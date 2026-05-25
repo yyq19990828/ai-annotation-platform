@@ -132,6 +132,11 @@ export function AIInspectorPanel({
     ? new Set(selectedIds)
     : selectedId ? new Set([selectedId]) : new Set<string>();
   const multiCount = selSet.size > 1 ? selSet.size : 0;
+  // 评论卡片绑定 chip 用：annotation_id → class_name。
+  const annotationClassById = useMemo(
+    () => Object.fromEntries(userBoxes.map((b) => [b.id, b.cls])),
+    [userBoxes],
+  );
   if (!open) {
     return null;
   }
@@ -184,6 +189,8 @@ export function AIInspectorPanel({
         liveCanvas={liveCommentCanvas}
         commentAnchor={commentAnchor}
         onSeekFrame={onSeekFrame}
+        annotationClassById={annotationClassById}
+        onSelectAnnotation={(id) => onSelect(id)}
       />
 
       <BoxesList

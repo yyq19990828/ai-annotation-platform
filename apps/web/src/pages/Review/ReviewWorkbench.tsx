@@ -76,6 +76,11 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
   );
 
   const userBoxes = useMemo(() => (annotationsData ?? []).map(annotationToBox), [annotationsData]);
+  // 评论卡片绑定 chip 用：annotation_id → class_name。
+  const annotationClassById = useMemo(
+    () => Object.fromEntries((annotationsData ?? []).map((a) => [a.id, a.class_name])),
+    [annotationsData],
+  );
   const allAi = useMemo(() => predictionsToBoxes(predictionsData), [predictionsData]);
 
   // 已被采纳的 prediction id 集合
@@ -216,6 +221,8 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
           currentUserId={meUserId}
           backgroundUrl={task?.file_url ?? null}
           enableCanvasDrawing
+          annotationClassById={annotationClassById}
+          onSelectAnnotation={setSelectedId}
         />
       </aside>
     )}

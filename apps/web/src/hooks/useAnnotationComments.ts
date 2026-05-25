@@ -66,6 +66,9 @@ export function useCreateComment(annotationId: string | null | undefined) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["annotation-comments", annotationId] });
       qc.invalidateQueries({ queryKey: ["annotation-comments-page", annotationId] });
+      // 任务级聚合视图（未选中标注）下 annotationId 为 null，上面的 key 命中不到
+      // ["task-comments-page", taskId]；按前缀失效任务级缓存，保证汇总列表即时刷新。
+      qc.invalidateQueries({ queryKey: ["task-comments-page"] });
       qc.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
@@ -79,6 +82,7 @@ export function usePatchComment(annotationId: string | null | undefined) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["annotation-comments", annotationId] });
       qc.invalidateQueries({ queryKey: ["annotation-comments-page", annotationId] });
+      qc.invalidateQueries({ queryKey: ["task-comments-page"] });
     },
   });
 }
@@ -90,6 +94,7 @@ export function useDeleteComment(annotationId: string | null | undefined) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["annotation-comments", annotationId] });
       qc.invalidateQueries({ queryKey: ["annotation-comments-page", annotationId] });
+      qc.invalidateQueries({ queryKey: ["task-comments-page"] });
     },
   });
 }

@@ -55,6 +55,10 @@ interface Props {
   };
   commentAnchor?: AnnotationCommentAnchor | null;
   onSeekFrame?: (frameIndex: number) => void;
+  /** 评论绑定标注框的类别名映射（annotation_id → class_name）；用于在评论卡片上显示绑定 chip。 */
+  annotationClassById?: Record<string, string | undefined>;
+  /** 点击绑定 chip 时选中/跳转到对应标注框。 */
+  onSelectAnnotation?: (annotationId: string) => void;
 }
 
 function anchorLabel(anchor: AnnotationCommentAnchor): string {
@@ -64,7 +68,7 @@ function anchorLabel(anchor: AnnotationCommentAnchor): string {
   return parts.join(" · ");
 }
 
-export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, commentAnchor, onSeekFrame }: Props) {
+export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, commentAnchor, onSeekFrame, annotationClassById, onSelectAnnotation }: Props) {
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("comments");
   // I4 · annotationId null 时走 task 级 hook (DiscussionPanel 雏形 — 评论/历史常驻).
@@ -304,6 +308,20 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                   )}
                 </div>
               </div>
+              {c.annotation_id && onSelectAnnotation && (
+                <button
+                  type="button"
+                  data-testid="comment-annotation-chip"
+                  onClick={() => onSelectAnnotation(c.annotation_id!)}
+                  className={styles.annotationChip}
+                  title="跳转到该评论绑定的标注框"
+                >
+                  <Icon name="crosshair" size={11} />
+                  <span className={styles.annotationChipLabel}>
+                    {annotationClassById?.[c.annotation_id] ?? "标注框"}
+                  </span>
+                </button>
+              )}
               <div className={styles.commentBody}>
                 {renderCommentBody(c.body, c.mentions ?? [], (uid) => navigate(`/audit?actor=${uid}`))}
               </div>
