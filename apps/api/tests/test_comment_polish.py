@@ -187,7 +187,12 @@ async def test_patch_clear_body_allowed_when_drawing_remains(
             "attachments": [],
             "canvas_drawing": {
                 "shapes": [
-                    {"type": "line", "points": [0.1, 0.1, 0.5, 0.5], "stroke": "#ef4444", "id": "s1"}
+                    {
+                        "type": "line",
+                        "points": [0.1, 0.1, 0.5, 0.5],
+                        "stroke": "#ef4444",
+                        "id": "s1",
+                    }
                 ]
             },
         },
