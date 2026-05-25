@@ -46,6 +46,10 @@ export function CanvasDrawingEditor({ open, onClose, onSave, initial, background
   const [shapes, setShapes] = useState<Shape[]>(initial?.shapes ?? []);
   const [stroke, setStroke] = useState<string>("#ef4444");
   const [drawing, setDrawing] = useState<number[] | null>(null); // 当前正在画的折线点 [x1, y1, x2, y2, ...]
+  // 同步标记是否正在绘制：pointerdown 里同步置位，不受 React 渲染时机影响。
+  // 不能用闭包里的 `drawing` 做 move 守卫——pointerdown 的 setDrawing 尚未 flush 时，
+  // 紧跟的快速 pointermove 会命中旧闭包 (drawing===null) 被丢弃，导致笔画开头缺失/跟不上手。
+  const drawingActiveRef = useRef(false);
   const strokeStartedAtRef = useRef<number | null>(null); // v0.10.21 I4 · 当前 stroke 起点 ms epoch
   const svgRef = useRef<SVGSVGElement | null>(null);
   const canvasRef = useElementStyle<HTMLDivElement>(useMemo<CSSProperties>(() => ({
@@ -73,17 +77,19 @@ export function CanvasDrawingEditor({ open, onClose, onSave, initial, background
     e.preventDefault();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     const [x, y] = toNormalized(e);
+    drawingActiveRef.current = true;
     setDrawing([x, y]);
     strokeStartedAtRef.current = Date.now();
   };
 
   const handleMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (drawing === null) return;
+    if (!drawingActiveRef.current) return;
     const [x, y] = toNormalized(e);
     setDrawing((d) => (d ? [...d, x, y] : d));
   };
 
   const handleUp = () => {
+    drawingActiveRef.current = false;
     if (drawing && drawing.length >= 4) {
       const startedAt = strokeStartedAtRef.current ?? Date.now();
       const endedAt = Date.now();
