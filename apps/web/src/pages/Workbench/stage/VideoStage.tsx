@@ -1471,6 +1471,17 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     videoViewBoxHeight,
   ]);
 
+  // v0.11.7 · 时间轴标记: pixel-anchored issue 命中的帧 (去重)。
+  const issueFrames = useMemo(() => {
+    const frames = new Set<number>();
+    for (const f of issuePixelFeedbacks ?? []) {
+      if (f.kind !== "issue" || f.anchor_type !== "pixel") continue;
+      const frame = f.anchor_position?.frame;
+      if (typeof frame === "number") frames.add(frame);
+    }
+    return [...frames].sort((a, b) => a - b);
+  }, [issuePixelFeedbacks]);
+
   if (isLoading) {
     return (
       <div className={styles.loadingState}>
@@ -1492,17 +1503,6 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     ? viewportSize.w / (videoPixelWidth * vp.scale) < 0.85 || viewportSize.h / (videoPixelHeight * vp.scale) < 0.85
     : false;
   minimapVisibleRef.current = videoMinimapVisible;
-
-  // v0.11.7 · 时间轴标记: pixel-anchored issue 命中的帧 (去重)。
-  const issueFrames = useMemo(() => {
-    const frames = new Set<number>();
-    for (const f of issuePixelFeedbacks ?? []) {
-      if (f.kind !== "issue" || f.anchor_type !== "pixel") continue;
-      const frame = f.anchor_position?.frame;
-      if (typeof frame === "number") frames.add(frame);
-    }
-    return [...frames].sort((a, b) => a - b);
-  }, [issuePixelFeedbacks]);
 
   return (
     <div
