@@ -120,7 +120,7 @@ export function CanvasDrawingEditor({ open, onClose, onSave, initial, background
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="画布批注（reviewer）" width={680}>
+    <Modal open={open} onClose={onClose} title="画布批注" width={680}>
       <div className={styles.editor}>
         <div className={styles.toolbar}>
           <span className={styles.muted}>颜色：</span>

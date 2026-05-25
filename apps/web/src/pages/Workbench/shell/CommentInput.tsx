@@ -330,8 +330,13 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
             <button
               type="button"
               onClick={() => setCanvasOpen(true)}
-              className={cn(styles.toolbarButton, canvasDrawing && styles.toolbarButtonActive)}
-              title="弹窗内绘制（与原图比例对齐）"
+              disabled={!backgroundUrl}
+              className={cn(
+                styles.toolbarButton,
+                canvasDrawing && styles.toolbarButtonActive,
+                !backgroundUrl && styles.toolbarButtonDisabled,
+              )}
+              title={backgroundUrl ? "弹窗内绘制（与原图比例对齐）" : "题图未加载，无法在空白画布上批注"}
             >
               <Icon name="edit" size={12} />
               {canvasDrawing ? `批注 · ${(canvasDrawing.shapes ?? []).length} 条` : "弹窗批注"}

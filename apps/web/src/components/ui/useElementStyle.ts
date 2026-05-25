@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject, Ref } from "react";
 
 const UNITLESS_NUMBER_PROPS = new Set([
@@ -62,16 +62,20 @@ export function useElementStyle<T extends HTMLElement | SVGElement>(
   style: CSSProperties | undefined,
   forwardedRef?: Ref<T>,
 ) {
-  const localRef = useRef<T | null>(null);
+  // element 用 state 持有：当元素延迟挂载（如 Modal/Drawer 打开时才进 DOM）后，
+  // 需要重新跑下面的 effect 把样式写上去；只用 ref 不会触发 effect，会漏设。
+  const [element, setElement] = useState<T | null>(null);
   const appliedKeysRef = useRef<Set<string>>(new Set());
 
-  const ref = (element: T | null) => {
-    localRef.current = element;
-    setRef(forwardedRef, element);
-  };
+  const ref = useCallback(
+    (el: T | null) => {
+      setElement(el);
+      setRef(forwardedRef, el);
+    },
+    [forwardedRef],
+  );
 
   useLayoutEffect(() => {
-    const element = localRef.current;
     if (!element) return;
 
     const nextKeys = new Set(Object.keys(style ?? {}));
@@ -94,7 +98,7 @@ export function useElementStyle<T extends HTMLElement | SVGElement>(
     }
 
     appliedKeysRef.current = nextKeys;
-  }, [style]);
+  }, [style, element]);
 
   return ref;
 }
