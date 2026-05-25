@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 import { CommentsPanel } from "./CommentsPanel";
 import { DiscussionIssuesTab } from "./DiscussionIssuesTab";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
@@ -26,14 +26,25 @@ const TABS: { key: DiscussionTab; label: string }[] = [
   { key: "issues", label: "Issue" },
 ];
 
-interface DiscussionPanelProps {
+// v0.11.5+ · 评论内画布批注 (live 绘图) + 点评论跳帧 (video) 的桥接 props，
+// 从 CommentsPanel 派生以保持同步。原在 AIInspectorPanel 内嵌时透传，去 flag 后
+// 在此重新接上 (修复 v0.11.2 复用 CommentsPanel 时漏传导致的功能回退)。
+type CommentsBridgeProps = Pick<
+  ComponentProps<typeof CommentsPanel>,
+  "backgroundUrl" | "imageWidth" | "imageHeight" | "enableCanvasDrawing" | "liveCanvas" | "commentAnchor" | "onSeekFrame"
+>;
+
+interface DiscussionPanelProps extends CommentsBridgeProps {
   annotationId: string | null;
   taskId: string | null;
   projectId: string | null;
   currentUserId: string | null;
 }
 
-export function DiscussionPanel({ annotationId, taskId, projectId, currentUserId }: DiscussionPanelProps) {
+export function DiscussionPanel({
+  annotationId, taskId, projectId, currentUserId,
+  backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, commentAnchor, onSeekFrame,
+}: DiscussionPanelProps) {
   const [tab, setTab] = useState<DiscussionTab>("comments");
 
   // v0.11.4 · 单击/hover IssueLayer 图钉 → store.tabRequestTick++ → 自动切到 issues tab。
@@ -73,6 +84,13 @@ export function DiscussionPanel({ annotationId, taskId, projectId, currentUserId
             taskId={taskId}
             projectId={projectId}
             currentUserId={currentUserId ?? undefined}
+            backgroundUrl={backgroundUrl}
+            imageWidth={imageWidth}
+            imageHeight={imageHeight}
+            enableCanvasDrawing={enableCanvasDrawing}
+            liveCanvas={liveCanvas}
+            commentAnchor={commentAnchor}
+            onSeekFrame={onSeekFrame}
             hideTabs
             forceTab={tab}
           />

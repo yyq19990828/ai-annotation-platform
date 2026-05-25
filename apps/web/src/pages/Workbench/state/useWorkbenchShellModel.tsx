@@ -56,7 +56,8 @@ import { deriveSamplingStep } from "../stage/videoSamplingGrid";
 import { VideoChapterSidebar, pickChapterTargetFrame } from "../stage/VideoChapterSidebar";
 import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
-import { isVideoTrack } from "../stage/videoStageGeometry";
+import { isVideoBbox, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
+import type { AnnotationCommentAnchor } from "@/api/comments";
 import { useVideoChapters } from "@/hooks/useVideoChapters";
 import { useVideoTrackerJobs } from "@/hooks/useVideoTrackerJobs";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
@@ -901,6 +902,29 @@ export function useWorkbenchShellModel({
     return (annotationsData ?? []).find((a) => a.id === s.selectedId) ?? null;
   }, [s.selectedId, s.selectedIds.length, annotationsData]);
 
+  // v0.11.5+ · 评论的视频帧锚点 (恢复 B1 去 flag 时随 AIInspectorPanel 内嵌一起删掉的逻辑)。
+  const videoCommentAnchor = useMemo<AnnotationCommentAnchor | null>(() => {
+    const ann = selectedAnnotationForPanel;
+    if (!isVideoTask || !ann) return null;
+    if (isVideoTrack(ann)) {
+      const resolved = resolveTrackAtFrame(ann.geometry, s.videoFrameIndex);
+      return {
+        kind: "video_frame",
+        frameIndex: s.videoFrameIndex,
+        trackId: ann.geometry.track_id,
+        source: resolved?.source ?? null,
+      };
+    }
+    if (isVideoBbox(ann)) {
+      return {
+        kind: "video_frame",
+        frameIndex: ann.geometry.frame_index,
+        source: "legacy",
+      };
+    }
+    return null;
+  }, [isVideoTask, s.videoFrameIndex, selectedAnnotationForPanel]);
+
   const handleUpdateAttributes = useCallback((annotationId: string, next: Record<string, unknown>) => {
     const ann = annotationsRef.current.find((a) => a.id === annotationId);
     if (!ann) return;
@@ -1423,6 +1447,20 @@ export function useWorkbenchShellModel({
       taskId: taskId ?? null,
       projectId: projectId ?? null,
       currentUserId: meUserId ?? null,
+      // v0.11.5+ · 评论内画布批注 (live 绘图) + 视频帧锚点 + 点评论跳帧的桥接，
+      // 恢复 B1 去 flag 时随 AIInspectorPanel 内嵌一起删掉的接线。
+      backgroundUrl: task?.file_url ?? null,
+      imageWidth,
+      imageHeight,
+      enableCanvasDrawing: true,
+      liveCanvas: {
+        active: s.canvasDraft.active,
+        result: s.canvasDraft.pendingResult,
+        onStart: (initial) => s.beginCanvasDraft(selectedAnnotationForPanel?.id ?? null, initial),
+        onConsume: s.consumeCanvasResult,
+      },
+      commentAnchor: videoCommentAnchor,
+      onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
     },
   };
 

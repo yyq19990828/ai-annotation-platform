@@ -21,7 +21,6 @@ import { groupOutlineColor } from "../stage/ImageStageShapes";
 import { resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { isFrameOutside } from "../stage/videoTrackOutside";
 import { AttributeForm } from "./AttributeForm";
-import { ResizeHandle } from "./ResizeHandle";
 import { SchemaForm, VARIANT_FIELD_KEYS, type JsonSchemaObject } from "../components/SchemaForm";
 import styles from "./AIInspectorPanel.module.css";
 
@@ -90,7 +89,9 @@ interface PredictionSourceFilterState {
 }
 
 export function AIInspectorPanel({
-  open, width, onResize,
+  // v0.11.5+ · width/onResize 仍在 props 接口里，但列宽拖拽 handle 已上移到
+  // WorkbenchLayout 的 .rightSplit（全高），故此处不再渲染/解构它们。
+  open,
   aiBoxes,
   predictionSourceFilter,
   userBoxes, selectedId, selectedIds,
@@ -116,7 +117,6 @@ export function AIInspectorPanel({
 
   return (
     <div className={styles.panel}>
-      <ResizeHandle side="left" width={width} onResize={onResize} min={220} max={600} />
       <div className={styles.panelHeader}>
         <div className={styles.panelHeaderRow}>
           <b className={styles.panelTitle}>标注详情</b>
