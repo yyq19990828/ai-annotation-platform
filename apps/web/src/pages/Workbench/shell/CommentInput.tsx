@@ -43,7 +43,7 @@ interface CommentInputProps {
     attachments: CommentAttachment[];
     canvas_drawing: CommentCanvasDrawing | null;
     anchor?: AnnotationCommentAnchor | null;
-  }) => void;
+  }) => void | Promise<unknown>;
 }
 
 interface PickerState {
@@ -257,12 +257,17 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
     }
   }, [annotationId, pushToast]);
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
     if (!editorRef.current) return;
     const { body, mentions } = serialize(editorRef.current);
     if (!body && attachments.length === 0 && !canvasDrawing) return;
-    onSubmit({ body, mentions, attachments, canvas_drawing: canvasDrawing, anchor });
-    reset();
+    try {
+      // 成功后才 reset：提交失败（如后端校验 / 网络）时保留草稿与画布批注，不静默丢失。
+      await onSubmit({ body, mentions, attachments, canvas_drawing: canvasDrawing, anchor });
+      reset();
+    } catch {
+      // 失败提示由 mutation 的 onError 负责；此处仅阻止 reset。
+    }
   }, [anchor, attachments, canvasDrawing, onSubmit, reset]);
 
   const submitDisabled = busy || uploading;

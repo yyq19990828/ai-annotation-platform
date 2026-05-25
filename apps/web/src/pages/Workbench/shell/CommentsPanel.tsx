@@ -186,14 +186,14 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
     anchor?: AnnotationCommentAnchor | null;
   }) => {
     if (!body && attachments.length === 0 && !canvas_drawing) return;
+    // 返回 mutateAsync 的 promise，让 CommentInput 在成功后才 reset（失败保留草稿）。
     if (annotationId) {
-      createMut.mutate({ body, mentions, attachments, canvas_drawing, anchor });
-      return;
+      return createMut.mutateAsync({ body, mentions, attachments, canvas_drawing, anchor });
     }
     // v0.10.20 · D1 · 任务级评论 POST /feedbacks (kind=comment, anchor_type=task).
     // 任务级 feedback 不支持 mentions / canvas_drawing / anchor (走不同 schema), 仅传 body + attachments.
     if (!taskId || !projectId) return;
-    createTaskFeedbackMut.mutate({
+    return createTaskFeedbackMut.mutateAsync({
       kind: "comment",
       anchor_type: "task",
       project_id: projectId,

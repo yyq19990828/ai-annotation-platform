@@ -5,6 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { useToastStore } from "@/components/ui/Toast";
 import {
   commentsApi,
   type AnnotationCommentListPage,
@@ -63,12 +64,14 @@ export function useTaskCommentsInfinite(
 
 export function useCreateComment(annotationId: string | null | undefined) {
   const qc = useQueryClient();
+  const pushToast = useToastStore((s) => s.push);
   return useMutation({
     mutationFn: (payload: string | CreateCommentPayload) => {
       if (!annotationId) throw new Error("No annotation selected");
       const body = typeof payload === "string" ? { body: payload } : payload;
       return commentsApi.create(annotationId, body);
     },
+    onError: (e) => pushToast({ msg: "评论发送失败", sub: String(e), kind: "error" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["annotation-comments", annotationId] });
       qc.invalidateQueries({ queryKey: ["annotation-comments-page", annotationId] });
