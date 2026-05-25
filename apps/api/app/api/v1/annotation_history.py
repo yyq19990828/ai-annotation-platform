@@ -152,7 +152,8 @@ async def get_annotation_history(
             )
         )
 
-    entries.sort(key=lambda e: e.timestamp)
+    # 倒序：最新事件在最前（与"评论"tab 的 created_at desc 一致）。
+    entries.sort(key=lambda e: e.timestamp, reverse=True)
 
     return AnnotationHistoryResponse(
         annotation_id=annotation_id,
@@ -242,7 +243,8 @@ async def get_task_audit_history(
                 detail=a.detail_json,
             )
         )
-    entries.sort(key=lambda e: e.timestamp)
+    # 倒序：最新事件在最前（与"评论"tab 的 created_at desc 一致）。
+    entries.sort(key=lambda e: e.timestamp, reverse=True)
 
     return AnnotationHistoryResponse(
         annotation_id=None,
