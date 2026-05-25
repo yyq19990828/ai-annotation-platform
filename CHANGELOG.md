@@ -45,5 +45,6 @@
 - **右栏列宽拖拽线在 DiscussionPanel 区域失效**（实测）：列宽 `ResizeHandle` 原在 AIInspectorPanel 内，去 flag 后只覆盖右栏上段；提到 `.rightSplit` 全高层级，整列可拖。
 - **评论内画布批注（live 绘图）+ 点评论跳帧（video）断开**（实测，v0.11.2 回退）：DiscussionPanel 复用 CommentsPanel 时漏传 `backgroundUrl`/`enableCanvasDrawing`/`liveCanvas`/`commentAnchor`/`onSeekFrame`，去 flag 后旧路径消失致功能失效；透传桥接 props + 恢复 shell model 的 `videoCommentAnchor` memo 与 `liveCanvas` 桥接。
 - **标注评论删除后偶现重现**（实测）：后端软删正确但前端 invalidate+refetch 在快速切换标注时有 stale 缓存竞态；`useDeleteComment` 改为乐观移除 + 失败回滚 + invalidate 兜底。
+- **白板（弹窗批注 CanvasDrawingEditor）快速绘制时笔画跟不上手**（实测，浏览器调试确认）：`handleMove` 用渲染闭包里的 `drawing` 做守卫，pointerdown 的 `setDrawing` 未 flush 时紧跟的快速 pointermove 命中旧闭包 `drawing===null` 被丢弃，笔画开头缺失。改用 pointerdown 同步置位的 ref 守卫，不受 React 渲染时机影响。
 
 <!-- v0.11.0 起的版本变更直接追加到本节；当开始开发 0.12 版本后再移到 docs/changelogs/0.11.x.md -->
