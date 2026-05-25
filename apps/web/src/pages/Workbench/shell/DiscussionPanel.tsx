@@ -14,7 +14,8 @@ import styles from "./DiscussionPanel.module.css";
  *     annotation 优先，null 降级查任务级 audit (GET /tasks/{id}/audit-history)。
  *   - issues (v0.11.4)：kind=issue feedback 列表 + status 过滤 + 与 IssueLayer 图钉双向联动。
  *
- * 仍在 DISCUSSION_PANEL_ENABLED flag 后；旧 CommentsPanel/IssueListPanel 路径保留 (v0.11.5 才删)。
+ * v0.11.5 转正：去 flag 成为右栏下段默认；旧浮层 IssueListPanel 路径已删，
+ * CommentsPanel 保留作本面板 comments/history tab 的子渲染器。
  * 边界：只统一 comment + issue + history(audit)；bug / reject 刻意不进。
  */
 type DiscussionTab = "comments" | "history" | "issues";

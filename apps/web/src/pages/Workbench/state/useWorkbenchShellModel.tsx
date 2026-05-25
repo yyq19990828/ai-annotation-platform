@@ -21,13 +21,12 @@ import { useFeedbacks } from "@/hooks/useFeedbacks";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
-import type { AnnotationCommentAnchor } from "@/api/comments";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { predictionsApi } from "@/api/predictions";
 import type { Annotation, TaskResponse, AnnotationResponse } from "@/types";
-import { ANNOTATION_GUIDE_UI_ENABLED, DISCUSSION_PANEL_ENABLED } from "@/config/featureFlags";
+import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 import { useWorkbenchState } from "./useWorkbenchState";
 import { useToolBindings } from "./useToolBindings";
@@ -44,7 +43,6 @@ import { useAiToolParamPrefs } from "./useAiToolParamPrefs";
 import { deriveDefaults, VARIANT_FIELD_KEYS } from "../components/SchemaForm";
 import { AIToolDrawer } from "../shell/AIToolDrawer";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
-import { IssueListPanel } from "../shell/IssueListPanel";
 import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
 import { useHoveredCommentStore } from "./useHoveredCommentStore";
 import { useActiveIssueStore } from "./useActiveIssueStore";
@@ -58,7 +56,7 @@ import { deriveSamplingStep } from "../stage/videoSamplingGrid";
 import { VideoChapterSidebar, pickChapterTargetFrame } from "../stage/VideoChapterSidebar";
 import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
-import { isVideoBbox, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
+import { isVideoTrack } from "../stage/videoStageGeometry";
 import { useVideoChapters } from "@/hooks/useVideoChapters";
 import { useVideoTrackerJobs } from "@/hooks/useVideoTrackerJobs";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
@@ -108,7 +106,6 @@ interface WorkbenchShellIssueSection {
   issuePinDropArmed: boolean;
   onOpenList: () => void;
   onToggleIssuePinDrop: () => void;
-  listPanel: ComponentProps<typeof IssueListPanel>;
   createModal: ComponentProps<typeof IssueCreateModal>;
 }
 
@@ -475,10 +472,8 @@ export function useWorkbenchShellModel({
   const bulkUpdateMut = useAnnotationBulkUpdate(taskId ?? "");
 
   const [issueCreateOpen, setIssueCreateOpen] = useState(false);
-  const [issueListOpen, setIssueListOpen] = useState(false);
   const [issuePinDropArmed, setIssuePinDropArmed] = useState(false);
   const [issuePinPrefill, setIssuePinPrefill] = useState<{ x: number; y: number } | null>(null);
-  const [highlightIssueId, setHighlightIssueId] = useState<string | null>(null);
   const issueListParams = useMemo(
     () => ({
       project_id: projectId ?? "",
@@ -491,17 +486,24 @@ export function useWorkbenchShellModel({
   const openIssueCount = (issuesQuery.data?.items ?? []).filter((i) => i.status === "open").length;
 
   // v0.11.4 · DiscussionPanel issues tab ↔ IssueLayer 双向联动 store。
-  // 列表单击 → focusTick++ → 把视口平移到对应图钉并高亮 (复用现有 vp/setVp + stageGeom)。
+  // 列表单击 → focusTick++ → 定位到对应图钉并高亮。
+  //   image: 把视口平移到图钉 (复用现有 vp/setVp + stageGeom)。
+  //   video (v0.11.7): 先 seek 到 anchor_position.frame 命中的帧, 该帧的 VideoIssueLayer 图钉再显示。
   const activeIssueHighlightId = useActiveIssueStore((st) => st.highlightId);
   const highlightIssueFromPin = useActiveIssueStore((st) => st.highlightFromPin);
+  const requestIssuesTab = useActiveIssueStore((st) => st.requestIssuesTab);
   const issueFocusTick = useActiveIssueStore((st) => st.focusTick);
   const lastIssueFocusRef = useRef(issueFocusTick);
   useEffect(() => {
-    if (!DISCUSSION_PANEL_ENABLED) return;
     if (issueFocusTick === lastIssueFocusRef.current) return;
     lastIssueFocusRef.current = issueFocusTick;
     const target = (issuesQuery.data?.items ?? []).find((i) => i.id === activeIssueHighlightId);
     if (!target?.anchor_position) return;
+    if (isVideoTask) {
+      const frame = target.anchor_position.frame;
+      if (typeof frame === "number") s.setVideoFrameIndex(frame);
+      return;
+    }
     const { imgW, imgH, vpSize } = stageGeom;
     if (!imgW || !imgH || !vpSize.w || !vpSize.h) return;
     setVp((cur) => ({
@@ -509,7 +511,7 @@ export function useWorkbenchShellModel({
       tx: vpSize.w / 2 - target.anchor_position!.x * imgW * cur.scale,
       ty: vpSize.h / 2 - target.anchor_position!.y * imgH * cur.scale,
     }));
-  }, [issueFocusTick, activeIssueHighlightId, issuesQuery.data, stageGeom, setVp]);
+  }, [issueFocusTick, activeIssueHighlightId, issuesQuery.data, stageGeom, setVp, isVideoTask, s.setVideoFrameIndex]);
   const submitTaskMut = useSubmitTask();
   const triggerPreannotation = useTriggerPreannotation(projectId);
   const { progress: preannotationProgress, connection: preannotationConn, retries: preannotationRetries } =
@@ -899,28 +901,6 @@ export function useWorkbenchShellModel({
     return (annotationsData ?? []).find((a) => a.id === s.selectedId) ?? null;
   }, [s.selectedId, s.selectedIds.length, annotationsData]);
 
-  const videoCommentAnchor = useMemo<AnnotationCommentAnchor | null>(() => {
-    const ann = selectedAnnotationForPanel;
-    if (!isVideoTask || !ann) return null;
-    if (isVideoTrack(ann)) {
-      const resolved = resolveTrackAtFrame(ann.geometry, s.videoFrameIndex);
-      return {
-        kind: "video_frame",
-        frameIndex: s.videoFrameIndex,
-        trackId: ann.geometry.track_id,
-        source: resolved?.source ?? null,
-      };
-    }
-    if (isVideoBbox(ann)) {
-      return {
-        kind: "video_frame",
-        frameIndex: ann.geometry.frame_index,
-        source: "legacy",
-      };
-    }
-    return null;
-  }, [isVideoTask, s.videoFrameIndex, selectedAnnotationForPanel]);
-
   const handleUpdateAttributes = useCallback((annotationId: string, next: Record<string, unknown>) => {
     const ann = annotationsRef.current.find((a) => a.id === annotationId);
     if (!ann) return;
@@ -1308,17 +1288,10 @@ export function useWorkbenchShellModel({
         maskEditor,
         projectRenderingConfig: currentProject?.rendering_config ?? null,
         issuePixelFeedbacks: issuesQuery.data?.items ?? [],
-        // v0.11.4 · flag 开时图钉高亮跟 DiscussionPanel issues tab 共享 store; 否则沿用旧浮层高亮。
-        highlightIssueId: DISCUSSION_PANEL_ENABLED ? activeIssueHighlightId : highlightIssueId,
-        onIssuePinClick: (id) => {
-          if (DISCUSSION_PANEL_ENABLED) {
-            // 高亮 + 请求 DiscussionPanel 切到 issues tab + 高亮对应列表行。
-            highlightIssueFromPin(id);
-            return;
-          }
-          setHighlightIssueId(id);
-          setIssueListOpen(true);
-        },
+        // v0.11.5 · 图钉高亮跟 DiscussionPanel issues tab 共享 store (旧浮层路径已删)。
+        highlightIssueId: activeIssueHighlightId,
+        // 单击图钉 → 高亮 + 请求 DiscussionPanel 切到 issues tab + 高亮对应列表行。
+        onIssuePinClick: (id) => highlightIssueFromPin(id),
         issuePinDropArmed: issuePinDropArmed,
         onIssuePinDrop: (x, y) => {
           setIssuePinDropArmed(false);
@@ -1362,14 +1335,11 @@ export function useWorkbenchShellModel({
         bulkUpdateMut.mutate({ ids, patch });
       },
       onSelectGroup: (memberIds) => s.replaceSelected(memberIds),
-      currentUserId: meUserId, taskFileUrl: task?.file_url,
       hasMorePredictions: modeState.diffMode !== "final" && !!predictionsInfinite.hasNextPage,
       isFetchingMorePredictions: modeState.diffMode !== "final" && predictionsInfinite.isFetchingNextPage,
       onFetchMorePredictions: () => predictionsInfinite.fetchNextPage(),
       currentFrameIndex: isVideoTask ? s.videoFrameIndex : undefined,
       onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
-      commentAnchor: videoCommentAnchor,
-      taskId: taskId ?? null,
       videoTrackPanel: isVideoTask ? ((frameFilter) => (
         <div className={styles.videoTrackPanel}>
           <VideoTrackSidebar
@@ -1414,12 +1384,6 @@ export function useWorkbenchShellModel({
           />
         </div>
       )) : undefined,
-      liveCommentCanvas: {
-        active: s.canvasDraft.active,
-        result: s.canvasDraft.pendingResult,
-        onStart: (initial) => s.beginCanvasDraft(selectedAnnotationForPanel?.id ?? null, initial),
-        onConsume: s.consumeCanvasResult,
-      },
     },
     aiPopover: {
       open: aiPopoverOpen && !isVideoTask,
@@ -1453,14 +1417,13 @@ export function useWorkbenchShellModel({
       projectId,
       content: (currentProject as unknown as { annotation_guide?: string | null } | undefined)?.annotation_guide ?? null,
     } : undefined,
-    // v0.11.1 · B 组 · 仅 flag 开时传 discussionPanel → 右栏切两段布局。
-    // off（默认）= undefined → WorkbenchLayout 维持现状只渲染 AIInspectorPanel，零行为变化。
-    discussionPanel: DISCUSSION_PANEL_ENABLED ? {
+    // v0.11.5 · B 组 · DiscussionPanel 转正 → 右栏固定两段布局 (上 AIInspectorPanel + 下 DiscussionPanel)。
+    discussionPanel: {
       annotationId: s.selectedId,
       taskId: taskId ?? null,
       projectId: projectId ?? null,
       currentUserId: meUserId ?? null,
-    } : undefined,
+    },
   };
 
   const propagateDialogProps: ComponentProps<typeof VideoTrackerPropagateDialog> = {
@@ -1478,16 +1441,9 @@ export function useWorkbenchShellModel({
     openIssueCount,
     stageKind,
     issuePinDropArmed,
-    onOpenList: () => setIssueListOpen(true),
+    // v0.11.5 · issue FAB → 切到 DiscussionPanel issues tab (旧浮层 IssueListPanel 已删)。
+    onOpenList: () => requestIssuesTab(),
     onToggleIssuePinDrop: () => setIssuePinDropArmed((v) => !v),
-    listPanel: {
-      open: issueListOpen,
-      projectId,
-      taskId,
-      highlightId: highlightIssueId,
-      onClose: () => { setIssueListOpen(false); setHighlightIssueId(null); },
-      onCreateNew: () => { setIssueListOpen(false); setIssueCreateOpen(true); },
-    },
     createModal: {
       open: issueCreateOpen,
       projectId,

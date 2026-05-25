@@ -93,6 +93,11 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
                   <Icon name="crosshair" size={11} /> ({it.anchor_position!.x.toFixed(2)}, {it.anchor_position!.y.toFixed(2)})
                 </span>
               )}
+              {hasPin && typeof it.anchor_position!.frame === "number" && (
+                <span className={styles.anchorChip} title="所属帧 · 单击跳转">
+                  F{it.anchor_position!.frame}
+                </span>
+              )}
               <span className={styles.author}>
                 {it.author_name ?? "—"} · {new Date(it.created_at).toLocaleString()}
               </span>

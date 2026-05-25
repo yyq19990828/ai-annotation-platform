@@ -3,7 +3,6 @@ import { Icon } from "@/components/ui/Icon";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
 import { useWorkbenchShellModel } from "../state/useWorkbenchShellModel";
 import { IssueCreateModal } from "./IssueCreateModal";
-import { IssueListPanel } from "./IssueListPanel";
 import { WorkbenchLayout } from "./WorkbenchLayout";
 import { WorkbenchSkeleton } from "./WorkbenchSkeleton";
 import styles from "./WorkbenchShell.module.css";
@@ -33,7 +32,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         <>
           <button
             type="button"
-            aria-label={`查看 issue 列表 (${model.issueSection.openIssueCount} 待处理)`}
+            aria-label={`查看讨论面板 Issue (${model.issueSection.openIssueCount} 待处理)`}
             title={`Issue: ${model.issueSection.openIssueCount} 个待处理`}
             onClick={model.issueSection.onOpenList}
             className={styles.issueFab}
@@ -57,7 +56,6 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
               <Icon name="crosshair" size={14} />
             </button>
           )}
-          <IssueListPanel {...model.issueSection.listPanel} />
           <IssueCreateModal {...model.issueSection.createModal} />
         </>
       )}

@@ -30,11 +30,6 @@ vi.mock("@tanstack/react-virtual", () => ({
   }),
 }));
 
-// ── mock CommentsPanel (有复杂的 hooks) ─────────────────────────────────────
-vi.mock("./CommentsPanel", () => ({
-  CommentsPanel: () => <div data-testid="comments-panel" />,
-}));
-
 // ── mock ResizeHandle (纯布局，不影响逻辑) ───────────────────────────────────
 vi.mock("./ResizeHandle", () => ({
   ResizeHandle: () => <div data-testid="resize-handle" />,

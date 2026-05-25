@@ -31,6 +31,9 @@ vi.mock("./AIInspectorPanel", () => ({
   AIInspectorPanel: () => <div data-testid="inspector" />,
   AIPredictionPopover: () => <div data-testid="ai-popover" />,
 }));
+vi.mock("./DiscussionPanel", () => ({
+  DiscussionPanel: () => <div data-testid="discussion-panel" />,
+}));
 vi.mock("./HotkeyCheatSheet", () => ({
   HotkeyCheatSheet: () => <div data-testid="hotkeys" />,
 }));
@@ -63,6 +66,7 @@ const baseProps = {
   hotkeys: {} as never,
   offlineQueue: {} as never,
   conflict: {} as never,
+  discussionPanel: {} as never,
 };
 
 describe("WorkbenchLayout", () => {

@@ -45,9 +45,8 @@ interface WorkbenchLayoutProps {
   rejectModal?: ComponentProps<typeof RejectReasonModal>;
   // v0.10.13 · E1 · 标注指引浮层 (可选; 项目无 guide 时不渲染).
   guidePanel?: ComponentProps<typeof GuidePanel>;
-  // v0.11.1 · B 组 · 右栏下段统一讨论面板 (可选; 仅 flag DISCUSSION_PANEL_ENABLED 开时由 model 传入).
-  // 不传时右栏维持现状只渲染 AIInspectorPanel —— 零行为变化。
-  discussionPanel?: ComponentProps<typeof DiscussionPanel>;
+  // v0.11.5 · B 组 · 右栏下段统一讨论面板 (转正; 上 AIInspectorPanel + 下 DiscussionPanel 两段固定).
+  discussionPanel: ComponentProps<typeof DiscussionPanel>;
 }
 
 export function WorkbenchLayout({
@@ -107,26 +106,22 @@ export function WorkbenchLayout({
         </div>
 
         <div className={styles.sideSlot}>
-          {discussionPanel ? (
-            <div className={styles.rightSplit}>
-              <div ref={splitTopRef} className={styles.rightSplitTop}>
-                <AIInspectorPanel {...inspector} />
-                <ResizeHandle
-                  side="bottom"
-                  width={splitTopHeight}
-                  onResize={onSplitResize}
-                  min={RIGHT_SPLIT_TOP_MIN}
-                  max={RIGHT_SPLIT_TOP_MAX}
-                  resetTo={RIGHT_SPLIT_TOP_DEFAULT}
-                />
-              </div>
-              <div className={styles.rightSplitBottom}>
-                <DiscussionPanel {...discussionPanel} />
-              </div>
+          <div className={styles.rightSplit}>
+            <div ref={splitTopRef} className={styles.rightSplitTop}>
+              <AIInspectorPanel {...inspector} />
+              <ResizeHandle
+                side="bottom"
+                width={splitTopHeight}
+                onResize={onSplitResize}
+                min={RIGHT_SPLIT_TOP_MIN}
+                max={RIGHT_SPLIT_TOP_MAX}
+                resetTo={RIGHT_SPLIT_TOP_DEFAULT}
+              />
             </div>
-          ) : (
-            <AIInspectorPanel {...inspector} />
-          )}
+            <div className={styles.rightSplitBottom}>
+              <DiscussionPanel {...discussionPanel} />
+            </div>
+          </div>
         </div>
       </div>
 
