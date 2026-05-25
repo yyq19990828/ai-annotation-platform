@@ -36,6 +36,8 @@ interface VideoPlaybackOverlayProps {
   loopRegion?: VideoLoopRegion | null;
   bookmarks?: VideoBookmark[];
   chapters?: VideoTimelineChapter[];
+  /** v0.11.7 · 含 pixel-anchored issue 的帧 (时间轴上加标记, 单击跳转)。 */
+  issueFrames?: number[];
   hoverPreview?: VideoFramePreview | null;
   currentFrameEntryCount: number;
   visible: boolean;
@@ -101,6 +103,7 @@ export function VideoPlaybackOverlay({
   loopRegion = null,
   bookmarks = [],
   chapters = [],
+  issueFrames = [],
   hoverPreview = null,
   currentFrameEntryCount,
   visible,
@@ -402,6 +405,21 @@ export function VideoPlaybackOverlay({
               }}
               className={cn(styles.bookmarkMarker, isInteractive && styles.interactive)}
               vars={{ "--timeline-left": frameLeft(bookmark.frameIndex) }}
+            />
+          ))}
+          {issueFrames.map((frame) => (
+            <TimelineButton
+              key={`issue-${frame}`}
+              type="button"
+              data-testid="video-issue-marker"
+              title={`Issue · F ${frame}`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onSeek(frame);
+              }}
+              className={cn(styles.issueMarker, isInteractive && styles.interactive)}
+              vars={{ "--timeline-left": frameLeft(frame) }}
             />
           ))}
           {!selectedTrackTimeline && globalTimelineDensity.length > 0 && (

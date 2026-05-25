@@ -8,6 +8,7 @@ import type {
   VideoTrackGeometry,
 } from "@/types";
 import { VideoStage, type VideoStageControls } from "../../stage/VideoStage";
+import type { AnnotationFeedback } from "@/api/feedbacks";
 import type { VideoTimelineChapter } from "../../stage/VideoPlaybackOverlay";
 import type { VideoTrackAnnotation } from "../../stage/videoStageTypes";
 import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
@@ -54,6 +55,10 @@ export interface VideoWorkbenchProps {
   onToggleLockedTrack?: (trackId: string) => void;
   onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
   onCursorMove: (pt: { x: number; y: number } | null) => void;
+  // v0.11.7 · pixel-anchored issue 图钉 (按当前帧显隐 + 时间轴标记)。
+  issuePixelFeedbacks?: AnnotationFeedback[];
+  issueHighlightId?: string | null;
+  onIssuePinClick?: (id: string) => void;
 }
 
 export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps>(
@@ -89,6 +94,9 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     onToggleLockedTrack,
     onPropagateTrack,
     onCursorMove,
+    issuePixelFeedbacks,
+    issueHighlightId,
+    onIssuePinClick,
   }, ref) {
     return (
       <VideoStage
@@ -124,6 +132,9 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         onToggleLockedTrack={onToggleLockedTrack}
         onPropagateTrack={onPropagateTrack}
         onCursorMove={onCursorMove}
+        issuePixelFeedbacks={issuePixelFeedbacks}
+        issueHighlightId={issueHighlightId}
+        onIssuePinClick={onIssuePinClick}
       />
     );
   },

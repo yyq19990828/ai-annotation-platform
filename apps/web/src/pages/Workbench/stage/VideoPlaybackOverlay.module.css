@@ -150,6 +150,27 @@
   pointer-events: auto;
 }
 
+/* v0.11.7 · pixel-anchored issue 帧标记 (warning 色上指三角)。 */
+.issueMarker {
+  position: absolute;
+  bottom: -1px;
+  left: var(--timeline-left);
+  width: 0;
+  height: 0;
+  padding: 0;
+  border-bottom: 8px solid var(--color-warning);
+  border-right: 5px solid transparent;
+  border-left: 5px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.issueMarker.interactive {
+  pointer-events: auto;
+}
+
 /* v0.10.29 · 采样网格刻度轨道 + off-grid 当前帧标记。 */
 .gridTrack {
   position: absolute;

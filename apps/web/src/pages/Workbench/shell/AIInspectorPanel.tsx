@@ -7,7 +7,6 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { VariantSelector } from "@/components/ml/VariantSelector";
 import type { MLBackendSupportedVariantGroup } from "@/api/ml-backends";
 import type { Annotation, AnnotationResponse } from "@/types";
-import type { AnnotationCommentAnchor } from "@/api/comments";
 import type { AttributeSchema } from "@/api/projects";
 import {
   PREDICTION_SOURCE_FILTERS,
@@ -22,7 +21,6 @@ import { groupOutlineColor } from "../stage/ImageStageShapes";
 import { resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { isFrameOutside } from "../stage/videoTrackOutside";
 import { AttributeForm } from "./AttributeForm";
-import { CommentsPanel } from "./CommentsPanel";
 import { ResizeHandle } from "./ResizeHandle";
 import { SchemaForm, VARIANT_FIELD_KEYS, type JsonSchemaObject } from "../components/SchemaForm";
 import styles from "./AIInspectorPanel.module.css";
@@ -57,28 +55,11 @@ interface AIInspectorPanelProps {
   ) => void;
   /** v0.10.20 · I12 BoxList group card 头部单击 → 整组选中 (replaceSelected). */
   onSelectGroup?: (memberIds: string[]) => void;
-  /** 当前用户 id（驱动评论作者操作权限）。 */
-  currentUserId?: string;
-  /** 当前题图 URL：作为评论画布批注的预览背景。 */
-  taskFileUrl?: string | null;
-  /** v0.6.4：默认 true，annotator + reviewer 双向都能画布批注（之前仅 reviewer）。
-   *  设 false 仅在确实只读的场景（例如审计预览页）才需要。*/
-  enableCommentCanvasDrawing?: boolean;
-  /** v0.6.4：在题图上直接绘制的桥接（CommentInput → ImageStage CanvasDrawingLayer）。*/
-  liveCommentCanvas?: {
-    active: boolean;
-    result: import("@/api/comments").CommentCanvasDrawing | null;
-    onStart: (initial?: import("@/api/comments").CommentCanvasDrawing | null) => void;
-    onConsume: () => void;
-  };
   hasMorePredictions?: boolean;
   isFetchingMorePredictions?: boolean;
   onFetchMorePredictions?: () => void;
   currentFrameIndex?: number;
   onSeekFrame?: (frameIndex: number) => void;
-  commentAnchor?: AnnotationCommentAnchor | null;
-  /** I4 · 任务 id; selectedAnnotation 为 null 时 CommentsPanel 走 task 级降级展示. */
-  taskId?: string | null;
   /** Shift+click 进入多选；普通 click 单选。 */
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
   onAcceptPrediction: (b: AiBox) => void;
@@ -117,11 +98,8 @@ export function AIInspectorPanel({
   imageWidth, imageHeight,
   attributeSchema, selectedAnnotation, onUpdateAttributes,
   onBulkUpdateAttributes, onSelectGroup,
-  currentUserId,
-  taskFileUrl, enableCommentCanvasDrawing = true, liveCommentCanvas,
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
-  currentFrameIndex, onSeekFrame, commentAnchor,
-  taskId,
+  currentFrameIndex, onSeekFrame,
   onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction, onRefineUserPolygon,
   onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   onToggleUserBoxFlag,
@@ -132,11 +110,6 @@ export function AIInspectorPanel({
     ? new Set(selectedIds)
     : selectedId ? new Set([selectedId]) : new Set<string>();
   const multiCount = selSet.size > 1 ? selSet.size : 0;
-  // 评论卡片绑定 chip 用：annotation_id → class_name。
-  const annotationClassById = useMemo(
-    () => Object.fromEntries(userBoxes.map((b) => [b.id, b.cls])),
-    [userBoxes],
-  );
   if (!open) {
     return null;
   }
@@ -174,24 +147,6 @@ export function AIInspectorPanel({
           readOnly={readOnly}
         />
       )}
-
-      {/* I4 · 评论/历史常驻 (v0.10.19): 未选中标注时降级为该 task 级评论汇总.
-          v0.10.20 计划: 进一步抽出为独立 DiscussionPanel + WorkbenchLayout 右栏两段固定. */}
-      <CommentsPanel
-        annotationId={selectedAnnotation?.id ?? null}
-        taskId={taskId ?? null}
-        projectId={selectedAnnotation?.project_id ?? null}
-        currentUserId={currentUserId}
-        backgroundUrl={taskFileUrl}
-        imageWidth={imageWidth}
-        imageHeight={imageHeight}
-        enableCanvasDrawing={enableCommentCanvasDrawing}
-        liveCanvas={liveCommentCanvas}
-        commentAnchor={commentAnchor}
-        onSeekFrame={onSeekFrame}
-        annotationClassById={annotationClassById}
-        onSelectAnnotation={(id) => onSelect(id)}
-      />
 
       <BoxesList
         aiBoxes={aiBoxes}

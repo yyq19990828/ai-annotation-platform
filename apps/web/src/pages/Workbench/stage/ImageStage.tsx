@@ -212,9 +212,9 @@ interface ImageStageProps {
    * 仅 kind=issue + anchor_type=pixel 的行会被消费; 其它 anchor_type 由调用方过滤.
    */
   issuePixelFeedbacks?: import("@/api/feedbacks").AnnotationFeedback[];
-  /** v0.10.20 · pin 高亮 id (IssueListPanel 单击列表项时聚焦). */
+  /** v0.10.20 · pin 高亮 id (DiscussionPanel issues tab 单击列表项时聚焦). */
   highlightIssueId?: string | null;
-  /** v0.10.20 · 单击图钉; Shell 据此切换 IssueListPanel 高亮 / 跳转. */
+  /** v0.10.20 · 单击图钉; Shell 据此高亮 + 切到 DiscussionPanel issues tab. */
   onIssuePinClick?: (id: string) => void;
   /** v0.10.20 · drop-arm 模式: 渲染 catcher 拦截单击, 派发归一化坐标 → Shell 打开 IssueCreateModal. */
   issuePinDropArmed?: boolean;

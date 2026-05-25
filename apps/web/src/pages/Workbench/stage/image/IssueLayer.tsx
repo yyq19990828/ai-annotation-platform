@@ -6,7 +6,7 @@
  *
  *   - 每个 pixel issue 渲染为 status 配色的图钉 (Circle + 字母)。
  *   - status: open=warning橙, resolved=success绿, wont_fix=fg-muted灰。
- *   - 单击图钉 → 派发 onPinClick(id), 由 Shell 切换 IssueListPanel 高亮对应项。
+ *   - 单击图钉 → 派发 onPinClick(id), 由 Shell 高亮 + 切到 DiscussionPanel issues tab 对应项。
  *   - drop-arm 模式 (armedForDrop=true): 渲染一个透明全画布 Rect, 单击落点 → 派发 onDrop(x, y)
  *     (相对坐标 [0,1]); Shell 据此打开 IssueCreateModal 预填 anchor.
  *
