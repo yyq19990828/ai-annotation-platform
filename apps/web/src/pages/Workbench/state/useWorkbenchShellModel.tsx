@@ -44,7 +44,7 @@ import { deriveDefaults, VARIANT_FIELD_KEYS } from "../components/SchemaForm";
 import { AIToolDrawer } from "../shell/AIToolDrawer";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
-import { useHoveredCommentStore } from "./useHoveredCommentStore";
+import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
 import { useActiveIssueStore } from "./useActiveIssueStore";
 import { annotationToBox } from "./transforms";
 import { applyVideoKeyframeToGeometry } from "./videoTrackCommands";
@@ -937,7 +937,7 @@ export function useWorkbenchShellModel({
     });
   }, [updateAnnotationMut, history]);
 
-  const hoveredCommentShapes = useHoveredCommentStore((s) => s.shapes);
+  const hoveredCommentShapes = useHoveredCommentStore(selectEffectiveShapes);
 
   const { navigateTask, smartNext, handleSubmitTask } = useWorkbenchTaskFlow({
     taskId, task, tasks,

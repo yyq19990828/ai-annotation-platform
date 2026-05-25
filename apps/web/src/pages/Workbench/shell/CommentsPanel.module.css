@@ -64,6 +64,12 @@
   cursor: crosshair;
 }
 
+/* 点击 pin 到画布的评论：accent 边框 + 左侧色条，表示其批注正持续叠加在 konva 画布上。 */
+.commentCardPinned {
+  border-color: var(--color-accent);
+  box-shadow: inset 2px 0 0 0 var(--color-accent);
+}
+
 .commentHeader {
   display: flex;
   align-items: center;

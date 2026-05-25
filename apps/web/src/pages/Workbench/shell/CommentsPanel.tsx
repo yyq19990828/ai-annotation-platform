@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { useProjectMembers } from "@/hooks/useProjects";
@@ -132,7 +132,15 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
   const createMut = useCreateComment(annotationId);
   const patchMut = usePatchComment(annotationId);
   const deleteMut = useDeleteComment(annotationId);
-  const setHoveredShapes = useHoveredCommentStore((s) => s.setShapes);
+  const setHoveredShapes = useHoveredCommentStore((s) => s.setHover);
+  const togglePinnedComment = useHoveredCommentStore((s) => s.togglePin);
+  const clearPinnedComment = useHoveredCommentStore((s) => s.clearPin);
+  const pinnedCommentId = useHoveredCommentStore((s) => s.pinnedId);
+  // 切换标注 / 卸载 → 清掉 pin，避免上一个标注的批注残留在画布上。
+  useEffect(() => {
+    clearPinnedComment();
+    return clearPinnedComment;
+  }, [annotationId, clearPinnedComment]);
   // v0.7.2 · 历史 tab — 仅切到 history 时拉取; I4 · 未选中标注时拉 task 级.
   const annotationHistoryQuery = useAnnotationAuditHistory(
     tab === "history" && annotationId ? annotationId : null,
@@ -250,10 +258,18 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
               key={c.id}
               onMouseEnter={() => { if (hoverShapes) setHoveredShapes(hoverShapes); }}
               onMouseLeave={() => { if (hoverShapes) setHoveredShapes(null); }}
+              onClick={(e) => {
+                // 卡片内的按钮 / 链接（解决、删除、跳标注、跳帧、附件）各有自己的动作，
+                // 点它们不应顺带 toggle pin；其余区域点击 = pin 这条评论的批注到画布。
+                if (!hoverShapes) return;
+                if ((e.target as HTMLElement).closest("button, a")) return;
+                togglePinnedComment(c.id, hoverShapes);
+              }}
               className={cn(
                 styles.commentCard,
                 c.is_resolved && styles.commentCardResolved,
                 hoverShapes && styles.commentCardHoverable,
+                pinnedCommentId === c.id && styles.commentCardPinned,
               )}
             >
               <div className={styles.commentHeader}>
