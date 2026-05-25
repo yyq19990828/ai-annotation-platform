@@ -37,12 +37,37 @@
 
 .navRow {
   gap: 6px;
+  min-width: 0;
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .rightRow {
   position: relative;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.projectName {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectId {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--color-fg-muted);
 }
 
 .taskId {
@@ -54,6 +79,7 @@
 
 .fileName {
   min-width: 0;
+  max-width: 220px;
   overflow: hidden;
   font-size: 12.5px;
   color: var(--color-fg-muted);

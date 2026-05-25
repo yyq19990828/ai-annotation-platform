@@ -45,7 +45,7 @@ import { deriveDefaults, VARIANT_FIELD_KEYS } from "../components/SchemaForm";
 import { AIToolDrawer } from "../shell/AIToolDrawer";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { IssueListPanel } from "../shell/IssueListPanel";
-import { isAIToolId } from "../stage/tools";
+import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
 import { useHoveredCommentStore } from "./useHoveredCommentStore";
 import { annotationToBox } from "./transforms";
 import { applyVideoKeyframeToGeometry } from "./videoTrackCommands";
@@ -1076,7 +1076,8 @@ export function useWorkbenchShellModel({
   const layout: ComponentProps<typeof WorkbenchLayout> = {
     gridTemplateColumns: `${leftOpen ? `${s.leftWidth}px` : "0px"} 48px 1fr ${rightOpen ? `${s.rightWidth}px` : "0px"}`,
     taskQueue: {
-      open: leftOpen, projectName, projectDisplayId, classes, classesConfig: currentProject?.classes_config,
+      open: leftOpen, classes, classesConfig: currentProject?.classes_config,
+      toolLabel: TOOL_REGISTRY[s.tool].label, toolIcon: TOOL_REGISTRY[s.tool].icon,
       activeClass: s.activeClass, recentClasses, tasks, taskId, taskIdx, hasNextPage,
       isFetchingNextPage, onFetchNextPage: fetchNextPage,
       onSelectTask: selectTask, batches: activeBatches, selectedBatchId, onSelectBatch: handleSelectBatch,
@@ -1121,6 +1122,7 @@ export function useWorkbenchShellModel({
       onReopen: bannerActions.onReopen, onAcceptRejection: bannerActions.onAcceptRejection,
     },
     topbar: {
+      projectName, projectDisplayId,
       task, taskIdx, taskTotal: tasks.length, aiRunning, batchStatus: currentBatchStatus,
       isSubmitting: topbarActions.isSubmitting ?? submitTaskMut.isPending, confThreshold: s.confThreshold,
       onShowHotkeys: () => setShowHotkeys(true),

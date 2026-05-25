@@ -7,38 +7,10 @@
   background: var(--color-bg-elev);
 }
 
-.header {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.headerActions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
-/* Temporary bridge until Button drops inline base padding. */
-.compactButton {
-  padding: 2px 6px !important;
-}
-
 /* Temporary bridge until Button drops inline base font-size. */
 .batchSettingsButton {
   padding: 2px 6px !important;
   font-size: 11px !important;
-}
-
-.projectName {
-  margin-bottom: 4px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.projectMeta {
-  color: var(--color-fg-muted);
-  font-size: 11px;
 }
 
 .batchFilter {
@@ -148,13 +120,30 @@
 }
 
 .paletteTitle {
-  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 2px;
   color: var(--color-fg-muted);
   font-size: 11px;
 }
 
+.paletteTool {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-fg);
+  font-weight: 600;
+}
+
+.paletteCount {
+  color: var(--color-fg-muted);
+}
+
 .paletteHint {
+  margin-bottom: 6px;
   color: var(--color-fg-subtle);
+  font-size: 11px;
 }
 
 .taskItem {

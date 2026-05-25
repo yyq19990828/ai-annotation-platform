@@ -9,6 +9,9 @@ import type { TaskResponse } from "@/types";
 import styles from "./Topbar.module.css";
 
 interface TopbarProps {
+  /** 项目名 + 展示 ID（如 P-0001）；显示在左侧 task id 前作为项目上下文。 */
+  projectName: string;
+  projectDisplayId: string;
   task: TaskResponse | undefined;
   taskIdx: number;
   taskTotal: number;
@@ -66,6 +69,7 @@ function cn(...xs: Array<string | false | null | undefined>): string {
  * 工具切换 → ToolDock（左侧垂直）；撤销/重做/缩放/适应 → FloatingDock（画布右下）。
  */
 export function Topbar({
+  projectName, projectDisplayId,
   task, taskIdx, taskTotal, aiRunning, batchStatus, isSubmitting, confThreshold,
   onShowHotkeys, onBack, leftSidebarOpen, rightSidebarOpen, onToggleLeftSidebar, onToggleRightSidebar,
   onRunAi, aiDisabled = false, onPrev, onNext, onSubmit, onSmartNextOpen, onSmartNextUncertain,
@@ -100,9 +104,8 @@ export function Topbar({
   if (onSmartNextOpen) smartItems.push({ id: "next-open", label: "下一未标注", kbd: "N", onSelect: onSmartNextOpen });
   if (onSmartNextUncertain) smartItems.push({ id: "next-uncertain", label: "下一最不确定", kbd: "U", onSelect: onSmartNextUncertain });
 
-  const overflowItems: DropdownItem[] = [
-    { id: "hotkeys", label: "快捷键", kbd: "?", onSelect: onShowHotkeys },
-  ];
+  // 快捷键已提到 navRow 独立按钮; ⚙ 溢出菜单现仅承载主题切换 (footer)。
+  const overflowItems: DropdownItem[] = [];
 
   return (
     <div className={styles.topbar}>
@@ -127,42 +130,48 @@ export function Topbar({
           )}
         </div>
         <span className={styles.chromeDivider} />
-        <span
-          className={cn("mono", styles.taskId)}
-        >
-          {task?.display_id ?? "—"}
-        </span>
-        <span
-          className={styles.fileName}
-          title={task?.file_name ?? undefined}
-        >
-          {task?.file_name ?? "—"}
-        </span>
-        {indexLabel && (
-          <span
-            className={cn("mono", styles.indexBadge)}
-          >
-            {indexLabel}
-          </span>
-        )}
-        {/* v0.9.6 · 仅 pre_annotated 时显示徽章, 标注员一眼知道「先看 AI 候选」 */}
-        {batchStatus === "pre_annotated" && (
-          <BatchStatusBadge status="pre_annotated" />
-        )}
-        {/* v0.7.2 · 责任人胶囊：标注员 / 审核员（list_tasks/get_task 已 populate） */}
-        {(task?.assignee || task?.reviewer) && (
-          <span className={styles.divider} />
-        )}
-        {task?.assignee && (
-          <AssigneeAvatarStack users={[task.assignee]} label="标注" max={1} />
-        )}
-        {task?.reviewer && (
-          <AssigneeAvatarStack users={[task.reviewer]} label="审核" max={1} />
-        )}
+        <span className={styles.projectName} title={projectName}>{projectName}</span>
       </div>
 
-      {/* 中：任务导航 + 状态相关主操作 */}
+      {/* 中：任务标识 + 任务导航 + 状态相关主操作（整体居中） */}
       <div className={styles.navRow}>
+        <div className={styles.identity}>
+          <span className={cn("mono", styles.projectId)}>{projectDisplayId}</span>
+          <span className={styles.divider} />
+          <span
+            className={cn("mono", styles.taskId)}
+          >
+            {task?.display_id ?? "—"}
+          </span>
+          <span
+            className={styles.fileName}
+            title={task?.file_name ?? undefined}
+          >
+            {task?.file_name ?? "—"}
+          </span>
+          {indexLabel && (
+            <span
+              className={cn("mono", styles.indexBadge)}
+            >
+              {indexLabel}
+            </span>
+          )}
+          {/* v0.9.6 · 仅 pre_annotated 时显示徽章, 标注员一眼知道「先看 AI 候选」 */}
+          {batchStatus === "pre_annotated" && (
+            <BatchStatusBadge status="pre_annotated" />
+          )}
+          {/* v0.7.2 · 责任人胶囊：标注员 / 审核员（list_tasks/get_task 已 populate） */}
+          {(task?.assignee || task?.reviewer) && (
+            <span className={styles.divider} />
+          )}
+          {task?.assignee && (
+            <AssigneeAvatarStack users={[task.assignee]} label="标注" max={1} />
+          )}
+          {task?.reviewer && (
+            <AssigneeAvatarStack users={[task.reviewer]} label="审核" max={1} />
+          )}
+        </div>
+        <span className={styles.divider} />
         <Button size="sm" onClick={onPrev}><Icon name="chevLeft" size={13} />上一</Button>
         {mode === "review" ? (
           <>
@@ -250,21 +259,19 @@ export function Topbar({
             )}
           />
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onShowHotkeys}
+          title="快捷键 (?)"
+          className={cn("mono", styles.compactGhostButton)}
+        >
+          ?
+        </Button>
       </div>
 
       {/* 右：AI 主操作（annotate）或 ReviewerMini chip（review）+ 溢出菜单 */}
       <div className={styles.rightRow}>
-        {onToggleRightSidebar && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onToggleRightSidebar}
-            title={rightSidebarOpen ? "收起标注详情" : "展开标注详情"}
-            className={cn(styles.chromeIconButton, rightSidebarOpen && styles.chromeIconButtonActive)}
-          >
-            <Icon name="panelRight" size={14} />
-          </Button>
-        )}
         {reviewInfoSlot}
         {showThr && confThreshold !== undefined && (
           <span
@@ -306,6 +313,17 @@ export function Topbar({
             </Button>
           )}
         />
+        {onToggleRightSidebar && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleRightSidebar}
+            title={rightSidebarOpen ? "收起标注详情" : "展开标注详情"}
+            className={cn(styles.chromeIconButton, rightSidebarOpen && styles.chromeIconButtonActive)}
+          >
+            <Icon name="panelRight" size={14} />
+          </Button>
+        )}
       </div>
       {onSkip && (
         <SkipTaskModal
