@@ -8,6 +8,7 @@ import {
   type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { Icon, type IconName } from "./Icon";
 import styles from "./DropdownMenu.module.css";
 
@@ -167,7 +168,13 @@ export function DropdownMenu(props: DropdownMenuProps) {
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (!hostRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (
+        !hostRef.current?.contains(target) &&
+        !menuRef.current?.contains(target)
+      ) {
+        setOpen(false);
+      }
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -242,7 +249,119 @@ export function DropdownMenu(props: DropdownMenuProps) {
     menu.style.setProperty("--dropdown-z-index", String(zIndex));
     menu.style.setProperty("--dropdown-padding", disablePanelPadding ? "0" : "4px");
     syncDomStyles(menu, panelStyle, prevPanelStyleRef);
-  }, [disablePanelPadding, minWidth, panelStyle, zIndex]);
+    // `open` 必须入依赖：面板挂载在 createPortal 里、且 open 是组件内部 state，
+    // 切换 open 不会改变父级传入的 panelStyle 引用。若不依赖 open，重新打开时
+    // 这个 effect 不会重跑，新挂载的面板节点拿不到 panelStyle（如 width），
+    // 直到某次父级重渲染（轮询）恰好刷新 panelStyle 引用才补上 —— 表现为面板尺寸忽大忽小。
+  }, [disablePanelPadding, minWidth, panelStyle, zIndex, open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    const updatePosition = () => {
+      const triggerNode = triggerRef.current;
+      const menuNode = menuRef.current;
+      if (!triggerNode || !menuNode) return;
+
+      const triggerRect = triggerNode.getBoundingClientRect();
+      const menuWidth = menuNode.offsetWidth || minWidth;
+      const menuHeight = menuNode.offsetHeight;
+      const margin = 8;
+      const gap = 4;
+
+      let left = align === "start"
+        ? triggerRect.left
+        : triggerRect.right - menuWidth;
+      left = Math.max(
+        margin,
+        Math.min(left, window.innerWidth - margin - menuWidth),
+      );
+
+      let top = triggerRect.bottom + gap;
+      const flippedTop = triggerRect.top - gap - menuHeight;
+      if (
+        menuHeight > 0 &&
+        top + menuHeight > window.innerHeight - margin &&
+        flippedTop >= margin
+      ) {
+        top = flippedTop;
+      }
+      if (menuHeight > 0) {
+        top = Math.min(top, window.innerHeight - margin - menuHeight);
+      }
+      top = Math.max(margin, top);
+
+      menuNode.style.setProperty("--dropdown-left", `${left}px`);
+      menuNode.style.setProperty("--dropdown-top", `${top}px`);
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [align, minWidth, open]);
+
+  const menuPanel = open ? (
+    <div
+      ref={menuRef}
+      role={items ? "menu" : "dialog"}
+      aria-orientation={items ? "vertical" : undefined}
+      tabIndex={-1}
+      onKeyDown={onMenuKey}
+      className={styles.panel}
+    >
+      {content
+        ? content({ close })
+        : items?.map((it, i) => {
+            if (it.divider) {
+              return (
+                <div
+                  key={it.id || `div-${i}`}
+                  role="separator"
+                  className={styles.divider}
+                />
+              );
+            }
+            const focused = focusIdx === i;
+            return (
+              <button
+                key={it.id}
+                type="button"
+                role="menuitem"
+                disabled={it.disabled}
+                onClick={() => {
+                  if (it.disabled) return;
+                  it.onSelect?.();
+                  setOpen(false);
+                  triggerRef.current?.focus();
+                }}
+                onMouseEnter={() => setFocusIdx(i)}
+                className={[
+                  styles.item,
+                  it.active && styles.itemActive,
+                  focused && styles.itemFocused,
+                  it.disabled && styles.itemDisabled,
+                ].filter(Boolean).join(" ")}
+              >
+                {it.icon && <Icon name={it.icon} size={13} />}
+                <span className={styles.itemLabel}>{it.label}</span>
+                {it.kbd && (
+                  <span className={`mono ${styles.kbd}`}>
+                    {it.kbd}
+                  </span>
+                )}
+                {it.active && !it.kbd && (
+                  <Icon name="check" size={12} className={styles.checkIcon} />
+                )}
+              </button>
+            );
+          })}
+      {footer}
+    </div>
+  ) : null;
 
   return (
     <div ref={hostRef} className={styles.host}>
@@ -252,64 +371,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
         close,
         ref: triggerRef,
       })}
-      {open && (
-        <div
-          ref={menuRef}
-          role={items ? "menu" : "dialog"}
-          aria-orientation={items ? "vertical" : undefined}
-          tabIndex={-1}
-          onKeyDown={onMenuKey}
-          className={`${styles.panel} ${align === "start" ? styles.alignStart : styles.alignEnd}`}
-        >
-          {content
-            ? content({ close })
-            : items?.map((it, i) => {
-                if (it.divider) {
-                  return (
-                    <div
-                      key={it.id || `div-${i}`}
-                      role="separator"
-                      className={styles.divider}
-                    />
-                  );
-                }
-                const focused = focusIdx === i;
-                return (
-                  <button
-                    key={it.id}
-                    type="button"
-                    role="menuitem"
-                    disabled={it.disabled}
-                    onClick={() => {
-                      if (it.disabled) return;
-                      it.onSelect?.();
-                      setOpen(false);
-                      triggerRef.current?.focus();
-                    }}
-                    onMouseEnter={() => setFocusIdx(i)}
-                    className={[
-                      styles.item,
-                      it.active && styles.itemActive,
-                      focused && styles.itemFocused,
-                      it.disabled && styles.itemDisabled,
-                    ].filter(Boolean).join(" ")}
-                  >
-                    {it.icon && <Icon name={it.icon} size={13} />}
-                    <span className={styles.itemLabel}>{it.label}</span>
-                    {it.kbd && (
-                      <span className={`mono ${styles.kbd}`}>
-                        {it.kbd}
-                      </span>
-                    )}
-                    {it.active && !it.kbd && (
-                      <Icon name="check" size={12} className={styles.checkIcon} />
-                    )}
-                  </button>
-                );
-              })}
-          {footer}
-        </div>
-      )}
+      {menuPanel && createPortal(menuPanel, document.body)}
     </div>
   );
 }

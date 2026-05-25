@@ -1,11 +1,11 @@
 .host {
-  position: relative;
   display: inline-flex;
 }
 
 .panel {
-  position: absolute;
-  top: calc(100% + 4px);
+  position: fixed;
+  top: var(--dropdown-top, 0);
+  left: var(--dropdown-left, 0);
   z-index: var(--dropdown-z-index, 30);
   min-width: var(--dropdown-min-width, 180px);
   padding: var(--dropdown-padding, 4px);
@@ -14,14 +14,6 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md, 0 8px 24px rgb(0 0 0 / 0.12));
   outline: none;
-}
-
-.alignStart {
-  left: 0;
-}
-
-.alignEnd {
-  right: 0;
 }
 
 .divider {

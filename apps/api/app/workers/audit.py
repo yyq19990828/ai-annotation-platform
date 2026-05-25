@@ -40,8 +40,8 @@ def persist_audit_entry(payload: dict[str, Any]) -> None:
 async def _async_persist(payload: dict[str, Any]) -> None:
     from uuid import UUID
 
-    from app.db.base import async_session
     from app.db.models.audit_log import AuditLog
+    from app.workers._db import task_session
 
     actor_id_raw = payload.get("actor_id")
     actor_id: UUID | None = None
@@ -65,7 +65,7 @@ async def _async_persist(payload: dict[str, Any]) -> None:
         detail_json=None,
         request_id=payload.get("request_id"),
     )
-    async with async_session() as session:
+    async with task_session() as session:
         session.add(entry)
         try:
             await session.commit()

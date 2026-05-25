@@ -39,6 +39,12 @@ describe("<DropdownMenu />", () => {
     expect(screen.getByText("打开")).toHaveAttribute("aria-expanded", "true");
   });
 
+  it("通过 portal 渲染菜单面板，避免被滚动容器裁切", () => {
+    render(<Wrapper />);
+    fireEvent.click(screen.getByText("打开"));
+    expect(screen.getByRole("menu").parentElement).toBe(document.body);
+  });
+
   it("点击 item 触发 onSelect 并关闭菜单", () => {
     const onSelectA = vi.fn();
     render(<Wrapper onSelectA={onSelectA} />);

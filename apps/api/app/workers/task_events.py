@@ -39,8 +39,8 @@ def persist_task_events_batch(payload_list: list[dict[str, Any]]) -> None:
 
 
 async def _async_persist(payload_list: list[dict[str, Any]]) -> None:
-    from app.db.base import async_session
     from app.db.models.task_event import TaskEvent
+    from app.workers._db import task_session
 
     if not payload_list:
         return
@@ -68,7 +68,7 @@ async def _async_persist(payload_list: list[dict[str, Any]]) -> None:
     if not rows:
         return
 
-    async with async_session() as session:
+    async with task_session() as session:
         session.add_all(rows)
         try:
             await session.commit()

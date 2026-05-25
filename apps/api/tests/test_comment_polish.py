@@ -124,6 +124,117 @@ async def test_attachment_storagekey_wrong_prefix_rejected(
 
 
 @pytest.mark.asyncio
+async def test_drawing_only_comment_created(httpx_client, db_session, super_admin):
+    """空正文 + 仅画布批注 → 201，且 canvas_drawing 正确落库（JSONB dict）。
+
+    回归：此前 body 必填(min_length=1) 拒绝空正文，且 endpoint 把 pydantic
+    CanvasDrawing 直接塞 JSONB 列导致 500，drawing-only 评论从未成功创建过。
+    """
+    sa_user, sa_token = super_admin
+    _, ann = await _seed_project_with_annotation(db_session, sa_user.id)
+
+    r = await httpx_client.post(
+        f"/api/v1/annotations/{ann.id}/comments",
+        json={
+            "body": "",
+            "mentions": [],
+            "attachments": [],
+            "canvas_drawing": {
+                "shapes": [
+                    {
+                        "type": "line",
+                        "points": [0.1, 0.1, 0.5, 0.5],
+                        "stroke": "#ef4444",
+                        "id": "s1",
+                    }
+                ]
+            },
+        },
+        headers=_bearer(sa_token),
+    )
+    assert r.status_code == 201, r.text
+    out = r.json()
+    assert out["body"] == ""
+    assert out["canvas_drawing"]["shapes"][0]["points"] == [0.1, 0.1, 0.5, 0.5]
+
+
+@pytest.mark.asyncio
+async def test_empty_comment_rejected(httpx_client, db_session, super_admin):
+    """全空（无正文 / 附件 / 批注）→ 422（_require_content 校验）。"""
+    sa_user, sa_token = super_admin
+    _, ann = await _seed_project_with_annotation(db_session, sa_user.id)
+
+    r = await httpx_client.post(
+        f"/api/v1/annotations/{ann.id}/comments",
+        json={"body": "", "mentions": [], "attachments": [], "canvas_drawing": None},
+        headers=_bearer(sa_token),
+    )
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
+async def test_patch_clear_body_allowed_when_drawing_remains(
+    httpx_client, db_session, super_admin
+):
+    """PATCH 清空正文：评论仍有画布批注 → 200（与 create 口径对齐，#5）。"""
+    sa_user, sa_token = super_admin
+    _, ann = await _seed_project_with_annotation(db_session, sa_user.id)
+
+    created = await httpx_client.post(
+        f"/api/v1/annotations/{ann.id}/comments",
+        json={
+            "body": "先写点字",
+            "attachments": [],
+            "canvas_drawing": {
+                "shapes": [
+                    {
+                        "type": "line",
+                        "points": [0.1, 0.1, 0.5, 0.5],
+                        "stroke": "#ef4444",
+                        "id": "s1",
+                    }
+                ]
+            },
+        },
+        headers=_bearer(sa_token),
+    )
+    assert created.status_code == 201, created.text
+    cid = created.json()["id"]
+
+    r = await httpx_client.patch(
+        f"/api/v1/comments/{cid}",
+        json={"body": ""},
+        headers=_bearer(sa_token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["body"] == ""
+
+
+@pytest.mark.asyncio
+async def test_patch_clear_body_rejected_when_text_only(
+    httpx_client, db_session, super_admin
+):
+    """PATCH 清空正文：评论无附件 / 批注兜底 → 422（不允许变成空评论，#5）。"""
+    sa_user, sa_token = super_admin
+    _, ann = await _seed_project_with_annotation(db_session, sa_user.id)
+
+    created = await httpx_client.post(
+        f"/api/v1/annotations/{ann.id}/comments",
+        json={"body": "纯文字评论", "attachments": [], "canvas_drawing": None},
+        headers=_bearer(sa_token),
+    )
+    assert created.status_code == 201, created.text
+    cid = created.json()["id"]
+
+    r = await httpx_client.patch(
+        f"/api/v1/comments/{cid}",
+        json={"body": "   "},
+        headers=_bearer(sa_token),
+    )
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
 async def test_video_comment_anchor_roundtrips(httpx_client, db_session, super_admin):
     sa_user, sa_token = super_admin
     _, ann = await _seed_project_with_annotation(db_session, sa_user.id)

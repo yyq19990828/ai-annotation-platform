@@ -9,8 +9,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from app.db.base import async_session
 from app.services.deactivation_service import DeactivationService
+from app.workers._db import task_session
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ def process_deactivation_requests() -> dict:
 
 
 async def _process_async() -> dict:
-    async with async_session() as db:
+    async with task_session() as db:
         n = await DeactivationService.execute_due(db)
         await db.commit()
     log.info("process_deactivation_requests done: processed=%d", n)

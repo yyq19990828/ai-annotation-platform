@@ -19,6 +19,17 @@
   right: -3px;
 }
 
+/* v0.11.1 · 垂直分隔条（上下分段用），贴在容器底沿外侧。 */
+.handleBottom {
+  top: auto;
+  bottom: -3px;
+  left: 0;
+  right: 0;
+  width: auto;
+  height: 6px;
+  cursor: row-resize;
+}
+
 .handleActive {
   background: color-mix(in oklab, var(--color-accent) 55%, transparent);
 }

@@ -19,6 +19,7 @@ import type { KeypointDraftHandle, PolygonDraftHandle } from "../stage/tools";
 import { toolUnitForTool } from "../stage/tools/toolUnits";
 import { bboxGeom, keypointGeom, polygonGeom, polylineGeom } from "../state/transforms";
 import type { Keypoint } from "@/types";
+import { randomId } from "@/utils/id";
 import { enqueue } from "../state/offlineQueue";
 import type { useWorkbenchState } from "../state/useWorkbenchState";
 import type { useAnnotationHistory } from "../state/useAnnotationHistory";
@@ -145,7 +146,7 @@ export function useWorkbenchAnnotationActions({
   const optimisticEnqueueCreate = useCallback(
     (payload: AnnotationPayload) => {
       if (!taskId) return;
-      const tmpId = `tmp_${crypto.randomUUID()}`;
+      const tmpId = `tmp_${randomId()}`;
       const optimistic: AnnotationResponse = {
         id: tmpId,
         task_id: taskId,
@@ -168,7 +169,7 @@ export function useWorkbenchAnnotationActions({
       setQ<AnnotationResponse[]>(["annotations", taskId], (prev) => [...(prev ?? []), optimistic]);
       s.setSelectedId(tmpId);
       history.push({ kind: "create", annotationId: tmpId, payload });
-      enqueue({ kind: "create", id: crypto.randomUUID(), tmpId, taskId, payload, ts: Date.now() });
+      enqueue({ kind: "create", id: randomId(), tmpId, taskId, payload, ts: Date.now() });
     },
     [taskId, projectId, meUserId, setQ, s, history],
   );
@@ -347,7 +348,7 @@ export function useWorkbenchAnnotationActions({
                 kind: "update", annotationId: id,
                 before: { geometry: beforeG }, after: { geometry: afterG },
               });
-              enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
+              enqueue({ kind: "update", id: randomId(), taskId, annotationId: id, payload, ts: Date.now() });
             }),
         },
       );
@@ -449,7 +450,7 @@ export function useWorkbenchAnnotationActions({
                 kind: "update", annotationId: id,
                 before: { geometry: before }, after: { geometry: after },
               });
-              enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
+              enqueue({ kind: "update", id: randomId(), taskId, annotationId: id, payload, ts: Date.now() });
             }),
         },
       );
@@ -481,7 +482,7 @@ export function useWorkbenchAnnotationActions({
             enqueueOnError(err, () => {
               optimisticDelete(id);
               history.push({ kind: "delete", annotation: target });
-              enqueue({ kind: "delete", id: crypto.randomUUID(), taskId, annotationId: id, ts: Date.now() });
+              enqueue({ kind: "delete", id: randomId(), taskId, annotationId: id, ts: Date.now() });
             }),
         });
       }
@@ -513,7 +514,7 @@ export function useWorkbenchAnnotationActions({
                 kind: "update", annotationId: id,
                 before: { geometry: beforeG }, after: { geometry: afterG },
               });
-              enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
+              enqueue({ kind: "update", id: randomId(), taskId, annotationId: id, payload, ts: Date.now() });
             }),
         },
       );
@@ -548,7 +549,7 @@ export function useWorkbenchAnnotationActions({
                 kind: "update", annotationId: id,
                 before: { geometry: beforeG }, after: { geometry: afterG },
               });
-              enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
+              enqueue({ kind: "update", id: randomId(), taskId, annotationId: id, payload, ts: Date.now() });
             }),
         },
       );
@@ -597,7 +598,7 @@ export function useWorkbenchAnnotationActions({
                 kind: "update", annotationId: id,
                 before: { geometry: beforeG }, after: { geometry: afterG },
               });
-              enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
+              enqueue({ kind: "update", id: randomId(), taskId, annotationId: id, payload, ts: Date.now() });
             }),
         },
       );
@@ -639,7 +640,7 @@ export function useWorkbenchAnnotationActions({
                 after: payload,
               });
               enqueue({
-                kind: "update", id: crypto.randomUUID(), taskId,
+                kind: "update", id: randomId(), taskId,
                 annotationId: id, payload, ts: Date.now(),
               });
             }),

@@ -7,6 +7,7 @@ import { FloatingDock } from "../shell/FloatingDock";
 import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoSamplingConfig } from "@/types";
 import { useQuery } from "@tanstack/react-query";
 import { videoApi } from "@/api/videos";
+import type { AnnotationFeedback } from "@/api/feedbacks";
 import type { PendingDrawing, VideoTool } from "../state/useWorkbenchState";
 import { useElementSize, useViewportTransform } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
@@ -140,6 +141,10 @@ interface VideoStageProps {
   onToggleLockedTrack?: (trackId: string) => void;
   onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
   onCursorMove?: (pt: { x: number; y: number } | null) => void;
+  // v0.11.7 · pixel-anchored issue 图钉 (按当前帧显隐 + 时间轴标记)。
+  issuePixelFeedbacks?: AnnotationFeedback[];
+  issueHighlightId?: string | null;
+  onIssuePinClick?: (id: string) => void;
 }
 
 export interface VideoStageControls {
@@ -195,6 +200,9 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   onToggleLockedTrack,
   onPropagateTrack,
   onCursorMove,
+  issuePixelFeedbacks,
+  issueHighlightId,
+  onIssuePinClick,
 }: VideoStageProps, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -1463,6 +1471,17 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     videoViewBoxHeight,
   ]);
 
+  // v0.11.7 · 时间轴标记: pixel-anchored issue 命中的帧 (去重)。
+  const issueFrames = useMemo(() => {
+    const frames = new Set<number>();
+    for (const f of issuePixelFeedbacks ?? []) {
+      if (f.kind !== "issue" || f.anchor_type !== "pixel") continue;
+      const frame = f.anchor_position?.frame;
+      if (typeof frame === "number") frames.add(frame);
+    }
+    return [...frames].sort((a, b) => a - b);
+  }, [issuePixelFeedbacks]);
+
   if (isLoading) {
     return (
       <div className={styles.loadingState}>
@@ -1539,6 +1558,10 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             />
             <VideoFrameOverlay
               overlayRef={overlayRef}
+              issuePixelFeedbacks={issuePixelFeedbacks}
+              frameIndex={frameIndex}
+              issueHighlightId={issueHighlightId}
+              onIssuePinClick={onIssuePinClick}
               cachedBitmap={displayBitmap}
               showCachedBitmap={showCachedBitmap}
               entries={currentFrameEntries}
@@ -1617,6 +1640,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             loopRegion={loopRegion}
             bookmarks={bookmarks}
             chapters={chapters}
+            issueFrames={issueFrames}
             hoverPreview={framePreview}
             currentFrameEntryCount={currentFrameEntries.length}
             visible={playbackOverlayVisible && !drag}

@@ -4,12 +4,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import type { ReactNode } from "react";
+
+type MockAuthState = {
+  user: { id: string; role: string; email: string } | null;
+};
+
+type OpenModalProps = {
+  open?: boolean;
+};
 
 const mockUseProjects = vi.fn();
 const mockUseProjectStats = vi.fn();
 const mockUseAuditLogs = vi.fn();
-const mockAuthStore = vi.fn();
 const mockPushToast = vi.fn();
+const mockAuthStore = vi.fn(<T,>(sel: (s: MockAuthState) => T) => sel({ user: null }));
 
 vi.mock("@/hooks/useProjects", () => ({
   useProjects: (...args: unknown[]) => mockUseProjects(...args),
@@ -21,15 +30,15 @@ vi.mock("@/hooks/useAudit", () => ({
 }));
 
 vi.mock("@/stores/authStore", () => ({
-  useAuthStore: (sel: (s: any) => any) => mockAuthStore(sel),
+  useAuthStore: <T,>(sel: (s: MockAuthState) => T) => mockAuthStore(sel),
 }));
 
 vi.mock("@/components/projects/CreateProjectWizard", () => ({
-  CreateProjectWizard: ({ open }: any) => (open ? <div data-testid="cp-wizard" /> : null),
+  CreateProjectWizard: ({ open }: OpenModalProps) => (open ? <div data-testid="cp-wizard" /> : null),
 }));
 
 vi.mock("@/components/datasets/ImportDatasetWizard", () => ({
-  ImportDatasetWizard: ({ open }: any) => (open ? <div data-testid="id-wizard" /> : null),
+  ImportDatasetWizard: ({ open }: OpenModalProps) => (open ? <div data-testid="id-wizard" /> : null),
 }));
 
 vi.mock("./FilterDrawer", () => ({
@@ -46,7 +55,7 @@ vi.mock("./ExportSection", () => ({
 }));
 
 vi.mock("@/components/guards/Can", () => ({
-  Can: ({ children }: any) => <>{children}</>,
+  Can: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
 vi.mock("@/utils/workbenchNavigation", () => ({
@@ -55,10 +64,13 @@ vi.mock("@/utils/workbenchNavigation", () => ({
 }));
 
 vi.mock("@/components/ui/Toast", async () => {
-  const actual = await vi.importActual<any>("@/components/ui/Toast");
+  const actual = await vi.importActual<typeof import("@/components/ui/Toast")>(
+    "@/components/ui/Toast",
+  );
   return {
     ...actual,
-    useToastStore: <T,>(sel: (s: any) => T) => sel({ push: mockPushToast }),
+    useToastStore: <T,>(sel: (s: { push: typeof mockPushToast }) => T) =>
+      sel({ push: mockPushToast }),
   };
 });
 
@@ -77,7 +89,9 @@ function renderUI(initialPath = "/dashboard") {
 describe("DashboardPage", () => {
   beforeEach(() => {
     mockPushToast.mockReset();
-    mockAuthStore.mockImplementation((sel: any) => sel({ user: baseUser }));
+    mockAuthStore.mockImplementation(<T,>(sel: (s: MockAuthState) => T) =>
+      sel({ user: baseUser }),
+    );
     mockUseProjectStats.mockReturnValue({ data: undefined });
     mockUseAuditLogs.mockReturnValue({ data: { items: [] } });
     mockUseProjects.mockReturnValue({ data: [], isLoading: false });
@@ -122,6 +136,37 @@ describe("DashboardPage", () => {
     expect(screen.getByText("Demo项目")).toBeInTheDocument();
     expect(screen.getByText("Alice")).toBeInTheDocument();
     expect(screen.getByText("P-1")).toBeInTheDocument();
+  });
+
+  it("项目已解绑 backend 时不显示旧 ai_model", () => {
+    mockUseProjects.mockReturnValue({
+      data: [
+        {
+          id: "p1",
+          display_id: "P-1",
+          name: "Demo项目",
+          type_label: "视频",
+          type_key: "video-track",
+          data_type: "video",
+          owner_id: "u1",
+          owner_name: "Alice",
+          member_count: 1,
+          status: "in_progress",
+          total_tasks: 2,
+          completed_tasks: 0,
+          review_tasks: 0,
+          in_progress_tasks: 0,
+          ai_enabled: true,
+          ai_model: "gsam2-video",
+          ml_backend_id: null,
+          updated_at: "2026-05-22T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+    });
+    renderUI();
+    expect(screen.queryByText("gsam2-video")).not.toBeInTheDocument();
+    expect(screen.getByText("未接入模型")).toBeInTheDocument();
   });
 
   it("有 stats → stat 卡片渲染正确数值", () => {

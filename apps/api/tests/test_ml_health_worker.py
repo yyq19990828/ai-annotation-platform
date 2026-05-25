@@ -125,7 +125,7 @@ def test_worker_module_imports_and_registers_task():
 async def test_check_all_backends_iterates_without_jitter(monkeypatch, jitter):
     """jitter=0 时 worker 不 sleep；遍历所有 backend，逐个调用 check_health。
 
-    用 monkeypatch 替换 async_session + service 以绕开 DB（保持快速 + 与 conftest 不耦合）。
+    用 monkeypatch 替换 task_session + service 以绕开 DB（保持快速 + 与 conftest 不耦合）。
     """
     from app.workers import ml_health
 
@@ -176,7 +176,7 @@ async def test_check_all_backends_iterates_without_jitter(monkeypatch, jitter):
         async def get(self, bid):  # noqa: ARG002
             return _FakeBackend()
 
-    monkeypatch.setattr(ml_health, "async_session", _factory)
+    monkeypatch.setattr(ml_health, "task_session", _factory)
     monkeypatch.setattr(ml_health, "MLBackendService", _FakeService)
 
     result = await ml_health.check_all_backends(jitter_max_seconds=jitter)
@@ -213,7 +213,7 @@ async def test_check_all_backends_isolates_per_backend_failure(monkeypatch):
         async def __aexit__(self, *args):
             return False
 
-    monkeypatch.setattr(ml_health, "async_session", lambda: _FakeSession())
+    monkeypatch.setattr(ml_health, "task_session", lambda: _FakeSession())
 
     class _FakeService:
         def __init__(self, db):  # noqa: ARG002

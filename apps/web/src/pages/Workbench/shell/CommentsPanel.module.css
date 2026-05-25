@@ -64,6 +64,12 @@
   cursor: crosshair;
 }
 
+/* 点击 pin 到画布的评论：accent 边框 + 左侧色条，表示其批注正持续叠加在 konva 画布上。 */
+.commentCardPinned {
+  border-color: var(--color-accent);
+  box-shadow: inset 2px 0 0 0 var(--color-accent);
+}
+
 .commentHeader {
   display: flex;
   align-items: center;
@@ -124,6 +130,34 @@
 
 .anchorChipClickable {
   cursor: pointer;
+}
+
+/* 评论绑定的标注框：类别标签 chip，点击跳转/选中对应框。 */
+.annotationChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  margin-bottom: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10.5px;
+}
+
+.annotationChip:hover {
+  border-color: var(--color-accent);
+  color: var(--color-fg);
+}
+
+.annotationChipLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .canvasPreview {

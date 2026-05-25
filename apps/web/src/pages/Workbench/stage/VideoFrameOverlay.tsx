@@ -5,6 +5,7 @@ import { VideoAttachmentLayer } from "./VideoAttachmentLayer";
 import { VideoBitmapLayer } from "./VideoBitmapLayer";
 import { VideoGridLayer } from "./VideoGridLayer";
 import { VideoInteractionLayer } from "./VideoInteractionLayer";
+import { VideoIssueLayer } from "./VideoIssueLayer";
 import { VideoObjectsLayer } from "./VideoObjectsLayer";
 import { VideoTextLayer, type VideoLabelEntry } from "./VideoTextLayer";
 import type {
@@ -16,9 +17,15 @@ import type {
   VideoTrackPreview,
 } from "./videoStageTypes";
 import type { CachedVideoBitmap } from "./useVideoBitmapCache";
+import type { AnnotationFeedback } from "@/api/feedbacks";
 
 interface VideoFrameOverlayProps {
   overlayRef: RefObject<SVGSVGElement>;
+  /** v0.11.7 · pixel-anchored issue 图钉 (按当前帧显隐)。 */
+  issuePixelFeedbacks?: AnnotationFeedback[];
+  frameIndex: number;
+  issueHighlightId?: string | null;
+  onIssuePinClick?: (id: string) => void;
   cachedBitmap?: CachedVideoBitmap | null;
   showCachedBitmap?: boolean;
   entries: VideoFrameEntry[];
@@ -52,6 +59,10 @@ interface VideoFrameOverlayProps {
 
 export function VideoFrameOverlay({
   overlayRef,
+  issuePixelFeedbacks,
+  frameIndex,
+  issueHighlightId,
+  onIssuePinClick,
   cachedBitmap = null,
   showCachedBitmap = false,
   entries,
@@ -157,6 +168,15 @@ export function VideoFrameOverlay({
         onFinishDrag={onFinishDrag}
         onCancelDrag={onCancelDrag}
         onPointerLeave={onPointerLeave}
+      />
+      <VideoIssueLayer
+        pixelIssues={(issuePixelFeedbacks ?? []).filter(
+          (f) => f.kind === "issue" && f.anchor_type === "pixel" && !!f.anchor_position,
+        )}
+        frameIndex={frameIndex}
+        viewBoxHeight={viewBoxHeight}
+        highlightId={issueHighlightId}
+        onPinClick={onIssuePinClick}
       />
       <VideoAttachmentLayer />
     </>

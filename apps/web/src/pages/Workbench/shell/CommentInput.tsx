@@ -35,13 +35,15 @@ interface CommentInputProps {
     onConsume: () => void;
   };
   anchor?: AnnotationCommentAnchor | null;
+  /** v0.11.12 · 上报当前 pending 批注，让画布把「正在编辑的评论」的批注预览出来。 */
+  onPendingDrawingChange?: (drawing: CommentCanvasDrawing | null) => void;
   onSubmit: (payload: {
     body: string;
     mentions: CommentMention[];
     attachments: CommentAttachment[];
     canvas_drawing: CommentCanvasDrawing | null;
     anchor?: AnnotationCommentAnchor | null;
-  }) => void;
+  }) => void | Promise<unknown>;
 }
 
 interface PickerState {
@@ -141,7 +143,7 @@ function insertMentionChip(triggerRange: { node: Node; offset: number }, opt: Us
   sel.addRange(newRange);
 }
 
-export function CommentInput({ annotationId, members, busy, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, anchor, onSubmit }: CommentInputProps) {
+export function CommentInput({ annotationId, members, busy, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, anchor, onPendingDrawingChange, onSubmit }: CommentInputProps) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const [picker, setPicker] = useState<PickerState>({ open: false, anchor: { left: 0, top: 0 }, query: "", triggerRange: null });
   const [attachments, setAttachments] = useState<CommentAttachment[]>([]);
@@ -157,6 +159,12 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
       liveCanvas.onConsume();
     }
   }, [liveCanvas]);
+
+  // v0.11.12：把当前 pending 批注上报给画布预览通道；卸载时清空。
+  useEffect(() => {
+    onPendingDrawingChange?.(canvasDrawing);
+    return () => onPendingDrawingChange?.(null);
+  }, [canvasDrawing, onPendingDrawingChange]);
 
   const reset = useCallback(() => {
     if (editorRef.current) editorRef.current.innerHTML = "";
@@ -249,12 +257,17 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
     }
   }, [annotationId, pushToast]);
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
     if (!editorRef.current) return;
     const { body, mentions } = serialize(editorRef.current);
     if (!body && attachments.length === 0 && !canvasDrawing) return;
-    onSubmit({ body, mentions, attachments, canvas_drawing: canvasDrawing, anchor });
-    reset();
+    try {
+      // 成功后才 reset：提交失败（如后端校验 / 网络）时保留草稿与画布批注，不静默丢失。
+      await onSubmit({ body, mentions, attachments, canvas_drawing: canvasDrawing, anchor });
+      reset();
+    } catch {
+      // 失败提示由 mutation 的 onError 负责；此处仅阻止 reset。
+    }
   }, [anchor, attachments, canvasDrawing, onSubmit, reset]);
 
   const submitDisabled = busy || uploading;
@@ -330,8 +343,13 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
             <button
               type="button"
               onClick={() => setCanvasOpen(true)}
-              className={cn(styles.toolbarButton, canvasDrawing && styles.toolbarButtonActive)}
-              title="弹窗内绘制（与原图比例对齐）"
+              disabled={!backgroundUrl}
+              className={cn(
+                styles.toolbarButton,
+                canvasDrawing && styles.toolbarButtonActive,
+                !backgroundUrl && styles.toolbarButtonDisabled,
+              )}
+              title={backgroundUrl ? "弹窗内绘制（与原图比例对齐）" : "题图未加载，无法在空白画布上批注"}
             >
               <Icon name="edit" size={12} />
               {canvasDrawing ? `批注 · ${(canvasDrawing.shapes ?? []).length} 条` : "弹窗批注"}

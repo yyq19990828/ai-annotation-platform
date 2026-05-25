@@ -56,6 +56,7 @@ const TYPE_LABEL: Record<string, string> = {
   "task.approved": "通过了任务",
   "task.rejected": "退回了任务",
   "task.reopened": "重新打开了任务",
+  "feedback.reconcile_drift": "反馈双写对账发现不一致",
   "failed_prediction.retry.started": "开始重试失败预测",
   "failed_prediction.retry.succeeded": "失败预测重试成功",
   "failed_prediction.retry.failed": "失败预测重试失败",

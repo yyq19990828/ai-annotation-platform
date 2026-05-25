@@ -2,7 +2,7 @@
 
 覆盖：
 - 创建/更新项目带 ml_backend_id 自动同步 ai_model（display hint）
-- ON DELETE SET NULL：删除 backend 时项目 ml_backend_id 置 null
+- 解绑/删除 backend 时项目 ml_backend_id + ai_model 置 null
 - service.get_project_backend 优先返回显式绑定，否则 fallback
 """
 
@@ -95,6 +95,30 @@ async def test_patch_project_bind_backend_overwrites_ai_model(
     assert data["ai_model"] == "grounded-sam2"
 
 
+async def test_patch_project_unbind_backend_clears_ai_model(
+    httpx_client_bound, super_admin, db_session
+):
+    user, token = super_admin
+    proj = await _seed_project(
+        db_session, user.id, ai_enabled=True, ai_model="gsam2-video"
+    )
+    backend = await _seed_backend(db_session, proj.id, name="gsam2-video")
+    proj.ml_backend_id = backend.id
+    await db_session.flush()
+    await db_session.commit()
+
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = await httpx_client_bound.patch(
+        f"/api/v1/projects/{proj.id}",
+        json={"ml_backend_id": None},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["ml_backend_id"] is None
+    assert data["ai_model"] is None
+
+
 async def test_delete_ml_backend_sets_project_null(db_session, super_admin):
     user, _ = super_admin
     proj = await _seed_project(db_session, user.id)
@@ -117,6 +141,30 @@ async def test_delete_ml_backend_sets_project_null(db_session, super_admin):
         )
     ).scalar_one_or_none()
     assert refreshed is None
+
+
+async def test_service_delete_ml_backend_clears_project_display_hint(
+    db_session, super_admin
+):
+    user, _ = super_admin
+    proj = await _seed_project(
+        db_session, user.id, ai_enabled=True, ai_model="gsam2-video"
+    )
+    backend = await _seed_backend(db_session, proj.id, name="gsam2-video")
+    proj.ml_backend_id = backend.id
+    await db_session.flush()
+
+    assert await MLBackendService(db_session).delete(backend.id) is True
+    await db_session.flush()
+
+    row = (
+        await db_session.execute(
+            text("SELECT ml_backend_id, ai_model FROM projects WHERE id = :pid"),
+            {"pid": proj.id},
+        )
+    ).one()
+    assert row[0] is None
+    assert row[1] is None
 
 
 async def test_get_project_backend_prefers_explicit_binding(db_session, super_admin):

@@ -23,9 +23,6 @@ vi.mock("./WorkbenchSkeleton", () => ({
 vi.mock("../stage/VideoTrackerPropagateDialog", () => ({
   VideoTrackerPropagateDialog: () => <div data-testid="propagate-dialog" />,
 }));
-vi.mock("./IssueListPanel", () => ({
-  IssueListPanel: () => <div data-testid="issue-list-panel" />,
-}));
 vi.mock("./IssueCreateModal", () => ({
   IssueCreateModal: () => <div data-testid="issue-create-modal" />,
 }));
@@ -73,7 +70,6 @@ describe("WorkbenchShell", () => {
         issuePinDropArmed: true,
         onOpenList,
         onToggleIssuePinDrop,
-        listPanel: {} as never,
         createModal: {} as never,
       },
     });
@@ -82,7 +78,6 @@ describe("WorkbenchShell", () => {
 
     expect(screen.getByTestId("layout")).toBeTruthy();
     expect(screen.getByTestId("propagate-dialog")).toBeTruthy();
-    expect(screen.getByTestId("issue-list-panel")).toBeTruthy();
     expect(screen.getByTestId("issue-create-modal")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("issue-fab"));

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Button } from "@/components/ui/Button";
-import { Icon } from "@/components/ui/Icon";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { Thumbnail } from "@/components/Thumbnail";
 import type { TaskResponse } from "@/types";
 import type { ClassesConfig } from "@/api/projects";
@@ -12,10 +12,11 @@ import styles from "./TaskQueuePanel.module.css";
 
 interface TaskQueuePanelProps {
   open: boolean;
-  projectName: string;
-  projectDisplayId: string;
   classes: string[];
   classesConfig?: ClassesConfig;
+  /** 当前激活工具的显示名 + 图标，色板图例据此标明类别归属的工具。 */
+  toolLabel: string;
+  toolIcon: IconName;
   activeClass: string;
   recentClasses?: string[];
   tasks: TaskResponse[];
@@ -154,7 +155,7 @@ function VirtualRow({
 }
 
 export function TaskQueuePanel({
-  open, projectName, projectDisplayId, classes, classesConfig, activeClass, recentClasses,
+  open, classes, classesConfig, toolLabel, toolIcon, activeClass, recentClasses,
   tasks, taskId, taskIdx,
   hasNextPage, isFetchingNextPage, onFetchNextPage,
   onSelectTask,
@@ -209,13 +210,6 @@ export function TaskQueuePanel({
 
   return (
     <div className={styles.root}>
-      <div className={styles.header}>
-        <div className={styles.projectName}>{projectName}</div>
-        <div className={styles.projectMeta}>
-          <span className="mono">{projectDisplayId}</span> · {classes.length} 个类别
-        </div>
-      </div>
-
       {batches && batches.length > 0 && onSelectBatch && (
         <div className={styles.batchFilter}>
           <select
@@ -321,8 +315,13 @@ export function TaskQueuePanel({
 
       <div className={styles.palettePanel}>
         <div className={styles.paletteTitle}>
-          类别图例 <span className={styles.paletteHint}>(数字/字母键直接落框时使用)</span>
+          <span className={styles.paletteTool}>
+            <Icon name={toolIcon} size={12} />
+            {toolLabel}
+          </span>
+          <span className={styles.paletteCount}>· {classes.length} 个类别</span>
         </div>
+        <div className={styles.paletteHint}>数字/字母键直接落框时使用</div>
         <ClassPalette
           classes={classes}
           classesConfig={classesConfig}

@@ -31,6 +31,8 @@ celery_app = Celery(
         "app.workers.heartbeat",
         # v0.10.25 · predictions 月分区维护（ADR-0006 Stage 2）
         "app.workers.prediction_partition",
+        # v0.11.0 · ADR-0027 双写一致性对账（A 组安全网）
+        "app.workers.feedback_reconcile",
     ],
 )
 
@@ -100,6 +102,11 @@ celery_app.conf.update(
         "ensure-future-prediction-partitions": {
             "task": "app.workers.prediction_partition.ensure_future_prediction_partitions",
             "schedule": crontab(day_of_month=25, hour=3, minute=30),
+        },
+        # v0.11.0 · ADR-0027 双写一致性对账：每日 03:00 UTC（避开 03:30 分区维护）
+        "reconcile-annotation-feedback": {
+            "task": "app.workers.feedback_reconcile.reconcile_annotation_feedback",
+            "schedule": crontab(hour=3, minute=0),
         },
         # v0.8.1 · 审计冷数据归档：每月 2 日把保留期外分区归档至 MinIO 后 DROP
         "archive-old-audit-partitions": {

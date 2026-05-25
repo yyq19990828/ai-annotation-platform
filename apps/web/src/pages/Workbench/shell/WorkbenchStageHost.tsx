@@ -333,6 +333,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onToggleLockedTrack={onToggleLockedVideoTrack}
             onPropagateTrack={onPropagateVideoTrack}
             onCursorMove={onCursorMove}
+            issuePixelFeedbacks={issuePixelFeedbacks}
+            issueHighlightId={highlightIssueId}
+            onIssuePinClick={onIssuePinClick}
           />
         ) : (
           <ImageWorkbench

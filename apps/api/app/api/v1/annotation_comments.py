@@ -273,7 +273,9 @@ async def create_comment(
         attachments=[
             a.model_dump(by_alias=True, mode="json") for a in data.attachments
         ],
-        canvas_drawing=data.canvas_drawing,
+        canvas_drawing=data.canvas_drawing.model_dump(by_alias=True, mode="json")
+        if data.canvas_drawing
+        else None,
         anchor=data.anchor.model_dump(by_alias=True, mode="json")
         if data.anchor
         else None,
@@ -329,6 +331,16 @@ async def patch_comment(
             status_code=403, detail="Only the author can edit this comment"
         )
     if data.body is not None:
+        # 清空正文需保证评论仍有附件 / 画布批注（与 create 的 _require_content 同口径）。
+        if not data.body.strip():
+            has_drawing = bool(
+                c.canvas_drawing and (c.canvas_drawing.get("shapes") or [])
+            )
+            if not c.attachments and not has_drawing:
+                raise HTTPException(
+                    status_code=422,
+                    detail="评论需至少包含正文、附件或画布批注之一",
+                )
         c.body = data.body
     if data.is_resolved is not None:
         c.is_resolved = data.is_resolved

@@ -123,9 +123,19 @@ describe("useGlobalPreannotationJobs", () => {
     expect(result.current.runningJobs.length).toBe(0);
   });
 
-  it("卸载时 close 主动断", () => {
+  it("卸载时 close 主动断（已 OPEN 立即关）", () => {
     const { unmount } = renderHook(() => useGlobalPreannotationJobs());
+    act(() => MockWebSocket.instances[0].triggerOpen());
     unmount();
+    expect(MockWebSocket.instances[0].closedManually).toBe(true);
+  });
+
+  it("卸载时仍在握手 → 延迟到 onopen 再关", () => {
+    const { unmount } = renderHook(() => useGlobalPreannotationJobs());
+    // 未 triggerOpen，readyState 仍 CONNECTING：直接关会触发浏览器告警，故延迟
+    unmount();
+    expect(MockWebSocket.instances[0].closedManually).toBe(false);
+    act(() => MockWebSocket.instances[0].triggerOpen());
     expect(MockWebSocket.instances[0].closedManually).toBe(true);
   });
 });

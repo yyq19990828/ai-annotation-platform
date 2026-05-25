@@ -86,33 +86,3 @@
 .spacer {
   flex: 1;
 }
-
-.aiQuota {
-  margin: 12px 4px 4px;
-  padding: 12px;
-  background: linear-gradient(135deg, var(--color-ai-soft), var(--color-accent-soft));
-  border: 1px solid oklch(0.92 0.04 270);
-  border-radius: var(--radius-lg);
-}
-
-.aiQuotaHeader {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-
-.aiQuotaIcon {
-  color: var(--color-ai);
-}
-
-.aiQuotaTitle {
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.aiQuotaText {
-  margin-bottom: 8px;
-  color: var(--color-fg-muted);
-  font-size: 11px;
-}

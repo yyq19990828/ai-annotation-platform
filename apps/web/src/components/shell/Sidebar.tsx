@@ -1,7 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { clsx } from "clsx";
 import { Icon } from "@/components/ui/Icon";
-import { ProgressBar } from "@/components/ui/ProgressBar";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useFailedPredictions } from "@/hooks/useFailedPredictions";
 import { useAdminStats } from "@/hooks/useDashboard";
@@ -18,7 +17,6 @@ interface NavItem {
   path: string;
   icon: IconName;
   label: string;
-  count?: number;
   badge?: string;
 }
 
@@ -34,10 +32,6 @@ const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem
         : [{ key: "dashboard" as PageKey, path: "/dashboard", icon: "dashboard" as IconName, label: "项目总览" }]),
       { key: "annotate", path: "/annotate", icon: "target", label: "标注工作" },
       { key: "review", path: "/review", icon: "check", label: "质检审核" },
-      { key: "datasets", path: "/datasets", icon: "layers", label: "数据集", count: 42 },
-      { key: "storage", path: "/storage", icon: "db", label: "存储管理" },
-      // v0.10.14 · E2 · 项目模板库
-      { key: "project-templates", path: "/project-templates", icon: "book", label: "项目模板" },
     ],
   },
   {
@@ -51,6 +45,10 @@ const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem
   {
     label: "管理",
     items: [
+      { key: "datasets", path: "/datasets", icon: "layers", label: "数据集" },
+      { key: "storage", path: "/storage", icon: "db", label: "存储管理" },
+      // v0.10.14 · E2 · 项目模板库
+      { key: "project-templates", path: "/project-templates", icon: "book", label: "项目模板" },
       { key: "users", path: "/users", icon: "users", label: "用户与权限" },
       { key: "audit", path: "/audit", icon: "shield", label: "审计日志" },
       ...(isSuperAdmin ? [{ key: "admin-health" as PageKey, path: "/admin/health", icon: "activity" as IconName, label: "系统健康" }] : []),
@@ -62,7 +60,6 @@ const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem
 
 export function Sidebar({ reviewCount }: SidebarProps) {
   const { canAccessPage, hasAnyPermission, role } = usePermissions();
-  const showAiQuota = hasAnyPermission("ai.trigger", "ml-backend.manage");
   const canSeeFailed = hasAnyPermission("ml-backend.manage");
   const failedQuery = useFailedPredictions(1, 1, false, canSeeFailed);
   const failedTotal = failedQuery.data?.total ?? 0;
@@ -99,11 +96,6 @@ export function Sidebar({ reviewCount }: SidebarProps) {
                   {reviewCount}
                 </span>
               )}
-              {item.count && (
-                <span className={styles.navCount}>
-                  {item.count}
-                </span>
-              )}
               {item.badge && (
                 <span className={clsx(styles.badge, styles.badgeAi, styles.navBadge)}>
                   {item.badge}
@@ -135,19 +127,6 @@ export function Sidebar({ reviewCount }: SidebarProps) {
       ))}
 
       <div className={styles.spacer} />
-
-      {showAiQuota && (
-        <div className={styles.aiQuota}>
-          <div className={styles.aiQuotaHeader}>
-            <Icon name="sparkles" size={13} className={styles.aiQuotaIcon} />
-            <span className={styles.aiQuotaTitle}>AI 配额</span>
-          </div>
-          <div className={styles.aiQuotaText}>
-            本月已用 6,842 / 20,000 次
-          </div>
-          <ProgressBar value={34} color="var(--color-ai)" />
-        </div>
-      )}
     </aside>
   );
 }

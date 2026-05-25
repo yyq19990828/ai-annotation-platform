@@ -12,8 +12,8 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update
 
-from app.db.base import async_session
 from app.db.models.annotation_comment import AnnotationComment
+from app.workers._db import task_session
 from app.services.storage import storage_service
 from app.workers.celery_app import celery_app
 
@@ -35,7 +35,7 @@ async def _purge_async() -> dict:
     deleted_objects = 0
     processed_comments = 0
 
-    async with async_session() as db:
+    async with task_session() as db:
         result = await db.execute(
             select(AnnotationComment)
             .where(
@@ -90,7 +90,7 @@ def refresh_user_perf_mv() -> dict:
 async def _refresh_mv_async() -> dict:
     from sqlalchemy import text
 
-    async with async_session() as db:
+    async with task_session() as db:
         try:
             await db.execute(
                 text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_user_perf_daily")

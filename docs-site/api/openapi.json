@@ -662,8 +662,8 @@
             "type": "array"
           },
           "body": {
+            "default": "",
             "maxLength": 4000,
-            "minLength": 1,
             "title": "Body",
             "type": "string"
           },
@@ -685,9 +685,6 @@
             "type": "array"
           }
         },
-        "required": [
-          "body"
-        ],
         "title": "AnnotationCommentCreate",
         "type": "object"
       },
@@ -843,7 +840,6 @@
             "anyOf": [
               {
                 "maxLength": 4000,
-                "minLength": 1,
                 "type": "string"
               },
               {

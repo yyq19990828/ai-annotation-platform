@@ -10,8 +10,8 @@ import asyncio
 import logging
 
 from app.config import settings
-from app.db.base import async_session
 from app.services.audit_partition_service import AuditPartitionService
+from app.workers._db import task_session
 from app.workers.celery_app import celery_app
 
 
@@ -24,7 +24,7 @@ def ensure_future_audit_partitions(months_ahead: int = 3) -> dict:
 
 
 async def _ensure_async(months_ahead: int) -> dict:
-    async with async_session() as db:
+    async with task_session() as db:
         created = await AuditPartitionService.ensure_future_partitions(
             db, months_ahead=months_ahead
         )
@@ -47,7 +47,7 @@ async def _archive_async(retain_months: int, celery_task_id: str | None = None) 
     from app.services import async_job as async_job_svc
     from app.services.async_job_notify import notify_job_terminal
 
-    async with async_session() as db:
+    async with task_session() as db:
         async with async_job_svc.track_job(
             db,
             kind="audit_archive",

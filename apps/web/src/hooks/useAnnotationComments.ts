@@ -1,10 +1,17 @@
 import {
+  type InfiniteData,
   useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { commentsApi, type CreateCommentPayload } from "@/api/comments";
+import { useToastStore } from "@/components/ui/Toast";
+import {
+  commentsApi,
+  type AnnotationCommentListPage,
+  type AnnotationCommentResponse,
+  type CreateCommentPayload,
+} from "@/api/comments";
 
 export function useAnnotationComments(annotationId: string | null | undefined) {
   return useQuery({
@@ -57,15 +64,20 @@ export function useTaskCommentsInfinite(
 
 export function useCreateComment(annotationId: string | null | undefined) {
   const qc = useQueryClient();
+  const pushToast = useToastStore((s) => s.push);
   return useMutation({
     mutationFn: (payload: string | CreateCommentPayload) => {
       if (!annotationId) throw new Error("No annotation selected");
       const body = typeof payload === "string" ? { body: payload } : payload;
       return commentsApi.create(annotationId, body);
     },
+    onError: (e) => pushToast({ msg: "评论发送失败", sub: String(e), kind: "error" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["annotation-comments", annotationId] });
       qc.invalidateQueries({ queryKey: ["annotation-comments-page", annotationId] });
+      // 任务级聚合视图（未选中标注）下 annotationId 为 null，上面的 key 命中不到
+      // ["task-comments-page", taskId]；按前缀失效任务级缓存，保证汇总列表即时刷新。
+      qc.invalidateQueries({ queryKey: ["task-comments-page"] });
       qc.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
@@ -79,17 +91,60 @@ export function usePatchComment(annotationId: string | null | undefined) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["annotation-comments", annotationId] });
       qc.invalidateQueries({ queryKey: ["annotation-comments-page", annotationId] });
+      qc.invalidateQueries({ queryKey: ["task-comments-page"] });
     },
   });
 }
 
+const removeFromPages = (id: string) => (
+  old: InfiniteData<AnnotationCommentListPage> | undefined,
+) =>
+  old
+    ? { ...old, pages: old.pages.map((p) => ({ ...p, items: p.items.filter((c) => c.id !== id) })) }
+    : old;
+
 export function useDeleteComment(annotationId: string | null | undefined) {
   const qc = useQueryClient();
+  const pageKey = ["annotation-comments-page", annotationId];
+  const listKey = ["annotation-comments", annotationId];
+  // 任务级聚合视图（未选中标注）缓存按 taskId 分键，删除时不知道 taskId，
+  // 故按前缀对所有 ["task-comments-page", *] 缓存乐观剔除。
+  const taskPagePrefix = ["task-comments-page"];
   return useMutation({
     mutationFn: (id: string) => commentsApi.remove(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["annotation-comments", annotationId] });
-      qc.invalidateQueries({ queryKey: ["annotation-comments-page", annotationId] });
+    // 乐观移除：直接从缓存剔除被删项。后端是软删 (is_active=false) + 列表过滤，
+    // 仅靠 invalidate+refetch 在快速切换标注时会偶现"删除后重现"（stale 缓存竞态）。
+    // 直接改缓存条目可彻底避免；失败则在 onError 回滚（不掩盖失败的删除）。
+    onMutate: async (id: string) => {
+      await Promise.all([
+        qc.cancelQueries({ queryKey: pageKey }),
+        qc.cancelQueries({ queryKey: listKey }),
+        qc.cancelQueries({ queryKey: taskPagePrefix }),
+      ]);
+      const prevPages = qc.getQueryData<InfiniteData<AnnotationCommentListPage>>(pageKey);
+      const prevList = qc.getQueryData<AnnotationCommentResponse[]>(listKey);
+      const prevTaskPages = qc.getQueriesData<InfiniteData<AnnotationCommentListPage>>({
+        queryKey: taskPagePrefix,
+      });
+      qc.setQueryData<InfiniteData<AnnotationCommentListPage>>(pageKey, removeFromPages(id));
+      qc.setQueryData<AnnotationCommentResponse[]>(listKey, (old) =>
+        old ? old.filter((c) => c.id !== id) : old,
+      );
+      qc.setQueriesData<InfiniteData<AnnotationCommentListPage>>(
+        { queryKey: taskPagePrefix },
+        removeFromPages(id),
+      );
+      return { prevPages, prevList, prevTaskPages };
+    },
+    onError: (_e, _id, ctx) => {
+      if (ctx?.prevPages !== undefined) qc.setQueryData(pageKey, ctx.prevPages);
+      if (ctx?.prevList !== undefined) qc.setQueryData(listKey, ctx.prevList);
+      ctx?.prevTaskPages?.forEach(([key, data]) => qc.setQueryData(key, data));
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: listKey });
+      qc.invalidateQueries({ queryKey: pageKey });
+      qc.invalidateQueries({ queryKey: taskPagePrefix });
     },
   });
 }

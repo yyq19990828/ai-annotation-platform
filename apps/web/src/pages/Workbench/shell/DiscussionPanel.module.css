@@ -1,0 +1,48 @@
+/* v0.11.1 · B 组 · DiscussionPanel 骨架样式。颜色仅取 tokens.css 既有 --color-*。 */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-panel);
+}
+
+.tabRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.tabButton {
+  padding: 4px 8px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.tabButtonActive {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-fg);
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}

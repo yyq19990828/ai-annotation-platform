@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from uuid import UUID
 from datetime import datetime
 
@@ -28,15 +28,28 @@ __all__ = [
 
 
 class AnnotationCommentCreate(BaseModel):
-    body: str = Field(min_length=1, max_length=4000)
+    # body 可空：允许「只画批注 / 只传附件」的评论（前端 CommentInput 也按此放行）。
+    # 但整条评论必须至少有 body / 附件 / 画布批注之一，见 _require_content。
+    body: str = Field(default="", max_length=4000)
     mentions: list[Mention] = Field(default_factory=list)
     attachments: list[Attachment] = Field(default_factory=list)
     canvas_drawing: CanvasDrawing | None = None
     anchor: CommentAnchor | None = None
 
+    @model_validator(mode="after")
+    def _require_content(self) -> "AnnotationCommentCreate":
+        has_drawing = (
+            self.canvas_drawing is not None and len(self.canvas_drawing.shapes) > 0
+        )
+        if not self.body.strip() and not self.attachments and not has_drawing:
+            raise ValueError("评论需至少包含正文、附件或画布批注之一")
+        return self
+
 
 class AnnotationCommentUpdate(BaseModel):
-    body: str | None = Field(default=None, min_length=1, max_length=4000)
+    # body 与 create 口径对齐：字段级不再强制 min_length=1（None=不改、""=清空正文）。
+    # 「清空后整条评论不能为空」的不变式由 patch_comment 端点结合现有附件/画布批注校验。
+    body: str | None = Field(default=None, max_length=4000)
     is_resolved: bool | None = None
 
 

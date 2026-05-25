@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { useProjectMembers } from "@/hooks/useProjects";
@@ -55,6 +55,14 @@ interface Props {
   };
   commentAnchor?: AnnotationCommentAnchor | null;
   onSeekFrame?: (frameIndex: number) => void;
+  /** 评论绑定标注框的类别名映射（annotation_id → class_name）；用于在评论卡片上显示绑定 chip。 */
+  annotationClassById?: Record<string, string | undefined>;
+  /** 点击绑定 chip 时选中/跳转到对应标注框。 */
+  onSelectAnnotation?: (annotationId: string) => void;
+  /** v0.11.2/3 · DiscussionPanel 自带顶层 tab 时, 隐藏本组件内部 comments/history 切换条。 */
+  hideTabs?: boolean;
+  /** v0.11.2/3 · 由外层 DiscussionPanel 锁定显示哪一段 (配合 hideTabs)。 */
+  forceTab?: Tab;
 }
 
 function anchorLabel(anchor: AnnotationCommentAnchor): string {
@@ -64,9 +72,10 @@ function anchorLabel(anchor: AnnotationCommentAnchor): string {
   return parts.join(" · ");
 }
 
-export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, commentAnchor, onSeekFrame }: Props) {
+export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, commentAnchor, onSeekFrame, annotationClassById, onSelectAnnotation, hideTabs, forceTab }: Props) {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>("comments");
+  const [localTab, setTab] = useState<Tab>("comments");
+  const tab = forceTab ?? localTab;
   // I4 · annotationId null 时走 task 级 hook (DiscussionPanel 雏形 — 评论/历史常驻).
   const annotationCommentsQuery = useAnnotationCommentsInfinite(annotationId);
   const taskCommentsQuery = useTaskCommentsInfinite(taskId ?? null, !annotationId && !!taskId);
@@ -123,7 +132,26 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
   const createMut = useCreateComment(annotationId);
   const patchMut = usePatchComment(annotationId);
   const deleteMut = useDeleteComment(annotationId);
-  const setHoveredShapes = useHoveredCommentStore((s) => s.setShapes);
+  const setHoveredShapes = useHoveredCommentStore((s) => s.setHover);
+  const togglePinnedComment = useHoveredCommentStore((s) => s.togglePin);
+  const clearPinnedComment = useHoveredCommentStore((s) => s.clearPin);
+  const pinnedCommentId = useHoveredCommentStore((s) => s.pinnedId);
+  const setComposingShapes = useHoveredCommentStore((s) => s.setComposing);
+  // CommentInput 上报 pending 批注 → 写入 composing 预览通道（仅提取 shapes）。
+  const reportPendingDrawing = useCallback(
+    (d: CommentCanvasDrawing | null) =>
+      setComposingShapes(d?.shapes && d.shapes.length > 0 ? d.shapes : null),
+    [setComposingShapes],
+  );
+  // 切换标注 / 卸载 → 清掉 pin 与 composing 预览，避免上一个标注的批注残留在画布上。
+  useEffect(() => {
+    clearPinnedComment();
+    setComposingShapes(null);
+    return () => {
+      clearPinnedComment();
+      setComposingShapes(null);
+    };
+  }, [annotationId, clearPinnedComment, setComposingShapes]);
   // v0.7.2 · 历史 tab — 仅切到 history 时拉取; I4 · 未选中标注时拉 task 级.
   const annotationHistoryQuery = useAnnotationAuditHistory(
     tab === "history" && annotationId ? annotationId : null,
@@ -158,14 +186,14 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
     anchor?: AnnotationCommentAnchor | null;
   }) => {
     if (!body && attachments.length === 0 && !canvas_drawing) return;
+    // 返回 mutateAsync 的 promise，让 CommentInput 在成功后才 reset（失败保留草稿）。
     if (annotationId) {
-      createMut.mutate({ body, mentions, attachments, canvas_drawing, anchor });
-      return;
+      return createMut.mutateAsync({ body, mentions, attachments, canvas_drawing, anchor });
     }
     // v0.10.20 · D1 · 任务级评论 POST /feedbacks (kind=comment, anchor_type=task).
     // 任务级 feedback 不支持 mentions / canvas_drawing / anchor (走不同 schema), 仅传 body + attachments.
     if (!taskId || !projectId) return;
-    createTaskFeedbackMut.mutate({
+    return createTaskFeedbackMut.mutateAsync({
       kind: "comment",
       anchor_type: "task",
       project_id: projectId,
@@ -177,6 +205,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
 
   return (
     <div className={styles.panel}>
+      {!hideTabs && (
       <div className={styles.tabRow}>
         <button
           type="button"
@@ -193,6 +222,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
           历史 {history && history.entries.length > 0 && `(${history.entries.length})`}
         </button>
       </div>
+      )}
 
       {tab === "history" ? (
         <AnnotationHistoryTimeline
@@ -212,6 +242,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
           enableCanvasDrawing={enableCanvasDrawing}
           liveCanvas={liveCanvas}
           anchor={commentAnchor}
+          onPendingDrawingChange={reportPendingDrawing}
           onSubmit={handleSubmit}
         />
       ) : taskId && projectId ? (
@@ -239,10 +270,18 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
               key={c.id}
               onMouseEnter={() => { if (hoverShapes) setHoveredShapes(hoverShapes); }}
               onMouseLeave={() => { if (hoverShapes) setHoveredShapes(null); }}
+              onClick={(e) => {
+                // 卡片内的按钮 / 链接（解决、删除、跳标注、跳帧、附件）各有自己的动作，
+                // 点它们不应顺带 toggle pin；其余区域点击 = pin 这条评论的批注到画布。
+                if (!hoverShapes) return;
+                if ((e.target as HTMLElement).closest("button, a")) return;
+                togglePinnedComment(c.id, hoverShapes);
+              }}
               className={cn(
                 styles.commentCard,
                 c.is_resolved && styles.commentCardResolved,
                 hoverShapes && styles.commentCardHoverable,
+                pinnedCommentId === c.id && styles.commentCardPinned,
               )}
             >
               <div className={styles.commentHeader}>
@@ -304,6 +343,20 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                   )}
                 </div>
               </div>
+              {c.annotation_id && onSelectAnnotation && (
+                <button
+                  type="button"
+                  data-testid="comment-annotation-chip"
+                  onClick={() => onSelectAnnotation(c.annotation_id!)}
+                  className={styles.annotationChip}
+                  title="跳转到该评论绑定的标注框"
+                >
+                  <Icon name="crosshair" size={11} />
+                  <span className={styles.annotationChipLabel}>
+                    {annotationClassById?.[c.annotation_id] ?? "标注框"}
+                  </span>
+                </button>
+              )}
               <div className={styles.commentBody}>
                 {renderCommentBody(c.body, c.mentions ?? [], (uid) => navigate(`/audit?actor=${uid}`))}
               </div>

@@ -113,6 +113,8 @@ class AuditAction(str, Enum):
     FEEDBACK_CREATED = "feedback.created"
     FEEDBACK_STATUS_CHANGED = "feedback.status_changed"
     FEEDBACK_DELETED = "feedback.deleted"
+    # v0.11.0 · ADR-0027 双写一致性对账 cron 检出漂移
+    FEEDBACK_RECONCILE_DRIFT = "feedback.reconcile_drift"
 
 
 def extract_client_ip(request: Request | None) -> str | None:

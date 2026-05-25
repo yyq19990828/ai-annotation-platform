@@ -128,6 +128,7 @@ describe("ViewerDashboard", () => {
           completed_tasks: 5,
           ai_enabled: true,
           ai_model: "yolo-v8",
+          ml_backend_id: "mb-1",
           status: "in_progress",
         },
       ],
@@ -136,6 +137,31 @@ describe("ViewerDashboard", () => {
     mockUseProjectStats.mockReturnValue({ data: undefined });
     renderUI();
     expect(screen.getByText("yolo-v8")).toBeInTheDocument();
+  });
+
+  it("AI enabled 但已解绑后端 → 不显示残留模型名", () => {
+    mockUseProjects.mockReturnValue({
+      data: [
+        {
+          id: "p4",
+          display_id: "P-4",
+          name: "Unbound",
+          type_label: "图像检测",
+          type_key: "image-det",
+          total_tasks: 10,
+          completed_tasks: 5,
+          ai_enabled: true,
+          ai_model: "yolo-v8",
+          ml_backend_id: null,
+          status: "in_progress",
+        },
+      ],
+      isLoading: false,
+    });
+    mockUseProjectStats.mockReturnValue({ data: undefined });
+    renderUI();
+    expect(screen.queryByText("yolo-v8")).not.toBeInTheDocument();
+    expect(screen.getByText("未接入模型")).toBeInTheDocument();
   });
 
   it("切换 TabRow 过滤 → useProjects 入参随之变化", () => {

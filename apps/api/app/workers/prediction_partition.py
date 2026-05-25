@@ -8,8 +8,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from app.db.base import async_session
 from app.services.prediction_partition_service import PredictionPartitionService
+from app.workers._db import task_session
 from app.workers.celery_app import celery_app
 
 
@@ -24,7 +24,7 @@ def ensure_future_prediction_partitions(months_ahead: int = 3) -> dict:
 
 
 async def _ensure_async(months_ahead: int) -> dict:
-    async with async_session() as db:
+    async with task_session() as db:
         created = await PredictionPartitionService.ensure_future_partitions(
             db, months_ahead=months_ahead
         )

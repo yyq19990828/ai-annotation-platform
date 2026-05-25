@@ -6,6 +6,7 @@ import type { AnnotationResponse, Geometry, VideoBboxGeometry, VideoTrackGeometr
 import { UNKNOWN_CLASS } from "../../stage/colors";
 import { enqueue } from "../../state/offlineQueue";
 import type { useAnnotationHistory, Command } from "../../state/useAnnotationHistory";
+import { randomId } from "@/utils/id";
 import type { PendingDrawing, useWorkbenchState } from "../../state/useWorkbenchState";
 import {
   buildVideoKeyframeCommand,
@@ -89,9 +90,7 @@ export function buildVideoCreatePayload(
     };
   }
 
-  const trackId = typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? `trk_${crypto.randomUUID()}`
-    : `trk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const trackId = `trk_${randomId()}`;
   const geometry: VideoTrackGeometry = {
     type: "video_track",
     track_id: trackId,
@@ -243,7 +242,7 @@ export function useVideoAnnotationActions({
           enqueueOnError(err, () => {
             optimisticUpdateAnnotation(ann.id, { geometry });
             history.push(command);
-            if (taskId) enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: ann.id, payload: after, ts: Date.now() });
+            if (taskId) enqueue({ kind: "update", id: randomId(), taskId, annotationId: ann.id, payload: after, ts: Date.now() });
           });
         },
       },
@@ -262,7 +261,7 @@ export function useVideoAnnotationActions({
           enqueueOnError(err, () => {
             optimisticUpdateAnnotation(ann.id, { class_name: className });
             history.push({ kind: "update", annotationId: ann.id, before, after });
-            if (taskId) enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: ann.id, payload: after, ts: Date.now() });
+            if (taskId) enqueue({ kind: "update", id: randomId(), taskId, annotationId: ann.id, payload: after, ts: Date.now() });
           });
         },
       },
@@ -469,7 +468,7 @@ export function useVideoAnnotationActions({
               (prev) => (prev ?? []).map((a) => (a.id === ann.id ? { ...a, attributes } : a)),
             );
             history.push({ kind: "update", annotationId: ann.id, before, after });
-            if (taskId) enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: ann.id, payload: after, ts: Date.now() });
+            if (taskId) enqueue({ kind: "update", id: randomId(), taskId, annotationId: ann.id, payload: after, ts: Date.now() });
           });
         },
       },
