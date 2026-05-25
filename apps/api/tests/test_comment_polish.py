@@ -141,7 +141,12 @@ async def test_drawing_only_comment_created(httpx_client, db_session, super_admi
             "attachments": [],
             "canvas_drawing": {
                 "shapes": [
-                    {"type": "line", "points": [0.1, 0.1, 0.5, 0.5], "stroke": "#ef4444", "id": "s1"}
+                    {
+                        "type": "line",
+                        "points": [0.1, 0.1, 0.5, 0.5],
+                        "stroke": "#ef4444",
+                        "id": "s1",
+                    }
                 ]
             },
         },

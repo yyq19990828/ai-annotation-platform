@@ -38,7 +38,9 @@ class AnnotationCommentCreate(BaseModel):
 
     @model_validator(mode="after")
     def _require_content(self) -> "AnnotationCommentCreate":
-        has_drawing = self.canvas_drawing is not None and len(self.canvas_drawing.shapes) > 0
+        has_drawing = (
+            self.canvas_drawing is not None and len(self.canvas_drawing.shapes) > 0
+        )
         if not self.body.strip() and not self.attachments and not has_drawing:
             raise ValueError("评论需至少包含正文、附件或画布批注之一")
         return self
