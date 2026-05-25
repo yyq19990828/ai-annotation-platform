@@ -249,7 +249,11 @@ export function DropdownMenu(props: DropdownMenuProps) {
     menu.style.setProperty("--dropdown-z-index", String(zIndex));
     menu.style.setProperty("--dropdown-padding", disablePanelPadding ? "0" : "4px");
     syncDomStyles(menu, panelStyle, prevPanelStyleRef);
-  }, [disablePanelPadding, minWidth, panelStyle, zIndex]);
+    // `open` 必须入依赖：面板挂载在 createPortal 里、且 open 是组件内部 state，
+    // 切换 open 不会改变父级传入的 panelStyle 引用。若不依赖 open，重新打开时
+    // 这个 effect 不会重跑，新挂载的面板节点拿不到 panelStyle（如 width），
+    // 直到某次父级重渲染（轮询）恰好刷新 panelStyle 引用才补上 —— 表现为面板尺寸忽大忽小。
+  }, [disablePanelPadding, minWidth, panelStyle, zIndex, open]);
 
   useLayoutEffect(() => {
     if (!open) return;
