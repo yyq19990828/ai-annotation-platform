@@ -22,6 +22,10 @@ interface HoveredCommentState {
   togglePin: (id: string, shapes: Shapes) => void;
   /** 清除 pin（切换标注 / 卸载时调用）。*/
   clearPin: () => void;
+  /** 正在编辑的评论的 pending 批注（弹窗批注 save / live 完成后）；它是当前焦点，
+   *  持续预览在画布上直到评论发送 / 清空 / 切换标注。*/
+  composingShapes: Shapes | null;
+  setComposing: (shapes: Shapes | null) => void;
 }
 
 export const useHoveredCommentStore = create<HoveredCommentState>((set) => ({
@@ -32,9 +36,11 @@ export const useHoveredCommentStore = create<HoveredCommentState>((set) => ({
   togglePin: (id, shapes) =>
     set((s) => (s.pinnedId === id ? { pinnedId: null, pinnedShapes: null } : { pinnedId: id, pinnedShapes: shapes })),
   clearPin: () => set({ pinnedId: null, pinnedShapes: null }),
+  composingShapes: null,
+  setComposing: (shapes) => set({ composingShapes: shapes }),
 }));
 
-/** 画布实际叠加的 shapes：hover（临时 peek）优先，否则 pinned。 */
+/** 画布实际叠加的 shapes：hover（临时 peek）> composing（正在编辑的评论）> pinned（点击选中）。 */
 export function selectEffectiveShapes(s: HoveredCommentState): Shapes | null {
-  return s.hoverShapes ?? s.pinnedShapes;
+  return s.hoverShapes ?? s.composingShapes ?? s.pinnedShapes;
 }

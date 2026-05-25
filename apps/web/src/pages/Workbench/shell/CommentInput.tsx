@@ -35,6 +35,8 @@ interface CommentInputProps {
     onConsume: () => void;
   };
   anchor?: AnnotationCommentAnchor | null;
+  /** v0.11.12 · 上报当前 pending 批注，让画布把「正在编辑的评论」的批注预览出来。 */
+  onPendingDrawingChange?: (drawing: CommentCanvasDrawing | null) => void;
   onSubmit: (payload: {
     body: string;
     mentions: CommentMention[];
@@ -141,7 +143,7 @@ function insertMentionChip(triggerRange: { node: Node; offset: number }, opt: Us
   sel.addRange(newRange);
 }
 
-export function CommentInput({ annotationId, members, busy, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, anchor, onSubmit }: CommentInputProps) {
+export function CommentInput({ annotationId, members, busy, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, anchor, onPendingDrawingChange, onSubmit }: CommentInputProps) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const [picker, setPicker] = useState<PickerState>({ open: false, anchor: { left: 0, top: 0 }, query: "", triggerRange: null });
   const [attachments, setAttachments] = useState<CommentAttachment[]>([]);
@@ -157,6 +159,12 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
       liveCanvas.onConsume();
     }
   }, [liveCanvas]);
+
+  // v0.11.12：把当前 pending 批注上报给画布预览通道；卸载时清空。
+  useEffect(() => {
+    onPendingDrawingChange?.(canvasDrawing);
+    return () => onPendingDrawingChange?.(null);
+  }, [canvasDrawing, onPendingDrawingChange]);
 
   const reset = useCallback(() => {
     if (editorRef.current) editorRef.current.innerHTML = "";

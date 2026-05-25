@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { useProjectMembers } from "@/hooks/useProjects";
@@ -136,11 +136,22 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
   const togglePinnedComment = useHoveredCommentStore((s) => s.togglePin);
   const clearPinnedComment = useHoveredCommentStore((s) => s.clearPin);
   const pinnedCommentId = useHoveredCommentStore((s) => s.pinnedId);
-  // 切换标注 / 卸载 → 清掉 pin，避免上一个标注的批注残留在画布上。
+  const setComposingShapes = useHoveredCommentStore((s) => s.setComposing);
+  // CommentInput 上报 pending 批注 → 写入 composing 预览通道（仅提取 shapes）。
+  const reportPendingDrawing = useCallback(
+    (d: CommentCanvasDrawing | null) =>
+      setComposingShapes(d?.shapes && d.shapes.length > 0 ? d.shapes : null),
+    [setComposingShapes],
+  );
+  // 切换标注 / 卸载 → 清掉 pin 与 composing 预览，避免上一个标注的批注残留在画布上。
   useEffect(() => {
     clearPinnedComment();
-    return clearPinnedComment;
-  }, [annotationId, clearPinnedComment]);
+    setComposingShapes(null);
+    return () => {
+      clearPinnedComment();
+      setComposingShapes(null);
+    };
+  }, [annotationId, clearPinnedComment, setComposingShapes]);
   // v0.7.2 · 历史 tab — 仅切到 history 时拉取; I4 · 未选中标注时拉 task 级.
   const annotationHistoryQuery = useAnnotationAuditHistory(
     tab === "history" && annotationId ? annotationId : null,
@@ -231,6 +242,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
           enableCanvasDrawing={enableCanvasDrawing}
           liveCanvas={liveCanvas}
           anchor={commentAnchor}
+          onPendingDrawingChange={reportPendingDrawing}
           onSubmit={handleSubmit}
         />
       ) : taskId && projectId ? (

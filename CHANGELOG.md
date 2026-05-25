@@ -30,11 +30,12 @@
 
 ## [0.11.12] - 2026-05-25
 
-> **评论画布批注交互完善。** 评论批注改为点击 pin 持续显示在 konva 画布上；修复白板快速绘制丢点。
+> **评论画布批注交互完善。** 评论批注改为点击 pin 持续显示在 konva 画布上；正在编辑的评论的 pending 批注实时预览到画布；修复白板快速绘制丢点。
 
 ### Changed
 
-- **评论画布批注：hover-reveal → 点击 pin** ([useHoveredCommentStore.ts](apps/web/src/pages/Workbench/state/useHoveredCommentStore.ts) · [CommentsPanel.tsx](apps/web/src/pages/Workbench/shell/CommentsPanel.tsx)): 此前评论的画布批注仅在 hover 评论卡片时半透明叠加到 konva 画布、鼠标一移开即清空，无法移到画布定睛查看。改为「点击评论卡片 = pin 其批注到画布持续显示」（再次点击同条 / 切换标注则取消），hover 保留为快速 peek（`selectEffectiveShapes`: hover 优先、否则回落 pinned）。落实「批注线 ⟷ 评论绑定、聚焦即显示」的可见性模型。
+- **评论画布批注：hover-reveal → 点击 pin** ([useHoveredCommentStore.ts](apps/web/src/pages/Workbench/state/useHoveredCommentStore.ts) · [CommentsPanel.tsx](apps/web/src/pages/Workbench/shell/CommentsPanel.tsx)): 此前评论的画布批注仅在 hover 评论卡片时半透明叠加到 konva 画布、鼠标一移开即清空，无法移到画布定睛查看。改为「点击评论卡片 = pin 其批注到画布持续显示」（再次点击同条 / 切换标注则取消），hover 保留为快速 peek。落实「批注线 ⟷ 评论绑定、聚焦即显示」的可见性模型。
+- **正在编辑的评论 pending 批注预览到画布** ([CommentInput.tsx](apps/web/src/pages/Workbench/shell/CommentInput.tsx) · [useHoveredCommentStore.ts](apps/web/src/pages/Workbench/state/useHoveredCommentStore.ts)): 此前「弹窗批注」保存后只更新评论区按钮、主画布不显示，须再点「在题图上绘制」才载入可见。现 CommentInput 把 pending 批注上报到 composing 预览通道，弹窗批注 / live 完成后即实时叠加到主 konva 画布，发送 / 切换标注后清除。画布叠加优先级统一为 `selectEffectiveShapes`: hover（peek）> composing（编辑中）> pinned（点击选中）。
 
 ### Fixed
 
