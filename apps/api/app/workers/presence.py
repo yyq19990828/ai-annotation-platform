@@ -17,8 +17,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import or_, update
 
 from app.config import settings
-from app.db.base import async_session
 from app.db.models.user import User
+from app.workers._db import task_session
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ def mark_inactive_offline() -> dict:
 
 
 async def _run_async() -> dict:
-    async with async_session() as db:
+    async with task_session() as db:
         return await mark_inactive_offline_with_session(db)
 
 

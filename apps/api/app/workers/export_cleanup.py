@@ -12,8 +12,8 @@ from datetime import datetime, timezone
 
 from sqlalchemy import delete
 
-from app.db.base import async_session
 from app.db.models.export_artifact import ExportArtifact
+from app.workers._db import task_session
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ def purge_expired_export_artifacts() -> dict:
 
 async def _purge_async() -> dict:
     now = datetime.now(timezone.utc)
-    async with async_session() as db:
+    async with task_session() as db:
         stmt = (
             delete(ExportArtifact)
             .where(ExportArtifact.expires_at < now)

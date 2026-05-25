@@ -17,12 +17,12 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.base import async_session
 from app.db.enums import UserRole
 from app.db.models.user import User
 from app.services.audit import AuditAction, AuditService
 from app.services.feedback_reconcile import compute_feedback_drift
 from app.services.notification import NotificationService
+from app.workers._db import task_session
 from app.workers.celery_app import celery_app
 
 
@@ -38,7 +38,7 @@ def reconcile_annotation_feedback() -> dict:
 
 
 async def _reconcile_async() -> dict:
-    async with async_session() as db:
+    async with task_session() as db:
         result = await run_reconcile(db)
         await db.commit()
     return result

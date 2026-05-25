@@ -28,9 +28,9 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.config import settings
-from app.db.base import async_session
 from app.db.models.ml_backend import MLBackend
 from app.services.ml_backend import MLBackendService
+from app.workers._db import task_session
 from app.services.ml_client import MLBackendClient
 from app.workers.celery_app import celery_app
 
@@ -141,7 +141,7 @@ async def check_all_backends(jitter_max_seconds: float = 3.0) -> dict:
 
     返回 ``{"checked": N, "results": [{"id":..., "state":..., "healthy":bool}, ...]}``。
     """
-    async with async_session() as db:
+    async with task_session() as db:
         rows = (await db.execute(select(MLBackend.id))).scalars().all()
         backend_ids = list(rows)
 
@@ -150,7 +150,7 @@ async def check_all_backends(jitter_max_seconds: float = 3.0) -> dict:
         if jitter_max_seconds > 0:
             await asyncio.sleep(random.uniform(0, jitter_max_seconds))
         try:
-            async with async_session() as db:
+            async with task_session() as db:
                 svc = MLBackendService(db)
                 healthy = await svc.check_health(backend_id)
                 await db.commit()
