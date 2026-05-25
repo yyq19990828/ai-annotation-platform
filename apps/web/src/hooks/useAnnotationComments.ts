@@ -1,10 +1,16 @@
 import {
+  type InfiniteData,
   useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { commentsApi, type CreateCommentPayload } from "@/api/comments";
+import {
+  commentsApi,
+  type AnnotationCommentListPage,
+  type AnnotationCommentResponse,
+  type CreateCommentPayload,
+} from "@/api/comments";
 
 export function useAnnotationComments(annotationId: string | null | undefined) {
   return useQuery({
@@ -89,11 +95,37 @@ export function usePatchComment(annotationId: string | null | undefined) {
 
 export function useDeleteComment(annotationId: string | null | undefined) {
   const qc = useQueryClient();
+  const pageKey = ["annotation-comments-page", annotationId];
+  const listKey = ["annotation-comments", annotationId];
   return useMutation({
     mutationFn: (id: string) => commentsApi.remove(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["annotation-comments", annotationId] });
-      qc.invalidateQueries({ queryKey: ["annotation-comments-page", annotationId] });
+    // 乐观移除：直接从缓存剔除被删项。后端是软删 (is_active=false) + 列表过滤，
+    // 仅靠 invalidate+refetch 在快速切换标注时会偶现"删除后重现"（stale 缓存竞态）。
+    // 直接改缓存条目可彻底避免；失败则在 onError 回滚（不掩盖失败的删除）。
+    onMutate: async (id: string) => {
+      await Promise.all([
+        qc.cancelQueries({ queryKey: pageKey }),
+        qc.cancelQueries({ queryKey: listKey }),
+      ]);
+      const prevPages = qc.getQueryData<InfiniteData<AnnotationCommentListPage>>(pageKey);
+      const prevList = qc.getQueryData<AnnotationCommentResponse[]>(listKey);
+      qc.setQueryData<InfiniteData<AnnotationCommentListPage>>(pageKey, (old) =>
+        old
+          ? { ...old, pages: old.pages.map((p) => ({ ...p, items: p.items.filter((c) => c.id !== id) })) }
+          : old,
+      );
+      qc.setQueryData<AnnotationCommentResponse[]>(listKey, (old) =>
+        old ? old.filter((c) => c.id !== id) : old,
+      );
+      return { prevPages, prevList };
+    },
+    onError: (_e, _id, ctx) => {
+      if (ctx?.prevPages !== undefined) qc.setQueryData(pageKey, ctx.prevPages);
+      if (ctx?.prevList !== undefined) qc.setQueryData(listKey, ctx.prevList);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: listKey });
+      qc.invalidateQueries({ queryKey: pageKey });
       qc.invalidateQueries({ queryKey: ["task-comments-page"] });
     },
   });
