@@ -273,7 +273,9 @@ async def create_comment(
         attachments=[
             a.model_dump(by_alias=True, mode="json") for a in data.attachments
         ],
-        canvas_drawing=data.canvas_drawing,
+        canvas_drawing=data.canvas_drawing.model_dump(by_alias=True, mode="json")
+        if data.canvas_drawing
+        else None,
         anchor=data.anchor.model_dump(by_alias=True, mode="json")
         if data.anchor
         else None,
