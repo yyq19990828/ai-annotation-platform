@@ -401,3 +401,57 @@ async def test_reconcile_detects_drift_and_notifies(
     assert user.id in calls[0]["user_ids"]
     assert calls[0]["payload"]["total_missing"] == 1
     assert calls[0]["payload"]["missing_by_source"]["bug_reports"] == 1
+
+
+@pytest.mark.asyncio
+async def test_drift_detects_under_mirrored_duplicates(db_session, super_admin):
+    """内容完全相同的 2 条旧表行只 mirror 了 1 条 → 必须检出缺失 1 条。
+
+    回归 PR #21 审查发现的 false-negative：旧 NOT EXISTS 写法在重复内容下会把
+    两条都判为「已覆盖」漏报缺失。差额计数应精确报出 1 条。
+    """
+    import uuid as _uuid
+
+    from app.db.models.annotation_feedback import AnnotationFeedback
+    from app.db.models.bug_report import BugReport
+    from app.services.feedback_reconcile import compute_feedback_drift
+
+    user, _ = super_admin
+    proj = await create_project(db_session, owner_id=user.id, type_key="image-det")
+    await db_session.flush()
+
+    # 两条业务字段完全相同的 bug（同 project/title/description/reporter）
+    for i in range(2):
+        db_session.add(
+            BugReport(
+                id=_uuid.uuid4(),
+                display_id=f"B-DUP-{i}",
+                reporter_id=user.id,
+                route="/workbench",
+                user_role="super_admin",
+                project_id=proj.id,
+                task_id=None,
+                title="same title",
+                description="same body",
+                severity="low",
+                status="new",
+            )
+        )
+    # 只 mirror 了其中 1 条
+    db_session.add(
+        AnnotationFeedback(
+            id=_uuid.uuid4(),
+            kind="bug",
+            anchor_type="project",
+            project_id=proj.id,
+            title="same title",
+            body="same body",
+            author_id=user.id,
+        )
+    )
+    await db_session.flush()
+
+    drift = await compute_feedback_drift(db_session)
+    assert drift["bug_reports"]["expected"] == 2
+    assert len(drift["bug_reports"]["missing_ids"]) == 1
+    assert drift["bug_reports"]["actual"] == 1

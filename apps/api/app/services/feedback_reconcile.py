@@ -62,24 +62,17 @@ async def compute_feedback_drift(db: AsyncSession) -> dict[str, dict]:
     纯查询、无副作用。drift = sum(len(missing_ids))；调用方据此决定是否告警。
     """
     out: dict[str, dict] = {}
-    for source, kind in _MIRROR_KINDS.items():
+    for source in _MIRROR_KINDS:
         expected_rows = (await db.execute(text(_EXPECTED_SQL[source]))).all()
-        expected_ids = [r[0] for r in expected_rows]
-
-        actual = (
-            await db.execute(
-                text(
-                    "SELECT COUNT(*) FROM v_annotation_feedback_unified "
-                    "WHERE source_table = 'annotation_feedbacks' AND kind = :kind"
-                ),
-                {"kind": kind},
-            )
-        ).scalar() or 0
+        expected = len(expected_rows)
 
         missing_ids = await _missing_ids(db, source)
+        # actual = 真正被 mirror 覆盖的旧表行数 = expected - missing。不直接 COUNT
+        # 统一表的 kind 行：那会把原生 annotation_feedbacks 行（非 mirror）算进去，
+        # 正常一致态下也 expected != actual，误导排障（见 ADR-0027 对账安全网说明）。
         out[source] = {
-            "expected": len(expected_ids),
-            "actual": int(actual),
+            "expected": expected,
+            "actual": expected - len(missing_ids),
             "missing_ids": missing_ids,
         }
     return out
@@ -92,46 +85,72 @@ async def _missing_ids(db: AsyncSession, source: str) -> list[str]:
       - bug_reports: (kind=bug, project_id, title, body=description, author_id)
       - annotation_comments: (kind=comment, annotation_id, body, author_id)
       - tasks_reject: (kind=reject, task_id, body=reject_reason, author_id=reviewer)
-    用 NOT EXISTS 关联子查询，返回未被任何 mirror 行覆盖的旧表行 id。
+
+    用「分组计数差额」而非 NOT EXISTS：同一业务键下若有 N 条内容完全相同的旧表行
+    但只 mirror 了 M 条（M<N），NOT EXISTS 会因「存在任一 mirror 行」把 N 条全判为
+    已覆盖 → 漏报缺失的 N-M 条。本 cron 是切单源（删数据）前的安全网，漏报最危险。
+    故按业务键给旧表行编号（ROW_NUMBER），行号超过该键 mirror 行数的即缺失，
+    返回精确到具体旧表行 id 的差额。tasks_reject 因 task_id 唯一，等价于原 NOT EXISTS。
     """
     if source == "bug_reports":
         sql = """
-            SELECT br.id::text
-            FROM bug_reports br
-            WHERE br.project_id IS NOT NULL
-              AND NOT EXISTS (
-                SELECT 1 FROM annotation_feedbacks af
+            WITH old_ranked AS (
+                SELECT br.id::text AS id,
+                       br.project_id, br.title, br.description, br.reporter_id,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY br.project_id, br.title,
+                                      br.description, br.reporter_id
+                         ORDER BY br.id
+                       ) AS rn
+                FROM bug_reports br
+                WHERE br.project_id IS NOT NULL
+            )
+            SELECT o.id FROM old_ranked o
+            WHERE o.rn > (
+                SELECT COUNT(*) FROM annotation_feedbacks af
                 WHERE af.kind = 'bug'
-                  AND af.project_id = br.project_id
-                  AND af.title IS NOT DISTINCT FROM br.title
-                  AND af.body IS NOT DISTINCT FROM br.description
-                  AND af.author_id IS NOT DISTINCT FROM br.reporter_id
-              )
+                  AND af.project_id = o.project_id
+                  AND af.title IS NOT DISTINCT FROM o.title
+                  AND af.body IS NOT DISTINCT FROM o.description
+                  AND af.author_id IS NOT DISTINCT FROM o.reporter_id
+            )
         """
     elif source == "annotation_comments":
         sql = """
-            SELECT ac.id::text
-            FROM annotation_comments ac
-            WHERE ac.is_active = true
-              AND NOT EXISTS (
-                SELECT 1 FROM annotation_feedbacks af
+            WITH old_ranked AS (
+                SELECT ac.id::text AS id,
+                       ac.annotation_id, ac.body, ac.author_id,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY ac.annotation_id, ac.body, ac.author_id
+                         ORDER BY ac.id
+                       ) AS rn
+                FROM annotation_comments ac
+                WHERE ac.is_active = true
+            )
+            SELECT o.id FROM old_ranked o
+            WHERE o.rn > (
+                SELECT COUNT(*) FROM annotation_feedbacks af
                 WHERE af.kind = 'comment'
-                  AND af.annotation_id = ac.annotation_id
-                  AND af.body IS NOT DISTINCT FROM ac.body
-                  AND af.author_id IS NOT DISTINCT FROM ac.author_id
-              )
+                  AND af.annotation_id IS NOT DISTINCT FROM o.annotation_id
+                  AND af.body IS NOT DISTINCT FROM o.body
+                  AND af.author_id IS NOT DISTINCT FROM o.author_id
+            )
         """
     elif source == "tasks_reject":
         sql = """
-            SELECT t.id::text
-            FROM tasks t
-            WHERE t.status = 'rejected' AND t.reject_reason IS NOT NULL
-              AND NOT EXISTS (
-                SELECT 1 FROM annotation_feedbacks af
+            WITH old_ranked AS (
+                SELECT t.id::text AS id, t.id AS task_id, t.reject_reason,
+                       ROW_NUMBER() OVER (PARTITION BY t.id ORDER BY t.id) AS rn
+                FROM tasks t
+                WHERE t.status = 'rejected' AND t.reject_reason IS NOT NULL
+            )
+            SELECT o.id FROM old_ranked o
+            WHERE o.rn > (
+                SELECT COUNT(*) FROM annotation_feedbacks af
                 WHERE af.kind = 'reject'
-                  AND af.task_id = t.id
-                  AND af.body IS NOT DISTINCT FROM t.reject_reason
-              )
+                  AND af.task_id = o.task_id
+                  AND af.body IS NOT DISTINCT FROM o.reject_reason
+            )
         """
     else:  # pragma: no cover - 调用方只传 _MIRROR_KINDS 里的 key
         return []

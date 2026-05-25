@@ -1480,7 +1480,11 @@ export function useWorkbenchShellModel({
     stageKind,
     issuePinDropArmed,
     // v0.11.5 · issue FAB → 切到 DiscussionPanel issues tab (旧浮层 IssueListPanel 已删)。
-    onOpenList: () => requestIssuesTab(),
+    // DiscussionPanel 在右栏内，右栏收起时列宽为 0px 被裁切，故先确保右栏展开再切 tab。
+    onOpenList: () => {
+      if (!s.rightOpen) s.setRightOpen(true);
+      requestIssuesTab();
+    },
     onToggleIssuePinDrop: () => setIssuePinDropArmed((v) => !v),
     createModal: {
       open: issueCreateOpen,
