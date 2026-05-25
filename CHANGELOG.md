@@ -36,11 +36,14 @@
 
 ### Changed
 
-- **DiscussionPanel 转正 + 右栏旧路径清理（v0.11.5）**：移除 `DISCUSSION_PANEL_ENABLED` flag，两段右栏成为默认；AIInspectorPanel 瘦身（移除内嵌 CommentsPanel 及相关 props）；删除旧浮动 `IssueListPanel`（图钉点击与 issue FAB 统一改走 DiscussionPanel issues tab）。→ [plan](docs/plans/2026-05-25-v0.11.5-discussion-cutover-cleanup.md)。**已知回退缺口**：评论内画布批注 live 绘图 + 点评论跳帧暂断开（v0.11.2 复用 CommentsPanel 时未透传 canvas/seek props），待独立修复切片 + 运行时验证，详见 plan。
+- **DiscussionPanel 转正 + 右栏旧路径清理（v0.11.5）**：移除 `DISCUSSION_PANEL_ENABLED` flag，两段右栏成为默认；AIInspectorPanel 瘦身（移除内嵌 CommentsPanel 及相关 props）；删除旧浮动 `IssueListPanel`（图钉点击与 issue FAB 统一改走 DiscussionPanel issues tab）。→ [plan](docs/plans/2026-05-25-v0.11.5-discussion-cutover-cleanup.md)
 
 ### Fixed
 
 - **通知中心补 `feedback.reconcile_drift` 标签** ([NotificationsPopover.tsx](apps/web/src/components/shell/NotificationsPopover.tsx))：对账 cron 通知此前无 `TYPE_LABEL` 映射，会向 superadmin 显示原始点号字符串。
 - **VideoStage `issueFrames` useMemo 提到 early-return 之前**：v0.11.7 的帧标记 memo 误放在 `isLoading`/`error` 返回之后，违反 `react-hooks/rules-of-hooks`。
+- **右栏列宽拖拽线在 DiscussionPanel 区域失效**（实测）：列宽 `ResizeHandle` 原在 AIInspectorPanel 内，去 flag 后只覆盖右栏上段；提到 `.rightSplit` 全高层级，整列可拖。
+- **评论内画布批注（live 绘图）+ 点评论跳帧（video）断开**（实测，v0.11.2 回退）：DiscussionPanel 复用 CommentsPanel 时漏传 `backgroundUrl`/`enableCanvasDrawing`/`liveCanvas`/`commentAnchor`/`onSeekFrame`，去 flag 后旧路径消失致功能失效；透传桥接 props + 恢复 shell model 的 `videoCommentAnchor` memo 与 `liveCanvas` 桥接。
+- **标注评论删除后偶现重现**（实测）：后端软删正确但前端 invalidate+refetch 在快速切换标注时有 stale 缓存竞态；`useDeleteComment` 改为乐观移除 + 失败回滚 + invalidate 兜底。
 
 <!-- v0.11.0 起的版本变更直接追加到本节；当开始开发 0.12 版本后再移到 docs/changelogs/0.11.x.md -->
