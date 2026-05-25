@@ -173,6 +173,63 @@ async def test_empty_comment_rejected(httpx_client, db_session, super_admin):
 
 
 @pytest.mark.asyncio
+async def test_patch_clear_body_allowed_when_drawing_remains(
+    httpx_client, db_session, super_admin
+):
+    """PATCH 清空正文：评论仍有画布批注 → 200（与 create 口径对齐，#5）。"""
+    sa_user, sa_token = super_admin
+    _, ann = await _seed_project_with_annotation(db_session, sa_user.id)
+
+    created = await httpx_client.post(
+        f"/api/v1/annotations/{ann.id}/comments",
+        json={
+            "body": "先写点字",
+            "attachments": [],
+            "canvas_drawing": {
+                "shapes": [
+                    {"type": "line", "points": [0.1, 0.1, 0.5, 0.5], "stroke": "#ef4444", "id": "s1"}
+                ]
+            },
+        },
+        headers=_bearer(sa_token),
+    )
+    assert created.status_code == 201, created.text
+    cid = created.json()["id"]
+
+    r = await httpx_client.patch(
+        f"/api/v1/comments/{cid}",
+        json={"body": ""},
+        headers=_bearer(sa_token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["body"] == ""
+
+
+@pytest.mark.asyncio
+async def test_patch_clear_body_rejected_when_text_only(
+    httpx_client, db_session, super_admin
+):
+    """PATCH 清空正文：评论无附件 / 批注兜底 → 422（不允许变成空评论，#5）。"""
+    sa_user, sa_token = super_admin
+    _, ann = await _seed_project_with_annotation(db_session, sa_user.id)
+
+    created = await httpx_client.post(
+        f"/api/v1/annotations/{ann.id}/comments",
+        json={"body": "纯文字评论", "attachments": [], "canvas_drawing": None},
+        headers=_bearer(sa_token),
+    )
+    assert created.status_code == 201, created.text
+    cid = created.json()["id"]
+
+    r = await httpx_client.patch(
+        f"/api/v1/comments/{cid}",
+        json={"body": "   "},
+        headers=_bearer(sa_token),
+    )
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
 async def test_video_comment_anchor_roundtrips(httpx_client, db_session, super_admin):
     sa_user, sa_token = super_admin
     _, ann = await _seed_project_with_annotation(db_session, sa_user.id)

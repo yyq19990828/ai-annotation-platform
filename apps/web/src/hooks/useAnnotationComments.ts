@@ -96,10 +96,20 @@ export function usePatchComment(annotationId: string | null | undefined) {
   });
 }
 
+const removeFromPages = (id: string) => (
+  old: InfiniteData<AnnotationCommentListPage> | undefined,
+) =>
+  old
+    ? { ...old, pages: old.pages.map((p) => ({ ...p, items: p.items.filter((c) => c.id !== id) })) }
+    : old;
+
 export function useDeleteComment(annotationId: string | null | undefined) {
   const qc = useQueryClient();
   const pageKey = ["annotation-comments-page", annotationId];
   const listKey = ["annotation-comments", annotationId];
+  // 任务级聚合视图（未选中标注）缓存按 taskId 分键，删除时不知道 taskId，
+  // 故按前缀对所有 ["task-comments-page", *] 缓存乐观剔除。
+  const taskPagePrefix = ["task-comments-page"];
   return useMutation({
     mutationFn: (id: string) => commentsApi.remove(id),
     // 乐观移除：直接从缓存剔除被删项。后端是软删 (is_active=false) + 列表过滤，
@@ -109,27 +119,32 @@ export function useDeleteComment(annotationId: string | null | undefined) {
       await Promise.all([
         qc.cancelQueries({ queryKey: pageKey }),
         qc.cancelQueries({ queryKey: listKey }),
+        qc.cancelQueries({ queryKey: taskPagePrefix }),
       ]);
       const prevPages = qc.getQueryData<InfiniteData<AnnotationCommentListPage>>(pageKey);
       const prevList = qc.getQueryData<AnnotationCommentResponse[]>(listKey);
-      qc.setQueryData<InfiniteData<AnnotationCommentListPage>>(pageKey, (old) =>
-        old
-          ? { ...old, pages: old.pages.map((p) => ({ ...p, items: p.items.filter((c) => c.id !== id) })) }
-          : old,
-      );
+      const prevTaskPages = qc.getQueriesData<InfiniteData<AnnotationCommentListPage>>({
+        queryKey: taskPagePrefix,
+      });
+      qc.setQueryData<InfiniteData<AnnotationCommentListPage>>(pageKey, removeFromPages(id));
       qc.setQueryData<AnnotationCommentResponse[]>(listKey, (old) =>
         old ? old.filter((c) => c.id !== id) : old,
       );
-      return { prevPages, prevList };
+      qc.setQueriesData<InfiniteData<AnnotationCommentListPage>>(
+        { queryKey: taskPagePrefix },
+        removeFromPages(id),
+      );
+      return { prevPages, prevList, prevTaskPages };
     },
     onError: (_e, _id, ctx) => {
       if (ctx?.prevPages !== undefined) qc.setQueryData(pageKey, ctx.prevPages);
       if (ctx?.prevList !== undefined) qc.setQueryData(listKey, ctx.prevList);
+      ctx?.prevTaskPages?.forEach(([key, data]) => qc.setQueryData(key, data));
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: listKey });
       qc.invalidateQueries({ queryKey: pageKey });
-      qc.invalidateQueries({ queryKey: ["task-comments-page"] });
+      qc.invalidateQueries({ queryKey: taskPagePrefix });
     },
   });
 }
