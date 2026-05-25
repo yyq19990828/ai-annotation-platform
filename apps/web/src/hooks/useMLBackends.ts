@@ -8,6 +8,8 @@ import {
 
 function invalidateBackendQueries(qc: QueryClient, projectId: string) {
   qc.invalidateQueries({ queryKey: ["ml-backends", projectId] });
+  qc.invalidateQueries({ queryKey: ["projects"] });
+  qc.invalidateQueries({ queryKey: ["project", projectId] });
   qc.invalidateQueries({ queryKey: ["admin", "ml-integrations", "overview"] });
 }
 

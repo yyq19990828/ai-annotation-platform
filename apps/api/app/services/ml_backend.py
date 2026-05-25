@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.ml_backend import MLBackend
+from app.db.models.project import Project
 from app.services.ml_client import MLBackendClient
 
 
@@ -70,6 +71,12 @@ class MLBackendService:
         running_jobs = list(running.scalars().all())
         if running_jobs:
             raise MLBackendDeleteBlocked(len(running_jobs))
+        bound_projects = await self.db.execute(
+            select(Project).where(Project.ml_backend_id == backend_id)
+        )
+        for project in bound_projects.scalars():
+            project.ml_backend_id = None
+            project.ai_model = None
         await self.db.delete(backend)
         await self.db.flush()
         return True

@@ -498,13 +498,19 @@ async def update_project(
     db: AsyncSession = Depends(get_db),
 ):
     payload = data.model_dump(exclude_unset=True)
-    # v0.8.6 F3 · 绑定 backend 时用 backend.name 覆盖 ai_model（display hint）
-    if payload.get("ml_backend_id"):
-        # v0.10.37 · 绑定按 data_type 校验模态 (用应用 payload 后的有效 data_type)
-        await _validate_backend_modality(
-            db, payload["ml_backend_id"], payload.get("data_type") or project.data_type
-        )
-        payload = await _apply_backend_display_hint(db, payload)
+    # v0.8.6 F3 · 绑定 backend 时用 backend.name 覆盖 ai_model（display hint）;
+    # 显式解绑时同步清空 display hint, 避免总览继续显示旧模型名。
+    if "ml_backend_id" in payload:
+        if payload["ml_backend_id"]:
+            # v0.10.37 · 绑定按 data_type 校验模态 (用应用 payload 后的有效 data_type)
+            await _validate_backend_modality(
+                db,
+                payload["ml_backend_id"],
+                payload.get("data_type") or project.data_type,
+            )
+            payload = await _apply_backend_display_hint(db, payload)
+        else:
+            payload["ai_model"] = None
 
     # v0.10.22 · 同 create_project: 旧扁平输入反向派生进 tool_bindings 后剔除.
     from app.services.project import coalesce_legacy_into_tool_bindings
