@@ -97,9 +97,14 @@ export function useReconnectingWebSocket(
       cancelled = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (ws) {
-        ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null;
-        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.onmessage = ws.onerror = ws.onclose = null;
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.onopen = null;
           ws.close();
+        } else if (ws.readyState === WebSocket.CONNECTING) {
+          // 关闭仍在握手中的 socket 浏览器会告警；改为握手完成后再静默关闭。
+          const w = ws;
+          w.onopen = () => w.close();
         }
       }
     };
