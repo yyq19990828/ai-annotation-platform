@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import type { CommentCanvasDrawing } from "@/api/comments";
+import { randomId } from "@/utils/id";
 import styles from "./CanvasDrawingEditor.module.css";
 
 interface Props {
@@ -92,10 +93,7 @@ export function CanvasDrawingEditor({ open, onClose, onSave, initial, background
           type: "line",
           points: drawing,
           stroke,
-          id:
-            typeof crypto !== "undefined" && "randomUUID" in crypto
-              ? crypto.randomUUID()
-              : `s-${Date.now()}-${prev.length}`,
+          id: randomId(),
           started_at: startedAt,
           ended_at: endedAt,
         },

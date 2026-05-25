@@ -2,6 +2,7 @@ import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tansta
 import { tasksApi, type AnnotationPayload, type AnnotationUpdatePayload, type TaskListParams } from "../api/tasks";
 import type { AnnotationResponse } from "@/types";
 import { ApiError } from "../api/client";
+import { randomId } from "@/utils/id";
 
 const TASK_PAGE_SIZE = 100;
 
@@ -80,7 +81,7 @@ export function useCreateAnnotation(taskId: string | undefined) {
       if (!taskId) return { prev: undefined, tmpId: undefined };
       await qc.cancelQueries({ queryKey: ["annotations", taskId] });
       const prev = qc.getQueryData<AnnotationResponse[]>(["annotations", taskId]);
-      const tmpId = `tmp_${crypto.randomUUID()}`;
+      const tmpId = `tmp_${randomId()}`;
       const optimistic: AnnotationResponse = {
         id: tmpId,
         task_id: taskId,
