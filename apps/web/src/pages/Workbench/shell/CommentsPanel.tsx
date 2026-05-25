@@ -59,6 +59,10 @@ interface Props {
   annotationClassById?: Record<string, string | undefined>;
   /** 点击绑定 chip 时选中/跳转到对应标注框。 */
   onSelectAnnotation?: (annotationId: string) => void;
+  /** v0.11.2/3 · DiscussionPanel 自带顶层 tab 时, 隐藏本组件内部 comments/history 切换条。 */
+  hideTabs?: boolean;
+  /** v0.11.2/3 · 由外层 DiscussionPanel 锁定显示哪一段 (配合 hideTabs)。 */
+  forceTab?: Tab;
 }
 
 function anchorLabel(anchor: AnnotationCommentAnchor): string {
@@ -68,9 +72,10 @@ function anchorLabel(anchor: AnnotationCommentAnchor): string {
   return parts.join(" · ");
 }
 
-export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, commentAnchor, onSeekFrame, annotationClassById, onSelectAnnotation }: Props) {
+export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, commentAnchor, onSeekFrame, annotationClassById, onSelectAnnotation, hideTabs, forceTab }: Props) {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>("comments");
+  const [localTab, setTab] = useState<Tab>("comments");
+  const tab = forceTab ?? localTab;
   // I4 · annotationId null 时走 task 级 hook (DiscussionPanel 雏形 — 评论/历史常驻).
   const annotationCommentsQuery = useAnnotationCommentsInfinite(annotationId);
   const taskCommentsQuery = useTaskCommentsInfinite(taskId ?? null, !annotationId && !!taskId);
@@ -181,6 +186,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
 
   return (
     <div className={styles.panel}>
+      {!hideTabs && (
       <div className={styles.tabRow}>
         <button
           type="button"
@@ -197,6 +203,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
           历史 {history && history.entries.length > 0 && `(${history.entries.length})`}
         </button>
       </div>
+      )}
 
       {tab === "history" ? (
         <AnnotationHistoryTimeline

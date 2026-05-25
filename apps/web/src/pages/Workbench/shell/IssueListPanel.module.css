@@ -105,3 +105,29 @@
 .cardTitle { font-size: 12px; color: var(--color-fg); font-weight: 600; }
 .cardBody { font-size: 12px; color: var(--color-fg); white-space: pre-wrap; }
 .cardActions { display: flex; gap: 4px; justify-content: flex-end; margin-top: 4px; }
+
+/* v0.11.4 · DiscussionPanel issues tab: status 过滤条 + 可定位卡片. */
+.filterRow {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.filterChip {
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+}
+
+.filterChipActive {
+  border-color: var(--color-accent);
+  color: var(--color-fg);
+}
+
+.cardClickable { cursor: pointer; }
+.cardClickable:hover { border-color: var(--color-accent); }

@@ -1,14 +1,21 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { CommentsPanel } from "./CommentsPanel";
+import { DiscussionIssuesTab } from "./DiscussionIssuesTab";
+import { useActiveIssueStore } from "../state/useActiveIssueStore";
 import styles from "./DiscussionPanel.module.css";
 
 /**
- * v0.11.1 · B 组 · 工作台右栏下段统一讨论面板（骨架）。
+ * v0.11.2-4 · B 组 · 工作台右栏下段统一讨论面板。
  *
- * 只搭 Tabs 外壳：comments | history | issues。本切片不迁移任何数据/逻辑，
- * 内容区只放占位；逐 tab 内容在 v0.11.2（comments）/ v0.11.3（history）/ v0.11.4（issues）落地。
+ * 三个常驻 tab：
+ *   - comments (v0.11.2)：复用 CommentsPanel 的评论能力 (hideTabs + forceTab)，
+ *     annotationId 非 null → 标注级评论；null → 任务级评论 (合并 annotation_comments + feedback)。
+ *   - history (v0.11.3)：同样复用 CommentsPanel 的历史时间线 (forceTab="history")，
+ *     annotation 优先，null 降级查任务级 audit (GET /tasks/{id}/audit-history)。
+ *   - issues (v0.11.4)：kind=issue feedback 列表 + status 过滤 + 与 IssueLayer 图钉双向联动。
  *
- * 边界（B 组）：只统一绑当前 task/标注的 comment + issue + history(audit)；
- * bug（BugReportDrawer）与 reject（审核状态机）刻意不进。
+ * 仍在 DISCUSSION_PANEL_ENABLED flag 后；旧 CommentsPanel/IssueListPanel 路径保留 (v0.11.5 才删)。
+ * 边界：只统一 comment + issue + history(audit)；bug / reject 刻意不进。
  */
 type DiscussionTab = "comments" | "history" | "issues";
 
@@ -25,8 +32,18 @@ interface DiscussionPanelProps {
   currentUserId: string | null;
 }
 
-export function DiscussionPanel(_props: DiscussionPanelProps) {
+export function DiscussionPanel({ annotationId, taskId, projectId, currentUserId }: DiscussionPanelProps) {
   const [tab, setTab] = useState<DiscussionTab>("comments");
+
+  // v0.11.4 · 单击/hover IssueLayer 图钉 → store.tabRequestTick++ → 自动切到 issues tab。
+  const tabRequestTick = useActiveIssueStore((s) => s.tabRequestTick);
+  const lastTabRequestRef = useRef(tabRequestTick);
+  useEffect(() => {
+    if (tabRequestTick !== lastTabRequestRef.current) {
+      lastTabRequestRef.current = tabRequestTick;
+      setTab("issues");
+    }
+  }, [tabRequestTick]);
 
   return (
     <div className={styles.panel}>
@@ -45,7 +62,20 @@ export function DiscussionPanel(_props: DiscussionPanelProps) {
         ))}
       </div>
       <div className={styles.content} role="tabpanel">
-        <span className={styles.placeholder}>即将上线</span>
+        {tab === "issues" ? (
+          projectId && taskId ? (
+            <DiscussionIssuesTab projectId={projectId} taskId={taskId} />
+          ) : null
+        ) : (
+          <CommentsPanel
+            annotationId={annotationId}
+            taskId={taskId}
+            projectId={projectId}
+            currentUserId={currentUserId ?? undefined}
+            hideTabs
+            forceTab={tab}
+          />
+        )}
       </div>
     </div>
   );
