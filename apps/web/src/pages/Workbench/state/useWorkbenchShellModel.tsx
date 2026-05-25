@@ -27,7 +27,7 @@ import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { predictionsApi } from "@/api/predictions";
 import type { Annotation, TaskResponse, AnnotationResponse } from "@/types";
-import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
+import { ANNOTATION_GUIDE_UI_ENABLED, DISCUSSION_PANEL_ENABLED } from "@/config/featureFlags";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 import { useWorkbenchState } from "./useWorkbenchState";
 import { useToolBindings } from "./useToolBindings";
@@ -1424,6 +1424,14 @@ export function useWorkbenchShellModel({
     guidePanel: ANNOTATION_GUIDE_UI_ENABLED && projectId ? {
       projectId,
       content: (currentProject as unknown as { annotation_guide?: string | null } | undefined)?.annotation_guide ?? null,
+    } : undefined,
+    // v0.11.1 · B 组 · 仅 flag 开时传 discussionPanel → 右栏切两段布局。
+    // off（默认）= undefined → WorkbenchLayout 维持现状只渲染 AIInspectorPanel，零行为变化。
+    discussionPanel: DISCUSSION_PANEL_ENABLED ? {
+      annotationId: s.selectedId,
+      taskId: taskId ?? null,
+      projectId: projectId ?? null,
+      currentUserId: meUserId ?? null,
     } : undefined,
   };
 
