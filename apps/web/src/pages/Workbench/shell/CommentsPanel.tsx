@@ -172,6 +172,13 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
     email: m.user_email,
   }));
 
+  // 删除评论前清掉它在题图上的批注预览：卡片随删除卸载时 onMouseLeave 不会触发，
+  // hover/pinned 预览会残留在画布上直到 hover 别处或刷新。
+  const clearShapesPreviewFor = (commentId: string) => {
+    setHoveredShapes(null);
+    if (pinnedCommentId === commentId) clearPinnedComment();
+  };
+
   const handleSubmit = ({
     body,
     mentions,
@@ -246,15 +253,12 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
           onSubmit={handleSubmit}
         />
       ) : taskId && projectId ? (
-        // v0.10.20 · D1 · 任务级评论 (POST /feedbacks · kind=comment / anchor_type=task).
-        // 不支持 mentions / canvas_drawing / anchor (任务无具体标注上下文); 仅文本 + 附件.
-        <CommentInput
-          annotationId={`task:${taskId}`}
-          members={[]}
-          busy={createTaskFeedbackMut.isPending}
-          enableCanvasDrawing={false}
-          onSubmit={handleSubmit}
-        />
+        // 未选中标注时禁用评论框：先要求选中一个标注再评论。
+        // 任务级评论 (POST /feedbacks · kind=comment / anchor_type=task) 的后端路径保留，
+        // 待后续有更好的交互方案再开启（handleSubmit 的 task 分支仍在）。
+        <div className={styles.disabledComposer} data-testid="comment-input-disabled">
+          请先选中一个标注后再评论
+        </div>
       ) : null}
 
       <div className={styles.commentList}>
@@ -312,7 +316,10 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                         <button
                           type="button"
                           title="删除"
-                          onClick={() => deleteTaskFeedbackMut.mutate(c.id)}
+                          onClick={() => {
+                            clearShapesPreviewFor(c.id);
+                            deleteTaskFeedbackMut.mutate(c.id);
+                          }}
                           className={styles.iconButton}
                         >
                           <Icon name="trash" size={11} />
@@ -333,7 +340,10 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                         <button
                           type="button"
                           title="删除"
-                          onClick={() => deleteMut.mutate(c.id)}
+                          onClick={() => {
+                            clearShapesPreviewFor(c.id);
+                            deleteMut.mutate(c.id);
+                          }}
                           className={styles.iconButton}
                         >
                           <Icon name="trash" size={11} />

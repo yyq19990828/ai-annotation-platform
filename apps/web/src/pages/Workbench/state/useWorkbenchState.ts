@@ -231,6 +231,9 @@ export function useWorkbenchState() {
     setCanvasDraft((d) => ({
       ...d,
       active: false,
+      // 打包进 pendingResult 后立即清空 shapes，否则草稿笔触会一直残留在题图上
+      // （CanvasDrawingLayer 始终渲染 shapes，与 active 无关），直到下次绘制或刷新才消失。
+      shapes: [],
       pendingResult: d.shapes.length > 0 ? { shapes: d.shapes } : { shapes: [] },
     }));
     setTool("box");
