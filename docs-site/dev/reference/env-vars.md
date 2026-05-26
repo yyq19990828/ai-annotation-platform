@@ -86,6 +86,12 @@ last_reviewed: 2026-05-26
 |---|---|---|
 | `SECRET_KEY` | `change-this-to-a-random-string-in-production` | JWT 签名密钥；生产环境必须替换为高强度随机字符串（≥32 字符） |
 
+## v0.11.14 · 存储连接器（外部 S3 / SFTP 服务端拉取）凭据 Fernet 加密 key。
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `CONNECTOR_ENCRYPTION_KEY` | `—` | 与 SECRET_KEY 隔离；留空则连接器加解密一律拒绝（API 返回 503）。 生成: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" |
+
 ## 是否允许开放注册（v0.7.7+；v0.8.1 起可在 SettingsPage > 系统设置 中热更新覆盖）
 
 | 变量 | 默认值 | 说明 |

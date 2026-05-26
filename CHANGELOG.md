@@ -24,6 +24,16 @@
 
 ## 最新版本
 
+## [0.11.14] - 2026-05-26
+
+> **数据集导入能力扩展 · 存储连接器基建（切片 1/3）。** 为"服务端主动拉取"类导入（外部 S3/OSS + SFTP/SSH）打地基：可复用、密钥加密落库、受超管主机白名单约束的存储连接器。本版仅含连接器管理与连通性测试，实际导入在后续切片。
+
+### Added
+
+- **存储连接器 CRUD + 连通性测试**: 新增 `storage_connections` 表与 `/api/v1/storage-connections` 端点（list/create/get/patch/delete/test）。支持 `s3`（外部对象存储）与 `sftp`（宿主机 & 同网段服务器）两类。超管可建 global-scope，项目负责人可建归属己项目的 project-scope。→ [plan](docs/plans/2026-05-26-v0.11.14-connector-foundation.md)
+- **连接器主机白名单（SSRF 防护）**: 新增 `GET/PUT /api/v1/storage-connections/allowlist`（仅超管）。连接器创建 / 测试 / 导入入口统一过白名单 + SSRF 校验：DNS 解析为真实 IP 后逐个判定，永久拒绝 loopback / link-local（含云元数据 169.254.169.254），内网地址须经白名单 CIDR 显式放行，缓解 DNS rebinding。
+- **凭据 Fernet 加密**: 连接器密钥（AK/SK、SSH 密码 / 私钥）经新环境变量 `CONNECTOR_ENCRYPTION_KEY`（与 `SECRET_KEY` 隔离）Fernet 加密落库，API 永不回吐明文（仅 `secret_set:bool`）；未配置时连接器加解密一律拒绝（返回 503）。
+
 ## [0.11.13] - 2026-05-26
 
 > **类别 / 属性孤儿数据治理。** 删除类别或属性前展示受影响标注数；工作台可隐藏孤儿标注；导出跳过孤儿类别并收敛属性；新增 owner/superadmin cleanup 端点。

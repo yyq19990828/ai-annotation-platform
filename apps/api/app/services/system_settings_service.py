@@ -31,6 +31,9 @@ EDITABLE_KEYS: dict[str, str] = {
     "smtp_user": "str",
     "smtp_password": "str",
     "smtp_from": "str",
+    # v0.11.14 · 存储连接器主机白名单（list[str]，host 精确域名或 CIDR）。
+    # 不进 system_settings 标量 UI，经连接器路由专属端点读写。
+    "connector_host_allowlist": "json",
 }
 
 # 敏感字段：GET 返回掩码、audit_log 不记录值
@@ -53,6 +56,9 @@ def _coerce(value_type: str, raw: Any) -> Any:
         return bool(raw)
     if value_type == "int":
         return int(raw)
+    if value_type == "json":
+        # JSONB 原样存取（list/dict 等结构化值）。
+        return raw
     return str(raw)
 
 
