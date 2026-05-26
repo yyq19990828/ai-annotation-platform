@@ -17140,6 +17140,18 @@
             }
           },
           {
+            "description": "仅返回业务事件，排除 http.* 中间件元数据行",
+            "in": "query",
+            "name": "business_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "仅返回业务事件，排除 http.* 中间件元数据行",
+              "title": "Business Only",
+              "type": "boolean"
+            }
+          },
+          {
             "description": "A.3：detail_json 字段级过滤——键名",
             "in": "query",
             "name": "detail_key",
@@ -17438,6 +17450,18 @@
                 }
               ],
               "title": "To"
+            }
+          },
+          {
+            "description": "仅导出业务事件，排除 http.* 中间件元数据行",
+            "in": "query",
+            "name": "business_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "仅导出业务事件，排除 http.* 中间件元数据行",
+              "title": "Business Only",
+              "type": "boolean"
             }
           },
           {

@@ -60,6 +60,13 @@ describe("AuditPage", () => {
     expect(screen.getByText(/第 1 \/ 1 页/)).toBeInTheDocument();
   });
 
+  it("默认仅业务事件 → 后端查询带 business_only", () => {
+    renderUI();
+    const calls = mockUseAuditLogs.mock.calls;
+    const lastCall = calls[calls.length - 1][0];
+    expect(lastCall.business_only).toBe(true);
+  });
+
   it("有数据 → 总数显示 1 条", () => {
     mockUseAuditLogs.mockReturnValue({
       data: {
@@ -92,6 +99,9 @@ describe("AuditPage", () => {
     renderUI();
     fireEvent.click(screen.getByRole("button", { name: /CSV/ }));
     await waitFor(() => expect(mockExport).toHaveBeenCalledTimes(1));
+    expect(mockExport.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ business_only: true }),
+    );
     expect(mockExport.mock.calls[0][1]).toBe("csv");
     await waitFor(() =>
       expect(mockPushToast).toHaveBeenCalledWith(
@@ -109,6 +119,18 @@ describe("AuditPage", () => {
     const keyInput = screen.getByPlaceholderText(/detail 键名/);
     fireEvent.change(keyInput, { target: { value: "role" } });
     expect((screen.getByPlaceholderText(/detail 键值/) as HTMLInputElement).disabled).toBe(false);
+  });
+
+  it("切换到全部事件 → 移除 business_only 查询参数", async () => {
+    renderUI();
+    fireEvent.change(screen.getByDisplayValue("仅业务事件"), {
+      target: { value: "all" },
+    });
+    await waitFor(() => {
+      const calls = mockUseAuditLogs.mock.calls;
+      const lastCall = calls[calls.length - 1][0];
+      expect(lastCall.business_only).toBeUndefined();
+    });
   });
 
   it("URL 参数 actor_id → 进入追溯模式 + 显示操作人 badge", () => {

@@ -13,6 +13,7 @@ export interface AuditQuery {
   actor_id?: string;
   from?: string;
   to?: string;
+  business_only?: boolean;
   /** A.3：detail_json 字段级 GIN 过滤——键名 + 键值（仅 super_admin）。 */
   detail_key?: string;
   detail_value?: string;
@@ -22,7 +23,7 @@ function toQuery(params?: AuditQuery): string {
   if (!params) return "";
   const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== "");
   if (entries.length === 0) return "";
-  const sp = new URLSearchParams(entries as [string, string][]);
+  const sp = new URLSearchParams(entries.map(([k, v]) => [k, String(v)]));
   return `?${sp.toString()}`;
 }
 

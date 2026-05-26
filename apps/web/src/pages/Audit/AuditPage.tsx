@@ -88,8 +88,9 @@ export function AuditPage() {
       actor_id: actorId || undefined,
       detail_key: detailKey || undefined,
       detail_value: detailKey ? detailValue : undefined,
+      business_only: scope === "business" ? true : undefined,
     }),
-    [page, actionFilter, targetType, targetId, actorId, detailKey, detailValue],
+    [page, actionFilter, targetType, targetId, actorId, detailKey, detailValue, scope],
   );
   const { data, isLoading, refetch, isFetching } = useAuditLogs(params, {
     refetchInterval: autoRefresh ? 30_000 : false,
@@ -108,10 +109,7 @@ export function AuditPage() {
     }
   };
 
-  const items = useMemo(() => {
-    const all = data?.items ?? [];
-    return scope === "business" ? all.filter((it) => !it.action.startsWith("http.")) : all;
-  }, [data?.items, scope]);
+  const items = useMemo(() => data?.items ?? [], [data?.items]);
 
   const total = data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -230,7 +228,14 @@ export function AuditPage() {
 
       <Card>
         <div className={styles.filters}>
-          <select value={scope} onChange={(e) => setScope(e.target.value as "business" | "all")} className={styles.control}>
+          <select
+            value={scope}
+            onChange={(e) => {
+              setScope(e.target.value as "business" | "all");
+              setPage(1);
+            }}
+            className={styles.control}
+          >
             <option value="business">仅业务事件</option>
             <option value="all">全部（含 HTTP 元数据）</option>
           </select>

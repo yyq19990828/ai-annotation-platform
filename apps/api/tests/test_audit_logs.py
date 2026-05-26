@@ -1,5 +1,9 @@
 """审计日志过滤 / 分页 / 自动记录测试。"""
 
+from datetime import datetime, timezone
+
+from app.db.models.audit_log import AuditLog
+
 
 class TestAuditLogFilters:
     async def test_list_requires_super_admin(self, httpx_client, db_session, annotator):
@@ -28,6 +32,45 @@ class TestAuditLogFilters:
         for item in r.json()["items"]:
             assert item.get("target_type") == "user" or item.get("target_type") is None
 
+    async def test_business_only_filters_before_pagination(
+        self, httpx_client, db_session, auth_headers
+    ):
+        """仅业务事件过滤在分页和计数前生效。"""
+        target_type = "audit_business_scope_test"
+        target_id = "business-only-scope"
+        now = datetime.now(timezone.utc)
+        db_session.add_all(
+            [
+                AuditLog(
+                    action="http.post",
+                    target_type=target_type,
+                    target_id=target_id,
+                    request_id="audit-business-scope-test",
+                    created_at=now,
+                ),
+                AuditLog(
+                    action="project.create",
+                    target_type=target_type,
+                    target_id=target_id,
+                    request_id="audit-business-scope-test",
+                    created_at=now,
+                ),
+            ]
+        )
+        await db_session.commit()
+
+        r = await httpx_client.get(
+            (
+                "/api/v1/audit-logs"
+                f"?target_type={target_type}&business_only=true&page_size=50"
+            ),
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["total"] == 1
+        assert [item["action"] for item in data["items"]] == ["project.create"]
+
     async def test_pagination(self, httpx_client, auth_headers):
         """分页参数生效。"""
         r = await httpx_client.get(
@@ -47,7 +90,6 @@ class TestAuditAutoRecord:
         )
         assert r.status_code == 200
 
-        from app.db.models.audit_log import AuditLog
         from sqlalchemy import select
 
         result = await db_session.execute(

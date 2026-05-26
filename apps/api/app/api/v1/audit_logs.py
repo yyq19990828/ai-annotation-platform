@@ -32,6 +32,7 @@ def _build_base_query(
     actor_id: str | None,
     from_: datetime | None,
     to: datetime | None,
+    business_only: bool = False,
     detail_key: str | None = None,
     detail_value: str | None = None,
 ):
@@ -62,6 +63,9 @@ def _build_base_query(
     if to:
         base = base.where(AuditLog.created_at <= to)
         count_base = count_base.where(AuditLog.created_at <= to)
+    if business_only:
+        base = base.where(~AuditLog.action.like("http.%"))
+        count_base = count_base.where(~AuditLog.action.like("http.%"))
     if detail_key and detail_value is not None:
         # JSONB 子集匹配 —— 走 GIN 索引（仅 PG）；测试态 SQLite 走通用 contains
         match = {detail_key: detail_value}
@@ -101,6 +105,9 @@ async def list_audit_logs(
     actor_id: str | None = None,
     from_: datetime | None = Query(None, alias="from"),
     to: datetime | None = None,
+    business_only: bool = Query(
+        False, description="仅返回业务事件，排除 http.* 中间件元数据行"
+    ),
     detail_key: str | None = Query(
         None, description="A.3：detail_json 字段级过滤——键名"
     ),
@@ -111,7 +118,15 @@ async def list_audit_logs(
     _: User = Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)),
 ):
     base, count_q = _build_base_query(
-        action, target_type, target_id, actor_id, from_, to, detail_key, detail_value
+        action,
+        target_type,
+        target_id,
+        actor_id,
+        from_,
+        to,
+        business_only,
+        detail_key,
+        detail_value,
     )
 
     total = (await db.execute(count_q)).scalar_one()
@@ -197,6 +212,9 @@ async def export_audit_logs(
     actor_id: str | None = None,
     from_: datetime | None = Query(None, alias="from"),
     to: datetime | None = None,
+    business_only: bool = Query(
+        False, description="仅导出业务事件，排除 http.* 中间件元数据行"
+    ),
     detail_key: str | None = Query(None),
     detail_value: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -204,7 +222,15 @@ async def export_audit_logs(
 ):
     _MAX_ROWS = 50_000
     base, count_q = _build_base_query(
-        action, target_type, target_id, actor_id, from_, to, detail_key, detail_value
+        action,
+        target_type,
+        target_id,
+        actor_id,
+        from_,
+        to,
+        business_only,
+        detail_key,
+        detail_value,
     )
 
     total = (await db.execute(count_q)).scalar_one()
@@ -237,6 +263,7 @@ async def export_audit_logs(
             "actor_id": actor_id,
             "from": from_.isoformat() if from_ else None,
             "to": to.isoformat() if to else None,
+            "business_only": business_only if business_only else None,
             "detail_key": detail_key,
             "detail_value": detail_value,
         }.items()
