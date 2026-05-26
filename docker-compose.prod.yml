@@ -1,0 +1,44 @@
+# 线上叠加文件 · 仅生产使用，把 api / web 以容器形态加到 docker-compose.yml 之上。
+#
+#   生产：docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#   开发：docker compose up -d            # 不带本文件 → 只起基础设施，api/web 仍跑宿主机
+#
+# 应用配置统一来自 .env.production（基于 .env.example 复制、逐项审过；已被 .gitignore 忽略，
+# ENVIRONMENT=production 时 SECRET_KEY / CORS_ALLOW_ORIGINS / MINIO_SECRET_KEY 等必填，
+# 否则启动断言失败 —— 见 docs-site/dev/concepts/runtime-environments.md）。
+# 注：前端不读 VITE_API_URL，调用硬编码同源 /api/v1，由 web 容器内 nginx 反代到 api:8000，
+# 故 web 镜像无需 build arg。
+services:
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    # entrypoint.sh 启动时自动 alembic upgrade head，再跑 Dockerfile CMD 的 uvicorn。
+    env_file:
+      - .env.production
+    ports:
+      - "8080:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.web
+    # 容器内 nginx 监听 80：托管静态产物 + 反代 /api/ /ws/ 到 api:8000。
+    # 宿主端口 8088 避开 dev 前端 3000 与 grafana 3001；生产由外层反代 (nginx/Caddy) 终结 TLS 指向它。
+    ports:
+      - "8088:80"
+    depends_on:
+      api:
+        condition: service_healthy

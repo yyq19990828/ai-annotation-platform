@@ -129,6 +129,7 @@ K8s 化目前**没有计划**——compose 已能覆盖到形态三，迁移成�
 
 ## 相关
 
+- [运行环境形态（dev/staging/prod）](./runtime-environments)（同一套代码在三种环境的运行差异）
 - [ADR 0012 — SAM Backend 独立 GPU 服务](../adr/0012-sam-backend-as-independent-gpu-service)
 - [部署指南](/ops/deploy/docker-compose)（运维细则）
 - [容器网络与 loopback 限制](../troubleshooting/container-networking)

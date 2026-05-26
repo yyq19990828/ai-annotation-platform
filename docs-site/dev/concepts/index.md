@@ -82,6 +82,8 @@
   哪些容器，各自职责，容器间网络
 - [部署拓扑](./deployment-topology)：
   生产环境的网络拓扑与服务边界
+- [运行环境形态（dev/staging/prod）](./runtime-environments)：
+  同一套代码在三种环境下的运行差异（谁进容器 / profile / ENVIRONMENT 断言）
 - [性能 HUD](./perfhud)：
   开发期内置性能面板的原理与使用
 

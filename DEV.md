@@ -256,6 +256,8 @@ uv run --project apps/_shared/mask_utils python scripts/eval_simplify.py \
 
 ## 部署
 
+> 开发态 / staging / 生产态的整体差异（谁进容器、profile、`ENVIRONMENT` 断言行为）见概念页 [运行环境形态](docs-site/dev/concepts/runtime-environments.md)；逐项环境变量与运维细则见 [部署指南](docs-site/ops/deploy/docker-compose.md)。
+
 ### 开发环境
 
 ```bash
@@ -264,16 +266,19 @@ pnpm dev:web             # 前端 :3000
 pnpm dev:api             # 后端 :8000
 ```
 
-### 生产构建
+### 生产（api/web 进容器）
 
 ```bash
-# 前端
-pnpm --filter @anno/web build    # 输出到 apps/web/dist/
+# 1. 准备生产配置：复制 .env.example → .env.production，逐项审过
+#    （ENVIRONMENT=production 下 SECRET_KEY / CORS_ALLOW_ORIGINS / MINIO_SECRET_KEY 等必填）
+cp .env.example .env.production
 
-# Docker 镜像
-docker build -f infra/docker/Dockerfile.web -t anno-web .
-docker build -f infra/docker/Dockerfile.api -t anno-api apps/api/
+# 2. 叠加 prod 文件，基础设施 + api/web 容器一起拉起
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
+
+> 开发态不带 `-f docker-compose.prod.yml`，api/web 仍跑宿主机。
+> 单独构建镜像：`docker build -f infra/docker/Dockerfile.web -t anno-web .` / `docker build -f infra/docker/Dockerfile.api -t anno-api apps/api/`。
 
 ## 测试与文档
 

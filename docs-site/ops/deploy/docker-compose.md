@@ -11,6 +11,8 @@ last_reviewed: 2026-05-09
 > 适用读者：第一次把平台搬到 staging / production 的运维或开发者。
 >
 > 当前部署形态：API + Web 进程式跑（Node + Python），基础设施（PG / Redis / MinIO / Celery）走 docker-compose。完整 K8s / Terraform 模板暂未维护。
+>
+> 想先理解开发态 / staging / 生产态的整体差异（谁进容器、profile、`ENVIRONMENT` 断言行为），先读[运行环境形态](/dev/concepts/runtime-environments)。
 
 ---
 

@@ -257,6 +257,7 @@ export default withMermaid(defineConfig({
                 { text: "API Schema 边界", link: "/dev/concepts/api-schema-boundary" },
                 { text: "后端基础设施（容器）", link: "/dev/concepts/backend-infrastructure" },
                 { text: "部署拓扑", link: "/dev/concepts/deployment-topology" },
+                { text: "运行环境形态（dev/staging/prod）", link: "/dev/concepts/runtime-environments" },
                 { text: "性能 HUD", link: "/dev/concepts/perfhud" },
               ],
             },
