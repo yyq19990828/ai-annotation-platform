@@ -85,7 +85,7 @@ export function Sidebar({ reviewCount }: SidebarProps) {
           </div>
           {sec.items.map((item) => (
             <NavLink
-              key={item.key}
+              key={item.path}
               to={item.path}
               className={({ isActive }) => clsx(styles.navItem, isActive && styles.navItemActive)}
             >

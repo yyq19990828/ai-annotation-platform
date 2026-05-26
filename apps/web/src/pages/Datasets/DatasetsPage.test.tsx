@@ -129,12 +129,12 @@ describe("DatasetsPage", () => {
     expect(screen.getByText("文件总量")).toBeInTheDocument();
   });
 
-  it("点击「新建数据集」按钮 → 显示创建表单", () => {
+  it("点击「新建数据集」按钮 → 弹出新建+上传向导", () => {
     mockUseDatasets.mockReturnValue({ data: { items: [], total: 0 }, isLoading: false });
     renderUI();
-    expect(screen.queryByText("新建数据集", { selector: "h3" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("import-wizard")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /新建数据集/ }));
-    expect(screen.getByText("新建数据集", { selector: "h3" })).toBeInTheDocument();
+    expect(screen.getByTestId("import-wizard")).toBeInTheDocument();
   });
 
   it("搜索框输入后 query 传入 useDatasets", () => {

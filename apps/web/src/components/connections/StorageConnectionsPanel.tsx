@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
 import { useToastStore } from "@/components/ui/Toast";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
@@ -394,7 +395,15 @@ export function StorageConnectionForm({
   );
 }
 
-export function StorageConnectionsPanel() {
+export function StorageConnectionsPanel({
+  showForm: showFormProp,
+  onShowFormChange,
+  hideHeaderAction = false,
+}: {
+  showForm?: boolean;
+  onShowFormChange?: (open: boolean) => void;
+  hideHeaderAction?: boolean;
+} = {}) {
   const { role } = usePermissions();
   const isSuper = role === "super_admin";
   const canManage = isSuper || role === "project_admin";
@@ -404,7 +413,9 @@ export function StorageConnectionsPanel() {
   const updateMutation = useUpdateStorageConnection();
   const deleteMutation = useDeleteStorageConnection();
   const testMutation = useTestStorageConnection();
-  const [showForm, setShowForm] = useState(false);
+  const [showFormLocal, setShowFormLocal] = useState(false);
+  const showForm = showFormProp ?? showFormLocal;
+  const setShowForm = onShowFormChange ?? setShowFormLocal;
   const [editing, setEditing] = useState<StorageConnection | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, StorageConnectionTestResult>>({});
@@ -463,33 +474,44 @@ export function StorageConnectionsPanel() {
           <h3 className={styles.title}>数据源连接器</h3>
           <div className={styles.subtitle}>S3 / OSS / SFTP</div>
         </div>
-        {canManage && (
+        {canManage && !hideHeaderAction && (
           <Button
             size="sm"
-            variant={showForm ? "default" : "primary"}
+            variant="primary"
             onClick={() => {
               setEditing(null);
-              setShowForm((value) => !value);
+              setShowForm(true);
             }}
           >
-            <Icon name={showForm ? "x" : "plus"} size={12} />
-            {showForm ? "收起" : "新建连接器"}
+            <Icon name="plus" size={12} />
+            新建数据源
           </Button>
         )}
       </div>
 
-      {canManage && showForm && (
-        <StorageConnectionForm
-          key={editing?.id ?? "new"}
-          connection={editing}
-          isSuper={isSuper}
-          submitting={createMutation.isPending || updateMutation.isPending}
-          onSubmit={submitConnection}
-          onCancel={() => {
+      {canManage && (
+        <Modal
+          open={showForm}
+          onClose={() => {
             setEditing(null);
             setShowForm(false);
           }}
-        />
+          title={editing ? "编辑数据源" : "新建数据源"}
+          width={640}
+        >
+          <StorageConnectionForm
+            key={editing?.id ?? "new"}
+            connection={editing}
+            isSuper={isSuper}
+            submitLabel={editing ? "保存" : "新建数据源"}
+            submitting={createMutation.isPending || updateMutation.isPending}
+            onSubmit={submitConnection}
+            onCancel={() => {
+              setEditing(null);
+              setShowForm(false);
+            }}
+          />
+        </Modal>
       )}
 
       <div className={styles.list}>
