@@ -21,6 +21,8 @@ from app.schemas.dataset import (
     DatasetLinkRequest,
     DatasetUploadInitRequest,
     DatasetUploadInitResponse,
+    DatasetImportFromConnectionRequest,
+    DatasetImportFromConnectionResponse,
 )
 from app.schemas.project import ProjectOut
 from app.services.audit import AuditAction, AuditService
@@ -126,6 +128,95 @@ async def list_dataset_items(
         raise HTTPException(status_code=404, detail="Dataset not found")
     items, total = await svc.list_items(dataset_id, limit=limit, offset=offset)
     return DatasetItemListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.post(
+    "/{dataset_id}/import-from-connection",
+    response_model=DatasetImportFromConnectionResponse,
+    status_code=202,
+)
+async def import_from_connection(
+    dataset_id: uuid.UUID,
+    payload: DatasetImportFromConnectionRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_MANAGERS)),
+):
+    from app.db.models.async_job import AsyncJobKind
+    from app.services import async_job as async_job_svc
+    from app.services import connector_guard
+    from app.services.sources import SourcePathError, validate_source_path
+    from app.services.storage_connection import (
+        ConnectorAccessDenied,
+        StorageConnectionService,
+        assert_connection_usable,
+        target_host,
+    )
+    from app.workers.dataset_import import run_dataset_import
+
+    svc = DatasetService(db)
+    ds = await svc.get(dataset_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    conn = await StorageConnectionService.get(db, payload.connection_id)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="连接器不存在")
+    try:
+        assert_connection_usable(current_user, conn)
+    except ConnectorAccessDenied:
+        raise HTTPException(status_code=404, detail="连接器不存在")
+    try:
+        await connector_guard.assert_connection_target_allowed(db, target_host(conn))
+        validate_source_path(conn, payload.source_path)
+    except connector_guard.ConnectorHostDenied as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except SourcePathError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    clean_globs = [
+        pattern.strip()
+        for pattern in (payload.include_globs or [])
+        if pattern and pattern.strip()
+    ]
+    job = await async_job_svc.create_job(
+        db,
+        kind=AsyncJobKind.DATASET_IMPORT.value,
+        user_id=current_user.id,
+        payload={
+            "dataset_id": str(dataset_id),
+            "dataset_display_id": ds.display_id,
+            "dataset_name": ds.name,
+            "connection_id": str(conn.id),
+            "connection_name": conn.name,
+            "connection_kind": conn.kind,
+            "source_path": payload.source_path,
+            "recursive": payload.recursive,
+            "include_globs": clean_globs,
+        },
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.DATASET_IMPORT,
+        target_type="dataset",
+        target_id=str(dataset_id),
+        request=request,
+        status_code=202,
+        detail={
+            "connection_id": str(conn.id),
+            "connection_kind": conn.kind,
+            "source_path": payload.source_path,
+            "recursive": payload.recursive,
+            "include_globs": clean_globs,
+        },
+    )
+    await db.commit()
+
+    task = run_dataset_import.delay(str(job.id))
+    job.celery_task_id = task.id
+    await db.commit()
+    return DatasetImportFromConnectionResponse(job_id=job.id)
 
 
 @router.post(
@@ -414,25 +505,17 @@ async def scan_items(
     ds = await svc.get(dataset_id)
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    new_ids = await svc.scan_and_import(dataset_id)
-    linked_tasks = await svc.create_tasks_for_items(dataset_id, new_ids)
+    outcomes = await svc.scan_and_import(dataset_id)
+    new_ids = [
+        outcome.item_id
+        for outcome in outcomes
+        if outcome.status == "added" and outcome.item_id is not None
+    ]
+    linked_tasks = sum(outcome.linked_tasks for outcome in outcomes)
     await db.commit()
 
     if new_ids:
-        from app.db.models.dataset import DatasetItem
-        from app.workers.media import generate_thumbnail, generate_video_metadata
-
-        item_rows = await db.execute(
-            select(DatasetItem.id, DatasetItem.file_type).where(
-                DatasetItem.id.in_(new_ids)
-            )
-        )
-
-        for iid, file_type in item_rows:
-            if file_type == "image":
-                generate_thumbnail.delay(str(iid))
-            elif file_type == "video":
-                generate_video_metadata.delay(str(iid))
+        await svc.enqueue_media_for_items(new_ids)
 
     return {"status": "ok", "new_items": len(new_ids), "linked_tasks": linked_tasks}
 
@@ -557,7 +640,7 @@ async def preview_unlink_project(
     """v0.6.7 B-10 v2：取消关联前的预览数字（will be deleted）。前端拿来做二次确认文案。
     v0.7.3：补 will_delete_batches —— 与 service 层一致：失去 task 后变空壳的 batch（B-DEFAULT 除外）。
     """
-    from sqlalchemy import select, func
+    from sqlalchemy import func
     from app.db.models.dataset import DatasetItem
     from app.db.models.task import Task
     from app.db.models.annotation import Annotation

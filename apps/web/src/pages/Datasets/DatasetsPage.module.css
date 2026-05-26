@@ -24,6 +24,10 @@
   font-size: 13px;
 }
 
+.pageTabs {
+  margin-bottom: 20px;
+}
+
 .statsGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -357,75 +361,25 @@
   font-size: 12px;
 }
 
-.textInput,
-.textarea,
 .confirmInput {
   box-sizing: border-box;
   width: 100%;
-  padding: 8px 10px;
+  padding: 7px 10px;
   font-family: inherit;
   font-size: 13px;
-  background: var(--color-bg-elev);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.confirmInput {
-  padding: 7px 10px;
   color: var(--color-fg);
   background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
 }
 
 .confirmInputReady {
   border-color: var(--color-success);
 }
 
-.textarea {
-  resize: vertical;
-}
-
-.modalActions,
-.formActions {
+.modalActions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.modalActions {
   margin-top: 16px;
-}
-
-.createCard {
-  margin-bottom: 16px;
-  background: var(--color-bg-elev);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-}
-
-.createCardBody {
-  padding: 16px;
-}
-
-.createTitle {
-  margin: 0 0 12px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.formStack {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.formLabel {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--color-fg-muted);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.formActions {
-  margin-top: 4px;
 }

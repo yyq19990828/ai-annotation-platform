@@ -24,6 +24,47 @@
 
 ## 最新版本
 
+## [0.11.17] - 2026-05-26
+
+> **后台任务浮层清理。** `JobsBell` 浮层新增 `全部 / 进行中` 筛选与终态任务本地 dismiss，缓解连接器导入等新任务进入后浮层被终态历史挤占的问题。纯前端显示层，不触后端、不删除任何 job。
+
+### Added
+
+- **任务浮层筛选与清理**: `JobsBell` 顶部新增 `全部 / 进行中` 分段筛选，并支持对 `completed / failed / cancelled` 任务单条 ✕ 隐藏或「清空已结束」批量隐藏；选择与隐藏集合持久化到 `localStorage`。`pending / running` 永不隐藏，dismiss 仅影响本地显示、不调任何删除接口，完整历史仍走 `/ai-pre/jobs`。隐藏集合按当前轮询窗口收敛，避免 `localStorage` 无限增长。→ [plan](docs/plans/2026-05-26-v0.11.17-jobsbell-filter-dismiss.md)
+
+## [0.11.16] - 2026-05-26
+
+> **数据集导入能力扩展 · 连接器前端入口（切片 3/3）。** `/datasets` 现在可管理数据源连接器，并在导入向导中直接选择 S3/OSS 或 SFTP 连接器提交异步导入任务；连接器权限语义从项目级收敛为 owner-scope。
+
+### Added
+
+- **数据集页连接器管理**: 新增 `/datasets` 内的数据源连接器面板，支持创建、编辑、删除、连通性测试 S3/OSS 与 SFTP 连接器；非超管创建的连接器默认归属创建者，超管仍可创建全局连接器。→ [plan](docs/plans/2026-05-26-v0.11.16-connector-frontend.md)
+- **导入向导连接器模式**: `ImportDatasetWizard` 在多文件与 ZIP 之外新增「连接器导入」，可选择连接器、填写 `source_path`、递归扫描与 `include_globs`，提交后轮询 `AsyncJob(kind="dataset_import")` 进度与结果。
+
+### Changed
+
+- **连接器权限 owner-scope 化**: `StorageScope` 从 `project` 调整为 `owner`；列表对普通用户只返回全局连接器与本人创建的连接器，测试与导入统一走 `assert_connection_usable(user, conn)`。历史 `project_id` 列保留但新连接器不再写入。
+
+## [0.11.15] - 2026-05-26
+
+> **数据集导入能力扩展 · SourceAdapter + 异步导入（切片 2/3）。** 连接器现在可经 HTTP API 端到端导入数据集：外部 S3/OSS 或 SFTP 路径由 Celery job 流式复制到 `minio-datasets`，复用 DatasetItem/Task/媒体派生管线，并可通过 `async_jobs` 轮询与取消。
+
+### Added
+
+- **SourceAdapter + S3/SFTP 拉取实现**: 新增 `SourceAdapter` 抽象及 `S3CompatibleSource` / `SftpSource`，导入前复检连接器主机白名单并限制 `source_path` 必须位于连接器 `base_prefix` / `base_path` 内，支持递归扫描与 `include_globs` 过滤。→ [plan](docs/plans/2026-05-26-v0.11.15-adapter-and-import-job.md)
+- **异步数据集导入 API**: 新增 `POST /api/v1/datasets/{id}/import-from-connection`，创建 `AsyncJob(kind="dataset_import")` 后由 Celery 后台执行；job payload 只保存连接器 ID、数据集 ID、路径与过滤条件，不保存明文密钥。
+- **流式入库复用管线**: `DatasetService.ingest_one()` 分块写入 `minio-datasets`，同步计算 content hash，重复内容跳过并清理临时对象；新增文件会生成 DatasetItem、为已关联项目补 Task，并派发缩略图 / 视频元数据任务。
+
+## [0.11.14] - 2026-05-26
+
+> **数据集导入能力扩展 · 存储连接器基建（切片 1/3）。** 为"服务端主动拉取"类导入（外部 S3/OSS + SFTP/SSH）打地基：可复用、密钥加密落库、受超管主机白名单约束的存储连接器。本版仅含连接器管理与连通性测试，实际导入在后续切片。
+
+### Added
+
+- **存储连接器 CRUD + 连通性测试**: 新增 `storage_connections` 表与 `/api/v1/storage-connections` 端点（list/create/get/patch/delete/test）。支持 `s3`（外部对象存储）与 `sftp`（宿主机 & 同网段服务器）两类。超管可建 global-scope，项目负责人可建归属己项目的 project-scope。→ [plan](docs/plans/2026-05-26-v0.11.14-connector-foundation.md)
+- **连接器主机白名单（SSRF 防护）**: 新增 `GET/PUT /api/v1/storage-connections/allowlist`（仅超管）。连接器创建 / 测试 / 导入入口统一过白名单 + SSRF 校验：DNS 解析为真实 IP 后逐个判定，永久拒绝 loopback / link-local（含云元数据 169.254.169.254），内网地址须经白名单 CIDR 显式放行，缓解 DNS rebinding。
+- **凭据 Fernet 加密**: 连接器密钥（AK/SK、SSH 密码 / 私钥）经新环境变量 `CONNECTOR_ENCRYPTION_KEY`（与 `SECRET_KEY` 隔离）Fernet 加密落库，API 永不回吐明文（仅 `secret_set:bool`）；未配置时连接器加解密一律拒绝（返回 503）。
+
 ## [0.11.13] - 2026-05-26
 
 > **类别 / 属性孤儿数据治理。** 删除类别或属性前展示受影响标注数；工作台可隐藏孤儿标注；导出跳过孤儿类别并收敛属性；新增 owner/superadmin cleanup 端点。

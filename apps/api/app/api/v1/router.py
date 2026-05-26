@@ -30,6 +30,7 @@ from app.api.v1 import (
     project_templates,
     search,
     storage,
+    storage_connections,
     system_settings,
     tasks,
     users,
@@ -89,6 +90,11 @@ api_router.include_router(
 api_router.include_router(files.router, prefix="/files", tags=["files"])
 api_router.include_router(datasets.router, prefix="/datasets", tags=["datasets"])
 api_router.include_router(storage.router, prefix="/storage", tags=["storage"])
+api_router.include_router(
+    storage_connections.router,
+    prefix="/storage-connections",
+    tags=["storage-connections"],
+)
 api_router.include_router(audit_logs.router, prefix="/audit-logs", tags=["audit"])
 api_router.include_router(system_settings.router, prefix="/settings", tags=["settings"])
 api_router.include_router(

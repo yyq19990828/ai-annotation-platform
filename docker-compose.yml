@@ -80,11 +80,15 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
+      CONNECTOR_ENCRYPTION_KEY: ${CONNECTOR_ENCRYPTION_KEY:-}
+      CONNECTOR_HOST_ALLOWLIST: ${CONNECTOR_HOST_ALLOWLIST:-}
       # v0.10.16 · DuckDB 离线分析视图 (ROADMAP §1.6); host ./data/duckdb 挂到容器 /var/lib/duckdb
       DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
     volumes:
       # v0.10.16 · DuckDB 文件 bind mount, worker 写 / API 跑 host 时只读
       - ./data/duckdb:/var/lib/duckdb
+      # v0.11.16 · Paramiko RejectPolicy 需要预置信任的 SFTP host key；本地文件 gitignored。
+      - ./config/ssh/known_hosts:/root/.ssh/known_hosts:ro
       # v0.10.25 · dev 源码热挂载: 改 worker 业务码 / 加 alembic 迁移只需 docker restart, 不必 rebuild。
       # deps 装在 --system site-packages (见 Dockerfile.api), 不在 /app 下, 挂 /app 不盖依赖;
       # 匿名卷屏蔽 host 的 apps/api/.venv 避免泄入容器。Celery 无 --reload, 改码后仍需 restart。

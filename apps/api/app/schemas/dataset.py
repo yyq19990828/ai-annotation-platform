@@ -78,3 +78,14 @@ class DatasetUploadInitResponse(BaseModel):
     item_id: UUID
     upload_url: str
     expires_in: int
+
+
+class DatasetImportFromConnectionRequest(BaseModel):
+    connection_id: UUID
+    source_path: str = ""
+    recursive: bool = True
+    include_globs: list[str] | None = None
+
+
+class DatasetImportFromConnectionResponse(BaseModel):
+    job_id: UUID

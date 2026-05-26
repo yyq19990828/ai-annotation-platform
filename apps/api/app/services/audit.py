@@ -30,6 +30,13 @@ class AuditAction(str, Enum):
     DATASET_DELETE = "dataset.delete"
     DATASET_LINK = "dataset.link"
     DATASET_UNLINK = "dataset.unlink"
+    DATASET_IMPORT = "dataset.import"
+    # v0.11.14 · 存储连接器（服务端拉取导入）
+    STORAGE_CONNECTION_CREATE = "storage_connection.create"
+    STORAGE_CONNECTION_UPDATE = "storage_connection.update"
+    STORAGE_CONNECTION_DELETE = "storage_connection.delete"
+    STORAGE_CONNECTION_TEST = "storage_connection.test"
+    CONNECTOR_ALLOWLIST_UPDATE = "connector.allowlist_update"
     SYSTEM_BOOTSTRAP_ADMIN = "system.bootstrap_admin"
     BUG_REPORT_CREATED = "bug_report.created"
     BUG_REPORT_STATUS_CHANGED = "bug_report.status_changed"

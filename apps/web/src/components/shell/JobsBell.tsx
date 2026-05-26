@@ -15,12 +15,59 @@ import styles from "./JobsBell.module.css";
 
 const POLL_INTERVAL_MS = 5000;
 
+// v0.11.17 · 浮层显示层（纯前端，不触后端 / 不调删除接口）。
+const FILTER_KEY = "wb:jobsbell:filter";
+const DISMISSED_KEY = "wb:jobsbell:dismissed";
+
+type JobFilter = "all" | "active";
+
+const TERMINAL_STATUSES: AsyncJobStatus[] = ["completed", "failed", "cancelled"];
+const isTerminal = (s: AsyncJobStatus) => TERMINAL_STATUSES.includes(s);
+
+function readFilter(): JobFilter {
+  try {
+    return localStorage.getItem(FILTER_KEY) === "active" ? "active" : "all";
+  } catch {
+    return "all";
+  }
+}
+
+function persistFilter(filter: JobFilter) {
+  try {
+    localStorage.setItem(FILTER_KEY, filter);
+  } catch {
+    /* localStorage 不可用时忽略，显示退回默认 */
+  }
+}
+
+function readDismissed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DISMISSED_KEY);
+    if (!raw) return new Set();
+    const arr: unknown = JSON.parse(raw);
+    return Array.isArray(arr)
+      ? new Set(arr.filter((x): x is string => typeof x === "string"))
+      : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function persistDismissed(set: Set<string>) {
+  try {
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...set]));
+  } catch {
+    /* localStorage 不可用时忽略 */
+  }
+}
+
 const KIND_LABEL: Record<string, string> = {
   batch_predict: "批量预标",
   video_tracker: "视频追踪",
   audit_archive: "审计分区归档",
   predictions_import: "预测导入",
   prediction_retry: "失败预测重试",
+  dataset_import: "数据集导入",
   export: "数据导出",
 };
 
@@ -85,7 +132,13 @@ function StatusPill({ status }: { status: AsyncJobStatus }) {
   );
 }
 
-function JobRow({ job }: { job: AsyncJob }) {
+function JobRow({
+  job,
+  onDismiss,
+}: {
+  job: AsyncJob;
+  onDismiss?: (id: string) => void;
+}) {
   const kindLabel = KIND_LABEL[job.kind] ?? job.kind;
   const pct = Math.max(0, Math.min(100, job.progress_pct));
   // v0.10.27 · 导出完成后的下载链接（预签名 URL，7 天内可反复点）。
@@ -94,6 +147,8 @@ function JobRow({ job }: { job: AsyncJob }) {
       ? exportDownloadUrl(job.result)
       : null;
   const detail = jobDetail(job);
+  // v0.11.17 · 仅终态任务可单条本地 dismiss；进行中永不可隐藏。
+  const canDismiss = onDismiss && isTerminal(job.status);
   return (
     <div className={styles.jobRow} data-testid={`job-row-${job.id}`}>
       <div className={styles.jobHeader}>
@@ -101,7 +156,21 @@ function JobRow({ job }: { job: AsyncJob }) {
           {kindLabel}
           {detail && <span className={styles.jobDetail}> · {detail}</span>}
         </span>
-        <StatusPill status={job.status} />
+        <div className={styles.jobHeaderRight}>
+          <StatusPill status={job.status} />
+          {canDismiss && (
+            <button
+              type="button"
+              onClick={() => onDismiss(job.id)}
+              className={styles.dismissBtn}
+              title="从列表隐藏（不影响历史记录）"
+              aria-label="隐藏此任务"
+              data-testid={`job-dismiss-${job.id}`}
+            >
+              <Icon name="x" size={12} />
+            </button>
+          )}
+        </div>
       </div>
       <ProgressBar pct={pct} status={job.status} />
       <div className={styles.jobMeta}>
@@ -143,6 +212,63 @@ export function JobsBell() {
     [jobs],
   );
 
+  const [filter, setFilter] = useState<JobFilter>(readFilter);
+  const [dismissed, setDismissed] = useState<Set<string>>(readDismissed);
+
+  const changeFilter = (next: JobFilter) => {
+    setFilter(next);
+    persistFilter(next);
+  };
+
+  // 终态任务才进 dismiss 集合；进行中无 dismiss 入口，集合永不含其 id。
+  const dismissOne = (id: string) => {
+    setDismissed((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev).add(id);
+      persistDismissed(next);
+      return next;
+    });
+  };
+
+  // dismiss 集合收敛：轮询窗口只回最近 20 条，已滑出窗口的 dismiss id 既不会再渲染、
+  // 又会让 localStorage 无限增长，故每次窗口更新后用当前 id 集合求交集裁剪。
+  // 守卫 data：loading 态 jobs 为空，若此时收敛会把整个集合误清空。
+  useEffect(() => {
+    if (!data) return;
+    setDismissed((prev) => {
+      if (prev.size === 0) return prev;
+      const windowIds = new Set(jobs.map((j) => j.id));
+      const next = new Set([...prev].filter((id) => windowIds.has(id)));
+      if (next.size === prev.size) return prev;
+      persistDismissed(next);
+      return next;
+    });
+  }, [data, jobs]);
+
+  // 渲染列表：先按 filter 过滤，再剔除已 dismiss 的终态项（进行中永不隐藏）。
+  const visibleJobs = useMemo(() => {
+    return jobs.filter((j) => {
+      if (filter === "active" && isTerminal(j.status)) return false;
+      if (isTerminal(j.status) && dismissed.has(j.id)) return false;
+      return true;
+    });
+  }, [jobs, filter, dismissed]);
+
+  const visibleTerminalIds = useMemo(
+    () => visibleJobs.filter((j) => isTerminal(j.status)).map((j) => j.id),
+    [visibleJobs],
+  );
+
+  const dismissAllTerminal = () => {
+    if (visibleTerminalIds.length === 0) return;
+    setDismissed((prev) => {
+      const next = new Set(prev);
+      visibleTerminalIds.forEach((id) => next.add(id));
+      persistDismissed(next);
+      return next;
+    });
+  };
+
   return (
     <div className={styles.root}>
       <button
@@ -169,11 +295,53 @@ export function JobsBell() {
             <div className={styles.panelTitle}>
               <span>后台任务 {runningCount > 0 ? `(${runningCount} 进行中)` : ""}</span>
             </div>
+            <div className={styles.toolbar}>
+              <div
+                role="tablist"
+                aria-label="任务筛选"
+                className={styles.segmented}
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={filter === "all"}
+                  onClick={() => changeFilter("all")}
+                  className={`${styles.segItem} ${filter === "all" ? styles.segItemActive : ""}`}
+                  data-testid="jobs-bell-filter-all"
+                >
+                  全部
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={filter === "active"}
+                  onClick={() => changeFilter("active")}
+                  className={`${styles.segItem} ${filter === "active" ? styles.segItemActive : ""}`}
+                  data-testid="jobs-bell-filter-active"
+                >
+                  进行中
+                </button>
+              </div>
+              {visibleTerminalIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={dismissAllTerminal}
+                  className={styles.clearBtn}
+                  data-testid="jobs-bell-clear-terminal"
+                >
+                  清空已结束
+                </button>
+              )}
+            </div>
             <div className={styles.list}>
-              {jobs.length === 0 ? (
-                <div className={styles.empty}>暂无后台任务</div>
+              {visibleJobs.length === 0 ? (
+                <div className={styles.empty}>
+                  {filter === "active" ? "暂无进行中任务" : "暂无后台任务"}
+                </div>
               ) : (
-                jobs.map((j) => <JobRow key={j.id} job={j} />)
+                visibleJobs.map((j) => (
+                  <JobRow key={j.id} job={j} onDismiss={dismissOne} />
+                ))
               )}
             </div>
           </div>

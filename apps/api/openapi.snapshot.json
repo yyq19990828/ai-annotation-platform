@@ -5529,6 +5529,35 @@
         "title": "CommentAttachmentUploadInitResponse",
         "type": "object"
       },
+      "ConnectorAllowlistOut": {
+        "properties": {
+          "entries": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "title": "ConnectorAllowlistOut",
+        "type": "object"
+      },
+      "ConnectorAllowlistUpdate": {
+        "properties": {
+          "entries": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "title": "ConnectorAllowlistUpdate",
+        "type": "object"
+      },
       "DatasetCreate": {
         "properties": {
           "data_type": {
@@ -5550,6 +5579,58 @@
           "name"
         ],
         "title": "DatasetCreate",
+        "type": "object"
+      },
+      "DatasetImportFromConnectionRequest": {
+        "properties": {
+          "connection_id": {
+            "format": "uuid",
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "include_globs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Include Globs"
+          },
+          "recursive": {
+            "default": true,
+            "title": "Recursive",
+            "type": "boolean"
+          },
+          "source_path": {
+            "default": "",
+            "title": "Source Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection_id"
+        ],
+        "title": "DatasetImportFromConnectionRequest",
+        "type": "object"
+      },
+      "DatasetImportFromConnectionResponse": {
+        "properties": {
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "DatasetImportFromConnectionResponse",
         "type": "object"
       },
       "DatasetItemListResponse": {
@@ -11507,6 +11588,221 @@
         "title": "SmtpStatus",
         "type": "object"
       },
+      "StorageConnectionCreate": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "s3",
+              "sftp"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "scope": {
+            "default": "owner",
+            "enum": [
+              "global",
+              "owner"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "secret": {
+            "additionalProperties": true,
+            "title": "Secret",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "config",
+          "secret"
+        ],
+        "title": "StorageConnectionCreate",
+        "type": "object"
+      },
+      "StorageConnectionOut": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "s3",
+              "sftp"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "scope": {
+            "enum": [
+              "global",
+              "owner"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "secret_set": {
+            "title": "Secret Set",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "config",
+          "scope",
+          "project_id",
+          "secret_set",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "StorageConnectionOut",
+        "type": "object"
+      },
+      "StorageConnectionTestResult": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "sample_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Count"
+          }
+        },
+        "required": [
+          "ok",
+          "message"
+        ],
+        "title": "StorageConnectionTestResult",
+        "type": "object"
+      },
+      "StorageConnectionUpdate": {
+        "properties": {
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret"
+          }
+        },
+        "title": "StorageConnectionUpdate",
+        "type": "object"
+      },
       "StorageOverview": {
         "properties": {
           "items": {
@@ -15238,7 +15534,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.10.58"
+    "version": "0.11.17"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -19308,6 +19604,64 @@
           }
         ],
         "summary": "Backfill Media Endpoint",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
+    "/api/v1/datasets/{dataset_id}/import-from-connection": {
+      "post": {
+        "operationId": "import_from_connection_api_v1_datasets__dataset_id__import_from_connection_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetImportFromConnectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetImportFromConnectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Import From Connection",
         "tags": [
           "datasets"
         ]
@@ -25116,6 +25470,341 @@
         "summary": "Test Smtp",
         "tags": [
           "settings"
+        ]
+      }
+    },
+    "/api/v1/storage-connections": {
+      "get": {
+        "operationId": "list_connections_api_v1_storage_connections_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StorageConnectionOut"
+                  },
+                  "title": "Response List Connections Api V1 Storage Connections Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Connections",
+        "tags": [
+          "storage-connections"
+        ]
+      },
+      "post": {
+        "operationId": "create_connection_api_v1_storage_connections_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageConnectionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageConnectionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Connection",
+        "tags": [
+          "storage-connections"
+        ]
+      }
+    },
+    "/api/v1/storage-connections/allowlist": {
+      "get": {
+        "operationId": "get_allowlist_api_v1_storage_connections_allowlist_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorAllowlistOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Allowlist",
+        "tags": [
+          "storage-connections"
+        ]
+      },
+      "put": {
+        "operationId": "update_allowlist_api_v1_storage_connections_allowlist_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorAllowlistUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorAllowlistOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Allowlist",
+        "tags": [
+          "storage-connections"
+        ]
+      }
+    },
+    "/api/v1/storage-connections/{conn_id}": {
+      "delete": {
+        "operationId": "delete_connection_api_v1_storage_connections__conn_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Connection",
+        "tags": [
+          "storage-connections"
+        ]
+      },
+      "get": {
+        "operationId": "get_connection_api_v1_storage_connections__conn_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageConnectionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Connection",
+        "tags": [
+          "storage-connections"
+        ]
+      },
+      "patch": {
+        "operationId": "update_connection_api_v1_storage_connections__conn_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageConnectionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageConnectionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Connection",
+        "tags": [
+          "storage-connections"
+        ]
+      }
+    },
+    "/api/v1/storage-connections/{conn_id}/test": {
+      "post": {
+        "operationId": "test_connection_api_v1_storage_connections__conn_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageConnectionTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Connection",
+        "tags": [
+          "storage-connections"
         ]
       }
     },

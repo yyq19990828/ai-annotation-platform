@@ -9,12 +9,17 @@ import { MemoryRouter } from "react-router-dom";
 
 const mockCreateDatasetMutateAsync = vi.fn();
 const mockCreateDatasetReset = vi.fn();
+const mockImportFromConnectionMutateAsync = vi.fn();
 const mockPushToast = vi.fn();
 
 vi.mock("@/hooks/useDatasets", () => ({
   useCreateDataset: () => ({
     mutateAsync: mockCreateDatasetMutateAsync,
     reset: mockCreateDatasetReset,
+    isPending: false,
+  }),
+  useImportFromConnection: () => ({
+    mutateAsync: mockImportFromConnectionMutateAsync,
     isPending: false,
   }),
 }));
@@ -65,6 +70,7 @@ describe("ImportDatasetWizard", () => {
   beforeEach(() => {
     mockCreateDatasetMutateAsync.mockReset().mockResolvedValue({ id: "ds-new", name: "Test DS" });
     mockCreateDatasetReset.mockReset();
+    mockImportFromConnectionMutateAsync.mockReset();
     mockPushToast.mockReset();
   });
 
@@ -92,7 +98,7 @@ describe("ImportDatasetWizard", () => {
     const nextBtn = screen.getByRole("button", { name: /下一步/ });
     expect(nextBtn).not.toBeDisabled();
     fireEvent.click(nextBtn);
-    expect(screen.getByText("选择文件")).toBeInTheDocument();
+    expect(screen.getByText("选择来源")).toBeInTheDocument();
     // step2 标题: 拖拽文件提示
     expect(screen.getByText(/拖拽文件到此处/)).toBeInTheDocument();
   });

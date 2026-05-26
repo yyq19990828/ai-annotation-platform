@@ -1,5 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { datasetsApi, type DatasetCreatePayload, type DatasetUpdatePayload } from "../api/datasets";
+import {
+  storageConnectionsApi,
+  type DatasetImportFromConnectionPayload,
+} from "@/api/storageConnections";
 
 export function useDatasets(params?: { search?: string; data_type?: string }) {
   return useQuery({
@@ -85,6 +89,23 @@ export function useBackfillMedia(datasetId: string) {
     mutationFn: () => datasetsApi.backfillMedia(datasetId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["dataset-items", datasetId] });
+    },
+  });
+}
+
+export function useImportFromConnection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      datasetId,
+      payload,
+    }: {
+      datasetId: string;
+      payload: DatasetImportFromConnectionPayload;
+    }) =>
+      storageConnectionsApi.importFromConnection(datasetId, payload),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["async-job", res.job_id] });
     },
   });
 }

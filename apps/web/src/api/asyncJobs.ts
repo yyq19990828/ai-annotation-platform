@@ -15,6 +15,7 @@ export type AsyncJobKind =
   | "audit_archive"
   | "predictions_import"
   | "prediction_retry"
+  | "dataset_import"
   | string;
 
 export interface AsyncJob {

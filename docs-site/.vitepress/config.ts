@@ -137,6 +137,7 @@ export default withMermaid(defineConfig({
             { text: "批次与分配", link: "/user-guide/projects/batch" },
             { text: "AI 预标注", link: "/user-guide/projects/ai-preannotate" },
             { text: "ML 后端绑定", link: "/user-guide/projects/ml-backends" },
+            { text: "存储连接器", link: "/user-guide/datasets/storage-connections" },
           ],
         },
         {
@@ -239,6 +240,7 @@ export default withMermaid(defineConfig({
                 { text: "批次生命周期（端到端）", link: "/dev/concepts/batch-lifecycle-end-to-end" },
                 { text: "AI 预标注接管", link: "/dev/concepts/ai-preannotate-handoff" },
                 { text: "数据流", link: "/dev/concepts/data-flow" },
+                { text: "存储连接器", link: "/dev/concepts/storage-connections" },
               ],
             },
             {
@@ -287,6 +289,7 @@ export default withMermaid(defineConfig({
             { text: "图标约定", link: "/dev/reference/icon-conventions" },
             { text: "环境变量", link: "/dev/reference/env-vars" },
             { text: "存储桶布局", link: "/dev/reference/storage-buckets" },
+            { text: "连接器安全", link: "/dev/reference/connector-security" },
           ],
         },
         {
@@ -363,6 +366,7 @@ export default withMermaid(defineConfig({
             { text: "ML Backend", link: "/api/guides/ml-backend" },
             { text: "WebSocket", link: "/api/guides/websocket" },
             { text: "导出", link: "/api/guides/export" },
+            { text: "存储连接器", link: "/api/guides/storage-connections" },
             { text: "路由索引（自动生成）", link: "/api/guides/_routes.generated" },
           ],
         },

@@ -76,6 +76,7 @@ flowchart TD
 - 任务审核：`task.submit / withdraw / approve / reject / reopen / skip`
 - AI 预标：`preannotate.bulk_clear`
 - 反馈：`feedback.created / status_changed / deleted`、`feedback.reconcile_drift`（双写对账漂移，v0.11.0）
+- 存储连接器：`storage_connection.create / update / delete / test`、`connector.allowlist_update`（v0.11.14，见 [存储连接器](/dev/concepts/storage-connections)）。`update` 的 `detail` 含 `secret_rotated` 标记是否轮换密钥，且**绝不写入明文密钥**
 
 但它不是强制枚举。代码里也存在直接传字符串的情况，例如：
 
@@ -243,6 +244,7 @@ helper 位于 `apps/api/app/services/async_job_notify.py`，由 worker / API 在
 - `prediction_retry`
 - `video_tracker`
 - `predictions_import`
+- `dataset_import`
 - `audit_archive`
 
 `failed_prediction.retry.succeeded` / `failed_prediction.retry.failed` 保留为历史通知偏好类型；

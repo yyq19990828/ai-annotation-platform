@@ -23,6 +23,7 @@ TERMINAL_NOTIFY_KINDS = {
     "predictions_import",
     "audit_archive",
     "prediction_retry",
+    "dataset_import",
 }
 
 _STATUS_TO_TYPE = {
@@ -42,7 +43,12 @@ _PAYLOAD_SUMMARY_KEYS = (
     "error_type",
     "output_mode",
     "format",
+    "dataset_display_id",
+    "dataset_name",
+    "connection_name",
+    "connection_kind",
     "total_tasks",
+    "total_files",
     "from_frame",
     "to_frame",
     "model_key",
@@ -61,7 +67,9 @@ _RESULT_SUMMARY_KEYS = (
     "prediction_id",
     "reason",
     "imported",
+    "added",
     "skipped",
+    "total",
     "error_count",
     "file_count",
     "size_bytes",

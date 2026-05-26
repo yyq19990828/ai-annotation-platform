@@ -31,7 +31,7 @@
 
 .stepDotActive,
 .stepDotDone {
-  color: #fff;
+  color: var(--color-bg-elev);
   background: var(--color-accent);
 }
 
@@ -88,6 +88,19 @@
   font-weight: 500;
 }
 
+.field,
+.fieldWide {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.fieldWide {
+  grid-column: span 2;
+}
+
 .input,
 .textarea {
   box-sizing: border-box;
@@ -118,6 +131,7 @@
 
 .modeTabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -187,6 +201,32 @@
 
 .hiddenInput {
   display: none;
+}
+
+.connectionSource {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.connectionGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.checkField {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 33px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.inlineCreateHeader {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .filePanel,
@@ -314,9 +354,9 @@
 }
 
 .progressFill {
-  width: var(--progress, 0%);
+  width: var(--progress);
   height: 100%;
-  background: var(--progress-color, var(--color-accent));
+  background: var(--progress-color);
   transition: width 0.2s;
 }
 
@@ -387,9 +427,28 @@
 
 .zipError {
   padding: 10px 12px;
-  color: #ef4444;
+  color: var(--color-danger);
   font-size: 12.5px;
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid #ef4444;
+  background: var(--color-danger-soft);
+  border: 1px solid var(--color-danger);
   border-radius: var(--radius-md);
+}
+
+.connectionJobHint {
+  padding: 10px 12px;
+  color: var(--color-fg-muted);
+  font-size: 12.5px;
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+@media (max-width: 720px) {
+  .connectionGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .fieldWide {
+    grid-column: auto;
+  }
 }

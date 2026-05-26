@@ -10,10 +10,12 @@ import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { useDatasets, useDatasetItems, useCreateDataset, useDatasetProjects, useUnlinkProject, useLinkProject, useScanDatasetItems, useBackfillDimensions, useBackfillMedia } from "@/hooks/useDatasets";
+import { useDatasets, useDatasetItems, useDatasetProjects, useUnlinkProject, useLinkProject, useScanDatasetItems, useBackfillDimensions, useBackfillMedia } from "@/hooks/useDatasets";
 import { datasetsApi } from "@/api/datasets";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
+import { StorageConnectionsPanel } from "@/components/connections/StorageConnectionsPanel";
 import { useProjects } from "@/hooks/useProjects";
+import { usePermissions } from "@/hooks/usePermissions";
 import type { DatasetResponse } from "@/api/datasets";
 import type { ProjectResponse } from "@/api/projects";
 import type { IconName } from "@/components/ui/Icon";
@@ -453,84 +455,28 @@ function UnlinkConfirmModal({
   );
 }
 
-function CreateDatasetForm({ onClose, onCreate }: { onClose: () => void; onCreate: (data: { name: string; description: string; data_type: string }) => void }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [dataType, setDataType] = useState("image");
-
-  return (
-    <div className={styles.createCard}>
-      <div className={styles.createCardBody}>
-        <h3 className={styles.createTitle}>新建数据集</h3>
-        <div className={styles.formStack}>
-          <div>
-            <label className={styles.formLabel}>名称</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="输入数据集名称"
-              className={styles.textInput}
-            />
-          </div>
-          <div>
-            <label className={styles.formLabel}>描述</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="可选描述"
-              rows={2}
-              className={styles.textarea}
-            />
-          </div>
-          <div>
-            <label className={styles.formLabel}>数据类型</label>
-            <TabRow
-              tabs={["图像", "视频", "3D 点云", "多模态"]}
-              active={TYPE_LABELS[dataType] || "图像"}
-              onChange={(v) => {
-                const entry = Object.entries(TYPE_LABELS).find(([, label]) => label === v);
-                if (entry) setDataType(entry[0]);
-              }}
-            />
-          </div>
-          <div className={styles.formActions}>
-            <Button onClick={onClose}>取消</Button>
-            <Button variant="primary" onClick={() => name.trim() && onCreate({ name: name.trim(), description, data_type: dataType })}>
-              <Icon name="plus" size={13} /> 创建
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+const PAGE_TABS = ["数据集管理", "数据连接器"] as const;
 
 export function DatasetsPage() {
+  const [activeTab, setActiveTab] = useState<string>("数据集管理");
   const [filter, setFilter] = useState<string>("全部");
   const [query, setQuery] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const pushToast = useToastStore((s) => s.push);
+  const [showConnForm, setShowConnForm] = useState(false);
+  const { role } = usePermissions();
+  const canManageConn = role === "super_admin" || role === "project_admin";
+  const queryClient = useQueryClient();
 
   const { data: datasetsData, isLoading } = useDatasets({
     search: query || undefined,
     data_type: FILTER_MAP[filter],
   });
-  const createMutation = useCreateDataset();
 
   const datasets = datasetsData?.items ?? [];
   const total = datasetsData?.total ?? 0;
   const totalFiles = datasets.reduce((sum, ds) => sum + ds.file_count, 0);
   const linkedCount = datasets.filter((ds) => (ds.project_count ?? 0) > 0).length;
-
-  const handleCreate = (data: { name: string; description: string; data_type: string }) => {
-    createMutation.mutate(data, {
-      onSuccess: (ds) => {
-        pushToast({ msg: `数据集 "${ds.name}" 创建成功` });
-        setShowCreate(false);
-      },
-    });
-  };
 
   return (
     <div className={styles.page}>
@@ -540,65 +486,96 @@ export function DatasetsPage() {
           <h1 className={styles.title}>数据集</h1>
           <p className={styles.subtitle}>管理标注数据集，上传文件并关联到标注项目</p>
         </div>
-        <Button variant="primary" onClick={() => setShowCreate(true)}>
-          <Icon name="plus" size={13} /> 新建数据集
-        </Button>
+        {activeTab === "数据集管理" && (
+          <Button variant="primary" onClick={() => setShowCreate(true)}>
+            <Icon name="plus" size={13} /> 新建数据集
+          </Button>
+        )}
+        {activeTab === "数据连接器" && canManageConn && (
+          <Button variant="primary" onClick={() => setShowConnForm(true)}>
+            <Icon name="plus" size={13} /> 新建数据源
+          </Button>
+        )}
       </div>
 
-      {/* Stats */}
-      <div className={styles.statsGrid}>
-        <StatCard icon="layers" label="数据集总数" value={total.toLocaleString()} />
-        <StatCard icon="image" label="文件总量" value={totalFiles.toLocaleString()} />
-        <StatCard icon="folder" label="已关联项目" value={String(linkedCount)} />
-        <StatCard icon="db" label="存储后端" value="MinIO" />
+      {/* Page tabs */}
+      <div className={styles.pageTabs}>
+        <TabRow tabs={[...PAGE_TABS]} active={activeTab} onChange={setActiveTab} />
       </div>
 
-      {/* Create form */}
-      {showCreate && <CreateDatasetForm onClose={() => setShowCreate(false)} onCreate={handleCreate} />}
+      {/* Create dataset wizard：新建数据集 + 上传/导入文件 */}
+      <ImportDatasetWizard
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        onUploaded={() => {
+          queryClient.invalidateQueries({ queryKey: ["datasets"] });
+          queryClient.invalidateQueries({ queryKey: ["tasks"] });
+          queryClient.invalidateQueries({ queryKey: ["projects"] });
+          queryClient.invalidateQueries({ queryKey: ["project-stats"] });
+        }}
+      />
 
-      {/* Main table */}
-      <Card>
-        <div className={styles.tableToolbar}>
-          <div className={styles.toolbarLeft}>
-            <h3 className={styles.sectionTitle}>全部数据集</h3>
-            <TabRow tabs={[...TYPE_FILTERS]} active={filter} onChange={setFilter} />
+      {activeTab === "数据连接器" ? (
+        <StorageConnectionsPanel
+          showForm={showConnForm}
+          onShowFormChange={setShowConnForm}
+          hideHeaderAction
+        />
+      ) : (
+        <>
+          {/* Stats */}
+          <div className={styles.statsGrid}>
+            <StatCard icon="layers" label="数据集总数" value={total.toLocaleString()} />
+            <StatCard icon="image" label="文件总量" value={totalFiles.toLocaleString()} />
+            <StatCard icon="folder" label="已关联项目" value={String(linkedCount)} />
+            <StatCard icon="db" label="存储后端" value="MinIO" />
           </div>
-          <SearchInput placeholder="搜索数据集..." value={query} onChange={setQuery} width={220} />
-        </div>
-        <div className={styles.tableScroller}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                {["数据集", "类型", "文件数", "关联项目", "创建时间", ""].map((h, i) => (
-                  <th key={i} className={styles.headerCell}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && (
-                <tr><td colSpan={6} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>加载中...</td></tr>
-              )}
-              {!isLoading && datasets.map((ds) => (
-                <Fragment key={ds.id}>
-                  <DatasetRow
-                    ds={ds}
-                    isExpanded={expandedId === ds.id}
-                    onToggle={() => setExpandedId(expandedId === ds.id ? null : ds.id)}
-                  />
-                  {expandedId === ds.id && <DatasetDetail ds={ds} />}
-                </Fragment>
-              ))}
-              {!isLoading && datasets.length === 0 && (
-                <tr><td colSpan={6} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>
-                  {query || filter !== "全部" ? "没有匹配的数据集" : '暂无数据集，点击「新建数据集」开始'}
-                </td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+
+          {/* Main table */}
+          <Card>
+            <div className={styles.tableToolbar}>
+              <div className={styles.toolbarLeft}>
+                <h3 className={styles.sectionTitle}>全部数据集</h3>
+                <TabRow tabs={[...TYPE_FILTERS]} active={filter} onChange={setFilter} />
+              </div>
+              <SearchInput placeholder="搜索数据集..." value={query} onChange={setQuery} width={220} />
+            </div>
+            <div className={styles.tableScroller}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    {["数据集", "类型", "文件数", "关联项目", "创建时间", ""].map((h, i) => (
+                      <th key={i} className={styles.headerCell}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {isLoading && (
+                    <tr><td colSpan={6} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>加载中...</td></tr>
+                  )}
+                  {!isLoading && datasets.map((ds) => (
+                    <Fragment key={ds.id}>
+                      <DatasetRow
+                        ds={ds}
+                        isExpanded={expandedId === ds.id}
+                        onToggle={() => setExpandedId(expandedId === ds.id ? null : ds.id)}
+                      />
+                      {expandedId === ds.id && <DatasetDetail ds={ds} />}
+                    </Fragment>
+                  ))}
+                  {!isLoading && datasets.length === 0 && (
+                    <tr><td colSpan={6} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>
+                      {query || filter !== "全部" ? "没有匹配的数据集" : '暂无数据集，点击「新建数据集」开始'}
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

@@ -34,6 +34,11 @@ from app.db.models.system_setting import SystemSetting
 from app.db.models.api_key import ApiKey
 from app.db.models.async_job import AsyncJob, AsyncJobKind, AsyncJobStatus
 from app.db.models.export_artifact import ExportArtifact
+from app.db.models.storage_connection import (
+    StorageConnection,
+    StorageConnectionKind,
+    StorageConnectionScope,
+)
 
 __all__ = [
     "User",
@@ -78,4 +83,7 @@ __all__ = [
     "AsyncJobKind",
     "AsyncJobStatus",
     "ExportArtifact",
+    "StorageConnection",
+    "StorageConnectionKind",
+    "StorageConnectionScope",
 ]

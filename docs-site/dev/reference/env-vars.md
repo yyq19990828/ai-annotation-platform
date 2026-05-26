@@ -86,6 +86,15 @@ last_reviewed: 2026-05-26
 |---|---|---|
 | `SECRET_KEY` | `change-this-to-a-random-string-in-production` | JWT 签名密钥；生产环境必须替换为高强度随机字符串（≥32 字符） |
 
+## v0.11.14 · 存储连接器（外部 S3 / SFTP 服务端拉取）凭据 Fernet 加密 key。
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `CONNECTOR_ENCRYPTION_KEY` | `—` | 与 SECRET_KEY 隔离；留空则连接器加解密一律拒绝（API 返回 503）。 生成: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" |
+| `CONNECTOR_HOST_ALLOWLIST` | `—` | v0.11.16 · 存储连接器主机白名单部署默认值（CIDR/IP/域名，CSV 或 JSON 数组）。 超管通过 /storage-connections/allowlist 写入 DB 后会覆盖该默认值。 本地连接宿主机 SFTP 示例: CONNECTOR_HOST_ALLOWLIST=172.17.0.1/32,172.26.1.17/32 |
+| `DATASET_IMPORT_MAX_FILES` | `50000` | v0.11.15 · 连接器导入单个 job 最多扫描 / 导入的文件数；超限直接失败，避免误扫全桶。 |
+| `DATASET_IMPORT_MAX_TOTAL_BYTES` | `214748364800` | v0.11.15 · 连接器导入单个 job 允许的总字节数；默认 200GiB。 |
+
 ## 是否允许开放注册（v0.7.7+；v0.8.1 起可在 SettingsPage > 系统设置 中热更新覆盖）
 
 | 变量 | 默认值 | 说明 |

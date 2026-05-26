@@ -79,7 +79,6 @@
 
 ### TopBar / Dashboard 控件
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast；Organization 表已存在但前端无切换 UI。
-- **后台任务浮层清理 / 隐藏已结束任务**（**P3**）：`JobsBell` 当前固定拉最近 20 条 `async_jobs`，终态任务会长期占据提醒浮层；数据层已有 30 天终态清理（Celery beat `purge_old_async_jobs`），不应为了 UI 清爽直接删除 job。建议先做前端层面的 `全部 / 进行中` 筛选 +「清空已结束」本地 dismiss，仅隐藏 `completed / failed / cancelled`，`pending / running` 永远不隐藏；真正历史仍走 `/ai-pre/jobs`。
 
 ### 登录 / 注册 / 认证
 - **开放注册二阶段剩余**：

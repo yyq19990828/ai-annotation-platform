@@ -29,8 +29,13 @@ from app.schemas.async_job import (
 router = APIRouter()
 log = logging.getLogger(__name__)
 
-# v0.10.51 · batch_predict 支持协作取消；predictions_import / audit_archive 保持软取消。
-CANCELLABLE_KINDS = {"batch_predict", "predictions_import", "audit_archive"}
+# v0.10.51 · batch_predict 支持协作取消；其它长任务保持软取消。
+CANCELLABLE_KINDS = {
+    "batch_predict",
+    "predictions_import",
+    "audit_archive",
+    "dataset_import",
+}
 RETRY_FAILED_KINDS = {"batch_predict"}
 
 AsyncJobStatusParam = Literal["pending", "running", "completed", "failed", "cancelled"]

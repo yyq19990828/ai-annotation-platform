@@ -78,6 +78,63 @@
   align-items: center;
 }
 
+/* v0.11.17 · 筛选 + 清空已结束 工具条 */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--color-bg-sunken);
+  border-radius: var(--radius-sm);
+}
+
+.segItem {
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-fg-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.segItem:hover {
+  color: var(--color-fg);
+}
+
+.segItemActive {
+  color: var(--color-fg);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.clearBtn {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-fg-muted);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.clearBtn:hover {
+  color: var(--color-fg);
+  background: var(--color-bg-sunken);
+  border-color: var(--color-fg-muted);
+}
+
 .list {
   flex: 1;
   overflow-y: auto;
@@ -108,6 +165,33 @@
 .jobDetail {
   color: var(--color-fg-muted);
   font-weight: 400;
+}
+
+/* v0.11.17 · 状态徽标 + 终态 dismiss ✕ */
+.jobHeaderRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.dismissBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--color-fg-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.dismissBtn:hover {
+  color: var(--color-fg);
+  background: var(--color-bg-sunken);
 }
 
 .jobMeta {
