@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS sync_state (
 # task_events 目标表（与 PG 端字段对齐）
 _TASK_EVENTS_DDL = """
 CREATE TABLE IF NOT EXISTS task_events (
-    id BIGINT PRIMARY KEY,
+    id UUID PRIMARY KEY,
     task_id UUID,
     user_id UUID,
     project_id UUID,
