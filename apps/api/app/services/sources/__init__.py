@@ -31,9 +31,7 @@ def validate_source_path(conn: StorageConnection, source_path: str | None) -> No
     raise ValueError(f"unsupported storage connection kind: {conn.kind}")
 
 
-async def build_adapter(
-    db: AsyncSession, conn: StorageConnection
-) -> SourceAdapter:
+async def build_adapter(db: AsyncSession, conn: StorageConnection) -> SourceAdapter:
     await connector_guard.assert_connection_target_allowed(db, target_host(conn))
     validate_source_path(conn, "")
     secret = decrypt_secret(conn.secret_enc) if conn.secret_enc else {}

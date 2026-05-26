@@ -168,11 +168,15 @@ async def test_export_skips_orphan_class_and_prunes_orphan_attributes(
     assert annotations[0]["attributes"] == {"color": "red"}
 
     active = (
-        await db_session.execute(
-            select(Annotation).where(
-                Annotation.project_id == project.id,
-                Annotation.is_active.is_(True),
+        (
+            await db_session.execute(
+                select(Annotation).where(
+                    Annotation.project_id == project.id,
+                    Annotation.is_active.is_(True),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert {ann.class_name for ann in active} == {"car", "dog"}

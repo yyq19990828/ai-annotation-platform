@@ -14,7 +14,9 @@ from app.services import connector_guard as cg
 
 
 def test_encrypt_decrypt_roundtrip(monkeypatch):
-    monkeypatch.setattr(settings, "connector_encryption_key", Fernet.generate_key().decode())
+    monkeypatch.setattr(
+        settings, "connector_encryption_key", Fernet.generate_key().decode()
+    )
     secret = {"access_key": "AK", "secret_key": "SK"}
     token = crypto.encrypt_secret(secret)
     assert isinstance(token, bytes)
@@ -23,9 +25,13 @@ def test_encrypt_decrypt_roundtrip(monkeypatch):
 
 
 def test_decrypt_wrong_key_raises(monkeypatch):
-    monkeypatch.setattr(settings, "connector_encryption_key", Fernet.generate_key().decode())
+    monkeypatch.setattr(
+        settings, "connector_encryption_key", Fernet.generate_key().decode()
+    )
     token = crypto.encrypt_secret({"password": "p"})
-    monkeypatch.setattr(settings, "connector_encryption_key", Fernet.generate_key().decode())
+    monkeypatch.setattr(
+        settings, "connector_encryption_key", Fernet.generate_key().decode()
+    )
     with pytest.raises(crypto.ConnectorCryptoError):
         crypto.decrypt_secret(token)
 

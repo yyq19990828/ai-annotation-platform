@@ -172,9 +172,7 @@ async def test_owner_scope_list_and_usage_is_owner_or_global_only(
     assert other_res.status_code == 201, other_res.text
     other_id = other_res.json()["id"]
 
-    listed = await httpx_client.get(
-        "/api/v1/storage-connections", headers=_h(pm_token)
-    )
+    listed = await httpx_client.get("/api/v1/storage-connections", headers=_h(pm_token))
     assert listed.status_code == 200
     ids = {item["id"] for item in listed.json()}
     assert ids == {global_id, own_id}

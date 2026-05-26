@@ -48,9 +48,7 @@ def normalize_relpath(path: str | None) -> str:
     return "/".join(parts)
 
 
-def matches_include_globs(
-    relpath: str, include_globs: Iterable[str] | None
-) -> bool:
+def matches_include_globs(relpath: str, include_globs: Iterable[str] | None) -> bool:
     patterns = [p.strip() for p in (include_globs or []) if p and p.strip()]
     if not patterns:
         return True
