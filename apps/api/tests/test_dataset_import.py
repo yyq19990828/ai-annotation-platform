@@ -126,7 +126,9 @@ def test_collect_within_limits_short_circuits_on_total_bytes(monkeypatch):
     monkeypatch.setattr(dataset_import.settings, "dataset_import_max_total_bytes", 10)
 
     with pytest.raises(ValueError, match="total bytes exceeds limit"):
-        dataset_import._collect_within_limits(_obj(f"f{i}.bin", size=6) for i in range(100))
+        dataset_import._collect_within_limits(
+            _obj(f"f{i}.bin", size=6) for i in range(100)
+        )
 
 
 def test_collect_within_limits_returns_all_when_under(monkeypatch):
