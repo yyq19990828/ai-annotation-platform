@@ -1,8 +1,8 @@
 /**
  * v0.7.6 · AttributeSchemaEditor
  *
- * 从 AttributesSection 抽出的纯受控组件：负责字段增删改 + 校验。
- * 由 AttributesSection（保存按钮的薄外壳）和 CreateProjectWizard（向导 step）共用。
+ * 从项目设置属性编辑抽出的纯受控组件：负责字段增删改 + 校验。
+ * 由 ClassesSection（类别与属性合并页）和 CreateProjectWizard（向导 step）共用。
  *
  * 不在内部触发 PATCH 请求；调用方拿到 onChange 后的 fields 自行决定保存时机。
  */

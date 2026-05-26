@@ -1,15 +1,9 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
-import { useMLBackends } from "@/hooks/useMLBackends";
-import {
-  TextOutputDefaultSelect,
-  type TextOutputDefault,
-} from "@/components/projects/shared/TextOutputDefaultSelect";
 import type { ProjectResponse } from "@/api/projects";
 import styles from "./GeneralSection.module.css";
 
@@ -31,58 +25,18 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
   const [name, setName] = useState(project.name);
   const [status, setStatus] = useState(project.status);
   const [dueDate, setDueDate] = useState(project.due_date ?? "");
-  const [classes, setClasses] = useState<string[]>(project.classes ?? []);
-  const [classInput, setClassInput] = useState("");
-  const [aiEnabled, setAiEnabled] = useState(project.ai_enabled);
-  // v0.8.6 F3 · MLBackend 真实绑定
-  const [mlBackendId, setMlBackendId] = useState<string | null>(
-    project.ml_backend_id ?? null,
-  );
-  const { data: mlBackends = [] } = useMLBackends(project.id);
-  const [iouThreshold, setIouThreshold] = useState(project.iou_dedup_threshold ?? 0.7);
-  // v0.9.5 · SAM 文本预标默认输出形态（"" = 自动按 type_key）
-  const [textOutputDefault, setTextOutputDefault] = useState<string>(
-    project.text_output_default ?? "",
-  );
 
   useEffect(() => {
     setName(project.name);
     setStatus(project.status);
     setDueDate(project.due_date ?? "");
-    setClasses(project.classes ?? []);
-    setAiEnabled(project.ai_enabled);
-    setMlBackendId(project.ml_backend_id ?? null);
-    setIouThreshold(project.iou_dedup_threshold ?? 0.7);
-    setTextOutputDefault(project.text_output_default ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
-  const addClass = () => {
-    const v = classInput.trim();
-    if (!v || v.length > 30 || classes.includes(v)) {
-      setClassInput("");
-      return;
-    }
-    setClasses((s) => [...s, v]);
-    setClassInput("");
-  };
-
-  const boundBackendName =
-    mlBackendId && mlBackends.find((b) => b.id === mlBackendId)?.name;
-  const effectiveAiModel =
-    boundBackendName ??
-    (mlBackendId === project.ml_backend_id ? project.ai_model ?? null : null);
-  const nextAiModel = aiEnabled ? effectiveAiModel : null;
   const dirty =
     name.trim() !== project.name ||
     status !== project.status ||
-    (dueDate || null) !== (project.due_date ?? null) ||
-    JSON.stringify(classes) !== JSON.stringify(project.classes ?? []) ||
-    aiEnabled !== project.ai_enabled ||
-    nextAiModel !== (project.ai_model ?? null) ||
-    (mlBackendId ?? null) !== (project.ml_backend_id ?? null) ||
-    Math.abs(iouThreshold - (project.iou_dedup_threshold ?? 0.7)) > 0.001 ||
-    textOutputDefault !== (project.text_output_default ?? "");
+    (dueDate || null) !== (project.due_date ?? null);
 
   useUnsavedWarning(dirty);
 
@@ -96,12 +50,6 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
         name: name.trim(),
         status,
         due_date: dueDate || null,
-        classes,
-        ai_enabled: aiEnabled,
-        ai_model: nextAiModel,
-        ml_backend_id: aiEnabled ? mlBackendId : null,
-        iou_dedup_threshold: iouThreshold,
-        text_output_default: (textOutputDefault || null) as "box" | "mask" | "both" | null,
       },
       {
         onSuccess: () => pushToast({ msg: "项目已更新", kind: "success" }),
@@ -140,123 +88,6 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
           <div className={styles.readonlyValue}>
             {project.type_label} <span className={cn("mono", styles.typeKey)}>{project.type_key}</span>
           </div>
-        </div>
-        <div>
-          <label className={styles.label}>标注类别</label>
-          <div className={styles.classInputRow}>
-            <input
-              value={classInput}
-              onChange={(e) => setClassInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addClass();
-                }
-              }}
-              placeholder="回车添加"
-              maxLength={30}
-              className={cn(styles.control, styles.classInput)}
-            />
-            <Button onClick={addClass} disabled={!classInput.trim()}>
-              <Icon name="plus" size={12} />添加
-            </Button>
-          </div>
-          <div className={styles.classChipBox}>
-            {classes.length === 0 && (
-              <span className={styles.emptyText}>暂无类别</span>
-            )}
-            {classes.map((c) => (
-              <span
-                key={c}
-                className={styles.classChip}
-              >
-                {c}
-                <button
-                  type="button"
-                  onClick={() => setClasses((s) => s.filter((x) => x !== c))}
-                  aria-label={`删除 ${c}`}
-                  className={styles.classChipRemove}
-                >
-                  <Icon name="x" size={10} />
-                </button>
-              </span>
-            ))}
-          </div>
-        </div>
-        <div>
-          <label className={styles.aiToggleLabel}>
-            <input
-              type="checkbox"
-              checked={aiEnabled}
-              onChange={(e) => setAiEnabled(e.target.checked)}
-              className={styles.aiCheckbox}
-            />
-            <Icon name="sparkles" size={14} className={styles.aiIcon} />
-            启用 AI 预标注
-          </label>
-          {aiEnabled && (
-            <div className={styles.aiPanel}>
-              {/* B-7 · 实际 ML Backend 绑定 — 模型语义直接来自注册的 backend.name,
-                  不再用脱离实际部署的 PRESET 占位字符串 */}
-              <div>
-                <label className={cn(styles.label, styles.labelCompact)}>实际 ML Backend</label>
-                <select
-                  value={mlBackendId ?? ""}
-                  onChange={(e) => setMlBackendId(e.target.value || null)}
-                  className={cn(styles.control, styles.selectControl)}
-                >
-                  <option value="">未绑定（项目按肉眼标注运行,AI 待接入）</option>
-                  {mlBackends.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                      {b.state === "connected" ? " · 在线" : ` · ${b.state}`}
-                      {b.is_interactive ? " · 交互式" : ""}
-                    </option>
-                  ))}
-                </select>
-                <div className={styles.hint}>
-                  绑定后,平台所有「模型名」展示均直接来自 backend.name,保证 UI 语义与实际推理后端一致。
-                  后端专属推理参数（如 DINO 阈值、模型变体）已移至工作台 AI 面板，按所绑定后端动态显示，且每位标注员可独立调整、互不影响。
-                  {mlBackends.length === 0 && (
-                    <span className={styles.warningText}>
-                      暂无可用 backend;先在「ML 模型」选项卡添加。
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-        <div>
-          <label className={styles.label}>
-            AI 框去重阈值 <span className={styles.labelNote}>（与已确认人工框 IoU 高于此值的同类 AI 框将淡化）</span>
-          </label>
-          <div className={styles.sliderRow}>
-            <input
-              type="range"
-              min={0.3}
-              max={0.95}
-              step={0.05}
-              value={iouThreshold}
-              onChange={(e) => setIouThreshold(Number(e.target.value))}
-              className={styles.rangeInput}
-            />
-            <span
-              className={cn("mono", styles.metricValue)}
-            >
-              {iouThreshold.toFixed(2)}
-            </span>
-          </div>
-        </div>
-        <div>
-          <label className={styles.label}>
-            SAM 文本预标默认输出 <span className={styles.labelNote}>（工作台「找全图」初始值，可在工作台临时切换）</span>
-          </label>
-          <TextOutputDefaultSelect
-            value={textOutputDefault as TextOutputDefault}
-            onChange={(v) => setTextOutputDefault(v)}
-            className={cn(styles.control, styles.selectControl)}
-          />
         </div>
         <div className={styles.footer}>
           {dirty && (

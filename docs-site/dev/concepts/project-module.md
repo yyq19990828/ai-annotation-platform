@@ -127,6 +127,8 @@ archived
 
 写入路径: `apps/api/app/api/v1/projects.py` 的 `create_project` / `update_project` 调用 `coalesce_legacy_into_tool_bindings` (旧客户端只传扁平字段时反向派生到对应 unit), 之后剔除扁平 key —— `tool_bindings` 是唯一写入目标。读出路径由 `ProjectOut` 的 `model_validator` 用 `derive_*` 从 `tool_bindings` 派生扁平投影。详细 helper 实现见 `apps/api/app/services/project.py`。
 
+前端项目设置的归属：`基本信息` 只维护名称、状态、截止日期和类型展示；`类别与属性` 是 `tool_bindings` 的唯一编辑入口，同一个工具单位 tab 下同时维护类别、关键点骨骼模板与属性 schema。
+
 ### 2. 工作台派题策略
 
 `sampling` 决定 `scheduler.get_next_task()` 的排序行为：
@@ -153,6 +155,8 @@ archived
 - 默认输出形态：`text_output_default`
 
 AI 能力是 project 级开关，不是 batch 或 task 私有配置。
+
+前端项目设置的归属：这些 AI 字段统一在 `ML 模型` 页维护。该页上方是项目级 AI 预标注设置（启用开关、绑定 backend、去重阈值、文本输出默认值），下方是项目作用域内 ML backend 的注册、健康检查与快捷绑定列表。
 
 ## 成员与权限边界
 

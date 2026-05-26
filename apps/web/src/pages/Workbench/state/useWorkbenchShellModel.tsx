@@ -833,7 +833,7 @@ export function useWorkbenchShellModel({
     if (aliases.length === 0) {
       pushToast({
         msg: "AI 暂不可用",
-        sub: "项目类别未配置英文 alias,请到「项目设置 → 类别管理」补全",
+        sub: "项目类别未配置英文 alias,请到「项目设置 → 类别与属性」补全",
         kind: "error",
       });
       return;

@@ -30,7 +30,7 @@ last_reviewed: 2026-05-11
 2. 填写基本信息：
    - 项目名称（唯一）
    - 标注类型：bbox / polygon / keypoint / classification
-   - 启用 AI 预标注（可选，可复用已有 ML Backend）
+   - 类别、属性与 AI 接入按向导后续步骤配置
 3. 上传数据集（支持批量 ZIP 或逐个文件上传）
 4. 保存后系统自动生成对应 Task（状态 `pending`）
 

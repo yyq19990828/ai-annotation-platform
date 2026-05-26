@@ -100,7 +100,7 @@ graph TD
 | `video_bbox` | v0.9.16 视频逐帧框 | 单个 frame 上的 bbox，带 `frame_index` |
 | `video_track` | v0.9.17 视频对象轨迹 | 一条 annotation 保存稳定 `track_id` 和 `keyframes[]` |
 
-`keypoint` 的骨骼拓扑（命名节点 + 连线）不存进 geometry，而是 unit 级模板：`project.tool_bindings["keypoint"].keypoint_schema`（`KeypointSchema = {nodes: KeypointNode[], edges: [int,int][]}`，后端见 `_jsonb_types.py`，前端在类别配置区 `KeypointSchemaEditor` 维护）。geometry 只存各节点的 `{x,y,v}`，按 index 与 schema 节点一一对应。
+`keypoint` 的骨骼拓扑（命名节点 + 连线）不存进 geometry，而是 unit 级模板：`project.tool_bindings["keypoint"].keypoint_schema`（`KeypointSchema = {nodes: KeypointNode[], edges: [int,int][]}`，后端见 `_jsonb_types.py`，前端在项目设置「类别与属性」里的 `KeypointSchemaEditor` 维护）。geometry 只存各节点的 `{x,y,v}`，按 index 与 schema 节点一一对应。
 
 `video_track` 是 compact 轨迹模型，不把插值帧逐条写库。编辑同一对象其它帧时，前端会更新同一条 annotation 的 `geometry.keyframes[]`；前端显示的 interpolated bbox 只是视图结果。目标"消失"用 `outside` 闭区间段表达（v0.10.30 起删除旧 `absent` 字段），插值不跨消失段、其中不输出 bbox；`occluded=true` 表示目标仍存在但被遮挡。
 

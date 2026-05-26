@@ -26,7 +26,7 @@ last_reviewed: 2026-05-09
 
 - **按数据类型分流**：`/ai-pre` 列表现在含图像与视频项目。**图像项目**进详情面板走原来的文本批量预标；**视频项目**进详情面板看到引导卡片——视频 AI 预标是逐轨迹的追踪任务，在工作台打开视频任务选中轨迹后按 `Shift+T` 发起（不是整批文本检测），卡片提供「去工作台标注」+「视频 job 历史」入口。
 - **多 backend 选择**：项目注册了多个 ML backend 时，执行页出现 backend 下拉，可在已注册 backend 间切换（默认项目绑定值），不必每次回设置页改绑定。
-- **按后端参数面板**：选中 backend 后，按它 `/setup` 自报的参数（如 `box_threshold` / `text_threshold`）渲染参数面板，**按 backend 分别记忆**（每个用户各自一份）；跑预标时随请求带上，覆盖项目级阈值兜底。取代了旧的项目级阈值滑块（项目默认值仍可在「项目设置 → 基本信息」改）。
+- **按后端参数面板**：选中 backend 后，按它 `/setup` 自报的参数（如 `box_threshold` / `text_threshold`）渲染参数面板，**按 backend 分别记忆**（每个用户各自一份）；跑预标时随请求带上，覆盖项目级阈值兜底。取代了旧的项目级阈值滑块（项目默认值在「项目设置 → ML 模型」维护）。
 - **统一 AI 任务历史**：`/ai-pre/jobs` 加「图像 / 视频」两个 tab——图像消费 `async_jobs(kind=batch_predict|prediction_retry)`，视频消费 `async_jobs(kind=video_tracker)`（原模型市场的「视频追踪任务」监控页已并入此处，旧链接 `/model-market/video-jobs` 自动跳转）。模型市场只保留后端 / 显存池健康观测。
 
 **v0.10.40 起** — 图像项目的 ai-pre 参数面板支持模型变体选择：
@@ -70,8 +70,8 @@ last_reviewed: 2026-05-09
 
 ## 前置条件
 
-1. 项目启用 AI（项目设置 → 基本信息 → 「启用 AI 预标注」；v0.9.7 起新建项目 wizard step 4 也可一键复用其它项目已注册的 backend，跳过单独注册步骤）
-2. 项目已绑定 ML Backend（项目设置 → ML 模型 → 注册一个 grounded-sam-2 类型 backend，再回基本信息绑定）
+1. 项目已在「项目设置 → ML 模型」启用 AI 预标注。
+2. 项目已绑定 ML Backend（同一页可注册 grounded-sam-2 类型 backend，并在 AI 预标注设置里绑定）。
 3. 批次状态为 **active**（草稿批次需先点「激活」才能跑预标）
 
 ## 步骤
@@ -84,7 +84,7 @@ last_reviewed: 2026-05-09
 
 英文 prompt 召回最佳。例：`person`、`ripe apple`、`car . truck . bicycle`（多类用 `.` 分隔）。
 
-**类别 alias chips**（v0.9.5 起）：项目类别配过英文 alias（项目设置 → 类别配置）会自动变成可点 chip，点击直填到 prompt 输入框。alias 在保存时自动规范化（lowercased + 折叠多重空格 / 逗号），不必担心大小写。30+ 类别项目的 chips 限高 + 横向滚动 + 搜索筛选（v0.9.6 起）。
+**类别 alias chips**（v0.9.5 起）：项目类别配过英文 alias（项目设置 → 类别与属性）会自动变成可点 chip，点击直填到 prompt 输入框。alias 在保存时自动规范化（lowercased + 折叠多重空格 / 逗号），不必担心大小写。30+ 类别项目的 chips 限高 + 横向滚动 + 搜索筛选（v0.9.6 起）。
 
 **v0.9.7 起 chips 按预标频率排序**：高频常用类别（`×N` 角标显示历史 prediction count）排在最前；端点 `GET /admin/projects/:id/alias-frequency` 5 分钟 staleTime, 切项目自动重拉。
 
@@ -94,7 +94,7 @@ last_reviewed: 2026-05-09
 - `○ 掩膜`：DINO + SAM mask → polygon（image-seg 项目首选）
 - `⊕ 全部`：同实例配对返回 box + polygon
 
-默认值按项目 type_key 智能选；项目级 `text_output_default`（项目设置 / 新建项目 wizard step 4 可设）覆盖默认。
+默认值按项目 type_key 智能选；项目级 `text_output_default`（项目设置 → ML 模型 / 新建项目 wizard step 4 可设）覆盖默认。
 
 **后端参数与变体**：勾选批次后，页面会按选中 backend 的 `/setup.params` 显示参数表单。grounded-sam2 会额外显示 SAM / DINO 变体选择器；选择 `large` / `B` 等变体后再跑预标，请求会带上对应 variant。若 backend 未上报富元数据，页面仍会回落到 enum 下拉。
 
@@ -135,4 +135,4 @@ last_reviewed: 2026-05-09
 - **跑预标按钮灰**：检查项目是否绑定 backend、批次是否 active、prompt 是否非空
 - **某些 task 失败**：模型市场 → 失败列表查具体错误（多为 backend 超时 / 图片无法加载）；可点「重试」（v0.8.6 F6 起 max=3 次）
 - **跑完批次状态没变**：刷新页面；偶发 WS 延迟可能让前端 progress 滞后，但后端 batch 状态已经转
-- **类别 alias 不出现 chips**：去类别配置补 alias（小写英文，如 `person` / `ripe apple`）
+- **类别 alias 不出现 chips**：去项目设置 → 类别与属性补 alias（小写英文，如 `person` / `ripe apple`）

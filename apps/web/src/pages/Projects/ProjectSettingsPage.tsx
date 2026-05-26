@@ -10,7 +10,6 @@ import { GeneralSection } from "./sections/GeneralSection";
 import { MembersSection } from "./sections/MembersSection";
 import { OwnerSection } from "./sections/OwnerSection";
 import { DangerSection } from "./sections/DangerSection";
-import { AttributesSection } from "./sections/AttributesSection";
 import { BatchesSection } from "./sections/BatchesSection";
 import { ClassesSection } from "./sections/ClassesSection";
 import { DatasetsSection } from "./sections/DatasetsSection";
@@ -42,8 +41,7 @@ const SECTIONS: {
   icon: "settings" | "users" | "user" | "trash" | "tag" | "rect" | "layers" | "db" | "bot" | "eye" | "book" | "target";
 }[] = [
   { key: "general", label: "基本信息", icon: "settings" },
-  { key: "classes", label: "类别管理", icon: "rect" },
-  { key: "attributes", label: "属性 schema", icon: "tag" },
+  { key: "classes", label: "类别与属性", icon: "rect" },
   { key: "members", label: "成员管理", icon: "users" },
   { key: "datasets", label: "关联数据集", icon: "db" },
   { key: "batches", label: "批次管理", icon: "layers" },
@@ -85,6 +83,7 @@ export function ProjectSettingsPage() {
   const initialSection = (() => {
     const q = searchParams.get("section");
     if (!q || !(VALID_SECTIONS as string[]).includes(q)) return "general";
+    if (q === "attributes") return "classes";
     if (q === "annotation-guide" && !ANNOTATION_GUIDE_UI_ENABLED) return "general";
     return q as SectionKey;
   })();
@@ -182,7 +181,6 @@ export function ProjectSettingsPage() {
         <div>
           {section === "general" && <GeneralSection project={project} />}
           {section === "classes" && <ClassesSection project={project} />}
-          {section === "attributes" && <AttributesSection project={project} />}
           {section === "members" && <MembersSection project={project} />}
           {section === "datasets" && <DatasetsSection project={project} />}
           {section === "batches" && <BatchesSection project={project} />}

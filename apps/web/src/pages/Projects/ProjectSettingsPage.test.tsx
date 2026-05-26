@@ -28,9 +28,6 @@ vi.mock("./sections/OwnerSection", () => ({
 vi.mock("./sections/DangerSection", () => ({
   DangerSection: () => <div>danger-section</div>,
 }));
-vi.mock("./sections/AttributesSection", () => ({
-  AttributesSection: () => <div>attributes-section</div>,
-}));
 vi.mock("./sections/BatchesSection", () => ({
   BatchesSection: () => <div>batches-section</div>,
 }));
@@ -84,6 +81,21 @@ function renderSettingsPage(project: Record<string, unknown>) {
   );
 }
 
+function renderSettingsPageAt(project: Record<string, unknown>, path: string) {
+  mockUseProject.mockReturnValue({
+    data: project,
+    isLoading: false,
+    error: null,
+  });
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/projects/:id/settings" element={<ProjectSettingsPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 describe("ProjectSettingsPage", () => {
   beforeEach(() => {
     mockUseProject.mockReset();
@@ -106,5 +118,37 @@ describe("ProjectSettingsPage", () => {
     expect(screen.getByTestId("location")).toHaveTextContent(
       "/projects/p-video/annotate?returnTo=%2Fprojects%2Fp-video%2Fsettings",
     );
+  });
+
+  it("uses one combined classes and attributes settings tab", () => {
+    renderSettingsPage({
+      id: "p-image",
+      name: "Image Project",
+      display_id: "P-IMAGE",
+      type_label: "图像检测",
+      type_key: "image-det",
+      data_type: "image",
+      status: "in_progress",
+    });
+
+    expect(screen.getByTestId("settings-tab-classes")).toHaveTextContent("类别与属性");
+    expect(screen.queryByTestId("settings-tab-attributes")).toBeNull();
+  });
+
+  it("maps old section=attributes links to the combined tab", () => {
+    renderSettingsPageAt(
+      {
+        id: "p-image",
+        name: "Image Project",
+        display_id: "P-IMAGE",
+        type_label: "图像检测",
+        type_key: "image-det",
+        data_type: "image",
+        status: "in_progress",
+      },
+      "/projects/p-image/settings?section=attributes",
+    );
+
+    expect(screen.getByText("classes-section")).toBeInTheDocument();
   });
 });

@@ -1,7 +1,7 @@
 /**
  * v0.9.14 · GeneralSection 单测 — 项目基本信息 controlled form 主路径.
  *
- * 覆盖: 加载初值 / dirty 检测 / 类别添加 删除 / 校验空名 / 保存 mutation 触发.
+ * 覆盖: 加载初值 / dirty 检测 / 校验空名 / 保存 mutation 触发.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
@@ -9,23 +9,20 @@ import { MemoryRouter } from "react-router-dom";
 
 const mockUpdateMutate = vi.fn();
 const mockPushToast = vi.fn();
-const mockUseMLBackends = vi.fn();
 const mockUseUnsavedWarning = vi.fn();
 
 vi.mock("@/hooks/useProjects", () => ({
   useUpdateProject: () => ({ mutate: mockUpdateMutate, isPending: false }),
 }));
-vi.mock("@/hooks/useMLBackends", () => ({
-  useMLBackends: () => mockUseMLBackends(),
-}));
 vi.mock("@/hooks/useUnsavedWarning", () => ({
   useUnsavedWarning: (...args: unknown[]) => mockUseUnsavedWarning(...args),
 }));
 vi.mock("@/components/ui/Toast", async () => {
-  const actual = await vi.importActual<any>("@/components/ui/Toast");
+  const actual = await vi.importActual<typeof import("@/components/ui/Toast")>("@/components/ui/Toast");
   return {
     ...actual,
-    useToastStore: <T,>(sel: (s: any) => T) => sel({ push: mockPushToast }),
+    useToastStore: <T,>(sel: (s: { push: typeof mockPushToast }) => T) =>
+      sel({ push: mockPushToast }),
   };
 });
 
@@ -81,16 +78,16 @@ describe("GeneralSection", () => {
   beforeEach(() => {
     mockUpdateMutate.mockReset();
     mockPushToast.mockReset();
-    mockUseMLBackends.mockReturnValue({ data: [] });
     mockUseUnsavedWarning.mockReset();
   });
 
-  it("渲染初值: 项目名 / 状态 / 类别 chips", () => {
+  it("渲染初值: 项目名 / 状态 / 类型", () => {
     renderUI(makeProject());
     const nameInput = screen.getByDisplayValue("Demo Project") as HTMLInputElement;
     expect(nameInput).toBeInTheDocument();
-    expect(screen.getByText("car")).toBeInTheDocument();
-    expect(screen.getByText("person")).toBeInTheDocument();
+    expect(screen.getByText("图像检测")).toBeInTheDocument();
+    expect(screen.queryByText("启用 AI 预标注")).not.toBeInTheDocument();
+    expect(screen.queryByText("标注类别")).not.toBeInTheDocument();
   });
 
   it("修改项目名 → useUnsavedWarning 收到 dirty=true", () => {
@@ -113,57 +110,6 @@ describe("GeneralSection", () => {
     );
   });
 
-  it("启用 AI 但未绑定 backend → mutation 携带 ai_enabled=true + ai_model=null", () => {
-    renderUI(makeProject());
-    fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
-    expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
-    const [payload] = mockUpdateMutate.mock.calls[0];
-    expect(payload.ai_enabled).toBe(true);
-    expect(payload.ai_model).toBeNull();
-  });
-
-  it("绑定 backend 保存 → mutation 用 backend.name 回填 ai_model", () => {
-    mockUseMLBackends.mockReturnValue({
-      data: [
-        {
-          id: "b1",
-          name: "grounded-sam2",
-          state: "connected",
-          is_interactive: true,
-        },
-      ],
-    });
-    renderUI(makeProject({ ai_enabled: true, ai_model: null }));
-    fireEvent.change(screen.getByDisplayValue("未绑定（项目按肉眼标注运行,AI 待接入）"), {
-      target: { value: "b1" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
-    expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
-    const [payload] = mockUpdateMutate.mock.calls[0];
-    expect(payload.ai_enabled).toBe(true);
-    expect(payload.ml_backend_id).toBe("b1");
-    expect(payload.ai_model).toBe("grounded-sam2");
-  });
-
-  it("类别 chip 删除按钮触发删除", () => {
-    renderUI(makeProject());
-    const removeBtn = screen.getByLabelText("删除 car");
-    fireEvent.click(removeBtn);
-    // 删除后 unsaved warning 应感知到 dirty
-    const calls = mockUseUnsavedWarning.mock.calls;
-    expect(calls[calls.length - 1][0]).toBe(true);
-    expect(screen.queryByText("car")).not.toBeInTheDocument();
-  });
-
-  it("回车添加类别 → chip 出现", () => {
-    renderUI(makeProject());
-    const addInput = screen.getByPlaceholderText("回车添加") as HTMLInputElement;
-    fireEvent.change(addInput, { target: { value: "truck" } });
-    fireEvent.keyDown(addInput, { key: "Enter" });
-    expect(screen.getByText("truck")).toBeInTheDocument();
-  });
-
   it("有效改动后保存触发 update.mutate, 名字 trim", () => {
     renderUI(makeProject());
     const nameInput = screen.getByDisplayValue("Demo Project") as HTMLInputElement;
@@ -172,5 +118,7 @@ describe("GeneralSection", () => {
     expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
     const [payload] = mockUpdateMutate.mock.calls[0];
     expect(payload).toMatchObject({ name: "Renamed", status: "in_progress" });
+    expect(payload).not.toHaveProperty("classes");
+    expect(payload).not.toHaveProperty("ai_enabled");
   });
 });

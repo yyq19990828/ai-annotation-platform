@@ -75,7 +75,7 @@ export interface FormState {
   unitBindings: UnitBindingMap;
   activeUnit: ToolUnitId;
   aiEnabled: boolean;
-  /** v0.9.6 · SAM 文本预标默认输出 ("" = 自动按 type_key, 与 GeneralSection 4 项一致). */
+  /** v0.9.6 · SAM 文本预标默认输出 ("" = 自动按 type_key, 与 ML 模型页 4 项一致). */
   textOutputDefault: "" | "box" | "mask" | "both";
   /** v0.9.7 · 复用现有 backend; "" = 暂不绑定 (项目创建后到设置页注册). */
   mlBackendSourceId: string;

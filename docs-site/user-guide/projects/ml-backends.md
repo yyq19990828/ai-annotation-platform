@@ -14,7 +14,7 @@ last_reviewed: 2026-05-14
 
 ## 注册一个 backend
 
-进入 **项目设置 → ML 模型** 标签：
+进入 **项目设置 → ML 模型** 标签。页面上方是 AI 预标注设置，页面下方是本项目的 backend 注册列表：
 
 - 标题右侧角标显示 **已用 X / Y**——X 是当前已注册数，Y 是 `MAX_ML_BACKENDS_PER_PROJECT`（默认 1）。
 - 点 **「注册 backend」** 弹出表单。
@@ -26,7 +26,18 @@ last_reviewed: 2026-05-14
 
 > **交互能力 / 支持模态自动探测（v0.10.37 起）**：「是否交互式 backend」不再手填。平台在**健康检查**时会顺带探一次 `/setup`，按 backend 自报的 `is_interactive` / `supported_prompts`（图像 prompt）/ `supported_trackers`（视频 tracker）派生交互能力与支持模态，写库后在列表只读展示。注册一个新 backend 后，先在表格里点一次「健康检查」（刷新图标）即可看到检测到的能力。
 
-## 绑定为预标注 backend
+## 配置 AI 预标注与绑定 backend
+
+在页面上方的 **AI 预标注设置** 中：
+
+- 勾选 **启用 AI 预标注**。
+- 在 **实际 ML Backend** 下拉中选择已注册 backend。
+- 可设置 **AI 框去重阈值** 和 **SAM 文本预标默认输出**。
+- 点 **保存 AI 设置**。
+
+这些字段原先分散在“基本信息”，现在统一收口到 **ML 模型**。
+
+## 从列表快捷绑定 backend
 
 注册后在表格里点 **「绑定到本项目」**：
 
@@ -67,7 +78,7 @@ UI 形态不会变——配额角标自动更新、「注册 backend」按钮自
 | 操作 | 影响 |
 |---|---|
 | **删除 backend** | 从项目移除该 backend 记录。如果它是当前预标注 backend，项目 `ml_backend_id` 自动置 null、`ai_enabled` 不变。 |
-| **绑定其他 backend** | 只切换 `ml_backend_id`，老 backend 仍注册在项目里。 |
+| **绑定其他 backend** | 切换 `ml_backend_id` 并同步 `ai_model` 展示名，老 backend 仍注册在项目里。 |
 
 ## 常见问题
 

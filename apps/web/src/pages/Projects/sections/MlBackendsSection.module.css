@@ -31,6 +31,130 @@
   margin-top: 2px;
 }
 
+.aiSettings {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.aiSettingsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.aiToggleLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.aiCheckbox,
+.rangeInput {
+  accent-color: var(--color-ai);
+}
+
+.aiIcon {
+  color: var(--color-ai);
+}
+
+.aiSettingsGrid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.2fr) minmax(220px, 1fr);
+  gap: 14px;
+}
+
+.aiSettingsGrid > :last-child {
+  grid-column: 1 / -1;
+}
+
+.label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.labelNote {
+  color: var(--color-fg-subtle);
+  font-weight: 400;
+}
+
+.control {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: none;
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  font-family: inherit;
+  font-size: 13.5px;
+}
+
+.selectControl {
+  cursor: pointer;
+}
+
+.hint {
+  margin-top: 4px;
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.warningText {
+  margin-left: 4px;
+  color: var(--color-warning);
+}
+
+.sliderRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+}
+
+.rangeInput {
+  flex: 1;
+}
+
+.metricValue {
+  min-width: 48px;
+  color: var(--color-fg);
+  font-size: 13px;
+  text-align: right;
+}
+
+.aiSettingsFooter {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.unsavedIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-warning);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.unsavedDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-warning);
+}
+
 .body {
   padding: 12px;
 }

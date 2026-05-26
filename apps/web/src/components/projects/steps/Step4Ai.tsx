@@ -40,7 +40,7 @@ export function Step4Ai({
 
       {form.aiEnabled && (
         <>
-          {/* v0.9.6 · SAM 文本预标默认输出 (与 GeneralSection 4 项一致, 复用共享组件) */}
+          {/* v0.9.6 · SAM 文本预标默认输出 (与 ML 模型页 4 项一致, 复用共享组件) */}
           <div>
             <label className={styles.label}>
               SAM 文本预标默认输出{" "}

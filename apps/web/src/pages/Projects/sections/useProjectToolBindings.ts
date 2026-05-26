@@ -1,5 +1,5 @@
 /**
- * v0.10.17 · ClassesSection / AttributesSection / TemplateEditModal 共享 hook.
+ * v0.10.17 · ClassesSection / TemplateEditModal 共享 hook.
  *
  * 从 project.tool_bindings (或老 classes_config 派生兜底) 反推出按 ToolUnitId 拆分
  * 的编辑状态; 保存时把当前各 unit 的 classRows / attributeFields 序列化回 tool_bindings.

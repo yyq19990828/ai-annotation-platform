@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -11,9 +11,14 @@ import {
   useMLBackendHealth,
 } from "@/hooks/useMLBackends";
 import { useUpdateProject } from "@/hooks/useProjects";
+import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import { usePermissions } from "@/hooks/usePermissions";
 import { MlBackendFormModal } from "@/components/projects/MlBackendFormModal";
 import { MlBackendLimitModal } from "@/components/projects/MlBackendLimitModal";
+import {
+  TextOutputDefaultSelect,
+  type TextOutputDefault,
+} from "@/components/projects/shared/TextOutputDefaultSelect";
 import { mlBackendsApi, type MLBackendCapability } from "@/api/ml-backends";
 import type { ProjectResponse } from "@/api/projects";
 import type { MLBackendResponse } from "@/types";
@@ -44,9 +49,62 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
   const health = useMLBackendHealth(project.id);
   // v0.9.5 · 行内「绑定到本项目」快捷绑定，免回基本信息 tab 手选
   const updateProject = useUpdateProject(project.id);
+  const [aiEnabled, setAiEnabled] = useState(project.ai_enabled);
+  const [mlBackendId, setMlBackendId] = useState<string | null>(
+    project.ml_backend_id ?? null,
+  );
+  const [iouThreshold, setIouThreshold] = useState(project.iou_dedup_threshold ?? 0.7);
+  const [textOutputDefault, setTextOutputDefault] = useState<string>(
+    project.text_output_default ?? "",
+  );
+
+  useEffect(() => {
+    setAiEnabled(project.ai_enabled);
+    setMlBackendId(project.ml_backend_id ?? null);
+    setIouThreshold(project.iou_dedup_threshold ?? 0.7);
+    setTextOutputDefault(project.text_output_default ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id]);
+
+  const selectedBackendName =
+    mlBackendId && backends.find((b) => b.id === mlBackendId)?.name;
+  const effectiveAiModel =
+    selectedBackendName ??
+    (mlBackendId === project.ml_backend_id ? project.ai_model ?? null : null);
+  const nextAiModel = aiEnabled ? effectiveAiModel : null;
+  const aiSettingsDirty =
+    aiEnabled !== project.ai_enabled ||
+    nextAiModel !== (project.ai_model ?? null) ||
+    (mlBackendId ?? null) !== (project.ml_backend_id ?? null) ||
+    Math.abs(iouThreshold - (project.iou_dedup_threshold ?? 0.7)) > 0.001 ||
+    textOutputDefault !== (project.text_output_default ?? "");
+
+  useUnsavedWarning(aiSettingsDirty);
+
+  const onSaveAiSettings = () => {
+    updateProject.mutate(
+      {
+        ai_enabled: aiEnabled,
+        ai_model: nextAiModel,
+        ml_backend_id: aiEnabled ? mlBackendId : null,
+        iou_dedup_threshold: iouThreshold,
+        text_output_default: (textOutputDefault || null) as "box" | "mask" | "both" | null,
+      },
+      {
+        onSuccess: () =>
+          pushToast({ msg: "AI 预标注设置已保存", kind: "success" }),
+        onError: (e) => pushToast({ msg: "保存失败", sub: (e as Error).message }),
+      },
+    );
+  };
+
   const onBind = (b: MLBackendResponse) => {
     updateProject.mutate(
-      { ml_backend_id: b.id, ai_enabled: true } as Parameters<typeof updateProject.mutate>[0],
+      {
+        ml_backend_id: b.id,
+        ai_enabled: true,
+        ai_model: b.name,
+      } as Parameters<typeof updateProject.mutate>[0],
       {
         onSuccess: () =>
           pushToast({ msg: `已绑定 backend「${b.name}」`, kind: "success" }),
@@ -129,7 +187,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
             </span>
           </h3>
           <div className={styles.subtitle}>
-            管理本项目作用域的 ML backend；注册后回「基本信息」可绑定为预标注 backend。
+            管理本项目作用域的 ML backend，并配置 AI 预标注入口。
           </div>
         </div>
         <Button
@@ -141,6 +199,102 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
           <Icon name="plus" size={12} />
           注册 backend
         </Button>
+      </div>
+
+      <div className={styles.aiSettings}>
+        <div className={styles.aiSettingsHeader}>
+          <label className={styles.aiToggleLabel}>
+            <input
+              type="checkbox"
+              checked={aiEnabled}
+              onChange={(e) => setAiEnabled(e.target.checked)}
+              className={styles.aiCheckbox}
+            />
+            <Icon name="sparkles" size={14} className={styles.aiIcon} />
+            启用 AI 预标注
+          </label>
+          {aiSettingsDirty && (
+            <span
+              className={styles.unsavedIndicator}
+              data-testid="ai-settings-unsaved"
+            >
+              <span className={styles.unsavedDot} />
+              有未保存的修改
+            </span>
+          )}
+        </div>
+
+        <div className={styles.aiSettingsGrid}>
+          <div>
+            <label className={styles.label}>实际 ML Backend</label>
+            <select
+              value={mlBackendId ?? ""}
+              onChange={(e) => setMlBackendId(e.target.value || null)}
+              disabled={!aiEnabled}
+              className={cn(styles.control, styles.selectControl)}
+            >
+              <option value="">未绑定（项目按肉眼标注运行，AI 待接入）</option>
+              {backends.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                  {b.state === "connected" ? " · 在线" : ` · ${b.state}`}
+                  {b.is_interactive ? " · 交互式" : ""}
+                </option>
+              ))}
+            </select>
+            <div className={styles.hint}>
+              绑定后，平台所有“模型名”展示均直接来自 backend.name。后端专属推理参数仍在工作台 AI 面板按用户独立调整。
+              {backends.length === 0 && (
+                <span className={styles.warningText}>
+                  暂无可用 backend；可先在本页注册。
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className={styles.label}>
+              AI 框去重阈值 <span className={styles.labelNote}>同类 AI 框与人工框 IoU 高于此值时淡化</span>
+            </label>
+            <div className={styles.sliderRow}>
+              <input
+                type="range"
+                min={0.3}
+                max={0.95}
+                step={0.05}
+                value={iouThreshold}
+                onChange={(e) => setIouThreshold(Number(e.target.value))}
+                disabled={!aiEnabled}
+                className={styles.rangeInput}
+              />
+              <span className={cn("mono", styles.metricValue)}>
+                {iouThreshold.toFixed(2)}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <label className={styles.label}>
+              SAM 文本预标默认输出 <span className={styles.labelNote}>工作台“找全图”的初始值</span>
+            </label>
+            <TextOutputDefaultSelect
+              value={textOutputDefault as TextOutputDefault}
+              onChange={(v) => setTextOutputDefault(v)}
+              disabled={!aiEnabled}
+              className={cn(styles.control, styles.selectControl)}
+            />
+          </div>
+        </div>
+
+        <div className={styles.aiSettingsFooter}>
+          <Button
+            variant="primary"
+            disabled={!aiSettingsDirty || updateProject.isPending}
+            onClick={onSaveAiSettings}
+          >
+            {updateProject.isPending ? "保存中..." : "保存 AI 设置"}
+          </Button>
+        </div>
       </div>
 
       <div className={styles.body}>

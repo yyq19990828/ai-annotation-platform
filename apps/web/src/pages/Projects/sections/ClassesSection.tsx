@@ -1,9 +1,15 @@
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject, useRenameClass } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
-import type { ProjectResponse } from "@/api/projects";
+import type {
+  ProjectResponse,
+  AttributeField,
+  AttributeSchema,
+} from "@/api/projects";
+import { AttributeSchemaEditor, validateAttributeFields } from "./AttributeSchemaEditor";
 import { ClassEditor, type ClassRow } from "./ClassEditor";
 import { KeypointSchemaEditor } from "./KeypointSchemaEditor";
 import { ToolUnitTabs } from "./ToolUnitTabs";
@@ -54,6 +60,19 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
         enabled: b[activeUnit]?.enabled ?? true,
         classRows: next,
         attributeFields: b[activeUnit]?.attributeFields ?? [],
+        keypointSchema: b[activeUnit]?.keypointSchema ?? null,
+      },
+    }));
+  };
+
+  const onAttributeChange = (next: AttributeField[]) => {
+    setBindings((b) => ({
+      ...b,
+      [activeUnit]: {
+        enabled: b[activeUnit]?.enabled ?? true,
+        classRows: b[activeUnit]?.classRows ?? [],
+        attributeFields: next,
+        keypointSchema: b[activeUnit]?.keypointSchema ?? null,
       },
     }));
   };
@@ -77,17 +96,27 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
         enabled,
         classRows: b[unit]?.classRows ?? [],
         attributeFields: b[unit]?.attributeFields ?? [],
+        keypointSchema: b[unit]?.keypointSchema ?? null,
       },
     }));
   };
 
   const onSave = () => {
+    for (const k of Object.keys(bindings) as (keyof typeof bindings)[]) {
+      const ub = bindings[k];
+      if (!ub?.enabled) continue;
+      const err = validateAttributeFields(ub.attributeFields);
+      if (err) {
+        pushToast({ msg: `[${k}] ${err}`, kind: "error" });
+        return;
+      }
+    }
     const tool_bindings = unitBindingsToPayload(bindings);
     update.mutate(
       { tool_bindings },
       {
         onSuccess: () =>
-          pushToast({ msg: "类别配置已保存", kind: "success" }),
+          pushToast({ msg: "类别与属性配置已保存", kind: "success" }),
         onError: (err) =>
           pushToast({
             msg: "保存失败",
@@ -98,15 +127,65 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
     );
   };
 
+  const onExportJson = () => {
+    const fields = activeBinding?.attributeFields ?? [];
+    const blob = new Blob([JSON.stringify({ fields }, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${project.display_id}-${activeUnit}-attribute-schema.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const onImportJson = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result ?? "")) as AttributeSchema;
+        if (!Array.isArray(parsed.fields)) throw new Error("缺少 fields 数组");
+        onAttributeChange(parsed.fields);
+        pushToast({ msg: `已导入到 ${activeUnit} 工具单位`, kind: "success" });
+      } catch (err) {
+        pushToast({
+          msg: "JSON 格式错误",
+          sub: (err as Error).message,
+          kind: "error",
+        });
+      }
+    };
+    reader.readAsText(f);
+    e.target.value = "";
+  };
+
   return (
     <Card>
       <div className={styles.cardHeader}>
-        <h3 className={styles.cardTitle}>类别管理（按工具单位 · v0.10.17）</h3>
+        <h3 className={styles.cardTitle}>类别与属性</h3>
+        <div className={styles.headerActions}>
+          <Button size="sm" variant="ghost" onClick={onExportJson}>
+            <Icon name="download" size={11} />导出属性 JSON
+          </Button>
+          <label className={styles.importLabel}>
+            <input
+              type="file"
+              accept="application/json"
+              onChange={onImportJson}
+              className={styles.fileInput}
+            />
+            <span className={styles.importButton}>
+              <Icon name="plus" size={11} />导入属性
+            </span>
+          </label>
+        </div>
       </div>
       <div className={styles.body}>
         <p className={styles.helpText}>
-          每个工具单位独立维护类别 / 颜色 / 排序; 同名类在不同单位下是独立记录 (强隔离)。
-          顺序影响数字键 1-9 / a-z 映射与左侧调色板展示。
+          点击工具单位后，直接维护该工具的类别、颜色、排序和属性 schema；同名类在不同工具单位下相互隔离。
         </p>
         <ToolUnitTabs
           bindings={bindings}
@@ -117,23 +196,36 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
         />
         {!activeBinding?.enabled ? (
           <div className={styles.helpText}>
-            当前工具单位未启用 — 勾选上方复选框以启用并配置类别。
+            当前工具单位未启用 — 勾选上方复选框以启用并配置类别与属性。
           </div>
         ) : (
-          <>
-            <ClassEditor
-              value={activeBinding.classRows}
-              onChange={onChange}
-              onRename={handleRename}
-              renaming={rename.isPending}
-            />
-            {activeUnit === "keypoint" && (
-              <KeypointSchemaEditor
-                value={activeBinding.keypointSchema}
-                onChange={onKeypointSchemaChange}
+          <div className={styles.editorGrid}>
+            <section className={styles.editorPanel}>
+              <h4 className={styles.sectionTitle}>类别</h4>
+              <ClassEditor
+                value={activeBinding.classRows}
+                onChange={onChange}
+                onRename={handleRename}
+                renaming={rename.isPending}
               />
+            </section>
+            {activeUnit === "keypoint" && (
+              <section className={styles.editorPanel}>
+                <h4 className={styles.sectionTitle}>关键点骨骼</h4>
+                <KeypointSchemaEditor
+                  value={activeBinding.keypointSchema}
+                  onChange={onKeypointSchemaChange}
+                />
+              </section>
             )}
-          </>
+            <section className={styles.editorPanel}>
+              <h4 className={styles.sectionTitle}>属性 schema</h4>
+              <AttributeSchemaEditor
+                value={activeBinding.attributeFields}
+                onChange={onAttributeChange}
+              />
+            </section>
+          </div>
         )}
         <div className={styles.footer}>
           {dirty && (
