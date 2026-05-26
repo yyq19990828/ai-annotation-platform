@@ -21,6 +21,7 @@ const KIND_LABEL: Record<string, string> = {
   audit_archive: "审计分区归档",
   predictions_import: "预测导入",
   prediction_retry: "失败预测重试",
+  dataset_import: "数据集导入",
   export: "数据导出",
 };
 

@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+import hashlib
+import mimetypes
+import os
 import uuid
+from typing import BinaryIO, Literal
+
 from sqlalchemy import select, func, delete, insert, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +16,22 @@ from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.services.display_id import next_display_id
 from app.services.storage import storage_service
+
+_STREAM_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
+_IMAGE_HEAD_BYTES = 256 * 1024
+
+
+@dataclass(frozen=True)
+class IngestOutcome:
+    status: Literal["added", "skipped", "error"]
+    relpath: str
+    item_id: uuid.UUID | None = None
+    file_type: str | None = None
+    file_size: int | None = None
+    content_hash: str | None = None
+    linked_tasks: int = 0
+    reason: str | None = None
+    error: str | None = None
 
 
 class DatasetService:
@@ -236,80 +258,268 @@ class DatasetService:
         await self.db.flush()
         return True
 
-    # ── Scan & import from bucket ─────────────────────────────────────────
+    async def ingest_one(
+        self,
+        dataset_id: uuid.UUID,
+        relpath: str,
+        stream: BinaryIO | None = None,
+        *,
+        size: int | None = None,
+        storage_key: str | None = None,
+        content_hash_hint: str | None = None,
+    ) -> IngestOutcome:
+        """Ingest one source object into a dataset.
 
-    async def scan_and_import(self, dataset_id: uuid.UUID) -> list[uuid.UUID]:
+        `storage_key` is for objects already present in the datasets bucket (scan);
+        otherwise `stream` is copied into that bucket in chunks while hashing.
+        """
         ds = await self.db.get(Dataset, dataset_id)
         if not ds:
-            return 0
+            return IngestOutcome(
+                status="error", relpath=relpath, error="dataset missing"
+            )
 
-        existing = await self.db.execute(
-            select(DatasetItem.file_path).where(DatasetItem.dataset_id == dataset_id)
+        source_name = _safe_basename(relpath)
+        final_name = await self._unique_file_name(dataset_id, source_name)
+        ext = final_name.rsplit(".", 1)[-1].lower() if "." in final_name else ""
+        file_type = _infer_file_type_from_ext(ext)
+        uploaded_storage = False
+
+        if storage_key:
+            duplicate_path = await self._find_by_file_path(dataset_id, storage_key)
+            if duplicate_path is not None:
+                return IngestOutcome(
+                    status="skipped",
+                    relpath=relpath,
+                    reason="file_path_exists",
+                    item_id=duplicate_path.id,
+                )
+            content_hash = content_hash_hint if _is_md5(content_hash_hint) else None
+            file_size = size
+            head_bytes = b""
+        else:
+            if stream is None:
+                return IngestOutcome(
+                    status="error", relpath=relpath, error="stream missing"
+                )
+            storage_key = f"{ds.name}/{final_name}"
+            content_type = (
+                mimetypes.guess_type(final_name)[0] or "application/octet-stream"
+            )
+            content_hash, file_size, head_bytes = self._upload_stream_to_dataset_bucket(
+                storage_key,
+                stream,
+                content_type=content_type,
+            )
+            uploaded_storage = True
+
+        if content_hash:
+            existing = await self.find_by_hash(dataset_id, content_hash)
+            if existing is not None:
+                if uploaded_storage:
+                    try:
+                        storage_service.delete_object(
+                            storage_key, bucket=storage_service.datasets_bucket
+                        )
+                    except Exception:
+                        pass
+                return IngestOutcome(
+                    status="skipped",
+                    relpath=relpath,
+                    item_id=existing.id,
+                    file_type=existing.file_type,
+                    file_size=file_size,
+                    content_hash=content_hash,
+                    reason="content_hash_exists",
+                )
+
+        width: int | None = None
+        height: int | None = None
+        if file_type == "image":
+            dims = (
+                storage_service.read_image_dimensions_from_bytes(head_bytes)
+                if head_bytes
+                else None
+            )
+            if dims is None:
+                dims = storage_service.read_image_dimensions(
+                    storage_key,
+                    bucket=storage_service.datasets_bucket,
+                )
+            if dims:
+                width, height = dims
+
+        item = await self.add_item(
+            dataset_id=dataset_id,
+            file_name=final_name,
+            file_path=storage_key,
+            file_type=file_type,
+            file_size=file_size,
+            content_hash=content_hash,
+            width=width,
+            height=height,
         )
-        existing_paths: set[str] = {row[0] for row in existing}
+        linked_tasks = await self.create_tasks_for_items(dataset_id, [item.id])
+        return IngestOutcome(
+            status="added",
+            relpath=relpath,
+            item_id=item.id,
+            file_type=file_type,
+            file_size=file_size,
+            content_hash=content_hash,
+            linked_tasks=linked_tasks,
+        )
+
+    async def enqueue_media_for_items(self, item_ids: list[uuid.UUID]) -> None:
+        unique_item_ids = list(dict.fromkeys(item_ids))
+        if not unique_item_ids:
+            return
+        rows = await self.db.execute(
+            select(DatasetItem.id, DatasetItem.file_type).where(
+                DatasetItem.id.in_(unique_item_ids)
+            )
+        )
+        for item_id, file_type in rows.all():
+            if file_type == "image":
+                from app.workers.media import generate_thumbnail
+
+                generate_thumbnail.delay(str(item_id))
+            elif file_type == "video":
+                from app.workers.media import generate_video_metadata
+
+                generate_video_metadata.delay(str(item_id))
+
+    async def _find_by_file_path(
+        self, dataset_id: uuid.UUID, file_path: str
+    ) -> DatasetItem | None:
+        result = await self.db.execute(
+            select(DatasetItem).where(
+                DatasetItem.dataset_id == dataset_id,
+                DatasetItem.file_path == file_path,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def _unique_file_name(self, dataset_id: uuid.UUID, file_name: str) -> str:
+        existing_rows = await self.db.execute(
+            select(DatasetItem.file_name).where(DatasetItem.dataset_id == dataset_id)
+        )
+        existing = {row[0] for row in existing_rows.all() if row[0]}
+        if file_name not in existing:
+            return file_name
+        stem, ext = os.path.splitext(file_name)
+        i = 1
+        while f"{stem}-{i}{ext}" in existing:
+            i += 1
+        return f"{stem}-{i}{ext}"
+
+    def _upload_stream_to_dataset_bucket(
+        self,
+        storage_key: str,
+        stream: BinaryIO,
+        *,
+        content_type: str,
+    ) -> tuple[str, int, bytes]:
+        client = storage_service.client
+        bucket = storage_service.datasets_bucket
+        md5 = hashlib.md5()
+        head = bytearray()
+        total = 0
+        part_number = 1
+        parts: list[dict] = []
+        upload_id: str | None = None
+
+        resp = client.create_multipart_upload(
+            Bucket=bucket,
+            Key=storage_key,
+            ContentType=content_type,
+        )
+        upload_id = resp["UploadId"]
+        try:
+            while True:
+                chunk = stream.read(_STREAM_UPLOAD_CHUNK_BYTES)
+                if not chunk:
+                    break
+                if isinstance(chunk, str):
+                    chunk = chunk.encode()
+                elif not isinstance(chunk, bytes):
+                    chunk = bytes(chunk)
+                total += len(chunk)
+                md5.update(chunk)
+                if len(head) < _IMAGE_HEAD_BYTES:
+                    remaining = _IMAGE_HEAD_BYTES - len(head)
+                    head.extend(chunk[:remaining])
+                part = client.upload_part(
+                    Bucket=bucket,
+                    Key=storage_key,
+                    PartNumber=part_number,
+                    UploadId=upload_id,
+                    Body=chunk,
+                )
+                parts.append({"ETag": part["ETag"], "PartNumber": part_number})
+                part_number += 1
+
+            if parts:
+                client.complete_multipart_upload(
+                    Bucket=bucket,
+                    Key=storage_key,
+                    UploadId=upload_id,
+                    MultipartUpload={"Parts": parts},
+                )
+            else:
+                client.abort_multipart_upload(
+                    Bucket=bucket,
+                    Key=storage_key,
+                    UploadId=upload_id,
+                )
+                upload_id = None
+                client.put_object(
+                    Bucket=bucket,
+                    Key=storage_key,
+                    Body=b"",
+                    ContentType=content_type,
+                )
+        except Exception:
+            if upload_id is not None:
+                try:
+                    client.abort_multipart_upload(
+                        Bucket=bucket,
+                        Key=storage_key,
+                        UploadId=upload_id,
+                    )
+                except Exception:
+                    pass
+            raise
+
+        return md5.hexdigest(), total, bytes(head)
+
+    # ── Scan & import from bucket ─────────────────────────────────────────
+
+    async def scan_and_import(self, dataset_id: uuid.UUID) -> list[IngestOutcome]:
+        ds = await self.db.get(Dataset, dataset_id)
+        if not ds:
+            return []
 
         prefix = f"{ds.name}/"
         objects = storage_service.list_objects(
             prefix, bucket=storage_service.datasets_bucket
         )
-
-        # 同时收集已存在的 hash，防止 scan 时内容重复
-        existing_hashes_res = await self.db.execute(
-            select(DatasetItem.content_hash).where(
-                DatasetItem.dataset_id == dataset_id,
-                DatasetItem.content_hash.isnot(None),
-            )
-        )
-        existing_hashes: set[str] = {r[0] for r in existing_hashes_res.all()}
-
-        created = 0
-        new_items: list[DatasetItem] = []
+        outcomes: list[IngestOutcome] = []
         for obj in objects:
             key: str = obj["key"]
             if key.endswith("/"):
                 continue
-            if key in existing_paths:
-                continue
-
-            # ETag from MinIO 单 PUT = md5（不含引号）
             etag = obj.get("etag") or ""
-            content_hash = etag if len(etag) == 32 else None
-            if content_hash and content_hash in existing_hashes:
-                continue
-            if content_hash:
-                existing_hashes.add(content_hash)
-
-            file_name = key.rsplit("/", 1)[-1]
-            ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
-            file_type = _infer_file_type_from_ext(ext)
-
-            width: int | None = None
-            height: int | None = None
-            if file_type == "image":
-                dims = storage_service.read_image_dimensions(
-                    key, bucket=storage_service.datasets_bucket
+            outcomes.append(
+                await self.ingest_one(
+                    dataset_id,
+                    key.rsplit("/", 1)[-1],
+                    size=obj.get("size"),
+                    storage_key=key,
+                    content_hash_hint=etag if _is_md5(etag) else None,
                 )
-                if dims:
-                    width, height = dims
-
-            item = DatasetItem(
-                dataset_id=dataset_id,
-                file_name=file_name,
-                file_path=key,
-                file_type=file_type,
-                file_size=obj.get("size"),
-                content_hash=content_hash,
-                width=width,
-                height=height,
             )
-            self.db.add(item)
-            new_items.append(item)
-            created += 1
-
-        if created and ds:
-            ds.file_count = (ds.file_count or 0) + created
-        await self.db.flush()
-        return [item.id for item in new_items]
+        return outcomes
 
     # ── Project linking ─────────────────────────────────────────────────────
 
@@ -626,6 +836,16 @@ class DatasetService:
 
 _IMAGE_EXTS = {"jpg", "jpeg", "png", "bmp", "webp", "tiff", "tif", "gif", "svg"}
 _VIDEO_EXTS = {"mp4", "avi", "mov", "mkv", "wmv", "flv", "webm"}
+
+
+def _safe_basename(relpath: str) -> str:
+    normalized = (relpath or "").replace("\\", "/").rstrip("/")
+    name = os.path.basename(normalized)
+    return name or f"source-{uuid.uuid4().hex}"
+
+
+def _is_md5(value: str | None) -> bool:
+    return bool(value and len(value) == 32)
 
 
 def _infer_file_type_from_ext(ext: str) -> str:

@@ -28,6 +28,7 @@ class AsyncJobKind(str, enum.Enum):
     PREDICTIONS_IMPORT = "predictions_import"  # 外部 prediction 导入
     PREDICTION_RETRY = "prediction_retry"  # 失败预测重试
     EXPORT = "export"  # 标注导出（异步化 + 目录镜像）
+    DATASET_IMPORT = "dataset_import"  # 外部连接器数据集导入
 
 
 class AsyncJobStatus(str, enum.Enum):

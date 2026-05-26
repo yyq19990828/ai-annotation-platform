@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # v0.10.24 · 版本号单源真值。FastAPI title version 与 /health version 都读它，
     # 发版只改这一处（+ pyproject.toml / package.json）。运维 scrape /health 拿到的
     # 版本号此前长期 stale（曾硬编码 0.7.6），故收口到 settings。
-    app_version: str = "0.11.14"
+    app_version: str = "0.11.15"
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
 
@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     # 一把 Fernet key（32B url-safe base64）；留空则连接器加解密一律拒绝（API 转 503）。
     # 生成: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     connector_encryption_key: str = ""
+    # v0.11.15 · 连接器导入护栏。超限 job 会失败，不会部分导入。
+    dataset_import_max_files: int = 50_000
+    dataset_import_max_total_bytes: int = 200 * 1024 * 1024 * 1024
 
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "minioadmin"

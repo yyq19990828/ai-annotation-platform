@@ -139,7 +139,7 @@ Celery 里任务先被**投递（publish）到某个命名队列**，worker 只*
   |---|---|---|---|
   | `default` | `task_default_queue` 兜底 + ml_health | `publish_ml_backend_stats`(PerfHud) / `check_ml_backends_health` / `worker-heartbeat` / `mark_inactive_offline`(在线状态) / 各 `ensure_future_*_partitions` | 部分（PerfHud / 在线状态点） |
   | `ml` | `batch_predict` / `retry_failed_prediction` | 跑 ML backend / 重试失败预测 | ✅ 工作台 AI 候选框 |
-  | `media` | `generate_thumbnail` / `extract_video_frames` 等 | 缩略图、视频帧、媒体 backfill | ✅ 列表 / 工作台的图与帧 |
+  | `media` | `generate_thumbnail` / `extract_video_frames` / `run_dataset_import` 等 | 缩略图、视频帧、媒体 backfill、连接器数据集导入 | ✅ 列表 / 工作台的图与帧 / 数据集导入进度 |
   | `gpu` | `run_video_tracker_job` | 视频目标追踪 | ✅ 视频追踪结果 |
   | `cleanup` | `purge_soft_deleted_attachments` / `refresh_user_perf_mv` / `sync_to_duckdb` 等 | 清理、效率看板物化视图刷新、DuckDB 同步 | 间接（效率看板数据） |
   | `audit` | `persist_audit_entry` / `persist_task_events_batch` | 审计日志 / task event 批量入库 | ✅ admin 审计页 |

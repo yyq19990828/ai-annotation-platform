@@ -5581,6 +5581,58 @@
         "title": "DatasetCreate",
         "type": "object"
       },
+      "DatasetImportFromConnectionRequest": {
+        "properties": {
+          "connection_id": {
+            "format": "uuid",
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "include_globs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Include Globs"
+          },
+          "recursive": {
+            "default": true,
+            "title": "Recursive",
+            "type": "boolean"
+          },
+          "source_path": {
+            "default": "",
+            "title": "Source Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection_id"
+        ],
+        "title": "DatasetImportFromConnectionRequest",
+        "type": "object"
+      },
+      "DatasetImportFromConnectionResponse": {
+        "properties": {
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "DatasetImportFromConnectionResponse",
+        "type": "object"
+      },
       "DatasetItemListResponse": {
         "properties": {
           "items": {
@@ -15482,7 +15534,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.11.14"
+    "version": "0.11.15"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -19552,6 +19604,64 @@
           }
         ],
         "summary": "Backfill Media Endpoint",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
+    "/api/v1/datasets/{dataset_id}/import-from-connection": {
+      "post": {
+        "operationId": "import_from_connection_api_v1_datasets__dataset_id__import_from_connection_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetImportFromConnectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetImportFromConnectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Import From Connection",
         "tags": [
           "datasets"
         ]

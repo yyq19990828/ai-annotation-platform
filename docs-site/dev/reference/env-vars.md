@@ -91,6 +91,8 @@ last_reviewed: 2026-05-26
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `CONNECTOR_ENCRYPTION_KEY` | `—` | 与 SECRET_KEY 隔离；留空则连接器加解密一律拒绝（API 返回 503）。 生成: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" |
+| `DATASET_IMPORT_MAX_FILES` | `50000` | v0.11.15 · 连接器导入单个 job 最多扫描 / 导入的文件数；超限直接失败，避免误扫全桶。 |
+| `DATASET_IMPORT_MAX_TOTAL_BYTES` | `214748364800` | v0.11.15 · 连接器导入单个 job 允许的总字节数；默认 200GiB。 |
 
 ## 是否允许开放注册（v0.7.7+；v0.8.1 起可在 SettingsPage > 系统设置 中热更新覆盖）
 

@@ -74,6 +74,7 @@ const JOB_KIND_LABEL: Record<string, string> = {
   video_tracker: "视频追踪",
   predictions_import: "预测导入",
   prediction_retry: "失败预测重试",
+  dataset_import: "数据集导入",
   audit_archive: "审计归档",
 };
 
@@ -106,6 +107,9 @@ function jobTitle(item: NotificationItem): string {
   }
   if (kind === "prediction_retry") {
     return stringValue((payload as { ml_backend_name?: unknown }).ml_backend_name);
+  }
+  if (kind === "dataset_import") {
+    return stringValue((payload as { dataset_name?: unknown }).dataset_name);
   }
   return "";
 }

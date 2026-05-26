@@ -24,6 +24,16 @@
 
 ## 最新版本
 
+## [0.11.15] - 2026-05-26
+
+> **数据集导入能力扩展 · SourceAdapter + 异步导入（切片 2/3）。** 连接器现在可经 HTTP API 端到端导入数据集：外部 S3/OSS 或 SFTP 路径由 Celery job 流式复制到 `minio-datasets`，复用 DatasetItem/Task/媒体派生管线，并可通过 `async_jobs` 轮询与取消。
+
+### Added
+
+- **SourceAdapter + S3/SFTP 拉取实现**: 新增 `SourceAdapter` 抽象及 `S3CompatibleSource` / `SftpSource`，导入前复检连接器主机白名单并限制 `source_path` 必须位于连接器 `base_prefix` / `base_path` 内，支持递归扫描与 `include_globs` 过滤。→ [plan](docs/plans/2026-05-26-v0.11.15-adapter-and-import-job.md)
+- **异步数据集导入 API**: 新增 `POST /api/v1/datasets/{id}/import-from-connection`，创建 `AsyncJob(kind="dataset_import")` 后由 Celery 后台执行；job payload 只保存连接器 ID、数据集 ID、路径与过滤条件，不保存明文密钥。
+- **流式入库复用管线**: `DatasetService.ingest_one()` 分块写入 `minio-datasets`，同步计算 content hash，重复内容跳过并清理临时对象；新增文件会生成 DatasetItem、为已关联项目补 Task，并派发缩略图 / 视频元数据任务。
+
 ## [0.11.14] - 2026-05-26
 
 > **数据集导入能力扩展 · 存储连接器基建（切片 1/3）。** 为"服务端主动拉取"类导入（外部 S3/OSS + SFTP/SSH）打地基：可复用、密钥加密落库、受超管主机白名单约束的存储连接器。本版仅含连接器管理与连通性测试，实际导入在后续切片。

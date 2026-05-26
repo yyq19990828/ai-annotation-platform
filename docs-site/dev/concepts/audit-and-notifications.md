@@ -243,6 +243,7 @@ helper 位于 `apps/api/app/services/async_job_notify.py`，由 worker / API 在
 - `prediction_retry`
 - `video_tracker`
 - `predictions_import`
+- `dataset_import`
 - `audit_archive`
 
 `failed_prediction.retry.succeeded` / `failed_prediction.retry.failed` 保留为历史通知偏好类型；
