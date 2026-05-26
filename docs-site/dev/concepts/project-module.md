@@ -175,6 +175,8 @@ AI 能力是 project 级开关，不是 batch 或 task 私有配置。
 
 所以“用户是不是项目管理员”不是只看全局 role，而是“全局角色 + 是否是该项目 owner”的组合。
 
+前端项目设置的 `成员管理` 是一个添加入口：先选择项目内角色（标注员 / 审核员），再多选候选用户批量加入。后端仍以单条 `ProjectMember` 关系为写入单位；批量添加只是前端对现有 `POST /projects/:id/members` 的循环封装。
+
 ## 和 Batch / Task 的关系
 
 ### Project → Batch

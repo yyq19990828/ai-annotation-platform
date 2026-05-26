@@ -19,7 +19,7 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
   const { data: members = [], isLoading } = useProjectMembers(project.id);
   const remove = useRemoveProjectMember(project.id);
-  const [assignRole, setAssignRole] = useState<"annotator" | "reviewer" | null>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<ProjectMemberResponse | null>(null);
 
   const onRemove = (m: ProjectMemberResponse) => {
@@ -38,11 +38,8 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
         <div className={styles.cardHeader}>
           <h3 className={styles.cardTitle}>项目成员</h3>
           <div className={styles.headerActions}>
-            <Button onClick={() => setAssignRole("annotator")}>
-              <Icon name="plus" size={12} />指派标注员
-            </Button>
-            <Button onClick={() => setAssignRole("reviewer")}>
-              <Icon name="plus" size={12} />指派审核员
+            <Button onClick={() => setAssignOpen(true)}>
+              <Icon name="plus" size={12} />添加成员
             </Button>
           </div>
         </div>
@@ -54,7 +51,7 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
         )}
         {!isLoading && members.length === 0 && (
           <div className={styles.placeholder}>
-            暂无成员，点击右上角按钮指派标注员或审核员
+            暂无成员，点击右上角按钮添加标注员或审核员
           </div>
         )}
         {!isLoading && members.length > 0 && (
@@ -111,13 +108,12 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
         )}
       </Card>
 
-      {assignRole && (
+      {assignOpen && (
         <AssignMemberModal
           open
           projectId={project.id}
-          role={assignRole}
           existing={members}
-          onClose={() => setAssignRole(null)}
+          onClose={() => setAssignOpen(false)}
         />
       )}
 
