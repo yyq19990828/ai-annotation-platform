@@ -47,7 +47,7 @@ celery_app.conf.update(
     worker_max_memory_per_child=512_000,
     # v0.10.25 · 默认队列从 Celery 内置 "celery" 改为 "default"。worker 订阅
     # default,ml,media,gpu,cleanup,audit —— 不含 "celery", 故任何未在 task_routes 显式
-    # 路由的任务(beat 的 worker-heartbeat / ensure_future_*_partitions / mark_inactive_offline
+    # 路由的任务(beat 的 ensure_future_*_partitions / mark_inactive_offline
     # / process_deactivation_requests / refresh_user_perf_mv 等)此前都落进无人消费的 "celery"
     # 队列堆积、永不执行。收口到 default 让兜底任务真正跑起来。
     task_default_queue="default",
@@ -157,10 +157,13 @@ celery_app.conf.update(
             "task": "app.workers.export_cleanup.purge_expired_export_artifacts",
             "schedule": crontab(hour=4, minute=30),
         },
-        # v0.10.25 · worker 心跳：周期写 Redis（celery:hb:{worker}），/health/celery 读差值。
-        "worker-heartbeat": {
-            "task": "app.workers.heartbeat.publish_worker_heartbeat",
-            "schedule": timedelta(seconds=settings.worker_heartbeat_interval_seconds),
-        },
+        # v0.11.18 · worker 心跳已从 beat 任务改为 worker bootstep（每个 worker 进程自身
+        # 定时写 Redis，见 heartbeat.py），不再由 beat 派发，故此处移除。
     },
 )
+
+# v0.11.18 · 注册心跳 bootstep：每个 worker 进程在自身内部定时器里周期写 celery:hb:{node}，
+# 不依赖 broker fanout 投递（Redis broker 的 Broadcast 队列分发不可靠），多 worker 各自上报。
+from app.workers.heartbeat import HeartbeatStep  # noqa: E402
+
+celery_app.steps["worker"].add(HeartbeatStep)

@@ -44,8 +44,8 @@ async def test_health_celery_returns_queues_and_workers(
     audit_q = next(q for q in data["queues"] if q["name"] == "audit")
     assert audit_q["length"] == 1
     assert {w["name"] for w in data["workers"]} == {"worker@h1", "worker@h2"}
-    # v0.10.25 · 心跳改读 Redis（beat publish_worker_heartbeat 写入）。fake worker 无心跳
-    # key，故新鲜度为 None（未知），不再是旧的硬编码 0。
+    # v0.10.25 · 心跳改读 Redis（v0.11.18 起由各 worker 的心跳 bootstep 写入）。fake worker
+    # 无心跳 key，故新鲜度为 None（未知），不再是旧的硬编码 0。
     assert all(w["last_heartbeat_seconds_ago"] is None for w in data["workers"])
     assert any(w["pool_max"] == 4 for w in data["workers"])
 

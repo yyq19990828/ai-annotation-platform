@@ -189,8 +189,8 @@ class Settings(BaseSettings):
     # Celery beat 任务 mark_inactive_offline 置 offline。前端 30s 心跳 × 10 容差。
     offline_threshold_minutes: int = 5
 
-    # v0.10.25 · Worker 心跳上报间隔（秒）。beat 周期触发 publish_worker_heartbeat
-    # 写 Redis（key celery:hb:{worker}，TTL = 间隔 × 3），/health/celery 读差值。
+    # v0.10.25 · Worker 心跳上报间隔（秒）。每个 worker 的心跳 bootstep（v0.11.18，见
+    # workers/heartbeat.py）周期写 Redis（key celery:hb:{worker}，TTL = 间隔 × 3），/health/celery 读差值。
     worker_heartbeat_interval_seconds: int = 30
 
     # SMTP（本期占位，仅在 GET /settings/system 中以「已配置/未配置」呈现）

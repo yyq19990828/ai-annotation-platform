@@ -97,8 +97,8 @@ def _check_celery() -> dict:
         for qname, count in queue_counts.items():
             CELERY_QUEUE_LENGTH.labels(queue=qname).set(count)
 
-        # v0.10.25 · 心跳新鲜度：beat 任务 publish_worker_heartbeat 周期把 unix 时间戳
-        # 写进 Redis（key celery:hb:{worker}，worker 名与 ping().keys() 同源）。这里同步读
+        # v0.10.25 · 心跳新鲜度：worker 心跳 bootstep（v0.11.18，见 workers/heartbeat.py）周期把
+        # unix 时间戳写进 Redis（key celery:hb:{worker}，worker 名与 ping().keys() 同源）。这里同步读
         # 同名 key 算 now - ts。读 Redis 失败整体降级为 None，不影响 /health 其它统计。
         import redis  # noqa: PLC0415
 
