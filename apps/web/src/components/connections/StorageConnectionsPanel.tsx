@@ -191,7 +191,7 @@ export function StorageConnectionForm({
     >
       <div className={styles.formGrid}>
         <label className={styles.field}>
-          <span>名称</span>
+          <span>名称<span className={styles.required}>*</span></span>
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -228,7 +228,7 @@ export function StorageConnectionForm({
       {kind === "s3" ? (
         <div className={styles.formGrid}>
           <label className={styles.fieldWide}>
-            <span>Endpoint</span>
+            <span>Endpoint<span className={styles.required}>*</span></span>
             <input
               value={endpoint}
               onChange={(event) => setEndpoint(event.target.value)}
@@ -237,7 +237,7 @@ export function StorageConnectionForm({
             />
           </label>
           <label className={styles.field}>
-            <span>Bucket</span>
+            <span>Bucket<span className={styles.required}>*</span></span>
             <input
               value={bucket}
               onChange={(event) => setBucket(event.target.value)}
@@ -272,7 +272,7 @@ export function StorageConnectionForm({
             <span>HTTPS</span>
           </label>
           <label className={styles.field}>
-            <span>Access key</span>
+            <span>Access key{!isEditing && <span className={styles.required}>*</span>}</span>
             <input
               value={accessKey}
               onChange={(event) => setAccessKey(event.target.value)}
@@ -281,7 +281,7 @@ export function StorageConnectionForm({
             />
           </label>
           <label className={styles.field}>
-            <span>Secret key</span>
+            <span>Secret key{!isEditing && <span className={styles.required}>*</span>}</span>
             <input
               value={secretKey}
               onChange={(event) => setSecretKey(event.target.value)}
@@ -294,7 +294,7 @@ export function StorageConnectionForm({
       ) : (
         <div className={styles.formGrid}>
           <label className={styles.fieldWide}>
-            <span>Host</span>
+            <span>Host<span className={styles.required}>*</span></span>
             <input
               value={host}
               onChange={(event) => setHost(event.target.value)}
@@ -313,7 +313,7 @@ export function StorageConnectionForm({
             />
           </label>
           <label className={styles.field}>
-            <span>Username</span>
+            <span>Username<span className={styles.required}>*</span></span>
             <input
               value={username}
               onChange={(event) => setUsername(event.target.value)}
@@ -343,7 +343,7 @@ export function StorageConnectionForm({
           </label>
           {authType === "password" ? (
             <label className={styles.field}>
-              <span>Password</span>
+              <span>Password{!isEditing && <span className={styles.required}>*</span>}</span>
               <input
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -355,7 +355,7 @@ export function StorageConnectionForm({
           ) : (
             <>
               <label className={styles.fieldWide}>
-                <span>Private key</span>
+                <span>Private key{!isEditing && <span className={styles.required}>*</span>}</span>
                 <textarea
                   value={privateKey}
                   onChange={(event) => setPrivateKey(event.target.value)}

@@ -63,6 +63,11 @@
   grid-column: span 2;
 }
 
+.required {
+  margin-left: 2px;
+  color: var(--color-danger);
+}
+
 .input,
 .textarea {
   width: 100%;
