@@ -84,7 +84,7 @@ export function AIToolDrawer({
     >
       {/* 标题 */}
       <div className={styles.titleRow}>
-        <Icon name={meta.icon as never} size={13} />
+        <Icon name={meta.icon} size={13} />
         <b className={styles.title}>{meta.label}</b>
       </div>
 

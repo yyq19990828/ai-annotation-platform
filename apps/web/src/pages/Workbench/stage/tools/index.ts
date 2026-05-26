@@ -14,6 +14,7 @@ import { ExemplarTool } from "./ExemplarTool";
 import { MaskTool } from "./MaskTool";
 import { MagicBoxTool } from "./MagicBoxTool";
 import { KeypointTool } from "./KeypointTool";
+import type { IconName } from "@/components/ui/Icon";
 import type { Keypoint } from "@/types";
 
 // v0.10.2 · Prompt-first ToolDock 重构:
@@ -45,7 +46,7 @@ export interface ToolMeta {
   id: ToolId;
   hotkey: string;
   label: string;
-  icon: string;
+  icon: IconName;
   cursor: "crosshair" | "grab" | "default";
 }
 

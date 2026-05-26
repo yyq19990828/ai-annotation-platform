@@ -28,9 +28,11 @@ import {
   Filter,
   Flag,
   Film,
+  Flame,
   Folder,
   FolderOpen,
   Hexagon,
+  History,
   Image as ImageIcon,
   Inbox,
   Info,
@@ -58,6 +60,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  RotateCcw,
   Save,
   Scissors,
   Search,
@@ -95,8 +98,9 @@ import { useElementStyle } from "./useElementStyle";
  *
  * 这里只为存量 171 处调用兜底兼容；新业务（batch / SAM / theme 等）建议直接用 Lucide。
  */
-const ICON_MAP: Record<string, LucideIcon> = {
+const ICON_MAP = {
   activity: Activity,
+  "alert-triangle": AlertTriangle,
   arrowRight: ArrowRight,
   bell: Bell,
   // v0.10.13 · E1 · 标注指引图标
@@ -114,6 +118,9 @@ const ICON_MAP: Record<string, LucideIcon> = {
   chevLeft: ChevronLeft,
   chevRight: ChevronRight,
   chevUp: ChevronUp,
+  "chevron-left": ChevronLeft,
+  "chevron-right": ChevronRight,
+  crosshair: Crosshair,
   cube: Box,
   copy: Copy,
   cpu: Cpu,
@@ -126,9 +133,11 @@ const ICON_MAP: Record<string, LucideIcon> = {
   film: Film,
   filter: Filter,
   flag: Flag,
+  flame: Flame,
   folder: Folder,
   folderOpen: FolderOpen,
   grid: LayoutGrid,
+  history: History,
   image: ImageIcon,
   inbox: Inbox,
   info: Info,
@@ -157,6 +166,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   polygon: Hexagon,
   rect: Square,
   refresh: RefreshCw,
+  "rotate-ccw": RotateCcw,
   save: Save,
   scissors: Scissors,
   search: Search,
@@ -179,7 +189,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   x: X,
   zoomIn: ZoomIn,
   zoomOut: ZoomOut,
-};
+} satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICON_MAP;
 
@@ -197,7 +207,7 @@ export const Icon = forwardRef<SVGSVGElement, IconProps>(function Icon(
   ref,
 ) {
   const styleRef = useElementStyle(style, ref);
-  const Cmp = ICON_MAP[name as string];
+  const Cmp = ICON_MAP[name];
   if (!Cmp) return null;
   return (
     <Cmp
