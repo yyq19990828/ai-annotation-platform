@@ -83,7 +83,11 @@ async def test_health_meta_keeps_pool():
                 "gpu_info": {"memory_used_mb": 1},
                 "cache": {"hit_rate": 0.5, "buckets": {"small/B": {"hit_rate": 0.5}}},
                 "model_version": "grounded-sam2-dinoB-sam2.1small",
+                "loaded": True,
+                "idle_unload_seconds": 600,
+                "last_request_age_seconds": 12.5,
                 "pool": pool,
+                "video_pool": {"loaded_variants": [], "active_sessions": 0},
             },
         )
 
@@ -93,5 +97,9 @@ async def test_health_meta_keeps_pool():
 
     assert ok is True
     assert meta is not None
+    assert meta["loaded"] is True
+    assert meta["idle_unload_seconds"] == 600
+    assert meta["last_request_age_seconds"] == 12.5
     assert meta["pool"] == pool
+    assert meta["video_pool"]["active_sessions"] == 0
     assert "buckets" in meta["cache"]

@@ -132,6 +132,9 @@ class MLBackendClient:
                         "host",
                         "cache",
                         "model_version",
+                        "loaded",
+                        "idle_unload_seconds",
+                        "last_request_age_seconds",
                         "pool",
                         "video_pool",
                     )

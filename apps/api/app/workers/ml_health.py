@@ -36,6 +36,34 @@ from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
 
+_PERFHUD_META_KEYS = (
+    "gpu_info",
+    "host",
+    "cache",
+    "model_version",
+    "loaded",
+    "idle_unload_seconds",
+    "last_request_age_seconds",
+    "pool",
+    "video_pool",
+)
+
+
+def _build_stats_snapshot(
+    backend: MLBackend, *, ok: bool, meta: dict | None, timestamp: str
+) -> dict:
+    snap = {
+        "backend_id": str(backend.id),
+        "backend_name": backend.name,
+        "state": "ok" if ok else "error",
+        "timestamp": timestamp,
+    }
+    if meta:
+        for key in _PERFHUD_META_KEYS:
+            if key in meta:
+                snap[key] = meta[key]
+    return snap
+
 
 @celery_app.task(name="app.workers.ml_health.check_ml_backends_health")
 def check_ml_backends_health() -> dict:
@@ -99,17 +127,9 @@ async def _publish_stats_async() -> dict:
         try:
             client = MLBackendClient(backend)
             ok, meta = await client.health_meta()
-            snap = {
-                "backend_id": str(backend.id),
-                "backend_name": backend.name,
-                "state": "ok" if ok else "error",
-                "timestamp": now,
-            }
-            if meta:
-                for key in ("gpu_info", "host", "cache", "model_version"):
-                    if key in meta:
-                        snap[key] = meta[key]
-            snapshots.append(snap)
+            snapshots.append(
+                _build_stats_snapshot(backend, ok=ok, meta=meta, timestamp=now)
+            )
         except Exception as exc:  # noqa: BLE001 — 单 backend 失败不影响其他
             log.debug("publish_ml_backend_stats: backend=%s err=%s", backend.id, exc)
             snapshots.append(

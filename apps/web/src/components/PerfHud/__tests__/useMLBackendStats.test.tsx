@@ -92,11 +92,15 @@ describe("useMLBackendStats", () => {
             backend_id: "b1",
             backend_name: "sam2",
             state: "connected",
+            loaded: false,
+            pool: { loaded_variants: [] },
           },
         ],
       });
     });
     expect(result.current.snapshots["b1"]?.backend_name).toBe("sam2");
+    expect(result.current.snapshots["b1"]?.loaded).toBe(false);
+    expect(result.current.snapshots["b1"]?.pool?.loaded_variants).toEqual([]);
   });
 
   it("ping 帧不触发 state 变化", () => {

@@ -15,6 +15,8 @@ export interface BackendSnapshot {
     gpu_utilization_percent?: number | null;
     gpu_temperature_celsius?: number | null;
     gpu_power_watts?: number | null;
+    image_pool_loaded_variants?: unknown[] | null;
+    video_pool_loaded_variants?: unknown[] | null;
   } | null;
   host?: {
     container_cpu_percent?: number | null;
@@ -28,6 +30,19 @@ export interface BackendSnapshot {
     hit_rate?: number | null;
   } | null;
   model_version?: string | null;
+  loaded?: boolean | null;
+  idle_unload_seconds?: number | null;
+  last_request_age_seconds?: number | null;
+  pool?: {
+    cap?: number | null;
+    loaded_variants?: unknown[] | null;
+  } | null;
+  video_pool?: {
+    cap?: number | null;
+    loaded_variants?: unknown[] | null;
+    active_sessions?: number | null;
+    idle_seconds?: number | null;
+  } | null;
   timestamp?: string;
 }
 

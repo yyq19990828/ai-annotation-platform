@@ -121,6 +121,33 @@ def test_worker_module_imports_and_registers_task():
     assert "check-ml-backends-health" in celery_app.conf.beat_schedule
 
 
+def test_build_stats_snapshot_keeps_runtime_load_state():
+    """PerfHud WS 帧需保留 loaded/pool 状态, 避免 idle unloaded 时误读 VRAM."""
+    from app.workers.ml_health import _build_stats_snapshot
+
+    backend = MLBackend(id=uuid.uuid4(), name="sam2", url="http://example")
+    snap = _build_stats_snapshot(
+        backend,
+        ok=True,
+        timestamp="2026-05-26T00:00:00+00:00",
+        meta={
+            "gpu_info": {"memory_used_mb": 448},
+            "model_version": "grounded-sam2-dinoT-sam2.1tiny",
+            "loaded": False,
+            "idle_unload_seconds": 600,
+            "last_request_age_seconds": 2831.8,
+            "pool": {"loaded_variants": []},
+            "video_pool": {"loaded_variants": [], "active_sessions": 0},
+        },
+    )
+
+    assert snap["backend_name"] == "sam2"
+    assert snap["loaded"] is False
+    assert snap["pool"]["loaded_variants"] == []
+    assert snap["video_pool"]["active_sessions"] == 0
+    assert snap["last_request_age_seconds"] == 2831.8
+
+
 @pytest.mark.parametrize("jitter", [0.0])
 async def test_check_all_backends_iterates_without_jitter(monkeypatch, jitter):
     """jitter=0 时 worker 不 sleep；遍历所有 backend，逐个调用 check_health。

@@ -56,6 +56,28 @@ function MetricBar({
   );
 }
 
+function formatIdleAge(seconds: number | null | undefined): string | null {
+  if (seconds == null || !Number.isFinite(seconds)) return null;
+  if (seconds < 60) return `idle ${Math.max(0, Math.round(seconds))}s`;
+  if (seconds < 3600) return `idle ${Math.round(seconds / 60)}m`;
+  return `idle ${Math.round(seconds / 3600)}h`;
+}
+
+function getLoadLabel(snap: BackendSnapshot): string | null {
+  const imageLoaded =
+    snap.pool?.loaded_variants?.length ??
+    snap.gpu_info?.image_pool_loaded_variants?.length ??
+    null;
+  const videoLoaded =
+    snap.video_pool?.loaded_variants?.length ??
+    snap.gpu_info?.video_pool_loaded_variants?.length ??
+    null;
+  if ((imageLoaded ?? 0) > 0 || (videoLoaded ?? 0) > 0) return "loaded";
+  if (snap.loaded === true) return "loaded";
+  if (snap.loaded === false || imageLoaded === 0 || videoLoaded === 0) return "idle unloaded";
+  return null;
+}
+
 function BackendPanel({
   snap,
   hist,
@@ -74,6 +96,8 @@ function BackendPanel({
   const temp = snap.gpu_info?.gpu_temperature_celsius;
   const power = snap.gpu_info?.gpu_power_watts;
   const hitRate = snap.cache?.hit_rate;
+  const loadLabel = getLoadLabel(snap);
+  const idleAge = formatIdleAge(snap.last_request_age_seconds);
 
   return (
     <div className={styles.backendPanel}>
@@ -108,6 +132,8 @@ function BackendPanel({
       ) : null}
       <div className={styles.backendMeta}>
         {snap.gpu_info?.device_name ? <span>{snap.gpu_info.device_name}</span> : null}
+        {loadLabel ? <span>· {loadLabel}</span> : null}
+        {idleAge ? <span>· {idleAge}</span> : null}
         {temp != null ? <span>· {temp}°C</span> : null}
         {power != null ? <span>· {power}W</span> : null}
         {hitRate != null ? <span>· cache {(hitRate * 100).toFixed(0)}%</span> : null}
