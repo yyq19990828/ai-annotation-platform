@@ -2,34 +2,78 @@
 
 .handle {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 6px;
-  cursor: col-resize;
-  z-index: 5;
+  z-index: 20;
+  background: transparent;
+}
+
+.handle::after {
+  content: "";
+  position: absolute;
   background: transparent;
   transition: background 0.15s;
 }
 
+.handleLeft,
+.handleRight {
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  cursor: col-resize;
+}
+
 .handleLeft {
-  left: -3px;
+  left: 0;
 }
 
 .handleRight {
-  right: -3px;
+  right: 0;
 }
 
-/* v0.11.1 · 垂直分隔条（上下分段用），贴在容器底沿外侧。 */
+.handleLeft::after {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+}
+
+.handleRight::after {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 2px;
+}
+
+/* v0.11.1 · 垂直分隔条（上下分段用）。 */
+.handleTop,
 .handleBottom {
-  top: auto;
-  bottom: -3px;
   left: 0;
   right: 0;
-  width: auto;
-  height: 6px;
+  height: 14px;
   cursor: row-resize;
 }
 
-.handleActive {
+.handleTop {
+  top: 0;
+}
+
+.handleBottom {
+  bottom: 0;
+}
+
+.handleTop::after {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+}
+
+.handleBottom::after {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+}
+
+.handleActive::after {
   background: color-mix(in oklab, var(--color-accent) 55%, transparent);
 }

@@ -4,8 +4,9 @@ import styles from "./ResizeHandle.module.css";
 interface ResizeHandleProps {
   /** "right" = handle 贴在容器右沿，往右拖增大宽度（左侧栏用）。
    *  "left"  = handle 贴在容器左沿，往左拖增大宽度（右侧栏用）。
+   *  "top" = handle 贴在容器顶沿，往上拖增大高度（下方面板用）。
    *  "bottom" = handle 贴在容器底沿，往下拖增大高度（上下分段用，v0.11.1）。 */
-  side: "left" | "right" | "bottom";
+  side: "left" | "right" | "top" | "bottom";
   /** 当前尺寸（受控）：水平方向是宽度，垂直方向（side="bottom"）是高度。 */
   width: number;
   onResize: (next: number) => void;
@@ -25,7 +26,7 @@ export function ResizeHandle({ side, width, onResize, min = 200, max = 600, rese
   const start = useRef(0);
   const startW = useRef(0);
 
-  const vertical = side === "bottom";
+  const vertical = side === "top" || side === "bottom";
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -36,7 +37,7 @@ export function ResizeHandle({ side, width, onResize, min = 200, max = 600, rese
     const onMove = (ev: MouseEvent) => {
       const pos = vertical ? ev.clientY : ev.clientX;
       const delta = pos - start.current;
-      const next = side === "left" ? startW.current - delta : startW.current + delta;
+      const next = side === "left" || side === "top" ? startW.current - delta : startW.current + delta;
       onResize(Math.max(min, Math.min(max, next)));
     };
     const onUp = () => {
@@ -54,7 +55,10 @@ export function ResizeHandle({ side, width, onResize, min = 200, max = 600, rese
 
   const active = hover || dragging;
   const sideClass =
-    side === "right" ? styles.handleRight : side === "left" ? styles.handleLeft : styles.handleBottom;
+    side === "right" ? styles.handleRight
+    : side === "left" ? styles.handleLeft
+    : side === "top" ? styles.handleTop
+    : styles.handleBottom;
   const className = [
     styles.handle,
     sideClass,

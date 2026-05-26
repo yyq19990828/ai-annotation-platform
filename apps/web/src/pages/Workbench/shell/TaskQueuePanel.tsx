@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Button } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
@@ -9,6 +9,11 @@ import type { BatchResponse } from "@/api/batches";
 import { ClassPalette } from "./ClassPalette";
 import { ResizeHandle } from "./ResizeHandle";
 import styles from "./TaskQueuePanel.module.css";
+
+const PALETTE_HEIGHT_KEY = "workbench.leftPalette.height";
+const PALETTE_HEIGHT_DEFAULT = 220;
+const PALETTE_HEIGHT_MIN = 112;
+const PALETTE_HEIGHT_MAX = 420;
 
 interface TaskQueuePanelProps {
   open: boolean;
@@ -39,6 +44,13 @@ interface TaskQueuePanelProps {
 
 function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(" ");
+}
+
+function readPaletteHeight(): number {
+  if (typeof window === "undefined") return PALETTE_HEIGHT_DEFAULT;
+  const raw = Number(window.localStorage.getItem(PALETTE_HEIGHT_KEY));
+  if (!Number.isFinite(raw) || raw <= 0) return PALETTE_HEIGHT_DEFAULT;
+  return Math.max(PALETTE_HEIGHT_MIN, Math.min(PALETTE_HEIGHT_MAX, Math.round(raw)));
 }
 
 function statusClassName(task: TaskResponse): string {
@@ -163,7 +175,15 @@ export function TaskQueuePanel({
   totalCount, isOwner, onGoToBatchSettings,
   width, onResize,
 }: TaskQueuePanelProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const parentRef = useRef<HTMLDivElement>(null);
+  const [paletteHeight, setPaletteHeight] = useState(readPaletteHeight);
+
+  const onPaletteResize = useCallback((next: number) => {
+    const clamped = Math.max(PALETTE_HEIGHT_MIN, Math.min(PALETTE_HEIGHT_MAX, Math.round(next)));
+    setPaletteHeight(clamped);
+    try { window.localStorage.setItem(PALETTE_HEIGHT_KEY, String(clamped)); } catch { /* noop */ }
+  }, []);
 
   // rejected 任务置顶，其余保持原序
   const sortedTasks = useMemo(() => {
@@ -204,12 +224,16 @@ export function TaskQueuePanel({
     return () => window.cancelAnimationFrame(frame);
   }, [open, activeTaskIndex, virtualizer]);
 
+  useEffect(() => {
+    rootRef.current?.style.setProperty("--left-palette-height", `${paletteHeight}px`);
+  }, [paletteHeight]);
+
   if (!open) {
     return null;
   }
 
   return (
-    <div className={styles.root}>
+    <div ref={rootRef} className={styles.root}>
       {batches && batches.length > 0 && onSelectBatch && (
         <div className={styles.batchFilter}>
           <select
@@ -314,6 +338,14 @@ export function TaskQueuePanel({
       </div>
 
       <div className={styles.palettePanel}>
+        <ResizeHandle
+          side="top"
+          width={paletteHeight}
+          onResize={onPaletteResize}
+          min={PALETTE_HEIGHT_MIN}
+          max={PALETTE_HEIGHT_MAX}
+          resetTo={PALETTE_HEIGHT_DEFAULT}
+        />
         <div className={styles.paletteTitle}>
           <span className={styles.paletteTool}>
             <Icon name={toolIcon} size={12} />
