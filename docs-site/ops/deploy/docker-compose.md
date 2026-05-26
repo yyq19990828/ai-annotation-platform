@@ -55,7 +55,7 @@ last_reviewed: 2026-05-09
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `REDIS_URL` **必填** | `redis://localhost:6379/0` | 同时承担：Celery broker、result backend、WebSocket pub/sub、限流计数、token 黑名单（v0.7.8 复用本连接，无需单独配置）。 |
+| `REDIS_URL` **必填** | `redis://localhost:6379/0` | 同时承担：Celery broker、result backend、WebSocket pub/sub、限流计数、token 黑名单，无需单独配置。 |
 | `CELERY_BROKER_URL` | 空 → 复用 `REDIS_URL` | 想拆开 broker（如换 RabbitMQ）时单独设。 |
 
 > Redis 建议为生产挂 AOF volume——dev 容器**没**挂 volume，重启即清空所有队列与限流计数。详见 [后端基础设施](/dev/concepts/backend-infrastructure)。
@@ -80,10 +80,10 @@ last_reviewed: 2026-05-09
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `SECRET_KEY` **必填** | `change-this-...` | JWT 签名密钥，≥ 32 字节随机串。`ENVIRONMENT=production` 仍是默认值时启动会 RuntimeError（`apps/api/app/main.py:50-57`）。生成：`python -c "import secrets; print(secrets.token_hex(32))"`。 |
-| `ALLOW_OPEN_REGISTRATION` | `false` | 自助注册开关。v0.8.1+ 可在 SettingsPage 热更新覆盖。 |
-| `TURNSTILE_ENABLED` | `false` | Cloudflare Turnstile CAPTCHA（v0.8.7+）。开启后 `/auth/register-open` `/auth/forgot-password` 必须带 `captcha_token`。 |
+| `ALLOW_OPEN_REGISTRATION` | `false` | 自助注册开关，可在 SettingsPage 热更新覆盖。 |
+| `TURNSTILE_ENABLED` | `false` | Cloudflare Turnstile CAPTCHA。开启后 `/auth/register-open` `/auth/forgot-password` 必须带 `captcha_token`。 |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 空 | 启用 Turnstile 时配套；secret 绝不暴露给前端。 |
-| `AUDIT_RETENTION_MONTHS` | `12` | 冷数据保留月数。Celery beat 每月 2 日把超期 partition 归档为 `audit-archive/{YYYY}/{MM}.jsonl.gz` 上 MinIO 后 DROP（v0.8.1+）。 |
+| `AUDIT_RETENTION_MONTHS` | `12` | 冷数据保留月数。Celery beat 每月 2 日把超期 partition 归档为 `audit-archive/{YYYY}/{MM}.jsonl.gz` 上 MinIO 后 DROP。 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `1440`（24h） | 未列入 `.env.example`；高敏环境调到 `480`（8h）。 |
 
 ### 2.5 前端
@@ -96,7 +96,7 @@ last_reviewed: 2026-05-09
 | `VITE_SENTRY_DSN` | 空 | 前端 Sentry DSN；留空禁用前端错误上报。 |
 | `FRONTEND_BASE_URL` | `http://localhost:5173` | 后端在邮件 / 邀请链接里回跳到这个 origin；生产必改成实际域名。 |
 
-### 2.6 错误监控 (Sentry, v0.6.6+)
+### 2.6 错误监控 (Sentry)
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
@@ -113,7 +113,7 @@ last_reviewed: 2026-05-09
 | `CORS_ALLOW_ORIGINS` **production 必填** | dev 默认放行 localhost 常用端口 | 支持 JSON 数组 `["https://app.example.com"]` 或逗号分隔。即便前后端同源也要显式列；`main.py:71-74` 启动断言。 |
 | `CORS_ALLOW_ORIGIN_REGEX` | dev `http://localhost:\d+` | 仅 `dev / staging` 生效，production 自动忽略以防误把本机正则上线。 |
 
-### 2.8 Grounded-SAM-2 ML Backend (v0.9.0+, GPU profile)
+### 2.8 Grounded-SAM-2 ML Backend (GPU profile)
 
 仅当 `docker compose --profile gpu up grounded-sam2-backend` 时生效。详见 §8.5。
 
@@ -124,16 +124,16 @@ last_reviewed: 2026-05-09
 | `BOX_THRESHOLD` | `0.35` | DINO 检测阈值；召回不足 → `0.25`，误检多 → `0.45`。 |
 | `TEXT_THRESHOLD` | `0.25` | DINO 文本-标签匹配阈值；短语 prompt 一般 0.25 即可。 |
 | `GSAM2_LOG_LEVEL` | `INFO` | `DEBUG / INFO / WARNING`。 |
-| `MODEL_POOL_CAP` (v0.10.23) | `1` | 同容器内并存的 `(sam_variant, dino_variant)` 变体数上限（LRU 驱逐）。`1` = 维持单变体常驻；切变体走「驱逐旧 + 冷启新」。按显存预算调，见下表。 |
-| `MODEL_POOL_BUILD_TIMEOUT` (v0.10.23) | `30` | pool 满 + 并发 miss 时排队等显存腾挪的超时（秒），超时返回 503「显存繁忙，稍后重试」。 |
-| `PREFETCH_SAM_VARIANTS` (v0.10.23) | `tiny,small,base_plus,large` | entrypoint 启动时额外预拉的 SAM 变体 checkpoint（主变体 `SAM_VARIANT` 之外）。逗号分隔。pool 能服务多变体，但只有这里声明（+ 主变体）的 checkpoint 会落盘，**运行期请求未预拉的变体返回 503**。磁盘紧张时裁剪。 |
-| `PREFETCH_DINO_VARIANTS` (v0.10.23) | `T,B` | 同上，GroundingDINO 变体。 |
+| `MODEL_POOL_CAP` | `1` | 同容器内并存的 `(sam_variant, dino_variant)` 变体数上限（LRU 驱逐）。`1` = 维持单变体常驻；切变体走「驱逐旧 + 冷启新」。按显存预算调，见下表。 |
+| `MODEL_POOL_BUILD_TIMEOUT` | `30` | pool 满 + 并发 miss 时排队等显存腾挪的超时（秒），超时返回 503「显存繁忙，稍后重试」。 |
+| `PREFETCH_SAM_VARIANTS` | `tiny,small,base_plus,large` | entrypoint 启动时额外预拉的 SAM 变体 checkpoint（主变体 `SAM_VARIANT` 之外）。逗号分隔。pool 能服务多变体，但只有这里声明（+ 主变体）的 checkpoint 会落盘，**运行期请求未预拉的变体返回 503**。磁盘紧张时裁剪。 |
+| `PREFETCH_DINO_VARIANTS` | `T,B` | 同上，GroundingDINO 变体。 |
 
-> **多变体 checkpoint 预拉**（v0.10.23）：ModelPool 让运行期能切任意 `(sam_variant, dino_variant)`，但 checkpoint 必须先落盘。磁盘预算大致 `tiny ~150M / small ~180M / base_plus ~320M / large ~900M`，DINO `T ~680M / B(SwinB) ~940M`；全量约 3.2GB。
+> **多变体 checkpoint 预拉**：ModelPool 让运行期能切任意 `(sam_variant, dino_variant)`，但 checkpoint 必须先落盘。磁盘预算大致 `tiny ~150M / small ~180M / base_plus ~320M / large ~900M`，DINO `T ~680M / B(SwinB) ~940M`；全量约 3.2GB。
 >
 > 启动顺序（避免全量 ~3GB 阻塞期间容器对外 `error`）：entrypoint 只**阻塞**下载主变体（`SAM_VARIANT`/`DINO_VARIANT`，单档、秒级）→ uvicorn 立即起、`/health` 可达 → app startup 后台异步下载 `PREFETCH_*` 列表里的额外变体（边服务边补）。`/health.provisioning.status` 反映进度：`downloading`（额外变体下载中，容器仍 healthy）→ `ready`（全下完）/ `partial`（部分失败）/ `error`。下载期间请求尚未下完的变体返回 503（可诊断），主变体始终可用。主变体下载失败则容器启动失败（不带半残上线）；额外变体失败仅 warn 不阻塞。
 >
-> **按显存预算配 `MODEL_POOL_CAP`**（v0.10.23）：变体热切换让前端可按会话切 `(sam_variant, dino_variant)`，pool 把多个变体常驻显存以省冷启。cap 越大并存越多、切换越快，但显存占用线性上升（单变体 tiny/small ~2–4GB，large + SwinB 峰值 ~6–8GB）。
+> **按显存预算配 `MODEL_POOL_CAP`**：变体热切换让前端可按会话切 `(sam_variant, dino_variant)`，pool 把多个变体常驻显存以省冷启。cap 越大并存越多、切换越快，但显存占用线性上升（单变体 tiny/small ~2–4GB，large + SwinB 峰值 ~6–8GB）。
 >
 > | GPU | 显存 | 建议 `MODEL_POOL_CAP` | 说明 |
 > |---|---|---|---|
@@ -155,14 +155,14 @@ last_reviewed: 2026-05-09
 
 | 变量 | 默认 | 何时改 |
 |---|---|---|
-| `MAX_INVITATIONS_PER_DAY` | `30` | 邀请活动期临时调高（v0.7.8 限流） |
+| `MAX_INVITATIONS_PER_DAY` | `30` | 邀请活动期临时调高 |
 | `INVITATION_TTL_DAYS` | `7` | 合规要求短链 → `1–3` |
 | `ML_PREDICT_TIMEOUT` | `100` 秒 | LLM 慢 backend 调到 ≥ 180 |
 | `ML_HEALTH_TIMEOUT` | `10` 秒 | 通常不需动；冷启动慢的 backend 适当上调 |
 | `AUDIT_ASYNC` | `true` | broker 故障时回退 `false`（强一致但慢） |
 | `TASK_EVENTS_ASYNC` | `true` | 同上，针对 task event 流 |
 | `OFFLINE_THRESHOLD_MINUTES` | `5` | 在线状态心跳判断窗口 |
-| `LOGIN_CAPTCHA_THRESHOLD` | `5` | 同 IP 登录失败几次后强制 Turnstile（v0.8.7+） |
+| `LOGIN_CAPTCHA_THRESHOLD` | `5` | 同 IP 登录失败几次后强制 Turnstile |
 | `LOGIN_FAILED_WINDOW_SECONDS` | `3600` | 上面失败计数的窗口长度 |
 | `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASSWORD` `SMTP_FROM` | 空 | 启用密码重置邮件 / bug digest 时配齐 |
 
@@ -232,7 +232,7 @@ docker compose up -d postgres redis minio
 ```bash
 cd apps/api
 uv sync
-uv run alembic upgrade head           # 包含 v0.7.6 partition + v0.7.8 immut trigger 等迁移
+uv run alembic upgrade head
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
@@ -303,7 +303,7 @@ pg_dump -Fc -U user -d annotation -f /backup/anno-$(date +%F).pgdump
 pg_restore -U user -d annotation_new -j 4 /backup/anno-2026-05-06.pgdump
 ```
 
-> v0.7.8 起，`audit_logs` 上有 `BEFORE UPDATE/DELETE` 触发器拒绝改写（`apps/api/alembic/versions/0032_audit_log_immutability.py`）。pg_restore 走 COPY，不会被触发器阻断。
+> `audit_logs` 上有 `BEFORE UPDATE/DELETE` 触发器拒绝改写（`apps/api/alembic/versions/0032_audit_log_immutability.py`）。pg_restore 走 COPY，不会被触发器阻断。
 
 ### 5.2 MinIO 桶
 
@@ -331,7 +331,7 @@ mc mirror anno/datasets    s3-backup/anno/datasets
 
 每次 `git pull` 主分支后：
 
-1. **读 CHANGELOG**：v0.x.0 minor bump 通常含 Alembic 迁移。
+1. **读 CHANGELOG**：包含 Alembic 迁移的版本需要先确认迁移顺序和回滚策略。
 2. **先备份**：`pg_dump` + `mc mirror`（见 §5）。
 3. **更新依赖**：
    ```bash
@@ -351,7 +351,7 @@ mc mirror anno/datasets    s3-backup/anno/datasets
    curl -fsS https://app.example.com/api/v1/health/minio | jq
    curl -fsS https://app.example.com/api/v1/health/celery | jq
    ```
-7. **回滚预案**：`alembic downgrade -1` + 旧 commit 重启。MinIO 数据通常向前兼容；audit_logs 触发器是 v0.7.8 加的，downgrade 也已写在 0032 迁移里。
+7. **回滚预案**：`alembic downgrade -1` + 旧 commit 重启。MinIO 数据通常向前兼容；audit_logs 触发器 downgrade 已写在 0032 迁移里。
 
 ---
 
@@ -391,9 +391,9 @@ A: 接入方实现的 `/health` 没在 `ml_health_timeout`（10s）内返回。�
 
 ---
 
-## 8.5 GPU 节点部署（v0.9.5 新增）
+## 8.5 GPU 节点部署
 
-ML backend（v0.9.x grounded-sam2-backend / v0.10.x sam3-backend 等）需要 nvidia GPU。本节给出 docker-compose 最小落地。
+ML backend（grounded-sam2-backend / sam3-backend 等）需要 nvidia GPU。本节给出 docker-compose 最小落地。
 
 ### docker-compose 启用 GPU service
 
@@ -425,7 +425,7 @@ ML_BACKEND_STORAGE_HOST=172.17.0.1:9000   # docker bridge gateway
 
 K8s 同 namespace 部署时一般留空（直接走 service DNS）；跨 namespace / 跨集群时按需配。详见 ADR-0012。
 
-### `/health` 显存监控（v0.9.5）
+### `/health` 显存监控
 
 backend `/health` 返回新增 `gpu_info` / `cache` 子对象，便于运维一眼看显存占用 + cache hit rate：
 

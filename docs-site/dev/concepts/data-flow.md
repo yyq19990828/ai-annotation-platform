@@ -120,7 +120,7 @@ sequenceDiagram
 
 代码索引：
 - 端点：`apps/api/app/api/v1/projects.py` (导出/列表/下载)
-- 审计：v0.7.8 起所有导出写 `AuditAction.PROJECT_EXPORT` / `BATCH_EXPORT`
+- 审计：所有导出写 `AuditAction.PROJECT_EXPORT` / `BATCH_EXPORT`
 - Worker：`apps/api/app/workers/tasks.py`（export_project 任务）
 - 格式适配：`apps/api/app/services/export/`
 

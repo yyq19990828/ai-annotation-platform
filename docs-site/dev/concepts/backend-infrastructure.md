@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-27
 ---
 
 # 后端基础设施（容器）
@@ -126,7 +126,7 @@ docker compose down -v
 
 - **构建**：`infra/docker/Dockerfile.api`（与 api 同镜像，仅启动命令不同）
 - **端口**：无（不对外暴露）
-- **代码挂载**（v0.10.25+）：`docker-compose.yml` 把 `./apps/api:/app` 整目录 bind mount 进 worker/beat（匿名卷 `/app/.venv` 屏蔽 host venv；依赖装在 `--system` site-packages 不在 `/app` 下故不被盖掉）。**改业务码 / 新增 alembic 迁移只需 `docker restart` worker，不必 rebuild**（Celery 没有 `--reload`，故仍须 restart，详见 [docker rebuild vs restart](../troubleshooting/docker-rebuild-vs-restart)）。
+- **代码挂载**：`docker-compose.yml` 把 `./apps/api:/app` 整目录 bind mount 进 worker/beat（匿名卷 `/app/.venv` 屏蔽 host venv；依赖装在 `--system` site-packages 不在 `/app` 下故不被盖掉）。**改业务码 / 新增 alembic 迁移只需 `docker restart` worker，不必 rebuild**（Celery 没有 `--reload`，故仍须 restart，详见 [docker rebuild vs restart](../troubleshooting/docker-rebuild-vs-restart)）。
 
 #### 队列与「订阅」模型
 
@@ -145,7 +145,7 @@ Celery 里任务先被**投递（publish）到某个命名队列**，worker 只*
   | `audit` | `persist_audit_entry` / `persist_task_events_batch` | 审计日志 / task event 批量入库 | ✅ admin 审计页 |
 
   ::: warning 易踩坑：`task_default_queue`
-  Celery 内置默认队列名是 `celery`，**不在 worker 的 `-Q` 列表里**。若某 beat / 异步任务忘了在 `task_routes` 里路由、且 `task_default_queue` 仍是 `celery`，它就投进无人消费的 `celery` 队列里**静默堆积、永不执行**（v0.10.25 曾因此让 `worker-heartbeat`/`mark_inactive_offline`/审计分区维护等任务全部失效，死队列堆积 8127 条）。修复：`celery_app.conf` 设 `task_default_queue="default"`，让兜底任务落到 worker 实际订阅的 `default` 队列。排查时 `redis-cli llen celery` 看死队列是否堆积。
+  Celery 内置默认队列名是 `celery`，**不在 worker 的 `-Q` 列表里**。若某 beat / 异步任务忘了在 `task_routes` 里路由、且 `task_default_queue` 仍是 `celery`，它就投进无人消费的 `celery` 队列里**静默堆积、永不执行**。修复：`celery_app.conf` 设 `task_default_queue="default"`，让兜底任务落到 worker 实际订阅的 `default` 队列。排查时 `redis-cli llen celery` 看死队列是否堆积。
   :::
 - **常用命令**
 

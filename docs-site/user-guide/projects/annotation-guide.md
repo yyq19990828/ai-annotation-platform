@@ -1,11 +1,5 @@
 # 标注指引（Annotation Guide）
 
-> since v0.10.13
-
-::: warning 该功能前端暂时下线
-标注指引的前端入口（项目设置「标注指引」tab + 工作台浮层）已暂时下线，功能形态正在重新设计。后端接口与已保存的数据不受影响，下线期间无法在界面中编辑或查看指引。本页内容保留作为重新上线后的参考。
-:::
-
 为项目编写一段 Markdown 形式的「指引」，新标注员第一次进入工作台时会自动在左上角浮层弹出，显著降低标注一致性偏差与退回率。参考 CVAT `Project.annotation_guide` 设计。
 
 ## 何时用
@@ -40,7 +34,7 @@
 
 - 默认折叠，停留在工作台左上角。
 - **首次进入** + 项目有指引 → 自动展开一次，并写入 `localStorage` `wb:guide-seen:{projectId}`。
-- 标注员手动折叠后写 `localStorage` `wb:guide-collapsed:{projectId}=1`，后续保持折叠。
+- 标注员手动折叠后写 `localStorage` `wb:guide-collapsed:{projectId}=1`，之后保持折叠。
 - 项目未配置指引 → 浮层完全不渲染，零界面干扰。
 
 ## 从其它项目复制时的指引行为
@@ -62,9 +56,9 @@
 
 - 当前 Markdown 编辑器（CodeMirror 6）不带 spell-check，跨语言混排请人工检查。
 - 浮层默认 320px 宽，超出会触发滚动；图片宽度建议 ≤ 600px 以避免横向滚动。
-- v0.10.13 首版不做「指引内嵌视频」；如需视频指引请上传到外部 CDN，用 Markdown 链接附在指引正文。
+- 指引内嵌视频暂未做专用上传控件；如需视频指引，请上传到外部 CDN，用 Markdown 链接附在指引正文。
 - 历史变更不可视化（不像 task 注释那样有时间线）；项目设置的 PATCH 走 audit log。
 
 ## 与「项目模板」的关系
 
-v0.10.13 仅落 Annotation Guide。**独立 ProjectTemplate 表 + 模板库 UI**（跨项目复用 / 公共模板）在 v0.10.14 单独 epic 推进，详见 CHANGELOG。
+项目模板可以携带 `annotation_guide` Markdown 文本，但不会携带 `guide_assets` 图片资源。基于模板创建项目后，如需图片指引，请在新项目的标注指引页重新上传资源。

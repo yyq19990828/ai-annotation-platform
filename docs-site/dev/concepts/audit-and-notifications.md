@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-25
+last_reviewed: 2026-05-27
 ---
 
 # 审计与通知
@@ -75,8 +75,8 @@ flowchart TD
 - 标注：`annotation.*`
 - 任务审核：`task.submit / withdraw / approve / reject / reopen / skip`
 - AI 预标：`preannotate.bulk_clear`
-- 反馈：`feedback.created / status_changed / deleted`、`feedback.reconcile_drift`（双写对账漂移，v0.11.0）
-- 存储连接器：`storage_connection.create / update / delete / test`、`connector.allowlist_update`（v0.11.14，见 [存储连接器](/dev/concepts/storage-connections)）。`update` 的 `detail` 含 `secret_rotated` 标记是否轮换密钥，且**绝不写入明文密钥**
+- 反馈：`feedback.created / status_changed / deleted`、`feedback.reconcile_drift`（双写对账漂移）
+- 存储连接器：`storage_connection.create / update / delete / test`、`connector.allowlist_update`（见 [存储连接器](/dev/concepts/storage-connections)）。`update` 的 `detail` 含 `secret_rotated` 标记是否轮换密钥，且**绝不写入明文密钥**
 
 但它不是强制枚举。代码里也存在直接传字符串的情况，例如：
 
@@ -220,14 +220,14 @@ flowchart TD
 - `job.cancelled`
 - `user.deactivation_requested`
 - `user.deactivation_completed`
-- `feedback.reconcile_drift`（v0.11.0，双写对账发现不一致，仅发给 superadmin）
+- `feedback.reconcile_drift`（双写对账发现不一致，仅发给 superadmin）
 
 新增通知类型时要同步更新后端 `KNOWN_NOTIFICATION_TYPES` 与前端设置页标签；
 否则用户无法在「通知偏好」里静音它。
 
 ### async_jobs 终态通知
 
-v0.10.50 起，用户发起且有 `user_id` 的后台任务在进入终态后会发通用通知：
+用户发起且有 `user_id` 的后台任务在进入终态后会发通用通知：
 
 | 状态 | 通知 type |
 |---|---|
@@ -247,8 +247,7 @@ helper 位于 `apps/api/app/services/async_job_notify.py`，由 worker / API 在
 - `dataset_import`
 - `audit_archive`
 
-`failed_prediction.retry.succeeded` / `failed_prediction.retry.failed` 保留为历史通知偏好类型；
-v0.10.51 起失败预测重试的终态改由 `prediction_retry` 的 `job.completed` / `job.failed` 承载。
+`failed_prediction.retry.succeeded` / `failed_prediction.retry.failed` 保留为历史通知偏好类型；当前失败预测重试的终态由 `prediction_retry` 的 `job.completed` / `job.failed` 承载。
 
 `export` 不进通用 `job.*`，因为导出 worker 已经发 `export.ready` / `export.failed`
 并携带 `download_url`。
@@ -333,21 +332,23 @@ WS 握手时会校验 JWT，然后订阅：
 
 ## 反馈统一表(ADR-0027)
 
-历史上反馈入口散在 4 处:`bug_reports`(产品 BUG)/`annotation_comments`(标注评论)/`tasks.reject_reason`(审核驳回)/未来计划的 pixel-anchored issue。v0.10.19 起新立 `annotation_feedbacks` 表统一锚点(`anchor_type` ∈ project/task/annotation/pixel) + `kind` ∈ issue/comment/reject/bug,逐步收口为单一写入入口。详见 [ADR-0027](/dev/adr/0027-annotation-feedback-unified-table)(规范由 docs/adr 维护)。
+反馈入口历史上散在 `bug_reports`（产品 BUG）、`annotation_comments`（标注评论）、`tasks.reject_reason`（审核驳回）和 pixel-anchored issue。当前用 `annotation_feedbacks` 表统一锚点（`anchor_type` ∈ project/task/annotation/pixel）+ `kind` ∈ issue/comment/reject/bug，并通过旧源镜像与对账任务逐步收口为单一写入入口。详见 [ADR-0027](/dev/adr/0027-annotation-feedback-unified-table)（规范由 docs/adr 维护）。
 
-迁移按三段式推进,每段独立可回退:
+迁移按三段式推进，每段独立可回退：
 
 | 阶段 | 状态 | 行为 |
 |---|---|---|
-| v0.10.19 第一段 | ✅ 已落 | 立新表 + 新 API(`GET/POST/PATCH/DELETE /feedbacks`),旧三表读写不动;前端 IssueLayer 直接读新表 |
-| v0.10.20 第二段 | ✅ 已落 | alembic 0077 加 `v_annotation_feedback_unified` UNION ALL view(带 `source_table` 列对账);`FeedbackService.mirror_bug_report` / `mirror_annotation_comment` / `mirror_task_reject` 3 个 helper 接入旧三处写路径,**同事务**双写,失败一起回滚;前端只读暂不切到 view(避免老 bug/reject 出现在 DiscussionPanel) |
-| v0.10.21 第三段 | 🟡 计划中 | 验证双写一致性 → 旧表存量数据一次性 backfill 到 `annotation_feedbacks` → 删旧写路径,旧表保留只读一个版本作回退 |
+| 新表与 API | ✅ 已落 | 新表 + 新 API（`GET/POST/PATCH/DELETE /feedbacks`），旧三表读写不动；前端 IssueLayer 直接读新表 |
+| 双写与统一 view | ✅ 已落 | `v_annotation_feedback_unified` UNION ALL view（带 `source_table` 列对账）；`FeedbackService.mirror_bug_report` / `mirror_annotation_comment` / `mirror_task_reject` 3 个 helper 接入旧三处写路径，**同事务**双写，失败一起回滚；前端只读暂不切到 view，避免老 bug/reject 出现在 DiscussionPanel |
+| 切单源 | 计划中 | 验证双写一致性 → 旧表存量数据一次性 backfill 到 `annotation_feedbacks` → 删旧写路径，旧表保留只读一个版本作回退 |
 
-**audit 落点对齐**:新表的写操作走 `FEEDBACK_CREATED` / `FEEDBACK_STATUS_CHANGED` / `FEEDBACK_DELETED` 三个 AuditAction(v0.10.19 引入),不再为 4 个 source 各维护 detail helper。旧 `bug_report.*` 通知类型保留。
+**audit 落点对齐**：新表的写操作走 `FEEDBACK_CREATED` / `FEEDBACK_STATUS_CHANGED` / `FEEDBACK_DELETED` 三个 AuditAction，不再为 4 个 source 各维护 detail helper。旧 `bug_report.*` 通知类型保留。
 
 **双写一致性监控**:view 的 `source_table` 列可用于对账查询(`SELECT source_table, COUNT(*) FROM v_annotation_feedback_unified GROUP BY source_table` 对比 `annotation_feedbacks` 行数);日志关键字 `[ADR-0027 double-write]` 用于排障。`bug_reports.project_id IS NULL` 行(登录页等无项目归属 bug)不 mirror,留切单源时单独处理。
 
-**自动对账(v0.11.0)**:上述手工对账已自动化为每日 03:00 UTC 的 celery beat 任务 `reconcile_annotation_feedback`。它逐源比对旧表「应 mirror 行数」与统一表「实际镜像行数」,发现缺失时写 `FEEDBACK_RECONCILE_DRIFT` 审计并通知全部 superadmin(`feedback.reconcile_drift`)。drift 长期为 0 是切单源(v0.11.9+)的前置条件。机制详见 [反馈收敛与双写对账](./feedback-convergence)。
+**自动对账**：上述手工对账已自动化为每日 03:00 UTC 的 celery beat 任务 `reconcile_annotation_feedback`。它逐源比对旧表「应 mirror 行数」与统一表「实际镜像行数」，发现缺失时写 `FEEDBACK_RECONCILE_DRIFT` 审计并通知全部 superadmin（`feedback.reconcile_drift`）。drift 长期为 0 是切单源的前置条件。机制详见 [反馈收敛与双写对账](./feedback-convergence)。
+
+<!-- history: feedback convergence was introduced across v0.10 and v0.11 slices; the visible table now describes current phases instead of release numbers. -->
 
 ## 常见修改落点
 

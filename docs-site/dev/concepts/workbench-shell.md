@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.21
 status: stable
-last_reviewed: 2026-05-25
+last_reviewed: 2026-05-27
 ---
 
 # 工作台 Shell 架构
@@ -73,11 +73,11 @@ type StageKind = "image" | "video" | "3d";
 
 ## 右栏：AI 检查器 + 讨论面板
 
-右栏从 v0.11.5 起是一个上下两段的可调整布局（`WorkbenchLayout.tsx` 的 `.rightSplit`）：
+右栏是一个上下两段的可调整布局（`WorkbenchLayout.tsx` 的 `.rightSplit`）：
 
 - **上段 `.rightSplitTop`**：`AIInspectorPanel`，与下段之间有一个上下拖拽 handle。上段高度持久化到 localStorage `workbench.rightSplit.topHeight`（默认 360px，范围 160–720px）。
 - **下段 `.rightSplitBottom`**：`DiscussionPanel`，承载评论 / 历史 / issue 的统一讨论入口。
-- **列宽拖拽 handle** 提升到 `.rightSplit` 全高层级，覆盖两段（v0.11.5），不再只贴在 AI 检查器一侧。
+- **列宽拖拽 handle** 提升到 `.rightSplit` 全高层级，覆盖两段，不再只贴在 AI 检查器一侧。
 
 `DiscussionPanel`（`shell/DiscussionPanel.tsx`）有三个常驻 tab：
 
@@ -89,4 +89,6 @@ type StageKind = "image" | "video" | "3d";
 
 图钉单击 / hover 会通过 `useActiveIssueStore` 的 `tabRequestTick` 自动把面板切到 issues tab。
 
-v0.11.5 起 DiscussionPanel 转正为默认组件：旧 feature flag `DISCUSSION_PANEL_ENABLED` 与旧浮层 `IssueListPanel` 已删除。讨论面板与评论画布、issue 图钉的交互细节见 [审核模块](./review-module)。
+DiscussionPanel 是默认组件：旧 feature flag `DISCUSSION_PANEL_ENABLED` 与旧浮层 `IssueListPanel` 已删除。讨论面板与评论画布、issue 图钉的交互细节见 [审核模块](./review-module)。
+
+<!-- history: DiscussionPanel and the split right rail shipped through the v0.11 workbench slices. -->

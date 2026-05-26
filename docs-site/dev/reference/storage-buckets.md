@@ -24,7 +24,7 @@ MEDIA_CACHE_PREFIXES = ("thumbnails/", "videos/", "playback/")
 
 匹配则走 `media-cache` 桶,否则回退到调用方传入的 default(通常 `datasets` 或 `annotations`)。
 
-## 从旧布局迁移 (v0.10.16 → v0.10.17)
+## 从旧布局迁移
 
 历史数据仍在 `datasets` 与 `annotations` 桶里。由于派生缓存可重生,迁移**不是必须的**;不迁移时 worker 会按需重生派生数据,旧 key 自然随 lifecycle 衰减。
 

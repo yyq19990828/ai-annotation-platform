@@ -114,7 +114,7 @@ graph LR
 - `postgres-data` — 关键，必须备份（schema + 业务数据）
 - `minio-data` — 关键，存原图、prediction 截图、导出包、bug 反馈截图
 - `redis-data` — 可丢失（Celery broker 重启即可）
-- `sam-embedding-cache` — 可丢失，是性能优化（v0.9.1 LRU 缓存）
+- `sam-embedding-cache` — 可丢失，是性能优化（LRU 缓存）
 
 ## 升级路径
 

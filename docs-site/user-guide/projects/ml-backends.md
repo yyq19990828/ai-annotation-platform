@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.10.3
 status: stable
-last_reviewed: 2026-05-14
+last_reviewed: 2026-05-27
 ---
 
 # ML 后端绑定
@@ -24,7 +24,7 @@ last_reviewed: 2026-05-14
 - 可选项：鉴权方式、`max_concurrency`（1-32，控制单 backend 并发预标请求数）。
 - 注册前点 **「测试连接」**——平台会用临时探针打一次 `/health`，确认 URL 可达且鉴权配置正确，**不会**写 DB。
 
-> **交互能力 / 支持模态自动探测（v0.10.37 起）**：「是否交互式 backend」不再手填。平台在**健康检查**时会顺带探一次 `/setup`，按 backend 自报的 `is_interactive` / `supported_prompts`（图像 prompt）/ `supported_trackers`（视频 tracker）派生交互能力与支持模态，写库后在列表只读展示。注册一个新 backend 后，先在表格里点一次「健康检查」（刷新图标）即可看到检测到的能力。
+> **交互能力 / 支持模态自动探测**：「是否交互式 backend」不需要手填。平台在**健康检查**时会顺带探一次 `/setup`，按 backend 自报的 `is_interactive` / `supported_prompts`（图像 prompt）/ `supported_trackers`（视频 tracker）派生交互能力与支持模态，写库后在列表只读展示。注册一个新 backend 后，先在表格里点一次「健康检查」（刷新图标）即可看到检测到的能力。
 
 ## 配置 AI 预标注与绑定 backend
 
@@ -44,7 +44,7 @@ last_reviewed: 2026-05-14
 - 会同时把项目 `ml_backend_id` 设为该 backend、`ai_enabled` 置 true。
 - 已绑定的行显示蓝色 `已绑定` 角标，其他行仍可"绑定到本项目"实现切换。
 - 工作台进入时会拉这个 backend 的 `/setup`，按返回的 `supported_prompts` 决定工具栏哪些 AI 工具置灰。
-- **模态校验（v0.10.37 起）**：绑定时平台会按项目数据类型校验——视频项目只能绑自报 `supported_trackers`（支持视频追踪）的 backend，否则拒绝绑定。若 backend 此刻不可达探测失败，则放行（不因瞬时宕机卡住操作）。
+- **模态校验**：绑定时平台会按项目数据类型校验——视频项目只能绑自报 `supported_trackers`（支持视频追踪）的 backend，否则拒绝绑定。若 backend 此刻不可达探测失败，则放行（不因瞬时宕机卡住操作）。
 
 ## 能力列
 
@@ -53,9 +53,9 @@ last_reviewed: 2026-05-14
 - `grounded-sam2`：`point` `bbox` `text` `sam2_video`（最后一项为视频追踪能力徽标）
 - `sam3-backend`：`bbox` `text` `exemplar`
 
-数据来自后端 `GET /setup`（详见 [开发文档 § ML Backend Protocol](../../dev/reference/ml-backend-protocol.md)）。后端如返回 `—`，说明 `/setup` 不可达或未升级到 v0.10.1+。
+数据来自后端 `GET /setup`（详见 [开发文档 § ML Backend Protocol](../../dev/reference/ml-backend-protocol.md)）。后端如返回 `—`，说明 `/setup` 不可达或协议信息不完整。
 
-## 为什么开发环境默认只能注册一个？（v0.10.x）
+## 为什么开发环境默认只能注册一个？
 
 测试环境单机显存有限。**两个 backend（grounded-sam2 + sam3）同时长驻会爆显存**。所以 `MAX_ML_BACKENDS_PER_PROJECT` 默认是 1。
 
@@ -86,7 +86,7 @@ UI 形态不会变——配额角标自动更新、「注册 backend」按钮自
 不会。已写库的标注不会被回滚；只有新触发的预标注/交互式调用会走新 backend。
 
 **Q: 我直接改 DB 加多行可以吗？**
-可以，但工作台没有 backend 路由层（v0.11+ 才有），SAM 工具会随机走第一行。运维纪律上不建议绕过 env 锁。
+可以，但工作台侧仍应通过项目绑定和页面下拉显式选择 backend。绕过 env 配额直接改 DB 容易造成显存超预算或路由不清晰，运维纪律上不建议这么做。
 
 **Q: 工具栏某个 AI 工具是灰的怎么办？**
 按 ADR-0020 的能力协商约定，工具栏只 enable 当前 backend `supported_prompts` 里的工具。Hover 灰按钮会显示「当前后端不支持此交互模式」。如果你需要那个交互模式，切换到声明支持它的 backend。

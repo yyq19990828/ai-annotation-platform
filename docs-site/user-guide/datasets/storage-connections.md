@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: how-to
 since: v0.11.16
 status: stable
-last_reviewed: 2026-05-26
+last_reviewed: 2026-05-27
 ---
 
 # 存储连接器

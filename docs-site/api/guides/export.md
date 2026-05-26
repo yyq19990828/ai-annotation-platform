@@ -3,12 +3,12 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-23
+last_reviewed: 2026-05-27
 ---
 
 # 导出
 
-标注数据导出为下游训练可用格式。v0.10.27 起导出**异步化**：`POST` 创建后台 job 返回 `202 {job_id}`，产物 ZIP 生成后在任务铃用 7 天预签名 URL 下载（VOC 仍同步返回 blob）。v0.10.43 起导出目标**可多选**，一个 job 产一个 ZIP。
+标注数据导出为下游训练可用格式。除 VOC 同步返回 blob 外，导出通过后台 job 执行：`POST` 创建 job 返回 `202 {job_id}`，产物 ZIP 生成后在任务铃用 7 天预签名 URL 下载。导出目标可多选，一个 job 产一个 ZIP。
 
 ## 触发导出
 
@@ -27,7 +27,7 @@ POST /api/v1/projects/{project_id}/batches/{batch_id}/export?targets=coco&includ
 
 非 VOC 目标返回 `202 {job_id}`；勾选多个目标时产物 ZIP 内各目标落 `{target}/` 子目录，单目标落包根。`video-track` 项目只接受视频目标（`video_json` / `yolo-frames-det` / `aap_json` / `mot` / `kitti`），选图片目标会返回 400。
 
-v0.11.13 起，导出会按项目当前类别 / 属性定义做兜底收敛：`class_name` 已不在当前类别集合内的标注不会进入任何导出格式；`annotation.attributes` 只保留当前 attribute schema 内的用户属性 key。这样即使尚未执行 cleanup，导出文件的 schema 与 data 也保持一致。
+导出会按项目当前类别 / 属性定义做兜底收敛：`class_name` 已不在当前类别集合内的标注不会进入任何导出格式；`annotation.attributes` 只保留当前 attribute schema 内的用户属性 key。这样即使尚未执行 cleanup，导出文件的 schema 与 data 也保持一致。
 
 ## 格式说明
 
@@ -44,7 +44,7 @@ v0.11.13 起，导出会按项目当前类别 / 属性定义做兜底收敛：`c
 | **voc** | Pascal VOC XML（仅同步单选） |
 | **video tracks json** | `video-track` 专用 JSON（`video_json` 目标） |
 
-v0.10.43 起 COCO / YOLO 不再只处理 bbox：各目标按其消费的几何（bbox / rotated_bbox / polygon / multi_polygon / keypoint）映射，不匹配的几何跳过（COCO 跳过数记在 `info.skipped_annotations`）。
+COCO / YOLO 会按各自能消费的几何（bbox / rotated_bbox / polygon / multi_polygon / keypoint）映射，不匹配的几何跳过（COCO 跳过数记在 `info.skipped_annotations`）。
 
 ## 视频轨迹导出
 

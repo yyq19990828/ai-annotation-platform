@@ -3,12 +3,14 @@ audience: [dev, ops]
 type: reference
 since: v0.9.25
 status: stable
-last_reviewed: 2026-05-21
+last_reviewed: 2026-05-27
 ---
 
 # 视频后端帧服务
 
-v0.9.25 把视频帧作为后端一等资源暴露，服务于长视频 chunk 拉取、单帧 thumbnail / AI 推理复用，以及 manifest v2。旧的 `GET /api/v1/tasks/{task_id}/video/manifest` 保持不变。
+视频帧服务把视频帧作为后端一等资源暴露，服务于长视频 chunk 拉取、单帧 thumbnail / AI 推理复用，以及 manifest v2。旧的 `GET /api/v1/tasks/{task_id}/video/manifest` 保持不变。
+
+<!-- history: versioned video frame service rollout notes are folded into the current API reference. -->
 
 ## 资源模型
 
@@ -48,7 +50,7 @@ GET /api/v1/videos/{dataset_item_id}/chunks/{chunk_id}
 
 首次请求缺失 chunk 时，API 创建 `VideoChunk(status="pending")` 并投递 `ensure_video_chunks` Celery 任务。单 chunk 未 ready 时返回 HTTP 202 和 `Retry-After`；ready 后返回 signed URL。
 
-v0.9.38 起，media worker 会在源 codec 为 H.264 / H.265 且 chunk 起始帧 keyframe 对齐时优先尝试 ffmpeg stream copy；不满足条件或 smart-copy 失败时，自动 fallback 到既有 H.264 baseline fragmented MP4 重编码。API 行为保持兼容，只额外返回诊断字段：
+media worker 会在源 codec 为 H.264 / H.265 且 chunk 起始帧 keyframe 对齐时优先尝试 ffmpeg stream copy；不满足条件或 smart-copy 失败时，自动 fallback 到既有 H.264 baseline fragmented MP4 重编码。API 行为保持兼容，只额外返回诊断字段：
 
 ```json
 {
@@ -67,7 +69,7 @@ v0.9.38 起，media worker 会在源 codec 为 H.264 / H.265 且 chunk 起始帧
 
 前端可用这些字段判断 WebCodecs / Worker 解码是否继续使用 chunk，或降级到整段视频 / frame service。
 
-### Sample manifest（WebCodecs demux，v0.10.46）
+### Sample manifest（WebCodecs demux）
 
 chunk 生成时，media worker 会用 `ffprobe -show_packets` 扫一遍生成出的 chunk mp4，把每个 packet 的字节偏移 / 大小 / 时间戳 / 关键帧标记写进 `diagnostics["samples"]`（同时写 `codec_string` / `width` / `height`）。扫包失败（如 fragmented mp4 的 `pos` 缺失）时静默跳过，不影响 chunk 生成。
 
@@ -100,7 +102,7 @@ MinIO key：
 videos/{dataset_item_id}/chunks/{chunk_id}.mp4
 ```
 
-### Chunk warmup（v0.10.29）
+### Chunk warmup
 
 `list_chunks` / `get_chunk` 命中某些 chunk 后，会向后 look-ahead 预解码相邻 chunk（逐帧导航多为向前推进），减少后续等待。受 `VIDEO_CHUNK_WARMUP_LOOKAHEAD` 控制（默认 1，设 0 关闭）。warmup 保守降级：只对**还没 ready 且没在 pending 进行中**的相邻 chunk 投递 `ensure_video_chunks`，不重复投递、不阻塞主请求。纯选择逻辑见 `video_frame_service.warmup_chunk_ids`。
 
@@ -131,7 +133,7 @@ videos/{dataset_item_id}/frames/{frame_index}_{width}.{format}
 
 ## 失败资产与重试
 
-v0.9.33 起，管理侧通过存储 API 汇总视频资产失败状态：
+管理侧通过存储 API 汇总视频资产失败状态：
 
 ```http
 GET /api/v1/storage/video-assets/failures
@@ -165,13 +167,13 @@ uv run python -m app.cli.video.rebuild_timetable --all --limit 100
 
 命令会下载源视频或 playback 视频，调用 `ffprobe -show_frames`，替换该视频的 `video_frame_indices` 行，并更新 `metadata.video.frame_timetable_frame_count`。失败时写入 `metadata.video.frame_timetable_error`。
 
-### Sparse timetable（长视频，v0.10.29）
+### Sparse timetable（长视频）
 
-超长视频不必给每帧都存一行 `VideoFrameIndex`。`--sparse-stride <N>`（默认 1 = 全帧）让重建只持久化**锚点子集**：`select_sparse_anchor_rows` 取「stride 网格上的帧 ∪ 所有关键帧」（保留关键帧使 chunk smart-copy 的 keyframe 对齐判定不退化）。锚点仍写进现有 `video_frame_indices`，**不新增表**。
+超长视频不必给每帧都存一行 `VideoFrameIndex`。`--sparse-stride <N>`（默认 1 = 全帧）让重建只持久化**锚点子集**：`select_sparse_anchor_rows` 取「stride 网格上的帧 ∪ 所有关键帧」（保留关键帧使 chunk smart-copy 的 keyframe 对齐判定不退化）。锚点仍写进现有 `video_frame_indices`。
 
 读取时 `frame_index → pts_ms` 对外语义不变：命中锚点用 DB 真值，否则由相邻锚点线性插值、范围外按 fps 外推（纯函数 `resolve_pts_ms_sparse`）。`frame_timetable_frame_count` 仍记源视频总帧数。旧的全帧 timetable 视频零行为变化。
 
-### 帧采样网格 helper（v0.10.29）
+### 帧采样网格 helper
 
 项目级 `Project.video_sampling`（`{mode: none|fps|step, target_fps?, frame_step?}`）只约束**标注导航/打点网格**，不改 `VideoFrameIndex`、不生成新资产（决策 D1）；标注 geometry 的 `frame_index` 永远是源视频帧号（决策 D2）。后端 `video_frame_service` 提供与前端共用的纯函数：`derive_step(source_fps, sampling)` 派生步长、`derive_sampled_frames(frame_count, step)` 给出绝对网格（锚定 0：`[0, step, 2*step, …]`）。导出按采样网格重编号；MOT / KITTI / `yolo-frames-det` 都只输出网格帧，其中 `yolo-frames-det` 会把 `video_bbox` 与摊平后的 `video_track` 写成逐帧检测 label。逐帧导航语义见标注员手册「帧采样与软网格导航」。
 
@@ -197,13 +199,13 @@ GET /api/v1/video-tracker-jobs/{job_id}
 DELETE /api/v1/video-tracker-jobs/{job_id}
 ```
 
-v0.9.34 起，创建 job 后会投递 `app.workers.video_tracker.run_video_tracker_job`。v0.9.36 支持三类 `model_key`：
+创建 job 后会投递 `app.workers.video_tracker.run_video_tracker_job`。当前支持三类 `model_key`：
 
 | model_key | 用途 |
 |---|---|
 | `mock_bbox` | 无 GPU contract adapter，复用输入 bbox 逐帧输出，供 CI / 前端对接使用。 |
 | `sam2_video` | 调项目绑定的 connected ML Backend，发送 `context.type="video_tracker"`。 |
-| `sam3_video` | 与 `sam2_video` 相同协议，供 v0.10.x SAM 3 backend 并存接入。 |
+| `sam3_video` | 与 `sam2_video` 相同协议，供 SAM 3 backend 并存接入。 |
 
 创建请求：
 

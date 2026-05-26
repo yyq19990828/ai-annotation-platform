@@ -57,7 +57,7 @@ docker compose up -d celery-worker
 
 ## Chunk smart-copy 诊断
 
-v0.9.38 后，ready chunk 会返回 `generation_mode` 与 `diagnostics`。常见 fallback：
+ready chunk 会返回 `generation_mode` 与 `diagnostics`。常见 fallback：
 
 - `unsupported_codec`：源 codec 不是 H.264 / H.265，worker 会走 H.264 transcode。
 - `missing_start_frame_timetable`：缺少 chunk 起始帧 timetable 行，先重建帧时间表。

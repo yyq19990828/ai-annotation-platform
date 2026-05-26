@@ -3,7 +3,7 @@ audience: [super_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-27
 ---
 
 # ML Backend 注册
@@ -12,7 +12,7 @@ ML Backend 是平台对接外部推理服务的契约层。每个 Backend 是一
 
 ## 入口
 
-- 项目侧：项目设置 → **ML 模型** tab（v0.9.3-phase3 起前端可写，写权限属 admin/super_admin）
+- 项目侧：项目设置 → **ML 模型** tab（写权限属项目管理员 / 超级管理员）
 - 全局侧（仅超管）：`/model-market`
 
 ## 表单字段
@@ -27,7 +27,7 @@ ML Backend 是平台对接外部推理服务的契约层。每个 Backend 是一
 
 ## URL 校验：拒绝 loopback
 
-v0.9.8 起后端 Pydantic `field_validator` 直接拒绝以下 host：
+后端 Pydantic `field_validator` 会直接拒绝以下 host：
 
 - `localhost`
 - `127.0.0.1` / `127.x.x.x`
@@ -58,9 +58,9 @@ dev 环境 placeholder 已默认填 `172.17.0.1:8001`。
 2. 在同一页的 **实际 ML Backend** 下拉选刚注册的 backend
 3. 保存 AI 设置
 
-未绑定 backend 直接跑预标会报错（v0.9.9 B-8 后给出明确 toast 引导而非空字符串错）。
+未绑定 backend 直接跑预标会报错，并在前端给出配置引导。
 
-## 复用其它项目的 Backend（v0.9.7）
+## 复用其它项目的 Backend
 
 新建项目 wizard step 4 提供下拉选其它项目已注册的 backend，平台会**复制**一份到新项目（不是引用）。这样修改互不影响，也避免单项目 backend 删除影响他人。
 
@@ -72,7 +72,7 @@ dev 环境 placeholder 已默认填 `172.17.0.1:8001`。
 
 ## 审计
 
-v0.9.9 B-5 起，`ml_backend.created` / `ml_backend.updated` / `ml_backend.deleted` 全部进 audit_logs。详见 [审计日志](./audit-logs)。
+`ml_backend.created` / `ml_backend.updated` / `ml_backend.deleted` 全部进 audit_logs。详见 [审计日志](./audit-logs)。
 
 ## 相关
 

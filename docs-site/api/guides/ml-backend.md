@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-27
 ---
 
 # ML Backend
@@ -12,7 +12,7 @@ last_reviewed: 2026-05-09
 
 ```http
 GET /api/v1/admin/ml-integrations              # 当前用户可见
-GET /api/v1/admin/ml-integrations/all          # 全局列表（v0.9.7 wizard 复用用）
+GET /api/v1/admin/ml-integrations/all          # 全局列表
 GET /api/v1/admin/ml-integrations/:id
 ```
 
@@ -60,7 +60,7 @@ PATCH /api/v1/projects/:id
 { "ml_backend_id": 3, "ai_enabled": true }
 ```
 
-未绑定状态下触发预标会得到明确错误（v0.9.9 B-8）：
+未绑定状态下触发预标会得到明确错误：
 
 ```json
 { "detail": "Project has no ML backend bound. Configure in project settings." }
@@ -79,7 +79,7 @@ ML Backend 必须实现：
 
 ## 审计
 
-`ml_backend.created` / `updated` / `deleted` 全部进 audit_logs（v0.9.9 B-5）。
+`ml_backend.created` / `updated` / `deleted` 全部进 audit_logs。
 
 ## 相关
 

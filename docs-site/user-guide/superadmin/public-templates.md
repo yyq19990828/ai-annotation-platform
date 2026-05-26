@@ -3,14 +3,14 @@ audience: [super_admin]
 type: how-to
 since: v0.10.14
 status: stable
-last_reviewed: 2026-05-18
+last_reviewed: 2026-05-27
 ---
 
 # 公共模板治理
 
 > 适用角色：超级管理员
 
-v0.10.14 起平台支持「公共模板」（`scope=public`）—— 全平台可见可用、不受组织边界限制。
+平台支持「公共模板」（`scope=public`）—— 全平台可见可用、不受组织边界限制。
 本页给治理公共模板的实践要点。
 
 ## 谁能创建

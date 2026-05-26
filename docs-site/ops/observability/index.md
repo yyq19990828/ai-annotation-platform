@@ -3,14 +3,14 @@ audience: [ops, dev]
 type: reference
 since: v0.8.7
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-27
 ---
 
 # 可观测性 / 运维监控
 
 > 适用读者：负责上线运维 / SRE 视角的工程师；需要在 production 看 panel 排查抖动的开发者。
 
-v0.8.7 起 FastAPI `/metrics` 暴露 4 组 Prometheus metrics。v0.10.58 起，超管还可以直接打开 `/admin/health` 查看同一批基础探测的实时摘要；该页面适合快速确认 DB / Redis / MinIO / Celery 是否可用，长期趋势和告警仍以 Prometheus / Grafana 为准。
+FastAPI `/metrics` 暴露 Prometheus metrics。超管也可以直接打开 `/admin/health` 查看同一批基础探测的实时摘要；该页面适合快速确认 DB / Redis / MinIO / Celery 是否可用，长期趋势和告警仍以 Prometheus / Grafana 为准。
 
 | Metric | 类型 | Labels | 用途 |
 |---|---|---|---|
@@ -26,7 +26,7 @@ v0.8.7 起 FastAPI `/metrics` 暴露 4 组 Prometheus metrics。v0.10.58 起，�
 
 ## 1. 本地启动监控栈
 
-v0.8.8 加了 docker-compose `monitoring` profile（默认不启动，避免 dev 多吃 ~200 MB）：
+本地监控栈通过 docker-compose `monitoring` profile 启动（默认不启动，避免 dev 多吃约 200 MB）：
 
 ```bash
 docker compose --profile monitoring up -d prometheus grafana

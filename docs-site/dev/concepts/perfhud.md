@@ -3,18 +3,17 @@ audience: [dev]
 type: reference
 since: v0.8.7
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-27
 ---
 
 # PerfHud — GPU / ML backend 实时监控浮窗
 
-> v0.9.11 落地. 参考 [ComfyUI-Crystools](https://github.com/crystian/ComfyUI-Crystools) 的"后端 nvml/psutil 推送 → 前端 chart"架构, 不是浏览器侧采集.
+> 参考 [ComfyUI-Crystools](https://github.com/crystian/ComfyUI-Crystools) 的"后端 nvml/psutil 推送 → 前端 chart"架构，不是浏览器侧采集。
 
 ## 用途
 
-Grounded-SAM-2 / 未来 SAM-3 等 GPU backend 跑预标时, 运维侧需要实时看 GPU util / VRAM /
-温度 / 功耗 + 容器 CPU / RAM 排障 OOM / 卡顿. v0.9.11 之前只能看 60s 缓存的 `health_meta`,
-不够实时.
+Grounded-SAM-2 / SAM-3 等 GPU backend 跑预标时，运维侧需要实时看 GPU util / VRAM /
+温度 / 功耗 + 容器 CPU / RAM 排障 OOM / 卡顿。`health_meta` 是缓存快照，不适合排查实时抖动。
 
 ## 触发与权限
 
@@ -67,14 +66,14 @@ Grounded-SAM-2 / 未来 SAM-3 等 GPU backend 跑预标时, 运维侧需要实�
 
 | 层 | 路径 | 改动点 |
 |---|---|---|
-| GPU backend | `apps/grounded-sam2-backend/observability.py` | 新增 5 个 Gauge + `init_perfhud_collectors` / `sample_perfhud` |
+| GPU backend | `apps/grounded-sam2-backend/observability.py` | 5 个 Gauge + `init_perfhud_collectors` / `sample_perfhud` |
 | GPU backend | `apps/grounded-sam2-backend/main.py` `/health` | 调 `sample_perfhud()`, 扩 `gpu_info` + `host` 段 |
 | GPU backend | `apps/grounded-sam2-backend/pyproject.toml` | 加 `pynvml>=11.5` + `psutil>=5.9` |
-| API schema | `apps/api/app/schemas/ml_backend.py` | 新增 `GpuInfo` / `HostInfo` / `CacheStats` / `HealthMeta` / `MLBackendStatsSnapshot` Pydantic |
+| API schema | `apps/api/app/schemas/ml_backend.py` | `GpuInfo` / `HostInfo` / `CacheStats` / `HealthMeta` / `MLBackendStatsSnapshot` Pydantic |
 | API client | `apps/api/app/services/ml_client.py` | `health_meta()` 透传 `host` 段 |
-| API WS | `apps/api/app/api/v1/ws.py` | 新增 `/ws/ml-backend-stats` (admin only + 订阅者计数) |
-| API worker | `apps/api/app/workers/ml_health.py` | 新增 `publish_ml_backend_stats` 任务 |
-| API beat | `apps/api/app/workers/celery_app.py` | 新增 `publish-ml-backend-stats` schedule (1s) |
+| API WS | `apps/api/app/api/v1/ws.py` | `/ws/ml-backend-stats` (admin only + 订阅者计数) |
+| API worker | `apps/api/app/workers/ml_health.py` | `publish_ml_backend_stats` 任务 |
+| API beat | `apps/api/app/workers/celery_app.py` | `publish-ml-backend-stats` schedule (1s) |
 | 前端组件 | `apps/web/src/components/PerfHud/` | 浮窗 + hook + zustand store |
 | 前端入口 | `apps/web/src/App.tsx` | 全局 `Ctrl+Shift+P` listener + `<PerfHud />` 挂载 |
 | 前端入口 | `apps/web/src/components/shell/TopBar.tsx` | activity icon button (admin only) |
@@ -96,7 +95,7 @@ Grounded-SAM-2 / 未来 SAM-3 等 GPU backend 跑预标时, 运维侧需要实�
 - **浏览器侧指标** (FPS / JS heap / longtask / API p95 / WS 重连数 / 当前 task 框数):
   延期到 §C.1 keyset 分页拐点判断时一并加. 当前 backend 视角的 GPU/容器指标已足够
   排预标卡顿/OOM.
-- **多变体 backend** (v0.10.x sam3 + grounded-sam2 双 backend): 已支持 select 切换;
+- **多变体 backend**（sam3 + grounded-sam2 双 backend）：已支持 select 切换；
   未来加按 `extra_params.variant` 分组显示.
 - **历史趋势归档**: 60s ring buffer 仅在浮窗 visible 期间保留, 关闭即丢. 长期趋势看
   Prometheus + Grafana.
@@ -105,4 +104,4 @@ Grounded-SAM-2 / 未来 SAM-3 等 GPU backend 跑预标时, 运维侧需要实�
 
 - 上游协议: [ml-backend-protocol.md](../reference/ml-backend-protocol)
 - 健康检查总策略: [monitoring.md](/ops/observability/)
-- 关联 v0.9.6 `health_meta` 缓存: [ai-models.md](./ai-models.md)
+- `health_meta` 缓存: [ai-models.md](./ai-models.md)

@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-10
+last_reviewed: 2026-05-27
 ---
 
 # 项目模块
@@ -64,7 +64,7 @@ graph TD
 | `type_key` / `type_label` | 任务类型，例如 `image-det` |
 | `owner_id` | 项目 owner，决定写权限上限 |
 | `status` | 项目生命周期状态 |
-| `tool_bindings` (v0.10.17+) | 工具维度类别 / 属性绑定 JSONB, `{ tool_unit_id: { enabled, classes: [...], attribute_schema: {...} } }` 嵌套结构, **唯一存储真值** (v0.10.22 起旧扁平 `classes` / `classes_config` / `attribute_schema` 列已删除) |
+| `tool_bindings` | 工具维度类别 / 属性绑定 JSONB, `{ tool_unit_id: { enabled, classes: [...], attribute_schema: {...} } }` 嵌套结构，**唯一存储真值**；旧扁平 `classes` / `classes_config` / `attribute_schema` 仅作为响应兼容投影 |
 | `sampling` | 工作台派题策略 |
 | `maximum_annotations` | 多人重叠标注上限 |
 | `show_overlap_first` | 是否优先展示重叠任务 |
@@ -100,12 +100,14 @@ archived
 
 ## Project 负责哪些配置
 
-### 1. 标注 schema (v0.10.17 起按工具单位拆分)
+### 1. 标注 schema（按工具单位拆分）
 
 项目定义:
 
 - 启用哪些**工具单位** (tool_unit) 与各 unit 持有的类别 / 属性 schema: `tool_bindings` (唯一存储真值)
-- 响应 / 导出按需从 `tool_bindings` **读时派生**的扁平投影: `classes` / `classes_config` / `attribute_schema` (v0.10.22 起已无对应 DB 列)
+- 响应 / 导出按需从 `tool_bindings` **读时派生**的扁平投影: `classes` / `classes_config` / `attribute_schema`
+
+<!-- history: tool_bindings replaced the older flat project schema across the v0.10 tool-unit slices. -->
 
 `tool_bindings` 结构示例:
 

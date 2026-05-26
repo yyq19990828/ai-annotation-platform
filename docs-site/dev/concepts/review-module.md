@@ -353,7 +353,7 @@ review 链路几乎每个动作都带审计。
 
 ## 讨论面板：评论 / Issue / 历史统一入口
 
-v0.11 起，reviewer 与 annotator 的沟通收敛到工作台右栏下段的 `DiscussionPanel`（详见 [工作台 Shell 架构 §右栏](./workbench-shell#右栏-ai-检查器-讨论面板)），不再有独立的 issue 浮层。它有三个常驻 tab：
+reviewer 与 annotator 的沟通收敛到工作台右栏下段的 `DiscussionPanel`（详见 [工作台 Shell 架构 §右栏](./workbench-shell#右栏-ai-检查器-讨论面板)），不再有独立的 issue 浮层。它有三个常驻 tab：
 
 - **comments**：标注级评论；当前无选中标注时降级为任务级评论（合并 `annotation_comments` 与任务级反馈）。
 - **history**：标注 / 任务级 audit 历史（任务级走 `GET /tasks/{id}/audit-history`）。
@@ -365,7 +365,7 @@ issue 在画布上以图钉呈现，与 issues tab 列表双向联动：
 
 - 点列表项（有 pin）→ `focusIssue(id)` → 视口平移到对应图钉并高亮。
 - 图钉单击 → `useActiveIssueStore` 高亮对应行并自动把面板切到 issues tab。
-- 视频 stage 的图钉按 `anchor_position.frame` 帧级显隐（`VideoIssueLayer.tsx`，v0.11.7），颜色按 status 映射（open=warning / resolved=success / wont_fix=muted）。
+- 视频 stage 的图钉按 `anchor_position.frame` 帧级显隐（`VideoIssueLayer.tsx`），颜色按 status 映射（open=warning / resolved=success / wont_fix=muted）。
 
 ### 评论画布批注
 

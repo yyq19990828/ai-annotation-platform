@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-11
+last_reviewed: 2026-05-27
 ---
 
 # 标注模块
@@ -94,15 +94,15 @@ graph TD
 | `bbox` | 图片矩形框 | 单个归一化 bbox |
 | `polygon` | 图片多边形 | 单个外环，可带 `holes` |
 | `multi_polygon` | 多连通域 / 空洞预测 | 多个 polygon ring，主要来自 mask adapter |
-| `rotated_bbox` | v0.10.28 旋转框 / OBB | `{cx,cy,w,h,angle}` 归一化，`angle` 顺时针 `[0,360)` |
-| `polyline` | v0.10.28 开放折线 | `points[]`(≥2 顶点)，不闭合、无 `holes`、无自交校验 |
-| `keypoint` | v0.10.28 关键点 (COCO 范式) | `points[]` 各 `{x,y,v}`，`v` 可见性 0/1/2，与类别 `keypoint_schema.nodes` 同 index 对齐 |
-| `video_bbox` | v0.9.16 视频逐帧框 | 单个 frame 上的 bbox，带 `frame_index` |
-| `video_track` | v0.9.17 视频对象轨迹 | 一条 annotation 保存稳定 `track_id` 和 `keyframes[]` |
+| `rotated_bbox` | 旋转框 / OBB | `{cx,cy,w,h,angle}` 归一化，`angle` 顺时针 `[0,360)` |
+| `polyline` | 开放折线 | `points[]`(≥2 顶点)，不闭合、无 `holes`、无自交校验 |
+| `keypoint` | 关键点 (COCO 范式) | `points[]` 各 `{x,y,v}`，`v` 可见性 0/1/2，与类别 `keypoint_schema.nodes` 同 index 对齐 |
+| `video_bbox` | 视频逐帧框 | 单个 frame 上的 bbox，带 `frame_index` |
+| `video_track` | 视频对象轨迹 | 一条 annotation 保存稳定 `track_id` 和 `keyframes[]` |
 
 `keypoint` 的骨骼拓扑（命名节点 + 连线）不存进 geometry，而是 unit 级模板：`project.tool_bindings["keypoint"].keypoint_schema`（`KeypointSchema = {nodes: KeypointNode[], edges: [int,int][]}`，后端见 `_jsonb_types.py`，前端在项目设置「类别与属性」里的 `KeypointSchemaEditor` 维护）。geometry 只存各节点的 `{x,y,v}`，按 index 与 schema 节点一一对应。
 
-`video_track` 是 compact 轨迹模型，不把插值帧逐条写库。编辑同一对象其它帧时，前端会更新同一条 annotation 的 `geometry.keyframes[]`；前端显示的 interpolated bbox 只是视图结果。目标"消失"用 `outside` 闭区间段表达（v0.10.30 起删除旧 `absent` 字段），插值不跨消失段、其中不输出 bbox；`occluded=true` 表示目标仍存在但被遮挡。
+`video_track` 是 compact 轨迹模型，不把插值帧逐条写库。编辑同一对象其它帧时，前端会更新同一条 annotation 的 `geometry.keyframes[]`；前端显示的 interpolated bbox 只是视图结果。目标"消失"用 `outside` 闭区间段表达；插值不跨消失段、其中不输出 bbox；`occluded=true` 表示目标仍存在但被遮挡。
 
 ### `AnnotationDraft`
 
@@ -221,12 +221,14 @@ AI 采纳入口：
 所以如果你改类目别名逻辑,要一起看:
 
 - `annotation.py:accept_prediction`
-- `project.tool_bindings`(v0.10.22 起为唯一存储真值;无扁平 `classes_config` 列)
+- `project.tool_bindings`（唯一存储真值；`classes_config` 是响应兼容视图，不是独立写入源）
 - 前端 predictions 渲染与 class badge
 
-## 工具单位 (tool_unit) 维度 (v0.10.17+)
+## 工具单位（tool_unit）维度
 
-v0.10.17 起 annotation 必须携带 `tool_unit_id: String(30)` (枚举 bbox / polyline / region / ai_interactive / lidar_box_3d / rotated_bbox / keypoint, 与 `app/schemas/_jsonb_types.ToolUnitId` Literal 对齐; 后两者 v0.10.28 加入):
+annotation 必须携带 `tool_unit_id: String(30)`（枚举 bbox / polyline / region / ai_interactive / lidar_box_3d / rotated_bbox / keypoint，与 `app/schemas/_jsonb_types.ToolUnitId` Literal 对齐）：
+
+<!-- history: tool_unit and extra geometry units were introduced in separate release slices; this section now documents the current required model. -->
 
 - 写入路径: `AnnotationService.create(..., tool_unit_id="bbox")` 按 `project.tool_bindings[unit].classes` **软校验** `class_name` 命中, 空集合放行兼容旧数据, 不命中返 422。
 - `accept_prediction` 沿用 `prediction.tool_unit_id` 给生成的 annotation, 保持工具维度一致。

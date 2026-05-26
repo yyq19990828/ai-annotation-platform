@@ -3,7 +3,7 @@ audience: [super_admin]
 type: reference
 since: v0.8.1
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-27
 ---
 
 # 审计日志
@@ -35,12 +35,12 @@ last_reviewed: 2026-05-09
 
 ### 项目
 - `project.created` / `project.updated` / `project.archived`
-- `project.classes_renamed`（v0.9.10 B-13）
+- `project.classes_renamed`
 
 ### 数据
 - `batch.uploaded` / `batch.activated` / `batch.reset`
 
-### AI（v0.9.9 B-5）
+### AI
 - `ai.preannotate.triggered` — 触发预标，metadata 含 prompt / job_id
 - `ml_backend.created` / `ml_backend.updated` / `ml_backend.deleted`
 

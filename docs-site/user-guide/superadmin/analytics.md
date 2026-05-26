@@ -3,7 +3,7 @@ audience: [super_admin]
 type: reference
 since: v0.10.16
 status: stable
-last_reviewed: 2026-05-19
+last_reviewed: 2026-05-27
 ---
 
 # 离线分析面板（DuckDB）
@@ -17,7 +17,7 @@ last_reviewed: 2026-05-19
 | 面板 | 数据源 | 说明 |
 |---|---|---|
 | **团队日吞吐** | `task_events.kind='annotate'` | 按日聚合全团队提交事件计数，柱状条图 |
-| **Reject 原因分布** | `task_events.was_rejected=true AND reject_reason_type IS NOT NULL` | 4 类 enum 占比（v0.10.16 起标注；旧数据 NULL 不入分母） |
+| **Reject 原因分布** | `task_events.was_rejected=true AND reject_reason_type IS NOT NULL` | 4 类 enum 占比；旧数据 NULL 不入分母 |
 | **标注耗时分布** | `task_events.kind='annotate'` 的 claim→submit 间隔 | 样本数 / p50 / p95 / 均值（单位 ms） |
 
 时间范围下拉支持 **近 7 / 30 / 90 天**。

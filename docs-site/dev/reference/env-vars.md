@@ -42,31 +42,31 @@ last_reviewed: 2026-05-26
 | `MINIO_BUCKET` | `annotations` | 存放标注文件（图片、音频等）的桶名称 |
 | `MINIO_DATASETS_BUCKET` | `datasets` | 数据集源文件桶（图片/视频/文本原始文件） |
 | `MINIO_BUG_REPORTS_BUCKET` | `bug-reports` | Bug 反馈截图桶（180 天 lifecycle） |
-| `MINIO_MEDIA_CACHE_BUCKET` | `media-cache` | v0.10.17 · 派生媒体缓存桶（thumbnails / 视频帧 / chunks / playback，30 天 lifecycle，可重生） |
-| `MINIO_AUDIT_ARCHIVE_BUCKET` | `audit-archive` | v0.10.17 · 审计冷分区归档桶（永久保留，合规相关，建议开启 versioning + object lock） |
-| `MINIO_IMPORT_BUCKET` | `import` | v0.10.27 · 导入预标注产物桶（7 天 lifecycle，短生命周期） |
-| `MINIO_EXPORT_BUCKET` | `export` | v0.10.27 · 导出标注产物桶（7 天 lifecycle，短生命周期） |
-| `ML_BACKEND_STORAGE_HOST` | `172.17.0.1:9000` | v0.9.4 · ML backend 在 docker compose 网内、平台 api 在 host 进程时, SAM 容器无法 hit host 的 localhost:9000; 设为 docker bridge 网关地址即可。 Linux: 172.17.0.1:9000; macOS/Win Docker Desktop: host.docker.internal:9000; 生产 (api/sam/minio 同 K8s 网) 留空。 |
+| `MINIO_MEDIA_CACHE_BUCKET` | `media-cache` | 派生媒体缓存桶（thumbnails / 视频帧 / chunks / playback，30 天 lifecycle，可重生） |
+| `MINIO_AUDIT_ARCHIVE_BUCKET` | `audit-archive` | 审计冷分区归档桶（永久保留，合规相关，建议开启 versioning + object lock） |
+| `MINIO_IMPORT_BUCKET` | `import` | 导入预标注产物桶（7 天 lifecycle，短生命周期） |
+| `MINIO_EXPORT_BUCKET` | `export` | 导出标注产物桶（7 天 lifecycle，短生命周期） |
+| `ML_BACKEND_STORAGE_HOST` | `172.17.0.1:9000` | ML backend 在 docker compose 网内、平台 api 在 host 进程时, SAM 容器无法 hit host 的 localhost:9000; 设为 docker bridge 网关地址即可。 Linux: 172.17.0.1:9000; macOS/Win Docker Desktop: host.docker.internal:9000; 生产 (api/sam/minio 同 K8s 网) 留空。 |
 
-## v0.9.6 · ML Backend 注册表单 URL 默认值预填 hint (avoid 手敲).
+## ML Backend 注册表单 URL 默认值预填 hint (avoid 手敲).
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `ML_BACKEND_DEFAULT_URL` | `http://172.17.0.1:8001` | 留空则用前端硬编码默认 http://172.17.0.1:8001; 生产 K8s 同 namespace 时可设为 service DNS, 让运维注册时直接 ready. |
 
-## v0.10.26 · 模型市场「容器直连观测」面板要观测的后端容器 URL 列表 (逗号分隔 / JSON list)。
+## 模型市场「容器直连观测」面板要观测的后端容器 URL 列表 (逗号分隔 / JSON list)。
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `ML_BACKEND_OBSERVE_URLS` | `—` | 与项目注册解耦: 没有任何项目注册 backend 时, 运维也能在模型市场直连这些容器看 健康度 / 变体目录 / 试启动。留空则回退到 ML_BACKEND_DEFAULT_URL (若其非空)。 例: ML_BACKEND_OBSERVE_URLS=http://172.17.0.1:8001,http://172.17.0.1:8002 |
 
-## v0.10.1 · 单项目最多可绑定的 ML backend 数量上限. DB / API / UI 均按 1:N 设计,
+## 单项目最多可绑定的 ML backend 数量上限. DB / API / UI 均按 1:N 设计,
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `MAX_ML_BACKENDS_PER_PROJECT` | `1` | 运行时通过此值锁定. 默认 1 防止测试环境同时常驻 grounded-sam2 (~2GB) + sam3 (~7GB) 显存爆炸. 生产可调大; prompt-routing / fallback 在 v0.11+ 落地. |
+| `MAX_ML_BACKENDS_PER_PROJECT` | `1` | 运行时通过此值锁定. 默认 1 防止测试环境同时常驻 grounded-sam2 (~2GB) + sam3 (~7GB) 显存爆炸. 生产可调大; prompt-routing / fallback 按路线图推进. |
 
-## 视频帧服务 (v0.9.25+)
+## 视频帧服务
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
@@ -86,22 +86,22 @@ last_reviewed: 2026-05-26
 |---|---|---|
 | `SECRET_KEY` | `change-this-to-a-random-string-in-production` | JWT 签名密钥；生产环境必须替换为高强度随机字符串（≥32 字符） |
 
-## v0.11.14 · 存储连接器（外部 S3 / SFTP 服务端拉取）凭据 Fernet 加密 key。
+## 存储连接器（外部 S3 / SFTP 服务端拉取）凭据 Fernet 加密 key。
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `CONNECTOR_ENCRYPTION_KEY` | `—` | 与 SECRET_KEY 隔离；留空则连接器加解密一律拒绝（API 返回 503）。 生成: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" |
-| `CONNECTOR_HOST_ALLOWLIST` | `—` | v0.11.16 · 存储连接器主机白名单部署默认值（CIDR/IP/域名，CSV 或 JSON 数组）。 超管通过 /storage-connections/allowlist 写入 DB 后会覆盖该默认值。 本地连接宿主机 SFTP 示例: CONNECTOR_HOST_ALLOWLIST=172.17.0.1/32,172.26.1.17/32 |
-| `DATASET_IMPORT_MAX_FILES` | `50000` | v0.11.15 · 连接器导入单个 job 最多扫描 / 导入的文件数；超限直接失败，避免误扫全桶。 |
-| `DATASET_IMPORT_MAX_TOTAL_BYTES` | `214748364800` | v0.11.15 · 连接器导入单个 job 允许的总字节数；默认 200GiB。 |
+| `CONNECTOR_ENCRYPTION_KEY` | `—` | 与 SECRET_KEY 隔离；留空则连接器加解密一律拒绝（API 返回 503）。 生成: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key.decode)" |
+| `CONNECTOR_HOST_ALLOWLIST` | `—` | 存储连接器主机白名单部署默认值（CIDR/IP/域名，CSV 或 JSON 数组）。 超管通过 /storage-connections/allowlist 写入 DB 后会覆盖该默认值。 本地连接宿主机 SFTP 示例: CONNECTOR_HOST_ALLOWLIST=172.17.0.1/32,172.26.1.17/32 |
+| `DATASET_IMPORT_MAX_FILES` | `50000` | 连接器导入单个 job 最多扫描 / 导入的文件数；超限直接失败，避免误扫全桶。 |
+| `DATASET_IMPORT_MAX_TOTAL_BYTES` | `214748364800` | 连接器导入单个 job 允许的总字节数；默认 200GiB。 |
 
-## 是否允许开放注册（v0.7.7+；v0.8.1 起可在 SettingsPage > 系统设置 中热更新覆盖）
+## 是否允许开放注册
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `ALLOW_OPEN_REGISTRATION` | `false` | true  — 任何人可自行注册，默认获得 viewer 角色 false — 仅管理员可创建账号 |
 
-## Cloudflare Turnstile CAPTCHA（v0.8.7+，防分布式刷号）
+## Cloudflare Turnstile CAPTCHA
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
@@ -109,13 +109,13 @@ last_reviewed: 2026-05-26
 | `TURNSTILE_SITE_KEY` | `# 前端 widget 的 sitekey（同时设置 VITE_TURNSTILE_SITE_KEY）` | — |
 | `TURNSTILE_SECRET_KEY` | `# 后端 siteverify 用的 secret，绝不可暴露给前端` | — |
 
-## 审计日志冷数据保留月数（v0.8.1+）
+## 审计日志冷数据保留月数
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `AUDIT_RETENTION_MONTHS` | `12` | Celery beat 每月 2 日扫描超期分区，归档为 jsonl.gz 上传 MinIO `audit-archive/{YYYY}/{MM}.jsonl.gz`， 然后 DROP 该分区。默认 12 个月。 |
 
-## 错误监控 (Sentry, v0.6.6+)
+## 错误监控 (Sentry)
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
@@ -124,13 +124,13 @@ last_reviewed: 2026-05-26
 | `SENTRY_TRACES_SAMPLE_RATE` | `0.1` | 性能追踪采样率，0.0 ~ 1.0（0.1 = 采样 10% 的请求） |
 | `VITE_SENTRY_DSN` | `—` | 前端 Sentry DSN（Vite 构建时注入）；留空则禁用前端错误上报 |
 
-## 前端 Turnstile sitekey（v0.8.7+，与 TURNSTILE_SITE_KEY 一致）；留空时注册页不渲染 widget。
+## 前端 Turnstile sitekey；留空时注册页不渲染 widget。
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `VITE_TURNSTILE_SITE_KEY` | `—` | — |
 
-## SMTP 邮件 (v0.8.1+ admin「发送测试邮件」; v0.10.24 dev mailpit)
+## SMTP 邮件
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
@@ -153,7 +153,7 @@ last_reviewed: 2026-05-26
 |---|---|---|
 | `CORS_ALLOW_ORIGIN_REGEX` | `http://localhost:\d+` | — |
 
-## Grounded-SAM-2 ML Backend (v0.9.0+, GPU profile)
+## Grounded-SAM-2 ML Backend
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
@@ -164,16 +164,16 @@ last_reviewed: 2026-05-26
 | `GSAM2_LOG_LEVEL` | `INFO` | Backend 日志级别 (DEBUG / INFO / WARNING). |
 | `IDLE_UNLOAD_SECONDS` | `600` | B-28+ · 空闲多少秒后自动卸载模型释放显存 (默认 600s); <=0 关闭定时卸载, 仍可手动 /unload. |
 | `IDLE_CHECK_INTERVAL` | `60` | B-28+ · idle 检查器轮询间隔 (默认 60s). |
-| `MODEL_POOL_CAP` | `1` | v0.10.23 · ModelPool 同容器内并存的变体数上限 (LRU 驱逐). 显存预算: 4060(8G) 用 1, 3090(24G) 1-2, A100 2-4. 默认 1 = 维持单变体常驻行为, 切变体走"驱逐旧+冷启新". |
-| `MODEL_POOL_BUILD_TIMEOUT` | `30` | v0.10.23 · pool 满 + 并发 miss 时排队等待显存的超时 (秒), 超时返回 503 "显存繁忙". |
-| `PREFETCH_SAM_VARIANTS` | `tiny,small,base_plus,large` | v0.10.23 · entrypoint 启动时额外预拉的变体 checkpoint (主变体之外). pool 能服务多变体, 但只有这里声明 (+ 主变体) 的 checkpoint 会落盘; 运行期请求未预拉的变体会 503. 逗号分隔. 默认全量, 让 pool 任意切换不踩缺失; 磁盘紧张时裁剪 (大致 tiny~150M/small~180M/base_plus~320M/large~900M, SwinB~940M). |
+| `MODEL_POOL_CAP` | `1` | ModelPool 同容器内并存的变体数上限 (LRU 驱逐). 显存预算: 4060(8G) 用 1, 3090(24G) 1-2, A100 2-4. 默认 1 = 维持单变体常驻行为, 切变体走"驱逐旧+冷启新". |
+| `MODEL_POOL_BUILD_TIMEOUT` | `30` | pool 满 + 并发 miss 时排队等待显存的超时 (秒), 超时返回 503 "显存繁忙". |
+| `PREFETCH_SAM_VARIANTS` | `tiny,small,base_plus,large` | entrypoint 启动时额外预拉的变体 checkpoint (主变体之外). pool 能服务多变体, 但只有这里声明 (+ 主变体) 的 checkpoint 会落盘; 运行期请求未预拉的变体会 503. 逗号分隔. 默认全量, 让 pool 任意切换不踩缺失; 磁盘紧张时裁剪 (大致 tiny~150M/small~180M/base_plus~320M/large~900M, SwinB~940M). |
 | `PREFETCH_DINO_VARIANTS` | `T,B` | — |
-| `VIDEO_MODEL_POOL_CAP` | `1` | v0.10.35 §B · sam2_video tracker 独立显存池 (与图片池预算分离, 互不驱逐). 同容器内并存的 video 变体上限 (LRU); 默认 1. |
+| `VIDEO_MODEL_POOL_CAP` | `1` | sam2_video tracker 独立显存池 (与图片池预算分离, 互不驱逐). 同容器内并存的 video 变体上限 (LRU); 默认 1. |
 | `VIDEO_MODEL_POOL_BUILD_TIMEOUT` | `60` | video 池满 + 并发 miss 排队等显存的超时 (秒), 超时 503; video build 比图片慢, 默认 60. |
 | `VIDEO_TRACKER_MAX_WINDOW_FRAMES` | `300` | 单次 init_state 一次性加载的最大帧数 (安全上限, 防超长窗口灌爆显存); 超此值的窗口拒绝. |
 | `VIDEO_IDLE_UNLOAD_SECONDS` | `600` | video 池独立 idle 卸载 (与图片池 IDLE_UNLOAD_SECONDS 各自计时); <=0 关闭. |
 
-## SAM 3 ML Backend (v0.10.0+, GPU profile gpu-sam3)
+## SAM 3 ML Backend
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
@@ -184,7 +184,7 @@ last_reviewed: 2026-05-26
 | `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒后自动卸载模型释放显存 (sam3 FP16 ~7GB, 与 grounded-sam2 并存强烈建议保留); <=0 关闭定时卸载, 仍可通过 POST /unload 手动卸载. 下次 /predict 自动懒重载 (冷启动 ~8-12s). |
 | `SAM3_IDLE_CHECK_INTERVAL` | `60` | idle 检查器轮询间隔 (默认 60s). |
 
-## DuckDB 离线分析视图 (v0.10.16, ROADMAP §1.6)
+## DuckDB 离线分析视图
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|

@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-27
 ---
 
 # 项目
@@ -15,13 +15,20 @@ POST /api/v1/projects
 {
   "name": "<unique>",
   "description": "...",
-  "classes_config": [{ "name": "dog", "color": "#ff0000", "aliases": ["puppy"] }],
+  "data_type": "image",
+  "tool_bindings": {
+    "bbox": {
+      "enabled": true,
+      "classes": [{ "name": "dog", "color": "#ff0000", "aliases": ["puppy"] }],
+      "attribute_schema": { "fields": [] }
+    }
+  },
   "ai_enabled": false,
-  "ml_backend_source_id": null   // v0.9.7 复用其它项目 backend
+  "ml_backend_source_id": null
 }
 ```
 
-`classes_config` 是核心字段——后续 task 的 `class_name` 必须在这里。aliases 用于 AI 预标的 prompt 召回（DINO 对自然语言敏感）。
+`tool_bindings` 是类别与属性的存储真值。`classes_config` / `attribute_schema` 仍会在响应中作为兼容视图派生出来，但新代码应优先写 `tool_bindings`。aliases 用于 AI 预标的 prompt 召回（DINO 对自然语言敏感）。
 
 ## 配置
 
@@ -32,12 +39,13 @@ PATCH /api/v1/projects/:id
 支持字段（部分更新）：
 
 - `name` / `description`
-- `classes_config`（整体替换）
+- `tool_bindings`（整体替换）
+- `classes_config` / `attribute_schema`（兼容输入，会被归并到对应工具单位）
 - `ai_enabled` / `ml_backend_id`
-- `attribute_schema`（属性配置）
 - `review_required`
+- `annotation_guide` / `video_sampling` / `rendering_config`
 
-类别**重命名**走专用端点（v0.9.10 B-13，原子 + 迁移 annotations）：
+类别**重命名**走专用端点（原子迁移 annotations）：
 
 ```http
 POST /api/v1/projects/:id/classes/rename
@@ -46,7 +54,7 @@ POST /api/v1/projects/:id/classes/rename
 
 直接 PATCH `classes_config` 改名会让历史 annotation 的 `class_name` 失联。
 
-删除类别 / 属性定义不会删除已有标注；旧 `class_name` 或属性 key 会按当前配置实时判定为孤儿。v0.11.13 起提供两个治理端点：
+删除类别 / 属性定义不会删除已有标注；旧 `class_name` 或属性 key 会按当前配置实时判定为孤儿。提供两个治理端点：
 
 ```http
 GET /api/v1/projects/:id/class-usage
@@ -66,7 +74,7 @@ PATCH  /api/v1/projects/:id/members/:uid   # 改角色
 
 角色：`viewer` / `annotator` / `reviewer` / `project_admin`。
 
-## Alias 频率（v0.9.6）
+## Alias 频率
 
 ```http
 GET /api/v1/admin/projects/:id/alias-frequency

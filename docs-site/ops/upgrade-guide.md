@@ -50,13 +50,13 @@ curl -f http://localhost:5173
 - 若迁移失败，可回滚：`alembic downgrade -1`（回退一个版本）
 - 前端静态资源由 Vite 构建，版本号在文件名中，无缓存问题
 
-## 版本注意事项
+## 重点注意事项
 
-### 升级到 v0.9.16+
+### 视频媒体处理
 
-v0.9.16 引入视频元数据处理，API / Celery 镜像内需要 `ffmpeg` 与 `ffprobe`。该版本修改了 `infra/docker/Dockerfile.api`，升级时必须 rebuild API 与 Celery worker 镜像，不能只重启容器。
+视频元数据处理要求 API / Celery 镜像内有 `ffmpeg` 与 `ffprobe`。涉及 Dockerfile 或依赖变化时必须 rebuild API 与 Celery worker 镜像，不能只重启容器。
 
-v0.9.17+ media worker 还会为非 H.264 视频生成浏览器播放用的 `playback/*.mp4`。升级后如存量视频播放按钮无效，先 rebuild/restart Celery worker，再对相关 dataset 重新触发 media backfill。
+media worker 会为非 H.264 视频生成浏览器播放用的 `playback/*.mp4`。升级后如存量视频播放按钮无效，先 rebuild/restart Celery worker，再对相关 dataset 重新触发 media backfill。
 
 ```bash
 docker compose build api celery-worker
@@ -76,9 +76,9 @@ docker exec ai-annotation-platform-celery-worker-1 ffmpeg -version
 docker logs ai-annotation-platform-celery-worker-1 --tail 200
 ```
 
-### 升级到 v0.9.17+
+### 视频标注类型
 
-v0.9.17 新建视频标注默认写 `video_track`，旧 `video_bbox` 继续可读。该版本不新增数据库表；重点检查 OpenAPI / 前端类型是否与后端同步，避免旧前端无法识别 `video_track` discriminator。
+新建视频轨迹标注默认写 `video_track`，旧 `video_bbox` 继续可读。升级时重点检查 OpenAPI / 前端类型是否与后端同步，避免旧前端无法识别 `video_track` discriminator。
 
 ## 回滚步骤
 

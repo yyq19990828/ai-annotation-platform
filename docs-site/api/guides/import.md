@@ -3,12 +3,12 @@ audience: [dev]
 type: reference
 since: v0.10.15
 status: stable
-last_reviewed: 2026-05-24
+last_reviewed: 2026-05-27
 ---
 
 # 外部预测导入端点
 
-v0.10.15 起新增。允许客户把**外部模型**（不通过平台 ML backend 跑的模型）生成的预测灌入平台，进入"AI 预标 → 人工修正 → 导出"工作流。
+允许客户把**外部模型**（不通过平台 ML backend 跑的模型）生成的预测灌入平台，进入"AI 预标 → 人工修正 → 导出"工作流。
 
 支持三种输入格式：**COCO Detection**、**YOLO zip** 与平台原生 **AAP JSON v1.0**（无损中间格式）。
 
@@ -132,7 +132,7 @@ task 匹配按 label 文件 stem 进行：`labels/animals/cat/001.txt` 会匹配
 
 - 写入的 `predictions` 行：`source='external_import'`, `ml_backend_id=NULL`, `model_version=<entry 内值或 form 兜底>`, `result=<内部 LS shape 数组>`.
 - AAP JSON 每个 `predictions[i]` 对应**一条** Prediction 行；普通 `geometry` 写 1 个 shape，`shapes[]` 写多个 shape 到同一行的 `result[]`。COCO 每个 `annotations[i]` 对应一条。YOLO 每个非空 label 文件对应一条，文件内多行合并到同一条 `result[]`。
-- `overwrite_existing` 从 v0.10.57 起默认 true，只清 `source='external_import'`；不会删除 ML Backend 生成的 `source='ml_backend'` 预测。多文件同一次上传共享 purge 作用域，同一 task 只清一次旧导入，随后各文件的新预测都会保留。
+- `overwrite_existing` 默认 true，只清 `source='external_import'`；不会删除 ML Backend 生成的 `source='ml_backend'` 预测。多文件同一次上传共享 purge 作用域，同一 task 只清一次旧导入，随后各文件的新预测都会保留。
 - 写入路径复用 `PredictionService.create_from_ml_result`，确保与 ML backend 写入路径同源。
 
 ## task_match 匹配规则

@@ -142,7 +142,7 @@ WS 不保证 at-least-once。所有通知行已经 INSERT 到 `notifications` �
 
 接入方实现自定义客户端时，建议遵循同样的 backoff，避免风暴。
 
-### 4.1 鉴权过期重连（v0.8.8）
+### 4.1 鉴权过期重连
 
 `useNotificationSocket` 在 `onclose` 收到 `1008`（policy violation）或 `4001`（自定义鉴权失败）时，主动调 `POST /auth/refresh` 用旧 token 换新 token：
 
@@ -165,7 +165,7 @@ client.ts 已自动 logout()  // 路由层会跳 /login
 
 ---
 
-## 5. Redis ConnectionPool（v0.7.0+）
+## 5. Redis ConnectionPool
 
 服务端使用模块级共享 `ConnectionPool`（`ws.py:17-30`），`max_connections=200`。多副本部署时每副本 200 上限——如果你的 WS 副本数 ×200 接近 Redis 实例的 `maxclients`（默认 10000），调小 `max_connections` 或加 Redis 实例。
 

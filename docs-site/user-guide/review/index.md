@@ -3,7 +3,7 @@ audience: [reviewer]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-11
+last_reviewed: 2026-05-27
 ---
 
 # 审核流程
@@ -31,7 +31,7 @@ last_reviewed: 2026-05-11
 | **退回** | 需要修改，必须选「原因类型」（可附自由备注） | 任务回到原标注员，状态变 `rejected` |
 | **修改后通过** | 你直接改正小问题，标注员收到通知 | `completed`，但标注员能看到你的改动 |
 
-### 退回原因类型（v0.10.16 起）
+### 退回原因类型
 
 退回时必须从以下 4 类中选一项（**结构化枚举**，便于后续 reject 率统计 → [super_admin 离线分析](../superadmin/analytics)）：
 

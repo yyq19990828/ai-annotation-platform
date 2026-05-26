@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-10
+last_reviewed: 2026-05-27
 ---
 
 # 批次与分配
@@ -18,7 +18,7 @@ last_reviewed: 2026-05-10
 
 ## 批次状态机
 
-当前版本的批次状态机如下：
+批次状态机如下：
 
 ```mermaid
 stateDiagram-v2
@@ -46,7 +46,7 @@ stateDiagram-v2
 
 - `active → annotating`、`pre_annotated → annotating` 有自动路径，不需要管理员手工点状态
 - `annotating → reviewing` 既可能由“全量完成”自动触发，也可能由标注员主动整批送审触发
-- 当前版本**尚未实现**批次级“暂停 / 恢复（admin lock / unlock）”
+- owner 可以对批次执行 admin lock / unlock。admin lock 是软暂停：阻止新派单并冻结自动状态推进，但不会把已有任务变成只读。
 
 ## 状态语义
 
@@ -115,7 +115,7 @@ stateDiagram-v2
 
 ## 批量操作
 
-当前版本已实现的多选批量操作是：
+已实现的多选批量操作是：
 
 - 激活
 - 归档
@@ -124,9 +124,22 @@ stateDiagram-v2
 
 说明：
 
-- “暂停 / 恢复”还没有上线
 - 批量激活只适用于 `draft` 批次
 - 批量归档、删除、改派都受当前状态和权限约束，部分批次可能成功，部分批次会被跳过或失败
+
+## Admin lock / unlock
+
+<!-- history: ADR-0008 implemented the current soft-hold semantics. -->
+
+owner 可以在批次行上点击锁定，为批次写入锁定原因。锁定后：
+
+- scheduler 不会再从该批次派出新任务；
+- 自动状态推进会跳过该批次；
+- 批次卡片显示锁定状态与原因；
+- 已经可见的任务与已有 task lock 不会被强制撤销；
+- 解锁后恢复正常派题与自动推进。
+
+这不是严格只读冻结。需要彻底重来时，用「重置到草稿」；需要结束生产时，用「归档」。
 
 ## 批次导出
 
@@ -187,8 +200,8 @@ owner 可以把任意状态批次 `reset → draft`。这是一个比普通逆�
 
 ## 当前未实现能力
 
-以下能力在 ADR / Roadmap 中有规划，但当前版本尚未上线：
+以下能力在 ADR / Roadmap 中有规划，但尚未上线：
 
-- 批次级暂停 / 恢复（admin lock / unlock）
-- 批量暂停 / 批量恢复
-- 锁定后严格禁止新用户进入该批次
+- 批量锁定 / 批量解锁
+- 锁定后严格禁止已持锁用户继续编辑
+- 批次级共识 / IAA 与智能切批

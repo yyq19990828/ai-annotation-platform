@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.11.14
 status: stable
-last_reviewed: 2026-05-26
+last_reviewed: 2026-05-27
 ---
 
 # 存储连接器 API

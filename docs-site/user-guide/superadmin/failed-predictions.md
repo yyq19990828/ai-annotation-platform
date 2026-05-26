@@ -3,7 +3,7 @@ audience: [super_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-24
+last_reviewed: 2026-05-27
 ---
 
 # 失败预测排查
@@ -13,7 +13,7 @@ last_reviewed: 2026-05-24
 ## 入口
 
 - 超管：`/model-market` → **Failed Predictions** tab
-- 项目管理员：`/ai-pre` → **失败预测** tab（v0.9.9 B-2 平移）
+- 项目管理员：`/ai-pre` → **失败预测** tab
 - 任何角色：`/ai-pre/jobs` 图像 tab + 状态过滤 = failed
 
 ## 失败常见根因
@@ -22,7 +22,7 @@ last_reviewed: 2026-05-24
 |---|---|
 | `Connection refused` / `Name resolution` | [容器网络与 loopback](../../dev/troubleshooting/container-networking) |
 | `TypeError: ... unexpected keyword argument` | [Docker rebuild vs restart](../../dev/troubleshooting/docker-rebuild-vs-restart)（worker stale code） |
-| ML Backend `422` / `400` | prompt 格式问题——v0.9.9 B-12 起工作台一键预标会自动用项目 alias 拼，避免空 prompt 导致 DINO 422 |
+| ML Backend `422` / `400` | prompt 格式问题；工作台一键预标会自动用项目 alias 拼 prompt，避免空 prompt 导致 DINO 422 |
 | `Timeout` | ML Backend 推理太慢；看监控 P95 |
 | `403` / `401` | API Key 配置错误 |
 | 前端看不到候选但 job=succeeded | [Schema 适配器陷阱](../../dev/troubleshooting/schema-adapter-pitfalls) |

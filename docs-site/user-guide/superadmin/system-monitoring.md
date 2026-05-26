@@ -3,12 +3,12 @@ audience: [super_admin]
 type: reference
 since: v0.8.7
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-27
 ---
 
 # 系统监控
 
-平台用 Prometheus + 结构化日志做可观测，超管可从前端「平台概览」看核心指标。v0.10.58 起，侧边栏「管理 → 系统健康」提供 DB / Redis / MinIO / Celery 的实时健康面板；深度排查继续走 Grafana / 直接 PromQL。
+平台用 Prometheus + 结构化日志做可观测，超管可从前端「平台概览」看核心指标。侧边栏「管理 → 系统健康」提供 DB / Redis / MinIO / Celery 的实时健康面板；深度排查继续走 Grafana / 直接 PromQL。
 
 ## 入口
 
@@ -35,14 +35,14 @@ last_reviewed: 2026-05-09
 |---|---|
 | `celery_tasks_total{status="success"\|"failure"}` | task 成败率 |
 | `celery_task_duration_seconds` | 任务时长 |
-| `prediction_job_total{status=...}` | 预标 job 状态分布（v0.9.8） |
+| `prediction_job_total{status=...}` | 预标 job 状态分布 |
 
 ### ML Backend（grounded-sam2-backend）
 
 | 指标 | 含义 |
 |---|---|
 | `sam_predict_duration_seconds` | 推理延迟 |
-| `sam_embedding_cache_hits_total` / `misses_total` | LRU 缓存命中率（v0.9.1） |
+| `sam_embedding_cache_hits_total` / `misses_total` | LRU 缓存命中率 |
 | `gpu_memory_used_bytes` | 显存水位 |
 
 详细 PromQL 见 [可观测性 / 监控](../../ops/observability/)。

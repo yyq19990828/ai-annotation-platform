@@ -17,7 +17,7 @@
 
 | 名词 | 英文 | 含义 |
 |---|---|---|
-| **轨迹** | Track | 视频里同一个对象跨多个帧的标注结果。v0.9.17 起，一条轨迹保存为一条 `video_track` annotation。 |
+| **轨迹** | Track | 视频里同一个对象跨多个帧的标注结果。一条轨迹保存为一条 `video_track` annotation。 |
 | **关键帧** | Keyframe | 用户手工确认或模型预测出的轨迹控制点，包含 `frame_index` 和 bbox。 |
 | **插值帧** | Interpolated frame | 两个有效关键帧之间由前端线性计算出的显示结果，不会逐帧写入数据库。 |
 | **消失** | Outside | 目标在某帧或某段中不存在，用闭区间 `outside` 段表达；插值不会跨过消失段。 |
@@ -38,7 +38,7 @@
 |---|---|
 | **ML Backend** | 外部模型服务，通过标准协议与平台对接，提供预测或批量预标注能力。详见 [ML Backend 协议](/dev/reference/ml-backend-protocol)。 |
 | **预标注（Pre-annotate）** | 在标注员介入前，先让模型对一批任务生成 Prediction，降低手工标注工作量。 |
-| **Job** | 一次批量预标注请求，包含模型调用、结果写入等异步流程。状态：pending → running → done / failed。 |
+| **Job** | 一次后台任务请求，包含批量预标、导出、视频追踪、连接器导入等异步流程。状态：pending → running → completed / failed / cancelled。 |
 
 ## 状态流转速查
 
@@ -51,8 +51,9 @@
         → rejected（已回退）→ in_progress
 
 Job 状态
-  pending → running → done
+  pending → running → completed
                     → failed
+                    → cancelled
 ```
 
 ## 常见混淆

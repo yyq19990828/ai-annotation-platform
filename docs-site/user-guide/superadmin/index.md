@@ -3,7 +3,7 @@ audience: [super_admin]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-27
 ---
 
 # 超级管理员手册
@@ -12,9 +12,9 @@ last_reviewed: 2026-05-09
 
 ## 入口
 
-- Sidebar 顶部出现两条独立入口：**平台概览** + **项目总览**（v0.9.9 B-3 拆分）
+- Sidebar 顶部出现两条独立入口：**平台概览** + **项目总览**
 - `/dashboard?view=projects` — 用项目管理员视图查看所有项目
-- `/model-market` — ML 模型市场（v0.9.3 合并 `/ml-integrations` + `/failed-predictions`）
+- `/model-market` — ML 模型市场，集中管理 ML Backend 与失败预测
 - `/bugs` — BUG 反馈管理，支持状态流转、Markdown 描述/评论和多张截图附件
 
 ## 核心职责

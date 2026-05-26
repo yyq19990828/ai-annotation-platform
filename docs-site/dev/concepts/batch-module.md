@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-10
+last_reviewed: 2026-05-27
 ---
 
 # 批次模块
@@ -82,7 +82,7 @@ graph TD
 
 设计要点：
 
-- v0.7.2 之后是“单批次单标注员 + 单审核员”语义，不再是 batch 级多人 list
+- 当前是“单批次单标注员 + 单审核员”语义，不再是 batch 级多人 list
 - `assigned_user_ids` 还保留着，但属于兼容层；新代码优先读 `annotator_id` / `reviewer_id`
 
 ## 状态机
@@ -156,7 +156,7 @@ stateDiagram-v2
 
 ## AI 预标联动
 
-`pre_annotated` 是 v0.9.5 引入的中间态，语义是：
+`pre_annotated` 是 AI 预标后的中间态，语义是：
 
 - AI 文本批量预标已经跑完
 - predictions 还在

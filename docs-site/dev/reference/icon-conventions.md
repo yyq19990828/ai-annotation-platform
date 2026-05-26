@@ -3,12 +3,14 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-27
 ---
 
 # 图标语义规范
 
-> v0.9.5 起钉死。新代码请按本表挑图标，避免 v0.9.4 之前 `sparkles` 在 9 个语义场景共用导致识别度归零的回退。
+> 新代码请按本表挑图标，避免 `sparkles` 在多个语义场景共用导致识别度归零的回退。
+
+<!-- history: this table was stabilized after the early SAM toolbar icon cleanup. -->
 
 图标层走 `@/components/ui/Icon` 包装的 lucide-react；新业务图标可直接 `import { X } from "lucide-react"` 用，但**语义重要的位置**必须按下表挑：
 
@@ -43,14 +45,14 @@ last_reviewed: 2026-05-09
 |---|---|---|
 | `point` | `target` | 十字准心，"点"语义 |
 | `bbox` | `rect` | 矩形 |
-| `text` | `messageSquareText` | 文本输入框，**不要用 sparkles**（v0.9.5 修正） |
+| `text` | `messageSquareText` | 文本输入框，**不要用 sparkles** |
 
-## 反例（v0.9.5 修正前的回退场景）
+## 反例
 
-v0.9.4 phase 2 SAM 子工具栏落地后，`sparkles` 同时出现在 9 个语义场景，识别度归零：
+如果 `sparkles` 同时出现在 9 个语义场景，识别度会归零：
 - Topbar 智能切题 / Topbar 一键预标 / ToolDock SAM 文本子工具 / AIInspectorPanel AI 助手标题 / AIInspectorPanel 一键预标 / AIInspectorPanel SAM 文本提示标题 / BoxListItem 置信度徽章 / BoxRenderer 画布角标 / StatusBar AI 待审
 
-v0.9.5 phase 4 按上表重整 9 处。后续新业务请按表挑，**不要再把 sparkles 挂在 AI 操作按钮上**。
+后续新业务请按表挑，**不要再把 sparkles 挂在 AI 操作按钮上**。
 
 ## 添加新图标
 

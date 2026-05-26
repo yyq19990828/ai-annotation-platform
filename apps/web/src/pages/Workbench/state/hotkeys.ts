@@ -19,7 +19,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["W"], desc: "旋转框 (OBB) 工具：拖框后用顶部手柄旋转", group: "draw", actionType: "setTool" },
   { keys: ["S"], desc: "AI 工具循环：智能点 → 智能框 → Magic Box → 文本提示 → Exemplar → 退出（跳过置灰）", group: "ai", actionType: "setTool" },
   { keys: ["Alt", "3"], desc: "AI 工具（备用）", group: "ai", actionType: "setTool" },
-  { keys: ["G"], desc: "Magic Box: 粗框 → SAM 收紧到对象紧凑外接矩形 → 落 bbox（v0.10.17+）", group: "ai", actionType: "setTool" },
+  { keys: ["G"], desc: "Magic Box: 粗框 → SAM 收紧到对象紧凑外接矩形 → 落 bbox", group: "ai", actionType: "setTool" },
   { keys: ["= / +"], desc: "智能点工具：切正向", group: "ai", actionType: "samPolarity" },
   { keys: ["-"], desc: "智能点工具：切负向", group: "ai", actionType: "samPolarity" },
   { keys: ["P"], desc: "多边形工具", group: "draw", actionType: "setTool" },

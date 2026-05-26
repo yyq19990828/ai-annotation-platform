@@ -3,14 +3,14 @@ audience: [annotator]
 type: how-to
 since: v0.10.8
 status: stable
-last_reviewed: 2026-05-19
+last_reviewed: 2026-05-27
 ---
 
-# Mask 笔刷编辑器（I11）
+# Mask 笔刷编辑器
 
 > 用笔刷 / 橡皮把粗略的 polygon 精修到像素级，或从空白开始画一块 mask 直接落库为 polygon。
 
-v0.10.8 起，工作台新增 Mask 笔刷工具（`M` 键）。常见用法：
+Mask 笔刷工具使用 `M` 键进入。常见用法：
 
 - **AI 候选过糙** —— 文本 / SmartBox 出来的 polygon 边缘偏移几个像素 → 一笔刷快速纠
 - **已落库 polygon 局部修正** —— 不想重画整个轮廓，只想把右上角凸出去的几个像素擦掉
@@ -30,12 +30,12 @@ mask 编辑器走的是「polygon 中转」：mask 在前端临时态编辑，�
    - 用 `B`(笔刷)/`E`(橡皮) 修正 → `Enter` 提交
    - 原候选会自动 reject，新 polygon 用候选 label 落库
 
-3. **SAM 候选精修（v0.10.9）**
+3. **SAM 候选精修**
    - SAM 工具（SmartPoint / SmartBox）出 polygon 候选后，**不要按 Enter 采纳**
    - 按 `R`，或点画布上候选附近的「✎ 精修」浮按钮
    - 进 mask 编辑 → `Enter` 提交 → 原 SAM 候选消失，新 polygon 入库
 
-4. **已落库 user polygon 精修（v0.10.9）**
+4. **已落库 user polygon 精修**
    - 选中右侧侧栏的 polygon 行 → 点该行「精修」按钮（用户行 / AI 行都有）
    - mask 编辑 → `Enter` 提交：直接 **update** 原 annotation 的 geometry（不新建，可 undo 回原状）
 
@@ -55,10 +55,10 @@ mask 编辑器走的是「polygon 中转」：mask 在前端临时态编辑，�
 
 ## 已知限制
 
-- **bbox 候选不支持初始化**：AI 给的是 bbox 时「精修」按钮不显示；待 v0.11+ 与 Ellipse / Skeleton 一并做 `geometry.kind` 收口时一起支持
+- **bbox 候选不支持初始化**：AI 给的是 bbox 时「精修」按钮不显示。
 - **多连通区只保留最大外环**：mask 包含多块互不相连的区域时，只把最大连通块转回 polygon 入库，其它区域丢弃 + toast 提示
 - **不支持 RLE 持久化**：mask 不入库；提交即转 polygon。跨任务连续编辑同一 mask 不可行
-- **大画布性能**：v0.10.8 首版每笔全量 putImageData；v0.10.10 起 MaskBuffer 引入 dirtyRect 增量重绘（8K 图 brush 拖动更顺）
+- **大画布性能**：MaskBuffer 使用 dirtyRect 增量重绘；极大图仍建议降低笔刷半径并分段精修。
 
 ## 故障排查
 

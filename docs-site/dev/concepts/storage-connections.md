@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.11.14
 status: stable
-last_reviewed: 2026-05-26
+last_reviewed: 2026-05-27
 ---
 
 # 存储连接器（Storage Connections）
@@ -40,7 +40,9 @@ last_reviewed: 2026-05-26
 
 关键不变量：**明文密钥永不落库、永不出 API**。`config` 与 `secret` 在 schema 层就分离——`config` 是可读的连接参数，`secret`（access/secret key、密码、私钥）只进 `secret_enc`，对外仅以 `secret_set: bool` 表达"是否已配密钥"。
 
-> 历史字段 `project_id` 自 v0.11.16 起弃用：作用域从「项目级」迁移到「个人 / 全局」（见迁移 `0087`），新建不再写入。
+> 历史字段 `project_id` 已弃用：当前作用域是「个人 / 全局」，新建连接器不再写入项目级归属。
+
+<!-- history: project-scoped storage connections were migrated to owner/global scope by migration 0087. -->
 
 ### config / secret 形态
 

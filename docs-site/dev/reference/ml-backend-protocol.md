@@ -63,11 +63,11 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 平台侧调用时机：
 - 项目管理员在前端点「测试连接」（`POST /api/v1/projects/{pid}/ml-backends/{bid}/health`）。
-- v0.8.x 之后可能加入周期 cron（参见 ROADMAP §A「ML Backend 健康检查」）。
+- 周期健康检查可按 ROADMAP 的 ML Backend 健康检查方案扩展。
 
-> **`pool` 子对象**（v0.10.23, 仅 grounded-sam2 返回，运维观测用，平台不强制解析）：`{ cap, loaded_variants: [{sam_variant, dino_variant}], evict_count, per_variant_lru_ts: {"sam/dino": <monotonic_ts>} }`，反映 ModelPool 当前并存的变体及 LRU 顺序。`cache` 子对象同步聚合各变体桶（`buckets["sam/dino"]` 各自独立 hits/misses），`/cache/stats` 与 `/metrics` 口径一致。idle 超时后整池清空、`loaded` 变 false。v0.10.26 起平台 `health_meta()` 把 `pool` 一并缓存到 `ml_backends.health_meta`，供模型市场「变体」面板展示。
+> **`pool` 子对象**（仅 grounded-sam2 返回，运维观测用，平台不强制解析）：`{ cap, loaded_variants: [{sam_variant, dino_variant}], evict_count, per_variant_lru_ts: {"sam/dino": <monotonic_ts>} }`，反映 ModelPool 当前并存的变体及 LRU 顺序。`cache` 子对象同步聚合各变体桶（`buckets["sam/dino"]` 各自独立 hits/misses），`/cache/stats` 与 `/metrics` 口径一致。idle 超时后整池清空、`loaded` 变 false。平台 `health_meta()` 把 `pool` 一并缓存到 `ml_backends.health_meta`，供模型市场「变体」面板展示。
 
-> **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，grounded-sam2 实现）：`/unload` 清空整池释放显存；`/reload` 预热模型进 pool。v0.10.26 起 `/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.sam_variant`）；返回 `{ ok, loaded, reloaded, sam_variant, dino_variant }`。v0.10.36 起 `/reload` 接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。
+> **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，grounded-sam2 实现）：`/unload` 清空整池释放显存；`/reload` 预热模型进 pool。`/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.sam_variant`）；也接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。
 
 ---
 
@@ -113,7 +113,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 ### 2.2 交互式预测
 
-适用：标注员在工作台内点「AI 助手」工具发起的单次推理（v0.8.x SAM 模式将主要走这条路）。
+适用：标注员在工作台内点「AI 助手」工具发起的单次推理。
 
 只有 `is_interactive=True` 且 `state="connected"` 的 backend 才会被路由到这条路径（`ml_backend.py:67-75`）。
 
@@ -126,48 +126,48 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
     "points": [[x, y], ...],                // type=point 时
     "bbox": [x1, y1, x2, y2],               // type=bbox 时 (prompt 框) 或 type=exemplar 时 (视觉示例框)
     "labels": [1, 0, ...],                  // 可选；point 类型，1=positive 0=negative
-    "text": "ripe apples",                  // type=text 时（v0.9.x Grounded-SAM-2 / v0.10.x SAM 3 PCS 文本入口）
-    "output": "box" | "mask" | "both",      // v0.9.4 phase 2 · 仅 type=text 生效, 默认 "mask" 老前端兼容
+    "text": "ripe apples",                  // type=text 时（Grounded-SAM-2 / SAM 3 PCS 文本入口）
+    "output": "box" | "mask" | "both",      // 仅 type=text 生效, 默认 "mask" 老前端兼容
     "box_threshold": 0.35,                  // 可选; type=text 时 backend 的 DINO 阈值 override (grounded-sam2 专属)
     "text_threshold": 0.25,                 // 可选; 同上
-    "score_threshold": 0.5,                 // v0.10.0 · SAM 3 PCS text/exemplar 路径 score 过滤阈值
-    "simplify_tolerance": 1.0,              // v0.9.4 phase 3 · shapely.simplify 像素级覆盖, 仅 mask/both 路径生效
-    "sam_variant": "large",                 // v0.10.23 · grounded-sam2 请求级模型变体热切换 (tiny|small|base_plus|large); 缺省回退 backend env 默认
-    "dino_variant": "B"                     // v0.10.23 · 同上 (T|B); 非法值 422
+    "score_threshold": 0.5,                 // SAM 3 PCS text/exemplar 路径 score 过滤阈值
+    "simplify_tolerance": 1.0,              // shapely.simplify 像素级覆盖, 仅 mask/both 路径生效
+    "sam_variant": "large",                 // grounded-sam2 请求级模型变体热切换 (tiny|small|base_plus|large); 缺省回退 backend env 默认
+    "dino_variant": "B"                     // 同上 (T|B); 非法值 422
   }
 }
 ```
 
 `context` 是个开放 dict——平台和 backend 协商具体字段，平台不做 schema 校验（`ml_client.py:64-82`）。
 
-> **`type=text`**：v0.9.x（Grounded-SAM-2）走 GroundingDINO 文本 → boxes → SAM mask 复合链路；v0.10.x（SAM 3）走 PCS 单模型一步出 mask。两者返回 `result[]` 字面一致（多 polygon / 多 rect / 配对）。`box_threshold` / `text_threshold` 仅 grounded-sam2 消费；`score_threshold` 仅 SAM 3 消费。
+> **`type=text`**：Grounded-SAM-2 走 GroundingDINO 文本 → boxes → SAM mask 复合链路；SAM 3 走 PCS 单模型一步出 mask。两者返回 `result[]` 字面一致（多 polygon / 多 rect / 配对）。`box_threshold` / `text_threshold` 仅 grounded-sam2 消费；`score_threshold` 仅 SAM 3 消费。
 
-> **`sam_variant` / `dino_variant`**（v0.10.23 新增，仅 grounded-sam2 消费）：请求级模型变体热切换。backend 内 ModelPool 按 `(sam_variant, dino_variant)` 做 LRU 缓存：命中复用、miss 冷启 1–3s（超 cap 驱逐最久未用变体）、pool 满 + 并发排队超 `MODEL_POOL_BUILD_TIMEOUT` 返回 503。缺省回退 backend env 默认 (`SAM_VARIANT`/`DINO_VARIANT`)；非法值（不在 `SAM2_CONFIGS`/`DINO_CONFIGS` key 内）返回 422，不影响后续请求。变体合法但其 checkpoint 未预拉到 `CHECKPOINT_DIR`（不在 `PREFETCH_SAM_VARIANTS`/`PREFETCH_DINO_VARIANTS` 内）返回 503，提示把该变体加入 prefetch 后重建容器。返回 `model_version` 按本次请求变体拼（如 `grounded-sam2-dinoB-sam2.1large`）。embedding cache 按变体分桶（不同变体张量不可跨用），命中只在同变体同图。SAM 3 忽略这两个字段。
+> **`sam_variant` / `dino_variant`**（仅 grounded-sam2 消费）：请求级模型变体热切换。backend 内 ModelPool 按 `(sam_variant, dino_variant)` 做 LRU 缓存：命中复用、miss 冷启 1–3s（超 cap 驱逐最久未用变体）、pool 满 + 并发排队超 `MODEL_POOL_BUILD_TIMEOUT` 返回 503。缺省回退 backend env 默认 (`SAM_VARIANT`/`DINO_VARIANT`)；非法值（不在 `SAM2_CONFIGS`/`DINO_CONFIGS` key 内）返回 422，不影响后续请求。变体合法但其 checkpoint 未预拉到 `CHECKPOINT_DIR`（不在 `PREFETCH_SAM_VARIANTS`/`PREFETCH_DINO_VARIANTS` 内）返回 503，提示把该变体加入 prefetch 后重建容器。返回 `model_version` 按本次请求变体拼（如 `grounded-sam2-dinoB-sam2.1large`）。embedding cache 按变体分桶（不同变体张量不可跨用），命中只在同变体同图。SAM 3 忽略这两个字段。
 
-> **`type=exemplar`**（v0.10.0 新增，仅 SAM 3 支持）：取图中已有的一个 bbox 作为视觉示例，由 SAM 3 PCS 一步出全图相似实例的 masks。`bbox` 字段承载 4 坐标（与 `type=bbox` 共用字段，语义靠 `type` 区分）。返回 `result[]` 是多个 `polygonlabels`，`polygonlabels: ["object"]`（前端按当前 active label 批量改写）。apps/api 仅在项目挂了支持 exemplar 的 backend（`/setup.supported_prompts` 含 `exemplar`）时才放行；未挂返回 400。前端 UI 入口（工作台 Shift+拖框）在 v0.10.1 落地。
+> **`type=exemplar`**（仅 SAM 3 支持）：取图中已有的一个 bbox 作为视觉示例，由 SAM 3 PCS 一步出全图相似实例的 masks。`bbox` 字段承载 4 坐标（与 `type=bbox` 共用字段，语义靠 `type` 区分）。返回 `result[]` 是多个 `polygonlabels`，`polygonlabels: ["object"]`（前端按当前 active label 批量改写）。apps/api 仅在项目挂了支持 exemplar 的 backend（`/setup.supported_prompts` 含 `exemplar`）时才放行；未挂返回 400。前端 UI 入口在工作台 Shift+拖框。
 
-> **`type=video_tracker`**：v0.9.36 起由 `VideoTrackerJob` worker 使用，v0.10.35 起 gsam2 backend 接通真实 `sam2_video`。平台会按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 把长区间分窗，多次调用项目绑定的 connected ML Backend。请求 `task.file_path` 是视频 signed URL；`context` 包含 `model_key`（`sam2_video` / `sam3_video`）、`job_id`、`dataset_item_id`、`annotation_id`、`from_frame`、`to_frame`、`direction`、`prompt` 和 `source_geometry`。响应 `result[]` 每项为 `{ frame_index, geometry, confidence?, outside? }`；低于平台阈值的 `confidence` 会被写成 outside prediction range。
+> **`type=video_tracker`**：由 `VideoTrackerJob` worker 使用，gsam2 backend 接通真实 `sam2_video`。平台会按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 把长区间分窗，多次调用项目绑定的 connected ML Backend。请求 `task.file_path` 是视频 signed URL；`context` 包含 `model_key`（`sam2_video` / `sam3_video`）、`job_id`、`dataset_item_id`、`annotation_id`、`from_frame`、`to_frame`、`direction`、`prompt` 和 `source_geometry`。响应 `result[]` 每项为 `{ frame_index, geometry, confidence?, outside? }`；低于平台阈值的 `confidence` 会被写成 outside prediction range。
 >
-> v0.10.35 落地细节：
+> 落地细节：
 > - **真实推理（gsam2）**：backend 用 `build_sam2_video_predictor` + `SAM2VideoPredictor`（带跨帧 memory bank 的有状态预测，非循环调图片接口），逐帧 mask → 外接 bbox → 归一化坐标。视频解码用容器内 opencv 抽窗内帧到临时 JPEG 目录喂 `init_state`。`confidence` 非空 mask 记 1.0、空 mask（outside）记 0.0。
 > - **独立显存池**：video predictor 用独立的 `VideoPool`（按 `sam_variant` 分桶），与图片 `ModelPool` 显存预算分离、互不驱逐，按 job 结束释放会话状态。遵循 [ADR-0012](../adr/0012-sam-backend-as-independent-gpu-service)，predictor 不入 `apps/api`。
-> - **`sam_variant`**：v0.10.36 起请求链路可传——AI 传播对话框选 SAM 尺寸 → `VideoTrackerPropagateRequest.sam_variant` → 存入 `job.prompt` → `TrackerContext` → adapter 在 `context.sam_variant` 透传；缺省（未选）时 backend 回退默认 tiny。backend `/predict` video_tracker 分支按 `context.sam_variant` 从 `VideoPool` 取对应尺寸 tracker。
+> - **`sam_variant`**：请求链路可传——AI 传播对话框选 SAM 尺寸 → `VideoTrackerPropagateRequest.sam_variant` → 存入 `job.prompt` → `TrackerContext` → adapter 在 `context.sam_variant` 透传；缺省（未选）时 backend 回退默认 tiny。backend `/predict` video_tracker 分支按 `context.sam_variant` 从 `VideoPool` 取对应尺寸 tracker。
 > - **跨窗续追（平台侧）**：`video_tracker_runner.py` 窗 1 用原始 keyframe seed，后续窗用上一窗末帧（非 outside）geometry 作 `source_geometry` 续追，避免每窗从首帧框重新起追导致目标漂移。
 > - **只回填网格帧（平台侧）**：采样开启时 `apply_tracker_results` 按项目 `derive_step` 只持久化 `frame_index % step == 0` 的预测帧（tracker 仍逐源帧跑，off-grid 帧丢弃），与导航 / 导出网格一致。
 >
-> **能力声明（`/setup`）**：支持 video tracker 的 backend 在 `/setup` 返回 `supported_trackers: ["sam2_video", ...]`（v0.10.35 起，平台动态消费 + 模态校验留 v0.11.0 协议统一窗口，见 roadmap Phase 3.3）。
+> **能力声明（`/setup`）**：支持 video tracker 的 backend 在 `/setup` 返回 `supported_trackers: ["sam2_video", ...]`，平台动态消费并用于模态校验。
 >
-> **观测（`/health` + `/metrics`）**：开了 video 独立池的 backend，`/health` 返回 `video_pool` 区块（`{cap, loaded_variants, active_sessions, idle_seconds}`，与图片池 `pool` / `gpu_info.image_pool_loaded_variants` 分列）；`/metrics` 增 `video_tracker_frames_processed_total{sam_variant}` / `video_tracker_latency_seconds{sam_variant}`，并对推理指标加 `task_type="image|video"` 维度。模型市场观测页据此按图像 / 视频分类（v0.10.36）。
+> **观测（`/health` + `/metrics`）**：开了 video 独立池的 backend，`/health` 返回 `video_pool` 区块（`{cap, loaded_variants, active_sessions, idle_seconds}`，与图片池 `pool` / `gpu_info.image_pool_loaded_variants` 分列）；`/metrics` 增 `video_tracker_frames_processed_total{sam_variant}` / `video_tracker_latency_seconds{sam_variant}`，并对推理指标加 `task_type="image|video"` 维度。模型市场观测页据此按图像 / 视频分类。
 
-> **`output: "box" | "mask" | "both"`**（v0.9.4 phase 2，仅 `type=text` 生效）：
+> **`output: "box" | "mask" | "both"`**（仅 `type=text` 生效）：
 > - `box`：仅 GroundingDINO 出框，跳过 SAM image embedding + mask 推理 + cv2/shapely 简化。返回 `result[]` 全为 `rectanglelabels`，单图 ~50-100ms（4060 / tiny），相比 mask 全链路 200-500ms 快 50-80%。**适用 image-det 项目**：标注员要的就是 bbox annotation。
-> - `mask`（**默认**）：当前 v0.9.2 行为，DINO + SAM mask → polygon，返回 `polygonlabels`。
+> - `mask`（**默认**）：DINO + SAM mask → polygon，返回 `polygonlabels`。
 > - `both`：同 instance 配对返回 `[rectanglelabels, polygonlabels, ...]` 严格交错（box 优先，对应 polygon 在后）。前端 `Tab` 切活跃几何，`Enter` 接受当前形态。
 > - **老 backend 兼容**：缺 `output` 字段时按 `"mask"` 路径返回，零回归。
-> - **老前端兼容**：不识别 `rectanglelabels` 候选时只显示 `polygonlabels`（v0.9.4 phase 2 已让前端按 type discriminator 渲染）。
+> - **老前端兼容**：不识别 `rectanglelabels` 候选时只显示 `polygonlabels`。
 > - **point/bbox/polygon 类型**：`output` 字段无意义，始终走 SAM mask → polygon。
 
-> **`simplify_tolerance: number`**（v0.9.4 phase 3，可选；缺省走 backend 默认 1.0）：
+> **`simplify_tolerance: number`**（可选；缺省走 backend 默认 1.0）：
 > - 像素级 shapely.simplify 容差。**大物体 / 大致形状** 调高（2-3）减顶点、提速；**精细物体** 调低（0.3-0.5）保细节。
 > - 仅 `output ∈ {"mask", "both"}` 路径生效；`output="box"` 不简化。
 > - 单次请求级覆盖；项目级常量化未实现（运维 / dev 通过 `Context.simplify_tolerance` 注入足够，未来可加 ProjectSettings 字段，触发条件：客户提需求）。
@@ -218,7 +218,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 ---
 
-## 4. `GET /setup`（v0.10.1 后必填）
+## 4. `GET /setup`
 
 **用途**：自描述 backend 能力，前端 `useMLCapabilities` hook 据此决定哪些 AI 工具可用、参数面板渲染哪些字段。
 
@@ -261,25 +261,25 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 }
 ```
 
-> **变体 `readOnly` 语义（v0.10.23 起）**：grounded-sam2-backend 内置 ModelPool 后，`sam_variant` / `dino_variant` 去掉了 `readOnly`，前端可按会话切换，每次 `/predict` 经 `context.{sam_variant,dino_variant}` 携带请求级变体（详见 §2.2）。`sam_variant` enum 与 backend `SAM2_CONFIGS` key 一致：`tiny | small | base_plus | large`（注意是 `base_plus` 不是 `base`）。sam3-backend 单模型无 pool，其 variant 字段仍可保留 `readOnly`。
+> **变体 `readOnly` 语义**：grounded-sam2-backend 内置 ModelPool 后，`sam_variant` / `dino_variant` 去掉了 `readOnly`，前端可按会话切换，每次 `/predict` 经 `context.{sam_variant,dino_variant}` 携带请求级变体（详见 §2.2）。`sam_variant` enum 与 backend `SAM2_CONFIGS` key 一致：`tiny | small | base_plus | large`（注意是 `base_plus` 不是 `base`）。sam3-backend 单模型无 pool，其 variant 字段仍可保留 `readOnly`。
 >
-> **`supported_variants`（v0.10.40 起，可选）**：用于给 `params.sam_variant.enum` / `params.dino_variant.enum` 的裸字符串补富元数据。结构为数组，每项代表一个轴：`{ key, title?, description?, variants: [{ value, label?, vram_gb?, tier?, recommended?, note? }] }`。`key` 必须对应 `params.properties` 里的变体字段；`value` 必须与 enum 使用同一套 runtime 校验来源。前端优先读 `supported_variants` 渲染富选择器，缺失或为空时回落 `params.*_variant.enum`，因此老 backend 不需要立即升级。`tier` 建议使用 `fast | balanced | accurate`，但前端会容忍未知字符串。
+> **`supported_variants`（可选）**：用于给 `params.sam_variant.enum` / `params.dino_variant.enum` 的裸字符串补富元数据。结构为数组，每项代表一个轴：`{ key, title?, description?, variants: [{ value, label?, vram_gb?, tier?, recommended?, note? }] }`。`key` 必须对应 `params.properties` 里的变体字段；`value` 必须与 enum 使用同一套 runtime 校验来源。前端优先读 `supported_variants` 渲染富选择器，缺失或为空时回落 `params.*_variant.enum`，因此老 backend 不需要立即升级。`tier` 建议使用 `fast | balanced | accurate`，但前端会容忍未知字符串。
 
-> **`supported_prompts`**：枚举 `point | bbox | text | exemplar | sketch | scribble | …`。前端 ToolDock 据此置灰不支持的工具（M2 / v0.10.2 落地）。
+> **`supported_prompts`**：枚举 `point | bbox | text | exemplar | sketch | scribble | …`。前端 ToolDock 据此置灰不支持的工具。
 >
 > **`supported_text_outputs`**：text 路径支持的 `Context.output` 取值。
 >
 > **`params` JSON Schema**：当前前端消费的最小类型集 `number | integer | string (含 enum) | boolean`；`readOnly: true` 字段在 UI 上展示但不可改。
 
-**平台代理端点（v0.10.1）**：前端通过 `GET /api/v1/projects/{id}/ml-backends/{bid}/setup` 拉取；apps/api 30s TTL 进程内缓存，update/delete backend 时自动 invalidate。
+**平台代理端点**：前端通过 `GET /api/v1/projects/{id}/ml-backends/{bid}/setup` 拉取；apps/api 30s TTL 进程内缓存，update/delete backend 时自动 invalidate。
 
 **前端兜底**：返回体缺 `supported_prompts` 时前端回落 `["point","bbox","text"]` 并 `console.warn` 提示升级 backend。`/setup` 502 时整套 AI 工具置灰。
 
-> **能力快照持久化（v0.10.37 起）**：除上述代理端点的实时拉取外，平台在 `check_health`（services/ml_backend.py）拉完 `/health` 后会 best-effort 再探一次 `/setup`，把能力快照（`supported_prompts` / `supported_trackers` / `supported_text_outputs` / `supported_geometric_outputs` + 平台派生的 `modalities`）落进 `ml_backends.health_meta["capabilities"]`，供「按模态分流 / 绑定校验 / 列表只读展示」消费（无需每处实时拉 `/setup`）。模态派生规则：`supported_prompts` 非空 ⇒ image、`supported_trackers` 非空 ⇒ video（见 services/ml_capabilities.py）。
+> **能力快照持久化**：除上述代理端点的实时拉取外，平台在 `check_health`（services/ml_backend.py）拉完 `/health` 后会 best-effort 再探一次 `/setup`，把能力快照（`supported_prompts` / `supported_trackers` / `supported_text_outputs` / `supported_geometric_outputs` + 平台派生的 `modalities`）落进 `ml_backends.health_meta["capabilities"]`，供「按模态分流 / 绑定校验 / 列表只读展示」消费（无需每处实时拉 `/setup`）。模态派生规则：`supported_prompts` 非空 ⇒ image、`supported_trackers` 非空 ⇒ video（见 services/ml_capabilities.py）。
 >
-> **`is_interactive` 改派生（v0.10.37 起）**：`is_interactive` 不再由注册表单手填，而是以 backend `/setup.is_interactive` 自报为真值，在 `check_health` 时回写 `MLBackend.is_interactive`。backend 必须在 `/setup` 如实声明该位。
+> **`is_interactive` 改派生**：`is_interactive` 不再由注册表单手填，而是以 backend `/setup.is_interactive` 自报为真值，在 `check_health` 时回写 `MLBackend.is_interactive`。backend 必须在 `/setup` 如实声明该位。
 >
-> **绑定按 data_type 校验（v0.10.37 起）**：`PATCH /projects/{id}` 绑定 backend 时实时探 `/setup` 派生模态，与项目 `data_type` 不兼容 → 422；探测失败则 fail-open 放行（mismatch 留到 `/predict` 暴露）。
+> **绑定按 data_type 校验**：`PATCH /projects/{id}` 绑定 backend 时实时探 `/setup` 派生模态，与项目 `data_type` 不兼容 → 422；探测失败则 fail-open 放行（mismatch 留到 `/predict` 暴露）。
 
 ---
 
@@ -308,7 +308,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 ---
 
-## 7. token / cost 透传（v0.6.x+）
+## 7. token / cost 透传
 
 如果你的 backend 是 LLM（Anthropic、OpenAI、本地 vLLM），可以在 `inference_time_ms` 之外补这些字段，平台会写到 `prediction_metas` 表（`prediction.py:34-56`）以后做成本卡片：
 

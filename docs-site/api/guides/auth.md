@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-27
 ---
 
 # 认证
@@ -52,7 +52,7 @@ POST /api/v1/auth/logout
 
 清 cookie；前端同步清掉内存里的 access token。
 
-## CAPTCHA 升级（v0.9.3）
+## CAPTCHA
 
 连续登录失败 3 次后，下一次必须带 CAPTCHA：
 
@@ -69,7 +69,7 @@ CAPTCHA 由 `GET /api/v1/auth/captcha` 获取（PNG + id）。
 
 失败计数按 IP + 用户名 双键，3 分钟窗口。
 
-## API Key（v0.9.3）
+## API Key
 
 适合脚本 / 自动化场景，长期凭证：
 

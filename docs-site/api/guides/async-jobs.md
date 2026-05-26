@@ -3,15 +3,17 @@ audience: [project_admin, super_admin, developer]
 type: reference
 since: v0.10.16
 status: stable
-last_reviewed: 2026-05-24
+last_reviewed: 2026-05-27
 ---
 
 # 异步任务（async_jobs）
 
-平台从 v0.10.16 起把所有用户可见的长任务统一进 `async_jobs` 表，做为前端任务铃铛
-（Topbar `JobsBell`）和 `/ai-pre/jobs` 历史页的统一数据源。底层各类长任务（预标、视频追踪、审计归档、预测导入、导出）
+平台把所有用户可见的长任务统一进 `async_jobs` 表，做为前端任务铃铛
+（Topbar `JobsBell`）和 `/ai-pre/jobs` 历史页的统一数据源。底层各类长任务（预标、视频追踪、审计归档、预测导入、数据集导入、导出）
 按需保留各自专表作为 domain 真值（VideoTrackerJob 等），`async_jobs` 只记
 最小元数据作为汇总索引。这种"双写双轨"让前端只需 polling 一个端点就能看到全部进行中的任务。
+
+<!-- history: async_jobs started as a release slice and now describes the current long-job surface. -->
 
 ## kind 取值
 
@@ -22,6 +24,7 @@ last_reviewed: 2026-05-24
 | `video_tracker` | 视频工作台 tracker 触发 | ❌（走 video tracker 自身取消接口） |
 | `audit_archive` | Celery beat 每月 2 日 03:00 UTC | ✅ |
 | `predictions_import` | 外部 prediction 上传（[Import guide](./import)） | ✅ |
+| `dataset_import` | 数据集连接器导入文件 | ✅ |
 | `export` | 项目 / 批次导出 | ❌ |
 
 ## 端点
@@ -79,7 +82,7 @@ owner-scoped；非 owner（且非 super_admin）→ `403`。
 
 ### `POST /api/v1/async-jobs/{id}/cancel`
 
-软取消。支持 `predictions_import` / `audit_archive` / `batch_predict`；其他 kind 调用返回
+软取消。支持 `predictions_import` / `dataset_import` / `audit_archive` / `batch_predict`；其他 kind 调用返回
 `400 not cancellable`。已终态（`completed` / `failed` / `cancelled`）调用返回 `409`。
 
 `batch_predict` 使用协作取消：API 对 `pending` job 直接写 `cancelled`；对 `running` job 写
@@ -106,7 +109,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 ### `POST /api/v1/async-jobs/{id}/retry-failed`
 
-v0.10.58 起，`batch_predict` job 如果在结果里记录了 `failed_prediction_ids`，项目管理员可以从 job 详情一键把这些失败项投递到既有 `failed_prediction.retry` 链路。端点要求调用者是该 job owner（或 super_admin），并且角色是 project_admin / super_admin。
+`batch_predict` job 如果在结果里记录了 `failed_prediction_ids`，项目管理员可以从 job 详情一键把这些失败项投递到既有 `failed_prediction.retry` 链路。端点要求调用者是该 job owner（或 super_admin），并且角色是 project_admin / super_admin。
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
@@ -114,11 +117,11 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 # → 202 {"status":"queued","job_id":"01JX...","queued":3,"skipped":1}
 ```
 
-跳过项包括：失败预测已被删除、已 dismiss，或超过最大重试次数。旧版本产生的 job 没有 `failed_prediction_ids` 时返回 `409`，需要去「模型市场 → 失败预测」按单条处理。
+跳过项包括：失败预测已被删除、已 dismiss，或超过最大重试次数。历史 job 没有 `failed_prediction_ids` 时返回 `409`，需要去「模型市场 → 失败预测」按单条处理。
 
 ## 终态通知
 
-v0.10.50 起，以下 kind 在有 `user_id` 且进入终态后会通过 `notifications` 体系发站内通知：
+以下 kind 在有 `user_id` 且进入终态后会通过 `notifications` 体系发站内通知：
 
 | kind | `completed` | `failed` | `cancelled` |
 |---|---|---|---|
@@ -126,6 +129,7 @@ v0.10.50 起，以下 kind 在有 `user_id` 且进入终态后会通过 `notific
 | `prediction_retry` | `job.completed` | `job.failed` | - |
 | `video_tracker` | `job.completed` | `job.failed` | `job.cancelled` |
 | `predictions_import` | `job.completed` | `job.failed` | `job.cancelled` |
+| `dataset_import` | `job.completed` | `job.failed` | `job.cancelled` |
 | `audit_archive` | `job.completed` | `job.failed` | `job.cancelled` |
 
 通知 payload 至少包含 `kind` / `status`，并会带上可展示字段（如 `batch_display_id`、

@@ -3,12 +3,12 @@ audience: [dev]
 type: explanation
 since: v0.11.0
 status: stable
-last_reviewed: 2026-05-25
+last_reviewed: 2026-05-27
 ---
 
 # 反馈收敛与双写对账
 
-这页讲 ADR-0027「反馈统一表」迁移中 v0.11 阶段的两件事：
+这页讲 ADR-0027「反馈统一表」迁移中的两件事：
 
 - **收敛目标**：把历史上散在 4 处的反馈入口收口为 `annotation_feedbacks` 单一写入源
 - **对账安全网**：在切单源之前，用一个每日定时任务持续给出「双写零漂移」的证据
@@ -24,17 +24,17 @@ last_reviewed: 2026-05-25
 | `bug_reports` | 产品 BUG |
 | `annotation_comments` | 标注评论 |
 | `tasks.reject_reason` | 审核驳回理由 |
-| pixel-anchored issue | 像素锚点 issue（v0.10.19 新增） |
+| pixel-anchored issue | 像素锚点 issue |
 
 ADR-0027 立新表 `annotation_feedbacks`，用 `anchor_type`（project / task / annotation / pixel）+ `kind`（issue / comment / reject / bug）统一锚点与类型，目标是收口为单一写入入口。迁移按三段式推进，每段独立可回退（详见 [审计与通知 §反馈统一表](./audit-and-notifications#反馈统一表-adr-0027)）。
 
-v0.11 处于「双写已稳定、准备切单源」的窗口期：旧三处写路径仍通过 `FeedbackService.mirror_*` helper 同事务双写到新表。切单源前必须先证明双写没有持续丢行——这就是对账任务存在的理由。
+当前处于「双写已稳定、准备切单源」的窗口期：旧三处写路径仍通过 `FeedbackService.mirror_*` helper 同事务双写到新表。切单源前必须先证明双写没有持续丢行——这就是对账任务存在的理由。
 
 ## 双写对账任务
 
 ### 它做什么
 
-每日定时比对「旧表中应被 mirror 的行」与「新表中实际镜像的行」，统计每个来源的缺失数（drift）。drift 长期为 0 是 v0.11.9+ 删旧写路径的前置条件。
+每日定时比对「旧表中应被 mirror 的行」与「新表中实际镜像的行」，统计每个来源的缺失数（drift）。drift 长期为 0 是删旧写路径的前置条件。
 
 ```mermaid
 flowchart TD
@@ -100,17 +100,19 @@ Celery 没有 `--reload`，编辑 `apps/api/app/workers/**` 后需 `docker resta
 drift=0 时只写 `log.info`，不打扰任何人。
 
 ::: warning superadmin 收到该通知意味着什么
-说明某条旧表反馈没成功双写到 `annotation_feedbacks`。这是切单源的阻塞信号：应先按 `missing_by_source` 定位丢行来源、修复双写路径或 backfill，确认漂移归零后再推进 v0.11.9 删旧写路径。
+说明某条旧表反馈没成功双写到 `annotation_feedbacks`。这是切单源的阻塞信号：应先按 `missing_by_source` 定位丢行来源、修复双写路径或 backfill，确认漂移归零后再推进删旧写路径。
 :::
 
 ## 与统一表迁移的关系
 
-对账任务是 ADR-0027 第三段（切单源）的安全网，对应 v0.11 计划中的 A 组工作：
+对账任务是 ADR-0027 第三段（切单源）的安全网：
 
-- **v0.11.0**：本任务落地，提供长期零漂移证据
-- **v0.11.9+**：drift 持续为 0 后，删旧写路径、旧表保留只读一个版本作回退
+- 本任务提供长期零漂移证据
+- drift 持续为 0 后，删旧写路径、旧表保留只读一个版本作回退
 
 切单源完成后该任务仍可保留为回归守卫；旧表彻底下线后再考虑移除。
+
+<!-- history: this page was originally scoped to the v0.11 feedback convergence slice; visible text now describes the current migration state. -->
 
 ## 相关文档
 

@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-22
+last_reviewed: 2026-05-27
 ---
 
 # AI 预标注接管
@@ -13,7 +13,7 @@ last_reviewed: 2026-05-22
 如果你要改：
 
 - AI 预标注入口
-- `prediction_jobs` / `predictions` / `failed_predictions`
+- `async_jobs` / `predictions` / `failed_predictions`
 - `pre_annotated` 的状态语义
 - `/ai-pre` 页面和批量清理
 - 人工接管时的状态联动
@@ -43,7 +43,7 @@ flowchart TD
   D --> E["调用 ML backend.predict()"]
   E --> F["写 Prediction / PredictionMeta"]
   E --> G["失败写 FailedPrediction"]
-  F --> H["写 PredictionJob 汇总"]
+  F --> H["更新 async_jobs 汇总"]
   G --> H
   H --> I{"指定 batch 且仍为 active?"}
   I -->|是| J["batch -> pre_annotated"]
@@ -55,7 +55,9 @@ flowchart TD
   O --> P["batch pre_annotated -> annotating"]
 ```
 
-> **模态说明（v0.10.38+）**：`/ai-pre` 入口按项目 `data_type` 分流。图像项目走上图所示批量链路；视频项目显示引导卡片，实际追踪由工作台逐轨迹 Shift+T 发起，不走本页批量 Celery 链路；lidar 项目暂显占位。
+> **模态说明**：`/ai-pre` 入口按项目 `data_type` 分流。图像项目走上图所示批量链路；视频项目显示引导卡片，实际追踪由工作台逐轨迹 Shift+T 发起，不走本页批量 Celery 链路；lidar 项目暂显占位。
+
+<!-- history: batch_predict job history moved from prediction_jobs into async_jobs; the handoff flow now documents the current source of truth. -->
 
 ## 代码入口
 
@@ -65,7 +67,7 @@ flowchart TD
 | `apps/api/app/workers/tasks.py` | Celery worker `_run_batch()` |
 | `apps/api/app/services/prediction.py` | prediction / failed prediction 写入 |
 | `apps/api/app/db/models/prediction.py` | `Prediction` / `PredictionMeta` / `FailedPrediction` |
-| `apps/api/app/db/models/prediction_job.py` | `PredictionJob` 汇总表 |
+| `apps/api/app/db/models/async_job.py` | `AsyncJob` 汇总表 |
 | `apps/api/app/api/v1/admin_preannotate.py` | `/admin/preannotate-queue` 与批量清理 |
 | `apps/api/app/services/batch.py` | `pre_annotated` 相关状态迁移与 reset |
 | `apps/web/src/pages/AIPreAnnotate/` | 管理端 AI 预标入口与历史表 |
@@ -84,7 +86,7 @@ flowchart TD
 - `prompt`
 - `output_mode`
 - `batch_id`
-- `params`（v0.10.38+）——选中 backend 的 `/setup.params` 值；worker 合并进 `/predict` context，覆盖项目级阈值兜底；无此字段时行为不变
+- `params` —— 选中 backend 的 `/setup.params` 值；worker 合并进 `/predict` context，覆盖项目级阈值兜底；无此字段时行为不变
 
 ### 当前约束
 
@@ -130,21 +132,22 @@ worker 会按三种模式选任务：
 
 整批运行级别还会写：
 
-- `PredictionJob`
+- `AsyncJob(kind=batch_predict)`
 
-其中 `PredictionJob` 会记录：
+其中 `AsyncJob` 会记录：
 
 - `project_id`
-- `batch_id`
-- `ml_backend_id`
-- `prompt`
-- `output_mode`
+- `payload.batch_id`
+- `payload.ml_backend_id`
+- `payload.prompt`
+- `payload.output_mode`
 - `status`
-- `total_tasks`
-- `success_count`
-- `failed_count`
-- `duration_ms`
-- `total_cost`
+- `progress_pct`
+- `result.total_tasks`
+- `result.success_count`
+- `result.failed_count`
+- `result.duration_ms`
+- `result.total_cost`
 
 ## `pre_annotated` 的语义
 
@@ -189,7 +192,7 @@ annotator 可选择：
 1. `accept prediction`(候选层 → annotation)
 2. 在 prediction 基础上继续改
 3. 完全忽略 prediction，手工新建 annotation
-4. **Magic Box (v0.10.17+)**: 拖一个粗框 → SAM bbox prompt → 返回 polygon → 自动取紧凑外接矩形 → **直接**落 bbox(不经候选层 UI 确认)。归 `ai_interactive` 工具单位, 详见 [ADR-0026](../adr/0026-tool-unit-class-and-attribute-binding)
+4. **Magic Box**: 拖一个粗框 → SAM bbox prompt → 返回 polygon → 自动取紧凑外接矩形 → **直接**落 bbox(不经候选层 UI 确认)。归 `ai_interactive` 工具单位, 详见 [ADR-0026](../adr/0026-tool-unit-class-and-attribute-binding)
 
 只要出现有效 annotation，`AnnotationService._update_task_stats()` 就会把：
 
@@ -205,7 +208,7 @@ annotator 可选择：
 
 `apps/api/app/api/v1/admin_preannotate.py` 提供两类接口。
 
-**统一任务历史（v0.10.38+，v0.10.51 更新）**：`/ai-pre/jobs`（`AIPreAnnotateJobsPage.tsx`）提供「图像 / 视频」两个模态 tab（`?tab` 深链）——图像 tab 拉 `async_jobs(kind=batch_predict|prediction_retry)`，视频 tab 拉 `async_jobs(kind=video_tracker)`（原 `/model-market/video-jobs` 301 重定向至此）。
+**统一任务历史**：`/ai-pre/jobs`（`AIPreAnnotateJobsPage.tsx`）提供「图像 / 视频」两个模态 tab（`?tab` 深链）——图像 tab 拉 `async_jobs(kind=batch_predict|prediction_retry)`，视频 tab 拉 `async_jobs(kind=video_tracker)`。
 
 ### 1. 预标队列
 
@@ -252,7 +255,7 @@ ML backend 对某题失败时，不会中断整批；worker 会写：
 - `prediction_metas`
 - `predictions`
 - `failed_predictions`
-- `prediction_jobs`
+- `async_jobs`（`kind=batch_predict`，按 batch payload 清理）
 
 并在 `batch.status == pre_annotated` 时回：
 
@@ -297,12 +300,12 @@ ML backend 对某题失败时，不会中断整批；worker 会写：
 
 | 文件 | 为什么要看 |
 |---|---|
-| `apps/web/src/pages/AIPreAnnotate/AIPreAnnotatePage.tsx` | 批量预标主入口；按项目 `data_type` 路由到对应面板（v0.10.38+） |
+| `apps/web/src/pages/AIPreAnnotate/AIPreAnnotatePage.tsx` | 批量预标主入口；按项目 `data_type` 路由到对应面板 |
 | `apps/web/src/pages/AIPreAnnotate/components/ProjectDetailPanel.tsx` | 图像项目详情面板（含 backend 选择器、SchemaForm 参数面板、RunPanel、HistoryTable） |
 | `apps/web/src/pages/AIPreAnnotate/components/VideoPreannotateGuide.tsx` | 视频项目引导卡片（提示在工作台逐轨迹 Shift+T 发起，提供跳工作台 + `/ai-pre/jobs?tab=video` 深链） |
 | `apps/web/src/pages/AIPreAnnotate/components/RunPanel.tsx` | 运行触发与进度提示 |
 | `apps/web/src/pages/AIPreAnnotate/components/HistoryTable.tsx` | `pre_annotated` 历史列表与 bulk clear |
-| `apps/web/src/pages/AIPreAnnotate/AIPreAnnotateJobsPage.tsx` | AI 任务历史；含「图像」(prediction_jobs) 和「视频」(video_tracker_jobs) 两个模态 tab，`?tab=video` 深链 |
+| `apps/web/src/pages/AIPreAnnotate/AIPreAnnotateJobsPage.tsx` | AI 任务历史；含「图像」(`async_jobs: batch_predict / prediction_retry`) 和「视频」(`async_jobs: video_tracker`) 两个模态 tab，`?tab=video` 深链 |
 | `apps/web/src/hooks/usePredictions.ts` | prediction 查询与采纳 |
 | `apps/web/src/pages/Workbench/shell/Topbar.tsx` | 当前 task 所属批次的 `pre_annotated` 提示 |
 | `apps/web/src/components/badges/BatchStatusBadge.tsx` | `pre_annotated` 徽章 |

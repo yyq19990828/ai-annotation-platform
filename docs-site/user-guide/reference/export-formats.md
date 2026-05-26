@@ -3,7 +3,7 @@ audience: [annotator, project_admin]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-23
+last_reviewed: 2026-05-27
 ---
 
 # 数据导出格式
@@ -11,13 +11,13 @@ last_reviewed: 2026-05-23
 ![导出格式选择](../images/export/format-select.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 导出对话框，COCO / YOLO / AAP JSON 选项 + 当前选中状态 + 导出范围（项目 / 批次）。 -->
 
-项目 Dashboard 的「导出」入口会打开居中的导出弹窗。**v0.10.43 起导出目标可多选**，一次导出产出**一个**压缩包：勾选单个目标时落包根（与旧布局一致），勾选多个目标时各目标落各自的 `{target}/` 子目录。
+项目 Dashboard 的「导出」入口会打开居中的导出弹窗。导出目标可多选，一次导出产出**一个**压缩包：勾选单个目标时落包根，勾选多个目标时各目标落各自的 `{target}/` 子目录。
 
 图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧 / AAP JSON / MOT / KITTI**。
 
 > **YOLO 拆三个变体（几何映射不同）**：`YOLO 检测`(det) 导矩形框、`YOLO 旋转框`(obb) 导 rotated_bbox 四角、`YOLO 分割`(seg) 导 polygon / mask 多边形。每个变体只取匹配的几何，其余跳过。
 
-## 导出流程（v0.10.27 起异步化）
+## 导出流程
 
 在导出弹窗点「开始导出」**不再即时下载**：后端会创建一个后台任务并立即弹出 toast「导出已入队，可在右上角任务铃查看进度并下载」，弹窗随即关闭。
 
@@ -26,11 +26,11 @@ last_reviewed: 2026-05-23
 
 1. 在**右上角任务铃（JobsBell）**里能看到一条「数据导出」任务，附带进度条。
 2. 任务完成后，该条目出现「下载」按钮；个人通知中心也会出现「导出完成」通知，点击通知可打开下载链接。
-3. 产物（ZIP）的下载链接 **7 天内有效，可反复点击下载**（任务铃在后台不轮询，故不会自动下载，需手动点）。下载文件名为可读的 `{项目编号}_{数据集名}_{任务号前 8 位}.zip`（项目跨多个数据集时省略数据集名），v0.10.43 起替代旧的纯 UUID 名。
+3. 产物（ZIP）的下载链接 **7 天内有效，可反复点击下载**（任务铃在后台不轮询，故不会自动下载，需手动点）。下载文件名为可读的 `{项目编号}_{数据集名}_{任务号前 8 位}.zip`（项目跨多个数据集时省略数据集名）。
 
 > **重复导出走缓存**：一周内对**同一范围（项目 / 批次）+ 同一组导出目标 + 同一参数**、且标注与项目类别 / 属性配置均未变化的重复导出会**瞬间完成**（复用上次生成的产物）。目标集合顺序无关（勾选顺序不影响命中）。只要标注有任何增删改，或类别 / 属性定义发生变化，就会重新生成。
 
-v0.11.13 起，导出会自动跳过当前类别定义中不存在的孤儿标注，并只导出当前 attribute schema 内的用户属性 key。项目设置里删除类别 / 属性不会立即破坏已有标注；导出层会先兜底收敛，避免 schema 与 data 不一致。
+导出会自动跳过当前类别定义中不存在的孤儿标注，并只导出当前 attribute schema 内的用户属性 key。项目设置里删除类别 / 属性不会立即破坏已有标注；导出层会先兜底收敛，避免 schema 与 data 不一致。
 
 ## 图片产物形态：仅标注 + 回源脚本（不含图片本体）
 
@@ -58,7 +58,7 @@ python fetch_images.py
 
 最常用格式，适配 Detectron2、MMDetection、YOLOv8 等。COCO 是单文档格式，落在包根的 `annotations.json`（无 per-image label 文件）。图片的 `width` / `height` 现在取**真实尺寸**（来自 dataset 记录；早期版本曾硬编码 1920×1280，已修复）。
 
-**v0.10.43 起 COCO 不再只导矩形框**，单文件可同时承载多种几何：
+COCO 单文件可同时承载多种几何：
 
 - `bbox`：矩形框（也作为 polygon / keypoint 标注的外接框）。
 - `segmentation`：polygon / multi_polygon 标注的多边形顶点（像素坐标；孔洞/多连通域的完整还原留作后续）。
@@ -95,7 +95,7 @@ python fetch_images.py
 
 ## YOLO（det / obb / seg 三个变体）
 
-YOLO 不同变体的标注行格式互不相同，v0.10.43 起拆成三个可独立选择的导出目标：
+YOLO 不同变体的标注行格式互不相同，因此导出拆成三个可独立选择的目标：
 
 | 目标 | 行格式 | 取哪种几何 |
 |---|---|---|
@@ -122,7 +122,7 @@ names: [person, car, bicycle]
 nc: 3
 ```
 
-v0.10.56 起，导入向导也支持把 YOLO zip 作为外部预测导入。导入时选择对应变体 `det` / `obb` / `seg`；`classes.txt` 或 `data.yaml` 用于把类别索引映射回项目类别。OBB 导入会用 task 对应 `DatasetItem.width/height` 在像素空间还原旋转框，四角不构成矩形时降级为 polygon。
+导入向导也支持把 YOLO zip 作为外部预测导入。导入时选择对应变体 `det` / `obb` / `seg`；`classes.txt` 或 `data.yaml` 用于把类别索引映射回项目类别。OBB 导入会用 task 对应 `DatasetItem.width/height` 在像素空间还原旋转框，四角不构成矩形时降级为 polygon。
 
 ## Label Studio JSON
 
@@ -130,7 +130,8 @@ v0.10.56 起，导入向导也支持把 YOLO zip 作为外部预测导入。导�
 
 ## AAP JSON v1.2（无损）
 
-> v0.10.15 引入 1.0；**v0.10.17 升 1.1** 加 `tool_unit_id` / `tool_bindings`；**v0.10.31 升 1.2** 在 task 层加 `media_type`（image/video/lidar）+ `video` 子块（采样配置 / fps / 帧数 / 分辨率），视频 `video_track` geometry 无损透传，envelope 不拆。各版本向后兼容，旧 reader 走 `extra="ignore"` 仍可解析。**平台原生无损中间格式**。与 COCO / YOLO 并列，但**包含**它们丢失的所有字段：`tool_bindings`(工具维度类别/属性绑定) / `attribute_schema` 值、`prediction.confidence` / `model_version`、`annotation.source`、项目 `annotation_guide`、`classes_config`、`rendering_config`。
+> AAP JSON 是平台原生无损中间格式。当前 schema 1.2 在 task 层包含 `media_type`（image/video/lidar）与 `video` 子块（采样配置 / fps / 帧数 / 分辨率），并可无损透传视频 `video_track` geometry。与 COCO / YOLO 并列，但**包含**它们丢失的所有字段：`tool_bindings`(工具维度类别/属性绑定) / `attribute_schema` 值、`prediction.confidence` / `model_version`、`annotation.source`、项目 `annotation_guide`、`classes_config`、`rendering_config`。
+<!-- history: AAP JSON schema moved from 1.0 to 1.1 for tool_unit_id/tool_bindings, then to 1.2 for media_type/video. -->
 
 适合场景：
 
@@ -148,7 +149,7 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
   "exported_at": "2026-05-19T10:00:00Z",
   "exported_from": {
     "platform": "aap",
-    "platform_version": "0.10.17",
+    "platform_version": "0.11.17",
     "project_display_id": "P-12",
     "batch_display_id": "BT-3"
   },
@@ -207,13 +208,13 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 - 导出严格写满 null；导入 lenient 忽略未知字段、缺失按默认。
 - `task_match` 走 `display_id` 优先（全局唯一），`file_path` fallback；跨项目 `display_id` 不允许偷换项目。
 - `geometry` 使用平台**内部格式**（`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox` / `keypoint`），不嵌套 LabelStudio shape。预测导入端也接受可选 `shapes[]`，用于把多个 shape 合并到同一条 prediction；`video_bbox` / `video_track` 暂不导入。
-- **v0.10.17 新增** `project.tool_bindings` (工具维度类别 / 属性绑定) + 每条 annotation / prediction 的 `tool_unit_id`(`bbox` / `region` / `polyline` / `rotated_bbox` / `keypoint` / `ai_interactive` / ...)。导入端缺失时按 LS shape 类型回退派生(rectanglelabels→bbox, 带 rotation 的 rectanglelabels→rotated_bbox, polygonlabels→region, polylinelabels→polyline, keypointlabels→keypoint)。
+- `project.tool_bindings` (工具维度类别 / 属性绑定) + 每条 annotation / prediction 的 `tool_unit_id`(`bbox` / `region` / `polyline` / `rotated_bbox` / `keypoint` / `ai_interactive` / ...)。导入端缺失时按 LS shape 类型回退派生(rectanglelabels→bbox, 带 rotation 的 rectanglelabels→rotated_bbox, polygonlabels→region, polylinelabels→polyline, keypointlabels→keypoint)。
 
 详见 [ADR-0024](../../dev/adr/0024-aap-json-format) · [ADR-0026](../../dev/adr/0026-tool-unit-class-and-attribute-binding) · [API 导入指南](../../api/guides/import.md)。
 
 ## 视频轨迹
 
-v0.10.31 起，`video-track` 项目导出统一走异步 zip 管线；v0.10.44 起可选 **Video JSON / YOLO 逐帧 / AAP JSON / MOT / KITTI**。导出包含标注主体 + `manifest.json` + `fetch_videos.py`（按预签名 URL 回源视频）；MOT / KITTI / YOLO 逐帧另带 `fetch_frames.py`（用本地 ffmpeg 按采样网格帧号抽帧，遵循「不物理打包帧」）。
+`video-track` 项目导出统一走异步 zip 管线，可选 **Video JSON / YOLO 逐帧 / AAP JSON / MOT / KITTI**。导出包含标注主体 + `manifest.json` + `fetch_videos.py`（按预签名 URL 回源视频）；MOT / KITTI / YOLO 逐帧另带 `fetch_frames.py`（用本地 ffmpeg 按采样网格帧号抽帧，遵循「不物理打包帧」）。
 
 **Video JSON**（帧模式二选一）：
 
@@ -232,11 +233,11 @@ v0.10.31 起，`video-track` 项目导出统一走异步 zip 管线；v0.10.44 �
 
 **KITTI Tracking 2D**：每视频落 `labels/{sequence}.txt`，18 列空格分隔（`frame track_id type truncated occluded alpha bbox… 3D占位`），帧号网格序号 0-based。
 
-**AAP JSON**：单文档无损中间格式，`video_track` geometry 原样保留；详见上节（schema 1.2 起 task 层带 `media_type` + `video` 子块）。
+**AAP JSON**：单文档无损中间格式，`video_track` geometry 原样保留；详见上节（schema 1.2 的 task 层带 `media_type` + `video` 子块）。
 
 目标消失语义（各格式共用）：
 
-- `outside` 闭区间段表示目标在该段帧内不存在（v0.10.30 起统一用此表达，旧 `absent` 字段已删除）。
+- `outside` 闭区间段表示目标在该段帧内不存在。
 - 所有帧模式 / YOLO 逐帧 / MOT / KITTI 都不跨越 `outside` 段插值，也不在其中输出 bbox（MOT/KITTI 直接省略该帧，YOLO 保留该帧空 label 或其它对象的 label）。
 - `occluded=true` 表示目标存在但被遮挡，仍可参与插值；MOT 仍输出该帧，KITTI 置 occluded 列=1。
 

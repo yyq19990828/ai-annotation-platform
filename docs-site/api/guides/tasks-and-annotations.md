@@ -3,18 +3,19 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-11
+last_reviewed: 2026-05-27
 ---
 
 # 任务与标注
 
 ## 任务模型
 
-`tasks` 表的每行代表一条待标数据，可以是一张图片、一个视频任务，或其它项目类型的数据。它属于一个 batch，batch 属于 project。任务生命周期：
+`tasks` 表的每行代表一条待标数据，可以是一张图片、一个视频任务，或其它项目类型的数据。它属于一个 batch，batch 属于 project。任务状态以 `pending / in_progress / completed / review` 为主，批次状态负责更高层的生产推进。
 
 ```
-created → assigned → in_progress → submitted → reviewed → completed
-                                              ↘ returned ↗
+pending → in_progress → completed → review
+                 ↑          ↘ reviewer reject
+                 └────────────── pending
 ```
 
 ## 拉取下一个任务
@@ -42,11 +43,11 @@ POST /api/v1/tasks/:id/annotations
 }
 ```
 
-提交后任务状态进入 `submitted`，锁释放。
+提交后任务状态进入完成或待审核路径，锁释放。
 
 ## 视频任务
 
-v0.9.16 起，视频任务会在 `GET /api/v1/tasks/:id` 的 `TaskOut.video_metadata` 里透出标准化视频元数据：
+视频任务会在 `GET /api/v1/tasks/:id` 的 `TaskOut.video_metadata` 里透出标准化视频元数据：
 
 ```json
 {
@@ -75,7 +76,7 @@ GET /api/v1/tasks/:id/video/manifest
 
 返回 presigned 播放地址、poster 地址和同一份标准化 metadata。非视频任务会返回 `400`。
 
-v0.9.21 起，工作台还会读取帧时间表，用真实 `pts_ms` 替代单纯 `frame / fps`：
+工作台还会读取帧时间表，用真实 `pts_ms` 替代单纯 `frame / fps`：
 
 ```http
 GET /api/v1/tasks/:id/video/frame-timetable?from=0&to=120
@@ -101,7 +102,7 @@ GET /api/v1/tasks/:id/video/frame-timetable?from=0&to=120
 
 存量视频没有时间表时会返回 `source: "estimated"` 和空 `frames`，前端继续按 `fps` 估算。
 
-v0.9.16 的视频标注使用逐帧 `video_bbox`：
+逐帧 `video_bbox` 表示单个 frame 上的独立框：
 
 ```json
 {
@@ -117,7 +118,7 @@ v0.9.16 的视频标注使用逐帧 `video_bbox`：
 }
 ```
 
-v0.9.17 起，新建视频标注默认使用 compact `video_track`，一条 annotation 表达一个对象轨迹：
+新建视频轨迹标注默认使用 compact `video_track`，一条 annotation 表达一个对象轨迹：
 
 ```json
 {
@@ -142,7 +143,7 @@ v0.9.17 起，新建视频标注默认使用 compact `video_track`，一条 anno
 
 ## 视频轨迹转独立框
 
-v0.9.20 起，视频轨迹可以转换为一个或多个独立 `video_bbox`：
+视频轨迹可以转换为一个或多个独立 `video_bbox`：
 
 ```http
 POST /api/v1/tasks/:id/annotations/:annotation_id/video/convert-to-bboxes
@@ -164,7 +165,7 @@ POST /api/v1/tasks/:id/annotations/:annotation_id/video/convert-to-bboxes
 
 响应包含 `source_annotation`、`created_annotations[]`、`deleted_source` 与 `removed_frame_indexes`。`copy` 不会移除源帧，所以 `removed_frame_indexes` 为空；`split` 才会返回被移除的帧号。
 
-v0.9.37 起，视频标注也支持 track composition：
+视频标注支持 track composition：
 
 ```http
 POST /api/v1/tasks/:id/annotations/video/track-compositions
@@ -183,7 +184,7 @@ POST /api/v1/tasks/:id/annotations/video/track-compositions
 | `aggregate_bboxes` | 将同任务、同类、无重复帧的 `video_bbox[]` 聚合为一条 `video_track` |
 | `split_track` | 在 `frame_index` 可见帧之后，把一条 track 拆成前后两条 |
 | `merge_tracks` | 合并两条同类、可见帧区间不重叠的 track，并自动补中间 `outside` gap |
-| `join_tracks` | 跳连两条同类、可见帧区间不重叠的 track（v0.10.30）；`gap_mode=interpolate` 靠插值过渡 / `outside` 把 gap 标消失后合并 |
+| `join_tracks` | 跳连两条同类、可见帧区间不重叠的 track；`gap_mode=interpolate` 靠插值过渡 / `outside` 把 gap 标消失后合并 |
 
 响应包含 `updated_annotations[]`、`created_annotations[]` 和 `deleted_annotation_ids[]`，客户端应按这三组结果更新 annotation 列表。
 
@@ -199,12 +200,12 @@ GET /api/v1/tasks/:id/predictions
 
 ```http
 POST /api/v1/tasks/:id/annotations/accept
-{ "prediction_id": 42, "shape_index": 0 }   # v0.9.10 拆 shape 级
+{ "prediction_id": 42, "shape_index": 0 }
 ```
 
 后端会：
 1. 把 shape 写入 `annotations`（source=ai-accepted）
-2. 反查 `classes_config` 把 alias 映射回原类别名（v0.9.10 B-11）
+2. 反查类别配置把 alias 映射回原类别名
 3. 写审计 `annotation.prediction_accepted`
 
 ## 驳回预测

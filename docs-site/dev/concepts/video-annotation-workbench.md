@@ -3,40 +3,16 @@ audience: [dev]
 type: explanation
 since: v0.9.16
 status: stable
-last_reviewed: 2026-05-12
+last_reviewed: 2026-05-27
 ---
 
 # 视频标注工作台
 
-v0.9.16 落地视频工作台 M0 + M1：视频元数据、manifest、播放/逐帧定位，以及当前帧 bbox 标注。
+视频工作台当前支持视频元数据与 manifest、帧时间表、单帧预览缓存、逐帧播放与 J/K/L jog、`video_bbox` 当前帧框、`video_track` compact 轨迹、outside / occluded 语义、track split / merge / join / bbox 转换、时间轴关键帧与 prediction 分布、bitmap cache、minimap、评论锚点和工作台诊断快照。
 
-v0.9.17 把视频标注升级为 `video_track`：一条 annotation 保存一个对象轨迹和 compact keyframes，前端按需显示关键帧与线性插值结果。
+`video_track` 一条 annotation 保存一个对象轨迹和 compact keyframes，前端按需显示关键帧与线性插值结果；`video_bbox` 仍是一等逐帧框，可由矩形框工具直接创建，也可从 track 转换得到。视频 stage 复用 Workbench 外壳、任务锁、离线队列、评论、审核与导出入口。
 
-v0.9.19 补齐视频工作台基础设施：关键帧编辑进入 keyframe 级撤销/重做，视频创建 / 更新 / 重命名复用离线队列兜底，时间轴改为画布内悬浮 overlay。
-
-v0.9.20 分离视频矩形框与轨迹工具：`video_bbox` 重新成为可创建的一等对象，`video_track` 只由轨迹工具创建或延续，并新增 track → `video_bbox` 事务转换 API。
-
-v0.9.21 加入帧时间表与前端 `FrameClock`：media worker 生成 `frame_index -> pts_ms`，前端 seek/playback 优先用 `requestVideoFrameCallback` 与真实 PTS 做帧号映射；轨迹插值也改为 keyframe 索引 + 二分查找。
-
-v0.9.22 把视频渲染面向 CVAT 的 canvas 边界对齐：Media / Bitmap / Grid / Objects / Text / Interaction / Attachment 分层，bbox 命中测试迁到 Interaction 层统一 picker，并新增时间轴 frame bucket helper。
-
-v0.9.23 引入 `outside` 段语义：`video_track` 可用闭区间表达目标在一段帧内不存在，前后端渲染、导出和 track → `video_bbox` 转换都兼容旧 `absent=true` 并优先尊重 outside。
-
-v0.9.24 升级时间轴可视化：选中轨迹时显示 keyframe、outside、interpolated 和 prediction 分布；未选中轨迹时显示全局 keyframe 密度条，并支持 `Shift+←/→` 跳上/下可见关键帧。
-
-v0.10.30（视频工作台 Phase 2）对齐 CVAT 的 track 工具：**删除 `keyframe.absent`**，"消失"语义彻底并入 `outside`（两态 outside/occluded）；新增可编辑 `semantic_label` 与确定性派生的 `track_number`；接通 track/帧级属性 UI、split/merge、新增 **join（Re-ID 跳连，`gap_mode` interpolate/outside）**、Propagate 铺帧、track 导航快捷键、侧栏隐藏/锁定/选色。多几何 track 暂缓。
-
-v0.9.26 补齐轻量视频导航：时间轴支持本地 loop region，播放可在片段内循环；当前帧可打书签并通过 marker 跳回；显式 seek 会记录最近 50 个位置用于前进 / 后退。
-
-v0.9.27 接入后端单帧缓存的第一层前端消费：时间轴 hover 显示当前帧缩略图，并对选中轨迹关键帧、书签帧和 loop region 边界做预取 hint。
-
-v0.9.29 增加 J/K/L 多速率播放和异步 seek 原语：显式跳帧入口统一走 `seekFrameAsync`，`L` 正向播放 / 加速，`K` 暂停，`J` 反向播放 / 减速；反向播放按帧步进，不使用浏览器负 `playbackRate`。
-
-v0.9.31 补齐视频工作台观测包：本地 `video:bench` 固定回归矩阵，`VideoStage` 暴露当前 task 诊断快照，BugReportDrawer 会在视频工作台自动附带 frame clock、recent seeks、frame preview cache 和 timeline mode。
-
-v0.9.39 完成视频渲染 P0：`VideoStage` 新增 `ImageBitmap` LRU 帧缓存和 bitmap canvas，seek / scrub 时可先显示缓存帧；视频 media、bitmap、grid、objects、text、interaction 和 attachment 层共享 viewport transform，支持 `F` fit、`0` 1:1、Ctrl/Meta+滚轮缩放、右键拖拽平移与 minimap。
-
-v0.9.33 补齐视频资产失败可见性：存储管理页汇总 probe、poster、frame timetable、chunk 和 frame cache 失败，管理员可手动投递 media 队列重试。
+<!-- history: the original version-by-version video workbench notes are merged into this current capability overview. -->
 
 ## 数据入口
 
@@ -90,8 +66,6 @@ v0.9.33 补齐视频资产失败可见性：存储管理页汇总 probe、poster
 
 ## Frame Timetable API
 
-v0.9.21 新增：
-
 ```http
 GET /api/v1/tasks/{task_id}/video/frame-timetable?from=0&to=120
 ```
@@ -120,7 +94,7 @@ GET /api/v1/tasks/{task_id}/video/frame-timetable?from=0&to=120
 
 ## Frame Preview API
 
-v0.9.27 起，视频工作台前端消费 v0.9.25 的 task 级单帧缓存接口：
+视频工作台前端消费 task 级单帧缓存接口：
 
 ```http
 GET /api/v1/tasks/{task_id}/video/frames/{frame_index}?format=webp&w=320
@@ -138,7 +112,7 @@ POST /api/v1/tasks/{task_id}/video/frames:prefetch
 
 ## Observability
 
-v0.9.31 起，视频工作台提供两层前端诊断：
+视频工作台提供两层前端诊断：
 
 - `window.__videoFrameClockDiagnostics`：按 task 保存 `useFrameClock` 诊断，包含 seek 次数、stale 回调、long task 计数、最近 frame-ready source 和最近 seek 样本。
 - `window.__videoWorkbenchDiagnostics`：按 task 保存工作台快照，包含当前 frame、fps、timeline mode、J/K/L 播放速率、当前对象密度、loop/bookmark 状态，以及 frame preview cache hit/miss。
@@ -165,7 +139,7 @@ pnpm --filter @anno/web video:bench
 - `video_bbox`：当前帧独立矩形框。
 - `video_track`：跨帧对象轨迹。
 
-v0.9.20 起，前端通过 `videoTool` 决定新拖框落库类型：矩形框工具写 `video_bbox`，轨迹工具写 `video_track` 或追加 keyframe。
+前端通过 `videoTool` 决定新拖框落库类型：矩形框工具写 `video_bbox`，轨迹工具写 `video_track` 或追加 keyframe。
 
 `video_track` 示例：
 
@@ -192,15 +166,15 @@ v0.9.20 起，前端通过 `videoTool` 决定新拖框落库类型：矩形框�
 
 - `annotation_type` 写 `video_track`。
 - `track_id` 在单条 annotation 内稳定，用于 UI 展示和审核定位（uuid，只读不变）。
-- `semantic_label`（v0.10.30 起）是用户可编辑的语义标签（如 `car_3`），仅作跨任务 Re-ID 心智，不参与主键、不强制唯一。
+- `semantic_label` 是用户可编辑的语义标签（如 `car_3`），仅作跨任务 Re-ID 心智，不参与主键、不强制唯一。
 - 类别继续使用 annotation 顶层 `class_name`，本期不引入稳定 `class_id`。
-- `keyframes[]` 是持久化数据；插值结果由前端按相邻关键帧计算，不写库。v0.9.21 起前端用缓存索引和二分查找解析当前帧。
-- `outside[]` 是 v0.9.23 起的一等消失段，使用闭区间 `{ from, to }` 表示目标在该段帧内不存在；相邻或重叠区间会在读写 helper 中归一化。
+- `keyframes[]` 是持久化数据；插值结果由前端按相邻关键帧计算，不写库。前端用缓存索引和二分查找解析当前帧。
+- `outside[]` 是一等消失段，使用闭区间 `{ from, to }` 表示目标在该段帧内不存在；相邻或重叠区间会在读写 helper 中归一化。
 - `source` 当前支持 `manual` / `prediction` / `interpolated`；前端不会把计算得到的 interpolated frame 展开保存。
-- **v0.10.30 起删除 `keyframe.absent` 字段**：轨迹"消失"语义完全由 `outside` 区间表达（对齐 CVAT 两态 outside/occluded）。alembic 0084 已把存量 `absent=true` 关键帧转写为单帧 outside 并删除该键。
+- 轨迹"消失"语义完全由 `outside` 区间表达（对齐 CVAT 两态 outside/occluded）。历史 `absent=true` 关键帧已被迁移为单帧 outside。
 - `outside` 对渲染和导出优先级最高：落在 outside 的帧不显示对象、不导出 bbox，也不会参与 track → `video_bbox` 转换。
 - `occluded=true` 表示目标存在但被遮挡，前端用虚线状态显示，不阻断插值。
-- `track_number`（v0.10.30）是显示/导出用的确定性派生整数：按「首关键帧帧号升序、并列按 `track_id` 字典序」派生 `1..N`，**不持久化**（util `derive_track_number` / 前端 `deriveTrackNumber`）。
+- `track_number` 是显示/导出用的确定性派生整数：按「首关键帧帧号升序、并列按 `track_id` 字典序」派生 `1..N`，**不持久化**（util `derive_track_number` / 前端 `deriveTrackNumber`）。
 
 `video_bbox` geometry：
 
@@ -220,11 +194,9 @@ v0.9.20 起，前端通过 `videoTool` 决定新拖框落库类型：矩形框�
 - `frame_index` 从 0 开始，是唯一时间轴定位字段。
 - `x/y/w/h` 与图片 bbox 一样使用归一化坐标。
 - `annotation_type` 写 `video_bbox`。
-- v0.9.20 起，`video_bbox` 可由视频矩形框工具直接创建，也可由 track 转换 API 生成。
+- `video_bbox` 可由视频矩形框工具直接创建，也可由 track 转换 API 生成。
 
 ## Track 转独立框 API
-
-v0.9.20 新增：
 
 ```http
 POST /api/v1/tasks/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes
@@ -253,8 +225,6 @@ POST /api/v1/tasks/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes
 
 ### Track Composition
 
-v0.9.37 新增反向组合接口：
-
 ```http
 POST /api/v1/tasks/{task_id}/annotations/video/track-compositions
 ```
@@ -276,7 +246,7 @@ POST /api/v1/tasks/{task_id}/annotations/video/track-compositions
 | `operation` | `aggregate_bboxes` / `split_track` / `merge_tracks` / `join_tracks` | 聚合单帧框、拆分轨迹、合并轨迹、跳连轨迹 |
 | `annotation_ids` | UUID[] | 聚合时传 `video_bbox[]`；拆分时传 1 条 `video_track`；合并/跳连时传 2 条 `video_track` |
 | `frame_index` | number | `split_track` 必填，表示在当前可见帧之后切出后段 |
-| `gap_mode` | `interpolate` / `outside` | `join_tracks` 用（v0.10.30）：`interpolate` 不写 gap、靠线性插值过渡；`outside` 把 gap 区标 outside 后合并。默认 `interpolate` |
+| `gap_mode` | `interpolate` / `outside` | `join_tracks` 用：`interpolate` 不写 gap、靠线性插值过渡；`outside` 把 gap 区标 outside 后合并。默认 `interpolate` |
 | `delete_sources` | boolean | `aggregate_bboxes` 默认为 true，成功后删除源 `video_bbox` |
 
 约束：
@@ -284,7 +254,7 @@ POST /api/v1/tasks/{task_id}/annotations/video/track-compositions
 - `aggregate_bboxes` 要求同任务、同类、每帧最多一个 `video_bbox`。
 - `split_track` 要求切点是可见帧，源 annotation 保留前段，新 annotation 保存后段。
 - `merge_tracks` 只接受两条同类且可见帧区间不重叠的 track；中间 gap 会写入 `outside` 段。
-- `join_tracks`（v0.10.30）同样要求两条同类、可见帧区间不重叠的 track；与 merge 共用合并落库 helper，区别仅在 gap 处理（见 `gap_mode`）。
+- `join_tracks` 同样要求两条同类、可见帧区间不重叠的 track；与 merge 共用合并落库 helper，区别仅在 gap 处理（见 `gap_mode`）。
 - 响应返回 `updated_annotations[]`、`created_annotations[]` 和 `deleted_annotation_ids[]`，前端用这些结果更新 annotation cache 并组成 undo/redo batch。
 
 ## 插值与质量检查
@@ -304,7 +274,7 @@ POST /api/v1/tasks/{task_id}/annotations/video/track-compositions
 
 ## Video Tracks JSON 导出
 
-v0.9.18 起，`video-track` 项目可通过现有导出入口拿到专用 JSON：
+`video-track` 项目可通过现有导出入口拿到专用 JSON：
 
 ```http
 GET /api/v1/projects/{project_id}/export?format=coco&video_frame_mode=keyframes
@@ -382,12 +352,12 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 
 ### 视频渲染层
 
-v0.9.22 起，视频画布结构对齐 CVAT 的 canvas layer contract，但仍保留本项目的 React + SVG + HTML video 实现：
+视频画布结构对齐 CVAT 的 canvas layer contract，但仍保留本项目的 React + SVG + HTML video 实现：
 
 | 层 | 文件 | 职责 |
 |---|---|---|
 | Media | `VideoMediaLayer.tsx` | 承载 `<video>`，由 `useFrameClock` 驱动 |
-| Bitmap | `VideoBitmapLayer.tsx` | v0.9.39 起绘制 `ImageBitmap` LRU 命中的缓存帧 |
+| Bitmap | `VideoBitmapLayer.tsx` | 绘制 `ImageBitmap` LRU 命中的缓存帧 |
 | Grid | `VideoGridLayer.tsx` | viewport 同步层，后续可接网格 / ruler |
 | Objects | `VideoObjectsLayer.tsx` | 渲染 committed bbox、track path preview 和 pending draft |
 | Text | `VideoTextLayer.tsx` | 独立渲染 label，避免文字吞掉 handle 命中 |
@@ -396,33 +366,33 @@ v0.9.22 起，视频画布结构对齐 CVAT 的 canvas layer contract，但仍�
 
 `VideoStageSurface` 负责统一尺寸、aspect ratio、层叠顺序和 viewport transform。对象层不再给每个 bbox 主体挂 `pointerdown`，Interaction 层通过 `videoStageCoordinates.ts` 把 client 坐标映射到视频归一化坐标，再用 `videoStagePicking.ts` 选择顶层框。
 
-v0.10.33 起，画布上下文菜单使用通用 `ContextMenu` + `useCanvasContextMenu` 原语：Stage 负责把命中对象转换成 `DropdownItem[]`，菜单组件只处理 fixed 坐标定位、视口翻转和关闭行为。v0.10.34 起，这套外壳同时服务于视频 `video_track` / `video_bbox` 和图片 Stage 的 bbox、rotated bbox、polygon、polyline、keypoint 等人工标注；图片侧通过 Konva `getIntersection()` 在容器层统一命中 shape，再把 annotation action 映射成 `DropdownItem[]`。
+画布上下文菜单使用通用 `ContextMenu` + `useCanvasContextMenu` 原语：Stage 负责把命中对象转换成 `DropdownItem[]`，菜单组件只处理 fixed 坐标定位、视口翻转和关闭行为。这套外壳同时服务于视频 `video_track` / `video_bbox` 和图片 Stage 的 bbox、rotated bbox、polygon、polyline、keypoint 等人工标注；图片侧通过 Konva `getIntersection()` 在容器层统一命中 shape，再把 annotation action 映射成 `DropdownItem[]`。
 
-v0.9.39 起，视频工作台的 viewport 与图片工作台复用同一套 `useViewportTransform` 行为：`F` 适应视口、`0` 回到 1:1、Ctrl/Meta+滚轮以光标为锚点缩放、右键拖拽平移。缩放和平移只影响显示层，保存到 annotation 的 bbox / keyframe 仍是 `[0,1]` 归一化视频坐标。
+视频工作台的 viewport 与图片工作台复用同一套 `useViewportTransform` 行为：`F` 适应视口、`0` 回到 1:1、Ctrl/Meta+滚轮以光标为锚点缩放、右键拖拽平移。缩放和平移只影响显示层，保存到 annotation 的 bbox / keyframe 仍是 `[0,1]` 归一化视频坐标。
 
 R5.2 的 bitmap cache 只优化前端体感，不替代 `<video>` 播放源。`useVideoBitmapCache` 在浏览器支持 `createImageBitmap(video)` 时按 `taskId + frameIndex` 保存 LRU；seek / scrub 命中时 `VideoBitmapLayer` 先绘制缓存帧，`<video>` 异步追赶。浏览器不支持或抓帧失败时，bitmap 层保持隐藏并在诊断里标记 unsupported / errors。
 
 `videoStageMode.ts` 提供轻量 busy guard：`idle` 允许 seek / draw / drag / resize；`draw` / `drag` / `resize` 期间 frame setup 会被拦截并暂停播放，避免播放 tick 覆盖编辑中的几何。
 
-v0.9.19 后，`VideoStage` 底部固定控制条改为 `VideoPlaybackOverlay`：
+`VideoStage` 底部固定控制条使用 `VideoPlaybackOverlay`：
 
 - 悬浮在视频画布底部，不再占用 stage 布局高度。
 - hover 时显示，离开后延迟淡出；绘制或拖动 bbox 时隐藏，避免误触 scrubber。
 - 保留播放 / 暂停、逐帧按钮、range scrubber、关键帧 tick、当前帧号、时间和当前帧框数。
-- v0.9.23 起，底部标记的数据源升级为 timeline markers：keyframe 仍显示为细线，prediction 使用不同颜色，outside 段显示为灰色区间。
-- v0.9.24 起，选中 `video_track` 时显示该轨迹的单轨 timeline：keyframe 圆点、outside 灰段、interpolated 虚线段和 prediction 标记；未选中轨迹时显示全局 keyframe 密度条。
-- `Shift+←/→` 复用同一套可见关键帧计算，跳过 outside 帧；如果没有选中轨迹，则保持原有 ±10 帧跳转。v0.10.30 另加 `,`/`.` 跳上/下可见关键帧、`Home`/`End` 跳首/末出现帧。
-- v0.9.26 起，`Shift+drag` 时间轴可创建本地 loop region；播放越过范围末帧后 seek 回起始帧，逐帧和手动 seek 不被限制。
+- 底部标记的数据源是 timeline markers：keyframe 仍显示为细线，prediction 使用不同颜色，outside 段显示为灰色区间。
+- 选中 `video_track` 时显示该轨迹的单轨 timeline：keyframe 圆点、outside 灰段、interpolated 虚线段和 prediction 标记；未选中轨迹时显示全局 keyframe 密度条。
+- `Shift+←/→` 复用同一套可见关键帧计算，跳过 outside 帧；如果没有选中轨迹，则保持原有 ±10 帧跳转。`,`/`.` 跳上/下可见关键帧，`Home`/`End` 跳首/末出现帧。
+- `Shift+drag` 时间轴可创建本地 loop region；播放越过范围末帧后 seek 回起始帧，逐帧和手动 seek 不被限制。
 - loop region、书签和跳转历史只存前端会话状态，按 task 写入 `sessionStorage`，不改变 annotation schema 或后端 API。
 - 书签以小三角 marker 显示，`Ctrl+M` 在当前帧加 / 删；显式 seek、bookmark 跳转和关键帧跳转写入最近 50 条跳转历史，播放 tick 不写历史。
-- v0.9.27 起，hover 时间轴会请求单帧预览图；ready 时显示缩略图，pending/error 时降级显示 frame/time。选中轨迹关键帧、书签帧和 loop region 边界会被预取。
-- v0.9.29 起，`useFrameClock.seekToAsync` 作为 `VideoStage.seekFrameAsync` 的底层原语；时间轴 scrub、逐帧、关键帧、书签和跳转历史都通过它跳帧。J/K/L jog 播放支持 `0.25x / 0.5x / 1x / 2x / 4x`，overlay 会显示当前速度，反向播放通过帧步进实现。
-- v0.9.35 起，review 模式的 `raw / final / diff` 同步作用于视频工作台：`raw` 显示 prediction / interpolated 来源，`final` 显示 manual / legacy，`diff` 叠加。评论协议增加可选 `anchor`，视频评论可记录当前 `frameIndex`、`trackId` 和来源，评论 chip 可点击跳回对应帧。
-- v0.9.39 起，工作台右下角复用 Minimap，放大后显示当前视口、当前帧位置和 ImageBitmap 已缓存帧范围；`window.__videoWorkbenchDiagnostics` 也包含 bitmap cache 与 viewport/minimap 状态。
+- hover 时间轴会请求单帧预览图；ready 时显示缩略图，pending/error 时降级显示 frame/time。选中轨迹关键帧、书签帧和 loop region 边界会被预取。
+- `useFrameClock.seekToAsync` 是 `VideoStage.seekFrameAsync` 的底层原语；时间轴 scrub、逐帧、关键帧、书签和跳转历史都通过它跳帧。J/K/L jog 播放支持 `0.25x / 0.5x / 1x / 2x / 4x`，overlay 会显示当前速度，反向播放通过帧步进实现。
+- review 模式的 `raw / final / diff` 同步作用于视频工作台：`raw` 显示 prediction / interpolated 来源，`final` 显示 manual / legacy，`diff` 叠加。评论协议增加可选 `anchor`，视频评论可记录当前 `frameIndex`、`trackId` 和来源，评论 chip 可点击跳回对应帧。
+- 工作台右下角复用 Minimap，放大后显示当前视口、当前帧位置和 ImageBitmap 已缓存帧范围；`window.__videoWorkbenchDiagnostics` 也包含 bitmap cache 与 viewport/minimap 状态。
 
 ## History / Offline
 
-图片工作台的 `useAnnotationHistory` 仍处理 annotation 级 create / update / delete。视频侧在 v0.9.19 增加 `videoKeyframe` command：
+图片工作台的 `useAnnotationHistory` 仍处理 annotation 级 create / update / delete。视频侧使用 `videoKeyframe` command：
 
 - 单个 `frame_index` 的关键帧新增、移动、`occluded` 切换只撤销该关键帧；标记"消失"改为写 `outside` 区间（独立撤销）。
 - 创建 / 删除整条 track、重命名类别仍按 annotation 级命令处理。

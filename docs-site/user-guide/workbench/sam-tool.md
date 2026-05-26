@@ -3,14 +3,16 @@ audience: [annotator]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-19
+last_reviewed: 2026-05-27
 ---
 
-# AI 工具组（Prompt-first，v0.10.2 重构 + v0.10.17 Magic Box）
+# AI 工具组
 
 > 点 / 框 / 文本 / 示例 / Magic Box — 选一种交互方式让 AI 把 polygon 画出来,或直接收紧到 bbox。
 
-v0.10.2 起，原「SAM 智能工具 + 子工具栏」改为**按交互范式拆分的 5 个独立工具**(v0.10.17 起含 Magic Box)。你直接在工具栏选「想怎么交互」，AI 自动跑对应的模型 prompt。
+<!-- history: prompt-first tools and Magic Box were introduced in separate releases; this page describes the current tool model. -->
+
+工具栏按交互范式拆成 5 个独立 AI 工具。你直接选择「想怎么交互」，AI 自动走对应模型 prompt。
 
 | 工具 | 图标 | 默认快捷键 | 后端要求 | 输出形态 |
 |---|---|---|---|---|
@@ -36,7 +38,7 @@ v0.10.2 起，原「SAM 智能工具 + 子工具栏」改为**按交互范式拆
 
 拖框，SAM 把框内主要前景的 polygon 找出来。比智能点更明确「就是这一块」，适合背景杂乱时。
 
-### Magic Box（v0.10.17+）— 拖框 → SAM 收紧到对象紧凑外接矩形
+### Magic Box — 拖框 → SAM 收紧到对象紧凑外接矩形
 
 拖框时不要求精准，拖一个**大致包住目标**的框就行;SAM 跑 mask → 自动取 mask 的紧凑外接矩形 → **直接落 bbox 标注**(不经过候选层确认)。
 
@@ -47,7 +49,7 @@ v0.10.2 起，原「SAM 智能工具 + 子工具栏」改为**按交互范式拆
 
 **使用场景**: 想要精准 bbox 但不想拖到对象边缘的精细位置 — 粗框一下,SAM 帮你把"距离对象边 5px"的浪费空间砍掉。
 
-**注意**: 落库的 bbox 类别取当前 `activeClass`(左侧调色板高亮的类);若未选类则用 SAM 返回的 label 或类别列表首个。Magic Box 的标注归 `ai_interactive` 工具单位,类别集从该单位读取(v0.10.17+ 工具维度类别详见[创建项目](../projects/index.md#工具维度类别--属性v01017))。
+**注意**: 落库的 bbox 类别取当前 `activeClass`(左侧调色板高亮的类);若未选类则用 SAM 返回的 label 或类别列表首个。Magic Box 的标注归 `ai_interactive` 工具单位,类别集从该单位读取（工具维度类别详见[创建项目](../projects/index.md#工具维度类别--属性)）。
 
 ### 文本提示（Text Prompt）— 不知道有几个目标就用文本
 
@@ -61,7 +63,7 @@ v0.10.2 起，原「SAM 智能工具 + 子工具栏」改为**按交互范式拆
 
 项目设置 → ML 模型 →「SAM 文本预标默认输出」可锁定项目级默认。
 
-### Exemplar 示例（v0.10.2 新增，仅 SAM 3）
+### Exemplar 示例（仅 SAM 3）
 
 拖框圈出图中**已有的一个示例实例**，SAM 3 PCS 一步返回**全图相似实例**。
 
@@ -91,7 +93,7 @@ AIToolDrawer 提供与文本提示相同的输出形态三选一（`□ 框` / `
 - `simplify_tolerance` — 多边形轮廓简化容差（像素）
 - `model_variant` / `embedding_cache_size` — 只读信息（禁用展示，不可改）
 
-模型变体（SAM2 / DINO 变体）在同一面板的「变体选择器」里切换。v0.10.40 起，backend 若上报 `/setup.supported_variants`，选项会显示显存估算、快速/均衡/精度档位和推荐标识；老 backend 未上报时仍回落到 `/setup.params` 的 enum。参数按**所绑定后端**动态显示——绑 sam3 不会出现 DINO 阈值，绑 gsam2 才有。
+模型变体（SAM2 / DINO 变体）在同一面板的「变体选择器」里切换。backend 若上报 `/setup.supported_variants`，选项会显示显存估算、快速/均衡/精度档位和推荐标识；未上报时回落到 `/setup.params` 的 enum。参数按**所绑定后端**动态显示——绑 sam3 不会出现 DINO 阈值，绑 gsam2 才有。
 
 调整后再次触发的 AI 请求会带上新参数。普通阈值/容差设置**按你个人 + 后端独立保存**（存入用户偏好），刷新或下次进工作台仍保留；工作台里的模型变体保持会话级，ai-pre 批量预标页面的变体选择则按 backend 记忆。
 

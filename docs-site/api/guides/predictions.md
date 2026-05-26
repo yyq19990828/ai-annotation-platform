@@ -3,28 +3,30 @@ audience: [dev]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-27
 ---
 
-# Predictions / Prediction Jobs
+# Predictions / Async Jobs
 
-两张表，两个用途：
+候选预测和后台任务分离：
 
 | 表 | 用途 | 端点前缀 |
 |---|---|---|
 | `predictions` | 当前可采纳的候选框（按 task） | `/tasks/:id/predictions` |
-| `prediction_jobs` | AI 跑过哪几次、状态、谁触发（v0.9.8） | `/admin/preannotate-jobs` |
+| `async_jobs` | 批量预标、失败重试、导出、视频追踪、连接器导入等后台任务历史 | `/async-jobs` |
+
+<!-- history: batch prediction history used to live in prediction_jobs; current SoT is async_jobs(kind=batch_predict). -->
 
 ## 触发预标
 
 ```http
-POST /api/v1/admin/projects/:id/preannotate
+POST /api/v1/projects/:id/preannotate
 {
-  "batch_id": 5,
+  "batch_id": "uuid",
   "prompt": "person . car . bicycle",
   "output_mode": "both",        // box / mask / both
-  "ml_backend_id": 3,
-  "alias_filter": ["person", "car"]   // v0.9.10 B-10
+  "ml_backend_id": "uuid",
+  "params": { "box_threshold": 0.35 }
 }
 ```
 
@@ -33,14 +35,13 @@ POST /api/v1/admin/projects/:id/preannotate
 ## 查询 jobs
 
 ```http
-GET /api/v1/admin/preannotate-jobs?cursor=&status=&search=
+GET /api/v1/async-jobs?kind=batch_predict&kind=prediction_retry&status=running&search=
+GET /api/v1/async-jobs/{job_id}
+POST /api/v1/async-jobs/{job_id}/cancel
+POST /api/v1/async-jobs/{job_id}/retry-failed
 ```
 
-cursor 翻页，列字段：`id`, `project_id`, `batch_id`, `status`, `created_at`, `started_at`, `finished_at`, `succeeded_count`, `failed_count`, `error`, `prompt`, `output_mode`。
-
-```http
-GET /api/v1/admin/preannotate-jobs/:job_id    # 详情
-```
+`kind` 支持重复 query 参数过滤多种任务。批量预标取消是协作式取消：pending job 会直接置 cancelled；running job 写 `payload.cancel_requested=true` 并 revoke Celery task，worker 在下一条预测边界收敛终态。
 
 ## 查询当前快照
 
@@ -48,7 +49,7 @@ GET /api/v1/admin/preannotate-jobs/:job_id    # 详情
 GET /api/v1/admin/preannotate-queue?project_id=&status=
 ```
 
-只看当前 `pre_annotated=true` 的批次（与 jobs 历史区分）。
+只看当前 `pre_annotated` 批次（与 jobs 历史区分）。批量清理预标队列仍走 `/admin/preannotate-queue/bulk-clear`。
 
 ## 查询任务预测
 
@@ -108,7 +109,7 @@ POST /api/v1/projects/:project_id/predictions/purge
 POST /api/v1/admin/batches/:id/reset
 ```
 
-清掉该批次所有 `predictions`，但 `prediction_jobs` 历史保留（审计需要）。重置后可重新跑预标。
+清掉该批次所有 `predictions` / `failed_predictions` / 对应 `batch_predict` async job 索引，并释放相关锁。重置后可重新跑预标。
 
 ## 接受 / 驳回
 

@@ -38,6 +38,16 @@ last_reviewed: ${today}
 
 `;
 
+function stripReleaseMarkers(text) {
+  return text
+    .replace(/\bv\d+\.\d+(?:\.\d+)?\+?\s*[·:：]\s*/g, "")
+    .replace(/§[A-Z]\s*[·:：]\s*/g, "")
+    .replace(/\s*[（(]v\d+\.\d+(?:\.\d+)?\+?(?:[^）)]*)[）)]/g, "")
+    .replace(/\bv\d+\.\d+(?:\.\d+)?\+?\s*/g, "")
+    .replace(/,\s*[）)]/g, ")")
+    .replace(/[（(]\s*[）)]/g, "");
+}
+
 function parseEnvExample(content) {
   const lines = content.split("\n");
   const sections = [];
@@ -54,7 +64,7 @@ function parseEnvExample(content) {
 
     // Section title comment: # 数据库 (PostgreSQL)
     if (/^#\s+\S/.test(trimmed) && currentSection === null) {
-      const title = trimmed.replace(/^#\s+/, "");
+      const title = stripReleaseMarkers(trimmed.replace(/^#\s+/, ""));
       currentSection = { title, rows: [] };
       sections.push(currentSection);
       pendingComments = [];
@@ -79,11 +89,11 @@ function parseEnvExample(content) {
       const commentedVar = trimmed.match(/^#\s*([\w_]+)=(.*)$/);
       if (commentedVar) {
         const [, key, defaultVal] = commentedVar;
-        const desc = pendingComments.join(" ").trim();
+        const desc = stripReleaseMarkers(pendingComments.join(" ").trim());
         pendingComments = [];
         currentSection.rows.push({ key, defaultVal: defaultVal.trim() || "—", desc, optional: true });
       } else {
-        pendingComments.push(trimmed.replace(/^#\s*/, ""));
+        pendingComments.push(stripReleaseMarkers(trimmed.replace(/^#\s*/, "")));
       }
       continue;
     }
@@ -98,7 +108,7 @@ function parseEnvExample(content) {
     const varMatch = trimmed.match(/^([\w_]+)=(.*)$/);
     if (varMatch) {
       const [, key, defaultVal] = varMatch;
-      const desc = pendingComments.join(" ").trim();
+      const desc = stripReleaseMarkers(pendingComments.join(" ").trim());
       pendingComments = [];
       currentSection.rows.push({ key, defaultVal: defaultVal.trim() || "—", desc, optional: false });
       continue;

@@ -3,33 +3,32 @@ audience: [dev]
 type: explanation
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-22
+last_reviewed: 2026-05-27
 ---
 
-# AI 模型集成（grounded-sam2-backend / 后续 sam3-backend）
+# AI 模型集成（grounded-sam2-backend / sam3-backend）
 
-> 配套版本：v0.9.1（M1 — embedding 缓存）。后续 v0.10.x SAM 3 接入后本文继续扩展。
-> 协议契约见 [`ml-backend-protocol.md`](../reference/ml-backend-protocol)；版本切片见 [`ROADMAP/[archived]0.9.x.md`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/ROADMAP/%5Barchived%5D0.9.x.md)。
+协议契约见 [`ml-backend-protocol.md`](../reference/ml-backend-protocol)。本页说明当前模型服务的部署拓扑、显存预算、缓存、并发控制和能力协商。
+
+<!-- history: the original v0.9/v0.10 release-slice notes are folded into the current model integration guide. -->
 
 ---
 
 ## 1. 部署拓扑
 
 ```
-apps/api (FastAPI 3.11) ──HTTP /predict──▶ grounded-sam2-backend  (v0.9.x)
+apps/api (FastAPI 3.11) ──HTTP /predict──▶ grounded-sam2-backend
                                             FastAPI + PyTorch 2.3 + CUDA 12.1
                                             GroundingDINO + SAM 2.1
-                                            + LRU embedding cache (M1)
-                       └──HTTP /predict──▶ sam3-backend            (v0.10.x，并存)
+                                            + LRU model / embedding cache
+                       └──HTTP /predict──▶ sam3-backend
                                             FastAPI + PyTorch 2.7 + CUDA 12.6
                                             SAM 3
 ```
 
-**SAM 系列必须独立服务进程**：v0.9.x 锁 Python 3.10 / torch 2.3 / CUDA 12.1（GroundingDINO Deformable Attention 算子要 nvcc 现场编译），与 v0.10.x SAM 3 的 3.12 / 2.7 / 12.6 互不兼容。共用进程会触发 ABI 冲突（TORCH_CUDA_ARCH_LIST、cudnn 版本）。
+**SAM 系列必须独立服务进程**：grounded-sam2-backend 与 sam3-backend 使用不同 Python、torch、CUDA 与权重依赖；GroundingDINO Deformable Attention 算子还需要 nvcc 现场编译。共用进程会触发 ABI 冲突（TORCH_CUDA_ARCH_LIST、cudnn 版本）。
 
 ### 1.1 docker-compose profile + nvidia 资源预留
-
-> **v0.9.14 通用模板**：以 `grounded-sam2-backend` 为参考实例，v0.10.x `sam3-backend` 接入时复用相同骨架（仅替换 service 名 / 镜像 / 端口）。
 
 每个 backend service 必备四项：① 独立 service + 独立端口；② `profiles: ["gpu"]` opt-in（dev 默认 CPU mock 不启 GPU profile，避免开发机被占用）；③ `deploy.resources.reservations.devices` 申请 nvidia GPU；④ `healthcheck start_period=120s`（首次冷启 ~900MB checkpoint 下载）。
 
@@ -70,13 +69,13 @@ services:
 | 场景 | 启动命令 | GPU 需求 | 显存预算 | 备注 |
 |---|---|---|---|---|
 | **dev (无 GPU 机)** | `docker compose up` | 0 | 0 | grounded-sam2-backend 不启动, ml_backends 行 state=stopped, 标注页前端走 disabled UI |
-| **dev (有 GPU)** | `docker compose --profile gpu up` | 1 卡 | ~3GB (tiny) | 单变体常驻; 改变体 = 改 env + rebuild |
+| **dev (有 GPU)** | `docker compose --profile gpu up` | 1 卡 | ~3GB (tiny) | 默认启动 grounded-sam2 主变体，额外变体按 prefetch / model pool 配置 |
 | **生产 (单租户)** | `docker compose --profile gpu up -d` | ≥ 1 卡 | 见 §1.2 | 按显存档位选 SAM_VARIANT |
 | **生产 (多变体并存)** | 拆 service: `gsam2-tiny` / `gsam2-large` (各自 profile) | ≥ 2 卡 (推荐) 或 1 张 ≥ 24GB | 累加 §1.2 | C → B 升级路径见 ROADMAP §A 注册 backend 选变体 |
 
 ### 1.2 显存预算 + variant 选型
 
-每个 backend 常驻 = SAM 模型权重 + GroundingDINO 权重 + 推理时 mask buffer + embedding cache buffer。**SAM_VARIANT 与 DINO_VARIANT 通过 env 锁死**（v0.9.x 阶段一变体一容器, 运行期不可变；v0.10.x 阶段 1 计划升级为注册时声明，参见 ROADMAP §A AI 模型）。
+每个 backend 常驻 = SAM 模型权重 + GroundingDINO 权重 + 推理时 mask buffer + embedding cache buffer。`SAM_VARIANT` / `DINO_VARIANT` 是默认主变体；请求也可以通过 `/predict context` 携带 `sam_variant` / `dino_variant`，由 backend 内部 ModelPool 按 LRU 缓存和驱逐。
 
 | SAM 变体 | 模型权重 | 推理时峰值 | 推荐显存 | 推荐卡 |
 |---|---|---|---|---|
@@ -87,7 +86,7 @@ services:
 
 GroundingDINO 额外占用：`T` ~700MB / `B` ~1.5GB（仅 mask + box 模式需要，box 模式跳过 SAM 仍占 DINO）。
 
-embedding cache buffer（v0.9.1）：`EMBEDDING_CACHE_CAPACITY` 默认 32 entries，每 entry ~5MB（HxW 256-d feature map 浮点），cap=32 ≈ 160MB；按 GPU 显存富余度调到 16~64。
+embedding cache buffer：`EMBEDDING_CACHE_SIZE` 默认 16 entries；按 GPU 显存富余度调到 16~64，`large` 变体建议保守配置。
 
 **显存预算表（典型 dev / 生产组合）**：
 
@@ -98,11 +97,11 @@ embedding cache buffer（v0.9.1）：`EMBEDDING_CACHE_CAPACITY` 默认 32 entrie
 | 3090 / A4000 (24GB) | large | T 或 B | ~7.7-8.5GB | 2-3 (多容器并存) |
 | A100 40GB / H100 | large | B | ~8.5GB | 4+ (整租户多变体池) |
 
-**多容器并存**（生产高负载）：把 `grounded-sam2-backend` 拆成 `gsam2-tiny` / `gsam2-large` 两个 service（独立 profile + 独立端口），按业务 tier 路由不同 batch（tier-A 高精度走 large，tier-B 快通走 tiny）。运行期切换 / 模型 pool 在 ROADMAP §A 阶段 2 (B) 触发后做。
+**多容器并存**（生产高负载）：把 `grounded-sam2-backend` 拆成 `gsam2-tiny` / `gsam2-large` 两个 service（独立 profile + 独立端口），按业务 tier 路由不同 batch（tier-A 高精度走 large，tier-B 快通走 tiny）。单容器内需要少量变体切换时，优先使用 ModelPool 并配置 `PREFETCH_SAM_VARIANTS` / `PREFETCH_DINO_VARIANTS`。
 
 ### 1.3 镜像基础 + checkpoint 同步
 
-镜像基于 `pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel`（**devel** 必需，runtime 镜像缺 nvcc 触发 GroundingDINO 编译失败）。Dockerfile 末段 `pip install -e ../_shared/mask_utils` 把共享 mask 转换包链入容器（v0.9.14 起包内含 `mask_to_multi_polygon`，详 ADR-0013）。
+镜像基于 `pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel`（**devel** 必需，runtime 镜像缺 nvcc 触发 GroundingDINO 编译失败）。Dockerfile 末段 `pip install -e ../_shared/mask_utils` 把共享 mask 转换包链入容器，避免 grounded-sam2 与 sam3 各自维护 mask → polygon 转换逻辑。
 
 checkpoint 同步：`apps/grounded-sam2-backend/scripts/download_checkpoints.py` 按 SAM_VARIANT / DINO_VARIANT env 拉 hf-mirror 镜像；首次冷启或换 variant 时跑一次。生产环境推荐挂 PV / EBS 把 `/app/checkpoints` 持久化（~900MB-2GB），避免 image rebuild 重新下载。
 
@@ -120,7 +119,7 @@ context.type == "text"   ┘   先 GroundingDINO(caption→boxes)，再 SAM
 
 ---
 
-## 3. SAM 2 image embedding 缓存（v0.9.1 / M1）
+## 3. SAM 2 image embedding 缓存
 
 ### 3.1 为什么缓存
 工作台 `S` 工具的典型操作是同一张图反复点击 / 拖框（先 positive point 再 negative point 修边、调 bbox 看效果）。每次 SAM 2 `set_image()` 计算 image embedding ≈ 1.5 s（4060 / tiny），是热点。
@@ -168,7 +167,7 @@ SAM2ImagePredictor `set_image()` 之后状态写在 `_features` / `_orig_hw` / `
 
 ---
 
-## 4. 观测（v0.9.1）
+## 4. 观测
 
 ### 4.1 端点
 - `GET /metrics` — Prometheus exposition（`generate_latest()` 原始格式）。
@@ -216,7 +215,7 @@ histogram_quantile(0.95,
 
 ---
 
-## 4.5 per-backend max_concurrency 限速 (v0.9.12)
+## 4.5 per-backend max_concurrency 限速
 
 `ml_backends.extra_params.max_concurrency` (JSONB 字段, 默认 4) 控制平台到该 backend 的并发 `/predict` 上限. 实现:
 
@@ -238,9 +237,9 @@ histogram_quantile(0.95,
 }
 ```
 
-**调整后必须重启 worker**: 信号量按 backend_id 永久缓存, 改字段后须 `docker compose restart api celery-worker` 才能生效. 工时换简洁性的取舍 — 真要运行期热更新需要把 cache key 改 `(backend_id, max_cc)` 或加 invalidation 机制, 留 v0.10.x sam3 注册 + UI 配置同窗口.
+**调整后必须重启 worker**：信号量按 backend_id 永久缓存，改字段后须 `docker compose restart api celery-worker` 才能生效。若要运行期热更新，需要把 cache key 改为 `(backend_id, max_cc)` 或加 invalidation 机制。
 
-**注册表单 UI 暴露 (v0.9.13)**: `MlBackendFormModal` 在「认证方式」下方加「最大并发」number input (1-32, 留空走默认 4), 提交时合并到 `extra_params.max_concurrency` (覆盖 textarea JSON 同名键). `RegisteredBackendsTab` 列表行类型列旁显示 `≤N 并发` chip, 缺省值不渲染避免列表噪音. 不再需要直接手改 DB JSONB 字段.
+**注册表单 UI**：`MlBackendFormModal` 在「认证方式」下方提供「最大并发」number input（1-32，留空走默认 4），提交时合并到 `extra_params.max_concurrency`（覆盖 textarea JSON 同名键）。`RegisteredBackendsTab` 列表行类型列旁显示 `≤N 并发` chip，缺省值不渲染避免列表噪音。不再需要直接手改 DB JSONB 字段。
 
 **前端可见性**: `/admin/preannotate-summary` 透传 `ml_backend_max_concurrency` 给 `ProjectCardGrid` 卡片 + `ProjectDetailPanel` 头部展示「最多 N 并发」, 多 batch 并行预标时给 admin 心理预期.
 
@@ -254,9 +253,9 @@ histogram_quantile(0.95,
 
 ---
 
-## 7. 能力协商 + 模态派生（v0.10.37）
+## 7. 能力协商 + 模态派生
 
-平台从 v0.10.37 起对 backend 的「能力 / 模态」有持久化感知。实现集中在两个文件：
+平台对 backend 的「能力 / 模态」有持久化感知。实现集中在两个文件：
 - `apps/api/app/services/ml_capabilities.py`（`extract_capabilities` + `derive_modalities`）
 - `apps/api/app/services/ml_backend.py`（`check_health`）
 
@@ -300,7 +299,7 @@ if caps.get("supported_trackers"):  # 非空 ⇒ video
     modalities.append("video")
 ```
 
-`grounded-sam2-backend` 只有 `supported_prompts` 时 `modalities=["image"]`；v0.10.35 接通真实 video tracker 后上报 `supported_trackers: ["sam2_video"]`，`modalities=["image","video"]`。
+`grounded-sam2-backend` 只有 `supported_prompts` 时 `modalities=["image"]`；上报 `supported_trackers: ["sam2_video"]` 时 `modalities=["image","video"]`。
 
 ### 7.4 绑定校验（PATCH /projects/{id}）
 
@@ -308,15 +307,6 @@ if caps.get("supported_trackers"):  # 非空 ⇒ video
 
 ### 7.5 `is_interactive` 改派生对账
 
-v0.10.37 前 `is_interactive` 由注册表单手填。v0.10.37 起改为：每次 `check_health` 从 `/setup.is_interactive` 自报回写，注册/编辑表单不再含手填 checkbox（改为「健康检查时自动探测」提示），create/update payload 不带 `is_interactive`。
+`is_interactive` 由 backend `/setup.is_interactive` 自报并在每次 `check_health` 回写；注册/编辑表单不再手填 checkbox（只显示「健康检查时自动探测」提示），create/update payload 不带 `is_interactive`。
 
 ---
-
-## 6. 后续切片（v0.9.x 剩余）
-
-| 切片 | 文档影响 |
-|---|---|
-| v0.9.2 工作台 `S` 工具 + 文本入口 | 用户手册新增 `sam-tool.md` |
-| v0.9.3 mask→polygon 调参 + 抽 `_shared/mask_utils/` | 本文 §3 增「polygon 简化策略」段 |
-| v0.9.4 `/ai-pre` 文本批量预标 UI | 用户手册新增 `ai-preannotate.md` |
-| v0.9.5 显存监控进 `/health` | 本文 §1 + ADR-0012 / 0013 |

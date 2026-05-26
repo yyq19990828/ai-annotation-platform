@@ -3,7 +3,7 @@ audience: [ops]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-27
 ---
 
 # 安全模型
@@ -57,7 +57,7 @@ super_admin  > project_admin > reviewer > annotator > viewer
 
 > 注：`project_admin` 不能创建 `super_admin` / 不能改对方为 `viewer`（`apps/api/app/api/v1/users.py:27` 的注释）。
 >
-> `annotator_id` 单值绑定到 `batch.annotator_id`（v0.7.0 单值化），同一 batch 内任务都派给该一人；reviewer 通过 `task.reviewer_id` 锁定。
+> `annotator_id` 单值绑定到 `batch.annotator_id`，同一 batch 内任务都派给该一人；reviewer 通过 `task.reviewer_id` 锁定。
 
 ### 2.2 项目级 RBAC
 
@@ -77,14 +77,14 @@ super_admin  > project_admin > reviewer > annotator > viewer
 
 平台使用对称 JWT（HS256），密钥从 `SECRET_KEY` env 读，默认值在 production 启动**会触发 RuntimeError**（`apps/api/app/main.py:50-57`）。
 
-Token claims（v0.7.8）：
+Token claims：
 
 ```json
 {
   "sub": "<user_uuid>",
   "role": "<UserRole value>",
-  "jti": "<token_uuid>",      // v0.7.8 · 用于黑名单
-  "gen": 0,                   // v0.7.8 · 用户代际号；改变即旧 token 全失效
+  "jti": "<token_uuid>",      // 用于黑名单
+  "gen": 0,                   // 用户代际号；改变即旧 token 全失效
   "exp": 1745020800,
   "iat": 1744934400
 }
@@ -92,7 +92,7 @@ Token claims（v0.7.8）：
 
 默认 TTL = 24 小时（`ACCESS_TOKEN_EXPIRE_MINUTES`）。
 
-### 3.2 注销机制（v0.7.8）
+### 3.2 注销机制
 
 ```mermaid
 sequenceDiagram
@@ -127,7 +127,7 @@ sequenceDiagram
 - 至少包含一个大写字母、一个小写字母、一个数字
 - 不限符号（兼容性优先）
 
-前端 RegisterPage / InvitationAcceptPage 用同一规则做实时强度提示（v0.7.8 对齐）。
+前端 RegisterPage / InvitationAcceptPage 用同一规则做实时强度提示。
 
 ### 3.4 失败登录限流
 
@@ -167,7 +167,7 @@ sequenceDiagram
 - TTL 默认 7 天（`INVITATION_TTL_DAYS`）。过期后 token 直接拒绝、不返回 email 防枚举。
 - `super_admin` 邀请 super_admin 时 audit detail 含特殊标记，便于复盘。
 
-### 4.1 开放注册（v0.7.7）
+### 4.1 开放注册
 
 `POST /auth/register-open`，`ALLOW_OPEN_REGISTRATION=true` 时启用。新用户角色固定 `viewer`（最低权限），3/min 限流。
 
@@ -193,7 +193,7 @@ sequenceDiagram
 | `request_id` | str | 关联同请求其它日志 / Sentry |
 | `created_at` | timestamptz | 默认 `now()` |
 
-### 5.2 不可变性（v0.7.8）
+### 5.2 不可变性
 
 ```sql
 -- alembic/versions/0032_audit_log_immutability.py
@@ -215,7 +215,7 @@ CREATE TRIGGER trg_audit_log_no_delete BEFORE DELETE ON audit_logs ...
 - 任务：`task.submit/withdraw/review_claim/approve/reject/reopen`
 - 标注：`annotation.create/update/delete/attribute_change/comment_add/comment_delete`
 - 数据集：`dataset.create/delete/link/unlink`
-- 导出：`project.export/batch.export`（v0.7.8 新增）
+- 导出：`project.export/batch.export`
 - bug 反馈：`bug_report.created/status_changed`
 - 系统：`system.bootstrap_admin`
 
@@ -225,7 +225,7 @@ CREATE TRIGGER trg_audit_log_no_delete BEFORE DELETE ON audit_logs ...
 
 ## 6. HTTP 响应头与 CORS
 
-### 6.1 Production 安全响应头（v0.8.8）
+### 6.1 Production 安全响应头
 
 `apps/api/app/middleware/security_headers.py` 在 `environment == "production"` 时由 `main.py` 注册（详见 [ADR-0010](/dev/adr/0010-security-headers-middleware)）。dev / staging 不启用，避免本地热更新被 inline script 打挂。
 
@@ -250,7 +250,7 @@ font-src 'self' data:;
 object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 ```
 
-生产 HTML 由 Nginx 注入 CSP header，并通过 `sub_filter` 把 vite build 时写入的 `__CSP_NONCE__` 占位符替换成同一个 `$request_id`；API 响应路径不含 HTML，由 FastAPI middleware 使用无 nonce 的 `style-src 'self'` / `script-src 'self' https://challenges.cloudflare.com`。`https://challenges.cloudflare.com` 是 Turnstile widget 的固定来源（v0.8.7 引入 CAPTCHA 后所必需）。
+生产 HTML 由 Nginx 注入 CSP header，并通过 `sub_filter` 把 vite build 时写入的 `__CSP_NONCE__` 占位符替换成同一个 `$request_id`；API 响应路径不含 HTML，由 FastAPI middleware 使用无 nonce 的 `style-src 'self'` / `script-src 'self' https://challenges.cloudflare.com`。`https://challenges.cloudflare.com` 是 Turnstile widget 的固定来源。
 
 **新增第三方依赖时的 checklist**：
 
@@ -284,7 +284,7 @@ production 收紧的目的：避免误把 dev regex 上线放任何 localhost �
 
 `GET /api/v1/projects/{id}/export?format=...` 和 `GET /api/v1/projects/{id}/batches/{bid}/export` 都会写 `audit_logs.action = project.export / batch.export`，detail 含 `format` + `task_count`。审计页可按 `action ILIKE '%.export'` 筛查异常导出。
 
-下载者签名水印（PDF/zip 内嵌发起人邮箱）已在 ROADMAP §B 列为 P2，未实现。
+下载者签名水印（PDF/zip 内嵌发起人邮箱）仍在路线图中，当前导出审计依赖 audit log 和对象存储访问日志。
 
 ### 7.2 文件存取
 
