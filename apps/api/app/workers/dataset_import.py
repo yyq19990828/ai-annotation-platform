@@ -7,7 +7,7 @@ from contextlib import suppress
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import BinaryIO
+from typing import BinaryIO, Iterable
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -23,6 +23,7 @@ from app.services import async_job as async_job_svc
 from app.services.async_job_notify import notify_job_terminal
 from app.services.dataset import DatasetService, IngestOutcome
 from app.services.sources import build_adapter
+from app.services.sources.base import SourceObject
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
@@ -65,6 +66,33 @@ async def _finish_cancelled(
         job.status = AsyncJobStatus.CANCELLED.value
         job.completed_at = datetime.now(timezone.utc)
         job.result = result
+
+
+def _collect_within_limits(
+    objects: Iterable[SourceObject],
+) -> tuple[list[SourceObject], int]:
+    """流式收集对象并在超限时立即短路抛错。
+
+    避免对指向超大 bucket/目录的连接器先全量物化列表再判断限额——那样 worker
+    可能在触达 max_files / max_total_bytes 之前就 OOM。这里在枚举过程中对计数与
+    字节累加做短路：超限即抛 ValueError 中止，内存上界钳制在 max_files+1 条目。
+    """
+    collected: list[SourceObject] = []
+    total_bytes = 0
+    for obj in objects:
+        collected.append(obj)
+        total_bytes += max(0, obj.size)
+        if len(collected) > settings.dataset_import_max_files:
+            raise ValueError(
+                "import file count exceeds limit "
+                f"(> {settings.dataset_import_max_files})"
+            )
+        if total_bytes > settings.dataset_import_max_total_bytes:
+            raise ValueError(
+                "import total bytes exceeds limit "
+                f"(> {settings.dataset_import_max_total_bytes})"
+            )
+    return collected, total_bytes
 
 
 def _close_stream(stream: BinaryIO) -> None:
@@ -137,19 +165,10 @@ async def _run_dataset_import(
                     raise ValueError("storage connection not found")
 
                 adapter = await build_adapter(db, conn)
-                objects = list(adapter.list(source_path, recursive, include_globs))
+                objects, total_bytes = _collect_within_limits(
+                    adapter.list(source_path, recursive, include_globs)
+                )
                 total = len(objects)
-                total_bytes = sum(max(0, obj.size) for obj in objects)
-                if total > settings.dataset_import_max_files:
-                    raise ValueError(
-                        "import file count exceeds limit "
-                        f"({total} > {settings.dataset_import_max_files})"
-                    )
-                if total_bytes > settings.dataset_import_max_total_bytes:
-                    raise ValueError(
-                        "import total bytes exceeds limit "
-                        f"({total_bytes} > {settings.dataset_import_max_total_bytes})"
-                    )
 
                 await async_job_svc.update_progress(
                     db,

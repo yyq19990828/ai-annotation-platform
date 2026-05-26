@@ -27,7 +27,13 @@ def _under_base(base_path: str, path: str) -> bool:
     base = _clean_remote(base_path)
     candidate = _clean_remote(path)
     if base in {"", "."}:
-        return not candidate.startswith("../") and candidate != ".."
+        # base 未设具体值（默认家目录）时，绝对路径会逃出预期子树，等同未限定——
+        # 一并拒绝绝对路径与 '..'，迫使使用者配置具体 base_path 后才能用绝对 source_path。
+        return (
+            not candidate.startswith("/")
+            and not candidate.startswith("../")
+            and candidate != ".."
+        )
     return candidate == base or candidate.startswith(f"{base.rstrip('/')}/")
 
 

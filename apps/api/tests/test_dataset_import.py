@@ -16,9 +16,10 @@ from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.storage_connection import StorageConnection
 from app.services import async_job as async_job_svc
 from app.services.dataset import DatasetService
-from app.services.sources.base import SourcePathError
+from app.services.sources.base import SourceObject, SourcePathError
 from app.services.sources.s3 import S3CompatibleSource, validate_s3_source_path
 from app.services.sources.sftp import SftpSource, validate_sftp_source_path
+from app.workers import dataset_import
 from app.services.storage import storage_service
 
 
@@ -83,6 +84,60 @@ def test_source_path_traversal_rejected():
         validate_sftp_source_path({"base_path": "/data/imports"}, "../secret")
     with pytest.raises(SourcePathError):
         validate_sftp_source_path({"base_path": "/data/imports"}, "/data/other")
+
+
+def test_sftp_absolute_source_path_rejected_without_base():
+    # base_path 未设 / 为 "." 时，绝对 source_path 会逃出家目录子树，必须拒绝
+    with pytest.raises(SourcePathError):
+        validate_sftp_source_path({}, "/etc")
+    with pytest.raises(SourcePathError):
+        validate_sftp_source_path({"base_path": "."}, "/etc/passwd")
+    # 具体 base 下、位于 base 内的绝对路径仍允许
+    validate_sftp_source_path({"base_path": "/data"}, "/data/batch")
+
+
+def _obj(name: str, size: int = 1) -> SourceObject:
+    return SourceObject(relpath=name, size=size, mtime=None, etag=None)
+
+
+def test_collect_within_limits_short_circuits_on_file_count(monkeypatch):
+    monkeypatch.setattr(dataset_import.settings, "dataset_import_max_files", 3)
+    monkeypatch.setattr(
+        dataset_import.settings, "dataset_import_max_total_bytes", 10**12
+    )
+    consumed = 0
+
+    def infinite():
+        nonlocal consumed
+        i = 0
+        while True:  # 若未短路将无限消费，测试会卡死 → 证明短路
+            consumed += 1
+            yield _obj(f"f{i}.jpg")
+            i += 1
+
+    with pytest.raises(ValueError, match="file count exceeds limit"):
+        dataset_import._collect_within_limits(infinite())
+    # 只消费到超限即停（max_files + 1），不会全量物化
+    assert consumed == 4
+
+
+def test_collect_within_limits_short_circuits_on_total_bytes(monkeypatch):
+    monkeypatch.setattr(dataset_import.settings, "dataset_import_max_files", 10**6)
+    monkeypatch.setattr(dataset_import.settings, "dataset_import_max_total_bytes", 10)
+
+    with pytest.raises(ValueError, match="total bytes exceeds limit"):
+        dataset_import._collect_within_limits(_obj(f"f{i}.bin", size=6) for i in range(100))
+
+
+def test_collect_within_limits_returns_all_when_under(monkeypatch):
+    monkeypatch.setattr(dataset_import.settings, "dataset_import_max_files", 10)
+    monkeypatch.setattr(dataset_import.settings, "dataset_import_max_total_bytes", 1000)
+
+    collected, total_bytes = dataset_import._collect_within_limits(
+        _obj(f"f{i}.jpg", size=2) for i in range(3)
+    )
+    assert [o.relpath for o in collected] == ["f0.jpg", "f1.jpg", "f2.jpg"]
+    assert total_bytes == 6
 
 
 class _FakeSftpAttr:
