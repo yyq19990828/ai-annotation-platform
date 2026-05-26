@@ -173,6 +173,7 @@
 | PUT | `/{dataset_id}` |
 | DELETE | `/{dataset_id}` |
 | GET | `/{dataset_id}/items` |
+| POST | `/{dataset_id}/import-from-connection` |
 | POST | `/{dataset_id}/items/upload-init` |
 | POST | `/{dataset_id}/items/upload-complete/{item_id}` |
 | POST | `/{dataset_id}/items/upload-zip` |
@@ -313,6 +314,17 @@
 | GET | `/video-assets/failures` |
 | POST | `/video-assets/retry` |
 
+## `storage_connections.py`
+
+| Method | Path |
+|---|---|
+| GET | `/allowlist` |
+| PUT | `/allowlist` |
+| GET | `/{conn_id}` |
+| PATCH | `/{conn_id}` |
+| DELETE | `/{conn_id}` |
+| POST | `/{conn_id}/test` |
+
 ## `system_settings.py`
 
 | Method | Path |
@@ -402,4 +414,4 @@
 
 ---
 
-_共 36 模块 / 230 路由_
+_共 37 模块 / 237 路由_
