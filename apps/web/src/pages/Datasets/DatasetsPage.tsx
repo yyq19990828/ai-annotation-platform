@@ -13,6 +13,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useDatasets, useDatasetItems, useCreateDataset, useDatasetProjects, useUnlinkProject, useLinkProject, useScanDatasetItems, useBackfillDimensions, useBackfillMedia } from "@/hooks/useDatasets";
 import { datasetsApi } from "@/api/datasets";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
+import { StorageConnectionsPanel } from "@/components/connections/StorageConnectionsPanel";
 import { useProjects } from "@/hooks/useProjects";
 import type { DatasetResponse } from "@/api/datasets";
 import type { ProjectResponse } from "@/api/projects";
@@ -555,6 +556,8 @@ export function DatasetsPage() {
 
       {/* Create form */}
       {showCreate && <CreateDatasetForm onClose={() => setShowCreate(false)} onCreate={handleCreate} />}
+
+      <StorageConnectionsPanel />
 
       {/* Main table */}
       <Card>

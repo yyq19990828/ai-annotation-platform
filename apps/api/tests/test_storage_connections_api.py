@@ -61,6 +61,18 @@ async def test_allowlist_super_admin_only(httpx_client, super_admin, project_adm
     assert r.json()["entries"] == ["8.8.8.0/24"]
 
 
+async def test_allowlist_uses_env_default_when_db_unset(
+    httpx_client, super_admin, monkeypatch
+):
+    _, super_token = super_admin
+    monkeypatch.setattr(settings, "connector_host_allowlist", ["8.8.8.0/24"])
+    r = await httpx_client.get(
+        "/api/v1/storage-connections/allowlist", headers=_h(super_token)
+    )
+    assert r.status_code == 200
+    assert r.json()["entries"] == ["8.8.8.0/24"]
+
+
 async def test_create_global_connection_redacts_secret(
     httpx_client, super_admin, crypto_key
 ):
@@ -112,16 +124,69 @@ async def test_project_admin_cannot_create_global(
     assert r.status_code == 403
 
 
-async def test_project_scope_requires_project_id(
-    httpx_client, super_admin, crypto_key
+async def test_owner_scope_does_not_write_project_id(
+    httpx_client, super_admin, project_admin, crypto_key
 ):
     _, super_token = super_admin
+    user, pm_token = project_admin
     await _set_allowlist(httpx_client, super_token, ["8.8.8.0/24"])
-    payload = {**_S3_CONN, "scope": "project", "project_id": None}
+    payload = {**_S3_CONN, "scope": "owner", "project_id": None}
     r = await httpx_client.post(
-        "/api/v1/storage-connections", headers=_h(super_token), json=payload
+        "/api/v1/storage-connections", headers=_h(pm_token), json=payload
     )
-    assert r.status_code == 400
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["scope"] == "owner"
+    assert body["project_id"] is None
+    assert body["created_by"] == str(user.id)
+
+
+async def test_owner_scope_list_and_usage_is_owner_or_global_only(
+    httpx_client, super_admin, project_admin, crypto_key
+):
+    _, super_token = super_admin
+    _, pm_token = project_admin
+    await _set_allowlist(httpx_client, super_token, ["8.8.8.0/24"])
+
+    global_res = await httpx_client.post(
+        "/api/v1/storage-connections",
+        headers=_h(super_token),
+        json=_S3_CONN,
+    )
+    assert global_res.status_code == 201, global_res.text
+    global_id = global_res.json()["id"]
+
+    own_res = await httpx_client.post(
+        "/api/v1/storage-connections",
+        headers=_h(pm_token),
+        json={**_S3_CONN, "name": "pm-oss", "scope": "owner"},
+    )
+    assert own_res.status_code == 201, own_res.text
+    own_id = own_res.json()["id"]
+
+    other_res = await httpx_client.post(
+        "/api/v1/storage-connections",
+        headers=_h(super_token),
+        json={**_S3_CONN, "name": "admin-private", "scope": "owner"},
+    )
+    assert other_res.status_code == 201, other_res.text
+    other_id = other_res.json()["id"]
+
+    listed = await httpx_client.get(
+        "/api/v1/storage-connections", headers=_h(pm_token)
+    )
+    assert listed.status_code == 200
+    ids = {item["id"] for item in listed.json()}
+    assert ids == {global_id, own_id}
+
+    hidden = await httpx_client.get(
+        f"/api/v1/storage-connections/{other_id}", headers=_h(pm_token)
+    )
+    assert hidden.status_code == 404
+    unusable = await httpx_client.post(
+        f"/api/v1/storage-connections/{other_id}/test", headers=_h(pm_token)
+    )
+    assert unusable.status_code == 404
 
 
 async def test_create_503_when_crypto_unconfigured(

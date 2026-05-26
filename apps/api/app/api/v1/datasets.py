@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import assert_project_visible, get_db, get_current_user, require_roles
+from app.deps import get_db, get_current_user, require_roles
 from app.db.enums import UserRole
 from app.db.models.user import User
 from app.schemas.dataset import (
@@ -32,18 +32,6 @@ from app.services.storage import storage_service
 router = APIRouter()
 
 _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
-
-
-def _role_value(role) -> str:
-    return getattr(role, "value", role)
-
-
-async def _assert_connection_visible(db: AsyncSession, user: User, conn) -> None:
-    if _role_value(user.role) == UserRole.SUPER_ADMIN.value or conn.scope == "global":
-        return
-    if conn.project_id is None:
-        raise HTTPException(status_code=404, detail="连接器不存在")
-    await assert_project_visible(conn.project_id, db, user)
 
 
 @router.get("", response_model=DatasetListResponse)
@@ -159,7 +147,9 @@ async def import_from_connection(
     from app.services import connector_guard
     from app.services.sources import SourcePathError, validate_source_path
     from app.services.storage_connection import (
+        ConnectorAccessDenied,
         StorageConnectionService,
+        assert_connection_usable,
         target_host,
     )
     from app.workers.dataset_import import run_dataset_import
@@ -172,7 +162,10 @@ async def import_from_connection(
     conn = await StorageConnectionService.get(db, payload.connection_id)
     if conn is None:
         raise HTTPException(status_code=404, detail="连接器不存在")
-    await _assert_connection_visible(db, current_user, conn)
+    try:
+        assert_connection_usable(current_user, conn)
+    except ConnectorAccessDenied:
+        raise HTTPException(status_code=404, detail="连接器不存在")
     try:
         await connector_guard.assert_connection_target_allowed(db, target_host(conn))
         validate_source_path(conn, payload.source_path)

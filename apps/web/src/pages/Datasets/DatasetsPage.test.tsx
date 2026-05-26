@@ -43,6 +43,10 @@ vi.mock("@/components/datasets/ImportDatasetWizard", () => ({
   ImportDatasetWizard: ({ open }: any) => (open ? <div data-testid="import-wizard" /> : null),
 }));
 
+vi.mock("@/components/connections/StorageConnectionsPanel", () => ({
+  StorageConnectionsPanel: () => <div data-testid="storage-connections-panel" />,
+}));
+
 vi.mock("@tanstack/react-query", async () => {
   const actual = await vi.importActual<any>("@tanstack/react-query");
   return {

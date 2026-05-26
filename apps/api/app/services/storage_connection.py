@@ -1,4 +1,4 @@
-"""v0.11.14 · 存储连接器 service：CRUD + 连通性测试。
+"""v0.11.16 · 存储连接器 service：CRUD + 连通性测试。
 
 密钥加解密只在本层发生，绝不出层；所有出网操作（test）前先过 connector_guard
 （白名单 + SSRF）。实际数据拉取的 SourceAdapter 在 v0.11.15。
@@ -16,7 +16,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import decrypt_secret, encrypt_secret
+from app.db.enums import UserRole
 from app.db.models.storage_connection import StorageConnection
+from app.db.models.user import User
 from app.services import connector_guard
 
 # 各 kind 的必填字段
@@ -35,6 +37,41 @@ _TEST_SAMPLE_LIMIT = 20
 
 class ConnectorValidationError(Exception):
     """config/secret 校验失败。"""
+
+
+class ConnectorAccessDenied(Exception):
+    """当前用户不可使用或管理该连接器。"""
+
+
+def _role_value(role) -> str:
+    return getattr(role, "value", role)
+
+
+def _is_super_admin(user: User) -> bool:
+    return _role_value(user.role) == UserRole.SUPER_ADMIN.value
+
+
+def can_use_connection(user: User, conn: StorageConnection) -> bool:
+    if _is_super_admin(user) or conn.scope == "global":
+        return True
+    return conn.created_by is not None and conn.created_by == user.id
+
+
+def assert_connection_usable(user: User, conn: StorageConnection) -> None:
+    if not can_use_connection(user, conn):
+        raise ConnectorAccessDenied("连接器不存在")
+
+
+def assert_connection_admin(user: User, conn: StorageConnection) -> None:
+    if conn.scope == "global":
+        if _is_super_admin(user):
+            return
+        raise ConnectorAccessDenied("仅超级管理员可管理全局连接器")
+    if _is_super_admin(user) or (
+        conn.created_by is not None and conn.created_by == user.id
+    ):
+        return
+    raise ConnectorAccessDenied("仅创建者或超级管理员可管理连接器")
 
 
 def _validate_and_sanitize_config(kind: str, config: dict) -> dict:
@@ -73,7 +110,7 @@ def to_out_dict(conn: StorageConnection) -> dict:
         "name": conn.name,
         "kind": conn.kind,
         "config": conn.config or {},
-        "scope": conn.scope,
+        "scope": "global" if conn.scope == "global" else "owner",
         "project_id": conn.project_id,
         "secret_set": conn.secret_enc is not None,
         "created_by": conn.created_by,
@@ -92,8 +129,8 @@ class StorageConnectionService:
         config: dict,
         secret: dict,
         scope: str,
-        project_id: uuid.UUID | None,
         created_by: uuid.UUID,
+        project_id: uuid.UUID | None = None,
     ) -> StorageConnection:
         clean_config = _validate_and_sanitize_config(kind, config)
         _validate_secret(kind, secret)
@@ -103,7 +140,7 @@ class StorageConnectionService:
             config=clean_config,
             secret_enc=encrypt_secret(secret),
             scope=scope,
-            project_id=project_id,
+            project_id=None,
             created_by=created_by,
         )
         # 落库前先过白名单/SSRF：拒绝建一个根本连不出去的连接器。
@@ -121,18 +158,15 @@ class StorageConnectionService:
         db: AsyncSession,
         *,
         all_scopes: bool,
-        project_id: uuid.UUID | None,
+        user_id: uuid.UUID,
     ) -> list[StorageConnection]:
-        """all_scopes=True（超管）→ 全部；否则 global + 指定项目的。"""
+        """all_scopes=True（超管）→ 全部；否则 global + 当前用户创建的。"""
         stmt = select(StorageConnection).order_by(StorageConnection.created_at.desc())
         if not all_scopes:
-            if project_id is not None:
-                stmt = stmt.where(
-                    (StorageConnection.scope == "global")
-                    | (StorageConnection.project_id == project_id)
-                )
-            else:
-                stmt = stmt.where(StorageConnection.scope == "global")
+            stmt = stmt.where(
+                (StorageConnection.scope == "global")
+                | (StorageConnection.created_by == user_id)
+            )
         rows = await db.execute(stmt)
         return list(rows.scalars().all())
 

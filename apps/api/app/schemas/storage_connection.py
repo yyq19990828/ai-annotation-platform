@@ -1,4 +1,4 @@
-"""v0.11.14 · 存储连接器 schema。
+"""v0.11.16 · 存储连接器 schema。
 
 Out **绝不含密钥字段**，仅以 secret_set:bool 表达"是否已配密钥"。
 config 仅含非密钥项（endpoint/host/bucket/username/path），可原样回吐。
@@ -13,7 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 StorageKind = Literal["s3", "sftp"]
-StorageScope = Literal["global", "project"]
+StorageScope = Literal["global", "owner"]
 
 
 class StorageConnectionCreate(BaseModel):
@@ -27,8 +27,8 @@ class StorageConnectionCreate(BaseModel):
     #   s3   → {access_key, secret_key}
     #   sftp → {password} 或 {private_key, passphrase?}
     secret: dict
-    # scope=project 时必填 project_id；global 仅超管可建。
-    scope: StorageScope = "project"
+    # scope=owner 默认归属创建者；global 仅超管可建。project_id 为历史兼容字段，不再写入。
+    scope: StorageScope = "owner"
     project_id: uuid.UUID | None = None
 
 

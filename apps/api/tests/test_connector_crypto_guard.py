@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from cryptography.fernet import Fernet
 
-from app.config import settings
+from app.config import Settings, settings
 from app.core import crypto
 from app.services import connector_guard as cg
 
@@ -34,6 +34,22 @@ def test_not_configured_raises(monkeypatch):
     monkeypatch.setattr(settings, "connector_encryption_key", "")
     with pytest.raises(crypto.ConnectorCryptoNotConfigured):
         crypto.encrypt_secret({"x": "y"})
+
+
+def test_connector_host_allowlist_settings_accepts_csv():
+    cfg = Settings(
+        connector_host_allowlist="172.17.0.1/32, 172.26.1.17/32, .example.com"
+    )
+    assert cfg.connector_host_allowlist == [
+        "172.17.0.1/32",
+        "172.26.1.17/32",
+        ".example.com",
+    ]
+
+
+def test_connector_host_allowlist_settings_accepts_json_list():
+    cfg = Settings(connector_host_allowlist='["172.17.0.1/32", ".example.com"]')
+    assert cfg.connector_host_allowlist == ["172.17.0.1/32", ".example.com"]
 
 
 # ── host 提取 ─────────────────────────────────────────────────────────

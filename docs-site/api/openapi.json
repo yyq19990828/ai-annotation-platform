@@ -11622,10 +11622,10 @@
             "title": "Project Id"
           },
           "scope": {
-            "default": "project",
+            "default": "owner",
             "enum": [
               "global",
-              "project"
+              "owner"
             ],
             "title": "Scope",
             "type": "string"
@@ -11701,7 +11701,7 @@
           "scope": {
             "enum": [
               "global",
-              "project"
+              "owner"
             ],
             "title": "Scope",
             "type": "string"
@@ -15534,7 +15534,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.11.15"
+    "version": "0.11.16"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -25476,25 +25476,6 @@
     "/api/v1/storage-connections": {
       "get": {
         "operationId": "list_connections_api_v1_storage_connections_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "project_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Project Id"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -25509,16 +25490,6 @@
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
         "security": [

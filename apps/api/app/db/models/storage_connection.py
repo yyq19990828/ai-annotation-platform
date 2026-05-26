@@ -1,8 +1,8 @@
-"""v0.11.14 · 存储连接器（外部 S3 / SFTP）。
+"""v0.11.16 · 存储连接器（外部 S3 / SFTP）。
 
 服务端主动拉取类导入的可复用连接配置。非密钥部分（endpoint/host/bucket/path 等）
 存 ``config`` JSONB；密钥（AK/SK、SSH 密码/私钥）经 Fernet 加密存 ``secret_enc``，
-绝不回吐明文。``scope`` 区分全局（超管）与项目级（项目管理员可建归属己项目的）。
+绝不回吐明文。``scope`` 区分全局（超管）与个人归属（创建者可用）。
 
 实际拉取与白名单/SSRF 校验见 app/services/connector_guard.py 与 v0.11.15 的 SourceAdapter。
 """
@@ -32,7 +32,7 @@ class StorageConnectionKind(str, enum.Enum):
 
 class StorageConnectionScope(str, enum.Enum):
     GLOBAL = "global"  # 超管建，全平台可见
-    PROJECT = "project"  # 项目管理员建，仅归属项目可见
+    OWNER = "owner"  # 用户自建，仅创建者与超管可见
 
 
 class StorageConnection(Base):
@@ -49,7 +49,7 @@ class StorageConnection(Base):
     # Fernet 密文：s3 → {access_key,secret_key}；sftp → {password} 或 {private_key,passphrase?}
     secret_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     scope: Mapped[str] = mapped_column(
-        String(20), nullable=False, default=StorageConnectionScope.PROJECT.value
+        String(20), nullable=False, default=StorageConnectionScope.OWNER.value
     )
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

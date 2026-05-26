@@ -5,14 +5,28 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useToastStore } from "@/components/ui/Toast";
-import { useCreateDataset } from "@/hooks/useDatasets";
+import {
+  useCreateDataset,
+  useImportFromConnection,
+} from "@/hooks/useDatasets";
+import { useAsyncJob } from "@/hooks/useAsyncJob";
+import {
+  useCreateStorageConnection,
+  useStorageConnections,
+} from "@/hooks/useStorageConnections";
+import { usePermissions } from "@/hooks/usePermissions";
+import {
+  StorageConnectionForm,
+  type StorageConnectionFormValues,
+} from "@/components/connections/StorageConnectionsPanel";
 import { datasetsApi } from "@/api/datasets";
 import { putWithProgress, runUploadQueue, type QueueItem } from "@/utils/uploadQueue";
 import type { DatasetResponse } from "@/api/datasets";
+import type { AsyncJob } from "@/api/asyncJobs";
 import styles from "./ImportDatasetWizard.module.css";
 
 type Step = 1 | 2 | 3;
-type UploadMode = "files" | "zip";
+type UploadMode = "files" | "zip" | "connection";
 
 const ZIP_MAX_BYTES = 200 * 1024 * 1024;
 
@@ -42,8 +56,8 @@ const DATA_TYPES: Array<{ key: string; label: string }> = [
 
 const STEP_LABELS: Record<Step, string> = {
   1: "基本信息",
-  2: "选择文件",
-  3: "上传完成",
+  2: "选择来源",
+  3: "导入完成",
 };
 
 function cx(...classes: Array<string | false | null | undefined>) {
@@ -62,6 +76,7 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
   const navigate = useNavigate();
   const pushToast = useToastStore((s) => s.push);
   const createDataset = useCreateDataset();
+  const importFromConnection = useImportFromConnection();
 
   const skipCreate = !!datasetId;
   const [step, setStep] = useState<Step>(skipCreate ? 2 : 1);
@@ -74,6 +89,12 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
   const [zipProgress, setZipProgress] = useState(0);
   const [zipResult, setZipResult] = useState<ZipResult | null>(null);
   const [zipError, setZipError] = useState<string | null>(null);
+  const [connectionId, setConnectionId] = useState("");
+  const [sourcePath, setSourcePath] = useState("");
+  const [recursive, setRecursive] = useState(true);
+  const [includeGlobs, setIncludeGlobs] = useState("");
+  const [connectionJobId, setConnectionJobId] = useState<string | null>(null);
+  const [connectionImportError, setConnectionImportError] = useState<string | null>(null);
   const [created, setCreated] = useState<DatasetResponse | null>(null);
   const [items, setItems] = useState<Map<string, QueueItem>>(new Map());
   const [running, setRunning] = useState(false);
@@ -93,6 +114,12 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
       setZipProgress(0);
       setZipResult(null);
       setZipError(null);
+      setConnectionId("");
+      setSourcePath("");
+      setRecursive(true);
+      setIncludeGlobs("");
+      setConnectionJobId(null);
+      setConnectionImportError(null);
       setCreated(null);
       setItems(new Map());
       setRunning(false);
@@ -224,11 +251,46 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
     }
   };
 
+  const startConnectionImport = async () => {
+    if (running || !connectionId) return;
+    const dsId = await ensureDataset();
+    if (!dsId) return;
+
+    setStep(3);
+    setRunning(true);
+    setConnectionJobId(null);
+    setConnectionImportError(null);
+
+    const globs = includeGlobs
+      .split(",")
+      .map((pattern) => pattern.trim())
+      .filter(Boolean);
+
+    try {
+      const res = await importFromConnection.mutateAsync({
+        datasetId: dsId,
+        payload: {
+          connection_id: connectionId,
+          source_path: sourcePath.trim(),
+          recursive,
+          include_globs: globs,
+        },
+      });
+      setConnectionJobId(res.job_id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setConnectionImportError(msg);
+      setRunning(false);
+      pushToast({ msg: "连接器导入提交失败", sub: msg, kind: "error" });
+    }
+  };
+
   const goNextOrSubmit = () => {
     if (step === 1 && nameValid) setStep(2);
     else if (step === 2) {
       if (mode === "files") startFilesUpload();
-      else startZipUpload();
+      else if (mode === "zip") startZipUpload();
+      else startConnectionImport();
     }
   };
 
@@ -258,13 +320,28 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
           setMode={(m) => {
             setMode(m);
             // 切换模式时清掉对侧选择
-            if (m === "files") setZipFile(null);
-            else setFiles([]);
+            if (m !== "files") setFiles([]);
+            if (m !== "zip") setZipFile(null);
+            if (m !== "connection") {
+              setConnectionId("");
+              setSourcePath("");
+              setIncludeGlobs("");
+              setConnectionJobId(null);
+              setConnectionImportError(null);
+            }
           }}
           files={files}
           zipFile={zipFile}
+          connectionId={connectionId}
+          sourcePath={sourcePath}
+          recursive={recursive}
+          includeGlobs={includeGlobs}
           onAddFiles={handleAddFiles}
           onSetZip={(f) => setZipFile(f)}
+          onSetConnectionId={setConnectionId}
+          onSetSourcePath={setSourcePath}
+          onSetRecursive={setRecursive}
+          onSetIncludeGlobs={setIncludeGlobs}
           onDrop={handleDrop}
           onRemove={(idx) => setFiles((arr) => arr.filter((_, i) => i !== idx))}
         />
@@ -283,13 +360,30 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
               if (id) navigate(`/datasets`);
             }}
           />
-        ) : (
+        ) : mode === "zip" ? (
           <Step3Zip
             zipFile={zipFile!}
             progress={zipProgress}
             running={running}
             result={zipResult}
             error={zipError}
+            onClose={onClose}
+            onView={() => {
+              const id = targetDatasetId;
+              onClose();
+              if (id) navigate(`/datasets`);
+            }}
+          />
+        ) : (
+          <Step3Connection
+            jobId={connectionJobId}
+            submitError={connectionImportError}
+            running={running}
+            onSettled={(job) => {
+              setRunning(false);
+              const added = connectionImportAdded(job);
+              if (targetDatasetId) onUploaded?.(targetDatasetId, added);
+            }}
             onClose={onClose}
             onView={() => {
               const id = targetDatasetId;
@@ -307,9 +401,14 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
           skipCreate={skipCreate}
           canNext={
             (step === 1 && nameValid) ||
-            (step === 2 && (mode === "files" ? files.length > 0 : !!zipFile))
+            (step === 2 &&
+              (mode === "files"
+                ? files.length > 0
+                : mode === "zip"
+                  ? !!zipFile
+                  : !!connectionId))
           }
-          loading={createDataset.isPending}
+          loading={createDataset.isPending || importFromConnection.isPending}
           onCancel={onClose}
           onPrev={() => {
             if (skipCreate) return;
@@ -419,8 +518,16 @@ function Step2({
   setMode,
   files,
   zipFile,
+  connectionId,
+  sourcePath,
+  recursive,
+  includeGlobs,
   onAddFiles,
   onSetZip,
+  onSetConnectionId,
+  onSetSourcePath,
+  onSetRecursive,
+  onSetIncludeGlobs,
   onDrop,
   onRemove,
 }: {
@@ -428,8 +535,16 @@ function Step2({
   setMode: (m: UploadMode) => void;
   files: File[];
   zipFile: File | null;
+  connectionId: string;
+  sourcePath: string;
+  recursive: boolean;
+  includeGlobs: string;
   onAddFiles: (files: FileList | File[]) => void;
   onSetZip: (f: File | null) => void;
+  onSetConnectionId: (id: string) => void;
+  onSetSourcePath: (path: string) => void;
+  onSetRecursive: (value: boolean) => void;
+  onSetIncludeGlobs: (value: string) => void;
   onDrop: (e: DragEvent<HTMLDivElement>) => void;
   onRemove: (idx: number) => void;
 }) {
@@ -458,6 +573,7 @@ function Step2({
         {([
           { key: "files", label: "多文件" },
           { key: "zip", label: "ZIP 包 (≤200MB)" },
+          { key: "connection", label: "连接器导入" },
         ] as const).map((opt) => {
           const active = mode === opt.key;
           return (
@@ -587,6 +703,134 @@ function Step2({
           )}
         </>
       )}
+
+      {mode === "connection" && (
+        <ConnectionImportSource
+          connectionId={connectionId}
+          sourcePath={sourcePath}
+          recursive={recursive}
+          includeGlobs={includeGlobs}
+          onSetConnectionId={onSetConnectionId}
+          onSetSourcePath={onSetSourcePath}
+          onSetRecursive={onSetRecursive}
+          onSetIncludeGlobs={onSetIncludeGlobs}
+        />
+      )}
+    </div>
+  );
+}
+
+function ConnectionImportSource({
+  connectionId,
+  sourcePath,
+  recursive,
+  includeGlobs,
+  onSetConnectionId,
+  onSetSourcePath,
+  onSetRecursive,
+  onSetIncludeGlobs,
+}: {
+  connectionId: string;
+  sourcePath: string;
+  recursive: boolean;
+  includeGlobs: string;
+  onSetConnectionId: (id: string) => void;
+  onSetSourcePath: (path: string) => void;
+  onSetRecursive: (value: boolean) => void;
+  onSetIncludeGlobs: (value: string) => void;
+}) {
+  const { role } = usePermissions();
+  const isSuper = role === "super_admin";
+  const canManage = isSuper || role === "project_admin";
+  const pushToast = useToastStore((s) => s.push);
+  const { data: connections = [], isLoading } = useStorageConnections();
+  const createConnection = useCreateStorageConnection();
+  const [showCreate, setShowCreate] = useState(false);
+
+  const handleCreate = async (values: StorageConnectionFormValues) => {
+    const conn = await createConnection.mutateAsync({
+      name: values.name,
+      kind: values.kind,
+      scope: values.scope,
+      config: values.config,
+      secret: values.secret ?? {},
+    });
+    onSetConnectionId(conn.id);
+    setShowCreate(false);
+    pushToast({ msg: "连接器已创建" });
+  };
+
+  return (
+    <div className={styles.connectionSource}>
+      <div className={styles.connectionGrid}>
+        <label className={styles.field}>
+          <span>连接器</span>
+          <select
+            value={connectionId}
+            onChange={(event) => onSetConnectionId(event.target.value)}
+            className={styles.input}
+            disabled={isLoading || connections.length === 0}
+          >
+            <option value="">
+              {isLoading ? "加载中..." : connections.length ? "选择连接器" : "暂无连接器"}
+            </option>
+            {connections.map((conn) => (
+              <option key={conn.id} value={conn.id}>
+                {conn.name} · {conn.kind.toUpperCase()} · {conn.scope === "global" ? "全局" : "个人"}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className={styles.field}>
+          <span>Source path</span>
+          <input
+            value={sourcePath}
+            onChange={(event) => onSetSourcePath(event.target.value)}
+            className={styles.input}
+            placeholder="batch-a/"
+          />
+        </label>
+        <label className={styles.fieldWide}>
+          <span>Include globs</span>
+          <input
+            value={includeGlobs}
+            onChange={(event) => onSetIncludeGlobs(event.target.value)}
+            className={styles.input}
+            placeholder="*.jpg, *.png"
+          />
+        </label>
+        <label className={styles.checkField}>
+          <input
+            type="checkbox"
+            checked={recursive}
+            onChange={(event) => onSetRecursive(event.target.checked)}
+          />
+          <span>递归扫描</span>
+        </label>
+      </div>
+
+      {canManage && (
+        <div className={styles.inlineCreateHeader}>
+          <Button
+            size="sm"
+            onClick={() => setShowCreate((value) => !value)}
+          >
+            <Icon name={showCreate ? "x" : "plus"} size={12} />
+            {showCreate ? "收起新建" : "新建连接器"}
+          </Button>
+        </div>
+      )}
+
+      {canManage && showCreate && (
+        <StorageConnectionForm
+          compact
+          isSuper={isSuper}
+          submitLabel="创建并选择"
+          submitting={createConnection.isPending}
+          onSubmit={handleCreate}
+          onCancel={() => setShowCreate(false)}
+        />
+      )}
     </div>
   );
 }
@@ -693,7 +937,8 @@ function Footer({
   onNext: () => void;
 }) {
   const showPrev = !skipCreate && step > 1;
-  const submitLabel = mode === "zip" ? "上传 ZIP" : "开始上传";
+  const submitLabel =
+    mode === "zip" ? "上传 ZIP" : mode === "connection" ? "开始导入" : "开始上传";
   return (
     <div className={styles.footer}>
       <div>
@@ -802,6 +1047,129 @@ function Step3Zip({
   );
 }
 
+// ── Step 3 (Connection) ─────────────────────────────────────────────────────
+
+function Step3Connection({
+  jobId,
+  submitError,
+  running,
+  onSettled,
+  onClose,
+  onView,
+}: {
+  jobId: string | null;
+  submitError: string | null;
+  running: boolean;
+  onSettled: (job: AsyncJob) => void;
+  onClose: () => void;
+  onView: () => void;
+}) {
+  const pushToast = useToastStore((s) => s.push);
+  const { data: job, isLoading } = useAsyncJob(jobId, !!jobId);
+  const settledRef = useRef<string | null>(null);
+  const terminal =
+    job?.status === "completed" ||
+    job?.status === "failed" ||
+    job?.status === "cancelled";
+
+  useEffect(() => {
+    if (!job || !terminal || settledRef.current === job.id) return;
+    settledRef.current = job.id;
+    onSettled(job);
+    if (job.status === "completed") {
+      const added = connectionImportAdded(job);
+      pushToast({ msg: `连接器导入完成：新增 ${added} 个文件`, kind: "success" });
+    } else {
+      pushToast({
+        msg: job.status === "cancelled" ? "连接器导入已取消" : "连接器导入失败",
+        sub: job.error_message ?? undefined,
+        kind: job.status === "cancelled" ? "warning" : "error",
+      });
+    }
+  }, [job, onSettled, pushToast, terminal]);
+
+  const progress = job?.progress_pct ?? (jobId ? 0 : running ? 5 : 0);
+  const result = job?.result ?? {};
+  const added = readJobNumber(result.added ?? result.imported);
+  const skipped = readJobNumber(result.skipped);
+  const errors = readJobNumber(result.error_count);
+  const total = readJobNumber(result.total);
+  const busy = running && !terminal && !submitError;
+
+  return (
+    <div className={styles.stackMedium}>
+      <div className={styles.summaryPanel}>
+        <span>
+          任务进度 <strong>{Math.round(progress)}%</strong>
+          {job && <> · {jobStatusLabel(job.status)}</>}
+        </span>
+        <span className={busy ? styles.runningText : styles.mutedMedium}>
+          {submitError ? "提交失败" : busy ? "导入中…" : terminal ? "已结束" : "等待"}
+        </span>
+      </div>
+
+      <div className={styles.zipProgressTrack}>
+        <ProgressFill
+          progress={progress}
+          color={
+            submitError || job?.status === "failed"
+              ? "var(--color-danger)"
+              : job?.status === "completed"
+                ? "var(--color-success)"
+                : "var(--color-accent)"
+          }
+        />
+      </div>
+
+      {!submitError && !job && (
+        <div className={styles.connectionJobHint}>
+          {isLoading || jobId ? "正在读取导入任务..." : "正在提交导入任务..."}
+        </div>
+      )}
+
+      {job && (
+        <div className={styles.zipSummary}>
+          <div>
+            <strong className={job.status === "completed" ? styles.successText : styles.runningText}>
+              新增 {added}
+            </strong>{" "}
+            个文件 ·{" "}
+            <span className={styles.mutedMedium}>
+              共 {total} · 跳过 {skipped} · 失败 {errors}
+            </span>
+          </div>
+          {job.error_message && (
+            <div className={styles.errorMessage}>{job.error_message}</div>
+          )}
+          {Array.isArray(result.errors) && result.errors.length > 0 && (
+            <details className={styles.errorDetails}>
+              <summary className={styles.errorSummary}>
+                查看 {result.errors.length} 条失败明细
+              </summary>
+              <div className={styles.errorList}>
+                {result.errors.slice(0, 50).map((entry, index) => (
+                  <div key={index} className={styles.errorRow}>
+                    {formatJobError(entry)}
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+
+      {submitError && <div className={styles.zipError}>{submitError}</div>}
+
+      <div className={styles.actions}>
+        <Button onClick={onClose}>关闭</Button>
+        <Button variant="primary" onClick={onView} disabled={busy}>
+          查看数据集
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatBytes(bytes: number): string {
@@ -815,4 +1183,29 @@ function iconForFile(f: File) {
   if (f.type.startsWith("image/")) return "image" as const;
   if (f.type.startsWith("video/")) return "video" as const;
   return "layers" as const;
+}
+
+function readJobNumber(value: unknown): number {
+  return typeof value === "number" ? value : 0;
+}
+
+function connectionImportAdded(job: AsyncJob): number {
+  return readJobNumber(job.result?.added ?? job.result?.imported);
+}
+
+function jobStatusLabel(status: string): string {
+  if (status === "pending") return "排队中";
+  if (status === "running") return "运行中";
+  if (status === "completed") return "完成";
+  if (status === "failed") return "失败";
+  if (status === "cancelled") return "已取消";
+  return status;
+}
+
+function formatJobError(entry: unknown): string {
+  if (!entry || typeof entry !== "object") return String(entry);
+  const data = entry as Record<string, unknown>;
+  const path = typeof data.path === "string" ? data.path : data.name;
+  const error = typeof data.error === "string" ? data.error : data.message;
+  return [path, error].filter(Boolean).join(" - ");
 }

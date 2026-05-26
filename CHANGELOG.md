@@ -24,6 +24,19 @@
 
 ## 最新版本
 
+## [0.11.16] - 2026-05-26
+
+> **数据集导入能力扩展 · 连接器前端入口（切片 3/3）。** `/datasets` 现在可管理数据源连接器，并在导入向导中直接选择 S3/OSS 或 SFTP 连接器提交异步导入任务；连接器权限语义从项目级收敛为 owner-scope。
+
+### Added
+
+- **数据集页连接器管理**: 新增 `/datasets` 内的数据源连接器面板，支持创建、编辑、删除、连通性测试 S3/OSS 与 SFTP 连接器；非超管创建的连接器默认归属创建者，超管仍可创建全局连接器。→ [plan](docs/plans/2026-05-26-v0.11.16-connector-frontend.md)
+- **导入向导连接器模式**: `ImportDatasetWizard` 在多文件与 ZIP 之外新增「连接器导入」，可选择连接器、填写 `source_path`、递归扫描与 `include_globs`，提交后轮询 `AsyncJob(kind="dataset_import")` 进度与结果。
+
+### Changed
+
+- **连接器权限 owner-scope 化**: `StorageScope` 从 `project` 调整为 `owner`；列表对普通用户只返回全局连接器与本人创建的连接器，测试与导入统一走 `assert_connection_usable(user, conn)`。历史 `project_id` 列保留但新连接器不再写入。
+
 ## [0.11.15] - 2026-05-26
 
 > **数据集导入能力扩展 · SourceAdapter + 异步导入（切片 2/3）。** 连接器现在可经 HTTP API 端到端导入数据集：外部 S3/OSS 或 SFTP 路径由 Celery job 流式复制到 `minio-datasets`，复用 DatasetItem/Task/媒体派生管线，并可通过 `async_jobs` 轮询与取消。
