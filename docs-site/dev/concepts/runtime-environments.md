@@ -24,11 +24,14 @@ last_reviewed: 2026-05-26
 # 开发：只起基础设施，api/web 在宿主机跑
 docker compose up -d
 
-# 生产：叠加 prod 文件，api/web 进容器
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# 生产：叠加 prod 文件，api/web 进容器、worker 改用生产配置
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
 > `docker-compose.prod.yml` 是**显式命名的叠加文件**，必须 `-f` 带上才生效——刻意没用会被自动 merge 的 `docker-compose.override.yml`，否则 dev 的 `docker compose up` 会把 api/web 容器一起拉起，与"开发态跑宿主机"相悖。
+>
+> `--env-file .env.production` 不可省：基础文件给 celery worker/beat 硬编码了 dev 凭据（inline `environment` 优先级高于 `env_file`，叠加文件光加 `env_file` 盖不掉），叠加文件用 `${VAR}` 插值覆盖这些 key，插值源由 `--env-file` 指定。
 
 ## 三态对照
 
@@ -67,7 +70,7 @@ environment: Literal["development", "staging", "production"] = "development"
 ## 镜像构建差异（为什么 dev 能热挂载）
 
 - `infra/docker/Dockerfile.api`：依赖装到 `--system` site-packages（不在 `/app` 下）。所以开发态把 `./apps/api` 挂到 `/app` 不会覆盖依赖；匿名卷 `/app/.venv` 屏蔽宿主机 venv。Celery 无 `--reload`，改业务码后仍需 `docker restart`。
-- `infra/docker/Dockerfile.web`：多阶段构建，`pnpm build` 产物交给 nginx 托管。前端 API base 硬编码同源相对路径 `/api/v1`（`apps/web/src/api/client.ts`），dev 由 vite proxy、生产由容器内 `nginx.conf` 反代 `/api/` `/ws/` 到 `api:8000`，**无需 build arg**（`.env.example` 里的 `VITE_API_URL` 已无代码引用，是历史遗留变量）。
+- `infra/docker/Dockerfile.web`：多阶段构建，`pnpm build` 产物交给 nginx 托管。前端 API base 硬编码同源相对路径 `/api/v1`（`apps/web/src/api/client.ts`），dev 由 vite proxy、生产由容器内 `nginx.conf` 反代 `/api/` `/ws/` 到 `api:8000`，**无需 build arg / API 地址变量**。
 
 ## 相关
 

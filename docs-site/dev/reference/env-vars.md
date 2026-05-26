@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-22
+last_reviewed: 2026-05-26
 ---
 
 # 环境变量参考
@@ -97,12 +97,6 @@ last_reviewed: 2026-05-22
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `AUDIT_RETENTION_MONTHS` | `12` | Celery beat 每月 2 日扫描超期分区，归档为 jsonl.gz 上传 MinIO `audit-archive/{YYYY}/{MM}.jsonl.gz`， 然后 DROP 该分区。默认 12 个月。 |
-
-## 前端
-
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `VITE_API_URL` | `http://localhost:8000` | 前端访问后端 API 的基础 URL（Vite 构建时注入） 本地开发通常为 http://localhost:8000；部署时改为实际域名 |
 
 ## 错误监控 (Sentry, v0.6.6+)
 

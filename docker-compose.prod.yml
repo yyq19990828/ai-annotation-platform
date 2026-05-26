@@ -1,13 +1,30 @@
-# 线上叠加文件 · 仅生产使用，把 api / web 以容器形态加到 docker-compose.yml 之上。
+# 线上叠加文件 · 仅生产使用，把 api / web 容器化并让 celery worker/beat 改用生产配置。
 #
-#   生产：docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#   生产：docker compose --env-file .env.production \
+#           -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #   开发：docker compose up -d            # 不带本文件 → 只起基础设施，api/web 仍跑宿主机
+#
+# 必须带 --env-file .env.production：worker 下面用 ${VAR} 插值覆盖基础文件里硬编码的 dev 凭据，
+# 插值源由 --env-file 指定（默认 .env 是 dev 用的）。
+#
+# 为什么 worker 要 inline environment 覆盖、api/web 只用 env_file：
+#   docker-compose.yml 给 worker/beat 硬编码了 dev 的 DATABASE_URL/MINIO 凭据（inline environment），
+#   而 inline environment 优先级高于 env_file —— 叠加文件光加 env_file 盖不掉，必须再用 inline 覆盖这几个 key。
+#   api/web 在基础文件里不存在，无 inline 冲突，env_file 就能注入全部生产配置。
 #
 # 应用配置统一来自 .env.production（基于 .env.example 复制、逐项审过；已被 .gitignore 忽略，
 # ENVIRONMENT=production 时 SECRET_KEY / CORS_ALLOW_ORIGINS / MINIO_SECRET_KEY 等必填，
 # 否则启动断言失败 —— 见 docs-site/dev/concepts/runtime-environments.md）。
-# 注：前端不读 VITE_API_URL，调用硬编码同源 /api/v1，由 web 容器内 nginx 反代到 api:8000，
-# 故 web 镜像无需 build arg。
+# 注：前端不读 VITE_API_URL，调用硬编码同源 /api/v1，由 web 容器内 nginx 反代到 api:8000，故 web 镜像无需 build arg。
+
+# worker/beat 共用：覆盖基础文件硬编码的 dev infra 凭据，全部从 .env.production 取（缺失即报错）。
+x-prod-infra-env: &prod-infra-env
+  DATABASE_URL: ${DATABASE_URL:?.env.production 必须设置 DATABASE_URL}
+  REDIS_URL: ${REDIS_URL:?.env.production 必须设置 REDIS_URL}
+  MINIO_ENDPOINT: ${MINIO_ENDPOINT:?.env.production 必须设置 MINIO_ENDPOINT}
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?.env.production 必须设置 MINIO_ACCESS_KEY}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?.env.production 必须设置 MINIO_SECRET_KEY}
+
 services:
   api:
     build:
@@ -42,3 +59,25 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+  # 以下三个 worker/beat 服务已在 docker-compose.yml 定义，这里仅叠加生产环境配置：
+  # env_file 注入 ENVIRONMENT/SECRET_KEY/SENTRY 等全部生产变量，environment 覆盖硬编码的 infra 凭据。
+  celery-worker:
+    env_file:
+      - .env.production
+    environment:
+      <<: *prod-infra-env
+      DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
+
+  celery-worker-export:
+    env_file:
+      - .env.production
+    environment:
+      <<: *prod-infra-env
+      DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
+
+  celery-beat:
+    env_file:
+      - .env.production
+    environment:
+      <<: *prod-infra-env

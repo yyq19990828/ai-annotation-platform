@@ -61,7 +61,7 @@ services:
 
   # api / web 不在本文件：dev 跑宿主机 (uvicorn --reload + pnpm dev:web，见 DEV.md)；
   # 生产以容器形态在叠加文件 docker-compose.prod.yml 定义，用
-  #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+  #   docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.prod.yml up -d
   # 拉起。区别详见 docs-site/dev/concepts/runtime-environments.md。
 
   celery-worker:

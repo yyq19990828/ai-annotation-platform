@@ -273,8 +273,10 @@ pnpm dev:api             # 后端 :8000
 #    （ENVIRONMENT=production 下 SECRET_KEY / CORS_ALLOW_ORIGINS / MINIO_SECRET_KEY 等必填）
 cp .env.example .env.production
 
-# 2. 叠加 prod 文件，基础设施 + api/web 容器一起拉起
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# 2. 叠加 prod 文件，基础设施 + api/web 容器一起拉起、worker 改用生产配置
+#    --env-file 不可省：用于覆盖 worker 硬编码的 dev 凭据（详见 docker-compose.prod.yml 注释）
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
 > 开发态不带 `-f docker-compose.prod.yml`，api/web 仍跑宿主机。

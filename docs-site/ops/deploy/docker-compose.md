@@ -87,9 +87,10 @@ last_reviewed: 2026-05-09
 
 ### 2.5 前端
 
+> 前端 API base 是硬编码的同源相对路径 `/api/v1`（`apps/web/src/api/client.ts`），**不读 `VITE_API_URL`**——dev 由 vite proxy、生产由 web 容器内 nginx 反代 `/api/`→`api:8000`，故无需构建时注入 API 地址。
+
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `VITE_API_URL` **构建时必填** | `http://localhost:8000` | Vite 编译时注入；部署改为 `https://app.example.com/api`（含路径前缀，匹配 §3 nginx）。 |
 | `VITE_TURNSTILE_SITE_KEY` | 空 | 与后端 `TURNSTILE_SITE_KEY` 一致；空则注册页不渲染 widget。 |
 | `VITE_SENTRY_DSN` | 空 | 前端 Sentry DSN；留空禁用前端错误上报。 |
 | `FRONTEND_BASE_URL` | `http://localhost:5173` | 后端在邮件 / 邀请链接里回跳到这个 origin；生产必改成实际域名。 |
@@ -278,7 +279,7 @@ pnpm --filter @anno/web build
 # 把 apps/web/dist/ rsync 到 nginx 的 root 目录
 ```
 
-如要内嵌后端 API URL，构建时设 `VITE_API_URL=https://app.example.com/api`。
+前端调用硬编码同源 `/api/v1`，由托管它的 nginx 反代 `/api/`→后端即可（见 `infra/docker/nginx.conf`），无需构建时配置 API 地址。
 
 ---
 
