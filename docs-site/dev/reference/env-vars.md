@@ -16,7 +16,15 @@ last_reviewed: 2026-05-26
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `DATABASE_URL` | `postgresql+asyncpg://user:pass@localhost:5432/annotation` | 异步数据库连接串，格式：postgresql+asyncpg://用户名:密码@主机:端口/数据库名 本地开发可直接使用下方默认值；生产环境请替换为真实凭据 |
+| `DATABASE_URL` | `postgresql+asyncpg://user:pass@localhost:5432/annotation` | 异步数据库连接串，格式：postgresql+asyncpg://用户名:密码@主机:端口/数据库名 本地开发可直接使用下方默认值；生产环境请替换为真实凭据 注：驱动必须是 postgresql+asyncpg；托管库走 SSL 时用 ?ssl=require（asyncpg 不认 sslmode=） |
+
+## 仅供 docker-compose.yml 里的 postgres 容器初始化用（后端不读这三项）。
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `POSTGRES_USER` | `user` | 若沿用 compose 自带的 postgres 容器，生产请在此设强凭据，且必须与上面 DATABASE_URL 的 用户名/密码/库名完全一致；用托管 RDS/Cloud SQL 时这三项可忽略。 |
+| `POSTGRES_PASSWORD` | `pass` | — |
+| `POSTGRES_DB` | `annotation` | — |
 
 ## 缓存 / 消息队列 (Redis)
 

@@ -46,7 +46,8 @@ last_reviewed: 2026-05-09
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `DATABASE_URL` **必填** | dev 连本机 | asyncpg 连接串，格式 `postgresql+asyncpg://用户名:密码@主机:端口/库`。生产环境用托管 RDS / Cloud SQL 优先，库名常用 `annotation`。 |
+| `DATABASE_URL` **必填** | dev 连本机 | asyncpg 连接串，格式 `postgresql+asyncpg://用户名:密码@主机:端口/库`。驱动必须 `postgresql+asyncpg`；托管库走 SSL 用 `?ssl=require`（asyncpg **不认** `sslmode=`）。密码含特殊字符要 URL 编码（`@`→`%40`）。生产用托管 RDS / Cloud SQL 优先。 |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `user` / `pass` / `annotation` | 仅 `docker-compose.yml` 的 postgres 容器初始化用，后端不读。**沿用 compose 自带 postgres 时**生产须设强凭据，且与 `DATABASE_URL` 的用户名/密码/库名一致；用托管库时忽略。 |
 
 迁移在容器外手动跑：`uv run alembic upgrade head`。详见 §4.2。
 

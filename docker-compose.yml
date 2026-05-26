@@ -4,13 +4,16 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: annotation
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: pass
+      # 默认值 = dev 凭据 (docker compose up 不带 --env-file 时生效)。
+      # 生产用 --env-file .env.production 覆盖, 须与 DATABASE_URL 中的用户名/密码/库名一致。
+      POSTGRES_DB: ${POSTGRES_DB:-annotation}
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pass}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d annotation"]
+      # 用容器内 env 展开 ($$ → $), 不写死 user/annotation, 改了凭据探针仍然有效。
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 5
