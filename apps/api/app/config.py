@@ -12,6 +12,14 @@ _PARENTS = Path(__file__).resolve().parents
 _REPO_ROOT_ENV = (
     _PARENTS[3] / ".env" if len(_PARENTS) > 3 else Path("/nonexistent/.env")
 )
+# DuckDB 默认路径锚定仓库根 (host)，不随 API 进程 cwd 漂移 (apps/api 启动时旧的
+# 相对 ./data/duckdb 会指向不存在的 apps/api/data/duckdb)。容器内 len<=3 走相对
+# fallback，但 compose 已用 DUCKDB_PATH env 注入绝对路径，故默认值在容器内不生效。
+_REPO_ROOT_DUCKDB = (
+    str(_PARENTS[3] / "data" / "duckdb" / "analytics.duckdb")
+    if len(_PARENTS) > 3
+    else "./data/duckdb/analytics.duckdb"
+)
 
 
 class Settings(BaseSettings):
@@ -138,8 +146,9 @@ class Settings(BaseSettings):
 
     # v0.10.16 · DuckDB 离线分析文件位置。Celery worker 写、FastAPI 进程只读 (read_only)。
     # docker compose 把 host 路径 ./data/duckdb 挂到 worker /var/lib/duckdb；API 跑 host
-    # 时直接读 host 文件。容器与 host 均可通过 DUCKDB_PATH env 覆盖。
-    duckdb_path: str = "./data/duckdb/analytics.duckdb"
+    # 时直接读 host 文件 (默认锚定仓库根，见 _REPO_ROOT_DUCKDB)。容器与 host 均可通过
+    # DUCKDB_PATH env 覆盖。
+    duckdb_path: str = _REPO_ROOT_DUCKDB
 
     # Governance / invitations
     frontend_base_url: str = "http://localhost:5173"
