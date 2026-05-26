@@ -35,8 +35,10 @@ services:
       - "9001:9001"
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      # root 凭据直接绑定后端用的 MINIO_ACCESS_KEY/SECRET_KEY (单一来源, 不会漂移):
+      # dev 默认 minioadmin; 生产经 --env-file .env.production 覆盖, 自动与后端/worker 一致。
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
     volumes:
       - miniodata:/data
     healthcheck:

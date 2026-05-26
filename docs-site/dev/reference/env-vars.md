@@ -37,7 +37,7 @@ last_reviewed: 2026-05-26
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `MINIO_ENDPOINT` | `localhost:9000` | MinIO 服务地址（不含协议前缀），Docker 默认 localhost:9000 |
-| `MINIO_ACCESS_KEY` | `minioadmin` | MinIO 访问密钥（相当于 AWS Access Key ID） |
+| `MINIO_ACCESS_KEY` | `minioadmin` | MinIO 访问密钥（相当于 AWS Access Key ID） 沿用 compose 自带 minio 时，这两项同时作为 minio 容器的 root 凭据（docker-compose.yml 绑定）， 后端/worker 与 minio 容器自动共用同一份；用托管 S3/OSS 时填对方的 AK/SK 即可。 |
 | `MINIO_SECRET_KEY` | `minioadmin` | MinIO 密钥（相当于 AWS Secret Access Key）；生产环境务必更换 |
 | `MINIO_BUCKET` | `annotations` | 存放标注文件（图片、音频等）的桶名称 |
 | `MINIO_DATASETS_BUCKET` | `datasets` | 数据集源文件桶（图片/视频/文本原始文件） |
