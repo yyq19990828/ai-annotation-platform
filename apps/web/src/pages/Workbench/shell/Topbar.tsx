@@ -36,6 +36,8 @@ interface TopbarProps {
   onSmartNextUncertain?: () => void;
   /** 溢出菜单内嵌槽位（Phase 3 用于主题切换）。 */
   overflowSlot?: React.ReactNode;
+  hideOrphanAnnotations?: boolean;
+  onToggleHideOrphans?: () => void;
   /** v0.6.5 状态机：审核中可撤回 / 已通过可重开。 */
   canWithdraw?: boolean;
   canReopen?: boolean;
@@ -73,7 +75,7 @@ export function Topbar({
   task, taskIdx, taskTotal, aiRunning, batchStatus, isSubmitting, confThreshold,
   onShowHotkeys, onBack, leftSidebarOpen, rightSidebarOpen, onToggleLeftSidebar, onToggleRightSidebar,
   onRunAi, aiDisabled = false, onPrev, onNext, onSubmit, onSmartNextOpen, onSmartNextUncertain,
-  overflowSlot,
+  overflowSlot, hideOrphanAnnotations = false, onToggleHideOrphans,
   canWithdraw = false, canReopen = false, isWithdrawing = false, isReopening = false,
   onWithdraw, onReopen,
   isSkipping = false, onSkip,
@@ -104,8 +106,16 @@ export function Topbar({
   if (onSmartNextOpen) smartItems.push({ id: "next-open", label: "下一未标注", kbd: "N", onSelect: onSmartNextOpen });
   if (onSmartNextUncertain) smartItems.push({ id: "next-uncertain", label: "下一最不确定", kbd: "U", onSelect: onSmartNextUncertain });
 
-  // 快捷键已提到 navRow 独立按钮; ⚙ 溢出菜单现仅承载主题切换 (footer)。
   const overflowItems: DropdownItem[] = [];
+  if (onToggleHideOrphans) {
+    overflowItems.push({
+      id: "hide-orphan-annotations",
+      label: "隐藏孤儿标注",
+      icon: "warning",
+      active: hideOrphanAnnotations,
+      onSelect: onToggleHideOrphans,
+    });
+  }
 
   return (
     <div className={styles.topbar}>

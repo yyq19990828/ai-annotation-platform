@@ -1,4 +1,5 @@
 import uuid
+from collections import Counter
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
@@ -22,6 +23,9 @@ from app.schemas.project import (
     ProjectCreate,
     ProjectUpdate,
     ProjectStats,
+    ProjectClassUsageOut,
+    ProjectCleanupOrphansRequest,
+    ProjectCleanupOrphansOut,
     ProjectMemberOut,
     ProjectMemberCreate,
     ProjectTransferRequest,
@@ -666,6 +670,128 @@ async def rename_class(
     await db.commit()
     await db.refresh(project)
     return await _serialize_project(db, project)
+
+
+@router.get("/{project_id}/class-usage", response_model=ProjectClassUsageOut)
+async def get_class_usage(
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.db.models.annotation import Annotation
+
+    class_rows = (
+        await db.execute(
+            select(Annotation.class_name, func.count(Annotation.id))
+            .where(
+                Annotation.project_id == project.id,
+                Annotation.is_active.is_(True),
+            )
+            .group_by(Annotation.class_name)
+        )
+    ).all()
+    classes = {name: int(count or 0) for name, count in class_rows if name}
+
+    attribute_rows = (
+        await db.execute(
+            select(Annotation.attributes).where(
+                Annotation.project_id == project.id,
+                Annotation.is_active.is_(True),
+            )
+        )
+    ).scalars()
+    attributes: Counter[str] = Counter()
+    for attrs in attribute_rows:
+        if isinstance(attrs, dict):
+            attributes.update(str(key) for key in attrs.keys())
+
+    return ProjectClassUsageOut(classes=classes, attributes=dict(attributes))
+
+
+@router.post("/{project_id}/cleanup-orphans", response_model=ProjectCleanupOrphansOut)
+async def cleanup_annotation_orphans(
+    request: Request,
+    body: ProjectCleanupOrphansRequest | None = None,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.db.models.annotation import Annotation
+    from app.services.project import (
+        derive_attribute_keys,
+        derive_classes_list,
+        orphan_user_attribute_keys,
+        prune_orphan_user_attributes,
+    )
+
+    dry_run = True if body is None else body.dry_run
+    class_names = set(derive_classes_list(project.tool_bindings))
+    attribute_keys = derive_attribute_keys(project.tool_bindings)
+
+    annotations = list(
+        (
+            await db.execute(
+                select(Annotation).where(
+                    Annotation.project_id == project.id,
+                    Annotation.is_active.is_(True),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    orphan_annotations = 0
+    orphan_attribute_keys: Counter[str] = Counter()
+    affected_task_ids: set[uuid.UUID] = set()
+
+    for ann in annotations:
+        if ann.class_name not in class_names:
+            orphan_annotations += 1
+            if not dry_run:
+                ann.is_active = False
+                affected_task_ids.add(ann.task_id)
+            continue
+
+        orphan_keys = orphan_user_attribute_keys(ann.attributes, attribute_keys)
+        if not orphan_keys:
+            continue
+        orphan_attribute_keys.update(orphan_keys)
+        if not dry_run:
+            ann.attributes = prune_orphan_user_attributes(
+                ann.attributes,
+                attribute_keys,
+            )
+
+    if not dry_run:
+        await db.flush()
+        if affected_task_ids:
+            from app.services.annotation import AnnotationService
+
+            annotation_svc = AnnotationService(db)
+            for task_id in affected_task_ids:
+                await annotation_svc._update_task_stats(task_id)
+
+        from app.services.audit import AuditService
+
+        await AuditService.log(
+            db,
+            actor=current_user,
+            action="project.cleanup_annotation_orphans",
+            target_type="project",
+            target_id=str(project.id),
+            request=request,
+            status_code=200,
+            detail={
+                "orphan_annotations": orphan_annotations,
+                "orphan_attribute_keys": dict(orphan_attribute_keys),
+            },
+        )
+        await db.commit()
+
+    return ProjectCleanupOrphansOut(
+        orphan_annotations=orphan_annotations,
+        orphan_attribute_keys=dict(orphan_attribute_keys),
+    )
 
 
 @router.post("/{project_id}/transfer", response_model=ProjectOut)

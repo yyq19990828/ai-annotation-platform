@@ -119,11 +119,13 @@ interface BoxListItemProps {
   onChangeClass?: () => void;
   /** v0.10.5 M4-β · I15 切换 lock/hidden/occluded；仅人工框传入。 */
   onToggleFlag?: (flag: "is_locked" | "is_hidden" | "is_occluded") => void;
+  orphan?: boolean;
 }
 
 export function BoxListItem({
   b, isAi, selected, dimmed = false, imageWidth, imageHeight,
   onSelect, onAccept, onReject, onRefine, onDelete, onChangeClass, onToggleFlag,
+  orphan = false,
 }: BoxListItemProps) {
   const color = classColor(b.cls);
   const toolMeta = annotationToolMeta(b, imageWidth, imageHeight);
@@ -159,6 +161,15 @@ export function BoxListItem({
               className={styles.coveredTag}
               title="已被同类用户框（IoU > 0.7）覆盖"
             >已被覆盖</span>
+          )}
+          {orphan && !isAi && (
+            <span
+              className={styles.orphanTag}
+              title="当前项目类别配置中已不存在该类别"
+            >
+              <Icon name="warning" size={9} />
+              已删除
+            </span>
           )}
         </div>
         <div className={cn("mono", styles.detailRow)}>

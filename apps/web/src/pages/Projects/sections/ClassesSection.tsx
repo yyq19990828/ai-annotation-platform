@@ -4,10 +4,11 @@ import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject, useRenameClass } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
-import type {
-  ProjectResponse,
-  AttributeField,
-  AttributeSchema,
+import {
+  projectsApi,
+  type ProjectResponse,
+  type AttributeField,
+  type AttributeSchema,
 } from "@/api/projects";
 import { AttributeSchemaEditor, validateAttributeFields } from "./AttributeSchemaEditor";
 import { ClassEditor, type ClassRow } from "./ClassEditor";
@@ -75,6 +76,44 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
         keypointSchema: b[activeUnit]?.keypointSchema ?? null,
       },
     }));
+  };
+
+  const confirmClassDelete = async (row: ClassRow) => {
+    try {
+      const usage = await projectsApi.classUsage(project.id);
+      const count = usage.classes[row.name] ?? 0;
+      const message = count > 0
+        ? `类别「${row.name}」已被 ${count} 条标注使用。\n\n删除后这些标注将变为孤儿；暂不影响标注数据，加回同名类别即可恢复。工作台可隐藏孤儿标注，如需彻底清除请运维执行清理。\n\n确认删除？`
+        : `类别「${row.name}」暂无标注引用，可放心删除。\n\n确认删除？`;
+      return window.confirm(message);
+    } catch (err) {
+      pushToast({
+        msg: "删除前用量统计失败",
+        sub: (err as Error).message,
+        kind: "error",
+      });
+      return false;
+    }
+  };
+
+  const confirmAttributeDelete = async (field: AttributeField) => {
+    const key = field.key.trim();
+    if (!key) return true;
+    try {
+      const usage = await projectsApi.classUsage(project.id);
+      const count = usage.attributes[key] ?? 0;
+      const message = count > 0
+        ? `属性「${key}」已被 ${count} 条标注使用。\n\n删除后这些属性值将变为孤儿；暂不影响标注数据，加回同 key 属性即可恢复。工作台可隐藏孤儿标注，如需彻底清除请运维执行清理。\n\n确认删除？`
+        : `属性「${key}」暂无标注引用，可放心删除。\n\n确认删除？`;
+      return window.confirm(message);
+    } catch (err) {
+      pushToast({
+        msg: "删除前用量统计失败",
+        sub: (err as Error).message,
+        kind: "error",
+      });
+      return false;
+    }
   };
 
   const onKeypointSchemaChange = (next: KeypointSchema) => {
@@ -207,6 +246,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
                 onChange={onChange}
                 onRename={handleRename}
                 renaming={rename.isPending}
+                onConfirmDelete={confirmClassDelete}
               />
             </section>
             {activeUnit === "keypoint" && (
@@ -223,6 +263,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
               <AttributeSchemaEditor
                 value={activeBinding.attributeFields}
                 onChange={onAttributeChange}
+                onConfirmDelete={confirmAttributeDelete}
               />
             </section>
           </div>

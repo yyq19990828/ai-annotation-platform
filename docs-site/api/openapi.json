@@ -8909,6 +8909,55 @@
         "title": "ProjectBatchSummary",
         "type": "object"
       },
+      "ProjectClassUsageOut": {
+        "properties": {
+          "attributes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Attributes",
+            "type": "object"
+          },
+          "classes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Classes",
+            "type": "object"
+          }
+        },
+        "title": "ProjectClassUsageOut",
+        "type": "object"
+      },
+      "ProjectCleanupOrphansOut": {
+        "properties": {
+          "orphan_annotations": {
+            "default": 0,
+            "title": "Orphan Annotations",
+            "type": "integer"
+          },
+          "orphan_attribute_keys": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Orphan Attribute Keys",
+            "type": "object"
+          }
+        },
+        "title": "ProjectCleanupOrphansOut",
+        "type": "object"
+      },
+      "ProjectCleanupOrphansRequest": {
+        "properties": {
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "title": "ProjectCleanupOrphansRequest",
+        "type": "object"
+      },
       "ProjectCreate": {
         "properties": {
           "ai_enabled": {
@@ -23193,6 +23242,54 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/class-usage": {
+      "get": {
+        "operationId": "get_class_usage_api_v1_projects__project_id__class_usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectClassUsageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Class Usage",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/classes/rename": {
       "post": {
         "description": "B-13 · 原子地把类别 old_name 重命名为 new_name:\n- 更新 tool_bindings 中对应 unit (或所有 unit) 的 classes[].name (强隔离 · 仅本 unit)\n- **始终跨 unit** 改全项目内同名 annotations.class_name (避免历史 magic-box /\n  region / 旧 schema 残留留下\"孤儿\"标注: binding 已无该类, 但 annotation 仍引用)\n- 不动 predictions.result (alias 不变)",
@@ -23247,6 +23344,71 @@
           }
         ],
         "summary": "Rename Class",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/cleanup-orphans": {
+      "post": {
+        "operationId": "cleanup_annotation_orphans_api_v1_projects__project_id__cleanup_orphans_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ProjectCleanupOrphansRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectCleanupOrphansOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cleanup Annotation Orphans",
         "tags": [
           "projects"
         ]

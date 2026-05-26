@@ -29,12 +29,15 @@ interface Props {
   onChange: (next: AttributeField[]) => void;
   /** 空状态提示文案 */
   emptyHint?: string;
+  /** 删除前确认；返回 false 时取消删除。 */
+  onConfirmDelete?: (field: AttributeField) => boolean | Promise<boolean>;
 }
 
 export function AttributeSchemaEditor({
   value,
   onChange,
   emptyHint = "尚未配置任何属性",
+  onConfirmDelete,
 }: Props) {
   const setField = (i: number, patch: Partial<AttributeField>) =>
     onChange(value.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
@@ -47,7 +50,15 @@ export function AttributeSchemaEditor({
     onChange(out);
   };
 
-  const removeField = (i: number) => onChange(value.filter((_, idx) => idx !== i));
+  const removeField = async (i: number) => {
+    const field = value[i];
+    if (!field) return;
+    if (onConfirmDelete) {
+      const ok = await onConfirmDelete(field);
+      if (!ok) return;
+    }
+    onChange(value.filter((_, idx) => idx !== i));
+  };
   const addField = () => onChange([...value, newAttributeField()]);
 
   return (

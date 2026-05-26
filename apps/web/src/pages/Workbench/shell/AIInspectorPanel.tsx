@@ -32,6 +32,7 @@ interface AIInspectorPanelProps {
   aiBoxes: AiBox[];
   predictionSourceFilter?: PredictionSourceFilterState;
   userBoxes: Annotation[];
+  orphanUserBoxIds?: Set<string>;
   selectedId: string | null;
   selectedIds?: string[];
   /** 与 user 框 IoU > 0.7 的同类 AI 框 id（视觉淡化）。 */
@@ -94,7 +95,7 @@ export function AIInspectorPanel({
   open,
   aiBoxes,
   predictionSourceFilter,
-  userBoxes, selectedId, selectedIds,
+  userBoxes, orphanUserBoxIds, selectedId, selectedIds,
   dimmedAiIds,
   imageWidth, imageHeight,
   attributeSchema, selectedAnnotation, onUpdateAttributes,
@@ -152,6 +153,7 @@ export function AIInspectorPanel({
         aiBoxes={aiBoxes}
         predictionSourceFilter={predictionSourceFilter}
         userBoxes={userBoxes}
+        orphanUserBoxIds={orphanUserBoxIds}
         selSet={selSet}
         dimmedAiIds={dimmedAiIds}
         imageWidth={imageWidth}
@@ -576,6 +578,7 @@ interface BoxesListProps {
   aiBoxes: AiBox[];
   predictionSourceFilter?: PredictionSourceFilterState;
   userBoxes: Annotation[];
+  orphanUserBoxIds?: Set<string>;
   selSet: Set<string>;
   dimmedAiIds?: Set<string>;
   imageWidth: number | null;
@@ -602,7 +605,7 @@ interface BoxesListProps {
 }
 
 function BoxesList({
-  aiBoxes, predictionSourceFilter, userBoxes, selSet, dimmedAiIds, imageWidth, imageHeight,
+  aiBoxes, predictionSourceFilter, userBoxes, orphanUserBoxIds, selSet, dimmedAiIds, imageWidth, imageHeight,
   hasMore, isFetchingMore, onFetchMore,
   currentFrameIndex,
   onSeekFrame,
@@ -817,6 +820,7 @@ function BoxesList({
               {r.kind === "user" && (
                 <BoxListItem
                   b={r.box}
+                  orphan={orphanUserBoxIds?.has(r.box.id) ?? false}
                   selected={selSet.has(r.box.id)}
                   imageWidth={imageWidth} imageHeight={imageHeight}
                   onSelect={(e) => selectBox(r.box, e?.shiftKey)}

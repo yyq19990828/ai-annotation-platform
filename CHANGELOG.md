@@ -24,9 +24,19 @@
 
 ## 最新版本
 
-> **§2.2 AnnotationFeedback 收敛 epic 进行中（v0.11）。** 见 [epic 索引](docs/plans/2026-05-25-v0.11-annotation-feedback-convergence.md) 与 [ADR-0027](docs/adr/0027-annotation-feedback-unified-table.md)。已落地 A 组（双写对账安全网）与 B 组（工作台统一讨论面板 DiscussionPanel）；C 组（ADR refined-C 决策）/ D 组（切单源）待后续。关键决策：refined-C —— comment/issue 单源进 `annotation_feedbacks`，bug/reject 保持权威在 `bug_reports`/`tasks`，`v_annotation_feedback_unified` view 作永久统一读表面。
->
-> 开始开发 0.12 后，以下 0.11.x 版本段整体移到 `docs/changelogs/0.11.x.md`。
+## [0.11.13] - 2026-05-26
+
+> **类别 / 属性孤儿数据治理。** 删除类别或属性前展示受影响标注数；工作台可隐藏孤儿标注；导出跳过孤儿类别并收敛属性；新增 owner/superadmin cleanup 端点。
+
+### Added
+
+- **类别 / 属性删除确认用量统计**: 新增 `GET /projects/{id}/class-usage`，项目设置删除类别或属性时拉取当前 active 标注计数，确认文案明确“删除定义不删除标注，加回同名 / 同 key 可恢复”。
+- **工作台隐藏孤儿标注开关**: Topbar ⚙ 菜单新增“隐藏孤儿标注”，同时作用于画布与右侧人工列表；未隐藏时孤儿行显示“已删除”标记。
+- **孤儿 cleanup 运维端点**: 新增 `POST /projects/{id}/cleanup-orphans`，默认 `dry_run=true` 返回孤儿标注数与孤儿属性 key 计数；`dry_run=false` 软删孤儿类别标注并移除有效类别标注中的孤儿用户属性 key。→ [plan](docs/plans/2026-05-26-v0.11.13-orphan-class-attr-cleanup.md)
+
+### Changed
+
+- **导出兜底过滤孤儿数据**: COCO / YOLO / VOC / AAP JSON / Video JSON 统一在加载后跳过当前类别定义中不存在的标注，并只导出当前 attribute schema 内的用户属性 key，避免 schema 与 data 自相矛盾。
 
 ## [0.11.12] - 2026-05-25
 

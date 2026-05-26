@@ -5,6 +5,8 @@ import json
 import uuid
 import zipfile
 from datetime import datetime
+from types import SimpleNamespace
+from typing import cast
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from sqlalchemy import select
@@ -13,12 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem
 from app.db.models.prediction import Prediction
-from app.db.models.task import Task
 from app.db.models.project import Project
+from app.db.models.task import Task
 from app.services.project import (
+    derive_attribute_keys,
     derive_attribute_schema,
     derive_classes_config,
     derive_classes_list,
+    sanitize_annotation_attributes,
 )
 from app.schemas.aap_json import (
     AAP_SCHEMA_VERSION,
@@ -37,6 +41,59 @@ from app.services.video_tracks import (
     resolved_track_frames,
     sorted_keyframes,
 )
+
+
+def _sanitize_export_geometry(
+    geometry: dict | None,
+    allowed_attribute_keys: set[str],
+) -> dict:
+    if not isinstance(geometry, dict):
+        return {}
+    if geometry.get("type") != "video_track":
+        return dict(geometry)
+
+    changed = False
+    keyframes = []
+    for kf in geometry.get("keyframes") or []:
+        if not isinstance(kf, dict):
+            keyframes.append(kf)
+            continue
+        next_kf = dict(kf)
+        if isinstance(kf.get("attributes"), dict):
+            next_attrs = sanitize_annotation_attributes(
+                kf.get("attributes"),
+                allowed_attribute_keys,
+            )
+            if next_attrs:
+                next_kf["attributes"] = next_attrs
+            else:
+                next_kf.pop("attributes", None)
+            changed = changed or next_attrs != kf.get("attributes")
+        keyframes.append(next_kf)
+
+    if not changed:
+        return dict(geometry)
+    return {**geometry, "keyframes": keyframes}
+
+
+def _export_annotation_copy(
+    ann: Annotation,
+    allowed_attribute_keys: set[str],
+) -> Annotation:
+    data = {
+        column.name: getattr(ann, column.name)
+        for column in Annotation.__table__.columns
+    }
+    data["attributes"] = sanitize_annotation_attributes(
+        ann.attributes,
+        allowed_attribute_keys,
+    )
+    data["geometry"] = _sanitize_export_geometry(
+        ann.geometry,
+        allowed_attribute_keys,
+    )
+    return cast(Annotation, SimpleNamespace(**data))
+
 
 IMG_W, IMG_H = 1920, 1280
 
@@ -209,6 +266,13 @@ class ExportService:
         ann_q = ann_q.order_by(Annotation.created_at)
         annotations_result = await self.db.execute(ann_q)
         annotations = list(annotations_result.scalars().all())
+        class_names = set(derive_classes_list(project.tool_bindings))
+        attribute_keys = derive_attribute_keys(project.tool_bindings)
+        annotations = [
+            _export_annotation_copy(ann, attribute_keys)
+            for ann in annotations
+            if ann.class_name in class_names
+        ]
 
         return project, tasks, annotations
 

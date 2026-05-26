@@ -409,6 +409,50 @@ export function useWorkbenchShellModel({
   const { data: annotationsData } = useAnnotations(taskId);
   const annotationsRef = useRef<AnnotationResponse[]>([]);
   annotationsRef.current = annotationsData ?? [];
+  const [hideOrphanAnnotations, setHideOrphanAnnotations] = useState(false);
+  const projectClassNames = useMemo(
+    () =>
+      currentProject
+        ? new Set(Object.keys(currentProject.classes_config ?? {}))
+        : null,
+    [currentProject],
+  );
+  const orphanAnnotationIds = useMemo(
+    () =>
+      new Set(
+        (annotationsData ?? [])
+          .filter(
+            (ann) =>
+              projectClassNames != null && !projectClassNames.has(ann.class_name),
+          )
+          .map((ann) => ann.id),
+      ),
+    [annotationsData, projectClassNames],
+  );
+  const visibleAnnotationsData = useMemo(
+    () =>
+      hideOrphanAnnotations
+        ? (annotationsData ?? []).filter((ann) => !orphanAnnotationIds.has(ann.id))
+        : (annotationsData ?? []),
+    [annotationsData, hideOrphanAnnotations, orphanAnnotationIds],
+  );
+  const selectedIdsForOrphanFilter = s.selectedIds;
+  const replaceSelectedForOrphanFilter = s.replaceSelected;
+
+  useEffect(() => {
+    if (!hideOrphanAnnotations || selectedIdsForOrphanFilter.length === 0) return;
+    const nextSelectedIds = selectedIdsForOrphanFilter.filter(
+      (id) => !orphanAnnotationIds.has(id),
+    );
+    if (nextSelectedIds.length !== selectedIdsForOrphanFilter.length) {
+      replaceSelectedForOrphanFilter(nextSelectedIds);
+    }
+  }, [
+    hideOrphanAnnotations,
+    orphanAnnotationIds,
+    replaceSelectedForOrphanFilter,
+    selectedIdsForOrphanFilter,
+  ]);
 
   useEffect(() => {
     publishTaskBoxCount(annotationsRef.current.length);
@@ -439,10 +483,10 @@ export function useWorkbenchShellModel({
   );
 
   const userBoxes = useMemo(
-    () => (annotationsData ?? [])
+    () => visibleAnnotationsData
       .filter((ann) => !(isVideoTask && ann.geometry.type === "video_track"))
       .map(annotationToBox),
-    [annotationsData, isVideoTask],
+    [visibleAnnotationsData, isVideoTask],
   );
 
   const taskAiMeta = useMemo(() => {
@@ -899,8 +943,8 @@ export function useWorkbenchShellModel({
 
   const selectedAnnotationForPanel = useMemo<AnnotationResponse | null>(() => {
     if (!s.selectedId || s.selectedIds.length > 1) return null;
-    return (annotationsData ?? []).find((a) => a.id === s.selectedId) ?? null;
-  }, [s.selectedId, s.selectedIds.length, annotationsData]);
+    return visibleAnnotationsData.find((a) => a.id === s.selectedId) ?? null;
+  }, [s.selectedId, s.selectedIds.length, visibleAnnotationsData]);
 
   // v0.11.5+ · 评论的视频帧锚点 (恢复 B1 去 flag 时随 AIInspectorPanel 内嵌一起删掉的逻辑)。
   const videoCommentAnchor = useMemo<AnnotationCommentAnchor | null>(() => {
@@ -1164,6 +1208,8 @@ export function useWorkbenchShellModel({
       onPrev: () => navigateTask("prev"), onNext: () => navigateTask("next"),
       onSubmit: topbarActions.onSubmit ?? handleSubmitTask, onSmartNextOpen: topbarActions.onSmartNextOpen,
       onSmartNextUncertain: topbarActions.onSmartNextUncertain, overflowSlot: <ThemeSwitcher />,
+      hideOrphanAnnotations,
+      onToggleHideOrphans: () => setHideOrphanAnnotations((value) => !value),
       canWithdraw: topbarActions.canWithdraw, canReopen: topbarActions.canReopen,
       isWithdrawing: topbarActions.isWithdrawing, isReopening: topbarActions.isReopening,
       onWithdraw: topbarActions.onWithdraw, onReopen: topbarActions.onReopen,
@@ -1179,7 +1225,7 @@ export function useWorkbenchShellModel({
         activeClass: s.activeClass,
         selectedId: s.selectedId,
         selectedIds: s.selectedIds,
-        annotations: annotationsData ?? [],
+        annotations: visibleAnnotationsData,
         pendingDrawing: s.pendingDrawing,
         onSelectBox: handleSelectBox,
         onCursorMove: setCursor,
@@ -1336,7 +1382,8 @@ export function useWorkbenchShellModel({
       open: rightOpen, width: s.rightWidth, onResize: s.setRightWidth, readOnly: isLocked,
       aiBoxes: modeState.diffMode !== "final" ? aiBoxes : [],
       predictionSourceFilter,
-      userBoxes, selectedId: s.selectedId, selectedIds: s.selectedIds,
+      userBoxes, orphanUserBoxIds: orphanAnnotationIds,
+      selectedId: s.selectedId, selectedIds: s.selectedIds,
       dimmedAiIds,
       imageWidth, imageHeight,
       onSelect: handleSelectBox,
@@ -1367,7 +1414,7 @@ export function useWorkbenchShellModel({
       videoTrackPanel: isVideoTask ? ((frameFilter) => (
         <div className={styles.videoTrackPanel}>
           <VideoTrackSidebar
-            annotations={annotationsData ?? []}
+            annotations={visibleAnnotationsData}
             selectedId={s.selectedId}
             selectedIds={s.selectedIds}
             frameIndex={s.videoFrameIndex}

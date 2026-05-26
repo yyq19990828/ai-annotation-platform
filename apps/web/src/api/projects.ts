@@ -126,6 +126,16 @@ export interface ExportOptions {
   videoFrameMode?: VideoFrameMode;
 }
 
+export interface ProjectClassUsageResponse {
+  classes: Record<string, number>;
+  attributes: Record<string, number>;
+}
+
+export interface ProjectCleanupOrphansResponse {
+  orphan_annotations: number;
+  orphan_attribute_keys: Record<string, number>;
+}
+
 export interface ProjectListParams {
   status?: string;
   search?: string;
@@ -167,6 +177,15 @@ export const projectsApi = {
 
   transfer: (id: string, new_owner_id: string) =>
     apiClient.post<ProjectResponse>(`/projects/${id}/transfer`, { new_owner_id }),
+
+  classUsage: (id: string) =>
+    apiClient.get<ProjectClassUsageResponse>(`/projects/${id}/class-usage`),
+
+  cleanupOrphans: (id: string, dry_run = true) =>
+    apiClient.post<ProjectCleanupOrphansResponse>(
+      `/projects/${id}/cleanup-orphans`,
+      { dry_run },
+    ),
 
   // B-13 · 重命名类别 (后端原子更新 classes / classes_config / annotations.class_name)
   // v0.10.17 · 加可选 tool_unit_id 限定工具单位; 不传时跨所有 unit 同名一起改 (兼容旧客户端).

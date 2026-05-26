@@ -5,7 +5,7 @@
  * 2. 组件 render：fields 数组渲染对应字段；onChange 在 add/remove 时触发
  */
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import {
   AttributeSchemaEditor,
   validateAttributeFields,
@@ -99,5 +99,27 @@ describe("<AttributeSchemaEditor />", () => {
     render(<AttributeSchemaEditor value={fields} onChange={() => {}} />);
     expect(screen.getByDisplayValue("occluded")).toBeInTheDocument();
     expect(screen.getByDisplayValue("是否遮挡")).toBeInTheDocument();
+  });
+
+  it("删除字段前等待确认回调", async () => {
+    const fields: AttributeField[] = [
+      { key: "occluded", label: "是否遮挡", type: "boolean" },
+    ];
+    const onChange = vi.fn();
+    const onConfirmDelete = vi.fn().mockResolvedValue(false);
+    render(
+      <AttributeSchemaEditor
+        value={fields}
+        onChange={onChange}
+        onConfirmDelete={onConfirmDelete}
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle("删除"));
+
+    await waitFor(() => {
+      expect(onConfirmDelete).toHaveBeenCalledWith(fields[0]);
+    });
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

@@ -292,6 +292,8 @@
 | PATCH | `/{project_id}` |
 | DELETE | `/{project_id}` |
 | POST | `/{project_id}/classes/rename` |
+| GET | `/{project_id}/class-usage` |
+| POST | `/{project_id}/cleanup-orphans` |
 | POST | `/{project_id}/transfer` |
 | GET | `/{project_id}/members` |
 | POST | `/{project_id}/members` |
@@ -400,4 +402,4 @@
 
 ---
 
-_共 36 模块 / 228 路由_
+_共 36 模块 / 230 路由_

@@ -66,9 +66,11 @@ interface Props {
   onRename?: (oldName: string, newName: string) => void;
   /** 外部正在跑 rename 时禁用编辑. */
   renaming?: boolean;
+  /** 删除前确认；返回 false 时取消删除。 */
+  onConfirmDelete?: (row: ClassRow) => boolean | Promise<boolean>;
 }
 
-export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配置任何类别", onRename, renaming = false }: Props) {
+export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配置任何类别", onRename, renaming = false, onConfirmDelete }: Props) {
   const [classInput, setClassInput] = useState("");
   // B-13 · 行内重命名: 记录每行的草稿名 (key 用稳定的 row.name 作 baseline; 提交时与原名比对决定是否调 onRename).
   const [renameDrafts, setRenameDrafts] = useState<Record<string, string>>({});
@@ -125,7 +127,15 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
       // sessionStorage 不可用时静默
     }
   };
-  const remove = (i: number) => onChange(value.filter((_, idx) => idx !== i));
+  const remove = async (i: number) => {
+    const row = value[i];
+    if (!row) return;
+    if (onConfirmDelete) {
+      const ok = await onConfirmDelete(row);
+      if (!ok) return;
+    }
+    onChange(value.filter((_, idx) => idx !== i));
+  };
 
   const add = () => {
     const v = classInput.trim();

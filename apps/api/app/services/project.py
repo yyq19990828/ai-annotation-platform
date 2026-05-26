@@ -92,6 +92,59 @@ def derive_attribute_schema(
     return {"fields": merged}
 
 
+def derive_attribute_keys(tool_bindings: dict[str, Any] | None) -> set[str]:
+    """Return user-defined annotation attribute keys from enabled tool bindings."""
+    schema = derive_attribute_schema(tool_bindings)
+    return {
+        field["key"]
+        for field in schema.get("fields") or []
+        if isinstance(field, dict) and field.get("key")
+    }
+
+
+def is_system_attribute_key(key: str) -> bool:
+    """System metadata stored in annotations.attributes, not user schema data."""
+    return key.startswith("_")
+
+
+def sanitize_annotation_attributes(
+    attributes: dict[str, Any] | None,
+    allowed_keys: set[str],
+) -> dict[str, Any]:
+    """Keep only current schema-backed user attributes for export payloads."""
+    if not isinstance(attributes, dict):
+        return {}
+    return {key: value for key, value in attributes.items() if key in allowed_keys}
+
+
+def orphan_user_attribute_keys(
+    attributes: dict[str, Any] | None,
+    allowed_keys: set[str],
+) -> list[str]:
+    """User attribute keys that no longer exist in the current schema."""
+    if not isinstance(attributes, dict):
+        return []
+    return [
+        key
+        for key in attributes
+        if key not in allowed_keys and not is_system_attribute_key(key)
+    ]
+
+
+def prune_orphan_user_attributes(
+    attributes: dict[str, Any] | None,
+    allowed_keys: set[str],
+) -> dict[str, Any]:
+    """Drop orphan user attributes while preserving system metadata keys."""
+    if not isinstance(attributes, dict):
+        return {}
+    return {
+        key: value
+        for key, value in attributes.items()
+        if key in allowed_keys or is_system_attribute_key(key)
+    }
+
+
 def derive_tool_unit_for_type_key(type_key: str | None) -> str:
     """v0.10.17 · 旧 type_key → 默认 tool_unit_id 推断 (与 migration 0072 同规则).
 

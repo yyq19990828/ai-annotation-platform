@@ -227,6 +227,20 @@ class ProjectStats(BaseModel):
     ai_derived_annotations: int = 0
 
 
+class ProjectClassUsageOut(BaseModel):
+    classes: dict[str, int] = Field(default_factory=dict)
+    attributes: dict[str, int] = Field(default_factory=dict)
+
+
+class ProjectCleanupOrphansRequest(BaseModel):
+    dry_run: bool = True
+
+
+class ProjectCleanupOrphansOut(BaseModel):
+    orphan_annotations: int = 0
+    orphan_attribute_keys: dict[str, int] = Field(default_factory=dict)
+
+
 class ProjectMemberOut(BaseModel):
     id: UUID
     user_id: UUID

@@ -46,6 +46,16 @@ POST /api/v1/projects/:id/classes/rename
 
 直接 PATCH `classes_config` 改名会让历史 annotation 的 `class_name` 失联。
 
+删除类别 / 属性定义不会删除已有标注；旧 `class_name` 或属性 key 会按当前配置实时判定为孤儿。v0.11.13 起提供两个治理端点：
+
+```http
+GET /api/v1/projects/:id/class-usage
+POST /api/v1/projects/:id/cleanup-orphans
+```
+
+- `class-usage` 返回 `{ classes: {name: count}, attributes: {key: count} }`，用于删除确认。
+- `cleanup-orphans` 默认 `dry_run=true`，返回 `{ orphan_annotations, orphan_attribute_keys }`；`dry_run=false` 时软删孤儿类别标注，并移除有效类别标注中不在当前 attribute schema 内的用户属性 key。
+
 ## 成员管理
 
 ```http

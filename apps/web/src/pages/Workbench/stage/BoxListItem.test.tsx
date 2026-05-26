@@ -86,6 +86,21 @@ describe("BoxListItem", () => {
     expect(getByText("导入 · 91%")).toBeInTheDocument();
   });
 
+  it("marks orphan user annotations", () => {
+    const { getByText } = render(
+      <BoxListItem
+        b={base}
+        selected={false}
+        orphan
+        imageWidth={1000}
+        imageHeight={500}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(getByText("已删除")).toBeInTheDocument();
+  });
+
   it("v0.10.9 · 渲染 onRefine 按钮并触发回调（user polygon 行）", () => {
     const b: Annotation = {
       ...base,

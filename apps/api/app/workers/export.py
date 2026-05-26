@@ -105,7 +105,7 @@ def run_export(
 async def _scope_fingerprint(
     db: AsyncSession, project_id: uuid.UUID, batch_id: uuid.UUID | None
 ) -> tuple[datetime | None, int]:
-    """max(updated_at) + count(active annotation)，删除标注让 count 变（缓存失效）。"""
+    """max(project/annotation updated_at) + active annotation count for cache invalidation."""
     q = select(func.max(Annotation.updated_at), func.count(Annotation.id)).where(
         Annotation.project_id == project_id,
         Annotation.is_active.is_(True),
@@ -117,7 +117,11 @@ async def _scope_fingerprint(
             Annotation.task_id.in_(select(Task.id).where(Task.batch_id == batch_id))
         )
     row = (await db.execute(q)).one()
-    return row[0], int(row[1] or 0)
+    project_updated_at = (
+        await db.execute(select(Project.updated_at).where(Project.id == project_id))
+    ).scalar_one_or_none()
+    timestamps = [ts for ts in (row[0], project_updated_at) if ts is not None]
+    return (max(timestamps) if timestamps else None), int(row[1] or 0)
 
 
 async def _scope_naming(
