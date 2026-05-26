@@ -62,7 +62,6 @@ import { useVideoChapters } from "@/hooks/useVideoChapters";
 import { useVideoTrackerJobs } from "@/hooks/useVideoTrackerJobs";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import type { StageKind } from "../stages/types";
-import { ThemeSwitcher } from "../shell/ThemeSwitcher";
 import { WorkbenchOverlays } from "../shell/WorkbenchOverlays";
 import { WorkbenchLayout } from "../shell/WorkbenchLayout";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -1207,7 +1206,7 @@ export function useWorkbenchShellModel({
       aiDisabled: isVideoTask,
       onPrev: () => navigateTask("prev"), onNext: () => navigateTask("next"),
       onSubmit: topbarActions.onSubmit ?? handleSubmitTask, onSmartNextOpen: topbarActions.onSmartNextOpen,
-      onSmartNextUncertain: topbarActions.onSmartNextUncertain, overflowSlot: <ThemeSwitcher />,
+      onSmartNextUncertain: topbarActions.onSmartNextUncertain,
       hideOrphanAnnotations,
       onToggleHideOrphans: () => setHideOrphanAnnotations((value) => !value),
       canWithdraw: topbarActions.canWithdraw, canReopen: topbarActions.canReopen,

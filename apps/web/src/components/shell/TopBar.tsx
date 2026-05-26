@@ -4,9 +4,8 @@ import { clsx } from "clsx";
 import { Icon } from "@/components/ui/Icon";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Avatar } from "@/components/ui/Avatar";
-import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { useAuthStore } from "@/stores/authStore";
-import { useTheme, type ThemePref } from "@/hooks/useTheme";
+import { useTheme } from "@/hooks/useTheme";
 import type { IconName } from "@/components/ui/Icon";
 import { NotificationsPopover } from "./NotificationsPopover";
 import { PreannotateJobsBadge } from "./PreannotateJobsBadge";
@@ -29,7 +28,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
   const qc = useQueryClient();
   const isFetching = useIsFetching();
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const { theme, resolved, setTheme } = useTheme();
+  const { resolved, setTheme } = useTheme();
 
   // v0.7.2 · 全局 ⌘K / Ctrl+K 触发命令搜索
   useEffect(() => {
@@ -50,27 +49,10 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
     qc.invalidateQueries();
   };
 
-  const themeIcon: IconName = theme === "system" ? "monitor" : theme === "dark" ? "moon" : "sun";
-  const themeTitle =
-    theme === "system"
-      ? `主题：跟随系统（当前 ${resolved === "dark" ? "夜间" : "日间"}）`
-      : theme === "dark"
-      ? "主题：夜间"
-      : "主题：日间";
-
-  const themeItems: DropdownItem[] = (
-    [
-      { key: "light", label: "日间", icon: "sun" as IconName },
-      { key: "dark", label: "夜间", icon: "moon" as IconName },
-      { key: "system", label: "跟随系统", icon: "monitor" as IconName },
-    ] as Array<{ key: ThemePref; label: string; icon: IconName }>
-  ).map((opt) => ({
-    id: opt.key,
-    label: opt.label,
-    icon: opt.icon,
-    active: theme === opt.key,
-    onSelect: () => setTheme(opt.key),
-  }));
+  const nextTheme = resolved === "dark" ? "light" : "dark";
+  const themeIcon: IconName = nextTheme === "dark" ? "moon" : "sun";
+  const themeActionLabel = nextTheme === "dark" ? "切到夜间" : "切到日间";
+  const themeTitle = `当前${resolved === "dark" ? "夜间" : "日间"}，${themeActionLabel}`;
 
   return (
     <>
@@ -130,29 +112,15 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           </button>
 
           {/* 主题切换 */}
-          <DropdownMenu
-            minWidth={160}
-            items={themeItems}
-            footer={
-              theme === "system" ? (
-                <div className={styles.themeFooter}>
-                  当前 {resolved === "dark" ? "夜间" : "日间"}（跟随系统）
-                </div>
-              ) : null
-            }
-            trigger={({ open, toggle, ref }) => (
-              <button
-                ref={ref}
-                title={themeTitle}
-                onClick={toggle}
-                aria-haspopup="menu"
-                aria-expanded={open}
-                className={clsx(styles.iconButton, open && styles.iconButtonActive)}
-              >
-                <Icon name={themeIcon} size={15} />
-              </button>
-            )}
-          />
+          <button
+            type="button"
+            title={themeTitle}
+            aria-label={themeTitle}
+            onClick={() => setTheme(nextTheme)}
+            className={clsx(styles.iconButton, styles.themeToggle)}
+          >
+            <Icon name={themeIcon} size={15} />
+          </button>
 
           {/* v0.9.11 PerfHud · 性能监控浮窗 toggle (admin only, 快捷键 Ctrl+Shift+P 同步) */}
           {(user?.role === "super_admin" || user?.role === "project_admin") ? (

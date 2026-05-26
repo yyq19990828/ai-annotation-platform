@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { Icon } from "@/components/ui/Icon";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
 import { SkipTaskModal, type SkipReason } from "./SkipTaskModal";
 import { BatchStatusBadge } from "@/components/badges/BatchStatusBadge";
+import { useTheme } from "@/hooks/useTheme";
 import type { TaskResponse } from "@/types";
 import styles from "./Topbar.module.css";
 
@@ -34,8 +35,6 @@ interface TopbarProps {
   onSubmit: () => void;
   onSmartNextOpen?: () => void;
   onSmartNextUncertain?: () => void;
-  /** 溢出菜单内嵌槽位（Phase 3 用于主题切换）。 */
-  overflowSlot?: React.ReactNode;
   hideOrphanAnnotations?: boolean;
   onToggleHideOrphans?: () => void;
   /** v0.6.5 状态机：审核中可撤回 / 已通过可重开。 */
@@ -66,7 +65,7 @@ function cn(...xs: Array<string | false | null | undefined>): string {
  * Topbar 三段（v0.5.3）：
  * - 左：标题 / 索引（task.display_id · file_name · n / total）
  * - 中：上一题 / 提交 / 下一题 / ⌄ 智能切题
- * - 右：阈值反馈浮 + AI + ⋯ 溢出菜单（? 帮助 + 主题 + ...）
+ * - 右：阈值反馈浮 + AI + 主题 + ⋯ 溢出菜单（? 帮助 + 设置）
  *
  * 工具切换 → ToolDock（左侧垂直）；撤销/重做/缩放/适应 → FloatingDock（画布右下）。
  */
@@ -75,13 +74,14 @@ export function Topbar({
   task, taskIdx, taskTotal, aiRunning, batchStatus, isSubmitting, confThreshold,
   onShowHotkeys, onBack, leftSidebarOpen, rightSidebarOpen, onToggleLeftSidebar, onToggleRightSidebar,
   onRunAi, aiDisabled = false, onPrev, onNext, onSubmit, onSmartNextOpen, onSmartNextUncertain,
-  overflowSlot, hideOrphanAnnotations = false, onToggleHideOrphans,
+  hideOrphanAnnotations = false, onToggleHideOrphans,
   canWithdraw = false, canReopen = false, isWithdrawing = false, isReopening = false,
   onWithdraw, onReopen,
   isSkipping = false, onSkip,
   mode = "annotate", onApprove, onReject, isApproving = false, isRejecting = false,
   reviewInfoSlot,
 }: TopbarProps) {
+  const { resolved, setTheme } = useTheme();
   // v0.8.7 F7 · 跳过任务 modal 状态
   const [skipOpen, setSkipOpen] = useState(false);
   const status = task?.status;
@@ -106,16 +106,10 @@ export function Topbar({
   if (onSmartNextOpen) smartItems.push({ id: "next-open", label: "下一未标注", kbd: "N", onSelect: onSmartNextOpen });
   if (onSmartNextUncertain) smartItems.push({ id: "next-uncertain", label: "下一最不确定", kbd: "U", onSelect: onSmartNextUncertain });
 
-  const overflowItems: DropdownItem[] = [];
-  if (onToggleHideOrphans) {
-    overflowItems.push({
-      id: "hide-orphan-annotations",
-      label: "隐藏孤儿标注",
-      icon: "warning",
-      active: hideOrphanAnnotations,
-      onSelect: onToggleHideOrphans,
-    });
-  }
+  const nextTheme = resolved === "dark" ? "light" : "dark";
+  const themeIcon: IconName = nextTheme === "dark" ? "moon" : "sun";
+  const themeActionLabel = nextTheme === "dark" ? "切到夜间" : "切到日间";
+  const themeTitle = `当前${resolved === "dark" ? "夜间" : "日间"}，${themeActionLabel}`;
 
   return (
     <div className={styles.topbar}>
@@ -298,6 +292,7 @@ export function Topbar({
             onClick={onRunAi}
             disabled={aiDisabled}
             title={aiDisabled ? "视频任务暂不支持 AI" : "打开 AI 面板"}
+            className={styles.aiButton}
           >
             {aiRunning
               ? <Icon name="loader2" size={13} className="spin" />
@@ -305,11 +300,40 @@ export function Topbar({
             AI
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setTheme(nextTheme)}
+          title={themeTitle}
+          aria-label={themeTitle}
+          className={cn(styles.compactGhostButton, styles.toolbarIconButton)}
+        >
+          <Icon name={themeIcon} size={14} />
+        </Button>
 
         <DropdownMenu
-          minWidth={200}
-          items={overflowItems}
-          footer={overflowSlot ? <div className={styles.overflowFooter}>{overflowSlot}</div> : null}
+          minWidth={220}
+          content={() => (
+            <div className={styles.settingsMenu}>
+              {onToggleHideOrphans && (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={hideOrphanAnnotations}
+                  onClick={onToggleHideOrphans}
+                  className={styles.switchRow}
+                >
+                  <span className={styles.switchText}>
+                    <span className={styles.switchLabel}>隐藏孤儿标注</span>
+                    <span className={styles.switchHint}>筛掉无匹配预测的人工框</span>
+                  </span>
+                  <span className={cn(styles.switchTrack, hideOrphanAnnotations && styles.switchTrackOn)}>
+                    <span className={styles.switchKnob} />
+                  </span>
+                </button>
+              )}
+            </div>
+          )}
           trigger={({ toggle, ref, open }) => (
             <Button
               ref={ref}
@@ -317,7 +341,7 @@ export function Topbar({
               size="sm"
               onClick={toggle}
               title="更多"
-              className={cn(styles.compactGhostButton, open && styles.compactGhostButtonOpen)}
+              className={cn(styles.compactGhostButton, styles.toolbarIconButton, open && styles.toolbarIconButtonOpen)}
             >
               <Icon name="settings" size={14} />
             </Button>

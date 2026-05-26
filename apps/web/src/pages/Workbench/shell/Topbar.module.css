@@ -50,7 +50,7 @@
 .rightRow {
   position: relative;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
 }
 
 .projectName {
@@ -132,14 +132,112 @@
   border-radius: 50%;
 }
 
-.overflowFooter {
-  padding: 4px 0 0;
-}
-
 /* Temporary bridge until Button removes inline base styles. */
 .compactGhostButton {
   padding: 4px 6px !important;
   color: var(--color-fg-muted) !important;
+}
+
+.aiButton {
+  height: 28px !important;
+  padding: 0 11px !important;
+}
+
+.toolbarIconButton {
+  justify-content: center !important;
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  color: var(--color-fg-muted) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: none !important;
+}
+
+.toolbarIconButton:hover,
+.toolbarIconButtonOpen {
+  color: var(--color-fg) !important;
+  background: var(--color-bg-hover) !important;
+}
+
+.settingsMenu {
+  padding: 4px;
+}
+
+.switchRow {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 14px;
+  padding: 9px 10px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+}
+
+.switchRow:hover {
+  background: var(--color-bg-hover);
+}
+
+.switchText {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.switchLabel {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-fg);
+  white-space: nowrap;
+}
+
+.switchHint {
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switchTrack {
+  position: relative;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 20px;
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  transition: background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.switchTrackOn {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.switchKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+
+.switchTrackOn .switchKnob {
+  border-color: var(--color-bg-elev);
+  transform: translateX(16px);
 }
 
 .smartNextButton {
@@ -156,6 +254,7 @@
 }
 
 .chromeIconButton {
+  justify-content: center !important;
   width: 28px !important;
   height: 28px !important;
   padding: 0 !important;
