@@ -7,7 +7,7 @@ import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { Tool } from "../state/useWorkbenchState";
 import type { AiBox } from "../state/transforms";
 import { useElementSize, type Viewport } from "../state/useViewportTransform";
-import { applyResize, type ResizeDirection } from "./ResizeHandles";
+import { applyResize, applyRotatedResize, type ResizeDirection } from "./ResizeHandles";
 import { classColorForCanvas, hexToRgba } from "./colors";
 import { SelectionOverlay } from "./SelectionOverlay";
 import { TOOL_REGISTRY, type PolygonDraftHandle, type KeypointDraftHandle } from "./tools";
@@ -48,6 +48,15 @@ type Drag =
     }
   | { kind: "move"; id: string; start: Geom; sx: number; sy: number; cur: Geom }
   | { kind: "resize"; id: string; start: Geom; sx: number; sy: number; dir: ResizeDirection; cur: Geom }
+  | {
+      kind: "resizeRotatedBox";
+      id: string;
+      start: RotatedBboxGeometry;
+      sx: number;
+      sy: number;
+      dir: ResizeDirection;
+      cur: RotatedBboxGeometry;
+    }
   | { kind: "polyVertex"; id: string; vidx: number; start: Pt[]; cur: Pt[] }
   | { kind: "polyMove"; id: string; start: Pt[]; sx: number; sy: number; cur: Pt[] }
   // v0.10.28 · 关键点单节点拖拽。start/cur 为完整 keypoints 列表，nidx 为被拖节点。
@@ -69,6 +78,11 @@ function translatePolygon(points: Pt[], dx: number, dy: number): Pt[] {
   const cdx = Math.max(-minX, Math.min(1 - maxX, dx));
   const cdy = Math.max(-minY, Math.min(1 - maxY, dy));
   return points.map(([x, y]) => [x + cdx, y + cdy] as Pt);
+}
+
+function rotatedBboxChanged(before: RotatedBboxGeometry, after: RotatedBboxGeometry): boolean {
+  return before.cx !== after.cx || before.cy !== after.cy || before.w !== after.w ||
+    before.h !== after.h || before.angle !== after.angle;
 }
 
 function SamRefineButton({
@@ -141,7 +155,7 @@ interface ImageStageProps {
   onCommitDrawing?: (geo: Geom) => void;
   /** v0.10.28 · 旋转框: 拖出轴对齐矩形松手 → 提交 angle=0 的 rotated_bbox (类别用 activeClass)。 */
   onCommitRotatedBbox?: (geo: Geom) => void;
-  /** v0.10.28 · 旋转框: 旋转手柄落定 → 更新 angle (before/after 为完整 RotatedBboxGeometry)。 */
+  /** v0.10.28 · 旋转框: 旋转 / 缩放手柄落定 → 更新完整 RotatedBboxGeometry。 */
   onCommitRotateBbox?: (id: string, before: RotatedBboxGeometry, after: RotatedBboxGeometry) => void;
   /**
    * v0.9.2 · SAM 工具松手时派发 prompt.
@@ -463,6 +477,21 @@ export function ImageStage({
           );
           return { ...cur, cur: next };
         }));
+      } else if (d.kind === "resizeRotatedBox") {
+        const shiftKey = e.shiftKey;
+        const altKey = e.altKey;
+        schedule(() => setDrag((cur) => {
+          if (!cur || cur.kind !== "resizeRotatedBox") return cur;
+          const next = applyRotatedResize(
+            cur.start,
+            { x: cur.sx, y: cur.sy },
+            pt,
+            cur.dir,
+            { w: imgW, h: imgH },
+            { shiftKey, altKey },
+          );
+          return { ...cur, cur: next };
+        }));
       } else if (d.kind === "polyVertex") {
         schedule(() => setDrag((cur) => {
           if (!cur || cur.kind !== "polyVertex") return cur;
@@ -562,6 +591,10 @@ export function ImageStage({
               (d.cur.x !== d.start.x || d.cur.y !== d.start.y ||
                d.cur.w !== d.start.w || d.cur.h !== d.start.h)) {
             onCommitResize?.(d.id, d.start, d.cur);
+          }
+        } else if (d.kind === "resizeRotatedBox") {
+          if (d.cur.w > 0.005 && d.cur.h > 0.005 && rotatedBboxChanged(d.start, d.cur)) {
+            onCommitRotateBbox?.(d.id, d.start, d.cur);
           }
         } else if (d.kind === "polyVertex" || d.kind === "polyMove") {
           const before = d.start;
@@ -887,15 +920,16 @@ export function ImageStage({
             // v0.10.28 · 旋转框: 绕中心旋转的 Rect + 顶部旋转手柄。
             if (b.geometry?.type === "rotated_bbox") {
               const g = b.geometry;
+              const liveGeometry = drag?.kind === "resizeRotatedBox" && drag.id === b.id ? drag.cur : g;
               // 拖拽中实时角度 override (rotateBox)。
-              const liveAngle = drag?.kind === "rotateBox" && drag.id === b.id ? drag.cur : g.angle;
+              const liveAngle = drag?.kind === "rotateBox" && drag.id === b.id ? drag.cur : liveGeometry.angle;
               const isPrimarySingleSelect = selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
               return (
                 <KonvaRotatedBox
                   key={b.id}
                   b={b}
                   annotationId={b.id}
-                  geometry={g}
+                  geometry={liveGeometry}
                   angle={liveAngle}
                   isAi={false}
                   selected={selSet.has(b.id)}
@@ -908,6 +942,19 @@ export function ImageStage({
                     const pt = toImg(e.evt.clientX, e.evt.clientY);
                     if (!pt) return;
                     setDrag({ kind: "rotateBox", id: b.id, cx: g.cx, cy: g.cy, startAngle: g.angle, cur: g.angle });
+                  } : null}
+                  onResizeStart={isPrimarySingleSelect ? (dir, e) => {
+                    const pt = toImg(e.evt.clientX, e.evt.clientY);
+                    if (!pt) return;
+                    setDrag({
+                      kind: "resizeRotatedBox",
+                      id: b.id,
+                      start: g,
+                      sx: pt.x,
+                      sy: pt.y,
+                      dir,
+                      cur: g,
+                    });
                   } : null}
                 />
               );

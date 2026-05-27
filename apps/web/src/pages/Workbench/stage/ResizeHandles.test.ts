@@ -8,8 +8,8 @@
  * - clamp: 修饰键叠加超出 [0,1] 时仍被 clamp
  */
 import { describe, it, expect } from "vitest";
-import { applyResize } from "./ResizeHandles";
-import type { Annotation } from "@/types";
+import { applyResize, applyRotatedResize } from "./ResizeHandles";
+import type { Annotation, RotatedBboxGeometry } from "@/types";
 
 const base: Annotation = {
   id: "x",
@@ -103,5 +103,63 @@ describe("applyResize · v0.8.7 F6", () => {
     );
     expect(r.x).toBeGreaterThanOrEqual(0);
     expect(r.x + r.w).toBeLessThanOrEqual(1.0001);
+  });
+});
+
+const rotatedBase: RotatedBboxGeometry = {
+  type: "rotated_bbox",
+  cx: 0.5,
+  cy: 0.5,
+  w: 0.2,
+  h: 0.1,
+  angle: 0,
+};
+
+describe("applyRotatedResize", () => {
+  it("angle 0: SE handle resizes like an axis-aligned bbox", () => {
+    const r = applyRotatedResize(
+      rotatedBase,
+      { x: 0, y: 0 },
+      { x: 0.1, y: 0.1 },
+      "se",
+      { w: 1000, h: 500 },
+    );
+
+    expect(r.cx).toBeCloseTo(0.55);
+    expect(r.cy).toBeCloseTo(0.55);
+    expect(r.w).toBeCloseTo(0.3);
+    expect(r.h).toBeCloseTo(0.2);
+    expect(r.angle).toBe(rotatedBase.angle);
+  });
+
+  it("projects pointer movement onto the rotated local axes", () => {
+    const r = applyRotatedResize(
+      { ...rotatedBase, h: 0.2, angle: 90 },
+      { x: 0, y: 0 },
+      { x: 0, y: 0.1 },
+      "e",
+      { w: 1000, h: 1000 },
+    );
+
+    expect(r.cx).toBeCloseTo(0.5);
+    expect(r.cy).toBeCloseTo(0.55);
+    expect(r.w).toBeCloseTo(0.3);
+    expect(r.h).toBeCloseTo(0.2);
+  });
+
+  it("altKey keeps the rotated box centered while resizing", () => {
+    const r = applyRotatedResize(
+      rotatedBase,
+      { x: 0, y: 0 },
+      { x: 0.05, y: 0.05 },
+      "se",
+      { w: 1000, h: 1000 },
+      { altKey: true },
+    );
+
+    expect(r.cx).toBeCloseTo(rotatedBase.cx);
+    expect(r.cy).toBeCloseTo(rotatedBase.cy);
+    expect(r.w).toBeCloseTo(0.3);
+    expect(r.h).toBeCloseTo(0.2);
   });
 });

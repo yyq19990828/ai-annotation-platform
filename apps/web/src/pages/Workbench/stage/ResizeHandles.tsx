@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { Annotation } from "@/types";
+import type { Annotation, RotatedBboxGeometry } from "@/types";
 import styles from "./ResizeHandles.module.css";
 
 const HANDLE_SIZE = 9;
@@ -18,6 +18,7 @@ const DIRECTIONS: { dir: Direction; cx: number; cy: number; cursor: string }[] =
 ];
 
 type ResizeBox = Pick<Annotation, "x" | "y" | "w" | "h">;
+type Point = { x: number; y: number };
 
 interface ResizeHandlesProps {
   b: Annotation;
@@ -72,18 +73,10 @@ function ResizeHandleDot({
 
 export type ResizeDirection = Direction;
 
-/**
- * 给定起始 box + 拖动起点 + 当前点 + 方向，返回拖动后 box（已 clamp 到 [0,1]）。
- *
- * v0.8.7 F6 · 修饰键：
- *   - shiftKey: 锁定起始 aspect ratio（newW/newH = origW/origH）
- *   - altKey:   以 bbox 中心为 anchor 反向 mirror（拖一边等价两边对称变化）
- *   - 两键叠加：先按 aspect ratio 锁定，再以中心 mirror
- */
-export function applyResize(
+function applyResizeCore(
   start: ResizeBox,
-  startPt: { x: number; y: number },
-  curPt: { x: number; y: number },
+  startPt: Point,
+  curPt: Point,
   dir: Direction,
   modifiers?: { shiftKey?: boolean; altKey?: boolean },
 ): { x: number; y: number; w: number; h: number } {
@@ -139,6 +132,26 @@ export function applyResize(
   if (w < 0) { x += w; w = -w; }
   if (h < 0) { y += h; h = -h; }
 
+  return { x, y, w, h };
+}
+
+/**
+ * 给定起始 box + 拖动起点 + 当前点 + 方向，返回拖动后 box（已 clamp 到 [0,1]）。
+ *
+ * v0.8.7 F6 · 修饰键：
+ *   - shiftKey: 锁定起始 aspect ratio（newW/newH = origW/origH）
+ *   - altKey:   以 bbox 中心为 anchor 反向 mirror（拖一边等价两边对称变化）
+ *   - 两键叠加：先按 aspect ratio 锁定，再以中心 mirror
+ */
+export function applyResize(
+  start: ResizeBox,
+  startPt: Point,
+  curPt: Point,
+  dir: Direction,
+  modifiers?: { shiftKey?: boolean; altKey?: boolean },
+): { x: number; y: number; w: number; h: number } {
+  let { x, y, w, h } = applyResizeCore(start, startPt, curPt, dir, modifiers);
+
   // clamp 到 [0,1]
   if (x < 0) { w += x; x = 0; }
   if (y < 0) { h += y; y = 0; }
@@ -146,4 +159,42 @@ export function applyResize(
   if (y + h > 1) h = 1 - y;
 
   return { x, y, w, h };
+}
+
+export function applyRotatedResize(
+  start: RotatedBboxGeometry,
+  startPt: Point,
+  curPt: Point,
+  dir: Direction,
+  imageSize: { w: number; h: number },
+  modifiers?: { shiftKey?: boolean; altKey?: boolean },
+): RotatedBboxGeometry {
+  const imgW = Math.max(1, imageSize.w);
+  const imgH = Math.max(1, imageSize.h);
+  const rad = (start.angle * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const dxPx = (curPt.x - startPt.x) * imgW;
+  const dyPx = (curPt.y - startPt.y) * imgH;
+  const localDx = dxPx * cos + dyPx * sin;
+  const localDy = -dxPx * sin + dyPx * cos;
+  const startPx = {
+    x: -(start.w * imgW) / 2,
+    y: -(start.h * imgH) / 2,
+    w: start.w * imgW,
+    h: start.h * imgH,
+  };
+  const resized = applyResizeCore(startPx, { x: 0, y: 0 }, { x: localDx, y: localDy }, dir, modifiers);
+  const centerLocalX = resized.x + resized.w / 2;
+  const centerLocalY = resized.y + resized.h / 2;
+  const centerDx = centerLocalX * cos - centerLocalY * sin;
+  const centerDy = centerLocalX * sin + centerLocalY * cos;
+
+  return {
+    ...start,
+    cx: Math.max(0, Math.min(1, start.cx + centerDx / imgW)),
+    cy: Math.max(0, Math.min(1, start.cy + centerDy / imgH)),
+    w: Math.max(0, Math.min(1, resized.w / imgW)),
+    h: Math.max(0, Math.min(1, resized.h / imgH)),
+  };
 }

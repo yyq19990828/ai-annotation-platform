@@ -365,6 +365,7 @@ interface KonvaRotatedBoxProps {
   scale: number;
   onClick: (e?: Konva.KonvaEventObject<MouseEvent>) => void;
   onRotateStart: ((e: Konva.KonvaEventObject<MouseEvent>) => void) | null;
+  onResizeStart: ((dir: ResizeDirection, e: Konva.KonvaEventObject<MouseEvent>) => void) | null;
 }
 
 export function KonvaRotatedBox({
@@ -372,6 +373,7 @@ export function KonvaRotatedBox({
   imgW, imgH, scale,
   onClick,
   onRotateStart,
+  onResizeStart,
 }: KonvaRotatedBoxProps) {
   const color = classColorForCanvas(b.cls);
   const sw = (selected ? 2 : 1.5) / scale;
@@ -423,6 +425,33 @@ export function KonvaRotatedBox({
           />
         </Label>
       )}
+
+      {isUserSelected && onResizeStart && HANDLE_DIRECTIONS.map(({ dir, cx: hx, cy: hy, cursor }) => (
+        <Rect
+          key={dir}
+          x={-hw + wPx * hx - handleSize / 2}
+          y={-hh + hPx * hy - handleSize / 2}
+          width={handleSize}
+          height={handleSize}
+          fill="white"
+          stroke={color}
+          strokeWidth={1.5 / scale}
+          cornerRadius={2 / scale}
+          onMouseDown={(e) => {
+            if (e.evt.button !== 0) return;
+            e.cancelBubble = true;
+            onResizeStart(dir, e);
+          }}
+          onMouseEnter={(e) => {
+            const stage = e.target.getStage();
+            if (stage) stage.container().style.cursor = cursor;
+          }}
+          onMouseLeave={(e) => {
+            const stage = e.target.getStage();
+            if (stage) stage.container().style.cursor = "";
+          }}
+        />
+      ))}
 
       {isUserSelected && onRotateStart && (
         <>

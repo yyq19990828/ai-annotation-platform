@@ -65,7 +65,7 @@ export interface UseWorkbenchAnnotationActionsReturn {
   createBboxWithClass: (geom: Geom, cls: string) => boolean;
   /** v0.10.28 · 旋转框: 由轴对齐矩形 (归一化 x/y/w/h) 提交 angle=0 的 rotated_bbox; 类别用 activeClass。 */
   createRotatedBbox: (geom: Geom) => boolean;
-  /** v0.10.28 · 旋转框: 旋转手柄拖拽落定时更新 angle (走 update mutation + history)。 */
+  /** v0.10.28 · 旋转框: 旋转 / 缩放手柄落定时更新 OBB geometry (走 update mutation + history)。 */
   handleCommitRotateBbox: (id: string, before: RotatedBboxGeometry, after: RotatedBboxGeometry) => void;
   handlePickPendingClass: (cls: string) => void;
   submitPolygon: (points: [number, number][]) => void;
@@ -427,12 +427,13 @@ export function useWorkbenchAnnotationActions({
     [blockIfLocked, s, mutations, history, recordRecentClass, pushToast, enqueueOnError, optimisticEnqueueCreate],
   );
 
-  // v0.10.28 · 旋转框: 旋转手柄落定时仅 angle 变更 (cx/cy/w/h 不变), 走 update mutation。
+  // v0.10.28 · 旋转框: 旋转 / 缩放手柄落定时更新 rotated_bbox geometry。
   const handleCommitRotateBbox = useCallback(
     (id: string, before: RotatedBboxGeometry, after: RotatedBboxGeometry) => {
       if (blockIfLocked()) return;
       if (!taskId) return;
-      if (before.angle === after.angle) return;
+      if (before.cx === after.cx && before.cy === after.cy && before.w === after.w &&
+          before.h === after.h && before.angle === after.angle) return;
       const payload = { geometry: after };
       mutations.update.mutate(
         { annotationId: id, payload },
