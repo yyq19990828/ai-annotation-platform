@@ -55,9 +55,12 @@ class RegisterRequest(BaseModel):
 
 
 class RegisterResponse(BaseModel):
-    access_token: str
+    # v0.12.0 · 需邮箱验证时不自动登录：access_token 为 None + email_verification_required=True，
+    # 前端据此显示「验证邮件已发送」而非进站。邀请注册 / 无需验证时照常返回 token。
+    access_token: str | None = None
     token_type: str = "bearer"
     user: UserOut
+    email_verification_required: bool = False
 
 
 class InvitationOut(BaseModel):

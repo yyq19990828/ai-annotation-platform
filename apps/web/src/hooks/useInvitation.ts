@@ -40,3 +40,9 @@ export function useOpenRegister() {
     mutationFn: (payload: OpenRegisterPayload) => invitationsApi.openRegister(payload),
   });
 }
+
+export function useResendVerification() {
+  return useMutation({
+    mutationFn: (email: string) => invitationsApi.resendVerification(email),
+  });
+}

@@ -54,6 +54,8 @@ class UserOut(BaseModel):
     group_id: UUID | None = None
     status: str
     is_active: bool = True
+    # v0.12.0 · 邮箱验证时间戳；None = 未验证。仅开放注册 + 验证开关打开时作登录 gate。
+    email_verified_at: datetime | None = None
     last_login_at: datetime | None = None
     # v0.8.3 · 心跳机制：最近一次活跃时间（登录 / POST /me/heartbeat / 关键操作）
     last_seen_at: datetime | None = None

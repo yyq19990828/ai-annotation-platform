@@ -16,12 +16,14 @@ const mockResolve: any = { isLoading: false, isError: false, error: null, data: 
 const mockRegister: any = { isPending: false, isError: false, error: null, mutate: vi.fn() };
 const mockOpenRegister: any = { isPending: false, isError: false, error: null, mutate: vi.fn() };
 const mockRegStatus: any = { isLoading: false, data: { open_registration_enabled: true } };
+const mockResend: any = { isPending: false, mutate: vi.fn() };
 
 vi.mock("@/hooks/useInvitation", () => ({
   useResolveInvitation: () => mockResolve,
   useRegister: () => mockRegister,
   useRegistrationStatus: () => mockRegStatus,
   useOpenRegister: () => mockOpenRegister,
+  useResendVerification: () => mockResend,
 }));
 
 import { RegisterPage } from "./RegisterPage";
@@ -155,6 +157,24 @@ describe("RegisterPage / OpenRegisterForm", () => {
     fillPwd("Abcdef12");
     fireEvent.click(screen.getByText("注册"));
     expect(screen.getByText("DASHBOARD")).toBeInTheDocument();
+  });
+
+  it("需邮箱验证 → 显示「验证邮件已发送」态而非进站", () => {
+    mockOpenRegister.mutate = vi.fn((_args, opts) =>
+      opts?.onSuccess?.({
+        access_token: null,
+        email_verification_required: true,
+        user: { id: "u1", email: "x@y.com", name: "Tom", role: "viewer" },
+      }),
+    );
+    renderUI();
+    const inputs = document.querySelectorAll("input");
+    fireEvent.change(inputs[0], { target: { value: "x@y.com" } });
+    fireEvent.change(inputs[1], { target: { value: "Tom" } });
+    fillPwd("Abcdef12");
+    fireEvent.click(screen.getByText("注册"));
+    expect(screen.getByText("验证邮件已发送")).toBeInTheDocument();
+    expect(screen.queryByText("DASHBOARD")).not.toBeInTheDocument();
   });
 
   it("openRegister.isError → 显示错误条", () => {

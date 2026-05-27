@@ -16,9 +16,11 @@ export interface RegisterPayload {
 }
 
 export interface RegisterResponse {
-  access_token: string;
+  // v0.12.0 · 需邮箱验证时为 null（不自动登录）
+  access_token: string | null;
   token_type: string;
   user: MeResponse;
+  email_verification_required: boolean;
 }
 
 export type InvitationStatus = "pending" | "accepted" | "expired" | "revoked";
@@ -70,4 +72,10 @@ export const invitationsApi = {
     apiClient.publicGet<{ open_registration_enabled: boolean }>("/auth/registration-status"),
   openRegister: (payload: OpenRegisterPayload) =>
     apiClient.publicPost<RegisterResponse>("/auth/register-open", payload),
+
+  // v0.12.0 · 邮箱验证
+  verifyEmail: (token: string) =>
+    apiClient.publicPost<{ message: string }>("/auth/verify-email", { token }),
+  resendVerification: (email: string) =>
+    apiClient.publicPost<{ message: string }>("/auth/send-verification-email", { email }),
 };
