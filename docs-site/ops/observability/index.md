@@ -57,7 +57,30 @@ production 不建议把 prometheus / grafana 跟应用塞同一 docker-compose�
 
 ---
 
-## 3. 关键告警建议
+## 3. ML Backend GPU 指标接入（自动发现，v0.11.19）
+
+ML backend（grounded-sam2 / sam3 / 后续接入的任意 backend）的 `/metrics` 由 Prometheus 的 `ml-backends` job 自动抓取，**无需手改 `prometheus.yml`**：
+
+- 该 job 用 `http_sd_config` 定期拉 anno-api 的 `/api/v1/internal/metrics-targets`，端点从 `ml_backends` 表（`state != disconnected`）生成 target 列表并按 host:port 去重。**新 backend 在超管「模型市场」注册即被纳入抓取**，与 PerfHud 共用同一真相源。
+- 指标统一为**裸名 + `service` label**（不带 backend 前缀），同语义指标靠 label 区分 backend：
+
+| Metric | 类型 | 用途 |
+|---|---|---|
+| `gpu_utilization_percent` | Gauge | GPU SM 利用率 |
+| `gpu_memory_used_mb` / `gpu_memory_total_mb` | Gauge | 显存（占用率 = used/total） |
+| `gpu_temperature_celsius` / `gpu_power_watts` | Gauge | 温度 / 功耗 |
+| `inference_latency_seconds` | Histogram | 推理延迟（P50/P95 用 `histogram_quantile`） |
+| `embedding_cache_hits_total` / `_misses_total` / `embedding_cache_size` | Counter/Gauge | embedding cache 命中与容量 |
+| `container_cpu_percent` / `container_memory_percent` | Gauge | 容器 CPU / 内存 |
+| `video_tracker_*`（仅 grounded-sam2） | Counter/Histogram | 视频追踪帧数 / 延迟 |
+
+> backend 在独立 GPU 机、prometheus 不在同网时，把 `ml-backends` job 的 `http_sd_configs` 注释掉，改用同 job 里注释好的 static 兜底（target 填 prometheus 视角可达地址）。
+>
+> 与超管 PerfHud 的关系：两套通道、同一数据源（`/metrics` 与 `/health` 共用同一次 NVML/psutil 采样）。PerfHud 实时一眼看（无历史），Prometheus 留 14d 时序做趋势/告警。Grafana 的 `ML Backends` dashboard（v0.11.20）据此渲染。
+
+---
+
+## 4. 关键告警建议
 
 不在仓库内强制产出 alert rule（不同团队偏好不一），下面是建议规则：
 
@@ -71,11 +94,13 @@ production 不建议把 prometheus / grafana 跟应用塞同一 docker-compose�
 
 ---
 
-## 4. 关键文件索引
+## 5. 关键文件索引
 
 | 主题 | 路径 |
 |---|---|
 | Metrics 定义 | `apps/api/app/observability/metrics.py` |
+| ML backend 指标埋点 | `apps/grounded-sam2-backend/observability.py` · `apps/sam3-backend/observability.py` |
+| ML backend http_sd 端点 | `apps/api/app/api/v1/` → `GET /api/v1/internal/metrics-targets` |
 | FastAPI `/metrics` 挂载 | `apps/api/app/main.py:108-130` |
 | Sentry 初始化 | `apps/api/app/main.py:22-45` |
 | Grafana dashboard JSON | `infra/grafana/dashboards/anno-overview.json` |

@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-26
+last_reviewed: 2026-05-27
 ---
 
 # 环境变量参考
@@ -65,6 +65,12 @@ last_reviewed: 2026-05-26
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `MAX_ML_BACKENDS_PER_PROJECT` | `1` | 运行时通过此值锁定. 默认 1 防止测试环境同时常驻 grounded-sam2 (~2GB) + sam3 (~7GB) 显存爆炸. 生产可调大; prompt-routing / fallback 按路线图推进. |
+
+## Prometheus http_sd 服务发现端点 /api/v1/internal/metrics-targets 的可选 bearer token。
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `METRICS_SD_TOKEN` | `—` | 默认空 = 免鉴权 (内网端点, 靠 nginx /internal 网段隔离, 与 /metrics 一致); 设为非空时该端点校验请求头 Authorization: Bearer <token>, 不匹配返回 401。 |
 
 ## 视频帧服务
 
@@ -195,3 +201,10 @@ last_reviewed: 2026-05-26
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `ENVIRONMENT` | `development` | 当前运行环境，影响 CORS 策略、日志级别、调试开关等 可选值：development | staging | production |
+
+## Docker 卷存储位置 (可选)
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `DATA_ROOT` | `/srv/annotation-data` | 默认 docker compose 用 Docker 托管的命名卷 (落在 /var/lib/docker/volumes)。 想把所有命名卷 (pgdata/minio/模型权重/监控) 集中到宿主机统一目录便于 备份/迁移/指定磁盘, 叠加 docker-compose.hostvols.yml 并设 DATA_ROOT: export DATA_ROOT=/srv/annotation-data   # 绝对路径, 子目录须先 mkdir docker compose -f docker-compose.yml -f docker-compose.hostvols.yml up -d 想固化成默认 (免每次敲 -f), 取消下面两行注释: |
+| `COMPOSE_FILE` | `docker-compose.yml:docker-compose.hostvols.yml` | — |
