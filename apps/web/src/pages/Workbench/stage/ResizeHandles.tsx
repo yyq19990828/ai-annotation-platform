@@ -73,6 +73,29 @@ function ResizeHandleDot({
 
 export type ResizeDirection = Direction;
 
+function applyAspectLockedCornerResize(
+  start: ResizeBox,
+  dx: number,
+  dy: number,
+  dir: Direction,
+): { x: number; y: number; w: number; h: number } {
+  const aspect = start.w / start.h;
+  const horizontalSign = dir.includes("e") ? 1 : -1;
+  const verticalSign = dir.includes("s") ? 1 : -1;
+  const rawDw = horizontalSign * dx;
+  const rawDh = verticalSign * dy;
+  const projectedStep = (rawDw * aspect + rawDh) / (aspect * aspect + 1);
+  const dw = projectedStep * aspect;
+  const dh = projectedStep;
+
+  return {
+    x: dir.includes("w") ? start.x - dw : start.x,
+    y: dir.includes("n") ? start.y - dh : start.y,
+    w: start.w + dw,
+    h: start.h + dh,
+  };
+}
+
 function applyResizeCore(
   start: ResizeBox,
   startPt: Point,
@@ -92,22 +115,21 @@ function applyResizeCore(
   // ── v0.8.7 F6 · Shift 锁纵横比 ──────────────────────────────
   if (modifiers?.shiftKey && start.w > 0 && start.h > 0) {
     const aspect = start.w / start.h;
-    // 以 |dx| 与 |dy * aspect| 中较大者为主轴，其他方向按比例同步
-    const wByDx = w;
-    const hByDx = wByDx / aspect;
-    const hByDy = h;
-    const wByDy = hByDy * aspect;
-    if (Math.abs(wByDx - start.w) >= Math.abs(wByDy - start.w)) {
-      w = wByDx;
-      // 调整 h，保留 anchor 位置不变（与 dir 一致：n*y / w*x 的边）
-      const oldH = h;
-      h = hByDx;
-      if (dir.includes("n")) y += oldH - h;
+    const isCornerHandle = (dir.includes("e") || dir.includes("w")) && (dir.includes("n") || dir.includes("s"));
+    if (isCornerHandle) {
+      ({ x, y, w, h } = applyAspectLockedCornerResize(start, dx, dy, dir));
     } else {
-      h = hByDy;
-      w = wByDy;
-      const oldW = wByDx;
-      if (dir.includes("w")) x += oldW - w;
+      const wByDx = w;
+      const hByDx = wByDx / aspect;
+      const hByDy = h;
+      const wByDy = hByDy * aspect;
+      if (dir.includes("e") || dir.includes("w")) {
+        w = wByDx;
+        h = hByDx;
+      } else {
+        h = hByDy;
+        w = wByDy;
+      }
     }
   }
 

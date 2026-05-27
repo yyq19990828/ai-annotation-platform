@@ -31,9 +31,8 @@ describe("applyResize · v0.8.7 F6", () => {
     expect(r.h).toBeCloseTo(0.15, 5);
   });
 
-  it("shiftKey: 锁定 aspect ratio 2:1", () => {
-    // 起始 0.2 × 0.1（2:1）；拖动 dx=0.1 dy=0
-    // 锁纵横比后 w=0.3, h 应同步增大到 0.15
+  it("shiftKey: projects corner drag onto the locked aspect-ratio diagonal", () => {
+    // 起始 0.2 × 0.1（2:1）；纯水平拖动会被投影到 2:1 对角线，避免锁比例时过度放大。
     const r = applyResize(
       base,
       { x: 0, y: 0 },
@@ -41,7 +40,29 @@ describe("applyResize · v0.8.7 F6", () => {
       "se",
       { shiftKey: true },
     );
-    expect(r.w / r.h).toBeCloseTo(2, 1);
+    expect(r.w / r.h).toBeCloseTo(2, 5);
+    expect(r.w).toBeCloseTo(0.28, 5);
+    expect(r.h).toBeCloseTo(0.14, 5);
+  });
+
+  it("shiftKey: avoids switching between horizontal and vertical master axes near tiny jitter", () => {
+    const lower = applyResize(
+      base,
+      { x: 0, y: 0 },
+      { x: 0.02, y: 0.009 },
+      "se",
+      { shiftKey: true },
+    );
+    const upper = applyResize(
+      base,
+      { x: 0, y: 0 },
+      { x: 0.02, y: 0.011 },
+      "se",
+      { shiftKey: true },
+    );
+
+    expect(upper.w - lower.w).toBeCloseTo(0.0008, 5);
+    expect(upper.h - lower.h).toBeCloseTo(0.0004, 5);
   });
 
   it("altKey SE 角: 中心扩展，等价两边都 +dx", () => {
