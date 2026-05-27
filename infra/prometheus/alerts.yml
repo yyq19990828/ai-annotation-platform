@@ -1,0 +1,35 @@
+# v0.11.21 · ML backend 告警规则。Prometheus 周期 evaluate，满足 for: 时长后 firing，
+# 推给 alertmanager（见 prometheus.yml alerting 段）。
+#
+# 误报防护：MLBackendDown 只覆盖 job="ml-backends" 的 target，而该 job 由 http_sd 从
+# ml_backends 表（state != disconnected）生成 —— 主动 disconnect 的 backend 不在 target
+# 列表里，不会误报；for: 再挡瞬时抖动。
+groups:
+  - name: ml-backends
+    rules:
+      - alert: MLBackendDown
+        expr: up{job="ml-backends"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ML backend {{ $labels.service }} 离线 ≥5m"
+          description: "Prometheus 连续 5m 抓不到 {{ $labels.service }}（{{ $labels.instance }}）的 /metrics。"
+
+      - alert: GPUMemoryHigh
+        expr: gpu_memory_used_mb / gpu_memory_total_mb > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} 显存占用 >90% 持续 10m"
+          description: "GPU 显存占用 {{ $value | humanizePercentage }}（used/total），可能触发 OOM 或显存排队。"
+
+      - alert: InferenceLatencyHigh
+        expr: histogram_quantile(0.95, sum by (le, service) (rate(inference_latency_seconds_bucket[5m]))) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} 推理 P95 >10s 持续 10m"
+          description: "P95 推理延迟 {{ $value }}s，检查 GPU 负载 / 模型变体 / 显存驱逐。"

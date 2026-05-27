@@ -24,6 +24,19 @@
 
 ## 最新版本
 
+## [0.11.21] - 2026-05-27
+
+> **ML backend 告警（Alertmanager）。** 新增 alertmanager service 与告警规则，backend 离线 / 显存打满 / 推理延迟劣化时经 SMTP 主动告警（dev 投递 mailpit），补上 PerfHud 没有的告警能力，完成可观测性 epic（v0.11.19–21）。
+
+### Added
+
+- **告警规则**: `infra/prometheus/alerts.yml` 三条 —— `MLBackendDown`（`up==0` 持续 5m）/ `GPUMemoryHigh`（显存 >90% 持续 10m）/ `InferenceLatencyHigh`（P95 >10s 持续 10m）；`prometheus.yml` 接入 `alerting` + `rule_files`。误报防护：`MLBackendDown` 只覆盖 http_sd 生成的 `ml-backends` target，主动 disconnect 的 backend 不在其中。→ [plan](docs/plans/2026-05-27-v0.11.21-ml-backend-alerting.md)
+- **Alertmanager**: docker-compose `alertmanager` service（`monitoring` profile，9093）+ `infra/alertmanager/alertmanager.yml`，SMTP receiver dev 投递 mailpit、生产换真实 SMTP。
+
+### Changed
+
+- observability 指南 §4 更新：ML backend 告警从「建议规则」落地为仓库内规则。
+
 ## [0.11.20] - 2026-05-27
 
 > **Grafana ML backend / GPU 监控面板。** 新增 `ML Backends` dashboard，把 v0.11.19 接入的 GPU/推理/cache 指标按 `service` 多 backend 对比可视化（显存占用、利用率、温度功耗、推理 P50/P95、cache 命中率、容器 CPU/内存）。

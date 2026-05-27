@@ -82,9 +82,11 @@ ML backend（grounded-sam2 / sam3 / 后续接入的任意 backend）的 `/metric
 
 ---
 
-## 4. 关键告警建议
+## 4. 告警
 
-不在仓库内强制产出 alert rule（不同团队偏好不一），下面是建议规则：
+**ML backend GPU 告警已落地**（v0.11.21）：`infra/prometheus/alerts.yml` 提供 `MLBackendDown`（`up==0` 持续 5m）/ `GPUMemoryHigh`（显存 >90% 持续 10m）/ `InferenceLatencyHigh`（P95 >10s 持续 10m）三条规则，随 `monitoring` profile 的 `alertmanager`（9093）经 SMTP 发邮件 —— dev 投递到 mailpit（见 `infra/alertmanager/alertmanager.yml`），生产换真实 SMTP。`MLBackendDown` 只覆盖 `ml-backends` job 的 target（由 http_sd 从 `state != disconnected` 的 backend 生成），主动 disconnect 的 backend 不会误报。排查见 [ML Backend 不可用 runbook](/ops/runbooks/ml-backend-down)。
+
+其余 HTTP / Celery / Sentry 相关不在仓库内强制产出（不同团队偏好不一），下面是建议规则：
 
 | 告警 | 触发表达式 | 严重度 |
 |---|---|---|
@@ -103,6 +105,8 @@ ML backend（grounded-sam2 / sam3 / 后续接入的任意 backend）的 `/metric
 | Metrics 定义 | `apps/api/app/observability/metrics.py` |
 | ML backend 指标埋点 | `apps/grounded-sam2-backend/observability.py` · `apps/sam3-backend/observability.py` |
 | ML backend http_sd 端点 | `apps/api/app/api/v1/` → `GET /api/v1/internal/metrics-targets` |
+| ML backend 告警规则 | `infra/prometheus/alerts.yml` |
+| Alertmanager 配置 | `infra/alertmanager/alertmanager.yml` |
 | FastAPI `/metrics` 挂载 | `apps/api/app/main.py:108-130` |
 | Sentry 初始化 | `apps/api/app/main.py:22-45` |
 | Grafana dashboard JSON | `infra/grafana/dashboards/anno-overview.json` |

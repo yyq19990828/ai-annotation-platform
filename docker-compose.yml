@@ -292,6 +292,7 @@ services:
       - "9090:9090"
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -315,6 +316,22 @@ services:
     depends_on:
       - prometheus
 
+  # v0.11.21 · 告警通知。Prometheus firing 的告警在此分组/去重后经 SMTP 发邮件。
+  # dev 投递到 mailpit（见 infra/alertmanager/alertmanager.yml）；生产换真实 SMTP。
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    profiles: ["monitoring"]
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./infra/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+    extra_hosts:
+      # dev 经 host-gateway 投递到 host 上的 mailpit:1025（端口已映射，gateway 可达）。
+      - "host.docker.internal:host-gateway"
+
 volumes:
   pgdata:
   miniodata:
@@ -324,3 +341,4 @@ volumes:
   sam3_hf_cache:
   prometheus_data:
   grafana_data:
+  alertmanager_data:

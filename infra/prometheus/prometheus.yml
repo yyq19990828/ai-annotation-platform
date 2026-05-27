@@ -9,6 +9,16 @@ global:
   external_labels:
     env: development
 
+# v0.11.21 · 告警：规则在 alerts.yml，firing 后推给 alertmanager（monitoring profile）。
+# alertmanager target 用 service DNS（生产/同网正确）；dev 本环境若 service DNS 不解析，
+# 改成 host.docker.internal:9093（prometheus 已配 extra_hosts host-gateway）。
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+rule_files:
+  - "/etc/prometheus/alerts.yml"
+
 scrape_configs:
   # FastAPI 应用 metrics（apps/api 在 host 上跑）
   - job_name: anno-api
