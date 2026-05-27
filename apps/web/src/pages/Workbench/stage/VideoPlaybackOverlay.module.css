@@ -180,21 +180,23 @@
 
 .gridTick {
   position: absolute;
-  top: 3px;
-  bottom: 3px;
+  bottom: 5px;
   left: var(--timeline-left);
   width: 1px;
-  background: var(--color-fg-muted);
-  opacity: 0.4;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-fg-subtle);
+  opacity: 0.55;
   transform: translateX(-50%);
 }
 
 .offGridMarker {
   position: absolute;
-  top: 2px;
-  bottom: 2px;
+  bottom: 4px;
   left: var(--timeline-left);
   width: 2px;
+  height: 10px;
+  border-radius: var(--radius-pill);
   background: var(--color-accent);
   transform: translateX(-50%);
 }

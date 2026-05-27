@@ -314,6 +314,10 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     }
     return out;
   }, [annotations, frameIndex, hiddenTrackIds, reviewDisplayMode]);
+  const currentFrameTrackIds = useMemo(
+    () => new Set(currentFrameEntries.flatMap((entry) => entry.trackId ? [entry.trackId] : [])),
+    [currentFrameEntries],
+  );
 
   const selectedTrackGhost = useMemo<VideoTrackGhost | null>(() => {
     if (!selectedTrack || hiddenTrackIds.has(selectedTrack.geometry.track_id)) return null;
@@ -366,7 +370,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
 
   const trackPreviews = useMemo<VideoTrackPreview[]>(
     () => videoTracks
-      .filter((ann) => !hiddenTrackIds.has(ann.geometry.track_id))
+      .filter((ann) => !hiddenTrackIds.has(ann.geometry.track_id) && currentFrameTrackIds.has(ann.geometry.track_id))
       .map((ann) => ({
         id: ann.id,
         trackId: ann.geometry.track_id,
@@ -375,7 +379,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         outside: ann.geometry.outside,
         selected: ann.id === selectedId,
       })),
-    [hiddenTrackIds, selectedId, videoTracks],
+    [currentFrameTrackIds, hiddenTrackIds, selectedId, videoTracks],
   );
 
   const selectedTrackTimeline = useMemo(

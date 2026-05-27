@@ -72,6 +72,23 @@ describe("VideoPlaybackOverlay", () => {
     expect(getByTestId("video-playback-rate")).toHaveTextContent("-2x");
   });
 
+  it("keeps sampling grid markers away from timeline edges", () => {
+    const { queryAllByTestId } = renderOverlay({ maxFrame: 9, samplingStep: 3 });
+
+    expect(queryAllByTestId("video-timeline-grid-tick")).toHaveLength(2);
+  });
+
+  it("hides the off-grid helper marker during playback", () => {
+    const playing = renderOverlay({ frameIndex: 1, samplingStep: 3, isPlaying: true });
+
+    expect(playing.queryByTestId("video-timeline-offgrid-marker")).toBeNull();
+    playing.unmount();
+
+    const paused = renderOverlay({ frameIndex: 1, samplingStep: 3, isPlaying: false });
+
+    expect(paused.getByTestId("video-timeline-offgrid-marker")).toBeInTheDocument();
+  });
+
   it("reports hover frame changes and renders ready frame previews", () => {
     const onHoverFrameChange = vi.fn();
     const { getByLabelText, getByTestId } = renderOverlay({

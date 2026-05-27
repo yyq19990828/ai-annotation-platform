@@ -4,6 +4,9 @@ import type { VideoFrameEntry, VideoStageGeom, VideoTrackPreview } from "./video
 import { isFrameOutside } from "./videoTrackOutside";
 import styles from "./VideoObjectsLayer.module.css";
 
+const TRACK_KEYFRAME_DOT_RADIUS = 0.0038;
+const TRACK_OCCLUDED_DOT_RADIUS = 0.0052;
+
 type VideoObjectEntry = {
   key: string;
   entry: VideoFrameEntry;
@@ -51,6 +54,8 @@ export function VideoObjectsLayer({
             occluded: Boolean(kf.occluded),
           }));
         if (points.length === 0) return null;
+        const showKeyframeDots = preview.selected;
+        if (points.length === 1 && !showKeyframeDots) return null;
         const pointAttr = points.map((p) => `${p.x},${p.y}`).join(" ");
         return (
           <g
@@ -70,12 +75,13 @@ export function VideoObjectsLayer({
                 vectorEffect="non-scaling-stroke"
               />
             )}
-            {points.map((p) => (
+            {showKeyframeDots && points.map((p) => (
               <circle
                 key={`${preview.id}-${p.frame}`}
+                data-testid="video-track-keyframe-dot"
                 cx={p.x}
                 cy={p.y}
-                r={p.occluded ? 0.008 : 0.006}
+                r={p.occluded ? TRACK_OCCLUDED_DOT_RADIUS : TRACK_KEYFRAME_DOT_RADIUS}
                 fill={p.occluded ? "var(--color-bg-elev)" : color}
                 stroke={color}
                 strokeWidth="1.5"

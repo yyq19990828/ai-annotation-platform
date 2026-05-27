@@ -1420,7 +1420,11 @@ describe("VideoStage", () => {
     expect(getAllByTestId("video-resize-handle")).toHaveLength(8);
     expect(getAllByTestId("video-resize-hit-area")).toHaveLength(8);
     const seHitArea = overlay.querySelector('[data-testid="video-resize-hit-area"][data-dir="se"]');
+    const seHandle = overlay.querySelector('[data-testid="video-resize-handle"][data-dir="se"]');
     expect(seHitArea).not.toBeNull();
+    expect(seHandle).not.toBeNull();
+    expect(Number(seHitArea!.getAttribute("width"))).toBeCloseTo(Number(seHandle!.getAttribute("width")) * 1.1);
+    expect(Number(seHitArea!.getAttribute("height"))).toBeCloseTo(Number(seHandle!.getAttribute("height")) * 1.1);
 
     fireEvent(seHitArea!, pointer("pointerdown", 300, 150));
     fireEvent(overlay, pointer("pointermove", 400, 200));
@@ -1562,7 +1566,7 @@ describe("VideoStage", () => {
       },
     ] as AnnotationResponse[];
 
-    const { getByLabelText, getByTestId } = render(
+    const { getByLabelText, getByTestId, queryByTestId } = render(
       <VideoStage
         manifest={manifest}
         annotations={annotations}
@@ -1578,10 +1582,82 @@ describe("VideoStage", () => {
     fireEvent.change(getByLabelText("视频帧时间轴"), { target: { value: "1" } });
 
     expect(getByTestId("video-track-path-preview")).toBeInTheDocument();
+    expect(queryByTestId("video-track-keyframe-dot")).toBeNull();
     expect(getByTestId("video-label-overlay").textContent).toContain("car · 插值");
     const label = Array.from(getByTestId("video-label-overlay").querySelectorAll('[data-testid="video-label"]'))
       .find((node) => node.textContent?.includes("car · 插值"));
     expect(label).toHaveStyle({ "--video-label-left": "20%", "--video-label-top": "10%" });
+  });
+
+  it("shows track keyframe dots only for the selected track", () => {
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 2, bbox: { x: 0.3, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const props = {
+      manifest,
+      annotations,
+      frameIndex: 1,
+      activeClass: "car",
+      onSelect: () => {},
+      onCreate: () => {},
+      onUpdate: () => {},
+      onRename: () => {},
+    };
+
+    const { queryByTestId, getAllByTestId, rerender } = render(
+      <VideoStage {...props} selectedId={null} />,
+    );
+
+    expect(queryByTestId("video-track-keyframe-dot")).toBeNull();
+
+    rerender(<VideoStage {...props} selectedId="t1" />);
+
+    expect(getAllByTestId("video-track-keyframe-dot")).toHaveLength(2);
+  });
+
+  it("hides track paths on frames where the track is absent", () => {
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 2, bbox: { x: 0.3, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { queryByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="t1"
+        frameIndex={4}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    expect(queryByTestId("video-track-path-preview")).toBeNull();
   });
 
   it("filters video entries by review raw/final display mode", () => {

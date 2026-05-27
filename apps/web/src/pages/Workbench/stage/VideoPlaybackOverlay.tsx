@@ -140,11 +140,13 @@ export function VideoPlaybackOverlay({
     const stride = total > 200 ? Math.ceil(total / 200) : 1;
     const ticks: number[] = [];
     for (let i = 0; i < total; i += stride) {
-      ticks.push(Math.min(maxFrame, i * samplingStep));
+      const frame = Math.min(maxFrame, i * samplingStep);
+      if (frame <= 0 || frame >= maxFrame) continue;
+      ticks.push(frame);
     }
     return ticks;
   }, [maxFrame, samplingStep]);
-  const currentFrameOffGrid = samplingStep > 1 && frameIndex % samplingStep !== 0;
+  const currentFrameOffGrid = !isPlaying && samplingStep > 1 && frameIndex % samplingStep !== 0;
   const frameLeft = (frame: number) => `${maxFrame > 0 ? (frame / maxFrame) * 100 : 0}%`;
   const frameFromPointer = (clientX: number, rect: DOMRect) => {
     const pointerX = Number.isFinite(clientX) ? clientX : rect.left;
