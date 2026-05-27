@@ -76,7 +76,9 @@ ML backend（grounded-sam2 / sam3 / 后续接入的任意 backend）的 `/metric
 
 > backend 在独立 GPU 机、prometheus 不在同网时，把 `ml-backends` job 的 `http_sd_configs` 注释掉，改用同 job 里注释好的 static 兜底（target 填 prometheus 视角可达地址）。
 >
-> 与超管 PerfHud 的关系：两套通道、同一数据源（`/metrics` 与 `/health` 共用同一次 NVML/psutil 采样）。PerfHud 实时一眼看（无历史），Prometheus 留 14d 时序做趋势/告警。Grafana 的 `ML Backends` dashboard（v0.11.20）据此渲染。
+> **dev 前提**：`pnpm dev:api` 默认 `uvicorn --port 8000`（绑 `127.0.0.1`），prometheus 容器经 host-gateway 抓不到——http_sd 与**既有 `anno-api` job 同此前提**。要在 dev 抓到，用 `uvicorn app.main:app --reload --port 8000 --host 0.0.0.0` 起 api；或按上一条用 static 兜底，target 写 bridge gateway `172.17.0.1:<host 映射端口>`（dev 下 backend 的 service DNS 未必解析）。
+>
+> 与超管 PerfHud 的关系：两套通道、同一数据源（`/metrics` 与 `/health` 共用同一次 NVML/psutil 采样）。PerfHud 实时一眼看（无历史），Prometheus 留 14d 时序做趋势/告警。Grafana 的 `ML Backends` dashboard（`infra/grafana/dashboards/ml-backends.json`，v0.11.20，provisioning 自动加载）据此渲染。
 
 ---
 

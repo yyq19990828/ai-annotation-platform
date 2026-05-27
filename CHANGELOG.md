@@ -24,6 +24,18 @@
 
 ## 最新版本
 
+## [0.11.20] - 2026-05-27
+
+> **Grafana ML backend / GPU 监控面板。** 新增 `ML Backends` dashboard，把 v0.11.19 接入的 GPU/推理/cache 指标按 `service` 多 backend 对比可视化（显存占用、利用率、温度功耗、推理 P50/P95、cache 命中率、容器 CPU/内存）。
+
+### Added
+
+- **ML Backends Grafana dashboard**: `infra/grafana/dashboards/ml-backends.json`（provisioning 自动加载），11 个 panel + `$service` 多选模板变量，按 `service` label 区分 grounded-sam2 / sam3。复用既有 Prometheus datasource uid。→ [plan](docs/plans/2026-05-27-v0.11.20-grafana-ml-backend-dashboard.md)
+
+### Changed
+
+- `prometheus.yml` 的 `ml-backends` 兜底注释改用 bridge gateway 地址并补 dev 前提（dev `uvicorn` 默认绑 `127.0.0.1`，prometheus 容器经 host-gateway 抓不到 host api，需 `--host 0.0.0.0`；与既有 `anno-api` job 同前提）；observability 指南同步。
+
 ## [0.11.19] - 2026-05-27
 
 > **ML backend 指标接入 Prometheus（自动发现）+ 指标命名统一。** 两个 ML backend（grounded-sam2 / sam3）的 `/metrics` 现由 Prometheus `ml-backends` job 经 http_sd 从 `ml_backends` 表自动发现并抓取——新 backend 在超管注册即被纳入，无需手改 `prometheus.yml`；指标统一为裸名 + `service` label 区分 backend。为 Grafana GPU 面板（v0.11.20）与告警（v0.11.21）铺底。

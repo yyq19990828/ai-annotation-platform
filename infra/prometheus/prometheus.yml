@@ -27,12 +27,15 @@ scrape_configs:
     http_sd_configs:
       - url: http://host.docker.internal:8000/api/v1/internal/metrics-targets
         refresh_interval: 30s
-    # 兜底：API 自动发现不可用（无 host 网络 / backend 在独立 GPU 机）时，注释掉上面的
-    # http_sd_configs，改用手填 static_configs（target 用 prometheus 视角的可达地址）：
+    # dev 前提：http_sd 要求 prometheus 能访问 host 上的 anno-api。若 dev 的 uvicorn 绑
+    # 127.0.0.1，prometheus 容器（经 host-gateway 172.17.0.1）访问不到，需把 api 绑
+    # 0.0.0.0（见部署 §4.2）。仍不通 / backend 在独立 GPU 机时，注释掉上面的
+    # http_sd_configs，改用手填 static（target 用 prometheus 视角可达地址；本机 docker 用
+    # bridge gateway 172.17.0.1:<host 映射端口>，注意 dev 下 backend 的 service DNS 未必解析）：
     # static_configs:
-    #   - targets: ["grounded-sam2-backend:8001"]
+    #   - targets: ["172.17.0.1:8001"]
     #     labels: { service: grounded-sam2 }
-    #   - targets: ["sam3-backend:8002"]
+    #   - targets: ["172.17.0.1:8002"]
     #     labels: { service: sam3 }
 
   # 自身（Prometheus 也暴露 /metrics）
