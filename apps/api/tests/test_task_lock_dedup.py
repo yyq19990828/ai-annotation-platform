@@ -62,6 +62,10 @@ def _stale_lock(task_id: uuid.UUID, user_id: uuid.UUID, ttl_s: int = 300) -> Tas
     )
 
 
+def _bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
 class TestTaskLockMultiRowResilience:
     async def test_acquire_with_my_existing_and_others_stale_renews_and_dedups(
         self, db_session, annotator, reviewer
@@ -230,3 +234,28 @@ class TestTaskLockMultiRowResilience:
         svc = TaskLockService(db_session)
         locked, _holder = await svc.is_locked(task.id)
         assert locked is True
+
+    async def test_acquire_conflict_returns_lock_holder_detail(
+        self, httpx_client_bound, db_session, annotator, reviewer
+    ):
+        """活跃他人锁冲突时，API 返回可展示的锁持有人信息。"""
+        ann_user, ann_token = annotator
+        rev_user, _ = reviewer
+        task = await _seed_project_and_task(db_session, owner_id=ann_user.id)
+        task.assignee_id = rev_user.id
+        db_session.add(_stale_lock(task.id, rev_user.id, ttl_s=280))
+        await db_session.flush()
+
+        response = await httpx_client_bound.post(
+            f"/api/v1/tasks/{task.id}/lock",
+            headers=_bearer(ann_token),
+        )
+
+        assert response.status_code == 409
+        detail = response.json()["detail"]
+        assert detail["reason"] == "task_locked_by_other"
+        assert detail["user_id"] == str(rev_user.id)
+        assert detail["expire_at"]
+        assert detail["locked_by"]["id"] == str(rev_user.id)
+        assert detail["locked_by"]["name"] == rev_user.name
+        assert detail["locked_by"]["email"] == rev_user.email

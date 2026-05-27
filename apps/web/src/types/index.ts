@@ -432,6 +432,14 @@ export interface TaskLockResponse {
   unique_id: string;
 }
 
+export interface TaskLockConflictDetail {
+  reason?: string;
+  message?: string;
+  user_id?: string | null;
+  expire_at?: string | null;
+  locked_by?: UserBrief | null;
+}
+
 // ── User ────────────────────────────────────────────────────────────────────
 
 export interface User {

@@ -1,5 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import type { ReconnectState } from "@/hooks/useReconnectingWebSocket";
+import type { TaskLockConflictDetail } from "@/types";
 import { formatDuration } from "../state/useSessionStats";
 import styles from "./StatusBar.module.css";
 
@@ -33,6 +34,7 @@ interface StatusBarProps {
   lockRemainingMs?: number;
   /** 锁错误消息。非空时优先展示错误。 */
   lockError?: string | null;
+  lockConflict?: TaskLockConflictDetail | null;
   /** M2 · review 模式下的 diff 控制（final/raw/diff）。有值时渲染 segmented control。 */
   diffMode?: DiffMode;
   onSetDiffMode?: (m: DiffMode) => void;
@@ -48,13 +50,19 @@ function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(" ");
 }
 
+function lockStatusText(lockError: string, lockConflict?: TaskLockConflictDetail | null): string {
+  if (lockError === "Lock expired") return "锁已过期";
+  const name = lockConflict?.locked_by?.name?.trim();
+  return name ? `${name} 正在编辑` : "他人正在编辑";
+}
+
 export function StatusBar({
   userBoxesCount, aiBoxesCount, activeClass,
   imageWidth, imageHeight, cursor,
   preannotationProgress, preannotationConn, preannotationRetries,
   avgLeadMs, remainingTaskCount,
   offlineQueueCount, online, onShowQueueDrawer,
-  lockRemainingMs, lockError,
+  lockRemainingMs, lockError, lockConflict,
   diffMode, onSetDiffMode,
 }: StatusBarProps) {
   const dimText = imageWidth && imageHeight ? `${imageWidth}×${imageHeight}` : "—";
@@ -80,7 +88,7 @@ export function StatusBar({
         {lockError && (
           <>
             <span className={cn(styles.inlineItem, styles.lockError)}>
-              <Icon name="warning" size={11} /> {lockError === "Lock expired" ? "锁已过期" : "他人正在编辑"}
+              <Icon name="warning" size={11} /> {lockStatusText(lockError, lockConflict)}
             </span>
             <Sep />
           </>

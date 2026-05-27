@@ -560,7 +560,7 @@ export function useWorkbenchShellModel({
   const triggerPreannotation = useTriggerPreannotation(projectId);
   const { progress: preannotationProgress, connection: preannotationConn, retries: preannotationRetries } =
     usePreannotationProgress(projectId);
-  const { lockError, remainingMs } = useTaskLock(taskId);
+  const { lockError, lockConflict, remainingMs } = useTaskLock(taskId);
 
   const queryClient = useQueryClient();
 
@@ -1185,7 +1185,7 @@ export function useWorkbenchShellModel({
       enabledToolUnits,
     },
     banners: {
-      mode, task, lockError, claimInfo: modeState.claimInfo, canWithdraw: bannerActions.canWithdraw,
+      mode, task, lockError, lockConflict, claimInfo: modeState.claimInfo, canWithdraw: bannerActions.canWithdraw,
       isWithdrawing: bannerActions.isWithdrawing, isReopening: bannerActions.isReopening,
       isAcceptingRejection: bannerActions.isAcceptingRejection, onWithdraw: bannerActions.onWithdraw,
       onReopen: bannerActions.onReopen, onAcceptRejection: bannerActions.onAcceptRejection,
@@ -1374,7 +1374,7 @@ export function useWorkbenchShellModel({
       userBoxesCount: userBoxes.length, aiBoxesCount: aiBoxes.length, activeClass: s.activeClass,
       imageWidth, imageHeight, cursor, preannotationProgress, preannotationConn, preannotationRetries,
       avgLeadMs: avgMs, remainingTaskCount, offlineQueueCount: queueCount, online,
-      onShowQueueDrawer: openOfflineDrawer, lockRemainingMs: remainingMs, lockError,
+      onShowQueueDrawer: openOfflineDrawer, lockRemainingMs: remainingMs, lockError, lockConflict,
       diffMode: modeState.diffMode, onSetDiffMode: modeState.onSetDiffMode,
     },
     inspector: {

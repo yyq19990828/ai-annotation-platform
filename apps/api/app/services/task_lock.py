@@ -134,6 +134,15 @@ class TaskLockService:
             return True, lock.user_id
         return False, None
 
+    async def active_lock(self, task_id: uuid.UUID) -> TaskLock | None:
+        await self._cleanup_expired()
+        result = await self.db.execute(
+            select(TaskLock)
+            .where(TaskLock.task_id == task_id)
+            .order_by(TaskLock.expire_at.desc())
+        )
+        return result.scalars().first()
+
     async def _cleanup_expired(self) -> int:
         now = datetime.now(timezone.utc)
         result = await self.db.execute(delete(TaskLock).where(TaskLock.expire_at < now))

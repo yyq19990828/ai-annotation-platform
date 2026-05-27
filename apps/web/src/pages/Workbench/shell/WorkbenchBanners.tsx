@@ -1,12 +1,13 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
-import type { ReviewClaimResponse, TaskResponse } from "@/types";
+import type { ReviewClaimResponse, TaskLockConflictDetail, TaskResponse } from "@/types";
 import styles from "./WorkbenchBanners.module.css";
 
 interface WorkbenchBannersProps {
   mode: "annotate" | "review";
   task: TaskResponse | undefined;
   lockError: string | null;
+  lockConflict?: TaskLockConflictDetail | null;
   claimInfo: ReviewClaimResponse | null;
   canWithdraw: boolean;
   isWithdrawing: boolean;
@@ -17,10 +18,17 @@ interface WorkbenchBannersProps {
   onAcceptRejection: () => void;
 }
 
+function lockErrorText(lockError: string, lockConflict?: TaskLockConflictDetail | null): string {
+  if (lockError === "Lock expired") return "任务锁已过期，请刷新页面";
+  const name = lockConflict?.locked_by?.name?.trim();
+  return name ? `该任务正被 ${name} 编辑` : "该任务正被其他用户编辑";
+}
+
 export function WorkbenchBanners({
   mode,
   task,
   lockError,
+  lockConflict,
   claimInfo,
   canWithdraw,
   isWithdrawing,
@@ -37,7 +45,7 @@ export function WorkbenchBanners({
           className={`${styles.banner} ${styles.lockBanner}`}
         >
           <Icon name="warning" size={13} />
-          {lockError === "Lock expired" ? "任务锁已过期，请刷新页面" : "该任务正被其他用户编辑"}
+          {lockErrorText(lockError, lockConflict)}
         </div>
       )}
 

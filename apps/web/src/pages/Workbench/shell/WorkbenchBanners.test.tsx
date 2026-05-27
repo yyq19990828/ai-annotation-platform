@@ -64,6 +64,29 @@ describe("WorkbenchBanners", () => {
     expect(screen.getByText("任务锁已过期，请刷新页面")).toBeTruthy();
   });
 
+  it("renders lock holder name when the backend reports it", () => {
+    render(
+      <WorkbenchBanners
+        {...baseProps}
+        lockError="Task is locked by another user"
+        lockConflict={{
+          reason: "task_locked_by_other",
+          user_id: "user-2",
+          expire_at: "2026-05-11T08:05:00Z",
+          locked_by: {
+            id: "user-2",
+            name: "李静雯",
+            email: "li@example.com",
+            role: "annotator",
+            avatar_initial: "李",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("该任务正被 李静雯 编辑")).toBeTruthy();
+  });
+
   it("renders review claim and skipped-task banners", () => {
     render(
       <WorkbenchBanners

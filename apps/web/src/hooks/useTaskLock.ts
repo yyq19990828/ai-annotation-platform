@@ -1,12 +1,22 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { ApiError } from "@/api";
 import { tasksApi } from "@/api/tasks";
-import type { TaskLockResponse } from "@/types";
+import type { TaskLockConflictDetail, TaskLockResponse } from "@/types";
 
 const HEARTBEAT_INTERVAL_MS = 60_000;
+
+function parseLockConflict(err: unknown): TaskLockConflictDetail | null {
+  if (!(err instanceof ApiError) || err.status !== 409) return null;
+  const detail = err.detailRaw;
+  if (!detail || typeof detail !== "object") return null;
+  const typed = detail as TaskLockConflictDetail;
+  return typed.reason === "task_locked_by_other" ? typed : null;
+}
 
 export function useTaskLock(taskId: string | undefined) {
   const [lock, setLock] = useState<TaskLockResponse | null>(null);
   const [lockError, setLockError] = useState<string | null>(null);
+  const [lockConflict, setLockConflict] = useState<TaskLockConflictDetail | null>(null);
   const [remainingMs, setRemainingMs] = useState<number>(0);
   const intervalRef = useRef<ReturnType<typeof setInterval>>();
   const timerRef = useRef<ReturnType<typeof setInterval>>();
@@ -22,6 +32,7 @@ export function useTaskLock(taskId: string | undefined) {
     if (!taskId) {
       setLock(null);
       setLockError(null);
+      setLockConflict(null);
       setRemainingMs(0);
       return;
     }
@@ -39,10 +50,13 @@ export function useTaskLock(taskId: string | undefined) {
         if (!cancelled) {
           setLock(result);
           setLockError(null);
+          setLockConflict(null);
         }
       } catch (err: unknown) {
         if (!cancelled) {
           setLock(null);
+          const conflict = parseLockConflict(err);
+          setLockConflict(conflict);
           const msg = err instanceof Error ? err.message : "Task is locked";
           setLockError(msg);
         }
@@ -62,11 +76,14 @@ export function useTaskLock(taskId: string | undefined) {
           if (!cancelled) {
             setLock(newLock);
             setLockError(null);
+            setLockConflict(null);
           }
-        } catch {
+        } catch (err: unknown) {
           if (!cancelled) {
             setLock(null);
-            setLockError("Lock expired");
+            const conflict = parseLockConflict(err);
+            setLockConflict(conflict);
+            setLockError(conflict ? "Task is locked by another user" : "Lock expired");
           }
         }
       }
@@ -91,5 +108,5 @@ export function useTaskLock(taskId: string | undefined) {
     };
   }, [taskId, release]);
 
-  return { lock, lockError, remainingMs, isLocked: !!lock };
+  return { lock, lockError, lockConflict, remainingMs, isLocked: !!lock };
 }

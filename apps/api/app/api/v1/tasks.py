@@ -1892,7 +1892,22 @@ async def acquire_lock(
     svc = TaskLockService(db)
     lock = await svc.acquire(task_id, current_user.id, force_takeover=is_assignee)
     if not lock:
-        raise HTTPException(status_code=409, detail="Task is locked by another user")
+        active_lock = await svc.active_lock(task_id)
+        locked_by = None
+        if active_lock:
+            briefs = await resolve_briefs(db, [active_lock.user_id])
+            brief = briefs.get(str(active_lock.user_id))
+            locked_by = brief.model_dump(mode="json") if brief else None
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "task_locked_by_other",
+                "message": "Task is locked by another user",
+                "user_id": str(active_lock.user_id) if active_lock else None,
+                "expire_at": active_lock.expire_at.isoformat() if active_lock else None,
+                "locked_by": locked_by,
+            },
+        )
     await db.commit()
     return lock
 
