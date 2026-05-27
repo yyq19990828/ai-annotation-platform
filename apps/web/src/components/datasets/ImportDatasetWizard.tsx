@@ -55,10 +55,15 @@ const DATA_TYPES: Array<{ key: string; label: string }> = [
 ];
 
 const STEP_LABELS: Record<Step, string> = {
-  1: "基本信息",
-  2: "选择来源",
+  1: "选择来源",
+  2: "基本信息",
   3: "导入完成",
 };
+
+/** 取路径末段作为数据集名候选（如 `a/b/dataset-A/` → `dataset-A`）。 */
+function lastPathSegment(path: string): string {
+  return path.split("/").filter(Boolean).pop() ?? "";
+}
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -79,9 +84,10 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
   const importFromConnection = useImportFromConnection();
 
   const skipCreate = !!datasetId;
-  const [step, setStep] = useState<Step>(skipCreate ? 2 : 1);
+  const [step, setStep] = useState<Step>(1);
   const [mode, setMode] = useState<UploadMode>("files");
   const [name, setName] = useState("");
+  const [nameTouched, setNameTouched] = useState(false);
   const [description, setDescription] = useState("");
   const [dataType, setDataType] = useState("image");
   const [files, setFiles] = useState<File[]>([]);
@@ -104,9 +110,10 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
   useEffect(() => {
     if (!open) {
       // reset
-      setStep(skipCreate ? 2 : 1);
+      setStep(1);
       setMode("files");
       setName("");
+      setNameTouched(false);
       setDescription("");
       setDataType("image");
       setFiles([]);
@@ -132,6 +139,20 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
   const nameValid = skipCreate || (trimmedName.length >= 2 && trimmedName.length <= 60);
 
   const targetDatasetId = datasetId || created?.id;
+
+  const handleSetName = (v: string) => {
+    setNameTouched(true);
+    setName(v);
+  };
+
+  const handleSetSourcePath = (v: string) => {
+    setSourcePath(v);
+    // 连接器模式、用户未手改过名字时，用路径末段自动填充数据集名（仍可在「基本信息」步改）
+    if (!skipCreate && !nameTouched && mode === "connection") {
+      const seg = lastPathSegment(v);
+      if (seg) setName(seg);
+    }
+  };
 
   const handleAddFiles = (incoming: FileList | File[]) => {
     const list = Array.from(incoming).filter((f) => f.size > 0);
@@ -285,36 +306,41 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
     }
   };
 
+  // 提交（开始上传/导入）所在的步：追加模式在「来源」步直接提交；新建模式在「基本信息」步提交。
+  const isSubmitStep = skipCreate ? step === 1 : step === 2;
+
+  const startByMode = () => {
+    if (mode === "files") startFilesUpload();
+    else if (mode === "zip") startZipUpload();
+    else startConnectionImport();
+  };
+
   const goNextOrSubmit = () => {
-    if (step === 1 && nameValid) setStep(2);
-    else if (step === 2) {
-      if (mode === "files") startFilesUpload();
-      else if (mode === "zip") startZipUpload();
-      else startConnectionImport();
-    }
+    if (step === 1 && !skipCreate) setStep(2);
+    else if (isSubmitStep) startByMode();
   };
 
   const titleSuffix = datasetName ? ` · ${datasetName}` : "";
 
-  const stepNums: Step[] = skipCreate ? [2, 3] : [1, 2, 3];
+  const stepNums: Step[] = skipCreate ? [1, 3] : [1, 2, 3];
 
   return (
     <Modal open={open} onClose={onClose} title={`导入数据集${titleSuffix}`} width={640}>
       <Stepper current={step} steps={stepNums} />
 
-      {step === 1 && !skipCreate && (
+      {step === 2 && !skipCreate && (
         <Step1
           name={name}
           description={description}
           dataType={dataType}
-          setName={setName}
+          setName={handleSetName}
           setDescription={setDescription}
           setDataType={setDataType}
           nameValid={nameValid}
         />
       )}
 
-      {step === 2 && (
+      {step === 1 && (
         <Step2
           mode={mode}
           setMode={(m) => {
@@ -339,7 +365,7 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
           onAddFiles={handleAddFiles}
           onSetZip={(f) => setZipFile(f)}
           onSetConnectionId={setConnectionId}
-          onSetSourcePath={setSourcePath}
+          onSetSourcePath={handleSetSourcePath}
           onSetRecursive={setRecursive}
           onSetIncludeGlobs={setIncludeGlobs}
           onDrop={handleDrop}
@@ -396,24 +422,21 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
 
       {step !== 3 && (
         <Footer
-          step={step}
+          isSubmitStep={isSubmitStep}
+          showPrev={!skipCreate && step === 2}
           mode={mode}
-          skipCreate={skipCreate}
           canNext={
-            (step === 1 && nameValid) ||
-            (step === 2 &&
-              (mode === "files"
+            step === 1
+              ? mode === "files"
                 ? files.length > 0
                 : mode === "zip"
                   ? !!zipFile
-                  : !!connectionId))
+                  : !!connectionId
+              : nameValid
           }
           loading={createDataset.isPending || importFromConnection.isPending}
           onCancel={onClose}
-          onPrev={() => {
-            if (skipCreate) return;
-            setStep((s) => (s > 1 ? ((s - 1) as Step) : s));
-          }}
+          onPrev={() => setStep(1)}
           onNext={goNextOrSubmit}
         />
       )}
@@ -918,25 +941,24 @@ function Step3({
 // ── Footer ───────────────────────────────────────────────────────────────────
 
 function Footer({
-  step,
+  isSubmitStep,
+  showPrev,
   mode,
-  skipCreate,
   canNext,
   loading,
   onCancel,
   onPrev,
   onNext,
 }: {
-  step: Step;
+  isSubmitStep: boolean;
+  showPrev: boolean;
   mode: UploadMode;
-  skipCreate: boolean;
   canNext: boolean;
   loading: boolean;
   onCancel: () => void;
   onPrev: () => void;
   onNext: () => void;
 }) {
-  const showPrev = !skipCreate && step > 1;
   const submitLabel =
     mode === "zip" ? "上传 ZIP" : mode === "connection" ? "开始导入" : "开始上传";
   return (
@@ -951,8 +973,8 @@ function Footer({
       <div className={styles.footerActions}>
         <Button onClick={onCancel}>取消</Button>
         <Button variant="primary" onClick={onNext} disabled={!canNext || loading}>
-          {step === 2 ? (loading ? "处理中…" : submitLabel) : "下一步"}
-          {step !== 2 && <Icon name="chevRight" size={12} />}
+          {isSubmitStep ? (loading ? "处理中…" : submitLabel) : "下一步"}
+          {!isSubmitStep && <Icon name="chevRight" size={12} />}
         </Button>
       </div>
     </div>

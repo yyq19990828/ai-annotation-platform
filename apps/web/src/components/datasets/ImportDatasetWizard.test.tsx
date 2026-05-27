@@ -1,7 +1,8 @@
 /**
  * ImportDatasetWizard 单测
- * 覆盖: 初始渲染 / step1 校验 / step1→2 推进 / skipCreate 直接到 step2 /
- *       step2 文件模式 / step2 ZIP 模式 / 上传触发 mutation
+ * 覆盖: 初始渲染(step1=选择来源) / 选源后推进 step2=基本信息 / 名称校验 /
+ *       skipCreate 直接在来源步提交 / 文件模式 / ZIP 模式 / 上传触发 mutation /
+ *       连接器模式按 source_path 末段自动命名
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
@@ -22,6 +23,18 @@ vi.mock("@/hooks/useDatasets", () => ({
     mutateAsync: mockImportFromConnectionMutateAsync,
     isPending: false,
   }),
+}));
+
+vi.mock("@/hooks/useStorageConnections", () => ({
+  useStorageConnections: () => ({
+    data: [{ id: "c1", name: "Conn", kind: "s3", scope: "global" }],
+    isLoading: false,
+  }),
+  useCreateStorageConnection: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock("@/hooks/usePermissions", () => ({
+  usePermissions: () => ({ role: "super_admin" }),
 }));
 
 vi.mock("@/api/datasets", () => ({
@@ -66,6 +79,14 @@ function renderUI(props: Partial<React.ComponentProps<typeof ImportDatasetWizard
   );
 }
 
+/** 选中一个文件，让「来源」步的文件模式可推进。 */
+function pickFile() {
+  const fileInput = document.querySelector('input[type="file"][multiple]') as HTMLInputElement;
+  const fakeFile = new File(["content"], "img.jpg", { type: "image/jpeg" });
+  Object.defineProperty(fileInput, "files", { value: [fakeFile], configurable: true });
+  fireEvent.change(fileInput);
+}
+
 describe("ImportDatasetWizard", () => {
   beforeEach(() => {
     mockCreateDatasetMutateAsync.mockReset().mockResolvedValue({ id: "ds-new", name: "Test DS" });
@@ -74,78 +95,80 @@ describe("ImportDatasetWizard", () => {
     mockPushToast.mockReset();
   });
 
-  it("初始渲染: step1 显示「基本信息」+ 「下一步」禁用", () => {
+  it("初始渲染: step1 显示「选择来源」, 文件模式未选文件时「下一步」禁用", () => {
     renderUI();
-    expect(screen.getByText("基本信息")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/商品检测训练集/)).toBeInTheDocument();
-    const nextBtn = screen.getByRole("button", { name: /下一步/ });
-    expect(nextBtn).toBeDisabled();
-  });
-
-  it("step1 名称输入不足 2 字符时「下一步」仍禁用", () => {
-    renderUI();
-    fireEvent.change(screen.getByPlaceholderText(/商品检测训练集/), {
-      target: { value: "A" },
-    });
+    expect(screen.getByText("选择来源")).toBeInTheDocument();
+    expect(screen.getByText(/拖拽文件到此处/)).toBeInTheDocument();
+    // step1 不显示名称输入框（名称在 step2）
+    expect(screen.queryByPlaceholderText(/商品检测训练集/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /下一步/ })).toBeDisabled();
   });
 
-  it("step1 填入有效名称后「下一步」启用 + 点击进入 step2", () => {
+  it("选好文件后「下一步」启用 + 点击进入 step2「基本信息」", async () => {
     renderUI();
-    fireEvent.change(screen.getByPlaceholderText(/商品检测训练集/), {
-      target: { value: "合法数据集名称" },
-    });
+    pickFile();
+    await waitFor(() => expect(screen.getByText(/已选 1 个文件/)).toBeInTheDocument());
     const nextBtn = screen.getByRole("button", { name: /下一步/ });
     expect(nextBtn).not.toBeDisabled();
     fireEvent.click(nextBtn);
-    expect(screen.getByText("选择来源")).toBeInTheDocument();
-    // step2 标题: 拖拽文件提示
-    expect(screen.getByText(/拖拽文件到此处/)).toBeInTheDocument();
+    expect(screen.getByText("基本信息")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/商品检测训练集/)).toBeInTheDocument();
   });
 
-  it("skipCreate (datasetId 给定) 直接显示 step2，不显示「下一步」中的名称字段", () => {
+  it("step2 名称不足 2 字符时「开始上传」禁用, 填合法名称后启用", async () => {
+    renderUI();
+    pickFile();
+    await waitFor(() => expect(screen.getByText(/已选 1 个文件/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /下一步/ }));
+    const nameInput = screen.getByPlaceholderText(/商品检测训练集/);
+    fireEvent.change(nameInput, { target: { value: "A" } });
+    expect(screen.getByRole("button", { name: /开始上传/ })).toBeDisabled();
+    fireEvent.change(nameInput, { target: { value: "合法数据集名称" } });
+    expect(screen.getByRole("button", { name: /开始上传/ })).not.toBeDisabled();
+  });
+
+  it("skipCreate (datasetId 给定) 直接在「来源」步提交, 无名称字段、无「下一步」", () => {
     renderUI({ datasetId: "existing-ds", datasetName: "已有数据集" });
-    // step2 相关文案出现
     expect(screen.getByText(/拖拽文件到此处/)).toBeInTheDocument();
-    // step1 名称输入框不存在
     expect(screen.queryByPlaceholderText(/商品检测训练集/)).not.toBeInTheDocument();
-  });
-
-  it("step2 文件模式: 未选文件时「开始上传」禁用", () => {
-    renderUI({ datasetId: "ds1" });
+    expect(screen.queryByRole("button", { name: /下一步/ })).not.toBeInTheDocument();
+    // 未选文件时提交按钮禁用
     expect(screen.getByRole("button", { name: /开始上传/ })).toBeDisabled();
   });
 
-  it("step2 切换到 ZIP 模式显示 ZIP 相关文案", () => {
+  it("切换到 ZIP 模式显示 ZIP 相关文案", () => {
     renderUI({ datasetId: "ds1" });
-    const zipTab = screen.getByRole("button", { name: /ZIP 包/ });
-    fireEvent.click(zipTab);
+    fireEvent.click(screen.getByRole("button", { name: /ZIP 包/ }));
     expect(screen.getByText(/拖入或/)).toBeInTheDocument();
     expect(screen.getByText(/整包 ≤ 200MB/)).toBeInTheDocument();
   });
 
-  it("step1 → step2 → 模拟添加文件后「开始上传」启用 + 触发 createDataset", async () => {
+  it("连接器模式: 选定 source_path 后按末段自动填充数据集名", async () => {
     renderUI();
-    // 填名称进入 step2
+    fireEvent.click(screen.getByRole("button", { name: /连接器导入/ }));
+    // 选连接器
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "c1" } });
+    // 输入 source path
+    fireEvent.change(screen.getByPlaceholderText("batch-a/"), {
+      target: { value: "root/dataset-A" },
+    });
+    // 进入基本信息步，名称应自动为 dataset-A
+    fireEvent.click(screen.getByRole("button", { name: /下一步/ }));
+    const nameInput = screen.getByPlaceholderText(/商品检测训练集/) as HTMLInputElement;
+    expect(nameInput.value).toBe("dataset-A");
+  });
+
+  it("完整新建流程: 选文件 → 下一步 → 填名 → 开始上传 → 触发 createDataset", async () => {
+    renderUI();
+    pickFile();
+    await waitFor(() => expect(screen.getByText(/已选 1 个文件/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /下一步/ }));
     fireEvent.change(screen.getByPlaceholderText(/商品检测训练集/), {
       target: { value: "新建集合" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /下一步/ }));
-
-    // 找到隐藏的 file input 并模拟上传文件
-    const fileInput = document.querySelector('input[type="file"][multiple]') as HTMLInputElement;
-    const fakeFile = new File(["content"], "img.jpg", { type: "image/jpeg" });
-    Object.defineProperty(fileInput, "files", { value: [fakeFile], configurable: true });
-    fireEvent.change(fileInput);
-
-    await waitFor(() =>
-      expect(screen.getByText(/已选 1 个文件/)).toBeInTheDocument(),
-    );
-
     const uploadBtn = screen.getByRole("button", { name: /开始上传/ });
     expect(uploadBtn).not.toBeDisabled();
     fireEvent.click(uploadBtn);
-
     await waitFor(() => {
       expect(mockCreateDatasetMutateAsync).toHaveBeenCalledTimes(1);
     });
@@ -153,6 +176,6 @@ describe("ImportDatasetWizard", () => {
 
   it("open=false 时 wizard 不渲染内容", () => {
     renderUI({ open: false });
-    expect(screen.queryByText("基本信息")).not.toBeInTheDocument();
+    expect(screen.queryByText("选择来源")).not.toBeInTheDocument();
   });
 });

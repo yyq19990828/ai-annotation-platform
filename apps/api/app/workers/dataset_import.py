@@ -208,11 +208,22 @@ async def _run_dataset_import(
                     try:
                         stream = adapter.open(obj.relpath)
                         try:
+                            # S3 适配器用 base_prefix，SFTP 用 base_path —— 取到哪个用哪个，
+                            # 用于在用户把 source_path 写成含 base 的形式时对齐剥离。
+                            adapter_base = getattr(adapter, "base_prefix", None)
+                            if adapter_base is None:
+                                adapter_base = getattr(adapter, "base_path", "")
+                            dest_rel = _dest_relpath(
+                                obj.relpath,
+                                source_path,
+                                adapter_base or "",
+                            )
                             outcome = await svc.ingest_one(
                                 dataset_id,
                                 obj.relpath,
                                 stream,
                                 size=obj.size,
+                                dest_relpath=dest_rel or None,
                             )
                         finally:
                             _close_stream(stream)
@@ -288,6 +299,28 @@ async def _run_dataset_import(
             with suppress(Exception):
                 adapter.close()
         await engine.dispose()
+
+
+def _norm_rel(value: str) -> str:
+    return (value or "").replace("\\", "/").strip().strip("/")
+
+
+def _dest_relpath(relpath: str, source_path: str, base_prefix: str = "") -> str:
+    """把「相对连接器根」的 relpath 转成「相对 source_path」的子路径，保留目录层级。
+
+    obj.relpath 已剥掉 base_prefix；source_path 是用户输入（base 相对）。剥掉 source_path
+    这段前缀，避免导入后多嵌套一级（`{dataset}/dataset-A/a/x` → `{dataset}/a/x`）。
+    base_prefix 用于兜底：用户把 source_path 写成含 base 的形式时也能对齐。返回空串表示该对象
+    正好等于 source_path（单文件），交由 ingest_one 退回 basename。
+    """
+    rel = _norm_rel(relpath)
+    src = _norm_rel(source_path)
+    base = _norm_rel(base_prefix)
+    if base and (src == base or src.startswith(f"{base}/")):
+        src = src[len(base):].lstrip("/")
+    if src and (rel == src or rel.startswith(f"{src}/")):
+        rel = rel[len(src):].lstrip("/")
+    return rel
 
 
 def _append_error(errors: list[dict], outcome: IngestOutcome) -> None:

@@ -267,11 +267,15 @@ class DatasetService:
         size: int | None = None,
         storage_key: str | None = None,
         content_hash_hint: str | None = None,
+        dest_relpath: str | None = None,
     ) -> IngestOutcome:
         """Ingest one source object into a dataset.
 
         `storage_key` is for objects already present in the datasets bucket (scan);
         otherwise `stream` is copied into that bucket in chunks while hashing.
+
+        `dest_relpath` 给定时（连接器/扫描导入）保留源子目录结构作为 file_name 与
+        storage_key 后缀（如 `a/img.jpg`）；不给时退回纯文件名（basename），其它调用零影响。
         """
         ds = await self.db.get(Dataset, dataset_id)
         if not ds:
@@ -279,9 +283,12 @@ class DatasetService:
                 status="error", relpath=relpath, error="dataset missing"
             )
 
-        source_name = _safe_basename(relpath)
+        source_name = (
+            _safe_relpath(dest_relpath) if dest_relpath else _safe_basename(relpath)
+        )
         final_name = await self._unique_file_name(dataset_id, source_name)
-        ext = final_name.rsplit(".", 1)[-1].lower() if "." in final_name else ""
+        base_for_ext = os.path.basename(final_name)
+        ext = base_for_ext.rsplit(".", 1)[-1].lower() if "." in base_for_ext else ""
         file_type = _infer_file_type_from_ext(ext)
         uploaded_storage = False
 
@@ -510,13 +517,16 @@ class DatasetService:
             if key.endswith("/"):
                 continue
             etag = obj.get("etag") or ""
+            # 保留数据集前缀下的子目录层级作为 file_name（如 a/img.jpg）
+            rel_under_ds = key[len(prefix):] if key.startswith(prefix) else key
             outcomes.append(
                 await self.ingest_one(
                     dataset_id,
-                    key.rsplit("/", 1)[-1],
+                    key,
                     size=obj.get("size"),
                     storage_key=key,
                     content_hash_hint=etag if _is_md5(etag) else None,
+                    dest_relpath=rel_under_ds,
                 )
             )
         return outcomes
@@ -842,6 +852,15 @@ def _safe_basename(relpath: str) -> str:
     normalized = (relpath or "").replace("\\", "/").rstrip("/")
     name = os.path.basename(normalized)
     return name or f"source-{uuid.uuid4().hex}"
+
+
+def _safe_relpath(relpath: str) -> str:
+    """归一化相对路径并保留子目录层级；遇到空 / 含 `..` 的不安全路径退回 basename。"""
+    raw = (relpath or "").replace("\\", "/").strip().strip("/")
+    parts = [p for p in raw.split("/") if p not in {"", "."}]
+    if not parts or any(p == ".." for p in parts):
+        return _safe_basename(relpath)
+    return "/".join(parts)
 
 
 def _is_md5(value: str | None) -> bool:

@@ -310,6 +310,66 @@ async def test_ingest_one_streams_upload_and_skips_duplicate(
     assert count == 1
 
 
+@pytest.mark.parametrize(
+    "relpath,source_path,base_prefix,expected",
+    [
+        # 剥掉 source_path 前缀，保留内部子路径
+        ("dataset-A/a/img.jpg", "dataset-A", "", "a/img.jpg"),
+        ("dataset-A/b/img.png", "dataset-A/", "", "b/img.png"),
+        # source_path 为空（连接器根）→ 整体保留
+        ("a/img.jpg", "", "", "a/img.jpg"),
+        # 单文件正好等于 source_path → 返回空（交由 ingest_one 退回 basename）
+        ("dataset-A", "dataset-A", "", ""),
+        # 用户把 source_path 写成含 base_prefix 的形式 → 用 base 兜底对齐
+        ("dataset-A/a/x.jpg", "root/dataset-A", "root", "a/x.jpg"),
+        # source_path 是 base 相对（不含 base）也能正确剥离
+        ("dataset-A/a/x.jpg", "dataset-A", "root", "a/x.jpg"),
+        # SFTP：base_path 绝对、用户把 source_path 写成含 base 的绝对路径 → 用 base 兜底对齐
+        ("batch/a.jpg", "/data/batch", "/data", "a.jpg"),
+        # SFTP：base_path 绝对、source_path 相对 base → 正常剥离
+        ("batch/a.jpg", "batch", "/data", "a.jpg"),
+    ],
+)
+def test_dest_relpath(relpath, source_path, base_prefix, expected):
+    assert dataset_import._dest_relpath(relpath, source_path, base_prefix) == expected
+
+
+async def test_ingest_one_preserves_subdirectory_structure(
+    db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    ds = await _seed_dataset(db_session, user.id)
+    fake_client = _FakeDatasetBucketClient()
+    monkeypatch.setattr(storage_service, "client", fake_client)
+    monkeypatch.setattr(storage_service, "read_image_dimensions", lambda *a, **k: None)
+    monkeypatch.setattr(
+        storage_service, "read_image_dimensions_from_bytes", lambda *a, **k: None
+    )
+
+    svc = DatasetService(db_session)
+    outcome = await svc.ingest_one(
+        ds.id,
+        "dataset-A/a/img.jpg",
+        _ChunkOnlyStream(b"bytes"),
+        size=5,
+        dest_relpath="a/img.jpg",
+    )
+    assert outcome.status == "added"
+
+    item = (
+        await db_session.execute(
+            select(DatasetItem).where(DatasetItem.dataset_id == ds.id)
+        )
+    ).scalar_one()
+    # 子目录层级保留进 file_name 与 file_path（无多余嵌套）
+    assert item.file_name == "a/img.jpg"
+    assert item.file_path == f"{ds.name}/a/img.jpg"
+    assert (
+        storage_service.datasets_bucket,
+        f"{ds.name}/a/img.jpg",
+    ) in fake_client.objects
+
+
 async def test_import_from_connection_api_creates_secretless_job(
     httpx_client, db_session, super_admin, monkeypatch
 ):
