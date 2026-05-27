@@ -1,4 +1,5 @@
 import { useState, Fragment, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -86,7 +87,7 @@ function formatMediaInfo(item: { file_type: string; width: number | null; height
 function DatasetRow({ ds, isExpanded, onToggle }: { ds: DatasetResponse; isExpanded: boolean; onToggle: () => void }) {
   const created = new Date(ds.created_at).toLocaleDateString("zh-CN");
   return (
-    <tr className={`${styles.datasetRow} ${isExpanded ? styles.datasetRowExpanded : ""}`} onClick={onToggle}>
+    <tr id={`dataset-row-${ds.id}`} className={`${styles.datasetRow} ${isExpanded ? styles.datasetRowExpanded : ""}`} onClick={onToggle}>
       <td className={`${styles.datasetCell} ${styles.datasetNameCell}`}>
         <div className={styles.datasetIdentity}>
           <div className={styles.datasetIconBox}>
@@ -475,6 +476,25 @@ export function DatasetsPage() {
 
   const datasets = datasetsData?.items ?? [];
   const total = datasetsData?.total ?? 0;
+
+  // 从通知点入（/datasets?dataset=<id>）时，自动切到「数据集管理」并展开、滚动到该数据集
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const target = searchParams.get("dataset");
+    if (!target || isLoading) return;
+    if (!datasets.some((ds) => ds.id === target)) return;
+    setActiveTab("数据集管理");
+    setExpandedId(target);
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`dataset-row-${target}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    // 用过即清掉 query，避免刷新/再渲染时反复跳转
+    searchParams.delete("dataset");
+    setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, isLoading, datasets]);
   const totalFiles = datasets.reduce((sum, ds) => sum + ds.file_count, 0);
   const linkedCount = datasets.filter((ds) => (ds.project_count ?? 0) > 0).length;
 

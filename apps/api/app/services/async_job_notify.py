@@ -43,6 +43,7 @@ _PAYLOAD_SUMMARY_KEYS = (
     "error_type",
     "output_mode",
     "format",
+    "dataset_id",
     "dataset_display_id",
     "dataset_name",
     "connection_name",

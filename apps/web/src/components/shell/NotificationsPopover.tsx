@@ -335,12 +335,20 @@ export function NotificationsPopover() {
                 window.open(payload.download_url, "_blank", "noopener");
               }
             } else if (item.target_type === "async_job") {
-              const payload = (item.payload || {}) as { kind?: string };
-              navigate(
-                payload.kind === "video_tracker"
-                  ? "/ai-pre/jobs?tab=video"
-                  : "/ai-pre/jobs",
-              );
+              const payload = (item.payload || {}) as {
+                kind?: string;
+                dataset_id?: string;
+              };
+              if (payload.kind === "dataset_import" && payload.dataset_id) {
+                // 数据集导入完成 → 跳数据集列表并自动展开该数据集
+                navigate(`/datasets?dataset=${payload.dataset_id}`);
+              } else {
+                navigate(
+                  payload.kind === "video_tracker"
+                    ? "/ai-pre/jobs?tab=video"
+                    : "/ai-pre/jobs",
+                );
+              }
             }
             close();
           }}
