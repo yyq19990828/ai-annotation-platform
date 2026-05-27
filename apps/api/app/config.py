@@ -140,6 +140,11 @@ class Settings(BaseSettings):
     ml_predict_timeout: int = 100
     ml_health_timeout: int = 10
 
+    # v0.11.19 · Prometheus http_sd 服务发现端点 (/api/v1/internal/metrics-targets)
+    # 的可选 bearer token。默认空 = 免鉴权 (靠内网/nginx 网段隔离, 与 /metrics 一致);
+    # 设为非空时, 该端点校验请求头 Authorization: Bearer <token>, 不匹配返回 401。
+    metrics_sd_token: str = ""
+
     # v0.10.1 · 单项目最多可绑定的 ML backend 数量上限。schema/UI 已按 1:N 一步到位设计,
     # 运行时通过此 env 锁定为 1, 防止测试环境同时常驻 grounded-sam2 (~2GB) + sam3 (~7GB)
     # 显存爆炸。生产可调大, prompt-routing / fallback 在 v0.11+ 落地。
