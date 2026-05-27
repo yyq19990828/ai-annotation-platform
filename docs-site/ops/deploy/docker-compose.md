@@ -3,7 +3,7 @@ audience: [ops]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-27
 ---
 
 # 部署指南
@@ -27,10 +27,15 @@ last_reviewed: 2026-05-09
 │   └── /*       → 静态站点（pnpm build:web 产物）
 │
 ├─ Postgres 16
-├─ Redis 7         （Celery broker + Pub/Sub + 限流 + token 黑名单）
-├─ MinIO           （或 S3 / OSS 兼容存储）
-└─ Celery worker × N
+├─ Redis 7              （Celery broker + Pub/Sub + 限流 + token 黑名单）
+├─ MinIO               （或 S3 / OSS 兼容存储）
+├─ Celery worker × N   （default,ml,media,gpu,cleanup,audit 队列）
+├─ Celery worker (export) （独立 export 队列，导出大任务资源隔离，v0.10.27）
+├─ Celery beat × 1     （单实例！定时任务：审计归档 / PerfHud 推送 / ml health 巡检，v0.9.11）
+└─ ML backend（可选，GPU profile）：grounded-sam2 (8001) / sam3 (8002)
 ```
+
+> **Celery beat 必须单实例**：worker 可水平扩多副本，但 beat 多实例会重复触发定时任务。进程式部署务必单独跑 beat（见 §4.3），漏了它则审计归档、PerfHud、ml health 等全部静默失效。
 
 最小生产部署：1 台 4C8G + 1 个独立 PG 实例（托管 RDS 优先）。
 
@@ -128,6 +133,12 @@ last_reviewed: 2026-05-09
 | `MODEL_POOL_BUILD_TIMEOUT` | `30` | pool 满 + 并发 miss 时排队等显存腾挪的超时（秒），超时返回 503「显存繁忙，稍后重试」。 |
 | `PREFETCH_SAM_VARIANTS` | `tiny,small,base_plus,large` | entrypoint 启动时额外预拉的 SAM 变体 checkpoint（主变体 `SAM_VARIANT` 之外）。逗号分隔。pool 能服务多变体，但只有这里声明（+ 主变体）的 checkpoint 会落盘，**运行期请求未预拉的变体返回 503**。磁盘紧张时裁剪。 |
 | `PREFETCH_DINO_VARIANTS` | `T,B` | 同上，GroundingDINO 变体。 |
+| `IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒后自动卸载模型释放显存；`<=0` 关闭定时卸载（仍可手动 `POST /unload`）。 |
+| `IDLE_CHECK_INTERVAL` | `60` | 上面空闲判断的轮询间隔（秒）。 |
+| `VIDEO_MODEL_POOL_CAP` | `1` | v0.10.35 · sam2_video tracker 的**独立**显存池上限，与图片池预算分离、互不驱逐。 |
+| `VIDEO_MODEL_POOL_BUILD_TIMEOUT` | `60` | video 池满 + 并发 miss 时排队等显存的超时（秒）。 |
+| `VIDEO_TRACKER_MAX_WINDOW_FRAMES` | `300` | 单次 `init_state` 一次性加载的最大帧数（安全上限，防超长窗口灌爆显存）。 |
+| `VIDEO_IDLE_UNLOAD_SECONDS` | `600` | video 池独立 idle 卸载（与图片池 `IDLE_UNLOAD_SECONDS` 各自计时）；`<=0` 关闭。 |
 
 > **多变体 checkpoint 预拉**：ModelPool 让运行期能切任意 `(sam_variant, dino_variant)`，但 checkpoint 必须先落盘。磁盘预算大致 `tiny ~150M / small ~180M / base_plus ~320M / large ~900M`，DINO `T ~680M / B(SwinB) ~940M`；全量约 3.2GB。
 >
@@ -142,6 +153,21 @@ last_reviewed: 2026-05-09
 > | A100 | 40/80G | `2–4` | 多变体并存，团队多人并发切换最顺。 |
 >
 > cap 设过大触发 OOM 时，pool 在驱逐前先腾位（驱逐到 cap-1 再 build 新变体），并发 miss 排队超 `MODEL_POOL_BUILD_TIMEOUT` 返回 503 而非 OOM。保守起步用 `1`，观察 `/health.pool.evict_count` 与显存占用再调高。
+
+### 2.8.1 SAM 3 ML Backend (gpu-sam3 profile)
+
+v0.10.0+ 的高精度 backend（`facebookresearch/sam3` + `facebook/sam3.1` 权重），独立 profile `gpu-sam3`，与 grounded-sam2 的 `gpu` profile 解耦、两者可并存（sam3 高精度首选，grounded-sam2 4060 友好兜底）。仅当 `docker compose --profile gpu-sam3 up sam3-backend` 时生效，监听 `8002`。
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `HF_TOKEN` **必填** | 空 | sam3.1 权重是 gated repo（~3.2GB），首次启动下载必须带；`start_period=180s`。 |
+| `SAM3_EMBEDDING_CACHE_SIZE` | `32` | 图像 embedding LRU 缓存条数。 |
+| `SAM3_SCORE_THRESHOLD` | `0.5` | 检测置信度阈值；召回不足下调、误检多上调。 |
+| `SAM3_LOG_LEVEL` | `INFO` | `DEBUG / INFO / WARNING`。 |
+| `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒自动卸载释放显存（sam3 ~7GB FP16，与 grounded-sam2 并存时强烈建议保留）；`<=0` 关闭。前缀与 grounded-sam2 的 `IDLE_*` 解耦，可独立调。 |
+| `SAM3_IDLE_CHECK_INTERVAL` | `60` | 空闲判断轮询间隔（秒）。 |
+
+> 镜像基础 `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel`（比 grounded-sam2 的 2.3.1-cuda12.1 更新，注意宿主 nvidia 驱动需支持 CUDA 12.8）。
 
 ### 2.9 部署环境
 
@@ -225,7 +251,7 @@ server {
 docker compose up -d postgres redis minio
 ```
 
-`docker-compose.yml` 默认只起这三个 + `celery-worker`。API/Web 当前推荐进程式跑（开发时也是这样）。
+`docker-compose.yml` **默认（不带 `--profile`）** 会起 7 个 service：postgres / redis / minio / mailpit / `celery-worker` / `celery-worker-export` / `celery-beat`；GPU backend（profile `gpu` / `gpu-sam3`）与监控（profile `monitoring`）按需单独启用。mailpit 只是 dev SMTP 收件箱，**生产应禁用并改用真实 SMTP**（见 §2.10）。API/Web 当前推荐进程式跑（开发时也是这样）。
 
 ### 4.2 API（uvicorn）
 
@@ -253,7 +279,29 @@ uv run celery -A app.workers.celery_app worker -l info -Q default,ml,media,gpu,c
 - `cleanup` — 软删清理、效率看板物化视图刷新、DuckDB 同步
 - `audit` — 审计日志 / task event 批量入库
 
-或直接用 `docker-compose up celery-worker`（已配置好）。
+或直接用 `docker compose up -d celery-worker`（已配置好）。
+
+#### 导出专用 worker（v0.10.27）
+
+`export` 队列由独立 worker 处理，让导出大任务资源隔离、不拖累预标 / 媒体处理。上面那个主 worker **不订阅** `export`，所以进程式部署必须再起一个：
+
+```bash
+cd apps/api
+uv run celery -A app.workers.celery_app worker -l info -Q export --concurrency=2
+```
+
+或 `docker compose up -d celery-worker-export`。
+
+#### Celery beat（必须单实例，v0.9.11）
+
+beat 是定时任务调度进程（审计 partition 月度归档、PerfHud 推送、ml health 巡检等），**必须且只能起一个实例**——多实例会重复触发。worker 可以多副本，beat 不行：
+
+```bash
+cd apps/api
+uv run celery -A app.workers.celery_app beat -l info --schedule=/tmp/celerybeat-schedule
+```
+
+或 `docker compose up -d celery-beat`。漏了 beat 不会报错，但所有定时任务静默不跑。
 
 ### 4.4 首个 super_admin（bootstrap_admin）
 
@@ -325,6 +373,21 @@ mc mirror anno/datasets    s3-backup/anno/datasets
 
 崩溃影响：用户当下需重新登录、断线 30s 内 publish 的通知可能丢失（兜底 GET 端点会补齐）。
 
+### 5.4 卷存储位置（命名卷 vs 宿主机统一前缀）
+
+`docker-compose.yml` 默认用 **Docker 托管的命名卷**（`pgdata` / `miniodata` / 模型权重 / 监控），数据落在 `/var/lib/docker/volumes/<project>_<vol>`。想把它们集中到宿主机一个统一目录（便于备份、迁移、放到指定磁盘），叠加 `docker-compose.hostvols.yml`：
+
+```bash
+export DATA_ROOT=/srv/annotation-data   # 绝对路径
+# bind 目录须先建好，Docker 不会自动 mkdir：
+mkdir -p "$DATA_ROOT"/{pgdata,minio,gsam2-checkpoints,gsam2-hf-cache,sam3-checkpoints,sam3-hf-cache,prometheus,grafana}
+docker compose -f docker-compose.yml -f docker-compose.hostvols.yml up -d
+```
+
+不挂这个文件时行为完全不变（仍是命名卷）。想免去每次敲 `-f`，在 `.env` 设 `COMPOSE_FILE=docker-compose.yml:docker-compose.hostvols.yml`。
+
+> 切换不会自动迁移数据：从命名卷转 bind 前，先 `docker compose stop`，把旧卷内容（`docker volume inspect <vol>` 查 `Mountpoint`）`cp` 到 `$DATA_ROOT` 对应子目录，否则容器会以为数据为空。
+
 ---
 
 ## 6. 升级与迁移 runbook
@@ -395,24 +458,27 @@ A: 接入方实现的 `/health` 没在 `ml_health_timeout`（10s）内返回。�
 
 ML backend（grounded-sam2-backend / sam3-backend 等）需要 nvidia GPU。本节给出 docker-compose 最小落地。
 
-### docker-compose 启用 GPU service
+### docker compose 启用 GPU service
 
-`docker-compose.yml` 中 `grounded-sam2-backend` service 已加 `profiles: ["gpu"]`：
+两个 backend 各有独立 profile，可单独启用也可并存：
 
 ```bash
-# 默认不启 GPU service（节约本地资源）
-docker-compose up
+# 默认不启任何 GPU service（节约本地资源）
+docker compose up -d
 
-# 启 GPU service
-docker-compose --profile gpu up
+# 启 grounded-sam2（profile gpu，端口 8001）
+docker compose --profile gpu up -d grounded-sam2-backend
+
+# 启 sam3（profile gpu-sam3，端口 8002）
+docker compose --profile gpu-sam3 up -d sam3-backend
 ```
 
 要点：
 
-- 镜像基础：`pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel`（**devel 必需**：GroundingDINO 算子要 nvcc 现场编译）
+- 镜像基础：grounded-sam2 = `pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel`，sam3 = `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel`（**devel 必需**：GroundingDINO 算子要 nvcc 现场编译；sam3 的 CUDA 12.8 要求宿主驱动够新）
 - nvidia device reservation 已配置；需要 host 装 nvidia-container-toolkit
-- healthcheck `start_period=120s`：首次冷启动加载模型 ~80-100s
-- env：`SAM_VARIANT` / `DINO_VARIANT` 切大模型（默认 tiny + T，速度优先）；`EMBEDDING_CACHE_SIZE` 默认 16（4060）/ 32+（3090+）
+- healthcheck `start_period`：grounded-sam2 `120s`（冷启加载 ~80-100s）、sam3 `180s`（下载 ~3.2GB gated 权重）
+- 显存 / 变体相关 env 见 §2.8（grounded-sam2）与 §2.8.1（sam3）；两者 `IDLE_*` / `MODEL_POOL_*` 前缀解耦，可独立调
 
 ### dev 跨容器存储访问（`ML_BACKEND_STORAGE_HOST`）
 
