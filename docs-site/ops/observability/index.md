@@ -61,7 +61,23 @@ production 不建议把 prometheus / grafana 跟应用塞同一 docker-compose�
 
 ML backend（grounded-sam2 / sam3 / 后续接入的任意 backend）的 `/metrics` 由 Prometheus 的 `ml-backends` job 自动抓取，**无需手改 `prometheus.yml`**：
 
-- 该 job 用 `http_sd_config` 定期拉 anno-api 的 `/api/v1/internal/metrics-targets`，端点从 `ml_backends` 表（`state != disconnected`）生成 target 列表并按 host:port 去重。**新 backend 在超管「模型市场」注册即被纳入抓取**，与 PerfHud 共用同一真相源。
+- 该 job 用 `http_sd_config` 定期拉 anno-api 的 `/api/v1/internal/metrics-targets`，端点从 `ml_backends` 表（`state != disconnected`）生成 target 列表并按 host:port 去重。**新 backend 在超管「模型市场」注册即被纳入抓取**，与 PerfHud 共用同一真相源。响应即 Prometheus http_sd 原生格式（`include_in_schema=False`，不入 OpenAPI；实现 `apps/api/app/api/v1/internal.py`）：
+
+  ```json
+  [
+    {
+      "targets": ["grounded-sam2-backend:8080"],
+      "labels": {
+        "service": "grounded-sam2",
+        "backend_id": "1",
+        "project_id": "1"
+      }
+    }
+  ]
+  ```
+
+  鉴权可选：`METRICS_SD_TOKEN` 非空时端点校验 `Authorization: Bearer <env>`，否则免鉴权（与 `/metrics` 同走 nginx `/internal` 网段隔离）。
+
 - 指标统一为**裸名 + `service` label**（不带 backend 前缀），同语义指标靠 label 区分 backend：
 
 | Metric | 类型 | 用途 |
