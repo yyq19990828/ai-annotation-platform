@@ -9,13 +9,16 @@
 groups:
   - name: ml-backends
     rules:
+      # 注：summary/description 同时带 service + instance(host:port)。`ml_backends.name`
+      # 没有 unique 约束，同名 backend 出现时 service label 会撞车；instance 由
+      # Prometheus 从 http_sd target 自动注入，是唯一定位 SRE 用得上的物理标识。
       - alert: MLBackendDown
         expr: up{job="ml-backends"} == 0
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "ML backend {{ $labels.service }} 离线 ≥5m"
+          summary: "ML backend {{ $labels.service }} ({{ $labels.instance }}) 离线 ≥5m"
           description: "Prometheus 连续 5m 抓不到 {{ $labels.service }}（{{ $labels.instance }}）的 /metrics。"
 
       - alert: GPUMemoryHigh
@@ -24,14 +27,15 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "{{ $labels.service }} 显存占用 >90% 持续 10m"
+          summary: "{{ $labels.service }} ({{ $labels.instance }}) 显存占用 >90% 持续 10m"
           description: "GPU 显存占用 {{ $value | humanizePercentage }}（used/total），可能触发 OOM 或显存排队。"
 
+      # sum by 显式带 instance，避免同名 backend 的延迟桶被合并。
       - alert: InferenceLatencyHigh
-        expr: histogram_quantile(0.95, sum by (le, service) (rate(inference_latency_seconds_bucket[5m]))) > 10
+        expr: histogram_quantile(0.95, sum by (le, service, instance) (rate(inference_latency_seconds_bucket[5m]))) > 10
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: "{{ $labels.service }} 推理 P95 >10s 持续 10m"
+          summary: "{{ $labels.service }} ({{ $labels.instance }}) 推理 P95 >10s 持续 10m"
           description: "P95 推理延迟 {{ $value }}s，检查 GPU 负载 / 模型变体 / 显存驱逐。"
