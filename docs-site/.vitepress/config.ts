@@ -290,6 +290,7 @@ export default withMermaid(defineConfig({
             { text: "环境变量", link: "/dev/reference/env-vars" },
             { text: "存储桶布局", link: "/dev/reference/storage-buckets" },
             { text: "连接器安全", link: "/dev/reference/connector-security" },
+            { text: "内部 API 端点", link: "/dev/reference/internal-api-endpoints" },
           ],
         },
         {

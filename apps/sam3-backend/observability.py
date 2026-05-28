@@ -1,18 +1,20 @@
 """Prometheus 指标定义 (v0.10.0 / M0).
 
-镜像 grounded-sam2-backend/observability.py, 但所有指标加 `sam3_` 前缀, 避免
-两个 backend 同时启用时 Prometheus scrape 撞名 (e.g. inference_latency_seconds).
+镜像 grounded-sam2-backend/observability.py. 指标名与 grounded-sam2 逐字同名 (无
+`sam3_` 前缀), 靠 Prometheus `service` label 区分两个 backend 实例, 不靠名字前缀.
 
 暴露的 metric:
-    sam3_embedding_cache_hits_total{prompt_type}      Counter
-    sam3_embedding_cache_misses_total{prompt_type}    Counter
-    sam3_embedding_cache_size                         Gauge
-    sam3_inference_latency_seconds{prompt_type,cache} Histogram
-    sam3_gpu_utilization_percent                      Gauge
-    sam3_gpu_temperature_celsius                      Gauge
-    sam3_gpu_power_watts                              Gauge
-    sam3_container_cpu_percent                        Gauge
-    sam3_container_memory_percent                     Gauge
+    embedding_cache_hits_total{prompt_type}      Counter
+    embedding_cache_misses_total{prompt_type}    Counter
+    embedding_cache_size                         Gauge
+    inference_latency_seconds{prompt_type,cache} Histogram
+    gpu_utilization_percent                      Gauge
+    gpu_temperature_celsius                      Gauge
+    gpu_power_watts                              Gauge
+    gpu_memory_used_mb                           Gauge
+    gpu_memory_total_mb                          Gauge
+    container_cpu_percent                        Gauge
+    container_memory_percent                     Gauge
 
 `/metrics` 端点在 main.py 注册, 用 prometheus_client.generate_latest().
 """
@@ -27,35 +29,37 @@ logger = logging.getLogger(__name__)
 
 
 EMBEDDING_CACHE_HITS = Counter(
-    "sam3_embedding_cache_hits_total",
+    "embedding_cache_hits_total",
     "SAM 3 image embedding 缓存命中次数",
     labelnames=("prompt_type",),
 )
 
 EMBEDDING_CACHE_MISSES = Counter(
-    "sam3_embedding_cache_misses_total",
+    "embedding_cache_misses_total",
     "SAM 3 image embedding 缓存未命中次数",
     labelnames=("prompt_type",),
 )
 
 EMBEDDING_CACHE_SIZE = Gauge(
-    "sam3_embedding_cache_size",
+    "embedding_cache_size",
     "SAM 3 image embedding 缓存当前条目数",
 )
 
 INFERENCE_LATENCY = Histogram(
-    "sam3_inference_latency_seconds",
+    "inference_latency_seconds",
     "/predict 端到端耗时 (秒) — SAM 3",
     labelnames=("prompt_type", "cache"),
     buckets=(0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
 )
 
 
-GPU_UTILIZATION = Gauge("sam3_gpu_utilization_percent", "GPU SM 利用率 (%) — sam3-backend")
-GPU_TEMPERATURE = Gauge("sam3_gpu_temperature_celsius", "GPU 温度 (°C) — sam3-backend")
-GPU_POWER = Gauge("sam3_gpu_power_watts", "GPU 实时功耗 (W) — sam3-backend")
-CONTAINER_CPU = Gauge("sam3_container_cpu_percent", "容器 CPU 利用率 (%) — sam3-backend")
-CONTAINER_MEM = Gauge("sam3_container_memory_percent", "容器内存利用率 (%) — sam3-backend")
+GPU_UTILIZATION = Gauge("gpu_utilization_percent", "GPU SM 利用率 (%) — sam3-backend")
+GPU_TEMPERATURE = Gauge("gpu_temperature_celsius", "GPU 温度 (°C) — sam3-backend")
+GPU_POWER = Gauge("gpu_power_watts", "GPU 实时功耗 (W) — sam3-backend")
+GPU_MEMORY_USED = Gauge("gpu_memory_used_mb", "GPU 已用显存 (MB)")
+GPU_MEMORY_TOTAL = Gauge("gpu_memory_total_mb", "GPU 总显存 (MB)")
+CONTAINER_CPU = Gauge("container_cpu_percent", "容器 CPU 利用率 (%) — sam3-backend")
+CONTAINER_MEM = Gauge("container_memory_percent", "容器内存利用率 (%) — sam3-backend")
 
 
 def record_inference(prompt_type: str, cache_status: str, duration_seconds: float) -> None:
@@ -120,6 +124,8 @@ def sample_perfhud() -> dict:
         "gpu_utilization_percent": None,
         "gpu_temperature_celsius": None,
         "gpu_power_watts": None,
+        "gpu_memory_used_mb": None,
+        "gpu_memory_total_mb": None,
         "container_cpu_percent": None,
         "container_memory_percent": None,
     }
@@ -132,12 +138,17 @@ def sample_perfhud() -> dict:
                 _pynvml_handle, pynvml.NVML_TEMPERATURE_GPU
             )
             power = pynvml.nvmlDeviceGetPowerUsage(_pynvml_handle) / 1000.0
+            mem = pynvml.nvmlDeviceGetMemoryInfo(_pynvml_handle)
             out["gpu_utilization_percent"] = int(util)
             out["gpu_temperature_celsius"] = int(temp)
             out["gpu_power_watts"] = round(float(power), 1)
+            out["gpu_memory_used_mb"] = int(mem.used / 1024**2)
+            out["gpu_memory_total_mb"] = int(mem.total / 1024**2)
             GPU_UTILIZATION.set(out["gpu_utilization_percent"])
             GPU_TEMPERATURE.set(out["gpu_temperature_celsius"])
             GPU_POWER.set(out["gpu_power_watts"])
+            GPU_MEMORY_USED.set(out["gpu_memory_used_mb"])
+            GPU_MEMORY_TOTAL.set(out["gpu_memory_total_mb"])
         except Exception as exc:  # noqa: BLE001
             logger.debug("pynvml sample failed: %s", exc)
     if _psutil is not None:

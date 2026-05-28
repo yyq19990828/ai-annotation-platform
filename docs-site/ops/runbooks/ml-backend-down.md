@@ -75,6 +75,12 @@ curl http://localhost:8001/health
 
 对照 [ML Backend 协议](/dev/reference/ml-backend-protocol) 检查 Backend 实现。
 
+## 维护窗口 / 避免告警
+
+`MLBackendDown` 由 Prometheus `up{job="ml-backends"} == 0` 持续 5m 触发，target 由 http_sd 从 `ml_backends` 表生成，**仅** `state="disconnected"` 的 backend 被排除。换言之 `state="error"`（health 探活失败）仍在 target 列表中，会按设计触发告警。
+
+要做带外维护（停机刷模型 / 换权重等），先把 backend 在超管 → ML Backend 注册页 disconnect，再操作；否则 5m 后会被 `MLBackendDown` 告警炸。
+
 ## 影响范围评估
 
 | 受影响功能 | 影响级别 |

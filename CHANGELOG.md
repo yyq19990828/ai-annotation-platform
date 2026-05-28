@@ -24,6 +24,45 @@
 
 ## 最新版本
 
+## [0.11.21] - 2026-05-27
+
+> **ML backend 告警（Alertmanager）。** 新增 alertmanager service 与告警规则，backend 离线 / 显存打满 / 推理延迟劣化时经 SMTP 主动告警（dev 投递 mailpit），补上 PerfHud 没有的告警能力，完成可观测性 epic（v0.11.19–21）。
+
+### Added
+
+- **告警规则**: `infra/prometheus/alerts.yml` 三条 —— `MLBackendDown`（`up==0` 持续 5m）/ `GPUMemoryHigh`（显存 >90% 持续 10m）/ `InferenceLatencyHigh`（P95 >10s 持续 10m）；`prometheus.yml` 接入 `alerting` + `rule_files`。误报防护：`MLBackendDown` 只覆盖 http_sd 生成的 `ml-backends` target，主动 disconnect 的 backend 不在其中。→ [plan](docs/plans/2026-05-27-v0.11.21-ml-backend-alerting.md)
+- **Alertmanager**: docker-compose `alertmanager` service（`monitoring` profile，9093）+ `infra/alertmanager/alertmanager.yml`，SMTP receiver dev 投递 mailpit、生产换真实 SMTP。
+
+### Changed
+
+- observability 指南 §4 更新：ML backend 告警从「建议规则」落地为仓库内规则。
+
+## [0.11.20] - 2026-05-27
+
+> **Grafana ML backend / GPU 监控面板。** 新增 `ML Backends` dashboard，把 v0.11.19 接入的 GPU/推理/cache 指标按 `service` 多 backend 对比可视化（显存占用、利用率、温度功耗、推理 P50/P95、cache 命中率、容器 CPU/内存）。
+
+### Added
+
+- **ML Backends Grafana dashboard**: `infra/grafana/dashboards/ml-backends.json`（provisioning 自动加载），11 个 panel + `$service` 多选模板变量，按 `service` label 区分 grounded-sam2 / sam3。复用既有 Prometheus datasource uid。→ [plan](docs/plans/2026-05-27-v0.11.20-grafana-ml-backend-dashboard.md)
+
+### Changed
+
+- `prometheus.yml` 的 `ml-backends` 兜底注释改用 bridge gateway 地址并补 dev 前提（dev `uvicorn` 默认绑 `127.0.0.1`，prometheus 容器经 host-gateway 抓不到 host api，需 `--host 0.0.0.0`；与既有 `anno-api` job 同前提）；observability 指南同步。
+
+## [0.11.19] - 2026-05-27
+
+> **ML backend 指标接入 Prometheus（自动发现）+ 指标命名统一。** 两个 ML backend（grounded-sam2 / sam3）的 `/metrics` 现由 Prometheus `ml-backends` job 经 http_sd 从 `ml_backends` 表自动发现并抓取——新 backend 在超管注册即被纳入，无需手改 `prometheus.yml`；指标统一为裸名 + `service` label 区分 backend。为 Grafana GPU 面板（v0.11.20）与告警（v0.11.21）铺底。
+
+### Added
+
+- **http_sd 服务发现端点**: 新增 `GET /api/v1/internal/metrics-targets`（`include_in_schema=False`，不进 OpenAPI 快照），从 `ml_backends` 表（`state != disconnected`）生成 Prometheus http_sd target 列表，按 `host:port` 去重 project-scoped 记录，labels 注入 `service` / `backend_id` / `project_id`。可选 `METRICS_SD_TOKEN` bearer 鉴权，默认空 = 免鉴权（与 `/metrics` 一致）。`prometheus.yml` 新增 `ml-backends` job（http_sd + static 兜底注释）。→ [plan](docs/plans/2026-05-27-v0.11.19-ml-metrics-naming-and-http-sd.md)
+- **GPU 显存指标**: 两个 backend `/metrics` 补 `gpu_memory_used_mb` / `gpu_memory_total_mb` gauge（复用 PerfHud 现有 pynvml 采样，无新依赖、零额外采样），此前显存仅在 `/health`。
+
+### Changed
+
+- **指标命名统一**: sam3 backend 去掉所有指标的 `sam3_` 前缀，与 grounded-sam2 逐字对齐（`gpu_utilization_percent` / `inference_latency_seconds` / `embedding_cache_*` 等），同语义指标靠 `service` label 区分 backend；超管 PerfHud 读 `/health`、不受影响。
+- 部署文档 §8.5 与可观测性指南同步：说明自动发现机制，及 PerfHud（实时一眼看）与 Prometheus/Grafana（历史趋势 + 告警）的分工。
+
 ## [0.11.18] - 2026-05-27
 
 > **连接器导入保留源目录结构 + 路径名自动命名数据集。** 从 S3/OSS/SFTP 连接器导入时，数据集内部按 Source path 内部的子目录层级落库（不再拍平、也不多嵌套一层）；新建向导调整为「先选来源、后填信息」，连接器模式下数据集名自动取 Source path 末段（可改）。

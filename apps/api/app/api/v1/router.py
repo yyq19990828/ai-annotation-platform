@@ -8,6 +8,7 @@ from app.api.v1 import (
     api_keys,
     async_jobs,
     auth,
+    internal,
     audit_logs,
     annotation_comments,
     annotation_feedbacks,
@@ -123,6 +124,10 @@ api_router.include_router(
     prefix="/admin/system-health",
     tags=["admin-system-health"],
 )
+
+# v0.11.19 · 内部服务发现 router (/internal/metrics-targets, Prometheus http_sd)。
+# include_in_schema=False, 不进 OpenAPI 公开 schema; 所有环境暴露 (监控用)。
+api_router.include_router(internal.router, prefix="/internal", tags=["internal"])
 
 # v0.8.3 · _test_seed router：仅非 production 暴露，供 Playwright E2E 造数 + 跳登录
 from app.config import settings as _settings  # noqa: E402

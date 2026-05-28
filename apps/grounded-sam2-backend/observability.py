@@ -12,6 +12,8 @@
     gpu_utilization_percent                      Gauge
     gpu_temperature_celsius                      Gauge
     gpu_power_watts                              Gauge
+    gpu_memory_used_mb                           Gauge
+    gpu_memory_total_mb                          Gauge
     container_cpu_percent                        Gauge
     container_memory_percent                     Gauge
 
@@ -76,6 +78,8 @@ def record_video_tracker(sam_variant: str, frames: int, duration_seconds: float)
 GPU_UTILIZATION = Gauge("gpu_utilization_percent", "GPU SM 利用率 (%)")
 GPU_TEMPERATURE = Gauge("gpu_temperature_celsius", "GPU 温度 (°C)")
 GPU_POWER = Gauge("gpu_power_watts", "GPU 实时功耗 (W)")
+GPU_MEMORY_USED = Gauge("gpu_memory_used_mb", "GPU 已用显存 (MB)")
+GPU_MEMORY_TOTAL = Gauge("gpu_memory_total_mb", "GPU 总显存 (MB)")
 CONTAINER_CPU = Gauge("container_cpu_percent", "容器 CPU 利用率 (cgroup 视角, %)")
 CONTAINER_MEM = Gauge("container_memory_percent", "容器内存利用率 (%)")
 
@@ -150,6 +154,8 @@ def sample_perfhud() -> dict:
         "gpu_utilization_percent": None,
         "gpu_temperature_celsius": None,
         "gpu_power_watts": None,
+        "gpu_memory_used_mb": None,
+        "gpu_memory_total_mb": None,
         "container_cpu_percent": None,
         "container_memory_percent": None,
     }
@@ -162,12 +168,17 @@ def sample_perfhud() -> dict:
                 _pynvml_handle, pynvml.NVML_TEMPERATURE_GPU
             )
             power = pynvml.nvmlDeviceGetPowerUsage(_pynvml_handle) / 1000.0
+            mem = pynvml.nvmlDeviceGetMemoryInfo(_pynvml_handle)
             out["gpu_utilization_percent"] = int(util)
             out["gpu_temperature_celsius"] = int(temp)
             out["gpu_power_watts"] = round(float(power), 1)
+            out["gpu_memory_used_mb"] = int(mem.used / 1024**2)
+            out["gpu_memory_total_mb"] = int(mem.total / 1024**2)
             GPU_UTILIZATION.set(out["gpu_utilization_percent"])
             GPU_TEMPERATURE.set(out["gpu_temperature_celsius"])
             GPU_POWER.set(out["gpu_power_watts"])
+            GPU_MEMORY_USED.set(out["gpu_memory_used_mb"])
+            GPU_MEMORY_TOTAL.set(out["gpu_memory_total_mb"])
         except Exception as exc:  # noqa: BLE001
             logger.debug("pynvml sample failed: %s", exc)
     if _psutil is not None:
