@@ -40,7 +40,7 @@ features:
   - icon: 💻
     title: 我要贡献代码
     details: 5 分钟跑通本地环境，了解架构全景，按 How-to 完成第一个 PR。
-    link: /dev/local-dev
+    link: /dev/tutorials/local-dev
     linkText: 开始开发
   - icon: 🔌
     title: 我要集成 API

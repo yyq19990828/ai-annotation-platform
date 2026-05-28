@@ -151,11 +151,13 @@ export default withMermaid(defineConfig({
           collapsed: true,
           items: [
             { text: "概览", link: "/user-guide/superadmin/" },
+            { text: "用户与权限", link: "/user-guide/superadmin/user-management" },
             { text: "ML Backend 注册", link: "/user-guide/superadmin/ml-backend-registry" },
             { text: "模型市场", link: "/user-guide/superadmin/model-market" },
             { text: "失败预测排查", link: "/user-guide/superadmin/failed-predictions" },
             { text: "审计日志", link: "/user-guide/superadmin/audit-logs" },
             { text: "系统监控", link: "/user-guide/superadmin/system-monitoring" },
+            { text: "BUG 反馈管理", link: "/user-guide/superadmin/bug-management" },
           ],
         },
         {
@@ -173,6 +175,7 @@ export default withMermaid(defineConfig({
           items: [
             { text: "数据导出格式", link: "/user-guide/reference/export-formats" },
             { text: "通知中心", link: "/user-guide/reference/notifications" },
+            { text: "设置页", link: "/user-guide/reference/settings" },
           ],
         },
         {

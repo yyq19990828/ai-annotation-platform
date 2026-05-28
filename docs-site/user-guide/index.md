@@ -34,8 +34,8 @@
 管理用户、注册 ML Backend、查看系统状态。
 
 - [超管概览](./superadmin/) — 权限与入口
-- [ML Backend 注册](./superadmin/ml-backend-registry)
-- [模型市场](./superadmin/model-market)
+- [用户与权限](./superadmin/user-management) · [BUG 反馈管理](./superadmin/bug-management)
+- [ML Backend 注册](./superadmin/ml-backend-registry) · [模型市场](./superadmin/model-market)
 - [审计日志](./superadmin/audit-logs) · [系统监控](./superadmin/system-monitoring)
 
 ---
@@ -48,5 +48,6 @@
 | 理解「任务 / 批次 / 标注」这些词的含义 | [平台概念与术语](./concepts) |
 | 看快捷键列表 | [工作台概览 → 快捷键](./workbench/) |
 | 导出标注数据 | [数据导出格式](./reference/export-formats) |
+| 修改密码 / 通知偏好 / 标注偏好 | [设置页](./reference/settings) |
 | 提交 BUG 或问题 | 应用右下角「BUG 反馈」按钮 |
 | 常见问题 | [FAQ](./faq) |

@@ -3,7 +3,7 @@ audience: [super_admin]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-05-29
 ---
 
 # 超级管理员手册
@@ -21,10 +21,11 @@ last_reviewed: 2026-05-27
 
 | 任务 | 文档 |
 |---|---|
+| 用户与权限管理 | [用户与权限](./user-management) |
 | 注册 / 维护 ML Backend | [ML Backend 注册](./ml-backend-registry) |
 | 跨项目管理 AI 模型 | [模型市场](./model-market) |
 | 排查失败预标 | [失败预测排查](./failed-predictions) |
-| 管理 BUG 反馈 | `/bugs` |
+| 管理 BUG 反馈 | [BUG 反馈管理](./bug-management) |
 | 治理公共模板 | [公共模板治理](./public-templates) |
 | 审计与合规 | [审计日志](./audit-logs) |
 | 系统监控 | [系统监控](./system-monitoring) |

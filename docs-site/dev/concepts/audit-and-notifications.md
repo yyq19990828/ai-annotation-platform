@@ -197,7 +197,7 @@ flowchart TD
 
 ### 已知通知类型
 
-当前 `apps/api/app/api/v1/notifications.py` 暴露的可配置类型主要有：
+`apps/api/app/api/v1/notifications.py:29` 中的 `KNOWN_NOTIFICATION_TYPES` 是「**用户可在设置页静音**」的全部类型；新增类型时必须同步两侧：
 
 - `bug_report.commented`
 - `bug_report.reopened`
@@ -220,10 +220,13 @@ flowchart TD
 - `job.cancelled`
 - `user.deactivation_requested`
 - `user.deactivation_completed`
-- `feedback.reconcile_drift`（双写对账发现不一致，仅发给 superadmin）
 
-新增通知类型时要同步更新后端 `KNOWN_NOTIFICATION_TYPES` 与前端设置页标签；
-否则用户无法在「通知偏好」里静音它。
+**特殊类型（不在 `KNOWN_NOTIFICATION_TYPES`，因此用户不能静音）：**
+
+- `feedback.reconcile_drift` — 双写对账发现不一致，仅发给 superadmin（`apps/api/app/workers/feedback_reconcile.py:76`）
+
+新增可配置通知类型时要同步更新后端 `KNOWN_NOTIFICATION_TYPES` 与前端设置页标签；
+不可配置的运维类通知则刻意不进 `KNOWN`，避免被错误静音。
 
 ### async_jobs 终态通知
 

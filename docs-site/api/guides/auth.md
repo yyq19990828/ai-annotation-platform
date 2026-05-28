@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-05-28
 ---
 
 # 认证
@@ -27,7 +27,7 @@ Content-Type: application/json
 }
 ```
 
-`access_token` 短期有效（默认 30 min）。Refresh token 通过 **HttpOnly cookie** 自动下发，前端无需手动管理。
+`access_token` 默认有效期 **24 小时**（`access_token_expire_minutes` 配置，默认 `60 * 24`）。Refresh token 通过 **HttpOnly cookie** 自动下发，前端无需手动管理。
 
 ## 携带 token
 
@@ -54,7 +54,7 @@ POST /api/v1/auth/logout
 
 ## CAPTCHA
 
-连续登录失败 3 次后，下一次必须带 CAPTCHA：
+同 IP 连续登录失败达到阈值（`login_captcha_threshold`，默认 **5 次**）后，下一次登录必须带 CAPTCHA：
 
 ```json
 {
@@ -67,7 +67,7 @@ POST /api/v1/auth/logout
 
 CAPTCHA 由 `GET /api/v1/auth/captcha` 获取（PNG + id）。
 
-失败计数按 IP + 用户名 双键，3 分钟窗口。
+失败计数按 IP 单键 (`login_failed:{ip}`)，窗口长度由 `login_failed_window_seconds` 配置（默认 **3600 秒 / 1 小时**）。登录成功后立刻清空计数。
 
 ## API Key
 

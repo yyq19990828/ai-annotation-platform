@@ -50,6 +50,30 @@ GET /api/v1/videos/{dataset_item_id}/chunks/{chunk_id}
 
 首次请求缺失 chunk 时，API 创建 `VideoChunk(status="pending")` 并投递 `ensure_video_chunks` Celery 任务。单 chunk 未 ready 时返回 HTTP 202 和 `Retry-After`；ready 后返回 signed URL。
 
+### Chunk 状态机
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending: API 首次请求 / 失败重试
+    pending --> ready: worker 写入 storage_key 成功
+    pending --> failed: ffmpeg 失败 / 超时（写 error 字段）
+    failed --> pending: POST /chunks:retry 重新投递
+    ready --> [*]
+    note right of ready
+        分两种 generation_mode:
+        smart_copy (stream copy, 0 转码) /
+        transcode (H.264 baseline fallback)
+    end note
+```
+
+| 状态 | 触发 / 含义 |
+|---|---|
+| `pending` | 行刚创建或 retry 后，Celery 任务在排队 / 执行中。API 返回 `202` + `Retry-After: 3s` |
+| `ready` | worker 完成 chunk 生成（含 ffprobe 写 `diagnostics.samples`），返回 signed URL |
+| `failed` | ffmpeg 失败 / 超时；行携带 `error` 字段；客户端可触发 retry |
+
+> 实现：`apps/api/app/services/video_frame_service.py` 第 200、217、344 行。chunk 状态白名单见 `{"pending", "ready", "failed"}`；越界值视为 `pending`。
+
 media worker 会在源 codec 为 H.264 / H.265 且 chunk 起始帧 keyframe 对齐时优先尝试 ffmpeg stream copy；不满足条件或 smart-copy 失败时，自动 fallback 到既有 H.264 baseline fragmented MP4 重编码。API 行为保持兼容，只额外返回诊断字段：
 
 ```json
@@ -242,7 +266,48 @@ WS /api/v1/ws/video-tracker-jobs/{job_id}?token=<access-token>
 - `job_failed`
 - `job_cancelled`
 
-当前状态机为 `queued -> running -> completed | failed | cancelled`；`DELETE` 对 queued/running job 标记 `cancel_requested_at` 并进入 `cancelled`，对 terminal job 幂等返回当前状态。worker 会保留人工 `video_track` keyframe，不用 prediction keyframe 覆盖 manual 结果。
+```mermaid
+sequenceDiagram
+    autonumber
+    participant FE as 前端 (WS 订阅)
+    participant API as FastAPI
+    participant W as Celery worker (runner)
+    participant ML as ML Backend (/predict)
+    participant Pub as Redis Pub/Sub<br/>(video-tracker-job:{job_id})
+
+    FE->>API: POST /video-tracker-jobs (frame range + prompt)
+    API->>W: enqueue runner
+    API-->>FE: 201 { job_id, event_channel }
+    FE->>API: WS /ws/video-tracker-jobs/{job_id}?token=...
+    W->>Pub: publish job_started
+    Pub-->>FE: job_started
+
+    loop 长区间按 VIDEO_TRACKER_WINDOW_SIZE_FRAMES 分窗
+        W->>ML: /predict (interactive video, source_geometry)
+        ML-->>W: stream frame_result[]
+        loop 每帧
+            W->>Pub: publish frame_result {idx, geometry, confidence}
+            Pub-->>FE: frame_result
+        end
+        W->>Pub: publish job_progress {current, total}
+        Pub-->>FE: job_progress
+    end
+
+    alt 正常结束
+        W->>Pub: publish job_completed
+        Pub-->>FE: job_completed
+    else 出错
+        W->>Pub: publish job_failed {error}
+        Pub-->>FE: job_failed
+    else 用户取消 (DELETE)
+        FE->>API: DELETE /video-tracker-jobs/{job_id}
+        API->>W: 写 cancel_requested_at
+        W->>Pub: publish job_cancelled
+        Pub-->>FE: job_cancelled
+    end
+```
+
+DB 状态机（`VideoTrackerJob.status`，独立于 WS 事件命名）：`queued -> running -> completed | failed | cancelled`；`DELETE` 对 queued/running job 标记 `cancel_requested_at` 并进入 `cancelled`，对 terminal job 幂等返回当前状态。worker 会保留人工 `video_track` keyframe，不用 prediction keyframe 覆盖 manual 结果。
 
 SAM video adapter 会调用项目绑定的 ML Backend `/predict`：
 
