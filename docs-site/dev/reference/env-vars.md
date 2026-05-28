@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-05-28
 ---
 
 # 环境变量参考
@@ -70,7 +70,7 @@ last_reviewed: 2026-05-27
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `METRICS_SD_TOKEN` | `—` | 默认空 = 免鉴权 (内网端点, 靠 nginx /internal 网段隔离, 与 /metrics 一致); 设为非空时该端点校验请求头 Authorization: Bearer <token>, 不匹配返回 401。 |
+| `METRICS_SD_TOKEN` | `—` | 默认空 = 免鉴权 (内网端点, 靠 nginx /internal 网段隔离, 与 /metrics 一致); 设为非空时该端点校验请求头 Authorization: Bearer TOKEN, 不匹配返回 401。 |
 
 ## 视频帧服务
 
