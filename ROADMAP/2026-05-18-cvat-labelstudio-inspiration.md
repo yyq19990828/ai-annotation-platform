@@ -61,27 +61,13 @@
 - **签名头**：`X-Signature-256: sha256=<hmac>`（GitHub 同款），客户端可直接复用 GitHub webhook 验签代码。
 - **UI**：ProjectSettings + AdminDashboard 各加「Webhook 管理」section（增删改 + 测试投递 + 最近 20 次 delivery 历史）。
 
-### 2.2 AnnotationFeedback 表（Issue / Comment / BugReport 收敛）
+### 2.2 AnnotationFeedback 表（Issue / Comment / BugReport 收敛）◑ 核心已落，剩切单源
+
+> 统一模型本身已落地（[ADR-0027](../../docs/adr/0027-annotation-feedback-unified-table.md)）：`annotation_feedbacks` 表（migration 0076 / v0.10.19）、`v_annotation_feedback_unified` UNION ALL view（0077 / v0.10.21，段二）、bug/comment/reject 三源同事务双写 mirror（`feedback.py mirror_*`）、双写一致性对账安全网（`feedback_reconcile.py` / v0.11.0）均就位。实现的 `kind` / `anchor_type` 枚举与本节原设计基本一致。
+>
+> **唯一仍 open**：ADR-0027 第三段「切单源 + 旧表退役」（标 v0.11.9+，drift 长期为 0 后才切），在主 ROADMAP 优先级表 I4/I12/I18 行跟踪。
 
 - **来源**：CVAT [`Issue`](../../cvat/cvat/apps/engine/issue.py) + Comment thread，所有反馈都锚到 `(frame, position)`。
-- **现 ROADMAP**：§C.7 I18 只把"Issue 锚定到像素位置"放在 P2 图片侧，没看到收敛规划。
-- **风险**：平台已有 `BugReportDrawer` / `TaskComment` / `reject_reason` 三处反馈入口，**越演化越难合并**。
-- **建议**：在 v0.11 前期做一次模型收敛，**早做比晚做便宜**。
-- **统一模型**：
-  ```python
-  class AnnotationFeedback:
-      id: UUID
-      kind: Literal["bug", "issue", "comment", "reject"]
-      anchor_type: Literal["project", "task", "annotation", "pixel"]
-      anchor_id: int | None  # task_id / annotation_id
-      anchor_position: JSONB | None  # {frame, x, y} for pixel
-      status: Literal["open", "resolved", "wont_fix"]
-      severity: Literal["info", "warn", "blocker"] | None
-      created_by: int
-      thread: list[Comment]  # 子评论
-  ```
-- **迁移**：保留 `bug_reports` / `task_comments` 现表，新表加 view 合并，前端先切到统一 API，旧表后续收尾。
-- **联动**：§C.7 I18 自动满足，BugReportDrawer 的 LLM 聚类去重（§B）也直接复用。
 
 ### 2.3 Consensus / Replica Jobs（与 GT honeypot 分开做）
 
@@ -92,15 +78,11 @@
   - **I19b · GT honeypot（后做，更难）**：从已完成 task 抽 N% 标记为 GT，新任务里偷偷重新分发；标注员视角无法分辨。需要 task 复制 + 标注隐藏 + 评分回灌。
 - **价值**：低预算高质量场景（医疗影像 / 法务）通常用 consensus 而非 honeypot —— 业主愿意付双倍标注成本换取共识 ground truth。
 
-### 2.4 Tracker / Auto-Annotation 协议层抽象（先于 R23 UI）
+### 2.4 Tracker / Auto-Annotation 协议层抽象 ✅ 已完成 v0.10.37（结论已演进）
+
+> 已由 [能力协商 epic]([archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 落地，但**结论与原设想不同**：原提议「R23 前置 capabilities 协议、保留 Tracker Registry UI」，实际**取消了注册表 UI**，改为 backend `/setup` 自报能力 + 平台动态发现（`health_meta["capabilities"]` + `ml_capabilities.derive_modalities` 派生 image/video modality），「启停」即 backend 暂停/恢复。CVAT `FunctionKind` enum 未照搬，改用 capabilities 快照 + modality 派生。SoT：视频 roadmap [§3.2/§3.3](2026-05-21-video-workbench-roadmap.md)、[`ml_backend.py`](../apps/api/app/services/ml_backend.py)、CHANGELOG v0.10.37。
 
 - **来源**：CVAT `FunctionKind` enum (`DETECTOR / INTERACTOR / REID / TRACKER`)。
-- **现 ROADMAP**：§C.5 R23 "Tracker Registry UI" 直接做 UI 层，缺协议层。
-- **建议**：R23 前置一个"capabilities 协议统一"小项（§C.7 I20.4 已提，但没和 R23 关联）。
-  - 后端 `/setup` 返回 `supported_capabilities: ["detector", "interactor", "tracker", "reid"]`。
-  - 平台按 capability 分类路由（图片 detector 走预标、视频 tracker 走 R10 job、interactor 走 ToolDock）。
-  - UI 注册时按 capability 显示可选项，避免误配。
-- **工作量**：1d（协议层）+ R23 UI 维持原估。
 
 ### 2.5 标注规则版本化（Project Fork / Branch）
 
@@ -275,9 +257,9 @@
 | §1.6 DuckDB 离线视图 | ✅ **已完成 v0.10.16**（2026-05-19） | 三面板 + super_admin 守卫 + 升级路径 PG → DuckDB → ClickHouse 待触发 |
 | §1.7 async_jobs 统一表 | ✅ **已完成 v0.10.16**（2026-05-19） | 双写双轨 + Topbar 铃铛 + 4 kind 接入；cancel 全 kind / WebSocket 进度推送留 v0.10.17 |
 | §2.1 Webhook 系统 | §B 治理/合规 有 1 句话 | **升级范围**：拆独立 epic + ADR-0018 草案 |
-| §2.2 AnnotationFeedback 收敛 | §C.7 I18 仅图片侧 | **升级范围**：从 I18 扩为统一模型收敛任务 |
+| §2.2 AnnotationFeedback 收敛 | ◑ **核心已落 v0.10.19–v0.11.0** | 统一表 + view + 双写 + 对账就位；剩 ADR-0027 段三切单源（v0.11.9+，主 ROADMAP I18 跟踪） |
 | §2.3 Consensus / GT 拆分 | §C.7 I19 是 L 体量打包 | **升级范围**：建议 I19a/I19b 拆分 |
-| §2.4 Tracker 协议层 | §C.5 R23 + §C.7 I20.4 散落 | **升级范围**：R23 前置协议统一 |
+| §2.4 Tracker 协议层 | ✅ **已完成 v0.10.37**（能力协商 epic） | 结论演进：取消 Tracker Registry UI，改 `/setup` 自报 + 动态发现；详见 §2.4 与视频 roadmap §3.2/§3.3 |
 | §2.5 项目规则版本化 | **新增** | 回流到 §A "数据 & 存储" 或长期规划 |
 | §2.6 平台原生 AAP JSON | ✅ **已完成 v0.10.15**（2026-05-19，与 §1.5 同窗口） | 后续延伸条目已转录到 ROADMAP §A "Predictions Import / AAP JSON 后续延伸" |
 | §3.1 公开 SDK + CLI | 长期规划 L7（12 月+） | **优先级升级**：建议从 L7 提升到 P2 |
