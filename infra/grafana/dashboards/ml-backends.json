@@ -36,7 +36,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "expr": "up{job=\"ml-backends\", service=~\"$service\"}",
-          "legendFormat": "{{service}}",
+          "legendFormat": "{{service}} ({{instance}})",
           "instant": true,
           "refId": "A"
         }
@@ -60,7 +60,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "expr": "gpu_memory_used_mb{service=~\"$service\"} / gpu_memory_total_mb{service=~\"$service\"} * 100",
-          "legendFormat": "{{service}}",
+          "legendFormat": "{{service}} ({{instance}})",
           "refId": "A"
         }
       ]
@@ -76,13 +76,13 @@
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "expr": "gpu_memory_used_mb{service=~\"$service\"}",
-          "legendFormat": "used {{service}}",
+          "legendFormat": "used {{service}} ({{instance}})",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "expr": "gpu_memory_total_mb{service=~\"$service\"}",
-          "legendFormat": "total {{service}}",
+          "legendFormat": "total {{service}} ({{instance}})",
           "refId": "B"
         }
       ]
@@ -98,7 +98,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "expr": "gpu_utilization_percent{service=~\"$service\"}",
-          "legendFormat": "{{service}}",
+          "legendFormat": "{{service}} ({{instance}})",
           "refId": "A"
         }
       ]
@@ -113,13 +113,13 @@
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "expr": "gpu_temperature_celsius{service=~\"$service\"}",
-          "legendFormat": "温度 {{service}}",
+          "legendFormat": "温度 {{service}} ({{instance}})",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "expr": "gpu_power_watts{service=~\"$service\"}",
-          "legendFormat": "功耗 {{service}}",
+          "legendFormat": "功耗 {{service}} ({{instance}})",
           "refId": "B"
         }
       ]
@@ -134,14 +134,14 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-          "expr": "histogram_quantile(0.50, sum by (le, service) (rate(inference_latency_seconds_bucket{service=~\"$service\"}[5m])))",
-          "legendFormat": "p50 {{service}}",
+          "expr": "histogram_quantile(0.50, sum by (le, service, instance) (rate(inference_latency_seconds_bucket{service=~\"$service\"}[5m])))",
+          "legendFormat": "p50 {{service}} ({{instance}})",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-          "expr": "histogram_quantile(0.95, sum by (le, service) (rate(inference_latency_seconds_bucket{service=~\"$service\"}[5m])))",
-          "legendFormat": "p95 {{service}}",
+          "expr": "histogram_quantile(0.95, sum by (le, service, instance) (rate(inference_latency_seconds_bucket{service=~\"$service\"}[5m])))",
+          "legendFormat": "p95 {{service}} ({{instance}})",
           "refId": "B"
         }
       ]
@@ -156,8 +156,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-          "expr": "sum by (service) (rate(inference_latency_seconds_count{service=~\"$service\"}[5m]))",
-          "legendFormat": "{{service}}",
+          "expr": "sum by (service, instance) (rate(inference_latency_seconds_count{service=~\"$service\"}[5m]))",
+          "legendFormat": "{{service}} ({{instance}})",
           "refId": "A"
         }
       ]
@@ -172,8 +172,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-          "expr": "sum by (service) (rate(embedding_cache_hits_total{service=~\"$service\"}[5m])) / (sum by (service) (rate(embedding_cache_hits_total{service=~\"$service\"}[5m])) + sum by (service) (rate(embedding_cache_misses_total{service=~\"$service\"}[5m])))",
-          "legendFormat": "{{service}}",
+          "expr": "sum by (service, instance) (rate(embedding_cache_hits_total{service=~\"$service\"}[5m])) / (sum by (service, instance) (rate(embedding_cache_hits_total{service=~\"$service\"}[5m])) + sum by (service, instance) (rate(embedding_cache_misses_total{service=~\"$service\"}[5m])))",
+          "legendFormat": "{{service}} ({{instance}})",
           "refId": "A"
         }
       ]
@@ -188,7 +188,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "expr": "embedding_cache_size{service=~\"$service\"}",
-          "legendFormat": "{{service}}",
+          "legendFormat": "{{service}} ({{instance}})",
           "refId": "A"
         }
       ]
@@ -204,13 +204,13 @@
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "expr": "container_cpu_percent{service=~\"$service\"}",
-          "legendFormat": "CPU {{service}}",
+          "legendFormat": "CPU {{service}} ({{instance}})",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "expr": "container_memory_percent{service=~\"$service\"}",
-          "legendFormat": "MEM {{service}}",
+          "legendFormat": "MEM {{service}} ({{instance}})",
           "refId": "B"
         }
       ]
@@ -225,8 +225,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-          "expr": "histogram_quantile(0.95, sum by (le, service) (rate(video_tracker_latency_seconds_bucket{service=~\"$service\"}[5m])))",
-          "legendFormat": "p95 {{service}}",
+          "expr": "histogram_quantile(0.95, sum by (le, service, instance) (rate(video_tracker_latency_seconds_bucket{service=~\"$service\"}[5m])))",
+          "legendFormat": "p95 {{service}} ({{instance}})",
           "refId": "A"
         }
       ]
