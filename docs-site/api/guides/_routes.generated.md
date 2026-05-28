@@ -211,6 +211,12 @@
 | DELETE | `/{project_id}/guide-assets` |
 | GET | `/{project_id}/guide-assets/sign-url` |
 
+## `internal.py`
+
+| Method | Path |
+|---|---|
+| GET | `/metrics-targets` |
+
 ## `invitations.py`
 
 | Method | Path |
@@ -414,4 +420,4 @@
 
 ---
 
-_共 37 模块 / 237 路由_
+_共 38 模块 / 238 路由_

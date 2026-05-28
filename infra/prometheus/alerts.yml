@@ -2,8 +2,10 @@
 # 推给 alertmanager（见 prometheus.yml alerting 段）。
 #
 # 误报防护：MLBackendDown 只覆盖 job="ml-backends" 的 target，而该 job 由 http_sd 从
-# ml_backends 表（state != disconnected）生成 —— 主动 disconnect 的 backend 不在 target
-# 列表里，不会误报；for: 再挡瞬时抖动。
+# ml_backends 表（state != "disconnected"）生成 —— 只有显式 disconnected 的 backend
+# 被排除；state="error"（health 探活失败）仍在 target 列表里，5m 后会触发告警（这是
+# 设计意图，探活失败本就该被发现）。运维带外维护时请把 backend 置 disconnected，
+# 否则将触发 MLBackendDown。for: 再挡瞬时抖动。
 groups:
   - name: ml-backends
     rules:

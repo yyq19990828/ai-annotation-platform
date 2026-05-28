@@ -4,16 +4,19 @@
 生成 ML backend 的 scrape target 列表, 让新注册的 backend 自动接入监控。
 
 安全:
-  - 默认免鉴权 (内网端点, 靠 nginx `/internal` 网段限制, 与 backend `/metrics`
-    / anno-api `/metrics` 一致)。
-  - 可选 env `METRICS_SD_TOKEN`: 非空时校验请求头 `Authorization: Bearer <token>`,
-    不匹配返回 401; 为空则不校验。
+  - 网段隔离: `infra/docker/nginx.conf` 显式 deny `/api/v1/internal/`,
+    与根路径 `/metrics` 一样靠"反代不转发"做隔离 (不依赖 /api/ 前缀里
+    的 OpenAPI 缺失)。直连 api 容器才能访问。
+  - 可选 token: env `METRICS_SD_TOKEN` 非空时校验请求头
+    `Authorization: Bearer <env>` (常量时间比较), 不匹配返回 401;
+    为空则不校验。
 
 不暴露给 OpenAPI 公开 schema (include_in_schema=False)。
 """
 
 from __future__ import annotations
 
+import secrets
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -42,7 +45,7 @@ def _check_token(authorization: str | None) -> None:
     if not token:
         return
     expected = f"Bearer {token}"
-    if authorization != expected:
+    if not secrets.compare_digest(authorization or "", expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid metrics-sd token",
