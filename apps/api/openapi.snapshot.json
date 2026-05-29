@@ -8421,6 +8421,16 @@
             ],
             "title": "Params"
           },
+          "predict_mode": {
+            "default": "skip_predicted",
+            "enum": [
+              "skip_predicted",
+              "overwrite",
+              "append"
+            ],
+            "title": "Predict Mode",
+            "type": "string"
+          },
           "prompt": {
             "anyOf": [
               {

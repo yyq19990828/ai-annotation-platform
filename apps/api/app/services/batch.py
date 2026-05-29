@@ -892,16 +892,14 @@ class BatchService:
         不走这套清理, review/completed 的 task 会带状态变孤儿; AI 预标残留 (predictions
         + prediction_based annotation) 会在重分包后再次预标时叠加重复标注 (见 B-33).
 
-        必须在 task 仍 batch_id==batch_id 时调用 (清理全靠该子查询定位).
+        必须在 task 仍 batch_id==batch_id 时调用 (状态重置/锁/job 清理靠该条件定位).
+        预测清理委托给 clean_task_predictions (按 task_id).
 
         Returns: cascade_counts (含 tasks_reset / predictions / failed_predictions /
                  prediction_jobs / ai_annotations_deactivated).
         """
         from app.db.models.task_lock import TaskLock
-        from app.db.models.prediction import Prediction, FailedPrediction
         from app.db.models.async_job import AsyncJob
-        from app.db.models.annotation import Annotation
-        from sqlalchemy import text
 
         result = await self.db.execute(
             update(Task)
@@ -919,14 +917,61 @@ class BatchService:
             )
         )
 
-        task_ids_subq = select(Task.id).where(Task.batch_id == batch_id)
+        # v0.10.49 · prediction_jobs 已收敛进 async_jobs；按 payload.batch_id 清本批 job 历史
+        job_result = await self.db.execute(
+            delete(AsyncJob).where(
+                AsyncJob.kind == "batch_predict",
+                AsyncJob.payload["batch_id"].astext == str(batch_id),
+            )
+        )
 
-        # B-33 · 软删 AI 采纳的 annotation. 保留 source='manual' 的人工标注 (用户已动手时不丢工作量).
-        # is_active=False 保留行用于审计; _update_task_stats 已按 is_active 过滤计数.
+        task_ids = [
+            r[0]
+            for r in (
+                await self.db.execute(select(Task.id).where(Task.batch_id == batch_id))
+            ).all()
+        ]
+        pred_counts = await self.clean_task_predictions(task_ids)
+
+        return {
+            "tasks_reset": tasks_reset,
+            "prediction_jobs": job_result.rowcount or 0,
+            **pred_counts,
+        }
+
+    async def clean_task_predictions(
+        self, task_ids: list[uuid.UUID]
+    ) -> dict[str, int]:
+        """按 task_id 清理 AI 预标产物 (不动 task 状态 / 锁 / job): 软删 prediction_based
+        annotation (保留 source='manual')、NULL parent_prediction_id、删 prediction_metas
+        / predictions / failed_predictions、total_predictions 归 0 并按存活人工标注重算
+        total_annotations / is_labeled.
+
+        供 _reset_and_clean_batch_tasks (删批次/重置) 与 batch_predict overwrite 模式
+        (v0.11.24) 复用. task_ids 为空时 no-op.
+
+        Returns: {"predictions": N, "failed_predictions": N, "ai_annotations_deactivated": N}
+        """
+        from app.db.models.prediction import (
+            Prediction,
+            FailedPrediction,
+            PredictionMeta,
+        )
+        from app.db.models.annotation import Annotation
+        from sqlalchemy import text, bindparam
+
+        if not task_ids:
+            return {
+                "predictions": 0,
+                "failed_predictions": 0,
+                "ai_annotations_deactivated": 0,
+            }
+
+        # B-33 · 软删 AI 采纳的 annotation. 保留 source='manual' 的人工标注 (不丢工作量).
         ai_anno_result = await self.db.execute(
             update(Annotation)
             .where(
-                Annotation.task_id.in_(task_ids_subq),
+                Annotation.task_id.in_(task_ids),
                 Annotation.source == "prediction_based",
                 Annotation.is_active.is_(True),
             )
@@ -936,67 +981,57 @@ class BatchService:
         # annotations.parent_prediction_id FK 无 ondelete; 必须先 NULL 才能 DELETE predictions
         await self.db.execute(
             update(Annotation)
-            .where(Annotation.task_id.in_(task_ids_subq))
+            .where(Annotation.task_id.in_(task_ids))
             .values(parent_prediction_id=None)
         )
 
-        # prediction_metas FK 无 ondelete; 用 raw SQL 因 model 未在 batch.py 顶端导入
+        # prediction_metas FK 无 ondelete; 先删
+        pred_ids = select(Prediction.id).where(Prediction.task_id.in_(task_ids))
+        failed_ids = select(FailedPrediction.id).where(
+            FailedPrediction.task_id.in_(task_ids)
+        )
         await self.db.execute(
-            text(
-                "DELETE FROM prediction_metas WHERE prediction_id IN "
-                "(SELECT id FROM predictions WHERE task_id IN "
-                "(SELECT id FROM tasks WHERE batch_id = :bid)) "
-                "OR failed_prediction_id IN "
-                "(SELECT id FROM failed_predictions WHERE task_id IN "
-                "(SELECT id FROM tasks WHERE batch_id = :bid))"
-            ),
-            {"bid": str(batch_id)},
-        )
-
-        pred_result = await self.db.execute(
-            delete(Prediction).where(Prediction.task_id.in_(task_ids_subq))
-        )
-        failed_result = await self.db.execute(
-            delete(FailedPrediction).where(FailedPrediction.task_id.in_(task_ids_subq))
-        )
-        # v0.10.49 · prediction_jobs 已收敛进 async_jobs；按 payload.batch_id 清本批 job 历史
-        job_result = await self.db.execute(
-            delete(AsyncJob).where(
-                AsyncJob.kind == "batch_predict",
-                AsyncJob.payload["batch_id"].astext == str(batch_id),
+            delete(PredictionMeta).where(
+                or_(
+                    PredictionMeta.prediction_id.in_(pred_ids),
+                    PredictionMeta.failed_prediction_id.in_(failed_ids),
+                )
             )
         )
 
-        # B-33 · 同步 task 物化字段: total_predictions 归 0, total_annotations / is_labeled
-        # 按剩余 active+未取消的 annotation 重算. 不用 ORM 循环, 用一条 UPDATE+子查询.
-        await self.db.execute(
-            text(
-                """
-                UPDATE tasks AS t
-                SET total_predictions = 0,
-                    total_annotations = COALESCE(sub.cnt, 0),
-                    is_labeled = COALESCE(sub.cnt, 0) > 0
-                FROM (
-                    SELECT t2.id AS task_id, (
-                        SELECT COUNT(*) FROM annotations a
-                        WHERE a.task_id = t2.id
-                          AND a.is_active = TRUE
-                          AND a.was_cancelled = FALSE
-                    ) AS cnt
-                    FROM tasks t2
-                    WHERE t2.batch_id = :bid
-                ) AS sub
-                WHERE t.id = sub.task_id
-                """
-            ),
-            {"bid": str(batch_id)},
+        pred_result = await self.db.execute(
+            delete(Prediction).where(Prediction.task_id.in_(task_ids))
+        )
+        failed_result = await self.db.execute(
+            delete(FailedPrediction).where(FailedPrediction.task_id.in_(task_ids))
         )
 
+        # B-33 · 同步 task 物化字段: total_predictions 归 0, total_annotations / is_labeled
+        # 按剩余 active+未取消的 annotation 重算. 一条 UPDATE+子查询, 按 task_id 定位.
+        stmt = text(
+            """
+            UPDATE tasks AS t
+            SET total_predictions = 0,
+                total_annotations = COALESCE(sub.cnt, 0),
+                is_labeled = COALESCE(sub.cnt, 0) > 0
+            FROM (
+                SELECT t2.id AS task_id, (
+                    SELECT COUNT(*) FROM annotations a
+                    WHERE a.task_id = t2.id
+                      AND a.is_active = TRUE
+                      AND a.was_cancelled = FALSE
+                ) AS cnt
+                FROM tasks t2
+                WHERE t2.id IN :tids
+            ) AS sub
+            WHERE t.id = sub.task_id
+            """
+        ).bindparams(bindparam("tids", expanding=True))
+        await self.db.execute(stmt, {"tids": task_ids})
+
         return {
-            "tasks_reset": tasks_reset,
             "predictions": pred_result.rowcount or 0,
             "failed_predictions": failed_result.rowcount or 0,
-            "prediction_jobs": job_result.rowcount or 0,
             "ai_annotations_deactivated": ai_anno_result.rowcount or 0,
         }
 

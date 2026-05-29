@@ -24,6 +24,18 @@
 
 ## 最新版本
 
+## [0.11.24] - 2026-05-29
+
+> **批量预标幂等：跳过已预标 / 覆盖历史预标（批次解绑状态修复 2/3）。** 根治 `batch_predict` 不幂等的根因——重复预标同一 task 会叠加重复/重叠标注。新增 `predict_mode`：默认 `skip_predicted` 跳过已预标 task，`overwrite` 先清旧预测再重标，`append` 保留旧行为。覆盖所有触发路径（重复点预标、解绑重分包后再预标、task_ids 直接指定）。→ [plan](docs/plans/2026-05-29-v0.11.24-batch-predict-idempotency.md)
+
+### Added
+
+- **预标幂等模式 `predict_mode`**: `PreannotateRequest` 新增字段，透传至 `batch_predict` worker。`skip_predicted`（默认）在选 task 时排除 `total_predictions>0`、进度条分母同步排除；`overwrite` 预标前调 `BatchService.clean_task_predictions(task_ids)` 清旧预测（软删 `prediction_based` annotation、删 predictions、归零物化字段，保留 `manual`）再重标，不改 task 流程状态。前端 AI 预标页新增「已预标任务」三选一，工作台单任务「AI 分析」固定走 `overwrite`（重跑替换）。
+
+### Changed
+
+- 抽 `BatchService.clean_task_predictions(task_ids)`（按 task_id 的预测清理核心），`_reset_and_clean_batch_tasks`（v0.11.23）改为委托它，overwrite 预标复用同一逻辑。
+
 ## [0.11.23] - 2026-05-29
 
 > **删除批次时级联重置 task 状态 + 清 AI 预标（批次解绑状态修复 1/3）。** 删批次不再只解绑：批次内非 pending task 先重置回 pending（保留人工标注、软删 AI 标注、删 predictions），消除「review/completed task 解绑成孤儿」「重分包污染新批次计数/状态机」「AI 预标残留再预标叠加重复标注」三类问题。→ [plan](docs/plans/2026-05-29-v0.11.23-batch-delete-reset-cascade.md)
