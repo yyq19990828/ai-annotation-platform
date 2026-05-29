@@ -9,12 +9,17 @@ from fastapi import HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.audit_log import AuditLog
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.schemas.batch import BatchSplitRequest
 from app.services.dataset import DatasetService
 from app.services.batch import BatchService
+
+
+def _bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
 
 
 async def _seed_batch(db: AsyncSession, owner_id: uuid.UUID, n_items: int):
@@ -186,3 +191,78 @@ async def test_bulk_delete_force_guard(db_session: AsyncSession, super_admin):
     # force=True：删除并重置
     res2 = await svc.bulk_delete(project.id, [protected_id], force=True)
     assert protected_id in res2["succeeded"]
+
+
+@pytest.mark.asyncio
+async def test_delete_route_force_param_and_audit(
+    db_session: AsyncSession, super_admin, httpx_client_bound
+):
+    """HTTP 层：非 force → 409(affected_tasks)；force=true → 204 + 审计 forced=True。"""
+    user, token = super_admin
+    project, batch_id = await _seed_batch(db_session, user.id, 2)
+    tasks = (
+        (await db_session.execute(select(Task).where(Task.batch_id == batch_id)))
+        .scalars()
+        .all()
+    )
+    tasks[0].status = "review"
+    await db_session.flush()
+
+    r409 = await httpx_client_bound.delete(
+        f"/api/v1/projects/{project.id}/batches/{batch_id}",
+        headers=_bearer(token),
+    )
+    assert r409.status_code == 409
+    detail = r409.json()["detail"]
+    assert detail["requires_force"] is True
+    assert detail["affected_tasks"] == 1
+
+    r = await httpx_client_bound.delete(
+        f"/api/v1/projects/{project.id}/batches/{batch_id}?force=true",
+        headers=_bearer(token),
+    )
+    assert r.status_code == 204
+    audits = (
+        (
+            await db_session.execute(
+                select(AuditLog).where(AuditLog.target_id == str(batch_id))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert any((a.detail_json or {}).get("forced") is True for a in audits)
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_route_force_audit(
+    db_session: AsyncSession, super_admin, httpx_client_bound
+):
+    """HTTP 层 bulk-delete：force=true 删除成功且审计 detail 写入 forced 标记。"""
+    user, token = super_admin
+    project, batch_id = await _seed_batch(db_session, user.id, 2)
+    tasks = (
+        (await db_session.execute(select(Task).where(Task.batch_id == batch_id)))
+        .scalars()
+        .all()
+    )
+    tasks[0].status = "completed"
+    await db_session.flush()
+
+    r = await httpx_client_bound.post(
+        f"/api/v1/projects/{project.id}/batches/bulk-delete?force=true",
+        headers=_bearer(token),
+        json={"batch_ids": [str(batch_id)]},
+    )
+    assert r.status_code == 200, r.text
+    assert str(batch_id) in r.json()["succeeded"]
+    audits = (
+        (
+            await db_session.execute(
+                select(AuditLog).where(AuditLog.target_id == str(project.id))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert any((a.detail_json or {}).get("forced") is True for a in audits)
