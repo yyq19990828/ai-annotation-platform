@@ -119,6 +119,10 @@
   font-size: 11px;
 }
 
+.fieldHint {
+  color: var(--color-warning);
+}
+
 .backendParamsStack {
   display: flex;
   flex-direction: column;

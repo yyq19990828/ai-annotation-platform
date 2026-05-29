@@ -10,7 +10,6 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 import {
   useBatches,
-  useCreateBatch,
   useDeleteBatch,
   useTransitionBatch,
   useSplitBatches,
@@ -64,7 +63,6 @@ const STATUS_VARIANTS: Record<string, "default" | "accent" | "success" | "warnin
   archived: "default",
 };
 
-type CreateMode = "single" | "split";
 
 type BulkActionKind = "archive" | "delete" | "reassign" | "activate" | "approve" | "reject";
 
@@ -87,7 +85,6 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   // v0.9.13 · 后端 batch 状态变更 (transition / auto_transition) 实时刷新本页列表
   useBatchEventsSocket(project.id);
   const { data: batches = [], isLoading } = useBatches(project.id);
-  const createBatch = useCreateBatch(project.id);
   const deleteBatch = useDeleteBatch(project.id);
   const transitionBatch = useTransitionBatch(project.id);
   const splitBatches = useSplitBatches(project.id);
@@ -104,12 +101,18 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   const unclassifiedCount = unclassified?.count ?? 0;
 
   const [showCreate, setShowCreate] = useState(false);
-  const [createMode, setCreateMode] = useState<CreateMode>("single");
-  const [name, setName] = useState("");
   const [priority, setPriority] = useState(50);
   const [nBatches, setNBatches] = useState(3);
   const [namePrefix, setNamePrefix] = useState("Batch");
+  const [shuffle, setShuffle] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState<BatchResponse | null>(null);
+  // v0.11.25 · 删批次保护：含进行中成果/已预标时后端 409，弹此框让用户确认强制删除
+  const [forceDelete, setForceDelete] = useState<{
+    batch: BatchResponse;
+    nonPending: number;
+    predicted: number;
+    affected: number;
+  } | null>(null);
   const [assignTarget, setAssignTarget] = useState<BatchResponse | null>(null);
   const [rejectTarget, setRejectTarget] = useState<BatchResponse | null>(null);
   const [distributeOpen, setDistributeOpen] = useState(false);
@@ -272,40 +275,37 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
   const renderBulkResultRow = (item: { batch_id: string; reason: string }) => {
     const b = idToBatch.get(item.batch_id);
+    // v0.11.25 · requires_force 的批次含进行中成果/已预标，批量删除默认跳过
+    const reason =
+      item.reason === "requires_force"
+        ? "含进行中成果/已预标，未删除（可单独强制删除）"
+        : item.reason;
     return (
       <li key={item.batch_id} className={styles.bulkResultRow}>
         <span className="mono">{b?.display_id ?? item.batch_id.slice(0, 8)}</span>
         {b ? <span className={styles.bulkResultRowName}>· {b.name}</span> : null}
-        <span className={styles.bulkResultRowReason}>— {item.reason}</span>
+        <span className={styles.bulkResultRowReason}>— {reason}</span>
       </li>
     );
   };
 
   const handleCreate = () => {
-    if (createMode === "single") {
-      createBatch.mutate(
-        { name, priority },
-        {
-          onSuccess: () => {
-            pushToast({ msg: "批次已创建", kind: "success" });
-            setShowCreate(false);
-            setName("");
-          },
-          onError: (e) => pushToast({ msg: "创建失败", sub: (e as Error).message }),
+    splitBatches.mutate(
+      { strategy: "random", n_batches: nBatches, shuffle, name_prefix: namePrefix, priority },
+      {
+        onSuccess: (res) => {
+          pushToast({
+            msg:
+              res.length === 1
+                ? "已把未归类任务注入 1 个新批次"
+                : `已创建 ${res.length} 个批次`,
+            kind: "success",
+          });
+          setShowCreate(false);
         },
-      );
-    } else {
-      splitBatches.mutate(
-        { strategy: "random", n_batches: nBatches, name_prefix: namePrefix, priority },
-        {
-          onSuccess: (res) => {
-            pushToast({ msg: `已创建 ${res.length} 个批次`, kind: "success" });
-            setShowCreate(false);
-          },
-          onError: (e) => pushToast({ msg: "切分失败", sub: (e as Error).message }),
-        },
-      );
-    }
+        onError: (e) => pushToast({ msg: "切分失败", sub: (e as Error).message }),
+      },
+    );
   };
 
   const handleTransition = (batch: BatchResponse, target: string) => {
@@ -318,14 +318,32 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
     );
   };
 
-  const handleDelete = (batch: BatchResponse) => {
-    deleteBatch.mutate(batch.id, {
-      onSuccess: () => {
-        pushToast({ msg: "批次已删除", kind: "success" });
-        setConfirmDelete(null);
+  const handleDelete = (batch: BatchResponse, force = false) => {
+    deleteBatch.mutate(
+      { batchId: batch.id, force },
+      {
+        onSuccess: () => {
+          pushToast({ msg: "批次已删除", kind: "success" });
+          setConfirmDelete(null);
+          setForceDelete(null);
+        },
+        onError: (e) => {
+          // v0.11.25 · 409 requires_force：含进行中成果/已预标 → 弹保护框让用户确认强制删除
+          const err = e as { status?: number; detailRaw?: Record<string, unknown> };
+          if (err.status === 409 && err.detailRaw?.requires_force) {
+            setConfirmDelete(null);
+            setForceDelete({
+              batch,
+              nonPending: Number(err.detailRaw.non_pending ?? 0),
+              predicted: Number(err.detailRaw.predicted ?? 0),
+              affected: Number(err.detailRaw.affected_tasks ?? 0),
+            });
+            return;
+          }
+          pushToast({ msg: "删除失败", sub: (e as Error).message });
+        },
       },
-      onError: (e) => pushToast({ msg: "删除失败", sub: (e as Error).message }),
-    });
+    );
   };
 
   return (
@@ -382,10 +400,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
             </span>
             {isOwner && (
               <Button
-                onClick={() => {
-                  setCreateMode("split");
-                  setShowCreate(true);
-                }}
+                onClick={() => setShowCreate(true)}
                 className={styles.bannerListGoSplit}
                 title="按随机切分把未归类任务拆成 N 个批次"
               >
@@ -724,55 +739,45 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
       {/* 创建批次 Modal */}
       <Modal open={showCreate} title="创建批次" onClose={() => setShowCreate(false)}>
           <div className={styles.modalForm}>
+            <label className={styles.formLabel}>
+              批次数量
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={nBatches}
+                onChange={(e) => setNBatches(Number(e.target.value))}
+                className={cn(styles.formInput, styles.formInputNarrow)}
+              />
+            </label>
+            {nBatches === 1 && (
+              <p className={styles.formHint}>把全部未归类任务注入一个新批次。</p>
+            )}
+            <label className={styles.formLabel}>
+              {nBatches === 1 ? "批次名称" : "名称前缀"}
+              <input
+                value={namePrefix}
+                onChange={(e) => setNamePrefix(e.target.value)}
+                className={styles.formInput}
+                placeholder={nBatches === 1 ? "例如：第 1 批" : "Batch"}
+              />
+            </label>
             <div className={styles.modeToggleRow}>
               <Button
-                onClick={() => setCreateMode("single")}
-                className={cn(createMode === "single" && styles.modeToggleActive)}
+                onClick={() => setShuffle(false)}
+                className={cn(!shuffle && styles.modeToggleActive)}
+                title="按任务导入顺序切分（不打乱）"
               >
-                单个批次
+                顺序切分
               </Button>
               <Button
-                onClick={() => setCreateMode("split")}
-                className={cn(createMode === "split" && styles.modeToggleActive)}
+                onClick={() => setShuffle(true)}
+                className={cn(shuffle && styles.modeToggleActive)}
+                title="随机打乱后切分"
               >
-                随机切分
+                打乱切分
               </Button>
             </div>
-
-            {createMode === "single" ? (
-              <label className={styles.formLabel}>
-                批次名称
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className={styles.formInput}
-                  placeholder="例如：第 1 批"
-                />
-              </label>
-            ) : (
-              <>
-                <label className={styles.formLabel}>
-                  批次数量
-                  <input
-                    type="number"
-                    min={2}
-                    max={100}
-                    value={nBatches}
-                    onChange={(e) => setNBatches(Number(e.target.value))}
-                    className={cn(styles.formInput, styles.formInputNarrow)}
-                  />
-                </label>
-                <label className={styles.formLabel}>
-                  名称前缀
-                  <input
-                    value={namePrefix}
-                    onChange={(e) => setNamePrefix(e.target.value)}
-                    className={styles.formInput}
-                    placeholder="Batch"
-                  />
-                </label>
-              </>
-            )}
 
             <label className={styles.formLabel}>
               优先级: {priority}
@@ -790,10 +795,10 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
               <Button onClick={() => setShowCreate(false)}>取消</Button>
               <Button
                 onClick={handleCreate}
-                disabled={createMode === "single" && !name.trim()}
+                disabled={!namePrefix.trim()}
                 className={styles.btnAccent}
               >
-                {createMode === "single" ? "创建" : `切分为 ${nBatches} 个批次`}
+                {nBatches === 1 ? "注入 1 个批次" : `切分为 ${nBatches} 个批次`}
               </Button>
             </div>
           </div>
@@ -804,7 +809,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           <div className={styles.confirmBody}>
             <p>
               确定删除批次 <strong>{confirmDelete?.name}</strong>？
-              其中的 {confirmDelete?.total_tasks ?? 0} 个任务将回归默认批次。
+              其中的 {confirmDelete?.total_tasks ?? 0} 个任务将变为未归类（可重新分包）。
             </p>
             <div className={styles.confirmActions}>
               <Button onClick={() => setConfirmDelete(null)}>取消</Button>
@@ -813,6 +818,39 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                 className={styles.btnDanger}
               >
                 删除
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+      {/* v0.11.25 · 删除保护：含进行中成果/已预标 → 强制删除确认 */}
+      <Modal
+        open={!!forceDelete}
+        title="该批次有进行中的成果"
+        onClose={() => setForceDelete(null)}
+      >
+          <div className={styles.confirmBody}>
+            <p>
+              批次 <strong>{forceDelete?.batch.name}</strong> 将影响{" "}
+              <strong>{forceDelete?.affected ?? 0}</strong> 个任务
+              {forceDelete?.nonPending || forceDelete?.predicted ? (
+                <>
+                  （含进行中/已完成成果 {forceDelete?.nonPending ?? 0}、AI 预标成果{" "}
+                  {forceDelete?.predicted ?? 0}，可能重叠）
+                </>
+              ) : null}
+              。强制删除会把这些任务<strong>重置为待标注</strong>并<strong>清除 AI 预标</strong>（人工标注保留）。
+            </p>
+            <p className={styles.confirmHint}>
+              若只想暂停而不丢进度，建议改用「归档」。
+            </p>
+            <div className={styles.confirmActions}>
+              <Button onClick={() => setForceDelete(null)}>取消</Button>
+              <Button
+                onClick={() => forceDelete && handleDelete(forceDelete.batch, true)}
+                className={styles.btnDanger}
+              >
+                强制删除
               </Button>
             </div>
           </div>

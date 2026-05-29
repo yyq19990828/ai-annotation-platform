@@ -46,6 +46,7 @@ async def _run_batch(
     celery_task_id: str | None = None,
     user_id: str | None = None,
     params: dict | None = None,
+    predict_mode: str = "skip_predicted",
 ):
     """v0.9.5 · 批量预标 worker.
 
@@ -125,25 +126,40 @@ async def _run_batch(
                     }
                 )
 
+        # v0.11.24 · 幂等：skip_predicted 排除已预标 task；append/overwrite 不排除。
+        skip_predicted = predict_mode == "skip_predicted"
         if task_ids:
             uuids = [uuid.UUID(tid) for tid in task_ids]
-            result = await db.execute(select(Task).where(Task.id.in_(uuids)))
+            sel = select(Task).where(Task.id.in_(uuids))
+            if skip_predicted:
+                sel = sel.where(Task.total_predictions == 0)
+            result = await db.execute(sel)
         elif batch_id:
             # v0.9.5 · 指定 batch 时仅捞 batch 内 pending tasks
-            result = await db.execute(
-                select(Task).where(
-                    Task.batch_id == uuid.UUID(batch_id),
-                    Task.status == "pending",
-                )
+            sel = select(Task).where(
+                Task.batch_id == uuid.UUID(batch_id),
+                Task.status == "pending",
             )
+            if skip_predicted:
+                sel = sel.where(Task.total_predictions == 0)
+            result = await db.execute(sel)
         else:
-            result = await db.execute(
-                select(Task).where(
-                    Task.project_id == uuid.UUID(project_id), Task.status == "pending"
-                )
+            sel = select(Task).where(
+                Task.project_id == uuid.UUID(project_id), Task.status == "pending"
             )
+            if skip_predicted:
+                sel = sel.where(Task.total_predictions == 0)
+            result = await db.execute(sel)
         tasks = list(result.scalars().all())
         total = len(tasks)
+
+        # v0.11.24 · overwrite：预标前清掉这批 task 的旧预测（保留人工标注），避免叠加。
+        # 不重置 task 状态（与删批次不同）——预标只换预测内容、不动流程。
+        if predict_mode == "overwrite" and tasks:
+            from app.services.batch import BatchService
+
+            await BatchService(db).clean_task_predictions([t.id for t in tasks])
+            await db.flush()
 
         # v0.10.49 · async_jobs 单一真值：建 batch_predict 行 (status=running)。
         # domain 字段（batch_id / ml_backend / prompt / total_tasks）进 payload。
@@ -431,6 +447,7 @@ def batch_predict(
     batch_id: str | None = None,
     user_id: str | None = None,
     params: dict | None = None,
+    predict_mode: str = "skip_predicted",
 ):
     asyncio.run(
         _run_batch(
@@ -443,5 +460,6 @@ def batch_predict(
             celery_task_id=self.request.id,
             user_id=user_id,
             params=params,
+            predict_mode=predict_mode,
         )
     )

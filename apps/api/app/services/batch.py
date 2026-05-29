@@ -205,8 +205,12 @@ class BatchService:
         conds = [Task.batch_id.is_(None)]
         if default is not None:
             conds.append(Task.batch_id == default.id)
+        # v0.11.22：按创建顺序返回，使「顺序切分（不打乱）」结果稳定可预期。
         result = await self.db.execute(
-            select(Task.id).where(Task.project_id == project_id).where(or_(*conds))
+            select(Task.id)
+            .where(Task.project_id == project_id)
+            .where(or_(*conds))
+            .order_by(Task.created_at, Task.id)
         )
         return [row[0] for row in result.fetchall()]
 
@@ -354,7 +358,30 @@ class BatchService:
 
         return batch
 
-    async def delete(self, batch_id: uuid.UUID) -> bool:
+    async def _count_protected_tasks(
+        self, batch_id: uuid.UUID
+    ) -> tuple[int, int, int]:
+        """v0.11.25 · 统计「有进行中成果」的 task: 非 pending 数 / 已预标数 / 去重后实际受影响数。
+        non_pending 与 predicted 可能重叠（同一 task 既非 pending 又已预标），affected 是二者的
+        并集去重计数，供前端展示「将影响 N 个任务」避免 X+Y 误判。供 delete / bulk_delete 保护判定。"""
+        row = (
+            await self.db.execute(
+                select(
+                    func.count().filter(Task.status != "pending").label("non_pending"),
+                    func.count()
+                    .filter(Task.total_predictions > 0)
+                    .label("predicted"),
+                    func.count()
+                    .filter(
+                        or_(Task.status != "pending", Task.total_predictions > 0)
+                    )
+                    .label("affected"),
+                ).where(Task.batch_id == batch_id)
+            )
+        ).one()
+        return int(row.non_pending), int(row.predicted), int(row.affected)
+
+    async def delete(self, batch_id: uuid.UUID, *, force: bool = False) -> bool:
         batch = await self.db.get(TaskBatch, batch_id)
         if not batch:
             raise HTTPException(status_code=404, detail="Batch not found")
@@ -362,6 +389,32 @@ class BatchService:
             raise HTTPException(
                 status_code=400, detail="Cannot delete the default batch"
             )
+
+        # v0.11.25：默认保护——批次含非 pending 或已预标 task 时拒删，需显式 force（前端弹保护框）。
+        if not force:
+            non_pending, predicted, affected = await self._count_protected_tasks(
+                batch_id
+            )
+            if affected:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "batch_has_active_work",
+                        "requires_force": True,
+                        "non_pending": non_pending,
+                        "predicted": predicted,
+                        "affected_tasks": affected,
+                        "message": (
+                            "批次含进行中/已完成或 AI 预标过的任务；删除将重置为待标注"
+                            "并清除 AI 预标。请改用归档，或确认强制删除。"
+                        ),
+                    },
+                )
+
+        # v0.11.23：解绑前先重置非 pending task 为 pending、清 AI 预标（保留人工标注），
+        # 否则 review/completed task 解绑后成孤儿、AI 预标残留会在重分包再预标时叠加重复标注。
+        # 必须在改写 batch_id 之前调用（清理靠 Task.batch_id==batch_id 子查询定位）。
+        await self._reset_and_clean_batch_tasks(batch_id)
 
         # v0.6.8 B-14：老项目仍走「回收到 B-DEFAULT」路径；新项目无 B-DEFAULT 时把任务回退为
         # batch_id=NULL（成为「未归类任务」），由 split 流程兜底，避免删完所有批次后死锁。
@@ -377,6 +430,9 @@ class BatchService:
             await self.db.execute(
                 update(Task).where(Task.batch_id == batch_id).values(batch_id=None)
             )
+            # 无 B-DEFAULT 兜底时没有 recalculate_counters 触发 project 计数同步，
+            # 这里显式刷一次，否则强删含进行中/已完成 task 的批次后 project 物化列会停在旧快照。
+            await self._sync_project_counters(batch.project_id)
 
         await self.db.execute(delete(TaskBatch).where(TaskBatch.id == batch_id))
         await self.db.flush()
@@ -419,7 +475,9 @@ class BatchService:
         if not task_ids:
             raise HTTPException(status_code=400, detail="No unassigned tasks to split")
 
-        random.shuffle(task_ids)
+        # v0.11.22：shuffle=False 时保留 _splittable_task_ids 的创建顺序（顺序切分 / 顺序注入）。
+        if data.shuffle:
+            random.shuffle(task_ids)
         chunk_size = len(task_ids) // n
         remainder = len(task_ids) % n
 
@@ -433,7 +491,8 @@ class BatchService:
             batch = TaskBatch(
                 project_id=project_id,
                 display_id=await next_display_id(self.db, "batches"),
-                name=f"{data.name_prefix} {i + 1}",
+                # v0.11.22：n=1（把全部未归类任务注入一个批次）时直接用名称本身，不加 " 1" 后缀。
+                name=data.name_prefix if n == 1 else f"{data.name_prefix} {i + 1}",
                 status=BatchStatus.DRAFT,
                 priority=data.priority,
                 deadline=data.deadline,
@@ -857,15 +916,37 @@ class BatchService:
             cascade_counts = {"predictions": N, "failed_predictions": N,
                               "prediction_jobs": N, "ai_annotations_deactivated": N}
         """
-        from app.db.models.task_lock import TaskLock
-        from app.db.models.prediction import Prediction, FailedPrediction
-        from app.db.models.async_job import AsyncJob
-        from app.db.models.annotation import Annotation
-        from sqlalchemy import text
-
         batch = await self.db.get(TaskBatch, batch_id)
         if not batch:
             raise HTTPException(status_code=404, detail="Batch not found")
+
+        counts = await self._reset_and_clean_batch_tasks(batch_id)
+        affected = counts.pop("tasks_reset")
+
+        batch.status = BatchStatus.DRAFT
+        batch.review_feedback = None
+        batch.reviewed_at = None
+        batch.reviewed_by = None
+
+        await self.db.flush()
+        await self.recalculate_counters(batch_id)
+        return batch, affected, counts
+
+    async def _reset_and_clean_batch_tasks(self, batch_id: uuid.UUID) -> dict[str, int]:
+        """把批次内所有非 pending task 重置为 pending, 并清理 AI 预标产物, 保留人工标注.
+
+        供 reset_to_draft (v0.7.6) 与 delete / bulk_delete (v0.11.23) 复用. 删除批次若
+        不走这套清理, review/completed 的 task 会带状态变孤儿; AI 预标残留 (predictions
+        + prediction_based annotation) 会在重分包后再次预标时叠加重复标注 (见 B-33).
+
+        必须在 task 仍 batch_id==batch_id 时调用 (状态重置/锁/job 清理靠该条件定位).
+        预测清理委托给 clean_task_predictions (按 task_id).
+
+        Returns: cascade_counts (含 tasks_reset / predictions / failed_predictions /
+                 prediction_jobs / ai_annotations_deactivated).
+        """
+        from app.db.models.task_lock import TaskLock
+        from app.db.models.async_job import AsyncJob
 
         result = await self.db.execute(
             update(Task)
@@ -875,7 +956,7 @@ class BatchService:
             )
             .values(status="pending")
         )
-        affected = result.rowcount
+        tasks_reset = result.rowcount
 
         await self.db.execute(
             delete(TaskLock).where(
@@ -883,14 +964,59 @@ class BatchService:
             )
         )
 
-        task_ids_subq = select(Task.id).where(Task.batch_id == batch_id)
+        # v0.10.49 · prediction_jobs 已收敛进 async_jobs；按 payload.batch_id 清本批 job 历史
+        job_result = await self.db.execute(
+            delete(AsyncJob).where(
+                AsyncJob.kind == "batch_predict",
+                AsyncJob.payload["batch_id"].astext == str(batch_id),
+            )
+        )
 
-        # B-33 · 软删 AI 采纳的 annotation. 保留 source='manual' 的人工标注 (用户已动手时不丢工作量).
-        # is_active=False 保留行用于审计; _update_task_stats 已按 is_active 过滤计数.
+        task_ids = [
+            r[0]
+            for r in (
+                await self.db.execute(select(Task.id).where(Task.batch_id == batch_id))
+            ).all()
+        ]
+        pred_counts = await self.clean_task_predictions(task_ids)
+
+        return {
+            "tasks_reset": tasks_reset,
+            "prediction_jobs": job_result.rowcount or 0,
+            **pred_counts,
+        }
+
+    async def clean_task_predictions(self, task_ids: list[uuid.UUID]) -> dict[str, int]:
+        """按 task_id 清理 AI 预标产物 (不动 task 状态 / 锁 / job): 软删 prediction_based
+        annotation (保留 source='manual')、NULL parent_prediction_id、删 prediction_metas
+        / predictions / failed_predictions、total_predictions 归 0 并按存活人工标注重算
+        total_annotations / is_labeled.
+
+        供 _reset_and_clean_batch_tasks (删批次/重置) 与 batch_predict overwrite 模式
+        (v0.11.24) 复用. task_ids 为空时 no-op.
+
+        Returns: {"predictions": N, "failed_predictions": N, "ai_annotations_deactivated": N}
+        """
+        from app.db.models.prediction import (
+            Prediction,
+            FailedPrediction,
+            PredictionMeta,
+        )
+        from app.db.models.annotation import Annotation
+        from sqlalchemy import text, bindparam
+
+        if not task_ids:
+            return {
+                "predictions": 0,
+                "failed_predictions": 0,
+                "ai_annotations_deactivated": 0,
+            }
+
+        # B-33 · 软删 AI 采纳的 annotation. 保留 source='manual' 的人工标注 (不丢工作量).
         ai_anno_result = await self.db.execute(
             update(Annotation)
             .where(
-                Annotation.task_id.in_(task_ids_subq),
+                Annotation.task_id.in_(task_ids),
                 Annotation.source == "prediction_based",
                 Annotation.is_active.is_(True),
             )
@@ -900,77 +1026,59 @@ class BatchService:
         # annotations.parent_prediction_id FK 无 ondelete; 必须先 NULL 才能 DELETE predictions
         await self.db.execute(
             update(Annotation)
-            .where(Annotation.task_id.in_(task_ids_subq))
+            .where(Annotation.task_id.in_(task_ids))
             .values(parent_prediction_id=None)
         )
 
-        # prediction_metas FK 无 ondelete; 用 raw SQL 因 model 未在 batch.py 顶端导入
+        # prediction_metas FK 无 ondelete; 先删
+        pred_ids = select(Prediction.id).where(Prediction.task_id.in_(task_ids))
+        failed_ids = select(FailedPrediction.id).where(
+            FailedPrediction.task_id.in_(task_ids)
+        )
         await self.db.execute(
-            text(
-                "DELETE FROM prediction_metas WHERE prediction_id IN "
-                "(SELECT id FROM predictions WHERE task_id IN "
-                "(SELECT id FROM tasks WHERE batch_id = :bid)) "
-                "OR failed_prediction_id IN "
-                "(SELECT id FROM failed_predictions WHERE task_id IN "
-                "(SELECT id FROM tasks WHERE batch_id = :bid))"
-            ),
-            {"bid": str(batch_id)},
-        )
-
-        pred_result = await self.db.execute(
-            delete(Prediction).where(Prediction.task_id.in_(task_ids_subq))
-        )
-        failed_result = await self.db.execute(
-            delete(FailedPrediction).where(FailedPrediction.task_id.in_(task_ids_subq))
-        )
-        # v0.10.49 · prediction_jobs 已收敛进 async_jobs；按 payload.batch_id 清本批 job 历史
-        job_result = await self.db.execute(
-            delete(AsyncJob).where(
-                AsyncJob.kind == "batch_predict",
-                AsyncJob.payload["batch_id"].astext == str(batch_id),
+            delete(PredictionMeta).where(
+                or_(
+                    PredictionMeta.prediction_id.in_(pred_ids),
+                    PredictionMeta.failed_prediction_id.in_(failed_ids),
+                )
             )
         )
 
-        # B-33 · 同步 task 物化字段: total_predictions 归 0, total_annotations / is_labeled
-        # 按剩余 active+未取消的 annotation 重算. 不用 ORM 循环, 用一条 UPDATE+子查询.
-        await self.db.execute(
-            text(
-                """
-                UPDATE tasks AS t
-                SET total_predictions = 0,
-                    total_annotations = COALESCE(sub.cnt, 0),
-                    is_labeled = COALESCE(sub.cnt, 0) > 0
-                FROM (
-                    SELECT t2.id AS task_id, (
-                        SELECT COUNT(*) FROM annotations a
-                        WHERE a.task_id = t2.id
-                          AND a.is_active = TRUE
-                          AND a.was_cancelled = FALSE
-                    ) AS cnt
-                    FROM tasks t2
-                    WHERE t2.batch_id = :bid
-                ) AS sub
-                WHERE t.id = sub.task_id
-                """
-            ),
-            {"bid": str(batch_id)},
+        pred_result = await self.db.execute(
+            delete(Prediction).where(Prediction.task_id.in_(task_ids))
+        )
+        failed_result = await self.db.execute(
+            delete(FailedPrediction).where(FailedPrediction.task_id.in_(task_ids))
         )
 
-        cascade_counts = {
+        # B-33 · 同步 task 物化字段: total_predictions 归 0, total_annotations / is_labeled
+        # 按剩余 active+未取消的 annotation 重算. 一条 UPDATE+子查询, 按 task_id 定位.
+        stmt = text(
+            """
+            UPDATE tasks AS t
+            SET total_predictions = 0,
+                total_annotations = COALESCE(sub.cnt, 0),
+                is_labeled = COALESCE(sub.cnt, 0) > 0
+            FROM (
+                SELECT t2.id AS task_id, (
+                    SELECT COUNT(*) FROM annotations a
+                    WHERE a.task_id = t2.id
+                      AND a.is_active = TRUE
+                      AND a.was_cancelled = FALSE
+                ) AS cnt
+                FROM tasks t2
+                WHERE t2.id IN :tids
+            ) AS sub
+            WHERE t.id = sub.task_id
+            """
+        ).bindparams(bindparam("tids", expanding=True))
+        await self.db.execute(stmt, {"tids": task_ids})
+
+        return {
             "predictions": pred_result.rowcount or 0,
             "failed_predictions": failed_result.rowcount or 0,
-            "prediction_jobs": job_result.rowcount or 0,
             "ai_annotations_deactivated": ai_anno_result.rowcount or 0,
         }
-
-        batch.status = BatchStatus.DRAFT
-        batch.review_feedback = None
-        batch.reviewed_at = None
-        batch.reviewed_by = None
-
-        await self.db.flush()
-        await self.recalculate_counters(batch_id)
-        return batch, affected, cascade_counts
 
     # ── Bulk operations (v0.7.3) ───────────────────────────────────────────
 
@@ -1023,6 +1131,8 @@ class BatchService:
         self,
         project_id: uuid.UUID,
         batch_ids: list[uuid.UUID],
+        *,
+        force: bool = False,
     ) -> dict[str, list[dict]]:
         loaded = await self._list_batches_in_project(project_id, batch_ids)
         succeeded: list[uuid.UUID] = []
@@ -1039,6 +1149,24 @@ class BatchService:
                     {"batch_id": bid, "reason": "B-DEFAULT cannot be deleted"}
                 )
                 continue
+            # v0.11.25：默认保护——含进行中成果/已预标的批次非 force 时计入 failed（partial 语义）
+            if not force:
+                non_pending, predicted, affected = await self._count_protected_tasks(
+                    bid
+                )
+                if affected:
+                    failed.append(
+                        {
+                            "batch_id": bid,
+                            "reason": "requires_force",
+                            "non_pending": non_pending,
+                            "predicted": predicted,
+                            "affected_tasks": affected,
+                        }
+                    )
+                    continue
+            # v0.11.23：与单删一致——解绑前先重置非 pending task + 清 AI 预标（保留人工标注）
+            await self._reset_and_clean_batch_tasks(bid)
             # 复用单个删除路径里的 task 接管逻辑（按 default 是否存在二选一）
             if default is not None:
                 await self.db.execute(
@@ -1053,6 +1181,9 @@ class BatchService:
         await self.db.flush()
         if default is not None and succeeded:
             await self.recalculate_counters(default.id)
+        elif succeeded:
+            # 无 B-DEFAULT 时缺少 recalculate_counters 兜底，显式同步 project 物化列
+            await self._sync_project_counters(project_id)
         return {"succeeded": succeeded, "skipped": skipped, "failed": failed}
 
     async def bulk_reassign(

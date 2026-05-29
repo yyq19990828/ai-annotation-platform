@@ -247,9 +247,11 @@ export function ReviewerDashboard() {
 
 function RecentReviewRow({ item, onClick }: { item: RecentReviewItem; onClick: () => void }) {
   const reviewedAt = item.reviewed_at ? new Date(item.reviewed_at).toLocaleString("zh-CN") : "—";
+  // 与工作台任务队列 (TaskQueuePanel) 标签一致；并补 rejected 分支，避免 fallback 漏出原始英文 status
   const statusBadge =
-    item.status === "completed" ? <Badge variant="success" dot>已通过</Badge> :
-    item.status === "review" ? <Badge variant="warning" dot>重审中</Badge> :
+    item.status === "completed" ? <Badge variant="success" dot>已完成</Badge> :
+    item.status === "review" ? <Badge variant="warning" dot>待审核</Badge> :
+    item.status === "rejected" ? <Badge variant="danger" dot>待重做</Badge> :
     <Badge variant="outline">{item.status}</Badge>;
   return (
     <div

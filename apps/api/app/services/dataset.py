@@ -518,7 +518,7 @@ class DatasetService:
                 continue
             etag = obj.get("etag") or ""
             # 保留数据集前缀下的子目录层级作为 file_name（如 a/img.jpg）
-            rel_under_ds = key[len(prefix):] if key.startswith(prefix) else key
+            rel_under_ds = key[len(prefix) :] if key.startswith(prefix) else key
             outcomes.append(
                 await self.ingest_one(
                     dataset_id,

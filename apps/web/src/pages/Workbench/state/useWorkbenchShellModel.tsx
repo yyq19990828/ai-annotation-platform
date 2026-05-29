@@ -888,6 +888,9 @@ export function useWorkbenchShellModel({
         ml_backend_id: mlBackendId,
         task_ids: taskId ? [taskId] : undefined,
         prompt,
+        // v0.11.24 · 工作台手动「AI 分析」= 重跑覆盖，替换旧 AI 预测（保留人工标注），
+        // 否则默认 skip_predicted 会让已预标任务再点无反应。
+        predict_mode: "overwrite",
       },
       {
         onError: (err) => pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" }),

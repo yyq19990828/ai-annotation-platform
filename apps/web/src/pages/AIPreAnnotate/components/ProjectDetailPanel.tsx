@@ -21,6 +21,7 @@ import { useMLBackends } from "@/hooks/useMLBackends";
 import {
   useTriggerPreannotation,
   type TextOutputMode,
+  type PredictMode,
 } from "@/hooks/usePreannotation";
 import { adminPreannotateApi } from "@/api/adminPreannotate";
 import { aliasFrequencyApi } from "@/api/aliasFrequency";
@@ -49,6 +50,18 @@ const OUTPUT_MODE_BY_LABEL: Record<string, TextOutputMode> = {
   "□ 框": "box",
   "○ 掩膜": "mask",
   "⊕ 全部": "both",
+};
+// v0.11.24 · 预标幂等模式
+const PREDICT_MODE_TABS = ["跳过已预标", "覆盖", "追加"];
+const PREDICT_MODE_LABELS: Record<PredictMode, string> = {
+  skip_predicted: "跳过已预标",
+  overwrite: "覆盖",
+  append: "追加",
+};
+const PREDICT_MODE_BY_LABEL: Record<string, PredictMode> = {
+  跳过已预标: "skip_predicted",
+  覆盖: "overwrite",
+  追加: "append",
 };
 
 type ConcurrencyMode = "serial" | "parallel";
@@ -177,6 +190,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   const [selectedBatchIds, setSelectedBatchIds] = useState<Set<string>>(new Set());
   const [prompt, setPrompt] = useState("");
   const [outputMode, setOutputMode] = useState<TextOutputMode>("mask");
+  // v0.11.24 · 默认跳过已预标 task，避免重复预标叠加重复标注
+  const [predictMode, setPredictMode] = useState<PredictMode>("skip_predicted");
   const [concurrency, setConcurrency] = useState<ConcurrencyMode>("serial");
   const [running, setRunning] = useState(false);
   // v0.10.15 · 外部预测导入向导 (COCO / AAP JSON)
@@ -277,6 +292,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       prompt: prompt.trim(),
       output_mode: outputMode,
       params: paramsValue,
+      predict_mode: predictMode,
     };
     setRunning(true);
     try {
@@ -549,6 +565,23 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                 onChange={(label) => {
                   const m = OUTPUT_MODE_BY_LABEL[label];
                   if (m) setOutputMode(m);
+                }}
+              />
+            </div>
+
+            <div className={styles.field}>
+              <span className={styles.fieldLabel}>
+                已预标任务
+                {predictMode === "overwrite" && (
+                  <span className={styles.fieldHint}> · 覆盖会删除已有 AI 标注</span>
+                )}
+              </span>
+              <TabRow
+                tabs={PREDICT_MODE_TABS}
+                active={PREDICT_MODE_LABELS[predictMode]}
+                onChange={(label) => {
+                  const m = PREDICT_MODE_BY_LABEL[label];
+                  if (m) setPredictMode(m);
                 }}
               />
             </div>

@@ -173,6 +173,7 @@ async def delete_batch(
     project_id: uuid.UUID,
     batch_id: uuid.UUID,
     request: Request,
+    force: bool = False,
     project: Project = Depends(require_project_owner),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -182,7 +183,8 @@ async def delete_batch(
     if not batch or batch.project_id != project_id:
         raise HTTPException(status_code=404, detail="Batch not found")
     affected = batch.total_tasks
-    await svc.delete(batch_id)
+    # v0.11.25：含进行中成果/已预标时 svc.delete 会抛 409 requires_force；force=true 走强制清理删除
+    await svc.delete(batch_id, force=force)
     await AuditService.log(
         db,
         actor=current_user,
@@ -191,7 +193,7 @@ async def delete_batch(
         target_id=str(batch_id),
         request=request,
         status_code=204,
-        detail={"name": batch.name, "affected_tasks": affected},
+        detail={"name": batch.name, "affected_tasks": affected, "forced": force},
     )
     await db.commit()
 
@@ -617,12 +619,14 @@ async def bulk_delete_batches(
     project_id: uuid.UUID,
     data: BulkBatchIds,
     request: Request,
+    force: bool = False,
     project: Project = Depends(require_project_owner),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     svc = BatchService(db)
-    summary = await svc.bulk_delete(project_id, data.batch_ids)
+    # v0.11.25：force=false 时含进行中成果/已预标的批次进 failed(reason=requires_force)
+    summary = await svc.bulk_delete(project_id, data.batch_ids, force=force)
     await AuditService.log(
         db,
         actor=current_user,
@@ -631,7 +635,10 @@ async def bulk_delete_batches(
         target_id=str(project_id),
         request=request,
         status_code=200,
-        detail=_bulk_audit_detail({"batch_ids": data.batch_ids}, summary),
+        detail={
+            **_bulk_audit_detail({"batch_ids": data.batch_ids}, summary),
+            "forced": force,
+        },
     )
     await db.commit()
     return summary

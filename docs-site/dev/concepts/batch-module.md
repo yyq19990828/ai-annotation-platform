@@ -221,12 +221,58 @@ stateDiagram-v2
 - `distribute_batches_in_project`
 - `reject_batch`
 - `reset_to_draft`
+- `clean_task_predictions`
 - `bulk_archive`
 - `bulk_delete`
 - `bulk_reassign`
 - `bulk_activate`
 - `check_auto_transitions`
 - `recalculate_counters`
+
+### `delete` 与删批次保护（v0.11.25）
+
+`delete(batch_id, *, force=False)` 不再是裸删，它先判断批次里有没有"不该被无声丢弃"的工作：
+
+- `_count_protected_tasks(batch_id)` 返回 `(non_pending, predicted, affected)`：
+  - `non_pending`：`Task.status != "pending"` 的数量（进行中 / 已完成 / 已审核等）
+  - `predicted`：`Task.total_predictions > 0` 的数量（AI 预标过）
+  - `affected`：`status != "pending" OR total_predictions > 0` 的并集去重数。`non_pending` 与 `predicted` 会重叠（同一 task 既 review 又预标），前端用 `affected` 展示「将影响 N 个任务」，避免 X+Y 误判
+- 当 `force=False` 且 `affected` 非零时，抛 409：
+
+  ```json
+  {
+    "code": "batch_has_active_work",
+    "requires_force": true,
+    "non_pending": 3,
+    "predicted": 5,
+    "affected_tasks": 6,
+    "message": "批次含进行中/已完成或 AI 预标过的任务；删除将重置为待标注并清除 AI 预标。请改用归档，或确认强制删除。"
+  }
+  ```
+
+- 当 `force=True`（或批次本就干净）时，先调 `_reset_and_clean_batch_tasks(batch_id)` 做级联清理，再把 task 的 `batch_id` 解绑、删除批次本体。
+
+路由层（`api/v1/batches.py`）的 `DELETE /batches/{id}` 与 `POST /batches/bulk-delete` 都接 `force: bool = False` 查询参数，透传给 service；审计 detail 里带 `"forced": force`。前端拿到 409 `requires_force` 后应弹"改归档 / 确认强制删除"二次确认。
+
+### `_reset_and_clean_batch_tasks` 级联清理
+
+这是 `reset_to_draft`（v0.7.6）与 `delete` / `bulk_delete`（v0.11.23）共用的级联清理核心，返回各项清理计数：
+
+- 非 `pending` task → `pending`
+- 删除该批次 task 的 `TaskLock`
+- 删除 `AsyncJob(kind="batch_predict")` 中 `payload.batch_id` 命中的历史任务
+- 调 `clean_task_predictions(task_ids)` 清掉 AI 预标产物
+- 返回 `{tasks_reset, prediction_jobs, predictions, failed_predictions, ai_annotations_deactivated}`
+
+### `clean_task_predictions`
+
+`clean_task_predictions(task_ids)` 是 task 维度的"清 AI 预标产物"原子操作，被 `_reset_and_clean_batch_tasks` 与 `batch_predict` 的 `overwrite` 模式（v0.11.24）共用：
+
+- 软删除 `source != "manual"`（即 prediction 派生）的 annotation；手工标注保留
+- 把残留 annotation 的 `parent_prediction_id` 置空
+- 删除 `prediction_metas` / `predictions` / `failed_predictions`
+- `Task.total_predictions` 归零，重算 `total_annotations` / `is_labeled`
+- `task_ids` 为空时是 no-op
 
 ### `reject_batch`
 
@@ -241,10 +287,8 @@ stateDiagram-v2
 这是“重兜底”：
 
 - 任意状态回 `draft`
-- 非 `pending` task 统一回 `pending`
-- 删除 `task_locks`
 - 清 review 元数据
-- 级联清掉 predictions / failed_predictions / prediction_jobs / prediction_metas
+- 复用 `_reset_and_clean_batch_tasks`：非 `pending` task 回 `pending`、删 `task_locks`、级联清掉 predictions / failed_predictions / prediction_jobs / prediction_metas
 
 ### bulk 系列
 

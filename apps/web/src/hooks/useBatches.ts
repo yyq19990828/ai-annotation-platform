@@ -53,7 +53,8 @@ export function useUpdateBatch(projectId: string) {
 export function useDeleteBatch(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (batchId: string) => batchesApi.remove(projectId, batchId),
+    mutationFn: ({ batchId, force }: { batchId: string; force?: boolean }) =>
+      batchesApi.remove(projectId, batchId, force ?? false),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["batches", projectId] });
       qc.invalidateQueries({ queryKey: ["unclassified-count", projectId] });

@@ -35,16 +35,20 @@ function ProgressFill({ pct, color }: { pct: number; color: string }) {
 
 function TaskRow({ task, onOpen }: { task: TaskResponse; onOpen: () => void }) {
   const isLocked = task.status === "review" || task.status === "completed";
+  // 与工作台任务队列 (TaskQueuePanel) 的标签 + 配色保持一致
   const statusLabel =
-    task.status === "completed" ? "已通过"
-    : task.status === "review" ? "送审中"
+    task.status === "completed" ? "已完成"
+    : task.status === "review" ? "待审核"
+    : task.status === "rejected" ? "待重做"
     : task.total_annotations > 0 ? "进行中"
     : task.total_predictions > 0 ? "AI 已预标"
     : "未开始";
   const statusVariant =
     task.status === "completed" ? "success" as const
     : task.status === "review" ? "warning" as const
+    : task.status === "rejected" ? "danger" as const
     : task.total_annotations > 0 ? "accent" as const
+    : task.total_predictions > 0 ? "ai" as const
     : "outline" as const;
 
   return (

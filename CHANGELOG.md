@@ -24,7 +24,59 @@
 
 ## 最新版本
 
-## [0.11.21] - 2026-05-27
+## [0.11.25] - 2026-05-29
+
+> **删批次保护：默认拒删含进行中成果/已预标的批次（批次解绑状态修复 3/3）。** 把 v0.11.23 的「无条件重置+解绑」升级为有保护的选择——删一个含非 pending 或 AI 预标过 task 的批次默认拒绝（409 requires_force），引导改用归档或显式强制删除；强制删除才走重置+清预标。完成批次解绑状态修复 epic（v0.11.23-25）。→ [plan](docs/plans/2026-05-29-v0.11.25-batch-delete-force-guard.md)
+
+### Added
+
+- **删批次 force 保护**: `delete()` / `bulk_delete()` 新增 `force` 参数（端点 `?force=true`）。非 force 时含非 pending 或 `total_predictions>0` task 的批次：单删抛 409 `{code:batch_has_active_work, requires_force, non_pending, predicted}`，批量删进 `failed`（reason=`requires_force`）。前端删除流程捕获 409 弹保护框（列出受影响计数 + 归档建议 + 强制删除出口），批量结果对 requires_force 给友好文案。删除审计记 `forced` 标记。
+
+### Changed
+
+- 纯 `draft` / 全 pending 且无预标的批次删除无摩擦（一如既往）；前端单删确认文案更新为「任务将变为未归类」。
+
+## [0.11.24] - 2026-05-29
+
+> **批量预标幂等：跳过已预标 / 覆盖历史预标（批次解绑状态修复 2/3）。** 根治 `batch_predict` 不幂等的根因——重复预标同一 task 会叠加重复/重叠标注。新增 `predict_mode`：默认 `skip_predicted` 跳过已预标 task，`overwrite` 先清旧预测再重标，`append` 保留旧行为。覆盖所有触发路径（重复点预标、解绑重分包后再预标、task_ids 直接指定）。→ [plan](docs/plans/2026-05-29-v0.11.24-batch-predict-idempotency.md)
+
+### Added
+
+- **预标幂等模式 `predict_mode`**: `PreannotateRequest` 新增字段，透传至 `batch_predict` worker。`skip_predicted`（默认）在选 task 时排除 `total_predictions>0`、进度条分母同步排除；`overwrite` 预标前调 `BatchService.clean_task_predictions(task_ids)` 清旧预测（软删 `prediction_based` annotation、删 predictions、归零物化字段，保留 `manual`）再重标，不改 task 流程状态。前端 AI 预标页新增「已预标任务」三选一，工作台单任务「AI 分析」固定走 `overwrite`（重跑替换）。
+
+### Changed
+
+- 抽 `BatchService.clean_task_predictions(task_ids)`（按 task_id 的预测清理核心），`_reset_and_clean_batch_tasks`（v0.11.23）改为委托它，overwrite 预标复用同一逻辑。
+
+## [0.11.23] - 2026-05-29
+
+> **删除批次时级联重置 task 状态 + 清 AI 预标（批次解绑状态修复 1/3）。** 删批次不再只解绑：批次内非 pending task 先重置回 pending（保留人工标注、软删 AI 标注、删 predictions），消除「review/completed task 解绑成孤儿」「重分包污染新批次计数/状态机」「AI 预标残留再预标叠加重复标注」三类问题。→ [plan](docs/plans/2026-05-29-v0.11.23-batch-delete-reset-cascade.md)
+
+### Fixed
+
+- **删除/批量删除批次级联重置**: 抽 `reset_to_draft` 的级联清理为 `BatchService._reset_and_clean_batch_tasks(batch_id)`，`delete()` / `bulk_delete()` 在解绑前复用——非 pending task → pending、软删 `source=prediction_based` annotation（保留 `manual`）、删 `predictions`/`failed_predictions`/`prediction_metas`/本批 `batch_predict` job、`total_predictions` 归零并重算 `total_annotations`/`is_labeled`。`reset_to_draft` 改调同一 helper（行为不变）。取消关联数据集走硬删 task 路径、无需此清理。
+
+### Changed
+
+- 用户手册 `projects/batch.md` 新增「删除批次」一节，说明重置语义与 AI 预标清除。
+
+## [0.11.22] - 2026-05-29
+
+> **批次分包统一走切分 + 支持注入单个批次 + 顺序切分。** 修复「分包时选单个批次无法把 task 注入」缺口（原「单个批次」模式只建空批次、且空批次无法再填充），把分包统一到切分流程：批次数量可填 1（= 把全部未归类任务注入一个新批次），并新增「顺序切分（不打乱）」。
+
+### Added
+
+- **顺序切分**: `BatchSplitRequest` 新增 `shuffle` 字段（默认 `true`）。`shuffle=false` 时按任务创建顺序切分、不打乱；`_splittable_task_ids` 加 `ORDER BY created_at, id` 保证结果稳定。前端「创建批次」对话框新增「顺序切分 / 打乱切分」切换。
+
+### Changed
+
+- **分包统一走切分，支持注入单个批次**: `n_batches` 下限从 2 放宽到 1，`n_batches=1` 即把全部未归类任务注入一个新批次（名称直接取 `name_prefix`，不加 " 1" 后缀）。前端移除「单个批次」空批次创建模式（空批次无法再追加任务，是死胡同），「创建批次」与「去分包」统一进切分对话框；批次数量为 1 时第二个输入变为批次完整名称。
+
+### Fixed
+
+- **删除批次时未归类任务状态去向写入 [ROADMAP](ROADMAP.md)**: 删除已预标注 / 进行中批次时 task 仅解绑（`batch_id` 置 NULL）、`status` 不变属设计预期，但其副作用（半成品 task 变未归类、重分包后状态滞留）作为待商议项记入 ROADMAP §A。
+
+## [0.11.21] - 2026-05-28
 
 > **ML backend 告警（Alertmanager）。** 新增 alertmanager service 与告警规则，backend 离线 / 显存打满 / 推理延迟劣化时经 SMTP 主动告警（dev 投递 mailpit），补上 PerfHud 没有的告警能力，完成可观测性 epic（v0.11.19–21）。
 

@@ -317,9 +317,9 @@ def _dest_relpath(relpath: str, source_path: str, base_prefix: str = "") -> str:
     src = _norm_rel(source_path)
     base = _norm_rel(base_prefix)
     if base and (src == base or src.startswith(f"{base}/")):
-        src = src[len(base):].lstrip("/")
+        src = src[len(base) :].lstrip("/")
     if src and (rel == src or rel.startswith(f"{src}/")):
-        rel = rel[len(src):].lstrip("/")
+        rel = rel[len(src) :].lstrip("/")
     return rel
 
 

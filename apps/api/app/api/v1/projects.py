@@ -1034,6 +1034,9 @@ class PreannotateRequest(BaseModel):
     # v0.10.38 · 按后端参数面板 (epic 阶段 2): 选中 backend 的 /setup.params 值,
     # 由前端按 backend 分桶解析后显式带上, worker 合并进 /predict context (覆盖项目级阈值兜底).
     params: dict | None = None
+    # v0.11.24 · 幂等模式: skip_predicted=跳过已预标 task (默认), overwrite=先清旧预测再预标,
+    # append=保留旧行为 (无脑追加, 仅特殊场景). 避免重复预标叠加重复标注.
+    predict_mode: Literal["skip_predicted", "overwrite", "append"] = "skip_predicted"
 
 
 @router.post("/{project_id}/preannotate")
@@ -1068,12 +1071,14 @@ async def trigger_preannotation(
                 status_code=400,
                 detail=f"batch.status must be 'active' to preannotate, got {batch.status!r}",
             )
-        count_q = await db.execute(
-            select(func.count(TaskModel.id)).where(
-                TaskModel.batch_id == body.batch_id,
-                TaskModel.status == "pending",
-            )
-        )
+        hint_conds = [
+            TaskModel.batch_id == body.batch_id,
+            TaskModel.status == "pending",
+        ]
+        # v0.11.24 · skip_predicted 下进度条分母应排除已预标 task，否则虚高
+        if body.predict_mode == "skip_predicted":
+            hint_conds.append(TaskModel.total_predictions == 0)
+        count_q = await db.execute(select(func.count(TaskModel.id)).where(*hint_conds))
         total_tasks_hint = int(count_q.scalar_one() or 0)
 
     from app.workers.tasks import batch_predict
@@ -1087,6 +1092,7 @@ async def trigger_preannotation(
         batch_id=str(body.batch_id) if body.batch_id else None,
         user_id=str(current_user.id),
         params=body.params or None,
+        predict_mode=body.predict_mode,
     )
     # B-5 · AI 预标注触发审计 — 让超管在 /audit 看到 谁/何时/对哪个 batch 跑了 AI
     await AuditService.log(

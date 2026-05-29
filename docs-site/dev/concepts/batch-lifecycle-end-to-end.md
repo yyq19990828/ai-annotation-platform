@@ -245,6 +245,17 @@ owner 可把：
 - 这批需要重做分组或重跑流程
 - `/ai-pre` 页面历史卡片需要彻底清掉
 
+### delete（删批次 + 级联清理）
+
+`delete` 不是 `reset_to_draft` 的反面，而是"解绑 task 并删批次本体"，但同样要做级联清理，避免删批次时留下悬挂的 AI 预标产物。
+
+默认有保护（v0.11.25）：
+
+- `delete(batch_id, force=False)` 先数 `_count_protected_tasks`：有进行中/已完成 task 或被 AI 预标过的 task 时，抛 409 `batch_has_active_work`（`requires_force=true`），提示改用归档或确认强制删除
+- `force=True` 时才执行：先 `_reset_and_clean_batch_tasks`（task 回 `pending`、删 `task_locks`、清 predictions / failed_predictions / prediction_jobs / prediction_metas），再把 task 的 `batch_id` 解绑、删除批次
+
+所以删批次和 `reset_to_draft` 共用同一套级联清理（`_reset_and_clean_batch_tasks` → `clean_task_predictions`），区别只在删完后批次本体是否还在、task 是否解绑。改删批次或重置逻辑时，两条路径要一起回归。
+
 ## 一个最常见的真实链路
 
 下面这条链路基本覆盖了系统里最容易联动出 bug 的部分：

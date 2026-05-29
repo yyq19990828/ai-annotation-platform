@@ -64,6 +64,8 @@ export interface BatchSplitPayload {
   metadata_value?: string;
   item_ids?: string[];
   n_batches?: number;
+  /** v0.11.22 · false = 顺序切分（不打乱），按 task 创建顺序分包 */
+  shuffle?: boolean;
   name_prefix?: string;
   priority?: number;
   deadline?: string;
@@ -136,8 +138,10 @@ export const batchesApi = {
       payload,
     ),
 
-  remove: (projectId: string, batchId: string) =>
-    apiClient.delete<void>(`/projects/${projectId}/batches/${batchId}`),
+  remove: (projectId: string, batchId: string, force = false) =>
+    apiClient.delete<void>(
+      `/projects/${projectId}/batches/${batchId}${force ? "?force=true" : ""}`,
+    ),
 
   transition: (
     projectId: string,
@@ -185,9 +189,9 @@ export const batchesApi = {
       { batch_ids: batchIds },
     ),
 
-  bulkDelete: (projectId: string, batchIds: string[]) =>
+  bulkDelete: (projectId: string, batchIds: string[], force = false) =>
     apiClient.post<BulkBatchActionResponse>(
-      `/projects/${projectId}/batches/bulk-delete`,
+      `/projects/${projectId}/batches/bulk-delete${force ? "?force=true" : ""}`,
       { batch_ids: batchIds },
     ),
 

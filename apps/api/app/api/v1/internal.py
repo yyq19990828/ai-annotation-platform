@@ -64,9 +64,7 @@ async def metrics_targets(
     """
     _check_token(authorization)
 
-    rows = await db.execute(
-        select(MLBackend).where(MLBackend.state != "disconnected")
-    )
+    rows = await db.execute(select(MLBackend).where(MLBackend.state != "disconnected"))
     by_target: dict[str, MLBackend] = {}
     for b in rows.scalars():
         hostport = _url_to_hostport(b.url)

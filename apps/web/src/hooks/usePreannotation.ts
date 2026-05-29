@@ -37,6 +37,9 @@ export function usePreannotationProgress(projectId: string | undefined): {
 
 export type TextOutputMode = "box" | "mask" | "both";
 
+/** v0.11.24 · 预标幂等模式 */
+export type PredictMode = "skip_predicted" | "overwrite" | "append";
+
 export interface TriggerPreannotationPayload {
   ml_backend_id: string;
   task_ids?: string[];
@@ -46,6 +49,8 @@ export interface TriggerPreannotationPayload {
   batch_id?: string;
   /** v0.10.38 · 按后端参数面板 (epic 阶段 2): 选中 backend 的 /setup.params 值, 覆盖项目级阈值兜底. */
   params?: Record<string, unknown>;
+  /** v0.11.24 · 跳过已预标 (默认) / 覆盖历史预标 / 追加 */
+  predict_mode?: PredictMode;
 }
 
 export interface TriggerPreannotationResponse {

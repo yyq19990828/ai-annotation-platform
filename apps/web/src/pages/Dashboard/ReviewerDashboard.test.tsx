@@ -223,6 +223,6 @@ describe("ReviewerDashboard", () => {
     });
     renderUI();
     expect(screen.getByText("R-1")).toBeInTheDocument();
-    expect(screen.getByText("已通过")).toBeInTheDocument();
+    expect(screen.getByText("已完成")).toBeInTheDocument();
   });
 });
