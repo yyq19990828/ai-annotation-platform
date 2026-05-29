@@ -1,4 +1,4 @@
-import { classColor } from "./colors";
+import { classColor, getTrackColor } from "./colors";
 import { VideoTrackShape } from "./VideoTrackShape";
 import type { VideoFrameEntry, VideoStageGeom, VideoTrackPreview } from "./videoStageTypes";
 import { isFrameOutside } from "./videoTrackOutside";
@@ -20,6 +20,7 @@ interface VideoObjectsLayerProps {
   viewBoxHeight: number;
   entries: VideoObjectEntry[];
   trackPreviews: VideoTrackPreview[];
+  trackColorOverrides?: Record<string, string>;
   pendingDraft?: { geom: VideoStageGeom; className: string } | null;
 }
 
@@ -27,6 +28,7 @@ export function VideoObjectsLayer({
   viewBoxHeight,
   entries,
   trackPreviews,
+  trackColorOverrides,
   pendingDraft,
 }: VideoObjectsLayerProps) {
   return (
@@ -37,7 +39,7 @@ export function VideoObjectsLayer({
       className={styles.layer}
     >
       {trackPreviews.map((preview) => {
-        const color = classColor(preview.className);
+        const color = getTrackColor(preview.trackId, preview.className, trackColorOverrides);
         const previewTrack = {
           type: "video_track" as const,
           track_id: preview.trackId,

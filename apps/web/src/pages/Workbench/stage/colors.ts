@@ -68,6 +68,15 @@ function hashString(s: string): number {
   return h;
 }
 
+function mixHash(h: number): number {
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x7feb352d);
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x846ca68b);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
 export function classColor(name: string, config?: ClassesConfig): string {
   if (name === UNKNOWN_CLASS) return UNKNOWN_COLOR;
   // 优先级：显式传入 config > 模块级 _activeConfig（项目当前） > 内置预设 > hash 派生
@@ -93,8 +102,20 @@ export const TRACK_COLOR_PALETTE: { label: string; value: string }[] = [
   { label: "灰", value: "oklch(0.65 0 0)" },
 ];
 
+const TRACK_LIGHTNESS_BANDS = [0.56, 0.62, 0.68, 0.74] as const;
+const TRACK_CHROMA_BANDS = [0.23, 0.20, 0.17, 0.14] as const;
+
+export function defaultTrackColor(trackId: string, className: string): string {
+  if (!trackId) return classColor(className);
+  const hash = mixHash(hashString(`track:${trackId}`));
+  const hue = ((hash & 0xffff) / 0x10000) * 360;
+  const lightness = TRACK_LIGHTNESS_BANDS[(hash >>> 16) % TRACK_LIGHTNESS_BANDS.length];
+  const chroma = TRACK_CHROMA_BANDS[(hash >>> 19) % TRACK_CHROMA_BANDS.length];
+  return `oklch(${lightness.toFixed(2)} ${chroma.toFixed(2)} ${hue.toFixed(2)})`;
+}
+
 /**
- * Track 显示色：命中 session 级覆盖则用覆盖色，否则回落到既有 classColor(className)。
+ * Track 显示色：命中 session 级覆盖则用覆盖色，否则按 trackId 派生稳定色。
  * overrides 以 trackId 为键，值为调色板中的 oklch 字符串。
  */
 export function getTrackColor(
@@ -104,7 +125,7 @@ export function getTrackColor(
 ): string {
   const override = overrides?.[trackId];
   if (override) return override;
-  return classColor(className);
+  return defaultTrackColor(trackId, className);
 }
 
 /** 按 classes_config.order 升序排序类别名（无 order 的排末尾）。 */

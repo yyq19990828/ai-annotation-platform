@@ -31,6 +31,7 @@ export interface VideoWorkbenchProps {
   reviewDisplayMode?: DiffMode;
   hiddenTrackIds: Set<string>;
   lockedTrackIds: Set<string>;
+  trackColorOverrides?: Record<string, string>;
   readOnly: boolean;
   videoTool: VideoTool;
   pendingDrawing: PendingDrawing;
@@ -75,6 +76,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     reviewDisplayMode,
     hiddenTrackIds,
     lockedTrackIds,
+    trackColorOverrides,
     readOnly,
     videoTool,
     pendingDrawing,
@@ -113,6 +115,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         reviewDisplayMode={reviewDisplayMode}
         hiddenTrackIds={hiddenTrackIds}
         lockedTrackIds={lockedTrackIds}
+        trackColorOverrides={trackColorOverrides}
         readOnly={readOnly}
         videoTool={videoTool}
         pendingDrawing={pendingDrawing}

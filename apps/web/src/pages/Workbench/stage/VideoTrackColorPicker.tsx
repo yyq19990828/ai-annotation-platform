@@ -15,7 +15,7 @@ interface VideoTrackColorPickerProps {
   onClose: () => void;
 }
 
-/** 轻量 track 取色器：从固定调色板选色，或恢复默认（回落到类别色）。 */
+/** 轻量 track 取色器：从固定调色板选色，或恢复默认（按 track_id 派生色）。 */
 export function VideoTrackColorPicker({
   currentColor,
   hasOverride,

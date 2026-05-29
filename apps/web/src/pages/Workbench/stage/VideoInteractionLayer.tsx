@@ -44,6 +44,7 @@ interface VideoInteractionLayerProps {
   drag: VideoDragState;
   activeClass: string;
   selectedTrackClassName?: string;
+  selectedTrackColor?: string;
   readOnly: boolean;
   isPlaying: boolean;
   videoTool: VideoTool;
@@ -71,6 +72,7 @@ export function VideoInteractionLayer({
   drag,
   activeClass,
   selectedTrackClassName,
+  selectedTrackColor,
   readOnly,
   isPlaying,
   videoTool,
@@ -84,7 +86,7 @@ export function VideoInteractionLayer({
   onCancelDrag,
   onPointerLeave,
 }: VideoInteractionLayerProps) {
-  const ghostColor = selectedTrackGhost ? classColor(selectedTrackGhost.className) : "";
+  const ghostColor = selectedTrackGhost ? selectedTrackColor ?? classColor(selectedTrackGhost.className) : "";
   const interactiveGhost = selectedTrackGhost && !drag ? selectedTrackGhost : null;
   const dragColor = drag && (drag.kind === "move" || drag.kind === "resize")
     ? entries.find(({ entry }) => entry.ann.id === drag.id)?.color || ghostColor || classColor(activeClass)
@@ -261,7 +263,7 @@ export function VideoInteractionLayer({
           width={draft.w}
           height={draft.h * viewBoxHeight}
           fill="rgba(255,255,255,0.08)"
-          stroke={classColor(selectedTrackClassName ?? activeClass)}
+          stroke={selectedTrackColor ?? classColor(selectedTrackClassName ?? activeClass)}
           strokeWidth={2}
           vectorEffect="non-scaling-stroke"
           strokeDasharray="6 4"

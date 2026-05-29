@@ -124,6 +124,7 @@ interface VideoStageProps {
   reviewDisplayMode?: DiffMode;
   hiddenTrackIds?: Set<string>;
   lockedTrackIds?: Set<string>;
+  trackColorOverrides?: Record<string, string>;
   readOnly?: boolean;
   videoTool?: VideoTool;
   pendingDrawing?: PendingDrawing;
@@ -190,6 +191,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   reviewDisplayMode,
   hiddenTrackIds = EMPTY_TRACK_ID_SET,
   lockedTrackIds = EMPTY_TRACK_ID_SET,
+  trackColorOverrides,
   readOnly = false,
   videoTool = "box",
   pendingDrawing = null,
@@ -1583,6 +1585,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               entries={currentFrameEntries}
               trackNumbers={trackNumbers}
               trackPreviews={trackPreviews}
+              trackColorOverrides={trackColorOverrides}
               pendingDraft={pendingDraft}
               aspectRatio={videoAspectRatio}
               selectedId={selectedId}

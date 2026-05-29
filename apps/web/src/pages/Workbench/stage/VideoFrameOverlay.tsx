@@ -1,6 +1,6 @@
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { VideoTool } from "../state/useWorkbenchState";
-import { classColor } from "./colors";
+import { classColor, getTrackColor } from "./colors";
 import { VideoAttachmentLayer } from "./VideoAttachmentLayer";
 import { VideoBitmapLayer } from "./VideoBitmapLayer";
 import { VideoGridLayer } from "./VideoGridLayer";
@@ -31,6 +31,7 @@ interface VideoFrameOverlayProps {
   entries: VideoFrameEntry[];
   trackNumbers: ReadonlyMap<string, number>;
   trackPreviews: VideoTrackPreview[];
+  trackColorOverrides?: Record<string, string>;
   pendingDraft?: { geom: VideoStageGeom; className: string } | null;
   aspectRatio: number;
   selectedId: string | null;
@@ -68,6 +69,7 @@ export function VideoFrameOverlay({
   entries,
   trackNumbers,
   trackPreviews,
+  trackColorOverrides,
   pendingDraft,
   aspectRatio,
   selectedId,
@@ -92,7 +94,9 @@ export function VideoFrameOverlay({
   const viewBoxHeight = Number.isFinite(aspectRatio) && aspectRatio > 0 ? 1 / aspectRatio : 9 / 16;
   const entryViews = entries.map((entry) => {
     const geom = entry.geom;
-    const color = classColor(entry.className);
+    const color = entry.trackId
+      ? getTrackColor(entry.trackId, entry.className, trackColorOverrides)
+      : classColor(entry.className);
     const selected = entry.ann.id === selectedId;
     const canEditSelected = selected && !readOnly && !isPlaying && !(entry.trackId && selectedTrackLocked);
     const labelSuffix = entry.source === "interpolated"
@@ -114,7 +118,11 @@ export function VideoFrameOverlay({
     };
   });
   const pendingDraftColor = pendingDraft ? classColor(pendingDraft.className) : "";
-  const ghostColor = selectedTrackGhost ? classColor(selectedTrackGhost.className) : "";
+  const ghostColor = selectedTrackGhost
+    ? getTrackColor(selectedTrackGhost.trackId, selectedTrackGhost.className, trackColorOverrides)
+    : "";
+  const selectedTrackColor = entryViews.find((view) => view.entry.ann.id === selectedId)?.color
+    ?? (ghostColor || classColor(selectedTrackClassName ?? activeClass));
   const labelEntries: VideoLabelEntry[] = [
     ...entryViews.map((view) => ({
       key: `entry-${view.key}`,
@@ -144,6 +152,7 @@ export function VideoFrameOverlay({
         viewBoxHeight={viewBoxHeight}
         entries={entryViews}
         trackPreviews={trackPreviews}
+        trackColorOverrides={trackColorOverrides}
         pendingDraft={!drag ? pendingDraft : null}
       />
       <VideoTextLayer labels={labelEntries} />
@@ -156,6 +165,7 @@ export function VideoFrameOverlay({
         drag={drag}
         activeClass={activeClass}
         selectedTrackClassName={selectedTrackClassName}
+        selectedTrackColor={selectedTrackColor}
         readOnly={readOnly}
         isPlaying={isPlaying}
         videoTool={videoTool}

@@ -67,6 +67,7 @@ interface WorkbenchStageHostVideoProps {
   videoReviewDisplayMode?: DiffMode;
   hiddenVideoTrackIds: Set<string>;
   lockedVideoTrackIds: Set<string>;
+  trackColorOverrides?: Record<string, string>;
   onVideoFrameIndexChange: (frameIndex: number) => void;
   onVideoCreate: (frameIndex: number, geom: Geom) => void;
   onVideoPendingDraw: (
@@ -219,6 +220,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       videoReviewDisplayMode,
       hiddenVideoTrackIds,
       lockedVideoTrackIds,
+      trackColorOverrides,
       onVideoFrameIndexChange,
       onVideoCreate,
       onVideoPendingDraw,
@@ -313,6 +315,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             reviewDisplayMode={videoReviewDisplayMode}
             hiddenTrackIds={hiddenVideoTrackIds}
             lockedTrackIds={lockedVideoTrackIds}
+            trackColorOverrides={trackColorOverrides}
             selectedIds={selectedIds}
             readOnly={readOnly}
             videoTool={videoTool}

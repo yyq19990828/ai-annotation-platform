@@ -12,6 +12,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { VideoStage, type VideoStageControls } from "./VideoStage";
 import { VideoTrackSidebar } from "./VideoTrackSidebar";
+import { classColor, getTrackColor } from "./colors";
 
 // VideoStage 自 v0.10.46 起内部用 react-query 拉 chunk 列表/samples (WebCodecs demux),
 // 故所有渲染需包一层 QueryClientProvider (生产环境由 main.tsx 根部提供)。
@@ -1632,6 +1633,59 @@ describe("VideoStage", () => {
     const label = Array.from(getByTestId("video-label-overlay").querySelectorAll('[data-testid="video-label"]'))
       .find((node) => node.textContent?.includes("car · 插值"));
     expect(label).toHaveStyle({ "--video-label-left": "20%", "--video-label-top": "10%" });
+  });
+
+  it("renders same-class track paths with stable per-track colors", () => {
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car_a",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 2, bbox: { x: 0.3, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+      {
+        id: "t2",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car_b",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.2, y: 0.3, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 2, bbox: { x: 0.4, y: 0.3, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { container, getByLabelText } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    fireEvent.change(getByLabelText("视频帧时间轴"), { target: { value: "1" } });
+
+    const pathStrokes = Array.from(container.querySelectorAll('[data-testid="video-track-path-preview"] polyline'))
+      .map((node) => node.getAttribute("stroke"));
+    expect(pathStrokes).toEqual([
+      getTrackColor("trk_car_a", "car"),
+      getTrackColor("trk_car_b", "car"),
+    ]);
+    expect(pathStrokes[0]).not.toBe(pathStrokes[1]);
+    expect(pathStrokes).not.toContain(classColor("car"));
   });
 
   it("shows track keyframe dots only for the selected track", () => {

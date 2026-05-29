@@ -1284,6 +1284,7 @@ export function useWorkbenchShellModel({
         videoReviewDisplayMode: mode === "review" ? modeState.diffMode : undefined,
         hiddenVideoTrackIds: s.hiddenVideoTrackIds,
         lockedVideoTrackIds: s.lockedVideoTrackIds,
+        trackColorOverrides: s.trackColorOverrides,
         onVideoFrameIndexChange: s.setVideoFrameIndex,
         onVideoCreate: handleVideoCreate,
         onVideoPendingDraw: handleVideoPendingDraw,
