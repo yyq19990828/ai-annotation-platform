@@ -154,6 +154,21 @@ if params:
 
 即 `params` 的非 None 值覆盖项目级 `box_threshold` / `text_threshold` 兜底值。无 `params` 时使用项目级阈值兜底，状态机本身不变。
 
+## 幂等预标模式（predict_mode，v0.11.24）
+
+`PreannotateRequest.predict_mode`（`apps/api/app/api/v1/projects.py`）是 `Literal["skip_predicted", "overwrite", "append"]`，默认 `skip_predicted`，由 worker（`apps/api/app/workers/tasks.py::batch_predict` / `_run_batch`）透传决定 task 选取与旧预测处理：
+
+| 模式 | task 选取 | 旧预测处理 | 用途 |
+|---|---|---|---|
+| `skip_predicted`（默认） | task 选取追加 `.where(Task.total_predictions == 0)`，跳过已预标 task | 不动 | 重复点"批量预标"时幂等，只补没跑过的 task |
+| `overwrite` | 不过滤已预标 task | 预标前先 `BatchService(db).clean_task_predictions([t.id])` + flush 清旧预测（**不重置 task 状态**） | 改了 prompt / 阈值想重跑 |
+| `append` | 不过滤 | 不清，无脑追加 | 兼容旧行为，仅特殊场景 |
+
+注意：
+
+- `skip_predicted` 模式下，进度条分母（`projects.py` 触发处）也排除已预标 task，避免"跳过的 task"虚增分母让进度显示卡住。
+- `overwrite` 只清 AI 预标产物（复用 [`clean_task_predictions`](./batch-module#clean-task-predictions)），手工标注 `source="manual"` 不受影响，task 状态不回退；与删批次/`reset_to_draft` 的级联清理是同一套清理逻辑。
+
 ## 代码索引
 
 - 模型：`apps/api/app/db/models/async_job.py`、`apps/api/app/db/models/prediction.py`
