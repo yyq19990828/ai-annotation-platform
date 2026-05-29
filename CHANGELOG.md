@@ -24,6 +24,18 @@
 
 ## 最新版本
 
+## [0.11.23] - 2026-05-29
+
+> **删除批次时级联重置 task 状态 + 清 AI 预标（批次解绑状态修复 1/3）。** 删批次不再只解绑：批次内非 pending task 先重置回 pending（保留人工标注、软删 AI 标注、删 predictions），消除「review/completed task 解绑成孤儿」「重分包污染新批次计数/状态机」「AI 预标残留再预标叠加重复标注」三类问题。→ [plan](docs/plans/2026-05-29-v0.11.23-batch-delete-reset-cascade.md)
+
+### Fixed
+
+- **删除/批量删除批次级联重置**: 抽 `reset_to_draft` 的级联清理为 `BatchService._reset_and_clean_batch_tasks(batch_id)`，`delete()` / `bulk_delete()` 在解绑前复用——非 pending task → pending、软删 `source=prediction_based` annotation（保留 `manual`）、删 `predictions`/`failed_predictions`/`prediction_metas`/本批 `batch_predict` job、`total_predictions` 归零并重算 `total_annotations`/`is_labeled`。`reset_to_draft` 改调同一 helper（行为不变）。取消关联数据集走硬删 task 路径、无需此清理。
+
+### Changed
+
+- 用户手册 `projects/batch.md` 新增「删除批次」一节，说明重置语义与 AI 预标清除。
+
 ## [0.11.22] - 2026-05-29
 
 > **批次分包统一走切分 + 支持注入单个批次 + 顺序切分。** 修复「分包时选单个批次无法把 task 注入」缺口（原「单个批次」模式只建空批次、且空批次无法再填充），把分包统一到切分流程：批次数量可填 1（= 把全部未归类任务注入一个新批次），并新增「顺序切分（不打乱）」。

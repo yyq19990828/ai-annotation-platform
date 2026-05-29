@@ -148,6 +148,16 @@ stateDiagram-v2
 - 批量激活只适用于 `draft` 批次
 - 批量归档、删除、改派都受当前状态和权限约束，部分批次可能成功，部分批次会被跳过或失败
 
+## 删除批次
+
+删除批次会先把批次内**所有非 `pending` 的 task 重置回 `pending`**，再解绑（task 变为「未归类」，可重新分包）：
+
+- **人工标注保留**：`source=manual` 的标注不丢，task 回到待标注入口可继续。
+- **AI 预标清除**：该批次 task 上的 AI 预测结果与已采纳的 AI 标注（`source=prediction_based`）会被清掉，`total_predictions` 归零。这样重新分包并再次预标时不会与旧预测叠加出重复标注。
+- **审核结论丢失**：`review` / `completed`（已通过）/ `rejected` 的 task 一并回到 `pending`——删除批次意味着这批工作要重新走流程，但已标注的几何不丢。
+
+> 因此删除一个「进行中 / 审核中 / 预标过」的批次不会留下看不见的孤儿任务，也不会污染后续新批次的计数。`B-DEFAULT` 默认批次不可删除。
+
 ## Admin lock / unlock
 
 <!-- history: ADR-0008 implemented the current soft-hold semantics. -->

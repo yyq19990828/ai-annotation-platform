@@ -367,6 +367,11 @@ class BatchService:
                 status_code=400, detail="Cannot delete the default batch"
             )
 
+        # v0.11.23：解绑前先重置非 pending task 为 pending、清 AI 预标（保留人工标注），
+        # 否则 review/completed task 解绑后成孤儿、AI 预标残留会在重分包再预标时叠加重复标注。
+        # 必须在改写 batch_id 之前调用（清理靠 Task.batch_id==batch_id 子查询定位）。
+        await self._reset_and_clean_batch_tasks(batch_id)
+
         # v0.6.8 B-14：老项目仍走「回收到 B-DEFAULT」路径；新项目无 B-DEFAULT 时把任务回退为
         # batch_id=NULL（成为「未归类任务」），由 split 流程兜底，避免删完所有批次后死锁。
         default = await self.get_default_batch(batch.project_id)
@@ -864,15 +869,39 @@ class BatchService:
             cascade_counts = {"predictions": N, "failed_predictions": N,
                               "prediction_jobs": N, "ai_annotations_deactivated": N}
         """
+        batch = await self.db.get(TaskBatch, batch_id)
+        if not batch:
+            raise HTTPException(status_code=404, detail="Batch not found")
+
+        counts = await self._reset_and_clean_batch_tasks(batch_id)
+        affected = counts.pop("tasks_reset")
+
+        batch.status = BatchStatus.DRAFT
+        batch.review_feedback = None
+        batch.reviewed_at = None
+        batch.reviewed_by = None
+
+        await self.db.flush()
+        await self.recalculate_counters(batch_id)
+        return batch, affected, counts
+
+    async def _reset_and_clean_batch_tasks(self, batch_id: uuid.UUID) -> dict[str, int]:
+        """把批次内所有非 pending task 重置为 pending, 并清理 AI 预标产物, 保留人工标注.
+
+        供 reset_to_draft (v0.7.6) 与 delete / bulk_delete (v0.11.23) 复用. 删除批次若
+        不走这套清理, review/completed 的 task 会带状态变孤儿; AI 预标残留 (predictions
+        + prediction_based annotation) 会在重分包后再次预标时叠加重复标注 (见 B-33).
+
+        必须在 task 仍 batch_id==batch_id 时调用 (清理全靠该子查询定位).
+
+        Returns: cascade_counts (含 tasks_reset / predictions / failed_predictions /
+                 prediction_jobs / ai_annotations_deactivated).
+        """
         from app.db.models.task_lock import TaskLock
         from app.db.models.prediction import Prediction, FailedPrediction
         from app.db.models.async_job import AsyncJob
         from app.db.models.annotation import Annotation
         from sqlalchemy import text
-
-        batch = await self.db.get(TaskBatch, batch_id)
-        if not batch:
-            raise HTTPException(status_code=404, detail="Batch not found")
 
         result = await self.db.execute(
             update(Task)
@@ -882,7 +911,7 @@ class BatchService:
             )
             .values(status="pending")
         )
-        affected = result.rowcount
+        tasks_reset = result.rowcount
 
         await self.db.execute(
             delete(TaskLock).where(
@@ -963,21 +992,13 @@ class BatchService:
             {"bid": str(batch_id)},
         )
 
-        cascade_counts = {
+        return {
+            "tasks_reset": tasks_reset,
             "predictions": pred_result.rowcount or 0,
             "failed_predictions": failed_result.rowcount or 0,
             "prediction_jobs": job_result.rowcount or 0,
             "ai_annotations_deactivated": ai_anno_result.rowcount or 0,
         }
-
-        batch.status = BatchStatus.DRAFT
-        batch.review_feedback = None
-        batch.reviewed_at = None
-        batch.reviewed_by = None
-
-        await self.db.flush()
-        await self.recalculate_counters(batch_id)
-        return batch, affected, cascade_counts
 
     # ── Bulk operations (v0.7.3) ───────────────────────────────────────────
 
@@ -1046,6 +1067,8 @@ class BatchService:
                     {"batch_id": bid, "reason": "B-DEFAULT cannot be deleted"}
                 )
                 continue
+            # v0.11.23：与单删一致——解绑前先重置非 pending task + 清 AI 预标（保留人工标注）
+            await self._reset_and_clean_batch_tasks(bid)
             # 复用单个删除路径里的 task 接管逻辑（按 default 是否存在二选一）
             if default is not None:
                 await self.db.execute(
