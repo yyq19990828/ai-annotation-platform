@@ -382,6 +382,12 @@
   font-size: 13px;
 }
 
+.formHint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
 .formInput {
   padding: 6px 10px;
   border: 1px solid var(--color-border);

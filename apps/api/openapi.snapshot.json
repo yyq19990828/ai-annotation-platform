@@ -3677,7 +3677,7 @@
             "anyOf": [
               {
                 "maximum": 100.0,
-                "minimum": 2.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -3709,6 +3709,11 @@
               }
             ],
             "title": "Reviewer Id"
+          },
+          "shuffle": {
+            "default": true,
+            "title": "Shuffle",
+            "type": "boolean"
           },
           "strategy": {
             "enum": [

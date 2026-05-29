@@ -205,8 +205,12 @@ class BatchService:
         conds = [Task.batch_id.is_(None)]
         if default is not None:
             conds.append(Task.batch_id == default.id)
+        # v0.11.22：按创建顺序返回，使「顺序切分（不打乱）」结果稳定可预期。
         result = await self.db.execute(
-            select(Task.id).where(Task.project_id == project_id).where(or_(*conds))
+            select(Task.id)
+            .where(Task.project_id == project_id)
+            .where(or_(*conds))
+            .order_by(Task.created_at, Task.id)
         )
         return [row[0] for row in result.fetchall()]
 
@@ -419,7 +423,9 @@ class BatchService:
         if not task_ids:
             raise HTTPException(status_code=400, detail="No unassigned tasks to split")
 
-        random.shuffle(task_ids)
+        # v0.11.22：shuffle=False 时保留 _splittable_task_ids 的创建顺序（顺序切分 / 顺序注入）。
+        if data.shuffle:
+            random.shuffle(task_ids)
         chunk_size = len(task_ids) // n
         remainder = len(task_ids) % n
 
@@ -433,7 +439,8 @@ class BatchService:
             batch = TaskBatch(
                 project_id=project_id,
                 display_id=await next_display_id(self.db, "batches"),
-                name=f"{data.name_prefix} {i + 1}",
+                # v0.11.22：n=1（把全部未归类任务注入一个批次）时直接用名称本身，不加 " 1" 后缀。
+                name=data.name_prefix if n == 1 else f"{data.name_prefix} {i + 1}",
                 status=BatchStatus.DRAFT,
                 priority=data.priority,
                 deadline=data.deadline,

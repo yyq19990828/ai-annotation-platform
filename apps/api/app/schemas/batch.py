@@ -149,7 +149,10 @@ class BatchSplitRequest(BaseModel):
     # id_range 策略
     item_ids: list[UUID] | None = None
     # random 策略
-    n_batches: int | None = Field(None, ge=2, le=100)
+    n_batches: int | None = Field(None, ge=1, le=100)
+    # v0.11.22 · 顺序切分（不打乱）：False 时按 task 创建顺序切分，便于把未归类任务按导入顺序分包。
+    # n_batches=1 + shuffle=False 即「把全部未归类任务顺序注入一个新批次」。
+    shuffle: bool = True
     # 公共字段
     name_prefix: str = "Batch"
     priority: int = Field(50, ge=0, le=100)

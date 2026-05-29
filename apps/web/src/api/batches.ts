@@ -64,6 +64,8 @@ export interface BatchSplitPayload {
   metadata_value?: string;
   item_ids?: string[];
   n_batches?: number;
+  /** v0.11.22 · false = 顺序切分（不打乱），按 task 创建顺序分包 */
+  shuffle?: boolean;
   name_prefix?: string;
   priority?: number;
   deadline?: string;
