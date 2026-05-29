@@ -24,6 +24,18 @@
 
 ## 最新版本
 
+## [0.11.25] - 2026-05-29
+
+> **删批次保护：默认拒删含进行中成果/已预标的批次（批次解绑状态修复 3/3）。** 把 v0.11.23 的「无条件重置+解绑」升级为有保护的选择——删一个含非 pending 或 AI 预标过 task 的批次默认拒绝（409 requires_force），引导改用归档或显式强制删除；强制删除才走重置+清预标。完成批次解绑状态修复 epic（v0.11.23-25）。→ [plan](docs/plans/2026-05-29-v0.11.25-batch-delete-force-guard.md)
+
+### Added
+
+- **删批次 force 保护**: `delete()` / `bulk_delete()` 新增 `force` 参数（端点 `?force=true`）。非 force 时含非 pending 或 `total_predictions>0` task 的批次：单删抛 409 `{code:batch_has_active_work, requires_force, non_pending, predicted}`，批量删进 `failed`（reason=`requires_force`）。前端删除流程捕获 409 弹保护框（列出受影响计数 + 归档建议 + 强制删除出口），批量结果对 requires_force 给友好文案。删除审计记 `forced` 标记。
+
+### Changed
+
+- 纯 `draft` / 全 pending 且无预标的批次删除无摩擦（一如既往）；前端单删确认文案更新为「任务将变为未归类」。
+
 ## [0.11.24] - 2026-05-29
 
 > **批量预标幂等：跳过已预标 / 覆盖历史预标（批次解绑状态修复 2/3）。** 根治 `batch_predict` 不幂等的根因——重复预标同一 task 会叠加重复/重叠标注。新增 `predict_mode`：默认 `skip_predicted` 跳过已预标 task，`overwrite` 先清旧预测再重标，`append` 保留旧行为。覆盖所有触发路径（重复点预标、解绑重分包后再预标、task_ids 直接指定）。→ [plan](docs/plans/2026-05-29-v0.11.24-batch-predict-idempotency.md)

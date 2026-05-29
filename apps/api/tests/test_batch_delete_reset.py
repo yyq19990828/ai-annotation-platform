@@ -135,7 +135,7 @@ async def test_delete_resets_nonpending_and_clears_ai(
     )
     await db_session.flush()
 
-    await BatchService(db_session).delete(batch_id)
+    await BatchService(db_session).delete(batch_id, force=True)
 
     # 1. 所有 task 回 pending 且解绑（新项目无 B-DEFAULT → batch_id=NULL）
     # 直接 select 列值读 DB 实时值（物化字段经 raw SQL UPDATE 改写，ORM 对象会陈旧）
@@ -209,7 +209,7 @@ async def test_delete_then_resplit_no_counter_pollution(
     await db_session.flush()
 
     svc = BatchService(db_session)
-    await svc.delete(batch_id)
+    await svc.delete(batch_id, force=True)
     # 重分包到新批次：计数应干净（无 completed/review 污染）
     new_batches = await svc.split(
         project.id,
@@ -237,7 +237,7 @@ async def test_bulk_delete_also_resets(db_session: AsyncSession, super_admin):
     db_session.add(_prediction(tasks[0].id, project.id))
     await db_session.flush()
 
-    res = await BatchService(db_session).bulk_delete(project.id, [batch_id])
+    res = await BatchService(db_session).bulk_delete(project.id, [batch_id], force=True)
     assert batch_id in res["succeeded"]
 
     rows = (

@@ -106,6 +106,12 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   const [namePrefix, setNamePrefix] = useState("Batch");
   const [shuffle, setShuffle] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState<BatchResponse | null>(null);
+  // v0.11.25 · 删批次保护：含进行中成果/已预标时后端 409，弹此框让用户确认强制删除
+  const [forceDelete, setForceDelete] = useState<{
+    batch: BatchResponse;
+    nonPending: number;
+    predicted: number;
+  } | null>(null);
   const [assignTarget, setAssignTarget] = useState<BatchResponse | null>(null);
   const [rejectTarget, setRejectTarget] = useState<BatchResponse | null>(null);
   const [distributeOpen, setDistributeOpen] = useState(false);
@@ -268,11 +274,16 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
   const renderBulkResultRow = (item: { batch_id: string; reason: string }) => {
     const b = idToBatch.get(item.batch_id);
+    // v0.11.25 · requires_force 的批次含进行中成果/已预标，批量删除默认跳过
+    const reason =
+      item.reason === "requires_force"
+        ? "含进行中成果/已预标，未删除（可单独强制删除）"
+        : item.reason;
     return (
       <li key={item.batch_id} className={styles.bulkResultRow}>
         <span className="mono">{b?.display_id ?? item.batch_id.slice(0, 8)}</span>
         {b ? <span className={styles.bulkResultRowName}>· {b.name}</span> : null}
-        <span className={styles.bulkResultRowReason}>— {item.reason}</span>
+        <span className={styles.bulkResultRowReason}>— {reason}</span>
       </li>
     );
   };
@@ -306,14 +317,31 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
     );
   };
 
-  const handleDelete = (batch: BatchResponse) => {
-    deleteBatch.mutate(batch.id, {
-      onSuccess: () => {
-        pushToast({ msg: "批次已删除", kind: "success" });
-        setConfirmDelete(null);
+  const handleDelete = (batch: BatchResponse, force = false) => {
+    deleteBatch.mutate(
+      { batchId: batch.id, force },
+      {
+        onSuccess: () => {
+          pushToast({ msg: "批次已删除", kind: "success" });
+          setConfirmDelete(null);
+          setForceDelete(null);
+        },
+        onError: (e) => {
+          // v0.11.25 · 409 requires_force：含进行中成果/已预标 → 弹保护框让用户确认强制删除
+          const err = e as { status?: number; detailRaw?: Record<string, unknown> };
+          if (err.status === 409 && err.detailRaw?.requires_force) {
+            setConfirmDelete(null);
+            setForceDelete({
+              batch,
+              nonPending: Number(err.detailRaw.non_pending ?? 0),
+              predicted: Number(err.detailRaw.predicted ?? 0),
+            });
+            return;
+          }
+          pushToast({ msg: "删除失败", sub: (e as Error).message });
+        },
       },
-      onError: (e) => pushToast({ msg: "删除失败", sub: (e as Error).message }),
-    });
+    );
   };
 
   return (
@@ -779,7 +807,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           <div className={styles.confirmBody}>
             <p>
               确定删除批次 <strong>{confirmDelete?.name}</strong>？
-              其中的 {confirmDelete?.total_tasks ?? 0} 个任务将回归默认批次。
+              其中的 {confirmDelete?.total_tasks ?? 0} 个任务将变为未归类（可重新分包）。
             </p>
             <div className={styles.confirmActions}>
               <Button onClick={() => setConfirmDelete(null)}>取消</Button>
@@ -788,6 +816,35 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                 className={styles.btnDanger}
               >
                 删除
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+      {/* v0.11.25 · 删除保护：含进行中成果/已预标 → 强制删除确认 */}
+      <Modal
+        open={!!forceDelete}
+        title="该批次有进行中的成果"
+        onClose={() => setForceDelete(null)}
+      >
+          <div className={styles.confirmBody}>
+            <p>
+              批次 <strong>{forceDelete?.batch.name}</strong> 含
+              {forceDelete?.nonPending ? ` ${forceDelete.nonPending} 个进行中/已完成任务` : ""}
+              {forceDelete?.nonPending && forceDelete?.predicted ? "、" : ""}
+              {forceDelete?.predicted ? ` ${forceDelete.predicted} 个已 AI 预标任务` : ""}
+              。强制删除会把这些任务<strong>重置为待标注</strong>并<strong>清除 AI 预标</strong>（人工标注保留）。
+            </p>
+            <p className={styles.confirmHint}>
+              若只想暂停而不丢进度，建议改用「归档」。
+            </p>
+            <div className={styles.confirmActions}>
+              <Button onClick={() => setForceDelete(null)}>取消</Button>
+              <Button
+                onClick={() => forceDelete && handleDelete(forceDelete.batch, true)}
+                className={styles.btnDanger}
+              >
+                强制删除
               </Button>
             </div>
           </div>

@@ -358,7 +358,32 @@ class BatchService:
 
         return batch
 
-    async def delete(self, batch_id: uuid.UUID) -> bool:
+    async def _count_protected_tasks(self, batch_id: uuid.UUID) -> tuple[int, int]:
+        """v0.11.25 · 统计「有进行中成果」的 task: 非 pending 数 / 已预标数（含重叠）。
+        供 delete / bulk_delete 的 force 保护判定。"""
+        non_pending = int(
+            (
+                await self.db.execute(
+                    select(func.count())
+                    .select_from(Task)
+                    .where(Task.batch_id == batch_id, Task.status != "pending")
+                )
+            ).scalar()
+            or 0
+        )
+        predicted = int(
+            (
+                await self.db.execute(
+                    select(func.count())
+                    .select_from(Task)
+                    .where(Task.batch_id == batch_id, Task.total_predictions > 0)
+                )
+            ).scalar()
+            or 0
+        )
+        return non_pending, predicted
+
+    async def delete(self, batch_id: uuid.UUID, *, force: bool = False) -> bool:
         batch = await self.db.get(TaskBatch, batch_id)
         if not batch:
             raise HTTPException(status_code=404, detail="Batch not found")
@@ -366,6 +391,24 @@ class BatchService:
             raise HTTPException(
                 status_code=400, detail="Cannot delete the default batch"
             )
+
+        # v0.11.25：默认保护——批次含非 pending 或已预标 task 时拒删，需显式 force（前端弹保护框）。
+        if not force:
+            non_pending, predicted = await self._count_protected_tasks(batch_id)
+            if non_pending or predicted:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "batch_has_active_work",
+                        "requires_force": True,
+                        "non_pending": non_pending,
+                        "predicted": predicted,
+                        "message": (
+                            "批次含进行中/已完成或 AI 预标过的任务；删除将重置为待标注"
+                            "并清除 AI 预标。请改用归档，或确认强制删除。"
+                        ),
+                    },
+                )
 
         # v0.11.23：解绑前先重置非 pending task 为 pending、清 AI 预标（保留人工标注），
         # 否则 review/completed task 解绑后成孤儿、AI 预标残留会在重分包再预标时叠加重复标注。
@@ -1086,6 +1129,8 @@ class BatchService:
         self,
         project_id: uuid.UUID,
         batch_ids: list[uuid.UUID],
+        *,
+        force: bool = False,
     ) -> dict[str, list[dict]]:
         loaded = await self._list_batches_in_project(project_id, batch_ids)
         succeeded: list[uuid.UUID] = []
@@ -1102,6 +1147,19 @@ class BatchService:
                     {"batch_id": bid, "reason": "B-DEFAULT cannot be deleted"}
                 )
                 continue
+            # v0.11.25：默认保护——含进行中成果/已预标的批次非 force 时计入 failed（partial 语义）
+            if not force:
+                non_pending, predicted = await self._count_protected_tasks(bid)
+                if non_pending or predicted:
+                    failed.append(
+                        {
+                            "batch_id": bid,
+                            "reason": "requires_force",
+                            "non_pending": non_pending,
+                            "predicted": predicted,
+                        }
+                    )
+                    continue
             # v0.11.23：与单删一致——解绑前先重置非 pending task + 清 AI 预标（保留人工标注）
             await self._reset_and_clean_batch_tasks(bid)
             # 复用单个删除路径里的 task 接管逻辑（按 default 是否存在二选一）
