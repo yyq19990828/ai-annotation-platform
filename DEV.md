@@ -102,8 +102,13 @@ cd apps/api
 uv venv
 source .venv/bin/activate
 uv pip install fastapi "uvicorn[standard]" pydantic-settings sqlalchemy asyncpg python-jose passlib python-multipart httpx
-uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 3
 ```
+
+> `--timeout-graceful-shutdown 3`：代码改动触发 `--reload` 时，若有浏览器标签页还连着
+> WebSocket（工作台 / AI 预标页），uvicorn 默认会无限等待这些连接结束，卡在
+> `Waiting for background tasks to complete`，新代码迟迟不生效。设 3s 上限后到点强制
+> 掐断 WS 放行 reload，客户端收到 1006 自走指数退避重连。
 
 API 文档：http://localhost:8000/docs
 
