@@ -982,9 +982,7 @@ class BatchService:
             **pred_counts,
         }
 
-    async def clean_task_predictions(
-        self, task_ids: list[uuid.UUID]
-    ) -> dict[str, int]:
+    async def clean_task_predictions(self, task_ids: list[uuid.UUID]) -> dict[str, int]:
         """按 task_id 清理 AI 预标产物 (不动 task 状态 / 锁 / job): 软删 prediction_based
         annotation (保留 source='manual')、NULL parent_prediction_id、删 prediction_metas
         / predictions / failed_predictions、total_predictions 归 0 并按存活人工标注重算

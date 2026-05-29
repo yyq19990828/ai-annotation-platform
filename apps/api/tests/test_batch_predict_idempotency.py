@@ -224,7 +224,9 @@ async def test_clean_task_predictions_removes_ai_keeps_manual(
 
     pred_count = (
         await db_session.execute(
-            select(func.count()).select_from(Prediction).where(Prediction.task_id == t.id)
+            select(func.count())
+            .select_from(Prediction)
+            .where(Prediction.task_id == t.id)
         )
     ).scalar()
     assert pred_count == 0

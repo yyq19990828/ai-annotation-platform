@@ -173,9 +173,7 @@ async def test_delete_resets_nonpending_and_clears_ai(
 
     # 3. prediction 行被删
     pred_count = (
-        await db_session.execute(
-            select(func.count()).select_from(Prediction)
-        )
+        await db_session.execute(select(func.count()).select_from(Prediction))
     ).scalar()
     assert pred_count == 0
 

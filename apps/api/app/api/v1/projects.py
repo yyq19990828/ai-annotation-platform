@@ -1078,9 +1078,7 @@ async def trigger_preannotation(
         # v0.11.24 · skip_predicted 下进度条分母应排除已预标 task，否则虚高
         if body.predict_mode == "skip_predicted":
             hint_conds.append(TaskModel.total_predictions == 0)
-        count_q = await db.execute(
-            select(func.count(TaskModel.id)).where(*hint_conds)
-        )
+        count_q = await db.execute(select(func.count(TaskModel.id)).where(*hint_conds))
         total_tasks_hint = int(count_q.scalar_one() or 0)
 
     from app.workers.tasks import batch_predict

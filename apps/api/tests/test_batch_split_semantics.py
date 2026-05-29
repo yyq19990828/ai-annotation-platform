@@ -78,9 +78,7 @@ async def test_split_into_single_batch_injects_all_unclassified(
     assert batch.name == "第 1 批"
     # 6 个未归类 task 全部注入这一个新批次
     rows = (
-        await db_session.execute(
-            select(Task.id).where(Task.batch_id == batch.id)
-        )
+        await db_session.execute(select(Task.id).where(Task.batch_id == batch.id))
     ).all()
     assert len(rows) == 6
     # 没有残留未归类任务
