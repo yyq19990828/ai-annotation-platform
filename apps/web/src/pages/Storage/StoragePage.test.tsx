@@ -2,7 +2,7 @@
  * StoragePage 单测 — 存储桶/数据集/视频资产失败 主路径.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 const mockPushToast = vi.fn();
@@ -11,7 +11,9 @@ const mockRetryMutate = vi.fn();
 
 // --- useQueryClient ---
 vi.mock("@tanstack/react-query", async () => {
-  const actual = await vi.importActual<any>("@tanstack/react-query");
+  const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
+    "@tanstack/react-query",
+  );
   return {
     ...actual,
     useQueryClient: () => ({
@@ -25,7 +27,8 @@ const mockUseStorageBuckets = vi.fn();
 const mockUseVideoAssetFailures = vi.fn();
 vi.mock("@/hooks/useStorage", () => ({
   useStorageBuckets: () => mockUseStorageBuckets(),
-  useVideoAssetFailures: () => mockUseVideoAssetFailures(),
+  useVideoAssetFailures: (limit?: number, offset?: number) =>
+    mockUseVideoAssetFailures(limit, offset),
   useRetryVideoAsset: () => ({
     mutate: mockRetryMutate,
     isPending: false,
@@ -40,10 +43,13 @@ vi.mock("@/hooks/useDatasets", () => ({
 
 // --- toast ---
 vi.mock("@/components/ui/Toast", async () => {
-  const actual = await vi.importActual<any>("@/components/ui/Toast");
+  const actual = await vi.importActual<typeof import("@/components/ui/Toast")>(
+    "@/components/ui/Toast",
+  );
   return {
     ...actual,
-    useToastStore: <T,>(sel: (s: any) => T) => sel({ push: mockPushToast }),
+    useToastStore: <T,>(sel: (s: { push: typeof mockPushToast }) => T) =>
+      sel({ push: mockPushToast }),
   };
 });
 
@@ -115,7 +121,7 @@ describe("StoragePage", () => {
     });
     mockUseDatasets.mockReturnValue({ data: { items: [], total: 0 } });
     mockUseVideoAssetFailures.mockReturnValue({
-      data: { items: [], total: 0 },
+      data: { items: [], total: 0, limit: 20, offset: 0 },
       isLoading: false,
       isError: false,
     });
@@ -165,7 +171,7 @@ describe("StoragePage", () => {
 
   it("视频资产失败列表有数据 → 渲染失败行 + 重试按钮", () => {
     mockUseVideoAssetFailures.mockReturnValue({
-      data: { items: [SAMPLE_VIDEO_FAILURE], total: 1 },
+      data: { items: [SAMPLE_VIDEO_FAILURE], total: 1, limit: 20, offset: 0 },
       isLoading: false,
       isError: false,
     });
@@ -182,7 +188,7 @@ describe("StoragePage", () => {
 
   it("点击重试按钮 → 调用 retry.mutate", () => {
     mockUseVideoAssetFailures.mockReturnValue({
-      data: { items: [SAMPLE_VIDEO_FAILURE], total: 1 },
+      data: { items: [SAMPLE_VIDEO_FAILURE], total: 1, limit: 20, offset: 0 },
       isLoading: false,
       isError: false,
     });
@@ -198,7 +204,7 @@ describe("StoragePage", () => {
   it("点击「刷新状态」→ invalidateQueries 被调用", () => {
     renderUI();
     fireEvent.click(screen.getByRole("button", { name: /刷新状态/ }));
-    expect(mockInvalidateQueries).toHaveBeenCalledTimes(2);
+    expect(mockInvalidateQueries).toHaveBeenCalledTimes(3);
   });
 
   it("视频资产加载中 → 显示加载态文字", () => {
@@ -209,5 +215,22 @@ describe("StoragePage", () => {
     });
     renderUI();
     expect(screen.getByText("加载中...")).toBeInTheDocument();
+  });
+
+  it("视频资产失败列表分页 → 使用 limit/offset 拉取下一页", async () => {
+    mockUseVideoAssetFailures.mockReturnValue({
+      data: { items: [SAMPLE_VIDEO_FAILURE], total: 21, limit: 20, offset: 0 },
+      isLoading: false,
+      isError: false,
+    });
+    renderUI();
+    expect(mockUseVideoAssetFailures).toHaveBeenLastCalledWith(20, 0);
+
+    fireEvent.click(screen.getByRole("button", { name: /下一页/ }));
+
+    await waitFor(() => {
+      expect(mockUseVideoAssetFailures).toHaveBeenLastCalledWith(20, 20);
+    });
+    expect(screen.getByText(/第 2 页/)).toBeInTheDocument();
   });
 });

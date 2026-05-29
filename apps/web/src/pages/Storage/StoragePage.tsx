@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -43,6 +45,8 @@ const VIDEO_ASSET_LABELS: Record<VideoAssetKind, string> = {
   chunk: "Chunk",
   frame: "Frame cache",
 };
+
+const VIDEO_ASSET_FAILURE_PAGE_SIZE = 20;
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -129,10 +133,25 @@ function assetDetail(asset: VideoAssetFailureItem): string {
 }
 
 function VideoAssetFailuresPanel() {
-  const { data, isLoading, isError } = useVideoAssetFailures(50, 0);
+  const [page, setPage] = useState(0);
+  const offset = page * VIDEO_ASSET_FAILURE_PAGE_SIZE;
+  const { data, isLoading, isError } = useVideoAssetFailures(
+    VIDEO_ASSET_FAILURE_PAGE_SIZE,
+    offset,
+  );
   const retry = useRetryVideoAsset();
   const pushToast = useToastStore((s) => s.push);
   const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const hasNext = offset + VIDEO_ASSET_FAILURE_PAGE_SIZE < total;
+  const pageStart = total === 0 ? 0 : offset + 1;
+  const pageEnd = Math.min(total, offset + items.length);
+
+  useEffect(() => {
+    if (isLoading) return;
+    const lastPage = Math.max(0, Math.ceil(total / VIDEO_ASSET_FAILURE_PAGE_SIZE) - 1);
+    if (page > lastPage) setPage(lastPage);
+  }, [isLoading, page, total]);
 
   const onRetry = (asset: VideoAssetFailureItem) => {
     retry.mutate(
@@ -163,8 +182,8 @@ function VideoAssetFailuresPanel() {
           </p>
         </div>
         <span className={styles.centerBadge}>
-          <Badge variant={items.length ? "danger" : "success"} dot>
-            {items.length ? `${data?.total ?? items.length} 个失败` : "正常"}
+          <Badge variant={total ? "danger" : "success"} dot>
+            {total ? `${total} 个失败` : "正常"}
           </Badge>
         </span>
       </div>
@@ -178,59 +197,86 @@ function VideoAssetFailuresPanel() {
           <div>暂无视频资产失败</div>
         </div>
       ) : (
-        <div className={styles.tableScroll}>
-          <table className={styles.assetTable}>
-            <thead>
-              <tr className={styles.tableBorderRow}>
-                <th className={styles.assetTh}>类型</th>
-                <th className={styles.assetTh}>视频</th>
-                <th className={styles.assetTh}>项目 / 任务</th>
-                <th className={styles.assetTh}>错误</th>
-                <th className={styles.assetTh}>更新时间</th>
-                <th className={styles.assetTh}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((asset) => (
-                <tr key={asset.asset_key} className={styles.tableBorderRow}>
-                  <td className={styles.assetTd}>
-                    <Badge variant="outline">{VIDEO_ASSET_LABELS[asset.asset_type]}</Badge>
-                  </td>
-                  <td className={styles.assetTd}>
-                    <div className={styles.assetFileName}>{asset.file_name}</div>
-                    <div className={styles.assetSubtle}>
-                      {assetDetail(asset)}
-                    </div>
-                  </td>
-                  <td className={styles.assetTd}>
-                    <div>{asset.project_name ?? "—"}</div>
-                    <div className={`mono ${styles.assetSubtle}`}>
-                      {asset.task_display_id ?? "—"}
-                    </div>
-                  </td>
-                  <td className={`${styles.assetTd} ${styles.assetErrorCell}`}>
-                    <div title={asset.error} className={styles.assetErrorText}>
-                      {asset.error}
-                    </div>
-                  </td>
-                  <td className={`${styles.assetTd} ${styles.assetDateCell}`}>
-                    {asset.updated_at ? new Date(asset.updated_at).toLocaleString() : "—"}
-                  </td>
-                  <td className={`${styles.assetTd} ${styles.nowrap}`}>
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      disabled={retry.isPending}
-                      onClick={() => onRetry(asset)}
-                    >
-                      <Icon name="refresh" size={11} />
-                      重试
-                    </Button>
-                  </td>
+        <div>
+          <div className={styles.tableScroll}>
+            <table className={styles.assetTable}>
+              <thead>
+                <tr className={styles.tableBorderRow}>
+                  <th className={styles.assetTh}>类型</th>
+                  <th className={styles.assetTh}>视频</th>
+                  <th className={styles.assetTh}>项目 / 任务</th>
+                  <th className={styles.assetTh}>错误</th>
+                  <th className={styles.assetTh}>更新时间</th>
+                  <th className={styles.assetTh}>操作</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {items.map((asset) => (
+                  <tr key={asset.asset_key} className={styles.tableBorderRow}>
+                    <td className={styles.assetTd}>
+                      <Badge variant="outline">{VIDEO_ASSET_LABELS[asset.asset_type]}</Badge>
+                    </td>
+                    <td className={styles.assetTd}>
+                      <div className={styles.assetFileName}>{asset.file_name}</div>
+                      <div className={styles.assetSubtle}>
+                        {assetDetail(asset)}
+                      </div>
+                    </td>
+                    <td className={styles.assetTd}>
+                      <div>{asset.project_name ?? "—"}</div>
+                      <div className={`mono ${styles.assetSubtle}`}>
+                        {asset.task_display_id ?? "—"}
+                      </div>
+                    </td>
+                    <td className={`${styles.assetTd} ${styles.assetErrorCell}`}>
+                      <div title={asset.error} className={styles.assetErrorText}>
+                        {asset.error}
+                      </div>
+                    </td>
+                    <td className={`${styles.assetTd} ${styles.assetDateCell}`}>
+                      {asset.updated_at ? new Date(asset.updated_at).toLocaleString() : "—"}
+                    </td>
+                    <td className={`${styles.assetTd} ${styles.nowrap}`}>
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        disabled={retry.isPending}
+                        onClick={() => onRetry(asset)}
+                      >
+                        <Icon name="refresh" size={11} />
+                        重试
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {(page > 0 || hasNext) && (
+            <div className={styles.pagination}>
+              <span className={styles.helperInline}>
+                第 {page + 1} 页 · {pageStart}-{pageEnd} / 共 {total} 条
+              </span>
+              <div className={styles.inlineActions}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                >
+                  <Icon name="chevLeft" size={11} /> 上一页
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={!hasNext}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  下一页 <Icon name="chevRight" size={11} />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
       </Card>
@@ -250,6 +296,7 @@ export function StoragePage() {
   const handleRefresh = () => {
     qc.invalidateQueries({ queryKey: ["storage-buckets"] });
     qc.invalidateQueries({ queryKey: ["datasets"] });
+    qc.invalidateQueries({ queryKey: ["storage-video-asset-failures"] });
   };
 
   return (
