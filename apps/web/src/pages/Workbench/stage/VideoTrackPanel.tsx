@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { Icon } from "@/components/ui/Icon";
 import type { AttributeSchema } from "@/api/projects";
 import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
@@ -289,6 +290,56 @@ export function VideoTrackPanel({
     : null;
   const selectedTrackOccluded = !currentFrameOutside && Boolean(selectedTrackCurrentKeyframe?.occluded);
   const selectedTrackFrames = selectedTrack?.geometry.keyframes.map((kf) => kf.frame_index) ?? [];
+  const convertTrackMenuItems = useMemo<DropdownItem[]>(() => {
+    const disabled = !selectedTrack || readOnly || !onConvertToBboxes;
+    return [
+      {
+        id: "copy-keyframes",
+        label: "复制关键帧",
+        icon: "box",
+        disabled,
+        onSelect: () => selectedTrack && onConvertToBboxes?.(selectedTrack, {
+          operation: "copy",
+          scope: "track",
+          frameMode: "keyframes",
+        }),
+      },
+      {
+        id: "copy-all-frames",
+        label: "复制全帧",
+        icon: "film",
+        disabled,
+        onSelect: () => selectedTrack && onConvertToBboxes?.(selectedTrack, {
+          operation: "copy",
+          scope: "track",
+          frameMode: "all_frames",
+        }),
+      },
+      { id: "convert-divider", divider: true, label: "" },
+      {
+        id: "split-keyframes",
+        label: "拆关键帧",
+        icon: "scissors",
+        disabled,
+        onSelect: () => selectedTrack && onConvertToBboxes?.(selectedTrack, {
+          operation: "split",
+          scope: "track",
+          frameMode: "keyframes",
+        }),
+      },
+      {
+        id: "split-all-frames",
+        label: "拆全帧",
+        icon: "film",
+        disabled,
+        onSelect: () => selectedTrack && onConvertToBboxes?.(selectedTrack, {
+          operation: "split",
+          scope: "track",
+          frameMode: "all_frames",
+        }),
+      },
+    ];
+  }, [onConvertToBboxes, readOnly, selectedTrack]);
 
   return (
     <div className={styles.panelRoot}>
@@ -552,14 +603,35 @@ export function VideoTrackPanel({
                   </span>
                 </div>
               </div>
-              <Button
-                size="sm"
-                className={styles.iconButton}
-                title="复制轨迹 ID"
-                onClick={() => copyText(selectedTrack.geometry.track_id)}
-              >
-                <Icon name="copy" size={13} />
-              </Button>
+              <div className={styles.selectedHeaderActions}>
+                <Button
+                  size="sm"
+                  className={styles.iconButton}
+                  title="复制轨迹 ID"
+                  onClick={() => copyText(selectedTrack.geometry.track_id)}
+                >
+                  <Icon name="copy" size={13} />
+                </Button>
+                <DropdownMenu
+                  items={convertTrackMenuItems}
+                  minWidth={168}
+                  trigger={({ open, toggle, ref }) => (
+                    <Button
+                      ref={ref}
+                      type="button"
+                      size="sm"
+                      className={styles.iconButton}
+                      disabled={readOnly || !onConvertToBboxes}
+                      title="转换为独立框"
+                      aria-label="转换为独立框"
+                      aria-expanded={open}
+                      onClick={toggle}
+                    >
+                      <Icon name="more" size={14} />
+                    </Button>
+                  )}
+                />
+              </div>
             </div>
             <div className={styles.selectedStatsGrid}>
               <div className={styles.statCell}>
@@ -581,51 +653,61 @@ export function VideoTrackPanel({
                 <b className={cn("mono", styles.statValue)}>{frameRange(selectedTrackFrames)}</b>
               </div>
             </div>
-            <div className={styles.actionGroup}>
-              <div className={styles.actionGroupHeader}>
-                <span>轨迹操作</span>
+            <details
+              className={styles.actionDisclosure}
+              data-testid="video-track-actions-disclosure"
+            >
+              <summary
+                className={styles.actionSummary}
+                data-testid="video-track-actions-summary"
+              >
+                <span className={styles.summaryTitle}>轨迹操作</span>
+                <span className={styles.summaryMeta}>4 个动作</span>
+                <Icon name="chevDown" size={14} className={styles.summaryChevron} />
+              </summary>
+              <div className={styles.actionDisclosureBody}>
+                <div className={styles.actionGrid}>
+                  <Button
+                    size="sm"
+                    className={styles.currentActionButton}
+                    disabled={readOnly || selectedTrackLocked || !onSplitSelectedTrack}
+                    title="在当前帧之后拆出后段轨迹"
+                    onClick={onSplitSelectedTrack}
+                  >
+                    <Icon name="scissors" size={13} />拆轨迹
+                  </Button>
+                  <Button
+                    size="sm"
+                    className={styles.currentActionButton}
+                    disabled={selectedTrackNextPredictionFrame === null || !onSeekFrame}
+                    title="跳转到下一条 prediction 关键帧"
+                    onClick={() => {
+                      if (selectedTrackNextPredictionFrame !== null) onSeekFrame?.(selectedTrackNextPredictionFrame);
+                    }}
+                  >
+                    <Icon name="arrowRight" size={13} />下一预测
+                  </Button>
+                  <Button
+                    size="sm"
+                    className={styles.currentActionButton}
+                    disabled={readOnly || selectedTrackLocked || !onPropagateTrack}
+                    title="发起 AI 传播 (Shift+T)"
+                    onClick={() => onPropagateTrack?.(selectedTrack)}
+                  >
+                    <Icon name="bot" size={13} />AI 传播
+                  </Button>
+                  <Button
+                    size="sm"
+                    className={styles.currentActionButton}
+                    disabled={!canPropagate}
+                    title="把当前帧的框复制到后续/向前 N 帧"
+                    onClick={() => setPropagateOpen(true)}
+                  >
+                    <Icon name="layers" size={13} />复制后续
+                  </Button>
+                </div>
               </div>
-              <div className={styles.actionGrid}>
-                <Button
-                  size="sm"
-                  className={styles.currentActionButton}
-                  disabled={readOnly || selectedTrackLocked || !onSplitSelectedTrack}
-                  title="在当前帧之后拆出后段轨迹"
-                  onClick={onSplitSelectedTrack}
-                >
-                  <Icon name="scissors" size={13} />拆轨迹
-                </Button>
-                <Button
-                  size="sm"
-                  className={styles.currentActionButton}
-                  disabled={selectedTrackNextPredictionFrame === null || !onSeekFrame}
-                  title="跳转到下一条 prediction 关键帧"
-                  onClick={() => {
-                    if (selectedTrackNextPredictionFrame !== null) onSeekFrame?.(selectedTrackNextPredictionFrame);
-                  }}
-                >
-                  <Icon name="arrowRight" size={13} />下一预测
-                </Button>
-                <Button
-                  size="sm"
-                  className={styles.currentActionButton}
-                  disabled={readOnly || selectedTrackLocked || !onPropagateTrack}
-                  title="发起 AI 传播 (Shift+T)"
-                  onClick={() => onPropagateTrack?.(selectedTrack)}
-                >
-                  <Icon name="bot" size={13} />AI 传播
-                </Button>
-                <Button
-                  size="sm"
-                  className={styles.currentActionButton}
-                  disabled={!canPropagate}
-                  title="把当前帧的框复制到后续/向前 N 帧"
-                  onClick={() => setPropagateOpen(true)}
-                >
-                  <Icon name="layers" size={13} />复制后续
-                </Button>
-              </div>
-            </div>
+            </details>
             {onUpdateSemanticLabel && (
               <label className={styles.semanticRow}>
                 <span className={styles.semanticLabel}>语义标签</span>
@@ -653,75 +735,89 @@ export function VideoTrackPanel({
                 />
               </div>
             )}
-            <div className={styles.actionGroup}>
-              <div className={styles.actionGroupHeader}>
-                <span>当前帧操作</span>
-                <span className={cn("mono", styles.copyStatusText)}>
+            <details
+              className={styles.actionDisclosure}
+              data-testid="video-frame-actions-disclosure"
+            >
+              <summary
+                className={styles.actionSummary}
+                data-testid="video-frame-actions-summary"
+              >
+                <span className={styles.summaryTitle}>当前帧操作</span>
+                <span className={cn("mono", styles.summaryMeta)}>
                   {copiedKeyframeLabel ? `已复制 ${copiedKeyframeLabel}` : "未复制关键帧"}
                 </span>
+                <Icon name="chevDown" size={14} className={styles.summaryChevron} />
+              </summary>
+              <div className={styles.actionDisclosureBody}>
+                <div className={styles.actionGrid}>
+                  <Button
+                    size="sm"
+                    className={styles.frameActionButton}
+                    disabled={!selectedTrackGhost || readOnly || selectedTrackLocked}
+                    title="使用最近关键帧的框在当前帧创建关键帧"
+                    onClick={onCopySelectedTrackToCurrentFrame}
+                  >
+                    <Icon name="plus" size={14} />复制到当前帧
+                  </Button>
+                  <Button
+                    size="sm"
+                    className={styles.frameActionButton}
+                    disabled={!canCopyCurrentKeyframe}
+                    title="复制当前轨迹在当前帧的关键帧"
+                    onClick={onCopyCurrentKeyframe}
+                  >
+                    <Icon name="copy" size={14} />复制关键帧
+                  </Button>
+                  <Button
+                    size="sm"
+                    className={styles.frameActionButton}
+                    disabled={!canPasteKeyframe}
+                    title="把已复制的关键帧粘贴到当前帧"
+                    onClick={onPasteKeyframeToCurrentFrame}
+                  >
+                    <Icon name="clipboardPaste" size={14} />粘贴关键帧
+                  </Button>
+                  <Button
+                    size="sm"
+                    className={styles.frameActionButton}
+                    disabled={!selectedTrack || readOnly || selectedTrackLocked}
+                    aria-pressed={currentFrameOutside}
+                    title={currentFrameOutside ? "恢复当前帧为正常状态" : "标记当前帧消失"}
+                    onClick={() => onMarkSelectedTrack(currentFrameOutside
+                      ? { outside: false, occluded: false }
+                      : { outside: true, occluded: false })}
+                  >
+                    <Icon name="eyeOff" size={14} />标记消失
+                  </Button>
+                  <Button
+                    size="sm"
+                    className={styles.frameActionButton}
+                    disabled={!selectedTrack || readOnly || selectedTrackLocked}
+                    aria-pressed={selectedTrackOccluded}
+                    title={selectedTrackOccluded ? "恢复当前帧为正常状态" : "标记当前帧遮挡"}
+                    onClick={() => onMarkSelectedTrack(selectedTrackOccluded
+                      ? { outside: false, occluded: false }
+                      : { outside: false, occluded: true })}
+                  >
+                    <Icon name="rect" size={14} />标记遮挡
+                  </Button>
+                </div>
               </div>
-              <div className={styles.actionGrid}>
-                <Button
-                  size="sm"
-                  className={styles.frameActionButton}
-                  disabled={!selectedTrackGhost || readOnly || selectedTrackLocked}
-                  title="使用最近关键帧的框在当前帧创建关键帧"
-                  onClick={onCopySelectedTrackToCurrentFrame}
-                >
-                  <Icon name="plus" size={14} />复制到当前帧
-                </Button>
-                <Button
-                  size="sm"
-                  className={styles.frameActionButton}
-                  disabled={!canCopyCurrentKeyframe}
-                  title="复制当前轨迹在当前帧的关键帧"
-                  onClick={onCopyCurrentKeyframe}
-                >
-                  <Icon name="copy" size={14} />复制关键帧
-                </Button>
-                <Button
-                  size="sm"
-                  className={styles.frameActionButton}
-                  disabled={!canPasteKeyframe}
-                  title="把已复制的关键帧粘贴到当前帧"
-                  onClick={onPasteKeyframeToCurrentFrame}
-                >
-                  <Icon name="clipboardPaste" size={14} />粘贴关键帧
-                </Button>
-                <Button
-                  size="sm"
-                  className={styles.frameActionButton}
-                  disabled={!selectedTrack || readOnly || selectedTrackLocked}
-                  aria-pressed={currentFrameOutside}
-                  title={currentFrameOutside ? "恢复当前帧为正常状态" : "标记当前帧消失"}
-                  onClick={() => onMarkSelectedTrack(currentFrameOutside
-                    ? { outside: false, occluded: false }
-                    : { outside: true, occluded: false })}
-                >
-                  <Icon name="eyeOff" size={14} />标记消失
-                </Button>
-                <Button
-                  size="sm"
-                  className={styles.frameActionButton}
-                  disabled={!selectedTrack || readOnly || selectedTrackLocked}
-                  aria-pressed={selectedTrackOccluded}
-                  title={selectedTrackOccluded ? "恢复当前帧为正常状态" : "标记当前帧遮挡"}
-                  onClick={() => onMarkSelectedTrack(selectedTrackOccluded
-                    ? { outside: false, occluded: false }
-                    : { outside: false, occluded: true })}
-                >
-                  <Icon name="rect" size={14} />标记遮挡
-                </Button>
-              </div>
-            </div>
+            </details>
           </div>
         ) : (
           <div className={styles.emptyCompactText}>选择一条轨迹后编辑当前帧状态。</div>
         )}
         {selectedTrack && (
           <>
-            <div className={styles.sectionWithTopPadding}>
-              <b className={styles.heading}>关键帧</b>
+            <div className={styles.keyframePanel}>
+              <div className={styles.keyframePanelHeader}>
+                <b className={styles.heading}>关键帧</b>
+                <span className={cn("mono", styles.mutedMono)}>
+                  {selectedTrack.geometry.keyframes.length}
+                </span>
+              </div>
               <div className={styles.keyframeTable}>
                 <div className={styles.keyframeHeader}>
                   <span>帧</span>
@@ -851,69 +947,6 @@ export function VideoTrackPanel({
                 />
               </div>
             )}
-            <details className={styles.convertPanel}>
-              <summary className={styles.convertSummary}>
-                转换为独立框...
-              </summary>
-              <div className={styles.convertActions}>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className={styles.menuButton}
-                  disabled={readOnly || !onConvertToBboxes}
-                  title="复制整条轨迹的关键帧为独立框"
-                  onClick={() => onConvertToBboxes?.(selectedTrack, {
-                    operation: "copy",
-                    scope: "track",
-                    frameMode: "keyframes",
-                  })}
-                >
-                  <Icon name="box" size={15} />复制关键帧
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className={styles.menuButton}
-                  disabled={readOnly || !onConvertToBboxes}
-                  title="复制整条轨迹插值后的所有帧为独立框"
-                  onClick={() => onConvertToBboxes?.(selectedTrack, {
-                    operation: "copy",
-                    scope: "track",
-                    frameMode: "all_frames",
-                  })}
-                >
-                  <Icon name="film" size={15} />复制全帧
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className={styles.menuButton}
-                  disabled={readOnly || !onConvertToBboxes}
-                  title="拆整条轨迹关键帧为独立框并删除原轨迹"
-                  onClick={() => onConvertToBboxes?.(selectedTrack, {
-                    operation: "split",
-                    scope: "track",
-                    frameMode: "keyframes",
-                  })}
-                >
-                  <Icon name="scissors" size={15} />拆关键帧
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className={styles.menuButton}
-                  disabled={readOnly || !onConvertToBboxes}
-                  title="拆整条轨迹所有插值帧为独立框并删除原轨迹"
-                  onClick={() => onConvertToBboxes?.(selectedTrack, {
-                    operation: "split",
-                    scope: "track",
-                    frameMode: "all_frames",
-                  })}
-                >
-                  <Icon name="film" size={15} />拆全帧
-                </Button>
-              </div>
-            </details>
           </>
         )}
       </div>

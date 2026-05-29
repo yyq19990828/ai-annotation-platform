@@ -477,6 +477,51 @@ describe("VideoStage", () => {
     await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("7"));
   });
 
+  it("shows a selected-track keyframe quick jump on the canvas", async () => {
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          outside: [{ from: 3, to: 3 }],
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 3, bbox: { x: 0.2, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 7, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "prediction" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByLabelText, getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="t1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    const quickJump = getByTestId("video-keyframe-quick-jump") as HTMLDetailsElement;
+    expect(quickJump.open).toBe(false);
+    expect(quickJump).toHaveTextContent("关键帧");
+    expect(quickJump).toHaveTextContent("3");
+
+    fireEvent.click(getByTestId("video-keyframe-quick-jump-summary"));
+    expect(quickJump.open).toBe(true);
+    expect(quickJump).toHaveTextContent("消失");
+    expect(quickJump).toHaveTextContent("预测");
+
+    fireEvent.click(within(quickJump).getByTitle("跳转到 F7"));
+    await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("7"));
+  });
+
   it("prefetches selected keyframes and loop region endpoints for timeline previews", async () => {
     sessionStorage.setItem(
       videoNavigationStorageKey(manifest.task_id, "loop"),
@@ -2232,6 +2277,8 @@ describe("VideoStage", () => {
     );
 
     expect(view.getByTestId("video-track-current-source")).toHaveTextContent("manual");
+    expect((view.getByTestId("video-track-actions-disclosure") as HTMLDetailsElement).open).toBe(false);
+    fireEvent.click(view.getByTestId("video-track-actions-summary"));
     fireEvent.click(view.getByText("下一预测"));
     expect(onSeekFrame).toHaveBeenCalledWith(4);
   });
@@ -2396,6 +2443,50 @@ describe("VideoStage", () => {
     expect(onComposeTracks).toHaveBeenLastCalledWith({
       operation: "merge_tracks",
       annotationIds: ["t1", "t2"],
+    });
+  });
+
+  it("routes whole-track conversion through the selected-track menu", () => {
+    const onConvertToBboxes = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 4, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const view = render(
+      <VideoTrackSidebar
+        annotations={annotations}
+        selectedId="t1"
+        frameIndex={0}
+        readOnly={false}
+        hiddenTrackIds={new Set()}
+        lockedTrackIds={new Set()}
+        onSelect={() => {}}
+        onToggleHiddenTrack={() => {}}
+        onToggleLockedTrack={() => {}}
+        onUpdate={() => {}}
+        onConvertToBboxes={onConvertToBboxes}
+      />,
+    );
+
+    expect(view.queryByText("转换为独立框...")).not.toBeInTheDocument();
+    fireEvent.click(view.getByTitle("转换为独立框"));
+    fireEvent.click(screen.getByRole("menuitem", { name: /拆全帧/ }));
+
+    expect(onConvertToBboxes).toHaveBeenCalledWith(annotations[0], {
+      operation: "split",
+      scope: "track",
+      frameMode: "all_frames",
     });
   });
 

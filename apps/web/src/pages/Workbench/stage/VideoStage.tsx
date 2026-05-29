@@ -4,7 +4,7 @@ import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { DropdownItem } from "@/components/ui/DropdownMenu";
 import { Icon } from "@/components/ui/Icon";
 import { FloatingDock } from "../shell/FloatingDock";
-import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoSamplingConfig } from "@/types";
+import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoSamplingConfig, VideoTrackKeyframe } from "@/types";
 import { useQuery } from "@tanstack/react-query";
 import { videoApi } from "@/api/videos";
 import type { AnnotationFeedback } from "@/api/feedbacks";
@@ -51,6 +51,7 @@ import {
 import { clientPointToVideoPoint } from "./videoStageCoordinates";
 import { modeFromDrag, getVideoStageModeGuard } from "./videoStageMode";
 import { pickTopVideoEntryAt } from "./videoStagePicking";
+import { isFrameOutside } from "./videoTrackOutside";
 import {
   clampGeom,
   deriveTrackNumber,
@@ -101,6 +102,13 @@ function visibleInReviewMode(source: VideoFrameEntry["source"], mode?: DiffMode)
   if (!mode || mode === "diff") return true;
   if (mode === "raw") return source === "prediction" || source === "interpolated";
   return source === "manual" || source === "legacy";
+}
+
+function quickKeyframeStatus(keyframe: VideoTrackKeyframe, outside: boolean): string {
+  if (outside) return "消失";
+  if (keyframe.occluded) return "遮挡";
+  if (keyframe.source === "prediction") return "预测";
+  return "正常";
 }
 
 interface VideoStageProps {
@@ -384,6 +392,10 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
 
   const selectedTrackTimeline = useMemo(
     () => selectedTrack ? buildSelectedTrackTimeline(selectedTrack.geometry) : null,
+    [selectedTrack],
+  );
+  const selectedTrackKeyframes = useMemo(
+    () => selectedTrack ? sortedKeyframes(selectedTrack.geometry) : [],
     [selectedTrack],
   );
   const manualBboxFrames = useMemo(
@@ -971,8 +983,8 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
 
   useEffect(() => {
     if (!selectedTrack) return;
-    prefetchFrames(sortedKeyframes(selectedTrack.geometry).map((keyframe) => keyframe.frame_index));
-  }, [prefetchFrames, selectedTrack]);
+    prefetchFrames(selectedTrackKeyframes.map((keyframe) => keyframe.frame_index));
+  }, [prefetchFrames, selectedTrack, selectedTrackKeyframes]);
 
   useEffect(() => {
     prefetchFrames(bookmarks.map((bookmark) => bookmark.frameIndex));
@@ -1632,6 +1644,48 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             onClose={closeContextMenu}
           />
           <VideoQcWarnings warnings={qualityWarnings} />
+          {selectedTrack && selectedTrackKeyframes.length > 0 && (
+            <details
+              className={styles.keyframeQuickJump}
+              data-testid="video-keyframe-quick-jump"
+            >
+              <summary
+                className={styles.keyframeQuickSummary}
+                data-testid="video-keyframe-quick-jump-summary"
+              >
+                <Icon name="key" size={14} />
+                <span className={styles.keyframeQuickTitle}>关键帧</span>
+                <span className={`mono ${styles.keyframeQuickCount}`}>
+                  {selectedTrackKeyframes.length}
+                </span>
+                <Icon name="chevDown" size={14} className={styles.keyframeQuickChevron} />
+              </summary>
+              <div className={styles.keyframeQuickList}>
+                {selectedTrackKeyframes.map((keyframe) => {
+                  const outside = isFrameOutside(selectedTrack.geometry, keyframe.frame_index);
+                  const statusClassName = [
+                    styles.keyframeQuickStatus,
+                    outside ? styles.keyframeQuickStatusAbsent : "",
+                    keyframe.source === "prediction" ? styles.keyframeQuickStatusPrediction : "",
+                  ].filter(Boolean).join(" ");
+                  return (
+                    <button
+                      key={keyframe.frame_index}
+                      type="button"
+                      className={styles.keyframeQuickRow}
+                      title={`跳转到 F${keyframe.frame_index}`}
+                      onClick={() => seekToFrame(keyframe.frame_index, { recordHistory: true })}
+                    >
+                      <span className={`mono ${styles.keyframeQuickFrame}`}>F{keyframe.frame_index}</span>
+                      <span className={statusClassName}>{quickKeyframeStatus(keyframe, outside)}</span>
+                      <span className={styles.keyframeQuickSource}>{keyframe.source}</span>
+                      <Icon name="arrowRight" size={13} />
+                    </button>
+                  );
+                })}
+              </div>
+            </details>
+          )}
           <VideoPlaybackOverlay
             frameIndex={frameIndex}
             maxFrame={maxFrame}
