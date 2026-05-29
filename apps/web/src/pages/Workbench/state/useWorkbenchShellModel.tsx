@@ -1098,7 +1098,8 @@ export function useWorkbenchShellModel({
     s.setRightOpen(!s.rightOpen);
   }, [s.rightOpen, s.setRightOpen]);
   useEffect(() => {
-    if (stageKind !== "image") return;
+    // 边栏收起/展开后 stage 容器宽度变化, 用 fitTick 触发 image/video stage 重新适应窗口。
+    if (stageKind !== "image" && stageKind !== "video") return;
     let secondFrame = 0;
     const firstFrame = window.requestAnimationFrame(() => {
       secondFrame = window.requestAnimationFrame(() => {
@@ -1229,6 +1230,7 @@ export function useWorkbenchShellModel({
         selectedIds: s.selectedIds,
         annotations: visibleAnnotationsData,
         pendingDrawing: s.pendingDrawing,
+        fitTick,
         onSelectBox: handleSelectBox,
         onCursorMove: setCursor,
         onDeleteUserBox: handleDeleteBox,
@@ -1308,7 +1310,6 @@ export function useWorkbenchShellModel({
         spacePan,
         vp,
         setVp,
-        fitTick,
         setFitTick,
         onAcceptPrediction: handleAcceptPrediction,
         onRejectPrediction: handleRejectPrediction,

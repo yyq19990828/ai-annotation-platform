@@ -6,6 +6,7 @@ import type {
 } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { getTrackColor } from "./colors";
 import { frameToTime, type FrameTimebase } from "./frameTimebase";
 import type { VideoBookmark, VideoLoopRegion } from "./videoNavigationState";
 import type { VideoFramePreview } from "./useVideoFramePreview";
@@ -32,7 +33,11 @@ interface VideoPlaybackOverlayProps {
   isPlaying: boolean;
   playbackRateLabel?: string;
   selectedTrackTimeline?: VideoTrackTimeline | null;
+  /** 选中轨迹的显示色 (oklch 字符串); 关键帧点用它着色, 与画布框/侧栏同源。 */
+  trackColor?: string | null;
   globalTimelineDensity?: VideoTimelineDensityBin[];
+  /** 会话级轨迹色覆盖; 密度条按各 bin 的主导轨迹着色时用它解析颜色。 */
+  trackColorOverrides?: Record<string, string>;
   loopRegion?: VideoLoopRegion | null;
   bookmarks?: VideoBookmark[];
   chapters?: VideoTimelineChapter[];
@@ -62,6 +67,36 @@ function formatTime(seconds: number) {
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
+}
+
+// 密度条半透明色: 轨迹色 (oklch) 或 accent token 兑入透明, 避免密度条过抢眼。
+function densityTint(color: string) {
+  return `color-mix(in oklch, ${color} 68%, transparent)`;
+}
+
+/**
+ * 按比例分级着色: 把一个密度 bin 按各轨迹关键帧占比, 自底向上堆叠成彩色渐变 (类似堆叠柱状),
+ * 占比 = 该轨迹 count / bin 总 density; 差额 (legacy bbox, 无轨迹归属) 用 accent 兜底补满。
+ */
+function densityBinGradient(
+  bin: VideoTimelineDensityBin,
+  overrides?: Record<string, string>,
+): string {
+  const total = bin.density > 0 ? bin.density : 1;
+  const pct = (n: number) => `${((n / total) * 100).toFixed(2)}%`;
+  const stops: string[] = [];
+  let acc = 0;
+  for (const share of bin.tracks) {
+    const tint = densityTint(getTrackColor(share.trackId, "", overrides));
+    const start = acc;
+    acc += share.count;
+    stops.push(`${tint} ${pct(start)}`, `${tint} ${pct(acc)}`);
+  }
+  if (acc < total) {
+    const tint = densityTint("var(--color-accent)");
+    stops.push(`${tint} ${pct(acc)}`, `${tint} 100%`);
+  }
+  return `linear-gradient(to top, ${stops.join(", ")})`;
 }
 
 function useCssVars<T extends HTMLElement>(vars: CSSVars) {
@@ -99,7 +134,9 @@ export function VideoPlaybackOverlay({
   isPlaying,
   playbackRateLabel,
   selectedTrackTimeline = null,
+  trackColor = null,
   globalTimelineDensity = [],
+  trackColorOverrides,
   loopRegion = null,
   bookmarks = [],
   chapters = [],
@@ -428,12 +465,15 @@ export function VideoPlaybackOverlay({
             <div data-testid="video-timeline-density" className={styles.densityTrack}>
               {globalTimelineDensity.map((bin) => {
                 if (bin.density <= 0) return null;
-                const left = maxFrame > 0 ? (bin.from / maxFrame) * 100 : 0;
-                const width = maxFrame > 0 ? ((bin.to - bin.from + 1) / (maxFrame + 1)) * 100 : 100;
+                // 等宽分桶: 每个 bin 占 1/binCount 的等宽切片, 不按帧数比例算宽度
+                // —— 否则首末桶因 floor 取整只覆盖 1 帧而显著偏窄, 且与网格刻度 (frameLeft) 的
+                //    坐标系不一致 (此前 left 用 /maxFrame、width 用 /(maxFrame+1))。
+                const binCount = globalTimelineDensity.length;
                 const binStyle: CSSVars = {
-                  "--timeline-left": `${left}%`,
-                  "--timeline-width": `${Math.max(0.7, width)}%`,
+                  "--timeline-left": `${(bin.index / binCount) * 100}%`,
+                  "--timeline-width": `${(1 / binCount) * 100}%`,
                   "--density-height": `${Math.max(3, (bin.density / maxDensity) * 8)}px`,
+                  "--density-gradient": densityBinGradient(bin, trackColorOverrides),
                 };
                 return (
                   <TimelineSpan
@@ -446,7 +486,11 @@ export function VideoPlaybackOverlay({
             </div>
           )}
           {selectedTrackTimeline && (
-            <div data-testid="video-track-timeline" className={styles.trackTimeline}>
+            <TimelineDiv
+              data-testid="video-track-timeline"
+              className={styles.trackTimeline}
+              vars={trackColor ? { "--track-keyframe-color": trackColor } : {}}
+            >
               {selectedTrackTimeline.interpolated.map((segment) => (
                 <TimelineSpan
                   key={`interpolated-${segment.from}-${segment.to}`}
@@ -475,7 +519,7 @@ export function VideoPlaybackOverlay({
                   vars={{ "--timeline-left": frameLeft(keyframe.frame) }}
                 />
               ))}
-            </div>
+            </TimelineDiv>
           )}
         </div>
         {frameTooltip && (
