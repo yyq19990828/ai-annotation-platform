@@ -2106,6 +2106,12 @@ describe("VideoStage", () => {
     } as AnnotationResponse, "标记消失");
     expect(restoredOutside.outside).toEqual([]);
     expect(restoredOutside.keyframes.find((kf) => kf.frame_index === 0)?.occluded).toBe(false);
+    expect(restoredOutside.keyframes.find((kf) => kf.frame_index === 0)?.bbox).toEqual({
+      x: 0.1,
+      y: 0.1,
+      w: 0.2,
+      h: 0.2,
+    });
 
     const restoredOccluded = renderSidebar({
       ...baseTrack,

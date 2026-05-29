@@ -56,14 +56,15 @@ export function useVideoTrackActions({
       }));
       return;
     }
-    const bbox = nearestTrackBbox(selectedTrack.geometry, frameIndex);
+    const visibleTrack = removeOutsideFrame(selectedTrack.geometry, frameIndex);
+    const bbox = nearestTrackBbox(visibleTrack, frameIndex);
     const keyframePatch = patch.source
       ? { occluded: patch.occluded, source: patch.source }
       : { occluded: patch.occluded };
     onUpdate(
       selectedTrack,
       upsertKeyframe(
-        removeOutsideFrame(selectedTrack.geometry, frameIndex),
+        visibleTrack,
         frameIndex,
         bbox,
         keyframePatch,
