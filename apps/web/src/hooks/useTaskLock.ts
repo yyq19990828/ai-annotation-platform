@@ -44,7 +44,7 @@ export function useTaskLock(taskId: string | undefined) {
 
     let cancelled = false;
 
-    async function acquire() {
+    async function acquire(allowRetry = true): Promise<void> {
       try {
         const result = await tasksApi.acquireLock(taskId!);
         if (!cancelled) {
@@ -53,13 +53,23 @@ export function useTaskLock(taskId: string | undefined) {
           setLockConflict(null);
         }
       } catch (err: unknown) {
-        if (!cancelled) {
+        if (cancelled) return;
+        const conflict = parseLockConflict(err);
+        if (conflict) {
+          // 真冲突：他人持锁 → 显示「该任务正被 X 编辑」横幅
           setLock(null);
-          const conflict = parseLockConflict(err);
           setLockConflict(conflict);
-          const msg = err instanceof Error ? err.message : "Task is locked";
-          setLockError(msg);
+          setLockError("Task is locked by another user");
+          return;
         }
+        // 非 409（多为退出重进的瞬时竞态：500 / 网络抖动）。重试一次；仍失败则静默，
+        // 不把它误渲染成「他人正在编辑」横幅（全局拦截器已对 5xx 弹 toast）。
+        if (allowRetry) {
+          await acquire(false);
+          return;
+        }
+        setLock(null);
+        setLockConflict(null);
       }
     }
 

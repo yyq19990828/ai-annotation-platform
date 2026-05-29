@@ -4,9 +4,22 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.task_lock import TaskLock
+
+# 退出重进时 acquire 与 release(DELETE)/并发 acquire 会在 task_locks 上交错加锁，
+# Postgres 可能判定死锁(40P01) / 序列化失败(40001)。死锁会 abort 整个事务，
+# 无法用 savepoint 局部恢复，只能 rollback 后整体重试。
+_RETRYABLE_SQLSTATES = {"40P01", "40001"}
+_MAX_DEADLOCK_RETRY = 3
+
+
+def _is_retryable_db_error(exc: DBAPIError) -> bool:
+    orig = getattr(exc, "orig", None)
+    sqlstate = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+    return sqlstate in _RETRYABLE_SQLSTATES
 
 
 class TaskLockService:
@@ -22,34 +35,53 @@ class TaskLockService:
         ttl: int | None = None,
         force_takeover: bool = False,
     ) -> TaskLock | None:
+        # 死锁兜底重试：两个调用点(acquire_lock 端点 / scheduler 取下一任务)在 acquire
+        # 之前都只读不写，acquire 是事务内第一个写动作，故死锁后 rollback 整体重试是安全的。
+        for attempt in range(_MAX_DEADLOCK_RETRY):
+            try:
+                return await self._acquire_once(
+                    task_id, user_id, ttl=ttl, force_takeover=force_takeover
+                )
+            except DBAPIError as exc:
+                if attempt + 1 < _MAX_DEADLOCK_RETRY and _is_retryable_db_error(exc):
+                    await self.db.rollback()
+                    continue
+                raise
+        return None  # unreachable: 循环要么 return 要么 raise
+
+    async def _acquire_once(
+        self,
+        task_id: uuid.UUID,
+        user_id: uuid.UUID,
+        ttl: int | None = None,
+        force_takeover: bool = False,
+    ) -> TaskLock | None:
         # B-6 修复：表上 unique 约束是 (task_id, user_id)，并不阻止同一 task_id 出现多行（不同用户）。
         # 历史并发 / 残留可能留下重复行，原本 scalar_one_or_none() 会抛 MultipleResultsFound → 500。
         # 这里改为读取全部行：若我已持有则续期并清掉同 task 的他人重复锁；否则视为他人占用。
-        await self._cleanup_expired()
+        await self._cleanup_expired(task_id)
 
         result = await self.db.execute(
             select(TaskLock).where(TaskLock.task_id == task_id)
         )
         locks = list(result.scalars().all())
 
-        # v0.6.8 B-13：同一 user_id 下多行兜底 —— 取 expire_at 最新的那行作为 my_lock，
-        # 其余删除（应对 keepalive DELETE / acquire 乱序到达留下的残影）。
-        mine = [lock for lock in locks if lock.user_id == user_id]
-        my_lock = max(mine, key=lambda lock: lock.expire_at) if mine else None
+        # unique(task_id, user_id) 保证同一 (task, user) 至多一行，故 mine 至多 1 个。
+        mine = next((lock for lock in locks if lock.user_id == user_id), None)
         others = [lock for lock in locks if lock.user_id != user_id]
         new_expire = datetime.now(timezone.utc) + timedelta(
             seconds=ttl or self.DEFAULT_TTL
         )
 
-        if my_lock:
-            for lock in locks:
-                if lock is not my_lock:
-                    await self.db.delete(lock)
-            my_lock.expire_at = new_expire
-            await self.db.flush()
-            return my_lock
+        # 关键修复（StaleDataError）：决策只用内存中的 locks 完成，随后把这些 ORM 行
+        # 从 session 中 expunge。否则一旦后续 flush 时 ORM 对某个已被并发请求
+        # (release DELETE / 另一个 acquire / _cleanup_expired) 删除的行发起 UPDATE/DELETE，
+        # 受影响行数为 0，SQLAlchemy 抛 StaleDataError → 500。退出后立刻重进时高频触发。
+        # 清理与续期一律改走 Core 语句 + upsert，不依赖这些 ORM 行仍然存在。
+        for lock in locks:
+            self.db.expunge(lock)
 
-        if others:
+        if others and mine is None:
             # v0.6.7 B-13：他人锁存在但若全部「即将过期」（last heartbeat > TTL/2 前）→ 视为悬挂残留自动接管。
             # 真活会话每 60s 心跳一次，expire_at - now ∈ [240, 300]；阈值 TTL/2 = 150s 给两次心跳容错窗。
             #
@@ -58,20 +90,25 @@ class TaskLockService:
             # reviewer 走非 assignee 路径仍按 stale_threshold 判定，不会被本机制破坏。
             now = datetime.now(timezone.utc)
             stale_threshold = now + timedelta(seconds=self.DEFAULT_TTL // 2)
-
             takeover = force_takeover or all(
                 lock.expire_at < stale_threshold for lock in others
             )
-            if takeover:
-                for lock in others:
-                    await self.db.delete(lock)
-                await self.db.flush()
-            else:
+            if not takeover:
                 return None
+
+        if others:
+            # 走到此处：要么我已持锁（本人优先，无条件清理他人残影），要么已判定可接管。
+            # 用 Core DELETE 而非 db.delete(orm_obj)，规避对并发已删行的 ORM DELETE flush。
+            await self.db.execute(
+                delete(TaskLock).where(
+                    TaskLock.task_id == task_id, TaskLock.user_id != user_id
+                )
+            )
 
         # v0.6.7 二修 B-13：用 INSERT ... ON CONFLICT 而非裸 INSERT，避免快速重进时
         # 两个并发请求都看到「empty + my_lock=None」→ 都尝试 INSERT → 第二个撞
         # unique(task_id, user_id) 抛 IntegrityError → 500 → 前端误显「他人占用」横幅。
+        # 既有行走 DO UPDATE 续期、不存在则插入，全程原子且不依赖 ORM 行。
         stmt = (
             pg_insert(TaskLock)
             .values(
@@ -125,7 +162,7 @@ class TaskLockService:
 
     async def is_locked(self, task_id: uuid.UUID) -> tuple[bool, uuid.UUID | None]:
         # B-6 修复：见 acquire() 注释 — 同 task_id 可能有多行残留，使用 first() 兜底。
-        await self._cleanup_expired()
+        await self._cleanup_expired(task_id)
         result = await self.db.execute(
             select(TaskLock).where(TaskLock.task_id == task_id)
         )
@@ -135,7 +172,7 @@ class TaskLockService:
         return False, None
 
     async def active_lock(self, task_id: uuid.UUID) -> TaskLock | None:
-        await self._cleanup_expired()
+        await self._cleanup_expired(task_id)
         result = await self.db.execute(
             select(TaskLock)
             .where(TaskLock.task_id == task_id)
@@ -143,7 +180,13 @@ class TaskLockService:
         )
         return result.scalars().first()
 
-    async def _cleanup_expired(self) -> int:
+    async def _cleanup_expired(self, task_id: uuid.UUID | None = None) -> int:
+        # 收窄到单个 task_id：全表 DELETE 会跨任务锁住大量行，与并发 acquire 的
+        # INSERT/UPDATE 交错时是死锁主因。按 task 清理后，不同任务的 acquire 互不争用，
+        # 同任务的并发请求也只在本任务的少量行上排队。其他任务的过期行在其被访问时顺带清掉。
         now = datetime.now(timezone.utc)
-        result = await self.db.execute(delete(TaskLock).where(TaskLock.expire_at < now))
+        stmt = delete(TaskLock).where(TaskLock.expire_at < now)
+        if task_id is not None:
+            stmt = stmt.where(TaskLock.task_id == task_id)
+        result = await self.db.execute(stmt)
         return result.rowcount
