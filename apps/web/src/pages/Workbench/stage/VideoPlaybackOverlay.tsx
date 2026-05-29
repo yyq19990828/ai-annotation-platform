@@ -78,7 +78,7 @@ function densityTint(color: string) {
  * 按比例分级着色: 把一个密度 bin 按各轨迹关键帧占比, 自底向上堆叠成彩色渐变 (类似堆叠柱状),
  * 占比 = 该轨迹 count / bin 总 density; 差额 (legacy bbox, 无轨迹归属) 用 accent 兜底补满。
  */
-function densityBinGradient(
+export function densityBinGradient(
   bin: VideoTimelineDensityBin,
   overrides?: Record<string, string>,
 ): string {

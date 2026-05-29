@@ -219,6 +219,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   onIssuePinClick,
 }: VideoStageProps, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const stageLayerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<SVGSVGElement>(null);
   const viewportSize = useElementSize(containerRef);
@@ -1552,9 +1553,17 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         if (!drag) showPlaybackOverlay();
       }}
       onMouseLeave={schedulePlaybackOverlayHide}
-      onDoubleClick={() => {
+      onDoubleClick={(evt) => {
         // 双击画布适应窗口 (对齐图片工作台)。拖拽中不触发。
+        // 仅在 stageLayer 范围内的 letterbox/空白区域响应:
+        // - FloatingDock / VideoPlaybackOverlay 是 root 的兄弟节点, 不在 stageLayer
+        //   内, 双击它们的按钮 / scrubber / 书签不会冒泡触发 fit
+        // - SVG overlay (bbox/keyframe 编辑层) 也排除, 避免与未来双击编辑冲突
         if (drag) return;
+        const stageLayer = stageLayerRef.current;
+        if (!stageLayer || !stageLayer.contains(evt.target as Node)) return;
+        const overlay = overlayRef.current;
+        if (overlay && overlay.contains(evt.target as Node)) return;
         fitViewport();
       }}
       onPointerDown={(evt) => {
@@ -1591,7 +1600,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       }}
       className={drag?.kind === "pan" ? `${styles.root} ${styles.rootPanning}` : styles.root}
     >
-      <div className={styles.stageLayer}>
+      <div ref={stageLayerRef} className={styles.stageLayer}>
           <VideoStageSurface width={videoPixelWidth} height={videoPixelHeight} viewport={vp}>
             <VideoMediaLayer
               ref={videoRef}

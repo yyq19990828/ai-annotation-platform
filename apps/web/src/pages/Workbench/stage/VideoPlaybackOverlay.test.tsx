@@ -1,8 +1,10 @@
 import { fireEvent, render } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { VideoPlaybackOverlay } from "./VideoPlaybackOverlay";
+import { VideoPlaybackOverlay, densityBinGradient } from "./VideoPlaybackOverlay";
+import { getTrackColor } from "./colors";
 import { buildFrameTimebase } from "./frameTimebase";
+import type { VideoTimelineDensityBin } from "./videoTrackTimeline";
 
 const timebase = buildFrameTimebase({
   duration_ms: 1000,
@@ -229,3 +231,69 @@ describe("VideoPlaybackOverlay", () => {
     expect(onSeekByFrames).toHaveBeenNthCalledWith(2, -10);
   });
 });
+
+describe("densityBinGradient", () => {
+  const bin = (
+    density: number,
+    tracks: VideoTimelineDensityBin["tracks"],
+  ): VideoTimelineDensityBin => ({ index: 0, from: 0, to: 1, density, tracks });
+
+  it("fills with accent when bin has density but no track ownership (legacy bbox)", () => {
+    const gradient = densityBinGradient(bin(3, []));
+
+    expect(gradient).toMatch(/^linear-gradient\(to top, /);
+    // 没有任何 track 段, 只有 accent 兜底覆盖 0%~100%
+    const stops = gradient.match(/color-mix\([^)]+\)/g) ?? [];
+    expect(stops).toHaveLength(2);
+    expect(stops[0]).toContain("var(--color-accent)");
+    expect(gradient).toContain("0.00%");
+    expect(gradient).toContain("100%");
+  });
+
+  it("tops up the remainder with accent when tracks cover only part of the density", () => {
+    // density=4, 但只有 2 个 track keyframe (差额 2 是 legacy bbox)
+    const gradient = densityBinGradient(bin(4, [{ trackId: "t1", count: 2 }]));
+
+    expect(gradient).toContain(densityHelpers.color("t1"));
+    expect(gradient).toContain("var(--color-accent)");
+    // t1 占 0%~50%, accent 占 50%~100%
+    expect(gradient).toContain("0.00%");
+    expect(gradient).toContain("50.00%");
+    expect(gradient).toContain("100%");
+  });
+
+  it("respects overrides when provided", () => {
+    const overrides = { t1: "oklch(0.7 0.2 200)" };
+    const gradient = densityBinGradient(bin(2, [{ trackId: "t1", count: 2 }]), overrides);
+
+    expect(gradient).toContain("oklch(0.7 0.2 200)");
+    // 完全覆盖时不应出现 accent 兜底
+    expect(gradient).not.toContain("var(--color-accent)");
+  });
+
+  it("stacks tracks in iteration order (stable for same-count tracks)", () => {
+    // 两个轨迹同 count, 按传入顺序堆叠 (Map 插入序 + 稳定 sort)
+    const gradient = densityBinGradient(
+      bin(4, [
+        { trackId: "tA", count: 2 },
+        { trackId: "tB", count: 2 },
+      ]),
+    );
+
+    const colorA = densityHelpers.color("tA");
+    const colorB = densityHelpers.color("tB");
+    // tA 应排在 tB 前 (自底向上: tA 从 0% 开始)
+    const idxA = gradient.indexOf(colorA);
+    const idxB = gradient.indexOf(colorB);
+    expect(idxA).toBeGreaterThan(-1);
+    expect(idxB).toBeGreaterThan(idxA);
+    // 边界: 0% → 50% (tA) → 100% (tB); 全覆盖时尾部 stop 是 pct(total) = "100.00%"
+    expect(gradient).toContain("0.00%");
+    expect(gradient).toContain("50.00%");
+    expect(gradient).toContain("100.00%");
+  });
+});
+
+const densityHelpers = {
+  color: (trackId: string) => getTrackColor(trackId, ""),
+};
