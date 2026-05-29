@@ -635,7 +635,10 @@ async def bulk_delete_batches(
         target_id=str(project_id),
         request=request,
         status_code=200,
-        detail=_bulk_audit_detail({"batch_ids": data.batch_ids}, summary),
+        detail={
+            **_bulk_audit_detail({"batch_ids": data.batch_ids}, summary),
+            "forced": force,
+        },
     )
     await db.commit()
     return summary

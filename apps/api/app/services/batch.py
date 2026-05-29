@@ -358,30 +358,28 @@ class BatchService:
 
         return batch
 
-    async def _count_protected_tasks(self, batch_id: uuid.UUID) -> tuple[int, int]:
-        """v0.11.25 · 统计「有进行中成果」的 task: 非 pending 数 / 已预标数（含重叠）。
-        供 delete / bulk_delete 的 force 保护判定。"""
-        non_pending = int(
-            (
-                await self.db.execute(
-                    select(func.count())
-                    .select_from(Task)
-                    .where(Task.batch_id == batch_id, Task.status != "pending")
-                )
-            ).scalar()
-            or 0
-        )
-        predicted = int(
-            (
-                await self.db.execute(
-                    select(func.count())
-                    .select_from(Task)
-                    .where(Task.batch_id == batch_id, Task.total_predictions > 0)
-                )
-            ).scalar()
-            or 0
-        )
-        return non_pending, predicted
+    async def _count_protected_tasks(
+        self, batch_id: uuid.UUID
+    ) -> tuple[int, int, int]:
+        """v0.11.25 · 统计「有进行中成果」的 task: 非 pending 数 / 已预标数 / 去重后实际受影响数。
+        non_pending 与 predicted 可能重叠（同一 task 既非 pending 又已预标），affected 是二者的
+        并集去重计数，供前端展示「将影响 N 个任务」避免 X+Y 误判。供 delete / bulk_delete 保护判定。"""
+        row = (
+            await self.db.execute(
+                select(
+                    func.count().filter(Task.status != "pending").label("non_pending"),
+                    func.count()
+                    .filter(Task.total_predictions > 0)
+                    .label("predicted"),
+                    func.count()
+                    .filter(
+                        or_(Task.status != "pending", Task.total_predictions > 0)
+                    )
+                    .label("affected"),
+                ).where(Task.batch_id == batch_id)
+            )
+        ).one()
+        return int(row.non_pending), int(row.predicted), int(row.affected)
 
     async def delete(self, batch_id: uuid.UUID, *, force: bool = False) -> bool:
         batch = await self.db.get(TaskBatch, batch_id)
@@ -394,8 +392,10 @@ class BatchService:
 
         # v0.11.25：默认保护——批次含非 pending 或已预标 task 时拒删，需显式 force（前端弹保护框）。
         if not force:
-            non_pending, predicted = await self._count_protected_tasks(batch_id)
-            if non_pending or predicted:
+            non_pending, predicted, affected = await self._count_protected_tasks(
+                batch_id
+            )
+            if affected:
                 raise HTTPException(
                     status_code=409,
                     detail={
@@ -403,6 +403,7 @@ class BatchService:
                         "requires_force": True,
                         "non_pending": non_pending,
                         "predicted": predicted,
+                        "affected_tasks": affected,
                         "message": (
                             "批次含进行中/已完成或 AI 预标过的任务；删除将重置为待标注"
                             "并清除 AI 预标。请改用归档，或确认强制删除。"
@@ -429,6 +430,9 @@ class BatchService:
             await self.db.execute(
                 update(Task).where(Task.batch_id == batch_id).values(batch_id=None)
             )
+            # 无 B-DEFAULT 兜底时没有 recalculate_counters 触发 project 计数同步，
+            # 这里显式刷一次，否则强删含进行中/已完成 task 的批次后 project 物化列会停在旧快照。
+            await self._sync_project_counters(batch.project_id)
 
         await self.db.execute(delete(TaskBatch).where(TaskBatch.id == batch_id))
         await self.db.flush()
@@ -1147,14 +1151,17 @@ class BatchService:
                 continue
             # v0.11.25：默认保护——含进行中成果/已预标的批次非 force 时计入 failed（partial 语义）
             if not force:
-                non_pending, predicted = await self._count_protected_tasks(bid)
-                if non_pending or predicted:
+                non_pending, predicted, affected = await self._count_protected_tasks(
+                    bid
+                )
+                if affected:
                     failed.append(
                         {
                             "batch_id": bid,
                             "reason": "requires_force",
                             "non_pending": non_pending,
                             "predicted": predicted,
+                            "affected_tasks": affected,
                         }
                     )
                     continue
@@ -1174,6 +1181,9 @@ class BatchService:
         await self.db.flush()
         if default is not None and succeeded:
             await self.recalculate_counters(default.id)
+        elif succeeded:
+            # 无 B-DEFAULT 时缺少 recalculate_counters 兜底，显式同步 project 物化列
+            await self._sync_project_counters(project_id)
         return {"succeeded": succeeded, "skipped": skipped, "failed": failed}
 
     async def bulk_reassign(

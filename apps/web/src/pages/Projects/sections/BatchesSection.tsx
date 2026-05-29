@@ -111,6 +111,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
     batch: BatchResponse;
     nonPending: number;
     predicted: number;
+    affected: number;
   } | null>(null);
   const [assignTarget, setAssignTarget] = useState<BatchResponse | null>(null);
   const [rejectTarget, setRejectTarget] = useState<BatchResponse | null>(null);
@@ -335,6 +336,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
               batch,
               nonPending: Number(err.detailRaw.non_pending ?? 0),
               predicted: Number(err.detailRaw.predicted ?? 0),
+              affected: Number(err.detailRaw.affected_tasks ?? 0),
             });
             return;
           }
@@ -829,10 +831,14 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
       >
           <div className={styles.confirmBody}>
             <p>
-              批次 <strong>{forceDelete?.batch.name}</strong> 含
-              {forceDelete?.nonPending ? ` ${forceDelete.nonPending} 个进行中/已完成任务` : ""}
-              {forceDelete?.nonPending && forceDelete?.predicted ? "、" : ""}
-              {forceDelete?.predicted ? ` ${forceDelete.predicted} 个已 AI 预标任务` : ""}
+              批次 <strong>{forceDelete?.batch.name}</strong> 将影响{" "}
+              <strong>{forceDelete?.affected ?? 0}</strong> 个任务
+              {forceDelete?.nonPending || forceDelete?.predicted ? (
+                <>
+                  （含进行中/已完成成果 {forceDelete?.nonPending ?? 0}、AI 预标成果{" "}
+                  {forceDelete?.predicted ?? 0}，可能重叠）
+                </>
+              ) : null}
               。强制删除会把这些任务<strong>重置为待标注</strong>并<strong>清除 AI 预标</strong>（人工标注保留）。
             </p>
             <p className={styles.confirmHint}>

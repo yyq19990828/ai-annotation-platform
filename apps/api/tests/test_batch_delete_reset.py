@@ -248,3 +248,7 @@ async def test_bulk_delete_also_resets(db_session: AsyncSession, super_admin):
         await db_session.execute(select(func.count()).select_from(Prediction))
     ).scalar()
     assert pred_count == 0
+    # 无 B-DEFAULT 时 bulk_delete 也要同步 project 物化列
+    await db_session.refresh(project)
+    assert project.review_tasks == 0
+    assert project.completed_tasks == 0

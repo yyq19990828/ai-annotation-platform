@@ -233,10 +233,11 @@ stateDiagram-v2
 
 `delete(batch_id, *, force=False)` 不再是裸删，它先判断批次里有没有"不该被无声丢弃"的工作：
 
-- `_count_protected_tasks(batch_id)` 返回 `(non_pending, predicted)`：
+- `_count_protected_tasks(batch_id)` 返回 `(non_pending, predicted, affected)`：
   - `non_pending`：`Task.status != "pending"` 的数量（进行中 / 已完成 / 已审核等）
   - `predicted`：`Task.total_predictions > 0` 的数量（AI 预标过）
-- 当 `force=False` 且 `non_pending` 或 `predicted` 任一非零时，抛 409：
+  - `affected`：`status != "pending" OR total_predictions > 0` 的并集去重数。`non_pending` 与 `predicted` 会重叠（同一 task 既 review 又预标），前端用 `affected` 展示「将影响 N 个任务」，避免 X+Y 误判
+- 当 `force=False` 且 `affected` 非零时，抛 409：
 
   ```json
   {
@@ -244,6 +245,7 @@ stateDiagram-v2
     "requires_force": true,
     "non_pending": 3,
     "predicted": 5,
+    "affected_tasks": 6,
     "message": "批次含进行中/已完成或 AI 预标过的任务；删除将重置为待标注并清除 AI 预标。请改用归档，或确认强制删除。"
   }
   ```

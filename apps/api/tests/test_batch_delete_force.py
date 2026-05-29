@@ -127,6 +127,33 @@ async def test_delete_force_resets_and_deletes(db_session: AsyncSession, super_a
         )
     ).all()
     assert all(r.status == "pending" and r.batch_id is None for r in rows)
+    # 无 B-DEFAULT 的新项目也必须同步 project 物化列，避免停在删前快照
+    await db_session.refresh(project)
+    assert project.completed_tasks == 0
+    assert project.review_tasks == 0
+    assert project.in_progress_tasks == 0
+
+
+@pytest.mark.asyncio
+async def test_count_protected_dedups_affected(db_session: AsyncSession, super_admin):
+    """non_pending 与 predicted 重叠时 affected 去重计数。"""
+    user, _ = super_admin
+    project, batch_id = await _seed_batch(db_session, user.id, 2)
+    tasks = (
+        (await db_session.execute(select(Task).where(Task.batch_id == batch_id)))
+        .scalars()
+        .all()
+    )
+    # 同一 task 既 review 又已预标 → non_pending=1, predicted=1, 但实际只 1 个 task 受影响
+    tasks[0].status = "review"
+    tasks[0].total_predictions = 1
+    await db_session.flush()
+
+    with pytest.raises(HTTPException) as exc:
+        await BatchService(db_session).delete(batch_id)
+    assert exc.value.detail["non_pending"] == 1
+    assert exc.value.detail["predicted"] == 1
+    assert exc.value.detail["affected_tasks"] == 1
 
 
 @pytest.mark.asyncio
