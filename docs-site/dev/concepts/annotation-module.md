@@ -104,6 +104,22 @@ graph TD
 
 `video_track` 是 compact 轨迹模型，不把插值帧逐条写库。编辑同一对象其它帧时，前端会更新同一条 annotation 的 `geometry.keyframes[]`；前端显示的 interpolated bbox 只是视图结果。目标"消失"用 `outside` 闭区间段表达；插值不跨消失段、其中不输出 bbox；`occluded=true` 表示目标仍存在但被遮挡。
 
+### 属性 schema 与派生渲染
+
+`Annotation.attributes` 是 JSONB 自由字段，由项目级 `AttributeField` schema（`apps/api/app/db/models/project.py` → `attribute_schema`，前端在「项目设置 / 类别与属性」用 `AttributeSchemaEditor` 维护）约束 key、类型、必填、`applies_to` 类别白名单等。
+
+类型支持：`text` / `number` / `boolean` / `select` / `multiselect` / `range`，由 `apps/api/app/schemas/_jsonb_types.py` 的 `AttributeField` discriminated union 校验。
+
+**派生渲染开关 `style_occluded`**（v0.11.27 引入）：单个 `AttributeField` 上的可选标记，**仅 `boolean` 字段允许**（后端 `_jsonb_types.py` 强校验，前端 `AttributeSchemaEditor` 在类型从 `boolean` 切走时同步清掉残留值、`validateAttributeFields` 做客户端兜底）。打开后，当该属性在某 annotation 上为 `true`，画布框渲染为虚线 + 半透（"遮挡样式"）。
+
+该值不在 annotation 表上加列、不引入新枚举，纯属性驱动；因此：
+
+- 自然进 COCO / YOLO 导出（普通属性走默认导出路径）
+- 跨工具单位（图片 / 视频）的"遮挡键集合"在前端通过 `useWorkbenchShellModel` / `ReviewWorkbench` 取并集，避免切工具后视觉丢失
+- 切类时属性按新类别 `applies_to` 过滤；改类悬浮框（`ClassPickerPopover`）即时联动刷新可见字段
+
+> **历史背景**：v0.11.27 之前 `Annotation` 上有 `is_occluded` 内置布尔列，只影响视觉、不进导出。迁移 `0088_remove_annotation_occlusion` 删除该列；旧项目如需保留遮挡语义，请在 schema 上新增一个 boolean 属性并启用 `style_occluded`。`video_track.keyframes[i].occluded` 是视频轨迹层面的"目标存在但被遮挡"语义，与 annotation 表无关，未变更。
+
 ### `AnnotationDraft`
 
 `AnnotationDraft` 目前定义在 `apps/api/app/db/models/task_lock.py`，不是独立文件。它保存：
@@ -347,6 +363,10 @@ annotation 路径几乎都带两个伴随动作：
 
 - 后端有 `AnnotationDraft` 数据模型和 service
 - 前端工作台主草稿恢复仍以本地 `sessionStorage` 为主
+
+### 误解 4：图片框"遮挡"是 annotation 上的内置状态位
+
+不再是。v0.11.27 起 `Annotation.is_occluded` 列已删除（迁移 `0088`），"遮挡"收敛为普通 boolean 属性 + `AttributeField.style_occluded` 开关派生渲染。详见 [属性 schema 与派生渲染](#属性-schema-与派生渲染)。视频 `video_track.keyframes[i].occluded` 不在此次变更范围内，仍是轨迹关键帧的内置字段。
 
 ## 相关文档
 
