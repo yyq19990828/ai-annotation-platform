@@ -82,7 +82,16 @@ export function AttributeSchemaEditor({
             </div>
             <div>
               <label className={styles.label}>类型</label>
-              <select value={f.type} onChange={(e) => setField(i, { type: e.target.value as AttributeFieldType })} className={`${styles.control} ${styles.selectControl}`}>
+              <select
+                value={f.type}
+                onChange={(e) => {
+                  const next = e.target.value as AttributeFieldType;
+                  // style_occluded 仅在 boolean 字段上有效；切换到非 boolean 时同步清理，
+                  // 否则字段会保留 style_occluded:true 且 UI 入口消失 → 提交时被后端校验拒绝。
+                  setField(i, next !== "boolean" ? { type: next, style_occluded: undefined } : { type: next });
+                }}
+                className={`${styles.control} ${styles.selectControl}`}
+              >
                 {FIELD_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
@@ -177,6 +186,9 @@ export function validateAttributeFields(fields: AttributeField[]): string | null
     seen.add(f.key);
     if ((f.type === "select" || f.type === "multiselect") && (!f.options || f.options.length === 0)) {
       return `${f.label || f.key} 需要至少 1 个选项`;
+    }
+    if (f.style_occluded && f.type !== "boolean") {
+      return `${f.label || f.key}：遮挡样式仅支持开关（boolean）字段`;
     }
   }
   return null;
