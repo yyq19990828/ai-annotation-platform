@@ -48,6 +48,7 @@ import {
   lastAppearFrame,
   nextVisibleKeyframeFrame,
 } from "./videoTrackTimeline";
+import { getTrackColor } from "./colors";
 import { clientPointToVideoPoint } from "./videoStageCoordinates";
 import { modeFromDrag, getVideoStageModeGuard } from "./videoStageMode";
 import { pickTopVideoEntryAt } from "./videoStagePicking";
@@ -121,6 +122,8 @@ interface VideoStageProps {
   selectedIds?: string[];
   activeClass: string;
   frameIndex?: number;
+  /** 边栏开合时 +1, 触发重新适应窗口 (对齐图片工作台行为)。 */
+  fitTick?: number;
   reviewDisplayMode?: DiffMode;
   hiddenTrackIds?: Set<string>;
   lockedTrackIds?: Set<string>;
@@ -188,6 +191,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   selectedIds = [],
   activeClass,
   frameIndex: controlledFrameIndex,
+  fitTick,
   reviewDisplayMode,
   hiddenTrackIds = EMPTY_TRACK_ID_SET,
   lockedTrackIds = EMPTY_TRACK_ID_SET,
@@ -215,6 +219,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   onIssuePinClick,
 }: VideoStageProps, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const stageLayerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<SVGSVGElement>(null);
   const viewportSize = useElementSize(containerRef);
@@ -395,6 +400,13 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const selectedTrackTimeline = useMemo(
     () => selectedTrack ? buildSelectedTrackTimeline(selectedTrack.geometry) : null,
     [selectedTrack],
+  );
+  // 选中轨迹时, 时间轴关键帧点沿用该轨迹的显示色 (与画布框/侧栏色板同源)。
+  const selectedTrackColor = useMemo(
+    () => selectedTrack
+      ? getTrackColor(selectedTrack.geometry.track_id, selectedTrack.class_name, trackColorOverrides)
+      : null,
+    [selectedTrack, trackColorOverrides],
   );
   const selectedTrackKeyframes = useMemo(
     () => selectedTrack ? sortedKeyframes(selectedTrack.geometry) : [],
@@ -911,6 +923,15 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     fittedTaskIdRef.current = taskId;
     fitViewport();
   }, [fitViewport, manifest?.task_id, videoPixelHeight, videoPixelWidth, viewportSize.h, viewportSize.w]);
+
+  // 边栏开合 → fitTick 变化 → 重新适应窗口 (对齐图片工作台; 用显式信号而非监听 resize, 避免覆盖用户手动缩放)。
+  const lastFitTickRef = useRef(fitTick);
+  useEffect(() => {
+    if (fitTick === lastFitTickRef.current) return;
+    lastFitTickRef.current = fitTick;
+    if (!viewportSize.w || !viewportSize.h || !videoPixelWidth || !videoPixelHeight) return;
+    fitViewport();
+  }, [fitTick, fitViewport, videoPixelHeight, videoPixelWidth, viewportSize.h, viewportSize.w]);
 
   useEffect(() => {
     // 注意：不在此处捕获 containerRef.current。容器在 isLoading / 无 manifest 时不渲染
@@ -1532,6 +1553,19 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         if (!drag) showPlaybackOverlay();
       }}
       onMouseLeave={schedulePlaybackOverlayHide}
+      onDoubleClick={(evt) => {
+        // 双击画布适应窗口 (对齐图片工作台)。拖拽中不触发。
+        // 仅在 stageLayer 范围内的 letterbox/空白区域响应:
+        // - FloatingDock / VideoPlaybackOverlay 是 root 的兄弟节点, 不在 stageLayer
+        //   内, 双击它们的按钮 / scrubber / 书签不会冒泡触发 fit
+        // - SVG overlay (bbox/keyframe 编辑层) 也排除, 避免与未来双击编辑冲突
+        if (drag) return;
+        const stageLayer = stageLayerRef.current;
+        if (!stageLayer || !stageLayer.contains(evt.target as Node)) return;
+        const overlay = overlayRef.current;
+        if (overlay && overlay.contains(evt.target as Node)) return;
+        fitViewport();
+      }}
       onPointerDown={(evt) => {
         // 接管 letterbox (视频画面以外的黑/灰边) 的右键 pan; 视频画面内 (SVG overlay)
         // 的右键由 VideoInteractionLayer 现有逻辑处理.
@@ -1566,7 +1600,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       }}
       className={drag?.kind === "pan" ? `${styles.root} ${styles.rootPanning}` : styles.root}
     >
-      <div className={styles.stageLayer}>
+      <div ref={stageLayerRef} className={styles.stageLayer}>
           <VideoStageSurface width={videoPixelWidth} height={videoPixelHeight} viewport={vp}>
             <VideoMediaLayer
               ref={videoRef}
@@ -1697,7 +1731,9 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             isPlaying={isPlaybackActive}
             playbackRateLabel={isJogPlaying ? `${jogPlayback.direction < 0 ? "-" : ""}${jogPlayback.rate}x` : undefined}
             selectedTrackTimeline={selectedTrackTimeline}
+            trackColor={selectedTrackColor}
             globalTimelineDensity={globalTimelineDensity}
+            trackColorOverrides={trackColorOverrides}
             loopRegion={loopRegion}
             bookmarks={bookmarks}
             chapters={chapters}

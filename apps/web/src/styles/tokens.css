@@ -182,16 +182,23 @@ button.btn.ghost:disabled {
   background: rgba(255, 255, 255, 0.32);
 }
 
+/* v0.11.26 · playhead 细竖线: 16px 圆点会盖住相邻关键帧/刻度, 改 3px 竖条做位置指示,
+   hover/active 加宽到 5px 便于抓取 (点击轨道任意处仍可 seek)。 */
 .video-timeline-range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
+  width: 3px;
   height: 16px;
   margin-top: -6px;
-  border-radius: var(--radius-pill);
-  border: 2px solid rgba(255, 255, 255, 0.86);
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.86);
   background: var(--color-accent);
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.28);
+}
+
+.video-timeline-range:hover::-webkit-slider-thumb,
+.video-timeline-range:active::-webkit-slider-thumb {
+  width: 5px;
 }
 
 .video-timeline-range::-moz-range-track,
@@ -202,12 +209,17 @@ button.btn.ghost:disabled {
 }
 
 .video-timeline-range::-moz-range-thumb {
-  width: 16px;
+  width: 3px;
   height: 16px;
-  border-radius: var(--radius-pill);
-  border: 2px solid rgba(255, 255, 255, 0.86);
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.86);
   background: var(--color-accent);
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.28);
+}
+
+.video-timeline-range:hover::-moz-range-thumb,
+.video-timeline-range:active::-moz-range-thumb {
+  width: 5px;
 }
 
 /* v0.9.6 P2-b · 通用旋转动画 (Icon spinner / Loading 状态). */

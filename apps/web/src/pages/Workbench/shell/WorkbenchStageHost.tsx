@@ -48,6 +48,8 @@ interface WorkbenchStageHostCommonProps {
   selectedIds: string[];
   annotations: AnnotationResponse[];
   pendingDrawing: PendingDrawing;
+  /** 边栏开合时 +1, 触发 image/video stage 重新适应窗口 (两个舞台共用)。 */
+  fitTick: number;
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
   onCursorMove: (pt: { x: number; y: number } | null) => void;
   onDeleteUserBox: (id: string) => void;
@@ -97,7 +99,6 @@ interface WorkbenchStageHostImageProps {
   spacePan: boolean;
   vp: Viewport;
   setVp: React.Dispatch<React.SetStateAction<Viewport>>;
-  fitTick: number;
   setFitTick: React.Dispatch<React.SetStateAction<number>>;
   onAcceptPrediction: (b: AiBox) => void;
   onRejectPrediction: (b: AiBox) => void;
@@ -199,6 +200,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       selectedIds,
       annotations,
       pendingDrawing,
+      fitTick,
       onSelectBox,
       onCursorMove,
       onDeleteUserBox,
@@ -244,7 +246,6 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       spacePan,
       vp,
       setVp,
-      fitTick,
       setFitTick,
       onAcceptPrediction,
       onRejectPrediction,
@@ -304,6 +305,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
         ) : stageKind === "video" ? (
           <VideoWorkbench
             ref={ref}
+            fitTick={fitTick}
             manifest={videoManifest}
             frameTimetable={videoFrameTimetable}
             isLoading={videoManifestLoading}

@@ -35,6 +35,11 @@ export interface VideoTimelineDensityBin {
   from: number;
   to: number;
   density: number;
+  /**
+   * 该 bin 内各轨迹的关键帧贡献数, 按数量降序 (legacy bbox 不计入)。
+   * 用于把密度条按比例分段着色; 各 track count 之和可能小于 density (差额为 legacy bbox)。
+   */
+  tracks: { trackId: string; count: number }[];
 }
 
 function sortedLatestKeyframes(track: VideoTrackGeometry): VideoTrackKeyframe[] {
@@ -94,27 +99,36 @@ export function buildGlobalTimelineDensity(
   const safeMaxFrame = Math.max(0, Math.floor(maxFrame));
   const binCount = Math.max(1, Math.min(Math.floor(bins), safeMaxFrame + 1 || 1));
   const counts = Array.from({ length: binCount }, () => 0);
+  // 每个 bin 记录各轨迹贡献数, 取最多者作为该 bin 的着色轨迹。
+  const trackCounts: Map<string, number>[] = Array.from({ length: binCount }, () => new Map());
 
-  const incrementFrame = (frameIndex: number) => {
+  const binOf = (frameIndex: number) => {
     const frame = Math.max(0, Math.min(safeMaxFrame, Math.floor(frameIndex)));
-    const index = safeMaxFrame > 0 ? Math.min(binCount - 1, Math.floor((frame / (safeMaxFrame + 1)) * binCount)) : 0;
-    counts[index] += 1;
+    return safeMaxFrame > 0 ? Math.min(binCount - 1, Math.floor((frame / (safeMaxFrame + 1)) * binCount)) : 0;
   };
 
   for (const track of tracks) {
     for (const keyframe of sortedLatestKeyframes(track)) {
-      incrementFrame(keyframe.frame_index);
+      const index = binOf(keyframe.frame_index);
+      counts[index] += 1;
+      const perTrack = trackCounts[index];
+      perTrack.set(track.track_id, (perTrack.get(track.track_id) ?? 0) + 1);
     }
   }
 
+  // legacy bbox 无 track 归属: 只计入密度高度, 不参与着色轨迹的判定。
   for (const frameIndex of manualBboxFrames) {
-    incrementFrame(frameIndex);
+    counts[binOf(frameIndex)] += 1;
   }
 
   return counts.map((density, index) => {
     const from = Math.floor((index / binCount) * (safeMaxFrame + 1));
     const to = Math.max(from, Math.floor(((index + 1) / binCount) * (safeMaxFrame + 1)) - 1);
-    return { index, from, to, density };
+    // Map 迭代序 = 插入序; sort 稳定, 故同数量按首次出现的轨迹在前。
+    const trackShares = [...trackCounts[index]]
+      .map(([trackId, count]) => ({ trackId, count }))
+      .sort((a, b) => b.count - a.count);
+    return { index, from, to, density, tracks: trackShares };
   });
 }
 

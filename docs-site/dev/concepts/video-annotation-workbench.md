@@ -380,7 +380,8 @@ R5.2 的 bitmap cache 只优化前端体感，不替代 `<video>` 播放源。`u
 - hover 时显示，离开后延迟淡出；绘制或拖动 bbox 时隐藏，避免误触 scrubber。
 - 保留播放 / 暂停、逐帧按钮、range scrubber、关键帧 tick、当前帧号、时间和当前帧框数。
 - 底部标记的数据源是 timeline markers：keyframe 仍显示为细线，prediction 使用不同颜色，outside 段显示为灰色区间。
-- 选中 `video_track` 时显示该轨迹的单轨 timeline：keyframe 圆点、outside 灰段、interpolated 虚线段和 prediction 标记；未选中轨迹时显示全局 keyframe 密度条。
+- 选中 `video_track` 时显示该轨迹的单轨 timeline：keyframe 圆点跟随轨迹色、悬浮在进度条上方，连线加粗并加同色外发光，outside 灰段、interpolated 虚线段和 prediction 标记照旧；未选中轨迹时显示全局 keyframe 密度条，按各轨迹关键帧占比自底向上堆叠成彩色渐变（legacy bbox 用 accent 兜底），等宽分桶避免首帧偏窄。
+- playhead 显示为 3px 竖线（hover/active 加宽到 5px），不再遮挡相邻关键帧/刻度；overlay 改两行布局让进度条独占一行，不随帧数位数/loop 标签变短；loop 区间渲染为贯穿轨道高度的半透明填充块 + inset 高亮边界。
 - `Shift+←/→` 复用同一套可见关键帧计算，跳过 outside 帧；如果没有选中轨迹，则保持原有 ±10 帧跳转。`,`/`.` 跳上/下可见关键帧，`Home`/`End` 跳首/末出现帧。
 - `Shift+drag` 时间轴可创建本地 loop region；播放越过范围末帧后 seek 回起始帧，逐帧和手动 seek 不被限制。
 - loop region、书签和跳转历史只存前端会话状态，按 task 写入 `sessionStorage`，不改变 annotation schema 或后端 API。

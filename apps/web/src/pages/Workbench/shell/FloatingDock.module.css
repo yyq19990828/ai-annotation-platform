@@ -2,7 +2,9 @@
 
 .root {
   position: absolute;
-  right: 12px;
+  /* 右下角全局有 BugReportFAB (fixed; right:20; 44px 宽 → 占右侧 ~64px)。边栏收起时 stage 撑满整宽,
+     dock 若仍 right:12 会被 bug 反馈按钮压住。右移到 bug FAB 左侧 (20+44+12=76) 并排放置。 */
+  right: 76px;
   bottom: 12px;
   display: flex;
   align-items: center;

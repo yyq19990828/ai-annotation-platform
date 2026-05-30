@@ -24,6 +24,16 @@
 
 ## 最新版本
 
+## [0.11.26] - 2026-05-30
+
+> **视频工作台时间轴外观/布局优化。** playhead 改为竖线、overlay 两行布局让进度条独占一行；选中轨迹的关键帧点跟随轨迹色并外发光、未选中时密度条按各轨迹占比堆叠成彩色渐变；FloatingDock 让位 BugReportFAB；边栏开合的 fitTick 信号扩展到 video，VideoStage 监听并支持双击适应窗口。→ [plan](docs/plans/2026-05-29-v0.11.26-video-timeline-ui.md)
+
+### Changed
+
+- **时间轴外观**: `VideoPlaybackOverlay` playhead 从 16px 圆点改为 3px 竖线（hover/active 加宽到 5px），不再遮挡相邻关键帧/刻度；overlay 改两行布局，进度条独占一行；loop 区间改为贯穿轨道高度的半透明填充块 + inset 高亮边界。
+- **轨迹色彩**: 选中轨迹时关键帧点跟随轨迹色、悬浮到进度条上方，连线加粗并加同色外发光；未选中时密度条按各轨迹关键帧占比自底向上堆叠成彩色渐变（legacy bbox 用 accent 兜底），改等宽分桶修复首帧偏窄；`timelineLayer` 内缩 6px→2px 匹配新 thumb 半宽，修复刻度/关键帧与 playhead 错位。
+- **布局自适应**: `FloatingDock` 右移 12px→76px 让出右下角 `BugReportFAB`；`fitTick` 自增逻辑从 image 属性组提升到 common，让 video 也能收到边栏开合信号；`VideoStage` 监听 `fitTick` 重新适应窗口，并新增双击画布适应窗口。
+
 ## [0.11.25] - 2026-05-29
 
 > **删批次保护：默认拒删含进行中成果/已预标的批次（批次解绑状态修复 3/3）。** 把 v0.11.23 的「无条件重置+解绑」升级为有保护的选择——删一个含非 pending 或 AI 预标过 task 的批次默认拒绝（409 requires_force），引导改用归档或显式强制删除；强制删除才走重置+清预标。完成批次解绑状态修复 epic（v0.11.23-25）。→ [plan](docs/plans/2026-05-29-v0.11.25-batch-delete-force-guard.md)
