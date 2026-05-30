@@ -27,28 +27,3 @@
   margin: 0 3px;
   color: var(--color-fg);
 }
-
-.changeClassButton {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: 3px;
-  background: var(--color-bg-elev);
-  color: var(--color-fg);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 11.5px;
-}
-
-.classSwatch {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-}
-
-.changeClassHint {
-  color: var(--color-fg-subtle);
-  font-size: 10px;
-}

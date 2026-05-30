@@ -156,7 +156,10 @@ export function AttributeForm({
         const isMissing = f.required && missing.includes(f.key);
         const setValue = (newV: unknown) => scheduleCommit({ ...draft, [f.key]: newV });
         return (
-          <label key={f.key} className={cn(styles.field, isMissing && styles.fieldMissing)}>
+          <label
+            key={f.key}
+            className={cn(styles.field, f.type === "boolean" && styles.fieldInline, isMissing && styles.fieldMissing)}
+          >
             <span className={styles.labelRow}>
               {f.label}
               {f.required && <span className={styles.requiredMarker}>*</span>}
@@ -204,13 +207,21 @@ export function AttributeForm({
               />
             )}
             {f.type === "boolean" && (
-              <input
-                type="checkbox"
-                checked={!!v}
-                disabled={readOnly}
-                onChange={(e) => setValue(e.target.checked)}
-                className={styles.checkbox}
-              />
+              <span className={styles.switch}>
+                <input
+                  type="checkbox"
+                  checked={!!v}
+                  disabled={readOnly}
+                  onChange={(e) => setValue(e.target.checked)}
+                  className={styles.switchInput}
+                />
+                <span
+                  aria-hidden="true"
+                  className={cn(styles.switchTrack, !!v && styles.switchTrackOn)}
+                >
+                  <span className={styles.switchKnob} />
+                </span>
+              </span>
             )}
             {f.type === "select" && (
               <select
@@ -242,14 +253,20 @@ export function AttributeForm({
               </select>
             )}
             {f.type === "range" && (
-              <input
-                type="range"
-                min={f.min ?? 0}
-                max={f.max ?? 100}
-                value={typeof v === "number" ? v : f.min ?? 0}
-                disabled={readOnly}
-                onChange={(e) => setValue(Number(e.target.value))}
-              />
+              <div className={styles.rangeRow}>
+                <input
+                  type="range"
+                  min={f.min ?? 0}
+                  max={f.max ?? 100}
+                  value={typeof v === "number" ? v : f.min ?? 0}
+                  disabled={readOnly}
+                  onChange={(e) => setValue(Number(e.target.value))}
+                  className={styles.range}
+                />
+                <span className={cn("mono", styles.rangeValue)}>
+                  {typeof v === "number" ? v : f.min ?? 0}
+                </span>
+              </div>
             )}
           </label>
         );

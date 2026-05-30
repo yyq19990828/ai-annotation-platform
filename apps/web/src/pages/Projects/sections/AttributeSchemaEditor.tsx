@@ -14,7 +14,7 @@ import styles from "./AttributeSchemaEditor.module.css";
 const FIELD_TYPES: { value: AttributeFieldType; label: string }[] = [
   { value: "text", label: "文本" },
   { value: "number", label: "数字" },
-  { value: "boolean", label: "勾选" },
+  { value: "boolean", label: "开关" },
   { value: "select", label: "下拉单选" },
   { value: "multiselect", label: "下拉多选" },
   { value: "range", label: "区间滑杆" },

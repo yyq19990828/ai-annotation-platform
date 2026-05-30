@@ -2,7 +2,6 @@ import { useLayoutEffect, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { Viewport } from "../state/useViewportTransform";
-import { classColor, displayClassName } from "./colors";
 import styles from "./SelectionOverlay.module.css";
 
 interface OverlayProps {
@@ -15,8 +14,6 @@ interface OverlayProps {
   vp: Viewport;
   onAccept?: () => void;
   onReject?: () => void;
-  onDelete?: () => void;
-  onChangeClass?: () => void;
   onBatchDelete?: () => void;
   onBatchChangeClass?: () => void;
   onClearSelection?: () => void;
@@ -25,14 +22,13 @@ interface OverlayProps {
 export function SelectionOverlay({
   box, isAi, batchCount,
   imgW, imgH, vp,
-  onAccept, onReject, onDelete, onChangeClass,
+  onAccept, onReject,
   onBatchDelete, onBatchChangeClass, onClearSelection,
 }: OverlayProps) {
   const right = (box.x + box.w) * imgW * vp.scale + vp.tx;
   const bottom = (box.y + box.h) * imgH * vp.scale + vp.ty;
   const isBatch = !!batchCount && batchCount > 1;
   const rootRef = useRef<HTMLDivElement>(null);
-  const color = classColor(box.cls);
 
   useLayoutEffect(() => {
     const el = rootRef.current;
@@ -79,25 +75,6 @@ export function SelectionOverlay({
           {isAi && onReject && (
             <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onReject(); }}>
               <Icon name="x" size={10} />驳回
-            </Button>
-          )}
-          {!isAi && onChangeClass && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onChangeClass(); }}
-              title="改类别 (C)"
-              className={styles.changeClassButton}
-            >
-              <svg className={styles.classSwatch} viewBox="0 0 8 8" aria-hidden="true">
-                <rect width="8" height="8" rx="2" fill={color} />
-              </svg>
-              {displayClassName(box.cls)}
-              <span className={styles.changeClassHint}>改类</span>
-            </button>
-          )}
-          {!isAi && onDelete && (
-            <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
-              <Icon name="trash" size={10} />删除
             </Button>
           )}
         </>

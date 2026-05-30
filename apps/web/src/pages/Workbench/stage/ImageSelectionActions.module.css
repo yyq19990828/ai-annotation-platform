@@ -1,0 +1,33 @@
+/* v0.11.28 · 单框选中编辑迁移到画布右上角，视觉对齐 VideoSelectionActions.module.css。 */
+
+.actions {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 6px;
+  width: max-content;
+  max-width: calc(100% - 28px);
+  overflow-x: auto;
+  padding: 6px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.68);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
+  scrollbar-width: none;
+  z-index: 13;
+}
+
+.actions::-webkit-scrollbar {
+  display: none;
+}
+
+.iconButton {
+  flex: 0 0 auto;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
+}

@@ -54,9 +54,8 @@
   text-align: center;
 }
 
-/* v0.11.28 · 改类悬浮框内联属性区（类别选择下方，单列堆叠）。 */
+/* v0.11.28 · 改类悬浮框内联属性区（类别选择下方，单列堆叠）。
+   分隔线由内部 AttributeForm 的 .form border-top 提供，此处不再重复画线。 */
 .attrBlock {
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px solid var(--color-border);
+  margin-top: 4px;
 }
