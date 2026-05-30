@@ -358,10 +358,6 @@ describe("v0.10.5 M4-β · shape 状态位快捷键", () => {
     expect(dispatch({ key: "h" }, { hasSelection: true }))
       .toEqual({ type: "toggleShapeFlag", flag: "is_hidden" });
   });
-  it("选中态 O → toggleShapeFlag is_occluded", () => {
-    expect(dispatch({ key: "o" }, { hasSelection: true }))
-      .toEqual({ type: "toggleShapeFlag", flag: "is_occluded" });
-  });
   it("无选中 H/O → null（不消费）", () => {
     expect(dispatch({ key: "h" })).toBeNull();
     expect(dispatch({ key: "o" })).toBeNull();

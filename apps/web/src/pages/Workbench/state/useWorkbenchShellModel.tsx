@@ -46,7 +46,7 @@ import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
 import { useActiveIssueStore } from "./useActiveIssueStore";
-import { annotationToBox } from "./transforms";
+import { annotationToBox, collectOccludedKeys } from "./transforms";
 import { applyVideoKeyframeToGeometry } from "./videoTrackCommands";
 import { useAnnotateMode } from "../modes/useAnnotateMode";
 import { useReviewMode } from "../modes/useReviewMode";
@@ -63,6 +63,7 @@ import { useVideoTrackerJobs } from "@/hooks/useVideoTrackerJobs";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import type { StageKind } from "../stages/types";
 import { WorkbenchOverlays } from "../shell/WorkbenchOverlays";
+import type { ClassPickerAttrEditing } from "../shell/ClassPickerPopover";
 import { WorkbenchLayout } from "../shell/WorkbenchLayout";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
@@ -422,7 +423,11 @@ export function useWorkbenchShellModel({
         (annotationsData ?? [])
           .filter(
             (ann) =>
-              projectClassNames != null && !projectClassNames.has(ann.class_name),
+              projectClassNames != null &&
+              // `__unknown`（未分类）是合法 sentinel，并非"类别被删除"的孤儿，
+              // 不应判为 orphan / 标记"已删除"。
+              ann.class_name !== UNKNOWN_CLASS &&
+              !projectClassNames.has(ann.class_name),
           )
           .map((ann) => ann.id),
       ),
@@ -481,11 +486,25 @@ export function useWorkbenchShellModel({
     [predictionsPages],
   );
 
+  // v0.11.27 · 遮挡样式 key 的跨工具单位并集。userBoxes 含全部单位的标注，而
+  // toolView.attributeSchema 仅当前工具单位；故遍历全 tool_bindings 取 style_occluded
+  // boolean key 并集，避免切换工具后其他单位的框遮挡视觉丢失。
+  const occludedKeys = useMemo(() => {
+    const keys = new Set<string>();
+    const tb = currentProject?.tool_bindings ?? {};
+    for (const binding of Object.values(tb)) {
+      for (const k of collectOccludedKeys(binding?.attribute_schema?.fields ?? [])) {
+        keys.add(k);
+      }
+    }
+    return keys;
+  }, [currentProject]);
+
   const userBoxes = useMemo(
     () => visibleAnnotationsData
       .filter((ann) => !(isVideoTask && ann.geometry.type === "video_track"))
-      .map(annotationToBox),
-    [visibleAnnotationsData, isVideoTask],
+      .map((a) => annotationToBox(a, occludedKeys)),
+    [visibleAnnotationsData, isVideoTask, occludedKeys],
   );
 
   const taskAiMeta = useMemo(() => {
@@ -836,6 +855,7 @@ export function useWorkbenchShellModel({
     handleCommitRotateBbox,
     handleStartChangeClass,
     handleCommitChangeClass,
+    handleChangeClassKeepOpen,
     handleCancelChangeClass,
     handleSamCommitClass,
     handleSamCancelClass,
@@ -1020,6 +1040,38 @@ export function useWorkbenchShellModel({
   const modeState = mode === "review" ? reviewModeState : annotateModeState;
   const { topbarActions, bannerActions } = modeState;
   const isLocked = modeState.isLocked;
+
+  // v0.11.28：改类悬浮框内联属性编辑——按当前正在改类的标注派生 schema/attributes/提交回调。
+  const editingClassAnnotation = useMemo(
+    () => (s.editingClass
+      ? (visibleAnnotationsData.find((a) => a.id === s.editingClass!.annotationId) ?? null)
+      : null),
+    [s.editingClass, visibleAnnotationsData],
+  );
+  const changeClassAttrEditing = useMemo<ClassPickerAttrEditing | undefined>(() => {
+    const ann = editingClassAnnotation;
+    const schema = toolView.attributeSchema;
+    if (!ann || !schema || (schema.fields ?? []).length === 0) return undefined;
+    if (isVideoTrack(ann)) {
+      // 视频：悬浮框只编辑 mutable 字段的「轨迹默认值」层；逐帧覆盖留给侧栏完整编辑器。
+      const mutableFields = (schema.fields ?? []).filter((f) => f.mutable === true);
+      if (mutableFields.length === 0) return undefined;
+      return {
+        schema: { fields: mutableFields },
+        attributes: ann.attributes ?? {},
+        context: "video",
+        readOnly: isLocked,
+        onChange: (next) => handleUpdateTrackAttributes(ann, next),
+      };
+    }
+    return {
+      schema,
+      attributes: ann.attributes ?? {},
+      context: "image",
+      readOnly: isLocked,
+      onChange: (next) => handleUpdateAttributes(ann.id, next),
+    };
+  }, [editingClassAnnotation, toolView.attributeSchema, isLocked, handleUpdateTrackAttributes, handleUpdateAttributes]);
 
   useCanvasDraftPersistence({
     taskId,
@@ -1265,6 +1317,8 @@ export function useWorkbenchShellModel({
               onPickPendingClass={handlePickPendingClassAny}
               onCancelPending={handleCancelPending}
               onCommitChangeClass={handleCommitChangeClass}
+              onChangeClassKeepOpen={handleChangeClassKeepOpen}
+              changeClassAttrEditing={changeClassAttrEditing}
               onCancelChangeClass={handleCancelChangeClass}
               onSamCommitClass={handleSamCommitClass}
               onSamCancelClass={handleSamCancelClass}
@@ -1397,7 +1451,7 @@ export function useWorkbenchShellModel({
       onRefineUserPolygon: handleRefineUserPolygon,
       onClearSelection: () => s.setSelectedId(null), onDeleteUserBox: handleDeleteBox,
       onChangeUserBoxClass: handleStartChangeClass,
-      onToggleUserBoxFlag: (id: string, flag: "is_locked" | "is_hidden" | "is_occluded") => {
+      onToggleUserBoxFlag: (id: string, flag: "is_locked" | "is_hidden") => {
         const ann = userBoxes.find((b) => b.id === id);
         if (!ann) return;
         const cur = !!ann[flag];

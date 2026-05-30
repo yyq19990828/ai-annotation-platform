@@ -117,8 +117,8 @@ interface BoxListItemProps {
   onRefine?: () => void;
   onDelete?: () => void;
   onChangeClass?: () => void;
-  /** v0.10.5 M4-β · I15 切换 lock/hidden/occluded；仅人工框传入。 */
-  onToggleFlag?: (flag: "is_locked" | "is_hidden" | "is_occluded") => void;
+  /** v0.10.5 M4-β · I15 切换 lock/hidden；仅人工框传入。 */
+  onToggleFlag?: (flag: "is_locked" | "is_hidden") => void;
   orphan?: boolean;
 }
 
@@ -244,16 +244,6 @@ export function BoxListItem({
                   className={cn(styles.rowActionButton, !b.is_locked && styles.inactiveFlagButton)}
                 >
                   <Icon name={b.is_locked ? "lock" : "unlock"} size={14} />
-                </Button>
-                <Button
-                  size="sm"
-                  title={b.is_occluded ? "取消遮挡 (O)" : "标记遮挡 (O)"}
-                  aria-label={b.is_occluded ? "取消遮挡" : "标记遮挡"}
-                  aria-pressed={!!b.is_occluded}
-                  onClick={(e) => { e.stopPropagation(); onToggleFlag("is_occluded"); }}
-                  className={cn(styles.rowActionButton, !b.is_occluded && styles.inactiveFlagButton)}
-                >
-                  <Icon name="circleDot" size={14} />
                 </Button>
               </>
             )}

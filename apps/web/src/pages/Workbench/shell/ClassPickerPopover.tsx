@@ -1,11 +1,22 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
+import type { AttributeSchema } from "@/api/projects";
 import type { Viewport } from "../state/useViewportTransform";
+import { AttributeForm } from "./AttributeForm";
 import { ClassPalette, shortcutForIndex } from "./ClassPalette";
 import styles from "./ClassPickerPopover.module.css";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type FixedAnchor = { left: number; top: number };
 export type ClassPickerCancelReason = "escape" | "outside";
+
+/** v0.11.28：改类悬浮框内联的属性编辑（与类别选择二合一，单列堆叠）。 */
+export type ClassPickerAttrEditing = {
+  schema: AttributeSchema;
+  attributes: Record<string, unknown>;
+  context: "image" | "video";
+  readOnly?: boolean;
+  onChange: (next: Record<string, unknown>) => void;
+};
 
 type CommonProps = {
   classes: string[];
@@ -14,6 +25,8 @@ type CommonProps = {
   title?: string;
   onPick: (cls: string) => void;
   onCancel: (reason: ClassPickerCancelReason) => void;
+  /** 传入时在类别选择下方渲染属性表单（className 跟随当前 defaultClass 联动刷新可见字段）。 */
+  attrEditing?: ClassPickerAttrEditing;
 };
 
 type ImagePositionProps = CommonProps & {
@@ -37,7 +50,7 @@ type ClassPickerPopoverProps = ImagePositionProps | FixedPositionProps;
  * - 数字 1-9 / 字母 a-z 直选；Enter 默认 default；Esc 取消；点外部取消
  */
 export function ClassPickerPopover({
-  classes, recent, defaultClass, title = "选择类别", onPick, onCancel, ...positionProps
+  classes, recent, defaultClass, title = "选择类别", onPick, onCancel, attrEditing, ...positionProps
 }: ClassPickerPopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -53,15 +66,38 @@ export function ClassPickerPopover({
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.style.setProperty("--class-picker-left", `${left}px`);
-    el.style.setProperty("--class-picker-top", `${top}px`);
-  }, [left, top]);
+    let l = left;
+    let t = top;
+    // fixed 模式（改类 / SAM / 批量等由调用方给 viewport 坐标的场景）做视口边界 clamp：
+    // 锚点来自列表里的触发按钮时，原始坐标常会让 popover 溢出右侧或底部，需拉回视口内，
+    // 必要时翻转到锚点上方。image 模式锚定画布内的框，维持原行为不 clamp。
+    if (isFixed && typeof window !== "undefined") {
+      const margin = 8;
+      const rect = el.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      if (l + rect.width > vw - margin) l = vw - margin - rect.width;
+      if (l < margin) l = margin;
+      if (t + rect.height > vh - margin) {
+        const flipped = top - rect.height - 12; // 翻到锚点上方
+        t = flipped >= margin ? flipped : Math.max(margin, vh - margin - rect.height);
+      }
+      if (t < margin) t = margin;
+    }
+    el.style.setProperty("--class-picker-left", `${l}px`);
+    el.style.setProperty("--class-picker-top", `${t}px`);
+  }, [left, top, isFixed]);
 
   // keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement && e.key !== "Escape" && e.key !== "Enter") {
-        return; // 让搜索框正常输入
+      if (
+        (e.target instanceof HTMLInputElement
+          || e.target instanceof HTMLSelectElement
+          || e.target instanceof HTMLTextAreaElement)
+        && e.key !== "Escape" && e.key !== "Enter"
+      ) {
+        return; // 让搜索框 / 属性表单控件正常输入，不抢数字/字母快捷键
       }
       if (e.key === "Escape") { e.preventDefault(); onCancel("escape"); return; }
       if (e.key === "Enter") {
@@ -130,6 +166,18 @@ export function ClassPickerPopover({
       {classes.length > 0 && (
         <div className={styles.footerHint}>
           快捷键: {shortcutForIndex(0)}…{shortcutForIndex(Math.min(classes.length - 1, 34))}
+        </div>
+      )}
+      {attrEditing && (
+        <div className={styles.attrBlock}>
+          <AttributeForm
+            schema={attrEditing.schema}
+            className={defaultClass}
+            attributes={attrEditing.attributes}
+            onChange={attrEditing.onChange}
+            readOnly={attrEditing.readOnly}
+            context={attrEditing.context}
+          />
         </div>
       )}
     </div>

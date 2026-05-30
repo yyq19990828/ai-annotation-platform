@@ -9,6 +9,7 @@ import type { AiBox } from "../state/transforms";
 import { useElementSize, type Viewport } from "../state/useViewportTransform";
 import { applyResize, applyRotatedResize, type ResizeDirection } from "./ResizeHandles";
 import { classColorForCanvas, hexToRgba } from "./colors";
+import { ImageSelectionActions } from "./ImageSelectionActions";
 import { SelectionOverlay } from "./SelectionOverlay";
 import { TOOL_REGISTRY, type PolygonDraftHandle, type KeypointDraftHandle } from "./tools";
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
@@ -148,7 +149,7 @@ interface ImageStageProps {
   onChangeUserBoxClass?: (id: string) => void;
   onPatchShapeFlag?: (
     id: string,
-    flag: "z_order" | "is_locked" | "is_hidden" | "is_occluded",
+    flag: "z_order" | "is_locked" | "is_hidden",
     value: number | boolean,
   ) => void;
   clipboardActions?: ImageContextMenuClipboardActions | null;
@@ -935,7 +936,7 @@ export function ImageStage({
                   selected={selSet.has(b.id)}
                   editable={isPrimarySingleSelect}
                   faded={false}
-                  occluded={!!b.is_occluded}
+                  occluded={!!b.occluded}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
                   onRotateStart={isPrimarySingleSelect ? (e) => {
@@ -975,7 +976,7 @@ export function ImageStage({
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   points={livePoints}
                   editable={isOnlySelected}
-                  occluded={!!b.is_occluded}
+                  occluded={!!b.occluded}
                   onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
                   onVertexMouseDown={(vidx, e) => {
                     const cur = (polyOverridePoints(b.id) ?? (b.polyline as Pt[])).slice();
@@ -1065,7 +1066,7 @@ export function ImageStage({
                   selfIntersect={intersects}
                   viewportBBox={viewportBBox}
                   editable={isOnlySelected}
-                  occluded={!!b.is_occluded}
+                  occluded={!!b.occluded}
                   onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
                   onVertexMouseDown={(vidx, e) => {
                     const cur = (polyOverridePoints(b.id) ?? (b.polygon as Pt[])).slice();
@@ -1109,7 +1110,7 @@ export function ImageStage({
                 selected={selSet.has(b.id)}
                 faded={false}
                 editable={!readOnly && !b.is_locked}
-                occluded={!!b.is_occluded}
+                occluded={!!b.occluded}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
                 onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
                 onMoveStart={isPrimarySingleSelect ? (e) => {
@@ -1457,32 +1458,38 @@ export function ImageStage({
       })()}
 
       {selectedBox && !readOnly && !pendingDrawing && tool !== "canvas" && (
-        <SelectionOverlay
-          box={selectedBox}
-          isAi={isSelectedAi}
-          batchCount={selSet.size > 1 ? selSet.size : undefined}
-          imgW={imgW}
-          imgH={imgH}
-          vp={vp}
-          onAccept={isSelectedAi && onAcceptPrediction
-            ? () => onAcceptPrediction(selectedBox as AiBox)
-            : undefined}
-          onReject={isSelectedAi
-            ? () => {
-                if (onRejectPrediction) onRejectPrediction(selectedBox as AiBox);
-                onSelectBox(null);
-              }
-            : undefined}
-          onDelete={!isSelectedAi && onDeleteUserBox && selSet.size === 1
-            ? () => onDeleteUserBox(selectedBox.id)
-            : undefined}
-          onChangeClass={!isSelectedAi && onChangeUserBoxClass && selSet.size === 1
-            ? () => onChangeUserBoxClass(selectedBox.id)
-            : undefined}
-          onBatchDelete={selSet.size > 1 ? onBatchDelete : undefined}
-          onBatchChangeClass={selSet.size > 1 ? onBatchChangeClass : undefined}
-          onClearSelection={selSet.size > 1 ? () => onSelectBox(null) : undefined}
-        />
+        // 单个用户框：编辑工具条移到画布右上角（对齐视频工作台）；AI 预测 / 批量仍用贴框浮条。
+        !isSelectedAi && selSet.size === 1 ? (
+          <ImageSelectionActions
+            onChangeClass={onChangeUserBoxClass
+              ? () => onChangeUserBoxClass(selectedBox.id)
+              : undefined}
+            onDelete={onDeleteUserBox
+              ? () => onDeleteUserBox(selectedBox.id)
+              : undefined}
+          />
+        ) : (
+          <SelectionOverlay
+            box={selectedBox}
+            isAi={isSelectedAi}
+            batchCount={selSet.size > 1 ? selSet.size : undefined}
+            imgW={imgW}
+            imgH={imgH}
+            vp={vp}
+            onAccept={isSelectedAi && onAcceptPrediction
+              ? () => onAcceptPrediction(selectedBox as AiBox)
+              : undefined}
+            onReject={isSelectedAi
+              ? () => {
+                  if (onRejectPrediction) onRejectPrediction(selectedBox as AiBox);
+                  onSelectBox(null);
+                }
+              : undefined}
+            onBatchDelete={selSet.size > 1 ? onBatchDelete : undefined}
+            onBatchChangeClass={selSet.size > 1 ? onBatchChangeClass : undefined}
+            onClearSelection={selSet.size > 1 ? () => onSelectBox(null) : undefined}
+          />
+        )
       )}
 
       <ContextMenu

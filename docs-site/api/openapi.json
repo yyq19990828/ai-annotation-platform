@@ -573,17 +573,6 @@
             ],
             "title": "Is Locked"
           },
-          "is_occluded": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Occluded"
-          },
           "z_order": {
             "anyOf": [
               {
@@ -1688,11 +1677,6 @@
             "title": "Is Locked",
             "type": "boolean"
           },
-          "is_occluded": {
-            "default": false,
-            "title": "Is Occluded",
-            "type": "boolean"
-          },
           "lead_time": {
             "anyOf": [
               {
@@ -1984,17 +1968,6 @@
               }
             ],
             "title": "Is Locked"
-          },
-          "is_occluded": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Occluded"
           },
           "z_order": {
             "anyOf": [
@@ -2667,6 +2640,17 @@
               }
             ],
             "title": "Required"
+          },
+          "style_occluded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Style Occluded"
           },
           "type": {
             "enum": [

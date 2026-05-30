@@ -49,7 +49,6 @@ export interface AnnotationUpdatePayload {
   z_order?: number;
   is_locked?: boolean;
   is_hidden?: boolean;
-  is_occluded?: boolean;
 }
 
 export interface VideoTrackConvertToBboxesPayload {

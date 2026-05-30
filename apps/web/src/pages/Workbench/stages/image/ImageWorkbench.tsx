@@ -40,7 +40,7 @@ export interface ImageWorkbenchProps {
   onDeleteUserBox: (id: string) => void;
   onPatchShapeFlag?: (
     id: string,
-    flag: "z_order" | "is_locked" | "is_hidden" | "is_occluded",
+    flag: "z_order" | "is_locked" | "is_hidden",
     value: number | boolean,
   ) => void;
   clipboardActions?: ImageContextMenuClipboardActions | null;

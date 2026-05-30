@@ -96,7 +96,6 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["]"], desc: "选中态：z_order +1；否则升置信度阈值", group: "ai", actionType: "thresholdAdjust" },
   { keys: ["L"], desc: "切换选中 shape 锁定状态", group: "draw", actionType: "toggleShapeFlag" },
   { keys: ["H"], desc: "切换选中 shape 隐藏状态", group: "draw", actionType: "toggleShapeFlag" },
-  { keys: ["O"], desc: "切换选中 shape 遮挡 (occluded) 状态", group: "draw", actionType: "toggleShapeFlag" },
 
   { keys: ["Ctrl", "→"], desc: "下一题", group: "nav", actionType: "navigateTask" },
   { keys: ["Ctrl", "←"], desc: "上一题", group: "nav", actionType: "navigateTask" },
@@ -145,7 +144,7 @@ export type HotkeyAction =
   | { type: "setAttribute"; key: string; value: unknown }
   | { type: "deleteSelected" }
   // v0.10.5 M4-β · I15 shape 状态位快捷键。
-  | { type: "toggleShapeFlag"; flag: "is_locked" | "is_hidden" | "is_occluded" }
+  | { type: "toggleShapeFlag"; flag: "is_locked" | "is_hidden" }
   | { type: "bumpZOrder"; delta: -1 | 1 }
   | { type: "submit" }
   | { type: "acceptAi" }
@@ -350,11 +349,10 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     return { type: "thresholdAdjust", delta:  0.05 };
   }
 
-  // v0.10.5 M4-β I15 · L/H/O 切换选中 shape 的 lock/hidden/occluded。仅在有选中时消费。
+  // v0.10.5 M4-β I15 · L/H 切换选中 shape 的 lock/hidden。仅在有选中时消费。
   if (ctx.hasSelection) {
     if (e.key === "l" || e.key === "L") return { type: "toggleShapeFlag", flag: "is_locked" };
     if (e.key === "h" || e.key === "H") return { type: "toggleShapeFlag", flag: "is_hidden" };
-    if (e.key === "o" || e.key === "O") return { type: "toggleShapeFlag", flag: "is_occluded" };
   }
   // v0.10.28 · 无选中时 L → 折线工具（与上方 L=lock 互补：lock 仅选中态消费）。
   if ((e.key === "l" || e.key === "L") && !ctx.hasSelection) return { type: "setTool", tool: "polyline" };
@@ -376,7 +374,7 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
 
   if (e.key === "v" || e.key === "V") return { type: "setTool", tool: "hand" };
   if (e.key === "b" || e.key === "B") return { type: "setTool", tool: "box" };
-  // v0.10.28 · W 单键直达旋转框 (OBB) 工具 (O 已被 occluded 占用)。
+  // v0.10.28 · W 单键直达旋转框 (OBB) 工具 (O 已被视频 outside 占用，且为保留键)。
   if (e.key === "w" || e.key === "W") return { type: "setTool", tool: "rotated-box" };
   // v0.10.28 · F 单键直达关键点工具 (K 已被 cycleUser「上一个框」占用)。
   if (e.key === "f" || e.key === "F") return { type: "setTool", tool: "keypoint" };

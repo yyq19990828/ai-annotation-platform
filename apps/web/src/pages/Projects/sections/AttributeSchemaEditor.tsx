@@ -14,7 +14,7 @@ import styles from "./AttributeSchemaEditor.module.css";
 const FIELD_TYPES: { value: AttributeFieldType; label: string }[] = [
   { value: "text", label: "文本" },
   { value: "number", label: "数字" },
-  { value: "boolean", label: "勾选" },
+  { value: "boolean", label: "开关" },
   { value: "select", label: "下拉单选" },
   { value: "multiselect", label: "下拉多选" },
   { value: "range", label: "区间滑杆" },
@@ -82,7 +82,16 @@ export function AttributeSchemaEditor({
             </div>
             <div>
               <label className={styles.label}>类型</label>
-              <select value={f.type} onChange={(e) => setField(i, { type: e.target.value as AttributeFieldType })} className={`${styles.control} ${styles.selectControl}`}>
+              <select
+                value={f.type}
+                onChange={(e) => {
+                  const next = e.target.value as AttributeFieldType;
+                  // style_occluded 仅在 boolean 字段上有效；切换到非 boolean 时同步清理，
+                  // 否则字段会保留 style_occluded:true 且 UI 入口消失 → 提交时被后端校验拒绝。
+                  setField(i, next !== "boolean" ? { type: next, style_occluded: undefined } : { type: next });
+                }}
+                className={`${styles.control} ${styles.selectControl}`}
+              >
                 {FIELD_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
@@ -103,6 +112,13 @@ export function AttributeSchemaEditor({
             <input type="checkbox" checked={!!f.required} onChange={(e) => setField(i, { required: e.target.checked })} />
             必填（提交质检前必须填写）
           </label>
+
+          {f.type === "boolean" && (
+            <label className={styles.checkboxLabel}>
+              <input type="checkbox" checked={!!f.style_occluded} onChange={(e) => setField(i, { style_occluded: e.target.checked })} />
+              遮挡样式（该属性为真时，画布框渲染为虚线+半透）
+            </label>
+          )}
 
           {(f.type === "select" || f.type === "multiselect") && (
             <div>
@@ -170,6 +186,9 @@ export function validateAttributeFields(fields: AttributeField[]): string | null
     seen.add(f.key);
     if ((f.type === "select" || f.type === "multiselect") && (!f.options || f.options.length === 0)) {
       return `${f.label || f.key} 需要至少 1 个选项`;
+    }
+    if (f.style_occluded && f.type !== "boolean") {
+      return `${f.label || f.key}：遮挡样式仅支持开关（boolean）字段`;
     }
   }
   return null;

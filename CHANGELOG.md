@@ -24,6 +24,35 @@
 
 ## 最新版本
 
+## [0.11.28] - 2026-05-30
+
+> **标注属性区上下分栏 + 改类悬浮框定位修复 + 图片单框编辑条对齐视频。** 把右侧属性表单从「选中时插入列表上方 / 详情卡内、动态挤压列表」改为固定在侧栏底部的**可折叠属性区**（图片）/可折叠区块（视频），选中即刷新；图片工作台单框编辑（改类 / 删除）迁移到**画布右上角图标条**，与视频一致；修复视频改类悬浮框锚点硬编码导致跑到顶部；修复图片「未分类」标注被误判为孤儿而错误显示「已删除」徽标。
+
+### Fixed
+
+- **「未分类」误标「已删除」**: `useWorkbenchShellModel` 的孤儿（orphan）判定排除 `__unknown` sentinel——它是用户未指定类别时的合法占位值，并非「项目类别配置中已删除」的孤儿，不应显示「已删除」徽标。
+- **视频改类悬浮框定位异常**: `handleStartChangeClass` 不再对视频几何硬编码 `{left: innerWidth-340, top: 96}`，改为锚定到**画布上选中框的屏幕位置**——`VideoStage` 给 overlay SVG 打 `data-video-overlay` 标记，按当前帧 bbox + overlay 屏幕矩形算锚点，覆盖快捷键 / 右键菜单 / 画布选择栏 / 侧栏「重命名类别」等所有改类入口；框在当前帧不可见时回落到触发按钮位置，再不行才贴右上角。`ClassPickerPopover` 另加 fixed 模式视口边界 clamp/翻转，避免溢出右侧或底部。
+
+### Changed
+
+- **属性区上下分栏**: 图片工作台 `AIInspectorPanel` 的 `AttributeForm` 从列表上方移到**侧栏底部固定可折叠区**（`attrDock`，限高 45% 避免挤压列表，选中即刷新）；视频工作台 `VideoTrackPanel` 的 `VideoAttributesEditor` 也包成**可折叠区块**（视觉一致）。`AttributeForm` 新增 `hideHeading` prop（外层折叠头承载标题时隐藏内部标题）；仅图片任务渲染 `attrDock`，视频任务统一由 `VideoAttributesEditor` 两层承载，避免误用单层表单。
+- **改类悬浮框并入属性**: `ClassPickerPopover` 在类别选择下方内联属性表单（图片全量可见属性 / 视频「轨迹默认值」层 mutable 字段，单列堆叠）；改类改为「点选即时提交但不关闭悬浮框」（`handleChangeClassKeepOpen`），属性随新类别联动刷新可见字段。悬浮框 `max-height` 放宽到 `70vh`，选类快捷键放行 select/textarea 输入。
+- **图片单框编辑条对齐视频**: 图片工作台选中**单个用户框**时的编辑（改类 / 删除）从贴框浮条迁移到**画布右上角的图标按钮条**（新增 `ImageSelectionActions`，复用视频 `VideoSelectionActions` 的深色药丸样式），与视频工作台一致；AI 预测（采纳 / 驳回）与多选批量（批量改类 / 删除 / 取消）仍保留贴框的 `SelectionOverlay`（更依赖框的位置上下文）。`SelectionOverlay` 移除已失效的单框改类/删除分支及相关样式。
+- **属性表单紧凑化 + boolean 改开关**: `AttributeForm`（改类悬浮框内联 / 侧栏底部属性区共用）布局收紧——boolean 字段改**单行**（标签左、控件右，不再单独占一行）且控件由勾选框升级为**开关 toggle**（视觉沿用 Topbar 的 `switchTrack`/`switchKnob`，仍是真实 checkbox：label 关联 + 键盘可达 + focus 环），range 字段右侧**显示当前数值**，字段纵向内边距与字段间距收窄；改类悬浮框去掉与 `.form` 重复的分隔线（消除双横线）。属性类型显示名 **boolean「勾选」→「开关」**（`AttributeSchemaEditor`，与 文本/数字/下拉/区间滑杆 的控件命名风格一致）。
+
+## [0.11.27] - 2026-05-30
+
+> **图片遮挡：内置状态位 → 属性联动（⚠️ breaking）。** 图片工作台的「标记遮挡」内置状态位 `is_occluded` 只影响画布视觉、不进任何导出，且占用 `BoxListItem` 一格按钮——删除它，把「遮挡」语义收敛为普通属性 schema 字段：boolean 属性新增可选「遮挡样式」开关，勾选后该属性为 `true` 时画布框沿用虚线+半透视觉，并天然进 COCO/YOLO 导出。切换改走属性自带的数字键（1-9）hotkey，字母 O 键废弃。→ [plan](docs/plans/2026-05-30-v0.11.27-occluded-to-attribute.md)
+
+### Added
+
+- **属性「遮挡样式」开关**: `AttributeField` 新增可选 `style_occluded`（仅 boolean 字段，后端 `_check_unique` 校验）。项目属性编辑器在 boolean 字段下新增勾选项；勾选后该属性值为 `true` 时，画布对应标注框渲染为虚线 + 0.5 半透（沿用 `ImageStageShapes` 视觉，不限定属性 key 名）。遮挡随属性进 `annotations[].attributes`，导出层无需改动。
+- **渲染派生 `occluded`**: `transforms.collectOccludedKeys()` 收集标了 `style_occluded` 的 boolean key；`annotationToBox(a, occludedKeys)` 据此计算渲染对象的 `occluded` 字段。工作台与复核界面（`ReviewWorkbench`）跨工具单位取 key 并集，保证一致显示。
+
+### Removed
+
+- **⚠️ BREAKING · 删除内置 `is_occluded`**: 删 `annotations.is_occluded` 列（迁移 `0088`，downgrade 仅重建空列、不恢复原值）及其全链路——后端 `AnnotationUpdate`/`AnnotationBulkPatch`/`AnnotationOut`、`AnnotationService.update/bulk_update`；前端 `BoxListItem` 的 O 遮挡按钮、右键「标记遮挡」菜单、O 快捷键、各处 `"is_occluded"` 联合类型分支。`is_hidden`/`is_locked`/`z_order` 三个状态位保留不动；视频侧遮挡（Q 键 / `keyframe.occluded` / MOT/KITTI 导出）是另一套，不受影响。
+
 ## [0.11.26] - 2026-05-30
 
 > **视频工作台时间轴外观/布局优化。** playhead 改为竖线、overlay 两行布局让进度条独占一行；选中轨迹的关键帧点跟随轨迹色并外发光、未选中时密度条按各轨迹占比堆叠成彩色渐变；FloatingDock 让位 BugReportFAB；边栏开合的 fitTick 信号扩展到 video，VideoStage 监听并支持双击适应窗口。→ [plan](docs/plans/2026-05-29-v0.11.26-video-timeline-ui.md)

@@ -1,4 +1,4 @@
-import type { ToolBindings } from "@/api/projects";
+import type { AttributeField, ToolBindings } from "@/api/projects";
 import type { ToolUnitId } from "@/constants/toolUnits";
 import type { Annotation, AnnotationResponse, BboxGeometry, Geometry, Keypoint, MultiPolygonGeometry, PolygonGeometry, PolylineGeometry, PredictionResponse, PredictionSourceValue } from "@/types";
 
@@ -137,7 +137,16 @@ export function geometryToShape(g: Geometry): {
   return { x: g.x, y: g.y, w: g.w, h: g.h };
 }
 
-export function annotationToBox(a: AnnotationResponse): Annotation {
+/**
+ * v0.11.27 · 收集属性 schema 中标了 `style_occluded` 的 boolean 字段 key。
+ * 这些属性为 true 时，对应标注框渲染为虚线+半透（遮挡样式）。
+ */
+export const collectOccludedKeys = (fields: AttributeField[]): Set<string> =>
+  new Set(
+    fields.filter((f) => f.type === "boolean" && f.style_occluded).map((f) => f.key),
+  );
+
+export function annotationToBox(a: AnnotationResponse, occludedKeys?: Set<string>): Annotation {
   const shape = geometryToShape(a.geometry);
   return {
     id: a.id,
@@ -153,7 +162,10 @@ export function annotationToBox(a: AnnotationResponse): Annotation {
     z_order: a.z_order ?? 0,
     is_locked: a.is_locked ?? false,
     is_hidden: a.is_hidden ?? false,
-    is_occluded: a.is_occluded ?? false,
+    // v0.11.27 · 遮挡为渲染派生：任一 style_occluded 属性为 true 即触发。
+    occluded: occludedKeys
+      ? [...occludedKeys].some((k) => a.attributes?.[k] === true)
+      : false,
     // I12 · Object Group; null/undefined 表示未分组.
     group_id: a.group_id ?? null,
   };

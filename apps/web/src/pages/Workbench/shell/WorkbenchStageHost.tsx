@@ -104,7 +104,7 @@ interface WorkbenchStageHostImageProps {
   onRejectPrediction: (b: AiBox) => void;
   onPatchShapeFlag?: (
     id: string,
-    flag: "z_order" | "is_locked" | "is_hidden" | "is_occluded",
+    flag: "z_order" | "is_locked" | "is_hidden",
     value: number | boolean,
   ) => void;
   imageClipboardActions?: ImageContextMenuClipboardActions | null;

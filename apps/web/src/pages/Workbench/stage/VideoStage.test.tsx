@@ -2082,7 +2082,10 @@ describe("VideoStage", () => {
 
     fireEvent.click(getByTitle("重命名轨迹类别"));
 
-    expect(onChangeUserBoxClass).toHaveBeenCalledWith("t1");
+    expect(onChangeUserBoxClass).toHaveBeenCalledWith(
+      "t1",
+      expect.objectContaining({ left: expect.any(Number), top: expect.any(Number) }),
+    );
     expect(promptSpy).not.toHaveBeenCalled();
     promptSpy.mockRestore();
   });

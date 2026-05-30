@@ -1,7 +1,7 @@
 """v0.10.5 M4-β · annotation shape 状态位字段级 PATCH (I15).
 
 覆盖 PATCH /tasks/{tid}/annotations/{aid} 写入 z_order / is_locked /
-is_hidden / is_occluded 后:
+is_hidden 后:
   - DB 字段持久化
   - AnnotationOut 透出新字段
   - 默认值（旧记录）回落 0 / false
@@ -82,7 +82,6 @@ async def test_shape_metadata_defaults_are_zero_false(
     assert a["z_order"] == 0
     assert a["is_locked"] is False
     assert a["is_hidden"] is False
-    assert a["is_occluded"] is False
 
 
 @pytest.mark.asyncio
@@ -92,7 +91,7 @@ async def test_patch_shape_metadata_persists(httpx_client, db_session, annotator
 
     r = await httpx_client.patch(
         f"/api/v1/tasks/{task.id}/annotations/{ann.id}",
-        json={"z_order": 3, "is_locked": True, "is_hidden": True, "is_occluded": True},
+        json={"z_order": 3, "is_locked": True, "is_hidden": True},
         headers=_bearer(ann_token),
     )
     assert r.status_code == 200, r.text
@@ -100,14 +99,12 @@ async def test_patch_shape_metadata_persists(httpx_client, db_session, annotator
     assert body["z_order"] == 3
     assert body["is_locked"] is True
     assert body["is_hidden"] is True
-    assert body["is_occluded"] is True
 
     # DB 持久化
     await db_session.refresh(ann)
     assert ann.z_order == 3
     assert ann.is_locked is True
     assert ann.is_hidden is True
-    assert ann.is_occluded is True
     # version 应递增（乐观并发）
     assert ann.version >= 2
 
@@ -128,4 +125,3 @@ async def test_patch_shape_metadata_partial(httpx_client, db_session, annotator)
     assert body["is_locked"] is True
     assert body["z_order"] == 0  # 未指定字段保持原值
     assert body["is_hidden"] is False
-    assert body["is_occluded"] is False

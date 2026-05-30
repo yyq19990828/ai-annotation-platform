@@ -20,7 +20,8 @@ import { BoxListItem } from "../stage/BoxListItem";
 import { groupOutlineColor } from "../stage/ImageStageShapes";
 import { resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { isFrameOutside } from "../stage/videoTrackOutside";
-import { AttributeForm } from "./AttributeForm";
+import { displayClassName } from "../stage/colors";
+import { AttributeForm, getMissingRequired } from "./AttributeForm";
 import { SchemaForm, VARIANT_FIELD_KEYS, type JsonSchemaObject } from "../components/SchemaForm";
 import styles from "./AIInspectorPanel.module.css";
 
@@ -71,8 +72,8 @@ interface AIInspectorPanelProps {
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
-  /** v0.10.5 M4-β · I15 切换 shape 状态位（lock/hidden/occluded）。 */
-  onToggleUserBoxFlag?: (id: string, flag: "is_locked" | "is_hidden" | "is_occluded") => void;
+  /** v0.10.5 M4-β · I15 切换 shape 状态位（lock/hidden）。 */
+  onToggleUserBoxFlag?: (id: string, flag: "is_locked" | "is_hidden") => void;
   /** v0.6.5 · 任务已锁定（review/completed），属性表单只读。 */
   readOnly?: boolean;
   videoTrackPanel?: React.ReactNode | ((frameFilter: FrameFilter) => React.ReactNode);
@@ -112,6 +113,11 @@ export function AIInspectorPanel({
     ? new Set(selectedIds)
     : selectedId ? new Set([selectedId]) : new Set<string>();
   const multiCount = selSet.size > 1 ? selSet.size : 0;
+  // 底部属性区折叠态（v0.11.28 上下分栏：属性区固定在列表下方，可折叠让出列表空间）。
+  const [attrCollapsed, setAttrCollapsed] = useState(false);
+  const attrMissing = selectedAnnotation && attributeSchema
+    ? getMissingRequired(attributeSchema, selectedAnnotation.class_name, selectedAnnotation.attributes ?? {})
+    : [];
   if (!open) {
     return null;
   }
@@ -129,24 +135,6 @@ export function AIInspectorPanel({
           <span>已选 <b>{multiCount}</b> 个 user 框</span>
           <button onClick={onClearSelection} className={styles.clearSelectionButton}>清除</button>
         </div>
-      )}
-
-      {selectedAnnotation && attributeSchema && onUpdateAttributes && (
-        <AttributeForm
-          schema={attributeSchema}
-          className={selectedAnnotation.class_name}
-          attributes={selectedAnnotation.attributes ?? {}}
-          // v0.10.20 · I12 多选批量: 有 onBulkUpdateAttributes 且选中 >1 时 fan-out, 否则单条 PATCH.
-          onChange={(next) => {
-            if (multiCount > 1 && onBulkUpdateAttributes) {
-              onBulkUpdateAttributes(Array.from(selSet), { attributes: next });
-            } else {
-              onUpdateAttributes(selectedAnnotation.id, next);
-            }
-          }}
-          batchCount={multiCount > 1 ? multiCount : undefined}
-          readOnly={readOnly}
-        />
       )}
 
       <BoxesList
@@ -175,6 +163,45 @@ export function AIInspectorPanel({
         onSelectGroup={onSelectGroup}
         videoTrackPanel={videoTrackPanel}
       />
+      {/* 视频任务的属性由 VideoTrackPanel 内的两层 VideoAttributesEditor 承载，此处仅图片任务渲染。 */}
+      {!videoTrackPanel && selectedAnnotation && attributeSchema && onUpdateAttributes && (
+        <div className={styles.attrDock}>
+          <button
+            type="button"
+            className={styles.attrDockHeader}
+            onClick={() => setAttrCollapsed((v) => !v)}
+            aria-expanded={!attrCollapsed}
+            title={attrCollapsed ? "展开属性" : "折叠属性"}
+          >
+            <Icon name={attrCollapsed ? "chevRight" : "chevDown"} size={13} />
+            <span>属性</span>
+            {attrMissing.length > 0 && (
+              <span className={styles.attrDockMissing}>· {attrMissing.length} 项必填未填</span>
+            )}
+            <span className={styles.attrDockClass}>{displayClassName(selectedAnnotation.class_name)}</span>
+          </button>
+          {!attrCollapsed && (
+            <div className={styles.attrDockBody}>
+              <AttributeForm
+                schema={attributeSchema}
+                className={selectedAnnotation.class_name}
+                attributes={selectedAnnotation.attributes ?? {}}
+                // v0.10.20 · I12 多选批量: 有 onBulkUpdateAttributes 且选中 >1 时 fan-out, 否则单条 PATCH.
+                onChange={(next) => {
+                  if (multiCount > 1 && onBulkUpdateAttributes) {
+                    onBulkUpdateAttributes(Array.from(selSet), { attributes: next });
+                  } else {
+                    onUpdateAttributes(selectedAnnotation.id, next);
+                  }
+                }}
+                batchCount={multiCount > 1 ? multiCount : undefined}
+                readOnly={readOnly}
+                hideHeading
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -597,8 +624,8 @@ interface BoxesListProps {
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
-  /** v0.10.5 M4-β · I15 切换 shape 状态位（lock/hidden/occluded）。 */
-  onToggleUserBoxFlag?: (id: string, flag: "is_locked" | "is_hidden" | "is_occluded") => void;
+  /** v0.10.5 M4-β · I15 切换 shape 状态位（lock/hidden）。 */
+  onToggleUserBoxFlag?: (id: string, flag: "is_locked" | "is_hidden") => void;
   onSeekFrame?: (frameIndex: number) => void;
   onSelectGroup?: (memberIds: string[]) => void;
   videoTrackPanel?: React.ReactNode | ((frameFilter: FrameFilter) => React.ReactNode);

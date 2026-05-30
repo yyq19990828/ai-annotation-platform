@@ -33,6 +33,8 @@ export interface AttributeFormProps {
   dirtyTracker?: DirtyTracker;
   /** v0.10.6：dirty tracker 模式下，需要 annotationId 才能 mark / flush。 */
   annotationId?: string;
+  /** 隐藏内部「属性」标题行：外层（侧栏底部折叠头 / 悬浮框）已承载标题时使用，避免重复。 */
+  hideHeading?: boolean;
 }
 
 /** 判断 field 在当前 class + 当前值组合下是否应展示。 */
@@ -74,7 +76,7 @@ function cn(...xs: Array<string | false | null | undefined>): string {
 export function AttributeForm({
   schema, className, attributes, onChange, readOnly,
   context = "image", dirtyTracker, annotationId,
-  batchCount,
+  batchCount, hideHeading,
 }: AttributeFormProps) {
   const [draft, setDraft] = useState<Record<string, unknown>>(attributes ?? {});
   const lastFromUpstream = useRef<Record<string, unknown>>(attributes ?? {});
@@ -144,15 +146,20 @@ export function AttributeForm({
           <b>{batchCount}</b> 个标注被选中, 修改将应用到全部
         </div>
       )}
-      <div className={styles.heading}>
-        属性 {missing.length > 0 && <span className={styles.missingSummary}>· {missing.length} 项必填未填</span>}
-      </div>
+      {!hideHeading && (
+        <div className={styles.heading}>
+          属性 {missing.length > 0 && <span className={styles.missingSummary}>· {missing.length} 项必填未填</span>}
+        </div>
+      )}
       {visible.map((f) => {
         const v = draft[f.key];
         const isMissing = f.required && missing.includes(f.key);
         const setValue = (newV: unknown) => scheduleCommit({ ...draft, [f.key]: newV });
         return (
-          <label key={f.key} className={cn(styles.field, isMissing && styles.fieldMissing)}>
+          <label
+            key={f.key}
+            className={cn(styles.field, f.type === "boolean" && styles.fieldInline, isMissing && styles.fieldMissing)}
+          >
             <span className={styles.labelRow}>
               {f.label}
               {f.required && <span className={styles.requiredMarker}>*</span>}
@@ -200,13 +207,21 @@ export function AttributeForm({
               />
             )}
             {f.type === "boolean" && (
-              <input
-                type="checkbox"
-                checked={!!v}
-                disabled={readOnly}
-                onChange={(e) => setValue(e.target.checked)}
-                className={styles.checkbox}
-              />
+              <span className={styles.switch}>
+                <input
+                  type="checkbox"
+                  checked={!!v}
+                  disabled={readOnly}
+                  onChange={(e) => setValue(e.target.checked)}
+                  className={styles.switchInput}
+                />
+                <span
+                  aria-hidden="true"
+                  className={cn(styles.switchTrack, !!v && styles.switchTrackOn)}
+                >
+                  <span className={styles.switchKnob} />
+                </span>
+              </span>
             )}
             {f.type === "select" && (
               <select
@@ -238,14 +253,20 @@ export function AttributeForm({
               </select>
             )}
             {f.type === "range" && (
-              <input
-                type="range"
-                min={f.min ?? 0}
-                max={f.max ?? 100}
-                value={typeof v === "number" ? v : f.min ?? 0}
-                disabled={readOnly}
-                onChange={(e) => setValue(Number(e.target.value))}
-              />
+              <div className={styles.rangeRow}>
+                <input
+                  type="range"
+                  min={f.min ?? 0}
+                  max={f.max ?? 100}
+                  value={typeof v === "number" ? v : f.min ?? 0}
+                  disabled={readOnly}
+                  onChange={(e) => setValue(Number(e.target.value))}
+                  className={styles.range}
+                />
+                <span className={cn("mono", styles.rangeValue)}>
+                  {typeof v === "number" ? v : f.min ?? 0}
+                </span>
+              </div>
             )}
           </label>
         );

@@ -24,7 +24,7 @@ interface BuildImageContextMenuItemsArgs {
   onDelete?: (id: string) => void;
   onPatchFlag?: (
     id: string,
-    flag: "z_order" | "is_locked" | "is_hidden" | "is_occluded",
+    flag: "z_order" | "is_locked" | "is_hidden",
     value: number | boolean,
   ) => void;
 }
@@ -60,15 +60,6 @@ export function findContextMenuAnnotationId(node: NodeLike | null): string | nul
   return null;
 }
 
-function annotationSupportsOcclusion(annotation: Annotation): boolean {
-  const geometryType = annotation.geometry?.type;
-  return geometryType === "bbox"
-    || geometryType === "rotated_bbox"
-    || geometryType === "polygon"
-    || geometryType === "multi_polygon"
-    || (!geometryType && Boolean(annotation.polygon));
-}
-
 export function buildImageContextMenuItems({
   annotation,
   readOnly,
@@ -81,9 +72,7 @@ export function buildImageContextMenuItems({
 }: BuildImageContextMenuItemsArgs): DropdownItem[] {
   const locked = Boolean(annotation.is_locked);
   const hidden = Boolean(annotation.is_hidden);
-  const occluded = Boolean(annotation.is_occluded);
   const shapeMutationDisabled = readOnly || locked;
-  const occlusionSupported = annotationSupportsOcclusion(annotation);
 
   const items: DropdownItem[] = [
     {
@@ -110,17 +99,6 @@ export function buildImageContextMenuItems({
       onSelect: () => onPatchFlag?.(annotation.id, "is_hidden", !hidden),
     },
   ];
-
-  if (occlusionSupported) {
-    items.push({
-      id: "occluded",
-      label: occluded ? "取消遮挡" : "标记遮挡",
-      icon: "circleDot",
-      kbd: "O",
-      disabled: shapeMutationDisabled || !onPatchFlag,
-      onSelect: () => onPatchFlag?.(annotation.id, "is_occluded", !occluded),
-    });
-  }
 
   items.push(
     { id: "state-divider", divider: true, label: "" },

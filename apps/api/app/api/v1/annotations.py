@@ -138,7 +138,6 @@ async def bulk_update_annotations(
         z_order=payload.patch.z_order,
         is_locked=payload.patch.is_locked,
         is_hidden=payload.patch.is_hidden,
-        is_occluded=payload.patch.is_occluded,
         group_id=payload.patch.group_id,
         group_id_explicit_clear=payload.patch.group_id_explicit_clear,
     )

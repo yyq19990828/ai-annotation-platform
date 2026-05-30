@@ -38,7 +38,6 @@ class AnnotationUpdate(BaseModel):
     z_order: int | None = None
     is_locked: bool | None = None
     is_hidden: bool | None = None
-    is_occluded: bool | None = None
 
     @field_validator("geometry", mode="before")
     @classmethod
@@ -66,7 +65,6 @@ class AnnotationBulkPatch(BaseModel):
     z_order: int | None = None
     is_locked: bool | None = None
     is_hidden: bool | None = None
-    is_occluded: bool | None = None
     group_id: int | None = None
     # group_id 特殊语义: explicit_clear=True 时把 group_id 置 null;
     # 单 None 字段 pydantic 无法区分"未提供"与"显式 null".
@@ -161,7 +159,6 @@ class AnnotationOut(BaseModel):
     z_order: int = 0
     is_locked: bool = False
     is_hidden: bool = False
-    is_occluded: bool = False
     version: int = 1
     created_at: datetime
     updated_at: datetime | None = None
