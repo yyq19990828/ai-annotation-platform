@@ -8,6 +8,7 @@ import {
   polygonBounds,
   geometryToShape,
   annotationToBox,
+  collectOccludedKeys,
   predictionsToBoxes,
 } from "./transforms";
 
@@ -107,6 +108,46 @@ describe("annotationToBox", () => {
       source: "manual",
     } as any;
     expect(annotationToBox(ann).conf).toBe(1);
+  });
+
+  // v0.11.27 · 遮挡为渲染派生：style_occluded 属性为 true 时 occluded=true。
+  it("不传 occludedKeys → occluded 默认 false", () => {
+    const ann = {
+      id: "a3",
+      geometry: { type: "bbox", x: 0, y: 0, w: 1, h: 1 },
+      class_name: "car",
+      source: "manual",
+      attributes: { occ: true },
+    } as any;
+    expect(annotationToBox(ann).occluded).toBe(false);
+  });
+
+  it("属性命中 occludedKeys 且为 true → occluded=true", () => {
+    const keys = new Set(["occ"]);
+    const truthy = {
+      id: "a4",
+      geometry: { type: "bbox", x: 0, y: 0, w: 1, h: 1 },
+      class_name: "car",
+      source: "manual",
+      attributes: { occ: true },
+    } as any;
+    const falsy = { ...truthy, id: "a5", attributes: { occ: false } } as any;
+    const missing = { ...truthy, id: "a6", attributes: {} } as any;
+    expect(annotationToBox(truthy, keys).occluded).toBe(true);
+    expect(annotationToBox(falsy, keys).occluded).toBe(false);
+    expect(annotationToBox(missing, keys).occluded).toBe(false);
+  });
+});
+
+describe("collectOccludedKeys", () => {
+  it("仅收集 boolean 且 style_occluded 的字段 key", () => {
+    const fields = [
+      { key: "occ", label: "遮挡", type: "boolean", style_occluded: true },
+      { key: "blur", label: "模糊", type: "boolean" },
+      { key: "note", label: "备注", type: "text", style_occluded: true },
+    ] as any;
+    const keys = collectOccludedKeys(fields);
+    expect([...keys]).toEqual(["occ"]);
   });
 });
 

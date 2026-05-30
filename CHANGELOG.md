@@ -24,6 +24,19 @@
 
 ## 最新版本
 
+## [0.11.27] - 2026-05-30
+
+> **图片遮挡：内置状态位 → 属性联动（⚠️ breaking）。** 图片工作台的「标记遮挡」内置状态位 `is_occluded` 只影响画布视觉、不进任何导出，且占用 `BoxListItem` 一格按钮——删除它，把「遮挡」语义收敛为普通属性 schema 字段：boolean 属性新增可选「遮挡样式」开关，勾选后该属性为 `true` 时画布框沿用虚线+半透视觉，并天然进 COCO/YOLO 导出。切换改走属性自带的数字键（1-9）hotkey，字母 O 键废弃。→ [plan](docs/plans/2026-05-30-v0.11.27-occluded-to-attribute.md)
+
+### Added
+
+- **属性「遮挡样式」开关**: `AttributeField` 新增可选 `style_occluded`（仅 boolean 字段，后端 `_check_unique` 校验）。项目属性编辑器在 boolean 字段下新增勾选项；勾选后该属性值为 `true` 时，画布对应标注框渲染为虚线 + 0.5 半透（沿用 `ImageStageShapes` 视觉，不限定属性 key 名）。遮挡随属性进 `annotations[].attributes`，导出层无需改动。
+- **渲染派生 `occluded`**: `transforms.collectOccludedKeys()` 收集标了 `style_occluded` 的 boolean key；`annotationToBox(a, occludedKeys)` 据此计算渲染对象的 `occluded` 字段。工作台与复核界面（`ReviewWorkbench`）跨工具单位取 key 并集，保证一致显示。
+
+### Removed
+
+- **⚠️ BREAKING · 删除内置 `is_occluded`**: 删 `annotations.is_occluded` 列（迁移 `0088`，downgrade 仅重建空列、不恢复原值）及其全链路——后端 `AnnotationUpdate`/`AnnotationBulkPatch`/`AnnotationOut`、`AnnotationService.update/bulk_update`；前端 `BoxListItem` 的 O 遮挡按钮、右键「标记遮挡」菜单、O 快捷键、各处 `"is_occluded"` 联合类型分支。`is_hidden`/`is_locked`/`z_order` 三个状态位保留不动；视频侧遮挡（Q 键 / `keyframe.occluded` / MOT/KITTI 导出）是另一套，不受影响。
+
 ## [0.11.26] - 2026-05-30
 
 > **视频工作台时间轴外观/布局优化。** playhead 改为竖线、overlay 两行布局让进度条独占一行；选中轨迹的关键帧点跟随轨迹色并外发光、未选中时密度条按各轨迹占比堆叠成彩色渐变；FloatingDock 让位 BugReportFAB；边栏开合的 fitTick 信号扩展到 video，VideoStage 监听并支持双击适应窗口。→ [plan](docs/plans/2026-05-29-v0.11.26-video-timeline-ui.md)

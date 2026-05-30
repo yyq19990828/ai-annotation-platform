@@ -62,7 +62,7 @@ describe("imageStageContextMenu", () => {
     expect(findContextMenuAnnotationId(null)).toBeNull();
   });
 
-  it("builds bbox menu items with occlusion and clipboard actions", () => {
+  it("builds bbox menu items with clipboard actions", () => {
     const onChangeClass = vi.fn();
     const onDelete = vi.fn();
     const onPatchFlag = vi.fn();
@@ -80,7 +80,6 @@ describe("imageStageContextMenu", () => {
       onPatchFlag,
     });
 
-    expect(items.map((item) => item.id)).toContain("occluded");
     expect(items.find((item) => item.id === "paste")?.disabled).toBe(false);
 
     items.find((item) => item.id === "copy")?.onSelect?.();
@@ -89,7 +88,7 @@ describe("imageStageContextMenu", () => {
     expect(paste).toHaveBeenCalled();
   });
 
-  it("omits occlusion for keypoints and disables mutations on locked shapes except unlock", () => {
+  it("disables mutations on locked shapes except unlock", () => {
     const items = buildImageContextMenuItems({
       annotation: annotation({
         geometry: {
@@ -108,7 +107,6 @@ describe("imageStageContextMenu", () => {
       onPatchFlag: vi.fn(),
     });
 
-    expect(items.map((item) => item.id)).not.toContain("occluded");
     expect(items.find((item) => item.id === "class")?.disabled).toBe(true);
     expect(items.find((item) => item.id === "hidden")?.disabled).toBe(true);
     expect(items.find((item) => item.id === "delete")?.disabled).toBe(true);

@@ -108,9 +108,9 @@ async def test_bulk_update_attributes_applies_to_all(db_session, super_admin):
     await db_session.flush()
 
     svc = AnnotationService(db_session)
-    updated = await svc.bulk_update([a1.id, a2.id, a3.id], is_occluded=True)
+    updated = await svc.bulk_update([a1.id, a2.id, a3.id], is_hidden=True)
     assert len(updated) == 3
-    assert all(r.is_occluded for r in updated)
+    assert all(r.is_hidden for r in updated)
     assert all(r.version == 2 for r in updated)
 
 

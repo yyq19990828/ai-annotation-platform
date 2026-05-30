@@ -148,7 +148,7 @@ interface ImageStageProps {
   onChangeUserBoxClass?: (id: string) => void;
   onPatchShapeFlag?: (
     id: string,
-    flag: "z_order" | "is_locked" | "is_hidden" | "is_occluded",
+    flag: "z_order" | "is_locked" | "is_hidden",
     value: number | boolean,
   ) => void;
   clipboardActions?: ImageContextMenuClipboardActions | null;
@@ -935,7 +935,7 @@ export function ImageStage({
                   selected={selSet.has(b.id)}
                   editable={isPrimarySingleSelect}
                   faded={false}
-                  occluded={!!b.is_occluded}
+                  occluded={!!b.occluded}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
                   onRotateStart={isPrimarySingleSelect ? (e) => {
@@ -975,7 +975,7 @@ export function ImageStage({
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   points={livePoints}
                   editable={isOnlySelected}
-                  occluded={!!b.is_occluded}
+                  occluded={!!b.occluded}
                   onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
                   onVertexMouseDown={(vidx, e) => {
                     const cur = (polyOverridePoints(b.id) ?? (b.polyline as Pt[])).slice();
@@ -1065,7 +1065,7 @@ export function ImageStage({
                   selfIntersect={intersects}
                   viewportBBox={viewportBBox}
                   editable={isOnlySelected}
-                  occluded={!!b.is_occluded}
+                  occluded={!!b.occluded}
                   onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
                   onVertexMouseDown={(vidx, e) => {
                     const cur = (polyOverridePoints(b.id) ?? (b.polygon as Pt[])).slice();
@@ -1109,7 +1109,7 @@ export function ImageStage({
                 selected={selSet.has(b.id)}
                 faded={false}
                 editable={!readOnly && !b.is_locked}
-                occluded={!!b.is_occluded}
+                occluded={!!b.occluded}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
                 onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
                 onMoveStart={isPrimarySingleSelect ? (e) => {

@@ -341,7 +341,9 @@ export interface Annotation extends AIBox {
   z_order?: number;
   is_locked?: boolean;
   is_hidden?: boolean;
-  is_occluded?: boolean;
+  // v0.11.27 · 渲染派生字段：由属性 schema 中标了 style_occluded 的 boolean 属性
+  // 为 true 时计算得出（见 transforms.annotationToBox）；驱动虚线+半透视觉。非后端字段。
+  occluded?: boolean;
   // I12 · Object Group; 同 task 内 group_id 相同的多框为一组 (Ctrl+G 形成).
   group_id?: number | null;
 }
@@ -366,7 +368,6 @@ export interface AnnotationResponse {
   z_order?: number;
   is_locked?: boolean;
   is_hidden?: boolean;
-  is_occluded?: boolean;
   // I12 · Object Group; null 表示未分组.
   group_id?: number | null;
   version?: number;

@@ -298,7 +298,6 @@ class AnnotationService:
         z_order: int | None = None,
         is_locked: bool | None = None,
         is_hidden: bool | None = None,
-        is_occluded: bool | None = None,
         group_id: int | None = None,
         group_id_explicit_clear: bool = False,
     ) -> list[Annotation]:
@@ -358,8 +357,6 @@ class AnnotationService:
                 r.is_locked = is_locked
             if is_hidden is not None:
                 r.is_hidden = is_hidden
-            if is_occluded is not None:
-                r.is_occluded = is_occluded
             if group_id is not None:
                 r.group_id = group_id
             elif group_id_explicit_clear:
@@ -476,7 +473,6 @@ class AnnotationService:
         z_order: int | None = None,
         is_locked: bool | None = None,
         is_hidden: bool | None = None,
-        is_occluded: bool | None = None,
     ) -> Annotation | None:
         """Surgical update of mutable fields. Increments version for optimistic concurrency."""
         annotation = await self.db.get(Annotation, annotation_id)
@@ -497,8 +493,6 @@ class AnnotationService:
             annotation.is_locked = is_locked
         if is_hidden is not None:
             annotation.is_hidden = is_hidden
-        if is_occluded is not None:
-            annotation.is_occluded = is_occluded
         annotation.version += 1
         await self.db.flush()
         return annotation

@@ -63,10 +63,10 @@ export interface UseWorkbenchHotkeysArgs {
   recordRecentClass: (cls: string) => void;
   handleDeleteBox: (id: string) => void;
   handleBatchDelete: () => void;
-  /** v0.10.5 M4-β · I15 shape 状态位字段级 PATCH（lock/hidden/occluded/z_order）。 */
+  /** v0.10.5 M4-β · I15 shape 状态位字段级 PATCH（lock/hidden/z_order）。 */
   handlePatchShapeFlag?: (
     id: string,
-    flag: "z_order" | "is_locked" | "is_hidden" | "is_occluded",
+    flag: "z_order" | "is_locked" | "is_hidden",
     value: number | boolean,
   ) => void;
   handleStartChangeClass: (id: string) => void;

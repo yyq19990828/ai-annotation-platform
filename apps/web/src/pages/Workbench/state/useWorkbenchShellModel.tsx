@@ -46,7 +46,7 @@ import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
 import { useActiveIssueStore } from "./useActiveIssueStore";
-import { annotationToBox } from "./transforms";
+import { annotationToBox, collectOccludedKeys } from "./transforms";
 import { applyVideoKeyframeToGeometry } from "./videoTrackCommands";
 import { useAnnotateMode } from "../modes/useAnnotateMode";
 import { useReviewMode } from "../modes/useReviewMode";
@@ -481,11 +481,25 @@ export function useWorkbenchShellModel({
     [predictionsPages],
   );
 
+  // v0.11.27 · 遮挡样式 key 的跨工具单位并集。userBoxes 含全部单位的标注，而
+  // toolView.attributeSchema 仅当前工具单位；故遍历全 tool_bindings 取 style_occluded
+  // boolean key 并集，避免切换工具后其他单位的框遮挡视觉丢失。
+  const occludedKeys = useMemo(() => {
+    const keys = new Set<string>();
+    const tb = currentProject?.tool_bindings ?? {};
+    for (const binding of Object.values(tb)) {
+      for (const k of collectOccludedKeys(binding?.attribute_schema?.fields ?? [])) {
+        keys.add(k);
+      }
+    }
+    return keys;
+  }, [currentProject]);
+
   const userBoxes = useMemo(
     () => visibleAnnotationsData
       .filter((ann) => !(isVideoTask && ann.geometry.type === "video_track"))
-      .map(annotationToBox),
-    [visibleAnnotationsData, isVideoTask],
+      .map((a) => annotationToBox(a, occludedKeys)),
+    [visibleAnnotationsData, isVideoTask, occludedKeys],
   );
 
   const taskAiMeta = useMemo(() => {
@@ -1397,7 +1411,7 @@ export function useWorkbenchShellModel({
       onRefineUserPolygon: handleRefineUserPolygon,
       onClearSelection: () => s.setSelectedId(null), onDeleteUserBox: handleDeleteBox,
       onChangeUserBoxClass: handleStartChangeClass,
-      onToggleUserBoxFlag: (id: string, flag: "is_locked" | "is_hidden" | "is_occluded") => {
+      onToggleUserBoxFlag: (id: string, flag: "is_locked" | "is_hidden") => {
         const ann = userBoxes.find((b) => b.id === id);
         if (!ann) return;
         const cur = !!ann[flag];

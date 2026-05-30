@@ -3,9 +3,10 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useTask, useAnnotations, useReviewClaim } from "@/hooks/useTasks";
 import { usePredictions } from "@/hooks/usePredictions";
+import { useProject } from "@/hooks/useProjects";
 import { ImageStage } from "@/pages/Workbench/stage/ImageStage";
 import {
-  annotationToBox, predictionsToBoxes,
+  annotationToBox, collectOccludedKeys, predictionsToBoxes,
 } from "@/pages/Workbench/state/transforms";
 import { useViewportTransform } from "@/pages/Workbench/state/useViewportTransform";
 import { CommentsPanel } from "@/pages/Workbench/shell/CommentsPanel";
@@ -42,6 +43,7 @@ interface ReviewWorkbenchProps {
 
 export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }: ReviewWorkbenchProps) {
   const { data: task } = useTask(taskId);
+  const { data: project } = useProject(task?.project_id ?? "");
   const { data: annotationsData } = useAnnotations(taskId);
   const predictionsInfinite = usePredictions(taskId);
   const predictionsData = useMemo(
@@ -75,7 +77,22 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
     [annotationsData, selectedId],
   );
 
-  const userBoxes = useMemo(() => (annotationsData ?? []).map(annotationToBox), [annotationsData]);
+  // v0.11.27 · 遮挡样式 key 并集（跨工具单位），复核界面与工作台保持一致的遮挡视觉。
+  const occludedKeys = useMemo(() => {
+    const keys = new Set<string>();
+    const tb = project?.tool_bindings ?? {};
+    for (const binding of Object.values(tb)) {
+      for (const k of collectOccludedKeys(binding?.attribute_schema?.fields ?? [])) {
+        keys.add(k);
+      }
+    }
+    return keys;
+  }, [project]);
+
+  const userBoxes = useMemo(
+    () => (annotationsData ?? []).map((a) => annotationToBox(a, occludedKeys)),
+    [annotationsData, occludedKeys],
+  );
   // 评论卡片绑定 chip 用：annotation_id → class_name。
   const annotationClassById = useMemo(
     () => Object.fromEntries((annotationsData ?? []).map((a) => [a.id, a.class_name])),

@@ -104,6 +104,13 @@ export function AttributeSchemaEditor({
             必填（提交质检前必须填写）
           </label>
 
+          {f.type === "boolean" && (
+            <label className={styles.checkboxLabel}>
+              <input type="checkbox" checked={!!f.style_occluded} onChange={(e) => setField(i, { style_occluded: e.target.checked })} />
+              遮挡样式（该属性为真时，画布框渲染为虚线+半透）
+            </label>
+          )}
+
           {(f.type === "select" || f.type === "multiselect") && (
             <div>
               <label className={styles.label}>选项（逗号分隔，格式 value:label）</label>

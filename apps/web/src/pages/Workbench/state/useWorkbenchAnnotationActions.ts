@@ -77,10 +77,10 @@ export interface UseWorkbenchAnnotationActionsReturn {
   handleCommitPolygonGeometry: (id: string, before: Pt[], after: Pt[]) => void;
   /** v0.10.28 · keypoint 节点几何/可见性变更。 */
   handleCommitKeypointGeometry: (id: string, before: Keypoint[], after: Keypoint[]) => void;
-  /** v0.10.5 M4-β · I15 shape 状态位 (z_order / is_locked / is_hidden / is_occluded) 字段级 PATCH。*/
+  /** v0.10.5 M4-β · I15 shape 状态位 (z_order / is_locked / is_hidden) 字段级 PATCH。*/
   handlePatchShapeFlag: (
     id: string,
-    flag: "z_order" | "is_locked" | "is_hidden" | "is_occluded",
+    flag: "z_order" | "is_locked" | "is_hidden",
     value: number | boolean,
   ) => void;
   /** polygon 草稿点集（由 hotkeys hook 借用一份引用做 Enter/Esc/Backspace 处理）。*/
@@ -608,12 +608,12 @@ export function useWorkbenchAnnotationActions({
   );
 
   // v0.10.5 M4-β · I15 shape 状态位字段级 PATCH。
-  // `flag` ∈ { z_order, is_locked, is_hidden, is_occluded }；value 直传。
+  // `flag` ∈ { z_order, is_locked, is_hidden }；value 直传。
   // 失败时仍 enqueue 离线 op（与 handleCommitMove 一致）。
   const handlePatchShapeFlag = useCallback(
     (
       id: string,
-      flag: "z_order" | "is_locked" | "is_hidden" | "is_occluded",
+      flag: "z_order" | "is_locked" | "is_hidden",
       value: number | boolean,
     ) => {
       if (blockIfLocked()) return;

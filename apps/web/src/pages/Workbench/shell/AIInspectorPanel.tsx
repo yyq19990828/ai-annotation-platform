@@ -71,8 +71,8 @@ interface AIInspectorPanelProps {
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
-  /** v0.10.5 M4-β · I15 切换 shape 状态位（lock/hidden/occluded）。 */
-  onToggleUserBoxFlag?: (id: string, flag: "is_locked" | "is_hidden" | "is_occluded") => void;
+  /** v0.10.5 M4-β · I15 切换 shape 状态位（lock/hidden）。 */
+  onToggleUserBoxFlag?: (id: string, flag: "is_locked" | "is_hidden") => void;
   /** v0.6.5 · 任务已锁定（review/completed），属性表单只读。 */
   readOnly?: boolean;
   videoTrackPanel?: React.ReactNode | ((frameFilter: FrameFilter) => React.ReactNode);
@@ -597,8 +597,8 @@ interface BoxesListProps {
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
-  /** v0.10.5 M4-β · I15 切换 shape 状态位（lock/hidden/occluded）。 */
-  onToggleUserBoxFlag?: (id: string, flag: "is_locked" | "is_hidden" | "is_occluded") => void;
+  /** v0.10.5 M4-β · I15 切换 shape 状态位（lock/hidden）。 */
+  onToggleUserBoxFlag?: (id: string, flag: "is_locked" | "is_hidden") => void;
   onSeekFrame?: (frameIndex: number) => void;
   onSelectGroup?: (memberIds: string[]) => void;
   videoTrackPanel?: React.ReactNode | ((frameFilter: FrameFilter) => React.ReactNode);

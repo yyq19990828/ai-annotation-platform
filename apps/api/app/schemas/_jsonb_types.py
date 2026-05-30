@@ -65,6 +65,9 @@ class AttributeField(BaseModel):
     # （CVAT 的 mutable / immutable 语义）。图片任务下忽略；前端展示「track 默认
     # 值 / 当前帧覆盖」双行，PATCH 走 keyframe override 路径。默认 false 向后兼容。
     mutable: bool | None = None
+    # v0.11.27 · true 表示「该 boolean 属性=true 时，画布框渲染为虚线+半透（遮挡样式）」。
+    # 仅图片任务消费；不影响导出（属性值照常进 attributes）。
+    style_occluded: bool | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -102,6 +105,10 @@ class AttributeSchema(BaseModel):
             if f.type in {"select", "multiselect"} and not f.options:
                 raise ValueError(
                     f"fields[{f.key!r}].options 必填且非空（{f.type} 类型）"
+                )
+            if f.style_occluded and f.type != "boolean":
+                raise ValueError(
+                    f"fields[{f.key!r}].style_occluded 仅支持 boolean 字段"
                 )
         return self
 
