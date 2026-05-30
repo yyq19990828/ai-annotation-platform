@@ -31,7 +31,7 @@
 ### Fixed
 
 - **「未分类」误标「已删除」**: `useWorkbenchShellModel` 的孤儿（orphan）判定排除 `__unknown` sentinel——它是用户未指定类别时的合法占位值，并非「项目类别配置中已删除」的孤儿，不应显示「已删除」徽标。
-- **视频改类悬浮框定位异常**: `handleStartChangeClass` 不再对视频几何硬编码 `{left: innerWidth-340, top: 96}`，改由触发按钮（`VideoTrackPanel` 重命名类别按钮）传入真实 `getBoundingClientRect` 位置；`ClassPickerPopover` 新增 fixed 模式视口边界 clamp/翻转，避免悬浮框溢出右侧或底部。
+- **视频改类悬浮框定位异常**: `handleStartChangeClass` 不再对视频几何硬编码 `{left: innerWidth-340, top: 96}`，改为锚定到**画布上选中框的屏幕位置**——`VideoStage` 给 overlay SVG 打 `data-video-overlay` 标记，按当前帧 bbox + overlay 屏幕矩形算锚点，覆盖快捷键 / 右键菜单 / 画布选择栏 / 侧栏「重命名类别」等所有改类入口；框在当前帧不可见时回落到触发按钮位置，再不行才贴右上角。`ClassPickerPopover` 另加 fixed 模式视口边界 clamp/翻转，避免溢出右侧或底部。
 
 ### Changed
 

@@ -224,6 +224,11 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const overlayRef = useRef<SVGSVGElement>(null);
   const viewportSize = useElementSize(containerRef);
   const { vp, vpRef, setVp, fit, zoomAt } = useViewportTransform();
+  // v0.11.28：给 overlay SVG 打标记，供改类悬浮框按"画布上的框"定位
+  //（handleStartChangeClass 用 querySelector 取其屏幕矩形 + 当前帧 bbox 算锚点）。
+  useEffect(() => {
+    overlayRef.current?.setAttribute("data-video-overlay", "");
+  });
   const [uncontrolledFrameIndex, setUncontrolledFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [jogPlayback, setJogPlayback] = useState<VideoJogPlayback>(PAUSED_JOG_PLAYBACK);

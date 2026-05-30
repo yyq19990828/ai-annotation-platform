@@ -22,6 +22,7 @@ import {
 import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
 import { tightenBboxFromPolygon } from "../../stage/shared/geometry/bbox";
 import { UNKNOWN_CLASS } from "../../stage/colors";
+import { resolveTrackAtFrame } from "../../stage/videoStageGeometry";
 import { useClipboard } from "../../state/useClipboard";
 import {
   useWorkbenchAnnotationActions,
@@ -31,6 +32,29 @@ import type { useWorkbenchState } from "../../state/useWorkbenchState";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
+
+/**
+ * v0.11.28：视频改类时，把选中框在「当前帧」的归一化 bbox 转成屏幕坐标，
+ * 让改类悬浮框锚到画布上的框（而非贴顶部）。overlay SVG 由 VideoStage 打上 `data-video-overlay`。
+ * 框在当前帧不可见（如 track 在该帧被标消失）时返回 undefined，由调用方回落到其它锚点。
+ */
+function videoBoxScreenAnchor(
+  ann: AnnotationResponse,
+  frameIndex: number,
+): { left: number; top: number } | undefined {
+  if (typeof document === "undefined") return undefined;
+  let g: { x: number; y: number; w: number; h: number } | undefined;
+  if (ann.geometry.type === "video_track") {
+    g = resolveTrackAtFrame(ann.geometry, frameIndex)?.geom;
+  } else if (ann.geometry.type === "video_bbox") {
+    const b = ann.geometry;
+    g = { x: b.x, y: b.y, w: b.w, h: b.h };
+  }
+  if (!g) return undefined;
+  const rect = document.querySelector("[data-video-overlay]")?.getBoundingClientRect();
+  if (!rect || rect.width === 0) return undefined;
+  return { left: rect.left + g.x * rect.width, top: rect.top + (g.y + g.h) * rect.height + 6 };
+}
 
 interface ToastInput {
   msg: string;
@@ -683,12 +707,14 @@ export function useImageAnnotationActions({
     if (!ann) return;
     const isVideoGeometry = ann.geometry.type === "video_bbox" || ann.geometry.type === "video_track";
     const geom = isVideoGeometry ? geometryToShape(ann.geometry) : ann.geometry as Geom;
-    // 视频几何无法用 image 定位（侧栏列表无 stage transform），需 fixed anchor：
-    // 优先用触发按钮传入的真实位置（在侧栏列表点改类时），缺省（如快捷键，无 DOM）才回落到右上角。
-    const resolvedAnchor = anchor
-      ?? (isVideoGeometry && typeof window !== "undefined"
-        ? { left: Math.max(16, window.innerWidth - 340), top: 96 }
-        : undefined);
+    // 视频几何无法走 image 定位（侧栏/快捷键无 stage transform），需 fixed anchor：
+    // 优先锚到画布上的框（overlay 屏幕矩形 + 当前帧 bbox），覆盖所有触发入口；
+    // 框在当前帧不可见时退回调用方传入的锚点（如侧栏按钮），再不行才贴右上角兜底。
+    const resolvedAnchor = isVideoGeometry
+      ? (videoBoxScreenAnchor(ann, s.videoFrameIndex)
+        ?? anchor
+        ?? (typeof window !== "undefined" ? { left: Math.max(16, window.innerWidth - 340), top: 96 } : undefined))
+      : anchor;
     s.setEditingClass({
       annotationId,
       geom,
