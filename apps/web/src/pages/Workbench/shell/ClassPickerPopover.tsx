@@ -53,9 +53,27 @@ export function ClassPickerPopover({
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.style.setProperty("--class-picker-left", `${left}px`);
-    el.style.setProperty("--class-picker-top", `${top}px`);
-  }, [left, top]);
+    let l = left;
+    let t = top;
+    // fixed 模式（改类 / SAM / 批量等由调用方给 viewport 坐标的场景）做视口边界 clamp：
+    // 锚点来自列表里的触发按钮时，原始坐标常会让 popover 溢出右侧或底部，需拉回视口内，
+    // 必要时翻转到锚点上方。image 模式锚定画布内的框，维持原行为不 clamp。
+    if (isFixed && typeof window !== "undefined") {
+      const margin = 8;
+      const rect = el.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      if (l + rect.width > vw - margin) l = vw - margin - rect.width;
+      if (l < margin) l = margin;
+      if (t + rect.height > vh - margin) {
+        const flipped = top - rect.height - 12; // 翻到锚点上方
+        t = flipped >= margin ? flipped : Math.max(margin, vh - margin - rect.height);
+      }
+      if (t < margin) t = margin;
+    }
+    el.style.setProperty("--class-picker-left", `${l}px`);
+    el.style.setProperty("--class-picker-top", `${t}px`);
+  }, [left, top, isFixed]);
 
   // keyboard
   useEffect(() => {

@@ -24,6 +24,19 @@
 
 ## 最新版本
 
+## [0.11.28] - 2026-05-30
+
+> **标注属性区上下分栏 + 改类悬浮框定位修复。** 把右侧属性表单从「选中时插入列表上方 / 详情卡内、动态挤压列表」改为固定在侧栏底部的**可折叠属性区**（图片）/可折叠区块（视频），选中即刷新；修复视频改类悬浮框锚点硬编码导致跑到顶部；修复图片「未分类」标注被误判为孤儿而错误显示「已删除」徽标。
+
+### Fixed
+
+- **「未分类」误标「已删除」**: `useWorkbenchShellModel` 的孤儿（orphan）判定排除 `__unknown` sentinel——它是用户未指定类别时的合法占位值，并非「项目类别配置中已删除」的孤儿，不应显示「已删除」徽标。
+- **视频改类悬浮框定位异常**: `handleStartChangeClass` 不再对视频几何硬编码 `{left: innerWidth-340, top: 96}`，改由触发按钮（`VideoTrackPanel` 重命名类别按钮）传入真实 `getBoundingClientRect` 位置；`ClassPickerPopover` 新增 fixed 模式视口边界 clamp/翻转，避免悬浮框溢出右侧或底部。
+
+### Changed
+
+- **属性区上下分栏**: 图片工作台 `AIInspectorPanel` 的 `AttributeForm` 从列表上方移到**侧栏底部固定可折叠区**（`attrDock`，限高 45% 避免挤压列表，选中即刷新）；视频工作台 `VideoTrackPanel` 的 `VideoAttributesEditor` 也包成**可折叠区块**（视觉一致）。`AttributeForm` 新增 `hideHeading` prop（外层折叠头承载标题时隐藏内部标题）；仅图片任务渲染 `attrDock`，视频任务统一由 `VideoAttributesEditor` 两层承载，避免误用单层表单。
+
 ## [0.11.27] - 2026-05-30
 
 > **图片遮挡：内置状态位 → 属性联动（⚠️ breaking）。** 图片工作台的「标记遮挡」内置状态位 `is_occluded` 只影响画布视觉、不进任何导出，且占用 `BoxListItem` 一格按钮——删除它，把「遮挡」语义收敛为普通属性 schema 字段：boolean 属性新增可选「遮挡样式」开关，勾选后该属性为 `true` 时画布框沿用虚线+半透视觉，并天然进 COCO/YOLO 导出。切换改走属性自带的数字键（1-9）hotkey，字母 O 键废弃。→ [plan](docs/plans/2026-05-30-v0.11.27-occluded-to-attribute.md)

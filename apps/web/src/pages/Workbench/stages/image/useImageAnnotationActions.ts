@@ -678,19 +678,22 @@ export function useImageAnnotationActions({
     annotationActions.createRotatedBbox(g);
   }, [annotationActions, userBoxes, pushToast]);
 
-  const handleStartChangeClass = useCallback((annotationId: string) => {
+  const handleStartChangeClass = useCallback((annotationId: string, anchor?: { left: number; top: number }) => {
     const ann = annotationsRef.current.find((a) => a.id === annotationId);
     if (!ann) return;
     const isVideoGeometry = ann.geometry.type === "video_bbox" || ann.geometry.type === "video_track";
     const geom = isVideoGeometry ? geometryToShape(ann.geometry) : ann.geometry as Geom;
-    const anchor = isVideoGeometry && typeof window !== "undefined"
-      ? { left: Math.max(16, window.innerWidth - 340), top: 96 }
-      : undefined;
+    // 视频几何无法用 image 定位（侧栏列表无 stage transform），需 fixed anchor：
+    // 优先用触发按钮传入的真实位置（在侧栏列表点改类时），缺省（如快捷键，无 DOM）才回落到右上角。
+    const resolvedAnchor = anchor
+      ?? (isVideoGeometry && typeof window !== "undefined"
+        ? { left: Math.max(16, window.innerWidth - 340), top: 96 }
+        : undefined);
     s.setEditingClass({
       annotationId,
       geom,
       currentClass: ann.class_name,
-      anchor,
+      anchor: resolvedAnchor,
     });
   }, [s, annotationsRef]);
 

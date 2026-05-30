@@ -422,7 +422,11 @@ export function useWorkbenchShellModel({
         (annotationsData ?? [])
           .filter(
             (ann) =>
-              projectClassNames != null && !projectClassNames.has(ann.class_name),
+              projectClassNames != null &&
+              // `__unknown`（未分类）是合法 sentinel，并非"类别被删除"的孤儿，
+              // 不应判为 orphan / 标记"已删除"。
+              ann.class_name !== UNKNOWN_CLASS &&
+              !projectClassNames.has(ann.class_name),
           )
           .map((ann) => ann.id),
       ),

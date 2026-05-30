@@ -38,7 +38,7 @@ interface VideoTrackSidebarProps {
   onToggleHiddenTrack: (trackId: string) => void;
   onToggleLockedTrack: (trackId: string) => void;
   onSeekFrame?: (frameIndex: number) => void;
-  onChangeUserBoxClass?: (id: string) => void;
+  onChangeUserBoxClass?: (id: string, anchor?: { left: number; top: number }) => void;
   onRenameTracks?: (annotations: AnnotationResponse[], className: string) => void;
   onDeleteTracks?: (annotations: AnnotationResponse[]) => void;
   onUpdate: (annotation: AnnotationResponse, geometry: VideoTrackAnnotation["geometry"]) => void;

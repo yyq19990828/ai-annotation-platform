@@ -50,7 +50,7 @@ interface VideoTrackPanelProps {
   onToggleLockedTrack: (trackId: string) => void;
   onSeekFrame?: (frameIndex: number) => void;
   onStartNewTrack?: () => void;
-  onChangeUserBoxClass?: (id: string) => void;
+  onChangeUserBoxClass?: (id: string, anchor?: { left: number; top: number }) => void;
   onBatchRenameTracks?: (className: string) => void;
   onBatchDeleteTracks?: () => void;
   onAggregateSelectedBboxes?: () => void;
@@ -235,6 +235,8 @@ export function VideoTrackPanel({
   const batchMutationDisabled = readOnly || batchSelectionDisabled;
   const canAggregateBboxes = !readOnly && selectedBboxCount > 1 && Boolean(onAggregateSelectedBboxes);
   const currentFrameLabel = exactFrameLabel(selectedTrack, frameIndex, currentFrameOutside);
+  // 属性区折叠态（v0.11.28：与图片侧栏一致，属性区可折叠让出空间）。
+  const [attrCollapsed, setAttrCollapsed] = useState(false);
   const [propagateOpen, setPropagateOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   // 当前打开取色器的 trackId; null 表示关闭。
@@ -537,7 +539,8 @@ export function VideoTrackPanel({
                     disabled={readOnly || !onChangeUserBoxClass}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onChangeUserBoxClass?.(ann.id);
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      onChangeUserBoxClass?.(ann.id, { left: rect.left, top: rect.bottom + 6 });
                     }}
                   >
                     <Icon name="edit" size={14} />
@@ -929,22 +932,35 @@ export function VideoTrackPanel({
               </div>
             </div>
             {attributeSchema && (onUpdateTrackAttributes || onUpdateKeyframeAttributes) && (
-              <div className={styles.sectionWithTopPadding}>
-                <VideoAttributesEditor
-                  schema={attributeSchema}
-                  className={selectedTrack.class_name}
-                  trackAttributes={selectedTrack.attributes}
-                  keyframeAttributes={
-                    (selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex) as
-                      | { attributes?: Record<string, unknown> | null }
-                      | undefined)?.attributes ?? undefined
-                  }
-                  frameIndex={frameIndex}
-                  canEditKeyframe={currentFrameHasKeyframe}
-                  readOnly={readOnly || selectedTrackLocked}
-                  onChangeTrackAttributes={(attrs) => onUpdateTrackAttributes?.(selectedTrack, attrs)}
-                  onChangeKeyframeAttributes={(attrs) => onUpdateKeyframeAttributes?.(selectedTrack, frameIndex, attrs)}
-                />
+              <div className={styles.attrSection}>
+                <button
+                  type="button"
+                  className={styles.attrSectionHeader}
+                  onClick={() => setAttrCollapsed((v) => !v)}
+                  aria-expanded={!attrCollapsed}
+                  title={attrCollapsed ? "展开属性" : "折叠属性"}
+                >
+                  <Icon name={attrCollapsed ? "chevRight" : "chevDown"} size={13} />
+                  <span>属性</span>
+                  <span className={styles.attrSectionClass}>{displayClassName(selectedTrack.class_name)}</span>
+                </button>
+                {!attrCollapsed && (
+                  <VideoAttributesEditor
+                    schema={attributeSchema}
+                    className={selectedTrack.class_name}
+                    trackAttributes={selectedTrack.attributes}
+                    keyframeAttributes={
+                      (selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex) as
+                        | { attributes?: Record<string, unknown> | null }
+                        | undefined)?.attributes ?? undefined
+                    }
+                    frameIndex={frameIndex}
+                    canEditKeyframe={currentFrameHasKeyframe}
+                    readOnly={readOnly || selectedTrackLocked}
+                    onChangeTrackAttributes={(attrs) => onUpdateTrackAttributes?.(selectedTrack, attrs)}
+                    onChangeKeyframeAttributes={(attrs) => onUpdateKeyframeAttributes?.(selectedTrack, frameIndex, attrs)}
+                  />
+                )}
               </div>
             )}
           </>
