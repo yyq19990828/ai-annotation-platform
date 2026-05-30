@@ -63,6 +63,7 @@ import { useVideoTrackerJobs } from "@/hooks/useVideoTrackerJobs";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import type { StageKind } from "../stages/types";
 import { WorkbenchOverlays } from "../shell/WorkbenchOverlays";
+import type { ClassPickerAttrEditing } from "../shell/ClassPickerPopover";
 import { WorkbenchLayout } from "../shell/WorkbenchLayout";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
@@ -854,6 +855,7 @@ export function useWorkbenchShellModel({
     handleCommitRotateBbox,
     handleStartChangeClass,
     handleCommitChangeClass,
+    handleChangeClassKeepOpen,
     handleCancelChangeClass,
     handleSamCommitClass,
     handleSamCancelClass,
@@ -1038,6 +1040,38 @@ export function useWorkbenchShellModel({
   const modeState = mode === "review" ? reviewModeState : annotateModeState;
   const { topbarActions, bannerActions } = modeState;
   const isLocked = modeState.isLocked;
+
+  // v0.11.28：改类悬浮框内联属性编辑——按当前正在改类的标注派生 schema/attributes/提交回调。
+  const editingClassAnnotation = useMemo(
+    () => (s.editingClass
+      ? (visibleAnnotationsData.find((a) => a.id === s.editingClass!.annotationId) ?? null)
+      : null),
+    [s.editingClass, visibleAnnotationsData],
+  );
+  const changeClassAttrEditing = useMemo<ClassPickerAttrEditing | undefined>(() => {
+    const ann = editingClassAnnotation;
+    const schema = toolView.attributeSchema;
+    if (!ann || !schema || (schema.fields ?? []).length === 0) return undefined;
+    if (isVideoTrack(ann)) {
+      // 视频：悬浮框只编辑 mutable 字段的「轨迹默认值」层；逐帧覆盖留给侧栏完整编辑器。
+      const mutableFields = (schema.fields ?? []).filter((f) => f.mutable === true);
+      if (mutableFields.length === 0) return undefined;
+      return {
+        schema: { fields: mutableFields },
+        attributes: ann.attributes ?? {},
+        context: "video",
+        readOnly: isLocked,
+        onChange: (next) => handleUpdateTrackAttributes(ann, next),
+      };
+    }
+    return {
+      schema,
+      attributes: ann.attributes ?? {},
+      context: "image",
+      readOnly: isLocked,
+      onChange: (next) => handleUpdateAttributes(ann.id, next),
+    };
+  }, [editingClassAnnotation, toolView.attributeSchema, isLocked, handleUpdateTrackAttributes, handleUpdateAttributes]);
 
   useCanvasDraftPersistence({
     taskId,
@@ -1283,6 +1317,8 @@ export function useWorkbenchShellModel({
               onPickPendingClass={handlePickPendingClassAny}
               onCancelPending={handleCancelPending}
               onCommitChangeClass={handleCommitChangeClass}
+              onChangeClassKeepOpen={handleChangeClassKeepOpen}
+              changeClassAttrEditing={changeClassAttrEditing}
               onCancelChangeClass={handleCancelChangeClass}
               onSamCommitClass={handleSamCommitClass}
               onSamCancelClass={handleSamCancelClass}

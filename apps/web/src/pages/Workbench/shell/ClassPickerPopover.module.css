@@ -5,7 +5,7 @@
   z-index: 30;
   min-width: 220px;
   max-width: 280px;
-  max-height: 360px;
+  max-height: 70vh;
   padding: 10px;
   overflow-y: auto;
   pointer-events: auto;
@@ -52,4 +52,11 @@
   color: var(--color-fg-subtle);
   font-size: 10.5px;
   text-align: center;
+}
+
+/* v0.11.28 · 改类悬浮框内联属性区（类别选择下方，单列堆叠）。 */
+.attrBlock {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
 }

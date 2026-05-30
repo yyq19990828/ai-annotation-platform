@@ -36,6 +36,7 @@
 ### Changed
 
 - **属性区上下分栏**: 图片工作台 `AIInspectorPanel` 的 `AttributeForm` 从列表上方移到**侧栏底部固定可折叠区**（`attrDock`，限高 45% 避免挤压列表，选中即刷新）；视频工作台 `VideoTrackPanel` 的 `VideoAttributesEditor` 也包成**可折叠区块**（视觉一致）。`AttributeForm` 新增 `hideHeading` prop（外层折叠头承载标题时隐藏内部标题）；仅图片任务渲染 `attrDock`，视频任务统一由 `VideoAttributesEditor` 两层承载，避免误用单层表单。
+- **改类悬浮框并入属性**: `ClassPickerPopover` 在类别选择下方内联属性表单（图片全量可见属性 / 视频「轨迹默认值」层 mutable 字段，单列堆叠）；改类改为「点选即时提交但不关闭悬浮框」（`handleChangeClassKeepOpen`），属性随新类别联动刷新可见字段。悬浮框 `max-height` 放宽到 `70vh`，选类快捷键放行 select/textarea 输入。
 
 ## [0.11.27] - 2026-05-30
 

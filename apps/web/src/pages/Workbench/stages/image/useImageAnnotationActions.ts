@@ -726,6 +726,27 @@ export function useImageAnnotationActions({
     s.setEditingClass(null);
   }, [s]);
 
+  // v0.11.28：改类悬浮框含属性时，点类别即时提交但不关闭悬浮框
+  // （更新 currentClass 让悬浮框内属性按新类别联动刷新可见字段）。
+  const handleChangeClassKeepOpen = useCallback((cls: string) => {
+    const editing = s.editingClass;
+    if (!editing || !cls || cls === editing.currentClass) return;
+    const before = { class_name: editing.currentClass };
+    const after = { class_name: cls };
+    s.setEditingClass({ ...editing, currentClass: cls });
+    s.setActiveClass(cls);
+    recordRecentClass(cls);
+    mutations.update.mutate(
+      { annotationId: editing.annotationId, payload: after },
+      {
+        onSuccess: () => {
+          history.push({ kind: "update", annotationId: editing.annotationId, before, after });
+          pushToast({ msg: `已改为 ${cls}`, kind: "success" });
+        },
+      },
+    );
+  }, [s, mutations.update, history, pushToast, recordRecentClass]);
+
   return {
     ...annotationActions,
     aiBoxes,
@@ -755,6 +776,7 @@ export function useImageAnnotationActions({
     createRotatedBbox: handleCommitRotatedBbox,
     handleStartChangeClass,
     handleCommitChangeClass,
+    handleChangeClassKeepOpen,
     handleCancelChangeClass,
     handleSamCommitClass,
     handleSamCancelClass,

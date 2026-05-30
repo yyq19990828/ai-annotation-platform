@@ -1,6 +1,6 @@
 import type { PendingDrawing, EditingClass, Geom } from "../state/useWorkbenchState";
 import type { Viewport } from "../state/useViewportTransform";
-import { ClassPickerPopover, type ClassPickerCancelReason } from "./ClassPickerPopover";
+import { ClassPickerPopover, type ClassPickerCancelReason, type ClassPickerAttrEditing } from "./ClassPickerPopover";
 
 type StageGeometry = {
   imgW: number;
@@ -29,6 +29,10 @@ interface WorkbenchOverlaysProps {
   onPickPendingClass: (cls: string) => void;
   onCancelPending: (reason: ClassPickerCancelReason) => void;
   onCommitChangeClass: (cls: string) => void;
+  /** v0.11.28：改类悬浮框含属性时用此回调——提交改类但不关闭悬浮框，便于接着编辑属性。 */
+  onChangeClassKeepOpen?: (cls: string) => void;
+  /** v0.11.28：改类悬浮框内联属性编辑（按当前选中标注派生；缺省时退化为纯改类、点选即关）。 */
+  changeClassAttrEditing?: ClassPickerAttrEditing;
   onCancelChangeClass: () => void;
   onSamCommitClass: (cls: string) => void;
   onSamCancelClass: () => void;
@@ -64,6 +68,8 @@ export function WorkbenchOverlays({
   onPickPendingClass,
   onCancelPending,
   onCommitChangeClass,
+  onChangeClassKeepOpen,
+  changeClassAttrEditing,
   onCancelChangeClass,
   onSamCommitClass,
   onSamCancelClass,
@@ -106,8 +112,9 @@ export function WorkbenchOverlays({
           recent={recentClasses}
           defaultClass={editingClass.currentClass}
           title={`改类别 (当前: ${editingClass.currentClass})`}
-          onPick={onCommitChangeClass}
+          onPick={changeClassAttrEditing && onChangeClassKeepOpen ? onChangeClassKeepOpen : onCommitChangeClass}
           onCancel={onCancelChangeClass}
+          attrEditing={changeClassAttrEditing}
         />
       )}
       {editingClass && !hasFixedAnchor(editingClass) && canUseImagePosition && !pendingDrawing && (
@@ -120,8 +127,9 @@ export function WorkbenchOverlays({
           recent={recentClasses}
           defaultClass={editingClass.currentClass}
           title={`改类别 (当前: ${editingClass.currentClass})`}
-          onPick={onCommitChangeClass}
+          onPick={changeClassAttrEditing && onChangeClassKeepOpen ? onChangeClassKeepOpen : onCommitChangeClass}
           onCancel={onCancelChangeClass}
+          attrEditing={changeClassAttrEditing}
         />
       )}
       {samPendingGeom && canUseImagePosition && !pendingDrawing && !editingClass && (
