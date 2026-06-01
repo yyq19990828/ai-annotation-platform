@@ -13,8 +13,6 @@ Revises: 0088
 Create Date: 2026-06-01
 """
 
-import json
-
 import sqlalchemy as sa
 from alembic import op
 
@@ -26,23 +24,17 @@ depends_on = None
 
 
 def _rewrite_geometry_type(bind, old: str, new: str) -> None:
-    rows = bind.execute(
+    # 只改顶层 type 字段, jsonb_set 一条批量 SQL 即可, 大表上不必逐行 Python 循环。
+    # 注意: 用 cast(:new AS text) 而非 :new::text —— asyncpg 驱动下 SQLAlchemy text()
+    # 的 ::cast 会与 :name 绑定参数语法冲突 (:new 不被识别 → "syntax error at :")。
+    bind.execute(
         sa.text(
-            "SELECT id, geometry FROM annotations WHERE geometry->>'type' = :old"
+            "UPDATE annotations "
+            "SET geometry = jsonb_set(geometry, '{type}', to_jsonb(cast(:new AS text))) "
+            "WHERE geometry->>'type' = :old"
         ),
-        {"old": old},
-    ).fetchall()
-    for row in rows:
-        geometry = row.geometry
-        if isinstance(geometry, str):
-            geometry = json.loads(geometry)
-        if not isinstance(geometry, dict):
-            continue
-        new_geometry = {**geometry, "type": new}
-        bind.execute(
-            sa.text("UPDATE annotations SET geometry = :g WHERE id = :id"),
-            {"g": json.dumps(new_geometry), "id": str(row.id)},
-        )
+        {"old": old, "new": new},
+    )
 
 
 def upgrade() -> None:
