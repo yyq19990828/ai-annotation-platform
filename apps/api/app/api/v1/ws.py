@@ -72,6 +72,61 @@ async def _heartbeat_loop(websocket: WebSocket) -> None:
         log.debug("heartbeat loop ended: %s", e)
 
 
+async def _run_pubsub_ws(
+    websocket: WebSocket,
+    pubsub: aioredis.client.PubSub,
+    *,
+    heartbeat: bool = True,
+) -> None:
+    """把 Redis pub/sub 消息转发给 WebSocket, 直到任意一方关闭。caller 负责 subscribe/cleanup。
+
+    listen 转发循环与 websocket.receive() 并发跑: 单独阻塞在 pubsub.listen() 时
+    感知不到断连, 优雅关闭 (uvicorn --reload / SIGTERM) 时 handler 会一直挂到
+    timeout-graceful-shutdown 超时被强制取消 — 每次 reload 打一条 ERROR。uvicorn
+    在 shutdown 时会向 receive 队列推 websocket.disconnect (code 1012, 客户端关闭同理),
+    所以 await receive() 能让 handler 即时退出, 既消除 reload 卡顿, 也修复阻塞在
+    listen() 时漏判客户端断开的问题。
+    """
+
+    async def _relay() -> None:
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                data = message["data"]
+                await websocket.send_text(
+                    data.decode() if isinstance(data, bytes) else data
+                )
+
+    async def _watch_disconnect() -> None:
+        # 不期望客户端→服务端帧; await receive() 仅用于感知客户端断开 / 服务端关闭。
+        while True:
+            msg = await websocket.receive()
+            if msg["type"] == "websocket.disconnect":
+                return
+
+    tasks = [
+        asyncio.create_task(_relay()),
+        asyncio.create_task(_watch_disconnect()),
+    ]
+    if heartbeat:
+        tasks.append(asyncio.create_task(_heartbeat_loop(websocket)))
+
+    try:
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    # 把最先完成的任务里的真实错误抛给 caller (用于各 endpoint 的 log.warning);
+    # 正常断连 (_watch_disconnect 返回) / 取消不算错误。
+    for t in done:
+        exc = t.exception()
+        if exc is not None and not isinstance(
+            exc, (WebSocketDisconnect, asyncio.CancelledError)
+        ):
+            raise exc
+
+
 @router.websocket("/ws/projects/{project_id}/preannotate")
 async def preannotate_progress(websocket: WebSocket, project_id: uuid.UUID):
     await websocket.accept()
@@ -80,18 +135,15 @@ async def preannotate_progress(websocket: WebSocket, project_id: uuid.UUID):
     channel = f"project:{project_id}:preannotate"
     await pubsub.subscribe(channel)
     try:
-        async for message in pubsub.listen():
-            if message["type"] == "message":
-                await websocket.send_text(
-                    message["data"].decode()
-                    if isinstance(message["data"], bytes)
-                    else message["data"]
-                )
+        await _run_pubsub_ws(websocket, pubsub, heartbeat=False)
     except WebSocketDisconnect:
         pass
     finally:
-        await pubsub.unsubscribe(channel)
-        await pubsub.close()
+        try:
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()
+        except Exception:
+            pass
 
 
 @router.websocket("/ws/batches/project/{project_id}")
@@ -111,21 +163,13 @@ async def batch_events_socket(websocket: WebSocket, project_id: uuid.UUID):
     pubsub = r.pubsub()
     channel = f"project:{project_id}:batch"
     await pubsub.subscribe(channel)
-
-    heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
     try:
-        async for message in pubsub.listen():
-            if message["type"] == "message":
-                data = message["data"]
-                await websocket.send_text(
-                    data.decode() if isinstance(data, bytes) else data
-                )
+        await _run_pubsub_ws(websocket, pubsub)
     except WebSocketDisconnect:
         pass
     except Exception as e:
         log.warning("batch-events WS error project=%s err=%s", project_id, e)
     finally:
-        heartbeat_task.cancel()
         try:
             await pubsub.unsubscribe(channel)
             await pubsub.close()
@@ -167,21 +211,13 @@ async def prediction_jobs_socket(
     pubsub = r.pubsub()
     channel = "global:prediction-jobs"
     await pubsub.subscribe(channel)
-
-    heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
     try:
-        async for message in pubsub.listen():
-            if message["type"] == "message":
-                data = message["data"]
-                await websocket.send_text(
-                    data.decode() if isinstance(data, bytes) else data
-                )
+        await _run_pubsub_ws(websocket, pubsub)
     except WebSocketDisconnect:
         pass
     except Exception as e:
         log.warning("prediction-jobs WS error user=%s err=%s", user_id, e)
     finally:
-        heartbeat_task.cancel()
         try:
             await pubsub.unsubscribe(channel)
             await pubsub.close()
@@ -223,19 +259,11 @@ async def video_tracker_job_socket(
     pubsub = r.pubsub()
     channel = f"video-tracker-job:{job_id}"
     await pubsub.subscribe(channel)
-
-    heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
     try:
-        async for message in pubsub.listen():
-            if message["type"] == "message":
-                data = message["data"]
-                await websocket.send_text(
-                    data.decode() if isinstance(data, bytes) else data
-                )
+        await _run_pubsub_ws(websocket, pubsub)
     except WebSocketDisconnect:
         pass
     finally:
-        heartbeat_task.cancel()
         try:
             await pubsub.unsubscribe(channel)
             await pubsub.close()
@@ -284,20 +312,13 @@ async def ml_backend_stats_socket(
     except Exception as e:
         log.warning("incr subscribers key failed: %s", e)
 
-    heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
     try:
-        async for message in pubsub.listen():
-            if message["type"] == "message":
-                data = message["data"]
-                await websocket.send_text(
-                    data.decode() if isinstance(data, bytes) else data
-                )
+        await _run_pubsub_ws(websocket, pubsub)
     except WebSocketDisconnect:
         pass
     except Exception as e:
         log.warning("ml-backend-stats WS error user=%s err=%s", user_id, e)
     finally:
-        heartbeat_task.cancel()
         try:
             # 计数 -1; 防计数漂移 (异常退出场景), 取 max(0, ...)
             count = await r.decr(_ML_STATS_SUBSCRIBERS_KEY)
@@ -337,21 +358,13 @@ async def notifications_socket(
     pubsub = r.pubsub()
     channel = channel_for(user_id)
     await pubsub.subscribe(channel)
-
-    heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
     try:
-        async for message in pubsub.listen():
-            if message["type"] == "message":
-                data = message["data"]
-                await websocket.send_text(
-                    data.decode() if isinstance(data, bytes) else data
-                )
+        await _run_pubsub_ws(websocket, pubsub)
     except WebSocketDisconnect:
         pass
     except Exception as e:
         log.warning("notifications WS error user=%s err=%s", user_id, e)
     finally:
-        heartbeat_task.cancel()
         try:
             await pubsub.unsubscribe(channel)
             await pubsub.close()
