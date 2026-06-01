@@ -634,7 +634,7 @@ async def _build_video_export_zip(
     bboxes_by_task: dict[uuid.UUID, list[Annotation]] = {}
     for ann in annotations:
         geometry_type = (ann.geometry or {}).get("type")
-        if geometry_type == "video_track":
+        if geometry_type == "video_track_bbox":
             tracks_by_task.setdefault(ann.task_id, []).append(ann)
         elif geometry_type == "video_bbox":
             bboxes_by_task.setdefault(ann.task_id, []).append(ann)

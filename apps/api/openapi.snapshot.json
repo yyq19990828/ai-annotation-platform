@@ -920,7 +920,7 @@
                 "polyline": "#/components/schemas/PolylineGeometry",
                 "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                 "video_bbox": "#/components/schemas/VideoBboxGeometry",
-                "video_track": "#/components/schemas/VideoTrackGeometry"
+                "video_track_bbox": "#/components/schemas/VideoTrackGeometry"
               },
               "propertyName": "type"
             },
@@ -1610,7 +1610,7 @@
                 "polyline": "#/components/schemas/PolylineGeometry",
                 "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                 "video_bbox": "#/components/schemas/VideoBboxGeometry",
-                "video_track": "#/components/schemas/VideoTrackGeometry"
+                "video_track_bbox": "#/components/schemas/VideoTrackGeometry"
               },
               "propertyName": "type"
             },
@@ -1910,7 +1910,7 @@
                     "polyline": "#/components/schemas/PolylineGeometry",
                     "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                     "video_bbox": "#/components/schemas/VideoBboxGeometry",
-                    "video_track": "#/components/schemas/VideoTrackGeometry"
+                    "video_track_bbox": "#/components/schemas/VideoTrackGeometry"
                   },
                   "propertyName": "type"
                 },
@@ -12663,6 +12663,16 @@
                 "type": "null"
               }
             ]
+          },
+          "video_modes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoModesConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "ToolBinding",
@@ -14484,6 +14494,24 @@
         "title": "VideoMetadata",
         "type": "object"
       },
+      "VideoModesConfig": {
+        "additionalProperties": false,
+        "description": "v0.11.29 · 仅视频项目的 bbox 单位消费：控制「单帧框 / 轨迹框」是否各自可用。\n\n单帧框 = video_bbox 几何, 轨迹框 = video_track_bbox 几何, 共享同一套类别 / 属性绑定.\n仅用于工具栏可用性过滤; 不强制校验已存在的 annotation. None = 两者均可用 (向后兼容老项目).",
+        "properties": {
+          "box": {
+            "default": true,
+            "title": "Box",
+            "type": "boolean"
+          },
+          "track": {
+            "default": true,
+            "title": "Track",
+            "type": "boolean"
+          }
+        },
+        "title": "VideoModesConfig",
+        "type": "object"
+      },
       "VideoSamplingConfig": {
         "properties": {
           "frame_step": {
@@ -14897,8 +14925,8 @@
             "type": "string"
           },
           "type": {
-            "const": "video_track",
-            "default": "video_track",
+            "const": "video_track_bbox",
+            "default": "video_track_bbox",
             "title": "Type",
             "type": "string"
           }

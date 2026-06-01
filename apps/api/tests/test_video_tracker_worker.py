@@ -93,8 +93,8 @@ async def test_tracker_worker_completes_mock_bbox_job_and_writes_video_track(
     await db_session.refresh(annotation)
 
     assert job.status == "completed"
-    assert annotation.annotation_type == "video_track"
-    assert annotation.geometry["type"] == "video_track"
+    assert annotation.annotation_type == "video_track_bbox"
+    assert annotation.geometry["type"] == "video_track_bbox"
     assert [kf["frame_index"] for kf in annotation.geometry["keyframes"]] == [0, 1, 2]
     assert annotation.geometry["keyframes"][0]["source"] == "manual"
     assert annotation.geometry["keyframes"][1]["source"] == "prediction"
@@ -356,10 +356,10 @@ async def test_tracker_worker_marks_low_confidence_backend_results_outside(
         task_id=task.id,
         project_id=task.project_id,
         user_id=user.id,
-        annotation_type="video_track",
+        annotation_type="video_track_bbox",
         class_name="car",
         geometry={
-            "type": "video_track",
+            "type": "video_track_bbox",
             "track_id": "car-1",
             "keyframes": [
                 {

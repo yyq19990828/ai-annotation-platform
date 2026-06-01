@@ -174,6 +174,15 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "l" }, selectedTrackCtx)).toEqual({ type: "videoToggleLockedTrack" });
   });
 
+  it("B / T / V → switch box / track / hand video tools", () => {
+    expect(dispatch({ key: "b" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "box" });
+    expect(dispatch({ key: "T" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "track" });
+    expect(dispatch({ key: "v" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "hand" });
+    expect(dispatch({ key: "V" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "hand" });
+    // Alt+1/2/3 副键
+    expect(dispatch({ key: "3", altKey: true }, videoCtx)).toEqual({ type: "setVideoTool", tool: "hand" });
+  });
+
   it("Ctrl+B opens selected video track propagation only in video mode", () => {
     expect(dispatch({ key: "b", ctrlKey: true }, { videoMode: true, hasSelectedVideoTrack: true }))
       .toEqual({ type: "videoPropagateTrack" });

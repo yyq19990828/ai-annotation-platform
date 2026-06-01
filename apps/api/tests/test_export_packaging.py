@@ -133,10 +133,10 @@ async def test_video_yolo_frames_zip_writes_grid_labels_and_manifest(monkeypatch
         task_id=task_id,
         project_id=project_id,
         user_id=uuid.uuid4(),
-        annotation_type="video_track",
+        annotation_type="video_track_bbox",
         class_name="car",
         geometry={
-            "type": "video_track",
+            "type": "video_track_bbox",
             "track_id": "trk-1",
             "keyframes": [
                 {"frame_index": 0, "bbox": {"x": 0.0, "y": 0.0, "w": 0.2, "h": 0.2}},

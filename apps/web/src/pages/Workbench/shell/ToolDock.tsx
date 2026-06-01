@@ -30,6 +30,11 @@ interface ToolDockProps {
    * null = 老项目无 tool_bindings 配置 → 视为全部启用, 不隐藏任何工具 (向后兼容)。
    */
   enabledToolUnits?: Set<string> | null;
+  /**
+   * v0.11.29 · 视频 bbox 单位的「单帧框 / 轨迹框」子开关 (来自 tool_bindings["bbox"].video_modes)。
+   * null / undefined = 两者均显示 (向后兼容老项目)。hand (视图) 工具不受此过滤, 恒显示。
+   */
+  videoModes?: { box: boolean; track: boolean } | null;
 }
 
 interface ToolDescriptor {
@@ -58,9 +63,12 @@ const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor> = {
   canvas: { desc: "评论批注 (内部, 不展示)" },
 };
 
-const VIDEO_TOOLS: Array<{ id: VideoTool; hotkey: string; label: string; icon: IconName; desc: string; altDigit: number }> = [
-  { id: "box", hotkey: "B", label: "矩形框", icon: "rect", desc: "当前帧独立矩形框", altDigit: 1 },
-  { id: "track", hotkey: "T", label: "轨迹", icon: "target", desc: "跨帧对象轨迹", altDigit: 2 },
+// v0.11.29 · group: 单帧 (static) / 轨迹 (track) / 视图 (view), 用于 divider 分组与 video_modes 过滤。
+//            为未来 polygon / track-polygon 预留扩展位 (同组追加即可)。
+const VIDEO_TOOLS: Array<{ id: VideoTool; hotkey: string; label: string; icon: IconName; desc: string; altDigit: number; group: "static" | "track" | "view" }> = [
+  { id: "box", hotkey: "B", label: "矩形框", icon: "rect", desc: "当前帧独立矩形框", altDigit: 1, group: "static" },
+  { id: "track", hotkey: "T", label: "轨迹", icon: "target", desc: "跨帧对象轨迹", altDigit: 2, group: "track" },
+  { id: "hand", hotkey: "V", label: "平移", icon: "move", desc: "拖拽平移画布", altDigit: 3, group: "view" },
 ];
 
 const cn = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
@@ -88,35 +96,48 @@ export function ToolDock({
   reviewMode = false,
   videoMode = false,
   enabledToolUnits = null,
+  videoModes = null,
 }: ToolDockProps) {
   if (videoMode) {
+    // hand (view) 恒显示; box/track 按 video_modes 过滤 (null = 兼容老项目, 全显示)。
+    const visibleVideoTools = VIDEO_TOOLS.filter((t) => {
+      if (t.group === "view") return true;
+      if (!videoModes) return true;
+      if (t.id === "box") return videoModes.box;
+      if (t.id === "track") return videoModes.track;
+      return true;
+    });
     return (
       <div className={styles.root} data-workbench-tool-dock>
-        {VIDEO_TOOLS.map((t) => {
+        {visibleVideoTools.map((t, idx) => {
           const active = videoTool === t.id;
+          const prevGroup = idx > 0 ? visibleVideoTools[idx - 1].group : null;
+          const showDivider = prevGroup !== null && prevGroup !== t.group;
           return (
-            <Tooltip
-              key={t.id}
-              name={t.label}
-              desc={`${t.desc} · 备用 Alt+${t.altDigit}`}
-              hotkey={t.hotkey}
-              side="right"
-              delay={250}
-            >
-              <button
-                type="button"
-                onClick={() => onSetVideoTool?.(t.id)}
-                aria-label={t.label}
-                aria-pressed={active}
-                data-testid={`video-tool-btn-${t.id}`}
-                className={cn(styles.toolButton, active && styles.toolButtonActive)}
+            <Fragment key={t.id}>
+              {showDivider && <div aria-hidden className={styles.divider} />}
+              <Tooltip
+                name={t.label}
+                desc={`${t.desc} · 备用 Alt+${t.altDigit}`}
+                hotkey={t.hotkey}
+                side="right"
+                delay={250}
               >
-                <Icon name={t.icon} size={17} />
-                <span aria-hidden className={cn(styles.hotkeyBadge, active && styles.hotkeyBadgeActive)}>
-                  {t.hotkey}
-                </span>
-              </button>
-            </Tooltip>
+                <button
+                  type="button"
+                  onClick={() => onSetVideoTool?.(t.id)}
+                  aria-label={t.label}
+                  aria-pressed={active}
+                  data-testid={`video-tool-btn-${t.id}`}
+                  className={cn(styles.toolButton, active && styles.toolButtonActive)}
+                >
+                  <Icon name={t.icon} size={17} />
+                  <span aria-hidden className={cn(styles.hotkeyBadge, active && styles.hotkeyBadgeActive)}>
+                    {t.hotkey}
+                  </span>
+                </button>
+              </Tooltip>
+            </Fragment>
           );
         })}
       </div>

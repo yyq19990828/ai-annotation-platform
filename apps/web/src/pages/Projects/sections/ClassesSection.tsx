@@ -143,8 +143,28 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
         classRows: b[unit]?.classRows ?? [],
         attributeFields: b[unit]?.attributeFields ?? [],
         keypointSchema: b[unit]?.keypointSchema ?? null,
+        videoModes: b[unit]?.videoModes ?? null,
       },
     }));
+  };
+
+  // v0.11.29 · 视频 bbox 单元: 单帧框 / 轨迹框独立开关 (至少保留一个可用)。
+  const onToggleVideoMode = (key: "box" | "track", next: boolean) => {
+    setBindings((b) => {
+      const cur = b.bbox?.videoModes ?? { box: true, track: true };
+      const updated = { ...cur, [key]: next };
+      if (!updated.box && !updated.track) return b;
+      return {
+        ...b,
+        bbox: {
+          enabled: b.bbox?.enabled ?? true,
+          classRows: b.bbox?.classRows ?? [],
+          attributeFields: b.bbox?.attributeFields ?? [],
+          keypointSchema: b.bbox?.keypointSchema ?? null,
+          videoModes: updated,
+        },
+      };
+    });
   };
 
   const onSave = () => {
@@ -266,6 +286,32 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
                 </span>
               )}
             </div>
+            {isVideoBbox && activeBinding.enabled && (() => {
+              const vm = activeBinding.videoModes ?? { box: true, track: true };
+              const onlyBox = vm.box && !vm.track;
+              const onlyTrack = !vm.box && vm.track;
+              return (
+                <div className={styles.videoModesRow}>
+                  <span className={styles.videoModesTitle}>可用工具</span>
+                  <Switch
+                    checked={vm.box}
+                    onChange={(next) => onToggleVideoMode("box", next)}
+                    label="单帧矩形框"
+                    disabled={onlyBox}
+                    title={onlyBox ? "至少保留一个可用工具" : undefined}
+                    data-testid="video-mode-box-switch"
+                  />
+                  <Switch
+                    checked={vm.track}
+                    onChange={(next) => onToggleVideoMode("track", next)}
+                    label="轨迹矩形框"
+                    disabled={onlyTrack}
+                    title={onlyTrack ? "至少保留一个可用工具" : undefined}
+                    data-testid="video-mode-track-switch"
+                  />
+                </div>
+              );
+            })()}
             <fieldset
               className={styles.editorFieldset}
               disabled={!activeBinding.enabled}

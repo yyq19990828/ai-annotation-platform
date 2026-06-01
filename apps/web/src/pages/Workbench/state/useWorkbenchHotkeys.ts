@@ -310,7 +310,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         videoMode,
         samplingActive,
         hasSelectedVideoTrack: videoMode && !!s.selectedId && annotationsRef.current.some(
-          (ann) => ann.id === s.selectedId && ann.geometry.type === "video_track",
+          (ann) => ann.id === s.selectedId && ann.geometry.type === "video_track_bbox",
         ),
       });
       if (!action) return;
@@ -387,7 +387,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           if (!s.selectedId) return;
           if (action.scope === "keyframe") {
             const selected = annotationsRef.current.find((ann) => ann.id === s.selectedId);
-            if (selected?.geometry.type === "video_track") {
+            if (selected?.geometry.type === "video_track_bbox") {
               videoControlsRef?.current?.deleteSelectedTrackKeyframe();
               return;
             }
@@ -395,7 +395,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           handleDeleteBox(s.selectedId);
           return;
         case "videoCycleTrack": {
-          const list = annotationsRef.current.filter((ann) => ann.geometry.type === "video_track");
+          const list = annotationsRef.current.filter((ann) => ann.geometry.type === "video_track_bbox");
           if (list.length === 0) return;
           e.preventDefault();
           const idxNow = s.selectedId ? list.findIndex((a) => a.id === s.selectedId) : -1;
@@ -467,6 +467,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         case "cancel":
           if (showHotkeys) { setShowHotkeys(false); return; }
           if (batchChanging) { setBatchChanging(false); return; }
+          // v0.11.29 · 视频模式 ESC 回归 hand 中立态（继续向下取消草稿 / 选中）。
+          if (videoMode) s.setVideoTool("hand");
           if (s.pendingDrawing) { s.setPendingDrawing(null); return; }
           if (s.editingClass) { s.setEditingClass(null); return; }
           s.setSelectedId(null);

@@ -71,7 +71,7 @@ def _tool_unit_from_internal_geometry(geometry: Any) -> str | None:
         return "keypoint"
     if kind in {"polygon", "multi_polygon"}:
         return "region"
-    if kind in {"bbox", "video_bbox", "video_track"}:
+    if kind in {"bbox", "video_bbox", "video_track_bbox"}:
         return "bbox"
     return None
 

@@ -29,6 +29,8 @@ export interface UnitBindingState {
   attributeFields: AttributeField[];
   /** v0.10.28 · 仅 keypoint 单元用：骨骼模板 (命名节点 + 连线)。 */
   keypointSchema?: import("@/types").KeypointSchema | null;
+  /** v0.11.29 · 仅视频 bbox 单元用：单帧框 / 轨迹框独立开关。null = 两者均可用。 */
+  videoModes?: { box: boolean; track: boolean } | null;
 }
 
 export type UnitBindingMap = Partial<Record<ToolUnitId, UnitBindingState>>;
@@ -69,6 +71,9 @@ export function buildUnitBindings(project: {
         attributeFields:
           (b.attribute_schema as AttributeSchema | undefined)?.fields ?? [],
         keypointSchema: b.keypoint_schema ?? null,
+        videoModes: b.video_modes
+          ? { box: b.video_modes.box ?? true, track: b.video_modes.track ?? true }
+          : null,
       };
     }
     return out;
@@ -154,6 +159,10 @@ export function unitBindingsToPayload(bindings: UnitBindingMap): ToolBindings {
       // v0.10.28 · keypoint 单元附带骨骼模板 (后端 ToolBinding.keypoint_schema 就位前不落库)。
       ...(k === "keypoint" && ub.keypointSchema
         ? { keypoint_schema: ub.keypointSchema }
+        : {}),
+      // v0.11.29 · bbox 单元附带视频单帧/轨迹开关 (仅视频项目设置, null 不落库)。
+      ...(k === "bbox" && ub.videoModes
+        ? { video_modes: ub.videoModes }
         : {}),
     };
   }

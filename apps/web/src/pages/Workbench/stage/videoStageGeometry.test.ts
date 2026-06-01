@@ -4,7 +4,7 @@ import type { VideoTrackGeometry } from "@/types";
 
 function track(keyframes: VideoTrackGeometry["keyframes"], patch?: Partial<VideoTrackGeometry>): VideoTrackGeometry {
   return {
-    type: "video_track",
+    type: "video_track_bbox",
     track_id: "trk_1",
     keyframes,
     ...patch,

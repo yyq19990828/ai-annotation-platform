@@ -41,7 +41,7 @@ export function isVideoBbox(ann: AnnotationResponse): ann is AnnotationResponse 
 }
 
 export function isVideoTrack(ann: AnnotationResponse): ann is AnnotationResponse & { geometry: VideoTrackGeometry } {
-  return ann.geometry.type === "video_track";
+  return ann.geometry.type === "video_track_bbox";
 }
 
 type ResolvedTrackFrame = { geom: VideoStageGeom; source: VideoFrameEntry["source"]; occluded?: boolean };

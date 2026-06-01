@@ -6,7 +6,7 @@ function track(id: string, trackId: string, firstFrame: number): { id: string; g
   return {
     id,
     geometry: {
-      type: "video_track",
+      type: "video_track_bbox",
       track_id: trackId,
       keyframes: [
         { frame_index: firstFrame, bbox: { x: 0, y: 0, w: 1, h: 1 }, source: "manual" },
@@ -43,7 +43,7 @@ describe("deriveTrackNumber", () => {
     const x = {
       id: "x",
       geometry: {
-        type: "video_track" as const,
+        type: "video_track_bbox" as const,
         track_id: "trk_x",
         keyframes: [
           { frame_index: 8, bbox: { x: 0, y: 0, w: 1, h: 1 }, source: "manual" as const },

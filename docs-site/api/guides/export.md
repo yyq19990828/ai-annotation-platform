@@ -38,7 +38,7 @@ POST /api/v1/projects/{project_id}/batches/{batch_id}/export?targets=coco&includ
 | **yolo-obb** | YOLO 旋转框 txt（rotated_bbox 四角） |
 | **yolo-seg** | YOLO 分割 txt（polygon / mask 归一化多边形） |
 | **aap_json** | 平台原生无损中间格式（双数组 annotations / predictions） |
-| **yolo-frames-det** | `video-track` 专用逐帧 YOLO 检测集，按采样网格抽帧，合并 `video_bbox` 与 `video_track` 摊平框 |
+| **yolo-frames-det** | `video-track` 专用逐帧 YOLO 检测集，按采样网格抽帧，合并 `video_bbox` 与 `video_track_bbox` 摊平框 |
 | **mot** | MOT 16/17/20 tracking 评测格式，按采样网格重排帧号 |
 | **kitti** | KITTI Tracking 2D label 文本 |
 | **voc** | Pascal VOC XML（仅同步单选） |
@@ -90,7 +90,7 @@ COCO / YOLO 会按各自能消费的几何（bbox / rotated_bbox / polygon / mul
 
 - 帧集来自项目采样网格 `derive_sampled_frames(frame_count, step)`，不是全帧，也不是仅关键帧。
 - `video_bbox` 单帧框只在 `frame_index` 落网格时输出。
-- `video_track` 先用 `resolved_track_frames(..., frame_mode="all_frames")` 展开，再筛采样网格；`outside` 区间不输出框。
+- `video_track_bbox` 先用 `resolved_track_frames(..., frame_mode="all_frames")` 展开，再筛采样网格；`outside` 区间不输出框。
 - ZIP 内写 `labels/{sequence}/{frame:06d}.txt`、`classes.txt`、`data.yaml`、`manifest.json`、`fetch_videos.py`、`fetch_frames.py`。帧图不打包，`fetch_frames.py` 会抽到 `images/{sequence}`，与 label 路径对齐。
 
 schema 语义见 [视频标注工作台](/dev/concepts/video-annotation-workbench)。

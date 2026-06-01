@@ -49,7 +49,7 @@ def _sanitize_export_geometry(
 ) -> dict:
     if not isinstance(geometry, dict):
         return {}
-    if geometry.get("type") != "video_track":
+    if geometry.get("type") != "video_track_bbox":
         return dict(geometry)
 
     changed = False
@@ -364,7 +364,7 @@ class ExportService:
             if not task:
                 continue
             geometry = ann.geometry or {}
-            if geometry.get("type") == "video_track":
+            if geometry.get("type") == "video_track_bbox":
                 keyframes = [
                     clean_keyframe(kf, include_attributes=include_attributes)
                     for kf in sorted_keyframes(geometry)

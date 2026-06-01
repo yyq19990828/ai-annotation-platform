@@ -138,7 +138,7 @@ interface VideoStageProps {
   onFrameIndexChange?: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: VideoStageGeom) => void;
   onPendingDraw?: (
-    kind: "video_bbox" | "video_track",
+    kind: "video_bbox" | "video_track_bbox",
     frameIndex: number,
     geom: VideoStageGeom,
     anchor: { left: number; top: number },
@@ -509,7 +509,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const pendingDraft = useMemo(() => {
     if (
       !pendingDrawing ||
-      (pendingDrawing.kind !== "video_bbox" && pendingDrawing.kind !== "video_track") ||
+      (pendingDrawing.kind !== "video_bbox" && pendingDrawing.kind !== "video_track_bbox") ||
       pendingDrawing.frameIndex !== frameIndex
     ) {
       return null;
@@ -1233,6 +1233,11 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   }, [pausePlayback]);
 
   const beginDraw = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
+    // v0.11.29 · hand 工具：overlay 内左键也走平移（与右键 pan 同分支），不绘制。
+    if (videoTool === "hand") {
+      beginPan(evt);
+      return;
+    }
     if (!stageModeGuard.canBeginDraw || readOnly || isPlaybackActive || (videoTool === "track" && selectedTrackLocked)) return;
     const pt = pointFromEvent(evt);
     if (!pt) return;
@@ -1240,7 +1245,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     setPlaybackOverlayVisible(false);
     setDrag({ kind: "draw", start: pt, current: pt });
-  }, [isPlaybackActive, onSelect, pointFromEvent, readOnly, selectedTrack, selectedTrackLocked, stageModeGuard.canBeginDraw, videoTool]);
+  }, [beginPan, isPlaybackActive, onSelect, pointFromEvent, readOnly, selectedTrack, selectedTrackLocked, stageModeGuard.canBeginDraw, videoTool]);
 
   const beginMove = useCallback((evt: ReactPointerEvent<SVGElement>, entry: VideoFrameEntry | VideoTrackGhost) => {
     const trackId = isVideoTrack(entry.ann) ? entry.ann.geometry.track_id : null;
@@ -1322,7 +1327,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         const anchor = rect
           ? { left: rect.left + geom.x * rect.width, top: rect.top + (geom.y + geom.h) * rect.height + 6 }
           : { left: 0, top: 0 };
-        const kind = videoTool === "track" ? "video_track" : "video_bbox";
+        const kind = videoTool === "track" ? "video_track_bbox" : "video_bbox";
         if (onPendingDraw) onPendingDraw(kind, frameIndex, geom, anchor);
         else onCreate(frameIndex, geom);
       }

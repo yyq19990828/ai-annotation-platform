@@ -69,6 +69,20 @@
   line-height: 1.5;
 }
 
+/* v0.11.29 · 视频 bbox 单元下「单帧框 / 轨迹框」子开关行。 */
+.videoModesRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.videoModesTitle {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+}
+
 /* 重置 fieldset 默认样式；禁用时整体置灰并禁止交互（内部 input 由 fieldset
  * disabled 原生禁用，pointer-events 兜底拖拽等非表单交互）。 */
 .editorFieldset {

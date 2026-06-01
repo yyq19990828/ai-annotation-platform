@@ -125,9 +125,9 @@ describe("BoxListItem", () => {
   it("shows track-specific metadata", () => {
     const b: Annotation = {
       ...base,
-      annotation_type: "video_track",
+      annotation_type: "video_track_bbox",
       geometry: {
-        type: "video_track",
+        type: "video_track_bbox",
         track_id: "trk_abcdefgh12345678",
         keyframes: [
           { frame_index: 0, bbox: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 }, source: "manual" },

@@ -243,7 +243,7 @@ export type VideoTrackOutsideRange = {
   source?: "manual" | "prediction";
 };
 export type VideoTrackGeometry = {
-  type: "video_track";
+  type: "video_track_bbox";
   track_id: string;
   // v0.10.30 · 2.1 用户可编辑语义标签 (跨任务 Re-ID 心智), 不参与主键、不强制唯一。
   semantic_label?: string | null;

@@ -211,6 +211,12 @@ export function useWorkbenchShellModel({
     }
     return set;
   }, [currentProject?.tool_bindings]);
+  // v0.11.29 · 视频 bbox 单位的单帧/轨迹子开关; null = 两者均可用 (兼容老项目)。
+  const videoModes = useMemo<{ box: boolean; track: boolean } | null>(() => {
+    const vm = currentProject?.tool_bindings?.bbox?.video_modes;
+    if (!vm) return null;
+    return { box: vm.box ?? true, track: vm.track ?? true };
+  }, [currentProject?.tool_bindings]);
   const classes = toolView.classes;
   const classesConfig = toolView.classesConfig;
   void toolView.toolUnitId;
@@ -280,6 +286,12 @@ export function useWorkbenchShellModel({
       })),
     [videoChaptersData],
   );
+  // v0.11.29 · 当前 videoTool 被 video_modes 过滤掉时, 切到可用工具 (否则默认按钮指向隐藏项)。hand 始终可用。
+  useEffect(() => {
+    if (!isVideoTask || !videoModes) return;
+    if (s.videoTool === "box" && !videoModes.box) s.setVideoTool(videoModes.track ? "track" : "hand");
+    else if (s.videoTool === "track" && !videoModes.track) s.setVideoTool(videoModes.box ? "box" : "hand");
+  }, [isVideoTask, videoModes, s.videoTool, s.setVideoTool]);
   useEffect(() => {
     if (!isVideoTask) return;
     if (videoChaptersData.length === 0) return;
@@ -502,7 +514,7 @@ export function useWorkbenchShellModel({
 
   const userBoxes = useMemo(
     () => visibleAnnotationsData
-      .filter((ann) => !(isVideoTask && ann.geometry.type === "video_track"))
+      .filter((ann) => !(isVideoTask && ann.geometry.type === "video_track_bbox"))
       .map((a) => annotationToBox(a, occludedKeys)),
     [visibleAnnotationsData, isVideoTask, occludedKeys],
   );
@@ -748,7 +760,7 @@ export function useWorkbenchShellModel({
       updateAnnotationMut.mutateAsync({ annotationId: id, payload }),
     updateVideoKeyframe: async (id, frameIndex, keyframe) => {
       const ann = annotationsRef.current.find((a) => a.id === id);
-      if (!ann || ann.geometry.type !== "video_track") throw new Error("Video track not found");
+      if (!ann || ann.geometry.type !== "video_track_bbox") throw new Error("Video track not found");
       const geometry = applyVideoKeyframeToGeometry(ann.geometry, frameIndex, keyframe);
       await updateAnnotationMut.mutateAsync({ annotationId: id, payload: { geometry } });
     },
@@ -1239,6 +1251,7 @@ export function useWorkbenchShellModel({
       ) : null,
       reviewMode: mode === "review", videoMode: isVideoTask,
       enabledToolUnits,
+      videoModes,
     },
     banners: {
       mode, task, lockError, lockConflict, claimInfo: modeState.claimInfo, canWithdraw: bannerActions.canWithdraw,

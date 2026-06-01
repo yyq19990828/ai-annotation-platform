@@ -9,7 +9,7 @@ import {
 } from "./videoTrackCommands";
 
 const base: VideoTrackGeometry = {
-  type: "video_track",
+  type: "video_track_bbox",
   track_id: "trk_1",
   keyframes: [
     { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -73,7 +73,7 @@ describe("videoTrackCommands", () => {
 
 const pbbox = { x: 0.1, y: 0.1, w: 0.2, h: 0.2 };
 function ptrack(keyframes: VideoTrackKeyframeWithAttrs[]): VideoTrackGeometry {
-  return { type: "video_track", track_id: "trk", keyframes };
+  return { type: "video_track_bbox", track_id: "trk", keyframes };
 }
 
 describe("propagateKeyframes (2.6)", () => {

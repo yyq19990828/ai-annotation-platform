@@ -6,7 +6,7 @@ describe("videoFrameBuckets", () => {
   it("builds stable per-frame track buckets", () => {
     const tracks: VideoTrackGeometry[] = [
       {
-        type: "video_track",
+        type: "video_track_bbox",
         track_id: "trk_b",
         keyframes: [
           { frame_index: 10, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },
@@ -14,7 +14,7 @@ describe("videoFrameBuckets", () => {
         ],
       },
       {
-        type: "video_track",
+        type: "video_track_bbox",
         track_id: "trk_a",
         keyframes: [
           { frame_index: 10, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },
@@ -44,7 +44,7 @@ describe("videoFrameBuckets", () => {
 
   it("uses the last keyframe when a track repeats a frame", () => {
     const tracks: VideoTrackGeometry[] = [{
-      type: "video_track",
+      type: "video_track_bbox",
       track_id: "trk",
       keyframes: [
         { frame_index: 1, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "prediction" },
@@ -61,7 +61,7 @@ describe("videoFrameBuckets", () => {
 
   it("emits outside timeline segments separately from keyframe density", () => {
     const tracks: VideoTrackGeometry[] = [{
-      type: "video_track",
+      type: "video_track_bbox",
       track_id: "trk",
       outside: [{ from: 3, to: 5 }],
       keyframes: [

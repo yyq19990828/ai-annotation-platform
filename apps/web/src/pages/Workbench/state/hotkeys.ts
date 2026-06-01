@@ -138,7 +138,7 @@ export type HotkeyAction =
   | { type: "smartNext"; mode: "open" | "uncertain" }
   | { type: "changeClass" }
   | { type: "setTool"; tool: "box" | "rotated-box" | "hand" | "polygon" | "polyline" | "keypoint" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box" | "ai-cycle" }
-  | { type: "setVideoTool"; tool: "box" | "track" }
+  | { type: "setVideoTool"; tool: "box" | "track" | "hand" }
   | { type: "setClassByDigit"; idx: number }
   | { type: "setClassByLetter"; letter: string }
   | { type: "setAttribute"; key: string; value: unknown }
@@ -247,6 +247,7 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
       if (e.key === "1") return { type: "setVideoTool", tool: "box" };
       if (e.key === "2") return { type: "setVideoTool", tool: "track" };
+      if (e.key === "3") return { type: "setVideoTool", tool: "hand" };
       if (e.key === "l" || e.key === "L") return { type: "videoClearLoopRegion" };
       // v0.10.29 · 采样开启时 Alt+←/→ 承接「选中轨迹跳关键帧」(原 Shift 行为迁移至此)。
       if (ctx.samplingActive && ctx.hasSelectedVideoTrack) {
@@ -266,6 +267,8 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.key === "l" || e.key === "L") return { type: "videoJogPlayback", dir: 1 };
     if (e.key === "b" || e.key === "B") return { type: "setVideoTool", tool: "box" };
     if (e.key === "t" || e.key === "T") return { type: "setVideoTool", tool: "track" };
+    // v0.11.29 · V = 视图/平移工具（hand），与图片工作台一致；H 已被「隐藏轨迹」占用。
+    if (e.key === "v" || e.key === "V") return { type: "setVideoTool", tool: "hand" };
     // v0.10.29 · 采样开启 (step>1)：←/→ 网格跳；Shift+←/→ 与 ,/. 走 ±1 源帧微调 (逃生口)。
     //            采样关闭 (step=1)：维持现状键位 (向后兼容)。
     if (ctx.samplingActive) {

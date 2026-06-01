@@ -46,7 +46,7 @@ class TrackerAdapter(Protocol):
 
 
 def _bbox_from_geometry(geometry: dict) -> dict:
-    if geometry.get("type") == "video_track":
+    if geometry.get("type") == "video_track_bbox":
         keyframes = sorted(
             geometry.get("keyframes") or [],
             key=lambda item: int(item.get("frame_index", 0)),

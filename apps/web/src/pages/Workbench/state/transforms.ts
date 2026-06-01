@@ -118,7 +118,7 @@ export function geometryToShape(g: Geometry): {
   if (g.type === "video_bbox") {
     return { x: g.x, y: g.y, w: g.w, h: g.h };
   }
-  if (g.type === "video_track") {
+  if (g.type === "video_track_bbox") {
     const outside = g.outside ?? [];
     const isOutside = (frame: number) => outside.some((r) => frame >= r.from && frame <= r.to);
     const keyframe = g.keyframes.find((kf) => !isOutside(kf.frame_index)) ?? g.keyframes[0];

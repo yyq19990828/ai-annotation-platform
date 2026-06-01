@@ -93,16 +93,16 @@ def _source_keyframe(annotation: Annotation, job: VideoTrackerJob) -> dict:
 
 def _coerce_video_track_geometry(annotation: Annotation, job: VideoTrackerJob) -> dict:
     geometry = annotation.geometry or {}
-    if geometry.get("type") == "video_track":
+    if geometry.get("type") == "video_track_bbox":
         return {
-            "type": "video_track",
+            "type": "video_track_bbox",
             "track_id": str(geometry.get("track_id") or annotation.id),
             "keyframes": [dict(item) for item in geometry.get("keyframes") or []],
             "outside": [dict(item) for item in geometry.get("outside") or []],
         }
 
     return {
-        "type": "video_track",
+        "type": "video_track_bbox",
         "track_id": str(annotation.id),
         "keyframes": [_source_keyframe(annotation, job)],
         "outside": [],
@@ -182,7 +182,7 @@ def apply_tracker_results(
     )
 
     annotation.geometry = geometry
-    annotation.annotation_type = "video_track"
+    annotation.annotation_type = "video_track_bbox"
     annotation.version = int(annotation.version or 1) + 1
 
 

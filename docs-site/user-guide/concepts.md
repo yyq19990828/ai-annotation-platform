@@ -17,7 +17,7 @@
 
 | 名词 | 英文 | 含义 |
 |---|---|---|
-| **轨迹** | Track | 视频里同一个对象跨多个帧的标注结果。一条轨迹保存为一条 `video_track` annotation。 |
+| **轨迹** | Track | 视频里同一个对象跨多个帧的标注结果。一条轨迹保存为一条 `video_track_bbox` annotation。 |
 | **关键帧** | Keyframe | 用户手工确认或模型预测出的轨迹控制点，包含 `frame_index` 和 bbox。 |
 | **插值帧** | Interpolated frame | 两个有效关键帧之间由前端线性计算出的显示结果，不会逐帧写入数据库。 |
 | **消失** | Outside | 目标在某帧或某段中不存在，用闭区间 `outside` 段表达；插值不会跨过消失段。 |
