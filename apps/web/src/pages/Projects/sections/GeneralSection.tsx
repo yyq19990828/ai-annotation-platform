@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
-import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import type { ProjectResponse } from "@/api/projects";
 import styles from "./GeneralSection.module.css";
 
@@ -77,30 +75,39 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
-  const dirty =
-    name.trim() !== project.name ||
-    status !== project.status ||
-    (dueDate || null) !== (project.due_date ?? null);
+  // 自动保存：状态 / 截止日期等离散控件即时存；项目名称走文本框失焦保存。
+  // 失败弹 toast，成功静默（避免每次改动都打扰）。
+  const savePatch = (patch: {
+    name?: string;
+    status?: string;
+    due_date?: string | null;
+  }) => {
+    update.mutate(patch, {
+      onError: (err) =>
+        pushToast({ msg: "保存失败", sub: (err as Error).message }),
+    });
+  };
 
-  useUnsavedWarning(dirty);
+  const onStatusChange = (next: string) => {
+    setStatus(next);
+    savePatch({ status: next });
+  };
 
-  const onSave = () => {
-    if (!name.trim()) {
+  const onDueDateChange = (next: string) => {
+    setDueDate(next);
+    savePatch({ due_date: next || null });
+  };
+
+  const commitName = () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
       pushToast({ msg: "项目名称不能为空" });
+      setName(project.name);
       return;
     }
-    update.mutate(
-      {
-        name: name.trim(),
-        status,
-        due_date: dueDate || null,
-      },
-      {
-        onSuccess: () => pushToast({ msg: "项目已更新", kind: "success" }),
-        onError: (err) =>
-          pushToast({ msg: "保存失败", sub: (err as Error).message }),
-      },
-    );
+    if (trimmed === project.name) return;
+    setName(trimmed);
+    savePatch({ name: trimmed });
   };
 
   return (
@@ -111,12 +118,18 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
       <div className={styles.body}>
         <div>
           <label className={styles.label}>项目名称</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} className={styles.control} />
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={commitName}
+            maxLength={60}
+            className={styles.control}
+          />
         </div>
         <div className={styles.gridTwo}>
           <div>
             <label className={styles.label}>状态</label>
-            <select value={status} onChange={(e) => setStatus(e.target.value)} className={cn(styles.control, styles.selectControl)}>
+            <select value={status} onChange={(e) => onStatusChange(e.target.value)} className={cn(styles.control, styles.selectControl)}>
               {STATUS_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
@@ -124,7 +137,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
           </div>
           <div>
             <label className={styles.label}>截止日期</label>
-            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={styles.control} />
+            <input type="date" value={dueDate} onChange={(e) => onDueDateChange(e.target.value)} className={styles.control} />
           </div>
         </div>
         <div>
@@ -134,20 +147,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
           </div>
         </div>
         <ProgressOverview project={project} />
-        <div className={styles.footer}>
-          {dirty && (
-            <span
-              className={styles.unsavedIndicator}
-              data-testid="unsaved-indicator"
-            >
-              <span className={styles.unsavedDot} />
-              有未保存的修改
-            </span>
-          )}
-          <Button variant="primary" disabled={!dirty || update.isPending} onClick={onSave}>
-            {update.isPending ? "保存中..." : "保存修改"}
-          </Button>
-        </div>
+        {update.isPending && <div className={styles.savingHint} data-testid="saving-hint">保存中…</div>}
       </div>
     </Card>
   );

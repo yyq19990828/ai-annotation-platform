@@ -1,7 +1,7 @@
 /**
  * v0.9.14 · GeneralSection 单测 — 项目基本信息 controlled form 主路径.
  *
- * 覆盖: 加载初值 / dirty 检测 / 校验空名 / 保存 mutation 触发.
+ * 覆盖: 加载初值 / 离散控件即时保存 / 名称失焦保存 / 空名校验恢复.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
@@ -9,13 +9,9 @@ import { MemoryRouter } from "react-router-dom";
 
 const mockUpdateMutate = vi.fn();
 const mockPushToast = vi.fn();
-const mockUseUnsavedWarning = vi.fn();
 
 vi.mock("@/hooks/useProjects", () => ({
   useUpdateProject: () => ({ mutate: mockUpdateMutate, isPending: false }),
-}));
-vi.mock("@/hooks/useUnsavedWarning", () => ({
-  useUnsavedWarning: (...args: unknown[]) => mockUseUnsavedWarning(...args),
 }));
 vi.mock("@/components/ui/Toast", async () => {
   const actual = await vi.importActual<typeof import("@/components/ui/Toast")>("@/components/ui/Toast");
@@ -78,7 +74,6 @@ describe("GeneralSection", () => {
   beforeEach(() => {
     mockUpdateMutate.mockReset();
     mockPushToast.mockReset();
-    mockUseUnsavedWarning.mockReset();
   });
 
   it("渲染初值: 项目名 / 状态 / 类型", () => {
@@ -90,35 +85,41 @@ describe("GeneralSection", () => {
     expect(screen.queryByText("标注类别")).not.toBeInTheDocument();
   });
 
-  it("修改项目名 → useUnsavedWarning 收到 dirty=true", () => {
+  it("修改状态 → 即时保存只提交 status", () => {
     renderUI(makeProject());
-    const nameInput = screen.getByDisplayValue("Demo Project") as HTMLInputElement;
-    fireEvent.change(nameInput, { target: { value: "Renamed" } });
-    // useUnsavedWarning 在每次 render 都被调用; 取最后一次
-    const calls = mockUseUnsavedWarning.mock.calls;
-    expect(calls[calls.length - 1][0]).toBe(true);
+    fireEvent.change(screen.getByDisplayValue("进行中"), {
+      target: { value: "completed" },
+    });
+    expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
+    expect(mockUpdateMutate.mock.calls[0][0]).toEqual({ status: "completed" });
   });
 
-  it("空名保存 → 弹 toast 阻止 mutation", () => {
+  it("空名失焦 → 弹 toast 并恢复, 不提交", () => {
     renderUI(makeProject());
     const nameInput = screen.getByDisplayValue("Demo Project") as HTMLInputElement;
     fireEvent.change(nameInput, { target: { value: "   " } });
-    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+    fireEvent.blur(nameInput);
     expect(mockUpdateMutate).not.toHaveBeenCalled();
     expect(mockPushToast).toHaveBeenCalledWith(
       expect.objectContaining({ msg: expect.stringContaining("项目名称不能为空") }),
     );
+    expect(nameInput.value).toBe("Demo Project");
   });
 
-  it("有效改动后保存触发 update.mutate, 名字 trim", () => {
+  it("改名失焦 → 提交 trim 后的 name", () => {
     renderUI(makeProject());
     const nameInput = screen.getByDisplayValue("Demo Project") as HTMLInputElement;
     fireEvent.change(nameInput, { target: { value: "  Renamed  " } });
-    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+    fireEvent.blur(nameInput);
     expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
     const [payload] = mockUpdateMutate.mock.calls[0];
-    expect(payload).toMatchObject({ name: "Renamed", status: "in_progress" });
-    expect(payload).not.toHaveProperty("classes");
-    expect(payload).not.toHaveProperty("ai_enabled");
+    expect(payload).toEqual({ name: "Renamed" });
+  });
+
+  it("名称未变化失焦 → 不提交", () => {
+    renderUI(makeProject());
+    const nameInput = screen.getByDisplayValue("Demo Project") as HTMLInputElement;
+    fireEvent.blur(nameInput);
+    expect(mockUpdateMutate).not.toHaveBeenCalled();
   });
 });

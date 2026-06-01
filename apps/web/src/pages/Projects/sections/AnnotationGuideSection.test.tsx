@@ -39,14 +39,17 @@ vi.mock("@/components/markdown/MarkdownEditor", () => ({
   MarkdownEditor: ({
     value,
     onChange,
+    onBlur,
   }: {
     value: string;
     onChange: (v: string) => void;
+    onBlur?: () => void;
   }) => (
     <textarea
       data-testid="markdown-editor"
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
     />
   ),
 }));
@@ -110,7 +113,7 @@ describe("AnnotationGuideSection", () => {
     expect(screen.getByTestId("guide-tab-edit")).toHaveAttribute("aria-selected", "true");
   });
 
-  it("修改 markdown 后点击保存 → mutation 携带 annotation_guide", async () => {
+  it("修改 markdown 后失焦 → mutation 携带 annotation_guide", async () => {
     render(
       <AnnotationGuideSection
         project={makeProject({ annotation_guide: "" })}
@@ -118,11 +121,22 @@ describe("AnnotationGuideSection", () => {
     );
     const editor = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
     fireEvent.change(editor, { target: { value: "# 新指引\n第一条" } });
-    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+    fireEvent.blur(editor);
     expect(mockMutate).toHaveBeenCalledWith(
       { annotation_guide: "# 新指引\n第一条" },
       expect.any(Object),
     );
+  });
+
+  it("内容未变化失焦 → 不触发 mutation", async () => {
+    render(
+      <AnnotationGuideSection
+        project={makeProject({ annotation_guide: "# 初始" })}
+      />,
+    );
+    const editor = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
+    fireEvent.blur(editor);
+    expect(mockMutate).not.toHaveBeenCalled();
   });
 
   it("切到预览 tab 渲染 markdown 内容", async () => {

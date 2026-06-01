@@ -7,7 +7,6 @@
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
 import { useGuideAssets } from "@/hooks/useGuideAssets";
@@ -35,8 +34,6 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
   const [draft, setDraft] = useState<string>(initialMarkdown);
   const [assets, setAssets] = useState<GuideAssetEntry[]>(initialAssets);
 
-  const dirty = draft !== initialMarkdown;
-
   // 项目切换时同步.
   useEffect(() => {
     setDraft(initialMarkdown);
@@ -44,15 +41,15 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
-  const handleSave = useCallback(() => {
+  // 失焦自动保存：内容有变更才提交。失败弹 toast，成功静默（切到预览 tab
+  // 会让编辑器失焦，从而触发保存）。
+  const handleAutoSave = useCallback(() => {
+    if (draft === initialMarkdown) return;
     update.mutate(
       { annotation_guide: draft },
-      {
-        onSuccess: () => pushToast({ msg: "已保存标注指引", kind: "success" }),
-        onError: () => pushToast({ msg: "保存失败", kind: "warning" }),
-      },
+      { onError: () => pushToast({ msg: "保存失败", kind: "warning" }) },
     );
-  }, [draft, pushToast, update]);
+  }, [draft, initialMarkdown, pushToast, update]);
 
   const handleUpload = useCallback(
     async (file: File) => {
@@ -127,6 +124,7 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
               value={draft}
               onChange={setDraft}
               onUploadImage={handleUpload}
+              onBlur={handleAutoSave}
               placeholder="# 标注指引\n请描述类别定义、易混淆边界、典型反例…"
             />
           </Suspense>
@@ -157,9 +155,6 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
 
         <div className={styles.actions}>
           {update.isPending && <span className={styles.savingHint}>保存中…</span>}
-          <Button onClick={handleSave} disabled={!dirty || update.isPending}>
-            保存
-          </Button>
         </div>
       </div>
     </Card>

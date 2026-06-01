@@ -1,8 +1,8 @@
 /**
  * v0.10.29 · VideoSamplingSection 单测 — 项目级视频帧采样配置.
  *
- * 覆盖: 初值加载 / mode 切换 / fps & step 输入 / 预览文案 /
- *       保存 payload 形态 / 非法态禁用保存且不提交.
+ * 覆盖: 初值加载 / mode 切换即时保存 / fps & step 失焦保存 / 预览文案 /
+ *       非法态不提交.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
@@ -40,26 +40,18 @@ function makeProject(
   } as unknown as ProjectResponse;
 }
 
-function getSaveButton() {
-  return screen.getByRole("button", { name: /保存/ }) as HTMLButtonElement;
-}
-
 describe("VideoSamplingSection", () => {
   beforeEach(() => {
     mockUpdateMutate.mockReset();
     mockPushToast.mockReset();
   });
 
-  it("默认无配置 → mode=none, 预览显示不采样, 保存提交 { mode: none }", () => {
+  it("默认无配置 → mode=none, 预览显示不采样, 无交互不自动提交", () => {
     render(<VideoSamplingSection project={makeProject()} />);
     expect(screen.getByTestId("video-sampling-preview").textContent).toMatch(
       /不采样/,
     );
-    fireEvent.click(getSaveButton());
-    expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
-    expect(mockUpdateMutate.mock.calls[0][0]).toEqual({
-      video_sampling: { mode: "none" },
-    });
+    expect(mockUpdateMutate).not.toHaveBeenCalled();
   });
 
   it("加载已有 fps 配置作为初值", () => {
@@ -74,53 +66,57 @@ describe("VideoSamplingSection", () => {
     );
   });
 
-  it("切到 fps 模式但 target 为空 → 保存按钮禁用, 不提交", () => {
+  it("切到 fps 模式但 target 为空 → 不提交", () => {
     render(<VideoSamplingSection project={makeProject()} />);
     fireEvent.click(screen.getByLabelText("按目标 fps"));
-    const btn = getSaveButton();
-    expect(btn).toBeDisabled();
-    fireEvent.click(btn);
     expect(mockUpdateMutate).not.toHaveBeenCalled();
   });
 
-  it("fps 模式填合法 target → 提交 { mode: fps, target_fps }", () => {
+  it("fps 模式填合法 target 失焦 → 提交 { mode: fps, target_fps }", () => {
     render(<VideoSamplingSection project={makeProject()} />);
     fireEvent.click(screen.getByLabelText("按目标 fps"));
-    fireEvent.change(screen.getByRole("spinbutton"), {
-      target: { value: "12" },
-    });
+    const input = screen.getByRole("spinbutton");
+    fireEvent.change(input, { target: { value: "12" } });
     expect(screen.getByTestId("video-sampling-preview").textContent).toMatch(
       /标注 12 fps/,
     );
-    fireEvent.click(getSaveButton());
+    fireEvent.blur(input);
     expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
     expect(mockUpdateMutate.mock.calls[0][0]).toEqual({
       video_sampling: { mode: "fps", target_fps: 12 },
     });
   });
 
-  it("step 模式填合法整数 → 提交 { mode: step, frame_step }, 预览含 step", () => {
+  it("step 模式填合法整数 失焦 → 提交 { mode: step, frame_step }, 预览含 step", () => {
     render(<VideoSamplingSection project={makeProject()} />);
     fireEvent.click(screen.getByLabelText("按帧间隔"));
-    fireEvent.change(screen.getByRole("spinbutton"), {
-      target: { value: "5" },
-    });
+    const input = screen.getByRole("spinbutton");
+    fireEvent.change(input, { target: { value: "5" } });
     expect(screen.getByTestId("video-sampling-preview").textContent).toMatch(
       /每 5 帧打点/,
     );
-    fireEvent.click(getSaveButton());
+    fireEvent.blur(input);
     expect(mockUpdateMutate.mock.calls[0][0]).toEqual({
       video_sampling: { mode: "step", frame_step: 5 },
     });
   });
 
-  it("step 模式填 0（<1）→ 保存禁用, 不提交", () => {
+  it("step 模式填 0（<1）失焦 → 不提交", () => {
     render(<VideoSamplingSection project={makeProject()} />);
     fireEvent.click(screen.getByLabelText("按帧间隔"));
-    fireEvent.change(screen.getByRole("spinbutton"), {
-      target: { value: "0" },
-    });
-    expect(getSaveButton()).toBeDisabled();
+    const input = screen.getByRole("spinbutton");
+    fireEvent.change(input, { target: { value: "0" } });
+    fireEvent.blur(input);
     expect(mockUpdateMutate).not.toHaveBeenCalled();
+  });
+
+  it("从 fps 切回不采样 → 即时提交 { mode: none }", () => {
+    render(<VideoSamplingSection project={makeProject()} />);
+    fireEvent.click(screen.getByLabelText("按目标 fps"));
+    fireEvent.click(screen.getByLabelText("不采样（所有帧）"));
+    expect(mockUpdateMutate).toHaveBeenLastCalledWith(
+      { video_sampling: { mode: "none" } },
+      expect.any(Object),
+    );
   });
 });
