@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AttributeField, AttributeSchema } from "@/api/projects";
+import { Switch } from "@/components/ui/Switch";
 import { usePopover } from "@/hooks/usePopover";
 import type { DirtyTracker } from "../state/useDirtyTracker";
 import styles from "./AttributeForm.module.css";
@@ -207,21 +208,11 @@ export function AttributeForm({
               />
             )}
             {f.type === "boolean" && (
-              <span className={styles.switch}>
-                <input
-                  type="checkbox"
-                  checked={!!v}
-                  disabled={readOnly}
-                  onChange={(e) => setValue(e.target.checked)}
-                  className={styles.switchInput}
-                />
-                <span
-                  aria-hidden="true"
-                  className={cn(styles.switchTrack, !!v && styles.switchTrackOn)}
-                >
-                  <span className={styles.switchKnob} />
-                </span>
-              </span>
+              <Switch
+                checked={!!v}
+                disabled={readOnly}
+                onChange={(next) => setValue(next)}
+              />
             )}
             {f.type === "select" && (
               <select
