@@ -85,6 +85,10 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
 
   const setMode = (mode: SamplingMode) => {
     const next = { ...draft, mode };
+    // 切到 fps/step 时若对应输入为空，填一个合法默认值，保证 commit 一定落库，
+    // 避免 UI radio 已切到新模式但后端仍是旧模式（刷新即回滚）。
+    if (mode === "fps" && !next.targetFps.trim()) next.targetFps = "10";
+    if (mode === "step" && !next.frameStep.trim()) next.frameStep = "1";
     setDraft(next);
     commit(next);
   };

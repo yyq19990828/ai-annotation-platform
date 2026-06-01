@@ -3,6 +3,7 @@ import { Card } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
+import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import type { ProjectResponse } from "@/api/projects";
 import styles from "./GeneralSection.module.css";
 
@@ -67,6 +68,9 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
   const [name, setName] = useState(project.name);
   const [status, setStatus] = useState(project.status);
   const [dueDate, setDueDate] = useState(project.due_date ?? "");
+
+  // 项目名称只在 onBlur 落库，补浏览器离开提示，避免未失焦直接关 tab / 刷新丢改名。
+  useUnsavedWarning(name.trim() !== "" && name.trim() !== project.name);
 
   useEffect(() => {
     setName(project.name);

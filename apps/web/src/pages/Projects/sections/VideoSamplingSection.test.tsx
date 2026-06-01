@@ -66,10 +66,13 @@ describe("VideoSamplingSection", () => {
     );
   });
 
-  it("切到 fps 模式但 target 为空 → 不提交", () => {
+  it("切到 fps 模式 target 为空 → 自动填默认 10 并提交（避免 UI/DB 不一致）", () => {
     render(<VideoSamplingSection project={makeProject()} />);
     fireEvent.click(screen.getByLabelText("按目标 fps"));
-    expect(mockUpdateMutate).not.toHaveBeenCalled();
+    expect(mockUpdateMutate).toHaveBeenLastCalledWith(
+      { video_sampling: { mode: "fps", target_fps: 10 } },
+      expect.any(Object),
+    );
   });
 
   it("fps 模式填合法 target 失焦 → 提交 { mode: fps, target_fps }", () => {
@@ -81,10 +84,10 @@ describe("VideoSamplingSection", () => {
       /标注 12 fps/,
     );
     fireEvent.blur(input);
-    expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
-    expect(mockUpdateMutate.mock.calls[0][0]).toEqual({
-      video_sampling: { mode: "fps", target_fps: 12 },
-    });
+    expect(mockUpdateMutate).toHaveBeenLastCalledWith(
+      { video_sampling: { mode: "fps", target_fps: 12 } },
+      expect.any(Object),
+    );
   });
 
   it("step 模式填合法整数 失焦 → 提交 { mode: step, frame_step }, 预览含 step", () => {
@@ -96,18 +99,29 @@ describe("VideoSamplingSection", () => {
       /每 5 帧打点/,
     );
     fireEvent.blur(input);
-    expect(mockUpdateMutate.mock.calls[0][0]).toEqual({
-      video_sampling: { mode: "step", frame_step: 5 },
-    });
+    expect(mockUpdateMutate).toHaveBeenLastCalledWith(
+      { video_sampling: { mode: "step", frame_step: 5 } },
+      expect.any(Object),
+    );
   });
 
-  it("step 模式填 0（<1）失焦 → 不提交", () => {
+  it("切到 step 模式 frame_step 为空 → 自动填默认 1 并提交", () => {
     render(<VideoSamplingSection project={makeProject()} />);
     fireEvent.click(screen.getByLabelText("按帧间隔"));
+    expect(mockUpdateMutate).toHaveBeenLastCalledWith(
+      { video_sampling: { mode: "step", frame_step: 1 } },
+      expect.any(Object),
+    );
+  });
+
+  it("step 模式改成非法值 0（<1）失焦 → 不再追加提交（保留切换时的默认）", () => {
+    render(<VideoSamplingSection project={makeProject()} />);
+    fireEvent.click(screen.getByLabelText("按帧间隔"));
+    expect(mockUpdateMutate).toHaveBeenCalledTimes(1); // 切换时的默认提交
     const input = screen.getByRole("spinbutton");
     fireEvent.change(input, { target: { value: "0" } });
     fireEvent.blur(input);
-    expect(mockUpdateMutate).not.toHaveBeenCalled();
+    expect(mockUpdateMutate).toHaveBeenCalledTimes(1); // 非法 blur 不再提交
   });
 
   it("从 fps 切回不采样 → 即时提交 { mode: none }", () => {

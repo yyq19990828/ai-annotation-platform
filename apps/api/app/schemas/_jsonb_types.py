@@ -257,6 +257,14 @@ class VideoModesConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    @model_validator(mode="after")
+    def _at_least_one_enabled(self) -> "VideoModesConfig":
+        # 与前端 ClassesSection 语义一致：不允许 box / track 全 false，
+        # 否则 bbox 单元 enabled=true 却什么都画不了。
+        if not self.box and not self.track:
+            raise ValueError("video_modes 必须至少保留 box / track 其一可用")
+        return self
+
 
 class ToolBinding(BaseModel):
     """单一工具单位下的 enable 状态 + 类别集合 + 属性 schema."""

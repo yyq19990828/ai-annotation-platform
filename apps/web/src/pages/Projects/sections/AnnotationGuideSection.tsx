@@ -9,6 +9,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react
 import { Card } from "@/components/ui/Card";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
+import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import { useGuideAssets } from "@/hooks/useGuideAssets";
 import { GuideMarkdownView } from "@/components/markdown/GuideMarkdownView";
 import type { GuideAssetEntry, ProjectResponse } from "@/api/projects";
@@ -33,6 +34,9 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
   const [mode, setMode] = useState<Mode>("edit");
   const [draft, setDraft] = useState<string>(initialMarkdown);
   const [assets, setAssets] = useState<GuideAssetEntry[]>(initialAssets);
+
+  // blur 自动保存兜不住「未失焦直接关 tab / 刷新」的大段输入，补浏览器离开提示。
+  useUnsavedWarning(draft !== initialMarkdown);
 
   // 项目切换时同步.
   useEffect(() => {
