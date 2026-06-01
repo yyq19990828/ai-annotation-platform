@@ -49,14 +49,12 @@ function ProgressOverview({ project }: { project: ProjectResponse }) {
             <span className={styles.progressPct}>{pct}%</span>
           </div>
           <div className={styles.progressChips}>
-            {inProgress > 0 && <span className={styles.progressChip}>{inProgress} 进行中</span>}
-            {review > 0 && <span className={styles.progressChip}>{review} 待审</span>}
-            {project.ai_enabled && aiCompleted > 0 && (
+            <span className={styles.progressChip}>{inProgress} 进行中</span>
+            <span className={styles.progressChip}>{review} 待审</span>
+            {project.ai_enabled && (
               <span className={cn(styles.progressChip, styles.progressChipAi)}>{aiCompleted} AI 完成</span>
             )}
-            {(batch?.total ?? 0) > 0 && (
-              <span className={styles.progressChip}>{batch?.total} 个批次</span>
-            )}
+            <span className={styles.progressChip}>{batch?.total ?? 0} 个批次</span>
           </div>
         </div>
       )}
