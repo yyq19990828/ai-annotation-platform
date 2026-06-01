@@ -333,10 +333,11 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 
 - `Space` 播放 / 暂停
 - `J` / `K` / `L` 反向播放或减速 / 暂停 / 正向播放或加速
-- `B` / `T` 切换视频矩形框 / 轨迹工具
-- `←` / `→` 逐帧
-- `,` / `.` 逐帧备用键
-- `Shift + ←/→` 选中 `video_track_bbox` 时跳上/下可见关键帧；未选中轨迹时跳 10 帧
+- `B` / `T` / `V` 切换视频矩形框 / 轨迹 / 平移工具
+- `←` / `→` 上一帧 / 下一帧；采样开启时按网格跳
+- `Shift + ←/→` 采样开启时源帧 ±1 微调
+- `,` / `.` 选中 `video_track_bbox` 时跳上 / 下可见关键帧
+- `Home` / `End` 选中 `video_track_bbox` 时跳首 / 末可见关键帧
 - `Ctrl+M` 当前帧添加 / 移除书签
 - `Ctrl+[` / `Ctrl+]` 跳转历史后退 / 前进
 - `Alt+L` 清除本地 loop region
@@ -382,7 +383,7 @@ R5.2 的 bitmap cache 只优化前端体感，不替代 `<video>` 播放源。`u
 - 底部标记的数据源是 timeline markers：keyframe 仍显示为细线，prediction 使用不同颜色，outside 段显示为灰色区间。
 - 选中 `video_track_bbox` 时显示该轨迹的单轨 timeline：keyframe 圆点跟随轨迹色、悬浮在进度条上方，连线加粗并加同色外发光，outside 灰段、interpolated 虚线段和 prediction 标记照旧；未选中轨迹时显示全局 keyframe 密度条，按各轨迹关键帧占比自底向上堆叠成彩色渐变（legacy bbox 用 accent 兜底），等宽分桶避免首帧偏窄。
 - playhead 显示为 3px 竖线（hover/active 加宽到 5px），不再遮挡相邻关键帧/刻度；overlay 改两行布局让进度条独占一行，不随帧数位数/loop 标签变短；loop 区间渲染为贯穿轨道高度的半透明填充块 + inset 高亮边界。
-- `Shift+←/→` 复用同一套可见关键帧计算，跳过 outside 帧；如果没有选中轨迹，则保持原有 ±10 帧跳转。`,`/`.` 跳上/下可见关键帧，`Home`/`End` 跳首/末出现帧。
+- `,` / `.` 复用同一套可见关键帧计算，跳过 outside 帧；`Home` / `End` 跳首 / 末出现帧。采样开启时 `Shift+←/→` 仅做源帧 ±1 微调，不参与关键帧跳转。
 - `Shift+drag` 时间轴可创建本地 loop region；播放越过范围末帧后 seek 回起始帧，逐帧和手动 seek 不被限制。
 - loop region、书签和跳转历史只存前端会话状态，按 task 写入 `sessionStorage`，不改变 annotation schema 或后端 API。
 - 书签以小三角 marker 显示，`Ctrl+M` 在当前帧加 / 删；显式 seek、bookmark 跳转和关键帧跳转写入最近 50 条跳转历史，播放 tick 不写历史。
