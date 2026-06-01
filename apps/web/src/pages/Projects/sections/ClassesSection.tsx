@@ -20,7 +20,11 @@ import {
   unitBindingsToPayload,
   useProjectToolBindings,
 } from "./useProjectToolBindings";
-import type { ToolUnitId } from "@/constants/toolUnits";
+import {
+  dataTypeFromLegacy,
+  type ProjectDataType,
+  type ToolUnitId,
+} from "@/constants/toolUnits";
 import styles from "./ClassesSection.module.css";
 
 export function ClassesSection({ project }: { project: ProjectResponse }) {
@@ -29,6 +33,8 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
   const rename = useRenameClass(project.id);
   const { bindings, setBindings, activeUnit, setActiveUnit, dirty } =
     useProjectToolBindings(project);
+  const dataType = projectDataType(project);
+  const isVideoBbox = dataType === "video" && activeUnit === "bbox";
 
   useUnsavedWarning(dirty);
 
@@ -233,12 +239,15 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
       </div>
       <div className={styles.body}>
         <p className={styles.helpText}>
-          点击工具单位后，直接维护该工具的类别、颜色、排序和属性 schema；同名类在不同工具单位下相互隔离。
+          {dataType === "video"
+            ? "视频工作台的单帧框和轨迹框共用这一套类别、颜色、排序和属性 schema。"
+            : "点击工具单位后，直接维护该工具的类别、颜色、排序和属性 schema；同名类在不同工具单位下相互隔离。"}
         </p>
         <ToolUnitTabs
           bindings={bindings}
           activeUnit={activeUnit}
           onSelect={setActiveUnit}
+          dataType={dataType}
         />
         {activeBinding && (
           <>
@@ -246,12 +255,14 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
               <Switch
                 checked={activeBinding.enabled}
                 onChange={(next) => onToggle(activeUnit, next)}
-                label={activeBinding.enabled ? "已启用此工具单位" : "已禁用此工具单位"}
+                label={unitSwitchLabel(activeBinding.enabled, isVideoBbox)}
                 data-testid="unit-enabled-switch"
               />
               {!activeBinding.enabled && (
                 <span className={styles.disabledNote}>
-                  禁用后配置仍会保留，但工作台不会使用；需要修改请先启用。
+                  {isVideoBbox
+                    ? "禁用后单帧框和轨迹框都不可新增；配置仍会保留，需要修改请先启用。"
+                    : "禁用后配置仍会保留，但工作台不会使用；需要修改请先启用。"}
                 </span>
               )}
             </div>
@@ -309,4 +320,20 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
       </div>
     </Card>
   );
+}
+
+function projectDataType(project: ProjectResponse): ProjectDataType {
+  if (
+    project.data_type === "image" ||
+    project.data_type === "video" ||
+    project.data_type === "lidar"
+  ) {
+    return project.data_type;
+  }
+  return dataTypeFromLegacy(project.type_key);
+}
+
+function unitSwitchLabel(enabled: boolean, videoBbox: boolean): string {
+  const state = enabled ? "已启用" : "已禁用";
+  return videoBbox ? `${state}矩形框 / 轨迹` : `${state}此工具单位`;
 }

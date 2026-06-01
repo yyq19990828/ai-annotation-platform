@@ -30,7 +30,7 @@ import {
   unitBindingsToPayload,
   type UnitBindingMap,
 } from "@/pages/Projects/sections/useProjectToolBindings";
-import { type ToolUnitId } from "@/constants/toolUnits";
+import { dataTypeFromLegacy, type ToolUnitId } from "@/constants/toolUnits";
 
 import styles from "./ProjectTemplatesPage.module.css";
 
@@ -282,6 +282,7 @@ export function TemplateEditModal({ open, onClose, initial }: Props) {
               bindings={bindings}
               activeUnit={activeUnit}
               onSelect={setActiveUnit}
+              dataType={dataTypeFromLegacy(typeKey)}
               allowToggle
               onToggle={onToggleUnit}
             />
