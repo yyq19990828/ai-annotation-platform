@@ -651,7 +651,9 @@ describe("VideoStage", () => {
     const video = container.querySelector("video");
 
     expect(video).not.toBeNull();
-    expect(video!.currentTime).toBe(0);
+    // 首帧会被主动 seek 以解码出清晰画面 (frame 0 → frameToSeekTime(0) ≈ 0.025)，
+    // 而非停留在 0 仅显示低清 poster。
+    await waitFor(() => expect(video!.currentTime).toBeCloseTo(0.025));
 
     rerender(<VideoStage {...props} frameIndex={5} />);
 

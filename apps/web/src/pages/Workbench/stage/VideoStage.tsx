@@ -1095,6 +1095,30 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     };
   }, [captureBitmapFrame, isPlaybackActive]);
 
+  // 首次加载视频源时主动 seek 一次当前帧, 强制浏览器解码出清晰首帧并抓成位图。
+  // 否则 <video> 仅展示低清 poster, 要等用户播放/拖动时间轴触发 seek 才解码 —
+  // captureBitmapFrame 有 readyState >= HAVE_CURRENT_DATA 的门槛 (见 useVideoBitmapCache),
+  // 默认 preload 下首帧未解码, 上层位图层拿不到帧, 表现为“先糊后清晰”。
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !manifest?.video_url) return;
+    let cancelled = false;
+    const primeFirstFrame = () => {
+      if (cancelled) return;
+      cancelled = true;
+      void seekFrameAsyncRef.current(frameIndexRef.current, { recordHistory: false });
+    };
+    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      primeFirstFrame();
+    } else {
+      video.addEventListener("loadedmetadata", primeFirstFrame, { once: true });
+    }
+    return () => {
+      cancelled = true;
+      video.removeEventListener("loadedmetadata", primeFirstFrame);
+    };
+  }, [manifest?.video_url]);
+
   useEffect(() => {
     if (isPlaybackActive || frameClock.isSeeking) return;
     const schedule = typeof window.requestAnimationFrame === "function"
