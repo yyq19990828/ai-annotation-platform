@@ -225,7 +225,7 @@ def internal_geometry_to_ls_shape(
             "score": score,
         }
 
-    # 本期不支持 video_bbox / video_track / 其他 kind.
+    # 本期不支持 video_bbox / video_track_bbox / 其他 kind.
     return None
 
 

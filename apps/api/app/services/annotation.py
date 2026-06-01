@@ -512,7 +512,7 @@ class AnnotationService:
     ) -> tuple[Annotation | None, list[Annotation], bool, list[int]]:
         geometry = annotation.geometry or {}
         if geometry.get("type") != "video_track_bbox":
-            raise ValueError("annotation must be a video_track")
+            raise ValueError("annotation must be a video_track_bbox")
 
         frames: list[dict]
         removed_frame_indexes: list[int] = []
@@ -728,7 +728,7 @@ class AnnotationService:
         source = annotations[0]
         geometry = source.geometry or {}
         if geometry.get("type") != "video_track_bbox":
-            raise ValueError("split_track only accepts a video_track annotation")
+            raise ValueError("split_track only accepts a video_track_bbox annotation")
         if not resolve_track_at_frame(geometry, frame_index):
             raise ValueError("split_track requires a visible frame")
 
@@ -841,7 +841,7 @@ class AnnotationService:
         if any(
             (ann.geometry or {}).get("type") != "video_track_bbox" for ann in annotations
         ):
-            raise ValueError(f"{operation} only accepts video_track annotations")
+            raise ValueError(f"{operation} only accepts video_track_bbox annotations")
         if annotations[0].class_name != annotations[1].class_name:
             raise ValueError(f"{operation} requires tracks with the same class")
 

@@ -467,11 +467,13 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         case "cancel":
           if (showHotkeys) { setShowHotkeys(false); return; }
           if (batchChanging) { setBatchChanging(false); return; }
-          // v0.11.29 · 视频模式 ESC 回归 hand 中立态（继续向下取消草稿 / 选中）。
-          if (videoMode) s.setVideoTool("hand");
+          // 分层取消：每按一次 ESC 只做一件事（草稿 → 编辑类别 → 选中）。
           if (s.pendingDrawing) { s.setPendingDrawing(null); return; }
           if (s.editingClass) { s.setEditingClass(null); return; }
-          s.setSelectedId(null);
+          if (s.selectedId) { s.setSelectedId(null); return; }
+          // v0.11.29 · 视频模式：仅当无草稿 / 无选中可取消时，ESC 才回归 hand 中立态，
+          // 避免用户只想取消选中却顺手把当前 track 工具一并丢掉。
+          if (videoMode) s.setVideoTool("hand");
           return;
 
         case "thresholdAdjust":

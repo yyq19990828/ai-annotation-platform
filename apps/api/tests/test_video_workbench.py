@@ -1425,7 +1425,7 @@ async def test_video_track_convert_rejects_non_track_annotation(
     )
 
     assert resp.status_code == 400
-    assert resp.json()["detail"] == "Annotation is not a video_track"
+    assert resp.json()["detail"] == "Annotation is not a video_track_bbox"
 
 
 async def test_video_track_convert_requires_task_visibility(
