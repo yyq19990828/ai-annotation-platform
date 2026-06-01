@@ -116,14 +116,31 @@ function projectDataType(project: {
   return dataTypeFromLegacy(project.type_key ?? "image-det");
 }
 
-/** 把 UnitBindingMap 序列化为后端 PATCH 体的 tool_bindings 字段 (仅 enabled 单位). */
+/** 单位是否「无任何配置内容」(纯空)。 */
+function isUnitEmpty(ub: UnitBindingState): boolean {
+  return (
+    ub.classRows.length === 0 &&
+    ub.attributeFields.length === 0 &&
+    !ub.keypointSchema
+  );
+}
+
+/**
+ * 把 UnitBindingMap 序列化为后端 PATCH 体的 tool_bindings 字段。
+ *
+ * 保留「禁用但已配置」的单位 (enabled:false + 原有 classes / attribute_schema)，
+ * 只丢弃从未配置过的纯空单位，避免禁用即丢失配置 (后端 derive_* 已会跳过
+ * enabled=false 的单位，故禁用单位不会污染工作台扁平投影)。
+ */
 export function unitBindingsToPayload(bindings: UnitBindingMap): ToolBindings {
   const out: ToolBindings = {};
   for (const k of Object.keys(bindings) as ToolUnitId[]) {
     const ub = bindings[k];
-    if (!ub || !ub.enabled) continue;
+    if (!ub) continue;
+    // 纯空且禁用 → 不落库，保持 tool_bindings 精简。
+    if (!ub.enabled && isUnitEmpty(ub)) continue;
     out[k] = {
-      enabled: true,
+      enabled: ub.enabled,
       classes: ub.classRows.map((r, i) => ({
         name: r.name,
         color: r.color,

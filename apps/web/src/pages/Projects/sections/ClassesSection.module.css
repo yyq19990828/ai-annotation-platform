@@ -56,6 +56,33 @@
   line-height: 1.5;
 }
 
+.unitEnableRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.disabledNote {
+  font-size: 12px;
+  color: var(--color-fg-subtle);
+  line-height: 1.5;
+}
+
+/* 重置 fieldset 默认样式；禁用时整体置灰并禁止交互（内部 input 由 fieldset
+ * disabled 原生禁用，pointer-events 兜底拖拽等非表单交互）。 */
+.editorFieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.editorFieldset:disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 .editorGrid {
   display: flex;
   flex-direction: column;

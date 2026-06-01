@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { Switch } from "@/components/ui/Switch";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject, useRenameClass } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
@@ -143,7 +144,15 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
   const onSave = () => {
     for (const k of Object.keys(bindings) as (keyof typeof bindings)[]) {
       const ub = bindings[k];
-      if (!ub?.enabled) continue;
+      if (!ub) continue;
+      // 校验所有「会落库」的单位 (启用，或禁用但仍有配置)：禁用单位的属性
+      // 现在也会被持久化，半成品空 key 会被后端 (key min_length=1) 拒绝。
+      const willPersist =
+        ub.enabled ||
+        ub.classRows.length > 0 ||
+        ub.attributeFields.length > 0 ||
+        !!ub.keypointSchema;
+      if (!willPersist) continue;
       const err = validateAttributeFields(ub.attributeFields);
       if (err) {
         pushToast({ msg: `[${k}] ${err}`, kind: "error" });
@@ -230,43 +239,58 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
           bindings={bindings}
           activeUnit={activeUnit}
           onSelect={setActiveUnit}
-          allowToggle
-          onToggle={onToggle}
         />
-        {!activeBinding?.enabled ? (
-          <div className={styles.helpText}>
-            当前工具单位未启用 — 勾选上方复选框以启用并配置类别与属性。
-          </div>
-        ) : (
-          <div className={styles.editorGrid}>
-            <section className={styles.editorPanel}>
-              <h4 className={styles.sectionTitle}>类别</h4>
-              <ClassEditor
-                value={activeBinding.classRows}
-                onChange={onChange}
-                onRename={handleRename}
-                renaming={rename.isPending}
-                onConfirmDelete={confirmClassDelete}
+        {activeBinding && (
+          <>
+            <div className={styles.unitEnableRow}>
+              <Switch
+                checked={activeBinding.enabled}
+                onChange={(next) => onToggle(activeUnit, next)}
+                label={activeBinding.enabled ? "已启用此工具单位" : "已禁用此工具单位"}
+                data-testid="unit-enabled-switch"
               />
-            </section>
-            {activeUnit === "keypoint" && (
-              <section className={styles.editorPanel}>
-                <h4 className={styles.sectionTitle}>关键点骨骼</h4>
-                <KeypointSchemaEditor
-                  value={activeBinding.keypointSchema}
-                  onChange={onKeypointSchemaChange}
-                />
-              </section>
-            )}
-            <section className={styles.editorPanel}>
-              <h4 className={styles.sectionTitle}>属性 schema</h4>
-              <AttributeSchemaEditor
-                value={activeBinding.attributeFields}
-                onChange={onAttributeChange}
-                onConfirmDelete={confirmAttributeDelete}
-              />
-            </section>
-          </div>
+              {!activeBinding.enabled && (
+                <span className={styles.disabledNote}>
+                  禁用后配置仍会保留，但工作台不会使用；需要修改请先启用。
+                </span>
+              )}
+            </div>
+            <fieldset
+              className={styles.editorFieldset}
+              disabled={!activeBinding.enabled}
+              aria-disabled={!activeBinding.enabled}
+            >
+              <div className={styles.editorGrid}>
+                <section className={styles.editorPanel}>
+                  <h4 className={styles.sectionTitle}>类别</h4>
+                  <ClassEditor
+                    value={activeBinding.classRows}
+                    onChange={onChange}
+                    onRename={handleRename}
+                    renaming={rename.isPending}
+                    onConfirmDelete={confirmClassDelete}
+                  />
+                </section>
+                {activeUnit === "keypoint" && (
+                  <section className={styles.editorPanel}>
+                    <h4 className={styles.sectionTitle}>关键点骨骼</h4>
+                    <KeypointSchemaEditor
+                      value={activeBinding.keypointSchema}
+                      onChange={onKeypointSchemaChange}
+                    />
+                  </section>
+                )}
+                <section className={styles.editorPanel}>
+                  <h4 className={styles.sectionTitle}>属性 schema</h4>
+                  <AttributeSchemaEditor
+                    value={activeBinding.attributeFields}
+                    onChange={onAttributeChange}
+                    onConfirmDelete={confirmAttributeDelete}
+                  />
+                </section>
+              </div>
+            </fieldset>
+          </>
         )}
         <div className={styles.footer}>
           {dirty && (

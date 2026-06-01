@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildUnitBindings } from "./useProjectToolBindings";
+import { buildUnitBindings, unitBindingsToPayload } from "./useProjectToolBindings";
 
 describe("buildUnitBindings", () => {
   it("keeps video project settings on the video tool-unit set", () => {
@@ -62,5 +62,46 @@ describe("buildUnitBindings", () => {
     expect(bindings.bbox?.attributeFields).toEqual([
       { key: "occluded", type: "boolean", label: "Occluded" },
     ]);
+  });
+});
+
+describe("unitBindingsToPayload", () => {
+  it("禁用但有配置的单位仍序列化 (enabled:false, 保留 classes/属性)", () => {
+    const out = unitBindingsToPayload({
+      bbox: {
+        enabled: true,
+        classRows: [{ name: "car", color: "#0ea5e9" }],
+        attributeFields: [],
+      },
+      region: {
+        enabled: false,
+        classRows: [{ name: "road", color: "#22c55e" }],
+        attributeFields: [{ key: "occluded", type: "boolean", label: "遮挡" }],
+      },
+    });
+
+    expect(out.bbox?.enabled).toBe(true);
+    // 修复前: 禁用单位整体被丢弃；修复后: enabled:false 但配置保留。
+    expect(out.region?.enabled).toBe(false);
+    expect(out.region?.classes).toEqual([
+      { name: "road", color: "#22c55e", order: 0 },
+    ]);
+    expect(out.region?.attribute_schema).toEqual({
+      fields: [{ key: "occluded", type: "boolean", label: "遮挡" }],
+    });
+  });
+
+  it("纯空且禁用的单位不落库, 保持 tool_bindings 精简", () => {
+    const out = unitBindingsToPayload({
+      bbox: {
+        enabled: true,
+        classRows: [{ name: "car", color: "#0ea5e9" }],
+        attributeFields: [],
+      },
+      region: { enabled: false, classRows: [], attributeFields: [] },
+    });
+
+    expect(out.bbox).toBeDefined();
+    expect(out.region).toBeUndefined();
   });
 });
