@@ -73,14 +73,8 @@
   color: var(--color-danger);
 }
 
-.actions {
-  margin-top: 14px;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
 .savingHint {
+  margin-top: 14px;
   font-size: 12px;
   color: var(--color-fg-muted);
 }

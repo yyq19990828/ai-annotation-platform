@@ -78,7 +78,7 @@ docker logs ai-annotation-platform-celery-worker-1 --tail 200
 
 ### 视频标注类型
 
-新建视频轨迹标注默认写 `video_track`，旧 `video_bbox` 继续可读。升级时重点检查 OpenAPI / 前端类型是否与后端同步，避免旧前端无法识别 `video_track` discriminator。
+新建视频轨迹标注默认写 `video_track_bbox`，旧 `video_bbox` 继续可读。升级时重点检查 OpenAPI / 前端类型是否与后端同步，避免旧前端无法识别 `video_track_bbox` discriminator。
 
 ## 回滚步骤
 

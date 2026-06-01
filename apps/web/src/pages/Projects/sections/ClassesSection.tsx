@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { Switch } from "@/components/ui/Switch";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject, useRenameClass } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
@@ -19,7 +20,11 @@ import {
   unitBindingsToPayload,
   useProjectToolBindings,
 } from "./useProjectToolBindings";
-import type { ToolUnitId } from "@/constants/toolUnits";
+import {
+  dataTypeFromLegacy,
+  type ProjectDataType,
+  type ToolUnitId,
+} from "@/constants/toolUnits";
 import styles from "./ClassesSection.module.css";
 
 export function ClassesSection({ project }: { project: ProjectResponse }) {
@@ -28,6 +33,8 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
   const rename = useRenameClass(project.id);
   const { bindings, setBindings, activeUnit, setActiveUnit, dirty } =
     useProjectToolBindings(project);
+  const dataType = projectDataType(project);
+  const isVideoBbox = dataType === "video" && activeUnit === "bbox";
 
   useUnsavedWarning(dirty);
 
@@ -136,14 +143,42 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
         classRows: b[unit]?.classRows ?? [],
         attributeFields: b[unit]?.attributeFields ?? [],
         keypointSchema: b[unit]?.keypointSchema ?? null,
+        videoModes: b[unit]?.videoModes ?? null,
       },
     }));
+  };
+
+  // v0.11.29 · 视频 bbox 单元: 单帧框 / 轨迹框独立开关 (至少保留一个可用)。
+  const onToggleVideoMode = (key: "box" | "track", next: boolean) => {
+    setBindings((b) => {
+      const cur = b.bbox?.videoModes ?? { box: true, track: true };
+      const updated = { ...cur, [key]: next };
+      if (!updated.box && !updated.track) return b;
+      return {
+        ...b,
+        bbox: {
+          enabled: b.bbox?.enabled ?? true,
+          classRows: b.bbox?.classRows ?? [],
+          attributeFields: b.bbox?.attributeFields ?? [],
+          keypointSchema: b.bbox?.keypointSchema ?? null,
+          videoModes: updated,
+        },
+      };
+    });
   };
 
   const onSave = () => {
     for (const k of Object.keys(bindings) as (keyof typeof bindings)[]) {
       const ub = bindings[k];
-      if (!ub?.enabled) continue;
+      if (!ub) continue;
+      // 校验所有「会落库」的单位 (启用，或禁用但仍有配置)：禁用单位的属性
+      // 现在也会被持久化，半成品空 key 会被后端 (key min_length=1) 拒绝。
+      const willPersist =
+        ub.enabled ||
+        ub.classRows.length > 0 ||
+        ub.attributeFields.length > 0 ||
+        !!ub.keypointSchema;
+      if (!willPersist) continue;
       const err = validateAttributeFields(ub.attributeFields);
       if (err) {
         pushToast({ msg: `[${k}] ${err}`, kind: "error" });
@@ -224,49 +259,95 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
       </div>
       <div className={styles.body}>
         <p className={styles.helpText}>
-          点击工具单位后，直接维护该工具的类别、颜色、排序和属性 schema；同名类在不同工具单位下相互隔离。
+          {dataType === "video"
+            ? "视频工作台的单帧框和轨迹框共用这一套类别、颜色、排序和属性 schema。"
+            : "点击工具单位后，直接维护该工具的类别、颜色、排序和属性 schema；同名类在不同工具单位下相互隔离。"}
         </p>
         <ToolUnitTabs
           bindings={bindings}
           activeUnit={activeUnit}
           onSelect={setActiveUnit}
-          allowToggle
-          onToggle={onToggle}
+          dataType={dataType}
         />
-        {!activeBinding?.enabled ? (
-          <div className={styles.helpText}>
-            当前工具单位未启用 — 勾选上方复选框以启用并配置类别与属性。
-          </div>
-        ) : (
-          <div className={styles.editorGrid}>
-            <section className={styles.editorPanel}>
-              <h4 className={styles.sectionTitle}>类别</h4>
-              <ClassEditor
-                value={activeBinding.classRows}
-                onChange={onChange}
-                onRename={handleRename}
-                renaming={rename.isPending}
-                onConfirmDelete={confirmClassDelete}
+        {activeBinding && (
+          <>
+            <div className={styles.unitEnableRow}>
+              <Switch
+                checked={activeBinding.enabled}
+                onChange={(next) => onToggle(activeUnit, next)}
+                label={unitSwitchLabel(activeBinding.enabled, isVideoBbox)}
+                data-testid="unit-enabled-switch"
               />
-            </section>
-            {activeUnit === "keypoint" && (
-              <section className={styles.editorPanel}>
-                <h4 className={styles.sectionTitle}>关键点骨骼</h4>
-                <KeypointSchemaEditor
-                  value={activeBinding.keypointSchema}
-                  onChange={onKeypointSchemaChange}
-                />
-              </section>
-            )}
-            <section className={styles.editorPanel}>
-              <h4 className={styles.sectionTitle}>属性 schema</h4>
-              <AttributeSchemaEditor
-                value={activeBinding.attributeFields}
-                onChange={onAttributeChange}
-                onConfirmDelete={confirmAttributeDelete}
-              />
-            </section>
-          </div>
+              {!activeBinding.enabled && (
+                <span className={styles.disabledNote}>
+                  {isVideoBbox
+                    ? "禁用后单帧框和轨迹框都不可新增；配置仍会保留，需要修改请先启用。"
+                    : "禁用后配置仍会保留，但工作台不会使用；需要修改请先启用。"}
+                </span>
+              )}
+            </div>
+            {isVideoBbox && activeBinding.enabled && (() => {
+              const vm = activeBinding.videoModes ?? { box: true, track: true };
+              const onlyBox = vm.box && !vm.track;
+              const onlyTrack = !vm.box && vm.track;
+              return (
+                <div className={styles.videoModesRow}>
+                  <span className={styles.videoModesTitle}>可用工具</span>
+                  <Switch
+                    checked={vm.box}
+                    onChange={(next) => onToggleVideoMode("box", next)}
+                    label="单帧矩形框"
+                    disabled={onlyBox}
+                    title={onlyBox ? "至少保留一个可用工具" : undefined}
+                    data-testid="video-mode-box-switch"
+                  />
+                  <Switch
+                    checked={vm.track}
+                    onChange={(next) => onToggleVideoMode("track", next)}
+                    label="轨迹矩形框"
+                    disabled={onlyTrack}
+                    title={onlyTrack ? "至少保留一个可用工具" : undefined}
+                    data-testid="video-mode-track-switch"
+                  />
+                </div>
+              );
+            })()}
+            <fieldset
+              className={styles.editorFieldset}
+              disabled={!activeBinding.enabled}
+              aria-disabled={!activeBinding.enabled}
+            >
+              <div className={styles.editorGrid}>
+                <section className={styles.editorPanel}>
+                  <h4 className={styles.sectionTitle}>类别</h4>
+                  <ClassEditor
+                    value={activeBinding.classRows}
+                    onChange={onChange}
+                    onRename={handleRename}
+                    renaming={rename.isPending}
+                    onConfirmDelete={confirmClassDelete}
+                  />
+                </section>
+                {activeUnit === "keypoint" && (
+                  <section className={styles.editorPanel}>
+                    <h4 className={styles.sectionTitle}>关键点骨骼</h4>
+                    <KeypointSchemaEditor
+                      value={activeBinding.keypointSchema}
+                      onChange={onKeypointSchemaChange}
+                    />
+                  </section>
+                )}
+                <section className={styles.editorPanel}>
+                  <h4 className={styles.sectionTitle}>属性 schema</h4>
+                  <AttributeSchemaEditor
+                    value={activeBinding.attributeFields}
+                    onChange={onAttributeChange}
+                    onConfirmDelete={confirmAttributeDelete}
+                  />
+                </section>
+              </div>
+            </fieldset>
+          </>
         )}
         <div className={styles.footer}>
           {dirty && (
@@ -285,4 +366,20 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
       </div>
     </Card>
   );
+}
+
+function projectDataType(project: ProjectResponse): ProjectDataType {
+  if (
+    project.data_type === "image" ||
+    project.data_type === "video" ||
+    project.data_type === "lidar"
+  ) {
+    return project.data_type;
+  }
+  return dataTypeFromLegacy(project.type_key);
+}
+
+function unitSwitchLabel(enabled: boolean, videoBbox: boolean): string {
+  const state = enabled ? "已启用" : "已禁用";
+  return videoBbox ? `${state}矩形框 / 轨迹` : `${state}此工具单位`;
 }

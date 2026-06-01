@@ -310,7 +310,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         videoMode,
         samplingActive,
         hasSelectedVideoTrack: videoMode && !!s.selectedId && annotationsRef.current.some(
-          (ann) => ann.id === s.selectedId && ann.geometry.type === "video_track",
+          (ann) => ann.id === s.selectedId && ann.geometry.type === "video_track_bbox",
         ),
       });
       if (!action) return;
@@ -387,7 +387,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           if (!s.selectedId) return;
           if (action.scope === "keyframe") {
             const selected = annotationsRef.current.find((ann) => ann.id === s.selectedId);
-            if (selected?.geometry.type === "video_track") {
+            if (selected?.geometry.type === "video_track_bbox") {
               videoControlsRef?.current?.deleteSelectedTrackKeyframe();
               return;
             }
@@ -395,7 +395,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           handleDeleteBox(s.selectedId);
           return;
         case "videoCycleTrack": {
-          const list = annotationsRef.current.filter((ann) => ann.geometry.type === "video_track");
+          const list = annotationsRef.current.filter((ann) => ann.geometry.type === "video_track_bbox");
           if (list.length === 0) return;
           e.preventDefault();
           const idxNow = s.selectedId ? list.findIndex((a) => a.id === s.selectedId) : -1;
@@ -467,9 +467,13 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         case "cancel":
           if (showHotkeys) { setShowHotkeys(false); return; }
           if (batchChanging) { setBatchChanging(false); return; }
+          // 分层取消：每按一次 ESC 只做一件事（草稿 → 编辑类别 → 选中）。
           if (s.pendingDrawing) { s.setPendingDrawing(null); return; }
           if (s.editingClass) { s.setEditingClass(null); return; }
-          s.setSelectedId(null);
+          if (s.selectedId) { s.setSelectedId(null); return; }
+          // v0.11.29 · 视频模式：仅当无草稿 / 无选中可取消时，ESC 才回归 hand 中立态，
+          // 避免用户只想取消选中却顺手把当前 track 工具一并丢掉。
+          if (videoMode) s.setVideoTool("hand");
           return;
 
         case "thresholdAdjust":

@@ -15,7 +15,7 @@ const bbox = { x: 0, y: 0, w: 0.2, h: 0.2 };
 
 function track(patch: Partial<VideoTrackGeometry>): VideoTrackGeometry {
   return {
-    type: "video_track",
+    type: "video_track_bbox",
     track_id: "trk",
     keyframes: [],
     ...patch,

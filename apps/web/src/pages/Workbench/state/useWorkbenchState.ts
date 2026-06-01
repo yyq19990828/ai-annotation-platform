@@ -24,7 +24,8 @@ export type Tool =
   | "magic-box"
   // v0.10.28 · 关键点 (COCO 范式).
   | "keypoint";
-export type VideoTool = "box" | "track";
+// v0.11.29 · hand = 视图/平移中立态（左键拖拽平移画布，不绘制）；ESC 回归到它。
+export type VideoTool = "box" | "track" | "hand";
 
 /**
  * v0.10.2 · 派生型 SAM 子工具, 仅作 ImageStage / AIInspectorPanel 等老消费者的兼容外观.
@@ -75,7 +76,7 @@ export type Geom = { x: number; y: number; w: number; h: number };
 export type PendingDrawing =
   | { kind?: "bbox"; geom: Geom }
   | {
-      kind: "video_bbox" | "video_track";
+      kind: "video_bbox" | "video_track_bbox";
       frameIndex: number;
       geom: Geom;
       anchor: { left: number; top: number };

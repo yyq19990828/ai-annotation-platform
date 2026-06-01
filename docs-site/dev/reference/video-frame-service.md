@@ -199,7 +199,7 @@ uv run python -m app.cli.video.rebuild_timetable --all --limit 100
 
 ### 帧采样网格 helper
 
-项目级 `Project.video_sampling`（`{mode: none|fps|step, target_fps?, frame_step?}`）只约束**标注导航/打点网格**，不改 `VideoFrameIndex`、不生成新资产（决策 D1）；标注 geometry 的 `frame_index` 永远是源视频帧号（决策 D2）。后端 `video_frame_service` 提供与前端共用的纯函数：`derive_step(source_fps, sampling)` 派生步长、`derive_sampled_frames(frame_count, step)` 给出绝对网格（锚定 0：`[0, step, 2*step, …]`）。导出按采样网格重编号；MOT / KITTI / `yolo-frames-det` 都只输出网格帧，其中 `yolo-frames-det` 会把 `video_bbox` 与摊平后的 `video_track` 写成逐帧检测 label。逐帧导航语义见标注员手册「帧采样与软网格导航」。
+项目级 `Project.video_sampling`（`{mode: none|fps|step, target_fps?, frame_step?}`）只约束**标注导航/打点网格**，不改 `VideoFrameIndex`、不生成新资产（决策 D1）；标注 geometry 的 `frame_index` 永远是源视频帧号（决策 D2）。后端 `video_frame_service` 提供与前端共用的纯函数：`derive_step(source_fps, sampling)` 派生步长、`derive_sampled_frames(frame_count, step)` 给出绝对网格（锚定 0：`[0, step, 2*step, …]`）。导出按采样网格重编号；MOT / KITTI / `yolo-frames-det` 都只输出网格帧，其中 `yolo-frames-det` 会把 `video_bbox` 与摊平后的 `video_track_bbox` 写成逐帧检测 label。逐帧导航语义见标注员手册「帧采样与软网格导航」。
 
 ## Segment 协同
 
@@ -307,7 +307,7 @@ sequenceDiagram
     end
 ```
 
-DB 状态机（`VideoTrackerJob.status`，独立于 WS 事件命名）：`queued -> running -> completed | failed | cancelled`；`DELETE` 对 queued/running job 标记 `cancel_requested_at` 并进入 `cancelled`，对 terminal job 幂等返回当前状态。worker 会保留人工 `video_track` keyframe，不用 prediction keyframe 覆盖 manual 结果。
+DB 状态机（`VideoTrackerJob.status`，独立于 WS 事件命名）：`queued -> running -> completed | failed | cancelled`；`DELETE` 对 queued/running job 标记 `cancel_requested_at` 并进入 `cancelled`，对 terminal job 幂等返回当前状态。worker 会保留人工 `video_track_bbox` keyframe，不用 prediction keyframe 覆盖 manual 结果。
 
 SAM video adapter 会调用项目绑定的 ML Backend `/predict`：
 

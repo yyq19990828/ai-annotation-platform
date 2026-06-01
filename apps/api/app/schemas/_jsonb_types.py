@@ -245,6 +245,27 @@ class KeypointSchema(BaseModel):
         return v
 
 
+class VideoModesConfig(BaseModel):
+    """v0.11.29 · 仅视频项目的 bbox 单位消费：控制「单帧框 / 轨迹框」是否各自可用。
+
+    单帧框 = video_bbox 几何, 轨迹框 = video_track_bbox 几何, 共享同一套类别 / 属性绑定.
+    仅用于工具栏可用性过滤; 不强制校验已存在的 annotation. None = 两者均可用 (向后兼容老项目).
+    """
+
+    box: bool = True
+    track: bool = True
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _at_least_one_enabled(self) -> "VideoModesConfig":
+        # 与前端 ClassesSection 语义一致：不允许 box / track 全 false，
+        # 否则 bbox 单元 enabled=true 却什么都画不了。
+        if not self.box and not self.track:
+            raise ValueError("video_modes 必须至少保留 box / track 其一可用")
+        return self
+
+
 class ToolBinding(BaseModel):
     """单一工具单位下的 enable 状态 + 类别集合 + 属性 schema."""
 
@@ -253,6 +274,8 @@ class ToolBinding(BaseModel):
     attribute_schema: AttributeSchema = Field(default_factory=AttributeSchema)
     # v0.10.28 · 仅 keypoint 单元用：骨骼拓扑（节点名 / 连线）。其它单元留 None。
     keypoint_schema: KeypointSchema | None = None
+    # v0.11.29 · 仅视频 bbox 单位消费：单帧框 / 轨迹框独立开关。None = 两者均可用。
+    video_modes: VideoModesConfig | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -369,7 +392,7 @@ class VideoTrackGeometry(BaseModel):
     `keyframes` 保存手工 / 预测关键帧，插值结果由前端按需计算。
     """
 
-    type: Literal["video_track"] = "video_track"
+    type: Literal["video_track_bbox"] = "video_track_bbox"
     track_id: str = Field(min_length=1)
     # v0.10.30 · 2.1 用户可编辑的语义标签 (如 "car_3"), 仅作跨任务 Re-ID 心智,
     # 不参与主键、不强制唯一。track_number 由 derive_track_number 确定性派生, 不持久化。

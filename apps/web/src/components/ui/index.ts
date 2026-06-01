@@ -1,5 +1,6 @@
 export { Button } from "./Button";
 export { Badge } from "./Badge";
+export { Switch } from "./Switch";
 export { Card } from "./Card";
 export { Avatar } from "./Avatar";
 export { ProgressBar } from "./ProgressBar";

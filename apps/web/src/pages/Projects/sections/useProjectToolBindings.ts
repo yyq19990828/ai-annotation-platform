@@ -17,7 +17,9 @@ import type {
 import { defaultColorFor, type ClassRow } from "./ClassEditor";
 import {
   TOOL_UNIT_GROUPS,
+  dataTypeFromLegacy,
   toolUnitFromLegacy,
+  type ProjectDataType,
   type ToolUnitId,
 } from "@/constants/toolUnits";
 
@@ -27,20 +29,25 @@ export interface UnitBindingState {
   attributeFields: AttributeField[];
   /** v0.10.28 · 仅 keypoint 单元用：骨骼模板 (命名节点 + 连线)。 */
   keypointSchema?: import("@/types").KeypointSchema | null;
+  /** v0.11.29 · 仅视频 bbox 单元用：单帧框 / 轨迹框独立开关。null = 两者均可用。 */
+  videoModes?: { box: boolean; track: boolean } | null;
 }
 
 export type UnitBindingMap = Partial<Record<ToolUnitId, UnitBindingState>>;
 
 export function buildUnitBindings(project: {
+  data_type?: string | null;
   type_key?: string;
   classes?: string[];
   classes_config?: ClassesConfig | null;
   attribute_schema?: AttributeSchema | null;
   tool_bindings?: ToolBindings | null;
 }): UnitBindingMap {
+  const dataType = projectDataType(project);
   const out: UnitBindingMap = {};
   for (const g of TOOL_UNIT_GROUPS) {
     if (!g.available) continue;
+    if (!g.dataTypes.includes(dataType)) continue;
     out[g.id] = { enabled: false, classRows: [], attributeFields: [] };
   }
 
@@ -49,6 +56,7 @@ export function buildUnitBindings(project: {
     for (const k of Object.keys(tb) as ToolUnitId[]) {
       const b = tb[k];
       if (!b) continue;
+      if (!out[k]) continue;
       const classRows: ClassRow[] = (b.classes ?? [])
         .slice()
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
@@ -63,13 +71,20 @@ export function buildUnitBindings(project: {
         attributeFields:
           (b.attribute_schema as AttributeSchema | undefined)?.fields ?? [],
         keypointSchema: b.keypoint_schema ?? null,
+        videoModes: b.video_modes
+          ? { box: b.video_modes.box ?? true, track: b.video_modes.track ?? true }
+          : null,
       };
     }
     return out;
   }
 
   // 兜底: 老项目从扁平 classes_config / attribute_schema 派生到默认 unit
-  const defaultUnit = toolUnitFromLegacy(project.type_key ?? "image-det");
+  const legacyUnit = toolUnitFromLegacy(project.type_key ?? "image-det");
+  const defaultUnit = out[legacyUnit]
+    ? legacyUnit
+    : (Object.keys(out)[0] as ToolUnitId | undefined);
+  if (!defaultUnit) return out;
   const cfg = (project.classes_config ?? {}) as ClassesConfig;
   const ordered = [...(project.classes ?? [])].sort((a, b) => {
     const oa = cfg[a]?.order ?? 0;
@@ -92,14 +107,45 @@ export function buildUnitBindings(project: {
   return out;
 }
 
-/** 把 UnitBindingMap 序列化为后端 PATCH 体的 tool_bindings 字段 (仅 enabled 单位). */
+function projectDataType(project: {
+  data_type?: string | null;
+  type_key?: string;
+}): ProjectDataType {
+  if (
+    project.data_type === "image" ||
+    project.data_type === "video" ||
+    project.data_type === "lidar"
+  ) {
+    return project.data_type;
+  }
+  return dataTypeFromLegacy(project.type_key ?? "image-det");
+}
+
+/** 单位是否「无任何配置内容」(纯空)。 */
+function isUnitEmpty(ub: UnitBindingState): boolean {
+  return (
+    ub.classRows.length === 0 &&
+    ub.attributeFields.length === 0 &&
+    !ub.keypointSchema
+  );
+}
+
+/**
+ * 把 UnitBindingMap 序列化为后端 PATCH 体的 tool_bindings 字段。
+ *
+ * 保留「禁用但已配置」的单位 (enabled:false + 原有 classes / attribute_schema)，
+ * 只丢弃从未配置过的纯空单位，避免禁用即丢失配置 (后端 derive_* 已会跳过
+ * enabled=false 的单位，故禁用单位不会污染工作台扁平投影)。
+ */
 export function unitBindingsToPayload(bindings: UnitBindingMap): ToolBindings {
   const out: ToolBindings = {};
   for (const k of Object.keys(bindings) as ToolUnitId[]) {
     const ub = bindings[k];
-    if (!ub || !ub.enabled) continue;
+    if (!ub) continue;
+    // 纯空且禁用 → 不落库，保持 tool_bindings 精简。
+    if (!ub.enabled && isUnitEmpty(ub)) continue;
     out[k] = {
-      enabled: true,
+      enabled: ub.enabled,
       classes: ub.classRows.map((r, i) => ({
         name: r.name,
         color: r.color,
@@ -114,6 +160,10 @@ export function unitBindingsToPayload(bindings: UnitBindingMap): ToolBindings {
       ...(k === "keypoint" && ub.keypointSchema
         ? { keypoint_schema: ub.keypointSchema }
         : {}),
+      // v0.11.29 · bbox 单元附带视频单帧/轨迹开关 (仅视频项目设置, null 不落库)。
+      ...(k === "bbox" && ub.videoModes
+        ? { video_modes: ub.videoModes }
+        : {}),
     };
   }
   return out;
@@ -123,15 +173,13 @@ export function unitBindingsToPayload(bindings: UnitBindingMap): ToolBindings {
 export function useProjectToolBindings(project: ProjectResponse) {
   const initial = useMemo(() => buildUnitBindings(project), [project]);
   const [bindings, setBindings] = useState<UnitBindingMap>(initial);
-  const [activeUnit, setActiveUnit] = useState<ToolUnitId>(() => {
-    const firstEnabled = (Object.keys(initial) as ToolUnitId[]).find(
-      (k) => initial[k]?.enabled,
-    );
-    return firstEnabled ?? "bbox";
-  });
+  const [activeUnit, setActiveUnit] = useState<ToolUnitId>(() =>
+    firstActiveUnit(initial),
+  );
 
   useEffect(() => {
     setBindings(initial);
+    setActiveUnit((cur) => initial[cur] ? cur : firstActiveUnit(initial));
   }, [initial]);
 
   const dirty = JSON.stringify(bindings) !== JSON.stringify(initial);
@@ -144,4 +192,12 @@ export function useProjectToolBindings(project: ProjectResponse) {
     dirty,
     initial,
   };
+}
+
+function firstActiveUnit(bindings: UnitBindingMap): ToolUnitId {
+  const firstEnabled = (Object.keys(bindings) as ToolUnitId[]).find(
+    (k) => bindings[k]?.enabled,
+  );
+  return firstEnabled
+    ?? ((Object.keys(bindings)[0] as ToolUnitId | undefined) ?? "bbox");
 }

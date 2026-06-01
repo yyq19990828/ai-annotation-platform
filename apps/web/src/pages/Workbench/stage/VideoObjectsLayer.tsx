@@ -41,7 +41,7 @@ export function VideoObjectsLayer({
       {trackPreviews.map((preview) => {
         const color = getTrackColor(preview.trackId, preview.className, trackColorOverrides);
         const previewTrack = {
-          type: "video_track" as const,
+          type: "video_track_bbox" as const,
           track_id: preview.trackId,
           keyframes: preview.keyframes,
           outside: preview.outside,

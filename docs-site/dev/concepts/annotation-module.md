@@ -67,7 +67,7 @@ graph TD
 | `project_id` | 所属项目，便于跨 task 聚合 |
 | `user_id` | 标注创建者 |
 | `source` | `manual` 或 `prediction_based` |
-| `annotation_type` | 几何类型，如 `bbox`、`polygon`、`video_bbox`、`video_track` |
+| `annotation_type` | 几何类型，如 `bbox`、`polygon`、`video_bbox`、`video_track_bbox` |
 | `class_name` | 类目名 |
 | `geometry` | JSONB 几何体 |
 | `confidence` | 置信度，可空 |
@@ -98,11 +98,11 @@ graph TD
 | `polyline` | 开放折线 | `points[]`(≥2 顶点)，不闭合、无 `holes`、无自交校验 |
 | `keypoint` | 关键点 (COCO 范式) | `points[]` 各 `{x,y,v}`，`v` 可见性 0/1/2，与类别 `keypoint_schema.nodes` 同 index 对齐 |
 | `video_bbox` | 视频逐帧框 | 单个 frame 上的 bbox，带 `frame_index` |
-| `video_track` | 视频对象轨迹 | 一条 annotation 保存稳定 `track_id` 和 `keyframes[]` |
+| `video_track_bbox` | 视频对象轨迹 | 一条 annotation 保存稳定 `track_id` 和 `keyframes[]` |
 
 `keypoint` 的骨骼拓扑（命名节点 + 连线）不存进 geometry，而是 unit 级模板：`project.tool_bindings["keypoint"].keypoint_schema`（`KeypointSchema = {nodes: KeypointNode[], edges: [int,int][]}`，后端见 `_jsonb_types.py`，前端在项目设置「类别与属性」里的 `KeypointSchemaEditor` 维护）。geometry 只存各节点的 `{x,y,v}`，按 index 与 schema 节点一一对应。
 
-`video_track` 是 compact 轨迹模型，不把插值帧逐条写库。编辑同一对象其它帧时，前端会更新同一条 annotation 的 `geometry.keyframes[]`；前端显示的 interpolated bbox 只是视图结果。目标"消失"用 `outside` 闭区间段表达；插值不跨消失段、其中不输出 bbox；`occluded=true` 表示目标仍存在但被遮挡。
+`video_track_bbox` 是 compact 轨迹模型，不把插值帧逐条写库。编辑同一对象其它帧时，前端会更新同一条 annotation 的 `geometry.keyframes[]`；前端显示的 interpolated bbox 只是视图结果。目标"消失"用 `outside` 闭区间段表达；插值不跨消失段、其中不输出 bbox；`occluded=true` 表示目标仍存在但被遮挡。
 
 ### 属性 schema 与派生渲染
 
@@ -118,7 +118,7 @@ graph TD
 - 跨工具单位（图片 / 视频）的"遮挡键集合"在前端通过 `useWorkbenchShellModel` / `ReviewWorkbench` 取并集，避免切工具后视觉丢失
 - 切类时属性按新类别 `applies_to` 过滤；改类悬浮框（`ClassPickerPopover`）即时联动刷新可见字段
 
-> **历史背景**：v0.11.27 之前 `Annotation` 上有 `is_occluded` 内置布尔列，只影响视觉、不进导出。迁移 `0088_remove_annotation_occlusion` 删除该列；旧项目如需保留遮挡语义，请在 schema 上新增一个 boolean 属性并启用 `style_occluded`。`video_track.keyframes[i].occluded` 是视频轨迹层面的"目标存在但被遮挡"语义，与 annotation 表无关，未变更。
+> **历史背景**：v0.11.27 之前 `Annotation` 上有 `is_occluded` 内置布尔列，只影响视觉、不进导出。迁移 `0088_remove_annotation_occlusion` 删除该列；旧项目如需保留遮挡语义，请在 schema 上新增一个 boolean 属性并启用 `style_occluded`。`video_track_bbox.keyframes[i].occluded` 是视频轨迹层面的"目标存在但被遮挡"语义，与 annotation 表无关，未变更。
 
 ### `AnnotationDraft`
 
@@ -175,7 +175,7 @@ graph TD
 - 返回新版本
 - 路由层把 `ETag: W/"{version}"` 写回响应头
 
-视频轨迹编辑也走同一条 `PATCH /tasks/{task_id}/annotations/{annotation_id}` 路径：新增关键帧、移动当前帧框、标记消失 / 遮挡，都会作为完整 `video_track` geometry 的一次更新保存。
+视频轨迹编辑也走同一条 `PATCH /tasks/{task_id}/annotations/{annotation_id}` 路径：新增关键帧、移动当前帧框、标记消失 / 遮挡，都会作为完整 `video_track_bbox` geometry 的一次更新保存。
 
 ### 3. 视频轨迹转独立框
 
@@ -184,7 +184,7 @@ graph TD
 - `POST /tasks/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes`
 - `AnnotationService.convert_video_track_to_bboxes()`
 
-这个动作只接受 `video_track` 源 annotation，会创建一个或多个 `video_bbox`，并通过 `parent_annotation_id` 保留派生关系。
+这个动作只接受 `video_track_bbox` 源 annotation，会创建一个或多个 `video_bbox`，并通过 `parent_annotation_id` 保留派生关系。
 
 请求语义：
 
@@ -336,7 +336,7 @@ annotation 路径几乎都带两个伴随动作：
 | `apps/web/src/pages/Workbench/stages/video/VideoWorkbench.tsx` | 视频 Stage concrete implementation |
 | `apps/web/src/pages/Workbench/stage/VideoStage.tsx` | 视频播放、关键帧编辑、轨迹列表和插值显示 |
 | `apps/web/src/pages/Workbench/stages/video/useVideoAnnotationActions.ts` | 视频 annotation payload 与离线兜底 |
-| `apps/web/src/pages/Workbench/state/transforms.ts` | `video_bbox` / `video_track` 与工作台 shape 的转换 |
+| `apps/web/src/pages/Workbench/state/transforms.ts` | `video_bbox` / `video_track_bbox` 与工作台 shape 的转换 |
 | `apps/api/app/schemas/task.py` | `TaskOut.video_metadata` 和 video manifest response |
 
 ## 常见误解
@@ -366,7 +366,7 @@ annotation 路径几乎都带两个伴随动作：
 
 ### 误解 4：图片框"遮挡"是 annotation 上的内置状态位
 
-不再是。v0.11.27 起 `Annotation.is_occluded` 列已删除（迁移 `0088`），"遮挡"收敛为普通 boolean 属性 + `AttributeField.style_occluded` 开关派生渲染。详见 [属性 schema 与派生渲染](#属性-schema-与派生渲染)。视频 `video_track.keyframes[i].occluded` 不在此次变更范围内，仍是轨迹关键帧的内置字段。
+不再是。v0.11.27 起 `Annotation.is_occluded` 列已删除（迁移 `0088`），"遮挡"收敛为普通 boolean 属性 + `AttributeField.style_occluded` 开关派生渲染。详见 [属性 schema 与派生渲染](#属性-schema-与派生渲染)。视频 `video_track_bbox.keyframes[i].occluded` 不在此次变更范围内，仍是轨迹关键帧的内置字段。
 
 ## 相关文档
 

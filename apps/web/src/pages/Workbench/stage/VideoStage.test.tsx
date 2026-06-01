@@ -273,7 +273,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -444,7 +444,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           outside: [{ from: 3, to: 4 }, { from: 5, to: 5 }],
           keyframes: [
@@ -484,7 +484,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           outside: [{ from: 3, to: 3 }],
           keyframes: [
@@ -533,7 +533,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -651,7 +651,9 @@ describe("VideoStage", () => {
     const video = container.querySelector("video");
 
     expect(video).not.toBeNull();
-    expect(video!.currentTime).toBe(0);
+    // 首帧会被主动 seek 以解码出清晰画面 (frame 0 → frameToSeekTime(0) ≈ 0.025)，
+    // 而非停留在 0 仅显示低清 poster。
+    await waitFor(() => expect(video!.currentTime).toBeCloseTo(0.025));
 
     rerender(<VideoStage {...props} frameIndex={5} />);
 
@@ -895,7 +897,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -951,7 +953,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -1076,7 +1078,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -1166,7 +1168,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -1291,7 +1293,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -1323,7 +1325,7 @@ describe("VideoStage", () => {
 
     expect(onUpdate).toHaveBeenCalledTimes(1);
     const [, geometry] = onUpdate.mock.calls[0];
-    expect(geometry.type).toBe("video_track");
+    expect(geometry.type).toBe("video_track_bbox");
     expect(geometry.keyframes).toHaveLength(2);
     expect(geometry.keyframes[1].frame_index).toBe(3);
     expect(geometry.keyframes[1].bbox.x).toBeCloseTo(0.4);
@@ -1336,7 +1338,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -1386,7 +1388,7 @@ describe("VideoStage", () => {
 
     expect(onUpdate).toHaveBeenCalledTimes(1);
     const [, geometry] = onUpdate.mock.calls[0];
-    expect(geometry.type).toBe("video_track");
+    expect(geometry.type).toBe("video_track_bbox");
     expect(geometry.keyframes).toHaveLength(2);
     expect(geometry.keyframes[1].frame_index).toBe(3);
     expect(geometry.keyframes[1].bbox.x).toBeCloseTo(0.1);
@@ -1399,7 +1401,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -1432,7 +1434,7 @@ describe("VideoStage", () => {
 
     expect(onUpdate).toHaveBeenCalledTimes(1);
     const [, geometry] = onUpdate.mock.calls[0];
-    expect(geometry.type).toBe("video_track");
+    expect(geometry.type).toBe("video_track_bbox");
     expect(geometry.keyframes[1].frame_index).toBe(3);
     expect(geometry.keyframes[1].bbox.x).toBeCloseTo(0.2);
     expect(geometry.keyframes[1].bbox.y).toBeCloseTo(0.3);
@@ -1492,7 +1494,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -1527,7 +1529,7 @@ describe("VideoStage", () => {
 
     expect(onUpdate).toHaveBeenCalledTimes(1);
     const [, geometry] = onUpdate.mock.calls[0];
-    expect(geometry.type).toBe("video_track");
+    expect(geometry.type).toBe("video_track_bbox");
     expect(geometry.keyframes).toHaveLength(2);
     expect(geometry.keyframes[1].frame_index).toBe(3);
     expect(geometry.keyframes[1].bbox.w).toBeCloseTo(0.3);
@@ -1540,7 +1542,7 @@ describe("VideoStage", () => {
       id: "t1",
       class_name: "car",
       geometry: {
-        type: "video_track",
+        type: "video_track_bbox",
         track_id: "trk_car",
         keyframes: [
           { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -1602,7 +1604,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -1641,7 +1643,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car_a",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -1653,7 +1655,7 @@ describe("VideoStage", () => {
         id: "t2",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car_b",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.2, y: 0.3, w: 0.2, h: 0.2 }, source: "manual" },
@@ -1694,7 +1696,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -1732,7 +1734,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -1765,7 +1767,7 @@ describe("VideoStage", () => {
         id: "manual-track",
         class_name: "manual-car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_manual",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -1776,7 +1778,7 @@ describe("VideoStage", () => {
         id: "prediction-track",
         class_name: "prediction-car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_prediction",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "prediction" },
@@ -1825,7 +1827,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           outside: [{ from: 1, to: 1 }],
           keyframes: [
@@ -1861,7 +1863,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           outside: [{ from: 1, to: 1 }],
           keyframes: [
@@ -1896,7 +1898,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           outside: [{ from: 4, to: 5 }],
           keyframes: [
@@ -1984,7 +1986,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -2055,7 +2057,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -2098,7 +2100,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 9, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -2137,7 +2139,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -2171,7 +2173,7 @@ describe("VideoStage", () => {
       id: "t1",
       class_name: "car",
       geometry: {
-        type: "video_track",
+        type: "video_track_bbox",
         track_id: "trk_car",
         keyframes: [
           { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -2245,7 +2247,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -2256,7 +2258,7 @@ describe("VideoStage", () => {
         id: "t2",
         class_name: "person",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_person",
           keyframes: [
             { frame_index: 3, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -2307,7 +2309,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -2349,7 +2351,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -2360,7 +2362,7 @@ describe("VideoStage", () => {
         id: "t2",
         class_name: "person",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_person",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -2450,7 +2452,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -2461,7 +2463,7 @@ describe("VideoStage", () => {
         id: "t2",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car_tail",
           keyframes: [
             { frame_index: 4, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -2510,7 +2512,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -2554,7 +2556,7 @@ describe("VideoStage", () => {
         id: "t1",
         class_name: "car",
         geometry: {
-          type: "video_track",
+          type: "video_track_bbox",
           track_id: "trk_car",
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
@@ -2601,7 +2603,7 @@ describe("VideoStage", () => {
 
     expect(onUpdate).toHaveBeenCalledTimes(1);
     const [, geometry] = onUpdate.mock.calls[0];
-    expect(geometry.type).toBe("video_track");
+    expect(geometry.type).toBe("video_track_bbox");
     const pasted = (geometry.keyframes as Array<{ frame_index: number; bbox: { x: number; y: number } }>)
       .find((kf) => kf.frame_index === 3);
     expect(pasted?.bbox.x).toBeCloseTo(0.1);

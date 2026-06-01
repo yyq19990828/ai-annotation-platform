@@ -511,8 +511,8 @@ class AnnotationService:
         max_created: int = VIDEO_BBOX_CONVERSION_LIMIT,
     ) -> tuple[Annotation | None, list[Annotation], bool, list[int]]:
         geometry = annotation.geometry or {}
-        if geometry.get("type") != "video_track":
-            raise ValueError("annotation must be a video_track")
+        if geometry.get("type") != "video_track_bbox":
+            raise ValueError("annotation must be a video_track_bbox")
 
         frames: list[dict]
         removed_frame_indexes: list[int] = []
@@ -693,10 +693,10 @@ class AnnotationService:
             project_id=task.project_id,
             user_id=user_id,
             source=ordered[0].source,
-            annotation_type="video_track",
+            annotation_type="video_track_bbox",
             class_name=ordered[0].class_name,
             geometry={
-                "type": "video_track",
+                "type": "video_track_bbox",
                 "track_id": _new_track_id(),
                 "keyframes": keyframes,
                 "outside": [],
@@ -727,8 +727,8 @@ class AnnotationService:
             raise ValueError("split_track requires exactly one annotation")
         source = annotations[0]
         geometry = source.geometry or {}
-        if geometry.get("type") != "video_track":
-            raise ValueError("split_track only accepts a video_track annotation")
+        if geometry.get("type") != "video_track_bbox":
+            raise ValueError("split_track only accepts a video_track_bbox annotation")
         if not resolve_track_at_frame(geometry, frame_index):
             raise ValueError("split_track requires a visible frame")
 
@@ -760,7 +760,7 @@ class AnnotationService:
             )
         after_keyframes.sort(key=lambda kf: int(kf.get("frame_index", 0)))
         if not _track_visible_keyframes(
-            {"type": "video_track", "keyframes": after_keyframes}
+            {"type": "video_track_bbox", "keyframes": after_keyframes}
         ):
             raise ValueError("split_track requires a visible tail segment")
 
@@ -777,10 +777,10 @@ class AnnotationService:
             project_id=task.project_id,
             user_id=user_id,
             source=source.source,
-            annotation_type="video_track",
+            annotation_type="video_track_bbox",
             class_name=source.class_name,
             geometry={
-                "type": "video_track",
+                "type": "video_track_bbox",
                 "track_id": _new_track_id(),
                 "semantic_label": geometry.get("semantic_label"),
                 "keyframes": after_keyframes,
@@ -839,9 +839,9 @@ class AnnotationService:
         if len(annotations) != 2:
             raise ValueError(f"{operation} requires exactly two annotations")
         if any(
-            (ann.geometry or {}).get("type") != "video_track" for ann in annotations
+            (ann.geometry or {}).get("type") != "video_track_bbox" for ann in annotations
         ):
-            raise ValueError(f"{operation} only accepts video_track annotations")
+            raise ValueError(f"{operation} only accepts video_track_bbox annotations")
         if annotations[0].class_name != annotations[1].class_name:
             raise ValueError(f"{operation} requires tracks with the same class")
 
@@ -889,7 +889,7 @@ class AnnotationService:
 
         survivor.geometry = {
             **(survivor.geometry or {}),
-            "type": "video_track",
+            "type": "video_track_bbox",
             "track_id": (survivor.geometry or {}).get("track_id") or _new_track_id(),
             "keyframes": keyframes,
             "outside": normalize_outside_ranges(outside),

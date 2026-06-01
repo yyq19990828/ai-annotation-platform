@@ -105,7 +105,7 @@ def lerp_bbox(before: dict, after: dict, ratio: float) -> dict:
 def _coerce_geometry(geometry_or_keyframes: dict | list[dict]) -> dict:
     if isinstance(geometry_or_keyframes, list):
         return {
-            "type": "video_track",
+            "type": "video_track_bbox",
             "track_id": "",
             "keyframes": geometry_or_keyframes,
         }

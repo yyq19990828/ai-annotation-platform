@@ -70,7 +70,7 @@ export function buildVideoKeyframeCommand(
   before: VideoTrackGeometry,
   after: VideoTrackGeometry,
 ): Extract<Command, { kind: "videoKeyframe" }> | null {
-  if (before.type !== "video_track" || after.type !== "video_track") return null;
+  if (before.type !== "video_track_bbox" || after.type !== "video_track_bbox") return null;
   if (before.track_id !== after.track_id) return null;
   if (!sameOutsideRanges(before.outside, after.outside)) return null;
 

@@ -30,6 +30,7 @@ from app.schemas._jsonb_types import (
     PolylineGeometry,
     RotatedBboxGeometry,
     ToolBinding,
+    VideoModesConfig,
     VideoTrackBbox,
     VideoTrackGeometry,
     VideoTrackKeyframe,
@@ -148,6 +149,17 @@ def test_tool_binding_keypoint_schema_optional():
     )
     assert b2.keypoint_schema is not None
     assert len(b2.keypoint_schema.nodes) == 2
+
+
+def test_video_modes_config_at_least_one_enabled():
+    # 默认两者均可用
+    assert VideoModesConfig() == VideoModesConfig(box=True, track=True)
+    # 单独保留任一合法
+    assert VideoModesConfig(box=True, track=False).box is True
+    assert VideoModesConfig(box=False, track=True).track is True
+    # 全 false 非法：bbox 单元 enabled 却什么都画不了
+    with pytest.raises(ValidationError):
+        VideoModesConfig(box=False, track=False)
 
 
 # ── Attribute schema ────────────────────────────────────────────────

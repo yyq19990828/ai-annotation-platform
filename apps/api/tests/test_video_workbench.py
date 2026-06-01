@@ -540,7 +540,7 @@ def test_video_track_geometry_validates_and_video_bbox_stays_compatible():
 
     parsed = adapter.validate_python(
         {
-            "type": "video_track",
+            "type": "video_track_bbox",
             "track_id": "trk_abc123",
             "keyframes": [
                 {
@@ -557,7 +557,7 @@ def test_video_track_geometry_validates_and_video_bbox_stays_compatible():
             ],
         }
     )
-    assert parsed.type == "video_track"
+    assert parsed.type == "video_track_bbox"
     assert parsed.track_id == "trk_abc123"
     assert parsed.keyframes[1].occluded is True
 
@@ -577,9 +577,9 @@ def test_video_track_geometry_validates_and_video_bbox_stays_compatible():
 @pytest.mark.parametrize(
     "geometry",
     [
-        {"type": "video_track", "track_id": "trk_empty", "keyframes": []},
+        {"type": "video_track_bbox", "track_id": "trk_empty", "keyframes": []},
         {
-            "type": "video_track",
+            "type": "video_track_bbox",
             "track_id": "trk_negative",
             "keyframes": [
                 {
@@ -1078,10 +1078,10 @@ async def _create_video_export_fixture(db_session, user):
         task_id=task_a.id,
         project_id=project.id,
         user_id=user.id,
-        annotation_type="video_track",
+        annotation_type="video_track_bbox",
         class_name="car",
         geometry={
-            "type": "video_track",
+            "type": "video_track_bbox",
             "track_id": "trk_car",
             "keyframes": [
                 {
@@ -1124,10 +1124,10 @@ async def _create_video_export_fixture(db_session, user):
         task_id=task_b.id,
         project_id=project.id,
         user_id=user.id,
-        annotation_type="video_track",
+        annotation_type="video_track_bbox",
         class_name="person",
         geometry={
-            "type": "video_track",
+            "type": "video_track_bbox",
             "track_id": "trk_person",
             "keyframes": [
                 {
@@ -1155,7 +1155,7 @@ async def _video_fixture_task_and_track(db_session, project):
         await db_session.execute(
             select(Annotation).where(
                 Annotation.task_id == task.id,
-                Annotation.annotation_type == "video_track",
+                Annotation.annotation_type == "video_track_bbox",
                 Annotation.class_name == "car",
                 Annotation.is_active.is_(True),
             )
@@ -1425,7 +1425,7 @@ async def test_video_track_convert_rejects_non_track_annotation(
     )
 
     assert resp.status_code == 400
-    assert resp.json()["detail"] == "Annotation is not a video_track"
+    assert resp.json()["detail"] == "Annotation is not a video_track_bbox"
 
 
 async def test_video_track_convert_requires_task_visibility(
@@ -1503,7 +1503,7 @@ async def test_video_track_composition_aggregate_bboxes_deletes_sources(
     assert body["operation"] == "aggregate_bboxes"
     assert set(body["deleted_annotation_ids"]) == {str(first.id), str(second.id)}
     created = body["created_annotations"][0]
-    assert created["annotation_type"] == "video_track"
+    assert created["annotation_type"] == "video_track_bbox"
     assert created["class_name"] == "person"
     assert [kf["frame_index"] for kf in created["geometry"]["keyframes"]] == [1, 3]
     await db_session.refresh(first)
@@ -1684,10 +1684,10 @@ async def test_video_track_composition_merge_tracks_adds_outside_gap(
         task_id=task.id,
         project_id=project.id,
         user_id=user.id,
-        annotation_type="video_track",
+        annotation_type="video_track_bbox",
         class_name="car",
         geometry={
-            "type": "video_track",
+            "type": "video_track_bbox",
             "track_id": "trk_car_tail",
             "keyframes": [
                 {
@@ -1744,10 +1744,10 @@ async def test_video_track_composition_merge_rejects_overlap_and_mixed_classes(
         task_id=task.id,
         project_id=project.id,
         user_id=user.id,
-        annotation_type="video_track",
+        annotation_type="video_track_bbox",
         class_name="car",
         geometry={
-            "type": "video_track",
+            "type": "video_track_bbox",
             "track_id": "trk_overlap",
             "keyframes": [
                 {
@@ -1762,10 +1762,10 @@ async def test_video_track_composition_merge_rejects_overlap_and_mixed_classes(
         task_id=task.id,
         project_id=project.id,
         user_id=user.id,
-        annotation_type="video_track",
+        annotation_type="video_track_bbox",
         class_name="person",
         geometry={
-            "type": "video_track",
+            "type": "video_track_bbox",
             "track_id": "trk_person_tail",
             "keyframes": [
                 {
@@ -1814,10 +1814,10 @@ async def _add_car_tail_track(db_session, task, project, user, *, frame_index=6)
         task_id=task.id,
         project_id=project.id,
         user_id=user.id,
-        annotation_type="video_track",
+        annotation_type="video_track_bbox",
         class_name="car",
         geometry={
-            "type": "video_track",
+            "type": "video_track_bbox",
             "track_id": "trk_car_tail",
             "keyframes": [
                 {
@@ -1940,10 +1940,10 @@ async def test_video_track_composition_join_rejects_overlap_and_mixed_classes(
         task_id=task.id,
         project_id=project.id,
         user_id=user.id,
-        annotation_type="video_track",
+        annotation_type="video_track_bbox",
         class_name="car",
         geometry={
-            "type": "video_track",
+            "type": "video_track_bbox",
             "track_id": "trk_join_overlap",
             "keyframes": [
                 {
@@ -1958,10 +1958,10 @@ async def test_video_track_composition_join_rejects_overlap_and_mixed_classes(
         task_id=task.id,
         project_id=project.id,
         user_id=user.id,
-        annotation_type="video_track",
+        annotation_type="video_track_bbox",
         class_name="person",
         geometry={
-            "type": "video_track",
+            "type": "video_track_bbox",
             "track_id": "trk_join_person_tail",
             "keyframes": [
                 {
@@ -2015,7 +2015,7 @@ async def test_video_track_composition_rejects_annotation_from_other_task(
             select(Annotation).where(
                 Annotation.project_id == project.id,
                 Annotation.task_id != task.id,
-                Annotation.annotation_type == "video_track",
+                Annotation.annotation_type == "video_track_bbox",
             )
         )
     ).scalar_one()

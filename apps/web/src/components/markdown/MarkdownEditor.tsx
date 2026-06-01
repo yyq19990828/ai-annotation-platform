@@ -11,6 +11,8 @@ interface MarkdownEditorProps {
   /** 拖拽 / 粘贴图片时上传; 返回 markdown 中要插入的 src (例如 "guide-asset:KEY"). */
   onUploadImage?: (file: File) => Promise<{ src: string; alt?: string }>;
   placeholder?: string;
+  /** 编辑器失焦时回调 (供调用方做失焦自动保存). */
+  onBlur?: () => void;
 }
 
 /**
@@ -27,16 +29,19 @@ export function MarkdownEditor({
   onChange,
   onUploadImage,
   placeholder,
+  onBlur,
 }: MarkdownEditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onUploadRef = useRef(onUploadImage);
+  const onBlurRef = useRef(onBlur);
   const [uploading, setUploading] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
 
   onChangeRef.current = onChange;
   onUploadRef.current = onUploadImage;
+  onBlurRef.current = onBlur;
 
   const insertAtCursor = useCallback((text: string) => {
     const v = viewRef.current;
@@ -129,6 +134,10 @@ export function MarkdownEditor({
               imgs.forEach((f) => void handleUpload(f));
               return true;
             }
+            return false;
+          },
+          blur: () => {
+            onBlurRef.current?.();
             return false;
           },
         }),

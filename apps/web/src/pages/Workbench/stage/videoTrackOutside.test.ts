@@ -9,7 +9,7 @@ import {
 } from "./videoTrackOutside";
 
 const track: VideoTrackGeometry = {
-  type: "video_track",
+  type: "video_track_bbox",
   track_id: "trk",
   keyframes: [
     { frame_index: 2, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },

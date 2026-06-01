@@ -118,14 +118,14 @@ GET /api/v1/tasks/:id/video/frame-timetable?from=0&to=120
 }
 ```
 
-新建视频轨迹标注默认使用 compact `video_track`，一条 annotation 表达一个对象轨迹：
+新建视频轨迹标注默认使用 compact `video_track_bbox`，一条 annotation 表达一个对象轨迹：
 
 ```json
 {
-  "annotation_type": "video_track",
+  "annotation_type": "video_track_bbox",
   "class_name": "person",
   "geometry": {
-    "type": "video_track",
+    "type": "video_track_bbox",
     "track_id": "trk_...",
     "keyframes": [
       {
@@ -139,7 +139,7 @@ GET /api/v1/tasks/:id/video/frame-timetable?from=0&to=120
 }
 ```
 
-`video_track.keyframes[]` 只保存关键帧；插值帧由前端按需计算，不会展开写入 `annotations` 表。旧 `video_bbox` 数据仍可读取和显示。
+`video_track_bbox.keyframes[]` 只保存关键帧；插值帧由前端按需计算，不会展开写入 `annotations` 表。旧 `video_bbox` 数据仍可读取和显示。
 
 ## 视频轨迹转独立框
 
@@ -181,7 +181,7 @@ POST /api/v1/tasks/:id/annotations/video/track-compositions
 
 | `operation` | 说明 |
 |---|---|
-| `aggregate_bboxes` | 将同任务、同类、无重复帧的 `video_bbox[]` 聚合为一条 `video_track` |
+| `aggregate_bboxes` | 将同任务、同类、无重复帧的 `video_bbox[]` 聚合为一条 `video_track_bbox` |
 | `split_track` | 在 `frame_index` 可见帧之后，把一条 track 拆成前后两条 |
 | `merge_tracks` | 合并两条同类、可见帧区间不重叠的 track，并自动补中间 `outside` gap |
 | `join_tracks` | 跳连两条同类、可见帧区间不重叠的 track；`gap_mode=interpolate` 靠插值过渡 / `outside` 把 gap 标消失后合并 |

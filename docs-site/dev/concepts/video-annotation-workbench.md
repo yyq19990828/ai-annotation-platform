@@ -8,9 +8,9 @@ last_reviewed: 2026-05-27
 
 # 视频标注工作台
 
-视频工作台当前支持视频元数据与 manifest、帧时间表、单帧预览缓存、逐帧播放与 J/K/L jog、`video_bbox` 当前帧框、`video_track` compact 轨迹、outside / occluded 语义、track split / merge / join / bbox 转换、时间轴关键帧与 prediction 分布、bitmap cache、minimap、评论锚点和工作台诊断快照。
+视频工作台当前支持视频元数据与 manifest、帧时间表、单帧预览缓存、逐帧播放与 J/K/L jog、`video_bbox` 当前帧框、`video_track_bbox` compact 轨迹、outside / occluded 语义、track split / merge / join / bbox 转换、时间轴关键帧与 prediction 分布、bitmap cache、minimap、评论锚点和工作台诊断快照。
 
-`video_track` 一条 annotation 保存一个对象轨迹和 compact keyframes，前端按需显示关键帧与线性插值结果；`video_bbox` 仍是一等逐帧框，可由矩形框工具直接创建，也可从 track 转换得到。视频 stage 复用 Workbench 外壳、任务锁、离线队列、评论、审核与导出入口。
+`video_track_bbox` 一条 annotation 保存一个对象轨迹和 compact keyframes，前端按需显示关键帧与线性插值结果；`video_bbox` 仍是一等逐帧框，可由矩形框工具直接创建，也可从 track 转换得到。视频 stage 复用 Workbench 外壳、任务锁、离线队列、评论、审核与导出入口。
 
 <!-- history: the original version-by-version video workbench notes are merged into this current capability overview. -->
 
@@ -108,7 +108,7 @@ POST /api/v1/tasks/{task_id}/video/frames:prefetch
 - `failed` 或网络错误：保留 frame/time 文案，当前 hover 帧不阻断 seek/playback。
 - `400` / `404`：认为当前 task 不支持 frame service，本次打开期间停用 hover preview，只保留原 frame tooltip。
 
-前端会对以下帧调用 `frames:prefetch` 作为 hint：当前选中 `video_track` 的 keyframes、当前 task 的 bookmark frames，以及 loop region 的起止帧。预取只影响后端单帧缓存，不写 annotation，也不会改变播放 / seek 语义。
+前端会对以下帧调用 `frames:prefetch` 作为 hint：当前选中 `video_track_bbox` 的 keyframes、当前 task 的 bookmark frames，以及 loop region 的起止帧。预取只影响后端单帧缓存，不写 annotation，也不会改变播放 / seek 语义。
 
 ## Observability
 
@@ -137,15 +137,15 @@ pnpm --filter @anno/web video:bench
 视频工作台支持两种视频 geometry：
 
 - `video_bbox`：当前帧独立矩形框。
-- `video_track`：跨帧对象轨迹。
+- `video_track_bbox`：跨帧对象轨迹。
 
-前端通过 `videoTool` 决定新拖框落库类型：矩形框工具写 `video_bbox`，轨迹工具写 `video_track` 或追加 keyframe。
+前端通过 `videoTool` 决定新拖框落库类型：矩形框工具写 `video_bbox`，轨迹工具写 `video_track_bbox` 或追加 keyframe。
 
-`video_track` 示例：
+`video_track_bbox` 示例：
 
 ```json
 {
-  "type": "video_track",
+  "type": "video_track_bbox",
   "track_id": "trk_...",
   "semantic_label": "car_3",
   "outside": [
@@ -164,7 +164,7 @@ pnpm --filter @anno/web video:bench
 
 约定：
 
-- `annotation_type` 写 `video_track`。
+- `annotation_type` 写 `video_track_bbox`。
 - `track_id` 在单条 annotation 内稳定，用于 UI 展示和审核定位（uuid，只读不变）。
 - `semantic_label` 是用户可编辑的语义标签（如 `car_3`），仅作跨任务 Re-ID 心智，不参与主键、不强制唯一。
 - 类别继续使用 annotation 顶层 `class_name`，本期不引入稳定 `class_id`。
@@ -244,7 +244,7 @@ POST /api/v1/tasks/{task_id}/annotations/video/track-compositions
 | 字段 | 取值 | 说明 |
 |---|---|---|
 | `operation` | `aggregate_bboxes` / `split_track` / `merge_tracks` / `join_tracks` | 聚合单帧框、拆分轨迹、合并轨迹、跳连轨迹 |
-| `annotation_ids` | UUID[] | 聚合时传 `video_bbox[]`；拆分时传 1 条 `video_track`；合并/跳连时传 2 条 `video_track` |
+| `annotation_ids` | UUID[] | 聚合时传 `video_bbox[]`；拆分时传 1 条 `video_track_bbox`；合并/跳连时传 2 条 `video_track_bbox` |
 | `frame_index` | number | `split_track` 必填，表示在当前可见帧之后切出后段 |
 | `gap_mode` | `interpolate` / `outside` | `join_tracks` 用：`interpolate` 不写 gap、靠线性插值过渡；`outside` 把 gap 区标 outside 后合并。默认 `interpolate` |
 | `delete_sources` | boolean | `aggregate_bboxes` 默认为 true，成功后删除源 `video_bbox` |
@@ -321,7 +321,7 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 
 插值规则与前端显示保持一致：outside 段优先；精确关键帧其次；`occluded=true` 表示目标存在但遮挡，不阻断插值。`video_frame_mode=all_frames` 不输出 outside 范围内的 bbox，也不会把 track → `video_bbox` 转换到 outside 帧上。
 
-`include_attributes=false` 会移除 `project.attribute_schema` 以及 track / legacy `video_bbox` 上的 `attributes`。图片侧 `yolo-det` / `yolo-obb` / `yolo-seg` / `voc` 对视频项目返回 400；视频检测训练集要使用 `targets=yolo-frames-det`，它按采样网格抽帧并把 `video_bbox` 与摊平后的 `video_track` 写成逐帧 YOLO label。
+`include_attributes=false` 会移除 `project.attribute_schema` 以及 track / legacy `video_bbox` 上的 `attributes`。图片侧 `yolo-det` / `yolo-obb` / `yolo-seg` / `voc` 对视频项目返回 400；视频检测训练集要使用 `targets=yolo-frames-det`，它按采样网格抽帧并把 `video_bbox` 与摊平后的 `video_track_bbox` 写成逐帧 YOLO label。
 
 ## 前端 Stage 边界
 
@@ -333,14 +333,15 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 
 - `Space` 播放 / 暂停
 - `J` / `K` / `L` 反向播放或减速 / 暂停 / 正向播放或加速
-- `B` / `T` 切换视频矩形框 / 轨迹工具
-- `←` / `→` 逐帧
-- `,` / `.` 逐帧备用键
-- `Shift + ←/→` 选中 `video_track` 时跳上/下可见关键帧；未选中轨迹时跳 10 帧
+- `B` / `T` / `V` 切换视频矩形框 / 轨迹 / 平移工具
+- `←` / `→` 上一帧 / 下一帧；采样开启时按网格跳
+- `Shift + ←/→` 采样开启时源帧 ±1 微调
+- `,` / `.` 选中 `video_track_bbox` 时跳上 / 下可见关键帧
+- `Home` / `End` 选中 `video_track_bbox` 时跳首 / 末可见关键帧
 - `Ctrl+M` 当前帧添加 / 移除书签
 - `Ctrl+[` / `Ctrl+]` 跳转历史后退 / 前进
 - `Alt+L` 清除本地 loop region
-- `Delete` / `Backspace` 选中 `video_track` 时删除当前帧关键帧；选中 `video_bbox` 时删除该框
+- `Delete` / `Backspace` 选中 `video_track_bbox` 时删除当前帧关键帧；选中 `video_bbox` 时删除该框
 - `Ctrl+Delete` / `Ctrl+Backspace` 删除整条选中轨迹
 - `Tab` / `Shift+Tab` 循环轨迹
 - `Esc` 取消选择
@@ -366,7 +367,7 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 
 `VideoStageSurface` 负责统一尺寸、aspect ratio、层叠顺序和 viewport transform。对象层不再给每个 bbox 主体挂 `pointerdown`，Interaction 层通过 `videoStageCoordinates.ts` 把 client 坐标映射到视频归一化坐标，再用 `videoStagePicking.ts` 选择顶层框。
 
-画布上下文菜单使用通用 `ContextMenu` + `useCanvasContextMenu` 原语：Stage 负责把命中对象转换成 `DropdownItem[]`，菜单组件只处理 fixed 坐标定位、视口翻转和关闭行为。这套外壳同时服务于视频 `video_track` / `video_bbox` 和图片 Stage 的 bbox、rotated bbox、polygon、polyline、keypoint 等人工标注；图片侧通过 Konva `getIntersection()` 在容器层统一命中 shape，再把 annotation action 映射成 `DropdownItem[]`。
+画布上下文菜单使用通用 `ContextMenu` + `useCanvasContextMenu` 原语：Stage 负责把命中对象转换成 `DropdownItem[]`，菜单组件只处理 fixed 坐标定位、视口翻转和关闭行为。这套外壳同时服务于视频 `video_track_bbox` / `video_bbox` 和图片 Stage 的 bbox、rotated bbox、polygon、polyline、keypoint 等人工标注；图片侧通过 Konva `getIntersection()` 在容器层统一命中 shape，再把 annotation action 映射成 `DropdownItem[]`。
 
 视频工作台的 viewport 与图片工作台复用同一套 `useViewportTransform` 行为：`F` 适应视口、`0` 回到 1:1、Ctrl/Meta+滚轮以光标为锚点缩放、右键拖拽平移。缩放和平移只影响显示层，保存到 annotation 的 bbox / keyframe 仍是 `[0,1]` 归一化视频坐标。
 
@@ -380,9 +381,9 @@ R5.2 的 bitmap cache 只优化前端体感，不替代 `<video>` 播放源。`u
 - hover 时显示，离开后延迟淡出；绘制或拖动 bbox 时隐藏，避免误触 scrubber。
 - 保留播放 / 暂停、逐帧按钮、range scrubber、关键帧 tick、当前帧号、时间和当前帧框数。
 - 底部标记的数据源是 timeline markers：keyframe 仍显示为细线，prediction 使用不同颜色，outside 段显示为灰色区间。
-- 选中 `video_track` 时显示该轨迹的单轨 timeline：keyframe 圆点跟随轨迹色、悬浮在进度条上方，连线加粗并加同色外发光，outside 灰段、interpolated 虚线段和 prediction 标记照旧；未选中轨迹时显示全局 keyframe 密度条，按各轨迹关键帧占比自底向上堆叠成彩色渐变（legacy bbox 用 accent 兜底），等宽分桶避免首帧偏窄。
+- 选中 `video_track_bbox` 时显示该轨迹的单轨 timeline：keyframe 圆点跟随轨迹色、悬浮在进度条上方，连线加粗并加同色外发光，outside 灰段、interpolated 虚线段和 prediction 标记照旧；未选中轨迹时显示全局 keyframe 密度条，按各轨迹关键帧占比自底向上堆叠成彩色渐变（legacy bbox 用 accent 兜底），等宽分桶避免首帧偏窄。
 - playhead 显示为 3px 竖线（hover/active 加宽到 5px），不再遮挡相邻关键帧/刻度；overlay 改两行布局让进度条独占一行，不随帧数位数/loop 标签变短；loop 区间渲染为贯穿轨道高度的半透明填充块 + inset 高亮边界。
-- `Shift+←/→` 复用同一套可见关键帧计算，跳过 outside 帧；如果没有选中轨迹，则保持原有 ±10 帧跳转。`,`/`.` 跳上/下可见关键帧，`Home`/`End` 跳首/末出现帧。
+- `,` / `.` 复用同一套可见关键帧计算，跳过 outside 帧；`Home` / `End` 跳首 / 末出现帧。采样开启时 `Shift+←/→` 仅做源帧 ±1 微调，不参与关键帧跳转。
 - `Shift+drag` 时间轴可创建本地 loop region；播放越过范围末帧后 seek 回起始帧，逐帧和手动 seek 不被限制。
 - loop region、书签和跳转历史只存前端会话状态，按 task 写入 `sessionStorage`，不改变 annotation schema 或后端 API。
 - 书签以小三角 marker 显示，`Ctrl+M` 在当前帧加 / 删；显式 seek、bookmark 跳转和关键帧跳转写入最近 50 条跳转历史，播放 tick 不写历史。
@@ -397,7 +398,7 @@ R5.2 的 bitmap cache 只优化前端体感，不替代 `<video>` 播放源。`u
 
 - 单个 `frame_index` 的关键帧新增、移动、`occluded` 切换只撤销该关键帧；标记"消失"改为写 `outside` 区间（独立撤销）。
 - 创建 / 删除整条 track、重命名类别仍按 annotation 级命令处理。
-- apply 时读取当前最新 `video_track` geometry，只替换目标帧 keyframe，保留其它关键帧。
+- apply 时读取当前最新 `video_track_bbox` geometry，只替换目标帧 keyframe，保留其它关键帧。
 
 视频写操作仍走原 annotation API。网络断开或 5xx 时：
 

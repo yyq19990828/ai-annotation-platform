@@ -42,11 +42,11 @@ describe("video annotation actions helpers", () => {
   });
 
   it("builds video_track create payload with one manual keyframe", () => {
-    const payload = buildVideoCreatePayload("video_track", 9, box, "");
+    const payload = buildVideoCreatePayload("video_track_bbox", 9, box, "");
 
-    expect(payload.annotation_type).toBe("video_track");
+    expect(payload.annotation_type).toBe("video_track_bbox");
     expect(payload.class_name).toBe("__unknown");
-    expect(payload.geometry.type).toBe("video_track");
+    expect(payload.geometry.type).toBe("video_track_bbox");
     const geometry = payload.geometry as VideoTrackGeometry;
     expect(geometry.track_id).toMatch(/^trk_/);
     expect(geometry.keyframes).toEqual([
@@ -61,7 +61,7 @@ describe("video annotation actions helpers", () => {
 
   it("uses videoKeyframe history command for single-keyframe track edits", () => {
     const before: VideoTrackGeometry = {
-      type: "video_track",
+      type: "video_track_bbox",
       track_id: "trk_1",
       keyframes: [{ frame_index: 0, bbox: box, source: "manual" }],
     };
@@ -92,7 +92,7 @@ describe("video annotation actions helpers", () => {
   it("builds batchable composition history commands", () => {
     const bbox = annotation({ type: "video_bbox", frame_index: 1, ...box });
     const track = annotation({
-      type: "video_track",
+      type: "video_track_bbox",
       track_id: "trk_1",
       keyframes: [{ frame_index: 1, bbox: box, source: "manual" }],
     });

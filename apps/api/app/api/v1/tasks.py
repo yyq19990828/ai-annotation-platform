@@ -1056,8 +1056,8 @@ async def convert_video_track_to_bboxes(
         raise HTTPException(
             status_code=400, detail="Annotation does not belong to this task"
         )
-    if (annotation.geometry or {}).get("type") != "video_track":
-        raise HTTPException(status_code=400, detail="Annotation is not a video_track")
+    if (annotation.geometry or {}).get("type") != "video_track_bbox":
+        raise HTTPException(status_code=400, detail="Annotation is not a video_track_bbox")
 
     svc = AnnotationService(db)
     try:

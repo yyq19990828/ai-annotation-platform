@@ -9,7 +9,6 @@
 
 import { useState } from "react";
 import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
 import type { ProjectResponse, VideoSamplingConfig } from "@/api/projects";
@@ -73,18 +72,25 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
   const config = buildConfig(draft);
   const valid = config !== null;
 
-  const onSave = () => {
-    if (!config) {
-      pushToast({ msg: "采样配置不合法，请检查输入", kind: "warning" });
-      return;
-    }
+  // 自动保存：切换采样方式即时存；数字输入失焦存。非法配置不提交，等用户
+  // 填到合法再触发。失败弹 toast，成功静默。
+  const commit = (nextDraft: DraftState) => {
+    const cfg = buildConfig(nextDraft);
+    if (!cfg) return;
     update.mutate(
-      { video_sampling: config },
-      {
-        onError: () => pushToast({ msg: "保存失败", kind: "warning" }),
-        onSuccess: () => pushToast({ msg: "已保存采样配置", kind: "success" }),
-      },
+      { video_sampling: cfg },
+      { onError: () => pushToast({ msg: "保存失败", kind: "warning" }) },
     );
+  };
+
+  const setMode = (mode: SamplingMode) => {
+    const next = { ...draft, mode };
+    // 切到 fps/step 时若对应输入为空，填一个合法默认值，保证 commit 一定落库，
+    // 避免 UI radio 已切到新模式但后端仍是旧模式（刷新即回滚）。
+    if (mode === "fps" && !next.targetFps.trim()) next.targetFps = "10";
+    if (mode === "step" && !next.frameStep.trim()) next.frameStep = "1";
+    setDraft(next);
+    commit(next);
   };
 
   return (
@@ -103,7 +109,7 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
                 type="radio"
                 name="video-sampling-mode"
                 checked={draft.mode === "none"}
-                onChange={() => setDraft((d) => ({ ...d, mode: "none" }))}
+                onChange={() => setMode("none")}
               />
               <span>不采样（所有帧）</span>
             </label>
@@ -112,7 +118,7 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
                 type="radio"
                 name="video-sampling-mode"
                 checked={draft.mode === "fps"}
-                onChange={() => setDraft((d) => ({ ...d, mode: "fps" }))}
+                onChange={() => setMode("fps")}
               />
               <span>按目标 fps</span>
             </label>
@@ -121,7 +127,7 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
                 type="radio"
                 name="video-sampling-mode"
                 checked={draft.mode === "step"}
-                onChange={() => setDraft((d) => ({ ...d, mode: "step" }))}
+                onChange={() => setMode("step")}
               />
               <span>按帧间隔</span>
             </label>
@@ -143,6 +149,7 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
               onChange={(e) =>
                 setDraft((d) => ({ ...d, targetFps: e.target.value }))
               }
+              onBlur={() => commit(draft)}
               placeholder="例：10"
               className={styles.input}
             />
@@ -164,6 +171,7 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
               onChange={(e) =>
                 setDraft((d) => ({ ...d, frameStep: e.target.value }))
               }
+              onBlur={() => commit(draft)}
               placeholder="例：5"
               className={styles.input}
             />
@@ -175,17 +183,12 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
         </div>
 
         {!valid && (
-          <p className={styles.error}>请填写合法的采样参数后再保存。</p>
+          <p className={styles.error}>请填写合法的采样参数，填好后自动保存。</p>
         )}
 
-        <div className={styles.actions}>
-          <Button onClick={onSave} disabled={!valid || update.isPending}>
-            保存
-          </Button>
-          {update.isPending && (
-            <span className={styles.savingHint}>保存中…</span>
-          )}
-        </div>
+        {update.isPending && (
+          <div className={styles.savingHint}>保存中…</div>
+        )}
       </div>
     </Card>
   );

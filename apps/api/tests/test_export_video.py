@@ -20,7 +20,7 @@ def _track(
     track_id: str, keyframes: list[tuple[int, float, float, float, float]], outside=None
 ) -> dict:
     return {
-        "type": "video_track",
+        "type": "video_track_bbox",
         "track_id": track_id,
         "keyframes": [
             {

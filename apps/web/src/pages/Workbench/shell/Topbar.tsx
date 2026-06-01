@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
+import { Switch } from "@/components/ui/Switch";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
 import { SkipTaskModal, type SkipReason } from "./SkipTaskModal";
@@ -316,21 +317,16 @@ export function Topbar({
           content={() => (
             <div className={styles.settingsMenu}>
               {onToggleHideOrphans && (
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={hideOrphanAnnotations}
-                  onClick={onToggleHideOrphans}
-                  className={styles.switchRow}
-                >
+                <label className={styles.switchRow}>
                   <span className={styles.switchText}>
                     <span className={styles.switchLabel}>隐藏孤儿标注</span>
                     <span className={styles.switchHint}>筛掉无匹配预测的人工框</span>
                   </span>
-                  <span className={cn(styles.switchTrack, hideOrphanAnnotations && styles.switchTrackOn)}>
-                    <span className={styles.switchKnob} />
-                  </span>
-                </button>
+                  <Switch
+                    checked={hideOrphanAnnotations}
+                    onChange={onToggleHideOrphans}
+                  />
+                </label>
               )}
             </div>
           )}

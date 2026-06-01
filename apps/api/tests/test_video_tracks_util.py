@@ -5,7 +5,7 @@ from app.services.video_tracks import derive_track_number
 
 def _track(track_id: str, first_frame: int) -> dict:
     return {
-        "type": "video_track",
+        "type": "video_track_bbox",
         "track_id": track_id,
         "keyframes": [
             {"frame_index": first_frame, "bbox": {"x": 0, "y": 0, "w": 1, "h": 1}},
@@ -38,7 +38,7 @@ def test_derive_track_number_empty():
 
 def test_derive_track_number_unsorted_keyframes_use_min_frame():
     geometry = {
-        "type": "video_track",
+        "type": "video_track_bbox",
         "track_id": "trk_x",
         "keyframes": [
             {"frame_index": 8, "bbox": {"x": 0, "y": 0, "w": 1, "h": 1}},

@@ -12,7 +12,7 @@ function track(
   outside?: VideoTrackOutsideRange[],
 ): VideoTrackAnnotation {
   const geometry: VideoTrackGeometry = {
-    type: "video_track",
+    type: "video_track_bbox",
     track_id: `trk_${id}`,
     keyframes: frames.map((frame_index) => ({ frame_index, bbox: box, source: "manual" })),
     ...(outside ? { outside } : {}),
@@ -23,7 +23,7 @@ function track(
     project_id: "project-1",
     user_id: "user-1",
     source: "manual",
-    annotation_type: "video_track",
+    annotation_type: "video_track_bbox",
     class_name: className,
     geometry,
     confidence: 1,

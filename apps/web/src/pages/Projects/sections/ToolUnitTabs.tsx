@@ -5,7 +5,11 @@
 
 import { Icon } from "@/components/ui/Icon";
 import { clsx } from "clsx";
-import { TOOL_UNIT_GROUPS, type ToolUnitId } from "@/constants/toolUnits";
+import {
+  TOOL_UNIT_GROUPS,
+  type ProjectDataType,
+  type ToolUnitId,
+} from "@/constants/toolUnits";
 import type { UnitBindingMap } from "./useProjectToolBindings";
 import styles from "./ToolUnitTabs.module.css";
 
@@ -13,6 +17,7 @@ interface Props {
   bindings: UnitBindingMap;
   activeUnit: ToolUnitId;
   onSelect: (unit: ToolUnitId) => void;
+  dataType?: ProjectDataType;
   /** 是否允许在此处切换 enabled 状态. Section 内默认 false (不让用户在类别页删 unit). */
   allowToggle?: boolean;
   onToggle?: (unit: ToolUnitId, enabled: boolean) => void;
@@ -22,6 +27,7 @@ export function ToolUnitTabs({
   bindings,
   activeUnit,
   onSelect,
+  dataType,
   allowToggle = false,
   onToggle,
 }: Props) {
@@ -34,6 +40,7 @@ export function ToolUnitTabs({
         const ub = bindings[g.id];
         const active = activeUnit === g.id;
         const enabled = !!ub?.enabled;
+        const label = toolUnitLabel(g.id, g.label, dataType);
         return (
           <div
             key={g.id}
@@ -58,7 +65,7 @@ export function ToolUnitTabs({
               className={styles.tabButton}
             >
               <Icon name={g.icon} size={12} />
-              <span>{g.label}</span>
+              <span>{label}</span>
               {ub && ub.classRows.length > 0 && (
                 <span className={styles.badge}>{ub.classRows.length}</span>
               )}
@@ -68,4 +75,15 @@ export function ToolUnitTabs({
       })}
     </div>
   );
+}
+
+function toolUnitLabel(
+  unit: ToolUnitId,
+  fallback: string,
+  dataType?: ProjectDataType,
+): string {
+  if (dataType === "video" && unit === "bbox") {
+    return "矩形框 / 轨迹";
+  }
+  return fallback;
 }

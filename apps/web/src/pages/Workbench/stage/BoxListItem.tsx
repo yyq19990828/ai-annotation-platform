@@ -59,7 +59,7 @@ function annotationToolMeta(
       detail: `F${geometry.frame_index} · ${rectText(geometry.x, geometry.y, geometry.w, geometry.h, imageWidth, imageHeight)}`,
     };
   }
-  if (geometry.type === "video_track") {
+  if (geometry.type === "video_track_bbox") {
     const frames = geometry.keyframes.map((kf) => kf.frame_index);
     const outsideFrames = (geometry.outside ?? []).reduce((sum, r) => sum + (r.to - r.from + 1), 0);
     const occluded = geometry.keyframes.filter((kf) => kf.occluded).length;

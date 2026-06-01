@@ -76,7 +76,7 @@ export interface VideoTrackCompositionOptions {
 }
 
 export function buildVideoCreatePayload(
-  kind: "video_bbox" | "video_track",
+  kind: "video_bbox" | "video_track_bbox",
   frameIndex: number,
   geo: Geom,
   cls: string,
@@ -92,7 +92,7 @@ export function buildVideoCreatePayload(
 
   const trackId = `trk_${randomId()}`;
   const geometry: VideoTrackGeometry = {
-    type: "video_track",
+    type: "video_track_bbox",
     track_id: trackId,
     keyframes: [
       {
@@ -105,14 +105,14 @@ export function buildVideoCreatePayload(
   };
 
   return {
-    annotation_type: "video_track",
+    annotation_type: "video_track_bbox",
     class_name: className,
     geometry,
   };
 }
 
 export function buildVideoUpdateCommand(ann: AnnotationResponse, geometry: VideoGeometry): Command {
-  if (ann.geometry.type === "video_track" && geometry.type === "video_track") {
+  if (ann.geometry.type === "video_track_bbox" && geometry.type === "video_track_bbox") {
     const keyframeCommand = buildVideoKeyframeCommand(ann.id, ann.geometry, geometry);
     if (keyframeCommand) return keyframeCommand;
   }
@@ -168,9 +168,9 @@ function isConflictError(err: unknown): boolean {
 }
 
 function isVideoPending(pending: PendingDrawing): pending is NonNullable<PendingDrawing> & {
-  kind: "video_bbox" | "video_track";
+  kind: "video_bbox" | "video_track_bbox";
 } {
-  return pending?.kind === "video_bbox" || pending?.kind === "video_track";
+  return pending?.kind === "video_bbox" || pending?.kind === "video_track_bbox";
 }
 
 export function useVideoAnnotationActions({
@@ -193,7 +193,7 @@ export function useVideoAnnotationActions({
     );
   }, [queryClient, taskId]);
 
-  const handleVideoCreateWithClass = useCallback((kind: "video_bbox" | "video_track", frameIndex: number, geo: Geom, cls: string) => {
+  const handleVideoCreateWithClass = useCallback((kind: "video_bbox" | "video_track_bbox", frameIndex: number, geo: Geom, cls: string) => {
     const payload = buildVideoCreatePayload(kind, frameIndex, geo, cls);
     const className = payload.class_name;
     mutations.create.mutate(payload, {
@@ -210,11 +210,11 @@ export function useVideoAnnotationActions({
   }, [enqueueOnError, history, mutations.create, optimisticEnqueueCreate, recordRecentClass, s]);
 
   const handleVideoCreate = useCallback((frameIndex: number, geo: Geom) => {
-    handleVideoCreateWithClass("video_track", frameIndex, geo, s.activeClass || UNKNOWN_CLASS);
+    handleVideoCreateWithClass("video_track_bbox", frameIndex, geo, s.activeClass || UNKNOWN_CLASS);
   }, [handleVideoCreateWithClass, s.activeClass]);
 
   const handleVideoPendingDraw = useCallback((
-    kind: "video_bbox" | "video_track",
+    kind: "video_bbox" | "video_track_bbox",
     frameIndex: number,
     geom: Geom,
     anchor: { left: number; top: number },
@@ -270,7 +270,7 @@ export function useVideoAnnotationActions({
 
   const handleVideoBatchRename = useCallback((annotations: AnnotationResponse[], className: string) => {
     const targets = annotations.filter((ann) =>
-      ann.geometry.type === "video_track" && ann.class_name !== className,
+      ann.geometry.type === "video_track_bbox" && ann.class_name !== className,
     );
     if (!className || targets.length === 0) return;
 
@@ -312,7 +312,7 @@ export function useVideoAnnotationActions({
   }, [history, mutations.update, pushToast, recordRecentClass, s]);
 
   const handleVideoBatchDelete = useCallback((annotations: AnnotationResponse[]) => {
-    const targets = annotations.filter((ann) => ann.geometry.type === "video_track");
+    const targets = annotations.filter((ann) => ann.geometry.type === "video_track_bbox");
     if (targets.length === 0) return;
 
     let pending = targets.length;
@@ -347,7 +347,7 @@ export function useVideoAnnotationActions({
   const handleVideoSetSelectedClass = useCallback((className: string) => {
     if (!s.selectedId) return false;
     const ann = annotationsRef.current.find((a) => a.id === s.selectedId);
-    if (!ann || (ann.geometry.type !== "video_bbox" && ann.geometry.type !== "video_track")) return false;
+    if (!ann || (ann.geometry.type !== "video_bbox" && ann.geometry.type !== "video_track_bbox")) return false;
     if (ann.class_name === className) return true;
     handleVideoRename(ann, className);
     recordRecentClass(className);
@@ -358,7 +358,7 @@ export function useVideoAnnotationActions({
     ann: AnnotationResponse,
     options: VideoConvertOptions,
   ) => {
-    if (!taskId || ann.geometry.type !== "video_track") return;
+    if (!taskId || ann.geometry.type !== "video_track_bbox") return;
     if (options.frameMode === "all_frames") {
       const ok = window.confirm("将按插值结果展开所有可见帧，长视频可能生成大量独立框。继续？");
       if (!ok) return;
@@ -392,7 +392,7 @@ export function useVideoAnnotationActions({
       if (result.deleted_source) {
         commands.push({ kind: "delete", annotation: ann });
         s.setSelectedId(null);
-      } else if (result.source_annotation && result.source_annotation.geometry.type === "video_track") {
+      } else if (result.source_annotation && result.source_annotation.geometry.type === "video_track_bbox") {
         commands.push({
           kind: "update",
           annotationId: ann.id,
@@ -478,7 +478,7 @@ export function useVideoAnnotationActions({
   // v0.10.30 · 2.3 当前帧逐帧覆盖: 写入该帧 keyframe.attributes。复用 upsertKeyframe (保留当前帧框)
   // + handleVideoUpdate (geometry 单条 keyframe 变化 → videoKeyframe undo 命令)。
   const handleUpdateKeyframeAttributes = useCallback((ann: AnnotationResponse, frameIndex: number, attributes: Record<string, unknown>) => {
-    if (ann.geometry.type !== "video_track") return;
+    if (ann.geometry.type !== "video_track_bbox") return;
     const track = ann.geometry;
     const bbox = nearestTrackBbox(track, frameIndex);
     const patch: Partial<VideoTrackKeyframeWithAttrs> = { attributes };
@@ -493,7 +493,7 @@ export function useVideoAnnotationActions({
     count: number,
     options: { direction: VideoPropagateOptions["direction"]; overwrite: boolean },
   ) => {
-    if (ann.geometry.type !== "video_track") return;
+    if (ann.geometry.type !== "video_track_bbox") return;
     const track = ann.geometry;
     const fromBbox = nearestTrackBbox(track, fromFrame);
     const next = propagateKeyframes(track, fromFrame, fromBbox, {

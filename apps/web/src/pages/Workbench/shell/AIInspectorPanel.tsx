@@ -509,7 +509,7 @@ function boxIsOnFrame(box: Annotation | AiBox, frameIndex: number) {
   const geometry = box.geometry;
   if (!geometry) return true;
   if (geometry.type === "video_bbox") return geometry.frame_index === frameIndex;
-  if (geometry.type === "video_track") return resolveTrackAtFrame(geometry, frameIndex) !== null;
+  if (geometry.type === "video_track_bbox") return resolveTrackAtFrame(geometry, frameIndex) !== null;
   return true;
 }
 
@@ -517,7 +517,7 @@ function firstTrackFrame(box: Annotation | AiBox): number | null {
   const geometry = box.geometry;
   if (!geometry) return null;
   if (geometry.type === "video_bbox") return geometry.frame_index;
-  if (geometry.type !== "video_track" || geometry.keyframes.length === 0) return null;
+  if (geometry.type !== "video_track_bbox" || geometry.keyframes.length === 0) return null;
   const visible = geometry.keyframes.filter((kf) => !isFrameOutside(geometry, kf.frame_index));
   const frames = (visible.length > 0 ? visible : geometry.keyframes).map((kf) => kf.frame_index);
   return Math.min(...frames);

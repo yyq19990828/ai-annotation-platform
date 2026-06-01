@@ -99,7 +99,7 @@ image_height=<optional COCO fallback height>
 
 `shapes[]` 与 `geometry` 同时存在时，以 `shapes[]` 为准；其中某个 shape 不支持时只记录该 shape 的 errors[]，其余 shape 仍合并入库。
 
-支持的 geometry kind：`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox` / `keypoint`。`rotated_bbox` 使用平台内部中心点格式 `{cx, cy, w, h, angle}`，导入时写成 Label Studio `rectanglelabels.rotation`，读回时再还原中心点。`keypoint` 使用 `{points:[{x,y,v}]}`，`v` 保留 COCO 可见性 0/1/2。其他 kind（`video_bbox` / `video_track` / 自定义）进 errors[] 不入库。
+支持的 geometry kind：`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox` / `keypoint`。`rotated_bbox` 使用平台内部中心点格式 `{cx, cy, w, h, angle}`，导入时写成 Label Studio `rectanglelabels.rotation`，读回时再还原中心点。`keypoint` 使用 `{points:[{x,y,v}]}`，`v` 保留 COCO 可见性 0/1/2。其他 kind（`video_bbox` / `video_track_bbox` / 自定义）进 errors[] 不入库。
 
 ## COCO Detection 格式
 

@@ -72,7 +72,7 @@ describe("geometryToShape", () => {
 
   it("video_track → 返回第一条非消失关键帧 bbox", () => {
     const s = geometryToShape({
-      type: "video_track",
+      type: "video_track_bbox",
       track_id: "trk_1",
       keyframes: [
         { frame_index: 0, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },

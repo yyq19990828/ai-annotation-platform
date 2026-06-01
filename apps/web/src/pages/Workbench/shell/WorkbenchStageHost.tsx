@@ -73,7 +73,7 @@ interface WorkbenchStageHostVideoProps {
   onVideoFrameIndexChange: (frameIndex: number) => void;
   onVideoCreate: (frameIndex: number, geom: Geom) => void;
   onVideoPendingDraw: (
-    kind: "video_bbox" | "video_track",
+    kind: "video_bbox" | "video_track_bbox",
     frameIndex: number,
     geom: Geom,
     anchor: { left: number; top: number },

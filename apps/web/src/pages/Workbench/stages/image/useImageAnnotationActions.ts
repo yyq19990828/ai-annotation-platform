@@ -44,7 +44,7 @@ function videoBoxScreenAnchor(
 ): { left: number; top: number } | undefined {
   if (typeof document === "undefined") return undefined;
   let g: { x: number; y: number; w: number; h: number } | undefined;
-  if (ann.geometry.type === "video_track") {
+  if (ann.geometry.type === "video_track_bbox") {
     g = resolveTrackAtFrame(ann.geometry, frameIndex)?.geom;
   } else if (ann.geometry.type === "video_bbox") {
     const b = ann.geometry;
@@ -705,7 +705,7 @@ export function useImageAnnotationActions({
   const handleStartChangeClass = useCallback((annotationId: string, anchor?: { left: number; top: number }) => {
     const ann = annotationsRef.current.find((a) => a.id === annotationId);
     if (!ann) return;
-    const isVideoGeometry = ann.geometry.type === "video_bbox" || ann.geometry.type === "video_track";
+    const isVideoGeometry = ann.geometry.type === "video_bbox" || ann.geometry.type === "video_track_bbox";
     const geom = isVideoGeometry ? geometryToShape(ann.geometry) : ann.geometry as Geom;
     // 视频几何无法走 image 定位（侧栏/快捷键无 stage transform），需 fixed anchor：
     // 优先锚到画布上的框（overlay 屏幕矩形 + 当前帧 bbox），覆盖所有触发入口；
