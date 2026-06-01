@@ -69,7 +69,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["B"], desc: "视频矩形框工具", group: "video", actionType: "setVideoTool" },
   { keys: ["T"], desc: "视频轨迹工具", group: "video", actionType: "setVideoTool" },
   { keys: ["← / →"], desc: "视频逐帧后退 / 前进（采样开启时按网格跳）", group: "video", actionType: "videoSeek" },
-  { keys: [", / ."], desc: "选中轨迹时跳上/下关键帧；否则上一帧 / 下一帧（采样开启时为 ±1 微调）", group: "video", actionType: "videoSeek" },
+  { keys: [", / ."], desc: "选中轨迹时跳上/下关键帧；否则上一帧 / 下一帧（采样开启时为 ±1 微调）", group: "video", actionType: "videoSeekKeyframe" },
   { keys: ["Home / End"], desc: "选中轨迹时跳该轨迹首次 / 最后出现帧", group: "video", actionType: "videoSeekKeyframe" },
   { keys: ["Shift", "← / →"], desc: "采样开启：±1 源帧微调（逃生口）；否则选中轨迹跳关键帧 / ±10 帧", group: "video", actionType: "videoSeekKeyframe" },
   { keys: ["Alt", "← / →"], desc: "采样开启：选中轨迹跳上/下关键帧", group: "video", actionType: "videoSeekKeyframe" },
@@ -269,7 +269,8 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.key === "t" || e.key === "T") return { type: "setVideoTool", tool: "track" };
     // v0.11.29 · V = 视图/平移工具（hand），与图片工作台一致；H 已被「隐藏轨迹」占用。
     if (e.key === "v" || e.key === "V") return { type: "setVideoTool", tool: "hand" };
-    // v0.10.29 · 采样开启 (step>1)：←/→ 网格跳；Shift+←/→ 与 ,/. 走 ±1 源帧微调 (逃生口)。
+    // v0.10.29 · 采样开启 (step>1)：←/→ 网格跳；Shift+←/→ 走 ±1 源帧微调 (逃生口)。
+    //            ,/. 在选中轨迹时仍按关键帧跳；无选中轨迹时作为 ±1 源帧微调。
     //            采样关闭 (step=1)：维持现状键位 (向后兼容)。
     if (ctx.samplingActive) {
       if (e.key === "ArrowRight") {
@@ -280,8 +281,16 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
         if (e.shiftKey) return { type: "videoMicroStep", dir: -1 };
         return { type: "videoSeekGrid", dir: -1 };
       }
-      if (e.key === ".") return { type: "videoMicroStep", dir: 1 };
-      if (e.key === ",") return { type: "videoMicroStep", dir: -1 };
+      if (e.key === ".") {
+        return ctx.hasSelectedVideoTrack
+          ? { type: "videoSeekKeyframe", dir: 1 }
+          : { type: "videoMicroStep", dir: 1 };
+      }
+      if (e.key === ",") {
+        return ctx.hasSelectedVideoTrack
+          ? { type: "videoSeekKeyframe", dir: -1 }
+          : { type: "videoMicroStep", dir: -1 };
+      }
     } else {
       if (e.key === "ArrowRight") {
         if (e.shiftKey && ctx.hasSelectedVideoTrack) return { type: "videoSeekKeyframe", dir: 1 };
