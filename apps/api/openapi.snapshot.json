@@ -9735,13 +9735,34 @@
             "title": "Ai Rate",
             "type": "number"
           },
+          "ai_rate_series": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Ai Rate Series",
+            "type": "array"
+          },
           "completed": {
             "title": "Completed",
             "type": "integer"
           },
+          "completed_series": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Completed Series",
+            "type": "array"
+          },
           "pending_review": {
             "title": "Pending Review",
             "type": "integer"
+          },
+          "pending_review_series": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Pending Review Series",
+            "type": "array"
           },
           "total_annotations": {
             "default": 0,
@@ -9751,6 +9772,13 @@
           "total_data": {
             "title": "Total Data",
             "type": "integer"
+          },
+          "total_data_series": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Total Data Series",
+            "type": "array"
           }
         },
         "required": [
@@ -10888,8 +10916,20 @@
       "RegisterResponse": {
         "properties": {
           "access_token": {
-            "title": "Access Token",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access Token"
+          },
+          "email_verification_required": {
+            "default": false,
+            "title": "Email Verification Required",
+            "type": "boolean"
           },
           "token_type": {
             "default": "bearer",
@@ -10901,7 +10941,6 @@
           }
         },
         "required": [
-          "access_token",
           "user"
         ],
         "title": "RegisterResponse",
@@ -10929,6 +10968,21 @@
           "open_count"
         ],
         "title": "RegistrationDayPoint",
+        "type": "object"
+      },
+      "ResendVerificationRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ResendVerificationRequest",
         "type": "object"
       },
       "ResetPasswordRequest": {
@@ -12154,13 +12208,19 @@
             "type": "integer"
           },
           "total": {
-            "title": "Total",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
           "items",
-          "total",
           "limit",
           "offset"
         ],
@@ -12869,6 +12929,18 @@
             "title": "Email",
             "type": "string"
           },
+          "email_verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Verified At"
+          },
           "group_id": {
             "anyOf": [
               {
@@ -13065,6 +13137,20 @@
           }
         },
         "title": "VariantCatalog",
+        "type": "object"
+      },
+      "VerifyEmailRequest": {
+        "properties": {
+          "token": {
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "VerifyEmailRequest",
         "type": "object"
       },
       "VideoAssetFailureItem": {
@@ -15561,7 +15647,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.11.17"
+    "version": "0.12.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -18204,6 +18290,86 @@
           }
         },
         "summary": "Reset Password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/send-verification-email": {
+      "post": {
+        "description": "v0.12.0 · 重发验证邮件。无论邮箱是否存在 / 已验证都返回 202（防枚举）。",
+        "operationId": "send_verification_email_endpoint_api_v1_auth_send_verification_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResendVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Verification Email Endpoint",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/verify-email": {
+      "post": {
+        "description": "v0.12.0 · 消费验证 token，置 email_verified_at。",
+        "operationId": "verify_email_api_v1_auth_verify_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Email",
         "tags": [
           "auth"
         ]
@@ -26098,6 +26264,16 @@
                 }
               ],
               "title": "Batch Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unbatched",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unbatched",
+              "type": "boolean"
             }
           },
           {

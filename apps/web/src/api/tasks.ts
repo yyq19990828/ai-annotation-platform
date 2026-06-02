@@ -13,7 +13,8 @@ import type {
 
 export interface TaskListResponse {
   items: TaskResponse[];
-  total: number;
+  // v0.11.30 · 仅首页返回精确总数；cursor 翻页时为 null（前端复用首页值）。
+  total: number | null;
   limit: number;
   offset: number;
   next_cursor?: string | null;
@@ -23,6 +24,8 @@ export interface TaskListParams {
   status?: string;
   assignee_id?: string;
   batch_id?: string;
+  // v0.12.0 · true = 只返回 batch_id IS NULL（未归类）任务
+  unbatched?: boolean;
   limit?: number;
   offset?: number;
   cursor?: string;
@@ -102,6 +105,7 @@ export const tasksApi = {
     if (params?.status) q.set("status", params.status);
     if (params?.assignee_id) q.set("assignee_id", params.assignee_id);
     if (params?.batch_id) q.set("batch_id", params.batch_id);
+    if (params?.unbatched) q.set("unbatched", "true");
     if (params?.limit) q.set("limit", String(params.limit));
     if (params?.offset) q.set("offset", String(params.offset));
     if (params?.cursor) q.set("cursor", params.cursor);

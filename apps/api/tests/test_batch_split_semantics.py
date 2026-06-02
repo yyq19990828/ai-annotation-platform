@@ -12,11 +12,14 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.enums import BatchStatus
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.project import Project
 from app.db.models.task import Task
+from app.db.models.task_batch import TaskBatch
 from app.schemas.batch import BatchSplitRequest
 from app.services.dataset import DatasetService
+from app.services import batch as batch_service_mod
 from app.services.batch import BatchService
 
 
@@ -136,3 +139,47 @@ async def test_sequential_split_preserves_creation_order(
     ]
     assert set(first) == set(ordered_task_ids[:3])
     assert set(second) == set(ordered_task_ids[3:])
+
+
+@pytest.mark.asyncio
+async def test_assign_tasks_chunks_assign_all(
+    db_session: AsyncSession, super_admin, monkeypatch
+):
+    """v0.12.0 B5 · _assign_tasks 分块回写 batch_id：跨多块的长 list 仍全量分配。
+
+    用 monkeypatch 把分块大小压到 7（远小于 30 条），强制走多轮 UPDATE，
+    覆盖分块循环的边界，而无需真造 5000 条。
+    """
+    user, _ = super_admin
+    project = await _seed_linked(db_session, user.id, n_items=30)
+
+    task_ids = [
+        r[0]
+        for r in (
+            await db_session.execute(
+                select(Task.id).where(Task.project_id == project.id)
+            )
+        ).all()
+    ]
+    assert len(task_ids) == 30
+
+    batch = TaskBatch(
+        id=uuid.uuid4(),
+        project_id=project.id,
+        display_id=f"B-{uuid.uuid4().hex[:6]}",
+        name="chunk target",
+        status=BatchStatus.DRAFT,
+        created_by=user.id,
+    )
+    db_session.add(batch)
+    await db_session.flush()
+
+    # 7 不整除 30 → 末块更短，确认边界处理无遗漏
+    monkeypatch.setattr(batch_service_mod, "ASSIGN_CHUNK_SIZE", 7)
+    assigned = await BatchService(db_session)._assign_tasks(batch.id, task_ids)
+    assert assigned == 30
+
+    rows = (
+        await db_session.execute(select(Task.id).where(Task.batch_id == batch.id))
+    ).all()
+    assert len(rows) == 30

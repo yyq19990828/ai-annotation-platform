@@ -171,7 +171,9 @@ sequenceDiagram
 
 `POST /auth/register-open`，`ALLOW_OPEN_REGISTRATION=true` 时启用。新用户角色固定 `viewer`（最低权限），3/min 限流。
 
-未来角色提升前必须先完成：邮箱验证、CAPTCHA。详见 ROADMAP §A「开放注册二阶段」。
+**邮箱验证（v0.12.0+）**：由 `REQUIRE_EMAIL_VERIFICATION` 控制，留空时按环境派生（production 默认开、dev/staging 默认关）。开关打开时，开放注册后 `email_verified_at` 为空、登录被 `400 {code: "email_not_verified"}` 拦截，须点验证邮件链接（`POST /auth/verify-email`，24h 一次性 token）后方可登录；`POST /auth/send-verification-email` 可重发（防枚举恒 202）。邀请注册与管理员建号恒视为已验证。验证邮件复用 SMTP 配置；SMTP 未配置时仅把验证链接写入日志（dev 友好）。
+
+CAPTCHA 已在 v0.8.7 落地（Turnstile，见 §3）。
 
 ---
 

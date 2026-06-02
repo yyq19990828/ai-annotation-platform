@@ -156,6 +156,8 @@ class InvitationService:
             group_name=inv.group_name,
             status="online",
             is_active=True,
+            # v0.12.0 · 邀请 token 本身即身份证明，邀请注册恒视为已验证
+            email_verified_at=datetime.now(timezone.utc),
         )
         db.add(user)
         await db.flush()

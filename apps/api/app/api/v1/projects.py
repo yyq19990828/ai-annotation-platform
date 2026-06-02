@@ -1,11 +1,12 @@
 import uuid
 from collections import Counter
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func, text, or_, and_
 from app.deps import (
     get_db,
     get_current_user,
@@ -40,6 +41,8 @@ from app.config import settings
 router = APIRouter()
 
 _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+_STATS_SERIES_POINTS = 12
+_STATS_SERIES_STEP = timedelta(days=7)
 
 
 def _visible_project_filter(user: User):
@@ -52,6 +55,97 @@ def _visible_project_filter(user: User):
     return Project.id.in_(
         select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)
     )
+
+
+def _stats_bucket_ends(now: datetime) -> list[datetime]:
+    return [
+        now - _STATS_SERIES_STEP * (_STATS_SERIES_POINTS - 1 - i)
+        for i in range(_STATS_SERIES_POINTS)
+    ]
+
+
+async def _build_project_stats_series(
+    db: AsyncSession,
+    visible_project_ids: list[uuid.UUID],
+) -> dict[str, list[int] | list[float]]:
+    from app.db.models.annotation import Annotation
+    from app.db.models.task import Task
+
+    bucket_ends = _stats_bucket_ends(datetime.now(timezone.utc))
+
+    # v0.12.1 · 12 桶 × 标量原本逐桶 sequential（48 次 round-trip）；改用
+    # count(*) FILTER (WHERE bucket) 把每个指标的 12 桶折叠进一条聚合：Task 3 指标
+    # 合 1 条、Annotation 2 指标合 1 条 = 共 2 次往返。AsyncSession 不允许同一
+    # session 并发查询，故走「减查询数」而非 asyncio.gather。
+    task_cols = (
+        [func.count().filter(Task.created_at <= be) for be in bucket_ends]
+        + [
+            func.count().filter(
+                and_(
+                    Task.status == "completed",
+                    or_(
+                        Task.reviewed_at <= be,
+                        and_(Task.reviewed_at.is_(None), Task.updated_at <= be),
+                    ),
+                )
+            )
+            for be in bucket_ends
+        ]
+        + [
+            func.count().filter(
+                and_(
+                    Task.submitted_at.isnot(None),
+                    Task.submitted_at <= be,
+                    or_(Task.reviewed_at.is_(None), Task.reviewed_at > be),
+                )
+            )
+            for be in bucket_ends
+        ]
+    )
+    task_row = (
+        await db.execute(
+            select(*task_cols)
+            .select_from(Task)
+            .where(Task.project_id.in_(visible_project_ids))
+        )
+    ).one()
+    n = _STATS_SERIES_POINTS
+    total_data_series = [int(v or 0) for v in task_row[0:n]]
+    completed_series = [int(v or 0) for v in task_row[n : 2 * n]]
+    pending_review_series = [int(v or 0) for v in task_row[2 * n : 3 * n]]
+
+    ann_base = (
+        Annotation.is_active.is_(True),
+        Annotation.was_cancelled.is_(False),
+        Annotation.project_id.in_(visible_project_ids),
+    )
+    ann_cols = [
+        func.count().filter(Annotation.created_at <= be) for be in bucket_ends
+    ] + [
+        func.count().filter(
+            and_(
+                Annotation.created_at <= be,
+                Annotation.parent_prediction_id.isnot(None),
+            )
+        )
+        for be in bucket_ends
+    ]
+    ann_row = (
+        await db.execute(select(*ann_cols).select_from(Annotation).where(*ann_base))
+    ).one()
+    total_ann_series = [int(v or 0) for v in ann_row[0:n]]
+    ai_ann_series = [int(v or 0) for v in ann_row[n : 2 * n]]
+    ai_rate_series = [
+        round(ai / total * 100, 1) if total else 0.0
+        for ai, total in zip(ai_ann_series, total_ann_series)
+    ]
+
+    return {
+        "total_data_series": total_data_series,
+        "completed_series": completed_series,
+        "pending_review_series": pending_review_series,
+        "ai_rate_series": ai_rate_series,
+    }
 
 
 async def _serialize_project(
@@ -221,6 +315,10 @@ async def get_stats(
             pending_review=0,
             total_annotations=0,
             ai_derived_annotations=0,
+            total_data_series=[0] * _STATS_SERIES_POINTS,
+            completed_series=[0] * _STATS_SERIES_POINTS,
+            ai_rate_series=[0.0] * _STATS_SERIES_POINTS,
+            pending_review_series=[0] * _STATS_SERIES_POINTS,
         )
 
     total_ann_result = await db.execute(
@@ -251,6 +349,7 @@ async def get_stats(
         if total_annotations
         else 0.0
     )
+    series = await _build_project_stats_series(db, visible_ids)
 
     return ProjectStats(
         total_data=total,
@@ -259,6 +358,7 @@ async def get_stats(
         pending_review=review,
         total_annotations=total_annotations,
         ai_derived_annotations=ai_derived_annotations,
+        **series,
     )
 
 

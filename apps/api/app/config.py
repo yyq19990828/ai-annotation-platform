@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # v0.10.24 · 版本号单源真值。FastAPI title version 与 /health version 都读它，
     # 发版只改这一处（+ pyproject.toml / package.json）。运维 scrape /health 拿到的
     # 版本号此前长期 stale（曾硬编码 0.7.6），故收口到 settings。
-    app_version: str = "0.11.17"
+    app_version: str = "0.12.0"
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
 
@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     # v0.11.15 · 连接器导入护栏。超限 job 会失败，不会部分导入。
     dataset_import_max_files: int = 50_000
     dataset_import_max_total_bytes: int = 200 * 1024 * 1024 * 1024
+
+    # v0.12.0 · dataset link 建 task 同步阈值：item 数 ≤ 阈值走同步快路径，
+    # > 阈值改入 Celery 异步建 task（避免大 dataset 在 HTTP 单事务里超时 + 长事务锁）。
+    task_create_sync_threshold: int = 2000
 
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "minioadmin"
@@ -186,6 +190,11 @@ class Settings(BaseSettings):
     allow_open_registration: bool = False
     max_invitations_per_day: int = 30
 
+    # v0.12.0 · 开放注册邮箱验证。None = 按环境派生（production 默认开、dev/staging 默认关），
+    # 显式 true/false 覆盖派生（staging 提前联调 / 生产临时兜底）。业务代码只读
+    # email_verification_required property，不直接读裸字段。
+    require_email_verification: bool | None = None
+
     # CORS — production 收紧 methods / headers
     cors_allow_methods: list[str] = ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"]
     cors_allow_headers: list[str] = ["Authorization", "Content-Type", "X-Request-ID"]
@@ -231,6 +240,13 @@ class Settings(BaseSettings):
     @property
     def smtp_configured(self) -> bool:
         return bool(self.smtp_host and self.smtp_port and self.smtp_from)
+
+    @property
+    def email_verification_required(self) -> bool:
+        """开放注册是否强制邮箱验证。None → production 开、其它环境关。"""
+        if self.require_email_verification is not None:
+            return self.require_email_verification
+        return self.environment == "production"
 
     class Config:
         # 用绝对路径让从任何 cwd 起 uvicorn 都能读到 repo root .env

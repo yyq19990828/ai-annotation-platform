@@ -79,3 +79,4 @@
 | 11 | [参考资料](./11-references.md) | §8-§9 参考资料 + 总结 |
 | 12 | [大数据集分批策略](./12-large-dataset-batching.md) | 智能切批 / 不可变快照 / 主动学习闭环 |
 | 13 | [mask→polygon simplify tolerance 评测](./13-simplify-tolerance-eval.md) | v0.9.4 phase 3 默认 tolerance 选定依据 |
+| 14 | [点云 + 图像联合标注](./14-point-cloud-image-fusion.md) | 融合原理 + SUSTechPOINTS/xtreme1/CVAT 源码级拆解 + 本平台 gap 分析与改动评估 |

@@ -115,7 +115,8 @@ class TaskLockResponse(BaseModel):
 
 class TaskListResponse(BaseModel):
     items: list[TaskOut]
-    total: int
+    # v0.11.30 · 仅首页返回精确总数；cursor 翻页时为 None（前端复用首页值）。
+    total: int | None = None
     limit: int
     offset: int
     next_cursor: str | None = None

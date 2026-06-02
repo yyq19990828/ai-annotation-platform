@@ -22,6 +22,10 @@ from app.services.progress import publish_batch_status_change
 
 logger = logging.getLogger(__name__)
 
+# v0.12.0 B5 · split 回写 batch_id 的分块大小，避免十万级未归类「一键全量建包」
+# 打成单条巨 IN/UPDATE。模块级常量便于测试覆盖分块边界。
+ASSIGN_CHUNK_SIZE = 5000
+
 VALID_TRANSITIONS: dict[str, set[str]] = {
     BatchStatus.DRAFT: {BatchStatus.ACTIVE},
     # v0.9.5：active → pre_annotated 由 batch_predict task 末尾自动触发
@@ -621,9 +625,12 @@ class BatchService:
     ) -> int:
         if not task_ids:
             return 0
-        await self.db.execute(
-            update(Task).where(Task.id.in_(task_ids)).values(batch_id=batch_id)
-        )
+        # v0.12.0 B5 · 分块 UPDATE，避免十万级未归类「一键全量建包」打成单条巨 IN/UPDATE。
+        for i in range(0, len(task_ids), ASSIGN_CHUNK_SIZE):
+            chunk = task_ids[i : i + ASSIGN_CHUNK_SIZE]
+            await self.db.execute(
+                update(Task).where(Task.id.in_(chunk)).values(batch_id=batch_id)
+            )
         return len(task_ids)
 
     async def assign_tasks_to_batch(

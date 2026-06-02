@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from "react";
-import { Navigate, Outlet, Route, Routes, useSearchParams } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { TopBar } from "@/components/shell/TopBar";
 import { PerfHud, usePerfHudStore } from "@/components/PerfHud";
 import { useNotificationSocket } from "@/hooks/useNotificationSocket";
@@ -10,12 +10,14 @@ import { ToastRack, useToastStore } from "@/components/ui/Toast";
 // 仪表盘 / 登录 类首屏关键路径：保持同步加载（避免 Suspense 闪烁）
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { AdminDashboard } from "@/pages/Dashboard/AdminDashboard";
+import { AdminProjectsDashboard } from "@/pages/Dashboard/AdminProjectsDashboard";
 import { ReviewerDashboard } from "@/pages/Dashboard/ReviewerDashboard";
 import { AnnotatorDashboard } from "@/pages/Dashboard/AnnotatorDashboard";
 import { ViewerDashboard } from "@/pages/Dashboard/ViewerDashboard";
 import { LoginPage } from "@/pages/Login/LoginPage";
 import { ForgotPasswordPage } from "@/pages/Login/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/pages/Login/ResetPasswordPage";
+import { VerifyEmailPage } from "@/pages/Login/VerifyEmailPage";
 import { RegisterPage } from "@/pages/Register/RegisterPage";
 import { UnauthorizedPage } from "@/pages/Unauthorized/UnauthorizedPage";
 
@@ -91,11 +93,9 @@ import styles from "./App.module.css";
 
 function DashboardRouter() {
   const { role } = usePermissions();
-  const [params] = useSearchParams();
-  // B-3: super_admin 默认进入"平台概览"，?view=projects 切到与 project_admin 一致的"项目总览"
   switch (role) {
     case "super_admin":
-      return params.get("view") === "projects" ? <DashboardPage /> : <AdminDashboard />;
+      return <AdminDashboard />;
     case "project_admin":
       return <DashboardPage />;
     case "reviewer":
@@ -107,6 +107,14 @@ function DashboardRouter() {
     default:
       return <DashboardPage />;
   }
+}
+
+function AdminProjectsRoute() {
+  const { role } = usePermissions();
+  if (role !== "super_admin") {
+    return <Navigate to="/unauthorized" replace />;
+  }
+  return <AdminProjectsDashboard />;
 }
 
 function AppShell() {
@@ -243,6 +251,7 @@ export function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
 
       <Route
         path="/projects/:id/annotate"
@@ -274,6 +283,7 @@ export function App() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardRouter />} />
+        <Route path="/projects" element={<AdminProjectsRoute />} />
         <Route
           path="/admin/people"
           element={

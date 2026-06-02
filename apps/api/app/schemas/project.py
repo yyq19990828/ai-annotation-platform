@@ -225,6 +225,10 @@ class ProjectStats(BaseModel):
     pending_review: int
     total_annotations: int = 0
     ai_derived_annotations: int = 0
+    total_data_series: list[int] = Field(default_factory=list)
+    completed_series: list[int] = Field(default_factory=list)
+    ai_rate_series: list[float] = Field(default_factory=list)
+    pending_review_series: list[int] = Field(default_factory=list)
 
 
 class ProjectClassUsageOut(BaseModel):

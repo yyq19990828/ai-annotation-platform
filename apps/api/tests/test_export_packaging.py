@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import tempfile
 import uuid
 import zipfile
 
@@ -164,18 +166,31 @@ async def test_video_yolo_frames_zip_writes_grid_labels_and_manifest(monkeypatch
         attributes={"speed": 3},
     )
 
-    data, file_count = await _build_video_export_zip(
-        None,
-        None,
-        project,
-        [task],
-        [track, bbox],
-        {item_id: item},
-        batch_id=None,
-        targets=["yolo-frames-det"],
-        include_attributes=True,
-        video_frame_mode="keyframes",
-    )
+    # v0.12.1 · 流式签名：喂内存 chunk（单块），ZIP 落盘 tmp_path，断言后清理。
+    async def _chunks():
+        yield [task], {task_id: [track, bbox]}, {item_id: item}
+
+    fd, tmp_path = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    try:
+        ret_path, file_count, size_bytes = await _build_video_export_zip(
+            None,
+            project,
+            _chunks(),
+            tmp_path=tmp_path,
+            batch_id=None,
+            targets=["yolo-frames-det"],
+            include_attributes=True,
+            video_frame_mode="keyframes",
+        )
+        assert ret_path == tmp_path
+        assert size_bytes == os.path.getsize(tmp_path)
+        data = open(tmp_path, "rb").read()
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
     assert file_count == 3
     with zipfile.ZipFile(io.BytesIO(data)) as zf:

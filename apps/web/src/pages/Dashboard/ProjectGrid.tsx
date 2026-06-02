@@ -7,6 +7,7 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { type ProjectResponse } from "@/api/projects";
 import { ExportSection } from "./ExportSection";
 import { ProjectActionsMenu } from "./ProjectActionsMenu";
+import { projectDisplayType } from "@/utils/projectDisplay";
 
 import styles from "./ProjectGrid.module.css";
 
@@ -68,7 +69,7 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
                     <span className={`mono ${styles.projectId}`}>
                       {p.display_id}
                     </span>
-                    <span className={styles.projectType}>{p.type_label}</span>
+                    <span className={styles.projectType}>{projectDisplayType(p)}</span>
                   </div>
                 </div>
                 {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}

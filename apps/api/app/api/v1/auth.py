@@ -24,6 +24,8 @@ from app.services.audit import AuditAction, AuditService
 from app.services.captcha_service import verify_turnstile_token
 from app.services import login_failed_counter
 from app.services.password_reset import PasswordResetService
+from app.services.email_verification import EmailVerificationService
+from app.services.email import send_verification_email, SmtpConfigError
 from app.services.system_settings_service import SystemSettingsService
 from app.config import settings
 import logging
@@ -54,6 +56,52 @@ class ResetPasswordRequest(BaseModel):
         if errors:
             raise ValueError("; ".join(errors))
         return v
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(min_length=1)
+
+
+class ResendVerificationRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def _normalize(cls, v: str) -> str:
+        return (v or "").strip().lower()
+
+
+async def _dispatch_verification_email(db: AsyncSession, user: User) -> None:
+    """生成验证 token + 发信。SMTP 未配置 / 发送失败时仅记日志（dev 友好），不阻断注册。"""
+    token = await EmailVerificationService(db).create_token(user)
+    base_url = (
+        await SystemSettingsService.get(db, "frontend_base_url")
+        or settings.frontend_base_url
+    )
+    verify_url = f"{str(base_url).rstrip('/')}/verify-email?token={token}"
+    smtp_host = await SystemSettingsService.get(db, "smtp_host")
+    # 含明文一次性 token 的 url 仅在非 production 落日志（dev 友好）；production 只记
+    # user_id + 原因，避免 token 经集中式日志扩散后被用于 24h 内冒充验证。
+    is_prod = settings.environment == "production"
+    if not smtp_host:
+        if is_prod:
+            logger.info(
+                "Email verification pending for user %s: SMTP not configured", user.id
+            )
+        else:
+            logger.info(
+                "Email verification token for %s (SMTP not configured): %s",
+                user.email,
+                verify_url,
+            )
+        return
+    try:
+        await send_verification_email(db, user.email, verify_url)
+    except SmtpConfigError as e:
+        if is_prod:
+            logger.warning("发送验证邮件失败 (user %s): %s", user.id, e)
+        else:
+            logger.warning("发送验证邮件失败 (%s): %s; url=%s", user.email, e, verify_url)
 
 
 @router.post("/login", response_model=Token)
@@ -121,6 +169,28 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN, detail="账户已被停用"
         )
 
+    # v0.12.0 · 邮箱验证 gate（仅开放注册场景生效；邀请/管理员建号恒已验证）。
+    # 用 400 + 结构化 detail.code，让前端识别后显示「重发验证邮件」入口而非通用 toast。
+    if settings.email_verification_required and user.email_verified_at is None:
+        await AuditService.log(
+            db,
+            actor=user,
+            action=AuditAction.AUTH_LOGIN,
+            target_type="user",
+            target_id=str(user.id),
+            request=request,
+            status_code=400,
+            detail={"email": user.email, "result": "email_not_verified"},
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "email_not_verified",
+                "message": "邮箱未验证，请查收验证邮件后再登录",
+            },
+        )
+
     # 凭据通过 → 清零失败计数
     await login_failed_counter.reset(client_ip)
 
@@ -173,15 +243,26 @@ async def forgot_password(
             or settings.frontend_base_url
         )
         smtp_host = await SystemSettingsService.get(db, "smtp_host")
+        # 含明文一次性 token 的 url/token 仅在非 production 落日志（dev 友好）；
+        # production 只记 email + 是否配置 SMTP，防 token 经集中式日志扩散后被用于重置密码。
+        is_prod = settings.environment == "production"
         if smtp_host:
-            reset_url = f"{str(base_url).rstrip('/')}/reset-password?token={token}"
-            logger.info("Password reset token for %s: %s", data.email, reset_url)
+            if is_prod:
+                logger.info("Password reset email dispatched for %s", data.email)
+            else:
+                reset_url = f"{str(base_url).rstrip('/')}/reset-password?token={token}"
+                logger.info("Password reset token for %s: %s", data.email, reset_url)
         else:
-            logger.info(
-                "Password reset token for %s (SMTP not configured): token=%s",
-                data.email,
-                token,
-            )
+            if is_prod:
+                logger.info(
+                    "Password reset requested for %s but SMTP not configured", data.email
+                )
+            else:
+                logger.info(
+                    "Password reset token for %s (SMTP not configured): token=%s",
+                    data.email,
+                    token,
+                )
 
     # 无论成功与否都返回 202，防邮箱枚举
     return {"message": "如果该邮箱已注册，您将收到一封包含重置链接的邮件"}
@@ -211,6 +292,46 @@ async def reset_password(
     )
     await db.commit()
     return {"message": "密码已重置，请使用新密码登录"}
+
+
+@router.post("/verify-email")
+async def verify_email(
+    data: VerifyEmailRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """v0.12.0 · 消费验证 token，置 email_verified_at。"""
+    user = await EmailVerificationService(db).consume_token(data.token)
+    if not user:
+        raise HTTPException(status_code=400, detail="验证链接无效或已过期")
+    await AuditService.log(
+        db,
+        actor=user,
+        action=AuditAction.USER_REGISTER,
+        target_type="user",
+        target_id=str(user.id),
+        request=request,
+        status_code=200,
+        detail={"email": user.email, "result": "email_verified"},
+    )
+    await db.commit()
+    return {"message": "邮箱已验证，请登录"}
+
+
+@router.post("/send-verification-email", status_code=202)
+@limiter.limit("3/minute")
+async def send_verification_email_endpoint(
+    data: ResendVerificationRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """v0.12.0 · 重发验证邮件。无论邮箱是否存在 / 已验证都返回 202（防枚举）。"""
+    result = await db.execute(select(User).where(User.email == data.email))
+    user = result.scalar_one_or_none()
+    if user is not None and user.email_verified_at is None:
+        await _dispatch_verification_email(db, user)
+        await db.commit()
+    return {"message": "如果该邮箱待验证，您将收到一封包含验证链接的邮件"}
 
 
 @router.get("/registration-status")
@@ -244,13 +365,16 @@ async def register_open(
             detail="该邮箱已被注册",
         )
 
+    require_verification = settings.email_verification_required
+    now = datetime.now(timezone.utc)
     user = User(
         email=payload.email,
         name=payload.name,
         password_hash=hash_password(payload.password),
         role=UserRole.VIEWER.value,
-        status="online",
+        status="offline" if require_verification else "online",
         is_active=True,
+        email_verified_at=None if require_verification else now,
     )
     db.add(user)
     await db.flush()
@@ -263,11 +387,26 @@ async def register_open(
         target_id=str(user.id),
         request=request,
         status_code=201,
-        detail={"email": user.email, "role": user.role, "method": "open_registration"},
+        detail={
+            "email": user.email,
+            "role": user.role,
+            "method": "open_registration",
+            "email_verification_required": require_verification,
+        },
     )
+
+    if require_verification:
+        await _dispatch_verification_email(db, user)
+        await db.commit()
+        await db.refresh(user)
+        return RegisterResponse(
+            access_token=None,
+            user=UserOut.model_validate(user),
+            email_verification_required=True,
+        )
+
     await db.commit()
     await db.refresh(user)
-
     token = create_access_token(subject=str(user.id), role=user.role)
     return RegisterResponse(
         access_token=token,

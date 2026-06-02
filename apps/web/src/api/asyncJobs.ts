@@ -16,6 +16,7 @@ export type AsyncJobKind =
   | "predictions_import"
   | "prediction_retry"
   | "dataset_import"
+  | "create_tasks"
   | string;
 
 export interface AsyncJob {

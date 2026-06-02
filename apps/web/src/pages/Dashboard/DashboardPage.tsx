@@ -23,6 +23,8 @@ import { FilterDrawer, EMPTY_FILTERS, type DashboardFilters } from "./FilterDraw
 import { ProjectGrid } from "./ProjectGrid";
 import { ProjectActionsMenu } from "./ProjectActionsMenu";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import { projectDisplayType } from "@/utils/projectDisplay";
+import { statSeriesHint, statSparkValues, statTrendFromSeries } from "@/utils/projectStatsSeries";
 
 import styles from "./DashboardPage.module.css";
 
@@ -60,7 +62,7 @@ function ProjectRow({
   const ownerInitial = p.owner_name?.slice(0, 1) ?? "?";
 
   return (
-    <tr className={styles.projectRow} onClick={() => onOpen(p)}>
+    <tr className={styles.projectRow}>
       <td className={styles.projectCellPrimary}>
         <div className={styles.projectIdentity}>
           <div className={styles.projectTypeIcon}>
@@ -71,7 +73,7 @@ function ProjectRow({
             <div className={styles.projectMeta}>
               <span className={`mono ${styles.projectId}`}>{p.display_id}</span>
               <span className={styles.metaDot}>·</span>
-              <span className={styles.projectType}>{p.type_label}</span>
+              <span className={styles.projectType}>{projectDisplayType(p)}</span>
             </div>
           </div>
         </div>
@@ -187,8 +189,7 @@ export function DashboardPage() {
   const wizardOpen = searchParams.get("new") === "1";
   // v0.10.11 · 从 ProjectGrid "复制项目" 跳来时携带 ?from=<id>; Wizard 据此预填.
   const wizardSourceProjectId = searchParams.get("from") || undefined;
-  // B-35 · 内部 list/grid 切换使用独立的 layout 参数，避免与外层 DashboardRouter 的 view=projects 冲突
-  // （否则超管点击网格切换会把 view=projects 覆盖成 view=grid，被路由回平台概览）。
+  // B-35 · list/grid 切换使用独立的 layout 参数，避免占用页面级 view 参数。
   const viewMode: "list" | "grid" = searchParams.get("layout") === "grid" ? "grid" : "list";
   const setViewMode = (mode: "list" | "grid") => {
     const next = new URLSearchParams(searchParams);
@@ -212,7 +213,7 @@ export function DashboardPage() {
     if (WORKBENCH_PROJECT_TYPES.has(p.type_key)) {
       navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
     } else {
-      pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `类型 ${p.type_label} 的标注界面尚未实现` });
+      pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `${projectDisplayType(p)} 的标注界面尚未实现` });
     }
   };
 
@@ -280,10 +281,42 @@ export function DashboardPage() {
       </div>
 
       <div className={styles.statsGrid}>
-        <StatCard icon="layers" label="数据总量" value={(stats?.total_data ?? 0).toLocaleString()} trend={12} sparkValues={[42, 50, 48, 56, 60, 65, 78, 82, 89, 95, 102, 108]} sparkColor="var(--color-accent)" hint="近 12 周" />
-        <StatCard icon="check" label="已完成标注" value={(stats?.completed ?? 0).toLocaleString()} trend={8} sparkValues={[20, 28, 24, 36, 42, 48, 56, 62, 68, 74, 80, 86]} sparkColor="var(--color-success)" hint="近 12 周" />
-        <StatCard icon="sparkles" label="AI 接管率" value={`${stats?.ai_rate ?? 0}%`} trend={5} sparkValues={[42, 48, 50, 52, 55, 56, 58, 59, 60, 61, 62, 62]} sparkColor="var(--color-ai)" hint="自动通过" />
-        <StatCard icon="flag" label="待审核" value={(stats?.pending_review ?? 0).toLocaleString()} trend={-14} sparkValues={[820, 760, 920, 880, 760, 700, 680, 620, 580, 540, 480, 412]} sparkColor="var(--color-warning)" hint="近 12 周" />
+        <StatCard
+          icon="layers"
+          label="任务总量"
+          value={(stats?.total_data ?? 0).toLocaleString()}
+          trend={statTrendFromSeries(stats?.total_data_series)}
+          sparkValues={statSparkValues(stats?.total_data_series)}
+          sparkColor="var(--color-accent)"
+          hint={statSeriesHint(stats?.total_data_series)}
+        />
+        <StatCard
+          icon="check"
+          label="已完成任务"
+          value={(stats?.completed ?? 0).toLocaleString()}
+          trend={statTrendFromSeries(stats?.completed_series)}
+          sparkValues={statSparkValues(stats?.completed_series)}
+          sparkColor="var(--color-success)"
+          hint={statSeriesHint(stats?.completed_series)}
+        />
+        <StatCard
+          icon="sparkles"
+          label="AI 派生标注率"
+          value={`${stats?.ai_rate ?? 0}%`}
+          trend={statTrendFromSeries(stats?.ai_rate_series)}
+          sparkValues={statSparkValues(stats?.ai_rate_series)}
+          sparkColor="var(--color-ai)"
+          hint={statSeriesHint(stats?.ai_rate_series)}
+        />
+        <StatCard
+          icon="flag"
+          label="待审核任务"
+          value={(stats?.pending_review ?? 0).toLocaleString()}
+          trend={statTrendFromSeries(stats?.pending_review_series)}
+          sparkValues={statSparkValues(stats?.pending_review_series)}
+          sparkColor="var(--color-warning)"
+          hint={statSeriesHint(stats?.pending_review_series)}
+        />
       </div>
 
       <Card>

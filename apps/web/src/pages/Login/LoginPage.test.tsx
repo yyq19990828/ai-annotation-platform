@@ -6,15 +6,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
+import { ApiError } from "@/api/client";
 
 const mockLogin: any = { isPending: false, isError: false, error: null, mutate: vi.fn() };
 const mockRegStatus: any = { data: { open_registration_enabled: true } };
+const mockResend: any = { isPending: false, mutate: vi.fn() };
 
 vi.mock("@/hooks/useAuth", () => ({
   useLogin: () => mockLogin,
 }));
 vi.mock("@/hooks/useInvitation", () => ({
   useRegistrationStatus: () => mockRegStatus,
+  useResendVerification: () => mockResend,
 }));
 
 import { LoginPage } from "./LoginPage";
@@ -94,6 +97,18 @@ describe("LoginPage", () => {
     mockLogin.error = new Error("账号已被禁用");
     renderUI();
     expect(screen.getByText("账号已被禁用")).toBeInTheDocument();
+  });
+
+  it("email_not_verified → 显示重发入口，点击调 resend.mutate", () => {
+    mockLogin.isError = true;
+    mockLogin.error = new ApiError(400, "邮箱未验证", { code: "email_not_verified" });
+    renderUI();
+    fireEvent.change(screen.getByPlaceholderText("输入账号或邮箱"), {
+      target: { value: "unverified@test.com" },
+    });
+    const btn = screen.getByText("重新发送验证邮件");
+    fireEvent.click(btn);
+    expect(mockResend.mutate).toHaveBeenCalledWith("unverified@test.com", expect.any(Object));
   });
 
   it("eye toggle 切换密码可见性", () => {

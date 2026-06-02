@@ -43,3 +43,6 @@ apps/api/data/duckdb/
 .claude/worktrees/
 # Claude Code 运行时锁（ScheduleWakeup 维护；含 sessionId/pid/时间戳，因机器而异）
 .claude/scheduled_tasks.lock
+
+# 第三方开源仓库源码（仅供本地源码级调研，不纳入版本管理）
+third-party/

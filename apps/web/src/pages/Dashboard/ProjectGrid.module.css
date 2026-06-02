@@ -55,17 +55,19 @@
 .projectMeta {
   display: flex;
   gap: 6px;
-  align-items: center;
+  align-items: baseline;
   margin-top: 2px;
 }
 
 .projectId {
-  font-size: 10.5px;
+  font-size: 11px;
+  line-height: 15px;
   color: var(--color-fg-subtle);
 }
 
 .projectType {
   font-size: 11px;
+  line-height: 15px;
   color: var(--color-fg-muted);
 }
 
