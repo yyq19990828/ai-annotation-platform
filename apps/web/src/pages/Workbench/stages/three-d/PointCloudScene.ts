@@ -9,13 +9,29 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { PCDLoader } from "three/examples/jsm/loaders/PCDLoader.js";
 
+import { boxToMatrix4 } from "./geometry/box3d";
+
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
 const DECIMATE_THRESHOLD = 500_000;
+
+// 选中框高亮色(线框)。未选中用类别色。
+const SELECTED_EDGE_COLOR = 0xffd54a;
 
 export interface PointCloudStats {
   totalPoints: number;
   renderedPoints: number;
   decimated: boolean;
+}
+
+/** v0.13.3 · 渲染层用的 3D 框输入(PSR + 类别色 + 选中态),由 React 从标注派生。 */
+export interface SceneBox {
+  id: string;
+  center: [number, number, number];
+  size: [number, number, number];
+  rotation: [number, number, number];
+  /** 类别色(hex 字符串,如 "#4f8cff");选中时线框另用高亮色。 */
+  color: string;
+  selected: boolean;
 }
 
 export class PointCloudScene {
@@ -27,6 +43,18 @@ export class PointCloudScene {
   private raf = 0;
   private disposed = false;
   private container: HTMLElement;
+
+  // v0.13.3 · 3D 框图层:每框一个 Group(线框 LineSegments + 半透明拾取 Mesh),
+  // 用 boxToMatrix4 设矩阵。共享单位几何(边长 1),材质按框单独建(颜色不同)。
+  private boxLayer = new THREE.Group();
+  private boxGroups = new Map<string, THREE.Group>();
+  private readonly unitEdges = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
+  private readonly unitBox = new THREE.BoxGeometry(1, 1, 1);
+  private readonly raycaster = new THREE.Raycaster();
+
+  // v0.13.3 · 鲁棒取景中心/半径(mean ± 2.5σ,见 setRobustFrame)。
+  private readonly viewCenter = new THREE.Vector3();
+  private viewRadius = 10;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -52,6 +80,8 @@ export class PointCloudScene {
     const grid = new THREE.GridHelper(100, 50, 0x2a2f3a, 0x1a1d24);
     grid.rotation.x = Math.PI / 2;
     this.scene.add(grid);
+
+    this.scene.add(this.boxLayer);
 
     this.animate();
   }
@@ -97,7 +127,8 @@ export class PointCloudScene {
     this.removePoints();
     this.points = new THREE.Points(geom, material);
     this.scene.add(this.points);
-    this.fitToBounds(geom.boundingBox);
+    this.setRobustFrame(positions, rendered);
+    this.frameView();
 
     return { totalPoints: total, renderedPoints: rendered, decimated };
   }
@@ -128,21 +159,38 @@ export class PointCloudScene {
     geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   }
 
-  private fitToBounds(box: THREE.Box3 | null) {
-    if (!box) return;
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
-    const radius = Math.max(size.x, size.y, size.z) * 0.5 || 10;
-    this.controls.target.copy(center);
-    this.camera.position.set(center.x, center.y - radius * 2.2, center.z + radius * 1.2);
-    this.camera.near = Math.max(radius / 100, 0.1);
-    this.camera.far = radius * 50;
+  /**
+   * v0.13.3 · 鲁棒取景:用 mean ± 2.5σ 框住稠密区,而非 bbox。LiDAR 帧常带远处稀疏
+   * 离群点(本夹具 bbox 达 369×297m 但稠密区仅 ~76×110m),按 bbox 取景会把相机拉得
+   * 极远、点云与标注框都缩成几像素。mean/std 受少量离群点影响小,框得准。
+   */
+  private setRobustFrame(positions: Float32Array, count: number) {
+    if (count === 0) return;
+    let sx = 0, sy = 0, sz = 0, sxx = 0, syy = 0, szz = 0;
+    for (let i = 0; i < count; i++) {
+      const x = positions[i * 3], y = positions[i * 3 + 1], z = positions[i * 3 + 2];
+      sx += x; sy += y; sz += z;
+      sxx += x * x; syy += y * y; szz += z * z;
+    }
+    const mx = sx / count, my = sy / count, mz = sz / count;
+    const sd = (sum2: number, m: number) => Math.sqrt(Math.max(sum2 / count - m * m, 0));
+    this.viewCenter.set(mx, my, mz);
+    this.viewRadius = Math.max(2.5 * Math.max(sd(sxx, mx), sd(syy, my), sd(szz, mz)), 5);
+  }
+
+  private frameView() {
+    const c = this.viewCenter;
+    const r = this.viewRadius;
+    this.controls.target.copy(c);
+    this.camera.position.set(c.x, c.y - r * 2.2, c.z + r * 1.2);
+    this.camera.near = Math.max(r / 100, 0.1);
+    this.camera.far = r * 50;
     this.camera.updateProjectionMatrix();
     this.controls.update();
   }
 
   resetView() {
-    if (this.points) this.fitToBounds(this.points.geometry.boundingBox);
+    this.frameView();
   }
 
   setPointSize(size: number) {
@@ -167,10 +215,100 @@ export class PointCloudScene {
     this.points = null;
   }
 
+  /**
+   * v0.13.3 · 同步 3D 框图层到给定集合(diff 增删改)。共享单位几何;
+   * 每框材质单独建(颜色不同),移除时 dispose 材质(几何只在 scene dispose 时清)。
+   */
+  setBoxes(boxes: SceneBox[]) {
+    const next = new Set(boxes.map((b) => b.id));
+    for (const [id, group] of this.boxGroups) {
+      if (!next.has(id)) {
+        this.boxLayer.remove(group);
+        this.disposeBoxGroup(group);
+        this.boxGroups.delete(id);
+      }
+    }
+    for (const b of boxes) {
+      let group = this.boxGroups.get(b.id);
+      if (!group) {
+        group = this.createBoxGroup(b.id);
+        this.boxGroups.set(b.id, group);
+        this.boxLayer.add(group);
+      }
+      this.updateBoxGroup(group, b);
+    }
+  }
+
+  private createBoxGroup(id: string): THREE.Group {
+    const group = new THREE.Group();
+    group.matrixAutoUpdate = false; // 矩阵由 boxToMatrix4 显式设
+    // depthTest:false + renderOrder:框始终画在点云之上。否则细线框会被点云遮挡 / 淹没,
+    // 远视角下几乎不可见(标注 overlay 的惯例做法)。fill 兼作射线拾取目标 + 选中淡填充。
+    const fill = new THREE.Mesh(
+      this.unitBox,
+      new THREE.MeshBasicMaterial({
+        transparent: true,
+        opacity: 0.06,
+        depthWrite: false,
+        depthTest: false,
+      }),
+    );
+    fill.renderOrder = 2;
+    fill.userData.boxId = id; // 供 pickBox 反查
+    const edges = new THREE.LineSegments(
+      this.unitEdges,
+      new THREE.LineBasicMaterial({ transparent: true, depthTest: false }),
+    );
+    edges.renderOrder = 3;
+    group.add(fill); // children[0] = 拾取 mesh
+    group.add(edges); // children[1] = 线框
+    return group;
+  }
+
+  private updateBoxGroup(group: THREE.Group, b: SceneBox) {
+    group.matrix.copy(boxToMatrix4(b.center, b.size, b.rotation));
+    group.matrixWorldNeedsUpdate = true;
+    const fill = group.children[0] as THREE.Mesh;
+    const edges = group.children[1] as THREE.LineSegments;
+    const fillMat = fill.material as THREE.MeshBasicMaterial;
+    const edgeMat = edges.material as THREE.LineBasicMaterial;
+    fillMat.color.set(b.color);
+    fillMat.opacity = b.selected ? 0.2 : 0.06;
+    edgeMat.color.set(b.selected ? SELECTED_EDGE_COLOR : b.color);
+  }
+
+  private disposeBoxGroup(group: THREE.Group) {
+    for (const child of group.children) {
+      const mat = (child as THREE.Mesh | THREE.LineSegments).material;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else (mat as THREE.Material).dispose();
+    }
+  }
+
+  /** 屏幕坐标射线拾取最近的框,返回其 id;未命中返回 null。 */
+  pickBox(clientX: number, clientY: number): string | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    this.boxLayer.updateMatrixWorld(true); // 确保拾取前矩阵最新
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const meshes: THREE.Object3D[] = [];
+    for (const group of this.boxGroups.values()) meshes.push(group.children[0]);
+    const hit = this.raycaster.intersectObjects(meshes, false)[0];
+    const id = hit?.object.userData.boxId;
+    return typeof id === "string" ? id : null;
+  }
+
   dispose() {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.removePoints();
+    for (const group of this.boxGroups.values()) this.disposeBoxGroup(group);
+    this.boxGroups.clear();
+    this.unitEdges.dispose();
+    this.unitBox.dispose();
     this.controls.dispose();
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement === this.container) {

@@ -87,6 +87,13 @@ function annotationToolMeta(
     const visible = geometry.points.filter((p) => p.v === 2).length;
     return { label: "关键点", detail: `${visible}/${geometry.points.length} 可见` };
   }
+  if (geometry.type === "box_3d") {
+    const [l, w, h] = geometry.size;
+    return { label: "3D 框", detail: `${l.toFixed(1)}×${w.toFixed(1)}×${h.toFixed(1)} m` };
+  }
+  if (geometry.type === "point_mask_3d") {
+    return { label: "点云掩码", detail: `${geometry.point_indices.length} 点` };
+  }
   return {
     label: "多连通域",
     detail: `${geometry.polygons.length} 区域 · ${geometry.polygons.reduce((sum, p) => sum + p.points.length, 0)} 点`,

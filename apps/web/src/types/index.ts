@@ -290,10 +290,22 @@ export type KeypointGeometry = {
   type: "keypoint";
   points: Keypoint[];
 };
-// v0.13.0 · 点云 3D 几何 (box_3d / point_mask_3d) 的强类型已由 OpenAPI codegen 落到
-// src/api/generated/types.gen.ts。此处手写业务 union 暂不并入 —— 现有 2D 工作台逻辑
-// (如 transforms.ts 的 2D bounds 兜底) 全程假设 x/y/w/h，过早 widening 会逼迫各窄化点
-// 处理 3D 分支，而那是 v0.13.2+ 前端的范围。届时引入 3D 工作台时再并入本 union。
+/** v0.13.3 · LiDAR 3D 框. center/size/rotation 各为 3 元组(米 / 长宽高 / 绕各轴弧度);
+ * 点云 Z-up, 7-DoF 主要用 yaw=rotation[2](绕 Z)。 */
+export type Box3DGeometry = {
+  type: "box_3d";
+  center: [number, number, number];
+  size: [number, number, number];
+  rotation: [number, number, number];
+};
+/** v0.13.3 · 点云 3D 分割掩码. point_indices 指向点云的非负整数索引(预留, v0.13.5+ 用)。 */
+export type PointMaskGeometry = {
+  type: "point_mask_3d";
+  point_indices: number[];
+};
+// v0.13.3 · 引入 3D 工作台,把点云 3D 几何并入手写 union(此前刻意延后,见 v0.13.0 注记)。
+// 各 2D 窄化点(transforms.ts geometryToShape / BoxListItem)需对 3D 分支兜底:3D 无 2D
+// 投影(投影联动是 v0.13.4),退化为空 shape,2D 画布不画;3D 渲染走 three-d 模块。
 export type Geometry =
   | BboxGeometry
   | VideoBboxGeometry
@@ -302,7 +314,9 @@ export type Geometry =
   | MultiPolygonGeometry
   | RotatedBboxGeometry
   | PolylineGeometry
-  | KeypointGeometry;
+  | KeypointGeometry
+  | Box3DGeometry
+  | PointMaskGeometry;
 
 export interface AIBox {
   id: string;

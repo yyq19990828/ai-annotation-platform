@@ -134,6 +134,11 @@ export function geometryToShape(g: Geometry): {
     );
     return polygonBounds(corners);
   }
+  if (g.type === "box_3d" || g.type === "point_mask_3d") {
+    // v0.13.3 · 3D 几何无 2D 投影(投影联动是 v0.13.4),退化为空 shape;
+    // 2D 画布消费方不画,3D 渲染走 three-d 模块(PointCloudScene)。
+    return { x: 0, y: 0, w: 0, h: 0 };
+  }
   return { x: g.x, y: g.y, w: g.w, h: g.h };
 }
 
