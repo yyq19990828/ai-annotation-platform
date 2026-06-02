@@ -1,5 +1,6 @@
 // v0.10.17 · 工具单位 Tab. enabled=false 的 unit 仍能切到 (展示空状态), 在 Step1
-// 的工具集 chips 区切换. 不可用 (本版无实现的 polyline / lidar_box_3d) 不显示.
+// 的工具集 chips 区切换. 只展示 available=true 的 unit; v0.13.3 起 lidar_box_3d
+// 已解禁 (available=true) 故点云项目会出现该 Tab.
 // v0.10.18 · 从 CreateProjectWizard.tsx 抽出.
 
 import { clsx } from "clsx";
