@@ -104,7 +104,8 @@ async def test_link_project_idempotent(db_session: AsyncSession, super_admin):
     svc = DatasetService(db_session)
     link1 = await svc.link_project(ds.id, project.id)
     link2 = await svc.link_project(ds.id, project.id)
-    assert link1.id == link2.id, "重复 link 应返回同一行"
+    # v0.12.0：link_project 返回 LinkProjectResult，.link 才是 ProjectDataset 行。
+    assert link1.link.id == link2.link.id, "重复 link 应返回同一行"
 
     count = (
         await db_session.execute(
