@@ -177,6 +177,7 @@ async def list_tasks(
     status: str | None = None,
     assignee_id: uuid.UUID | None = None,
     batch_id: uuid.UUID | None = None,
+    unbatched: bool = False,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     cursor: str | None = None,
@@ -205,7 +206,12 @@ async def list_tasks(
     if assignee_id:
         q = q.where(Task.assignee_id == assignee_id)
         count_q = count_q.where(Task.assignee_id == assignee_id)
-    if batch_id:
+    # v0.12.0 B5 · 未归类池(batch_id IS NULL)浏览；unbatched 优先, 忽略 batch_id 参数。
+    # 非特权用户因上方 JOIN TaskBatch 天然排除 NULL → 返回空(未归类池是管理者功能)。
+    if unbatched:
+        q = q.where(Task.batch_id.is_(None))
+        count_q = count_q.where(Task.batch_id.is_(None))
+    elif batch_id:
         q = q.where(Task.batch_id == batch_id)
         count_q = count_q.where(Task.batch_id == batch_id)
 

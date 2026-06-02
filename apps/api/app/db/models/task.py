@@ -38,6 +38,14 @@ class Task(Base):
             "batch_id",
             postgresql_where=text("is_labeled = false"),
         ),
+        # v0.12.0 · 未归类池 cursor 分页（与迁移 0091 同步）。
+        Index(
+            "ix_tasks_project_unbatched",
+            "project_id",
+            "created_at",
+            "id",
+            postgresql_where=text("batch_id IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

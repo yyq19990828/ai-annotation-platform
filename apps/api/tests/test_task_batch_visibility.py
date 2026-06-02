@@ -367,3 +367,47 @@ async def test_unassigned_batch_visible_to_all_members(
     assert resp.status_code == 200
     ids = {item["id"] for item in resp.json()["items"]}
     assert str(t_open.id) in ids
+
+
+@pytest.mark.asyncio
+async def test_unbatched_filter_returns_only_orphan_tasks(
+    httpx_client_bound, db_session, super_admin, annotator
+):
+    """v0.12.0 B5 · list_tasks?unbatched=true 仅返回 batch_id IS NULL 的未归类任务。
+
+    B-OTHER 内的已归类任务 + 一条 batch_id=NULL 的未归类孤儿，
+    super_admin 用 unbatched=true 应只看见后者。
+    """
+    owner, owner_token = super_admin
+    user, _ = annotator
+    p, _, _, t_mine, t_other = await _seed_project_with_two_batches(
+        db_session,
+        owner.id,
+        user.id,
+    )
+
+    t_orphan = Task(
+        id=uuid.uuid4(),
+        project_id=p.id,
+        batch_id=None,
+        display_id="T-ORPHAN",
+        file_name="orphan.jpg",
+        file_path="/tmp/orphan.jpg",
+        file_type="image",
+        status="pending",
+    )
+    db_session.add(t_orphan)
+    await db_session.flush()
+    await db_session.commit()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/tasks?project_id={p.id}&unbatched=true&limit=200",
+        headers=_bearer(owner_token),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    ids = {item["id"] for item in data["items"]}
+    assert ids == {str(t_orphan.id)}
+    assert str(t_mine.id) not in ids
+    assert str(t_other.id) not in ids
+    assert data["total"] == 1

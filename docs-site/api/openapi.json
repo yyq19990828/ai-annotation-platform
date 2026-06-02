@@ -26108,6 +26108,16 @@
           },
           {
             "in": "query",
+            "name": "unbatched",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unbatched",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
