@@ -7,6 +7,7 @@ from app.db.models.project_template import ProjectTemplate
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.task_lock import TaskLock, AnnotationDraft
+from app.db.models.task_dataset_item_link import TaskDatasetItemLink
 from app.db.models.task_event import TaskEvent
 from app.db.models.annotation import Annotation
 from app.db.models.annotation_comment import AnnotationComment
@@ -52,6 +53,7 @@ __all__ = [
     "TaskBatch",
     "TaskLock",
     "AnnotationDraft",
+    "TaskDatasetItemLink",
     "TaskEvent",
     "Annotation",
     "AnnotationComment",

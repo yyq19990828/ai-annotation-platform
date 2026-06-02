@@ -914,8 +914,10 @@
             "discriminator": {
               "mapping": {
                 "bbox": "#/components/schemas/BboxGeometry",
+                "box_3d": "#/components/schemas/Box3DGeometry",
                 "keypoint": "#/components/schemas/KeypointGeometry",
                 "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
+                "point_mask_3d": "#/components/schemas/PointMaskGeometry",
                 "polygon": "#/components/schemas/PolygonGeometry",
                 "polyline": "#/components/schemas/PolylineGeometry",
                 "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
@@ -948,6 +950,12 @@
               },
               {
                 "$ref": "#/components/schemas/KeypointGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/Box3DGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/PointMaskGeometry"
               }
             ],
             "title": "Geometry"
@@ -984,7 +992,8 @@
               "ai_interactive",
               "lidar_box_3d",
               "rotated_bbox",
-              "keypoint"
+              "keypoint",
+              "point_mask_3d"
             ],
             "title": "Tool Unit Id",
             "type": "string"
@@ -1604,8 +1613,10 @@
             "discriminator": {
               "mapping": {
                 "bbox": "#/components/schemas/BboxGeometry",
+                "box_3d": "#/components/schemas/Box3DGeometry",
                 "keypoint": "#/components/schemas/KeypointGeometry",
                 "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
+                "point_mask_3d": "#/components/schemas/PointMaskGeometry",
                 "polygon": "#/components/schemas/PolygonGeometry",
                 "polyline": "#/components/schemas/PolylineGeometry",
                 "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
@@ -1638,6 +1649,12 @@
               },
               {
                 "$ref": "#/components/schemas/KeypointGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/Box3DGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/PointMaskGeometry"
               }
             ],
             "title": "Geometry"
@@ -1742,7 +1759,8 @@
               "ai_interactive",
               "lidar_box_3d",
               "rotated_bbox",
-              "keypoint"
+              "keypoint",
+              "point_mask_3d"
             ],
             "title": "Tool Unit Id",
             "type": "string"
@@ -1904,8 +1922,10 @@
                 "discriminator": {
                   "mapping": {
                     "bbox": "#/components/schemas/BboxGeometry",
+                    "box_3d": "#/components/schemas/Box3DGeometry",
                     "keypoint": "#/components/schemas/KeypointGeometry",
                     "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
+                    "point_mask_3d": "#/components/schemas/PointMaskGeometry",
                     "polygon": "#/components/schemas/PolygonGeometry",
                     "polyline": "#/components/schemas/PolylineGeometry",
                     "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
@@ -1938,6 +1958,12 @@
                   },
                   {
                     "$ref": "#/components/schemas/KeypointGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Box3DGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PointMaskGeometry"
                   }
                 ]
               },
@@ -3941,6 +3967,52 @@
           "file"
         ],
         "title": "Body_upload_zip_api_v1_datasets__dataset_id__items_upload_zip_post",
+        "type": "object"
+      },
+      "Box3DGeometry": {
+        "additionalProperties": true,
+        "description": "v0.13.0 · LiDAR 3D 框。center/size/rotation 各为长度 3 的列表\n(x,y,z 米 / 长宽高 / 绕各轴弧度)。extra=\"allow\" 容纳标定/属性等扩展字段。",
+        "properties": {
+          "center": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Center",
+            "type": "array"
+          },
+          "rotation": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Rotation",
+            "type": "array"
+          },
+          "size": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Size",
+            "type": "array"
+          },
+          "type": {
+            "const": "box_3d",
+            "default": "box_3d",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "center",
+          "size",
+          "rotation"
+        ],
+        "title": "Box3DGeometry",
         "type": "object"
       },
       "BucketSummary": {
@@ -8073,6 +8145,27 @@
         "title": "PasswordChange",
         "type": "object"
       },
+      "PointMaskGeometry": {
+        "additionalProperties": false,
+        "description": "v0.13.0 · 3D 点云语义/实例分割掩码。point_indices 为指向点云的整数索引列表。",
+        "properties": {
+          "point_indices": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Point Indices",
+            "type": "array"
+          },
+          "type": {
+            "const": "point_mask_3d",
+            "default": "point_mask_3d",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "PointMaskGeometry",
+        "type": "object"
+      },
       "PolygonGeometry": {
         "additionalProperties": false,
         "description": "单连通域 polygon。\n\nv0.9.14 · holes 字段新增, 默认 [] 向后兼容。老存量 / 老前端写入仍走 type=polygon\n+ 仅 points 路径; 新 prediction 在有 hole 时把 hole 顶点列表填进 holes, 多连通域\n走 MultiPolygonGeometry 分支。",
@@ -8648,7 +8741,8 @@
               "ai_interactive",
               "lidar_box_3d",
               "rotated_bbox",
-              "keypoint"
+              "keypoint",
+              "point_mask_3d"
             ],
             "title": "Tool Unit Id",
             "type": "string"

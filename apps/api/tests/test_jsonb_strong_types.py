@@ -18,14 +18,17 @@ from app.schemas._jsonb_types import (
     AttributeField,
     AttributeSchema,
     BboxGeometry,
+    Box3DGeometry,
     CanvasDrawing,
     CanvasShape,
     ClassConfigEntry,
+    Geometry,
     Keypoint,
     KeypointGeometry,
     KeypointNode,
     KeypointSchema,
     Mention,
+    PointMaskGeometry,
     PolygonGeometry,
     PolylineGeometry,
     RotatedBboxGeometry,
@@ -446,3 +449,63 @@ def test_annotation_attributes_value_types():
     AA.validate_python({"k1": "str", "k2": 1, "k3": True, "k4": ["a"], "k5": None})
     # multiselect 列表必须 str
     AA.validate_python({"k": ["a", "b"]})
+
+
+# ── v0.13.0 · 点云 3D 几何（box_3d / point_mask_3d）─────────────────
+
+
+def test_box_3d_geometry_round_trip():
+    g = Box3DGeometry(center=[1, 2, 3], size=[4, 5, 6], rotation=[0, 0, 0])
+    assert g.type == "box_3d"
+    dumped = g.model_dump()
+    g2 = Box3DGeometry.model_validate(dumped)
+    assert g2.center == [1, 2, 3]
+    assert g2.size == [4, 5, 6]
+    assert g2.rotation == [0, 0, 0]
+    assert g2.type == "box_3d"
+
+
+def test_box_3d_geometry_length_enforced():
+    # center/size/rotation 必须长度 3
+    with pytest.raises(ValidationError):
+        Box3DGeometry(center=[1, 2], size=[4, 5, 6], rotation=[0, 0, 0])
+    with pytest.raises(ValidationError):
+        Box3DGeometry(center=[1, 2, 3], size=[4, 5, 6, 7], rotation=[0, 0, 0])
+
+
+def test_point_mask_geometry_round_trip():
+    g = PointMaskGeometry(point_indices=[0, 1, 2])
+    assert g.type == "point_mask_3d"
+    dumped = g.model_dump()
+    g2 = PointMaskGeometry.model_validate(dumped)
+    assert g2.point_indices == [0, 1, 2]
+    assert g2.type == "point_mask_3d"
+    # 默认空列表
+    assert PointMaskGeometry().point_indices == []
+
+
+def test_point_mask_geometry_rejects_negative():
+    with pytest.raises(ValidationError):
+        PointMaskGeometry(point_indices=[-1])
+
+
+def test_geometry_union_dispatches_3d_types():
+    from pydantic import TypeAdapter
+
+    GA = TypeAdapter(Geometry)
+    box = GA.validate_python(
+        {"type": "box_3d", "center": [1, 2, 3], "size": [4, 5, 6], "rotation": [0, 0, 0]}
+    )
+    assert isinstance(box, Box3DGeometry)
+    mask = GA.validate_python({"type": "point_mask_3d", "point_indices": [0, 1, 2]})
+    assert isinstance(mask, PointMaskGeometry)
+
+
+def test_geometry_union_still_dispatches_2d_types():
+    """回归：旧 2D 类型（bbox）经判别联合仍正常解析，不受 3D 新增影响。"""
+    from pydantic import TypeAdapter
+
+    GA = TypeAdapter(Geometry)
+    bbox = GA.validate_python({"type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4})
+    assert isinstance(bbox, BboxGeometry)
+    assert bbox.x == 0.1
