@@ -5725,6 +5725,24 @@
         "title": "DatasetItemListResponse",
         "type": "object"
       },
+      "DatasetItemMetadata": {
+        "additionalProperties": true,
+        "description": "v0.13.1 · DatasetItem.metadata_ 的结构化视图。calibration 仅点云相机项有;\nextra=\"allow\" 保留其它历史/未来 metadata key 不丢。",
+        "properties": {
+          "calibration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SensorCalibration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "DatasetItemMetadata",
+        "type": "object"
+      },
       "DatasetItemOut": {
         "properties": {
           "blurhash": {
@@ -5810,10 +5828,7 @@
             "type": "string"
           },
           "metadata": {
-            "additionalProperties": true,
-            "default": {},
-            "title": "Metadata",
-            "type": "object"
+            "$ref": "#/components/schemas/DatasetItemMetadata"
           },
           "thumbnail_url": {
             "anyOf": [
@@ -11507,6 +11522,52 @@
           "upload_url"
         ],
         "title": "ScreenshotInitResponse",
+        "type": "object"
+      },
+      "SensorCalibration": {
+        "additionalProperties": false,
+        "description": "v0.13.1 · 相机标定。extrinsic row-major 4x4 外参(16), intrinsic row-major\n3x3 内参(9), rect 为 KITTI 可选矫正矩阵 4x4(16)。存进 DatasetItem.metadata_\n的 \"calibration\" key。投影: extrinsic·[x,y,z,1] → xyz → intrinsic·xyz → 透视除法。",
+        "properties": {
+          "extrinsic": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 16,
+            "minItems": 16,
+            "title": "Extrinsic",
+            "type": "array"
+          },
+          "intrinsic": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 9,
+            "minItems": 9,
+            "title": "Intrinsic",
+            "type": "array"
+          },
+          "rect": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 16,
+                "minItems": 16,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rect"
+          }
+        },
+        "required": [
+          "extrinsic",
+          "intrinsic"
+        ],
+        "title": "SensorCalibration",
         "type": "object"
       },
       "SkipTaskRequest": {

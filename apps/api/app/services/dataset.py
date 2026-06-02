@@ -64,7 +64,26 @@ async def build_tasks_for_link(
     幂等：用 NOT EXISTS 过滤掉该 project 下已有 task 的 dataset_item，重复跑不双建。
     每块独立 commit（增量累加 project.total_tasks），传 job_id 时每块按 5% 粒度
     update_progress，供前端轮询看到进度。返回 {"created": N, "total": M}。
+
+    v0.13.1 · 点云项目（project.data_type == "lidar"）分流到 scene 感知建任务器：
+    先写各相机标定，再按帧建 Task + 多文件 link（见 services/pointcloud_import.py）。
     """
+    project = await db.get(Project, project_id)
+    if project and project.data_type == "lidar":
+        from app.services.pointcloud_import import (
+            attach_calibration,
+            build_pointcloud_tasks_for_link,
+        )
+
+        await attach_calibration(db, dataset_id=dataset_id)
+        return await build_pointcloud_tasks_for_link(
+            db,
+            dataset_id=dataset_id,
+            project_id=project_id,
+            job_id=job_id,
+            chunk_size=chunk_size,
+        )
+
     item_q = (
         select(
             DatasetItem.id,

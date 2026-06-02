@@ -1,6 +1,8 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import datetime
+
+from app.schemas._jsonb_types import DatasetItemMetadata
 
 
 class DatasetCreate(BaseModel):
@@ -41,7 +43,8 @@ class DatasetItemOut(BaseModel):
     content_hash: str | None = None
     width: int | None = None
     height: int | None = None
-    metadata: dict = {}
+    # v0.13.1 · 结构化视图: calibration 仅点云相机项有, extra="allow" 保留其它 key。
+    metadata: DatasetItemMetadata = Field(default_factory=DatasetItemMetadata)
     file_url: str | None = None
     thumbnail_url: str | None = None
     blurhash: str | None = None

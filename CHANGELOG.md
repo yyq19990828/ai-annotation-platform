@@ -27,6 +27,21 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；0.12.x 历史段待整体移到 docs/changelogs/0.12.x.md -->
 
+## [0.13.1] - 2026-06-02
+
+点云 + 图像联合标注工作台第二切片：scene 统一资产导入 + 标定存储。**仅 API、零迁移、无前端可见变化**。计划见 `docs/plans/2026-06-02-v0.13.1-pointcloud-scene-import.md`，决策见 ADR-0030。
+
+### Added
+
+- **标定 schema `SensorCalibration`（G2）**：`extrinsic[16]` + `intrinsic[9]`（+ KITTI 可选 `rect[16]`），存进相机 `DatasetItem.metadata_["calibration"]`，不加列。新增 `DatasetItemMetadata`（`extra="allow"`）让 `DatasetItemOut.metadata` 出强类型（codegen 流到前端），保留其它 metadata key。
+- **scene 感知建任务管线**：复用既有「文件入库 → `POST /datasets/{id}/link`」管线，在 `build_tasks_for_link` 内按 `project.data_type == "lidar"` 分流到 `services/pointcloud_import.py`：按 `file_path`（`lidar/` `camera/<cam>/` `calib/camera/`）帧分组，每个 lidar 帧建一个 Task（`file_type=point_cloud`，`dataset_item_id` 指向主点云），用 `link_items` 关联 `primary_lidar` + 各 `camera_<cam>`；帧级 `NOT EXISTS` 去重、分块 commit、job 进度上报，沿用 2D 路径机制。
+- **标定写入**：`attach_calibration` 导入时读 `calib/camera/<cam>.json` → 校验长度 → 写各相机帧 DatasetItem.metadata；无 calib 则跳过（标定降级为 3D-only，不阻断）；缺相机的帧只 link 主点云。
+
+### Notes
+
+- `task.dataset_item_id` 指向主点云，使假设单 item 的现存消费方（导出/列表/缩略图）不炸；多 item 消费走 link 表（后续切片验证）。
+- 端到端测试以真实夹具 `third-party/SUSTechPOINTS/data/example`（front/left/right 三相机 + 缺相机帧 000950）对拍 link 与标定值。
+
 ## [0.13.0] - 2026-06-02
 
 点云 + 图像联合标注工作台（Epic v0.13.x）第一切片：后端数据地基。纯新增、**无前端可见变化**，为后续 LiDAR 点云 + 相机图像联合标注打底。计划见 `docs/plans/2026-06-02-v0.13.0-pointcloud-data-foundation.md`，决策见 ADR-0029，数据模型见 `docs-site/dev/reference/point-cloud-data-model.md`。

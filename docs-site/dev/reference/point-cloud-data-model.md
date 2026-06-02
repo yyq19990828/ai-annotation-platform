@@ -11,9 +11,12 @@
 | 缺口 | 落地物 | 位置 |
 |---|---|---|
 | G1 任务-数据项 1:N 关联 | `TaskDatasetItemLink` 中间表 | `app/db/models/task_dataset_item_link.py` |
+| G2 标定存储（v0.13.1） | `SensorCalibration` 进 `DatasetItem.metadata_` | `_jsonb_types.py` / `services/pointcloud_import.py` |
 | G3 3D 几何 | `Box3DGeometry` / `PointMaskGeometry` | `app/schemas/_jsonb_types.py` |
 | G4 工具单位 / file_type | `lidar_box_3d`（启用）/ `point_mask_3d`（新增）；点云扩展名 | `_jsonb_types.py` / `services/dataset.py` |
 | G6 跨模态 ID 约定 | 复用 `Annotation.group_id`（不改模型） | 见下文「跨模态身份」 |
+
+> v0.13.0 落 G1/G3/G4/G6 静态地基；v0.13.1 补 **G2 标定存储** + **scene 导入管线**（见下文「scene 导入数据流」）。
 
 ## G1 · 多文件关联：`TaskDatasetItemLink`
 
@@ -41,6 +44,46 @@ await link_items(session, task_id, [(item_id, "primary_lidar", None),
                                      (item_id2, "camera_front", "cam0")])
 links = await get_linked_items(session, task_id)
 ```
+
+## G2 · 标定存储：`SensorCalibration` 进 `metadata_`（v0.13.1）
+
+相机标定按相机一份(对该相机所有帧通用),存进相机 `DatasetItem.metadata_` 的约定 key `"calibration"`，**不加列、零迁移**(决策见 ADR-0030)。
+
+```python
+class SensorCalibration(BaseModel):
+    extrinsic: list[float]   # len 16, row-major 4x4 外参
+    intrinsic: list[float]   # len 9,  row-major 3x3 内参
+    rect: list[float] | None # len 16, KITTI 可选矫正矩阵
+
+class DatasetItemMetadata(BaseModel):   # extra="allow" 保留其它 metadata key
+    calibration: SensorCalibration | None = None
+```
+
+`DatasetItemOut.metadata` 用 `DatasetItemMetadata` 出强类型(codegen 流到前端)。投影(v0.13.4)按 `task → camera link → DatasetItem.metadata_["calibration"]` 取标定:`extrinsic·[x,y,z,1] → 取 xyz → intrinsic·xyz → 透视除法 → 像素`。
+
+## scene 导入数据流（v0.13.1）
+
+复用既有「文件入库 → 关联项目 → 建任务」管线,只在 `build_tasks_for_link` 内按 `project.data_type == "lidar"` 分流到 `services/pointcloud_import.py`:
+
+```
+scene 目录入库(upload-zip / import-from-connection):
+  <ds>/lidar/<frame>.pcd            → DatasetItem(file_type=point_cloud)
+  <ds>/camera/<cam>/<frame>.jpg     → DatasetItem(file_type=image)
+  <ds>/calib/camera/<cam>.json      → DatasetItem(file_type=other)
+
+POST /datasets/{id}/link  (project.data_type=="lidar"):
+  build_tasks_for_link 分流 →
+    attach_calibration         : 读 calib JSON → 写各相机帧 DatasetItem.metadata_["calibration"]
+    build_pointcloud_tasks_for_link:
+      group_frames             : 按 file_path 段名(lidar/camera/calib)分组,取最后一次出现
+      每个 lidar 帧 → 1 Task(dataset_item_id=lidar item, file_type=point_cloud)
+      link_items               : primary_lidar + 各 camera_<cam>
+      缺相机的帧 → 只 link primary_lidar(warning,不报错)
+      帧级 NOT EXISTS 去重 / 分块 commit / job 进度上报
+```
+
+- **`task.dataset_item_id` 指向主点云 item**:让假设单 item 的现存消费方(导出 / 列表 / 缩略图)不炸,link-aware 消费方走 link 表取全部。
+- **标定降级**:无 calib 文件 → 跳过写入,scene 退化为 3D-only,不阻断。
 
 ## G3 · 3D 几何类型
 
