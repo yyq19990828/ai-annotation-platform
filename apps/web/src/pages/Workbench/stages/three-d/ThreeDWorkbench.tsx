@@ -8,9 +8,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   useAnnotations,
+  useCreateAnnotation,
   useDeleteAnnotation,
+  useTask,
   useUpdateAnnotation,
 } from "@/hooks/useTasks";
+import { useProject } from "@/hooks/useProjects";
 import { classColorForCanvas } from "@/pages/Workbench/stage/colors";
 import type { Box3DGeometry } from "@/types";
 
@@ -25,6 +28,11 @@ import styles from "./ThreeDWorkbench.module.css";
 interface ThreeDWorkbenchProps {
   taskId: string | null;
 }
+
+// v0.13.3 · 新框默认尺寸(米,长宽高;约一辆轿车),放置后用面板/gizmo 精修。
+const DEFAULT_BOX_SIZE: [number, number, number] = [4.0, 1.8, 1.6];
+// 点云项目的 3D 框工具单位(类别 / 属性绑定都挂在它下面)。
+const LIDAR_TOOL_UNIT = "lidar_box_3d";
 
 // v0.13.3 · PSR 数值面板字段(中心 cx/cy/cz、尺寸 l/w/h、朝向 yaw)。
 type PsrField = "cx" | "cy" | "cz" | "l" | "w" | "h" | "yaw";
@@ -64,9 +72,29 @@ export function ThreeDWorkbench({ taskId }: ThreeDWorkbenchProps) {
   const { data: annotations } = useAnnotations(taskId ?? undefined);
   const updateAnnotation = useUpdateAnnotation(taskId ?? undefined);
   const deleteAnnotation = useDeleteAnnotation(taskId ?? undefined);
+  const createAnnotation = useCreateAnnotation(taskId ?? undefined);
   // scene 的拖拽回调只设一次,用 ref 取最新 mutate,避免闭包旧值。
   const updateMutateRef = useRef(updateAnnotation.mutate);
   updateMutateRef.current = updateAnnotation.mutate;
+
+  // 放置新框需要项目的 lidar_box_3d 类别(后端按 tool_bindings 校验 class_name)。
+  const { data: task } = useTask(taskId ?? "");
+  const { data: project } = useProject(task?.project_id ?? "");
+  const lidarClasses = useMemo(
+    () => (project?.tool_bindings?.[LIDAR_TOOL_UNIT]?.classes ?? []).map((c) => c.name),
+    [project],
+  );
+
+  // 放置模式 + 待放置类别(进入放置时点地面创建一个默认框)。
+  const [placing, setPlacing] = useState(false);
+  const [placeClass, setPlaceClass] = useState<string | null>(null);
+  // 类别就绪后给个默认值;当前选项被删时回落到首个。
+  useEffect(() => {
+    setPlaceClass((prev) =>
+      prev && lidarClasses.includes(prev) ? prev : (lidarClasses[0] ?? null),
+    );
+  }, [lidarClasses]);
+  const canPlace = lidarClasses.length > 0;
 
   // 选中框的 PSR 编辑表单(字符串值,允许清空 / 中间态如 "-" / "1.";解析有效时才提交)。
   // PATCH 防抖 250ms;yaw 以度展示。
@@ -184,10 +212,28 @@ export function ThreeDWorkbench({ taskId }: ThreeDWorkbenchProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedId]);
 
-  // 切任务清选中。
+  // 切任务清选中 + 退出放置。
   useEffect(() => {
     setSelectedId(null);
+    setPlacing(false);
   }, [taskId]);
+
+  // 进入放置模式时清选中,避免 gizmo 挡在点地面的路上。
+  useEffect(() => {
+    if (placing) setSelectedId(null);
+  }, [placing]);
+
+  // B 切换放置模式 / Esc 取消(焦点在输入框时不拦截;无可用类别时不进入)。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      if (e.key === "Escape") setPlacing(false);
+      else if (e.key === "b" || e.key === "B") setPlacing((p) => (canPlace ? !p : false));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canPlace]);
 
   // 选中目标切换时用其 PSR 初始化表单(编辑期间不被服务端回写覆盖,故仅依赖 selectedId)。
   useEffect(() => {
@@ -262,9 +308,41 @@ export function ThreeDWorkbench({ taskId }: ThreeDWorkbenchProps) {
     setSelectedId(null);
   }, [selectedId, deleteAnnotation]);
 
+  // 放置:点地面 → 默认尺寸框(落在地面上)→ 持久化 → 选中新框精修;单次放置后退出。
+  const handlePlace = useCallback(
+    (clientX: number, clientY: number) => {
+      const scene = sceneRef.current;
+      if (!scene || !placeClass) return;
+      const ground = scene.placeOnGround(clientX, clientY);
+      if (!ground) return;
+      const [l, w, h] = DEFAULT_BOX_SIZE;
+      const geometry: Box3DGeometry = {
+        type: "box_3d",
+        center: [ground[0], ground[1], ground[2] + h / 2],
+        size: [l, w, h],
+        rotation: [0, 0, 0],
+      };
+      createAnnotation.mutate(
+        {
+          annotation_type: "box_3d",
+          tool_unit_id: LIDAR_TOOL_UNIT,
+          class_name: placeClass,
+          geometry,
+        },
+        { onSuccess: (created) => setSelectedId(created.id) },
+      );
+      setPlacing(false);
+    },
+    [placeClass, createAnnotation],
+  );
+
   const handleViewportClick = (e: React.MouseEvent) => {
     // 拖拽 gizmo 结束的 click 不应改选中。
     if (sceneRef.current?.shouldIgnoreClick()) return;
+    if (placing) {
+      handlePlace(e.clientX, e.clientY);
+      return;
+    }
     setSelectedId(sceneRef.current?.pickBox(e.clientX, e.clientY) ?? null);
   };
 
@@ -280,7 +358,7 @@ export function ThreeDWorkbench({ taskId }: ThreeDWorkbenchProps) {
       <div className={styles.viewportWrap}>
         <div
           ref={viewportRef}
-          className={styles.viewport}
+          className={placing ? `${styles.viewport} ${styles.placing}` : styles.viewport}
           data-testid="pc-viewport"
           onClick={handleViewportClick}
         />
@@ -305,6 +383,30 @@ export function ThreeDWorkbench({ taskId }: ThreeDWorkbenchProps) {
               onChange={(e) => handlePointSize(Number(e.target.value))}
             />
           </label>
+          {canPlace && (
+            <>
+              <select
+                className={styles.btn}
+                value={placeClass ?? ""}
+                aria-label="放置类别"
+                onChange={(e) => setPlaceClass(e.target.value)}
+              >
+                {lidarClasses.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className={placing ? `${styles.btn} ${styles.btnActive}` : styles.btn}
+                aria-pressed={placing}
+                onClick={() => setPlacing((p) => !p)}
+              >
+                {placing ? "点地面放置 · Esc 取消" : "放置框 (B)"}
+              </button>
+            </>
+          )}
         </div>
 
         {/* 状态条 */}

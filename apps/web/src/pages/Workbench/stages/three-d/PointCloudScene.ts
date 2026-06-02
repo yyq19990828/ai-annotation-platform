@@ -64,6 +64,9 @@ export class PointCloudScene {
   private readonly viewCenter = new THREE.Vector3();
   private viewRadius = 10;
 
+  // v0.13.3 · 估计的地面高度 z(低分位,见 estimateGroundZ),放置新框时落在此平面上。
+  private groundZ = 0;
+
   // v0.13.3 · 选中框拖拽编辑(平移/yaw/缩放)。gizmo 挂 getHelper() 到场景。
   private readonly transform: TransformControls;
   private onTransformEnd: ((id: string, psr: BoxPsr) => void) | null = null;
@@ -155,6 +158,7 @@ export class PointCloudScene {
     this.points = new THREE.Points(geom, material);
     this.scene.add(this.points);
     this.setRobustFrame(positions, rendered);
+    this.groundZ = this.estimateGroundZ(positions, rendered);
     this.frameView();
 
     return { totalPoints: total, renderedPoints: rendered, decimated };
@@ -203,6 +207,36 @@ export class PointCloudScene {
     const sd = (sum2: number, m: number) => Math.sqrt(Math.max(sum2 / count - m * m, 0));
     this.viewCenter.set(mx, my, mz);
     this.viewRadius = Math.max(2.5 * Math.max(sd(sxx, mx), sd(syy, my), sd(szz, mz)), 5);
+  }
+
+  /**
+   * v0.13.3 · 估计地面高度:z 直方图的 ~1% 低分位(对少量低离群点鲁棒,比 zMin 稳)。
+   * 放置新框时把框落在此平面上(center.z = groundZ + 高/2),避免默认框悬浮。
+   */
+  private estimateGroundZ(positions: Float32Array, count: number): number {
+    if (count === 0) return 0;
+    let zMin = Infinity, zMax = -Infinity;
+    for (let i = 0; i < count; i++) {
+      const z = positions[i * 3 + 2];
+      if (z < zMin) zMin = z;
+      if (z > zMax) zMax = z;
+    }
+    const span = zMax - zMin;
+    if (span <= 0) return zMin;
+    const BINS = 128;
+    const hist = new Int32Array(BINS);
+    for (let i = 0; i < count; i++) {
+      const t = (positions[i * 3 + 2] - zMin) / span;
+      const b = Math.min(BINS - 1, Math.floor(t * BINS));
+      hist[b]++;
+    }
+    const target = count * 0.01;
+    let acc = 0;
+    for (let b = 0; b < BINS; b++) {
+      acc += hist[b];
+      if (acc >= target) return zMin + ((b + 0.5) / BINS) * span;
+    }
+    return zMin;
   }
 
   private frameView() {
@@ -331,6 +365,24 @@ export class PointCloudScene {
     const hit = this.raycaster.intersectObjects(meshes, false)[0];
     const id = hit?.object.userData.boxId;
     return typeof id === "string" ? id : null;
+  }
+
+  /**
+   * v0.13.3 · 屏幕坐标射线打到地面水平面(z=groundZ),返回世界落点 [x,y,groundZ];
+   * 放置新框用(透视拖拽不准,故先点落点 + 默认尺寸,再用数值面板/gizmo 精修)。
+   * 射线与地面平行(俯视极端)时返回 null。
+   */
+  placeOnGround(clientX: number, clientY: number): [number, number, number] | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -this.groundZ);
+    const hit = new THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(plane, hit)) return null;
+    return [hit.x, hit.y, this.groundZ];
   }
 
   /** React 注册拖拽结束回调(回传该框最新 PSR 供持久化)。 */

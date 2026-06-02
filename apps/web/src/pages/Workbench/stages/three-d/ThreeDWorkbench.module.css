@@ -18,6 +18,11 @@
   inset: 0;
 }
 
+/* v0.13.3 · 放置模式:十字光标提示点地面落框。 */
+.viewport.placing {
+  cursor: crosshair;
+}
+
 .controls {
   position: absolute;
   top: 12px;
@@ -45,6 +50,13 @@
 .btn:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
+}
+
+/* v0.13.3 · 放置模式激活态(高亮放置按钮)。 */
+.btnActive {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-bg-elev);
 }
 
 .sizeCtl {
