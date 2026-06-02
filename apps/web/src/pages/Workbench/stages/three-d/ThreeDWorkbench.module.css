@@ -73,6 +73,69 @@
   color: var(--color-danger);
 }
 
+/* v0.13.3 · 选中框的 PSR 数值编辑面板(右上浮层)。 */
+.editPanel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  font-size: 12px;
+  color: var(--color-fg);
+}
+
+.editTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.editGroupLabel {
+  margin-top: 4px;
+  color: var(--color-fg-muted);
+}
+
+.editRow {
+  display: flex;
+  gap: 6px;
+}
+
+.editRow input {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-size: 12px;
+}
+
+.deleteBtn {
+  margin-top: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-danger);
+  background: transparent;
+  color: var(--color-danger);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.deleteBtn:hover {
+  background: var(--color-danger);
+  color: var(--color-bg);
+}
+
 .cameraStrip {
   flex: 0 0 auto;
   display: flex;

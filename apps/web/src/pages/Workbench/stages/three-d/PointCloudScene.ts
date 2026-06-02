@@ -7,9 +7,8 @@
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { PCDLoader } from "three/examples/jsm/loaders/PCDLoader.js";
-
-import { boxToMatrix4 } from "./geometry/box3d";
 
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
 const DECIMATE_THRESHOLD = 500_000;
@@ -34,6 +33,15 @@ export interface SceneBox {
   selected: boolean;
 }
 
+/** v0.13.3 · TransformControls 拖拽结束时回传的 PSR(center/size/rotation)。 */
+export interface BoxPsr {
+  center: [number, number, number];
+  size: [number, number, number];
+  rotation: [number, number, number];
+}
+
+type TransformMode = "translate" | "rotate" | "scale";
+
 export class PointCloudScene {
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
@@ -55,6 +63,12 @@ export class PointCloudScene {
   // v0.13.3 · 鲁棒取景中心/半径(mean ± 2.5σ,见 setRobustFrame)。
   private readonly viewCenter = new THREE.Vector3();
   private viewRadius = 10;
+
+  // v0.13.3 · 选中框拖拽编辑(平移/yaw/缩放)。gizmo 挂 getHelper() 到场景。
+  private readonly transform: TransformControls;
+  private onTransformEnd: ((id: string, psr: BoxPsr) => void) | null = null;
+  // 拖拽结束会触发一次 click,不应改变选中 —— 用此标记吞掉那次 click。
+  private suppressClickAfterDrag = false;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -82,6 +96,19 @@ export class PointCloudScene {
     this.scene.add(grid);
 
     this.scene.add(this.boxLayer);
+
+    // 变换 gizmo:在框 local 空间编辑(缩放/旋转沿框自身轴)。
+    this.transform = new TransformControls(this.camera, this.renderer.domElement);
+    this.transform.setSpace("local");
+    this.transform.addEventListener("dragging-changed", (event) => {
+      const dragging = (event as unknown as { value: boolean }).value;
+      this.controls.enabled = !dragging; // 拖 gizmo 时禁用 orbit,避免相机乱转
+      if (!dragging) {
+        this.suppressClickAfterDrag = true;
+        this.emitTransform();
+      }
+    });
+    this.scene.add(this.transform.getHelper());
 
     this.animate();
   }
@@ -223,6 +250,7 @@ export class PointCloudScene {
     const next = new Set(boxes.map((b) => b.id));
     for (const [id, group] of this.boxGroups) {
       if (!next.has(id)) {
+        if (this.transform.object === group) this.transform.detach();
         this.boxLayer.remove(group);
         this.disposeBoxGroup(group);
         this.boxGroups.delete(id);
@@ -241,9 +269,10 @@ export class PointCloudScene {
 
   private createBoxGroup(id: string): THREE.Group {
     const group = new THREE.Group();
-    group.matrixAutoUpdate = false; // 矩阵由 boxToMatrix4 显式设
-    // depthTest:false + renderOrder:框始终画在点云之上。否则细线框会被点云遮挡 / 淹没,
-    // 远视角下几乎不可见(标注 overlay 的惯例做法)。fill 兼作射线拾取目标 + 选中淡填充。
+    group.userData.boxId = id; // 供 TransformControls 拖拽结束回查
+    // 用 position/quaternion/scale 表示框(matrixAutoUpdate 默认 true),让 TransformControls
+    // 能直接驱动。depthTest:false + renderOrder:框始终画在点云之上。否则细线框会被点云遮挡 /
+    // 淹没,远视角下几乎不可见(标注 overlay 的惯例做法)。fill 兼作射线拾取目标 + 选中淡填充。
     const fill = new THREE.Mesh(
       this.unitBox,
       new THREE.MeshBasicMaterial({
@@ -266,8 +295,11 @@ export class PointCloudScene {
   }
 
   private updateBoxGroup(group: THREE.Group, b: SceneBox) {
-    group.matrix.copy(boxToMatrix4(b.center, b.size, b.rotation));
-    group.matrixWorldNeedsUpdate = true;
+    group.position.set(b.center[0], b.center[1], b.center[2]);
+    group.quaternion.setFromEuler(
+      new THREE.Euler(b.rotation[0], b.rotation[1], b.rotation[2], "XYZ"),
+    );
+    group.scale.set(b.size[0], b.size[1], b.size[2]);
     const fill = group.children[0] as THREE.Mesh;
     const edges = group.children[1] as THREE.LineSegments;
     const fillMat = fill.material as THREE.MeshBasicMaterial;
@@ -301,6 +333,58 @@ export class PointCloudScene {
     return typeof id === "string" ? id : null;
   }
 
+  /** React 注册拖拽结束回调(回传该框最新 PSR 供持久化)。 */
+  setTransformHandler(cb: ((id: string, psr: BoxPsr) => void) | null) {
+    this.onTransformEnd = cb;
+  }
+
+  /** 把变换 gizmo 挂到指定框;找不到则脱离。 */
+  attachTransform(id: string) {
+    const group = this.boxGroups.get(id);
+    if (group) this.transform.attach(group);
+    else this.transform.detach();
+  }
+
+  detachTransform() {
+    this.transform.detach();
+  }
+
+  /** 切换 gizmo 模式;旋转仅绕 Z(yaw,7-DoF),平移/缩放允许各轴。 */
+  setTransformMode(mode: TransformMode) {
+    this.transform.setMode(mode);
+    const rotateOnlyZ = mode === "rotate";
+    this.transform.showX = !rotateOnlyZ;
+    this.transform.showY = !rotateOnlyZ;
+    this.transform.showZ = true;
+  }
+
+  /** 拖拽刚结束触发的 click 应被吞掉(否则会误改选中);返回并清标记。 */
+  shouldIgnoreClick(): boolean {
+    if (this.suppressClickAfterDrag) {
+      this.suppressClickAfterDrag = false;
+      return true;
+    }
+    return false;
+  }
+
+  private emitTransform() {
+    const obj = this.transform.object;
+    const id = obj?.userData.boxId;
+    if (!obj || typeof id !== "string" || !this.onTransformEnd) return;
+    const e = new THREE.Euler().setFromQuaternion(obj.quaternion, "XYZ");
+    const s = obj.scale;
+    this.onTransformEnd(id, {
+      center: [obj.position.x, obj.position.y, obj.position.z],
+      // 缩放 gizmo 可能拖出负 scale(翻转);尺寸必须为正,取绝对值并设下限 0.05m。
+      size: [
+        Math.max(Math.abs(s.x), 0.05),
+        Math.max(Math.abs(s.y), 0.05),
+        Math.max(Math.abs(s.z), 0.05),
+      ],
+      rotation: [e.x, e.y, e.z],
+    });
+  }
+
   dispose() {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
@@ -309,6 +393,9 @@ export class PointCloudScene {
     this.boxGroups.clear();
     this.unitEdges.dispose();
     this.unitBox.dispose();
+    this.transform.detach();
+    this.scene.remove(this.transform.getHelper());
+    this.transform.dispose();
     this.controls.dispose();
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement === this.container) {
