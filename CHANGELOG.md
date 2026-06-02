@@ -25,7 +25,18 @@
 
 ## 最新版本
 
-<!-- 0.12.x 版本变更按版本段追加到本区；开始开发 0.13 后整体移到 docs/changelogs/0.12.x.md -->
+<!-- 0.13.x 版本变更按版本段追加到本区；0.12.x 历史段待整体移到 docs/changelogs/0.12.x.md -->
+
+## [0.13.0] - 2026-06-02
+
+点云 + 图像联合标注工作台（Epic v0.13.x）第一切片：后端数据地基。纯新增、**无前端可见变化**，为后续 LiDAR 点云 + 相机图像联合标注打底。计划见 `docs/plans/2026-06-02-v0.13.0-pointcloud-data-foundation.md`，决策见 ADR-0029，数据模型见 `docs-site/dev/reference/point-cloud-data-model.md`。
+
+### Added
+
+- **多文件关联中间表 `TaskDatasetItemLink`（G1）**：一个 3D 任务（一帧 scene）经新表 `task_dataset_item_links` 关联多个数据项（主点云 + N 路相机图像），带 `role`（`primary_lidar` / `camera_<name>`）与 `sensor_name`；`UNIQUE(task_id, role)`。2D 单文件 task 的 `task.dataset_item_id` 1:1 路径完整保留，两条路径 service 层按 `project.data_type` 分流。迁移 `0092`。service 接口 `link_items` / `get_linked_items`（`app/services/task_dataset_link.py`）。
+- **3D 几何类型（G3）**：`Geometry` discriminated union 新增 `Box3DGeometry`（`type=box_3d`，`center[3]`/`size[3]`/`rotation[3]`）与 `PointMaskGeometry`（`type=point_mask_3d`，`point_indices`）。零迁移（存 `annotations.geometry` JSONB）；旧 2D 几何不受影响。前端强类型由 OpenAPI codegen 产出。
+- **工具单位 + file_type（G4）**：`lidar_box_3d` 工具单位从「留位」转为后端可用，新增 `point_mask_3d`；数据集 file_type 推断放开点云扩展名 `.pcd` / `.bin` / `.las` / `.ply` → `point_cloud`。
+- **跨模态身份约定（G6）**：不新增模型，复用 `Annotation.group_id` 把同一物体的「3D 框 + 各相机 2D 框」聚为一个逻辑对象。约定见数据模型参考文档。
 
 ## [0.12.1] - 2026-06-02
 

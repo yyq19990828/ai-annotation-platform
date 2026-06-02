@@ -6,7 +6,10 @@ repos:
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
+      # --unsafe: 仍校验 YAML 语法, 但不拒绝 docker-compose override 里的自定义标签
+      # (如 docker-compose.pcwb.yml 用 `!override` 强制替换 ports 列表)。
       - id: check-yaml
+        args: ["--unsafe"]
       - id: check-added-large-files
         args: ["--maxkb=2048"]
       - id: check-merge-conflict

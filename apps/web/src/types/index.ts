@@ -290,6 +290,10 @@ export type KeypointGeometry = {
   type: "keypoint";
   points: Keypoint[];
 };
+// v0.13.0 · 点云 3D 几何 (box_3d / point_mask_3d) 的强类型已由 OpenAPI codegen 落到
+// src/api/generated/types.gen.ts。此处手写业务 union 暂不并入 —— 现有 2D 工作台逻辑
+// (如 transforms.ts 的 2D bounds 兜底) 全程假设 x/y/w/h，过早 widening 会逼迫各窄化点
+// 处理 3D 分支，而那是 v0.13.2+ 前端的范围。届时引入 3D 工作台时再并入本 union。
 export type Geometry =
   | BboxGeometry
   | VideoBboxGeometry

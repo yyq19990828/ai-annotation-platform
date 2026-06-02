@@ -63,3 +63,5 @@
 - [0025](0025-webhook-event-envelope-versioning.md) — Webhook 事件信封与版本化（草案，未实现）
 - [0026](0026-tool-unit-class-and-attribute-binding.md) — 类别与属性按工具单位 (tool_unit) 强隔离绑定
 - [0027](0027-annotation-feedback-unified-table.md) — AnnotationFeedback 统一反馈表(三段式迁移)
+- [0028](0028-annotations-import-semantics.md) — 标注导入语义
+- [0029](0029-task-dataset-item-multi-link.md) — 点云任务-数据项多文件关联中间表（保留 2D 1:1）

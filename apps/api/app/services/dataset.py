@@ -939,6 +939,8 @@ class DatasetService:
 
 _IMAGE_EXTS = {"jpg", "jpeg", "png", "bmp", "webp", "tiff", "tif", "gif", "svg"}
 _VIDEO_EXTS = {"mp4", "avi", "mov", "mkv", "wmv", "flv", "webm"}
+# v0.13.0 · 点云联合标注地基 (0.13.0-3): 放开点云扩展名 → file_type=point_cloud。
+_POINTCLOUD_EXTS = {"pcd", "bin", "las", "ply"}
 
 
 def _safe_basename(relpath: str) -> str:
@@ -965,6 +967,8 @@ def _infer_file_type_from_ext(ext: str) -> str:
         return "image"
     if ext in _VIDEO_EXTS:
         return "video"
+    if ext in _POINTCLOUD_EXTS:
+        return "point_cloud"
     return "other"
 
 

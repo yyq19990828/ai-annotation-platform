@@ -364,3 +364,39 @@ class PointMaskGeometry(BaseModel):
 5. 前端 3D 查看器是真正的工作量大头,建议独立立项分期推进。
 
 > 后续若推进,可在 [10-roadmap.md](./10-roadmap.md) 增列「多模态 / 3D」阶段,并在 [08-comparison-matrix.md](./08-comparison-matrix.md) 的「3D 点云」行更新本平台支持度。相关上游源码已留在 `third-party/`(gitignore),可随时复查。
+
+---
+
+## 14.10 技术选型:面向生产级的借鉴决策
+
+> 本节是 §14.7 源码拆解 + §14.8 gap 分析的决策收口 —— 回答「要落地一个**生产级**平台,技术栈该借鉴谁」,直接驱动 v0.13.x 版本计划(见 `docs/plans/`)。
+
+### 14.10.1 本平台技术栈现状(已确认)
+
+| 层 | 栈 |
+|---|---|
+| 后端 | FastAPI + SQLAlchemy 2.0(async)+ Pydantic 2 + Alembic + Celery + PostgreSQL(JSONB) |
+| 前端 | React 18 + TypeScript + Vite + Zustand + **Konva / react-konva** |
+
+**硬约束**:Konva 是**纯 2D canvas 库,无 WebGL,渲染不了点云**。这一条决定一切 —— 3D 点云必须**新增 Three.js** 这一栈,Konva 撑不住。所以问题不是「整体抄谁」,而是分三层各取所长。
+
+### 14.10.2 三层借鉴决策
+
+| 层 | 最该借鉴 | 为什么 | 注意 |
+|---|---|---|---|
+| **后端数据模型** | **xtreme1**(设计)+ CVAT(可直译) | xtreme1 的 `SCENE/SINGLE_DATA/content 文件树 + trackId` 是三者里最生产级、最完整的多模态模型(直接答 G1);它是 Java,抄设计不抄代码。CVAT 是 **Django(同为 Python)**,`RelatedFile`/`DimensionType`/`cuboid_3d` 编码能较直接翻译成 SQLAlchemy | xtreme1 模型成熟;CVAT 同语言但**缺标定** |
+| **前端工程外壳** | **CVAT** | 三者中**唯一 React + Three.js**(`cvat-canvas3d`),与本平台 React 栈契合度最高,任务/job/质检体系是生产级 React 标注平台范本 | **CVAT 的 3D 不做投影**(只并排参考),这块不抄 |
+| **标定 + 投影内核** | **SUSTechPOINTS** | 投影是纯矩阵运算(`extrinsic[16] → intrinsic[9] → 透视除法`),**语言/框架无关,可直接移植**,是 CVAT 缺失、决定差异化的核心 | 原型级工程,只取算法不取架构 |
+
+### 14.10.3 综合结论
+
+**以 xtreme1 的数据模型为骨架,以 CVAT 的 React + Three.js 工程为前端外壳,以 SUSTechPOINTS 的标定投影为算法内核。** 没有任何一个能整体照搬:
+
+- **xtreme1** 功能最全但技术栈完全不同(Java/Spring/Vue)→ 学架构,代码重写。
+- **CVAT** 技术栈最契合(Python 后端 + React 前端)但 3D 是残缺品(无标定、无投影)→ 做整体工程参照,3D 部分要补。
+- **SUSTechPOINTS** 算法最纯但非生产级 → 只移植投影那几百行。
+
+### 14.10.4 两个要落地的前端选型
+
+1. **裸 Three.js + 自包一层 React,不用 react-three-fiber。** 标注编辑器要精细控制相机、射线拾取、8 角点拖拽手柄、多视图同步,这类命令式交互用 r3f 的声明式反而别扭 —— CVAT(`cvat-canvas3d`)与 xtreme1(`pc-render`)**都用命令式裸 Three.js**,这是成熟选择的信号。
+2. **两套画布并存,不强行统一。** 保留 Konva 做 2D 图像标注,新增 Three.js 做 3D 点云 —— 正如 xtreme1 把 `image-tool`(2D)与 `pc-tool`(3D)拆成两个独立 package。让 Konva 兼顾 3D 是死路。
