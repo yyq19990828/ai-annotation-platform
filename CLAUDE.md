@@ -219,3 +219,6 @@ Local preview: `pnpm docs:dev` → http://localhost:5173
 - [09-recommendations.md](docs/research/09-recommendations.md) — adoption recommendations
 - [10-roadmap.md](docs/research/10-roadmap.md) — roadmap
 - [11-references.md](docs/research/11-references.md) — references
+- [12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md) — large-dataset batching strategy
+- [13-simplify-tolerance-eval.md](docs/research/13-simplify-tolerance-eval.md) — mask→polygon simplify tolerance evaluation
+- [14-point-cloud-image-fusion.md](docs/research/14-point-cloud-image-fusion.md) — point-cloud + image joint annotation: fusion principles, tool comparison, and platform gap analysis
