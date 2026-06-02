@@ -174,6 +174,7 @@ ToolUnitId = Literal[
     "lidar_box_3d",
     "rotated_bbox",
     "keypoint",
+    "point_mask_3d",
 ]
 TOOL_UNIT_IDS: tuple[str, ...] = (
     "bbox",
@@ -183,6 +184,7 @@ TOOL_UNIT_IDS: tuple[str, ...] = (
     "lidar_box_3d",
     "rotated_bbox",
     "keypoint",
+    "point_mask_3d",
 )
 
 
@@ -509,6 +511,37 @@ class KeypointGeometry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+# ── v0.13.0 · 点云 3D 几何（box_3d / point_mask_3d） ──────────────────
+
+
+class Box3DGeometry(BaseModel):
+    """v0.13.0 · LiDAR 3D 框。center/size/rotation 各为长度 3 的列表
+    (x,y,z 米 / 长宽高 / 绕各轴弧度)。extra="allow" 容纳标定/属性等扩展字段。"""
+
+    type: Literal["box_3d"] = "box_3d"
+    center: list[float] = Field(min_length=3, max_length=3)
+    size: list[float] = Field(min_length=3, max_length=3)
+    rotation: list[float] = Field(min_length=3, max_length=3)
+
+    model_config = ConfigDict(extra="allow")
+
+
+class PointMaskGeometry(BaseModel):
+    """v0.13.0 · 3D 点云语义/实例分割掩码。point_indices 为指向点云的整数索引列表。"""
+
+    type: Literal["point_mask_3d"] = "point_mask_3d"
+    point_indices: list[int] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("point_indices")
+    @classmethod
+    def _check_non_negative(cls, v: list[int]) -> list[int]:
+        if any(i < 0 for i in v):
+            raise ValueError("point_indices 必须全为非负整数")
+        return v
+
+
 Geometry = Annotated[
     BboxGeometry
     | VideoBboxGeometry
@@ -517,7 +550,9 @@ Geometry = Annotated[
     | MultiPolygonGeometry
     | RotatedBboxGeometry
     | PolylineGeometry
-    | KeypointGeometry,
+    | KeypointGeometry
+    | Box3DGeometry
+    | PointMaskGeometry,
     Field(discriminator="type"),
 ]
 
