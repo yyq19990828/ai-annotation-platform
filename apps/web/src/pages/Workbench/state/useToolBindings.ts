@@ -40,13 +40,16 @@ export interface ToolBindingsView {
 export function useToolBindings(
   project: ProjectResponse | null | undefined,
   activeToolId: ToolId,
+  // v0.13.3-5 · 3D 点云台无对应 2D ToolId,直接指定工具单位(lidar_box_3d),绕过 toolUnitForTool。
+  overrideUnit?: ToolUnitId,
 ): ToolBindingsView {
-  const toolUnitId = toolUnitForTool(activeToolId);
+  const toolUnitId = overrideUnit ?? toolUnitForTool(activeToolId);
   return useMemo(() => {
     const tb = (project?.tool_bindings ?? {}) as ToolBindings;
     const view = _materialize(tb, toolUnitId);
     const hasOwnClasses = view.classes.length > 0;
-    if (hasOwnClasses) {
+    // overrideUnit(如 3D 的 lidar_box_3d)显式指定单位,不借 bbox/region 兜底(强隔离)。
+    if (hasOwnClasses || overrideUnit) {
       return view;
     }
     // v0.10.17 兜底: 当前 unit 未配置或类集合为空 (尤其是
@@ -61,7 +64,7 @@ export function useToolBindings(
       }
     }
     return { ...view, toolUnitId, hasOwnClasses };
-  }, [project, toolUnitId]);
+  }, [project, toolUnitId, overrideUnit]);
 }
 
 function _materialize(

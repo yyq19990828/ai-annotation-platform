@@ -11,7 +11,7 @@ import type {
 } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import type { AiBox } from "../state/transforms";
-import type { PendingDrawing, SamPolarity, SamSubTool, Tool, VideoTool } from "../state/useWorkbenchState";
+import type { PendingDrawing, SamPolarity, SamSubTool, ThreeDTool, Tool, VideoTool } from "../state/useWorkbenchState";
 import type { Viewport } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
@@ -57,6 +57,9 @@ interface WorkbenchStageHostCommonProps {
   onCursorMove: (pt: { x: number; y: number } | null) => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass: (id: string) => void;
+  /** v0.13.3-5 · 点云 3D 台工具态(壳层共享,与 ToolDock 同源);非 3D 任务忽略。 */
+  threeDTool: ThreeDTool;
+  onSetThreeDTool: (t: ThreeDTool) => void;
 }
 
 interface WorkbenchStageHostVideoProps {
@@ -209,6 +212,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onCursorMove,
       onDeleteUserBox,
       onChangeUserBoxClass,
+      threeDTool,
+      onSetThreeDTool,
     } = common;
     const videoProps = stageKind === "video" ? requireStageGroup(video, "video", stageKind) : undefined;
     const imageProps = stageKind === "image" ? requireStageGroup(image, "image", stageKind) : undefined;
@@ -311,6 +316,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
               readOnly={readOnly}
               selectedId={selectedId}
               onSelectBox={onSelectBox}
+              activeClass={activeClass}
+              threeDTool={threeDTool}
+              onSetThreeDTool={onSetThreeDTool}
             />
           </Suspense>
         ) : stageKind === "video" ? (

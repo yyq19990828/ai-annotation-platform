@@ -15,6 +15,7 @@ import {
 } from "@/hooks/useTasks";
 import { useProject } from "@/hooks/useProjects";
 import { classColorForCanvas } from "@/pages/Workbench/stage/colors";
+import type { ThreeDTool } from "@/pages/Workbench/state/useWorkbenchState";
 import type { Box3DGeometry } from "@/types";
 
 import { usePointCloudManifest } from "./usePointCloudManifest";
@@ -32,6 +33,11 @@ interface ThreeDWorkbenchProps {
   /** v0.13.3-5 · 壳层共享选中态(与标注列表 / 右栏面板同一份),驱动选中高亮 / gizmo / 数值面板。 */
   selectedId: string | null;
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
+  /** v0.13.3-5 · 壳层激活类别(左栏 ClassPalette 选);放置新框的 class_name 取它。 */
+  activeClass: string;
+  /** v0.13.3-5 · 3D 工具态(左栏 ToolDock 选,壳层共享):select 拾取 / box 点地面放置。 */
+  threeDTool: ThreeDTool;
+  onSetThreeDTool: (t: ThreeDTool) => void;
 }
 
 // v0.13.3 · 新框默认尺寸(米,长宽高;约一辆轿车),放置后用面板/gizmo 精修。
@@ -70,6 +76,9 @@ export function ThreeDWorkbench({
   readOnly = false,
   selectedId,
   onSelectBox,
+  activeClass,
+  threeDTool,
+  onSetThreeDTool,
 }: ThreeDWorkbenchProps) {
   const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -95,16 +104,12 @@ export function ThreeDWorkbench({
     [project],
   );
 
-  // 放置模式 + 待放置类别(进入放置时点地面创建一个默认框)。
-  const [placing, setPlacing] = useState(false);
-  const [placeClass, setPlaceClass] = useState<string | null>(null);
-  // 类别就绪后给个默认值;当前选项被删时回落到首个。
-  useEffect(() => {
-    setPlaceClass((prev) =>
-      prev && lidarClasses.includes(prev) ? prev : (lidarClasses[0] ?? null),
-    );
-  }, [lidarClasses]);
+  // 工具态 / 待放置类别全来自壳层(ToolDock 的 threeDTool + 左栏 ClassPalette 的 activeClass);
+  // canPlace 兜底:只读 / 未配类别时不允许放置。placeClass 在 activeClass 不在类集合时回落首个。
   const canPlace = !readOnly && lidarClasses.length > 0;
+  const placing = threeDTool === "box" && canPlace;
+  const placeClass =
+    activeClass && lidarClasses.includes(activeClass) ? activeClass : (lidarClasses[0] ?? null);
 
   // 选中框的 PSR 编辑表单(字符串值,允许清空 / 中间态如 "-" / "1.";解析有效时才提交)。
   // PATCH 防抖 250ms;yaw 以度展示。
@@ -222,9 +227,10 @@ export function ThreeDWorkbench({
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedId, readOnly]);
 
-  // 切任务退出放置(选中态由壳层在切任务时统管,3D 不再本地清)。
+  // 切任务回到选择工具(选中态由壳层在切任务时统管,3D 不再本地清)。
   useEffect(() => {
-    setPlacing(false);
+    onSetThreeDTool("select");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
   // 进入放置模式时清选中,避免 gizmo 挡在点地面的路上。
@@ -232,17 +238,17 @@ export function ThreeDWorkbench({
     if (placing) onSelectBox(null);
   }, [placing, onSelectBox]);
 
-  // B 切换放置模式 / Esc 取消(焦点在输入框时不拦截;无可用类别时不进入)。
+  // B 进放置 / V / Esc 回选择(焦点在输入框时不拦截;无可用类别时 B 无效)。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
-      if (e.key === "Escape") setPlacing(false);
-      else if (e.key === "b" || e.key === "B") setPlacing((p) => (canPlace ? !p : false));
+      if (e.key === "Escape" || e.key === "v" || e.key === "V") onSetThreeDTool("select");
+      else if ((e.key === "b" || e.key === "B") && canPlace) onSetThreeDTool("box");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canPlace]);
+  }, [canPlace, onSetThreeDTool]);
 
   // 选中目标切换时用其 PSR 初始化表单(编辑期间不被服务端回写覆盖,故仅依赖 selectedId)。
   useEffect(() => {
@@ -340,9 +346,9 @@ export function ThreeDWorkbench({
         },
         { onSuccess: (created) => onSelectBox(created.id) },
       );
-      setPlacing(false);
+      onSetThreeDTool("select"); // 单次放置后回到选择工具
     },
-    [placeClass, createAnnotation, onSelectBox],
+    [placeClass, createAnnotation, onSelectBox, onSetThreeDTool],
   );
 
   const handleViewportClick = (e: React.MouseEvent) => {
@@ -392,30 +398,6 @@ export function ThreeDWorkbench({
               onChange={(e) => handlePointSize(Number(e.target.value))}
             />
           </label>
-          {canPlace && (
-            <>
-              <select
-                className={styles.btn}
-                value={placeClass ?? ""}
-                aria-label="放置类别"
-                onChange={(e) => setPlaceClass(e.target.value)}
-              >
-                {lidarClasses.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className={placing ? `${styles.btn} ${styles.btnActive}` : styles.btn}
-                aria-pressed={placing}
-                onClick={() => setPlacing((p) => !p)}
-              >
-                {placing ? "点地面放置 · Esc 取消" : "放置框 (B)"}
-              </button>
-            </>
-          )}
         </div>
 
         {/* 状态条 */}
@@ -430,6 +412,9 @@ export function ThreeDWorkbench({
             </span>
           )}
           {boxes.length > 0 && <span>· {boxes.length} 框</span>}
+          {placing && (
+            <span>· 点地面放置 {placeClass ?? ""} · V/Esc 取消</span>
+          )}
           {selectedBox && (
             <span>
               · 选中 {selectedClass ?? ""} 中心 [

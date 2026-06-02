@@ -52,13 +52,6 @@
   color: var(--color-accent);
 }
 
-/* v0.13.3 · 放置模式激活态(高亮放置按钮)。 */
-.btnActive {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-  background: var(--color-bg-elev);
-}
-
 .sizeCtl {
   display: flex;
   align-items: center;
