@@ -27,6 +27,16 @@
 
 <!-- 0.12.x 版本变更按版本段追加到本区；开始开发 0.13 后整体移到 docs/changelogs/0.12.x.md -->
 
+## [0.12.2] - 2026-06-02
+
+> **开放注册邮箱验证。** 开放注册新增邮箱验证环节：验证开关按环境派生（production 默认开、dev/staging 默认关，可用 `REQUIRE_EMAIL_VERIFICATION` 显式覆盖）。开关打开时注册后须点邮件链接验证才能登录；邀请注册与管理员建号恒视为已验证。复用既有 SMTP 底座与 password-reset token 范式，未引入新依赖。
+
+### Added
+
+- **邮箱验证流程**: `User.email_verified_at` 字段 + `email_verification_tokens` 表（24 小时一次性 token，迁移 `0092`）；新增 `POST /auth/verify-email`（消费 token）与 `POST /auth/send-verification-email`（重发，防枚举恒 202）。`register-open` 在验证开关打开时不再自动登录，返回 `email_verification_required=true` 且 `access_token=null`，并发送验证邮件；`login` 对未验证账户返回 `400 {code: "email_not_verified"}` gate。→ [plan](docs/plans/2026-05-27-v0.12.0-email-verification.md)
+- **前端验证 UI**: RegisterPage 注册后切到「验证邮件已发送」态（含重发按钮 + 60s 倒计时）；新增 `/verify-email` 落地页消费 token；LoginPage 识别 `email_not_verified` 后展示「重新发送验证邮件」入口。
+- **环境派生配置**: 新增 `REQUIRE_EMAIL_VERIFICATION` env（留空按环境派生），经 `settings.email_verification_required` property 统一读取。存量用户迁移时回填 `email_verified_at = created_at`，避免上线即被锁。
+
 ## [0.12.1] - 2026-06-02
 
 大数据集规模化加固第三版（B6）：把导出从「全量进内存 + 单 `BytesIO` 攒整包」改为「分块读 DB + 落盘式 ZIP + 流式上传」，使导出 worker 内存与 task 数解耦，消除十万级导出的 OOM 风险。对用户行为无变化（仍异步、仍下载链接），只是内部更省内存。计划见 `docs/plans/2026-06-02-v0.12.1-streaming-export.md`。

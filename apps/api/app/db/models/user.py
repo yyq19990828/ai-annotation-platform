@@ -27,6 +27,12 @@ class User(Base):
     )
     status: Mapped[str] = mapped_column(String(20), default="offline")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # v0.12.0 · 邮箱验证时间戳。None = 未验证；非空 = 已验证。仅在开放注册 +
+    # require_email_verification 打开时作为登录 gate；邀请注册 / 管理员建号恒视为已验证。
+    # is_active 保持「停用/注销」单一语义，不背验证含义。
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

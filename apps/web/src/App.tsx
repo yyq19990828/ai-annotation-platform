@@ -17,6 +17,7 @@ import { ViewerDashboard } from "@/pages/Dashboard/ViewerDashboard";
 import { LoginPage } from "@/pages/Login/LoginPage";
 import { ForgotPasswordPage } from "@/pages/Login/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/pages/Login/ResetPasswordPage";
+import { VerifyEmailPage } from "@/pages/Login/VerifyEmailPage";
 import { RegisterPage } from "@/pages/Register/RegisterPage";
 import { UnauthorizedPage } from "@/pages/Unauthorized/UnauthorizedPage";
 
@@ -250,6 +251,7 @@ export function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
 
       <Route
         path="/projects/:id/annotate"

@@ -108,6 +108,12 @@ last_reviewed: 2026-06-02
 |---|---|---|
 | `ALLOW_OPEN_REGISTRATION` | `false` | true  — 任何人可自行注册，默认获得 viewer 角色 false — 仅管理员可创建账号 |
 
+## 开放注册是否强制邮箱验证
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `REQUIRE_EMAIL_VERIFICATION` | `—` | 留空  — 按环境派生：production 默认开、development/staging 默认关 true  — 注册后须点邮件链接验证才能登录（验证前不可登录；邀请注册恒视为已验证） false — 注册即可登录（与历史行为一致） |
+
 ## Cloudflare Turnstile CAPTCHA
 
 | 变量 | 默认值 | 说明 |

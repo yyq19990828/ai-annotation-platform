@@ -81,7 +81,6 @@
 
 ### 登录 / 注册 / 认证
 - **开放注册二阶段剩余**：
-  - **邮箱验证**：当前 viewer 零权限可跳过；若未来开放注册默认角色调高，需 `POST /auth/verify-email` + `email_verified_at` 字段 + 验证前 `is_active=false`。
   - **OAuth2 / 社交登录**：Google / GitHub SSO，python-social-auth 或 authlib；`User.oauth_provider` + `oauth_id` 字段；LoginPage / RegisterPage 加「使用 Google 登录」按钮。
 
 ### 后续观察项（仍 open）
@@ -161,7 +160,6 @@
 | **P0/P1** | 视频工作台总 epic（导入帧采样 / 轨迹工具对齐 CVAT / 视频导出 / 长视频协同 / 质量评估） | 已抽离为独立 epic，前后端 Phase 1-6 详见 [`ROADMAP/2026-05-21-video-workbench-roadmap.md`](ROADMAP/2026-05-21-video-workbench-roadmap.md) | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P2** | 图片工作台能力扩展剩余（I1 / I10 / I14 / I21） | 大图 tile / Skeleton / Polygon Crop / 快捷键自定义；详见 §C.7（I12/I18 仅余 UI 细节） | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
-| **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |
 | **P2** | 非视频工作台 lidar 真实 3D | v0.10.17 已把 `tool_unit=lidar_box_3d` 留位置灰; 图片侧形状 region / polyline / rotated_bbox / keypoint 已通过 tool_unit 维度落地(v0.10.17 + v0.10.28), 不再算独立工作台 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
