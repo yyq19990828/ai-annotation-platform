@@ -27,6 +27,8 @@ import styles from "./ThreeDWorkbench.module.css";
 
 interface ThreeDWorkbenchProps {
   taskId: string | null;
+  /** v0.13.3 · 锁定 task / viewer 角色时只读:不放置 / 不编辑 / 无 gizmo,仅看 + 选中查看数值。 */
+  readOnly?: boolean;
 }
 
 // v0.13.3 · 新框默认尺寸(米,长宽高;约一辆轿车),放置后用面板/gizmo 精修。
@@ -60,7 +62,7 @@ function psrToForm(b: {
   };
 }
 
-export function ThreeDWorkbench({ taskId }: ThreeDWorkbenchProps) {
+export function ThreeDWorkbench({ taskId, readOnly = false }: ThreeDWorkbenchProps) {
   const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
   const viewportRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<PointCloudScene | null>(null);
@@ -94,7 +96,7 @@ export function ThreeDWorkbench({ taskId }: ThreeDWorkbenchProps) {
       prev && lidarClasses.includes(prev) ? prev : (lidarClasses[0] ?? null),
     );
   }, [lidarClasses]);
-  const canPlace = lidarClasses.length > 0;
+  const canPlace = !readOnly && lidarClasses.length > 0;
 
   // 选中框的 PSR 编辑表单(字符串值,允许清空 / 中间态如 "-" / "1.";解析有效时才提交)。
   // PATCH 防抖 250ms;yaw 以度展示。
@@ -184,17 +186,17 @@ export function ThreeDWorkbench({ taskId }: ThreeDWorkbenchProps) {
     sceneRef.current?.setBoxes(boxes);
   }, [boxes]);
 
-  // 选中框时挂变换 gizmo,取消选中时脱离(依赖 boxes 以确保 setBoxes 已建好该组)。
+  // 选中框时挂变换 gizmo,取消选中时脱离(依赖 boxes 以确保 setBoxes 已建好该组);只读不挂。
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
-    if (selectedId) scene.attachTransform(selectedId);
+    if (selectedId && !readOnly) scene.attachTransform(selectedId);
     else scene.detachTransform();
-  }, [selectedId, boxes]);
+  }, [selectedId, boxes, readOnly]);
 
-  // W/E/R 切 gizmo 模式(仅选中时;焦点在输入框时不拦截)。
+  // W/E/R 切 gizmo 模式(仅选中且可编辑时;焦点在输入框时不拦截)。
   useEffect(() => {
-    if (!selectedId) return;
+    if (!selectedId || readOnly) return;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
@@ -210,7 +212,7 @@ export function ThreeDWorkbench({ taskId }: ThreeDWorkbenchProps) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId]);
+  }, [selectedId, readOnly]);
 
   // 切任务清选中 + 退出放置。
   useEffect(() => {
@@ -435,7 +437,9 @@ export function ThreeDWorkbench({ taskId }: ThreeDWorkbenchProps) {
             <div className={styles.editTitle}>
               <span>3D 框 · {selectedClass ?? ""}</span>
             </div>
-            <div className={styles.editGroupLabel}>拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放</div>
+            <div className={styles.editGroupLabel}>
+              {readOnly ? "只读 · 锁定 / 审阅态" : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
+            </div>
             {PSR_GROUPS.map((g) => (
               <div key={g.label}>
                 <div className={styles.editGroupLabel}>{g.label}</div>
@@ -448,6 +452,7 @@ export function ThreeDWorkbench({ taskId }: ThreeDWorkbenchProps) {
                       min={g.min}
                       value={form[k]}
                       aria-label={k}
+                      disabled={readOnly}
                       onChange={(e) => handleField(k, e.target.value)}
                       onBlur={() => handleFieldBlur(k)}
                     />
@@ -455,13 +460,15 @@ export function ThreeDWorkbench({ taskId }: ThreeDWorkbenchProps) {
                 </div>
               </div>
             ))}
-            <button
-              type="button"
-              className={styles.deleteBtn}
-              onClick={handleDeleteSelected}
-            >
-              删除框
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                className={styles.deleteBtn}
+                onClick={handleDeleteSelected}
+              >
+                删除框
+              </button>
+            )}
           </div>
         )}
       </div>

@@ -306,7 +306,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       <div className={styles.root} data-workbench-stage>
         {stageKind === "3d" ? (
           <Suspense fallback={<div className={styles.lazyFallback}>加载点云查看器…</div>}>
-            <ThreeDWorkbench taskId={taskId} />
+            <ThreeDWorkbench taskId={taskId} readOnly={readOnly} />
           </Suspense>
         ) : stageKind === "video" ? (
           <VideoWorkbench
