@@ -130,3 +130,36 @@ GET /tasks/{id}/point-cloud/manifest   (project.data_type=="lidar"，否则 409)
 前端(双画布架构,ADR-0031):`project.type_key === "lidar"` → `WorkbenchStageHost` 的 `3d` 分支 → lazy `ThreeDWorkbench`(独立 `vendor-three` chunk,不进主 bundle)。裸 Three.js 封装 `PointCloudScene`(`PCDLoader` + OrbitControls + 高度上色 + 大点云抽稀 + dispose 生命周期),相机图只读平铺。模块在 `apps/web/src/pages/Workbench/stages/three-d/`,与 Konva `stage/` 隔离。
 
 > 只读;3D 框标注(v0.13.3)与标定驱动投影联动(v0.13.4)后续。
+
+## 3D 框标注链路(v0.13.3)
+
+把只读查看器升级为**可标注**:在 3D 工作台画 / 选 / 编辑 `box_3d` 框,经现有标注 CRUD 持久化。**后端零改动、零新端点、零迁移**(链路在 v0.13.0 已备好),全部是前端 + 一处设置解禁。交互形态决策见 ADR-0032。
+
+### 持久化 payload(复用既有标注 API)
+
+```jsonc
+POST /tasks/{id}/annotations            // 创建; PATCH .../{aid} 更新, DELETE 软删
+{ "annotation_type": "box_3d",
+  "tool_unit_id": "lidar_box_3d",        // 类别 / 属性绑定挂在此 unit 下
+  "class_name": "car",
+  "geometry": { "type": "box_3d",
+    "center": [x, y, z],                 // 米, 点云 Z-up
+    "size":   [长, 宽, 高],
+    "rotation": [0, 0, yaw] } }          // 7-DoF: 仅 rotation[2]=yaw(绕 Z)可编辑
+```
+
+- **类别校验**:service 层 `_validate_class_name` 按 `lookup_classes_for_tool_unit(tool_bindings, "lidar_box_3d")` 校验,非集合内类别 422;空 `tool_bindings` 放行(向后兼容)。与 2D 同一条路径,无 3D 专用分支。测试:`apps/api/tests/test_pointcloud_box3d_annotation.py`(创建命中 / 422 / 空放行),几何判别联合分发由 `test_jsonb_strong_types.py::test_geometry_union_dispatches_3d_types` 锁。
+- **设置解禁**:`lidar` 项目在建项目向导 / 项目设置可启用 `lidar_box_3d` 并配类别(`toolUnits.ts` 映射 `data_type==="lidar" → ["lidar_box_3d"]`,向导按 `available` 过滤,v0.13.3 起 `available=true`)。
+
+### 编辑交互(主视图 gizmo + 数值面板,ADR-0032 方案 A)
+
+- **渲染 + 选中**:`PointCloudScene` 框图层每框一个 Group(线框 + 半透拾取 Mesh,`depthTest:false` 始终画在点云之上),`Raycaster` 拾取选中。PSR 用 Group 的 position/quaternion/scale 表示(让 `TransformControls` 直接驱动)。
+- **编辑**:选中后官方 `TransformControls`(W 平移 / E 绕 Z 转 / R 缩放)+ 右上 PSR 数值面板,两者经选中框 PSR 单一真值双向同步;缩放 gizmo 翻转出的负尺寸取绝对值兜底(下限 0.05m),避免框翻转 / 卡住面板 `size>0` 提交校验。
+- **放置**:「放置框 (B)」切换 → 点地面射线打 `z=groundZ` 水平面(`groundZ` 由 z 直方图低分位估计,避免默认框悬浮)→ 默认尺寸框 → 持久化 → 自动选中精修。透视拖拽不准,故落点 + 默认尺寸 + 数值面板精修,不做拖画足迹。
+- **只读**:锁定 task / viewer(`readOnly`,壳层透传)不放置 / 不挂 gizmo / 面板禁用,仅可选中查看数值。
+
+### PSR↔角点纯函数(为 v0.13.4 投影预留)
+
+`three-d/geometry/box3d.ts`(移植 SUSTechPOINTS 矩阵,无框架依赖,带单测):`boxToMatrix4` / `psrToCorners` 算 8 角点与朝向。v0.13.4 标定驱动 3D→2D 投影复用同一套约定(欧拉角顺序 `XYZ`、yaw=`rotation[2]`),约定一旦漂移投影必偏。
+
+> 投影联动(3D↔2D 实时高亮、最佳相机)、`group_id` 跨模态聚合、`point_mask_3d` 分割留 v0.13.4+。
