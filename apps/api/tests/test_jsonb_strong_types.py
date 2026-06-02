@@ -22,6 +22,7 @@ from app.schemas._jsonb_types import (
     CanvasDrawing,
     CanvasShape,
     ClassConfigEntry,
+    DatasetItemMetadata,
     Geometry,
     Keypoint,
     KeypointGeometry,
@@ -32,6 +33,7 @@ from app.schemas._jsonb_types import (
     PolygonGeometry,
     PolylineGeometry,
     RotatedBboxGeometry,
+    SensorCalibration,
     ToolBinding,
     VideoModesConfig,
     VideoTrackBbox,
@@ -509,3 +511,70 @@ def test_geometry_union_still_dispatches_2d_types():
     bbox = GA.validate_python({"type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4})
     assert isinstance(bbox, BboxGeometry)
     assert bbox.x == 0.1
+
+
+# ── v0.13.1 · 相机标定 SensorCalibration / DatasetItemMetadata ───────
+
+
+def test_sensor_calibration_round_trip():
+    extrinsic = [float(i) for i in range(16)]
+    intrinsic = [float(i) for i in range(9)]
+    c = SensorCalibration(extrinsic=extrinsic, intrinsic=intrinsic)
+    assert c.rect is None
+    dumped = c.model_dump()
+    c2 = SensorCalibration.model_validate(dumped)
+    assert c2.extrinsic == extrinsic
+    assert c2.intrinsic == intrinsic
+    assert c2.rect is None
+
+
+def test_sensor_calibration_round_trip_with_rect():
+    extrinsic = [float(i) for i in range(16)]
+    intrinsic = [float(i) for i in range(9)]
+    rect = [float(i) for i in range(16)]
+    c = SensorCalibration(extrinsic=extrinsic, intrinsic=intrinsic, rect=rect)
+    dumped = c.model_dump()
+    c2 = SensorCalibration.model_validate(dumped)
+    assert c2.rect == rect
+
+
+def test_sensor_calibration_rejects_bad_lengths():
+    intrinsic = [float(i) for i in range(9)]
+    extrinsic = [float(i) for i in range(16)]
+    # extrinsic 长度 15
+    with pytest.raises(ValidationError):
+        SensorCalibration(
+            extrinsic=[float(i) for i in range(15)], intrinsic=intrinsic
+        )
+    # intrinsic 长度 8
+    with pytest.raises(ValidationError):
+        SensorCalibration(
+            extrinsic=extrinsic, intrinsic=[float(i) for i in range(8)]
+        )
+    # rect 长度 10
+    with pytest.raises(ValidationError):
+        SensorCalibration(
+            extrinsic=extrinsic,
+            intrinsic=intrinsic,
+            rect=[float(i) for i in range(10)],
+        )
+
+
+def test_dataset_item_metadata_calibration_typed_extra_preserved():
+    m = DatasetItemMetadata.model_validate(
+        {
+            "calibration": {
+                "extrinsic": [float(i) for i in range(16)],
+                "intrinsic": [float(i) for i in range(9)],
+            },
+            "foo": 123,
+        }
+    )
+    assert isinstance(m.calibration, SensorCalibration)
+    # extra="allow" 保留未声明 key
+    assert m.model_dump()["foo"] == 123
+
+
+def test_dataset_item_metadata_empty_calibration_none():
+    m = DatasetItemMetadata()
+    assert m.calibration is None
