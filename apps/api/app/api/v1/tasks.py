@@ -483,6 +483,13 @@ async def get_point_cloud_manifest(
             try:
                 calibration = SensorCalibration.model_validate(raw_calib)
             except Exception:
+                # 入库已经过 attach_calibration 归一化，正常到不了这里；真踩到说明
+                # 存了脏标定，别静默吞 —— 记一条 warning 指明是哪个 task/相机被判废。
+                logger.warning(
+                    "task %s %s: stored calibration failed validation, returning null",
+                    task_id,
+                    link.role,
+                )
                 calibration = None
         cameras.append(
             PointCloudCameraOut(

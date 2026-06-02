@@ -76,6 +76,10 @@ async def build_tasks_for_link(
         )
 
         await attach_calibration(db, dataset_id=dataset_id)
+        # 标定独立落库：build_pointcloud 在「帧全已建过 task」时 total==0 早退且不 commit，
+        # 若不在此 commit，attach_calibration 的 flush 会在 session 关闭时回滚 —— 重导入
+        # （如修正 calib 文件后重跑）将刷不掉旧标定。commit 在这让标定持久化与建任务解耦。
+        await db.commit()
         return await build_pointcloud_tasks_for_link(
             db,
             dataset_id=dataset_id,

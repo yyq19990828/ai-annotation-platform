@@ -176,7 +176,9 @@ async def test_attach_calibration_writes_metadata(db_session, super_admin, monke
     calib = {
         "extrinsic": list(range(16)),
         "intrinsic": list(range(9)),
-        "rect": [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        # rect 是 KITTI 4x4 矫正矩阵（长度 16）。v0.13.2 起 attach_calibration 经
+        # SensorCalibration 全字段校验，非法长度的 rect 会让整份标定被拒（warning 跳过）。
+        "rect": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
     }
     _patch_get_object(monkeypatch, calib)
 

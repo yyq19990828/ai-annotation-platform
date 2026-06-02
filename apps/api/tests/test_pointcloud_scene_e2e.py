@@ -124,8 +124,20 @@ async def test_scene_import_end_to_end(db_session, _patch_calib_read):
     assert all(t.file_type == "point_cloud" for t in tasks)
 
     # 每帧 link: 1 primary_lidar + 该帧实际存在的相机
+    # v0.13.2 · attach_calibration 入库前经 SensorCalibration 归一化（剥未建模杂键、
+    # exclude_none），故期望值同样归一化（夹具 left.json 含杂键 extrinsic_ok，被剥掉）。
+    from app.schemas._jsonb_types import SensorCalibration
+
+    _known = set(SensorCalibration.model_fields)
     expected_calib = {
-        cam: json.loads(Path(p).read_bytes()) for cam, p in calib_paths.items()
+        cam: SensorCalibration.model_validate(
+            {
+                k: v
+                for k, v in json.loads(Path(p).read_bytes()).items()
+                if k in _known
+            }
+        ).model_dump(exclude_none=True)
+        for cam, p in calib_paths.items()
     }
     items = (
         await db_session.execute(
@@ -157,7 +169,7 @@ async def test_scene_import_end_to_end(db_session, _patch_calib_read):
     links_950 = await get_linked_items(db_session, task_950.id)
     assert [link.role for link in links_950] == ["primary_lidar"]
 
-    # 各相机帧 DatasetItem.metadata_["calibration"] 与源一致
+    # 各相机帧 DatasetItem.metadata_["calibration"] 与源（归一化后）一致
     for cam, frames in cams.items():
         for frame in frames:
             cam_item = by_path[f"scene-a/camera/{cam}/{frame}.jpg"]

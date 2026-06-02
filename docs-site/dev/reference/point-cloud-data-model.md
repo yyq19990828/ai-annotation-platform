@@ -73,7 +73,7 @@ scene 目录入库(upload-zip / import-from-connection):
 
 POST /datasets/{id}/link  (project.data_type=="lidar"):
   build_tasks_for_link 分流 →
-    attach_calibration         : 读 calib JSON → 写各相机帧 DatasetItem.metadata_["calibration"]
+    attach_calibration         : 读 calib JSON → 经 SensorCalibration 归一化(剥未建模杂键 + 全字段校验)→ 写各相机帧 DatasetItem.metadata_["calibration"]
     build_pointcloud_tasks_for_link:
       group_frames             : 按 file_path 段名(lidar/camera/calib)分组,取最后一次出现
       每个 lidar 帧 → 1 Task(dataset_item_id=lidar item, file_type=point_cloud)

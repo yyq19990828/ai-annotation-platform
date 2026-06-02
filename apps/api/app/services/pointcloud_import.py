@@ -20,10 +20,12 @@ import logging
 import uuid
 from pathlib import PurePosixPath
 
+from pydantic import ValidationError
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DatasetItem, Project, Task
+from app.schemas._jsonb_types import SensorCalibration
 from app.services import async_job as async_job_svc
 from app.services.storage import storage_service
 from app.services.task_dataset_link import link_items
@@ -211,9 +213,13 @@ async def build_pointcloud_tasks_for_link(
 async def attach_calibration(db: AsyncSession, *, dataset_id: uuid.UUID) -> int:
     """v0.13.1 · 读 calib/camera/<cam>.json 写入该相机所有帧 DatasetItem 的 metadata。
 
-    对每个 calib item：从 MinIO 读字节 → json.loads → {extrinsic, intrinsic, rect?}。
-    校验 extrinsic 长度 16、intrinsic 长度 9，否则 warning 跳过该相机（不抛）。
-    把 calib dict 写进该相机所有帧 DatasetItem 的 metadata_["calibration"]。
+    对每个 calib item：从 MinIO 读字节 → json.loads → 经 SensorCalibration 归一化后落库。
+    归一化做两件事（v0.13.2 起，原先存原始 dict + 仅长度校验）：
+      1. 只保留 schema 已建模字段（extrinsic / intrinsic / rect），剥掉上游/厂商夹带的
+         杂键（如 SUSTechPOINTS 示例 left.json 的 extrinsic_ok）；
+      2. 过 SensorCalibration 校验（extrinsic=16 / intrinsic=9 / rect=16），非法则
+         warning 跳过该相机（不抛）。
+    入库即「单一真值的干净标定」，读取端（manifest）不会再因杂键被 extra="forbid" 判废。
     返回写入的相机项数（DatasetItem 行数）。
     """
     items = await _load_dataset_items(db, dataset_id)
@@ -225,32 +231,28 @@ async def attach_calibration(db: AsyncSession, *, dataset_id: uuid.UUID) -> int:
         for cam, cam_item in frame["cameras"].items():
             cam_to_items.setdefault(cam, []).append(cam_item)
 
+    known_fields = set(SensorCalibration.model_fields)
     written = 0
     for cam, calib_item in calib_items.items():
-        calib = _read_calibration(calib_item.file_path)
-        if calib is None:
+        raw = _read_calibration(calib_item.file_path)
+        if raw is None:
             continue
-        extrinsic = calib.get("extrinsic")
-        intrinsic = calib.get("intrinsic")
-        if (
-            not isinstance(extrinsic, list)
-            or len(extrinsic) != 16
-            or not isinstance(intrinsic, list)
-            or len(intrinsic) != 9
-        ):
+        # 先剥未建模键再校验：杂键不应让一份内外参合法的标定整体作废。
+        filtered = {k: v for k, v in raw.items() if k in known_fields}
+        try:
+            calib = SensorCalibration.model_validate(filtered)
+        except ValidationError as exc:
             logger.warning(
-                "calibration for camera %r invalid (extrinsic=%s intrinsic=%s), skipped",
-                cam,
-                None if extrinsic is None else len(extrinsic),
-                None if intrinsic is None else len(intrinsic),
+                "calibration for camera %r invalid, skipped: %s", cam, exc
             )
             continue
+        normalized = calib.model_dump(exclude_none=True)
 
         for cam_item in cam_to_items.get(cam, []):
             # 整体重新赋值整个 dict 以触发 SQLAlchemy JSONB 变更检测。
             cam_item.metadata_ = {
                 **(cam_item.metadata_ or {}),
-                "calibration": calib,
+                "calibration": normalized,
             }
             written += 1
 
