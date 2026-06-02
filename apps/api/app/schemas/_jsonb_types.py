@@ -672,3 +672,27 @@ class AuditDetail(BaseModel):
     new_name: str | None = None
 
     model_config = ConfigDict(extra="allow")
+
+
+# ── v0.13.1 · 点云相机标定（calibration）────────────────────────────
+
+
+class SensorCalibration(BaseModel):
+    """v0.13.1 · 相机标定。extrinsic row-major 4x4 外参(16), intrinsic row-major
+    3x3 内参(9), rect 为 KITTI 可选矫正矩阵 4x4(16)。存进 DatasetItem.metadata_
+    的 "calibration" key。投影: extrinsic·[x,y,z,1] → xyz → intrinsic·xyz → 透视除法。"""
+
+    extrinsic: list[float] = Field(min_length=16, max_length=16)
+    intrinsic: list[float] = Field(min_length=9, max_length=9)
+    rect: list[float] | None = Field(default=None, min_length=16, max_length=16)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DatasetItemMetadata(BaseModel):
+    """v0.13.1 · DatasetItem.metadata_ 的结构化视图。calibration 仅点云相机项有;
+    extra="allow" 保留其它历史/未来 metadata key 不丢。"""
+
+    calibration: SensorCalibration | None = None
+
+    model_config = ConfigDict(extra="allow")
