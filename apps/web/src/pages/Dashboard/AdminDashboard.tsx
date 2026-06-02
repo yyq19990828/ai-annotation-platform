@@ -14,6 +14,7 @@ import { ROLE_LABELS } from "@/constants/roles";
 import { CreateProjectWizard } from "@/components/projects/CreateProjectWizard";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { auditActionLabel } from "@/utils/auditLabels";
+import { projectDisplayType } from "@/utils/projectDisplay";
 import type { UserRole } from "@/types";
 import type { RegistrationDayPoint } from "@/api/dashboard";
 import styles from "./AdminDashboard.module.css";
@@ -277,7 +278,7 @@ export function AdminDashboard() {
                     <td className={`${styles.tableCell} ${styles.tableCellFirst}`}>
                       <div className={styles.projectName}>{p.name}</div>
                       <div className={styles.projectMeta}>
-                        <span className="mono">{p.display_id}</span> · {p.type_label}
+                        <span className="mono">{p.display_id}</span> · {projectDisplayType(p)}
                       </div>
                     </td>
                     <td className={styles.tableCell}>

@@ -11,6 +11,7 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useProjects, useProjectStats } from "@/hooks/useProjects";
 import type { ProjectResponse } from "@/api/projects";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import { projectDisplayType } from "@/utils/projectDisplay";
 import styles from "./ViewerDashboard.module.css";
 
 const FILTERS = ["全部", "进行中", "待审核", "已完成"] as const;
@@ -32,7 +33,7 @@ export function ViewerDashboard() {
     if (WORKBENCH_PROJECT_TYPES.has(p.type_key)) {
       navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
     } else {
-      pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `类型 ${p.type_label} 的标注界面尚未实现` });
+      pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `${projectDisplayType(p)} 的标注界面尚未实现` });
     }
   };
 

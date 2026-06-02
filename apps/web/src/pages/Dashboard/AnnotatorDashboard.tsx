@@ -12,6 +12,7 @@ import { useAnnotatorStats } from "@/hooks/useDashboard";
 import { useProjects } from "@/hooks/useProjects";
 import { MyBatchesCard } from "./MyBatchesCard";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import { projectDisplayType } from "@/utils/projectDisplay";
 import styles from "./AnnotatorDashboard.module.css";
 
 function formatMs(ms: number | null | undefined): string {
@@ -243,7 +244,7 @@ export function AnnotatorDashboard() {
                         </div>
                       </td>
                       <td className={styles.mutedCell}>
-                        {p.type_label}
+                        {projectDisplayType(p)}
                       </td>
                       <td className={styles.mutedCell}>
                         {p.completed_tasks ?? 0} / {p.total_tasks ?? 0} <span className="mono">({pct}%)</span>

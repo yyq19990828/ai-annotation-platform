@@ -115,9 +115,10 @@ describe("DashboardPage", () => {
           id: "p1",
           display_id: "P-1",
           name: "Demo项目",
-          type_label: "图像检测",
+          type_label: "图像 · 目标检测",
           type_key: "image-det",
           data_type: "image",
+          tool_bindings: { bbox: { enabled: true } },
           owner_id: "u1",
           owner_name: "Alice",
           member_count: 3,
@@ -136,6 +137,8 @@ describe("DashboardPage", () => {
     expect(screen.getByText("Demo项目")).toBeInTheDocument();
     expect(screen.getByText("Alice")).toBeInTheDocument();
     expect(screen.getByText("P-1")).toBeInTheDocument();
+    expect(screen.getByText("图片 · 矩形框")).toBeInTheDocument();
+    expect(screen.queryByText("图像 · 目标检测")).not.toBeInTheDocument();
   });
 
   it("项目已解绑 backend 时不显示旧 ai_model", () => {
@@ -145,9 +148,10 @@ describe("DashboardPage", () => {
           id: "p1",
           display_id: "P-1",
           name: "Demo项目",
-          type_label: "视频",
+          type_label: "视频 · 时序追踪",
           type_key: "video-track",
           data_type: "video",
+          tool_bindings: { bbox: { enabled: true } },
           owner_id: "u1",
           owner_name: "Alice",
           member_count: 1,
@@ -167,6 +171,8 @@ describe("DashboardPage", () => {
     renderUI();
     expect(screen.queryByText("gsam2-video")).not.toBeInTheDocument();
     expect(screen.getByText("未接入模型")).toBeInTheDocument();
+    expect(screen.getByText("视频 · 单帧框 / 轨迹框")).toBeInTheDocument();
+    expect(screen.queryByText("视频 · 时序追踪")).not.toBeInTheDocument();
   });
 
   it("有 stats → stat 卡片渲染正确数值", () => {

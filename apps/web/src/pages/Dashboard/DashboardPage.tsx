@@ -23,6 +23,7 @@ import { FilterDrawer, EMPTY_FILTERS, type DashboardFilters } from "./FilterDraw
 import { ProjectGrid } from "./ProjectGrid";
 import { ProjectActionsMenu } from "./ProjectActionsMenu";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import { projectDisplayType } from "@/utils/projectDisplay";
 
 import styles from "./DashboardPage.module.css";
 
@@ -71,7 +72,7 @@ function ProjectRow({
             <div className={styles.projectMeta}>
               <span className={`mono ${styles.projectId}`}>{p.display_id}</span>
               <span className={styles.metaDot}>·</span>
-              <span className={styles.projectType}>{p.type_label}</span>
+              <span className={styles.projectType}>{projectDisplayType(p)}</span>
             </div>
           </div>
         </div>
@@ -212,7 +213,7 @@ export function DashboardPage() {
     if (WORKBENCH_PROJECT_TYPES.has(p.type_key)) {
       navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
     } else {
-      pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `类型 ${p.type_label} 的标注界面尚未实现` });
+      pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `${projectDisplayType(p)} 的标注界面尚未实现` });
     }
   };
 
