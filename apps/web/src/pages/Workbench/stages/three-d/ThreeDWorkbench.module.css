@@ -100,8 +100,43 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   font-size: 13px;
   font-weight: 600;
+}
+
+/* v0.13.3-5 · 选中框改类下拉(面板内,3D 原生改类)。 */
+.classSelect {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-size: 12px;
+}
+
+/* v0.13.3-5 · 锁定 / 解锁切换。 */
+.lockBtn {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.lockBtn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.lockBtnOn {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 .editGroupLabel {

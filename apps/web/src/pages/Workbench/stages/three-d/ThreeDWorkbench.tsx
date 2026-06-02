@@ -120,6 +120,7 @@ export function ThreeDWorkbench({
   const boxes = useMemo<SceneBox[]>(() => {
     const list: SceneBox[] = [];
     for (const a of annotations ?? []) {
+      if (a.is_hidden) continue; // 隐藏的框(列表 H 切换)不渲染,与 2D 画布同语义
       const g = a.geometry as {
         type?: string;
         center?: number[];
@@ -142,8 +143,12 @@ export function ThreeDWorkbench({
   }, [annotations, selectedId]);
 
   const selectedBox = boxes.find((b) => b.id === selectedId) ?? null;
-  const selectedClass =
-    (annotations ?? []).find((a) => a.id === selectedId)?.class_name ?? null;
+  const selectedAnn = (annotations ?? []).find((a) => a.id === selectedId) ?? null;
+  const selectedClass = selectedAnn?.class_name ?? null;
+  // 单框锁定(列表 L 切换)→ 不可编辑(无 gizmo / 面板禁用 / 不可删),但仍可选中查看。
+  const selectedLocked = !!selectedAnn?.is_locked;
+  // 可编辑 = 任务级非只读 且 该框未锁定。
+  const selectedEditable = !readOnly && !selectedLocked;
 
   // 实例化 / 销毁 Scene(随容器挂载一次)。
   useEffect(() => {
@@ -199,17 +204,17 @@ export function ThreeDWorkbench({
     sceneRef.current?.setBoxes(boxes);
   }, [boxes]);
 
-  // 选中框时挂变换 gizmo,取消选中时脱离(依赖 boxes 以确保 setBoxes 已建好该组);只读不挂。
+  // 选中框时挂变换 gizmo,取消选中时脱离(依赖 boxes 以确保 setBoxes 已建好该组);只读/锁定不挂。
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
-    if (selectedId && !readOnly) scene.attachTransform(selectedId);
+    if (selectedId && selectedEditable) scene.attachTransform(selectedId);
     else scene.detachTransform();
-  }, [selectedId, boxes, readOnly]);
+  }, [selectedId, boxes, selectedEditable]);
 
   // W/E/R 切 gizmo 模式(仅选中且可编辑时;焦点在输入框时不拦截)。
   useEffect(() => {
-    if (!selectedId || readOnly) return;
+    if (!selectedId || !selectedEditable) return;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
@@ -225,7 +230,7 @@ export function ThreeDWorkbench({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, readOnly]);
+  }, [selectedId, selectedEditable]);
 
   // 切任务回到选择工具(选中态由壳层在切任务时统管,3D 不再本地清)。
   useEffect(() => {
@@ -322,6 +327,24 @@ export function ThreeDWorkbench({
     deleteAnnotation.mutate(selectedId);
     onSelectBox(null);
   }, [selectedId, deleteAnnotation, onSelectBox]);
+
+  // 改选中框类别(3D 原生:面板下拉;2D 的画布锚定 popover 不适用 3D)。
+  const handleChangeClass = useCallback(
+    (cls: string) => {
+      if (!selectedId || !cls) return;
+      updateAnnotation.mutate({ annotationId: selectedId, payload: { class_name: cls } });
+    },
+    [selectedId, updateAnnotation],
+  );
+
+  // 锁定 / 解锁选中框(与列表 L 切换同源 is_locked;锁定后不可编辑,解锁需此按钮 / 列表)。
+  const handleToggleLock = useCallback(() => {
+    if (!selectedId) return;
+    updateAnnotation.mutate({
+      annotationId: selectedId,
+      payload: { is_locked: !selectedLocked },
+    });
+  }, [selectedId, selectedLocked, updateAnnotation]);
 
   // 放置:点地面 → 默认尺寸框(落在地面上)→ 持久化 → 选中新框精修;单次放置后退出。
   const handlePlace = useCallback(
@@ -427,10 +450,44 @@ export function ThreeDWorkbench({
         {selectedBox && form && (
           <div className={styles.editPanel}>
             <div className={styles.editTitle}>
-              <span>3D 框 · {selectedClass ?? ""}</span>
+              {lidarClasses.length > 0 ? (
+                <select
+                  className={styles.classSelect}
+                  value={selectedClass ?? ""}
+                  aria-label="框类别"
+                  disabled={!selectedEditable}
+                  onChange={(e) => handleChangeClass(e.target.value)}
+                >
+                  {/* 当前类别若不在配置集合内(历史数据)仍可见,不丢选中项 */}
+                  {selectedClass && !lidarClasses.includes(selectedClass) && (
+                    <option value={selectedClass}>{selectedClass}</option>
+                  )}
+                  {lidarClasses.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span>3D 框 · {selectedClass ?? ""}</span>
+              )}
+              {!readOnly && (
+                <button
+                  type="button"
+                  className={selectedLocked ? `${styles.lockBtn} ${styles.lockBtnOn}` : styles.lockBtn}
+                  aria-pressed={selectedLocked}
+                  onClick={handleToggleLock}
+                >
+                  {selectedLocked ? "已锁定" : "锁定"}
+                </button>
+              )}
             </div>
             <div className={styles.editGroupLabel}>
-              {readOnly ? "只读 · 锁定 / 审阅态" : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
+              {readOnly
+                ? "只读 · 锁定 / 审阅态"
+                : selectedLocked
+                  ? "已锁定 · 点「已锁定」解锁后可编辑"
+                  : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
             </div>
             {PSR_GROUPS.map((g) => (
               <div key={g.label}>
@@ -444,7 +501,7 @@ export function ThreeDWorkbench({
                       min={g.min}
                       value={form[k]}
                       aria-label={k}
-                      disabled={readOnly}
+                      disabled={!selectedEditable}
                       onChange={(e) => handleField(k, e.target.value)}
                       onBlur={() => handleFieldBlur(k)}
                     />
@@ -452,7 +509,7 @@ export function ThreeDWorkbench({
                 </div>
               </div>
             ))}
-            {!readOnly && (
+            {selectedEditable && (
               <button
                 type="button"
                 className={styles.deleteBtn}
