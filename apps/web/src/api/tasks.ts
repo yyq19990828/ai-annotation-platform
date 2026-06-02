@@ -13,7 +13,8 @@ import type {
 
 export interface TaskListResponse {
   items: TaskResponse[];
-  total: number;
+  // v0.11.30 · 仅首页返回精确总数；cursor 翻页时为 null（前端复用首页值）。
+  total: number | null;
   limit: number;
   offset: number;
   next_cursor?: string | null;

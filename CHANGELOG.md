@@ -24,6 +24,20 @@
 
 ## 最新版本
 
+## [0.11.30] - 2026-06-02
+
+> **大数据集查询地基：万级 → 十万级 task 的「取下一题 / 列任务」热路径索引化。** 为 `tasks` 补 2 个经 10 万行 EXPLAIN ANALYZE 实测保留的索引；scheduler 的 `get_next_task` 用相关 `NOT EXISTS` 取代 `NOT IN`、用相关标量子查询取代 uncertainty 采样的 `outerjoin Prediction` 行扇出；`list_tasks` 仅首页做精确全表 `COUNT`，cursor 翻页不再逐页重复扫全表。纯后端 + 一处前端类型放宽，无行为变化。详见 [docs/plans/2026-06-02-v0.11.30-scale-query-foundation.md](docs/plans/2026-06-02-v0.11.30-scale-query-foundation.md)。
+
+### Changed
+
+- **scheduler 热路径（B1）**: `get_next_task` 候选集的「该用户已标注」判定从 `~Task.id.in_(子查询)` 改为相关 `NOT EXISTS`（标注量大时避免 Postgres 物化整个 task_id 集合，NULL 语义也更稳）；`uncertainty` 采样从 `outerjoin Prediction ... order by score`（按预测条数行扇出）改为相关标量子查询取每 task 最低预测分。语义不变。
+- **任务列表 COUNT（B2）**: `GET /tasks` 仅首页（无 cursor 且 offset=0）返回精确 `total`，cursor 翻页返回 `null`（前端复用首页值），消除无限滚动逐页重复的全表 `COUNT`。`TaskListResponse.total` 放宽为可空；前端两个消费点本就读 `pages[0].total`，零影响。
+
+### Added
+
+- **tasks 大表索引（B3，migration 0090）**: `ix_tasks_project_created_id (project_id, created_at, id)`（列任务 Index Scan，首页 100 行 0.09ms）+ `ix_tasks_batch_unlabeled (batch_id) WHERE is_labeled=false`（batch 内取题 + 未归类池）。普通建索引 + `IF NOT EXISTS`；生产大表的在线 `CONCURRENTLY` 预建路径见迁移 docstring。
+- **规模化压测种子脚本**: `apps/api/scripts/seed_scale.py`，秒级生成 N 个 task（默认 10 万）/ M 批次 / K 条标注，供 EXPLAIN ANALYZE 与后续 v0.12.x 复用。
+
 ## [0.11.29] - 2026-06-01
 
 > **视频工具：单帧/轨迹独立开关 + hand 平移兜底 + 几何 type 命名规范化。** 视频项目设置的 `bbox` 工具单位下新增「单帧矩形框 / 轨迹矩形框」独立开关（共享同一套类别 / 属性，零重复配置）；视频工作台工具栏新增 `hand` 平移工具（左键拖拽平移、`V` 键、ESC 回归），并按「单帧 / 轨迹 / 视图」分组，为未来多边形 / 轨迹多边形预留扩展位；轨迹几何 type 值 `video_track` 规范化为 `video_track_bbox`（时序 × 几何的一致命名），含存量数据迁移。

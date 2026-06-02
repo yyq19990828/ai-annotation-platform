@@ -1,7 +1,17 @@
 import enum
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Boolean, Integer, Float, DateTime, ForeignKey, func
+from sqlalchemy import (
+    String,
+    Boolean,
+    Integer,
+    Float,
+    DateTime,
+    ForeignKey,
+    func,
+    Index,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
@@ -18,6 +28,17 @@ class RejectReasonType(str, enum.Enum):
 
 class Task(Base):
     __tablename__ = "tasks"
+
+    # v0.11.30 · 大表查询地基索引（与迁移 0090 同步，经 10 万行 EXPLAIN 实测保留）。
+    # 单列索引仍由各列的 index=True 声明；此处补两条热路径所需的组合。
+    __table_args__ = (
+        Index("ix_tasks_project_created_id", "project_id", "created_at", "id"),
+        Index(
+            "ix_tasks_batch_unlabeled",
+            "batch_id",
+            postgresql_where=text("is_labeled = false"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

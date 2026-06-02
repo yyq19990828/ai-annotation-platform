@@ -96,11 +96,18 @@ async def get_next_task(
     if not project:
         return None
 
-    # 3. Build candidate query: unlabeled, not already annotated by this user
-    already_annotated_subq = (
-        select(Annotation.task_id)
-        .where(Annotation.user_id == user_id, Annotation.is_active.is_(True))
-        .scalar_subquery()
+    # 3. Build candidate query: unlabeled, not already annotated by this user.
+    # v0.11.30 · 相关 NOT EXISTS 取代 NOT IN(子查询)：标注员标注量大时 NOT IN 会让
+    # Postgres 物化整个 task_id 集合（大表热路径放大）；NOT EXISTS 可直接走索引短路。
+    already_annotated = (
+        select(Annotation.id)
+        .where(
+            Annotation.task_id == Task.id,
+            Annotation.user_id == user_id,
+            Annotation.is_active.is_(True),
+        )
+        .correlate(Task)
+        .exists()
     )
 
     candidates = (
@@ -109,7 +116,7 @@ async def get_next_task(
         .where(
             Task.project_id == project_id,
             Task.is_labeled.is_(False),
-            ~Task.id.in_(already_annotated_subq),
+            ~already_annotated,
             TaskBatch.status.in_(["active", "annotating"]),
             TaskBatch.admin_locked.is_(False),  # v0.9.15 · ADR-0008
         )
@@ -132,9 +139,17 @@ async def get_next_task(
 
     # 5. Apply sampling strategy (batch priority as primary sort)
     if project.sampling == "uncertainty":
-        candidates = candidates.outerjoin(
-            Prediction, Prediction.task_id == Task.id
-        ).order_by(TaskBatch.priority.desc(), Prediction.score.asc().nullslast())
+        # v0.11.30 · 相关标量子查询取每 task 最低预测分，取代 outerjoin Prediction：
+        # outerjoin 会按预测条数行扇出（一 task 多 prediction）再对扇出行排序，大表代价高。
+        min_pred_score = (
+            select(func.min(Prediction.score))
+            .where(Prediction.task_id == Task.id)
+            .correlate(Task)
+            .scalar_subquery()
+        )
+        candidates = candidates.order_by(
+            TaskBatch.priority.desc(), min_pred_score.asc().nullslast()
+        )
     elif project.sampling == "uniform":
         candidates = candidates.order_by(TaskBatch.priority.desc(), func.random())
     else:

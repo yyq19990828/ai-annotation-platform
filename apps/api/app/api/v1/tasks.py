@@ -224,7 +224,10 @@ async def list_tasks(
     if not cursor and offset:
         q = q.offset(offset)
     tasks = list((await db.execute(q)).scalars().all())
-    total = (await db.execute(count_q)).scalar() or 0
+    # v0.11.30 · 仅首页(无 cursor 且 offset=0)做精确全表 COUNT；后续页(cursor 翻页)
+    # 返回 None，前端复用首页值，避免无限滚动逐页重复全表 COUNT(大表 O(N) 放大)。
+    is_first_page = cursor is None and offset == 0
+    total = ((await db.execute(count_q)).scalar() or 0) if is_first_page else None
     dims = await _attach_dimensions_batch(db, tasks)
     # v0.7.2 · 一次 IN 查询解析所有 assignee_id / reviewer_id → UserBrief
     user_ids = {t.assignee_id for t in tasks if t.assignee_id} | {
