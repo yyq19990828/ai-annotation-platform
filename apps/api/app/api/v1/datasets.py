@@ -611,7 +611,7 @@ async def link_project(
     ds = await svc.get(dataset_id)
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    await svc.link_project(dataset_id, data.project_id)
+    link_result = await svc.link_project(dataset_id, data.project_id)
     await AuditService.log(
         db,
         actor=current_user,
@@ -623,10 +623,26 @@ async def link_project(
         detail={"project_id": str(data.project_id)},
     )
     await db.commit()
+
+    # v0.12.0 · enqueue-after-commit：大 dataset 的建 task 走 Celery，必须在 commit
+    # 之后再 delay，否则 worker 可能先于 link / async_job 行可见而读不到。
+    if link_result.async_job_id is not None:
+        from app.workers.create_tasks import run_create_tasks
+
+        run_create_tasks.delay(str(link_result.async_job_id))
+        return {
+            "status": "linking",
+            "dataset_id": str(dataset_id),
+            "project_id": str(data.project_id),
+            "async_job_id": str(link_result.async_job_id),
+        }
+
     return {
         "status": "linked",
         "dataset_id": str(dataset_id),
         "project_id": str(data.project_id),
+        "async_job_id": None,
+        "created_tasks": link_result.created_tasks,
     }
 
 
