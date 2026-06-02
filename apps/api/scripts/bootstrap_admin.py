@@ -12,6 +12,7 @@
 import asyncio
 import os
 import sys
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -53,6 +54,10 @@ async def _bootstrap() -> int:
             group_name=None,
             status="online",
             is_active=True,
+            # 不变量：邀请注册 / 管理员建号恒视为已验证（见 user.py 注释、
+            # invitation.py:160）。否则 production 默认开启邮箱验证时，day-0
+            # bootstrap 出的 super_admin email_verified_at=NULL 会被登录 gate 拦 400。
+            email_verified_at=datetime.now(timezone.utc),
         )
         db.add(admin)
         await db.flush()

@@ -80,17 +80,28 @@ async def _dispatch_verification_email(db: AsyncSession, user: User) -> None:
     )
     verify_url = f"{str(base_url).rstrip('/')}/verify-email?token={token}"
     smtp_host = await SystemSettingsService.get(db, "smtp_host")
+    # 含明文一次性 token 的 url 仅在非 production 落日志（dev 友好）；production 只记
+    # user_id + 原因，避免 token 经集中式日志扩散后被用于 24h 内冒充验证。
+    is_prod = settings.environment == "production"
     if not smtp_host:
-        logger.info(
-            "Email verification token for %s (SMTP not configured): %s",
-            user.email,
-            verify_url,
-        )
+        if is_prod:
+            logger.info(
+                "Email verification pending for user %s: SMTP not configured", user.id
+            )
+        else:
+            logger.info(
+                "Email verification token for %s (SMTP not configured): %s",
+                user.email,
+                verify_url,
+            )
         return
     try:
         await send_verification_email(db, user.email, verify_url)
     except SmtpConfigError as e:
-        logger.warning("发送验证邮件失败 (%s): %s; url=%s", user.email, e, verify_url)
+        if is_prod:
+            logger.warning("发送验证邮件失败 (user %s): %s", user.id, e)
+        else:
+            logger.warning("发送验证邮件失败 (%s): %s; url=%s", user.email, e, verify_url)
 
 
 @router.post("/login", response_model=Token)
