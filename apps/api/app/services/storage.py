@@ -174,6 +174,26 @@ class StorageService:
         )
         return self._public_url(url)
 
+    def upload_file(
+        self,
+        local_path: str,
+        key: str,
+        *,
+        bucket: str | None = None,
+        content_type: str = "application/octet-stream",
+    ) -> None:
+        """从本地文件路径流式上传（boto3 managed multipart，不把整文件读进内存）。
+
+        v0.12.1 · 导出落盘式 ZIP 的上传入口：worker 把 ZIP 写到 tempfile 后用本方法
+        分段上传，内存与产物大小解耦（对比旧 put_object(Body=bytes) 全量驻留 RAM）。
+        """
+        self.client.upload_file(
+            local_path,
+            bucket or self.bucket,
+            key,
+            ExtraArgs={"ContentType": content_type},
+        )
+
     def verify_upload(self, key: str, bucket: str | None = None) -> dict | None:
         try:
             return self.client.head_object(Bucket=bucket or self.bucket, Key=key)

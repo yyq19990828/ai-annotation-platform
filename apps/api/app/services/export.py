@@ -6,7 +6,7 @@ import uuid
 import zipfile
 from datetime import datetime
 from types import SimpleNamespace
-from typing import cast
+from typing import AsyncIterator, cast
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from sqlalchemy import select
@@ -303,6 +303,74 @@ class ExportService:
             select(DatasetItem).where(DatasetItem.id.in_(item_ids))
         )
         return {item.id: item for item in result.scalars().all()}
+
+    async def iter_export_chunks(
+        self,
+        project_id: uuid.UUID,
+        batch_id: uuid.UUID | None = None,
+        *,
+        chunk_size: int = 1000,
+        with_annotations: bool = True,
+    ) -> AsyncIterator[
+        tuple[list[Task], dict[uuid.UUID, list[Annotation]], dict[uuid.UUID, DatasetItem]]
+    ]:
+        """v0.12.1 · B6-1 · 按 task 分块惰性产出 (tasks, ann_by_task, dataset_items)。
+
+        导出 per-file 格式（YOLO 镜像 / 视频逐序列）的内存与 task 数解耦：不再
+        `_load_data` 全量 `list().all()`，而是先取**轻量 task id 列表**（十万 UUID ≈ 1.6MB，
+        可忽略），再按 chunk_size 水合整行 Task + 该块 annotation + dataset_item，逐块 yield。
+
+        不用 `db.stream()` 服务端游标：游标占用连接，迭代中再发 annotation/item 查询会
+        在同一连接上冲突（"another operation in progress"）。id 列表 + 分块水合规避该坑，
+        与 v0.12.0 split 分块同构。
+
+        annotation 已做 export 副本 + class 过滤（与 `_load_data` 语义一致）；几何/格式维度的
+        分组留给打包层（YOLO bbox vs 视频 track/bbox）。
+        """
+        project = await self.db.get(Project, project_id)
+        if project is None:
+            return
+        class_names = set(derive_classes_list(project.tool_bindings))
+        attribute_keys = derive_attribute_keys(project.tool_bindings)
+
+        id_q = select(Task.id).where(Task.project_id == project_id)
+        if batch_id:
+            id_q = id_q.where(Task.batch_id == batch_id)
+        id_q = id_q.order_by(Task.sequence_order, Task.created_at)
+        all_ids = [row[0] for row in (await self.db.execute(id_q)).all()]
+
+        for start in range(0, len(all_ids), chunk_size):
+            chunk_ids = all_ids[start : start + chunk_size]
+            task_rows = (
+                await self.db.execute(
+                    select(Task)
+                    .where(Task.id.in_(chunk_ids))
+                    .order_by(Task.sequence_order, Task.created_at)
+                )
+            ).scalars().all()
+            tasks = list(task_rows)
+
+            ann_by_task: dict[uuid.UUID, list[Annotation]] = {}
+            if with_annotations:
+                ann_q = (
+                    select(Annotation)
+                    .where(
+                        Annotation.project_id == project_id,
+                        Annotation.is_active.is_(True),
+                        Annotation.was_cancelled.is_(False),
+                        Annotation.task_id.in_(chunk_ids),
+                    )
+                    .order_by(Annotation.created_at)
+                )
+                for ann in (await self.db.execute(ann_q)).scalars().all():
+                    if ann.class_name not in class_names:
+                        continue
+                    ann_by_task.setdefault(ann.task_id, []).append(
+                        _export_annotation_copy(ann, attribute_keys)
+                    )
+
+            dataset_items = await self._load_dataset_items(tasks)
+            yield tasks, ann_by_task, dataset_items
 
     async def export_video_tracks(
         self,

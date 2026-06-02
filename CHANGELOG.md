@@ -27,6 +27,16 @@
 
 <!-- 0.12.x 版本变更按版本段追加到本区；开始开发 0.13 后整体移到 docs/changelogs/0.12.x.md -->
 
+## [0.12.1] - 2026-06-02
+
+大数据集规模化加固第三版（B6）：把导出从「全量进内存 + 单 `BytesIO` 攒整包」改为「分块读 DB + 落盘式 ZIP + 流式上传」，使导出 worker 内存与 task 数解耦，消除十万级导出的 OOM 风险。对用户行为无变化（仍异步、仍下载链接），只是内部更省内存。计划见 `docs/plans/2026-06-02-v0.12.1-streaming-export.md`。
+
+### Changed
+
+- **导出 ZIP 落盘 + 流式上传（B6-2）**：`build_export_zip` / `_build_video_export_zip` 不再用 `io.BytesIO()` 把整包压缩 ZIP 攒在内存，改写 `tempfile` 落盘；worker 用 boto3 `upload_file` 多段流式上传（不把整文件读进 RAM），上传后清理临时文件。内存峰值与产物大小解耦。
+- **导出 DB 读分块流式化（B6-1）**：新增 `ExportService.iter_export_chunks`，按 task 分块惰性产出 `(tasks, ann_by_task, dataset_items)`（先取轻量 task id 列表再分块水合，规避服务端游标占用连接的冲突）。per-file 格式（YOLO 镜像、视频逐序列 MOT/KITTI/yolo-frames）的 ORM 对象内存与 task 数解耦。COCO/AAP JSON 是单文档格式，本质需全量物化（流式 JSON 编码不在本版范围），仍由 `ExportService` 自加载。
+- `build_export_zip` 返回签名由 `(bytes, file_count)` 改为 `(zip 路径, file_count, size_bytes)`；`storage_service` 新增 `upload_file` 从本地路径流式上传。
+
 ## [0.12.0] - 2026-06-02
 
 大数据集规模化加固第二版（B4/B5），承接 v0.11.30 的查询地基，把「关联数据集 → 建任务」搬入异步、并补未归类任务池在大表下的浏览与分包规模化。配套路线图见 `docs/plans/2026-06-02-large-dataset-scale-hardening-roadmap.md`。

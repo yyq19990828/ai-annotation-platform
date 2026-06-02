@@ -18,18 +18,21 @@
 
 from __future__ import annotations
 
-import io
 import json
 import math
+import os
+import tempfile
 import uuid
 import zipfile
 from datetime import datetime, timezone
 from posixpath import splitext
+from typing import AsyncIterator
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem
+from app.db.models.project import Project
 from app.db.models.task import Task
 from app.services.export import (
     ExportService,
@@ -289,6 +292,28 @@ def _yolo_target_lines(
     return lines, attrs
 
 
+# v0.12.1 · B6 流式导出：打包函数消费 (tasks, ann_by_task, dataset_items) 的异步分块
+# 迭代器（生产由 ExportService.iter_export_chunks 流式产出，测试可喂内存 chunk），ZIP 落盘
+# tempfile 而非 io.BytesIO 攒整包，内存与 task 数解耦。
+ExportChunkIter = AsyncIterator[
+    tuple[list[Task], dict[uuid.UUID, list[Annotation]], dict[uuid.UUID, DatasetItem]]
+]
+
+
+def _new_zip_tempfile() -> str:
+    """创建空 tempfile 供 ZipFile 落盘写入，返回路径（调用方负责清理）。"""
+    fd, path = tempfile.mkstemp(prefix="aap-export-", suffix=".zip")
+    os.close(fd)
+    return path
+
+
+def _safe_unlink(path: str) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
 async def build_export_zip(
     db: AsyncSession,
     project_id: uuid.UUID,
@@ -297,143 +322,171 @@ async def build_export_zip(
     targets: list[str],
     include_attributes: bool,
     video_frame_mode: str,
-) -> tuple[bytes, int]:
-    """生成镜像目录 ZIP，返回 (bytes, label 文件数)。
+) -> tuple[str, int, int]:
+    """生成镜像目录 ZIP 到磁盘临时文件，返回 (zip 路径, label 文件数, size_bytes)。
+
+    v0.12.1 · B6 · 落盘 + 流式：ZIP 写 tempfile（不再 io.BytesIO 攒整包驻留 RAM）；
+    per-file 格式（YOLO 镜像）按 task 分块流式产出 annotation。COCO/AAP 是单文档 JSON，
+    本质要全量物化（流式 JSON 编码不在本版范围），仍由 ExportService 自加载。
+    调用方（worker）负责上传后清理返回的 zip 路径；本函数内部异常时清理自身临时文件。
 
     v0.10.43 · 多目标（方案 B）：单目标落包根（向后兼容旧布局），>1 目标各落 `{target}/` 子目录。
     图像 targets ∈ {coco, yolo-det, yolo-obb, yolo-seg, aap_json}（`yolo` 兼容旧 = yolo-det）。
     VOC 走旧同步路径，不在此处。
     """
     svc = ExportService(db)
-    project, tasks, annotations = await svc._load_data(project_id, batch_id)
-    if project is None:
-        return b"", 0
-    dataset_items = await svc._load_dataset_items(tasks)
+    project = await svc.db.get(Project, project_id)
 
-    # v0.10.31 · Phase 4.1 · 视频项目走独立组装（manifest + 视频回源脚本 + 多格式）。
-    if project.data_type == "video":
-        return await _build_video_export_zip(
-            db,
-            svc,
-            project,
-            tasks,
-            annotations,
-            dataset_items,
-            batch_id=batch_id,
-            targets=targets,
-            include_attributes=include_attributes,
-            video_frame_mode=video_frame_mode,
-        )
+    tmp_path = _new_zip_tempfile()
+    try:
+        if project is None:
+            with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED):
+                pass
+            return tmp_path, 0, os.path.getsize(tmp_path)
 
-    classes_list = derive_classes_list(project.tool_bindings)
-    attribute_schema = derive_attribute_schema(project.tool_bindings)
-    cat_map = {name: i for i, name in enumerate(classes_list)}
-    ann_by_task: dict[uuid.UUID, list[Annotation]] = {}
-    for ann in annotations:
-        ann_by_task.setdefault(ann.task_id, []).append(ann)
-
-    multi = len(targets) > 1
-    file_count = 0
-    has_yolo = False
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # 共享产物（格式无关）：类别清单 + 属性 schema。
-        zf.writestr("classes.txt", "\n".join(classes_list))
-        if include_attributes:
-            zf.writestr(
-                "attribute_schema.json",
-                json.dumps(attribute_schema, ensure_ascii=False, indent=2),
+        # v0.10.31 · Phase 4.1 · 视频项目走独立组装（manifest + 视频回源脚本 + 多格式）。
+        if project.data_type == "video":
+            needs_ann = bool({"mot", "kitti", "yolo-frames-det"} & set(targets))
+            chunks = svc.iter_export_chunks(
+                project_id, batch_id, with_annotations=needs_ann
+            )
+            return await _build_video_export_zip(
+                svc,
+                project,
+                chunks,
+                tmp_path=tmp_path,
+                batch_id=batch_id,
+                targets=targets,
+                include_attributes=include_attributes,
+                video_frame_mode=video_frame_mode,
             )
 
-        for target in targets:
-            prefix = f"{target}/" if multi else ""
-            if target in YOLO_TARGETS:
-                has_yolo = True
+        classes_list = derive_classes_list(project.tool_bindings)
+        attribute_schema = derive_attribute_schema(project.tool_bindings)
+        cat_map = {name: i for i, name in enumerate(classes_list)}
+
+        multi = len(targets) > 1
+        yolo_targets = [t for t in targets if t in YOLO_TARGETS]
+        other_targets = [t for t in targets if t not in YOLO_TARGETS]
+        for target in other_targets:
+            if target not in ("coco", "aap_json"):
+                raise UnsupportedExportError(f"unsupported export target: {target}")
+        has_yolo = bool(yolo_targets)
+        # COCO 需 DatasetItem 真值尺寸算像素坐标；仅在请求 coco 时累积全量 items
+        # （coco 本身单文档全量物化，O(N) items 不额外恶化）。纯 YOLO 不累积，保持流式。
+        dataset_items_all: dict[uuid.UUID, DatasetItem] | None = (
+            {} if "coco" in targets else None
+        )
+
+        file_count = 0
+        total_tasks = 0
+        now = datetime.now(timezone.utc)
+        expires_iso = datetime.fromtimestamp(
+            now.timestamp() + PRESIGN_EXPIRES_SECONDS, tz=timezone.utc
+        ).isoformat()
+        manifest_images: list[dict] = []
+
+        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            # 共享产物（格式无关）：类别清单 + 属性 schema。
+            zf.writestr("classes.txt", "\n".join(classes_list))
+            if include_attributes:
+                zf.writestr(
+                    "attribute_schema.json",
+                    json.dumps(attribute_schema, ensure_ascii=False, indent=2),
+                )
+
+            # 单流式 pass：写 YOLO 镜像 labels + 累积 manifest + 计数 task。
+            async for tasks, ann_by_task, dataset_items in svc.iter_export_chunks(
+                project_id, batch_id, with_annotations=has_yolo
+            ):
+                total_tasks += len(tasks)
+                if dataset_items_all is not None:
+                    dataset_items_all.update(dataset_items)
                 for t in tasks:
                     item = (
                         dataset_items.get(t.dataset_item_id)
                         if t.dataset_item_id
                         else None
                     )
-                    rel = _label_rel(t, item)
-                    img_w = int(item.width) if item and item.width else FALLBACK_W
-                    img_h = int(item.height) if item and item.height else FALLBACK_H
-                    lines, attrs_per_line = _yolo_target_lines(
-                        target,
-                        ann_by_task.get(t.id, []),
-                        cat_map,
-                        img_w=img_w,
-                        img_h=img_h,
-                        include_attributes=include_attributes,
-                    )
-                    dataset_id = str(item.dataset_id) if item else "unknown"
-                    base = f"{prefix}{project_id}/{dataset_id}/labels/{rel}"
-                    zf.writestr(f"{base}.txt", "\n".join(lines))
-                    file_count += 1
-                    if include_attributes and attrs_per_line:
-                        zf.writestr(
-                            f"{base}.attrs.json",
-                            json.dumps(
-                                {"attributes": attrs_per_line}, ensure_ascii=False
-                            ),
+                    for target in yolo_targets:
+                        prefix = f"{target}/" if multi else ""
+                        rel = _label_rel(t, item)
+                        img_w = int(item.width) if item and item.width else FALLBACK_W
+                        img_h = int(item.height) if item and item.height else FALLBACK_H
+                        lines, attrs_per_line = _yolo_target_lines(
+                            target,
+                            ann_by_task.get(t.id, []),
+                            cat_map,
+                            img_w=img_w,
+                            img_h=img_h,
+                            include_attributes=include_attributes,
                         )
+                        dataset_id = str(item.dataset_id) if item else "unknown"
+                        base = f"{prefix}{project_id}/{dataset_id}/labels/{rel}"
+                        zf.writestr(f"{base}.txt", "\n".join(lines))
+                        file_count += 1
+                        if include_attributes and attrs_per_line:
+                            zf.writestr(
+                                f"{base}.attrs.json",
+                                json.dumps(
+                                    {"attributes": attrs_per_line}, ensure_ascii=False
+                                ),
+                            )
+                    # 共享图片回源条目（任一目标都可用）。
+                    dataset_name = _dataset_name_for_task(t, item)
+                    img_rel = relative_path_from_file_path(t.file_path, dataset_name)
+                    presigned = storage_service.generate_download_url(
+                        t.file_path,
+                        expires_in=PRESIGN_EXPIRES_SECONDS,
+                        bucket=storage_service.datasets_bucket,
+                    )
+                    manifest_images.append(
+                        {
+                            "rel_path": img_rel,
+                            "dataset_id": str(item.dataset_id) if item else None,
+                            "presigned_url": presigned,
+                            "expires_at": expires_iso,
+                        }
+                    )
+
+            # YOLO data.yaml（每 yolo 目标一份；单目标落根，多目标落 {target}/）。
+            for target in yolo_targets:
+                prefix = f"{target}/" if multi else ""
                 zf.writestr(f"{prefix}data.yaml", _build_data_yaml(classes_list))
-            elif target == "coco":
-                content = await svc.export_coco(
-                    project_id,
-                    batch_id=batch_id,
-                    include_attributes=include_attributes,
-                    video_frame_mode=video_frame_mode,
-                    dataset_items=dataset_items,
-                )
+
+            # 单文档目标（coco/aap_json）：本质全量物化，svc 自加载落包根/子目录。
+            for target in other_targets:
+                prefix = f"{target}/" if multi else ""
+                if target == "coco":
+                    content = await svc.export_coco(
+                        project_id,
+                        batch_id=batch_id,
+                        include_attributes=include_attributes,
+                        video_frame_mode=video_frame_mode,
+                        dataset_items=dataset_items_all or {},
+                    )
+                else:  # aap_json
+                    content = await svc.export_aap_json(project_id, batch_id=batch_id)
                 zf.writestr(f"{prefix}annotations.json", content)
-                file_count += len(tasks)
-            elif target == "aap_json":
-                content = await svc.export_aap_json(project_id, batch_id=batch_id)
-                zf.writestr(f"{prefix}annotations.json", content)
-                file_count += len(tasks)
-            else:
-                raise UnsupportedExportError(f"unsupported export target: {target}")
+                file_count += total_tasks
 
-        # 共享图片回源：images_manifest.json + fetch_images.py（任一目标都可用）。
-        now = datetime.now(timezone.utc)
-        expires_iso = datetime.fromtimestamp(
-            now.timestamp() + PRESIGN_EXPIRES_SECONDS, tz=timezone.utc
-        ).isoformat()
-        manifest_images: list[dict] = []
-        for t in tasks:
-            item = dataset_items.get(t.dataset_item_id) if t.dataset_item_id else None
-            dataset_name = _dataset_name_for_task(t, item)
-            img_rel = relative_path_from_file_path(t.file_path, dataset_name)
-            presigned = storage_service.generate_download_url(
-                t.file_path,
-                expires_in=PRESIGN_EXPIRES_SECONDS,
-                bucket=storage_service.datasets_bucket,
+            zf.writestr(
+                "images_manifest.json",
+                json.dumps(
+                    {"images": manifest_images, "expires_at": expires_iso},
+                    ensure_ascii=False,
+                    indent=2,
+                ),
             )
-            manifest_images.append(
-                {
-                    "rel_path": img_rel,
-                    "dataset_id": str(item.dataset_id) if item else None,
-                    "presigned_url": presigned,
-                    "expires_at": expires_iso,
-                }
-            )
+            zf.writestr("fetch_images.py", _FETCH_IMAGES_TEMPLATE)
+            # 单 YOLO 目标根 data.yaml 已在上面写；纯 COCO/AAP 单目标补一份（兼容旧包结构）。
+            if not multi and not has_yolo:
+                zf.writestr("data.yaml", _build_data_yaml(classes_list))
 
-        zf.writestr(
-            "images_manifest.json",
-            json.dumps(
-                {"images": manifest_images, "expires_at": expires_iso},
-                ensure_ascii=False,
-                indent=2,
-            ),
-        )
-        zf.writestr("fetch_images.py", _FETCH_IMAGES_TEMPLATE)
-        # 单 YOLO 目标时根 data.yaml 已在循环里写（prefix=""）；多目标时各子目录已带 data.yaml。
-        if not multi and not has_yolo:
-            # 纯 COCO/AAP 单目标也给一份 data.yaml（保持旧包结构兼容）。
-            zf.writestr("data.yaml", _build_data_yaml(classes_list))
-
-    return buf.getvalue(), file_count
+        return tmp_path, file_count, os.path.getsize(tmp_path)
+    except BaseException:
+        _safe_unlink(tmp_path)
+        raise
 
 
 def _build_data_yaml(classes_list: list[str]) -> str:
@@ -599,20 +652,23 @@ def _video_meta(item: DatasetItem | None) -> dict:
 
 
 async def _build_video_export_zip(
-    db: AsyncSession,
     svc: ExportService,
     project,
-    tasks: list[Task],
-    annotations: list[Annotation],
-    dataset_items: dict[uuid.UUID, DatasetItem],
+    chunks: ExportChunkIter,
     *,
+    tmp_path: str,
     batch_id: uuid.UUID | None,
     targets: list[str],
     include_attributes: bool,
     video_frame_mode: str,
-) -> tuple[bytes, int]:
+) -> tuple[str, int, int]:
     """视频项目 zip（v0.10.43 多目标）：单目标落根、>1 目标各落 `{target}/`；
-    manifest.json + fetch_videos.py 共享落根（MOT/KITTI 另带 fetch_frames.py）。"""
+    manifest.json + fetch_videos.py 共享落根（MOT/KITTI 另带 fetch_frames.py）。
+
+    v0.12.1 · B6 · 落盘 + 按 task 分块流式：逐序列文件（MOT/KITTI/yolo-frames）边遍历
+    chunk 边写盘；video_json/aap_json 单文档由 svc 自加载。ZIP 写入调用方给的 tmp_path，
+    临时文件清理由调用方负责，返回 (zip 路径, 文件数, size_bytes)。
+    """
     for tg in targets:
         if tg not in VIDEO_EXPORT_FORMATS:
             raise UnsupportedExportError(f"unsupported video export format: {tg}")
@@ -629,24 +685,13 @@ async def _build_video_export_zip(
     attribute_schema = derive_attribute_schema(project.tool_bindings)
     cat_map = {name: i for i, name in enumerate(classes_list)}
 
-    # 按 task 分组 video_track / video_bbox，派生 track_number 与逐帧 YOLO labels。
-    tracks_by_task: dict[uuid.UUID, list[Annotation]] = {}
-    bboxes_by_task: dict[uuid.UUID, list[Annotation]] = {}
-    for ann in annotations:
-        geometry_type = (ann.geometry or {}).get("type")
-        if geometry_type == "video_track_bbox":
-            tracks_by_task.setdefault(ann.task_id, []).append(ann)
-        elif geometry_type == "video_bbox":
-            bboxes_by_task.setdefault(ann.task_id, []).append(ann)
-
-    buf = io.BytesIO()
     manifest_videos: list[dict] = []
     now = datetime.now(timezone.utc)
     expires_iso = datetime.fromtimestamp(
         now.timestamp() + PRESIGN_EXPIRES_SECONDS, tz=timezone.utc
     ).isoformat()
 
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for target in targets:
             prefix = f"{target}/" if multi else ""
             if target == "video_json":
@@ -675,132 +720,149 @@ async def _build_video_export_zip(
                     f"{prefix}data.yaml", _build_video_yolo_data_yaml(classes_list)
                 )
 
-        # 逐 task = sequence：写 MOT/KITTI 逐序列文件 + 收集 manifest 条目。
+        # 逐 task = sequence（按 chunk 流式）：写 MOT/KITTI/yolo-frames 逐序列文件 + 收集 manifest。
         file_count = 0
-        for t in tasks:
-            item = dataset_items.get(t.dataset_item_id) if t.dataset_item_id else None
-            seq = _video_seq_name(t, item)
-            vmeta = _video_meta(item)
-            source_fps = vmeta.get("fps")
-            img_w = int(vmeta.get("width") or FALLBACK_W)
-            img_h = int(vmeta.get("height") or FALLBACK_H)
-            step = derive_step(source_fps, sampling)
-
-            track_anns = tracks_by_task.get(t.id, [])
-            bbox_anns = bboxes_by_task.get(t.id, [])
-            # frame_count：元数据优先，缺失回退最大标注帧 + 1。
-            max_kf = 0
-            for ann in track_anns:
-                for kf in (ann.geometry or {}).get("keyframes") or []:
-                    max_kf = max(max_kf, int(kf.get("frame_index", 0)))
-            for ann in bbox_anns:
-                max_kf = max(max_kf, int((ann.geometry or {}).get("frame_index", 0)))
-            frame_count = int(vmeta.get("frame_count") or (max_kf + 1))
-            frame_count = max(frame_count, max_kf + 1)
-
-            if has_mot or has_kitti:
-                numbers = derive_track_number(
-                    [(ann.id, ann.geometry or {}) for ann in track_anns]
+        total_tasks = 0
+        async for tasks, ann_by_task, dataset_items in chunks:
+            total_tasks += len(tasks)
+            # 本块内按 task 分组 video_track / video_bbox。
+            tracks_by_task: dict[uuid.UUID, list[Annotation]] = {}
+            bboxes_by_task: dict[uuid.UUID, list[Annotation]] = {}
+            for anns in ann_by_task.values():
+                for ann in anns:
+                    geometry_type = (ann.geometry or {}).get("type")
+                    if geometry_type == "video_track_bbox":
+                        tracks_by_task.setdefault(ann.task_id, []).append(ann)
+                    elif geometry_type == "video_bbox":
+                        bboxes_by_task.setdefault(ann.task_id, []).append(ann)
+            for t in tasks:
+                item = (
+                    dataset_items.get(t.dataset_item_id) if t.dataset_item_id else None
                 )
-                track_args = [
-                    (numbers[ann.id], ann.class_name, ann.geometry or {})
-                    for ann in track_anns
-                ]
-                if has_mot:
-                    mp = "mot/" if multi else ""
-                    zf.writestr(
-                        f"{mp}{seq}/gt/gt.txt",
-                        build_mot_gt(
-                            track_args,
-                            frame_count=frame_count,
-                            step=step,
-                            img_w=img_w,
-                            img_h=img_h,
-                        ),
-                    )
-                    zf.writestr(
-                        f"{mp}{seq}/seqinfo.ini",
-                        build_mot_seqinfo(
-                            seq.split("/")[-1],
-                            source_fps=source_fps,
-                            step=step,
-                            frame_count=frame_count,
-                            img_w=img_w,
-                            img_h=img_h,
-                        ),
-                    )
-                if has_kitti:
-                    kp = "kitti/" if multi else ""
-                    zf.writestr(
-                        f"{kp}labels/{seq}.txt",
-                        build_kitti_labels(
-                            track_args,
-                            frame_count=frame_count,
-                            step=step,
-                            img_w=img_w,
-                            img_h=img_h,
-                        ),
-                    )
+                seq = _video_seq_name(t, item)
+                vmeta = _video_meta(item)
+                source_fps = vmeta.get("fps")
+                img_w = int(vmeta.get("width") or FALLBACK_W)
+                img_h = int(vmeta.get("height") or FALLBACK_H)
+                step = derive_step(source_fps, sampling)
 
-            if has_yolo_frames:
-                yp = "yolo-frames-det/" if multi else ""
-                labels = build_yolo_frame_det_labels(
-                    [
-                        (ann.class_name, ann.geometry or {}, ann.attributes or {})
+                track_anns = tracks_by_task.get(t.id, [])
+                bbox_anns = bboxes_by_task.get(t.id, [])
+                # frame_count：元数据优先，缺失回退最大标注帧 + 1。
+                max_kf = 0
+                for ann in track_anns:
+                    for kf in (ann.geometry or {}).get("keyframes") or []:
+                        max_kf = max(max_kf, int(kf.get("frame_index", 0)))
+                for ann in bbox_anns:
+                    max_kf = max(
+                        max_kf, int((ann.geometry or {}).get("frame_index", 0))
+                    )
+                frame_count = int(vmeta.get("frame_count") or (max_kf + 1))
+                frame_count = max(frame_count, max_kf + 1)
+
+                if has_mot or has_kitti:
+                    numbers = derive_track_number(
+                        [(ann.id, ann.geometry or {}) for ann in track_anns]
+                    )
+                    track_args = [
+                        (numbers[ann.id], ann.class_name, ann.geometry or {})
                         for ann in track_anns
-                    ],
-                    [
-                        (ann.class_name, ann.geometry or {}, ann.attributes or {})
-                        for ann in bbox_anns
-                    ],
-                    cat_map,
-                    frame_count=frame_count,
-                    step=step,
-                    frame_start_number=frame_start_number,
-                    include_attributes=include_attributes,
-                )
-                for frame_no, (lines, attrs_per_line) in sorted(labels.items()):
-                    base = f"{yp}labels/{seq}/{frame_no:06d}"
-                    zf.writestr(f"{base}.txt", "\n".join(lines))
-                    file_count += 1
-                    if include_attributes and attrs_per_line:
+                    ]
+                    if has_mot:
+                        mp = "mot/" if multi else ""
                         zf.writestr(
-                            f"{base}.attrs.json",
-                            json.dumps(
-                                {"attributes": attrs_per_line}, ensure_ascii=False
+                            f"{mp}{seq}/gt/gt.txt",
+                            build_mot_gt(
+                                track_args,
+                                frame_count=frame_count,
+                                step=step,
+                                img_w=img_w,
+                                img_h=img_h,
+                            ),
+                        )
+                        zf.writestr(
+                            f"{mp}{seq}/seqinfo.ini",
+                            build_mot_seqinfo(
+                                seq.split("/")[-1],
+                                source_fps=source_fps,
+                                step=step,
+                                frame_count=frame_count,
+                                img_w=img_w,
+                                img_h=img_h,
+                            ),
+                        )
+                    if has_kitti:
+                        kp = "kitti/" if multi else ""
+                        zf.writestr(
+                            f"{kp}labels/{seq}.txt",
+                            build_kitti_labels(
+                                track_args,
+                                frame_count=frame_count,
+                                step=step,
+                                img_w=img_w,
+                                img_h=img_h,
                             ),
                         )
 
-            # manifest 视频条目（含网格帧号供 fetch_frames.py 抽帧）。
-            dataset_name = _dataset_name_for_task(t, item)
-            video_rel = relative_path_from_file_path(t.file_path, dataset_name)
-            presigned = storage_service.generate_download_url(
-                t.file_path,
-                expires_in=PRESIGN_EXPIRES_SECONDS,
-                bucket=storage_service.datasets_bucket,
-            )
-            frame_output_dirs: list[str] = []
-            if has_mot or has_kitti:
-                frame_output_dirs.append(f"{seq}/img1")
-            if has_yolo_frames:
-                yp = "yolo-frames-det/" if multi else ""
-                frame_output_dirs.append(f"{yp}images/{seq}")
-            manifest_videos.append(
-                {
-                    "sequence": seq,
-                    "task_display_id": t.display_id,
-                    "rel_path": video_rel,
-                    "presigned_url": presigned,
-                    "expires_at": expires_iso,
-                    "video_metadata": vmeta,
-                    "sampling": sampling,
-                    "step": step,
-                    "grid_source_frames": derive_sampled_frames(frame_count, step),
-                    # 帧号 base：MOT/YOLO 取 1（1-based），KITTI-only 取 0。
-                    "frame_start_number": frame_start_number,
-                    "frame_output_dirs": frame_output_dirs,
-                }
-            )
+                if has_yolo_frames:
+                    yp = "yolo-frames-det/" if multi else ""
+                    labels = build_yolo_frame_det_labels(
+                        [
+                            (ann.class_name, ann.geometry or {}, ann.attributes or {})
+                            for ann in track_anns
+                        ],
+                        [
+                            (ann.class_name, ann.geometry or {}, ann.attributes or {})
+                            for ann in bbox_anns
+                        ],
+                        cat_map,
+                        frame_count=frame_count,
+                        step=step,
+                        frame_start_number=frame_start_number,
+                        include_attributes=include_attributes,
+                    )
+                    for frame_no, (lines, attrs_per_line) in sorted(labels.items()):
+                        base = f"{yp}labels/{seq}/{frame_no:06d}"
+                        zf.writestr(f"{base}.txt", "\n".join(lines))
+                        file_count += 1
+                        if include_attributes and attrs_per_line:
+                            zf.writestr(
+                                f"{base}.attrs.json",
+                                json.dumps(
+                                    {"attributes": attrs_per_line}, ensure_ascii=False
+                                ),
+                            )
+
+                # manifest 视频条目（含网格帧号供 fetch_frames.py 抽帧）。
+                dataset_name = _dataset_name_for_task(t, item)
+                video_rel = relative_path_from_file_path(t.file_path, dataset_name)
+                presigned = storage_service.generate_download_url(
+                    t.file_path,
+                    expires_in=PRESIGN_EXPIRES_SECONDS,
+                    bucket=storage_service.datasets_bucket,
+                )
+                frame_output_dirs: list[str] = []
+                if has_mot or has_kitti:
+                    frame_output_dirs.append(f"{seq}/img1")
+                if has_yolo_frames:
+                    yp = "yolo-frames-det/" if multi else ""
+                    frame_output_dirs.append(f"{yp}images/{seq}")
+                manifest_videos.append(
+                    {
+                        "sequence": seq,
+                        "task_display_id": t.display_id,
+                        "rel_path": video_rel,
+                        "presigned_url": presigned,
+                        "expires_at": expires_iso,
+                        "video_metadata": vmeta,
+                        "sampling": sampling,
+                        "step": step,
+                        "grid_source_frames": derive_sampled_frames(frame_count, step),
+                        # 帧号 base：MOT/YOLO 取 1（1-based），KITTI-only 取 0。
+                        "frame_start_number": frame_start_number,
+                        "frame_output_dirs": frame_output_dirs,
+                    }
+                )
 
         zf.writestr(
             "manifest.json",
@@ -818,4 +880,4 @@ async def _build_video_export_zip(
         if has_frame_sequences:
             zf.writestr("fetch_frames.py", _FETCH_FRAMES_TEMPLATE)
 
-    return buf.getvalue(), file_count or len(tasks)
+    return tmp_path, file_count or total_tasks, os.path.getsize(tmp_path)

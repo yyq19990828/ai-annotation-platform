@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -251,11 +252,11 @@ async def _run_export(
                     )
                     return
 
-                # 未命中：生成 ZIP。
+                # 未命中：生成 ZIP（v0.12.1 · 落盘 tempfile，不再整包驻留 RAM）。
                 await async_job_svc.update_progress(db, job_uuid, 10)
                 await db.commit()
 
-                data, file_count = await build_export_zip(
+                zip_path, file_count, size_bytes = await build_export_zip(
                     db,
                     proj_uuid,
                     batch_id=batch_uuid,
@@ -263,17 +264,24 @@ async def _run_export(
                     include_attributes=include_attributes,
                     video_frame_mode=video_frame_mode,
                 )
+                try:
+                    await async_job_svc.update_progress(db, job_uuid, 70)
+                    await db.commit()
 
-                await async_job_svc.update_progress(db, job_uuid, 70)
-                await db.commit()
-
-                object_key = f"{media}/{project_id}/{async_job_id}.zip"
-                storage_service.client.put_object(
-                    Bucket=export_bucket,
-                    Key=object_key,
-                    Body=data,
-                    ContentType="application/zip",
-                )
+                    object_key = f"{media}/{project_id}/{async_job_id}.zip"
+                    # 流式多段上传（boto3 upload_file），不把整文件读进内存。
+                    storage_service.upload_file(
+                        zip_path,
+                        object_key,
+                        bucket=export_bucket,
+                        content_type="application/zip",
+                    )
+                finally:
+                    # 上传成功或失败都清理临时文件，避免磁盘泄漏。
+                    try:
+                        os.unlink(zip_path)
+                    except OSError:
+                        pass
 
                 expires_at = datetime.now(timezone.utc) + timedelta(
                     seconds=PRESIGN_EXPIRES_SECONDS
@@ -286,7 +294,7 @@ async def _run_export(
                     format=",".join(sorted(targets)),
                     object_key=object_key,
                     file_count=file_count,
-                    size_bytes=len(data),
+                    size_bytes=size_bytes,
                     expires_at=expires_at,
                 )
                 await db.commit()
@@ -308,7 +316,7 @@ async def _run_export(
                         "expires_at": expires_at.isoformat(),
                         "object_key": object_key,
                         "file_count": file_count,
-                        "size_bytes": len(data),
+                        "size_bytes": size_bytes,
                         "cache_hit": False,
                     },
                 )
@@ -328,7 +336,7 @@ async def _run_export(
                     async_job_id,
                     object_key,
                     file_count,
-                    len(data),
+                    size_bytes,
                 )
             except Exception as exc:  # noqa: BLE001
                 await db.rollback()
