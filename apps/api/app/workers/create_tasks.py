@@ -70,7 +70,15 @@ async def _run_create_tasks(
                     job_id=job_uuid,
                 )
 
-                await async_job_svc.mark_complete(db, job_uuid, result=result)
+                # created_tasks 与前端 LinkJobProgress 读取的字段名对齐（完成 toast 显示数量）。
+                await async_job_svc.mark_complete(
+                    db,
+                    job_uuid,
+                    result={
+                        "created_tasks": result["created"],
+                        "total": result["total"],
+                    },
+                )
                 await notify_job_terminal(db, job_id=job_uuid)
                 await db.commit()
             except Exception as exc:  # noqa: BLE001
