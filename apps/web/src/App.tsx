@@ -10,6 +10,7 @@ import { ToastRack, useToastStore } from "@/components/ui/Toast";
 // 仪表盘 / 登录 类首屏关键路径：保持同步加载（避免 Suspense 闪烁）
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { AdminDashboard } from "@/pages/Dashboard/AdminDashboard";
+import { AdminProjectsDashboard } from "@/pages/Dashboard/AdminProjectsDashboard";
 import { ReviewerDashboard } from "@/pages/Dashboard/ReviewerDashboard";
 import { AnnotatorDashboard } from "@/pages/Dashboard/AnnotatorDashboard";
 import { ViewerDashboard } from "@/pages/Dashboard/ViewerDashboard";
@@ -105,6 +106,14 @@ function DashboardRouter() {
     default:
       return <DashboardPage />;
   }
+}
+
+function AdminProjectsRoute() {
+  const { role } = usePermissions();
+  if (role !== "super_admin") {
+    return <Navigate to="/unauthorized" replace />;
+  }
+  return <AdminProjectsDashboard />;
 }
 
 function AppShell() {
@@ -272,6 +281,7 @@ export function App() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardRouter />} />
+        <Route path="/projects" element={<AdminProjectsRoute />} />
         <Route
           path="/admin/people"
           element={

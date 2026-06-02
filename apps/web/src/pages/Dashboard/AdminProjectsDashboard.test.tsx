@@ -31,7 +31,7 @@ vi.mock("./ExportSection", () => ({
 
 vi.mock("@/utils/workbenchNavigation", () => ({
   buildWorkbenchUrl: (id: string) => mockBuildWorkbenchUrl(id),
-  currentWorkbenchReturnTo: () => "/dashboard?view=projects",
+  currentWorkbenchReturnTo: () => "/projects",
 }));
 
 vi.mock("@/components/ui/Toast", async () => {
@@ -47,7 +47,7 @@ vi.mock("@/components/ui/Toast", async () => {
 
 import { AdminProjectsDashboard } from "./AdminProjectsDashboard";
 
-function renderUI(initialPath = "/dashboard?view=projects") {
+function renderUI(initialPath = "/projects") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <AdminProjectsDashboard />
