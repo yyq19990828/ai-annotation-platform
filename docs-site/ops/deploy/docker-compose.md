@@ -86,6 +86,7 @@ last_reviewed: 2026-05-27
 |---|---|---|
 | `SECRET_KEY` **必填** | `change-this-...` | JWT 签名密钥，≥ 32 字节随机串。`ENVIRONMENT=production` 仍是默认值时启动会 RuntimeError（`apps/api/app/main.py:50-57`）。生成：`python -c "import secrets; print(secrets.token_hex(32))"`。 |
 | `ALLOW_OPEN_REGISTRATION` | `false` | 自助注册开关，可在 SettingsPage 热更新覆盖。 |
+| `REQUIRE_EMAIL_VERIFICATION` | 空（按环境派生） | 开放注册是否强制邮箱验证。留空时 production 默认开、dev/staging 默认关；显式 `true`/`false` 覆盖。开启后注册需点邮件链接验证才能登录，邀请注册恒视为已验证。依赖 SMTP 配置（未配时验证链接仅写日志）。 |
 | `TURNSTILE_ENABLED` | `false` | Cloudflare Turnstile CAPTCHA。开启后 `/auth/register-open` `/auth/forgot-password` 必须带 `captcha_token`。 |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 空 | 启用 Turnstile 时配套；secret 绝不暴露给前端。 |
 | `AUDIT_RETENTION_MONTHS` | `12` | 冷数据保留月数。Celery beat 每月 2 日把超期 partition 归档为 `audit-archive/{YYYY}/{MM}.jsonl.gz` 上 MinIO 后 DROP。 |

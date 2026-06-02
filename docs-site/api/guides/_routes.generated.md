@@ -106,6 +106,8 @@
 | GET | `/me` |
 | POST | `/forgot-password` |
 | POST | `/reset-password` |
+| POST | `/verify-email` |
+| POST | `/send-verification-email` |
 | GET | `/registration-status` |
 | POST | `/register-open` |
 | POST | `/logout` |
@@ -420,4 +422,4 @@
 
 ---
 
-_共 38 模块 / 238 路由_
+_共 38 模块 / 240 路由_
