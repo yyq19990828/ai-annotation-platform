@@ -68,6 +68,7 @@ const KIND_LABEL: Record<string, string> = {
   predictions_import: "预测导入",
   prediction_retry: "失败预测重试",
   dataset_import: "数据集导入",
+  create_tasks: "建任务",
   export: "数据导出",
 };
 

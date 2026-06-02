@@ -14,6 +14,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useDatasets, useDatasetItems, useDatasetProjects, useUnlinkProject, useLinkProject, useScanDatasetItems, useBackfillDimensions, useBackfillMedia } from "@/hooks/useDatasets";
 import { datasetsApi } from "@/api/datasets";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
+import { LinkJobProgress } from "@/components/datasets/LinkJobProgress";
 import { StorageConnectionsPanel } from "@/components/connections/StorageConnectionsPanel";
 import { useProjects } from "@/hooks/useProjects";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -130,6 +131,8 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
   const [itemPage, setItemPage] = useState(0);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [confirmUnlink, setConfirmUnlink] = useState<ProjectResponse | null>(null);
+  // v0.12.0 · 大 dataset 关联后异步建 task 的进度
+  const [linkJob, setLinkJob] = useState<{ jobId: string; projectId: string } | null>(null);
   const queryClient = useQueryClient();
   const { data: itemsData, isLoading: itemsLoading } = useDatasetItems(ds.id, { limit: 10, offset: itemPage * 10 });
   const { data: linkedProjects = [] } = useDatasetProjects(ds.id);
@@ -322,8 +325,15 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
               {availableProjects.length > 0 && (
                 <select
                   onChange={(e) => {
-                    if (e.target.value) {
-                      linkMutation.mutate(e.target.value);
+                    const projectId = e.target.value;
+                    if (projectId) {
+                      linkMutation.mutate(projectId, {
+                        onSuccess: (res) => {
+                          if (res.async_job_id) {
+                            setLinkJob({ jobId: res.async_job_id, projectId });
+                          }
+                        },
+                      });
                       e.target.value = "";
                     }
                   }}
@@ -335,6 +345,13 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                     <option key={p.id} value={p.id}>{p.name} ({p.display_id})</option>
                   ))}
                 </select>
+              )}
+              {linkJob && (
+                <LinkJobProgress
+                  jobId={linkJob.jobId}
+                  projectId={linkJob.projectId}
+                  onDone={() => setLinkJob(null)}
+                />
               )}
             </div>
           </div>

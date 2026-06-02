@@ -142,7 +142,14 @@ export const datasetsApi = {
     apiClient.delete<void>(`/datasets/${id}/items/${itemId}`),
 
   linkProject: (id: string, projectId: string) =>
-    apiClient.post<{ status: string; dataset_id: string; project_id: string }>(
+    apiClient.post<{
+      status: string;
+      dataset_id: string;
+      project_id: string;
+      // v0.12.0 · 大 dataset(>2000 items) 异步建 task 时返回 job id；小 dataset 同步建则为 null
+      async_job_id?: string | null;
+      created_tasks?: number;
+    }>(
       `/datasets/${id}/link`,
       { project_id: projectId },
     ),

@@ -35,6 +35,7 @@ import { AdminLockModal } from "./AdminLockModal";
 import { BulkRejectModal } from "./BulkRejectModal";
 import { BatchesKanbanView } from "./BatchesKanbanView";
 import { BatchAuditLogDrawer } from "./BatchAuditLogDrawer";
+import { UnbatchedTasksModal } from "./UnbatchedTasksModal";
 import type { ProjectResponse } from "@/api/projects";
 import type { BatchResponse, BulkBatchActionResponse } from "@/api/batches";
 import styles from "./BatchesSection.module.css";
@@ -116,6 +117,8 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   const [assignTarget, setAssignTarget] = useState<BatchResponse | null>(null);
   const [rejectTarget, setRejectTarget] = useState<BatchResponse | null>(null);
   const [distributeOpen, setDistributeOpen] = useState(false);
+  // v0.12.0 · P2 · 浏览未归类任务池
+  const [browseUnbatched, setBrowseUnbatched] = useState(false);
 
   // v0.7.3 · 多选批量操作
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -289,6 +292,23 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
     );
   };
 
+  // v0.12.0 · B5 兜底：一键把全部未归类任务注入 1 个批次（random split, n_batches=1）。
+  // 十万级导入后无需手动选 N，直接让任务进入工作流。
+  const handleCreateAll = () => {
+    splitBatches.mutate(
+      { strategy: "random", n_batches: 1, shuffle: false, name_prefix: "全部未归类", priority: 50 },
+      {
+        onSuccess: () => {
+          pushToast({
+            msg: `已把 ${unclassifiedCount} 个未归类任务注入 1 个批次`,
+            kind: "success",
+          });
+        },
+        onError: (e) => pushToast({ msg: "建包失败", sub: (e as Error).message }),
+      },
+    );
+  };
+
   const handleCreate = () => {
     splitBatches.mutate(
       { strategy: "random", n_batches: nBatches, shuffle, name_prefix: namePrefix, priority },
@@ -399,14 +419,31 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
               本项目有 <strong>{unclassifiedCount}</strong> 个 <strong>未归类任务</strong>（数据集已关联但尚未划分到批次）。
             </span>
             {isOwner && (
-              <Button
-                onClick={() => setShowCreate(true)}
-                className={styles.bannerListGoSplit}
-                title="按随机切分把未归类任务拆成 N 个批次"
-              >
-                <Icon name="layers" size={12} /> 去分包
-              </Button>
+              <>
+                <Button
+                  onClick={handleCreateAll}
+                  disabled={splitBatches.isPending}
+                  className={styles.bannerListGoSplit}
+                  title="把全部未归类任务一次性注入 1 个批次，立即进入工作流"
+                >
+                  <Icon name="flame" size={12} /> 一键全量建包
+                </Button>
+                <Button
+                  onClick={() => setShowCreate(true)}
+                  className={styles.bannerListGoSplit}
+                  title="按随机切分把未归类任务拆成 N 个批次"
+                >
+                  <Icon name="layers" size={12} /> 去分包
+                </Button>
+              </>
             )}
+            <Button
+              onClick={() => setBrowseUnbatched(true)}
+              className={styles.bannerListGoSplit}
+              title="浏览未归类任务列表"
+            >
+              <Icon name="list" size={12} /> 浏览未归类
+            </Button>
           </div>
         )}
 
@@ -971,6 +1008,15 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           onClose={() => setLockTarget(null)}
           onSubmit={(reason) => handleAdminLock(lockTarget, reason)}
           pending={adminLock.isPending}
+        />
+      )}
+
+      {/* v0.12.0：浏览未归类任务池（虚拟滚动） */}
+      {browseUnbatched && (
+        <UnbatchedTasksModal
+          projectId={project.id}
+          count={unclassifiedCount}
+          onClose={() => setBrowseUnbatched(false)}
         />
       )}
 

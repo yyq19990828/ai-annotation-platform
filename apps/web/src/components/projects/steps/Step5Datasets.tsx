@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { useDatasets } from "@/hooks/useDatasets";
 import { useSplitBatches } from "@/hooks/useBatches";
+import { LinkJobProgress } from "@/components/datasets/LinkJobProgress";
 import type { DatasetResponse } from "@/api/datasets";
 import type { ProjectResponse } from "@/api/projects";
 import type { FormState } from "../CreateProjectWizard";
@@ -31,6 +32,8 @@ export function Step5Datasets({
   // 这里走原始 api 直接调（hooks 仅用于 invalidate；step 完成后整体 invalidate 一次足够）。
   const datasets: DatasetResponse[] = datasetsRes?.items ?? [];
   const [linking, setLinking] = useState(false);
+  // v0.12.0 · 大 dataset 异步建 task 的 job id 列表，非空则在底部显示进度条
+  const [linkJobIds, setLinkJobIds] = useState<string[]>([]);
 
   const toggle = (id: string) => {
     setForm((s) => ({
@@ -51,9 +54,11 @@ export function Step5Datasets({
       const { datasetsApi } = await import("@/api/datasets");
       // 依次 link（保证审计一行一项），失败不阻断
       let linkedOK = 0;
+      const jobIds: string[] = [];
       for (const dsId of form.datasetIds) {
         try {
-          await datasetsApi.linkProject(dsId, project.id);
+          const res = await datasetsApi.linkProject(dsId, project.id);
+          if (res.async_job_id) jobIds.push(res.async_job_id);
           linkedOK++;
         } catch (e) {
           pushToast({
@@ -80,7 +85,13 @@ export function Step5Datasets({
         }
       }
       pushToast({ msg: `已关联 ${linkedOK} 个数据集`, kind: "success" });
-      onNext(linkedOK);
+      // v0.12.0 · 有大 dataset 异步建 task：留在本步显示进度，待用户点「下一步」再前进；
+      // 否则（全同步）直接前进。
+      if (jobIds.length > 0) {
+        setLinkJobIds(jobIds);
+      } else {
+        onNext(linkedOK);
+      }
     } finally {
       setLinking(false);
     }
@@ -182,17 +193,43 @@ export function Step5Datasets({
         </div>
       )}
 
+      {linkJobIds.length > 0 && (
+        <div className={styles.linkProgressList}>
+          {linkJobIds.map((jid) => (
+            <LinkJobProgress
+              key={jid}
+              jobId={jid}
+              projectId={project.id}
+              onDone={() =>
+                setLinkJobIds((prev) => prev.filter((x) => x !== jid))
+              }
+            />
+          ))}
+        </div>
+      )}
+
       <div className={styles.stepActions}>
-        <Button variant="ghost" onClick={() => onNext(0)} disabled={linking}>
-          跳过
-        </Button>
-        <Button variant="primary" onClick={onContinue} disabled={linking}>
-          {linking
-            ? "关联中…"
-            : form.datasetIds.length === 0
-              ? "下一步"
-              : `关联 ${form.datasetIds.length} 个并继续`}
-        </Button>
+        {linkJobIds.length > 0 ? (
+          <Button
+            variant="primary"
+            onClick={() => onNext(form.datasetIds.length)}
+          >
+            下一步
+          </Button>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={() => onNext(0)} disabled={linking}>
+              跳过
+            </Button>
+            <Button variant="primary" onClick={onContinue} disabled={linking}>
+              {linking
+                ? "关联中…"
+                : form.datasetIds.length === 0
+                  ? "下一步"
+                  : `关联 ${form.datasetIds.length} 个并继续`}
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

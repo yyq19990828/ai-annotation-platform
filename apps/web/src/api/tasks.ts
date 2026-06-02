@@ -24,6 +24,8 @@ export interface TaskListParams {
   status?: string;
   assignee_id?: string;
   batch_id?: string;
+  // v0.12.0 · true = 只返回 batch_id IS NULL（未归类）任务
+  unbatched?: boolean;
   limit?: number;
   offset?: number;
   cursor?: string;
@@ -103,6 +105,7 @@ export const tasksApi = {
     if (params?.status) q.set("status", params.status);
     if (params?.assignee_id) q.set("assignee_id", params.assignee_id);
     if (params?.batch_id) q.set("batch_id", params.batch_id);
+    if (params?.unbatched) q.set("unbatched", "true");
     if (params?.limit) q.set("limit", String(params.limit));
     if (params?.offset) q.set("offset", String(params.offset));
     if (params?.cursor) q.set("cursor", params.cursor);

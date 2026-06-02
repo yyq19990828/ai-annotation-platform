@@ -11,6 +11,7 @@ import {
   useProjectDatasets,
 } from "@/hooks/useDatasets";
 import { datasetsApi } from "@/api/datasets";
+import { LinkJobProgress } from "@/components/datasets/LinkJobProgress";
 import type { ProjectResponse } from "@/api/projects";
 import styles from "./DatasetsSection.module.css";
 
@@ -135,6 +136,8 @@ function LinkDatasetModal({
   onLinked: (name: string) => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
+  // v0.12.0 · 大 dataset 异步建 task 时返回的 job id，非空则在弹窗内显示进度条
+  const [linkJobId, setLinkJobId] = useState<string | null>(null);
   // useLinkProject 是按 datasetId 维度的 hook；这里临时绕开 — 直接调 mutation
   // 但现有 useLinkProject 只能 useMutation 化为 datasetId-bound 实例。
   // 为简洁，我们直接调 datasetsApi.linkProject + invalidate by hand。
@@ -145,9 +148,14 @@ function LinkDatasetModal({
     if (!selected) return;
     const ds = candidates.find((c) => c.id === selected);
     link.mutate(projectId, {
-      onSuccess: () => {
+      onSuccess: (res) => {
         onLinked(ds?.name ?? "数据集");
-        onClose();
+        // 大 dataset 异步建 task：留在弹窗里看进度；小 dataset 同步建完直接关闭
+        if (res.async_job_id) {
+          setLinkJobId(res.async_job_id);
+        } else {
+          onClose();
+        }
       },
       onError: (e) => pushToast({ msg: "关联失败", sub: (e as Error).message, kind: "error" }),
     });
@@ -198,11 +206,21 @@ function LinkDatasetModal({
           })}
         </div>
       )}
+      {linkJobId && (
+        <LinkJobProgress
+          jobId={linkJobId}
+          projectId={projectId}
+          onDone={() => {
+            setLinkJobId(null);
+            onClose();
+          }}
+        />
+      )}
       <div className={styles.modalActions}>
-        <Button onClick={onClose}>取消</Button>
+        <Button onClick={onClose} disabled={!!linkJobId}>取消</Button>
         <Button
           onClick={onSubmit}
-          disabled={!selected || link.isPending}
+          disabled={!selected || link.isPending || !!linkJobId}
           className={styles.primaryButton}
         >
           {link.isPending ? "关联中…" : "确认关联"}
