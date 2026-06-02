@@ -29,6 +29,9 @@ interface ThreeDWorkbenchProps {
   taskId: string | null;
   /** v0.13.3 · 锁定 task / viewer 角色时只读:不放置 / 不编辑 / 无 gizmo,仅看 + 选中查看数值。 */
   readOnly?: boolean;
+  /** v0.13.3-5 · 壳层共享选中态(与标注列表 / 右栏面板同一份),驱动选中高亮 / gizmo / 数值面板。 */
+  selectedId: string | null;
+  onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
 }
 
 // v0.13.3 · 新框默认尺寸(米,长宽高;约一辆轿车),放置后用面板/gizmo 精修。
@@ -62,14 +65,19 @@ function psrToForm(b: {
   };
 }
 
-export function ThreeDWorkbench({ taskId, readOnly = false }: ThreeDWorkbenchProps) {
+export function ThreeDWorkbench({
+  taskId,
+  readOnly = false,
+  selectedId,
+  onSelectBox,
+}: ThreeDWorkbenchProps) {
   const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
   const viewportRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<PointCloudScene | null>(null);
   const [stats, setStats] = useState<PointCloudStats | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pointSize, setPointSize] = useState(0.06);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // 选中态来自壳层(selectedId / onSelectBox props),与标注列表 / 右栏面板共享同一份。
 
   const { data: annotations } = useAnnotations(taskId ?? undefined);
   const updateAnnotation = useUpdateAnnotation(taskId ?? undefined);
@@ -214,16 +222,15 @@ export function ThreeDWorkbench({ taskId, readOnly = false }: ThreeDWorkbenchPro
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedId, readOnly]);
 
-  // 切任务清选中 + 退出放置。
+  // 切任务退出放置(选中态由壳层在切任务时统管,3D 不再本地清)。
   useEffect(() => {
-    setSelectedId(null);
     setPlacing(false);
   }, [taskId]);
 
   // 进入放置模式时清选中,避免 gizmo 挡在点地面的路上。
   useEffect(() => {
-    if (placing) setSelectedId(null);
-  }, [placing]);
+    if (placing) onSelectBox(null);
+  }, [placing, onSelectBox]);
 
   // B 切换放置模式 / Esc 取消(焦点在输入框时不拦截;无可用类别时不进入)。
   useEffect(() => {
@@ -307,8 +314,8 @@ export function ThreeDWorkbench({ taskId, readOnly = false }: ThreeDWorkbenchPro
   const handleDeleteSelected = useCallback(() => {
     if (!selectedId) return;
     deleteAnnotation.mutate(selectedId);
-    setSelectedId(null);
-  }, [selectedId, deleteAnnotation]);
+    onSelectBox(null);
+  }, [selectedId, deleteAnnotation, onSelectBox]);
 
   // 放置:点地面 → 默认尺寸框(落在地面上)→ 持久化 → 选中新框精修;单次放置后退出。
   const handlePlace = useCallback(
@@ -331,11 +338,11 @@ export function ThreeDWorkbench({ taskId, readOnly = false }: ThreeDWorkbenchPro
           class_name: placeClass,
           geometry,
         },
-        { onSuccess: (created) => setSelectedId(created.id) },
+        { onSuccess: (created) => onSelectBox(created.id) },
       );
       setPlacing(false);
     },
-    [placeClass, createAnnotation],
+    [placeClass, createAnnotation, onSelectBox],
   );
 
   const handleViewportClick = (e: React.MouseEvent) => {
@@ -345,7 +352,7 @@ export function ThreeDWorkbench({ taskId, readOnly = false }: ThreeDWorkbenchPro
       handlePlace(e.clientX, e.clientY);
       return;
     }
-    setSelectedId(sceneRef.current?.pickBox(e.clientX, e.clientY) ?? null);
+    onSelectBox(sceneRef.current?.pickBox(e.clientX, e.clientY) ?? null);
   };
 
   const handlePointSize = (v: number) => {
