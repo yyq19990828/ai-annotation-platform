@@ -9735,13 +9735,34 @@
             "title": "Ai Rate",
             "type": "number"
           },
+          "ai_rate_series": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Ai Rate Series",
+            "type": "array"
+          },
           "completed": {
             "title": "Completed",
             "type": "integer"
           },
+          "completed_series": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Completed Series",
+            "type": "array"
+          },
           "pending_review": {
             "title": "Pending Review",
             "type": "integer"
+          },
+          "pending_review_series": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Pending Review Series",
+            "type": "array"
           },
           "total_annotations": {
             "default": 0,
@@ -9751,6 +9772,13 @@
           "total_data": {
             "title": "Total Data",
             "type": "integer"
+          },
+          "total_data_series": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Total Data Series",
+            "type": "array"
           }
         },
         "required": [

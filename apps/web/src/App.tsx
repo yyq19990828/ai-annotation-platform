@@ -10,6 +10,7 @@ import { ToastRack, useToastStore } from "@/components/ui/Toast";
 // 仪表盘 / 登录 类首屏关键路径：保持同步加载（避免 Suspense 闪烁）
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { AdminDashboard } from "@/pages/Dashboard/AdminDashboard";
+import { AdminProjectsDashboard } from "@/pages/Dashboard/AdminProjectsDashboard";
 import { ReviewerDashboard } from "@/pages/Dashboard/ReviewerDashboard";
 import { AnnotatorDashboard } from "@/pages/Dashboard/AnnotatorDashboard";
 import { ViewerDashboard } from "@/pages/Dashboard/ViewerDashboard";
@@ -92,10 +93,10 @@ import styles from "./App.module.css";
 function DashboardRouter() {
   const { role } = usePermissions();
   const [params] = useSearchParams();
-  // B-3: super_admin 默认进入"平台概览"，?view=projects 切到与 project_admin 一致的"项目总览"
+  // B-3: super_admin 默认进入"平台概览"，?view=projects 切到独立的全局项目管理页。
   switch (role) {
     case "super_admin":
-      return params.get("view") === "projects" ? <DashboardPage /> : <AdminDashboard />;
+      return params.get("view") === "projects" ? <AdminProjectsDashboard /> : <AdminDashboard />;
     case "project_admin":
       return <DashboardPage />;
     case "reviewer":

@@ -1,11 +1,12 @@
 import uuid
 from collections import Counter
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func, text, or_
 from app.deps import (
     get_db,
     get_current_user,
@@ -40,6 +41,8 @@ from app.config import settings
 router = APIRouter()
 
 _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+_STATS_SERIES_POINTS = 12
+_STATS_SERIES_STEP = timedelta(days=7)
 
 
 def _visible_project_filter(user: User):
@@ -52,6 +55,98 @@ def _visible_project_filter(user: User):
     return Project.id.in_(
         select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)
     )
+
+
+def _stats_bucket_ends(now: datetime) -> list[datetime]:
+    return [
+        now - _STATS_SERIES_STEP * (_STATS_SERIES_POINTS - 1 - i)
+        for i in range(_STATS_SERIES_POINTS)
+    ]
+
+
+async def _build_project_stats_series(
+    db: AsyncSession,
+    visible_project_ids: list[uuid.UUID],
+) -> dict[str, list[int] | list[float]]:
+    from app.db.models.annotation import Annotation
+    from app.db.models.task import Task
+
+    bucket_ends = _stats_bucket_ends(datetime.now(timezone.utc))
+    total_data_series: list[int] = []
+    completed_series: list[int] = []
+    pending_review_series: list[int] = []
+    ai_rate_series: list[float] = []
+
+    for bucket_end in bucket_ends:
+        total_tasks = await db.scalar(
+            select(func.count())
+            .select_from(Task)
+            .where(
+                Task.project_id.in_(visible_project_ids),
+                Task.created_at <= bucket_end,
+            )
+        )
+        total_data_series.append(int(total_tasks or 0))
+
+        completed_tasks = await db.scalar(
+            select(func.count())
+            .select_from(Task)
+            .where(
+                Task.project_id.in_(visible_project_ids),
+                Task.status == "completed",
+                or_(
+                    Task.reviewed_at <= bucket_end,
+                    Task.reviewed_at.is_(None) & (Task.updated_at <= bucket_end),
+                ),
+            )
+        )
+        completed_series.append(int(completed_tasks or 0))
+
+        pending_review_tasks = await db.scalar(
+            select(func.count())
+            .select_from(Task)
+            .where(
+                Task.project_id.in_(visible_project_ids),
+                Task.submitted_at.isnot(None),
+                Task.submitted_at <= bucket_end,
+                or_(Task.reviewed_at.is_(None), Task.reviewed_at > bucket_end),
+            )
+        )
+        pending_review_series.append(int(pending_review_tasks or 0))
+
+        total_annotations = await db.scalar(
+            select(func.count())
+            .select_from(Annotation)
+            .where(
+                Annotation.is_active.is_(True),
+                Annotation.was_cancelled.is_(False),
+                Annotation.project_id.in_(visible_project_ids),
+                Annotation.created_at <= bucket_end,
+            )
+        )
+        ai_annotations = await db.scalar(
+            select(func.count())
+            .select_from(Annotation)
+            .where(
+                Annotation.is_active.is_(True),
+                Annotation.was_cancelled.is_(False),
+                Annotation.parent_prediction_id.isnot(None),
+                Annotation.project_id.in_(visible_project_ids),
+                Annotation.created_at <= bucket_end,
+            )
+        )
+        ai_rate_series.append(
+            round((ai_annotations or 0) / total_annotations * 100, 1)
+            if total_annotations
+            else 0.0
+        )
+
+    return {
+        "total_data_series": total_data_series,
+        "completed_series": completed_series,
+        "pending_review_series": pending_review_series,
+        "ai_rate_series": ai_rate_series,
+    }
 
 
 async def _serialize_project(
@@ -221,6 +316,10 @@ async def get_stats(
             pending_review=0,
             total_annotations=0,
             ai_derived_annotations=0,
+            total_data_series=[0] * _STATS_SERIES_POINTS,
+            completed_series=[0] * _STATS_SERIES_POINTS,
+            ai_rate_series=[0.0] * _STATS_SERIES_POINTS,
+            pending_review_series=[0] * _STATS_SERIES_POINTS,
         )
 
     total_ann_result = await db.execute(
@@ -251,6 +350,7 @@ async def get_stats(
         if total_annotations
         else 0.0
     )
+    series = await _build_project_stats_series(db, visible_ids)
 
     return ProjectStats(
         total_data=total,
@@ -259,6 +359,7 @@ async def get_stats(
         pending_review=review,
         total_annotations=total_annotations,
         ai_derived_annotations=ai_derived_annotations,
+        **series,
     )
 
 

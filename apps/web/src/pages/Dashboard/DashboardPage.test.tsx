@@ -214,11 +214,17 @@ describe("DashboardPage", () => {
         completed: 567,
         ai_rate: 42,
         pending_review: 89,
+        total_data_series: [1000, 1050, 1100, 1120, 1150, 1170, 1190, 1200, 1210, 1220, 1230, 1234],
+        completed_series: [500, 505, 510, 520, 530, 540, 548, 552, 558, 562, 565, 567],
+        ai_rate_series: [30, 31, 32, 34, 35, 37, 38, 39, 40, 41, 42, 42],
+        pending_review_series: [100, 95, 90, 89, 88, 90, 92, 91, 90, 89, 89, 89],
       },
     });
     renderUI();
     expect(screen.getByText("1,234")).toBeInTheDocument();
     expect(screen.getByText("42%")).toBeInTheDocument();
+    expect(screen.getAllByText("近 12 周").length).toBeGreaterThan(0);
+    expect(screen.queryByText("↑ 12%")).not.toBeInTheDocument();
   });
 
   it("audit 含 http.* 项被过滤，只显示业务事件", () => {
