@@ -384,7 +384,6 @@ async def build_export_zip(
         expires_iso = datetime.fromtimestamp(
             now.timestamp() + PRESIGN_EXPIRES_SECONDS, tz=timezone.utc
         ).isoformat()
-        manifest_images: list[dict] = []
 
         with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
             # 共享产物（格式无关）：类别清单 + 属性 schema。
@@ -395,64 +394,87 @@ async def build_export_zip(
                     json.dumps(attribute_schema, ensure_ascii=False, indent=2),
                 )
 
-            # 单流式 pass：写 YOLO 镜像 labels + 累积 manifest + 计数 task。
-            async for tasks, ann_by_task, dataset_items in svc.iter_export_chunks(
-                project_id, batch_id, with_annotations=has_yolo
-            ):
-                total_tasks += len(tasks)
-                if dataset_items_all is not None:
-                    dataset_items_all.update(dataset_items)
-                for t in tasks:
-                    item = (
-                        dataset_items.get(t.dataset_item_id)
-                        if t.dataset_item_id
-                        else None
-                    )
-                    for target in yolo_targets:
-                        prefix = f"{target}/" if multi else ""
-                        rel = _label_rel(t, item)
-                        img_w = int(item.width) if item and item.width else FALLBACK_W
-                        img_h = int(item.height) if item and item.height else FALLBACK_H
-                        lines, attrs_per_line = _yolo_target_lines(
-                            target,
-                            ann_by_task.get(t.id, []),
-                            cat_map,
-                            img_w=img_w,
-                            img_h=img_h,
-                            include_attributes=include_attributes,
+            # Pass 1（仅 YOLO 目标）：流式写镜像 labels（需 annotation）。
+            if yolo_targets:
+                async for tasks, ann_by_task, dataset_items in svc.iter_export_chunks(
+                    project_id, batch_id, with_annotations=True
+                ):
+                    for t in tasks:
+                        item = (
+                            dataset_items.get(t.dataset_item_id)
+                            if t.dataset_item_id
+                            else None
                         )
-                        dataset_id = str(item.dataset_id) if item else "unknown"
-                        base = f"{prefix}{project_id}/{dataset_id}/labels/{rel}"
-                        zf.writestr(f"{base}.txt", "\n".join(lines))
-                        file_count += 1
-                        if include_attributes and attrs_per_line:
-                            zf.writestr(
-                                f"{base}.attrs.json",
-                                json.dumps(
-                                    {"attributes": attrs_per_line}, ensure_ascii=False
-                                ),
+                        for target in yolo_targets:
+                            prefix = f"{target}/" if multi else ""
+                            rel = _label_rel(t, item)
+                            img_w = (
+                                int(item.width) if item and item.width else FALLBACK_W
                             )
-                    # 共享图片回源条目（任一目标都可用）。
-                    dataset_name = _dataset_name_for_task(t, item)
-                    img_rel = relative_path_from_file_path(t.file_path, dataset_name)
-                    presigned = storage_service.generate_download_url(
-                        t.file_path,
-                        expires_in=PRESIGN_EXPIRES_SECONDS,
-                        bucket=storage_service.datasets_bucket,
-                    )
-                    manifest_images.append(
-                        {
+                            img_h = (
+                                int(item.height) if item and item.height else FALLBACK_H
+                            )
+                            lines, attrs_per_line = _yolo_target_lines(
+                                target,
+                                ann_by_task.get(t.id, []),
+                                cat_map,
+                                img_w=img_w,
+                                img_h=img_h,
+                                include_attributes=include_attributes,
+                            )
+                            dataset_id = str(item.dataset_id) if item else "unknown"
+                            base = f"{prefix}{project_id}/{dataset_id}/labels/{rel}"
+                            zf.writestr(f"{base}.txt", "\n".join(lines))
+                            file_count += 1
+                            if include_attributes and attrs_per_line:
+                                zf.writestr(
+                                    f"{base}.attrs.json",
+                                    json.dumps(
+                                        {"attributes": attrs_per_line},
+                                        ensure_ascii=False,
+                                    ),
+                                )
+                for target in yolo_targets:
+                    prefix = f"{target}/" if multi else ""
+                    zf.writestr(f"{prefix}data.yaml", _build_data_yaml(classes_list))
+
+            # Pass 2：流式写 images_manifest.json —— 边遍历边写 zip entry（O(1) 内存，
+            # 不把十万条 manifest dict 攒进 RAM，这是 B6「内存与 task 数解耦」的关键），
+            # 顺带计 task 数 + 累积 coco 所需 items（不需 annotation）。
+            with zf.open("images_manifest.json", "w") as mf:
+                mf.write(b'{"images": [')
+                first = True
+                async for tasks, _ann, dataset_items in svc.iter_export_chunks(
+                    project_id, batch_id, with_annotations=False
+                ):
+                    total_tasks += len(tasks)
+                    if dataset_items_all is not None:
+                        dataset_items_all.update(dataset_items)
+                    for t in tasks:
+                        item = (
+                            dataset_items.get(t.dataset_item_id)
+                            if t.dataset_item_id
+                            else None
+                        )
+                        dataset_name = _dataset_name_for_task(t, item)
+                        img_rel = relative_path_from_file_path(t.file_path, dataset_name)
+                        presigned = storage_service.generate_download_url(
+                            t.file_path,
+                            expires_in=PRESIGN_EXPIRES_SECONDS,
+                            bucket=storage_service.datasets_bucket,
+                        )
+                        entry = {
                             "rel_path": img_rel,
                             "dataset_id": str(item.dataset_id) if item else None,
                             "presigned_url": presigned,
                             "expires_at": expires_iso,
                         }
-                    )
-
-            # YOLO data.yaml（每 yolo 目标一份；单目标落根，多目标落 {target}/）。
-            for target in yolo_targets:
-                prefix = f"{target}/" if multi else ""
-                zf.writestr(f"{prefix}data.yaml", _build_data_yaml(classes_list))
+                        mf.write(b"" if first else b", ")
+                        mf.write(json.dumps(entry, ensure_ascii=False).encode("utf-8"))
+                        first = False
+                mf.write(b'], "expires_at": ')
+                mf.write(json.dumps(expires_iso).encode("utf-8"))
+                mf.write(b"}")
 
             # 单文档目标（coco/aap_json）：本质全量物化，svc 自加载落包根/子目录。
             for target in other_targets:
@@ -470,14 +492,6 @@ async def build_export_zip(
                 zf.writestr(f"{prefix}annotations.json", content)
                 file_count += total_tasks
 
-            zf.writestr(
-                "images_manifest.json",
-                json.dumps(
-                    {"images": manifest_images, "expires_at": expires_iso},
-                    ensure_ascii=False,
-                    indent=2,
-                ),
-            )
             zf.writestr("fetch_images.py", _FETCH_IMAGES_TEMPLATE)
             # 单 YOLO 目标根 data.yaml 已在上面写；纯 COCO/AAP 单目标补一份（兼容旧包结构）。
             if not multi and not has_yolo:

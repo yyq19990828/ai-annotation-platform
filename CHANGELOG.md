@@ -34,8 +34,10 @@
 ### Changed
 
 - **导出 ZIP 落盘 + 流式上传（B6-2）**：`build_export_zip` / `_build_video_export_zip` 不再用 `io.BytesIO()` 把整包压缩 ZIP 攒在内存，改写 `tempfile` 落盘；worker 用 boto3 `upload_file` 多段流式上传（不把整文件读进 RAM），上传后清理临时文件。内存峰值与产物大小解耦。
-- **导出 DB 读分块流式化（B6-1）**：新增 `ExportService.iter_export_chunks`，按 task 分块惰性产出 `(tasks, ann_by_task, dataset_items)`（先取轻量 task id 列表再分块水合，规避服务端游标占用连接的冲突）。per-file 格式（YOLO 镜像、视频逐序列 MOT/KITTI/yolo-frames）的 ORM 对象内存与 task 数解耦。COCO/AAP JSON 是单文档格式，本质需全量物化（流式 JSON 编码不在本版范围），仍由 `ExportService` 自加载。
+- **导出 DB 读分块流式化（B6-1）**：新增 `ExportService.iter_export_chunks`，按 task 分块惰性产出 `(tasks, ann_by_task, dataset_items)`（先取轻量 task id 列表再分块水合，规避服务端游标占用连接的冲突），每块产出后 `expunge_all()` 释放 session 身份映射，避免分块加载的 ORM 行滞留内存。per-file 格式（YOLO 镜像、视频逐序列 MOT/KITTI/yolo-frames）的 ORM 对象内存与 task 数解耦。COCO/AAP JSON 是单文档格式，本质需全量物化（流式 JSON 编码不在本版范围），仍由 `ExportService` 自加载。
+- **图像 manifest 流式写入**：`images_manifest.json` 改为边遍历边写 zip entry（`zf.open(...,"w")`，O(1) 内存），不再把十万条 manifest dict 攒进 RAM 再整体 `json.dumps`——这是「内存与 task 数解耦」的关键残留项。
 - `build_export_zip` 返回签名由 `(bytes, file_count)` 改为 `(zip 路径, file_count, size_bytes)`；`storage_service` 新增 `upload_file` 从本地路径流式上传。
+- 实测（10 万 task 项目，YOLO 全量导出）：旧 `_load_data` 仅加载即 ~426MB 峰值；新流式落盘端到端 ~134MB（剩余主要是 stdlib `zipfile` 十万条目的中央目录，小常数因子），产物 `testzip` 完好、manifest 合法。
 
 ## [0.12.0] - 2026-06-02
 

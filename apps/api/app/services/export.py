@@ -371,6 +371,11 @@ class ExportService:
 
             dataset_items = await self._load_dataset_items(tasks)
             yield tasks, ann_by_task, dataset_items
+            # v0.12.1 · 释放 session 身份映射，否则分块加载的 Task/Annotation/DatasetItem
+            # ORM 行会全部滞留 identity map，内存仍随 task 数线性增长（B6-1 失效）。
+            # 消费方在本轮已写盘完成；expunge 后已加载属性仍可读（expire_on_commit=False），
+            # 不影响 dataset_items_all 等后续引用。
+            self.db.expunge_all()
 
     async def export_video_tracks(
         self,
