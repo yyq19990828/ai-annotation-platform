@@ -1,7 +1,7 @@
 // v0.10.18 · CreateProjectWizard 第 5 步: 数据集关联 + 批次切分.
 // 从 CreateProjectWizard.tsx 抽出.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { clsx } from "clsx";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -34,6 +34,33 @@ export function Step5Datasets({
   const [linking, setLinking] = useState(false);
   // v0.12.0 · 大 dataset 异步建 task 的 job id 列表，非空则在底部显示进度条
   const [linkJobIds, setLinkJobIds] = useState<string[]>([]);
+  // v0.12.0 · 大 dataset 异步时 task 尚未建完，切分需延后到所有建任务 job 完成再跑
+  const [splitAfterJobs, setSplitAfterJobs] = useState(false);
+
+  const runSplit = async () => {
+    try {
+      await splitMutation.mutateAsync({
+        strategy: "random",
+        n_batches: form.splitNBatches,
+        name_prefix: "Batch",
+        priority: 50,
+      });
+    } catch (e) {
+      pushToast({
+        msg: "批次切分失败（可在设置页重试）",
+        sub: (e as Error).message,
+      });
+    }
+  };
+
+  // 所有异步建任务 job 完成（linkJobIds 清空）后，再执行延后的切分。
+  useEffect(() => {
+    if (splitAfterJobs && linkJobIds.length === 0) {
+      setSplitAfterJobs(false);
+      void runSplit();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [splitAfterJobs, linkJobIds]);
 
   const toggle = (id: string) => {
     setForm((s) => ({
@@ -68,20 +95,14 @@ export function Step5Datasets({
           });
         }
       }
-      // 切分（仅当用户选了 >=2）
+      // 切分（仅当用户选了 >=2）。大 dataset 异步建 task 时此刻任务尚未建完，
+      // 立即切分会切到空集 → 延后到所有建任务 job 完成再切（见 splitAfterJobs effect）；
+      // 全同步时任务已就绪，立即切。
       if (form.splitNBatches >= 2) {
-        try {
-          await splitMutation.mutateAsync({
-            strategy: "random",
-            n_batches: form.splitNBatches,
-            name_prefix: "Batch",
-            priority: 50,
-          });
-        } catch (e) {
-          pushToast({
-            msg: "批次切分失败（可在设置页重试）",
-            sub: (e as Error).message,
-          });
+        if (jobIds.length > 0) {
+          setSplitAfterJobs(true);
+        } else {
+          await runSplit();
         }
       }
       pushToast({ msg: `已关联 ${linkedOK} 个数据集`, kind: "success" });
