@@ -189,8 +189,7 @@ export function DashboardPage() {
   const wizardOpen = searchParams.get("new") === "1";
   // v0.10.11 · 从 ProjectGrid "复制项目" 跳来时携带 ?from=<id>; Wizard 据此预填.
   const wizardSourceProjectId = searchParams.get("from") || undefined;
-  // B-35 · 内部 list/grid 切换使用独立的 layout 参数，避免与外层 DashboardRouter 的 view=projects 冲突
-  // （否则超管点击网格切换会把 view=projects 覆盖成 view=grid，被路由回平台概览）。
+  // B-35 · 内部 list/grid 切换使用独立的 layout 参数，避免覆盖超管项目页的 view=projects。
   const viewMode: "list" | "grid" = searchParams.get("layout") === "grid" ? "grid" : "list";
   const setViewMode = (mode: "list" | "grid") => {
     const next = new URLSearchParams(searchParams);

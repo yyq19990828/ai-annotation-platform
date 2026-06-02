@@ -28,6 +28,9 @@ vi.mock("@/components/projects/CreateProjectWizard", () => ({
 vi.mock("@/components/datasets/ImportDatasetWizard", () => ({
   ImportDatasetWizard: ({ open }: any) => (open ? <div data-testid="id-wizard" /> : null),
 }));
+vi.mock("./AdminProjectsDashboard", () => ({
+  AdminProjectsDashboard: () => <div data-testid="admin-projects-dashboard" />,
+}));
 
 import { AdminDashboard } from "./AdminDashboard";
 
@@ -68,6 +71,12 @@ describe("AdminDashboard", () => {
     mockUseAdminStats.mockReturnValue({ data: undefined, isLoading: true });
     renderUI();
     expect(screen.getByText("加载中...")).toBeInTheDocument();
+  });
+
+  it("projects view → 在超管 dashboard 内部切到项目管理页", () => {
+    renderUI("/dashboard?view=projects");
+    expect(screen.getByTestId("admin-projects-dashboard")).toBeInTheDocument();
+    expect(mockUseAdminStats).not.toHaveBeenCalled();
   });
 
   it("有 stats → 渲染主要 KPI 卡片", () => {

@@ -17,9 +17,23 @@ import { auditActionLabel } from "@/utils/auditLabels";
 import { projectDisplayType } from "@/utils/projectDisplay";
 import type { UserRole } from "@/types";
 import type { RegistrationDayPoint } from "@/api/dashboard";
+import { AdminProjectsDashboard } from "./AdminProjectsDashboard";
 import styles from "./AdminDashboard.module.css";
 
+const ADMIN_DASHBOARD_PROJECTS_VIEW = "projects";
+
 export function AdminDashboard() {
+  const [searchParams] = useSearchParams();
+  const view = searchParams.get("view");
+
+  if (view === ADMIN_DASHBOARD_PROJECTS_VIEW) {
+    return <AdminProjectsDashboard />;
+  }
+
+  return <AdminOverviewDashboard />;
+}
+
+function AdminOverviewDashboard() {
   const { data: stats, isLoading } = useAdminStats();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
   const { data: audit } = useAuditLogs({ page: 1, page_size: 8 });
