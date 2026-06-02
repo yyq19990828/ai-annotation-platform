@@ -61,7 +61,7 @@ function ProjectRow({
   const ownerInitial = p.owner_name?.slice(0, 1) ?? "?";
 
   return (
-    <tr className={styles.projectRow} onClick={() => onOpen(p)}>
+    <tr className={styles.projectRow}>
       <td className={styles.projectCellPrimary}>
         <div className={styles.projectIdentity}>
           <div className={styles.projectTypeIcon}>

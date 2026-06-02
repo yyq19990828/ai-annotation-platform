@@ -111,10 +111,6 @@
   padding-right: 16px;
 }
 
-.projectRow {
-  cursor: pointer;
-}
-
 .projectCell,
 .projectCellPrimary,
 .progressCell,
@@ -182,23 +178,26 @@
 .projectMeta {
   display: flex;
   gap: 8px;
-  align-items: center;
+  align-items: baseline;
   min-width: 0;
   margin-top: 2px;
 }
 
 .projectId {
-  font-size: 11px;
+  font-size: 11.5px;
+  line-height: 16px;
   color: var(--color-fg-subtle);
 }
 
 .metaDot {
+  line-height: 16px;
   color: var(--color-fg-faint);
 }
 
 .projectType {
   overflow: hidden;
   font-size: 11.5px;
+  line-height: 16px;
   color: var(--color-fg-muted);
   text-overflow: ellipsis;
   white-space: nowrap;

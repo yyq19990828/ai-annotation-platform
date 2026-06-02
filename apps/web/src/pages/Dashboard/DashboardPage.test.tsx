@@ -18,6 +18,7 @@ const mockUseProjects = vi.fn();
 const mockUseProjectStats = vi.fn();
 const mockUseAuditLogs = vi.fn();
 const mockPushToast = vi.fn();
+const mockBuildWorkbenchUrl = vi.hoisted(() => vi.fn((id: string) => `/workbench/${id}`));
 const mockAuthStore = vi.fn(<T,>(sel: (s: MockAuthState) => T) => sel({ user: null }));
 
 vi.mock("@/hooks/useProjects", () => ({
@@ -59,7 +60,7 @@ vi.mock("@/components/guards/Can", () => ({
 }));
 
 vi.mock("@/utils/workbenchNavigation", () => ({
-  buildWorkbenchUrl: (_id: string) => `/workbench/${_id}`,
+  buildWorkbenchUrl: (id: string) => mockBuildWorkbenchUrl(id),
   currentWorkbenchReturnTo: () => "/dashboard",
 }));
 
@@ -89,6 +90,7 @@ function renderUI(initialPath = "/dashboard") {
 describe("DashboardPage", () => {
   beforeEach(() => {
     mockPushToast.mockReset();
+    mockBuildWorkbenchUrl.mockClear();
     mockAuthStore.mockImplementation(<T,>(sel: (s: MockAuthState) => T) =>
       sel({ user: baseUser }),
     );
@@ -137,7 +139,7 @@ describe("DashboardPage", () => {
     expect(screen.getByText("Demo项目")).toBeInTheDocument();
     expect(screen.getByText("Alice")).toBeInTheDocument();
     expect(screen.getByText("P-1")).toBeInTheDocument();
-    expect(screen.getByText("图片 · 矩形框")).toBeInTheDocument();
+    expect(screen.getByText("图片")).toBeInTheDocument();
     expect(screen.queryByText("图像 · 目标检测")).not.toBeInTheDocument();
   });
 
@@ -171,8 +173,38 @@ describe("DashboardPage", () => {
     renderUI();
     expect(screen.queryByText("gsam2-video")).not.toBeInTheDocument();
     expect(screen.getByText("未接入模型")).toBeInTheDocument();
-    expect(screen.getByText("视频 · 单帧框 / 轨迹框")).toBeInTheDocument();
+    expect(screen.getByText("视频")).toBeInTheDocument();
     expect(screen.queryByText("视频 · 时序追踪")).not.toBeInTheDocument();
+  });
+
+  it("列表行空白点击不进入工作台，只有打开按钮进入", () => {
+    mockUseProjects.mockReturnValue({
+      data: [
+        {
+          id: "p1",
+          display_id: "P-1",
+          name: "Demo项目",
+          type_label: "图像 · 目标检测",
+          type_key: "image-det",
+          data_type: "image",
+          owner_id: "u1",
+          owner_name: "Alice",
+          member_count: 3,
+          status: "in_progress",
+          total_tasks: 10,
+          completed_tasks: 5,
+          review_tasks: 0,
+          in_progress_tasks: 0,
+          ai_enabled: false,
+        },
+      ],
+      isLoading: false,
+    });
+    renderUI();
+    fireEvent.click(screen.getByText("Demo项目"));
+    expect(mockBuildWorkbenchUrl).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /打开/ }));
+    expect(mockBuildWorkbenchUrl).toHaveBeenCalledWith("p1");
   });
 
   it("有 stats → stat 卡片渲染正确数值", () => {

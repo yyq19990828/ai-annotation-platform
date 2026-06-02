@@ -23,7 +23,7 @@ function project(overrides: Partial<ProjectResponse>): ProjectResponse {
 }
 
 describe("projectDisplayType", () => {
-  it("uses media and tool bindings instead of legacy type_label", () => {
+  it("uses media instead of legacy type_label or tool bindings", () => {
     expect(
       projectDisplayType(project({
         tool_bindings: {
@@ -31,14 +31,14 @@ describe("projectDisplayType", () => {
           region: { enabled: true },
         },
       })),
-    ).toBe("图片 · 矩形框 / 区域");
+    ).toBe("图片");
   });
 
-  it("falls back from legacy type_key when tool_bindings are absent", () => {
-    expect(projectDisplayType(project({}))).toBe("图片 · 矩形框");
+  it("falls back from legacy type_key only for media", () => {
+    expect(projectDisplayType(project({ data_type: undefined }))).toBe("图片");
   });
 
-  it("describes video bbox subtools with video_modes", () => {
+  it("does not include video bbox subtools", () => {
     expect(
       projectDisplayType(project({
         data_type: "video",
@@ -48,6 +48,6 @@ describe("projectDisplayType", () => {
           bbox: { enabled: true, video_modes: { box: false, track: true } },
         },
       })),
-    ).toBe("视频 · 轨迹框");
+    ).toBe("视频");
   });
 });
