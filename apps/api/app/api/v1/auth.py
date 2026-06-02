@@ -243,15 +243,26 @@ async def forgot_password(
             or settings.frontend_base_url
         )
         smtp_host = await SystemSettingsService.get(db, "smtp_host")
+        # 含明文一次性 token 的 url/token 仅在非 production 落日志（dev 友好）；
+        # production 只记 email + 是否配置 SMTP，防 token 经集中式日志扩散后被用于重置密码。
+        is_prod = settings.environment == "production"
         if smtp_host:
-            reset_url = f"{str(base_url).rstrip('/')}/reset-password?token={token}"
-            logger.info("Password reset token for %s: %s", data.email, reset_url)
+            if is_prod:
+                logger.info("Password reset email dispatched for %s", data.email)
+            else:
+                reset_url = f"{str(base_url).rstrip('/')}/reset-password?token={token}"
+                logger.info("Password reset token for %s: %s", data.email, reset_url)
         else:
-            logger.info(
-                "Password reset token for %s (SMTP not configured): token=%s",
-                data.email,
-                token,
-            )
+            if is_prod:
+                logger.info(
+                    "Password reset requested for %s but SMTP not configured", data.email
+                )
+            else:
+                logger.info(
+                    "Password reset token for %s (SMTP not configured): token=%s",
+                    data.email,
+                    token,
+                )
 
     # 无论成功与否都返回 202，防邮箱枚举
     return {"message": "如果该邮箱已注册，您将收到一封包含重置链接的邮件"}
