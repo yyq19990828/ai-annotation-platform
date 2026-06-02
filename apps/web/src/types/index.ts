@@ -395,6 +395,13 @@ import type {
 // v0.10.29 · 视频项目级采样配置 (软网格导航). 形状由后端 schema 派生.
 export type { VideoSamplingConfig } from "@/api/generated/types.gen";
 
+// v0.13.2 · 点云查看器 manifest (主点云 URL + 各相机图 + 标定). 由后端 schema 派生.
+export type {
+  TaskPointCloudManifestResponse,
+  PointCloudCameraOut,
+  SensorCalibration,
+} from "@/api/generated/types.gen";
+
 export type PredictionShape = Omit<GeneratedPredictionShape, "geometry"> & {
   geometry: Geometry;
   shape_index?: number;

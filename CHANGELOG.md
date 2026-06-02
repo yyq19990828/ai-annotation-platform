@@ -27,6 +27,25 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；0.12.x 历史段待整体移到 docs/changelogs/0.12.x.md -->
 
+## [0.13.2] - 2026-06-02
+
+点云 + 图像联合标注工作台第三切片：**前端点云查看器 MVP(只读)**——首个用户可见的点云能力。引入 Three.js,在工作台渲染主点云 + 各相机图,可旋转缩放、看不可标。计划见 `docs/plans/2026-06-02-v0.13.2-pointcloud-viewer-mvp.md`,架构决策见 ADR-0031。
+
+### Added
+
+- **点云 manifest API**:`GET /tasks/{id}/point-cloud/manifest` 返回主点云 presigned URL + 各相机图 URL + 标定(`SensorCalibration`)。非点云任务 409。
+- **Three.js 点云查看器**:`project.type_key === "lidar"` 的任务在工作台进入 3D 舞台(`WorkbenchStageHost` 三路分流的 `3d` 分支)。裸 Three.js + React 薄封装(`PointCloudScene`):`PCDLoader` 加载点云、按高度上色、OrbitControls 旋转/平移/缩放、点大小调节、重置视角;大点云(>50 万点)自动抽稀。各相机图只读平铺(投影联动留 v0.13.4)。
+- **dev proxy 可配**:`vite.config.ts` proxy 目标改 `API_PROXY_TARGET` 可覆盖(默认 8000),支持多 worktree 并行各连不同后端端口。
+
+### Changed
+
+- `DatasetItemOut`/3D 几何类型经 codegen 流到前端;three 经 `React.lazy` + 独立 `vendor-three` chunk 加载,**不进主 bundle**,不影响 2D 工作台首屏。
+
+### Notes
+
+- 双画布架构(Konva 2D / Three.js 3D)双栈并存、模块级隔离,2D 流程零改动(ADR-0031)。
+- 本切片只读;3D 框标注(v0.13.3)与标定驱动投影联动(v0.13.4)后续。
+
 ## [0.13.1] - 2026-06-02
 
 点云 + 图像联合标注工作台第二切片：scene 统一资产导入 + 标定存储。**仅 API、零迁移、无前端可见变化**。计划见 `docs/plans/2026-06-02-v0.13.1-pointcloud-scene-import.md`，决策见 ADR-0030。

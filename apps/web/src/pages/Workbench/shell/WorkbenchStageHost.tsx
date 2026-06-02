@@ -1,4 +1,4 @@
-import { forwardRef, type ReactNode } from "react";
+import { forwardRef, lazy, Suspense, type ReactNode } from "react";
 import type {
   Annotation,
   AnnotationResponse,
@@ -20,7 +20,8 @@ import type { VideoTimelineChapter } from "../stage/VideoPlaybackOverlay";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import { ImageWorkbench } from "../stages/image/ImageWorkbench";
 import type { StageKind } from "../stages/types";
-import { ThreeDWorkbenchPlaceholder } from "../stages/three-d/ThreeDWorkbench.placeholder";
+// v0.13.2 · 点云 3D 模块 lazy import：three(~600KB)只在打开 lidar 任务时加载，不进主 bundle。
+const ThreeDWorkbench = lazy(() => import("../stages/three-d/ThreeDWorkbench"));
 import { VideoWorkbench } from "../stages/video/VideoWorkbench";
 import type { VideoConvertOptions, VideoTrackCompositionOptions } from "../stages/video/useVideoAnnotationActions";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
@@ -41,6 +42,8 @@ type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry;
  */
 interface WorkbenchStageHostCommonProps {
   stageKind: StageKind;
+  /** v0.13.2 · 当前任务 id，点云 3D 舞台据此拉 point-cloud manifest。 */
+  taskId: string | null;
   overlays: ReactNode;
   readOnly: boolean;
   activeClass: string;
@@ -193,6 +196,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     const { common, video, image, ai, editors } = props;
     const {
       stageKind,
+      taskId,
       overlays,
       readOnly,
       activeClass,
@@ -301,7 +305,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     return (
       <div className={styles.root} data-workbench-stage>
         {stageKind === "3d" ? (
-          <ThreeDWorkbenchPlaceholder />
+          <Suspense fallback={<div className={styles.lazyFallback}>加载点云查看器…</div>}>
+            <ThreeDWorkbench taskId={taskId} />
+          </Suspense>
         ) : stageKind === "video" ? (
           <VideoWorkbench
             ref={ref}

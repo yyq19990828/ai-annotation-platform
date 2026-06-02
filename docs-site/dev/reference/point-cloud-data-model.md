@@ -112,3 +112,21 @@ POST /datasets/{id}/link  (project.data_type=="lidar"):
 - 跨模态联动（选中 3D 框高亮各 2D 框、批量改类别）按 `group_id` 聚合查询，无需新表或新外键。
 
 > 投影本身（标定驱动 3D→2D）是 v0.13.4 前端工作；v0.13.0 仅约定身份字段，不预存投影结果。
+
+## 点云查看器 manifest API + 前端模块（v0.13.2）
+
+前端 3D 舞台经一个 manifest 端点拿渲染所需的一切：
+
+```
+GET /tasks/{id}/point-cloud/manifest   (project.data_type=="lidar"，否则 409)
+  → { point_cloud_url,                 # 主点云 presigned URL（datasets bucket）
+      point_cloud_format: "pcd",
+      cameras: [{ name, role, image_url, calibration: SensorCalibration | null }],
+      expires_in }
+```
+
+实现:`api/v1/tasks.py` 用 `get_linked_items` 取 link → 主点云(无 primary_lidar link 时回退 `task.file_path`)+ 各相机 presign + `metadata_["calibration"]`(非法降级 None)。
+
+前端(双画布架构,ADR-0031):`project.type_key === "lidar"` → `WorkbenchStageHost` 的 `3d` 分支 → lazy `ThreeDWorkbench`(独立 `vendor-three` chunk,不进主 bundle)。裸 Three.js 封装 `PointCloudScene`(`PCDLoader` + OrbitControls + 高度上色 + 大点云抽稀 + dispose 生命周期),相机图只读平铺。模块在 `apps/web/src/pages/Workbench/stages/three-d/`,与 Konva `stage/` 隔离。
+
+> 只读;3D 框标注(v0.13.3)与标定驱动投影联动(v0.13.4)后续。

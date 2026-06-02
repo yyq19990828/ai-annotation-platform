@@ -4,6 +4,11 @@ import react from "@vitejs/plugin-react";
 import { resolve } from "path";
 import { cspNoncePlugin } from "./vite-plugins/csp-nonce";
 
+// v0.13.2 · dev proxy 目标可配：多 worktree 并行时各分支后端跑在不同端口
+// （如点云分支隔离栈 8010），用 API_PROXY_TARGET 覆盖，默认仍指 8000。
+const apiTarget = process.env.API_PROXY_TARGET || "http://127.0.0.1:8000";
+const wsTarget = apiTarget.replace(/^http/, "ws");
+
 // vitest 字段在 vite 6 的 UserConfig 类型里未直接合并，用类型断言放过。
 // `/// <reference types="vitest" />` 已注入运行时 schema。
 const config: Parameters<typeof defineConfig>[0] = {
@@ -23,6 +28,8 @@ const config: Parameters<typeof defineConfig>[0] = {
         manualChunks: {
           "vendor-konva": ["konva", "react-konva"],
           "vendor-markdown": ["react-markdown"],
+          // v0.13.2 · three 仅点云 3D 模块用，独立 chunk（配合 lazy import 不进主 bundle）。
+          "vendor-three": ["three"],
         },
       },
     },
@@ -34,11 +41,11 @@ const config: Parameters<typeof defineConfig>[0] = {
       // 用 127.0.0.1 强制 IPv4：CI runner 上 Node 把 localhost 解析成 ::1，但
       // 后端 uvicorn 只绑 IPv4，会触发 ECONNREFUSED ::1:8000。
       "/api": {
-        target: "http://127.0.0.1:8000",
+        target: apiTarget,
         changeOrigin: true,
       },
       "/ws": {
-        target: "ws://127.0.0.1:8000",
+        target: wsTarget,
         ws: true,
       },
     },

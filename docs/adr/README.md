@@ -66,3 +66,4 @@
 - [0028](0028-annotations-import-semantics.md) — 标注导入语义
 - [0029](0029-task-dataset-item-multi-link.md) — 点云任务-数据项多文件关联中间表（保留 2D 1:1）
 - [0030](0030-sensor-calibration-in-dataset-item-metadata.md) — 相机标定存进 DatasetItem.metadata_（不加列）
+- [0031](0031-dual-canvas-konva-three.md) — 双画布架构：Konva 2D / Three.js 3D 双栈并存

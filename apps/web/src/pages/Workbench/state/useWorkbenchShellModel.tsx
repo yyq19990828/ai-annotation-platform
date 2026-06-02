@@ -1289,6 +1289,7 @@ export function useWorkbenchShellModel({
     stageHost: {
       common: {
         stageKind,
+        taskId,
         readOnly: isLocked,
         activeClass: s.activeClass,
         selectedId: s.selectedId,

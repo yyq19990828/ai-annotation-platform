@@ -7,6 +7,7 @@ import type {
   Geometry,
   TaskVideoFrameTimetableResponse,
   TaskVideoManifestResponse,
+  TaskPointCloudManifestResponse,
   VideoFrameOut,
   VideoFramePrefetchResponse,
 } from "@/types";
@@ -122,6 +123,11 @@ export const tasksApi = {
 
   getVideoManifest: (id: string) =>
     apiClient.get<TaskVideoManifestResponse>(`/tasks/${id}/video/manifest`),
+
+  getPointCloudManifest: (id: string) =>
+    apiClient.get<TaskPointCloudManifestResponse>(
+      `/tasks/${id}/point-cloud/manifest`,
+    ),
 
   getVideoFrameTimetable: (id: string, params?: VideoFrameTimetableParams) => {
     const q = new URLSearchParams();
