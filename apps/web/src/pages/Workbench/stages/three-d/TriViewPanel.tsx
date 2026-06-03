@@ -34,6 +34,8 @@ interface TriViewPanelProps {
   pointsReady: boolean;
   /** 是否可编辑 (任务非只读 且 框未锁定); false → 只读, overlay 不画 handle、不收事件。 */
   editable: boolean;
+  /** 点大小 (米): 跟随主视图点大小滑杆。 */
+  pointSize: number;
   /** 拖拽中 (commit=false, draft) / 松手 (commit=true, PATCH) 回写选中框 PSR。 */
   onEditPsr: (psr: Psr, commit: boolean) => void;
 }
@@ -43,6 +45,7 @@ export function TriViewPanel({
   getPointsGeometry,
   pointsReady,
   editable,
+  pointSize,
   onEditPsr,
 }: TriViewPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -91,6 +94,11 @@ export function TriViewPanel({
   useEffect(() => {
     rendererRef.current?.setGeometry(getPointsGeometry());
   }, [pointsReady, getPointsGeometry]);
+
+  // 点大小跟随主视图滑杆。
+  useEffect(() => {
+    rendererRef.current?.setPointSize(pointSize);
+  }, [pointSize]);
 
   // 选中框 PSR 变化 (含拖拽 draft): 更新裁剪面/相机, 并重排。
   useEffect(() => {

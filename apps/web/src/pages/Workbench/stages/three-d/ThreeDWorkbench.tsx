@@ -622,6 +622,7 @@ export function ThreeDWorkbench({
           getPointsGeometry={getPointsGeometry}
           pointsReady={!!stats}
           editable={selectedEditable}
+          pointSize={pointSize}
           onEditPsr={handleEditPsr}
         />
       </div>

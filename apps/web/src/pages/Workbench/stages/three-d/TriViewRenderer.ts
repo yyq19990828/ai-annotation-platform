@@ -103,6 +103,11 @@ export class TriViewRenderer {
     this.cameraRef = ref;
   }
 
+  /** 点大小 (世界尺寸, 米): 跟随主视图点大小滑杆, 三视图与主点云口径一致。 */
+  setPointSize(size: number) {
+    this.material.size = size;
+  }
+
   /** 容器尺寸变化: 同步 canvas 像素尺寸 (viewport 由 setViewports 单独给)。 */
   resize() {
     const { clientWidth: w, clientHeight: h } = this.container;
