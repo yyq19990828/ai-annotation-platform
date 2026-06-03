@@ -139,6 +139,8 @@ export function ThreeDWorkbench({
   const [colorizing, setColorizing] = useState(false);
   // v0.13.6 · 深度提示开关(默认关):相机图叠深度热力图 + hover 读最近点深度/3D。
   const [depthOn, setDepthOn] = useState(false);
+  // v0.13.7 · 三视图浮层折叠态(右下角):选中框才浮出,可收成小标签。
+  const [triCollapsed, setTriCollapsed] = useState(false);
   // 选中态来自壳层(selectedId / onSelectBox props),与标注列表 / 右栏面板共享同一份。
 
   const { data: annotations } = useAnnotations(taskId ?? undefined);
@@ -597,8 +599,7 @@ export function ThreeDWorkbench({
 
   return (
     <div className={styles.root}>
-      <div className={styles.mainRow}>
-        <div className={styles.viewportWrap}>
+      <div className={styles.viewportWrap}>
         <div
           ref={viewportRef}
           className={placing ? `${styles.viewport} ${styles.placing}` : styles.viewport}
@@ -763,17 +764,39 @@ export function ThreeDWorkbench({
             )}
           </div>
         )}
-        </div>
 
-        {/* v0.13.5 · 三正交视图精修面板(只读基建;选中框出俯/侧/正三窗) */}
-        <TriViewPanel
-          selected={triSelected}
-          getPointsGeometry={getPointsGeometry}
-          pointsReady={!!stats}
-          editable={selectedEditable}
-          pointSize={pointSize}
-          onEditPsr={handleEditPsr}
-        />
+        {/* v0.13.7 · 三正交视图精修浮层(右下):选中框才浮出,可收成小标签。 */}
+        {triSelected && !triCollapsed && (
+          <div className={styles.triFloat}>
+            <div className={styles.triFloatHeader}>
+              <span>三视图精修</span>
+              <button
+                type="button"
+                className={styles.floatToggleBtn}
+                onClick={() => setTriCollapsed(true)}
+              >
+                收起
+              </button>
+            </div>
+            <TriViewPanel
+              selected={triSelected}
+              getPointsGeometry={getPointsGeometry}
+              pointsReady={!!stats}
+              editable={selectedEditable}
+              pointSize={pointSize}
+              onEditPsr={handleEditPsr}
+            />
+          </div>
+        )}
+        {triSelected && triCollapsed && (
+          <button
+            type="button"
+            className={styles.triFloatTab}
+            onClick={() => setTriCollapsed(false)}
+          >
+            三视图 ▸
+          </button>
+        )}
       </div>
 
       {/* 相机图面板 + 投影 overlay(v0.13.4):3D 框经标定实时投影,点投影框反选 */}
