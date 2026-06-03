@@ -32,7 +32,9 @@ import type { Psr } from "./geometry/triview";
 import { psrToCorners } from "./geometry/box3d";
 import { cameraAnchor, type Anchor } from "./geometry/cameraAnchor";
 import { colorizePoints, type CameraSample } from "./geometry/colorize";
+import { buildDepthRaster } from "./geometry/depthmap";
 import { projectPoints } from "./geometry/projection";
+import { fitSize, fitBottom, fitYaw, fitSizeAndBottom } from "./geometry/autofit";
 import styles from "./ThreeDWorkbench.module.css";
 
 interface ThreeDWorkbenchProps {
@@ -453,6 +455,58 @@ export function ThreeDWorkbench({
     });
   }, [selectedId, selectedBox, updateAnnotation]);
 
+  // v0.13.8 · 自动贴合:把选中框按点云 box-local AABB 收尺寸 / 贴地 / 朝向。
+  // 共用 helper:拿当前点云 positions + 选中框 PSR → 跑 transform → 立即提交 + 同步表单。
+  // 不走 schedulePatch 250ms 防抖(一键操作期望即时生效)。
+  const applyFit = useCallback(
+    (transform: (positions: Float32Array, psr: Psr) => Psr) => {
+      if (!selectedId || !selectedBox || !selectedEditable) return;
+      const positions = sceneRef.current?.getPointPositions();
+      if (!positions) return;
+      const current: Psr = {
+        center: selectedBox.center,
+        size: selectedBox.size,
+        rotation: selectedBox.rotation,
+      };
+      const next = transform(positions, current);
+      setForm(psrToForm(next));
+      updateAnnotation.mutate({
+        annotationId: selectedId,
+        payload: {
+          geometry: {
+            type: "box_3d",
+            center: [next.center[0], next.center[1], next.center[2]],
+            size: [next.size[0], next.size[1], next.size[2]],
+            rotation: [next.rotation[0], next.rotation[1], next.rotation[2]],
+          },
+        },
+      });
+    },
+    [selectedId, selectedBox, selectedEditable, updateAnnotation],
+  );
+  const handleFitSize = useCallback(() => applyFit(fitSize), [applyFit]);
+  const handleFitBottom = useCallback(() => applyFit(fitBottom), [applyFit]);
+  const handleFitYaw = useCallback(() => applyFit(fitYaw), [applyFit]);
+  const handleFitDefault = useCallback(() => applyFit(fitSizeAndBottom), [applyFit]);
+
+  // Q (默认连击=收尺寸+贴地) / Shift+Q (仅收尺寸) / Alt+Q (仅贴地)。
+  // 焦点在输入框时不拦截;未选中 / 不可编辑时跳过。Ctrl+Q 让给浏览器/系统。
+  useEffect(() => {
+    if (!selectedId || !selectedEditable) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "q" && e.key !== "Q") return;
+      if (e.ctrlKey || e.metaKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      e.preventDefault();
+      if (e.shiftKey) handleFitSize();
+      else if (e.altKey) handleFitBottom();
+      else handleFitDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedId, selectedEditable, handleFitSize, handleFitBottom, handleFitDefault]);
+
   // 锁定 / 解锁选中框(与列表 L 切换同源 is_locked;锁定后不可编辑,解锁需此按钮 / 列表)。
   const handleToggleLock = useCallback(() => {
     if (!selectedId) return;
@@ -580,7 +634,14 @@ export function ThreeDWorkbench({
       ).filter((s): s is CameraSample => s !== null);
       if (cancelled) return;
       if (samples.length > 0) {
-        scene.setPointColors(colorizePoints(positions, scene.getBaseColors(), samples));
+        // v0.13.8 · 上色前为每个相机建一次深度栅格,colorize 内做 z-test 剔除被前景遮挡的背景点,
+        // 避免 v0.13.6 「背景点取到前景像素」 的串色感。容差固定 OCCLUSION_TOL_M=0.10m(经验值)。
+        const rasters = samples.map((s) =>
+          buildDepthRaster(positions, s.calib, s.width, s.height),
+        );
+        scene.setPointColors(
+          colorizePoints(positions, scene.getBaseColors(), samples, rasters),
+        );
       }
       setColorizing(false);
     })();
@@ -710,6 +771,44 @@ export function ThreeDWorkbench({
                 深度提示
               </label>
             </>
+          )}
+          {/* v0.13.8 · 选中且可编辑时显示贴合按钮组:Q 默认连击(收尺寸+贴地);
+              Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发,稀疏点云易反转故不进盲操。 */}
+          {selectedBox && selectedEditable && (
+            <div className={styles.fitGroup} role="group" aria-label="自动贴合">
+              <button
+                type="button"
+                className={styles.btn}
+                onClick={handleFitDefault}
+                title="贴合 (Q):收尺寸 + 贴地"
+              >
+                贴合
+              </button>
+              <button
+                type="button"
+                className={styles.btn}
+                onClick={handleFitSize}
+                title="只收尺寸 (Shift+Q)"
+              >
+                收尺寸
+              </button>
+              <button
+                type="button"
+                className={styles.btn}
+                onClick={handleFitBottom}
+                title="只贴地 (Alt+Q)"
+              >
+                贴地
+              </button>
+              <button
+                type="button"
+                className={styles.btn}
+                onClick={handleFitYaw}
+                title="贴朝向(实验):点云稀疏时主轴可能反转 180°"
+              >
+                朝向⚗
+              </button>
+            </div>
           )}
         </div>
 

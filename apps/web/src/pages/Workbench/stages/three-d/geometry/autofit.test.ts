@@ -155,17 +155,14 @@ describe("fitBottom", () => {
   });
 
   it("不改 cx/cy/size/rotation (逐字段断言)", () => {
-    const pts = gridPoints(-1, 1, -1, 1, 0, 2, 3, 3, 3);
     const psr: Psr = {
       center: [7, 8, 5],
       size: [10, 10, 12],
       rotation: [0.1, 0.2, 0.3],
     };
-    // 注: 这里 rotation 非零 → 点云 (在 world 系) 不一定全在框内, 需保证 inside 非空。
-    // 框中心 (7,8,5), size 10×10×12 + 小旋转 → 边界仍宽松, 点云 [-1,1]×[-1,1]×[0,2] 远离 (7,8,5)。
-    // 改造: 点云中心也移到 (7,8,*) 附近。
-    const pts2 = gridPoints(6, 8, 7, 9, 0, 2, 3, 3, 3);
-    const out = fitBottom(pts2, psr);
+    // rotation 非零 → 点云需移到框中心 (7,8,*) 附近以保证 inside 非空。
+    const pts = gridPoints(6, 8, 7, 9, 0, 2, 3, 3, 3);
+    const out = fitBottom(pts, psr);
     expect(out.center[0]).toBe(7);
     expect(out.center[1]).toBe(8);
     expect(out.size[0]).toBe(10);

@@ -190,6 +190,15 @@
   color: var(--color-fg-muted);
 }
 
+/* v0.13.8 · 贴合按钮组(仅选中且可编辑时出现);与 .btn 同尺度,左侧细分隔线把它与上色/深度开关分开。 */
+.fitGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 12px;
+  border-left: 1px solid var(--color-border);
+}
+
 .statusBar {
   position: absolute;
   bottom: 12px;
