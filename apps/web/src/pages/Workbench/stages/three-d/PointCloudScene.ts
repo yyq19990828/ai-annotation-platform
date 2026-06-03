@@ -418,11 +418,17 @@ export class PointCloudScene {
     this.raycaster.setFromCamera(ndc, this.camera);
 
     // 优先打点云:Raycaster.params.Points.threshold 控制命中半径(米)。
+    // try/finally 保证即使 intersectObject 抛错,threshold 也还原,不污染后续 attachTransform
+    // 等其他 raycaster 用法。
     if (this.points) {
       const prev = this.raycaster.params.Points?.threshold ?? 1;
       this.raycaster.params.Points = { ...(this.raycaster.params.Points ?? {}), threshold: 0.3 };
-      const hits = this.raycaster.intersectObject(this.points, false);
-      this.raycaster.params.Points = { ...(this.raycaster.params.Points ?? {}), threshold: prev };
+      let hits: THREE.Intersection[];
+      try {
+        hits = this.raycaster.intersectObject(this.points, false);
+      } finally {
+        this.raycaster.params.Points = { ...(this.raycaster.params.Points ?? {}), threshold: prev };
+      }
       if (hits.length > 0) {
         const p = hits[0].point;
         return [p.x, p.y, p.z];

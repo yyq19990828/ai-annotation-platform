@@ -79,6 +79,25 @@ describe("fitSize", () => {
     expect(out.rotation[2]).toBe(0);
   });
 
+  it("**不对称 inside → 中心漂移到 AABB 中心**(钉死 fitSize contract)", () => {
+    // 框 center=[0,0,0] size=[10,10,2]; inside 点全部在 box-local x∈[0,1](右半):
+    //   点云沿 X 从 0→1 均匀,Y/Z 居中。AABB_local 中心 = (0.5, 0, 0)。
+    // 期望:新 center.x = 0 + 0.5 = 0.5(向右漂),新 size.x = 1 - 0 + 0.1 = 1.1。
+    // 这一例显式证明 fitSize **不是「保中心」**,它把 center 平移到 inside AABB 中心
+    // 以让收紧后的 box 恰好包住点云;若未来按"保中心"理解去重构会被本测试卡住。
+    const pts = gridPoints(0, 1, -0.2, 0.2, -0.5, 0.5, 11, 5, 5);
+    const psr: Psr = {
+      center: [0, 0, 0],
+      size: [10, 10, 2],
+      rotation: [0, 0, 0],
+    };
+    const out = fitSize(pts, psr, 0.05);
+    expect(out.center[0]).toBeCloseTo(0.5, 5);
+    expect(out.center[1]).toBeCloseTo(0, 5);
+    expect(out.center[2]).toBeCloseTo(0, 5);
+    expect(out.size[0]).toBeCloseTo(1.0 + 0.1, 5);
+  });
+
   it("框比点云小 → 扩大到 inside 子集的 AABB + 2×padding (出框点被裁掉)", () => {
     // 点云 x ∈ [-2,2] 取 9 点 (步长 0.5: -2,-1.5,...,2), y 取 5 点 (步长 0.25: -0.5,...,0.5), z 取 3 点。
     // 框 size=[1,1,1] 中心(0,0,0) → 仅看 |x|,|y|,|z|≤0.5 子集。

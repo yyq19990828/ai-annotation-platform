@@ -110,7 +110,9 @@ function clampSize(s: Vec3): Vec3 {
 }
 
 /**
- * v0.13.8 · fit_size: 保中心 + 朝向不动, 只把 size 收到「框内点 box-local AABB + 2×padding」。
+ * v0.13.8 · fit_size: 保朝向 + 收尺寸, **中心对齐到框内点 box-local AABB 中心**
+ * (= 旧中心 + R·AABBcenter_local;只有 inside 点云在 box 内对称分布时新中心 == 旧中心,
+ * 不对称分布时中心会沿 inside 主体方向漂移以让 size 紧贴点云)。
  * 框内空 / 点数 < 3 → 返回原 PSR 不动。padding 默认 0.05m。
  *
  * 计算: 对每个 world 点 p, p_local = q⁻¹ · (p - center); 仅保留 |p_local.x| ≤ sx/2 ...
@@ -171,6 +173,11 @@ export function fitSize(
  *
  * 注: 这里"最低 Z"指 **world 系 Z** (点云 Z-up), 不是 box-local 系。直接对 inside 点取 min(world.z),
  * 然后新 cz = z_min_world + sz/2 (让 box 世界下沿 = 点云最低点)。
+ *
+ * **严格性 contract**: "box 下沿 = z_min" 仅在 box 与世界 Z 共轴 (pitch == roll == 0,只 yaw)
+ * 时严格成立 —— 这是车载 LiDAR 数据集 (含本平台 v0.13.x 示例集) 的通用约束,故按此简化。
+ * 若以后支持 box 整体倾斜 (pitch/roll ≠ 0),此公式会让 box 下顶点低于 z_min,需改为用
+ * box-local Z 最低面坐标反算 world cz。
  */
 export function fitBottom(positions: Float32Array, psr: Psr): Psr {
   const inside = collectInsidePoints(positions, psr);

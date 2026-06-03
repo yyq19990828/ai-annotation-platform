@@ -497,7 +497,7 @@ export function ThreeDWorkbench({
       if (e.key !== "q" && e.key !== "Q") return;
       if (e.ctrlKey || e.metaKey) return;
       const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       e.preventDefault();
       if (e.shiftKey) handleFitSize();
       else if (e.altKey) handleFitBottom();
