@@ -79,6 +79,27 @@ describe("fitSize", () => {
     expect(out.rotation[2]).toBe(0);
   });
 
+  it("inside count < 3 → 返回原 psr(早退,覆盖 1-2 点边界)", () => {
+    // box size [1,1,1] 中心 [0,0,0],仅放 2 个 inside 点。
+    const pts = new Float32Array([0.1, 0.1, 0.1, -0.1, -0.1, -0.1]);
+    const psr: Psr = { center: [0, 0, 0], size: [1, 1, 1], rotation: [0, 0, 0] };
+    const out = fitSize(pts, psr);
+    expect(out.size[0]).toBe(1);
+    expect(out.size[1]).toBe(1);
+    expect(out.size[2]).toBe(1);
+    expect(out.center).toEqual([0, 0, 0]);
+  });
+
+  it("极小点云 + padding 收到 < MIN_SIZE → clamp 到 MIN_SIZE(覆盖 clampSize 分支)", () => {
+    // 点云 z 跨度 ~0.001m, 远小于 MIN_SIZE=0.05;padding=0 防止被 padding 撑过 MIN_SIZE。
+    const pts = gridPoints(-0.0005, 0.0005, -0.0005, 0.0005, -0.0005, 0.0005, 3, 3, 3);
+    const psr: Psr = { center: [0, 0, 0], size: [1, 1, 1], rotation: [0, 0, 0] };
+    const out = fitSize(pts, psr, 0);
+    expect(out.size[0]).toBeCloseTo(0.05, 5);
+    expect(out.size[1]).toBeCloseTo(0.05, 5);
+    expect(out.size[2]).toBeCloseTo(0.05, 5);
+  });
+
   it("**不对称 inside → 中心漂移到 AABB 中心**(钉死 fitSize contract)", () => {
     // 框 center=[0,0,0] size=[10,10,2]; inside 点全部在 box-local x∈[0,1](右半):
     //   点云沿 X 从 0→1 均匀,Y/Z 居中。AABB_local 中心 = (0.5, 0, 0)。
@@ -235,6 +256,26 @@ describe("fitYaw", () => {
     // 其他轴不动。
     expect(out.rotation[0]).toBe(0);
     expect(out.rotation[1]).toBe(0);
+  });
+
+  it("沿 Y 拉长(b≈0, a<d)→ 退化分支 vy=1 → 新 yaw ≈ π/2", () => {
+    // 完全沿 Y 拉长的对齐点云: x ∈ {0}, y ∈ [-3, 3] 步长 0.1 → 协方差 b == 0, a < d。
+    // 走 fitYaw 闭式 PCA 退化分支 (vx=0, vy=1) → atan2(1, 0) = π/2。
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let y = -3; y <= 3.001; y += 0.1) {
+      xs.push(0);
+      ys.push(y);
+    }
+    const pts = new Float32Array(xs.length * 3);
+    xs.forEach((x, i) => {
+      pts[3 * i] = x;
+      pts[3 * i + 1] = ys[i];
+      pts[3 * i + 2] = 0;
+    });
+    const psr: Psr = { center: [0, 0, 0], size: [10, 10, 10], rotation: [0, 0, 0] };
+    const out = fitYaw(pts, psr);
+    expect(out.rotation[2]).toBeCloseTo(Math.PI / 2, 3);
   });
 
   it("点数 < 20 → 返回原 psr (rotation 完全相等)", () => {
