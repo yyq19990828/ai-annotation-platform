@@ -578,6 +578,19 @@ function PersonDrawer({
                         </div>
                       );
                     })}
+                    {(() => {
+                      const sum = data.class_distribution.reduce(
+                        (s, c) => s + c.pct,
+                        0,
+                      );
+                      const other = Math.max(0, 100 - sum);
+                      return other > 0 ? (
+                        <div className={styles.distributionRow}>
+                          <span>其他</span>
+                          <span className={styles.distributionCount}>{other}%</span>
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                 </Card>
               )}

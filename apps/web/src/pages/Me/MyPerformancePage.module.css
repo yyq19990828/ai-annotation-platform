@@ -104,6 +104,13 @@
   padding: 8px 0;
 }
 
+.cardFooter {
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  margin-top: 6px;
+  text-align: right;
+}
+
 @media (max-width: 760px) {
   .page {
     padding: 16px;

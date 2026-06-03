@@ -23,6 +23,7 @@ import {
   YAxis,
 } from "recharts";
 import { adminAnalyticsApi } from "@/api/adminAnalytics";
+import { useTheme } from "@/hooks/useTheme";
 import { REJECT_REASON_TYPE_LABELS } from "@/pages/Review/rejectReasonTypes";
 import styles from "./AnalyticsPage.module.css";
 
@@ -44,6 +45,9 @@ const HOURS = Array.from({ length: 24 }, (_, h) => h);
 
 export function AnalyticsPage() {
   const [days, setDays] = useState(30);
+  // 订阅主题变化:resolved 切换会触发本组件 re-render,
+  // accent/gridColor 的 useMemo 重读 token,recharts 拿到新色重绘。
+  const { resolved } = useTheme();
 
   const throughputQ = useQuery({
     queryKey: ["admin", "analytics", "throughput", days],
@@ -62,8 +66,8 @@ export function AnalyticsPage() {
     queryFn: () => adminAnalyticsApi.activityHeatmap(days),
   });
 
-  const accent = cssVar("--color-accent");
-  const gridColor = cssVar("--color-border");
+  const accent = useMemo(() => cssVar("--color-accent"), [resolved]);
+  const gridColor = useMemo(() => cssVar("--color-border"), [resolved]);
 
   const aggThroughput = useMemo(() => {
     const data = throughputQ.data?.data ?? [];

@@ -20,6 +20,7 @@ import {
   YAxis,
 } from "recharts";
 import { dashboardApi } from "@/api/dashboard";
+import { useTheme } from "@/hooks/useTheme";
 import { REJECT_REASON_TYPE_LABELS } from "@/pages/Review/rejectReasonTypes";
 import styles from "./MyPerformancePage.module.css";
 
@@ -41,10 +42,13 @@ export function MyPerformancePage() {
     queryFn: () => dashboardApi.getMyPerformance(PERIOD),
   });
 
-  const accent = cssVar("--color-accent");
-  const muted = cssVar("--color-fg-subtle");
-  const danger = cssVar("--color-danger");
-  const gridColor = cssVar("--color-border");
+  // 订阅主题变化:resolved 切换触发 re-render → 下面 useMemo 重读 token,
+  // recharts 拿到最新色重绘,避免主题切换后图表颜色滞留。
+  const { resolved } = useTheme();
+  const accent = useMemo(() => cssVar("--color-accent"), [resolved]);
+  const muted = useMemo(() => cssVar("--color-fg-subtle"), [resolved]);
+  const danger = useMemo(() => cssVar("--color-danger"), [resolved]);
+  const gridColor = useMemo(() => cssVar("--color-border"), [resolved]);
 
   const data = perfQ.data;
 
@@ -79,6 +83,13 @@ export function MyPerformancePage() {
   const classData = useMemo(() => {
     if (!data) return [];
     return data.class_distribution.map((c) => ({ name: c.class_name, value: c.count }));
+  }, [data]);
+
+  // top-N 类别覆盖率之外的剩余占比;类多时 ΣP 不到 100% 是 backend 有意行为。
+  const otherClassPct = useMemo(() => {
+    if (!data || data.class_distribution.length === 0) return 0;
+    const sum = data.class_distribution.reduce((s, c) => s + c.pct, 0);
+    return Math.max(0, 100 - sum);
   }, [data]);
 
   return (
@@ -229,6 +240,11 @@ export function MyPerformancePage() {
                       <Bar dataKey="value" name="标注数" fill={accent} radius={[0, 3, 3, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
+                </div>
+              )}
+              {classData.length > 0 && otherClassPct > 0 && (
+                <div className={styles.cardFooter}>
+                  其他类别合计 {otherClassPct}%
                 </div>
               )}
             </div>
