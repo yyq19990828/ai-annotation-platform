@@ -201,6 +201,15 @@
             ],
             "title": "Active Minutes"
           },
+          "class_distribution": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Class Distribution",
+            "type": "array"
+          },
           "composite_score": {
             "title": "Composite Score",
             "type": "integer"
@@ -216,6 +225,17 @@
           "email": {
             "title": "Email",
             "type": "string"
+          },
+          "first_pass_yield": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Pass Yield"
           },
           "name": {
             "title": "Name",
@@ -258,6 +278,15 @@
           "quality_score": {
             "title": "Quality Score",
             "type": "integer"
+          },
+          "reject_reason_breakdown": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Reject Reason Breakdown",
+            "type": "array"
           },
           "role": {
             "title": "Role",
@@ -7797,6 +7826,139 @@
         "title": "MyBatchItem",
         "type": "object"
       },
+      "MyPerformance": {
+        "description": "v0.12.3 · 标注员自助绩效（自己 vs 团队均线，取经合集 §4.1 个人页）。",
+        "properties": {
+          "class_distribution": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Class Distribution",
+            "type": "array"
+          },
+          "duration_histogram": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Duration Histogram",
+            "type": "array"
+          },
+          "first_pass_yield": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Pass Yield"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "p50_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50 Duration Ms"
+          },
+          "p95_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Duration Ms"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "quality_score": {
+            "title": "Quality Score",
+            "type": "integer"
+          },
+          "reject_reason_breakdown": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Reject Reason Breakdown",
+            "type": "array"
+          },
+          "team_trend_throughput": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Team Trend Throughput",
+            "type": "array"
+          },
+          "throughput": {
+            "title": "Throughput",
+            "type": "integer"
+          },
+          "trend_quality": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Trend Quality",
+            "type": "array"
+          },
+          "trend_throughput": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Trend Throughput",
+            "type": "array"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "weekly_compare_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekly Compare Pct"
+          }
+        },
+        "required": [
+          "user_id",
+          "name",
+          "period",
+          "throughput",
+          "quality_score",
+          "weekly_compare_pct",
+          "trend_throughput",
+          "trend_quality",
+          "team_trend_throughput",
+          "duration_histogram",
+          "p50_duration_ms",
+          "p95_duration_ms",
+          "reject_reason_breakdown",
+          "class_distribution",
+          "first_pass_yield"
+        ],
+        "title": "MyPerformance",
+        "type": "object"
+      },
       "NotificationList": {
         "properties": {
           "items": {
@@ -11058,8 +11220,20 @@
       "RegisterResponse": {
         "properties": {
           "access_token": {
-            "title": "Access Token",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access Token"
+          },
+          "email_verification_required": {
+            "default": false,
+            "title": "Email Verification Required",
+            "type": "boolean"
           },
           "token_type": {
             "default": "bearer",
@@ -11071,7 +11245,6 @@
           }
         },
         "required": [
-          "access_token",
           "user"
         ],
         "title": "RegisterResponse",
@@ -11099,6 +11272,21 @@
           "open_count"
         ],
         "title": "RegistrationDayPoint",
+        "type": "object"
+      },
+      "ResendVerificationRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ResendVerificationRequest",
         "type": "object"
       },
       "ResetPasswordRequest": {
@@ -13128,6 +13316,18 @@
             "title": "Email",
             "type": "string"
           },
+          "email_verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Verified At"
+          },
           "group_id": {
             "anyOf": [
               {
@@ -13324,6 +13524,20 @@
           }
         },
         "title": "VariantCatalog",
+        "type": "object"
+      },
+      "VerifyEmailRequest": {
+        "properties": {
+          "token": {
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "VerifyEmailRequest",
         "type": "object"
       },
       "VideoAssetFailureItem": {
@@ -15820,7 +16034,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.11.17"
+    "version": "0.12.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -15837,7 +16051,8 @@
               "enum": [
                 "throughput_daily",
                 "reject_rate_by_type",
-                "duration_dist"
+                "duration_dist",
+                "activity_heatmap"
               ],
               "title": "Panel Name",
               "type": "string"
@@ -18468,6 +18683,86 @@
         ]
       }
     },
+    "/api/v1/auth/send-verification-email": {
+      "post": {
+        "description": "v0.12.0 · 重发验证邮件。无论邮箱是否存在 / 已验证都返回 202（防枚举）。",
+        "operationId": "send_verification_email_endpoint_api_v1_auth_send_verification_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResendVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Verification Email Endpoint",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/verify-email": {
+      "post": {
+        "description": "v0.12.0 · 消费验证 token，置 email_verified_at。",
+        "operationId": "verify_email_api_v1_auth_verify_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Email",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/bug_reports": {
       "get": {
         "operationId": "list_bug_reports_api_v1_bug_reports_get",
@@ -19155,7 +19450,7 @@
     },
     "/api/v1/dashboard/admin/people": {
       "get": {
-        "description": "v0.8.4 · 全员效率卡片网格数据。\n\nrole 过滤：annotator / reviewer / both（默认 both）\nperiod: today / 7d / 4w / 1m\nsort: throughput / quality / activity / weekly_compare",
+        "description": "v0.8.4 · 全员效率卡片网格数据。\n\nrole 过滤：annotator / reviewer / both（默认 both）\nperiod: today / 7d / 4w / 1m\nsort: throughput / quality / activity / weekly_compare\n\nv0.12.6 (A3)：project 给定时所有产能/质量/活跃聚合**按该项目切分**（非全局）；\nproject_admin 必须指定其项目，super_admin 可全局或任意项目。",
         "operationId": "admin_people_list_api_v1_dashboard_admin_people_get",
         "parameters": [
           {
@@ -19260,9 +19555,114 @@
         ]
       }
     },
+    "/api/v1/dashboard/admin/people/export": {
+      "get": {
+        "description": "v0.12.5 · 成员绩效 CSV 导出。复用 admin_people_list 聚合,零重复;Excel UTF-8 BOM 防中文乱码。\n\nv0.12.6 (A3)：放行 project_admin（委托 admin_people_list 强制其项目范围）。",
+        "operationId": "admin_people_export_api_v1_dashboard_admin_people_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "7d",
+              "title": "Period",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "throughput",
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin People Export",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
     "/api/v1/dashboard/admin/people/{user_id}": {
       "get": {
-        "description": "v0.8.4 · 个人详情：4 周趋势、耗时直方图、项目分布、timeline。",
+        "description": "v0.8.4 · 个人详情：4 周趋势、耗时直方图、项目分布、timeline。\n\nv0.12.6 (A3)：project 给定时产能/质量/耗时/归因聚合**按该项目切分**；\nproject_admin 必须指定其项目，super_admin 可全局或任意项目。timeline（审计活动流）\n不含可靠 project 维度，保持全局。",
         "operationId": "admin_person_detail_api_v1_dashboard_admin_people__user_id__get",
         "parameters": [
           {
@@ -19282,6 +19682,22 @@
               "default": "4w",
               "title": "Period",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project"
             }
           }
         ],
@@ -19420,6 +19836,55 @@
           }
         ],
         "summary": "My Batches",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/dashboard/me/performance": {
+      "get": {
+        "description": "v0.12.3 · 标注员自助绩效（取经合集 §4.1 个人页）。\n\n任意已认证用户看**自己**的 4 周趋势 + 耗时直方图，并叠加团队（annotator 群体）\n每周平均产出作对标基线。强制 self，不接受他人 user_id。",
+        "operationId": "my_performance_api_v1_dashboard_me_performance_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "4w",
+              "title": "Period",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyPerformance"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "My Performance",
         "tags": [
           "dashboard"
         ]
@@ -26367,6 +26832,38 @@
               "default": false,
               "title": "Unbatched",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reject_reason_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reject Reason Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "class_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Class Name"
             }
           },
           {

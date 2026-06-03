@@ -3,7 +3,7 @@ audience: [project_admin, super_admin, developer]
 type: reference
 since: v0.10.16
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-02
 ---
 
 # 异步任务（async_jobs）
@@ -25,6 +25,7 @@ last_reviewed: 2026-05-27
 | `audit_archive` | Celery beat 每月 2 日 03:00 UTC | ✅ |
 | `predictions_import` | 外部 prediction 上传（[Import guide](./import)） | ✅ |
 | `dataset_import` | 数据集连接器导入文件 | ✅ |
+| `create_tasks` | 数据集关联项目且 item 数 > `TASK_CREATE_SYNC_THRESHOLD`（默认 2000）时，建 task 转入后台 | ❌ |
 | `export` | 项目 / 批次导出 | ❌ |
 
 ## 端点
@@ -130,6 +131,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 | `video_tracker` | `job.completed` | `job.failed` | `job.cancelled` |
 | `predictions_import` | `job.completed` | `job.failed` | `job.cancelled` |
 | `dataset_import` | `job.completed` | `job.failed` | `job.cancelled` |
+| `create_tasks` | `job.completed` | `job.failed` | - |
 | `audit_archive` | `job.completed` | `job.failed` | `job.cancelled` |
 
 通知 payload 至少包含 `kind` / `status`，并会带上可展示字段（如 `batch_display_id`、

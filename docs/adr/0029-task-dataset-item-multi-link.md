@@ -21,7 +21,7 @@ LiDAR 点云 + 相机图像联合标注要求一个任务（一帧 scene）同�
 
 采用**方案 A**：新增中间表 `task_dataset_item_links`，与现有 1:1 路径**并存**。
 
-表结构（迁移 `0092_task_dataset_item_links.py`）：
+表结构（迁移 `0094_task_dataset_item_links.py`）：
 
 ```
 task_dataset_item_links(
@@ -54,6 +54,6 @@ task_dataset_item_links(
 ## Notes
 
 - 实现代码：`apps/api/app/db/models/task_dataset_item_link.py`、`apps/api/app/services/task_dataset_link.py`
-- 迁移：`apps/api/alembic/versions/0092_task_dataset_item_links.py`
+- 迁移：`apps/api/alembic/versions/0094_task_dataset_item_links.py`
 - 相关：调研 `docs/research/14-point-cloud-image-fusion.md` §14.8.3 第 1 层；Epic `docs/plans/2026-06-02-v0.13.x-point-cloud-workbench-epic.md`；数据模型参考 `docs-site/dev/reference/point-cloud-data-model.md`
 - 后续：标定存储约定（G2，`SensorCalibration` 进 `DatasetItem.metadata_`）与双画布前端架构将各补一条 ADR（v0.13.1 / v0.13.2）。

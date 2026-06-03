@@ -839,7 +839,8 @@ class AnnotationService:
         if len(annotations) != 2:
             raise ValueError(f"{operation} requires exactly two annotations")
         if any(
-            (ann.geometry or {}).get("type") != "video_track_bbox" for ann in annotations
+            (ann.geometry or {}).get("type") != "video_track_bbox"
+            for ann in annotations
         ):
             raise ValueError(f"{operation} only accepts video_track_bbox annotations")
         if annotations[0].class_name != annotations[1].class_name:

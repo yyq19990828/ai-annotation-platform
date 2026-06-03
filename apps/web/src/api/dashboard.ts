@@ -144,6 +144,30 @@ export interface AdminPersonDetail {
     task_display_id?: string;
     detail?: string;
   }>;
+  // v0.12.4 · 质量归因(A1)
+  reject_reason_breakdown: Array<{ reason_type: string; count: number; pct: number }>;
+  class_distribution: Array<{ class_name: string; count: number; pct: number }>;
+  first_pass_yield: number | null;
+}
+
+// v0.12.3 · 标注员自助绩效（取经合集 §4.1 个人页）
+export interface MyPerformance {
+  user_id: string;
+  name: string;
+  period: string;
+  throughput: number;
+  quality_score: number;
+  weekly_compare_pct: number | null;
+  trend_throughput: number[];
+  trend_quality: number[];
+  team_trend_throughput: number[];
+  duration_histogram: Array<{ upper_ms: number; count: number }>;
+  p50_duration_ms: number | null;
+  p95_duration_ms: number | null;
+  // v0.12.4 · 质量归因(A1)
+  reject_reason_breakdown: Array<{ reason_type: string; count: number; pct: number }>;
+  class_distribution: Array<{ class_name: string; count: number; pct: number }>;
+  first_pass_yield: number | null;
 }
 
 export interface MyBatchItem {
@@ -233,8 +257,45 @@ export const dashboardApi = {
       `/dashboard/admin/people${qs ? `?${qs}` : ""}`,
     );
   },
-  getAdminPersonDetail: (userId: string, period: string = "4w") =>
+  getAdminPersonDetail: (userId: string, period: string = "4w", project?: string) =>
     apiClient.get<AdminPersonDetail>(
-      `/dashboard/admin/people/${userId}?period=${period}`,
+      `/dashboard/admin/people/${userId}?period=${period}${
+        project ? `&project=${project}` : ""
+      }`,
     ),
+  // v0.12.5 · 成员绩效 CSV 导出（A2）。带 Bearer 拉 blob 触发下载，镜像 usersApi.exportUsers。
+  exportPeople: async (
+    params: { role?: string; project?: string; period?: string; sort?: string; q?: string } = {},
+  ): Promise<void> => {
+    const sp = new URLSearchParams();
+    if (params.role) sp.set("role", params.role);
+    if (params.project) sp.set("project", params.project);
+    if (params.period) sp.set("period", params.period);
+    if (params.sort) sp.set("sort", params.sort);
+    if (params.q) sp.set("q", params.q);
+    const qs = sp.toString();
+    const token = localStorage.getItem("token");
+    const res = await fetch(`/api/v1/dashboard/admin/people/export${qs ? `?${qs}` : ""}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as { detail?: string }).detail || `导出失败 (HTTP ${res.status})`);
+    }
+    const blob = await res.blob();
+    const dispo = res.headers.get("Content-Disposition") || "";
+    const match = /filename="?([^"]+)"?/.exec(dispo);
+    const filename = match ? match[1] : "people_performance.csv";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+  // v0.12.3 · 标注员自助绩效（取经合集 §4.1 个人页）
+  getMyPerformance: (period: string = "4w") =>
+    apiClient.get<MyPerformance>(`/dashboard/me/performance?period=${period}`),
 };

@@ -1,10 +1,10 @@
 import type { UserRole, PageKey } from "@/types";
 
 export const ROLE_PAGE_ACCESS: Record<UserRole, PageKey[]> = {
-  super_admin: ["dashboard", "annotate", "review", "users", "datasets", "storage", "ai-pre", "model-market", "training", "audit", "bugs", "settings", "project-templates", "admin-people", "admin-analytics", "admin-health"],
-  project_admin: ["dashboard", "annotate", "review", "users", "datasets", "storage", "ai-pre", "model-market", "training", "bugs", "settings", "project-templates"],
-  reviewer: ["dashboard", "review", "datasets", "settings"],
-  annotator: ["dashboard", "annotate", "settings"],
+  super_admin: ["dashboard", "annotate", "review", "users", "datasets", "storage", "ai-pre", "model-market", "training", "audit", "bugs", "settings", "project-templates", "admin-people", "admin-analytics", "admin-health", "my-performance"],
+  project_admin: ["dashboard", "annotate", "review", "users", "datasets", "storage", "ai-pre", "model-market", "training", "bugs", "settings", "project-templates", "admin-people", "my-performance"],
+  reviewer: ["dashboard", "review", "datasets", "settings", "my-performance"],
+  annotator: ["dashboard", "annotate", "settings", "my-performance"],
   viewer: ["dashboard", "datasets", "settings"],
 };
 

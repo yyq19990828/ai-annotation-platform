@@ -17,6 +17,7 @@ import { ViewerDashboard } from "@/pages/Dashboard/ViewerDashboard";
 import { LoginPage } from "@/pages/Login/LoginPage";
 import { ForgotPasswordPage } from "@/pages/Login/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/pages/Login/ResetPasswordPage";
+import { VerifyEmailPage } from "@/pages/Login/VerifyEmailPage";
 import { RegisterPage } from "@/pages/Register/RegisterPage";
 import { UnauthorizedPage } from "@/pages/Unauthorized/UnauthorizedPage";
 
@@ -77,6 +78,9 @@ const AnalyticsPage = lazy(() =>
 );
 const SystemHealthPage = lazy(() =>
   import("@/pages/Admin/SystemHealthPage").then((m) => ({ default: m.SystemHealthPage }))
+);
+const MyPerformancePage = lazy(() =>
+  import("@/pages/Me/MyPerformancePage").then((m) => ({ default: m.MyPerformancePage }))
 );
 import { RequireAuth } from "@/components/routing/RequireAuth";
 import { RequirePagePermission } from "@/components/routing/RequirePagePermission";
@@ -250,6 +254,7 @@ export function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
 
       <Route
         path="/projects/:id/annotate"
@@ -304,6 +309,15 @@ export function App() {
           element={
             <RequirePagePermission pageKey="admin-health">
               <SystemHealthPage />
+            </RequirePagePermission>
+          }
+        />
+        {/* v0.12.3 · 我的绩效（所有角色，自助自视） */}
+        <Route
+          path="/me/performance"
+          element={
+            <RequirePagePermission pageKey="my-performance">
+              <MyPerformancePage />
             </RequirePagePermission>
           }
         />

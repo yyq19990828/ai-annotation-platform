@@ -38,7 +38,7 @@
 |---|---|
 | **ML Backend** | 外部模型服务，通过标准协议与平台对接，提供预测或批量预标注能力。详见 [ML Backend 协议](/dev/reference/ml-backend-protocol)。 |
 | **预标注（Pre-annotate）** | 在标注员介入前，先让模型对一批任务生成 Prediction，降低手工标注工作量。 |
-| **Job** | 一次后台任务请求，包含批量预标、导出、视频追踪、连接器导入等异步流程。状态：pending → running → completed / failed / cancelled。 |
+| **Job** | 一次后台任务请求，包含批量预标、导出、视频追踪、连接器导入、大数据集关联建任务等异步流程。状态：pending → running → completed / failed / cancelled。 |
 
 ## 状态流转速查
 

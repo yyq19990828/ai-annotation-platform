@@ -33,6 +33,53 @@ async def _load_smtp_config(db: AsyncSession) -> dict[str, Any]:
     return out
 
 
+async def _send(db: AsyncSession, to_address: str, subject: str, body: str) -> None:
+    """连 SMTP 发一封纯文本邮件。失败抛 SmtpConfigError。"""
+    cfg = await _load_smtp_config(db)
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = cfg["smtp_from"]
+    msg["To"] = to_address
+    msg["Date"] = formatdate(localtime=True)
+
+    host = cfg["smtp_host"]
+    port = int(cfg["smtp_port"])
+    user = cfg["smtp_user"]
+    password = cfg["smtp_password"]
+
+    try:
+        if port == 465:
+            client = smtplib.SMTP_SSL(host, port, timeout=15)
+        else:
+            client = smtplib.SMTP(host, port, timeout=15)
+        with client:
+            client.ehlo()
+            if port != 465:
+                try:
+                    client.starttls()
+                    client.ehlo()
+                except smtplib.SMTPException:
+                    pass
+            if user and password:
+                client.login(user, password)
+            client.send_message(msg)
+    except (smtplib.SMTPException, socket.error, OSError) as e:
+        raise SmtpConfigError(f"SMTP 发送失败: {e}") from e
+
+
+async def send_verification_email(
+    db: AsyncSession, to_address: str, verify_url: str
+) -> None:
+    """v0.12.0 · 发送邮箱验证链接。SMTP 未配置 / 发送失败抛 SmtpConfigError。"""
+    body = (
+        "欢迎注册 AI 标注平台！\n\n"
+        "请点击以下链接验证你的邮箱（24 小时内有效）：\n"
+        f"{verify_url}\n\n"
+        "如果你没有注册本平台，请忽略此邮件。\n"
+    )
+    await _send(db, to_address, "[AI 标注平台] 验证你的邮箱", body)
+
+
 async def send_test_email(db: AsyncSession, to_address: str) -> dict[str, Any]:
     """连 SMTP 发一封测试邮件。返回诊断字典；失败抛 SmtpConfigError。"""
     cfg = await _load_smtp_config(db)

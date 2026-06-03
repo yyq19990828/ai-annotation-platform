@@ -3,7 +3,7 @@ import { clsx } from "clsx";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Captcha, isCaptchaRequired } from "@/components/Captcha";
-import { useResolveInvitation, useRegister, useRegistrationStatus, useOpenRegister } from "@/hooks/useInvitation";
+import { useResolveInvitation, useRegister, useRegistrationStatus, useOpenRegister, useResendVerification } from "@/hooks/useInvitation";
 import { useAuthStore } from "@/stores/authStore";
 import { ROLE_LABELS } from "@/constants/roles";
 import type { UserRole } from "@/types";
@@ -58,6 +58,8 @@ function OpenRegisterForm() {
   const [pwd2, setPwd2] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  // v0.12.0 · 注册后需邮箱验证时切到「验证邮件已发送」态（不进站）
+  const [verificationSentTo, setVerificationSentTo] = useState<string | null>(null);
   const captchaRequired = isCaptchaRequired();
 
   if (regStatus.isLoading) {
@@ -65,7 +67,11 @@ function OpenRegisterForm() {
   }
 
   if (!regStatus.data?.open_registration_enabled) {
-    return <ErrorPanel title="注册未开放" hint="当前不支持自助���册，请联系管理员获取邀请链接。" />;
+    return <ErrorPanel title="注册未开放" hint="当前不支持自助注册，请联系管理员获取邀请链接。" />;
+  }
+
+  if (verificationSentTo) {
+    return <VerificationSentPanel email={verificationSentTo} />;
   }
 
   const passwordsMatch = !pwd || !pwd2 || pwd === pwd2;
@@ -84,6 +90,10 @@ function OpenRegisterForm() {
       },
       {
         onSuccess: (data) => {
+          if (data.email_verification_required || !data.access_token) {
+            setVerificationSentTo(email.trim());
+            return;
+          }
           setAuth(data.access_token, data.user);
           navigate("/dashboard", { replace: true });
         },
@@ -226,6 +236,8 @@ function InviteRegisterForm({ token }: { token: string }) {
       { token, name: name.trim(), password: pwd },
       {
         onSuccess: (data) => {
+          // 邀请注册恒返回 token（不走邮箱验证）
+          if (!data.access_token) return;
           setAuth(data.access_token, data.user);
           navigate("/dashboard", { replace: true });
         },
@@ -353,6 +365,56 @@ function ErrorPanel({ title, hint }: { title: string; hint: string }) {
         <button onClick={() => navigate("/login")} className={styles.primaryButton}>
           前往登录
         </button>
+      </div>
+    </CenteredCard>
+  );
+}
+
+function VerificationSentPanel({ email }: { email: string }) {
+  const navigate = useNavigate();
+  const resend = useResendVerification();
+  const [cooldown, setCooldown] = useState(0);
+
+  const handleResend = () => {
+    if (cooldown > 0 || resend.isPending) return;
+    resend.mutate(email, {
+      onSuccess: () => {
+        setCooldown(60);
+        const timer = setInterval(() => {
+          setCooldown((c) => {
+            if (c <= 1) {
+              clearInterval(timer);
+              return 0;
+            }
+            return c - 1;
+          });
+        }, 1000);
+      },
+    });
+  };
+
+  return (
+    <CenteredCard>
+      <Brand />
+      <div className={styles.card}>
+        <h1 className={styles.title}>验证邮件已发送</h1>
+        <p className={styles.description}>
+          我们已向 <span className={clsx("mono", styles.inviteEmail)}>{email}</span> 发送了一封验证邮件，
+          请点击邮件中的链接完成验证后再登录。
+        </p>
+        <button
+          type="button"
+          onClick={handleResend}
+          disabled={cooldown > 0 || resend.isPending}
+          className={clsx(styles.primaryButton, (cooldown > 0 || resend.isPending) && styles.primaryButtonPending)}
+        >
+          {resend.isPending ? "发送中..." : cooldown > 0 ? `重新发送（${cooldown}s）` : "重新发送验证邮件"}
+        </button>
+        <div className={styles.loginPrompt}>
+          <button type="button" onClick={() => navigate("/login")} className={styles.link}>
+            返回登录
+          </button>
+        </div>
       </div>
     </CenteredCard>
   );

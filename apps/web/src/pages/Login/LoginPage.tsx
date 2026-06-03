@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { clsx } from "clsx";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { useLogin } from "@/hooks/useAuth";
-import { useRegistrationStatus } from "@/hooks/useInvitation";
+import { useRegistrationStatus, useResendVerification } from "@/hooks/useInvitation";
 import { useAuthStore } from "@/stores/authStore";
 import { Icon } from "@/components/ui/Icon";
 import { Captcha } from "@/components/Captcha";
@@ -21,8 +21,12 @@ export function LoginPage() {
   const [showPwd, setShowPwd] = useState(false);
   const [failedCount, setFailedCount] = useState(0);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  // v0.12.0 · 后端返回 email_not_verified 时展示重发入口
+  const [unverified, setUnverified] = useState(false);
+  const [resendDone, setResendDone] = useState(false);
   const login = useLogin();
   const regStatus = useRegistrationStatus();
+  const resend = useResendVerification();
 
   useEffect(() => {
     if (login.isError) {
@@ -31,6 +35,8 @@ export function LoginPage() {
         const h = err.headers?.["x-login-failed-count"];
         const n = h ? parseInt(h, 10) : NaN;
         if (Number.isFinite(n)) setFailedCount(n);
+        const code = (err.detailRaw as { code?: string } | undefined)?.code;
+        setUnverified(code === "email_not_verified");
       }
     }
   }, [login.isError, login.error]);
@@ -43,6 +49,8 @@ export function LoginPage() {
     e.preventDefault();
     if (!email || !password) return;
     if (captchaRequired && !captchaToken) return;
+    setUnverified(false);
+    setResendDone(false);
     login.mutate(
       { email, password, captcha_token: captchaRequired ? captchaToken : undefined },
       {
@@ -52,6 +60,11 @@ export function LoginPage() {
         },
       },
     );
+  };
+
+  const handleResend = () => {
+    if (!email || resend.isPending || resendDone) return;
+    resend.mutate(email, { onSuccess: () => setResendDone(true) });
   };
 
   return (
@@ -79,6 +92,18 @@ export function LoginPage() {
             <div className={styles.errorBanner}>
               <Icon name="warning" size={14} />
               {(login.error as Error)?.message ?? "登录失败，请检查账号密码"}
+            </div>
+          )}
+
+          {unverified && (
+            <div className={styles.errorBanner}>
+              {resendDone ? (
+                "验证邮件已重新发送，请查收邮箱"
+              ) : (
+                <button type="button" onClick={handleResend} disabled={resend.isPending} className={styles.link}>
+                  {resend.isPending ? "发送中…" : "重新发送验证邮件"}
+                </button>
+              )}
             </div>
           )}
 

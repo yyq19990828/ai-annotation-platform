@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, text, or_
+from sqlalchemy import select, func, text, or_, and_
 from app.deps import (
     get_db,
     get_current_user,
@@ -72,74 +72,73 @@ async def _build_project_stats_series(
     from app.db.models.task import Task
 
     bucket_ends = _stats_bucket_ends(datetime.now(timezone.utc))
-    total_data_series: list[int] = []
-    completed_series: list[int] = []
-    pending_review_series: list[int] = []
-    ai_rate_series: list[float] = []
 
-    for bucket_end in bucket_ends:
-        total_tasks = await db.scalar(
-            select(func.count())
+    # v0.12.1 · 12 桶 × 标量原本逐桶 sequential（48 次 round-trip）；改用
+    # count(*) FILTER (WHERE bucket) 把每个指标的 12 桶折叠进一条聚合：Task 3 指标
+    # 合 1 条、Annotation 2 指标合 1 条 = 共 2 次往返。AsyncSession 不允许同一
+    # session 并发查询，故走「减查询数」而非 asyncio.gather。
+    task_cols = (
+        [func.count().filter(Task.created_at <= be) for be in bucket_ends]
+        + [
+            func.count().filter(
+                and_(
+                    Task.status == "completed",
+                    or_(
+                        Task.reviewed_at <= be,
+                        and_(Task.reviewed_at.is_(None), Task.updated_at <= be),
+                    ),
+                )
+            )
+            for be in bucket_ends
+        ]
+        + [
+            func.count().filter(
+                and_(
+                    Task.submitted_at.isnot(None),
+                    Task.submitted_at <= be,
+                    or_(Task.reviewed_at.is_(None), Task.reviewed_at > be),
+                )
+            )
+            for be in bucket_ends
+        ]
+    )
+    task_row = (
+        await db.execute(
+            select(*task_cols)
             .select_from(Task)
-            .where(
-                Task.project_id.in_(visible_project_ids),
-                Task.created_at <= bucket_end,
-            )
+            .where(Task.project_id.in_(visible_project_ids))
         )
-        total_data_series.append(int(total_tasks or 0))
+    ).one()
+    n = _STATS_SERIES_POINTS
+    total_data_series = [int(v or 0) for v in task_row[0:n]]
+    completed_series = [int(v or 0) for v in task_row[n : 2 * n]]
+    pending_review_series = [int(v or 0) for v in task_row[2 * n : 3 * n]]
 
-        completed_tasks = await db.scalar(
-            select(func.count())
-            .select_from(Task)
-            .where(
-                Task.project_id.in_(visible_project_ids),
-                Task.status == "completed",
-                or_(
-                    Task.reviewed_at <= bucket_end,
-                    Task.reviewed_at.is_(None) & (Task.updated_at <= bucket_end),
-                ),
-            )
-        )
-        completed_series.append(int(completed_tasks or 0))
-
-        pending_review_tasks = await db.scalar(
-            select(func.count())
-            .select_from(Task)
-            .where(
-                Task.project_id.in_(visible_project_ids),
-                Task.submitted_at.isnot(None),
-                Task.submitted_at <= bucket_end,
-                or_(Task.reviewed_at.is_(None), Task.reviewed_at > bucket_end),
-            )
-        )
-        pending_review_series.append(int(pending_review_tasks or 0))
-
-        total_annotations = await db.scalar(
-            select(func.count())
-            .select_from(Annotation)
-            .where(
-                Annotation.is_active.is_(True),
-                Annotation.was_cancelled.is_(False),
-                Annotation.project_id.in_(visible_project_ids),
-                Annotation.created_at <= bucket_end,
-            )
-        )
-        ai_annotations = await db.scalar(
-            select(func.count())
-            .select_from(Annotation)
-            .where(
-                Annotation.is_active.is_(True),
-                Annotation.was_cancelled.is_(False),
+    ann_base = (
+        Annotation.is_active.is_(True),
+        Annotation.was_cancelled.is_(False),
+        Annotation.project_id.in_(visible_project_ids),
+    )
+    ann_cols = [
+        func.count().filter(Annotation.created_at <= be) for be in bucket_ends
+    ] + [
+        func.count().filter(
+            and_(
+                Annotation.created_at <= be,
                 Annotation.parent_prediction_id.isnot(None),
-                Annotation.project_id.in_(visible_project_ids),
-                Annotation.created_at <= bucket_end,
             )
         )
-        ai_rate_series.append(
-            round((ai_annotations or 0) / total_annotations * 100, 1)
-            if total_annotations
-            else 0.0
-        )
+        for be in bucket_ends
+    ]
+    ann_row = (
+        await db.execute(select(*ann_cols).select_from(Annotation).where(*ann_base))
+    ).one()
+    total_ann_series = [int(v or 0) for v in ann_row[0:n]]
+    ai_ann_series = [int(v or 0) for v in ann_row[n : 2 * n]]
+    ai_rate_series = [
+        round(ai / total * 100, 1) if total else 0.0
+        for ai, total in zip(ai_ann_series, total_ann_series)
+    ]
 
     return {
         "total_data_series": total_data_series,

@@ -1,8 +1,17 @@
+import csv
+import io
+import uuid
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, cast, Date
-from app.deps import get_db, require_roles
+from app.deps import (
+    assert_project_visible,
+    get_current_user,
+    get_db,
+    require_roles,
+)
 from app.db.models.user import User
 from app.db.models.project import Project
 from app.db.models.task import Task
@@ -23,6 +32,7 @@ from app.schemas.dashboard import (
     AdminPeopleList,
     AdminPersonItem,
     AdminPersonDetail,
+    MyPerformance,
     PredictionCostStats,
     BackendCostBreakdown,
     ReviewerMiniStats,
@@ -827,6 +837,320 @@ def _period_window(period: str) -> tuple[datetime, datetime]:
     return today - timedelta(days=6), now
 
 
+async def _reject_reason_breakdown(db, uid, start, project_id=None) -> list[dict]:
+    """v0.12.4 · 本人被驳回任务按 reject_reason_type 分布(A1)。
+
+    v0.12.6 (A3)：project_id 给定时按该项目切分。
+    """
+    proj = [Task.project_id == project_id] if project_id else []
+    rows = (
+        await db.execute(
+            select(Task.reject_reason_type, func.count().label("n"))
+            .where(
+                Task.assignee_id == uid,
+                Task.reject_reason_type.isnot(None),
+                Task.submitted_at >= start,
+                *proj,
+            )
+            .group_by(Task.reject_reason_type)
+            .order_by(func.count().desc())
+        )
+    ).all()
+    total = sum(int(r.n) for r in rows)
+    return [
+        {
+            "reason_type": r.reject_reason_type,
+            "count": int(r.n),
+            "pct": round(int(r.n) / total * 100, 1) if total else 0.0,
+        }
+        for r in rows
+    ]
+
+
+async def _class_distribution(
+    db, uid, start, limit: int = 10, project_id=None
+) -> list[dict]:
+    """v0.12.4 · 本人标注按 class_name 的 top-N 占比(A1 类别覆盖)。
+
+    v0.12.6 (A3)：project_id 给定时按该项目切分。
+    """
+    proj = [Annotation.project_id == project_id] if project_id else []
+    rows = (
+        await db.execute(
+            select(Annotation.class_name, func.count().label("n"))
+            .where(
+                Annotation.user_id == uid,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= start,
+                *proj,
+            )
+            .group_by(Annotation.class_name)
+            .order_by(func.count().desc())
+            .limit(limit)
+        )
+    ).all()
+    total = (
+        await db.execute(
+            select(func.count())
+            .select_from(Annotation)
+            .where(
+                Annotation.user_id == uid,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= start,
+                *proj,
+            )
+        )
+    ).scalar() or 0
+    return [
+        {
+            "class_name": r.class_name,
+            "count": int(r.n),
+            "pct": round(int(r.n) / total * 100, 1) if total else 0.0,
+        }
+        for r in rows
+    ]
+
+
+async def _first_pass_yield(db, uid, start, project_id=None) -> float | None:
+    """v0.12.4 · 首过率 = 一次通过(无 reopen)/ 提交总数(A1)。无样本→None。
+
+    v0.12.6 (A3)：project_id 给定时按该项目切分。
+    """
+    proj = [Task.project_id == project_id] if project_id else []
+    row = (
+        await db.execute(
+            select(
+                func.count().label("submitted_n"),
+                func.count().filter(Task.reopened_count == 0).label("clean_n"),
+            ).where(
+                Task.assignee_id == uid,
+                Task.submitted_at.isnot(None),
+                Task.submitted_at >= start,
+                *proj,
+            )
+        )
+    ).first()
+    sn = int(row.submitted_n or 0) if row else 0
+    cn = int(row.clean_n or 0) if row else 0
+    return round(cn / sn, 3) if sn else None
+
+
+@router.get("/me/performance", response_model=MyPerformance)
+async def my_performance(
+    period: str = Query("4w"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """v0.12.3 · 标注员自助绩效（取经合集 §4.1 个人页）。
+
+    任意已认证用户看**自己**的 4 周趋势 + 耗时直方图，并叠加团队（annotator 群体）
+    每周平均产出作对标基线。强制 self，不接受他人 user_id。
+    """
+    uid = current_user.id
+    start, _end = _period_window(period)
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # 本期总产出
+    throughput = (
+        await db.execute(
+            select(func.count())
+            .select_from(Annotation)
+            .where(
+                Annotation.user_id == uid,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= start,
+            )
+        )
+    ).scalar() or 0
+
+    # 团队 annotator 群体（活跃），用于每周均线分母
+    team_ids = (
+        (
+            await db.execute(
+                select(User.id).where(
+                    User.is_active.is_(True),
+                    User.role == UserRole.ANNOTATOR,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    team_n = len(team_ids) or 1
+
+    # 4 周趋势（每周一点）：自身 throughput / quality + 团队均线
+    trend_throughput: list[int] = []
+    trend_quality: list[int] = []
+    team_trend_throughput: list[float] = []
+    for w in range(3, -1, -1):
+        ws = today_start - timedelta(days=today_start.weekday()) - timedelta(weeks=w)
+        we = ws + timedelta(weeks=1)
+        n = (
+            await db.execute(
+                select(func.count())
+                .select_from(Annotation)
+                .where(
+                    Annotation.user_id == uid,
+                    Annotation.is_active.is_(True),
+                    Annotation.created_at >= ws,
+                    Annotation.created_at < we,
+                )
+            )
+        ).scalar() or 0
+        trend_throughput.append(int(n))
+        # 质量：1 - 当周 reopen 率
+        reopen_row = (
+            await db.execute(
+                select(
+                    func.count().label("sn"),
+                    func.count().filter(Task.reopened_count > 0).label("rn"),
+                ).where(
+                    Task.assignee_id == uid,
+                    Task.submitted_at.isnot(None),
+                    Task.submitted_at >= ws,
+                    Task.submitted_at < we,
+                )
+            )
+        ).first()
+        sn = int(reopen_row.sn or 0) if reopen_row else 0
+        rn = int(reopen_row.rn or 0) if reopen_row else 0
+        trend_quality.append(100 if sn == 0 else max(0, 100 - int(rn / sn * 100)))
+        # 团队均线：当周全 annotator 总产出 / annotator 数
+        team_total = (
+            await db.execute(
+                select(func.count())
+                .select_from(Annotation)
+                .where(
+                    Annotation.user_id.in_(team_ids),
+                    Annotation.is_active.is_(True),
+                    Annotation.created_at >= ws,
+                    Annotation.created_at < we,
+                )
+            )
+        ).scalar() or 0
+        team_trend_throughput.append(round(int(team_total) / team_n, 1))
+
+    # 耗时直方图（10 桶）+ p50 / p95，从 task_events 拉本人 annotate
+    duration_rows = (
+        (
+            await db.execute(
+                select(TaskEvent.duration_ms).where(
+                    TaskEvent.user_id == uid,
+                    TaskEvent.kind == "annotate",
+                    TaskEvent.started_at >= start,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    durations = [int(d) for d in duration_rows if d is not None]
+    duration_histogram: list[dict] = []
+    p50: int | None = None
+    p95: int | None = None
+    if durations:
+        durations_sorted = sorted(durations)
+        peak = durations_sorted[-1]
+        if peak > 0:
+            step = max(1, peak // 10)
+            buckets = [0] * 10
+            for d in durations:
+                buckets[min(9, d // step)] += 1
+            for i, c in enumerate(buckets):
+                duration_histogram.append(
+                    {"upper_ms": int((i + 1) * step), "count": int(c)}
+                )
+        p50 = int(durations_sorted[len(durations_sorted) // 2])
+        p95_idx = max(0, int(len(durations_sorted) * 0.95) - 1)
+        p95 = int(durations_sorted[p95_idx])
+
+    # 周环比
+    last_week_start = (
+        today_start - timedelta(days=today_start.weekday()) - timedelta(weeks=1)
+    )
+    week_start_dt = last_week_start + timedelta(weeks=1)
+    last_n = (
+        await db.execute(
+            select(func.count())
+            .select_from(Annotation)
+            .where(
+                Annotation.user_id == uid,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= last_week_start,
+                Annotation.created_at < week_start_dt,
+            )
+        )
+    ).scalar() or 0
+    this_n = (
+        await db.execute(
+            select(func.count())
+            .select_from(Annotation)
+            .where(
+                Annotation.user_id == uid,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= week_start_dt,
+            )
+        )
+    ).scalar() or 0
+    weekly_compare_pct: float | None = (
+        round((this_n - last_n) / last_n * 100, 1) if last_n else None
+    )
+
+    return MyPerformance(
+        user_id=str(uid),
+        name=current_user.name,
+        period=period,
+        throughput=int(throughput),
+        quality_score=trend_quality[-1] if trend_quality else 100,
+        weekly_compare_pct=weekly_compare_pct,
+        trend_throughput=trend_throughput,
+        trend_quality=trend_quality,
+        team_trend_throughput=team_trend_throughput,
+        duration_histogram=duration_histogram,
+        p50_duration_ms=p50,
+        p95_duration_ms=p95,
+        reject_reason_breakdown=await _reject_reason_breakdown(db, uid, start),
+        class_distribution=await _class_distribution(db, uid, start),
+        first_pass_yield=await _first_pass_yield(db, uid, start),
+    )
+
+
+async def _resolve_people_scope(
+    db: AsyncSession, current_user: User, project: str | None
+) -> uuid.UUID | None:
+    """v0.12.6 (A3) · 解析成员绩效的项目范围 + 强制 RBAC。
+
+    - super_admin：project 可选（给了就校验存在），返回 pid 或 None（全局）。
+    - project_admin：project 必填且必须是其 **owner** 的项目（越权 / 不存在均返回
+      404 隐藏存在性），缺失 project → 403。
+
+    注意：project_admin 这里**不复用** `assert_project_visible`——后者在 owner 检查
+    失败后会 fallback 到 `ProjectMember`，导致「身为他人项目 member 的 project_admin」
+    也能读到该项目他人绩效。成员绩效语义严格限定为 owner，故自行校验 `owner_id`。
+
+    返回用于聚合过滤的 project_id（None = 全局，仅 super_admin 可得）。
+    """
+    pid: uuid.UUID | None = None
+    if project:
+        try:
+            pid = uuid.UUID(project)
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail="invalid project id") from exc
+    if current_user.role == UserRole.PROJECT_ADMIN:
+        if pid is None:
+            raise HTTPException(
+                status_code=403, detail="project_admin 必须指定其管理的项目范围"
+            )
+        proj = await db.get(Project, pid)
+        if proj is None or proj.owner_id != current_user.id:
+            raise HTTPException(status_code=404, detail="项目不存在")
+    elif pid is not None:
+        # super_admin 指定项目：校验存在（对 super_admin 恒可见，无 member fallback 问题）。
+        await assert_project_visible(pid, db, current_user)
+    return pid
+
+
 @router.get("/admin/people", response_model=AdminPeopleList)
 async def admin_people_list(
     role: str | None = Query(None),
@@ -835,14 +1159,25 @@ async def admin_people_list(
     sort: str = Query("throughput"),
     q: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+    current_user: User = Depends(
+        require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+    ),
 ):
     """v0.8.4 · 全员效率卡片网格数据。
 
     role 过滤：annotator / reviewer / both（默认 both）
     period: today / 7d / 4w / 1m
     sort: throughput / quality / activity / weekly_compare
+
+    v0.12.6 (A3)：project 给定时所有产能/质量/活跃聚合**按该项目切分**（非全局）；
+    project_admin 必须指定其项目，super_admin 可全局或任意项目。
     """
+    pid = await _resolve_people_scope(db, current_user, project)
+    # 聚合级项目过滤片段（pid 为 None 时为空 → 全局，行为与改造前一致）。
+    ann_proj = [Annotation.project_id == pid] if pid else []
+    task_proj = [Task.project_id == pid] if pid else []
+    event_proj = [TaskEvent.project_id == pid] if pid else []
+
     start, _end = _period_window(period)
     week_start = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
@@ -888,6 +1223,7 @@ async def admin_people_list(
                 Annotation.user_id.in_(user_ids),
                 Annotation.is_active.is_(True),
                 Annotation.created_at >= start,
+                *ann_proj,
             )
             .group_by(Annotation.user_id)
         )
@@ -902,6 +1238,7 @@ async def admin_people_list(
                 Task.reviewer_id.in_(user_ids),
                 Task.reviewed_at.isnot(None),
                 Task.reviewed_at >= start,
+                *task_proj,
             )
             .group_by(Task.reviewer_id)
         )
@@ -917,6 +1254,7 @@ async def admin_people_list(
                 Annotation.is_active.is_(True),
                 Annotation.created_at >= last_week_start,
                 Annotation.created_at < week_start,
+                *ann_proj,
             )
             .group_by(Annotation.user_id)
         )
@@ -930,6 +1268,7 @@ async def admin_people_list(
                 Annotation.user_id.in_(user_ids),
                 Annotation.is_active.is_(True),
                 Annotation.created_at >= week_start,
+                *ann_proj,
             )
             .group_by(Annotation.user_id)
         )
@@ -947,6 +1286,7 @@ async def admin_people_list(
             .where(
                 Task.assignee_id.in_(user_ids),
                 Task.submitted_at.isnot(None),
+                *task_proj,
             )
             .group_by(Task.assignee_id)
         )
@@ -972,6 +1312,7 @@ async def admin_people_list(
                     Annotation.is_active.is_(True),
                     Annotation.created_at >= ds,
                     Annotation.created_at < de,
+                    *ann_proj,
                 )
                 .group_by(Annotation.user_id)
             )
@@ -991,6 +1332,7 @@ async def admin_people_list(
             .where(
                 TaskEvent.user_id.in_(user_ids),
                 TaskEvent.started_at >= seven_d_start,
+                *event_proj,
             )
             .group_by(TaskEvent.user_id)
         )
@@ -1080,53 +1422,129 @@ async def admin_people_list(
     else:
         items.sort(key=lambda it: it.main_metric, reverse=True)
 
-    # 简易项目过滤：如指定 project，只返回 project_members 包含该项目的用户
-    if project:
-        try:
-            import uuid as _u
-
-            pid = _u.UUID(project)
-            allowed = (
-                (
-                    await db.execute(
-                        select(ProjectMember.user_id).where(
-                            ProjectMember.project_id == pid
-                        )
-                    )
+    # 项目过滤：指定项目时只返回该项目成员（聚合数字已在上面按 pid 切分）。
+    if pid:
+        allowed = (
+            (
+                await db.execute(
+                    select(ProjectMember.user_id).where(ProjectMember.project_id == pid)
                 )
-                .scalars()
-                .all()
             )
-            allowed_set = {str(x) for x in allowed}
-            items = [it for it in items if it.user_id in allowed_set]
-        except (ValueError, TypeError):
-            pass
+            .scalars()
+            .all()
+        )
+        allowed_set = {str(x) for x in allowed}
+        items = [it for it in items if it.user_id in allowed_set]
 
     return AdminPeopleList(items=items, total=len(items), period=period)
+
+
+# v0.12.5 · 成员绩效 CSV 导出(A2)。
+# 注意:必须定义在 /admin/people/{user_id} 之前,否则 "export" 会被当作 user_id 命中详情端点。
+_PEOPLE_EXPORT_COLS = [
+    "user_id",
+    "name",
+    "email",
+    "role",
+    "status",
+    "project_count",
+    "main_metric",
+    "main_metric_label",
+    "weekly_compare_pct",
+    "throughput_score",
+    "quality_score",
+    "activity_score",
+    "rejected_rate",
+]
+
+
+@router.get("/admin/people/export")
+async def admin_people_export(
+    role: str | None = Query(None),
+    project: str | None = Query(None),
+    period: str = Query("7d"),
+    sort: str = Query("throughput"),
+    q: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+    ),
+):
+    """v0.12.5 · 成员绩效 CSV 导出。复用 admin_people_list 聚合,零重复;Excel UTF-8 BOM 防中文乱码。
+
+    v0.12.6 (A3)：放行 project_admin（委托 admin_people_list 强制其项目范围）。
+    """
+    data = await admin_people_list(
+        role=role,
+        project=project,
+        period=period,
+        sort=sort,
+        q=q,
+        db=db,
+        current_user=current_user,
+    )
+
+    # 名实相符:admin_people_list 已把全表加载进内存(百行级),
+    # CSV 也是一次拼好,直接 Response,不假装流式。
+    buf = io.StringIO()
+    buf.write("﻿")  # Excel UTF-8 BOM
+    writer = csv.DictWriter(buf, fieldnames=_PEOPLE_EXPORT_COLS, extrasaction="ignore")
+    writer.writeheader()
+    for it in data.items:
+        writer.writerow(it.model_dump(mode="json"))
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename=people_performance_{period}.csv"
+        },
+    )
 
 
 @router.get("/admin/people/{user_id}", response_model=AdminPersonDetail)
 async def admin_person_detail(
     user_id: str,
     period: str = Query("4w"),
+    project: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+    current_user: User = Depends(
+        require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+    ),
 ):
-    """v0.8.4 · 个人详情：4 周趋势、耗时直方图、项目分布、timeline。"""
-    import uuid as _u
+    """v0.8.4 · 个人详情：4 周趋势、耗时直方图、项目分布、timeline。
+
+    v0.12.6 (A3)：project 给定时产能/质量/耗时/归因聚合**按该项目切分**；
+    project_admin 必须指定其项目，super_admin 可全局或任意项目。timeline（审计活动流）
+    不含可靠 project 维度，保持全局。
+    """
+    pid = await _resolve_people_scope(db, current_user, project)
+    ann_proj = [Annotation.project_id == pid] if pid else []
+    task_proj = [Task.project_id == pid] if pid else []
+    event_proj = [TaskEvent.project_id == pid] if pid else []
 
     try:
-        uid = _u.UUID(user_id)
+        uid = uuid.UUID(user_id)
     except (ValueError, TypeError):
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=400, detail="invalid user_id")
 
     user = await db.get(User, uid)
     if not user or not user.is_active:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail="user not found")
+
+    # v0.12.6 (A3) 安全收口:project_admin 只能查其项目内的成员详情。否则可借任意
+    # user_id + 自有 project 枚举他人存在性 + 读取全局 timeline(IDOR)。非成员 → 404。
+    if current_user.role == UserRole.PROJECT_ADMIN and pid is not None:
+        membership = (
+            await db.execute(
+                select(ProjectMember).where(
+                    ProjectMember.project_id == pid,
+                    ProjectMember.user_id == uid,
+                )
+            )
+        ).scalar_one_or_none()
+        if membership is None:
+            raise HTTPException(status_code=404, detail="user not found")
 
     start, _end = _period_window(period)
     now = datetime.now(timezone.utc)
@@ -1141,6 +1559,7 @@ async def admin_person_detail(
                 Annotation.user_id == uid,
                 Annotation.is_active.is_(True),
                 Annotation.created_at >= start,
+                *ann_proj,
             )
         )
     ).scalar() or 0
@@ -1160,6 +1579,7 @@ async def admin_person_detail(
                     Annotation.is_active.is_(True),
                     Annotation.created_at >= ws,
                     Annotation.created_at < we,
+                    *ann_proj,
                 )
             )
         ).scalar() or 0
@@ -1175,6 +1595,7 @@ async def admin_person_detail(
                     Task.submitted_at.isnot(None),
                     Task.submitted_at >= ws,
                     Task.submitted_at < we,
+                    *task_proj,
                 )
             )
         ).first()
@@ -1196,6 +1617,7 @@ async def admin_person_detail(
                 Annotation.user_id == uid,
                 Annotation.is_active.is_(True),
                 Annotation.created_at >= start,
+                *ann_proj,
             )
             .group_by(Annotation.project_id, Project.name)
             .order_by(func.count().desc())
@@ -1206,9 +1628,7 @@ async def admin_person_detail(
         for r in proj_rows
     ]
 
-    # 耗时直方图：从 task_events 拉本人的 annotate kind
-    from app.db.models.task_event import TaskEvent
-
+    # 耗时直方图：从 task_events 拉本人的 annotate kind（TaskEvent 已在模块级导入）
     duration_rows = (
         (
             await db.execute(
@@ -1216,6 +1636,7 @@ async def admin_person_detail(
                     TaskEvent.user_id == uid,
                     TaskEvent.kind == "annotate",
                     TaskEvent.started_at >= start,
+                    *event_proj,
                 )
             )
         )
@@ -1311,6 +1732,7 @@ async def admin_person_detail(
                 Annotation.is_active.is_(True),
                 Annotation.created_at >= last_week_start,
                 Annotation.created_at < week_start_dt,
+                *ann_proj,
             )
         )
     ).scalar() or 0
@@ -1322,6 +1744,7 @@ async def admin_person_detail(
                 Annotation.user_id == uid,
                 Annotation.is_active.is_(True),
                 Annotation.created_at >= week_start_dt,
+                *ann_proj,
             )
         )
     ).scalar() or 0
@@ -1350,6 +1773,11 @@ async def admin_person_detail(
         p50_duration_ms=p50,
         p95_duration_ms=p95,
         timeline=timeline,
+        reject_reason_breakdown=await _reject_reason_breakdown(
+            db, uid, start, project_id=pid
+        ),
+        class_distribution=await _class_distribution(db, uid, start, project_id=pid),
+        first_pass_yield=await _first_pass_yield(db, uid, start, project_id=pid),
     )
 
 

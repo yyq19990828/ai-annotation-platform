@@ -55,6 +55,14 @@
   border-radius: var(--radius-md);
 }
 
+.cardWide {
+  grid-column: 1 / -1;
+}
+
+.chartWrap {
+  width: 100%;
+}
+
 .cardTitle {
   font-size: 13px;
   font-weight: 600;
@@ -91,33 +99,46 @@
   font-weight: 600;
 }
 
-.list {
+.heatmap {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
+  overflow-x: auto;
 }
 
-.row {
+.heatmapRow {
   display: grid;
-  grid-template-columns: 140px 1fr 60px;
+  grid-template-columns: 36px repeat(24, 1fr);
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 3px;
 }
 
-.barTrack {
-  height: 6px;
-  background: var(--color-bg-sunken);
-  border-radius: 3px;
-  overflow: hidden;
+.heatmapRowLabel {
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  white-space: nowrap;
 }
 
-.barFill {
-  width: var(--analytics-bar-width, 0%);
-  height: 100%;
+.heatmapCell {
+  height: 16px;
+  min-width: 12px;
+  border-radius: 2px;
   background: var(--color-accent);
-  border-radius: 3px;
-  transition: width 200ms ease;
+  border: 1px solid var(--color-border);
+  opacity: var(--heat-opacity);
+}
+
+.heatmapAxis {
+  display: grid;
+  grid-template-columns: 36px repeat(24, 1fr);
+  gap: 3px;
+  margin-top: 2px;
+}
+
+.heatmapHourLabel {
+  font-size: 10px;
+  color: var(--color-fg-subtle);
+  text-align: left;
 }
 
 .empty {

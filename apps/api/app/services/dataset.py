@@ -765,9 +765,7 @@ class DatasetService:
         for start in range(0, len(pending), chunk_size):
             chunk = pending[start : start + chunk_size]
             seq_result = await self.db.execute(
-                text(
-                    "SELECT nextval('display_seq_tasks') FROM generate_series(1, :n)"
-                ),
+                text("SELECT nextval('display_seq_tasks') FROM generate_series(1, :n)"),
                 {"n": len(chunk)},
             )
             display_nums = [row[0] for row in seq_result.all()]

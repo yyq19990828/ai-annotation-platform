@@ -174,6 +174,34 @@ class AdminPersonDetail(BaseModel):
     p95_duration_ms: int | None
     # timeline 最近事件
     timeline: list[dict]
+    # v0.12.4 · 质量归因(A1)
+    reject_reason_breakdown: list[dict] = []  # [{reason_type, count, pct}]
+    class_distribution: list[dict] = []  # [{class_name, count, pct}] top-N
+    first_pass_yield: float | None = None
+
+
+class MyPerformance(BaseModel):
+    """v0.12.3 · 标注员自助绩效（自己 vs 团队均线，取经合集 §4.1 个人页）。"""
+
+    user_id: str
+    name: str
+    period: str
+    # 本期 hero
+    throughput: int
+    quality_score: int
+    weekly_compare_pct: float | None
+    # 4 周趋势（每周 1 点）：自身 + 团队均线
+    trend_throughput: list[int]
+    trend_quality: list[int]
+    team_trend_throughput: list[float]
+    # 耗时直方图 + 分位
+    duration_histogram: list[dict]
+    p50_duration_ms: int | None
+    p95_duration_ms: int | None
+    # v0.12.4 · 质量归因(A1)
+    reject_reason_breakdown: list[dict]  # [{reason_type, count, pct}]
+    class_distribution: list[dict]  # [{class_name, count, pct}] top-N
+    first_pass_yield: float | None  # 一次通过(无 reopen) / 提交总数
 
 
 class MyBatchItem(BaseModel):

@@ -29,6 +29,7 @@ from app.db.models.audit_log import AuditLog
 from app.db.models.user_invitation import UserInvitation
 from app.db.models.bug_report import BugReport, BugComment
 from app.db.models.password_reset_token import PasswordResetToken
+from app.db.models.email_verification_token import EmailVerificationToken
 from app.db.models.notification import Notification
 from app.db.models.notification_preference import NotificationPreference
 from app.db.models.system_setting import SystemSetting
@@ -77,6 +78,7 @@ __all__ = [
     "BugReport",
     "BugComment",
     "PasswordResetToken",
+    "EmailVerificationToken",
     "Notification",
     "NotificationPreference",
     "SystemSetting",
