@@ -418,8 +418,55 @@
 .camPanelBar {
   display: flex;
   justify-content: flex-end;
+  gap: 4px;
   padding: 2px 4px;
   border-bottom: 1px solid var(--color-border);
+}
+
+/* v0.13.7 · 相机放大浮层(L3):遮罩 + 居中大图。 */
+.camModal {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.camModalBody {
+  position: relative;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-elev);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 放大态:图按视口高度放大(覆盖面板态的 width:190px)。 */
+.camModalBody .cameraItem img {
+  width: auto;
+  height: 70vh;
+  max-width: 88vw;
+}
+
+.camModalClose {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.camModalClose:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 /* 折叠后的贴边小标签。 */

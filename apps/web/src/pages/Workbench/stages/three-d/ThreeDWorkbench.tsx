@@ -24,6 +24,7 @@ import {
   type PointCloudStats,
   type SceneBox,
 } from "./PointCloudScene";
+import CameraProjectionView from "./CameraProjectionView";
 import FloatingCameraPanel from "./FloatingCameraPanel";
 import TriViewPanel from "./TriViewPanel";
 import type { TriSelected } from "./TriOrthoView";
@@ -155,6 +156,8 @@ export function ThreeDWorkbench({
   const [depthOn, setDepthOn] = useState(false);
   // v0.13.7 · 三视图浮层折叠态(右下角):选中框才浮出,可收成小标签。
   const [triCollapsed, setTriCollapsed] = useState(false);
+  // v0.13.7 · 放大查看的相机 role(L3);null = 无放大。点⛶开,ESC/遮罩/关闭钮收。
+  const [enlargedRole, setEnlargedRole] = useState<string | null>(null);
   // 选中态来自壳层(selectedId / onSelectBox props),与标注列表 / 右栏面板共享同一份。
 
   const { data: annotations } = useAnnotations(taskId ?? undefined);
@@ -512,6 +515,19 @@ export function ThreeDWorkbench({
     }
     return [...groups.entries()];
   }, [cameras]);
+  const enlargedCam = useMemo(
+    () => cameras.find((c) => c.role === enlargedRole) ?? null,
+    [cameras, enlargedRole],
+  );
+  // v0.13.7 · 放大浮层:ESC 关闭。
+  useEffect(() => {
+    if (!enlargedRole) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setEnlargedRole(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [enlargedRole]);
   // v0.13.6 · 点云坐标(载帧后稳定);供相机视图建深度栅格。stats 变化即点云换帧。
   const pointPositions = useMemo(
     () => (stats ? (sceneRef.current?.getPointPositions() ?? null) : null),
@@ -840,10 +856,46 @@ export function ThreeDWorkbench({
                 bestForSelected={cam.role === bestCameraRole}
                 pointPositions={pointPositions}
                 showDepth={depthOn}
+                onEnlarge={() => setEnlargedRole(cam.role)}
               />
             ))}
           </div>
         ))}
+
+        {/* v0.13.7 · 相机放大浮层(L3):点⛶弹大图,遮罩 / 关闭钮 / ESC 关闭。
+            复用 CameraProjectionView(同 props,大尺寸),投影 / 上色 / 深度 overlay 一致。 */}
+        {enlargedCam && (
+          <div
+            className={styles.camModal}
+            onClick={() => setEnlargedRole(null)}
+            role="presentation"
+          >
+            <div
+              className={styles.camModalBody}
+              onClick={(e) => e.stopPropagation()}
+              role="presentation"
+            >
+              <button
+                type="button"
+                className={styles.camModalClose}
+                onClick={() => setEnlargedRole(null)}
+              >
+                关闭 ✕
+              </button>
+              <CameraProjectionView
+                name={enlargedCam.name}
+                imageUrl={enlargedCam.image_url}
+                calibration={enlargedCam.calibration}
+                boxes={boxes}
+                highlightedIds={highlightedIds}
+                onSelectBox={onSelectBox}
+                bestForSelected={enlargedCam.role === bestCameraRole}
+                pointPositions={pointPositions}
+                showDepth={depthOn}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

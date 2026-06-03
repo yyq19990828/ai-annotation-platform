@@ -25,6 +25,8 @@ interface FloatingCameraPanelProps {
   bestForSelected?: boolean;
   pointPositions?: Float32Array | null;
   showDepth?: boolean;
+  /** v0.13.7 · 点「⛶」放大该相机为大图浮层(L3)。 */
+  onEnlarge?: () => void;
 }
 
 const collapseKey = (role: string) => `pcwb:cam-collapsed:${role}`;
@@ -32,6 +34,7 @@ const collapseKey = (role: string) => `pcwb:cam-collapsed:${role}`;
 export function FloatingCameraPanel({
   role,
   name,
+  onEnlarge,
   ...camProps
 }: FloatingCameraPanelProps) {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -70,6 +73,16 @@ export function FloatingCameraPanel({
   return (
     <div className={styles.camPanel}>
       <div className={styles.camPanelBar}>
+        {onEnlarge && (
+          <button
+            type="button"
+            className={styles.floatToggleBtn}
+            onClick={onEnlarge}
+            title="放大相机"
+          >
+            ⛶
+          </button>
+        )}
         <button
           type="button"
           className={styles.floatToggleBtn}
