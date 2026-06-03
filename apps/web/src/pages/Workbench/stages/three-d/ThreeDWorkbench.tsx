@@ -24,11 +24,12 @@ import {
   type PointCloudStats,
   type SceneBox,
 } from "./PointCloudScene";
-import CameraProjectionView from "./CameraProjectionView";
+import FloatingCameraPanel from "./FloatingCameraPanel";
 import TriViewPanel from "./TriViewPanel";
 import type { TriSelected } from "./TriOrthoView";
 import type { Psr } from "./geometry/triview";
 import { psrToCorners } from "./geometry/box3d";
+import { cameraAnchor, type Anchor } from "./geometry/cameraAnchor";
 import { colorizePoints, type CameraSample } from "./geometry/colorize";
 import { projectPoints } from "./geometry/projection";
 import styles from "./ThreeDWorkbench.module.css";
@@ -118,6 +119,19 @@ function psrToForm(b: {
     roll: fmtNum((b.rotation[0] * 180) / Math.PI),
   };
 }
+
+// v0.13.7 · 朝向 → 悬浮定位容器 CSS 类(贴主视图对应边缘)。
+const ANCHOR_CLASS: Record<Anchor, string> = {
+  top: styles.camAnchorTop,
+  bottom: styles.camAnchorBottom,
+  left: styles.camAnchorLeft,
+  right: styles.camAnchorRight,
+  "top-left": styles.camAnchorTopLeft,
+  "top-right": styles.camAnchorTopRight,
+  "bottom-left": styles.camAnchorBottomLeft,
+  "bottom-right": styles.camAnchorBottomRight,
+  overflow: styles.camAnchorOverflow,
+};
 
 export function ThreeDWorkbench({
   taskId,
@@ -487,6 +501,17 @@ export function ThreeDWorkbench({
   };
 
   const cameras = useMemo(() => manifest?.cameras ?? [], [manifest?.cameras]);
+  // v0.13.7 · 相机按物理朝向分组(悬浮环绕):每个 anchor 一个定位容器,同朝向沿边堆叠。
+  const cameraGroups = useMemo(() => {
+    const groups = new Map<Anchor, typeof cameras>();
+    for (const cam of cameras) {
+      const anchor = cameraAnchor(cam.calibration, cam.role || cam.name);
+      const arr = groups.get(anchor) ?? [];
+      arr.push(cam);
+      groups.set(anchor, arr);
+    }
+    return [...groups.entries()];
+  }, [cameras]);
   // v0.13.6 · 点云坐标(载帧后稳定);供相机视图建深度栅格。stats 变化即点云换帧。
   const pointPositions = useMemo(
     () => (stats ? (sceneRef.current?.getPointPositions() ?? null) : null),
@@ -797,27 +822,29 @@ export function ThreeDWorkbench({
             三视图 ▸
           </button>
         )}
-      </div>
 
-      {/* 相机图面板 + 投影 overlay(v0.13.4):3D 框经标定实时投影,点投影框反选 */}
-      {cameras.length > 0 && (
-        <div className={styles.cameraStrip}>
-          {cameras.map((cam) => (
-            <CameraProjectionView
-              key={cam.role}
-              name={cam.name}
-              imageUrl={cam.image_url}
-              calibration={cam.calibration}
-              boxes={boxes}
-              highlightedIds={highlightedIds}
-              onSelectBox={onSelectBox}
-              bestForSelected={cam.role === bestCameraRole}
-              pointPositions={pointPositions}
-              showDepth={depthOn}
-            />
-          ))}
-        </div>
-      )}
+        {/* v0.13.7 · 悬浮相机面板:按物理朝向贴主视图边缘,同朝向沿边堆叠。
+            投影 overlay / 上色 / 深度命中沿用 CameraProjectionView,布局对其透明。 */}
+        {cameraGroups.map(([anchor, cams]) => (
+          <div key={anchor} className={`${styles.camGroup} ${ANCHOR_CLASS[anchor]}`}>
+            {cams.map((cam) => (
+              <FloatingCameraPanel
+                key={cam.role}
+                role={cam.role}
+                name={cam.name}
+                imageUrl={cam.image_url}
+                calibration={cam.calibration}
+                boxes={boxes}
+                highlightedIds={highlightedIds}
+                onSelectBox={onSelectBox}
+                bestForSelected={cam.role === bestCameraRole}
+                pointPositions={pointPositions}
+                showDepth={depthOn}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

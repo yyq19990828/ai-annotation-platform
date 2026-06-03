@@ -330,14 +330,114 @@
   color: var(--color-bg);
 }
 
-.cameraStrip {
-  flex: 0 0 auto;
+/* v0.13.7 · 悬浮相机:按朝向分组的定位容器(贴主视图边缘),同朝向沿边堆叠。
+ * 容器自身不挡点云事件,子面板各自收事件。 */
+.camGroup {
+  position: absolute;
+  z-index: 3;
   display: flex;
   gap: 8px;
-  padding: 8px;
-  overflow-x: auto;
+  pointer-events: none;
+}
+
+.camGroup > * {
+  pointer-events: auto;
+}
+
+.camAnchorTop {
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  flex-direction: row;
+}
+
+.camAnchorBottom {
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  flex-direction: row;
+}
+
+.camAnchorLeft {
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  flex-direction: column;
+}
+
+.camAnchorRight {
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  flex-direction: column;
+}
+
+/* 角向:避让四角既有浮层(控件 / PSR / 状态条 / 三视图)。 */
+.camAnchorTopLeft {
+  top: 64px;
+  left: 12px;
+  flex-direction: column;
+}
+
+.camAnchorTopRight {
+  top: 64px;
+  right: 12px;
+  flex-direction: column;
+}
+
+.camAnchorBottomLeft {
+  bottom: 48px;
+  left: 12px;
+  flex-direction: column;
+}
+
+.camAnchorBottomRight {
+  bottom: 64px;
+  right: 12px;
+  flex-direction: column;
+}
+
+.camAnchorOverflow {
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  flex-direction: row;
+}
+
+/* 单个悬浮相机面板:细标题条(收起钮)+ 相机图。 */
+.camPanel {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
   background: var(--color-bg-elev);
-  border-top: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.camPanelBar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* 折叠后的贴边小标签。 */
+.camPanelTab {
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-elev);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-fg);
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.camPanelTab:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 .cameraItem {
@@ -354,10 +454,8 @@
 
 .cameraItem img {
   display: block;
-  height: 160px;
-  width: auto;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
+  width: 190px;
+  height: auto;
   object-fit: cover;
 }
 
