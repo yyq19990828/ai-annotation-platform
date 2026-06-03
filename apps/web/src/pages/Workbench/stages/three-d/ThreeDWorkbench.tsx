@@ -121,6 +121,20 @@ function psrToForm(b: {
   };
 }
 
+// v0.13.7 · 取 front 相机光轴的水平「前方」(归一化 [x,y]),供 resetView 跟随车头朝向。
+// front = anchor 推为 top 的相机;无标定 / 退化 → null(回退默认 +Y)。
+function frontCameraForward(
+  cams: { calibration?: SensorCalibration | null; role: string; name: string }[],
+): [number, number] | null {
+  const front = cams.find((c) => cameraAnchor(c.calibration, c.role || c.name) === "top");
+  const e = front?.calibration?.extrinsic;
+  if (!e) return null;
+  const x = e[8];
+  const y = e[9];
+  const n = Math.hypot(x, y);
+  return n < 1e-3 ? null : [x / n, y / n];
+}
+
 // v0.13.7 · 朝向 → 悬浮定位容器 CSS 类(贴主视图对应边缘)。
 const ANCHOR_CLASS: Record<Anchor, string> = {
   top: styles.camAnchorTop,
@@ -519,6 +533,14 @@ export function ThreeDWorkbench({
     () => cameras.find((c) => c.role === enlargedRole) ?? null,
     [cameras, enlargedRole],
   );
+  // v0.13.7 · resetView 默认视向跟随 front 相机光轴(健壮于任意 lidar 前向约定)。
+  // loadPcd 的首次 frameView 在 await fetch 之后异步触发,本同步 effect 必先于其设好前方。
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const fwd = frontCameraForward(cameras);
+    scene.setViewForward(fwd?.[0] ?? 0, fwd?.[1] ?? 1);
+  }, [cameras]);
   // v0.13.7 · 放大浮层:ESC 关闭。
   useEffect(() => {
     if (!enlargedRole) return;

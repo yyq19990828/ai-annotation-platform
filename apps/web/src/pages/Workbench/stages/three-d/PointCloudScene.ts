@@ -66,6 +66,10 @@ export class PointCloudScene {
   private readonly viewCenter = new THREE.Vector3();
   private viewRadius = 10;
 
+  // v0.13.7 · resetView 默认视向的水平「前方」(= front 相机光轴水平投影)。
+  // 默认 +Y(历史行为:相机蹲 -Y 看 +Y);由 setViewForward 跟随实际车头改写。
+  private readonly forward = new THREE.Vector3(0, 1, 0);
+
   // v0.13.3 · 估计的地面高度 z(低分位,见 estimateGroundZ),放置新框时落在此平面上。
   private groundZ = 0;
 
@@ -247,12 +251,25 @@ export class PointCloudScene {
   private frameView() {
     const c = this.viewCenter;
     const r = this.viewRadius;
+    const f = this.forward; // 水平单位向量(车头方向)
     this.controls.target.copy(c);
-    this.camera.position.set(c.x, c.y - r * 2.2, c.z + r * 1.2);
+    // 蹲在车头反方向、抬高,看向中心 ⇒ 视线 = 车头方向(与 front 相机一致)。
+    // forward 默认 (0,1,0) 时退化为历史的 (c.x, c.y - 2.2r, ...)。
+    this.camera.position.set(c.x - f.x * r * 2.2, c.y - f.y * r * 2.2, c.z + r * 1.2);
     this.camera.near = Math.max(r / 100, 0.1);
     this.camera.far = r * 50;
     this.camera.updateProjectionMatrix();
     this.controls.update();
+  }
+
+  /**
+   * v0.13.7 · 设默认视向的水平「前方」(= front 相机光轴水平投影),使 resetView 与
+   * front 相机朝向一致(健壮于任意 lidar 系前向约定)。近零向量忽略(保持上次/默认 +Y);
+   * 不立即重排,下次 frameView / resetView 生效。
+   */
+  setViewForward(x: number, y: number) {
+    if (Math.hypot(x, y) < 1e-3) return;
+    this.forward.set(x, y, 0).normalize();
   }
 
   resetView() {
