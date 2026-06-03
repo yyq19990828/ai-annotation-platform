@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { SensorCalibration } from "@/types";
-import { colorizePoints, type CameraSample } from "./colorize";
+import { colorizePoints, OCCLUSION_TOL_M, type CameraSample } from "./colorize";
+import { buildDepthRaster } from "./depthmap";
 
 /* ──────────────────────────────────────────────────────────────────────
  * 上色纯函数单测。构造极简标定:extrinsic = 单位阵(相机系=lidar系),
@@ -117,5 +118,60 @@ describe("colorizePoints", () => {
     // 点1→(0,0)红, 点2→(1,0)绿, 点3→(1,1)白
     const out = colorizePoints(new Float32Array([0, 0, 1, 1, 0, 1, 1, 1, 1]), null, [cam]);
     expect(Array.from(out)).toEqual([1, 0, 0, 0, 1, 0, 1, 1, 1]);
+  });
+
+  it("z-test:有 rasters,前点上色,后点(被遮)保留原色", () => {
+    // 1 相机 cx=cy=0,2×2 全白图。
+    const cam: CameraSample = {
+      calib: calib(0, 0),
+      width: 2,
+      height: 2,
+      data: image(2, 2, () => [255, 255, 255]),
+    };
+    // A=(0,0,1) 近, B=(0,0,3) 远;u=v=0,投同一像素。
+    const positionsAB = new Float32Array([0, 0, 1, 0, 0, 3]);
+    // 栅格用 A+B 共建(cell=1),A 的格 depth=1。
+    const raster = buildDepthRaster(positionsAB, cam.calib, 2, 2, 1);
+    const orig = new Float32Array([0.1, 0.1, 0.1, 0.2, 0.2, 0.2]);
+    const out = colorizePoints(positionsAB, orig, [cam], [raster]);
+    // A 不遮挡 → 白;B 深度差 2 > 0.10 → 遮挡 → 原色。
+    expectColors(out, [1, 1, 1, 0.2, 0.2, 0.2]);
+  });
+
+  it("z-test 容差边界:diff<=TOL 不遮挡, diff>TOL 遮挡", () => {
+    const cam: CameraSample = {
+      calib: calib(0, 0),
+      width: 2,
+      height: 2,
+      data: image(2, 2, () => [255, 255, 255]),
+    };
+    // 仅用 A=(0,0,1) 建栅格(rasterDepth=1)。
+    const positionsA = new Float32Array([0, 0, 1]);
+    const raster = buildDepthRaster(positionsA, cam.calib, 2, 2, 1);
+    expect(OCCLUSION_TOL_M).toBe(0.1);
+    // p1 diff=0.05 < TOL 不遮挡;p2 diff≈0.09 < TOL(避开 FP 边界毛刺)不遮挡;p3 diff≈0.20 > TOL 遮挡。
+    const positions = new Float32Array([0, 0, 1.05, 0, 0, 1.09, 0, 0, 1.2]);
+    const orig = new Float32Array([0.3, 0.3, 0.3, 0.4, 0.4, 0.4, 0.5, 0.5, 0.5]);
+    const out = colorizePoints(positions, orig, [cam], [raster]);
+    expectColors(out, [1, 1, 1, 1, 1, 1, 0.5, 0.5, 0.5]);
+  });
+
+  it("无 rasters 参数等价 v0.13.6 行为(undefined / null / [null] 均不做遮挡)", () => {
+    const cam: CameraSample = {
+      calib: calib(0, 0),
+      width: 2,
+      height: 2,
+      data: image(2, 2, () => [255, 255, 255]),
+    };
+    // 前后两点投同一像素,无遮挡 ⇒ 都被上白。
+    const pos = new Float32Array([0, 0, 1, 0, 0, 3]);
+    const a = colorizePoints(pos, null, [cam]);
+    const b = colorizePoints(pos, null, [cam], undefined);
+    const c = colorizePoints(pos, null, [cam], null);
+    const d = colorizePoints(pos, null, [cam], [null]);
+    expect(Array.from(a)).toEqual([1, 1, 1, 1, 1, 1]);
+    expect(Array.from(b)).toEqual(Array.from(a));
+    expect(Array.from(c)).toEqual(Array.from(a));
+    expect(Array.from(d)).toEqual(Array.from(a));
   });
 });

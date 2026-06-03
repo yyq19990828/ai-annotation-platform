@@ -10,6 +10,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { PCDLoader } from "three/examples/jsm/loaders/PCDLoader.js";
 
+import { estimateGroundZ } from "./geometry/ground";
+
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
 const DECIMATE_THRESHOLD = 500_000;
 
@@ -167,7 +169,7 @@ export class PointCloudScene {
     this.points = new THREE.Points(geom, material);
     this.scene.add(this.points);
     this.setRobustFrame(positions, rendered);
-    this.groundZ = this.estimateGroundZ(positions, rendered);
+    this.groundZ = estimateGroundZ(positions, rendered);
     this.frameView();
 
     return { totalPoints: total, renderedPoints: rendered, decimated };
@@ -216,36 +218,6 @@ export class PointCloudScene {
     const sd = (sum2: number, m: number) => Math.sqrt(Math.max(sum2 / count - m * m, 0));
     this.viewCenter.set(mx, my, mz);
     this.viewRadius = Math.max(2.5 * Math.max(sd(sxx, mx), sd(syy, my), sd(szz, mz)), 5);
-  }
-
-  /**
-   * v0.13.3 · 估计地面高度:z 直方图的 ~1% 低分位(对少量低离群点鲁棒,比 zMin 稳)。
-   * 放置新框时把框落在此平面上(center.z = groundZ + 高/2),避免默认框悬浮。
-   */
-  private estimateGroundZ(positions: Float32Array, count: number): number {
-    if (count === 0) return 0;
-    let zMin = Infinity, zMax = -Infinity;
-    for (let i = 0; i < count; i++) {
-      const z = positions[i * 3 + 2];
-      if (z < zMin) zMin = z;
-      if (z > zMax) zMax = z;
-    }
-    const span = zMax - zMin;
-    if (span <= 0) return zMin;
-    const BINS = 128;
-    const hist = new Int32Array(BINS);
-    for (let i = 0; i < count; i++) {
-      const t = (positions[i * 3 + 2] - zMin) / span;
-      const b = Math.min(BINS - 1, Math.floor(t * BINS));
-      hist[b]++;
-    }
-    const target = count * 0.01;
-    let acc = 0;
-    for (let b = 0; b < BINS; b++) {
-      acc += hist[b];
-      if (acc >= target) return zMin + ((b + 0.5) / BINS) * span;
-    }
-    return zMin;
   }
 
   private frameView() {
@@ -426,9 +398,16 @@ export class PointCloudScene {
   }
 
   /**
-   * v0.13.3 · 屏幕坐标射线打到地面水平面(z=groundZ),返回世界落点 [x,y,groundZ];
-   * 放置新框用(透视拖拽不准,故先点落点 + 默认尺寸,再用数值面板/gizmo 精修)。
-   * 射线与地面平行(俯视极端)时返回 null。
+   * v0.13.3 · 屏幕坐标射线 → 世界落点 [x,y,z],供放置新框(透视拖拽不准,故先点落点 +
+   * 默认尺寸,再用数值面板 / gizmo / Q 一键贴合精修)。射线极端时返回 null。
+   *
+   * v0.13.8.1 · **优先打点云**(SUSTechPOINTS / xtreme1 通行做法):
+   *   1. 射线与点云相交 → 用最近命中点的 (x,y,z) 作落点,框底贴该点。
+   *   2. 未命中(点击空地)→ fallback 到水平面相交,用中位数 groundZ。
+   * 解决 v0.13.3 「总用 groundZ」的两个体感问题:
+   *   - 斜视角 + lidar 缺自车正下方点 → 1% 分位 groundZ 比"视觉地面"低,框总埋地下;
+   *   - 想标车顶物 / 屋顶物 → 总强行贴 groundZ,要手动调 cz。
+   * 点云命中容差用 0.3m(默认 1m 太松,易抓到背景远点;0.3m 跟点云密度匹配)。
    */
   placeOnGround(clientX: number, clientY: number): [number, number, number] | null {
     const rect = this.renderer.domElement.getBoundingClientRect();
@@ -437,6 +416,26 @@ export class PointCloudScene {
       -((clientY - rect.top) / rect.height) * 2 + 1,
     );
     this.raycaster.setFromCamera(ndc, this.camera);
+
+    // 优先打点云:Raycaster.params.Points.threshold 控制命中半径(米)。
+    // try/finally 保证即使 intersectObject 抛错,threshold 也还原,不污染后续 attachTransform
+    // 等其他 raycaster 用法。
+    if (this.points) {
+      const prev = this.raycaster.params.Points?.threshold ?? 1;
+      this.raycaster.params.Points = { ...(this.raycaster.params.Points ?? {}), threshold: 0.3 };
+      let hits: THREE.Intersection[];
+      try {
+        hits = this.raycaster.intersectObject(this.points, false);
+      } finally {
+        this.raycaster.params.Points = { ...(this.raycaster.params.Points ?? {}), threshold: prev };
+      }
+      if (hits.length > 0) {
+        const p = hits[0].point;
+        return [p.x, p.y, p.z];
+      }
+    }
+
+    // Fallback:射线与 z=groundZ 水平面相交(空地点击 / 未载点云)。
     const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -this.groundZ);
     const hit = new THREE.Vector3();
     if (!this.raycaster.ray.intersectPlane(plane, hit)) return null;

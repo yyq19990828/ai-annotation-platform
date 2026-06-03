@@ -28,6 +28,33 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.13.8] - 2026-06-03
+
+点云 + 图像联合标注工作台第九切片:**3D 框一键贴合 + RGB 上色 z-test 遮挡修复**。粗框 → 精框的「逐边拖到点云贴合」从手动 → 一键(`Q`);v0.13.6 RGB 上色背景被前景"染色"的视觉伪 feature 用既有深度栅格做 z-test 修真。**纯前端、复用 v0.13.5/0.13.6 既有 geometry,后端零改动、零迁移、零端点**。计划见 `docs/plans/2026-06-03-v0.13.8-fit-shrink-occlusion-fix.md`。
+
+### Added
+
+- **自动贴合内核**(`three-d/geometry/autofit.ts`,纯函数 + 单测 12 例):
+  - `fitSize` 保中心 + 朝向,把 size 收到「框内点 box-local AABB + 2×padding」(默认 5cm),size 各分量下限 `MIN_SIZE`;
+  - `fitBottom` 保中心 cx/cy + 朝向 + size,把 cz 下移到「框内 world 最低点 = box 下沿」;
+  - `fitYaw`(实验)保中心 + size + pitch/roll,仅改 yaw = 框内点 XY 平面 PCA 主轴方向;闭式 2x2 协方差特征向量,点数 < 20 自动放弃避免反转。
+  - `fitSizeAndBottom` 便捷连击(`Q` 默认动作);所有函数纯,inside 判定走 `q⁻¹·(p - center)` 米制 box-local,与 `box3d.boxLocalClipPlanes` 同口径(避开 `worldToBox` 的 scale 陷阱)。
+- **贴合 UI + 快捷键**:`ThreeDWorkbench` 控件浮条加四按钮组(选中且可编辑时显示),细分隔线与上色/深度开关分开;
+  - `Q` = 默认连击(收尺寸 + 贴地)/`Shift+Q` 仅收尺寸 / `Alt+Q` 仅贴地 / `朝向⚗` 仅按钮(实验,无快捷键避免盲操稀疏点 PCA 反转);
+  - 共用 `applyFit` helper 立即提交 + 同步 form,不走 250ms 防抖(一键操作期望即时);焦点在输入框 / Ctrl-Meta 修饰 / 不可编辑时跳过。
+
+### Changed
+
+- **RGB 上色 z-test 遮挡修复**(`colorize.ts` 新增可选 `rasters` 参数 + 单测 +3):v0.13.6 上色 MVP 不做遮挡,背景点投到前景同像素被"染色";现把 v0.13.6 既有深度栅格按相机喂给 colorize,逐点投影时比对该像素格最近深度,深度差 > `OCCLUSION_TOL_M = 0.10m`(经验值,常见 LiDAR 噪声 ~3-5cm + 城市目标 10cm)判遮挡 → 不上色,保留高度色带。未传 rasters 时完全向后兼容 v0.13.6 行为。`ThreeDWorkbench` colorize useEffect 已透传深度栅格;UI 无新开关,上色开 = 自动启用 z-test。
+- **autofit.test.ts unused vars 清理**:子代理 L0 commit 遗留的 `pts`/`pts2` 重复构造合并。
+
+### Notes
+
+- 性能:深度栅格 v0.13.6 已经按相机 + 帧建一次(供热力图 / hover 用),z-test 复用同一份栅格,新增 O(1) 哈希查询/点/相机,1e6 点 × 3 相机量级 10ms 级,主线程仍可接受;不进 worker 化(留 v0.14.x)。
+- 自动贴合 padding 默认值 5cm 在示例集 `pc-scene-a` 上经目测均衡(太大见缝,太小压点云),不暴露给用户调。
+- 范围:跨帧轨迹 / `track_id` schema / 邻帧标注复制本版**不做**(留 v0.13.9 完整切片):`group_id` 当前为 task 内自增空间(`annotation.py:50` 注释 + `task.py:114`),不可复用作 dataset-scoped track_id,需 schema + 迁移 + 端点 + UI,不应与纯前端体验项混做。
+- 验证:全量 1153 测绿(autofit 12 + colorize 新 3 + 原 1138);`tsc --noEmit` 零错误;`pnpm lint` 零错误(170 baseline warning 全属既有);`check-css-tokens` 通过;宽屏(1568px)浏览器目测 Q 收紧、Shift+Q 只收尺寸、Alt+Q 只贴地、RGB 上色穿模消除。
+
 ## [0.13.7] - 2026-06-03
 
 点云 + 图像联合标注工作台第八切片:**相机悬浮环绕布局**(SUSTech 式)。相机从「底部一字排 strip」改为按物理朝向悬浮在主 3D 视图四周,主视图全屏化;三视图精修栏从常驻右栏收为右下浮层。**纯前端、布局 + 交互重构,后端零改动**。计划见 `docs/plans/2026-06-03-v0.13.7-camera-surround-layout.md`。

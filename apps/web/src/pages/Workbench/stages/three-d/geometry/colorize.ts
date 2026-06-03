@@ -6,10 +6,18 @@
  * 多候选取**归一化图像中心距最小**者(最居中 = 镜头畸变最小、最可靠,且不同分辨率可比),
  * 采样该像素 RGB。无任何相机覆盖的点 → 保留原色(高度色带或灰)。
  *
- * MVP **不做遮挡**(无 per-camera z-buffer):背景点可能投到前景同一像素被染成前景色。
+ * v0.13.8 接 `rasters` 后做 z-test 遮挡剔除,容差 OCCLUSION_TOL_M;未传 rasters 时
+ * 回退 v0.13.6 无遮挡行为(向后兼容)。
  * 投影单点内联展开(不走 projection.ts 的数组版),避开 1e6 点逐点建数组的分配开销。
  */
 import type { SensorCalibration } from "@/types";
+import type { DepthRaster } from "./depthmap";
+
+/**
+ * 遮挡容差(米):若候选点深度比相机栅格最近深度大于该阈值,判为被前景遮挡。
+ * 经验值 10cm,兼顾激光噪声 + 标定误差;不开 UI(避免用户拨错)。
+ */
+export const OCCLUSION_TOL_M = 0.1;
 
 /** 一个相机的采样输入:标定 + 原图分辨率 + RGBA 像素 buffer(来自 canvas.getImageData)。 */
 export interface CameraSample {
@@ -54,11 +62,16 @@ function projectOne(
  * @param positions  点坐标 Float32Array(N*3,lidar/world 系,与标定同系)。
  * @param originalColors  原色(N*3),无相机覆盖的点回退到它;null 则回退中性灰。
  * @param cameras  有标定的相机采样集(空 → 全部点取原色)。
+ * @param rasters  可选,与 cameras 一一对应的深度栅格。传入则做 z-test 遮挡剔除:
+ *                 候选点深度比该相机栅格在投影格里的最近深度大于 OCCLUSION_TOL_M 时丢弃。
+ *                 rasters[i] = null 表示第 i 个相机不做 z-test(等价 v0.13.6 行为);
+ *                 整个参数为 undefined/null 时所有相机都不做 z-test(回归 v0.13.6)。
  */
 export function colorizePoints(
   positions: Float32Array,
   originalColors: Float32Array | null,
   cameras: CameraSample[],
+  rasters?: ReadonlyArray<DepthRaster | null> | null,
 ): Float32Array {
   const n = (positions.length / 3) | 0;
   const out = new Float32Array(positions.length);
@@ -76,6 +89,15 @@ export function colorizePoints(
       const { u, v, depth } = projectOne(x, y, z, cam.calib);
       if (depth <= 0) continue; // 相机后方
       if (u < 0 || u >= cam.width || v < 0 || v >= cam.height) continue; // 出框
+      // z-test 遮挡剔除:仅当该相机配了 raster 时执行。
+      const r = rasters?.[c] ?? null;
+      if (r !== null) {
+        const col = Math.min(r.cols - 1, Math.max(0, Math.floor(u / r.cell)));
+        const row = Math.min(r.rows - 1, Math.max(0, Math.floor(v / r.cell)));
+        const rasterDepth = r.depth[row * r.cols + col];
+        // 该格未命中(Infinity)⇒ 无前景参考,不判定遮挡(否则空区被误剔)。
+        if (isFinite(rasterDepth) && depth - rasterDepth > OCCLUSION_TOL_M) continue;
+      }
       const du = (u - cam.width / 2) / cam.width;
       const dv = (v - cam.height / 2) / cam.height;
       const score = du * du + dv * dv; // 归一化中心距²
