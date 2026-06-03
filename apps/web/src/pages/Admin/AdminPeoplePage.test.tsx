@@ -10,10 +10,24 @@ import { MemoryRouter } from "react-router-dom";
 const mockUseAdminPeople = vi.fn();
 const mockUseAdminPersonDetail = vi.fn();
 
+const { mockNavigate, mockExportPeople } = vi.hoisted(() => ({
+  mockNavigate: vi.fn(),
+  mockExportPeople: vi.fn(),
+}));
+
 vi.mock("@/hooks/useDashboard", () => ({
   useAdminPeople: (...args: unknown[]) => mockUseAdminPeople(...args),
   useAdminPersonDetail: (...args: unknown[]) => mockUseAdminPersonDetail(...args),
 }));
+
+vi.mock("@/api/dashboard", () => ({
+  dashboardApi: { exportPeople: (...args: unknown[]) => mockExportPeople(...args) },
+}));
+
+vi.mock("react-router-dom", async () => {
+  const actual = await vi.importActual<any>("react-router-dom");
+  return { ...actual, useNavigate: () => mockNavigate };
+});
 
 vi.mock("@/components/ui/Toast", async () => {
   const actual = await vi.importActual<any>("@/components/ui/Toast");
@@ -80,6 +94,9 @@ describe("AdminPeoplePage", () => {
   beforeEach(() => {
     mockUseAdminPeople.mockReturnValue({ data: undefined, isLoading: false });
     mockUseAdminPersonDetail.mockReturnValue({ data: undefined, isLoading: true });
+    mockNavigate.mockClear();
+    mockExportPeople.mockReset();
+    mockExportPeople.mockResolvedValue(undefined);
   });
 
   it("isLoading=true → 显示加载中", () => {
@@ -183,5 +200,32 @@ describe("AdminPeoplePage", () => {
     mockUseAdminPeople.mockReturnValue({ data: { items: [], total: 0, period: "7d" }, isLoading: false });
     renderUI();
     expect(screen.getByText("成员绩效")).toBeInTheDocument();
+  });
+
+  it("v0.12.5 · 点击「导出 CSV」调用 exportPeople（带当前筛选）", async () => {
+    mockUseAdminPeople.mockReturnValue({
+      data: { items: [basePerson], total: 1, period: "7d" },
+      isLoading: false,
+    });
+    renderUI("/admin/people?role=annotator&sort=quality");
+    fireEvent.click(screen.getByRole("button", { name: /导出 CSV/ }));
+    await waitFor(() =>
+      expect(mockExportPeople).toHaveBeenCalledWith(
+        expect.objectContaining({ role: "annotator", sort: "quality" }),
+      ),
+    );
+  });
+
+  it("v0.12.5 · 点击项目分布行 → 下钻到 review 队列（带 project + assignee）", async () => {
+    mockUseAdminPeople.mockReturnValue({
+      data: { items: [basePerson], total: 1, period: "7d" },
+      isLoading: false,
+    });
+    mockUseAdminPersonDetail.mockReturnValue({ data: baseDetail, isLoading: false });
+    renderUI();
+    fireEvent.click(screen.getByText("Alice").closest("[class]")!);
+    await waitFor(() => expect(screen.getByText("项目A")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("项目A"));
+    expect(mockNavigate).toHaveBeenCalledWith("/review?project=p1&assignee=u1");
   });
 });

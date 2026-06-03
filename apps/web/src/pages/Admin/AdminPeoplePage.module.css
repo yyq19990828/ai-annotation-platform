@@ -11,6 +11,11 @@
   margin-bottom: 16px;
 }
 
+.headerActions {
+  display: flex;
+  gap: 8px;
+}
+
 .title {
   margin: 0 0 4px;
   font-size: 20px;
@@ -342,6 +347,21 @@
 .distributionCount {
   color: var(--color-fg-muted);
   font-variant-numeric: tabular-nums;
+}
+
+.distributionLink {
+  width: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  border-radius: 6px;
+}
+
+.distributionLink:hover {
+  background: var(--color-bg-hover);
 }
 
 .timeline {

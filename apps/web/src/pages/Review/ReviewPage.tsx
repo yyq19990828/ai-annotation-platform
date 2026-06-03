@@ -115,9 +115,15 @@ export function ReviewPage() {
   const projectId = selectedBatch?.project_id || selectedProjectId || undefined;
   const rejectBatchMut = useRejectBatch(projectId ?? "");
 
+  // v0.12.5 · 绩效页项目下钻带入的 assignee 过滤(后端 tasks 已支持 assignee_id)。
+  const assigneeFilter = searchParams.get("assignee") || "";
   const taskListParams = useMemo(
-    () => ({ status: "review" as const, ...(selectedBatchId ? { batch_id: selectedBatchId } : {}) }),
-    [selectedBatchId],
+    () => ({
+      status: "review" as const,
+      ...(selectedBatchId ? { batch_id: selectedBatchId } : {}),
+      ...(assigneeFilter ? { assignee_id: assigneeFilter } : {}),
+    }),
+    [selectedBatchId, assigneeFilter],
   );
   const { data: taskListData, isLoading } = useTaskList(projectId, taskListParams);
   const tasks = taskListData?.pages.flatMap((p) => p.items) ?? [];

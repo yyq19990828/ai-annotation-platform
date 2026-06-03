@@ -261,6 +261,38 @@ export const dashboardApi = {
     apiClient.get<AdminPersonDetail>(
       `/dashboard/admin/people/${userId}?period=${period}`,
     ),
+  // v0.12.5 · 成员绩效 CSV 导出（A2）。带 Bearer 拉 blob 触发下载，镜像 usersApi.exportUsers。
+  exportPeople: async (
+    params: { role?: string; project?: string; period?: string; sort?: string; q?: string } = {},
+  ): Promise<void> => {
+    const sp = new URLSearchParams();
+    if (params.role) sp.set("role", params.role);
+    if (params.project) sp.set("project", params.project);
+    if (params.period) sp.set("period", params.period);
+    if (params.sort) sp.set("sort", params.sort);
+    if (params.q) sp.set("q", params.q);
+    const qs = sp.toString();
+    const token = localStorage.getItem("token");
+    const res = await fetch(`/api/v1/dashboard/admin/people/export${qs ? `?${qs}` : ""}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as { detail?: string }).detail || `导出失败 (HTTP ${res.status})`);
+    }
+    const blob = await res.blob();
+    const dispo = res.headers.get("Content-Disposition") || "";
+    const match = /filename="?([^"]+)"?/.exec(dispo);
+    const filename = match ? match[1] : "people_performance.csv";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
   // v0.12.3 · 标注员自助绩效（取经合集 §4.1 个人页）
   getMyPerformance: (period: string = "4w") =>
     apiClient.get<MyPerformance>(`/dashboard/me/performance?period=${period}`),

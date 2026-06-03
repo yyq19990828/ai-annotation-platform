@@ -1,0 +1,89 @@
+"""v0.12.5 · GET /dashboard/admin/people/export CSV 导出（A2）。"""
+
+from __future__ import annotations
+
+import uuid
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models.annotation import Annotation
+from app.db.models.project import Project
+from app.db.models.task import Task
+
+
+async def _seed_one_annotation(
+    db: AsyncSession, owner_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
+    p = Project(
+        id=uuid.uuid4(),
+        display_id=f"P-EXP-{uuid.uuid4().hex[:6]}",
+        name="export-test",
+        type_label="image-det",
+        type_key="image-det",
+        owner_id=owner_id,
+    )
+    db.add(p)
+    await db.flush()
+    t = Task(
+        id=uuid.uuid4(),
+        project_id=p.id,
+        display_id=f"T-EXP-{uuid.uuid4().hex[:6]}",
+        file_name="x.jpg",
+        file_path="/tmp/x.jpg",
+        file_type="image",
+        tags=[],
+        status="completed",
+    )
+    db.add(t)
+    await db.flush()
+    db.add(
+        Annotation(
+            id=uuid.uuid4(),
+            task_id=t.id,
+            project_id=p.id,
+            user_id=user_id,
+            class_name="car",
+            geometry={"x": 0, "y": 0, "w": 1, "h": 1},
+        )
+    )
+    await db.flush()
+
+
+@pytest.mark.asyncio
+async def test_admin_people_export_csv(
+    httpx_client_bound, db_session, super_admin, annotator
+):
+    """super_admin 导出 CSV：带 BOM、含表头、含成员行。"""
+    admin_user, admin_token = super_admin
+    ann_user, _ = annotator
+    await _seed_one_annotation(db_session, admin_user.id, ann_user.id)
+    await db_session.commit()
+
+    resp = await httpx_client_bound.get(
+        "/api/v1/dashboard/admin/people/export?period=4w",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200
+    assert "text/csv" in resp.headers["content-type"]
+    assert "attachment" in resp.headers.get("content-disposition", "")
+    body = resp.text
+    # Excel UTF-8 BOM
+    assert body.startswith("﻿")
+    # 表头 + 成员行
+    assert "user_id" in body
+    assert "quality_score" in body
+    assert ann_user.email in body
+
+
+@pytest.mark.asyncio
+async def test_admin_people_export_requires_super_admin(
+    httpx_client_bound, annotator
+):
+    """非 super_admin（annotator）导出被拒。"""
+    _, ann_token = annotator
+    resp = await httpx_client_bound.get(
+        "/api/v1/dashboard/admin/people/export",
+        headers={"Authorization": f"Bearer {ann_token}"},
+    )
+    assert resp.status_code == 403

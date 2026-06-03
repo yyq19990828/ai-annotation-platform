@@ -1,5 +1,8 @@
+import csv
+import io
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, cast, Date
 from app.deps import get_current_user, get_db, require_roles
@@ -1365,6 +1368,60 @@ async def admin_people_list(
             pass
 
     return AdminPeopleList(items=items, total=len(items), period=period)
+
+
+# v0.12.5 · 成员绩效 CSV 导出(A2)。
+# 注意:必须定义在 /admin/people/{user_id} 之前,否则 "export" 会被当作 user_id 命中详情端点。
+_PEOPLE_EXPORT_COLS = [
+    "user_id",
+    "name",
+    "email",
+    "role",
+    "status",
+    "project_count",
+    "main_metric",
+    "main_metric_label",
+    "weekly_compare_pct",
+    "throughput_score",
+    "quality_score",
+    "activity_score",
+    "rejected_rate",
+]
+
+
+@router.get("/admin/people/export")
+async def admin_people_export(
+    role: str | None = Query(None),
+    project: str | None = Query(None),
+    period: str = Query("7d"),
+    sort: str = Query("throughput"),
+    q: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+):
+    """v0.12.5 · 成员绩效 CSV 导出。复用 admin_people_list 聚合,零重复;Excel UTF-8 BOM 防中文乱码。"""
+    data = await admin_people_list(
+        role=role, project=project, period=period, sort=sort, q=q, db=db, _=user
+    )
+
+    def _gen_csv():
+        buf = io.StringIO()
+        buf.write("﻿")  # Excel UTF-8 BOM
+        writer = csv.DictWriter(
+            buf, fieldnames=_PEOPLE_EXPORT_COLS, extrasaction="ignore"
+        )
+        writer.writeheader()
+        for it in data.items:
+            writer.writerow(it.model_dump(mode="json"))
+        yield buf.getvalue()
+
+    return StreamingResponse(
+        _gen_csv(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename=people_performance_{period}.csv"
+        },
+    )
 
 
 @router.get("/admin/people/{user_id}", response_model=AdminPersonDetail)

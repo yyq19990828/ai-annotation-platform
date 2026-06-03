@@ -11,7 +11,8 @@ import { RadialProgress } from "@/components/ui/RadialProgress";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useAdminPeople, useAdminPersonDetail } from "@/hooks/useDashboard";
 import { REJECT_REASON_TYPE_LABELS } from "@/pages/Review/rejectReasonTypes";
-import type { AdminPersonItem } from "@/api/dashboard";
+import { dashboardApi, type AdminPersonItem } from "@/api/dashboard";
+import { useToastStore } from "@/components/ui/Toast";
 import styles from "./AdminPeoplePage.module.css";
 
 const ROLE_OPTS = [
@@ -40,6 +41,28 @@ export function AdminPeoplePage() {
   const q = sp.get("q") || "";
 
   const [activeUserId, setActiveUserId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const pushToast = useToastStore((s) => s.push);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await dashboardApi.exportPeople({
+        role: role || undefined,
+        period,
+        sort,
+        q: q || undefined,
+      });
+    } catch (e) {
+      pushToast({
+        kind: "error",
+        msg: "导出失败",
+        sub: e instanceof Error ? e.message : undefined,
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const { data, isLoading } = useAdminPeople({
     role: role || undefined,
@@ -68,9 +91,15 @@ export function AdminPeoplePage() {
             全员效率卡片网格 · 点击卡片查看详情
           </p>
         </div>
-        <Button variant="ghost" onClick={() => navigate("/dashboard")}>
-          <Icon name="chevron-left" size={13} />返回总览
-        </Button>
+        <div className={styles.headerActions}>
+          <Button variant="ghost" onClick={handleExport} disabled={exporting}>
+            <Icon name="download" size={13} />
+            {exporting ? "导出中…" : "导出 CSV"}
+          </Button>
+          <Button variant="ghost" onClick={() => navigate("/dashboard")}>
+            <Icon name="chevron-left" size={13} />返回总览
+          </Button>
+        </div>
       </div>
 
       {/* sticky filter bar */}
@@ -280,7 +309,14 @@ function PercentBarFill({ value }: { value: number }) {
 }
 
 function PersonDrawer({ userId, onClose }: { userId: string; onClose: () => void }) {
+  const navigate = useNavigate();
   const { data, isLoading } = useAdminPersonDetail(userId, "4w");
+
+  // v0.12.5 · 项目维度下钻:跳到该项目 review 队列按本人 assignee 过滤(复用后端 assignee_id 过滤)。
+  const drillToProject = (projectId: string) => {
+    navigate(`/review?project=${projectId}&assignee=${userId}`);
+    onClose();
+  };
   const histogramValues = useMemo(() => (data?.duration_histogram ?? []).map((b) => b.count), [data]);
   const xLabels = useMemo(
     () => (data?.duration_histogram ?? []).map((b) => `${Math.round(b.upper_ms / 1000)}s`),
@@ -367,18 +403,22 @@ function PersonDrawer({ userId, onClose }: { userId: string; onClose: () => void
                 <Card>
                   <div className={styles.sectionTitle}>
                     项目分布
+                    <span className={styles.sectionTitleMeta}>点击进入该项目审核队列</span>
                   </div>
                   <div className={styles.distribution}>
                     {data.project_distribution.map((p) => (
-                      <div
+                      <button
+                        type="button"
                         key={p.project_id}
-                        className={styles.distributionRow}
+                        className={`${styles.distributionRow} ${styles.distributionLink}`}
+                        onClick={() => drillToProject(p.project_id)}
+                        title="进入该项目审核队列(已按本人过滤)"
                       >
                         <span>{p.project_name}</span>
                         <span className={styles.distributionCount}>
                           {p.count}
                         </span>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </Card>

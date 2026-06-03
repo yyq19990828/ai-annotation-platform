@@ -27,6 +27,19 @@
 
 <!-- 0.12.x 版本变更按版本段追加到本区；开始开发 0.13 后整体移到 docs/changelogs/0.12.x.md -->
 
+## [0.12.5] - 2026-06-03
+
+> **成员绩效 CSV 导出 + 项目维度下钻(A2)。** `/admin/people` 顶部新增「导出 CSV」(带当前筛选,Excel UTF-8 BOM 防中文乱码);成员详情抽屉「项目分布」每行可点 → 跳到该项目审核队列并按本人 assignee 过滤。落地时发现路线档原设想的「reject/类别下钻复用现有 tasks query」前提不成立(tasks 端点 `project_id` 必填、无 `reject_reason_type`/`class_name` 过滤,且绩效聚合跨项目),故本版只做**项目维度**下钻,reject/类别下钻并入 A3(v0.12.6,届时聚合做成项目级、落点天然顺)。计划见 `docs/plans/2026-06-03-v0.12.5-export-drilldown.md`。
+
+### Added
+
+- **成员绩效 CSV 导出**:`GET /dashboard/admin/people/export`(super_admin),复用 `admin_people_list` 聚合输出 CSV(13 列:user_id/name/email/role/status/project_count/main_metric 等),Excel UTF-8 BOM。前端 `dashboardApi.exportPeople` 带 Bearer 拉 blob 触发下载,`AdminPeoplePage` 头部「导出 CSV」按钮携带当前 role/period/sort/q 筛选。
+- **项目维度下钻**:`AdminPeoplePage` 成员详情抽屉「项目分布」行改为可点,跳 `/review?project=<pid>&assignee=<uid>`;`ReviewPage` 新增读 `assignee` query param 注入任务列表过滤(复用后端已有 `assignee_id`)。
+
+### Notes
+
+- **reject/类别维度下钻**未做:需给工作台 tasks 查询新增 `reject_reason_type`/`class_name` 过滤(触碰 B-16 可见性 + cursor 分页)并解决跨项目落点,非快赢零风险 —— 延后并入 A3 项目级聚合改造(v0.12.6)。
+
 ## [0.12.4] - 2026-06-03
 
 > **绩效页质量归因(A1)。** 给 `/me/performance`(标注员自助)与 `/admin/people` 成员详情抽屉补三个质量归因维度:**Reject 原因细分**(本人被驳回任务按漏标/多标/类别错/位置错分布)、**类别覆盖**(本人标注按 class_name 的 top-N 占比,检测偏科/盲区)、**首过率 first-pass yield**(一次通过无 reopen / 提交总数,比 reopen 率更标准的质量 KPI)。纯增量、数据现成。对标调研见 `docs/research/15-annotator-performance.md`,路线见 `docs/plans/2026-06-03-annotator-performance-deepening.md`。
