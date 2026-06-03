@@ -36,9 +36,7 @@ class EmailVerificationService:
     async def consume_token(self, token: str) -> User | None:
         """验证并消费 token，置 user.email_verified_at。无效/过期/已用返回 None。"""
         result = await self.db.execute(
-            select(EmailVerificationToken).where(
-                EmailVerificationToken.token == token
-            )
+            select(EmailVerificationToken).where(EmailVerificationToken.token == token)
         )
         entry = result.scalar_one_or_none()
         if not entry:

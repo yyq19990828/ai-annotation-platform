@@ -457,7 +457,9 @@ async def build_export_zip(
                             else None
                         )
                         dataset_name = _dataset_name_for_task(t, item)
-                        img_rel = relative_path_from_file_path(t.file_path, dataset_name)
+                        img_rel = relative_path_from_file_path(
+                            t.file_path, dataset_name
+                        )
                         presigned = storage_service.generate_download_url(
                             t.file_path,
                             expires_in=PRESIGN_EXPIRES_SECONDS,

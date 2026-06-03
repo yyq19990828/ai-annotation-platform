@@ -867,7 +867,9 @@ async def _reject_reason_breakdown(db, uid, start, project_id=None) -> list[dict
     ]
 
 
-async def _class_distribution(db, uid, start, limit: int = 10, project_id=None) -> list[dict]:
+async def _class_distribution(
+    db, uid, start, limit: int = 10, project_id=None
+) -> list[dict]:
     """v0.12.4 · 本人标注按 class_name 的 top-N 占比(A1 类别覆盖)。
 
     v0.12.6 (A3)：project_id 给定时按该项目切分。
@@ -1419,9 +1421,7 @@ async def admin_people_list(
         allowed = (
             (
                 await db.execute(
-                    select(ProjectMember.user_id).where(
-                        ProjectMember.project_id == pid
-                    )
+                    select(ProjectMember.user_id).where(ProjectMember.project_id == pid)
                 )
             )
             .scalars()

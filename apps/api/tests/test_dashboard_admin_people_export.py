@@ -77,9 +77,7 @@ async def test_admin_people_export_csv(
 
 
 @pytest.mark.asyncio
-async def test_admin_people_export_requires_super_admin(
-    httpx_client_bound, annotator
-):
+async def test_admin_people_export_requires_super_admin(httpx_client_bound, annotator):
     """非 super_admin（annotator）导出被拒。"""
     _, ann_token = annotator
     resp = await httpx_client_bound.get(

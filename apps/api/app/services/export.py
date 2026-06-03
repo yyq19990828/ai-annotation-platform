@@ -312,7 +312,9 @@ class ExportService:
         chunk_size: int = 1000,
         with_annotations: bool = True,
     ) -> AsyncIterator[
-        tuple[list[Task], dict[uuid.UUID, list[Annotation]], dict[uuid.UUID, DatasetItem]]
+        tuple[
+            list[Task], dict[uuid.UUID, list[Annotation]], dict[uuid.UUID, DatasetItem]
+        ]
     ]:
         """v0.12.1 · B6-1 · 按 task 分块惰性产出 (tasks, ann_by_task, dataset_items)。
 
@@ -342,12 +344,16 @@ class ExportService:
         for start in range(0, len(all_ids), chunk_size):
             chunk_ids = all_ids[start : start + chunk_size]
             task_rows = (
-                await self.db.execute(
-                    select(Task)
-                    .where(Task.id.in_(chunk_ids))
-                    .order_by(Task.sequence_order, Task.created_at)
+                (
+                    await self.db.execute(
+                        select(Task)
+                        .where(Task.id.in_(chunk_ids))
+                        .order_by(Task.sequence_order, Task.created_at)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             tasks = list(task_rows)
 
             ann_by_task: dict[uuid.UUID, list[Annotation]] = {}

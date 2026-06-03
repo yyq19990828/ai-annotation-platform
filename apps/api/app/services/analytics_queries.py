@@ -97,8 +97,7 @@ def activity_heatmap(days: int = 30) -> list[dict[str, Any]]:
             """,
         ).fetchall()
         return [
-            {"weekday": int(r[0]), "hour": int(r[1]), "count": int(r[2])}
-            for r in rows
+            {"weekday": int(r[0]), "hour": int(r[1]), "count": int(r[2])} for r in rows
         ]
     finally:
         con.close()
