@@ -5,7 +5,7 @@
  * 数据走实时 PG（/dashboard/me/performance），强制 self。
  */
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar,
@@ -23,11 +23,9 @@ import { dashboardApi } from "@/api/dashboard";
 import { REJECT_REASON_TYPE_LABELS } from "@/pages/Review/rejectReasonTypes";
 import styles from "./MyPerformancePage.module.css";
 
-const PERIOD_OPTIONS = [
-  { value: "7d", label: "近 7 天" },
-  { value: "4w", label: "近 4 周" },
-  { value: "1m", label: "近 1 月" },
-];
+// 统计窗口固定 4 周：趋势图 / 团队均线 / 质量分 / 周环比均按周聚合写死 4 周，
+// 故 KPI 也锁定同一窗口，避免「KPI 跟 period、趋势写死 4 周」的口径割裂。
+const PERIOD = "4w";
 
 const WEEK_LABELS = ["前 3 周", "前 2 周", "上周", "本周"];
 
@@ -38,11 +36,9 @@ function cssVar(name: string): string {
 }
 
 export function MyPerformancePage() {
-  const [period, setPeriod] = useState("4w");
-
   const perfQ = useQuery({
-    queryKey: ["me", "performance", period],
-    queryFn: () => dashboardApi.getMyPerformance(period),
+    queryKey: ["me", "performance", PERIOD],
+    queryFn: () => dashboardApi.getMyPerformance(PERIOD),
   });
 
   const accent = cssVar("--color-accent");
@@ -91,23 +87,8 @@ export function MyPerformancePage() {
         <div>
           <h1 className={styles.title}>我的绩效</h1>
           <p className={styles.subtitle}>
-            自己的产出趋势对标团队均线，帮助自我改进。数据实时统计。
+            自己的产出趋势对标团队均线，帮助自我改进。统计窗口：近 4 周，数据实时统计。
           </p>
-        </div>
-        <div className={styles.controls}>
-          <span className={styles.control}>时间范围：</span>
-          <select
-            className={styles.select}
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
-            data-testid="my-perf-period-select"
-          >
-            {PERIOD_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
         </div>
       </div>
 

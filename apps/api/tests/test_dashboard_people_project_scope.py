@@ -205,6 +205,42 @@ async def test_project_admin_detail_blocks_non_member(
 
 
 @pytest.mark.asyncio
+async def test_project_admin_member_of_others_project_blocked(
+    httpx_client_bound, db_session, super_admin, project_admin
+):
+    """安全:project_admin 是他人项目的 ProjectMember 但非 owner 时,仍 → 404。
+
+    _resolve_people_scope 严格按 owner 校验,**不复用** assert_project_visible
+    的 ProjectMember fallback,防止「owner ∪ member」的 IDOR 漏窗。
+    """
+    admin_user, _ = super_admin
+    pm_user, pm_token = project_admin
+    # admin 拥有的项目,把 pm_user 加为 ProjectMember(但 owner 仍是 admin)
+    other = await _seed_project(db_session, admin_user.id, "Other")
+    db_session.add(
+        ProjectMember(
+            id=uuid.uuid4(),
+            project_id=other.id,
+            user_id=pm_user.id,
+            role="annotator",
+        )
+    )
+    await db_session.commit()
+
+    # pm 拿 other.id 访问 → 严格 owner 校验失败 → 404(不是 200,不是 403)
+    r_list = await httpx_client_bound.get(
+        f"/api/v1/dashboard/admin/people?project={other.id}",
+        headers={"Authorization": f"Bearer {pm_token}"},
+    )
+    assert r_list.status_code == 404
+    r_export = await httpx_client_bound.get(
+        f"/api/v1/dashboard/admin/people/export?project={other.id}",
+        headers={"Authorization": f"Bearer {pm_token}"},
+    )
+    assert r_export.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_annotator_still_denied(httpx_client_bound, annotator):
     """普通 annotator 无权访问成员绩效。"""
     _, token = annotator

@@ -117,7 +117,9 @@ describe("useDashboard hooks", () => {
       wrapper: makeWrapper(),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockApi.getAdminPersonDetail).toHaveBeenCalledWith("u1", "4w");
+    // v0.12.6 (A3)：useAdminPersonDetail 签名扩为 (userId, period, project)，
+    // project 默认 undefined 仍会透传到第三参。
+    expect(mockApi.getAdminPersonDetail).toHaveBeenCalledWith("u1", "4w", undefined);
   });
 
   it("useAdminPersonDetail 自定义 period 透传", async () => {
@@ -125,6 +127,6 @@ describe("useDashboard hooks", () => {
       wrapper: makeWrapper(),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockApi.getAdminPersonDetail).toHaveBeenCalledWith("u2", "30d");
+    expect(mockApi.getAdminPersonDetail).toHaveBeenCalledWith("u2", "30d", undefined);
   });
 });

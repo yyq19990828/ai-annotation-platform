@@ -135,16 +135,27 @@ export function ReviewPage() {
   const [rejectingIds, setRejectingIds] = useState<string[] | null>(null);
 
   const handleSelectBatch = (b: ReviewingBatchItem | null) => {
+    // 合并而非整体重写：保留 assignee 等下钻带入的过滤 param。
+    const next = new URLSearchParams(searchParams);
+    next.delete("project");
+    next.delete("batch");
     if (!b) {
       setSelectedBatchId("");
       setSelectedProjectId("");
-      setSearchParams({});
     } else {
       setSelectedBatchId(b.batch_id);
       setSelectedProjectId(b.project_id);
-      setSearchParams({ project: b.project_id, batch: b.batch_id });
+      next.set("project", b.project_id);
+      next.set("batch", b.batch_id);
     }
+    setSearchParams(next);
     setCheckedIds(new Set());
+  };
+
+  const clearAssigneeFilter = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("assignee");
+    setSearchParams(next);
   };
 
   const openTaskId = searchParams.get("taskId");
@@ -303,6 +314,17 @@ export function ReviewPage() {
                 <>左侧选择批次开始审核；点击行可在右侧画布预览，多选支持批量通过 / 退回</>
               )}
             </p>
+            {assigneeFilter && (
+              <button
+                type="button"
+                className={styles.filterChip}
+                onClick={clearAssigneeFilter}
+                title="清除指派标注员过滤"
+              >
+                <Icon name="filter" size={11} />
+                仅看指派标注员 · 清除
+              </button>
+            )}
           </div>
           {selectedBatchId && (
             <div className={styles.headerActions}>

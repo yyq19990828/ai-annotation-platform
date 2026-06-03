@@ -1122,8 +1122,12 @@ async def _resolve_people_scope(
     """v0.12.6 (A3) · 解析成员绩效的项目范围 + 强制 RBAC。
 
     - super_admin：project 可选（给了就校验存在），返回 pid 或 None（全局）。
-    - project_admin：project 必填且必须是其 owner 的项目（assert_project_visible
-      对越权返回 404 隐藏存在性），缺失 project → 403。
+    - project_admin：project 必填且必须是其 **owner** 的项目（越权 / 不存在均返回
+      404 隐藏存在性），缺失 project → 403。
+
+    注意：project_admin 这里**不复用** `assert_project_visible`——后者在 owner 检查
+    失败后会 fallback 到 `ProjectMember`，导致「身为他人项目 member 的 project_admin」
+    也能读到该项目他人绩效。成员绩效语义严格限定为 owner，故自行校验 `owner_id`。
 
     返回用于聚合过滤的 project_id（None = 全局，仅 super_admin 可得）。
     """
@@ -1138,9 +1142,11 @@ async def _resolve_people_scope(
             raise HTTPException(
                 status_code=403, detail="project_admin 必须指定其管理的项目范围"
             )
-        await assert_project_visible(pid, db, current_user)
+        proj = await db.get(Project, pid)
+        if proj is None or proj.owner_id != current_user.id:
+            raise HTTPException(status_code=404, detail="项目不存在")
     elif pid is not None:
-        # super_admin 指定项目：校验存在（对 super_admin 恒可见）。
+        # super_admin 指定项目：校验存在（对 super_admin 恒可见，无 member fallback 问题）。
         await assert_project_visible(pid, db, current_user)
     return pid
 
