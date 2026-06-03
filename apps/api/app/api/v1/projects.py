@@ -375,12 +375,15 @@ async def create_project(
     # v0.10.28 · B 路线: 新建以 data_type 为主. type_key 缺省时由 data_type 派生兼容值;
     # data_type 缺省时由 type_key 反推, 二者互填后均落库 (Project.type_key NOT NULL).
     from app.services.project import (
+        assert_project_kind_consistent,
         data_type_from_type_key,
         legacy_type_key_from_data_type,
     )
 
     _dt = payload.get("data_type")
     _tk = payload.get("type_key")
+    # 两侧都给时先断言一致 (cross-fill 只补缺, 不审已给值).
+    assert_project_kind_consistent(_tk, _dt)
     if not _tk:
         payload["type_key"] = legacy_type_key_from_data_type(_dt)
     if not _dt:
@@ -602,6 +605,15 @@ async def update_project(
     db: AsyncSession = Depends(get_db),
 ):
     payload = data.model_dump(exclude_unset=True)
+    # v0.13.x 收口 PR#30 review #5: type_key 与 data_type 媒体维度必须一致.
+    # 单独 PATCH 任一字段也要校验 (用 payload 给值 + 项目现值组合后的有效值).
+    if "type_key" in payload or "data_type" in payload:
+        from app.services.project import assert_project_kind_consistent
+
+        assert_project_kind_consistent(
+            payload.get("type_key", project.type_key),
+            payload.get("data_type", project.data_type),
+        )
     # v0.8.6 F3 · 绑定 backend 时用 backend.name 覆盖 ai_model（display hint）;
     # 显式解绑时同步清空 display hint, 避免总览继续显示旧模型名。
     if "ml_backend_id" in payload:

@@ -259,6 +259,32 @@ def legacy_type_key_from_data_type(data_type: str | None) -> str:
     return _DATA_TYPE_TO_LEGACY_TYPE_KEY.get(data_type or "image", "image-det")
 
 
+def assert_project_kind_consistent(
+    type_key: str | None, data_type: str | None
+) -> None:
+    """断言 type_key 与 data_type 在媒体维度一致, 不一致抛 422.
+
+    前端用 `type_key === "lidar"` 入 3D Stage, 后端 manifest 用
+    `data_type == "lidar"` 放行点云端点; 两侧落库不一致就会出现「前端进了
+    3D 台, 后端拒提供点云 manifest」之类的撕裂. 创建 / 更新接口必经此关.
+
+    其中一个缺失时不抛 (上游 cross-fill 会补), 两侧都给且不一致才抛.
+    """
+    if not type_key or not data_type:
+        return
+    derived = data_type_from_type_key(type_key)
+    if derived != data_type:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"type_key={type_key!r} implies data_type={derived!r}, "
+                f"got data_type={data_type!r} (媒体维度必须一致)"
+            ),
+        )
+
+
 def lookup_classes_for_tool_unit(
     tool_bindings: dict[str, Any] | None,
     tool_unit_id: str,

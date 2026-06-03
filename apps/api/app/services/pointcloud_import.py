@@ -147,8 +147,7 @@ async def build_pointcloud_tasks_for_link(
             continue
         frame_ids.append(frame_id)
 
-    total = len(frame_ids)
-    if total == 0:
+    if not frame_ids:
         return {"created": 0, "total": 0}
 
     # 幂等去重：该 project 下、dataset_item_id == 本帧 lidar item 已有 Task 的帧跳过。
@@ -160,13 +159,13 @@ async def build_pointcloud_tasks_for_link(
     existing = {row[0] for row in (await db.execute(existing_q)).all()}
     pending_frame_ids = [f for f in frame_ids if frames[f]["lidar"].id not in existing]
 
-    total = len(pending_frame_ids)
-    if total == 0:
+    total_pending = len(pending_frame_ids)
+    if total_pending == 0:
         return {"created": 0, "total": 0}
 
     created = 0
     last_pct = 0
-    for start in range(0, total, chunk_size):
+    for start in range(0, total_pending, chunk_size):
         chunk = pending_frame_ids[start : start + chunk_size]
         seq_result = await db.execute(
             text("SELECT nextval('display_seq_tasks') FROM generate_series(1, :n)"),
@@ -206,14 +205,14 @@ async def build_pointcloud_tasks_for_link(
             project.total_tasks = (project.total_tasks or 0) + len(chunk)
 
         if job_id is not None:
-            pct = int(created / total * 100)
-            if pct >= last_pct + 5 or created == total:
+            pct = int(created / total_pending * 100)
+            if pct >= last_pct + 5 or created == total_pending:
                 await async_job_svc.update_progress(db, job_id, pct)
                 last_pct = pct
 
         await db.commit()
 
-    return {"created": created, "total": total}
+    return {"created": created, "total": total_pending}
 
 
 async def attach_calibration(db: AsyncSession, *, dataset_id: uuid.UUID) -> int:
