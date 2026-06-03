@@ -51,14 +51,16 @@ const DEFAULT_BOX_SIZE: [number, number, number] = [4.0, 1.8, 1.6];
 // 点云项目的 3D 框工具单位(类别 / 属性绑定都挂在它下面)。
 const LIDAR_TOOL_UNIT = "lidar_box_3d";
 
-// v0.13.3 · PSR 数值面板字段(中心 cx/cy/cz、尺寸 l/w/h、朝向 yaw)。
-type PsrField = "cx" | "cy" | "cz" | "l" | "w" | "h" | "yaw";
-const PSR_FIELDS: PsrField[] = ["cx", "cy", "cz", "l", "w", "h", "yaw"];
+// v0.13.3 · PSR 数值面板字段(中心 cx/cy/cz、尺寸 l/w/h、朝向 yaw/pitch/roll)。
+// v0.13.5 · 朝向补齐三轴: yaw=rotation[2](绕Z)、pitch=rotation[1](绕Y)、roll=rotation[0](绕X),
+//   与三视图方向线(Top/Side/Front)一致, 避免数值编辑抹掉 pitch/roll。
+type PsrField = "cx" | "cy" | "cz" | "l" | "w" | "h" | "yaw" | "pitch" | "roll";
+const PSR_FIELDS: PsrField[] = ["cx", "cy", "cz", "l", "w", "h", "yaw", "pitch", "roll"];
 const SIZE_FIELDS = new Set<PsrField>(["l", "w", "h"]);
 const PSR_GROUPS: { label: string; keys: PsrField[]; step: number; min?: number }[] = [
   { label: "中心 (m)", keys: ["cx", "cy", "cz"], step: 0.1 },
   { label: "尺寸 长宽高 (m)", keys: ["l", "w", "h"], step: 0.1, min: 0.1 },
-  { label: "朝向 yaw (°)", keys: ["yaw"], step: 1 },
+  { label: "朝向 偏航/俯仰/翻滚 (°)", keys: ["yaw", "pitch", "roll"], step: 1 },
 ];
 const fmtNum = (n: number) => String(+n.toFixed(3));
 function psrToForm(b: {
@@ -74,6 +76,8 @@ function psrToForm(b: {
     w: fmtNum(b.size[1]),
     h: fmtNum(b.size[2]),
     yaw: fmtNum((b.rotation[2] * 180) / Math.PI),
+    pitch: fmtNum((b.rotation[1] * 180) / Math.PI),
+    roll: fmtNum((b.rotation[0] * 180) / Math.PI),
   };
 }
 
@@ -300,11 +304,13 @@ export function ThreeDWorkbench({
       if (!valid) return;
       if (patchTimer.current) window.clearTimeout(patchTimer.current);
       patchTimer.current = window.setTimeout(() => {
+        const deg = Math.PI / 180;
         const geometry: Box3DGeometry = {
           type: "box_3d",
           center: [v.cx, v.cy, v.cz],
           size: [v.l, v.w, v.h],
-          rotation: [0, 0, (v.yaw * Math.PI) / 180],
+          // rotation = [rx=roll, ry=pitch, rz=yaw] (弧度), 三轴齐全, 不再抹掉 pitch/roll。
+          rotation: [v.roll * deg, v.pitch * deg, v.yaw * deg],
         };
         updateAnnotation.mutate({ annotationId: selectedId, payload: { geometry } });
       }, 250);
