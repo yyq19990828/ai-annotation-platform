@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-10
+last_reviewed: 2026-06-03
 ---
 
 # 计数与派生字段
@@ -270,6 +270,20 @@ dashboard 和列表页有两种取数方式：
 
 有些页面展示的是“业务口径派生值”，不是字段原样输出。
 
+## 绩效派生聚合（即时计算，不持久化）
+
+上面那些是「持久化的缓存字段」。绩效页（`/me/performance`、`/admin/people/{user_id}`）还有一类
+**查询时即时聚合、不落库**的派生值，v0.12.4（A1）新增三项（v0.12.6 起均可按 `project_id` 切分）：
+
+| 字段 | 口径 | helper |
+|---|---|---|
+| `reject_reason_breakdown` | 本人被驳回任务按 `Task.reject_reason_type`（漏标 / 多标 / 类别错 / 位置错）分组占比 | `_reject_reason_breakdown` |
+| `class_distribution` | 本人标注按 `Annotation.class_name` 的 top-N 占比 | `_class_distribution` |
+| `first_pass_yield` | 一次通过率 = `reopened_count == 0` 的提交数 / 提交总数；无样本 → `null` | `_first_pass_yield` |
+
+`first_pass_yield` 直接读 task 的派生历史字段 `reopened_count`（见上文），是其少数的下游消费方之一——
+改 reopen 计数语义时记得它会连带影响绩效口径。
+
 ## 常见修改落点
 
 | 你想改什么 | 先看哪里 |
@@ -279,7 +293,7 @@ dashboard 和列表页有两种取数方式：
 | batch / project counters 重算 | `services/batch.py` |
 | dataset 删除 / unlink 后数字异常 | `services/dataset.py` |
 | orphan cleanup 后数字异常 | `api/v1/projects.py` |
-| dashboard 显示口径 | `api/v1/dashboard.py` + 前端页面 |
+| dashboard 显示口径 / 绩效派生聚合 | `api/v1/dashboard.py` + 前端页面 |
 
 ## 常见误解
 

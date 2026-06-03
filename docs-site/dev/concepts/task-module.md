@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-10
+last_reviewed: 2026-06-03
 ---
 
 # 任务模块
@@ -136,6 +136,19 @@ stateDiagram-v2
 - `super_admin` / project owner：越权放行
 
 所以 task 的可见性不只是看 task 本身状态，也看它挂在哪个 batch 上。
+
+### 列表查询过滤参数
+
+`GET /tasks` 在可见性约束之上叠加若干可选过滤参数（与可见性正交）：
+
+| 参数 | 作用 |
+|---|---|
+| `assignee_id` | 按标注责任人过滤 |
+| `reject_reason_type` | 按 `Task.reject_reason_type`（退回原因 enum）过滤 |
+| `class_name` | 命中存在该 `class_name` 有效 annotation 的 task（`EXISTS` 子查询，不展开多行） |
+
+`reject_reason_type` / `class_name` 是 v0.12.6（A3）为成员绩效页 reject/类别维度下钻新增的；
+两者均同时作用于列表 query 与 count query，分页口径一致。
 
 ### `/tasks/next`
 

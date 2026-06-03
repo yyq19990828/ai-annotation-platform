@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-10
+last_reviewed: 2026-06-03
 ---
 
 # 可见性与权限
@@ -65,6 +65,20 @@ last_reviewed: 2026-05-10
 - annotator 可能看见 `rejected` task，但不能做 reviewer approve
 - reviewer 能看见 reviewing task，但不能激活 batch
 - owner 越权可见，不代表绕过所有 task 状态机约束
+
+## 项目级范围收敛（成员绩效端点）
+
+除了「看不看得见某条数据」，还有一类是「聚合数字按哪个项目口径切分」。
+成员绩效端点 `GET /dashboard/admin/people` 及其详情 / 导出从 v0.12.6（A3）起遵循统一的范围解析（`dashboard._resolve_people_scope`）：
+
+- `super_admin`：`project` 可选；给定则校验存在，缺省则全局聚合。
+- `project_admin`：`project` **必填**，且必须是其 owner 的项目；
+  - 越权项目走 `assert_project_visible` 返回 `404`（隐藏存在性，不泄露「项目存在但你无权」）；
+  - 缺省 `project` → `403`。
+
+这把「越权读他人项目绩效」收成 IDOR 安全边界：role 门只放行 `super_admin + project_admin`，
+而 `project_admin` 被强制锁定在自有项目范围，所有产能 / 质量 / 活跃聚合都按该 `project_id` 过滤
+（此前 `project` 仅过滤「返回哪些用户」，聚合仍是跨项目全局数字 → 误导且越权）。
 
 ## 现阶段最该注意的坑
 
