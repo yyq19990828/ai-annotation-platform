@@ -123,6 +123,14 @@ async def build_pointcloud_tasks_for_link(
     幂等：跳过该 project 下、dataset_item_id == 本帧 lidar item 已存在 Task 的帧
     （NOT EXISTS，键是 lidar item）。每块独立 commit、累加 project.total_tasks、
     传 job_id 时按 5% 粒度 update_progress。返回 {"created": N, "total": M}。
+
+    幂等粒度限制（已知）：键是「lidar Task 是否已存在」而不是「该 Task 的 link
+    数量是否齐备」。正常路径下 chunk 失败整批回滚（Task + link 一起消失），重跑
+    能补全；但若进程在「`db.flush()` 拿到 task.id + `link_items` 写完一部分
+    role」与「`db.commit()`」之间硬挂（OOM / SIGKILL / OS panic），可能留下
+    Task 已存在但 `camera_*` link 残缺的孤儿帧。重跑会被 existing 跳过，缺失
+    link 永远不会被补，对应帧 manifest 的 `cameras` 列表少几个相机。补建残缺
+    link 是独立入口职责（未实现，见 follow-up）。
     """
     items = await _load_dataset_items(db, dataset_id)
     frames, _ = group_frames(items)

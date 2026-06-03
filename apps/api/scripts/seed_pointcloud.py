@@ -117,6 +117,19 @@ async def main() -> None:
                 owner_id=owner.id,
                 status="in_progress",
                 ai_enabled=False,
+                # 默认 lidar_box_3d 类别集；不设 → 工作台 canPlace=false、B 键无效
+                # → 首次试用必卡在「点了没反应」。
+                tool_bindings={
+                    "lidar_box_3d": {
+                        "enabled": True,
+                        "classes": [
+                            {"name": "车辆", "order": 0},
+                            {"name": "行人", "order": 1},
+                            {"name": "自行车", "order": 2},
+                            {"name": "路锥", "order": 3},
+                        ],
+                    },
+                },
             )
             db.add(project)
             await db.flush()
