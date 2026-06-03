@@ -44,9 +44,11 @@ def _default_test_db_url() -> str:
 
         # render_as_string(hide_password=False)：str(URL) 会把密码渲染成 ***，
         # 直接用会导致认证失败，必须显式不隐藏。
-        return make_url(settings.database_url).set(
-            database="annotation_test"
-        ).render_as_string(hide_password=False)
+        return (
+            make_url(settings.database_url)
+            .set(database="annotation_test")
+            .render_as_string(hide_password=False)
+        )
     except Exception:
         return "postgresql+asyncpg://user:pass@localhost:5432/annotation_test"
 

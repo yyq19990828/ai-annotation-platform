@@ -464,17 +464,15 @@ async def get_point_cloud_manifest(
     items_by_id: dict[uuid.UUID, DatasetItem] = {}
     if item_ids:
         rows = (
-            await db.execute(
-                select(DatasetItem).where(DatasetItem.id.in_(item_ids))
-            )
-        ).scalars().all()
+            (await db.execute(select(DatasetItem).where(DatasetItem.id.in_(item_ids))))
+            .scalars()
+            .all()
+        )
         items_by_id = {item.id: item for item in rows}
 
     # 主点云 URL：优先 primary_lidar link，否则回退 task.file_path
     point_cloud_url: str | None = None
-    primary_link = next(
-        (link for link in links if link.role == "primary_lidar"), None
-    )
+    primary_link = next((link for link in links if link.role == "primary_lidar"), None)
     if primary_link is not None:
         primary_item = items_by_id.get(primary_link.dataset_item_id)
         if primary_item is not None:
@@ -509,7 +507,7 @@ async def get_point_cloud_manifest(
                 calibration = None
         cameras.append(
             PointCloudCameraOut(
-                name=link.role[len("camera_"):],
+                name=link.role[len("camera_") :],
                 role=link.role,
                 image_url=_presign(item.file_path),
                 calibration=calibration,

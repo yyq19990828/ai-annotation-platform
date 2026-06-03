@@ -496,7 +496,12 @@ def test_geometry_union_dispatches_3d_types():
 
     GA = TypeAdapter(Geometry)
     box = GA.validate_python(
-        {"type": "box_3d", "center": [1, 2, 3], "size": [4, 5, 6], "rotation": [0, 0, 0]}
+        {
+            "type": "box_3d",
+            "center": [1, 2, 3],
+            "size": [4, 5, 6],
+            "rotation": [0, 0, 0],
+        }
     )
     assert isinstance(box, Box3DGeometry)
     mask = GA.validate_python({"type": "point_mask_3d", "point_indices": [0, 1, 2]})
@@ -543,14 +548,10 @@ def test_sensor_calibration_rejects_bad_lengths():
     extrinsic = [float(i) for i in range(16)]
     # extrinsic 长度 15
     with pytest.raises(ValidationError):
-        SensorCalibration(
-            extrinsic=[float(i) for i in range(15)], intrinsic=intrinsic
-        )
+        SensorCalibration(extrinsic=[float(i) for i in range(15)], intrinsic=intrinsic)
     # intrinsic 长度 8
     with pytest.raises(ValidationError):
-        SensorCalibration(
-            extrinsic=extrinsic, intrinsic=[float(i) for i in range(8)]
-        )
+        SensorCalibration(extrinsic=extrinsic, intrinsic=[float(i) for i in range(8)])
     # rect 长度 10
     with pytest.raises(ValidationError):
         SensorCalibration(

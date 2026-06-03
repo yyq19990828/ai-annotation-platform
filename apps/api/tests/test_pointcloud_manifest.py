@@ -34,9 +34,7 @@ def _patch_presign(monkeypatch):
     def _fake(key, expires_in=3600, bucket=None):
         return f"http://storage.local/{key}"
 
-    monkeypatch.setattr(
-        "app.api.v1.tasks.storage_service.generate_download_url", _fake
-    )
+    monkeypatch.setattr("app.api.v1.tasks.storage_service.generate_download_url", _fake)
 
 
 async def _seed_lidar_scene(db, owner_id):
@@ -138,9 +136,7 @@ async def test_point_cloud_manifest_rejects_non_lidar_task(
     db_session, httpx_client, super_admin, _patch_presign
 ):
     user, token = super_admin
-    project = await create_project(
-        db_session, owner_id=user.id, type_key="image-det"
-    )
+    project = await create_project(db_session, owner_id=user.id, type_key="image-det")
     # 默认 data_type == "image"
     task = Task(
         project_id=project.id,

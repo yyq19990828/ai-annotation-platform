@@ -55,9 +55,7 @@ async def _seed_scene(db_session, ds, frames, cameras):
     name = ds.name
     out: dict = {}
     for frame in frames:
-        lidar = _add_item(
-            db_session, ds.id, f"{name}/lidar/{frame}.pcd", "point_cloud"
-        )
+        lidar = _add_item(db_session, ds.id, f"{name}/lidar/{frame}.pcd", "point_cloud")
         cams = {}
         for cam in cameras:
             cams[cam] = _add_item(
@@ -83,10 +81,10 @@ async def test_build_tasks_groups_frames_and_links(db_session, super_admin):
     from app.db.models import Task
 
     tasks = (
-        await db_session.execute(
-            select(Task).where(Task.project_id == project.id)
-        )
-    ).scalars().all()
+        (await db_session.execute(select(Task).where(Task.project_id == project.id)))
+        .scalars()
+        .all()
+    )
     assert len(tasks) == 2
 
     by_lidar = {t.dataset_item_id: t for t in tasks}
@@ -149,9 +147,7 @@ async def test_build_tasks_missing_camera_tolerated(db_session, super_admin):
     from app.db.models import Task
 
     task1 = (
-        await db_session.execute(
-            select(Task).where(Task.dataset_item_id == lidar1.id)
-        )
+        await db_session.execute(select(Task).where(Task.dataset_item_id == lidar1.id))
     ).scalar_one()
     links = await get_linked_items(db_session, task1.id)
     # 缺 left：只 link lidar + front 两条，不报错。
@@ -198,7 +194,9 @@ async def test_attach_calibration_invalid_skipped(db_session, super_admin, monke
     await db_session.flush()
 
     # extrinsic 长度非 16 → 跳过，不写不抛。
-    _patch_get_object(monkeypatch, {"extrinsic": [1, 2, 3], "intrinsic": list(range(9))})
+    _patch_get_object(
+        monkeypatch, {"extrinsic": [1, 2, 3], "intrinsic": list(range(9))}
+    )
 
     written = await pointcloud_import.attach_calibration(db_session, dataset_id=ds.id)
     assert written == 0

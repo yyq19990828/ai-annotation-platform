@@ -26,8 +26,7 @@ from app.services.task_dataset_link import get_linked_items
 from tests.factory import create_project, create_user
 
 _FIXTURE = (
-    Path(__file__).resolve().parents[3]
-    / "third-party/SUSTechPOINTS/data/example"
+    Path(__file__).resolve().parents[3] / "third-party/SUSTechPOINTS/data/example"
 )
 
 pytestmark = pytest.mark.skipif(
@@ -43,10 +42,7 @@ def _scan_fixture() -> tuple[list[str], dict[str, list[str]], dict[str, str]]:
     for cam_dir in sorted((_FIXTURE / "camera").iterdir()):
         if cam_dir.is_dir():
             cams[cam_dir.name] = sorted(p.stem for p in cam_dir.glob("*.jpg"))
-    calib = {
-        p.stem: str(p)
-        for p in (_FIXTURE / "calib/camera").glob("*.json")
-    }
+    calib = {p.stem: str(p) for p in (_FIXTURE / "calib/camera").glob("*.json")}
     return lidar_frames, cams, calib
 
 
@@ -118,8 +114,10 @@ async def test_scene_import_end_to_end(db_session, _patch_calib_read):
     from app.db.models.task import Task
 
     tasks = (
-        await db_session.execute(select(Task).where(Task.project_id == project.id))
-    ).scalars().all()
+        (await db_session.execute(select(Task).where(Task.project_id == project.id)))
+        .scalars()
+        .all()
+    )
     assert len(tasks) == len(lidar_frames)
     assert all(t.file_type == "point_cloud" for t in tasks)
 
@@ -131,19 +129,19 @@ async def test_scene_import_end_to_end(db_session, _patch_calib_read):
     _known = set(SensorCalibration.model_fields)
     expected_calib = {
         cam: SensorCalibration.model_validate(
-            {
-                k: v
-                for k, v in json.loads(Path(p).read_bytes()).items()
-                if k in _known
-            }
+            {k: v for k, v in json.loads(Path(p).read_bytes()).items() if k in _known}
         ).model_dump(exclude_none=True)
         for cam, p in calib_paths.items()
     }
     items = (
-        await db_session.execute(
-            select(DatasetItem).where(DatasetItem.dataset_id == ds.id)
+        (
+            await db_session.execute(
+                select(DatasetItem).where(DatasetItem.dataset_id == ds.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     by_path = {i.file_path: i for i in items}
 
     for task in tasks:
@@ -154,9 +152,7 @@ async def test_scene_import_end_to_end(db_session, _patch_calib_read):
 
         links = await get_linked_items(db_session, task.id)
         roles = sorted(link.role for link in links)
-        expected_cams = sorted(
-            cam for cam, frames in cams.items() if frame in frames
-        )
+        expected_cams = sorted(cam for cam, frames in cams.items() if frame in frames)
         expected_roles = sorted(
             ["primary_lidar"] + [f"camera_{c}" for c in expected_cams]
         )

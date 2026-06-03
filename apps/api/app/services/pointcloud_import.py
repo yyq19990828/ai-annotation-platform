@@ -150,9 +150,7 @@ async def build_pointcloud_tasks_for_link(
         Task.dataset_item_id.in_(lidar_ids),
     )
     existing = {row[0] for row in (await db.execute(existing_q)).all()}
-    pending_frame_ids = [
-        f for f in frame_ids if frames[f]["lidar"].id not in existing
-    ]
+    pending_frame_ids = [f for f in frame_ids if frames[f]["lidar"].id not in existing]
 
     total = len(pending_frame_ids)
     if total == 0:
@@ -242,9 +240,7 @@ async def attach_calibration(db: AsyncSession, *, dataset_id: uuid.UUID) -> int:
         try:
             calib = SensorCalibration.model_validate(filtered)
         except ValidationError as exc:
-            logger.warning(
-                "calibration for camera %r invalid, skipped: %s", cam, exc
-            )
+            logger.warning("calibration for camera %r invalid, skipped: %s", cam, exc)
             continue
         normalized = calib.model_dump(exclude_none=True)
 
