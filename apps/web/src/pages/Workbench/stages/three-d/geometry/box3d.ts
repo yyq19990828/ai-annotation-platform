@@ -82,3 +82,65 @@ export function psrToCorners(
     new THREE.Vector3(c[0], c[1], c[2]).applyMatrix4(m),
   );
 }
+
+/** 局部轴单位向量 (axis: 0=X / 1=Y / 2=Z)。 */
+function unitAxis(axis: 0 | 1 | 2): THREE.Vector3 {
+  return new THREE.Vector3(
+    axis === 0 ? 1 : 0,
+    axis === 1 ? 1 : 0,
+    axis === 2 ? 1 : 0,
+  );
+}
+
+/**
+ * v0.13.5 · 框 local 轴在世界系的单位方向 (旋转作用于单位轴, 不含 scale/平移)。
+ * 三视图拖边时中心沿该方向移动, 裁剪面法线也由它给出。欧拉顺序与 boxToMatrix4 同 'XYZ'。
+ */
+export function boxAxisWorldDir(rotation: Vec3, axis: 0 | 1 | 2): THREE.Vector3 {
+  const q = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(rotation[0], rotation[1], rotation[2], "XYZ"),
+  );
+  return unitAxis(axis).applyQuaternion(q).normalize();
+}
+
+/**
+ * v0.13.5 · boxToMatrix4 的逆: 世界坐标 → 单位立方体 local 系。
+ * 含 scale, 故框内点映到 [-0.5, 0.5]^3 内 (供正交相机 / 命中 / 裁切判断)。
+ */
+export function worldToBox(center: Vec3, size: Vec3, rotation: Vec3): THREE.Matrix4 {
+  return boxToMatrix4(center, size, rotation).invert();
+}
+
+/**
+ * v0.13.5 · 框的 6 个世界系裁剪面 (法线指向框内), 喂给 three 点材质 `clippingPlanes`
+ * 做 GPU 框内点裁切 (保留满足全部 6 面 `distanceToPoint >= 0` 的点)。
+ * margin: 各方向额外放宽米数 (看清框边界外一圈轮廓)。PSR 变只需重算这 6 面。
+ */
+export function boxLocalClipPlanes(
+  center: Vec3,
+  size: Vec3,
+  rotation: Vec3,
+  margin = 0,
+): THREE.Plane[] {
+  const c = new THREE.Vector3(center[0], center[1], center[2]);
+  const planes: THREE.Plane[] = [];
+  for (let axis = 0; axis < 3; axis++) {
+    const dir = boxAxisWorldDir(rotation, axis as 0 | 1 | 2);
+    const half = size[axis] / 2 + margin;
+    // +axis 面: 共面点在 center + dir*half, 内法线 = -dir。
+    planes.push(
+      new THREE.Plane().setFromNormalAndCoplanarPoint(
+        dir.clone().negate(),
+        c.clone().addScaledVector(dir, half),
+      ),
+    );
+    // -axis 面: 共面点在 center - dir*half, 内法线 = +dir。
+    planes.push(
+      new THREE.Plane().setFromNormalAndCoplanarPoint(
+        dir.clone(),
+        c.clone().addScaledVector(dir, -half),
+      ),
+    );
+  }
+  return planes;
+}
