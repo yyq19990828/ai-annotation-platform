@@ -9,13 +9,14 @@
  * 缩放约定:intrinsic 基于图像**原始分辨率**,投影出的像素是原图坐标;overlay 按
  *   显示尺寸 / 自然尺寸(clientWidth/naturalWidth)比例缩放后绘制,`ResizeObserver` + onLoad 重算。
  */
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { hexToRgba } from "@/pages/Workbench/stage/colors";
 import type { SensorCalibration } from "@/types";
 
 import { psrToCorners } from "./geometry/box3d";
 import { BOX_EDGES, projectPoints } from "./geometry/projection";
+import { buildDepthRaster, sampleDepth, type DepthRaster } from "./geometry/depthmap";
 import type { SceneBox } from "./PointCloudScene";
 import styles from "./ThreeDWorkbench.module.css";
 
@@ -31,6 +32,10 @@ interface CameraProjectionViewProps {
   onSelectBox: (id: string | null) => void;
   /** 该相机是否最正对当前选中框(可见角点最多者);用于 figcaption 角标。 */
   bestForSelected?: boolean;
+  /** v0.13.6 · 点云坐标(N*3,lidar/world 系);深度提示开启时建相机深度栅格。 */
+  pointPositions?: Float32Array | null;
+  /** v0.13.6 · 深度提示开关:开 → 画深度热力图 + 图上 hover 读出最近点深度/3D。 */
+  showDepth?: boolean;
 }
 
 // 一个框至少有这么多可见角点才参与命中测试(避免擦边框误选)。
@@ -44,6 +49,8 @@ export function CameraProjectionView({
   highlightedIds,
   onSelectBox,
   bestForSelected = false,
+  pointPositions = null,
+  showDepth = false,
 }: CameraProjectionViewProps) {
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -51,6 +58,20 @@ export function CameraProjectionView({
   const hitBoxesRef = useRef<
     { id: string; x0: number; y0: number; x1: number; y1: number; area: number }[]
   >([]);
+  // v0.13.6 · 深度提示:相机深度栅格(state,变化时驱动一次重绘)+ hover 读数(不入 draw 依赖,不触发重绘)。
+  const [raster, setRaster] = useState<DepthRaster | null>(null);
+  const [natSize, setNatSize] = useState<{ w: number; h: number } | null>(null);
+  const [hover, setHover] = useState<{ depth: number; point: [number, number, number] } | null>(null);
+
+  // 深度栅格:开关开 + 有点 + 有标定 + 知道原图尺寸时建一次(换帧/换相机重建);否则清空。
+  useEffect(() => {
+    if (showDepth && pointPositions && calibration && natSize) {
+      setRaster(buildDepthRaster(pointPositions, calibration, natSize.w, natSize.h));
+    } else {
+      setRaster(null);
+      setHover(null);
+    }
+  }, [showDepth, pointPositions, calibration, natSize]);
 
   const draw = useCallback(() => {
     const img = imgRef.current;
@@ -76,6 +97,20 @@ export function CameraProjectionView({
 
     const sx = cssW / natW;
     const sy = cssH / natH;
+
+    // v0.13.6 · 深度热力图:遍历栅格非空格,在投影像素画按深度着色的点(近→远 = 红→蓝)。
+    // 画在框线之下。深度归一化到 [minDepth, maxDepth],hue 0(红,近)→ 240(蓝,远)。
+    if (showDepth && raster && isFinite(raster.minDepth)) {
+      const span = raster.maxDepth - raster.minDepth || 1;
+      const cellsN = raster.cols * raster.rows;
+      for (let c = 0; c < cellsN; c++) {
+        const d = raster.depth[c];
+        if (!isFinite(d)) continue;
+        const t = (d - raster.minDepth) / span;
+        ctx.fillStyle = `hsl(${240 * t}, 90%, 55%)`;
+        ctx.fillRect(raster.u[c] * sx - 1, raster.v[c] * sy - 1, 2, 2);
+      }
+    }
 
     // 高亮框最后画(描边置顶);同序更新命中包围盒。
     const ordered = [...boxes].sort(
@@ -132,7 +167,7 @@ export function CameraProjectionView({
         });
       }
     }
-  }, [boxes, calibration, highlightedIds]);
+  }, [boxes, calibration, highlightedIds, showDepth, raster]);
 
   // 数据 / 标定变化重绘。
   useEffect(() => {
@@ -147,6 +182,25 @@ export function CameraProjectionView({
     ro.observe(img);
     return () => ro.disconnect();
   }, [draw]);
+
+  // 图加载后记下原图分辨率(深度栅格 / 投影都基于 intrinsic 原图坐标)+ 重绘。
+  const handleImgLoad = useCallback(() => {
+    const img = imgRef.current;
+    if (img?.naturalWidth) setNatSize({ w: img.naturalWidth, h: img.naturalHeight });
+    draw();
+  }, [draw]);
+
+  // v0.13.6 · 深度提示 hover:光标→原图像素→查栅格最近点深度/3D。setHover 不入 draw 依赖,故不触发重绘。
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!showDepth || !raster) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const u = ((e.clientX - rect.left) / rect.width) * raster.width;
+      const v = ((e.clientY - rect.top) / rect.height) * raster.height;
+      setHover(sampleDepth(raster, u, v));
+    },
+    [showDepth, raster],
+  );
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -172,13 +226,20 @@ export function CameraProjectionView({
   return (
     <figure className={styles.cameraItem}>
       <div className={styles.cameraView}>
-        <img ref={imgRef} src={imageUrl} alt={name} loading="lazy" onLoad={draw} />
-        <canvas ref={canvasRef} className={styles.cameraCanvas} onClick={handleClick} />
+        <img ref={imgRef} src={imageUrl} alt={name} loading="lazy" onLoad={handleImgLoad} />
+        <canvas
+          ref={canvasRef}
+          className={styles.cameraCanvas}
+          onClick={handleClick}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={() => setHover(null)}
+        />
       </div>
       <figcaption>
         {name}
         {bestForSelected && " · 正对"}
         {calibration ? "" : " · 无标定"}
+        {showDepth && hover && ` · ${hover.depth.toFixed(1)}m`}
       </figcaption>
     </figure>
   );

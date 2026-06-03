@@ -137,6 +137,8 @@ export function ThreeDWorkbench({
   // v0.13.6 · 相机 RGB 上色开关(默认关:无标定相机降级,且省一次性投影采样开销)。
   const [colorizeOn, setColorizeOn] = useState(false);
   const [colorizing, setColorizing] = useState(false);
+  // v0.13.6 · 深度提示开关(默认关):相机图叠深度热力图 + hover 读最近点深度/3D。
+  const [depthOn, setDepthOn] = useState(false);
   // 选中态来自壳层(selectedId / onSelectBox props),与标注列表 / 右栏面板共享同一份。
 
   const { data: annotations } = useAnnotations(taskId ?? undefined);
@@ -483,6 +485,11 @@ export function ThreeDWorkbench({
   };
 
   const cameras = useMemo(() => manifest?.cameras ?? [], [manifest?.cameras]);
+  // v0.13.6 · 点云坐标(载帧后稳定);供相机视图建深度栅格。stats 变化即点云换帧。
+  const pointPositions = useMemo(
+    () => (stats ? (sceneRef.current?.getPointPositions() ?? null) : null),
+    [stats],
+  );
 
   // v0.13.6 · 相机 RGB 上色:开关开 → 逐点投影到各标定相机采样像素 → 写回点云 color;
   // 关 → 还原高度色带。一次性算(不进每帧),依赖 colorizeOn / cameras / stats(载帧)。
@@ -621,14 +628,24 @@ export function ThreeDWorkbench({
             />
           </label>
           {cameras.some((c) => c.calibration) && (
-            <label className={styles.sizeCtl}>
-              <input
-                type="checkbox"
-                checked={colorizeOn}
-                onChange={(e) => setColorizeOn(e.target.checked)}
-              />
-              相机上色{colorizing ? "…" : ""}
-            </label>
+            <>
+              <label className={styles.sizeCtl}>
+                <input
+                  type="checkbox"
+                  checked={colorizeOn}
+                  onChange={(e) => setColorizeOn(e.target.checked)}
+                />
+                相机上色{colorizing ? "…" : ""}
+              </label>
+              <label className={styles.sizeCtl}>
+                <input
+                  type="checkbox"
+                  checked={depthOn}
+                  onChange={(e) => setDepthOn(e.target.checked)}
+                />
+                深度提示
+              </label>
+            </>
           )}
         </div>
 
@@ -772,6 +789,8 @@ export function ThreeDWorkbench({
               highlightedIds={highlightedIds}
               onSelectBox={onSelectBox}
               bestForSelected={cam.role === bestCameraRole}
+              pointPositions={pointPositions}
+              showDepth={depthOn}
             />
           ))}
         </div>
