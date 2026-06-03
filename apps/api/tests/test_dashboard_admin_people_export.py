@@ -77,11 +77,44 @@ async def test_admin_people_export_csv(
 
 
 @pytest.mark.asyncio
-async def test_admin_people_export_requires_super_admin(httpx_client_bound, annotator):
-    """非 super_admin（annotator）导出被拒。"""
+async def test_admin_people_export_requires_admin_role(
+    httpx_client_bound, db_session, project_admin, annotator
+):
+    """RBAC 角色门(v0.12.6 起放行 project_admin,annotator 仍拒)。
+
+    覆盖三条边界:
+    - annotator → 403(无 admin 角色)
+    - project_admin 不带 project → 403(必须指定其管理的项目范围)
+    - project_admin 带自有项目 → 200(委托 admin_people_list 强制项目级聚合)
+    """
     _, ann_token = annotator
-    resp = await httpx_client_bound.get(
+    r_ann = await httpx_client_bound.get(
         "/api/v1/dashboard/admin/people/export",
         headers={"Authorization": f"Bearer {ann_token}"},
     )
-    assert resp.status_code == 403
+    assert r_ann.status_code == 403
+
+    pm_user, pm_token = project_admin
+    r_pm_no_proj = await httpx_client_bound.get(
+        "/api/v1/dashboard/admin/people/export",
+        headers={"Authorization": f"Bearer {pm_token}"},
+    )
+    assert r_pm_no_proj.status_code == 403
+
+    # 自有项目:owner 是 pm_user → 严格 owner 校验通过 → 200。
+    own = Project(
+        id=uuid.uuid4(),
+        display_id=f"P-EXP-{uuid.uuid4().hex[:6]}",
+        name="pm-own",
+        type_label="image-det",
+        type_key="image-det",
+        owner_id=pm_user.id,
+    )
+    db_session.add(own)
+    await db_session.commit()
+    r_pm_own = await httpx_client_bound.get(
+        f"/api/v1/dashboard/admin/people/export?project={own.id}",
+        headers={"Authorization": f"Bearer {pm_token}"},
+    )
+    assert r_pm_own.status_code == 200
+    assert "text/csv" in r_pm_own.headers["content-type"]

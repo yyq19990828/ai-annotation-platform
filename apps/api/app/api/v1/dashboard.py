@@ -3,7 +3,7 @@ import io
 import uuid
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, cast, Date
 from app.deps import (
@@ -1484,19 +1484,17 @@ async def admin_people_export(
         current_user=current_user,
     )
 
-    def _gen_csv():
-        buf = io.StringIO()
-        buf.write("﻿")  # Excel UTF-8 BOM
-        writer = csv.DictWriter(
-            buf, fieldnames=_PEOPLE_EXPORT_COLS, extrasaction="ignore"
-        )
-        writer.writeheader()
-        for it in data.items:
-            writer.writerow(it.model_dump(mode="json"))
-        yield buf.getvalue()
+    # 名实相符:admin_people_list 已把全表加载进内存(百行级),
+    # CSV 也是一次拼好,直接 Response,不假装流式。
+    buf = io.StringIO()
+    buf.write("﻿")  # Excel UTF-8 BOM
+    writer = csv.DictWriter(buf, fieldnames=_PEOPLE_EXPORT_COLS, extrasaction="ignore")
+    writer.writeheader()
+    for it in data.items:
+        writer.writerow(it.model_dump(mode="json"))
 
-    return StreamingResponse(
-        _gen_csv(),
+    return Response(
+        content=buf.getvalue(),
         media_type="text/csv; charset=utf-8",
         headers={
             "Content-Disposition": f"attachment; filename=people_performance_{period}.csv"
