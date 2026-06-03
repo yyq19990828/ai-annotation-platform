@@ -1139,8 +1139,10 @@ export function useWorkbenchShellModel({
   // v0.13.4 · 3D 工作台自管这些字母键(V/B 选/放、W/E/R gizmo 模式),交给它的本地
   // keydown 处理;否则全局 2D 热键会抢 —— 尤其 E=「提交质检」(dispatchKey → submit)会被
   // 误触发:用户按 E 想转 gizmo,却把任务直接提交了。Ctrl+方向(切题)/?/Esc 等全局键仍保留。
+  // v0.13.8 · Delete/Backspace 也归 3D 本地处理:全局 dispatchKey 通路在 3D 台实测不触发删除,
+  // 改由 3D 工作台显式监听删选中框,口径与 W/E/R / B/V 一致。
   const threeDOwnedKeys = useMemo(
-    () => new Set(["b", "B", "v", "V", "w", "W", "e", "E", "r", "R"]),
+    () => new Set(["b", "B", "v", "V", "w", "W", "e", "E", "r", "R", "Delete", "Backspace"]),
     [],
   );
 

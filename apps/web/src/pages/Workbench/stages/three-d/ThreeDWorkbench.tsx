@@ -507,6 +507,22 @@ export function ThreeDWorkbench({
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedId, selectedEditable, handleFitSize, handleFitBottom, handleFitDefault]);
 
+  // v0.13.8 · Delete/Backspace 删选中框:全局 dispatchKey 通路在 3D 台实测未触发,
+  // 故 3D 本地接管(同 useWorkbenchShellModel.threeDOwnedKeys 把这俩键交给本地)。
+  // 焦点在输入框时不拦截(避免 PSR 数值面板里 Backspace 删字误删框)。
+  useEffect(() => {
+    if (!selectedId || !selectedEditable) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      handleDeleteSelected();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedId, selectedEditable, handleDeleteSelected]);
+
   // 锁定 / 解锁选中框(与列表 L 切换同源 is_locked;锁定后不可编辑,解锁需此按钮 / 列表)。
   const handleToggleLock = useCallback(() => {
     if (!selectedId) return;
