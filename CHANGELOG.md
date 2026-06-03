@@ -27,6 +27,20 @@
 
 <!-- 0.12.x 版本变更按版本段追加到本区；开始开发 0.13 后整体移到 docs/changelogs/0.12.x.md -->
 
+## [0.12.3] - 2026-06-03
+
+> **标注员自助绩效页 + 绩效/分析导航补全。** 取经合集 §4.1「Annotator Performance Dashboard」的真实缺口收口：super_admin 的成员绩效页 `/admin/people`（v0.8.4 已含今日/本周/本月、产能/质量排序、人均卡片 + 下钻趋势/直方图）此前只能从 Dashboard 卡片或直达 URL 进入，本版补 Sidebar 入口；DuckDB 离线分析页 `/admin/analytics` 同为导航孤儿，一并接入。新增**所有角色可见的 `/me/performance` 自助页**，标注员看自己 4 周产出趋势对标团队均线 + 耗时直方图，用 recharts 渲染。计划见 `docs/plans/2026-06-03-v0.12.3-annotator-performance-dashboard.md`。
+
+### Added
+
+- **`/me/performance` 标注员自助绩效页**：新增 `GET /dashboard/me/performance?period=`（任意已认证用户，强制 self，不接受他人 user_id），返回本人 4 周产出趋势 `trend_throughput` + 团队 annotator 群体每周均线 `team_trend_throughput` + 质量趋势 + 耗时直方图（10 桶）+ p50/p95 + 周环比。前端 `MyPerformancePage` 用 recharts LineChart（我 vs 团队均线）+ BarChart（耗时分布）+ hero KPI 卡渲染。所有角色 Sidebar 新增「我的绩效」入口（pageKey `my-performance`）。
+- **绩效 / 分析导航补全**：super_admin Sidebar「管理」区新增「标注员绩效」（`/admin/people`）与「离线分析」（`/admin/analytics`）两个入口——此前二者均为导航孤儿（路由存在但 Sidebar 无链接）。
+
+### Notes
+
+- **依赖**：前端新增 `recharts`（图表库）。
+- **project_admin 项目级绩效**暂未放开：`/admin/people` 的吞吐/质量聚合当前不按项目维度切分，直接放行会让 project_admin 看到跨项目全局数字（误导）。正确做法需为每个聚合加项目过滤，留后续版本独立做（详见 plan §范围修订）。
+
 ## [0.12.2] - 2026-06-02
 
 > **开放注册邮箱验证。** 开放注册新增邮箱验证环节：验证开关按环境派生（production 默认开、dev/staging 默认关，可用 `REQUIRE_EMAIL_VERIFICATION` 显式覆盖）。开关打开时注册后须点邮件链接验证才能登录；邀请注册与管理员建号恒视为已验证。复用既有 SMTP 底座与 password-reset token 范式，未引入新依赖。

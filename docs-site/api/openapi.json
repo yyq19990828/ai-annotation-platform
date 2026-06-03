@@ -7710,6 +7710,109 @@
         "title": "MyBatchItem",
         "type": "object"
       },
+      "MyPerformance": {
+        "description": "v0.12.3 · 标注员自助绩效（自己 vs 团队均线，取经合集 §4.1 个人页）。",
+        "properties": {
+          "duration_histogram": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Duration Histogram",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "p50_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50 Duration Ms"
+          },
+          "p95_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Duration Ms"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "quality_score": {
+            "title": "Quality Score",
+            "type": "integer"
+          },
+          "team_trend_throughput": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Team Trend Throughput",
+            "type": "array"
+          },
+          "throughput": {
+            "title": "Throughput",
+            "type": "integer"
+          },
+          "trend_quality": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Trend Quality",
+            "type": "array"
+          },
+          "trend_throughput": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Trend Throughput",
+            "type": "array"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "weekly_compare_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekly Compare Pct"
+          }
+        },
+        "required": [
+          "user_id",
+          "name",
+          "period",
+          "throughput",
+          "quality_score",
+          "weekly_compare_pct",
+          "trend_throughput",
+          "trend_quality",
+          "team_trend_throughput",
+          "duration_histogram",
+          "p50_duration_ms",
+          "p95_duration_ms"
+        ],
+        "title": "MyPerformance",
+        "type": "object"
+      },
       "NotificationList": {
         "properties": {
           "items": {
@@ -19327,6 +19430,55 @@
           }
         ],
         "summary": "My Batches",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/dashboard/me/performance": {
+      "get": {
+        "description": "v0.12.3 · 标注员自助绩效（取经合集 §4.1 个人页）。\n\n任意已认证用户看**自己**的 4 周趋势 + 耗时直方图，并叠加团队（annotator 群体）\n每周平均产出作对标基线。强制 self，不接受他人 user_id。",
+        "operationId": "my_performance_api_v1_dashboard_me_performance_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "4w",
+              "title": "Period",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyPerformance"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "My Performance",
         "tags": [
           "dashboard"
         ]

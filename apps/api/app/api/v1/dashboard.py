@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, cast, Date
-from app.deps import get_db, require_roles
+from app.deps import get_current_user, get_db, require_roles
 from app.db.models.user import User
 from app.db.models.project import Project
 from app.db.models.task import Task
@@ -23,6 +23,7 @@ from app.schemas.dashboard import (
     AdminPeopleList,
     AdminPersonItem,
     AdminPersonDetail,
+    MyPerformance,
     PredictionCostStats,
     BackendCostBreakdown,
     ReviewerMiniStats,
@@ -825,6 +826,184 @@ def _period_window(period: str) -> tuple[datetime, datetime]:
         return today - timedelta(days=28), now
     # default: 7d / week
     return today - timedelta(days=6), now
+
+
+@router.get("/me/performance", response_model=MyPerformance)
+async def my_performance(
+    period: str = Query("4w"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """v0.12.3 · 标注员自助绩效（取经合集 §4.1 个人页）。
+
+    任意已认证用户看**自己**的 4 周趋势 + 耗时直方图，并叠加团队（annotator 群体）
+    每周平均产出作对标基线。强制 self，不接受他人 user_id。
+    """
+    uid = current_user.id
+    start, _end = _period_window(period)
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # 本期总产出
+    throughput = (
+        await db.execute(
+            select(func.count())
+            .select_from(Annotation)
+            .where(
+                Annotation.user_id == uid,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= start,
+            )
+        )
+    ).scalar() or 0
+
+    # 团队 annotator 群体（活跃），用于每周均线分母
+    team_ids = (
+        (
+            await db.execute(
+                select(User.id).where(
+                    User.is_active.is_(True),
+                    User.role == UserRole.ANNOTATOR,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    team_n = len(team_ids) or 1
+
+    # 4 周趋势（每周一点）：自身 throughput / quality + 团队均线
+    trend_throughput: list[int] = []
+    trend_quality: list[int] = []
+    team_trend_throughput: list[float] = []
+    for w in range(3, -1, -1):
+        ws = today_start - timedelta(days=today_start.weekday()) - timedelta(weeks=w)
+        we = ws + timedelta(weeks=1)
+        n = (
+            await db.execute(
+                select(func.count())
+                .select_from(Annotation)
+                .where(
+                    Annotation.user_id == uid,
+                    Annotation.is_active.is_(True),
+                    Annotation.created_at >= ws,
+                    Annotation.created_at < we,
+                )
+            )
+        ).scalar() or 0
+        trend_throughput.append(int(n))
+        # 质量：1 - 当周 reopen 率
+        reopen_row = (
+            await db.execute(
+                select(
+                    func.count().label("sn"),
+                    func.count().filter(Task.reopened_count > 0).label("rn"),
+                ).where(
+                    Task.assignee_id == uid,
+                    Task.submitted_at.isnot(None),
+                    Task.submitted_at >= ws,
+                    Task.submitted_at < we,
+                )
+            )
+        ).first()
+        sn = int(reopen_row.sn or 0) if reopen_row else 0
+        rn = int(reopen_row.rn or 0) if reopen_row else 0
+        trend_quality.append(100 if sn == 0 else max(0, 100 - int(rn / sn * 100)))
+        # 团队均线：当周全 annotator 总产出 / annotator 数
+        team_total = (
+            await db.execute(
+                select(func.count())
+                .select_from(Annotation)
+                .where(
+                    Annotation.user_id.in_(team_ids),
+                    Annotation.is_active.is_(True),
+                    Annotation.created_at >= ws,
+                    Annotation.created_at < we,
+                )
+            )
+        ).scalar() or 0
+        team_trend_throughput.append(round(int(team_total) / team_n, 1))
+
+    # 耗时直方图（10 桶）+ p50 / p95，从 task_events 拉本人 annotate
+    duration_rows = (
+        (
+            await db.execute(
+                select(TaskEvent.duration_ms).where(
+                    TaskEvent.user_id == uid,
+                    TaskEvent.kind == "annotate",
+                    TaskEvent.started_at >= start,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    durations = [int(d) for d in duration_rows if d is not None]
+    duration_histogram: list[dict] = []
+    p50: int | None = None
+    p95: int | None = None
+    if durations:
+        durations_sorted = sorted(durations)
+        peak = durations_sorted[-1]
+        if peak > 0:
+            step = max(1, peak // 10)
+            buckets = [0] * 10
+            for d in durations:
+                buckets[min(9, d // step)] += 1
+            for i, c in enumerate(buckets):
+                duration_histogram.append(
+                    {"upper_ms": int((i + 1) * step), "count": int(c)}
+                )
+        p50 = int(durations_sorted[len(durations_sorted) // 2])
+        p95_idx = max(0, int(len(durations_sorted) * 0.95) - 1)
+        p95 = int(durations_sorted[p95_idx])
+
+    # 周环比
+    last_week_start = (
+        today_start - timedelta(days=today_start.weekday()) - timedelta(weeks=1)
+    )
+    week_start_dt = last_week_start + timedelta(weeks=1)
+    last_n = (
+        await db.execute(
+            select(func.count())
+            .select_from(Annotation)
+            .where(
+                Annotation.user_id == uid,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= last_week_start,
+                Annotation.created_at < week_start_dt,
+            )
+        )
+    ).scalar() or 0
+    this_n = (
+        await db.execute(
+            select(func.count())
+            .select_from(Annotation)
+            .where(
+                Annotation.user_id == uid,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= week_start_dt,
+            )
+        )
+    ).scalar() or 0
+    weekly_compare_pct: float | None = (
+        round((this_n - last_n) / last_n * 100, 1) if last_n else None
+    )
+
+    return MyPerformance(
+        user_id=str(uid),
+        name=current_user.name,
+        period=period,
+        throughput=int(throughput),
+        quality_score=trend_quality[-1] if trend_quality else 100,
+        weekly_compare_pct=weekly_compare_pct,
+        trend_throughput=trend_throughput,
+        trend_quality=trend_quality,
+        team_trend_throughput=team_trend_throughput,
+        duration_histogram=duration_histogram,
+        p50_duration_ms=p50,
+        p95_duration_ms=p95,
+    )
 
 
 @router.get("/admin/people", response_model=AdminPeopleList)

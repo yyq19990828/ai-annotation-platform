@@ -1,7 +1,7 @@
 {
   "name": "@anno/web",
   "private": true,
-  "version": "0.12.2",
+  "version": "0.12.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -51,6 +51,7 @@
     "react-konva": "^18.2.14",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^6.28.0",
+    "recharts": "^3.8.1",
     "remark-gfm": "^4.0.1",
     "use-image": "^1.1.4",
     "zustand": "^5.0.0"

@@ -146,6 +146,22 @@ export interface AdminPersonDetail {
   }>;
 }
 
+// v0.12.3 · 标注员自助绩效（取经合集 §4.1 个人页）
+export interface MyPerformance {
+  user_id: string;
+  name: string;
+  period: string;
+  throughput: number;
+  quality_score: number;
+  weekly_compare_pct: number | null;
+  trend_throughput: number[];
+  trend_quality: number[];
+  team_trend_throughput: number[];
+  duration_histogram: Array<{ upper_ms: number; count: number }>;
+  p50_duration_ms: number | null;
+  p95_duration_ms: number | null;
+}
+
 export interface MyBatchItem {
   batch_id: string;
   batch_display_id: string;
@@ -237,4 +253,7 @@ export const dashboardApi = {
     apiClient.get<AdminPersonDetail>(
       `/dashboard/admin/people/${userId}?period=${period}`,
     ),
+  // v0.12.3 · 标注员自助绩效（取经合集 §4.1 个人页）
+  getMyPerformance: (period: string = "4w") =>
+    apiClient.get<MyPerformance>(`/dashboard/me/performance?period=${period}`),
 };
