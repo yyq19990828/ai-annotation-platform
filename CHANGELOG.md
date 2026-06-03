@@ -27,6 +27,15 @@
 
 <!-- 0.12.x 版本变更按版本段追加到本区；开始开发 0.13 后整体移到 docs/changelogs/0.12.x.md -->
 
+## [0.12.7] - 2026-06-03
+
+> **离线分析页 recharts 升级 + 工时热力图(A4)。** `/admin/analytics` 三个手搓 CSS 条面板升级为 recharts(团队日吞吐折线、reject 原因分布柱状,耗时分布保留 KPI);新增第四面板**工时热力图**(星期 × 小时,基于 `task_events.started_at` 聚合 annotate 事件,颜色深浅 = 时段计数占比)。轨道 A 收官。计划见 `docs/plans/2026-06-03-v0.12.7-analytics-heatmap.md`。
+
+### Added
+
+- **工时热力图**:`analytics_queries.activity_heatmap(days)` 按 `dayofweek(started_at)`(0=周日..6=周六)× 小时聚合 `kind='annotate'` 事件;`/admin/analytics/activity_heatmap` 面板端点(super_admin)。前端 7×24 CSS grid 渲染,格子颜色 `--color-accent` + opacity 表达强度(token 合规)。
+- **analytics 面板 recharts 化**:团队日吞吐 → `LineChart`,reject 原因分布 → 横向 `BarChart`,耗时分布保留 p50/p95/均值 KPI。recharts stroke/fill 经 `cssVar()` 运行时读 token 色值。
+
 ## [0.12.6] - 2026-06-03
 
 > **成员绩效项目级范围(A3)+ reject/类别维度下钻。** `/admin/people` 与详情端点支持按项目切分聚合,并对 **project_admin 放行**(强制其管理的项目范围);super_admin 仍可全局或任意项目。补 A2 顺延的 reject/类别下钻:`GET /tasks` 新增 `reject_reason_type`/`class_name` 过滤,详情抽屉在项目模式下点 reject 原因 / 类别行内联展开该项目内本人匹配任务。计划见 `docs/plans/2026-06-03-v0.12.6-project-scope-drilldown.md`。

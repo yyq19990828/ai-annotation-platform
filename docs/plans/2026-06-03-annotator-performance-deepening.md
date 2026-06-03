@@ -86,7 +86,7 @@
 | **v0.12.4** | **A1 质量归因包(reject 细分 + 类别覆盖 + 首过率)** | 1–2d | 无 | **本次实现**,见 [v0.12.4 plan](2026-06-03-v0.12.4-quality-attribution.md) |
 | v0.12.5 | A2 导出 + **项目维度**下钻(reject/类别下钻并入 A3) | 1–2d | 无 | **已实现**,见 [v0.12.5 plan](2026-06-03-v0.12.5-export-drilldown.md) |
 | v0.12.6 | A3 project_admin 项目级范围(**风险:改已上线聚合**)+ **reject/类别维度下钻**(从 A2 顺延) | 2–3d | 聚合改造 + 回归测试 | **已实现**,见 [v0.12.6 plan](2026-06-03-v0.12.6-project-scope-drilldown.md) |
-| v0.12.7 | A4 analytics 升级 + 热力图(+ 可选 outlier) | 1–2d | recharts(已进) | 待排 |
+| v0.12.7 | A4 analytics 升级 + 热力图 | 1–2d | recharts(已进) | **已实现**,见 [v0.12.7 plan](2026-06-03-v0.12.7-analytics-heatmap.md) |
 | — | B1 Honeypot/GT · B2 Consensus/IAA | 大 | overlap / 众包场景触发 | **只设计,不排版本(1:1:1 阻塞)** |
 
 > A1–A4 顺序可按反馈调整;A3 因改动已上线聚合,**单独切一版隔离回归风险**,不与快赢混版。B 轨等 overlap 前提出现再排。

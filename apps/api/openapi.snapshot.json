@@ -15826,7 +15826,8 @@
               "enum": [
                 "throughput_daily",
                 "reject_rate_by_type",
-                "duration_dist"
+                "duration_dist",
+                "activity_heatmap"
               ],
               "title": "Panel Name",
               "type": "string"

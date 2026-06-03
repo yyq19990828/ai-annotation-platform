@@ -71,6 +71,39 @@ def reject_rate_by_type(days: int = 30) -> list[dict[str, Any]]:
         con.close()
 
 
+def activity_heatmap(days: int = 30) -> list[dict[str, Any]]:
+    """v0.12.7 · 工时热力图（按星期几 × 小时聚合 annotate 事件计数）。
+
+    用 started_at（工时实际发生时刻，比 created_at 更贴合）。
+    DuckDB `dayofweek()` 约定 0=周日 .. 6=周六。
+
+    只返回出现过的 (weekday, hour) 行，前端补零成完整 7×24 网格。
+    """
+    days = max(1, min(int(days), 365))
+    con = _connect_reader()
+    try:
+        rows = con.execute(
+            f"""
+            SELECT
+                CAST(dayofweek(started_at) AS INTEGER) AS weekday,
+                CAST(extract('hour' FROM started_at) AS INTEGER) AS hour,
+                count(*) AS n
+            FROM task_events
+            WHERE kind = 'annotate'
+              AND started_at IS NOT NULL
+              AND started_at > current_timestamp - INTERVAL '{days} days'
+            GROUP BY 1, 2
+            ORDER BY 1, 2;
+            """,
+        ).fetchall()
+        return [
+            {"weekday": int(r[0]), "hour": int(r[1]), "count": int(r[2])}
+            for r in rows
+        ]
+    finally:
+        con.close()
+
+
 def annotation_duration_distribution(days: int = 30) -> dict[str, Any]:
     """v0.10.16 · 标注耗时分布（p50 / p95 / 平均，单位 ms）。"""
     days = max(1, min(int(days), 365))

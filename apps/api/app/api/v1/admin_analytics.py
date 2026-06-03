@@ -14,7 +14,12 @@ from app.db.enums import UserRole
 
 router = APIRouter()
 
-PanelName = Literal["throughput_daily", "reject_rate_by_type", "duration_dist"]
+PanelName = Literal[
+    "throughput_daily",
+    "reject_rate_by_type",
+    "duration_dist",
+    "activity_heatmap",
+]
 
 
 @router.get("/{panel_name}")
@@ -45,6 +50,11 @@ async def get_analytics_panel(
             return {
                 "panel": panel_name,
                 "data": analytics_queries.annotation_duration_distribution(days),
+            }
+        if panel_name == "activity_heatmap":
+            return {
+                "panel": panel_name,
+                "data": analytics_queries.activity_heatmap(days),
             }
     except FileNotFoundError as exc:
         raise HTTPException(
