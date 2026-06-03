@@ -183,6 +183,28 @@ async def test_project_admin_scoped_to_own_project(
 
 
 @pytest.mark.asyncio
+async def test_project_admin_detail_blocks_non_member(
+    httpx_client_bound, db_session, super_admin, project_admin, annotator
+):
+    """安全:project_admin 查非本项目成员的详情 → 404(防 IDOR / 跨项目枚举)。"""
+    admin_user, _ = super_admin
+    pm_user, pm_token = project_admin
+    ann_user, _ = annotator
+    own = await _seed_project(db_session, pm_user.id, "Own")
+    other = await _seed_project(db_session, admin_user.id, "Other")
+    # ann_user 在 other(非 pm 的项目)有数据,但不是 own 的成员
+    await _seed_annotations(db_session, other.id, ann_user.id, 2)
+    await db_session.commit()
+
+    # pm 用自己的项目 own + 他人 user_id → 非成员 → 404
+    resp = await httpx_client_bound.get(
+        f"/api/v1/dashboard/admin/people/{ann_user.id}?project={own.id}",
+        headers={"Authorization": f"Bearer {pm_token}"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_annotator_still_denied(httpx_client_bound, annotator):
     """普通 annotator 无权访问成员绩效。"""
     _, token = annotator

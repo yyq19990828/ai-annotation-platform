@@ -1528,6 +1528,20 @@ async def admin_person_detail(
     if not user or not user.is_active:
         raise HTTPException(status_code=404, detail="user not found")
 
+    # v0.12.6 (A3) 安全收口:project_admin 只能查其项目内的成员详情。否则可借任意
+    # user_id + 自有 project 枚举他人存在性 + 读取全局 timeline(IDOR)。非成员 → 404。
+    if current_user.role == UserRole.PROJECT_ADMIN and pid is not None:
+        membership = (
+            await db.execute(
+                select(ProjectMember).where(
+                    ProjectMember.project_id == pid,
+                    ProjectMember.user_id == uid,
+                )
+            )
+        ).scalar_one_or_none()
+        if membership is None:
+            raise HTTPException(status_code=404, detail="user not found")
+
     start, _end = _period_window(period)
     now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
