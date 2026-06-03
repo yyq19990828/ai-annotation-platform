@@ -71,13 +71,15 @@ last_reviewed: 2026-06-03
 除了「看不看得见某条数据」，还有一类是「聚合数字按哪个项目口径切分」。
 成员绩效端点 `GET /dashboard/admin/people` 及其详情 / 导出从 v0.12.6（A3）起遵循统一的范围解析（`dashboard._resolve_people_scope`）：
 
-- `super_admin`：`project` 可选；给定则校验存在，缺省则全局聚合。
-- `project_admin`：`project` **必填**，且必须是其 owner 的项目；
-  - 越权项目走 `assert_project_visible` 返回 `404`（隐藏存在性，不泄露「项目存在但你无权」）；
+- `super_admin`：`project` 可选；给定则走 `assert_project_visible` 校验存在（对 super_admin 恒可见），缺省则全局聚合。
+- `project_admin`：`project` **必填**，且必须是其 **owner** 的项目；
+  - 严格校验 `project.owner_id == current_user.id`，**不复用** `assert_project_visible`；越权或项目不存在均返回 `404`（隐藏存在性，不泄露「项目存在但你无权」）；
   - 缺省 `project` → `403`。
 
+为什么不复用 `assert_project_visible`：后者对 project_admin 的 owner 校验失败后会 **fallback 到 `ProjectMember` 查询**（见 [`apps/api/app/deps.py`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/apps/api/app/deps.py) `assert_project_visible`），这是项目级数据访问的通用宽松策略，但对成员绩效语义过宽——会让「身为他人项目 member 的 project_admin」读到他人产能 / reject 率 / 类别分布。`_resolve_people_scope` 自行校验 `owner_id` 以收死边界，与「能不能看见 task」用同一把锁是错的口径。
+
 这把「越权读他人项目绩效」收成 IDOR 安全边界：role 门只放行 `super_admin + project_admin`，
-而 `project_admin` 被强制锁定在自有项目范围，所有产能 / 质量 / 活跃聚合都按该 `project_id` 过滤
+而 `project_admin` 被严格锁定在 **owner 自有项目** 范围，所有产能 / 质量 / 活跃聚合都按该 `project_id` 过滤
 （此前 `project` 仅过滤「返回哪些用户」，聚合仍是跨项目全局数字 → 误导且越权）。
 
 ## 现阶段最该注意的坑
