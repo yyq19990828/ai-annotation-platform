@@ -178,6 +178,8 @@ async def list_tasks(
     assignee_id: uuid.UUID | None = None,
     batch_id: uuid.UUID | None = None,
     unbatched: bool = False,
+    reject_reason_type: str | None = None,
+    class_name: str | None = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     cursor: str | None = None,
@@ -206,6 +208,20 @@ async def list_tasks(
     if assignee_id:
         q = q.where(Task.assignee_id == assignee_id)
         count_q = count_q.where(Task.assignee_id == assignee_id)
+    # v0.12.6 (A3) · 绩效页 reject/类别维度下钻过滤。
+    if reject_reason_type:
+        q = q.where(Task.reject_reason_type == reject_reason_type)
+        count_q = count_q.where(Task.reject_reason_type == reject_reason_type)
+    if class_name:
+        from sqlalchemy import exists
+
+        ann_clause = exists().where(
+            Annotation.task_id == Task.id,
+            Annotation.class_name == class_name,
+            Annotation.is_active.is_(True),
+        )
+        q = q.where(ann_clause)
+        count_q = count_q.where(ann_clause)
     # v0.12.0 B5 · 未归类池(batch_id IS NULL)浏览；unbatched 优先, 忽略 batch_id 参数。
     # 非特权用户因上方 JOIN TaskBatch 天然排除 NULL → 返回空(未归类池是管理者功能)。
     if unbatched:

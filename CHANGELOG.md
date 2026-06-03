@@ -27,6 +27,21 @@
 
 <!-- 0.12.x 版本变更按版本段追加到本区；开始开发 0.13 后整体移到 docs/changelogs/0.12.x.md -->
 
+## [0.12.6] - 2026-06-03
+
+> **成员绩效项目级范围(A3)+ reject/类别维度下钻。** `/admin/people` 与详情端点支持按项目切分聚合,并对 **project_admin 放行**(强制其管理的项目范围);super_admin 仍可全局或任意项目。补 A2 顺延的 reject/类别下钻:`GET /tasks` 新增 `reject_reason_type`/`class_name` 过滤,详情抽屉在项目模式下点 reject 原因 / 类别行内联展开该项目内本人匹配任务。计划见 `docs/plans/2026-06-03-v0.12.6-project-scope-drilldown.md`。
+
+### Added
+
+- **成员绩效项目级范围**:`GET /dashboard/admin/people` 与 `GET /dashboard/admin/people/{user_id}` 新增/启用 `project` 参数,给**每个产能/质量/活跃/耗时/归因聚合**加项目过滤(此前 `project` 仅过滤"返回哪些用户",聚合仍是跨项目全局数字 → 误导)。新增共享助手 `_resolve_people_scope` 统一解析范围 + RBAC。导出端点同步放行。
+- **RBAC 放行 project_admin**:两端点角色门由 super_admin 扩到 `super_admin + project_admin`;project_admin **必须指定** 其 owner 的项目(`assert_project_visible`,越权项目 404 隐藏存在性,缺省 project → 403),super_admin 不变。前端 `permissions` 给 project_admin 加 `admin-people` 页面权限 + Sidebar 入口放开(由 `canAccessPage` 过滤);`AdminPeoplePage` 新增项目下拉(super_admin 含「全部项目」,project_admin 锁自有项目并自动选第一个)。
+- **reject/类别维度下钻**:`GET /tasks` 新增 `reject_reason_type`(Task 列)与 `class_name`(annotation EXISTS 子查询)过滤;成员详情抽屉在**项目模式**下点 reject 原因 / 类别行,内联展开该项目内本人匹配任务列表(只读,display_id + 状态)。全局模式下不下钻(tasks 查询需 project_id)。
+
+### Notes
+
+- **timeline(审计活动流)不按项目切分**:其无可靠 project 维度,保持全局。`project_count`(成员所属项目数)同理保持全局。
+- 聚合级对账测试(全局 vs 项目级数字)保证改造正确性:见 `tests/test_dashboard_people_project_scope.py`。
+
 ## [0.12.5] - 2026-06-03
 
 > **成员绩效 CSV 导出 + 项目维度下钻(A2)。** `/admin/people` 顶部新增「导出 CSV」(带当前筛选,Excel UTF-8 BOM 防中文乱码);成员详情抽屉「项目分布」每行可点 → 跳到该项目审核队列并按本人 assignee 过滤。落地时发现路线档原设想的「reject/类别下钻复用现有 tasks query」前提不成立(tasks 端点 `project_id` 必填、无 `reject_reason_type`/`class_name` 过滤,且绩效聚合跨项目),故本版只做**项目维度**下钻,reject/类别下钻并入 A3(v0.12.6,届时聚合做成项目级、落点天然顺)。计划见 `docs/plans/2026-06-03-v0.12.5-export-drilldown.md`。

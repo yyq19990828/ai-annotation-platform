@@ -19224,7 +19224,7 @@
     },
     "/api/v1/dashboard/admin/people": {
       "get": {
-        "description": "v0.8.4 · 全员效率卡片网格数据。\n\nrole 过滤：annotator / reviewer / both（默认 both）\nperiod: today / 7d / 4w / 1m\nsort: throughput / quality / activity / weekly_compare",
+        "description": "v0.8.4 · 全员效率卡片网格数据。\n\nrole 过滤：annotator / reviewer / both（默认 both）\nperiod: today / 7d / 4w / 1m\nsort: throughput / quality / activity / weekly_compare\n\nv0.12.6 (A3)：project 给定时所有产能/质量/活跃聚合**按该项目切分**（非全局）；\nproject_admin 必须指定其项目，super_admin 可全局或任意项目。",
         "operationId": "admin_people_list_api_v1_dashboard_admin_people_get",
         "parameters": [
           {
@@ -19331,7 +19331,7 @@
     },
     "/api/v1/dashboard/admin/people/export": {
       "get": {
-        "description": "v0.12.5 · 成员绩效 CSV 导出。复用 admin_people_list 聚合,零重复;Excel UTF-8 BOM 防中文乱码。",
+        "description": "v0.12.5 · 成员绩效 CSV 导出。复用 admin_people_list 聚合,零重复;Excel UTF-8 BOM 防中文乱码。\n\nv0.12.6 (A3)：放行 project_admin（委托 admin_people_list 强制其项目范围）。",
         "operationId": "admin_people_export_api_v1_dashboard_admin_people_export_get",
         "parameters": [
           {
@@ -19436,7 +19436,7 @@
     },
     "/api/v1/dashboard/admin/people/{user_id}": {
       "get": {
-        "description": "v0.8.4 · 个人详情：4 周趋势、耗时直方图、项目分布、timeline。",
+        "description": "v0.8.4 · 个人详情：4 周趋势、耗时直方图、项目分布、timeline。\n\nv0.12.6 (A3)：project 给定时产能/质量/耗时/归因聚合**按该项目切分**；\nproject_admin 必须指定其项目，super_admin 可全局或任意项目。timeline（审计活动流）\n不含可靠 project 维度，保持全局。",
         "operationId": "admin_person_detail_api_v1_dashboard_admin_people__user_id__get",
         "parameters": [
           {
@@ -19456,6 +19456,22 @@
               "default": "4w",
               "title": "Period",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project"
             }
           }
         ],
@@ -26590,6 +26606,38 @@
               "default": false,
               "title": "Unbatched",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reject_reason_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reject Reason Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "class_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Class Name"
             }
           },
           {

@@ -1,5 +1,6 @@
-import { useMemo, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -10,8 +11,11 @@ import { Histogram } from "@/components/ui/Histogram";
 import { RadialProgress } from "@/components/ui/RadialProgress";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useAdminPeople, useAdminPersonDetail } from "@/hooks/useDashboard";
+import { useProjects } from "@/hooks/useProjects";
+import { usePermissions } from "@/hooks/usePermissions";
 import { REJECT_REASON_TYPE_LABELS } from "@/pages/Review/rejectReasonTypes";
 import { dashboardApi, type AdminPersonItem } from "@/api/dashboard";
+import { tasksApi } from "@/api/tasks";
 import { useToastStore } from "@/components/ui/Toast";
 import styles from "./AdminPeoplePage.module.css";
 
@@ -39,16 +43,39 @@ export function AdminPeoplePage() {
   const period = sp.get("period") || "7d";
   const sort = sp.get("sort") || "throughput";
   const q = sp.get("q") || "";
+  const project = sp.get("project") || "";
 
   const [activeUserId, setActiveUserId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const pushToast = useToastStore((s) => s.push);
+
+  // v0.12.6 (A3) · 项目级范围:project_admin 仅见自有项目且必须选定一个项目。
+  const { role: userRole } = usePermissions();
+  const isProjectAdmin = userRole === "project_admin";
+  const { data: projects } = useProjects();
+  const projectOpts = projects ?? [];
+
+  const setQuery = (key: string, value: string) => {
+    const next = new URLSearchParams(sp);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    setSp(next, { replace: true });
+  };
+
+  // project_admin 未选项目时自动选第一个(后端对其强制项目范围,不选会 403)。
+  useEffect(() => {
+    if (isProjectAdmin && !project && projectOpts.length > 0) {
+      setQuery("project", projectOpts[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isProjectAdmin, project, projectOpts]);
 
   const handleExport = async () => {
     setExporting(true);
     try {
       await dashboardApi.exportPeople({
         role: role || undefined,
+        project: project || undefined,
         period,
         sort,
         q: q || undefined,
@@ -66,19 +93,15 @@ export function AdminPeoplePage() {
 
   const { data, isLoading } = useAdminPeople({
     role: role || undefined,
+    project: project || undefined,
     period,
     sort,
     q: q || undefined,
+    // project_admin 在自动选定项目前不发请求(避免 403 噪声)
+    enabled: !(isProjectAdmin && !project),
   });
 
   const items = data?.items ?? [];
-
-  const setQuery = (key: string, value: string) => {
-    const next = new URLSearchParams(sp);
-    if (value) next.set(key, value);
-    else next.delete(key);
-    setSp(next, { replace: true });
-  };
 
   return (
     <div className={styles.page}>
@@ -124,6 +147,23 @@ export function AdminPeoplePage() {
             value={sort}
             onChange={(v: string) => setQuery("sort", v)}
           />
+          {/* v0.12.6 (A3) · 项目级范围下拉 */}
+          <div className={styles.projectFilter}>
+            <span className={styles.projectFilterLabel}>项目</span>
+            <select
+              className={styles.projectSelect}
+              value={project}
+              onChange={(e) => setQuery("project", e.target.value)}
+              aria-label="项目范围"
+            >
+              {!isProjectAdmin && <option value="">全部项目（全局）</option>}
+              {projectOpts.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <input
             type="search"
             placeholder="姓名 / 邮箱"
@@ -166,6 +206,7 @@ export function AdminPeoplePage() {
       {activeUserId && (
         <PersonDrawer
           userId={activeUserId}
+          project={project || undefined}
           onClose={() => setActiveUserId(null)}
         />
       )}
@@ -308,9 +349,28 @@ function PercentBarFill({ value }: { value: number }) {
   return <div ref={ref} className={styles.barFill} />;
 }
 
-function PersonDrawer({ userId, onClose }: { userId: string; onClose: () => void }) {
+function PersonDrawer({
+  userId,
+  project,
+  onClose,
+}: {
+  userId: string;
+  project?: string;
+  onClose: () => void;
+}) {
   const navigate = useNavigate();
-  const { data, isLoading } = useAdminPersonDetail(userId, "4w");
+  const { data, isLoading } = useAdminPersonDetail(userId, "4w", project);
+
+  // v0.12.6 (A3) · reject/类别维度下钻:仅项目模式可下钻(tasks 查询需 project_id)。
+  // 选中一个维度值 → 内联展开该项目内本人匹配任务列表。
+  const [drill, setDrill] = useState<{ type: "reject" | "class"; value: string } | null>(
+    null,
+  );
+  const toggleDrill = (type: "reject" | "class", value: string) => {
+    setDrill((cur) =>
+      cur && cur.type === type && cur.value === value ? null : { type, value },
+    );
+  };
 
   // v0.12.5 · 项目维度下钻:跳到该项目 review 队列按本人 assignee 过滤(复用后端 assignee_id 过滤)。
   const drillToProject = (projectId: string) => {
@@ -426,36 +486,98 @@ function PersonDrawer({ userId, onClose }: { userId: string; onClose: () => void
 
               {data.reject_reason_breakdown.length > 0 && (
                 <Card>
-                  <div className={styles.sectionTitle}>Reject 原因分布</div>
+                  <div className={styles.sectionTitle}>
+                    Reject 原因分布
+                    {project && (
+                      <span className={styles.sectionTitleMeta}>点击下钻该项目任务</span>
+                    )}
+                  </div>
                   <div className={styles.distribution}>
-                    {data.reject_reason_breakdown.map((r) => (
-                      <div key={r.reason_type} className={styles.distributionRow}>
-                        <span>
-                          {REJECT_REASON_TYPE_LABELS[
-                            r.reason_type as keyof typeof REJECT_REASON_TYPE_LABELS
-                          ] ?? r.reason_type}
-                        </span>
-                        <span className={styles.distributionCount}>
-                          {r.count} · {r.pct}%
-                        </span>
-                      </div>
-                    ))}
+                    {data.reject_reason_breakdown.map((r) => {
+                      const label =
+                        REJECT_REASON_TYPE_LABELS[
+                          r.reason_type as keyof typeof REJECT_REASON_TYPE_LABELS
+                        ] ?? r.reason_type;
+                      const active =
+                        drill?.type === "reject" && drill.value === r.reason_type;
+                      const rowBody = (
+                        <>
+                          <span>{label}</span>
+                          <span className={styles.distributionCount}>
+                            {r.count} · {r.pct}%
+                          </span>
+                        </>
+                      );
+                      return project ? (
+                        <div key={r.reason_type}>
+                          <button
+                            type="button"
+                            className={`${styles.distributionRow} ${styles.distributionLink}`}
+                            onClick={() => toggleDrill("reject", r.reason_type)}
+                          >
+                            {rowBody}
+                          </button>
+                          {active && (
+                            <DrillTaskList
+                              projectId={project}
+                              assigneeId={userId}
+                              rejectReasonType={r.reason_type}
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        <div key={r.reason_type} className={styles.distributionRow}>
+                          {rowBody}
+                        </div>
+                      );
+                    })}
                   </div>
                 </Card>
               )}
 
               {data.class_distribution.length > 0 && (
                 <Card>
-                  <div className={styles.sectionTitle}>类别覆盖(top {data.class_distribution.length})</div>
+                  <div className={styles.sectionTitle}>
+                    类别覆盖(top {data.class_distribution.length})
+                    {project && (
+                      <span className={styles.sectionTitleMeta}>点击下钻该项目任务</span>
+                    )}
+                  </div>
                   <div className={styles.distribution}>
-                    {data.class_distribution.map((c) => (
-                      <div key={c.class_name} className={styles.distributionRow}>
-                        <span>{c.class_name}</span>
-                        <span className={styles.distributionCount}>
-                          {c.count} · {c.pct}%
-                        </span>
-                      </div>
-                    ))}
+                    {data.class_distribution.map((c) => {
+                      const active =
+                        drill?.type === "class" && drill.value === c.class_name;
+                      const rowBody = (
+                        <>
+                          <span>{c.class_name}</span>
+                          <span className={styles.distributionCount}>
+                            {c.count} · {c.pct}%
+                          </span>
+                        </>
+                      );
+                      return project ? (
+                        <div key={c.class_name}>
+                          <button
+                            type="button"
+                            className={`${styles.distributionRow} ${styles.distributionLink}`}
+                            onClick={() => toggleDrill("class", c.class_name)}
+                          >
+                            {rowBody}
+                          </button>
+                          {active && (
+                            <DrillTaskList
+                              projectId={project}
+                              assigneeId={userId}
+                              classNameFilter={c.class_name}
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        <div key={c.class_name} className={styles.distributionRow}>
+                          {rowBody}
+                        </div>
+                      );
+                    })}
                   </div>
                 </Card>
               )}
@@ -489,6 +611,47 @@ function PersonDrawer({ userId, onClose }: { userId: string; onClose: () => void
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// v0.12.6 (A3) · 下钻任务列表:项目内本人按 reject 原因 / 类别过滤的任务(只读,展示 display_id + 状态)。
+function DrillTaskList({
+  projectId,
+  assigneeId,
+  rejectReasonType,
+  classNameFilter,
+}: {
+  projectId: string;
+  assigneeId: string;
+  rejectReasonType?: string;
+  classNameFilter?: string;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["drill-tasks", projectId, assigneeId, rejectReasonType, classNameFilter],
+    queryFn: () =>
+      tasksApi.listByProject(projectId, {
+        assignee_id: assigneeId,
+        reject_reason_type: rejectReasonType,
+        class_name: classNameFilter,
+        limit: 20,
+      }),
+  });
+  const tasks = data?.items ?? [];
+  return (
+    <div className={styles.drillList}>
+      {isLoading ? (
+        <div className={styles.drillEmpty}>加载中...</div>
+      ) : tasks.length === 0 ? (
+        <div className={styles.drillEmpty}>该项目内无匹配任务</div>
+      ) : (
+        tasks.map((t) => (
+          <div key={t.id} className={styles.drillItem}>
+            <span className="mono">{t.display_id}</span>
+            <span className={styles.drillStatus}>{t.status}</span>
+          </div>
+        ))
+      )}
     </div>
   );
 }

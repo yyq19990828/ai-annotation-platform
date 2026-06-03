@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const mockUseAdminPeople = vi.fn();
 const mockUseAdminPersonDetail = vi.fn();
@@ -22,6 +23,21 @@ vi.mock("@/hooks/useDashboard", () => ({
 
 vi.mock("@/api/dashboard", () => ({
   dashboardApi: { exportPeople: (...args: unknown[]) => mockExportPeople(...args) },
+}));
+
+const mockUseProjects = vi.fn();
+vi.mock("@/hooks/useProjects", () => ({
+  useProjects: () => mockUseProjects(),
+}));
+
+const mockUsePermissions = vi.fn();
+vi.mock("@/hooks/usePermissions", () => ({
+  usePermissions: () => mockUsePermissions(),
+}));
+
+const mockListByProject = vi.fn();
+vi.mock("@/api/tasks", () => ({
+  tasksApi: { listByProject: (...args: unknown[]) => mockListByProject(...args) },
 }));
 
 vi.mock("react-router-dom", async () => {
@@ -83,10 +99,13 @@ const baseDetail = {
 };
 
 function renderUI(initialPath = "/admin/people") {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter initialEntries={[initialPath]}>
-      <AdminPeoplePage />
-    </MemoryRouter>,
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <AdminPeoplePage />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -97,6 +116,12 @@ describe("AdminPeoplePage", () => {
     mockNavigate.mockClear();
     mockExportPeople.mockReset();
     mockExportPeople.mockResolvedValue(undefined);
+    mockUseProjects.mockReturnValue({
+      data: [{ id: "pd", name: "下拉项目" }],
+    });
+    mockUsePermissions.mockReturnValue({ role: "super_admin" });
+    mockListByProject.mockReset();
+    mockListByProject.mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0 });
   });
 
   it("isLoading=true → 显示加载中", () => {
@@ -227,5 +252,42 @@ describe("AdminPeoplePage", () => {
     await waitFor(() => expect(screen.getByText("项目A")).toBeInTheDocument());
     fireEvent.click(screen.getByText("项目A"));
     expect(mockNavigate).toHaveBeenCalledWith("/review?project=p1&assignee=u1");
+  });
+
+  it("v0.12.6 · super_admin 项目下拉含「全部项目」+ 项目选项", () => {
+    mockUseAdminPeople.mockReturnValue({
+      data: { items: [], total: 0, period: "7d" },
+      isLoading: false,
+    });
+    renderUI();
+    const select = screen.getByLabelText("项目范围");
+    expect(select).toBeInTheDocument();
+    expect(screen.getByText("全部项目（全局）")).toBeInTheDocument();
+    expect(screen.getByText("下拉项目")).toBeInTheDocument();
+  });
+
+  it("v0.12.6 · 项目模式下点 reject 原因行 → 下钻调 tasksApi（带 project+assignee+reason）", async () => {
+    const detailWithReject = {
+      ...baseDetail,
+      reject_reason_breakdown: [{ reason_type: "missing", count: 3, pct: 100 }],
+    };
+    mockUseAdminPeople.mockReturnValue({
+      data: { items: [basePerson], total: 1, period: "7d" },
+      isLoading: false,
+    });
+    mockUseAdminPersonDetail.mockReturnValue({
+      data: detailWithReject,
+      isLoading: false,
+    });
+    renderUI("/admin/people?project=pd");
+    fireEvent.click(screen.getByText("Alice").closest("[class]")!);
+    await waitFor(() => expect(screen.getByText("漏标")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("漏标"));
+    await waitFor(() =>
+      expect(mockListByProject).toHaveBeenCalledWith(
+        "pd",
+        expect.objectContaining({ assignee_id: "u1", reject_reason_type: "missing" }),
+      ),
+    );
   });
 });

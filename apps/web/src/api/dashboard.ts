@@ -257,9 +257,11 @@ export const dashboardApi = {
       `/dashboard/admin/people${qs ? `?${qs}` : ""}`,
     );
   },
-  getAdminPersonDetail: (userId: string, period: string = "4w") =>
+  getAdminPersonDetail: (userId: string, period: string = "4w", project?: string) =>
     apiClient.get<AdminPersonDetail>(
-      `/dashboard/admin/people/${userId}?period=${period}`,
+      `/dashboard/admin/people/${userId}?period=${period}${
+        project ? `&project=${project}` : ""
+      }`,
     ),
   // v0.12.5 · 成员绩效 CSV 导出（A2）。带 Bearer 拉 blob 触发下载，镜像 usersApi.exportUsers。
   exportPeople: async (
