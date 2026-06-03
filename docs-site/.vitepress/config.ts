@@ -126,6 +126,7 @@ export default withMermaid(defineConfig({
             { text: "折线标注", link: "/user-guide/workbench/polyline" },
             { text: "关键点标注", link: "/user-guide/workbench/keypoint" },
             { text: "视频追踪标注", link: "/user-guide/workbench/video-track" },
+            { text: "3D 立体框标注", link: "/user-guide/workbench/3d-box" },
             { text: "SAM 智能工具", link: "/user-guide/workbench/sam-tool" },
           ],
         },
