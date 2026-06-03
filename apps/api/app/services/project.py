@@ -259,9 +259,7 @@ def legacy_type_key_from_data_type(data_type: str | None) -> str:
     return _DATA_TYPE_TO_LEGACY_TYPE_KEY.get(data_type or "image", "image-det")
 
 
-def assert_project_kind_consistent(
-    type_key: str | None, data_type: str | None
-) -> None:
+def assert_project_kind_consistent(type_key: str | None, data_type: str | None) -> None:
     """断言 type_key 与 data_type 在媒体维度一致, 不一致抛 422.
 
     前端用 `type_key === "lidar"` 入 3D Stage, 后端 manifest 用

@@ -98,9 +98,7 @@ async def test_create_project_cross_fill_still_works(
 
 
 @pytest.mark.asyncio
-async def test_patch_project_rejects_kind_drift(
-    httpx_client, db_session, super_admin
-):
+async def test_patch_project_rejects_kind_drift(httpx_client, db_session, super_admin):
     user, token = super_admin
     proj = await create_project(db_session, owner_id=user.id, type_key="image-det")
     proj.data_type = "image"
