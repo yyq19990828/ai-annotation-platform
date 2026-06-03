@@ -420,9 +420,21 @@ export function ThreeDWorkbench({
     [placeClass, createAnnotation, onSelectBox, onSetThreeDTool],
   );
 
+  // mousedown 落点(像素): click 时若位移超阈值判为「转视角拖拽」, 不改选中/不放置。
+  const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
+  const DRAG_CLICK_TOL = 4; // px
+
+  const handleViewportMouseDown = (e: React.MouseEvent) => {
+    pointerDownRef.current = { x: e.clientX, y: e.clientY };
+  };
+
   const handleViewportClick = (e: React.MouseEvent) => {
     // 拖拽 gizmo 结束的 click 不应改选中。
     if (sceneRef.current?.shouldIgnoreClick()) return;
+    // OrbitControls 转视角拖拽松手也会触发 click: 位移超阈值视为拖拽, 保持当前选中。
+    const down = pointerDownRef.current;
+    pointerDownRef.current = null;
+    if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_CLICK_TOL) return;
     if (placing) {
       handlePlace(e.clientX, e.clientY);
       return;
@@ -516,6 +528,7 @@ export function ThreeDWorkbench({
           ref={viewportRef}
           className={placing ? `${styles.viewport} ${styles.placing}` : styles.viewport}
           data-testid="pc-viewport"
+          onMouseDown={handleViewportMouseDown}
           onClick={handleViewportClick}
         />
 
