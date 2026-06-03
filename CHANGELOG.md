@@ -27,6 +27,33 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；0.12.x 历史段待整体移到 docs/changelogs/0.12.x.md -->
 
+## [0.13.5] - 2026-06-03
+
+点云 + 图像联合标注工作台第六切片:**三正交视图框精修编辑器**(ADR-0032 方案 B)。主 3D 视图右栏并排俯/侧/正三窗,框内点经 **GPU 裁切**逐窗渲染;在三视图里拖边/拖角改尺寸、拖方向线转三轴(yaw/pitch/roll),与主视图 gizmo / 数值面板 / 0.13.4 投影 overlay **四方实时同步**,松手防抖 PATCH。数值面板补齐 pitch/roll 三轴可编辑 + 朝向一键归零。**纯前端,后端零改动**。计划见 `docs/plans/2026-06-03-v0.13.5-tri-view-box-editor.md`。
+
+### Added
+
+- **三视图几何底座**(`three-d/geometry/triview.ts` + `box3d.ts`,纯函数 + 单测):`worldToBox` / `boxLocalClipPlanes`(box-local 6 裁剪面,含 margin)、`frameOrtho`(等比取景)、`dragEdge` / `dragCorner`(全边长口径 2D→PSR)、`dragRotation`(四元数 local 复合后分解 XYZ 欧拉,**避开多轴欧拉串轴**)、`dragHandle`(屏幕 handle→拖边/角分派)。`triview.test.ts` / `box3d.test.ts` 覆盖三视图映射 / 拖边·角数学 / 三轴旋转 round-trip / 逆变换 + 6 面方向。
+- **三视图渲染基建**(`TriViewRenderer.ts`):**单** `WebGLRenderer` + 3 viewport/scissor + 3 正交相机,框内点用 GPU clipping planes 裁、**复用主视图同一份点 BufferGeometry**(零 CPU 拷贝,全程仅 2 个 WebGL context)。相机映射与 `VIEW_AXES` 同口径(右手系保证屏幕 u→右 / v→上),PSR 变只重算 6 面 + 相机。所有 WebGL 资源收口本类,点 geometry 属主场景不 dispose。
+- **三视图面板 + 2D overlay**(`TriViewPanel.tsx` / `TriOrthoView.tsx`):WebGL 底 + 叠加 2D overlay 画框矩形 / handle / 方向线柄;拖边/角/方向线 → 回写选中框 PSR。拖拽期**冻结相机取景**(`setCameraRef`),裁剪面仍随实时 box,使框在屏上真实长/移/转而点云不动。
+- **数值面板三轴朝向**(`ThreeDWorkbench.tsx`):PSR 编辑面板新增 pitch / roll 字段(°),与 yaw 同组可显示、可编辑;新增「**朝向归零**」按钮一键复位 `yaw/pitch/roll → [0,0,0]`(保留中心 / 尺寸)。
+
+### Changed
+
+- **点大小三视图联动**:三视图点大小跟随主视图点大小滑杆(`pointSize` 透传 → `setPointSize`)。
+- **正交相机点大小修正**:`PointsMaterial.sizeAttenuation` 在正交相机下不生效(three.js 仅对透视相机生效),世界尺寸被当像素用 → 亚像素不可见。改为 `sizeAttenuation=false` + 每帧按本视图「米→px」比例(`sCss×dpr`)换算成真实像素,下限 1px。
+
+### Fixed
+
+- **拖拽不落 PATCH**(高危,顺带修好 B-2/B-3 提交):2D overlay 交互 `useEffect` 把频繁变化的 `selected` 放进依赖,拖拽中 draft 改 `selected` → effect 重跑 → cleanup 撤掉了命令式挂的 `mousemove`/`mouseup` 监听 → 松手没人处理,只剩刷新即回退的乐观 draft。改用 `propsRef` + 空依赖,监听全程稳定。
+- **数值编辑抹掉 pitch/roll**:`schedulePatch` 原硬编码 `rotation: [0,0,yaw]`,三视图设好 pitch/roll 后再在面板改任一字段(如 cx)就把 pitch/roll 抹回 0。修复:补齐字段 + `rotation: [roll, pitch, yaw]`。
+
+### Notes
+
+- 性能:GPU clip 无 CPU 每帧重算,PSR 变只重算 6 个 `THREE.Plane` + 相机;1e6 点 ×3 viewport 顶点开销在预算内,掉帧预案为三视图相机降采样点集(本切片未触发)。
+- 验证:拖拽数学纯函数单测绿(`triview.test.ts` 18 例);切任务 / 反复进出无 WebGL context lost、内存稳定。点云工作台尚无 Playwright e2e harness(0.13.x 各切片一致),三视图交互验证走纯函数单测 + 浏览器手测,e2e 待点云台整体补 harness 时统一加。
+- 不做(顺延 v0.13.6+):多框批量 / 跨帧轨迹、自动拟合贴合(`fit_bottom` / `auto_shrink`)、`point_mask_3d` 3D 分割。
+
 ## [0.13.4] - 2026-06-03
 
 点云 + 图像联合标注工作台第五切片:**联合标注 MVP 上线**——把 3D 框经相机标定**实时**投影到各相机视图。标注员对照图像确认 / 校正 3D 框,3D↔2D 双向选中联动,同物体共享 `group_id` 身份。**纯前端、实时算不预存,后端零改动、零新端点、零迁移**。计划见 `docs/plans/2026-06-03-v0.13.4-pointcloud-projection-linkage.md`,投影 overlay 架构决策见 ADR-0033。
