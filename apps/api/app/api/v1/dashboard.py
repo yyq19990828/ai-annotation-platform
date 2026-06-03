@@ -828,6 +828,86 @@ def _period_window(period: str) -> tuple[datetime, datetime]:
     return today - timedelta(days=6), now
 
 
+async def _reject_reason_breakdown(db, uid, start) -> list[dict]:
+    """v0.12.4 · 本人被驳回任务按 reject_reason_type 分布(A1)。"""
+    rows = (
+        await db.execute(
+            select(Task.reject_reason_type, func.count().label("n"))
+            .where(
+                Task.assignee_id == uid,
+                Task.reject_reason_type.isnot(None),
+                Task.submitted_at >= start,
+            )
+            .group_by(Task.reject_reason_type)
+            .order_by(func.count().desc())
+        )
+    ).all()
+    total = sum(int(r.n) for r in rows)
+    return [
+        {
+            "reason_type": r.reject_reason_type,
+            "count": int(r.n),
+            "pct": round(int(r.n) / total * 100, 1) if total else 0.0,
+        }
+        for r in rows
+    ]
+
+
+async def _class_distribution(db, uid, start, limit: int = 10) -> list[dict]:
+    """v0.12.4 · 本人标注按 class_name 的 top-N 占比(A1 类别覆盖)。"""
+    rows = (
+        await db.execute(
+            select(Annotation.class_name, func.count().label("n"))
+            .where(
+                Annotation.user_id == uid,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= start,
+            )
+            .group_by(Annotation.class_name)
+            .order_by(func.count().desc())
+            .limit(limit)
+        )
+    ).all()
+    total = (
+        await db.execute(
+            select(func.count())
+            .select_from(Annotation)
+            .where(
+                Annotation.user_id == uid,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= start,
+            )
+        )
+    ).scalar() or 0
+    return [
+        {
+            "class_name": r.class_name,
+            "count": int(r.n),
+            "pct": round(int(r.n) / total * 100, 1) if total else 0.0,
+        }
+        for r in rows
+    ]
+
+
+async def _first_pass_yield(db, uid, start) -> float | None:
+    """v0.12.4 · 首过率 = 一次通过(无 reopen)/ 提交总数(A1)。无样本→None。"""
+    row = (
+        await db.execute(
+            select(
+                func.count().label("submitted_n"),
+                func.count().filter(Task.reopened_count == 0).label("clean_n"),
+            ).where(
+                Task.assignee_id == uid,
+                Task.submitted_at.isnot(None),
+                Task.submitted_at >= start,
+            )
+        )
+    ).first()
+    sn = int(row.submitted_n or 0) if row else 0
+    cn = int(row.clean_n or 0) if row else 0
+    return round(cn / sn, 3) if sn else None
+
+
 @router.get("/me/performance", response_model=MyPerformance)
 async def my_performance(
     period: str = Query("4w"),
@@ -1003,6 +1083,9 @@ async def my_performance(
         duration_histogram=duration_histogram,
         p50_duration_ms=p50,
         p95_duration_ms=p95,
+        reject_reason_breakdown=await _reject_reason_breakdown(db, uid, start),
+        class_distribution=await _class_distribution(db, uid, start),
+        first_pass_yield=await _first_pass_yield(db, uid, start),
     )
 
 
@@ -1529,6 +1612,9 @@ async def admin_person_detail(
         p50_duration_ms=p50,
         p95_duration_ms=p95,
         timeline=timeline,
+        reject_reason_breakdown=await _reject_reason_breakdown(db, uid, start),
+        class_distribution=await _class_distribution(db, uid, start),
+        first_pass_yield=await _first_pass_yield(db, uid, start),
     )
 
 

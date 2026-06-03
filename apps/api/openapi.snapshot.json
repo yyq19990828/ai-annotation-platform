@@ -201,6 +201,15 @@
             ],
             "title": "Active Minutes"
           },
+          "class_distribution": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Class Distribution",
+            "type": "array"
+          },
           "composite_score": {
             "title": "Composite Score",
             "type": "integer"
@@ -216,6 +225,17 @@
           "email": {
             "title": "Email",
             "type": "string"
+          },
+          "first_pass_yield": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Pass Yield"
           },
           "name": {
             "title": "Name",
@@ -258,6 +278,15 @@
           "quality_score": {
             "title": "Quality Score",
             "type": "integer"
+          },
+          "reject_reason_breakdown": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Reject Reason Breakdown",
+            "type": "array"
           },
           "role": {
             "title": "Role",
@@ -7713,6 +7742,14 @@
       "MyPerformance": {
         "description": "v0.12.3 · 标注员自助绩效（自己 vs 团队均线，取经合集 §4.1 个人页）。",
         "properties": {
+          "class_distribution": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Class Distribution",
+            "type": "array"
+          },
           "duration_histogram": {
             "items": {
               "additionalProperties": true,
@@ -7720,6 +7757,17 @@
             },
             "title": "Duration Histogram",
             "type": "array"
+          },
+          "first_pass_yield": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Pass Yield"
           },
           "name": {
             "title": "Name",
@@ -7754,6 +7802,14 @@
           "quality_score": {
             "title": "Quality Score",
             "type": "integer"
+          },
+          "reject_reason_breakdown": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Reject Reason Breakdown",
+            "type": "array"
           },
           "team_trend_throughput": {
             "items": {
@@ -7808,7 +7864,10 @@
           "team_trend_throughput",
           "duration_histogram",
           "p50_duration_ms",
-          "p95_duration_ms"
+          "p95_duration_ms",
+          "reject_reason_breakdown",
+          "class_distribution",
+          "first_pass_yield"
         ],
         "title": "MyPerformance",
         "type": "object"

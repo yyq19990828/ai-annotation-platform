@@ -174,6 +174,10 @@ class AdminPersonDetail(BaseModel):
     p95_duration_ms: int | None
     # timeline 最近事件
     timeline: list[dict]
+    # v0.12.4 · 质量归因(A1)
+    reject_reason_breakdown: list[dict] = []  # [{reason_type, count, pct}]
+    class_distribution: list[dict] = []  # [{class_name, count, pct}] top-N
+    first_pass_yield: float | None = None
 
 
 class MyPerformance(BaseModel):
@@ -194,6 +198,10 @@ class MyPerformance(BaseModel):
     duration_histogram: list[dict]
     p50_duration_ms: int | None
     p95_duration_ms: int | None
+    # v0.12.4 · 质量归因(A1)
+    reject_reason_breakdown: list[dict]  # [{reason_type, count, pct}]
+    class_distribution: list[dict]  # [{class_name, count, pct}] top-N
+    first_pass_yield: float | None  # 一次通过(无 reopen) / 提交总数
 
 
 class MyBatchItem(BaseModel):

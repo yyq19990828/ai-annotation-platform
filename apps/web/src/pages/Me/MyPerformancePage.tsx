@@ -20,6 +20,7 @@ import {
   YAxis,
 } from "recharts";
 import { dashboardApi } from "@/api/dashboard";
+import { REJECT_REASON_TYPE_LABELS } from "@/pages/Review/rejectReasonTypes";
 import styles from "./MyPerformancePage.module.css";
 
 const PERIOD_OPTIONS = [
@@ -46,6 +47,7 @@ export function MyPerformancePage() {
 
   const accent = cssVar("--color-accent");
   const muted = cssVar("--color-fg-subtle");
+  const danger = cssVar("--color-danger");
   const gridColor = cssVar("--color-border");
 
   const data = perfQ.data;
@@ -65,6 +67,22 @@ export function MyPerformancePage() {
       name: `${Math.round(b.upper_ms / 1000)}s`,
       count: b.count,
     }));
+  }, [data]);
+
+  const rejectData = useMemo(() => {
+    if (!data) return [];
+    return data.reject_reason_breakdown.map((r) => ({
+      name:
+        REJECT_REASON_TYPE_LABELS[
+          r.reason_type as keyof typeof REJECT_REASON_TYPE_LABELS
+        ] ?? r.reason_type,
+      value: r.count,
+    }));
+  }, [data]);
+
+  const classData = useMemo(() => {
+    if (!data) return [];
+    return data.class_distribution.map((c) => ({ name: c.class_name, value: c.count }));
   }, [data]);
 
   return (
@@ -123,6 +141,15 @@ export function MyPerformancePage() {
                   : "—"
               }
             />
+            <KpiCard
+              label="首过率"
+              value={
+                data.first_pass_yield === null
+                  ? "—"
+                  : `${Math.round(data.first_pass_yield * 100)}%`
+              }
+              suffix={data.first_pass_yield === null ? undefined : "一次通过"}
+            />
           </div>
 
           <div className={styles.grid}>
@@ -158,7 +185,7 @@ export function MyPerformancePage() {
             </div>
 
             {/* 耗时直方图 */}
-            <div className={`${styles.card} ${styles.cardWide}`}>
+            <div className={styles.card}>
               <div className={styles.cardTitle}>标注耗时分布</div>
               {histogramData.length === 0 ? (
                 <div className={styles.empty}>所选范围内暂无耗时样本</div>
@@ -171,6 +198,54 @@ export function MyPerformancePage() {
                       <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                       <Tooltip />
                       <Bar dataKey="count" name="次数" fill={accent} radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            {/* Reject 原因分布(质量归因 A1) */}
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>Reject 原因分布</div>
+              {rejectData.length === 0 ? (
+                <div className={styles.empty}>所选范围内无被驳回记录 🎉</div>
+              ) : (
+                <div className={styles.chartWrap}>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart
+                      layout="vertical"
+                      data={rejectData}
+                      margin={{ top: 4, right: 12, bottom: 4, left: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke={gridColor} horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <YAxis type="category" dataKey="name" width={72} tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Bar dataKey="value" name="次数" fill={danger} radius={[0, 3, 3, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            {/* 类别覆盖 top-N(质量归因 A1) */}
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>类别覆盖(top {classData.length || ""})</div>
+              {classData.length === 0 ? (
+                <div className={styles.empty}>所选范围内暂无标注</div>
+              ) : (
+                <div className={styles.chartWrap}>
+                  <ResponsiveContainer width="100%" height={Math.max(160, classData.length * 26)}>
+                    <BarChart
+                      layout="vertical"
+                      data={classData}
+                      margin={{ top: 4, right: 12, bottom: 4, left: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke={gridColor} horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Bar dataKey="value" name="标注数" fill={accent} radius={[0, 3, 3, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

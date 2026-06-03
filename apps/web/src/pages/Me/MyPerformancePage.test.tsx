@@ -34,6 +34,15 @@ const sample = {
   ],
   p50_duration_ms: 4200,
   p95_duration_ms: 9100,
+  reject_reason_breakdown: [
+    { reason_type: "missing", count: 3, pct: 60.0 },
+    { reason_type: "wrong_label", count: 2, pct: 40.0 },
+  ],
+  class_distribution: [
+    { class_name: "car", count: 80, pct: 62.5 },
+    { class_name: "person", count: 48, pct: 37.5 },
+  ],
+  first_pass_yield: 0.82,
 };
 
 function renderPage() {
@@ -61,6 +70,10 @@ describe("MyPerformancePage", () => {
       screen.getByText("产出趋势 · 我 vs 团队均线（近 4 周）"),
     ).toBeInTheDocument();
     expect(screen.getByText("标注耗时分布")).toBeInTheDocument();
+    // v0.12.4 质量归因块
+    expect(screen.getByText("82%")).toBeInTheDocument(); // 首过率
+    expect(screen.getByText("Reject 原因分布")).toBeInTheDocument();
+    expect(screen.getByText(/类别覆盖/)).toBeInTheDocument();
   });
 
   it("接口报错时显示降级文案", async () => {

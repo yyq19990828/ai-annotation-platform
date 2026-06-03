@@ -63,6 +63,9 @@ const baseDetail = {
   p50_duration_ms: null,
   p95_duration_ms: null,
   timeline: [],
+  reject_reason_breakdown: [],
+  class_distribution: [],
+  first_pass_yield: null,
 };
 
 function renderUI(initialPath = "/admin/people") {

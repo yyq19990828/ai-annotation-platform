@@ -10,6 +10,7 @@ import { Histogram } from "@/components/ui/Histogram";
 import { RadialProgress } from "@/components/ui/RadialProgress";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useAdminPeople, useAdminPersonDetail } from "@/hooks/useDashboard";
+import { REJECT_REASON_TYPE_LABELS } from "@/pages/Review/rejectReasonTypes";
 import type { AdminPersonItem } from "@/api/dashboard";
 import styles from "./AdminPeoplePage.module.css";
 
@@ -324,6 +325,14 @@ function PersonDrawer({ userId, onClose }: { userId: string; onClose: () => void
                   value={data.active_minutes == null ? "—" : `${data.active_minutes}m`}
                 />
                 <KpiCell label="综合分" value={data.composite_score} />
+                <KpiCell
+                  label="首过率"
+                  value={
+                    data.first_pass_yield == null
+                      ? "—"
+                      : `${Math.round(data.first_pass_yield * 100)}%`
+                  }
+                />
               </div>
 
               <Card>
@@ -368,6 +377,42 @@ function PersonDrawer({ userId, onClose }: { userId: string; onClose: () => void
                         <span>{p.project_name}</span>
                         <span className={styles.distributionCount}>
                           {p.count}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              {data.reject_reason_breakdown.length > 0 && (
+                <Card>
+                  <div className={styles.sectionTitle}>Reject 原因分布</div>
+                  <div className={styles.distribution}>
+                    {data.reject_reason_breakdown.map((r) => (
+                      <div key={r.reason_type} className={styles.distributionRow}>
+                        <span>
+                          {REJECT_REASON_TYPE_LABELS[
+                            r.reason_type as keyof typeof REJECT_REASON_TYPE_LABELS
+                          ] ?? r.reason_type}
+                        </span>
+                        <span className={styles.distributionCount}>
+                          {r.count} · {r.pct}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              {data.class_distribution.length > 0 && (
+                <Card>
+                  <div className={styles.sectionTitle}>类别覆盖(top {data.class_distribution.length})</div>
+                  <div className={styles.distribution}>
+                    {data.class_distribution.map((c) => (
+                      <div key={c.class_name} className={styles.distributionRow}>
+                        <span>{c.class_name}</span>
+                        <span className={styles.distributionCount}>
+                          {c.count} · {c.pct}%
                         </span>
                       </div>
                     ))}

@@ -144,6 +144,10 @@ export interface AdminPersonDetail {
     task_display_id?: string;
     detail?: string;
   }>;
+  // v0.12.4 · 质量归因(A1)
+  reject_reason_breakdown: Array<{ reason_type: string; count: number; pct: number }>;
+  class_distribution: Array<{ class_name: string; count: number; pct: number }>;
+  first_pass_yield: number | null;
 }
 
 // v0.12.3 · 标注员自助绩效（取经合集 §4.1 个人页）
@@ -160,6 +164,10 @@ export interface MyPerformance {
   duration_histogram: Array<{ upper_ms: number; count: number }>;
   p50_duration_ms: number | null;
   p95_duration_ms: number | null;
+  // v0.12.4 · 质量归因(A1)
+  reject_reason_breakdown: Array<{ reason_type: string; count: number; pct: number }>;
+  class_distribution: Array<{ class_name: string; count: number; pct: number }>;
+  first_pass_yield: number | null;
 }
 
 export interface MyBatchItem {

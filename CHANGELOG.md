@@ -27,6 +27,15 @@
 
 <!-- 0.12.x 版本变更按版本段追加到本区；开始开发 0.13 后整体移到 docs/changelogs/0.12.x.md -->
 
+## [0.12.4] - 2026-06-03
+
+> **绩效页质量归因(A1)。** 给 `/me/performance`(标注员自助)与 `/admin/people` 成员详情抽屉补三个质量归因维度:**Reject 原因细分**(本人被驳回任务按漏标/多标/类别错/位置错分布)、**类别覆盖**(本人标注按 class_name 的 top-N 占比,检测偏科/盲区)、**首过率 first-pass yield**(一次通过无 reopen / 提交总数,比 reopen 率更标准的质量 KPI)。纯增量、数据现成。对标调研见 `docs/research/15-annotator-performance.md`,路线见 `docs/plans/2026-06-03-annotator-performance-deepening.md`。
+
+### Added
+
+- **质量归因三维**:`GET /dashboard/me/performance` 与 `GET /dashboard/admin/people/{user_id}` 响应新增 `reject_reason_breakdown` / `class_distribution` / `first_pass_yield` 三字段(追加,向后兼容)。后端三个共享 helper:`_reject_reason_breakdown`(按 `Task.reject_reason_type` 分组)、`_class_distribution`(按 `Annotation.class_name` top-N)、`_first_pass_yield`(`reopened_count==0` 占提交比,无样本→null)。
+- **前端**:`MyPerformancePage` 新增「首过率」KPI + 「Reject 原因分布」+「类别覆盖」(recharts 横向柱图);`AdminPeoplePage` 详情抽屉新增同三块(复用现有 distribution 行样式 + 首过率 KPI)。
+
 ## [0.12.3] - 2026-06-03
 
 > **标注员自助绩效页 + 绩效/分析导航补全。** 取经合集 §4.1「Annotator Performance Dashboard」的真实缺口收口：super_admin 的成员绩效页 `/admin/people`（v0.8.4 已含今日/本周/本月、产能/质量排序、人均卡片 + 下钻趋势/直方图）此前只能从 Dashboard 卡片或直达 URL 进入，本版补 Sidebar 入口；DuckDB 离线分析页 `/admin/analytics` 同为导航孤儿，一并接入。新增**所有角色可见的 `/me/performance` 自助页**，标注员看自己 4 周产出趋势对标团队均线 + 耗时直方图，用 recharts 渲染。计划见 `docs/plans/2026-06-03-v0.12.3-annotator-performance-dashboard.md`。

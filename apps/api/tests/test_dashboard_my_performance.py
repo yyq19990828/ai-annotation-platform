@@ -78,6 +78,10 @@ async def test_my_performance_zeros_when_no_data(httpx_client_bound, annotator):
     assert len(data["trend_throughput"]) == 4
     assert len(data["team_trend_throughput"]) == 4
     assert data["duration_histogram"] == []
+    # v0.12.4 质量归因(A1):无数据时空 + None
+    assert data["reject_reason_breakdown"] == []
+    assert data["class_distribution"] == []
+    assert data["first_pass_yield"] is None
 
 
 @pytest.mark.asyncio
@@ -128,6 +132,52 @@ async def test_my_performance_is_self_scoped(
     assert resp.status_code == 200
     # admin 自己没有标注产出
     assert resp.json()["throughput"] == 0
+
+
+@pytest.mark.asyncio
+async def test_my_performance_quality_attribution(
+    httpx_client_bound, db_session, super_admin, annotator
+):
+    """v0.12.4 · 类别覆盖 / reject 原因细分 / 首过率(A1)。"""
+    admin_user, _ = super_admin
+    ann_user, ann_token = annotator
+    proj = await _seed_project(db_session, admin_user.id)
+    now = datetime.now(timezone.utc)
+
+    # 类别分布:car×2, person×1
+    for cls in ("car", "car", "person"):
+        task = await _seed_task(db_session, proj.id)
+        db_session.add(
+            Annotation(
+                id=uuid.uuid4(),
+                task_id=task.id,
+                project_id=proj.id,
+                user_id=ann_user.id,
+                class_name=cls,
+                geometry={"x": 0, "y": 0, "w": 1, "h": 1},
+                created_at=now,
+            )
+        )
+    # 首过率:3 提交(2 干净 + 1 reopen=1) → 2/3;其中 reopen 那条带 reject 原因
+    for reopened, reason in [(0, None), (0, None), (1, "missing")]:
+        t = await _seed_task(db_session, proj.id)
+        t.assignee_id = ann_user.id
+        t.submitted_at = now
+        t.reopened_count = reopened
+        t.reject_reason_type = reason
+    await db_session.commit()
+
+    resp = await httpx_client_bound.get(
+        "/api/v1/dashboard/me/performance",
+        headers={"Authorization": f"Bearer {ann_token}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    classes = {c["class_name"]: c["count"] for c in data["class_distribution"]}
+    assert classes == {"car": 2, "person": 1}
+    assert data["first_pass_yield"] == 0.667  # 2/3 round 3
+    reasons = {r["reason_type"]: r["count"] for r in data["reject_reason_breakdown"]}
+    assert reasons == {"missing": 1}
 
 
 @pytest.mark.asyncio
