@@ -45,6 +45,7 @@
 
 ### Fixed
 
+- **3D 台按 E 键误把任务提交质检**:E 全局绑定「提交质检」(`hotkeys.ts` dispatch → submit),在 3D 工作台按 E 想切 gizmo 旋转模式却触发了全局提交。修复:`stageKind==="3d"` 时把 3D 自管的 `B/V/W/E/R` 经 `ignoredKeys` 交给 3D 本地 keydown 处理,全局 2D 热键跳过这些键(Ctrl+方向切题 / `?` / Esc 等全局键保留)。
 - **Dashboard 陈旧测试**:`ViewerDashboard.test.tsx` 原用 `lidar` 项目断言「未实现工作台 → toast」,但 lidar 自 v0.13.x 已进白名单(导航进 3D 台);改用 `image-seg` 项目验证降级 toast。
 
 ### Notes

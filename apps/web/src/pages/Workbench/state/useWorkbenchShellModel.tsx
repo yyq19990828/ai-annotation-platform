@@ -1136,6 +1136,14 @@ export function useWorkbenchShellModel({
     });
   }, [taskId, s.selectedIds, ungroupAnnotationMut, pushToast]);
 
+  // v0.13.4 · 3D 工作台自管这些字母键(V/B 选/放、W/E/R gizmo 模式),交给它的本地
+  // keydown 处理;否则全局 2D 热键会抢 —— 尤其 E=「提交质检」(dispatchKey → submit)会被
+  // 误触发:用户按 E 想转 gizmo,却把任务直接提交了。Ctrl+方向(切题)/?/Esc 等全局键仍保留。
+  const threeDOwnedKeys = useMemo(
+    () => new Set(["b", "B", "v", "V", "w", "W", "e", "E", "r", "R"]),
+    [],
+  );
+
   const { spacePan, nudgeMap } = useWorkbenchHotkeys({
     s, history, classes, currentProject, annotationsRef,
     batchChanging, setBatchChanging, showHotkeys,
@@ -1148,6 +1156,7 @@ export function useWorkbenchShellModel({
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
     taskId,
+    ignoredKeys: stageKind === "3d" ? threeDOwnedKeys : undefined,
     videoMode: isVideoTask,
     samplingActive,
     videoControlsRef,
