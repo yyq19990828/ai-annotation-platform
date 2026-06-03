@@ -27,6 +27,27 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；0.12.x 历史段待整体移到 docs/changelogs/0.12.x.md -->
 
+## [0.13.7] - 2026-06-03
+
+点云 + 图像联合标注工作台第八切片:**相机悬浮环绕布局**(SUSTech 式)。相机从「底部一字排 strip」改为按物理朝向悬浮在主 3D 视图四周,主视图全屏化;三视图精修栏从常驻右栏收为右下浮层。**纯前端、布局 + 交互重构,后端零改动**。计划见 `docs/plans/2026-06-03-v0.13.7-camera-surround-layout.md`。
+
+### Added
+
+- **相机朝向锚点推导**(`three-d/geometry/cameraAnchor.ts`,纯函数 + 单测 7 例):把每个相机推到主视图四周 9 个锚点之一(8 方位 + overflow)。**名字优先**(`front→顶 / rear→底 / left→左 / right→右`,复合 `front_left` 先于简单命中)、**外参兜底**(无可识别名字时按标准 lidar 约定 X=前 取光轴方位角)、都认不出 / 光轴近垂直 → overflow。
+- **悬浮相机面板**(`FloatingCameraPanel.tsx`):相机按 `cameraAnchor` 分组贴主视图边缘(同朝向沿边堆叠),`front` 顶中 / `left` 左中 / `right` 右中。每个面板可「收起」折叠为贴边小标签,折叠态按 role 存 `localStorage`(刷新保留)。容器 `pointer-events:none` 不挡点云,子面板各自收事件。
+- **相机放大浮层**:面板标题条「⛶」→ 居中大图浮层(复用 `CameraProjectionView`,图按 70vh 放大),投影 / 上色 / 深度 overlay 一致缩放;遮罩点击 / 关闭钮 / `ESC` 三途径关闭。
+
+### Changed
+
+- **主 3D 视图全屏化**:拆掉 `mainRow` 固定 240px 三视图右栏与底部相机 strip,viewport 铺满,gizmo 标注空间最大化且永不被压。
+- **三视图精修收右下浮层**(`TriViewPanel` 容器从右栏改 `viewportWrap` 内 absolute 浮层):选中框才挂载浮出,可「收起」为小标签,未选框时零占位。
+- **投影 / 上色 / 深度 / 命中零改动**:`CameraProjectionView` 已按 `clientWidth/naturalWidth` 自适应缩放,布局变更对其透明。
+
+### Notes
+
+- 当前示例集 `pc-scene-a` 仅 `front/left/right` 三相机(无 rear),网格自适应只渲染有相机的扇区,空朝向让主视图吃掉。外参兜底假设标准 lidar 约定(X=前);示例集前向实为 -Y(非标准),故走名字分支,回归测试锁定名字优先压过外参。
+- 窄屏自适应(过窄自动折叠)未做:应用已在 <1024px 由 `MobileWorkbenchBlock` 拦截、且面板可手动折叠 + 记忆,留作 follow-up。相机面板自由拖动、6+ 相机(nuScenes)实测调优同列后续。
+
 ## [0.13.6] - 2026-06-03
 
 点云 + 图像联合标注工作台第七切片:**点云 RGB 上色 + 深度联动**——继续吃满 0.13.4 的标定投影内核,把图像↔点云的融合做深一层。**纯前端、实时算不预存,后端零改动**。计划见 `docs/plans/2026-06-03-v0.13.6-rgb-colorize-depth-layout.md`(朝向环绕布局原 C3 已拆出顺延更下一版本)。
