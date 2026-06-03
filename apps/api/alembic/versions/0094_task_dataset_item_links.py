@@ -3,8 +3,8 @@
 一个点云任务可关联主点云 (role=primary_lidar) 与多路相机图像
 (role=camera_<name>)。同一 task 同一 role 唯一。纯新增，不动现有 2D 流程。
 
-Revision ID: 0092
-Revises: 0091
+Revision ID: 0094
+Revises: 0093
 Create Date: 2026-06-02
 """
 
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision = "0092"
-down_revision = "0091"
+revision = "0094"
+down_revision = "0093"
 branch_labels = None
 depends_on = None
 
