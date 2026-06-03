@@ -16,7 +16,7 @@ import {
 import { useProject } from "@/hooks/useProjects";
 import { classColorForCanvas } from "@/pages/Workbench/stage/colors";
 import type { ThreeDTool } from "@/pages/Workbench/state/useWorkbenchState";
-import type { Box3DGeometry } from "@/types";
+import type { Box3DGeometry, SensorCalibration } from "@/types";
 
 import { usePointCloudManifest } from "./usePointCloudManifest";
 import {
@@ -29,6 +29,7 @@ import TriViewPanel from "./TriViewPanel";
 import type { TriSelected } from "./TriOrthoView";
 import type { Psr } from "./geometry/triview";
 import { psrToCorners } from "./geometry/box3d";
+import { colorizePoints, type CameraSample } from "./geometry/colorize";
 import { projectPoints } from "./geometry/projection";
 import styles from "./ThreeDWorkbench.module.css";
 
@@ -50,6 +51,37 @@ interface ThreeDWorkbenchProps {
 const DEFAULT_BOX_SIZE: [number, number, number] = [4.0, 1.8, 1.6];
 // 点云项目的 3D 框工具单位(类别 / 属性绑定都挂在它下面)。
 const LIDAR_TOOL_UNIT = "lidar_box_3d";
+
+/**
+ * v0.13.6 · 把相机图加载成 CameraSample(原图分辨率 RGBA buffer),供点云上色逐点采样。
+ * crossOrigin="anonymous" 让 canvas 不被跨域污染(MinIO 已为点云 GET 放行 CORS);
+ * 加载失败 / getImageData 仍被污染(SecurityError)→ 返回 null(该相机降级跳过,不阻断其余)。
+ */
+function loadCameraSample(
+  imageUrl: string,
+  calib: SensorCalibration,
+): Promise<CameraSample | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return resolve(null);
+      ctx.drawImage(img, 0, 0);
+      try {
+        const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        resolve({ calib, width: canvas.width, height: canvas.height, data });
+      } catch {
+        resolve(null); // 跨域污染
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = imageUrl;
+  });
+}
 
 // v0.13.3 · PSR 数值面板字段(中心 cx/cy/cz、尺寸 l/w/h、朝向 yaw/pitch/roll)。
 // v0.13.5 · 朝向补齐三轴: yaw=rotation[2](绕Z)、pitch=rotation[1](绕Y)、roll=rotation[0](绕X),
@@ -102,6 +134,9 @@ export function ThreeDWorkbench({
   const [stats, setStats] = useState<PointCloudStats | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pointSize, setPointSize] = useState(0.06);
+  // v0.13.6 · 相机 RGB 上色开关(默认关:无标定相机降级,且省一次性投影采样开销)。
+  const [colorizeOn, setColorizeOn] = useState(false);
+  const [colorizing, setColorizing] = useState(false);
   // 选中态来自壳层(selectedId / onSelectBox props),与标注列表 / 右栏面板共享同一份。
 
   const { data: annotations } = useAnnotations(taskId ?? undefined);
@@ -449,6 +484,39 @@ export function ThreeDWorkbench({
 
   const cameras = useMemo(() => manifest?.cameras ?? [], [manifest?.cameras]);
 
+  // v0.13.6 · 相机 RGB 上色:开关开 → 逐点投影到各标定相机采样像素 → 写回点云 color;
+  // 关 → 还原高度色带。一次性算(不进每帧),依赖 colorizeOn / cameras / stats(载帧)。
+  // 无标定相机自动剔除;getImageData 跨域污染则降级(整相机跳过)。三视图复用同一 geometry 自动跟随。
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene || !stats) return;
+    if (!colorizeOn) {
+      scene.setPointColors(null);
+      return;
+    }
+    let cancelled = false;
+    setColorizing(true);
+    (async () => {
+      const positions = scene.getPointPositions();
+      const calibCams = cameras.filter((c) => c.calibration);
+      if (!positions || calibCams.length === 0) {
+        if (!cancelled) setColorizing(false);
+        return;
+      }
+      const samples = (
+        await Promise.all(calibCams.map((c) => loadCameraSample(c.image_url, c.calibration!)))
+      ).filter((s): s is CameraSample => s !== null);
+      if (cancelled) return;
+      if (samples.length > 0) {
+        scene.setPointColors(colorizePoints(positions, scene.getBaseColors(), samples));
+      }
+      setColorizing(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [colorizeOn, cameras, stats]);
+
   // v0.13.4 · 跨模态高亮集合:选中框 + 同 group_id 成员。3D 主视图仍按 selected 单框高亮,
   // overlay 按本集合高亮(为未来同组 2D 框成员预留;孤立框 group_id 为空时退化为仅选中本身)。
   const selectedGroupId = selectedAnn?.group_id ?? null;
@@ -552,6 +620,16 @@ export function ThreeDWorkbench({
               onChange={(e) => handlePointSize(Number(e.target.value))}
             />
           </label>
+          {cameras.some((c) => c.calibration) && (
+            <label className={styles.sizeCtl}>
+              <input
+                type="checkbox"
+                checked={colorizeOn}
+                onChange={(e) => setColorizeOn(e.target.checked)}
+              />
+              相机上色{colorizing ? "…" : ""}
+            </label>
+          )}
         </div>
 
         {/* 状态条 */}

@@ -48,6 +48,8 @@ export class PointCloudScene {
   private camera: THREE.PerspectiveCamera;
   private controls: OrbitControls;
   private points: THREE.Points | null = null;
+  // v0.13.6 · 载帧时存的原色(高度色带),相机上色关闭时还原。
+  private baseColors: Float32Array | null = null;
   private raf = 0;
   private disposed = false;
   private container: HTMLElement;
@@ -146,6 +148,9 @@ export class PointCloudScene {
     const geom = new THREE.BufferGeometry();
     geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     this.applyHeightColors(geom, positions, rendered);
+    this.baseColors = new Float32Array(
+      (geom.getAttribute("color") as THREE.BufferAttribute).array as Float32Array,
+    );
     geom.computeBoundingBox();
 
     const material = new THREE.PointsMaterial({
@@ -267,6 +272,33 @@ export class PointCloudScene {
     if (this.points) {
       (this.points.material as THREE.PointsMaterial).size = size;
     }
+  }
+
+  /** v0.13.6 · 当前点坐标 (N*3, lidar/world 系, 与标定同系); 供相机上色逐点投影。 */
+  getPointPositions(): Float32Array | null {
+    const attr = this.points?.geometry.getAttribute("position") as
+      | THREE.BufferAttribute
+      | undefined;
+    return attr ? (attr.array as Float32Array) : null;
+  }
+
+  /** v0.13.6 · 载帧时的原色 (高度色带); 上色时无相机覆盖的点回退到它。 */
+  getBaseColors(): Float32Array | null {
+    return this.baseColors;
+  }
+
+  /**
+   * v0.13.6 · 设点云颜色。colors=相机上色结果 (N*3); null=还原原色 (高度色带)。
+   * 原地写回既有 color buffer (长度一致), 触发 GPU 更新。三视图复用同一 geometry 自动跟随。
+   */
+  setPointColors(colors: Float32Array | null) {
+    const geom = this.points?.geometry;
+    if (!geom) return;
+    const target = colors ?? this.baseColors;
+    if (!target) return;
+    const attr = geom.getAttribute("color") as THREE.BufferAttribute;
+    (attr.array as Float32Array).set(target);
+    attr.needsUpdate = true;
   }
 
   resize() {
