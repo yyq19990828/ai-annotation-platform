@@ -5,6 +5,8 @@ import { boxAxisWorldDir } from "./box3d";
 import {
   VIEW_AXES,
   MIN_SIZE,
+  FRAME_MARGIN,
+  frameOrtho,
   dragEdge,
   dragCorner,
   dragRotation,
@@ -23,6 +25,26 @@ describe("VIEW_AXES", () => {
       const { u, v, normal } = VIEW_AXES[view];
       expect(new Set([u, v, normal]).size).toBe(3);
     }
+  });
+});
+
+describe("frameOrtho · 正交取景半宽/半高", () => {
+  it("保持视口 aspect, 且必框住 box+margin (较紧一维贴边)", () => {
+    // base.size=[4,2,1.5], Top: u=X(4)→halfU=2.6, v=Y(2)→halfV=1.6; aspect=2
+    const { halfW, halfH } = frameOrtho(base.size, "top", 2);
+    expect(halfW / halfH).toBeCloseTo(2); // aspect 不变形
+    expect(halfW).toBeGreaterThanOrEqual(base.size[0] / 2 + FRAME_MARGIN - 1e-9);
+    expect(halfH).toBeGreaterThanOrEqual(base.size[1] / 2 + FRAME_MARGIN - 1e-9);
+    // halfU/halfV=1.625 < aspect 2 → 按高贴边: halfH=1.6, halfW=3.2
+    expect(halfH).toBeCloseTo(1.6);
+    expect(halfW).toBeCloseTo(3.2);
+  });
+
+  it("框比视口更'宽'时按宽贴边 (横轴顶满, 纵轴按 aspect 撑开)", () => {
+    // aspect=1 (方形视口): halfU/halfV=1.625 > 1 → 按宽贴边
+    const { halfW, halfH } = frameOrtho(base.size, "top", 1);
+    expect(halfW).toBeCloseTo(2.6); // = halfU
+    expect(halfH).toBeCloseTo(2.6); // = halfU / aspect
   });
 });
 

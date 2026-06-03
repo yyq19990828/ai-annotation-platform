@@ -37,8 +37,35 @@ export const VIEW_AXES: Record<
 /** 全边长下限 (米): 避免拖穿 / 负尺寸 (呼应渲染层的负 size 兜底)。 */
 export const MIN_SIZE = 0.05;
 
+/** 三视图正交相机/裁剪在框各方向额外放宽的米数 (看清框边界外一圈轮廓贴合度)。 */
+export const FRAME_MARGIN = 0.6;
+
 function toVec3(v: THREE.Vector3): Vec3 {
   return [v.x, v.y, v.z];
+}
+
+/**
+ * v0.13.5 · 单视图正交相机的取景半宽/半高 (米): 框住 box(对应两 local 轴) + margin,
+ * 并按视口 aspect (= 宽/高 像素比) 保持不变形 (取较紧的一维, 另一维按 aspect 撑开)。
+ *
+ * 供两处共用同一口径:
+ *   - TriViewRenderer 设正交相机 left/right/top/bottom = ±halfW / ±halfH;
+ *   - TriOrthoView 2D overlay 把米→px (s = (cssW/2)/halfW) 画框矩形, 与 WebGL 底严丝对齐。
+ */
+export function frameOrtho(
+  size: Vec3,
+  view: TriView,
+  aspect: number,
+  margin = FRAME_MARGIN,
+): { halfW: number; halfH: number } {
+  const { u, v } = VIEW_AXES[view];
+  const halfU = size[u] / 2 + margin; // 屏幕横轴方向需框住的半宽 (米)
+  const halfV = size[v] / 2 + margin; // 屏幕纵轴方向需框住的半高 (米)
+  // 框的宽高比 vs 视口宽高比: 框更"宽"则按宽贴边、高度按 aspect 撑开; 反之按高贴边。
+  if (halfU / halfV > aspect) {
+    return { halfW: halfU, halfH: halfU / aspect };
+  }
+  return { halfW: halfV * aspect, halfH: halfV };
 }
 
 /**

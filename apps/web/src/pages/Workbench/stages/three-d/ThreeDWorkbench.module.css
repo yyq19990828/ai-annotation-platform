@@ -23,6 +23,73 @@
   cursor: crosshair;
 }
 
+/* v0.13.5 · 主 3D 视图(左)+ 三正交视图面板(右)横向并排。 */
+.mainRow {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* v0.13.5 · 右栏三视图面板:一块占满的 WebGL canvas(居底)+ 纵向 3 行 overlay。 */
+.triPanel {
+  position: relative;
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-bg-elev);
+}
+
+/* 单视图行:WebGL viewport 与 2D overlay 共用此像素矩形。 */
+.triRow {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* 2D overlay(框矩形 / 之后的 handle):叠在 WebGL 之上。B-1 只读, 不收事件。 */
+.triOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.triCaption {
+  position: absolute;
+  left: 6px;
+  bottom: 4px;
+  z-index: 2;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  pointer-events: none;
+}
+
+/* 未选中框时的占位提示(盖住三窗)。 */
+.triEmpty {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 12px;
+  background: var(--color-bg-elev);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-fg-muted);
+}
+
 .controls {
   position: absolute;
   top: 12px;

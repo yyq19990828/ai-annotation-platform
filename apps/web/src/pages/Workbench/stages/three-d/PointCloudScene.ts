@@ -254,6 +254,15 @@ export class PointCloudScene {
     this.frameView();
   }
 
+  /**
+   * v0.13.5 · 暴露当前点云 BufferGeometry, 供三视图 TriViewRenderer 复用同一份点数据
+   * (CPU 数据共享, 各 WebGL context 各自惰性上传一份 GPU 副本; 主场景拥有生命周期,
+   * TriViewRenderer 只引用、不 dispose)。无点云时返回 null。
+   */
+  getPointsGeometry(): THREE.BufferGeometry | null {
+    return this.points?.geometry ?? null;
+  }
+
   setPointSize(size: number) {
     if (this.points) {
       (this.points.material as THREE.PointsMaterial).size = size;

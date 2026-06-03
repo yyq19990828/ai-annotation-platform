@@ -25,6 +25,8 @@ import {
   type SceneBox,
 } from "./PointCloudScene";
 import CameraProjectionView from "./CameraProjectionView";
+import TriViewPanel from "./TriViewPanel";
+import type { TriSelected } from "./TriOrthoView";
 import { psrToCorners } from "./geometry/box3d";
 import { projectPoints } from "./geometry/projection";
 import styles from "./ThreeDWorkbench.module.css";
@@ -424,9 +426,29 @@ export function ThreeDWorkbench({
   }, [selectedBox, cameras]);
   const bestCameraRole = selectedCameraVis[0]?.role ?? null;
 
+  // v0.13.5 · 三视图复用主场景点 geometry (零拷贝); selected 仅在 PSR/色变化时换引用,
+  // 避免每次 render 触发 TriViewRenderer.setBox。
+  const getPointsGeometry = useCallback(
+    () => sceneRef.current?.getPointsGeometry() ?? null,
+    [],
+  );
+  const triSelected = useMemo<TriSelected | null>(
+    () =>
+      selectedBox
+        ? {
+            center: selectedBox.center,
+            size: selectedBox.size,
+            rotation: selectedBox.rotation,
+            color: selectedBox.color,
+          }
+        : null,
+    [selectedBox],
+  );
+
   return (
     <div className={styles.root}>
-      <div className={styles.viewportWrap}>
+      <div className={styles.mainRow}>
+        <div className={styles.viewportWrap}>
         <div
           ref={viewportRef}
           className={placing ? `${styles.viewport} ${styles.placing}` : styles.viewport}
@@ -558,6 +580,14 @@ export function ThreeDWorkbench({
             )}
           </div>
         )}
+        </div>
+
+        {/* v0.13.5 · 三正交视图精修面板(只读基建;选中框出俯/侧/正三窗) */}
+        <TriViewPanel
+          selected={triSelected}
+          getPointsGeometry={getPointsGeometry}
+          pointsReady={!!stats}
+        />
       </div>
 
       {/* 相机图面板 + 投影 overlay(v0.13.4):3D 框经标定实时投影,点投影框反选 */}
