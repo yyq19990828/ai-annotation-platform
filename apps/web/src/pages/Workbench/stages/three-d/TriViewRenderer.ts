@@ -39,6 +39,10 @@ export class TriViewRenderer {
   private box: Psr | null = null;
   // 拖拽期冻结相机取景的参考 PSR (= 拖拽起始姿态); null 时相机随 box。裁剪面始终用 box(实时)。
   private cameraRef: Psr | null = null;
+  // 世界点大小 (米, 跟随主视图滑杆)。正交相机下 sizeAttenuation 不生效, 故每帧按本视图
+  // 米→px 比例把它换算成像素喂给 material.size (见 animate)。
+  private worldPointSize = 0.06;
+  private dpr: number;
   private raf = 0;
   private disposed = false;
   private container: HTMLElement;
@@ -46,9 +50,10 @@ export class TriViewRenderer {
   constructor(container: HTMLElement) {
     this.container = container;
     const { clientWidth: w, clientHeight: h } = container;
+    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(this.dpr);
     this.renderer.setSize(w || 1, h || 1);
     this.renderer.setClearColor(0x0b0d12, 1);
     this.renderer.localClippingEnabled = true; // 启用 GPU 框内点裁切
@@ -60,9 +65,9 @@ export class TriViewRenderer {
     container.appendChild(el);
 
     this.material = new THREE.PointsMaterial({
-      size: 0.05,
+      size: 2,
       vertexColors: true,
-      sizeAttenuation: true,
+      sizeAttenuation: false, // 正交相机下 attenuation 无效; size 当像素用, 每帧按比例算
     });
     this.material.clippingPlanes = []; // 选中框时填 6 面
 
@@ -103,9 +108,9 @@ export class TriViewRenderer {
     this.cameraRef = ref;
   }
 
-  /** 点大小 (世界尺寸, 米): 跟随主视图点大小滑杆, 三视图与主点云口径一致。 */
+  /** 点大小 (世界尺寸, 米): 跟随主视图点大小滑杆; 每帧按本视图 米→px 比例换算成像素。 */
   setPointSize(size: number) {
-    this.material.size = size;
+    this.worldPointSize = size;
   }
 
   /** 容器尺寸变化: 同步 canvas 像素尺寸 (viewport 由 setViewports 单独给)。 */
@@ -154,6 +159,11 @@ export class TriViewRenderer {
       r.setViewport(rect.x, yBottom, rect.w, rect.h);
       r.setScissor(rect.x, yBottom, rect.w, rect.h);
       this.updateCamera(rect.view, rect.w / rect.h);
+      // 正交下按本视图 米→px (sCss) 把世界点大小换成像素 (×dpr 到 framebuffer px); 下限 1px。
+      const camBox = this.cameraRef ?? this.box;
+      const { halfW } = frameOrtho(camBox.size, rect.view, rect.w / rect.h);
+      const sCss = rect.w / 2 / halfW;
+      this.material.size = Math.max(1, this.worldPointSize * sCss * this.dpr);
       r.render(this.scene, this.cameras[rect.view]);
     }
     r.setScissorTest(false);

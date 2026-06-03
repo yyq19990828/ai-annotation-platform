@@ -57,10 +57,16 @@ const LIDAR_TOOL_UNIT = "lidar_box_3d";
 type PsrField = "cx" | "cy" | "cz" | "l" | "w" | "h" | "yaw" | "pitch" | "roll";
 const PSR_FIELDS: PsrField[] = ["cx", "cy", "cz", "l", "w", "h", "yaw", "pitch", "roll"];
 const SIZE_FIELDS = new Set<PsrField>(["l", "w", "h"]);
-const PSR_GROUPS: { label: string; keys: PsrField[]; step: number; min?: number }[] = [
+const PSR_GROUPS: {
+  label: string;
+  keys: PsrField[];
+  step: number;
+  min?: number;
+  reset?: boolean;
+}[] = [
   { label: "中心 (m)", keys: ["cx", "cy", "cz"], step: 0.1 },
   { label: "尺寸 长宽高 (m)", keys: ["l", "w", "h"], step: 0.1, min: 0.1 },
-  { label: "朝向 偏航/俯仰/翻滚 (°)", keys: ["yaw", "pitch", "roll"], step: 1 },
+  { label: "朝向 偏航/俯仰/翻滚 (°)", keys: ["yaw", "pitch", "roll"], step: 1, reset: true },
 ];
 const fmtNum = (n: number) => String(+n.toFixed(3));
 function psrToForm(b: {
@@ -360,6 +366,23 @@ export function ThreeDWorkbench({
     [selectedId, updateAnnotation],
   );
 
+  // v0.13.5 · 朝向归零:把三轴旋转复位为 [0,0,0](保留中心/尺寸),并同步表单。
+  const handleResetRotation = useCallback(() => {
+    if (!selectedId || !selectedBox) return;
+    setForm((prev) => (prev ? { ...prev, yaw: "0", pitch: "0", roll: "0" } : prev));
+    updateAnnotation.mutate({
+      annotationId: selectedId,
+      payload: {
+        geometry: {
+          type: "box_3d",
+          center: selectedBox.center,
+          size: selectedBox.size,
+          rotation: [0, 0, 0],
+        },
+      },
+    });
+  }, [selectedId, selectedBox, updateAnnotation]);
+
   // 锁定 / 解锁选中框(与列表 L 切换同源 is_locked;锁定后不可编辑,解锁需此按钮 / 列表)。
   const handleToggleLock = useCallback(() => {
     if (!selectedId) return;
@@ -591,7 +614,19 @@ export function ThreeDWorkbench({
             </div>
             {PSR_GROUPS.map((g) => (
               <div key={g.label}>
-                <div className={styles.editGroupLabel}>{g.label}</div>
+                <div className={styles.editGroupLabelRow}>
+                  <span className={styles.editGroupLabel}>{g.label}</span>
+                  {g.reset && selectedEditable && (
+                    <button
+                      type="button"
+                      className={styles.resetBtn}
+                      onClick={handleResetRotation}
+                      title="把偏航/俯仰/翻滚全部归零"
+                    >
+                      归零
+                    </button>
+                  )}
+                </div>
                 <div className={styles.editRow}>
                   {g.keys.map((k) => (
                     <input
