@@ -113,6 +113,47 @@ export function dragCorner(
 }
 
 /**
+ * 屏幕 handle 标识 (8 向, 同 CSS resize 方位): 屏幕 u 右 = e、u 左 = w、v 上 = n、v 下 = s;
+ * 四角 ne/nw/se/sw。注意屏幕 v 轴朝上, 故 n 对应 box-local +v 边、s 对应 −v 边。
+ */
+export type Handle = "e" | "w" | "n" | "s" | "ne" | "nw" | "se" | "sw";
+
+/**
+ * v0.13.5 · 把一次屏幕 handle 拖拽映射到边/角拖拽 (UI 不写裸数学, 全收口于此)。
+ * @param dU 指针沿屏幕 +u (= box-local +u 世界方向) 的位移, 米 (= 屏幕 dx_px / s)
+ * @param dV 指针沿屏幕 +v (= box-local +v 世界方向) 的位移, 米 (= −屏幕 dy_px / s, 屏幕 y 朝下)
+ *
+ * 应以**拖拽起始 PSR** 为输入、传入"相对起点的累计位移", 因 dragEdge 含 clamp 非增量幂等。
+ */
+export function dragHandle(
+  psr: Psr,
+  view: TriView,
+  handle: Handle,
+  dU: number,
+  dV: number,
+): Psr {
+  const { u, v } = VIEW_AXES[view];
+  switch (handle) {
+    case "e":
+      return dragEdge(psr, u, 1, dU);
+    case "w":
+      return dragEdge(psr, u, -1, dU);
+    case "n":
+      return dragEdge(psr, v, 1, dV);
+    case "s":
+      return dragEdge(psr, v, -1, dV);
+    case "ne":
+      return dragCorner(psr, u, 1, dU, v, 1, dV);
+    case "nw":
+      return dragCorner(psr, u, -1, dU, v, 1, dV);
+    case "se":
+      return dragCorner(psr, u, 1, dU, v, -1, dV);
+    case "sw":
+      return dragCorner(psr, u, -1, dU, v, -1, dV);
+  }
+}
+
+/**
  * 拖方向线: 绕该视图法线对应的 box-local 轴增量旋转 deltaTheta (弧度)。
  * 增量 → 四元数 local-space 复合 (右乘) → 分解回 XYZ 欧拉。纯 yaw 时退化为 rotation[2]+=dθ。
  */

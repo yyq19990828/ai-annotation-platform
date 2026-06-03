@@ -27,6 +27,7 @@ import {
 import CameraProjectionView from "./CameraProjectionView";
 import TriViewPanel from "./TriViewPanel";
 import type { TriSelected } from "./TriOrthoView";
+import type { Psr } from "./geometry/triview";
 import { psrToCorners } from "./geometry/box3d";
 import { projectPoints } from "./geometry/projection";
 import styles from "./ThreeDWorkbench.module.css";
@@ -121,6 +122,9 @@ export function ThreeDWorkbench({
   const [form, setForm] = useState<Record<PsrField, string> | null>(null);
   const patchTimer = useRef<number | null>(null);
 
+  // v0.13.5 · 三视图拖拽中的本地草稿 PSR (覆盖选中框, 实时四方同步; 松手 PATCH 后清空)。
+  const [draftPsr, setDraftPsr] = useState<{ id: string; psr: Psr } | null>(null);
+
   // 标注里的 3D 框(geometry.type==="box_3d")→ 渲染层输入(PSR + 类别色 + 选中态)。
   const boxes = useMemo<SceneBox[]>(() => {
     const list: SceneBox[] = [];
@@ -133,19 +137,27 @@ export function ThreeDWorkbench({
         rotation?: number[];
       };
       if (g?.type !== "box_3d" || !g.center || !g.size || !g.rotation) continue;
+      // 三视图拖拽中:用本地草稿覆盖该框的 PSR(实时预览, 不发请求)。
+      const dp = draftPsr && draftPsr.id === a.id ? draftPsr.psr : null;
       list.push({
         id: a.id,
-        center: g.center as [number, number, number],
+        center: dp
+          ? [dp.center[0], dp.center[1], dp.center[2]]
+          : (g.center as [number, number, number]),
         // 尺寸取绝对值兜底:历史/缩放翻转可能写入负 size,负值会让框翻转、且卡住数值面板
         // 的 size>0 提交校验。渲染与面板初始化统一按正尺寸。
-        size: g.size.map((v) => Math.abs(v)) as [number, number, number],
-        rotation: g.rotation as [number, number, number],
+        size: dp
+          ? [Math.abs(dp.size[0]), Math.abs(dp.size[1]), Math.abs(dp.size[2])]
+          : (g.size.map((v) => Math.abs(v)) as [number, number, number]),
+        rotation: dp
+          ? [dp.rotation[0], dp.rotation[1], dp.rotation[2]]
+          : (g.rotation as [number, number, number]),
         color: classColorForCanvas(a.class_name),
         selected: a.id === selectedId,
       });
     }
     return list;
-  }, [annotations, selectedId]);
+  }, [annotations, selectedId, draftPsr]);
 
   const selectedBox = boxes.find((b) => b.id === selectedId) ?? null;
   const selectedAnn = (annotations ?? []).find((a) => a.id === selectedId) ?? null;
@@ -445,6 +457,28 @@ export function ThreeDWorkbench({
     [selectedBox],
   );
 
+  // v0.13.5 · 三视图拖边/角回写: 拖拽中 (commit=false) 只更新本地草稿 (实时四方同步);
+  // 松手 (commit=true) 走与 gizmo 同一条 PATCH 管线持久化, 并清草稿 (乐观更新已写入缓存)。
+  const handleEditPsr = useCallback(
+    (psr: Psr, commit: boolean) => {
+      if (!selectedId) return;
+      const center: [number, number, number] = [psr.center[0], psr.center[1], psr.center[2]];
+      const size: [number, number, number] = [psr.size[0], psr.size[1], psr.size[2]];
+      const rotation: [number, number, number] = [psr.rotation[0], psr.rotation[1], psr.rotation[2]];
+      setForm(psrToForm({ center, size, rotation }));
+      if (commit) {
+        setDraftPsr(null);
+        updateMutateRef.current({
+          annotationId: selectedId,
+          payload: { geometry: { type: "box_3d", center, size, rotation } },
+        });
+      } else {
+        setDraftPsr({ id: selectedId, psr });
+      }
+    },
+    [selectedId],
+  );
+
   return (
     <div className={styles.root}>
       <div className={styles.mainRow}>
@@ -587,6 +621,8 @@ export function ThreeDWorkbench({
           selected={triSelected}
           getPointsGeometry={getPointsGeometry}
           pointsReady={!!stats}
+          editable={selectedEditable}
+          onEditPsr={handleEditPsr}
         />
       </div>
 

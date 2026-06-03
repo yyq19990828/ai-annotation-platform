@@ -37,6 +37,8 @@ export class TriViewRenderer {
   private cameras: Record<TriView, THREE.OrthographicCamera>;
   private rects: ViewRectCss[] = [];
   private box: Psr | null = null;
+  // 拖拽期冻结相机取景的参考 PSR (= 拖拽起始姿态); null 时相机随 box。裁剪面始终用 box(实时)。
+  private cameraRef: Psr | null = null;
   private raf = 0;
   private disposed = false;
   private container: HTMLElement;
@@ -96,6 +98,11 @@ export class TriViewRenderer {
     this.rects = rects;
   }
 
+  /** 拖拽期冻结相机取景的参考 PSR (拖拽起始姿态); null = 相机随实时 box。 */
+  setCameraRef(ref: Psr | null) {
+    this.cameraRef = ref;
+  }
+
   /** 容器尺寸变化: 同步 canvas 像素尺寸 (viewport 由 setViewports 单独给)。 */
   resize() {
     const { clientWidth: w, clientHeight: h } = this.container;
@@ -104,7 +111,7 @@ export class TriViewRenderer {
   }
 
   private updateCamera(view: TriView, aspect: number) {
-    const box = this.box;
+    const box = this.cameraRef ?? this.box; // 拖拽期用冻结参考取景, 否则随实时 box
     if (!box) return;
     const cam = this.cameras[view];
     const { u, v, normal } = VIEW_AXES[view];

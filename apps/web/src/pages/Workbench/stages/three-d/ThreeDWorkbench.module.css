@@ -52,12 +52,16 @@
   overflow: hidden;
 }
 
-/* 2D overlay(框矩形 / 之后的 handle):叠在 WebGL 之上。B-1 只读, 不收事件。 */
+/* 2D overlay(框矩形 / handle):叠在 WebGL 之上。默认只读不收事件; 可编辑时收事件拖拽。 */
 .triOverlay {
   position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
+}
+
+.triOverlayEditable {
+  pointer-events: auto;
 }
 
 .triCaption {

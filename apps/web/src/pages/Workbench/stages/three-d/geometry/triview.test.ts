@@ -9,6 +9,7 @@ import {
   frameOrtho,
   dragEdge,
   dragCorner,
+  dragHandle,
   dragRotation,
   type Psr,
 } from "./triview";
@@ -87,6 +88,44 @@ describe("dragCorner", () => {
     expect(r.size[2]).toBeCloseTo(1.5);
     expect(r.center[0]).toBeCloseTo(0.2);
     expect(r.center[1]).toBeCloseTo(0.2);
+  });
+});
+
+describe("dragHandle · 屏幕 handle → 边/角", () => {
+  it("e (右边) = dragEdge(u,+1): Top dU=0.5 → size[0]+0.5, 中心移半程", () => {
+    const r = dragHandle(base, "top", "e", 0.5, 0);
+    expect(r.size[0]).toBeCloseTo(4.5);
+    expect(r.size[1]).toBeCloseTo(2);
+    expect(r.center[0]).toBeCloseTo(0.25);
+  });
+
+  it("w (左边): Top 往左拖 dU=-0.5 → +X 固定, size[0]+0.5, 中心朝 -X 移", () => {
+    const r = dragHandle(base, "top", "w", -0.5, 0);
+    expect(r.size[0]).toBeCloseTo(4.5);
+    expect(r.center[0]).toBeCloseTo(-0.25);
+  });
+
+  it("n (上边) = dragEdge(v,+1): Top dV=0.3 → size[1]+0.3 (width)", () => {
+    const r = dragHandle(base, "top", "n", 0, 0.3);
+    expect(r.size[1]).toBeCloseTo(2.3);
+    expect(r.size[0]).toBeCloseTo(4);
+    expect(r.center[1]).toBeCloseTo(0.15);
+  });
+
+  it("sw 角: Top dU=-0.3 dV=-0.3 → size 两维各 +0.3, 中心朝 -X/-Y 各移 0.15", () => {
+    const r = dragHandle(base, "top", "sw", -0.3, -0.3);
+    expect(r.size[0]).toBeCloseTo(4.3);
+    expect(r.size[1]).toBeCloseTo(2.3);
+    expect(r.center[0]).toBeCloseTo(-0.15);
+    expect(r.center[1]).toBeCloseTo(-0.15);
+  });
+
+  it("Front 视图 e = 改 width(v=Y? u=Y): u 轴=Y → size[1] 变", () => {
+    // front: u=Y(width), v=Z(height); e 拖 u(+1) → size[1]
+    const r = dragHandle(base, "front", "e", 0.4, 0);
+    expect(r.size[1]).toBeCloseTo(2.4);
+    expect(r.size[0]).toBeCloseTo(4);
+    expect(r.size[2]).toBeCloseTo(1.5);
   });
 });
 
