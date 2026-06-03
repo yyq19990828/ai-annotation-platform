@@ -101,7 +101,9 @@ async def _dispatch_verification_email(db: AsyncSession, user: User) -> None:
         if is_prod:
             logger.warning("发送验证邮件失败 (user %s): %s", user.id, e)
         else:
-            logger.warning("发送验证邮件失败 (%s): %s; url=%s", user.email, e, verify_url)
+            logger.warning(
+                "发送验证邮件失败 (%s): %s; url=%s", user.email, e, verify_url
+            )
 
 
 @router.post("/login", response_model=Token)
@@ -255,7 +257,8 @@ async def forgot_password(
         else:
             if is_prod:
                 logger.info(
-                    "Password reset requested for %s but SMTP not configured", data.email
+                    "Password reset requested for %s but SMTP not configured",
+                    data.email,
                 )
             else:
                 logger.info(

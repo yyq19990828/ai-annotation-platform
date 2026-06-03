@@ -362,9 +362,7 @@ class BatchService:
 
         return batch
 
-    async def _count_protected_tasks(
-        self, batch_id: uuid.UUID
-    ) -> tuple[int, int, int]:
+    async def _count_protected_tasks(self, batch_id: uuid.UUID) -> tuple[int, int, int]:
         """v0.11.25 · 统计「有进行中成果」的 task: 非 pending 数 / 已预标数 / 去重后实际受影响数。
         non_pending 与 predicted 可能重叠（同一 task 既非 pending 又已预标），affected 是二者的
         并集去重计数，供前端展示「将影响 N 个任务」避免 X+Y 误判。供 delete / bulk_delete 保护判定。"""
@@ -372,13 +370,9 @@ class BatchService:
             await self.db.execute(
                 select(
                     func.count().filter(Task.status != "pending").label("non_pending"),
+                    func.count().filter(Task.total_predictions > 0).label("predicted"),
                     func.count()
-                    .filter(Task.total_predictions > 0)
-                    .label("predicted"),
-                    func.count()
-                    .filter(
-                        or_(Task.status != "pending", Task.total_predictions > 0)
-                    )
+                    .filter(or_(Task.status != "pending", Task.total_predictions > 0))
                     .label("affected"),
                 ).where(Task.batch_id == batch_id)
             )

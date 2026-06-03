@@ -222,3 +222,4 @@ Local preview: `pnpm docs:dev` → http://localhost:5173
 - [12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md) — large-dataset batching strategy
 - [13-simplify-tolerance-eval.md](docs/research/13-simplify-tolerance-eval.md) — mask→polygon simplify tolerance evaluation
 - [14-point-cloud-image-fusion.md](docs/research/14-point-cloud-image-fusion.md) — point-cloud + image joint annotation: fusion principles, tool comparison, and platform gap analysis
+- [15-annotator-performance.md](docs/research/15-annotator-performance.md) — annotator performance benchmarking: metric taxonomy from CVAT/Label Studio source + 6 commercial products, gap analysis (IAA/honeypot/project scoping/export)

@@ -482,6 +482,8 @@ export type PageKey =
   | "project-templates"
   // v0.8.4 · 成员绩效（super_admin only）
   | "admin-people"
+  // v0.12.3 · 我的绩效（所有角色，自助自视）
+  | "my-performance"
   // v0.10.16 · DuckDB 离线分析面板（super_admin only）
   | "admin-analytics"
   // v0.10.58 · 系统健康面板（super_admin only）

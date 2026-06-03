@@ -5,7 +5,8 @@ import { apiClient } from "./client";
 export type AnalyticsPanelName =
   | "throughput_daily"
   | "reject_rate_by_type"
-  | "duration_dist";
+  | "duration_dist"
+  | "activity_heatmap";
 
 export interface ThroughputRow {
   day: string;
@@ -26,6 +27,12 @@ export interface DurationDist {
   mean: number;
 }
 
+export interface HeatmapCell {
+  weekday: number;
+  hour: number;
+  count: number;
+}
+
 export interface AnalyticsPanelResponse<T> {
   panel: AnalyticsPanelName;
   data: T;
@@ -43,5 +50,9 @@ export const adminAnalyticsApi = {
   durationDist: (days = 30) =>
     apiClient.get<AnalyticsPanelResponse<DurationDist>>(
       `/admin/analytics/duration_dist?days=${days}`,
+    ),
+  activityHeatmap: (days = 30) =>
+    apiClient.get<AnalyticsPanelResponse<HeatmapCell[]>>(
+      `/admin/analytics/activity_heatmap?days=${days}`,
     ),
 };

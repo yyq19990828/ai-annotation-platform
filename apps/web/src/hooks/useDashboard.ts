@@ -47,17 +47,24 @@ export function useAdminPeople(params: {
   period?: string;
   sort?: string;
   q?: string;
+  enabled?: boolean;
 }) {
+  const { enabled = true, ...query } = params;
   return useQuery({
-    queryKey: ["dashboard", "admin", "people", params],
-    queryFn: () => dashboardApi.getAdminPeople(params),
+    queryKey: ["dashboard", "admin", "people", query],
+    queryFn: () => dashboardApi.getAdminPeople(query),
+    enabled,
   });
 }
 
-export function useAdminPersonDetail(userId: string | null, period: string = "4w") {
+export function useAdminPersonDetail(
+  userId: string | null,
+  period: string = "4w",
+  project?: string,
+) {
   return useQuery({
-    queryKey: ["dashboard", "admin", "people", "detail", userId, period],
-    queryFn: () => dashboardApi.getAdminPersonDetail(userId!, period),
+    queryKey: ["dashboard", "admin", "people", "detail", userId, period, project],
+    queryFn: () => dashboardApi.getAdminPersonDetail(userId!, period, project),
     enabled: Boolean(userId),
   });
 }

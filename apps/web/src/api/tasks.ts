@@ -26,6 +26,9 @@ export interface TaskListParams {
   batch_id?: string;
   // v0.12.0 · true = 只返回 batch_id IS NULL（未归类）任务
   unbatched?: boolean;
+  // v0.12.6 (A3) · 绩效页 reject/类别维度下钻过滤
+  reject_reason_type?: string;
+  class_name?: string;
   limit?: number;
   offset?: number;
   cursor?: string;
@@ -106,6 +109,8 @@ export const tasksApi = {
     if (params?.assignee_id) q.set("assignee_id", params.assignee_id);
     if (params?.batch_id) q.set("batch_id", params.batch_id);
     if (params?.unbatched) q.set("unbatched", "true");
+    if (params?.reject_reason_type) q.set("reject_reason_type", params.reject_reason_type);
+    if (params?.class_name) q.set("class_name", params.class_name);
     if (params?.limit) q.set("limit", String(params.limit));
     if (params?.offset) q.set("offset", String(params.offset));
     if (params?.cursor) q.set("cursor", params.cursor);

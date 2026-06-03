@@ -24,6 +24,7 @@ const PAGE_PATH: Record<PageKey, string> = {
   "admin-people": "/admin/people",
   "admin-analytics": "/admin/analytics",
   "admin-health": "/admin/health",
+  "my-performance": "/me/performance",
 };
 
 export function UnauthorizedPage() {

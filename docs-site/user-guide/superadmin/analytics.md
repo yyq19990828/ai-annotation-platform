@@ -3,22 +3,23 @@ audience: [super_admin]
 type: reference
 since: v0.10.16
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-03
 ---
 
 # 离线分析面板（DuckDB）
 
 `/admin/analytics` 是 `super_admin` 专属的离线分析视图，依赖 Celery beat 每日 02:30 UTC 把
 `task_events` + `audit_logs` 增量同步到本地 DuckDB 文件（`./data/duckdb/analytics.duckdb`），
-**不**接收任意 SQL 输入，只暴露 3 个固定面板：
+**不**接收任意 SQL 输入，只暴露 4 个固定面板：
 
 ## 面板
 
 | 面板 | 数据源 | 说明 |
 |---|---|---|
-| **团队日吞吐** | `task_events.kind='annotate'` | 按日聚合全团队提交事件计数，柱状条图 |
-| **Reject 原因分布** | `task_events.was_rejected=true AND reject_reason_type IS NOT NULL` | 4 类 enum 占比；旧数据 NULL 不入分母 |
+| **团队日吞吐** | `task_events.kind='annotate'` | 按日聚合全团队提交事件计数，recharts 折线图 |
+| **Reject 原因分布** | `task_events.was_rejected=true AND reject_reason_type IS NOT NULL` | 4 类 enum 占比；旧数据 NULL 不入分母，recharts 横向柱图 |
 | **标注耗时分布** | `task_events.kind='annotate'` 的 claim→submit 间隔 | 样本数 / p50 / p95 / 均值（单位 ms） |
+| **工时热力图** | `task_events.kind='annotate'` 的 `started_at` | 星期（0=周日..6=周六）× 小时聚合事件计数；7×24 网格，格子深浅 = 时段计数强度 |
 
 时间范围下拉支持 **近 7 / 30 / 90 天**。
 

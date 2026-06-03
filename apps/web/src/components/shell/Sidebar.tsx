@@ -51,8 +51,14 @@ const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem
       { key: "project-templates", path: "/project-templates", icon: "book", label: "项目模板" },
       { key: "users", path: "/users", icon: "users", label: "用户与权限" },
       { key: "audit", path: "/audit", icon: "shield", label: "审计日志" },
+      // v0.12.3 · 标注员绩效 + 离线分析（此前仅 Dashboard 卡片 / 直达 URL 可达，补 Sidebar 入口）
+      // v0.12.6 (A3) · 标注员绩效对 project_admin 开放（项目级范围），由 canAccessPage 过滤；离线分析仍超管专属。
+      { key: "admin-people" as PageKey, path: "/admin/people", icon: "users" as IconName, label: "标注员绩效" },
+      ...(isSuperAdmin ? [{ key: "admin-analytics" as PageKey, path: "/admin/analytics", icon: "layers" as IconName, label: "离线分析" }] : []),
       ...(isSuperAdmin ? [{ key: "admin-health" as PageKey, path: "/admin/health", icon: "activity" as IconName, label: "系统健康" }] : []),
       ...(isSuperAdmin ? [{ key: "bugs" as PageKey, path: "/bugs", icon: "bug" as IconName, label: "BUG反馈" }] : []),
+      // v0.12.3 · 我的绩效（所有角色自助自视）
+      { key: "my-performance", path: "/me/performance", icon: "activity", label: "我的绩效" },
       { key: "settings", path: "/settings", icon: "settings", label: "设置" },
     ],
   },
