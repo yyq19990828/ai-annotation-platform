@@ -21,7 +21,7 @@ const FILTER_STATUS_MAP: Record<string, string | undefined> = {
   "待审核": "pending_review",
   "已完成": "completed",
 };
-const WORKBENCH_PROJECT_TYPES = new Set(["image-det", "video-track"]);
+const WORKBENCH_PROJECT_TYPES = new Set(["image-det", "video-track", "lidar"]);
 
 export function ViewerDashboard() {
   const [filter, setFilter] = useState<string>("全部");

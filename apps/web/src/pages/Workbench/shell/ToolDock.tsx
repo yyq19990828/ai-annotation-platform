@@ -3,7 +3,7 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { ALL_TOOLS, type CanvasTool, type ToolId } from "../stage/tools";
 import { toolUnitForTool } from "../stage/tools/toolUnits";
-import type { VideoTool } from "../state/useWorkbenchState";
+import type { ThreeDTool, VideoTool } from "../state/useWorkbenchState";
 import styles from "./ToolDock.module.css";
 
 interface ToolDockProps {
@@ -35,6 +35,10 @@ interface ToolDockProps {
    * null / undefined = 两者均显示 (向后兼容老项目)。hand (视图) 工具不受此过滤, 恒显示。
    */
   videoModes?: { box: boolean; track: boolean } | null;
+  /** v0.13.3-5 · 点云 3D 台:渲染 select / box 两个 3D 工具(双栈隔离,不走 2D ToolId)。 */
+  threeDMode?: boolean;
+  threeDTool?: ThreeDTool;
+  onSetThreeDTool?: (t: ThreeDTool) => void;
 }
 
 interface ToolDescriptor {
@@ -71,6 +75,12 @@ const VIDEO_TOOLS: Array<{ id: VideoTool; hotkey: string; label: string; icon: I
   { id: "hand", hotkey: "V", label: "平移", icon: "move", desc: "拖拽平移画布", altDigit: 3, group: "view" },
 ];
 
+// v0.13.3-5 · 点云 3D 工具:select 拾取选中 / box 点地面放置。view 控件(点大小/重置)留视口 HUD。
+const THREE_D_TOOLS: Array<{ id: ThreeDTool; hotkey: string; label: string; icon: IconName; desc: string }> = [
+  { id: "select", hotkey: "V", label: "选择", icon: "move", desc: "拾取 / 选中 3D 框" },
+  { id: "box", hotkey: "B", label: "放置框", icon: "rect", desc: "点地面放置新 3D 框" },
+];
+
 const cn = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 
 /**
@@ -97,7 +107,36 @@ export function ToolDock({
   videoMode = false,
   enabledToolUnits = null,
   videoModes = null,
+  threeDMode = false,
+  threeDTool = "select",
+  onSetThreeDTool,
 }: ToolDockProps) {
+  if (threeDMode) {
+    return (
+      <div className={styles.root} data-workbench-tool-dock>
+        {THREE_D_TOOLS.map((t) => {
+          const active = threeDTool === t.id;
+          return (
+            <Tooltip key={t.id} name={t.label} desc={t.desc} hotkey={t.hotkey} side="right" delay={250}>
+              <button
+                type="button"
+                onClick={() => onSetThreeDTool?.(t.id)}
+                aria-label={t.label}
+                aria-pressed={active}
+                data-testid={`three-d-tool-btn-${t.id}`}
+                className={cn(styles.toolButton, active && styles.toolButtonActive)}
+              >
+                <Icon name={t.icon} size={17} />
+                <span aria-hidden className={cn(styles.hotkeyBadge, active && styles.hotkeyBadgeActive)}>
+                  {t.hotkey}
+                </span>
+              </button>
+            </Tooltip>
+          );
+        })}
+      </div>
+    );
+  }
   if (videoMode) {
     // hand (view) 恒显示; box/track 按 video_modes 过滤 (null = 兼容老项目, 全显示)。
     const visibleVideoTools = VIDEO_TOOLS.filter((t) => {

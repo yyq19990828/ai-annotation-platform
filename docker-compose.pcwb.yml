@@ -1,0 +1,46 @@
+# 点云工作台分支 (feat/point-cloud-workbench) 专用隔离栈 override。
+#
+# 用法:
+#   docker compose -p pcwb -f docker-compose.yml -f docker-compose.pcwb.yml up -d --no-build
+#   docker compose -p pcwb -f docker-compose.yml -f docker-compose.pcwb.yml down       # 停 (保留数据卷)
+#   docker compose -p pcwb -f docker-compose.yml -f docker-compose.pcwb.yml down -v     # 停 + 删数据卷
+#
+# 设计:
+#   - 独立项目名 -p pcwb → 容器 / 网络 / 数据卷 (pcwb_pgdata 等) 全部命名空间化,
+#     与主仓库共享栈物理隔离, 互不污染。
+#   - 仅 override 宿主机端口避让主栈; 容器内端口不变, 栈内服务靠服务名 (postgres:5432
+#     / redis:6379 / minio:9000) 互通, 故 celery 的 in-network env 无需改动。
+#   - celery 三个 worker 复用主仓库已构建镜像 (代码本来就 bind-mount ./apps/api 进容器),
+#     起栈跳过编译。改了 worker 业务码 docker restart 即可。
+#   - GPU 后端 (gpu / gpu-sam3 profile) 与监控栈 (monitoring profile) 不在此起,
+#     需要时复用主栈的 8001 / 8002 / 3001。
+
+services:
+  # ports 用 !override 强制替换 (compose 默认对列表是合并/拼接, 否则会同时保留
+  # 基础栈的 5432/6379/... 端口而和主栈撞车)。
+  postgres:
+    ports: !override
+      - "5433:5432"
+
+  redis:
+    ports: !override
+      - "6380:6379"
+
+  minio:
+    ports: !override
+      - "9002:9000"
+      - "9003:9001"
+
+  mailpit:
+    ports: !override
+      - "1026:1025"
+      - "8026:8025"
+
+  celery-worker:
+    image: ai-annotation-platform-celery-worker:latest
+
+  celery-worker-export:
+    image: ai-annotation-platform-celery-worker-export:latest
+
+  celery-beat:
+    image: ai-annotation-platform-celery-beat:latest

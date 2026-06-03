@@ -1,4 +1,4 @@
-import { forwardRef, type ReactNode } from "react";
+import { forwardRef, lazy, Suspense, type ReactNode } from "react";
 import type {
   Annotation,
   AnnotationResponse,
@@ -11,7 +11,7 @@ import type {
 } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import type { AiBox } from "../state/transforms";
-import type { PendingDrawing, SamPolarity, SamSubTool, Tool, VideoTool } from "../state/useWorkbenchState";
+import type { PendingDrawing, SamPolarity, SamSubTool, ThreeDTool, Tool, VideoTool } from "../state/useWorkbenchState";
 import type { Viewport } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
@@ -20,7 +20,8 @@ import type { VideoTimelineChapter } from "../stage/VideoPlaybackOverlay";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import { ImageWorkbench } from "../stages/image/ImageWorkbench";
 import type { StageKind } from "../stages/types";
-import { ThreeDWorkbenchPlaceholder } from "../stages/three-d/ThreeDWorkbench.placeholder";
+// v0.13.2 · 点云 3D 模块 lazy import：three(~600KB)只在打开 lidar 任务时加载，不进主 bundle。
+const ThreeDWorkbench = lazy(() => import("../stages/three-d/ThreeDWorkbench"));
 import { VideoWorkbench } from "../stages/video/VideoWorkbench";
 import type { VideoConvertOptions, VideoTrackCompositionOptions } from "../stages/video/useVideoAnnotationActions";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
@@ -41,6 +42,8 @@ type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry;
  */
 interface WorkbenchStageHostCommonProps {
   stageKind: StageKind;
+  /** v0.13.2 · 当前任务 id，点云 3D 舞台据此拉 point-cloud manifest。 */
+  taskId: string | null;
   overlays: ReactNode;
   readOnly: boolean;
   activeClass: string;
@@ -54,6 +57,9 @@ interface WorkbenchStageHostCommonProps {
   onCursorMove: (pt: { x: number; y: number } | null) => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass: (id: string) => void;
+  /** v0.13.3-5 · 点云 3D 台工具态(壳层共享,与 ToolDock 同源);非 3D 任务忽略。 */
+  threeDTool: ThreeDTool;
+  onSetThreeDTool: (t: ThreeDTool) => void;
 }
 
 interface WorkbenchStageHostVideoProps {
@@ -193,6 +199,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     const { common, video, image, ai, editors } = props;
     const {
       stageKind,
+      taskId,
       overlays,
       readOnly,
       activeClass,
@@ -205,6 +212,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onCursorMove,
       onDeleteUserBox,
       onChangeUserBoxClass,
+      threeDTool,
+      onSetThreeDTool,
     } = common;
     const videoProps = stageKind === "video" ? requireStageGroup(video, "video", stageKind) : undefined;
     const imageProps = stageKind === "image" ? requireStageGroup(image, "image", stageKind) : undefined;
@@ -301,7 +310,17 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     return (
       <div className={styles.root} data-workbench-stage>
         {stageKind === "3d" ? (
-          <ThreeDWorkbenchPlaceholder />
+          <Suspense fallback={<div className={styles.lazyFallback}>加载点云查看器…</div>}>
+            <ThreeDWorkbench
+              taskId={taskId}
+              readOnly={readOnly}
+              selectedId={selectedId}
+              onSelectBox={onSelectBox}
+              activeClass={activeClass}
+              threeDTool={threeDTool}
+              onSetThreeDTool={onSetThreeDTool}
+            />
+          </Suspense>
         ) : stageKind === "video" ? (
           <VideoWorkbench
             ref={ref}

@@ -290,6 +290,22 @@ export type KeypointGeometry = {
   type: "keypoint";
   points: Keypoint[];
 };
+/** v0.13.3 · LiDAR 3D 框. center/size/rotation 各为 3 元组(米 / 长宽高 / 绕各轴弧度);
+ * 点云 Z-up, 7-DoF 主要用 yaw=rotation[2](绕 Z)。 */
+export type Box3DGeometry = {
+  type: "box_3d";
+  center: [number, number, number];
+  size: [number, number, number];
+  rotation: [number, number, number];
+};
+/** v0.13.3 · 点云 3D 分割掩码. point_indices 指向点云的非负整数索引(预留, v0.13.5+ 用)。 */
+export type PointMaskGeometry = {
+  type: "point_mask_3d";
+  point_indices: number[];
+};
+// v0.13.3 · 引入 3D 工作台,把点云 3D 几何并入手写 union(此前刻意延后,见 v0.13.0 注记)。
+// 各 2D 窄化点(transforms.ts geometryToShape / BoxListItem)需对 3D 分支兜底:3D 无 2D
+// 投影(投影联动是 v0.13.4),退化为空 shape,2D 画布不画;3D 渲染走 three-d 模块。
 export type Geometry =
   | BboxGeometry
   | VideoBboxGeometry
@@ -298,7 +314,9 @@ export type Geometry =
   | MultiPolygonGeometry
   | RotatedBboxGeometry
   | PolylineGeometry
-  | KeypointGeometry;
+  | KeypointGeometry
+  | Box3DGeometry
+  | PointMaskGeometry;
 
 export interface AIBox {
   id: string;
@@ -390,6 +408,13 @@ import type {
 
 // v0.10.29 · 视频项目级采样配置 (软网格导航). 形状由后端 schema 派生.
 export type { VideoSamplingConfig } from "@/api/generated/types.gen";
+
+// v0.13.2 · 点云查看器 manifest (主点云 URL + 各相机图 + 标定). 由后端 schema 派生.
+export type {
+  TaskPointCloudManifestResponse,
+  PointCloudCameraOut,
+  SensorCalibration,
+} from "@/api/generated/types.gen";
 
 export type PredictionShape = Omit<GeneratedPredictionShape, "geometry"> & {
   geometry: Geometry;

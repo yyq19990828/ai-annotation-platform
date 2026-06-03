@@ -106,7 +106,9 @@ export function Step1DataTypeAndTools({
         <div className={styles.unitChipGrid}>
           {TOOL_UNIT_GROUPS.map((g) => {
             const binding = form.unitBindings[g.id];
-            // 占位 unit 不显示 (polyline / lidar_box_3d 暂未实现, 但 region 等 data type 限制也要过滤)
+            // 仅显示当前 data type 派生出 binding 的 unit (defaultUnitBindings 已按
+            // g.available + g.dataTypes 过滤; polyline 仍占位, v0.13.3 起 lidar_box_3d
+            // 解禁可在点云项目配置 3D 框类别).
             if (!binding) return null;
             const disabled = !g.available;
             return (

@@ -94,7 +94,18 @@ def make_projects(owner_id: uuid.UUID) -> list[dict]:
             "status": "in_progress",
             "ai_enabled": True,
             "ai_model": "GroundingDINO + SAM",
-            "classes": ["商品", "价签", "标识牌", "缺货位", "促销贴"],
+            "tool_bindings": {
+                "bbox": {
+                    "enabled": True,
+                    "classes": [
+                        {"name": "商品", "order": 0},
+                        {"name": "价签", "order": 1},
+                        {"name": "标识牌", "order": 2},
+                        {"name": "缺货位", "order": 3},
+                        {"name": "促销贴", "order": 4},
+                    ],
+                }
+            },
             "total_tasks": 8420,
             "completed_tasks": 6312,
             "review_tasks": 412,
@@ -109,7 +120,18 @@ def make_projects(owner_id: uuid.UUID) -> list[dict]:
             "status": "in_progress",
             "ai_enabled": True,
             "ai_model": "SAM2",
-            "classes": ["车辆", "行人", "自行车", "路锥", "路面坑洞"],
+            "tool_bindings": {
+                "region": {
+                    "enabled": True,
+                    "classes": [
+                        {"name": "车辆", "order": 0},
+                        {"name": "行人", "order": 1},
+                        {"name": "自行车", "order": 2},
+                        {"name": "路锥", "order": 3},
+                        {"name": "路面坑洞", "order": 4},
+                    ],
+                }
+            },
             "total_tasks": 12000,
             "completed_tasks": 4800,
             "review_tasks": 960,

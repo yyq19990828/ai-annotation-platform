@@ -14,8 +14,8 @@ vi.mock("../stages/video/VideoWorkbench", () => ({
     return <div data-testid="video-workbench" />;
   }),
 }));
-vi.mock("../stages/three-d/ThreeDWorkbench.placeholder", () => ({
-  ThreeDWorkbenchPlaceholder: () => <div data-testid="three-d-placeholder" />,
+vi.mock("../stages/three-d/ThreeDWorkbench", () => ({
+  default: () => <div data-testid="three-d-workbench" />,
 }));
 
 import { WorkbenchStageHost } from "./WorkbenchStageHost";
@@ -113,7 +113,7 @@ describe("WorkbenchStageHost", () => {
 
     expect(screen.getByTestId("image-workbench")).toBeTruthy();
     expect(screen.queryByTestId("video-workbench")).toBeNull();
-    expect(screen.queryByTestId("three-d-placeholder")).toBeNull();
+    expect(screen.queryByTestId("three-d-workbench")).toBeNull();
   });
 
   it("stageKind=video: renders VideoWorkbench + overlays rendered outside (image owns overlays inline)", () => {
@@ -121,15 +121,16 @@ describe("WorkbenchStageHost", () => {
 
     expect(screen.getByTestId("video-workbench")).toBeTruthy();
     expect(screen.queryByTestId("image-workbench")).toBeNull();
-    expect(screen.queryByTestId("three-d-placeholder")).toBeNull();
+    expect(screen.queryByTestId("three-d-workbench")).toBeNull();
     // Image 模式时 overlays 被传给 ImageWorkbench 自渲染; non-image 模式 host 在子组件后兜底渲染
     expect(screen.getByTestId("overlays-content")).toBeTruthy();
   });
 
-  it("stageKind=3d: renders ThreeDWorkbenchPlaceholder only", () => {
+  it("stageKind=3d: renders ThreeDWorkbench only (lazy)", async () => {
     render(<WorkbenchStageHost ref={createRef()} {...propsFor("3d")} />);
 
-    expect(screen.getByTestId("three-d-placeholder")).toBeTruthy();
+    // lazy + Suspense: 组件异步解析,用 findBy 等待。
+    expect(await screen.findByTestId("three-d-workbench")).toBeTruthy();
     expect(screen.queryByTestId("image-workbench")).toBeNull();
     expect(screen.queryByTestId("video-workbench")).toBeNull();
   });

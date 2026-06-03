@@ -26,6 +26,8 @@ export type Tool =
   | "keypoint";
 // v0.11.29 · hand = 视图/平移中立态（左键拖拽平移画布，不绘制）；ESC 回归到它。
 export type VideoTool = "box" | "track" | "hand";
+// v0.13.3-5 · 点云 3D 工作台工具态(双栈隔离,不复用 2D ToolId):select=拾取选中框,box=点地面放置新框。
+export type ThreeDTool = "select" | "box";
 
 /**
  * v0.10.2 · 派生型 SAM 子工具, 仅作 ImageStage / AIInspectorPanel 等老消费者的兼容外观.
@@ -95,6 +97,7 @@ export function useWorkbenchState() {
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("box");
   const [videoTool, setVideoTool] = useState<VideoTool>("box");
+  const [threeDTool, setThreeDTool] = useState<ThreeDTool>("select");
   const [videoFrameIndex, setVideoFrameIndex] = useState(0);
   const [hiddenVideoTrackIds, setHiddenVideoTrackIds] = useState<Set<string>>(() => new Set());
   const [lockedVideoTrackIds, setLockedVideoTrackIds] = useState<Set<string>>(() => new Set());
@@ -285,6 +288,7 @@ export function useWorkbenchState() {
     currentTaskId, setCurrentTaskId,
     tool, setTool,
     videoTool, setVideoTool,
+    threeDTool, setThreeDTool,
     videoFrameIndex, setVideoFrameIndex,
     hiddenVideoTrackIds, lockedVideoTrackIds,
     toggleHiddenVideoTrack, toggleLockedVideoTrack, resetVideoStageUi,

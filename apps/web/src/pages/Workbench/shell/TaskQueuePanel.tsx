@@ -40,6 +40,12 @@ interface TaskQueuePanelProps {
   /** 受控宽度（仅 open=true 生效）。 */
   width: number;
   onResize: (w: number) => void;
+  /**
+   * v0.13.3-5 · 左栏色板默认是只读图例(2D 落框时弹窗/数字键选类)。点云 3D 台没有落框弹窗,
+   * 放置新框直接取 activeClass,故 3D 下让色板可点选(classPickable),点击即设 activeClass。
+   */
+  classPickable?: boolean;
+  onPickClass?: (cls: string) => void;
 }
 
 function cn(...classes: Array<string | false | null | undefined>): string {
@@ -174,6 +180,7 @@ export function TaskQueuePanel({
   batches, selectedBatchId, onSelectBatch,
   totalCount, isOwner, onGoToBatchSettings,
   width, onResize,
+  classPickable = false, onPickClass,
 }: TaskQueuePanelProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -353,14 +360,17 @@ export function TaskQueuePanel({
           </span>
           <span className={styles.paletteCount}>· {classes.length} 个类别</span>
         </div>
-        <div className={styles.paletteHint}>数字/字母键直接落框时使用</div>
+        <div className={styles.paletteHint}>
+          {classPickable ? "点击选择放置类别" : "数字/字母键直接落框时使用"}
+        </div>
         <ClassPalette
           classes={classes}
           classesConfig={classesConfig}
           recent={recentClasses}
           activeClass={activeClass}
           enableSearch={classes.length > 9}
-          readOnly
+          onPick={onPickClass}
+          readOnly={!classPickable}
         />
       </div>
 

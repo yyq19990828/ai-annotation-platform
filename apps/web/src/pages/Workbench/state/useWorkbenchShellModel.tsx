@@ -201,7 +201,13 @@ export function useWorkbenchShellModel({
   const tasksTotal = taskListData?.pages[0]?.total ?? tasks.length;
 
   const s = useWorkbenchState();
-  const toolView = useToolBindings(currentProject ?? null, s.tool);
+  // v0.13.3-5 · 点云 3D 项目无对应 2D 工具,类别/属性绑定固定走 lidar_box_3d 单位。
+  const is3DProject = currentProject?.type_key === "lidar";
+  const toolView = useToolBindings(
+    currentProject ?? null,
+    s.tool,
+    is3DProject ? "lidar_box_3d" : undefined,
+  );
   const enabledToolUnits = useMemo<Set<string> | null>(() => {
     const tb = currentProject?.tool_bindings;
     if (!tb || Object.keys(tb).length === 0) return null;
@@ -1130,6 +1136,14 @@ export function useWorkbenchShellModel({
     });
   }, [taskId, s.selectedIds, ungroupAnnotationMut, pushToast]);
 
+  // v0.13.4 · 3D 工作台自管这些字母键(V/B 选/放、W/E/R gizmo 模式),交给它的本地
+  // keydown 处理;否则全局 2D 热键会抢 —— 尤其 E=「提交质检」(dispatchKey → submit)会被
+  // 误触发:用户按 E 想转 gizmo,却把任务直接提交了。Ctrl+方向(切题)/?/Esc 等全局键仍保留。
+  const threeDOwnedKeys = useMemo(
+    () => new Set(["b", "B", "v", "V", "w", "W", "e", "E", "r", "R"]),
+    [],
+  );
+
   const { spacePan, nudgeMap } = useWorkbenchHotkeys({
     s, history, classes, currentProject, annotationsRef,
     batchChanging, setBatchChanging, showHotkeys,
@@ -1142,6 +1156,7 @@ export function useWorkbenchShellModel({
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
     taskId,
+    ignoredKeys: stageKind === "3d" ? threeDOwnedKeys : undefined,
     videoMode: isVideoTask,
     samplingActive,
     videoControlsRef,
@@ -1213,13 +1228,19 @@ export function useWorkbenchShellModel({
   const layout: ComponentProps<typeof WorkbenchLayout> = {
     gridTemplateColumns: `${leftOpen ? `${s.leftWidth}px` : "0px"} 48px 1fr ${rightOpen ? `${s.rightWidth}px` : "0px"}`,
     taskQueue: {
-      open: leftOpen, classes, classesConfig: currentProject?.classes_config,
-      toolLabel: TOOL_REGISTRY[s.tool].label, toolIcon: TOOL_REGISTRY[s.tool].icon,
+      open: leftOpen, classes,
+      // 3D 点云台用 lidar_box_3d 单位的 classesConfig(与 3D 框配色同源);2D 仍用项目级。
+      classesConfig: stageKind === "3d" ? classesConfig : currentProject?.classes_config,
+      toolLabel: stageKind === "3d" ? "3D 框" : TOOL_REGISTRY[s.tool].label,
+      toolIcon: stageKind === "3d" ? "rect" : TOOL_REGISTRY[s.tool].icon,
       activeClass: s.activeClass, recentClasses, tasks, taskId, taskIdx, hasNextPage,
       isFetchingNextPage, onFetchNextPage: fetchNextPage,
       onSelectTask: selectTask, batches: activeBatches, selectedBatchId, onSelectBatch: handleSelectBatch,
       totalCount: tasksTotal, isOwner, onGoToBatchSettings: () => { if (projectId) navigate(`/projects/${projectId}/settings?section=batches`); },
       width: s.leftWidth, onResize: s.setLeftWidth,
+      // v0.13.3-5 · 3D 点云台:左栏色板可点选 = 放置新框的类别(2D 仍只读图例)。
+      classPickable: stageKind === "3d" && !isLocked,
+      onPickClass: s.setActiveClass,
     },
     toolDock: {
       tool: s.tool,
@@ -1252,6 +1273,9 @@ export function useWorkbenchShellModel({
       reviewMode: mode === "review", videoMode: isVideoTask,
       enabledToolUnits,
       videoModes,
+      threeDMode: stageKind === "3d",
+      threeDTool: s.threeDTool,
+      onSetThreeDTool: s.setThreeDTool,
     },
     banners: {
       mode, task, lockError, lockConflict, claimInfo: modeState.claimInfo, canWithdraw: bannerActions.canWithdraw,
@@ -1289,6 +1313,7 @@ export function useWorkbenchShellModel({
     stageHost: {
       common: {
         stageKind,
+        taskId,
         readOnly: isLocked,
         activeClass: s.activeClass,
         selectedId: s.selectedId,
@@ -1300,6 +1325,8 @@ export function useWorkbenchShellModel({
         onCursorMove: setCursor,
         onDeleteUserBox: handleDeleteBox,
         onChangeUserBoxClass: handleStartChangeClass,
+        threeDTool: s.threeDTool,
+        onSetThreeDTool: s.setThreeDTool,
         overlays: (
           <>
             {s.tool === "mask" && (

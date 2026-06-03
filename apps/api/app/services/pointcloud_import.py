@@ -1,0 +1,278 @@
+"""v0.13.1 · 点云 scene 建任务 + 标定写入 service。
+
+scene 文件入库后，DatasetItem.file_path 是 MinIO storage key（保留子目录），形如:
+    <dataset_name>/lidar/000970.pcd          file_type=point_cloud
+    <dataset_name>/camera/front/000970.jpg   file_type=image
+    <dataset_name>/camera/left/000970.jpg
+    <dataset_name>/calib/camera/front.json   file_type=other
+
+帧 id = lidar / 相机文件名 stem（如 000970）；相机名 = camera/ 后那一段（如 front）；
+标定 calib/camera/<cam>.json 对该相机所有帧通用。
+
+本模块只负责「帧分组 → 逐帧建 Task + link → 写标定」，分流接线由调用方完成，
+不改 dataset.py 的 build_tasks_for_link。
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import uuid
+from pathlib import PurePosixPath
+
+from pydantic import ValidationError
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models import DatasetItem, Project, Task
+from app.schemas._jsonb_types import SensorCalibration
+from app.services import async_job as async_job_svc
+from app.services.storage import storage_service
+from app.services.task_dataset_link import link_items
+
+logger = logging.getLogger(__name__)
+
+# 点云扩展名集合：file_type 未必准（入库可能落 other），故同时按后缀兜底。
+_POINT_CLOUD_EXTS = {".pcd", ".bin", ".ply", ".las", ".laz", ".npy"}
+
+
+def _last_index(parts: tuple[str, ...], name: str) -> int:
+    """返回 name 在 parts 中最后一次出现的下标，找不到返回 -1。
+
+    取「最后一次」以兼容 dataset 名前缀与多层嵌套（如 dataset 名恰好叫 camera）。
+    """
+    for i in range(len(parts) - 1, -1, -1):
+        if parts[i] == name:
+            return i
+    return -1
+
+
+def group_frames(items: list[DatasetItem]) -> tuple[dict, dict]:
+    """把一批 DatasetItem 按帧分组。
+
+    返回 (frames, calib_items):
+      frames: {frame_id: {"lidar": item | None, "cameras": {cam: item}}}
+      calib_items: {cam: item}
+
+    分组规则（按 file_path 的 PurePosixPath.parts，定位段名取最后一次出现）:
+      - calib: 末两段是 calib/camera 且后缀 .json → cam = stem(front)，记入 calib_items。
+      - lidar: parts 含 lidar 且 (file_type==point_cloud 或后缀属点云集) → frame=stem。
+      - camera: parts 含 camera → cam = camera 后一段，frame=stem。
+    判定顺序优先 calib，避免 calib/camera 路径被 camera 规则误吞。
+    """
+    frames: dict[str, dict] = {}
+    calib_items: dict[str, DatasetItem] = {}
+
+    for item in items:
+        path = PurePosixPath(item.file_path)
+        parts = path.parts
+        stem = path.stem
+        suffix = path.suffix.lower()
+
+        calib_i = _last_index(parts, "calib")
+        # calib/camera/<cam>.json —— 末两段恰好 calib/camera
+        if (
+            len(parts) >= 2
+            and parts[-2] == "camera"
+            and calib_i == len(parts) - 3
+            and suffix == ".json"
+        ):
+            calib_items[stem] = item
+            continue
+
+        lidar_i = _last_index(parts, "lidar")
+        if lidar_i >= 0 and (
+            item.file_type == "point_cloud" or suffix in _POINT_CLOUD_EXTS
+        ):
+            frame = frames.setdefault(stem, {"lidar": None, "cameras": {}})
+            frame["lidar"] = item
+            continue
+
+        camera_i = _last_index(parts, "camera")
+        if camera_i >= 0 and camera_i + 1 < len(parts):
+            cam = parts[camera_i + 1]
+            frame = frames.setdefault(stem, {"lidar": None, "cameras": {}})
+            frame["cameras"][cam] = item
+            continue
+
+    return frames, calib_items
+
+
+async def _load_dataset_items(
+    db: AsyncSession, dataset_id: uuid.UUID
+) -> list[DatasetItem]:
+    result = await db.execute(
+        select(DatasetItem).where(DatasetItem.dataset_id == dataset_id)
+    )
+    return list(result.scalars().all())
+
+
+async def build_pointcloud_tasks_for_link(
+    db: AsyncSession,
+    *,
+    dataset_id: uuid.UUID,
+    project_id: uuid.UUID,
+    job_id: uuid.UUID | None = None,
+    chunk_size: int = 5000,
+) -> dict:
+    """v0.13.1 · 为点云 scene dataset link 分块建 task（镜像 build_tasks_for_link）。
+
+    单位是「帧」而非 item：先帧分组，按 frame_id 排序后逐帧建一个 Task（dataset_item_id
+    指向该帧 primary_lidar item），再用 link_items 关联 lidar + 各相机。
+
+    幂等：跳过该 project 下、dataset_item_id == 本帧 lidar item 已存在 Task 的帧
+    （NOT EXISTS，键是 lidar item）。每块独立 commit、累加 project.total_tasks、
+    传 job_id 时按 5% 粒度 update_progress。返回 {"created": N, "total": M}。
+
+    幂等粒度限制（已知）：键是「lidar Task 是否已存在」而不是「该 Task 的 link
+    数量是否齐备」。正常路径下 chunk 失败整批回滚（Task + link 一起消失），重跑
+    能补全；但若进程在「`db.flush()` 拿到 task.id + `link_items` 写完一部分
+    role」与「`db.commit()`」之间硬挂（OOM / SIGKILL / OS panic），可能留下
+    Task 已存在但 `camera_*` link 残缺的孤儿帧。重跑会被 existing 跳过，缺失
+    link 永远不会被补，对应帧 manifest 的 `cameras` 列表少几个相机。补建残缺
+    link 是独立入口职责（未实现，见 follow-up）。
+    """
+    items = await _load_dataset_items(db, dataset_id)
+    frames, _ = group_frames(items)
+
+    # 缺帧容错：无 lidar 的「帧」跳过（warning）。
+    frame_ids: list[str] = []
+    for frame_id in sorted(frames.keys()):
+        if frames[frame_id]["lidar"] is None:
+            logger.warning(
+                "pointcloud frame %r has no lidar item, skipped (dataset=%s)",
+                frame_id,
+                dataset_id,
+            )
+            continue
+        frame_ids.append(frame_id)
+
+    if not frame_ids:
+        return {"created": 0, "total": 0}
+
+    # 幂等去重：该 project 下、dataset_item_id == 本帧 lidar item 已有 Task 的帧跳过。
+    lidar_ids = [frames[f]["lidar"].id for f in frame_ids]
+    existing_q = select(Task.dataset_item_id).where(
+        Task.project_id == project_id,
+        Task.dataset_item_id.in_(lidar_ids),
+    )
+    existing = {row[0] for row in (await db.execute(existing_q)).all()}
+    pending_frame_ids = [f for f in frame_ids if frames[f]["lidar"].id not in existing]
+
+    total_pending = len(pending_frame_ids)
+    if total_pending == 0:
+        return {"created": 0, "total": 0}
+
+    created = 0
+    last_pct = 0
+    for start in range(0, total_pending, chunk_size):
+        chunk = pending_frame_ids[start : start + chunk_size]
+        seq_result = await db.execute(
+            text("SELECT nextval('display_seq_tasks') FROM generate_series(1, :n)"),
+            {"n": len(chunk)},
+        )
+        display_nums = [row[0] for row in seq_result.all()]
+
+        for i, frame_id in enumerate(chunk):
+            frame = frames[frame_id]
+            lidar = frame["lidar"]
+            # 逐帧 add + flush 拿 task.id 再 link（scene 帧数远小于 2D item 数，
+            # 性能可接受；批插 insert(Task) 不回拿 id 无法建 link）。
+            task = Task(
+                project_id=project_id,
+                dataset_item_id=lidar.id,
+                batch_id=None,
+                display_id=f"T-{display_nums[i]}",
+                file_name=lidar.file_name,
+                file_path=lidar.file_path,
+                file_type="point_cloud",
+                status="pending",
+            )
+            db.add(task)
+            await db.flush()
+
+            link_payload: list[tuple[uuid.UUID, str, str | None]] = [
+                (lidar.id, "primary_lidar", None)
+            ]
+            for cam, cam_item in frame["cameras"].items():
+                link_payload.append((cam_item.id, f"camera_{cam}", cam))
+            await link_items(db, task.id, link_payload)
+
+        created += len(chunk)
+
+        project = await db.get(Project, project_id)
+        if project:
+            project.total_tasks = (project.total_tasks or 0) + len(chunk)
+
+        if job_id is not None:
+            pct = int(created / total_pending * 100)
+            if pct >= last_pct + 5 or created == total_pending:
+                await async_job_svc.update_progress(db, job_id, pct)
+                last_pct = pct
+
+        await db.commit()
+
+    return {"created": created, "total": total_pending}
+
+
+async def attach_calibration(db: AsyncSession, *, dataset_id: uuid.UUID) -> int:
+    """v0.13.1 · 读 calib/camera/<cam>.json 写入该相机所有帧 DatasetItem 的 metadata。
+
+    对每个 calib item：从 MinIO 读字节 → json.loads → 经 SensorCalibration 归一化后落库。
+    归一化做两件事（v0.13.2 起，原先存原始 dict + 仅长度校验）：
+      1. 只保留 schema 已建模字段（extrinsic / intrinsic / rect），剥掉上游/厂商夹带的
+         杂键（如 SUSTechPOINTS 示例 left.json 的 extrinsic_ok）；
+      2. 过 SensorCalibration 校验（extrinsic=16 / intrinsic=9 / rect=16），非法则
+         warning 跳过该相机（不抛）。
+    入库即「单一真值的干净标定」，读取端（manifest）不会再因杂键被 extra="forbid" 判废。
+    返回写入的相机项数（DatasetItem 行数）。
+    """
+    items = await _load_dataset_items(db, dataset_id)
+    frames, calib_items = group_frames(items)
+
+    # cam -> [该相机所有帧的 DatasetItem]
+    cam_to_items: dict[str, list[DatasetItem]] = {}
+    for frame in frames.values():
+        for cam, cam_item in frame["cameras"].items():
+            cam_to_items.setdefault(cam, []).append(cam_item)
+
+    known_fields = set(SensorCalibration.model_fields)
+    written = 0
+    for cam, calib_item in calib_items.items():
+        raw = _read_calibration(calib_item.file_path)
+        if raw is None:
+            continue
+        # 先剥未建模键再校验：杂键不应让一份内外参合法的标定整体作废。
+        filtered = {k: v for k, v in raw.items() if k in known_fields}
+        try:
+            calib = SensorCalibration.model_validate(filtered)
+        except ValidationError as exc:
+            logger.warning("calibration for camera %r invalid, skipped: %s", cam, exc)
+            continue
+        normalized = calib.model_dump(exclude_none=True)
+
+        for cam_item in cam_to_items.get(cam, []):
+            # 整体重新赋值整个 dict 以触发 SQLAlchemy JSONB 变更检测。
+            cam_item.metadata_ = {
+                **(cam_item.metadata_ or {}),
+                "calibration": normalized,
+            }
+            written += 1
+
+    await db.flush()
+    return written
+
+
+def _read_calibration(key: str) -> dict | None:
+    """从 datasets 桶读取 calib JSON 字节并解析。读取 / 解析失败返回 None。
+
+    抽成小函数便于测试注入（monkeypatch storage_service.client.get_object 即可）。
+    """
+    try:
+        body = storage_service.client.get_object(
+            Bucket=storage_service.datasets_bucket, Key=key
+        )["Body"].read()
+        return json.loads(body)
+    except Exception:
+        logger.warning("failed to read calibration object %r", key, exc_info=True)
+        return None

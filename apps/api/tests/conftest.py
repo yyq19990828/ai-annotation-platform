@@ -32,7 +32,28 @@ import pytest
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 
-TEST_DB_DEFAULT = "postgresql+asyncpg://user:pass@localhost:5432/annotation_test"
+def _default_test_db_url() -> str:
+    """默认测试库：跟随本环境 .env 的 DATABASE_URL（host/port/账号/驱动），库名固定
+    annotation_test。这样多 worktree（各连不同 postgres 端口，如点云隔离栈 5433）无需
+    手动设 TEST_DATABASE_URL。CI / 显式场景仍可用 TEST_DATABASE_URL 覆盖（见 test_db_url）。
+    settings 不可用时回退到历史默认（localhost:5432）。"""
+    try:
+        from sqlalchemy.engine import make_url
+
+        from app.config import settings
+
+        # render_as_string(hide_password=False)：str(URL) 会把密码渲染成 ***，
+        # 直接用会导致认证失败，必须显式不隐藏。
+        return (
+            make_url(settings.database_url)
+            .set(database="annotation_test")
+            .render_as_string(hide_password=False)
+        )
+    except Exception:
+        return "postgresql+asyncpg://user:pass@localhost:5432/annotation_test"
+
+
+TEST_DB_DEFAULT = _default_test_db_url()
 
 
 # v0.10.22 · 旧扁平列 classes / classes_config / attribute_schema 已删 (单源真值

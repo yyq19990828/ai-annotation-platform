@@ -3,6 +3,7 @@ from uuid import UUID
 from datetime import datetime
 from typing import Literal
 
+from app.schemas._jsonb_types import SensorCalibration
 from app.schemas.user import UserBrief
 
 
@@ -85,6 +86,21 @@ class TaskVideoManifestResponse(BaseModel):
     poster_url: str | None = None
     metadata: VideoMetadata
     expires_in: int = 3600
+
+
+class PointCloudCameraOut(BaseModel):
+    name: str
+    role: str
+    image_url: str
+    calibration: SensorCalibration | None = None
+
+
+class TaskPointCloudManifestResponse(BaseModel):
+    task_id: UUID
+    point_cloud_url: str
+    point_cloud_format: str = "pcd"
+    cameras: list[PointCloudCameraOut]
+    expires_in: int
 
 
 class VideoFrameTimetableEntry(BaseModel):

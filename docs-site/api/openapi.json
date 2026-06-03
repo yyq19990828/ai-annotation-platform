@@ -943,8 +943,10 @@
             "discriminator": {
               "mapping": {
                 "bbox": "#/components/schemas/BboxGeometry",
+                "box_3d": "#/components/schemas/Box3DGeometry",
                 "keypoint": "#/components/schemas/KeypointGeometry",
                 "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
+                "point_mask_3d": "#/components/schemas/PointMaskGeometry",
                 "polygon": "#/components/schemas/PolygonGeometry",
                 "polyline": "#/components/schemas/PolylineGeometry",
                 "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
@@ -977,6 +979,12 @@
               },
               {
                 "$ref": "#/components/schemas/KeypointGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/Box3DGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/PointMaskGeometry"
               }
             ],
             "title": "Geometry"
@@ -1013,7 +1021,8 @@
               "ai_interactive",
               "lidar_box_3d",
               "rotated_bbox",
-              "keypoint"
+              "keypoint",
+              "point_mask_3d"
             ],
             "title": "Tool Unit Id",
             "type": "string"
@@ -1633,8 +1642,10 @@
             "discriminator": {
               "mapping": {
                 "bbox": "#/components/schemas/BboxGeometry",
+                "box_3d": "#/components/schemas/Box3DGeometry",
                 "keypoint": "#/components/schemas/KeypointGeometry",
                 "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
+                "point_mask_3d": "#/components/schemas/PointMaskGeometry",
                 "polygon": "#/components/schemas/PolygonGeometry",
                 "polyline": "#/components/schemas/PolylineGeometry",
                 "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
@@ -1667,6 +1678,12 @@
               },
               {
                 "$ref": "#/components/schemas/KeypointGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/Box3DGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/PointMaskGeometry"
               }
             ],
             "title": "Geometry"
@@ -1771,7 +1788,8 @@
               "ai_interactive",
               "lidar_box_3d",
               "rotated_bbox",
-              "keypoint"
+              "keypoint",
+              "point_mask_3d"
             ],
             "title": "Tool Unit Id",
             "type": "string"
@@ -1933,8 +1951,10 @@
                 "discriminator": {
                   "mapping": {
                     "bbox": "#/components/schemas/BboxGeometry",
+                    "box_3d": "#/components/schemas/Box3DGeometry",
                     "keypoint": "#/components/schemas/KeypointGeometry",
                     "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
+                    "point_mask_3d": "#/components/schemas/PointMaskGeometry",
                     "polygon": "#/components/schemas/PolygonGeometry",
                     "polyline": "#/components/schemas/PolylineGeometry",
                     "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
@@ -1967,6 +1987,12 @@
                   },
                   {
                     "$ref": "#/components/schemas/KeypointGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Box3DGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PointMaskGeometry"
                   }
                 ]
               },
@@ -3972,6 +3998,52 @@
         "title": "Body_upload_zip_api_v1_datasets__dataset_id__items_upload_zip_post",
         "type": "object"
       },
+      "Box3DGeometry": {
+        "additionalProperties": true,
+        "description": "v0.13.0 · LiDAR 3D 框。center/size/rotation 各为长度 3 的列表\n(x,y,z 米 / 长宽高 / 绕各轴弧度)。extra=\"allow\" 容纳标定/属性等扩展字段。",
+        "properties": {
+          "center": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Center",
+            "type": "array"
+          },
+          "rotation": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Rotation",
+            "type": "array"
+          },
+          "size": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Size",
+            "type": "array"
+          },
+          "type": {
+            "const": "box_3d",
+            "default": "box_3d",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "center",
+          "size",
+          "rotation"
+        ],
+        "title": "Box3DGeometry",
+        "type": "object"
+      },
       "BucketSummary": {
         "properties": {
           "error": {
@@ -5682,6 +5754,24 @@
         "title": "DatasetItemListResponse",
         "type": "object"
       },
+      "DatasetItemMetadata": {
+        "additionalProperties": true,
+        "description": "v0.13.1 · DatasetItem.metadata_ 的结构化视图。calibration 仅点云相机项有;\nextra=\"allow\" 保留其它历史/未来 metadata key 不丢。",
+        "properties": {
+          "calibration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SensorCalibration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "DatasetItemMetadata",
+        "type": "object"
+      },
       "DatasetItemOut": {
         "properties": {
           "blurhash": {
@@ -5767,10 +5857,7 @@
             "type": "string"
           },
           "metadata": {
-            "additionalProperties": true,
-            "default": {},
-            "title": "Metadata",
-            "type": "object"
+            "$ref": "#/components/schemas/DatasetItemMetadata"
           },
           "thumbnail_url": {
             "anyOf": [
@@ -8235,6 +8322,60 @@
         "title": "PasswordChange",
         "type": "object"
       },
+      "PointCloudCameraOut": {
+        "properties": {
+          "calibration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SensorCalibration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "image_url": {
+            "title": "Image Url",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "role",
+          "image_url"
+        ],
+        "title": "PointCloudCameraOut",
+        "type": "object"
+      },
+      "PointMaskGeometry": {
+        "additionalProperties": false,
+        "description": "v0.13.0 · 3D 点云语义/实例分割掩码。point_indices 为指向点云的整数索引列表。",
+        "properties": {
+          "point_indices": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Point Indices",
+            "type": "array"
+          },
+          "type": {
+            "const": "point_mask_3d",
+            "default": "point_mask_3d",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "PointMaskGeometry",
+        "type": "object"
+      },
       "PolygonGeometry": {
         "additionalProperties": false,
         "description": "单连通域 polygon。\n\nv0.9.14 · holes 字段新增, 默认 [] 向后兼容。老存量 / 老前端写入仍走 type=polygon\n+ 仅 points 路径; 新 prediction 在有 hole 时把 hole 顶点列表填进 holes, 多连通域\n走 MultiPolygonGeometry 分支。",
@@ -8810,7 +8951,8 @@
               "ai_interactive",
               "lidar_box_3d",
               "rotated_bbox",
-              "keypoint"
+              "keypoint",
+              "point_mask_3d"
             ],
             "title": "Tool Unit Id",
             "type": "string"
@@ -11603,6 +11745,52 @@
         "title": "ScreenshotInitResponse",
         "type": "object"
       },
+      "SensorCalibration": {
+        "additionalProperties": false,
+        "description": "v0.13.1 · 相机标定。extrinsic row-major 4x4 外参(16), intrinsic row-major\n3x3 内参(9), rect 为 KITTI 可选矫正矩阵 4x4(16)。存进 DatasetItem.metadata_\n的 \"calibration\" key。投影: extrinsic·[x,y,z,1] → xyz → intrinsic·xyz → 透视除法。",
+        "properties": {
+          "extrinsic": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 16,
+            "minItems": 16,
+            "title": "Extrinsic",
+            "type": "array"
+          },
+          "intrinsic": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 9,
+            "minItems": 9,
+            "title": "Intrinsic",
+            "type": "array"
+          },
+          "rect": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 16,
+                "minItems": 16,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rect"
+          }
+        },
+        "required": [
+          "extrinsic",
+          "intrinsic"
+        ],
+        "title": "SensorCalibration",
+        "type": "object"
+      },
       "SkipTaskRequest": {
         "properties": {
           "note": {
@@ -12733,6 +12921,43 @@
           "created_at"
         ],
         "title": "TaskOut",
+        "type": "object"
+      },
+      "TaskPointCloudManifestResponse": {
+        "properties": {
+          "cameras": {
+            "items": {
+              "$ref": "#/components/schemas/PointCloudCameraOut"
+            },
+            "title": "Cameras",
+            "type": "array"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "point_cloud_format": {
+            "default": "pcd",
+            "title": "Point Cloud Format",
+            "type": "string"
+          },
+          "point_cloud_url": {
+            "title": "Point Cloud Url",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "point_cloud_url",
+          "cameras",
+          "expires_in"
+        ],
+        "title": "TaskPointCloudManifestResponse",
         "type": "object"
       },
       "TaskVideoFrameTimetableResponse": {
@@ -27562,6 +27787,54 @@
           }
         ],
         "summary": "Heartbeat Lock",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/point-cloud/manifest": {
+      "get": {
+        "operationId": "get_point_cloud_manifest_api_v1_tasks__task_id__point_cloud_manifest_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskPointCloudManifestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Point Cloud Manifest",
         "tags": [
           "tasks"
         ]

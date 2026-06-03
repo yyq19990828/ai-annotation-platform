@@ -34,7 +34,7 @@ const DATA_TYPE_ICONS: Record<string, IconName> = {
   video: "video",
   lidar: "cube",
 };
-const WORKBENCH_PROJECT_TYPES = new Set(["image-det", "video-track"]);
+const WORKBENCH_PROJECT_TYPES = new Set(["image-det", "video-track", "lidar"]);
 
 function ProjectRow({
   p,

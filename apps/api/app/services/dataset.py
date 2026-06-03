@@ -64,7 +64,30 @@ async def build_tasks_for_link(
     幂等：用 NOT EXISTS 过滤掉该 project 下已有 task 的 dataset_item，重复跑不双建。
     每块独立 commit（增量累加 project.total_tasks），传 job_id 时每块按 5% 粒度
     update_progress，供前端轮询看到进度。返回 {"created": N, "total": M}。
+
+    v0.13.1 · 点云项目（project.data_type == "lidar"）分流到 scene 感知建任务器：
+    先写各相机标定，再按帧建 Task + 多文件 link（见 services/pointcloud_import.py）。
     """
+    project = await db.get(Project, project_id)
+    if project and project.data_type == "lidar":
+        from app.services.pointcloud_import import (
+            attach_calibration,
+            build_pointcloud_tasks_for_link,
+        )
+
+        await attach_calibration(db, dataset_id=dataset_id)
+        # 标定独立落库：build_pointcloud 在「帧全已建过 task」时 total==0 早退且不 commit，
+        # 若不在此 commit，attach_calibration 的 flush 会在 session 关闭时回滚 —— 重导入
+        # （如修正 calib 文件后重跑）将刷不掉旧标定。commit 在这让标定持久化与建任务解耦。
+        await db.commit()
+        return await build_pointcloud_tasks_for_link(
+            db,
+            dataset_id=dataset_id,
+            project_id=project_id,
+            job_id=job_id,
+            chunk_size=chunk_size,
+        )
+
     item_q = (
         select(
             DatasetItem.id,
@@ -937,6 +960,8 @@ class DatasetService:
 
 _IMAGE_EXTS = {"jpg", "jpeg", "png", "bmp", "webp", "tiff", "tif", "gif", "svg"}
 _VIDEO_EXTS = {"mp4", "avi", "mov", "mkv", "wmv", "flv", "webm"}
+# v0.13.0 · 点云联合标注地基 (0.13.0-3): 放开点云扩展名 → file_type=point_cloud。
+_POINTCLOUD_EXTS = {"pcd", "bin", "las", "ply"}
 
 
 def _safe_basename(relpath: str) -> str:
@@ -963,6 +988,8 @@ def _infer_file_type_from_ext(ext: str) -> str:
         return "image"
     if ext in _VIDEO_EXTS:
         return "video"
+    if ext in _POINTCLOUD_EXTS:
+        return "point_cloud"
     return "other"
 
 

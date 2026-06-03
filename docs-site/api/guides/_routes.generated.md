@@ -163,7 +163,9 @@
 | GET | `/me/recent-reviews` |
 | GET | `/annotator` |
 | GET | `/annotator/batches` |
+| GET | `/me/performance` |
 | GET | `/admin/people` |
+| GET | `/admin/people/export` |
 | GET | `/admin/people/{user_id}` |
 | GET | `/admin/prediction-cost-stats` |
 
@@ -348,6 +350,7 @@
 | GET | `/next` |
 | GET | `/{task_id}` |
 | GET | `/{task_id}/video/manifest` |
+| GET | `/{task_id}/point-cloud/manifest` |
 | GET | `/{task_id}/video/frame-timetable` |
 | GET | `/{task_id}/video/manifest-v2` |
 | GET | `/{task_id}/video/segments` |
@@ -422,4 +425,4 @@
 
 ---
 
-_共 38 模块 / 240 路由_
+_共 38 模块 / 243 路由_

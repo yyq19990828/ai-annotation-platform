@@ -17,10 +17,12 @@ from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem, VideoFrameIndex
 from app.db.models.prediction import Prediction
 from app.schemas.task import (
+    PointCloudCameraOut,
     TaskOut,
     TaskListResponse,
     TaskLockResponse,
     ReviewClaimResponse,
+    TaskPointCloudManifestResponse,
     TaskVideoFrameTimetableResponse,
     TaskVideoManifestResponse,
     VideoFrameTimetableEntry,
@@ -55,6 +57,7 @@ from app.schemas.prediction import PredictionOut
 from app.services.annotation import AnnotationService
 from app.services.audit import AuditAction, AuditService
 from app.services.prediction import PredictionService
+from app.services.task_dataset_link import get_linked_items
 from app.services.task_lock import TaskLockService
 from app.services.scheduler import (
     get_next_task,
@@ -424,6 +427,99 @@ async def get_video_manifest(
         video_url=video_url,
         poster_url=poster_url,
         metadata=metadata,
+        expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
+    )
+
+
+@router.get(
+    "/{task_id}/point-cloud/manifest",
+    response_model=TaskPointCloudManifestResponse,
+)
+async def get_point_cloud_manifest(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.db.models.project import Project
+    from app.schemas._jsonb_types import SensorCalibration
+
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+
+    project = await db.get(Project, task.project_id)
+    if project is None or project.data_type != "lidar":
+        raise HTTPException(status_code=409, detail="Task is not a point-cloud task")
+
+    links = await get_linked_items(db, task_id)
+
+    def _presign(key: str) -> str:
+        return storage_service.generate_download_url(
+            key,
+            expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
+            bucket=storage_service.datasets_bucket,
+        )
+
+    # 一次性取出所有关联 DatasetItem，避免逐 link 往返 DB
+    item_ids = [link.dataset_item_id for link in links]
+    items_by_id: dict[uuid.UUID, DatasetItem] = {}
+    if item_ids:
+        rows = (
+            (await db.execute(select(DatasetItem).where(DatasetItem.id.in_(item_ids))))
+            .scalars()
+            .all()
+        )
+        items_by_id = {item.id: item for item in rows}
+
+    # 主点云 URL：优先 primary_lidar link，否则回退 task.file_path
+    point_cloud_url: str | None = None
+    primary_link = next((link for link in links if link.role == "primary_lidar"), None)
+    if primary_link is not None:
+        primary_item = items_by_id.get(primary_link.dataset_item_id)
+        if primary_item is not None:
+            point_cloud_url = _presign(primary_item.file_path)
+    if point_cloud_url is None:
+        if not task.file_path:
+            raise HTTPException(
+                status_code=404, detail="Point cloud file not available"
+            )
+        point_cloud_url = _presign(task.file_path)
+
+    cameras: list[PointCloudCameraOut] = []
+    for link in links:
+        if not link.role.startswith("camera_"):
+            continue
+        item = items_by_id.get(link.dataset_item_id)
+        if item is None:
+            continue
+        calibration: SensorCalibration | None = None
+        raw_calib = (item.metadata_ or {}).get("calibration")
+        if raw_calib:
+            try:
+                calibration = SensorCalibration.model_validate(raw_calib)
+            except Exception:
+                # 入库已经过 attach_calibration 归一化，正常到不了这里；真踩到说明
+                # 存了脏标定，别静默吞 —— 记一条 warning 指明是哪个 task/相机被判废。
+                logger.warning(
+                    "task %s %s: stored calibration failed validation, returning null",
+                    task_id,
+                    link.role,
+                )
+                calibration = None
+        cameras.append(
+            PointCloudCameraOut(
+                name=link.role[len("camera_") :],
+                role=link.role,
+                image_url=_presign(item.file_path),
+                calibration=calibration,
+            )
+        )
+
+    cameras.sort(key=lambda c: c.name)
+
+    return TaskPointCloudManifestResponse(
+        task_id=task.id,
+        point_cloud_url=point_cloud_url,
+        cameras=cameras,
         expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
     )
 

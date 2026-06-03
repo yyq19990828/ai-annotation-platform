@@ -133,11 +133,12 @@ export const TOOL_UNIT_GROUPS: ReadonlyArray<ToolUnitGroupSpec> = [
   {
     id: "lidar_box_3d",
     label: "3D 立体框",
-    hint: "本版未实现, schema 留位",
+    hint: "点云 7-DoF 立体框;车辆 / 行人 / 障碍物",
     icon: "cube",
     tools: ["lidar_box"],
     dataTypes: ["lidar"],
-    available: false,
+    // v0.13.3 · 解禁: 点云项目可在向导配 3D 框类别 (3D 编辑交互另行实现)
+    available: true,
   },
 ];
 
