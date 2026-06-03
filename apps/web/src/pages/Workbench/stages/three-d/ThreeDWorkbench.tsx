@@ -24,6 +24,9 @@ import {
   type PointCloudStats,
   type SceneBox,
 } from "./PointCloudScene";
+import CameraProjectionView from "./CameraProjectionView";
+import { psrToCorners } from "./geometry/box3d";
+import { projectPoints } from "./geometry/projection";
 import styles from "./ThreeDWorkbench.module.css";
 
 interface ThreeDWorkbenchProps {
@@ -389,7 +392,37 @@ export function ThreeDWorkbench({
     sceneRef.current?.setPointSize(v);
   };
 
-  const cameras = manifest?.cameras ?? [];
+  const cameras = useMemo(() => manifest?.cameras ?? [], [manifest?.cameras]);
+
+  // v0.13.4 · 跨模态高亮集合:选中框 + 同 group_id 成员。3D 主视图仍按 selected 单框高亮,
+  // overlay 按本集合高亮(为未来同组 2D 框成员预留;孤立框 group_id 为空时退化为仅选中本身)。
+  const selectedGroupId = selectedAnn?.group_id ?? null;
+  const highlightedIds = useMemo(() => {
+    const s = new Set<string>();
+    if (selectedId) s.add(selectedId);
+    if (selectedGroupId != null) {
+      for (const a of annotations ?? []) {
+        if (a.group_id === selectedGroupId) s.add(a.id);
+      }
+    }
+    return s;
+  }, [selectedId, selectedGroupId, annotations]);
+
+  // v0.13.4 · 选中框被哪些相机看到(可见角点数 > 0),按可见角点数降序;首个 = 最正对。
+  const selectedCameraVis = useMemo(() => {
+    if (!selectedBox) return [] as { role: string; name: string; count: number }[];
+    const corners = psrToCorners(selectedBox.center, selectedBox.size, selectedBox.rotation);
+    return cameras
+      .filter((c) => c.calibration)
+      .map((c) => ({
+        role: c.role,
+        name: c.name,
+        count: projectPoints(corners, c.calibration!).visible.filter(Boolean).length,
+      }))
+      .filter((v) => v.count > 0)
+      .sort((a, b) => b.count - a.count);
+  }, [selectedBox, cameras]);
+  const bestCameraRole = selectedCameraVis[0]?.role ?? null;
 
   return (
     <div className={styles.root}>
@@ -442,6 +475,11 @@ export function ThreeDWorkbench({
             <span>
               · 选中 {selectedClass ?? ""} 中心 [
               {selectedBox.center.map((n) => n.toFixed(2)).join(", ")}]
+            </span>
+          )}
+          {selectedBox && selectedCameraVis.length > 0 && (
+            <span>
+              · 投影可见于 {selectedCameraVis.length} 相机 · 正对 {selectedCameraVis[0].name}
             </span>
           )}
         </div>
@@ -522,17 +560,20 @@ export function ThreeDWorkbench({
         )}
       </div>
 
-      {/* 相机图面板(只读) */}
+      {/* 相机图面板 + 投影 overlay(v0.13.4):3D 框经标定实时投影,点投影框反选 */}
       {cameras.length > 0 && (
         <div className={styles.cameraStrip}>
           {cameras.map((cam) => (
-            <figure key={cam.role} className={styles.cameraItem}>
-              <img src={cam.image_url} alt={cam.name} loading="lazy" />
-              <figcaption>
-                {cam.name}
-                {cam.calibration ? "" : " · 无标定"}
-              </figcaption>
-            </figure>
+            <CameraProjectionView
+              key={cam.role}
+              name={cam.name}
+              imageUrl={cam.image_url}
+              calibration={cam.calibration}
+              boxes={boxes}
+              highlightedIds={highlightedIds}
+              onSelectBox={onSelectBox}
+              bestForSelected={cam.role === bestCameraRole}
+            />
           ))}
         </div>
       )}

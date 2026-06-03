@@ -162,4 +162,39 @@ POST /tasks/{id}/annotations            // 创建; PATCH .../{aid} 更新, DELET
 
 `three-d/geometry/box3d.ts`(移植 SUSTechPOINTS 矩阵,无框架依赖,带单测):`boxToMatrix4` / `psrToCorners` 算 8 角点与朝向。v0.13.4 标定驱动 3D→2D 投影复用同一套约定(欧拉角顺序 `XYZ`、yaw=`rotation[2]`),约定一旦漂移投影必偏。
 
-> 投影联动(3D↔2D 实时高亮、最佳相机)、`group_id` 跨模态聚合、`point_mask_3d` 分割留 v0.13.4+。
+## 投影联动:3D 框 → 相机视图(v0.13.4)
+
+把 3D 框经相机标定**实时**投影到各相机图上画线框,标注员对照图像确认 / 校正 3D 框。**后端零改动、零新端点、零迁移、不预存投影**:标定已在 `DatasetItem.metadata_`(G2)、manifest 的 `cameras[].calibration` 直出;前端每次按标定现算。前端为主,详见 ADR-0033。
+
+### 投影链(纯函数 `three-d/geometry/projection.ts`)
+
+世界点 `p=[x,y,z]`(lidar 系、米)→ 相机像素,与 SUSTechPOINTS `image.js#points3d_homo_to_image2d` + `util.js#matmul` **逐字对齐**:
+
+```
+p_cam   = extrinsic · [x, y, z, 1]ᵀ      // extrinsic: 行主序 4x4 lidar→camera 外参
+p_cam   = rect · p_cam   (KITTI 有 rect)  // 可选矫正, 行主序 4x4
+[u,v,w] = intrinsic · p_cam.xyz          // intrinsic: 行主序 3x3 内参
+pixel   = [u/w, v/w]                       // 透视除法; 像素原点左上(u 右、v 下)
+visible = w > 0                            // 相机前方; w<=0(后方)剔除该角点
+```
+
+- `projectPoints(points, calib) → { pixels, visible }`:接受 `THREE.Vector3[]` 或 `[x,y,z][]`。**手写行主序矩阵·向量**(`THREE.Matrix4.elements` 是列主序,直接喂行主序标定会被转置而出错)。
+- `BOX_EDGES`:12 条边索引表(底面环 / 顶面环 / 4 竖棱),基于 `box3d.ts` 角点顺序;overlay 据此连线。
+- **坐标约定锁死(漂移即偏)**:extrinsic 方向 lidar→cam、`rect` 在 extrinsic 之后、像素原点左上、欧拉顺序 `XYZ`。
+- **欧拉顺序差异**:SUSTech 默认 `ZYX` 与 box3d.ts 的 `XYZ` 仅在 pitch/roll 非零时不同;7-DoF 只编辑 yaw(rx=ry=0)时退化为同一 `Rz`,角点一致。投影链本身与欧拉顺序无关。
+- **对拍验证**:`projection.test.ts` 用 `third-party/SUSTechPOINTS/data/example/calib/camera/front.json` 真实标定 + 同 scene yaw-only 框,`psrToCorners`→`projectPoints` 与移植的 SUSTech oracle 逐角点像素一致(epic 验证策略)。
+
+### overlay 渲染 + 缩放(`CameraProjectionView.tsx`)
+
+- 相机图 `<img>` 上叠等尺寸 `<canvas>`,消费**同一份** `annotations`(经 `boxes`)+ `highlightedIds`;3D 框改 PSR / 改类 / 选中变化即重绘(`useUpdateAnnotation` **乐观更新**会即时写缓存,故面板 / gizmo / 列表改框后 overlay 立即跟随)。
+- **缩放**:`intrinsic` 基于图像**原始分辨率**,投影像素是原图坐标;overlay 按 `clientWidth/naturalWidth` 比例缩放绘制,`ResizeObserver` + `onLoad` 重算。`devicePixelRatio` 适配高清屏。
+- **可见性**:全角点在相机后方 / 全不可见 → 该相机不画此框;部分可见 → 只连两端都可见的边(MVP 不做画面裁剪)。无 `calibration` 的相机降级不画、不报错(承 ADR-0030)。
+
+### 选中联动 + 跨模态身份
+
+- **3D→2D**:选中 3D 框 → 各相机投影框高亮(白描边加粗 + 淡填充),承共享 `selectedId`。
+- **2D→3D 反选**:点相机里的投影框 → 命中测试(投影包围盒含点、取最小面积框)→ `onSelectBox` 选中对应 3D 框。
+- **最佳相机提示**:选中框按可见角点数统计被几个相机看到,状态条显示「投影可见于 N 相机 · 正对 X」,最正对相机 figcaption 标「· 正对」。
+- **`group_id` 聚合高亮**:overlay 高亮集合 = 选中框 + 同 `group_id` 成员(G6)。本切片只打通身份可视化:相机视图上**独立绘制 / 编辑 2D 框成员**留后续。注意后端 `/annotations/group` 要求 `len(ids) >= 2`,**单个 3D 框无法自分组**;孤立框 `group_id` 为空时退化为仅高亮自身,待 2D 成员落地再聚合。
+
+> `point_mask_3d` 分割、三正交视图精修(ADR-0032 方案 B,v0.13.5)、跨帧轨迹留后续。

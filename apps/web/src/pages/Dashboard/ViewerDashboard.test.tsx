@@ -88,15 +88,16 @@ describe("ViewerDashboard", () => {
     expect(screen.getByText("50%")).toBeInTheDocument();
   });
 
-  it("非 image-det 点击 → toast 而不是导航", () => {
+  it("未实现工作台类型点击 → toast 而不是导航", () => {
+    // 注:lidar 自 v0.13.x 已进白名单(点云 3D 工作台),改用尚未实现工作台的 image-seg 验证降级 toast。
     mockUseProjects.mockReturnValue({
       data: [
         {
           id: "p2",
           display_id: "P-2",
-          name: "Lidar",
-          type_label: "点云",
-          type_key: "lidar",
+          name: "Seg",
+          type_label: "图像分割",
+          type_key: "image-seg",
           total_tasks: 5,
           completed_tasks: 0,
           ai_enabled: false,
@@ -107,10 +108,10 @@ describe("ViewerDashboard", () => {
     });
     mockUseProjectStats.mockReturnValue({ data: undefined });
     renderUI();
-    fireEvent.click(screen.getByText("Lidar"));
+    fireEvent.click(screen.getByText("Seg"));
     expect(mockPushToast).toHaveBeenCalledWith(
       expect.objectContaining({
-        msg: '项目 "Lidar" 已打开',
+        msg: '项目 "Seg" 已打开',
       }),
     );
   });

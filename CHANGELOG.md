@@ -27,6 +27,32 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；0.12.x 历史段待整体移到 docs/changelogs/0.12.x.md -->
 
+## [0.13.4] - 2026-06-03
+
+点云 + 图像联合标注工作台第五切片:**联合标注 MVP 上线**——把 3D 框经相机标定**实时**投影到各相机视图。标注员对照图像确认 / 校正 3D 框,3D↔2D 双向选中联动,同物体共享 `group_id` 身份。**纯前端、实时算不预存,后端零改动、零新端点、零迁移**。计划见 `docs/plans/2026-06-03-v0.13.4-pointcloud-projection-linkage.md`,投影 overlay 架构决策见 ADR-0033。
+
+### Added
+
+- **3D→2D 投影内核**(`three-d/geometry/projection.ts`):`projectPoints(points, calib)` 实现 `extrinsic(行主 4x4) → 可选 rect → intrinsic(行主 3x3) → 透视除法`,`visible = w>0` 剔除相机后方角点;`BOX_EDGES` 12 边索引表。手写行主序矩阵·向量(避开 `THREE.Matrix4` 列主序陷阱)。与 SUSTechPOINTS 逐字对齐,`projection.test.ts` 用真实标定 + yaw-only 框做**像素级对拍**。
+- **相机视图投影 overlay**(`CameraProjectionView.tsx`):相机图上叠等尺寸 canvas 画投影线框(类别色),消费同一份标注实时重绘;按 `clientWidth/naturalWidth` 缩放(intrinsic 基于原图分辨率),`ResizeObserver` + `onLoad` 重算,`devicePixelRatio` 适配高清屏。
+- **3D↔2D 选中联动**:选中 3D 框 → 各相机投影高亮(白描边 + 淡填充);点相机投影框 → 命中测试反选对应 3D 框;状态条显示「投影可见于 N 相机 · 正对 X」,最正对相机标「· 正对」角标。
+- **`group_id` 聚合高亮**:overlay 高亮集合 = 选中框 + 同 `group_id` 成员,为相机视图 2D 框成员(后续)预留跨模态身份。
+
+### Changed
+
+- **相机面板从只读 `<img>` 升级为图 + 投影 overlay**:相机图加大到 160px;无 `calibration` 的相机降级不画、不报错。
+- **`useUpdateAnnotation` 乐观更新驱动实时性**:数值面板 / gizmo / 列表改框经乐观更新即时写缓存,overlay 立即跟随(gizmo 拖拽期间不逐帧透传,落点提交后跟随)。
+
+### Fixed
+
+- **Dashboard 陈旧测试**:`ViewerDashboard.test.tsx` 原用 `lidar` 项目断言「未实现工作台 → toast」,但 lidar 自 v0.13.x 已进白名单(导航进 3D 台);改用 `image-seg` 项目验证降级 toast。
+
+### Notes
+
+- three 仍走 `React.lazy` + 独立 `vendor-three` chunk(513KB);`ThreeDWorkbench` 懒加载块 67.75KB,konva 2D 栈隔离。
+- 后端无改动:`/annotations/group` 要求 `len(ids) >= 2`,**单个 3D 框无法自分组**;本切片只做按 `group_id` 聚合高亮,孤立框退化为仅高亮自身。
+- 不做:相机视图独立绘制 / 编辑 2D 框成员、投影预存生成 2D 标注、三正交视图精修(ADR-0032 方案 B)、`point_mask_3d` 分割——留 v0.13.5+。
+
 ## [0.13.3] - 2026-06-03
 
 点云 + 图像联合标注工作台第四切片:把只读查看器升级为**可标注**——首个点云**可写**能力。在 Three.js 工作台画 / 选 / 编辑 **3D 框**(`Box3DGeometry`),类别复用 `tool_bindings["lidar_box_3d"]`,经现有标注 API 持久化。**纯前端 + 一处设置解禁,后端零改动、零新端点、零迁移**。计划见 `docs/plans/2026-06-02-v0.13.3-pointcloud-3d-box-annotation.md`,交互形态决策见 ADR-0032。
