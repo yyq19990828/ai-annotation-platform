@@ -6,9 +6,11 @@
 """
 
 import asyncio
+import importlib.util
 import sys
 import uuid
 from datetime import date
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import select
@@ -140,6 +142,23 @@ def make_projects(owner_id: uuid.UUID) -> list[dict]:
     ]
 
 
+# ── 点云夹具(复用 repo 根 scripts/seed_pointcloud_dev.py)────────────────────
+
+
+def _load_pointcloud_seeder():
+    """从 repo 根的 scripts/seed_pointcloud_dev.py 按路径加载 seed_pointcloud。
+
+    该脚本不在 apps/api 的 PYTHONPATH 上,用 importlib 按绝对路径载入;模块顶层
+    只算常量、无副作用(app.* 导入都在函数内),import 本身安全。
+    """
+    repo = Path(__file__).resolve().parents[3]
+    mod_path = repo / "scripts" / "seed_pointcloud_dev.py"
+    spec = importlib.util.spec_from_file_location("seed_pointcloud_dev", mod_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.seed_pointcloud
+
+
 # ── 主逻辑 ────────────────────────────────────────────────────────────────────
 
 
@@ -192,6 +211,24 @@ async def seed() -> None:
             print(f"  add   project {pdata['display_id']}  {pdata['name']}")
 
         await db.commit()
+
+        # 点云开发夹具(owner=admin):依赖 MinIO + SUSTechPOINTS 夹具,缺失则跳过,
+        # 不影响核心账号/项目种子。幂等:P-PC-DEV 已存在则跳过。
+        admin = created_users.get("admin")
+        if admin is not None:
+            try:
+                info = await _load_pointcloud_seeder()(db, owner_id=admin.id)
+                await db.commit()
+                if info is None:
+                    print("  skip  point-cloud P-PC-DEV (已存在)")
+                else:
+                    print(
+                        f"  add   point-cloud {info['project']}  "
+                        f"files={info['files']} tasks={info['tasks']}"
+                    )
+            except Exception as e:  # noqa: BLE001 — 夹具/MinIO 不可用时不阻断 seed
+                await db.rollback()
+                print(f"  WARN  point-cloud 夹具跳过: {e}")
 
     await engine.dispose()
 

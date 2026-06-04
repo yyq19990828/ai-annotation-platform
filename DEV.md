@@ -330,7 +330,7 @@ pnpm dev:web                                               # 另开窗口，:300
 pnpm exec playwright install chromium                      # 首次需下载浏览器
 
 # 首次还需要至少一个 super_admin 账号 + 一个项目，否则截图脚本会报缺数据
-cd apps/api && PYTHONPATH=. uv run python scripts/seed.py  # 创建 admin/pm/qa/anno + 2 示例项目
+cd apps/api && PYTHONPATH=. uv run python scripts/seed.py  # 创建 admin/pm/qa/anno + 2 示例项目 + 点云项目 P-PC-DEV(owner=admin,需 MinIO,缺则跳过)
 ```
 
 ### 触发
