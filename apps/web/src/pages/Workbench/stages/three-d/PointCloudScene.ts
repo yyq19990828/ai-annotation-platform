@@ -225,6 +225,7 @@ export class PointCloudScene {
     const r = this.viewRadius;
     const f = this.forward; // 水平单位向量(车头方向)
     this.controls.target.copy(c);
+    this.camera.up.set(0, 0, 1); // v0.13.9 · 还原 up(bevView 会改成水平 forward)
     // 蹲在车头反方向、抬高,看向中心 ⇒ 视线 = 车头方向(与 front 相机一致)。
     // forward 默认 (0,1,0) 时退化为历史的 (c.x, c.y - 2.2r, ...)。
     this.camera.position.set(c.x - f.x * r * 2.2, c.y - f.y * r * 2.2, c.z + r * 1.2);
@@ -246,6 +247,75 @@ export class PointCloudScene {
 
   resetView() {
     this.frameView();
+  }
+
+  /**
+   * v0.13.9 · 俯视(BEV)复位: 相机摆到稠密区正上方俯看 -Z, 车头(forward)朝屏幕上方。
+   * 看 -Z 时 up 不能与视线共线 → 取水平的 forward 作 up(切回 resetView 时 frameView 还原 (0,0,1))。
+   * 便于在地面平面拖框选 footprint。仍是透视相机, 不引入正交模式。
+   */
+  bevView() {
+    const c = this.viewCenter;
+    const r = this.viewRadius;
+    this.controls.target.copy(c);
+    this.camera.up.copy(this.forward);
+    this.camera.position.set(c.x, c.y, c.z + r * 2.5);
+    this.camera.near = Math.max(r / 100, 0.1);
+    this.camera.far = r * 50;
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
+  }
+
+  /**
+   * v0.13.9 · 框选选点: 返回投影落在屏幕矩形(两对角 client px)内、且在相机前方的点 world 坐标
+   * (Float32Array, len = 3·K)。用屏幕投影选真实点而非投地面平面 → 对物体高度/视角零视差
+   * (SUSTechPOINTS 「框选 + 点云拟合」范式)。无点云 / 选不到点 → 返回 null。
+   *
+   * 实现: vp = projection · viewMatrixInverse; 对每点取齐次裁剪坐标, w ≤ 0 (相机后方) 丢弃,
+   * 否则透视除得 NDC, 落在矩形 [nx0,nx1]×[ny0,ny1] 内即选中。
+   */
+  selectPointsInScreenRect(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+  ): Float32Array | null {
+    const positions = this.getPointPositions();
+    if (!positions) return null;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const toNdcX = (cx: number) => ((cx - rect.left) / rect.width) * 2 - 1;
+    const toNdcY = (cy: number) => -((cy - rect.top) / rect.height) * 2 + 1;
+    // client y 越大 NDC y 越小 → 取 min/max 归一化矩形。
+    const nx0 = Math.min(toNdcX(x0), toNdcX(x1));
+    const nx1 = Math.max(toNdcX(x0), toNdcX(x1));
+    const ny0 = Math.min(toNdcY(y0), toNdcY(y1));
+    const ny1 = Math.max(toNdcY(y0), toNdcY(y1));
+    this.camera.updateMatrixWorld();
+    const vp = new THREE.Matrix4().multiplyMatrices(
+      this.camera.projectionMatrix,
+      this.camera.matrixWorldInverse,
+    );
+    const v = new THREE.Vector4();
+    const out: number[] = [];
+    const n = Math.floor(positions.length / 3);
+    for (let i = 0; i < n; i++) {
+      const px = positions[i * 3];
+      const py = positions[i * 3 + 1];
+      const pz = positions[i * 3 + 2];
+      v.set(px, py, pz, 1).applyMatrix4(vp);
+      if (v.w <= 0) continue; // 相机后方
+      const ndcX = v.x / v.w;
+      const ndcY = v.y / v.w;
+      if (ndcX >= nx0 && ndcX <= nx1 && ndcY >= ny0 && ndcY <= ny1) {
+        out.push(px, py, pz);
+      }
+    }
+    return out.length > 0 ? new Float32Array(out) : null;
+  }
+
+  /** v0.13.9 · 框选拖拽期禁用 OrbitControls(同 gizmo 拖拽), 避免拖框时相机乱转。 */
+  setBoxSelecting(active: boolean) {
+    this.controls.enabled = !active;
   }
 
   /**

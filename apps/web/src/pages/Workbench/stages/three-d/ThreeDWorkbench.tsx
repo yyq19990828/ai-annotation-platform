@@ -5,6 +5,7 @@
  * 旁边平铺各相机图(只读,不画投影框 —— 投影联动是 v0.13.4)。与 Konva 2D 工作台双栈隔离。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 
 import {
   useAnnotations,
@@ -34,7 +35,13 @@ import { cameraAnchor, type Anchor } from "./geometry/cameraAnchor";
 import { colorizePoints, type CameraSample } from "./geometry/colorize";
 import { buildDepthRaster } from "./geometry/depthmap";
 import { projectPoints } from "./geometry/projection";
-import { fitSize, fitBottom, fitYaw, fitSizeAndBottom } from "./geometry/autofit";
+import {
+  fitSize,
+  fitBottom,
+  fitYaw,
+  fitSizeAndBottom,
+  psrFromPoints,
+} from "./geometry/autofit";
 import styles from "./ThreeDWorkbench.module.css";
 
 interface ThreeDWorkbenchProps {
@@ -53,6 +60,13 @@ interface ThreeDWorkbenchProps {
 
 // v0.13.3 · 新框默认尺寸(米,长宽高;约一辆轿车),放置后用面板/gizmo 精修。
 const DEFAULT_BOX_SIZE: [number, number, number] = [4.0, 1.8, 1.6];
+// v0.13.9 · 框选预览矩形位置/尺寸经 CSS custom property 注入(逐帧动态值)。
+type BoxSelectRectVars = CSSProperties & {
+  "--rect-l": string;
+  "--rect-t": string;
+  "--rect-w": string;
+  "--rect-h": string;
+};
 // 点云项目的 3D 框工具单位(类别 / 属性绑定都挂在它下面)。
 const LIDAR_TOOL_UNIT = "lidar_box_3d";
 
@@ -560,25 +574,106 @@ export function ThreeDWorkbench({
     [placeClass, createAnnotation, onSelectBox, onSetThreeDTool],
   );
 
+  // v0.13.9 · 框选画框 (frustum 选点): 在 box 工具下按住拖出屏幕矩形 → 选中投影落在矩形内的真实
+  // 点 → 取其 world AABB 建框 (psrFromPoints)。用屏幕投影选点而非投地面平面 → 对物体高度/视角零
+  // 视差 (SUSTechPOINTS 范式)。拖动 < 阈值退化为旧的「点击放置固定框」(向后兼容)。
+  // 仍建议在俯视(BEV)下框, 框选体验最佳; 但本法不再依赖视角无视差性。
+  const handleBoxSelect = useCallback(
+    (a: { x: number; y: number }, b: { x: number; y: number }) => {
+      const scene = sceneRef.current;
+      if (!scene || !placeClass) return;
+      const selected = scene.selectPointsInScreenRect(a.x, a.y, b.x, b.y);
+      if (!selected) return; // 框内无点 → 不建框
+      const psr = psrFromPoints(selected);
+      const geometry: Box3DGeometry = {
+        type: "box_3d",
+        center: [psr.center[0], psr.center[1], psr.center[2]],
+        size: [psr.size[0], psr.size[1], psr.size[2]],
+        rotation: [psr.rotation[0], psr.rotation[1], psr.rotation[2]],
+      };
+      createAnnotation.mutate(
+        {
+          annotation_type: "box_3d",
+          tool_unit_id: LIDAR_TOOL_UNIT,
+          class_name: placeClass,
+          geometry,
+        },
+        { onSuccess: (created) => onSelectBox(created.id) },
+      );
+      onSetThreeDTool("select"); // 单次画框后回到选择工具
+    },
+    [placeClass, createAnnotation, onSelectBox, onSetThreeDTool],
+  );
+
   // mousedown 落点(像素): click 时若位移超阈值判为「转视角拖拽」, 不改选中/不放置。
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
   const DRAG_CLICK_TOL = 4; // px
+  // v0.13.9 · 框选拖拽起点(client px)与屏上预览矩形(相对 viewportWrap px)。
+  const boxSelectStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [isBoxSelecting, setIsBoxSelecting] = useState(false);
+  const [previewRect, setPreviewRect] = useState<{
+    l: number;
+    t: number;
+    w: number;
+    h: number;
+  } | null>(null);
 
   const handleViewportMouseDown = (e: React.MouseEvent) => {
     pointerDownRef.current = { x: e.clientX, y: e.clientY };
+    if (placing) {
+      // 框选: 禁 orbit, 记起点; 实际 move/up 走 window 监听(见下方 effect), 拖出视口也能收尾。
+      sceneRef.current?.setBoxSelecting(true);
+      boxSelectStartRef.current = { x: e.clientX, y: e.clientY };
+      setIsBoxSelecting(true);
+    }
   };
+
+  // v0.13.9 · 框选期 window 级 move/up: move 画预览矩形; up 收尾(拖动大 → 框选, 否则 → 点击放置)。
+  useEffect(() => {
+    if (!isBoxSelecting) return;
+    const onMove = (e: MouseEvent) => {
+      const start = boxSelectStartRef.current;
+      const wrap = viewportRef.current;
+      if (!start || !wrap) return;
+      const r = wrap.getBoundingClientRect();
+      setPreviewRect({
+        l: Math.min(start.x, e.clientX) - r.left,
+        t: Math.min(start.y, e.clientY) - r.top,
+        w: Math.abs(e.clientX - start.x),
+        h: Math.abs(e.clientY - start.y),
+      });
+    };
+    const onUp = (e: MouseEvent) => {
+      const start = boxSelectStartRef.current;
+      boxSelectStartRef.current = null;
+      sceneRef.current?.setBoxSelecting(false);
+      setIsBoxSelecting(false);
+      setPreviewRect(null);
+      if (!start) return;
+      const dist = Math.hypot(e.clientX - start.x, e.clientY - start.y);
+      if (dist <= DRAG_CLICK_TOL) handlePlace(e.clientX, e.clientY); // 退化为点击放置
+      else handleBoxSelect(start, { x: e.clientX, y: e.clientY });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isBoxSelecting, handlePlace, handleBoxSelect]);
 
   const handleViewportClick = (e: React.MouseEvent) => {
     // 拖拽 gizmo 结束的 click 不应改选中。
     if (sceneRef.current?.shouldIgnoreClick()) return;
+    // 放置/框选已全程由 mousedown→window mouseup 接管, click 不再处理放置。
+    if (placing) {
+      pointerDownRef.current = null;
+      return;
+    }
     // OrbitControls 转视角拖拽松手也会触发 click: 位移超阈值视为拖拽, 保持当前选中。
     const down = pointerDownRef.current;
     pointerDownRef.current = null;
     if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_CLICK_TOL) return;
-    if (placing) {
-      handlePlace(e.clientX, e.clientY);
-      return;
-    }
     onSelectBox(sceneRef.current?.pickBox(e.clientX, e.clientY) ?? null);
   };
 
@@ -748,6 +843,22 @@ export function ThreeDWorkbench({
           onClick={handleViewportClick}
         />
 
+        {/* v0.13.9 · 框选预览矩形(地面 footprint), 仅拖拽期出现, 不拦事件。 */}
+        {previewRect && (
+          <div
+            className={styles.boxSelectRect}
+            // eslint-disable-next-line no-restricted-syntax -- 框选预览矩形位置/尺寸是逐帧动态值, 经 CSS custom property 注入
+            style={
+              {
+                "--rect-l": `${previewRect.l}px`,
+                "--rect-t": `${previewRect.t}px`,
+                "--rect-w": `${previewRect.w}px`,
+                "--rect-h": `${previewRect.h}px`,
+              } as BoxSelectRectVars
+            }
+          />
+        )}
+
         {/* 控件浮条 */}
         <div className={styles.controls}>
           <button
@@ -756,6 +867,13 @@ export function ThreeDWorkbench({
             onClick={() => sceneRef.current?.resetView()}
           >
             重置视角
+          </button>
+          <button
+            type="button"
+            className={styles.btn}
+            onClick={() => sceneRef.current?.bevView()}
+          >
+            俯视
           </button>
           <label className={styles.sizeCtl}>
             点大小
@@ -841,7 +959,7 @@ export function ThreeDWorkbench({
           )}
           {boxes.length > 0 && <span>· {boxes.length} 框</span>}
           {placing && (
-            <span>· 点地面放置 {placeClass ?? ""} · V/Esc 取消</span>
+            <span>· 拖框选 / 点击放置 {placeClass ?? ""} · V/Esc 取消</span>
           )}
           {selectedBox && (
             <span>

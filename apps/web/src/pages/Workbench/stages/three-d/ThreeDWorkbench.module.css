@@ -23,6 +23,20 @@
   cursor: crosshair;
 }
 
+/* v0.13.9 · 俯视框选地面 footprint 预览矩形:仅拖拽期出现,不拦事件。 */
+.boxSelectRect {
+  position: absolute;
+  left: var(--rect-l);
+  top: var(--rect-t);
+  width: var(--rect-w);
+  height: var(--rect-h);
+  z-index: 3;
+  pointer-events: none;
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent-soft);
+  opacity: 0.5;
+}
+
 /* v0.13.7 · 三视图浮层(右下角):选中框才浮出,可收成小标签。 */
 .triFloat {
   position: absolute;

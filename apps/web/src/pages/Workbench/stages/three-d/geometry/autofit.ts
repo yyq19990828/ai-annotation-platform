@@ -263,6 +263,45 @@ export function fitYaw(positions: Float32Array, psr: Psr): Psr {
 }
 
 /**
+ * v0.13.9 · 框选选点拟合: 由一组 world 点 (Float32Array, len=3K) 直接取轴对齐 AABB → PSR。
+ * center = AABB 中心, size = (max - min) + 2×padding (clamp MIN_SIZE), rotation = [0,0,0]。
+ *
+ * 用于 frustum 框选 (selectPointsInScreenRect → 本函数): 选中点即用户圈住的真实物体点,
+ * 取其包围盒最直接、零视差。yaw 暂取 0 (留 fitYaw / 手调); 朝向斜的物体可建框后按「朝向⚗」。
+ * 入参点数应 ≥ 1 (调用方在选不到点时已走兜底, 不会传空数组)。
+ */
+export function psrFromPoints(points: Float32Array, padding: number = 0.05): Psr {
+  let minX = points[0];
+  let maxX = minX;
+  let minY = points[1];
+  let maxY = minY;
+  let minZ = points[2];
+  let maxZ = minZ;
+  const n = Math.floor(points.length / 3);
+  for (let i = 1; i < n; i++) {
+    const x = points[i * 3];
+    const y = points[i * 3 + 1];
+    const z = points[i * 3 + 2];
+    if (x < minX) minX = x;
+    else if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    else if (y > maxY) maxY = y;
+    if (z < minZ) minZ = z;
+    else if (z > maxZ) maxZ = z;
+  }
+  const size = clampSize([
+    maxX - minX + 2 * padding,
+    maxY - minY + 2 * padding,
+    maxZ - minZ + 2 * padding,
+  ]);
+  return {
+    center: [(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2],
+    size,
+    rotation: [0, 0, 0],
+  };
+}
+
+/**
  * v0.13.8 · 便捷: fit_size 后再 fit_bottom (默认连击, Q 键)。不嵌入 fit_yaw。
  */
 export function fitSizeAndBottom(

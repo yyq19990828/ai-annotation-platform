@@ -28,6 +28,21 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.13.9] - 2026-06-04
+
+点云标注台「初始画框」优化:**框选画框(frustum 选点)+ BEV 一键鸟瞰**。原先建框只能「点地面放一个固定尺寸框」,现支持在主 3D 视图按住拖出屏幕矩形 → 选中投影落在矩形内的真实点 → 取其包围盒建框并自动选中;并新增「俯视(BEV)」相机复位按钮,便于框选。调研(`docs/research/14-point-cloud-image-fusion.md`)表明主流工具(SUSTechPOINTS/xtreme1)均走「框选 + 点云拟合」范式,本版与之对齐。**关键:用屏幕投影选真实点而非投地面平面取 footprint**——后者对有高度的物体在透视视角下有视差(车顶投影偏到车后,框只捞到一层地面点),frustum 选点对视角/物体高度零视差。**纯前端、复用既有 geometry,后端零改动、零迁移、零端点**。计划见 `docs/plans/2026-06-04-v0.13.9-ground-rect-bev.md`。
+
+### Added
+
+- **框选画框(frustum 选点)**(`ThreeDWorkbench` + `PointCloudScene` + 纯几何 + 单测):box 工具下在主视图按住拖出屏幕矩形 → `PointCloudScene.selectPointsInScreenRect`(将每个点经 `projection·viewⁱⁿᵛ` 投到 NDC,落在矩形内且在相机前方 `w>0` 的点选中)→ `psrFromPoints`(`autofit.ts`,取选中点 world AABB:`center`=包围盒中心、`size`=跨度 + 2×padding、`rotation`=0)→ 建框并选中。拖动 < 4px 退化为旧的「点击放置固定框」(向后兼容)。拖拽期禁用 OrbitControls、屏上画半透明预览矩形;`window` 级 mousemove/mouseup 监听保证拖出视口也能收尾。
+- **BEV 鸟瞰复位按钮**:控件浮条「俯视」(`PointCloudScene.bevView`)把相机摆到稠密区正上方俯看 -Z、车头朝屏幕上方(看 -Z 时 up 取水平 forward);仍是透视相机,不引入正交模式。「重置视角」(`frameView`)同步还原 `camera.up = (0,0,1)`,两者可随时切换。
+
+### Notes
+
+- frustum 选点天然把屏幕矩形对应的近垂直点柱内所有高度的点都选上(含车顶/车轮 + 周围地面),故 AABB 底自然贴地、高度到车顶、XY≈拖框范围;选不到点(空地拖框)→ 不建框。
+- 朝向(yaw)取 0(轴对齐 AABB),斜置物体建框后可按「朝向⚗」(`fitYaw`)旋正,或手调。
+- 仍建议在俯视(BEV)下框选体验最佳,但本法不再依赖视角的无视差性(透视斜视下也能选对点)。
+
 ## [0.13.8] - 2026-06-03
 
 点云 + 图像联合标注工作台第九切片:**3D 框一键贴合 + RGB 上色 z-test 遮挡修复**。粗框 → 精框的「逐边拖到点云贴合」从手动 → 一键(`Q`);v0.13.6 RGB 上色背景被前景"染色"的视觉伪 feature 用既有深度栅格做 z-test 修真。**纯前端、复用 v0.13.5/0.13.6 既有 geometry,后端零改动、零迁移、零端点**。计划见 `docs/plans/2026-06-03-v0.13.8-fit-shrink-occlusion-fix.md`。
