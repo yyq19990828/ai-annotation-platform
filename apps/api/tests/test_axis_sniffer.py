@@ -142,6 +142,55 @@ async def test_sniff_axis_convention_falls_back_to_dataset_item_with_discount(
     assert body["camera_item_id"] == str(side_item.id)
 
 
+async def test_sniff_axis_convention_skips_non_image_items(
+    db_session,
+    httpx_client,
+    super_admin,
+):
+    # 回归: 点云 item(file_type=point_cloud)即便 metadata 带 lidar→ego 外参,也不应被
+    # 当相机喂给 sniff 污染推断(fallback 只看 file_type=="image")。这里点云项路径含 front
+    # (若不过滤会被排到最前), 外参指向 sustechpoints_demo; image 项指向 apollo。
+    user, token = super_admin
+    ds = Dataset(
+        display_id=f"DS-SKIP-{uuid.uuid4().hex[:6]}",
+        name="skip-non-image",
+        data_type="point_cloud",
+        created_by=user.id,
+    )
+    db_session.add(ds)
+    await db_session.flush()
+    db_session.add(
+        DatasetItem(
+            dataset_id=ds.id,
+            file_name="000001.pcd",
+            file_path="scene/lidar/front/000001.pcd",
+            file_type="point_cloud",
+            metadata_={"calibration": _calib_for("sustechpoints_demo")},
+        )
+    )
+    image_item = DatasetItem(
+        dataset_id=ds.id,
+        file_name="000001.jpg",
+        file_path="scene/camera/left/000001.jpg",
+        file_type="image",
+        metadata_={"calibration": _calib_for("apollo")},
+    )
+    db_session.add(image_item)
+    await db_session.commit()
+
+    resp = await httpx_client.post(
+        f"/api/v1/datasets/{ds.id}/sniff-axis-convention",
+        headers=_bearer(token),
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # 只看到 image item → apollo; 若回归(未过滤 file_type)则会变成 sustechpoints_demo。
+    assert body["best"] == "apollo"
+    assert body["source"] == "dataset_item"
+    assert body["camera_item_id"] == str(image_item.id)
+
+
 async def test_sniff_axis_convention_returns_null_without_calibration(
     db_session,
     httpx_client,
