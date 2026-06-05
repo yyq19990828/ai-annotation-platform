@@ -191,6 +191,152 @@ async def test_sniff_axis_convention_skips_non_image_items(
     assert body["camera_item_id"] == str(image_item.id)
 
 
+async def test_sniff_axis_convention_picks_canonical_front_not_front_side(
+    db_session,
+    httpx_client,
+    super_admin,
+):
+    """v0.14.2 回归:nuScenes 式多相机装置,CAM_FRONT_LEFT/RIGHT 也含 "front",
+    旧实现会把它们当正前并按 created_at 选中(实测 CAM_FRONT_RIGHT→iso_8855 误判)。
+    新实现只认 canonical 正前(不含 left/right/back/rear),故无论建序都锁定 CAM_FRONT。
+
+    这里故意让 CAM_FRONT_RIGHT 先建(created_at 更早),CAM_FRONT 后建。
+    CAM_FRONT 标定指向 apollo(真值),CAM_FRONT_RIGHT 指向 iso_8855(误导)。
+    """
+    user, token = super_admin
+    ds = Dataset(
+        display_id=f"DS-NUSC-{uuid.uuid4().hex[:6]}",
+        name="nusc-multicam",
+        data_type="point_cloud",
+        created_by=user.id,
+    )
+    db_session.add(ds)
+    await db_session.flush()
+
+    # 先建侧前相机(更早 created_at)——旧实现会优先取它而判错。
+    front_right = DatasetItem(
+        dataset_id=ds.id,
+        file_name="000001.jpg",
+        file_path="nusc/scene-0061/camera/CAM_FRONT_RIGHT/000001.jpg",
+        file_type="image",
+        metadata_={"calibration": _calib_for("iso_8855")},
+    )
+    db_session.add(front_right)
+    await db_session.flush()
+
+    front = DatasetItem(
+        dataset_id=ds.id,
+        file_name="000001.jpg",
+        file_path="nusc/scene-0061/camera/CAM_FRONT/000001.jpg",
+        file_type="image",
+        metadata_={"calibration": _calib_for("apollo")},
+    )
+    back_left = DatasetItem(
+        dataset_id=ds.id,
+        file_name="000001.jpg",
+        file_path="nusc/scene-0061/camera/CAM_BACK_LEFT/000001.jpg",
+        file_type="image",
+        metadata_={"calibration": _calib_for("sustechpoints_demo")},
+    )
+    db_session.add_all([front, back_left])
+    await db_session.flush()
+
+    project = await create_project(
+        db_session, owner_id=user.id, type_key="lidar", type_label="点云检测"
+    )
+    project.data_type = "lidar"
+    task = Task(
+        project_id=project.id,
+        dataset_item_id=None,
+        display_id=f"T-NUSC-{uuid.uuid4().hex[:6]}",
+        file_name="000001.pcd",
+        file_path="nusc/scene-0061/lidar/000001.pcd",
+        file_type="point_cloud",
+        status="pending",
+    )
+    db_session.add(task)
+    await db_session.flush()
+    await link_items(
+        db_session,
+        task.id,
+        [
+            (front_right.id, "camera_CAM_FRONT_RIGHT", "CAM_FRONT_RIGHT"),
+            (back_left.id, "camera_CAM_BACK_LEFT", "CAM_BACK_LEFT"),
+            (front.id, "camera_CAM_FRONT", "CAM_FRONT"),
+        ],
+    )
+    await db_session.commit()
+
+    resp = await httpx_client.post(
+        f"/api/v1/datasets/{ds.id}/sniff-axis-convention",
+        headers=_bearer(token),
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["best"] == "apollo", body
+    assert body["score"] == pytest.approx(1.0)
+    assert body["camera_role"] == "camera_CAM_FRONT"
+    assert body["camera_item_id"] == str(front.id)
+
+
+async def test_sniff_axis_convention_votes_when_no_canonical_front(
+    db_session,
+    httpx_client,
+    super_admin,
+):
+    """无 canonical 正前相机时跨相机投票取众数,结果与建序无关。
+
+    两个 apollo + 一个 iso_8855(均侧 / 后)→ 投票 apollo 胜,score 打 0.75 折。
+    """
+    user, token = super_admin
+    ds = Dataset(
+        display_id=f"DS-VOTE-{uuid.uuid4().hex[:6]}",
+        name="vote-noscene",
+        data_type="point_cloud",
+        created_by=user.id,
+    )
+    db_session.add(ds)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            DatasetItem(
+                dataset_id=ds.id,
+                file_name="000001.jpg",
+                file_path="v/camera/CAM_BACK_RIGHT/000001.jpg",
+                file_type="image",
+                metadata_={"calibration": _calib_for("iso_8855")},
+            ),
+            DatasetItem(
+                dataset_id=ds.id,
+                file_name="000001.jpg",
+                file_path="v/camera/CAM_BACK_LEFT/000001.jpg",
+                file_type="image",
+                metadata_={"calibration": _calib_for("apollo")},
+            ),
+            DatasetItem(
+                dataset_id=ds.id,
+                file_name="000001.jpg",
+                file_path="v/camera/CAM_BACK/000001.jpg",
+                file_type="image",
+                metadata_={"calibration": _calib_for("apollo")},
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    resp = await httpx_client.post(
+        f"/api/v1/datasets/{ds.id}/sniff-axis-convention",
+        headers=_bearer(token),
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["best"] == "apollo", body
+    assert body["score"] == pytest.approx(0.75)
+    assert body["source"] == "dataset_item"
+
+
 async def test_sniff_axis_convention_returns_null_without_calibration(
     db_session,
     httpx_client,
