@@ -139,6 +139,7 @@ export default withMermaid(defineConfig({
             { text: "AI 预标注", link: "/user-guide/projects/ai-preannotate" },
             { text: "ML 后端绑定", link: "/user-guide/projects/ml-backends" },
             { text: "存储连接器", link: "/user-guide/datasets/storage-connections" },
+            { text: "点云 / 多模态导入格式", link: "/user-guide/datasets/import-formats" },
           ],
         },
         {

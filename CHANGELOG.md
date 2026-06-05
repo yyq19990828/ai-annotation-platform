@@ -28,6 +28,35 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.14.2] - 2026-06-06
+
+点云导入格式收敛 + 多相机/多 scene 实测:把"进数据"这一头的两个真实阻塞拆掉。修 ZIP 上传拍平路径(D1),让点云 scene ZIP 真能从向导上传;新增 nuScenes-mini 转换脚本(D2),作为 v0.14.0 scene 模型的第一个真实多 scene 消费者,scene_token 1:1 落到 `scenes.name`。不引入插件注册表 / 通用 importer 抽象,按"自家格式 + 一次性转换脚本"路线(与 SUSTechPOINTS / xtreme1 一致)。计划见 `docs/plans/2026-06-05-v0.14.2-import-format-and-multicam.md`。
+
+### Fixed
+
+- **ZIP 上传保留子目录(D1)**:`POST /api/v1/datasets/{id}/items/upload-zip` 此前用 `os.path.basename` 把每个文件拍平到 `{ds.name}/{basename}`,丢掉 ZIP 内子目录 → 点云 scene ZIP(`lidar/ camera/<cam>/ calib/camera/`)上传后 `group_frames` 找不到段名,整批不被识别为 scene。改为经新增的 `_normalize_zip_relpath` 规范化相对路径并保留子目录(`{ds.name}/lidar/000970.pcd`),附 zip-slip 防护(拒 `..` 段 / 绝对路径 / 隐藏文件 / `__MACOSX/`)。**该修复全局生效**,非点云 dataset 同样保留子目录。
+- **去重键改 content_hash-only**:同一 scene 内 `camera/front/000970.jpg` 与 `camera/left/000970.jpg` 的 basename 相同但属合法的跨相机同帧;删掉原"同名追加 -1/-2 后缀"逻辑,仅当 content_hash 完全相同才去重,跨子目录同名不再误改名 / 误去重。
+
+### Added
+
+- **nuScenes-mini 转换脚本(D2)**:`apps/api/scripts/import_nuscenes_scene.py`,自读 nuScenes JSON(不依赖 `nuscenes-devkit`,只用 numpy + Pillow),把一个或多个 scene 转成平台原生目录 + 直接入库,并**显式调 v0.14.0 `scene_svc.create_scene` + `assign_items_to_scene`**:scene_token → `scenes.name`,sample 顺序 → `frame_index`,`.pcd.bin` 转 ASCII PCD,6 路相机 jpg + 每相机一份 lidar→camera 外参/内参标定。支持 `--scene-tokens a,b,c` 多 scene 共用一个 dataset。`axis_convention=iso_8855`(nuScenes 原生 ISO,无需旋转)。幂等(dataset 按 display_id、scene 按 name 复用)。
+- **多 scene 帧 stem 全局唯一**:每个 scene 的帧号都从 0 起,而 `group_frames` 以文件名 stem 作帧键——多 scene 共用 dataset 时同号帧会撞键漏建 task。脚本给帧文件名加 `<scene_name>_` 前缀保证 stem 全局唯一(不动 `group_frames`);scene 内 `frame_index` 仍由 `assign_items_to_scene` 按顺序赋值,与文件名解耦。
+
+### Verified / Tests
+
+- `tests/test_datasets_upload_zip.py`(新):子目录保留、zip-slip 拒绝、跨子目录同名按 hash 去重、SUSTech 布局自动建 1 scene + `frame_index` 0..N、伪多 scene zip 建 2 scene。
+- `tests/test_import_nuscenes_lite.py`(新):用 tmp_path 造极小 fake nuScenes 根目录(2 scene × 3 sample × 1 cam,不依赖真 4GB 数据),验证脚本骨架跑通 + 产生 2 个 scene + `frame_index` 按 sample 顺序 + **跨 scene neighbors 不串**。
+- nuScenes 真实数据端到端(6 相机投影对齐 / BEV 车头朝上 / 跨 scene 隔离)走脚本 docstring 里的手动 checklist(dev 工具,CI 不跑真数据)。
+
+### Docs
+
+- `docs-site/user-guide/datasets/import-formats.md`(新):平台原生目录约定 + 多 scene 边界 + 标定 JSON schema + nuScenes/KITTI 转换索引;明确"只接受原生格式,其他走转换脚本"。sidebar 加入口。
+
+### 未尽事项(留后续)
+
+- 多 lidar 数据集(Waymo 5 路 lidar)、同 sample 跨相机微秒级 timestamp 偏差补偿(`ego_pose` 插值)、`group_frames` 路径段名抽象化(角色 pattern 配置):留 v0.15+。
+- ZIP 单包 200MB 上限不放宽;多 scene 批量请走转换脚本而非向导。
+
 ## [0.14.1] - 2026-06-06
 
 跨帧目标延续 UX:把 v0.14.0 的 scene + neighbors API 变成可用的标注效率特性。3D 工作台 `Shift+→` / `Shift+←` 一键把选中 box_3d 延续到同 scene 邻帧 task(共享 `group_id`),跳过去自动选中新框;三视图 / 主视图可叠加显示同 group_id 的前后 K 帧参考框。2D 图像序列同等用 `Alt+→` / `Alt+←`(2D 的 `Shift+方向` 已被 10px nudge 占用)。配套加 scheduler scene 连续标注调度开关。计划见 `docs/plans/2026-06-05-v0.14.1-cross-frame-ux.md`。
