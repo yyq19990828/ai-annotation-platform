@@ -11,6 +11,7 @@
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
+  --top-toolbar-height: 0px;
 }
 
 .viewport {
@@ -37,14 +38,8 @@
   opacity: 0.5;
 }
 
-/* v0.13.7 · 三视图浮层(右下角):选中框才浮出,可收成小标签。 */
+/* v0.13.10 · 三视图浮层由 FloatingPanelShell 定位; 本类仅保留视觉排版兜底。 */
 .triFloat {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  z-index: 4;
-  width: 240px;
-  height: 440px;
   display: flex;
   flex-direction: column;
   border-radius: var(--radius-md);
@@ -52,17 +47,6 @@
   background: var(--color-bg-elev);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
-}
-
-.triFloatHeader {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 8px;
-  font-size: 12px;
-  color: var(--color-fg-muted);
-  border-bottom: 1px solid var(--color-border);
 }
 
 /* 折叠后的小标签(右下角)。 */
@@ -172,8 +156,10 @@
   top: 12px;
   left: 12px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
+  max-width: calc(100% - 24px);
   padding: 6px 10px;
   border-radius: var(--radius-md);
   background: var(--color-bg-elev);
@@ -204,13 +190,21 @@
   color: var(--color-fg-muted);
 }
 
-/* v0.13.8 · 贴合按钮组(仅选中且可编辑时出现);与 .btn 同尺度,左侧细分隔线把它与上色/深度开关分开。 */
+/* v0.13.8 · 贴合按钮组(仅选中且可编辑时出现);放入右上框属性面板内。 */
 .fitGroup {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
   gap: 6px;
-  padding-left: 12px;
-  border-left: 1px solid var(--color-border);
+  padding: 6px 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.fitGroup .btn {
+  width: 100%;
+  padding: 3px 6px;
+  font-size: 12px;
 }
 
 .statusBar {
@@ -368,7 +362,7 @@
 }
 
 .camAnchorTop {
-  top: 12px;
+  top: calc(var(--top-toolbar-height) + 12px);
   left: 50%;
   transform: translateX(-50%);
   flex-direction: row;
@@ -397,13 +391,13 @@
 
 /* 角向:避让四角既有浮层(控件 / PSR / 状态条 / 三视图)。 */
 .camAnchorTopLeft {
-  top: 64px;
+  top: calc(var(--top-toolbar-height) + 12px);
   left: 12px;
   flex-direction: column;
 }
 
 .camAnchorTopRight {
-  top: 64px;
+  top: calc(var(--top-toolbar-height) + 12px);
   right: 12px;
   flex-direction: column;
 }

@@ -28,6 +28,27 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.13.10] - 2026-06-05
+
+工作台布局偏好跨设备同步 + 右侧标注详情浮窗 + 3D 三视图浮层可拖拽。左右侧栏开合/宽度、标注详情浮窗位置尺寸、3D 三视图位置尺寸/折叠态统一写入 `user.preferences.workbench.layout`；离线或未登录时继续用 localStorage 兜底。计划见 `docs/plans/2026-06-05-v0.13.10-workbench-prefs-and-floating-inspector.md`。
+
+### Added
+
+- **工作台 layout 偏好跨设备记忆**：`WorkbenchPreferences.layout` 新增 `leftOpen/rightOpen/leftWidth/rightWidth/floatingInspector/triViewFloat`；前端 `useWorkbenchConfig.setLayout()` 本地立即生效、localStorage 兜底，并 300ms debounce PATCH 全量 `workbench` 子树，避免只发 nested layout 覆盖旧渲染偏好。
+- **右栏「标注详情」可分离为同窗口浮窗**：`AIInspectorPanel` 顶部新增分离按钮；分离后 `WorkbenchLayout` 不再保留右栏空槽，中心 Stage 吃满宽度。浮窗支持顶栏拖动、右下角 resize、合并回侧栏与关闭；位置/尺寸持久化到 `floatingInspector`。
+- **通用 `FloatingPanelShell` + `useDragMove`**：统一处理 fixed 浮窗 chrome、pointer 拖动、右下角 resize、窗口 resize clamp 和边界防丢，供标注详情与三视图复用。
+- **3D 三视图浮层升级**：`TriViewPanel` 改由 `FloatingPanelShell` 承载，顶栏可拖动、右下角可 resize，位置/尺寸/折叠态写入 `triViewFloat`；首次打开仍默认贴右下并避让右栏。
+
+### Changed
+
+- **3D 浮层避让右栏和顶部工具条**：`ThreeDWorkbench` 在 `.viewportWrap` 注入 `--right-sidebar-width` 与 `--top-toolbar-height`；相机右侧锚点、右上/右下角锚点、三视图折叠标签随右栏宽度偏移，顶部相机锚点随工具条实际高度下移。工具条高度由 `ResizeObserver` 跟踪，按钮换行后相机不会压住工具条。
+- **侧栏宽度持久化迁移**：`leftWidth/rightWidth` 从只写 `localStorage` 升级为 `user.preferences.workbench.layout`，保留旧 localStorage key 作为远端缺省和离线兜底。
+
+### Notes
+
+- 不做真独立浏览器 window、多浮窗 z-order 或相机预览拖拽；本版只做同窗口浮窗形态。
+- 后端 JSONB 无迁移；schema 只新增偏好子结构并保持 `/me/preferences` 顶层子树合并契约。
+
 ## [0.13.9] - 2026-06-04
 
 点云标注台「初始画框」优化:**框选画框(frustum 选点)+ BEV 一键鸟瞰**。原先建框只能「点地面放一个固定尺寸框」,现支持在主 3D 视图按住拖出屏幕矩形 → 选中投影落在矩形内的真实点 → 取其包围盒建框并自动选中;并新增「俯视(BEV)」相机复位按钮,便于框选。调研(`docs/research/14-point-cloud-image-fusion.md`)表明主流工具(SUSTechPOINTS/xtreme1)均走「框选 + 点云拟合」范式,本版与之对齐。**关键:用屏幕投影选真实点而非投地面平面取 footprint**——后者对有高度的物体在透视视角下有视差(车顶投影偏到车后,框只捞到一层地面点),frustum 选点对视角/物体高度零视差。**纯前端、复用既有 geometry,后端零改动、零迁移、零端点**。计划见 `docs/plans/2026-06-04-v0.13.9-ground-rect-bev.md`。

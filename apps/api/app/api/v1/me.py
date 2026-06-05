@@ -127,8 +127,9 @@ async def update_preferences(
     """更新 preferences，按顶层子树（workbench / ai）合并，未提交的子树保持不变。
 
     pydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与
-    AI 工具参数偏好可各自独立保存，互不覆盖。"""
-    incoming = payload.model_dump(mode="json", exclude_unset=True)
+    AI 工具参数偏好可各自独立保存，互不覆盖。workbench 内部仍由前端提交全量子树；
+    单独 PATCH layout 会覆盖旧 workbench 渲染字段。"""
+    incoming = payload.model_dump(mode="json", exclude_unset=True, by_alias=True)
     merged = {**(user.preferences or {}), **incoming}
     user.preferences = merged
     await db.commit()

@@ -65,6 +65,7 @@ import type { StageKind } from "../stages/types";
 import { WorkbenchOverlays } from "../shell/WorkbenchOverlays";
 import type { ClassPickerAttrEditing } from "../shell/ClassPickerPopover";
 import { WorkbenchLayout } from "../shell/WorkbenchLayout";
+import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
 import {
@@ -124,6 +125,26 @@ interface WorkbenchShellReadyModel {
   layout: ComponentProps<typeof WorkbenchLayout>;
   propagateDialog: ComponentProps<typeof VideoTrackerPropagateDialog>;
   issueSection?: WorkbenchShellIssueSection;
+}
+
+function resolveFloatingInspectorRect(
+  state: {
+    x: number | null;
+    y: number | null;
+    w: number | null;
+    h: number | null;
+  },
+): FloatingPanelRect {
+  const w = state.w ?? 360;
+  const h = state.h ?? 600;
+  const viewportW = typeof window === "undefined" ? 1280 : window.innerWidth;
+  const viewportH = typeof window === "undefined" ? 800 : window.innerHeight;
+  return {
+    x: state.x ?? Math.max(24, viewportW - w - 40),
+    y: state.y ?? Math.max(24, Math.min(80, viewportH - h - 24)),
+    w,
+    h,
+  };
 }
 
 export type UseWorkbenchShellModelResult =
@@ -1170,14 +1191,58 @@ export function useWorkbenchShellModel({
     handleAnnotationUngroup,
   });
 
-  const leftOpen = isNarrow ? false : s.leftOpen;
-  const rightOpen = isNarrow ? false : s.rightOpen;
+  const floatingInspector = s.workbenchLayout.floatingInspector;
+  const setWorkbenchLayout = s.setWorkbenchLayout;
+  const setLeftOpenState = s.setLeftOpen;
+  const setRightOpenState = s.setRightOpen;
+  const leftOpenState = s.leftOpen;
+  const rightOpenState = s.rightOpen;
+  const inspectorDetached = floatingInspector.detached;
+  const leftOpen = isNarrow ? false : leftOpenState;
+  const rightOpen = isNarrow || inspectorDetached ? false : rightOpenState;
+  const floatingInspectorPosition = useMemo(
+    () => resolveFloatingInspectorRect(floatingInspector),
+    [
+      floatingInspector,
+    ],
+  );
+  const detachInspector = useCallback(() => {
+    setWorkbenchLayout({
+      floatingInspector: {
+        ...floatingInspector,
+        ...floatingInspectorPosition,
+        detached: true,
+      },
+    });
+  }, [floatingInspector, floatingInspectorPosition, setWorkbenchLayout]);
+  const mergeInspectorBack = useCallback(() => {
+    setWorkbenchLayout({
+      floatingInspector: {
+        ...floatingInspector,
+        detached: false,
+      },
+    });
+    setRightOpenState(true);
+  }, [floatingInspector, setRightOpenState, setWorkbenchLayout]);
+  const closeFloatingInspector = useCallback(() => {
+    setWorkbenchLayout({
+      floatingInspector: {
+        ...floatingInspector,
+        detached: false,
+      },
+    });
+    setRightOpenState(false);
+  }, [floatingInspector, setRightOpenState, setWorkbenchLayout]);
   const toggleLeftSidebar = useCallback(() => {
-    s.setLeftOpen(!s.leftOpen);
-  }, [s.leftOpen, s.setLeftOpen]);
+    setLeftOpenState(!leftOpenState);
+  }, [leftOpenState, setLeftOpenState]);
   const toggleRightSidebar = useCallback(() => {
-    s.setRightOpen(!s.rightOpen);
-  }, [s.rightOpen, s.setRightOpen]);
+    if (inspectorDetached) {
+      mergeInspectorBack();
+      return;
+    }
+    setRightOpenState(!rightOpenState);
+  }, [inspectorDetached, mergeInspectorBack, rightOpenState, setRightOpenState]);
   useEffect(() => {
     // 边栏收起/展开后 stage 容器宽度变化, 用 fitTick 触发 image/video stage 重新适应窗口。
     if (stageKind !== "image" && stageKind !== "video") return;
@@ -1329,6 +1394,10 @@ export function useWorkbenchShellModel({
         onChangeUserBoxClass: handleStartChangeClass,
         threeDTool: s.threeDTool,
         onSetThreeDTool: s.setThreeDTool,
+        rightSidebarOpen: rightOpen,
+        rightSidebarWidth: rightOpen ? s.rightWidth : 0,
+        workbenchLayout: s.workbenchLayout,
+        onWorkbenchLayoutChange: s.setWorkbenchLayout,
         overlays: (
           <>
             {s.tool === "mask" && (
@@ -1480,6 +1549,7 @@ export function useWorkbenchShellModel({
     },
     inspector: {
       open: rightOpen, width: s.rightWidth, onResize: s.setRightWidth, readOnly: isLocked,
+      onDetach: detachInspector,
       aiBoxes: modeState.diffMode !== "final" ? aiBoxes : [],
       predictionSourceFilter,
       userBoxes, orphanUserBoxIds: orphanAnnotationIds,
@@ -1556,6 +1626,20 @@ export function useWorkbenchShellModel({
         </div>
       )) : undefined,
     },
+    floatingInspector: {
+      detached: inspectorDetached,
+      position: floatingInspectorPosition,
+      onPositionChange: (patch) => {
+        s.setWorkbenchLayout({
+          floatingInspector: {
+            ...s.workbenchLayout.floatingInspector,
+            ...patch,
+          },
+        });
+      },
+      onMergeBack: mergeInspectorBack,
+      onClose: closeFloatingInspector,
+    },
     aiPopover: {
       open: aiPopoverOpen && !isVideoTask,
       rightOffset: rightOpen ? s.rightWidth + 44 : 44,
@@ -1629,6 +1713,14 @@ export function useWorkbenchShellModel({
     // v0.11.5 · issue FAB → 切到 DiscussionPanel issues tab (旧浮层 IssueListPanel 已删)。
     // DiscussionPanel 在右栏内，右栏收起时列宽为 0px 被裁切，故先确保右栏展开再切 tab。
     onOpenList: () => {
+      if (s.workbenchLayout.floatingInspector.detached) {
+        s.setWorkbenchLayout({
+          floatingInspector: {
+            ...s.workbenchLayout.floatingInspector,
+            detached: false,
+          },
+        });
+      }
       if (!s.rightOpen) s.setRightOpen(true);
       requestIssuesTab();
     },

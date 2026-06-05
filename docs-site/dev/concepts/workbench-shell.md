@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.21
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-05
 ---
 
 # 工作台 Shell 架构
@@ -55,7 +55,7 @@ type StageKind = "image" | "video" | "3d";
 
 - `ImageWorkbench`：包装图片 `ImageStage`，持有图片专属的 FloatingDock、CanvasToolbar、Minimap。
 - `VideoWorkbench`：包装视频 `VideoStage`，持有视频时间轴、轨迹与 keyframe 操作。
-- `ThreeDWorkbench.placeholder`：只提供明确的未支持占位，不接真实业务。
+- `ThreeDWorkbench`：包装 Three.js 点云工作台，持有 3D 框绘制 / gizmo / 三视图浮窗 / 相机投影浮层。
 
 `stages/types.ts` 里的 `StageCapabilities` 用来描述外围能力，例如是否有 class picker、AI 预标、timeline、viewport、comments。它不是内部编辑协议。
 
@@ -78,6 +78,8 @@ type StageKind = "image" | "video" | "3d";
 - **上段 `.rightSplitTop`**：`AIInspectorPanel`，与下段之间有一个上下拖拽 handle。上段高度持久化到 localStorage `workbench.rightSplit.topHeight`（默认 360px，范围 160–720px）。
 - **下段 `.rightSplitBottom`**：`DiscussionPanel`，承载评论 / 历史 / issue 的统一讨论入口。
 - **列宽拖拽 handle** 提升到 `.rightSplit` 全高层级，覆盖两段，不再只贴在 AI 检查器一侧。
+- **布局偏好**：左右栏开合、左右栏宽度、标注详情浮窗、3D 三视图浮层状态写入 `user.preferences.workbench.layout`；前端提交全量 `workbench` 子树，后端只做顶层 `workbench` / `ai` 合并。
+- **标注详情分离**：`AIInspectorPanel` 仍是受控组件；分离时 `WorkbenchLayout` 改用 `FloatingPanelShell` 渲染同一个面板，并让右栏列宽等价为 0，避免留下空槽。
 
 `DiscussionPanel`（`shell/DiscussionPanel.tsx`）有三个常驻 tab：
 

@@ -4,9 +4,10 @@
  * 拉 point-cloud manifest → 用裸 Three.js(PointCloudScene)渲染主点云 + OrbitControls,
  * 旁边平铺各相机图(只读,不画投影框 —— 投影联动是 v0.13.4)。与 Konva 2D 工作台双栈隔离。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 
+import type { TriViewFloatState } from "@/api/auth";
 import {
   useAnnotations,
   useCreateAnnotation,
@@ -17,8 +18,10 @@ import {
 import { useProject } from "@/hooks/useProjects";
 import { classColorForCanvas } from "@/pages/Workbench/stage/colors";
 import type { ThreeDTool } from "@/pages/Workbench/state/useWorkbenchState";
+import type { WorkbenchLayoutPatch } from "@/pages/Workbench/state/useWorkbenchConfig";
 import type { Box3DGeometry, SensorCalibration } from "@/types";
 
+import { FloatingPanelShell, type FloatingPanelRect } from "../../shell/FloatingPanelShell";
 import { usePointCloudManifest } from "./usePointCloudManifest";
 import {
   PointCloudScene,
@@ -56,10 +59,17 @@ interface ThreeDWorkbenchProps {
   /** v0.13.3-5 · 3D 工具态(左栏 ToolDock 选,壳层共享):select 拾取 / box 点地面放置。 */
   threeDTool: ThreeDTool;
   onSetThreeDTool: (t: ThreeDTool) => void;
+  /** v0.13.10 · 右栏避让与三视图浮窗持久化。 */
+  rightSidebarOpen: boolean;
+  rightSidebarWidth: number;
+  triViewFloat: TriViewFloatState;
+  onWorkbenchLayoutChange: (patch: WorkbenchLayoutPatch) => void;
 }
 
 // v0.13.3 · 新框默认尺寸(米,长宽高;约一辆轿车),放置后用面板/gizmo 精修。
 const DEFAULT_BOX_SIZE: [number, number, number] = [4.0, 1.8, 1.6];
+const TRI_FLOAT_DEFAULT_W = 240;
+const TRI_FLOAT_DEFAULT_H = 440;
 // v0.13.9 · 框选预览矩形位置/尺寸经 CSS custom property 注入(逐帧动态值)。
 type BoxSelectRectVars = CSSProperties & {
   "--rect-l": string;
@@ -67,6 +77,22 @@ type BoxSelectRectVars = CSSProperties & {
   "--rect-w": string;
   "--rect-h": string;
 };
+
+function resolveTriViewFloatRect(
+  state: TriViewFloatState,
+  rightSidebarWidth: number,
+): FloatingPanelRect {
+  const w = state.w ?? TRI_FLOAT_DEFAULT_W;
+  const h = state.h ?? TRI_FLOAT_DEFAULT_H;
+  const viewportW = typeof window === "undefined" ? 1280 : window.innerWidth;
+  const viewportH = typeof window === "undefined" ? 800 : window.innerHeight;
+  return {
+    x: state.x ?? Math.max(24, viewportW - w - rightSidebarWidth - 12),
+    y: state.y ?? Math.max(24, viewportH - h - 12),
+    w,
+    h,
+  };
+}
 // 点云项目的 3D 框工具单位(类别 / 属性绑定都挂在它下面)。
 const LIDAR_TOOL_UNIT = "lidar_box_3d";
 
@@ -172,9 +198,15 @@ export function ThreeDWorkbench({
   activeClass,
   threeDTool,
   onSetThreeDTool,
+  rightSidebarOpen,
+  rightSidebarWidth,
+  triViewFloat,
+  onWorkbenchLayoutChange,
 }: ThreeDWorkbenchProps) {
   const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
+  const viewportWrapRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const controlsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<PointCloudScene | null>(null);
   const [stats, setStats] = useState<PointCloudStats | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -184,8 +216,6 @@ export function ThreeDWorkbench({
   const [colorizing, setColorizing] = useState(false);
   // v0.13.6 · 深度提示开关(默认关):相机图叠深度热力图 + hover 读最近点深度/3D。
   const [depthOn, setDepthOn] = useState(false);
-  // v0.13.7 · 三视图浮层折叠态(右下角):选中框才浮出,可收成小标签。
-  const [triCollapsed, setTriCollapsed] = useState(false);
   // v0.13.7 · 放大查看的相机 role(L3);null = 无放大。点⛶开,ESC/遮罩/关闭钮收。
   const [enlargedRole, setEnlargedRole] = useState<string | null>(null);
   // 选中态来自壳层(selectedId / onSelectBox props),与标注列表 / 右栏面板共享同一份。
@@ -212,6 +242,41 @@ export function ThreeDWorkbench({
   const placing = threeDTool === "box" && canPlace;
   const placeClass =
     activeClass && lidarClasses.includes(activeClass) ? activeClass : (lidarClasses[0] ?? null);
+  const effectiveRightSidebarWidth = rightSidebarOpen ? rightSidebarWidth : 0;
+  const triFloatPosition = useMemo(
+    () => resolveTriViewFloatRect(triViewFloat, effectiveRightSidebarWidth),
+    [
+      effectiveRightSidebarWidth,
+      triViewFloat,
+    ],
+  );
+  const updateTriViewFloat = useCallback(
+    (patch: Partial<FloatingPanelRect> & { collapsed?: boolean }) => {
+      onWorkbenchLayoutChange({
+        triViewFloat: {
+          ...triViewFloat,
+          ...patch,
+        },
+      });
+    },
+    [onWorkbenchLayoutChange, triViewFloat],
+  );
+
+  useLayoutEffect(() => {
+    const controls = controlsRef.current;
+    const viewport = viewportWrapRef.current;
+    if (!controls || !viewport) return;
+    const setToolbarHeight = (height: number) => {
+      viewport.style.setProperty("--top-toolbar-height", `${Math.round(height)}px`);
+    };
+    setToolbarHeight(controls.getBoundingClientRect().height);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      setToolbarHeight(entry.contentRect.height);
+    });
+    observer.observe(controls);
+    return () => observer.disconnect();
+  }, []);
 
   // 选中框的 PSR 编辑表单(字符串值,允许清空 / 中间态如 "-" / "1.";解析有效时才提交)。
   // PATCH 防抖 250ms;yaw 以度展示。
@@ -834,7 +899,7 @@ export function ThreeDWorkbench({
 
   return (
     <div className={styles.root}>
-      <div className={styles.viewportWrap}>
+      <div ref={viewportWrapRef} className={styles.viewportWrap}>
         <div
           ref={viewportRef}
           className={placing ? `${styles.viewport} ${styles.placing}` : styles.viewport}
@@ -860,7 +925,7 @@ export function ThreeDWorkbench({
         )}
 
         {/* 控件浮条 */}
-        <div className={styles.controls}>
+        <div ref={controlsRef} className={styles.controls}>
           <button
             type="button"
             className={styles.btn}
@@ -905,44 +970,6 @@ export function ThreeDWorkbench({
                 深度提示
               </label>
             </>
-          )}
-          {/* v0.13.8 · 选中且可编辑时显示贴合按钮组:Q 默认连击(收尺寸+贴地);
-              Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发,稀疏点云易反转故不进盲操。 */}
-          {selectedBox && selectedEditable && (
-            <div className={styles.fitGroup} role="group" aria-label="自动贴合">
-              <button
-                type="button"
-                className={styles.btn}
-                onClick={handleFitDefault}
-                title="贴合 (Q):收尺寸 + 贴地"
-              >
-                贴合
-              </button>
-              <button
-                type="button"
-                className={styles.btn}
-                onClick={handleFitSize}
-                title="只收尺寸 (Shift+Q)"
-              >
-                收尺寸
-              </button>
-              <button
-                type="button"
-                className={styles.btn}
-                onClick={handleFitBottom}
-                title="只贴地 (Alt+Q)"
-              >
-                贴地
-              </button>
-              <button
-                type="button"
-                className={styles.btn}
-                onClick={handleFitYaw}
-                title="贴朝向(实验):点云稀疏时主轴可能反转 180°"
-              >
-                朝向⚗
-              </button>
-            </div>
           )}
         </div>
 
@@ -1017,6 +1044,44 @@ export function ThreeDWorkbench({
                   ? "已锁定 · 点「已锁定」解锁后可编辑"
                   : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
             </div>
+            {/* v0.13.8 · 选中框自动贴合:Q 默认连击(收尺寸+贴地);
+                Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发。 */}
+            {selectedEditable && (
+              <div className={styles.fitGroup} role="group" aria-label="自动贴合">
+                <button
+                  type="button"
+                  className={styles.btn}
+                  onClick={handleFitDefault}
+                  title="贴合 (Q):收尺寸 + 贴地"
+                >
+                  贴合
+                </button>
+                <button
+                  type="button"
+                  className={styles.btn}
+                  onClick={handleFitSize}
+                  title="只收尺寸 (Shift+Q)"
+                >
+                  收尺寸
+                </button>
+                <button
+                  type="button"
+                  className={styles.btn}
+                  onClick={handleFitBottom}
+                  title="只贴地 (Alt+Q)"
+                >
+                  贴地
+                </button>
+                <button
+                  type="button"
+                  className={styles.btn}
+                  onClick={handleFitYaw}
+                  title="贴朝向(实验):点云稀疏时主轴可能反转 180°"
+                >
+                  朝向⚗
+                </button>
+              </div>
+            )}
             {PSR_GROUPS.map((g) => (
               <div key={g.label}>
                 <div className={styles.editGroupLabelRow}>
@@ -1062,18 +1127,16 @@ export function ThreeDWorkbench({
         )}
 
         {/* v0.13.7 · 三正交视图精修浮层(右下):选中框才浮出,可收成小标签。 */}
-        {triSelected && !triCollapsed && (
-          <div className={styles.triFloat}>
-            <div className={styles.triFloatHeader}>
-              <span>三视图精修</span>
-              <button
-                type="button"
-                className={styles.floatToggleBtn}
-                onClick={() => setTriCollapsed(true)}
-              >
-                收起
-              </button>
-            </div>
+        {triSelected && !triViewFloat.collapsed && (
+          <FloatingPanelShell
+            title="三视图精修"
+            position={triFloatPosition}
+            onPositionChange={updateTriViewFloat}
+            onCollapse={() => updateTriViewFloat({ collapsed: true })}
+            variant="no-merge"
+            minSize={{ w: 200, h: 240 }}
+            maxSize={{ w: 480, h: 720 }}
+          >
             <TriViewPanel
               selected={triSelected}
               getPointsGeometry={getPointsGeometry}
@@ -1082,13 +1145,13 @@ export function ThreeDWorkbench({
               pointSize={pointSize}
               onEditPsr={handleEditPsr}
             />
-          </div>
+          </FloatingPanelShell>
         )}
-        {triSelected && triCollapsed && (
+        {triSelected && triViewFloat.collapsed && (
           <button
             type="button"
             className={styles.triFloatTab}
-            onClick={() => setTriCollapsed(false)}
+            onClick={() => updateTriViewFloat({ collapsed: false })}
           >
             三视图 ▸
           </button>

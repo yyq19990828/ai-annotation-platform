@@ -4,6 +4,7 @@ import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
 import type { VideoStageControls } from "../stage/VideoStage";
 import { AIInspectorPanel, AIPredictionPopover } from "./AIInspectorPanel";
 import { DiscussionPanel } from "./DiscussionPanel";
+import { FloatingPanelShell, type FloatingPanelRect } from "./FloatingPanelShell";
 import { HotkeyCheatSheet } from "./HotkeyCheatSheet";
 import { OfflineQueueDrawer } from "./OfflineQueueDrawer";
 import { ResizeHandle } from "./ResizeHandle";
@@ -47,6 +48,13 @@ interface WorkbenchLayoutProps {
   guidePanel?: ComponentProps<typeof GuidePanel>;
   // v0.11.5 · B 组 · 右栏下段统一讨论面板 (转正; 上 AIInspectorPanel + 下 DiscussionPanel 两段固定).
   discussionPanel: ComponentProps<typeof DiscussionPanel>;
+  floatingInspector?: {
+    detached: boolean;
+    position: FloatingPanelRect;
+    onPositionChange: (patch: Partial<FloatingPanelRect>) => void;
+    onMergeBack: () => void;
+    onClose: () => void;
+  };
 }
 
 export function WorkbenchLayout({
@@ -66,10 +74,12 @@ export function WorkbenchLayout({
   rejectModal,
   guidePanel,
   discussionPanel,
+  floatingInspector,
 }: WorkbenchLayoutProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const splitTopRef = useRef<HTMLDivElement>(null);
   const [splitTopHeight, setSplitTopHeight] = useState(readRightSplitTop);
+  const inspectorDetached = Boolean(floatingInspector?.detached);
 
   const onSplitResize = useCallback((next: number) => {
     setSplitTopHeight(next);
@@ -105,30 +115,51 @@ export function WorkbenchLayout({
           <StatusBar {...statusBar} />
         </div>
 
-        <div className={styles.sideSlot}>
-          <div className={styles.rightSplit}>
-            {/* v0.11.5+ · 列宽拖拽 handle 提到右栏全高层级（原在 AIInspectorPanel 内，
-                导致只在上段可拖；这里覆盖 AIInspectorPanel + DiscussionPanel 整列高度）。 */}
-            {inspector.open && (
-              <ResizeHandle side="left" width={inspector.width} onResize={inspector.onResize} min={220} max={600} />
-            )}
-            <div ref={splitTopRef} className={styles.rightSplitTop}>
-              <AIInspectorPanel {...inspector} />
-              <ResizeHandle
-                side="bottom"
-                width={splitTopHeight}
-                onResize={onSplitResize}
-                min={RIGHT_SPLIT_TOP_MIN}
-                max={RIGHT_SPLIT_TOP_MAX}
-                resetTo={RIGHT_SPLIT_TOP_DEFAULT}
-              />
-            </div>
-            <div className={styles.rightSplitBottom}>
-              <DiscussionPanel {...discussionPanel} />
+        {!inspectorDetached && (
+          <div className={styles.sideSlot}>
+            <div className={styles.rightSplit}>
+              {/* v0.11.5+ · 列宽拖拽 handle 提到右栏全高层级（原在 AIInspectorPanel 内，
+                  导致只在上段可拖；这里覆盖 AIInspectorPanel + DiscussionPanel 整列高度）。 */}
+              {inspector.open && (
+                <ResizeHandle side="left" width={inspector.width} onResize={inspector.onResize} min={220} max={600} />
+              )}
+              <div ref={splitTopRef} className={styles.rightSplitTop}>
+                <AIInspectorPanel {...inspector} />
+                <ResizeHandle
+                  side="bottom"
+                  width={splitTopHeight}
+                  onResize={onSplitResize}
+                  min={RIGHT_SPLIT_TOP_MIN}
+                  max={RIGHT_SPLIT_TOP_MAX}
+                  resetTo={RIGHT_SPLIT_TOP_DEFAULT}
+                />
+              </div>
+              <div className={styles.rightSplitBottom}>
+                <DiscussionPanel {...discussionPanel} />
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
+
+      {inspectorDetached && floatingInspector && (
+        <FloatingPanelShell
+          title="标注详情"
+          position={floatingInspector.position}
+          onPositionChange={floatingInspector.onPositionChange}
+          onMergeBack={floatingInspector.onMergeBack}
+          onClose={floatingInspector.onClose}
+          minSize={{ w: 280, h: 320 }}
+          maxSize={{ w: 720, h: 900 }}
+        >
+          <AIInspectorPanel
+            {...inspector}
+            open
+            floating
+            onDetach={undefined}
+          />
+        </FloatingPanelShell>
+      )}
 
       <AIPredictionPopover {...aiPopover} />
       <HotkeyCheatSheet {...hotkeys} />

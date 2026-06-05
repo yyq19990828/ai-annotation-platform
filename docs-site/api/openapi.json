@@ -6342,6 +6342,67 @@
         "title": "FeedbackAnchorPosition",
         "type": "object"
       },
+      "FloatingInspectorState": {
+        "additionalProperties": false,
+        "description": "v0.13.10 · 标注详情浮窗状态。像素默认由前端按窗口计算。",
+        "properties": {
+          "detached": {
+            "default": false,
+            "title": "Detached",
+            "type": "boolean"
+          },
+          "h": {
+            "anyOf": [
+              {
+                "maximum": 900.0,
+                "minimum": 240.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "H"
+          },
+          "w": {
+            "anyOf": [
+              {
+                "maximum": 720.0,
+                "minimum": 200.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "W"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          }
+        },
+        "title": "FloatingInspectorState",
+        "type": "object"
+      },
       "ForgotPasswordRequest": {
         "properties": {
           "captcha_token": {
@@ -13179,6 +13240,67 @@
         "title": "ToolClassEntry",
         "type": "object"
       },
+      "TriViewFloatState": {
+        "additionalProperties": false,
+        "description": "v0.13.10 · 3D 三视图浮层位置、尺寸与折叠态。",
+        "properties": {
+          "collapsed": {
+            "default": false,
+            "title": "Collapsed",
+            "type": "boolean"
+          },
+          "h": {
+            "anyOf": [
+              {
+                "maximum": 720.0,
+                "minimum": 240.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "H"
+          },
+          "w": {
+            "anyOf": [
+              {
+                "maximum": 480.0,
+                "minimum": 200.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "W"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          }
+        },
+        "title": "TriViewFloatState",
+        "type": "object"
+      },
       "UnreadCount": {
         "properties": {
           "unread": {
@@ -15986,9 +16108,85 @@
         "title": "VisibleIfRule",
         "type": "object"
       },
+      "WorkbenchLayoutPreferences": {
+        "additionalProperties": false,
+        "description": "v0.13.10 · 工作台布局偏好。\n\n后端只校验结构；默认值和 PATCH 全量 workbench 契约由前端维护。",
+        "properties": {
+          "floatingInspector": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FloatingInspectorState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "leftOpen": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leftopen"
+          },
+          "leftWidth": {
+            "anyOf": [
+              {
+                "maximum": 560.0,
+                "minimum": 200.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leftwidth"
+          },
+          "rightOpen": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rightopen"
+          },
+          "rightWidth": {
+            "anyOf": [
+              {
+                "maximum": 600.0,
+                "minimum": 220.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rightwidth"
+          },
+          "triViewFloat": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TriViewFloatState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "WorkbenchLayoutPreferences",
+        "type": "object"
+      },
       "WorkbenchPreferences": {
         "additionalProperties": false,
-        "description": "v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。\n所有字段都有默认值，前端缺省可直接落库；schema 用严格 forbid 防脏写入。",
+        "description": "v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。\nv0.13.10 · 增加 layout 子树承载跨设备布局偏好。",
         "properties": {
           "controlPointsSize": {
             "default": 6,
@@ -16002,6 +16200,9 @@
             "maxLength": 255,
             "title": "Cssimagefilter",
             "type": "string"
+          },
+          "layout": {
+            "$ref": "#/components/schemas/WorkbenchLayoutPreferences"
           },
           "longTaskSampleRate": {
             "default": 0.05,
@@ -18424,7 +18625,7 @@
         ]
       },
       "patch": {
-        "description": "更新 preferences，按顶层子树（workbench / ai）合并，未提交的子树保持不变。\n\npydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与\nAI 工具参数偏好可各自独立保存，互不覆盖。",
+        "description": "更新 preferences，按顶层子树（workbench / ai）合并，未提交的子树保持不变。\n\npydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与\nAI 工具参数偏好可各自独立保存，互不覆盖。workbench 内部仍由前端提交全量子树；\n单独 PATCH layout 会覆盖旧 workbench 渲染字段。",
         "operationId": "update_preferences_api_v1_auth_me_preferences_patch",
         "requestBody": {
           "content": {

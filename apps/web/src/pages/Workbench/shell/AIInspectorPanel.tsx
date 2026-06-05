@@ -77,6 +77,9 @@ interface AIInspectorPanelProps {
   /** v0.6.5 · 任务已锁定（review/completed），属性表单只读。 */
   readOnly?: boolean;
   videoTrackPanel?: React.ReactNode | ((frameFilter: FrameFilter) => React.ReactNode);
+  /** v0.13.10 · 分离为同窗口浮窗，由 WorkbenchLayout 负责实际渲染分支。 */
+  onDetach?: () => void;
+  floating?: boolean;
 }
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -108,6 +111,8 @@ export function AIInspectorPanel({
   onToggleUserBoxFlag,
   readOnly = false,
   videoTrackPanel,
+  onDetach,
+  floating = false,
 }: AIInspectorPanelProps) {
   const selSet = selectedIds && selectedIds.length > 0
     ? new Set(selectedIds)
@@ -123,10 +128,21 @@ export function AIInspectorPanel({
   }
 
   return (
-    <div className={styles.panel}>
+    <div className={floating ? `${styles.panel} ${styles.panelFloating}` : styles.panel}>
       <div className={styles.panelHeader}>
         <div className={styles.panelHeaderRow}>
           <b className={styles.panelTitle}>标注详情</b>
+          {onDetach && (
+            <button
+              type="button"
+              className={styles.detachButton}
+              onClick={onDetach}
+              aria-label="分离为浮窗"
+              title="分离为浮窗"
+            >
+              <Icon name="pictureInPicture2" size={14} />
+            </button>
+          )}
         </div>
       </div>
 

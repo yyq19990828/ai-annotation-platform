@@ -2,7 +2,7 @@
 // 验证布局 shell 把 12 个子组件按预期插槽渲染, gridTemplateColumns 写入 CSS 变量,
 // 可选模块 (rejectModal / guidePanel) 不传时不渲染.
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { createRef, forwardRef } from "react";
 import type { VideoStageControls } from "../stage/VideoStage";
@@ -111,5 +111,30 @@ describe("WorkbenchLayout", () => {
     expect(root.style.getPropertyValue("--workbench-grid-template")).toBe(
       "100px 1fr 200px",
     );
+  });
+
+  it("renders detached inspector in a floating shell without the right split slot", () => {
+    const onMergeBack = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <WorkbenchLayout
+        {...baseProps}
+        floatingInspector={{
+          detached: true,
+          position: { x: 120, y: 80, w: 360, h: 500 },
+          onPositionChange: vi.fn(),
+          onMergeBack,
+          onClose,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("inspector")).toBeTruthy();
+    expect(screen.queryByTestId("discussion-panel")).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("合并回侧栏"));
+    fireEvent.click(screen.getByLabelText("关闭浮窗"));
+    expect(onMergeBack).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

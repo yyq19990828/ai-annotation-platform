@@ -18,6 +18,32 @@ export interface WorkbenchPreferences {
   controlPointsSize: number;
   snapToGrid: boolean;
   longTaskSampleRate: number;
+  layout: WorkbenchLayoutPreferences;
+}
+
+export interface FloatingInspectorState {
+  detached: boolean;
+  x: number | null;
+  y: number | null;
+  w: number | null;
+  h: number | null;
+}
+
+export interface TriViewFloatState {
+  collapsed: boolean;
+  x: number | null;
+  y: number | null;
+  w: number | null;
+  h: number | null;
+}
+
+export interface WorkbenchLayoutPreferences {
+  leftOpen: boolean;
+  rightOpen: boolean;
+  leftWidth: number;
+  rightWidth: number;
+  floatingInspector: FloatingInspectorState;
+  triViewFloat: TriViewFloatState;
 }
 
 /** 每用户的 AI 工具推理参数偏好，按 ML backend id 分桶（不同后端参数 schema 不同）。 */
@@ -36,6 +62,26 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
   controlPointsSize: 6,
   snapToGrid: false,
   longTaskSampleRate: 0.05,
+  layout: {
+    leftOpen: true,
+    rightOpen: true,
+    leftWidth: 260,
+    rightWidth: 280,
+    floatingInspector: {
+      detached: false,
+      x: null,
+      y: null,
+      w: null,
+      h: null,
+    },
+    triViewFloat: {
+      collapsed: false,
+      x: null,
+      y: null,
+      w: null,
+      h: null,
+    },
+  },
 };
 
 export interface MeResponse {
