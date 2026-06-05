@@ -5650,6 +5650,27 @@
       },
       "DatasetCreate": {
         "properties": {
+          "axis_convention": {
+            "anyOf": [
+              {
+                "enum": [
+                  "iso_8855",
+                  "ros_rep103",
+                  "kitti_camera",
+                  "opencv_camera",
+                  "apollo",
+                  "y_forward",
+                  "sustechpoints_demo",
+                  "raw"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axis Convention"
+          },
           "data_type": {
             "default": "image",
             "title": "Data Type",
@@ -5940,6 +5961,27 @@
       },
       "DatasetOut": {
         "properties": {
+          "axis_convention": {
+            "anyOf": [
+              {
+                "enum": [
+                  "iso_8855",
+                  "ros_rep103",
+                  "kitti_camera",
+                  "opencv_camera",
+                  "apollo",
+                  "y_forward",
+                  "sustechpoints_demo",
+                  "raw"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axis Convention"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -6007,6 +6049,27 @@
       },
       "DatasetUpdate": {
         "properties": {
+          "axis_convention": {
+            "anyOf": [
+              {
+                "enum": [
+                  "iso_8855",
+                  "ros_rep103",
+                  "kitti_camera",
+                  "opencv_camera",
+                  "apollo",
+                  "y_forward",
+                  "sustechpoints_demo",
+                  "raw"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axis Convention"
+          },
           "description": {
             "anyOf": [
               {
