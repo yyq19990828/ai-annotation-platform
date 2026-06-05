@@ -49,6 +49,8 @@ from app.schemas.annotation import (
     AnnotationListPage,
     AnnotationOut,
     AnnotationUpdate,
+    PropagateRequest,
+    PropagateResponse,
     VideoTrackCompositionRequest,
     VideoTrackCompositionResponse,
     VideoTrackConvertToBboxesRequest,
@@ -1051,6 +1053,62 @@ async def create_annotation(
     await db.commit()
     await db.refresh(annotation)
     return annotation
+
+
+@router.post(
+    "/{task_id}/annotations/{annotation_id}/propagate-to-task",
+    response_model=PropagateResponse,
+    status_code=201,
+)
+async def propagate_annotation_to_task(
+    task_id: uuid.UUID,
+    annotation_id: uuid.UUID,
+    data: PropagateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """v0.14.1 · 跨帧目标延续: 把源 annotation 复制到 target_task(同 project 同 scene)。
+
+    源 task 需对当前用户可见; 目标 task 需可见且可写(未进 review/completed 锁态)。
+    复制 geometry/class/attributes + 共享 group_id; box_3d 的 convention_at_create
+    取目标 dataset 的 axis_convention(详 service.propagate)。
+    """
+    source_task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, source_task, current_user)
+
+    target_task = await _load_task_or_404(db, data.target_task_id)
+    await _assert_task_visible(db, target_task, current_user)
+    _assert_task_editable(target_task, current_user)
+
+    svc = AnnotationService(db)
+    new_annotation = await svc.propagate(
+        source_annotation_id=annotation_id,
+        target_task_id=data.target_task_id,
+        user_id=current_user.id,
+        override_psr=data.override_psr,
+    )
+    await TaskLockService(db).heartbeat(data.target_task_id, current_user.id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_CREATE,
+        target_type="annotation",
+        target_id=str(new_annotation.id),
+        request=request,
+        status_code=201,
+        detail={
+            "task_id": str(data.target_task_id),
+            "source_task_id": str(task_id),
+            "source_annotation_id": str(annotation_id),
+            "propagated": True,
+            "group_id": new_annotation.group_id,
+            "class_name": new_annotation.class_name,
+        },
+    )
+    await db.commit()
+    await db.refresh(new_annotation)
+    return PropagateResponse(annotation=AnnotationOut.model_validate(new_annotation))
 
 
 @router.patch("/{task_id}/annotations/{annotation_id}", response_model=AnnotationOut)

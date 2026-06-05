@@ -135,6 +135,22 @@ class VideoTrackCompositionResponse(BaseModel):
     deleted_annotation_ids: list[UUID] = []
 
 
+class PropagateRequest(BaseModel):
+    """v0.14.1 · 跨帧目标延续: 把源 annotation 复制到目标 task(同 project 同 scene)。
+
+    target_task_id 走 body(端点路径已含源 task_id + annotation_id)。
+    override_psr 留扩展位: 本期前端总传 None = 完全复制源几何; 给定时按 key
+    覆盖 box_3d 的 center/size/rotation(其它几何忽略, 高阶 propagate 用)。
+    """
+
+    target_task_id: UUID
+    override_psr: dict | None = None
+
+
+class PropagateResponse(BaseModel):
+    annotation: "AnnotationOut"
+
+
 class AnnotationOut(BaseModel):
     id: UUID
     task_id: UUID
@@ -175,3 +191,4 @@ class AnnotationOut(BaseModel):
 AnnotationListPage.model_rebuild()
 VideoTrackConvertToBboxesResponse.model_rebuild()
 VideoTrackCompositionResponse.model_rebuild()
+PropagateResponse.model_rebuild()

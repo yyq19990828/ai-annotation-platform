@@ -10133,6 +10133,11 @@
             ],
             "title": "Owner Name"
           },
+          "prefer_same_scene_continuation": {
+            "default": false,
+            "title": "Prefer Same Scene Continuation",
+            "type": "boolean"
+          },
           "rendering_config": {
             "$ref": "#/components/schemas/ProjectRenderingConfig",
             "default": {}
@@ -10145,6 +10150,11 @@
             "default": "sequence",
             "title": "Sampling",
             "type": "string"
+          },
+          "scene_continuation_window_min": {
+            "default": 30,
+            "title": "Scene Continuation Window Min",
+            "type": "integer"
           },
           "show_overlap_first": {
             "default": false,
@@ -11272,6 +11282,17 @@
             ],
             "title": "Name"
           },
+          "prefer_same_scene_continuation": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefer Same Scene Continuation"
+          },
           "rendering_config": {
             "anyOf": [
               {
@@ -11292,6 +11313,19 @@
               }
             ],
             "title": "Sampling"
+          },
+          "scene_continuation_window_min": {
+            "anyOf": [
+              {
+                "maximum": 480.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Continuation Window Min"
           },
           "show_overlap_first": {
             "anyOf": [
@@ -11392,6 +11426,45 @@
           }
         },
         "title": "ProjectUpdate",
+        "type": "object"
+      },
+      "PropagateRequest": {
+        "description": "v0.14.1 · 跨帧目标延续: 把源 annotation 复制到目标 task(同 project 同 scene)。\n\ntarget_task_id 走 body(端点路径已含源 task_id + annotation_id)。\noverride_psr 留扩展位: 本期前端总传 None = 完全复制源几何; 给定时按 key\n覆盖 box_3d 的 center/size/rotation(其它几何忽略, 高阶 propagate 用)。",
+        "properties": {
+          "override_psr": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Psr"
+          },
+          "target_task_id": {
+            "format": "uuid",
+            "title": "Target Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_task_id"
+        ],
+        "title": "PropagateRequest",
+        "type": "object"
+      },
+      "PropagateResponse": {
+        "properties": {
+          "annotation": {
+            "$ref": "#/components/schemas/AnnotationOut"
+          }
+        },
+        "required": [
+          "annotation"
+        ],
+        "title": "PropagateResponse",
         "type": "object"
       },
       "RecentReviewItem": {
@@ -28478,6 +28551,75 @@
           }
         ],
         "summary": "Update Annotation",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/annotations/{annotation_id}/propagate-to-task": {
+      "post": {
+        "description": "v0.14.1 · 跨帧目标延续: 把源 annotation 复制到 target_task(同 project 同 scene)。\n\n源 task 需对当前用户可见; 目标 task 需可见且可写(未进 review/completed 锁态)。\n复制 geometry/class/attributes + 共享 group_id; box_3d 的 convention_at_create\n取目标 dataset 的 axis_convention(详 service.propagate)。",
+        "operationId": "propagate_annotation_to_task_api_v1_tasks__task_id__annotations__annotation_id__propagate_to_task_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PropagateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PropagateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Propagate Annotation To Task",
         "tags": [
           "tasks"
         ]

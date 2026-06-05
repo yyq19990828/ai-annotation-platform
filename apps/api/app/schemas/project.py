@@ -130,6 +130,9 @@ class ProjectUpdate(BaseModel):
     guide_assets: list[dict] | None = None
     # v0.10.29 · 视频帧逻辑采样配置; PATCH 用整体替换语义 (与 rendering_config 一致).
     video_sampling: VideoSamplingConfig | None = None
+    # v0.14.1 · scene 连续标注调度开关 + 连续 session 估计窗口(分钟).
+    prefer_same_scene_continuation: bool | None = None
+    scene_continuation_window_min: Annotated[int, Field(ge=1, le=480)] | None = None
 
 
 class ProjectBatchSummary(BaseModel):
@@ -175,6 +178,9 @@ class ProjectOut(BaseModel):
     rendering_config: ProjectRenderingConfig = ProjectRenderingConfig()
     # v0.10.29 · 视频帧逻辑采样配置; 空 dict (mode=none) 表示不采样.
     video_sampling: VideoSamplingConfig = VideoSamplingConfig()
+    # v0.14.1 · scene 连续标注调度开关 + 连续 session 估计窗口(分钟).
+    prefer_same_scene_continuation: bool = False
+    scene_continuation_window_min: int = 30
     # v0.10.13 · E1 · 标注指引 Markdown 原文; None 表示未配置.
     annotation_guide: str | None = None
     # v0.10.13 · E1 · 已上传的指引图片资源元数据列表.

@@ -99,6 +99,14 @@ class Project(Base):
     video_sampling: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict
     )
+    # v0.14.1 · scene 连续标注调度: 打开后 get_next_task 优先返回"用户上一次提交
+    # task 的同 scene 下一帧"(默认 OFF, 既有项目零回归); window 为连续 session 估计窗口.
+    prefer_same_scene_continuation: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
+    scene_continuation_window_min: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="30", default=30
+    )
     due_date: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
