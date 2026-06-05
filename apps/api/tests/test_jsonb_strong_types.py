@@ -457,13 +457,19 @@ def test_annotation_attributes_value_types():
 
 
 def test_box_3d_geometry_round_trip():
-    g = Box3DGeometry(center=[1, 2, 3], size=[4, 5, 6], rotation=[0, 0, 0])
+    g = Box3DGeometry(
+        center=[1, 2, 3],
+        size=[4, 5, 6],
+        rotation=[0, 0, 0],
+        convention_at_create="apollo",
+    )
     assert g.type == "box_3d"
     dumped = g.model_dump()
     g2 = Box3DGeometry.model_validate(dumped)
     assert g2.center == [1, 2, 3]
     assert g2.size == [4, 5, 6]
     assert g2.rotation == [0, 0, 0]
+    assert g2.convention_at_create == "apollo"
     assert g2.type == "box_3d"
 
 
@@ -476,11 +482,19 @@ def test_box_3d_geometry_length_enforced():
 
 
 def test_point_mask_geometry_round_trip():
-    g = PointMaskGeometry(point_indices=[0, 1, 2])
+    g = PointMaskGeometry(
+        point_indices=[0, 1, 2],
+        convention_at_create="sustechpoints_demo",
+        decimate_stride=3,
+        source_point_count=100,
+    )
     assert g.type == "point_mask_3d"
     dumped = g.model_dump()
     g2 = PointMaskGeometry.model_validate(dumped)
     assert g2.point_indices == [0, 1, 2]
+    assert g2.convention_at_create == "sustechpoints_demo"
+    assert g2.decimate_stride == 3
+    assert g2.source_point_count == 100
     assert g2.type == "point_mask_3d"
     # 默认空列表
     assert PointMaskGeometry().point_indices == []
@@ -489,6 +503,10 @@ def test_point_mask_geometry_round_trip():
 def test_point_mask_geometry_rejects_negative():
     with pytest.raises(ValidationError):
         PointMaskGeometry(point_indices=[-1])
+    with pytest.raises(ValidationError):
+        PointMaskGeometry(point_indices=[1], convention_at_create="bad_axis")
+    with pytest.raises(ValidationError):
+        PointMaskGeometry(point_indices=[1], decimate_stride=0)
 
 
 def test_geometry_union_dispatches_3d_types():

@@ -4,7 +4,9 @@ import type { Psr } from "./triview";
 import {
   applyConventionToExtrinsic,
   applyConventionToPositions,
+  applyConventionToPsr,
   rotationMatrixFor,
+  sniffConventionFromForward,
   unapplyConventionToPsr,
   type LidarAxisConvention,
   type Mat3,
@@ -292,4 +294,50 @@ describe("unapplyConventionToPsr · 行为", () => {
     expect(out.center[1]).toBeCloseTo(expected[1], 6);
     expect(out.center[2]).toBeCloseTo(expected[2], 6);
   });
+});
+
+describe("applyConventionToPsr · 行为", () => {
+  it("与 unapply 构成 round-trip", () => {
+    const src: Psr = {
+      center: [1.5, -2.0, 3.25],
+      size: [4.0, 1.8, 1.6],
+      rotation: [0.1, -0.2, Math.PI / 4],
+    };
+    const iso = applyConventionToPsr(src, "apollo");
+    const out = unapplyConventionToPsr(iso, "apollo");
+    expect(out.center[0]).toBeCloseTo(src.center[0], 6);
+    expect(out.center[1]).toBeCloseTo(src.center[1], 6);
+    expect(out.center[2]).toBeCloseTo(src.center[2], 6);
+    expect(out.size[0]).toBeCloseTo(src.size[0], 6);
+    expect(out.size[1]).toBeCloseTo(src.size[1], 6);
+    expect(out.size[2]).toBeCloseTo(src.size[2], 6);
+    expect(out.rotation[0]).toBeCloseTo(src.rotation[0], 6);
+    expect(out.rotation[1]).toBeCloseTo(src.rotation[1], 6);
+    expect(out.rotation[2]).toBeCloseTo(src.rotation[2], 6);
+  });
+});
+
+describe("sniffConventionFromForward · 行为", () => {
+  it.each([
+    ["iso_8855", "iso_8855"],
+    ["ros_rep103", "iso_8855"],
+    ["kitti_camera", "kitti_camera"],
+    ["opencv_camera", "kitti_camera"],
+    ["apollo", "apollo"],
+    ["y_forward", "apollo"],
+    ["sustechpoints_demo", "sustechpoints_demo"],
+  ] as Array<[LidarAxisConvention, LidarAxisConvention]>)(
+    "%s row0 → %s",
+    (convention, expectedBest) => {
+      const m = rotationMatrixFor(convention);
+      const result = sniffConventionFromForward(m[0], m[1], m[2]);
+      expect(result?.best).toBe(expectedBest);
+      expect(result?.score).toBeCloseTo(1, 6);
+      expect(
+        result?.candidates.some(
+          (c) => c.convention === convention && Math.abs(c.score - 1) < 1e-6,
+        ),
+      ).toBe(true);
+    },
+  );
 });

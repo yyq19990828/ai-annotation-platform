@@ -29,6 +29,7 @@ export interface PointCloudStats {
   totalPoints: number;
   renderedPoints: number;
   decimated: boolean;
+  decimateStride: number;
 }
 
 /** v0.13.3 · 渲染层用的 3D 框输入(PSR + 类别色 + 选中态),由 React 从标注派生。 */
@@ -49,6 +50,12 @@ export interface BoxPsr {
   rotation: [number, number, number];
 }
 
+export interface PointMaskSelection {
+  pointIndices: number[];
+  decimateStride: number;
+  sourcePointCount: number;
+}
+
 type TransformMode = "translate" | "rotate" | "scale";
 
 export class PointCloudScene {
@@ -57,6 +64,8 @@ export class PointCloudScene {
   private camera: THREE.PerspectiveCamera;
   private controls: OrbitControls;
   private points: THREE.Points | null = null;
+  private pointIndexStride = 1;
+  private sourcePointCount = 0;
   // v0.13.6 · 载帧时存的原色(高度色带),相机上色关闭时还原。
   private baseColors: Float32Array | null = null;
   private raf = 0;
@@ -280,6 +289,8 @@ export class PointCloudScene {
     const decimated = total > DECIMATE_THRESHOLD;
     const stride = decimated ? Math.ceil(total / DECIMATE_THRESHOLD) : 1;
     const rendered = decimated ? Math.floor(total / stride) : total;
+    this.pointIndexStride = stride;
+    this.sourcePointCount = total;
 
     const positions = new Float32Array(rendered * 3);
     for (let i = 0, j = 0; i < total && j < rendered; i += stride, j++) {
@@ -313,7 +324,7 @@ export class PointCloudScene {
     this.groundZ = estimateGroundZ(positions, rendered);
     this.frameView();
 
-    return { totalPoints: total, renderedPoints: rendered, decimated };
+    return { totalPoints: total, renderedPoints: rendered, decimated, decimateStride: stride };
   }
 
   /** 按 z(高度)做一条蓝→青→黄的色带,纯只读可视化。 */
@@ -437,12 +448,12 @@ export class PointCloudScene {
    * 实现: vp = projection · viewMatrixInverse; 对每点取齐次裁剪坐标, w ≤ 0 (相机后方) 丢弃,
    * 否则透视除得 NDC, 落在矩形 [nx0,nx1]×[ny0,ny1] 内即选中。
    */
-  selectPointsInScreenRect(
+  private collectPointsInScreenRect(
     x0: number,
     y0: number,
     x1: number,
     y1: number,
-  ): Float32Array | null {
+  ): { positions: Float32Array; indices: number[] } | null {
     const positions = this.getPointPositions();
     if (!positions) return null;
     const rect = this.renderer.domElement.getBoundingClientRect();
@@ -460,6 +471,7 @@ export class PointCloudScene {
     );
     const v = new THREE.Vector4();
     const out: number[] = [];
+    const indices: number[] = [];
     const n = Math.floor(positions.length / 3);
     for (let i = 0; i < n; i++) {
       const px = positions[i * 3];
@@ -471,9 +483,34 @@ export class PointCloudScene {
       const ndcY = v.y / v.w;
       if (ndcX >= nx0 && ndcX <= nx1 && ndcY >= ny0 && ndcY <= ny1) {
         out.push(px, py, pz);
+        indices.push(i * this.pointIndexStride);
       }
     }
-    return out.length > 0 ? new Float32Array(out) : null;
+    return out.length > 0 ? { positions: new Float32Array(out), indices } : null;
+  }
+
+  selectPointsInScreenRect(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+  ): Float32Array | null {
+    return this.collectPointsInScreenRect(x0, y0, x1, y1)?.positions ?? null;
+  }
+
+  selectPointMaskInScreenRect(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+  ): PointMaskSelection | null {
+    const selected = this.collectPointsInScreenRect(x0, y0, x1, y1);
+    if (!selected) return null;
+    return {
+      pointIndices: selected.indices,
+      decimateStride: this.pointIndexStride,
+      sourcePointCount: this.sourcePointCount,
+    };
   }
 
   /** v0.13.9 · 框选拖拽期禁用 OrbitControls(同 gizmo 拖拽), 避免拖框时相机乱转。 */
@@ -523,6 +560,27 @@ export class PointCloudScene {
     attr.needsUpdate = true;
   }
 
+  highlightPointMask(indices: readonly number[] | null) {
+    const geom = this.points?.geometry;
+    if (!geom) return;
+    const base = this.baseColors;
+    if (!base) return;
+    const attr = geom.getAttribute("color") as THREE.BufferAttribute;
+    const colors = attr.array as Float32Array;
+    colors.set(base);
+    if (indices && indices.length > 0) {
+      const selected = new Set(indices);
+      const count = Math.floor(colors.length / 3);
+      for (let i = 0; i < count; i += 1) {
+        if (!selected.has(i * this.pointIndexStride)) continue;
+        colors[i * 3] = 1;
+        colors[i * 3 + 1] = 0.12;
+        colors[i * 3 + 2] = 0.12;
+      }
+    }
+    attr.needsUpdate = true;
+  }
+
   resize() {
     const { clientWidth: w, clientHeight: h } = this.container;
     if (!w || !h) return;
@@ -537,6 +595,8 @@ export class PointCloudScene {
     this.points.geometry.dispose();
     (this.points.material as THREE.Material).dispose();
     this.points = null;
+    this.pointIndexStride = 1;
+    this.sourcePointCount = 0;
   }
 
   /**

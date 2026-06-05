@@ -11,16 +11,18 @@ import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { useDatasets, useDatasetItems, useDatasetProjects, useUnlinkProject, useLinkProject, useScanDatasetItems, useBackfillDimensions, useBackfillMedia } from "@/hooks/useDatasets";
+import { useDatasets, useDatasetItems, useDatasetProjects, useUnlinkProject, useLinkProject, useScanDatasetItems, useBackfillDimensions, useBackfillMedia, useUpdateDataset } from "@/hooks/useDatasets";
 import { datasetsApi } from "@/api/datasets";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { LinkJobProgress } from "@/components/datasets/LinkJobProgress";
 import { StorageConnectionsPanel } from "@/components/connections/StorageConnectionsPanel";
+import { AxisConventionPicker } from "@/components/datasets/AxisConventionPicker";
 import { useProjects } from "@/hooks/useProjects";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { DatasetResponse } from "@/api/datasets";
 import type { ProjectResponse } from "@/api/projects";
 import type { IconName } from "@/components/ui/Icon";
+import type { LidarAxisConvention } from "@/pages/Workbench/stages/three-d/geometry/axisConvention";
 import styles from "./DatasetsPage.module.css";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -142,6 +144,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
   const scanMutation = useScanDatasetItems(ds.id);
   const backfillMutation = useBackfillDimensions(ds.id);
   const backfillMediaMutation = useBackfillMedia(ds.id);
+  const updateDataset = useUpdateDataset();
   const pushToast = useToastStore((s) => s.push);
 
   const items = itemsData?.items ?? [];
@@ -149,9 +152,32 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
   const totalPages = Math.ceil(totalItems / 10);
   const isImageDataset = ds.data_type === "image";
   const isVideoDataset = ds.data_type === "video";
+  const isPointCloudDataset = ds.data_type === "point_cloud";
 
   const linkedIds = new Set(linkedProjects.map((p) => p.id));
   const availableProjects = (allProjects ?? []).filter((p) => !linkedIds.has(p.id));
+  const handleAxisConventionChange = (next: LidarAxisConvention) => {
+    const current = ds.axis_convention ?? "iso_8855";
+    if (next === current || updateDataset.isPending) return;
+    if (isPointCloudDataset && (ds.project_count ?? 0) > 0) {
+      const ok = window.confirm(
+        "该数据集已关联项目。若已有 3D 标注，切换坐标系后历史标注可能与点云不一致。确认继续？",
+      );
+      if (!ok) return;
+    }
+    updateDataset.mutate(
+      { id: ds.id, payload: { axis_convention: next } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ["dataset", ds.id] });
+          pushToast({ msg: "坐标系约定已更新" });
+        },
+        onError: (err: Error) => {
+          pushToast({ msg: "坐标系更新失败", sub: err.message, kind: "error" });
+        },
+      },
+    );
+  };
 
   return (
     <tr>
@@ -303,6 +329,19 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
 
             {/* 关联项目 */}
             <div className={styles.projectsColumn}>
+              {isPointCloudDataset && (
+                <div className={styles.settingsBlock}>
+                  <div className={styles.detailHeader}>
+                    <h4 className={styles.detailTitle}>点云坐标系</h4>
+                  </div>
+                  <AxisConventionPicker
+                    value={ds.axis_convention}
+                    datasetId={ds.id}
+                    disabled={updateDataset.isPending}
+                    onChange={handleAxisConventionChange}
+                  />
+                </div>
+              )}
               <div className={styles.detailHeader}>
                 <h4 className={styles.detailTitle}>
                   关联项目 <span className={styles.detailCount}>({linkedProjects.length})</span>

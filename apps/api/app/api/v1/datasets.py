@@ -23,9 +23,11 @@ from app.schemas.dataset import (
     DatasetUploadInitResponse,
     DatasetImportFromConnectionRequest,
     DatasetImportFromConnectionResponse,
+    SniffAxisConventionResponse,
 )
 from app.schemas.project import ProjectOut
 from app.services.audit import AuditAction, AuditService
+from app.services.axis_sniffer import AxisSnifferService
 from app.services.dataset import DatasetService
 from app.services.storage import storage_service
 
@@ -111,6 +113,33 @@ async def update_dataset(
     await db.refresh(ds)
     result = await svc.get_with_project_count(dataset_id)
     return result
+
+
+@router.post(
+    "/{dataset_id}/sniff-axis-convention",
+    response_model=SniffAxisConventionResponse,
+)
+async def sniff_axis_convention(
+    dataset_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles(*_MANAGERS)),
+):
+    svc = DatasetService(db)
+    ds = await svc.get(dataset_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    result = await AxisSnifferService(db).sniff_dataset(dataset_id)
+    if result is None:
+        return SniffAxisConventionResponse()
+    return SniffAxisConventionResponse(
+        best=result.best,
+        score=result.score,
+        candidates=result.candidates,
+        source=result.source,
+        camera_role=result.camera_role,
+        camera_item_id=result.camera_item_id,
+    )
 
 
 @router.delete("/{dataset_id}", status_code=204)

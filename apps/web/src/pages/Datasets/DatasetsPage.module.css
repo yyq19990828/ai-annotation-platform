@@ -212,6 +212,12 @@
   border-left: 1px solid var(--color-border);
 }
 
+.settingsBlock {
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
 .detailHeader {
   display: flex;
   align-items: center;

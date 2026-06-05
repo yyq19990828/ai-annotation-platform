@@ -4011,6 +4011,27 @@
             "title": "Center",
             "type": "array"
           },
+          "convention_at_create": {
+            "anyOf": [
+              {
+                "enum": [
+                  "iso_8855",
+                  "ros_rep103",
+                  "kitti_camera",
+                  "opencv_camera",
+                  "apollo",
+                  "y_forward",
+                  "sustechpoints_demo",
+                  "raw"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Convention At Create"
+          },
           "rotation": {
             "items": {
               "type": "number"
@@ -8483,12 +8504,57 @@
         "additionalProperties": false,
         "description": "v0.13.0 · 3D 点云语义/实例分割掩码。point_indices 为指向点云的整数索引列表。",
         "properties": {
+          "convention_at_create": {
+            "anyOf": [
+              {
+                "enum": [
+                  "iso_8855",
+                  "ros_rep103",
+                  "kitti_camera",
+                  "opencv_camera",
+                  "apollo",
+                  "y_forward",
+                  "sustechpoints_demo",
+                  "raw"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Convention At Create"
+          },
+          "decimate_stride": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decimate Stride"
+          },
           "point_indices": {
             "items": {
               "type": "integer"
             },
             "title": "Point Indices",
             "type": "array"
+          },
+          "source_point_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Point Count"
           },
           "type": {
             "const": "point_mask_3d",
@@ -12113,6 +12179,117 @@
           "configured"
         ],
         "title": "SmtpStatus",
+        "type": "object"
+      },
+      "SniffAxisConventionCandidate": {
+        "properties": {
+          "convention": {
+            "enum": [
+              "iso_8855",
+              "ros_rep103",
+              "kitti_camera",
+              "opencv_camera",
+              "apollo",
+              "y_forward",
+              "sustechpoints_demo",
+              "raw"
+            ],
+            "title": "Convention",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "convention",
+          "score"
+        ],
+        "title": "SniffAxisConventionCandidate",
+        "type": "object"
+      },
+      "SniffAxisConventionResponse": {
+        "properties": {
+          "best": {
+            "anyOf": [
+              {
+                "enum": [
+                  "iso_8855",
+                  "ros_rep103",
+                  "kitti_camera",
+                  "opencv_camera",
+                  "apollo",
+                  "y_forward",
+                  "sustechpoints_demo",
+                  "raw"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best"
+          },
+          "camera_item_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Item Id"
+          },
+          "camera_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Role"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/SniffAxisConventionCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "task_link",
+                  "dataset_item"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "title": "SniffAxisConventionResponse",
         "type": "object"
       },
       "StorageConnectionCreate": {
@@ -21317,6 +21494,54 @@
         ]
       }
     },
+    "/api/v1/datasets/{dataset_id}/sniff-axis-convention": {
+      "post": {
+        "operationId": "sniff_axis_convention_api_v1_datasets__dataset_id__sniff_axis_convention_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SniffAxisConventionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Sniff Axis Convention",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
     "/api/v1/feedbacks": {
       "get": {
         "operationId": "list_feedbacks_api_v1_feedbacks_get",
@@ -24472,6 +24697,19 @@
               "title": "Video Frame Mode",
               "type": "string"
             }
+          },
+          {
+            "description": "3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
+            "in": "query",
+            "name": "axis_frame",
+            "required": false,
+            "schema": {
+              "default": "iso",
+              "description": "3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
+              "pattern": "^(iso|source)$",
+              "title": "Axis Frame",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -24978,6 +25216,19 @@
               "description": "video-track 导出帧模式：keyframes 仅关键帧，all_frames 展开逐帧插值；图片项目忽略",
               "pattern": "^(keyframes|all_frames)$",
               "title": "Video Frame Mode",
+              "type": "string"
+            }
+          },
+          {
+            "description": "3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
+            "in": "query",
+            "name": "axis_frame",
+            "required": false,
+            "schema": {
+              "default": "iso",
+              "description": "3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
+              "pattern": "^(iso|source)$",
+              "title": "Axis Frame",
               "type": "string"
             }
           }

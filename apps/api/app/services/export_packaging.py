@@ -39,6 +39,7 @@ from app.services.export import (
     UnsupportedExportError,
     _bbox_geometry,
 )
+from app.services.axis_convention import AxisFrame
 from app.services.export_video import (
     FALLBACK_H,
     FALLBACK_W,
@@ -322,6 +323,7 @@ async def build_export_zip(
     targets: list[str],
     include_attributes: bool,
     video_frame_mode: str,
+    axis_frame: AxisFrame = "iso",
 ) -> tuple[str, int, int]:
     """生成镜像目录 ZIP 到磁盘临时文件，返回 (zip 路径, label 文件数, size_bytes)。
 
@@ -488,9 +490,14 @@ async def build_export_zip(
                         include_attributes=include_attributes,
                         video_frame_mode=video_frame_mode,
                         dataset_items=dataset_items_all or {},
+                        axis_frame=axis_frame,
                     )
                 else:  # aap_json
-                    content = await svc.export_aap_json(project_id, batch_id=batch_id)
+                    content = await svc.export_aap_json(
+                        project_id,
+                        batch_id=batch_id,
+                        axis_frame=axis_frame,
+                    )
                 zf.writestr(f"{prefix}annotations.json", content)
                 file_count += total_tasks
 

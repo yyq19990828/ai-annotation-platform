@@ -40,7 +40,7 @@ last_reviewed: 2026-06-05
 
 ### 创建数据集时声明
 
-`POST /datasets` 接口现支持 `axis_convention` 字段:
+创建点云数据集时,上传向导第一步会显示「LiDAR 坐标系约定」下拉。选定后会随 `POST /datasets` 的 `axis_convention` 字段一起落库:
 
 ```json
 {
@@ -60,7 +60,9 @@ last_reviewed: 2026-06-05
 
 ### 已上传数据集的修改
 
-`PUT /datasets/{id}` 也支持 `axis_convention` 字段。无 UI 入口前可直接走 API,或在 dev 环境用 SQL:
+数据集详情页的设置面板也可修改点云坐标系。点「保存」后会 PATCH `axis_convention`;如果该数据集已经关联项目,页面会先提示历史 3D 标注可能与新约定不一致。
+
+API 仍支持直接修改:
 
 ```sql
 UPDATE datasets
@@ -68,11 +70,13 @@ SET metadata = jsonb_set(metadata, '{axis_convention}', '"sustechpoints_demo"')
 WHERE name = 'scene-001';
 ```
 
-修改后**刷新 3D 工作台**即可看到正确朝向的 BEV。
+修改后重新打开或刷新 3D 工作台即可看到正确朝向的 BEV。
 
 ### 如何判断该选哪个约定
 
-如果数据集里有 front 相机 (named "front" 或类似):
+数据集详情页提供「自动检测」按钮,会调用 `POST /datasets/{id}/sniff-axis-convention`。平台优先读取当前数据集中 front 相机的外参,把相机光轴方向与已知约定做相似度比对,返回最匹配的 convention、分数和候选列表。分数低时仍建议人工核对。
+
+如果需要手算,且数据集里有 front 相机 (named "front" 或类似):
 
 1. 找到 `calib/camera/front.json`,看 `extrinsic` 的第 3 行前两个数(row-major):
    ```
@@ -87,8 +91,6 @@ WHERE name = 'scene-001';
    - `(0, -1)` → 车头朝 -Y → **`sustechpoints_demo`**
    - 其它 → 看上述「业界常见」表对照
 
-未来版本会加上**自动嗅探**(`POST /datasets/{id}/sniff-axis-convention`)与**数据集设置 UI**,届时无需手算。
-
 ## 影响范围
 
 声明 `axis_convention` 后:
@@ -97,14 +99,17 @@ WHERE name = 'scene-001';
 - ✓ 框选画框生成的初始 PSR(`yaw=0`) 沿车身长轴对齐
 - ✓ 三视图 (Top / Side / Front) 视角与车身真实长 / 宽 / 高对齐
 - ✓ 相机投影联动方向正确
+- ✓ 新建 3D 框和点云分割标注会记录当时的 `convention_at_create`
+- ✓ AAP 导出可通过 `axis_frame=source` 把 3D 框反向映射回数据源坐标系;默认 `iso` 保持平台内部坐标
 
 ### 历史标注
 
 v0.13.11 之前已经标注的 3D 框,**当时是按 ISO 假设画的**(几何代码一直锁死 ISO),所以它们存的 PSR 对应的就是"用户当时屏幕上看到的"。给数据集设定新 convention 后,旧框会被按新 convention 重投影显示——若你确认旧框已经匹配点云(说明数据集本来就是 ISO),保持 `axis_convention=iso_8855` 即可,旧框不动。若新 convention 把旧框带歪,需要重新审标或在数据集设置回 `iso_8855`。
 
-未来版本会在切换 convention 时提示该警告并提供"按新 convention 重投影旧框"工具。
+v0.13.12 起,新建的 `box_3d` / `point_mask_3d` 几何会记录 `convention_at_create`。打开 3D 任务时,如果某个 3D 框的创建约定与当前数据集约定不同,工作台顶部会显示警告;选中单个框后可执行「按当前约定重投影选中框」。该动作只处理选中框,不做批量改写。
 
 ## 相关
 
 - 架构决策: [`docs/adr/0034-lidar-axis-convention.md`](../../adr/0034-lidar-axis-convention.md)
 - 实现计划: [`docs/plans/2026-06-05-v0.13.11-lidar-axis-convention.md`](../../plans/2026-06-05-v0.13.11-lidar-axis-convention.md)
+- 收尾计划: [`docs/plans/2026-06-05-v0.13.12-3d-polish-and-pointmask.md`](../../plans/2026-06-05-v0.13.12-3d-polish-and-pointmask.md)

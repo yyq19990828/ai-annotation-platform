@@ -31,6 +31,19 @@ export type LidarAxisConvention =
   | "sustechpoints_demo"
   | "raw";
 
+export const LIDAR_AXIS_CONVENTIONS: LidarAxisConvention[] = [
+  "iso_8855",
+  "ros_rep103",
+  "kitti_camera",
+  "opencv_camera",
+  "apollo",
+  "y_forward",
+  "sustechpoints_demo",
+  "raw",
+];
+
+const SNIFF_CONVENTIONS: LidarAxisConvention[] = LIDAR_AXIS_CONVENTIONS.filter((c) => c !== "raw");
+
 /** 3x3 行主序矩阵 (9 个数, m[r*3+c] = 第 r 行第 c 列)。 */
 export type Mat3 = readonly [
   number, number, number,
@@ -186,5 +199,74 @@ export function unapplyConventionToPsr(
     center: [c.x, c.y, c.z],
     size: [psr.size[0], psr.size[1], psr.size[2]],
     rotation: [eulerSrc.x, eulerSrc.y, eulerSrc.z],
+  };
+}
+
+/**
+ * v0.13.12 · 把源系 PSR 映射到平台 ISO 系。用于 convention mismatch 重投影:
+ * `psr_new = R_new · R_oldᵀ · psr_old` 可拆成先 unapply(old), 再 apply(new)。
+ */
+export function applyConventionToPsr(
+  psr: Psr,
+  convention: LidarAxisConvention,
+): Psr {
+  const m = rotationMatrixFor(convention);
+  const R = mat3ToThree(m);
+  const Rt = R.clone().transpose();
+  const c = new THREE.Vector3(psr.center[0], psr.center[1], psr.center[2]).applyMatrix3(R);
+  const eulerSrc = new THREE.Euler(psr.rotation[0], psr.rotation[1], psr.rotation[2], "XYZ");
+  const Rbox = new THREE.Matrix4().makeRotationFromEuler(eulerSrc);
+  const R4 = new THREE.Matrix4().setFromMatrix3(R);
+  const Rt4 = new THREE.Matrix4().setFromMatrix3(Rt);
+  const RboxIso = R4.clone().multiply(Rbox).multiply(Rt4);
+  const eulerIso = new THREE.Euler().setFromRotationMatrix(RboxIso, "XYZ");
+  return {
+    center: [c.x, c.y, c.z],
+    size: [psr.size[0], psr.size[1], psr.size[2]],
+    rotation: [eulerIso.x, eulerIso.y, eulerIso.z],
+  };
+}
+
+export interface AxisSniffCandidate {
+  convention: LidarAxisConvention;
+  score: number;
+}
+
+export interface AxisSniffResult {
+  best: LidarAxisConvention;
+  score: number;
+  candidates: AxisSniffCandidate[];
+}
+
+/**
+ * v0.13.12 · 从 front camera 外参 row 2 推断源系 axis convention。
+ * fz 可选以兼容原 fx/fy 调用; 有完整外参时应传 fz, 否则 KITTI/OpenCV (+Z 前) 不可区分。
+ */
+export function sniffConventionFromForward(
+  fx: number,
+  fy: number,
+  fz = 0,
+): AxisSniffResult | null {
+  const norm = Math.hypot(fx, fy, fz);
+  if (norm < 1e-9) return null;
+  const ux = fx / norm;
+  const uy = fy / norm;
+  const uz = fz / norm;
+  const candidates = SNIFF_CONVENTIONS.map((convention) => {
+    const m = rotationMatrixFor(convention);
+    const ex = m[0];
+    const ey = m[1];
+    const ez = m[2];
+    const expectedNorm = Math.hypot(ex, ey, ez);
+    const score = expectedNorm < 1e-9
+      ? -1
+      : ux * (ex / expectedNorm) + uy * (ey / expectedNorm) + uz * (ez / expectedNorm);
+    return { convention, score };
+  }).sort((a, b) => b.score - a.score);
+  const best = candidates[0];
+  return {
+    best: best.convention,
+    score: best.score,
+    candidates,
   };
 }

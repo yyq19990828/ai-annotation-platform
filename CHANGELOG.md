@@ -28,6 +28,24 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.13.12] - 2026-06-05
+
+3D 工作台收尾 + 点云分割 MVP。补齐 v0.13.11 留下的坐标系 UI、自动嗅探、标注创建约定记录、导出源系映射,并把 v0.13.0 已预留的 `point_mask_3d` 几何接入前端工作台。计划见 `docs/plans/2026-06-05-v0.13.12-3d-polish-and-pointmask.md`。
+
+### Added
+
+- **点云坐标系设置入口**:点云数据集创建向导与数据集详情设置面板新增 `AxisConventionPicker`,支持 `iso_8855` / `ros_rep103` / `kitti_camera` / `opencv_camera` / `apollo` / `y_forward` / `sustechpoints_demo` / `raw`。已关联项目的数据集切换时会先提示历史 3D 标注风险。
+- **自动嗅探端点**:`POST /datasets/{id}/sniff-axis-convention` 根据 front 相机外参光轴方向返回最匹配 convention、分数和候选列表;前端设置面板可一键应用建议。
+- **3D 几何创建约定记录**:`box_3d` 和 `point_mask_3d` geometry 新增 `convention_at_create`。3D 工作台发现历史框与当前数据集约定不一致时显示顶部提示,并支持对选中框按当前约定单框重投影。
+- **导出坐标系选项**:项目/批次导出新增 `axis_frame=iso|source`,默认 `iso`。`source` 时 AAP 导出会把 `box_3d` PSR 反向映射回数据集源坐标系;导出缓存 key 同步纳入该参数。
+- **点云分割工具 MVP**:3D 工具栏新增 `point_mask_3d` 分割工具和 `P` 快捷键。拖出屏幕矩形后,矩形内点云原始索引落为 `PointMaskGeometry { point_indices }`;再次选中分割标注会在主 3D 视图高亮所属点。
+
+### Changed
+
+- **前后端坐标系数学对齐**:后端新增 `axis_convention.py` 复刻 `R_NORM`、PSR apply/unapply 与导出转换逻辑;前端 `axisConvention.ts` 补齐 PSR apply、自动嗅探候选排序与回归测试。
+- **OpenAPI / codegen 同步**:API schema 暴露 sniff response、`convention_at_create`、`decimate_stride`、导出 `axis_frame` 参数,前端生成类型同步更新。
+- **文档同步**:`docs-site/user-guide/datasets/lidar-axis-convention.md` 更新为当前 UI/API 行为;`docs-site/user-guide/workbench/3d-box.md` 增补点云分割操作。
+
 ## [0.13.11] - 2026-06-05
 
 点云 lidar 系约定 dataset 级声明 + 加载侧归一化。SUSTechPOINTS 示例及任何非 ISO 8855 (`+X 前 / +Y 左 / +Z 上`) 数据集进来后,3D 工作台不再因坐标系约定错位而出现「BEV 车头朝下 / 画框沿世界轴对齐错位 / 三视图躺歪」。计划见 `docs/plans/2026-06-05-v0.13.11-lidar-axis-convention.md`,架构决策见 `docs/adr/0034-lidar-axis-convention.md`。

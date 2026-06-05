@@ -862,6 +862,11 @@ async def export_batch(
         pattern="^(keyframes|all_frames)$",
         description="video-track 导出帧模式：keyframes 仅关键帧，all_frames 展开逐帧插值；图片项目忽略",
     ),
+    axis_frame: str = Query(
+        "iso",
+        pattern="^(iso|source)$",
+        description="3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
+    ),
     project: Project = Depends(require_project_visible),
     actor: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -931,6 +936,7 @@ async def export_batch(
             "targets": targets,
             "include_attributes": include_attributes,
             "video_frame_mode": video_frame_mode,
+            "axis_frame": axis_frame,
             "project_id": str(project_id),
             "project_display_id": project.display_id,
             "batch_display_id": batch.display_id,
@@ -955,6 +961,7 @@ async def export_batch(
             filter_criteria={
                 "include_attributes": include_attributes,
                 "video_frame_mode": video_frame_mode,
+                "axis_frame": axis_frame,
             },
         ),
     )
@@ -967,6 +974,7 @@ async def export_batch(
         opts={
             "include_attributes": include_attributes,
             "video_frame_mode": video_frame_mode,
+            "axis_frame": axis_frame,
         },
         async_job_id=str(job.id),
     )

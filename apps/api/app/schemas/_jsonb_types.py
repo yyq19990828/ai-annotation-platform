@@ -24,6 +24,24 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+# ── v0.13.11 · 点云 lidar 坐标系约定 ──────────────────────────────────
+
+# 平台内部统一假设 ISO 8855 (+X 前 / +Y 左 / +Z 上)。LidarAxisConvention 描述
+# 「数据源系 → ISO 系」的旋转关系；前端加载时做归一化，上层几何代码 (cameraAnchor /
+# frontCameraForward / psrFromPoints / ...) 无需感知 convention 存在。
+# 详见 docs/adr/0034-lidar-axis-convention.md。
+LidarAxisConvention = Literal[
+    "iso_8855",            # +X 前 / +Y 左 / +Z 上 (默认, ISO 8855 / SAE J670)
+    "ros_rep103",          # 同 iso_8855 (ROS REP-103, 别名)
+    "kitti_camera",        # +X 右 / +Y 下 / +Z 前 (KITTI camera-as-world)
+    "opencv_camera",       # 同 kitti_camera (别名)
+    "apollo",              # +X 右 / +Y 前 / +Z 上 (Apollo)
+    "y_forward",           # 同 apollo (Velodyne raw 常见别名)
+    "sustechpoints_demo",  # +X 车左 / +Y 车后 / +Z 天 (third-party/SUSTechPOINTS 自带示例)
+    "raw",                 # 不归一化, 平台不为该数据集承诺 ISO
+]
+
+
 # ── 项目级 attribute schema / classes config ────────────────────────
 
 AttributeFieldType = Literal[
@@ -522,6 +540,7 @@ class Box3DGeometry(BaseModel):
     center: list[float] = Field(min_length=3, max_length=3)
     size: list[float] = Field(min_length=3, max_length=3)
     rotation: list[float] = Field(min_length=3, max_length=3)
+    convention_at_create: LidarAxisConvention | None = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -531,6 +550,9 @@ class PointMaskGeometry(BaseModel):
 
     type: Literal["point_mask_3d"] = "point_mask_3d"
     point_indices: list[int] = Field(default_factory=list)
+    convention_at_create: LidarAxisConvention | None = None
+    decimate_stride: int | None = Field(default=None, ge=1)
+    source_point_count: int | None = Field(default=None, ge=0)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -696,24 +718,6 @@ class DatasetItemMetadata(BaseModel):
     calibration: SensorCalibration | None = None
 
     model_config = ConfigDict(extra="allow")
-
-
-# ── v0.13.11 · 点云 lidar 坐标系约定 ──────────────────────────────────
-
-# 平台内部统一假设 ISO 8855 (+X 前 / +Y 左 / +Z 上)。LidarAxisConvention 描述
-# 「数据源系 → ISO 系」的旋转关系；前端加载时做归一化，上层几何代码 (cameraAnchor /
-# frontCameraForward / psrFromPoints / ...) 无需感知 convention 存在。
-# 详见 docs/adr/0034-lidar-axis-convention.md。
-LidarAxisConvention = Literal[
-    "iso_8855",            # +X 前 / +Y 左 / +Z 上 (默认, ISO 8855 / SAE J670)
-    "ros_rep103",          # 同 iso_8855 (ROS REP-103, 别名)
-    "kitti_camera",        # +X 右 / +Y 下 / +Z 前 (KITTI camera-as-world)
-    "opencv_camera",       # 同 kitti_camera (别名)
-    "apollo",              # +X 右 / +Y 前 / +Z 上 (Apollo)
-    "y_forward",           # 同 apollo (Velodyne raw 常见别名)
-    "sustechpoints_demo",  # +X 车左 / +Y 车后 / +Z 天 (third-party/SUSTechPOINTS 自带示例)
-    "raw",                 # 不归一化, 平台不为该数据集承诺 ISO
-]
 
 
 class DatasetMetadata(BaseModel):

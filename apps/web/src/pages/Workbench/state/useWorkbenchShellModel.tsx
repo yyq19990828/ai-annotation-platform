@@ -267,12 +267,13 @@ export function useWorkbenchShellModel({
   const tasksTotal = taskListData?.pages[0]?.total ?? tasks.length;
 
   const s = useWorkbenchState();
-  // v0.13.3-5 · 点云 3D 项目无对应 2D 工具,类别/属性绑定固定走 lidar_box_3d 单位。
+  // v0.13.x · 点云 3D 项目无对应 2D 工具,按当前 3D 工具显式选择工具单位。
   const is3DProject = currentProject?.type_key === "lidar";
+  const threeDToolUnit = s.threeDTool === "point-mask" ? "point_mask_3d" : "lidar_box_3d";
   const toolView = useToolBindings(
     currentProject ?? null,
     s.tool,
-    is3DProject ? "lidar_box_3d" : undefined,
+    is3DProject ? threeDToolUnit : undefined,
   );
   const enabledToolUnits = useMemo<Set<string> | null>(() => {
     const tb = currentProject?.tool_bindings;
@@ -1208,7 +1209,7 @@ export function useWorkbenchShellModel({
   // v0.13.8 · Delete/Backspace 也归 3D 本地处理:全局 dispatchKey 通路在 3D 台实测不触发删除,
   // 改由 3D 工作台显式监听删选中框,口径与 W/E/R / B/V 一致。
   const threeDOwnedKeys = useMemo(
-    () => new Set(["b", "B", "v", "V", "w", "W", "e", "E", "r", "R", "Delete", "Backspace"]),
+    () => new Set(["b", "B", "p", "P", "v", "V", "w", "W", "e", "E", "r", "R", "Delete", "Backspace"]),
     [],
   );
 
@@ -1438,10 +1439,14 @@ export function useWorkbenchShellModel({
     gridTemplateColumns: `${leftOpen ? `${s.leftWidth}px` : "0px"} 48px 1fr ${rightOpen ? `${s.rightWidth}px` : "0px"}`,
     taskQueue: {
       open: leftOpen, classes,
-      // 3D 点云台用 lidar_box_3d 单位的 classesConfig(与 3D 框配色同源);2D 仍用项目级。
+      // 3D 点云台用当前 3D 工具单位的 classesConfig;2D 仍用项目级。
       classesConfig: stageKind === "3d" ? classesConfig : currentProject?.classes_config,
-      toolLabel: stageKind === "3d" ? "3D 框" : TOOL_REGISTRY[s.tool].label,
-      toolIcon: stageKind === "3d" ? "rect" : TOOL_REGISTRY[s.tool].icon,
+      toolLabel: stageKind === "3d"
+        ? (s.threeDTool === "point-mask" ? "点云分割" : "3D 框")
+        : TOOL_REGISTRY[s.tool].label,
+      toolIcon: stageKind === "3d"
+        ? (s.threeDTool === "point-mask" ? "scissors" : "rect")
+        : TOOL_REGISTRY[s.tool].icon,
       activeClass: s.activeClass, recentClasses, tasks, taskId, taskIdx, hasNextPage,
       isFetchingNextPage, onFetchNextPage: fetchNextPage,
       onSelectTask: selectTask, batches: activeBatches, selectedBatchId, onSelectBatch: handleSelectBatch,

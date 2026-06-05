@@ -290,6 +290,15 @@ export type KeypointGeometry = {
   type: "keypoint";
   points: Keypoint[];
 };
+export type LidarAxisConvention =
+  | "iso_8855"
+  | "ros_rep103"
+  | "kitti_camera"
+  | "opencv_camera"
+  | "apollo"
+  | "y_forward"
+  | "sustechpoints_demo"
+  | "raw";
 /** v0.13.3 · LiDAR 3D 框. center/size/rotation 各为 3 元组(米 / 长宽高 / 绕各轴弧度);
  * 点云 Z-up, 7-DoF 主要用 yaw=rotation[2](绕 Z)。 */
 export type Box3DGeometry = {
@@ -297,11 +306,15 @@ export type Box3DGeometry = {
   center: [number, number, number];
   size: [number, number, number];
   rotation: [number, number, number];
+  convention_at_create?: LidarAxisConvention | null;
 };
 /** v0.13.3 · 点云 3D 分割掩码. point_indices 指向点云的非负整数索引(预留, v0.13.5+ 用)。 */
 export type PointMaskGeometry = {
   type: "point_mask_3d";
   point_indices: number[];
+  convention_at_create?: LidarAxisConvention | null;
+  decimate_stride?: number | null;
+  source_point_count?: number | null;
 };
 // v0.13.3 · 引入 3D 工作台,把点云 3D 几何并入手写 union(此前刻意延后,见 v0.13.0 注记)。
 // 各 2D 窄化点(transforms.ts geometryToShape / BoxListItem)需对 3D 分支兜底:3D 无 2D

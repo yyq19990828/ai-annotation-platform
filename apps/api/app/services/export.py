@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
-from app.db.models.dataset import DatasetItem
+from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.prediction import Prediction
 from app.db.models.project import Project
 from app.db.models.task import Task
@@ -23,6 +23,10 @@ from app.services.project import (
     derive_classes_config,
     derive_classes_list,
     sanitize_annotation_attributes,
+)
+from app.services.axis_convention import (
+    AxisFrame,
+    transform_box_geometry_axis_frame,
 )
 from app.schemas.aap_json import (
     AAP_SCHEMA_VERSION,
@@ -304,6 +308,33 @@ class ExportService:
         )
         return {item.id: item for item in result.scalars().all()}
 
+    async def _axis_convention_by_task(
+        self,
+        tasks: list[Task],
+    ) -> dict[uuid.UUID, str | None]:
+        dataset_items = await self._load_dataset_items(tasks)
+        dataset_ids = {
+            item.dataset_id
+            for item in dataset_items.values()
+            if item.dataset_id is not None
+        }
+        if not dataset_ids:
+            return {}
+        result = await self.db.execute(
+            select(Dataset).where(Dataset.id.in_(dataset_ids))
+        )
+        datasets = {ds.id: ds for ds in result.scalars().all()}
+        out: dict[uuid.UUID, str | None] = {}
+        for task in tasks:
+            if not task.dataset_item_id:
+                continue
+            item = dataset_items.get(task.dataset_item_id)
+            if item is None:
+                continue
+            ds = datasets.get(item.dataset_id)
+            out[task.id] = (ds.metadata_ or {}).get("axis_convention") if ds else None
+        return out
+
     async def iter_export_chunks(
         self,
         project_id: uuid.UUID,
@@ -538,6 +569,7 @@ class ExportService:
         include_attributes: bool = True,
         video_frame_mode: str = "keyframes",
         dataset_items: dict[uuid.UUID, DatasetItem] | None = None,
+        axis_frame: AxisFrame = "iso",
     ) -> str:
         project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
@@ -694,6 +726,8 @@ class ExportService:
         }
         if include_attributes:
             info["attribute_schema"] = derive_attribute_schema(project.tool_bindings)
+        if axis_frame != "iso":
+            info["axis_frame"] = axis_frame
 
         coco = {
             "info": info,
@@ -823,6 +857,7 @@ class ExportService:
         project_id: uuid.UUID,
         *,
         batch_id: uuid.UUID | None = None,
+        axis_frame: AxisFrame = "iso",
     ) -> str:
         """v0.10.15 · AAP JSON v1.0 无损中间格式.
 
@@ -846,6 +881,12 @@ class ExportService:
         for pred in predictions:
             pred_by_task.setdefault(pred.task_id, []).append(pred)
 
+        axis_by_task = (
+            await self._axis_convention_by_task(tasks)
+            if axis_frame == "source"
+            else {}
+        )
+
         # v0.10.31 · 视频项目: 给每个 task block 填 media_type + video 子块.
         is_video = project.data_type == "video"
         dataset_items = await self._load_dataset_items(tasks) if is_video else {}
@@ -862,9 +903,14 @@ class ExportService:
         for t in tasks:
             ann_entries: list[AAPAnnotationEntry] = []
             for ann in ann_by_task.get(t.id, []):
+                geometry = transform_box_geometry_axis_frame(
+                    ann.geometry or {},
+                    dataset_convention=axis_by_task.get(t.id),
+                    axis_frame=axis_frame,
+                )
                 ann_entries.append(
                     AAPAnnotationEntry(
-                        geometry=ann.geometry or {},
+                        geometry=geometry,
                         class_name=ann.class_name,
                         # v0.10.17 · 工具维度绑定 (1.1+).
                         tool_unit_id=getattr(ann, "tool_unit_id", None) or "bbox",
@@ -887,6 +933,11 @@ class ExportService:
                     geometry = internal.get("geometry") or {}
                     if not geometry:
                         continue
+                    geometry = transform_box_geometry_axis_frame(
+                        geometry,
+                        dataset_convention=axis_by_task.get(t.id),
+                        axis_frame=axis_frame,
+                    )
                     pred_entries.append(
                         AAPPredictionEntry(
                             geometry=geometry,
@@ -901,7 +952,7 @@ class ExportService:
                         )
                     )
 
-            media_type = "image"
+            media_type = "lidar" if project.data_type == "lidar" else "image"
             video_block: dict | None = None
             if is_video:
                 media_type = "video"

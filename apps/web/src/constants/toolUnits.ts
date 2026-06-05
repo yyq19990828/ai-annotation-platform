@@ -15,6 +15,7 @@ export type ToolUnitId =
   | "region"
   | "ai_interactive"
   | "lidar_box_3d"
+  | "point_mask_3d"
   | "rotated_bbox";
 
 export const TOOL_UNIT_IDS: ReadonlyArray<ToolUnitId> = [
@@ -24,6 +25,7 @@ export const TOOL_UNIT_IDS: ReadonlyArray<ToolUnitId> = [
   "region",
   "ai_interactive",
   "lidar_box_3d",
+  "point_mask_3d",
   "rotated_bbox",
 ];
 
@@ -140,6 +142,15 @@ export const TOOL_UNIT_GROUPS: ReadonlyArray<ToolUnitGroupSpec> = [
     // v0.13.3 · 解禁: 点云项目可在向导配 3D 框类别 (3D 编辑交互另行实现)
     available: true,
   },
+  {
+    id: "point_mask_3d",
+    label: "点云分割",
+    hint: "框选点云索引集合;细粒度 3D 分割",
+    icon: "scissors",
+    tools: ["point_mask"],
+    dataTypes: ["lidar"],
+    available: true,
+  },
 ];
 
 export function getToolUnitGroup(id: ToolUnitId): ToolUnitGroupSpec | undefined {
@@ -149,7 +160,7 @@ export function getToolUnitGroup(id: ToolUnitId): ToolUnitGroupSpec | undefined 
 /** 给定数据类型, 推荐默认启用的 unit 集合. */
 export function defaultEnabledUnits(dt: ProjectDataType): ToolUnitId[] {
   if (dt === "video") return ["bbox"];
-  if (dt === "lidar") return ["lidar_box_3d"];
+  if (dt === "lidar") return ["lidar_box_3d", "point_mask_3d"];
   // image 默认: bbox + region 两个开 (覆盖检测 / 分割 90% 场景), AI 交互按 AI 开关再开
   return ["bbox", "region"];
 }

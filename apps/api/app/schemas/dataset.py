@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import datetime
+from typing import Literal
 
 from app.schemas._jsonb_types import DatasetItemMetadata, LidarAxisConvention
 
@@ -98,3 +99,17 @@ class DatasetImportFromConnectionRequest(BaseModel):
 
 class DatasetImportFromConnectionResponse(BaseModel):
     job_id: UUID
+
+
+class SniffAxisConventionCandidate(BaseModel):
+    convention: LidarAxisConvention
+    score: float
+
+
+class SniffAxisConventionResponse(BaseModel):
+    best: LidarAxisConvention | None = None
+    score: float | None = None
+    candidates: list[SniffAxisConventionCandidate] = Field(default_factory=list)
+    source: Literal["task_link", "dataset_item"] | None = None
+    camera_role: str | None = None
+    camera_item_id: UUID | None = None

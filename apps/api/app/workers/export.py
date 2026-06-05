@@ -181,6 +181,7 @@ async def _run_export(
     job_uuid = uuid.UUID(async_job_id)
     include_attributes = bool(opts.get("include_attributes", True))
     video_frame_mode = str(opts.get("video_frame_mode", "keyframes"))
+    axis_frame = str(opts.get("axis_frame", "iso"))
     export_bucket = settings.minio_export_bucket
 
     engine = create_async_engine(settings.database_url, echo=False)
@@ -206,6 +207,7 @@ async def _run_export(
                     video_frame_mode,
                     max_updated_at,
                     active_count,
+                    axis_frame=axis_frame,
                 )
                 # v0.10.43 · media 前缀 + 友好下载名（{display_id}_{dataset?}_{job[:8]}.zip）。
                 media, dataset_name, project_display_id = await _scope_naming(
@@ -263,6 +265,7 @@ async def _run_export(
                     targets=targets,
                     include_attributes=include_attributes,
                     video_frame_mode=video_frame_mode,
+                    axis_frame=axis_frame,
                 )
                 try:
                     await async_job_svc.update_progress(db, job_uuid, 70)

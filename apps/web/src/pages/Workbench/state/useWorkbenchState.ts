@@ -27,8 +27,8 @@ export type Tool =
   | "keypoint";
 // v0.11.29 · hand = 视图/平移中立态（左键拖拽平移画布，不绘制）；ESC 回归到它。
 export type VideoTool = "box" | "track" | "hand";
-// v0.13.3-5 · 点云 3D 工作台工具态(双栈隔离,不复用 2D ToolId):select=拾取选中框,box=点地面放置新框。
-export type ThreeDTool = "select" | "box";
+// v0.13.3-5 · 点云 3D 工作台工具态(双栈隔离,不复用 2D ToolId)。
+export type ThreeDTool = "select" | "box" | "point-mask";
 
 /**
  * v0.10.2 · 派生型 SAM 子工具, 仅作 ImageStage / AIInspectorPanel 等老消费者的兼容外观.
