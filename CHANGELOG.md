@@ -28,6 +28,37 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.13.11] - 2026-06-05
+
+点云 lidar 系约定 dataset 级声明 + 加载侧归一化。SUSTechPOINTS 示例及任何非 ISO 8855 (`+X 前 / +Y 左 / +Z 上`) 数据集进来后,3D 工作台不再因坐标系约定错位而出现「BEV 车头朝下 / 画框沿世界轴对齐错位 / 三视图躺歪」。计划见 `docs/plans/2026-06-05-v0.13.11-lidar-axis-convention.md`,架构决策见 `docs/adr/0034-lidar-axis-convention.md`。
+
+### Added
+
+- **dataset 级 `axis_convention` 字段**:`POST /datasets` / `PUT /datasets/{id}` 可声明 lidar 系约定,枚举 `iso_8855` / `ros_rep103` / `kitti_camera` / `opencv_camera` / `apollo` / `y_forward` / `sustechpoints_demo` / `raw`,默认 `iso_8855`。落到 `Dataset.metadata.axis_convention` (新增 `datasets.metadata` jsonb 列,迁移 `0095_dataset_metadata.py`)。
+- **3D 工作台加载侧归一化**:`GET /tasks/{id}/point-cloud/manifest` 透出该数据集的 `axis_convention`;前端 `PointCloudScene.loadPcd` 加载 PCD 后立即把 positions 旋转到 ISO 系,`ThreeDWorkbench` 把所有相机 extrinsic 同步旋转。上层几何代码 (`cameraAnchor` / `frontCameraForward` / `psrFromPoints` / `autofit` / `projection` / `triview`) 全部不感知 convention,继续锁死 ISO 8855。
+- **`apps/web/src/pages/Workbench/stages/three-d/geometry/axisConvention.ts`**:新增 8 种约定的 R_norm 旋转矩阵表 + `applyConventionToPositions` / `applyConventionToExtrinsic` / `unapplyConventionToPsr`。20 个单测覆盖合法性 (det=+1, R·Rᵀ=I) / 退化 (iso/raw 是 identity) / 数学契约 (E_iso = E_src·diag(R_normᵀ,1)) / SUSTechPOINTS 实测回归。
+- **seed 夹具自动打标**:`apps/api/scripts/seed_pointcloud.py` 创建 SUSTechPOINTS 示例数据集时,自动写 `axis_convention=sustechpoints_demo`,开箱即用 BEV 车头朝上。
+
+### Changed
+
+- **seed 脚本归并到 `apps/api/scripts/`**:旧的 standalone `apps/api/scripts/seed_pointcloud.py` 删除;`scripts/seed_pointcloud_dev.py`(repo 根)移到 `apps/api/scripts/seed_pointcloud.py`。`scripts/seed.py` 不再用 `importlib.util.spec_from_file_location` 跨目录加载,改为标准 `from seed_pointcloud import seed_pointcloud`。
+
+### Behavior
+
+- **向后兼容**:历史数据集 `metadata={}` ⇒ `axis_convention=null` ⇒ 前端按 `iso_8855` 处理,与 v0.13.10 行为完全一致。
+- **现有 dev 栈一次性回填** SUSTechPOINTS 数据集约定:
+  ```sql
+  UPDATE datasets SET metadata = jsonb_set(metadata, '{axis_convention}',
+    '"sustechpoints_demo"') WHERE name = 'pc-scene-dev';
+  ```
+
+### Deferred (不在本版本)
+
+- UI 数据集设置里的 axis_convention 下拉 + 8 种约定图示 (`AxisConventionPicker`)
+- 自动嗅探端点 `POST /datasets/{id}/sniff-axis-convention`
+- annotation payload `convention_at_create` 字段 + 跨约定切换 warning
+- 导出时 `unapplyConventionToPsr` 反向回源系
+
 ## [0.13.10] - 2026-06-05
 
 工作台布局偏好跨设备同步 + 左右侧栏四区块浮窗 + 3D 三视图浮层可拖拽。左右侧栏开合/宽度、任务队列 / 类别面板 / 标注详情 / 讨论 Issue 面板浮窗位置尺寸、3D 三视图位置尺寸/折叠态统一写入 `user.preferences.workbench.layout`；离线或未登录时继续用 localStorage 兜底。计划见 `docs/plans/2026-06-05-v0.13.10-workbench-prefs-and-floating-inspector.md`。
