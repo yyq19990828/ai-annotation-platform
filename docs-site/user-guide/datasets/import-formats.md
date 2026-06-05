@@ -116,7 +116,11 @@ uv run python scripts/import_nuscenes_scene.py \
   --dataset-name nu-mini-multi
 ```
 
-nuScenes 原生即 ISO 8855 坐标系,入库时 `axis_convention=iso_8855`,无需旋转;脚本只依赖 numpy + Pillow,不需要 `nuscenes-devkit`。数据集下载见 [nuscenes.org/nuscenes#download](https://www.nuscenes.org/nuscenes#download)(选 mini split)。
+脚本只依赖 numpy + Pillow,不需要 `nuscenes-devkit`。数据集下载见 [nuscenes.org/nuscenes#download](https://www.nuscenes.org/nuscenes#download)(选 mini split)。
+
+> **坐标系**:nuScenes 的 **ego(车体)系**才是 ISO 8855,但脚本上传的是未变换的 **LIDAR_TOP 传感器系**原始点,其约定为 +X 车右 / +Y 车前 / +Z 天 = **`apollo`**(已用 LIDAR_TOP→ego 标定旋转印证,且 `sniff-axis-convention` 取正前相机 `CAM_FRONT` 时给 apollo、score 1.0)。因此脚本设 `axis_convention=apollo`,由前端旋转到 ISO 显示,BEV 才车头朝上;`cam_from_lidar` 外参与 raw 点一致,投影不受影响。
+>
+> ⚠️ 实测发现 `sniff-axis-convention` 在多相机装置上结果随所抽相机而变(`CAM_FRONT`→apollo,`CAM_FRONT_RIGHT`→iso_8855)。**别用单次 sniff 给 nuScenes 这类多相机数据定约定**,以已知传感器装置(apollo)为准。
 
 ### KITTI
 

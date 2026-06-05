@@ -12,14 +12,14 @@ build_pointcloud_tasks_for_link 的目录启发式 single-scene inference)。
 用法示例:
     cd apps/api
 
-    # 单 scene
-    uv run python scripts/import_nuscenes_scene.py \
+    # 单 scene(注意 PYTHONPATH=. 才能 import app.*,与其他 seed 脚本一致)
+    PYTHONPATH=. uv run python scripts/import_nuscenes_scene.py \
         --nuscenes-root /data/nuscenes-mini \
         --scene-tokens scene-0061 \
         --dataset-name nu-scene-0061
 
     # 多 scene 共用 dataset(验证 v0.14.0 多 scene 隔离)
-    uv run python scripts/import_nuscenes_scene.py \
+    PYTHONPATH=. uv run python scripts/import_nuscenes_scene.py \
         --nuscenes-root /data/nuscenes-mini \
         --scene-tokens scene-0061,scene-0103,scene-0553 \
         --dataset-name nu-mini-multi
@@ -41,11 +41,14 @@ timestamp_delta_us 备查;前端不消费;逐帧真补偿留 v0.15+)。
 ================================ 手动测试 checklist ================================
 跑真实 nuScenes-mini 后人工验证(浏览器 + curl,token 自备):
   1. 脚本 stdout 报告:每个 scene 的 frames 数 = nbr_samples,total_items 合理。
-  2. 浏览器打开任一 scene 第 1 帧 BEV:车头朝上(nuScenes 原生 ISO 8855,不旋转)。
+  2. 浏览器打开任一 scene 第 1 帧 BEV:车头朝上(LIDAR_TOP 传感器系是 apollo,
+     dataset axis_convention=apollo,前端旋转到 ISO 显示)。
   3. 6 路相机投影:点云投到各 CAM 图像上大致对齐(用第 1 帧标定,首帧最准)。
-  4. curl /datasets/<id>/scenes 返回 N 个 scene(= 传入的 scene 数)。
+  4. curl /scenes?dataset_id=<id> 返回 N 个 scene(= 传入的 scene 数)。
   5. curl /tasks/<某 scene 末帧 task>/neighbors:next 为空,不串到下一个 scene 首帧。
-  6. curl /datasets/<id>/sniff-axis-convention 返回 iso_8855 且置信度 >= 0.95。
+  6. curl -X POST /datasets/<id>/sniff-axis-convention 命中 apollo(实测最高分)。
+     注意:nuScenes **ego** 系才是 ISO 8855;我们上传的是未变换的 lidar 传感器系点,
+     故约定是 apollo 而非 iso_8855。
   7. (若已有 v0.14.1)工作台 Shift+→ 翻到 scene 末帧后不跳到下一 scene。
 ====================================================================================
 """
@@ -263,7 +266,11 @@ async def import_nuscenes(
             name=dataset_name,
             data_type="point_cloud",
             created_by=owner_id,
-            metadata_={"axis_convention": "iso_8855"},
+            # nuScenes 上传的是 LIDAR_TOP **传感器系**原始点,其约定为
+            # +X 车右 / +Y 车前 / +Z 天 = apollo(实测 sniff 命中 apollo,iso_8855 反而负分;
+            # ego 系才是 ISO,但我们没把点变换到 ego 系)。设 apollo 让前端旋转到 ISO 显示,
+            # BEV 才车头朝上;cam_from_lidar 外参与 raw 点一致,投影不受影响。
+            metadata_={"axis_convention": "apollo"},
         )
         db.add(ds)
         await db.flush()

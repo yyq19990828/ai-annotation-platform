@@ -39,7 +39,18 @@
 
 ### Added
 
-- **nuScenes-mini 转换脚本(D2)**:`apps/api/scripts/import_nuscenes_scene.py`,自读 nuScenes JSON(不依赖 `nuscenes-devkit`,只用 numpy + Pillow),把一个或多个 scene 转成平台原生目录 + 直接入库,并**显式调 v0.14.0 `scene_svc.create_scene` + `assign_items_to_scene`**:scene_token → `scenes.name`,sample 顺序 → `frame_index`,`.pcd.bin` 转 ASCII PCD,6 路相机 jpg + 每相机一份 lidar→camera 外参/内参标定。支持 `--scene-tokens a,b,c` 多 scene 共用一个 dataset。`axis_convention=iso_8855`(nuScenes 原生 ISO,无需旋转)。幂等(dataset 按 display_id、scene 按 name 复用)。
+- **nuScenes-mini 转换脚本(D2)**:`apps/api/scripts/import_nuscenes_scene.py`,自读 nuScenes JSON(不依赖 `nuscenes-devkit`,只用 numpy + Pillow),把一个或多个 scene 转成平台原生目录 + 直接入库,并**显式调 v0.14.0 `scene_svc.create_scene` + `assign_items_to_scene`**:scene_token → `scenes.name`,sample 顺序 → `frame_index`,`.pcd.bin` 转 ASCII PCD,6 路相机 jpg + 每相机一份 lidar→camera 外参/内参标定。支持 `--scene-tokens a,b,c` 多 scene 共用一个 dataset。`axis_convention=apollo`(**实测发现**:上传的是未变换的 LIDAR_TOP 传感器系点,实测其约定 +X 右/+Y 前/+Z 天 = apollo;nuScenes 仅 **ego** 系才是 ISO,计划原假设"原生 ISO"对 raw lidar 点不成立。已用 LIDAR_TOP→ego 标定旋转独立印证)。幂等(dataset 按 display_id、scene 按 name 复用)。
+
+### Verified(真实 nuScenes-mini 端到端)
+
+- **单 scene(scene-0061)**:279 items(39 帧 ×7 传感器 + 6 calib),1 scene,lidar `frame_index` 0..38;末帧 `neighbors.next` 为空。
+- **多 scene(scene-0061/0103/0553 共用一个 dataset)**:858 items,3 scene,各自 `frame_index` 独立 0..N-1(39/40/41);`scenes?dataset_id=` 返回 3 个;**跨 scene 不串**:scene-0061 末帧 `next=[]`、scene-0103 首帧 `prev=[]`,直接验证 v0.14.0 判据 6 在真实多 scene 数据上成立。
+- **帧 stem 全局唯一修复有效**:多 scene 同号帧因带 scene 前缀未撞键,每 scene 的 task 都正确建出。
+
+### 已知问题 / 后续(实测暴露)
+
+- **轴向 sniffer 多相机不鲁棒**(v0.13.12 端点):`sniff-axis-convention` 只取单个相机的标定来推断 lidar 约定,结果随抽到的相机而变——nuScenes 抽到 `CAM_FRONT` 得 `apollo`(score 1.0,正确),抽到 `CAM_FRONT_RIGHT` 被误导成 `iso_8855`。importer 不依赖 sniff(按已知 LIDAR_TOP 装置硬编码 apollo),但 sniffer 本身应改为优先正前相机或跨相机投票。留 v0.14.x+。
+- **nuScenes 点未变换到 ego 系**:本版直接上传 LIDAR_TOP 传感器系点 + `axis_convention=apollo`(前端旋转到 ISO 显示)。若要点云直接落在 ego/ISO 系,需逐点乘 `T_ego_from_lidar` 并把外参改为 `cam_from_ego`,留后续。
 - **多 scene 帧 stem 全局唯一**:每个 scene 的帧号都从 0 起,而 `group_frames` 以文件名 stem 作帧键——多 scene 共用 dataset 时同号帧会撞键漏建 task。脚本给帧文件名加 `<scene_name>_` 前缀保证 stem 全局唯一(不动 `group_frames`);scene 内 `frame_index` 仍由 `assign_items_to_scene` 按顺序赋值,与文件名解耦。
 
 ### Verified / Tests
