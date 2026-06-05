@@ -37,7 +37,7 @@
 - **工作台 layout 偏好跨设备记忆**：`WorkbenchPreferences.layout` 新增 `leftOpen/rightOpen/leftWidth/rightWidth/floatingTaskQueue/floatingClassPalette/floatingInspector/floatingDiscussion/triViewFloat`；前端 `useWorkbenchConfig.setLayout()` 本地立即生效、localStorage 兜底，并 300ms debounce PATCH 全量 `workbench` 子树，避免只发 nested layout 覆盖旧渲染偏好。
 - **左右栏四区块可分离为同窗口浮窗**：左栏任务队列 / 类别面板、右栏标注详情 / 讨论 Issue 面板都提供分离入口。分离后对应侧栏默认收起；用户再次展开侧栏时只显示仍嵌入的区块，不会把浮窗自动合并回去。若该侧栏两个区块都已分离，展开/收起按钮无可见变化。四个浮窗使用一致的最小尺寸，支持顶栏拖动、右下角 resize、合并回侧栏与关闭；合并回侧栏只恢复嵌入状态，不主动展开侧栏。位置/尺寸持久化到对应 `floating*` 字段。
 - **通用 `FloatingPanelShell` + `useDragMove`**：统一处理 fixed 浮窗 chrome、pointer 拖动、右下角 resize、窗口 resize clamp 和边界防丢，供侧栏区块与三视图复用。
-- **3D 三视图浮层升级**：`TriViewPanel` 改由 `FloatingPanelShell` 承载，顶栏可拖动、右下角可 resize，位置/尺寸/折叠态写入 `triViewFloat`；首次打开仍默认贴右下并避让右栏。
+- **3D 三视图浮层升级**：`TriViewPanel` 改由 `FloatingPanelShell` 承载，顶栏可在 3D 画布范围内拖动、右下角可 resize，位置/尺寸/折叠态写入 `triViewFloat`；首次打开仍默认贴右下并避让右栏。
 
 ### Changed
 

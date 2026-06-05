@@ -17,6 +17,14 @@ export interface FloatingPanelSize {
   h: number;
 }
 
+export interface FloatingPanelBounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  margin?: number;
+}
+
 const EDGE_MARGIN = 24;
 
 function clamp(value: number, min: number, max: number): number {
@@ -35,22 +43,29 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 export function clampFloatingPosition(
   position: FloatingPanelPoint,
   size: FloatingPanelSize,
+  bounds?: FloatingPanelBounds | null,
 ): FloatingPanelPoint {
   if (typeof window === "undefined") return position;
-  const maxX = Math.max(EDGE_MARGIN, window.innerWidth - size.w - EDGE_MARGIN);
-  const maxY = Math.max(EDGE_MARGIN, window.innerHeight - size.h - EDGE_MARGIN);
+  const margin = bounds ? (bounds.margin ?? 0) : EDGE_MARGIN;
+  const left = (bounds?.left ?? 0) + margin;
+  const top = (bounds?.top ?? 0) + margin;
+  const right = (bounds?.right ?? window.innerWidth) - margin;
+  const bottom = (bounds?.bottom ?? window.innerHeight) - margin;
+  const maxX = Math.max(left, right - size.w);
+  const maxY = Math.max(top, bottom - size.h);
   return {
-    x: clamp(Math.round(position.x), EDGE_MARGIN, maxX),
-    y: clamp(Math.round(position.y), EDGE_MARGIN, maxY),
+    x: clamp(Math.round(position.x), left, maxX),
+    y: clamp(Math.round(position.y), top, maxY),
   };
 }
 
 export function useDragMove(opts: {
   position: FloatingPanelPoint;
   size: FloatingPanelSize;
+  bounds?: FloatingPanelBounds | null;
   onChange: (pos: FloatingPanelPoint) => void;
 }): { handleProps: HTMLAttributes<HTMLElement>; isDragging: boolean } {
-  const { position, size, onChange } = opts;
+  const { position, size, bounds, onChange } = opts;
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -81,6 +96,7 @@ export function useDragMove(opts: {
         clampFloatingPosition(
           { x: event.clientX - drag.dx, y: event.clientY - drag.dy },
           size,
+          bounds,
         ),
       );
     };
@@ -95,11 +111,11 @@ export function useDragMove(opts: {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
     };
-  }, [isDragging, onChange, size]);
+  }, [bounds, isDragging, onChange, size]);
 
   useEffect(() => {
     const onResize = () => {
-      const next = clampFloatingPosition(position, size);
+      const next = clampFloatingPosition(position, size, bounds);
       if (next.x !== position.x || next.y !== position.y) {
         onChange(next);
       }
@@ -107,7 +123,7 @@ export function useDragMove(opts: {
     window.addEventListener("resize", onResize);
     onResize();
     return () => window.removeEventListener("resize", onResize);
-  }, [onChange, position, size]);
+  }, [bounds, onChange, position, size]);
 
   return {
     handleProps: { onPointerDown },

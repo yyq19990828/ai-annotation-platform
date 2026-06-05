@@ -22,6 +22,7 @@ import type { WorkbenchLayoutPatch } from "@/pages/Workbench/state/useWorkbenchC
 import type { Box3DGeometry, SensorCalibration } from "@/types";
 
 import { FloatingPanelShell, type FloatingPanelRect } from "../../shell/FloatingPanelShell";
+import type { FloatingPanelBounds } from "../../shell/useDragMove";
 import { usePointCloudManifest } from "./usePointCloudManifest";
 import {
   PointCloudScene,
@@ -208,6 +209,7 @@ export function ThreeDWorkbench({
   const viewportRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<PointCloudScene | null>(null);
+  const [triFloatBounds, setTriFloatBounds] = useState<FloatingPanelBounds | null>(null);
   const [stats, setStats] = useState<PointCloudStats | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pointSize, setPointSize] = useState(0.06);
@@ -276,6 +278,42 @@ export function ThreeDWorkbench({
     });
     observer.observe(controls);
     return () => observer.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    const viewport = viewportWrapRef.current;
+    if (!viewport) return;
+    const syncBounds = () => {
+      const rect = viewport.getBoundingClientRect();
+      const next: FloatingPanelBounds = {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        margin: 12,
+      };
+      setTriFloatBounds((prev) => (
+        prev
+        && prev.left === next.left
+        && prev.top === next.top
+        && prev.right === next.right
+        && prev.bottom === next.bottom
+        && prev.margin === next.margin
+          ? prev
+          : next
+      ));
+    };
+    syncBounds();
+    window.addEventListener("resize", syncBounds);
+    if (typeof ResizeObserver === "undefined") {
+      return () => window.removeEventListener("resize", syncBounds);
+    }
+    const observer = new ResizeObserver(syncBounds);
+    observer.observe(viewport);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", syncBounds);
+    };
   }, []);
 
   // 选中框的 PSR 编辑表单(字符串值,允许清空 / 中间态如 "-" / "1.";解析有效时才提交)。
@@ -1136,6 +1174,7 @@ export function ThreeDWorkbench({
             variant="no-merge"
             minSize={{ w: 200, h: 240 }}
             maxSize={{ w: 480, h: 720 }}
+            bounds={triFloatBounds}
           >
             <TriViewPanel
               selected={triSelected}

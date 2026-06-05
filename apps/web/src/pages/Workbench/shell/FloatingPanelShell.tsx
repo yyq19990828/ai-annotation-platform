@@ -12,6 +12,7 @@ import { Icon } from "@/components/ui/Icon";
 import {
   clampFloatingPosition,
   useDragMove,
+  type FloatingPanelBounds,
   type FloatingPanelPoint,
   type FloatingPanelSize,
 } from "./useDragMove";
@@ -25,6 +26,7 @@ interface FloatingPanelShellProps {
   onPositionChange: (patch: Partial<FloatingPanelRect>) => void;
   minSize: FloatingPanelSize;
   maxSize: FloatingPanelSize;
+  bounds?: FloatingPanelBounds | null;
   onMergeBack?: () => void;
   onClose?: () => void;
   onCollapse?: () => void;
@@ -45,11 +47,13 @@ function clampSize(
   position: FloatingPanelPoint,
   minSize: FloatingPanelSize,
   maxSize: FloatingPanelSize,
+  bounds?: FloatingPanelBounds | null,
 ): FloatingPanelSize {
-  const viewportW = typeof window === "undefined" ? maxSize.w : window.innerWidth;
-  const viewportH = typeof window === "undefined" ? maxSize.h : window.innerHeight;
-  const maxW = Math.max(minSize.w, Math.min(maxSize.w, viewportW - position.x - 24));
-  const maxH = Math.max(minSize.h, Math.min(maxSize.h, viewportH - position.y - 24));
+  const margin = bounds ? (bounds.margin ?? 0) : 24;
+  const right = bounds?.right ?? (typeof window === "undefined" ? maxSize.w : window.innerWidth);
+  const bottom = bounds?.bottom ?? (typeof window === "undefined" ? maxSize.h : window.innerHeight);
+  const maxW = Math.max(minSize.w, Math.min(maxSize.w, right - margin - position.x));
+  const maxH = Math.max(minSize.h, Math.min(maxSize.h, bottom - margin - position.y));
   return {
     w: Math.max(minSize.w, Math.min(maxW, Math.round(size.w))),
     h: Math.max(minSize.h, Math.min(maxH, Math.round(size.h))),
@@ -62,6 +66,7 @@ export function FloatingPanelShell({
   onPositionChange,
   minSize,
   maxSize,
+  bounds,
   onMergeBack,
   onClose,
   onCollapse,
@@ -84,13 +89,14 @@ export function FloatingPanelShell({
   const drag = useDragMove({
     position,
     size,
+    bounds,
     onChange: onPositionChange,
   });
 
   useEffect(() => {
     const clampPanel = () => {
-      const clampedPosition = clampFloatingPosition(position, size);
-      const clampedSize = clampSize(size, clampedPosition, minSize, maxSize);
+      const clampedPosition = clampFloatingPosition(position, size, bounds);
+      const clampedSize = clampSize(size, clampedPosition, minSize, maxSize, bounds);
       const patch: Partial<FloatingPanelRect> = {};
       if (clampedPosition.x !== position.x) patch.x = clampedPosition.x;
       if (clampedPosition.y !== position.y) patch.y = clampedPosition.y;
@@ -101,7 +107,7 @@ export function FloatingPanelShell({
     clampPanel();
     window.addEventListener("resize", clampPanel);
     return () => window.removeEventListener("resize", clampPanel);
-  }, [maxSize, minSize, onPositionChange, position, size]);
+  }, [bounds, maxSize, minSize, onPositionChange, position, size]);
 
   const onResizePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -133,6 +139,7 @@ export function FloatingPanelShell({
         position,
         minSize,
         maxSize,
+        bounds,
       );
       onPositionChange(next);
     };
@@ -147,7 +154,7 @@ export function FloatingPanelShell({
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
     };
-  }, [isResizing, maxSize, minSize, onPositionChange, position]);
+  }, [bounds, isResizing, maxSize, minSize, onPositionChange, position]);
 
   return (
     <section

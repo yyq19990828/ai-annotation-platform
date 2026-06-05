@@ -54,6 +54,45 @@ describe("FloatingPanelShell", () => {
     expect(onPositionChange).toHaveBeenLastCalledWith({ x: 476, y: 476 });
   });
 
+  it("clamps dragging inside custom bounds", async () => {
+    setViewport(900, 900);
+    const onPositionChange = vi.fn();
+    render(
+      <FloatingPanelShell
+        title="浮窗"
+        position={{ x: 100, y: 100, w: 200, h: 200 }}
+        onPositionChange={onPositionChange}
+        minSize={{ w: 200, h: 200 }}
+        maxSize={{ w: 500, h: 500 }}
+        bounds={{ left: 50, top: 60, right: 450, bottom: 460 }}
+      >
+        <div>content</div>
+      </FloatingPanelShell>,
+    );
+
+    const header = screen.getByText("浮窗").parentElement?.parentElement as HTMLElement;
+    fireEvent(
+      header,
+      new MouseEvent("pointerdown", {
+        bubbles: true,
+        clientX: 120,
+        clientY: 130,
+      }),
+    );
+    await act(async () => {});
+    fireEvent(
+      window,
+      new MouseEvent("pointermove", {
+        bubbles: true,
+        clientX: 760,
+        clientY: 760,
+      }),
+    );
+    fireEvent(window, new MouseEvent("pointerup", { bubbles: true }));
+
+    expect(onPositionChange).toHaveBeenLastCalledWith({ x: 250, y: 260 });
+  });
+
   it("resizes from the bottom-right handle", async () => {
     setViewport(900, 900);
     const onPositionChange = vi.fn();
