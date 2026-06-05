@@ -102,6 +102,12 @@ class TaskPointCloudManifestResponse(BaseModel):
     cameras: list[PointCloudCameraOut]
     expires_in: int
     axis_convention: LidarAxisConvention | None = None
+    # v0.14.0 · 跨 task 帧序列定位字段。全 None 表示历史未 backfill,
+    # 前端按"无 scene"兜底(不渲染跨帧导航)。
+    scene_id: UUID | None = None
+    scene_name: str | None = None
+    frame_index: int | None = None
+    scene_total_frames: int | None = None
 
 
 class VideoFrameTimetableEntry(BaseModel):

@@ -107,6 +107,26 @@ async def _load_dataset_items(
     return list(result.scalars().all())
 
 
+async def _maybe_infer_single_scene(
+    db: AsyncSession, *, dataset_id: uuid.UUID
+) -> None:
+    """v0.14.0 · 点云 link 接线前的 scene hook。
+
+    若 dataset 已有 scene 直接返回;否则跑 single-mode inference。
+    SUSTechPOINTS / wizard 上传走这里 → 自动建出 1 scene + frame_index。
+    """
+    from app.services import scene as scene_svc
+    from app.services import scene_inference
+
+    existing = await scene_svc.list_for_dataset(db, dataset_id)
+    if existing:
+        return
+    await scene_inference.infer_and_apply(
+        db, dataset_id=dataset_id, mode="single"
+    )
+    await db.flush()
+
+
 async def build_pointcloud_tasks_for_link(
     db: AsyncSession,
     *,
@@ -128,10 +148,18 @@ async def build_pointcloud_tasks_for_link(
     数量是否齐备」。正常路径下 chunk 失败整批回滚（Task + link 一起消失），重跑
     能补全；但若进程在「`db.flush()` 拿到 task.id + `link_items` 写完一部分
     role」与「`db.commit()`」之间硬挂（OOM / SIGKILL / OS panic），可能留下
-    Task 已存在但 `camera_*` link 残缺的孤儿帧。重跑会被 existing 跳过，缺失
-    link 永远不会被补，对应帧 manifest 的 `cameras` 列表少几个相机。补建残缺
-    link 是独立入口职责（未实现，见 follow-up）。
+    Task 已存在但 `camera_*` link 残缺的孤儿帧。重跑会被 existing 跳过,缺失
+    link 永远不会被补,对应帧 manifest 的 `cameras` 列表少几个相机。补建残缺
+    link 是独立入口职责(未实现,见 follow-up)。
+
+    v0.14.0 · 在建 task 之前自动跑 scene_inference(mode="single"):若 dataset
+    尚无 scene,推断出 1 个 scene + 给 lidar/cam items 写 frame_index,这样建出
+    的 task 通过 dataset_item_id → scene_id 反查能拿到 frame_index。
     """
+    # v0.14.0 · scene 推断 hook(放在 _load_dataset_items 之前,避免对已 assign 的 items
+    # 重复 inference;infer_and_apply 内部本身也幂等,这层是性能优化)。
+    await _maybe_infer_single_scene(db, dataset_id=dataset_id)
+
     items = await _load_dataset_items(db, dataset_id)
     frames, _ = group_frames(items)
 

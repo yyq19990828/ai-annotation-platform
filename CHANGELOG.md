@@ -28,6 +28,35 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.14.0] - 2026-06-06
+
+跨 task 帧序列地基:`scenes` 模型 + `dataset_items.scene_id/frame_index` + neighbors API + 导入端口对齐 + manifest 透出。把 3D 点云逐帧 / 2D 抽帧序列 / 多段 mp4 拼接长录像统一到同一抽象,为 v0.14.1 跨帧 UX(`Shift+→` propagate / 邻帧叠加 / `useFrameNeighbors`)备好合法 backing。计划见 `docs/plans/2026-06-05-v0.14.0-scene-and-frame-index-foundation.md`。
+
+### Added
+
+- **`scenes` 表 + 两列**:新建 `scenes`(`display_id` SCN-N、`dataset_id` FK CASCADE、同 dataset name 唯一)+ `dataset_items.scene_id`(FK SET NULL)+ `frame_index`(int);复合索引 `idx_dataset_items_scene_frame` 给 neighbors 查询。migration `0096_scenes_and_frame_index.py`。
+- **Scene service**(`services/scene.py`):`create_scene` / `assign_items_to_scene` / `list_for_dataset` / `get_neighbors_for_task`;双路径反查 task(`task.dataset_item_id` 直链 + `TaskDatasetItemLink role=primary_lidar`)。
+- **Scene inference**(`services/scene_inference.py`):`infer_and_apply(mode=single|per_subdirectory|auto, dry_run)`;auto 模式按"顶层是否全为已知角色名"自适应单/多 scene。点云布局走 `group_frames` + 自然排序;非点云按 `file_name` 自然排序赋 0..N-1。幂等 + > 100 scene 安全阀。
+- **Neighbors 端点**:`GET /api/v1/tasks/{id}/neighbors?k=1`,k ∈ [1,20]。响应 `{ scene_id, scene_name, frame_index, scene_total_frames, prev[], next[] }`;历史未 backfill task → 200 全空。
+- **Scenes CRUD API**:`GET /api/v1/scenes?dataset_id=` / `GET /api/v1/scenes/{id}` / `PATCH /api/v1/scenes/{id}`。create 由 importer / backfill 自动发起。
+- **Backfill 端点 + 脚本**:`POST /api/v1/datasets/{id}/scenes/backfill?mode=auto&dry_run=` + `scripts/backfill_scenes.py --dataset-id / --all-missing / --dry-run / --mode`。
+- **导入端口对齐**:`pointcloud_import.build_pointcloud_tasks_for_link` 顶部自动跑 `single`-mode inference;`POST /datasets/{id}/items/upload-zip` 末尾跑 `auto`-mode,响应附 `scene_inference_notes[]`。
+- **Manifest 透出**:`TaskPointCloudManifestResponse` 增 `scene_id` / `scene_name` / `frame_index` / `scene_total_frames`;前端 codegen 自动跟随。`ThreeDWorkbench` 写 `console.debug` 追踪,本期不消费 UX。
+- **文档**:[`docs-site/dev/concepts/scene-and-frame-index.md`](docs-site/dev/concepts/scene-and-frame-index.md)。
+
+### 不在本期(留后)
+
+- 跨帧 UX(`useFrameNeighbors` / `Shift+→` propagate / 邻帧叠加)→ v0.14.1
+- 跨 scene 段内段间无感导航(case C)→ v0.14.2+
+- `get_next_task` 的 `prefer_same_scene_continuation` flag → v0.14.1+
+- nuScenes 多 scene 转换脚本 → v0.14.2
+- scene 跨多 dataset / ego_pose / 时间戳 → v0.15+
+
+### 不动
+
+- `services/scheduler.py` 一行不动;`get_next_task` 行为完全不变(既有项目零回归)。
+- `VideoFrameIndex` / `VideoChunk` / `VideoFrameCache` / `video_tracker_runner.py`:case A 内部跨帧栈不动。
+
 ## [0.13.12] - 2026-06-05
 
 3D 工作台收尾 + 点云分割 MVP。补齐 v0.13.11 留下的坐标系 UI、自动嗅探、标注创建约定记录、导出源系映射,并把 v0.13.0 已预留的 `point_mask_3d` 几何接入前端工作台。计划见 `docs/plans/2026-06-05-v0.13.12-3d-polish-and-pointmask.md`。

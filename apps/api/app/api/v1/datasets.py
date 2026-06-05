@@ -516,6 +516,25 @@ async def upload_zip(
             new_video_item_ids.append(item.id)
 
     linked_tasks = await svc.create_tasks_for_items(dataset_id, new_item_ids)
+
+    # v0.14.0 · 上传完跑 scene_inference(mode="auto"):
+    # - SUSTechPOINTS 单 scene zip(顶层 lidar/ camera/ calib/)→ 1 scene
+    # - 顶层若干非角色子目录(nuScenes 多 scene)→ N scene
+    # - 纯 image / video 帧序列 → 1 scene + 自然排序 frame_index
+    # 幂等:若 dataset 已有 scene → 整体跳过(下次上传不重赋)。
+    scene_inference_notes: list[str] = []
+    if added > 0:
+        from app.services import scene_inference as _scene_inference
+
+        try:
+            inf = await _scene_inference.infer_and_apply(
+                db, dataset_id=dataset_id, mode="auto"
+            )
+            scene_inference_notes = inf.notes
+        except ValueError as exc:
+            # 超过 scene 上限 / 其他可恢复错误:不阻断 upload,把 notes 透回前端
+            scene_inference_notes = [f"scene_inference skipped: {exc}"]
+
     await db.commit()
 
     if new_image_item_ids:
@@ -536,6 +555,7 @@ async def upload_zip(
         "errors": errors,
         "total_in_zip": len(infos),
         "linked_tasks": linked_tasks,
+        "scene_inference_notes": scene_inference_notes,
     }
 
 
@@ -624,6 +644,43 @@ async def backfill_media_endpoint(
 
     backfill_media.delay(str(dataset_id))
     return {"status": "queued", "dataset_id": str(dataset_id)}
+
+
+@router.post("/{dataset_id}/scenes/backfill")
+async def backfill_scenes_endpoint(
+    dataset_id: uuid.UUID,
+    mode: str = Query(
+        "auto",
+        description="single / per_subdirectory / auto",
+        pattern="^(single|per_subdirectory|auto)$",
+    ),
+    dry_run: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_MANAGERS)),
+):
+    """v0.14.0 · 对 dataset 跑 scene_inference,补 scene + frame_index。
+
+    幂等:dataset 已有 scene → 直接返回(notes 提示)。
+    dry_run:不写库,返回会创建 / 赋值的统计。
+    """
+    from app.schemas.scene import InferenceResult
+    from app.services.scene_inference import infer_and_apply
+
+    svc = DatasetService(db)
+    ds = await svc.get(dataset_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    try:
+        result: InferenceResult = await infer_and_apply(
+            db, dataset_id=dataset_id, mode=mode, dry_run=dry_run  # type: ignore[arg-type]
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not dry_run:
+        await db.commit()
+    return result
 
 
 @router.delete("/{dataset_id}/items/{item_id}", status_code=204)

@@ -28,6 +28,7 @@ from app.schemas.task import (
     VideoFrameTimetableEntry,
     VideoMetadata,
 )
+from app.schemas.scene import NeighborsResponse
 from app.schemas.video_frame_service import (
     VideoChunkOut,
     VideoChunksResponse,
@@ -527,13 +528,81 @@ async def get_point_cloud_manifest(
             if dataset is not None:
                 axis_convention = (dataset.metadata_ or {}).get("axis_convention")
 
+    # v0.14.0 · scene 字段透出:仅当 primary_lidar item 有 scene_id 时挂上,
+    # 前端用做跨帧导航的合法 backing(本期不消费 UX,仅显示在调试面板)。
+    scene_id_out: uuid.UUID | None = None
+    scene_name_out: str | None = None
+    frame_index_out: int | None = None
+    scene_total_frames_out: int | None = None
+    if primary_link is not None:
+        primary_item = items_by_id.get(primary_link.dataset_item_id)
+        if primary_item is not None and primary_item.scene_id is not None:
+            from app.db.models.dataset import Scene
+
+            scene = await db.get(Scene, primary_item.scene_id)
+            if scene is not None:
+                scene_id_out = scene.id
+                scene_name_out = scene.name
+                frame_index_out = primary_item.frame_index
+                total_row = await db.execute(
+                    select(func.count(func.distinct(DatasetItem.frame_index)))
+                    .where(DatasetItem.scene_id == scene.id)
+                    .where(DatasetItem.frame_index.is_not(None))
+                )
+                scene_total_frames_out = total_row.scalar() or 0
+
     return TaskPointCloudManifestResponse(
         task_id=task.id,
         point_cloud_url=point_cloud_url,
         cameras=cameras,
         expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
         axis_convention=axis_convention,
+        scene_id=scene_id_out,
+        scene_name=scene_name_out,
+        frame_index=frame_index_out,
+        scene_total_frames=scene_total_frames_out,
     )
+
+
+@router.get(
+    "/{task_id}/neighbors",
+    response_model=NeighborsResponse,
+)
+async def get_task_neighbors(
+    task_id: uuid.UUID,
+    k: int = Query(1, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """v0.14.0 · 返回 task 在所属 scene 内的前后 k 个邻居 task。
+
+    历史未 backfill / 无 scene_id 的 task → 200 + 空 prev/next(与首末帧一致)。
+    scene_id 非空但 frame_index NULL(异常)→ 409。
+    """
+    from app.services.scene import (
+        SceneFrameIndexInconsistent,
+        get_neighbors_for_task,
+    )
+
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+
+    try:
+        result = await get_neighbors_for_task(db, task_id=task_id, k=k)
+    except SceneFrameIndexInconsistent as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    if result is None:
+        # 与"首末帧"对调用方一致:返回空 prev/next 不要 404,避免前端做无用区分
+        return NeighborsResponse(
+            scene_id=uuid.UUID(int=0),
+            scene_name="",
+            frame_index=0,
+            scene_total_frames=0,
+            prev=[],
+            next=[],
+        )
+    return result
 
 
 @router.get(

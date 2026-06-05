@@ -8104,6 +8104,69 @@
         "title": "MyPerformance",
         "type": "object"
       },
+      "NeighborInfo": {
+        "properties": {
+          "frame_index": {
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "frame_index"
+        ],
+        "title": "NeighborInfo",
+        "type": "object"
+      },
+      "NeighborsResponse": {
+        "description": "task 在所属 scene 内的前后 k 个邻居任务。\n\nprev / next 都按\"距离 cur 的远近\"排序——cur-1 在 prev[0],cur+1 在 next[0]。\n首/末帧的对应方向数组为空(不报错,前端兜底渲染)。",
+        "properties": {
+          "frame_index": {
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "next": {
+            "items": {
+              "$ref": "#/components/schemas/NeighborInfo"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "prev": {
+            "items": {
+              "$ref": "#/components/schemas/NeighborInfo"
+            },
+            "title": "Prev",
+            "type": "array"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "scene_name": {
+            "title": "Scene Name",
+            "type": "string"
+          },
+          "scene_total_frames": {
+            "title": "Scene Total Frames",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scene_id",
+          "scene_name",
+          "frame_index",
+          "scene_total_frames"
+        ],
+        "title": "NeighborsResponse",
+        "type": "object"
+      },
       "NotificationList": {
         "properties": {
           "items": {
@@ -11893,6 +11956,119 @@
         "title": "RuntimeHints",
         "type": "object"
       },
+      "SceneOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "dataset_id": {
+            "format": "uuid",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "display_id": {
+            "title": "Display Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source_format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Format"
+          },
+          "source_metadata": {
+            "additionalProperties": true,
+            "title": "Source Metadata",
+            "type": "object"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_id",
+          "dataset_id",
+          "name",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SceneOut",
+        "type": "object"
+      },
+      "SceneUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "source_format": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Format"
+          },
+          "source_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Metadata"
+          }
+        },
+        "title": "SceneUpdate",
+        "type": "object"
+      },
       "ScreenshotInitRequest": {
         "properties": {
           "content_type": {
@@ -13259,6 +13435,17 @@
             "title": "Expires In",
             "type": "integer"
           },
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
           "point_cloud_format": {
             "default": "pcd",
             "title": "Point Cloud Format",
@@ -13267,6 +13454,40 @@
           "point_cloud_url": {
             "title": "Point Cloud Url",
             "type": "string"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "scene_total_frames": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Total Frames"
           },
           "task_id": {
             "format": "uuid",
@@ -21495,6 +21716,76 @@
         ]
       }
     },
+    "/api/v1/datasets/{dataset_id}/scenes/backfill": {
+      "post": {
+        "description": "v0.14.0 · 对 dataset 跑 scene_inference,补 scene + frame_index。\n\n幂等:dataset 已有 scene → 直接返回(notes 提示)。\ndry_run:不写库,返回会创建 / 赋值的统计。",
+        "operationId": "backfill_scenes_endpoint_api_v1_datasets__dataset_id__scenes_backfill_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "single / per_subdirectory / auto",
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "auto",
+              "description": "single / per_subdirectory / auto",
+              "pattern": "^(single|per_subdirectory|auto)$",
+              "title": "Mode",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Backfill Scenes Endpoint",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
     "/api/v1/datasets/{dataset_id}/sniff-axis-convention": {
       "post": {
         "operationId": "sniff_axis_convention_api_v1_datasets__dataset_id__sniff_axis_convention_post",
@@ -26671,6 +26962,166 @@
         ]
       }
     },
+    "/api/v1/scenes": {
+      "get": {
+        "description": "列 dataset 下所有 scene(按 created_at 升序)。",
+        "operationId": "list_scenes_api_v1_scenes_get",
+        "parameters": [
+          {
+            "description": "按 dataset 过滤",
+            "in": "query",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "description": "按 dataset 过滤",
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SceneOut"
+                  },
+                  "title": "Response List Scenes Api V1 Scenes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Scenes",
+        "tags": [
+          "scenes"
+        ]
+      }
+    },
+    "/api/v1/scenes/{scene_id}": {
+      "get": {
+        "operationId": "get_scene_api_v1_scenes__scene_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scene_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scene Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Scene",
+        "tags": [
+          "scenes"
+        ]
+      },
+      "patch": {
+        "description": "更新 scene 元数据(name / source_format / source_metadata)。\n\nname 冲突 → 409。",
+        "operationId": "update_scene_api_v1_scenes__scene_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scene_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scene Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Scene",
+        "tags": [
+          "scenes"
+        ]
+      }
+    },
     "/api/v1/search": {
       "get": {
         "operationId": "global_search_api_v1_search_get",
@@ -28354,6 +28805,67 @@
           }
         ],
         "summary": "Heartbeat Lock",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/neighbors": {
+      "get": {
+        "description": "v0.14.0 · 返回 task 在所属 scene 内的前后 k 个邻居 task。\n\n历史未 backfill / 无 scene_id 的 task → 200 + 空 prev/next(与首末帧一致)。\nscene_id 非空但 frame_index NULL(异常)→ 409。",
+        "operationId": "get_task_neighbors_api_v1_tasks__task_id__neighbors_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "k",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "K",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NeighborsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Task Neighbors",
         "tags": [
           "tasks"
         ]

@@ -233,6 +233,24 @@ export function ThreeDWorkbench({
   // v0.13.11 · dataset 声明的 lidar 系约定;前端把点云 positions + 相机 extrinsic 一次性
   // 旋转到 ISO 8855 (+X 前 / +Y 左 / +Z 上),上层几何代码继续锁死 ISO。null / 缺省 = iso_8855。
   const axisConvention: LidarAxisConvention = manifest?.axis_convention ?? "iso_8855";
+  // v0.14.0 · scene 字段(跨 task 帧序列地基)仅做调试透出,本期 UX 不消费;
+  // v0.14.1 会上 useFrameNeighbors hook + Shift+→ propagate 等。
+  useEffect(() => {
+    if (manifest?.scene_id) {
+      // eslint-disable-next-line no-console
+      console.debug("[3D] scene info", {
+        scene_id: manifest.scene_id,
+        scene_name: manifest.scene_name,
+        frame_index: manifest.frame_index,
+        scene_total_frames: manifest.scene_total_frames,
+      });
+    }
+  }, [
+    manifest?.scene_id,
+    manifest?.scene_name,
+    manifest?.frame_index,
+    manifest?.scene_total_frames,
+  ]);
   const axisConventionRef = useRef<LidarAxisConvention>(axisConvention);
   axisConventionRef.current = axisConvention;
   const viewportWrapRef = useRef<HTMLDivElement>(null);
