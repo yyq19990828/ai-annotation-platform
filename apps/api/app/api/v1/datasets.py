@@ -1,9 +1,9 @@
 import hashlib
 import io
 import mimetypes
-import os
 import uuid
 import zipfile
+from pathlib import PurePosixPath
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy import select
@@ -376,6 +376,54 @@ _ZIP_MAX_ENTRIES = 5000  # 防 zip bomb：限制条目数
 _PER_FILE_MAX_BYTES = 100 * 1024 * 1024  # 单文件 100MB 上限
 
 
+def _normalize_zip_relpath(name: str) -> str | None:
+    """把 ZIP entry 名规范化为安全的相对路径。
+
+    - 统一 Windows 反斜杠为正斜杠。
+    - 拒绝绝对路径（以 "/" 开头或含 Windows 盘符段）。
+    - 拒绝 ".." 段（zip-slip 防护）。
+    - 跳过 macOS 元数据（__MACOSX/）、隐藏文件（任意段以 "." 开头）、空 basename。
+    - 返回规范化的 forward-slash 相对路径；不合法则返回 None。
+    """
+    # 统一斜杠
+    name = name.replace("\\", "/")
+
+    # macOS 元数据目录
+    if name.startswith("__MACOSX/"):
+        return None
+
+    p = PurePosixPath(name)
+
+    # 拒绝绝对路径
+    if p.is_absolute():
+        return None
+
+    parts = p.parts
+    # 空路径
+    if not parts:
+        return None
+
+    # 拒绝 ".." 段（zip-slip）
+    if ".." in parts:
+        return None
+
+    # Windows 盘符段（如 "C:"）
+    if any(len(part) == 2 and part[1] == ":" for part in parts):
+        return None
+
+    # 隐藏文件 / 隐藏目录：任意路径段以 "." 开头
+    if any(part.startswith(".") for part in parts):
+        return None
+
+    # 空 basename
+    basename = p.name
+    if not basename:
+        return None
+
+    # 返回规范化路径字符串（str(PurePosixPath) 不会带前导 "/"）
+    return str(p)
+
+
 @router.post("/{dataset_id}/items/upload-zip")
 async def upload_zip(
     dataset_id: uuid.UUID,
@@ -422,15 +470,7 @@ async def upload_zip(
     from sqlalchemy import select as sa_select
     from app.db.models.dataset import DatasetItem
 
-    existing_names: set[str] = set()
-    rows = await db.execute(
-        sa_select(DatasetItem.file_name).where(DatasetItem.dataset_id == dataset_id)
-    )
-    for (n,) in rows.all():
-        if n:
-            existing_names.add(n)
-
-    # 收集已有 hash，用于内容去重
+    # 收集已有 hash，用于内容去重（仅按 content_hash 去重，保留子目录同名文件）
     hash_rows = await db.execute(
         sa_select(DatasetItem.content_hash).where(
             DatasetItem.dataset_id == dataset_id, DatasetItem.content_hash.isnot(None)
@@ -440,11 +480,12 @@ async def upload_zip(
 
     for info in infos:
         name = info.filename
-        base = os.path.basename(name)
-        # macOS 元 + 隐藏文件
-        if name.startswith("__MACOSX/") or base.startswith(".") or not base:
+        # v0.14.2 D1：保留子目录，同时防 zip-slip / 隐藏文件
+        safe_relpath = _normalize_zip_relpath(name)
+        if safe_relpath is None:
             skipped.append(name)
             continue
+
         if info.file_size > _PER_FILE_MAX_BYTES:
             errors.append(
                 {
@@ -466,19 +507,10 @@ async def upload_zip(
             continue
         existing_hashes.add(content_hash)
 
-        # 名称冲突：同名追加 -1 / -2 后缀（保留扩展名）
-        final_name = base
-        if final_name in existing_names:
-            stem, ext = os.path.splitext(base)
-            i = 1
-            while f"{stem}-{i}{ext}" in existing_names:
-                i += 1
-            final_name = f"{stem}-{i}{ext}"
-        existing_names.add(final_name)
-
-        content_type = mimetypes.guess_type(final_name)[0] or "application/octet-stream"
+        basename = PurePosixPath(safe_relpath).name
+        content_type = mimetypes.guess_type(basename)[0] or "application/octet-stream"
         file_type = _infer_file_type(content_type)
-        storage_key = f"{ds.name}/{final_name}"
+        storage_key = f"{ds.name}/{safe_relpath}"
 
         try:
             storage_service.client.put_object(
@@ -500,7 +532,7 @@ async def upload_zip(
 
         item = await svc.add_item(
             dataset_id=dataset_id,
-            file_name=final_name,
+            file_name=basename,
             file_path=storage_key,
             file_type=file_type,
             file_size=len(data),
