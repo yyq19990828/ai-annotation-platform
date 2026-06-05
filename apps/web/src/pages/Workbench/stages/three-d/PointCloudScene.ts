@@ -112,6 +112,7 @@ export class PointCloudScene {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.1;
+    this.setOrbitMouseMode("orbit");
 
     // 网格地平面参考(xy 平面)。
     const grid = new THREE.GridHelper(100, 50, 0x2a2f3a, 0x1a1d24);
@@ -372,6 +373,7 @@ export class PointCloudScene {
     this.camera.near = Math.max(r / 100, 0.1);
     this.camera.far = r * 50;
     this.camera.updateProjectionMatrix();
+    this.setOrbitMouseMode("orbit");
     this.controls.update();
   }
 
@@ -403,7 +405,28 @@ export class PointCloudScene {
     this.camera.near = Math.max(r / 100, 0.1);
     this.camera.far = r * 50;
     this.camera.updateProjectionMatrix();
+    this.setOrbitMouseMode("bev");
     this.controls.update();
+  }
+
+  private setOrbitMouseMode(mode: "orbit" | "bev") {
+    if (mode === "bev") {
+      this.controls.mouseButtons = {
+        LEFT: THREE.MOUSE.PAN,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN,
+      };
+      this.controls.enableRotate = false;
+      this.controls.screenSpacePanning = true;
+      return;
+    }
+    this.controls.enableRotate = true;
+    this.controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN,
+    };
+    this.controls.screenSpacePanning = true;
   }
 
   /**

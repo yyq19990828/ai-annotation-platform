@@ -220,6 +220,7 @@ export function ThreeDWorkbench({
   const [stats, setStats] = useState<PointCloudStats | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pointSize, setPointSize] = useState(0.06);
+  const [pointCloudViewMode, setPointCloudViewMode] = useState<"orbit" | "bev">("orbit");
   // v0.13.6 · 相机 RGB 上色开关(默认关:无标定相机降级,且省一次性投影采样开销)。
   const [colorizeOn, setColorizeOn] = useState(false);
   const [colorizing, setColorizing] = useState(false);
@@ -459,6 +460,7 @@ export function ThreeDWorkbench({
   // 切任务回到选择工具(选中态由壳层在切任务时统管,3D 不再本地清)。
   useEffect(() => {
     onSetThreeDTool("select");
+    setPointCloudViewMode("orbit");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
@@ -792,6 +794,14 @@ export function ThreeDWorkbench({
     setPointSize(v);
     sceneRef.current?.setPointSize(v);
   };
+  const handleResetView = useCallback(() => {
+    sceneRef.current?.resetView();
+    setPointCloudViewMode("orbit");
+  }, []);
+  const handleBevView = useCallback(() => {
+    sceneRef.current?.bevView();
+    setPointCloudViewMode("bev");
+  }, []);
 
   // v0.13.11 · 相机列表的 extrinsic 在 hook 出口处归一化,下游 (frontCameraForward /
   // cameraAnchor / projectPoints / loadCameraSample) 无感知 convention。
@@ -823,9 +833,25 @@ export function ThreeDWorkbench({
     }
     return [...groups.entries()];
   }, [cameras]);
-  const enlargedCam = useMemo(
-    () => cameras.find((c) => c.role === enlargedRole) ?? null,
+  const enlargedIndex = useMemo(
+    () => cameras.findIndex((c) => c.role === enlargedRole),
     [cameras, enlargedRole],
+  );
+  const enlargedCam = useMemo(
+    () => (enlargedIndex >= 0 ? cameras[enlargedIndex] : null),
+    [cameras, enlargedIndex],
+  );
+  const cycleEnlargedCamera = useCallback(
+    (dir: -1 | 1) => {
+      if (cameras.length === 0) return;
+      setEnlargedRole((prev) => {
+        const idx = cameras.findIndex((c) => c.role === prev);
+        const base = idx >= 0 ? idx : (dir > 0 ? -1 : 0);
+        const next = (base + dir + cameras.length) % cameras.length;
+        return cameras[next].role;
+      });
+    },
+    [cameras],
   );
   // v0.13.7 · resetView 默认视向跟随 front 相机光轴(健壮于任意 lidar 前向约定)。
   // loadPcd 的首次 frameView 在 await fetch 之后异步触发,本同步 effect 必先于其设好前方。
@@ -840,10 +866,17 @@ export function ThreeDWorkbench({
     if (!enlargedRole) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setEnlargedRole(null);
+      else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        cycleEnlargedCamera(-1);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        cycleEnlargedCamera(1);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [enlargedRole]);
+  }, [cycleEnlargedCamera, enlargedRole]);
   // v0.13.6 · 点云坐标(载帧后稳定);供相机视图建深度栅格。stats 变化即点云换帧。
   const pointPositions = useMemo(
     () => (stats ? (sceneRef.current?.getPointPositions() ?? null) : null),
@@ -993,14 +1026,15 @@ export function ThreeDWorkbench({
           <button
             type="button"
             className={styles.btn}
-            onClick={() => sceneRef.current?.resetView()}
+            onClick={handleResetView}
           >
             重置视角
           </button>
           <button
             type="button"
-            className={styles.btn}
-            onClick={() => sceneRef.current?.bevView()}
+            className={`${styles.btn} ${pointCloudViewMode === "bev" ? styles.btnActive : ""}`}
+            onClick={handleBevView}
+            aria-pressed={pointCloudViewMode === "bev"}
           >
             俯视
           </button>
@@ -1265,6 +1299,26 @@ export function ThreeDWorkbench({
               >
                 关闭 ✕
               </button>
+              {cameras.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    className={`${styles.camModalSwitch} ${styles.camModalPrev}`}
+                    onClick={() => cycleEnlargedCamera(-1)}
+                    title="上一视角"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.camModalSwitch} ${styles.camModalNext}`}
+                    onClick={() => cycleEnlargedCamera(1)}
+                    title="下一视角"
+                  >
+                    ›
+                  </button>
+                </>
+              )}
               <CameraProjectionView
                 name={enlargedCam.name}
                 imageUrl={enlargedCam.image_url}

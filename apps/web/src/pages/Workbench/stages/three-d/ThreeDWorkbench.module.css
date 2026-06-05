@@ -253,6 +253,7 @@
   position: absolute;
   top: 12px;
   left: 12px;
+  z-index: 4;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -277,6 +278,13 @@
 
 .btn:hover {
   border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.btnActive,
+.btnActive:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
   color: var(--color-accent);
 }
 
@@ -462,7 +470,7 @@
 }
 
 .camAnchorTop {
-  top: calc(var(--top-toolbar-height) + 12px);
+  top: 12px;
   left: 50%;
   transform: translateX(-50%);
   flex-direction: row;
@@ -584,6 +592,35 @@
 .camModalClose:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
+}
+
+.camModalSwitch {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  width: 36px;
+  height: 48px;
+  transform: translateY(-50%);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  cursor: pointer;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.camModalSwitch:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.camModalPrev {
+  left: 16px;
+}
+
+.camModalNext {
+  right: 16px;
 }
 
 /* 折叠后的贴边小标签。 */

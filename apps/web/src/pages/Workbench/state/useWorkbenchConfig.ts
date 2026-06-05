@@ -46,11 +46,12 @@ interface WorkbenchConfigState {
 
 function mergeUser(
   remote: Partial<WorkbenchPreferences> | undefined | null,
+  options?: { preferLocalLayout?: boolean },
 ): WorkbenchPreferences {
   return {
     ...DEFAULT_WORKBENCH_PREFERENCES,
     ...(remote ?? {}),
-    layout: mergeLayout(remote?.layout),
+    layout: mergeLayout(remote?.layout, options),
   };
 }
 
@@ -128,6 +129,31 @@ function readLocalLayout(): WorkbenchLayoutPatch {
   };
 }
 
+function definedPatch<T extends object>(
+  patch: Partial<T> | null | undefined,
+): Partial<T> {
+  if (!patch) return {};
+  const out: Partial<T> = {};
+  for (const [key, value] of Object.entries(patch) as Array<
+    [keyof T, T[keyof T] | undefined]
+  >) {
+    if (value !== undefined) out[key] = value as T[keyof T];
+  }
+  return out;
+}
+
+function mergeLayoutPatch<T extends object>(
+  local: Partial<T> | null | undefined,
+  remote: Partial<T> | null | undefined,
+  preferLocal: boolean,
+): Partial<T> {
+  const localDefined = definedPatch(local);
+  const remoteDefined = definedPatch(remote);
+  return preferLocal
+    ? { ...remoteDefined, ...localDefined }
+    : { ...localDefined, ...remoteDefined };
+}
+
 function writeLocalLayout(layout: WorkbenchLayoutPreferences): void {
   if (typeof window === "undefined") return;
   try {
@@ -193,38 +219,61 @@ function mergeTriViewFloat(
 
 function mergeLayout(
   remote: Partial<WorkbenchLayoutPreferences> | null | undefined,
+  options?: { preferLocalLayout?: boolean },
 ): WorkbenchLayoutPreferences {
   const local = readLocalLayout();
+  const preferLocal = options?.preferLocalLayout === true;
   const merged = {
     ...DEFAULT_WORKBENCH_PREFERENCES.layout,
-    ...local,
-    ...(remote ?? {}),
+    ...mergeLayoutPatch<WorkbenchLayoutPatch>(local, remote, preferLocal),
   };
+  const floatingTaskQueue = mergeLayoutPatch(
+    local.floatingTaskQueue,
+    remote?.floatingTaskQueue,
+    preferLocal,
+  );
+  const floatingClassPalette = mergeLayoutPatch(
+    local.floatingClassPalette,
+    remote?.floatingClassPalette,
+    preferLocal,
+  );
+  const floatingInspector = mergeLayoutPatch(
+    local.floatingInspector,
+    remote?.floatingInspector,
+    preferLocal,
+  );
+  const floatingDiscussion = mergeLayoutPatch(
+    local.floatingDiscussion,
+    remote?.floatingDiscussion,
+    preferLocal,
+  );
+  const triViewFloat = mergeLayoutPatch(
+    local.triViewFloat,
+    remote?.triViewFloat,
+    preferLocal,
+  );
   return {
     leftOpen: merged.leftOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.leftOpen,
     rightOpen: merged.rightOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.rightOpen,
     leftWidth: merged.leftWidth ?? DEFAULT_WORKBENCH_PREFERENCES.layout.leftWidth,
     rightWidth: merged.rightWidth ?? DEFAULT_WORKBENCH_PREFERENCES.layout.rightWidth,
-    floatingTaskQueue: mergeFloatingPanel(DEFAULT_WORKBENCH_PREFERENCES.layout.floatingTaskQueue, {
-      ...(local.floatingTaskQueue ?? {}),
-      ...(remote?.floatingTaskQueue ?? {}),
-    }),
-    floatingClassPalette: mergeFloatingPanel(DEFAULT_WORKBENCH_PREFERENCES.layout.floatingClassPalette, {
-      ...(local.floatingClassPalette ?? {}),
-      ...(remote?.floatingClassPalette ?? {}),
-    }),
-    floatingInspector: mergeFloatingPanel(DEFAULT_WORKBENCH_PREFERENCES.layout.floatingInspector, {
-      ...(local.floatingInspector ?? {}),
-      ...(remote?.floatingInspector ?? {}),
-    }),
-    floatingDiscussion: mergeFloatingPanel(DEFAULT_WORKBENCH_PREFERENCES.layout.floatingDiscussion, {
-      ...(local.floatingDiscussion ?? {}),
-      ...(remote?.floatingDiscussion ?? {}),
-    }),
-    triViewFloat: mergeTriViewFloat({
-      ...(local.triViewFloat ?? {}),
-      ...(remote?.triViewFloat ?? {}),
-    }),
+    floatingTaskQueue: mergeFloatingPanel(
+      DEFAULT_WORKBENCH_PREFERENCES.layout.floatingTaskQueue,
+      floatingTaskQueue,
+    ),
+    floatingClassPalette: mergeFloatingPanel(
+      DEFAULT_WORKBENCH_PREFERENCES.layout.floatingClassPalette,
+      floatingClassPalette,
+    ),
+    floatingInspector: mergeFloatingPanel(
+      DEFAULT_WORKBENCH_PREFERENCES.layout.floatingInspector,
+      floatingInspector,
+    ),
+    floatingDiscussion: mergeFloatingPanel(
+      DEFAULT_WORKBENCH_PREFERENCES.layout.floatingDiscussion,
+      floatingDiscussion,
+    ),
+    triViewFloat: mergeTriViewFloat(triViewFloat),
   };
 }
 
@@ -315,7 +364,7 @@ export function useWorkbenchConfig(
   const user = useAuthStore((s) => s.user);
   const userId = user?.id;
   const [userConfig, setUserConfig] = useState<WorkbenchPreferences>(() =>
-    mergeUser(user?.preferences?.workbench),
+    mergeUser(user?.preferences?.workbench, { preferLocalLayout: true }),
   );
   const userConfigRef = useRef(userConfig);
   const layoutSaveTimerRef = useRef<number | null>(null);

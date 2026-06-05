@@ -7,6 +7,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGetPreferences = vi.hoisted(() => vi.fn());
 const mockUpdatePreferences = vi.hoisted(() => vi.fn());
+const mockAuthUser = vi.hoisted(() => ({
+  current: { id: "u1" } as { id: string; preferences?: unknown },
+}));
 
 vi.mock("@/api/auth", async () => {
   const actual = await vi.importActual<typeof import("@/api/auth")>("@/api/auth");
@@ -20,8 +23,8 @@ vi.mock("@/api/auth", async () => {
 });
 
 vi.mock("@/stores/authStore", () => ({
-  useAuthStore: (selector: (s: { user: { id: string } }) => unknown) =>
-    selector({ user: { id: "u1" } }),
+  useAuthStore: (selector: (s: { user: unknown }) => unknown) =>
+    selector({ user: mockAuthUser.current }),
 }));
 
 import { useWorkbenchConfig } from "./useWorkbenchConfig";
@@ -35,7 +38,27 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
   beforeEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+    mockAuthUser.current = { id: "u1" };
     window.localStorage.clear();
+  });
+
+  it("首帧优先使用本地 layout 缓存，避免右栏按旧偏好闪开再收起", () => {
+    window.localStorage.setItem("workbench.rightOpen", "0");
+    mockAuthUser.current = {
+      id: "u1",
+      preferences: {
+        workbench: {
+          layout: { rightOpen: true, rightWidth: 360 },
+        },
+      },
+    };
+    mockGetPreferences.mockReturnValue(new Promise(() => undefined));
+
+    const { result } = renderHook(() => useWorkbenchConfig(), { wrapper });
+
+    expect(result.current.loaded).toBe(false);
+    expect(result.current.layout.rightOpen).toBe(false);
+    expect(result.current.layout.rightWidth).toBe(360);
   });
 
   it("无项目覆盖时，config = DEFAULTS ∪ 用户偏好；lockedFields = []", async () => {
