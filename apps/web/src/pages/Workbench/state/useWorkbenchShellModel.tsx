@@ -21,6 +21,7 @@ import { useFeedbacks } from "@/hooks/useFeedbacks";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
+import { resolveCrossFrameTarget } from "./crossFrameTarget";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
@@ -547,6 +548,16 @@ export function useWorkbenchShellModel({
     publishTaskBoxCount(annotationsRef.current.length);
   }, [annotationsData]);
 
+  // v0.14.1 · 跨帧 propagate 跳转后, 目标 task 标注加载完成时补选新建的框。
+  useEffect(() => {
+    const pend = pendingCrossFrameSelectRef.current;
+    if (!pend || currentTaskId !== pend.taskId) return;
+    if ((annotationsData ?? []).some((a) => a.id === pend.annotationId)) {
+      setSelectedId(pend.annotationId);
+      pendingCrossFrameSelectRef.current = null;
+    }
+  }, [annotationsData, currentTaskId, setSelectedId]);
+
   useEffect(() => {
     if (!isVideoTask) return;
     const onKey = (e: KeyboardEvent) => {
@@ -667,6 +678,68 @@ export function useWorkbenchShellModel({
   const { lockError, lockConflict, remainingMs } = useTaskLock(taskId);
 
   const queryClient = useQueryClient();
+
+  // v0.14.1 · 跨帧目标延续 (Shift+→ / Shift+←): 把选中框 propagate 到同 scene 邻帧
+  // task, 跳过去并自动选中新框。导航复用 selectTask(同 batch 已加载列表内有效);
+  // 跨过去之前异步加载目标 task 标注, 故用 pendingSelectRef 在加载完成后补选。
+  const pendingCrossFrameSelectRef = useRef<{
+    taskId: string;
+    annotationId: string;
+  } | null>(null);
+  const crossFramePropagate = useCallback(
+    async (direction: "next" | "prev") => {
+      if (!taskId) return;
+      const selId = s.selectedId;
+      if (!selId) {
+        pushToast({ msg: "请先选中一个目标框", kind: "" });
+        return;
+      }
+      let neighbors;
+      try {
+        neighbors = await tasksApi.getNeighbors(taskId, 1);
+      } catch {
+        pushToast({ msg: "获取邻帧失败", kind: "error" });
+        return;
+      }
+      const resolution = resolveCrossFrameTarget(neighbors, direction);
+      if (resolution.kind === "no-scene") {
+        pushToast({ msg: "当前 task 不属于任何 scene, 无法跨帧延续", kind: "warning" });
+        return;
+      }
+      if (resolution.kind === "boundary") {
+        pushToast({
+          msg: direction === "next" ? "已是该 scene 最后一帧" : "已是该 scene 首帧",
+          kind: "",
+        });
+        return;
+      }
+      try {
+        const { annotation } = await tasksApi.propagateToTask(
+          taskId,
+          selId,
+          resolution.taskId,
+        );
+        // 失效目标 task 标注缓存, 跳过去后重新拉到含新框的列表。
+        queryClient.invalidateQueries({
+          queryKey: ["annotations", resolution.taskId],
+        });
+        // 源 task 框可能刚被分配 group_id, 失效让本帧高亮同步。
+        queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
+        pendingCrossFrameSelectRef.current = {
+          taskId: resolution.taskId,
+          annotationId: annotation.id,
+        };
+        selectTask(resolution.taskId);
+        pushToast({
+          msg: `已延续到帧 ${resolution.frameIndex}`,
+          kind: "success",
+        });
+      } catch {
+        pushToast({ msg: "跨帧延续失败", kind: "error" });
+      }
+    },
+    [taskId, s.selectedId, selectTask, pushToast, queryClient],
+  );
 
   const sam = useInteractiveAI({
     projectId,
@@ -1543,6 +1616,7 @@ export function useWorkbenchShellModel({
         onChangeUserBoxClass: handleStartChangeClass,
         threeDTool: s.threeDTool,
         onSetThreeDTool: s.setThreeDTool,
+        onCrossFramePropagate: crossFramePropagate,
         rightSidebarOpen: rightOpen,
         rightSidebarWidth: rightOpen ? s.rightWidth : 0,
         workbenchLayout: s.workbenchLayout,

@@ -43,6 +43,15 @@ export interface SceneBox {
   selected: boolean;
 }
 
+/** v0.14.1 · 邻帧参考框(只读叠加层): PSR + 类别色, 不可选不可拖。 */
+export interface ReferenceBox {
+  id: string;
+  center: [number, number, number];
+  size: [number, number, number];
+  rotation: [number, number, number];
+  color: string;
+}
+
 /** v0.13.3 · TransformControls 拖拽结束时回传的 PSR(center/size/rotation)。 */
 export interface BoxPsr {
   center: [number, number, number];
@@ -79,6 +88,11 @@ export class PointCloudScene {
   private readonly unitEdges = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
   private readonly unitBox = new THREE.BoxGeometry(1, 1, 1);
   private readonly raycaster = new THREE.Raycaster();
+
+  // v0.14.1 · 邻帧参考框图层:半透明 dashed 线框, 不参与 raycast(不加入 boxGroups,
+  // pickBox 只遍历 boxGroups), 仅作时序连续性参考。切 selectedGroupId / overlay K 时整层重建。
+  private referenceLayer = new THREE.Group();
+  private referenceBoxes: THREE.LineSegments[] = [];
 
   // v0.13.3 · 鲁棒取景中心/半径(mean ± 2.5σ,见 setRobustFrame)。
   private readonly viewCenter = new THREE.Vector3();
@@ -129,6 +143,7 @@ export class PointCloudScene {
     this.scene.add(grid);
 
     this.scene.add(this.boxLayer);
+    this.scene.add(this.referenceLayer);
     this.initAxisGizmo();
 
     // 变换 gizmo:在框 local 空间编辑(缩放/旋转沿框自身轴)。
@@ -621,6 +636,39 @@ export class PointCloudScene {
         this.boxLayer.add(group);
       }
       this.updateBoxGroup(group, b);
+    }
+  }
+
+  /**
+   * v0.14.1 · 同步邻帧参考框图层(整层清空重建)。参考框半透明 dashed 线框, 颜色取
+   * 主框类别色但描边更暗, 不参与 raycast(不加入 boxGroups)。切 selectedGroupId /
+   * overlay K 时由 React 重新调一次。
+   */
+  setReferenceBoxes(boxes: ReferenceBox[]) {
+    for (const seg of this.referenceBoxes) {
+      this.referenceLayer.remove(seg);
+      (seg.material as THREE.Material).dispose();
+    }
+    this.referenceBoxes = [];
+    for (const b of boxes) {
+      const mat = new THREE.LineDashedMaterial({
+        color: new THREE.Color(b.color).multiplyScalar(0.5),
+        transparent: true,
+        opacity: 0.5,
+        depthTest: false,
+        dashSize: 0.3,
+        gapSize: 0.15,
+      });
+      const seg = new THREE.LineSegments(this.unitEdges, mat);
+      seg.computeLineDistances(); // dashed 必需
+      seg.renderOrder = 1; // 在实框(2/3)之下
+      seg.position.set(b.center[0], b.center[1], b.center[2]);
+      seg.quaternion.setFromEuler(
+        new THREE.Euler(b.rotation[0], b.rotation[1], b.rotation[2], "XYZ"),
+      );
+      seg.scale.set(b.size[0], b.size[1], b.size[2]);
+      this.referenceLayer.add(seg);
+      this.referenceBoxes.push(seg);
     }
   }
 
