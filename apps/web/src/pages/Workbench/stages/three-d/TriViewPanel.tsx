@@ -20,9 +20,21 @@ import styles from "./ThreeDWorkbench.module.css";
 
 const VIEWS: TriView[] = ["top", "side", "front"];
 const TRI_LABEL: Record<TriView, string> = {
-  top: "俯视 Top · X→ / Y↑",
-  side: "侧视 Side · X→ / Z↑",
-  front: "正视 Front · Y→ / Z↑",
+  top: "俯视 Top",
+  side: "侧视 Side",
+  front: "正视 Front",
+};
+
+const TRI_AXES: Record<TriView, { u: "x" | "y" | "z"; v: "x" | "y" | "z" }> = {
+  top: { u: "x", v: "y" },
+  side: { u: "x", v: "z" },
+  front: { u: "y", v: "z" },
+};
+
+const AXIS_LABEL: Record<"x" | "y" | "z", string> = {
+  x: "X",
+  y: "Y",
+  z: "Z",
 };
 
 interface TriViewPanelProps {
@@ -38,6 +50,31 @@ interface TriViewPanelProps {
   pointSize: number;
   /** 拖拽中 (commit=false, draft) / 松手 (commit=true, PATCH) 回写选中框 PSR。 */
   onEditPsr: (psr: Psr, commit: boolean) => void;
+}
+
+function axisClass(axis: "x" | "y" | "z") {
+  if (axis === "x") return styles.axisX;
+  if (axis === "y") return styles.axisY;
+  return styles.axisZ;
+}
+
+function TriAxisGlyph({ view }: { view: TriView }) {
+  const axes = TRI_AXES[view];
+  return (
+    <svg className={styles.triAxisGlyph} viewBox="0 0 52 52" aria-hidden="true">
+      <g className={axisClass(axes.u)}>
+        <path className={styles.triAxisPath} d="M10 42H38" />
+        <path className={styles.triAxisPath} d="M38 42L32 37M38 42L32 47" />
+        <text className={styles.triAxisText} x="42" y="46">{AXIS_LABEL[axes.u]}</text>
+      </g>
+      <g className={axisClass(axes.v)}>
+        <path className={styles.triAxisPath} d="M10 42V12" />
+        <path className={styles.triAxisPath} d="M10 12L5 18M10 12L15 18" />
+        <text className={styles.triAxisText} x="4" y="10">{AXIS_LABEL[axes.v]}</text>
+      </g>
+      <circle className={styles.triAxisOrigin} cx="10" cy="42" r="2.8" />
+    </svg>
+  );
 }
 
 export function TriViewPanel({
@@ -144,6 +181,7 @@ export function TriViewPanel({
             onDragMove={handleDragMove}
             onDragEnd={handleDragEnd}
           />
+          <TriAxisGlyph view={view} />
           <figcaption className={styles.triCaption}>{TRI_LABEL[view]}</figcaption>
         </div>
       ))}

@@ -22,6 +22,8 @@ const DECIMATE_THRESHOLD = 500_000;
 
 // 选中框高亮色(线框)。未选中用类别色。
 const SELECTED_EDGE_COLOR = 0xffd54a;
+const TRANSFORM_SIZE_MIN = 0.35;
+const TRANSFORM_SIZE_MAX = 1.15;
 
 export interface PointCloudStats {
   totalPoints: number;
@@ -80,6 +82,11 @@ export class PointCloudScene {
   // v0.13.3 · 估计的地面高度 z(低分位,见 estimateGroundZ),放置新框时落在此平面上。
   private groundZ = 0;
 
+  // 主视图左下角方向辅助器:同一个 renderer 的小 viewport,跟随主相机旋转。
+  private readonly axisScene = new THREE.Scene();
+  private readonly axisCamera = new THREE.PerspectiveCamera(35, 1, 0.1, 20);
+  private readonly axisGroup = new THREE.Group();
+
   // v0.13.3 · 选中框拖拽编辑(平移/yaw/缩放)。gizmo 挂 getHelper() 到场景。
   private readonly transform: TransformControls;
   private onTransformEnd: ((id: string, psr: BoxPsr) => void) | null = null;
@@ -112,6 +119,7 @@ export class PointCloudScene {
     this.scene.add(grid);
 
     this.scene.add(this.boxLayer);
+    this.initAxisGizmo();
 
     // 变换 gizmo:在框 local 空间编辑(缩放/旋转沿框自身轴)。
     this.transform = new TransformControls(this.camera, this.renderer.domElement);
@@ -133,8 +141,122 @@ export class PointCloudScene {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.animate);
     this.controls.update();
+    this.updateTransformSize();
     this.renderer.render(this.scene, this.camera);
+    this.renderAxisGizmo();
   };
+
+  private initAxisGizmo() {
+    this.axisScene.add(this.axisGroup);
+    const axes: Array<{
+      label: "X" | "Y" | "Z";
+      dir: THREE.Vector3;
+      color: number;
+    }> = [
+      { label: "X", dir: new THREE.Vector3(1, 0, 0), color: 0xff5c68 },
+      { label: "Y", dir: new THREE.Vector3(0, 1, 0), color: 0x39e98a },
+      { label: "Z", dir: new THREE.Vector3(0, 0, 1), color: 0x44a6ff },
+    ];
+    for (const axis of axes) {
+      const arrow = new THREE.ArrowHelper(
+        axis.dir,
+        new THREE.Vector3(0, 0, 0),
+        1.18,
+        axis.color,
+        0.22,
+        0.1,
+      );
+      this.axisGroup.add(arrow);
+      const label = this.createAxisLabel(axis.label, axis.color);
+      label.position.copy(axis.dir).multiplyScalar(1.48);
+      this.axisGroup.add(label);
+    }
+    const ring = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints(
+        Array.from({ length: 48 }, (_, i) => {
+          const t = (i / 48) * Math.PI * 2;
+          return new THREE.Vector3(Math.cos(t) * 1.42, Math.sin(t) * 1.42, 0);
+        }),
+      ),
+      new THREE.LineBasicMaterial({
+        color: 0x44a6ff,
+        transparent: true,
+        opacity: 0.22,
+        depthTest: false,
+      }),
+    );
+    this.axisGroup.add(ring);
+  }
+
+  private createAxisLabel(label: string, color: number) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.font = "700 72px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.shadowColor = "rgba(0, 0, 0, 0.75)";
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = `#${new THREE.Color(color).getHexString()}`;
+      ctx.fillText(label, canvas.width / 2, canvas.height / 2);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(0.82, 0.82, 0.82);
+    return sprite;
+  }
+
+  private renderAxisGizmo() {
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    if (!w || !h) return;
+    const size = Math.min(128, Math.max(96, Math.floor(Math.min(w, h) * 0.18)));
+    const margin = 14;
+    const offset = new THREE.Vector3().copy(this.camera.position).sub(this.controls.target);
+    if (offset.lengthSq() < 1e-6) offset.set(2, -3, 2);
+    this.axisCamera.position.copy(offset.normalize().multiplyScalar(5));
+    this.axisCamera.up.copy(this.camera.up);
+    this.axisCamera.lookAt(0, 0, 0);
+    this.axisCamera.updateProjectionMatrix();
+
+    const r = this.renderer;
+    const prevAutoClear = r.autoClear;
+    r.autoClear = false;
+    r.clearDepth();
+    try {
+      r.setScissorTest(true);
+      r.setViewport(margin, margin, size, size);
+      r.setScissor(margin, margin, size, size);
+      r.render(this.axisScene, this.axisCamera);
+    } finally {
+      r.setScissorTest(false);
+      r.setViewport(0, 0, w, h);
+      r.autoClear = prevAutoClear;
+    }
+  }
+
+  private updateTransformSize() {
+    const obj = this.transform.object;
+    if (!obj) return;
+    const maxDim = Math.max(Math.abs(obj.scale.x), Math.abs(obj.scale.y), Math.abs(obj.scale.z), 0.5);
+    const dist = this.camera.position.distanceTo(obj.position);
+    const size = THREE.MathUtils.clamp(
+      (maxDim / Math.max(dist, 0.001)) * 4.8,
+      TRANSFORM_SIZE_MIN,
+      TRANSFORM_SIZE_MAX,
+    );
+    this.transform.setSize(size);
+  }
 
   /**
    * 加载 PCD 并渲染,返回统计;失败 throw。
@@ -593,10 +715,28 @@ export class PointCloudScene {
     this.transform.detach();
     this.scene.remove(this.transform.getHelper());
     this.transform.dispose();
+    this.disposeAxisGizmo();
     this.controls.dispose();
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement === this.container) {
       this.container.removeChild(this.renderer.domElement);
     }
+  }
+
+  private disposeAxisGizmo() {
+    this.axisScene.traverse((obj) => {
+      const withGeometry = obj as THREE.Object3D & { geometry?: THREE.BufferGeometry };
+      withGeometry.geometry?.dispose();
+      const material = (obj as THREE.Object3D & {
+        material?: THREE.Material | THREE.Material[];
+      }).material;
+      const disposeMaterial = (mat: THREE.Material) => {
+        const withMap = mat as THREE.Material & { map?: THREE.Texture | null };
+        withMap.map?.dispose();
+        mat.dispose();
+      };
+      if (Array.isArray(material)) material.forEach(disposeMaterial);
+      else material?.dispose();
+    });
   }
 }
