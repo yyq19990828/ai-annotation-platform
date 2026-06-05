@@ -75,6 +75,11 @@ const config: Parameters<typeof defineConfig>[0] = {
         "src/pages/Workbench/stage/Stage.tsx",
         "src/pages/Workbench/stage/Minimap.tsx",
         "src/pages/Workbench/stage/Layers.tsx",
+        // v0.13.12 · Three.js 点云画布 / WebGL 渲染基础设施（ThreeDWorkbench /
+        // PointCloudScene / 三视图 / 相机投影视图等）：无业务逻辑、jsdom 无 WebGL
+        // 不可单元测，与上方 Konva stage 画布排除同理。stages/three-d/geometry/** 是
+        // 纯几何数学，有完整单测，保留在覆盖率分母内。
+        "src/pages/Workbench/stages/three-d/*.{ts,tsx}",
         "src/utils/bugReportCapture.ts",
         "src/utils/uploadQueue.ts",
         "src/components/bugreport/**",
