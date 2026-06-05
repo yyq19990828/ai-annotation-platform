@@ -4,9 +4,64 @@ from uuid import UUID
 from datetime import datetime
 
 
+class FloatingPanelState(BaseModel):
+    """v0.13.10 · 工作台浮窗状态。像素默认由前端按窗口计算。"""
+
+    model_config = {"extra": "forbid"}
+
+    detached: bool = False
+    x: int | None = None
+    y: int | None = None
+    w: int | None = Field(default=None, ge=48, le=720)
+    h: int | None = Field(default=None, ge=120, le=900)
+
+
+class TriViewFloatState(BaseModel):
+    """v0.13.10 · 3D 三视图浮层位置、尺寸与折叠态。"""
+
+    model_config = {"extra": "forbid"}
+
+    collapsed: bool = False
+    x: int | None = None
+    y: int | None = None
+    w: int | None = Field(default=None, ge=200, le=480)
+    h: int | None = Field(default=None, ge=240, le=720)
+
+
+class WorkbenchLayoutPreferences(BaseModel):
+    """v0.13.10 · 工作台布局偏好。
+
+    后端只校验结构；默认值和 PATCH 全量 workbench 契约由前端维护。
+    """
+
+    model_config = {"extra": "forbid", "populate_by_name": True}
+
+    left_open: bool | None = Field(default=None, alias="leftOpen")
+    right_open: bool | None = Field(default=None, alias="rightOpen")
+    left_width: int | None = Field(default=None, alias="leftWidth", ge=200, le=560)
+    right_width: int | None = Field(default=None, alias="rightWidth", ge=220, le=600)
+    floating_task_queue: FloatingPanelState | None = Field(
+        default=None,
+        alias="floatingTaskQueue",
+    )
+    floating_class_palette: FloatingPanelState | None = Field(
+        default=None,
+        alias="floatingClassPalette",
+    )
+    floating_inspector: FloatingPanelState | None = Field(
+        default=None,
+        alias="floatingInspector",
+    )
+    floating_discussion: FloatingPanelState | None = Field(
+        default=None,
+        alias="floatingDiscussion",
+    )
+    tri_view_float: TriViewFloatState | None = Field(default=None, alias="triViewFloat")
+
+
 class WorkbenchPreferences(BaseModel):
     """v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。
-    所有字段都有默认值，前端缺省可直接落库；schema 用严格 forbid 防脏写入。"""
+    v0.13.10 · 增加 layout 子树承载跨设备布局偏好。"""
 
     model_config = {"extra": "forbid"}
 
@@ -15,6 +70,9 @@ class WorkbenchPreferences(BaseModel):
     controlPointsSize: int = Field(default=6, ge=2, le=20)
     snapToGrid: bool = False
     longTaskSampleRate: float = Field(default=0.05, ge=0.0, le=1.0)
+    layout: WorkbenchLayoutPreferences = Field(
+        default_factory=WorkbenchLayoutPreferences
+    )
 
 
 class AIToolPreferences(BaseModel):

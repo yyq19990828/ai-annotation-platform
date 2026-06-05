@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ComponentProps } from "react";
+import { Icon } from "@/components/ui/Icon";
 import { CommentsPanel } from "./CommentsPanel";
 import { DiscussionIssuesTab } from "./DiscussionIssuesTab";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
@@ -39,11 +40,15 @@ interface DiscussionPanelProps extends CommentsBridgeProps {
   taskId: string | null;
   projectId: string | null;
   currentUserId: string | null;
+  onDetach?: () => void;
+  floating?: boolean;
 }
 
 export function DiscussionPanel({
   annotationId, taskId, projectId, currentUserId,
   backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, commentAnchor, onSeekFrame,
+  onDetach,
+  floating = false,
 }: DiscussionPanelProps) {
   const [tab, setTab] = useState<DiscussionTab>("comments");
 
@@ -58,20 +63,33 @@ export function DiscussionPanel({
   }, [tabRequestTick]);
 
   return (
-    <div className={styles.panel}>
-      <div className={styles.tabRow} role="tablist" aria-label="讨论面板">
-        {TABS.map((t) => (
+    <div className={floating ? `${styles.panel} ${styles.panelFloating}` : styles.panel}>
+      <div className={styles.headerRow}>
+        <div className={styles.tabRow} role="tablist" aria-label="讨论面板">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.key}
+              className={`${styles.tabButton} ${tab === t.key ? styles.tabButtonActive : ""}`}
+              onClick={() => setTab(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {onDetach && (
           <button
-            key={t.key}
             type="button"
-            role="tab"
-            aria-selected={tab === t.key}
-            className={`${styles.tabButton} ${tab === t.key ? styles.tabButtonActive : ""}`}
-            onClick={() => setTab(t.key)}
+            className={styles.detachButton}
+            onClick={onDetach}
+            title="分离讨论面板"
+            aria-label="分离讨论面板"
           >
-            {t.label}
+            <Icon name="pictureInPicture2" size={13} />
           </button>
-        ))}
+        )}
       </div>
       <div className={styles.content} role="tabpanel">
         {tab === "issues" ? (

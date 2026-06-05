@@ -23,6 +23,10 @@ from app.services.storage import storage_service
 _STREAM_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 _IMAGE_HEAD_BYTES = 256 * 1024
 
+# v0.13.11 · 用于 DatasetService.update 区分「未传参」与「显式传 None」(后者表示清除
+# metadata_["axis_convention"]，回退到默认 iso_8855)。
+_UNSET: object = object()
+
 
 @dataclass(frozen=True)
 class IngestOutcome:
@@ -239,18 +243,28 @@ class DatasetService:
         return {**_dataset_dict(ds), "project_count": pc, "total_size": int(total_size)}
 
     async def create(
-        self, name: str, description: str, data_type: str, user_id: uuid.UUID
+        self,
+        name: str,
+        description: str,
+        data_type: str,
+        user_id: uuid.UUID,
+        *,
+        axis_convention: str | None = None,
     ) -> Dataset:
         ds_id = uuid.uuid4()
         display_id = await next_display_id(self.db, "datasets")
-        ds = Dataset(
-            id=ds_id,
-            display_id=display_id,
-            name=name,
-            description=description,
-            data_type=data_type,
-            created_by=user_id,
-        )
+        kwargs: dict = {
+            "id": ds_id,
+            "display_id": display_id,
+            "name": name,
+            "description": description,
+            "data_type": data_type,
+            "created_by": user_id,
+        }
+        # v0.13.11 · 仅当显式给定时写 metadata，否则走 server_default '{}'。
+        if axis_convention is not None:
+            kwargs["metadata_"] = {"axis_convention": axis_convention}
+        ds = Dataset(**kwargs)
         self.db.add(ds)
         await self.db.flush()
         storage_service.ensure_bucket(storage_service.datasets_bucket)
@@ -258,7 +272,12 @@ class DatasetService:
         return ds
 
     async def update(
-        self, dataset_id: uuid.UUID, name: str | None, description: str | None
+        self,
+        dataset_id: uuid.UUID,
+        name: str | None,
+        description: str | None,
+        *,
+        axis_convention=_UNSET,
     ) -> Dataset | None:
         ds = await self.db.get(Dataset, dataset_id)
         if not ds:
@@ -267,6 +286,15 @@ class DatasetService:
             ds.name = name
         if description is not None:
             ds.description = description
+        # v0.13.11 · sentinel 区分「未传」/「显式 None」/「具体值」。
+        # JSONB in-place mutation 不被 SQLAlchemy dirty-track，必须赋值整对象。
+        if axis_convention is not _UNSET:
+            meta = dict(ds.metadata_ or {})
+            if axis_convention is None:
+                meta.pop("axis_convention", None)
+            else:
+                meta["axis_convention"] = axis_convention
+            ds.metadata_ = meta
         await self.db.flush()
         return ds
 
@@ -1003,6 +1031,8 @@ def _dataset_dict(ds: Dataset) -> dict:
         "file_count": ds.file_count,
         "total_size": 0,  # 调用方会覆盖
         "created_by": ds.created_by,
+        # v0.13.11 · 派生自 metadata_["axis_convention"], None = 视作 iso_8855。
+        "axis_convention": (ds.metadata_ or {}).get("axis_convention"),
         "created_at": ds.created_at,
         "updated_at": ds.updated_at,
     }

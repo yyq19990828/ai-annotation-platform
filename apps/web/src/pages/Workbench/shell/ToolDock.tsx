@@ -75,11 +75,18 @@ const VIDEO_TOOLS: Array<{ id: VideoTool; hotkey: string; label: string; icon: I
   { id: "hand", hotkey: "V", label: "平移", icon: "move", desc: "拖拽平移画布", altDigit: 3, group: "view" },
 ];
 
-// v0.13.3-5 · 点云 3D 工具:select 拾取选中 / box 点地面放置。view 控件(点大小/重置)留视口 HUD。
+// v0.13.3-5 · 点云 3D 工具:select 拾取选中 / box 点地面放置 / point-mask 框选分割。
 const THREE_D_TOOLS: Array<{ id: ThreeDTool; hotkey: string; label: string; icon: IconName; desc: string }> = [
   { id: "select", hotkey: "V", label: "选择", icon: "move", desc: "拾取 / 选中 3D 框" },
   { id: "box", hotkey: "B", label: "放置框", icon: "rect", desc: "点地面放置新 3D 框" },
+  { id: "point-mask", hotkey: "P", label: "分割", icon: "scissors", desc: "框选点云生成 3D 分割" },
 ];
+
+function unitForThreeDTool(tool: ThreeDTool): string | null {
+  if (tool === "box") return "lidar_box_3d";
+  if (tool === "point-mask") return "point_mask_3d";
+  return null;
+}
 
 const cn = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 
@@ -112,9 +119,14 @@ export function ToolDock({
   onSetThreeDTool,
 }: ToolDockProps) {
   if (threeDMode) {
+    const visibleThreeDTools = THREE_D_TOOLS.filter((t) => {
+      const unit = unitForThreeDTool(t.id);
+      if (!unit || !enabledToolUnits) return true;
+      return enabledToolUnits.has(unit);
+    });
     return (
       <div className={styles.root} data-workbench-tool-dock>
-        {THREE_D_TOOLS.map((t) => {
+        {visibleThreeDTools.map((t) => {
           const active = threeDTool === t.id;
           return (
             <Tooltip key={t.id} name={t.label} desc={t.desc} hotkey={t.hotkey} side="right" delay={250}>

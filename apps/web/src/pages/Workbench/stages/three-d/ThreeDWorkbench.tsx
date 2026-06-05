@@ -4,8 +4,10 @@
  * 拉 point-cloud manifest → 用裸 Three.js(PointCloudScene)渲染主点云 + OrbitControls,
  * 旁边平铺各相机图(只读,不画投影框 —— 投影联动是 v0.13.4)。与 Konva 2D 工作台双栈隔离。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 
+import type { TriViewFloatState } from "@/api/auth";
 import {
   useAnnotations,
   useCreateAnnotation,
@@ -16,8 +18,11 @@ import {
 import { useProject } from "@/hooks/useProjects";
 import { classColorForCanvas } from "@/pages/Workbench/stage/colors";
 import type { ThreeDTool } from "@/pages/Workbench/state/useWorkbenchState";
-import type { Box3DGeometry, SensorCalibration } from "@/types";
+import type { WorkbenchLayoutPatch } from "@/pages/Workbench/state/useWorkbenchConfig";
+import type { Box3DGeometry, PointMaskGeometry, SensorCalibration } from "@/types";
 
+import { FloatingPanelShell, type FloatingPanelRect } from "../../shell/FloatingPanelShell";
+import type { FloatingPanelBounds } from "../../shell/useDragMove";
 import { usePointCloudManifest } from "./usePointCloudManifest";
 import {
   PointCloudScene,
@@ -34,7 +39,19 @@ import { cameraAnchor, type Anchor } from "./geometry/cameraAnchor";
 import { colorizePoints, type CameraSample } from "./geometry/colorize";
 import { buildDepthRaster } from "./geometry/depthmap";
 import { projectPoints } from "./geometry/projection";
-import { fitSize, fitBottom, fitYaw, fitSizeAndBottom } from "./geometry/autofit";
+import {
+  fitSize,
+  fitBottom,
+  fitYaw,
+  fitSizeAndBottom,
+  psrFromPoints,
+} from "./geometry/autofit";
+import {
+  applyConventionToPsr,
+  applyConventionToExtrinsic,
+  type LidarAxisConvention,
+  unapplyConventionToPsr,
+} from "./geometry/axisConvention";
 import styles from "./ThreeDWorkbench.module.css";
 
 interface ThreeDWorkbenchProps {
@@ -49,12 +66,61 @@ interface ThreeDWorkbenchProps {
   /** v0.13.3-5 · 3D 工具态(左栏 ToolDock 选,壳层共享):select 拾取 / box 点地面放置。 */
   threeDTool: ThreeDTool;
   onSetThreeDTool: (t: ThreeDTool) => void;
+  /** v0.13.10 · 右栏避让与三视图浮窗持久化。 */
+  rightSidebarOpen: boolean;
+  rightSidebarWidth: number;
+  triViewFloat: TriViewFloatState;
+  onWorkbenchLayoutChange: (patch: WorkbenchLayoutPatch) => void;
 }
 
 // v0.13.3 · 新框默认尺寸(米,长宽高;约一辆轿车),放置后用面板/gizmo 精修。
 const DEFAULT_BOX_SIZE: [number, number, number] = [4.0, 1.8, 1.6];
+const TRI_FLOAT_DEFAULT_W = 240;
+const TRI_FLOAT_DEFAULT_H = 440;
+// v0.13.9 · 框选预览矩形位置/尺寸经 CSS custom property 注入(逐帧动态值)。
+type BoxSelectRectVars = CSSProperties & {
+  "--rect-l": string;
+  "--rect-t": string;
+  "--rect-w": string;
+  "--rect-h": string;
+};
+
+function resolveTriViewFloatRect(
+  state: TriViewFloatState,
+  rightSidebarWidth: number,
+): FloatingPanelRect {
+  const w = state.w ?? TRI_FLOAT_DEFAULT_W;
+  const h = state.h ?? TRI_FLOAT_DEFAULT_H;
+  const viewportW = typeof window === "undefined" ? 1280 : window.innerWidth;
+  const viewportH = typeof window === "undefined" ? 800 : window.innerHeight;
+  return {
+    x: state.x ?? Math.max(24, viewportW - w - rightSidebarWidth - 12),
+    y: state.y ?? Math.max(24, viewportH - h - 12),
+    w,
+    h,
+  };
+}
 // 点云项目的 3D 框工具单位(类别 / 属性绑定都挂在它下面)。
 const LIDAR_TOOL_UNIT = "lidar_box_3d";
+const POINT_MASK_TOOL_UNIT = "point_mask_3d";
+
+function boxGeometryFromPsr(psr: Psr, convention: LidarAxisConvention): Box3DGeometry {
+  return {
+    type: "box_3d",
+    center: [psr.center[0], psr.center[1], psr.center[2]],
+    size: [psr.size[0], psr.size[1], psr.size[2]],
+    rotation: [psr.rotation[0], psr.rotation[1], psr.rotation[2]],
+    convention_at_create: convention,
+  };
+}
+
+function geometryConvention(
+  geometry: unknown,
+  fallback: LidarAxisConvention,
+): LidarAxisConvention {
+  const g = geometry as { convention_at_create?: LidarAxisConvention | null } | null;
+  return g?.convention_at_create ?? fallback;
+}
 
 /**
  * v0.13.6 · 把相机图加载成 CameraSample(原图分辨率 RGBA buffer),供点云上色逐点采样。
@@ -158,20 +224,31 @@ export function ThreeDWorkbench({
   activeClass,
   threeDTool,
   onSetThreeDTool,
+  rightSidebarOpen,
+  rightSidebarWidth,
+  triViewFloat,
+  onWorkbenchLayoutChange,
 }: ThreeDWorkbenchProps) {
   const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
+  // v0.13.11 · dataset 声明的 lidar 系约定;前端把点云 positions + 相机 extrinsic 一次性
+  // 旋转到 ISO 8855 (+X 前 / +Y 左 / +Z 上),上层几何代码继续锁死 ISO。null / 缺省 = iso_8855。
+  const axisConvention: LidarAxisConvention = manifest?.axis_convention ?? "iso_8855";
+  const axisConventionRef = useRef<LidarAxisConvention>(axisConvention);
+  axisConventionRef.current = axisConvention;
+  const viewportWrapRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const controlsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<PointCloudScene | null>(null);
+  const [triFloatBounds, setTriFloatBounds] = useState<FloatingPanelBounds | null>(null);
   const [stats, setStats] = useState<PointCloudStats | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pointSize, setPointSize] = useState(0.06);
+  const [pointCloudViewMode, setPointCloudViewMode] = useState<"orbit" | "bev">("orbit");
   // v0.13.6 · 相机 RGB 上色开关(默认关:无标定相机降级,且省一次性投影采样开销)。
   const [colorizeOn, setColorizeOn] = useState(false);
   const [colorizing, setColorizing] = useState(false);
   // v0.13.6 · 深度提示开关(默认关):相机图叠深度热力图 + hover 读最近点深度/3D。
   const [depthOn, setDepthOn] = useState(false);
-  // v0.13.7 · 三视图浮层折叠态(右下角):选中框才浮出,可收成小标签。
-  const [triCollapsed, setTriCollapsed] = useState(false);
   // v0.13.7 · 放大查看的相机 role(L3);null = 无放大。点⛶开,ESC/遮罩/关闭钮收。
   const [enlargedRole, setEnlargedRole] = useState<string | null>(null);
   // 选中态来自壳层(selectedId / onSelectBox props),与标注列表 / 右栏面板共享同一份。
@@ -180,24 +257,119 @@ export function ThreeDWorkbench({
   const updateAnnotation = useUpdateAnnotation(taskId ?? undefined);
   const deleteAnnotation = useDeleteAnnotation(taskId ?? undefined);
   const createAnnotation = useCreateAnnotation(taskId ?? undefined);
+  const annotationsRef = useRef<typeof annotations>(annotations);
+  annotationsRef.current = annotations;
   // scene 的拖拽回调只设一次,用 ref 取最新 mutate,避免闭包旧值。
   const updateMutateRef = useRef(updateAnnotation.mutate);
   updateMutateRef.current = updateAnnotation.mutate;
 
-  // 放置新框需要项目的 lidar_box_3d 类别(后端按 tool_bindings 校验 class_name)。
+  // 创建新 3D 标注需要对应工具单位的类别(后端按 tool_bindings 校验 class_name)。
   const { data: task } = useTask(taskId ?? "");
   const { data: project } = useProject(task?.project_id ?? "");
-  const lidarClasses = useMemo(
-    () => (project?.tool_bindings?.[LIDAR_TOOL_UNIT]?.classes ?? []).map((c) => c.name),
-    [project],
+  const toolBindings = project?.tool_bindings;
+  const hasToolBindings = !!toolBindings && Object.keys(toolBindings).length > 0;
+  const boxClasses = useMemo(
+    () => {
+      const binding = toolBindings?.[LIDAR_TOOL_UNIT];
+      if (hasToolBindings && !binding?.enabled) return [];
+      return (binding?.classes ?? []).map((c) => c.name);
+    },
+    [hasToolBindings, toolBindings],
   );
+  const pointMaskOwnClasses = useMemo(
+    () => {
+      const binding = toolBindings?.[POINT_MASK_TOOL_UNIT];
+      if (hasToolBindings && !binding?.enabled) return [];
+      return (binding?.classes ?? []).map((c) => c.name);
+    },
+    [hasToolBindings, toolBindings],
+  );
+  const pointMaskClasses = pointMaskOwnClasses.length > 0 ? pointMaskOwnClasses : boxClasses;
 
   // 工具态 / 待放置类别全来自壳层(ToolDock 的 threeDTool + 左栏 ClassPalette 的 activeClass);
-  // canPlace 兜底:只读 / 未配类别时不允许放置。placeClass 在 activeClass 不在类集合时回落首个。
-  const canPlace = !readOnly && lidarClasses.length > 0;
-  const placing = threeDTool === "box" && canPlace;
-  const placeClass =
-    activeClass && lidarClasses.includes(activeClass) ? activeClass : (lidarClasses[0] ?? null);
+  // canPlace 兜底:只读 / 未配类别时不允许放置。class 在 activeClass 不在类集合时回落首个。
+  const canPlaceBox = !readOnly && boxClasses.length > 0;
+  const canPlacePointMask = !readOnly && pointMaskClasses.length > 0;
+  const placing = threeDTool === "box" && canPlaceBox;
+  const pointMasking = threeDTool === "point-mask" && canPlacePointMask;
+  const drawingSelection = placing || pointMasking;
+  const boxPlaceClass =
+    activeClass && boxClasses.includes(activeClass) ? activeClass : (boxClasses[0] ?? null);
+  const pointMaskPlaceClass =
+    activeClass && pointMaskClasses.includes(activeClass)
+      ? activeClass
+      : (pointMaskClasses[0] ?? null);
+  const effectiveRightSidebarWidth = rightSidebarOpen ? rightSidebarWidth : 0;
+  const triFloatPosition = useMemo(
+    () => resolveTriViewFloatRect(triViewFloat, effectiveRightSidebarWidth),
+    [
+      effectiveRightSidebarWidth,
+      triViewFloat,
+    ],
+  );
+  const updateTriViewFloat = useCallback(
+    (patch: Partial<FloatingPanelRect> & { collapsed?: boolean }) => {
+      onWorkbenchLayoutChange({
+        triViewFloat: {
+          ...triViewFloat,
+          ...patch,
+        },
+      });
+    },
+    [onWorkbenchLayoutChange, triViewFloat],
+  );
+
+  useLayoutEffect(() => {
+    const controls = controlsRef.current;
+    const viewport = viewportWrapRef.current;
+    if (!controls || !viewport) return;
+    const setToolbarHeight = (height: number) => {
+      viewport.style.setProperty("--top-toolbar-height", `${Math.round(height)}px`);
+    };
+    setToolbarHeight(controls.getBoundingClientRect().height);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      setToolbarHeight(entry.contentRect.height);
+    });
+    observer.observe(controls);
+    return () => observer.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    const viewport = viewportWrapRef.current;
+    if (!viewport) return;
+    const syncBounds = () => {
+      const rect = viewport.getBoundingClientRect();
+      const next: FloatingPanelBounds = {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        margin: 12,
+      };
+      setTriFloatBounds((prev) => (
+        prev
+        && prev.left === next.left
+        && prev.top === next.top
+        && prev.right === next.right
+        && prev.bottom === next.bottom
+        && prev.margin === next.margin
+          ? prev
+          : next
+      ));
+    };
+    syncBounds();
+    window.addEventListener("resize", syncBounds);
+    if (typeof ResizeObserver === "undefined") {
+      return () => window.removeEventListener("resize", syncBounds);
+    }
+    const observer = new ResizeObserver(syncBounds);
+    observer.observe(viewport);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", syncBounds);
+    };
+  }, []);
 
   // 选中框的 PSR 编辑表单(字符串值,允许清空 / 中间态如 "-" / "1.";解析有效时才提交)。
   // PATCH 防抖 250ms;yaw 以度展示。
@@ -244,6 +416,29 @@ export function ThreeDWorkbench({
   const selectedBox = boxes.find((b) => b.id === selectedId) ?? null;
   const selectedAnn = (annotations ?? []).find((a) => a.id === selectedId) ?? null;
   const selectedClass = selectedAnn?.class_name ?? null;
+  const pointMasks = useMemo(
+    () => (annotations ?? []).filter((a) => !a.is_hidden && a.geometry?.type === "point_mask_3d"),
+    [annotations],
+  );
+  const selectedPointMask = selectedAnn?.geometry?.type === "point_mask_3d"
+    ? selectedAnn.geometry
+    : null;
+  const conventionMismatches = useMemo(() => {
+    const mismatches = [];
+    for (const ann of annotations ?? []) {
+      const g = ann.geometry;
+      if (!g || (g.type !== "box_3d" && g.type !== "point_mask_3d")) continue;
+      const created = (g as { convention_at_create?: LidarAxisConvention | null }).convention_at_create;
+      if (created && created !== axisConvention) mismatches.push({ ann, convention: created });
+    }
+    return mismatches;
+  }, [annotations, axisConvention]);
+  const selectedConventionMismatch =
+    selectedAnn?.geometry?.type === "box_3d"
+    && selectedAnn.geometry.convention_at_create
+    && selectedAnn.geometry.convention_at_create !== axisConvention
+      ? selectedAnn.geometry.convention_at_create
+      : null;
   // 单框锁定(列表 L 切换)→ 不可编辑(无 gizmo / 面板禁用 / 不可删),但仍可选中查看。
   const selectedLocked = !!selectedAnn?.is_locked;
   // 可编辑 = 任务级非只读 且 该框未锁定。
@@ -257,15 +452,14 @@ export function ThreeDWorkbench({
     // 拖拽结束:回写表单 + PATCH 持久化(与数值面板共用持久化管线)。
     scene.setTransformHandler((id, psr) => {
       setForm(psrToForm(psr));
+      const ann = annotationsRef.current?.find((a) => a.id === id);
       updateMutateRef.current({
         annotationId: id,
         payload: {
-          geometry: {
-            type: "box_3d",
-            center: psr.center,
-            size: psr.size,
-            rotation: psr.rotation,
-          },
+          geometry: boxGeometryFromPsr(
+            psr,
+            geometryConvention(ann?.geometry, axisConventionRef.current),
+          ),
         },
       });
     });
@@ -279,6 +473,7 @@ export function ThreeDWorkbench({
   }, []);
 
   // manifest 到位后加载点云。
+  // v0.13.11 · 传入 axisConvention,scene 内部加载完 PCD 立即把 positions 旋到 ISO 系。
   useEffect(() => {
     const scene = sceneRef.current;
     const url = manifest?.point_cloud_url;
@@ -286,7 +481,7 @@ export function ThreeDWorkbench({
     let cancelled = false;
     setLoadError(null);
     scene
-      .loadPcd(url)
+      .loadPcd(url, axisConvention)
       .then((s) => {
         if (!cancelled) setStats(s);
       })
@@ -296,7 +491,7 @@ export function ThreeDWorkbench({
     return () => {
       cancelled = true;
     };
-  }, [manifest?.point_cloud_url]);
+  }, [manifest?.point_cloud_url, axisConvention]);
 
   // 同步 3D 框图层(标注 / 选中变化)。scene 在挂载 effect 里先建,本 effect 后跑。
   useEffect(() => {
@@ -334,13 +529,14 @@ export function ThreeDWorkbench({
   // 切任务回到选择工具(选中态由壳层在切任务时统管,3D 不再本地清)。
   useEffect(() => {
     onSetThreeDTool("select");
+    setPointCloudViewMode("orbit");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
   // 进入放置模式时清选中,避免 gizmo 挡在点地面的路上。
   useEffect(() => {
-    if (placing) onSelectBox(null);
-  }, [placing, onSelectBox]);
+    if (drawingSelection) onSelectBox(null);
+  }, [drawingSelection, onSelectBox]);
 
   // B 进放置 / V / Esc 回选择(焦点在输入框时不拦截;无可用类别时 B 无效)。
   useEffect(() => {
@@ -348,11 +544,12 @@ export function ThreeDWorkbench({
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
       if (e.key === "Escape" || e.key === "v" || e.key === "V") onSetThreeDTool("select");
-      else if ((e.key === "b" || e.key === "B") && canPlace) onSetThreeDTool("box");
+      else if ((e.key === "b" || e.key === "B") && canPlaceBox) onSetThreeDTool("box");
+      else if ((e.key === "p" || e.key === "P") && canPlacePointMask) onSetThreeDTool("point-mask");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canPlace, onSetThreeDTool]);
+  }, [canPlaceBox, canPlacePointMask, onSetThreeDTool]);
 
   // 选中目标切换时用其 PSR 初始化表单(编辑期间不被服务端回写覆盖,故仅依赖 selectedId)。
   useEffect(() => {
@@ -383,17 +580,19 @@ export function ThreeDWorkbench({
       if (patchTimer.current) window.clearTimeout(patchTimer.current);
       patchTimer.current = window.setTimeout(() => {
         const deg = Math.PI / 180;
-        const geometry: Box3DGeometry = {
-          type: "box_3d",
-          center: [v.cx, v.cy, v.cz],
-          size: [v.l, v.w, v.h],
-          // rotation = [rx=roll, ry=pitch, rz=yaw] (弧度), 三轴齐全, 不再抹掉 pitch/roll。
-          rotation: [v.roll * deg, v.pitch * deg, v.yaw * deg],
-        };
+        const geometry = boxGeometryFromPsr(
+          {
+            center: [v.cx, v.cy, v.cz],
+            size: [v.l, v.w, v.h],
+            // rotation = [rx=roll, ry=pitch, rz=yaw] (弧度), 三轴齐全, 不再抹掉 pitch/roll。
+            rotation: [v.roll * deg, v.pitch * deg, v.yaw * deg],
+          },
+          geometryConvention(selectedAnn?.geometry, axisConvention),
+        );
         updateAnnotation.mutate({ annotationId: selectedId, payload: { geometry } });
       }, 250);
     },
-    [selectedId, updateAnnotation],
+    [selectedId, updateAnnotation, selectedAnn?.geometry, axisConvention],
   );
 
   const handleField = useCallback(
@@ -446,14 +645,18 @@ export function ThreeDWorkbench({
       annotationId: selectedId,
       payload: {
         geometry: {
-          type: "box_3d",
-          center: selectedBox.center,
-          size: selectedBox.size,
-          rotation: [0, 0, 0],
+          ...boxGeometryFromPsr(
+            {
+              center: selectedBox.center,
+              size: selectedBox.size,
+              rotation: [0, 0, 0],
+            },
+            geometryConvention(selectedAnn?.geometry, axisConvention),
+          ),
         },
       },
     });
-  }, [selectedId, selectedBox, updateAnnotation]);
+  }, [selectedId, selectedBox, selectedAnn?.geometry, axisConvention, updateAnnotation]);
 
   // v0.13.8 · 自动贴合:把选中框按点云 box-local AABB 收尺寸 / 贴地 / 朝向。
   // 共用 helper:拿当前点云 positions + 选中框 PSR → 跑 transform → 立即提交 + 同步表单。
@@ -473,16 +676,14 @@ export function ThreeDWorkbench({
       updateAnnotation.mutate({
         annotationId: selectedId,
         payload: {
-          geometry: {
-            type: "box_3d",
-            center: [next.center[0], next.center[1], next.center[2]],
-            size: [next.size[0], next.size[1], next.size[2]],
-            rotation: [next.rotation[0], next.rotation[1], next.rotation[2]],
-          },
+          geometry: boxGeometryFromPsr(
+            next,
+            geometryConvention(selectedAnn?.geometry, axisConvention),
+          ),
         },
       });
     },
-    [selectedId, selectedBox, selectedEditable, updateAnnotation],
+    [selectedId, selectedBox, selectedEditable, selectedAnn?.geometry, axisConvention, updateAnnotation],
   );
   const handleFitSize = useCallback(() => applyFit(fitSize), [applyFit]);
   const handleFitBottom = useCallback(() => applyFit(fitBottom), [applyFit]);
@@ -536,49 +737,178 @@ export function ThreeDWorkbench({
   const handlePlace = useCallback(
     (clientX: number, clientY: number) => {
       const scene = sceneRef.current;
-      if (!scene || !placeClass) return;
+      if (!scene || !boxPlaceClass) return;
       const ground = scene.placeOnGround(clientX, clientY);
       if (!ground) return;
       const [l, w, h] = DEFAULT_BOX_SIZE;
-      const geometry: Box3DGeometry = {
-        type: "box_3d",
-        center: [ground[0], ground[1], ground[2] + h / 2],
-        size: [l, w, h],
-        rotation: [0, 0, 0],
-      };
+      const geometry = boxGeometryFromPsr(
+        {
+          center: [ground[0], ground[1], ground[2] + h / 2],
+          size: [l, w, h],
+          rotation: [0, 0, 0],
+        },
+        axisConvention,
+      );
       createAnnotation.mutate(
         {
           annotation_type: "box_3d",
           tool_unit_id: LIDAR_TOOL_UNIT,
-          class_name: placeClass,
+          class_name: boxPlaceClass,
           geometry,
         },
         { onSuccess: (created) => onSelectBox(created.id) },
       );
       onSetThreeDTool("select"); // 单次放置后回到选择工具
     },
-    [placeClass, createAnnotation, onSelectBox, onSetThreeDTool],
+    [boxPlaceClass, axisConvention, createAnnotation, onSelectBox, onSetThreeDTool],
+  );
+
+  // v0.13.9 · 框选画框 (frustum 选点): 在 box 工具下按住拖出屏幕矩形 → 选中投影落在矩形内的真实
+  // 点 → 取其 world AABB 建框 (psrFromPoints)。用屏幕投影选点而非投地面平面 → 对物体高度/视角零
+  // 视差 (SUSTechPOINTS 范式)。拖动 < 阈值退化为旧的「点击放置固定框」(向后兼容)。
+  // 仍建议在俯视(BEV)下框, 框选体验最佳; 但本法不再依赖视角无视差性。
+  const handleBoxSelect = useCallback(
+    (a: { x: number; y: number }, b: { x: number; y: number }) => {
+      const scene = sceneRef.current;
+      if (!scene || !boxPlaceClass) return;
+      const selected = scene.selectPointsInScreenRect(a.x, a.y, b.x, b.y);
+      if (!selected) return; // 框内无点 → 不建框
+      const psr = psrFromPoints(selected);
+      const geometry = boxGeometryFromPsr(psr, axisConvention);
+      createAnnotation.mutate(
+        {
+          annotation_type: "box_3d",
+          tool_unit_id: LIDAR_TOOL_UNIT,
+          class_name: boxPlaceClass,
+          geometry,
+        },
+        { onSuccess: (created) => onSelectBox(created.id) },
+      );
+      onSetThreeDTool("select"); // 单次画框后回到选择工具
+    },
+    [boxPlaceClass, axisConvention, createAnnotation, onSelectBox, onSetThreeDTool],
+  );
+
+  const handlePointMaskSelect = useCallback(
+    (a: { x: number; y: number }, b: { x: number; y: number }) => {
+      const scene = sceneRef.current;
+      if (!scene || !pointMaskPlaceClass) return;
+      const selected = scene.selectPointMaskInScreenRect(a.x, a.y, b.x, b.y);
+      if (!selected) return;
+      const geometry: PointMaskGeometry = {
+        type: "point_mask_3d",
+        point_indices: selected.pointIndices,
+        convention_at_create: axisConvention,
+        decimate_stride: selected.decimateStride,
+        source_point_count: selected.sourcePointCount,
+      };
+      createAnnotation.mutate(
+        {
+          annotation_type: "point_mask_3d",
+          tool_unit_id: POINT_MASK_TOOL_UNIT,
+          class_name: pointMaskPlaceClass,
+          geometry,
+        },
+        { onSuccess: (created) => onSelectBox(created.id) },
+      );
+      onSetThreeDTool("select");
+    },
+    [pointMaskPlaceClass, axisConvention, createAnnotation, onSelectBox, onSetThreeDTool],
   );
 
   // mousedown 落点(像素): click 时若位移超阈值判为「转视角拖拽」, 不改选中/不放置。
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
   const DRAG_CLICK_TOL = 4; // px
+  // v0.13.9 · 框选拖拽起点(client px)与屏上预览矩形(相对 viewportWrap px)。
+  const boxSelectStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [isBoxSelecting, setIsBoxSelecting] = useState(false);
+  const [previewRect, setPreviewRect] = useState<{
+    l: number;
+    t: number;
+    w: number;
+    h: number;
+  } | null>(null);
 
   const handleViewportMouseDown = (e: React.MouseEvent) => {
     pointerDownRef.current = { x: e.clientX, y: e.clientY };
+    if (drawingSelection) {
+      // 框选: 禁 orbit, 记起点; 实际 move/up 走 window 监听(见下方 effect), 拖出视口也能收尾。
+      sceneRef.current?.setBoxSelecting(true);
+      boxSelectStartRef.current = { x: e.clientX, y: e.clientY };
+      setIsBoxSelecting(true);
+    }
   };
+
+  // v0.13.9 · 框选期 window 级 move/up: move 画预览矩形; up 收尾(拖动大 → 框选, 否则 → 点击放置)。
+  useEffect(() => {
+    if (!isBoxSelecting) return;
+    const onMove = (e: MouseEvent) => {
+      const start = boxSelectStartRef.current;
+      const wrap = viewportRef.current;
+      if (!start || !wrap) return;
+      const r = wrap.getBoundingClientRect();
+      setPreviewRect({
+        l: Math.min(start.x, e.clientX) - r.left,
+        t: Math.min(start.y, e.clientY) - r.top,
+        w: Math.abs(e.clientX - start.x),
+        h: Math.abs(e.clientY - start.y),
+      });
+    };
+    const onUp = (e: MouseEvent) => {
+      const start = boxSelectStartRef.current;
+      boxSelectStartRef.current = null;
+      sceneRef.current?.setBoxSelecting(false);
+      setIsBoxSelecting(false);
+      setPreviewRect(null);
+      if (!start) return;
+      const dist = Math.hypot(e.clientX - start.x, e.clientY - start.y);
+      if (dist <= DRAG_CLICK_TOL) {
+        if (placing) handlePlace(e.clientX, e.clientY); // 退化为点击放置
+      } else if (placing) {
+        handleBoxSelect(start, { x: e.clientX, y: e.clientY });
+      } else if (pointMasking) {
+        handlePointMaskSelect(start, { x: e.clientX, y: e.clientY });
+      }
+    };
+    // v0.13.12 · 拖拽期取消: Escape / 右键 → 丢弃这一笔(清起点+预览+scene 状态),
+    // 避免 preview 矩形挂着、或落进 up 收尾的全 false 分支被静默丢弃。
+    const cancel = () => {
+      boxSelectStartRef.current = null;
+      sceneRef.current?.setBoxSelecting(false);
+      setIsBoxSelecting(false);
+      setPreviewRect(null);
+    };
+    const onCancelKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") cancel();
+    };
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      cancel();
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("keydown", onCancelKey);
+    window.addEventListener("contextmenu", onContextMenu);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("keydown", onCancelKey);
+      window.removeEventListener("contextmenu", onContextMenu);
+    };
+  }, [isBoxSelecting, placing, pointMasking, handlePlace, handleBoxSelect, handlePointMaskSelect]);
 
   const handleViewportClick = (e: React.MouseEvent) => {
     // 拖拽 gizmo 结束的 click 不应改选中。
     if (sceneRef.current?.shouldIgnoreClick()) return;
+    // 放置/框选已全程由 mousedown→window mouseup 接管, click 不再处理放置。
+    if (drawingSelection) {
+      pointerDownRef.current = null;
+      return;
+    }
     // OrbitControls 转视角拖拽松手也会触发 click: 位移超阈值视为拖拽, 保持当前选中。
     const down = pointerDownRef.current;
     pointerDownRef.current = null;
     if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_CLICK_TOL) return;
-    if (placing) {
-      handlePlace(e.clientX, e.clientY);
-      return;
-    }
     onSelectBox(sceneRef.current?.pickBox(e.clientX, e.clientY) ?? null);
   };
 
@@ -586,8 +916,34 @@ export function ThreeDWorkbench({
     setPointSize(v);
     sceneRef.current?.setPointSize(v);
   };
+  const handleResetView = useCallback(() => {
+    sceneRef.current?.resetView();
+    setPointCloudViewMode("orbit");
+  }, []);
+  const handleBevView = useCallback(() => {
+    sceneRef.current?.bevView();
+    setPointCloudViewMode("bev");
+  }, []);
 
-  const cameras = useMemo(() => manifest?.cameras ?? [], [manifest?.cameras]);
+  // v0.13.11 · 相机列表的 extrinsic 在 hook 出口处归一化,下游 (frontCameraForward /
+  // cameraAnchor / projectPoints / loadCameraSample) 无感知 convention。
+  const cameras = useMemo(() => {
+    const raw = manifest?.cameras ?? [];
+    return raw.map((c) =>
+      c.calibration
+        ? {
+            ...c,
+            calibration: {
+              ...c.calibration,
+              extrinsic: applyConventionToExtrinsic(
+                c.calibration.extrinsic,
+                axisConvention,
+              ) as SensorCalibration["extrinsic"],
+            },
+          }
+        : c,
+    );
+  }, [manifest?.cameras, axisConvention]);
   // v0.13.7 · 相机按物理朝向分组(悬浮环绕):每个 anchor 一个定位容器,同朝向沿边堆叠。
   const cameraGroups = useMemo(() => {
     const groups = new Map<Anchor, typeof cameras>();
@@ -599,9 +955,25 @@ export function ThreeDWorkbench({
     }
     return [...groups.entries()];
   }, [cameras]);
-  const enlargedCam = useMemo(
-    () => cameras.find((c) => c.role === enlargedRole) ?? null,
+  const enlargedIndex = useMemo(
+    () => cameras.findIndex((c) => c.role === enlargedRole),
     [cameras, enlargedRole],
+  );
+  const enlargedCam = useMemo(
+    () => (enlargedIndex >= 0 ? cameras[enlargedIndex] : null),
+    [cameras, enlargedIndex],
+  );
+  const cycleEnlargedCamera = useCallback(
+    (dir: -1 | 1) => {
+      if (cameras.length === 0) return;
+      setEnlargedRole((prev) => {
+        const idx = cameras.findIndex((c) => c.role === prev);
+        const base = idx >= 0 ? idx : (dir > 0 ? -1 : 0);
+        const next = (base + dir + cameras.length) % cameras.length;
+        return cameras[next].role;
+      });
+    },
+    [cameras],
   );
   // v0.13.7 · resetView 默认视向跟随 front 相机光轴(健壮于任意 lidar 前向约定)。
   // loadPcd 的首次 frameView 在 await fetch 之后异步触发,本同步 effect 必先于其设好前方。
@@ -616,10 +988,17 @@ export function ThreeDWorkbench({
     if (!enlargedRole) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setEnlargedRole(null);
+      else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        cycleEnlargedCamera(-1);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        cycleEnlargedCamera(1);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [enlargedRole]);
+  }, [cycleEnlargedCamera, enlargedRole]);
   // v0.13.6 · 点云坐标(载帧后稳定);供相机视图建深度栅格。stats 变化即点云换帧。
   const pointPositions = useMemo(
     () => (stats ? (sceneRef.current?.getPointPositions() ?? null) : null),
@@ -665,6 +1044,10 @@ export function ThreeDWorkbench({
       cancelled = true;
     };
   }, [colorizeOn, cameras, stats]);
+
+  useEffect(() => {
+    sceneRef.current?.highlightPointMask(selectedPointMask?.point_indices ?? null);
+  }, [selectedPointMask?.point_indices, stats]);
 
   // v0.13.4 · 跨模态高亮集合:选中框 + 同 group_id 成员。3D 主视图仍按 selected 单框高亮,
   // overlay 按本集合高亮(为未来同组 2D 框成员预留;孤立框 group_id 为空时退化为仅选中本身)。
@@ -728,34 +1111,90 @@ export function ThreeDWorkbench({
         setDraftPsr(null);
         updateMutateRef.current({
           annotationId: selectedId,
-          payload: { geometry: { type: "box_3d", center, size, rotation } },
+          payload: {
+            geometry: boxGeometryFromPsr(
+              { center, size, rotation },
+              geometryConvention(selectedAnn?.geometry, axisConvention),
+            ),
+          },
         });
       } else {
         setDraftPsr({ id: selectedId, psr });
       }
     },
-    [selectedId],
+    [selectedId, selectedAnn?.geometry, axisConvention],
   );
+
+  const handleReprojectSelectedToCurrentConvention = useCallback(() => {
+    if (!selectedId || !selectedBox || !selectedConventionMismatch || !selectedEditable) return;
+    const src = unapplyConventionToPsr(
+      {
+        center: selectedBox.center,
+        size: selectedBox.size,
+        rotation: selectedBox.rotation,
+      },
+      selectedConventionMismatch,
+    );
+    const next = applyConventionToPsr(src, axisConvention);
+    setForm(psrToForm(next));
+    updateAnnotation.mutate({
+      annotationId: selectedId,
+      payload: {
+        geometry: boxGeometryFromPsr(next, axisConvention),
+      },
+    });
+  }, [
+    selectedId,
+    selectedBox,
+    selectedConventionMismatch,
+    selectedEditable,
+    axisConvention,
+    updateAnnotation,
+  ]);
 
   return (
     <div className={styles.root}>
-      <div className={styles.viewportWrap}>
+      <div ref={viewportWrapRef} className={styles.viewportWrap}>
         <div
           ref={viewportRef}
-          className={placing ? `${styles.viewport} ${styles.placing}` : styles.viewport}
+          className={drawingSelection ? `${styles.viewport} ${styles.placing}` : styles.viewport}
           data-testid="pc-viewport"
           onMouseDown={handleViewportMouseDown}
           onClick={handleViewportClick}
         />
 
+        {/* v0.13.9 · 框选预览矩形(地面 footprint), 仅拖拽期出现, 不拦事件。 */}
+        {previewRect && (
+          <div
+            className={styles.boxSelectRect}
+            // eslint-disable-next-line no-restricted-syntax -- 框选预览矩形位置/尺寸是逐帧动态值, 经 CSS custom property 注入
+            style={
+              {
+                "--rect-l": `${previewRect.l}px`,
+                "--rect-t": `${previewRect.t}px`,
+                "--rect-w": `${previewRect.w}px`,
+                "--rect-h": `${previewRect.h}px`,
+              } as BoxSelectRectVars
+            }
+          />
+        )}
+
         {/* 控件浮条 */}
-        <div className={styles.controls}>
+        <div ref={controlsRef} className={styles.controls}>
           <button
             type="button"
             className={styles.btn}
-            onClick={() => sceneRef.current?.resetView()}
+            onClick={handleResetView}
           >
             重置视角
+          </button>
+          <button
+            type="button"
+            className={`${styles.btn} ${pointCloudViewMode === "bev" ? styles.btnActive : ""}`}
+            onClick={handleBevView}
+            aria-pressed={pointCloudViewMode === "bev"}
+          >
+            俯视
           </button>
           <label className={styles.sizeCtl}>
             点大小
@@ -788,45 +1227,23 @@ export function ThreeDWorkbench({
               </label>
             </>
           )}
-          {/* v0.13.8 · 选中且可编辑时显示贴合按钮组:Q 默认连击(收尺寸+贴地);
-              Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发,稀疏点云易反转故不进盲操。 */}
-          {selectedBox && selectedEditable && (
-            <div className={styles.fitGroup} role="group" aria-label="自动贴合">
-              <button
-                type="button"
-                className={styles.btn}
-                onClick={handleFitDefault}
-                title="贴合 (Q):收尺寸 + 贴地"
-              >
-                贴合
-              </button>
-              <button
-                type="button"
-                className={styles.btn}
-                onClick={handleFitSize}
-                title="只收尺寸 (Shift+Q)"
-              >
-                收尺寸
-              </button>
-              <button
-                type="button"
-                className={styles.btn}
-                onClick={handleFitBottom}
-                title="只贴地 (Alt+Q)"
-              >
-                贴地
-              </button>
-              <button
-                type="button"
-                className={styles.btn}
-                onClick={handleFitYaw}
-                title="贴朝向(实验):点云稀疏时主轴可能反转 180°"
-              >
-                朝向⚗
-              </button>
-            </div>
-          )}
         </div>
+
+        {conventionMismatches.length > 0 && (
+          <div className={styles.mismatchBanner}>
+            <span>
+              {conventionMismatches.length} 个 3D 标注创建时的坐标系与当前数据集不一致。
+            </span>
+            <button
+              type="button"
+              className={styles.btn}
+              disabled={!selectedConventionMismatch || !selectedEditable}
+              onClick={handleReprojectSelectedToCurrentConvention}
+            >
+              按当前约定重投影选中
+            </button>
+          </div>
+        )}
 
         {/* 状态条 */}
         <div className={styles.statusBar}>
@@ -840,8 +1257,12 @@ export function ThreeDWorkbench({
             </span>
           )}
           {boxes.length > 0 && <span>· {boxes.length} 框</span>}
+          {pointMasks.length > 0 && <span>· {pointMasks.length} 分割</span>}
           {placing && (
-            <span>· 点地面放置 {placeClass ?? ""} · V/Esc 取消</span>
+            <span>· 拖框选 / 点击放置 {boxPlaceClass ?? ""} · V/Esc 取消</span>
+          )}
+          {pointMasking && (
+            <span>· 拖框选生成分割 {pointMaskPlaceClass ?? ""} · V/Esc 取消</span>
           )}
           {selectedBox && (
             <span>
@@ -860,7 +1281,7 @@ export function ThreeDWorkbench({
         {selectedBox && form && (
           <div className={styles.editPanel}>
             <div className={styles.editTitle}>
-              {lidarClasses.length > 0 ? (
+              {boxClasses.length > 0 ? (
                 <select
                   className={styles.classSelect}
                   value={selectedClass ?? ""}
@@ -869,10 +1290,10 @@ export function ThreeDWorkbench({
                   onChange={(e) => handleChangeClass(e.target.value)}
                 >
                   {/* 当前类别若不在配置集合内(历史数据)仍可见,不丢选中项 */}
-                  {selectedClass && !lidarClasses.includes(selectedClass) && (
+                  {selectedClass && !boxClasses.includes(selectedClass) && (
                     <option value={selectedClass}>{selectedClass}</option>
                   )}
-                  {lidarClasses.map((c) => (
+                  {boxClasses.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
@@ -899,6 +1320,44 @@ export function ThreeDWorkbench({
                   ? "已锁定 · 点「已锁定」解锁后可编辑"
                   : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
             </div>
+            {/* v0.13.8 · 选中框自动贴合:Q 默认连击(收尺寸+贴地);
+                Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发。 */}
+            {selectedEditable && (
+              <div className={styles.fitGroup} role="group" aria-label="自动贴合">
+                <button
+                  type="button"
+                  className={styles.btn}
+                  onClick={handleFitDefault}
+                  title="贴合 (Q):收尺寸 + 贴地"
+                >
+                  贴合
+                </button>
+                <button
+                  type="button"
+                  className={styles.btn}
+                  onClick={handleFitSize}
+                  title="只收尺寸 (Shift+Q)"
+                >
+                  收尺寸
+                </button>
+                <button
+                  type="button"
+                  className={styles.btn}
+                  onClick={handleFitBottom}
+                  title="只贴地 (Alt+Q)"
+                >
+                  贴地
+                </button>
+                <button
+                  type="button"
+                  className={styles.btn}
+                  onClick={handleFitYaw}
+                  title="贴朝向(实验):点云稀疏时主轴可能反转 180°"
+                >
+                  朝向⚗
+                </button>
+              </div>
+            )}
             {PSR_GROUPS.map((g) => (
               <div key={g.label}>
                 <div className={styles.editGroupLabelRow}>
@@ -944,18 +1403,17 @@ export function ThreeDWorkbench({
         )}
 
         {/* v0.13.7 · 三正交视图精修浮层(右下):选中框才浮出,可收成小标签。 */}
-        {triSelected && !triCollapsed && (
-          <div className={styles.triFloat}>
-            <div className={styles.triFloatHeader}>
-              <span>三视图精修</span>
-              <button
-                type="button"
-                className={styles.floatToggleBtn}
-                onClick={() => setTriCollapsed(true)}
-              >
-                收起
-              </button>
-            </div>
+        {triSelected && !triViewFloat.collapsed && (
+          <FloatingPanelShell
+            title="三视图精修"
+            position={triFloatPosition}
+            onPositionChange={updateTriViewFloat}
+            onCollapse={() => updateTriViewFloat({ collapsed: true })}
+            variant="no-merge"
+            minSize={{ w: 200, h: 240 }}
+            maxSize={{ w: 480, h: 720 }}
+            bounds={triFloatBounds}
+          >
             <TriViewPanel
               selected={triSelected}
               getPointsGeometry={getPointsGeometry}
@@ -964,13 +1422,13 @@ export function ThreeDWorkbench({
               pointSize={pointSize}
               onEditPsr={handleEditPsr}
             />
-          </div>
+          </FloatingPanelShell>
         )}
-        {triSelected && triCollapsed && (
+        {triSelected && triViewFloat.collapsed && (
           <button
             type="button"
             className={styles.triFloatTab}
-            onClick={() => setTriCollapsed(false)}
+            onClick={() => updateTriViewFloat({ collapsed: false })}
           >
             三视图 ▸
           </button>
@@ -1019,6 +1477,26 @@ export function ThreeDWorkbench({
               >
                 关闭 ✕
               </button>
+              {cameras.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    className={`${styles.camModalSwitch} ${styles.camModalPrev}`}
+                    onClick={() => cycleEnlargedCamera(-1)}
+                    title="上一视角"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.camModalSwitch} ${styles.camModalNext}`}
+                    onClick={() => cycleEnlargedCamera(1)}
+                    title="下一视角"
+                  >
+                    ›
+                  </button>
+                </>
+              )}
               <CameraProjectionView
                 name={enlargedCam.name}
                 imageUrl={enlargedCam.image_url}

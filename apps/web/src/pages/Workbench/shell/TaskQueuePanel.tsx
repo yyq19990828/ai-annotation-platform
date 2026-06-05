@@ -40,6 +40,11 @@ interface TaskQueuePanelProps {
   /** 受控宽度（仅 open=true 生效）。 */
   width: number;
   onResize: (w: number) => void;
+  detachedQueue?: boolean;
+  detachedPalette?: boolean;
+  onDetachQueue?: () => void;
+  onDetachPalette?: () => void;
+  floatingSection?: "queue" | "palette";
   /**
    * v0.13.3-5 · 左栏色板默认是只读图例(2D 落框时弹窗/数字键选类)。点云 3D 台没有落框弹窗,
    * 放置新框直接取 activeClass,故 3D 下让色板可点选(classPickable),点击即设 activeClass。
@@ -180,11 +185,19 @@ export function TaskQueuePanel({
   batches, selectedBatchId, onSelectBatch,
   totalCount, isOwner, onGoToBatchSettings,
   width, onResize,
+  detachedQueue = false,
+  detachedPalette = false,
+  onDetachQueue,
+  onDetachPalette,
+  floatingSection,
   classPickable = false, onPickClass,
 }: TaskQueuePanelProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const parentRef = useRef<HTMLDivElement>(null);
   const [paletteHeight, setPaletteHeight] = useState(readPaletteHeight);
+  const floating = Boolean(floatingSection);
+  const showQueue = floatingSection ? floatingSection === "queue" : !detachedQueue;
+  const showPalette = floatingSection ? floatingSection === "palette" : !detachedPalette;
 
   const onPaletteResize = useCallback((next: number) => {
     const clamped = Math.max(PALETTE_HEIGHT_MIN, Math.min(PALETTE_HEIGHT_MAX, Math.round(next)));
@@ -214,6 +227,7 @@ export function TaskQueuePanel({
 
   // 滚到接近末尾时触发加载下一页
   useEffect(() => {
+    if (!showQueue) return;
     const virtualItems = virtualizer.getVirtualItems();
     if (!virtualItems.length) return;
     const last = virtualItems[virtualItems.length - 1];
@@ -221,160 +235,202 @@ export function TaskQueuePanel({
       onFetchNextPage();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [virtualizer.getVirtualItems(), hasNextPage, isFetchingNextPage]);
+  }, [showQueue, virtualizer.getVirtualItems(), hasNextPage, isFetchingNextPage]);
 
   useEffect(() => {
+    if (!showQueue) return;
     if (!open || activeTaskIndex < 0) return;
     const frame = window.requestAnimationFrame(() => {
       virtualizer.scrollToIndex(activeTaskIndex, { align: "center" });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [open, activeTaskIndex, virtualizer]);
+  }, [open, showQueue, activeTaskIndex, virtualizer]);
 
   useEffect(() => {
     rootRef.current?.style.setProperty("--left-palette-height", `${paletteHeight}px`);
   }, [paletteHeight]);
 
-  if (!open) {
+  if (!open || (!showQueue && !showPalette)) {
     return null;
   }
 
   return (
-    <div ref={rootRef} className={styles.root}>
-      {batches && batches.length > 0 && onSelectBatch && (
-        <div className={styles.batchFilter}>
-          <select
-            value={selectedBatchId ?? ""}
-            onChange={(e) => onSelectBatch(e.target.value || null)}
-            className={styles.batchSelect}
-          >
-            <option value="">全部批次（{batches.length}）</option>
-            {batches.map((b) => {
-              const statusTag =
-                b.status === "annotating" ? "标注中"
-                : b.status === "active" ? "未开始"
-                : b.status === "rejected" ? "已驳回"
-                : b.status === "draft" ? "草稿"
-                : b.status;
-              return (
-                <option key={b.id} value={b.id}>
-                  {b.name} · {statusTag} ({b.completed_tasks}/{b.total_tasks})
-                </option>
-              );
-            })}
-          </select>
-        </div>
+    <div
+      ref={rootRef}
+      className={cn(
+        styles.root,
+        floating && styles.rootFloating,
+        (showQueue !== showPalette) && styles.rootSingleSection,
       )}
-
-      {/* v0.6.8 B-15：owner 视角且无任何批次时给出明确入口，避免误以为「100 条就是全部」 */}
-      {isOwner && (!batches || batches.length === 0) && onGoToBatchSettings && (
-        <div className={cn(styles.batchHint, styles.ownerBatchHint)}>
-          <span>未分批次 · 任务统一在「未归类」</span>
-          <Button variant="ghost" size="sm" onClick={onGoToBatchSettings} className={styles.batchSettingsButton}>
-            前往分批
-          </Button>
-        </div>
-      )}
-
-      {/* v0.7.1 B-15：非 owner 视角且未分到批次 → 显式提示，避免误以为「列表无尽，但只看见 100」 */}
-      {!isOwner && (!batches || batches.length === 0) && (
-        <div className={styles.batchHint}>
-          暂未被分派到批次 · 联系项目管理员分配
-        </div>
-      )}
-
-      <div className={styles.queueHeader}>
-        <div className={styles.queueTitle}>
-          任务队列
-          {selectedBatchId && batches && (
-            <span className={styles.queueSubtitle}>
-              · 当前批次
-            </span>
-          )}
-          {rejectedCount > 0 && (
-            <span
-              title={`${rejectedCount} 个任务被退回，需重做`}
-              className={styles.rejectedBadge}
-            >
-              <Icon name="warning" size={10} />
-              {rejectedCount} 待重做
-            </span>
-          )}
-        </div>
-        <span
-          className={cn("mono", styles.queueCount)}
-          title={
-            hasNextPage
-              ? `已加载 ${tasks.length} / 共 ${totalCount ?? tasks.length}（滚动加载更多）`
-              : `共 ${totalCount ?? tasks.length}`
-          }
-        >
-          {taskIdx + 1} / {tasks.length}
-          {totalCount != null && totalCount > tasks.length && (
-            <span className={styles.totalCount}> · 共 {totalCount}</span>
-          )}
-        </span>
-      </div>
-
-      <div ref={parentRef} className={styles.scrollArea}>
-        <VirtualInner height={virtualizer.getTotalSize()}>
-          {virtualizer.getVirtualItems().map((vItem) => {
-            const t = sortedTasks[vItem.index];
-            if (!t) return null;
-            return (
-              <VirtualRow
-                key={vItem.key}
-                start={vItem.start}
-                dataIndex={vItem.index}
-                measureElement={virtualizer.measureElement}
+    >
+      {showQueue && (
+        <>
+          {batches && batches.length > 0 && onSelectBatch && (
+            <div className={styles.batchFilter}>
+              <select
+                value={selectedBatchId ?? ""}
+                onChange={(e) => onSelectBatch(e.target.value || null)}
+                className={styles.batchSelect}
               >
-                <TaskItem
-                  task={t}
-                  isActive={t.id === taskId}
-                  onSelect={() => onSelectTask(t.id)}
-                />
-              </VirtualRow>
-            );
-          })}
-          {isFetchingNextPage && (
-            <VirtualRow start={virtualizer.getTotalSize()}>
-              <div className={styles.loadingMore}>加载更多...</div>
-            </VirtualRow>
+                <option value="">全部批次（{batches.length}）</option>
+                {batches.map((b) => {
+                  const statusTag =
+                    b.status === "annotating" ? "标注中"
+                    : b.status === "active" ? "未开始"
+                    : b.status === "rejected" ? "已驳回"
+                    : b.status === "draft" ? "草稿"
+                    : b.status;
+                  return (
+                    <option key={b.id} value={b.id}>
+                      {b.name} · {statusTag} ({b.completed_tasks}/{b.total_tasks})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
           )}
-        </VirtualInner>
-      </div>
 
-      <div className={styles.palettePanel}>
-        <ResizeHandle
-          side="top"
-          width={paletteHeight}
-          onResize={onPaletteResize}
-          min={PALETTE_HEIGHT_MIN}
-          max={PALETTE_HEIGHT_MAX}
-          resetTo={PALETTE_HEIGHT_DEFAULT}
-        />
-        <div className={styles.paletteTitle}>
-          <span className={styles.paletteTool}>
-            <Icon name={toolIcon} size={12} />
-            {toolLabel}
-          </span>
-          <span className={styles.paletteCount}>· {classes.length} 个类别</span>
-        </div>
-        <div className={styles.paletteHint}>
-          {classPickable ? "点击选择放置类别" : "数字/字母键直接落框时使用"}
-        </div>
-        <ClassPalette
-          classes={classes}
-          classesConfig={classesConfig}
-          recent={recentClasses}
-          activeClass={activeClass}
-          enableSearch={classes.length > 9}
-          onPick={onPickClass}
-          readOnly={!classPickable}
-        />
-      </div>
+          {/* v0.6.8 B-15：owner 视角且无任何批次时给出明确入口，避免误以为「100 条就是全部」 */}
+          {isOwner && (!batches || batches.length === 0) && onGoToBatchSettings && (
+            <div className={cn(styles.batchHint, styles.ownerBatchHint)}>
+              <span>未分批次 · 任务统一在「未归类」</span>
+              <Button variant="ghost" size="sm" onClick={onGoToBatchSettings} className={styles.batchSettingsButton}>
+                前往分批
+              </Button>
+            </div>
+          )}
 
-      <ResizeHandle side="right" width={width} onResize={onResize} min={200} max={560} />
+          {/* v0.7.1 B-15：非 owner 视角且未分到批次 → 显式提示，避免误以为「列表无尽，但只看见 100」 */}
+          {!isOwner && (!batches || batches.length === 0) && (
+            <div className={styles.batchHint}>
+              暂未被分派到批次 · 联系项目管理员分配
+            </div>
+          )}
+
+          <div className={styles.queueHeader}>
+            <div className={styles.queueTitle}>
+              任务队列
+              {selectedBatchId && batches && (
+                <span className={styles.queueSubtitle}>
+                  · 当前批次
+                </span>
+              )}
+              {rejectedCount > 0 && (
+                <span
+                  title={`${rejectedCount} 个任务被退回，需重做`}
+                  className={styles.rejectedBadge}
+                >
+                  <Icon name="warning" size={10} />
+                  {rejectedCount} 待重做
+                </span>
+              )}
+            </div>
+            <div className={styles.queueActions}>
+              <span
+                className={cn("mono", styles.queueCount)}
+                title={
+                  hasNextPage
+                    ? `已加载 ${tasks.length} / 共 ${totalCount ?? tasks.length}（滚动加载更多）`
+                    : `共 ${totalCount ?? tasks.length}`
+                }
+              >
+                {taskIdx + 1} / {tasks.length}
+                {totalCount != null && totalCount > tasks.length && (
+                  <span className={styles.totalCount}> · 共 {totalCount}</span>
+                )}
+              </span>
+              {onDetachQueue && !floating && (
+                <button
+                  type="button"
+                  className={styles.detachButton}
+                  onClick={onDetachQueue}
+                  title="分离任务队列"
+                  aria-label="分离任务队列"
+                >
+                  <Icon name="pictureInPicture2" size={13} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div ref={parentRef} className={styles.scrollArea}>
+            <VirtualInner height={virtualizer.getTotalSize()}>
+              {virtualizer.getVirtualItems().map((vItem) => {
+                const t = sortedTasks[vItem.index];
+                if (!t) return null;
+                return (
+                  <VirtualRow
+                    key={vItem.key}
+                    start={vItem.start}
+                    dataIndex={vItem.index}
+                    measureElement={virtualizer.measureElement}
+                  >
+                    <TaskItem
+                      task={t}
+                      isActive={t.id === taskId}
+                      onSelect={() => onSelectTask(t.id)}
+                    />
+                  </VirtualRow>
+                );
+              })}
+              {isFetchingNextPage && (
+                <VirtualRow start={virtualizer.getTotalSize()}>
+                  <div className={styles.loadingMore}>加载更多...</div>
+                </VirtualRow>
+              )}
+            </VirtualInner>
+          </div>
+        </>
+      )}
+
+      {showPalette && (
+        <div className={cn(styles.palettePanel, !showQueue && styles.palettePanelOnly)}>
+          {!floating && showQueue && (
+            <ResizeHandle
+              side="top"
+              width={paletteHeight}
+              onResize={onPaletteResize}
+              min={PALETTE_HEIGHT_MIN}
+              max={PALETTE_HEIGHT_MAX}
+              resetTo={PALETTE_HEIGHT_DEFAULT}
+            />
+          )}
+          <div className={styles.paletteTitleRow}>
+            <div className={styles.paletteTitle}>
+              <span className={styles.paletteTool}>
+                <Icon name={toolIcon} size={12} />
+                {toolLabel}
+              </span>
+              <span className={styles.paletteCount}>· {classes.length} 个类别</span>
+            </div>
+            {onDetachPalette && !floating && (
+              <button
+                type="button"
+                className={styles.detachButton}
+                onClick={onDetachPalette}
+                title="分离类别面板"
+                aria-label="分离类别面板"
+              >
+                <Icon name="pictureInPicture2" size={13} />
+              </button>
+            )}
+          </div>
+          <div className={styles.paletteHint}>
+            {classPickable ? "点击选择放置类别" : "数字/字母键直接落框时使用"}
+          </div>
+          <ClassPalette
+            classes={classes}
+            classesConfig={classesConfig}
+            recent={recentClasses}
+            activeClass={activeClass}
+            enableSearch={classes.length > 9}
+            onPick={onPickClass}
+            readOnly={!classPickable}
+          />
+        </div>
+      )}
+
+      {!floating && <ResizeHandle side="right" width={width} onResize={onResize} min={200} max={560} />}
     </div>
   );
 }

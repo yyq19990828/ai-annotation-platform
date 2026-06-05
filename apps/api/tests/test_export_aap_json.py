@@ -25,6 +25,7 @@ from app.db.models.task_batch import TaskBatch
 from app.schemas.aap_json import AAPTaskBlock, AAPTaskMatch
 from app.services.display_id import next_display_id
 from app.services.export import ExportService
+from tests.factory import create_project
 
 pytestmark = pytest.mark.asyncio
 
@@ -182,6 +183,86 @@ async def test_export_aap_json_empty_project(
     body = json.loads(await ExportService(db_session).export_aap_json(project.id))
     assert body["schema_version"] == "1.2"
     assert body["tasks"] == []
+
+
+async def test_export_aap_json_axis_frame_source_unapplies_box_3d(
+    super_admin,
+    db_session: AsyncSession,
+):
+    user, _ = super_admin
+    project = await create_project(
+        db_session,
+        owner_id=user.id,
+        type_key="lidar",
+        type_label="点云检测",
+        classes=["car"],
+    )
+    project.data_type = "lidar"
+    ds = Dataset(
+        display_id=f"DS-AAP-{uuid.uuid4().hex[:6]}",
+        name="aap-lidar",
+        data_type="point_cloud",
+        created_by=user.id,
+        metadata_={"axis_convention": "apollo"},
+    )
+    db_session.add(ds)
+    await db_session.flush()
+    item = DatasetItem(
+        dataset_id=ds.id,
+        file_name="000001.pcd",
+        file_path="aap-lidar/lidar/000001.pcd",
+        file_type="point_cloud",
+    )
+    db_session.add(item)
+    await db_session.flush()
+    task = Task(
+        project_id=project.id,
+        dataset_item_id=item.id,
+        display_id=f"T-AAP-{uuid.uuid4().hex[:6]}",
+        file_name="000001.pcd",
+        file_path=item.file_path,
+        file_type="point_cloud",
+        status="pending",
+    )
+    db_session.add(task)
+    await db_session.flush()
+    ann = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        source="manual",
+        annotation_type="box_3d",
+        tool_unit_id="lidar_box_3d",
+        class_name="car",
+        geometry={
+            "type": "box_3d",
+            "center": [0, 1, 0],
+            "size": [4, 2, 1],
+            "rotation": [0, 0, 0],
+            "convention_at_create": "apollo",
+        },
+    )
+    db_session.add(ann)
+    await db_session.flush()
+
+    iso = json.loads(await ExportService(db_session).export_aap_json(project.id))
+    source = json.loads(
+        await ExportService(db_session).export_aap_json(
+            project.id,
+            axis_frame="source",
+        )
+    )
+
+    iso_task = iso["tasks"][0]
+    source_task = source["tasks"][0]
+    assert iso_task["media_type"] == "lidar"
+    assert iso_task["annotations"][0]["geometry"]["center"] == [0, 1, 0]
+    source_geometry = source_task["annotations"][0]["geometry"]
+    assert source_task["media_type"] == "lidar"
+    assert source_geometry["center"] == pytest.approx([-1, 0, 0])
+    assert source_geometry["size"] == [4, 2, 1]
+    assert source_geometry["axis_frame"] == "source"
+    assert source_geometry["axis_convention"] == "apollo"
 
 
 async def test_export_aap_json_round_trip_after_external_import(

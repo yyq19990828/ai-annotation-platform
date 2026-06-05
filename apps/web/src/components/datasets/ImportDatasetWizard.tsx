@@ -20,9 +20,11 @@ import {
   type StorageConnectionFormValues,
 } from "@/components/connections/StorageConnectionsPanel";
 import { datasetsApi } from "@/api/datasets";
+import { AxisConventionPicker } from "@/components/datasets/AxisConventionPicker";
 import { putWithProgress, runUploadQueue, type QueueItem } from "@/utils/uploadQueue";
 import type { DatasetResponse } from "@/api/datasets";
 import type { AsyncJob } from "@/api/asyncJobs";
+import type { LidarAxisConvention } from "@/pages/Workbench/stages/three-d/geometry/axisConvention";
 import styles from "./ImportDatasetWizard.module.css";
 
 type Step = 1 | 2 | 3;
@@ -90,6 +92,7 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
   const [nameTouched, setNameTouched] = useState(false);
   const [description, setDescription] = useState("");
   const [dataType, setDataType] = useState("image");
+  const [axisConvention, setAxisConvention] = useState<LidarAxisConvention>("iso_8855");
   const [files, setFiles] = useState<File[]>([]);
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [zipProgress, setZipProgress] = useState(0);
@@ -116,6 +119,7 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
       setNameTouched(false);
       setDescription("");
       setDataType("image");
+      setAxisConvention("iso_8855");
       setFiles([]);
       setZipFile(null);
       setZipProgress(0);
@@ -183,6 +187,7 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
         name: trimmedName,
         description: description.trim() || undefined,
         data_type: dataType,
+        axis_convention: dataType === "point_cloud" ? axisConvention : undefined,
       });
       setCreated(dsResp);
       return dsResp.id;
@@ -336,6 +341,8 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
           setName={handleSetName}
           setDescription={setDescription}
           setDataType={setDataType}
+          axisConvention={axisConvention}
+          setAxisConvention={setAxisConvention}
           nameValid={nameValid}
         />
       )}
@@ -480,6 +487,8 @@ function Step1({
   setName,
   setDescription,
   setDataType,
+  axisConvention,
+  setAxisConvention,
   nameValid,
 }: {
   name: string;
@@ -488,6 +497,8 @@ function Step1({
   setName: (v: string) => void;
   setDescription: (v: string) => void;
   setDataType: (v: string) => void;
+  axisConvention: LidarAxisConvention;
+  setAxisConvention: (v: LidarAxisConvention) => void;
   nameValid: boolean;
 }) {
   return (
@@ -530,6 +541,15 @@ function Step1({
           })}
         </div>
       </div>
+      {dataType === "point_cloud" && (
+        <div>
+          <label className={styles.label}>LiDAR 坐标系约定</label>
+          <AxisConventionPicker
+            value={axisConvention}
+            onChange={setAxisConvention}
+          />
+        </div>
+      )}
     </div>
   );
 }

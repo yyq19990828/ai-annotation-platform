@@ -2,7 +2,13 @@ import { describe, it, expect } from "vitest";
 
 import type { Psr } from "./triview";
 import { MIN_SIZE } from "./triview";
-import { fitSize, fitBottom, fitYaw, fitSizeAndBottom } from "./autofit";
+import {
+  fitSize,
+  fitBottom,
+  fitYaw,
+  fitSizeAndBottom,
+  psrFromPoints,
+} from "./autofit";
 
 /* ──────────────────────────────────────────────────────────────────────
  * v0.13.8 · autofit 纯几何单测。合成数据 + 手算预期 + toBeCloseTo 浮点比较。
@@ -314,6 +320,36 @@ describe("fitSizeAndBottom", () => {
     expect(combined.rotation[0]).toBeCloseTo(stepwise.rotation[0]);
     expect(combined.rotation[1]).toBeCloseTo(stepwise.rotation[1]);
     expect(combined.rotation[2]).toBeCloseTo(stepwise.rotation[2]);
+  });
+});
+
+describe("psrFromPoints · 选中点 AABB → 轴对齐 PSR (框选选点)", () => {
+  it("center = AABB 中心; size = 跨度 + 2×padding; rotation = 0", () => {
+    // 点云 XY∈[9,11]×[19.5,20.5] z∈[1.0,2.6] (跨度 2,1,1.6), 中心 (10,20,1.8)。
+    const pts = gridPoints(9, 11, 19.5, 20.5, 1.0, 2.6, 4, 3, 5);
+    const out = psrFromPoints(pts, 0.05);
+    expect(out.center[0]).toBeCloseTo(10);
+    expect(out.center[1]).toBeCloseTo(20);
+    expect(out.center[2]).toBeCloseTo(1.8); // (1.0+2.6)/2
+    expect(out.size[0]).toBeCloseTo(2 + 0.1, 5); // 跨度 2 + 2×0.05
+    expect(out.size[1]).toBeCloseTo(1 + 0.1, 5);
+    expect(out.size[2]).toBeCloseTo(1.6 + 0.1, 5);
+    expect(out.rotation).toEqual([0, 0, 0]);
+  });
+
+  it("单点 → 退化为 MIN_SIZE 立方体, 中心即该点", () => {
+    const out = psrFromPoints(new Float32Array([3, -4, 5]), 0);
+    expect(out.center).toEqual([3, -4, 5]);
+    expect(out.size[0]).toBeCloseTo(MIN_SIZE);
+    expect(out.size[1]).toBeCloseTo(MIN_SIZE);
+    expect(out.size[2]).toBeCloseTo(MIN_SIZE);
+  });
+
+  it("某轴近共面 (跨度≈0) + padding=0 → 该轴 size clamp MIN_SIZE", () => {
+    const pts = gridPoints(-1, 1, -1, 1, 0, 0, 4, 4, 1); // z 全 0
+    const out = psrFromPoints(pts, 0);
+    expect(out.size[0]).toBeCloseTo(2, 5);
+    expect(out.size[2]).toBeCloseTo(MIN_SIZE, 5);
   });
 });
 

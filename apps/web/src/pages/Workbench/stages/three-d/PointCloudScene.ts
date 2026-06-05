@@ -10,6 +10,11 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { PCDLoader } from "three/examples/jsm/loaders/PCDLoader.js";
 
+import {
+  applyConventionToPositions,
+  type LidarAxisConvention,
+} from "./geometry/axisConvention";
+
 import { estimateGroundZ } from "./geometry/ground";
 
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
@@ -17,11 +22,14 @@ const DECIMATE_THRESHOLD = 500_000;
 
 // 选中框高亮色(线框)。未选中用类别色。
 const SELECTED_EDGE_COLOR = 0xffd54a;
+const TRANSFORM_SIZE_MIN = 0.35;
+const TRANSFORM_SIZE_MAX = 1.15;
 
 export interface PointCloudStats {
   totalPoints: number;
   renderedPoints: number;
   decimated: boolean;
+  decimateStride: number;
 }
 
 /** v0.13.3 · 渲染层用的 3D 框输入(PSR + 类别色 + 选中态),由 React 从标注派生。 */
@@ -42,6 +50,12 @@ export interface BoxPsr {
   rotation: [number, number, number];
 }
 
+export interface PointMaskSelection {
+  pointIndices: number[];
+  decimateStride: number;
+  sourcePointCount: number;
+}
+
 type TransformMode = "translate" | "rotate" | "scale";
 
 export class PointCloudScene {
@@ -50,6 +64,8 @@ export class PointCloudScene {
   private camera: THREE.PerspectiveCamera;
   private controls: OrbitControls;
   private points: THREE.Points | null = null;
+  private pointIndexStride = 1;
+  private sourcePointCount = 0;
   // v0.13.6 · 载帧时存的原色(高度色带),相机上色关闭时还原。
   private baseColors: Float32Array | null = null;
   private raf = 0;
@@ -74,6 +90,11 @@ export class PointCloudScene {
 
   // v0.13.3 · 估计的地面高度 z(低分位,见 estimateGroundZ),放置新框时落在此平面上。
   private groundZ = 0;
+
+  // 主视图左下角方向辅助器:同一个 renderer 的小 viewport,跟随主相机旋转。
+  private readonly axisScene = new THREE.Scene();
+  private readonly axisCamera = new THREE.PerspectiveCamera(35, 1, 0.1, 20);
+  private readonly axisGroup = new THREE.Group();
 
   // v0.13.3 · 选中框拖拽编辑(平移/yaw/缩放)。gizmo 挂 getHelper() 到场景。
   private readonly transform: TransformControls;
@@ -100,6 +121,7 @@ export class PointCloudScene {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.1;
+    this.setOrbitMouseMode("orbit");
 
     // 网格地平面参考(xy 平面)。
     const grid = new THREE.GridHelper(100, 50, 0x2a2f3a, 0x1a1d24);
@@ -107,6 +129,7 @@ export class PointCloudScene {
     this.scene.add(grid);
 
     this.scene.add(this.boxLayer);
+    this.initAxisGizmo();
 
     // 变换 gizmo:在框 local 空间编辑(缩放/旋转沿框自身轴)。
     this.transform = new TransformControls(this.camera, this.renderer.domElement);
@@ -128,11 +151,135 @@ export class PointCloudScene {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.animate);
     this.controls.update();
+    this.updateTransformSize();
     this.renderer.render(this.scene, this.camera);
+    this.renderAxisGizmo();
   };
 
-  /** 加载 PCD 并渲染,返回统计;失败 throw。 */
-  async loadPcd(url: string): Promise<PointCloudStats> {
+  private initAxisGizmo() {
+    this.axisScene.add(this.axisGroup);
+    const axes: Array<{
+      label: "X" | "Y" | "Z";
+      dir: THREE.Vector3;
+      color: number;
+    }> = [
+      { label: "X", dir: new THREE.Vector3(1, 0, 0), color: 0xff5c68 },
+      { label: "Y", dir: new THREE.Vector3(0, 1, 0), color: 0x39e98a },
+      { label: "Z", dir: new THREE.Vector3(0, 0, 1), color: 0x44a6ff },
+    ];
+    for (const axis of axes) {
+      const arrow = new THREE.ArrowHelper(
+        axis.dir,
+        new THREE.Vector3(0, 0, 0),
+        1.18,
+        axis.color,
+        0.22,
+        0.1,
+      );
+      this.axisGroup.add(arrow);
+      const label = this.createAxisLabel(axis.label, axis.color);
+      label.position.copy(axis.dir).multiplyScalar(1.48);
+      this.axisGroup.add(label);
+    }
+    const ring = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints(
+        Array.from({ length: 48 }, (_, i) => {
+          const t = (i / 48) * Math.PI * 2;
+          return new THREE.Vector3(Math.cos(t) * 1.42, Math.sin(t) * 1.42, 0);
+        }),
+      ),
+      new THREE.LineBasicMaterial({
+        color: 0x44a6ff,
+        transparent: true,
+        opacity: 0.22,
+        depthTest: false,
+      }),
+    );
+    this.axisGroup.add(ring);
+  }
+
+  private createAxisLabel(label: string, color: number) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.font = "700 72px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.shadowColor = "rgba(0, 0, 0, 0.75)";
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = `#${new THREE.Color(color).getHexString()}`;
+      ctx.fillText(label, canvas.width / 2, canvas.height / 2);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(0.82, 0.82, 0.82);
+    return sprite;
+  }
+
+  private renderAxisGizmo() {
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    if (!w || !h) return;
+    const size = Math.min(128, Math.max(96, Math.floor(Math.min(w, h) * 0.18)));
+    const margin = 14;
+    const offset = new THREE.Vector3().copy(this.camera.position).sub(this.controls.target);
+    if (offset.lengthSq() < 1e-6) offset.set(2, -3, 2);
+    this.axisCamera.position.copy(offset.normalize().multiplyScalar(5));
+    this.axisCamera.up.copy(this.camera.up);
+    this.axisCamera.lookAt(0, 0, 0);
+    this.axisCamera.updateProjectionMatrix();
+
+    const r = this.renderer;
+    const prevAutoClear = r.autoClear;
+    r.autoClear = false;
+    r.clearDepth();
+    try {
+      r.setScissorTest(true);
+      r.setViewport(margin, margin, size, size);
+      r.setScissor(margin, margin, size, size);
+      r.render(this.axisScene, this.axisCamera);
+    } finally {
+      r.setScissorTest(false);
+      r.setViewport(0, 0, w, h);
+      r.autoClear = prevAutoClear;
+    }
+  }
+
+  private updateTransformSize() {
+    const obj = this.transform.object;
+    if (!obj) return;
+    const maxDim = Math.max(Math.abs(obj.scale.x), Math.abs(obj.scale.y), Math.abs(obj.scale.z), 0.5);
+    const dist = this.camera.position.distanceTo(obj.position);
+    const size = THREE.MathUtils.clamp(
+      (maxDim / Math.max(dist, 0.001)) * 4.8,
+      TRANSFORM_SIZE_MIN,
+      TRANSFORM_SIZE_MAX,
+    );
+    this.transform.setSize(size);
+  }
+
+  /**
+   * 加载 PCD 并渲染,返回统计;失败 throw。
+   *
+   * v0.13.11 · convention 用于把 src 系下的 lidar 点云就地旋转到 ISO 8855
+   * (+X 前 / +Y 左 / +Z 上),下游 (色带 / robust frame / groundZ / autofit /
+   * cameraAnchor / projectPoints) 全部在 ISO 系下工作。默认 iso_8855 = identity,
+   * 与历史行为完全一致。
+   */
+  async loadPcd(
+    url: string,
+    convention: LidarAxisConvention = "iso_8855",
+  ): Promise<PointCloudStats> {
     const loader = new PCDLoader();
     const loaded = await loader.loadAsync(url);
     const srcGeom = loaded.geometry;
@@ -142,6 +289,8 @@ export class PointCloudScene {
     const decimated = total > DECIMATE_THRESHOLD;
     const stride = decimated ? Math.ceil(total / DECIMATE_THRESHOLD) : 1;
     const rendered = decimated ? Math.floor(total / stride) : total;
+    this.pointIndexStride = stride;
+    this.sourcePointCount = total;
 
     const positions = new Float32Array(rendered * 3);
     for (let i = 0, j = 0; i < total && j < rendered; i += stride, j++) {
@@ -150,6 +299,9 @@ export class PointCloudScene {
       positions[j * 3 + 2] = srcPos.getZ(i);
     }
     srcGeom.dispose();
+    // v0.13.11 · 归一化必须发生在 setRobustFrame / estimateGroundZ / applyHeightColors
+    // 之前,这些函数都假设 +Z 上 / +X 前;src 系下算会得到错的取景中心、地面 z、色带。
+    applyConventionToPositions(positions, convention);
 
     const geom = new THREE.BufferGeometry();
     geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -172,7 +324,7 @@ export class PointCloudScene {
     this.groundZ = estimateGroundZ(positions, rendered);
     this.frameView();
 
-    return { totalPoints: total, renderedPoints: rendered, decimated };
+    return { totalPoints: total, renderedPoints: rendered, decimated, decimateStride: stride };
   }
 
   /** 按 z(高度)做一条蓝→青→黄的色带,纯只读可视化。 */
@@ -225,12 +377,14 @@ export class PointCloudScene {
     const r = this.viewRadius;
     const f = this.forward; // 水平单位向量(车头方向)
     this.controls.target.copy(c);
+    this.camera.up.set(0, 0, 1); // v0.13.9 · 还原 up(bevView 会改成水平 forward)
     // 蹲在车头反方向、抬高,看向中心 ⇒ 视线 = 车头方向(与 front 相机一致)。
     // forward 默认 (0,1,0) 时退化为历史的 (c.x, c.y - 2.2r, ...)。
     this.camera.position.set(c.x - f.x * r * 2.2, c.y - f.y * r * 2.2, c.z + r * 1.2);
     this.camera.near = Math.max(r / 100, 0.1);
     this.camera.far = r * 50;
     this.camera.updateProjectionMatrix();
+    this.setOrbitMouseMode("orbit");
     this.controls.update();
   }
 
@@ -246,6 +400,122 @@ export class PointCloudScene {
 
   resetView() {
     this.frameView();
+  }
+
+  /**
+   * v0.13.9 · 俯视(BEV)复位: 相机摆到稠密区正上方俯看 -Z, 车头(forward)朝屏幕上方。
+   * 看 -Z 时 up 不能与视线共线 → 取水平的 forward 作 up(切回 resetView 时 frameView 还原 (0,0,1))。
+   * 便于在地面平面拖框选 footprint。仍是透视相机, 不引入正交模式。
+   */
+  bevView() {
+    const c = this.viewCenter;
+    const r = this.viewRadius;
+    this.controls.target.copy(c);
+    this.camera.up.copy(this.forward);
+    this.camera.position.set(c.x, c.y, c.z + r * 2.5);
+    this.camera.near = Math.max(r / 100, 0.1);
+    this.camera.far = r * 50;
+    this.camera.updateProjectionMatrix();
+    this.setOrbitMouseMode("bev");
+    this.controls.update();
+  }
+
+  private setOrbitMouseMode(mode: "orbit" | "bev") {
+    if (mode === "bev") {
+      this.controls.mouseButtons = {
+        LEFT: THREE.MOUSE.PAN,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN,
+      };
+      this.controls.enableRotate = false;
+      this.controls.screenSpacePanning = true;
+      return;
+    }
+    this.controls.enableRotate = true;
+    this.controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN,
+    };
+    this.controls.screenSpacePanning = true;
+  }
+
+  /**
+   * v0.13.9 · 框选选点: 返回投影落在屏幕矩形(两对角 client px)内、且在相机前方的点 world 坐标
+   * (Float32Array, len = 3·K)。用屏幕投影选真实点而非投地面平面 → 对物体高度/视角零视差
+   * (SUSTechPOINTS 「框选 + 点云拟合」范式)。无点云 / 选不到点 → 返回 null。
+   *
+   * 实现: vp = projection · viewMatrixInverse; 对每点取齐次裁剪坐标, w ≤ 0 (相机后方) 丢弃,
+   * 否则透视除得 NDC, 落在矩形 [nx0,nx1]×[ny0,ny1] 内即选中。
+   */
+  private collectPointsInScreenRect(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+  ): { positions: Float32Array; indices: number[] } | null {
+    const positions = this.getPointPositions();
+    if (!positions) return null;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const toNdcX = (cx: number) => ((cx - rect.left) / rect.width) * 2 - 1;
+    const toNdcY = (cy: number) => -((cy - rect.top) / rect.height) * 2 + 1;
+    // client y 越大 NDC y 越小 → 取 min/max 归一化矩形。
+    const nx0 = Math.min(toNdcX(x0), toNdcX(x1));
+    const nx1 = Math.max(toNdcX(x0), toNdcX(x1));
+    const ny0 = Math.min(toNdcY(y0), toNdcY(y1));
+    const ny1 = Math.max(toNdcY(y0), toNdcY(y1));
+    this.camera.updateMatrixWorld();
+    const vp = new THREE.Matrix4().multiplyMatrices(
+      this.camera.projectionMatrix,
+      this.camera.matrixWorldInverse,
+    );
+    const v = new THREE.Vector4();
+    const out: number[] = [];
+    const indices: number[] = [];
+    const n = Math.floor(positions.length / 3);
+    for (let i = 0; i < n; i++) {
+      const px = positions[i * 3];
+      const py = positions[i * 3 + 1];
+      const pz = positions[i * 3 + 2];
+      v.set(px, py, pz, 1).applyMatrix4(vp);
+      if (v.w <= 0) continue; // 相机后方
+      const ndcX = v.x / v.w;
+      const ndcY = v.y / v.w;
+      if (ndcX >= nx0 && ndcX <= nx1 && ndcY >= ny0 && ndcY <= ny1) {
+        out.push(px, py, pz);
+        indices.push(i * this.pointIndexStride);
+      }
+    }
+    return out.length > 0 ? { positions: new Float32Array(out), indices } : null;
+  }
+
+  selectPointsInScreenRect(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+  ): Float32Array | null {
+    return this.collectPointsInScreenRect(x0, y0, x1, y1)?.positions ?? null;
+  }
+
+  selectPointMaskInScreenRect(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+  ): PointMaskSelection | null {
+    const selected = this.collectPointsInScreenRect(x0, y0, x1, y1);
+    if (!selected) return null;
+    return {
+      pointIndices: selected.indices,
+      decimateStride: this.pointIndexStride,
+      sourcePointCount: this.sourcePointCount,
+    };
+  }
+
+  /** v0.13.9 · 框选拖拽期禁用 OrbitControls(同 gizmo 拖拽), 避免拖框时相机乱转。 */
+  setBoxSelecting(active: boolean) {
+    this.controls.enabled = !active;
   }
 
   /**
@@ -290,6 +560,27 @@ export class PointCloudScene {
     attr.needsUpdate = true;
   }
 
+  highlightPointMask(indices: readonly number[] | null) {
+    const geom = this.points?.geometry;
+    if (!geom) return;
+    const base = this.baseColors;
+    if (!base) return;
+    const attr = geom.getAttribute("color") as THREE.BufferAttribute;
+    const colors = attr.array as Float32Array;
+    colors.set(base);
+    if (indices && indices.length > 0) {
+      const selected = new Set(indices);
+      const count = Math.floor(colors.length / 3);
+      for (let i = 0; i < count; i += 1) {
+        if (!selected.has(i * this.pointIndexStride)) continue;
+        colors[i * 3] = 1;
+        colors[i * 3 + 1] = 0.12;
+        colors[i * 3 + 2] = 0.12;
+      }
+    }
+    attr.needsUpdate = true;
+  }
+
   resize() {
     const { clientWidth: w, clientHeight: h } = this.container;
     if (!w || !h) return;
@@ -304,6 +595,8 @@ export class PointCloudScene {
     this.points.geometry.dispose();
     (this.points.material as THREE.Material).dispose();
     this.points = null;
+    this.pointIndexStride = 1;
+    this.sourcePointCount = 0;
   }
 
   /**
@@ -505,10 +798,28 @@ export class PointCloudScene {
     this.transform.detach();
     this.scene.remove(this.transform.getHelper());
     this.transform.dispose();
+    this.disposeAxisGizmo();
     this.controls.dispose();
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement === this.container) {
       this.container.removeChild(this.renderer.domElement);
     }
+  }
+
+  private disposeAxisGizmo() {
+    this.axisScene.traverse((obj) => {
+      const withGeometry = obj as THREE.Object3D & { geometry?: THREE.BufferGeometry };
+      withGeometry.geometry?.dispose();
+      const material = (obj as THREE.Object3D & {
+        material?: THREE.Material | THREE.Material[];
+      }).material;
+      const disposeMaterial = (mat: THREE.Material) => {
+        const withMap = mat as THREE.Material & { map?: THREE.Texture | null };
+        withMap.map?.dispose();
+        mat.dispose();
+      };
+      if (Array.isArray(material)) material.forEach(disposeMaterial);
+      else material?.dispose();
+    });
   }
 }

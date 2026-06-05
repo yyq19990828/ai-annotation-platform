@@ -28,6 +28,91 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.13.12] - 2026-06-05
+
+3D 工作台收尾 + 点云分割 MVP。补齐 v0.13.11 留下的坐标系 UI、自动嗅探、标注创建约定记录、导出源系映射,并把 v0.13.0 已预留的 `point_mask_3d` 几何接入前端工作台。计划见 `docs/plans/2026-06-05-v0.13.12-3d-polish-and-pointmask.md`。
+
+### Added
+
+- **点云坐标系设置入口**:点云数据集创建向导与数据集详情设置面板新增 `AxisConventionPicker`,支持 `iso_8855` / `ros_rep103` / `kitti_camera` / `opencv_camera` / `apollo` / `y_forward` / `sustechpoints_demo` / `raw`。已关联项目的数据集切换时会先提示历史 3D 标注风险。
+- **自动嗅探端点**:`POST /datasets/{id}/sniff-axis-convention` 根据 front 相机外参光轴方向返回最匹配 convention、分数和候选列表;前端设置面板可一键应用建议。
+- **3D 几何创建约定记录**:`box_3d` 和 `point_mask_3d` geometry 新增 `convention_at_create`。3D 工作台发现历史框与当前数据集约定不一致时显示顶部提示,并支持对选中框按当前约定单框重投影。
+- **导出坐标系选项**:项目/批次导出新增 `axis_frame=iso|source`,默认 `iso`。`source` 时 AAP 导出会把 `box_3d` PSR 反向映射回数据集源坐标系;导出缓存 key 同步纳入该参数。
+- **点云分割工具 MVP**:3D 工具栏新增 `point_mask_3d` 分割工具和 `P` 快捷键。拖出屏幕矩形后,矩形内点云原始索引落为 `PointMaskGeometry { point_indices }`;再次选中分割标注会在主 3D 视图高亮所属点。
+
+### Changed
+
+- **前后端坐标系数学对齐**:后端新增 `axis_convention.py` 复刻 `R_NORM`、PSR apply/unapply 与导出转换逻辑;前端 `axisConvention.ts` 补齐 PSR apply、自动嗅探候选排序与回归测试。
+- **OpenAPI / codegen 同步**:API schema 暴露 sniff response、`convention_at_create`、`decimate_stride`、导出 `axis_frame` 参数,前端生成类型同步更新。
+- **文档同步**:`docs-site/user-guide/datasets/lidar-axis-convention.md` 更新为当前 UI/API 行为;`docs-site/user-guide/workbench/3d-box.md` 增补点云分割操作。
+
+## [0.13.11] - 2026-06-05
+
+点云 lidar 系约定 dataset 级声明 + 加载侧归一化。SUSTechPOINTS 示例及任何非 ISO 8855 (`+X 前 / +Y 左 / +Z 上`) 数据集进来后,3D 工作台不再因坐标系约定错位而出现「BEV 车头朝下 / 画框沿世界轴对齐错位 / 三视图躺歪」。计划见 `docs/plans/2026-06-05-v0.13.11-lidar-axis-convention.md`,架构决策见 `docs/adr/0034-lidar-axis-convention.md`。
+
+### Added
+
+- **dataset 级 `axis_convention` 字段**:`POST /datasets` / `PUT /datasets/{id}` 可声明 lidar 系约定,枚举 `iso_8855` / `ros_rep103` / `kitti_camera` / `opencv_camera` / `apollo` / `y_forward` / `sustechpoints_demo` / `raw`,默认 `iso_8855`。落到 `Dataset.metadata.axis_convention` (新增 `datasets.metadata` jsonb 列,迁移 `0095_dataset_metadata.py`)。
+- **3D 工作台加载侧归一化**:`GET /tasks/{id}/point-cloud/manifest` 透出该数据集的 `axis_convention`;前端 `PointCloudScene.loadPcd` 加载 PCD 后立即把 positions 旋转到 ISO 系,`ThreeDWorkbench` 把所有相机 extrinsic 同步旋转。上层几何代码 (`cameraAnchor` / `frontCameraForward` / `psrFromPoints` / `autofit` / `projection` / `triview`) 全部不感知 convention,继续锁死 ISO 8855。
+- **`apps/web/src/pages/Workbench/stages/three-d/geometry/axisConvention.ts`**:新增 8 种约定的 R_norm 旋转矩阵表 + `applyConventionToPositions` / `applyConventionToExtrinsic` / `unapplyConventionToPsr`。20 个单测覆盖合法性 (det=+1, R·Rᵀ=I) / 退化 (iso/raw 是 identity) / 数学契约 (E_iso = E_src·diag(R_normᵀ,1)) / SUSTechPOINTS 实测回归。
+- **seed 夹具自动打标**:`apps/api/scripts/seed_pointcloud.py` 创建 SUSTechPOINTS 示例数据集时,自动写 `axis_convention=sustechpoints_demo`,开箱即用 BEV 车头朝上。
+
+### Changed
+
+- **seed 脚本归并到 `apps/api/scripts/`**:旧的 standalone `apps/api/scripts/seed_pointcloud.py` 删除;`scripts/seed_pointcloud_dev.py`(repo 根)移到 `apps/api/scripts/seed_pointcloud.py`。`scripts/seed.py` 不再用 `importlib.util.spec_from_file_location` 跨目录加载,改为标准 `from seed_pointcloud import seed_pointcloud`。
+
+### Behavior
+
+- **向后兼容**:历史数据集 `metadata={}` ⇒ `axis_convention=null` ⇒ 前端按 `iso_8855` 处理,与 v0.13.10 行为完全一致。
+- **现有 dev 栈一次性回填** SUSTechPOINTS 数据集约定:
+  ```sql
+  UPDATE datasets SET metadata = jsonb_set(metadata, '{axis_convention}',
+    '"sustechpoints_demo"') WHERE name = 'pc-scene-dev';
+  ```
+
+### Deferred (不在本版本)
+
+- UI 数据集设置里的 axis_convention 下拉 + 8 种约定图示 (`AxisConventionPicker`)
+- 自动嗅探端点 `POST /datasets/{id}/sniff-axis-convention`
+- annotation payload `convention_at_create` 字段 + 跨约定切换 warning
+- 导出时 `unapplyConventionToPsr` 反向回源系
+
+## [0.13.10] - 2026-06-05
+
+工作台布局偏好跨设备同步 + 左右侧栏四区块浮窗 + 3D 三视图浮层可拖拽。左右侧栏开合/宽度、任务队列 / 类别面板 / 标注详情 / 讨论 Issue 面板浮窗位置尺寸、3D 三视图位置尺寸/折叠态统一写入 `user.preferences.workbench.layout`；离线或未登录时继续用 localStorage 兜底。计划见 `docs/plans/2026-06-05-v0.13.10-workbench-prefs-and-floating-inspector.md`。
+
+### Added
+
+- **工作台 layout 偏好跨设备记忆**：`WorkbenchPreferences.layout` 新增 `leftOpen/rightOpen/leftWidth/rightWidth/floatingTaskQueue/floatingClassPalette/floatingInspector/floatingDiscussion/triViewFloat`；前端 `useWorkbenchConfig.setLayout()` 本地立即生效、localStorage 兜底，并 300ms debounce PATCH 全量 `workbench` 子树，避免只发 nested layout 覆盖旧渲染偏好。
+- **左右栏四区块可分离为同窗口浮窗**：左栏任务队列 / 类别面板、右栏标注详情 / 讨论 Issue 面板都提供分离入口。分离后对应侧栏默认收起；用户再次展开侧栏时只显示仍嵌入的区块，不会把浮窗自动合并回去。若该侧栏两个区块都已分离，展开/收起按钮无可见变化。四个浮窗使用一致的最小尺寸，支持顶栏拖动、右下角 resize、合并回侧栏与关闭；合并回侧栏只恢复嵌入状态，不主动展开侧栏。位置/尺寸持久化到对应 `floating*` 字段。
+- **通用 `FloatingPanelShell` + `useDragMove`**：统一处理 fixed 浮窗 chrome、pointer 拖动、右下角 resize、窗口 resize clamp 和边界防丢，供侧栏区块与三视图复用。
+- **3D 三视图浮层升级**：`TriViewPanel` 改由 `FloatingPanelShell` 承载，顶栏可在 3D 画布范围内拖动、右下角可 resize，位置/尺寸/折叠态写入 `triViewFloat`；首次打开仍默认贴右下并避让右栏。
+
+### Changed
+
+- **3D 浮层避让与贴边修正**：`ThreeDWorkbench` 用右栏宽度计算三视图首次默认浮窗位置，但舞台内部右侧相机锚点和三视图折叠标签贴主视图边缘；顶部相机锚点随工具条实际高度下移。工具条高度由 `ResizeObserver` 跟踪，按钮换行后相机不会压住工具条。
+- **侧栏宽度持久化迁移**：`leftWidth/rightWidth` 从只写 `localStorage` 升级为 `user.preferences.workbench.layout`，保留旧 localStorage key 作为远端缺省和离线兜底。
+
+### Notes
+
+- 不做真独立浏览器 window、浮窗层级管理或相机预览拖拽；本版只做同窗口浮窗形态。
+- 后端 JSONB 无迁移；schema 只新增偏好子结构并保持 `/me/preferences` 顶层子树合并契约。
+
+## [0.13.9] - 2026-06-04
+
+点云标注台「初始画框」优化:**框选画框(frustum 选点)+ BEV 一键鸟瞰**。原先建框只能「点地面放一个固定尺寸框」,现支持在主 3D 视图按住拖出屏幕矩形 → 选中投影落在矩形内的真实点 → 取其包围盒建框并自动选中;并新增「俯视(BEV)」相机复位按钮,便于框选。调研(`docs/research/14-point-cloud-image-fusion.md`)表明主流工具(SUSTechPOINTS/xtreme1)均走「框选 + 点云拟合」范式,本版与之对齐。**关键:用屏幕投影选真实点而非投地面平面取 footprint**——后者对有高度的物体在透视视角下有视差(车顶投影偏到车后,框只捞到一层地面点),frustum 选点对视角/物体高度零视差。**纯前端、复用既有 geometry,后端零改动、零迁移、零端点**。计划见 `docs/plans/2026-06-04-v0.13.9-ground-rect-bev.md`。
+
+### Added
+
+- **框选画框(frustum 选点)**(`ThreeDWorkbench` + `PointCloudScene` + 纯几何 + 单测):box 工具下在主视图按住拖出屏幕矩形 → `PointCloudScene.selectPointsInScreenRect`(将每个点经 `projection·viewⁱⁿᵛ` 投到 NDC,落在矩形内且在相机前方 `w>0` 的点选中)→ `psrFromPoints`(`autofit.ts`,取选中点 world AABB:`center`=包围盒中心、`size`=跨度 + 2×padding、`rotation`=0)→ 建框并选中。拖动 < 4px 退化为旧的「点击放置固定框」(向后兼容)。拖拽期禁用 OrbitControls、屏上画半透明预览矩形;`window` 级 mousemove/mouseup 监听保证拖出视口也能收尾。
+- **BEV 鸟瞰复位按钮**:控件浮条「俯视」(`PointCloudScene.bevView`)把相机摆到稠密区正上方俯看 -Z、车头朝屏幕上方(看 -Z 时 up 取水平 forward);仍是透视相机,不引入正交模式。「重置视角」(`frameView`)同步还原 `camera.up = (0,0,1)`,两者可随时切换。
+
+### Notes
+
+- frustum 选点天然把屏幕矩形对应的近垂直点柱内所有高度的点都选上(含车顶/车轮 + 周围地面),故 AABB 底自然贴地、高度到车顶、XY≈拖框范围;选不到点(空地拖框)→ 不建框。
+- 朝向(yaw)取 0(轴对齐 AABB),斜置物体建框后可按「朝向⚗」(`fitYaw`)旋正,或手调。
+- 仍建议在俯视(BEV)下框选体验最佳,但本法不再依赖视角的无视差性(透视斜视下也能选对点)。
+
 ## [0.13.8] - 2026-06-03
 
 点云 + 图像联合标注工作台第九切片:**3D 框一键贴合 + RGB 上色 z-test 遮挡修复**。粗框 → 精框的「逐边拖到点云贴合」从手动 → 一键(`Q`);v0.13.6 RGB 上色背景被前景"染色"的视觉伪 feature 用既有深度栅格做 z-test 修真。**纯前端、复用 v0.13.5/0.13.6 既有 geometry,后端零改动、零迁移、零端点**。计划见 `docs/plans/2026-06-03-v0.13.8-fit-shrink-occlusion-fix.md`。

@@ -7,6 +7,10 @@
   background: var(--color-bg-elev);
 }
 
+.panelFloating {
+  border-left: 0;
+}
+
 .panelHeader {
   padding: 12px 14px;
   border-bottom: 1px solid var(--color-border);
@@ -23,6 +27,25 @@
 
 .panelTitle {
   font-size: 13px;
+}
+
+.detachButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-fg-muted);
+  cursor: pointer;
+}
+
+.detachButton:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 .multiSelectionBar {

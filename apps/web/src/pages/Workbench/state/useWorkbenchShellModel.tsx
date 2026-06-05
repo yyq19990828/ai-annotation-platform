@@ -65,8 +65,11 @@ import type { StageKind } from "../stages/types";
 import { WorkbenchOverlays } from "../shell/WorkbenchOverlays";
 import type { ClassPickerAttrEditing } from "../shell/ClassPickerPopover";
 import { WorkbenchLayout } from "../shell/WorkbenchLayout";
+import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
+import { SIDE_FLOATING_PANEL_MAX_SIZE, SIDE_FLOATING_PANEL_MIN_SIZE } from "../shell/floatingPanelSizing";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
+import type { FloatingPanelState } from "@/api/auth";
 import {
   getRememberedWorkbenchTask,
   rememberWorkbenchTask,
@@ -124,6 +127,69 @@ interface WorkbenchShellReadyModel {
   layout: ComponentProps<typeof WorkbenchLayout>;
   propagateDialog: ComponentProps<typeof VideoTrackerPropagateDialog>;
   issueSection?: WorkbenchShellIssueSection;
+}
+
+function resolveFloatingPanelRect(
+  state: FloatingPanelState,
+  defaults: {
+    w: number;
+    h: number;
+    x: (viewportW: number, w: number) => number;
+    y: (viewportH: number, h: number) => number;
+  },
+): FloatingPanelRect {
+  const w = Math.max(
+    SIDE_FLOATING_PANEL_MIN_SIZE.w,
+    Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.w, state.w ?? defaults.w),
+  );
+  const h = Math.max(
+    SIDE_FLOATING_PANEL_MIN_SIZE.h,
+    Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.h, state.h ?? defaults.h),
+  );
+  const viewportW = typeof window === "undefined" ? 1280 : window.innerWidth;
+  const viewportH = typeof window === "undefined" ? 800 : window.innerHeight;
+  return {
+    x: state.x ?? Math.max(24, defaults.x(viewportW, w)),
+    y: state.y ?? Math.max(24, defaults.y(viewportH, h)),
+    w,
+    h,
+  };
+}
+
+function resolveFloatingTaskQueueRect(state: FloatingPanelState): FloatingPanelRect {
+  return resolveFloatingPanelRect(state, {
+    w: 320,
+    h: 620,
+    x: () => 24,
+    y: () => 72,
+  });
+}
+
+function resolveFloatingClassPaletteRect(state: FloatingPanelState): FloatingPanelRect {
+  return resolveFloatingPanelRect(state, {
+    w: 320,
+    h: 420,
+    x: () => 24,
+    y: (viewportH, h) => viewportH - h - 40,
+  });
+}
+
+function resolveFloatingInspectorRect(state: FloatingPanelState): FloatingPanelRect {
+  return resolveFloatingPanelRect(state, {
+    w: 360,
+    h: 600,
+    x: (viewportW, w) => viewportW - w - 40,
+    y: (viewportH, h) => Math.min(80, viewportH - h - 24),
+  });
+}
+
+function resolveFloatingDiscussionRect(state: FloatingPanelState): FloatingPanelRect {
+  return resolveFloatingPanelRect(state, {
+    w: 420,
+    h: 560,
+    x: (viewportW, w) => viewportW - w - 40,
+    y: (viewportH, h) => Math.min(260, viewportH - h - 40),
+  });
 }
 
 export type UseWorkbenchShellModelResult =
@@ -201,12 +267,13 @@ export function useWorkbenchShellModel({
   const tasksTotal = taskListData?.pages[0]?.total ?? tasks.length;
 
   const s = useWorkbenchState();
-  // v0.13.3-5 · 点云 3D 项目无对应 2D 工具,类别/属性绑定固定走 lidar_box_3d 单位。
+  // v0.13.x · 点云 3D 项目无对应 2D 工具,按当前 3D 工具显式选择工具单位。
   const is3DProject = currentProject?.type_key === "lidar";
+  const threeDToolUnit = s.threeDTool === "point-mask" ? "point_mask_3d" : "lidar_box_3d";
   const toolView = useToolBindings(
     currentProject ?? null,
     s.tool,
-    is3DProject ? "lidar_box_3d" : undefined,
+    is3DProject ? threeDToolUnit : undefined,
   );
   const enabledToolUnits = useMemo<Set<string> | null>(() => {
     const tb = currentProject?.tool_bindings;
@@ -1142,7 +1209,7 @@ export function useWorkbenchShellModel({
   // v0.13.8 · Delete/Backspace 也归 3D 本地处理:全局 dispatchKey 通路在 3D 台实测不触发删除,
   // 改由 3D 工作台显式监听删选中框,口径与 W/E/R / B/V 一致。
   const threeDOwnedKeys = useMemo(
-    () => new Set(["b", "B", "v", "V", "w", "W", "e", "E", "r", "R", "Delete", "Backspace"]),
+    () => new Set(["b", "B", "p", "P", "v", "V", "w", "W", "e", "E", "r", "R", "Delete", "Backspace"]),
     [],
   );
 
@@ -1170,14 +1237,155 @@ export function useWorkbenchShellModel({
     handleAnnotationUngroup,
   });
 
-  const leftOpen = isNarrow ? false : s.leftOpen;
-  const rightOpen = isNarrow ? false : s.rightOpen;
+  const floatingTaskQueue = s.workbenchLayout.floatingTaskQueue;
+  const floatingClassPalette = s.workbenchLayout.floatingClassPalette;
+  const floatingInspector = s.workbenchLayout.floatingInspector;
+  const floatingDiscussion = s.workbenchLayout.floatingDiscussion;
+  const setWorkbenchLayout = s.setWorkbenchLayout;
+  const setLeftOpenState = s.setLeftOpen;
+  const setRightOpenState = s.setRightOpen;
+  const leftOpenState = s.leftOpen;
+  const rightOpenState = s.rightOpen;
+  const taskQueueDetached = floatingTaskQueue.detached;
+  const classPaletteDetached = floatingClassPalette.detached;
+  const inspectorDetached = floatingInspector.detached;
+  const discussionDetached = floatingDiscussion.detached;
+  const leftHasEmbeddedPanels = !taskQueueDetached || !classPaletteDetached;
+  const rightHasEmbeddedPanels = !inspectorDetached || !discussionDetached;
+  const leftOpen = isNarrow || !leftHasEmbeddedPanels ? false : leftOpenState;
+  const rightOpen = isNarrow || !rightHasEmbeddedPanels ? false : rightOpenState;
+  const floatingTaskQueuePosition = useMemo(
+    () => resolveFloatingTaskQueueRect(floatingTaskQueue),
+    [floatingTaskQueue],
+  );
+  const floatingClassPalettePosition = useMemo(
+    () => resolveFloatingClassPaletteRect(floatingClassPalette),
+    [floatingClassPalette],
+  );
+  const floatingInspectorPosition = useMemo(
+    () => resolveFloatingInspectorRect(floatingInspector),
+    [floatingInspector],
+  );
+  const floatingDiscussionPosition = useMemo(
+    () => resolveFloatingDiscussionRect(floatingDiscussion),
+    [floatingDiscussion],
+  );
+  const detachTaskQueue = useCallback(() => {
+    setWorkbenchLayout({
+      floatingTaskQueue: {
+        ...floatingTaskQueue,
+        ...floatingTaskQueuePosition,
+        detached: true,
+      },
+    });
+    setLeftOpenState(false);
+  }, [floatingTaskQueue, floatingTaskQueuePosition, setLeftOpenState, setWorkbenchLayout]);
+  const detachClassPalette = useCallback(() => {
+    setWorkbenchLayout({
+      floatingClassPalette: {
+        ...floatingClassPalette,
+        ...floatingClassPalettePosition,
+        detached: true,
+      },
+    });
+    setLeftOpenState(false);
+  }, [floatingClassPalette, floatingClassPalettePosition, setLeftOpenState, setWorkbenchLayout]);
+  const detachInspector = useCallback(() => {
+    setWorkbenchLayout({
+      floatingInspector: {
+        ...floatingInspector,
+        ...floatingInspectorPosition,
+        detached: true,
+      },
+    });
+    setRightOpenState(false);
+  }, [floatingInspector, floatingInspectorPosition, setRightOpenState, setWorkbenchLayout]);
+  const detachDiscussion = useCallback(() => {
+    setWorkbenchLayout({
+      floatingDiscussion: {
+        ...floatingDiscussion,
+        ...floatingDiscussionPosition,
+        detached: true,
+      },
+    });
+    setRightOpenState(false);
+  }, [floatingDiscussion, floatingDiscussionPosition, setRightOpenState, setWorkbenchLayout]);
+  const mergeTaskQueueBack = useCallback(() => {
+    setWorkbenchLayout({
+      floatingTaskQueue: {
+        ...floatingTaskQueue,
+        detached: false,
+      },
+    });
+  }, [floatingTaskQueue, setWorkbenchLayout]);
+  const mergeClassPaletteBack = useCallback(() => {
+    setWorkbenchLayout({
+      floatingClassPalette: {
+        ...floatingClassPalette,
+        detached: false,
+      },
+    });
+  }, [floatingClassPalette, setWorkbenchLayout]);
+  const mergeInspectorBack = useCallback(() => {
+    setWorkbenchLayout({
+      floatingInspector: {
+        ...floatingInspector,
+        detached: false,
+      },
+    });
+  }, [floatingInspector, setWorkbenchLayout]);
+  const mergeDiscussionBack = useCallback(() => {
+    setWorkbenchLayout({
+      floatingDiscussion: {
+        ...floatingDiscussion,
+        detached: false,
+      },
+    });
+  }, [floatingDiscussion, setWorkbenchLayout]);
+  const closeFloatingTaskQueue = useCallback(() => {
+    setWorkbenchLayout({
+      floatingTaskQueue: {
+        ...floatingTaskQueue,
+        detached: false,
+      },
+    });
+    setLeftOpenState(false);
+  }, [floatingTaskQueue, setLeftOpenState, setWorkbenchLayout]);
+  const closeFloatingClassPalette = useCallback(() => {
+    setWorkbenchLayout({
+      floatingClassPalette: {
+        ...floatingClassPalette,
+        detached: false,
+      },
+    });
+    setLeftOpenState(false);
+  }, [floatingClassPalette, setLeftOpenState, setWorkbenchLayout]);
+  const closeFloatingInspector = useCallback(() => {
+    setWorkbenchLayout({
+      floatingInspector: {
+        ...floatingInspector,
+        detached: false,
+      },
+    });
+    setRightOpenState(false);
+  }, [floatingInspector, setRightOpenState, setWorkbenchLayout]);
+  const closeFloatingDiscussion = useCallback(() => {
+    setWorkbenchLayout({
+      floatingDiscussion: {
+        ...floatingDiscussion,
+        detached: false,
+      },
+    });
+    setRightOpenState(false);
+  }, [floatingDiscussion, setRightOpenState, setWorkbenchLayout]);
   const toggleLeftSidebar = useCallback(() => {
-    s.setLeftOpen(!s.leftOpen);
-  }, [s.leftOpen, s.setLeftOpen]);
+    if (!leftHasEmbeddedPanels) return;
+    setLeftOpenState(!leftOpenState);
+  }, [leftHasEmbeddedPanels, leftOpenState, setLeftOpenState]);
   const toggleRightSidebar = useCallback(() => {
-    s.setRightOpen(!s.rightOpen);
-  }, [s.rightOpen, s.setRightOpen]);
+    if (!rightHasEmbeddedPanels) return;
+    setRightOpenState(!rightOpenState);
+  }, [rightHasEmbeddedPanels, rightOpenState, setRightOpenState]);
   useEffect(() => {
     // 边栏收起/展开后 stage 容器宽度变化, 用 fitTick 触发 image/video stage 重新适应窗口。
     if (stageKind !== "image" && stageKind !== "video") return;
@@ -1231,15 +1439,21 @@ export function useWorkbenchShellModel({
     gridTemplateColumns: `${leftOpen ? `${s.leftWidth}px` : "0px"} 48px 1fr ${rightOpen ? `${s.rightWidth}px` : "0px"}`,
     taskQueue: {
       open: leftOpen, classes,
-      // 3D 点云台用 lidar_box_3d 单位的 classesConfig(与 3D 框配色同源);2D 仍用项目级。
+      // 3D 点云台用当前 3D 工具单位的 classesConfig;2D 仍用项目级。
       classesConfig: stageKind === "3d" ? classesConfig : currentProject?.classes_config,
-      toolLabel: stageKind === "3d" ? "3D 框" : TOOL_REGISTRY[s.tool].label,
-      toolIcon: stageKind === "3d" ? "rect" : TOOL_REGISTRY[s.tool].icon,
+      toolLabel: stageKind === "3d"
+        ? (s.threeDTool === "point-mask" ? "点云分割" : "3D 框")
+        : TOOL_REGISTRY[s.tool].label,
+      toolIcon: stageKind === "3d"
+        ? (s.threeDTool === "point-mask" ? "scissors" : "rect")
+        : TOOL_REGISTRY[s.tool].icon,
       activeClass: s.activeClass, recentClasses, tasks, taskId, taskIdx, hasNextPage,
       isFetchingNextPage, onFetchNextPage: fetchNextPage,
       onSelectTask: selectTask, batches: activeBatches, selectedBatchId, onSelectBatch: handleSelectBatch,
       totalCount: tasksTotal, isOwner, onGoToBatchSettings: () => { if (projectId) navigate(`/projects/${projectId}/settings?section=batches`); },
       width: s.leftWidth, onResize: s.setLeftWidth,
+      onDetachQueue: detachTaskQueue,
+      onDetachPalette: detachClassPalette,
       // v0.13.3-5 · 3D 点云台:左栏色板可点选 = 放置新框的类别(2D 仍只读图例)。
       classPickable: stageKind === "3d" && !isLocked,
       onPickClass: s.setActiveClass,
@@ -1329,6 +1543,10 @@ export function useWorkbenchShellModel({
         onChangeUserBoxClass: handleStartChangeClass,
         threeDTool: s.threeDTool,
         onSetThreeDTool: s.setThreeDTool,
+        rightSidebarOpen: rightOpen,
+        rightSidebarWidth: rightOpen ? s.rightWidth : 0,
+        workbenchLayout: s.workbenchLayout,
+        onWorkbenchLayoutChange: s.setWorkbenchLayout,
         overlays: (
           <>
             {s.tool === "mask" && (
@@ -1480,6 +1698,7 @@ export function useWorkbenchShellModel({
     },
     inspector: {
       open: rightOpen, width: s.rightWidth, onResize: s.setRightWidth, readOnly: isLocked,
+      onDetach: detachInspector,
       aiBoxes: modeState.diffMode !== "final" ? aiBoxes : [],
       predictionSourceFilter,
       userBoxes, orphanUserBoxIds: orphanAnnotationIds,
@@ -1556,6 +1775,62 @@ export function useWorkbenchShellModel({
         </div>
       )) : undefined,
     },
+    floatingTaskQueue: {
+      detached: taskQueueDetached,
+      position: floatingTaskQueuePosition,
+      onPositionChange: (patch) => {
+        s.setWorkbenchLayout({
+          floatingTaskQueue: {
+            ...s.workbenchLayout.floatingTaskQueue,
+            ...patch,
+          },
+        });
+      },
+      onMergeBack: mergeTaskQueueBack,
+      onClose: closeFloatingTaskQueue,
+    },
+    floatingClassPalette: {
+      detached: classPaletteDetached,
+      position: floatingClassPalettePosition,
+      onPositionChange: (patch) => {
+        s.setWorkbenchLayout({
+          floatingClassPalette: {
+            ...s.workbenchLayout.floatingClassPalette,
+            ...patch,
+          },
+        });
+      },
+      onMergeBack: mergeClassPaletteBack,
+      onClose: closeFloatingClassPalette,
+    },
+    floatingInspector: {
+      detached: inspectorDetached,
+      position: floatingInspectorPosition,
+      onPositionChange: (patch) => {
+        s.setWorkbenchLayout({
+          floatingInspector: {
+            ...s.workbenchLayout.floatingInspector,
+            ...patch,
+          },
+        });
+      },
+      onMergeBack: mergeInspectorBack,
+      onClose: closeFloatingInspector,
+    },
+    floatingDiscussion: {
+      detached: discussionDetached,
+      position: floatingDiscussionPosition,
+      onPositionChange: (patch) => {
+        s.setWorkbenchLayout({
+          floatingDiscussion: {
+            ...s.workbenchLayout.floatingDiscussion,
+            ...patch,
+          },
+        });
+      },
+      onMergeBack: mergeDiscussionBack,
+      onClose: closeFloatingDiscussion,
+    },
     aiPopover: {
       open: aiPopoverOpen && !isVideoTask,
       rightOffset: rightOpen ? s.rightWidth + 44 : 44,
@@ -1608,6 +1883,7 @@ export function useWorkbenchShellModel({
       },
       commentAnchor: videoCommentAnchor,
       onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
+      onDetach: detachDiscussion,
     },
   };
 
@@ -1627,9 +1903,9 @@ export function useWorkbenchShellModel({
     stageKind,
     issuePinDropArmed,
     // v0.11.5 · issue FAB → 切到 DiscussionPanel issues tab (旧浮层 IssueListPanel 已删)。
-    // DiscussionPanel 在右栏内，右栏收起时列宽为 0px 被裁切，故先确保右栏展开再切 tab。
+    // v0.13.10+ · 不再把已分离的标注详情合并回去；讨论面板仍嵌入时才展开右栏。
     onOpenList: () => {
-      if (!s.rightOpen) s.setRightOpen(true);
+      if (!s.workbenchLayout.floatingDiscussion.detached && !s.rightOpen) s.setRightOpen(true);
       requestIssuesTab();
     },
     onToggleIssuePinDrop: () => setIssuePinDropArmed((v) => !v),

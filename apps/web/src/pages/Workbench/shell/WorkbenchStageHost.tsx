@@ -10,8 +10,10 @@ import type {
   VideoTrackGeometry,
 } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
+import type { WorkbenchLayoutPreferences } from "@/api/auth";
 import type { AiBox } from "../state/transforms";
 import type { PendingDrawing, SamPolarity, SamSubTool, ThreeDTool, Tool, VideoTool } from "../state/useWorkbenchState";
+import type { WorkbenchLayoutPatch } from "../state/useWorkbenchConfig";
 import type { Viewport } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
@@ -60,6 +62,11 @@ interface WorkbenchStageHostCommonProps {
   /** v0.13.3-5 · 点云 3D 台工具态(壳层共享,与 ToolDock 同源);非 3D 任务忽略。 */
   threeDTool: ThreeDTool;
   onSetThreeDTool: (t: ThreeDTool) => void;
+  /** v0.13.10 · 3D 浮层避让右栏 + 三视图浮窗偏好。 */
+  rightSidebarOpen: boolean;
+  rightSidebarWidth: number;
+  workbenchLayout: WorkbenchLayoutPreferences;
+  onWorkbenchLayoutChange: (patch: WorkbenchLayoutPatch) => void;
 }
 
 interface WorkbenchStageHostVideoProps {
@@ -214,6 +221,10 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onChangeUserBoxClass,
       threeDTool,
       onSetThreeDTool,
+      rightSidebarOpen,
+      rightSidebarWidth,
+      workbenchLayout,
+      onWorkbenchLayoutChange,
     } = common;
     const videoProps = stageKind === "video" ? requireStageGroup(video, "video", stageKind) : undefined;
     const imageProps = stageKind === "image" ? requireStageGroup(image, "image", stageKind) : undefined;
@@ -319,6 +330,10 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
               activeClass={activeClass}
               threeDTool={threeDTool}
               onSetThreeDTool={onSetThreeDTool}
+              rightSidebarOpen={rightSidebarOpen}
+              rightSidebarWidth={rightSidebarWidth}
+              triViewFloat={workbenchLayout.triViewFloat}
+              onWorkbenchLayoutChange={onWorkbenchLayoutChange}
             />
           </Suspense>
         ) : stageKind === "video" ? (

@@ -28,6 +28,7 @@ def compute_cache_key(
     video_frame_mode: str,
     max_updated_at: datetime | None,
     active_count: int,
+    axis_frame: str = "iso",
 ) -> str:
     """sha256 hex 指纹。scope_id 为 project_id 或 batch_id。
 
@@ -40,6 +41,7 @@ def compute_cache_key(
         ",".join(sorted(targets)),
         "1" if include_attributes else "0",
         video_frame_mode,
+        axis_frame,
         max_updated_at.isoformat() if max_updated_at is not None else "",
         str(active_count),
     ]

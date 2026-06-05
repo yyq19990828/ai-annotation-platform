@@ -175,6 +175,7 @@
 |---|---|
 | GET | `/{dataset_id}` |
 | PUT | `/{dataset_id}` |
+| POST | `/{dataset_id}/sniff-axis-convention` |
 | DELETE | `/{dataset_id}` |
 | GET | `/{dataset_id}/items` |
 | POST | `/{dataset_id}/import-from-connection` |
@@ -425,4 +426,4 @@
 
 ---
 
-_共 38 模块 / 243 路由_
+_共 38 模块 / 244 路由_

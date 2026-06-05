@@ -1,5 +1,6 @@
 import { apiClient } from "./client";
 import type { DatasetOut } from "./generated/types.gen";
+import type { LidarAxisConvention } from "@/types";
 
 export type DatasetResponse = DatasetOut;
 
@@ -38,11 +39,27 @@ export interface DatasetCreatePayload {
   name: string;
   description?: string;
   data_type?: string;
+  axis_convention?: LidarAxisConvention | null;
 }
 
 export interface DatasetUpdatePayload {
   name?: string;
   description?: string;
+  axis_convention?: LidarAxisConvention | null;
+}
+
+export interface SniffAxisConventionCandidate {
+  convention: LidarAxisConvention;
+  score: number;
+}
+
+export interface SniffAxisConventionResponse {
+  best: LidarAxisConvention | null;
+  score: number | null;
+  candidates: SniffAxisConventionCandidate[];
+  source: "task_link" | "dataset_item" | null;
+  camera_role: string | null;
+  camera_item_id: string | null;
 }
 
 export const datasetsApi = {
@@ -63,6 +80,11 @@ export const datasetsApi = {
 
   update: (id: string, payload: DatasetUpdatePayload) =>
     apiClient.put<DatasetResponse>(`/datasets/${id}`, payload),
+
+  sniffAxisConvention: (id: string) =>
+    apiClient.post<SniffAxisConventionResponse>(
+      `/datasets/${id}/sniff-axis-convention`,
+    ),
 
   delete: (id: string) => apiClient.delete<void>(`/datasets/${id}`),
 

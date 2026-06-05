@@ -1,0 +1,124 @@
+.shell {
+  position: fixed;
+  left: var(--floating-panel-x);
+  top: var(--floating-panel-y);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  width: var(--floating-panel-w);
+  height: var(--floating-panel-h);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+  box-shadow: var(--shadow-lg);
+}
+
+.dragging,
+.resizing {
+  user-select: none;
+}
+
+.header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-panel);
+  color: var(--color-fg-muted);
+  cursor: move;
+  touch-action: none;
+}
+
+.titleGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-fg);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elev);
+  color: var(--color-fg-muted);
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.content {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-bg-elev);
+}
+
+.content > * {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.resizeHandle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-fg-subtle);
+  cursor: nwse-resize;
+}
+
+.resizeHandle::before,
+.resizeHandle::after {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 9px;
+  height: 1px;
+  background: currentColor;
+  content: "";
+  transform-origin: right center;
+  transform: rotate(-45deg);
+}
+
+.resizeHandle::after {
+  right: 4px;
+  bottom: 8px;
+  width: 5px;
+}

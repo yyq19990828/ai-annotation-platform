@@ -32,6 +32,11 @@ class Dataset(Base):
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id")
     )
+    # v0.13.11 · 数据集级 jsonb 扩展点 (结构化视图见 schemas._jsonb_types.DatasetMetadata)。
+    # 当前已知 key: axis_convention (lidar 坐标系约定，前端加载时做 ISO 8855 归一化)。
+    metadata_: Mapped[dict] = mapped_column(
+        "metadata", JSONB, server_default="{}", nullable=False, default=dict
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

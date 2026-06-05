@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Annotation } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import type { TextOutputMode } from "./useInteractiveAI";
+import { useWorkbenchConfig } from "./useWorkbenchConfig";
 
 // v0.10.2 · Tool union 扩展: 旧 "sam" 拆为 4 个独立 AI 工具 (smart-point / smart-box /
 // text-prompt / exemplar), 每个绑定一个 prompt 范式. 状态层仅保留 polarity (smart-point
@@ -26,8 +27,8 @@ export type Tool =
   | "keypoint";
 // v0.11.29 · hand = 视图/平移中立态（左键拖拽平移画布，不绘制）；ESC 回归到它。
 export type VideoTool = "box" | "track" | "hand";
-// v0.13.3-5 · 点云 3D 工作台工具态(双栈隔离,不复用 2D ToolId):select=拾取选中框,box=点地面放置新框。
-export type ThreeDTool = "select" | "box";
+// v0.13.3-5 · 点云 3D 工作台工具态(双栈隔离,不复用 2D ToolId)。
+export type ThreeDTool = "select" | "box" | "point-mask";
 
 /**
  * v0.10.2 · 派生型 SAM 子工具, 仅作 ImageStage / AIInspectorPanel 等老消费者的兼容外观.
@@ -94,6 +95,11 @@ export type EditingClass = {
 } | null;
 
 export function useWorkbenchState() {
+  const {
+    layout: workbenchLayout,
+    loaded: workbenchLayoutLoaded,
+    setLayout: setWorkbenchLayout,
+  } = useWorkbenchConfig();
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("box");
   const [videoTool, setVideoTool] = useState<VideoTool>("box");
@@ -134,30 +140,61 @@ export function useWorkbenchState() {
   // 注意: 这是前端过滤, 不重跑模型; "全部采纳"也只会采纳过滤后还显示的框.
   // 改 DINO 召回阈值要去 项目设置 → AI 配置 → box_threshold / text_threshold.
   const [confThreshold, setConfThreshold] = useState(0.5);
-  const [leftOpen, setLeftOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(true);
-  const [leftWidth, setLeftWidthRaw] = useState<number>(() => {
-    try {
-      const v = parseInt(localStorage.getItem("workbench.leftWidth") ?? "");
-      return Number.isFinite(v) && v >= 200 && v <= 560 ? v : 260;
-    } catch { return 260; }
+  const layoutTouchedRef = useRef({
+    leftOpen: false,
+    rightOpen: false,
+    leftWidth: false,
+    rightWidth: false,
   });
-  const [rightWidth, setRightWidthRaw] = useState<number>(() => {
-    try {
-      const v = parseInt(localStorage.getItem("workbench.rightWidth") ?? "");
-      return Number.isFinite(v) && v >= 220 && v <= 600 ? v : 280;
-    } catch { return 280; }
-  });
+  const [leftOpen, setLeftOpenRaw] = useState(workbenchLayout.leftOpen);
+  const [rightOpen, setRightOpenRaw] = useState(workbenchLayout.rightOpen);
+  const [leftWidth, setLeftWidthRaw] = useState<number>(workbenchLayout.leftWidth);
+  const [rightWidth, setRightWidthRaw] = useState<number>(workbenchLayout.rightWidth);
+
+  useEffect(() => {
+    if (!workbenchLayoutLoaded) return;
+    if (!layoutTouchedRef.current.leftOpen) setLeftOpenRaw(workbenchLayout.leftOpen);
+    if (!layoutTouchedRef.current.rightOpen) setRightOpenRaw(workbenchLayout.rightOpen);
+    if (!layoutTouchedRef.current.leftWidth) setLeftWidthRaw(workbenchLayout.leftWidth);
+    if (!layoutTouchedRef.current.rightWidth) setRightWidthRaw(workbenchLayout.rightWidth);
+  }, [
+    workbenchLayout.leftOpen,
+    workbenchLayout.rightOpen,
+    workbenchLayout.leftWidth,
+    workbenchLayout.rightWidth,
+    workbenchLayoutLoaded,
+  ]);
+
+  const setLeftOpen = useCallback(
+    (open: boolean) => {
+      layoutTouchedRef.current.leftOpen = true;
+      setLeftOpenRaw(open);
+      setWorkbenchLayout({ leftOpen: open });
+    },
+    [setWorkbenchLayout],
+  );
+
+  const setRightOpen = useCallback(
+    (open: boolean) => {
+      layoutTouchedRef.current.rightOpen = true;
+      setRightOpenRaw(open);
+      setWorkbenchLayout({ rightOpen: open });
+    },
+    [setWorkbenchLayout],
+  );
+
   const setLeftWidth = useCallback((w: number) => {
     const clamped = Math.max(200, Math.min(560, Math.round(w)));
+    layoutTouchedRef.current.leftWidth = true;
     setLeftWidthRaw(clamped);
-    try { localStorage.setItem("workbench.leftWidth", String(clamped)); } catch { /* noop */ }
-  }, []);
+    setWorkbenchLayout({ leftWidth: clamped });
+  }, [setWorkbenchLayout]);
   const setRightWidth = useCallback((w: number) => {
     const clamped = Math.max(220, Math.min(600, Math.round(w)));
+    layoutTouchedRef.current.rightWidth = true;
     setRightWidthRaw(clamped);
-    try { localStorage.setItem("workbench.rightWidth", String(clamped)); } catch { /* noop */ }
-  }, []);
+    setWorkbenchLayout({ rightWidth: clamped });
+  }, [setWorkbenchLayout]);
   const toggleHiddenVideoTrack = useCallback((trackId: string) => {
     setHiddenVideoTrackIds((prev) => {
       const next = new Set(prev);
@@ -310,6 +347,7 @@ export function useWorkbenchState() {
     rightOpen, setRightOpen,
     leftWidth, setLeftWidth,
     rightWidth, setRightWidth,
+    workbenchLayout, setWorkbenchLayout,
     clipboard, setClipboard,
     canvasDraft,
     beginCanvasDraft, endCanvasDraft, cancelCanvasDraft,

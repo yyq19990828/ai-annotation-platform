@@ -24,6 +24,7 @@ POST /api/v1/projects/{project_id}/batches/{batch_id}/export?targets=coco&includ
 | `targets` | 可重复，多选 | `coco` / `yolo-det` / `yolo-obb` / `yolo-seg` / `aap_json` / `video_json` / `yolo-frames-det` / `mot` / `kitti`；`voc` 仅可单选（与其它混选返 400），走同步 blob 下载 |
 | `include_attributes` | `true` / `false` | 是否携带 `annotation.attributes` 与 `project.attribute_schema` |
 | `video_frame_mode` | `keyframes` / `all_frames` | 仅 `video-track` 生效；默认 `keyframes` |
+| `axis_frame` | `iso` / `source` | 仅影响导出中的 `box_3d` 几何；默认 `iso`（平台归一化 ISO 8855 PSR），`source` 反向映射回数据集 `axis_convention` 源系 |
 
 非 VOC 目标返回 `202 {job_id}`；勾选多个目标时产物 ZIP 内各目标落 `{target}/` 子目录，单目标落包根。`video-track` 项目只接受视频目标（`video_json` / `yolo-frames-det` / `aap_json` / `mot` / `kitti`），选图片目标会返回 400。
 
@@ -94,6 +95,14 @@ COCO / YOLO 会按各自能消费的几何（bbox / rotated_bbox / polygon / mul
 - ZIP 内写 `labels/{sequence}/{frame:06d}.txt`、`classes.txt`、`data.yaml`、`manifest.json`、`fetch_videos.py`、`fetch_frames.py`。帧图不打包，`fetch_frames.py` 会抽到 `images/{sequence}`，与 label 路径对齐。
 
 schema 语义见 [视频标注工作台](/dev/concepts/video-annotation-workbench)。
+
+## 3D box 坐标系（`axis_frame`） {#export-axis-frame}
+
+点云项目导出的 `box_3d` 几何默认按平台内部 **ISO 8855** 归一化 PSR 输出（`axis_frame=iso`）。当数据集声明了非 ISO 的 `axis_convention`（见 [lidar 坐标系约定](/user-guide/datasets/lidar-axis-convention)）且下游需要源系坐标时，加 `axis_frame=source`：
+
+- 目前仅 `aap_json` 目标携带 `box_3d`，会对标注与预测的 box 几何调用 `unapply_to_psr` 反向映射回该数据集的源系约定；其它格式与非 box 几何不受影响。
+- `source` 模式下每个被转换的几何额外带 `axis_frame: "source"` 与 `axis_convention: "<source>"`，便于消费方识别坐标系。
+- `axis_frame` 计入导出缓存 key：`iso` 与 `source` 是两份独立缓存产物。
 
 ## 权限
 

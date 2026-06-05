@@ -11,7 +11,7 @@
  * 方向线沿 box-local +u 轴 (= 朝向: Top 朝 X、Side 朝 X、Front 朝 Y), 末端一个旋转柄;
  * 拖它按指针绕框心的角度增量 Δθ 旋转。每视图绕其法线轴, 屏幕 CCW→+Δθ 的手性按视图定 (ROT_SIGN)。
  */
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
 import { boxAxisWorldDir } from "./geometry/box3d";
@@ -69,6 +69,26 @@ const CURSOR: Record<Handle, string> = {
   nw: "nwse-resize",
   se: "nwse-resize",
 };
+const ANGLE_LABEL: Record<TriView, string> = {
+  top: "Yaw",
+  side: "Pitch",
+  front: "Roll",
+};
+const DEG = Math.PI / 180;
+
+function shortestAngleDelta(current: number, start: number) {
+  let delta = current - start;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+  return delta;
+}
+
+function formatSignedDeg(rad: number, whole = false) {
+  const deg = (rad * 180) / Math.PI;
+  const abs = Math.abs(deg);
+  const text = whole ? String(Math.round(abs)) : abs >= 10 ? abs.toFixed(1) : abs.toFixed(2);
+  return `${deg >= 0 ? "+" : "-"}${text}°`;
+}
 
 /**
  * 把实时框投到取景参考系的屏幕坐标: 4 角 / 框心 / 8 个 resize 柄 / 方向线末端旋转柄。
@@ -154,6 +174,7 @@ export function TriOrthoView({
   onDragEnd,
 }: TriOrthoViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [angleHud, setAngleHud] = useState<{ label: string; value: string } | null>(null);
   // 拖拽态: resize (边/角) 用起始 PSR + 累计位移; rot 用绕框心(屏幕中心)的角度增量。用 ref 避重渲。
   const dragRef = useRef<
     | { kind: "resize"; handle: Handle; startPsr: Psr; s0: number; startX: number; startY: number; last: Psr }
@@ -243,7 +264,10 @@ export function TriOrthoView({
         psr = dragHandle(dr.startPsr, view, dr.handle, dU, dV);
       } else {
         const ang = Math.atan2(-(e.clientY - dr.cyC), e.clientX - dr.cxC); // 数学系 (v 朝上)
-        psr = dragRotation(dr.startPsr, view, dr.sign * (ang - dr.startAng));
+        let delta = dr.sign * shortestAngleDelta(ang, dr.startAng);
+        if (e.shiftKey) delta = Math.round(delta / DEG) * DEG;
+        psr = dragRotation(dr.startPsr, view, delta);
+        setAngleHud({ label: ANGLE_LABEL[view], value: formatSignedDeg(delta, e.shiftKey) });
       }
       dr.last = psr;
       onDragMove(psr);
@@ -252,6 +276,7 @@ export function TriOrthoView({
       const dr = dragRef.current;
       if (!dr) return;
       dragRef.current = null;
+      setAngleHud(null);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       propsRef.current.onDragEnd(dr.last);
@@ -276,6 +301,7 @@ export function TriOrthoView({
         const cyC = rect.top + proj.center[1];
         const startAng = Math.atan2(-(e.clientY - cyC), e.clientX - cxC);
         dragRef.current = { kind: "rot", startPsr, cxC, cyC, startAng, sign: ROT_SIGN[view], last: startPsr };
+        setAngleHud({ label: ANGLE_LABEL[view], value: "+0.00°" });
       } else {
         dragRef.current = {
           kind: "resize",
@@ -286,6 +312,7 @@ export function TriOrthoView({
           startY: e.clientY,
           last: startPsr,
         };
+        setAngleHud(null);
       }
       onDragStart(startPsr);
       window.addEventListener("mousemove", onMove);
@@ -313,10 +340,18 @@ export function TriOrthoView({
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className={editable ? `${styles.triOverlay} ${styles.triOverlayEditable}` : styles.triOverlay}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className={editable ? `${styles.triOverlay} ${styles.triOverlayEditable}` : styles.triOverlay}
+      />
+      {angleHud && (
+        <div className={styles.triAngleHud} aria-hidden="true">
+          <span className={styles.triAngleLabel}>Δ{angleHud.label}</span>
+          <span className={styles.triAngleValue}>{angleHud.value}</span>
+        </div>
+      )}
+    </>
   );
 }
 

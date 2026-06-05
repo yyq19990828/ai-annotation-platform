@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.21
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-05
 ---
 
 # 工作台 Shell 架构
@@ -55,7 +55,7 @@ type StageKind = "image" | "video" | "3d";
 
 - `ImageWorkbench`：包装图片 `ImageStage`，持有图片专属的 FloatingDock、CanvasToolbar、Minimap。
 - `VideoWorkbench`：包装视频 `VideoStage`，持有视频时间轴、轨迹与 keyframe 操作。
-- `ThreeDWorkbench.placeholder`：只提供明确的未支持占位，不接真实业务。
+- `ThreeDWorkbench`：包装 Three.js 点云工作台，持有 3D 框绘制 / gizmo / 三视图浮窗 / 相机投影浮层。
 
 `stages/types.ts` 里的 `StageCapabilities` 用来描述外围能力，例如是否有 class picker、AI 预标、timeline、viewport、comments。它不是内部编辑协议。
 
@@ -78,6 +78,8 @@ type StageKind = "image" | "video" | "3d";
 - **上段 `.rightSplitTop`**：`AIInspectorPanel`，与下段之间有一个上下拖拽 handle。上段高度持久化到 localStorage `workbench.rightSplit.topHeight`（默认 360px，范围 160–720px）。
 - **下段 `.rightSplitBottom`**：`DiscussionPanel`，承载评论 / 历史 / issue 的统一讨论入口。
 - **列宽拖拽 handle** 提升到 `.rightSplit` 全高层级，覆盖两段，不再只贴在 AI 检查器一侧。
+- **布局偏好**：左右栏开合、左右栏宽度、任务队列 / 类别面板 / 标注详情 / 讨论面板浮窗、3D 三视图浮层状态写入 `user.preferences.workbench.layout`；前端提交全量 `workbench` 子树，后端只做顶层 `workbench` / `ai` 合并。
+- **侧栏区块分离**：`TaskQueuePanel` 内的任务队列和类别面板、`AIInspectorPanel`、`DiscussionPanel` 都可由 `WorkbenchLayout` 改用 `FloatingPanelShell` 渲染。分离操作默认收起对应侧栏；后续展开只显示仍嵌入的区块，不会自动合并浮窗。合并回侧栏只恢复嵌入状态，不主动展开侧栏。若一侧两个区块都已分离，侧栏 toggle 是可见 no-op。
 
 `DiscussionPanel`（`shell/DiscussionPanel.tsx`）有三个常驻 tab：
 
@@ -91,4 +93,36 @@ type StageKind = "image" | "video" | "3d";
 
 DiscussionPanel 是默认组件：旧 feature flag `DISCUSSION_PANEL_ENABLED` 与旧浮层 `IssueListPanel` 已删除。讨论面板与评论画布、issue 图钉的交互细节见 [审核模块](./review-module)。
 
-<!-- history: DiscussionPanel and the split right rail shipped through the v0.11 workbench slices. -->
+## 浮窗与布局偏好（v0.13.10）
+
+左右侧栏的四个区块（任务队列 / 类别面板 / 标注详情 / 讨论 Issue）与 3D 三视图都可分离为**同窗口浮窗**。所有浮窗 chrome 统一由 `shell/FloatingPanelShell` + `shell/useDragMove` 承载：顶栏拖动、右下角 resize、窗口 resize 时 clamp 回视口、边界防丢，以及合并回侧栏 / 关闭入口。`floatingPanelSizing.ts` 提供统一的最小尺寸与首次默认位置。
+
+### 状态契约
+
+布局状态是 `user.preferences.workbench.layout`（`WorkbenchLayoutPreferences`，定义于 `apps/web/src/api/auth.ts`）：
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `leftOpen` / `rightOpen` | `boolean` | 左 / 右侧栏开合 |
+| `leftWidth` / `rightWidth` | `number` | 侧栏列宽（clamp 200–560 / 220–600） |
+| `floatingTaskQueue` / `floatingClassPalette` / `floatingInspector` / `floatingDiscussion` | `FloatingPanelState` | 四个侧栏区块的浮窗态 |
+| `triViewFloat` | `TriViewFloatState` | 3D 三视图浮层态 |
+
+`FloatingPanelState = { detached: boolean; x/y/w/h: number｜null }`；`TriViewFloatState` 把 `detached` 换成 `collapsed`（三视图常驻浮层，只折叠不分离）。`x/y/w/h` 为 `null` 表示尚未拖动过、用首次默认位置。
+
+### 分离 / 合并状态机
+
+- **分离**某区块时默认收起对应侧栏。
+- 之后**展开**侧栏只渲染仍嵌入的区块，不会把已分离浮窗自动收编。
+- **合并回侧栏**只把该区块恢复为嵌入态，不主动展开侧栏。
+- 若一侧两个区块都已分离，侧栏 toggle 是可见 no-op。
+
+### localStorage ↔ 服务端同步
+
+`state/useWorkbenchConfig.ts` 是单一入口：
+
+- `setLayout()` 先本地立即生效并写 `localStorage`（key 见 `LAYOUT_STORAGE_KEYS`，作为离线 / 未登录兜底和远端缺省）。
+- 登录在线时再以 **300ms debounce** `PATCH /me/preferences`，提交**全量 `workbench` 子树**（不是只发 nested `layout`），避免覆盖同子树下的其它渲染偏好。后端只做顶层 `workbench` / `ai` 合并。
+- 远端值缺失字段用 `localStorage` / `DEFAULT_WORKBENCH_PREFERENCES` 逐字段兜底合并（`mergeFloatingPanelState` / `mergeTriViewFloatState`）。
+
+<!-- history: DiscussionPanel and the split right rail shipped through the v0.11 workbench slices. FloatingPanelShell + layout preferences shipped in v0.13.10. -->

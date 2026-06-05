@@ -4011,6 +4011,27 @@
             "title": "Center",
             "type": "array"
           },
+          "convention_at_create": {
+            "anyOf": [
+              {
+                "enum": [
+                  "iso_8855",
+                  "ros_rep103",
+                  "kitti_camera",
+                  "opencv_camera",
+                  "apollo",
+                  "y_forward",
+                  "sustechpoints_demo",
+                  "raw"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Convention At Create"
+          },
           "rotation": {
             "items": {
               "type": "number"
@@ -5650,6 +5671,27 @@
       },
       "DatasetCreate": {
         "properties": {
+          "axis_convention": {
+            "anyOf": [
+              {
+                "enum": [
+                  "iso_8855",
+                  "ros_rep103",
+                  "kitti_camera",
+                  "opencv_camera",
+                  "apollo",
+                  "y_forward",
+                  "sustechpoints_demo",
+                  "raw"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axis Convention"
+          },
           "data_type": {
             "default": "image",
             "title": "Data Type",
@@ -5940,6 +5982,27 @@
       },
       "DatasetOut": {
         "properties": {
+          "axis_convention": {
+            "anyOf": [
+              {
+                "enum": [
+                  "iso_8855",
+                  "ros_rep103",
+                  "kitti_camera",
+                  "opencv_camera",
+                  "apollo",
+                  "y_forward",
+                  "sustechpoints_demo",
+                  "raw"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axis Convention"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -6007,6 +6070,27 @@
       },
       "DatasetUpdate": {
         "properties": {
+          "axis_convention": {
+            "anyOf": [
+              {
+                "enum": [
+                  "iso_8855",
+                  "ros_rep103",
+                  "kitti_camera",
+                  "opencv_camera",
+                  "apollo",
+                  "y_forward",
+                  "sustechpoints_demo",
+                  "raw"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axis Convention"
+          },
           "description": {
             "anyOf": [
               {
@@ -6340,6 +6424,67 @@
           "y"
         ],
         "title": "FeedbackAnchorPosition",
+        "type": "object"
+      },
+      "FloatingPanelState": {
+        "additionalProperties": false,
+        "description": "v0.13.10 · 工作台浮窗状态。像素默认由前端按窗口计算。",
+        "properties": {
+          "detached": {
+            "default": false,
+            "title": "Detached",
+            "type": "boolean"
+          },
+          "h": {
+            "anyOf": [
+              {
+                "maximum": 900.0,
+                "minimum": 120.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "H"
+          },
+          "w": {
+            "anyOf": [
+              {
+                "maximum": 720.0,
+                "minimum": 48.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "W"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          }
+        },
+        "title": "FloatingPanelState",
         "type": "object"
       },
       "ForgotPasswordRequest": {
@@ -8359,12 +8504,58 @@
         "additionalProperties": false,
         "description": "v0.13.0 · 3D 点云语义/实例分割掩码。point_indices 为指向点云的整数索引列表。",
         "properties": {
+          "convention_at_create": {
+            "anyOf": [
+              {
+                "enum": [
+                  "iso_8855",
+                  "ros_rep103",
+                  "kitti_camera",
+                  "opencv_camera",
+                  "apollo",
+                  "y_forward",
+                  "sustechpoints_demo",
+                  "raw"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Convention At Create"
+          },
+          "decimate_stride": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decimate Stride"
+          },
           "point_indices": {
             "items": {
               "type": "integer"
             },
+            "maxItems": 600000,
             "title": "Point Indices",
             "type": "array"
+          },
+          "source_point_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Point Count"
           },
           "type": {
             "const": "point_mask_3d",
@@ -11991,6 +12182,117 @@
         "title": "SmtpStatus",
         "type": "object"
       },
+      "SniffAxisConventionCandidate": {
+        "properties": {
+          "convention": {
+            "enum": [
+              "iso_8855",
+              "ros_rep103",
+              "kitti_camera",
+              "opencv_camera",
+              "apollo",
+              "y_forward",
+              "sustechpoints_demo",
+              "raw"
+            ],
+            "title": "Convention",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "convention",
+          "score"
+        ],
+        "title": "SniffAxisConventionCandidate",
+        "type": "object"
+      },
+      "SniffAxisConventionResponse": {
+        "properties": {
+          "best": {
+            "anyOf": [
+              {
+                "enum": [
+                  "iso_8855",
+                  "ros_rep103",
+                  "kitti_camera",
+                  "opencv_camera",
+                  "apollo",
+                  "y_forward",
+                  "sustechpoints_demo",
+                  "raw"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best"
+          },
+          "camera_item_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Item Id"
+          },
+          "camera_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Role"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/SniffAxisConventionCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "task_link",
+                  "dataset_item"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "title": "SniffAxisConventionResponse",
+        "type": "object"
+      },
       "StorageConnectionCreate": {
         "properties": {
           "config": {
@@ -12925,6 +13227,27 @@
       },
       "TaskPointCloudManifestResponse": {
         "properties": {
+          "axis_convention": {
+            "anyOf": [
+              {
+                "enum": [
+                  "iso_8855",
+                  "ros_rep103",
+                  "kitti_camera",
+                  "opencv_camera",
+                  "apollo",
+                  "y_forward",
+                  "sustechpoints_demo",
+                  "raw"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axis Convention"
+          },
           "cameras": {
             "items": {
               "$ref": "#/components/schemas/PointCloudCameraOut"
@@ -13177,6 +13500,67 @@
           "name"
         ],
         "title": "ToolClassEntry",
+        "type": "object"
+      },
+      "TriViewFloatState": {
+        "additionalProperties": false,
+        "description": "v0.13.10 · 3D 三视图浮层位置、尺寸与折叠态。",
+        "properties": {
+          "collapsed": {
+            "default": false,
+            "title": "Collapsed",
+            "type": "boolean"
+          },
+          "h": {
+            "anyOf": [
+              {
+                "maximum": 720.0,
+                "minimum": 240.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "H"
+          },
+          "w": {
+            "anyOf": [
+              {
+                "maximum": 480.0,
+                "minimum": 200.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "W"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          }
+        },
+        "title": "TriViewFloatState",
         "type": "object"
       },
       "UnreadCount": {
@@ -15986,9 +16370,115 @@
         "title": "VisibleIfRule",
         "type": "object"
       },
+      "WorkbenchLayoutPreferences": {
+        "additionalProperties": false,
+        "description": "v0.13.10 · 工作台布局偏好。\n\n后端只校验结构；默认值和 PATCH 全量 workbench 契约由前端维护。",
+        "properties": {
+          "floatingClassPalette": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FloatingPanelState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "floatingDiscussion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FloatingPanelState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "floatingInspector": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FloatingPanelState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "floatingTaskQueue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FloatingPanelState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "leftOpen": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leftopen"
+          },
+          "leftWidth": {
+            "anyOf": [
+              {
+                "maximum": 560.0,
+                "minimum": 200.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leftwidth"
+          },
+          "rightOpen": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rightopen"
+          },
+          "rightWidth": {
+            "anyOf": [
+              {
+                "maximum": 600.0,
+                "minimum": 220.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rightwidth"
+          },
+          "triViewFloat": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TriViewFloatState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "WorkbenchLayoutPreferences",
+        "type": "object"
+      },
       "WorkbenchPreferences": {
         "additionalProperties": false,
-        "description": "v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。\n所有字段都有默认值，前端缺省可直接落库；schema 用严格 forbid 防脏写入。",
+        "description": "v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。\nv0.13.10 · 增加 layout 子树承载跨设备布局偏好。",
         "properties": {
           "controlPointsSize": {
             "default": 6,
@@ -16002,6 +16492,9 @@
             "maxLength": 255,
             "title": "Cssimagefilter",
             "type": "string"
+          },
+          "layout": {
+            "$ref": "#/components/schemas/WorkbenchLayoutPreferences"
           },
           "longTaskSampleRate": {
             "default": 0.05,
@@ -18424,7 +18917,7 @@
         ]
       },
       "patch": {
-        "description": "更新 preferences，按顶层子树（workbench / ai）合并，未提交的子树保持不变。\n\npydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与\nAI 工具参数偏好可各自独立保存，互不覆盖。",
+        "description": "更新 preferences，按顶层子树（workbench / ai）合并，未提交的子树保持不变。\n\npydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与\nAI 工具参数偏好可各自独立保存，互不覆盖。workbench 内部仍由前端提交全量子树；\n单独 PATCH layout 会覆盖旧 workbench 渲染字段。",
         "operationId": "update_preferences_api_v1_auth_me_preferences_patch",
         "requestBody": {
           "content": {
@@ -20997,6 +21490,54 @@
           }
         ],
         "summary": "Get Linked Projects",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
+    "/api/v1/datasets/{dataset_id}/sniff-axis-convention": {
+      "post": {
+        "operationId": "sniff_axis_convention_api_v1_datasets__dataset_id__sniff_axis_convention_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SniffAxisConventionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Sniff Axis Convention",
         "tags": [
           "datasets"
         ]
@@ -24157,6 +24698,19 @@
               "title": "Video Frame Mode",
               "type": "string"
             }
+          },
+          {
+            "description": "3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
+            "in": "query",
+            "name": "axis_frame",
+            "required": false,
+            "schema": {
+              "default": "iso",
+              "description": "3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
+              "pattern": "^(iso|source)$",
+              "title": "Axis Frame",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -24663,6 +25217,19 @@
               "description": "video-track 导出帧模式：keyframes 仅关键帧，all_frames 展开逐帧插值；图片项目忽略",
               "pattern": "^(keyframes|all_frames)$",
               "title": "Video Frame Mode",
+              "type": "string"
+            }
+          },
+          {
+            "description": "3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
+            "in": "query",
+            "name": "axis_frame",
+            "required": false,
+            "schema": {
+              "default": "iso",
+              "description": "3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
+              "pattern": "^(iso|source)$",
+              "title": "Axis Frame",
               "type": "string"
             }
           }

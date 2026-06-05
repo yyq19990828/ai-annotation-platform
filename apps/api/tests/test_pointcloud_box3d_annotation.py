@@ -1,7 +1,7 @@
-"""v0.13.3 · 点云 3D 框标注 (box_3d / lidar_box_3d) service 层校验.
+"""v0.13.x · 点云 3D 框 / 分割标注 service 层校验.
 
 后端无新端点 —— 标注 CRUD 链路在 v0.13.0 已为 Box3DGeometry + lidar_box_3d
-工具单位备好 (Geometry 判别联合的 box_3d 分发由 test_jsonb_strong_types
+工具单位备好 (Geometry 判别联合的 box_3d / point_mask_3d 分发由 test_jsonb_strong_types
 覆盖)。本测试锁定 service 层创建路径:
 
 - create: lidar_box_3d 配了类集合且 class_name 命中 → 落库, geometry 原样
@@ -37,6 +37,23 @@ def _lidar_tb(classes: list[dict]) -> dict:
     }
 
 
+def _lidar_with_point_mask_tb(
+    box_classes: list[dict], mask_classes: list[dict]
+) -> dict:
+    return {
+        "lidar_box_3d": {
+            "enabled": True,
+            "classes": box_classes,
+            "attribute_schema": {"fields": []},
+        },
+        "point_mask_3d": {
+            "enabled": True,
+            "classes": mask_classes,
+            "attribute_schema": {"fields": []},
+        },
+    }
+
+
 @pytest.mark.asyncio
 async def test_create_box3d_allowed_class_passes(db_session, super_admin):
     user, _ = super_admin
@@ -64,6 +81,43 @@ async def test_create_box3d_allowed_class_passes(db_session, super_admin):
     assert ann.geometry["center"] == [12.0, -3.5, 0.8]
     assert len(ann.geometry["size"]) == 3
     assert len(ann.geometry["rotation"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_create_point_mask3d_uses_point_mask_unit_classes(
+    db_session, super_admin
+):
+    user, _ = super_admin
+    proj = await create_project(db_session, owner_id=user.id, type_key="lidar")
+    proj.tool_bindings = _lidar_with_point_mask_tb(
+        box_classes=[{"name": "car", "order": 0}],
+        mask_classes=[{"name": "road-surface", "order": 0}],
+    )
+    task = await create_task(db_session, project_id=proj.id)
+    await db_session.flush()
+
+    geometry = {
+        "type": "point_mask_3d",
+        "point_indices": [2, 4, 8],
+        "convention_at_create": "iso_8855",
+        "decimate_stride": 2,
+        "source_point_count": 100,
+    }
+
+    svc = AnnotationService(db_session)
+    ann = await svc.create(
+        task_id=task.id,
+        user_id=user.id,
+        annotation_type="point_mask_3d",
+        class_name="road-surface",
+        geometry=geometry,
+        tool_unit_id="point_mask_3d",
+    )
+
+    assert ann.class_name == "road-surface"
+    assert ann.tool_unit_id == "point_mask_3d"
+    assert ann.annotation_type == "point_mask_3d"
+    assert ann.geometry == geometry
 
 
 @pytest.mark.asyncio

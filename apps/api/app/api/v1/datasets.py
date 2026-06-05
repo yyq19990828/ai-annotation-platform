@@ -23,9 +23,11 @@ from app.schemas.dataset import (
     DatasetUploadInitResponse,
     DatasetImportFromConnectionRequest,
     DatasetImportFromConnectionResponse,
+    SniffAxisConventionResponse,
 )
 from app.schemas.project import ProjectOut
 from app.services.audit import AuditAction, AuditService
+from app.services.axis_sniffer import AxisSnifferService
 from app.services.dataset import DatasetService
 from app.services.storage import storage_service
 
@@ -62,6 +64,7 @@ async def create_dataset(
         description=data.description,
         data_type=data.data_type,
         user_id=current_user.id,
+        axis_convention=data.axis_convention,
     )
     await db.commit()
     await db.refresh(ds)
@@ -90,12 +93,53 @@ async def update_dataset(
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
     svc = DatasetService(db)
-    ds = await svc.update(dataset_id, name=data.name, description=data.description)
+    # v0.13.11 · 用 model_fields_set 区分「字段未传」与「显式传 None」(后者清除
+    # metadata_["axis_convention"])。未传时不进 kwargs，让 service 走 _UNSET。
+    update_kwargs: dict = {}
+    if "axis_convention" in data.model_fields_set:
+        update_kwargs["axis_convention"] = data.axis_convention
+    ds = await svc.update(
+        dataset_id,
+        name=data.name,
+        description=data.description,
+        **update_kwargs,
+    )
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
     await db.commit()
+    # v0.13.11 · 在 commit 后 ds 各属性进入 expired 状态; get_with_project_count
+    # 复用 identity map 中的同一对象, 直接访问 .updated_at 会触发 sync lazy reload
+    # 在 async session 下抛 MissingGreenlet。显式 refresh 重读, 复刻 POST 的做法。
+    await db.refresh(ds)
     result = await svc.get_with_project_count(dataset_id)
     return result
+
+
+@router.post(
+    "/{dataset_id}/sniff-axis-convention",
+    response_model=SniffAxisConventionResponse,
+)
+async def sniff_axis_convention(
+    dataset_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles(*_MANAGERS)),
+):
+    svc = DatasetService(db)
+    ds = await svc.get(dataset_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    result = await AxisSnifferService(db).sniff_dataset(dataset_id)
+    if result is None:
+        return SniffAxisConventionResponse()
+    return SniffAxisConventionResponse(
+        best=result.best,
+        score=result.score,
+        candidates=result.candidates,
+        source=result.source,
+        camera_role=result.camera_role,
+        camera_item_id=result.camera_item_id,
+    )
 
 
 @router.delete("/{dataset_id}", status_code=204)

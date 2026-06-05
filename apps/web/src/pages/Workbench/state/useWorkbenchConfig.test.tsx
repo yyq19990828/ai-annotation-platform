@@ -2,10 +2,14 @@
 
 import type { ReactNode } from "react";
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGetPreferences = vi.hoisted(() => vi.fn());
+const mockUpdatePreferences = vi.hoisted(() => vi.fn());
+const mockAuthUser = vi.hoisted(() => ({
+  current: { id: "u1" } as { id: string; preferences?: unknown },
+}));
 
 vi.mock("@/api/auth", async () => {
   const actual = await vi.importActual<typeof import("@/api/auth")>("@/api/auth");
@@ -13,14 +17,14 @@ vi.mock("@/api/auth", async () => {
     ...actual,
     authApi: {
       getPreferences: mockGetPreferences,
-      updatePreferences: vi.fn(),
+      updatePreferences: mockUpdatePreferences,
     },
   };
 });
 
 vi.mock("@/stores/authStore", () => ({
-  useAuthStore: (selector: (s: { user: { id: string } }) => unknown) =>
-    selector({ user: { id: "u1" } }),
+  useAuthStore: (selector: (s: { user: unknown }) => unknown) =>
+    selector({ user: mockAuthUser.current }),
 }));
 
 import { useWorkbenchConfig } from "./useWorkbenchConfig";
@@ -31,7 +35,31 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+    mockAuthUser.current = { id: "u1" };
+    window.localStorage.clear();
+  });
+
+  it("首帧优先使用本地 layout 缓存，避免右栏按旧偏好闪开再收起", () => {
+    window.localStorage.setItem("workbench.u1.rightOpen", "0");
+    mockAuthUser.current = {
+      id: "u1",
+      preferences: {
+        workbench: {
+          layout: { rightOpen: true, rightWidth: 360 },
+        },
+      },
+    };
+    mockGetPreferences.mockReturnValue(new Promise(() => undefined));
+
+    const { result } = renderHook(() => useWorkbenchConfig(), { wrapper });
+
+    expect(result.current.loaded).toBe(false);
+    expect(result.current.layout.rightOpen).toBe(false);
+    expect(result.current.layout.rightWidth).toBe(360);
+  });
 
   it("无项目覆盖时，config = DEFAULTS ∪ 用户偏好；lockedFields = []", async () => {
     mockGetPreferences.mockResolvedValue({
@@ -88,5 +116,64 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
     expect(result.current.config.smoothImage).toBe(true); // 沿用用户
     expect(result.current.config.controlPointsSize).toBe(12); // 项目覆盖
     expect(result.current.lockedFields).toEqual(["controlPointsSize"]);
+  });
+
+  it("setLayout 立即更新本地状态与 localStorage，并 debounce 全量 workbench PATCH", async () => {
+    mockGetPreferences.mockResolvedValue({
+      workbench: { smoothImage: false, layout: { rightWidth: 300 } },
+    });
+    mockUpdatePreferences.mockImplementation(async (payload) => payload);
+    const { result } = renderHook(() => useWorkbenchConfig(), { wrapper });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    vi.useFakeTimers();
+    act(() => {
+      result.current.setLayout({
+        rightWidth: 420,
+        floatingDiscussion: {
+          detached: true,
+          x: 760,
+          y: 180,
+          w: 420,
+          h: 560,
+        },
+        floatingInspector: {
+          detached: true,
+          x: 640,
+          y: 80,
+          w: 360,
+          h: 600,
+        },
+      });
+    });
+
+    expect(result.current.layout.rightWidth).toBe(420);
+    expect(result.current.layout.floatingInspector.detached).toBe(true);
+    expect(result.current.layout.floatingDiscussion.detached).toBe(true);
+    expect(window.localStorage.getItem("workbench.u1.rightWidth")).toBe("420");
+    expect(window.localStorage.getItem("workbench.u1.floatingDiscussion")).toContain("\"detached\":true");
+    expect(mockUpdatePreferences).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    expect(mockUpdatePreferences).toHaveBeenCalledWith({
+      workbench: expect.objectContaining({
+        smoothImage: false,
+        layout: expect.objectContaining({
+          rightWidth: 420,
+          floatingDiscussion: expect.objectContaining({
+            detached: true,
+            h: 560,
+          }),
+          floatingInspector: expect.objectContaining({
+            detached: true,
+            w: 360,
+          }),
+        }),
+      }),
+    });
+    vi.useRealTimers();
   });
 });

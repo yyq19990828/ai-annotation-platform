@@ -187,6 +187,13 @@ describe("AIInspectorPanel", () => {
     expect(screen.getByText("标注详情")).toBeInTheDocument();
   });
 
+  it("点击分离按钮 → 调用 onDetach", () => {
+    const onDetach = vi.fn();
+    renderUI({ onDetach });
+    fireEvent.click(screen.getByTitle("分离为浮窗"));
+    expect(onDetach).toHaveBeenCalled();
+  });
+
   it("有 AI 框 → 渲染「AI 待审」分组头 + box item", () => {
     const aiBoxes = [makeAiBox("ai-1", "car")];
     renderUI({ aiBoxes });
