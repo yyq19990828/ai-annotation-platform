@@ -26,10 +26,11 @@ build_pointcloud_tasks_for_link 的目录启发式 single-scene inference)。
 
 注意 `--scene-tokens` 实际匹配 scene.json 的 `name` 字段(如 scene-0061),不是 token。
 
-平台原生目录约定(storage key):
-    <dataset_name>/<scene_name>/lidar/<idx 6位>.pcd            file_type=point_cloud
-    <dataset_name>/<scene_name>/camera/<CHANNEL>/<idx 6位>.jpg  file_type=image
-    <dataset_name>/<scene_name>/calib/camera/<CHANNEL>.json     file_type=other
+平台原生目录约定(storage key);帧 stem 用 <scene_name>_<idx 6位> 保证跨 scene 全局唯一
+(group_frames 以文件名 stem 作帧键,多 scene 同号帧会撞键):
+    <dataset_name>/<scene_name>/lidar/<scene_name>_<idx 6位>.pcd            file_type=point_cloud
+    <dataset_name>/<scene_name>/camera/<CHANNEL>/<scene_name>_<idx 6位>.jpg  file_type=image
+    <dataset_name>/<scene_name>/calib/camera/<CHANNEL>.json                 file_type=other
 
 标定:本版用 **每个 scene 第 1 帧** 的标定对全 scene 通用(metadata 记
 timestamp_delta_us 备查;前端不消费;逐帧真补偿留 v0.15+)。
@@ -304,6 +305,12 @@ async def import_nuscenes(
 
         for frame_idx, sample in enumerate(samples):
             idx6 = f"{frame_idx:06d}"
+            # group_frames 以"文件名 stem"作帧键,而每个 scene 的 idx6 都从 0 起会重号;
+            # 多 scene 共用一个 dataset 时,不同 scene 的同号帧 stem 冲突,
+            # build_pointcloud_tasks_for_link 会把它们并成一个 task(漏建)。用 scene_name
+            # 前缀让 stem 全局唯一即可绕开(不动 group_frames)。scene 内 frame_index 仍由
+            # assign_items_to_scene 按 lidar_items 顺序赋 0..N-1,与文件名解耦。
+            frame_stem = f"{scene_name}_{idx6}"
             by_channel = _key_sample_data_by_channel(
                 sample["token"], sample_data, cs_by_token, sensor_by_token
             )
@@ -321,13 +328,13 @@ async def import_nuscenes(
                 )
 
             pcd_bytes = _lidar_bin_to_ascii_pcd(nuscenes_root / lidar_sd["filename"])
-            lidar_key = f"{dataset_name}/{scene_name}/lidar/{idx6}.pcd"
+            lidar_key = f"{dataset_name}/{scene_name}/lidar/{frame_stem}.pcd"
             storage_service.client.put_object(
                 Bucket=bucket, Key=lidar_key, Body=pcd_bytes
             )
             lidar_item = DatasetItem(
                 dataset_id=ds.id,
-                file_name=f"{idx6}.pcd",
+                file_name=f"{frame_stem}.pcd",
                 file_path=lidar_key,
                 file_type="point_cloud",
                 file_size=len(pcd_bytes),
@@ -346,13 +353,13 @@ async def import_nuscenes(
                     continue
 
                 jpg_bytes = (nuscenes_root / sd["filename"]).read_bytes()
-                cam_key = f"{dataset_name}/{scene_name}/camera/{channel}/{idx6}.jpg"
+                cam_key = f"{dataset_name}/{scene_name}/camera/{channel}/{frame_stem}.jpg"
                 storage_service.client.put_object(
                     Bucket=bucket, Key=cam_key, Body=jpg_bytes
                 )
                 cam_item = DatasetItem(
                     dataset_id=ds.id,
-                    file_name=f"{idx6}.jpg",
+                    file_name=f"{frame_stem}.jpg",
                     file_path=cam_key,
                     file_type="image",
                     file_size=len(jpg_bytes),

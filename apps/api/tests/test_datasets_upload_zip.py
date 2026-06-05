@@ -39,6 +39,10 @@ class _FakePutOnlyClient:
     def put_object(self, *, Bucket, Key, Body, ContentType=None):
         self.objects[Key] = bytes(Body)
 
+    def head_bucket(self, *, Bucket):
+        # create_dataset → ensure_bucket 会先 head_bucket 探测;假装 bucket 已存在。
+        return {}
+
 
 def _make_zip(entries: dict[str, bytes]) -> bytes:
     """在内存中构造 ZIP 包，entries = {zip内路径: 内容}。"""
@@ -56,7 +60,7 @@ async def _create_dataset(httpx_client, token: str, name: str, data_type: str = 
         headers=_bearer(token),
         json={"name": name, "data_type": data_type},
     )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code == 201, resp.text
     return resp.json()
 
 
@@ -256,12 +260,15 @@ async def test_upload_zip_scene_auto_inferred(
     ).scalars().all()
     assert len(scenes) == 1, f"expected 1 scene, got {len(scenes)}"
 
-    # lidar items frame_index 为 0 和 1
+    # lidar items frame_index 为 0 和 1。
+    # 注意:.pcd 经 mimetypes 猜不出类型,upload_zip 落 file_type="other";
+    # 但 scene_inference 的 group_frames 按后缀 .pcd 识别 lidar 并赋 frame_index,
+    # 故这里按路径 /lidar/ 过滤,而非 file_type。
     lidar_items = (
         await db_session.execute(
             select(DatasetItem).where(
                 DatasetItem.dataset_id == uuid.UUID(ds_id),
-                DatasetItem.file_type == "point_cloud",
+                DatasetItem.file_path.like("%/lidar/%"),
             )
         )
     ).scalars().all()
