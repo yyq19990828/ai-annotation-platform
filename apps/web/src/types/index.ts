@@ -429,6 +429,12 @@ export type {
   SensorCalibration,
 } from "@/api/generated/types.gen";
 
+// v0.14.0 · scene 邻帧导航 (跨 task 帧序列). 由后端 schema 派生.
+export type {
+  NeighborInfo,
+  NeighborsResponse,
+} from "@/api/generated/types.gen";
+
 export type PredictionShape = Omit<GeneratedPredictionShape, "geometry"> & {
   geometry: Geometry;
   shape_index?: number;
