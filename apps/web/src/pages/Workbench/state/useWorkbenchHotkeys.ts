@@ -58,6 +58,8 @@ export interface UseWorkbenchHotkeysArgs {
   navigateTask: (dir: "next" | "prev") => void;
   smartNext: (mode: "open" | "uncertain") => void;
   setFitTick: React.Dispatch<React.SetStateAction<number>>;
+  // v0.14.1 · 跨帧目标延续 (Alt+→ / Alt+←); 未提供则该键无动作。
+  onCrossFramePropagate?: (dir: "next" | "prev") => void;
 
   // class / attribute / annotation actions
   recordRecentClass: (cls: string) => void;
@@ -140,7 +142,7 @@ export function isWorkbenchInputFocused(el: EventTarget | null): boolean {
 export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbenchHotkeysReturn {
   const {
     s, history, classes, currentProject, annotationsRef, batchChanging, setBatchChanging, showHotkeys,
-    navigateTask, smartNext, setFitTick,
+    navigateTask, smartNext, setFitTick, onCrossFramePropagate,
     recordRecentClass, handleDeleteBox, handleBatchDelete, handlePatchShapeFlag,
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
@@ -321,6 +323,10 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         case "redo": e.preventDefault(); history.redo(); return;
         case "fitReset": e.preventDefault(); setFitTick((n) => n + 1); return;
         case "navigateTask": e.preventDefault(); navigateTask(action.dir); return;
+        case "crossFramePropagate":
+          e.preventDefault();
+          onCrossFramePropagate?.(action.dir);
+          return;
 
         case "videoTogglePlayback":
           e.preventDefault();
@@ -653,7 +659,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     samplingActive,
     videoControlsRef,
     s, history, classes, currentProject, annotationsRef, batchChanging, setBatchChanging, showHotkeys,
-    navigateTask, smartNext, setFitTick,
+    navigateTask, smartNext, setFitTick, onCrossFramePropagate,
     recordRecentClass, handleDeleteBox, handleBatchDelete, handlePatchShapeFlag,
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,

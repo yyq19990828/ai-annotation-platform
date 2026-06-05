@@ -150,6 +150,15 @@ describe("dispatchKey · 上下文相关", () => {
     expect(dispatch({ key: "ArrowDown", shiftKey: true }, { hasSelection: true }))
       .toEqual({ type: "arrowNudge", dx: 0, dy: 10 });
   });
+  it("Alt + → / ← (有选中) → crossFramePropagate", () => {
+    expect(dispatch({ key: "ArrowRight", altKey: true }, { hasSelection: true }))
+      .toEqual({ type: "crossFramePropagate", dir: "next" });
+    expect(dispatch({ key: "ArrowLeft", altKey: true }, { hasSelection: true }))
+      .toEqual({ type: "crossFramePropagate", dir: "prev" });
+  });
+  it("Alt + → 无选中 → 不触发跨帧", () => {
+    expect(dispatch({ key: "ArrowRight", altKey: true })).toBeNull();
+  });
 });
 
 describe("dispatchKey · video mode", () => {

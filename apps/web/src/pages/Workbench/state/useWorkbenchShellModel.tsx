@@ -1290,6 +1290,7 @@ export function useWorkbenchShellModel({
     s, history, classes, currentProject, annotationsRef,
     batchChanging, setBatchChanging, showHotkeys,
     navigateTask, smartNext, setFitTick,
+    onCrossFramePropagate: crossFramePropagate,
     recordRecentClass, handleDeleteBox, handleBatchDelete, handlePatchShapeFlag,
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes,

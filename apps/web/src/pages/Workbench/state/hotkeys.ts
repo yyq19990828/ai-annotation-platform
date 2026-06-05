@@ -98,6 +98,7 @@ export const HOTKEYS: HotkeyDef[] = [
 
   { keys: ["Ctrl", "→"], desc: "下一题", group: "nav", actionType: "navigateTask" },
   { keys: ["Ctrl", "←"], desc: "上一题", group: "nav", actionType: "navigateTask" },
+  { keys: ["Alt", "→ / ←"], desc: "跨帧延续选中框到同 scene 邻帧(3D 也可 Shift+→/←)", group: "nav", actionType: "crossFramePropagate" },
   { keys: ["N"], desc: "智能切题：下一未标注", group: "nav", actionType: "smartNext" },
   { keys: ["U"], desc: "智能切题：下一最不确定", group: "nav", actionType: "smartNext" },
   { keys: ["E"], desc: "提交质检", group: "nav", actionType: "submit" },
@@ -124,6 +125,7 @@ export type HotkeyAction =
   | { type: "redo" }
   | { type: "fitReset" }
   | { type: "navigateTask"; dir: "next" | "prev" }
+  | { type: "crossFramePropagate"; dir: "next" | "prev" }
   | { type: "selectAllUser" }
   | { type: "copy" }
   | { type: "paste" }
@@ -320,6 +322,16 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     // v0.10.2 · Alt+3 进入 AI 工具组 (循环). 单按 S 同样进入循环.
     if (e.key === "3") return { type: "setTool", tool: "ai-cycle" };
     if (e.key === "4") return { type: "setTool", tool: "hand" };
+  }
+
+  // v0.14.1 · Alt+→ / Alt+← 跨帧目标延续(2D / 3D 统一键; 2D 的 Shift+← / → 已被
+  // 10px nudge 占用, 故跨帧用 Alt+方向)。仅在有选中时消费。
+  if (
+    e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey &&
+    ctx.hasSelection &&
+    (e.key === "ArrowRight" || e.key === "ArrowLeft")
+  ) {
+    return { type: "crossFramePropagate", dir: e.key === "ArrowRight" ? "next" : "prev" };
   }
 
   // 方向键 nudge（仅在有选中时；上层进一步过滤是否含 user 框）
