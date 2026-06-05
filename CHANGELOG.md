@@ -28,6 +28,33 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.14.1] - 2026-06-06
+
+跨帧目标延续 UX:把 v0.14.0 的 scene + neighbors API 变成可用的标注效率特性。3D 工作台 `Shift+→` / `Shift+←` 一键把选中 box_3d 延续到同 scene 邻帧 task(共享 `group_id`),跳过去自动选中新框;三视图 / 主视图可叠加显示同 group_id 的前后 K 帧参考框。2D 图像序列同等用 `Alt+→` / `Alt+←`(2D 的 `Shift+方向` 已被 10px nudge 占用)。配套加 scheduler scene 连续标注调度开关。计划见 `docs/plans/2026-06-05-v0.14.1-cross-frame-ux.md`。
+
+### Added
+
+- **跨帧 propagate 端点**:`POST /api/v1/tasks/{task_id}/annotations/{annotation_id}/propagate-to-task`,body `{ target_task_id, override_psr? }`。复制源 annotation 的 geometry / class / attributes / tool_unit_id 到目标 task(同 project 才允许,否则 422),共享 `group_id`。仅支持静态几何(`box_3d` / `bbox` / `polygon` / `multi_polygon` / `rotated_bbox` / `polyline` / `keypoint`);`video_*` / `point_mask_3d` 拒(422)。
+- **共享 group_id 序列**:跨帧链的 `group_id` 在源无 group 时从新建全局序列 `cross_frame_group_seq`(START 1000000000)分配并写回源,高位起始保证与 per-task `tasks.next_group_seq`(小整数)永不冲突,同 scene 跨帧 overlay 按 `group_id` 匹配不误命中无关分组。migration `0097`。
+- **box_3d convention 安全网联动**:propagate 时 `box_3d.convention_at_create` 取**目标** dataset 的 `axis_convention`(DB 内 PSR 永远 ISO 字节,原值复制即对齐世界坐标;写目标 convention 仅为前端 banner 不误报,延续 v0.13.11 契约)。
+- **前端跨帧 hook**:`useFrameNeighbors(taskId, k)` 包 neighbors 端点 + `refresh()` 强刷;`useNeighborAnnotations(taskIds, groupId)` 用 `useQueries` 跨邻帧 task 拉同 group_id 标注(复用 `["annotations",taskId]` 缓存,group=null 短路)。`api/tasks.ts` 加 `getNeighbors` / `propagateToTask`。
+- **3D 工作台跨帧 UX**:`Shift+→` / `Shift+←` 把选中 box_3d propagate 到邻帧并跳转自动选中;`CrossFrameOverlayToggle`(0/1/3/5,localStorage 持久化)控制邻帧叠加 K;`PointCloudScene.setReferenceBoxes` 渲染半透明 dashed、不可拾取的参考框层;首/末帧给"已是该 scene 首/末帧" toast。
+- **2D 图像序列跨帧 UX**:`Alt+→` / `Alt+←` 跨帧 propagate 选中 bbox / polygon(统一中央 hotkey,与 3D 共用壳层 orchestration);3D 额外保留 `Shift+→` / `Shift+←` 别名。
+
+### Changed
+
+- **scheduler scene 连续标注**:`Project` 加 `prefer_same_scene_continuation`(默认 `false`)+ `scene_continuation_window_min`(默认 30)。打开后 `get_next_task` 在套用既有 sampling 前,优先返回"用户窗口内最近标注 task 的同 scene 下一帧"(未锁、未由本人标过、可见);找不到回退既有策略。**默认 OFF,既有项目零回归**(关闭时整段不进入)。`PATCH /projects/{id}` 透出该开关。
+
+### Docs
+
+- `docs-site/user-guide/workbench/3d-box.md`:跨帧 propagate + 邻帧叠加操作说明。
+- `docs-site/dev/concepts/scene-and-frame-index.md`:新增"跨帧 UX 如何消费 neighbors API"+ scheduler scene 优先小节。
+
+### 未尽事项(留后续)
+
+- 视频多段(case C)段内/段间 `Alt+→` 分流到 `video_tracker_runner`:本期未接(videoMode 下暂无动作)。
+- 跨帧自动插值 / Kalman 预测、多目标批量 propagate、`point_mask_3d` 跨帧、邻帧 overlay K>5:留 v0.15+。
+
 ## [0.14.0] - 2026-06-06
 
 跨 task 帧序列地基:`scenes` 模型 + `dataset_items.scene_id/frame_index` + neighbors API + 导入端口对齐 + manifest 透出。把 3D 点云逐帧 / 2D 抽帧序列 / 多段 mp4 拼接长录像统一到同一抽象,为 v0.14.1 跨帧 UX(`Shift+→` propagate / 邻帧叠加 / `useFrameNeighbors`)备好合法 backing。计划见 `docs/plans/2026-06-05-v0.14.0-scene-and-frame-index-foundation.md`。

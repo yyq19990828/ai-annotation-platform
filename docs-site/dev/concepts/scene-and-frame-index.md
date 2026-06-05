@@ -162,11 +162,27 @@ PYTHONPATH=. uv run python scripts/backfill_scenes.py --all-missing --dry-run
 
 **不**在 docker 启动时自动跑——管理员人工 review 后执行。脚本默认 `mode=auto`;对文件名编码 scene 信息(如 `<ds>/scene_a_000001.pcd` 平铺)会误判为单 scene,需显式 `--mode=per_subdirectory` 或人工 PATCH。
 
+## 跨帧 UX 如何消费 neighbors API(v0.14.1)
+
+v0.14.1 在这套地基上落了用户可用的跨帧能力,消费路径:
+
+1. **`useFrameNeighbors(taskId, k)`**(`apps/web/src/hooks/`):薄包 `GET /tasks/{id}/neighbors?k=K`,纯透传 `NeighborsResponse`,不感知几何类型,3D / 2D 共用。`refresh()` 在 propagate 前强刷避免缓存陈旧。
+2. **propagate**:`POST /tasks/{task_id}/annotations/{annotation_id}/propagate-to-task` body `{ target_task_id }`。`services/annotation.py::propagate` 复制 geometry / class / attributes,共享 `group_id`(源无则从全局序列 `cross_frame_group_seq` 分配并写回源),`box_3d.convention_at_create` 取**目标** dataset 的 `axis_convention`。
+   - **group_id 作用域**:per-task `tasks.next_group_seq` 产小整数;跨帧链用 `cross_frame_group_seq`(START 1e9)高位起始,两套命名空间共用 `group_id` 列但永不冲突——同 scene 跨帧 overlay 按 `group_id` 精确匹配不误命中无关分组。
+3. **邻帧叠加**:`useNeighborAnnotations(taskIds, groupId)` 用 `useQueries` 批量拉前后 K 帧 task 的标注(复用 `["annotations",taskId]` 缓存键),client 端按 `group_id` 过滤 → `PointCloudScene.setReferenceBoxes` 渲染只读参考框。`groupId=null` 时整 hook 短路不发请求。
+4. **键位**:3D `Shift+→/←`(ThreeDWorkbench 本地 keydown,3D 无 arrow-nudge 冲突);2D `Alt+→/←`(中央 hotkey,2D 的 `Shift+方向` 已被 10px nudge 占用)。两者共用壳层 `useWorkbenchShellModel.crossFramePropagate`(几何无关)+ `resolveCrossFrameTarget` 纯函数判 scene 边界。
+
+## scheduler scene 连续标注(`prefer_same_scene_continuation`,v0.14.1)
+
+`Project.prefer_same_scene_continuation`(默认 `false`)打开后,`get_next_task` 在套用既有 sampling 策略**前**插一步:找用户在 `scene_continuation_window_min`(默认 30)分钟内最近创建的 active annotation → 其 task 的 `scene_id + frame_index` → 该 scene 内 `frame_index` 更大的、按帧升序第一个可分配(未锁未标可见)task,锁定返回。找不到回退既有策略。
+
+- **不**强制独占 scene(其它帧仍可分配给他人),只是"同一人继续要 task 时优先连续"。
+- **默认 OFF 零回归**:关闭时整段不进入,既有 sampling 测试 byte-for-byte 不变(`tests/test_scheduler_scene_preference.py` 守此)。
+
 ## 不在本期(留后)
 
-- 跨帧 UX(`useFrameNeighbors` / `Shift+→` propagate / 邻帧参考框叠加)→ v0.14.1
-- 跨 scene 段内段间无感导航(case C)→ v0.14.2+
-- 跨帧自动插值 / Kalman 预测 → v0.14.2+
-- `get_next_task` 的 `prefer_same_scene_continuation` flag → v0.14.1+
+- 跨 scene 段内段间无感导航(case C 视频多段)→ v0.14.2+
+- 视频段 `Alt+→` 分流到 `video_tracker_runner`(段内)→ 后续
+- 跨帧自动插值 / Kalman 预测、多目标批量 propagate、`point_mask_3d` 跨帧 → v0.15+
 - scene 跨多 dataset(一 scene 横跨 lidar + image dataset)→ v0.15+
 - ego_pose / 时间戳(nuScenes sample_data 等价物)→ v0.15+
