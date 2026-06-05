@@ -137,12 +137,16 @@ class AxisSnifferService:
         dataset_id: uuid.UUID,
     ) -> list[AxisSniffObservation]:
         items = (
-            await self.db.execute(
-                select(DatasetItem)
-                .where(DatasetItem.dataset_id == dataset_id)
-                .order_by(DatasetItem.created_at)
+            (
+                await self.db.execute(
+                    select(DatasetItem)
+                    .where(DatasetItem.dataset_id == dataset_id)
+                    .order_by(DatasetItem.created_at)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         out: list[AxisSniffObservation] = []
         for item in items:
             if _calibration_for(item) is None:

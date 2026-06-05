@@ -31,14 +31,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 # frontCameraForward / psrFromPoints / ...) 无需感知 convention 存在。
 # 详见 docs/adr/0034-lidar-axis-convention.md。
 LidarAxisConvention = Literal[
-    "iso_8855",            # +X 前 / +Y 左 / +Z 上 (默认, ISO 8855 / SAE J670)
-    "ros_rep103",          # 同 iso_8855 (ROS REP-103, 别名)
-    "kitti_camera",        # +X 右 / +Y 下 / +Z 前 (KITTI camera-as-world)
-    "opencv_camera",       # 同 kitti_camera (别名)
-    "apollo",              # +X 右 / +Y 前 / +Z 上 (Apollo)
-    "y_forward",           # 同 apollo (Velodyne raw 常见别名)
+    "iso_8855",  # +X 前 / +Y 左 / +Z 上 (默认, ISO 8855 / SAE J670)
+    "ros_rep103",  # 同 iso_8855 (ROS REP-103, 别名)
+    "kitti_camera",  # +X 右 / +Y 下 / +Z 前 (KITTI camera-as-world)
+    "opencv_camera",  # 同 kitti_camera (别名)
+    "apollo",  # +X 右 / +Y 前 / +Z 上 (Apollo)
+    "y_forward",  # 同 apollo (Velodyne raw 常见别名)
     "sustechpoints_demo",  # +X 车左 / +Y 车后 / +Z 天 (third-party/SUSTechPOINTS 自带示例)
-    "raw",                 # 不归一化, 平台不为该数据集承诺 ISO
+    "raw",  # 不归一化, 平台不为该数据集承诺 ISO
 ]
 
 

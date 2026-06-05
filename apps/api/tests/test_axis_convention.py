@@ -80,7 +80,12 @@ def test_transform_box_geometry_axis_frame_source_keeps_extra_fields():
 
 
 def test_transform_box_geometry_axis_frame_iso_is_noop_copy():
-    geometry = {"type": "box_3d", "center": [0, 1, 0], "size": [1, 1, 1], "rotation": [0, 0, 0]}
+    geometry = {
+        "type": "box_3d",
+        "center": [0, 1, 0],
+        "size": [1, 1, 1],
+        "rotation": [0, 0, 0],
+    }
 
     out = transform_box_geometry_axis_frame(
         geometry,

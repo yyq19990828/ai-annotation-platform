@@ -882,9 +882,7 @@ class ExportService:
             pred_by_task.setdefault(pred.task_id, []).append(pred)
 
         axis_by_task = (
-            await self._axis_convention_by_task(tasks)
-            if axis_frame == "source"
-            else {}
+            await self._axis_convention_by_task(tasks) if axis_frame == "source" else {}
         )
 
         # v0.10.31 · 视频项目: 给每个 task block 填 media_type + video 子块.

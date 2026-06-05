@@ -55,7 +55,9 @@ async def _seed_dataset(db, owner_id, *, with_front: bool = True):
         file_name="000001.jpg",
         file_path="scene/camera/front/000001.jpg",
         file_type="image",
-        metadata_={"calibration": _calib_for("sustechpoints_demo")} if with_front else {},
+        metadata_={"calibration": _calib_for("sustechpoints_demo")}
+        if with_front
+        else {},
     )
     side_item = DatasetItem(
         dataset_id=ds.id,
