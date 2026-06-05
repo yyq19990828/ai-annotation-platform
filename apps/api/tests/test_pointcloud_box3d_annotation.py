@@ -37,7 +37,9 @@ def _lidar_tb(classes: list[dict]) -> dict:
     }
 
 
-def _lidar_with_point_mask_tb(box_classes: list[dict], mask_classes: list[dict]) -> dict:
+def _lidar_with_point_mask_tb(
+    box_classes: list[dict], mask_classes: list[dict]
+) -> dict:
     return {
         "lidar_box_3d": {
             "enabled": True,
@@ -82,7 +84,9 @@ async def test_create_box3d_allowed_class_passes(db_session, super_admin):
 
 
 @pytest.mark.asyncio
-async def test_create_point_mask3d_uses_point_mask_unit_classes(db_session, super_admin):
+async def test_create_point_mask3d_uses_point_mask_unit_classes(
+    db_session, super_admin
+):
     user, _ = super_admin
     proj = await create_project(db_session, owner_id=user.id, type_key="lidar")
     proj.tool_bindings = _lidar_with_point_mask_tb(

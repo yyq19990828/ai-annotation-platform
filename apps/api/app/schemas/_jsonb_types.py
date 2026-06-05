@@ -31,14 +31,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 # frontCameraForward / psrFromPoints / ...) 无需感知 convention 存在。
 # 详见 docs/adr/0034-lidar-axis-convention.md。
 LidarAxisConvention = Literal[
-    "iso_8855",            # +X 前 / +Y 左 / +Z 上 (默认, ISO 8855 / SAE J670)
-    "ros_rep103",          # 同 iso_8855 (ROS REP-103, 别名)
-    "kitti_camera",        # +X 右 / +Y 下 / +Z 前 (KITTI camera-as-world)
-    "opencv_camera",       # 同 kitti_camera (别名)
-    "apollo",              # +X 右 / +Y 前 / +Z 上 (Apollo)
-    "y_forward",           # 同 apollo (Velodyne raw 常见别名)
+    "iso_8855",  # +X 前 / +Y 左 / +Z 上 (默认, ISO 8855 / SAE J670)
+    "ros_rep103",  # 同 iso_8855 (ROS REP-103, 别名)
+    "kitti_camera",  # +X 右 / +Y 下 / +Z 前 (KITTI camera-as-world)
+    "opencv_camera",  # 同 kitti_camera (别名)
+    "apollo",  # +X 右 / +Y 前 / +Z 上 (Apollo)
+    "y_forward",  # 同 apollo (Velodyne raw 常见别名)
     "sustechpoints_demo",  # +X 车左 / +Y 车后 / +Z 天 (third-party/SUSTechPOINTS 自带示例)
-    "raw",                 # 不归一化, 平台不为该数据集承诺 ISO
+    "raw",  # 不归一化, 平台不为该数据集承诺 ISO
 ]
 
 
@@ -549,7 +549,9 @@ class PointMaskGeometry(BaseModel):
     """v0.13.0 · 3D 点云语义/实例分割掩码。point_indices 为指向点云的整数索引列表。"""
 
     type: Literal["point_mask_3d"] = "point_mask_3d"
-    point_indices: list[int] = Field(default_factory=list)
+    # 上界防止单条标注 geometry 膨胀到几 MB（jsonb / 列表序列化 / AAP 导出都会被放大）。
+    # 前端渲染抽稀到 DECIMATE_THRESHOLD=500k 点，全选最多 ~500k 索引，600k 留足余量。
+    point_indices: list[int] = Field(default_factory=list, max_length=600_000)
     convention_at_create: LidarAxisConvention | None = None
     decimate_stride: int | None = Field(default=None, ge=1)
     source_point_count: int | None = Field(default=None, ge=0)

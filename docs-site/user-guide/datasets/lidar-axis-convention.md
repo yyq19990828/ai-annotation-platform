@@ -100,7 +100,7 @@ WHERE name = 'scene-001';
 - ✓ 三视图 (Top / Side / Front) 视角与车身真实长 / 宽 / 高对齐
 - ✓ 相机投影联动方向正确
 - ✓ 新建 3D 框和点云分割标注会记录当时的 `convention_at_create`
-- ✓ AAP 导出可通过 `axis_frame=source` 把 3D 框反向映射回数据源坐标系;默认 `iso` 保持平台内部坐标
+- ✓ AAP 导出可通过 `axis_frame=source` 把 3D 框反向映射回数据源坐标系;默认 `iso` 保持平台内部坐标。参数语义与适用格式见 [导出 · 3D box 坐标系](../../api/guides/export.md#export-axis-frame)
 
 ### 历史标注
 
@@ -110,6 +110,6 @@ v0.13.12 起,新建的 `box_3d` / `point_mask_3d` 几何会记录 `convention_at
 
 ## 相关
 
-- 架构决策: [`docs/adr/0034-lidar-axis-convention.md`](../../adr/0034-lidar-axis-convention.md)
+- 架构决策: [ADR-0034 lidar 坐标系约定](../../dev/adr/0034-lidar-axis-convention)
 - 实现计划: [`docs/plans/2026-06-05-v0.13.11-lidar-axis-convention.md`](../../plans/2026-06-05-v0.13.11-lidar-axis-convention.md)
 - 收尾计划: [`docs/plans/2026-06-05-v0.13.12-3d-polish-and-pointmask.md`](../../plans/2026-06-05-v0.13.12-3d-polish-and-pointmask.md)

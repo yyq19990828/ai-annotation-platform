@@ -870,11 +870,30 @@ export function ThreeDWorkbench({
         handlePointMaskSelect(start, { x: e.clientX, y: e.clientY });
       }
     };
+    // v0.13.12 · 拖拽期取消: Escape / 右键 → 丢弃这一笔(清起点+预览+scene 状态),
+    // 避免 preview 矩形挂着、或落进 up 收尾的全 false 分支被静默丢弃。
+    const cancel = () => {
+      boxSelectStartRef.current = null;
+      sceneRef.current?.setBoxSelecting(false);
+      setIsBoxSelecting(false);
+      setPreviewRect(null);
+    };
+    const onCancelKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") cancel();
+    };
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      cancel();
+    };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("keydown", onCancelKey);
+    window.addEventListener("contextmenu", onContextMenu);
     return () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("keydown", onCancelKey);
+      window.removeEventListener("contextmenu", onContextMenu);
     };
   }, [isBoxSelecting, placing, pointMasking, handlePlace, handleBoxSelect, handlePointMaskSelect]);
 

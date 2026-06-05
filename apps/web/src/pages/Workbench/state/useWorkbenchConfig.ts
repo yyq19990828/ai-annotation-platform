@@ -44,28 +44,45 @@ interface WorkbenchConfigState {
   lockedFields: LockableField[];
 }
 
+const clampNum = (v: number, lo: number, hi: number): number =>
+  Math.min(hi, Math.max(lo, v));
+
 function mergeUser(
   remote: Partial<WorkbenchPreferences> | undefined | null,
+  userId: string | null | undefined,
   options?: { preferLocalLayout?: boolean },
 ): WorkbenchPreferences {
   return {
     ...DEFAULT_WORKBENCH_PREFERENCES,
     ...(remote ?? {}),
-    layout: mergeLayout(remote?.layout, options),
+    layout: mergeLayout(remote?.layout, userId, options),
   };
 }
 
-const LAYOUT_STORAGE_KEYS = {
-  leftOpen: "workbench.leftOpen",
-  rightOpen: "workbench.rightOpen",
-  leftWidth: "workbench.leftWidth",
-  rightWidth: "workbench.rightWidth",
-  floatingTaskQueue: "workbench.floatingTaskQueue",
-  floatingClassPalette: "workbench.floatingClassPalette",
-  floatingInspector: "workbench.floatingInspector",
-  floatingDiscussion: "workbench.floatingDiscussion",
-  triViewFloat: "workbench.triViewFloat",
-};
+// localStorage 布局缓存按账号分桶，避免同浏览器多账号布局串台 / 互相覆盖（首帧闪烁、
+// 后登录账号被先前账号覆盖）。登出态用无账号前缀（此时无账号可串）。
+const LAYOUT_KEY_NAMES = [
+  "leftOpen",
+  "rightOpen",
+  "leftWidth",
+  "rightWidth",
+  "floatingTaskQueue",
+  "floatingClassPalette",
+  "floatingInspector",
+  "floatingDiscussion",
+  "triViewFloat",
+] as const;
+
+type LayoutKeyName = (typeof LAYOUT_KEY_NAMES)[number];
+
+function layoutStorageKeys(
+  userId: string | null | undefined,
+): Record<LayoutKeyName, string> {
+  const prefix = userId ? `workbench.${userId}.` : "workbench.";
+  return Object.fromEntries(
+    LAYOUT_KEY_NAMES.map((n) => [n, `${prefix}${n}`]),
+  ) as Record<LayoutKeyName, string>;
+}
 
 function readBool(key: string): boolean | undefined {
   if (typeof window === "undefined") return undefined;
@@ -105,27 +122,24 @@ function readJsonObject<T extends object>(key: string): Partial<T> | undefined {
   }
 }
 
-function readLocalLayout(): WorkbenchLayoutPatch {
+function readLocalLayout(
+  userId: string | null | undefined,
+): WorkbenchLayoutPatch {
+  const K = layoutStorageKeys(userId);
   return {
-    leftOpen: readBool(LAYOUT_STORAGE_KEYS.leftOpen),
-    rightOpen: readBool(LAYOUT_STORAGE_KEYS.rightOpen),
-    leftWidth: readClampedNumber(LAYOUT_STORAGE_KEYS.leftWidth, 200, 560),
-    rightWidth: readClampedNumber(LAYOUT_STORAGE_KEYS.rightWidth, 220, 600),
-    floatingTaskQueue: readJsonObject<FloatingPanelState>(
-      LAYOUT_STORAGE_KEYS.floatingTaskQueue,
-    ),
+    leftOpen: readBool(K.leftOpen),
+    rightOpen: readBool(K.rightOpen),
+    leftWidth: readClampedNumber(K.leftWidth, 200, 560),
+    rightWidth: readClampedNumber(K.rightWidth, 220, 600),
+    floatingTaskQueue: readJsonObject<FloatingPanelState>(K.floatingTaskQueue),
     floatingClassPalette: readJsonObject<FloatingPanelState>(
-      LAYOUT_STORAGE_KEYS.floatingClassPalette,
+      K.floatingClassPalette,
     ),
-    floatingInspector: readJsonObject<FloatingPanelState>(
-      LAYOUT_STORAGE_KEYS.floatingInspector,
-    ),
+    floatingInspector: readJsonObject<FloatingPanelState>(K.floatingInspector),
     floatingDiscussion: readJsonObject<FloatingPanelState>(
-      LAYOUT_STORAGE_KEYS.floatingDiscussion,
+      K.floatingDiscussion,
     ),
-    triViewFloat: readJsonObject<TriViewFloatState>(
-      LAYOUT_STORAGE_KEYS.triViewFloat,
-    ),
+    triViewFloat: readJsonObject<TriViewFloatState>(K.triViewFloat),
   };
 }
 
@@ -154,43 +168,35 @@ function mergeLayoutPatch<T extends object>(
     : { ...localDefined, ...remoteDefined };
 }
 
-function writeLocalLayout(layout: WorkbenchLayoutPreferences): void {
+function writeLocalLayout(
+  layout: WorkbenchLayoutPreferences,
+  userId: string | null | undefined,
+): void {
   if (typeof window === "undefined") return;
+  const K = layoutStorageKeys(userId);
   try {
+    window.localStorage.setItem(K.leftOpen, layout.leftOpen ? "1" : "0");
+    window.localStorage.setItem(K.rightOpen, layout.rightOpen ? "1" : "0");
+    window.localStorage.setItem(K.leftWidth, String(layout.leftWidth));
+    window.localStorage.setItem(K.rightWidth, String(layout.rightWidth));
     window.localStorage.setItem(
-      LAYOUT_STORAGE_KEYS.leftOpen,
-      layout.leftOpen ? "1" : "0",
-    );
-    window.localStorage.setItem(
-      LAYOUT_STORAGE_KEYS.rightOpen,
-      layout.rightOpen ? "1" : "0",
-    );
-    window.localStorage.setItem(
-      LAYOUT_STORAGE_KEYS.leftWidth,
-      String(layout.leftWidth),
-    );
-    window.localStorage.setItem(
-      LAYOUT_STORAGE_KEYS.rightWidth,
-      String(layout.rightWidth),
-    );
-    window.localStorage.setItem(
-      LAYOUT_STORAGE_KEYS.floatingTaskQueue,
+      K.floatingTaskQueue,
       JSON.stringify(layout.floatingTaskQueue),
     );
     window.localStorage.setItem(
-      LAYOUT_STORAGE_KEYS.floatingClassPalette,
+      K.floatingClassPalette,
       JSON.stringify(layout.floatingClassPalette),
     );
     window.localStorage.setItem(
-      LAYOUT_STORAGE_KEYS.floatingInspector,
+      K.floatingInspector,
       JSON.stringify(layout.floatingInspector),
     );
     window.localStorage.setItem(
-      LAYOUT_STORAGE_KEYS.floatingDiscussion,
+      K.floatingDiscussion,
       JSON.stringify(layout.floatingDiscussion),
     );
     window.localStorage.setItem(
-      LAYOUT_STORAGE_KEYS.triViewFloat,
+      K.triViewFloat,
       JSON.stringify(layout.triViewFloat),
     );
   } catch {
@@ -198,30 +204,40 @@ function writeLocalLayout(layout: WorkbenchLayoutPreferences): void {
   }
 }
 
+// w/h 与后端 FloatingPanelState 约束一致(w 48–720 / h 120–900)，确保越界尺寸不会
+// 让整棵 workbench PATCH 触发 422 → catch 只 console.warn → 偏好静默丢失且持续失败。
 function mergeFloatingPanel(
   fallback: FloatingPanelState,
   remote: Partial<FloatingPanelState> | null | undefined,
 ): FloatingPanelState {
+  const m = { ...fallback, ...(remote ?? {}) };
   return {
-    ...fallback,
-    ...(remote ?? {}),
+    ...m,
+    w: m.w == null ? m.w : clampNum(m.w, 48, 720),
+    h: m.h == null ? m.h : clampNum(m.h, 120, 900),
   };
 }
 
 function mergeTriViewFloat(
   remote: Partial<TriViewFloatState> | null | undefined,
 ): TriViewFloatState {
-  return {
+  const m = {
     ...DEFAULT_WORKBENCH_PREFERENCES.layout.triViewFloat,
     ...(remote ?? {}),
+  };
+  return {
+    ...m,
+    w: m.w == null ? m.w : clampNum(m.w, 200, 480),
+    h: m.h == null ? m.h : clampNum(m.h, 240, 720),
   };
 }
 
 function mergeLayout(
   remote: Partial<WorkbenchLayoutPreferences> | null | undefined,
+  userId: string | null | undefined,
   options?: { preferLocalLayout?: boolean },
 ): WorkbenchLayoutPreferences {
-  const local = readLocalLayout();
+  const local = readLocalLayout(userId);
   const preferLocal = options?.preferLocalLayout === true;
   const merged = {
     ...DEFAULT_WORKBENCH_PREFERENCES.layout,
@@ -284,6 +300,9 @@ function applyLayoutPatch(
   return {
     ...current,
     ...patch,
+    // 列宽与后端约束对齐(left 200–560 / right 220–600)，同浮窗 w/h 一并防 422。
+    leftWidth: clampNum(patch.leftWidth ?? current.leftWidth, 200, 560),
+    rightWidth: clampNum(patch.rightWidth ?? current.rightWidth, 220, 600),
     floatingTaskQueue:
       patch.floatingTaskQueue === undefined
         ? current.floatingTaskQueue
@@ -364,7 +383,7 @@ export function useWorkbenchConfig(
   const user = useAuthStore((s) => s.user);
   const userId = user?.id;
   const [userConfig, setUserConfig] = useState<WorkbenchPreferences>(() =>
-    mergeUser(user?.preferences?.workbench, { preferLocalLayout: true }),
+    mergeUser(user?.preferences?.workbench, userId, { preferLocalLayout: true }),
   );
   const userConfigRef = useRef(userConfig);
   const layoutSaveTimerRef = useRef<number | null>(null);
@@ -379,6 +398,11 @@ export function useWorkbenchConfig(
     () => () => {
       if (layoutSaveTimerRef.current !== null) {
         window.clearTimeout(layoutSaveTimerRef.current);
+        // 卸载(路由切换)时若仍有未发出的防抖 PATCH，立即 flush，避免拖完 300ms 内
+        // 离开页面丢失跨设备同步。timer 仅在已登录时设置，故无需再判 userId。
+        void authApi
+          .updatePreferences({ workbench: userConfigRef.current })
+          .catch(() => undefined);
       }
     },
     [],
@@ -394,9 +418,9 @@ export function useWorkbenchConfig(
       .getPreferences()
       .then((res) => {
         if (!active) return;
-        const next = mergeUser(res.workbench);
+        const next = mergeUser(res.workbench, userId);
         setUserConfig(next);
-        writeLocalLayout(next.layout);
+        writeLocalLayout(next.layout, userId);
         setLoaded(true);
       })
       .catch(() => {
@@ -414,17 +438,17 @@ export function useWorkbenchConfig(
       const next = {
         ...prev,
         ...patch,
-        layout: patch.layout ? mergeLayout(patch.layout) : prev.layout,
+        layout: patch.layout ? mergeLayout(patch.layout, userId) : prev.layout,
       };
       userConfigRef.current = next;
       setUserConfig(next);
       setSaving(true);
       try {
         const res = await authApi.updatePreferences({ workbench: next });
-        const saved = mergeUser(res.workbench);
+        const saved = mergeUser(res.workbench, userId);
         userConfigRef.current = saved;
         setUserConfig(saved);
-        writeLocalLayout(saved.layout);
+        writeLocalLayout(saved.layout, userId);
       } catch {
         userConfigRef.current = prev;
         setUserConfig(prev);
@@ -432,7 +456,7 @@ export function useWorkbenchConfig(
         setSaving(false);
       }
     },
-    [],
+    [userId],
   );
 
   const setLayout = useCallback(
@@ -444,7 +468,7 @@ export function useWorkbenchConfig(
       };
       userConfigRef.current = next;
       setUserConfig(next);
-      writeLocalLayout(next.layout);
+      writeLocalLayout(next.layout, userId);
 
       if (layoutSaveTimerRef.current !== null) {
         window.clearTimeout(layoutSaveTimerRef.current);
@@ -452,15 +476,17 @@ export function useWorkbenchConfig(
       if (!userId) return;
 
       layoutSaveTimerRef.current = window.setTimeout(() => {
+        // 已触发，标记为「无待写」，卸载时不再冗余 flush(见上方 cleanup)。
+        layoutSaveTimerRef.current = null;
         const payload = userConfigRef.current;
         setSaving(true);
         authApi
           .updatePreferences({ workbench: payload })
           .then((res) => {
-            const saved = mergeUser(res.workbench);
+            const saved = mergeUser(res.workbench, userId);
             userConfigRef.current = saved;
             setUserConfig(saved);
-            writeLocalLayout(saved.layout);
+            writeLocalLayout(saved.layout, userId);
           })
           .catch((err) => {
             console.warn("Failed to persist workbench layout preferences", err);
