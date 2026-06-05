@@ -3,7 +3,7 @@ from uuid import UUID
 from datetime import datetime
 from typing import Literal
 
-from app.schemas._jsonb_types import SensorCalibration
+from app.schemas._jsonb_types import LidarAxisConvention, SensorCalibration
 from app.schemas.user import UserBrief
 
 
@@ -101,6 +101,7 @@ class TaskPointCloudManifestResponse(BaseModel):
     point_cloud_format: str = "pcd"
     cameras: list[PointCloudCameraOut]
     expires_in: int
+    axis_convention: LidarAxisConvention | None = None
 
 
 class VideoFrameTimetableEntry(BaseModel):

@@ -14,7 +14,7 @@ from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.task import Task
 from app.db.models.annotation import Annotation
-from app.db.models.dataset import DatasetItem, VideoFrameIndex
+from app.db.models.dataset import Dataset, DatasetItem, VideoFrameIndex
 from app.db.models.prediction import Prediction
 from app.schemas.task import (
     PointCloudCameraOut,
@@ -516,11 +516,23 @@ async def get_point_cloud_manifest(
 
     cameras.sort(key=lambda c: c.name)
 
+    # v0.13.11 · 取主点云所在 Dataset 的 axis_convention,前端用它把 PCD positions 与各相机
+    # extrinsic 旋转归一化到 ISO 8855。无 primary_lidar item / 无 metadata key → None,
+    # 前端按 "iso_8855" (= identity) 处理,保持向后兼容。
+    axis_convention = None
+    if primary_link is not None:
+        primary_item = items_by_id.get(primary_link.dataset_item_id)
+        if primary_item is not None:
+            dataset = await db.get(Dataset, primary_item.dataset_id)
+            if dataset is not None:
+                axis_convention = (dataset.metadata_ or {}).get("axis_convention")
+
     return TaskPointCloudManifestResponse(
         task_id=task.id,
         point_cloud_url=point_cloud_url,
         cameras=cameras,
         expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
+        axis_convention=axis_convention,
     )
 
 

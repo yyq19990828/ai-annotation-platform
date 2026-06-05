@@ -13049,6 +13049,27 @@
       },
       "TaskPointCloudManifestResponse": {
         "properties": {
+          "axis_convention": {
+            "anyOf": [
+              {
+                "enum": [
+                  "iso_8855",
+                  "ros_rep103",
+                  "kitti_camera",
+                  "opencv_camera",
+                  "apollo",
+                  "y_forward",
+                  "sustechpoints_demo",
+                  "raw"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axis Convention"
+          },
           "cameras": {
             "items": {
               "$ref": "#/components/schemas/PointCloudCameraOut"

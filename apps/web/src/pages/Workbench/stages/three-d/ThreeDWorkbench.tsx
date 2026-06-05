@@ -46,6 +46,10 @@ import {
   fitSizeAndBottom,
   psrFromPoints,
 } from "./geometry/autofit";
+import {
+  applyConventionToExtrinsic,
+  type LidarAxisConvention,
+} from "./geometry/axisConvention";
 import styles from "./ThreeDWorkbench.module.css";
 
 interface ThreeDWorkbenchProps {
@@ -205,6 +209,9 @@ export function ThreeDWorkbench({
   onWorkbenchLayoutChange,
 }: ThreeDWorkbenchProps) {
   const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
+  // v0.13.11 · dataset 声明的 lidar 系约定;前端把点云 positions + 相机 extrinsic 一次性
+  // 旋转到 ISO 8855 (+X 前 / +Y 左 / +Z 上),上层几何代码继续锁死 ISO。null / 缺省 = iso_8855。
+  const axisConvention: LidarAxisConvention = manifest?.axis_convention ?? "iso_8855";
   const viewportWrapRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
@@ -396,6 +403,7 @@ export function ThreeDWorkbench({
   }, []);
 
   // manifest 到位后加载点云。
+  // v0.13.11 · 传入 axisConvention,scene 内部加载完 PCD 立即把 positions 旋到 ISO 系。
   useEffect(() => {
     const scene = sceneRef.current;
     const url = manifest?.point_cloud_url;
@@ -403,7 +411,7 @@ export function ThreeDWorkbench({
     let cancelled = false;
     setLoadError(null);
     scene
-      .loadPcd(url)
+      .loadPcd(url, axisConvention)
       .then((s) => {
         if (!cancelled) setStats(s);
       })
@@ -413,7 +421,7 @@ export function ThreeDWorkbench({
     return () => {
       cancelled = true;
     };
-  }, [manifest?.point_cloud_url]);
+  }, [manifest?.point_cloud_url, axisConvention]);
 
   // 同步 3D 框图层(标注 / 选中变化)。scene 在挂载 effect 里先建,本 effect 后跑。
   useEffect(() => {
@@ -785,7 +793,25 @@ export function ThreeDWorkbench({
     sceneRef.current?.setPointSize(v);
   };
 
-  const cameras = useMemo(() => manifest?.cameras ?? [], [manifest?.cameras]);
+  // v0.13.11 · 相机列表的 extrinsic 在 hook 出口处归一化,下游 (frontCameraForward /
+  // cameraAnchor / projectPoints / loadCameraSample) 无感知 convention。
+  const cameras = useMemo(() => {
+    const raw = manifest?.cameras ?? [];
+    return raw.map((c) =>
+      c.calibration
+        ? {
+            ...c,
+            calibration: {
+              ...c.calibration,
+              extrinsic: applyConventionToExtrinsic(
+                c.calibration.extrinsic,
+                axisConvention,
+              ) as SensorCalibration["extrinsic"],
+            },
+          }
+        : c,
+    );
+  }, [manifest?.cameras, axisConvention]);
   // v0.13.7 · 相机按物理朝向分组(悬浮环绕):每个 anchor 一个定位容器,同朝向沿边堆叠。
   const cameraGroups = useMemo(() => {
     const groups = new Map<Anchor, typeof cameras>();

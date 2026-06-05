@@ -10,6 +10,11 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { PCDLoader } from "three/examples/jsm/loaders/PCDLoader.js";
 
+import {
+  applyConventionToPositions,
+  type LidarAxisConvention,
+} from "./geometry/axisConvention";
+
 import { estimateGroundZ } from "./geometry/ground";
 
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
@@ -131,8 +136,18 @@ export class PointCloudScene {
     this.renderer.render(this.scene, this.camera);
   };
 
-  /** 加载 PCD 并渲染,返回统计;失败 throw。 */
-  async loadPcd(url: string): Promise<PointCloudStats> {
+  /**
+   * 加载 PCD 并渲染,返回统计;失败 throw。
+   *
+   * v0.13.11 · convention 用于把 src 系下的 lidar 点云就地旋转到 ISO 8855
+   * (+X 前 / +Y 左 / +Z 上),下游 (色带 / robust frame / groundZ / autofit /
+   * cameraAnchor / projectPoints) 全部在 ISO 系下工作。默认 iso_8855 = identity,
+   * 与历史行为完全一致。
+   */
+  async loadPcd(
+    url: string,
+    convention: LidarAxisConvention = "iso_8855",
+  ): Promise<PointCloudStats> {
     const loader = new PCDLoader();
     const loaded = await loader.loadAsync(url);
     const srcGeom = loaded.geometry;
@@ -150,6 +165,9 @@ export class PointCloudScene {
       positions[j * 3 + 2] = srcPos.getZ(i);
     }
     srcGeom.dispose();
+    // v0.13.11 · 归一化必须发生在 setRobustFrame / estimateGroundZ / applyHeightColors
+    // 之前,这些函数都假设 +Z 上 / +X 前;src 系下算会得到错的取景中心、地面 z、色带。
+    applyConventionToPositions(positions, convention);
 
     const geom = new THREE.BufferGeometry();
     geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));

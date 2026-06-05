@@ -120,6 +120,8 @@ async def test_point_cloud_manifest_returns_scene(
     assert body["point_cloud_format"] == "pcd"
     assert body["expires_in"] == 3600
     assert body["point_cloud_url"] == "http://storage.local/scene-a/lidar/000001.pcd"
+    # v0.13.11 · dataset 无 axis_convention 时 manifest 字段为 None,前端按 iso_8855 处理。
+    assert body["axis_convention"] is None
 
     cameras = body["cameras"]
     assert [c["name"] for c in cameras] == ["front", "rear"]  # 按 name 排序
@@ -130,6 +132,34 @@ async def test_point_cloud_manifest_returns_scene(
     assert front["calibration"]["intrinsic"] == front_calib["intrinsic"]
     assert rear["calibration"]["extrinsic"] == rear_calib["extrinsic"]
     assert rear["calibration"]["intrinsic"] == rear_calib["intrinsic"]
+
+
+async def test_point_cloud_manifest_exposes_dataset_axis_convention(
+    db_session, httpx_client, super_admin, _patch_presign
+):
+    """v0.13.11 · 主点云所在 dataset.metadata.axis_convention 透到 manifest 字段。"""
+    user, token = super_admin
+    task, _, _ = await _seed_lidar_scene(db_session, user.id)
+
+    from app.db.models.dataset import Dataset, DatasetItem
+    from sqlalchemy import select
+
+    lidar_item = (
+        await db_session.execute(
+            select(DatasetItem).where(DatasetItem.id == task.dataset_item_id)
+        )
+    ).scalar_one()
+    dataset = await db_session.get(Dataset, lidar_item.dataset_id)
+    dataset.metadata_ = {"axis_convention": "sustechpoints_demo"}
+    await db_session.flush()
+    await db_session.commit()
+
+    resp = await httpx_client.get(
+        f"/api/v1/tasks/{task.id}/point-cloud/manifest",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["axis_convention"] == "sustechpoints_demo"
 
 
 async def test_point_cloud_manifest_rejects_non_lidar_task(
