@@ -8541,6 +8541,7 @@
             "items": {
               "type": "integer"
             },
+            "maxItems": 600000,
             "title": "Point Indices",
             "type": "array"
           },

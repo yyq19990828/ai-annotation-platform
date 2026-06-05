@@ -43,7 +43,7 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
   });
 
   it("首帧优先使用本地 layout 缓存，避免右栏按旧偏好闪开再收起", () => {
-    window.localStorage.setItem("workbench.rightOpen", "0");
+    window.localStorage.setItem("workbench.u1.rightOpen", "0");
     mockAuthUser.current = {
       id: "u1",
       preferences: {
@@ -150,8 +150,8 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
     expect(result.current.layout.rightWidth).toBe(420);
     expect(result.current.layout.floatingInspector.detached).toBe(true);
     expect(result.current.layout.floatingDiscussion.detached).toBe(true);
-    expect(window.localStorage.getItem("workbench.rightWidth")).toBe("420");
-    expect(window.localStorage.getItem("workbench.floatingDiscussion")).toContain("\"detached\":true");
+    expect(window.localStorage.getItem("workbench.u1.rightWidth")).toBe("420");
+    expect(window.localStorage.getItem("workbench.u1.floatingDiscussion")).toContain("\"detached\":true");
     expect(mockUpdatePreferences).not.toHaveBeenCalled();
 
     await act(async () => {

@@ -549,7 +549,9 @@ class PointMaskGeometry(BaseModel):
     """v0.13.0 · 3D 点云语义/实例分割掩码。point_indices 为指向点云的整数索引列表。"""
 
     type: Literal["point_mask_3d"] = "point_mask_3d"
-    point_indices: list[int] = Field(default_factory=list)
+    # 上界防止单条标注 geometry 膨胀到几 MB（jsonb / 列表序列化 / AAP 导出都会被放大）。
+    # 前端渲染抽稀到 DECIMATE_THRESHOLD=500k 点，全选最多 ~500k 索引，600k 留足余量。
+    point_indices: list[int] = Field(default_factory=list, max_length=600_000)
     convention_at_create: LidarAxisConvention | None = None
     decimate_stride: int | None = Field(default=None, ge=1)
     source_point_count: int | None = Field(default=None, ge=0)

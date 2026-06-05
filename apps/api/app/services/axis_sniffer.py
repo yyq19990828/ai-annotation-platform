@@ -136,11 +136,15 @@ class AxisSnifferService:
         self,
         dataset_id: uuid.UUID,
     ) -> list[AxisSniffObservation]:
+        # 仅看相机图（file_type=="image"）。点云项可能在 metadata 里带 lidar→ego
+        # 外参，若混进来会被 sniff_convention_from_forward 当成相机光轴污染推断。
+        # 与 _linked_camera_observations 仅取 role.startswith("camera_") 对齐。
         items = (
             (
                 await self.db.execute(
                     select(DatasetItem)
                     .where(DatasetItem.dataset_id == dataset_id)
+                    .where(DatasetItem.file_type == "image")
                     .order_by(DatasetItem.created_at)
                 )
             )
