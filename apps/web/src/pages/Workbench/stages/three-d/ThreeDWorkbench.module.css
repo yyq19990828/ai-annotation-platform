@@ -522,27 +522,29 @@
   flex-direction: column;
 }
 
-/* 角向:避让四角既有浮层(控件 / PSR / 状态条 / 三视图)。 */
+/* 角向:贴左 / 右竖边,但纵向往该竖边的中部靠(不再钉在上 / 下两端)。
+   nuScenes 等 6 相机装置下,front_left / back_left 都在左竖边、front_right /
+   back_right 都在右竖边;聚到竖边中段(front 在中线偏上、back 在中线偏下)更贴物理朝向。 */
 .camAnchorTopLeft {
-  top: calc(var(--top-toolbar-height) + 12px);
+  top: 30%;
   left: 12px;
   flex-direction: column;
 }
 
 .camAnchorTopRight {
-  top: calc(var(--top-toolbar-height) + 12px);
+  top: 30%;
   right: 12px;
   flex-direction: column;
 }
 
 .camAnchorBottomLeft {
-  bottom: 48px;
+  bottom: 30%;
   left: 12px;
   flex-direction: column;
 }
 
 .camAnchorBottomRight {
-  bottom: 64px;
+  bottom: 30%;
   right: 12px;
   flex-direction: column;
 }

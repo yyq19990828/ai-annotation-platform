@@ -36,6 +36,8 @@
 
 - **ZIP 上传保留子目录(D1)**:`POST /api/v1/datasets/{id}/items/upload-zip` 此前用 `os.path.basename` 把每个文件拍平到 `{ds.name}/{basename}`,丢掉 ZIP 内子目录 → 点云 scene ZIP(`lidar/ camera/<cam>/ calib/camera/`)上传后 `group_frames` 找不到段名,整批不被识别为 scene。改为经新增的 `_normalize_zip_relpath` 规范化相对路径并保留子目录(`{ds.name}/lidar/000970.pcd`),附 zip-slip 防护(拒 `..` 段 / 绝对路径 / 隐藏文件 / `__MACOSX/`)。**该修复全局生效**,非点云 dataset 同样保留子目录。
 - **去重键改 content_hash-only**:同一 scene 内 `camera/front/000970.jpg` 与 `camera/left/000970.jpg` 的 basename 相同但属合法的跨相机同帧;删掉原"同名追加 -1/-2 后缀"逻辑,仅当 content_hash 完全相同才去重,跨子目录同名不再误改名 / 误去重。
+- **轴向 sniffer 多相机鲁棒性**(v0.13.12 端点,实测 nuScenes 6 相机暴露):`sniff-axis-convention` 此前 `_is_front_role` 用 `"front" in haystack` 把 `CAM_FRONT_LEFT/RIGHT` 也当正前,并在并列里按 `created_at` 选 → 同一份数据随相机建序漂(CAM_FRONT_RIGHT 把 apollo 误判成 iso_8855)。改为:正前判定收紧为含 front/forward 且不含 left/right/back/rear;选择全程确定性——有正前相机取分最高(稳定 tiebreak),无则跨相机按 best 约定投票取众数。不改响应 schema。真实多 scene dataset 现稳定返回 `apollo`(`camera_CAM_FRONT`),与相机顺序无关。
+- **3D 相机面板四角布局**(nuScenes 6 相机实测调整):`front_left/right` 与 `back_left/right` 此前钉在左/右竖边的上下两端,6 相机装置下过散;改为沿各自竖边纵向收拢到中段(`top/bottom: 30%`),更贴物理朝向环绕直觉。
 
 ### Added
 
@@ -49,7 +51,6 @@
 
 ### 已知问题 / 后续(实测暴露)
 
-- **轴向 sniffer 多相机不鲁棒**(v0.13.12 端点):`sniff-axis-convention` 只取单个相机的标定来推断 lidar 约定,结果随抽到的相机而变——nuScenes 抽到 `CAM_FRONT` 得 `apollo`(score 1.0,正确),抽到 `CAM_FRONT_RIGHT` 被误导成 `iso_8855`。importer 不依赖 sniff(按已知 LIDAR_TOP 装置硬编码 apollo),但 sniffer 本身应改为优先正前相机或跨相机投票。留 v0.14.x+。
 - **nuScenes 点未变换到 ego 系**:本版直接上传 LIDAR_TOP 传感器系点 + `axis_convention=apollo`(前端旋转到 ISO 显示)。若要点云直接落在 ego/ISO 系,需逐点乘 `T_ego_from_lidar` 并把外参改为 `cam_from_ego`,留后续。
 - **多 scene 帧 stem 全局唯一**:每个 scene 的帧号都从 0 起,而 `group_frames` 以文件名 stem 作帧键——多 scene 共用 dataset 时同号帧会撞键漏建 task。脚本给帧文件名加 `<scene_name>_` 前缀保证 stem 全局唯一(不动 `group_frames`);scene 内 `frame_index` 仍由 `assign_items_to_scene` 按顺序赋值,与文件名解耦。
 
