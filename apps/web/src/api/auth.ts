@@ -21,13 +21,15 @@ export interface WorkbenchPreferences {
   layout: WorkbenchLayoutPreferences;
 }
 
-export interface FloatingInspectorState {
+export interface FloatingPanelState {
   detached: boolean;
   x: number | null;
   y: number | null;
   w: number | null;
   h: number | null;
 }
+
+export type FloatingInspectorState = FloatingPanelState;
 
 export interface TriViewFloatState {
   collapsed: boolean;
@@ -42,7 +44,10 @@ export interface WorkbenchLayoutPreferences {
   rightOpen: boolean;
   leftWidth: number;
   rightWidth: number;
-  floatingInspector: FloatingInspectorState;
+  floatingTaskQueue: FloatingPanelState;
+  floatingClassPalette: FloatingPanelState;
+  floatingInspector: FloatingPanelState;
+  floatingDiscussion: FloatingPanelState;
   triViewFloat: TriViewFloatState;
 }
 
@@ -67,7 +72,28 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     rightOpen: true,
     leftWidth: 260,
     rightWidth: 280,
+    floatingTaskQueue: {
+      detached: false,
+      x: null,
+      y: null,
+      w: null,
+      h: null,
+    },
+    floatingClassPalette: {
+      detached: false,
+      x: null,
+      y: null,
+      w: null,
+      h: null,
+    },
     floatingInspector: {
+      detached: false,
+      x: null,
+      y: null,
+      w: null,
+      h: null,
+    },
+    floatingDiscussion: {
       detached: false,
       x: null,
       y: null,

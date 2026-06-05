@@ -9,6 +9,15 @@
   background: var(--color-bg-elev);
 }
 
+.rootFloating {
+  height: 100%;
+  border-right: 0;
+}
+
+.rootSingleSection {
+  --left-palette-height: auto;
+}
+
 /* Temporary bridge until Button drops inline base font-size. */
 .batchSettingsButton {
   padding: 2px 6px !important;
@@ -51,6 +60,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding: 10px 14px 6px;
 }
 
@@ -84,6 +94,32 @@
 .queueCount {
   color: var(--color-fg-subtle);
   font-size: 11px;
+}
+
+.queueActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.detachButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-fg-muted);
+  cursor: pointer;
+}
+
+.detachButton:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 .totalCount {
@@ -124,11 +160,24 @@
   border-top: 1px solid var(--color-border);
 }
 
+.palettePanelOnly {
+  flex: 1;
+  max-height: none;
+  border-top: 0;
+}
+
+.paletteTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
 .paletteTitle {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-bottom: 2px;
   color: var(--color-fg-muted);
   font-size: 11px;
 }

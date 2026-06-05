@@ -30,23 +30,23 @@
 
 ## [0.13.10] - 2026-06-05
 
-工作台布局偏好跨设备同步 + 右侧标注详情浮窗 + 3D 三视图浮层可拖拽。左右侧栏开合/宽度、标注详情浮窗位置尺寸、3D 三视图位置尺寸/折叠态统一写入 `user.preferences.workbench.layout`；离线或未登录时继续用 localStorage 兜底。计划见 `docs/plans/2026-06-05-v0.13.10-workbench-prefs-and-floating-inspector.md`。
+工作台布局偏好跨设备同步 + 左右侧栏四区块浮窗 + 3D 三视图浮层可拖拽。左右侧栏开合/宽度、任务队列 / 类别面板 / 标注详情 / 讨论 Issue 面板浮窗位置尺寸、3D 三视图位置尺寸/折叠态统一写入 `user.preferences.workbench.layout`；离线或未登录时继续用 localStorage 兜底。计划见 `docs/plans/2026-06-05-v0.13.10-workbench-prefs-and-floating-inspector.md`。
 
 ### Added
 
-- **工作台 layout 偏好跨设备记忆**：`WorkbenchPreferences.layout` 新增 `leftOpen/rightOpen/leftWidth/rightWidth/floatingInspector/triViewFloat`；前端 `useWorkbenchConfig.setLayout()` 本地立即生效、localStorage 兜底，并 300ms debounce PATCH 全量 `workbench` 子树，避免只发 nested layout 覆盖旧渲染偏好。
-- **右栏「标注详情」可分离为同窗口浮窗**：`AIInspectorPanel` 顶部新增分离按钮；分离后 `WorkbenchLayout` 不再保留右栏空槽，中心 Stage 吃满宽度。浮窗支持顶栏拖动、右下角 resize、合并回侧栏与关闭；位置/尺寸持久化到 `floatingInspector`。
-- **通用 `FloatingPanelShell` + `useDragMove`**：统一处理 fixed 浮窗 chrome、pointer 拖动、右下角 resize、窗口 resize clamp 和边界防丢，供标注详情与三视图复用。
+- **工作台 layout 偏好跨设备记忆**：`WorkbenchPreferences.layout` 新增 `leftOpen/rightOpen/leftWidth/rightWidth/floatingTaskQueue/floatingClassPalette/floatingInspector/floatingDiscussion/triViewFloat`；前端 `useWorkbenchConfig.setLayout()` 本地立即生效、localStorage 兜底，并 300ms debounce PATCH 全量 `workbench` 子树，避免只发 nested layout 覆盖旧渲染偏好。
+- **左右栏四区块可分离为同窗口浮窗**：左栏任务队列 / 类别面板、右栏标注详情 / 讨论 Issue 面板都提供分离入口。分离后对应侧栏默认收起；用户再次展开侧栏时只显示仍嵌入的区块，不会把浮窗自动合并回去。若该侧栏两个区块都已分离，展开/收起按钮无可见变化。四个浮窗使用一致的最小尺寸，支持顶栏拖动、右下角 resize、合并回侧栏与关闭；合并回侧栏只恢复嵌入状态，不主动展开侧栏。位置/尺寸持久化到对应 `floating*` 字段。
+- **通用 `FloatingPanelShell` + `useDragMove`**：统一处理 fixed 浮窗 chrome、pointer 拖动、右下角 resize、窗口 resize clamp 和边界防丢，供侧栏区块与三视图复用。
 - **3D 三视图浮层升级**：`TriViewPanel` 改由 `FloatingPanelShell` 承载，顶栏可拖动、右下角可 resize，位置/尺寸/折叠态写入 `triViewFloat`；首次打开仍默认贴右下并避让右栏。
 
 ### Changed
 
-- **3D 浮层避让右栏和顶部工具条**：`ThreeDWorkbench` 在 `.viewportWrap` 注入 `--right-sidebar-width` 与 `--top-toolbar-height`；相机右侧锚点、右上/右下角锚点、三视图折叠标签随右栏宽度偏移，顶部相机锚点随工具条实际高度下移。工具条高度由 `ResizeObserver` 跟踪，按钮换行后相机不会压住工具条。
+- **3D 浮层避让与贴边修正**：`ThreeDWorkbench` 用右栏宽度计算三视图首次默认浮窗位置，但舞台内部右侧相机锚点和三视图折叠标签贴主视图边缘；顶部相机锚点随工具条实际高度下移。工具条高度由 `ResizeObserver` 跟踪，按钮换行后相机不会压住工具条。
 - **侧栏宽度持久化迁移**：`leftWidth/rightWidth` 从只写 `localStorage` 升级为 `user.preferences.workbench.layout`，保留旧 localStorage key 作为远端缺省和离线兜底。
 
 ### Notes
 
-- 不做真独立浏览器 window、多浮窗 z-order 或相机预览拖拽；本版只做同窗口浮窗形态。
+- 不做真独立浏览器 window、浮窗层级管理或相机预览拖拽；本版只做同窗口浮窗形态。
 - 后端 JSONB 无迁移；schema 只新增偏好子结构并保持 `/me/preferences` 顶层子树合并契约。
 
 ## [0.13.9] - 2026-06-04

@@ -14,6 +14,7 @@ import { ToolDock } from "./ToolDock";
 import { Topbar } from "./Topbar";
 import { WorkbenchBanners } from "./WorkbenchBanners";
 import { WorkbenchStageHost } from "./WorkbenchStageHost";
+import { SIDE_FLOATING_PANEL_MAX_SIZE, SIDE_FLOATING_PANEL_MIN_SIZE } from "./floatingPanelSizing";
 import { GuidePanel } from "../sidebar/GuidePanel";
 import styles from "./WorkbenchLayout.module.css";
 
@@ -27,6 +28,14 @@ function readRightSplitTop(): number {
   if (typeof window === "undefined") return RIGHT_SPLIT_TOP_DEFAULT;
   const raw = Number(window.localStorage.getItem(RIGHT_SPLIT_TOP_KEY));
   return Number.isFinite(raw) && raw > 0 ? raw : RIGHT_SPLIT_TOP_DEFAULT;
+}
+
+interface FloatingWorkbenchPanel {
+  detached: boolean;
+  position: FloatingPanelRect;
+  onPositionChange: (patch: Partial<FloatingPanelRect>) => void;
+  onMergeBack: () => void;
+  onClose: () => void;
 }
 
 interface WorkbenchLayoutProps {
@@ -48,13 +57,10 @@ interface WorkbenchLayoutProps {
   guidePanel?: ComponentProps<typeof GuidePanel>;
   // v0.11.5 · B 组 · 右栏下段统一讨论面板 (转正; 上 AIInspectorPanel + 下 DiscussionPanel 两段固定).
   discussionPanel: ComponentProps<typeof DiscussionPanel>;
-  floatingInspector?: {
-    detached: boolean;
-    position: FloatingPanelRect;
-    onPositionChange: (patch: Partial<FloatingPanelRect>) => void;
-    onMergeBack: () => void;
-    onClose: () => void;
-  };
+  floatingTaskQueue?: FloatingWorkbenchPanel;
+  floatingClassPalette?: FloatingWorkbenchPanel;
+  floatingInspector?: FloatingWorkbenchPanel;
+  floatingDiscussion?: FloatingWorkbenchPanel;
 }
 
 export function WorkbenchLayout({
@@ -74,12 +80,20 @@ export function WorkbenchLayout({
   rejectModal,
   guidePanel,
   discussionPanel,
+  floatingTaskQueue,
+  floatingClassPalette,
   floatingInspector,
+  floatingDiscussion,
 }: WorkbenchLayoutProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const splitTopRef = useRef<HTMLDivElement>(null);
   const [splitTopHeight, setSplitTopHeight] = useState(readRightSplitTop);
+  const taskQueueDetached = Boolean(floatingTaskQueue?.detached);
+  const classPaletteDetached = Boolean(floatingClassPalette?.detached);
   const inspectorDetached = Boolean(floatingInspector?.detached);
+  const discussionDetached = Boolean(floatingDiscussion?.detached);
+  const rightHasEmbeddedPanel = !inspectorDetached || !discussionDetached;
+  const rightShouldRenderEmbeddedPanel = inspector.open && rightHasEmbeddedPanel;
 
   const onSplitResize = useCallback((next: number) => {
     setSplitTopHeight(next);
@@ -105,7 +119,11 @@ export function WorkbenchLayout({
 
       <div className={styles.bodyGrid}>
         <div className={styles.sideSlot}>
-          <TaskQueuePanel {...taskQueue} />
+          <TaskQueuePanel
+            {...taskQueue}
+            detachedQueue={taskQueueDetached}
+            detachedPalette={classPaletteDetached}
+          />
         </div>
         <ToolDock {...toolDock} />
 
@@ -115,7 +133,7 @@ export function WorkbenchLayout({
           <StatusBar {...statusBar} />
         </div>
 
-        {!inspectorDetached && (
+        {rightShouldRenderEmbeddedPanel && (
           <div className={styles.sideSlot}>
             <div className={styles.rightSplit}>
               {/* v0.11.5+ · 列宽拖拽 handle 提到右栏全高层级（原在 AIInspectorPanel 内，
@@ -123,24 +141,69 @@ export function WorkbenchLayout({
               {inspector.open && (
                 <ResizeHandle side="left" width={inspector.width} onResize={inspector.onResize} min={220} max={600} />
               )}
-              <div ref={splitTopRef} className={styles.rightSplitTop}>
-                <AIInspectorPanel {...inspector} />
-                <ResizeHandle
-                  side="bottom"
-                  width={splitTopHeight}
-                  onResize={onSplitResize}
-                  min={RIGHT_SPLIT_TOP_MIN}
-                  max={RIGHT_SPLIT_TOP_MAX}
-                  resetTo={RIGHT_SPLIT_TOP_DEFAULT}
-                />
-              </div>
-              <div className={styles.rightSplitBottom}>
-                <DiscussionPanel {...discussionPanel} />
-              </div>
+              {!inspectorDetached && (
+                <div
+                  ref={splitTopRef}
+                  className={discussionDetached ? `${styles.rightSplitTop} ${styles.rightSplitTopFull}` : styles.rightSplitTop}
+                >
+                  <AIInspectorPanel {...inspector} />
+                  {!discussionDetached && (
+                    <ResizeHandle
+                      side="bottom"
+                      width={splitTopHeight}
+                      onResize={onSplitResize}
+                      min={RIGHT_SPLIT_TOP_MIN}
+                      max={RIGHT_SPLIT_TOP_MAX}
+                      resetTo={RIGHT_SPLIT_TOP_DEFAULT}
+                    />
+                  )}
+                </div>
+              )}
+              {!discussionDetached && (
+                <div className={styles.rightSplitBottom}>
+                  <DiscussionPanel {...discussionPanel} />
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
+
+      {taskQueueDetached && floatingTaskQueue && (
+        <FloatingPanelShell
+          title="任务队列"
+          position={floatingTaskQueue.position}
+          onPositionChange={floatingTaskQueue.onPositionChange}
+          onMergeBack={floatingTaskQueue.onMergeBack}
+          onClose={floatingTaskQueue.onClose}
+          minSize={SIDE_FLOATING_PANEL_MIN_SIZE}
+          maxSize={SIDE_FLOATING_PANEL_MAX_SIZE}
+        >
+          <TaskQueuePanel
+            {...taskQueue}
+            open
+            floatingSection="queue"
+          />
+        </FloatingPanelShell>
+      )}
+
+      {classPaletteDetached && floatingClassPalette && (
+        <FloatingPanelShell
+          title="类别面板"
+          position={floatingClassPalette.position}
+          onPositionChange={floatingClassPalette.onPositionChange}
+          onMergeBack={floatingClassPalette.onMergeBack}
+          onClose={floatingClassPalette.onClose}
+          minSize={SIDE_FLOATING_PANEL_MIN_SIZE}
+          maxSize={SIDE_FLOATING_PANEL_MAX_SIZE}
+        >
+          <TaskQueuePanel
+            {...taskQueue}
+            open
+            floatingSection="palette"
+          />
+        </FloatingPanelShell>
+      )}
 
       {inspectorDetached && floatingInspector && (
         <FloatingPanelShell
@@ -149,12 +212,30 @@ export function WorkbenchLayout({
           onPositionChange={floatingInspector.onPositionChange}
           onMergeBack={floatingInspector.onMergeBack}
           onClose={floatingInspector.onClose}
-          minSize={{ w: 280, h: 320 }}
-          maxSize={{ w: 720, h: 900 }}
+          minSize={SIDE_FLOATING_PANEL_MIN_SIZE}
+          maxSize={SIDE_FLOATING_PANEL_MAX_SIZE}
         >
           <AIInspectorPanel
             {...inspector}
             open
+            floating
+            onDetach={undefined}
+          />
+        </FloatingPanelShell>
+      )}
+
+      {discussionDetached && floatingDiscussion && (
+        <FloatingPanelShell
+          title="讨论 / Issue"
+          position={floatingDiscussion.position}
+          onPositionChange={floatingDiscussion.onPositionChange}
+          onMergeBack={floatingDiscussion.onMergeBack}
+          onClose={floatingDiscussion.onClose}
+          minSize={SIDE_FLOATING_PANEL_MIN_SIZE}
+          maxSize={SIDE_FLOATING_PANEL_MAX_SIZE}
+        >
+          <DiscussionPanel
+            {...discussionPanel}
             floating
             onDetach={undefined}
           />

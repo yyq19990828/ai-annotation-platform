@@ -107,6 +107,13 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
     act(() => {
       result.current.setLayout({
         rightWidth: 420,
+        floatingDiscussion: {
+          detached: true,
+          x: 760,
+          y: 180,
+          w: 420,
+          h: 560,
+        },
         floatingInspector: {
           detached: true,
           x: 640,
@@ -119,7 +126,9 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
 
     expect(result.current.layout.rightWidth).toBe(420);
     expect(result.current.layout.floatingInspector.detached).toBe(true);
+    expect(result.current.layout.floatingDiscussion.detached).toBe(true);
     expect(window.localStorage.getItem("workbench.rightWidth")).toBe("420");
+    expect(window.localStorage.getItem("workbench.floatingDiscussion")).toContain("\"detached\":true");
     expect(mockUpdatePreferences).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -131,6 +140,10 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
         smoothImage: false,
         layout: expect.objectContaining({
           rightWidth: 420,
+          floatingDiscussion: expect.objectContaining({
+            detached: true,
+            h: 560,
+          }),
           floatingInspector: expect.objectContaining({
             detached: true,
             w: 360,

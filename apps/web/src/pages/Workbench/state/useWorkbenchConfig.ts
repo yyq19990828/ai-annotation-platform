@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   authApi,
   DEFAULT_WORKBENCH_PREFERENCES,
-  type FloatingInspectorState,
+  type FloatingPanelState,
   type TriViewFloatState,
   type WorkbenchLayoutPreferences,
   type WorkbenchPreferences,
@@ -20,9 +20,16 @@ export type LockableField =
 
 export type WorkbenchLayoutPatch = Omit<
   Partial<WorkbenchLayoutPreferences>,
-  "floatingInspector" | "triViewFloat"
+  | "floatingTaskQueue"
+  | "floatingClassPalette"
+  | "floatingInspector"
+  | "floatingDiscussion"
+  | "triViewFloat"
 > & {
-  floatingInspector?: Partial<FloatingInspectorState> | null;
+  floatingTaskQueue?: Partial<FloatingPanelState> | null;
+  floatingClassPalette?: Partial<FloatingPanelState> | null;
+  floatingInspector?: Partial<FloatingPanelState> | null;
+  floatingDiscussion?: Partial<FloatingPanelState> | null;
   triViewFloat?: Partial<TriViewFloatState> | null;
 };
 
@@ -52,7 +59,10 @@ const LAYOUT_STORAGE_KEYS = {
   rightOpen: "workbench.rightOpen",
   leftWidth: "workbench.leftWidth",
   rightWidth: "workbench.rightWidth",
+  floatingTaskQueue: "workbench.floatingTaskQueue",
+  floatingClassPalette: "workbench.floatingClassPalette",
   floatingInspector: "workbench.floatingInspector",
+  floatingDiscussion: "workbench.floatingDiscussion",
   triViewFloat: "workbench.triViewFloat",
 };
 
@@ -100,8 +110,17 @@ function readLocalLayout(): WorkbenchLayoutPatch {
     rightOpen: readBool(LAYOUT_STORAGE_KEYS.rightOpen),
     leftWidth: readClampedNumber(LAYOUT_STORAGE_KEYS.leftWidth, 200, 560),
     rightWidth: readClampedNumber(LAYOUT_STORAGE_KEYS.rightWidth, 220, 600),
-    floatingInspector: readJsonObject<FloatingInspectorState>(
+    floatingTaskQueue: readJsonObject<FloatingPanelState>(
+      LAYOUT_STORAGE_KEYS.floatingTaskQueue,
+    ),
+    floatingClassPalette: readJsonObject<FloatingPanelState>(
+      LAYOUT_STORAGE_KEYS.floatingClassPalette,
+    ),
+    floatingInspector: readJsonObject<FloatingPanelState>(
       LAYOUT_STORAGE_KEYS.floatingInspector,
+    ),
+    floatingDiscussion: readJsonObject<FloatingPanelState>(
+      LAYOUT_STORAGE_KEYS.floatingDiscussion,
     ),
     triViewFloat: readJsonObject<TriViewFloatState>(
       LAYOUT_STORAGE_KEYS.triViewFloat,
@@ -129,8 +148,20 @@ function writeLocalLayout(layout: WorkbenchLayoutPreferences): void {
       String(layout.rightWidth),
     );
     window.localStorage.setItem(
+      LAYOUT_STORAGE_KEYS.floatingTaskQueue,
+      JSON.stringify(layout.floatingTaskQueue),
+    );
+    window.localStorage.setItem(
+      LAYOUT_STORAGE_KEYS.floatingClassPalette,
+      JSON.stringify(layout.floatingClassPalette),
+    );
+    window.localStorage.setItem(
       LAYOUT_STORAGE_KEYS.floatingInspector,
       JSON.stringify(layout.floatingInspector),
+    );
+    window.localStorage.setItem(
+      LAYOUT_STORAGE_KEYS.floatingDiscussion,
+      JSON.stringify(layout.floatingDiscussion),
     );
     window.localStorage.setItem(
       LAYOUT_STORAGE_KEYS.triViewFloat,
@@ -141,11 +172,12 @@ function writeLocalLayout(layout: WorkbenchLayoutPreferences): void {
   }
 }
 
-function mergeFloatingInspector(
-  remote: Partial<FloatingInspectorState> | null | undefined,
-): FloatingInspectorState {
+function mergeFloatingPanel(
+  fallback: FloatingPanelState,
+  remote: Partial<FloatingPanelState> | null | undefined,
+): FloatingPanelState {
   return {
-    ...DEFAULT_WORKBENCH_PREFERENCES.layout.floatingInspector,
+    ...fallback,
     ...(remote ?? {}),
   };
 }
@@ -173,9 +205,21 @@ function mergeLayout(
     rightOpen: merged.rightOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.rightOpen,
     leftWidth: merged.leftWidth ?? DEFAULT_WORKBENCH_PREFERENCES.layout.leftWidth,
     rightWidth: merged.rightWidth ?? DEFAULT_WORKBENCH_PREFERENCES.layout.rightWidth,
-    floatingInspector: mergeFloatingInspector({
+    floatingTaskQueue: mergeFloatingPanel(DEFAULT_WORKBENCH_PREFERENCES.layout.floatingTaskQueue, {
+      ...(local.floatingTaskQueue ?? {}),
+      ...(remote?.floatingTaskQueue ?? {}),
+    }),
+    floatingClassPalette: mergeFloatingPanel(DEFAULT_WORKBENCH_PREFERENCES.layout.floatingClassPalette, {
+      ...(local.floatingClassPalette ?? {}),
+      ...(remote?.floatingClassPalette ?? {}),
+    }),
+    floatingInspector: mergeFloatingPanel(DEFAULT_WORKBENCH_PREFERENCES.layout.floatingInspector, {
       ...(local.floatingInspector ?? {}),
       ...(remote?.floatingInspector ?? {}),
+    }),
+    floatingDiscussion: mergeFloatingPanel(DEFAULT_WORKBENCH_PREFERENCES.layout.floatingDiscussion, {
+      ...(local.floatingDiscussion ?? {}),
+      ...(remote?.floatingDiscussion ?? {}),
     }),
     triViewFloat: mergeTriViewFloat({
       ...(local.triViewFloat ?? {}),
@@ -191,12 +235,33 @@ function applyLayoutPatch(
   return {
     ...current,
     ...patch,
+    floatingTaskQueue:
+      patch.floatingTaskQueue === undefined
+        ? current.floatingTaskQueue
+        : mergeFloatingPanel(DEFAULT_WORKBENCH_PREFERENCES.layout.floatingTaskQueue, {
+            ...current.floatingTaskQueue,
+            ...(patch.floatingTaskQueue ?? {}),
+          }),
+    floatingClassPalette:
+      patch.floatingClassPalette === undefined
+        ? current.floatingClassPalette
+        : mergeFloatingPanel(DEFAULT_WORKBENCH_PREFERENCES.layout.floatingClassPalette, {
+            ...current.floatingClassPalette,
+            ...(patch.floatingClassPalette ?? {}),
+          }),
     floatingInspector:
       patch.floatingInspector === undefined
         ? current.floatingInspector
-        : mergeFloatingInspector({
+        : mergeFloatingPanel(DEFAULT_WORKBENCH_PREFERENCES.layout.floatingInspector, {
             ...current.floatingInspector,
             ...(patch.floatingInspector ?? {}),
+          }),
+    floatingDiscussion:
+      patch.floatingDiscussion === undefined
+        ? current.floatingDiscussion
+        : mergeFloatingPanel(DEFAULT_WORKBENCH_PREFERENCES.layout.floatingDiscussion, {
+            ...current.floatingDiscussion,
+            ...(patch.floatingDiscussion ?? {}),
           }),
     triViewFloat:
       patch.triViewFloat === undefined

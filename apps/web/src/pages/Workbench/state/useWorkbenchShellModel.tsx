@@ -66,8 +66,10 @@ import { WorkbenchOverlays } from "../shell/WorkbenchOverlays";
 import type { ClassPickerAttrEditing } from "../shell/ClassPickerPopover";
 import { WorkbenchLayout } from "../shell/WorkbenchLayout";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
+import { SIDE_FLOATING_PANEL_MAX_SIZE, SIDE_FLOATING_PANEL_MIN_SIZE } from "../shell/floatingPanelSizing";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
+import type { FloatingPanelState } from "@/api/auth";
 import {
   getRememberedWorkbenchTask,
   rememberWorkbenchTask,
@@ -127,24 +129,67 @@ interface WorkbenchShellReadyModel {
   issueSection?: WorkbenchShellIssueSection;
 }
 
-function resolveFloatingInspectorRect(
-  state: {
-    x: number | null;
-    y: number | null;
-    w: number | null;
-    h: number | null;
+function resolveFloatingPanelRect(
+  state: FloatingPanelState,
+  defaults: {
+    w: number;
+    h: number;
+    x: (viewportW: number, w: number) => number;
+    y: (viewportH: number, h: number) => number;
   },
 ): FloatingPanelRect {
-  const w = state.w ?? 360;
-  const h = state.h ?? 600;
+  const w = Math.max(
+    SIDE_FLOATING_PANEL_MIN_SIZE.w,
+    Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.w, state.w ?? defaults.w),
+  );
+  const h = Math.max(
+    SIDE_FLOATING_PANEL_MIN_SIZE.h,
+    Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.h, state.h ?? defaults.h),
+  );
   const viewportW = typeof window === "undefined" ? 1280 : window.innerWidth;
   const viewportH = typeof window === "undefined" ? 800 : window.innerHeight;
   return {
-    x: state.x ?? Math.max(24, viewportW - w - 40),
-    y: state.y ?? Math.max(24, Math.min(80, viewportH - h - 24)),
+    x: state.x ?? Math.max(24, defaults.x(viewportW, w)),
+    y: state.y ?? Math.max(24, defaults.y(viewportH, h)),
     w,
     h,
   };
+}
+
+function resolveFloatingTaskQueueRect(state: FloatingPanelState): FloatingPanelRect {
+  return resolveFloatingPanelRect(state, {
+    w: 320,
+    h: 620,
+    x: () => 24,
+    y: () => 72,
+  });
+}
+
+function resolveFloatingClassPaletteRect(state: FloatingPanelState): FloatingPanelRect {
+  return resolveFloatingPanelRect(state, {
+    w: 320,
+    h: 420,
+    x: () => 24,
+    y: (viewportH, h) => viewportH - h - 40,
+  });
+}
+
+function resolveFloatingInspectorRect(state: FloatingPanelState): FloatingPanelRect {
+  return resolveFloatingPanelRect(state, {
+    w: 360,
+    h: 600,
+    x: (viewportW, w) => viewportW - w - 40,
+    y: (viewportH, h) => Math.min(80, viewportH - h - 24),
+  });
+}
+
+function resolveFloatingDiscussionRect(state: FloatingPanelState): FloatingPanelRect {
+  return resolveFloatingPanelRect(state, {
+    w: 420,
+    h: 560,
+    x: (viewportW, w) => viewportW - w - 40,
+    y: (viewportH, h) => Math.min(260, viewportH - h - 40),
+  });
 }
 
 export type UseWorkbenchShellModelResult =
@@ -1191,21 +1236,59 @@ export function useWorkbenchShellModel({
     handleAnnotationUngroup,
   });
 
+  const floatingTaskQueue = s.workbenchLayout.floatingTaskQueue;
+  const floatingClassPalette = s.workbenchLayout.floatingClassPalette;
   const floatingInspector = s.workbenchLayout.floatingInspector;
+  const floatingDiscussion = s.workbenchLayout.floatingDiscussion;
   const setWorkbenchLayout = s.setWorkbenchLayout;
   const setLeftOpenState = s.setLeftOpen;
   const setRightOpenState = s.setRightOpen;
   const leftOpenState = s.leftOpen;
   const rightOpenState = s.rightOpen;
+  const taskQueueDetached = floatingTaskQueue.detached;
+  const classPaletteDetached = floatingClassPalette.detached;
   const inspectorDetached = floatingInspector.detached;
-  const leftOpen = isNarrow ? false : leftOpenState;
-  const rightOpen = isNarrow || inspectorDetached ? false : rightOpenState;
+  const discussionDetached = floatingDiscussion.detached;
+  const leftHasEmbeddedPanels = !taskQueueDetached || !classPaletteDetached;
+  const rightHasEmbeddedPanels = !inspectorDetached || !discussionDetached;
+  const leftOpen = isNarrow || !leftHasEmbeddedPanels ? false : leftOpenState;
+  const rightOpen = isNarrow || !rightHasEmbeddedPanels ? false : rightOpenState;
+  const floatingTaskQueuePosition = useMemo(
+    () => resolveFloatingTaskQueueRect(floatingTaskQueue),
+    [floatingTaskQueue],
+  );
+  const floatingClassPalettePosition = useMemo(
+    () => resolveFloatingClassPaletteRect(floatingClassPalette),
+    [floatingClassPalette],
+  );
   const floatingInspectorPosition = useMemo(
     () => resolveFloatingInspectorRect(floatingInspector),
-    [
-      floatingInspector,
-    ],
+    [floatingInspector],
   );
+  const floatingDiscussionPosition = useMemo(
+    () => resolveFloatingDiscussionRect(floatingDiscussion),
+    [floatingDiscussion],
+  );
+  const detachTaskQueue = useCallback(() => {
+    setWorkbenchLayout({
+      floatingTaskQueue: {
+        ...floatingTaskQueue,
+        ...floatingTaskQueuePosition,
+        detached: true,
+      },
+    });
+    setLeftOpenState(false);
+  }, [floatingTaskQueue, floatingTaskQueuePosition, setLeftOpenState, setWorkbenchLayout]);
+  const detachClassPalette = useCallback(() => {
+    setWorkbenchLayout({
+      floatingClassPalette: {
+        ...floatingClassPalette,
+        ...floatingClassPalettePosition,
+        detached: true,
+      },
+    });
+    setLeftOpenState(false);
+  }, [floatingClassPalette, floatingClassPalettePosition, setLeftOpenState, setWorkbenchLayout]);
   const detachInspector = useCallback(() => {
     setWorkbenchLayout({
       floatingInspector: {
@@ -1214,7 +1297,34 @@ export function useWorkbenchShellModel({
         detached: true,
       },
     });
-  }, [floatingInspector, floatingInspectorPosition, setWorkbenchLayout]);
+    setRightOpenState(false);
+  }, [floatingInspector, floatingInspectorPosition, setRightOpenState, setWorkbenchLayout]);
+  const detachDiscussion = useCallback(() => {
+    setWorkbenchLayout({
+      floatingDiscussion: {
+        ...floatingDiscussion,
+        ...floatingDiscussionPosition,
+        detached: true,
+      },
+    });
+    setRightOpenState(false);
+  }, [floatingDiscussion, floatingDiscussionPosition, setRightOpenState, setWorkbenchLayout]);
+  const mergeTaskQueueBack = useCallback(() => {
+    setWorkbenchLayout({
+      floatingTaskQueue: {
+        ...floatingTaskQueue,
+        detached: false,
+      },
+    });
+  }, [floatingTaskQueue, setWorkbenchLayout]);
+  const mergeClassPaletteBack = useCallback(() => {
+    setWorkbenchLayout({
+      floatingClassPalette: {
+        ...floatingClassPalette,
+        detached: false,
+      },
+    });
+  }, [floatingClassPalette, setWorkbenchLayout]);
   const mergeInspectorBack = useCallback(() => {
     setWorkbenchLayout({
       floatingInspector: {
@@ -1222,8 +1332,33 @@ export function useWorkbenchShellModel({
         detached: false,
       },
     });
-    setRightOpenState(true);
-  }, [floatingInspector, setRightOpenState, setWorkbenchLayout]);
+  }, [floatingInspector, setWorkbenchLayout]);
+  const mergeDiscussionBack = useCallback(() => {
+    setWorkbenchLayout({
+      floatingDiscussion: {
+        ...floatingDiscussion,
+        detached: false,
+      },
+    });
+  }, [floatingDiscussion, setWorkbenchLayout]);
+  const closeFloatingTaskQueue = useCallback(() => {
+    setWorkbenchLayout({
+      floatingTaskQueue: {
+        ...floatingTaskQueue,
+        detached: false,
+      },
+    });
+    setLeftOpenState(false);
+  }, [floatingTaskQueue, setLeftOpenState, setWorkbenchLayout]);
+  const closeFloatingClassPalette = useCallback(() => {
+    setWorkbenchLayout({
+      floatingClassPalette: {
+        ...floatingClassPalette,
+        detached: false,
+      },
+    });
+    setLeftOpenState(false);
+  }, [floatingClassPalette, setLeftOpenState, setWorkbenchLayout]);
   const closeFloatingInspector = useCallback(() => {
     setWorkbenchLayout({
       floatingInspector: {
@@ -1233,16 +1368,23 @@ export function useWorkbenchShellModel({
     });
     setRightOpenState(false);
   }, [floatingInspector, setRightOpenState, setWorkbenchLayout]);
+  const closeFloatingDiscussion = useCallback(() => {
+    setWorkbenchLayout({
+      floatingDiscussion: {
+        ...floatingDiscussion,
+        detached: false,
+      },
+    });
+    setRightOpenState(false);
+  }, [floatingDiscussion, setRightOpenState, setWorkbenchLayout]);
   const toggleLeftSidebar = useCallback(() => {
+    if (!leftHasEmbeddedPanels) return;
     setLeftOpenState(!leftOpenState);
-  }, [leftOpenState, setLeftOpenState]);
+  }, [leftHasEmbeddedPanels, leftOpenState, setLeftOpenState]);
   const toggleRightSidebar = useCallback(() => {
-    if (inspectorDetached) {
-      mergeInspectorBack();
-      return;
-    }
+    if (!rightHasEmbeddedPanels) return;
     setRightOpenState(!rightOpenState);
-  }, [inspectorDetached, mergeInspectorBack, rightOpenState, setRightOpenState]);
+  }, [rightHasEmbeddedPanels, rightOpenState, setRightOpenState]);
   useEffect(() => {
     // 边栏收起/展开后 stage 容器宽度变化, 用 fitTick 触发 image/video stage 重新适应窗口。
     if (stageKind !== "image" && stageKind !== "video") return;
@@ -1305,6 +1447,8 @@ export function useWorkbenchShellModel({
       onSelectTask: selectTask, batches: activeBatches, selectedBatchId, onSelectBatch: handleSelectBatch,
       totalCount: tasksTotal, isOwner, onGoToBatchSettings: () => { if (projectId) navigate(`/projects/${projectId}/settings?section=batches`); },
       width: s.leftWidth, onResize: s.setLeftWidth,
+      onDetachQueue: detachTaskQueue,
+      onDetachPalette: detachClassPalette,
       // v0.13.3-5 · 3D 点云台:左栏色板可点选 = 放置新框的类别(2D 仍只读图例)。
       classPickable: stageKind === "3d" && !isLocked,
       onPickClass: s.setActiveClass,
@@ -1626,6 +1770,34 @@ export function useWorkbenchShellModel({
         </div>
       )) : undefined,
     },
+    floatingTaskQueue: {
+      detached: taskQueueDetached,
+      position: floatingTaskQueuePosition,
+      onPositionChange: (patch) => {
+        s.setWorkbenchLayout({
+          floatingTaskQueue: {
+            ...s.workbenchLayout.floatingTaskQueue,
+            ...patch,
+          },
+        });
+      },
+      onMergeBack: mergeTaskQueueBack,
+      onClose: closeFloatingTaskQueue,
+    },
+    floatingClassPalette: {
+      detached: classPaletteDetached,
+      position: floatingClassPalettePosition,
+      onPositionChange: (patch) => {
+        s.setWorkbenchLayout({
+          floatingClassPalette: {
+            ...s.workbenchLayout.floatingClassPalette,
+            ...patch,
+          },
+        });
+      },
+      onMergeBack: mergeClassPaletteBack,
+      onClose: closeFloatingClassPalette,
+    },
     floatingInspector: {
       detached: inspectorDetached,
       position: floatingInspectorPosition,
@@ -1639,6 +1811,20 @@ export function useWorkbenchShellModel({
       },
       onMergeBack: mergeInspectorBack,
       onClose: closeFloatingInspector,
+    },
+    floatingDiscussion: {
+      detached: discussionDetached,
+      position: floatingDiscussionPosition,
+      onPositionChange: (patch) => {
+        s.setWorkbenchLayout({
+          floatingDiscussion: {
+            ...s.workbenchLayout.floatingDiscussion,
+            ...patch,
+          },
+        });
+      },
+      onMergeBack: mergeDiscussionBack,
+      onClose: closeFloatingDiscussion,
     },
     aiPopover: {
       open: aiPopoverOpen && !isVideoTask,
@@ -1692,6 +1878,7 @@ export function useWorkbenchShellModel({
       },
       commentAnchor: videoCommentAnchor,
       onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
+      onDetach: detachDiscussion,
     },
   };
 
@@ -1711,17 +1898,9 @@ export function useWorkbenchShellModel({
     stageKind,
     issuePinDropArmed,
     // v0.11.5 · issue FAB → 切到 DiscussionPanel issues tab (旧浮层 IssueListPanel 已删)。
-    // DiscussionPanel 在右栏内，右栏收起时列宽为 0px 被裁切，故先确保右栏展开再切 tab。
+    // v0.13.10+ · 不再把已分离的标注详情合并回去；讨论面板仍嵌入时才展开右栏。
     onOpenList: () => {
-      if (s.workbenchLayout.floatingInspector.detached) {
-        s.setWorkbenchLayout({
-          floatingInspector: {
-            ...s.workbenchLayout.floatingInspector,
-            detached: false,
-          },
-        });
-      }
-      if (!s.rightOpen) s.setRightOpen(true);
+      if (!s.workbenchLayout.floatingDiscussion.detached && !s.rightOpen) s.setRightOpen(true);
       requestIssuesTab();
     },
     onToggleIssuePinDrop: () => setIssuePinDropArmed((v) => !v),

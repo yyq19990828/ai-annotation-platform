@@ -6342,9 +6342,9 @@
         "title": "FeedbackAnchorPosition",
         "type": "object"
       },
-      "FloatingInspectorState": {
+      "FloatingPanelState": {
         "additionalProperties": false,
-        "description": "v0.13.10 · 标注详情浮窗状态。像素默认由前端按窗口计算。",
+        "description": "v0.13.10 · 工作台浮窗状态。像素默认由前端按窗口计算。",
         "properties": {
           "detached": {
             "default": false,
@@ -6355,7 +6355,7 @@
             "anyOf": [
               {
                 "maximum": 900.0,
-                "minimum": 240.0,
+                "minimum": 120.0,
                 "type": "integer"
               },
               {
@@ -6368,7 +6368,7 @@
             "anyOf": [
               {
                 "maximum": 720.0,
-                "minimum": 200.0,
+                "minimum": 48.0,
                 "type": "integer"
               },
               {
@@ -6400,7 +6400,7 @@
             "title": "Y"
           }
         },
-        "title": "FloatingInspectorState",
+        "title": "FloatingPanelState",
         "type": "object"
       },
       "ForgotPasswordRequest": {
@@ -16112,10 +16112,40 @@
         "additionalProperties": false,
         "description": "v0.13.10 · 工作台布局偏好。\n\n后端只校验结构；默认值和 PATCH 全量 workbench 契约由前端维护。",
         "properties": {
+          "floatingClassPalette": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FloatingPanelState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "floatingDiscussion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FloatingPanelState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "floatingInspector": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/FloatingInspectorState"
+                "$ref": "#/components/schemas/FloatingPanelState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "floatingTaskQueue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FloatingPanelState"
               },
               {
                 "type": "null"

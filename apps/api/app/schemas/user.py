@@ -4,16 +4,16 @@ from uuid import UUID
 from datetime import datetime
 
 
-class FloatingInspectorState(BaseModel):
-    """v0.13.10 · 标注详情浮窗状态。像素默认由前端按窗口计算。"""
+class FloatingPanelState(BaseModel):
+    """v0.13.10 · 工作台浮窗状态。像素默认由前端按窗口计算。"""
 
     model_config = {"extra": "forbid"}
 
     detached: bool = False
     x: int | None = None
     y: int | None = None
-    w: int | None = Field(default=None, ge=200, le=720)
-    h: int | None = Field(default=None, ge=240, le=900)
+    w: int | None = Field(default=None, ge=48, le=720)
+    h: int | None = Field(default=None, ge=120, le=900)
 
 
 class TriViewFloatState(BaseModel):
@@ -40,9 +40,21 @@ class WorkbenchLayoutPreferences(BaseModel):
     right_open: bool | None = Field(default=None, alias="rightOpen")
     left_width: int | None = Field(default=None, alias="leftWidth", ge=200, le=560)
     right_width: int | None = Field(default=None, alias="rightWidth", ge=220, le=600)
-    floating_inspector: FloatingInspectorState | None = Field(
+    floating_task_queue: FloatingPanelState | None = Field(
+        default=None,
+        alias="floatingTaskQueue",
+    )
+    floating_class_palette: FloatingPanelState | None = Field(
+        default=None,
+        alias="floatingClassPalette",
+    )
+    floating_inspector: FloatingPanelState | None = Field(
         default=None,
         alias="floatingInspector",
+    )
+    floating_discussion: FloatingPanelState | None = Field(
+        default=None,
+        alias="floatingDiscussion",
     )
     tri_view_float: TriViewFloatState | None = Field(default=None, alias="triViewFloat")
 
