@@ -137,7 +137,9 @@ async def main() -> None:
         else:
             print(f"  skip  project {PROJECT_DISPLAY_ID} (已存在)")
 
-        # 数据集（幂等 by name）
+        # 数据集（幂等 by name）。v0.13.11 · 夹具来自 SUSTechPOINTS 示例,lidar 系约定为
+        # +X 车左 / +Y 车后 / +Z 天 (非 ISO 8855),写 axis_convention=sustechpoints_demo
+        # 让 3D 工作台加载侧自动旋转到 ISO,BEV 才会车头朝上。
         ds = await db.scalar(select(Dataset).where(Dataset.name == DS_NAME))
         if ds is None:
             ds = Dataset(
@@ -145,12 +147,20 @@ async def main() -> None:
                 name=DS_NAME,
                 data_type="point_cloud",
                 created_by=owner.id,
+                metadata_={"axis_convention": "sustechpoints_demo"},
             )
             db.add(ds)
             await db.flush()
-            print(f"  add   dataset {DS_NAME}")
+            print(f"  add   dataset {DS_NAME} (axis_convention=sustechpoints_demo)")
         else:
-            print(f"  skip  dataset {DS_NAME} (已存在)")
+            # 回填:旧种子无 axis_convention 时补上 (幂等)。
+            current = (ds.metadata_ or {}).get("axis_convention")
+            if current != "sustechpoints_demo":
+                ds.metadata_ = {**(ds.metadata_ or {}), "axis_convention": "sustechpoints_demo"}
+                await db.flush()
+                print(f"  upd   dataset {DS_NAME} axis_convention → sustechpoints_demo")
+            else:
+                print(f"  skip  dataset {DS_NAME} (已存在)")
 
         # 项目-数据集关联（幂等）
         pd = await db.scalar(

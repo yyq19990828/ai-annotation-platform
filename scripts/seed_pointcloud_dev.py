@@ -80,9 +80,13 @@ async def seed_pointcloud(db, *, owner_id: uuid.UUID) -> dict | None:
     )
     db.add(project)
 
+    # v0.13.11 · 夹具来自 SUSTechPOINTS 示例,lidar 系约定 +X 车左 / +Y 车后 / +Z 天 (非
+    # ISO 8855),写 axis_convention=sustechpoints_demo 让前端加载侧自动旋转到 ISO,BEV
+    # 才会车头朝上,框选画框 yaw=0 才能沿车身长轴对齐。
     ds = Dataset(
         display_id=DATASET_DISPLAY_ID, name=DATASET_NAME, data_type="point_cloud",
         created_by=owner_id,
+        metadata_={"axis_convention": "sustechpoints_demo"},
     )
     db.add(ds)
     await db.flush()
