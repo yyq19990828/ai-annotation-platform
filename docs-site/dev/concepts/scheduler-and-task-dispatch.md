@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-10
+last_reviewed: 2026-06-06
 ---
 
 # Scheduler 与派题
@@ -124,6 +124,25 @@ flowchart TD
 - 再把题返回
 
 这样能把“派题”和“并发保护”串成一个原子体验。
+
+## scene 连续派题（v0.14.1）
+
+对时序数据集（同一 scene 下按 `frame_index` 排序的多帧），逐帧切换 scene 会打断标注节奏。v0.14.1 新增一条**可选**的派题优先级：让同一标注员尽量连续拿到同一 scene 的下一帧。
+
+触发与控制（均为 project 级字段，见 [项目模块](./project-module)）：
+
+- `prefer_same_scene_continuation`：开关。**默认 OFF**，关闭时 `get_next_task()` 完全走既有 sampling 流程，**既有项目零回归**。
+- `scene_continuation_window_min`：时间窗口，默认 `30` 分钟。
+
+开关打开后，scheduler 会在套用既有 sampling 策略**之前**先尝试 `_next_same_scene_task(...)`，逻辑是：
+
+1. 找该用户在 `window_min` 分钟内**最近创建的 active annotation** → 对应 task → 该 task 的 `scene_id` 与 `frame_index`（scene / 帧索引含义见 [scene 与 frame_index](./scene-and-frame-index)）。
+2. 在同一 scene 内，取 `frame_index` **严格大于**当前帧、按帧升序的第一个**可分配** task（可分配判定复用既有的 batch 状态 / 角色可见性 / 多人重叠等过滤）。
+3. 命中则直接 acquire lock 并返回该题。
+
+回退行为：上述任何一步缺数据——窗口内无最近提交、task 无 `scene_id`、没有后续帧、或后续帧全被他人占用——`_next_same_scene_task` 返回 `None`，scheduler **回退到既有 sampling 策略**，与开关关闭时一致。
+
+注意：scene 连续**不独占 scene**。它只是优先把下一帧派给同一个人，同 scene 的其它帧仍可正常分配给其他标注员。
 
 ## 它与 task lock 的关系
 
