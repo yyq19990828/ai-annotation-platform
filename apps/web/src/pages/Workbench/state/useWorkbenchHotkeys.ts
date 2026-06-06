@@ -325,6 +325,9 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         case "navigateTask": e.preventDefault(); navigateTask(action.dir); return;
         case "crossFramePropagate":
           e.preventDefault();
+          // v0.14.1 · 阻断按住 Alt+→ 的 auto-repeat: 否则连发多个 propagate POST,
+          // 在目标帧造出共享同一新 group_id 的重复 annotation。
+          if (e.repeat) return;
           onCrossFramePropagate?.(action.dir);
           return;
 

@@ -563,6 +563,9 @@ export function ThreeDWorkbench({
   useEffect(() => {
     if (readOnly) return;
     const onKey = (e: KeyboardEvent) => {
+      // v0.14.1 · 阻断按住 Shift+→ 的 auto-repeat: 否则连发多个 propagate POST,
+      // 在目标帧造出共享同一新 group_id 的重复 annotation。
+      if (e.repeat) return;
       if (!e.shiftKey || (e.key !== "ArrowRight" && e.key !== "ArrowLeft")) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;

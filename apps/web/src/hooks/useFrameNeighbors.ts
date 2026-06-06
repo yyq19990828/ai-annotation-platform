@@ -2,8 +2,9 @@
  * v0.14.1 · 跨帧目标延续: scene 内前后 k 个邻居 task。
  *
  * 纯包 v0.14.0 端点 GET /tasks/{id}/neighbors?k=K, 不感知几何类型 ——
- * 3D / 2D / 视频段 workbench 共用同一份。task 无 scene_id(历史未 backfill)时
- * 端点回 scene_total_frames=0 + 空 prev/next, 调用方据此判定"无跨帧能力"。
+ * 3D / 2D / 视频段 workbench 共用同一份。task 无 scene(历史未 backfill / 单帧)时
+ * 端点回 scene_id=null(v0.14.1 起, 取代旧全零 UUID sentinel)+ 空 prev/next,
+ * 调用方据此判定"无跨帧能力"。
  */
 import { useQuery } from "@tanstack/react-query";
 import { tasksApi } from "@/api/tasks";

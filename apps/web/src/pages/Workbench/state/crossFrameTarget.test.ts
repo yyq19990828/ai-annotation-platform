@@ -21,10 +21,13 @@ function nb(over: Partial<NeighborsResponse>): NeighborsResponse {
 }
 
 describe("resolveCrossFrameTarget", () => {
-  it("null / scene_total_frames=0 → no-scene", () => {
+  it("null / scene_id=null → no-scene", () => {
     expect(resolveCrossFrameTarget(null, "next").kind).toBe("no-scene");
     expect(
-      resolveCrossFrameTarget(nb({ scene_total_frames: 0 }), "next").kind,
+      resolveCrossFrameTarget(
+        nb({ scene_id: null, scene_name: null, frame_index: null }),
+        "next",
+      ).kind,
     ).toBe("no-scene");
   });
 

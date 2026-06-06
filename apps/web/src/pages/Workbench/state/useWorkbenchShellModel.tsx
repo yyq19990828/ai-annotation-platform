@@ -728,66 +728,75 @@ export function useWorkbenchShellModel({
     taskId: string;
     annotationId: string;
   } | null>(null);
+  // v0.14.1 · 并发/重复触发守卫: 按住 Alt+→ auto-repeat 或快速连按时, 防止并发
+  // 多个 propagate POST 在目标帧造出共享同一新 group_id 的重复 annotation。
+  const crossFrameInFlightRef = useRef(false);
   const crossFramePropagate = useCallback(
     async (direction: "next" | "prev") => {
       if (!taskId) return;
-      const selId = s.selectedId;
-      if (!selId) {
-        pushToast({ msg: "请先选中一个目标框", kind: "" });
-        return;
-      }
-      let neighbors;
+      if (crossFrameInFlightRef.current) return;
+      crossFrameInFlightRef.current = true;
       try {
-        neighbors = await tasksApi.getNeighbors(taskId, 1);
-      } catch {
-        pushToast({ msg: "获取邻帧失败", kind: "error" });
-        return;
-      }
-      const resolution = resolveCrossFrameTarget(neighbors, direction);
-      if (resolution.kind === "no-scene") {
-        pushToast({ msg: "当前 task 不属于任何 scene, 无法跨帧延续", kind: "warning" });
-        return;
-      }
-      if (resolution.kind === "boundary") {
-        pushToast({
-          msg: direction === "next" ? "已是该 scene 最后一帧" : "已是该 scene 首帧",
-          kind: "",
-        });
-        return;
-      }
-      try {
-        const { annotation } = await tasksApi.propagateToTask(
-          taskId,
-          selId,
-          resolution.taskId,
-        );
-        // 失效目标 task 标注缓存, 跳过去后重新拉到含新框的列表。
-        queryClient.invalidateQueries({
-          queryKey: ["annotations", resolution.taskId],
-        });
-        // 源 task 框可能刚被分配 group_id, 失效让本帧高亮同步。
-        queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
-        pendingCrossFrameSelectRef.current = {
-          taskId: resolution.taskId,
-          annotationId: annotation.id,
-        };
-        const nav = resolveCrossFrameNavigation(
-          tasks.map((t) => t.id),
-          resolution.taskId,
-        );
-        if (nav.kind === "loaded") {
-          selectTask(nav.taskId);
-        } else {
-          setCurrentTaskId(nav.taskId);
-          setSelectedId(null);
-          updateUrl({ batchId: selectedBatchId, taskId: nav.taskId });
+        const selId = s.selectedId;
+        if (!selId) {
+          pushToast({ msg: "请先选中一个目标框", kind: "" });
+          return;
         }
-        pushToast({
-          msg: `已延续到帧 ${resolution.frameIndex}`,
-          kind: "success",
-        });
-      } catch {
-        pushToast({ msg: "跨帧延续失败", kind: "error" });
+        let neighbors;
+        try {
+          neighbors = await tasksApi.getNeighbors(taskId, 1);
+        } catch {
+          pushToast({ msg: "获取邻帧失败", kind: "error" });
+          return;
+        }
+        const resolution = resolveCrossFrameTarget(neighbors, direction);
+        if (resolution.kind === "no-scene") {
+          pushToast({ msg: "当前 task 不属于任何 scene, 无法跨帧延续", kind: "warning" });
+          return;
+        }
+        if (resolution.kind === "boundary") {
+          pushToast({
+            msg: direction === "next" ? "已是该 scene 最后一帧" : "已是该 scene 首帧",
+            kind: "",
+          });
+          return;
+        }
+        try {
+          const { annotation } = await tasksApi.propagateToTask(
+            taskId,
+            selId,
+            resolution.taskId,
+          );
+          // 失效目标 task 标注缓存, 跳过去后重新拉到含新框的列表。
+          queryClient.invalidateQueries({
+            queryKey: ["annotations", resolution.taskId],
+          });
+          // 源 task 框可能刚被分配 group_id, 失效让本帧高亮同步。
+          queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
+          pendingCrossFrameSelectRef.current = {
+            taskId: resolution.taskId,
+            annotationId: annotation.id,
+          };
+          const nav = resolveCrossFrameNavigation(
+            tasks.map((t) => t.id),
+            resolution.taskId,
+          );
+          if (nav.kind === "loaded") {
+            selectTask(nav.taskId);
+          } else {
+            setCurrentTaskId(nav.taskId);
+            setSelectedId(null);
+            updateUrl({ batchId: selectedBatchId, taskId: nav.taskId });
+          }
+          pushToast({
+            msg: `已延续到帧 ${resolution.frameIndex}`,
+            kind: "success",
+          });
+        } catch {
+          pushToast({ msg: "跨帧延续失败", kind: "error" });
+        }
+      } finally {
+        crossFrameInFlightRef.current = false;
       }
     },
     [
