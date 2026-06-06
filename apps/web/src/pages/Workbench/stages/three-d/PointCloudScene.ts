@@ -841,6 +841,13 @@ export class PointCloudScene {
     this.removePoints();
     for (const group of this.boxGroups.values()) this.disposeBoxGroup(group);
     this.boxGroups.clear();
+    // 参考框共用 this.unitEdges 几何(下面统一 dispose),仅各自持有 LineDashedMaterial,
+    // 与 setReferenceBoxes 的清理口径一致:只 dispose 材质。
+    for (const seg of this.referenceBoxes) {
+      this.referenceLayer.remove(seg);
+      (seg.material as THREE.Material).dispose();
+    }
+    this.referenceBoxes = [];
     this.unitEdges.dispose();
     this.unitBox.dispose();
     this.transform.detach();
