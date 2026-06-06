@@ -51,3 +51,46 @@ async def test_list_datasets_filters_by_derived_has_scenes(
     assert scene_ds.id not in {item["id"] for item in plain_items}
     assert all(item["has_scenes"] is True for item in scene_items)
     assert all(item["has_scenes"] is False for item in plain_items)
+
+
+@pytest.mark.asyncio
+async def test_list_datasets_data_type_filter_uses_media_kind(
+    db_session: AsyncSession, super_admin
+):
+    """data_type 过滤按 media kind 归一:查 "lidar" 命中存成 "point_cloud" 的数据集
+    (与 link 硬门同口径),且不串到 image。"""
+    user, _ = super_admin
+    suffix = uuid.uuid4().hex[:6]
+    pc_ds = Dataset(
+        id=uuid.uuid4(),
+        display_id=f"D-PC-{suffix}",
+        name="point cloud dataset",
+        data_type="point_cloud",
+        created_by=user.id,
+    )
+    img_ds = Dataset(
+        id=uuid.uuid4(),
+        display_id=f"D-IMG-{suffix}",
+        name="image dataset",
+        data_type="image",
+        created_by=user.id,
+    )
+    db_session.add_all([pc_ds, img_ds])
+    await db_session.flush()
+
+    svc = DatasetService(db_session)
+    lidar_items, _ = await svc.list(data_type="lidar")
+    pc_items, _ = await svc.list(data_type="point_cloud")
+    image_items, _ = await svc.list(data_type="image")
+
+    lidar_ids = {item["id"] for item in lidar_items}
+    pc_ids = {item["id"] for item in pc_items}
+    image_ids = {item["id"] for item in image_items}
+
+    # 查 "lidar" 与查 "point_cloud" 都命中该 point_cloud 数据集。
+    assert pc_ds.id in lidar_ids
+    assert pc_ds.id in pc_ids
+    # 不串到 image;image 查询也不含 point_cloud。
+    assert pc_ds.id not in image_ids
+    assert img_ds.id not in lidar_ids
+    assert img_ds.id in image_ids

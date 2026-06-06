@@ -14,10 +14,6 @@ import type { ProjectResponse } from "@/api/projects";
 import type { FormState } from "../CreateProjectWizard";
 import styles from "../CreateProjectWizard.module.css";
 
-function datasetDataTypeForProject(dataType?: string | null) {
-  return dataType === "lidar" ? "point_cloud" : (dataType ?? "image");
-}
-
 export function Step5Datasets({
   project,
   form,
@@ -31,8 +27,10 @@ export function Step5Datasets({
 }) {
   const pushToast = useToastStore((s) => s.push);
   const projectHasScenes = !!project.scene_mode;
+  // data_type 传项目原始值,后端按 media kind 归一(lidar/point_cloud 互通),
+  // 与 link 硬门同口径,避免存成 "lidar" 的点云数据集被 picker 漏掉。
   const { data: datasetsRes, isLoading } = useDatasets({
-    data_type: datasetDataTypeForProject(project.data_type),
+    data_type: project.data_type ?? "image",
     has_scenes: projectHasScenes,
   });
   const splitMutation = useSplitBatches(project.id);
@@ -145,7 +143,9 @@ export function Step5Datasets({
 
       {!isLoading && datasets.length === 0 && (
         <div className={styles.emptyPanel}>
-          没有符合该项目类型的数据集，请先导入对应数据集，或跳过后稍后关联。
+          {projectHasScenes
+            ? "没有符合该项目类型且包含时序（scene）数据的数据集，请先导入对应数据集，或跳过后稍后关联。"
+            : "没有符合该项目类型的数据集，请先导入对应数据集，或跳过后稍后关联。"}
         </div>
       )}
 

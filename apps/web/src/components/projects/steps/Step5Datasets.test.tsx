@@ -71,7 +71,7 @@ describe("Step5Datasets", () => {
     mockUseDatasets.mockReset();
   });
 
-  it("scene lidar 项目按 point_cloud + has_scenes=true 过滤数据集", () => {
+  it("scene lidar 项目按 lidar(media kind)+ has_scenes=true 过滤数据集", () => {
     mockUseDatasets.mockReturnValue({
       data: {
         items: [
@@ -90,8 +90,9 @@ describe("Step5Datasets", () => {
 
     render(<Harness />);
 
+    // 传项目原始 data_type "lidar";后端按 media kind 归一同时命中 point_cloud。
     expect(mockUseDatasets).toHaveBeenCalledWith({
-      data_type: "point_cloud",
+      data_type: "lidar",
       has_scenes: true,
     });
     expect(screen.getByText("nuScenes")).toBeInTheDocument();
@@ -105,6 +106,8 @@ describe("Step5Datasets", () => {
 
     render(<Harness />);
 
-    expect(screen.getByText(/没有符合该项目类型的数据集/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/没有符合该项目类型且包含时序/),
+    ).toBeInTheDocument();
   });
 });

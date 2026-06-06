@@ -154,6 +154,9 @@ async def _resolve_primary_item_id(
     return link_row.scalar_one_or_none()
 
 
+_RESOLVE_CHUNK_SIZE = 5000
+
+
 async def resolve_task_scene_frames(
     db: AsyncSession, task_ids: list[uuid.UUID]
 ) -> dict[uuid.UUID, TaskSceneFrame]:
@@ -171,51 +174,56 @@ async def resolve_task_scene_frames(
         for task_id in task_ids
     }
 
-    direct_rows = (
-        await db.execute(
-            select(
-                Task.id,
-                DatasetItem.scene_id,
-                Scene.name,
-                DatasetItem.frame_index,
-            )
-            .join(DatasetItem, Task.dataset_item_id == DatasetItem.id)
-            .outerjoin(Scene, DatasetItem.scene_id == Scene.id)
-            .where(Task.id.in_(task_ids))
-        )
-    ).all()
-    for task_id, scene_id, scene_name, frame_index in direct_rows:
-        if scene_id is not None:
-            out[task_id] = TaskSceneFrame(
-                scene_id=scene_id,
-                scene_name=scene_name,
-                frame_index=frame_index,
-            )
+    # 按 chunk 反查,避免一次性把全量 task_id 灌进 IN(...) 撞 asyncpg 绑定参数上限
+    # (~32767);大数据集 scene 项目分包会传入全量待分包 task。
+    for start in range(0, len(task_ids), _RESOLVE_CHUNK_SIZE):
+        chunk = task_ids[start : start + _RESOLVE_CHUNK_SIZE]
 
-    link_rows = (
-        await db.execute(
-            select(
-                TaskDatasetItemLink.task_id,
-                DatasetItem.scene_id,
-                Scene.name,
-                DatasetItem.frame_index,
+        direct_rows = (
+            await db.execute(
+                select(
+                    Task.id,
+                    DatasetItem.scene_id,
+                    Scene.name,
+                    DatasetItem.frame_index,
+                )
+                .join(DatasetItem, Task.dataset_item_id == DatasetItem.id)
+                .outerjoin(Scene, DatasetItem.scene_id == Scene.id)
+                .where(Task.id.in_(chunk))
             )
-            .join(
-                DatasetItem,
-                TaskDatasetItemLink.dataset_item_id == DatasetItem.id,
+        ).all()
+        for task_id, scene_id, scene_name, frame_index in direct_rows:
+            if scene_id is not None:
+                out[task_id] = TaskSceneFrame(
+                    scene_id=scene_id,
+                    scene_name=scene_name,
+                    frame_index=frame_index,
+                )
+
+        link_rows = (
+            await db.execute(
+                select(
+                    TaskDatasetItemLink.task_id,
+                    DatasetItem.scene_id,
+                    Scene.name,
+                    DatasetItem.frame_index,
+                )
+                .join(
+                    DatasetItem,
+                    TaskDatasetItemLink.dataset_item_id == DatasetItem.id,
+                )
+                .outerjoin(Scene, DatasetItem.scene_id == Scene.id)
+                .where(TaskDatasetItemLink.task_id.in_(chunk))
+                .where(TaskDatasetItemLink.role == _PRIMARY_LIDAR_ROLE)
             )
-            .outerjoin(Scene, DatasetItem.scene_id == Scene.id)
-            .where(TaskDatasetItemLink.task_id.in_(task_ids))
-            .where(TaskDatasetItemLink.role == _PRIMARY_LIDAR_ROLE)
-        )
-    ).all()
-    for task_id, scene_id, scene_name, frame_index in link_rows:
-        if scene_id is not None and out[task_id].scene_id is None:
-            out[task_id] = TaskSceneFrame(
-                scene_id=scene_id,
-                scene_name=scene_name,
-                frame_index=frame_index,
-            )
+        ).all()
+        for task_id, scene_id, scene_name, frame_index in link_rows:
+            if scene_id is not None and out[task_id].scene_id is None:
+                out[task_id] = TaskSceneFrame(
+                    scene_id=scene_id,
+                    scene_name=scene_name,
+                    frame_index=frame_index,
+                )
 
     return out
 

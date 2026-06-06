@@ -22,10 +22,25 @@ class DatasetKind:
     has_scenes: bool
 
 
+_LIDAR_DATA_TYPES = ("lidar", "point_cloud", "pointcloud")
+
+
 def canonical_media_kind(data_type: str | None) -> str:
-    if data_type in {"lidar", "point_cloud", "pointcloud"}:
+    if data_type in _LIDAR_DATA_TYPES:
         return "lidar"
     return data_type or "image"
+
+
+def media_kind_aliases(data_type: str | None) -> tuple[str, ...]:
+    """返回与 data_type 同属一个 media kind 的所有原始 data_type 取值。
+
+    用于按 media kind 过滤数据集,使 picker 过滤与 link 硬门(canonical_media_kind)
+    口径一致 —— 传入 "lidar" 或 "point_cloud" 都匹配整个 lidar 家族,避免存成
+    "lidar" 的数据集被 picker 漏掉却能被 link 门放行的裂缝。
+    """
+    if canonical_media_kind(data_type) == "lidar":
+        return _LIDAR_DATA_TYPES
+    return (canonical_media_kind(data_type),)
 
 
 def project_kind(project: Project) -> ProjectKind:

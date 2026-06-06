@@ -105,3 +105,15 @@ async def test_link_project_enforces_data_type_and_scene_mode(
         await svc.link_project(scene_lidar.id, scene_project.id)
     assert type_exc.value.status_code == 422
     assert "data_type" in type_exc.value.detail
+
+    # 反向 scene 门:普通项目拒绝 has_scenes 数据集(对称强制)。
+    with pytest.raises(HTTPException) as inv_scene_exc:
+        await svc.link_project(scene_image.id, normal_project.id)
+    assert inv_scene_exc.value.status_code == 422
+    assert "scene" in inv_scene_exc.value.detail
+
+    # 反向 data_type 门:lidar 项目拒绝 image 数据集。
+    with pytest.raises(HTTPException) as inv_type_exc:
+        await svc.link_project(scene_image.id, lidar_scene_project.id)
+    assert inv_type_exc.value.status_code == 422
+    assert "data_type" in inv_type_exc.value.detail

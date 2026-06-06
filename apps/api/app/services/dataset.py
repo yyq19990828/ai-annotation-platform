@@ -23,6 +23,7 @@ from app.services.project_kind import (
     dataset_has_scenes,
     dataset_kind,
     kind_mismatch_detail,
+    media_kind_aliases,
     project_kind,
 )
 from app.services.storage import storage_service
@@ -182,10 +183,8 @@ class DatasetService:
             q = q.where(Dataset.name.ilike(f"%{search}%"))
             count_q = count_q.where(Dataset.name.ilike(f"%{search}%"))
         if data_type:
-            if data_type == "lidar":
-                data_type_cond = Dataset.data_type.in_(("lidar", "point_cloud"))
-            else:
-                data_type_cond = Dataset.data_type == data_type
+            # 按 media kind 过滤,与 link 硬门同口径(lidar/point_cloud 互通)。
+            data_type_cond = Dataset.data_type.in_(media_kind_aliases(data_type))
             q = q.where(data_type_cond)
             count_q = count_q.where(data_type_cond)
         if has_scenes is not None:
