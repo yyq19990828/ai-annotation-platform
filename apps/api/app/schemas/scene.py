@@ -48,9 +48,9 @@ class NeighborsResponse(BaseModel):
     首/末帧的对应方向数组为空(不报错,前端兜底渲染)。
     """
 
-    scene_id: UUID
-    scene_name: str
-    frame_index: int
+    scene_id: UUID | None = None
+    scene_name: str | None = None
+    frame_index: int | None = None
     scene_total_frames: int
     prev: list[NeighborInfo] = Field(default_factory=list)
     next: list[NeighborInfo] = Field(default_factory=list)

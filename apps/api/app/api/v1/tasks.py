@@ -597,9 +597,9 @@ async def get_task_neighbors(
     if result is None:
         # 与"首末帧"对调用方一致:返回空 prev/next 不要 404,避免前端做无用区分
         return NeighborsResponse(
-            scene_id=uuid.UUID(int=0),
-            scene_name="",
-            frame_index=0,
+            scene_id=None,
+            scene_name=None,
+            frame_index=None,
             scene_total_frames=0,
             prev=[],
             next=[],
@@ -1076,6 +1076,12 @@ async def propagate_annotation_to_task(
     """
     source_task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, source_task, current_user)
+
+    # 归属校验: annotation 必须属于 URL 里的源 task, 否则越权(借可见 task_id
+    # 复制同 project 内不可见 batch 的他人草稿)。
+    src_annotation = await db.get(Annotation, annotation_id)
+    if src_annotation is None or src_annotation.task_id != task_id:
+        raise HTTPException(status_code=404, detail="source annotation not found")
 
     target_task = await _load_task_or_404(db, data.target_task_id)
     await _assert_task_visible(db, target_task, current_user)

@@ -256,6 +256,57 @@ async def test_propagate_rejects_same_task(db_session, super_admin):
     assert exc.value.status_code == 422
 
 
+@pytest.mark.asyncio
+async def test_propagate_rejects_cross_scene(db_session, super_admin):
+    """同 project / 同 dataset 但目标 task 属于另一个 scene → 422。"""
+    from fastapi import HTTPException
+
+    user, _ = super_admin
+    project, ds, _, tasks = await _seed_scene(db_session, owner_id=user.id)
+
+    scene_b = Scene(
+        display_id=f"SCN-{uuid.uuid4().hex[:6]}",
+        dataset_id=ds.id,
+        name=f"s2-{uuid.uuid4().hex[:6]}",
+    )
+    db_session.add(scene_b)
+    await db_session.flush()
+    stem = "100000"
+    item_b = DatasetItem(
+        dataset_id=ds.id,
+        file_name=f"{stem}.pcd",
+        file_path=f"{ds.name}/lidar/{stem}.pcd",
+        file_type="point_cloud",
+        scene_id=scene_b.id,
+        frame_index=0,
+    )
+    db_session.add(item_b)
+    await db_session.flush()
+    task_b = Task(
+        project_id=project.id,
+        dataset_item_id=item_b.id,
+        display_id=f"T-PR-{uuid.uuid4().hex[:8]}",
+        file_name=f"{stem}.pcd",
+        file_path=f"{ds.name}/lidar/{stem}.pcd",
+        file_type="point_cloud",
+        status="pending",
+    )
+    db_session.add(task_b)
+    await db_session.flush()
+
+    src = await _add_annotation(
+        db_session, task=tasks[0], project=project, user_id=user.id, geometry=_box3d()
+    )
+    svc = AnnotationService(db_session)
+    with pytest.raises(HTTPException) as exc:
+        await svc.propagate(
+            source_annotation_id=src.id,
+            target_task_id=task_b.id,
+            user_id=user.id,
+        )
+    assert exc.value.status_code == 422
+
+
 # ── API 端点端到端 ────────────────────────────────────────────────────────
 
 
@@ -294,6 +345,28 @@ async def test_propagate_endpoint_target_not_found(
     resp = await httpx_client.post(
         f"/api/v1/tasks/{tasks[0].id}/annotations/{src.id}/propagate-to-task",
         json={"target_task_id": str(uuid.uuid4())},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_propagate_endpoint_annotation_task_mismatch_404(
+    db_session, httpx_client, super_admin
+):
+    """越权防护: annotation 不属于 URL 里的源 task → 404。
+
+    攻击路径: 用一个可见 task_id 作 URL 源, 配上别处 annotation_id 复制他人草稿。
+    """
+    user, token = super_admin
+    project, _, _, tasks = await _seed_scene(db_session, owner_id=user.id)
+    # annotation 实际属于 tasks[1], 但 URL 源 task 用 tasks[0]。
+    src = await _add_annotation(
+        db_session, task=tasks[1], project=project, user_id=user.id, geometry=_box3d()
+    )
+    resp = await httpx_client.post(
+        f"/api/v1/tasks/{tasks[0].id}/annotations/{src.id}/propagate-to-task",
+        json={"target_task_id": str(tasks[2].id)},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 404

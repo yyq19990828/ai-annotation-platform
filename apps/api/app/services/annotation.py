@@ -494,6 +494,27 @@ class AnnotationService:
         if src_task.project_id != target_task.project_id:
             raise HTTPException(status_code=422, detail="跨 project propagate 不被允许")
 
+        # 同 scene 校验: 两侧主 item 必须解析到相同且非空的 scene_id。
+        from app.db.models.dataset import DatasetItem
+        from app.services.scene import _resolve_primary_item_id
+
+        src_item_id = await _resolve_primary_item_id(self.db, src_task)
+        target_item_id = await _resolve_primary_item_id(self.db, target_task)
+        src_scene_id = None
+        target_scene_id = None
+        if src_item_id is not None:
+            src_item = await self.db.get(DatasetItem, src_item_id)
+            src_scene_id = src_item.scene_id if src_item is not None else None
+        if target_item_id is not None:
+            target_item = await self.db.get(DatasetItem, target_item_id)
+            target_scene_id = target_item.scene_id if target_item is not None else None
+        if (
+            src_scene_id is None
+            or target_scene_id is None
+            or src_scene_id != target_scene_id
+        ):
+            raise HTTPException(status_code=422, detail="跨 scene propagate 不被允许")
+
         # 共享 group_id: 源无则分配并写回。
         group_id = src.group_id
         if group_id is None:
