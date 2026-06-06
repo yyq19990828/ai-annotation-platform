@@ -250,7 +250,9 @@ async def test_build_tasks_multi_scene_same_frame_stem(db_session, super_admin):
             task = by_lidar[lidar_id]
             links = await get_linked_items(db_session, task.id)
             by_role = {ln.role: ln for ln in links}
-            assert by_role["camera_front"].dataset_item_id == frame["cameras"]["front"].id
+            assert (
+                by_role["camera_front"].dataset_item_id == frame["cameras"]["front"].id
+            )
 
 
 def _patch_get_object(monkeypatch, payload: dict):
