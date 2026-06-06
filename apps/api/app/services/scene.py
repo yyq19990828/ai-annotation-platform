@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import uuid
 from typing import Iterable
 
@@ -29,6 +30,13 @@ from app.services.display_id import next_display_id
 
 
 _PRIMARY_LIDAR_ROLE = "primary_lidar"
+
+
+@dataclass(frozen=True)
+class TaskSceneFrame:
+    scene_id: uuid.UUID | None
+    scene_name: str | None
+    frame_index: int | None
 
 
 class SceneNameConflict(ValueError):
@@ -144,6 +152,72 @@ async def _resolve_primary_item_id(
         .limit(1)
     )
     return link_row.scalar_one_or_none()
+
+
+async def resolve_task_scene_frames(
+    db: AsyncSession, task_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, TaskSceneFrame]:
+    """批量反查 task 的 scene/frame，用于 scheduler/batch 等跨帧逻辑。
+
+    支持两条主 item 关联路径:Task.dataset_item_id 与
+    TaskDatasetItemLink(role=primary_lidar)。返回值覆盖所有输入 task_id；
+    找不到 scene 的 task 以 None 字段表示。
+    """
+    if not task_ids:
+        return {}
+
+    out = {
+        task_id: TaskSceneFrame(scene_id=None, scene_name=None, frame_index=None)
+        for task_id in task_ids
+    }
+
+    direct_rows = (
+        await db.execute(
+            select(
+                Task.id,
+                DatasetItem.scene_id,
+                Scene.name,
+                DatasetItem.frame_index,
+            )
+            .join(DatasetItem, Task.dataset_item_id == DatasetItem.id)
+            .outerjoin(Scene, DatasetItem.scene_id == Scene.id)
+            .where(Task.id.in_(task_ids))
+        )
+    ).all()
+    for task_id, scene_id, scene_name, frame_index in direct_rows:
+        if scene_id is not None:
+            out[task_id] = TaskSceneFrame(
+                scene_id=scene_id,
+                scene_name=scene_name,
+                frame_index=frame_index,
+            )
+
+    link_rows = (
+        await db.execute(
+            select(
+                TaskDatasetItemLink.task_id,
+                DatasetItem.scene_id,
+                Scene.name,
+                DatasetItem.frame_index,
+            )
+            .join(
+                DatasetItem,
+                TaskDatasetItemLink.dataset_item_id == DatasetItem.id,
+            )
+            .outerjoin(Scene, DatasetItem.scene_id == Scene.id)
+            .where(TaskDatasetItemLink.task_id.in_(task_ids))
+            .where(TaskDatasetItemLink.role == _PRIMARY_LIDAR_ROLE)
+        )
+    ).all()
+    for task_id, scene_id, scene_name, frame_index in link_rows:
+        if scene_id is not None and out[task_id].scene_id is None:
+            out[task_id] = TaskSceneFrame(
+                scene_id=scene_id,
+                scene_name=scene_name,
+                frame_index=frame_index,
+            )
+
+    return out
 
 
 async def get_neighbors_for_task(

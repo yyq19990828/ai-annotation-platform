@@ -39,6 +39,7 @@ export interface DatasetCreatePayload {
   name: string;
   description?: string;
   data_type?: string;
+  is_temporal?: boolean;
   axis_convention?: LidarAxisConvention | null;
 }
 
@@ -71,10 +72,13 @@ export interface SniffAxisConventionResponse {
 }
 
 export const datasetsApi = {
-  list: (params?: { search?: string; data_type?: string; limit?: number; offset?: number }) => {
+  list: (params?: { search?: string; data_type?: string; has_scenes?: boolean; limit?: number; offset?: number }) => {
     const q = new URLSearchParams();
     if (params?.search) q.set("search", params.search);
     if (params?.data_type) q.set("data_type", params.data_type);
+    if (params?.has_scenes !== undefined) {
+      q.set("has_scenes", String(params.has_scenes));
+    }
     if (params?.limit) q.set("limit", String(params.limit));
     if (params?.offset) q.set("offset", String(params.offset));
     const qs = q.toString();

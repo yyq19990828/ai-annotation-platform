@@ -28,6 +28,31 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.14.4] - 2026-06-06
+
+scene 模式项目 + scene 感知分包补丁:把 scene 提升为项目级显式声明,补上 `by_scene` 分包、数据集 `has_scenes` 过滤与项目/数据集 kind 硬门。计划见 `docs/plans/2026-06-06-v0.14.4-scene-mode-projects.md`。
+
+### Added
+
+- **项目级 scene 模式**:`Project.scene_mode` 落库并透出到项目创建/更新/响应。图片和 3D 点云项目可开启;视频项目拒绝开启。scene 模式项目创建时默认开启 `prefer_same_scene_continuation`。
+- **数据集时序声明与派生 has_scenes**:`Dataset.is_temporal` 用于导入期校验;`DatasetOut.has_scenes` 由 `scenes` 实时派生。`GET /datasets?has_scenes=true|false` 支持按 scene 存在性过滤。
+- **按 scene 分包**:`POST /batches/split` 支持 `strategy="by_scene"`。一个 scene 生成一个批次,批次内 task 按 `frame_index` 排序,并写 `sequence_order=frame_index`。
+- **前端 scene 模式向导**:项目创建 Step1 增加 scene 模式开关;Step5 按项目媒体类型与 `has_scenes` 过滤数据集,scene 项目默认选择按 scene 分包。
+
+### Changed
+
+- **项目-数据集关联收紧**:`POST /datasets/{id}/link` 新增 kind 对称硬门。项目媒体类型必须匹配数据集媒体类型,且 `project.scene_mode` 必须等于数据集派生的 `has_scenes`;不匹配返回 422。存量关联不追溯。
+- **nuScenes 导入脚本**:脚本创建的数据集标记为时序数据集,配套项目标记为 scene 模式并默认开启 scene 连续调度。
+
+### Fixed
+
+- **scene 被随机分包切碎**:scene 模式项目可直接按 scene 分包,避免同一 scene 的连续帧被拆到不同 batch/owner,从源头减少跨帧 propagate 与调度被 batch 可见性打断。
+
+### Tests
+
+- 新增 `tests/test_batch_split_by_scene.py`、`tests/test_dataset_link_kind_match.py`、`tests/test_project_scene_mode.py`、`tests/test_datasets_list_has_scenes.py`。
+- 新增 `Step5Datasets.test.tsx`,并更新 `datasetsApi` query string 测试。
+
 ## [0.14.3] - 2026-06-06
 
 点云导入鲁棒性 + 跨帧 UX 补丁:把 v0.14.2 真实 nuScenes 实测暴露的硬编码目录名、sensor/ego 坐标混用、跨 batch 跳转、sniffer 分歧不可见、overlay 档位偏小和 ZIP 多 scene 提示问题补齐。不新增表/列,不做数据迁移。计划见 `docs/plans/2026-06-06-v0.14.3-import-robustness-and-crossframe-gaps.md`。

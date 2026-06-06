@@ -3758,7 +3758,8 @@
             "enum": [
               "metadata",
               "id_range",
-              "random"
+              "random",
+              "by_scene"
             ],
             "title": "Strategy",
             "type": "string"
@@ -5702,6 +5703,11 @@
             "title": "Description",
             "type": "string"
           },
+          "is_temporal": {
+            "default": false,
+            "title": "Is Temporal",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -6029,10 +6035,20 @@
             "title": "File Count",
             "type": "integer"
           },
+          "has_scenes": {
+            "default": false,
+            "title": "Has Scenes",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "is_temporal": {
+            "default": false,
+            "title": "Is Temporal",
+            "type": "boolean"
           },
           "name": {
             "title": "Name",
@@ -9715,6 +9731,11 @@
             "title": "Name",
             "type": "string"
           },
+          "scene_mode": {
+            "default": false,
+            "title": "Scene Mode",
+            "type": "boolean"
+          },
           "source_project_id": {
             "anyOf": [
               {
@@ -10155,6 +10176,11 @@
             "default": 30,
             "title": "Scene Continuation Window Min",
             "type": "integer"
+          },
+          "scene_mode": {
+            "default": false,
+            "title": "Scene Mode",
+            "type": "boolean"
           },
           "show_overlap_first": {
             "default": false,
@@ -11326,6 +11352,17 @@
               }
             ],
             "title": "Scene Continuation Window Min"
+          },
+          "scene_mode": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Mode"
           },
           "show_overlap_first": {
             "anyOf": [
@@ -20883,6 +20920,22 @@
                 }
               ],
               "title": "Data Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "has_scenes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Scenes"
             }
           },
           {

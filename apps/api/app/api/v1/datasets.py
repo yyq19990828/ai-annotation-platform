@@ -40,6 +40,7 @@ _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
 async def list_datasets(
     search: str | None = None,
     data_type: str | None = None,
+    has_scenes: bool | None = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -47,7 +48,11 @@ async def list_datasets(
 ):
     svc = DatasetService(db)
     items, total = await svc.list(
-        search=search, data_type=data_type, limit=limit, offset=offset
+        search=search,
+        data_type=data_type,
+        has_scenes=has_scenes,
+        limit=limit,
+        offset=offset,
     )
     return DatasetListResponse(items=items, total=total, limit=limit, offset=offset)
 
@@ -65,6 +70,7 @@ async def create_dataset(
         data_type=data.data_type,
         user_id=current_user.id,
         axis_convention=data.axis_convention,
+        is_temporal=data.is_temporal,
     )
     await db.commit()
     await db.refresh(ds)
@@ -592,6 +598,11 @@ async def upload_zip(
         except ValueError as exc:
             # 超过 scene 上限 / 其他可恢复错误:不阻断 upload,把 notes 透回前端
             scene_inference_notes.append(f"scene_inference skipped: {exc}")
+
+    try:
+        await svc.assert_temporal_dataset_has_scenes(dataset_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     await db.commit()
 

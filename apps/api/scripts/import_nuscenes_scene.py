@@ -315,6 +315,7 @@ async def import_nuscenes(
             display_id=display_id,
             name=dataset_name,
             data_type="point_cloud",
+            is_temporal=True,
             created_by=owner_id,
             metadata_={"axis_convention": axis_convention},
         )
@@ -332,7 +333,8 @@ async def import_nuscenes(
         if not existing_axis:
             meta["axis_convention"] = axis_convention
             ds.metadata_ = meta
-            await db.flush()
+        ds.is_temporal = True
+        await db.flush()
 
     bucket = storage_service.datasets_bucket
     existing_scene_names = {s.name for s in await scene_svc.list_for_dataset(db, ds.id)}
@@ -525,6 +527,8 @@ async def import_nuscenes(
             type_label="点云检测",
             type_key="lidar",
             data_type="lidar",
+            scene_mode=True,
+            prefer_same_scene_continuation=True,
             owner_id=owner_id,
             tool_bindings={},
             ai_enabled=False,

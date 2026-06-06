@@ -14,6 +14,10 @@ import type { ProjectResponse } from "@/api/projects";
 import type { FormState } from "../CreateProjectWizard";
 import styles from "../CreateProjectWizard.module.css";
 
+function datasetDataTypeForProject(dataType?: string | null) {
+  return dataType === "lidar" ? "point_cloud" : (dataType ?? "image");
+}
+
 export function Step5Datasets({
   project,
   form,
@@ -26,7 +30,11 @@ export function Step5Datasets({
   onNext: (linked: number) => void;
 }) {
   const pushToast = useToastStore((s) => s.push);
-  const { data: datasetsRes, isLoading } = useDatasets();
+  const projectHasScenes = !!project.scene_mode;
+  const { data: datasetsRes, isLoading } = useDatasets({
+    data_type: datasetDataTypeForProject(project.data_type),
+    has_scenes: projectHasScenes,
+  });
   const splitMutation = useSplitBatches(project.id);
   // useLinkProject 需要 datasetId 维度的实例，链路上每个 ds 的 mutation 都建一个会失控；
   // 这里走原始 api 直接调（hooks 仅用于 invalidate；step 完成后整体 invalidate 一次足够）。
@@ -38,13 +46,22 @@ export function Step5Datasets({
   const [splitAfterJobs, setSplitAfterJobs] = useState(false);
 
   const runSplit = async () => {
+    if (form.splitStrategy === "none") return;
     try {
-      await splitMutation.mutateAsync({
-        strategy: "random",
-        n_batches: form.splitNBatches,
-        name_prefix: "Batch",
-        priority: 50,
-      });
+      if (form.splitStrategy === "by_scene") {
+        await splitMutation.mutateAsync({
+          strategy: "by_scene",
+          name_prefix: "Scene",
+          priority: 50,
+        });
+      } else {
+        await splitMutation.mutateAsync({
+          strategy: "random",
+          n_batches: form.splitNBatches,
+          name_prefix: "Batch",
+          priority: 50,
+        });
+      }
     } catch (e) {
       pushToast({
         msg: "批次切分失败（可在设置页重试）",
@@ -98,7 +115,7 @@ export function Step5Datasets({
       // 切分（仅当用户选了 >=2）。大 dataset 异步建 task 时此刻任务尚未建完，
       // 立即切分会切到空集 → 延后到所有建任务 job 完成再切（见 splitAfterJobs effect）；
       // 全同步时任务已就绪，立即切。
-      if (form.splitNBatches >= 2) {
+      if (form.splitStrategy !== "none") {
         if (jobIds.length > 0) {
           setSplitAfterJobs(true);
         } else {
@@ -121,14 +138,14 @@ export function Step5Datasets({
   return (
     <div className={styles.formStack}>
       <div className={styles.sectionHint}>
-        选择要关联到本项目的数据集（可空 / 多选）。关联后任务会作为「未归类」加入项目；选择下面的「随机切分」可以一并把任务切分到 N 个批次。
+        选择要关联到本项目的数据集（可空 / 多选）。关联后任务会作为「未归类」加入项目；可在下方选择初始分包方式。
       </div>
 
       {isLoading && <div className={styles.inlineLoading}>加载数据集…</div>}
 
       {!isLoading && datasets.length === 0 && (
         <div className={styles.emptyPanel}>
-          暂无可用数据集，可跳过此步骤稍后在「数据集」页关联。
+          没有符合该项目类型的数据集，请先导入对应数据集，或跳过后稍后关联。
         </div>
       )}
 
@@ -159,6 +176,7 @@ export function Step5Datasets({
                   <div className={styles.choiceMeta}>
                     <span className="mono">{d.display_id}</span> · {d.file_count}{" "}
                     个文件 · {d.data_type}
+                    {d.has_scenes ? " · 时序" : ""}
                   </div>
                 </span>
               </button>
@@ -174,18 +192,31 @@ export function Step5Datasets({
             <label className={styles.radioLabel}>
               <input
                 type="radio"
-                checked={form.splitNBatches === 0}
-                onChange={() => setForm((s) => ({ ...s, splitNBatches: 0 }))}
+                checked={form.splitStrategy === "none"}
+                onChange={() => setForm((s) => ({ ...s, splitStrategy: "none" }))}
               />
-              保留默认包（每个数据集一个包）
+              暂不分包
             </label>
+            {projectHasScenes && (
+              <label className={styles.radioLabel}>
+                <input
+                  type="radio"
+                  checked={form.splitStrategy === "by_scene"}
+                  onChange={() =>
+                    setForm((s) => ({ ...s, splitStrategy: "by_scene" }))
+                  }
+                />
+                按 scene 分包
+              </label>
+            )}
             <label className={styles.radioLabel}>
               <input
                 type="radio"
-                checked={form.splitNBatches >= 2}
+                checked={form.splitStrategy === "random"}
                 onChange={() =>
                   setForm((s) => ({
                     ...s,
+                    splitStrategy: "random",
                     splitNBatches: Math.max(2, s.splitNBatches),
                   }))
                 }
@@ -195,11 +226,12 @@ export function Step5Datasets({
                 type="number"
                 min={2}
                 max={20}
-                value={form.splitNBatches >= 2 ? form.splitNBatches : 3}
-                disabled={form.splitNBatches < 2}
+                value={form.splitStrategy === "random" ? form.splitNBatches : 3}
+                disabled={form.splitStrategy !== "random"}
                 onChange={(e) =>
                   setForm((s) => ({
                     ...s,
+                    splitStrategy: "random",
                     splitNBatches: Math.max(
                       2,
                       Math.min(20, Number(e.target.value)),

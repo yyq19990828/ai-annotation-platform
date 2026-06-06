@@ -7,17 +7,24 @@ import os
 import uuid
 from typing import BinaryIO, Literal
 
+from fastapi import HTTPException
 from sqlalchemy import select, func, delete, insert, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.models.async_job import AsyncJobKind
-from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
+from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset, Scene
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.services import async_job as async_job_svc
 from app.services.display_id import next_display_id
+from app.services.project_kind import (
+    dataset_has_scenes,
+    dataset_kind,
+    kind_mismatch_detail,
+    project_kind,
+)
 from app.services.storage import storage_service
 
 _STREAM_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
@@ -164,6 +171,7 @@ class DatasetService:
         self,
         search: str | None = None,
         data_type: str | None = None,
+        has_scenes: bool | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[dict], int]:
@@ -174,8 +182,21 @@ class DatasetService:
             q = q.where(Dataset.name.ilike(f"%{search}%"))
             count_q = count_q.where(Dataset.name.ilike(f"%{search}%"))
         if data_type:
-            q = q.where(Dataset.data_type == data_type)
-            count_q = count_q.where(Dataset.data_type == data_type)
+            if data_type == "lidar":
+                data_type_cond = Dataset.data_type.in_(("lidar", "point_cloud"))
+            else:
+                data_type_cond = Dataset.data_type == data_type
+            q = q.where(data_type_cond)
+            count_q = count_q.where(data_type_cond)
+        if has_scenes is not None:
+            scenes_exists = (
+                select(Scene.id)
+                .where(Scene.dataset_id == Dataset.id)
+                .limit(1)
+                .exists()
+            )
+            q = q.where(scenes_exists if has_scenes else ~scenes_exists)
+            count_q = count_q.where(scenes_exists if has_scenes else ~scenes_exists)
 
         total = (await self.db.execute(count_q)).scalar() or 0
         result = await self.db.execute(
@@ -203,9 +224,17 @@ class DatasetService:
                 .group_by(DatasetItem.dataset_id)
             )
             sz_map = {r[0]: int(r[1]) for r in sz_rows.all()}
+
+            scene_rows = await self.db.execute(
+                select(Scene.dataset_id)
+                .where(Scene.dataset_id.in_(ds_ids))
+                .group_by(Scene.dataset_id)
+            )
+            has_scenes_map = {r[0]: True for r in scene_rows.all()}
         else:
             pc_map: dict = {}
             sz_map: dict = {}
+            has_scenes_map: dict = {}
 
         items = []
         for ds in datasets:
@@ -214,6 +243,7 @@ class DatasetService:
                     **_dataset_dict(ds),
                     "project_count": pc_map.get(ds.id, 0),
                     "total_size": sz_map.get(ds.id, 0),
+                    "has_scenes": has_scenes_map.get(ds.id, False),
                 }
             )
 
@@ -240,7 +270,13 @@ class DatasetService:
                 )
             )
         ).scalar() or 0
-        return {**_dataset_dict(ds), "project_count": pc, "total_size": int(total_size)}
+        has_scenes = await dataset_has_scenes(self.db, ds.id)
+        return {
+            **_dataset_dict(ds),
+            "project_count": pc,
+            "total_size": int(total_size),
+            "has_scenes": has_scenes,
+        }
 
     async def create(
         self,
@@ -250,6 +286,7 @@ class DatasetService:
         user_id: uuid.UUID,
         *,
         axis_convention: str | None = None,
+        is_temporal: bool = False,
     ) -> Dataset:
         ds_id = uuid.uuid4()
         display_id = await next_display_id(self.db, "datasets")
@@ -259,6 +296,7 @@ class DatasetService:
             "name": name,
             "description": description,
             "data_type": data_type,
+            "is_temporal": is_temporal,
             "created_by": user_id,
         }
         # v0.13.11 · 仅当显式给定时写 metadata，否则走 server_default '{}'。
@@ -699,6 +737,18 @@ class DatasetService:
         if existing:
             return LinkProjectResult(link=existing)
 
+        dataset = await self.db.get(Dataset, dataset_id)
+        project = await self.db.get(Project, project_id)
+        if dataset is None or project is None:
+            raise HTTPException(status_code=404, detail="Dataset or project not found")
+        has_scenes = await dataset_has_scenes(self.db, dataset_id)
+        mismatch = kind_mismatch_detail(
+            project_kind(project),
+            dataset_kind(dataset, has_scenes=has_scenes),
+        )
+        if mismatch:
+            raise HTTPException(status_code=422, detail=mismatch)
+
         link = ProjectDataset(dataset_id=dataset_id, project_id=project_id)
         self.db.add(link)
         await self.db.flush()
@@ -731,6 +781,15 @@ class DatasetService:
             self.db, dataset_id=dataset_id, project_id=project_id
         )
         return LinkProjectResult(link=link, created_tasks=result["created"])
+
+    async def assert_temporal_dataset_has_scenes(self, dataset_id: uuid.UUID) -> None:
+        ds = await self.db.get(Dataset, dataset_id)
+        if ds is None or not ds.is_temporal:
+            return
+        if not await dataset_has_scenes(self.db, dataset_id):
+            raise ValueError(
+                "声明为时序数据集但未识别出任何 scene,请检查目录结构"
+            )
 
     async def create_tasks_for_items(
         self, dataset_id: uuid.UUID, item_ids: list[uuid.UUID]
@@ -1028,6 +1087,8 @@ def _dataset_dict(ds: Dataset) -> dict:
         "name": ds.name,
         "description": ds.description,
         "data_type": ds.data_type,
+        "is_temporal": ds.is_temporal,
+        "has_scenes": False,
         "file_count": ds.file_count,
         "total_size": 0,  # 调用方会覆盖
         "created_by": ds.created_by,

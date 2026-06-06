@@ -10,6 +10,7 @@ class DatasetCreate(BaseModel):
     name: str
     description: str = ""
     data_type: str = "image"
+    is_temporal: bool = False
     # v0.13.11 · 点云数据集 lidar 坐标系约定，写进 Dataset.metadata_["axis_convention"]。
     axis_convention: LidarAxisConvention | None = None
 
@@ -27,6 +28,8 @@ class DatasetOut(BaseModel):
     name: str
     description: str
     data_type: str
+    is_temporal: bool = False
+    has_scenes: bool = False
     file_count: int
     total_size: int = 0
     created_by: UUID

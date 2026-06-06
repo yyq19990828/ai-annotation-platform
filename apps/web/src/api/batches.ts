@@ -59,7 +59,7 @@ export interface BatchUpdatePayload {
 }
 
 export interface BatchSplitPayload {
-  strategy: "metadata" | "id_range" | "random";
+  strategy: "metadata" | "id_range" | "random" | "by_scene";
   metadata_key?: string;
   metadata_value?: string;
   item_ids?: string[];

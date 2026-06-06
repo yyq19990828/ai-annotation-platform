@@ -58,6 +58,14 @@
 
 **索引**:`idx_dataset_items_scene_frame` on `(scene_id, frame_index)`,给 neighbors 查询。**不**加 UNIQUE——多模态同帧 3 行 + calib NULL 多行需共存。
 
+### 项目与数据集的 scene 声明
+
+`Project.scene_mode` 是项目级声明，表示这个项目要按跨 task scene 标注来组织数据。它不是从数据集倒推出来的临时开关，而是项目创建时的显式选择。
+
+`Dataset.is_temporal` 是导入意图声明，只用于导入期早失败：如果数据集声明为时序数据集，但导入结束后没有产生任何 scene，导入会报错。项目关联不看 `is_temporal`，而是实时派生 `has_scenes`。
+
+`has_scenes` 不落库，始终由 `EXISTS(scenes where scenes.dataset_id = datasets.id)` 派生。`GET /datasets?has_scenes=true|false` 使用同一判定过滤列表。
+
 ### 设计选择
 
 - **为什么单独建表而不只在 `dataset_items` 加 `scene_id` 字符串**?scene 有自身元数据 + 唯一性约束 + 跨 item 一致性;字符串列做不到。
@@ -93,6 +101,19 @@ scene 元数据 CRUD;create 由 importer / backfill 自动发起,API 不暴露�
 ### `POST /api/v1/datasets/{id}/scenes/backfill?mode=auto&dry_run=false`
 
 对 dataset 跑 `scene_inference`。`mode ∈ {single, per_subdirectory, auto}`,默认 `auto`。
+
+### `GET /api/v1/datasets?has_scenes=true|false`
+
+按实时派生的 scene 存在性过滤数据集列表。可与 `data_type` 一起使用。点云数据集的存储类型仍是 `point_cloud`，项目媒体类型是 `lidar`；项目-数据集匹配时会归一到同一媒体 kind。
+
+### `POST /api/v1/datasets/{id}/link`
+
+关联项目时执行对称 kind 校验：
+
+- 项目媒体类型必须匹配数据集媒体类型。
+- `project.scene_mode` 必须等于数据集实时派生的 `has_scenes`。
+
+不匹配返回 422。该规则只拦新的关联，不追溯修改旧关联。
 
 ### Manifest 透出
 
@@ -177,7 +198,19 @@ v0.14.1 在这套地基上落了用户可用的跨帧能力,消费路径:
 `Project.prefer_same_scene_continuation`(默认 `false`)打开后,`get_next_task` 在套用既有 sampling 策略**前**插一步:找用户在 `scene_continuation_window_min`(默认 30)分钟内最近创建的 active annotation → 其 task 的 `scene_id + frame_index` → 该 scene 内 `frame_index` 更大的、按帧升序第一个可分配(未锁未标可见)task,锁定返回。找不到回退既有策略。
 
 - **不**强制独占 scene(其它帧仍可分配给他人),只是"同一人继续要 task 时优先连续"。
-- **默认 OFF 零回归**:关闭时整段不进入,既有 sampling 测试 byte-for-byte 不变(`tests/test_scheduler_scene_preference.py` 守此)。
+- 普通项目默认关闭；scene 模式项目创建时默认开启。关闭时整段不进入,既有 sampling 测试 byte-for-byte 不变(`tests/test_scheduler_scene_preference.py` 守此)。
+
+## scene 感知分包
+
+`BatchService.split(strategy="by_scene")` 用 task 的主 dataset item 反查 `scene_id + frame_index`，按 scene 分组建批次。
+
+- 普通图片 task 走 `Task.dataset_item_id`。
+- 点云 task 走 `TaskDatasetItemLink(role="primary_lidar")`。
+- 每个 scene 生成一个 `draft` 批次。
+- 批次内 task 按帧号排序，并写 `Task.sequence_order = frame_index`。
+- 没有 scene 的 task 不丢弃，会进入“无 scene”兜底批次。
+
+这让 scene、批次 owner 和审核粒度自然对齐，避免跨帧 propagate 或连续调度被 batch 可见性打断。
 
 ## 不在本期(留后)
 

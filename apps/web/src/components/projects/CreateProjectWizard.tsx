@@ -79,9 +79,11 @@ export interface FormState {
   textOutputDefault: "" | "box" | "mask" | "both";
   /** v0.9.7 · 复用现有 backend; "" = 暂不绑定 (项目创建后到设置页注册). */
   mlBackendSourceId: string;
+  sceneMode: boolean;
   // v0.6.7 B-11
   datasetIds: string[];
-  splitNBatches: number; // 0 = 不切分（保留默认包），>=2 = 切分
+  splitStrategy: "none" | "random" | "by_scene";
+  splitNBatches: number;
   members: { userId: string; role: "annotator" | "reviewer" }[];
   // v0.10.13 · E1 · 复制模式下是否同时携带源项目的 annotation_guide + guide_assets.
   // 仅 sourceProjectId 给定时显示 UI; 默认 true.
@@ -115,7 +117,9 @@ const INITIAL: FormState = {
   aiEnabled: false,
   textOutputDefault: "",
   mlBackendSourceId: "",
+  sceneMode: false,
   datasetIds: [],
+  splitStrategy: "none",
   splitNBatches: 0,
   members: [],
   copyAnnotationGuide: true,
@@ -132,8 +136,8 @@ const STEP_LABELS: Record<StepperStep, string> = {
   6: "成员",
 };
 
-// v0.7.6：扩为 6 步（+属性 schema），bump 草稿 key 防止旧 5 步草稿污染。
-const DRAFT_KEY = "create_project_draft_v0_7_6";
+// v0.14.4：加入 sceneMode/splitStrategy，bump 草稿 key 防止旧分包状态污染。
+const DRAFT_KEY = "create_project_draft_v0_14_4";
 
 /** v0.10.11 · 把 ProjectResponse 的可克隆配置字段还原为 Wizard FormState. 不包含
  *  运行时数据 (datasets / tasks / members / batches); 后端 source_project_id 兜底
@@ -225,6 +229,8 @@ function buildFormFromSource(src: ProjectResponse): FormState {
     aiEnabled: src.ai_enabled,
     textOutputDefault,
     mlBackendSourceId: src.ml_backend_id ?? "",
+    sceneMode: !!src.scene_mode,
+    splitStrategy: src.scene_mode ? "by_scene" : "none",
     // datasets / batches / members / dueDate 留空 — 这些是运行时数据
   };
 }
@@ -251,6 +257,7 @@ function buildFormFromTemplate(t: ProjectTemplateOut): FormState {
     activeUnit,
     aiEnabled: t.ai_enabled,
     textOutputDefault,
+    sceneMode: false,
   };
 }
 
@@ -435,6 +442,7 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
         // v0.9.7 · 仅启用 AI 且选了 source backend 时携带; 后端会复制 row 入新项目
         ml_backend_source_id:
           form.aiEnabled && form.mlBackendSourceId ? form.mlBackendSourceId : null,
+        scene_mode: form.sceneMode,
         // v0.10.11 · "从已有项目复制" — 给后端兜底未显式给出的字段 (例如 label_config /
         // rendering_config / iou_dedup_threshold / sampling 等不在 wizard 表单内的项).
         source_project_id: sourceProjectId ?? null,

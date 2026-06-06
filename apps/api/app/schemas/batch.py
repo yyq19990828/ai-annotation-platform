@@ -142,7 +142,7 @@ class BulkBatchReject(BaseModel):
 
 
 class BatchSplitRequest(BaseModel):
-    strategy: Literal["metadata", "id_range", "random"]
+    strategy: Literal["metadata", "id_range", "random", "by_scene"]
     # metadata 策略
     metadata_key: str | None = None
     metadata_value: str | None = None
