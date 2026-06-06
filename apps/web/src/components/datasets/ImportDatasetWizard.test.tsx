@@ -174,6 +174,59 @@ describe("ImportDatasetWizard", () => {
     });
   });
 
+  it("3D 点云 + 勾选时序: createDataset 带 data_type=point_cloud 与 is_temporal=true", async () => {
+    renderUI();
+    pickFile();
+    await waitFor(() => expect(screen.getByText(/已选 1 个文件/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /下一步/ }));
+    fireEvent.change(screen.getByPlaceholderText(/商品检测训练集/), {
+      target: { value: "点云时序集" },
+    });
+    // 切到 3D 点云 → 时序开关出现 → 勾选
+    fireEvent.click(screen.getByRole("button", { name: /3D 点云/ }));
+    fireEvent.click(screen.getByLabelText(/声明为时序数据集/));
+    fireEvent.click(screen.getByRole("button", { name: /开始上传/ }));
+    await waitFor(() => {
+      expect(mockCreateDatasetMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ data_type: "point_cloud", is_temporal: true }),
+      );
+    });
+  });
+
+  it("图片类型也显示时序开关, 勾选后发送 is_temporal", async () => {
+    renderUI();
+    pickFile();
+    await waitFor(() => expect(screen.getByText(/已选 1 个文件/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /下一步/ }));
+    fireEvent.change(screen.getByPlaceholderText(/商品检测训练集/), {
+      target: { value: "图片时序集" },
+    });
+    // 图片(默认 data_type)同样有时序开关——图片 ZIP 也会产生 scene
+    fireEvent.click(screen.getByLabelText(/声明为时序数据集/));
+    fireEvent.click(screen.getByRole("button", { name: /开始上传/ }));
+    await waitFor(() => {
+      expect(mockCreateDatasetMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ data_type: "image", is_temporal: true }),
+      );
+    });
+  });
+
+  it("未勾选时序时 is_temporal 不发送 (undefined)", async () => {
+    renderUI();
+    pickFile();
+    await waitFor(() => expect(screen.getByText(/已选 1 个文件/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /下一步/ }));
+    fireEvent.change(screen.getByPlaceholderText(/商品检测训练集/), {
+      target: { value: "普通图片集" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /开始上传/ }));
+    await waitFor(() => {
+      expect(mockCreateDatasetMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ is_temporal: undefined }),
+      );
+    });
+  });
+
   it("open=false 时 wizard 不渲染内容", () => {
     renderUI({ open: false });
     expect(screen.queryByText("选择来源")).not.toBeInTheDocument();

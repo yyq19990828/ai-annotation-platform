@@ -61,7 +61,7 @@ scene 边界与 `frame_index` 的概念详见 [Scene + frame_index 跨 task 帧�
 
 入库后**含有 scene 的数据集**即"时序数据集",可在数据集列表用 `GET /api/v1/datasets?has_scenes=true` 筛出。该状态由 scene 行实时派生(`has_scenes`),不需要手动维护。
 
-导入脚本 / API 还可以在建数据集时把它**显式声明**为时序数据集(字段 `is_temporal`,目前无独立界面开关)。这是一道导入期"早失败"护栏:声明为时序却没有识别出任何 scene 时,导入直接失败并提示检查目录结构,避免一个本该分 scene 的数据集静默变成零 scene。nuScenes 转换脚本会自动声明 `is_temporal`,并创建一个已开启 scene 模式的配套项目。
+数据集导入向导的「基本信息」步提供「声明为时序数据集（scene）」开关,也可经导入脚本 / API 设置(字段 `is_temporal`)。这是一道导入期"早失败"护栏:声明为时序却没有识别出任何 scene 时,导入直接失败并提示检查目录结构,避免一个本该分 scene 的数据集静默变成零 scene。nuScenes 转换脚本会自动声明 `is_temporal`,并创建一个已开启 scene 模式的配套项目。
 
 **与 scene 模式项目的关联规则**(对称硬门,API 与界面一致):
 
