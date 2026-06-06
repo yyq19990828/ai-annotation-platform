@@ -8,7 +8,6 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { tasksApi } from "@/api/tasks";
-import type { NeighborsResponse } from "@/types";
 
 export function useFrameNeighbors(taskId: string | null | undefined, k = 1) {
   const query = useQuery({
@@ -18,16 +17,9 @@ export function useFrameNeighbors(taskId: string | null | undefined, k = 1) {
     staleTime: 5 * 60 * 1000,
   });
 
-  // propagate 前强刷一次避免缓存陈旧; 返回最新数据供 await 调用方直接消费。
-  const refresh = async (): Promise<NeighborsResponse | null> => {
-    const { data } = await query.refetch();
-    return data ?? null;
-  };
-
   return {
     data: query.data ?? null,
     isLoading: query.isLoading,
     error: query.error,
-    refresh,
   };
 }

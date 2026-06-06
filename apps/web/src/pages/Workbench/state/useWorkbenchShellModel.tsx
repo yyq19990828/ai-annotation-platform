@@ -472,6 +472,12 @@ export function useWorkbenchShellModel({
   useEffect(() => {
     resetVideoStageUi();
     setAiPopoverOpen(false);
+    // 切 task / 切 batch 后, 丢弃指向其它 task 的待补选; 仅当新 task 正是
+    // 跨帧 propagate 的目标时保留 (该补选逻辑见下方 annotationsData effect)。
+    const pend = pendingCrossFrameSelectRef.current;
+    if (pend && pend.taskId !== taskId) {
+      pendingCrossFrameSelectRef.current = null;
+    }
   }, [taskId, resetVideoStageUi]);
 
   useEffect(() => {
@@ -742,6 +748,7 @@ export function useWorkbenchShellModel({
           pushToast({ msg: "请先选中一个目标框", kind: "" });
           return;
         }
+        // 按需直拉邻帧 (非缓存), propagate 才发请求, 避免给每个 task 都预取。
         let neighbors;
         try {
           neighbors = await tasksApi.getNeighbors(taskId, 1);

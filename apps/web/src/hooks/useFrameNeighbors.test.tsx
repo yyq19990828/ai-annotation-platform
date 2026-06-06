@@ -1,5 +1,5 @@
 /**
- * v0.14.1 · useFrameNeighbors 单测: 调端点 + refresh 返回最新数据 + 无 scene 兜底。
+ * v0.14.1 · useFrameNeighbors 单测: 调端点 + 透传数据 + 无 scene 兜底。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
@@ -51,16 +51,5 @@ describe("useFrameNeighbors", () => {
     await waitFor(() => expect(result.current.data).not.toBeNull());
     expect(mockGetNeighbors).toHaveBeenCalledWith("t2", 1);
     expect(result.current.data?.next?.[0].task_id).toBe("t3");
-  });
-
-  it("refresh() 强刷并返回最新数据", async () => {
-    mockGetNeighbors.mockResolvedValue(sample);
-    const { result } = renderHook(() => useFrameNeighbors("t2", 3), {
-      wrapper: makeWrapper(),
-    });
-    await waitFor(() => expect(result.current.data).not.toBeNull());
-    const fresh = await result.current.refresh();
-    expect(fresh?.frame_index).toBe(2);
-    expect(mockGetNeighbors).toHaveBeenLastCalledWith("t2", 3);
   });
 });
