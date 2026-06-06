@@ -117,17 +117,38 @@ export default withMermaid(defineConfig({
           ],
         },
         {
-          text: "工作台与标注工具",
+          text: "工作台 · 通用",
           items: [
-            { text: "工作台概览", link: "/user-guide/workbench/" },
+            { text: "工作台概览与快捷键", link: "/user-guide/workbench/" },
+          ],
+        },
+        {
+          text: "图片标注",
+          items: [
             { text: "Bbox 标注", link: "/user-guide/workbench/bbox" },
             { text: "旋转框标注 (OBB)", link: "/user-guide/workbench/rotated-bbox" },
             { text: "Polygon 标注", link: "/user-guide/workbench/polygon" },
             { text: "折线标注", link: "/user-guide/workbench/polyline" },
             { text: "关键点标注", link: "/user-guide/workbench/keypoint" },
-            { text: "视频追踪标注", link: "/user-guide/workbench/video-track" },
-            { text: "3D 立体框标注", link: "/user-guide/workbench/3d-box" },
+            { text: "Mask 笔刷编辑器", link: "/user-guide/workbench/mask-brush" },
             { text: "SAM 智能工具", link: "/user-guide/workbench/sam-tool" },
+          ],
+        },
+        {
+          text: "视频标注",
+          items: [
+            { text: "视频追踪标注", link: "/user-guide/workbench/video-track" },
+            { text: "播放、帧导航与采样", link: "/user-guide/workbench/video-playback" },
+            { text: "关键帧传播与 AI", link: "/user-guide/workbench/video-propagate" },
+          ],
+        },
+        {
+          text: "点云标注",
+          items: [
+            { text: "点云视图与上色", link: "/user-guide/workbench/pointcloud-view" },
+            { text: "3D 立体框标注", link: "/user-guide/workbench/3d-box" },
+            { text: "点云跨模态联动", link: "/user-guide/workbench/pointcloud-projection" },
+            { text: "点云跨帧标注", link: "/user-guide/workbench/pointcloud-crossframe" },
           ],
         },
         {
