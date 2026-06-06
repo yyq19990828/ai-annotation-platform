@@ -47,11 +47,20 @@ export function Step5Datasets({
     if (form.splitStrategy === "none") return;
     try {
       if (form.splitStrategy === "by_scene") {
-        await splitMutation.mutateAsync({
+        const created = await splitMutation.mutateAsync({
           strategy: "by_scene",
           name_prefix: "Scene",
           priority: 50,
         });
+        // by_scene 切到 0 batch(所选数据集未识别出 scene)时不能静默成功 —— 跨步骤
+        // 切换可能让 by_scene 落在无 scene 的数据集上,给用户显式告警。
+        if (!created || created.length === 0) {
+          pushToast({
+            msg: "未生成批次：所选数据集未识别出任何 scene",
+            sub: "请确认数据集已声明 scene（时序 / 点云导入）后再按 scene 切分。",
+            kind: "warning",
+          });
+        }
       } else {
         await splitMutation.mutateAsync({
           strategy: "random",
