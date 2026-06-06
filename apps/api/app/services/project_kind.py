@@ -71,8 +71,7 @@ def scene_mode_allowed(data_type: str | None) -> bool:
 def kind_mismatch_detail(project: ProjectKind, dataset: DatasetKind) -> str | None:
     if project.data_type != dataset.data_type:
         return (
-            "data_type 不匹配"
-            f"(项目 {project.data_type} / 数据集 {dataset.data_type})"
+            f"data_type 不匹配(项目 {project.data_type} / 数据集 {dataset.data_type})"
         )
     if project.scene_mode != dataset.has_scenes:
         if project.scene_mode:

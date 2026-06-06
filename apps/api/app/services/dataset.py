@@ -189,10 +189,7 @@ class DatasetService:
             count_q = count_q.where(data_type_cond)
         if has_scenes is not None:
             scenes_exists = (
-                select(Scene.id)
-                .where(Scene.dataset_id == Dataset.id)
-                .limit(1)
-                .exists()
+                select(Scene.id).where(Scene.dataset_id == Dataset.id).limit(1).exists()
             )
             q = q.where(scenes_exists if has_scenes else ~scenes_exists)
             count_q = count_q.where(scenes_exists if has_scenes else ~scenes_exists)
@@ -786,9 +783,7 @@ class DatasetService:
         if ds is None or not ds.is_temporal:
             return
         if not await dataset_has_scenes(self.db, dataset_id):
-            raise ValueError(
-                "声明为时序数据集但未识别出任何 scene,请检查目录结构"
-            )
+            raise ValueError("声明为时序数据集但未识别出任何 scene,请检查目录结构")
 
     async def create_tasks_for_items(
         self, dataset_id: uuid.UUID, item_ids: list[uuid.UUID]

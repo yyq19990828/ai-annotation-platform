@@ -208,7 +208,9 @@ def _write_fake_nuscenes(
         (meta / f"{name}.json").write_text(json.dumps(rows), encoding="utf-8")
 
 
-async def test_import_nuscenes_two_scenes(tmp_path, db_session, super_admin, monkeypatch):
+async def test_import_nuscenes_two_scenes(
+    tmp_path, db_session, super_admin, monkeypatch
+):
     user, _ = super_admin
     root = tmp_path / "nuscenes-mini"
     _write_fake_nuscenes(root, scenes=2, samples_per=3)
@@ -232,22 +234,30 @@ async def test_import_nuscenes_two_scenes(tmp_path, db_session, super_admin, mon
 
     # 2. DB 里 2 个 Scene 行,name 对应
     scenes = (
-        await db_session.execute(
-            select(Scene).where(Scene.dataset_id == dataset_id).order_by(Scene.name)
+        (
+            await db_session.execute(
+                select(Scene).where(Scene.dataset_id == dataset_id).order_by(Scene.name)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert [s.name for s in scenes] == ["scene-0000", "scene-0001"]
 
     # 3. 每个 scene 的 lidar items frame_index = 0/1/2,scene_id 正确
     for scene in scenes:
         lidar_rows = (
-            await db_session.execute(
-                select(DatasetItem)
-                .where(DatasetItem.scene_id == scene.id)
-                .where(DatasetItem.file_type == "point_cloud")
-                .order_by(DatasetItem.frame_index)
+            (
+                await db_session.execute(
+                    select(DatasetItem)
+                    .where(DatasetItem.scene_id == scene.id)
+                    .where(DatasetItem.file_type == "point_cloud")
+                    .order_by(DatasetItem.frame_index)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert [r.frame_index for r in lidar_rows] == [0, 1, 2]
         assert all(r.scene_id == scene.id for r in lidar_rows)
 

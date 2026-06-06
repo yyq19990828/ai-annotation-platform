@@ -146,9 +146,7 @@ async def test_infer_single_scene_sustech_layout(db_session, super_admin):
     ds = await _make_dataset(db_session, user.id, name="pc-scene")
     items = []
     for stem in ["000001", "000002", "000003"]:
-        items.append(
-            await _add_item(db_session, ds.id, f"pc-scene/lidar/{stem}.pcd")
-        )
+        items.append(await _add_item(db_session, ds.id, f"pc-scene/lidar/{stem}.pcd"))
         items.append(
             await _add_item(
                 db_session, ds.id, f"pc-scene/camera/front/{stem}.jpg", "image"
@@ -173,9 +171,7 @@ async def test_infer_single_scene_sustech_layout(db_session, super_admin):
     )
     assert lidar_frames == [0, 1, 2]
     # cam 与 lidar 共享 frame_index
-    cam_frames = sorted(
-        it.frame_index for it in refreshed if it.file_type == "image"
-    )
+    cam_frames = sorted(it.frame_index for it in refreshed if it.file_type == "image")
     assert cam_frames == [0, 1, 2]
 
 

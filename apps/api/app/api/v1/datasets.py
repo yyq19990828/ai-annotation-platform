@@ -578,9 +578,7 @@ async def upload_zip(
             d for d in zip_top_level_dirs if _scene_inference._is_role_dir_name(d)
         )
         non_role_top_levels = sorted(
-            d
-            for d in zip_top_level_dirs
-            if not _scene_inference._is_role_dir_name(d)
+            d for d in zip_top_level_dirs if not _scene_inference._is_role_dir_name(d)
         )
         if reserved_top_levels and non_role_top_levels:
             scene_inference_notes.append(
@@ -742,7 +740,10 @@ async def backfill_scenes_endpoint(
 
     try:
         result: InferenceResult = await infer_and_apply(
-            db, dataset_id=dataset_id, mode=mode, dry_run=dry_run  # type: ignore[arg-type]
+            db,
+            dataset_id=dataset_id,
+            mode=mode,
+            dry_run=dry_run,  # type: ignore[arg-type]
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

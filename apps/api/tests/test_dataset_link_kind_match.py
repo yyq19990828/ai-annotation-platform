@@ -76,9 +76,7 @@ async def test_link_project_enforces_data_type_and_scene_mode(
     plain_image = await _dataset(
         db_session, user.id, data_type="image", has_scene=False
     )
-    scene_image = await _dataset(
-        db_session, user.id, data_type="image", has_scene=True
-    )
+    scene_image = await _dataset(db_session, user.id, data_type="image", has_scene=True)
     scene_lidar = await _dataset(
         db_session, user.id, data_type="point_cloud", has_scene=True
     )

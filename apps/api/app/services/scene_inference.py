@@ -46,9 +46,7 @@ logger = logging.getLogger(__name__)
 # 与 pointcloud_import.group_frames 共用 role pattern:这些顶层目录名说明
 # "整 dataset 就是单 scene 的角色子目录布局";否则就是 per_subdirectory 的 scene key。
 _EXTRA_ROLE_DIR_PATTERNS = ("video", "images", "videos")
-ROLE_DIR_NAMES = role_dir_names(
-    DEFAULT_ROLE_PATTERNS, extra=_EXTRA_ROLE_DIR_PATTERNS
-)
+ROLE_DIR_NAMES = role_dir_names(DEFAULT_ROLE_PATTERNS, extra=_EXTRA_ROLE_DIR_PATTERNS)
 
 # 与 pointcloud_import 共享的扩展名集合
 _POINT_CLOUD_EXTS = {".pcd", ".bin", ".ply", ".las", ".laz", ".npy"}
@@ -214,10 +212,14 @@ async def infer_and_apply(
         )
 
     items_rows = (
-        await db.execute(
-            select(DatasetItem).where(DatasetItem.dataset_id == dataset_id)
+        (
+            await db.execute(
+                select(DatasetItem).where(DatasetItem.dataset_id == dataset_id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     all_items: list[DatasetItem] = list(items_rows)
     if not all_items:
         return InferenceResult(
@@ -302,9 +304,7 @@ async def infer_and_apply(
             source_metadata={"mode": mode, "group_key": group_key},
         )
         if _is_pointcloud_like(group_items):
-            count, sub_notes = _assign_frame_indices_pointcloud(
-                scene.id, group_items
-            )
+            count, sub_notes = _assign_frame_indices_pointcloud(scene.id, group_items)
         else:
             count, sub_notes = _assign_frame_indices_flat(scene.id, group_items)
         assigned += count

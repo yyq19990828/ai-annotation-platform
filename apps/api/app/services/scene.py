@@ -122,13 +122,9 @@ async def assign_items_to_scene(
     return updated
 
 
-async def list_for_dataset(
-    db: AsyncSession, dataset_id: uuid.UUID
-) -> list[Scene]:
+async def list_for_dataset(db: AsyncSession, dataset_id: uuid.UUID) -> list[Scene]:
     rows = await db.execute(
-        select(Scene)
-        .where(Scene.dataset_id == dataset_id)
-        .order_by(Scene.created_at)
+        select(Scene).where(Scene.dataset_id == dataset_id).order_by(Scene.created_at)
     )
     return list(rows.scalars().all())
 
@@ -137,9 +133,7 @@ async def get_scene(db: AsyncSession, scene_id: uuid.UUID) -> Scene | None:
     return await db.get(Scene, scene_id)
 
 
-async def _resolve_primary_item_id(
-    db: AsyncSession, task: Task
-) -> uuid.UUID | None:
+async def _resolve_primary_item_id(db: AsyncSession, task: Task) -> uuid.UUID | None:
     """task 关联的"主"dataset_item:
     优先 task.dataset_item_id(2D 单文件路径),否则查 primary_lidar link(3D)。
     """
@@ -287,9 +281,7 @@ async def get_neighbors_for_task(
             )
         )
     ).all()
-    item_to_task: dict[uuid.UUID, uuid.UUID] = {
-        row[1]: row[0] for row in direct_rows
-    }
+    item_to_task: dict[uuid.UUID, uuid.UUID] = {row[1]: row[0] for row in direct_rows}
 
     link_rows = (
         await db.execute(
@@ -336,11 +328,9 @@ async def get_neighbors_for_task(
         frame_index=cur_frame,
         scene_total_frames=total,
         prev=[
-            NeighborInfo(task_id=frame_to_task[fi], frame_index=fi)
-            for fi in prev_slice
+            NeighborInfo(task_id=frame_to_task[fi], frame_index=fi) for fi in prev_slice
         ],
         next=[
-            NeighborInfo(task_id=frame_to_task[fi], frame_index=fi)
-            for fi in next_slice
+            NeighborInfo(task_id=frame_to_task[fi], frame_index=fi) for fi in next_slice
         ],
     )

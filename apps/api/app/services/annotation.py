@@ -23,7 +23,15 @@ VIDEO_BBOX_CONVERSION_LIMIT = 5000
 # v0.14.1 · 可跨帧 propagate 的几何类型。视频内 track 几何由 video_tracker_runner
 # 处理(case A 内部), point_mask_3d 跨帧 point_indices 无意义(§5.4 留 v0.15+)。
 PROPAGATABLE_GEOMETRY_TYPES = frozenset(
-    {"box_3d", "bbox", "polygon", "multi_polygon", "rotated_bbox", "polyline", "keypoint"}
+    {
+        "box_3d",
+        "bbox",
+        "polygon",
+        "multi_polygon",
+        "rotated_bbox",
+        "polyline",
+        "keypoint",
+    }
 )
 
 
@@ -484,9 +492,7 @@ class AnnotationService:
             )
         # §5.6 · 严格同 project(跨 project/dataset/scene propagate 语义不成立)。
         if src_task.project_id != target_task.project_id:
-            raise HTTPException(
-                status_code=422, detail="跨 project propagate 不被允许"
-            )
+            raise HTTPException(status_code=422, detail="跨 project propagate 不被允许")
 
         # 共享 group_id: 源无则分配并写回。
         group_id = src.group_id

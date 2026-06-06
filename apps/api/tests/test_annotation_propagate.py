@@ -111,9 +111,7 @@ async def _add_annotation(db, *, task, project, user_id, geometry, group_id=None
 
 
 @pytest.mark.asyncio
-async def test_propagate_box3d_copies_and_assigns_shared_group(
-    db_session, super_admin
-):
+async def test_propagate_box3d_copies_and_assigns_shared_group(db_session, super_admin):
     user, _ = super_admin
     project, _, _, tasks = await _seed_scene(
         db_session, owner_id=user.id, axis_convention="kitti_camera"
@@ -225,7 +223,11 @@ async def test_propagate_rejects_cross_project(db_session, super_admin):
     project_a, _, _, tasks_a = await _seed_scene(db_session, owner_id=user.id)
     _, _, _, tasks_b = await _seed_scene(db_session, owner_id=user.id)
     src = await _add_annotation(
-        db_session, task=tasks_a[0], project=project_a, user_id=user.id, geometry=_box3d()
+        db_session,
+        task=tasks_a[0],
+        project=project_a,
+        user_id=user.id,
+        geometry=_box3d(),
     )
     svc = AnnotationService(db_session)
     with pytest.raises(HTTPException) as exc:

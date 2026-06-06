@@ -90,7 +90,11 @@ def group_frames(
 
         camera_i = last_role_index(parts, patterns.camera)
         if camera_i >= 0 and camera_i + 1 < len(parts):
-            cam = parts[camera_i + 1] if camera_i + 1 < len(parts) - 1 else parts[camera_i]
+            cam = (
+                parts[camera_i + 1]
+                if camera_i + 1 < len(parts) - 1
+                else parts[camera_i]
+            )
             frame = frames.setdefault(stem, {"lidar": None, "cameras": {}})
             frame["cameras"][cam] = item
             continue
@@ -107,9 +111,7 @@ async def _load_dataset_items(
     return list(result.scalars().all())
 
 
-async def _maybe_infer_single_scene(
-    db: AsyncSession, *, dataset_id: uuid.UUID
-) -> None:
+async def _maybe_infer_single_scene(db: AsyncSession, *, dataset_id: uuid.UUID) -> None:
     """v0.14.0 · 点云 link 接线前的 scene hook。
 
     若 dataset 已有 scene 直接返回;否则跑 single-mode inference。
@@ -121,9 +123,7 @@ async def _maybe_infer_single_scene(
     existing = await scene_svc.list_for_dataset(db, dataset_id)
     if existing:
         return
-    await scene_inference.infer_and_apply(
-        db, dataset_id=dataset_id, mode="single"
-    )
+    await scene_inference.infer_and_apply(db, dataset_id=dataset_id, mode="single")
     await db.flush()
 
 

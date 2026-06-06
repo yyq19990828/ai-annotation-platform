@@ -131,9 +131,7 @@ class AxisSnifferService:
         if fronts:
             # canonical 正前相机是唯一可信来源:多份(如多 scene 同 CAM_FRONT)装置一致、
             # 推断相同,取分最高、稳定 tiebreak。score 不打折。
-            obs, result = min(
-                fronts, key=lambda e: (-e[1]["score"], _stable_key(e[0]))
-            )
+            obs, result = min(fronts, key=lambda e: (-e[1]["score"], _stable_key(e[0])))
             score_scale = 1.0
         else:
             # 无正前相机:不能只信任一个侧 / 后相机(实测会判错且随顺序漂)。
@@ -147,10 +145,9 @@ class AxisSnifferService:
             for c in result["candidates"]
         ]
         best = candidates[0]
-        agreement = (
-            sum(1 for row in per_camera if row["best"] == best["convention"])
-            / len(per_camera)
-        )
+        agreement = sum(
+            1 for row in per_camera if row["best"] == best["convention"]
+        ) / len(per_camera)
         return AxisSniffResult(
             best=str(best["convention"]),
             score=float(best["score"]),
@@ -204,9 +201,7 @@ class AxisSnifferService:
             conv = str(result["best"])
             votes[conv] = votes.get(conv, 0) + 1
             score_sum[conv] = score_sum.get(conv, 0.0) + float(result["score"])
-        winner = min(
-            votes, key=lambda c: (-votes[c], -score_sum[c], c)
-        )
+        winner = min(votes, key=lambda c: (-votes[c], -score_sum[c], c))
         return min(
             (e for e in evaluated if str(e[1]["best"]) == winner),
             key=lambda e: (-e[1]["score"], stable_key(e[0])),

@@ -111,7 +111,12 @@ async def _annotate(db, *, task, project, user_id):
         annotation_type="box_3d",
         tool_unit_id="lidar_box_3d",
         class_name="car",
-        geometry={"type": "box_3d", "center": [0, 0, 0], "size": [1, 1, 1], "rotation": [0, 0, 0]},
+        geometry={
+            "type": "box_3d",
+            "center": [0, 0, 0],
+            "size": [1, 1, 1],
+            "rotation": [0, 0, 0],
+        },
     )
     db.add(ann)
     await db.flush()
@@ -136,9 +141,7 @@ async def test_scene_preference_on_returns_next_frame(
 
 
 @pytest.mark.asyncio
-async def test_scene_preference_off_uses_sequence(
-    db_session, super_admin, annotator
-):
+async def test_scene_preference_off_uses_sequence(db_session, super_admin, annotator):
     owner, _ = super_admin
     user, _ = annotator
     project, _, tasks = await _seed_scene_project(
