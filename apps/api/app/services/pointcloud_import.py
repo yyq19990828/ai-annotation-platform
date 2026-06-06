@@ -161,11 +161,26 @@ async def build_pointcloud_tasks_for_link(
     await _maybe_infer_single_scene(db, dataset_id=dataset_id)
 
     items = await _load_dataset_items(db, dataset_id)
-    frames, _ = group_frames(items)
+
+    # v0.14.2 · 按 scene_id 分桶后各 scene 独立 group_frames：upload-zip 不保证
+    # 帧 stem 全局唯一（scene_a/lidar/000.pcd 与 scene_b/lidar/000.pcd 都 stem=000），
+    # 若在全 dataset 范围 group_frames，同号帧会互相 setdefault 覆盖 → 漏建 task、
+    # 跨 scene 串相机。分桶后 group_frames 的 stem key 只需在单 scene 内唯一即可。
+    # scene_id=None（无 scene 历史数据）单独成一桶，保持原行为。
+    buckets: dict[uuid.UUID | None, list[DatasetItem]] = {}
+    for item in items:
+        buckets.setdefault(item.scene_id, []).append(item)
+
+    # frame key 复合 (scene_id, stem)，避免跨 scene 同号帧在 frames 字典再次撞键。
+    frames: dict[tuple, dict] = {}
+    for scene_id, scene_items in buckets.items():
+        scene_frames, _ = group_frames(scene_items)
+        for stem, frame in scene_frames.items():
+            frames[(scene_id, stem)] = frame
 
     # 缺帧容错：无 lidar 的「帧」跳过（warning）。
-    frame_ids: list[str] = []
-    for frame_id in sorted(frames.keys()):
+    frame_ids: list[tuple] = []
+    for frame_id in sorted(frames.keys(), key=lambda k: (str(k[0]), k[1])):
         if frames[frame_id]["lidar"] is None:
             logger.warning(
                 "pointcloud frame %r has no lidar item, skipped (dataset=%s)",

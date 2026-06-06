@@ -12,7 +12,7 @@ import uuid
 
 import pytest
 
-from app.db.models.dataset import Dataset, DatasetItem
+from app.db.models.dataset import Dataset, DatasetItem, Scene
 from app.services import pointcloud_import
 from app.services.storage import storage_service
 from app.services.task_dataset_link import get_linked_items
@@ -184,6 +184,73 @@ async def test_build_tasks_missing_camera_tolerated(db_session, super_admin):
     # 缺 left：只 link lidar + front 两条，不报错。
     roles = {ln.role for ln in links}
     assert roles == {"primary_lidar", "camera_front"}
+
+
+async def test_build_tasks_multi_scene_same_frame_stem(db_session, super_admin):
+    """v0.14.2 回归：upload-zip 多 scene 同号帧 stem 不再互相覆盖。
+
+    scene_a/lidar/000.pcd 与 scene_b/lidar/000.pcd 入库 stem 都是 000。修复前
+    build_tasks 在全 dataset 跑 group_frames，两 scene 的 000 帧互相 setdefault
+    覆盖 → 漏建 task、跨 scene 串相机。分桶后每 scene 独立分组，task 数 == 总帧数。
+    """
+    from sqlalchemy import select
+    from app.db.models import Task
+
+    user, _ = super_admin
+    ds = await _seed_dataset(db_session, user.id)
+    project = await create_project(db_session, owner_id=user.id)
+
+    # 两个 scene，各自 2 帧，帧 stem 跨 scene 重复（000 / 001）。
+    scenes: dict[str, dict] = {}
+    for sidx, sname in enumerate(["scene_a", "scene_b"]):
+        scene = Scene(
+            id=uuid.uuid4(),
+            display_id=f"S-{uuid.uuid4().hex[:6]}",
+            dataset_id=ds.id,
+            name=sname,
+        )
+        db_session.add(scene)
+        await db_session.flush()
+        frames: dict[str, dict] = {}
+        for frame in ["000", "001"]:
+            lidar = _add_item(
+                db_session, ds.id, f"{ds.name}/{sname}/lidar/{frame}.pcd", "point_cloud"
+            )
+            lidar.scene_id = scene.id
+            cam = _add_item(
+                db_session,
+                ds.id,
+                f"{ds.name}/{sname}/camera/front/{frame}.jpg",
+                "image",
+            )
+            cam.scene_id = scene.id
+            frames[frame] = {"lidar": lidar, "cameras": {"front": cam}}
+        scenes[sname] = {"scene": scene, "frames": frames}
+    await db_session.flush()
+
+    result = await pointcloud_import.build_pointcloud_tasks_for_link(
+        db_session, dataset_id=ds.id, project_id=project.id
+    )
+    # 2 scene × 2 帧 = 4 个 task（修复前会因同号帧覆盖只建 2 个）。
+    assert result == {"created": 4, "total": 4}
+
+    tasks = (
+        (await db_session.execute(select(Task).where(Task.project_id == project.id)))
+        .scalars()
+        .all()
+    )
+    assert len(tasks) == 4
+
+    # 每个 lidar item 都恰好对应一个 task，且 camera link 指向同 scene 的相机（不串）。
+    by_lidar = {t.dataset_item_id: t for t in tasks}
+    for sname, sdata in scenes.items():
+        for frame_id, frame in sdata["frames"].items():
+            lidar_id = frame["lidar"].id
+            assert lidar_id in by_lidar, f"{sname}/{frame_id} 漏建 task"
+            task = by_lidar[lidar_id]
+            links = await get_linked_items(db_session, task.id)
+            by_role = {ln.role: ln for ln in links}
+            assert by_role["camera_front"].dataset_item_id == frame["cameras"]["front"].id
 
 
 def _patch_get_object(monkeypatch, payload: dict):
