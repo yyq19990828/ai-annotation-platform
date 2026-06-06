@@ -475,6 +475,7 @@ async def upload_zip(
     deduped = 0
     skipped: list[str] = []
     errors: list[dict] = []
+    written_keys: list[str] = []  # 已写入 MinIO 的对象 key，校验失败时回滚清理
     new_image_item_ids: list[uuid.UUID] = []
     new_video_item_ids: list[uuid.UUID] = []
     new_item_ids: list[uuid.UUID] = []
@@ -538,6 +539,7 @@ async def upload_zip(
         except Exception as e:  # noqa: BLE001
             errors.append({"name": name, "error": f"对象存储写入失败: {e}"})
             continue
+        written_keys.append(storage_key)
 
         width: int | None = None
         height: int | None = None
@@ -600,6 +602,16 @@ async def upload_zip(
     try:
         await svc.assert_temporal_dataset_has_scenes(dataset_id)
     except ValueError as exc:
+        # 校验失败 → 事务将 rollback，但本次已写入 MinIO 的对象不在事务内，
+        # 需显式删除，否则变成孤儿对象。
+        await db.rollback()
+        for key in written_keys:
+            try:
+                storage_service.delete_object(
+                    key, bucket=storage_service.datasets_bucket
+                )
+            except Exception:  # noqa: BLE001
+                pass
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     await db.commit()

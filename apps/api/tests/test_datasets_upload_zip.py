@@ -39,6 +39,9 @@ class _FakePutOnlyClient:
     def put_object(self, *, Bucket, Key, Body, ContentType=None):
         self.objects[Key] = bytes(Body)
 
+    def delete_object(self, *, Bucket, Key):
+        self.objects.pop(Key, None)
+
     def head_bucket(self, *, Bucket):
         # create_dataset → ensure_bucket 会先 head_bucket 探测;假装 bucket 已存在。
         return {}
@@ -54,13 +57,17 @@ def _make_zip(entries: dict[str, bytes]) -> bytes:
 
 
 async def _create_dataset(
-    httpx_client, token: str, name: str, data_type: str = "image"
+    httpx_client,
+    token: str,
+    name: str,
+    data_type: str = "image",
+    is_temporal: bool = False,
 ) -> dict:
     """通过 API 创建 dataset，返回响应 JSON。"""
     resp = await httpx_client.post(
         "/api/v1/datasets",
         headers=_bearer(token),
-        json={"name": name, "data_type": data_type},
+        json={"name": name, "data_type": data_type, "is_temporal": is_temporal},
     )
     assert resp.status_code == 201, resp.text
     return resp.json()
@@ -392,3 +399,58 @@ async def test_upload_zip_notes_reserved_role_top_level_mix(
     assert resp.status_code == 200, resp.text
     notes = resp.json()["scene_inference_notes"]
     assert any("保留角色目录" in note and "import-formats.md" in note for note in notes)
+
+
+async def test_upload_zip_temporal_validation_failure_cleans_storage(
+    httpx_client, db_session, super_admin, monkeypatch
+):
+    """时序数据集 scene 校验失败(422) → 本次已写入 MinIO 的对象必须被清理,不留孤儿。
+
+    构造:is_temporal=True 的 dataset,zip 只含根级文件(无子目录)→ scene_inference
+    推不出任何 scene → assert_temporal_dataset_has_scenes 抛 422。断言 fake storage
+    中已无残留对象,且 DatasetItem 因事务 rollback 未落库。
+    """
+    user, token = super_admin
+
+    fake_client = _FakePutOnlyClient()
+    monkeypatch.setattr(storage_service, "client", fake_client)
+    monkeypatch.setattr(storage_service, "read_image_dimensions_from_bytes", _noop)
+
+    ds = await _create_dataset(
+        httpx_client,
+        token,
+        f"temporal-fail-{uuid.uuid4().hex[:6]}",
+        "image",
+        is_temporal=True,
+    )
+    ds_id = ds["id"]
+
+    # 根级文件(无子目录)→ scene_inference 落入 _root 组,推不出 scene。
+    zip_bytes = _make_zip(
+        {
+            "frame_000.jpg": b"img0",
+            "frame_001.jpg": b"img1",
+        }
+    )
+
+    resp = await httpx_client.post(
+        f"/api/v1/datasets/{ds_id}/items/upload-zip",
+        headers=_bearer(token),
+        files={"file": ("flat.zip", zip_bytes, "application/zip")},
+    )
+    assert resp.status_code == 422, resp.text
+
+    # 已写入的对象应被清理,不留孤儿
+    assert fake_client.objects == {}, fake_client.objects
+
+    # 事务 rollback,DatasetItem 不应落库
+    rows = (
+        (
+            await db_session.execute(
+                select(DatasetItem).where(DatasetItem.dataset_id == uuid.UUID(ds_id))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert rows == []
