@@ -81,3 +81,4 @@
 | 13 | [mask→polygon simplify tolerance 评测](./13-simplify-tolerance-eval.md) | v0.9.4 phase 3 默认 tolerance 选定依据 |
 | 14 | [点云 + 图像联合标注](./14-point-cloud-image-fusion.md) | 融合原理 + SUSTechPOINTS/xtreme1/CVAT 源码级拆解 + 本平台 gap 分析与改动评估 |
 | 15 | [标注员绩效能力对标](./15-annotator-performance.md) | CVAT/LS 源码 + 6 商业产品的绩效指标 taxonomy + gap 分析(IAA/honeypot/项目级范围/导出) |
+| 16 | [质量体系前置调研](./16-quality-system-1t1a1r.md) | 1 task : 1 annotator : 1 reviewer 模式下 GT / Honeypot / Consensus 的可行边界 |
