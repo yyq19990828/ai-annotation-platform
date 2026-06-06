@@ -15,10 +15,15 @@ from app.db.models.annotation import Annotation
 from app.db.models.prediction import Prediction
 from app.db.models.project import Project
 from app.db.models.user import User
-from app.services.scene import _resolve_primary_item_id
+from app.services.scene import resolve_primary_item_id
 from app.services.task_lock import TaskLockService
 
 _PRIMARY_LIDAR_ROLE = "primary_lidar"
+
+# 经典派题路径在「候选查询」与「acquire 上锁」之间存在 TOCTOU 窗口:他人可能抢先
+# 上锁。逐个候选尝试 acquire,失败即跳到下一个,最多看这么多个候选(高竞争下兜底,
+# 全被占则本次返回 None,客户端重试)。
+_NEXT_TASK_CANDIDATE_WINDOW = 20
 
 
 def is_privileged_for_project(user: User, project: Project) -> bool:
@@ -161,7 +166,7 @@ async def _next_same_scene_task(
     recent_task = await db.get(Task, recent_task_id)
     if recent_task is None:
         return None
-    primary_item_id = await _resolve_primary_item_id(db, recent_task)
+    primary_item_id = await resolve_primary_item_id(db, recent_task)
     if primary_item_id is None:
         return None
     item = await db.get(DatasetItem, primary_item_id)
@@ -334,11 +339,14 @@ async def get_next_task(
             Task.created_at,
         )
 
-    # 6. Pick one and lock
-    result = await db.execute(candidates.limit(1))
-    next_task = result.scalar_one_or_none()
+    # 6. Pick and lock — 逐个候选尝试 acquire,跳过他人在 TOCTOU 窗口抢先上锁的 task,
+    #    返回首个成功上锁者;候选窗口内全被占则返回 None(本次无可派 task,客户端重试)。
+    result = await db.execute(candidates.limit(_NEXT_TASK_CANDIDATE_WINDOW))
+    for next_task in result.scalars().all():
+        acquired = await lock_svc.acquire(
+            next_task.id, user_id, ttl=project.task_lock_ttl_seconds
+        )
+        if acquired is not None:
+            return next_task
 
-    if next_task:
-        await lock_svc.acquire(next_task.id, user_id, ttl=project.task_lock_ttl_seconds)
-
-    return next_task
+    return None

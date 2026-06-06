@@ -133,9 +133,12 @@ async def get_scene(db: AsyncSession, scene_id: uuid.UUID) -> Scene | None:
     return await db.get(Scene, scene_id)
 
 
-async def _resolve_primary_item_id(db: AsyncSession, task: Task) -> uuid.UUID | None:
+async def resolve_primary_item_id(db: AsyncSession, task: Task) -> uuid.UUID | None:
     """task 关联的"主"dataset_item:
     优先 task.dataset_item_id(2D 单文件路径),否则查 primary_lidar link(3D)。
+
+    公开 API:scheduler / annotation 等跨模块消费方依赖它解析 task 的主 item
+    (进而反查 scene),故不加下划线前缀。
     """
     if task.dataset_item_id is not None:
         return task.dataset_item_id
@@ -241,7 +244,7 @@ async def get_neighbors_for_task(
     if task is None:
         return None
 
-    primary_item_id = await _resolve_primary_item_id(db, task)
+    primary_item_id = await resolve_primary_item_id(db, task)
     if primary_item_id is None:
         return None
 

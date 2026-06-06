@@ -432,9 +432,9 @@ class AnnotationService:
         """v0.14.1 · 取 task 主 dataset_item 所在 dataset 的 axis_convention。
         无主 item / 无 metadata key → None(前端按 iso_8855 identity 处理)。"""
         from app.db.models.dataset import Dataset
-        from app.services.scene import _resolve_primary_item_id
+        from app.services.scene import resolve_primary_item_id
 
-        primary_item_id = await _resolve_primary_item_id(self.db, task)
+        primary_item_id = await resolve_primary_item_id(self.db, task)
         if primary_item_id is None:
             return None
         from app.db.models.dataset import DatasetItem
@@ -496,10 +496,10 @@ class AnnotationService:
 
         # 同 scene 校验: 两侧主 item 必须解析到相同且非空的 scene_id。
         from app.db.models.dataset import DatasetItem
-        from app.services.scene import _resolve_primary_item_id
+        from app.services.scene import resolve_primary_item_id
 
-        src_item_id = await _resolve_primary_item_id(self.db, src_task)
-        target_item_id = await _resolve_primary_item_id(self.db, target_task)
+        src_item_id = await resolve_primary_item_id(self.db, src_task)
+        target_item_id = await resolve_primary_item_id(self.db, target_task)
         src_scene_id = None
         target_scene_id = None
         if src_item_id is not None:
