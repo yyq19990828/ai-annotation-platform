@@ -67,3 +67,7 @@
 - [0029](0029-task-dataset-item-multi-link.md) — 点云任务-数据项多文件关联中间表（保留 2D 1:1）
 - [0030](0030-sensor-calibration-in-dataset-item-metadata.md) — 相机标定存进 DatasetItem.metadata_（不加列）
 - [0031](0031-dual-canvas-konva-three.md) — 双画布架构：Konva 2D / Three.js 3D 双栈并存
+- [0032](0032-3d-box-editing-main-view-gizmo.md) — 3D 框编辑交互形态：主视图 gizmo + 数值面板（推迟三正交视图）
+- [0033](0033-3d-to-2d-projection-overlay.md) — 3D→2D 投影联动：实时纯函数投影 + canvas overlay（不预存）
+- [0034](0034-lidar-axis-convention.md) — 点云数据集 lidar 坐标系约定：dataset 级声明 + 加载侧归一化
+- [0035](0035-scene-and-frame-foundation.md) — Scene + frame_index 跨 task 时序帧序列地基
