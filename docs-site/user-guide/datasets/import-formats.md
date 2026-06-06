@@ -57,6 +57,20 @@ scene 边界与 `frame_index` 的概念详见 [Scene + frame_index 跨 task 帧�
 
 > ⚠️ **不要**把 `lidar` / `camera` / `calib` / `image` / `video` 用作顶层 scene 目录名——它们是角色目录的保留名,会让多 scene 启发式误判为单 scene。
 
+### 时序数据集声明与 scene 模式项目
+
+入库后**含有 scene 的数据集**即"时序数据集",可在数据集列表用 `GET /api/v1/datasets?has_scenes=true` 筛出。该状态由 scene 行实时派生(`has_scenes`),不需要手动维护。
+
+导入脚本 / API 还可以在建数据集时把它**显式声明**为时序数据集(字段 `is_temporal`,目前无独立界面开关)。这是一道导入期"早失败"护栏:声明为时序却没有识别出任何 scene 时,导入直接失败并提示检查目录结构,避免一个本该分 scene 的数据集静默变成零 scene。nuScenes 转换脚本会自动声明 `is_temporal`,并创建一个已开启 scene 模式的配套项目。
+
+**与 scene 模式项目的关联规则**(对称硬门,API 与界面一致):
+
+- scene 模式项目**只能**关联含 scene 的数据集;普通项目只能关联不含 scene 的数据集。
+- 媒体类型必须匹配,且 lidar 与 point_cloud 视作同一媒体 kind(点云数据集存储类型为 `point_cloud`、点云项目媒体类型为 `lidar`,二者归一后匹配)。
+- 不匹配时 `POST /api/v1/datasets/{id}/link` 返回 422;该校验只拦新关联,不追溯旧关联。
+
+scene 模式项目的开启与用法见 [项目管理 · scene 模式项目](/user-guide/projects/#scene-模式项目)。
+
 ## 上传方式
 
 ### A. 浏览器 ZIP 上传(向导)
@@ -120,6 +134,8 @@ uv run python scripts/import_nuscenes_scene.py \
 ```
 
 脚本只依赖 numpy + Pillow,不需要 `nuscenes-devkit`。数据集下载见 [nuscenes.org/nuscenes#download](https://www.nuscenes.org/nuscenes#download)(选 mini split)。如果 `--dataset-name` 较长,脚本会把内部 `DS-NU-...` / `P-NU-...` display_id 稳定截断并追加 hash,避免超过数据库长度限制;展示名称和对象存储前缀仍保留原始 `dataset_name`。
+
+脚本入库的数据集会自动声明为时序数据集(`is_temporal`),并配套创建一个已开启 scene 模式的项目,导入完成即可直接按 scene 分包标注(见上文「时序数据集声明与 scene 模式项目」)。
 
 > **坐标系**:v0.14.3 起脚本默认 `--frame ego`,逐点乘 `T_ego_from_lidar` 把 LIDAR_TOP 原始点落到 nuScenes ego(车体)系,并写 `axis_convention=iso_8855`;相机标定同步写为 `cam_from_ego`,投影仍与点云自洽。若需要保留 v0.14.2 的原始 LIDAR_TOP 传感器系点,可显式传 `--frame sensor`,此时脚本写 `axis_convention=apollo` 和 `cam_from_lidar`。
 >

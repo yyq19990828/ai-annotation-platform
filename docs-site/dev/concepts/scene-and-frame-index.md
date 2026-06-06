@@ -209,6 +209,7 @@ v0.14.1 在这套地基上落了用户可用的跨帧能力,消费路径:
 - 每个 scene 生成一个 `draft` 批次。
 - 批次内 task 按帧号排序，并写 `Task.sequence_order = frame_index`。
 - 没有 scene 的 task 不丢弃，会进入“无 scene”兜底批次。
+- 反查 `scene_id + frame_index` 的 `resolve_task_scene_frames` 按固定 chunk(5000)分批查询，避免大数据集 scene 项目一次性把全量待分包 task id 灌进 `IN(...)` 撞 asyncpg 绑定参数上限。
 
 这让 scene、批次 owner 和审核粒度自然对齐，避免跨帧 propagate 或连续调度被 batch 可见性打断。
 
