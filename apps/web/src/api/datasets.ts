@@ -39,6 +39,7 @@ export interface DatasetCreatePayload {
   name: string;
   description?: string;
   data_type?: string;
+  is_temporal?: boolean;
   axis_convention?: LidarAxisConvention | null;
 }
 
@@ -53,6 +54,12 @@ export interface SniffAxisConventionCandidate {
   score: number;
 }
 
+export interface SniffAxisConventionCamera {
+  camera_role: string | null;
+  best: LidarAxisConvention;
+  score: number;
+}
+
 export interface SniffAxisConventionResponse {
   best: LidarAxisConvention | null;
   score: number | null;
@@ -60,13 +67,18 @@ export interface SniffAxisConventionResponse {
   source: "task_link" | "dataset_item" | null;
   camera_role: string | null;
   camera_item_id: string | null;
+  per_camera: SniffAxisConventionCamera[] | null;
+  agreement: number | null;
 }
 
 export const datasetsApi = {
-  list: (params?: { search?: string; data_type?: string; limit?: number; offset?: number }) => {
+  list: (params?: { search?: string; data_type?: string; has_scenes?: boolean; limit?: number; offset?: number }) => {
     const q = new URLSearchParams();
     if (params?.search) q.set("search", params.search);
     if (params?.data_type) q.set("data_type", params.data_type);
+    if (params?.has_scenes !== undefined) {
+      q.set("has_scenes", String(params.has_scenes));
+    }
     if (params?.limit) q.set("limit", String(params.limit));
     if (params?.offset) q.set("offset", String(params.offset));
     const qs = q.toString();

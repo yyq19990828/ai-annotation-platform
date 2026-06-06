@@ -28,6 +28,8 @@ async def test_prefix_mapping_complete() -> None:
         "projects": "P",
         "batches": "BT",
         "project_templates": "PT",
+        # v0.14.0 · 跨 task 帧序列地基(scene)
+        "scenes": "SCN",
     }
 
 

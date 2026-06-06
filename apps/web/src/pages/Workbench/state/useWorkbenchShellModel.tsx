@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
 import { useProject } from "@/hooks/useProjects";
 import {
-  useTaskList, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
+  useTaskList, useTask, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
   useUpdateAnnotation, useSubmitTask,
   useVideoManifest,
   useVideoFrameTimetable,
@@ -21,6 +21,10 @@ import { useFeedbacks } from "@/hooks/useFeedbacks";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
+import {
+  resolveCrossFrameNavigation,
+  resolveCrossFrameTarget,
+} from "./crossFrameTarget";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
@@ -262,9 +266,24 @@ export function useWorkbenchShellModel({
     }),
     [mode, selectedBatchId],
   );
-  const { data: taskListData, hasNextPage, isFetchingNextPage, fetchNextPage } = useTaskList(projectId, taskListParams);
-  const tasks = taskListData?.pages.flatMap((p) => p.items) ?? [];
+  const {
+    data: taskListData,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+    isLoading: isTaskListLoading,
+  } = useTaskList(projectId, taskListParams);
+  const taskPages = taskListData?.pages;
+  const tasks = useMemo(
+    () => taskPages?.flatMap((p) => p.items) ?? [],
+    [taskPages],
+  );
   const tasksTotal = taskListData?.pages[0]?.total ?? tasks.length;
+  const requestedTaskLoaded = Boolean(
+    requestedTaskId && tasks.some((t) => t.id === requestedTaskId),
+  );
+  const shouldLoadDirectTask = Boolean(requestedTaskId && !requestedTaskLoaded);
+  const directTaskQuery = useTask(shouldLoadDirectTask ? requestedTaskId! : "");
 
   const s = useWorkbenchState();
   // v0.13.x · 点云 3D 项目无对应 2D 工具,按当前 3D 工具显式选择工具单位。
@@ -322,10 +341,25 @@ export function useWorkbenchShellModel({
     return () => clearTimeout(t);
   }, [s.confThreshold]);
 
-  const task: TaskResponse | undefined = useMemo(
-    () => tasks.find((t) => t.id === currentTaskId) ?? tasks[0],
-    [tasks, currentTaskId],
-  );
+  const task: TaskResponse | undefined = useMemo(() => {
+    const loaded = tasks.find((t) => t.id === currentTaskId);
+    if (loaded) return loaded;
+    const directTask = shouldLoadDirectTask ? directTaskQuery.data : undefined;
+    if (
+      directTask
+      && (directTask.id === requestedTaskId || !currentTaskId || directTask.id === currentTaskId)
+    ) {
+      return directTask;
+    }
+    if (requestedTaskId) return undefined;
+    return tasks[0];
+  }, [
+    tasks,
+    currentTaskId,
+    requestedTaskId,
+    shouldLoadDirectTask,
+    directTaskQuery.data,
+  ]);
   const taskId = task?.id;
   const taskIdx = tasks.findIndex((t) => t.id === taskId);
   const selectTask = useCallback(
@@ -438,14 +472,29 @@ export function useWorkbenchShellModel({
   useEffect(() => {
     resetVideoStageUi();
     setAiPopoverOpen(false);
+    // 切 task / 切 batch 后, 丢弃指向其它 task 的待补选; 仅当新 task 正是
+    // 跨帧 propagate 的目标时保留 (该补选逻辑见下方 annotationsData effect)。
+    const pend = pendingCrossFrameSelectRef.current;
+    if (pend && pend.taskId !== taskId) {
+      pendingCrossFrameSelectRef.current = null;
+    }
   }, [taskId, resetVideoStageUi]);
 
   useEffect(() => {
-    if (tasks.length === 0) return;
+    if (tasks.length === 0 && !directTaskQuery.data) return;
     if (requestedTaskId && tasks.some((t) => t.id === requestedTaskId)) {
       if (currentTaskId !== requestedTaskId) {
         setCurrentTaskId(requestedTaskId);
         setSelectedId(null);
+      }
+      return;
+    }
+    if (requestedTaskId) {
+      if (directTaskQuery.data?.id === requestedTaskId) {
+        if (currentTaskId !== requestedTaskId) {
+          setCurrentTaskId(requestedTaskId);
+          setSelectedId(null);
+        }
       }
       return;
     }
@@ -466,6 +515,7 @@ export function useWorkbenchShellModel({
     setSelectedId,
     selectTask,
     mode,
+    directTaskQuery.data,
   ]);
 
   useEffect(() => {
@@ -546,6 +596,16 @@ export function useWorkbenchShellModel({
   useEffect(() => {
     publishTaskBoxCount(annotationsRef.current.length);
   }, [annotationsData]);
+
+  // v0.14.1 · 跨帧 propagate 跳转后, 目标 task 标注加载完成时补选新建的框。
+  useEffect(() => {
+    const pend = pendingCrossFrameSelectRef.current;
+    if (!pend || currentTaskId !== pend.taskId) return;
+    if ((annotationsData ?? []).some((a) => a.id === pend.annotationId)) {
+      setSelectedId(pend.annotationId);
+      pendingCrossFrameSelectRef.current = null;
+    }
+  }, [annotationsData, currentTaskId, setSelectedId]);
 
   useEffect(() => {
     if (!isVideoTask) return;
@@ -667,6 +727,98 @@ export function useWorkbenchShellModel({
   const { lockError, lockConflict, remainingMs } = useTaskLock(taskId);
 
   const queryClient = useQueryClient();
+
+  // v0.14.1+ · 跨帧目标延续 (Shift+→ / Shift+←): 把选中框 propagate 到同 scene
+  // 邻帧 task。目标若不在当前已加载队列里,退化为按 taskId 直开并补选中新框。
+  const pendingCrossFrameSelectRef = useRef<{
+    taskId: string;
+    annotationId: string;
+  } | null>(null);
+  // v0.14.1 · 并发/重复触发守卫: 按住 Alt+→ auto-repeat 或快速连按时, 防止并发
+  // 多个 propagate POST 在目标帧造出共享同一新 group_id 的重复 annotation。
+  const crossFrameInFlightRef = useRef(false);
+  const crossFramePropagate = useCallback(
+    async (direction: "next" | "prev") => {
+      if (!taskId) return;
+      if (crossFrameInFlightRef.current) return;
+      crossFrameInFlightRef.current = true;
+      try {
+        const selId = s.selectedId;
+        if (!selId) {
+          pushToast({ msg: "请先选中一个目标框", kind: "" });
+          return;
+        }
+        // 按需直拉邻帧 (非缓存), propagate 才发请求, 避免给每个 task 都预取。
+        let neighbors;
+        try {
+          neighbors = await tasksApi.getNeighbors(taskId, 1);
+        } catch {
+          pushToast({ msg: "获取邻帧失败", kind: "error" });
+          return;
+        }
+        const resolution = resolveCrossFrameTarget(neighbors, direction);
+        if (resolution.kind === "no-scene") {
+          pushToast({ msg: "当前 task 不属于任何 scene, 无法跨帧延续", kind: "warning" });
+          return;
+        }
+        if (resolution.kind === "boundary") {
+          pushToast({
+            msg: direction === "next" ? "已是该 scene 最后一帧" : "已是该 scene 首帧",
+            kind: "",
+          });
+          return;
+        }
+        try {
+          const { annotation } = await tasksApi.propagateToTask(
+            taskId,
+            selId,
+            resolution.taskId,
+          );
+          // 失效目标 task 标注缓存, 跳过去后重新拉到含新框的列表。
+          queryClient.invalidateQueries({
+            queryKey: ["annotations", resolution.taskId],
+          });
+          // 源 task 框可能刚被分配 group_id, 失效让本帧高亮同步。
+          queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
+          pendingCrossFrameSelectRef.current = {
+            taskId: resolution.taskId,
+            annotationId: annotation.id,
+          };
+          const nav = resolveCrossFrameNavigation(
+            tasks.map((t) => t.id),
+            resolution.taskId,
+          );
+          if (nav.kind === "loaded") {
+            selectTask(nav.taskId);
+          } else {
+            setCurrentTaskId(nav.taskId);
+            setSelectedId(null);
+            updateUrl({ batchId: selectedBatchId, taskId: nav.taskId });
+          }
+          pushToast({
+            msg: `已延续到帧 ${resolution.frameIndex}`,
+            kind: "success",
+          });
+        } catch {
+          pushToast({ msg: "跨帧延续失败", kind: "error" });
+        }
+      } finally {
+        crossFrameInFlightRef.current = false;
+      }
+    },
+    [
+      taskId,
+      s.selectedId,
+      tasks,
+      selectTask,
+      setCurrentTaskId,
+      setSelectedId,
+      updateUrl,
+      selectedBatchId,
+      pushToast,
+      queryClient,
+    ],
+  );
 
   const sam = useInteractiveAI({
     projectId,
@@ -1217,6 +1369,7 @@ export function useWorkbenchShellModel({
     s, history, classes, currentProject, annotationsRef,
     batchChanging, setBatchChanging, showHotkeys,
     navigateTask, smartNext, setFitTick,
+    onCrossFramePropagate: crossFramePropagate,
     recordRecentClass, handleDeleteBox, handleBatchDelete, handlePatchShapeFlag,
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes,
@@ -1401,7 +1554,11 @@ export function useWorkbenchShellModel({
     };
   }, [leftOpen, rightOpen, stageKind]);
 
-  if (isProjectLoading) {
+  if (
+    isProjectLoading
+    || isTaskListLoading
+    || (shouldLoadDirectTask && directTaskQuery.isLoading)
+  ) {
     return { kind: "loading" };
   }
 
@@ -1416,7 +1573,18 @@ export function useWorkbenchShellModel({
     };
   }
 
-  if (tasks.length === 0) {
+  if (!task && shouldLoadDirectTask && directTaskQuery.isError) {
+    return {
+      kind: "empty",
+      emptyState: {
+        icon: "warning",
+        message: "任务不存在或无访问权限",
+        onBack,
+      },
+    };
+  }
+
+  if (tasks.length === 0 && !task) {
     return {
       kind: "empty",
       emptyState: {
@@ -1425,6 +1593,10 @@ export function useWorkbenchShellModel({
         onBack,
       },
     };
+  }
+
+  if (!task) {
+    return { kind: "loading" };
   }
 
   const propagateDialogTrack = propagateDialog?.annotation ?? null;
@@ -1529,7 +1701,7 @@ export function useWorkbenchShellModel({
     stageHost: {
       common: {
         stageKind,
-        taskId,
+        taskId: taskId ?? null,
         readOnly: isLocked,
         activeClass: s.activeClass,
         selectedId: s.selectedId,
@@ -1543,6 +1715,7 @@ export function useWorkbenchShellModel({
         onChangeUserBoxClass: handleStartChangeClass,
         threeDTool: s.threeDTool,
         onSetThreeDTool: s.setThreeDTool,
+        onCrossFramePropagate: crossFramePropagate,
         rightSidebarOpen: rightOpen,
         rightSidebarWidth: rightOpen ? s.rightWidth : 0,
         workbenchLayout: s.workbenchLayout,

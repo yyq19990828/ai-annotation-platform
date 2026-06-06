@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import copy
 import uuid
 from datetime import datetime
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
@@ -18,6 +19,20 @@ from app.services.video_tracks import (
 )
 
 VIDEO_BBOX_CONVERSION_LIMIT = 5000
+
+# v0.14.1 · 可跨帧 propagate 的几何类型。视频内 track 几何由 video_tracker_runner
+# 处理(case A 内部), point_mask_3d 跨帧 point_indices 无意义(§5.4 留 v0.15+)。
+PROPAGATABLE_GEOMETRY_TYPES = frozenset(
+    {
+        "box_3d",
+        "bbox",
+        "polygon",
+        "multi_polygon",
+        "rotated_bbox",
+        "polyline",
+        "keypoint",
+    }
+)
 
 
 def _new_track_id() -> str:
@@ -412,6 +427,131 @@ class AnnotationService:
             r.version += 1
         await self.db.flush()
         return new_group_id, rows
+
+    async def _resolve_axis_convention(self, task: Task) -> str | None:
+        """v0.14.1 · 取 task 主 dataset_item 所在 dataset 的 axis_convention。
+        无主 item / 无 metadata key → None(前端按 iso_8855 identity 处理)。"""
+        from app.db.models.dataset import Dataset
+        from app.services.scene import resolve_primary_item_id
+
+        primary_item_id = await resolve_primary_item_id(self.db, task)
+        if primary_item_id is None:
+            return None
+        from app.db.models.dataset import DatasetItem
+
+        item = await self.db.get(DatasetItem, primary_item_id)
+        if item is None:
+            return None
+        dataset = await self.db.get(Dataset, item.dataset_id)
+        if dataset is None:
+            return None
+        return (dataset.metadata_ or {}).get("axis_convention")
+
+    async def propagate(
+        self,
+        *,
+        source_annotation_id: uuid.UUID,
+        target_task_id: uuid.UUID,
+        user_id: uuid.UUID,
+        override_psr: dict | None = None,
+    ) -> Annotation:
+        """v0.14.1 · 跨帧目标延续: 把源 annotation 复制到目标 task。
+
+        语义:
+        - 仅复制静态几何(PROPAGATABLE_GEOMETRY_TYPES); video_* / point_mask_3d 拒。
+        - 跨帧链共享 group_id: 源无 group_id 时从全局序列 cross_frame_group_seq
+          分配一个(高位起始, 与 per-task next_group_seq 永不冲突)并写回源, 再复用。
+        - box_3d 的 convention_at_create 取**目标** dataset 的 axis_convention:
+          DB 内 PSR 永远是 ISO 系字节, 原值复制即对齐世界坐标; convention_at_create
+          写目标值仅为让前端 banner 不误报(v0.13.11 安全网)。
+        - override_psr 留扩展位, 给定时覆盖 box_3d 的 center/size/rotation。
+        """
+        from fastapi import HTTPException
+
+        src = await self.db.get(Annotation, source_annotation_id)
+        if src is None or not src.is_active:
+            raise HTTPException(status_code=404, detail="source annotation not found")
+
+        geom_type = (src.geometry or {}).get("type")
+        if geom_type not in PROPAGATABLE_GEOMETRY_TYPES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"geometry type '{geom_type}' 不支持跨帧 propagate",
+            )
+
+        target_task = await self.db.get(Task, target_task_id)
+        if target_task is None:
+            raise HTTPException(status_code=404, detail="target task not found")
+
+        src_task = await self.db.get(Task, src.task_id)
+        if src_task is None:
+            raise HTTPException(status_code=404, detail="source task not found")
+        if target_task_id == src.task_id:
+            raise HTTPException(
+                status_code=422, detail="propagate 目标不能是源 task 自身"
+            )
+        # §5.6 · 严格同 project(跨 project/dataset/scene propagate 语义不成立)。
+        if src_task.project_id != target_task.project_id:
+            raise HTTPException(status_code=422, detail="跨 project propagate 不被允许")
+
+        # 同 scene 校验: 两侧主 item 必须解析到相同且非空的 scene_id。
+        from app.db.models.dataset import DatasetItem
+        from app.services.scene import resolve_primary_item_id
+
+        src_item_id = await resolve_primary_item_id(self.db, src_task)
+        target_item_id = await resolve_primary_item_id(self.db, target_task)
+        src_scene_id = None
+        target_scene_id = None
+        if src_item_id is not None:
+            src_item = await self.db.get(DatasetItem, src_item_id)
+            src_scene_id = src_item.scene_id if src_item is not None else None
+        if target_item_id is not None:
+            target_item = await self.db.get(DatasetItem, target_item_id)
+            target_scene_id = target_item.scene_id if target_item is not None else None
+        if (
+            src_scene_id is None
+            or target_scene_id is None
+            or src_scene_id != target_scene_id
+        ):
+            raise HTTPException(status_code=422, detail="跨 scene propagate 不被允许")
+
+        # 共享 group_id: 源无则分配并写回。
+        group_id = src.group_id
+        if group_id is None:
+            seq_row = await self.db.execute(
+                text("SELECT nextval('cross_frame_group_seq')")
+            )
+            group_id = int(seq_row.scalar_one())
+            src.group_id = group_id
+            src.version += 1
+
+        geometry = copy.deepcopy(src.geometry or {})
+        if geom_type == "box_3d":
+            geometry["convention_at_create"] = await self._resolve_axis_convention(
+                target_task
+            )
+            if override_psr:
+                for key in ("center", "size", "rotation"):
+                    if key in override_psr:
+                        geometry[key] = override_psr[key]
+
+        new_annotation = Annotation(
+            id=uuid.uuid4(),
+            task_id=target_task_id,
+            project_id=target_task.project_id,
+            user_id=user_id,
+            source="manual",
+            annotation_type=src.annotation_type,
+            tool_unit_id=src.tool_unit_id,
+            class_name=src.class_name,
+            geometry=geometry,
+            group_id=group_id,
+            attributes=copy.deepcopy(src.attributes or {}),
+        )
+        self.db.add(new_annotation)
+        await self.db.flush()
+        await self._update_task_stats(target_task_id)
+        return new_annotation
 
     async def ungroup(
         self,

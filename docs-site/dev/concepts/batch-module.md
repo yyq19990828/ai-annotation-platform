@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-06
 ---
 
 # 批次模块
@@ -228,6 +228,25 @@ stateDiagram-v2
 - `bulk_activate`
 - `check_auto_transitions`
 - `recalculate_counters`
+
+### `split` 切分策略
+
+`split(project_id, data, created_by)` 从项目里尚未归类（未分配批次）的 task 中切出新批次，`BatchSplitRequest.strategy` 决定切分方式：
+
+| 策略 | 说明 |
+|---|---|
+| `metadata` | 按 `metadata_key` / `metadata_value` 过滤出匹配 task，归入一个新批次 |
+| `id_range` | 按显式给定的 `item_ids` 列表把指定 task 归入一个新批次 |
+| `random` | 把未归类 task 切成 `n_batches` 个批次；`shuffle=False` 时按 task 创建顺序切分（不打乱） |
+| `by_scene`（v0.14.4） | 适用 scene 模式项目：按 task 所属 scene 分组，每个 scene 切成一个独立批次 |
+
+`by_scene` 细节：
+
+- 通过 `resolve_task_scene_frames` 解析每个 task 的 `scene_id` / `scene_name` / `frame_index`，按 `scene_id` 分组，每组生成一个批次；无 scene 的 task 归入一个「无 scene」批次，排在最后。
+- 批次命名为 `{name_prefix} · {scene_name}`（无 scene 时为 `{name_prefix} · 无 scene`）。
+- 每个批次内调用 `_set_sequence_orders`，把 task 的 `sequence_order` 写为各自的 `frame_index`，使工作台派题顺序与 scene 内帧序一致；`frame_index` 为空的 task 不写 `sequence_order`。
+
+scene / frame_index 的语义见 [scene 与 frame_index](scene-and-frame-index)。
 
 ### `delete` 与删批次保护（v0.11.25）
 

@@ -93,6 +93,7 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
   const [description, setDescription] = useState("");
   const [dataType, setDataType] = useState("image");
   const [axisConvention, setAxisConvention] = useState<LidarAxisConvention>("iso_8855");
+  const [isTemporal, setIsTemporal] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [zipProgress, setZipProgress] = useState(0);
@@ -120,6 +121,7 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
       setDescription("");
       setDataType("image");
       setAxisConvention("iso_8855");
+      setIsTemporal(false);
       setFiles([]);
       setZipFile(null);
       setZipProgress(0);
@@ -188,6 +190,7 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
         description: description.trim() || undefined,
         data_type: dataType,
         axis_convention: dataType === "point_cloud" ? axisConvention : undefined,
+        is_temporal: isTemporal || undefined,
       });
       setCreated(dsResp);
       return dsResp.id;
@@ -340,9 +343,16 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
           dataType={dataType}
           setName={handleSetName}
           setDescription={setDescription}
-          setDataType={setDataType}
+          setDataType={(v) => {
+            setDataType(v);
+            // 切换数据类型时重置时序声明：时序开关仅在 image/video/point_cloud 显示，
+            // 切到 other/multimodal 后若仍残留 true 会让后端 scene 校验意外 422。
+            setIsTemporal(false);
+          }}
           axisConvention={axisConvention}
           setAxisConvention={setAxisConvention}
+          isTemporal={isTemporal}
+          setIsTemporal={setIsTemporal}
           nameValid={nameValid}
         />
       )}
@@ -489,6 +499,8 @@ function Step1({
   setDataType,
   axisConvention,
   setAxisConvention,
+  isTemporal,
+  setIsTemporal,
   nameValid,
 }: {
   name: string;
@@ -499,6 +511,8 @@ function Step1({
   setDataType: (v: string) => void;
   axisConvention: LidarAxisConvention;
   setAxisConvention: (v: LidarAxisConvention) => void;
+  isTemporal: boolean;
+  setIsTemporal: (v: boolean) => void;
   nameValid: boolean;
 }) {
   return (
@@ -548,6 +562,23 @@ function Step1({
             value={axisConvention}
             onChange={setAxisConvention}
           />
+        </div>
+      )}
+      {(dataType === "image" || dataType === "video" || dataType === "point_cloud") && (
+        <div>
+          <label className={styles.checkField}>
+            <input
+              type="checkbox"
+              checked={isTemporal}
+              onChange={(e) => setIsTemporal(e.target.checked)}
+            />
+            <span>声明为时序数据集（scene）</span>
+          </label>
+          <div className={styles.mutedSmall}>
+            勾选后，上传 / 入库完成时若未识别出任何 scene 会失败并提示检查目录结构；用于 scene
+            模式项目。ZIP 上传会自动识别 scene——点云按 <code>lidar/ camera/ calib/</code> 布局，图片 /
+            视频按帧序列或多场景子目录。
+          </div>
         </div>
       )}
     </div>

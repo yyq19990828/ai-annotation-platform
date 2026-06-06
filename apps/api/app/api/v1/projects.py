@@ -32,6 +32,14 @@ from app.schemas.project import (
     ProjectTransferRequest,
 )
 from app.services.display_id import next_display_id
+from app.services.project_kind import (
+    ProjectKind,
+    canonical_media_kind,
+    dataset_has_scenes,
+    dataset_kind,
+    kind_mismatch_detail,
+    scene_mode_allowed,
+)
 from app.services.project_clone import (
     CLONEABLE_PROJECT_FIELDS as _CLONEABLE_PROJECT_FIELDS,  # noqa: F401 (re-export)
     merge_from_source as _merge_from_source_project_impl,
@@ -207,6 +215,53 @@ async def _serialize_project(
     # v0.10.1 · 透出 env 控制的 1:N 上限 (默认 1), 供前端渲染添加按钮禁用状态.
     data["ml_backend_limit"] = settings.max_ml_backends_per_project
     return data
+
+
+async def _assert_project_kind_update_allowed(
+    db: AsyncSession, project: Project, payload: dict
+) -> None:
+    if "scene_mode" in payload and payload["scene_mode"] != project.scene_mode:
+        if (project.total_tasks or 0) > 0:
+            raise HTTPException(
+                status_code=422,
+                detail="已建 task 的项目不可切换 scene 模式,请先解绑数据集",
+            )
+
+    target_data_type = payload.get("data_type", project.data_type)
+    target_scene_mode = bool(payload.get("scene_mode", project.scene_mode))
+    if target_scene_mode and not scene_mode_allowed(target_data_type):
+        raise HTTPException(
+            status_code=422,
+            detail="scene_mode 仅支持 image/lidar 项目",
+        )
+
+    if "data_type" not in payload and "scene_mode" not in payload:
+        return
+
+    from app.db.models.dataset import Dataset, ProjectDataset
+
+    rows = await db.execute(
+        select(Dataset)
+        .join(ProjectDataset, ProjectDataset.dataset_id == Dataset.id)
+        .where(ProjectDataset.project_id == project.id)
+    )
+    target = ProjectKind(
+        data_type=canonical_media_kind(target_data_type),
+        scene_mode=target_scene_mode,
+    )
+    for dataset in rows.scalars().all():
+        has_scenes = await dataset_has_scenes(db, dataset.id)
+        mismatch = kind_mismatch_detail(
+            target, dataset_kind(dataset, has_scenes=has_scenes)
+        )
+        if mismatch:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"已有数据集 {dataset.display_id} 与目标项目 kind 不匹配: "
+                    f"{mismatch}; 请先解绑数据集"
+                ),
+            )
 
 
 @router.get("", response_model=list[ProjectOut])
@@ -388,6 +443,13 @@ async def create_project(
         payload["type_key"] = legacy_type_key_from_data_type(_dt)
     if not _dt:
         payload["data_type"] = data_type_from_type_key(payload.get("type_key"))
+    if payload.get("scene_mode"):
+        if not scene_mode_allowed(payload.get("data_type")):
+            raise HTTPException(
+                status_code=422,
+                detail="scene_mode 仅支持 image/lidar 项目",
+            )
+        payload.setdefault("prefer_same_scene_continuation", True)
 
     # v0.10.22 · 先把客户端显式传入的旧扁平 classes / classes_config / attribute_schema
     # 反向派生进 tool_bindings (按 type_key 推 unit), 再剔除扁平 key. 必须早于下面的
@@ -614,6 +676,7 @@ async def update_project(
             payload.get("type_key", project.type_key),
             payload.get("data_type", project.data_type),
         )
+    await _assert_project_kind_update_allowed(db, project, payload)
     # v0.8.6 F3 · 绑定 backend 时用 backend.name 覆盖 ai_model（display hint）;
     # 显式解绑时同步清空 display hint, 避免总览继续显示旧模型名。
     if "ml_backend_id" in payload:

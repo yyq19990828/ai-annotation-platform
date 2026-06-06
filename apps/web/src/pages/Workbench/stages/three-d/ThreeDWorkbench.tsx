@@ -16,6 +16,9 @@ import {
   useUpdateAnnotation,
 } from "@/hooks/useTasks";
 import { useProject } from "@/hooks/useProjects";
+import { useFrameNeighbors } from "@/hooks/useFrameNeighbors";
+import { useNeighborAnnotations } from "@/hooks/useNeighborAnnotations";
+import { useToastStore } from "@/components/ui/Toast";
 import { classColorForCanvas } from "@/pages/Workbench/stage/colors";
 import type { ThreeDTool } from "@/pages/Workbench/state/useWorkbenchState";
 import type { WorkbenchLayoutPatch } from "@/pages/Workbench/state/useWorkbenchConfig";
@@ -28,7 +31,9 @@ import {
   PointCloudScene,
   type PointCloudStats,
   type SceneBox,
+  type ReferenceBox,
 } from "./PointCloudScene";
+import { CrossFrameOverlayToggle } from "../../components/CrossFrameOverlayToggle";
 import CameraProjectionView from "./CameraProjectionView";
 import FloatingCameraPanel from "./FloatingCameraPanel";
 import TriViewPanel from "./TriViewPanel";
@@ -66,6 +71,8 @@ interface ThreeDWorkbenchProps {
   /** v0.13.3-5 · 3D 工具态(左栏 ToolDock 选,壳层共享):select 拾取 / box 点地面放置。 */
   threeDTool: ThreeDTool;
   onSetThreeDTool: (t: ThreeDTool) => void;
+  /** v0.14.1 · 跨帧目标延续 (Shift+→ / Shift+←): 把选中框 propagate 到同 scene 邻帧。 */
+  onCrossFramePropagate: (direction: "next" | "prev") => void;
   /** v0.13.10 · 右栏避让与三视图浮窗持久化。 */
   rightSidebarOpen: boolean;
   rightSidebarWidth: number;
@@ -75,6 +82,8 @@ interface ThreeDWorkbenchProps {
 
 // v0.13.3 · 新框默认尺寸(米,长宽高;约一辆轿车),放置后用面板/gizmo 精修。
 const DEFAULT_BOX_SIZE: [number, number, number] = [4.0, 1.8, 1.6];
+// v0.14.1 · 邻帧叠加 K 值持久化键(全局, 切 task 不重置)。
+const CROSS_FRAME_OVERLAY_K_KEY = "workbench.crossFrameOverlayK";
 const TRI_FLOAT_DEFAULT_W = 240;
 const TRI_FLOAT_DEFAULT_H = 440;
 // v0.13.9 · 框选预览矩形位置/尺寸经 CSS custom property 注入(逐帧动态值)。
@@ -224,15 +233,35 @@ export function ThreeDWorkbench({
   activeClass,
   threeDTool,
   onSetThreeDTool,
+  onCrossFramePropagate,
   rightSidebarOpen,
   rightSidebarWidth,
   triViewFloat,
   onWorkbenchLayoutChange,
 }: ThreeDWorkbenchProps) {
   const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
+  const pushToast = useToastStore((st) => st.push);
   // v0.13.11 · dataset 声明的 lidar 系约定;前端把点云 positions + 相机 extrinsic 一次性
   // 旋转到 ISO 8855 (+X 前 / +Y 左 / +Z 上),上层几何代码继续锁死 ISO。null / 缺省 = iso_8855。
   const axisConvention: LidarAxisConvention = manifest?.axis_convention ?? "iso_8855";
+  // v0.14.0 · scene 字段(跨 task 帧序列地基)仅做调试透出,本期 UX 不消费;
+  // v0.14.1 会上 useFrameNeighbors hook + Shift+→ propagate 等。
+  useEffect(() => {
+    if (manifest?.scene_id) {
+      // eslint-disable-next-line no-console
+      console.debug("[3D] scene info", {
+        scene_id: manifest.scene_id,
+        scene_name: manifest.scene_name,
+        frame_index: manifest.frame_index,
+        scene_total_frames: manifest.scene_total_frames,
+      });
+    }
+  }, [
+    manifest?.scene_id,
+    manifest?.scene_name,
+    manifest?.frame_index,
+    manifest?.scene_total_frames,
+  ]);
   const axisConventionRef = useRef<LidarAxisConvention>(axisConvention);
   axisConventionRef.current = axisConvention;
   const viewportWrapRef = useRef<HTMLDivElement>(null);
@@ -415,6 +444,9 @@ export function ThreeDWorkbench({
 
   const selectedBox = boxes.find((b) => b.id === selectedId) ?? null;
   const selectedAnn = (annotations ?? []).find((a) => a.id === selectedId) ?? null;
+  // v0.14.1 · 给 Shift+→ keydown 闭包读最新选中 annotation 的几何类型(避免频繁重绑监听)。
+  const selectedAnnRef = useRef(selectedAnn);
+  selectedAnnRef.current = selectedAnn;
   const selectedClass = selectedAnn?.class_name ?? null;
   const pointMasks = useMemo(
     () => (annotations ?? []).filter((a) => !a.is_hidden && a.geometry?.type === "point_mask_3d"),
@@ -525,6 +557,39 @@ export function ThreeDWorkbench({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedId, selectedEditable]);
+
+  // v0.14.1 · Shift+→ / Shift+← 跨帧目标延续: 选中 box_3d 时 propagate 到同 scene
+  // 邻帧并跳过去自动选中(orchestration 在壳层 onCrossFramePropagate)。
+  useEffect(() => {
+    if (readOnly) return;
+    const onKey = (e: KeyboardEvent) => {
+      // v0.14.1 · 阻断按住 Shift+→ 的 auto-repeat: 否则连发多个 propagate POST,
+      // 在目标帧造出共享同一新 group_id 的重复 annotation。
+      if (e.repeat) return;
+      if (!e.shiftKey || (e.key !== "ArrowRight" && e.key !== "ArrowLeft")) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      // 命中 Shift+左右(跨帧 propagate 组合)即抢占该按键: 即便后续因无选中 /
+      // 非 box_3d 提前 return, 也要阻止壳层 arrowNudge 同键误处理(否则会把
+      // NaN 写进 nudgeMap)。
+      e.preventDefault();
+      e.stopPropagation();
+      if (!selectedId) {
+        pushToast({ msg: "请先选中一个 3D 框", kind: "" });
+        return;
+      }
+      const selType = (
+        selectedAnnRef.current?.geometry as { type?: string } | undefined
+      )?.type;
+      if (selType !== "box_3d") {
+        pushToast({ msg: "跨帧延续仅支持 3D 框", kind: "" });
+        return;
+      }
+      void onCrossFramePropagate(e.key === "ArrowRight" ? "next" : "prev");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [readOnly, selectedId, onCrossFramePropagate, pushToast]);
 
   // 切任务回到选择工具(选中态由壳层在切任务时统管,3D 不再本地清)。
   useEffect(() => {
@@ -1063,6 +1128,62 @@ export function ThreeDWorkbench({
     return s;
   }, [selectedId, selectedGroupId, annotations]);
 
+  // v0.14.1 · 邻帧参考框叠加: overlayK 控制前后各拉多少帧(0=关)。per scene 持久化到
+  // localStorage; 选中某框 + 该框有 group_id 时, 拉同 group_id 的邻帧框作半透明参考。
+  const [overlayK, setOverlayK] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    const raw = window.localStorage.getItem(CROSS_FRAME_OVERLAY_K_KEY);
+    const n = raw ? Number(raw) : 0;
+    return [0, 1, 3, 5, 7].includes(n) ? n : 0;
+  });
+  const setOverlayKPersist = useCallback((k: number) => {
+    setOverlayK(k);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(CROSS_FRAME_OVERLAY_K_KEY, String(k));
+    }
+  }, []);
+  const { data: neighborsData } = useFrameNeighbors(
+    overlayK > 0 ? taskId : null,
+    Math.max(1, overlayK),
+  );
+  const neighborTaskIds = useMemo(() => {
+    if (overlayK <= 0 || !neighborsData) return [];
+    return [
+      ...(neighborsData.prev ?? []),
+      ...(neighborsData.next ?? []),
+    ].map((n) => n.task_id);
+  }, [overlayK, neighborsData]);
+  const { byTask: neighborAnnsByTask } = useNeighborAnnotations(
+    neighborTaskIds,
+    overlayK > 0 ? selectedGroupId : null,
+  );
+  const referenceBoxes = useMemo<ReferenceBox[]>(() => {
+    if (overlayK <= 0 || selectedGroupId == null) return [];
+    const out: ReferenceBox[] = [];
+    for (const tid of neighborTaskIds) {
+      for (const a of neighborAnnsByTask[tid] ?? []) {
+        const g = a.geometry as {
+          type?: string;
+          center?: number[];
+          size?: number[];
+          rotation?: number[];
+        };
+        if (g?.type !== "box_3d" || !g.center || !g.size || !g.rotation) continue;
+        out.push({
+          id: `${tid}:${a.id}`,
+          center: g.center as [number, number, number],
+          size: g.size.map((v) => Math.abs(v)) as [number, number, number],
+          rotation: g.rotation as [number, number, number],
+          color: classColorForCanvas(a.class_name),
+        });
+      }
+    }
+    return out;
+  }, [overlayK, selectedGroupId, neighborTaskIds, neighborAnnsByTask]);
+  useEffect(() => {
+    sceneRef.current?.setReferenceBoxes(referenceBoxes);
+  }, [referenceBoxes]);
+
   // v0.13.4 · 选中框被哪些相机看到(可见角点数 > 0),按可见角点数降序;首个 = 最正对。
   const selectedCameraVis = useMemo(() => {
     if (!selectedBox) return [] as { role: string; name: string; count: number }[];
@@ -1226,6 +1347,9 @@ export function ThreeDWorkbench({
                 深度提示
               </label>
             </>
+          )}
+          {manifest?.scene_id && (
+            <CrossFrameOverlayToggle value={overlayK} onChange={setOverlayKPersist} />
           )}
         </div>
 

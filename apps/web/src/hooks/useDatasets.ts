@@ -5,7 +5,7 @@ import {
   type DatasetImportFromConnectionPayload,
 } from "@/api/storageConnections";
 
-export function useDatasets(params?: { search?: string; data_type?: string }) {
+export function useDatasets(params?: { search?: string; data_type?: string; has_scenes?: boolean }) {
   return useQuery({
     queryKey: ["datasets", params],
     queryFn: () => datasetsApi.list(params),

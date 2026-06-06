@@ -3758,7 +3758,8 @@
             "enum": [
               "metadata",
               "id_range",
-              "random"
+              "random",
+              "by_scene"
             ],
             "title": "Strategy",
             "type": "string"
@@ -5702,6 +5703,11 @@
             "title": "Description",
             "type": "string"
           },
+          "is_temporal": {
+            "default": false,
+            "title": "Is Temporal",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -6029,10 +6035,20 @@
             "title": "File Count",
             "type": "integer"
           },
+          "has_scenes": {
+            "default": false,
+            "title": "Has Scenes",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "is_temporal": {
+            "default": false,
+            "title": "Is Temporal",
+            "type": "boolean"
           },
           "name": {
             "title": "Name",
@@ -8104,6 +8120,87 @@
         "title": "MyPerformance",
         "type": "object"
       },
+      "NeighborInfo": {
+        "properties": {
+          "frame_index": {
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "frame_index"
+        ],
+        "title": "NeighborInfo",
+        "type": "object"
+      },
+      "NeighborsResponse": {
+        "description": "task 在所属 scene 内的前后 k 个邻居任务。\n\nprev / next 都按\"距离 cur 的远近\"排序——cur-1 在 prev[0],cur+1 在 next[0]。\n首/末帧的对应方向数组为空(不报错,前端兜底渲染)。",
+        "properties": {
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "next": {
+            "items": {
+              "$ref": "#/components/schemas/NeighborInfo"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "prev": {
+            "items": {
+              "$ref": "#/components/schemas/NeighborInfo"
+            },
+            "title": "Prev",
+            "type": "array"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "scene_total_frames": {
+            "title": "Scene Total Frames",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scene_total_frames"
+        ],
+        "title": "NeighborsResponse",
+        "type": "object"
+      },
       "NotificationList": {
         "properties": {
           "items": {
@@ -9652,6 +9749,11 @@
             "title": "Name",
             "type": "string"
           },
+          "scene_mode": {
+            "default": false,
+            "title": "Scene Mode",
+            "type": "boolean"
+          },
           "source_project_id": {
             "anyOf": [
               {
@@ -10070,6 +10172,11 @@
             ],
             "title": "Owner Name"
           },
+          "prefer_same_scene_continuation": {
+            "default": false,
+            "title": "Prefer Same Scene Continuation",
+            "type": "boolean"
+          },
           "rendering_config": {
             "$ref": "#/components/schemas/ProjectRenderingConfig",
             "default": {}
@@ -10082,6 +10189,16 @@
             "default": "sequence",
             "title": "Sampling",
             "type": "string"
+          },
+          "scene_continuation_window_min": {
+            "default": 30,
+            "title": "Scene Continuation Window Min",
+            "type": "integer"
+          },
+          "scene_mode": {
+            "default": false,
+            "title": "Scene Mode",
+            "type": "boolean"
           },
           "show_overlap_first": {
             "default": false,
@@ -11209,6 +11326,17 @@
             ],
             "title": "Name"
           },
+          "prefer_same_scene_continuation": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefer Same Scene Continuation"
+          },
           "rendering_config": {
             "anyOf": [
               {
@@ -11229,6 +11357,30 @@
               }
             ],
             "title": "Sampling"
+          },
+          "scene_continuation_window_min": {
+            "anyOf": [
+              {
+                "maximum": 480.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Continuation Window Min"
+          },
+          "scene_mode": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Mode"
           },
           "show_overlap_first": {
             "anyOf": [
@@ -11329,6 +11481,45 @@
           }
         },
         "title": "ProjectUpdate",
+        "type": "object"
+      },
+      "PropagateRequest": {
+        "description": "v0.14.1 · 跨帧目标延续: 把源 annotation 复制到目标 task(同 project 同 scene)。\n\ntarget_task_id 走 body(端点路径已含源 task_id + annotation_id)。\noverride_psr 留扩展位: 本期前端总传 None = 完全复制源几何; 给定时按 key\n覆盖 box_3d 的 center/size/rotation(其它几何忽略, 高阶 propagate 用)。",
+        "properties": {
+          "override_psr": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Psr"
+          },
+          "target_task_id": {
+            "format": "uuid",
+            "title": "Target Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_task_id"
+        ],
+        "title": "PropagateRequest",
+        "type": "object"
+      },
+      "PropagateResponse": {
+        "properties": {
+          "annotation": {
+            "$ref": "#/components/schemas/AnnotationOut"
+          }
+        },
+        "required": [
+          "annotation"
+        ],
+        "title": "PropagateResponse",
         "type": "object"
       },
       "RecentReviewItem": {
@@ -11893,6 +12084,119 @@
         "title": "RuntimeHints",
         "type": "object"
       },
+      "SceneOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "dataset_id": {
+            "format": "uuid",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "display_id": {
+            "title": "Display Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source_format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Format"
+          },
+          "source_metadata": {
+            "additionalProperties": true,
+            "title": "Source Metadata",
+            "type": "object"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_id",
+          "dataset_id",
+          "name",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SceneOut",
+        "type": "object"
+      },
+      "SceneUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "source_format": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Format"
+          },
+          "source_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Metadata"
+          }
+        },
+        "title": "SceneUpdate",
+        "type": "object"
+      },
       "ScreenshotInitRequest": {
         "properties": {
           "content_type": {
@@ -12182,6 +12486,45 @@
         "title": "SmtpStatus",
         "type": "object"
       },
+      "SniffAxisConventionCamera": {
+        "properties": {
+          "best": {
+            "enum": [
+              "iso_8855",
+              "ros_rep103",
+              "kitti_camera",
+              "opencv_camera",
+              "apollo",
+              "y_forward",
+              "sustechpoints_demo",
+              "raw"
+            ],
+            "title": "Best",
+            "type": "string"
+          },
+          "camera_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Role"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "best",
+          "score"
+        ],
+        "title": "SniffAxisConventionCamera",
+        "type": "object"
+      },
       "SniffAxisConventionCandidate": {
         "properties": {
           "convention": {
@@ -12212,6 +12555,17 @@
       },
       "SniffAxisConventionResponse": {
         "properties": {
+          "agreement": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agreement"
+          },
           "best": {
             "anyOf": [
               {
@@ -12262,6 +12616,20 @@
             },
             "title": "Candidates",
             "type": "array"
+          },
+          "per_camera": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SniffAxisConventionCamera"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Camera"
           },
           "score": {
             "anyOf": [
@@ -13259,6 +13627,17 @@
             "title": "Expires In",
             "type": "integer"
           },
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
           "point_cloud_format": {
             "default": "pcd",
             "title": "Point Cloud Format",
@@ -13267,6 +13646,40 @@
           "point_cloud_url": {
             "title": "Point Cloud Url",
             "type": "string"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "scene_total_frames": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Total Frames"
           },
           "task_id": {
             "format": "uuid",
@@ -20529,6 +20942,22 @@
           },
           {
             "in": "query",
+            "name": "has_scenes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Scenes"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -21490,6 +21919,76 @@
           }
         ],
         "summary": "Get Linked Projects",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
+    "/api/v1/datasets/{dataset_id}/scenes/backfill": {
+      "post": {
+        "description": "v0.14.0 · 对 dataset 跑 scene_inference,补 scene + frame_index。\n\n幂等:dataset 已有 scene → 直接返回(notes 提示)。\ndry_run:不写库,返回会创建 / 赋值的统计。",
+        "operationId": "backfill_scenes_endpoint_api_v1_datasets__dataset_id__scenes_backfill_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "single / per_subdirectory / auto",
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "auto",
+              "description": "single / per_subdirectory / auto",
+              "pattern": "^(single|per_subdirectory|auto)$",
+              "title": "Mode",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Backfill Scenes Endpoint",
         "tags": [
           "datasets"
         ]
@@ -26671,6 +27170,166 @@
         ]
       }
     },
+    "/api/v1/scenes": {
+      "get": {
+        "description": "列 dataset 下所有 scene(按 created_at 升序)。",
+        "operationId": "list_scenes_api_v1_scenes_get",
+        "parameters": [
+          {
+            "description": "按 dataset 过滤",
+            "in": "query",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "description": "按 dataset 过滤",
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SceneOut"
+                  },
+                  "title": "Response List Scenes Api V1 Scenes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Scenes",
+        "tags": [
+          "scenes"
+        ]
+      }
+    },
+    "/api/v1/scenes/{scene_id}": {
+      "get": {
+        "operationId": "get_scene_api_v1_scenes__scene_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scene_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scene Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Scene",
+        "tags": [
+          "scenes"
+        ]
+      },
+      "patch": {
+        "description": "更新 scene 元数据(name / source_format / source_metadata)。\n\nname 冲突 → 409。",
+        "operationId": "update_scene_api_v1_scenes__scene_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scene_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scene Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Scene",
+        "tags": [
+          "scenes"
+        ]
+      }
+    },
     "/api/v1/search": {
       "get": {
         "operationId": "global_search_api_v1_search_get",
@@ -28032,6 +28691,75 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/annotations/{annotation_id}/propagate-to-task": {
+      "post": {
+        "description": "v0.14.1 · 跨帧目标延续: 把源 annotation 复制到 target_task(同 project 同 scene)。\n\n源 task 需对当前用户可见; 目标 task 需可见且可写(未进 review/completed 锁态)。\n复制 geometry/class/attributes + 共享 group_id; box_3d 的 convention_at_create\n取目标 dataset 的 axis_convention(详 service.propagate)。",
+        "operationId": "propagate_annotation_to_task_api_v1_tasks__task_id__annotations__annotation_id__propagate_to_task_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PropagateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PropagateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Propagate Annotation To Task",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes": {
       "post": {
         "operationId": "convert_video_track_to_bboxes_api_v1_tasks__task_id__annotations__annotation_id__video_convert_to_bboxes_post",
@@ -28354,6 +29082,67 @@
           }
         ],
         "summary": "Heartbeat Lock",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/neighbors": {
+      "get": {
+        "description": "v0.14.0 · 返回 task 在所属 scene 内的前后 k 个邻居 task。\n\n历史未 backfill / 无 scene_id 的 task → 200 + 空 prev/next(与首末帧一致)。\nscene_id 非空但 frame_index NULL(异常)→ 409。",
+        "operationId": "get_task_neighbors_api_v1_tasks__task_id__neighbors_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "k",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "K",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NeighborsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Task Neighbors",
         "tags": [
           "tasks"
         ]

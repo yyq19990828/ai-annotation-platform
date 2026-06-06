@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-06-03
+last_reviewed: 2026-06-06
 ---
 
 # 任务模块
@@ -81,6 +81,7 @@ graph TD
 | `skip_reason` / `skipped_at` | 跳过原因与时间 |
 | `reopened_count` / `last_reopened_at` | 重开编辑历史 |
 | `version` | annotation 写入时的乐观并发辅助 |
+| `sequence_order` | 帧内序号；scene 模式下与 frame_index 关联（batch `by_scene` 切分时写入），用于排序与跨帧导航 |
 
 数据集关联项目时会为该数据集的现有 `dataset_items` 创建 task；关联关系存在期间，后续上传、ZIP 导入或扫描导入新增的 item 也会扇出为对应项目的 task，并同步更新 `project.total_tasks`。
 
@@ -165,7 +166,7 @@ stateDiagram-v2
 - `TaskBatch.status in ["active", "annotating"]`
 - 命中 batch 可见性约束
 
-因此，task 派发行为本质上是 project + batch + task 三方共同决定的。
+因此，task 派发行为本质上是 project + batch + task 三方共同决定的。派题细节见 [scheduler-and-task-dispatch](scheduler-and-task-dispatch)。
 
 ## Annotation 对 Task 的回写
 
@@ -220,6 +221,35 @@ stateDiagram-v2
 
 - `reviewer_claimed_at` 一旦存在，会冻结 withdraw 入口
 - `reopen` 与 `accept-rejection` 都会回到 `in_progress`，但语义不同
+
+## 跨帧 / 邻帧能力（v0.14）
+
+scene 模式把一段时序录像切成多个 task，每个 task 通过其关联 `dataset_item` 上的 `scene_id` + `frame_index` 在 scene 内定位帧序（地基详见 [scene-and-frame-index](scene-and-frame-index)）。在此之上 v0.14 给 task 加了两个跨帧 API。
+
+### 邻帧查询
+
+`GET /tasks/{task_id}/neighbors`（v0.14.0）返回该 task 在所属 scene 内的前后 k 个邻居 task，供工作台取相邻帧叠加显示 / 前后导航。
+
+- 参数 `k`：方向上各取多少帧，`1 ≤ k ≤ 20`，默认 `1`
+- 返回 `NeighborsResponse`：scene 元数据（`scene_id` / `scene_name` / `frame_index` / `scene_total_frames`）+ `prev[]` / `next[]`
+  - `prev` / `next` 按"距 cur 的远近"排序：cur-1 在 `prev[0]`，cur+1 在 `next[0]`，元素为 `{ task_id, frame_index }`
+  - 首帧 `prev` 为空、末帧 `next` 为空，不报错（前端兜底渲染）
+- 边界口径：
+  - 历史未 backfill / 关联不到 `dataset_item` / item 无 `scene_id` → `200` + 空 `prev`/`next`（与首末帧对调用方一致，避免前端多做一种区分）
+  - `scene_id` 非空但 `frame_index` 为 NULL（异常数据）→ `409`
+- 服务层在 `app/services/scene.py:get_neighbors_for_task()`；按 `frame_index` 排序后反查 task，主帧（`dataset_item_id`）与多模态点云链接（`TaskDatasetItemLink`）两条路径合并去重。
+
+### 跨帧标注传播
+
+`POST /tasks/{task_id}/annotations/{annotation_id}/propagate-to-task`（v0.14.1）把源 task 的一条 annotation 复制到目标 task（`target_task_id` 走 body），用于跨帧把同一目标延续到相邻帧。
+
+- 复制 geometry / class / attributes，并共享 `group_id`
+- `box_3d` 的 `convention_at_create` 取**目标** dataset 的 `axis_convention`（3D 场景，详 service `propagate`）
+- `override_psr`（可空）为扩展位：给定时按 key 覆盖 box_3d 的 center/size/rotation，前端本期总传 `None` = 完全复制源几何
+- 权限：源 task 需对当前用户可见；目标 task 需可见且可写（未进 `review` / `completed` 锁态，走 `_assert_task_editable`）
+- 返回 `201` + `PropagateResponse{ annotation }`（新建的目标 annotation）
+
+> 与 `POST /tasks/{task_id}/video/tracks/{annotation_id}:propagate` 区分：后者是**视频轨迹传播**（提交一个异步 tracker job，沿帧序自动追踪同一目标），`propagate-to-task` 则是**单条标注一次性复制到指定相邻 task**，同步返回结果，二者用途不同，不要混淆。
 
 ## Task Lock
 

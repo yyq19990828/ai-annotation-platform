@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import Integer, select, func, update, delete, or_
+from sqlalchemy import Integer, case, select, func, update, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import BatchStatus, UserRole
@@ -19,6 +19,7 @@ from app.db.models.user import User
 from app.schemas.batch import BatchCreate, BatchUpdate, BatchSplitRequest
 from app.services.display_id import next_display_id
 from app.services.progress import publish_batch_status_change
+from app.services.scene import resolve_task_scene_frames
 
 logger = logging.getLogger(__name__)
 
@@ -452,6 +453,8 @@ class BatchService:
         elif data.strategy == "id_range":
             batches = await self._split_by_ids(project_id, data, created_by)
             return [batches]
+        elif data.strategy == "by_scene":
+            return await self._split_by_scene(project_id, data, created_by)
         raise HTTPException(
             status_code=400, detail=f"Unknown strategy: {data.strategy}"
         )
@@ -612,6 +615,82 @@ class BatchService:
             await self.recalculate_counters(default.id)
         return batch
 
+    async def _split_by_scene(
+        self,
+        project_id: uuid.UUID,
+        data: BatchSplitRequest,
+        created_by: uuid.UUID,
+    ) -> list[TaskBatch]:
+        default = await self.get_default_batch(project_id)
+        task_ids = await self._splittable_task_ids(project_id, default)
+        if not task_ids:
+            raise HTTPException(status_code=400, detail="No unassigned tasks to split")
+
+        scene_frames = await resolve_task_scene_frames(self.db, task_ids)
+        grouped: dict[uuid.UUID | None, list[uuid.UUID]] = {}
+        scene_names: dict[uuid.UUID | None, str] = {}
+        original_order = {task_id: i for i, task_id in enumerate(task_ids)}
+        for task_id in task_ids:
+            info = scene_frames.get(task_id)
+            scene_id = info.scene_id if info else None
+            grouped.setdefault(scene_id, []).append(task_id)
+            if scene_id is not None and info and info.scene_name:
+                scene_names[scene_id] = info.scene_name
+
+        def _group_sort_key(scene_id: uuid.UUID | None) -> tuple[int, str]:
+            if scene_id is None:
+                return (1, "")
+            return (0, scene_names.get(scene_id) or str(scene_id))
+
+        batches: list[TaskBatch] = []
+        for scene_id in sorted(grouped, key=_group_sort_key):
+            chunk = grouped[scene_id]
+            chunk.sort(
+                key=lambda task_id: (
+                    scene_frames[task_id].frame_index is None,
+                    scene_frames[task_id].frame_index
+                    if scene_frames[task_id].frame_index is not None
+                    else original_order[task_id],
+                    original_order[task_id],
+                )
+            )
+
+            scene_name = scene_names.get(scene_id) if scene_id is not None else None
+            batch_name = (
+                f"{data.name_prefix} · {scene_name}"
+                if scene_name
+                else f"{data.name_prefix} · 无 scene"
+            )
+            batch = TaskBatch(
+                project_id=project_id,
+                display_id=await next_display_id(self.db, "batches"),
+                name=batch_name[:255],
+                status=BatchStatus.DRAFT,
+                priority=data.priority,
+                deadline=data.deadline,
+                annotator_id=data.annotator_id,
+                reviewer_id=data.reviewer_id,
+                created_by=created_by,
+            )
+            self._sync_assigned_user_ids(batch)
+            self.db.add(batch)
+            await self.db.flush()
+
+            await self._assign_tasks(batch.id, chunk)
+            await self._set_sequence_orders(
+                {
+                    task_id: scene_frames[task_id].frame_index
+                    for task_id in chunk
+                    if scene_frames[task_id].frame_index is not None
+                }
+            )
+            await self.recalculate_counters(batch.id)
+            batches.append(batch)
+
+        if default is not None:
+            await self.recalculate_counters(default.id)
+        return batches
+
     # ── Task assignment ────────────────────────────────────────────────────
 
     async def _assign_tasks(
@@ -626,6 +705,30 @@ class BatchService:
                 update(Task).where(Task.id.in_(chunk)).values(batch_id=batch_id)
             )
         return len(task_ids)
+
+    async def _set_sequence_orders(
+        self, frame_by_task: dict[uuid.UUID, int | None]
+    ) -> None:
+        concrete = {
+            task_id: frame_index
+            for task_id, frame_index in frame_by_task.items()
+            if frame_index is not None
+        }
+        if not concrete:
+            return
+        task_ids = list(concrete)
+        for i in range(0, len(task_ids), ASSIGN_CHUNK_SIZE):
+            chunk = task_ids[i : i + ASSIGN_CHUNK_SIZE]
+            await self.db.execute(
+                update(Task)
+                .where(Task.id.in_(chunk))
+                .values(
+                    sequence_order=case(
+                        {task_id: concrete[task_id] for task_id in chunk},
+                        value=Task.id,
+                    )
+                )
+            )
 
     async def assign_tasks_to_batch(
         self, batch_id: uuid.UUID, task_ids: list[uuid.UUID]

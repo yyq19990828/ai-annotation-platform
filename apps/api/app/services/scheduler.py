@@ -1,18 +1,29 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
+from app.db.models.dataset import DatasetItem
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
+from app.db.models.task_dataset_item_link import TaskDatasetItemLink
 from app.db.models.task_lock import TaskLock
 from app.db.models.annotation import Annotation
 from app.db.models.prediction import Prediction
 from app.db.models.project import Project
 from app.db.models.user import User
+from app.services.scene import resolve_primary_item_id
 from app.services.task_lock import TaskLockService
+
+_PRIMARY_LIDAR_ROLE = "primary_lidar"
+
+# 经典派题路径在「候选查询」与「acquire 上锁」之间存在 TOCTOU 窗口:他人可能抢先
+# 上锁。逐个候选尝试 acquire,失败即跳到下一个,最多看这么多个候选(高竞争下兜底,
+# 全被占则本次返回 None,客户端重试)。
+_NEXT_TASK_CANDIDATE_WINDOW = 20
 
 
 def is_privileged_for_project(user: User, project: Project) -> bool:
@@ -67,6 +78,158 @@ def visible_batch_statuses_for(user: User) -> list[str]:
 assigned_user_ids_clause = batch_visibility_clause
 
 
+async def _filter_assignable_task_ids(
+    db: AsyncSession,
+    user: User,
+    project: Project,
+    batch_id: uuid.UUID | None,
+    task_ids: list[uuid.UUID],
+) -> set[uuid.UUID]:
+    """v0.14.1 · 在 task_ids 子集内套用与 get_next_task 主路径一致的可标候选约束,
+    额外排除被**他人**持有的未过期锁。返回可分配的 task_id 集合。"""
+    already_annotated = (
+        select(Annotation.id)
+        .where(
+            Annotation.task_id == Task.id,
+            Annotation.user_id == user.id,
+            Annotation.is_active.is_(True),
+        )
+        .correlate(Task)
+        .exists()
+    )
+    now = datetime.now(timezone.utc)
+    other_lock = (
+        select(TaskLock.id)
+        .where(
+            TaskLock.task_id == Task.id,
+            TaskLock.user_id != user.id,
+            TaskLock.expire_at > now,
+        )
+        .correlate(Task)
+        .exists()
+    )
+    q = (
+        select(Task.id)
+        .join(TaskBatch, Task.batch_id == TaskBatch.id)
+        .where(
+            Task.id.in_(task_ids),
+            Task.project_id == project.id,
+            Task.is_labeled.is_(False),
+            ~already_annotated,
+            ~other_lock,
+            TaskBatch.status.in_(["active", "annotating"]),
+            TaskBatch.admin_locked.is_(False),
+        )
+    )
+    if batch_id:
+        q = q.where(Task.batch_id == batch_id)
+    if not is_privileged_for_project(user, project):
+        q = q.where(assigned_user_ids_clause(user))
+    if project.maximum_annotations > 1:
+        q = q.where(Task.total_annotations < project.maximum_annotations)
+    rows = (await db.execute(q)).scalars().all()
+    return set(rows)
+
+
+async def _next_same_scene_task(
+    db: AsyncSession,
+    *,
+    user: User,
+    project: Project,
+    batch_id: uuid.UUID | None,
+) -> Task | None:
+    """v0.14.1 · scene 连续标注: 找"用户最近提交 task 的同 scene 下一帧"可标 task。
+
+    - 找用户在 window 内最近创建的 active annotation → 其 task → scene_id + frame_index
+    - 在该 scene 内取 frame_index 严格大于当前帧的、按帧升序第一个可分配 task
+    - 任何一步缺数据(无 recent / 无 scene_id / 无后续帧 / 全被占)→ None,调用方回退既有策略
+    不强制独占 scene(其它帧仍可分配给他人)。
+    """
+    window_min = project.scene_continuation_window_min or 30
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=window_min)
+    recent_task_id = (
+        await db.execute(
+            select(Annotation.task_id)
+            .where(
+                Annotation.user_id == user.id,
+                Annotation.project_id == project.id,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= cutoff,
+            )
+            .order_by(Annotation.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if recent_task_id is None:
+        return None
+
+    recent_task = await db.get(Task, recent_task_id)
+    if recent_task is None:
+        return None
+    primary_item_id = await resolve_primary_item_id(db, recent_task)
+    if primary_item_id is None:
+        return None
+    item = await db.get(DatasetItem, primary_item_id)
+    if item is None or item.scene_id is None or item.frame_index is None:
+        return None
+
+    next_items = (
+        await db.execute(
+            select(DatasetItem.id, DatasetItem.frame_index)
+            .where(
+                DatasetItem.scene_id == item.scene_id,
+                DatasetItem.frame_index.is_not(None),
+                DatasetItem.frame_index > item.frame_index,
+            )
+            .order_by(DatasetItem.frame_index)
+        )
+    ).all()
+    if not next_items:
+        return None
+    next_item_ids = [r[0] for r in next_items]
+
+    # 双路径反查 item → task(直挂 dataset_item_id / primary_lidar link)
+    item_to_task: dict[uuid.UUID, uuid.UUID] = {}
+    for tid, diid in (
+        await db.execute(
+            select(Task.id, Task.dataset_item_id).where(
+                Task.dataset_item_id.in_(next_item_ids)
+            )
+        )
+    ).all():
+        if diid is not None:
+            item_to_task[diid] = tid
+    for diid, tid in (
+        await db.execute(
+            select(
+                TaskDatasetItemLink.dataset_item_id, TaskDatasetItemLink.task_id
+            ).where(
+                TaskDatasetItemLink.dataset_item_id.in_(next_item_ids),
+                TaskDatasetItemLink.role == _PRIMARY_LIDAR_ROLE,
+            )
+        )
+    ).all():
+        item_to_task.setdefault(diid, tid)
+
+    ordered_task_ids: list[uuid.UUID] = []
+    seen: set[uuid.UUID] = set()
+    for diid, _fi in next_items:
+        tid = item_to_task.get(diid)
+        if tid is not None and tid not in seen:
+            seen.add(tid)
+            ordered_task_ids.append(tid)
+    if not ordered_task_ids:
+        return None
+
+    valid = await _filter_assignable_task_ids(
+        db, user, project, batch_id, ordered_task_ids
+    )
+    for tid in ordered_task_ids:
+        if tid in valid:
+            return await db.get(Task, tid)
+    return None
+
+
 async def get_next_task(
     user: User,
     project_id: uuid.UUID,
@@ -95,6 +258,23 @@ async def get_next_task(
     project = await db.get(Project, project_id)
     if not project:
         return None
+
+    # v0.14.1 · scene 连续标注优先(默认 OFF, 既有项目零回归): 显式打开后, 在套用既有
+    # sampling 策略前, 优先返回"用户最近提交 task 的同 scene 下一帧"。找不到则回退。
+    if project.prefer_same_scene_continuation:
+        scene_task = await _next_same_scene_task(
+            db, user=user, project=project, batch_id=batch_id
+        )
+        if scene_task is not None:
+            # TOCTOU: _filter_assignable_task_ids 已排除他人锁, 但与此处 acquire 之间存在
+            # 竞态窗口——他人可能在两步之间抢先上锁。acquire 返回 None 表示未拿到锁, 此时
+            # 不能返回这个未上锁的 task(否则多人同拉同一 scene next frame), 回退到下方既有
+            # 经典分配逻辑(经典路径同样以 acquire 结果决定是否返回)。
+            acquired = await lock_svc.acquire(
+                scene_task.id, user_id, ttl=project.task_lock_ttl_seconds
+            )
+            if acquired is not None:
+                return scene_task
 
     # 3. Build candidate query: unlabeled, not already annotated by this user.
     # v0.11.30 · 相关 NOT EXISTS 取代 NOT IN(子查询)：标注员标注量大时 NOT IN 会让
@@ -159,11 +339,14 @@ async def get_next_task(
             Task.created_at,
         )
 
-    # 6. Pick one and lock
-    result = await db.execute(candidates.limit(1))
-    next_task = result.scalar_one_or_none()
+    # 6. Pick and lock — 逐个候选尝试 acquire,跳过他人在 TOCTOU 窗口抢先上锁的 task,
+    #    返回首个成功上锁者;候选窗口内全被占则返回 None(本次无可派 task,客户端重试)。
+    result = await db.execute(candidates.limit(_NEXT_TASK_CANDIDATE_WINDOW))
+    for next_task in result.scalars().all():
+        acquired = await lock_svc.acquire(
+            next_task.id, user_id, ttl=project.task_lock_ttl_seconds
+        )
+        if acquired is not None:
+            return next_task
 
-    if next_task:
-        await lock_svc.acquire(next_task.id, user_id, ttl=project.task_lock_ttl_seconds)
-
-    return next_task
+    return None

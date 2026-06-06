@@ -34,6 +34,8 @@
   Annotation 的数据模型、采纳、版本控制与 task / batch 回写
 - [视频标注工作台](./video-annotation-workbench)：
   视频元数据、manifest、`video_bbox` schema 与前端 Stage 边界
+- [Scene + frame_index 跨 task 帧序列地基](./scene-and-frame-index)：
+  把 3D 点云逐帧 / 2D 抽帧序列 / 多段 mp4 拼接长录像统一到同一抽象,v0.14.0 引入
 - [审核模块](./review-module)：
   Task review、batch review、角色矩阵与通知审计联动
 

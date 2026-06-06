@@ -25,9 +25,15 @@ beforeEach(() => {
 
 describe("datasetsApi · endpoint 契约", () => {
   it("list 拼 query string（含 search 编码）", () => {
-    datasetsApi.list({ search: "a b", data_type: "lidar", limit: 10, offset: 20 });
+    datasetsApi.list({
+      search: "a b",
+      data_type: "lidar",
+      has_scenes: true,
+      limit: 10,
+      offset: 20,
+    });
     expect(get).toHaveBeenCalledWith(
-      "/datasets?search=a+b&data_type=lidar&limit=10&offset=20",
+      "/datasets?search=a+b&data_type=lidar&has_scenes=true&limit=10&offset=20",
     );
   });
 

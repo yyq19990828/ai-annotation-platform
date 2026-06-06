@@ -28,6 +28,9 @@ class Dataset(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     data_type: Mapped[str] = mapped_column(String(30), default="image")
+    is_temporal: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
     file_count: Mapped[int] = mapped_column(Integer, default=0)
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id")
@@ -42,6 +45,46 @@ class Dataset(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Scene(Base):
+    """v0.14.0 · 跨 task 帧序列的"录像"抽象。
+
+    一个 scene 代表一段"被切成多个 task 的时序录像"——3D 点云逐帧 /
+    2D 抽帧图像序列 / 多段 mp4 拼接长录像三种形态共用。
+    dataset_items.scene_id + frame_index 把 item 挂到 scene 内的某帧。
+    """
+
+    __tablename__ = "scenes"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    display_id: Mapped[str] = mapped_column(String(20), nullable=False, unique=True)
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("datasets.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_format: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source_metadata: Mapped[dict] = mapped_column(
+        JSONB, server_default="{}", nullable=False, default=dict
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("dataset_id", "name", name="uq_scenes_dataset_name"),
     )
 
 
@@ -66,11 +109,26 @@ class DatasetItem(Base):
     thumbnail_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     blurhash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
+    # v0.14.0 · 跨 task 帧序基地;FK 到 scenes,SET NULL 容忍历史数据 / scene 删除
+    scene_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("scenes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    frame_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        Index(
+            "idx_dataset_items_scene_frame",
+            "scene_id",
+            "frame_index",
+        ),
     )
 
 

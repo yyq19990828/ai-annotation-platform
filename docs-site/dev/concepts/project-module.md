@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-06
 ---
 
 # 项目模块
@@ -72,6 +72,9 @@ graph TD
 | `ml_backend_id` | 实际绑定的 ML backend |
 | `ai_model` | display hint，不再是行为真值 |
 | `box_threshold` / `text_threshold` / `text_output_default` | 项目级 AI 推理默认参数 |
+| `scene_mode` | 是否为 scene 模式项目（默认 `false`）；仅 image / lidar 项目可开启，且需绑定 `has_scenes=true` 的数据集（已建 task 后不可切换） |
+| `prefer_same_scene_continuation` | scene 模式连续派题开关（默认 `false`）：打开后 `get_next_task` 优先返回用户上次提交 task 的同 scene 下一帧 |
+| `scene_continuation_window_min` | 连续 session 估计窗口（分钟，默认 `30`，约束 1~480） |
 | `total_tasks` / `completed_tasks` / `review_tasks` / `in_progress_tasks` | 项目级聚合统计 |
 | `due_date` | 截止日期 |
 
@@ -146,6 +149,8 @@ archived
 - `task_lock_ttl_seconds`
 
 也就是说，工作台“下一题给谁、按什么顺序给”本质上是 project 级策略。
+
+scene 模式项目额外多一层连续派题逻辑：打开 `prefer_same_scene_continuation` 后，`get_next_task` 会优先把用户上次提交 task 的同 scene 下一帧派给同一人（连续标注同一段序列），其中 `scene_continuation_window_min` 是判定“是否仍属于同一连续 session”的时间窗口（分钟）。两者默认 OFF / 30，既有非 scene 项目零回归。详见 [scheduler-and-task-dispatch](scheduler-and-task-dispatch) 与 [scene-and-frame-index](scene-and-frame-index)。
 
 ### 3. AI / 预标注配置
 
@@ -251,6 +256,7 @@ Project 模型本身保留了多种聚合字段：
 | 新增项目配置字段 | `db/models/project.py` + `schemas/project.py` + `api/v1/projects.py` |
 | 改项目权限 | `deps.py` + `api/v1/projects.py` |
 | 改派题策略 | `db/models/project.py` + `services/scheduler.py` |
+| 改 scene 模式 / 连续派题（`scene_mode` / `prefer_same_scene_continuation` / `scene_continuation_window_min`） | `db/models/project.py` + `schemas/project.py` + `services/project_kind.py`（`scene_mode_allowed` 门禁）+ `services/scheduler.py` |
 | 改 AI 默认参数 | `schemas/project.py` + `projects.py` + 相关前端表单 |
 | 改项目统计 | `dashboard.py` + 相关 service / counter 回写 |
 

@@ -1,0 +1,26 @@
+.wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.label {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  margin-right: 2px;
+}
+.seg {
+  min-width: 24px;
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  cursor: pointer;
+  font-size: 12px;
+}
+.segActive,
+.segActive:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}

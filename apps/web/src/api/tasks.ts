@@ -8,9 +8,15 @@ import type {
   TaskVideoFrameTimetableResponse,
   TaskVideoManifestResponse,
   TaskPointCloudManifestResponse,
+  NeighborsResponse,
   VideoFrameOut,
   VideoFramePrefetchResponse,
 } from "@/types";
+
+/** v0.14.1 · 跨帧 propagate 响应: 复制到目标 task 的新 annotation。 */
+export interface PropagateResponse {
+  annotation: AnnotationResponse;
+}
 
 export interface TaskListResponse {
   items: TaskResponse[];
@@ -132,6 +138,22 @@ export const tasksApi = {
   getPointCloudManifest: (id: string) =>
     apiClient.get<TaskPointCloudManifestResponse>(
       `/tasks/${id}/point-cloud/manifest`,
+    ),
+
+  // v0.14.0 · scene 内前后 k 个邻居 task(跨帧导航 backing)。
+  getNeighbors: (id: string, k = 1) =>
+    apiClient.get<NeighborsResponse>(`/tasks/${id}/neighbors?k=${k}`),
+
+  // v0.14.1 · 把源 annotation 跨帧 propagate 到目标 task(同 project 同 scene)。
+  propagateToTask: (
+    taskId: string,
+    annotationId: string,
+    targetTaskId: string,
+    overridePsr?: Record<string, unknown> | null,
+  ) =>
+    apiClient.post<PropagateResponse>(
+      `/tasks/${taskId}/annotations/${annotationId}/propagate-to-task`,
+      { target_task_id: targetTaskId, override_psr: overridePsr ?? null },
     ),
 
   getVideoFrameTimetable: (id: string, params?: VideoFrameTimetableParams) => {

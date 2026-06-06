@@ -28,6 +28,7 @@ from app.schemas.task import (
     VideoFrameTimetableEntry,
     VideoMetadata,
 )
+from app.schemas.scene import NeighborsResponse
 from app.schemas.video_frame_service import (
     VideoChunkOut,
     VideoChunksResponse,
@@ -48,6 +49,8 @@ from app.schemas.annotation import (
     AnnotationListPage,
     AnnotationOut,
     AnnotationUpdate,
+    PropagateRequest,
+    PropagateResponse,
     VideoTrackCompositionRequest,
     VideoTrackCompositionResponse,
     VideoTrackConvertToBboxesRequest,
@@ -527,13 +530,81 @@ async def get_point_cloud_manifest(
             if dataset is not None:
                 axis_convention = (dataset.metadata_ or {}).get("axis_convention")
 
+    # v0.14.0 · scene 字段透出:仅当 primary_lidar item 有 scene_id 时挂上,
+    # 前端用做跨帧导航的合法 backing(本期不消费 UX,仅显示在调试面板)。
+    scene_id_out: uuid.UUID | None = None
+    scene_name_out: str | None = None
+    frame_index_out: int | None = None
+    scene_total_frames_out: int | None = None
+    if primary_link is not None:
+        primary_item = items_by_id.get(primary_link.dataset_item_id)
+        if primary_item is not None and primary_item.scene_id is not None:
+            from app.db.models.dataset import Scene
+
+            scene = await db.get(Scene, primary_item.scene_id)
+            if scene is not None:
+                scene_id_out = scene.id
+                scene_name_out = scene.name
+                frame_index_out = primary_item.frame_index
+                total_row = await db.execute(
+                    select(func.count(func.distinct(DatasetItem.frame_index)))
+                    .where(DatasetItem.scene_id == scene.id)
+                    .where(DatasetItem.frame_index.is_not(None))
+                )
+                scene_total_frames_out = total_row.scalar() or 0
+
     return TaskPointCloudManifestResponse(
         task_id=task.id,
         point_cloud_url=point_cloud_url,
         cameras=cameras,
         expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
         axis_convention=axis_convention,
+        scene_id=scene_id_out,
+        scene_name=scene_name_out,
+        frame_index=frame_index_out,
+        scene_total_frames=scene_total_frames_out,
     )
+
+
+@router.get(
+    "/{task_id}/neighbors",
+    response_model=NeighborsResponse,
+)
+async def get_task_neighbors(
+    task_id: uuid.UUID,
+    k: int = Query(1, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """v0.14.0 · 返回 task 在所属 scene 内的前后 k 个邻居 task。
+
+    历史未 backfill / 无 scene_id 的 task → 200 + 空 prev/next(与首末帧一致)。
+    scene_id 非空但 frame_index NULL(异常)→ 409。
+    """
+    from app.services.scene import (
+        SceneFrameIndexInconsistent,
+        get_neighbors_for_task,
+    )
+
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+
+    try:
+        result = await get_neighbors_for_task(db, task_id=task_id, k=k)
+    except SceneFrameIndexInconsistent as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    if result is None:
+        # 与"首末帧"对调用方一致:返回空 prev/next 不要 404,避免前端做无用区分
+        return NeighborsResponse(
+            scene_id=None,
+            scene_name=None,
+            frame_index=None,
+            scene_total_frames=0,
+            prev=[],
+            next=[],
+        )
+    return result
 
 
 @router.get(
@@ -982,6 +1053,68 @@ async def create_annotation(
     await db.commit()
     await db.refresh(annotation)
     return annotation
+
+
+@router.post(
+    "/{task_id}/annotations/{annotation_id}/propagate-to-task",
+    response_model=PropagateResponse,
+    status_code=201,
+)
+async def propagate_annotation_to_task(
+    task_id: uuid.UUID,
+    annotation_id: uuid.UUID,
+    data: PropagateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """v0.14.1 · 跨帧目标延续: 把源 annotation 复制到 target_task(同 project 同 scene)。
+
+    源 task 需对当前用户可见; 目标 task 需可见且可写(未进 review/completed 锁态)。
+    复制 geometry/class/attributes + 共享 group_id; box_3d 的 convention_at_create
+    取目标 dataset 的 axis_convention(详 service.propagate)。
+    """
+    source_task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, source_task, current_user)
+
+    # 归属校验: annotation 必须属于 URL 里的源 task, 否则越权(借可见 task_id
+    # 复制同 project 内不可见 batch 的他人草稿)。
+    src_annotation = await db.get(Annotation, annotation_id)
+    if src_annotation is None or src_annotation.task_id != task_id:
+        raise HTTPException(status_code=404, detail="source annotation not found")
+
+    target_task = await _load_task_or_404(db, data.target_task_id)
+    await _assert_task_visible(db, target_task, current_user)
+    _assert_task_editable(target_task, current_user)
+
+    svc = AnnotationService(db)
+    new_annotation = await svc.propagate(
+        source_annotation_id=annotation_id,
+        target_task_id=data.target_task_id,
+        user_id=current_user.id,
+        override_psr=data.override_psr,
+    )
+    await TaskLockService(db).heartbeat(data.target_task_id, current_user.id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_CREATE,
+        target_type="annotation",
+        target_id=str(new_annotation.id),
+        request=request,
+        status_code=201,
+        detail={
+            "task_id": str(data.target_task_id),
+            "source_task_id": str(task_id),
+            "source_annotation_id": str(annotation_id),
+            "propagated": True,
+            "group_id": new_annotation.group_id,
+            "class_name": new_annotation.class_name,
+        },
+    )
+    await db.commit()
+    await db.refresh(new_annotation)
+    return PropagateResponse(annotation=AnnotationOut.model_validate(new_annotation))
 
 
 @router.patch("/{task_id}/annotations/{annotation_id}", response_model=AnnotationOut)

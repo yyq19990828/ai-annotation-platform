@@ -1,9 +1,9 @@
 import hashlib
 import io
 import mimetypes
-import os
 import uuid
 import zipfile
+from pathlib import PurePosixPath
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy import select
@@ -40,6 +40,7 @@ _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
 async def list_datasets(
     search: str | None = None,
     data_type: str | None = None,
+    has_scenes: bool | None = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -47,7 +48,11 @@ async def list_datasets(
 ):
     svc = DatasetService(db)
     items, total = await svc.list(
-        search=search, data_type=data_type, limit=limit, offset=offset
+        search=search,
+        data_type=data_type,
+        has_scenes=has_scenes,
+        limit=limit,
+        offset=offset,
     )
     return DatasetListResponse(items=items, total=total, limit=limit, offset=offset)
 
@@ -65,6 +70,7 @@ async def create_dataset(
         data_type=data.data_type,
         user_id=current_user.id,
         axis_convention=data.axis_convention,
+        is_temporal=data.is_temporal,
     )
     await db.commit()
     await db.refresh(ds)
@@ -139,6 +145,8 @@ async def sniff_axis_convention(
         source=result.source,
         camera_role=result.camera_role,
         camera_item_id=result.camera_item_id,
+        per_camera=result.per_camera,
+        agreement=result.agreement,
     )
 
 
@@ -376,6 +384,54 @@ _ZIP_MAX_ENTRIES = 5000  # 防 zip bomb：限制条目数
 _PER_FILE_MAX_BYTES = 100 * 1024 * 1024  # 单文件 100MB 上限
 
 
+def _normalize_zip_relpath(name: str) -> str | None:
+    """把 ZIP entry 名规范化为安全的相对路径。
+
+    - 统一 Windows 反斜杠为正斜杠。
+    - 拒绝绝对路径（以 "/" 开头或含 Windows 盘符段）。
+    - 拒绝 ".." 段（zip-slip 防护）。
+    - 跳过 macOS 元数据（__MACOSX/）、隐藏文件（任意段以 "." 开头）、空 basename。
+    - 返回规范化的 forward-slash 相对路径；不合法则返回 None。
+    """
+    # 统一斜杠
+    name = name.replace("\\", "/")
+
+    # macOS 元数据目录
+    if name.startswith("__MACOSX/"):
+        return None
+
+    p = PurePosixPath(name)
+
+    # 拒绝绝对路径
+    if p.is_absolute():
+        return None
+
+    parts = p.parts
+    # 空路径
+    if not parts:
+        return None
+
+    # 拒绝 ".." 段（zip-slip）
+    if ".." in parts:
+        return None
+
+    # Windows 盘符段（如 "C:"）
+    if any(len(part) == 2 and part[1] == ":" for part in parts):
+        return None
+
+    # 隐藏文件 / 隐藏目录：任意路径段以 "." 开头
+    if any(part.startswith(".") for part in parts):
+        return None
+
+    # 空 basename
+    basename = p.name
+    if not basename:
+        return None
+
+    # 返回规范化路径字符串（str(PurePosixPath) 不会带前导 "/"）
+    return str(p)
+
+
 @router.post("/{dataset_id}/items/upload-zip")
 async def upload_zip(
     dataset_id: uuid.UUID,
@@ -393,11 +449,25 @@ async def upload_zip(
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
+    # 同一 dataset 的并发 upload-zip 用事务级 advisory lock 串行化:否则两个请求会
+    # 并行写 item + 各自跑 scene_inference,撞 SceneNameConflict(被吞成 notes 仍返回
+    # 200)且产生半建状态。xact 锁在本请求 commit/rollback 时自动释放。
+    from sqlalchemy import text
+
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+        {"k": str(dataset_id)},
+    )
+
     raw = await file.read()
     if len(raw) > _ZIP_MAX_BYTES:
         raise HTTPException(
             status_code=413,
-            detail=f"ZIP 包超过 {_ZIP_MAX_BYTES // 1024 // 1024}MB 限制",
+            detail=(
+                f"ZIP 包超过 {_ZIP_MAX_BYTES // 1024 // 1024}MB 限制。"
+                "浏览器向导只适合单个原生 scene；多 scene / nuScenes 等大包请使用转换脚本。"
+                "格式说明见 docs-site/user-guide/datasets/import-formats.md"
+            ),
         )
 
     try:
@@ -415,22 +485,16 @@ async def upload_zip(
     deduped = 0
     skipped: list[str] = []
     errors: list[dict] = []
+    written_keys: list[str] = []  # 已写入 MinIO 的对象 key，校验失败时回滚清理
     new_image_item_ids: list[uuid.UUID] = []
     new_video_item_ids: list[uuid.UUID] = []
     new_item_ids: list[uuid.UUID] = []
+    zip_top_level_dirs: set[str] = set()
 
     from sqlalchemy import select as sa_select
     from app.db.models.dataset import DatasetItem
 
-    existing_names: set[str] = set()
-    rows = await db.execute(
-        sa_select(DatasetItem.file_name).where(DatasetItem.dataset_id == dataset_id)
-    )
-    for (n,) in rows.all():
-        if n:
-            existing_names.add(n)
-
-    # 收集已有 hash，用于内容去重
+    # 收集已有 hash，用于内容去重（仅按 content_hash 去重，保留子目录同名文件）
     hash_rows = await db.execute(
         sa_select(DatasetItem.content_hash).where(
             DatasetItem.dataset_id == dataset_id, DatasetItem.content_hash.isnot(None)
@@ -440,11 +504,15 @@ async def upload_zip(
 
     for info in infos:
         name = info.filename
-        base = os.path.basename(name)
-        # macOS 元 + 隐藏文件
-        if name.startswith("__MACOSX/") or base.startswith(".") or not base:
+        # v0.14.2 D1：保留子目录，同时防 zip-slip / 隐藏文件
+        safe_relpath = _normalize_zip_relpath(name)
+        if safe_relpath is None:
             skipped.append(name)
             continue
+        safe_parts = PurePosixPath(safe_relpath).parts
+        if len(safe_parts) >= 2:
+            zip_top_level_dirs.add(safe_parts[0])
+
         if info.file_size > _PER_FILE_MAX_BYTES:
             errors.append(
                 {
@@ -466,19 +534,10 @@ async def upload_zip(
             continue
         existing_hashes.add(content_hash)
 
-        # 名称冲突：同名追加 -1 / -2 后缀（保留扩展名）
-        final_name = base
-        if final_name in existing_names:
-            stem, ext = os.path.splitext(base)
-            i = 1
-            while f"{stem}-{i}{ext}" in existing_names:
-                i += 1
-            final_name = f"{stem}-{i}{ext}"
-        existing_names.add(final_name)
-
-        content_type = mimetypes.guess_type(final_name)[0] or "application/octet-stream"
+        basename = PurePosixPath(safe_relpath).name
+        content_type = mimetypes.guess_type(basename)[0] or "application/octet-stream"
         file_type = _infer_file_type(content_type)
-        storage_key = f"{ds.name}/{final_name}"
+        storage_key = f"{ds.name}/{safe_relpath}"
 
         try:
             storage_service.client.put_object(
@@ -490,6 +549,7 @@ async def upload_zip(
         except Exception as e:  # noqa: BLE001
             errors.append({"name": name, "error": f"对象存储写入失败: {e}"})
             continue
+        written_keys.append(storage_key)
 
         width: int | None = None
         height: int | None = None
@@ -500,7 +560,7 @@ async def upload_zip(
 
         item = await svc.add_item(
             dataset_id=dataset_id,
-            file_name=final_name,
+            file_name=basename,
             file_path=storage_key,
             file_type=file_type,
             file_size=len(data),
@@ -516,6 +576,54 @@ async def upload_zip(
             new_video_item_ids.append(item.id)
 
     linked_tasks = await svc.create_tasks_for_items(dataset_id, new_item_ids)
+
+    # v0.14.0 · 上传完跑 scene_inference(mode="auto"):
+    # - SUSTechPOINTS 单 scene zip(顶层 lidar/ camera/ calib/)→ 1 scene
+    # - 顶层若干非角色子目录(nuScenes 多 scene)→ N scene
+    # - 纯 image / video 帧序列 → 1 scene + 自然排序 frame_index
+    # 幂等:若 dataset 已有 scene → 整体跳过(下次上传不重赋)。
+    scene_inference_notes: list[str] = []
+    if added > 0:
+        from app.services import scene_inference as _scene_inference
+
+        reserved_top_levels = sorted(
+            d for d in zip_top_level_dirs if _scene_inference._is_role_dir_name(d)
+        )
+        non_role_top_levels = sorted(
+            d for d in zip_top_level_dirs if not _scene_inference._is_role_dir_name(d)
+        )
+        if reserved_top_levels and non_role_top_levels:
+            scene_inference_notes.append(
+                "ZIP 顶层同时包含保留角色目录 "
+                f"({', '.join(reserved_top_levels)}) 与 scene 目录 "
+                f"({', '.join(non_role_top_levels)}); "
+                "多 scene 顶层目录不要使用 lidar/camera/calib/image/video 等角色名。"
+                "格式说明见 docs-site/user-guide/datasets/import-formats.md"
+            )
+        try:
+            inf = await _scene_inference.infer_and_apply(
+                db, dataset_id=dataset_id, mode="auto"
+            )
+            scene_inference_notes.extend(inf.notes)
+        except ValueError as exc:
+            # 超过 scene 上限 / 其他可恢复错误:不阻断 upload,把 notes 透回前端
+            scene_inference_notes.append(f"scene_inference skipped: {exc}")
+
+    try:
+        await svc.assert_temporal_dataset_has_scenes(dataset_id)
+    except ValueError as exc:
+        # 校验失败 → 事务将 rollback，但本次已写入 MinIO 的对象不在事务内，
+        # 需显式删除，否则变成孤儿对象。
+        await db.rollback()
+        for key in written_keys:
+            try:
+                storage_service.delete_object(
+                    key, bucket=storage_service.datasets_bucket
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     await db.commit()
 
     if new_image_item_ids:
@@ -536,6 +644,7 @@ async def upload_zip(
         "errors": errors,
         "total_in_zip": len(infos),
         "linked_tasks": linked_tasks,
+        "scene_inference_notes": scene_inference_notes,
     }
 
 
@@ -624,6 +733,46 @@ async def backfill_media_endpoint(
 
     backfill_media.delay(str(dataset_id))
     return {"status": "queued", "dataset_id": str(dataset_id)}
+
+
+@router.post("/{dataset_id}/scenes/backfill")
+async def backfill_scenes_endpoint(
+    dataset_id: uuid.UUID,
+    mode: str = Query(
+        "auto",
+        description="single / per_subdirectory / auto",
+        pattern="^(single|per_subdirectory|auto)$",
+    ),
+    dry_run: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_MANAGERS)),
+):
+    """v0.14.0 · 对 dataset 跑 scene_inference,补 scene + frame_index。
+
+    幂等:dataset 已有 scene → 直接返回(notes 提示)。
+    dry_run:不写库,返回会创建 / 赋值的统计。
+    """
+    from app.schemas.scene import InferenceResult
+    from app.services.scene_inference import infer_and_apply
+
+    svc = DatasetService(db)
+    ds = await svc.get(dataset_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    try:
+        result: InferenceResult = await infer_and_apply(
+            db,
+            dataset_id=dataset_id,
+            mode=mode,
+            dry_run=dry_run,  # type: ignore[arg-type]
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not dry_run:
+        await db.commit()
+    return result
 
 
 @router.delete("/{dataset_id}/items/{item_id}", status_code=204)

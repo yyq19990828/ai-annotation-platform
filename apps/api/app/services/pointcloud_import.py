@@ -27,6 +27,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import DatasetItem, Project, Task
 from app.schemas._jsonb_types import SensorCalibration
 from app.services import async_job as async_job_svc
+from app.services.role_patterns import (
+    DEFAULT_ROLE_PATTERNS,
+    RolePatterns,
+    last_role_index,
+    matches_role_part,
+)
 from app.services.storage import storage_service
 from app.services.task_dataset_link import link_items
 
@@ -35,19 +41,16 @@ logger = logging.getLogger(__name__)
 # 点云扩展名集合：file_type 未必准（入库可能落 other），故同时按后缀兜底。
 _POINT_CLOUD_EXTS = {".pcd", ".bin", ".ply", ".las", ".laz", ".npy"}
 
-
-def _last_index(parts: tuple[str, ...], name: str) -> int:
-    """返回 name 在 parts 中最后一次出现的下标，找不到返回 -1。
-
-    取「最后一次」以兼容 dataset 名前缀与多层嵌套（如 dataset 名恰好叫 camera）。
-    """
-    for i in range(len(parts) - 1, -1, -1):
-        if parts[i] == name:
-            return i
-    return -1
+# 相机图像直接放在角色目录下(如 camera/000.jpg、<scene>/camera/000.jpg)而无 channel
+# 子目录时的默认 channel 名。此前回退到 parts[camera_i](即角色目录名 "camera" 自身),
+# 会让 link role 变成畸形的 camera_camera、且 calib/axis_sniffer 反查拿错 sensor。
+_DEFAULT_CAMERA_CHANNEL = "default"
 
 
-def group_frames(items: list[DatasetItem]) -> tuple[dict, dict]:
+def group_frames(
+    items: list[DatasetItem],
+    patterns: RolePatterns = DEFAULT_ROLE_PATTERNS,
+) -> tuple[dict, dict]:
     """把一批 DatasetItem 按帧分组。
 
     返回 (frames, calib_items):
@@ -56,8 +59,8 @@ def group_frames(items: list[DatasetItem]) -> tuple[dict, dict]:
 
     分组规则（按 file_path 的 PurePosixPath.parts，定位段名取最后一次出现）:
       - calib: 末两段是 calib/camera 且后缀 .json → cam = stem(front)，记入 calib_items。
-      - lidar: parts 含 lidar 且 (file_type==point_cloud 或后缀属点云集) → frame=stem。
-      - camera: parts 含 camera → cam = camera 后一段，frame=stem。
+      - lidar: parts 命中 lidar pattern 且 (file_type==point_cloud 或后缀属点云集) → frame=stem。
+      - camera: parts 命中 camera pattern → cam = camera 后一段或 camera 段名，frame=stem。
     判定顺序优先 calib，避免 calib/camera 路径被 camera 规则误吞。
     """
     frames: dict[str, dict] = {}
@@ -69,18 +72,20 @@ def group_frames(items: list[DatasetItem]) -> tuple[dict, dict]:
         stem = path.stem
         suffix = path.suffix.lower()
 
-        calib_i = _last_index(parts, "calib")
-        # calib/camera/<cam>.json —— 末两段恰好 calib/camera
-        if (
-            len(parts) >= 2
-            and parts[-2] == "camera"
-            and calib_i == len(parts) - 3
-            and suffix == ".json"
+        calib_i = last_role_index(parts, patterns.calib)
+        # calib/camera/<cam>.json 或 calibration/<cam>.json。
+        if suffix == ".json" and (
+            (
+                len(parts) >= 3
+                and matches_role_part(parts[-2], patterns.camera)
+                and calib_i == len(parts) - 3
+            )
+            or calib_i == len(parts) - 2
         ):
             calib_items[stem] = item
             continue
 
-        lidar_i = _last_index(parts, "lidar")
+        lidar_i = last_role_index(parts, patterns.lidar)
         if lidar_i >= 0 and (
             item.file_type == "point_cloud" or suffix in _POINT_CLOUD_EXTS
         ):
@@ -88,9 +93,20 @@ def group_frames(items: list[DatasetItem]) -> tuple[dict, dict]:
             frame["lidar"] = item
             continue
 
-        camera_i = _last_index(parts, "camera")
+        camera_i = last_role_index(parts, patterns.camera)
         if camera_i >= 0 and camera_i + 1 < len(parts):
-            cam = parts[camera_i + 1]
+            # camera/<channel>/<file> → channel(取 channel 子目录名)。
+            # 无 channel 子目录(<dir>/<file>)时取角色目录名 <dir> 自身作 channel:
+            #   - 携带 channel 的角色名(camera_image_0 / camera_front)→ 保留,即真实 channel;
+            #   - 裸通用角色名(camera / image / cam ...)→ 回退默认 channel,
+            #     否则 link role 会退化成畸形的 camera_camera 且 calib 反查拿错 sensor。
+            role_dir = parts[camera_i]
+            if camera_i + 1 < len(parts) - 1:
+                cam = parts[camera_i + 1]
+            elif role_dir.lower() in {p.lower() for p in patterns.camera}:
+                cam = _DEFAULT_CAMERA_CHANNEL
+            else:
+                cam = role_dir
             frame = frames.setdefault(stem, {"lidar": None, "cameras": {}})
             frame["cameras"][cam] = item
             continue
@@ -105,6 +121,22 @@ async def _load_dataset_items(
         select(DatasetItem).where(DatasetItem.dataset_id == dataset_id)
     )
     return list(result.scalars().all())
+
+
+async def _maybe_infer_single_scene(db: AsyncSession, *, dataset_id: uuid.UUID) -> None:
+    """v0.14.0 · 点云 link 接线前的 scene hook。
+
+    若 dataset 已有 scene 直接返回;否则跑 single-mode inference。
+    SUSTechPOINTS / wizard 上传走这里 → 自动建出 1 scene + frame_index。
+    """
+    from app.services import scene as scene_svc
+    from app.services import scene_inference
+
+    existing = await scene_svc.list_for_dataset(db, dataset_id)
+    if existing:
+        return
+    await scene_inference.infer_and_apply(db, dataset_id=dataset_id, mode="single")
+    await db.flush()
 
 
 async def build_pointcloud_tasks_for_link(
@@ -128,16 +160,39 @@ async def build_pointcloud_tasks_for_link(
     数量是否齐备」。正常路径下 chunk 失败整批回滚（Task + link 一起消失），重跑
     能补全；但若进程在「`db.flush()` 拿到 task.id + `link_items` 写完一部分
     role」与「`db.commit()`」之间硬挂（OOM / SIGKILL / OS panic），可能留下
-    Task 已存在但 `camera_*` link 残缺的孤儿帧。重跑会被 existing 跳过，缺失
-    link 永远不会被补，对应帧 manifest 的 `cameras` 列表少几个相机。补建残缺
-    link 是独立入口职责（未实现，见 follow-up）。
+    Task 已存在但 `camera_*` link 残缺的孤儿帧。重跑会被 existing 跳过,缺失
+    link 永远不会被补,对应帧 manifest 的 `cameras` 列表少几个相机。补建残缺
+    link 是独立入口职责(未实现,见 follow-up)。
+
+    v0.14.0 · 在建 task 之前自动跑 scene_inference(mode="single"):若 dataset
+    尚无 scene,推断出 1 个 scene + 给 lidar/cam items 写 frame_index,这样建出
+    的 task 通过 dataset_item_id → scene_id 反查能拿到 frame_index。
     """
+    # v0.14.0 · scene 推断 hook(放在 _load_dataset_items 之前,避免对已 assign 的 items
+    # 重复 inference;infer_and_apply 内部本身也幂等,这层是性能优化)。
+    await _maybe_infer_single_scene(db, dataset_id=dataset_id)
+
     items = await _load_dataset_items(db, dataset_id)
-    frames, _ = group_frames(items)
+
+    # v0.14.2 · 按 scene_id 分桶后各 scene 独立 group_frames：upload-zip 不保证
+    # 帧 stem 全局唯一（scene_a/lidar/000.pcd 与 scene_b/lidar/000.pcd 都 stem=000），
+    # 若在全 dataset 范围 group_frames，同号帧会互相 setdefault 覆盖 → 漏建 task、
+    # 跨 scene 串相机。分桶后 group_frames 的 stem key 只需在单 scene 内唯一即可。
+    # scene_id=None（无 scene 历史数据）单独成一桶，保持原行为。
+    buckets: dict[uuid.UUID | None, list[DatasetItem]] = {}
+    for item in items:
+        buckets.setdefault(item.scene_id, []).append(item)
+
+    # frame key 复合 (scene_id, stem)，避免跨 scene 同号帧在 frames 字典再次撞键。
+    frames: dict[tuple, dict] = {}
+    for scene_id, scene_items in buckets.items():
+        scene_frames, _ = group_frames(scene_items)
+        for stem, frame in scene_frames.items():
+            frames[(scene_id, stem)] = frame
 
     # 缺帧容错：无 lidar 的「帧」跳过（warning）。
-    frame_ids: list[str] = []
-    for frame_id in sorted(frames.keys()):
+    frame_ids: list[tuple] = []
+    for frame_id in sorted(frames.keys(), key=lambda k: (str(k[0]), k[1])):
         if frames[frame_id]["lidar"] is None:
             logger.warning(
                 "pointcloud frame %r has no lidar item, skipped (dataset=%s)",

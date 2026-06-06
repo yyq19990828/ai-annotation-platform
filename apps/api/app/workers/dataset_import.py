@@ -281,6 +281,7 @@ async def _run_dataset_import(
                     errors=errors,
                     linked_tasks=linked_tasks,
                 )
+                await svc.assert_temporal_dataset_has_scenes(dataset_id)
                 await async_job_svc.mark_complete(db, job_uuid, result=result)
                 await notify_job_terminal(db, job_id=job_uuid)
                 await db.commit()

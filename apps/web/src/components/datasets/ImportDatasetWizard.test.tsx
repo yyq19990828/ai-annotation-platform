@@ -174,6 +174,96 @@ describe("ImportDatasetWizard", () => {
     });
   });
 
+  it("3D 点云 + 勾选时序: createDataset 带 data_type=point_cloud 与 is_temporal=true", async () => {
+    renderUI();
+    pickFile();
+    await waitFor(() => expect(screen.getByText(/已选 1 个文件/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /下一步/ }));
+    fireEvent.change(screen.getByPlaceholderText(/商品检测训练集/), {
+      target: { value: "点云时序集" },
+    });
+    // 切到 3D 点云 → 时序开关出现 → 勾选
+    fireEvent.click(screen.getByRole("button", { name: /3D 点云/ }));
+    fireEvent.click(screen.getByLabelText(/声明为时序数据集/));
+    fireEvent.click(screen.getByRole("button", { name: /开始上传/ }));
+    await waitFor(() => {
+      expect(mockCreateDatasetMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ data_type: "point_cloud", is_temporal: true }),
+      );
+    });
+  });
+
+  it("图片类型也显示时序开关, 勾选后发送 is_temporal", async () => {
+    renderUI();
+    pickFile();
+    await waitFor(() => expect(screen.getByText(/已选 1 个文件/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /下一步/ }));
+    fireEvent.change(screen.getByPlaceholderText(/商品检测训练集/), {
+      target: { value: "图片时序集" },
+    });
+    // 图片(默认 data_type)同样有时序开关——图片 ZIP 也会产生 scene
+    fireEvent.click(screen.getByLabelText(/声明为时序数据集/));
+    fireEvent.click(screen.getByRole("button", { name: /开始上传/ }));
+    await waitFor(() => {
+      expect(mockCreateDatasetMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ data_type: "image", is_temporal: true }),
+      );
+    });
+  });
+
+  it("未勾选时序时 is_temporal 不发送 (undefined)", async () => {
+    renderUI();
+    pickFile();
+    await waitFor(() => expect(screen.getByText(/已选 1 个文件/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /下一步/ }));
+    fireEvent.change(screen.getByPlaceholderText(/商品检测训练集/), {
+      target: { value: "普通图片集" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /开始上传/ }));
+    await waitFor(() => {
+      expect(mockCreateDatasetMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ is_temporal: undefined }),
+      );
+    });
+  });
+
+  it("其他/多模态类型不显示时序开关", async () => {
+    renderUI();
+    pickFile();
+    await waitFor(() => expect(screen.getByText(/已选 1 个文件/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /下一步/ }));
+    // 默认 image 时开关存在
+    expect(screen.getByLabelText(/声明为时序数据集/)).toBeInTheDocument();
+    // 切到「多模态」后开关消失
+    fireEvent.click(screen.getByRole("button", { name: /多模态/ }));
+    expect(screen.queryByLabelText(/声明为时序数据集/)).not.toBeInTheDocument();
+    // 切到「其他」同样无开关
+    fireEvent.click(screen.getByRole("button", { name: /其他/ }));
+    expect(screen.queryByLabelText(/声明为时序数据集/)).not.toBeInTheDocument();
+  });
+
+  it("勾选时序后切换数据类型会重置 isTemporal (再切回不发送 is_temporal)", async () => {
+    renderUI();
+    pickFile();
+    await waitFor(() => expect(screen.getByText(/已选 1 个文件/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /下一步/ }));
+    fireEvent.change(screen.getByPlaceholderText(/商品检测训练集/), {
+      target: { value: "重置测试集" },
+    });
+    // image 下勾选时序
+    fireEvent.click(screen.getByLabelText(/声明为时序数据集/));
+    // 切到视频(同样显示开关)——切换应重置为未勾选
+    fireEvent.click(screen.getByRole("button", { name: /视频/ }));
+    const checkbox = screen.getByLabelText(/声明为时序数据集/) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: /开始上传/ }));
+    await waitFor(() => {
+      expect(mockCreateDatasetMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ data_type: "video", is_temporal: undefined }),
+      );
+    });
+  });
+
   it("open=false 时 wizard 不渲染内容", () => {
     renderUI({ open: false });
     expect(screen.queryByText("选择来源")).not.toBeInTheDocument();

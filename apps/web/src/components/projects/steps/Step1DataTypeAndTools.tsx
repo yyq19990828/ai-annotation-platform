@@ -69,6 +69,11 @@ export function Step1DataTypeAndTools({
                       typeKey: t.legacyTypeKey,
                       unitBindings: next,
                       activeUnit: stillEnabled ?? "bbox",
+                      sceneMode: t.id === "video" ? false : s.sceneMode,
+                      splitStrategy:
+                        t.id === "video" && s.splitStrategy === "by_scene"
+                          ? "none"
+                          : s.splitStrategy,
                     };
                   })
                 }
@@ -94,6 +99,33 @@ export function Step1DataTypeAndTools({
           })}
         </div>
       </div>
+
+      {form.dataType !== "video" && (
+        <label className={styles.unitChip}>
+          <input
+            type="checkbox"
+            checked={form.sceneMode}
+            onChange={(e) =>
+              setForm((s) => ({
+                ...s,
+                sceneMode: e.target.checked,
+                splitStrategy: e.target.checked
+                  ? "by_scene"
+                  : s.splitStrategy === "by_scene"
+                    ? "none"
+                    : s.splitStrategy,
+              }))
+            }
+          />
+          <Icon name="layers" size={12} />
+          <div className={styles.unitChipBody}>
+            <span className={styles.unitChipLabel}>scene 模式</span>
+            <span className={styles.unitChipHint}>
+              时序数据按 scene 关联、分包和连续标注
+            </span>
+          </div>
+        </label>
+      )}
 
       {/* v0.10.17 · 工具集多选 chip. 三组: 矩形框 / 区域 / AI 交互 (region 与 AI 各自打包). */}
       <div>

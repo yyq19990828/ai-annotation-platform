@@ -22,6 +22,8 @@ ENTITY_TO_PREFIX: dict[str, str] = {
     "batches": "BT",
     # v0.10.14 · E2 · ProjectTemplate (前缀避开 P/T/B/D 单字母, 用 PT)
     "project_templates": "PT",
+    # v0.14.0 · 跨 task 帧序列地基(scene)
+    "scenes": "SCN",
 }
 
 

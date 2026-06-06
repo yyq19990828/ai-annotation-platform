@@ -28,6 +28,152 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.14.4] - 2026-06-06
+
+scene 模式项目 + scene 感知分包补丁:把 scene 提升为项目级显式声明,补上 `by_scene` 分包、数据集 `has_scenes` 过滤与项目/数据集 kind 硬门。计划见 `docs/plans/2026-06-06-v0.14.4-scene-mode-projects.md`。
+
+### Added
+
+- **项目级 scene 模式**:`Project.scene_mode` 落库并透出到项目创建/更新/响应。图片和 3D 点云项目可开启;视频项目拒绝开启。scene 模式项目创建时默认开启 `prefer_same_scene_continuation`。
+- **数据集时序声明与派生 has_scenes**:`Dataset.is_temporal` 用于导入期校验;`DatasetOut.has_scenes` 由 `scenes` 实时派生。`GET /datasets?has_scenes=true|false` 支持按 scene 存在性过滤。
+- **按 scene 分包**:`POST /batches/split` 支持 `strategy="by_scene"`。一个 scene 生成一个批次,批次内 task 按 `frame_index` 排序,并写 `sequence_order=frame_index`。
+- **前端 scene 模式向导**:项目创建 Step1 增加 scene 模式开关;Step5 按项目媒体类型与 `has_scenes` 过滤数据集,scene 项目默认选择按 scene 分包。
+
+### Changed
+
+- **项目-数据集关联收紧**:`POST /datasets/{id}/link` 新增 kind 对称硬门。项目媒体类型必须匹配数据集媒体类型,且 `project.scene_mode` 必须等于数据集派生的 `has_scenes`;不匹配返回 422。存量关联不追溯。
+- **nuScenes 导入脚本**:脚本创建的数据集标记为时序数据集,配套项目标记为 scene 模式并默认开启 scene 连续调度。
+
+### Fixed
+
+- **scene 被随机分包切碎**:scene 模式项目可直接按 scene 分包,避免同一 scene 的连续帧被拆到不同 batch/owner,从源头减少跨帧 propagate 与调度被 batch 可见性打断。
+
+### Tests
+
+- 新增 `tests/test_batch_split_by_scene.py`、`tests/test_dataset_link_kind_match.py`、`tests/test_project_scene_mode.py`、`tests/test_datasets_list_has_scenes.py`。
+- 新增 `Step5Datasets.test.tsx`,并更新 `datasetsApi` query string 测试。
+
+## [0.14.3] - 2026-06-06
+
+点云导入鲁棒性 + 跨帧 UX 补丁:把 v0.14.2 真实 nuScenes 实测暴露的硬编码目录名、sensor/ego 坐标混用、跨 batch 跳转、sniffer 分歧不可见、overlay 档位偏小和 ZIP 多 scene 提示问题补齐。不新增表/列,不做数据迁移。计划见 `docs/plans/2026-06-06-v0.14.3-import-robustness-and-crossframe-gaps.md`。
+
+### Changed
+
+- **角色目录 pattern 单一真值**:`pointcloud_import.group_frames` 与 `scene_inference` 共用 `role_patterns.py`,默认继续识别 `lidar/ camera/ calib/`,并新增 `lidar_point_cloud_*`、`camera_image_*`、`velodyne`、`points`、`calibration` 等常见别名。scene inference 的顶层角色判断同步使用同一套边界匹配,避免 xtreme1 风格目录被误判为多 scene。
+- **nuScenes 默认 ego/ISO 导入**:`import_nuscenes_scene.py` 新增 `--frame {ego,sensor}`,默认 `ego`:点云逐点乘 `T_ego_from_lidar`,dataset 写 `axis_convention=iso_8855`,相机标定写 `cam_from_ego`。显式 `--frame sensor` 保留 v0.14.2 的 raw LIDAR_TOP + `axis_convention=apollo` + `cam_from_lidar` 行为;同一 dataset 发现两种 frame 混用时拒绝继续导入。
+- **跨帧 propagate 可跳到未加载 task**:Workbench 在 `Shift+→/←` 或 `Alt+→/←` 延续到当前任务列表未加载的邻帧时,按 taskId 直接加载目标 task 并补选中新标注,不再被当前 batch/分页列表回退到第一页。
+- **邻帧 overlay 增加 7 档**:`CrossFrameOverlayToggle` 从 0/1/3/5 扩为 0/1/3/5/7,localStorage 白名单同步接受 7。
+
+### Added
+
+- **sniffer 分歧透出**:`SniffAxisConventionResponse` 新增可选 `per_camera[]` 和 `agreement`,前端 `AxisConventionPicker` 在多相机判断不一致时显示一致相机数量,帮助用户识别侧/后相机对坐标系嗅探的干扰。
+- **ZIP 上传错误提示细化**:上传包超过 200MB 时明确提示浏览器向导只适合单个原生 scene,多 scene/nuScenes 应走转换脚本;顶层混用保留角色目录与 scene 目录时,`scene_inference_notes` 指出冲突并链接 `import-formats.md`。
+
+### Fixed
+
+- **nuScenes 长 dataset_name 导入**:`import_nuscenes_scene.py` 的 dataset/project display_id 现在会在超过数据库 20 字符限制时稳定截断并追加 hash,避免 `DS-NU-...` / `P-NU-...` 因真实验证名称较长而入库失败;短名称保持旧 display_id 不变,幂等行为不变。
+
+### Docs
+
+- `docs-site/user-guide/datasets/import-formats.md`:补充角色目录别名、nuScenes `--frame ego|sensor` 行为、dataset frame 混用保护、sniffer `per_camera/agreement` 和 ZIP 多 scene 提示。
+
+## [0.14.2] - 2026-06-06
+
+点云导入格式收敛 + 多相机/多 scene 实测:把"进数据"这一头的两个真实阻塞拆掉。修 ZIP 上传拍平路径(D1),让点云 scene ZIP 真能从向导上传;新增 nuScenes-mini 转换脚本(D2),作为 v0.14.0 scene 模型的第一个真实多 scene 消费者,scene_token 1:1 落到 `scenes.name`。不引入插件注册表 / 通用 importer 抽象,按"自家格式 + 一次性转换脚本"路线(与 SUSTechPOINTS / xtreme1 一致)。计划见 `docs/plans/2026-06-05-v0.14.2-import-format-and-multicam.md`。
+
+### Fixed
+
+- **ZIP 上传保留子目录(D1)**:`POST /api/v1/datasets/{id}/items/upload-zip` 此前用 `os.path.basename` 把每个文件拍平到 `{ds.name}/{basename}`,丢掉 ZIP 内子目录 → 点云 scene ZIP(`lidar/ camera/<cam>/ calib/camera/`)上传后 `group_frames` 找不到段名,整批不被识别为 scene。改为经新增的 `_normalize_zip_relpath` 规范化相对路径并保留子目录(`{ds.name}/lidar/000970.pcd`),附 zip-slip 防护(拒 `..` 段 / 绝对路径 / 隐藏文件 / `__MACOSX/`)。**该修复全局生效**,非点云 dataset 同样保留子目录。
+- **去重键改 content_hash-only**:同一 scene 内 `camera/front/000970.jpg` 与 `camera/left/000970.jpg` 的 basename 相同但属合法的跨相机同帧;删掉原"同名追加 -1/-2 后缀"逻辑,仅当 content_hash 完全相同才去重,跨子目录同名不再误改名 / 误去重。
+- **轴向 sniffer 多相机鲁棒性**(v0.13.12 端点,实测 nuScenes 6 相机暴露):`sniff-axis-convention` 此前 `_is_front_role` 用 `"front" in haystack` 把 `CAM_FRONT_LEFT/RIGHT` 也当正前,并在并列里按 `created_at` 选 → 同一份数据随相机建序漂(CAM_FRONT_RIGHT 把 apollo 误判成 iso_8855)。改为:正前判定收紧为含 front/forward 且不含 left/right/back/rear;选择全程确定性——有正前相机取分最高(稳定 tiebreak),无则跨相机按 best 约定投票取众数。不改响应 schema。真实多 scene dataset 现稳定返回 `apollo`(`camera_CAM_FRONT`),与相机顺序无关。
+- **3D 相机面板四角布局**(nuScenes 6 相机实测调整):`front_left/right` 与 `back_left/right` 此前钉在左/右竖边的上下两端,6 相机装置下过散;改为沿各自竖边纵向收拢到中段(`top/bottom: 30%`),更贴物理朝向环绕直觉。
+
+### Added
+
+- **nuScenes-mini 转换脚本(D2)**:`apps/api/scripts/import_nuscenes_scene.py`,自读 nuScenes JSON(不依赖 `nuscenes-devkit`,只用 numpy + Pillow),把一个或多个 scene 转成平台原生目录 + 直接入库,并**显式调 v0.14.0 `scene_svc.create_scene` + `assign_items_to_scene`**:scene_token → `scenes.name`,sample 顺序 → `frame_index`,`.pcd.bin` 转 ASCII PCD,6 路相机 jpg + 每相机一份 lidar→camera 外参/内参标定。支持 `--scene-tokens a,b,c` 多 scene 共用一个 dataset。`axis_convention=apollo`(**实测发现**:上传的是未变换的 LIDAR_TOP 传感器系点,实测其约定 +X 右/+Y 前/+Z 天 = apollo;nuScenes 仅 **ego** 系才是 ISO,计划原假设"原生 ISO"对 raw lidar 点不成立。已用 LIDAR_TOP→ego 标定旋转独立印证)。幂等(dataset 按 display_id、scene 按 name 复用)。
+
+### Verified(真实 nuScenes-mini 端到端)
+
+- **单 scene(scene-0061)**:279 items(39 帧 ×7 传感器 + 6 calib),1 scene,lidar `frame_index` 0..38;末帧 `neighbors.next` 为空。
+- **多 scene(scene-0061/0103/0553 共用一个 dataset)**:858 items,3 scene,各自 `frame_index` 独立 0..N-1(39/40/41);`scenes?dataset_id=` 返回 3 个;**跨 scene 不串**:scene-0061 末帧 `next=[]`、scene-0103 首帧 `prev=[]`,直接验证 v0.14.0 判据 6 在真实多 scene 数据上成立。
+- **帧 stem 全局唯一修复有效**:多 scene 同号帧因带 scene 前缀未撞键,每 scene 的 task 都正确建出。
+
+### 已知问题 / 后续(实测暴露)
+
+- **nuScenes 点未变换到 ego 系**:本版直接上传 LIDAR_TOP 传感器系点 + `axis_convention=apollo`(前端旋转到 ISO 显示)。若要点云直接落在 ego/ISO 系,需逐点乘 `T_ego_from_lidar` 并把外参改为 `cam_from_ego`,留后续。
+- **多 scene 帧 stem 全局唯一**:每个 scene 的帧号都从 0 起,而 `group_frames` 以文件名 stem 作帧键——多 scene 共用 dataset 时同号帧会撞键漏建 task。脚本给帧文件名加 `<scene_name>_` 前缀保证 stem 全局唯一(不动 `group_frames`);scene 内 `frame_index` 仍由 `assign_items_to_scene` 按顺序赋值,与文件名解耦。
+
+### Verified / Tests
+
+- `tests/test_datasets_upload_zip.py`(新):子目录保留、zip-slip 拒绝、跨子目录同名按 hash 去重、SUSTech 布局自动建 1 scene + `frame_index` 0..N、伪多 scene zip 建 2 scene。
+- `tests/test_import_nuscenes_lite.py`(新):用 tmp_path 造极小 fake nuScenes 根目录(2 scene × 3 sample × 1 cam,不依赖真 4GB 数据),验证脚本骨架跑通 + 产生 2 个 scene + `frame_index` 按 sample 顺序 + **跨 scene neighbors 不串**。
+- nuScenes 真实数据端到端(6 相机投影对齐 / BEV 车头朝上 / 跨 scene 隔离)走脚本 docstring 里的手动 checklist(dev 工具,CI 不跑真数据)。
+
+### Docs
+
+- `docs-site/user-guide/datasets/import-formats.md`(新):平台原生目录约定 + 多 scene 边界 + 标定 JSON schema + nuScenes/KITTI 转换索引;明确"只接受原生格式,其他走转换脚本"。sidebar 加入口。
+
+### 未尽事项(留后续)
+
+- 多 lidar 数据集(Waymo 5 路 lidar)、同 sample 跨相机微秒级 timestamp 偏差补偿(`ego_pose` 插值)、`group_frames` 路径段名抽象化(角色 pattern 配置):留 v0.15+。
+- ZIP 单包 200MB 上限不放宽;多 scene 批量请走转换脚本而非向导。
+
+## [0.14.1] - 2026-06-06
+
+跨帧目标延续 UX:把 v0.14.0 的 scene + neighbors API 变成可用的标注效率特性。3D 工作台 `Shift+→` / `Shift+←` 一键把选中 box_3d 延续到同 scene 邻帧 task(共享 `group_id`),跳过去自动选中新框;三视图 / 主视图可叠加显示同 group_id 的前后 K 帧参考框。2D 图像序列同等用 `Alt+→` / `Alt+←`(2D 的 `Shift+方向` 已被 10px nudge 占用)。配套加 scheduler scene 连续标注调度开关。计划见 `docs/plans/2026-06-05-v0.14.1-cross-frame-ux.md`。
+
+### Added
+
+- **跨帧 propagate 端点**:`POST /api/v1/tasks/{task_id}/annotations/{annotation_id}/propagate-to-task`,body `{ target_task_id, override_psr? }`。复制源 annotation 的 geometry / class / attributes / tool_unit_id 到目标 task(同 project 才允许,否则 422),共享 `group_id`。仅支持静态几何(`box_3d` / `bbox` / `polygon` / `multi_polygon` / `rotated_bbox` / `polyline` / `keypoint`);`video_*` / `point_mask_3d` 拒(422)。
+- **共享 group_id 序列**:跨帧链的 `group_id` 在源无 group 时从新建全局序列 `cross_frame_group_seq`(START 1000000000)分配并写回源,高位起始保证与 per-task `tasks.next_group_seq`(小整数)永不冲突,同 scene 跨帧 overlay 按 `group_id` 匹配不误命中无关分组。migration `0097`。
+- **box_3d convention 安全网联动**:propagate 时 `box_3d.convention_at_create` 取**目标** dataset 的 `axis_convention`(DB 内 PSR 永远 ISO 字节,原值复制即对齐世界坐标;写目标 convention 仅为前端 banner 不误报,延续 v0.13.11 契约)。
+- **前端跨帧 hook**:`useFrameNeighbors(taskId, k)` 包 neighbors 端点 + `refresh()` 强刷;`useNeighborAnnotations(taskIds, groupId)` 用 `useQueries` 跨邻帧 task 拉同 group_id 标注(复用 `["annotations",taskId]` 缓存,group=null 短路)。`api/tasks.ts` 加 `getNeighbors` / `propagateToTask`。
+- **3D 工作台跨帧 UX**:`Shift+→` / `Shift+←` 把选中 box_3d propagate 到邻帧并跳转自动选中;`CrossFrameOverlayToggle`(0/1/3/5,localStorage 持久化)控制邻帧叠加 K;`PointCloudScene.setReferenceBoxes` 渲染半透明 dashed、不可拾取的参考框层;首/末帧给"已是该 scene 首/末帧" toast。
+- **2D 图像序列跨帧 UX**:`Alt+→` / `Alt+←` 跨帧 propagate 选中 bbox / polygon(统一中央 hotkey,与 3D 共用壳层 orchestration);3D 额外保留 `Shift+→` / `Shift+←` 别名。
+
+### Changed
+
+- **scheduler scene 连续标注**:`Project` 加 `prefer_same_scene_continuation`(默认 `false`)+ `scene_continuation_window_min`(默认 30)。打开后 `get_next_task` 在套用既有 sampling 前,优先返回"用户窗口内最近标注 task 的同 scene 下一帧"(未锁、未由本人标过、可见);找不到回退既有策略。**默认 OFF,既有项目零回归**(关闭时整段不进入)。`PATCH /projects/{id}` 透出该开关。
+
+### Docs
+
+- `docs-site/user-guide/workbench/3d-box.md`:跨帧 propagate + 邻帧叠加操作说明。
+- `docs-site/dev/concepts/scene-and-frame-index.md`:新增"跨帧 UX 如何消费 neighbors API"+ scheduler scene 优先小节。
+
+### 未尽事项(留后续)
+
+- 视频多段(case C)段内/段间 `Alt+→` 分流到 `video_tracker_runner`:本期未接(videoMode 下暂无动作)。
+- 跨帧自动插值 / Kalman 预测、多目标批量 propagate、`point_mask_3d` 跨帧、邻帧 overlay K>5:留 v0.15+。
+
+## [0.14.0] - 2026-06-06
+
+跨 task 帧序列地基:`scenes` 模型 + `dataset_items.scene_id/frame_index` + neighbors API + 导入端口对齐 + manifest 透出。把 3D 点云逐帧 / 2D 抽帧序列 / 多段 mp4 拼接长录像统一到同一抽象,为 v0.14.1 跨帧 UX(`Shift+→` propagate / 邻帧叠加 / `useFrameNeighbors`)备好合法 backing。计划见 `docs/plans/2026-06-05-v0.14.0-scene-and-frame-index-foundation.md`。
+
+### Added
+
+- **`scenes` 表 + 两列**:新建 `scenes`(`display_id` SCN-N、`dataset_id` FK CASCADE、同 dataset name 唯一)+ `dataset_items.scene_id`(FK SET NULL)+ `frame_index`(int);复合索引 `idx_dataset_items_scene_frame` 给 neighbors 查询。migration `0096_scenes_and_frame_index.py`。
+- **Scene service**(`services/scene.py`):`create_scene` / `assign_items_to_scene` / `list_for_dataset` / `get_neighbors_for_task`;双路径反查 task(`task.dataset_item_id` 直链 + `TaskDatasetItemLink role=primary_lidar`)。
+- **Scene inference**(`services/scene_inference.py`):`infer_and_apply(mode=single|per_subdirectory|auto, dry_run)`;auto 模式按"顶层是否全为已知角色名"自适应单/多 scene。点云布局走 `group_frames` + 自然排序;非点云按 `file_name` 自然排序赋 0..N-1。幂等 + > 100 scene 安全阀。
+- **Neighbors 端点**:`GET /api/v1/tasks/{id}/neighbors?k=1`,k ∈ [1,20]。响应 `{ scene_id, scene_name, frame_index, scene_total_frames, prev[], next[] }`;历史未 backfill task → 200 全空。
+- **Scenes CRUD API**:`GET /api/v1/scenes?dataset_id=` / `GET /api/v1/scenes/{id}` / `PATCH /api/v1/scenes/{id}`。create 由 importer / backfill 自动发起。
+- **Backfill 端点 + 脚本**:`POST /api/v1/datasets/{id}/scenes/backfill?mode=auto&dry_run=` + `scripts/backfill_scenes.py --dataset-id / --all-missing / --dry-run / --mode`。
+- **导入端口对齐**:`pointcloud_import.build_pointcloud_tasks_for_link` 顶部自动跑 `single`-mode inference;`POST /datasets/{id}/items/upload-zip` 末尾跑 `auto`-mode,响应附 `scene_inference_notes[]`。
+- **Manifest 透出**:`TaskPointCloudManifestResponse` 增 `scene_id` / `scene_name` / `frame_index` / `scene_total_frames`;前端 codegen 自动跟随。`ThreeDWorkbench` 写 `console.debug` 追踪,本期不消费 UX。
+- **文档**:[`docs-site/dev/concepts/scene-and-frame-index.md`](docs-site/dev/concepts/scene-and-frame-index.md)。
+
+### 不在本期(留后)
+
+- 跨帧 UX(`useFrameNeighbors` / `Shift+→` propagate / 邻帧叠加)→ v0.14.1
+- 跨 scene 段内段间无感导航(case C)→ v0.14.2+
+- `get_next_task` 的 `prefer_same_scene_continuation` flag → v0.14.1+
+- nuScenes 多 scene 转换脚本 → v0.14.2
+- scene 跨多 dataset / ego_pose / 时间戳 → v0.15+
+
+### 不动
+
+- `services/scheduler.py` 一行不动;`get_next_task` 行为完全不变(既有项目零回归)。
+- `VideoFrameIndex` / `VideoChunk` / `VideoFrameCache` / `video_tracker_runner.py`:case A 内部跨帧栈不动。
+
 ## [0.13.12] - 2026-06-05
 
 3D 工作台收尾 + 点云分割 MVP。补齐 v0.13.11 留下的坐标系 UI、自动嗅探、标注创建约定记录、导出源系映射,并把 v0.13.0 已预留的 `point_mask_3d` 几何接入前端工作台。计划见 `docs/plans/2026-06-05-v0.13.12-3d-polish-and-pointmask.md`。

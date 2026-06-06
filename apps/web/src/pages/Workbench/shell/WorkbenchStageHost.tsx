@@ -62,6 +62,8 @@ interface WorkbenchStageHostCommonProps {
   /** v0.13.3-5 · 点云 3D 台工具态(壳层共享,与 ToolDock 同源);非 3D 任务忽略。 */
   threeDTool: ThreeDTool;
   onSetThreeDTool: (t: ThreeDTool) => void;
+  /** v0.14.1 · 跨帧目标延续 (Shift+→ / Shift+←): 把选中框 propagate 到同 scene 邻帧。 */
+  onCrossFramePropagate: (direction: "next" | "prev") => void;
   /** v0.13.10 · 3D 浮层避让右栏 + 三视图浮窗偏好。 */
   rightSidebarOpen: boolean;
   rightSidebarWidth: number;
@@ -221,6 +223,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onChangeUserBoxClass,
       threeDTool,
       onSetThreeDTool,
+      onCrossFramePropagate,
       rightSidebarOpen,
       rightSidebarWidth,
       workbenchLayout,
@@ -330,6 +333,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
               activeClass={activeClass}
               threeDTool={threeDTool}
               onSetThreeDTool={onSetThreeDTool}
+              onCrossFramePropagate={onCrossFramePropagate}
               rightSidebarOpen={rightSidebarOpen}
               rightSidebarWidth={rightSidebarWidth}
               triViewFloat={workbenchLayout.triViewFloat}
