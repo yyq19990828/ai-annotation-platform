@@ -416,6 +416,18 @@ async def test_upload_zip_temporal_validation_failure_cleans_storage(
     monkeypatch.setattr(storage_service, "client", fake_client)
     monkeypatch.setattr(storage_service, "read_image_dimensions_from_bytes", _noop)
 
+    # auto 模式下根级帧序列会塌缩成单 scene,无法稳定触发"无 scene"分支;
+    # 直接把 scene_inference 短路成不建 scene,真实跑后续 422 + 清理逻辑。
+    from app.services import scene_inference as _scene_inference
+
+    class _NoScene:
+        notes: list[str] = []
+
+    async def _infer_noop(*_args, **_kwargs):
+        return _NoScene()
+
+    monkeypatch.setattr(_scene_inference, "infer_and_apply", _infer_noop)
+
     ds = await _create_dataset(
         httpx_client,
         token,
@@ -425,7 +437,6 @@ async def test_upload_zip_temporal_validation_failure_cleans_storage(
     )
     ds_id = ds["id"]
 
-    # 根级文件(无子目录)→ scene_inference 落入 _root 组,推不出 scene。
     zip_bytes = _make_zip(
         {
             "frame_000.jpg": b"img0",
@@ -440,8 +451,10 @@ async def test_upload_zip_temporal_validation_failure_cleans_storage(
     )
     assert resp.status_code == 422, resp.text
 
-    # 已写入的对象应被清理,不留孤儿
-    assert fake_client.objects == {}, fake_client.objects
+    # 本次上传写入的对象应被清理,不留孤儿;dataset 创建时的文件夹占位
+    # ("{name}/" 空对象)属于 dataset 本身,不在本次清理范围内,允许保留。
+    leftover_files = [k for k in fake_client.objects if not k.endswith("/")]
+    assert leftover_files == [], leftover_files
 
     # 事务 rollback,DatasetItem 不应落库
     rows = (
