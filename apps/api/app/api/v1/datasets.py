@@ -139,6 +139,8 @@ async def sniff_axis_convention(
         source=result.source,
         camera_role=result.camera_role,
         camera_item_id=result.camera_item_id,
+        per_camera=result.per_camera,
+        agreement=result.agreement,
     )
 
 
@@ -445,7 +447,11 @@ async def upload_zip(
     if len(raw) > _ZIP_MAX_BYTES:
         raise HTTPException(
             status_code=413,
-            detail=f"ZIP 包超过 {_ZIP_MAX_BYTES // 1024 // 1024}MB 限制",
+            detail=(
+                f"ZIP 包超过 {_ZIP_MAX_BYTES // 1024 // 1024}MB 限制。"
+                "浏览器向导只适合单个原生 scene；多 scene / nuScenes 等大包请使用转换脚本。"
+                "格式说明见 docs-site/user-guide/datasets/import-formats.md"
+            ),
         )
 
     try:
@@ -466,6 +472,7 @@ async def upload_zip(
     new_image_item_ids: list[uuid.UUID] = []
     new_video_item_ids: list[uuid.UUID] = []
     new_item_ids: list[uuid.UUID] = []
+    zip_top_level_dirs: set[str] = set()
 
     from sqlalchemy import select as sa_select
     from app.db.models.dataset import DatasetItem
@@ -485,6 +492,9 @@ async def upload_zip(
         if safe_relpath is None:
             skipped.append(name)
             continue
+        safe_parts = PurePosixPath(safe_relpath).parts
+        if len(safe_parts) >= 2:
+            zip_top_level_dirs.add(safe_parts[0])
 
         if info.file_size > _PER_FILE_MAX_BYTES:
             errors.append(
@@ -558,14 +568,30 @@ async def upload_zip(
     if added > 0:
         from app.services import scene_inference as _scene_inference
 
+        reserved_top_levels = sorted(
+            d for d in zip_top_level_dirs if _scene_inference._is_role_dir_name(d)
+        )
+        non_role_top_levels = sorted(
+            d
+            for d in zip_top_level_dirs
+            if not _scene_inference._is_role_dir_name(d)
+        )
+        if reserved_top_levels and non_role_top_levels:
+            scene_inference_notes.append(
+                "ZIP 顶层同时包含保留角色目录 "
+                f"({', '.join(reserved_top_levels)}) 与 scene 目录 "
+                f"({', '.join(non_role_top_levels)}); "
+                "多 scene 顶层目录不要使用 lidar/camera/calib/image/video 等角色名。"
+                "格式说明见 docs-site/user-guide/datasets/import-formats.md"
+            )
         try:
             inf = await _scene_inference.infer_and_apply(
                 db, dataset_id=dataset_id, mode="auto"
             )
-            scene_inference_notes = inf.notes
+            scene_inference_notes.extend(inf.notes)
         except ValueError as exc:
             # 超过 scene 上限 / 其他可恢复错误:不阻断 upload,把 notes 透回前端
-            scene_inference_notes = [f"scene_inference skipped: {exc}"]
+            scene_inference_notes.append(f"scene_inference skipped: {exc}")
 
     await db.commit()
 

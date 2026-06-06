@@ -19,12 +19,28 @@ import pytest
 from PIL import Image
 from sqlalchemy import select
 
-from app.db.models.dataset import DatasetItem, Scene
+from app.db.models.dataset import Dataset, DatasetItem, Scene
+from app.db.models.project import Project
 from app.services import scene as scene_svc
 from app.services.storage import storage_service
-from scripts.import_nuscenes_scene import import_nuscenes
+from scripts.import_nuscenes_scene import _derived_display_id, import_nuscenes
 
 pytestmark = pytest.mark.asyncio
+
+
+async def test_derived_display_id_keeps_short_names_and_bounds_long_names():
+    assert _derived_display_id("DS-NU-", "nu-lite") == "DS-NU-nu-lite"
+
+    long_name = "nu-ego-0061-v0143"
+    dataset_display_id = _derived_display_id("DS-NU-", long_name)
+    project_display_id = _derived_display_id("P-NU-", long_name)
+
+    assert len(dataset_display_id) <= 20
+    assert len(project_display_id) <= 20
+    assert dataset_display_id.startswith("DS-NU-")
+    assert project_display_id.startswith("P-NU-")
+    assert dataset_display_id == _derived_display_id("DS-NU-", long_name)
+    assert project_display_id == _derived_display_id("P-NU-", long_name)
 
 
 # --------------------------------------------------------------------------- #
@@ -56,7 +72,13 @@ _CS_LIDAR = "cs-lidar"
 _CS_CAM = "cs-cam-front"
 
 
-def _write_fake_nuscenes(root: Path, *, scenes: int = 2, samples_per: int = 3) -> None:
+def _write_fake_nuscenes(
+    root: Path,
+    *,
+    scenes: int = 2,
+    samples_per: int = 3,
+    lidar_translation: list[float] | None = None,
+) -> None:
     version = "v1.0-mini"
     meta = root / version
     meta.mkdir(parents=True)
@@ -69,7 +91,7 @@ def _write_fake_nuscenes(root: Path, *, scenes: int = 2, samples_per: int = 3) -
         {
             "token": _CS_LIDAR,
             "sensor_token": _LIDAR_SENSOR,
-            "translation": _ZERO_TRANS,
+            "translation": lidar_translation or _ZERO_TRANS,
             "rotation": _IDENTITY_QUAT,
             "camera_intrinsic": [],
         },
@@ -205,6 +227,8 @@ async def test_import_nuscenes_two_scenes(tmp_path, db_session, super_admin, mon
     assert len(result["scenes"]) == 2
     assert all(s["frames"] == 3 for s in result["scenes"])
     dataset_id = result["dataset_id"]
+    dataset = await db_session.get(Dataset, dataset_id)
+    assert dataset.metadata_["axis_convention"] == "iso_8855"
 
     # 2. DB 里 2 个 Scene 行,name 对应
     scenes = (
@@ -254,3 +278,81 @@ async def test_import_nuscenes_two_scenes(tmp_path, db_session, super_admin, mon
     assert neighbors.next == []  # 不串到 scene B 首帧
     assert len(neighbors.prev) == 1
     assert neighbors.prev[0].frame_index == 1
+
+
+async def test_import_nuscenes_bounds_long_derived_display_ids(
+    tmp_path, db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    root = tmp_path / "nuscenes-mini"
+    _write_fake_nuscenes(root, scenes=1, samples_per=1)
+    monkeypatch.setattr(storage_service, "client", _FakeS3Client())
+
+    dataset_name = "nu-ego-0061-v0143"
+    result = await import_nuscenes(
+        db_session,
+        nuscenes_root=root,
+        scene_names=["scene-0000"],
+        dataset_name=dataset_name,
+        owner_id=user.id,
+    )
+
+    dataset = await db_session.get(Dataset, result["dataset_id"])
+    project = await db_session.get(Project, result["project_id"])
+
+    assert dataset.display_id == _derived_display_id("DS-NU-", dataset_name)
+    assert project.display_id == _derived_display_id("P-NU-", dataset_name)
+    assert len(dataset.display_id) <= 20
+    assert len(project.display_id) <= 20
+
+
+async def test_import_nuscenes_frame_modes_axis_and_points(
+    tmp_path, db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    root = tmp_path / "nuscenes-mini"
+    _write_fake_nuscenes(
+        root,
+        scenes=1,
+        samples_per=1,
+        lidar_translation=[10.0, 20.0, 30.0],
+    )
+
+    fake_client = _FakeS3Client()
+    monkeypatch.setattr(storage_service, "client", fake_client)
+
+    ego_result = await import_nuscenes(
+        db_session,
+        nuscenes_root=root,
+        scene_names=["scene-0000"],
+        dataset_name="nu-lite-ego",
+        owner_id=user.id,
+        frame="ego",
+    )
+    sensor_result = await import_nuscenes(
+        db_session,
+        nuscenes_root=root,
+        scene_names=["scene-0000"],
+        dataset_name="nu-lite-sensor",
+        owner_id=user.id,
+        frame="sensor",
+    )
+
+    ego_dataset = await db_session.get(Dataset, ego_result["dataset_id"])
+    sensor_dataset = await db_session.get(Dataset, sensor_result["dataset_id"])
+    assert ego_dataset.metadata_["axis_convention"] == "iso_8855"
+    assert sensor_dataset.metadata_["axis_convention"] == "apollo"
+
+    def first_point(dataset_name: str) -> tuple[float, float, float]:
+        key = next(
+            k
+            for _, k in fake_client.objects
+            if f"{dataset_name}/" in k and k.endswith(".pcd")
+        )
+        text = fake_client.objects[(storage_service.datasets_bucket, key)].decode()
+        data_line = text.split("DATA ascii\n", 1)[1].splitlines()[0]
+        x, y, z = data_line.split()
+        return (float(x), float(y), float(z))
+
+    assert first_point("nu-lite-ego") == pytest.approx((11.0, 22.0, 33.0))
+    assert first_point("nu-lite-sensor") == pytest.approx((1.0, 2.0, 3.0))

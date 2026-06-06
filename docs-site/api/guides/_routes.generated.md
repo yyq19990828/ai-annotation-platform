@@ -185,6 +185,7 @@
 | POST | `/{dataset_id}/items/scan` |
 | POST | `/{dataset_id}/backfill-dimensions` |
 | POST | `/{dataset_id}/backfill-media` |
+| POST | `/{dataset_id}/scenes/backfill` |
 | DELETE | `/{dataset_id}/items/{item_id}` |
 | POST | `/{dataset_id}/link` |
 | GET | `/{dataset_id}/link/{project_id}/preview-unlink` |
@@ -316,6 +317,13 @@
 | POST | `/{project_id}/orphan-tasks/cleanup` |
 | GET | `/{project_id}/datasets` |
 
+## `scenes.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{scene_id}` |
+| PATCH | `/{scene_id}` |
+
 ## `storage.py`
 
 | Method | Path |
@@ -352,6 +360,7 @@
 | GET | `/{task_id}` |
 | GET | `/{task_id}/video/manifest` |
 | GET | `/{task_id}/point-cloud/manifest` |
+| GET | `/{task_id}/neighbors` |
 | GET | `/{task_id}/video/frame-timetable` |
 | GET | `/{task_id}/video/manifest-v2` |
 | GET | `/{task_id}/video/segments` |
@@ -367,6 +376,7 @@
 | GET | `/{task_id}/annotations` |
 | GET | `/{task_id}/annotations/page` |
 | POST | `/{task_id}/annotations` |
+| POST | `/{task_id}/annotations/{annotation_id}/propagate-to-task` |
 | PATCH | `/{task_id}/annotations/{annotation_id}` |
 | POST | `/{task_id}/annotations/video/track-compositions` |
 | POST | `/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes` |
@@ -426,4 +436,4 @@
 
 ---
 
-_共 38 模块 / 244 路由_
+_共 39 模块 / 249 路由_

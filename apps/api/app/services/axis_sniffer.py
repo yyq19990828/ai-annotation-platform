@@ -33,6 +33,8 @@ class AxisSniffResult:
     source: SniffSource
     camera_role: str | None
     camera_item_id: uuid.UUID
+    per_camera: list[dict]
+    agreement: float
 
 
 # 侧 / 后方位词:出现任一即说明这不是「正对车头」的相机,sniff 假设会失真。
@@ -104,6 +106,23 @@ class AxisSnifferService:
         if not evaluated:
             return None
 
+        per_camera_entries = self._best_per_camera(evaluated)
+        per_camera = [
+            {
+                "camera_role": obs.camera_role,
+                "best": str(result["best"]),
+                "score": float(result["score"]),
+            }
+            for obs, result in sorted(
+                per_camera_entries,
+                key=lambda e: (
+                    not _is_front_role(e[0].camera_role, e[0].item),
+                    -float(e[1]["score"]),
+                    str(e[0].camera_role or ""),
+                ),
+            )
+        ]
+
         # 全程确定性,与 DB 行序无关:每条观测一个稳定 key。
         def _stable_key(obs: AxisSniffObservation):
             return (obs.item.created_at, str(obs.item.id))
@@ -128,6 +147,10 @@ class AxisSnifferService:
             for c in result["candidates"]
         ]
         best = candidates[0]
+        agreement = (
+            sum(1 for row in per_camera if row["best"] == best["convention"])
+            / len(per_camera)
+        )
         return AxisSniffResult(
             best=str(best["convention"]),
             score=float(best["score"]),
@@ -135,7 +158,36 @@ class AxisSnifferService:
             source=obs.source,
             camera_role=obs.camera_role,
             camera_item_id=obs.item.id,
+            per_camera=per_camera,
+            agreement=agreement,
         )
+
+    @staticmethod
+    def _best_per_camera(
+        evaluated: list[tuple[AxisSniffObservation, dict]],
+    ) -> list[tuple[AxisSniffObservation, dict]]:
+        """Collapse repeated frame observations into one best row per camera role."""
+        grouped: dict[str, tuple[AxisSniffObservation, dict]] = {}
+        for obs, result in evaluated:
+            key = obs.camera_role or str(obs.item.id)
+            current = grouped.get(key)
+            if current is None:
+                grouped[key] = (obs, result)
+                continue
+            cur_obs, cur_result = current
+            cur_key = (
+                float(cur_result["score"]),
+                cur_obs.item.created_at,
+                str(cur_obs.item.id),
+            )
+            next_key = (
+                float(result["score"]),
+                obs.item.created_at,
+                str(obs.item.id),
+            )
+            if next_key > cur_key:
+                grouped[key] = (obs, result)
+        return list(grouped.values())
 
     @staticmethod
     def _vote(

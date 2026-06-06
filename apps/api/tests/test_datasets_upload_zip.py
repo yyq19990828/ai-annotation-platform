@@ -312,3 +312,33 @@ async def test_upload_zip_multi_scene_per_subdirectory(
         )
     ).scalars().all()
     assert len(scenes) == 2, f"expected 2 scenes, got {len(scenes)}: {[s.name for s in scenes]}"
+
+
+async def test_upload_zip_notes_reserved_role_top_level_mix(
+    httpx_client, db_session, super_admin, monkeypatch
+):
+    """顶层混用角色名与 scene 名时,响应 notes 指出保留目录名冲突。"""
+    user, token = super_admin
+
+    fake_client = _FakePutOnlyClient()
+    monkeypatch.setattr(storage_service, "client", fake_client)
+    monkeypatch.setattr(storage_service, "read_image_dimensions_from_bytes", _noop)
+
+    ds = await _create_dataset(
+        httpx_client, token, f"mixed-top-{uuid.uuid4().hex[:6]}", "point_cloud"
+    )
+    ds_id = ds["id"]
+
+    zip_bytes = _make_zip({
+        "lidar/000.pcd": b"pcd-a",
+        "scene_b/lidar/000.pcd": b"pcd-b",
+    })
+
+    resp = await httpx_client.post(
+        f"/api/v1/datasets/{ds_id}/items/upload-zip",
+        headers=_bearer(token),
+        files={"file": ("mixed.zip", zip_bytes, "application/zip")},
+    )
+    assert resp.status_code == 200, resp.text
+    notes = resp.json()["scene_inference_notes"]
+    assert any("保留角色目录" in note and "import-formats.md" in note for note in notes)

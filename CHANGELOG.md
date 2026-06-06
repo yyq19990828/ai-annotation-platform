@@ -28,6 +28,30 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.14.3] - 2026-06-06
+
+点云导入鲁棒性 + 跨帧 UX 补丁:把 v0.14.2 真实 nuScenes 实测暴露的硬编码目录名、sensor/ego 坐标混用、跨 batch 跳转、sniffer 分歧不可见、overlay 档位偏小和 ZIP 多 scene 提示问题补齐。不新增表/列,不做数据迁移。计划见 `docs/plans/2026-06-06-v0.14.3-import-robustness-and-crossframe-gaps.md`。
+
+### Changed
+
+- **角色目录 pattern 单一真值**:`pointcloud_import.group_frames` 与 `scene_inference` 共用 `role_patterns.py`,默认继续识别 `lidar/ camera/ calib/`,并新增 `lidar_point_cloud_*`、`camera_image_*`、`velodyne`、`points`、`calibration` 等常见别名。scene inference 的顶层角色判断同步使用同一套边界匹配,避免 xtreme1 风格目录被误判为多 scene。
+- **nuScenes 默认 ego/ISO 导入**:`import_nuscenes_scene.py` 新增 `--frame {ego,sensor}`,默认 `ego`:点云逐点乘 `T_ego_from_lidar`,dataset 写 `axis_convention=iso_8855`,相机标定写 `cam_from_ego`。显式 `--frame sensor` 保留 v0.14.2 的 raw LIDAR_TOP + `axis_convention=apollo` + `cam_from_lidar` 行为;同一 dataset 发现两种 frame 混用时拒绝继续导入。
+- **跨帧 propagate 可跳到未加载 task**:Workbench 在 `Shift+→/←` 或 `Alt+→/←` 延续到当前任务列表未加载的邻帧时,按 taskId 直接加载目标 task 并补选中新标注,不再被当前 batch/分页列表回退到第一页。
+- **邻帧 overlay 增加 7 档**:`CrossFrameOverlayToggle` 从 0/1/3/5 扩为 0/1/3/5/7,localStorage 白名单同步接受 7。
+
+### Added
+
+- **sniffer 分歧透出**:`SniffAxisConventionResponse` 新增可选 `per_camera[]` 和 `agreement`,前端 `AxisConventionPicker` 在多相机判断不一致时显示一致相机数量,帮助用户识别侧/后相机对坐标系嗅探的干扰。
+- **ZIP 上传错误提示细化**:上传包超过 200MB 时明确提示浏览器向导只适合单个原生 scene,多 scene/nuScenes 应走转换脚本;顶层混用保留角色目录与 scene 目录时,`scene_inference_notes` 指出冲突并链接 `import-formats.md`。
+
+### Fixed
+
+- **nuScenes 长 dataset_name 导入**:`import_nuscenes_scene.py` 的 dataset/project display_id 现在会在超过数据库 20 字符限制时稳定截断并追加 hash,避免 `DS-NU-...` / `P-NU-...` 因真实验证名称较长而入库失败;短名称保持旧 display_id 不变,幂等行为不变。
+
+### Docs
+
+- `docs-site/user-guide/datasets/import-formats.md`:补充角色目录别名、nuScenes `--frame ego|sensor` 行为、dataset frame 混用保护、sniffer `per_camera/agreement` 和 ZIP 多 scene 提示。
+
 ## [0.14.2] - 2026-06-06
 
 点云导入格式收敛 + 多相机/多 scene 实测:把"进数据"这一头的两个真实阻塞拆掉。修 ZIP 上传拍平路径(D1),让点云 scene ZIP 真能从向导上传;新增 nuScenes-mini 转换脚本(D2),作为 v0.14.0 scene 模型的第一个真实多 scene 消费者,scene_token 1:1 落到 `scenes.name`。不引入插件注册表 / 通用 importer 抽象,按"自家格式 + 一次性转换脚本"路线(与 SUSTechPOINTS / xtreme1 一致)。计划见 `docs/plans/2026-06-05-v0.14.2-import-format-and-multicam.md`。

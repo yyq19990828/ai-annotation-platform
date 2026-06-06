@@ -3,7 +3,7 @@ audience: [admin, superadmin]
 type: how-to
 since: v0.14.2
 status: stable
-last_reviewed: 2026-06-05
+last_reviewed: 2026-06-06
 ---
 
 # 点云 / 多模态数据集导入格式
@@ -25,6 +25,7 @@ last_reviewed: 2026-06-05
 - **帧 id = 文件名 stem**(去扩展名),如 `000970`。lidar 与各相机的同一帧必须用**相同的文件名 stem**,平台据此把它们归到一帧(`group_frames`)。
 - **相机名 = `camera/` 后那一段**,如 `front` / `left` / `CAM_FRONT`。
 - `calib/camera/<cam>.json` 对该相机的所有帧通用。
+- v0.14.3 起,角色目录也识别常见别名:`lidar_point_cloud_*` / `velodyne` / `points` 视作 lidar,`camera_image_*` / `image` / `cam` 视作 camera,`calibration` 视作 calib。别名只用于路径角色识别,不会改变入库后的 scene / task 契约。
 
 真实例子(SUSTechPOINTS 示例 scene):
 
@@ -64,6 +65,7 @@ scene 边界与 `frame_index` 的概念详见 [Scene + frame_index 跨 task 帧�
 
 - **默认一个 ZIP = 一个 scene**,除非顶层有多个非角色子目录(见上)。
 - 上传上限沿用现有 200MB 整包 / 100MB 单文件;nuScenes 单 scene(~80MB)够用,多 scene 请走转换脚本而非向导。
+- 顶层目录如果混用了保留角色名和 scene 名,响应的 `scene_inference_notes` 会提示冲突原因;超过上传上限时错误信息会指向本页和转换脚本路线。
 - 跨子目录同名文件(如 `camera/front/000970.jpg` 与 `camera/left/000970.jpg`)按 **content_hash** 去重,同名不冲突——同帧号跨相机是合法的。
 
 ### B. 命令行脚本入库
@@ -109,18 +111,19 @@ cd apps/api
 # 单 scene
 uv run python scripts/import_nuscenes_scene.py \
   --nuscenes-root /data/nuscenes-mini --scene-tokens scene-0061 \
-  --dataset-name nu-scene-0061
+  --dataset-name nu-scene-0061 \
+  --frame ego
 # 多 scene 共用一个 dataset
 uv run python scripts/import_nuscenes_scene.py \
   --nuscenes-root /data/nuscenes-mini --scene-tokens scene-0061,scene-0103,scene-0553 \
   --dataset-name nu-mini-multi
 ```
 
-脚本只依赖 numpy + Pillow,不需要 `nuscenes-devkit`。数据集下载见 [nuscenes.org/nuscenes#download](https://www.nuscenes.org/nuscenes#download)(选 mini split)。
+脚本只依赖 numpy + Pillow,不需要 `nuscenes-devkit`。数据集下载见 [nuscenes.org/nuscenes#download](https://www.nuscenes.org/nuscenes#download)(选 mini split)。如果 `--dataset-name` 较长,脚本会把内部 `DS-NU-...` / `P-NU-...` display_id 稳定截断并追加 hash,避免超过数据库长度限制;展示名称和对象存储前缀仍保留原始 `dataset_name`。
 
-> **坐标系**:nuScenes 的 **ego(车体)系**才是 ISO 8855,但脚本上传的是未变换的 **LIDAR_TOP 传感器系**原始点,其约定为 +X 车右 / +Y 车前 / +Z 天 = **`apollo`**(已用 LIDAR_TOP→ego 标定旋转印证,且 `sniff-axis-convention` 取正前相机 `CAM_FRONT` 时给 apollo、score 1.0)。因此脚本设 `axis_convention=apollo`,由前端旋转到 ISO 显示,BEV 才车头朝上;`cam_from_lidar` 外参与 raw 点一致,投影不受影响。
+> **坐标系**:v0.14.3 起脚本默认 `--frame ego`,逐点乘 `T_ego_from_lidar` 把 LIDAR_TOP 原始点落到 nuScenes ego(车体)系,并写 `axis_convention=iso_8855`;相机标定同步写为 `cam_from_ego`,投影仍与点云自洽。若需要保留 v0.14.2 的原始 LIDAR_TOP 传感器系点,可显式传 `--frame sensor`,此时脚本写 `axis_convention=apollo` 和 `cam_from_lidar`。
 >
-> ⚠️ 实测发现 `sniff-axis-convention` 在多相机装置上结果随所抽相机而变(`CAM_FRONT`→apollo,`CAM_FRONT_RIGHT`→iso_8855)。**别用单次 sniff 给 nuScenes 这类多相机数据定约定**,以已知传感器装置(apollo)为准。
+> ⚠️ 同一个 dataset 不能混用 `--frame ego` 与 `--frame sensor`;脚本发现已存在 dataset 的 `axis_convention` 与本次模式不一致时会拒绝继续导入。多相机装置的 `sniff-axis-convention` 响应会透出 `per_camera` 和 `agreement`,可用于判断侧/后相机是否与正前相机有分歧。
 
 ### KITTI
 

@@ -106,6 +106,12 @@ class SniffAxisConventionCandidate(BaseModel):
     score: float
 
 
+class SniffAxisConventionCamera(BaseModel):
+    camera_role: str | None = None
+    best: LidarAxisConvention
+    score: float
+
+
 class SniffAxisConventionResponse(BaseModel):
     best: LidarAxisConvention | None = None
     score: float | None = None
@@ -113,3 +119,5 @@ class SniffAxisConventionResponse(BaseModel):
     source: Literal["task_link", "dataset_item"] | None = None
     camera_role: str | None = None
     camera_item_id: UUID | None = None
+    per_camera: list[SniffAxisConventionCamera] | None = None
+    agreement: float | None = None

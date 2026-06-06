@@ -53,6 +53,13 @@ function formatScore(score: number | null | undefined) {
   return `${Math.round(score * 100)}%`;
 }
 
+function formatAgreement(sniff: SniffAxisConventionResponse) {
+  if (!sniff.per_camera?.length || typeof sniff.agreement !== "number") return null;
+  if (sniff.agreement >= 1) return null;
+  const matched = Math.round(sniff.agreement * sniff.per_camera.length);
+  return `${matched}/${sniff.per_camera.length} 个相机一致，侧/后向相机可能误导，已优先正前相机`;
+}
+
 export function AxisConventionPicker({
   value,
   onChange,
@@ -108,6 +115,9 @@ export function AxisConventionPicker({
           建议 {LABELS[sniff.best]} · 匹配度 {formatScore(sniff.score)}
           {typeof sniff.score === "number" && sniff.score < 0.85 ? " · 建议人工核对" : ""}
         </div>
+      )}
+      {sniff && formatAgreement(sniff) && (
+        <div className={styles.agreement}>{formatAgreement(sniff)}</div>
       )}
       {sniff?.candidates && sniff.candidates.length > 1 && (
         <div className={styles.candidates}>

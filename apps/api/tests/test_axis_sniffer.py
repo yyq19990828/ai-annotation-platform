@@ -278,6 +278,20 @@ async def test_sniff_axis_convention_picks_canonical_front_not_front_side(
     assert body["score"] == pytest.approx(1.0)
     assert body["camera_role"] == "camera_CAM_FRONT"
     assert body["camera_item_id"] == str(front.id)
+    assert body["agreement"] == pytest.approx(1 / 3)
+    assert body["per_camera"] == [
+        {"camera_role": "camera_CAM_FRONT", "best": "apollo", "score": 1.0},
+        {
+            "camera_role": "camera_CAM_BACK_LEFT",
+            "best": "sustechpoints_demo",
+            "score": 1.0,
+        },
+        {
+            "camera_role": "camera_CAM_FRONT_RIGHT",
+            "best": "iso_8855",
+            "score": 1.0,
+        },
+    ]
 
 
 async def test_sniff_axis_convention_votes_when_no_canonical_front(
@@ -335,6 +349,8 @@ async def test_sniff_axis_convention_votes_when_no_canonical_front(
     assert body["best"] == "apollo", body
     assert body["score"] == pytest.approx(0.75)
     assert body["source"] == "dataset_item"
+    assert body["agreement"] == pytest.approx(2 / 3)
+    assert len(body["per_camera"]) == 3
 
 
 async def test_sniff_axis_convention_returns_null_without_calibration(
@@ -375,4 +391,6 @@ async def test_sniff_axis_convention_returns_null_without_calibration(
         "source": None,
         "camera_role": None,
         "camera_item_id": None,
+        "per_camera": None,
+        "agreement": None,
     }

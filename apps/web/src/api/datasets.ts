@@ -53,6 +53,12 @@ export interface SniffAxisConventionCandidate {
   score: number;
 }
 
+export interface SniffAxisConventionCamera {
+  camera_role: string | null;
+  best: LidarAxisConvention;
+  score: number;
+}
+
 export interface SniffAxisConventionResponse {
   best: LidarAxisConvention | null;
   score: number | null;
@@ -60,6 +66,8 @@ export interface SniffAxisConventionResponse {
   source: "task_link" | "dataset_item" | null;
   camera_role: string | null;
   camera_item_id: string | null;
+  per_camera: SniffAxisConventionCamera[] | null;
+  agreement: number | null;
 }
 
 export const datasetsApi = {

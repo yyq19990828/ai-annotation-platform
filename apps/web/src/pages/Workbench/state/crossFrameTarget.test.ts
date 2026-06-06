@@ -2,7 +2,10 @@
  * v0.14.1 · resolveCrossFrameTarget 单测: scene 边界 / 无 scene / 正常解析。
  */
 import { describe, it, expect } from "vitest";
-import { resolveCrossFrameTarget } from "./crossFrameTarget";
+import {
+  resolveCrossFrameNavigation,
+  resolveCrossFrameTarget,
+} from "./crossFrameTarget";
 import type { NeighborsResponse } from "@/types";
 
 function nb(over: Partial<NeighborsResponse>): NeighborsResponse {
@@ -43,5 +46,19 @@ describe("resolveCrossFrameTarget", () => {
   it("首帧 prev 为空 → boundary prev", () => {
     const r = resolveCrossFrameTarget(nb({ prev: [] }), "prev");
     expect(r).toEqual({ kind: "boundary", direction: "prev" });
+  });
+
+  it("目标 task 已加载 → loaded 导航", () => {
+    expect(resolveCrossFrameNavigation(["t1", "t2"], "t2")).toEqual({
+      kind: "loaded",
+      taskId: "t2",
+    });
+  });
+
+  it("目标 task 未加载 → direct taskId 导航", () => {
+    expect(resolveCrossFrameNavigation(["t1", "t2"], "t3")).toEqual({
+      kind: "direct",
+      taskId: "t3",
+    });
   });
 });

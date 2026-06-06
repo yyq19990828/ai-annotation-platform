@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
 import { useProject } from "@/hooks/useProjects";
 import {
-  useTaskList, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
+  useTaskList, useTask, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
   useUpdateAnnotation, useSubmitTask,
   useVideoManifest,
   useVideoFrameTimetable,
@@ -21,7 +21,10 @@ import { useFeedbacks } from "@/hooks/useFeedbacks";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
-import { resolveCrossFrameTarget } from "./crossFrameTarget";
+import {
+  resolveCrossFrameNavigation,
+  resolveCrossFrameTarget,
+} from "./crossFrameTarget";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
@@ -263,9 +266,24 @@ export function useWorkbenchShellModel({
     }),
     [mode, selectedBatchId],
   );
-  const { data: taskListData, hasNextPage, isFetchingNextPage, fetchNextPage } = useTaskList(projectId, taskListParams);
-  const tasks = taskListData?.pages.flatMap((p) => p.items) ?? [];
+  const {
+    data: taskListData,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+    isLoading: isTaskListLoading,
+  } = useTaskList(projectId, taskListParams);
+  const taskPages = taskListData?.pages;
+  const tasks = useMemo(
+    () => taskPages?.flatMap((p) => p.items) ?? [],
+    [taskPages],
+  );
   const tasksTotal = taskListData?.pages[0]?.total ?? tasks.length;
+  const requestedTaskLoaded = Boolean(
+    requestedTaskId && tasks.some((t) => t.id === requestedTaskId),
+  );
+  const shouldLoadDirectTask = Boolean(requestedTaskId && !requestedTaskLoaded);
+  const directTaskQuery = useTask(shouldLoadDirectTask ? requestedTaskId! : "");
 
   const s = useWorkbenchState();
   // v0.13.x · 点云 3D 项目无对应 2D 工具,按当前 3D 工具显式选择工具单位。
@@ -323,10 +341,25 @@ export function useWorkbenchShellModel({
     return () => clearTimeout(t);
   }, [s.confThreshold]);
 
-  const task: TaskResponse | undefined = useMemo(
-    () => tasks.find((t) => t.id === currentTaskId) ?? tasks[0],
-    [tasks, currentTaskId],
-  );
+  const task: TaskResponse | undefined = useMemo(() => {
+    const loaded = tasks.find((t) => t.id === currentTaskId);
+    if (loaded) return loaded;
+    const directTask = shouldLoadDirectTask ? directTaskQuery.data : undefined;
+    if (
+      directTask
+      && (directTask.id === requestedTaskId || !currentTaskId || directTask.id === currentTaskId)
+    ) {
+      return directTask;
+    }
+    if (requestedTaskId) return undefined;
+    return tasks[0];
+  }, [
+    tasks,
+    currentTaskId,
+    requestedTaskId,
+    shouldLoadDirectTask,
+    directTaskQuery.data,
+  ]);
   const taskId = task?.id;
   const taskIdx = tasks.findIndex((t) => t.id === taskId);
   const selectTask = useCallback(
@@ -442,11 +475,20 @@ export function useWorkbenchShellModel({
   }, [taskId, resetVideoStageUi]);
 
   useEffect(() => {
-    if (tasks.length === 0) return;
+    if (tasks.length === 0 && !directTaskQuery.data) return;
     if (requestedTaskId && tasks.some((t) => t.id === requestedTaskId)) {
       if (currentTaskId !== requestedTaskId) {
         setCurrentTaskId(requestedTaskId);
         setSelectedId(null);
+      }
+      return;
+    }
+    if (requestedTaskId) {
+      if (directTaskQuery.data?.id === requestedTaskId) {
+        if (currentTaskId !== requestedTaskId) {
+          setCurrentTaskId(requestedTaskId);
+          setSelectedId(null);
+        }
       }
       return;
     }
@@ -467,6 +509,7 @@ export function useWorkbenchShellModel({
     setSelectedId,
     selectTask,
     mode,
+    directTaskQuery.data,
   ]);
 
   useEffect(() => {
@@ -679,9 +722,8 @@ export function useWorkbenchShellModel({
 
   const queryClient = useQueryClient();
 
-  // v0.14.1 · 跨帧目标延续 (Shift+→ / Shift+←): 把选中框 propagate 到同 scene 邻帧
-  // task, 跳过去并自动选中新框。导航复用 selectTask(同 batch 已加载列表内有效);
-  // 跨过去之前异步加载目标 task 标注, 故用 pendingSelectRef 在加载完成后补选。
+  // v0.14.1+ · 跨帧目标延续 (Shift+→ / Shift+←): 把选中框 propagate 到同 scene
+  // 邻帧 task。目标若不在当前已加载队列里,退化为按 taskId 直开并补选中新框。
   const pendingCrossFrameSelectRef = useRef<{
     taskId: string;
     annotationId: string;
@@ -729,7 +771,17 @@ export function useWorkbenchShellModel({
           taskId: resolution.taskId,
           annotationId: annotation.id,
         };
-        selectTask(resolution.taskId);
+        const nav = resolveCrossFrameNavigation(
+          tasks.map((t) => t.id),
+          resolution.taskId,
+        );
+        if (nav.kind === "loaded") {
+          selectTask(nav.taskId);
+        } else {
+          setCurrentTaskId(nav.taskId);
+          setSelectedId(null);
+          updateUrl({ batchId: selectedBatchId, taskId: nav.taskId });
+        }
         pushToast({
           msg: `已延续到帧 ${resolution.frameIndex}`,
           kind: "success",
@@ -738,7 +790,18 @@ export function useWorkbenchShellModel({
         pushToast({ msg: "跨帧延续失败", kind: "error" });
       }
     },
-    [taskId, s.selectedId, selectTask, pushToast, queryClient],
+    [
+      taskId,
+      s.selectedId,
+      tasks,
+      selectTask,
+      setCurrentTaskId,
+      setSelectedId,
+      updateUrl,
+      selectedBatchId,
+      pushToast,
+      queryClient,
+    ],
   );
 
   const sam = useInteractiveAI({
@@ -1475,7 +1538,11 @@ export function useWorkbenchShellModel({
     };
   }, [leftOpen, rightOpen, stageKind]);
 
-  if (isProjectLoading) {
+  if (
+    isProjectLoading
+    || isTaskListLoading
+    || (shouldLoadDirectTask && directTaskQuery.isLoading)
+  ) {
     return { kind: "loading" };
   }
 
@@ -1490,7 +1557,18 @@ export function useWorkbenchShellModel({
     };
   }
 
-  if (tasks.length === 0) {
+  if (!task && shouldLoadDirectTask && directTaskQuery.isError) {
+    return {
+      kind: "empty",
+      emptyState: {
+        icon: "warning",
+        message: "任务不存在或无访问权限",
+        onBack,
+      },
+    };
+  }
+
+  if (tasks.length === 0 && !task) {
     return {
       kind: "empty",
       emptyState: {
@@ -1499,6 +1577,10 @@ export function useWorkbenchShellModel({
         onBack,
       },
     };
+  }
+
+  if (!task) {
+    return { kind: "loading" };
   }
 
   const propagateDialogTrack = propagateDialog?.annotation ?? null;
@@ -1603,7 +1685,7 @@ export function useWorkbenchShellModel({
     stageHost: {
       common: {
         stageKind,
-        taskId,
+        taskId: taskId ?? null,
         readOnly: isLocked,
         activeClass: s.activeClass,
         selectedId: s.selectedId,

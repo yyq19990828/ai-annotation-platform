@@ -66,6 +66,37 @@ async def _seed_scene(db_session, ds, frames, cameras):
     return out
 
 
+async def test_group_frames_accepts_role_alias_directories():
+    dataset_id = uuid.uuid4()
+    lidar = DatasetItem(
+        id=uuid.uuid4(),
+        dataset_id=dataset_id,
+        file_name="000001.pcd",
+        file_path="xtreme/lidar_point_cloud_0/000001.pcd",
+        file_type="point_cloud",
+    )
+    cam = DatasetItem(
+        id=uuid.uuid4(),
+        dataset_id=dataset_id,
+        file_name="000001.jpg",
+        file_path="xtreme/camera_image_0/000001.jpg",
+        file_type="image",
+    )
+    calib = DatasetItem(
+        id=uuid.uuid4(),
+        dataset_id=dataset_id,
+        file_name="camera_image_0.json",
+        file_path="xtreme/calibration/camera_image_0.json",
+        file_type="other",
+    )
+
+    frames, calib_items = pointcloud_import.group_frames([lidar, cam, calib])
+
+    assert frames["000001"]["lidar"] == lidar
+    assert frames["000001"]["cameras"]["camera_image_0"] == cam
+    assert calib_items["camera_image_0"] == calib
+
+
 async def test_build_tasks_groups_frames_and_links(db_session, super_admin):
     user, _ = super_admin
     ds = await _seed_dataset(db_session, user.id)

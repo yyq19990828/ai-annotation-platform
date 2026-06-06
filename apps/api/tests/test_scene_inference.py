@@ -51,6 +51,18 @@ def test_split_into_scene_groups_sustech_single():
     assert len(g[si._SINGLE_GROUP_KEY]) == 3
 
 
+def test_split_into_scene_groups_role_alias_single():
+    """xtreme1 风格角色别名顶层目录 → _single。"""
+    items = [
+        _FakeItem("ds/lidar_point_cloud_0/000001.pcd"),
+        _FakeItem("ds/camera_image_0/000001.jpg"),
+        _FakeItem("ds/calibration/camera_image_0.json"),
+    ]
+    g = si._split_into_scene_groups(items, "ds")
+    assert list(g.keys()) == [si._SINGLE_GROUP_KEY]
+    assert len(g[si._SINGLE_GROUP_KEY]) == 3
+
+
 def test_split_into_scene_groups_multi_scene():
     """顶层是 N 个非角色子目录 → N 个 scene。"""
     items = [
@@ -94,8 +106,10 @@ def test_split_into_scene_groups_root_files():
 
 def test_is_pointcloud_like():
     pc_items = [_FakeItem("ds/lidar/000001.pcd")]
+    alias_items = [_FakeItem("ds/lidar_point_cloud_0/000001.pcd")]
     flat_items = [_FakeItem("ds/000001.jpg"), _FakeItem("ds/000002.jpg")]
     assert si._is_pointcloud_like(pc_items) is True
+    assert si._is_pointcloud_like(alias_items) is True
     assert si._is_pointcloud_like(flat_items) is False
 
 

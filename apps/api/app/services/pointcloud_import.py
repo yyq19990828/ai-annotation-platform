@@ -27,6 +27,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import DatasetItem, Project, Task
 from app.schemas._jsonb_types import SensorCalibration
 from app.services import async_job as async_job_svc
+from app.services.role_patterns import (
+    DEFAULT_ROLE_PATTERNS,
+    RolePatterns,
+    last_role_index,
+    matches_role_part,
+)
 from app.services.storage import storage_service
 from app.services.task_dataset_link import link_items
 
@@ -36,18 +42,10 @@ logger = logging.getLogger(__name__)
 _POINT_CLOUD_EXTS = {".pcd", ".bin", ".ply", ".las", ".laz", ".npy"}
 
 
-def _last_index(parts: tuple[str, ...], name: str) -> int:
-    """返回 name 在 parts 中最后一次出现的下标，找不到返回 -1。
-
-    取「最后一次」以兼容 dataset 名前缀与多层嵌套（如 dataset 名恰好叫 camera）。
-    """
-    for i in range(len(parts) - 1, -1, -1):
-        if parts[i] == name:
-            return i
-    return -1
-
-
-def group_frames(items: list[DatasetItem]) -> tuple[dict, dict]:
+def group_frames(
+    items: list[DatasetItem],
+    patterns: RolePatterns = DEFAULT_ROLE_PATTERNS,
+) -> tuple[dict, dict]:
     """把一批 DatasetItem 按帧分组。
 
     返回 (frames, calib_items):
@@ -56,8 +54,8 @@ def group_frames(items: list[DatasetItem]) -> tuple[dict, dict]:
 
     分组规则（按 file_path 的 PurePosixPath.parts，定位段名取最后一次出现）:
       - calib: 末两段是 calib/camera 且后缀 .json → cam = stem(front)，记入 calib_items。
-      - lidar: parts 含 lidar 且 (file_type==point_cloud 或后缀属点云集) → frame=stem。
-      - camera: parts 含 camera → cam = camera 后一段，frame=stem。
+      - lidar: parts 命中 lidar pattern 且 (file_type==point_cloud 或后缀属点云集) → frame=stem。
+      - camera: parts 命中 camera pattern → cam = camera 后一段或 camera 段名，frame=stem。
     判定顺序优先 calib，避免 calib/camera 路径被 camera 规则误吞。
     """
     frames: dict[str, dict] = {}
@@ -69,18 +67,20 @@ def group_frames(items: list[DatasetItem]) -> tuple[dict, dict]:
         stem = path.stem
         suffix = path.suffix.lower()
 
-        calib_i = _last_index(parts, "calib")
-        # calib/camera/<cam>.json —— 末两段恰好 calib/camera
-        if (
-            len(parts) >= 2
-            and parts[-2] == "camera"
-            and calib_i == len(parts) - 3
-            and suffix == ".json"
+        calib_i = last_role_index(parts, patterns.calib)
+        # calib/camera/<cam>.json 或 calibration/<cam>.json。
+        if suffix == ".json" and (
+            (
+                len(parts) >= 3
+                and matches_role_part(parts[-2], patterns.camera)
+                and calib_i == len(parts) - 3
+            )
+            or calib_i == len(parts) - 2
         ):
             calib_items[stem] = item
             continue
 
-        lidar_i = _last_index(parts, "lidar")
+        lidar_i = last_role_index(parts, patterns.lidar)
         if lidar_i >= 0 and (
             item.file_type == "point_cloud" or suffix in _POINT_CLOUD_EXTS
         ):
@@ -88,9 +88,9 @@ def group_frames(items: list[DatasetItem]) -> tuple[dict, dict]:
             frame["lidar"] = item
             continue
 
-        camera_i = _last_index(parts, "camera")
+        camera_i = last_role_index(parts, patterns.camera)
         if camera_i >= 0 and camera_i + 1 < len(parts):
-            cam = parts[camera_i + 1]
+            cam = parts[camera_i + 1] if camera_i + 1 < len(parts) - 1 else parts[camera_i]
             frame = frames.setdefault(stem, {"lidar": None, "cameras": {}})
             frame["cameras"][cam] = item
             continue

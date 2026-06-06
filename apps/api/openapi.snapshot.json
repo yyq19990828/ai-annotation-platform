@@ -12431,6 +12431,45 @@
         "title": "SmtpStatus",
         "type": "object"
       },
+      "SniffAxisConventionCamera": {
+        "properties": {
+          "best": {
+            "enum": [
+              "iso_8855",
+              "ros_rep103",
+              "kitti_camera",
+              "opencv_camera",
+              "apollo",
+              "y_forward",
+              "sustechpoints_demo",
+              "raw"
+            ],
+            "title": "Best",
+            "type": "string"
+          },
+          "camera_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Role"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "best",
+          "score"
+        ],
+        "title": "SniffAxisConventionCamera",
+        "type": "object"
+      },
       "SniffAxisConventionCandidate": {
         "properties": {
           "convention": {
@@ -12461,6 +12500,17 @@
       },
       "SniffAxisConventionResponse": {
         "properties": {
+          "agreement": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agreement"
+          },
           "best": {
             "anyOf": [
               {
@@ -12511,6 +12561,20 @@
             },
             "title": "Candidates",
             "type": "array"
+          },
+          "per_camera": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SniffAxisConventionCamera"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Camera"
           },
           "score": {
             "anyOf": [

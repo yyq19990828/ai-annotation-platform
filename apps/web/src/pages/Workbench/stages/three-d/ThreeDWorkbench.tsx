@@ -1127,7 +1127,7 @@ export function ThreeDWorkbench({
     if (typeof window === "undefined") return 0;
     const raw = window.localStorage.getItem(CROSS_FRAME_OVERLAY_K_KEY);
     const n = raw ? Number(raw) : 0;
-    return [0, 1, 3, 5].includes(n) ? n : 0;
+    return [0, 1, 3, 5, 7].includes(n) ? n : 0;
   });
   const setOverlayKPersist = useCallback((k: number) => {
     setOverlayK(k);

@@ -35,12 +35,20 @@ from app.db.models.dataset import Dataset, DatasetItem
 from app.schemas.scene import InferenceResult
 from app.services import scene as scene_svc
 from app.services.pointcloud_import import group_frames
+from app.services.role_patterns import (
+    DEFAULT_ROLE_PATTERNS,
+    matches_any_role_dir,
+    role_dir_names,
+)
 
 logger = logging.getLogger(__name__)
 
-# 与 pointcloud_import.group_frames 的 magic word 对齐:这些顶层目录名说明
+# 与 pointcloud_import.group_frames 共用 role pattern:这些顶层目录名说明
 # "整 dataset 就是单 scene 的角色子目录布局";否则就是 per_subdirectory 的 scene key。
-ROLE_DIR_NAMES = {"lidar", "camera", "calib", "image", "video", "images", "videos"}
+_EXTRA_ROLE_DIR_PATTERNS = ("video", "images", "videos")
+ROLE_DIR_NAMES = role_dir_names(
+    DEFAULT_ROLE_PATTERNS, extra=_EXTRA_ROLE_DIR_PATTERNS
+)
 
 # 与 pointcloud_import 共享的扩展名集合
 _POINT_CLOUD_EXTS = {".pcd", ".bin", ".ply", ".las", ".laz", ".npy"}
@@ -53,6 +61,14 @@ _MAX_INFERRED_SCENES = 100
 
 
 SceneInferenceMode = Literal["single", "per_subdirectory", "auto"]
+
+
+def _is_role_dir_name(part: str) -> bool:
+    return matches_any_role_dir(
+        part,
+        DEFAULT_ROLE_PATTERNS,
+        extra=_EXTRA_ROLE_DIR_PATTERNS,
+    )
 
 
 def _natural_sort_key(s: str) -> list:
@@ -79,7 +95,7 @@ def _split_into_scene_groups(
             by_scene.setdefault(_ROOT_GROUP_KEY, []).append(item)
             continue
         first = rest[0]
-        key = _SINGLE_GROUP_KEY if first in ROLE_DIR_NAMES else first
+        key = _SINGLE_GROUP_KEY if _is_role_dir_name(first) else first
         by_scene.setdefault(key, []).append(item)
     return by_scene
 
@@ -88,7 +104,7 @@ def _is_pointcloud_like(items: list[DatasetItem]) -> bool:
     """是否含点云 / 多模态布局(有 lidar/ camera/ calib 角色目录)。"""
     for item in items:
         parts = PurePosixPath(item.file_path).parts
-        if any(p in ROLE_DIR_NAMES for p in parts):
+        if any(_is_role_dir_name(p) for p in parts):
             return True
         if PurePosixPath(item.file_path).suffix.lower() in _POINT_CLOUD_EXTS:
             return True
@@ -257,9 +273,13 @@ async def infer_and_apply(
         )
 
     if len(groups) > _MAX_INFERRED_SCENES:
+        role_names = ", ".join(sorted(ROLE_DIR_NAMES))
         raise ValueError(
             f"inferred {len(groups)} scenes > {_MAX_INFERRED_SCENES}; "
-            f"likely misidentified flat dataset, use mode='single' explicitly"
+            "likely misidentified a flat or pseudo multi-scene ZIP. "
+            f"Top-level scene directories must not use reserved role names ({role_names}); "
+            "for large multi-scene imports use the conversion script. "
+            "See docs-site/user-guide/datasets/import-formats.md"
         )
 
     created = 0
