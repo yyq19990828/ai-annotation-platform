@@ -227,6 +227,43 @@ describe("ImportDatasetWizard", () => {
     });
   });
 
+  it("其他/多模态类型不显示时序开关", async () => {
+    renderUI();
+    pickFile();
+    await waitFor(() => expect(screen.getByText(/已选 1 个文件/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /下一步/ }));
+    // 默认 image 时开关存在
+    expect(screen.getByLabelText(/声明为时序数据集/)).toBeInTheDocument();
+    // 切到「多模态」后开关消失
+    fireEvent.click(screen.getByRole("button", { name: /多模态/ }));
+    expect(screen.queryByLabelText(/声明为时序数据集/)).not.toBeInTheDocument();
+    // 切到「其他」同样无开关
+    fireEvent.click(screen.getByRole("button", { name: /其他/ }));
+    expect(screen.queryByLabelText(/声明为时序数据集/)).not.toBeInTheDocument();
+  });
+
+  it("勾选时序后切换数据类型会重置 isTemporal (再切回不发送 is_temporal)", async () => {
+    renderUI();
+    pickFile();
+    await waitFor(() => expect(screen.getByText(/已选 1 个文件/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /下一步/ }));
+    fireEvent.change(screen.getByPlaceholderText(/商品检测训练集/), {
+      target: { value: "重置测试集" },
+    });
+    // image 下勾选时序
+    fireEvent.click(screen.getByLabelText(/声明为时序数据集/));
+    // 切到视频(同样显示开关)——切换应重置为未勾选
+    fireEvent.click(screen.getByRole("button", { name: /视频/ }));
+    const checkbox = screen.getByLabelText(/声明为时序数据集/) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: /开始上传/ }));
+    await waitFor(() => {
+      expect(mockCreateDatasetMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ data_type: "video", is_temporal: undefined }),
+      );
+    });
+  });
+
   it("open=false 时 wizard 不渲染内容", () => {
     renderUI({ open: false });
     expect(screen.queryByText("选择来源")).not.toBeInTheDocument();
