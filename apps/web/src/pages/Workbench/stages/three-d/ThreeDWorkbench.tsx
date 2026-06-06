@@ -569,6 +569,11 @@ export function ThreeDWorkbench({
       if (!e.shiftKey || (e.key !== "ArrowRight" && e.key !== "ArrowLeft")) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      // 命中 Shift+左右(跨帧 propagate 组合)即抢占该按键: 即便后续因无选中 /
+      // 非 box_3d 提前 return, 也要阻止壳层 arrowNudge 同键误处理(否则会把
+      // NaN 写进 nudgeMap)。
+      e.preventDefault();
+      e.stopPropagation();
       if (!selectedId) {
         pushToast({ msg: "请先选中一个 3D 框", kind: "" });
         return;
@@ -580,7 +585,6 @@ export function ThreeDWorkbench({
         pushToast({ msg: "跨帧延续仅支持 3D 框", kind: "" });
         return;
       }
-      e.preventDefault();
       void onCrossFramePropagate(e.key === "ArrowRight" ? "next" : "prev");
     };
     window.addEventListener("keydown", onKey);
