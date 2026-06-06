@@ -19,6 +19,7 @@ from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.services.scheduler import get_next_task
+from app.services.task_lock import TaskLockService
 from tests.factory import create_project
 
 
@@ -183,4 +184,39 @@ async def test_scene_preference_on_last_frame_falls_back(
     await _annotate(db_session, task=tasks[2], project=project, user_id=user.id)
     nxt = await get_next_task(user, project.id, db_session)
     assert nxt is not None
+    assert nxt.id == tasks[0].id
+
+
+@pytest.mark.asyncio
+async def test_scene_preference_on_acquire_fails_falls_back(
+    db_session, super_admin, annotator, monkeypatch
+):
+    """TOCTOU 回归: scene 分支命中下一帧 task, 但 acquire 因他人抢先返回 None,
+    必须回退到经典分配路径(返回另一把成功上锁的 task), 而不是返回那个未上锁的 scene task。"""
+    owner, _ = super_admin
+    user, _ = annotator
+    project, _, tasks = await _seed_scene_project(
+        db_session, owner_id=owner.id, annotator_id=user.id, n=4, prefer=True
+    )
+    # 用户刚标完 frame 1 → scene 分支会命中 frame 2(tasks[2])
+    await _annotate(db_session, task=tasks[1], project=project, user_id=user.id)
+
+    scene_next_id = tasks[2].id
+    real_acquire = TaskLockService.acquire
+
+    async def fake_acquire(self, task_id, user_id, ttl=None, force_takeover=False):
+        # 模拟他人在预过滤与 acquire 之间抢先: 仅对 scene next frame 抢锁失败
+        if task_id == scene_next_id:
+            return None
+        return await real_acquire(
+            self, task_id, user_id, ttl=ttl, force_takeover=force_takeover
+        )
+
+    monkeypatch.setattr(TaskLockService, "acquire", fake_acquire)
+
+    nxt = await get_next_task(user, project.id, db_session)
+    assert nxt is not None
+    # 不能返回未拿到锁的 scene next frame
+    assert nxt.id != scene_next_id
+    # 回退经典 sequence 策略: frame1 已标被排除, 取 frame 0
     assert nxt.id == tasks[0].id

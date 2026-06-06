@@ -261,10 +261,15 @@ async def get_next_task(
             db, user=user, project=project, batch_id=batch_id
         )
         if scene_task is not None:
-            await lock_svc.acquire(
+            # TOCTOU: _filter_assignable_task_ids 已排除他人锁, 但与此处 acquire 之间存在
+            # 竞态窗口——他人可能在两步之间抢先上锁。acquire 返回 None 表示未拿到锁, 此时
+            # 不能返回这个未上锁的 task(否则多人同拉同一 scene next frame), 回退到下方既有
+            # 经典分配逻辑(经典路径同样以 acquire 结果决定是否返回)。
+            acquired = await lock_svc.acquire(
                 scene_task.id, user_id, ttl=project.task_lock_ttl_seconds
             )
-            return scene_task
+            if acquired is not None:
+                return scene_task
 
     # 3. Build candidate query: unlabeled, not already annotated by this user.
     # v0.11.30 · 相关 NOT EXISTS 取代 NOT IN(子查询)：标注员标注量大时 NOT IN 会让
