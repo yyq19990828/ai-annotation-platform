@@ -8143,8 +8143,15 @@
         "description": "task 在所属 scene 内的前后 k 个邻居任务。\n\nprev / next 都按\"距离 cur 的远近\"排序——cur-1 在 prev[0],cur+1 在 next[0]。\n首/末帧的对应方向数组为空(不报错,前端兜底渲染)。",
         "properties": {
           "frame_index": {
-            "title": "Frame Index",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
           },
           "next": {
             "items": {
@@ -8161,13 +8168,27 @@
             "type": "array"
           },
           "scene_id": {
-            "format": "uuid",
-            "title": "Scene Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
           },
           "scene_name": {
-            "title": "Scene Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
           },
           "scene_total_frames": {
             "title": "Scene Total Frames",
@@ -8175,9 +8196,6 @@
           }
         },
         "required": [
-          "scene_id",
-          "scene_name",
-          "frame_index",
           "scene_total_frames"
         ],
         "title": "NeighborsResponse",
