@@ -220,3 +220,54 @@ async def test_scene_preference_on_acquire_fails_falls_back(
     assert nxt.id != scene_next_id
     # 回退经典 sequence 策略: frame1 已标被排除, 取 frame 0
     assert nxt.id == tasks[0].id
+
+
+@pytest.mark.asyncio
+async def test_classic_path_skips_candidate_when_acquire_fails(
+    db_session, super_admin, annotator, monkeypatch
+):
+    """经典路径 TOCTOU 回归: 首个候选(frame0)在「候选查询」与「acquire」之间被他人抢锁,
+    acquire 返回 None, 调度必须跳到下一个候选(frame1)并成功上锁返回, 而不是返回未上锁的
+    frame0。prefer=False 走经典路径。"""
+    owner, _ = super_admin
+    user, _ = annotator
+    project, _, tasks = await _seed_scene_project(
+        db_session, owner_id=owner.id, annotator_id=user.id, n=4, prefer=False
+    )
+
+    contended_id = tasks[0].id  # 经典 sequence 序首个候选
+    real_acquire = TaskLockService.acquire
+
+    async def fake_acquire(self, task_id, user_id, ttl=None, force_takeover=False):
+        if task_id == contended_id:
+            return None  # 模拟他人抢先上锁
+        return await real_acquire(
+            self, task_id, user_id, ttl=ttl, force_takeover=force_takeover
+        )
+
+    monkeypatch.setattr(TaskLockService, "acquire", fake_acquire)
+
+    nxt = await get_next_task(user, project.id, db_session)
+    assert nxt is not None
+    assert nxt.id != contended_id  # 不返回未拿到锁的首候选
+    assert nxt.id == tasks[1].id  # 跳到下一候选并成功上锁
+
+
+@pytest.mark.asyncio
+async def test_classic_path_returns_none_when_all_candidates_locked(
+    db_session, super_admin, annotator, monkeypatch
+):
+    """经典路径: 候选窗口内全部 acquire 失败(全被他人占)→ 返回 None, 不返回未上锁 task。"""
+    owner, _ = super_admin
+    user, _ = annotator
+    project, _, tasks = await _seed_scene_project(
+        db_session, owner_id=owner.id, annotator_id=user.id, n=3, prefer=False
+    )
+
+    async def fake_acquire(self, task_id, user_id, ttl=None, force_takeover=False):
+        return None  # 所有候选都抢不到锁
+
+    monkeypatch.setattr(TaskLockService, "acquire", fake_acquire)
+
+    nxt = await get_next_task(user, project.id, db_session)
+    assert nxt is None

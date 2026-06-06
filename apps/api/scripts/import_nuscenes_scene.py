@@ -564,15 +564,25 @@ async def import_nuscenes(
 # admin / CLI
 # --------------------------------------------------------------------------- #
 async def _ensure_admin(db) -> uuid.UUID:
-    """取标准 admin 用户;库里没有则按 admin/123456 建一个(与 seed_pointcloud 一致)。"""
+    """取标准 admin 用户;库里没有则按 admin/123456 建一个(与 seed_pointcloud 一致)。
+
+    弱口令默认 admin 仅用于 dev/test。生产环境(settings.environment == "production")
+    下若无 admin,拒绝自动创建——避免误对生产库植入弱口令 super_admin 后门。
+    """
     from sqlalchemy import select
 
+    from app.config import settings
     from app.core.security import hash_password
     from app.db.models.user import User
 
     admin = await db.scalar(select(User).where(User.email == "admin"))
     if admin:
         return admin.id
+    if settings.environment == "production":
+        raise RuntimeError(
+            "生产环境下未找到 admin 用户,拒绝自动创建弱口令 admin/123456。"
+            "请先手动创建管理员账号再运行本导入脚本。"
+        )
     admin = User(
         id=uuid.uuid4(),
         email="admin",

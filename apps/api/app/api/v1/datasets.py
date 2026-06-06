@@ -449,6 +449,16 @@ async def upload_zip(
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
+    # 同一 dataset 的并发 upload-zip 用事务级 advisory lock 串行化:否则两个请求会
+    # 并行写 item + 各自跑 scene_inference,撞 SceneNameConflict(被吞成 notes 仍返回
+    # 200)且产生半建状态。xact 锁在本请求 commit/rollback 时自动释放。
+    from sqlalchemy import text
+
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+        {"k": str(dataset_id)},
+    )
+
     raw = await file.read()
     if len(raw) > _ZIP_MAX_BYTES:
         raise HTTPException(

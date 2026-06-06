@@ -41,6 +41,11 @@ logger = logging.getLogger(__name__)
 # 点云扩展名集合：file_type 未必准（入库可能落 other），故同时按后缀兜底。
 _POINT_CLOUD_EXTS = {".pcd", ".bin", ".ply", ".las", ".laz", ".npy"}
 
+# 相机图像直接放在角色目录下(如 camera/000.jpg、<scene>/camera/000.jpg)而无 channel
+# 子目录时的默认 channel 名。此前回退到 parts[camera_i](即角色目录名 "camera" 自身),
+# 会让 link role 变成畸形的 camera_camera、且 calib/axis_sniffer 反查拿错 sensor。
+_DEFAULT_CAMERA_CHANNEL = "default"
+
 
 def group_frames(
     items: list[DatasetItem],
@@ -90,11 +95,18 @@ def group_frames(
 
         camera_i = last_role_index(parts, patterns.camera)
         if camera_i >= 0 and camera_i + 1 < len(parts):
-            cam = (
-                parts[camera_i + 1]
-                if camera_i + 1 < len(parts) - 1
-                else parts[camera_i]
-            )
+            # camera/<channel>/<file> → channel(取 channel 子目录名)。
+            # 无 channel 子目录(<dir>/<file>)时取角色目录名 <dir> 自身作 channel:
+            #   - 携带 channel 的角色名(camera_image_0 / camera_front)→ 保留,即真实 channel;
+            #   - 裸通用角色名(camera / image / cam ...)→ 回退默认 channel,
+            #     否则 link role 会退化成畸形的 camera_camera 且 calib 反查拿错 sensor。
+            role_dir = parts[camera_i]
+            if camera_i + 1 < len(parts) - 1:
+                cam = parts[camera_i + 1]
+            elif role_dir.lower() in {p.lower() for p in patterns.camera}:
+                cam = _DEFAULT_CAMERA_CHANNEL
+            else:
+                cam = role_dir
             frame = frames.setdefault(stem, {"lidar": None, "cameras": {}})
             frame["cameras"][cam] = item
             continue

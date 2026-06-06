@@ -201,7 +201,9 @@ class AxisSnifferService:
             conv = str(result["best"])
             votes[conv] = votes.get(conv, 0) + 1
             score_sum[conv] = score_sum.get(conv, 0.0) + float(result["score"])
-        winner = min(votes, key=lambda c: (-votes[c], -score_sum[c], c))
+        # score_sum 是按 evaluated 顺序累加的 float;DB 行序不保证稳定时,末位 ULP 抖动
+        # 可能翻转 -score_sum[c] 比较。取整去噪后再以约定名 c 兜底,保证结果确定。
+        winner = min(votes, key=lambda c: (-votes[c], -round(score_sum[c], 9), c))
         return min(
             (e for e in evaluated if str(e[1]["best"]) == winner),
             key=lambda e: (-e[1]["score"], stable_key(e[0])),

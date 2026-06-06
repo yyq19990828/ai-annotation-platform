@@ -97,6 +97,33 @@ async def test_group_frames_accepts_role_alias_directories():
     assert calib_items["camera_image_0"] == calib
 
 
+async def test_group_frames_channel_less_camera_uses_default_channel():
+    """相机图像直接放在角色目录下(camera/000.jpg、<scene>/camera/000.jpg)而无 channel
+    子目录时,channel 名应回退到 "default",不再取角色目录名 "camera" 自身
+    (否则 link role 会变成畸形的 camera_camera)。"""
+    dataset_id = uuid.uuid4()
+    cam_flat = DatasetItem(
+        id=uuid.uuid4(),
+        dataset_id=dataset_id,
+        file_name="000.jpg",
+        file_path="camera/000.jpg",
+        file_type="image",
+    )
+    cam_under_scene = DatasetItem(
+        id=uuid.uuid4(),
+        dataset_id=dataset_id,
+        file_name="001.jpg",
+        file_path="scene_a/camera/001.jpg",
+        file_type="image",
+    )
+
+    frames, _ = pointcloud_import.group_frames([cam_flat, cam_under_scene])
+
+    assert frames["000"]["cameras"]["default"] == cam_flat
+    assert frames["001"]["cameras"]["default"] == cam_under_scene
+    assert "camera" not in frames["000"]["cameras"]
+
+
 async def test_build_tasks_groups_frames_and_links(db_session, super_admin):
     user, _ = super_admin
     ds = await _seed_dataset(db_session, user.id)
