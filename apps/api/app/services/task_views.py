@@ -115,6 +115,9 @@ _NUMERIC_OPS = {"eq", "ne", "gt", "gte", "lt", "lte", "in"}
 _DATE_OPS = {"eq", "ne", "gt", "gte", "lt", "lte"}
 _EXISTS_OPS = {"exists", "eq", "in"}
 
+# in 列表元素数上限，防止单请求拖慢 DB。
+_MAX_IN_VALUES = 200
+
 
 def builtin_views(project_id: uuid.UUID) -> list[dict[str, Any]]:
     return [
@@ -197,6 +200,12 @@ def _compile_node(node: dict[str, Any]) -> ColumnElement[bool]:
     value = node.get("value")
     if not isinstance(field, str) or not isinstance(op, str):
         raise HTTPException(status_code=422, detail="Filter rule needs field and op")
+    # 防止单请求用超长 in 列表拖慢 DB（所有走 .in_() 的字段在此统一收口）。
+    if op == "in" and isinstance(value, list) and len(value) > _MAX_IN_VALUES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"in value too long (max {_MAX_IN_VALUES})",
+        )
     return _compile_rule(field, op, value)
 
 
@@ -623,6 +632,26 @@ class TaskViewService:
         stmt = self._apply_visibility(stmt, user, project)
         total = await self.db.scalar(stmt)
         return int(total or 0)
+
+    async def count_for_filters(
+        self,
+        project_id: uuid.UUID,
+        filters: list[dict[str, Any]],
+        *,
+        user: User,
+        project: Project,
+    ) -> list[int]:
+        """一次扫描算出多个 filter 的计数 (内置 + 已保存视图)，避免 N+1 往返。"""
+        if not filters:
+            return []
+        cols = [
+            func.count().filter(compile_filter(f)).label(f"c{i}")
+            for i, f in enumerate(filters)
+        ]
+        stmt = select(*cols).select_from(Task).where(Task.project_id == project_id)
+        stmt = self._apply_visibility(stmt, user, project)
+        row = (await self.db.execute(stmt)).one()
+        return [int(v or 0) for v in row]
 
     async def query_tasks(
         self,

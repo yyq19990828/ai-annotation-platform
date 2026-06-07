@@ -80,17 +80,19 @@ async def list_task_views(
 ):
     project = await assert_project_visible(project_id, db, user)
     svc = TaskViewService(db)
+    builtins = builtin_views(project_id)
     saved = await svc.list_views(project_id, user.id)
+    # 单条聚合查询算出全部视图计数，避免每个视图一次往返 (N+1)。
+    counts = await svc.count_for_filters(
+        project_id,
+        [b["filter_json"] for b in builtins] + [v.filter_json for v in saved],
+        user=user,
+        project=project,
+    )
     items: list[ProjectTaskViewOut] = []
-    for builtin in builtin_views(project_id):
-        count = await svc.count_for_filter(
-            project_id, builtin["filter_json"], user=user, project=project
-        )
+    for builtin, count in zip(builtins, counts):
         items.append(ProjectTaskViewOut(**builtin, task_count=count))
-    for view in saved:
-        count = await svc.count_for_filter(
-            project_id, view.filter_json, user=user, project=project
-        )
+    for view, count in zip(saved, counts[len(builtins) :]):
         items.append(_view_out(view, task_count=count))
     return ProjectTaskViewListResponse(items=items)
 

@@ -64,6 +64,12 @@ serializer therefore maps each box through
 `truncated` and `occluded` are read from `annotation.attributes`. Missing values
 default to `0.0` and `0`.
 
+When a frame has no persisted calibration, the calib file is written as
+`calib/<frame>.unverified.txt` (instead of `calib/<frame>.txt`) and its content
+is prefixed with a `# AAP WARNING:` comment. The matrices are identity
+placeholders and must not be used for 3D→2D projection — the distinct filename
+keeps downstream pipelines from silently consuming them as real calibration.
+
 ## nuScenes JSON
 
 nuScenes export writes lightweight table files:

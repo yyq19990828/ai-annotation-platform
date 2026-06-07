@@ -83,8 +83,21 @@ function multiPolygonToGeometry(multiPolygon: MultiPolygon): JoinGeometry | null
   return { type: "multi_polygon", polygons };
 }
 
+// 稳定序列化: 递归按 key 排序, 使属性相同但 key 顺序不同的对象判定为相等
+// (否则 polygon Join 会因 key 顺序差异误判为不同, 清空共享 attributes)。
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const obj = value as Record<string, unknown>;
+  const body = Object.keys(obj)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`)
+    .join(",");
+  return `{${body}}`;
+}
+
 function sameJson(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
+  return stableStringify(a ?? {}) === stableStringify(b ?? {});
 }
 
 function sharedAttributes(inputs: readonly PolygonJoinInput[]): Record<string, unknown> | undefined {

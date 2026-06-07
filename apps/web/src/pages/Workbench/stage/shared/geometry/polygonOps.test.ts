@@ -73,6 +73,15 @@ describe("polygon join helpers", () => {
     expect(result?.sourceAnnotations.map((source) => source.id)).toEqual(["a", "b"]);
   });
 
+  it("preserves attributes that match regardless of key order", () => {
+    const result = buildPolygonJoinPayload([
+      ann("a", left, { attributes: { lane: "main", dir: "n" } }),
+      ann("b", right, { attributes: { dir: "n", lane: "main" } }),
+    ]);
+
+    expect(result?.payload.attributes).toEqual({ lane: "main", dir: "n" });
+  });
+
   it("clears attributes when selected polygons disagree", () => {
     const result = buildPolygonJoinPayload([
       ann("a", left),

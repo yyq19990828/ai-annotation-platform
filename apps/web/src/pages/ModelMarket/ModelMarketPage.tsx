@@ -39,11 +39,15 @@ export function ModelMarketPage() {
     }
     return refs;
   }, [overviewQ.data]);
+  // 仅在「能力目录」tab 下扇出 /capabilities 探测 (与 CapabilityCatalogPanel 复用同一
+  // queryKey, react-query 自动去重); 其他 tab 不再 eager 打满每个 backend 的 /setup。
+  const capabilityEnabled = activeTab === "catalog";
   const capabilityQueries = useQueries({
     queries: backendRefs.map((ref) => ({
       queryKey: ["ml-backend-capabilities", ref.projectId, ref.backendId],
       queryFn: () => mlBackendsApi.capabilities(ref.projectId, ref.backendId),
       staleTime: 60_000,
+      enabled: capabilityEnabled,
     })),
   });
   const modelCount = capabilityQueries.reduce((sum, query) => {
@@ -51,7 +55,9 @@ export function ModelMarketPage() {
     return sum + (query.data.models?.length || 1);
   }, 0);
   const modelCountLoading =
-    backendRefs.length > 0 && capabilityQueries.some((query) => query.isLoading);
+    capabilityEnabled &&
+    backendRefs.length > 0 &&
+    capabilityQueries.some((query) => query.isLoading);
 
   // 兼容老书签: ?tab=failed → 自动 redirect 到 /ai-pre/jobs?status=failed
   useEffect(() => {
@@ -92,8 +98,10 @@ export function ModelMarketPage() {
         <StatCard
           icon="layers"
           label="模型条目"
-          value={modelCountLoading ? "探测中" : String(modelCount)}
-          hint="能力目录 models[] 汇总"
+          value={
+            !capabilityEnabled ? "—" : modelCountLoading ? "探测中" : String(modelCount)
+          }
+          hint={capabilityEnabled ? "能力目录 models[] 汇总" : "切换到能力目录查看"}
         />
       </div>
 

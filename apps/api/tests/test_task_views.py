@@ -135,6 +135,53 @@ async def test_tasks_query_filters_prediction_model_version(
     assert body["items"][0]["model_versions"] == ["sam3-v1"]
 
 
+async def test_tasks_query_rejects_oversized_in_list(
+    httpx_client: httpx.AsyncClient,
+    project_admin,
+    db_session: AsyncSession,
+):
+    owner, token = project_admin
+    project, _, _ = await _seed_project(db_session, owner.id)
+
+    r = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "filter_json": {
+                "op": "and",
+                "rules": [
+                    {
+                        "field": "task.status",
+                        "op": "in",
+                        "value": [f"s{i}" for i in range(201)],
+                    }
+                ],
+            }
+        },
+    )
+    assert r.status_code == 422
+    assert "in value too long" in r.text
+
+
+async def test_task_views_list_reports_counts(
+    httpx_client: httpx.AsyncClient,
+    project_admin,
+    db_session: AsyncSession,
+):
+    owner, token = project_admin
+    project, _, _ = await _seed_project(db_session, owner.id)
+
+    r = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/task-views",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    by_name = {item["name"]: item for item in r.json()["items"]}
+    # "全部任务" 内置视图 (filter {}) 计数应等于项目任务数。
+    assert by_name["全部任务"]["task_count"] == 2
+    assert by_name["待标注"]["task_count"] == 2
+
+
 async def test_tasks_query_annotator_only_sees_visible_batches(
     httpx_client: httpx.AsyncClient,
     project_admin,

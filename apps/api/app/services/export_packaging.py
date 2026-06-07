@@ -666,7 +666,15 @@ async def _load_lidar_link_items(
 
 
 def _kitti_calib_text(calib: SensorCalibration | None) -> str:
+    header = ""
     if calib is None:
+        # 缺标定时仍写出单位矩阵占位, 但加显式警告 + 文件名标记 (.unverified),
+        # 避免下游误把它当真实标定做 3D→2D 投影得到错误结果。
+        header = (
+            "# AAP WARNING: no calibration found for this frame; the matrices "
+            "below are identity placeholders and MUST NOT be used for 3D->2D "
+            "projection.\n"
+        )
         p2 = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
         r0 = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
         tr = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
@@ -680,7 +688,7 @@ def _kitti_calib_text(calib: SensorCalibration | None) -> str:
             r0 = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
         e = [float(v) for v in calib.extrinsic]
         tr = [e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e[11]]
-    return "\n".join(
+    return header + "\n".join(
         [
             "P2: " + " ".join(f"{v:.12g}" for v in p2),
             "R0_rect: " + " ".join(f"{v:.12g}" for v in r0),
@@ -826,8 +834,10 @@ async def _build_lidar_export_zip(
                         zf.writestr(
                             f"{prefix}label_2/{frame_key}.txt", "\n".join(lines)
                         )
+                        # 缺标定 → .unverified.txt, 让下游无法静默当真实标定消费。
+                        calib_suffix = "txt" if first_calib else "unverified.txt"
                         zf.writestr(
-                            f"{prefix}calib/{frame_key}.txt",
+                            f"{prefix}calib/{frame_key}.{calib_suffix}",
                             _kitti_calib_text(first_calib),
                         )
                         zf.writestr(f"{prefix}velodyne/", "")
