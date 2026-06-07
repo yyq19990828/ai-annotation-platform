@@ -161,9 +161,13 @@ async def test_tasks_query_annotator_only_sees_visible_batches(
     batch_other = await create_batch(db_session, project_id=project.id, status="active")
     batch_other.annotator_id = reviewer_user.id
 
-    task_mine = await create_task(db_session, project_id=project.id, display_id="T-DM-MINE")
+    task_mine = await create_task(
+        db_session, project_id=project.id, display_id="T-DM-MINE"
+    )
     task_mine.batch_id = batch_mine.id
-    task_other = await create_task(db_session, project_id=project.id, display_id="T-DM-OTHER")
+    task_other = await create_task(
+        db_session, project_id=project.id, display_id="T-DM-OTHER"
+    )
     task_other.batch_id = batch_other.id
     # 无 batch 的孤儿任务: 对非特权不可见
     await create_task(db_session, project_id=project.id, display_id="T-DM-ORPHAN")
