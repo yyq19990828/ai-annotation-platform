@@ -19,6 +19,7 @@ last_reviewed: 2026-05-09
 
 - 选中已有多边形，鼠标悬停在边界上 → 出现「+」图标，单击插入新顶点
 - 拖动顶点 → 修改形状
+- 绘制 polygon / polyline 或拖动 polygon 顶点时，会在 8px 屏幕距离内吸附到可见 polygon / multi_polygon 的顶点或边界；按住 `Alt` 可临时关闭吸附
 - 选中顶点 → `Delete` 删除
 - 多选同类别 polygon / multi_polygon 后，可在浮条或右键菜单点「合并」生成一个新的 polygon / multi_polygon；原标注会被删除，整次操作可一次撤销
 - 不同类别、锁定标注或非 polygon 几何不会合并；属性完全相同时保留，不一致时新标注属性为空
@@ -30,6 +31,12 @@ last_reviewed: 2026-05-09
 1. 打开「属性模式」
 2. 选择要补录的字段和值
 3. 直接点击 bbox、旋转框或 polygon / multi_polygon 标注，把该值写入标注属性
+
+快捷键:
+
+- `[` / `]`: 切换当前属性字段
+- `1` - `9`: 选择当前字段的第 N 个候选值
+- `N`: 跳到下一个未填写当前字段的可支持标注
 
 text / number / range 字段仍在右侧属性面板编辑。
 

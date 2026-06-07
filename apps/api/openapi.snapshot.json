@@ -8986,6 +8986,15 @@
             "title": "Supported Trackers",
             "type": "array"
           },
+          "supported_variants": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Supported Variants",
+            "type": "array"
+          },
           "supports_variants": {
             "default": false,
             "title": "Supports Variants",
@@ -13251,6 +13260,18 @@
             "minLength": 1,
             "title": "Url",
             "type": "string"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant"
           }
         },
         "required": [

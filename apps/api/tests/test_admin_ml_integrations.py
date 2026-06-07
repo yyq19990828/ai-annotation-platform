@@ -321,6 +321,13 @@ async def test_observe_returns_variant_catalog_and_registered_flag(
         ("get", "/setup"): _FakeResp(
             200,
             {
+                "supported_variants": [
+                    {
+                        "key": "series",
+                        "title": "Series",
+                        "variants": [{"value": "yolo11", "label": "YOLO 11"}],
+                    }
+                ],
                 "params": {
                     "properties": {
                         "sam_variant": {"enum": ["tiny", "large"]},
@@ -344,6 +351,7 @@ async def test_observe_returns_variant_catalog_and_registered_flag(
     assert t["ok"] is True
     assert t["supports_variants"] is True
     assert t["variant_catalog"]["sam_variant"] == ["tiny", "large"]
+    assert t["supported_variants"][0]["key"] == "series"
     assert t["registered"] is True
     assert "POBS" in (t["registered_label"] or "")
 
@@ -381,6 +389,28 @@ async def test_smoke_test_skips_when_pool_already_loaded(httpx_client, super_adm
     assert body["ok"] is True
     assert body["skipped"] is True
     assert body["auto_unloaded"] is False
+
+
+@pytest.mark.asyncio
+async def test_smoke_test_generic_variant_is_skipped_until_backend_warm_exists(
+    httpx_client, super_admin
+):
+    _, token = super_admin
+    with patch("app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client({})):
+        res = await httpx_client.post(
+            "/api/v1/admin/ml-integrations/observe/smoke-test",
+            json={
+                "url": "http://obs1:8001",
+                "variant": {"series": "yolo11", "size": "n"},
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["skipped"] is True
+    assert body["message"] == "该容器未声明通用 warm 接口"
+    assert body["loaded_variant"] == {"series": "yolo11", "size": "n"}
 
 
 @pytest.mark.asyncio

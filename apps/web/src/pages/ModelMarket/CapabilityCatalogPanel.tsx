@@ -95,6 +95,10 @@ interface BackendResult {
   error?: unknown;
 }
 
+type CatalogViewMode = "cards" | "list";
+type CatalogGroupBy = "none" | "backend" | "task" | "infra";
+type CatalogSort = "name" | "task" | "infra";
+
 // model 的有效 infra: 优先 model.infra, 回落 backend.infra.
 function effectiveInfra(m: MLModelCapability, backendInfra?: string): string | undefined {
   return m.infra ?? backendInfra;
@@ -110,6 +114,12 @@ export function CapabilityCatalogPanel() {
   const qc = useQueryClient();
   const pushToast = useToastStore((s) => s.push);
   const [refreshing, setRefreshing] = useState(false);
+  const [viewMode, setViewMode] = useState<CatalogViewMode>("cards");
+  const [groupBy, setGroupBy] = useState<CatalogGroupBy>("backend");
+  const [sortBy, setSortBy] = useState<CatalogSort>("name");
+  const [search, setSearch] = useState("");
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // 1) 枚举所有项目 + 已注册 backend.
   const {
@@ -223,6 +233,7 @@ export function CapabilityCatalogPanel() {
   const [modalityFilter, setModalityFilter] = useState<Set<string>>(new Set());
 
   const filtered = useMemo(() => {
+    const needle = search.trim().toLocaleLowerCase();
     return flatModels.filter((f) => {
       if (taskFilter.size > 0 && !(f.model.task && taskFilter.has(f.model.task))) return false;
       if (familyFilter.size > 0 && !(f.model.model_family && familyFilter.has(f.model.model_family)))
@@ -235,17 +246,49 @@ export function CapabilityCatalogPanel() {
         const mods = effectiveModalities(f.model, f.backendModalities);
         if (!mods.some((m) => modalityFilter.has(m))) return false;
       }
+      if (needle) {
+        const haystack = [
+          f.model.display_name,
+          f.model.id,
+          f.model.model_family,
+          f.model.task ? taskLabel(f.model.task) : "",
+          f.backendName,
+          f.projectName,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLocaleLowerCase();
+        if (!haystack.includes(needle)) return false;
+      }
       return true;
     });
-  }, [flatModels, taskFilter, familyFilter, infraFilter, modalityFilter]);
+  }, [flatModels, taskFilter, familyFilter, infraFilter, modalityFilter, search]);
+
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => compareModel(a, b, sortBy));
+  }, [filtered, sortBy]);
+
+  const grouped = useMemo(() => groupModels(sorted, groupBy), [groupBy, sorted]);
 
   const hasActiveFilter =
-    taskFilter.size > 0 || familyFilter.size > 0 || infraFilter.size > 0 || modalityFilter.size > 0;
+    taskFilter.size > 0 ||
+    familyFilter.size > 0 ||
+    infraFilter.size > 0 ||
+    modalityFilter.size > 0 ||
+    Boolean(search.trim());
   const clearFilters = () => {
     setTaskFilter(new Set());
     setFamilyFilter(new Set());
     setInfraFilter(new Set());
     setModalityFilter(new Set());
+    setSearch("");
+  };
+  const toggleGroup = (key: string) => {
+    if (flatModels.length > 30) {
+      setExpandedGroups((groups) => toggle(groups, key));
+    } else {
+      setCollapsedGroups((groups) => toggle(groups, key));
+    }
   };
 
   // 5) 刷新: 对每个 backend 调 refreshCapabilities, 再失效对应缓存.
@@ -323,6 +366,57 @@ export function CapabilityCatalogPanel() {
               onClear={clearFilters}
             />
 
+            <div className={styles.catalogControls}>
+              <label className={styles.searchBox}>
+                <Icon name="search" size={13} />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="搜索模型、ID、模型族、任务或来源"
+                  className={styles.searchInput}
+                />
+              </label>
+              <div className={styles.segmented}>
+                <button
+                  type="button"
+                  className={viewMode === "cards" ? `${styles.viewBtn} ${styles.viewBtnOn}` : styles.viewBtn}
+                  onClick={() => setViewMode("cards")}
+                  aria-pressed={viewMode === "cards"}
+                  title="卡片视图"
+                >
+                  <Icon name="grid" size={13} />
+                </button>
+                <button
+                  type="button"
+                  className={viewMode === "list" ? `${styles.viewBtn} ${styles.viewBtnOn}` : styles.viewBtn}
+                  onClick={() => setViewMode("list")}
+                  aria-pressed={viewMode === "list"}
+                  title="列表视图"
+                >
+                  <Icon name="list" size={13} />
+                </button>
+              </div>
+              <label className={styles.selectLabel}>
+                分组
+                <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as CatalogGroupBy)}>
+                  <option value="backend">backend</option>
+                  <option value="task">task</option>
+                  <option value="infra">infra</option>
+                  <option value="none">不分组</option>
+                </select>
+              </label>
+              {viewMode === "list" && (
+                <label className={styles.selectLabel}>
+                  排序
+                  <select value={sortBy} onChange={(e) => setSortBy(e.target.value as CatalogSort)}>
+                    <option value="name">模型名</option>
+                    <option value="task">任务</option>
+                    <option value="infra">infra</option>
+                  </select>
+                </label>
+              )}
+            </div>
+
             {/* 探测失败的 backend 降级提示 (能力目录可能缺条目). */}
             {results.some((r) => r.isError) && (
               <div className={styles.degradeBanner}>
@@ -335,7 +429,7 @@ export function CapabilityCatalogPanel() {
 
             {anyCapLoading && flatModels.length === 0 ? (
               <div className={styles.note}>探测各 backend 能力中…</div>
-            ) : filtered.length === 0 ? (
+            ) : sorted.length === 0 ? (
               <div className={styles.emptyState}>
                 <Icon name="filter" size={24} className={styles.emptyIcon} />
                 <div>{hasActiveFilter ? "当前过滤条件无匹配模型" : "暂无可用模型条目"}</div>
@@ -346,10 +440,39 @@ export function CapabilityCatalogPanel() {
                 )}
               </div>
             ) : (
-              <div className={styles.grid}>
-                {filtered.map((f) => (
-                  <ModelCard key={`${f.backendId}:${f.model.id}`} item={f} />
-                ))}
+              <div className={styles.groupedCatalog}>
+                {grouped.map((group) => {
+                  const defaultCollapsed = flatModels.length > 30 && groupBy !== "none";
+                  const collapsed =
+                    groupBy !== "none" &&
+                    (defaultCollapsed ? !expandedGroups.has(group.key) : collapsedGroups.has(group.key));
+                  return (
+                    <section key={group.key} className={styles.catalogGroup}>
+                      {groupBy !== "none" && (
+                        <button
+                          type="button"
+                          className={styles.groupHeader}
+                          onClick={() => toggleGroup(group.key)}
+                          aria-expanded={!collapsed}
+                        >
+                          <Icon name={collapsed ? "chevRight" : "chevDown"} size={13} />
+                          <span>{group.label}</span>
+                          <span className={styles.groupCount}>{group.items.length}</span>
+                        </button>
+                      )}
+                      {!collapsed &&
+                        (viewMode === "cards" ? (
+                          <div className={styles.grid}>
+                            {group.items.map((f) => (
+                              <ModelCard key={`${f.backendId}:${f.model.id}`} item={f} />
+                            ))}
+                          </div>
+                        ) : (
+                          <ModelListTable items={group.items} />
+                        ))}
+                    </section>
+                  );
+                })}
               </div>
             )}
           </>
@@ -357,6 +480,42 @@ export function CapabilityCatalogPanel() {
       </Card>
     </div>
   );
+}
+
+function compareModel(a: FlatModel, b: FlatModel, sortBy: CatalogSort): number {
+  if (sortBy === "task") {
+    return (a.model.task ?? "").localeCompare(b.model.task ?? "") || compareModel(a, b, "name");
+  }
+  if (sortBy === "infra") {
+    return (
+      (effectiveInfra(a.model, a.backendInfra) ?? "").localeCompare(
+        effectiveInfra(b.model, b.backendInfra) ?? "",
+      ) || compareModel(a, b, "name")
+    );
+  }
+  return (a.model.display_name ?? a.model.id).localeCompare(b.model.display_name ?? b.model.id);
+}
+
+function groupModels(items: FlatModel[], groupBy: CatalogGroupBy) {
+  if (groupBy === "none") return [{ key: "all", label: "全部模型", items }];
+  const map = new Map<string, { key: string; label: string; items: FlatModel[] }>();
+  for (const item of items) {
+    let key = "unknown";
+    let label = "未知";
+    if (groupBy === "backend") {
+      key = item.backendId;
+      label = `${item.projectName} · ${item.backendName}`;
+    } else if (groupBy === "task") {
+      key = item.model.task ?? "unknown";
+      label = item.model.task ? taskLabel(item.model.task) : "未知任务";
+    } else if (groupBy === "infra") {
+      key = effectiveInfra(item.model, item.backendInfra) ?? "unknown";
+      label = infraLabel(key);
+    }
+    if (!map.has(key)) map.set(key, { key, label, items: [] });
+    map.get(key)!.items.push(item);
+  }
+  return [...map.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function toggle(set: Set<string>, value: string): Set<string> {
@@ -432,6 +591,56 @@ function FilterToolbar(p: FilterToolbarProps) {
       )}
     </div>
   );
+}
+
+function ModelListTable({ items }: { items: FlatModel[] }) {
+  return (
+    <div className={styles.tableScroller}>
+      <table className={styles.modelTable}>
+        <thead>
+          <tr>
+            {["模型", "task", "infra", "模态", "输出几何", "variants", "来源", "状态"].map((head) => (
+              <th key={head}>{head}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => {
+            const m = item.model;
+            const infra = effectiveInfra(m, item.backendInfra);
+            const modalities = effectiveModalities(m, item.backendModalities);
+            return (
+              <tr key={`${item.backendId}:${m.id}`}>
+                <td className={styles.modelCell}>
+                  <div className={styles.modelCellName}>{m.display_name ?? m.id}</div>
+                  <div className={`mono ${styles.modelCellId}`}>{m.id}</div>
+                </td>
+                <td>{m.task ? taskLabel(m.task) : "—"}</td>
+                <td>{infra ? infraLabel(infra) : "—"}</td>
+                <td>{modalities.length ? modalities.map(modalityLabel).join(" / ") : "—"}</td>
+                <td className={styles.compactCell}>{(m.supported_geometric_outputs ?? []).join(" / ") || "—"}</td>
+                <td className={styles.compactCell}>{variantSummary(m)}</td>
+                <td className={styles.sourceCell}>
+                  {item.projectName} · {item.backendName}
+                </td>
+                <td>{item.stale ? <Badge variant="warning">缓存</Badge> : <Badge variant="success">在线</Badge>}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function variantSummary(model: MLModelCapability) {
+  const groups = (model.supported_variants ?? []).filter(
+    (group) => Array.isArray(group.variants) && group.variants.length > 0,
+  );
+  if (groups.length === 0) return "—";
+  return groups
+    .map((group) => `${group.title ?? group.key}:${group.variants?.length ?? 0}`)
+    .join(" / ");
 }
 
 // ── 单个 model 卡片 ─────────────────────────────────────────────────────

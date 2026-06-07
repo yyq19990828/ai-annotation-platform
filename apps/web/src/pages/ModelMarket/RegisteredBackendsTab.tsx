@@ -1,9 +1,8 @@
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { clsx } from "clsx";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { StatCard } from "@/components/ui/StatCard";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { useToastStore } from "@/components/ui/Toast";
@@ -11,16 +10,9 @@ import {
   adminMlIntegrationsApi,
   type MLBackendItem,
 } from "@/api/adminMlIntegrations";
-import {
-  useDeleteMLBackend,
-  useMLBackendHealth,
-  useMLBackendReload,
-  useMLBackendUnload,
-} from "@/hooks/useMLBackends";
+import { useDeleteMLBackend } from "@/hooks/useMLBackends";
 import { MlBackendFormModal } from "@/components/projects/MlBackendFormModal";
-import type { MLBackendVariant } from "@/api/ml-backends";
 import type { MLBackendResponse } from "@/types";
-import { VariantPanel } from "./VariantPanel";
 import styles from "./RegisteredBackendsTab.module.css";
 
 const STATE_VARIANT: Record<string, "success" | "warning" | "outline" | "danger"> = {
@@ -80,24 +72,9 @@ export function RegisteredBackendsTab() {
 
   return (
     <>
-      <div className={styles.statsGrid}>
-        <StatCard
-          icon="bot"
-          label="ML Backend"
-          value={`${data.connected_backends} / ${data.total_backends}`}
-          hint="已连接 / 总数"
-        />
-        <StatCard
-          icon="folder"
-          label="使用项目"
-          value={String(data.projects.length)}
-          hint="AI 已启用或已注册 backend 的项目"
-        />
-      </div>
-
       <Card>
         <div className={styles.cardHeader}>
-          <h3 className={styles.cardTitle}>项目级 ML Backend</h3>
+          <h3 className={styles.cardTitle}>注册管理</h3>
           <span className={styles.cardMeta}>
             共 {data.projects.length} 个 AI 项目 · {data.total_backends} 个 backend
           </span>
@@ -144,11 +121,6 @@ function ProjectGroup({
 }) {
   const pushToast = useToastStore((s) => s.push);
   const del = useDeleteMLBackend(group.project_id);
-  const health = useMLBackendHealth(group.project_id);
-  const unload = useMLBackendUnload(group.project_id);
-  const reload = useMLBackendReload(group.project_id);
-  // v0.10.26 · 每 backend 可展开「变体」面板.
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const onDelete = (b: MLBackendItem) => {
     if (!window.confirm(`确认删除 backend「${b.name}」？此操作不可撤销。`)) return;
@@ -156,47 +128,6 @@ function ProjectGroup({
       onSuccess: () => pushToast({ msg: "已删除 backend", kind: "success" }),
       onError: (e) => pushToast({ msg: "删除失败", sub: (e as Error).message }),
     });
-  };
-
-  const onHealth = (b: MLBackendItem) => {
-    health.mutate(b.id, {
-      onSuccess: (res) =>
-        pushToast({
-          msg: `${b.name}: ${res.status}`,
-          kind: res.status === "connected" ? "success" : "warning",
-        }),
-      onError: (e) => pushToast({ msg: "健康检查失败", sub: (e as Error).message }),
-    });
-  };
-
-  const onUnload = (b: MLBackendItem) => {
-    unload.mutate(b.id, {
-      onSuccess: (res) =>
-        pushToast({
-          msg: res.unloaded ? `${b.name} 已卸载，显存已释放` : `${b.name} 当前未加载，无需卸载`,
-          kind: "success",
-        }),
-      onError: (e) => pushToast({ msg: "卸载失败", sub: (e as Error).message }),
-    });
-  };
-
-  const onReload = (b: MLBackendItem, variant?: MLBackendVariant, taskType?: "image" | "video") => {
-    reload.mutate(
-      { backendId: b.id, variant, taskType },
-      {
-        onSuccess: (res) => {
-          // v0.10.36 · video 预热响应无 dino_variant, tag 只拼 sam_variant.
-          const tag = res.sam_variant
-            ? ` (${res.sam_variant}${res.dino_variant ? `/${res.dino_variant}` : ""})`
-            : "";
-          pushToast({
-            msg: res.reloaded ? `${b.name} 已预热到显存${tag}` : `${b.name} 已在显存中${tag}`,
-            kind: "success",
-          });
-        },
-        onError: (e) => pushToast({ msg: "预热失败", sub: (e as Error).message }),
-      },
-    );
   };
 
   return (
@@ -244,8 +175,7 @@ function ProjectGroup({
             </thead>
             <tbody>
               {group.backends.map((b) => (
-                <Fragment key={b.id}>
-                <tr>
+                <tr key={b.id}>
                   <td className={clsx(styles.tableCell, styles.nameCell)} title={b.name}>{b.name}</td>
                   <td className={clsx(styles.tableCell, styles.urlCell)} title={b.url}>
                     {b.url}
@@ -267,62 +197,16 @@ function ProjectGroup({
                     <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
                       {b.state}
                     </Badge>
-                    {/* v0.9.6 · 深度健康指标 (gpu_info / cache hit / model_version), 由 /health 缓存. */}
-                    {b.health_meta && (
-                      <div className={styles.healthMeta}>
-                        {b.health_meta.model_version && (
-                          <div className="mono" title="model_version">
-                            {b.health_meta.model_version}
-                          </div>
-                        )}
-                        {b.health_meta.gpu_info?.memory_used_mb != null &&
-                          b.health_meta.gpu_info?.memory_total_mb != null && (
-                            <div title="GPU 显存 used / total">
-                              GPU {b.health_meta.gpu_info.memory_used_mb}/
-                              {b.health_meta.gpu_info.memory_total_mb} MB
-                            </div>
-                          )}
-                        {typeof b.health_meta.cache?.hit_rate === "number" && (
-                          <div title="cache hit rate">
-                            cache {(b.health_meta.cache.hit_rate * 100).toFixed(1)}%
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    {b.error_message && <div className={styles.errorText}>{b.error_message}</div>}
                   </td>
                   <td className={clsx(styles.tableCell, styles.mutedCell, styles.dateCell)}>
                     {formatDate(b.last_checked_at)}
                   </td>
                   <td className={clsx(styles.tableCell, styles.actionsCell)}>
                     <div className={styles.actionList}>
-                      <Button
-                        size="sm"
-                        onClick={() => setExpandedId((id) => (id === b.id ? null : b.id))}
-                        title="变体（多模型并存 / 预热）"
-                      >
-                        <Icon name={expandedId === b.id ? "chevUp" : "chevDown"} size={11} />
-                      </Button>
-                      <Button size="sm" onClick={() => onHealth(b)} disabled={health.isPending} title="健康检查">
-                        <Icon name="refresh" size={11} />
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => onUnload(b)}
-                        disabled={unload.isPending}
-                        title="卸载模型释放显存 (空闲时建议)"
-                      >
-                        <Icon name="pause" size={11} />
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => onReload(b)}
-                        disabled={reload.isPending}
-                        title="重新加载模型到显存"
-                      >
-                        <Icon name="play" size={11} />
-                      </Button>
                       <Button size="sm" onClick={() => onEdit(itemToResponse(b))} title="编辑">
                         <Icon name="edit" size={11} />
+                        编辑
                       </Button>
                       <Button
                         size="sm"
@@ -332,23 +216,11 @@ function ProjectGroup({
                         title="删除"
                       >
                         <Icon name="trash" size={11} />
+                        删除
                       </Button>
                     </div>
                   </td>
                 </tr>
-                {expandedId === b.id && (
-                  <tr>
-                    <td colSpan={6} className={styles.expandCell}>
-                      <VariantPanel
-                        projectId={group.project_id}
-                        backend={b}
-                        onWarm={(variant, taskType) => onReload(b, variant, taskType)}
-                        isWarming={reload.isPending}
-                      />
-                    </td>
-                  </tr>
-                )}
-                </Fragment>
               ))}
             </tbody>
           </table>

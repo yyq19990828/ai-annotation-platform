@@ -30,22 +30,32 @@
 
 ## [0.14.10] - 2026-06-07
 
-画布精细交互 Part A。计划见 `docs/plans/2026-06-07-v0.14.10-canvas-precision-tools-and-attribute-mode.md`。本次只覆盖 Workbench canvas precision 与属性补录模式；模型市场重构由独立分支处理。
+画布精细交互 Part A + 模型市场前端重构 Part B。计划见 `docs/plans/2026-06-07-v0.14.10-canvas-precision-tools-and-attribute-mode.md`。
 
 ### Added
 
-- **Snap 纯几何助手**:新增 `stage/shared/geometry/snap.ts`,覆盖点候选、线段投影候选与 polygon / multi_polygon snap index 构建,为后续绘制/顶点拖拽接入提供可测基础。
+- **Snap 画布吸附**:新增 `stage/shared/geometry/snap.ts`,覆盖点候选、线段投影候选与 polygon / multi_polygon snap index 构建;polygon / polyline 绘制和 polygon 顶点拖拽会在 8px 屏幕距离内吸附到可见 polygon / multi_polygon 顶点或边界,并显示吸附指示点。按住 `Alt` 可临时关闭吸附。
 - **Polygon Join**:图片工作台多选同类别、未锁定 polygon / multi_polygon 后,可从浮条或右键菜单合并为一个新的 polygon / multi_polygon。合并复用 `polygon-clipping.union`,以 create + delete 批量历史命令记录,可一次撤销。
-- **属性模式**:图片工作台顶部新增属性模式栏,支持当前属性 schema 中 boolean / select / multiselect 字段。开启后点击 bbox、旋转框或 polygon / multi_polygon 会把当前字段值写入该标注属性并入 history。
+- **属性模式**:图片工作台顶部新增属性模式栏,支持当前属性 schema 中 boolean / select / multiselect 字段。开启后点击 bbox、旋转框或 polygon / multi_polygon 会把当前字段值写入该标注属性并入 history;`[`/`]` 切字段,`1`-`9` 选值,`N` 跳到下一个未填对象。
+- **模型市场三视图**:`/model-market` 改为 `?tab=catalog|runtime|registry` 分段视图,顶部显示已连 backend、使用项目数与模型条目数。能力目录支持卡片/列表、backend/task/infra 分组、搜索和列表排序。
+- **运行时观测独立**:新增运行时观测面,以已注册 backend 为主键展示 observe 实时指标并保留健康检查、卸载、预热与变体面板;env-only 容器单独展示,不再把生命周期动作放在注册表。
 
 ### Deferred
 
 - Slice 切割工具暂缓。当前 polygon 编辑器以单环编辑为主,可靠切割需要更多拓扑处理与失败回滚设计。
+- 通用多轴 `supported_variants` 的 warm / smoke 动作暂缓。运行时观测已只读展示通用变体,但仅 SAM/DINO 旧 `variant_catalog` 启用试启动。
+
+### Changed
+
+- **注册管理瘦身**:项目级 backend 表只保留 CRUD、状态和跳项目设置;GPU/cache/model_version/pool 与 health/unload/reload 迁到运行时观测。
+- **observe 泛化**:`GET /admin/ml-integrations/observe` 双发旧 `variant_catalog` 与新 `supported_variants`;`POST /observe/smoke-test` 接收 `variant` axis→value 字典并按占位协议返回 `skipped=true`。
 
 ### Docs / Tests
 
 - 更新 Workbench polygon 与总览文档,补充 Join 和属性模式说明。
+- 更新模型市场超管手册与 ML Backend 协议文档,补充三视图、运行时观测 keying 和 observe 通用变体说明。
 - 新增 `snap`、`polygonOps`、`attributeMode` 纯函数单测,并补充右键菜单 Join 可用性测试。
+- 补充 admin observe / smoke-test 后端单测与注册表瘦身组件测试。
 
 ## [0.14.9] - 2026-06-07
 

@@ -1,4 +1,4 @@
-import type { AnnotationResponse, MultiPolygonGeometry, PolygonGeometry } from "@/types";
+import type { Geometry, MultiPolygonGeometry, PolygonGeometry } from "@/types";
 import { projectOnSegment, type Pt } from "../../polygonGeom";
 
 export interface SnapPointCandidate {
@@ -44,7 +44,12 @@ function distancePx(a: Pt, b: Pt, transform: SnapViewportTransform): number {
   );
 }
 
-function polygonsFromGeometry(geometry: AnnotationResponse["geometry"]): PolygonGeometry[] {
+interface SnapAnnotation {
+  id: string;
+  geometry: Geometry;
+}
+
+function polygonsFromGeometry(geometry: Geometry): PolygonGeometry[] {
   if (geometry.type === "polygon") return [geometry];
   if (geometry.type === "multi_polygon") return geometry.polygons;
   return [];
@@ -99,7 +104,7 @@ export function snapPointToSegments(
   return best;
 }
 
-export function buildSnapIndex(annotations: readonly AnnotationResponse[]): SnapIndex {
+export function buildSnapIndex(annotations: readonly SnapAnnotation[]): SnapIndex {
   const points: SnapPointCandidate[] = [];
   const segments: SnapSegmentCandidate[] = [];
 

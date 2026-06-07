@@ -1,0 +1,170 @@
+.wrap {
+  margin-bottom: 16px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.headerTitle,
+.headerActions,
+.cardTop,
+.actionRow,
+.variantPicker,
+.field,
+.metrics {
+  display: flex;
+  align-items: center;
+}
+
+.headerTitle,
+.headerActions,
+.actionRow,
+.variantPicker {
+  gap: 8px;
+}
+
+.mutedIcon {
+  color: var(--color-fg-muted);
+}
+
+.title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.meta,
+.latency,
+.projectName,
+.emptyHint,
+.note {
+  color: var(--color-fg-subtle);
+}
+
+.meta,
+.latency,
+.emptyHint {
+  font-size: 11px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionTitle {
+  color: var(--color-fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+}
+
+.cardTop {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.backendName {
+  max-width: 220px;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.url {
+  max-width: 520px;
+  overflow: hidden;
+  color: var(--color-fg-muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metrics {
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--color-fg-muted);
+  font-size: 11.5px;
+}
+
+.field {
+  gap: 5px;
+}
+
+.label {
+  color: var(--color-fg-subtle);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.select {
+  max-width: 180px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  font-size: 12px;
+}
+
+.note {
+  padding: 12px 0;
+  font-size: 12px;
+}
+
+.noteError {
+  color: var(--color-danger);
+  font-size: 12px;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 32px;
+  color: var(--color-fg-subtle);
+  font-size: 13px;
+  text-align: center;
+}
+
+.emptyIcon {
+  opacity: 0.3;
+}
+
+@media (max-width: 760px) {
+  .header,
+  .headerActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .headerActions {
+    width: 100%;
+  }
+}

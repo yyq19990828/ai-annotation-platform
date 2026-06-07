@@ -145,6 +145,89 @@
   background: var(--color-bg-hover);
 }
 
+.catalogControls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.searchBox {
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 280px;
+  min-width: 220px;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-muted);
+}
+
+.searchInput {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-fg);
+  font-size: 12px;
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+}
+
+.viewBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+}
+
+.viewBtn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-fg);
+}
+
+.viewBtnOn {
+  background: var(--color-bg-elev);
+  color: var(--color-fg);
+  box-shadow: 0 0 0 1px var(--color-border);
+}
+
+.selectLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.selectLabel select {
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  font-size: 12px;
+}
+
 /* ── 降级提示横幅 ─────────────────────────────────────────────── */
 .degradeBanner {
   display: flex;
@@ -160,11 +243,43 @@
 }
 
 /* ── 卡片网格 ─────────────────────────────────────────────────── */
+.groupedCatalog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.catalogGroup {
+  min-width: 0;
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.groupCount {
+  margin-left: auto;
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 12px;
-  padding: 16px;
 }
 
 .card {
@@ -298,4 +413,53 @@
 
 .variantStar {
   color: var(--color-warning);
+}
+
+.tableScroller {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.modelTable {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+
+.modelTable th,
+.modelTable td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.modelTable th {
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.modelCell {
+  min-width: 180px;
+}
+
+.modelCellName {
+  font-weight: 600;
+}
+
+.modelCellId {
+  margin-top: 2px;
+  color: var(--color-fg-subtle);
+  font-size: 10.5px;
+}
+
+.compactCell,
+.sourceCell {
+  max-width: 220px;
+  color: var(--color-fg-muted);
 }

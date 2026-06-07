@@ -4,8 +4,11 @@ import type { AnnotationResponse } from "@/types";
 import {
   DEFAULT_ATTRIBUTE_MODE,
   applyAttributeModeValue,
+  attributeModeValueForDigit,
   attributeModeFields,
   canApplyAttributeModeToAnnotation,
+  findNextUnfilledAttributeModeAnnotation,
+  nextAttributeModeState,
   normalizeAttributeModeState,
 } from "./attributeMode";
 
@@ -94,5 +97,42 @@ describe("attribute mode helpers", () => {
       label: "标签",
       type: "multiselect",
     }, "a")).toEqual({ tags: ["a"] });
+  });
+
+  it("maps digit keys to attribute mode values", () => {
+    const stateField = schema.fields?.find((field) => field.key === "state");
+    expect(stateField).toBeDefined();
+    expect(attributeModeValueForDigit({ key: "occluded", label: "遮挡", type: "boolean" }, 1)).toBe(true);
+    expect(attributeModeValueForDigit({ key: "occluded", label: "遮挡", type: "boolean" }, 2)).toBe(false);
+    expect(attributeModeValueForDigit(stateField!, 2)).toBe("closed");
+    expect(attributeModeValueForDigit({
+      key: "tags",
+      label: "标签",
+      type: "multiselect",
+      options: [{ value: "a", label: "A" }],
+    }, 1)).toEqual(["a"]);
+  });
+
+  it("cycles fields with default values", () => {
+    expect(nextAttributeModeState({
+      enabled: true,
+      fieldKey: "occluded",
+      currentValue: true,
+    }, schema, 1)).toEqual({
+      enabled: true,
+      fieldKey: "state",
+      currentValue: "open",
+    });
+  });
+
+  it("finds the next unfilled supported annotation", () => {
+    const field = { key: "occluded", label: "遮挡", type: "boolean" as const };
+    const anns = [
+      annotation({ id: "a", attributes: { occluded: true } }),
+      annotation({ id: "b", attributes: {} }),
+      annotation({ id: "c", attributes: {} }),
+    ];
+    expect(findNextUnfilledAttributeModeAnnotation(anns, "a", field)?.id).toBe("b");
+    expect(findNextUnfilledAttributeModeAnnotation(anns, "b", field)?.id).toBe("c");
   });
 });

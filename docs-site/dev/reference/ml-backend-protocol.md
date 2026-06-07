@@ -264,6 +264,8 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 > **变体 `readOnly` 语义**：grounded-sam2-backend 内置 ModelPool 后，`sam_variant` / `dino_variant` 去掉了 `readOnly`，前端可按会话切换，每次 `/predict` 经 `context.{sam_variant,dino_variant}` 携带请求级变体（详见 §2.2）。`sam_variant` enum 与 backend `SAM2_CONFIGS` key 一致：`tiny | small | base_plus | large`（注意是 `base_plus` 不是 `base`）。sam3-backend 单模型无 pool，其 variant 字段仍可保留 `readOnly`。
 >
 > **`supported_variants`（可选）**：用于给 `params.sam_variant.enum` / `params.dino_variant.enum` 的裸字符串补富元数据。结构为数组，每项代表一个轴：`{ key, title?, description?, variants: [{ value, label?, vram_gb?, tier?, recommended?, note? }] }`。`key` 必须对应 `params.properties` 里的变体字段；`value` 必须与 enum 使用同一套 runtime 校验来源。前端优先读 `supported_variants` 渲染富选择器，缺失或为空时回落 `params.*_variant.enum`，因此老 backend 不需要立即升级。`tier` 建议使用 `fast | balanced | accurate`，但前端会容忍未知字符串。
+>
+> v0.14.10 起，超管运行时观测端点 `GET /admin/ml-integrations/observe` 也会把 `/setup.supported_variants` 原样透传到每个 `ObserveTarget.supported_variants`，用于 env-only 容器的只读多轴变体展示。旧 grounded-sam2/sam3 的 `sam_variant` / `dino_variant` enum 仍会通过 `variant_catalog` 双发；仅声明通用 `supported_variants` 的容器暂不启用「试启动」，`POST /admin/ml-integrations/observe/smoke-test` 收到 `variant: {axis: value}` 时返回 `skipped=true`，直到 backend 实现通用 warm 接口。
 
 > **`supported_prompts`**：枚举 `point | bbox | text | exemplar | sketch | scribble | …`。前端 ToolDock 据此置灰不支持的工具。
 >

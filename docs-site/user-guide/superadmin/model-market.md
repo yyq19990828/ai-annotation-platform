@@ -8,47 +8,56 @@ last_reviewed: 2026-05-27
 
 # 模型市场（/model-market）
 
-模型市场把 ML Backend 集成、失败预测、健康观测集中到同一个超管页面。
+模型市场把 ML Backend 能力目录、运行时观测、注册管理集中到同一个超管页面。
 
 ## 目的
 
-跨项目纵览所有 ML Backend 与最近的预测健康度。从这里可以一站式：
+跨项目纵览所有 ML Backend 与模型能力。从这里可以一站式：
 
-- 看哪些 backend 在线 / 不可达
-- 看每个 backend 最近 N 次推理的成功/失败率
-- 跳转到具体失败 case 排查
-- 全局新增 / 编辑 backend
+- 按 model 条目检索能力目录
+- 看注册 backend 与 env-only 容器的实时健康 / GPU / pool 状态
+- 对注册 backend 执行健康检查、卸载、预热
+- 全局新增 / 编辑 / 删除项目级 backend
 
-## 主要 Tab
+## 主要视图
 
-### 1. Integrations（集成）
+页面顶部有三段切换：**能力目录 / 运行时观测 / 注册管理**。当前视图写入 `?tab=catalog|runtime|registry`，可直接分享深链。
 
-列所有项目的 ML Backend 表，列：
+### 1. 能力目录
+
+能力目录是 model-centric 视图：枚举所有项目已注册的 backend，对每个 backend 拉 `/capabilities` 取 `models[]`，再按 model 条目展示。
+
+支持：
+
+- 卡片 / 紧凑列表切换。
+- 按 backend / task / infra 分组，组可折叠。
+- 搜索模型名、model id、模型族、task 中文标签和来源 backend。
+- 与 task / model_family / infra / modality chips 过滤叠加。
+- 列表态按模型名、task、infra 轻量排序。
+
+### 2. 运行时观测
+
+运行时观测是 runtime-centric 视图。它以**已注册 backend** 为主键展示，因为健康检查、卸载、预热都需要 `project_id + backend_id`。`ML_BACKEND_OBSERVE_URLS` 返回的实时指标按 URL join 到注册 backend：
+
+- 同一 URL 被多个项目注册时，会按每个项目 backend 各显示一行；实时指标共享同一个容器值。
+- 观测 URL 没有匹配任何注册 backend 时，会进入「未注册容器」分组，只支持直连 observe / smoke-test。
+- 已注册 backend 可执行健康检查、卸载、默认预热，并展示变体面板。
+- env-only 容器若只暴露通用 `supported_variants`，当前只读展示变体目录；「试启动」保持 disabled，等待 backend 实现通用 warm 接口。
+
+### 3. 注册管理
+
+注册管理只保留项目级 backend CRUD：
 
 | 列 | 说明 |
 |---|---|
-| 名称 / 类型 | — |
-| URL | 点击可复制；红/绿色徽章表示健康 |
-| 所属项目 | 一个 backend 若被多项目复用，列每个项目 |
-| 最近 24h 调用 | 调用次数 + 成功率 |
+| 名称 | backend 名称 |
+| URL | 注册地址 |
+| 类型 | 交互式 / 批量；最大并发 chip |
+| 状态 | 注册记录最近状态与错误片段 |
+| 最近检查 | 上次健康检查时间 |
 | 操作 | 编辑 / 删除 |
 
-### 2. Failed Predictions（失败预测）
-
-失败预测明细来自 `failed_predictions`，相关后台任务历史来自 `async_jobs(kind=batch_predict|prediction_retry)`：
-
-- 列 backend 名 / 项目名 / 触发时间 / 错误片段
-- 点击展开看完整 error trace
-- 可一键「查看 job 详情」跳到 `/ai-pre/jobs?job_id=X`
-- 失败预测也会在项目侧 `/ai-pre` 暴露，方便项目管理员自查（不再是超管独占）
-
-### 3. Health Overview
-
-可观测性概览（最近 24h）：
-
-- 各 backend 的调用次数 / P95 延迟 / 错误率
-- grounded-sam2-backend 还会显示 embedding 缓存命中率
-- Prometheus 指标见 [可观测性](../../ops/observability/)
+运行时指标（GPU、cache、model_version、pool）和生命周期动作已经迁到「运行时观测」。
 
 ## 视频追踪观测
 
@@ -74,21 +83,21 @@ backend 的变体面板拆成两组：
 
 ## 能力目录（多模型）
 
-v0.14.9 起页面新增「能力目录」面板，是[能力声明协议 v2](../../dev/reference/ml-backend-protocol) 的消费视图。与「项目级 ML Backend」表格按 backend 罗列不同，这里**按 model 条目展开**：枚举所有项目已注册的 backend，对每个 backend 拉 `/capabilities` 取 `models[]`，每个 model 渲染一张卡片。
+v0.14.9 起页面新增「能力目录」面板，是[能力声明协议 v2](../../dev/reference/ml-backend-protocol) 的消费视图。与「注册管理」按 backend 罗列不同，这里**按 model 条目展开**：枚举所有项目已注册的 backend，对每个 backend 拉 `/capabilities` 取 `models[]`，每个 model 渲染一张卡片或一行列表。
 
 卡片信息：
 
 - **task / infra / modality 徽章**：受控 task（检测 / 旋转框 / 分割 / 关键点 / 分类 / 文字识别 / 版面分析 / 追踪 / 交互分割）、infra（pytorch / onnx / paddle / tensorrt / openvino / 其它 / 未知）、modality（图像 / 视频 / 文本 / 点云）。
 - **输出几何 / 输出属性 / variants / resource**：来自 model 条目的 `supported_geometric_outputs` / `output_attribute_types` / `supported_variants` / `resource_profile`。
 
-顶部工具栏按 **task / model_family / infra / modality** 提供多选 chips 过滤（空集 = 不过滤该轴）。「刷新」按钮对每个 backend 调用 `capabilities/refresh` 重探 `/setup` 并刷新缓存。
+顶部工具栏按 **task / model_family / infra / modality** 提供多选 chips 过滤（空集 = 不过滤该轴），并支持名称搜索、卡片/列表切换、分组和列表排序。「刷新」按钮对每个 backend 调用 `capabilities/refresh` 重探 `/setup` 并刷新缓存。
 
 - 老 backend（协议 v1）由平台合成单 model 条目，长度为 1，正常显示。
 - backend 离线或上次探测失败时，目录可能展示缓存旧值，卡片会标注 stale。
 
 ## 新建 / 编辑 Backend
 
-「项目级 ML Backend」列表会显示两类项目：已注册 backend 的项目，以及已启用 AI 但还没有 backend 的项目。后者会显示「AI 已启用 · 未注册 backend」，可直接点「注册第一个 backend」把第一条 backend 记录注册到该项目；注册表单与 [ML Backend 注册](./ml-backend-registry) 等价。
+「注册管理」列表会显示两类项目：已注册 backend 的项目，以及已启用 AI 但还没有 backend 的项目。后者会显示「AI 已启用 · 未注册 backend」，可直接点「注册第一个 backend」把第一条 backend 记录注册到该项目；注册表单与 [ML Backend 注册](./ml-backend-registry) 等价。
 
 ## 删除
 
@@ -98,7 +107,7 @@ v0.14.9 起页面新增「能力目录」面板，是[能力声明协议 v2](../
 
 | 旧路由 | 新路由 |
 |---|---|
-| `/ml-integrations` | `/model-market`（Integrations tab） |
-| `/failed-predictions` | `/model-market`（Failed Predictions tab） |
+| `/ml-integrations` | `/model-market?tab=registry` |
+| `/failed-predictions` | `/ai-pre/jobs?status=failed` |
 
 旧路由已 301 重定向到新地址。
