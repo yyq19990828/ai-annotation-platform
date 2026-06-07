@@ -69,7 +69,9 @@ async def test_tasks_query_filters_unresolved_feedback_count(
         json={
             "filter_json": {
                 "op": "and",
-                "rules": [{"field": "feedback.unresolved_count", "op": "gt", "value": 0}],
+                "rules": [
+                    {"field": "feedback.unresolved_count", "op": "gt", "value": 0}
+                ],
             }
         },
     )

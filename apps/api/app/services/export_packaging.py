@@ -425,7 +425,9 @@ async def build_export_zip(
             chunks = svc.iter_export_chunks(
                 project_id,
                 batch_id,
-                with_annotations=bool({"kitti", "nuscenes", "pointmask"} & set(targets)),
+                with_annotations=bool(
+                    {"kitti", "nuscenes", "pointmask"} & set(targets)
+                ),
             )
             return await _build_lidar_export_zip(
                 svc,
@@ -618,6 +620,7 @@ def _build_video_yolo_data_yaml(classes_list: list[str]) -> str:
 
 # ── v0.14.7 · LiDAR 标准训练格式导出 ─────────────────────────────────
 
+
 def _lidar_frame_key(task: Task, item: DatasetItem | None) -> str:
     rel = _label_rel(task, item)
     return rel or task.display_id
@@ -696,8 +699,7 @@ def _lidar_readme(target: str) -> str:
     )
     if target == "nuscenes":
         return (
-            common
-            + "\nnuScenes note: this is a single-frame sample-style subset. "
+            common + "\nnuScenes note: this is a single-frame sample-style subset. "
             "sample_annotation.translation is in AAP ego/ISO coordinates, and "
             "ego_pose rows are identity placeholders because persisted global "
             "ego poses are planned for v0.15.0.\n"
@@ -821,8 +823,13 @@ async def _build_lidar_export_zip(
                             anns,
                             calib_by_cam=cameras,
                         )
-                        zf.writestr(f"{prefix}label_2/{frame_key}.txt", "\n".join(lines))
-                        zf.writestr(f"{prefix}calib/{frame_key}.txt", _kitti_calib_text(first_calib))
+                        zf.writestr(
+                            f"{prefix}label_2/{frame_key}.txt", "\n".join(lines)
+                        )
+                        zf.writestr(
+                            f"{prefix}calib/{frame_key}.txt",
+                            _kitti_calib_text(first_calib),
+                        )
                         zf.writestr(f"{prefix}velodyne/", "")
                         file_count += 1
                     elif target == "pointmask":
@@ -879,7 +886,9 @@ async def _build_lidar_export_zip(
                     )
                 file_count += len(frames)
             elif target == "pointmask":
-                zf.writestr(f"{prefix}category_map.json", category_map_json(classes_list))
+                zf.writestr(
+                    f"{prefix}category_map.json", category_map_json(classes_list)
+                )
 
     return tmp_path, file_count, os.path.getsize(tmp_path)
 

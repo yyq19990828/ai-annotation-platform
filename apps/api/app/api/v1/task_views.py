@@ -40,11 +40,16 @@ def _assert_can_write_view(user: User, project: Project, view: ProjectTaskView) 
         raise HTTPException(status_code=403, detail="Only the view owner can edit it")
     if _can_manage_project(user, project):
         return
-    raise HTTPException(status_code=403, detail="Only project admins can edit shared views")
+    raise HTTPException(
+        status_code=403, detail="Only project admins can edit shared views"
+    )
 
 
 def _sort_to_json(payload) -> list[dict]:
-    return [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload]
+    return [
+        item.model_dump() if hasattr(item, "model_dump") else dict(item)
+        for item in payload
+    ]
 
 
 async def _commit_or_duplicate(db: AsyncSession) -> None:
@@ -52,16 +57,22 @@ async def _commit_or_duplicate(db: AsyncSession) -> None:
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Task view name already exists") from exc
+        raise HTTPException(
+            status_code=409, detail="Task view name already exists"
+        ) from exc
 
 
-def _view_out(view: ProjectTaskView, task_count: int | None = None) -> ProjectTaskViewOut:
+def _view_out(
+    view: ProjectTaskView, task_count: int | None = None
+) -> ProjectTaskViewOut:
     out = ProjectTaskViewOut.model_validate(view, from_attributes=True)
     out.task_count = task_count
     return out
 
 
-@router.get("/projects/{project_id}/task-views", response_model=ProjectTaskViewListResponse)
+@router.get(
+    "/projects/{project_id}/task-views", response_model=ProjectTaskViewListResponse
+)
 async def list_task_views(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -94,7 +105,9 @@ async def create_task_view(
 ):
     project = await assert_project_visible(project_id, db, user)
     if payload.visibility == "project" and not _can_manage_project(user, project):
-        raise HTTPException(status_code=403, detail="Only project admins can create shared views")
+        raise HTTPException(
+            status_code=403, detail="Only project admins can create shared views"
+        )
     svc = TaskViewService(db)
     view = await svc.create_view(
         project_id=project_id,
@@ -119,7 +132,9 @@ async def create_task_view(
     return _view_out(view)
 
 
-@router.get("/projects/{project_id}/task-views/{view_id}", response_model=ProjectTaskViewOut)
+@router.get(
+    "/projects/{project_id}/task-views/{view_id}", response_model=ProjectTaskViewOut
+)
 async def get_task_view(
     project_id: uuid.UUID,
     view_id: uuid.UUID,
@@ -133,7 +148,9 @@ async def get_task_view(
     return _view_out(view, task_count=count)
 
 
-@router.patch("/projects/{project_id}/task-views/{view_id}", response_model=ProjectTaskViewOut)
+@router.patch(
+    "/projects/{project_id}/task-views/{view_id}", response_model=ProjectTaskViewOut
+)
 async def update_task_view(
     project_id: uuid.UUID,
     view_id: uuid.UUID,
@@ -148,13 +165,17 @@ async def update_task_view(
     _assert_can_write_view(user, project, view)
     next_visibility = payload.visibility
     if next_visibility == "project" and not _can_manage_project(user, project):
-        raise HTTPException(status_code=403, detail="Only project admins can share views")
+        raise HTTPException(
+            status_code=403, detail="Only project admins can share views"
+        )
     view = await svc.update_view(
         view,
         name=payload.name,
         visibility=payload.visibility,
         filter_json=payload.filter_json,
-        sort_json=_sort_to_json(payload.sort_json) if payload.sort_json is not None else None,
+        sort_json=_sort_to_json(payload.sort_json)
+        if payload.sort_json is not None
+        else None,
         columns_json=payload.columns_json,
     )
     await AuditService.log(
@@ -216,7 +237,9 @@ async def copy_task_view(
     source = await svc.get_view(project_id, view_id, user.id)
     visibility = payload.visibility or source.visibility
     if visibility == "project" and not _can_manage_project(user, project):
-        raise HTTPException(status_code=403, detail="Only project admins can create shared views")
+        raise HTTPException(
+            status_code=403, detail="Only project admins can create shared views"
+        )
     view = await svc.create_view(
         project_id=project_id,
         owner_id=user.id,
@@ -240,7 +263,9 @@ async def copy_task_view(
     return _view_out(view)
 
 
-@router.post("/projects/{project_id}/tasks/query", response_model=ProjectTaskQueryResponse)
+@router.post(
+    "/projects/{project_id}/tasks/query", response_model=ProjectTaskQueryResponse
+)
 async def query_project_tasks(
     project_id: uuid.UUID,
     payload: ProjectTaskQueryRequest,

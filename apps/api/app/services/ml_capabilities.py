@@ -102,7 +102,9 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         "display_name": model.get("display_name") or model.get("name") or model_id,
         "task": task,
         "model_family": model.get("model_family"),
-        "infra": _normalize_infra(model.get("infra")) if model.get("infra") else backend_infra,
+        "infra": _normalize_infra(model.get("infra"))
+        if model.get("infra")
+        else backend_infra,
         "is_interactive": bool(model.get("is_interactive")),
         "supported_prompts": list(model.get("supported_prompts") or []),
         "supported_geometric_outputs": geo,
@@ -143,7 +145,9 @@ def _synthesize_single_model(setup: dict, backend_infra: str) -> dict:
         "infra": backend_infra,
         "is_interactive": bool(setup.get("is_interactive")),
         "supported_prompts": prompts,
-        "supported_geometric_outputs": list(setup.get("supported_geometric_outputs") or []),
+        "supported_geometric_outputs": list(
+            setup.get("supported_geometric_outputs") or []
+        ),
         "output_attribute_types": [],
         "supported_text_outputs": list(setup.get("supported_text_outputs") or []),
         "supported_trackers": trackers,

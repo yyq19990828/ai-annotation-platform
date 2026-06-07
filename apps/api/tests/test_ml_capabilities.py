@@ -96,7 +96,11 @@ def test_model_infra_override():
         "name": "onnx-zoo",
         "infra": "onnx",
         "models": [
-            {"id": "yolo", "task": "detection", "supported_geometric_outputs": ["bbox"]},
+            {
+                "id": "yolo",
+                "task": "detection",
+                "supported_geometric_outputs": ["bbox"],
+            },
             {
                 "id": "ppocr",
                 "task": "ocr",
@@ -166,7 +170,9 @@ def test_modality_video_from_tracker_task():
     setup = {
         "name": "tracker-only",
         "infra": "onnx",
-        "models": [{"id": "t", "task": "tracker", "supported_trackers": ["sam2_video"]}],
+        "models": [
+            {"id": "t", "task": "tracker", "supported_trackers": ["sam2_video"]}
+        ],
     }
     caps = extract_capabilities(setup)
     assert caps is not None
@@ -177,7 +183,11 @@ def test_modality_lidar_from_geometry():
     setup = {
         "name": "pc",
         "models": [
-            {"id": "box3d", "task": "detection", "supported_geometric_outputs": ["lidar_box_3d"]}
+            {
+                "id": "box3d",
+                "task": "detection",
+                "supported_geometric_outputs": ["lidar_box_3d"],
+            }
         ],
     }
     caps = extract_capabilities(setup)

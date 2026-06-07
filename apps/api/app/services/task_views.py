@@ -140,9 +140,13 @@ def validate_sort(sort_json: list[dict[str, Any]] | None) -> None:
             "scene.frame_index",
             "last_activity_at",
         }:
-            raise HTTPException(status_code=422, detail=f"Unsupported sort field: {field}")
+            raise HTTPException(
+                status_code=422, detail=f"Unsupported sort field: {field}"
+            )
         if item.get("direction", "asc") not in {"asc", "desc"}:
-            raise HTTPException(status_code=422, detail="Sort direction must be asc or desc")
+            raise HTTPException(
+                status_code=422, detail="Sort direction must be asc or desc"
+            )
 
 
 def validate_columns(columns_json: list[str] | None) -> None:
@@ -168,10 +172,14 @@ def _compile_node(node: dict[str, Any]) -> ColumnElement[bool]:
     if "rules" in node:
         op = node.get("op", "and")
         if op not in {"and", "or"}:
-            raise HTTPException(status_code=422, detail="Filter group op must be and/or")
+            raise HTTPException(
+                status_code=422, detail="Filter group op must be and/or"
+            )
         rules = node.get("rules")
         if not isinstance(rules, list):
-            raise HTTPException(status_code=422, detail="Filter group rules must be a list")
+            raise HTTPException(
+                status_code=422, detail="Filter group rules must be a list"
+            )
         clauses = [_compile_node(rule) for rule in rules]
         if not clauses:
             return literal(True)
@@ -258,7 +266,9 @@ def _compare_scalar(
 
 def _compare_annotation_class(op: str, value: Any) -> ColumnElement[bool]:
     if op not in _EXISTS_OPS:
-        raise HTTPException(status_code=422, detail="Unsupported annotation.class_name op")
+        raise HTTPException(
+            status_code=422, detail="Unsupported annotation.class_name op"
+        )
     clause = and_(
         Annotation.task_id == Task.id,
         Annotation.is_active.is_(True),
@@ -411,7 +421,9 @@ def _unresolved_feedback_count_sq() -> ColumnElement[int]:
 
 def _model_versions_sq() -> ColumnElement[list[str]]:
     return (
-        select(func.coalesce(func.array_agg(func.distinct(Prediction.model_version)), []))
+        select(
+            func.coalesce(func.array_agg(func.distinct(Prediction.model_version)), [])
+        )
         .where(Prediction.task_id == Task.id, Prediction.model_version.is_not(None))
         .scalar_subquery()
     )
@@ -579,7 +591,9 @@ class TaskViewService:
     ) -> int:
         clause = compile_filter(filter_json)
         total = await self.db.scalar(
-            select(func.count()).select_from(Task).where(Task.project_id == project_id, clause)
+            select(func.count())
+            .select_from(Task)
+            .where(Task.project_id == project_id, clause)
         )
         return int(total or 0)
 

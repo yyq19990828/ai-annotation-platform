@@ -333,7 +333,7 @@ async def test_observe_returns_variant_catalog_and_registered_flag(
                         "sam_variant": {"enum": ["tiny", "large"]},
                         "dino_variant": {"enum": ["T", "B"]},
                     }
-                }
+                },
             },
         ),
     }
