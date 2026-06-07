@@ -111,4 +111,25 @@ describe("ExportSection", () => {
       includeAttributes: true,
     });
   });
+
+  it("点云项目展示标准 3D 目标并默认导出 AAP JSON", async () => {
+    render(<ExportSection projectId="p5" projectTypeKey="lidar" />);
+    openExportModal();
+
+    expect(screen.getByText("KITTI 3D")).toBeInTheDocument();
+    expect(screen.getByText("nuScenes JSON")).toBeInTheDocument();
+    expect(screen.getByText("Point Mask")).toBeInTheDocument();
+    expect(screen.queryByText("COCO")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("KITTI 3D"));
+    fireEvent.click(screen.getByText("nuScenes JSON"));
+    fireEvent.click(screen.getByText("Point Mask"));
+    submitExport();
+    await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
+    expect(projectsApi.exportProject).toHaveBeenCalledWith(
+      "p5",
+      ["aap_json", "kitti", "nuscenes", "pointmask"],
+      { includeAttributes: true },
+    );
+  });
 });

@@ -28,6 +28,27 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.14.7] - 2026-06-07
+
+点云标注导出标准训练格式补丁。计划见 `docs/plans/2026-06-07-v0.14.7-pointcloud-export-standard-formats.md`。本版为纯新增 serializer 和导出路由,不新增表/列/迁移。
+
+### Added
+
+- **KITTI 3D 导出**:lidar 项目新增 `kitti` 目标,输出 `label_2/<frame>.txt` 与 `calib/<frame>.txt`;3D 框固定映射到 KITTI camera 坐标,并消费 `occluded` / `truncated` 属性,缺失时降级默认值。
+- **nuScenes JSON 子集导出**:新增 `nuscenes` 目标,输出 `sample_annotation` / `category` / `attribute` / `calibrated_sensor` / `sample_data` / `ego_pose` 等轻量表。当前为单帧 sample 风格、ego/ISO 坐标和占位 `ego_pose`,完整 global 轨迹留待 v0.15.0。
+- **point_mask_3d 逐点导出**:新增 `pointmask` 目标,输出 little-endian uint32 `segmentation/<frame>.label` 与 `category_map.json`,类别 id 1-based,0 表示背景。
+- **多相机标定与回源 manifest**:三种标准点云目标随包写入 `calib_raw/<camera>/<frame>.json`、`images_manifest.json`、`pointclouds_manifest.json`、`fetch_images.py` 与 `fetch_pointclouds.py`。
+
+### Changed
+
+- `clean_export_targets` 为 `data_type="lidar"` 增加专属目标集合 `{aap_json,kitti,nuscenes,pointmask}`,lidar 项目请求 COCO/YOLO 等跨模态目标会在端点层返回 400。
+- Dashboard 导出弹窗为 lidar 项目显示 AAP JSON / KITTI 3D / nuScenes JSON / Point Mask,不再复用图片项目目标列表。
+
+### Docs / Tests
+
+- 新增 `docs-site/dev/reference/lidar-export-formats.md`,并更新用户导出格式页与批次导出说明。
+- 新增 lidar serializer 与 ZIP 打包测试,覆盖 KITTI 属性映射、nuScenes 占位 ego_pose、pointmask label 和 lidar 目标校验。
+
 ## [0.14.6] - 2026-06-07
 
 6 相机实测体验 + 点云上色性能 + `point_mask_3d` 分割工具深化补丁。计划见 `docs/plans/2026-06-07-v0.14.6-six-camera-experience-and-performance.md`。本版为纯前端切片,不新增后端表/列/端点。

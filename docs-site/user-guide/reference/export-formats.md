@@ -13,7 +13,7 @@ last_reviewed: 2026-05-27
 
 项目 Dashboard 的「导出」入口会打开居中的导出弹窗。导出目标可多选，一次导出产出**一个**压缩包：勾选单个目标时落包根，勾选多个目标时各目标落各自的 `{target}/` 子目录。
 
-图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧 / AAP JSON / MOT / KITTI**。
+图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧 / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。
 
 > **YOLO 拆三个变体（几何映射不同）**：`YOLO 检测`(det) 导矩形框、`YOLO 旋转框`(obb) 导 rotated_bbox 四角、`YOLO 分割`(seg) 导 polygon / mask 多边形。每个变体只取匹配的几何，其余跳过。
 
@@ -211,6 +211,18 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 - `project.tool_bindings` (工具维度类别 / 属性绑定) + 每条 annotation / prediction 的 `tool_unit_id`(`bbox` / `region` / `polyline` / `rotated_bbox` / `keypoint` / `ai_interactive` / ...)。导入端缺失时按 LS shape 类型回退派生(rectanglelabels→bbox, 带 rotation 的 rectanglelabels→rotated_bbox, polygonlabels→region, polylinelabels→polyline, keypointlabels→keypoint)。
 
 详见 [ADR-0024](../../dev/adr/0024-aap-json-format) · [ADR-0026](../../dev/adr/0026-tool-unit-class-and-attribute-binding) · [API 导入指南](../../api/guides/import.md)。
+
+## 点云标准训练格式
+
+`lidar` 项目导出统一走异步 zip 管线，可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。标准点云目标只打包标注、标定、manifest 和回源脚本；相机图片与点云本体通过 `images_manifest.json` / `pointclouds_manifest.json` 里的 7 天预签名 URL 回源。
+
+| 目标 | 主要文件 | 用途 |
+|---|---|---|
+| KITTI 3D | `label_2/<frame>.txt`、`calib/<frame>.txt`、`calib_raw/<camera>/<frame>.json` | 3D 检测训练前处理，box 输出为 KITTI camera 坐标 |
+| nuScenes JSON | `sample_annotation.json`、`sample_data.json`、`calibrated_sensor.json`、`ego_pose.json` | 单帧 3D 检测训练前处理 |
+| Point Mask | `segmentation/<frame>.label`、`category_map.json` | `point_mask_3d` 逐点语义 label |
+
+nuScenes JSON 当前是**单帧 sample 风格、ego/ISO 坐标、占位 `ego_pose`**的子集。它不等同于完整 nuScenes global 轨迹导出，不能直接用于 nuScenes devkit 的多帧跟踪评测；完整 global 轨迹依赖后续 ego pose 数据模型。
 
 ## 视频轨迹
 

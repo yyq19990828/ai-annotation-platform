@@ -197,7 +197,7 @@ owner 可以在批次行上点击锁定，为批次写入锁定原因。锁定�
 
 ## 批次导出
 
-项目管理员可以按批次导出当前批次内的任务标注。图片项目沿用 COCO / YOLO / AAP JSON；视频轨迹项目可导出 Video JSON / YOLO 逐帧 / AAP JSON / MOT / KITTI。
+项目管理员可以按批次导出当前批次内的任务标注。图片项目沿用 COCO / YOLO / AAP JSON；视频轨迹项目可导出 Video JSON / YOLO 逐帧 / AAP JSON / MOT / KITTI；点云项目可导出 AAP JSON / KITTI 3D / nuScenes JSON / Point Mask。
 
 视频轨迹批次支持两种帧模式：
 

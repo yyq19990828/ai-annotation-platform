@@ -312,6 +312,7 @@ export default withMermaid(defineConfig({
             { text: "WebSocket 协议", link: "/dev/reference/ws-protocol" },
             { text: "视频帧服务", link: "/dev/reference/video-frame-service" },
             { text: "点云联合标注数据模型", link: "/dev/reference/point-cloud-data-model" },
+            { text: "点云导出格式", link: "/dev/reference/lidar-export-formats" },
             { text: "代码规范", link: "/dev/reference/conventions" },
             { text: "图标约定", link: "/dev/reference/icon-conventions" },
             { text: "环境变量", link: "/dev/reference/env-vars" },
