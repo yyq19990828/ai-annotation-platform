@@ -3137,8 +3137,13 @@
         "type": "object"
       },
       "BackendCapabilities": {
-        "description": "v0.10.37 · backend `/setup` 能力快照 (epic 阶段 1).\n\n由 services/ml_backend.check_health 探 `/setup` 后落进 health_meta[\"capabilities\"];\n`modalities` 为派生视图 (image / video), 见 services/ml_capabilities.derive_modalities.",
+        "description": "v0.10.37 · backend `/setup` 能力快照 (epic 阶段 1).\n\n由 services/ml_backend.check_health 探 `/setup` 后落进 health_meta[\"capabilities\"];\n`modalities` 为派生视图 (image / video / lidar), 见 services/ml_capabilities.derive_modalities.\n\nv0.14.9 · 能力声明协议 v2: 新增 `infra` (backend 默认基础设施) + `models` (多模型目录);\n其余顶层字段为各 model 的「扁平并集」, 供未迁移消费方继续读 (向后兼容)。",
         "properties": {
+          "infra": {
+            "default": "unknown",
+            "title": "Infra",
+            "type": "string"
+          },
           "is_interactive": {
             "default": false,
             "title": "Is Interactive",
@@ -3150,6 +3155,14 @@
               "type": "string"
             },
             "title": "Modalities",
+            "type": "array"
+          },
+          "models": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ModelCapability"
+            },
+            "title": "Models",
             "type": "array"
           },
           "supported_geometric_outputs": {
@@ -8235,6 +8248,136 @@
           "length"
         ],
         "title": "Mention",
+        "type": "object"
+      },
+      "ModelCapability": {
+        "additionalProperties": true,
+        "description": "v0.14.9 · 能力声明协议 v2 — 单个 model 条目 (一个 backend 暴露 N 个).\n\n由 services/ml_capabilities._normalize_model 规范化后存入\nBackendCapabilities.models; `task` 是条目边界 (决定输出几何与项目兼容性),\n`infra` 缺省继承 backend 默认, `modality` 为派生视图。",
+        "properties": {
+          "default_thresholds": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Default Thresholds",
+            "type": "object"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "infra": {
+            "default": "unknown",
+            "title": "Infra",
+            "type": "string"
+          },
+          "is_interactive": {
+            "default": false,
+            "title": "Is Interactive",
+            "type": "boolean"
+          },
+          "modality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modality"
+          },
+          "model_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Family"
+          },
+          "output_attribute_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Output Attribute Types",
+            "type": "array"
+          },
+          "params": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Params",
+            "type": "object"
+          },
+          "resource_profile": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Resource Profile",
+            "type": "object"
+          },
+          "supported_geometric_outputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Geometric Outputs",
+            "type": "array"
+          },
+          "supported_prompts": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Prompts",
+            "type": "array"
+          },
+          "supported_text_outputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Text Outputs",
+            "type": "array"
+          },
+          "supported_trackers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Trackers",
+            "type": "array"
+          },
+          "supported_variants": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Supported Variants",
+            "type": "array"
+          },
+          "task": {
+            "default": "unknown",
+            "title": "Task",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ModelCapability",
         "type": "object"
       },
       "MultiPolygonGeometry": {

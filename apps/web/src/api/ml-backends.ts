@@ -39,6 +39,28 @@ export interface MLBackendSupportedVariantGroup {
   variants?: MLBackendSupportedVariantOption[];
 }
 
+// v0.14.9 · 能力声明协议 v2 — 单个 model 条目 (一个 backend 暴露 N 个).
+// `task` 是条目边界 (det/seg/pose/obb/cls/ocr/doc_layout/...), 决定输出几何与项目兼容性;
+// `infra` 缺省继承 backend 默认; series/size 复用 supported_variants 多轴.
+export interface MLModelCapability {
+  id: string;
+  display_name?: string;
+  task?: string;
+  model_family?: string;
+  infra?: string;
+  is_interactive?: boolean;
+  supported_prompts?: string[];
+  supported_geometric_outputs?: string[];
+  output_attribute_types?: string[];
+  supported_text_outputs?: string[];
+  supported_trackers?: string[];
+  supported_variants?: MLBackendSupportedVariantGroup[];
+  default_thresholds?: Record<string, unknown>;
+  resource_profile?: Record<string, unknown>;
+  params?: { type?: string; properties?: Record<string, unknown> };
+  modality?: string;
+}
+
 // v0.10.1 · /setup 协议自描述响应 (与后端 sam3/grounded-sam2 main.py 同构).
 // `params` 为 JSON Schema (Draft-07 子集), M2 schema-form 据此渲染参数面板.
 export interface MLBackendCapability {
@@ -58,6 +80,12 @@ export interface MLBackendCapability {
     type?: string;
     properties?: Record<string, unknown>;
   };
+  // v0.14.9 · 能力声明协议 v2: backend 默认 infra + 多模型目录.
+  // 老 backend 缺省时由平台合成「隐式单 model」(见 capabilities 端点).
+  infra?: string;
+  models?: MLModelCapability[];
+  // capabilities 端点 (health_meta 派生) 会带派生模态; 原始 /setup 不带.
+  modalities?: string[];
 }
 
 export const mlBackendsApi = {
@@ -66,6 +94,18 @@ export const mlBackendsApi = {
 
   setup: (projectId: string, backendId: string) =>
     apiClient.get<MLBackendCapability>(`/projects/${projectId}/ml-backends/${backendId}/setup`),
+
+  // v0.14.9 · 能力目录 (health_meta 派生视图, 含 models[] + infra + modalities).
+  capabilities: (projectId: string, backendId: string) =>
+    apiClient.get<MLBackendCapability>(
+      `/projects/${projectId}/ml-backends/${backendId}/capabilities`,
+    ),
+
+  // v0.14.9 · 强制重探 /setup 并刷新能力目录缓存.
+  refreshCapabilities: (projectId: string, backendId: string) =>
+    apiClient.post<MLBackendCapability>(
+      `/projects/${projectId}/ml-backends/${backendId}/capabilities/refresh`,
+    ),
 
   create: (projectId: string, payload: MLBackendCreatePayload) =>
     apiClient.post<MLBackendResponse>(`/projects/${projectId}/ml-backends`, payload),
