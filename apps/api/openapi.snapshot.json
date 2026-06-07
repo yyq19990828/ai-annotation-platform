@@ -9919,6 +9919,12 @@
       },
       "PredictionShape": {
         "properties": {
+          "attributes": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Attributes",
+            "type": "object"
+          },
           "class_name": {
             "title": "Class Name",
             "type": "string"
