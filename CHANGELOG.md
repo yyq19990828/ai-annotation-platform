@@ -28,6 +28,29 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.14.9] - 2026-06-07
+
+ML Backend 能力声明协议 v2(多模型目录 + infra)地基 + OCR / Doc Layout 首发模型族。计划见 `docs/plans/2026-06-07-v0.14.9-model-capability-catalog-and-ocr-doclayout.md`。本版把能力建模从单模型快照升级到 model 粒度,并在协议 v2 之下落地 OCR / Doc Layout 输出约定;`/predict` 请求/响应 schema 不变,不新增 prediction 表。
+
+### Added
+
+- **能力声明协议 v2**:`/setup` 顶层新增 `infra` 与 `models[]`,把能力声明下沉到 model 粒度——一个 backend 可暴露 N 个 model,每个 model 自带 `task` / `model_family` / `infra` / `supported_geometric_outputs` / `output_attribute_types` / `supported_variants` / `default_thresholds` / `resource_profile` / `params`。受控 task:detection / obb / segmentation / keypoint / classification / ocr / doc_layout / tracker / interactive_seg;受控 infra:pytorch / onnx / paddle / tensorrt / openvino / other。
+- **模型能力目录视图**:新增 `GET /projects/{pid}/ml-backends/{bid}/capabilities` 与 `POST …/capabilities/refresh`,作为 `health_meta` 能力快照的派生视图,返回 model 目录(含 infra / task / 输出几何 / 输出属性 / variants),供模型市场与工作台多模型选择器消费。
+- **OCR / Doc Layout 能力**:作为协议 v2 首发模型族,约定 OCR result 几何带 `attributes.text`(可选 `language` / `orientation`),doc_layout 以 `class_name` 落版面类别(title / paragraph / table / figure / formula / list / header / footer);统一 adapter 映射,不新增 prediction 表。
+
+### Changed
+
+- `extract_capabilities` / `derive_modalities`(`services/ml_capabilities.py`)从抽单层快照升级为遍历 `models[]` 派生 + backend 汇总;能力快照仍写 `ml_backends.health_meta["capabilities"]`(JSONB,零迁移),并保留顶层「扁平并集」字段(所有 model 的 prompts / geometry 去重合并)。
+
+### Compatibility
+
+- 向后兼容硬约束:无 `models[]` 的老 backend 由平台合成隐式单 model(`id="default"`,`task` 按 `supported_trackers`→tracker、含 point/bbox/text/exemplar→interactive_seg、否则 detection 推断),无 `infra` 标 `unknown`。grounded-sam2 / sam3 / echo 零改动继续工作。`infra` 是纯元数据,不改 `/predict` 协议、不参与硬校验。
+
+### Docs
+
+- 协议文档 `docs-site/dev/reference/ml-backend-protocol.md` 新增 §4.1「能力声明协议 v2」(顶层结构、model 条目、受控词表、向后兼容规则、YOLO / ONNX 范例、OCR / doc_layout 约定、capabilities 端点)。
+- 新增 ADR-0036「ML Backend 能力声明协议 v2(多模型目录 + infra)」。
+
 ## [0.14.8] - 2026-06-07
 
 Data Manager 保存视图 + 受控过滤 DSL + 只读项目任务运营面。计划见 `docs/plans/2026-06-07-v0.14.8-data-manager-saved-views-filter-dsl.md`。本版只做视图、过滤、排序、列显隐与计数列,不做筛选结果批量写操作。
