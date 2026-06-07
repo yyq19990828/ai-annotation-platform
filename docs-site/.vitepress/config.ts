@@ -156,6 +156,7 @@ export default withMermaid(defineConfig({
           collapsed: true,
           items: [
             { text: "项目管理", link: "/user-guide/projects/" },
+            { text: "Data Manager", link: "/user-guide/projects/data-manager" },
             { text: "批次与分配", link: "/user-guide/projects/batch" },
             { text: "AI 预标注", link: "/user-guide/projects/ai-preannotate" },
             { text: "ML 后端绑定", link: "/user-guide/projects/ml-backends" },

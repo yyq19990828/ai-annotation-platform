@@ -43,6 +43,9 @@ const StoragePage = lazy(() =>
 const ProjectSettingsPage = lazy(() =>
   import("@/pages/Projects/ProjectSettingsPage").then((m) => ({ default: m.ProjectSettingsPage }))
 );
+const ProjectDataManagerPage = lazy(() =>
+  import("@/pages/Projects/ProjectDataManagerPage").then((m) => ({ default: m.ProjectDataManagerPage }))
+);
 const ProjectTemplatesPage = lazy(() =>
   import("@/pages/ProjectTemplates/ProjectTemplatesPage").then((m) => ({ default: m.ProjectTemplatesPage }))
 );
@@ -276,6 +279,18 @@ export function App() {
           </RequireAuth>
         }
       />
+      <Route
+        path="/projects/:id/data-manager"
+        element={
+          <RequireAuth>
+            <RequireProjectMember>
+              <AppShell />
+            </RequireProjectMember>
+          </RequireAuth>
+        }
+      >
+        <Route index element={<ProjectDataManagerPage />} />
+      </Route>
 
       <Route
         element={

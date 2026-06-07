@@ -352,6 +352,19 @@
 | PATCH | `/system` |
 | POST | `/system/test-smtp` |
 
+## `task_views.py`
+
+| Method | Path |
+|---|---|
+| GET | `/projects/{project_id}/task-views` |
+| POST | `/projects/{project_id}/task-views` |
+| GET | `/projects/{project_id}/task-views/{view_id}` |
+| PATCH | `/projects/{project_id}/task-views/{view_id}` |
+| DELETE | `/projects/{project_id}/task-views/{view_id}` |
+| POST | `/projects/{project_id}/task-views/{view_id}/copy` |
+| POST | `/projects/{project_id}/tasks/query` |
+| GET | `/projects/{project_id}/task-views/{view_id}/tasks` |
+
 ## `tasks.py`
 
 | Method | Path |
@@ -436,4 +449,4 @@
 
 ---
 
-_共 39 模块 / 249 路由_
+_共 40 模块 / 257 路由_

@@ -28,6 +28,28 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.14.8] - 2026-06-07
+
+Data Manager 保存视图 + 受控过滤 DSL + 只读项目任务运营面。计划见 `docs/plans/2026-06-07-v0.14.8-data-manager-saved-views-filter-dsl.md`。本版只做视图、过滤、排序、列显隐与计数列,不做筛选结果批量写操作。
+
+### Added
+
+- **项目任务保存视图**:新增 `project_task_views` 表,支持 private / project 可见性、保存 `filter_json` / `sort_json` / `columns_json`,并提供创建、更新、删除和复制 API。
+- **受控 Filter DSL**:新增 `POST /projects/{project_id}/tasks/query` 与 `GET /projects/{project_id}/task-views/{view_id}/tasks`,支持任务状态、标注计数/类别、预测模型版本/来源/置信度、未解决反馈、scene 名称/帧号和数据集类型等白名单字段。
+- **Data Manager 前端页**:新增 `/projects/:id/data-manager`,从项目设置页进入;左侧展示内置/保存视图,顶部提供 and-only 过滤行、列显隐和保存视图操作,主表展示任务计数列和最近活动时间。
+- **内置视图**:提供全部任务、待标注、待审核、有未解决反馈、有预测候选 5 个只读默认入口;修改后保存会创建私有副本。
+
+### Security / Permissions
+
+- 所有 Data Manager 查询先执行项目可见性校验。私有视图仅 owner 可见;项目共享视图对成员可见,但只有项目负责人或超级管理员可编辑。
+- DSL 不开放任意 SQL 或任意 JSONB key 查询;未知字段、未知操作符和错误类型返回 422。
+
+### Docs / Tests
+
+- 新增 `docs-site/user-guide/projects/data-manager.md`,并更新项目手册与 API guide。
+- 新增 `tests/test_task_views.py`,覆盖未知字段拒绝、未解决反馈查询、预测模型版本查询、私有/共享视图可见性和共享视图编辑权限。
+- 更新 OpenAPI snapshot 与前端 generated types。
+
 ## [0.14.7] - 2026-06-07
 
 点云标注导出标准训练格式补丁。计划见 `docs/plans/2026-06-07-v0.14.7-pointcloud-export-standard-formats.md`。本版为纯新增 serializer 和导出路由,不新增表/列/迁移。
