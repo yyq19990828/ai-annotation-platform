@@ -12,6 +12,7 @@
  */
 import { useCallback, useMemo } from "react";
 import type { TaskResponse, AnnotationResponse } from "@/types";
+import type { AttributeSchema } from "@/api/projects";
 import { getMissingRequired } from "../shell/AttributeForm";
 
 interface ToastFn {
@@ -93,13 +94,10 @@ export function useWorkbenchTaskFlow(p: UseWorkbenchTaskFlowParams): UseWorkbenc
 
   /** 计算所有 annotation 中是否有 required 属性未填（驱动提交按钮 disabled）。 */
   const hasMissingRequired = useMemo(() => {
-    const schema = currentProject?.attribute_schema as
-      | { fields: { key: string; required?: boolean }[] }
-      | null
-      | undefined;
+    const schema = currentProject?.attribute_schema as AttributeSchema | null | undefined;
     if (!schema || !schema.fields || schema.fields.length === 0) return false;
     for (const a of annotationsRef.current) {
-      if (getMissingRequired(schema as any, a.class_name, a.attributes ?? {}).length > 0) return true;
+      if (getMissingRequired(schema, a.class_name, a.attributes ?? {}).length > 0) return true;
     }
     return false;
     // 当 annotations 列表变化时重算

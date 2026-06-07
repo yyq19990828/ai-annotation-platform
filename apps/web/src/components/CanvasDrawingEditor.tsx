@@ -226,7 +226,7 @@ export function CanvasDrawingPreview({ drawing, width = 220, backgroundUrl, imag
   } as CSSProperties), [backgroundUrl, height, width]));
 
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
-  const shapes = drawing.shapes ?? [];
+  const shapes = useMemo(() => drawing.shapes ?? [], [drawing.shapes]);
   const timelineData = useMemo(() => {
     const segments: { idx: number; color: string; durationMs: number }[] = [];
     for (let i = 0; i < shapes.length; i += 1) {

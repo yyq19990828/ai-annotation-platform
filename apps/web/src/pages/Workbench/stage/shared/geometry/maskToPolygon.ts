@@ -148,7 +148,6 @@ export function maskToPolygon(
 ): MaskToPolygonResult {
   const threshold = opts.threshold ?? 128;
   const epsilon = opts.simplifyEpsilon ?? 1;
-  const pickLargest = opts.pickLargest ?? true;
 
   const components = findComponents(mask, threshold);
   if (components.length === 0) {
@@ -195,7 +194,7 @@ export function maskToPolygon(
     if (!last || last[0] !== p[0] || last[1] !== p[1]) dedup.push(p);
   }
 
-  // 注意：!pickLargest 时也只返回最大分量（v1 不支持 multipolygon 落库），但 multipleComponents
+  // 注意：v1 只返回最大分量（暂不支持 multipolygon 落库），但 multipleComponents
   // 仍为 true 提示上层 UI。
   return {
     points: dedup,

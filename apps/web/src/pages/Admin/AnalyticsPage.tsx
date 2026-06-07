@@ -66,8 +66,14 @@ export function AnalyticsPage() {
     queryFn: () => adminAnalyticsApi.activityHeatmap(days),
   });
 
-  const accent = useMemo(() => cssVar("--color-accent"), [resolved]);
-  const gridColor = useMemo(() => cssVar("--color-border"), [resolved]);
+  const accent = useMemo(() => {
+    void resolved;
+    return cssVar("--color-accent");
+  }, [resolved]);
+  const gridColor = useMemo(() => {
+    void resolved;
+    return cssVar("--color-border");
+  }, [resolved]);
 
   const aggThroughput = useMemo(() => {
     const data = throughputQ.data?.data ?? [];

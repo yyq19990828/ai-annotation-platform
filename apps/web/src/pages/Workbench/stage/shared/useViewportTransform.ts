@@ -61,12 +61,12 @@ export function useElementSize<T extends HTMLElement>(ref: React.RefObject<T | n
   // viewport.size 永远不再更新, 表现为 "好了一会儿又不行了" (fit/zoom/Minimap 全失效).
   const [el, setEl] = useState<T | null>(null);
   // 每次 render 后检测 ref.current 与上次 observed 节点的差异; 仅在变化时 setEl 触发
-  // 第二个 effect 重新 observe. 不加依赖 = 每次 render 后跑, 但 setEl 是幂等的, 不会循环.
+  // 第二个 effect 重新 observe. ref.current 变化会伴随 remount render, el 变更后再完成订阅切换.
   useEffect(() => {
     if (ref.current !== el) {
       setEl(ref.current);
     }
-  });
+  }, [ref, el]);
   useEffect(() => {
     if (!el) return;
     if (typeof ResizeObserver === "undefined") {

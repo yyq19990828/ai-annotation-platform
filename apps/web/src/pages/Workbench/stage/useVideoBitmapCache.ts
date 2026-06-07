@@ -185,14 +185,15 @@ export function useVideoBitmapCache({
   }, [clear, taskId]);
 
   const activeBitmap = useMemo(() => {
+    void version;
     if (!taskId || activeFrameIndex === null) return null;
     return cacheRef.current.get(bitmapKey(taskId, activeFrameIndex)) ?? null;
   }, [activeFrameIndex, taskId, version]);
 
-  const cachedRanges = useMemo(
-    () => rangesFromFrames([...cacheRef.current.values()].map((entry) => entry.frameIndex)),
-    [version],
-  );
+  const cachedRanges = useMemo(() => {
+    void version;
+    return rangesFromFrames([...cacheRef.current.values()].map((entry) => entry.frameIndex));
+  }, [version]);
 
   return {
     activeBitmap,

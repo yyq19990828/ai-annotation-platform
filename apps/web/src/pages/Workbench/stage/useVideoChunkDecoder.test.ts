@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import {
   WEBCODECS_FLAG_QUERY_KEY,
-  WEBCODECS_FLAG_STORAGE_KEY,
   chunkDecoderCacheKey,
   decodeChunkToBitmap,
   detectWebCodecsSupport,

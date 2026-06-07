@@ -216,7 +216,10 @@ export function KonvaPolygon({
   const sw = (selected ? 2 : 1.5) / scale;
   const labelFontSize = BOX_LABEL_FONT_PX / scale;
   const labelText = shapeLabelText(b, isAi);
-  const ps: Pt[] = points && points.length >= 3 ? points : (b.polygon ?? []);
+  const ps = useMemo<Pt[]>(
+    () => (points && points.length >= 3 ? points : (b.polygon ?? [])),
+    [b.polygon, points],
+  );
   // I2.1 渲染层 LOD：编辑态 / 选中态用原顶点（保证手感）；其它态按 viewport scale 简化。
   const renderPs = useMemo<Pt[]>(() => {
     if (editable || selected) return ps;

@@ -152,7 +152,7 @@ export function ProjectDataManagerPage() {
   const [sort, setSort] = useState<TaskSortItem[]>([{ field: "task.created_at", direction: "asc" }]);
   const [page, setPage] = useState(0);
 
-  const views = viewsQ.data?.items ?? [];
+  const views = useMemo(() => viewsQ.data?.items ?? [], [viewsQ.data?.items]);
   const selectedView = useMemo(() => {
     return views.find((view) => (view.id ? `saved:${view.id}` : `builtin:${view.key}`) === selectedKey) ?? null;
   }, [selectedKey, views]);
