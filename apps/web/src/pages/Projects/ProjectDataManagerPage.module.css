@@ -5,13 +5,13 @@
 }
 
 .page {
-  max-width: 1440px;
+  max-width: 1680px;
   margin: 0 auto;
-  padding: 20px 28px 40px;
+  padding: 16px 28px 32px;
 }
 
 .header {
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .backButton {
@@ -58,13 +58,15 @@
 
 .layout {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 14px;
 }
 
 .viewsPane {
   align-self: flex-start;
-  padding: 10px;
+  position: sticky;
+  top: 16px;
+  padding: 8px;
   background: var(--color-bg-elev);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -80,8 +82,8 @@
 .viewList {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 10px;
+  gap: 2px;
+  margin-bottom: 8px;
 }
 
 .viewButton {
@@ -99,6 +101,11 @@
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
+}
+
+.viewButton:hover {
+  color: var(--color-fg);
+  background: var(--color-bg-hover);
 }
 
 .viewButton span:first-child {
@@ -124,30 +131,48 @@
 }
 
 .toolbar {
-  display: grid;
-  grid-template-columns: minmax(420px, 1fr) 340px;
-  gap: 12px;
-  align-items: start;
-  margin-bottom: 12px;
-}
-
-.rules,
-.columnPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   padding: 10px;
+  margin-bottom: 10px;
   background: var(--color-bg-elev);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
 }
 
+.toolbarHeader {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 2px;
+}
+
+.toolbarTitle {
+  color: var(--color-fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.toolbarMeta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 2px;
+  color: var(--color-fg-subtle);
+  font-size: 12px;
+}
+
 .rules {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .ruleRow {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) 82px minmax(160px, 1fr) 32px;
+  grid-template-columns: minmax(180px, 1fr) 90px minmax(220px, 1.2fr) 32px;
   gap: 8px;
   align-items: center;
 }
@@ -166,6 +191,12 @@
 .ruleRow input:disabled {
   color: var(--color-fg-subtle);
   background: var(--color-bg-sunken);
+}
+
+.addRuleButton {
+  justify-content: flex-start;
+  width: fit-content;
+  min-width: 112px;
 }
 
 .iconButton {
@@ -187,9 +218,19 @@
 }
 
 .columnPanel {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.columnPanelTitle {
+  margin-right: 4px;
+  color: var(--color-fg-subtle);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .columnToggle {
@@ -197,9 +238,19 @@
   gap: 6px;
   align-items: center;
   min-width: 0;
+  min-height: 28px;
+  padding: 4px 8px;
   color: var(--color-fg-muted);
   font-size: 12px;
   white-space: nowrap;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+}
+
+.columnToggle:hover {
+  color: var(--color-fg);
+  border-color: var(--color-border-strong);
 }
 
 .tableWrap {
@@ -207,6 +258,7 @@
   background: var(--color-bg-elev);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .table {
@@ -218,7 +270,7 @@
 
 .table th,
 .table td {
-  padding: 9px 10px;
+  padding: 10px 12px;
   overflow: hidden;
   text-align: left;
   text-overflow: ellipsis;
@@ -234,8 +286,17 @@
   background: var(--color-panel);
 }
 
+.table tbody tr:hover {
+  background: var(--color-bg-hover);
+}
+
 .table tr:last-child td {
   border-bottom: none;
+}
+
+.table th:first-child,
+.table td:first-child {
+  width: 140px;
 }
 
 .taskCell {
@@ -288,8 +349,7 @@
     flex-direction: column;
   }
 
-  .layout,
-  .toolbar {
+  .layout {
     grid-template-columns: 1fr;
   }
 
@@ -312,7 +372,6 @@
     width: 100%;
   }
 
-  .columnPanel,
   .viewList {
     grid-template-columns: 1fr;
   }

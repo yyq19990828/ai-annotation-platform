@@ -282,6 +282,19 @@ export function ProjectDataManagerPage() {
 
         <main className={styles.main}>
           <section className={styles.toolbar}>
+            <div className={styles.toolbarHeader}>
+              <div>
+                <div className={styles.toolbarTitle}>{selectedView?.name ?? "任务视图"}</div>
+                <div className={styles.toolbarMeta}>
+                  {selectedView?.builtin ? "内置视图" : selectedView?.visibility === "project" ? "项目共享" : "私有视图"}
+                  <span>·</span>
+                  {total.toLocaleString()} 条匹配
+                </div>
+              </div>
+              <Badge variant={canEditSelected ? "accent" : "outline"}>
+                {canEditSelected ? "可编辑" : "只读"}
+              </Badge>
+            </div>
             <div className={styles.rules}>
               {rules.map((rule, index) => (
                 <div key={`${index}-${rule.field}`} className={styles.ruleRow}>
@@ -334,11 +347,12 @@ export function ProjectDataManagerPage() {
                   </button>
                 </div>
               ))}
-              <Button size="sm" onClick={() => setRules([...rules, { ...EMPTY_RULE }])}>
+              <Button size="sm" className={styles.addRuleButton} onClick={() => setRules([...rules, { ...EMPTY_RULE }])}>
                 <Icon name="plus" size={12} />条件
               </Button>
             </div>
             <div className={styles.columnPanel}>
+              <div className={styles.columnPanelTitle}>显示列</div>
               {COLUMN_OPTIONS.map((column) => (
                 <label key={column.key} className={styles.columnToggle}>
                   <input
