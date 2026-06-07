@@ -73,8 +73,16 @@ def test_compile_filter_nested_and_or():
                 {
                     "op": "and",
                     "rules": [
-                        {"field": "annotation.annotation_count", "op": "gte", "value": 1},
-                        {"field": "prediction.prediction_count", "op": "gt", "value": 0},
+                        {
+                            "field": "annotation.annotation_count",
+                            "op": "gte",
+                            "value": 1,
+                        },
+                        {
+                            "field": "prediction.prediction_count",
+                            "op": "gt",
+                            "value": 0,
+                        },
                     ],
                 },
             ],
@@ -130,7 +138,9 @@ def test_compile_filter_in_list_cap():
 
 def test_validate_filter_rejects_unknown_field():
     with pytest.raises(HTTPException) as exc:
-        validate_filter({"op": "and", "rules": [{"field": "nope", "op": "eq", "value": 1}]})
+        validate_filter(
+            {"op": "and", "rules": [{"field": "nope", "op": "eq", "value": 1}]}
+        )
     assert exc.value.status_code == 422
 
 
