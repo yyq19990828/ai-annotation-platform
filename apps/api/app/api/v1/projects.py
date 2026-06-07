@@ -1303,6 +1303,9 @@ async def trigger_preannotation(
             "task_count": len(body.task_ids) if body.task_ids else total_tasks_hint,
             "prompt": (body.prompt or "")[:200],
             "output_mode": body.output_mode,
+            # v0.14.10 · 协议 v2 多模型路由溯源: 记录具体 model / task 类型
+            "model_id": body.model_id,
+            "task_type": body.task_type,
         },
     )
     await db.commit()

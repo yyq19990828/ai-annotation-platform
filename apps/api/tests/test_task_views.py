@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.prediction import Prediction
 from app.db.models.project_member import ProjectMember
-from tests.factory import create_project, create_task
+from tests.factory import create_batch, create_project, create_task
 
 pytestmark = pytest.mark.asyncio
 
@@ -133,6 +133,61 @@ async def test_tasks_query_filters_prediction_model_version(
     assert [item["id"] for item in body["items"]] == [str(task_a.id)]
     assert body["items"][0]["avg_prediction_confidence"] == 0.42
     assert body["items"][0]["model_versions"] == ["sam3-v1"]
+
+
+async def test_tasks_query_annotator_only_sees_visible_batches(
+    httpx_client: httpx.AsyncClient,
+    project_admin,
+    annotator,
+    reviewer,
+    db_session: AsyncSession,
+):
+    """非特权 annotator 通过 Data Manager 查询时, 只能看到自己 batch 可见性范围内的
+    任务, 不能看到项目里其他 batch / 孤儿任务; 项目 owner 则能看到全部。"""
+    owner, owner_token = project_admin
+    annotator_user, annotator_token = annotator
+    reviewer_user, _ = reviewer
+    project = await create_project(db_session, owner_id=owner.id, type_key="image-det")
+    db_session.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=annotator_user.id,
+            role="annotator",
+        )
+    )
+
+    batch_mine = await create_batch(db_session, project_id=project.id, status="active")
+    batch_mine.annotator_id = annotator_user.id
+    batch_other = await create_batch(db_session, project_id=project.id, status="active")
+    batch_other.annotator_id = reviewer_user.id
+
+    task_mine = await create_task(db_session, project_id=project.id, display_id="T-DM-MINE")
+    task_mine.batch_id = batch_mine.id
+    task_other = await create_task(db_session, project_id=project.id, display_id="T-DM-OTHER")
+    task_other.batch_id = batch_other.id
+    # 无 batch 的孤儿任务: 对非特权不可见
+    await create_task(db_session, project_id=project.id, display_id="T-DM-ORPHAN")
+    await db_session.flush()
+
+    anno_r = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/query",
+        headers={"Authorization": f"Bearer {annotator_token}"},
+        json={"filter_json": {}},
+    )
+    assert anno_r.status_code == 200, anno_r.text
+    anno_body = anno_r.json()
+    assert [item["id"] for item in anno_body["items"]] == [str(task_mine.id)]
+    assert anno_body["total"] == 1
+
+    owner_r = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/query",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"filter_json": {}},
+    )
+    assert owner_r.status_code == 200, owner_r.text
+    owner_ids = {item["id"] for item in owner_r.json()["items"]}
+    assert {str(task_mine.id), str(task_other.id)}.issubset(owner_ids)
+    assert owner_r.json()["total"] == 3
 
 
 async def test_task_view_visibility_and_shared_edit_permissions(

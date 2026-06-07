@@ -78,15 +78,19 @@ async def list_task_views(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    await assert_project_visible(project_id, db, user)
+    project = await assert_project_visible(project_id, db, user)
     svc = TaskViewService(db)
     saved = await svc.list_views(project_id, user.id)
     items: list[ProjectTaskViewOut] = []
     for builtin in builtin_views(project_id):
-        count = await svc.count_for_filter(project_id, builtin["filter_json"])
+        count = await svc.count_for_filter(
+            project_id, builtin["filter_json"], user=user, project=project
+        )
         items.append(ProjectTaskViewOut(**builtin, task_count=count))
     for view in saved:
-        count = await svc.count_for_filter(project_id, view.filter_json)
+        count = await svc.count_for_filter(
+            project_id, view.filter_json, user=user, project=project
+        )
         items.append(_view_out(view, task_count=count))
     return ProjectTaskViewListResponse(items=items)
 
@@ -141,10 +145,12 @@ async def get_task_view(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    await assert_project_visible(project_id, db, user)
+    project = await assert_project_visible(project_id, db, user)
     svc = TaskViewService(db)
     view = await svc.get_view(project_id, view_id, user.id)
-    count = await svc.count_for_filter(project_id, view.filter_json)
+    count = await svc.count_for_filter(
+        project_id, view.filter_json, user=user, project=project
+    )
     return _view_out(view, task_count=count)
 
 
@@ -272,7 +278,7 @@ async def query_project_tasks(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    await assert_project_visible(project_id, db, user)
+    project = await assert_project_visible(project_id, db, user)
     svc = TaskViewService(db)
     rows, total = await svc.query_tasks(
         project_id=project_id,
@@ -280,6 +286,8 @@ async def query_project_tasks(
         sort_json=_sort_to_json(payload.sort_json),
         limit=payload.limit,
         offset=payload.offset,
+        user=user,
+        project=project,
     )
     tasks = [row[0] for row in rows]
     dims = await _attach_dimensions_batch(db, tasks)

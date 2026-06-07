@@ -13,9 +13,16 @@ from app.db.models.annotation import Annotation
 from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.dataset import DatasetItem, Scene
 from app.db.models.prediction import Prediction
+from app.db.models.project import Project
 from app.db.models.project_task_view import ProjectTaskView
 from app.db.models.task import Task
+from app.db.models.task_batch import TaskBatch
 from app.db.models.task_dataset_item_link import TaskDatasetItemLink
+from app.db.models.user import User
+from app.services.scheduler import (
+    batch_visibility_clause,
+    is_privileged_for_project,
+)
 
 
 DEFAULT_COLUMNS = [
@@ -584,17 +591,37 @@ class TaskViewService:
         await self.db.delete(view)
         await self.db.flush()
 
+    def _apply_visibility(
+        self,
+        stmt: Select,
+        user: User,
+        project: Project,
+    ) -> Select:
+        # 与 tasks.list_tasks 对齐: 非特权用户 (annotator/reviewer) 通过 Data Manager
+        # 查询时只能看自己 batch 可见性范围内的任务, 不能看到全项目任务。无 batch 的
+        # 孤儿任务对非特权用户不可见 (inner join 自然过滤)。
+        if not is_privileged_for_project(user, project):
+            stmt = stmt.join(TaskBatch, Task.batch_id == TaskBatch.id).where(
+                batch_visibility_clause(user)
+            )
+        return stmt
+
     async def count_for_filter(
         self,
         project_id: uuid.UUID,
         filter_json: dict[str, Any],
+        *,
+        user: User,
+        project: Project,
     ) -> int:
         clause = compile_filter(filter_json)
-        total = await self.db.scalar(
+        stmt = (
             select(func.count())
             .select_from(Task)
             .where(Task.project_id == project_id, clause)
         )
+        stmt = self._apply_visibility(stmt, user, project)
+        total = await self.db.scalar(stmt)
         return int(total or 0)
 
     async def query_tasks(
@@ -605,12 +632,15 @@ class TaskViewService:
         sort_json: list[dict[str, Any]],
         limit: int,
         offset: int,
+        user: User,
+        project: Project,
     ) -> tuple[list[Any], int]:
         clause = compile_filter(filter_json)
         base = Task.project_id == project_id
-        total = await self.db.scalar(
-            select(func.count()).select_from(Task).where(base, clause)
+        count_stmt = self._apply_visibility(
+            select(func.count()).select_from(Task).where(base, clause), user, project
         )
+        total = await self.db.scalar(count_stmt)
         q = select(
             Task,
             _avg_prediction_confidence_sq().label("avg_prediction_confidence"),
@@ -620,6 +650,7 @@ class TaskViewService:
             _scene_frame_sq().label("frame_index"),
             _last_activity_at_expr().label("last_activity_at"),
         ).where(base, clause)
+        q = self._apply_visibility(q, user, project)
         q = apply_sort(q, sort_json).limit(limit).offset(offset)
         rows = (await self.db.execute(q)).all()
         return rows, int(total or 0)
