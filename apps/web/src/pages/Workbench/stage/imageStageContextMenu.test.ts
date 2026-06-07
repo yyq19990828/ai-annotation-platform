@@ -88,6 +88,43 @@ describe("imageStageContextMenu", () => {
     expect(paste).toHaveBeenCalled();
   });
 
+  it("enables join only for selected same-class polygon annotations", () => {
+    const onJoinSelected = vi.fn();
+    const poly = annotation({
+      geometry: { type: "polygon", points: [[0, 0], [0.1, 0], [0.1, 0.1]] },
+    });
+    const peer = annotation({
+      id: "ann-2",
+      geometry: { type: "polygon", points: [[0.1, 0], [0.2, 0], [0.2, 0.1]] },
+    });
+
+    const enabled = buildImageContextMenuItems({
+      annotation: poly,
+      selectedAnnotations: [poly, peer],
+      readOnly: false,
+      minZOrder: 0,
+      maxZOrder: 0,
+      clipboard: null,
+      onJoinSelected,
+    }).find((item) => item.id === "join");
+
+    expect(enabled?.disabled).toBe(false);
+    enabled?.onSelect?.();
+    expect(onJoinSelected).toHaveBeenCalled();
+
+    const mixedClass = buildImageContextMenuItems({
+      annotation: poly,
+      selectedAnnotations: [poly, { ...peer, cls: "person" }],
+      readOnly: false,
+      minZOrder: 0,
+      maxZOrder: 0,
+      clipboard: null,
+      onJoinSelected,
+    }).find((item) => item.id === "join");
+
+    expect(mixedClass?.disabled).toBe(true);
+  });
+
   it("disables mutations on locked shapes except unlock", () => {
     const items = buildImageContextMenuItems({
       annotation: annotation({

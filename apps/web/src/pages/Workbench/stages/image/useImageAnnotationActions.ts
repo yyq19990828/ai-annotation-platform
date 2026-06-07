@@ -29,6 +29,10 @@ import {
   type AnnotationMutations,
 } from "../../state/useWorkbenchAnnotationActions";
 import type { useWorkbenchState } from "../../state/useWorkbenchState";
+import {
+  buildPolygonJoinPayload,
+  canJoinPolygonAnnotation,
+} from "../../stage/shared/geometry/polygonOps";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -108,6 +112,22 @@ export function getBatchChangeTarget(
     className: firstBox.cls,
     count: selectedIds.length,
   };
+}
+
+// v0.14.9 · 采纳 OCR / doc_layout 候选时携带回新建标注的 attributes。
+// 仅保留候选提供的语义属性 (text/language/orientation 等), 丢弃以 `_` 开头的内部键
+// (如 _shape_index, 由后端 accept 自行写入)。无可携带键时返回 null (上层不发 PATCH)。
+function pickCarryAttributes(
+  attributes: Record<string, unknown> | undefined,
+): Record<string, unknown> | null {
+  if (!attributes) return null;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(attributes)) {
+    if (k.startsWith("_")) continue;
+    if (v === undefined || v === null || v === "") continue;
+    out[k] = v;
+  }
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 function acceptedPredictionShapeKeys(annotations: AnnotationResponse[] | undefined): Set<string> {
@@ -400,6 +420,70 @@ export function useImageAnnotationActions({
     });
   }, [s, annotationsRef, mutations.delete, history, pushToast]);
 
+  const handleJoinSelectedPolygons = useCallback(() => {
+    if (isLocked) {
+      pushToast({ msg: "任务已锁定", sub: "撤回提交或继续编辑后再操作", kind: "warning" });
+      return;
+    }
+    const targets = s.selectedIds
+      .map((id) => annotationsRef.current.find((ann) => ann.id === id))
+      .filter((ann): ann is AnnotationResponse => !!ann);
+    const joinable = targets.filter(canJoinPolygonAnnotation);
+    if (joinable.length < 2) {
+      pushToast({ msg: "请选择至少 2 个未锁定多边形", kind: "warning" });
+      return;
+    }
+    if (joinable.length !== targets.length) {
+      pushToast({ msg: "仅支持未锁定 polygon / multi_polygon 合并", kind: "warning" });
+      return;
+    }
+    const classNames = new Set(joinable.map((ann) => ann.class_name));
+    if (classNames.size > 1) {
+      pushToast({ msg: "暂不支持跨类别合并", sub: "请先批量改为同一类别", kind: "warning" });
+      return;
+    }
+    const result = buildPolygonJoinPayload(joinable);
+    if (!result) {
+      pushToast({ msg: "多边形合并失败", sub: "请检查几何是否自相交或手动调整后重试", kind: "error" });
+      return;
+    }
+
+    void createAnnotationAsync(result.payload)
+      .then((created) => {
+        const commands: Exclude<Parameters<typeof history.pushBatch>[0][number], { kind: "batch" }>[] = [
+          { kind: "create", annotationId: created.id, payload: result.payload },
+        ];
+        let pending = result.sourceAnnotations.length;
+        let deleted = 0;
+        let failed = 0;
+        const finish = () => {
+          pending--;
+          if (pending > 0) return;
+          history.pushBatch(commands);
+          s.setSelectedId(created.id);
+          pushToast({
+            msg: `已合并 ${deleted}/${result.sourceAnnotations.length} 个多边形`,
+            sub: failed ? `${failed} 项删除失败` : undefined,
+            kind: failed ? "warning" : "success",
+          });
+        };
+        for (const source of result.sourceAnnotations) {
+          const snapshot = annotationsRef.current.find((ann) => ann.id === source.id);
+          mutations.delete.mutate(source.id, {
+            onSuccess: () => {
+              deleted++;
+              if (snapshot) commands.push({ kind: "delete", annotation: snapshot });
+            },
+            onError: () => { failed++; },
+            onSettled: finish,
+          });
+        }
+      })
+      .catch((err) => {
+        pushToast({ msg: "多边形合并失败", sub: String(err), kind: "error" });
+      });
+  }, [annotationsRef, createAnnotationAsync, history, isLocked, mutations.delete, pushToast, s]);
+
   const handleStartBatchChangeClass = useCallback(() => {
     const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
     if (ids.length === 0) return;
@@ -480,11 +564,21 @@ export function useImageAnnotationActions({
         onSuccess: (created) => {
           const ids = created.map((a) => a.id);
           history.push({ kind: "acceptPrediction", predictionId: box.predictionId, createdAnnotationIds: ids });
+          // v0.14.9 · OCR / doc_layout 候选的 attributes (text/language/orientation 等) 后端
+          // accept_prediction 仅写 _shape_index, 不带 OCR 文本; 这里 accept 成功后把候选 attributes
+          // 合并 PATCH 进新建标注 (保留服务端写的 _shape_index), 避免识别文本丢失。
+          const carry = pickCarryAttributes(box.attributes);
+          if (carry && created.length > 0) {
+            for (const ann of created) {
+              const merged = { ...(ann.attributes ?? {}), ...carry };
+              mutations.update.mutate({ annotationId: ann.id, payload: { attributes: merged } });
+            }
+          }
           pushToast({ msg: "已采纳 AI 标注", sub: `${box.cls} · 置信度 ${(box.conf * 100).toFixed(0)}%`, kind: "success" });
         },
       },
     );
-  }, [acceptPredictionMut, history, pushToast]);
+  }, [acceptPredictionMut, history, pushToast, mutations.update]);
 
   // v0.10.8 · I11 · Mask 精修：候选/已存 polygon → mask 编辑 → commit 路径按 kind 分流。
   // v0.10.9 · 扩三种 kind：prediction（AI 预标 polygon 行）/ sam（SAM 交互候选，未 Enter）/ user（已落库 polygon，update 替换 geometry）。
@@ -797,6 +891,7 @@ export function useImageAnnotationActions({
     samPendingGeom,
     samDefaultClass,
     handleBatchDelete,
+    handleJoinSelectedPolygons,
     handleStartBatchChangeClass,
     handleCommitBatchChangeClass,
     handleCancelBatchChange,

@@ -8,6 +8,7 @@ import { VariantSelector } from "@/components/ml/VariantSelector";
 import type { MLBackendSupportedVariantGroup } from "@/api/ml-backends";
 import type { Annotation, AnnotationResponse } from "@/types";
 import type { AttributeSchema } from "@/api/projects";
+import type { CapabilityWarning } from "../state/useCapabilityValidation";
 import {
   PREDICTION_SOURCE_FILTERS,
   predictionSourceLabel,
@@ -80,6 +81,8 @@ interface AIInspectorPanelProps {
   /** v0.13.10 · 分离为同窗口浮窗，由 WorkbenchLayout 负责实际渲染分支。 */
   onDetach?: () => void;
   floating?: boolean;
+  /** v0.14.9 · active model 与项目配置的兼容性警告 (非阻断)；空时不渲染。 */
+  capabilityWarnings?: CapabilityWarning[];
 }
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -113,6 +116,7 @@ export function AIInspectorPanel({
   videoTrackPanel,
   onDetach,
   floating = false,
+  capabilityWarnings,
 }: AIInspectorPanelProps) {
   const selSet = selectedIds && selectedIds.length > 0
     ? new Set(selectedIds)
@@ -145,6 +149,17 @@ export function AIInspectorPanel({
           )}
         </div>
       </div>
+
+      {capabilityWarnings && capabilityWarnings.length > 0 && (
+        <div className={styles.capabilityWarnings} data-testid="ai-inspector-capability-warnings">
+          {capabilityWarnings.map((w) => (
+            <div key={w.key} className={styles.capabilityWarningItem}>
+              <Icon name="warning" size={11} />
+              <span>{w.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {multiCount > 0 && (
         <div className={styles.multiSelectionBar}>

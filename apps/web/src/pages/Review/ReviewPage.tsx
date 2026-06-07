@@ -105,7 +105,10 @@ export function ReviewPage() {
 
   // v0.7.1 B-18：批次树数据来自 reviewer dashboard 聚合（已扩展为「reviewing 或 review_tasks>0」）。
   const { data: reviewerStats } = useReviewerStats();
-  const sidebarBatches: ReviewingBatchItem[] = reviewerStats?.reviewing_batches ?? [];
+  const sidebarBatches = useMemo<ReviewingBatchItem[]>(
+    () => reviewerStats?.reviewing_batches ?? [],
+    [reviewerStats?.reviewing_batches],
+  );
 
   const selectedBatch = useMemo(
     () => sidebarBatches.find((b) => b.batch_id === selectedBatchId) ?? null,
@@ -126,7 +129,10 @@ export function ReviewPage() {
     [selectedBatchId, assigneeFilter],
   );
   const { data: taskListData, isLoading } = useTaskList(projectId, taskListParams);
-  const tasks = taskListData?.pages.flatMap((p) => p.items) ?? [];
+  const tasks = useMemo(
+    () => taskListData?.pages.flatMap((p) => p.items) ?? [],
+    [taskListData?.pages],
+  );
 
   const approveMut = useApproveTask();
   const rejectMut = useRejectTask();
@@ -159,11 +165,6 @@ export function ReviewPage() {
   };
 
   const openTaskId = searchParams.get("taskId");
-  const openTaskIdx = useMemo(
-    () => tasks.findIndex((t) => t.id === openTaskId),
-    [tasks, openTaskId],
-  );
-
   // ESC 关 drawer
   useEffect(() => {
     if (!openTaskId) return;
@@ -197,18 +198,6 @@ export function ReviewPage() {
       setSearchParams({ taskId: id });
     }
   };
-  const closeTask = () => setSearchParams({});
-
-  const handleApprove = (id: string) => {
-    approveMut.mutate(id, {
-      onSuccess: () => {
-        pushToast({ msg: "任务已通过", kind: "success" });
-        closeTask();
-      },
-    });
-  };
-  const handleRejectSingle = (id: string) => setRejectingIds([id]);
-
   const runBatchReject = (
     ids: string[],
     payload: {
@@ -263,13 +252,6 @@ export function ReviewPage() {
         },
       });
     });
-  };
-
-  const goPrev = () => {
-    if (openTaskIdx > 0) openTask(tasks[openTaskIdx - 1].id);
-  };
-  const goNext = () => {
-    if (openTaskIdx >= 0 && openTaskIdx < tasks.length - 1) openTask(tasks[openTaskIdx + 1].id);
   };
 
   const totalTasks = selectedBatch?.total_tasks ?? 0;

@@ -1,6 +1,6 @@
 /**
  * RegisteredBackendsTab 单测
- * 覆盖: 加载态 / 错误态 / 空项目列表 / 有项目+backend 渲染 / 健康检查点击
+ * 覆盖: 加载态 / 错误态 / 空项目列表 / 有项目+backend 渲染 / 注册管理动作
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
@@ -142,7 +142,7 @@ describe("RegisteredBackendsTab", () => {
     expect(screen.getByText("grounded-sam2")).toBeInTheDocument();
   });
 
-  it("点击健康检查按钮 → 调用 useMLBackendHealth.mutate", async () => {
+  it("注册管理不再渲染运行时生命周期动作", async () => {
     mockOverview.mockResolvedValue(
       makeOverview({
         total_backends: 1,
@@ -158,12 +158,10 @@ describe("RegisteredBackendsTab", () => {
     );
     renderUI();
     await screen.findByText("grounded-sam2");
-    const healthBtn = screen.getByTitle("健康检查");
-    fireEvent.click(healthBtn);
-    expect(mockHealthMutate).toHaveBeenCalledWith(
-      "bk-1",
-      expect.any(Object),
-    );
+    expect(screen.queryByTitle("健康检查")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("卸载模型释放显存 (空闲时建议)")).not.toBeInTheDocument();
+    expect(screen.getByTitle("编辑")).toBeInTheDocument();
+    expect(screen.getByTitle("删除")).toBeInTheDocument();
   });
 
   it("点击注册按钮 → 打开 MlBackendFormModal", async () => {
@@ -190,7 +188,7 @@ describe("RegisteredBackendsTab", () => {
     });
   });
 
-  it("stat cards 显示 connected/total 数值", async () => {
+  it("表头显示项目/backend 总数", async () => {
     mockOverview.mockResolvedValue(
       makeOverview({
         total_backends: 3,
@@ -205,6 +203,6 @@ describe("RegisteredBackendsTab", () => {
       }),
     );
     renderUI();
-    await screen.findByText("2 / 3");
+    await screen.findByText("共 1 个 AI 项目 · 3 个 backend");
   });
 });

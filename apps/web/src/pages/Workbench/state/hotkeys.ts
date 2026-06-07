@@ -54,6 +54,9 @@ export const HOTKEYS: HotkeyDef[] = [
   // I12 · Object Group + 批量编辑
   { keys: ["Ctrl", "G"], desc: "把选中的 ≥2 个标注合并为一个组（同色虚线外框）", group: "draw", actionType: "annotationGroup" },
   { keys: ["Ctrl", "Shift", "G"], desc: "把选中的标注从组里拆出（剩 1 个成员的组自动解散）", group: "draw", actionType: "annotationUngroup" },
+  { keys: ["[ / ]"], desc: "属性模式开启时：切换属性字段", group: "draw", actionType: "attributeModeField" },
+  { keys: ["1 — 9"], desc: "属性模式开启时：选择当前属性值", group: "draw", actionType: "attributeModeValue" },
+  { keys: ["N"], desc: "属性模式开启时：跳到下一个未填写当前属性的对象", group: "draw", actionType: "attributeModeNextMissing" },
 
   { keys: ["Ctrl", "Z"], desc: "撤销", group: "draw", actionType: "undo" },
   { keys: ["Ctrl", "Shift", "Z"], desc: "重做", group: "draw", actionType: "redo" },

@@ -1,0 +1,38 @@
+.root {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(620px, calc(100% - 32px));
+  padding: 6px 8px;
+  color: var(--color-fg);
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: var(--shadow-md);
+  transform: translateX(-50%);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-fg);
+}
+
+.select {
+  min-width: 120px;
+  max-width: 190px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--color-fg);
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}

@@ -107,6 +107,8 @@ export type ExportFormat =
   | "video_json"
   | "mot"
   | "kitti"
+  | "nuscenes"
+  | "pointmask"
   | "yolo-frames-det";
 // v0.10.43 · 多目标导出：YOLO 拆 det/obb/seg；一次导出可多选目标（voc 仅可单选）。
 export type ExportTarget =
@@ -118,6 +120,8 @@ export type ExportTarget =
   | "video_json"
   | "mot"
   | "kitti"
+  | "nuscenes"
+  | "pointmask"
   | "yolo-frames-det"
   | "voc";
 export type VideoFrameMode = "keyframes" | "all_frames";

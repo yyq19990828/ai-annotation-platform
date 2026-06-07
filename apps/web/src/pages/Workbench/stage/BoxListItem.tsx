@@ -108,6 +108,33 @@ function getPredictionSource(b: Annotation | AiBox) {
   return "predictionSource" in b ? b.predictionSource : null;
 }
 
+// v0.14.9 · doc_layout 版面类别 (后端 class_name). 命中时在候选行展示版面 type badge.
+const DOC_LAYOUT_LABELS: Record<string, string> = {
+  title: "标题",
+  paragraph: "段落",
+  table: "表格",
+  figure: "图片",
+  formula: "公式",
+  list: "列表",
+  header: "页眉",
+  footer: "页脚",
+};
+
+// v0.14.9 · 从 AI 候选 attributes 抽 OCR 文本摘要 (单行截断). 无文本返回 null.
+function ocrTextSummary(b: Annotation | AiBox): string | null {
+  if (!("attributes" in b) || !b.attributes) return null;
+  const text = b.attributes.text;
+  if (typeof text !== "string" || text.trim() === "") return null;
+  const trimmed = text.trim();
+  return trimmed.length > 48 ? `${trimmed.slice(0, 48)}…` : trimmed;
+}
+
+// v0.14.9 · 命中 doc_layout 版面类别时返回中文 badge 文案, 否则 null.
+function docLayoutBadge(b: Annotation | AiBox): string | null {
+  const key = b.cls?.toLowerCase?.();
+  return key && key in DOC_LAYOUT_LABELS ? DOC_LAYOUT_LABELS[key] : null;
+}
+
 interface BoxListItemProps {
   b: Annotation | AiBox;
   isAi?: boolean;
@@ -137,6 +164,9 @@ export function BoxListItem({
   const color = classColor(b.cls);
   const toolMeta = annotationToolMeta(b, imageWidth, imageHeight);
   const predictionSource = isAi ? getPredictionSource(b) : null;
+  // v0.14.9 · OCR / doc_layout 候选: 文本摘要 + 版面 type badge (仅 AI 行展示).
+  const ocrText = isAi ? ocrTextSummary(b) : null;
+  const layoutBadge = isAi ? docLayoutBadge(b) : null;
   return (
     <div
       onClick={(e) => onSelect({ shiftKey: e.shiftKey })}
@@ -163,6 +193,11 @@ export function BoxListItem({
               {b.source === "prediction_based" ? "AI 采纳" : "手动"}
             </span>
           )}
+          {layoutBadge && (
+            <span className={cn(styles.badge, styles.badgeLayout)} title="版面类别">
+              {layoutBadge}
+            </span>
+          )}
           {dimmed && (
             <span
               className={styles.coveredTag}
@@ -187,6 +222,12 @@ export function BoxListItem({
             {toolMeta.detail}
           </span>
         </div>
+        {ocrText && (
+          <div className={styles.ocrText} title={ocrText}>
+            <Icon name="type" size={11} />
+            <span className={styles.ocrTextValue}>{ocrText}</span>
+          </div>
+        )}
       </div>
       <div className={styles.actions}>
         {isAi ? (

@@ -239,6 +239,70 @@ def test_non_dict_input_safe():
     assert to_internal_shape([1, 2]) == {}
 
 
+# ─── v0.14.9 · 协议 v2 OCR / doc_layout attributes 透传 ─────────────────────
+
+
+def test_ocr_shape_extracts_attributes_text():
+    """OCR backend 在 shape 顶层写 attributes.{text,language,...}, adapter 原样提取。"""
+    raw = {
+        "type": "rectanglelabels",
+        "score": 0.95,
+        "value": {
+            "x": 0.1,
+            "y": 0.2,
+            "width": 0.3,
+            "height": 0.05,
+            "rectanglelabels": ["text_line"],
+        },
+        "attributes": {
+            "text": "Invoice #2026",
+            "language": "en",
+            "orientation": 0,
+        },
+    }
+    out = to_internal_shape(raw)
+    assert out["class_name"] == "text_line"
+    assert out["geometry"]["type"] == "bbox"
+    assert out["attributes"]["text"] == "Invoice #2026"
+    assert out["attributes"]["language"] == "en"
+
+
+def test_non_ocr_shape_attributes_defaults_to_empty_dict():
+    """无 attributes 字段时 adapter 输出 {} (不影响老路径)。"""
+    raw = {
+        "type": "rectanglelabels",
+        "score": 0.9,
+        "value": {
+            "x": 0,
+            "y": 0,
+            "width": 1,
+            "height": 1,
+            "rectanglelabels": ["car"],
+        },
+    }
+    out = to_internal_shape(raw)
+    assert out["attributes"] == {}
+
+
+def test_doc_layout_class_from_value_class_with_attributes():
+    """doc_layout: class 取 value.class, 富属性走 shape 顶层 attributes。"""
+    raw = {
+        "type": "rectanglelabels",
+        "score": 0.88,
+        "value": {
+            "x": 0.0,
+            "y": 0.0,
+            "width": 0.5,
+            "height": 0.2,
+            "class": "title",
+        },
+        "attributes": {"reading_order": 1},
+    }
+    out = to_internal_shape(raw)
+    assert out["class_name"] == "title"
+    assert out["attributes"] == {"reading_order": 1}
+
+
 # ─── v0.9.8 黄金样本 — 锁定内部 schema 边界, 防止再次漂移 ────────────────────
 
 

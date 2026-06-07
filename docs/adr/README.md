@@ -71,3 +71,4 @@
 - [0033](0033-3d-to-2d-projection-overlay.md) — 3D→2D 投影联动：实时纯函数投影 + canvas overlay（不预存）
 - [0034](0034-lidar-axis-convention.md) — 点云数据集 lidar 坐标系约定：dataset 级声明 + 加载侧归一化
 - [0035](0035-scene-and-frame-foundation.md) — Scene + frame_index 跨 task 时序帧序列地基
+- [0036](0036-ml-backend-capability-protocol-v2-multi-model.md) — ML Backend 能力声明协议 v2（多模型目录 + infra）

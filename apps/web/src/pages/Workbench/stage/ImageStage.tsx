@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as R
 import { Stage, Layer, Image as KonvaImage, Rect, Line, Circle, Label, Tag, Text } from "react-konva";
 import type Konva from "konva";
 import useImage from "use-image";
-import type { Annotation, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
+import type { Annotation, Geometry, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { Tool } from "../state/useWorkbenchState";
 import type { AiBox } from "../state/transforms";
@@ -20,6 +20,12 @@ import { MASK_BRUSH_MIN_PX, MASK_BRUSH_MAX_PX } from "../state/useMaskEditor";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import { Icon } from "@/components/ui/Icon";
 import { isSelfIntersecting, isSelfIntersectingIncremental, moveVertex, type Pt } from "./polygonGeom";
+import {
+  buildSnapIndex,
+  snapPointToCandidates,
+  snapPointToSegments,
+  type SnapMatch,
+} from "./shared/geometry/snap";
 import { BlurhashLayer } from "./BlurhashLayer";
 import { KonvaBox, KonvaPolygon, KonvaRotatedBox, KonvaPolyline, KonvaKeypoint, keypointColorByIndex } from "./ImageStageShapes";
 import {
@@ -35,6 +41,7 @@ import { useCanvasContextMenu } from "./useCanvasContextMenu";
 import styles from "./ImageStage.module.css";
 
 type Geom = { x: number; y: number; w: number; h: number };
+const SNAP_THRESHOLD_PX = 8;
 type Drag =
   | { kind: "draw"; sx: number; sy: number; cx: number; cy: number }
   | {
@@ -141,6 +148,8 @@ interface ImageStageProps {
   /** 多选批量浮条按钮（selectedIds.length > 1 时由 Shell 处理）。 */
   onBatchDelete?: () => void;
   onBatchChangeClass?: () => void;
+  onJoinSelected?: () => void;
+  onApplyAttributeMode?: (id: string) => boolean;
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
   onAcceptPrediction?: (b: AiBox) => void;
   /** B-11 · 驳回 AI 预测 (将 prediction 从画布隐去, 不调后端). */
@@ -241,7 +250,7 @@ export function ImageStage({
   fileUrl, blurhash, tool, activeClass,
   selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
-  onBatchDelete, onBatchChangeClass,
+  onBatchDelete, onBatchChangeClass, onJoinSelected, onApplyAttributeMode,
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass, onPatchShapeFlag, clipboardActions,
   onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
@@ -306,6 +315,12 @@ export function ImageStage({
       .sort((a, c) => (a.b.z_order ?? 0) - (c.b.z_order ?? 0) || a.i - c.i)
       .map((entry) => entry.b);
   }, [userBoxes]);
+  const snapIndex = useMemo(() => {
+    const polygonAnnotations = visibleSortedUserBoxes.filter((annotation): annotation is Annotation & { geometry: Geometry } => (
+      !!annotation.geometry && (annotation.geometry.type === "polygon" || annotation.geometry.type === "multi_polygon")
+    ));
+    return buildSnapIndex(polygonAnnotations);
+  }, [visibleSortedUserBoxes]);
 
   // v0.10.4 I2.3 · 当前视口在归一化 [0,1] 空间的 bbox，用于大 polygon 顶点视口粗筛。
   // 加 1 顶点 buffer 防边缘抖动；imgW/imgH 未就绪时返回 undefined（不启用粗筛）。
@@ -351,6 +366,37 @@ export function ImageStage({
       y: (clientY - rect.top - cur.ty) / cur.scale / imgH,
     };
   }, [imgW, imgH]);
+
+  const findSnapMatch = useCallback((
+    pt: { x: number; y: number },
+    evt: Pick<MouseEvent | PointerEvent, "altKey">,
+    excludeAnnotationId?: string,
+  ): SnapMatch | null => {
+    if (evt.altKey || !imgW || !imgH) return null;
+    const transform = { imgW, imgH, scale: vpRef.current.scale };
+    const point: Pt = [pt.x, pt.y];
+    const points = excludeAnnotationId
+      ? snapIndex.points.filter((candidate) => candidate.annotationId !== excludeAnnotationId)
+      : snapIndex.points;
+    const segments = excludeAnnotationId
+      ? snapIndex.segments.filter((candidate) => candidate.annotationId !== excludeAnnotationId)
+      : snapIndex.segments;
+    const pointMatch = snapPointToCandidates(point, points, SNAP_THRESHOLD_PX, transform);
+    const segmentMatch = snapPointToSegments(point, segments, SNAP_THRESHOLD_PX, transform);
+    if (!pointMatch) return segmentMatch;
+    if (!segmentMatch) return pointMatch;
+    return pointMatch.distancePx <= segmentMatch.distancePx ? pointMatch : segmentMatch;
+  }, [imgW, imgH, snapIndex]);
+
+  const snapImagePoint = useCallback((
+    pt: { x: number; y: number },
+    evt: Pick<MouseEvent | PointerEvent, "altKey">,
+    excludeAnnotationId?: string,
+  ) => {
+    const match = findSnapMatch(pt, evt, excludeAnnotationId);
+    if (!match) return { point: pt, match: null };
+    return { point: { x: match.point[0], y: match.point[1] }, match };
+  }, [findSnapMatch]);
 
   // ── fit ──────────────────────────────────────────────────────────────────
   const fitNow = useCallback(() => {
@@ -494,11 +540,14 @@ export function ImageStage({
           return { ...cur, cur: next };
         }));
       } else if (d.kind === "polyVertex") {
+        const snapped = snapImagePoint(pt, e, d.id);
+        setSnapIndicator(snapped.match ? snapped.point : null);
         schedule(() => setDrag((cur) => {
           if (!cur || cur.kind !== "polyVertex") return cur;
-          return { ...cur, cur: moveVertex(cur.cur, cur.vidx, [pt.x, pt.y]) };
+          return { ...cur, cur: moveVertex(cur.cur, cur.vidx, [snapped.point.x, snapped.point.y]) };
         }));
       } else if (d.kind === "polyMove") {
+        setSnapIndicator(null);
         schedule(() => setDrag((cur) => {
           if (!cur || cur.kind !== "polyMove") return cur;
           return { ...cur, cur: translatePolygon(cur.start, pt.x - cur.sx, pt.y - cur.sy) };
@@ -615,6 +664,7 @@ export function ImageStage({
         // v0.10.8 · maskBrush 松手不 commit；buffer 累积笔迹，由 Enter / MaskToolbar 显式触发 commitMaskAsPolygon。
       }
       setDrag(null);
+      setSnapIndicator(null);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -623,7 +673,7 @@ export function ImageStage({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [dragging, setVp, toImg, onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, tool, userBoxes, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCommitKeypointGeometry, onCanvasStrokeCommit, canvasStroke, onSamPrompt, maskEditor, imgW, imgH]);
+  }, [dragging, setVp, toImg, onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, tool, userBoxes, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCommitKeypointGeometry, onCanvasStrokeCommit, canvasStroke, onSamPrompt, maskEditor, imgW, imgH, snapImagePoint]);
 
   // ── stage event handlers ─────────────────────────────────────────────────
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -644,6 +694,11 @@ export function ImageStage({
       readOnly,
       pendingDrawing: !!pendingDrawing,
       onClearSelection: () => onSelectBox(null),
+      snapPoint: (candidate, evt) => {
+        const snapped = snapImagePoint(candidate, evt);
+        setSnapIndicator(snapped.match ? snapped.point : null);
+        return snapped.point;
+      },
       polygonDraft,
       keypointDraft,
       samPolarity,
@@ -669,12 +724,18 @@ export function ImageStage({
     const pt = toImg(e.evt.clientX, e.evt.clientY);
     onCursorMove(pt && pt.x >= 0 && pt.x <= 1 && pt.y >= 0 && pt.y <= 1 ? pt : null);
     if ((tool === "polygon" || tool === "polyline") && polygonDraft && polygonDraft.points.length > 0) {
-      setPolygonCursor(pt);
+      const snapped = pt ? snapImagePoint(pt, e.evt) : { point: null, match: null };
+      setPolygonCursor(snapped.point);
+      setSnapIndicator(snapped.match ? snapped.point : null);
     } else if (tool === "keypoint" && keypointDraft && keypointDraft.nodeCount > 0) {
       // v0.10.28 · 复用 polygonCursor 跟踪光标, 给下一个待放节点画提示。
       setPolygonCursor(pt);
+      setSnapIndicator(null);
     } else if (polygonCursor) {
       setPolygonCursor(null);
+      setSnapIndicator(null);
+    } else if (snapIndicator) {
+      setSnapIndicator(null);
     }
     // v0.10.9 · Mask 工具下追踪笔刷光标位置（image-space pixels），驱动 overlay 圆圈渲染。
     if (tool === "mask") {
@@ -707,6 +768,8 @@ export function ImageStage({
 
   // polygon 草稿当前光标位置（用于动态预览线段）
   const [polygonCursor, setPolygonCursor] = useState<{ x: number; y: number } | null>(null);
+  // v0.14.10 · polygon/polyline snap 命中时的图像坐标指示点。
+  const [snapIndicator, setSnapIndicator] = useState<{ x: number; y: number } | null>(null);
   // v0.10.9 · Mask 笔刷光标 (image-space pixels)；overlay 层据此画跟随圆圈。
   const [maskCursor, setMaskCursor] = useState<{ x: number; y: number } | null>(null);
 
@@ -739,6 +802,12 @@ export function ImageStage({
     return null;
   };
 
+  const handleUserShapeClick = useCallback((id: string, evt?: Konva.KonvaEventObject<MouseEvent>) => {
+    const shift = !!evt?.evt?.shiftKey;
+    if (!shift && onApplyAttributeMode?.(id)) return;
+    onSelectBox(id, { shift });
+  }, [onApplyAttributeMode, onSelectBox]);
+
   const selectedBox = useMemo(() => {
     if (!selectedId) return null;
     return (userBoxes as (Annotation | AiBox)[]).concat(aiBoxes).find((b) => b.id === selectedId) ?? null;
@@ -747,6 +816,11 @@ export function ImageStage({
     () => userBoxes.find((annotation) => annotation.id === contextMenuTargetId) ?? null,
     [contextMenuTargetId, userBoxes],
   );
+  const contextMenuSelectedAnnotations = useMemo(() => {
+    if (!contextMenuTarget) return [];
+    if (!selSet.has(contextMenuTarget.id)) return [contextMenuTarget];
+    return userBoxes.filter((annotation) => selSet.has(annotation.id));
+  }, [contextMenuTarget, selSet, userBoxes]);
   const keypointDraftPending = tool === "keypoint"
     && Boolean(keypointDraft && keypointDraft.nodeCount > 0 && keypointDraft.points.length < keypointDraft.nodeCount);
   const contextMenuItems = useMemo(() => {
@@ -759,14 +833,18 @@ export function ImageStage({
       minZOrder: zOrders.length > 0 ? Math.min(...zOrders, ownZ) : ownZ,
       maxZOrder: zOrders.length > 0 ? Math.max(...zOrders, ownZ) : ownZ,
       clipboard: clipboardActions ?? null,
+      selectedAnnotations: contextMenuSelectedAnnotations,
       onChangeClass: onChangeUserBoxClass,
+      onJoinSelected,
       onDelete: onDeleteUserBox,
       onPatchFlag: onPatchShapeFlag,
     });
   }, [
     clipboardActions,
     contextMenuTarget,
+    contextMenuSelectedAnnotations,
     onChangeUserBoxClass,
+    onJoinSelected,
     onDeleteUserBox,
     onPatchShapeFlag,
     readOnly,
@@ -807,16 +885,19 @@ export function ImageStage({
       return;
     }
     setContextMenuTargetId(target.id);
-    onSelectBox(target.id);
+    if (!selSet.has(target.id)) onSelectBox(target.id);
     contextMenu.openAt(evt.clientX, evt.clientY);
-  }, [closeContextMenu, contextMenu, keypointDraftPending, onSelectBox, readOnly, userBoxes]);
+  }, [closeContextMenu, contextMenu, keypointDraftPending, onSelectBox, readOnly, selSet, userBoxes]);
 
   return (
     <div
       ref={containerRef}
       data-testid="workbench-stage"
       className={styles.root}
-      onMouseLeave={() => onCursorMove(null)}
+      onMouseLeave={() => {
+        onCursorMove(null);
+        setSnapIndicator(null);
+      }}
       onContextMenu={handleContextMenu}
       onPointerDown={(evt) => {
         // 右键任意位置拖 = pan, 不论当前 tool. 走与 hand 工具 / spacePan 同一个
@@ -938,7 +1019,7 @@ export function ImageStage({
                   faded={false}
                   occluded={!!b.occluded}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
-                  onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                  onClick={(evt) => handleUserShapeClick(b.id, evt)}
                   onRotateStart={isPrimarySingleSelect ? (e) => {
                     const pt = toImg(e.evt.clientX, e.evt.clientY);
                     if (!pt) return;
@@ -977,7 +1058,7 @@ export function ImageStage({
                   points={livePoints}
                   editable={isOnlySelected}
                   occluded={!!b.occluded}
-                  onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                  onClick={(evt) => handleUserShapeClick(b.id, evt)}
                   onVertexMouseDown={(vidx, e) => {
                     const cur = (polyOverridePoints(b.id) ?? (b.polyline as Pt[])).slice();
                     if (e.evt.shiftKey) {
@@ -1024,7 +1105,7 @@ export function ImageStage({
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   schema={keypointSchema}
                   editable={isKpEditable}
-                  onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                  onClick={(evt) => handleUserShapeClick(b.id, evt)}
                   onNodeMouseDown={(nidx) => {
                     const cur = (kpOverridePoints(b.id) ?? (b.keypoints ?? [])).slice();
                     setDrag({ kind: "kpNode", id: b.id, nidx, start: cur, cur });
@@ -1067,7 +1148,7 @@ export function ImageStage({
                   viewportBBox={viewportBBox}
                   editable={isOnlySelected}
                   occluded={!!b.occluded}
-                  onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                  onClick={(evt) => handleUserShapeClick(b.id, evt)}
                   onVertexMouseDown={(vidx, e) => {
                     const cur = (polyOverridePoints(b.id) ?? (b.polygon as Pt[])).slice();
                     if (e.evt.shiftKey) {
@@ -1112,7 +1193,7 @@ export function ImageStage({
                 editable={!readOnly && !b.is_locked}
                 occluded={!!b.occluded}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
-                onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                onClick={(evt) => handleUserShapeClick(b.id, evt)}
                 onMoveStart={isPrimarySingleSelect ? (e) => {
                   const pt = toImg(e.evt.clientX, e.evt.clientY);
                   if (!pt) return;
@@ -1216,6 +1297,17 @@ export function ImageStage({
               </>
             );
           })()}
+          {snapIndicator && (
+            <Circle
+              x={snapIndicator.x * imgW}
+              y={snapIndicator.y * imgH}
+              radius={5 / vp.scale}
+              fill={hexToRgba(pendingColor, 0.16)}
+              stroke={pendingColor}
+              strokeWidth={1.5 / vp.scale}
+              listening={false}
+            />
+          )}
           {/* v0.10.28 · keypoint 草稿：已放节点 (按 schema 取色) + 下一个待放节点光标提示 */}
           {tool === "keypoint" && keypointDraft && keypointDraft.nodeCount > 0 && (() => {
             const placed = keypointDraft.points;
@@ -1487,6 +1579,7 @@ export function ImageStage({
               : undefined}
             onBatchDelete={selSet.size > 1 ? onBatchDelete : undefined}
             onBatchChangeClass={selSet.size > 1 ? onBatchChangeClass : undefined}
+            onBatchJoin={selSet.size > 1 ? onJoinSelected : undefined}
             onClearSelection={selSet.size > 1 ? () => onSelectBox(null) : undefined}
           />
         )

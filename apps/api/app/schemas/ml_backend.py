@@ -82,12 +82,47 @@ class CacheStats(BaseModel):
         extra = "allow"  # backend 可能扩展指标, 不强约束
 
 
+class ModelCapability(BaseModel):
+    """v0.14.9 · 能力声明协议 v2 — 单个 model 条目 (一个 backend 暴露 N 个).
+
+    由 services/ml_capabilities._normalize_model 规范化后存入
+    BackendCapabilities.models; `task` 是条目边界 (决定输出几何与项目兼容性),
+    `infra` 缺省继承 backend 默认, `modality` 为派生视图。"""
+
+    id: str
+    display_name: str | None = None
+    task: str = "unknown"
+    model_family: str | None = None
+    infra: str = "unknown"
+    is_interactive: bool = False
+    supported_prompts: list[str] = []
+    supported_geometric_outputs: list[str] = []
+    output_attribute_types: list[str] = []
+    supported_text_outputs: list[str] = []
+    supported_trackers: list[str] = []
+    supported_variants: list[dict] = []
+    default_thresholds: dict = {}
+    resource_profile: dict = {}
+    params: dict = {}
+    modality: str | None = None
+
+    class Config:
+        extra = "allow"
+
+
 class BackendCapabilities(BaseModel):
     """v0.10.37 · backend `/setup` 能力快照 (epic 阶段 1).
 
     由 services/ml_backend.check_health 探 `/setup` 后落进 health_meta["capabilities"];
-    `modalities` 为派生视图 (image / video), 见 services/ml_capabilities.derive_modalities."""
+    `modalities` 为派生视图 (image / video / lidar), 见 services/ml_capabilities.derive_modalities.
 
+    v0.14.9 · 能力声明协议 v2: 新增 `infra` (backend 默认基础设施) + `models` (多模型目录);
+    其余顶层字段为各 model 的「扁平并集」, 供未迁移消费方继续读 (向后兼容)。"""
+
+    # v0.14.9 · 协议 v2 新增
+    infra: str = "unknown"
+    models: list[ModelCapability] = []
+    # 扁平并集 (向后兼容)
     is_interactive: bool = False
     supported_prompts: list[str] = []
     supported_trackers: list[str] = []

@@ -264,6 +264,8 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 > **变体 `readOnly` 语义**：grounded-sam2-backend 内置 ModelPool 后，`sam_variant` / `dino_variant` 去掉了 `readOnly`，前端可按会话切换，每次 `/predict` 经 `context.{sam_variant,dino_variant}` 携带请求级变体（详见 §2.2）。`sam_variant` enum 与 backend `SAM2_CONFIGS` key 一致：`tiny | small | base_plus | large`（注意是 `base_plus` 不是 `base`）。sam3-backend 单模型无 pool，其 variant 字段仍可保留 `readOnly`。
 >
 > **`supported_variants`（可选）**：用于给 `params.sam_variant.enum` / `params.dino_variant.enum` 的裸字符串补富元数据。结构为数组，每项代表一个轴：`{ key, title?, description?, variants: [{ value, label?, vram_gb?, tier?, recommended?, note? }] }`。`key` 必须对应 `params.properties` 里的变体字段；`value` 必须与 enum 使用同一套 runtime 校验来源。前端优先读 `supported_variants` 渲染富选择器，缺失或为空时回落 `params.*_variant.enum`，因此老 backend 不需要立即升级。`tier` 建议使用 `fast | balanced | accurate`，但前端会容忍未知字符串。
+>
+> v0.14.10 起，超管运行时观测端点 `GET /admin/ml-integrations/observe` 也会把 `/setup.supported_variants` 原样透传到每个 `ObserveTarget.supported_variants`，用于 env-only 容器的只读多轴变体展示。旧 grounded-sam2/sam3 的 `sam_variant` / `dino_variant` enum 仍会通过 `variant_catalog` 双发；仅声明通用 `supported_variants` 的容器暂不启用「试启动」，`POST /admin/ml-integrations/observe/smoke-test` 收到 `variant: {axis: value}` 时返回 `skipped=true`，直到 backend 实现通用 warm 接口。
 
 > **`supported_prompts`**：枚举 `point | bbox | text | exemplar | sketch | scribble | …`。前端 ToolDock 据此置灰不支持的工具。
 >
@@ -280,6 +282,228 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 > **`is_interactive` 改派生**：`is_interactive` 不再由注册表单手填，而是以 backend `/setup.is_interactive` 自报为真值，在 `check_health` 时回写 `MLBackend.is_interactive`。backend 必须在 `/setup` 如实声明该位。
 >
 > **绑定按 data_type 校验**：`PATCH /projects/{id}` 绑定 backend 时实时探 `/setup` 派生模态，与项目 `data_type` 不兼容 → 422；探测失败则 fail-open 放行（mismatch 留到 `/predict` 暴露）。
+
+---
+
+## 4.1 能力声明协议 v2（多模型目录 + infra）
+
+> 协议背后的架构决策：[ADR-0036 — ML Backend 能力声明协议 v2（多模型目录 + infra）](../adr/0036-ml-backend-capability-protocol-v2-multi-model.md)。
+
+§4 描述的 `/setup` 是**单模型快照**形态——隐含「1 个 backend ≈ 1 个模型族」。协议 v2 在**完全向后兼容**前提下，把能力声明下沉到 **model 粒度**，让一个 backend 暴露一份 model list（一个 backend = N 个 model），每个 model 自带能力 + infra + variants。典型消费者是未来的 **YOLO 官仓 backend**（一个仓覆盖 det/seg/pose/obb/cls × series × size）与 **ONNX 聚合 backend**（一个进程聚合检测 / 关键点 / OCR / 抠图等异构模型）。
+
+`/setup` 仍是能力的唯一真相源（SoT），目录是其派生缓存 + UI 视图。`infra` / `models[]` 只影响能力声明与目录展示，**不改 `/predict` 请求/响应 schema**。
+
+### 4.1.1 `/setup` 顶层结构（v2）
+
+```jsonc
+{
+  // ── 必填三元组（协议 v1 已有，不变）──
+  "name": "yolo-ultralytics-backend",
+  "version": "0.1.0",              // backend 镜像/代码版本
+  "model_version": "ultralytics-8.3.x",
+
+  // ── v2 新增 ──
+  "infra": "pytorch",             // backend 默认基础设施；可被 model.infra 覆盖
+  "models": [ /* §4.1.2 model 条目数组 */ ],
+
+  // ── v1 顶层字段：仍可用，作为「隐式单 model」的兜底（§4.1.5）──
+  "is_interactive": false,
+  "supported_prompts": [],
+  "supported_geometric_outputs": [],
+  "supported_variants": [],
+  "params": {}
+}
+```
+
+- `models[]` 存在 ⇒ 平台按多模型目录解析，**忽略顶层能力字段**（顶层仅留 name/version/infra 等 backend 级元数据）。
+- `models[]` 缺省 ⇒ 平台用顶层字段合成一个隐式 model（老 backend 路径，§4.1.5）。
+
+### 4.1.2 model 条目结构
+
+```jsonc
+{
+  "id": "detect",                       // 必填. backend 内唯一,(backend_id,id) 构成目录主键
+  "display_name": "YOLO 目标检测",       // UI 展示名
+  "task": "detection",                  // 必填. 受控词表,条目边界,决定输出几何与项目兼容性
+  "model_family": "yolo",               // 可选. 家族标签(yolo/sam/paddleocr…),UI 二级分组用
+  "infra": "pytorch",                   // 可选. 缺省继承 backend.infra
+  "is_interactive": false,              // 该 model 是否支持交互式 /predict
+
+  "supported_prompts": ["none"],        // 受控. none = 纯批量,无交互 prompt
+  "supported_geometric_outputs": ["bbox"],   // 受控,复用现有字段名
+  "output_attribute_types": [],         // 受控. OCR: ["text","language"]; cls: ["class"]
+  "supported_text_outputs": [],         // v1 已有,text 路径专用(box/mask/both)
+  "supported_trackers": [],             // v1 已有,video tracker 专用
+
+  "supported_variants": [ /* series/size 多轴,§4.1.6 */ ],
+  "default_thresholds": { "conf": 0.25, "iou": 0.7 },
+  "resource_profile": { "device": "gpu", "batchable": true },
+  "params": { /* 该 model 专属 JSON Schema(Draft-07 子集),前端 schema-form 渲染 */ }
+}
+```
+
+### 4.1.3 受控词表（capability vocabulary）
+
+能力声明的关键是**一套受控枚举**，且与平台内部类型锚点对齐（`TOOL_UNIT_IDS` / LabelStudio result type / `data_type`）。
+
+**`task`（任务能力，条目边界，必填）** —— 项目兼容性校验的主轴；`model_family` 仅作展示分组，不参与校验：
+
+| `task` | 输出几何 | 对应 result type | 备注 |
+|---|---|---|---|
+| `detection` | `bbox` | `rectanglelabels` | |
+| `obb` | `rotated_bbox` | `rectanglelabels`（带 `rotation`） | 与 detection 输出几何不同，单列 |
+| `segmentation` | `polygon` | `polygonlabels` | 实例/语义分割统一 polygon 落地 |
+| `keypoint` | `keypoint` | `keypointlabels` | pose / 关键点 |
+| `classification` | `none` | 无几何，写 attribute | 整图/区域分类 |
+| `ocr` | `bbox`/`rotated_bbox`/`polygon` | 对应几何 + `attributes.text` | §4.1.8 |
+| `doc_layout` | `bbox`/`polygon` | 对应几何，class=版面类别 | §4.1.8 |
+| `tracker` | per-frame geometry | （video tracker 协议，§2.2） | 模态=video |
+| `interactive_seg` | `polygon`/`mask` | `polygonlabels` | SAM 类，prompt 驱动 |
+
+**`supported_geometric_outputs`（几何输出，复用现有字段）** —— 枚举与 `TOOL_UNIT_IDS` 对齐：
+
+`bbox` / `rotated_bbox` / `polygon` / `polyline` / `keypoint` / `none`。
+（3D 的 `lidar_box_3d` / `point_mask_3d` 暂不在本版 backend 范围，留位。）
+
+**`output_attribute_types`（属性输出，半开放）** —— `text`（OCR 文本） / `language` / `orientation` / `class`（分类标签）。其余按需扩展；layout 版面类别走 `class_name`（而非 attribute）。
+
+**`infra`（基础设施，受控，v2 新增）** —— `pytorch` / `onnx` / `paddle` / `tensorrt` / `openvino` / `other`（兜底）：
+
+- **层级**：backend 顶层声明默认值；model 条目可覆盖（如 YOLO 仓里部分条目导出 onnx）。
+- **缺省**：老 backend 不报 `infra` ⇒ 缓存标 `unknown`，UI 不渲染 badge 或显示「未声明」。
+- **边界**：`infra` 是纯元数据 —— 不改 `/predict` 协议、不影响 result schema、不参与项目兼容性的硬校验（仅展示 badge + 排障溯源）。
+
+**`supported_prompts`（沿用 v1，新增 `none`）** —— `none`（纯批量，无交互） / `point` / `bbox` / `text` / `exemplar` / `sketch` / `scribble`。YOLO / OCR / layout 是 `["none"]`（批量自动）；SAM 类仍是 point/bbox/text/exemplar。
+
+### 4.1.4 平台派生形态（health_meta）
+
+`extract_capabilities(setup)`（`services/ml_capabilities.py`）从「抽单层快照」升级为「遍历 `models[]` 派生 model 列表」，落进 `ml_backends.health_meta["capabilities"]`：
+
+```jsonc
+{
+  "infra": "pytorch",                 // backend 默认
+  "models": [
+    { "id": "detect", "task": "detection", "model_family": "yolo", "infra": "pytorch",
+      "supported_prompts": ["none"], "supported_geometric_outputs": ["bbox"],
+      "output_attribute_types": [], "supported_variants": [/*…*/],
+      "default_thresholds": {/*…*/}, "resource_profile": {/*…*/}, "modality": "image" }
+    /* … */
+  ],
+  // 兼容字段:老消费方仍能读到「扁平并集」(所有 model 的 prompts/geometry 去重合并)
+  "supported_prompts": ["none"], "supported_geometric_outputs": ["bbox","polygon","keypoint","rotated_bbox"],
+  "modalities": ["image"]
+}
+```
+
+保留顶层「扁平并集」字段，让现有 `useMLCapabilities` / 绑定校验在改造完成前零回归。模态派生升级为 **per-model 派生 + backend 汇总**：`task=tracker` 或 `supported_trackers` 非空 ⇒ video；几何含 `lidar_box_3d` / `point_mask_3d` ⇒ lidar（留位）；否则 ⇒ image（含 `supported_prompts=["none"]` 的批量模型）。backend `modalities` = 各 model modality 去重并集。
+
+### 4.1.5 向后兼容规则
+
+| backend 形态 | 平台解析 |
+|---|---|
+| 无 `models[]` | 顶层 `supported_*` / `params` 合成 1 个隐式 model：`id="default"`，`task` 由现有信号推断（`supported_trackers` 非空 → `tracker`、`supported_prompts` 含 point/bbox/text/exemplar → `interactive_seg`、否则 `detection`），`infra="unknown"` |
+| 无 `infra` | model.infra = backend.infra = `"unknown"` |
+| 有 `models[]` 但条目缺 `task` | 该条目按 `unknown` task 入目录，UI 标「能力未声明」，兼容性校验 fail-open（放行，留到 `/predict` 暴露） |
+
+老 backend（grounded-sam2 / sam3 / echo）**不需要任何改动**即可继续工作 —— 它们落到「隐式单 model」路径。
+
+### 4.1.6 范例：YOLO 官仓 backend（按任务分条目 + series/size 多轴）
+
+```jsonc
+{
+  "name": "yolo-ultralytics-backend",
+  "version": "0.1.0",
+  "model_version": "ultralytics-8.3.x",
+  "infra": "pytorch",
+  "is_interactive": false,
+  "models": [
+    {
+      "id": "detect", "display_name": "YOLO 目标检测",
+      "task": "detection", "model_family": "yolo",
+      "supported_prompts": ["none"],
+      "supported_geometric_outputs": ["bbox"],
+      "supported_variants": [
+        { "key": "series", "title": "版本系列", "variants": [
+          { "value": "yolov8", "label": "YOLOv8" },
+          { "value": "yolo11", "label": "YOLO11", "recommended": true },
+          { "value": "yolo12", "label": "YOLO12" } ] },
+        { "key": "size", "title": "尺寸 / 精度档", "variants": [
+          { "value": "n", "label": "nano",  "vram_gb": 1, "tier": "fast" },
+          { "value": "s", "label": "small", "vram_gb": 2, "tier": "balanced", "recommended": true },
+          { "value": "m", "label": "medium","vram_gb": 4 },
+          { "value": "l", "label": "large", "vram_gb": 6 },
+          { "value": "x", "label": "xlarge","vram_gb": 8, "tier": "accurate" } ] }
+      ],
+      "default_thresholds": { "conf": 0.25, "iou": 0.7 },
+      "resource_profile": { "device": "gpu", "batchable": true },
+      "params": { "type": "object", "properties": {
+        "conf":   { "type": "number", "minimum": 0, "maximum": 1, "default": 0.25, "title": "置信度阈值" },
+        "iou":    { "type": "number", "minimum": 0, "maximum": 1, "default": 0.7,  "title": "NMS IoU" },
+        "series": { "type": "string", "enum": ["yolov8","yolo11","yolo12"], "default": "yolo11" },
+        "size":   { "type": "string", "enum": ["n","s","m","l","x"], "default": "s" } } }
+    },
+    { "id": "segment",  "task": "segmentation",   "supported_geometric_outputs": ["polygon"],       "model_family": "yolo", "/* variants 同上 */": null },
+    { "id": "pose",     "task": "keypoint",       "supported_geometric_outputs": ["keypoint"],      "model_family": "yolo", "/* … */": null },
+    { "id": "obb",      "task": "obb",            "supported_geometric_outputs": ["rotated_bbox"],  "model_family": "yolo", "/* … */": null },
+    { "id": "classify", "task": "classification", "supported_geometric_outputs": ["none"], "output_attribute_types": ["class"], "model_family": "yolo", "/* … */": null }
+  ]
+}
+```
+
+> **关键红利**：det/seg/pose/obb 的输出几何恰好命中现有 4 种 result type（`rectanglelabels` / `polygonlabels` / `keypointlabels` / `rectanglelabels+rotation`），所以 **YOLO backend 的 `/predict` 输出零 adapter**，直接落现有渲染链路（§3）。只有 `classify` 的 class 需走 `attributes.class`。
+
+### 4.1.7 范例：ONNX 聚合 backend（一个 backend，多家族多任务，统一 infra）
+
+```jsonc
+{
+  "name": "onnx-zoo-backend",
+  "version": "0.1.0", "model_version": "onnxruntime-1.x",
+  "infra": "onnx", "is_interactive": false,
+  "models": [
+    { "id": "yolov8n-coco", "task": "detection",      "model_family": "yolo",      "supported_geometric_outputs": ["bbox"] },
+    { "id": "rtmpose",      "task": "keypoint",        "model_family": "rtmpose",   "supported_geometric_outputs": ["keypoint"] },
+    { "id": "ppocr",        "task": "ocr",             "model_family": "paddleocr", "supported_geometric_outputs": ["polygon"], "output_attribute_types": ["text","language"] },
+    { "id": "u2net",        "task": "segmentation",    "model_family": "u2net",     "supported_geometric_outputs": ["polygon"] }
+  ]
+}
+```
+
+> 这里 model 都继承 `infra="onnx"`，但 `model_family` / `task` 各异 —— 正是「聚合模型带不同能力」。若某 PaddleOCR 条目用 paddle 运行时，在该条目写 `"infra": "paddle"` 覆盖即可。
+
+### 4.1.8 OCR / Doc Layout 输出约定（v2 首发模型族）
+
+**OCR**（`task: "ocr"`）：
+
+- 检测文本区域：几何 = `bbox` / `rotated_bbox` / `polygon`。
+- 识别文本：写入 prediction result 的 `attributes.text`（必要时 `attributes.language` / `attributes.orientation`，对应 `output_attribute_types` 声明）。
+- 采纳后生成普通 annotation + text 写入 attributes；**项目未配置 text attribute 时不静默丢文本** —— 前端提示「可采纳几何，文本字段不会入库」或要求先配置。
+
+**Doc Layout**（`task: "doc_layout"`）：
+
+- 输出区域 class：`title` / `paragraph` / `table` / `figure` / `formula` / `list` / `header` / `footer`，落 `class_name`。
+- 几何 = `bbox` / `polygon`，可选 OCR text。
+- 目标场景：文档图片标注、OCR 校对、表格/版面区域检测。
+
+result 映射（统一 adapter，不新增 prediction 表）：`ocr_text` → `attributes.text`；`layout_type` → `class_name`；`orientation` → `attributes.orientation`。
+
+### 4.1.9 平台能力目录端点（派生视图）
+
+能力目录是 `health_meta` 的派生视图，复用现有 `POST …/{bid}/setup`（30s TTL 缓存）的探测链路：
+
+```text
+GET  /projects/{pid}/ml-backends/{bid}/capabilities          # 返回 models[] 目录(含 infra/task/variants)
+POST /projects/{pid}/ml-backends/{bid}/capabilities/refresh  # 强制重探 /setup 并刷新缓存
+```
+
+- `capabilities` 返回派生后的 model 目录（含每条 `infra` / `task` / `supported_geometric_outputs` / `output_attribute_types` / `supported_variants` / `last_seen_at`），供模型市场 / 工作台多模型选择器消费。
+- `capabilities/refresh` 跳过缓存强制重探，用于 backend 升级 model_version 后立即看到新能力。
+- 批量预标入口扩展 `model_id`（指向目录条目；缺省 = backend 隐式单 model，兼容老路径）；variant / threshold 经 `context` / `params` 透传。
+
+> Phase 2 起若放开 `MAX_ML_BACKENDS_PER_PROJECT > 1` 或需要跨 backend 模型检索，再考虑独立表 `ml_model_capabilities` 与全局聚合端点 `GET /ml-backends/capabilities`。
+
+### 4.1.10 可跑参考实现
+
+协议 v2 的端到端参考实现见 [`docs-site/dev/examples/mock-v2-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/docs-site/dev/examples/mock-v2-backend)：`/setup` 暴露 YOLO 风格多任务 `models[]`（detection / segmentation / keypoint / obb / classification）+ PaddleOCR / DocLayout 条目，每条带 `task` / `infra` / 几何 / 多轴 `variants`；`/predict` 按 `context.type`（task_type）返回固定 demo 结果，OCR 条目带 `attributes.text`。无真实推理，可直接 `uvicorn main:app --port 9100` 起来做协议 v2 冒烟与接入验证。（最小 v1 参考实现仍见下文 echo-ml-backend。）
 
 ---
 

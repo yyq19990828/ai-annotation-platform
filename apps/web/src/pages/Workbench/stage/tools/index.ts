@@ -113,6 +113,8 @@ export interface ToolPointerContext {
   readOnly: boolean;
   pendingDrawing: boolean;
   onClearSelection: () => void;
+  /** v0.14.10 · 仅 polygon/polyline 落点消费；返回吸附后的归一化图像坐标。 */
+  snapPoint?: (pt: { x: number; y: number }, evt: MouseEvent) => { x: number; y: number };
   /** 仅 PolygonTool 用. */
   polygonDraft?: PolygonDraftHandle;
   /** v0.10.28 · 仅 KeypointTool 用. */

@@ -3137,8 +3137,13 @@
         "type": "object"
       },
       "BackendCapabilities": {
-        "description": "v0.10.37 · backend `/setup` 能力快照 (epic 阶段 1).\n\n由 services/ml_backend.check_health 探 `/setup` 后落进 health_meta[\"capabilities\"];\n`modalities` 为派生视图 (image / video), 见 services/ml_capabilities.derive_modalities.",
+        "description": "v0.10.37 · backend `/setup` 能力快照 (epic 阶段 1).\n\n由 services/ml_backend.check_health 探 `/setup` 后落进 health_meta[\"capabilities\"];\n`modalities` 为派生视图 (image / video / lidar), 见 services/ml_capabilities.derive_modalities.\n\nv0.14.9 · 能力声明协议 v2: 新增 `infra` (backend 默认基础设施) + `models` (多模型目录);\n其余顶层字段为各 model 的「扁平并集」, 供未迁移消费方继续读 (向后兼容)。",
         "properties": {
+          "infra": {
+            "default": "unknown",
+            "title": "Infra",
+            "type": "string"
+          },
           "is_interactive": {
             "default": false,
             "title": "Is Interactive",
@@ -3150,6 +3155,14 @@
               "type": "string"
             },
             "title": "Modalities",
+            "type": "array"
+          },
+          "models": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ModelCapability"
+            },
+            "title": "Models",
             "type": "array"
           },
           "supported_geometric_outputs": {
@@ -5670,6 +5683,387 @@
         "title": "ConnectorAllowlistUpdate",
         "type": "object"
       },
+      "DataManagerTaskOut": {
+        "properties": {
+          "annotation_count": {
+            "default": 0,
+            "title": "Annotation Count",
+            "type": "integer"
+          },
+          "assignee": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assignee_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          },
+          "avg_prediction_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Prediction Confidence"
+          },
+          "batch_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "blurhash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blurhash"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "display_id": {
+            "title": "Display Id",
+            "type": "string"
+          },
+          "file_name": {
+            "title": "File Name",
+            "type": "string"
+          },
+          "file_type": {
+            "title": "File Type",
+            "type": "string"
+          },
+          "file_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Url"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "image_height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Height"
+          },
+          "image_width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Width"
+          },
+          "is_labeled": {
+            "default": false,
+            "title": "Is Labeled",
+            "type": "boolean"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
+          },
+          "last_reopened_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Reopened At"
+          },
+          "model_versions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Model Versions",
+            "type": "array"
+          },
+          "overlap": {
+            "default": 1,
+            "title": "Overlap",
+            "type": "integer"
+          },
+          "prediction_count": {
+            "default": 0,
+            "title": "Prediction Count",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "reject_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reject Reason"
+          },
+          "reject_reason_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reject Reason Type"
+          },
+          "reopened_count": {
+            "default": 0,
+            "title": "Reopened Count",
+            "type": "integer"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewer_claimed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Claimed At"
+          },
+          "reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Id"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "sequence_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence Order"
+          },
+          "skip_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skip Reason"
+          },
+          "skipped_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted At"
+          },
+          "tags": {
+            "default": [],
+            "items": {},
+            "title": "Tags",
+            "type": "array"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
+          },
+          "total_annotations": {
+            "default": 0,
+            "title": "Total Annotations",
+            "type": "integer"
+          },
+          "total_predictions": {
+            "default": 0,
+            "title": "Total Predictions",
+            "type": "integer"
+          },
+          "unresolved_feedback_count": {
+            "default": 0,
+            "title": "Unresolved Feedback Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "video_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "display_id",
+          "file_name",
+          "file_type",
+          "status",
+          "created_at"
+        ],
+        "title": "DataManagerTaskOut",
+        "type": "object"
+      },
       "DatasetCreate": {
         "properties": {
           "axis_convention": {
@@ -7856,6 +8250,136 @@
         "title": "Mention",
         "type": "object"
       },
+      "ModelCapability": {
+        "additionalProperties": true,
+        "description": "v0.14.9 · 能力声明协议 v2 — 单个 model 条目 (一个 backend 暴露 N 个).\n\n由 services/ml_capabilities._normalize_model 规范化后存入\nBackendCapabilities.models; `task` 是条目边界 (决定输出几何与项目兼容性),\n`infra` 缺省继承 backend 默认, `modality` 为派生视图。",
+        "properties": {
+          "default_thresholds": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Default Thresholds",
+            "type": "object"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "infra": {
+            "default": "unknown",
+            "title": "Infra",
+            "type": "string"
+          },
+          "is_interactive": {
+            "default": false,
+            "title": "Is Interactive",
+            "type": "boolean"
+          },
+          "modality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modality"
+          },
+          "model_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Family"
+          },
+          "output_attribute_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Output Attribute Types",
+            "type": "array"
+          },
+          "params": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Params",
+            "type": "object"
+          },
+          "resource_profile": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Resource Profile",
+            "type": "object"
+          },
+          "supported_geometric_outputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Geometric Outputs",
+            "type": "array"
+          },
+          "supported_prompts": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Prompts",
+            "type": "array"
+          },
+          "supported_text_outputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Text Outputs",
+            "type": "array"
+          },
+          "supported_trackers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Trackers",
+            "type": "array"
+          },
+          "supported_variants": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Supported Variants",
+            "type": "array"
+          },
+          "task": {
+            "default": "unknown",
+            "title": "Task",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ModelCapability",
+        "type": "object"
+      },
       "MultiPolygonGeometry": {
         "additionalProperties": false,
         "description": "多连通域 polygon 集合。每个 polygons[i] 内部仍是带 hole 的单连通 PolygonGeometry。\n\nv0.9.14 · 配合 mask_to_multi_polygon (apps/_shared/mask_utils) 输出。Predictor 在\n单连通无 hole 时仍输出 PolygonGeometry 兼容老前端; 多连通或带 hole 才走本分支。",
@@ -8462,6 +8986,15 @@
             "title": "Supported Trackers",
             "type": "array"
           },
+          "supported_variants": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Supported Variants",
+            "type": "array"
+          },
           "supports_variants": {
             "default": false,
             "title": "Supports Variants",
@@ -8974,6 +9507,17 @@
             "title": "Ml Backend Id",
             "type": "string"
           },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
           "output_mode": {
             "default": "mask",
             "enum": [
@@ -9031,6 +9575,17 @@
               }
             ],
             "title": "Task Ids"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type"
           }
         },
         "required": [
@@ -9373,6 +9928,12 @@
       },
       "PredictionShape": {
         "properties": {
+          "attributes": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Attributes",
+            "type": "object"
+          },
           "class_name": {
             "title": "Class Name",
             "type": "string"
@@ -10400,6 +10961,366 @@
           "pending_review"
         ],
         "title": "ProjectStats",
+        "type": "object"
+      },
+      "ProjectTaskQueryRequest": {
+        "properties": {
+          "columns_json": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns Json",
+            "type": "array"
+          },
+          "filter_json": {
+            "additionalProperties": true,
+            "title": "Filter Json",
+            "type": "object"
+          },
+          "limit": {
+            "default": 50,
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "sort_json": {
+            "items": {
+              "$ref": "#/components/schemas/TaskSortItem"
+            },
+            "title": "Sort Json",
+            "type": "array"
+          }
+        },
+        "title": "ProjectTaskQueryRequest",
+        "type": "object"
+      },
+      "ProjectTaskQueryResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DataManagerTaskOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "ProjectTaskQueryResponse",
+        "type": "object"
+      },
+      "ProjectTaskViewCopyRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "enum": [
+                  "private",
+                  "project"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visibility"
+          }
+        },
+        "title": "ProjectTaskViewCopyRequest",
+        "type": "object"
+      },
+      "ProjectTaskViewCreate": {
+        "properties": {
+          "columns_json": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns Json",
+            "type": "array"
+          },
+          "filter_json": {
+            "additionalProperties": true,
+            "title": "Filter Json",
+            "type": "object"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "sort_json": {
+            "items": {
+              "$ref": "#/components/schemas/TaskSortItem"
+            },
+            "title": "Sort Json",
+            "type": "array"
+          },
+          "visibility": {
+            "default": "private",
+            "enum": [
+              "private",
+              "project"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ProjectTaskViewCreate",
+        "type": "object"
+      },
+      "ProjectTaskViewListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectTaskViewOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ProjectTaskViewListResponse",
+        "type": "object"
+      },
+      "ProjectTaskViewOut": {
+        "properties": {
+          "builtin": {
+            "default": false,
+            "title": "Builtin",
+            "type": "boolean"
+          },
+          "columns_json": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns Json",
+            "type": "array"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "filter_json": {
+            "additionalProperties": true,
+            "title": "Filter Json",
+            "type": "object"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "sort_json": {
+            "items": {
+              "$ref": "#/components/schemas/TaskSortItem"
+            },
+            "title": "Sort Json",
+            "type": "array"
+          },
+          "task_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Count"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "visibility": {
+            "default": "private",
+            "enum": [
+              "private",
+              "project"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "project_id"
+        ],
+        "title": "ProjectTaskViewOut",
+        "type": "object"
+      },
+      "ProjectTaskViewUpdate": {
+        "properties": {
+          "columns_json": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Columns Json"
+          },
+          "filter_json": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filter Json"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "sort_json": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TaskSortItem"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Json"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "enum": [
+                  "private",
+                  "project"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visibility"
+          }
+        },
+        "title": "ProjectTaskViewUpdate",
         "type": "object"
       },
       "ProjectTemplateCreate": {
@@ -12339,6 +13260,18 @@
             "minLength": 1,
             "title": "Url",
             "type": "string"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant"
           }
         },
         "required": [
@@ -13694,6 +14627,28 @@
           "expires_in"
         ],
         "title": "TaskPointCloudManifestResponse",
+        "type": "object"
+      },
+      "TaskSortItem": {
+        "properties": {
+          "direction": {
+            "default": "asc",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "title": "TaskSortItem",
         "type": "object"
       },
       "TaskVideoFrameTimetableResponse": {
@@ -25159,7 +26114,7 @@
             }
           },
           {
-            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti（voc 仅可单选，走同步下载）",
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
             "in": "query",
             "name": "targets",
             "required": false,
@@ -25167,7 +26122,7 @@
               "default": [
                 "coco"
               ],
-              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti（voc 仅可单选，走同步下载）",
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
               "items": {
                 "type": "string"
               },
@@ -25678,7 +26633,7 @@
             }
           },
           {
-            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti（voc 仅可单选，走同步下载）",
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
             "in": "query",
             "name": "targets",
             "required": false,
@@ -25686,7 +26641,7 @@
               "default": [
                 "coco"
               ],
-              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti（voc 仅可单选，走同步下载）",
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
               "items": {
                 "type": "string"
               },
@@ -26434,6 +27389,124 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/ml-backends/{backend_id}/capabilities": {
+      "get": {
+        "description": "v0.14.9 · 能力声明协议 v2: 探 /setup (复用 setup 缓存链路) → 派生能力快照.\n\n返回含 models[] / infra / modalities + 扁平并集字段, 供前端多模型目录消费.\n权限同 /setup 端点 (managers + reviewer + annotator)。/setup 不可达时 502.",
+        "operationId": "get_ml_backend_capabilities_api_v1_projects__project_id__ml_backends__backend_id__capabilities_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Backend Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackendCapabilities"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Ml Backend Capabilities",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ml-backends/{backend_id}/capabilities/refresh": {
+      "post": {
+        "description": "v0.14.9 · 强制刷新能力快照: 先 invalidate setup 缓存再重探 + 派生.\n\n权限同 /health (managers); 用于 backend 升级/换模型后主动拉新能力。",
+        "operationId": "refresh_ml_backend_capabilities_api_v1_projects__project_id__ml_backends__backend_id__capabilities_refresh_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Backend Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackendCapabilities"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Refresh Ml Backend Capabilities",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/ml-backends/{backend_id}/health": {
       "post": {
         "operationId": "check_health_api_v1_projects__project_id__ml_backends__backend_id__health_post",
@@ -27109,6 +28182,490 @@
         "summary": "Purge Predictions",
         "tags": [
           "predictions"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/task-views": {
+      "get": {
+        "operationId": "list_task_views_api_v1_projects__project_id__task_views_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTaskViewListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Task Views",
+        "tags": [
+          "task-views"
+        ]
+      },
+      "post": {
+        "operationId": "create_task_view_api_v1_projects__project_id__task_views_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectTaskViewCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTaskViewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Task View",
+        "tags": [
+          "task-views"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/task-views/{view_id}": {
+      "delete": {
+        "operationId": "delete_task_view_api_v1_projects__project_id__task_views__view_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "view_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "View Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Task View",
+        "tags": [
+          "task-views"
+        ]
+      },
+      "get": {
+        "operationId": "get_task_view_api_v1_projects__project_id__task_views__view_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "view_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "View Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTaskViewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Task View",
+        "tags": [
+          "task-views"
+        ]
+      },
+      "patch": {
+        "operationId": "update_task_view_api_v1_projects__project_id__task_views__view_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "view_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "View Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectTaskViewUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTaskViewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Task View",
+        "tags": [
+          "task-views"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/task-views/{view_id}/copy": {
+      "post": {
+        "operationId": "copy_task_view_api_v1_projects__project_id__task_views__view_id__copy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "view_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "View Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectTaskViewCopyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTaskViewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Copy Task View",
+        "tags": [
+          "task-views"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/task-views/{view_id}/tasks": {
+      "get": {
+        "operationId": "query_task_view_tasks_api_v1_projects__project_id__task_views__view_id__tasks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "view_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "View Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTaskQueryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Query Task View Tasks",
+        "tags": [
+          "task-views"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/tasks/query": {
+      "post": {
+        "operationId": "query_project_tasks_api_v1_projects__project_id__tasks_query_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectTaskQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTaskQueryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Query Project Tasks",
+        "tags": [
+          "task-views"
         ]
       }
     },

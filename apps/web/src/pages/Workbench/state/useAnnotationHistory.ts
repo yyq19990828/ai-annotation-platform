@@ -45,11 +45,13 @@ export async function applyLeaf(
     if (direction === "undo") {
       const restored = await h.createAnnotation({
         annotation_type: cmd.annotation.annotation_type,
+        tool_unit_id: cmd.annotation.tool_unit_id ?? undefined,
         class_name: cmd.annotation.class_name,
         geometry: cmd.annotation.geometry,
         confidence: cmd.annotation.confidence ?? undefined,
         parent_prediction_id: cmd.annotation.parent_prediction_id ?? undefined,
         lead_time: cmd.annotation.lead_time ?? undefined,
+        attributes: cmd.annotation.attributes ?? undefined,
       });
       // 反向时新 id；后续 redo 删除以新 id 执行
       cmd.annotation = { ...cmd.annotation, id: restored.id };

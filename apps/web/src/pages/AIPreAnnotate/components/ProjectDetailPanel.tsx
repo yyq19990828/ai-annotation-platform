@@ -25,7 +25,7 @@ import {
 } from "@/hooks/usePreannotation";
 import { adminPreannotateApi } from "@/api/adminPreannotate";
 import { aliasFrequencyApi } from "@/api/aliasFrequency";
-import { mlBackendsApi } from "@/api/ml-backends";
+import { mlBackendsApi, type MLModelCapability } from "@/api/ml-backends";
 import {
   SchemaForm,
   VARIANT_FIELD_KEYS,
@@ -65,6 +65,20 @@ const PREDICT_MODE_BY_LABEL: Record<string, PredictMode> = {
 };
 
 type ConcurrencyMode = "serial" | "parallel";
+
+// v0.14.9 · 能力声明协议 v2: 文本 / OCR / 文档版面三态任务类型 (按选中 backend 的 models[].task 派生).
+// "text" 走原有纯文本 prompt 批量预标; "ocr"/"doc_layout" 走 model_id + task_type 透传.
+type PreannotateTaskType = "text" | "ocr" | "doc_layout";
+const TASK_TYPE_LABELS: Record<PreannotateTaskType, string> = {
+  text: "文本预标",
+  ocr: "OCR 文字识别",
+  doc_layout: "文档版面",
+};
+const TASK_TYPE_BY_LABEL: Record<string, PreannotateTaskType> = {
+  文本预标: "text",
+  "OCR 文字识别": "ocr",
+  文档版面: "doc_layout",
+};
 
 function cx(...classNames: Array<string | false | null | undefined>) {
   return classNames.filter(Boolean).join(" ");
@@ -150,7 +164,44 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     staleTime: 60_000,
     retry: false,
   });
-  const paramsSchema = setupQ.data?.params as JsonSchemaObject | undefined;
+  // v0.14.9 · 能力目录 (health_meta 派生): models[] 含 ocr / doc_layout 条目时解锁任务类型选择.
+  // 原始 /setup 不一定带 models[], 故单独走 capabilities 端点.
+  const capabilitiesQ = useQuery({
+    queryKey: ["ml-backends", projectId, selectedBackendId, "capabilities"],
+    queryFn: () => mlBackendsApi.capabilities(projectId, selectedBackendId as string),
+    enabled: !!selectedBackendId,
+    staleTime: 60_000,
+    retry: false,
+  });
+  // 选中 backend 暴露的 ocr / doc_layout 模型条目 (按 task 去重取首个).
+  const ocrModel = useMemo<MLModelCapability | undefined>(
+    () => (capabilitiesQ.data?.models ?? []).find((m) => m.task === "ocr"),
+    [capabilitiesQ.data],
+  );
+  const docLayoutModel = useMemo<MLModelCapability | undefined>(
+    () => (capabilitiesQ.data?.models ?? []).find((m) => m.task === "doc_layout"),
+    [capabilitiesQ.data],
+  );
+  const availableTaskTypes = useMemo<PreannotateTaskType[]>(() => {
+    const types: PreannotateTaskType[] = ["text"];
+    if (ocrModel) types.push("ocr");
+    if (docLayoutModel) types.push("doc_layout");
+    return types;
+  }, [ocrModel, docLayoutModel]);
+  const hasDocTasks = availableTaskTypes.length > 1;
+
+  const [taskType, setTaskType] = useState<PreannotateTaskType>("text");
+  // 切 backend / 能力目录刷新后, 若当前任务类型不再可用则回落 text.
+  useEffect(() => {
+    if (!availableTaskTypes.includes(taskType)) setTaskType("text");
+  }, [availableTaskTypes, taskType]);
+  const activeDocModel = taskType === "ocr" ? ocrModel : taskType === "doc_layout" ? docLayoutModel : undefined;
+  const isDocMode = taskType === "ocr" || taskType === "doc_layout";
+
+  // 文本任务用 /setup.params; OCR / 版面用所选 model 条目自带的 params schema.
+  const paramsSchema = (
+    isDocMode ? activeDocModel?.params : setupQ.data?.params
+  ) as JsonSchemaObject | undefined;
   const paramKeys = Object.keys(paramsSchema?.properties ?? {});
   const hasAnyParams = paramKeys.length > 0;
   const hasNonVariantParams = paramKeys.some(
@@ -278,22 +329,32 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     });
   };
 
+  // OCR / 版面模式无需文本 prompt; 文本模式仍要求非空 prompt.
   const canRun =
     !!selectedBackend &&
     selectedBatchIds.size > 0 &&
-    !!prompt.trim() &&
+    (isDocMode || !!prompt.trim()) &&
     !running;
 
   const onRun = async () => {
-    if (!selectedBackend || !prompt.trim() || selectedBatchIds.size === 0) return;
+    if (!selectedBackend || selectedBatchIds.size === 0) return;
+    if (!isDocMode && !prompt.trim()) return;
     const ids = Array.from(selectedBatchIds);
-    const baseArgs = {
-      ml_backend_id: selectedBackend.id,
-      prompt: prompt.trim(),
-      output_mode: outputMode,
-      params: paramsValue,
-      predict_mode: predictMode,
-    };
+    const baseArgs = isDocMode
+      ? {
+          ml_backend_id: selectedBackend.id,
+          model_id: activeDocModel?.id,
+          task_type: taskType,
+          params: paramsValue,
+          predict_mode: predictMode,
+        }
+      : {
+          ml_backend_id: selectedBackend.id,
+          prompt: prompt.trim(),
+          output_mode: outputMode,
+          params: paramsValue,
+          predict_mode: predictMode,
+        };
     setRunning(true);
     try {
       let okCount = 0;
@@ -458,53 +519,82 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               对已选 {selectedBatchIds.size} 批跑预标
             </strong>
 
-            <label className={styles.field}>
-              <span className={styles.fieldLabel}>
-                Prompt（同一段文本应用到所有选中批次；逗号分隔）
-              </span>
-              {/* v0.9.13 · alias chips: 点击 toggle prompt 添加 / 移除. 频率排序见 aliases useMemo. */}
-              {aliases.length > 0 && (
-                <div className={styles.aliasList}>
-                  {aliases.map((a) => {
-                    const isActive = promptTokenSet.has(a.alias.toLowerCase());
-                    return (
-                      <button
-                        key={a.name}
-                        type="button"
-                        onClick={() => toggleAlias(a.alias)}
-                        className={cx(styles.aliasChip, isActive && styles.aliasChipActive)}
-                        title={`${isActive ? "移除" : "添加"} 类别「${a.name}」的 alias${a.count > 0 ? ` · 历史 ${a.count} 次` : ""}`}
-                      >
-                        <span>{isActive ? "✓ " : ""}{a.alias}</span>
-                        <span className={styles.aliasName}>
-                          ({a.name})
-                        </span>
-                        {a.count > 0 && (
-                          <span className={styles.aliasCount}>
-                            ×{a.count}
+            {/* v0.14.9 · 能力声明协议 v2: backend 暴露 ocr / doc_layout 模型时, 提供任务类型选择.
+                选 OCR / 文档版面后隐藏纯文本 prompt 控件, 请求带 model_id + task_type. */}
+            {hasDocTasks && (
+              <div className={styles.field}>
+                <span className={styles.fieldLabel}>任务类型</span>
+                <TabRow
+                  tabs={availableTaskTypes.map((t) => TASK_TYPE_LABELS[t])}
+                  active={TASK_TYPE_LABELS[taskType]}
+                  onChange={(label) => {
+                    const t = TASK_TYPE_BY_LABEL[label];
+                    if (t) setTaskType(t);
+                  }}
+                />
+              </div>
+            )}
+
+            {/* v0.14.9 · OCR / 版面识别静态提示: 识别文本写入 annotation 属性, 项目需配置 text 属性. */}
+            {isDocMode && (
+              <div className={cx(styles.field, styles.docHint)}>
+                <Icon name="info" size={12} />
+                <span>
+                  {taskType === "ocr" ? "OCR 文字识别" : "文档版面"}
+                  ：识别文本将写入 annotation 属性；若项目未配置 text 属性，文本不会入库。
+                </span>
+              </div>
+            )}
+
+            {!isDocMode && (
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>
+                  Prompt（同一段文本应用到所有选中批次；逗号分隔）
+                </span>
+                {/* v0.9.13 · alias chips: 点击 toggle prompt 添加 / 移除. 频率排序见 aliases useMemo. */}
+                {aliases.length > 0 && (
+                  <div className={styles.aliasList}>
+                    {aliases.map((a) => {
+                      const isActive = promptTokenSet.has(a.alias.toLowerCase());
+                      return (
+                        <button
+                          key={a.name}
+                          type="button"
+                          onClick={() => toggleAlias(a.alias)}
+                          className={cx(styles.aliasChip, isActive && styles.aliasChipActive)}
+                          title={`${isActive ? "移除" : "添加"} 类别「${a.name}」的 alias${a.count > 0 ? ` · 历史 ${a.count} 次` : ""}`}
+                        >
+                          <span>{isActive ? "✓ " : ""}{a.alias}</span>
+                          <span className={styles.aliasName}>
+                            ({a.name})
                           </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    onClick={() => setPrompt(aliases.map((x) => x.alias).join(", "))}
-                    className={styles.refillButton}
-                    title="一键重填: 按频率拼上所有 alias"
-                  >
-                    重填
-                  </button>
-                </div>
-              )}
-              <textarea
-                rows={2}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="例：car, person, traffic light"
-                className={styles.promptInput}
-              />
-            </label>
+                          {a.count > 0 && (
+                            <span className={styles.aliasCount}>
+                              ×{a.count}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => setPrompt(aliases.map((x) => x.alias).join(", "))}
+                      className={styles.refillButton}
+                      title="一键重填: 按频率拼上所有 alias"
+                    >
+                      重填
+                    </button>
+                  </div>
+                )}
+                <textarea
+                  rows={2}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="例：car, person, traffic light"
+                  className={styles.promptInput}
+                />
+              </label>
+            )}
 
             {/* v0.10.38 · 多 backend 选择: 在项目已注册 backend 间选, 默认绑定值 (epic 阶段 2) */}
             {backends.length > 1 && (
@@ -532,17 +622,24 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               <span className={styles.fieldLabel}>
                 后端推理参数（按 backend 记忆，覆盖项目默认）
               </span>
-              {setupQ.isLoading ? (
+              {/* 文本任务: /setup.params; OCR / 版面: 所选 model 条目自带 params (见 paramsSchema 派生). */}
+              {!isDocMode && setupQ.isLoading ? (
                 <div className={styles.mutedText}>加载参数…</div>
-              ) : setupQ.isError ? (
+              ) : !isDocMode && setupQ.isError ? (
                 <div className={styles.mutedText}>
                   无法拉取 backend /setup，运行时回落项目级阈值。
                 </div>
+              ) : isDocMode && !hasAnyParams ? (
+                <div className={styles.mutedText}>该任务无可调参数。</div>
               ) : (
                 <div className={styles.backendParamsStack}>
                   <VariantSelector
                     schema={paramsSchema}
-                    supportedVariants={setupQ.data?.supported_variants}
+                    supportedVariants={
+                      isDocMode
+                        ? activeDocModel?.supported_variants
+                        : setupQ.data?.supported_variants
+                    }
                     value={paramsValue}
                     onChange={onParamsChange}
                   />
@@ -557,17 +654,19 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               )}
             </div>
 
-            <div className={styles.field}>
-              <span className={styles.fieldLabel}>输出形态</span>
-              <TabRow
-                tabs={OUTPUT_MODE_TABS}
-                active={OUTPUT_MODE_LABELS[outputMode]}
-                onChange={(label) => {
-                  const m = OUTPUT_MODE_BY_LABEL[label];
-                  if (m) setOutputMode(m);
-                }}
-              />
-            </div>
+            {!isDocMode && (
+              <div className={styles.field}>
+                <span className={styles.fieldLabel}>输出形态</span>
+                <TabRow
+                  tabs={OUTPUT_MODE_TABS}
+                  active={OUTPUT_MODE_LABELS[outputMode]}
+                  onChange={(label) => {
+                    const m = OUTPUT_MODE_BY_LABEL[label];
+                    if (m) setOutputMode(m);
+                  }}
+                />
+              </div>
+            )}
 
             <div className={styles.field}>
               <span className={styles.fieldLabel}>

@@ -72,6 +72,8 @@ export interface ImageWorkbenchProps {
   onChangeUserBoxClass: (id: string) => void;
   onBatchDelete: () => void;
   onBatchChangeClass: () => void;
+  onJoinSelected: () => void;
+  onApplyAttributeMode?: (id: string) => boolean;
   onStageGeometry: (g: StageGeometry) => void;
   polygonDraft?: PolygonDraftHandle;
   keypointDraft?: KeypointDraftHandle;
@@ -148,6 +150,8 @@ export function ImageWorkbench({
   onChangeUserBoxClass,
   onBatchDelete,
   onBatchChangeClass,
+  onJoinSelected,
+  onApplyAttributeMode,
   onStageGeometry,
   polygonDraft,
   keypointDraft,
@@ -218,6 +222,8 @@ export function ImageWorkbench({
       onChangeUserBoxClass={onChangeUserBoxClass}
       onBatchDelete={onBatchDelete}
       onBatchChangeClass={onBatchChangeClass}
+      onJoinSelected={onJoinSelected}
+      onApplyAttributeMode={onApplyAttributeMode}
       onStageGeometry={onStageGeometry}
       polygonDraft={polygonDraft}
       keypointDraft={keypointDraft}

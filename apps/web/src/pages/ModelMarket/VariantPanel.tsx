@@ -13,7 +13,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
-import { mlBackendsApi, type MLBackendVariant } from "@/api/ml-backends";
+import {
+  mlBackendsApi,
+  type MLBackendSupportedVariantGroup,
+  type MLBackendVariant,
+} from "@/api/ml-backends";
 import type { MLBackendItem } from "@/api/adminMlIntegrations";
 import styles from "./VariantPanel.module.css";
 
@@ -49,6 +53,9 @@ export function VariantPanel({
   const samEnum = samField?.enum ?? [];
   const dinoEnum = dinoField?.enum ?? [];
   const supportsVariants = samEnum.length > 0 || dinoEnum.length > 0;
+  const genericVariantGroups = (setup?.supported_variants ?? []).filter(
+    (group) => Array.isArray(group.variants) && group.variants.length > 0,
+  );
   const modalities = backend.health_meta?.capabilities?.modalities ?? [];
   const hasModalitySnapshot = modalities.length > 0;
 
@@ -62,7 +69,9 @@ export function VariantPanel({
   const hasVideoMeta = backend.health_meta != null && "video_pool" in backend.health_meta;
   const supportedTrackers = setup?.supported_trackers ?? [];
   const supportsVideo = supportedTrackers.length > 0;
-  const showImageGroup = hasModalitySnapshot ? modalities.includes("image") : supportsVariants;
+  const showImageGroup = hasModalitySnapshot
+    ? modalities.includes("image")
+    : supportsVariants || genericVariantGroups.length > 0;
   const showVideoGroup = hasModalitySnapshot ? modalities.includes("video") : supportsVideo;
   const videoLoaded = useMemo(() => videoPool?.loaded_variants ?? [], [videoPool?.loaded_variants]);
   // 视频 SAM 候选: 优先复用图片侧 enum, 否则用 SAM2 视频变体常量.
@@ -93,6 +102,16 @@ export function VariantPanel({
       {/* 图像推理变体 (走图片池); v0.10.41 起优先按持久化 modalities 门控, 未探测时回落旧 enum 判断. */}
       {showImageGroup && (
         <>
+          {genericVariantGroups.length > 0 && (
+            <div className={styles.section}>
+              <div className={styles.sectionTitle}>通用变体目录</div>
+              <GenericVariantDirectory groups={genericVariantGroups} />
+              {!supportsVariants && (
+                <div className={styles.hint}>该 backend 暂未实现通用 warm 接口，变体目录仅用于只读展示。</div>
+              )}
+            </div>
+          )}
+
           <div className={styles.section}>
             <div className={styles.sectionTitle}>
               图像推理变体 · 已加载
@@ -169,7 +188,8 @@ export function VariantPanel({
               <Button
                 size="sm"
                 onClick={() => onWarm({ sam_variant: sam || undefined, dino_variant: dino || undefined })}
-                disabled={isWarming}
+                disabled={isWarming || !supportsVariants}
+                title={supportsVariants ? "预热旧 SAM/DINO 变体" : "待 backend 实现通用 warm 接口"}
               >
                 <Icon name="play" size={11} />
                 预热
@@ -253,6 +273,27 @@ export function VariantPanel({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function GenericVariantDirectory({ groups }: { groups: MLBackendSupportedVariantGroup[] }) {
+  return (
+    <div className={styles.genericGrid}>
+      {groups.map((group) => (
+        <div key={group.key} className={styles.genericGroup}>
+          <div className={styles.genericTitle}>{group.title ?? group.key}</div>
+          <div className={styles.genericOptions}>
+            {group.variants!.map((option) => (
+              <span key={option.value} className={option.recommended ? `${styles.genericPill} ${styles.genericPillOn}` : styles.genericPill}>
+                <span className="mono">{option.label ?? option.value}</span>
+                {option.vram_gb != null && <span className={styles.genericMeta}> · {option.vram_gb}GB</span>}
+                {option.tier && <span className={styles.genericMeta}> · {option.tier}</span>}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -32,6 +32,10 @@ class PredictionShape(BaseModel):
         dict[str, Any],
     ]
     confidence: float
+    # v0.14.9 · OCR / doc_layout 识别属性 (attributes.text / language / orientation);
+    # 由 to_internal_shape 从 result shape 顶层提取, 非 OCR 时为 {}. read 路径透出供
+    # 工作台候选展示文本摘要 + 采纳时写入 annotation.attributes.
+    attributes: dict[str, Any] = {}
     # 原始 predictions.result 数组下标。GET /predictions 可能过滤/重排 shape,
     # 采纳时必须把这个原始下标传回 /accept?shape_index=...
     shape_index: int | None = None

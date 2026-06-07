@@ -186,6 +186,28 @@ async def test_preannotate_happy_path_text_box_mode(
 
 
 @pytest.mark.asyncio
+async def test_preannotate_forwards_model_id_and_task_type(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    """v0.14.9 · 协议 v2: model_id / task_type 透传到 batch_predict.delay kwargs。"""
+    owner, token = super_admin
+    proj, backend, batch = await _seed(db_session, owner.id)
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(backend.id),
+            "batch_id": str(batch.id),
+            "task_type": "ocr",
+            "model_id": "pp-ocrv4",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert _mock_celery["kwargs"]["task_type"] == "ocr"
+    assert _mock_celery["kwargs"]["model_id"] == "pp-ocrv4"
+
+
+@pytest.mark.asyncio
 async def test_preannotate_invalid_output_mode_rejected(
     httpx_client_bound, super_admin, db_session, _mock_celery
 ):

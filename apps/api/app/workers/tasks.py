@@ -47,6 +47,8 @@ async def _run_batch(
     user_id: str | None = None,
     params: dict | None = None,
     predict_mode: str = "skip_predicted",
+    model_id: str | None = None,
+    task_type: str | None = None,
 ):
     """v0.9.5 · 批量预标 worker.
 
@@ -56,6 +58,9 @@ async def _run_batch(
     - batch_id: 跑完后自动转 PRE_ANNOTATED 的目标 batch；None 则不动状态。
     - celery_task_id (v0.9.8): 用于 _BatchPredictTask.on_failure 回查 async_jobs 行.
     - user_id (v0.10.45): 写 async_jobs owner, 供 /async-jobs owner-scope 列表可见.
+    - model_id (v0.14.9): 协议 v2 多模型路由, 非空时写 context["model_id"]。
+    - task_type (v0.14.9): 协议 v2 task 别名 ("ocr"/"doc_layout"/"text"), 非空时写
+      context["type"]; 让 OCR / 版面分析等非纯文本 task 也能走批量预标。
 
     v0.10.49 · async_jobs 收敛：async_jobs 升为单一真值，prediction_jobs 专表已删。
     domain 字段（batch_id / prompt / 统计）进 payload/result JSONB。
@@ -125,6 +130,20 @@ async def _run_batch(
                         if v is not None and k not in _reserved
                     }
                 )
+
+        # v0.14.9 · 协议 v2: 多模型路由 + task 别名。
+        # task_type / model_id 即使在无 prompt 的纯图片 task (OCR / doc_layout) 下也要透传,
+        # 故在此处按需起 context (而非内嵌进 `if prompt` 分支)。
+        #   - context["type"] = task_type   覆盖 prompt 分支默认的 "text", 让 backend 路由到对应 task。
+        #   - context["model_id"] = model_id 指定多模型目录中的具体 model 条目。
+        # 纯文本 prompt 现状 (无 task_type / model_id 时) 不受影响。
+        if task_type or model_id:
+            if context is None:
+                context = {}
+            if task_type:
+                context["type"] = task_type
+            if model_id:
+                context["model_id"] = model_id
 
         # v0.11.24 · 幂等：skip_predicted 排除已预标 task；append/overwrite 不排除。
         skip_predicted = predict_mode == "skip_predicted"
@@ -448,6 +467,8 @@ def batch_predict(
     user_id: str | None = None,
     params: dict | None = None,
     predict_mode: str = "skip_predicted",
+    model_id: str | None = None,
+    task_type: str | None = None,
 ):
     asyncio.run(
         _run_batch(
@@ -461,5 +482,7 @@ def batch_predict(
             user_id=user_id,
             params=params,
             predict_mode=predict_mode,
+            model_id=model_id,
+            task_type=task_type,
         )
     )

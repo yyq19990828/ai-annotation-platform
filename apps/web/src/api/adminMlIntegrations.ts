@@ -1,4 +1,5 @@
 import { apiClient } from "./client";
+import type { MLBackendSupportedVariantGroup } from "./ml-backends";
 
 export interface BucketSummary {
   name: string;
@@ -164,6 +165,7 @@ export interface ObserveTarget {
   supported_trackers?: string[];
   cache?: { hit_rate?: number; buckets?: Record<string, CacheBucketStat> } | null;
   variant_catalog?: VariantCatalog | null;
+  supported_variants?: MLBackendSupportedVariantGroup[];
   supports_variants: boolean;
   registered: boolean;
   registered_label?: string | null;
@@ -178,6 +180,7 @@ export interface SmokeTestRequest {
   url: string;
   sam_variant?: string;
   dino_variant?: string;
+  variant?: Record<string, string>;
 }
 
 export interface SmokeTestResponse {

@@ -386,6 +386,7 @@ export interface AnnotationResponse {
   user_id: string | null;
   source: string;
   annotation_type: string;
+  tool_unit_id?: string | null;
   class_name: string;
   geometry: Geometry;
   confidence: number | null;

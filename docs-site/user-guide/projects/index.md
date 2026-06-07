@@ -89,6 +89,12 @@ scene 模式适合“一个连续场景被拆成多个 task”的项目，例如
 
 > scene 模式项目需要关联**已识别出 scene 的数据集**。如何在导入时产生 scene（原生目录约定 / 多 scene 布局 / nuScenes 脚本），详见 [点云 / 多模态数据集导入格式](../datasets/import-formats.md)。
 
+## Data Manager
+
+项目设置页提供 **Data Manager** 入口，用于查看项目内任务运营视图。它支持保存视图、受控过滤 DSL、排序、列显隐和任务计数列，适合固定查看“有未解决反馈”“有预测候选”“某个模型版本低置信度”等任务集合。
+
+本版 Data Manager 只读，不执行批量指派、导出、重跑预标或清理预测。详见 [Data Manager](./data-manager.md)。
+
 ## 标注指引
 
 为项目编写 Markdown 形式的标注指引，工作台首次打开会自动展开浮层让标注员阅读。详见

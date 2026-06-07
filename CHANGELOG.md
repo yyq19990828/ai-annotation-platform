@@ -28,6 +28,145 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.14.10] - 2026-06-07
+
+画布精细交互 Part A + 模型市场前端重构 Part B。计划见 `docs/plans/2026-06-07-v0.14.10-canvas-precision-tools-and-attribute-mode.md`。
+
+### Added
+
+- **Snap 画布吸附**:新增 `stage/shared/geometry/snap.ts`,覆盖点候选、线段投影候选与 polygon / multi_polygon snap index 构建;polygon / polyline 绘制和 polygon 顶点拖拽会在 8px 屏幕距离内吸附到可见 polygon / multi_polygon 顶点或边界,并显示吸附指示点。按住 `Alt` 可临时关闭吸附。
+- **Polygon Join**:图片工作台多选同类别、未锁定 polygon / multi_polygon 后,可从浮条或右键菜单合并为一个新的 polygon / multi_polygon。合并复用 `polygon-clipping.union`,以 create + delete 批量历史命令记录,可一次撤销。
+- **属性模式**:图片工作台顶部新增属性模式栏,支持当前属性 schema 中 boolean / select / multiselect 字段。开启后点击 bbox、旋转框或 polygon / multi_polygon 会把当前字段值写入该标注属性并入 history;`[`/`]` 切字段,`1`-`9` 选值,`N` 跳到下一个未填对象。
+- **模型市场三视图**:`/model-market` 改为 `?tab=catalog|runtime|registry` 分段视图,顶部显示已连 backend、使用项目数与模型条目数。能力目录支持卡片/列表、backend/task/infra 分组、搜索和列表排序。
+- **运行时观测独立**:新增运行时观测面,以已注册 backend 为主键展示 observe 实时指标并保留健康检查、卸载、预热与变体面板;env-only 容器单独展示,不再把生命周期动作放在注册表。
+
+### Deferred
+
+- Slice 切割工具暂缓。当前 polygon 编辑器以单环编辑为主,可靠切割需要更多拓扑处理与失败回滚设计。
+- 通用多轴 `supported_variants` 的 warm / smoke 动作暂缓。运行时观测已只读展示通用变体,但仅 SAM/DINO 旧 `variant_catalog` 启用试启动。
+
+### Changed
+
+- **注册管理瘦身**:项目级 backend 表只保留 CRUD、状态和跳项目设置;GPU/cache/model_version/pool 与 health/unload/reload 迁到运行时观测。
+- **observe 泛化**:`GET /admin/ml-integrations/observe` 双发旧 `variant_catalog` 与新 `supported_variants`;`POST /observe/smoke-test` 接收 `variant` axis→value 字典并按占位协议返回 `skipped=true`。
+
+### Docs / Tests
+
+- 更新 Workbench polygon 与总览文档,补充 Join 和属性模式说明。
+- 更新模型市场超管手册与 ML Backend 协议文档,补充三视图、运行时观测 keying 和 observe 通用变体说明。
+- 新增 `snap`、`polygonOps`、`attributeMode` 纯函数单测,并补充右键菜单 Join 可用性测试。
+- 补充 admin observe / smoke-test 后端单测与注册表瘦身组件测试。
+
+## [0.14.9] - 2026-06-07
+
+ML Backend 能力声明协议 v2(多模型目录 + infra)地基 + OCR / Doc Layout 首发模型族。计划见 `docs/plans/2026-06-07-v0.14.9-model-capability-catalog-and-ocr-doclayout.md`。本版把能力建模从单模型快照升级到 model 粒度,并在协议 v2 之下落地 OCR / Doc Layout 输出约定;`/predict` 请求/响应 schema 不变,不新增 prediction 表。
+
+### Added
+
+- **能力声明协议 v2**:`/setup` 顶层新增 `infra` 与 `models[]`,把能力声明下沉到 model 粒度——一个 backend 可暴露 N 个 model,每个 model 自带 `task` / `model_family` / `infra` / `supported_geometric_outputs` / `output_attribute_types` / `supported_variants` / `default_thresholds` / `resource_profile` / `params`。受控 task:detection / obb / segmentation / keypoint / classification / ocr / doc_layout / tracker / interactive_seg;受控 infra:pytorch / onnx / paddle / tensorrt / openvino / other。
+- **模型能力目录视图**:新增 `GET /projects/{pid}/ml-backends/{bid}/capabilities` 与 `POST …/capabilities/refresh`,作为 `health_meta` 能力快照的派生视图,返回 model 目录(含 infra / task / 输出几何 / 输出属性 / variants),供模型市场与工作台多模型选择器消费。
+- **OCR / Doc Layout 能力**:作为协议 v2 首发模型族,约定 OCR result 几何带 `attributes.text`(可选 `language` / `orientation`),doc_layout 以 `class_name` 落版面类别(title / paragraph / table / figure / formula / list / header / footer);统一 adapter 映射,不新增 prediction 表。
+
+### Changed
+
+- `extract_capabilities` / `derive_modalities`(`services/ml_capabilities.py`)从抽单层快照升级为遍历 `models[]` 派生 + backend 汇总;能力快照仍写 `ml_backends.health_meta["capabilities"]`(JSONB,零迁移),并保留顶层「扁平并集」字段(所有 model 的 prompts / geometry 去重合并)。
+
+### Compatibility
+
+- 向后兼容硬约束:无 `models[]` 的老 backend 由平台合成隐式单 model(`id="default"`,`task` 按 `supported_trackers`→tracker、含 point/bbox/text/exemplar→interactive_seg、否则 detection 推断),无 `infra` 标 `unknown`。grounded-sam2 / sam3 / echo 零改动继续工作。`infra` 是纯元数据,不改 `/predict` 协议、不参与硬校验。
+
+### Docs
+
+- 协议文档 `docs-site/dev/reference/ml-backend-protocol.md` 新增 §4.1「能力声明协议 v2」(顶层结构、model 条目、受控词表、向后兼容规则、YOLO / ONNX 范例、OCR / doc_layout 约定、capabilities 端点)，并在 §4.1.10 指向 v2 可跑参考实现 `docs-site/dev/examples/mock-v2-backend/`。
+- 新增 ADR-0036「ML Backend 能力声明协议 v2(多模型目录 + infra)」。
+- 补全能力协议 v2 下游消费面文档:API guide `ml-backend.md` 增加 capabilities 端点说明;超管手册 `model-market.md` 增加「能力目录(多模型)」面板;项目手册 `ai-preannotate.md` 增加「OCR / 文档版面预标」入口;工作台 `sam-tool.md` 增加「多模型选择与兼容性提示」。
+
+## [0.14.8] - 2026-06-07
+
+Data Manager 保存视图 + 受控过滤 DSL + 只读项目任务运营面。计划见 `docs/plans/2026-06-07-v0.14.8-data-manager-saved-views-filter-dsl.md`。本版只做视图、过滤、排序、列显隐与计数列,不做筛选结果批量写操作。
+
+### Added
+
+- **项目任务保存视图**:新增 `project_task_views` 表,支持 private / project 可见性、保存 `filter_json` / `sort_json` / `columns_json`,并提供创建、更新、删除和复制 API。
+- **受控 Filter DSL**:新增 `POST /projects/{project_id}/tasks/query` 与 `GET /projects/{project_id}/task-views/{view_id}/tasks`,支持任务状态、标注计数/类别、预测模型版本/来源/置信度、未解决反馈、scene 名称/帧号和数据集类型等白名单字段。
+- **Data Manager 前端页**:新增 `/projects/:id/data-manager`,从项目设置页进入;左侧展示内置/保存视图,顶部提供 and-only 过滤行、列显隐和保存视图操作,主表展示任务计数列和最近活动时间。
+- **内置视图**:提供全部任务、待标注、待审核、有未解决反馈、有预测候选 5 个只读默认入口;修改后保存会创建私有副本。
+
+### Security / Permissions
+
+- 所有 Data Manager 查询先执行项目可见性校验。私有视图仅 owner 可见;项目共享视图对成员可见,但只有项目负责人或超级管理员可编辑。
+- DSL 不开放任意 SQL 或任意 JSONB key 查询;未知字段、未知操作符和错误类型返回 422。
+
+### Docs / Tests
+
+- 新增 `docs-site/user-guide/projects/data-manager.md`,并更新项目手册与 API guide。
+- 新增 `tests/test_task_views.py`,覆盖未知字段拒绝、未解决反馈查询、预测模型版本查询、私有/共享视图可见性和共享视图编辑权限。
+- 更新 OpenAPI snapshot 与前端 generated types。
+
+## [0.14.7] - 2026-06-07
+
+点云标注导出标准训练格式补丁。计划见 `docs/plans/2026-06-07-v0.14.7-pointcloud-export-standard-formats.md`。本版为纯新增 serializer 和导出路由,不新增表/列/迁移。
+
+### Added
+
+- **KITTI 3D 导出**:lidar 项目新增 `kitti` 目标,输出 `label_2/<frame>.txt` 与 `calib/<frame>.txt`;3D 框固定映射到 KITTI camera 坐标,并消费 `occluded` / `truncated` 属性,缺失时降级默认值。
+- **nuScenes JSON 子集导出**:新增 `nuscenes` 目标,输出 `sample_annotation` / `category` / `attribute` / `calibrated_sensor` / `sample_data` / `ego_pose` 等轻量表。当前为单帧 sample 风格、ego/ISO 坐标和占位 `ego_pose`,完整 global 轨迹留待 v0.15.0。
+- **point_mask_3d 逐点导出**:新增 `pointmask` 目标,输出 little-endian uint32 `segmentation/<frame>.label` 与 `category_map.json`,类别 id 1-based,0 表示背景。
+- **多相机标定与回源 manifest**:三种标准点云目标随包写入 `calib_raw/<camera>/<frame>.json`、`images_manifest.json`、`pointclouds_manifest.json`、`fetch_images.py` 与 `fetch_pointclouds.py`。
+
+### Changed
+
+- `clean_export_targets` 为 `data_type="lidar"` 增加专属目标集合 `{aap_json,kitti,nuscenes,pointmask}`,lidar 项目请求 COCO/YOLO 等跨模态目标会在端点层返回 400。
+- Dashboard 导出弹窗为 lidar 项目显示 AAP JSON / KITTI 3D / nuScenes JSON / Point Mask,不再复用图片项目目标列表。
+
+### Docs / Tests
+
+- 新增 `docs-site/dev/reference/lidar-export-formats.md`,并更新用户导出格式页与批次导出说明。
+- 新增 lidar serializer 与 ZIP 打包测试,覆盖 KITTI 属性映射、nuScenes 占位 ego_pose、pointmask label 和 lidar 目标校验。
+
+## [0.14.6] - 2026-06-07
+
+6 相机实测体验 + 点云上色性能 + `point_mask_3d` 分割工具深化补丁。计划见 `docs/plans/2026-06-07-v0.14.6-six-camera-experience-and-performance.md`。本版为纯前端切片,不新增后端表/列/端点。
+
+### Added
+
+- **相机面板自由拖动**:悬浮相机面板保留默认物理朝向锚点,标题条可拖动临时避让;拖动位置按 camera role 写入 localStorage,双击标题条或点「归位」可回到默认锚点。
+- **point_mask 多模式选点**:分割工具新增矩形 / 套索 / 多边形三种选点模式。矩形保持默认;套索拖动闭合;多边形逐点点击后双击或 Enter 闭合。
+- **point_mask 增删编辑**:选中已有 `point_mask_3d` 标注后使用分割工具再次圈选可加点,按 Alt 圈选可减点;点集仍写回原有 `point_indices`。
+- **point_mask 类别编辑面板**:单选分割标注时可在 3D 工作台右上面板改类、查看点数、删除分割。
+
+### Changed
+
+- **相机面板窄屏默认折叠**:在中等窄屏下相机面板默认收为小标签,用户手动展开 / 收起状态优先,不会被自动折叠覆盖。
+- **相机同锚点稳定堆叠**:相机组内按 role 稳定排序,同一锚点超过 2 个时尾部默认折叠为小标签,避免异常外参或命名退化时挤满视图。
+- **相机上色 worker 化**:`colorizePoints` 与上色前深度栅格构建移到 Vite module worker 中执行;worker 不可用、构造失败或超时时自动回退主线程同步实现,输出仍来自同一份纯函数。
+
+### Docs / Tests
+
+- 新增 `pointInPolygon` 与 `pointcloudCompute` 单测,覆盖多边形选点边界和 worker 缺失 / 失败兜底。
+- 更新 `docs-site/user-guide/workbench/pointcloud-view.md`、`docs-site/user-guide/workbench/3d-box.md` 与工作台总览,同步相机拖动、上色 worker 化和分割编辑行为。
+
+## [0.14.5] - 2026-06-07
+
+3D 标注属性 + 标注效率补丁:补齐点云 3D 框属性编辑、多选批量操作、撤销/重做与复制/粘贴能力。计划见 `docs/plans/2026-06-07-v0.14.5-3d-annotation-attributes-and-efficiency.md`。本版为纯前端切片,不新增后端表/列/端点。
+
+### Added
+
+- **3D 框属性面板**:3D 工作台右上编辑面板接入 `lidar_box_3d` 工具单位的 `attribute_schema`,可编辑遮挡、截断、可见度及自定义属性,并持久化到标注 `attributes`。
+- **3D 多选与批量操作**:`Shift + 点击`主视图框或相机投影框可多选;类别下拉和 Delete/Backspace 可批量改类或删除全部已选且未锁定的 3D 框。
+- **3D 撤销/重做**:放置、删除、PSR 编辑、自动贴合、改类、改属性进入本地 history,支持 `Ctrl/Cmd+Z` 与 `Ctrl/Cmd+Y` / `Ctrl/Cmd+Shift+Z`。
+- **3D 复制/粘贴/duplicate**:`Ctrl/Cmd+C` 复制当前 3D 框,`Ctrl/Cmd+V` 按世界坐标偏移粘贴同类同属性新框,`Ctrl/Cmd+D` 直接 duplicate。
+
+### Changed
+
+- 多选时 3D 主视图和相机投影 overlay 同时高亮全部已选框;PSR 数值、gizmo、三正交视图和自动贴合仅在单选时可编辑。
+- 共享 history 的 delete-undo 路径现在会把 annotation `tool_unit_id` 与 `attributes` 一并带回 create payload,避免撤销删除 3D 框后丢工具单位或属性。
+
+### Docs / Tests
+
+- 更新 `docs-site/user-guide/workbench/3d-box.md`,补充 3D 属性、多选、撤销和复制快捷键说明。
+- 新增 `box3dAttributes`、`box3dClipboard`、`useThreeDHistory` 单测,并补充 `WorkbenchStageHost` 对 3D `selectedIds` 透传断言。
+
 ## [0.14.4] - 2026-06-06
 
 scene 模式项目 + scene 感知分包补丁:把 scene 提升为项目级显式声明,补上 `by_scene` 分包、数据集 `has_scenes` 过滤与项目/数据集 kind 硬门。计划见 `docs/plans/2026-06-06-v0.14.4-scene-mode-projects.md`。

@@ -148,6 +148,9 @@ export function ProjectSettingsPage() {
                 <Icon name="activity" size={12} />审计追溯
               </Button>
             )}
+            <Button onClick={() => navigate(`/projects/${project.id}/data-manager`)}>
+              <Icon name="filter" size={12} />Data Manager
+            </Button>
             {canOpenWorkbench && (
               <Button onClick={() => navigate(buildWorkbenchUrl(project.id, {
                 returnTo: currentWorkbenchReturnTo(location),

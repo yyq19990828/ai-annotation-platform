@@ -142,7 +142,7 @@
 
 .backendTable {
   width: 100%;
-  min-width: 920px;
+  min-width: 760px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12.5px;
@@ -198,11 +198,13 @@
   display: inline-flex;
 }
 
-.healthMeta {
+.errorText {
   margin-top: 4px;
-  color: var(--color-fg-subtle);
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--color-danger);
   font-size: 10.5px;
-  line-height: 1.5;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSetup = vi.hoisted(() => vi.fn());
@@ -75,5 +75,66 @@ describe("useMLCapabilities", () => {
     );
     expect(mockSetup).not.toHaveBeenCalled();
     expect(result.current.prompts).toEqual([]);
+  });
+
+  it("v0.14.9 · prefers active model prompts/params and defaults to first interactive model", async () => {
+    mockSetup.mockResolvedValue({
+      name: "multi-backend",
+      // 顶层 supported_prompts 故意与 model 不同, 验证 activeModel 优先级.
+      supported_prompts: ["text"],
+      params: { type: "object", properties: { top_threshold: { type: "number" } } },
+      models: [
+        {
+          id: "det",
+          task: "detection",
+          display_name: "检测模型",
+          supported_prompts: ["text"],
+          supported_geometric_outputs: ["bbox"],
+        },
+        {
+          id: "seg",
+          task: "interactive_seg",
+          display_name: "交互分割",
+          is_interactive: true,
+          supported_prompts: ["point", "bbox"],
+          supported_geometric_outputs: ["polygon"],
+          params: { type: "object", properties: { mask_threshold: { type: "number" } } },
+        },
+      ],
+    });
+    const { result } = renderHook(() => useMLCapabilities("p1", "b1"), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    // 默认选第一个 interactive 的 model (seg).
+    expect(result.current.activeModelId).toBe("seg");
+    expect(result.current.hasMultipleModels).toBe(true);
+    expect(result.current.prompts).toEqual(["point", "bbox"]);
+    expect(result.current.paramsSchema?.properties?.mask_threshold).toBeTruthy();
+  });
+
+  it("v0.14.9 · setActiveModelId switches prompts/params to the chosen model", async () => {
+    mockSetup.mockResolvedValue({
+      name: "multi-backend",
+      models: [
+        {
+          id: "det",
+          task: "detection",
+          supported_prompts: ["text"],
+          params: { type: "object", properties: { box_threshold: { type: "number" } } },
+        },
+        {
+          id: "seg",
+          task: "interactive_seg",
+          is_interactive: true,
+          supported_prompts: ["point"],
+        },
+      ],
+    });
+    const { result } = renderHook(() => useMLCapabilities("p1", "b1"), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.activeModelId).toBe("seg");
+    act(() => result.current.setActiveModelId("det"));
+    await waitFor(() => expect(result.current.activeModelId).toBe("det"));
+    expect(result.current.prompts).toEqual(["text"]);
+    expect(result.current.paramsSchema?.properties?.box_threshold).toBeTruthy();
   });
 });

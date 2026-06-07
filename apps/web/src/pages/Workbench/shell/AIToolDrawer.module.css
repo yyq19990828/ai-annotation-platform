@@ -41,6 +41,36 @@
   opacity: 0.85;
 }
 
+/* v0.14.9 · 多模型选择器 (可交互, 与 backendSelect 同视觉但无 disabled 淡化)。 */
+.modelSelect {
+  padding: 3px 6px;
+  font-size: 11.5px;
+  color: var(--color-fg);
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+/* v0.14.9 · 兼容性警告条 (非阻断)。 */
+.warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.warningItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 4px 6px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+  border-radius: var(--radius-sm);
+}
+
 .polarityRow {
   display: flex;
   align-items: center;

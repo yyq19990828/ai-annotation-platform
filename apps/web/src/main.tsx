@@ -9,11 +9,11 @@ import { initThemeFromStorage } from "./hooks/useTheme";
 import "./styles/tokens.css";
 
 // v0.6.6 · Sentry：DSN 留空则完全不启用（dev 默认关闭）
-const SENTRY_DSN = (import.meta as any).env?.VITE_SENTRY_DSN as string | undefined;
+const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN as string | undefined;
 if (SENTRY_DSN) {
   Sentry.init({
     dsn: SENTRY_DSN,
-    environment: (import.meta as any).env?.MODE ?? "development",
+    environment: import.meta.env.MODE ?? "development",
     tracesSampleRate: 0.1,
     integrations: [Sentry.browserTracingIntegration()],
   });

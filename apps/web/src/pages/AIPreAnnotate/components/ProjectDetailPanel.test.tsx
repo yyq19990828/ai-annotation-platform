@@ -15,6 +15,7 @@ const mockSummaryAPI = vi.fn();
 const mockQueueAPI = vi.fn();
 const mockAliasFreqAPI = vi.fn();
 const mockSetupAPI = vi.fn();
+const mockCapabilitiesAPI = vi.fn();
 const mockUpdatePreferences = vi.fn();
 
 vi.mock("@/hooks/useProjects", () => ({
@@ -60,6 +61,8 @@ vi.mock("@/api/aliasFrequency", () => ({
 vi.mock("@/api/ml-backends", () => ({
   mlBackendsApi: {
     setup: (projectId: string, backendId: string) => mockSetupAPI(projectId, backendId),
+    capabilities: (projectId: string, backendId: string) =>
+      mockCapabilitiesAPI(projectId, backendId),
   },
 }));
 vi.mock("@/api/auth", () => ({
@@ -92,6 +95,9 @@ describe("ProjectDetailPanel v0.9.12", () => {
   beforeEach(() => {
     mockTriggerMutate.mockReset();
     mockSetupAPI.mockReset();
+    mockCapabilitiesAPI.mockReset();
+    // 默认能力目录无 ocr / doc_layout 条目 → 不出现任务类型选择 (保持原文本预标行为).
+    mockCapabilitiesAPI.mockResolvedValue({ name: "grounded-sam2", models: [] });
     mockUpdatePreferences.mockReset();
     mockUseProject.mockReturnValue({
       data: { type_key: "image-det", ml_backend_id: "bk1" },
@@ -325,5 +331,71 @@ describe("ProjectDetailPanel v0.9.12", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /返回项目列表/ }));
     expect(onBack).toHaveBeenCalled();
+  });
+
+  // v0.14.9 · 能力声明协议 v2: backend models[] 含 ocr / doc_layout 时的任务类型分流.
+  describe("OCR / 文档版面任务类型", () => {
+    function withOcrCapabilities() {
+      mockCapabilitiesAPI.mockResolvedValue({
+        name: "doc-ai",
+        models: [
+          {
+            id: "m-ocr",
+            task: "ocr",
+            display_name: "OCR",
+            params: {
+              type: "object",
+              properties: { det_db_thresh: { type: "number", default: 0.3 } },
+            },
+          },
+          { id: "m-layout", task: "doc_layout", display_name: "版面" },
+        ],
+      });
+    }
+
+    it("能力目录无 ocr / doc_layout 时不显示任务类型选择", async () => {
+      renderUI();
+      fireEvent.click(screen.getAllByRole("checkbox", { name: /选择/ })[0]);
+      // 等 capabilities query 解析
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText(/car, person/)).toBeInTheDocument();
+      });
+      expect(screen.queryByText("OCR 文字识别")).toBeNull();
+    });
+
+    it("含 ocr 条目时显示任务类型选择, 选 OCR 后隐藏 prompt + 显示静态提示", async () => {
+      withOcrCapabilities();
+      renderUI();
+      fireEvent.click(screen.getAllByRole("checkbox", { name: /选择/ })[0]);
+      await waitFor(() => {
+        expect(screen.getByText("OCR 文字识别")).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByText("OCR 文字识别"));
+      expect(screen.queryByPlaceholderText(/car, person/)).toBeNull();
+      expect(screen.getByText(/未配置 text 属性，文本不会入库/)).toBeInTheDocument();
+    });
+
+    it("OCR 模式发起预标透传 model_id + task_type, 不带 prompt", async () => {
+      withOcrCapabilities();
+      renderUI();
+      fireEvent.click(screen.getAllByRole("checkbox", { name: /选择/ })[0]);
+      await waitFor(() => {
+        expect(screen.getByText("OCR 文字识别")).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByText("OCR 文字识别"));
+      fireEvent.click(screen.getByRole("button", { name: /跑预标.*1 批/ }));
+
+      await waitFor(() => {
+        expect(mockTriggerMutate).toHaveBeenCalledTimes(1);
+      });
+      const arg = mockTriggerMutate.mock.calls[0][0];
+      expect(arg).toMatchObject({
+        ml_backend_id: "bk1",
+        model_id: "m-ocr",
+        task_type: "ocr",
+        batch_id: "b1",
+      });
+      expect(arg).not.toHaveProperty("prompt");
+    });
   });
 });

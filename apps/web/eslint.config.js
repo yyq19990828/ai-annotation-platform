@@ -28,16 +28,23 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "react-refresh/only-export-components": [
-        "warn",
-        { allowConstantExport: true },
-      ],
+      // The codebase intentionally colocates small helpers/types with components.
+      // Splitting every helper into a separate file would add churn without
+      // changing runtime behavior, so keep Fast Refresh as a dev-tool concern.
+      "react-refresh/only-export-components": "off",
       // 项目当下偏向务实：先放宽这几条最常见的规则，逐步收紧
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-unused-vars": [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
+    },
+  },
+  {
+    files: ["src/**/*.test.{ts,tsx}", "src/**/__tests__/**/*.{ts,tsx}"],
+    rules: {
+      // Tests use mocked modules and event shims where exact app types add noise.
+      "@typescript-eslint/no-explicit-any": "off",
     },
   },
   // v0.10.12 · CSP style-src 收紧 — 全站 TSX 已迁到 CSS modules / class 切换,

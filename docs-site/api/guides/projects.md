@@ -74,6 +74,42 @@ PATCH  /api/v1/projects/:id/members/:uid   # 改角色
 
 角色：`viewer` / `annotator` / `reviewer` / `project_admin`。
 
+## Task Views / Data Manager
+
+```http
+GET    /api/v1/projects/:id/task-views
+POST   /api/v1/projects/:id/task-views
+GET    /api/v1/projects/:id/task-views/:view_id
+PATCH  /api/v1/projects/:id/task-views/:view_id
+DELETE /api/v1/projects/:id/task-views/:view_id
+POST   /api/v1/projects/:id/task-views/:view_id/copy
+
+POST   /api/v1/projects/:id/tasks/query
+GET    /api/v1/projects/:id/task-views/:view_id/tasks
+```
+
+`task-views` 保存项目内 Data Manager 视图，包含 `filter_json`、`sort_json`、`columns_json` 和 `visibility`。`private` 视图只有创建者可见；`project` 视图对项目成员可见，但只有项目负责人或超级管理员可编辑。
+
+`tasks/query` 接受临时过滤条件，不保存视图：
+
+```json
+{
+  "filter_json": {
+    "op": "and",
+    "rules": [
+      { "field": "feedback.unresolved_count", "op": "gt", "value": 0 },
+      { "field": "prediction.model_version", "op": "eq", "value": "sam3-v1" }
+    ]
+  },
+  "sort_json": [{ "field": "last_activity_at", "direction": "desc" }],
+  "columns_json": ["display_id", "status", "unresolved_feedback_count"],
+  "limit": 50,
+  "offset": 0
+}
+```
+
+过滤字段是白名单，未知字段或不允许的操作符返回 422。Data Manager 查询只读，不提供批量写操作。
+
 ## Alias 频率
 
 ```http

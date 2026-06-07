@@ -318,6 +318,7 @@ class ObserveTarget(BaseModel):
     video_pool: dict | None = None  # v0.10.36 · 视频追踪显存池
     cache: dict | None = None
     variant_catalog: VariantCatalog | None = None
+    supported_variants: list[dict] = []
     supported_trackers: list[
         str
     ] = []  # v0.10.36 · /setup 暴露的 video tracker model_key 列表
@@ -341,6 +342,14 @@ def _extract_variant_catalog(setup: dict | None) -> VariantCatalog | None:
     if not sam and not dino:
         return None
     return VariantCatalog(sam_variant=list(sam), dino_variant=list(dino))
+
+
+def _extract_supported_variants(setup: dict | None) -> list[dict]:
+    """Extract v2 generic variant axes from /setup without changing their shape."""
+    if not setup:
+        return []
+    groups = setup.get("supported_variants") or []
+    return list(groups) if isinstance(groups, list) else []
 
 
 async def _probe_one(client: httpx.AsyncClient, base: str) -> ObserveTarget:
@@ -382,6 +391,7 @@ async def _probe_one(client: httpx.AsyncClient, base: str) -> ObserveTarget:
         setup = None
 
     catalog = _extract_variant_catalog(setup)
+    supported_variants = _extract_supported_variants(setup)
     return ObserveTarget(
         url=base,
         ok=bool(health.get("ok", True)),
@@ -393,7 +403,8 @@ async def _probe_one(client: httpx.AsyncClient, base: str) -> ObserveTarget:
         video_pool=health.get("video_pool"),  # v0.10.36
         cache=health.get("cache"),
         variant_catalog=catalog,
-        supports_variants=catalog is not None,
+        supported_variants=supported_variants,
+        supports_variants=catalog is not None or bool(supported_variants),
         supported_trackers=list(
             (setup or {}).get("supported_trackers") or []
         ),  # v0.10.36
@@ -440,6 +451,7 @@ class SmokeTestRequest(BaseModel):
     url: str = Field(..., min_length=1, max_length=500)
     sam_variant: str | None = None
     dino_variant: str | None = None
+    variant: dict | None = None
 
 
 class SmokeTestResponse(BaseModel):
@@ -467,7 +479,8 @@ async def smoke_test_backend(
     """
     base = payload.url.rstrip("/")
     variant = {"sam_variant": payload.sam_variant, "dino_variant": payload.dino_variant}
-    audit_detail: dict = {"url": base, **variant}
+    generic_variant = payload.variant or None
+    audit_detail: dict = {"url": base, **variant, "variant": generic_variant}
 
     async def _audit(result: SmokeTestResponse) -> None:
         await AuditService.log(
@@ -488,6 +501,16 @@ async def smoke_test_backend(
         await db.commit()
 
     async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
+        if generic_variant:
+            r = SmokeTestResponse(
+                ok=True,
+                skipped=True,
+                message="该容器未声明通用 warm 接口",
+                loaded_variant=generic_variant,
+            )
+            await _audit(r)
+            return r
+
         # 1) 看池子是否已有变体常驻。
         try:
             hresp = await client.get(

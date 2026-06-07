@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type MouseEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -10,6 +10,7 @@ import { Histogram } from "@/components/ui/Histogram";
 import { SectionDivider } from "@/components/ui/SectionDivider";
 import { useAnnotatorStats } from "@/hooks/useDashboard";
 import { useProjects } from "@/hooks/useProjects";
+import type { ProjectResponse } from "@/api/projects";
 import { MyBatchesCard } from "./MyBatchesCard";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { projectDisplayType } from "@/utils/projectDisplay";
@@ -33,7 +34,7 @@ export function AnnotatorDashboard() {
 
   const sortedProjects = useMemo(
     () =>
-      [...myProjects].sort((a: any, b: any) => {
+      [...myProjects].sort((a: ProjectResponse, b: ProjectResponse) => {
         const ra = Math.max(0, (a.total_tasks ?? 0) - (a.completed_tasks ?? 0));
         const rb = Math.max(0, (b.total_tasks ?? 0) - (b.completed_tasks ?? 0));
         return rb - ra;
@@ -228,7 +229,7 @@ export function AnnotatorDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {sortedProjects.map((p: any) => {
+                {sortedProjects.map((p) => {
                   const remaining = Math.max(0, (p.total_tasks ?? 0) - (p.completed_tasks ?? 0));
                   const pct = p.total_tasks ? Math.round(((p.completed_tasks ?? 0) / p.total_tasks) * 100) : 0;
                   return (
@@ -258,7 +259,7 @@ export function AnnotatorDashboard() {
                         <Button
                           size="sm"
                           variant="primary"
-                          onClick={(e: any) => { e.stopPropagation(); openWorkbench(p.id); }}
+                          onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); openWorkbench(p.id); }}
                         >
                           <Icon name="target" size={11} />打开
                         </Button>

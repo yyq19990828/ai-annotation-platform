@@ -205,6 +205,9 @@ export type AiBox = Annotation & {
   predictionId: string;
   shapeIndex: number;
   predictionSource: PredictionSourceValue;
+  // v0.14.9 · OCR / doc_layout 候选携带的属性 (如 OCR 的 {text, language?, orientation?}).
+  // 后端 PredictionShape 协议外字段, 透传供 AIInspectorPanel 渲染文本摘要并在 accept 时带入新建标注.
+  attributes?: Record<string, unknown>;
 };
 
 /**
@@ -241,6 +244,9 @@ export function predictionsToBoxes(
     return p.result.map((shape, i) => {
       const s = geometryToShape(shape.geometry);
       const shapeIndex = typeof shape.shape_index === "number" ? shape.shape_index : i;
+      // v0.14.9 · OCR / doc_layout 的 attributes (text / language / orientation 等) 是协议外字段,
+      // 后端 PredictionShape codegen 类型未声明, 这里防御式读取透传.
+      const attributes = (shape as { attributes?: Record<string, unknown> }).attributes;
       return {
         id: `pred-${p.id}-${shapeIndex}`,
         annotation_type: shape.geometry.type,
@@ -252,6 +258,7 @@ export function predictionsToBoxes(
         conf: shape.confidence,
         source: "prediction_based" as const,
         predictionSource: p.source ?? null,
+        ...(attributes && typeof attributes === "object" ? { attributes } : {}),
       };
     });
   });

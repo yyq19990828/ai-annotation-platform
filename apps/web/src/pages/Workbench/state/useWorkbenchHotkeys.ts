@@ -15,9 +15,17 @@ import { dispatchKey, ARROW_KEY_SET } from "./hotkeys";
 import type { UseMaskEditorReturn } from "./useMaskEditor";
 import { recordHotkeyUsage } from "./hotkeyUsage";
 import { bboxGeom } from "./transforms";
+import {
+  attributeModeValueForDigit,
+  attributeModeFields,
+  findNextUnfilledAttributeModeAnnotation,
+  nextAttributeModeState,
+  normalizeAttributeModeState,
+} from "./attributeMode";
 import type { useWorkbenchState } from "./useWorkbenchState";
 import type { useAnnotationHistory } from "./useAnnotationHistory";
 import type { AnnotationResponse } from "@/types";
+import type { AttributeSchema } from "@/api/projects";
 import type { AiBox } from "./transforms";
 import type { VideoStageControls } from "../stage/VideoStage";
 
@@ -78,6 +86,7 @@ export interface UseWorkbenchHotkeysArgs {
   handleRejectPrediction?: (b: AiBox) => void;
   handleUpdateAttributes: (id: string, attrs: Record<string, unknown>) => void;
   handleVideoSetSelectedClass?: (className: string) => boolean;
+  attributeModeSchema?: AttributeSchema;
 
   // ai
   aiBoxes: AiBox[];
@@ -146,6 +155,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     recordRecentClass, handleDeleteBox, handleBatchDelete, handlePatchShapeFlag,
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
+    attributeModeSchema,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
     updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, samplingActive = false, videoControlsRef,
@@ -252,6 +262,68 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [disabled, s.tool, s.pendingDrawing, s.editingClass, maskEditor, commitMaskAsPolygon, cancelMaskEdit]);
+
+  useEffect(() => {
+    if (disabled || videoMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!s.attributeMode.enabled) return;
+      if (isWorkbenchInputFocused(e.target)) return;
+      if (s.pendingDrawing || s.editingClass || batchChanging) return;
+      const normalized = normalizeAttributeModeState(s.attributeMode, attributeModeSchema);
+      if (!normalized.enabled || !normalized.fieldKey) return;
+      const fields = attributeModeFields(attributeModeSchema);
+      const field = fields.find((item) => item.key === normalized.fieldKey);
+      if (!field) return;
+
+      if (e.key === "[" || e.key === "]") {
+        e.preventDefault();
+        e.stopPropagation();
+        recordHotkeyUsage("attributeModeField");
+        s.setAttributeMode(nextAttributeModeState(normalized, attributeModeSchema, e.key === "]" ? 1 : -1));
+        return;
+      }
+
+      if (e.key >= "1" && e.key <= "9") {
+        const value = attributeModeValueForDigit(field, Number(e.key));
+        if (value === undefined) return;
+        e.preventDefault();
+        e.stopPropagation();
+        recordHotkeyUsage("attributeModeValue");
+        s.setAttributeMode({ ...normalized, currentValue: value });
+        return;
+      }
+
+      if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        e.stopPropagation();
+        recordHotkeyUsage("attributeModeNextMissing");
+        const next = findNextUnfilledAttributeModeAnnotation(
+          annotationsRef.current,
+          s.selectedId,
+          field,
+        );
+        if (next) {
+          s.setSelectedId(next.id);
+        } else {
+          pushToast({ msg: "没有未填写该属性的标注", kind: "warning" });
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [
+    annotationsRef,
+    attributeModeSchema,
+    batchChanging,
+    disabled,
+    pushToast,
+    s,
+    s.attributeMode,
+    s.editingClass,
+    s.pendingDrawing,
+    s.selectedId,
+    videoMode,
+  ]);
 
   // 主 keydown / keyup
   useEffect(() => {
@@ -665,7 +737,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     navigateTask, smartNext, setFitTick, onCrossFramePropagate,
     recordRecentClass, handleDeleteBox, handleBatchDelete, handlePatchShapeFlag,
     handleStartChangeClass, handleStartBatchChangeClass,
-    handleSubmitTask, handleAcceptPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
+    handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
+    handleAnnotationGroup, handleAnnotationUngroup, isPromptSupported,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom.imgW, stageGeom.imgH,
     flushNudges,
   ]);

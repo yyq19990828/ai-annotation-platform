@@ -43,6 +43,7 @@ import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
 import { useInteractiveAI } from "./useInteractiveAI";
 import { useMLCapabilities } from "./useMLCapabilities";
+import { useCapabilityValidation } from "./useCapabilityValidation";
 import { useAiToolParamPrefs } from "./useAiToolParamPrefs";
 import { deriveDefaults, VARIANT_FIELD_KEYS } from "../components/SchemaForm";
 import { AIToolDrawer } from "../shell/AIToolDrawer";
@@ -89,6 +90,12 @@ import { useImageAnnotationActions } from "../stages/image/useImageAnnotationAct
 import { useMaskEditor } from "./useMaskEditor";
 import { MaskToolbar } from "../shell/MaskToolbar";
 import { useVideoAnnotationActions } from "../stages/video/useVideoAnnotationActions";
+import { AttributeModeBar } from "../shell/AttributeModeBar";
+import {
+  applyAttributeModeValue,
+  canApplyAttributeModeToAnnotation,
+  normalizeAttributeModeState,
+} from "./attributeMode";
 import styles from "../shell/WorkbenchShell.module.css";
 
 const VARIANT_FIELD_SET = new Set<string>(VARIANT_FIELD_KEYS);
@@ -312,15 +319,23 @@ export function useWorkbenchShellModel({
   const classes = toolView.classes;
   const classesConfig = toolView.classesConfig;
   void toolView.toolUnitId;
+  const activeClass = s.activeClass;
+  const setActiveClass = s.setActiveClass;
+  const tool = s.tool;
+  const setTool = s.setTool;
+  const videoTool = s.videoTool;
+  const setVideoTool = s.setVideoTool;
+  const videoFrameIndex = s.videoFrameIndex;
+  const setVideoFrameIndex = s.setVideoFrameIndex;
   useEffect(() => {
     setActiveClassesConfig(classesConfig);
     return () => setActiveClassesConfig(undefined);
   }, [classesConfig]);
   useEffect(() => {
-    if (s.activeClass && classes.length > 0 && !classes.includes(s.activeClass)) {
-      s.setActiveClass(classes[0] ?? "");
+    if (activeClass && classes.length > 0 && !classes.includes(activeClass)) {
+      setActiveClass(classes[0] ?? "");
     }
-  }, [s.activeClass, classes, s.setActiveClass]);
+  }, [activeClass, classes, setActiveClass]);
   const currentTaskId = s.currentTaskId;
   const setCurrentTaskId = s.setCurrentTaskId;
   const setSelectedId = s.setSelectedId;
@@ -372,16 +387,19 @@ export function useWorkbenchShellModel({
   );
   const imageWidth = task?.image_width ?? null;
   const imageHeight = task?.image_height ?? null;
-  const fileUrl = useMemo(() => task?.file_url ?? null, [task?.id]);
-  const blurhash = useMemo(() => task?.blurhash ?? null, [task?.id]);
-  const thumbnailUrl = useMemo(() => task?.thumbnail_url ?? null, [task?.id]);
+  const fileUrl = task?.file_url ?? null;
+  const blurhash = task?.blurhash ?? null;
+  const thumbnailUrl = task?.thumbnail_url ?? null;
   const isVideoTask = task?.file_type === "video" || currentProject?.type_key === "video-track";
   const stageKind = currentProject?.type_key === "lidar" ? "3d" : isVideoTask ? "video" : "image";
   const videoManifest = useVideoManifest(taskId, isVideoTask);
   const videoFrameTimetable = useVideoFrameTimetable(taskId, isVideoTask && !!videoManifest.data);
   const videoDatasetItemId = videoManifest.data?.dataset_item_id ?? null;
   const videoChaptersQuery = useVideoChapters(isVideoTask ? videoDatasetItemId : null);
-  const videoChaptersData = videoChaptersQuery.data ?? [];
+  const videoChaptersData = useMemo(
+    () => videoChaptersQuery.data ?? [],
+    [videoChaptersQuery.data],
+  );
   const videoTimelineChapters = useMemo(
     () =>
       videoChaptersData.map((c) => ({
@@ -396,9 +414,9 @@ export function useWorkbenchShellModel({
   // v0.11.29 · 当前 videoTool 被 video_modes 过滤掉时, 切到可用工具 (否则默认按钮指向隐藏项)。hand 始终可用。
   useEffect(() => {
     if (!isVideoTask || !videoModes) return;
-    if (s.videoTool === "box" && !videoModes.box) s.setVideoTool(videoModes.track ? "track" : "hand");
-    else if (s.videoTool === "track" && !videoModes.track) s.setVideoTool(videoModes.box ? "box" : "hand");
-  }, [isVideoTask, videoModes, s.videoTool, s.setVideoTool]);
+    if (videoTool === "box" && !videoModes.box) setVideoTool(videoModes.track ? "track" : "hand");
+    else if (videoTool === "track" && !videoModes.track) setVideoTool(videoModes.box ? "box" : "hand");
+  }, [isVideoTask, videoModes, videoTool, setVideoTool]);
   useEffect(() => {
     if (!isVideoTask) return;
     if (videoChaptersData.length === 0) return;
@@ -411,16 +429,16 @@ export function useWorkbenchShellModel({
       }
       const target = pickChapterTargetFrame(
         videoChaptersData,
-        s.videoFrameIndex,
+        videoFrameIndex,
         e.key === "PageDown" ? "next" : "prev",
       );
       if (target === null) return;
       e.preventDefault();
-      s.setVideoFrameIndex(target);
+      setVideoFrameIndex(target);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isVideoTask, videoChaptersData, s.videoFrameIndex, s.setVideoFrameIndex]);
+  }, [isVideoTask, videoChaptersData, videoFrameIndex, setVideoFrameIndex]);
 
   const trackerJobs = useVideoTrackerJobs();
   const [propagateDialog, setPropagateDialog] = useState<{
@@ -625,10 +643,9 @@ export function useWorkbenchShellModel({
     return () => window.removeEventListener("keydown", onKey);
   }, [isVideoTask, s.selectedId, openPropagateDialog]);
   const predictionsInfinite = usePredictions(taskId, undefined, debouncedConf);
-  const predictionsPages = predictionsInfinite.data?.pages ?? [];
   const predictionsData = useMemo(
-    () => predictionsPages.flatMap((p) => p),
-    [predictionsPages],
+    () => predictionsInfinite.data?.pages.flatMap((p) => p) ?? [],
+    [predictionsInfinite.data?.pages],
   );
 
   // v0.11.27 · 遮挡样式 key 的跨工具单位并集。userBoxes 含全部单位的标注，而
@@ -709,7 +726,7 @@ export function useWorkbenchShellModel({
     if (!target?.anchor_position) return;
     if (isVideoTask) {
       const frame = target.anchor_position.frame;
-      if (typeof frame === "number") s.setVideoFrameIndex(frame);
+      if (typeof frame === "number") setVideoFrameIndex(frame);
       return;
     }
     const { imgW, imgH, vpSize } = stageGeom;
@@ -719,7 +736,7 @@ export function useWorkbenchShellModel({
       tx: vpSize.w / 2 - target.anchor_position!.x * imgW * cur.scale,
       ty: vpSize.h / 2 - target.anchor_position!.y * imgH * cur.scale,
     }));
-  }, [issueFocusTick, activeIssueHighlightId, issuesQuery.data, stageGeom, setVp, isVideoTask, s.setVideoFrameIndex]);
+  }, [issueFocusTick, activeIssueHighlightId, issuesQuery.data, stageGeom, setVp, isVideoTask, setVideoFrameIndex]);
   const submitTaskMut = useSubmitTask();
   const triggerPreannotation = useTriggerPreannotation(projectId);
   const { progress: preannotationProgress, connection: preannotationConn, retries: preannotationRetries } =
@@ -829,6 +846,12 @@ export function useWorkbenchShellModel({
     projectId ?? null,
     currentProject?.ml_backend_id ?? null,
   );
+  // v0.14.9 · active model 输出几何 / 文本属性 与项目配置的兼容性警告 (非阻断)。
+  const capabilityWarnings = useCapabilityValidation({
+    activeModel: mlCapabilities.activeModel,
+    enabledToolUnits,
+    toolBindings: currentProject?.tool_bindings,
+  });
   const aiParamPrefs = useAiToolParamPrefs(currentProject?.ml_backend_id ?? null);
   useEffect(() => {
     sam.cancel();
@@ -891,8 +914,8 @@ export function useWorkbenchShellModel({
   }, [mlCapabilities.prompts.join(","), mlCapabilities.isLoading]);
   useEffect(() => {
     if (!isVideoTask) return;
-    if (s.tool !== "box" && s.tool !== "hand") s.setTool("box");
-  }, [isVideoTask, s.tool, s.setTool]);
+    if (tool !== "box" && tool !== "hand") setTool("box");
+  }, [isVideoTask, tool, setTool]);
 
   useEffect(() => {
     if (!isAIToolId(s.tool)) return;
@@ -1076,6 +1099,7 @@ export function useWorkbenchShellModel({
     polylineHandle,
     keypointHandle,
     handleBatchDelete,
+    handleJoinSelectedPolygons,
     handleStartBatchChangeClass,
     handleCommitBatchChangeClass,
     handleCancelBatchChange,
@@ -1240,6 +1264,31 @@ export function useWorkbenchShellModel({
     });
   }, [updateAnnotationMut, history]);
 
+  const normalizedAttributeMode = useMemo(
+    () => normalizeAttributeModeState(s.attributeMode, toolView.attributeSchema),
+    [s.attributeMode, toolView.attributeSchema],
+  );
+  const handleApplyAttributeMode = useCallback((annotationId: string): boolean => {
+    if (!normalizedAttributeMode.enabled || !normalizedAttributeMode.fieldKey) return false;
+    const ann = annotationsRef.current.find((a) => a.id === annotationId);
+    const field = toolView.attributeSchema.fields?.find((item) => item.key === normalizedAttributeMode.fieldKey);
+    if (!ann || !field || !canApplyAttributeModeToAnnotation(ann, field)) {
+      pushToast({ msg: "该标注不适用当前属性字段", kind: "warning" });
+      return false;
+    }
+    const next = applyAttributeModeValue(ann.attributes, field, normalizedAttributeMode.currentValue);
+    handleUpdateAttributes(annotationId, next);
+    s.setSelectedId(annotationId);
+    return true;
+  }, [
+    annotationsRef,
+    handleUpdateAttributes,
+    normalizedAttributeMode,
+    pushToast,
+    s,
+    toolView.attributeSchema,
+  ]);
+
   const hoveredCommentShapes = useHoveredCommentStore(selectEffectiveShapes);
 
   const { navigateTask, smartNext, handleSubmitTask } = useWorkbenchTaskFlow({
@@ -1374,6 +1423,7 @@ export function useWorkbenchShellModel({
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes,
     handleVideoSetSelectedClass,
+    attributeModeSchema: toolView.attributeSchema,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
@@ -1656,6 +1706,10 @@ export function useWorkbenchShellModel({
           samTextFocusKey={s.samTextFocusKey}
           exemplarOutputMode={s.exemplarOutputMode}
           onSetExemplarOutputMode={s.setExemplarOutputMode}
+          models={mlCapabilities.models}
+          activeModelId={mlCapabilities.activeModelId}
+          onSetActiveModelId={mlCapabilities.setActiveModelId}
+          capabilityWarnings={capabilityWarnings}
         />
       ) : null,
       reviewMode: mode === "review", videoMode: isVideoTask,
@@ -1732,6 +1786,14 @@ export function useWorkbenchShellModel({
                 onSetRadius={maskEditor.setRadius}
                 onCommit={commitMaskAsPolygon}
                 onCancel={cancelMaskEdit}
+              />
+            )}
+            {stageKind === "image" && (
+              <AttributeModeBar
+                schema={toolView.attributeSchema}
+                value={s.attributeMode}
+                onChange={s.setAttributeMode}
+                readOnly={isLocked}
               />
             )}
             <WorkbenchOverlays
@@ -1817,6 +1879,8 @@ export function useWorkbenchShellModel({
         onCommitKeypointGeometry: handleCommitKeypointGeometry,
         onBatchDelete: handleBatchDelete,
         onBatchChangeClass: handleStartBatchChangeClass,
+        onJoinSelected: handleJoinSelectedPolygons,
+        onApplyAttributeMode: handleApplyAttributeMode,
         onStageGeometry: setStageGeom,
       },
       ai: {
@@ -1872,6 +1936,7 @@ export function useWorkbenchShellModel({
     inspector: {
       open: rightOpen, width: s.rightWidth, onResize: s.setRightWidth, readOnly: isLocked,
       onDetach: detachInspector,
+      capabilityWarnings,
       aiBoxes: modeState.diffMode !== "final" ? aiBoxes : [],
       predictionSourceFilter,
       userBoxes, orphanUserBoxIds: orphanAnnotationIds,

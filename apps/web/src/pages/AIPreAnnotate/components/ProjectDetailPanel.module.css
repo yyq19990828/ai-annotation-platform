@@ -123,6 +123,19 @@
   color: var(--color-warning);
 }
 
+.docHint {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  color: var(--color-fg-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  background: var(--color-ai-soft);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
 .backendParamsStack {
   display: flex;
   flex-direction: column;

@@ -44,6 +44,13 @@ const VIDEO_OPTIONS: TargetOption[] = [
   { value: "kitti", label: "KITTI", description: "KITTI Tracking 2D labels，适配 KITTI 工具链。" },
 ];
 
+const LIDAR_OPTIONS: TargetOption[] = [
+  { value: "aap_json", label: "AAP JSON", description: "平台原生无损，保留 3D 几何与项目配置。" },
+  { value: "kitti", label: "KITTI 3D", description: "逐帧 label_2 + calib，输出 KITTI camera 坐标。" },
+  { value: "nuscenes", label: "nuScenes JSON", description: "单帧 sample 风格，ego 坐标 + 占位 ego_pose。" },
+  { value: "pointmask", label: "Point Mask", description: "逐点 uint32 label + 类别映射，适配 3D 分割训练前处理。" },
+];
+
 const FRAME_MODES: { value: VideoFrameMode; label: string; description: string }[] = [
   { value: "keyframes", label: "关键帧", description: "只导出人工 / 预测关键帧。" },
   { value: "all_frames", label: "所有帧", description: "按相邻有效关键帧线性插值展开。" },
@@ -124,8 +131,9 @@ function ExportForm({
   onCancel: () => void;
 }) {
   const isVideoProject = projectTypeKey === "video-track";
+  const isLidarProject = projectTypeKey === "lidar";
   const [targets, setTargets] = useState<ExportTarget[]>(
-    isVideoProject ? ["video_json"] : ["coco"],
+    isVideoProject ? ["video_json"] : isLidarProject ? ["aap_json"] : ["coco"],
   );
   const [yoloExpanded, setYoloExpanded] = useState(false);
   const [includeAttributes, setIncludeAttributes] = useState(true);
@@ -172,8 +180,8 @@ function ExportForm({
       <div className={styles.field}>
         <div className={styles.label}>导出目标（可多选）</div>
         <div className={styles.optionList}>
-          {isVideoProject
-            ? VIDEO_OPTIONS.map((o) => (
+          {isVideoProject || isLidarProject
+            ? (isVideoProject ? VIDEO_OPTIONS : LIDAR_OPTIONS).map((o) => (
                 <CheckCard
                   key={o.value}
                   option={o}
@@ -277,7 +285,7 @@ function ExportForm({
             : "兼容旧版（v0.4.9 之前）格式，不含属性。"}
         </div>
         <div className={styles.helpText}>
-          仅对 COCO / YOLO / Video JSON 生效（YOLO 写为伴生 .attrs.json）；AAP JSON 始终包含，MOT / KITTI 无此字段。
+          仅对 COCO / YOLO / Video JSON / LiDAR 标准格式生效；AAP JSON 始终包含，MOT 无此字段。
         </div>
       </div>
       <div className={styles.footer}>

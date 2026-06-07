@@ -350,7 +350,7 @@ function SystemSection() {
     setSmtpFrom(data.smtp.from_address ?? "");
     setSmtpPwd("");
     setPwdEditing(false);
-  }, [data?.allow_open_registration, data?.invitation_ttl_days, data?.frontend_base_url, data?.smtp.host, data?.smtp.port, data?.smtp.user, data?.smtp.from_address]);
+  }, [data]);
 
   if (isLoading || !data || allowOpen === null) {
     return (

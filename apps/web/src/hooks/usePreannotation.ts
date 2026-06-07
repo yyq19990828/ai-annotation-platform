@@ -51,6 +51,10 @@ export interface TriggerPreannotationPayload {
   params?: Record<string, unknown>;
   /** v0.11.24 · 跳过已预标 (默认) / 覆盖历史预标 / 追加 */
   predict_mode?: PredictMode;
+  /** v0.14.9 · 能力声明协议 v2: 多模型 backend 时指定目标 model 条目 id. */
+  model_id?: string;
+  /** v0.14.9 · 任务类型便捷别名 ("ocr" / "doc_layout" / "text"); OCR / 版面预标透传. */
+  task_type?: string;
 }
 
 export interface TriggerPreannotationResponse {

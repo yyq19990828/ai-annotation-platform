@@ -404,6 +404,205 @@ async def test_run_batch_merges_params_into_context(
 
 
 @pytest.mark.asyncio
+async def test_run_batch_passes_model_id_and_task_type_into_context(
+    db_session: AsyncSession, monkeypatch, super_admin
+):
+    """v0.14.9 · 协议 v2: 无 prompt 的纯图片 OCR task 也写 context type / model_id。"""
+    from app.db.models.task import Task
+    from app.services.ml_client import PredictionResult
+    from app.workers import tasks as worker_tasks
+
+    user, _ = super_admin
+    proj, backend = await _seed_project_and_backend(db_session, user.id)
+    t1 = Task(
+        id=uuid.uuid4(),
+        project_id=proj.id,
+        display_id="T-OCR1",
+        file_name="doc.png",
+        file_path="http://x/doc.png",
+        file_type="image",
+        status="pending",
+    )
+    db_session.add(t1)
+    await db_session.flush()
+
+    captured: dict = {}
+
+    class _StubClient:
+        def __init__(self, _backend):
+            self._backend = _backend
+
+        async def predict(self, tasks_payload, context=None):
+            captured["context"] = context
+            return [
+                PredictionResult(
+                    task_id=tasks_payload[0]["id"],
+                    result=[],
+                    score=0.9,
+                    model_version="stub-v1",
+                    inference_time_ms=10,
+                    meta={},
+                )
+            ]
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient", _StubClient, raising=True
+    )
+
+    fake_engine, fake_factory = _passthrough_engine_and_factory(db_session)
+    import sqlalchemy.ext.asyncio as sa_async
+
+    monkeypatch.setattr(sa_async, "create_async_engine", fake_engine)
+    monkeypatch.setattr(sa_async, "async_sessionmaker", fake_factory)
+
+    # 无 prompt: 纯图片 OCR, 仅靠 task_type / model_id 起 context
+    await worker_tasks._run_batch(
+        project_id=str(proj.id),
+        ml_backend_id=str(backend.id),
+        task_ids=[str(t1.id)],
+        task_type="ocr",
+        model_id="pp-ocrv4",
+    )
+
+    ctx = captured["context"]
+    assert ctx is not None
+    assert ctx["type"] == "ocr"
+    assert ctx["model_id"] == "pp-ocrv4"
+    # 纯 OCR 无文本 prompt, 不应混入 text/output 键
+    assert "text" not in ctx
+
+
+@pytest.mark.asyncio
+async def test_run_batch_task_type_overrides_text_type_with_prompt(
+    db_session: AsyncSession, monkeypatch, super_admin
+):
+    """v0.14.9 · 带 prompt 时 task_type 覆盖默认的 'text' type, 不破坏 prompt 文本。"""
+    from app.db.models.task import Task
+    from app.services.ml_client import PredictionResult
+    from app.workers import tasks as worker_tasks
+
+    user, _ = super_admin
+    proj, backend = await _seed_project_and_backend(db_session, user.id)
+    t1 = Task(
+        id=uuid.uuid4(),
+        project_id=proj.id,
+        display_id="T-DOC1",
+        file_name="doc.png",
+        file_path="http://x/doc.png",
+        file_type="image",
+        status="pending",
+    )
+    db_session.add(t1)
+    await db_session.flush()
+
+    captured: dict = {}
+
+    class _StubClient:
+        def __init__(self, _backend):
+            self._backend = _backend
+
+        async def predict(self, tasks_payload, context=None):
+            captured["context"] = context
+            return [
+                PredictionResult(
+                    task_id=tasks_payload[0]["id"],
+                    result=[],
+                    score=0.9,
+                    model_version="stub-v1",
+                    inference_time_ms=10,
+                    meta={},
+                )
+            ]
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient", _StubClient, raising=True
+    )
+
+    fake_engine, fake_factory = _passthrough_engine_and_factory(db_session)
+    import sqlalchemy.ext.asyncio as sa_async
+
+    monkeypatch.setattr(sa_async, "create_async_engine", fake_engine)
+    monkeypatch.setattr(sa_async, "async_sessionmaker", fake_factory)
+
+    await worker_tasks._run_batch(
+        project_id=str(proj.id),
+        ml_backend_id=str(backend.id),
+        task_ids=[str(t1.id)],
+        prompt="invoice",
+        task_type="doc_layout",
+    )
+
+    ctx = captured["context"]
+    assert ctx["type"] == "doc_layout"  # 覆盖默认 "text"
+    assert ctx["text"] == "invoice"  # prompt 文本仍保留
+
+
+@pytest.mark.asyncio
+async def test_run_batch_pure_text_prompt_unchanged_without_v2_args(
+    db_session: AsyncSession, monkeypatch, super_admin
+):
+    """v0.14.9 · 回归: 无 model_id / task_type 时纯文本 prompt 现状不变 (type=text)。"""
+    from app.db.models.task import Task
+    from app.services.ml_client import PredictionResult
+    from app.workers import tasks as worker_tasks
+
+    user, _ = super_admin
+    proj, backend = await _seed_project_and_backend(db_session, user.id)
+    t1 = Task(
+        id=uuid.uuid4(),
+        project_id=proj.id,
+        display_id="T-TXT1",
+        file_name="a.jpg",
+        file_path="http://x/a.jpg",
+        file_type="image",
+        status="pending",
+    )
+    db_session.add(t1)
+    await db_session.flush()
+
+    captured: dict = {}
+
+    class _StubClient:
+        def __init__(self, _backend):
+            self._backend = _backend
+
+        async def predict(self, tasks_payload, context=None):
+            captured["context"] = context
+            return [
+                PredictionResult(
+                    task_id=tasks_payload[0]["id"],
+                    result=[],
+                    score=0.9,
+                    model_version="stub-v1",
+                    inference_time_ms=10,
+                    meta={},
+                )
+            ]
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient", _StubClient, raising=True
+    )
+
+    fake_engine, fake_factory = _passthrough_engine_and_factory(db_session)
+    import sqlalchemy.ext.asyncio as sa_async
+
+    monkeypatch.setattr(sa_async, "create_async_engine", fake_engine)
+    monkeypatch.setattr(sa_async, "async_sessionmaker", fake_factory)
+
+    await worker_tasks._run_batch(
+        project_id=str(proj.id),
+        ml_backend_id=str(backend.id),
+        task_ids=[str(t1.id)],
+        prompt="cars",
+    )
+
+    ctx = captured["context"]
+    assert ctx["type"] == "text"
+    assert ctx["text"] == "cars"
+    assert "model_id" not in ctx
+
+
+@pytest.mark.asyncio
 async def test_delete_backend_blocked_by_running_batch_predict(
     db_session: AsyncSession, super_admin
 ):

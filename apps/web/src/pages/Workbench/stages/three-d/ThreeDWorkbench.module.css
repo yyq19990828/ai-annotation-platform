@@ -38,6 +38,29 @@
   opacity: 0.5;
 }
 
+.pointMaskPathPreview {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.pointMaskPathPreview polyline {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 2px;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.pointMaskPathPreview circle {
+  fill: var(--color-bg-elev);
+  stroke: var(--color-accent);
+  stroke-width: 2px;
+}
+
 /* v0.13.10 · 三视图浮层由 FloatingPanelShell 定位; 本类仅保留视觉排版兜底。 */
 .triFloat {
   display: flex;
@@ -302,6 +325,16 @@
   color: var(--color-fg-muted);
 }
 
+.selectCtl {
+  min-width: 84px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-size: 12px;
+}
+
 /* v0.13.8 · 贴合按钮组(仅选中且可编辑时出现);放入右上框属性面板内。 */
 .fitGroup {
   display: grid;
@@ -486,7 +519,9 @@
   position: absolute;
   z-index: 3;
   display: flex;
-  gap: 8px;
+  gap: 10px;
+  max-height: calc(100% - var(--top-toolbar-height) - 48px);
+  overflow: visible;
   pointer-events: none;
 }
 
@@ -560,11 +595,24 @@
 .camPanel {
   display: flex;
   flex-direction: column;
+  width: 210px;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   background: var(--color-bg-elev);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
+}
+
+.camPanelFloating {
+  position: fixed;
+  left: var(--cam-panel-x);
+  top: var(--cam-panel-y);
+  z-index: 5;
+  pointer-events: auto;
+}
+
+.camPanelDragging {
+  user-select: none;
 }
 
 .camPanelBar {
@@ -573,6 +621,11 @@
   gap: 4px;
   padding: 2px 4px;
   border-bottom: 1px solid var(--color-border);
+  cursor: grab;
+}
+
+.camPanelDragging .camPanelBar {
+  cursor: grabbing;
 }
 
 /* v0.13.7 · 相机放大浮层(L3):遮罩 + 居中大图。 */

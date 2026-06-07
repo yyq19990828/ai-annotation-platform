@@ -259,6 +259,8 @@
 | POST | `/{backend_id}/unload` |
 | POST | `/{backend_id}/reload` |
 | GET | `/{backend_id}/setup` |
+| GET | `/{backend_id}/capabilities` |
+| POST | `/{backend_id}/capabilities/refresh` |
 | POST | `/{backend_id}/health` |
 | POST | `/{backend_id}/predict-test` |
 | POST | `/{backend_id}/interactive-annotating` |
@@ -352,6 +354,19 @@
 | PATCH | `/system` |
 | POST | `/system/test-smtp` |
 
+## `task_views.py`
+
+| Method | Path |
+|---|---|
+| GET | `/projects/{project_id}/task-views` |
+| POST | `/projects/{project_id}/task-views` |
+| GET | `/projects/{project_id}/task-views/{view_id}` |
+| PATCH | `/projects/{project_id}/task-views/{view_id}` |
+| DELETE | `/projects/{project_id}/task-views/{view_id}` |
+| POST | `/projects/{project_id}/task-views/{view_id}/copy` |
+| POST | `/projects/{project_id}/tasks/query` |
+| GET | `/projects/{project_id}/task-views/{view_id}/tasks` |
+
 ## `tasks.py`
 
 | Method | Path |
@@ -436,4 +451,4 @@
 
 ---
 
-_共 39 模块 / 249 路由_
+_共 40 模块 / 259 路由_

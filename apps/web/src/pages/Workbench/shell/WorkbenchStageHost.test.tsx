@@ -6,6 +6,8 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { createRef, forwardRef } from "react";
 
+const threeDWorkbenchMock = vi.hoisted(() => vi.fn());
+
 vi.mock("../stages/image/ImageWorkbench", () => ({
   ImageWorkbench: () => <div data-testid="image-workbench" />,
 }));
@@ -15,7 +17,10 @@ vi.mock("../stages/video/VideoWorkbench", () => ({
   }),
 }));
 vi.mock("../stages/three-d/ThreeDWorkbench", () => ({
-  default: () => <div data-testid="three-d-workbench" />,
+  default: (props: { selectedIds?: string[] }) => {
+    threeDWorkbenchMock(props);
+    return <div data-testid="three-d-workbench" />;
+  },
 }));
 
 import { WorkbenchStageHost } from "./WorkbenchStageHost";
@@ -144,11 +149,16 @@ describe("WorkbenchStageHost", () => {
   });
 
   it("stageKind=3d: renders ThreeDWorkbench only (lazy)", async () => {
-    render(<WorkbenchStageHost ref={createRef()} {...propsFor("3d")} />);
+    const props = propsFor("3d");
+    props.common.selectedIds = ["a1", "a2"];
+    render(<WorkbenchStageHost ref={createRef()} {...props} />);
 
     // lazy + Suspense: 组件异步解析,用 findBy 等待。
     expect(await screen.findByTestId("three-d-workbench")).toBeTruthy();
     expect(screen.queryByTestId("image-workbench")).toBeNull();
     expect(screen.queryByTestId("video-workbench")).toBeNull();
+    expect(threeDWorkbenchMock).toHaveBeenCalledWith(
+      expect.objectContaining({ selectedIds: ["a1", "a2"] }),
+    );
   });
 });

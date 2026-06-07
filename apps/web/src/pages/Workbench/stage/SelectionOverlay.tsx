@@ -16,6 +16,7 @@ interface OverlayProps {
   onReject?: () => void;
   onBatchDelete?: () => void;
   onBatchChangeClass?: () => void;
+  onBatchJoin?: () => void;
   onClearSelection?: () => void;
 }
 
@@ -23,7 +24,7 @@ export function SelectionOverlay({
   box, isAi, batchCount,
   imgW, imgH, vp,
   onAccept, onReject,
-  onBatchDelete, onBatchChangeClass, onClearSelection,
+  onBatchDelete, onBatchChangeClass, onBatchJoin, onClearSelection,
 }: OverlayProps) {
   const right = (box.x + box.w) * imgW * vp.scale + vp.tx;
   const bottom = (box.y + box.h) * imgH * vp.scale + vp.ty;
@@ -52,6 +53,11 @@ export function SelectionOverlay({
           {onBatchChangeClass && (
             <Button size="sm" onClick={(e) => { e.stopPropagation(); onBatchChangeClass(); }}>
               <Icon name="rect" size={10} />批量改类
+            </Button>
+          )}
+          {onBatchJoin && (
+            <Button size="sm" onClick={(e) => { e.stopPropagation(); onBatchJoin(); }}>
+              <Icon name="layers" size={10} />合并
             </Button>
           )}
           {onBatchDelete && (

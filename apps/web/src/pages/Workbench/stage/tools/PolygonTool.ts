@@ -17,21 +17,22 @@ export const PolygonTool: CanvasTool = {
   label: "多边形",
   icon: "polygon",
   cursor: "crosshair",
-  onPointerDown: ({ pt, evt, readOnly, pendingDrawing, polygonDraft }: ToolPointerContext): DragInit | null => {
+  onPointerDown: ({ pt, evt, readOnly, pendingDrawing, polygonDraft, snapPoint }: ToolPointerContext): DragInit | null => {
     if (readOnly || pendingDrawing || !polygonDraft) return null;
     if (evt.button !== 0) return null; // 仅左键落点
+    const target = snapPoint?.(pt, evt) ?? pt;
     const points = polygonDraft.points;
     // 距首点近 → 闭合
     if (points.length >= 3) {
       const [fx, fy] = points[0];
-      const dx = pt.x - fx;
-      const dy = pt.y - fy;
+      const dx = target.x - fx;
+      const dy = target.y - fy;
       if (Math.hypot(dx, dy) <= CLOSE_DISTANCE) {
         polygonDraft.close();
         return null;
       }
     }
-    polygonDraft.addPoint([pt.x, pt.y]);
+    polygonDraft.addPoint([target.x, target.y]);
     return null;
   },
 };

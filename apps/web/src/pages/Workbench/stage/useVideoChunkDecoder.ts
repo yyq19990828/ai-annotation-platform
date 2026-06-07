@@ -132,7 +132,6 @@ export async function decodeChunkToBitmap(
   if (chunks.length === 0) return null;
 
   const frames: VideoFrame[] = [];
-  // eslint-disable-next-line no-undef -- VideoDecoder 由 WebCodecs 提供，类型见 lib.dom。
   const decoder = new VideoDecoder({
     output: (frame) => frames.push(frame),
     error: () => {
@@ -298,6 +297,7 @@ export function useVideoChunkDecoder({
   }, [clear, taskId]);
 
   const activeBitmap = useMemo(() => {
+    void version;
     if (!taskId || activeFrameIndex === null) return null;
     return cacheRef.current.get(chunkDecoderCacheKey(taskId, activeFrameIndex)) ?? null;
   }, [activeFrameIndex, taskId, version]);

@@ -181,3 +181,114 @@ async def test_setup_proxy_502_when_backend_unreachable(
             headers={"Authorization": f"Bearer {token}"},
         )
     assert resp.status_code == 502
+
+
+# ─── v0.14.9 · 能力声明协议 v2 — /capabilities 端点 ──────────────────────────
+
+# 含 models[] 的 /setup 回放样本: OCR + 检测双模型目录。
+_SETUP_WITH_MODELS = {
+    "name": "multi-model-backend",
+    "infra": "paddle",
+    "models": [
+        {
+            "id": "pp-ocrv4",
+            "display_name": "PP-OCRv4",
+            "task": "ocr",
+            "supported_text_outputs": ["text"],
+            "output_attribute_types": ["text", "language"],
+        },
+        {
+            "id": "yolo-det",
+            "display_name": "YOLO Detector",
+            "task": "detection",
+            "infra": "onnx",
+            "supported_geometric_outputs": ["bbox"],
+        },
+    ],
+}
+
+
+async def test_capabilities_returns_derived_models_snapshot(
+    httpx_client_bound, super_admin, db_session
+):
+    user, token = super_admin
+    proj = await _seed_project(db_session, user.id)
+    backend = await _seed_backend(db_session, proj.id)
+    await db_session.commit()
+
+    async def fake_setup(self):
+        return _SETUP_WITH_MODELS
+
+    with patch("app.services.ml_client.MLBackendClient.setup", new=fake_setup):
+        resp = await httpx_client_bound.get(
+            f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/capabilities",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # backend 默认 infra
+    assert body["infra"] == "paddle"
+    # models[] 派生出两条, id / task / infra 各就位
+    models = {m["id"]: m for m in body["models"]}
+    assert set(models) == {"pp-ocrv4", "yolo-det"}
+    assert models["pp-ocrv4"]["task"] == "ocr"
+    assert models["pp-ocrv4"]["output_attribute_types"] == ["text", "language"]
+    # detection 条目显式覆盖 infra
+    assert models["yolo-det"]["infra"] == "onnx"
+    # 模态派生 (纯 image 双模型)
+    assert body["modalities"] == ["image"]
+
+
+async def test_capabilities_refresh_invalidates_cache(
+    httpx_client_bound, super_admin, db_session
+):
+    """refresh 先 pop setup 缓存再重探: 两次结果不同时 refresh 拿到新值。"""
+    user, token = super_admin
+    proj = await _seed_project(db_session, user.id)
+    backend = await _seed_backend(db_session, proj.id)
+    await db_session.commit()
+
+    state = {"infra": "pytorch"}
+
+    async def fake_setup(self):
+        return {"infra": state["infra"], "models": []}
+
+    headers = {"Authorization": f"Bearer {token}"}
+    with patch("app.services.ml_client.MLBackendClient.setup", new=fake_setup):
+        # 先 GET 一次填充缓存
+        r1 = await httpx_client_bound.get(
+            f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/capabilities",
+            headers=headers,
+        )
+        assert r1.json()["infra"] == "pytorch"
+        # backend 升级换 infra
+        state["infra"] = "tensorrt"
+        # 不刷新时 GET 仍走 30s 缓存 → 旧值
+        r2 = await httpx_client_bound.get(
+            f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/capabilities",
+            headers=headers,
+        )
+        assert r2.json()["infra"] == "pytorch"
+        # refresh 先 invalidate 缓存再重探 → 新值
+        r3 = await httpx_client_bound.post(
+            f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/capabilities/refresh",
+            headers=headers,
+        )
+    assert r3.status_code == 200, r3.text
+    assert r3.json()["infra"] == "tensorrt"
+
+
+async def test_capabilities_404_on_cross_project_backend(
+    httpx_client_bound, super_admin, db_session
+):
+    user, token = super_admin
+    proj_a = await _seed_project(db_session, user.id)
+    proj_b = await _seed_project(db_session, user.id)
+    backend_b = await _seed_backend(db_session, proj_b.id)
+    await db_session.commit()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/projects/{proj_a.id}/ml-backends/{backend_b.id}/capabilities",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 404

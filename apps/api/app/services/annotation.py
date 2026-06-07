@@ -229,6 +229,17 @@ class AnnotationService:
             await self._validate_class_name(
                 prediction.project_id, prediction_unit, mapped_class
             )
+            # v0.14.9 · 协议 v2 OCR / doc_layout: 把 prediction shape 的富属性 (text /
+            # language / orientation) 透传到 annotation.attributes。tool_binding 的
+            # attribute_schema 未定义对应 key 时仍原样保留 (不静默丢、不硬校验), 让 OCR
+            # 文本随采纳进人工标注。_shape_index 始终保留供前端双键判定。
+            attributes: dict = {}
+            shape_attributes = shape.get("attributes")
+            if isinstance(shape_attributes, dict):
+                attributes.update(shape_attributes)
+            # 权威 _shape_index 放在最后, 防止 backend 在 shape attributes 里同名覆盖
+            # 导致前端按 (predictionId, shapeIndex) 双键命中错位。
+            attributes["_shape_index"] = idx
             annotation = Annotation(
                 id=uuid.uuid4(),
                 task_id=prediction.task_id,
@@ -243,7 +254,7 @@ class AnnotationService:
                 geometry=shape.get("geometry", {}),
                 confidence=shape.get("confidence"),
                 parent_prediction_id=prediction_id,
-                attributes={"_shape_index": idx},
+                attributes=attributes,
             )
             self.db.add(annotation)
 
