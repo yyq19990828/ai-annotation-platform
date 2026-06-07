@@ -1,0 +1,93 @@
+import { renderHook } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import type { MLModelCapability } from "@/api/ml-backends";
+import type { ToolBindings } from "@/api/projects";
+import { useCapabilityValidation } from "./useCapabilityValidation";
+
+function model(partial: Partial<MLModelCapability>): MLModelCapability {
+  return { id: "m1", display_name: "测试模型", ...partial };
+}
+
+describe("useCapabilityValidation", () => {
+  it("returns no warnings when there is no active model", () => {
+    const { result } = renderHook(() =>
+      useCapabilityValidation({
+        activeModel: undefined,
+        enabledToolUnits: new Set(["bbox"]),
+        toolBindings: {},
+      }),
+    );
+    expect(result.current).toEqual([]);
+  });
+
+  it("warns when model geometry has no matching enabled tool_unit", () => {
+    const { result } = renderHook(() =>
+      useCapabilityValidation({
+        // 模型输出 polygon (→ region unit), 但项目只启用了 bbox.
+        activeModel: model({ supported_geometric_outputs: ["polygon"] }),
+        enabledToolUnits: new Set(["bbox"]),
+        toolBindings: {},
+      }),
+    );
+    expect(result.current).toHaveLength(1);
+    expect(result.current[0].key).toBe("geom-polygon");
+  });
+
+  it("does not warn when geometry matches an enabled unit", () => {
+    const { result } = renderHook(() =>
+      useCapabilityValidation({
+        activeModel: model({ supported_geometric_outputs: ["bbox"] }),
+        enabledToolUnits: new Set(["bbox"]),
+        toolBindings: {},
+      }),
+    );
+    expect(result.current).toEqual([]);
+  });
+
+  it("skips geometry check when project has no explicit enabled units (legacy)", () => {
+    const { result } = renderHook(() =>
+      useCapabilityValidation({
+        activeModel: model({ supported_geometric_outputs: ["polygon"] }),
+        enabledToolUnits: null,
+        toolBindings: {},
+      }),
+    );
+    expect(result.current).toEqual([]);
+  });
+
+  it("warns when model outputs text but project has no text attribute", () => {
+    const toolBindings: ToolBindings = {
+      bbox: { enabled: true, attribute_schema: { fields: [{ key: "tag", label: "标签", type: "select" }] } },
+    };
+    const { result } = renderHook(() =>
+      useCapabilityValidation({
+        activeModel: model({
+          task: "ocr",
+          supported_geometric_outputs: ["bbox"],
+          output_attribute_types: ["text"],
+        }),
+        enabledToolUnits: new Set(["bbox"]),
+        toolBindings,
+      }),
+    );
+    expect(result.current.some((w) => w.key === "text-attr")).toBe(true);
+  });
+
+  it("does not warn about text when a text attribute exists", () => {
+    const toolBindings: ToolBindings = {
+      bbox: { enabled: true, attribute_schema: { fields: [{ key: "ocr_text", label: "文本", type: "text" }] } },
+    };
+    const { result } = renderHook(() =>
+      useCapabilityValidation({
+        activeModel: model({
+          task: "ocr",
+          supported_geometric_outputs: ["bbox"],
+          output_attribute_types: ["text"],
+        }),
+        enabledToolUnits: new Set(["bbox"]),
+        toolBindings,
+      }),
+    );
+    expect(result.current.some((w) => w.key === "text-attr")).toBe(false);
+  });
+});

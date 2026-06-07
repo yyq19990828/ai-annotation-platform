@@ -110,6 +110,22 @@ export function getBatchChangeTarget(
   };
 }
 
+// v0.14.9 · 采纳 OCR / doc_layout 候选时携带回新建标注的 attributes。
+// 仅保留候选提供的语义属性 (text/language/orientation 等), 丢弃以 `_` 开头的内部键
+// (如 _shape_index, 由后端 accept 自行写入)。无可携带键时返回 null (上层不发 PATCH)。
+function pickCarryAttributes(
+  attributes: Record<string, unknown> | undefined,
+): Record<string, unknown> | null {
+  if (!attributes) return null;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(attributes)) {
+    if (k.startsWith("_")) continue;
+    if (v === undefined || v === null || v === "") continue;
+    out[k] = v;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 function acceptedPredictionShapeKeys(annotations: AnnotationResponse[] | undefined): Set<string> {
   const set = new Set<string>();
   for (const ann of annotations ?? []) {
@@ -480,11 +496,21 @@ export function useImageAnnotationActions({
         onSuccess: (created) => {
           const ids = created.map((a) => a.id);
           history.push({ kind: "acceptPrediction", predictionId: box.predictionId, createdAnnotationIds: ids });
+          // v0.14.9 · OCR / doc_layout 候选的 attributes (text/language/orientation 等) 后端
+          // accept_prediction 仅写 _shape_index, 不带 OCR 文本; 这里 accept 成功后把候选 attributes
+          // 合并 PATCH 进新建标注 (保留服务端写的 _shape_index), 避免识别文本丢失。
+          const carry = pickCarryAttributes(box.attributes);
+          if (carry && created.length > 0) {
+            for (const ann of created) {
+              const merged = { ...(ann.attributes ?? {}), ...carry };
+              mutations.update.mutate({ annotationId: ann.id, payload: { attributes: merged } });
+            }
+          }
           pushToast({ msg: "已采纳 AI 标注", sub: `${box.cls} · 置信度 ${(box.conf * 100).toFixed(0)}%`, kind: "success" });
         },
       },
     );
-  }, [acceptPredictionMut, history, pushToast]);
+  }, [acceptPredictionMut, history, pushToast, mutations.update]);
 
   // v0.10.8 · I11 · Mask 精修：候选/已存 polygon → mask 编辑 → commit 路径按 kind 分流。
   // v0.10.9 · 扩三种 kind：prediction（AI 预标 polygon 行）/ sam（SAM 交互候选，未 Enter）/ user（已落库 polygon，update 替换 geometry）。

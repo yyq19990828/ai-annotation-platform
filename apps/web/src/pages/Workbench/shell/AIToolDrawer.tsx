@@ -5,9 +5,10 @@
 // 预测结果列表仍留右栏 AIInspectorPanel.
 
 import { Icon } from "@/components/ui/Icon";
-import type { MLBackendCapability } from "@/api/ml-backends";
+import type { MLBackendCapability, MLModelCapability } from "@/api/ml-backends";
 import type { SamPolarity, Tool } from "../state/useWorkbenchState";
 import type { TextOutputMode } from "../state/useInteractiveAI";
+import type { CapabilityWarning } from "../state/useCapabilityValidation";
 import { TOOL_REGISTRY, type ToolId } from "../stage/tools";
 import { SamTextPanel } from "./SamTextPanel";
 import { SamOutputModeTabs } from "./SamOutputModeTabs";
@@ -32,6 +33,47 @@ export interface AIToolDrawerProps {
   // exemplar 工具输出形态 (box/mask/both), 对齐 text-prompt; 会话级状态由 WorkbenchShell 持有.
   exemplarOutputMode?: TextOutputMode;
   onSetExemplarOutputMode?: (mode: TextOutputMode) => void;
+  // v0.14.9 · 能力声明协议 v2 · 多模型选择. models 长度 <= 1 时**不渲染**选择器 (向后兼容).
+  models?: MLModelCapability[];
+  activeModelId?: string;
+  onSetActiveModelId?: (id: string) => void;
+  // v0.14.9 · active model 与项目配置的兼容性警告 (非阻断). 空数组时不渲染。
+  capabilityWarnings?: CapabilityWarning[];
+}
+
+// v0.14.9 · model.task → 中文分组标题. 受控 task 之外的归「其他」。
+const MODEL_TASK_LABELS: Record<string, string> = {
+  detection: "检测",
+  obb: "旋转框检测",
+  segmentation: "分割",
+  keypoint: "关键点",
+  classification: "分类",
+  ocr: "文字识别",
+  doc_layout: "版面分析",
+  tracker: "视频追踪",
+  interactive_seg: "交互式分割",
+};
+
+function modelTaskLabel(task: string | undefined): string {
+  if (!task) return "其他";
+  return MODEL_TASK_LABELS[task] ?? "其他";
+}
+
+// v0.14.9 · 按 task 把 models 分桶, 保持各 task 内的原始顺序; 返回 [task, models[]] 列表。
+function groupModelsByTask(
+  models: MLModelCapability[],
+): Array<[string, MLModelCapability[]]> {
+  const order: string[] = [];
+  const buckets = new Map<string, MLModelCapability[]>();
+  for (const m of models) {
+    const task = m.task ?? "";
+    if (!buckets.has(task)) {
+      buckets.set(task, []);
+      order.push(task);
+    }
+    buckets.get(task)!.push(m);
+  }
+  return order.map((task) => [task, buckets.get(task)!]);
 }
 
 const TOOL_HINT: Record<ToolId, string | null> = {
@@ -72,9 +114,18 @@ export function AIToolDrawer({
   samTextFocusKey,
   exemplarOutputMode,
   onSetExemplarOutputMode,
+  models,
+  activeModelId,
+  onSetActiveModelId,
+  capabilityWarnings,
 }: AIToolDrawerProps) {
   const meta = TOOL_REGISTRY[tool];
   const hint = TOOL_HINT[tool];
+
+  // v0.14.9 · 多模型选择器: 仅 models 长度 > 1 时渲染 (单模型 / 老 backend 完全维持现状)。
+  const modelList = models ?? [];
+  const showModelSelector = modelList.length > 1 && !!onSetActiveModelId;
+  const warnings = capabilityWarnings ?? [];
 
   return (
     <div
@@ -102,6 +153,29 @@ export function AIToolDrawer({
           </option>
         </select>
       </div>
+
+      {/* v0.14.9 · 多模型选择器 (按 task 分组, 仅 models > 1 时渲染)。 */}
+      {showModelSelector && (
+        <div className={styles.field}>
+          <span className={styles.label}>模型</span>
+          <select
+            data-testid="ai-tool-model-select"
+            value={activeModelId ?? ""}
+            onChange={(e) => onSetActiveModelId?.(e.target.value)}
+            className={styles.modelSelect}
+          >
+            {groupModelsByTask(modelList).map(([task, group]) => (
+              <optgroup key={task} label={modelTaskLabel(task)}>
+                {group.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.display_name || m.id}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* 工具特定控件 */}
       {tool === "smart-point" && (
@@ -146,6 +220,18 @@ export function AIToolDrawer({
           projectTypeKey={projectTypeKey}
           focusKey={samTextFocusKey}
         />
+      )}
+
+      {/* v0.14.9 · 兼容性警告 (非阻断): active model 输出与项目配置不匹配时提示。 */}
+      {warnings.length > 0 && (
+        <div className={styles.warnings} data-testid="ai-tool-capability-warnings">
+          {warnings.map((w) => (
+            <div key={w.key} className={styles.warningItem}>
+              <Icon name="warning" size={11} />
+              <span>{w.message}</span>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* 状态指示 */}

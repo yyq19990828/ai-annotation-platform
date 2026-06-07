@@ -43,6 +43,7 @@ import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
 import { useInteractiveAI } from "./useInteractiveAI";
 import { useMLCapabilities } from "./useMLCapabilities";
+import { useCapabilityValidation } from "./useCapabilityValidation";
 import { useAiToolParamPrefs } from "./useAiToolParamPrefs";
 import { deriveDefaults, VARIANT_FIELD_KEYS } from "../components/SchemaForm";
 import { AIToolDrawer } from "../shell/AIToolDrawer";
@@ -829,6 +830,12 @@ export function useWorkbenchShellModel({
     projectId ?? null,
     currentProject?.ml_backend_id ?? null,
   );
+  // v0.14.9 · active model 输出几何 / 文本属性 与项目配置的兼容性警告 (非阻断)。
+  const capabilityWarnings = useCapabilityValidation({
+    activeModel: mlCapabilities.activeModel,
+    enabledToolUnits,
+    toolBindings: currentProject?.tool_bindings,
+  });
   const aiParamPrefs = useAiToolParamPrefs(currentProject?.ml_backend_id ?? null);
   useEffect(() => {
     sam.cancel();
@@ -1656,6 +1663,10 @@ export function useWorkbenchShellModel({
           samTextFocusKey={s.samTextFocusKey}
           exemplarOutputMode={s.exemplarOutputMode}
           onSetExemplarOutputMode={s.setExemplarOutputMode}
+          models={mlCapabilities.models}
+          activeModelId={mlCapabilities.activeModelId}
+          onSetActiveModelId={mlCapabilities.setActiveModelId}
+          capabilityWarnings={capabilityWarnings}
         />
       ) : null,
       reviewMode: mode === "review", videoMode: isVideoTask,
@@ -1872,6 +1883,7 @@ export function useWorkbenchShellModel({
     inspector: {
       open: rightOpen, width: s.rightWidth, onResize: s.setRightWidth, readOnly: isLocked,
       onDetach: detachInspector,
+      capabilityWarnings,
       aiBoxes: modeState.diffMode !== "final" ? aiBoxes : [],
       predictionSourceFilter,
       userBoxes, orphanUserBoxIds: orphanAnnotationIds,
