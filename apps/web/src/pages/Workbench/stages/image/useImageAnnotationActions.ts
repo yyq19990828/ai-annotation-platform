@@ -29,6 +29,10 @@ import {
   type AnnotationMutations,
 } from "../../state/useWorkbenchAnnotationActions";
 import type { useWorkbenchState } from "../../state/useWorkbenchState";
+import {
+  buildPolygonJoinPayload,
+  canJoinPolygonAnnotation,
+} from "../../stage/shared/geometry/polygonOps";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -415,6 +419,70 @@ export function useImageAnnotationActions({
       });
     });
   }, [s, annotationsRef, mutations.delete, history, pushToast]);
+
+  const handleJoinSelectedPolygons = useCallback(() => {
+    if (isLocked) {
+      pushToast({ msg: "任务已锁定", sub: "撤回提交或继续编辑后再操作", kind: "warning" });
+      return;
+    }
+    const targets = s.selectedIds
+      .map((id) => annotationsRef.current.find((ann) => ann.id === id))
+      .filter((ann): ann is AnnotationResponse => !!ann);
+    const joinable = targets.filter(canJoinPolygonAnnotation);
+    if (joinable.length < 2) {
+      pushToast({ msg: "请选择至少 2 个未锁定多边形", kind: "warning" });
+      return;
+    }
+    if (joinable.length !== targets.length) {
+      pushToast({ msg: "仅支持未锁定 polygon / multi_polygon 合并", kind: "warning" });
+      return;
+    }
+    const classNames = new Set(joinable.map((ann) => ann.class_name));
+    if (classNames.size > 1) {
+      pushToast({ msg: "暂不支持跨类别合并", sub: "请先批量改为同一类别", kind: "warning" });
+      return;
+    }
+    const result = buildPolygonJoinPayload(joinable);
+    if (!result) {
+      pushToast({ msg: "多边形合并失败", sub: "请检查几何是否自相交或手动调整后重试", kind: "error" });
+      return;
+    }
+
+    void createAnnotationAsync(result.payload)
+      .then((created) => {
+        const commands: Exclude<Parameters<typeof history.pushBatch>[0][number], { kind: "batch" }>[] = [
+          { kind: "create", annotationId: created.id, payload: result.payload },
+        ];
+        let pending = result.sourceAnnotations.length;
+        let deleted = 0;
+        let failed = 0;
+        const finish = () => {
+          pending--;
+          if (pending > 0) return;
+          history.pushBatch(commands);
+          s.setSelectedId(created.id);
+          pushToast({
+            msg: `已合并 ${deleted}/${result.sourceAnnotations.length} 个多边形`,
+            sub: failed ? `${failed} 项删除失败` : undefined,
+            kind: failed ? "warning" : "success",
+          });
+        };
+        for (const source of result.sourceAnnotations) {
+          const snapshot = annotationsRef.current.find((ann) => ann.id === source.id);
+          mutations.delete.mutate(source.id, {
+            onSuccess: () => {
+              deleted++;
+              if (snapshot) commands.push({ kind: "delete", annotation: snapshot });
+            },
+            onError: () => { failed++; },
+            onSettled: finish,
+          });
+        }
+      })
+      .catch((err) => {
+        pushToast({ msg: "多边形合并失败", sub: String(err), kind: "error" });
+      });
+  }, [annotationsRef, createAnnotationAsync, history, isLocked, mutations.delete, pushToast, s]);
 
   const handleStartBatchChangeClass = useCallback(() => {
     const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
@@ -823,6 +891,7 @@ export function useImageAnnotationActions({
     samPendingGeom,
     samDefaultClass,
     handleBatchDelete,
+    handleJoinSelectedPolygons,
     handleStartBatchChangeClass,
     handleCommitBatchChangeClass,
     handleCancelBatchChange,

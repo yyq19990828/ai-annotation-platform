@@ -4,6 +4,7 @@ import styles from "./ImageSelectionActions.module.css";
 
 interface ImageSelectionActionsProps {
   onChangeClass?: () => void;
+  onJoin?: () => void;
   onDelete?: () => void;
 }
 
@@ -11,8 +12,8 @@ interface ImageSelectionActionsProps {
  * 图片画布右上角的单框编辑工具条（改类 / 删除）。
  * v0.11.28 · 单框选中编辑由贴框浮条迁移到画布右上角，视觉对齐视频的 VideoSelectionActions。
  */
-export function ImageSelectionActions({ onChangeClass, onDelete }: ImageSelectionActionsProps) {
-  if (!onChangeClass && !onDelete) return null;
+export function ImageSelectionActions({ onChangeClass, onJoin, onDelete }: ImageSelectionActionsProps) {
+  if (!onChangeClass && !onJoin && !onDelete) return null;
 
   return (
     <div
@@ -28,6 +29,16 @@ export function ImageSelectionActions({ onChangeClass, onDelete }: ImageSelectio
         onClick={() => onChangeClass?.()}
       >
         <Icon name="tag" size={12} />
+      </Button>
+      <Button
+        size="sm"
+        className={styles.iconButton}
+        title="合并多边形"
+        aria-label="合并多边形"
+        disabled={!onJoin}
+        onClick={() => onJoin?.()}
+      >
+        <Icon name="layers" size={12} />
       </Button>
       <Button
         size="sm"

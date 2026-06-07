@@ -1,5 +1,6 @@
 import type { DropdownItem } from "@/components/ui/DropdownMenu";
 import type { Annotation } from "@/types";
+import { canJoinPolygonAnnotation } from "./shared/geometry/polygonOps";
 
 export const IMAGE_CONTEXT_MENU_DRAG_THRESHOLD_PX = 5;
 
@@ -20,7 +21,9 @@ interface BuildImageContextMenuItemsArgs {
   minZOrder: number;
   maxZOrder: number;
   clipboard: ImageContextMenuClipboardActions | null;
+  selectedAnnotations?: Annotation[];
   onChangeClass?: (id: string) => void;
+  onJoinSelected?: () => void;
   onDelete?: (id: string) => void;
   onPatchFlag?: (
     id: string,
@@ -66,13 +69,28 @@ export function buildImageContextMenuItems({
   minZOrder,
   maxZOrder,
   clipboard,
+  selectedAnnotations = [annotation],
   onChangeClass,
+  onJoinSelected,
   onDelete,
   onPatchFlag,
 }: BuildImageContextMenuItemsArgs): DropdownItem[] {
   const locked = Boolean(annotation.is_locked);
   const hidden = Boolean(annotation.is_hidden);
   const shapeMutationDisabled = readOnly || locked;
+  const joinableSelected = selectedAnnotations.filter((item) =>
+    item.geometry
+      ? canJoinPolygonAnnotation({
+          geometry: item.geometry,
+          is_locked: item.is_locked,
+        })
+      : false,
+  );
+  const joinDisabled = readOnly
+    || !onJoinSelected
+    || joinableSelected.length < 2
+    || new Set(joinableSelected.map((item) => item.cls)).size > 1
+    || !joinableSelected.some((item) => item.id === annotation.id);
 
   const items: DropdownItem[] = [
     {
@@ -97,6 +115,13 @@ export function buildImageContextMenuItems({
       kbd: "H",
       disabled: shapeMutationDisabled || !onPatchFlag,
       onSelect: () => onPatchFlag?.(annotation.id, "is_hidden", !hidden),
+    },
+    {
+      id: "join",
+      label: "合并多边形",
+      icon: "layers",
+      disabled: joinDisabled,
+      onSelect: () => onJoinSelected?.(),
     },
   ];
 

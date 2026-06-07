@@ -141,6 +141,8 @@ interface ImageStageProps {
   /** 多选批量浮条按钮（selectedIds.length > 1 时由 Shell 处理）。 */
   onBatchDelete?: () => void;
   onBatchChangeClass?: () => void;
+  onJoinSelected?: () => void;
+  onApplyAttributeMode?: (id: string) => boolean;
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
   onAcceptPrediction?: (b: AiBox) => void;
   /** B-11 · 驳回 AI 预测 (将 prediction 从画布隐去, 不调后端). */
@@ -241,7 +243,7 @@ export function ImageStage({
   fileUrl, blurhash, tool, activeClass,
   selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
-  onBatchDelete, onBatchChangeClass,
+  onBatchDelete, onBatchChangeClass, onJoinSelected, onApplyAttributeMode,
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass, onPatchShapeFlag, clipboardActions,
   onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
@@ -739,6 +741,12 @@ export function ImageStage({
     return null;
   };
 
+  const handleUserShapeClick = useCallback((id: string, evt?: Konva.KonvaEventObject<MouseEvent>) => {
+    const shift = !!evt?.evt?.shiftKey;
+    if (!shift && onApplyAttributeMode?.(id)) return;
+    onSelectBox(id, { shift });
+  }, [onApplyAttributeMode, onSelectBox]);
+
   const selectedBox = useMemo(() => {
     if (!selectedId) return null;
     return (userBoxes as (Annotation | AiBox)[]).concat(aiBoxes).find((b) => b.id === selectedId) ?? null;
@@ -747,6 +755,11 @@ export function ImageStage({
     () => userBoxes.find((annotation) => annotation.id === contextMenuTargetId) ?? null,
     [contextMenuTargetId, userBoxes],
   );
+  const contextMenuSelectedAnnotations = useMemo(() => {
+    if (!contextMenuTarget) return [];
+    if (!selSet.has(contextMenuTarget.id)) return [contextMenuTarget];
+    return userBoxes.filter((annotation) => selSet.has(annotation.id));
+  }, [contextMenuTarget, selSet, userBoxes]);
   const keypointDraftPending = tool === "keypoint"
     && Boolean(keypointDraft && keypointDraft.nodeCount > 0 && keypointDraft.points.length < keypointDraft.nodeCount);
   const contextMenuItems = useMemo(() => {
@@ -759,14 +772,18 @@ export function ImageStage({
       minZOrder: zOrders.length > 0 ? Math.min(...zOrders, ownZ) : ownZ,
       maxZOrder: zOrders.length > 0 ? Math.max(...zOrders, ownZ) : ownZ,
       clipboard: clipboardActions ?? null,
+      selectedAnnotations: contextMenuSelectedAnnotations,
       onChangeClass: onChangeUserBoxClass,
+      onJoinSelected,
       onDelete: onDeleteUserBox,
       onPatchFlag: onPatchShapeFlag,
     });
   }, [
     clipboardActions,
     contextMenuTarget,
+    contextMenuSelectedAnnotations,
     onChangeUserBoxClass,
+    onJoinSelected,
     onDeleteUserBox,
     onPatchShapeFlag,
     readOnly,
@@ -807,9 +824,9 @@ export function ImageStage({
       return;
     }
     setContextMenuTargetId(target.id);
-    onSelectBox(target.id);
+    if (!selSet.has(target.id)) onSelectBox(target.id);
     contextMenu.openAt(evt.clientX, evt.clientY);
-  }, [closeContextMenu, contextMenu, keypointDraftPending, onSelectBox, readOnly, userBoxes]);
+  }, [closeContextMenu, contextMenu, keypointDraftPending, onSelectBox, readOnly, selSet, userBoxes]);
 
   return (
     <div
@@ -938,7 +955,7 @@ export function ImageStage({
                   faded={false}
                   occluded={!!b.occluded}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
-                  onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                  onClick={(evt) => handleUserShapeClick(b.id, evt)}
                   onRotateStart={isPrimarySingleSelect ? (e) => {
                     const pt = toImg(e.evt.clientX, e.evt.clientY);
                     if (!pt) return;
@@ -977,7 +994,7 @@ export function ImageStage({
                   points={livePoints}
                   editable={isOnlySelected}
                   occluded={!!b.occluded}
-                  onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                  onClick={(evt) => handleUserShapeClick(b.id, evt)}
                   onVertexMouseDown={(vidx, e) => {
                     const cur = (polyOverridePoints(b.id) ?? (b.polyline as Pt[])).slice();
                     if (e.evt.shiftKey) {
@@ -1024,7 +1041,7 @@ export function ImageStage({
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   schema={keypointSchema}
                   editable={isKpEditable}
-                  onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                  onClick={(evt) => handleUserShapeClick(b.id, evt)}
                   onNodeMouseDown={(nidx) => {
                     const cur = (kpOverridePoints(b.id) ?? (b.keypoints ?? [])).slice();
                     setDrag({ kind: "kpNode", id: b.id, nidx, start: cur, cur });
@@ -1067,7 +1084,7 @@ export function ImageStage({
                   viewportBBox={viewportBBox}
                   editable={isOnlySelected}
                   occluded={!!b.occluded}
-                  onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                  onClick={(evt) => handleUserShapeClick(b.id, evt)}
                   onVertexMouseDown={(vidx, e) => {
                     const cur = (polyOverridePoints(b.id) ?? (b.polygon as Pt[])).slice();
                     if (e.evt.shiftKey) {
@@ -1112,7 +1129,7 @@ export function ImageStage({
                 editable={!readOnly && !b.is_locked}
                 occluded={!!b.occluded}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
-                onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                onClick={(evt) => handleUserShapeClick(b.id, evt)}
                 onMoveStart={isPrimarySingleSelect ? (e) => {
                   const pt = toImg(e.evt.clientX, e.evt.clientY);
                   if (!pt) return;
@@ -1487,6 +1504,7 @@ export function ImageStage({
               : undefined}
             onBatchDelete={selSet.size > 1 ? onBatchDelete : undefined}
             onBatchChangeClass={selSet.size > 1 ? onBatchChangeClass : undefined}
+            onBatchJoin={selSet.size > 1 ? onJoinSelected : undefined}
             onClearSelection={selSet.size > 1 ? () => onSelectBox(null) : undefined}
           />
         )

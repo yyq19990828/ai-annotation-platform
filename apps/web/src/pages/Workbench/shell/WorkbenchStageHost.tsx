@@ -140,6 +140,8 @@ interface WorkbenchStageHostImageProps {
   onCommitKeypointGeometry?: (id: string, before: import("@/types").Keypoint[], after: import("@/types").Keypoint[]) => void;
   onBatchDelete: () => void;
   onBatchChangeClass: () => void;
+  onJoinSelected: () => void;
+  onApplyAttributeMode?: (id: string) => boolean;
   onStageGeometry: (g: StageGeometry) => void;
 }
 
@@ -284,6 +286,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onCommitKeypointGeometry,
       onBatchDelete,
       onBatchChangeClass,
+      onJoinSelected,
+      onApplyAttributeMode,
       onStageGeometry,
     } = imageProps ?? ({} as WorkbenchStageHostImageProps);
     const {
@@ -423,6 +427,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onChangeUserBoxClass={onChangeUserBoxClass}
             onBatchDelete={onBatchDelete}
             onBatchChangeClass={onBatchChangeClass}
+            onJoinSelected={onJoinSelected}
+            onApplyAttributeMode={onApplyAttributeMode}
             onStageGeometry={onStageGeometry}
             polygonDraft={polygonDraft}
             keypointDraft={keypointDraft}

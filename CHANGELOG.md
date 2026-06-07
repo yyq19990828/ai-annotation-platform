@@ -28,6 +28,25 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.14.10] - 2026-06-07
+
+画布精细交互 Part A。计划见 `docs/plans/2026-06-07-v0.14.10-canvas-precision-tools-and-attribute-mode.md`。本次只覆盖 Workbench canvas precision 与属性补录模式；模型市场重构由独立分支处理。
+
+### Added
+
+- **Snap 纯几何助手**:新增 `stage/shared/geometry/snap.ts`,覆盖点候选、线段投影候选与 polygon / multi_polygon snap index 构建,为后续绘制/顶点拖拽接入提供可测基础。
+- **Polygon Join**:图片工作台多选同类别、未锁定 polygon / multi_polygon 后,可从浮条或右键菜单合并为一个新的 polygon / multi_polygon。合并复用 `polygon-clipping.union`,以 create + delete 批量历史命令记录,可一次撤销。
+- **属性模式**:图片工作台顶部新增属性模式栏,支持当前属性 schema 中 boolean / select / multiselect 字段。开启后点击 bbox、旋转框或 polygon / multi_polygon 会把当前字段值写入该标注属性并入 history。
+
+### Deferred
+
+- Slice 切割工具暂缓。当前 polygon 编辑器以单环编辑为主,可靠切割需要更多拓扑处理与失败回滚设计。
+
+### Docs / Tests
+
+- 更新 Workbench polygon 与总览文档,补充 Join 和属性模式说明。
+- 新增 `snap`、`polygonOps`、`attributeMode` 纯函数单测,并补充右键菜单 Join 可用性测试。
+
 ## [0.14.9] - 2026-06-07
 
 ML Backend 能力声明协议 v2(多模型目录 + infra)地基 + OCR / Doc Layout 首发模型族。计划见 `docs/plans/2026-06-07-v0.14.9-model-capability-catalog-and-ocr-doclayout.md`。本版把能力建模从单模型快照升级到 model 粒度,并在协议 v2 之下落地 OCR / Doc Layout 输出约定;`/predict` 请求/响应 schema 不变,不新增 prediction 表。
