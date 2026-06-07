@@ -48,8 +48,9 @@ ML Backend 能力声明协议 v2(多模型目录 + infra)地基 + OCR / Doc Layo
 
 ### Docs
 
-- 协议文档 `docs-site/dev/reference/ml-backend-protocol.md` 新增 §4.1「能力声明协议 v2」(顶层结构、model 条目、受控词表、向后兼容规则、YOLO / ONNX 范例、OCR / doc_layout 约定、capabilities 端点)。
+- 协议文档 `docs-site/dev/reference/ml-backend-protocol.md` 新增 §4.1「能力声明协议 v2」(顶层结构、model 条目、受控词表、向后兼容规则、YOLO / ONNX 范例、OCR / doc_layout 约定、capabilities 端点)，并在 §4.1.10 指向 v2 可跑参考实现 `docs-site/dev/examples/mock-v2-backend/`。
 - 新增 ADR-0036「ML Backend 能力声明协议 v2(多模型目录 + infra)」。
+- 补全能力协议 v2 下游消费面文档:API guide `ml-backend.md` 增加 capabilities 端点说明;超管手册 `model-market.md` 增加「能力目录(多模型)」面板;项目手册 `ai-preannotate.md` 增加「OCR / 文档版面预标」入口;工作台 `sam-tool.md` 增加「多模型选择与兼容性提示」。
 
 ## [0.14.8] - 2026-06-07
 

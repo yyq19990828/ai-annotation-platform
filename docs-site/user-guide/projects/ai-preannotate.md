@@ -55,6 +55,19 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
 
 如果 backend 上报 `supported_variants`，页面会显示 SAM / DINO 变体选择器，选项带显存估算、速度/精度档位和推荐标识。触发预标时，这些值会并入请求 `params` 并透传给 ML Backend。
 
+## OCR / 文档版面预标
+
+当选中的 backend 在[能力声明协议 v2](../../dev/reference/ml-backend-protocol) 中暴露 `ocr` 或 `doc_layout` 模型条目时（按能力目录派生），面板顶部出现「任务类型」选择器，三选一：
+
+- **文本预标**（默认）：走原有的纯文本 prompt 批量预标流程。
+- **OCR 文字识别** / **文档版面**：走对应模型条目，请求带 `model_id` + `task_type` 透传给 backend。
+
+选择 OCR 或文档版面后：
+
+- **隐藏文本 prompt 控件**：这两类任务不需要文本 prompt，参数面板改用所选 model 条目自带的 params schema（不再用 `/setup.params`）。
+- **识别文本去向**：识别出的文本写入 annotation 属性。**项目需先在「类别与属性」配置 text 属性，否则文本不会入库**——面板会给出静态提示。
+- 切换 backend 或刷新能力目录后，若当前任务类型不再可用，会自动回落到「文本预标」。
+
 ## Alias chips
 
 项目类别配置英文 alias 后，prompt 输入框附近会出现可点击 chip。点击 chip 会把 alias 填入 prompt；高频 alias 会排在前面，并显示历史预测次数。alias 保存时会自动小写化、折叠空格和逗号。

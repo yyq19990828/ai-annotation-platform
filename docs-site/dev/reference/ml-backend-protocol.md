@@ -499,6 +499,10 @@ POST /projects/{pid}/ml-backends/{bid}/capabilities/refresh  # 强制重探 /set
 
 > Phase 2 起若放开 `MAX_ML_BACKENDS_PER_PROJECT > 1` 或需要跨 backend 模型检索，再考虑独立表 `ml_model_capabilities` 与全局聚合端点 `GET /ml-backends/capabilities`。
 
+### 4.1.10 可跑参考实现
+
+协议 v2 的端到端参考实现见 [`docs-site/dev/examples/mock-v2-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/docs-site/dev/examples/mock-v2-backend)：`/setup` 暴露 YOLO 风格多任务 `models[]`（detection / segmentation / keypoint / obb / classification）+ PaddleOCR / DocLayout 条目，每条带 `task` / `infra` / 几何 / 多轴 `variants`；`/predict` 按 `context.type`（task_type）返回固定 demo 结果，OCR 条目带 `attributes.text`。无真实推理，可直接 `uvicorn main:app --port 9100` 起来做协议 v2 冒烟与接入验证。（最小 v1 参考实现仍见下文 echo-ml-backend。）
+
 ---
 
 ## 5. `GET /versions`（可选）

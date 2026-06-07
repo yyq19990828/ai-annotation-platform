@@ -259,6 +259,8 @@
 | POST | `/{backend_id}/unload` |
 | POST | `/{backend_id}/reload` |
 | GET | `/{backend_id}/setup` |
+| GET | `/{backend_id}/capabilities` |
+| POST | `/{backend_id}/capabilities/refresh` |
 | POST | `/{backend_id}/health` |
 | POST | `/{backend_id}/predict-test` |
 | POST | `/{backend_id}/interactive-annotating` |
@@ -449,4 +451,4 @@
 
 ---
 
-_共 40 模块 / 257 路由_
+_共 40 模块 / 259 路由_

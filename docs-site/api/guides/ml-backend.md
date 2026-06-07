@@ -77,6 +77,23 @@ ML Backend 必须实现：
 
 参考实现：`docs-site/dev/examples/echo-ml-backend/`。
 
+## 能力目录（capabilities）
+
+能力声明协议 v2（v0.14.9）下，平台把 backend `/setup` 派生成 model 粒度的能力目录，供模型市场与工作台多模型选择器消费：
+
+```http
+GET  /api/v1/projects/:id/ml-backends/:bid/capabilities
+POST /api/v1/projects/:id/ml-backends/:bid/capabilities/refresh
+```
+
+- 服务端探 backend `/setup`（复用 30s setup 缓存链路）后调 `extract_capabilities` 派生快照，返回 `models[]` / `infra` / `modalities` 与扁平并集字段（所有 model 的 prompts / geometry 去重合并）。
+- 老 backend（协议 v1，无 `models[]`）由平台合成隐式单 model（`id="default"`），返回结构一致，长度为 1。
+- `refresh` 对该 backend 强制重探并刷新缓存。
+- 权限同 `/setup`：项目管理员、超级管理员、审核员、标注员均可读。backend `/setup` 不可达时返回 502。
+- 能力快照同时落库到 `ml_backends.health_meta["capabilities"]`（健康检查时写入），无独立迁移。
+
+字段语义与受控词表见 [ML Backend 协议 §4.1](../../dev/reference/ml-backend-protocol)。
+
 ## 审计
 
 `ml_backend.created` / `updated` / `deleted` 全部进 audit_logs。

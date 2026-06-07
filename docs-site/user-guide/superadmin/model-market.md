@@ -72,6 +72,20 @@ backend 的变体面板拆成两组：
 >
 > 监控内容不变：计数卡（queued / running / completed / failed / cancelled）+ 按状态 / model_key / 项目过滤的 cursor 分页列表（failed 行展开 `error_message`），数据来自 `GET /video-tracker-jobs`。
 
+## 能力目录（多模型）
+
+v0.14.9 起页面新增「能力目录」面板，是[能力声明协议 v2](../../dev/reference/ml-backend-protocol) 的消费视图。与「项目级 ML Backend」表格按 backend 罗列不同，这里**按 model 条目展开**：枚举所有项目已注册的 backend，对每个 backend 拉 `/capabilities` 取 `models[]`，每个 model 渲染一张卡片。
+
+卡片信息：
+
+- **task / infra / modality 徽章**：受控 task（检测 / 旋转框 / 分割 / 关键点 / 分类 / 文字识别 / 版面分析 / 追踪 / 交互分割）、infra（pytorch / onnx / paddle / tensorrt / openvino / 其它 / 未知）、modality（图像 / 视频 / 文本 / 点云）。
+- **输出几何 / 输出属性 / variants / resource**：来自 model 条目的 `supported_geometric_outputs` / `output_attribute_types` / `supported_variants` / `resource_profile`。
+
+顶部工具栏按 **task / model_family / infra / modality** 提供多选 chips 过滤（空集 = 不过滤该轴）。「刷新」按钮对每个 backend 调用 `capabilities/refresh` 重探 `/setup` 并刷新缓存。
+
+- 老 backend（协议 v1）由平台合成单 model 条目，长度为 1，正常显示。
+- backend 离线或上次探测失败时，目录可能展示缓存旧值，卡片会标注 stale。
+
 ## 新建 / 编辑 Backend
 
 「项目级 ML Backend」列表会显示两类项目：已注册 backend 的项目，以及已启用 AI 但还没有 backend 的项目。后者会显示「AI 已启用 · 未注册 backend」，可直接点「注册第一个 backend」把第一条 backend 记录注册到该项目；注册表单与 [ML Backend 注册](./ml-backend-registry) 等价。
