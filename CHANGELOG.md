@@ -28,6 +28,28 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.14.6] - 2026-06-07
+
+6 相机实测体验 + 点云上色性能 + `point_mask_3d` 分割工具深化补丁。计划见 `docs/plans/2026-06-07-v0.14.6-six-camera-experience-and-performance.md`。本版为纯前端切片,不新增后端表/列/端点。
+
+### Added
+
+- **相机面板自由拖动**:悬浮相机面板保留默认物理朝向锚点,标题条可拖动临时避让;拖动位置按 camera role 写入 localStorage,双击标题条或点「归位」可回到默认锚点。
+- **point_mask 多模式选点**:分割工具新增矩形 / 套索 / 多边形三种选点模式。矩形保持默认;套索拖动闭合;多边形逐点点击后双击或 Enter 闭合。
+- **point_mask 增删编辑**:选中已有 `point_mask_3d` 标注后使用分割工具再次圈选可加点,按 Alt 圈选可减点;点集仍写回原有 `point_indices`。
+- **point_mask 类别编辑面板**:单选分割标注时可在 3D 工作台右上面板改类、查看点数、删除分割。
+
+### Changed
+
+- **相机面板窄屏默认折叠**:在中等窄屏下相机面板默认收为小标签,用户手动展开 / 收起状态优先,不会被自动折叠覆盖。
+- **相机同锚点稳定堆叠**:相机组内按 role 稳定排序,同一锚点超过 2 个时尾部默认折叠为小标签,避免异常外参或命名退化时挤满视图。
+- **相机上色 worker 化**:`colorizePoints` 与上色前深度栅格构建移到 Vite module worker 中执行;worker 不可用、构造失败或超时时自动回退主线程同步实现,输出仍来自同一份纯函数。
+
+### Docs / Tests
+
+- 新增 `pointInPolygon` 与 `pointcloudCompute` 单测,覆盖多边形选点边界和 worker 缺失 / 失败兜底。
+- 更新 `docs-site/user-guide/workbench/pointcloud-view.md`、`docs-site/user-guide/workbench/3d-box.md` 与工作台总览,同步相机拖动、上色 worker 化和分割编辑行为。
+
 ## [0.14.5] - 2026-06-07
 
 3D 标注属性 + 标注效率补丁:补齐点云 3D 框属性编辑、多选批量操作、撤销/重做与复制/粘贴能力。计划见 `docs/plans/2026-06-07-v0.14.5-3d-annotation-attributes-and-efficiency.md`。本版为纯前端切片,不新增后端表/列/端点。

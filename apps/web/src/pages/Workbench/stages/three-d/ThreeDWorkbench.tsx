@@ -32,6 +32,7 @@ import { usePointCloudManifest } from "./usePointCloudManifest";
 import {
   PointCloudScene,
   type PointCloudStats,
+  type PointMaskSelection,
   type SceneBox,
   type ReferenceBox,
 } from "./PointCloudScene";
@@ -43,9 +44,10 @@ import type { TriSelected } from "./TriOrthoView";
 import type { Psr } from "./geometry/triview";
 import { psrToCorners } from "./geometry/box3d";
 import { cameraAnchor, type Anchor } from "./geometry/cameraAnchor";
-import { colorizePoints, type CameraSample } from "./geometry/colorize";
-import { buildDepthRaster } from "./geometry/depthmap";
+import type { CameraSample } from "./geometry/colorize";
+import { colorizePointsAsync } from "./geometry/pointcloudCompute";
 import { projectPoints } from "./geometry/projection";
+import type { ScreenPoint } from "./geometry/pointInPolygon";
 import {
   fitSize,
   fitBottom,
@@ -97,8 +99,12 @@ interface ThreeDWorkbenchProps {
 const DEFAULT_BOX_SIZE: [number, number, number] = [4.0, 1.8, 1.6];
 // v0.14.1 · 邻帧叠加 K 值持久化键(全局, 切 task 不重置)。
 const CROSS_FRAME_OVERLAY_K_KEY = "workbench.crossFrameOverlayK";
+const POINT_MASK_MODE_KEY = "workbench.pointMaskSelectMode";
+const CAMERA_AUTO_COLLAPSE_WIDTH = 1366;
+const CAMERA_STACK_VISIBLE = 2;
 const TRI_FLOAT_DEFAULT_W = 240;
 const TRI_FLOAT_DEFAULT_H = 440;
+type PointMaskSelectMode = "rect" | "lasso" | "polygon";
 // v0.13.9 · 框选预览矩形位置/尺寸经 CSS custom property 注入(逐帧动态值)。
 type BoxSelectRectVars = CSSProperties & {
   "--rect-l": string;
@@ -106,6 +112,20 @@ type BoxSelectRectVars = CSSProperties & {
   "--rect-w": string;
   "--rect-h": string;
 };
+
+function readPointMaskMode(): PointMaskSelectMode {
+  try {
+    const raw = localStorage.getItem(POINT_MASK_MODE_KEY);
+    if (raw === "rect" || raw === "lasso" || raw === "polygon") return raw;
+  } catch {
+    /* ignore */
+  }
+  return "rect";
+}
+
+function sortedIndices(indices: Iterable<number>): number[] {
+  return [...indices].sort((a, b) => a - b);
+}
 
 function resolveTriViewFloatRect(
   state: TriViewFloatState,
@@ -293,6 +313,13 @@ export function ThreeDWorkbench({
   const [depthOn, setDepthOn] = useState(false);
   // v0.13.7 · 放大查看的相机 role(L3);null = 无放大。点⛶开,ESC/遮罩/关闭钮收。
   const [enlargedRole, setEnlargedRole] = useState<string | null>(null);
+  const [autoCollapseCameras, setAutoCollapseCameras] = useState(false);
+  const [pointMaskSelectMode, setPointMaskSelectMode] = useState<PointMaskSelectMode>(() =>
+    readPointMaskMode(),
+  );
+  const [pointMaskPolygonPoints, setPointMaskPolygonPoints] = useState<ScreenPoint[]>([]);
+  const [pointMaskCursor, setPointMaskCursor] = useState<ScreenPoint | null>(null);
+  const finishPointMaskPolygonRef = useRef<(subtract: boolean) => void>(() => undefined);
   // 选中态来自壳层(selectedId / onSelectBox props),与标注列表 / 右栏面板共享同一份。
 
   const { data: annotations } = useAnnotations(taskId ?? undefined);
@@ -344,6 +371,8 @@ export function ThreeDWorkbench({
   const canPlacePointMask = !readOnly && pointMaskClasses.length > 0;
   const placing = threeDTool === "box" && canPlaceBox;
   const pointMasking = threeDTool === "point-mask" && canPlacePointMask;
+  const pointMaskPolygonMode = pointMasking && pointMaskSelectMode === "polygon";
+  const pointMaskDragMode = pointMasking && pointMaskSelectMode !== "polygon";
   const drawingSelection = placing || pointMasking;
   const boxPlaceClass =
     activeClass && boxClasses.includes(activeClass) ? activeClass : (boxClasses[0] ?? null);
@@ -422,6 +451,38 @@ export function ThreeDWorkbench({
       window.removeEventListener("resize", syncBounds);
     };
   }, []);
+
+  useLayoutEffect(() => {
+    const sync = () => {
+      const width = viewportWrapRef.current?.getBoundingClientRect().width ?? window.innerWidth;
+      setAutoCollapseCameras(width < CAMERA_AUTO_COLLAPSE_WIDTH);
+    };
+    sync();
+    window.addEventListener("resize", sync);
+    if (typeof ResizeObserver === "undefined" || !viewportWrapRef.current) {
+      return () => window.removeEventListener("resize", sync);
+    }
+    const observer = new ResizeObserver(sync);
+    observer.observe(viewportWrapRef.current);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", sync);
+    };
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(POINT_MASK_MODE_KEY, pointMaskSelectMode);
+    } catch {
+      /* ignore */
+    }
+  }, [pointMaskSelectMode]);
+
+  useEffect(() => {
+    if (pointMasking) return;
+    setPointMaskPolygonPoints([]);
+    setPointMaskCursor(null);
+  }, [pointMasking]);
 
   // 选中框的 PSR 编辑表单(字符串值,允许清空 / 中间态如 "-" / "1.";解析有效时才提交)。
   // PATCH 防抖 250ms;yaw 以度展示。
@@ -508,6 +569,7 @@ export function ThreeDWorkbench({
   // 可编辑 = 任务级非只读 且 该框未锁定。
   const selectedEditable = !readOnly && !selectedLocked;
   const selectedPsrEditable = selectedEditable && !multiBoxSelected;
+  const selectedPointMaskEditable = selectedEditable && !!selectedPointMask && !multiBoxSelected;
 
   // 实例化 / 销毁 Scene(随容器挂载一次)。
   useEffect(() => {
@@ -642,21 +704,34 @@ export function ThreeDWorkbench({
 
   // 进入放置模式时清选中,避免 gizmo 挡在点地面的路上。
   useEffect(() => {
-    if (drawingSelection) onSelectBox(null);
-  }, [drawingSelection, onSelectBox]);
+    if (placing || (pointMasking && selectedAnn?.geometry?.type !== "point_mask_3d")) {
+      onSelectBox(null);
+    }
+  }, [placing, pointMasking, selectedAnn?.geometry, onSelectBox]);
 
   // B 进放置 / V / Esc 回选择(焦点在输入框时不拦截;无可用类别时 B 无效)。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
-      if (e.key === "Escape" || e.key === "v" || e.key === "V") onSetThreeDTool("select");
-      else if ((e.key === "b" || e.key === "B") && canPlaceBox) onSetThreeDTool("box");
+      if (e.key === "Enter" && pointMaskPolygonMode) {
+        e.preventDefault();
+        finishPointMaskPolygonRef.current(e.altKey);
+      } else if (e.key === "Escape" || e.key === "v" || e.key === "V") {
+        setPointMaskPolygonPoints([]);
+        setPointMaskCursor(null);
+        onSetThreeDTool("select");
+      } else if ((e.key === "b" || e.key === "B") && canPlaceBox) onSetThreeDTool("box");
       else if ((e.key === "p" || e.key === "P") && canPlacePointMask) onSetThreeDTool("point-mask");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canPlaceBox, canPlacePointMask, onSetThreeDTool]);
+  }, [
+    canPlaceBox,
+    canPlacePointMask,
+    onSetThreeDTool,
+    pointMaskPolygonMode,
+  ]);
 
   // 选中目标切换时用其 PSR 初始化表单(编辑期间不被服务端回写覆盖,故仅依赖 selectedId)。
   useEffect(() => {
@@ -766,6 +841,14 @@ export function ThreeDWorkbench({
   const handleChangeClass = useCallback(
     (cls: string) => {
       if (readOnly || !cls) return;
+      if (selectedPointMask && selectedId && selectedAnn && !selectedAnn.is_locked) {
+        updateAnnotationWithHistory(
+          selectedId,
+          { class_name: selectedAnn.class_name },
+          { class_name: cls },
+        );
+        return;
+      }
       const targets = editableSelectedBoxAnnotations();
       const commands = targets
         .filter((ann) => ann.class_name !== cls)
@@ -780,7 +863,16 @@ export function ThreeDWorkbench({
         });
       history.pushBatch(commands);
     },
-    [readOnly, editableSelectedBoxAnnotations, updateAnnotation, history],
+    [
+      readOnly,
+      selectedPointMask,
+      selectedId,
+      selectedAnn,
+      updateAnnotationWithHistory,
+      editableSelectedBoxAnnotations,
+      updateAnnotation,
+      history,
+    ],
   );
 
   const handleChangeAttributes = useCallback(
@@ -957,12 +1049,31 @@ export function ThreeDWorkbench({
     [boxPlaceClass, axisConvention, createAnnotation, history, onSelectBox, onSetThreeDTool],
   );
 
-  const handlePointMaskSelect = useCallback(
-    (a: { x: number; y: number }, b: { x: number; y: number }) => {
-      const scene = sceneRef.current;
-      if (!scene || !pointMaskPlaceClass) return;
-      const selected = scene.selectPointMaskInScreenRect(a.x, a.y, b.x, b.y);
+  const applyPointMaskSelection = useCallback(
+    (selected: PointMaskSelection | null, subtract: boolean) => {
       if (!selected) return;
+      const scene = sceneRef.current;
+      if (selectedPointMaskEditable && selectedId && selectedPointMask) {
+        const next = new Set(selectedPointMask.point_indices);
+        if (subtract) {
+          for (const index of selected.pointIndices) next.delete(index);
+        } else {
+          for (const index of selected.pointIndices) next.add(index);
+        }
+        const nextIndices = sortedIndices(next);
+        const geometry: PointMaskGeometry = {
+          ...selectedPointMask,
+          point_indices: nextIndices,
+        };
+        scene?.highlightPointMask(nextIndices);
+        updateAnnotationWithHistory(
+          selectedId,
+          { geometry: selectedPointMask },
+          { geometry },
+        );
+        return;
+      }
+      if (!pointMaskPlaceClass) return;
       const geometry: PointMaskGeometry = {
         type: "point_mask_3d",
         point_indices: selected.pointIndices,
@@ -981,8 +1092,50 @@ export function ThreeDWorkbench({
       );
       onSetThreeDTool("select");
     },
-    [pointMaskPlaceClass, axisConvention, createAnnotation, onSelectBox, onSetThreeDTool],
+    [
+      selectedPointMaskEditable,
+      selectedId,
+      selectedPointMask,
+      updateAnnotationWithHistory,
+      pointMaskPlaceClass,
+      axisConvention,
+      createAnnotation,
+      onSelectBox,
+      onSetThreeDTool,
+    ],
   );
+
+  const handlePointMaskRectSelect = useCallback(
+    (a: ScreenPoint, b: ScreenPoint, subtract: boolean) => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+      applyPointMaskSelection(
+        scene.selectPointMaskInScreenRect(a.x, a.y, b.x, b.y),
+        subtract,
+      );
+    },
+    [applyPointMaskSelection],
+  );
+
+  const handlePointMaskPolygonSelect = useCallback(
+    (polygon: readonly ScreenPoint[], subtract: boolean) => {
+      const scene = sceneRef.current;
+      if (!scene || polygon.length < 3) return;
+      applyPointMaskSelection(scene.selectPointMaskInScreenPolygon(polygon), subtract);
+    },
+    [applyPointMaskSelection],
+  );
+
+  const finishPointMaskPolygon = useCallback(
+    (subtract: boolean) => {
+      if (pointMaskPolygonPoints.length < 3) return;
+      handlePointMaskPolygonSelect(pointMaskPolygonPoints, subtract);
+      setPointMaskPolygonPoints([]);
+      setPointMaskCursor(null);
+    },
+    [handlePointMaskPolygonSelect, pointMaskPolygonPoints],
+  );
+  finishPointMaskPolygonRef.current = finishPointMaskPolygon;
 
   const createPastedBox = useCallback(
     (clip: ClipboardBox3D) => {
@@ -1052,6 +1205,7 @@ export function ThreeDWorkbench({
   const DRAG_CLICK_TOL = 4; // px
   // v0.13.9 · 框选拖拽起点(client px)与屏上预览矩形(相对 viewportWrap px)。
   const boxSelectStartRef = useRef<{ x: number; y: number } | null>(null);
+  const lassoPointsRef = useRef<ScreenPoint[]>([]);
   const [isBoxSelecting, setIsBoxSelecting] = useState(false);
   const [previewRect, setPreviewRect] = useState<{
     l: number;
@@ -1059,13 +1213,15 @@ export function ThreeDWorkbench({
     w: number;
     h: number;
   } | null>(null);
+  const [previewPath, setPreviewPath] = useState<ScreenPoint[]>([]);
 
   const handleViewportMouseDown = (e: React.MouseEvent) => {
     pointerDownRef.current = { x: e.clientX, y: e.clientY };
-    if (drawingSelection) {
+    if (placing || pointMaskDragMode) {
       // 框选: 禁 orbit, 记起点; 实际 move/up 走 window 监听(见下方 effect), 拖出视口也能收尾。
       sceneRef.current?.setBoxSelecting(true);
       boxSelectStartRef.current = { x: e.clientX, y: e.clientY };
+      lassoPointsRef.current = pointMaskSelectMode === "lasso" ? [{ x: e.clientX, y: e.clientY }] : [];
       setIsBoxSelecting(true);
     }
   };
@@ -1078,6 +1234,15 @@ export function ThreeDWorkbench({
       const wrap = viewportRef.current;
       if (!start || !wrap) return;
       const r = wrap.getBoundingClientRect();
+      if (pointMasking && pointMaskSelectMode === "lasso") {
+        const points = lassoPointsRef.current;
+        const last = points[points.length - 1] ?? start;
+        if (Math.hypot(e.clientX - last.x, e.clientY - last.y) >= 3) {
+          points.push({ x: e.clientX, y: e.clientY });
+          setPreviewPath(points.map((p) => ({ x: p.x - r.left, y: p.y - r.top })));
+        }
+        return;
+      }
       setPreviewRect({
         l: Math.min(start.x, e.clientX) - r.left,
         t: Math.min(start.y, e.clientY) - r.top,
@@ -1091,14 +1256,19 @@ export function ThreeDWorkbench({
       sceneRef.current?.setBoxSelecting(false);
       setIsBoxSelecting(false);
       setPreviewRect(null);
+      setPreviewPath([]);
       if (!start) return;
       const dist = Math.hypot(e.clientX - start.x, e.clientY - start.y);
       if (dist <= DRAG_CLICK_TOL) {
         if (placing) handlePlace(e.clientX, e.clientY); // 退化为点击放置
       } else if (placing) {
         handleBoxSelect(start, { x: e.clientX, y: e.clientY });
+      } else if (pointMasking && pointMaskSelectMode === "lasso") {
+        const points = lassoPointsRef.current;
+        lassoPointsRef.current = [];
+        handlePointMaskPolygonSelect(points, e.altKey);
       } else if (pointMasking) {
-        handlePointMaskSelect(start, { x: e.clientX, y: e.clientY });
+        handlePointMaskRectSelect(start, { x: e.clientX, y: e.clientY }, e.altKey);
       }
     };
     // v0.13.12 · 拖拽期取消: Escape / 右键 → 丢弃这一笔(清起点+预览+scene 状态),
@@ -1108,6 +1278,8 @@ export function ThreeDWorkbench({
       sceneRef.current?.setBoxSelecting(false);
       setIsBoxSelecting(false);
       setPreviewRect(null);
+      setPreviewPath([]);
+      lassoPointsRef.current = [];
     };
     const onCancelKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") cancel();
@@ -1126,9 +1298,38 @@ export function ThreeDWorkbench({
       window.removeEventListener("keydown", onCancelKey);
       window.removeEventListener("contextmenu", onContextMenu);
     };
-  }, [isBoxSelecting, placing, pointMasking, handlePlace, handleBoxSelect, handlePointMaskSelect]);
+  }, [
+    isBoxSelecting,
+    placing,
+    pointMasking,
+    pointMaskSelectMode,
+    handlePlace,
+    handleBoxSelect,
+    handlePointMaskRectSelect,
+    handlePointMaskPolygonSelect,
+  ]);
+
+  const handleViewportMouseMove = (e: React.MouseEvent) => {
+    if (!pointMaskPolygonMode || pointMaskPolygonPoints.length === 0) return;
+    const r = viewportRef.current?.getBoundingClientRect();
+    if (!r) return;
+    setPointMaskCursor({ x: e.clientX - r.left, y: e.clientY - r.top });
+  };
+
+  const handleViewportDoubleClick = (e: React.MouseEvent) => {
+    if (!pointMaskPolygonMode) return;
+    e.preventDefault();
+    finishPointMaskPolygon(e.altKey);
+  };
 
   const handleViewportClick = (e: React.MouseEvent) => {
+    if (pointMaskPolygonMode) {
+      const down = pointerDownRef.current;
+      pointerDownRef.current = null;
+      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_CLICK_TOL) return;
+      setPointMaskPolygonPoints((prev) => [...prev, { x: e.clientX, y: e.clientY }]);
+      return;
+    }
     // 拖拽 gizmo 结束的 click 不应改选中。
     if (sceneRef.current?.shouldIgnoreClick()) return;
     // 放置/框选已全程由 mousedown→window mouseup 接管, click 不再处理放置。
@@ -1184,7 +1385,10 @@ export function ThreeDWorkbench({
       arr.push(cam);
       groups.set(anchor, arr);
     }
-    return [...groups.entries()];
+    return [...groups.entries()].map(([anchor, cams]) => [
+      anchor,
+      [...cams].sort((a, b) => (a.role || a.name).localeCompare(b.role || b.name)),
+    ] as const);
   }, [cameras]);
   const enlargedIndex = useMemo(
     () => cameras.findIndex((c) => c.role === enlargedRole),
@@ -1260,16 +1464,10 @@ export function ThreeDWorkbench({
       ).filter((s): s is CameraSample => s !== null);
       if (cancelled) return;
       if (samples.length > 0) {
-        // v0.13.8 · 上色前为每个相机建一次深度栅格,colorize 内做 z-test 剔除被前景遮挡的背景点,
-        // 避免 v0.13.6 「背景点取到前景像素」 的串色感。容差固定 OCCLUSION_TOL_M=0.10m(经验值)。
-        const rasters = samples.map((s) =>
-          buildDepthRaster(positions, s.calib, s.width, s.height),
-        );
-        scene.setPointColors(
-          colorizePoints(positions, scene.getBaseColors(), samples, rasters),
-        );
+        const colors = await colorizePointsAsync(positions, scene.getBaseColors(), samples);
+        if (!cancelled) scene.setPointColors(colors);
       }
-      setColorizing(false);
+      if (!cancelled) setColorizing(false);
     })();
     return () => {
       cancelled = true;
@@ -1448,7 +1646,9 @@ export function ThreeDWorkbench({
           className={drawingSelection ? `${styles.viewport} ${styles.placing}` : styles.viewport}
           data-testid="pc-viewport"
           onMouseDown={handleViewportMouseDown}
+          onMouseMove={handleViewportMouseMove}
           onClick={handleViewportClick}
+          onDoubleClick={handleViewportDoubleClick}
         />
 
         {/* v0.13.9 · 框选预览矩形(地面 footprint), 仅拖拽期出现, 不拦事件。 */}
@@ -1466,6 +1666,24 @@ export function ThreeDWorkbench({
             }
           />
         )}
+        {(previewPath.length > 0 || pointMaskPolygonPoints.length > 0) && (() => {
+          const r = viewportRef.current?.getBoundingClientRect();
+          const draft = r
+            ? pointMaskPolygonPoints.map((p) => ({ x: p.x - r.left, y: p.y - r.top }))
+            : [];
+          const points = previewPath.length > 0
+            ? previewPath
+            : [...draft, ...(pointMaskCursor ? [pointMaskCursor] : [])];
+          const svgPoints = points.map((p) => `${p.x},${p.y}`).join(" ");
+          return (
+            <svg className={styles.pointMaskPathPreview} aria-hidden="true">
+              <polyline points={svgPoints} />
+              {draft.map((p, i) => (
+                <circle key={`${p.x}:${p.y}:${i}`} cx={p.x} cy={p.y} r="3" />
+              ))}
+            </svg>
+          );
+        })()}
 
         {/* 控件浮条 */}
         <div ref={controlsRef} className={styles.controls}>
@@ -1515,6 +1733,21 @@ export function ThreeDWorkbench({
               </label>
             </>
           )}
+          {threeDTool === "point-mask" && (
+            <label className={styles.sizeCtl}>
+              选点
+              <select
+                className={styles.selectCtl}
+                value={pointMaskSelectMode}
+                disabled={!canPlacePointMask}
+                onChange={(e) => setPointMaskSelectMode(e.target.value as PointMaskSelectMode)}
+              >
+                <option value="rect">矩形</option>
+                <option value="lasso">套索</option>
+                <option value="polygon">多边形</option>
+              </select>
+            </label>
+          )}
           {manifest?.scene_id && (
             <CrossFrameOverlayToggle value={overlayK} onChange={setOverlayKPersist} />
           )}
@@ -1553,7 +1786,14 @@ export function ThreeDWorkbench({
             <span>· 拖框选 / 点击放置 {boxPlaceClass ?? ""} · V/Esc 取消</span>
           )}
           {pointMasking && (
-            <span>· 拖框选生成分割 {pointMaskPlaceClass ?? ""} · V/Esc 取消</span>
+            <span>
+              · {pointMaskSelectMode === "polygon" ? "点击多边形闭合" : "拖动选点"}
+              {selectedPointMaskEditable ? "编辑分割(Alt 减点)" : `生成分割 ${pointMaskPlaceClass ?? ""}`}
+              · V/Esc 取消
+            </span>
+          )}
+          {threeDTool === "point-mask" && !canPlacePointMask && (
+            <span className={styles.err}>· 当前项目未启用 point_mask_3d 类别</span>
           )}
           {selectedBox && (
             <span>
@@ -1704,6 +1944,59 @@ export function ThreeDWorkbench({
           </div>
         )}
 
+        {selectedPointMask && selectedAnn && (
+          <div className={styles.editPanel}>
+            <div className={styles.editTitle}>
+              {pointMaskClasses.length > 0 ? (
+                <select
+                  className={styles.classSelect}
+                  value={selectedClass ?? ""}
+                  aria-label="分割类别"
+                  disabled={!selectedPointMaskEditable}
+                  onChange={(e) => handleChangeClass(e.target.value)}
+                >
+                  {selectedClass && !pointMaskClasses.includes(selectedClass) && (
+                    <option value={selectedClass}>{selectedClass}</option>
+                  )}
+                  {pointMaskClasses.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span>点云分割 · {selectedClass ?? ""}</span>
+              )}
+              {!readOnly && (
+                <button
+                  type="button"
+                  className={selectedLocked ? `${styles.lockBtn} ${styles.lockBtnOn}` : styles.lockBtn}
+                  aria-pressed={selectedLocked}
+                  onClick={handleToggleLock}
+                >
+                  {selectedLocked ? "已锁定" : "锁定"}
+                </button>
+              )}
+            </div>
+            <div className={styles.editGroupLabel}>
+              {selectedPointMask.point_indices.length.toLocaleString()} 点 · P 后圈选加点,Alt 圈选减点
+            </div>
+            {!readOnly && selectedPointMaskEditable && (
+              <button
+                type="button"
+                className={styles.deleteBtn}
+                onClick={() => {
+                  deleteAnnotation.mutate(selectedAnn.id);
+                  history.pushBatch([{ kind: "delete", annotation: selectedAnn }]);
+                  onSelectBox(null);
+                }}
+              >
+                删除分割
+              </button>
+            )}
+          </div>
+        )}
+
         {/* v0.13.7 · 三正交视图精修浮层(右下):选中框才浮出,可收成小标签。 */}
         {triSelected && !triViewFloat.collapsed && (
           <FloatingPanelShell
@@ -1740,7 +2033,7 @@ export function ThreeDWorkbench({
             投影 overlay / 上色 / 深度命中沿用 CameraProjectionView,布局对其透明。 */}
         {cameraGroups.map(([anchor, cams]) => (
           <div key={anchor} className={`${styles.camGroup} ${ANCHOR_CLASS[anchor]}`}>
-            {cams.map((cam) => (
+            {cams.map((cam, index) => (
               <FloatingCameraPanel
                 key={cam.role}
                 role={cam.role}
@@ -1754,6 +2047,8 @@ export function ThreeDWorkbench({
                 pointPositions={pointPositions}
                 showDepth={depthOn}
                 onEnlarge={() => setEnlargedRole(cam.role)}
+                autoCollapsed={autoCollapseCameras || index >= CAMERA_STACK_VISIBLE}
+                dragBounds={triFloatBounds}
               />
             ))}
           </div>

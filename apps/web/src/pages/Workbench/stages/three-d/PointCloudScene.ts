@@ -16,6 +16,7 @@ import {
 } from "./geometry/axisConvention";
 
 import { estimateGroundZ } from "./geometry/ground";
+import { isPointInPolygon, type ScreenPoint } from "./geometry/pointInPolygon";
 
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
 const DECIMATE_THRESHOLD = 500_000;
@@ -469,8 +470,6 @@ export class PointCloudScene {
     x1: number,
     y1: number,
   ): { positions: Float32Array; indices: number[] } | null {
-    const positions = this.getPointPositions();
-    if (!positions) return null;
     const rect = this.renderer.domElement.getBoundingClientRect();
     const toNdcX = (cx: number) => ((cx - rect.left) / rect.width) * 2 - 1;
     const toNdcY = (cy: number) => -((cy - rect.top) / rect.height) * 2 + 1;
@@ -479,6 +478,31 @@ export class PointCloudScene {
     const nx1 = Math.max(toNdcX(x0), toNdcX(x1));
     const ny0 = Math.min(toNdcY(y0), toNdcY(y1));
     const ny1 = Math.max(toNdcY(y0), toNdcY(y1));
+    return this.collectProjectedPoints((ndcX, ndcY) =>
+      ndcX >= nx0 && ndcX <= nx1 && ndcY >= ny0 && ndcY <= ny1,
+    );
+  }
+
+  private collectPointsInScreenPolygon(
+    polygon: readonly ScreenPoint[],
+  ): { positions: Float32Array; indices: number[] } | null {
+    const positions = this.getPointPositions();
+    if (!positions) return null;
+    if (polygon.length < 3) return null;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const toNdcX = (cx: number) => ((cx - rect.left) / rect.width) * 2 - 1;
+    const toNdcY = (cy: number) => -((cy - rect.top) / rect.height) * 2 + 1;
+    const ndcPolygon = polygon.map((p) => ({ x: toNdcX(p.x), y: toNdcY(p.y) }));
+    return this.collectProjectedPoints((ndcX, ndcY) =>
+      isPointInPolygon({ x: ndcX, y: ndcY }, ndcPolygon),
+    );
+  }
+
+  private collectProjectedPoints(
+    containsNdc: (ndcX: number, ndcY: number) => boolean,
+  ): { positions: Float32Array; indices: number[] } | null {
+    const positions = this.getPointPositions();
+    if (!positions) return null;
     this.camera.updateMatrixWorld();
     const vp = new THREE.Matrix4().multiplyMatrices(
       this.camera.projectionMatrix,
@@ -496,7 +520,7 @@ export class PointCloudScene {
       if (v.w <= 0) continue; // 相机后方
       const ndcX = v.x / v.w;
       const ndcY = v.y / v.w;
-      if (ndcX >= nx0 && ndcX <= nx1 && ndcY >= ny0 && ndcY <= ny1) {
+      if (containsNdc(ndcX, ndcY)) {
         out.push(px, py, pz);
         indices.push(i * this.pointIndexStride);
       }
@@ -520,6 +544,16 @@ export class PointCloudScene {
     y1: number,
   ): PointMaskSelection | null {
     const selected = this.collectPointsInScreenRect(x0, y0, x1, y1);
+    if (!selected) return null;
+    return {
+      pointIndices: selected.indices,
+      decimateStride: this.pointIndexStride,
+      sourcePointCount: this.sourcePointCount,
+    };
+  }
+
+  selectPointMaskInScreenPolygon(polygon: readonly ScreenPoint[]): PointMaskSelection | null {
+    const selected = this.collectPointsInScreenPolygon(polygon);
     if (!selected) return null;
     return {
       pointIndices: selected.indices,
