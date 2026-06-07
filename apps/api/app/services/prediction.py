@@ -138,6 +138,9 @@ def to_internal_shape(s: dict) -> dict:
 
     兼容旧格式: 已有 ``geometry`` 字段时 pass-through, 不做二次转换.
     v0.10.17 · 返回字典含 ``tool_unit_id``, 由 LS type 派生.
+    v0.14.9 · 协议 v2: 返回字典含 ``attributes`` (从 shape 顶层 ``s["attributes"]`` 提取),
+    供 OCR / doc_layout 富属性 (text / language / orientation) 透传到 annotation.attributes;
+    非 OCR shape 为 ``{}``。
     """
     if not isinstance(s, dict):
         return {}
@@ -156,6 +159,12 @@ def to_internal_shape(s: dict) -> dict:
     if raw_score is None:
         raw_score = s.get("confidence")
     confidence = float(raw_score) if raw_score is not None else 0.0
+
+    # v0.14.9 · 协议 v2 OCR / doc_layout: backend 在 shape 顶层写
+    # `attributes: {text, language?, orientation?, ...}` (与几何 value 同级)。
+    # 这里原样提取, 供 accept 路径透传到 annotation.attributes; 无则 {}。
+    raw_attributes = s.get("attributes")
+    attributes = dict(raw_attributes) if isinstance(raw_attributes, dict) else {}
 
     # LabelStudio 字段名约定: value.{type} 是 label 数组 (rectanglelabels/polygonlabels/...)
     labels = val.get(typ)
@@ -257,6 +266,8 @@ def to_internal_shape(s: dict) -> dict:
         "confidence": confidence,
         # v0.10.17 · 与 prediction.tool_unit_id 派生同源.
         "tool_unit_id": derive_tool_unit_from_ls_type(typ, val),
+        # v0.14.9 · OCR / doc_layout 富属性 (text / language / orientation 等); 非 OCR 为 {}。
+        "attributes": attributes,
     }
 
 

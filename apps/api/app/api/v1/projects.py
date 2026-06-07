@@ -1221,6 +1221,12 @@ class PreannotateRequest(BaseModel):
     # v0.11.24 · 幂等模式: skip_predicted=跳过已预标 task (默认), overwrite=先清旧预测再预标,
     # append=保留旧行为 (无脑追加, 仅特殊场景). 避免重复预标叠加重复标注.
     predict_mode: Literal["skip_predicted", "overwrite", "append"] = "skip_predicted"
+    # v0.14.9 · 能力声明协议 v2 多模型目录: 选中 backend 暴露的某个 model 条目 id,
+    # worker 透传进 /predict context["model_id"], backend 据此路由到对应模型。
+    model_id: str | None = None
+    # v0.14.9 · 任务类型便捷别名 ("ocr"/"doc_layout"/"text"): worker 写 context["type"],
+    # 让纯文本以外的 task (OCR / 版面分析) 也能走批量预标。缺省走老的纯 prompt / image 行为。
+    task_type: str | None = None
 
 
 @router.post("/{project_id}/preannotate")
@@ -1277,6 +1283,9 @@ async def trigger_preannotation(
         user_id=str(current_user.id),
         params=body.params or None,
         predict_mode=body.predict_mode,
+        # v0.14.9 · 协议 v2: 多模型路由 + task 别名透传到 /predict context
+        model_id=body.model_id,
+        task_type=body.task_type,
     )
     # B-5 · AI 预标注触发审计 — 让超管在 /audit 看到 谁/何时/对哪个 batch 跑了 AI
     await AuditService.log(

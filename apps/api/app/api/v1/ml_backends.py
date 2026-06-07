@@ -18,9 +18,11 @@ from app.schemas.ml_backend import (
     MLBackendHealthResponse,
     MLBackendReloadRequest,
     InteractiveRequest,
+    BackendCapabilities,
 )
 from app.services.ml_backend import MLBackendDeleteBlocked, MLBackendService
 from app.services import ml_client as ml_client_module
+from app.services.ml_capabilities import extract_capabilities
 from app.services.storage import StorageService
 from app.services.audit import AuditService
 
@@ -282,6 +284,28 @@ async def reload_ml_backend(
     return result
 
 
+async def _fetch_setup_cached(backend, backend_id: uuid.UUID) -> dict:
+    """v0.10.1 · 探 backend /setup, 命中 30s TTL 进程内缓存则直接返回.
+
+    v0.14.9 · 抽出供 /setup 与 /capabilities 端点共用同一缓存链路; backend /setup
+    不可达时抛 502 (与原 /setup 端点行为一致).
+    """
+    now = time.monotonic()
+    cached = _setup_cache.get(backend_id)
+    if cached is not None and (now - cached[0]) < _SETUP_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    client = ml_client_module.MLBackendClient(backend)
+    try:
+        data = await client.setup()
+    except Exception as exc:  # httpx.HTTPError 或 timeout
+        raise HTTPException(
+            status_code=502, detail=f"backend /setup unreachable: {exc}"
+        )
+    _setup_cache[backend_id] = (now, data)
+    return data
+
+
 @router.get("/{backend_id}/setup")
 async def get_ml_backend_setup(
     project_id: uuid.UUID,
@@ -300,20 +324,51 @@ async def get_ml_backend_setup(
     if not backend or backend.project_id != project_id:
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
-    now = time.monotonic()
-    cached = _setup_cache.get(backend_id)
-    if cached is not None and (now - cached[0]) < _SETUP_CACHE_TTL_SECONDS:
-        return cached[1]
+    return await _fetch_setup_cached(backend, backend_id)
 
-    client = ml_client_module.MLBackendClient(backend)
-    try:
-        data = await client.setup()
-    except Exception as exc:  # httpx.HTTPError 或 timeout
-        raise HTTPException(
-            status_code=502, detail=f"backend /setup unreachable: {exc}"
-        )
-    _setup_cache[backend_id] = (now, data)
-    return data
+
+@router.get("/{backend_id}/capabilities", response_model=BackendCapabilities)
+async def get_ml_backend_capabilities(
+    project_id: uuid.UUID,
+    backend_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
+    ),
+):
+    """v0.14.9 · 能力声明协议 v2: 探 /setup (复用 setup 缓存链路) → 派生能力快照.
+
+    返回含 models[] / infra / modalities + 扁平并集字段, 供前端多模型目录消费.
+    权限同 /setup 端点 (managers + reviewer + annotator)。/setup 不可达时 502.
+    """
+    svc = MLBackendService(db)
+    backend = await svc.get(backend_id)
+    if not backend or backend.project_id != project_id:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+
+    setup = await _fetch_setup_cached(backend, backend_id)
+    return extract_capabilities(setup) or {}
+
+
+@router.post("/{backend_id}/capabilities/refresh", response_model=BackendCapabilities)
+async def refresh_ml_backend_capabilities(
+    project_id: uuid.UUID,
+    backend_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_MANAGERS)),
+):
+    """v0.14.9 · 强制刷新能力快照: 先 invalidate setup 缓存再重探 + 派生.
+
+    权限同 /health (managers); 用于 backend 升级/换模型后主动拉新能力。
+    """
+    svc = MLBackendService(db)
+    backend = await svc.get(backend_id)
+    if not backend or backend.project_id != project_id:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+
+    _setup_cache.pop(backend_id, None)
+    setup = await _fetch_setup_cached(backend, backend_id)
+    return extract_capabilities(setup) or {}
 
 
 @router.post("/{backend_id}/health", response_model=MLBackendHealthResponse)

@@ -9498,6 +9498,17 @@
             "title": "Ml Backend Id",
             "type": "string"
           },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
           "output_mode": {
             "default": "mask",
             "enum": [
@@ -9555,6 +9566,17 @@
               }
             ],
             "title": "Task Ids"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type"
           }
         },
         "required": [
@@ -27335,6 +27357,124 @@
           }
         ],
         "summary": "Update Ml Backend",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ml-backends/{backend_id}/capabilities": {
+      "get": {
+        "description": "v0.14.9 · 能力声明协议 v2: 探 /setup (复用 setup 缓存链路) → 派生能力快照.\n\n返回含 models[] / infra / modalities + 扁平并集字段, 供前端多模型目录消费.\n权限同 /setup 端点 (managers + reviewer + annotator)。/setup 不可达时 502.",
+        "operationId": "get_ml_backend_capabilities_api_v1_projects__project_id__ml_backends__backend_id__capabilities_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Backend Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackendCapabilities"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Ml Backend Capabilities",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ml-backends/{backend_id}/capabilities/refresh": {
+      "post": {
+        "description": "v0.14.9 · 强制刷新能力快照: 先 invalidate setup 缓存再重探 + 派生.\n\n权限同 /health (managers); 用于 backend 升级/换模型后主动拉新能力。",
+        "operationId": "refresh_ml_backend_capabilities_api_v1_projects__project_id__ml_backends__backend_id__capabilities_refresh_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Backend Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackendCapabilities"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Refresh Ml Backend Capabilities",
         "tags": [
           "ml-backends"
         ]
