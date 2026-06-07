@@ -8,6 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { CSSProperties } from "react";
 
 import type { TriViewFloatState } from "@/api/auth";
+import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
 import {
   useAnnotations,
   useCreateAnnotation,
@@ -24,6 +25,7 @@ import type { ThreeDTool } from "@/pages/Workbench/state/useWorkbenchState";
 import type { WorkbenchLayoutPatch } from "@/pages/Workbench/state/useWorkbenchConfig";
 import type { Box3DGeometry, PointMaskGeometry, SensorCalibration } from "@/types";
 
+import { AttributeForm } from "../../shell/AttributeForm";
 import { FloatingPanelShell, type FloatingPanelRect } from "../../shell/FloatingPanelShell";
 import type { FloatingPanelBounds } from "../../shell/useDragMove";
 import { usePointCloudManifest } from "./usePointCloudManifest";
@@ -57,6 +59,16 @@ import {
   type LidarAxisConvention,
   unapplyConventionToPsr,
 } from "./geometry/axisConvention";
+import {
+  box3dAttributeSchema,
+  LIDAR_BOX_3D_TOOL_UNIT,
+} from "./geometry/box3dAttributes";
+import {
+  pasteOffsetPayload,
+  serializeBox3D,
+  type ClipboardBox3D,
+} from "./geometry/box3dClipboard";
+import { useThreeDHistory } from "./useThreeDHistory";
 import styles from "./ThreeDWorkbench.module.css";
 
 interface ThreeDWorkbenchProps {
@@ -65,6 +77,7 @@ interface ThreeDWorkbenchProps {
   readOnly?: boolean;
   /** v0.13.3-5 · 壳层共享选中态(与标注列表 / 右栏面板同一份),驱动选中高亮 / gizmo / 数值面板。 */
   selectedId: string | null;
+  selectedIds: string[];
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
   /** v0.13.3-5 · 壳层激活类别(左栏 ClassPalette 选);放置新框的 class_name 取它。 */
   activeClass: string;
@@ -110,7 +123,7 @@ function resolveTriViewFloatRect(
   };
 }
 // 点云项目的 3D 框工具单位(类别 / 属性绑定都挂在它下面)。
-const LIDAR_TOOL_UNIT = "lidar_box_3d";
+const LIDAR_TOOL_UNIT = LIDAR_BOX_3D_TOOL_UNIT;
 const POINT_MASK_TOOL_UNIT = "point_mask_3d";
 
 function boxGeometryFromPsr(psr: Psr, convention: LidarAxisConvention): Box3DGeometry {
@@ -229,6 +242,7 @@ export function ThreeDWorkbench({
   taskId,
   readOnly = false,
   selectedId,
+  selectedIds,
   onSelectBox,
   activeClass,
   threeDTool,
@@ -248,7 +262,6 @@ export function ThreeDWorkbench({
   // v0.14.1 会上 useFrameNeighbors hook + Shift+→ propagate 等。
   useEffect(() => {
     if (manifest?.scene_id) {
-      // eslint-disable-next-line no-console
       console.debug("[3D] scene info", {
         scene_id: manifest.scene_id,
         scene_name: manifest.scene_name,
@@ -286,11 +299,20 @@ export function ThreeDWorkbench({
   const updateAnnotation = useUpdateAnnotation(taskId ?? undefined);
   const deleteAnnotation = useDeleteAnnotation(taskId ?? undefined);
   const createAnnotation = useCreateAnnotation(taskId ?? undefined);
+  const history = useThreeDHistory(taskId, {
+    createAnnotation,
+    deleteAnnotation,
+    updateAnnotation,
+  });
+  const clipboardRef = useRef<ClipboardBox3D | null>(null);
+  const pasteCountRef = useRef(0);
   const annotationsRef = useRef<typeof annotations>(annotations);
   annotationsRef.current = annotations;
   // scene 的拖拽回调只设一次,用 ref 取最新 mutate,避免闭包旧值。
   const updateMutateRef = useRef(updateAnnotation.mutate);
   updateMutateRef.current = updateAnnotation.mutate;
+  const historyPushRef = useRef(history.push);
+  historyPushRef.current = history.push;
 
   // 创建新 3D 标注需要对应工具单位的类别(后端按 tool_bindings 校验 class_name)。
   const { data: task } = useTask(taskId ?? "");
@@ -314,6 +336,7 @@ export function ThreeDWorkbench({
     [hasToolBindings, toolBindings],
   );
   const pointMaskClasses = pointMaskOwnClasses.length > 0 ? pointMaskOwnClasses : boxClasses;
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   // 工具态 / 待放置类别全来自壳层(ToolDock 的 threeDTool + 左栏 ClassPalette 的 activeClass);
   // canPlace 兜底:只读 / 未配类别时不允许放置。class 在 activeClass 不在类集合时回落首个。
@@ -436,14 +459,23 @@ export function ThreeDWorkbench({
           ? [dp.rotation[0], dp.rotation[1], dp.rotation[2]]
           : (g.rotation as [number, number, number]),
         color: classColorForCanvas(a.class_name),
-        selected: a.id === selectedId,
+        selected: selectedIdSet.has(a.id),
       });
     }
     return list;
-  }, [annotations, selectedId, draftPsr]);
+  }, [annotations, selectedIdSet, draftPsr]);
 
   const selectedBox = boxes.find((b) => b.id === selectedId) ?? null;
   const selectedAnn = (annotations ?? []).find((a) => a.id === selectedId) ?? null;
+  const selectedBoxIds = useMemo(
+    () => selectedIds.filter((id) => boxes.some((b) => b.id === id)),
+    [selectedIds, boxes],
+  );
+  const multiBoxSelected = selectedBoxIds.length > 1;
+  const boxAttributeSchema = useMemo(
+    () => box3dAttributeSchema(toolBindings),
+    [toolBindings],
+  );
   // v0.14.1 · 给 Shift+→ keydown 闭包读最新选中 annotation 的几何类型(避免频繁重绑监听)。
   const selectedAnnRef = useRef(selectedAnn);
   selectedAnnRef.current = selectedAnn;
@@ -475,6 +507,7 @@ export function ThreeDWorkbench({
   const selectedLocked = !!selectedAnn?.is_locked;
   // 可编辑 = 任务级非只读 且 该框未锁定。
   const selectedEditable = !readOnly && !selectedLocked;
+  const selectedPsrEditable = selectedEditable && !multiBoxSelected;
 
   // 实例化 / 销毁 Scene(随容器挂载一次)。
   useEffect(() => {
@@ -485,15 +518,24 @@ export function ThreeDWorkbench({
     scene.setTransformHandler((id, psr) => {
       setForm(psrToForm(psr));
       const ann = annotationsRef.current?.find((a) => a.id === id);
+      const geometry = boxGeometryFromPsr(
+        psr,
+        geometryConvention(ann?.geometry, axisConventionRef.current),
+      );
       updateMutateRef.current({
         annotationId: id,
         payload: {
-          geometry: boxGeometryFromPsr(
-            psr,
-            geometryConvention(ann?.geometry, axisConventionRef.current),
-          ),
+          geometry,
         },
       });
+      if (ann?.geometry?.type === "box_3d") {
+        historyPushRef.current({
+          kind: "update",
+          annotationId: id,
+          before: { geometry: ann.geometry },
+          after: { geometry },
+        });
+      }
     });
     const ro = new ResizeObserver(() => scene.resize());
     ro.observe(viewportRef.current);
@@ -534,13 +576,13 @@ export function ThreeDWorkbench({
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
-    if (selectedId && selectedEditable) scene.attachTransform(selectedId);
+    if (selectedId && selectedPsrEditable) scene.attachTransform(selectedId);
     else scene.detachTransform();
-  }, [selectedId, boxes, selectedEditable]);
+  }, [selectedId, boxes, selectedPsrEditable]);
 
   // W/E/R 切 gizmo 模式(仅选中且可编辑时;焦点在输入框时不拦截)。
   useEffect(() => {
-    if (!selectedId || !selectedEditable) return;
+    if (!selectedId || !selectedPsrEditable) return;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
@@ -556,7 +598,7 @@ export function ThreeDWorkbench({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, selectedEditable]);
+  }, [selectedId, selectedPsrEditable]);
 
   // v0.14.1 · Shift+→ / Shift+← 跨帧目标延续: 选中 box_3d 时 propagate 到同 scene
   // 邻帧并跳过去自动选中(orchestration 在壳层 onCrossFramePropagate)。
@@ -655,9 +697,17 @@ export function ThreeDWorkbench({
           geometryConvention(selectedAnn?.geometry, axisConvention),
         );
         updateAnnotation.mutate({ annotationId: selectedId, payload: { geometry } });
+        if (selectedAnn?.geometry?.type === "box_3d") {
+          history.push({
+            kind: "update",
+            annotationId: selectedId,
+            before: { geometry: selectedAnn.geometry },
+            after: { geometry },
+          });
+        }
       }, 250);
     },
-    [selectedId, updateAnnotation, selectedAnn?.geometry, axisConvention],
+    [selectedId, updateAnnotation, selectedAnn?.geometry, axisConvention, history],
   );
 
   const handleField = useCallback(
@@ -687,48 +737,89 @@ export function ThreeDWorkbench({
     [selectedBox],
   );
 
+  const updateAnnotationWithHistory = useCallback(
+    (annotationId: string, before: AnnotationUpdatePayload, after: AnnotationUpdatePayload) => {
+      if (JSON.stringify(before) === JSON.stringify(after)) return;
+      updateAnnotation.mutate({ annotationId, payload: after });
+      history.push({ kind: "update", annotationId, before, after });
+    },
+    [history, updateAnnotation],
+  );
+
+  const editableSelectedBoxAnnotations = useCallback(() => {
+    const ids = selectedBoxIds.length > 0 ? selectedBoxIds : (selectedId ? [selectedId] : []);
+    return (annotationsRef.current ?? []).filter(
+      (a) => ids.includes(a.id) && a.geometry?.type === "box_3d" && !a.is_locked,
+    );
+  }, [selectedBoxIds, selectedId]);
+
   const handleDeleteSelected = useCallback(() => {
-    if (!selectedId) return;
-    deleteAnnotation.mutate(selectedId);
+    if (readOnly) return;
+    const targets = editableSelectedBoxAnnotations();
+    if (targets.length === 0) return;
+    for (const ann of targets) deleteAnnotation.mutate(ann.id);
+    history.pushBatch(targets.map((annotation) => ({ kind: "delete", annotation })));
     onSelectBox(null);
-  }, [selectedId, deleteAnnotation, onSelectBox]);
+  }, [readOnly, editableSelectedBoxAnnotations, deleteAnnotation, history, onSelectBox]);
 
   // 改选中框类别(3D 原生:面板下拉;2D 的画布锚定 popover 不适用 3D)。
   const handleChangeClass = useCallback(
     (cls: string) => {
-      if (!selectedId || !cls) return;
-      updateAnnotation.mutate({ annotationId: selectedId, payload: { class_name: cls } });
+      if (readOnly || !cls) return;
+      const targets = editableSelectedBoxAnnotations();
+      const commands = targets
+        .filter((ann) => ann.class_name !== cls)
+        .map((ann) => {
+          updateAnnotation.mutate({ annotationId: ann.id, payload: { class_name: cls } });
+          return {
+            kind: "update" as const,
+            annotationId: ann.id,
+            before: { class_name: ann.class_name },
+            after: { class_name: cls },
+          };
+        });
+      history.pushBatch(commands);
     },
-    [selectedId, updateAnnotation],
+    [readOnly, editableSelectedBoxAnnotations, updateAnnotation, history],
+  );
+
+  const handleChangeAttributes = useCallback(
+    (next: Record<string, unknown>) => {
+      if (!selectedId || !selectedAnn || readOnly || selectedAnn.is_locked || multiBoxSelected) return;
+      updateAnnotationWithHistory(
+        selectedId,
+        { attributes: selectedAnn.attributes ?? {} },
+        { attributes: next },
+      );
+    },
+    [selectedId, selectedAnn, readOnly, multiBoxSelected, updateAnnotationWithHistory],
   );
 
   // v0.13.5 · 朝向归零:把三轴旋转复位为 [0,0,0](保留中心/尺寸),并同步表单。
   const handleResetRotation = useCallback(() => {
     if (!selectedId || !selectedBox) return;
     setForm((prev) => (prev ? { ...prev, yaw: "0", pitch: "0", roll: "0" } : prev));
-    updateAnnotation.mutate({
-      annotationId: selectedId,
-      payload: {
-        geometry: {
-          ...boxGeometryFromPsr(
-            {
-              center: selectedBox.center,
-              size: selectedBox.size,
-              rotation: [0, 0, 0],
-            },
-            geometryConvention(selectedAnn?.geometry, axisConvention),
-          ),
-        },
+    const geometry = boxGeometryFromPsr(
+      {
+        center: selectedBox.center,
+        size: selectedBox.size,
+        rotation: [0, 0, 0],
       },
-    });
-  }, [selectedId, selectedBox, selectedAnn?.geometry, axisConvention, updateAnnotation]);
+      geometryConvention(selectedAnn?.geometry, axisConvention),
+    );
+    updateAnnotationWithHistory(
+      selectedId,
+      selectedAnn?.geometry?.type === "box_3d" ? { geometry: selectedAnn.geometry } : {},
+      { geometry },
+    );
+  }, [selectedId, selectedBox, selectedAnn?.geometry, axisConvention, updateAnnotationWithHistory]);
 
   // v0.13.8 · 自动贴合:把选中框按点云 box-local AABB 收尺寸 / 贴地 / 朝向。
   // 共用 helper:拿当前点云 positions + 选中框 PSR → 跑 transform → 立即提交 + 同步表单。
   // 不走 schedulePatch 250ms 防抖(一键操作期望即时生效)。
   const applyFit = useCallback(
     (transform: (positions: Float32Array, psr: Psr) => Psr) => {
-      if (!selectedId || !selectedBox || !selectedEditable) return;
+      if (!selectedId || !selectedBox || !selectedPsrEditable) return;
       const positions = sceneRef.current?.getPointPositions();
       if (!positions) return;
       const current: Psr = {
@@ -738,17 +829,17 @@ export function ThreeDWorkbench({
       };
       const next = transform(positions, current);
       setForm(psrToForm(next));
-      updateAnnotation.mutate({
-        annotationId: selectedId,
-        payload: {
-          geometry: boxGeometryFromPsr(
-            next,
-            geometryConvention(selectedAnn?.geometry, axisConvention),
-          ),
-        },
-      });
+      const geometry = boxGeometryFromPsr(
+        next,
+        geometryConvention(selectedAnn?.geometry, axisConvention),
+      );
+      updateAnnotationWithHistory(
+        selectedId,
+        selectedAnn?.geometry?.type === "box_3d" ? { geometry: selectedAnn.geometry } : {},
+        { geometry },
+      );
     },
-    [selectedId, selectedBox, selectedEditable, selectedAnn?.geometry, axisConvention, updateAnnotation],
+    [selectedId, selectedBox, selectedPsrEditable, selectedAnn?.geometry, axisConvention, updateAnnotationWithHistory],
   );
   const handleFitSize = useCallback(() => applyFit(fitSize), [applyFit]);
   const handleFitBottom = useCallback(() => applyFit(fitBottom), [applyFit]);
@@ -758,7 +849,7 @@ export function ThreeDWorkbench({
   // Q (默认连击=收尺寸+贴地) / Shift+Q (仅收尺寸) / Alt+Q (仅贴地)。
   // 焦点在输入框时不拦截;未选中 / 不可编辑时跳过。Ctrl+Q 让给浏览器/系统。
   useEffect(() => {
-    if (!selectedId || !selectedEditable) return;
+    if (!selectedId || !selectedPsrEditable) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "q" && e.key !== "Q") return;
       if (e.ctrlKey || e.metaKey) return;
@@ -771,13 +862,13 @@ export function ThreeDWorkbench({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, selectedEditable, handleFitSize, handleFitBottom, handleFitDefault]);
+  }, [selectedId, selectedPsrEditable, handleFitSize, handleFitBottom, handleFitDefault]);
 
   // v0.13.8 · Delete/Backspace 删选中框:全局 dispatchKey 通路在 3D 台实测未触发,
   // 故 3D 本地接管(同 useWorkbenchShellModel.threeDOwnedKeys 把这俩键交给本地)。
   // 焦点在输入框时不拦截(避免 PSR 数值面板里 Backspace 删字误删框)。
   useEffect(() => {
-    if (!selectedId || !selectedEditable) return;
+    if (readOnly || selectedBoxIds.length === 0) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Delete" && e.key !== "Backspace") return;
       const t = e.target as HTMLElement | null;
@@ -787,7 +878,7 @@ export function ThreeDWorkbench({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, selectedEditable, handleDeleteSelected]);
+  }, [readOnly, selectedBoxIds.length, handleDeleteSelected]);
 
   // 锁定 / 解锁选中框(与列表 L 切换同源 is_locked;锁定后不可编辑,解锁需此按钮 / 列表)。
   const handleToggleLock = useCallback(() => {
@@ -814,18 +905,24 @@ export function ThreeDWorkbench({
         },
         axisConvention,
       );
+      const payload: AnnotationPayload = {
+        annotation_type: "box_3d",
+        tool_unit_id: LIDAR_TOOL_UNIT,
+        class_name: boxPlaceClass,
+        geometry,
+      };
       createAnnotation.mutate(
+        payload,
         {
-          annotation_type: "box_3d",
-          tool_unit_id: LIDAR_TOOL_UNIT,
-          class_name: boxPlaceClass,
-          geometry,
+          onSuccess: (created) => {
+            history.push({ kind: "create", annotationId: created.id, payload });
+            onSelectBox(created.id);
+          },
         },
-        { onSuccess: (created) => onSelectBox(created.id) },
       );
       onSetThreeDTool("select"); // 单次放置后回到选择工具
     },
-    [boxPlaceClass, axisConvention, createAnnotation, onSelectBox, onSetThreeDTool],
+    [boxPlaceClass, axisConvention, createAnnotation, history, onSelectBox, onSetThreeDTool],
   );
 
   // v0.13.9 · 框选画框 (frustum 选点): 在 box 工具下按住拖出屏幕矩形 → 选中投影落在矩形内的真实
@@ -840,18 +937,24 @@ export function ThreeDWorkbench({
       if (!selected) return; // 框内无点 → 不建框
       const psr = psrFromPoints(selected);
       const geometry = boxGeometryFromPsr(psr, axisConvention);
+      const payload: AnnotationPayload = {
+        annotation_type: "box_3d",
+        tool_unit_id: LIDAR_TOOL_UNIT,
+        class_name: boxPlaceClass,
+        geometry,
+      };
       createAnnotation.mutate(
+        payload,
         {
-          annotation_type: "box_3d",
-          tool_unit_id: LIDAR_TOOL_UNIT,
-          class_name: boxPlaceClass,
-          geometry,
+          onSuccess: (created) => {
+            history.push({ kind: "create", annotationId: created.id, payload });
+            onSelectBox(created.id);
+          },
         },
-        { onSuccess: (created) => onSelectBox(created.id) },
       );
       onSetThreeDTool("select"); // 单次画框后回到选择工具
     },
-    [boxPlaceClass, axisConvention, createAnnotation, onSelectBox, onSetThreeDTool],
+    [boxPlaceClass, axisConvention, createAnnotation, history, onSelectBox, onSetThreeDTool],
   );
 
   const handlePointMaskSelect = useCallback(
@@ -880,6 +983,69 @@ export function ThreeDWorkbench({
     },
     [pointMaskPlaceClass, axisConvention, createAnnotation, onSelectBox, onSetThreeDTool],
   );
+
+  const createPastedBox = useCallback(
+    (clip: ClipboardBox3D) => {
+      if (readOnly) return;
+      pasteCountRef.current += 1;
+      const offset = 2 * pasteCountRef.current;
+      const payload = pasteOffsetPayload(clip, [offset, offset, 0]);
+      createAnnotation.mutate(payload, {
+        onSuccess: (created) => {
+          history.push({ kind: "create", annotationId: created.id, payload });
+          onSelectBox(created.id);
+        },
+      });
+    },
+    [readOnly, createAnnotation, history, onSelectBox],
+  );
+
+  const copySelected = useCallback(() => {
+    const clip = serializeBox3D(selectedAnn);
+    if (!clip) return;
+    clipboardRef.current = clip;
+    pasteCountRef.current = 0;
+  }, [selectedAnn]);
+
+  const pasteClipboard = useCallback(() => {
+    if (!clipboardRef.current) return;
+    createPastedBox(clipboardRef.current);
+  }, [createPastedBox]);
+
+  const duplicateSelected = useCallback(() => {
+    const clip = serializeBox3D(selectedAnn);
+    if (!clip) return;
+    clipboardRef.current = clip;
+    pasteCountRef.current = 0;
+    createPastedBox(clip);
+  }, [selectedAnn, createPastedBox]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        void history.undo();
+      } else if (key === "y" || (key === "z" && e.shiftKey)) {
+        e.preventDefault();
+        void history.redo();
+      } else if (key === "c") {
+        e.preventDefault();
+        copySelected();
+      } else if (key === "v") {
+        e.preventDefault();
+        pasteClipboard();
+      } else if (key === "d") {
+        e.preventDefault();
+        duplicateSelected();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [history, copySelected, pasteClipboard, duplicateSelected]);
 
   // mousedown 落点(像素): click 时若位移超阈值判为「转视角拖拽」, 不改选中/不放置。
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
@@ -974,7 +1140,7 @@ export function ThreeDWorkbench({
     const down = pointerDownRef.current;
     pointerDownRef.current = null;
     if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_CLICK_TOL) return;
-    onSelectBox(sceneRef.current?.pickBox(e.clientX, e.clientY) ?? null);
+    onSelectBox(sceneRef.current?.pickBox(e.clientX, e.clientY) ?? null, { shift: e.shiftKey });
   };
 
   const handlePointSize = (v: number) => {
@@ -1119,14 +1285,14 @@ export function ThreeDWorkbench({
   const selectedGroupId = selectedAnn?.group_id ?? null;
   const highlightedIds = useMemo(() => {
     const s = new Set<string>();
-    if (selectedId) s.add(selectedId);
+    for (const id of selectedIds) s.add(id);
     if (selectedGroupId != null) {
       for (const a of annotations ?? []) {
         if (a.group_id === selectedGroupId) s.add(a.id);
       }
     }
     return s;
-  }, [selectedId, selectedGroupId, annotations]);
+  }, [selectedIds, selectedGroupId, annotations]);
 
   // v0.14.1 · 邻帧参考框叠加: overlayK 控制前后各拉多少帧(0=关)。per scene 持久化到
   // localStorage; 选中某框 + 该框有 group_id 时, 拉同 group_id 的邻帧框作半透明参考。
@@ -1208,7 +1374,7 @@ export function ThreeDWorkbench({
   );
   const triSelected = useMemo<TriSelected | null>(
     () =>
-      selectedBox
+      selectedBox && !multiBoxSelected
         ? {
             center: selectedBox.center,
             size: selectedBox.size,
@@ -1216,7 +1382,7 @@ export function ThreeDWorkbench({
             color: selectedBox.color,
           }
         : null,
-    [selectedBox],
+    [selectedBox, multiBoxSelected],
   );
 
   // v0.13.5 · 三视图拖边/角回写: 拖拽中 (commit=false) 只更新本地草稿 (实时四方同步);
@@ -1230,20 +1396,20 @@ export function ThreeDWorkbench({
       setForm(psrToForm({ center, size, rotation }));
       if (commit) {
         setDraftPsr(null);
-        updateMutateRef.current({
-          annotationId: selectedId,
-          payload: {
-            geometry: boxGeometryFromPsr(
-              { center, size, rotation },
-              geometryConvention(selectedAnn?.geometry, axisConvention),
-            ),
-          },
-        });
+        const geometry = boxGeometryFromPsr(
+          { center, size, rotation },
+          geometryConvention(selectedAnn?.geometry, axisConvention),
+        );
+        updateAnnotationWithHistory(
+          selectedId,
+          selectedAnn?.geometry?.type === "box_3d" ? { geometry: selectedAnn.geometry } : {},
+          { geometry },
+        );
       } else {
         setDraftPsr({ id: selectedId, psr });
       }
     },
-    [selectedId, selectedAnn?.geometry, axisConvention],
+    [selectedId, selectedAnn?.geometry, axisConvention, updateAnnotationWithHistory],
   );
 
   const handleReprojectSelectedToCurrentConvention = useCallback(() => {
@@ -1257,20 +1423,21 @@ export function ThreeDWorkbench({
       selectedConventionMismatch,
     );
     const next = applyConventionToPsr(src, axisConvention);
+    const geometry = boxGeometryFromPsr(next, axisConvention);
     setForm(psrToForm(next));
-    updateAnnotation.mutate({
-      annotationId: selectedId,
-      payload: {
-        geometry: boxGeometryFromPsr(next, axisConvention),
-      },
-    });
+    updateAnnotationWithHistory(
+      selectedId,
+      selectedAnn?.geometry?.type === "box_3d" ? { geometry: selectedAnn.geometry } : {},
+      { geometry },
+    );
   }, [
     selectedId,
     selectedBox,
     selectedConventionMismatch,
     selectedEditable,
     axisConvention,
-    updateAnnotation,
+    selectedAnn?.geometry,
+    updateAnnotationWithHistory,
   ]);
 
   return (
@@ -1440,13 +1607,15 @@ export function ThreeDWorkbench({
             <div className={styles.editGroupLabel}>
               {readOnly
                 ? "只读 · 锁定 / 审阅态"
-                : selectedLocked
+                : multiBoxSelected
+                  ? `${selectedBoxIds.length} 个框已选中 · 可批量改类 / 删除`
+                  : selectedLocked
                   ? "已锁定 · 点「已锁定」解锁后可编辑"
                   : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
             </div>
             {/* v0.13.8 · 选中框自动贴合:Q 默认连击(收尺寸+贴地);
                 Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发。 */}
-            {selectedEditable && (
+            {selectedPsrEditable && (
               <div className={styles.fitGroup} role="group" aria-label="自动贴合">
                 <button
                   type="button"
@@ -1486,7 +1655,7 @@ export function ThreeDWorkbench({
               <div key={g.label}>
                 <div className={styles.editGroupLabelRow}>
                   <span className={styles.editGroupLabel}>{g.label}</span>
-                  {g.reset && selectedEditable && (
+                  {g.reset && selectedPsrEditable && (
                     <button
                       type="button"
                       className={styles.resetBtn}
@@ -1506,7 +1675,7 @@ export function ThreeDWorkbench({
                       min={g.min}
                       value={form[k]}
                       aria-label={k}
-                      disabled={!selectedEditable}
+                      disabled={!selectedPsrEditable}
                       onChange={(e) => handleField(k, e.target.value)}
                       onBlur={() => handleFieldBlur(k)}
                     />
@@ -1514,13 +1683,22 @@ export function ThreeDWorkbench({
                 </div>
               </div>
             ))}
-            {selectedEditable && (
+            {!multiBoxSelected && (
+              <AttributeForm
+                schema={boxAttributeSchema}
+                className={selectedClass ?? ""}
+                attributes={selectedAnn?.attributes ?? {}}
+                readOnly={!selectedEditable}
+                onChange={handleChangeAttributes}
+              />
+            )}
+            {!readOnly && selectedBoxIds.length > 0 && (
               <button
                 type="button"
                 className={styles.deleteBtn}
                 onClick={handleDeleteSelected}
               >
-                删除框
+                {multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"}
               </button>
             )}
           </div>
@@ -1542,7 +1720,7 @@ export function ThreeDWorkbench({
               selected={triSelected}
               getPointsGeometry={getPointsGeometry}
               pointsReady={!!stats}
-              editable={selectedEditable}
+              editable={selectedPsrEditable}
               pointSize={pointSize}
               onEditPsr={handleEditPsr}
             />

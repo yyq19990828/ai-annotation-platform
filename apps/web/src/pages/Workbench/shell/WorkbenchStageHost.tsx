@@ -329,6 +329,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
               taskId={taskId}
               readOnly={readOnly}
               selectedId={selectedId}
+              selectedIds={selectedIds}
               onSelectBox={onSelectBox}
               activeClass={activeClass}
               threeDTool={threeDTool}

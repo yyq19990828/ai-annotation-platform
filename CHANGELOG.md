@@ -28,6 +28,27 @@
 
 <!-- 0.13.x 版本变更按版本段追加到本区；进入 0.14.x 后整体移到 docs/changelogs/0.13.x.md -->
 
+## [0.14.5] - 2026-06-07
+
+3D 标注属性 + 标注效率补丁:补齐点云 3D 框属性编辑、多选批量操作、撤销/重做与复制/粘贴能力。计划见 `docs/plans/2026-06-07-v0.14.5-3d-annotation-attributes-and-efficiency.md`。本版为纯前端切片,不新增后端表/列/端点。
+
+### Added
+
+- **3D 框属性面板**:3D 工作台右上编辑面板接入 `lidar_box_3d` 工具单位的 `attribute_schema`,可编辑遮挡、截断、可见度及自定义属性,并持久化到标注 `attributes`。
+- **3D 多选与批量操作**:`Shift + 点击`主视图框或相机投影框可多选;类别下拉和 Delete/Backspace 可批量改类或删除全部已选且未锁定的 3D 框。
+- **3D 撤销/重做**:放置、删除、PSR 编辑、自动贴合、改类、改属性进入本地 history,支持 `Ctrl/Cmd+Z` 与 `Ctrl/Cmd+Y` / `Ctrl/Cmd+Shift+Z`。
+- **3D 复制/粘贴/duplicate**:`Ctrl/Cmd+C` 复制当前 3D 框,`Ctrl/Cmd+V` 按世界坐标偏移粘贴同类同属性新框,`Ctrl/Cmd+D` 直接 duplicate。
+
+### Changed
+
+- 多选时 3D 主视图和相机投影 overlay 同时高亮全部已选框;PSR 数值、gizmo、三正交视图和自动贴合仅在单选时可编辑。
+- 共享 history 的 delete-undo 路径现在会把 annotation `tool_unit_id` 与 `attributes` 一并带回 create payload,避免撤销删除 3D 框后丢工具单位或属性。
+
+### Docs / Tests
+
+- 更新 `docs-site/user-guide/workbench/3d-box.md`,补充 3D 属性、多选、撤销和复制快捷键说明。
+- 新增 `box3dAttributes`、`box3dClipboard`、`useThreeDHistory` 单测,并补充 `WorkbenchStageHost` 对 3D `selectedIds` 透传断言。
+
 ## [0.14.4] - 2026-06-06
 
 scene 模式项目 + scene 感知分包补丁:把 scene 提升为项目级显式声明,补上 `by_scene` 分包、数据集 `has_scenes` 过滤与项目/数据集 kind 硬门。计划见 `docs/plans/2026-06-06-v0.14.4-scene-mode-projects.md`。

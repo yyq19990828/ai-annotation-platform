@@ -21,7 +21,7 @@ interface FloatingCameraPanelProps {
   calibration?: SensorCalibration | null;
   boxes: SceneBox[];
   highlightedIds: Set<string>;
-  onSelectBox: (id: string | null) => void;
+  onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
   bestForSelected?: boolean;
   pointPositions?: Float32Array | null;
   showDepth?: boolean;

@@ -29,7 +29,7 @@ interface CameraProjectionViewProps {
   /** 需高亮的框 id(选中框 + 同 group_id 成员);决定描边粗细 / 填充。 */
   highlightedIds: Set<string>;
   /** 点投影框反选(命中最小面积框,前景优先)。 */
-  onSelectBox: (id: string | null) => void;
+  onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
   /** 该相机是否最正对当前选中框(可见角点最多者);用于 figcaption 角标。 */
   bestForSelected?: boolean;
   /** v0.13.6 · 点云坐标(N*3,lidar/world 系);深度提示开启时建相机深度栅格。 */
@@ -218,7 +218,7 @@ export function CameraProjectionView({
           hitId = hb.id;
         }
       }
-      if (hitId) onSelectBox(hitId);
+      if (hitId) onSelectBox(hitId, { shift: e.shiftKey });
     },
     [onSelectBox],
   );
