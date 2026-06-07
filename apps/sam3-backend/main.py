@@ -224,7 +224,7 @@ def setup() -> dict:
     # - name / version / model_version: 必填三元组, 前端用于诊断与兼容判断
     # - supported_prompts: 决定 ToolDock 哪些 AI 工具可用 (M2 ToolDock 重构消费)
     # - params: JSON Schema (Draft-07 子集) — 前端 schema-form 自动渲染参数面板
-    return {
+    base = {
         "name": "sam3-backend",
         "version": BACKEND_VERSION,
         "model_version": MODEL_VERSION,
@@ -282,6 +282,26 @@ def setup() -> dict:
             },
         },
     }
+    # v0.14.9 · 协议 v2: 顶层加 infra + 派生单模型目录条目 (复用顶层能力 / params).
+    # SAM 3 是单模型族 → 一个 interactive_seg 条目 (text / exemplar 出 bbox / polygon);
+    # 顶层老字段全部保留, 供未升级平台向后兼容。
+    base["infra"] = "pytorch"
+    base["models"] = [
+        {
+            "id": "sam3",
+            "display_name": "SAM 3",
+            "task": "interactive_seg",
+            "model_family": "sam3",
+            "infra": "pytorch",
+            "is_interactive": base["is_interactive"],
+            "supported_prompts": base["supported_prompts"],
+            "supported_geometric_outputs": ["bbox", "polygon"],
+            "supported_text_outputs": base["supported_text_outputs"],
+            "supported_variants": base["supported_variants"],
+            "params": base["params"],
+        }
+    ]
+    return base
 
 
 @app.get("/versions")

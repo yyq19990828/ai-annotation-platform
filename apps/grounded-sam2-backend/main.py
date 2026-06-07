@@ -416,7 +416,7 @@ def setup() -> dict:
     # - name / version / model_version: 必填三元组, 前端用于诊断与兼容判断
     # - supported_prompts: 决定 ToolDock 哪些 AI 工具可用 (M2 ToolDock 重构消费)
     # - params: JSON Schema (Draft-07 子集) — 前端 schema-form 自动渲染参数面板
-    return {
+    base = {
         "name": "grounded-sam2",
         "version": BACKEND_VERSION,
         "model_version": MODEL_VERSION,
@@ -473,6 +473,27 @@ def setup() -> dict:
             },
         },
     }
+    # v0.14.9 · 协议 v2: 顶层加 infra + 派生单模型目录条目 (复用顶层能力 / params).
+    # grounded-sam2 是单模型族 → 一个 interactive_seg 条目; 顶层老字段全部保留,
+    # 供未升级平台向后兼容 (平台见 models[] 时优先按多模型解析)。
+    base["infra"] = "pytorch"
+    base["models"] = [
+        {
+            "id": "grounded-sam2",
+            "display_name": "Grounded-SAM 2",
+            "task": "interactive_seg",
+            "model_family": "grounded-sam2",
+            "infra": "pytorch",
+            "is_interactive": base["is_interactive"],
+            "supported_prompts": base["supported_prompts"],
+            "supported_geometric_outputs": ["bbox", "polygon"],
+            "supported_text_outputs": base["supported_text_outputs"],
+            "supported_trackers": base["supported_trackers"],
+            "supported_variants": base["supported_variants"],
+            "params": base["params"],
+        }
+    ]
+    return base
 
 
 @app.get("/versions")
