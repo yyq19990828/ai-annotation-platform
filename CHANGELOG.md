@@ -29,6 +29,44 @@
 
 <!-- 0.14.x 版本变更按版本段追加到本区；进入 0.15.x 后整体移到 docs/changelogs/0.14.x.md -->
 
+## [0.14.13] - 2026-06-08
+
+预标注交互闭环 · 把 v0.14.12 在能力目录展示的 variant 富表达贯通到实际预标注链路，让用户在 AI 预标注页 / 工作台都能选 yolo `series/size` (或 gsam2 `sam_variant/dino_variant`、sam3 `model_variant`) 并持久化为项目级偏好。计划见 `docs/plans/2026-06-08-v0.14.13-predict-ux-refinement.md`，配套 v0.14.14 / v0.14.15 路线在 `docs/plans/2026-06-08-v0.14.14-predict-observability.md` / `2026-06-08-v0.14.15-protocol-field-unification.md`。
+
+### Added
+
+- **协议字段 `default_variants` (model 级, v0.14.13)**: backend `/setup` 每个 model 自报默认 variant 组合 (扁平 `dict[axis_key, value]`)，前端 VariantSelector 在用户未选时取此作初值。优先级链：项目级 `projects.default_variants[backend_id]` > backend 自报 > backend 启动 env 默认。三 backend 实现：
+  - yolo: 4 task 均默认 `{series: yolo11, size: s}` (推荐组合, 跨 task 全覆盖)
+  - gsam2: 按 task 暴露相应轴 (detection→`{dino_variant}`, segmentation→`{sam_variant, dino_variant}`, interactive_seg/tracker→`{sam_variant}`)
+  - sam3: 单档 `{model_variant: sam3.1}`，保持跨 backend 协议对称
+- **`projects.default_variants` 字段 (alembic 0100)**: 项目级 variant 偏好持久化，按 `ml_backend_id` 分桶存 JSONB。前端 PATCH 写回后跨设备 / 协作仍保留偏好。
+- **VariantSelector 通用化 (v0.14.13)**: 从「sam_variant / dino_variant 白名单」升级为协议 v2 通用消费，axis_key 任意。新增 props `variantCombinations` (yolo 非笛卡尔积联动约束, series=yolov9 → size 受限到 t/s/m/c/e) + `defaults` (backend / 项目级合并后的默认值)；初值优先级 value > defaults > recommended > schema.default > 第一项。
+- **冷启动 UX 本地猜测 (sessionStorage 命中集合, v0.14.13)**: 后端 `/predict` 暂未暴露 `cache_hit`，前端维护"本会话见过的 variant 组合"集合，没见过 → 按钮文案显示"加载模型中…（首次约 5-15s）"，见过 → "推理中"。AIPreAnnotate / Workbench 两路均接入。等 v0.14.14 后端 cache_hit 真信号替换。
+
+### Changed
+
+- **AI 预标注页 ProjectDetailPanel**: VariantSelector 数据源从 backend 顶层 `supported_variants` (4 task 并集) 切到 model 级 (yolo 各 task 自己的轴 / gsam2 按 task 暴露相应轴)，避免渲染冗余轴。用户切换变体 PATCH `project.default_variants` debounced (与项目当前偏好 diff, 无变化不打 API)。
+- **Workbench AIInspectorPanel**: 同样取 model 级 `supported_variants / variant_combinations / default_variants`；`setAiVariant` 包装为 `setAiVariantAndPersist`，session state + PATCH project 双写。下次进 AI 预标注页 / 工作台直接显示用户偏好。
+- **API 透传链**: `apps/api/app/services/{ml_capabilities,capability_instances}.py` 加 `default_variants` 透传；`apps/api/app/schemas/{ml_capabilities,project}.py` 加字段；`apps/api/app/db/models/project.py` 加 `default_variants` mapped_column。
+- **前端类型**: `apps/web/src/api/{ml-backends,mlCapabilities,projects}.ts` 加 `default_variants?: Record<string, string>` (类型, ProjectUpdatePayload 字段)。
+
+### Tests
+
+- **Backend 协议 (12+ 新测)**: yolo 加 `test_setup_each_model_has_default_variants` / `test_setup_default_variants_legal` / `test_setup_default_variants_prefer_yolo11_s`；gsam2 加 `test_setup_default_variants_per_task_axes` / `test_setup_default_variants_match_env_defaults`；sam3 加 `test_setup_default_variants_present_on_each_model` / `test_setup_default_variants_match_env_model_variant`。yolo 28 / gsam2 13 / sam3 11 setup 测试全过。
+- **API 派生 (1 新测)**: `test_ml_capabilities.py::test_default_variants_passthrough` 验证 backend 自报 + 缺省 (空 dict) 两种路径透传。
+- **前端 VariantSelector (5 新测)**: yolo series/size 渲染 / sam3 单档 / variantCombinations 过滤 / 联动清除非法值 / defaults 优先级。
+- **冷启动 cache (7 新测)**: isWarm 默认 false / markWarm 后 true / variant 互不影响 / backend 互不影响 / null/undefined noop / axis_key 顺序无关 / 非 string value 忽略。
+- **回归**: 全 web `pnpm tsc --noEmit` 0 error；309 个 Workbench shell+state 测试 + 35 个 AIPreAnnotate 测试 0 回归；API 33 个 capability + project 测试 0 回归。
+- **顺手 fix**: sam3 `test_setup_supported_variants_empty` 自 v0.14.12 单档 backend 暴露 model_variant 轴后即失效，重写为 `declare_single_axis`；gsam2 test 旧 vram_gb 断言 (v0.14.12 删字段时遗漏)。
+
+### Docs
+
+- 协议文档 `docs-site/dev/reference/ml-backend-protocol.md` §4.1.2 模型条目结构加 `default_variants` 字段，§4.1.6 新子段含 yolo / gsam2 / sam3 三个 backend 示例 + 优先级链 + 校验说明。
+- v0.14.13 / v0.14.14 / v0.14.15 三份独立 plan 文档落地：
+  - 本版主体 plan: `docs/plans/2026-06-08-v0.14.13-predict-ux-refinement.md`
+  - 下版可观测性: `docs/plans/2026-06-08-v0.14.14-predict-observability.md` (cache_hit / pool 状态统一 / `/warmup` 端点)
+  - 协议规范化: `docs/plans/2026-06-08-v0.14.15-protocol-field-unification.md` (`model_variants` 扁平 dict / HTTP 422/503 / 删 `projects.ai_model`)
+
 ## [0.14.12] - 2026-06-08
 
 接入第三个 ML backend：**yolo-backend**（ultralytics 多任务多系列）。计划见 `docs/plans/2026-06-08-v0.14.12-yolo-backend.md`，抽象层决策见 [ADR-0038](docs/adr/0038-defer-ml-backend-base-class.md)。本版交付：协议 v2 第一个「批量预标 backend」真实实例，covers detection / segmentation(instance) / keypoint / obb 四任务 × v8/v9/v10/v11/v12/v26/rt-detr 七系列预训练矩阵（共 80 个有效组合）。
