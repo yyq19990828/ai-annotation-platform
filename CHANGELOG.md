@@ -29,6 +29,33 @@
 
 <!-- 0.14.x 版本变更按版本段追加到本区；进入 0.15.x 后整体移到 docs/changelogs/0.14.x.md -->
 
+## [0.14.17] - 2026-06-08
+
+YOLO 预标可用性纵切 · 修通 YOLO 批量预标（此前必然 422）、暴露模型原生类别表供类别白名单勾选、采纳时可选项目类别。平台仍不做"模型类→项目标签"自动映射（NG6 保留，由 alias 配置 + 采纳人选承担）。计划见 `docs/plans/2026-06-08-v0.14.16-preannotate-panel-capability-ux.md` §5。
+
+### Fixed
+
+- **YOLO 批量预标 422（此前 YOLO 项目预标必然失败）**：worker 给文本批量预标统一发 `context.type="text"`，但 yolo `Context.type` 只接受 `detection/segmentation/keypoint/obb`，且发的是扁平 `series/size` 而非 YOLO 要求的 `model_variants` dict + nested `params`。修复：面板对闭集多 task 几何 backend 提供「模型任务」选择器，按选中 task 发协议 v2 结构化请求（`task_type`/`model_id`/`model_variants`/nested `params`）；worker 抽出 `_build_predict_context` 纯函数分流 v2 结构化 vs 既有扁平（gsam2 文本）路径，互不影响。
+- **PATCH 改类无 class_name 校验**：`AnnotationService.update` 改类时补 `_validate_class_name`，与 create / accept 对齐，堵住"采纳后 PATCH 成项目标签集外非法值"的数据质量缺口。
+
+### Added
+
+- **YOLO 类别白名单勾选**：yolo-backend 在模型加载后缓存 `model.names`（逐 task，读自权重不硬编码），`/setup.models[].classes` 暴露 `[{index,name}]`；面板渲染 `[index]类名` 勾选（留空=全部），选中 index 经 `context.classes` 透传给 ultralytics `model.predict(classes=)` 原生过滤。预标结果仍渲染模型原生类名（不映射）。
+- **采纳时选类**：`POST /tasks/{id}/predictions/{pid}/accept` 新增可选 `override_class_name`，预测类名既不在项目标签集、又无 alias 命中时可由人指定项目标签落库（仍走软校验）。工作台采纳遇此类 422 时，自动在该框位置弹出 ClassPickerPopover（复用 `EditingClass.accept` 模式）让用户选项目标签，再带 `override_class_name` 重试采纳。
+
+## [0.14.16] - 2026-06-08
+
+AI 预标注面板深度优化（纯前端）·配置区常驻、按 backend 能力逐 model 变形、推理参数命名预设。计划见 `docs/plans/2026-06-08-v0.14.16-preannotate-panel-capability-ux.md`。
+
+### Added
+
+- **推理参数命名预设**：「AI 预标注」页可把当前 (variant + params) 存成命名预设、一键套用、删除。按 (backend, task) 分桶存 localStorage（`useAiParamPresets`），切 backend/任务互不串台。
+- **配置区常驻**：批跑预标配置面板不再被"先选批次"gate，未选批次也可预先调参 / 存预设；运行按钮在未选批次时禁用并提示。
+
+### Changed
+
+- **输出形态按 capability 逐 model 隐藏**（`derivePanelShape`）：当 model 只支持单一几何输出（YOLO detection→bbox / segmentation→polygon）或无框/掩膜概念（keypoint）时，隐藏无意义的"输出形态"框/掩膜/全部三选并按 model 下发强制形态；gsam2 等同时支持框与掩膜的 backend 维持三选。判定一律以 model 的 `supported_geometric_outputs` 为准、不按 backend 名硬分；能力声明不全时安全兜底为维持显示。（YOLO 文本框的"类别白名单"语义与后端过滤一并放 v0.14.17，本版不改 prompt 区行为。）
+
 ## [0.14.15] - 2026-06-08
 
 协议字段名统一 · 把三家 backend 的变体请求字段收敛到 `context.model_variants`，协议版本升到 2.1；参数物理字段名保持 backend 自己的语义，通过 JSON Schema `x-platform-role` 做前端统一展示；同时删除 v0.14.13 已 deprecated 的 `projects.ai_model`，补齐 v0.14.14 延期的 video pool 协议化、yolo warmup 路径、ModelMarket 运行时列与 `cache_hit` 真信号接通。计划见 `docs/plans/2026-06-08-v0.14.15-protocol-field-unification.md`，决策见 [ADR-0039](docs/adr/0039-protocol-field-name-unification.md)。
