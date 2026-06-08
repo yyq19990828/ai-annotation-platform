@@ -307,6 +307,10 @@ def setup() -> dict:
     # 顶层 supported_prompts / supported_geometric_outputs 全部保留, 供未迁移平台
     # 向后兼容 (合成隐式单 model 路径)。
     base["infra"] = "pytorch"
+    # v0.14.13 · `default_variants`: 跨 backend 对称声明 (sam3 当前只有单档 sam3.1).
+    # 即便单值, 前端 VariantSelector 仍按统一规则消费 model.default_variants 拿初值,
+    # 避免对"单档 backend"再走特殊分支.
+    _default_variants = {"model_variant": MODEL_VARIANT}
     base["models"] = [
         {
             "id": "sam3-detection",
@@ -320,6 +324,7 @@ def setup() -> dict:
             "supported_text_outputs": ["box"],
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,
+            "default_variants": _default_variants,
             "params": base["params"],
         },
         {
@@ -334,6 +339,7 @@ def setup() -> dict:
             "supported_text_outputs": ["mask", "both"],
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,
+            "default_variants": _default_variants,
             "params": base["params"],
         },
         {
@@ -347,6 +353,7 @@ def setup() -> dict:
             "supported_geometric_outputs": ["polygon"],
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,
+            "default_variants": _default_variants,
             "params": base["params"],
         },
     ]

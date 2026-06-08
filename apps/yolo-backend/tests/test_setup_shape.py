@@ -182,3 +182,26 @@ def test_setup_variant_combinations_all_legal(setup_dict: dict) -> None:
         task = entry["task"]
         for series, size in entry["variant_combinations"]:
             assert size in m.MODEL_MATRIX[task][series], (task, series, size)
+
+
+def test_setup_each_model_has_default_variants(setup_dict: dict) -> None:
+    """v0.14.13 · 每个 model 必须暴露 default_variants (供前端 VariantSelector 取初值)."""
+    for entry in setup_dict["models"]:
+        dv = entry.get("default_variants")
+        assert isinstance(dv, dict) and dv, f"{entry['id']} missing default_variants"
+        assert set(dv.keys()) == {"series", "size"}
+
+
+def test_setup_default_variants_legal(setup_dict: dict) -> None:
+    """default_variants 必须是该 task 下的合法 (series, size) 组合."""
+    import main as m  # noqa: PLC0415
+    for entry in setup_dict["models"]:
+        task = entry["task"]
+        dv = entry["default_variants"]
+        assert dv["size"] in m.MODEL_MATRIX[task][dv["series"]], (task, dv)
+
+
+def test_setup_default_variants_prefer_yolo11_s(setup_dict: dict) -> None:
+    """yolo11/s 4 task 全覆盖, 推荐组合应被选中."""
+    for entry in setup_dict["models"]:
+        assert entry["default_variants"] == {"series": "yolo11", "size": "s"}, entry["id"]

@@ -338,6 +338,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   "supported_variants": [ /* series/size 多轴,§4.1.6 */ ],
   "variant_combinations": [ /* 可选,§4.1.6: 多轴非真笛卡尔积时显式列举合法组合 */ ],
   "variants_shared_across_tasks": false, /* 可选,§4.1.6: True 表同 backend 内多 task 共享同一份物理权重 */
+  "default_variants": { "series": "yolo11", "size": "s" }, /* 可选,§4.1.6: backend 自报该 model 默认 variant 组合 */
   "default_thresholds": { "conf": 0.25, "iou": 0.7 },
   "resource_profile": { "device": "gpu", "batchable": true },
   "params": { /* 该 model 专属 JSON Schema(Draft-07 子集),前端 schema-form 渲染 */ }
@@ -490,6 +491,30 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 - **`true`（gsam2 / sam3 风格）**：同 backend 内多 task 共享同一份权重（SAM 2.1 Tiny 一份 `.pt` 同时服务 segmentation / interactive_seg / tracker；GroundingDINO Swin-T 一份 `.pt` 同时服务 detection / segmentation）。模型市场列表按 `(backend, axis_key, axis_value)` 聚合到一行，`task` 列汇总所有用到此权重的 task。
 
 **结合 `supported_variants` 按 task 暴露**：当 `variants_shared_across_tasks=true` 时，每个 model 只声明该 task **真正用到的 axes**（如 grounded-sam2 的 `detection` 只声明 `dino_variant` 轴而非两轴），让前端目录的 task 列准确反映哪些 task 用 SAM、哪些 task 用 DINO。
+
+#### `default_variants`（可选，v0.14.13 起）
+
+每个 model 自报该 task 的默认 variant 组合，前端 `VariantSelector` 在用户未显式选择时用这组值作初值。**优先级**：项目级 `projects.default_variants[backend_id]`（v0.14.13 新增字段）> backend `default_variants` > backend 启动时 env 默认。
+
+**结构**：扁平 `dict[axis_key, axis_value]`，key 必须严格匹配该 model 的 `supported_variants[].key`，value 必须在对应 axis 的 `variants[].value` 内、且（多轴时）整体落在 `variant_combinations` 内：
+
+```jsonc
+// yolo (两轴, 严格按 variant_combinations 取合法组合):
+{ "default_variants": { "series": "yolo11", "size": "s" } }
+
+// grounded-sam2 detection (单轴 dino_variant):
+{ "default_variants": { "dino_variant": "T" } }
+// grounded-sam2 segmentation (两轴, DINO + SAM):
+{ "default_variants": { "sam_variant": "tiny", "dino_variant": "T" } }
+
+// sam3 (单档, 仍按对称约定声明):
+{ "default_variants": { "model_variant": "sam3.1" } }
+```
+
+- **每 model 一份**：因为同 backend 不同 task 可能选不同档（yolo 通常 4 task 共用 yolo11/s；但 backend 完全有自由按 task 调整）。
+- **轴必须完整**：声明了几轴 `supported_variants` 就要给齐几个值；缺轴等同于"没默认"，前端会回落到 backend 启动 env。
+- **不与 `params.*_variant.default` 重复**：老协议 v1 时 `params` 里也带过 `default`（如 `params.properties.sam_variant.default`），新前端优先读 `default_variants`，老前端继续读 `params.*.default` 兼容。
+- **校验**：backend 不强制运行时校验 default_variants 是否落在 supported_variants/variant_combinations 内（信任 backend 自报），前端 / API 也不校验；非法值只会让前端初值显示成不存在的选项（用户切换后即修复）。
 
 ### 4.1.7 范例：ONNX 聚合 backend（一个 backend，多家族多任务，统一 infra）
 

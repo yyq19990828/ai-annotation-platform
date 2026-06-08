@@ -494,6 +494,11 @@ def setup() -> dict:
     #   - interactive_seg / tracker 只用 SAM2 (prompts 是 point/bbox, 与 text 无关);
     #   - segmentation 是 DINO + SAM 组合, 两轴都用。
     # 前端模型市场据此正确聚合: SAM 系列只关联到 seg/iseg/tracker, DINO 系列只到 det/seg。
+    # v0.14.13 · `default_variants`: backend 自报该 task 的默认 variant 组合, 供前端
+    # 用户未选时作初值. 与 model 的 supported_variants 轴一一对应:
+    #   - detection (DINO 路径) 只声明 dino_variant
+    #   - interactive_seg / tracker (SAM2 路径) 只声明 sam_variant
+    #   - segmentation (DINO + SAM2 组合) 两轴都声明
     base["models"] = [
         {
             "id": "grounded-sam2-detection",
@@ -507,6 +512,7 @@ def setup() -> dict:
             "supported_text_outputs": ["box"],
             "supported_variants": [_dino_variant_axis()],
             "variants_shared_across_tasks": True,
+            "default_variants": {"dino_variant": DINO_VARIANT},
             "params": base["params"],
         },
         {
@@ -521,6 +527,7 @@ def setup() -> dict:
             "supported_text_outputs": ["mask", "both"],
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,
+            "default_variants": {"sam_variant": SAM_VARIANT, "dino_variant": DINO_VARIANT},
             "params": base["params"],
         },
         {
@@ -534,6 +541,7 @@ def setup() -> dict:
             "supported_geometric_outputs": ["polygon"],
             "supported_variants": [_sam_variant_axis()],
             "variants_shared_across_tasks": True,
+            "default_variants": {"sam_variant": SAM_VARIANT},
             "params": base["params"],
         },
         {
@@ -548,6 +556,7 @@ def setup() -> dict:
             "supported_trackers": ["sam2_video"],
             "supported_variants": [_sam_variant_axis()],
             "variants_shared_across_tasks": True,
+            "default_variants": {"sam_variant": SAM_VARIANT},
             "params": base["params"],
         },
     ]

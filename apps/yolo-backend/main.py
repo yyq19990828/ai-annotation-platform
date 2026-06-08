@@ -292,6 +292,22 @@ def _variant_combinations_for(task: str) -> list[list[str]]:
     return out
 
 
+def _default_variants_for(task: str) -> dict[str, str]:
+    """协议 v2.1 字段 `default_variants`: backend 自报该 task 的默认 variant 组合,
+    供前端在用户未选择时作为初值 (优先级低于项目级 default_variants, 高于 backend env).
+
+    优先用 RECOMMENDED_SERIES + RECOMMENDED_SIZE (yolo11/s); 若该组合在 task 内无
+    预训练权重 (理论不会发生, yolo11/s 4 task 全覆盖), 回退到该 task 第一个合法组合.
+    """
+    matrix = MODEL_MATRIX.get(task, {})
+    if RECOMMENDED_SERIES in matrix and RECOMMENDED_SIZE in matrix[RECOMMENDED_SERIES]:
+        return {"series": RECOMMENDED_SERIES, "size": RECOMMENDED_SIZE}
+    for series, sizes in matrix.items():
+        if sizes:
+            return {"series": series, "size": sizes[0]}
+    return {}  # 不应发生 (task 至少一个合法权重), 留 {} 让前端走"无默认"逻辑
+
+
 def _build_model_entry(
     model_id: str, display_name: str, task: str,
     geometric_outputs: list[str],
@@ -308,6 +324,7 @@ def _build_model_entry(
         "output_attribute_types": ["class", "score"],
         "supported_variants": _supported_variants_for(task),
         "variant_combinations": _variant_combinations_for(task),
+        "default_variants": _default_variants_for(task),
         "params": _PARAMS_SCHEMA,
     }
 
