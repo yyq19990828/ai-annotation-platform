@@ -89,6 +89,10 @@ class InstanceModelItem(BaseModel):
     # 的同 variant 合并到一行, 而不是为每个 task 重复显示。yolo 每 task 独立权重
     # (yolov8n-det.pt vs yolov8n-obb.pt), 缺省 False 保持「每 task 一行 + 任务后缀」。
     variants_shared_across_tasks: bool = False
+    # v0.14.13 · backend 自报的默认 variant 组合 (dict[axis_key, value]).
+    # 前端 VariantSelector 在用户未选时取此作初值; 优先级链:
+    # 项目级 project.default_variants[backend_id] > 本字段 > backend 启动 env 默认.
+    default_variants: dict[str, str] = {}
 
 
 class CapabilityInstanceItem(BaseModel):

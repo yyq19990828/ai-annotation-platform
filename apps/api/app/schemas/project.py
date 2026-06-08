@@ -136,6 +136,9 @@ class ProjectUpdate(BaseModel):
     scene_mode: bool | None = None
     prefer_same_scene_continuation: bool | None = None
     scene_continuation_window_min: Annotated[int, Field(ge=1, le=480)] | None = None
+    # v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶).
+    # PATCH 用整体替换语义; 前端可只发改动的 backend 桶 (其它桶保留靠业务侧 merge).
+    default_variants: dict[str, dict[str, str]] | None = None
 
 
 class ProjectBatchSummary(BaseModel):
@@ -185,6 +188,8 @@ class ProjectOut(BaseModel):
     scene_mode: bool = False
     prefer_same_scene_continuation: bool = False
     scene_continuation_window_min: int = 30
+    # v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶). 空 dict = 未设, 由前端落到 backend.default_variants.
+    default_variants: dict[str, dict[str, str]] = Field(default_factory=dict)
     # v0.10.13 · E1 · 标注指引 Markdown 原文; None 表示未配置.
     annotation_guide: str | None = None
     # v0.10.13 · E1 · 已上传的指引图片资源元数据列表.

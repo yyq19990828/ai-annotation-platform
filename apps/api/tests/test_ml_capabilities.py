@@ -151,6 +151,35 @@ def test_legacy_grounded_sam2_synthesizes_single_model():
     assert caps["modalities"] == ["image", "video"]
 
 
+def test_default_variants_passthrough():
+    """v0.14.13 · backend 自报的 default_variants 必须透传到 caps['models'][].default_variants."""
+    setup = {
+        "name": "yolo",
+        "infra": "pytorch",
+        "models": [
+            {
+                "id": "detect",
+                "task": "detection",
+                "supported_variants": [
+                    {"key": "series", "variants": [{"value": "yolo11"}]},
+                    {"key": "size", "variants": [{"value": "s"}]},
+                ],
+                "default_variants": {"series": "yolo11", "size": "s"},
+            },
+            {
+                "id": "no-default",
+                "task": "detection",
+                # 不报 default_variants → 派生层应给空 dict, 不报错
+            },
+        ],
+    }
+    caps = extract_capabilities(setup)
+    assert caps is not None
+    models = {m["id"]: m for m in caps["models"]}
+    assert models["detect"]["default_variants"] == {"series": "yolo11", "size": "s"}
+    assert models["no-default"]["default_variants"] == {}
+
+
 def test_legacy_detection_only_backend():
     # echo backend: 无 prompts/trackers/models → detection 单 model, 仅展示
     setup = {"name": "echo-backend", "labels": ["demo"], "is_interactive": False}

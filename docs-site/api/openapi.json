@@ -7600,6 +7600,14 @@
       "InstanceModelItem": {
         "description": "实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 resource_profile /\nparams 等运维信息; v0.14.12 起补 supported_variants + variant_combinations 让\n前端能按主轴展开「具体模型」行).",
         "properties": {
+          "default_variants": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Default Variants",
+            "type": "object"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -10893,6 +10901,16 @@
             "title": "Data Type",
             "type": "string"
           },
+          "default_variants": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Default Variants",
+            "type": "object"
+          },
           "display_id": {
             "title": "Display Id",
             "type": "string"
@@ -12448,6 +12466,23 @@
               }
             ],
             "title": "Data Type"
+          },
+          "default_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Variants"
           },
           "due_date": {
             "anyOf": [
