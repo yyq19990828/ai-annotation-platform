@@ -114,7 +114,64 @@ ML backend（grounded-sam2 / sam3 / 后续接入的任意 backend）的 `/metric
 
 ---
 
-## 5. 关键文件索引
+## 5. ML Backend pool 观测口径 (v0.14.14)
+
+v0.14.14 把三个 backend 的 `/health.pool` 统一成 `PoolStatus`（协议 §4.3），运维 / 模型市场都从同一结构读：
+
+```jsonc
+{
+  "pool": {
+    "cap": 4,
+    "current_size": 2,
+    "loaded_keys": [
+      {
+        "key": "yolov11/s/detection",     // backend-defined opaque string
+        "loaded_at": "2026-06-08T03:11:22Z",
+        "last_used_at": "2026-06-08T03:15:00Z",
+        "hit_count": 12                   // 累计命中次数 (不含 warmup)
+      }
+    ],
+    "last_evict": {
+      "key": "yolov8/x/detection",
+      "at": "2026-06-08T03:14:00Z",
+      "reason": "lru"                     // 受控: lru | manual | idle_timeout
+    }
+  }
+}
+```
+
+**key 命名约定**（backend 自由选择，平台只做相等匹配）：
+
+| backend | key 形式 |
+|---|---|
+| yolo-backend | `{series}/{size}/{task}`，如 `yolov11/s/detection` |
+| grounded-sam2-backend | `sam={sam_variant}/dino={dino_variant}`；video 池另用 `video:sam=…` 区分 |
+| sam3-backend | 模型变体字符串如 `sam3.1`；`cap` 永远 `1` |
+
+**`/predict` 响应观测三件套**（协议 §4.2）：
+
+| 字段 | 用途 |
+|---|---|
+| `cache_hit: bool \| null` | 本次推理是否命中 pool 内权重；`false` 表本次触发加载（冷启动 / pool evict 后 / 服务重启） |
+| `model_load_ms: int \| null` | 本次 disk→GPU 加载毫秒（`cache_hit=True` 时通常 `0`） |
+| `pool_state: {current_size, cap} \| null` | 轻量 pool 快照（按需开启，常态 `null` 避免响应体膨胀） |
+
+**前端冷启动 UX**：响应回来后调 `recordPredictCacheHit(backendId, variants, cache_hit)` 写入本会话 Map，下次同 variant 调用前查 `isVariantHot()` 决定按钮文案。pool LRU evict 后误判一次不可避免（前端 Map 还以为热的），但下次响应里 `cache_hit=false` 会自我修正。v0.14.13 的 `sessionStorage` 猜测保留作老 backend (未上报 `cache_hit`) 的 fallback，v0.14.15 删除。
+
+**显式预热（`POST /warmup`）**：运维 / 用户可在不消耗推理算力的前提下把指定 variant 权重加载到 pool。响应 `evicted` 字段回填本次因 cap 上限淘汰的 key 名，供前端 toast 提示。例：
+
+```bash
+# 三 backend 的 warmup body 各自定义, 响应统一为 WarmupResponse:
+curl -X POST localhost:8003/warmup \
+  -d '{"task":"detection","variants":{"series":"yolov11","size":"s"}}' | jq
+# {"ok":true,"model_load_ms":4500,"cache_hit":false,"evicted":null}
+```
+
+平台代理 `POST /api/v1/projects/{pid}/ml-backends/{bid}/warmup` 把 body 原样转发；upstream 4xx 透传，5xx 502 兜底。
+
+---
+
+## 6. 关键文件索引
 
 | 主题 | 路径 |
 |---|---|

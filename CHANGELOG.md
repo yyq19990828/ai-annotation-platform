@@ -29,6 +29,42 @@
 
 <!-- 0.14.x 版本变更按版本段追加到本区；进入 0.15.x 后整体移到 docs/changelogs/0.14.x.md -->
 
+## [0.14.14] - 2026-06-08
+
+预标注可观测性 · 把 v0.14.13 的「前端 sessionStorage 猜测是否首次冷启动」换成「backend 真信号」。`PredictionResult` 加 `cache_hit / model_load_ms / pool_state` 三可选字段；`/health.pool` 三 backend 统一为 `PoolStatus`（cap / current_size / loaded_keys[] / last_evict）；新协议端点 `POST /warmup` 让前端 / 运维显式预热权重。计划见 `docs/plans/2026-06-08-v0.14.14-predict-observability.md`。
+
+### Added
+
+- **协议字段 `PredictionResult.{cache_hit, model_load_ms, pool_state}` (v0.14.14)**：可选三元组。`cache_hit=True` 表本次推理命中 pool 内权重，`False` 表触发加载（冷启动 / pool evict / 首次拉 ckpt）；`model_load_ms` 是本次 disk→GPU 加载毫秒（`cache_hit=True` 时 `None`）；`pool_state` 是轻量 pool 快照（按需）。三 backend `/predict` 全部上报。
+- **`/health.pool` 统一 `PoolStatus` schema (v0.14.14)**：`{cap, current_size, loaded_keys: [{key, loaded_at, last_used_at, hit_count}], last_evict: {key, at, reason}|null}`。`key` 是 backend-defined opaque 字符串（yolo `{series}/{size}/{task}`、gsam2 `sam=X/dino=Y`、sam3 `sam3.1`）。`last_evict.reason` 受控为 `lru | manual | idle_timeout`。gsam2 兼容期同时输出老字段 (`loaded_variants/evict_count/per_variant_lru_ts`)，让旧消费方过渡。
+- **协议端点 `POST /warmup` (v0.14.14)**：把指定 variant 权重加载到 pool 不跑 forward。yolo / gsam2 / sam3 三 backend 全部实现：body 由 backend 自定义（yolo `{task, variants}` / gsam2 `{variants:{sam,dino}}` / sam3 可空），统一响应 `WarmupResponse {ok, model_load_ms, cache_hit, evicted}`。`/setup` 顶层加 `warmup_endpoint: true` 自声明。pool 满时按 LRU 淘汰并把 evicted key 回填响应字段供前端 toast 提示。
+- **API 代理 `POST /api/v1/projects/{pid}/ml-backends/{bid}/warmup`**：body 原样转发，权限沿用 RBAC，upstream 4xx 透传 / 5xx 502 兜底，含 AuditService 日志。
+- **前端真信号 Map (v0.14.14)**：`sessionVariantCache.ts` 加 `recordPredictCacheHit` / `isVariantHot`。`predict` 响应回来后写 Map<key, cache_hit>，下次同 variant 调用前查 Map 决定按钮文案。`isVariantHot=true` ⇒ "推理中"；`false` ⇒ "加载中"；`undefined` ⇒ 老 sessionStorage 猜测作 fallback。
+
+### Changed
+
+- **三 backend ModelPool**：yolo / gsam2 加 `_loaded_at / _last_used_at / _hit_count / _last_evict` 运行时元数据；`get()` 改返回 `(model, cache_hit, load_ms)` 三元组；新 `warmup()` 方法不增 `hit_count` 且 pool 满时回填 evicted；新 `pool_status()` 输出协议 §4.3 PoolStatus 格式。sam3 无 ModelPool 走 module-level 等价改造。`unload_all/clear_all(reason=)` 区分 `manual / idle_timeout / lru`。
+- **yolo predictor**：`predict_one` 返回签名扩展为 `(results, cache_hit, model_load_ms, inference_time_ms)`，main `/predict` 透传到 PredictionResult。
+- **gsam2 `_run_prompt`**：返回 6 元组 `(results, embedding_hit, sv, dv, pool_cache_hit, model_load_ms)`，区分图像 embedding 缓存命中（v0.9.x）与 model pool 权重命中（v0.14.14）。
+- **API `BackendCapabilities` + `CapabilityInstance` schema**：加 `warmup_endpoint: bool`（缺省 False）；`ModelCapability` 补 v0.14.12-13 字段（`variant_combinations / variants_shared_across_tasks / default_variants`）。`ml_capabilities.extract_capabilities` 透传 `warmup_endpoint`；`capability_instances._load_*` 同步透传。
+- **前端 `ProjectDetailPanel.isCurrentVariantWarm` / `useWorkbenchShellModel.currentVariantIsWarm`**：改为「真信号优先（`isVariantHot != undefined`）→ fallback 老 sessionStorage 猜测」两段式。
+
+### Tests
+
+- **Backend (40+ 新测)**: yolo 加 `test_pool_observability` 11 个（cache_hit/warmup/evict/idle_timeout/manual reason/key string）+ `test_warmup_and_health` 5 个（端点契约）+ `test_setup` 1 个 warmup_endpoint。gsam2 加 `test_pool_observability_v14_14` 11 个 + setup 1 个；sam3 加 `test_pool_status_v14_14` 8 个 + setup 1 个；改 idle_unload 3 个测匹配新 tuple 签名。protocol_v2 加 7 个新 schema 测试（PoolStatus / LoadedKey / EvictRecord / WarmupResponse / PredictionResult v14.14 字段）。
+- **API (6 新测)**: `test_ml_capabilities.py` 加 2 个 warmup_endpoint 透传测；`test_capability_instances.py` 加 2 个（env-only / 缺字段）；`test_ml_backend_warmup_proxy.py` 新文件 4 个（路由转发 / 404 / 4xx 透传 / connection 502）。
+- **前端 (7 新测)**: `sessionVariantCache.test.ts` 加 7 个真信号 Map 用例（未知/true/false/evict 自我修正/null 缺省/跨 backend/null id）。
+- **回归**: yolo 84 (67→84) / gsam2 63 (51→63) / sam3 53 (41→53) / protocol_v2 18 (11→18) / API capability+warmup 50 (44→50) / web sessionVariantCache 14 + VariantSelector 8 全过；`pnpm tsc --noEmit` 0 error。
+
+### Docs
+
+- 协议文档 `docs-site/dev/reference/ml-backend-protocol.md` §2.1 `PredictionResult` 加 cache_hit / model_load_ms / pool_state 字段，§4.1.1 顶层加 `warmup_endpoint`，新建 §4.2（PredictionResult 运行时观测语义）/ §4.3（PoolStatus 统一格式）/ §4.4（POST /warmup 端点 + 三 backend 请求示例）。§1 `/health.pool` 概览句改指 §4.3。
+
+### Migration
+
+- **后端协议向后兼容**: v0.14.14 字段全部可选，老消费方（仅读 `inference_time_ms / pool.loaded_variants`）零改动。gsam2 `/health.pool` 双发新老字段，老 admin / ModelMarket VariantPanel 继续可用。
+- **未删字段**: `projects.ai_model` 等冗余字段保留至 v0.14.15（协议字段名统一时一起清）。`ModelMarket "运行时列 / ⚡ 预热按钮 / 卡片 evict 提示"` 留 v0.14.15。
+
 ## [0.14.13] - 2026-06-08
 
 预标注交互闭环 · 把 v0.14.12 在能力目录展示的 variant 富表达贯通到实际预标注链路，让用户在 AI 预标注页 / 工作台都能选 yolo `series/size` (或 gsam2 `sam_variant/dino_variant`、sam3 `model_variant`) 并持久化为项目级偏好。计划见 `docs/plans/2026-06-08-v0.14.13-predict-ux-refinement.md`，配套 v0.14.14 / v0.14.15 路线在 `docs/plans/2026-06-08-v0.14.14-predict-observability.md` / `2026-06-08-v0.14.15-protocol-field-unification.md`。
