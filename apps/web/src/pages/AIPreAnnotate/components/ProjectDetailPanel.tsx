@@ -37,6 +37,8 @@ import { useAiToolParamPrefs } from "@/pages/Workbench/state/useAiToolParamPrefs
 import {
   isVariantWarm,
   markVariantWarm,
+  isVariantHot,
+  recordPredictCacheHit,
 } from "@/pages/Workbench/state/sessionVariantCache";
 
 import { TabRow } from "@/components/ui/TabRow";
@@ -487,10 +489,15 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     }
     return out;
   }, [paramsValue, primaryModel]);
-  const isCurrentVariantWarm = useMemo(
-    () => isVariantWarm(selectedBackendId, currentVariantSlice),
-    [selectedBackendId, currentVariantSlice],
-  );
+  // v0.14.14: 真信号优先 — backend 上报 cache_hit (isVariantHot) 时直接用; 未上报
+  // 时 fallback 到 sessionStorage 猜测 (isVariantWarm). running state 变化让 useMemo
+  // 在 predict 响应回来后重算.
+  const isCurrentVariantWarm = useMemo(() => {
+    if (!selectedBackendId) return false;
+    const hot = isVariantHot(selectedBackendId, currentVariantSlice);
+    if (hot !== undefined) return hot;
+    return isVariantWarm(selectedBackendId, currentVariantSlice);
+  }, [selectedBackendId, currentVariantSlice, running]);
 
   const headerName = summary?.project_name ?? `项目 ${projectId.slice(0, 8)}`;
 

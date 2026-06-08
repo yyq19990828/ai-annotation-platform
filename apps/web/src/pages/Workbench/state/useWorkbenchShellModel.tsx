@@ -47,6 +47,7 @@ import { useCapabilityValidation } from "./useCapabilityValidation";
 import { useAiToolParamPrefs } from "./useAiToolParamPrefs";
 import {
   isVariantWarm as isVariantWarmCache,
+  isVariantHot as isVariantHotMap,
   markVariantWarm,
 } from "./sessionVariantCache";
 import { deriveDefaults, VARIANT_FIELD_KEYS } from "../components/SchemaForm";
@@ -915,10 +916,15 @@ export function useWorkbenchShellModel({
     }
     return out;
   }, [s.aiVariant, variantAxisKeys]);
-  const currentVariantIsWarm = useMemo(
-    () => isVariantWarmCache(currentProject?.ml_backend_id ?? null, currentVariantSlice),
-    [currentProject?.ml_backend_id, currentVariantSlice],
-  );
+  // v0.14.14: 真信号优先 — 若有 isVariantHot 真信号则用, 否则 fallback 到老 sessionStorage
+  // 猜测. triggerPreannotation.isPending 变化触发重算 (response 回来后修正).
+  const currentVariantIsWarm = useMemo(() => {
+    const bid = currentProject?.ml_backend_id ?? null;
+    if (!bid) return false;
+    const hot = isVariantHotMap(bid, currentVariantSlice);
+    if (hot !== undefined) return hot;
+    return isVariantWarmCache(bid, currentVariantSlice);
+  }, [currentProject?.ml_backend_id, currentVariantSlice, triggerPreannotation.isPending]);
   useEffect(() => {
     sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -95,6 +95,8 @@ export interface MLBackendCapability {
   // v0.14.9 · 能力声明协议 v2: backend 默认 infra + 多模型目录.
   // 老 backend 缺省时由平台合成「隐式单 model」(见 capabilities 端点).
   infra?: string;
+  // v0.14.14 · backend 自报是否支持 POST /warmup (协议 §4.4); 老 backend 缺字段 = false.
+  warmup_endpoint?: boolean;
   models?: MLModelCapability[];
   // capabilities 端点 (health_meta 派生) 会带派生模态; 原始 /setup 不带.
   modalities?: string[];
@@ -171,4 +173,20 @@ export const mlBackendsApi = {
       `/projects/${projectId}/ml-backends/${backendId}/interactive-annotating`,
       payload,
     ),
+
+  // v0.14.14 协议 §4.4 · POST /warmup 代理. body 各 backend 自定义:
+  //   yolo:  { task: "detection", variants: { series: "yolo11", size: "s" } }
+  //   gsam2: { variants: { sam_variant: "small", dino_variant: "B" } }
+  //   sam3:  {} 或 { variants: { model_variant: "sam3.1" } }
+  warmup: (
+    projectId: string,
+    backendId: string,
+    body: Record<string, unknown>,
+  ) =>
+    apiClient.post<{
+      ok: boolean;
+      model_load_ms: number | null;
+      cache_hit: boolean;
+      evicted: string | null;
+    }>(`/projects/${projectId}/ml-backends/${backendId}/warmup`, body),
 };

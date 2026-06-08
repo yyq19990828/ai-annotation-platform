@@ -99,6 +99,9 @@ export interface CapabilityInstance {
   source: "env_only" | "registered" | string;
   name: string;
   infra: string;
+  // v0.14.14 · backend 自报是否支持 POST /warmup (协议 §4.4); 老 backend 缺字段 = false.
+  // 前端模型市场 "⚡ 预热" 按钮据此置灰.
+  warmup_endpoint?: boolean;
   models: CapabilityInstanceModel[];
 }
 
