@@ -74,8 +74,9 @@ class ModelPool:
         self._lru_ts: dict[VariantKey, float] = {}
         # per-variant 锁: 同一变体并发 miss 只 build 一次; 不同变体可并行排队。
         self._variant_locks: dict[VariantKey, asyncio.Lock] = {}
-        self._evict_count = 0
-        # v0.14.14: 运行时观测元数据 (协议 §4.3 PoolStatus).
+        # v0.14.14: 运行时观测元数据 (协议 §4.3 PoolStatus). 老 `_evict_count` 累加值
+        # 在 v0.14.15 起被 _last_evict 详细记录替代; loaded_at/last_used_at/hit_count
+        # 是 LoadedKey 元数据.
         self._loaded_at: dict[VariantKey, datetime] = {}
         self._last_used_at: dict[VariantKey, datetime] = {}
         self._hit_count: dict[VariantKey, int] = {}
@@ -85,9 +86,10 @@ class ModelPool:
     def cap(self) -> int:
         return self._cap
 
-    @property
-    def evict_count(self) -> int:
-        return self._evict_count
+    def is_loaded(self, sam_variant: str, dino_variant: str) -> bool:
+        """协议 §4.3 之前曾用 `(sv, dv) in pool.loaded_variants()` 判断; v0.14.14 之后
+        消费方应走 pool_status()['loaded_keys'], 内部调用方用本 helper."""
+        return (sam_variant, dino_variant) in self._predictors
 
     def _lock_for(self, key: VariantKey) -> asyncio.Lock:
         lock = self._variant_locks.get(key)
@@ -247,7 +249,6 @@ class ModelPool:
             if cache is not None:
                 cache.clear()
             self._free_gpu_memory()
-            self._evict_count += 1
             self._last_evict = {
                 "key": self._key_str(evict_key),
                 "at": datetime.now(UTC),
@@ -291,29 +292,6 @@ class ModelPool:
     @property
     def loaded(self) -> bool:
         return bool(self._predictors)
-
-    def loaded_variants(self) -> list[dict]:
-        """已加载变体列表 (LRU 顺序, 最近用在后)。"""
-        return [{"sam_variant": sv, "dino_variant": dv} for (sv, dv) in self._predictors.keys()]
-
-    def per_variant_lru_ts(self) -> dict[str, float]:
-        """每变体最近访问的 monotonic 时间戳 (key 用 'sam/dino' 字面)。"""
-        return {f"{sv}/{dv}": round(ts, 2) for (sv, dv), ts in self._lru_ts.items()}
-
-    def health(self) -> dict:
-        """老格式: 平台 ml_client / admin / ModelMarket VariantPanel 仍消费.
-
-        v0.14.14 起 main.py /health 端点会在 pool 子对象里合并 pool_status() 输出的
-        协议 §4.3 PoolStatus 字段 (cap/current_size/loaded_keys/last_evict), 与本老
-        格式 (loaded_variants/evict_count/per_variant_lru_ts) 双发, 等老消费方迁完
-        再移除老字段.
-        """
-        return {
-            "cap": self._cap,
-            "loaded_variants": self.loaded_variants(),
-            "evict_count": self._evict_count,
-            "per_variant_lru_ts": self.per_variant_lru_ts(),
-        }
 
     def pool_status(self) -> dict[str, Any]:
         """v0.14.14 协议 §4.3 PoolStatus: cap / current_size / loaded_keys / last_evict."""

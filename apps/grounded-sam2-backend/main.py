@@ -399,9 +399,10 @@ def health() -> dict:
         "container_memory_percent": perf["container_memory_percent"],
     }
     if gpu_info is not None:
-        # v0.10.35 §B · 让 gpu_info 里图片池 / video 池的占用可分辨 (整卡 mem_get_info
+        # v0.10.35 §B · 让 gpu_info 里 video 池的占用可分辨 (整卡 mem_get_info
         # 无法按进程内 allocator 切分, 这里给出"哪些池有权重常驻"的定性标记).
-        gpu_info["image_pool_loaded_variants"] = _pool.loaded_variants()
+        # v0.14.14: image 池迁到 pool.loaded_keys (协议 §4.3) 后这里不再注入老字段;
+        # video 池暂未协议化, 老字段保留. ModelMarket/PerfHud 已切到 loaded_keys.
         gpu_info["video_pool_loaded_variants"] = _video_pool.loaded_variants()
     return {
         "ok": True,
@@ -411,9 +412,9 @@ def health() -> dict:
         "cache": _pool.aggregate_cache_stats(),
         "model_version": MODEL_VERSION,
         "loaded": _pool.loaded,
-        # v0.14.14: 同时输出协议 §4.3 PoolStatus (cap/current_size/loaded_keys[]/last_evict)
-        # 和老字段 (loaded_variants/evict_count/per_variant_lru_ts), 给老消费方一版过渡期.
-        "pool": {**_pool.health(), **_pool.pool_status()},
+        # v0.14.14 协议 §4.3 PoolStatus (cap/current_size/loaded_keys[]/last_evict).
+        # 老字段 loaded_variants/evict_count/per_variant_lru_ts 在 v0.14.14 内清掉双发.
+        "pool": _pool.pool_status(),
         # v0.10.35 §B · video tracker 独立池区块 (cap / loaded_variants / active_sessions / idle_seconds).
         "video_pool": _video_pool.health(),
         "provisioning": _provisioning,
@@ -662,7 +663,7 @@ async def reload(req: ReloadRequest | None = None) -> dict:
             status_code=422,
             detail=f"unsupported dino_variant: {dv!r}; allowed={sorted(DINO_CONFIGS)}",
         )
-    already = {"sam_variant": sv, "dino_variant": dv} in _pool.loaded_variants()
+    already = _pool.is_loaded(sv, dv)
     _predictor, _cache_hit, _load_ms = await _get_predictor(sv, dv)
     return {
         "ok": True,

@@ -121,10 +121,11 @@ class MLBackendClient:
                 except Exception:
                     return True, None
                 # v0.9.11 · 加 host (PerfHud 容器 CPU/RAM); gpu_info/cache/model_version 保留
-                # v0.10.26 · 加 pool (loaded_variants / cap / per_variant_lru_ts),
-                # 供模型市场变体面板展示 (backend 无 pool 字段时静默跳过).
+                # v0.10.26 · 加 pool (cap / loaded_variants / per_variant_lru_ts), v0.14.14
+                # 升级到协议 §4.3 PoolStatus (cap / current_size / loaded_keys / last_evict),
+                # 这里整段透传; 模型市场变体面板按字段优先级展示 (backend 无 pool 时静默跳过).
                 # v0.10.36 · 加 video_pool (cap / loaded_variants / active_sessions / idle_seconds),
-                # 供视频追踪显存池观测 (backend 无该字段时静默跳过).
+                # 供视频追踪显存池观测 (backend 无该字段时静默跳过; video pool 协议化留下版).
                 meta = {
                     k: data[k]
                     for k in (

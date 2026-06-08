@@ -140,12 +140,10 @@ def test_clear_all_manual_sets_last_evict_manual() -> None:
     assert pool.pool_status()["last_evict"]["reason"] == "manual"
 
 
-def test_health_still_contains_legacy_fields() -> None:
-    """v0.14.14: health() 仍输出老字段, 让 admin/前端老消费方过渡."""
+def test_is_loaded_helper() -> None:
+    """v0.14.14: 调用方判断变体在池里改用 pool.is_loaded(sv, dv) 替代老 loaded_variants()."""
     pool = _make_pool()
+    assert pool.is_loaded("tiny", "T") is False
     _run(pool.get("tiny", "T"))
-    h = pool.health()
-    assert "loaded_variants" in h
-    assert "evict_count" in h
-    assert "per_variant_lru_ts" in h
-    assert h["cap"] == 2
+    assert pool.is_loaded("tiny", "T") is True
+    assert pool.is_loaded("small", "B") is False
