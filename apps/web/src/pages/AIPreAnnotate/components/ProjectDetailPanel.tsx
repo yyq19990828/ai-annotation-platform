@@ -43,6 +43,10 @@ import { TabRow } from "@/components/ui/TabRow";
 import { HistoryTable } from "./HistoryTable";
 import { VideoPreannotateGuide } from "./VideoPreannotateGuide";
 import { PredictionImportWizard } from "@/components/predictions/PredictionImportWizard";
+import { PresetRow } from "./PresetRow";
+import { ClassWhitelistRow } from "./ClassWhitelistRow";
+import { derivePanelShape } from "../utils/panelShape";
+import { useAiParamPresets } from "../utils/useAiParamPresets";
 import styles from "./ProjectDetailPanel.module.css";
 
 const OUTPUT_MODE_TABS = ["□ 框", "○ 掩膜", "⊕ 全部"];
@@ -83,6 +87,17 @@ const TASK_TYPE_BY_LABEL: Record<string, PreannotateTaskType> = {
   文本预标: "text",
   "OCR 文字识别": "ocr",
   文档版面: "doc_layout",
+};
+
+// v0.14.17 · YOLO 等"多 task 几何 backend"(闭集, supported_prompts=['none']) 的可选 task.
+// 选中后发协议 v2 结构化请求 (task_type + model_id + model_variants), 修通 YOLO 批量预标
+// (此前 worker 默认 context.type="text" 被 YOLO 的 Literal 校验 422 拒).
+const GEOMETRIC_TASKS = ["detection", "segmentation", "keypoint", "obb"];
+const GEOMETRIC_TASK_LABELS: Record<string, string> = {
+  detection: "检测（框）",
+  segmentation: "分割（掩膜）",
+  keypoint: "关键点",
+  obb: "朝向框",
 };
 
 function cx(...classNames: Array<string | false | null | undefined>) {
@@ -217,6 +232,39 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     );
   }, [isDocMode, activeDocModel, capabilitiesQ.data]);
 
+  // v0.14.16 · capability 驱动面板变形: 由当前 model 派生"输出形态是否显示 / prompt 区形态".
+  // YOLO 闭集 (supported_prompts=['none'], 单一几何) → 隐藏输出形态三选 + 文本框降级为类别筛选.
+  const panelShape = useMemo(
+    () => derivePanelShape(primaryModel, isDocMode),
+    [primaryModel, isDocMode],
+  );
+
+  // v0.14.17 · 闭集多 task 几何 backend (YOLO): 暴露 detection/seg/keypoint/obb 多 model 且无 text prompt.
+  // 提供显式 task 选择器, 选中 task → 发 v2 结构化请求修通 YOLO 批量预标.
+  const geometricModels = useMemo<MLModelCapability[]>(
+    () =>
+      (capabilitiesQ.data?.models ?? []).filter((m) =>
+        GEOMETRIC_TASKS.includes(m.task ?? ""),
+      ),
+    [capabilitiesQ.data],
+  );
+  const isGeometricBackend =
+    !isDocMode &&
+    geometricModels.length > 0 &&
+    !(primaryModel?.supported_prompts ?? []).includes("text");
+  const [geometricTaskId, setGeometricTaskId] = useState<string | null>(null);
+  useEffect(() => {
+    setGeometricTaskId(geometricModels[0]?.id ?? null);
+  }, [selectedBackendId, geometricModels]);
+  const geometricModel =
+    geometricModels.find((m) => m.id === geometricTaskId) ?? geometricModels[0];
+  // v0.14.17 · 类别白名单: 选中的模型原生类别 index 子集 (空集=检出全部类别). 随 task 切换重置.
+  // classes 仅在该 task 模型已加载过 (warmup/predict) 才有值; 未就位时不显示勾选, 默认全部.
+  const [selectedClassIdx, setSelectedClassIdx] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    setSelectedClassIdx(new Set());
+  }, [selectedBackendId, geometricTaskId]);
+
   // 文本任务用 /setup.params; OCR / 版面用所选 model 条目自带的 params schema.
   const paramsSchema = (
     isDocMode ? activeDocModel?.params : setupQ.data?.params
@@ -289,6 +337,16 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       [selectedBackendId]: variantSlice,
     };
     updateProjectMu.mutate({ default_variants: merged });
+  };
+
+  // v0.14.16 · 命名预设 (variant + params 快照, localStorage 按 backend×task 分桶).
+  const { presets, save: savePreset, remove: removePreset } = useAiParamPresets(
+    selectedBackendId,
+    taskType,
+  );
+  // 套用预设走 onVariantOrParamsChange: 同时 setParamsValue + 持久化 + variant 写回项目偏好.
+  const applyPreset = (values: Record<string, unknown>) => {
+    onVariantOrParamsChange({ ...deriveDefaults(paramsSchema), ...variantDefaults, ...values });
   };
 
   const batchesQ = useBatches(projectId, "active");
@@ -401,32 +459,58 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     });
   };
 
-  // OCR / 版面模式无需文本 prompt; 文本模式仍要求非空 prompt.
+  // OCR / 版面 (isDocMode) 与 YOLO 几何 backend (isGeometricBackend) 无需文本 prompt;
+  // 纯文本 (gsam2) 仍要求非空 prompt.
   const canRun =
     !!selectedBackend &&
     selectedBatchIds.size > 0 &&
-    (isDocMode || !!prompt.trim()) &&
+    (isDocMode || isGeometricBackend || !!prompt.trim()) &&
     !running;
 
   const onRun = async () => {
     if (!selectedBackend || selectedBatchIds.size === 0) return;
-    if (!isDocMode && !prompt.trim()) return;
+    if (!isDocMode && !isGeometricBackend && !prompt.trim()) return;
     const ids = Array.from(selectedBatchIds);
-    const baseArgs = isDocMode
+    // 输出形态被隐藏 (model 单一几何输出) 时下发强制形态, 否则用用户所选.
+    const effectiveOutputMode = panelShape.forcedOutputMode ?? outputMode;
+    // v0.14.17 · 几何 backend 走 v2 结构化: paramsValue 拆成 model_variants (variant 轴) + params (其余).
+    const variantSlice: Record<string, string> = {};
+    const nonVariantParams: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(paramsValue)) {
+      if (variantAxisKeysRef.current.has(k)) {
+        if (typeof v === "string") variantSlice[k] = v;
+      } else {
+        nonVariantParams[k] = v;
+      }
+    }
+    const baseArgs = isGeometricBackend
       ? {
           ml_backend_id: selectedBackend.id,
-          model_id: activeDocModel?.id,
-          task_type: taskType,
-          params: paramsValue,
+          task_type: geometricModel?.task,
+          model_id: geometricModel?.id,
+          model_variants: variantSlice,
+          params: nonVariantParams,
           predict_mode: predictMode,
+          // 类别白名单: 空集 = 全部类别 (不下发 class_filter).
+          ...(selectedClassIdx.size > 0
+            ? { class_filter: Array.from(selectedClassIdx).sort((a, b) => a - b) }
+            : {}),
         }
-      : {
-          ml_backend_id: selectedBackend.id,
-          prompt: prompt.trim(),
-          output_mode: outputMode,
-          params: paramsValue,
-          predict_mode: predictMode,
-        };
+      : isDocMode
+        ? {
+            ml_backend_id: selectedBackend.id,
+            model_id: activeDocModel?.id,
+            task_type: taskType,
+            params: paramsValue,
+            predict_mode: predictMode,
+          }
+        : {
+            ml_backend_id: selectedBackend.id,
+            prompt: prompt.trim(),
+            output_mode: effectiveOutputMode,
+            params: paramsValue,
+            predict_mode: predictMode,
+          };
     setRunning(true);
     try {
       let okCount = 0;
@@ -617,12 +701,15 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
         </div>
       </Card>
 
-      {selectedBatchIds.size > 0 && (
-        <Card>
-          <div className={styles.runPanel}>
-            <strong className={styles.sectionTitle}>
-              对已选 {selectedBatchIds.size} 批跑预标
-            </strong>
+      {/* v0.14.16 · 配置区常驻: 不再被 selectedBatchIds gate, 未选批次也可预先配置 / 存预设,
+          仅"运行"按钮禁用 (见 canRun). */}
+      <Card>
+        <div className={styles.runPanel}>
+          <strong className={styles.sectionTitle}>
+            {selectedBatchIds.size > 0
+              ? `对已选 ${selectedBatchIds.size} 批跑预标`
+              : "批跑预标设置"}
+          </strong>
 
             {/* v0.14.9 · 能力声明协议 v2: backend 暴露 ocr / doc_layout 模型时, 提供任务类型选择.
                 选 OCR / 文档版面后隐藏纯文本 prompt 控件, 请求带 model_id + task_type. */}
@@ -640,6 +727,44 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               </div>
             )}
 
+            {/* v0.14.17 · 闭集多 task 几何 backend (YOLO): 显式选 task → 发 v2 结构化请求.
+                选 task 即决定输出几何 (检测=框 / 分割=掩膜), 故此类 backend 不另设输出形态/prompt. */}
+            {isGeometricBackend && geometricModels.length > 1 && (
+              <div className={styles.field}>
+                <span className={styles.fieldLabel}>模型任务</span>
+                <TabRow
+                  tabs={geometricModels.map(
+                    (m) => GEOMETRIC_TASK_LABELS[m.task ?? ""] ?? m.task ?? m.id,
+                  )}
+                  active={
+                    geometricModel
+                      ? GEOMETRIC_TASK_LABELS[geometricModel.task ?? ""] ??
+                        geometricModel.task ??
+                        geometricModel.id
+                      : ""
+                  }
+                  onChange={(label) => {
+                    const m = geometricModels.find(
+                      (x) =>
+                        (GEOMETRIC_TASK_LABELS[x.task ?? ""] ?? x.task ?? x.id) ===
+                        label,
+                    );
+                    if (m) setGeometricTaskId(m.id);
+                  }}
+                />
+              </div>
+            )}
+
+            {/* v0.14.17 · YOLO 类别白名单勾选 ([index]类名). 留空=全部. 结果渲染模型原生类名,
+                采纳时由人选项目标签 (NG6: 平台不做映射). */}
+            {isGeometricBackend && (
+              <ClassWhitelistRow
+                classes={geometricModel?.classes}
+                selected={selectedClassIdx}
+                onChange={setSelectedClassIdx}
+              />
+            )}
+
             {/* v0.14.9 · OCR / 版面识别静态提示: 识别文本写入 annotation 属性, 项目需配置 text 属性. */}
             {isDocMode && (
               <div className={cx(styles.field, styles.docHint)}>
@@ -651,7 +776,10 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               </div>
             )}
 
-            {!isDocMode && (
+            {/* prompt 区: 开放词表文本任务 (gsam2) 显示; OCR/版面 (isDocMode) 与 YOLO 几何 backend
+                (isGeometricBackend, 走 task 选择器 + v2 请求, 后端忽略 prompt) 隐藏.
+                结构化"类别白名单" + 后端过滤是 v0.14.17 后续项. */}
+            {!isDocMode && !isGeometricBackend && (
               <label className={styles.field}>
                 <span className={styles.fieldLabel}>
                   Prompt（同一段文本应用到所有选中批次；逗号分隔）
@@ -764,7 +892,17 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               )}
             </div>
 
-            {!isDocMode && (
+            {/* v0.14.16 · 命名预设 (variant + params 快照, 按 backend×task 分桶 localStorage). */}
+            <PresetRow
+              presets={presets}
+              disabled={!selectedBackendId}
+              onApply={(p) => applyPreset(p.values)}
+              onSave={(name) => savePreset(name, paramsValue)}
+              onRemove={removePreset}
+            />
+
+            {/* v0.14.16 · 输出形态: 仅当 model 同时支持框与掩膜时显示 (单一几何/keypoint 隐藏, 见 panelShape). */}
+            {panelShape.showOutputMode && (
               <div className={styles.field}>
                 <span className={styles.fieldLabel}>输出形态</span>
                 <TabRow
@@ -824,18 +962,27 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
             )}
 
             <div className={styles.actions}>
-              <Button onClick={onRun} disabled={!canRun}>
+              <Button
+                onClick={onRun}
+                disabled={!canRun}
+                title={
+                  selectedBatchIds.size === 0
+                    ? "请先选择至少一个批次"
+                    : undefined
+                }
+              >
                 <Icon name="bot" size={12} />
                 {running
                   ? isCurrentVariantWarm
                     ? "分发中..."
                     : "加载模型中…（首次约 5-15s）"
-                  : `跑预标（${selectedBatchIds.size} 批）`}
+                  : selectedBatchIds.size === 0
+                    ? "跑预标（先选批次）"
+                    : `跑预标（${selectedBatchIds.size} 批）`}
               </Button>
             </div>
           </div>
-        </Card>
-      )}
+      </Card>
 
       <HistoryTable items={projectQueue} isLoading={queueQ.isLoading} />
     </div>

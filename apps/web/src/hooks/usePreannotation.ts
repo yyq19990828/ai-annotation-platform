@@ -55,6 +55,9 @@ export interface TriggerPreannotationPayload {
   model_id?: string;
   /** v0.14.9 · 任务类型便捷别名 ("ocr" / "doc_layout" / "text"); OCR / 版面预标透传. */
   task_type?: string;
+  /** v0.14.17 · 协议 v2 结构化路径 (YOLO 等多 task 几何 backend): 选中 variant 组合 (dict[axis,value]).
+   *  非空时后端构造 v2 context (model_variants dict + nested params), 修通 YOLO 批量预标. */
+  model_variants?: Record<string, string>;
 }
 
 export interface TriggerPreannotationResponse {

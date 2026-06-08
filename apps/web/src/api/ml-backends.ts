@@ -67,6 +67,9 @@ export interface MLModelCapability {
   resource_profile?: Record<string, unknown>;
   params?: { type?: string; properties?: Record<string, unknown> };
   modality?: string;
+  // v0.14.17 · 模型原生类别表 (闭集检测器, 读自权重 model.names). 供前端渲染类别白名单勾选;
+  // 仅在该 task 模型已加载过 (warmup / 首次 predict 后) 时有值。
+  classes?: { index: number; name: string }[];
 }
 
 // v0.10.1 · /setup 协议自描述响应 (与后端 sam3/grounded-sam2 main.py 同构).
