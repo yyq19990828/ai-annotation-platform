@@ -77,20 +77,26 @@ def test_unload_clears_predictor_and_cache(main_module):
 
 
 def test_ensure_predictor_loaded_builds_when_missing(main_module):
+    """v0.14.14: 返回 (predictor, cache_hit, load_ms). 冷启动时 cache_hit=False."""
     m = main_module
     m._predictor = None
-    result = _run(m._ensure_predictor_loaded())
-    assert result is not None
+    predictor, cache_hit, load_ms = _run(m._ensure_predictor_loaded())
+    assert predictor is not None
     assert m._predictor is not None
-    assert result is m._predictor
+    assert predictor is m._predictor
+    assert cache_hit is False
+    assert load_ms is not None and load_ms >= 0
 
 
 def test_ensure_predictor_loaded_reuses_existing(main_module):
+    """v0.14.14: 命中时 cache_hit=True, load_ms=None."""
     m = main_module
     existing = MagicMock(device="cpu")
     m._predictor = existing
-    result = _run(m._ensure_predictor_loaded())
-    assert result is existing, "已加载时不应重建"
+    predictor, cache_hit, load_ms = _run(m._ensure_predictor_loaded())
+    assert predictor is existing, "已加载时不应重建"
+    assert cache_hit is True
+    assert load_ms is None
 
 
 def test_ensure_predictor_updates_last_request_at(main_module):
@@ -129,7 +135,9 @@ def test_concurrent_loads_serialize_under_lock(main_module):
 
     results = _run(main())
     assert call_count["n"] == 1, "并发触发只允许一次真实加载"
-    assert all(r is results[0] for r in results)
+    # v0.14.14: results 是 [(predictor, cache_hit, load_ms), ...] 三元组
+    first_pred = results[0][0]
+    assert all(r[0] is first_pred for r in results)
 
 
 # ---------- 完整 unload → reload 循环 ----------
@@ -143,9 +151,11 @@ def test_unload_then_ensure_rebuilds(main_module):
     _run(m._unload_predictor(reason="test"))
     assert m._predictor is None
 
-    second = _run(m._ensure_predictor_loaded())
+    second, cache_hit, load_ms = _run(m._ensure_predictor_loaded())
     assert second is not None
     assert second is not first, "重载后应是新实例"
+    assert cache_hit is False, "unload 后再 ensure 必须是 cache_miss"
+    assert load_ms is not None and load_ms >= 0
 
 
 # ---------- env 默认值 ----------

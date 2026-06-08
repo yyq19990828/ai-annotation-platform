@@ -37,7 +37,9 @@ import gc
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from io import BytesIO
+from typing import Any
 
 import httpx
 import torch
@@ -45,6 +47,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from PIL import Image
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from pydantic import BaseModel
 
 from embedding_cache import EmbeddingCache, compute_cache_key
 from observability import (
@@ -61,7 +64,9 @@ from predictor import (
     MODEL_VARIANT,
     SAM3Predictor,
 )
-from schemas import BatchPredictResponse, PredictionResult
+from schemas import BatchPredictResponse, PredictionResult, WarmupResponse
+
+UTC = timezone.utc
 
 logger = logging.getLogger("sam3-backend")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
@@ -84,6 +89,12 @@ _cache = EmbeddingCache(capacity=EMBEDDING_CACHE_SIZE, sam_variant=MODEL_VERSION
 _last_request_at: float = time.monotonic()
 _predictor_lock = asyncio.Lock()
 _idle_task: asyncio.Task | None = None
+# v0.14.14: PoolStatus 元数据 (sam3 是单档 sam3.1, cap 永远 1).
+_pool_loaded_at: datetime | None = None
+_pool_last_used_at: datetime | None = None
+_pool_hit_count: int = 0
+_pool_last_evict: dict[str, Any] | None = None
+_POOL_KEY: str = MODEL_VERSION  # opaque key, 协议 §4.3 sam3 用 model_variant 字符串
 
 
 def _build_predictor() -> SAM3Predictor:
@@ -101,20 +112,44 @@ def _free_gpu_memory() -> None:
             pass
 
 
-async def _ensure_predictor_loaded() -> SAM3Predictor:
-    """懒加载: 若已被 unload, 在锁内重建. 锁避免并发请求并行加载导致 OOM."""
+async def _ensure_predictor_loaded(
+    *, count_as_hit: bool = True,
+) -> tuple[SAM3Predictor, bool, int | None]:
+    """v0.14.14: 懒加载 + 运行时观测.
+
+    返回 `(predictor, cache_hit, model_load_ms)`:
+      - cache_hit=True 时 load_ms=None (模型在内存, 复用); count_as_hit=True 时增 hit_count
+      - cache_hit=False 时 load_ms 是本次 build 毫秒 (冷启动 / idle unload 后 / manual reload 后)
+      - count_as_hit=False 走 warmup 路径, 不增 hit_count
+    """
     global _predictor, _last_request_at
+    global _pool_loaded_at, _pool_last_used_at, _pool_hit_count
     if _predictor is not None:
         _last_request_at = time.monotonic()
-        return _predictor
+        _pool_last_used_at = datetime.now(UTC)
+        if count_as_hit:
+            _pool_hit_count += 1
+        return _predictor, True, None
     async with _predictor_lock:
-        if _predictor is None:
-            logger.info("reloading SAM 3 on demand (after idle unload or manual unload)")
-            loop = asyncio.get_running_loop()
-            _predictor = await loop.run_in_executor(None, _build_predictor)
-            logger.info("SAM 3 reloaded; device=%s", _predictor.device)
+        if _predictor is not None:
+            # 锁内 double-check: 等锁期间别的协程可能已加载完.
+            _last_request_at = time.monotonic()
+            _pool_last_used_at = datetime.now(UTC)
+            if count_as_hit:
+                _pool_hit_count += 1
+            return _predictor, True, None
+        logger.info("reloading SAM 3 on demand (after idle unload or manual unload)")
+        loop = asyncio.get_running_loop()
+        t0 = time.monotonic()
+        _predictor = await loop.run_in_executor(None, _build_predictor)
+        load_ms = int((time.monotonic() - t0) * 1000)
+        now = datetime.now(UTC)
+        _pool_loaded_at = now
+        _pool_last_used_at = now
+        _pool_hit_count = 0  # 新加载, 命中计数重置
+        logger.info("SAM 3 reloaded; device=%s; load_ms=%d", _predictor.device, load_ms)
         _last_request_at = time.monotonic()
-        return _predictor
+        return _predictor, False, load_ms
 
 
 async def _unload_predictor(reason: str) -> bool:
@@ -122,8 +157,10 @@ async def _unload_predictor(reason: str) -> bool:
 
     embedding cache 中持有的 _features 张量指向 GPU 显存, 模型卸载后这些
     引用悬挂等同泄漏, 必须一起 clear (与 grounded-sam2-backend 同款处理).
+
+    v0.14.14: 记录 _pool_last_evict 供 PoolStatus.last_evict 输出.
     """
-    global _predictor
+    global _predictor, _pool_loaded_at, _pool_last_used_at, _pool_hit_count, _pool_last_evict
     async with _predictor_lock:
         if _predictor is None:
             return False
@@ -132,7 +169,45 @@ async def _unload_predictor(reason: str) -> bool:
         _free_gpu_memory()
         _cache.clear()
         _free_gpu_memory()
+        # 归类 evict reason: idle_* / manual / 其他 → manual
+        evict_reason = "idle_timeout" if reason.startswith("idle") else "manual"
+        _pool_last_evict = {
+            "key": _POOL_KEY,
+            "at": datetime.now(UTC),
+            "reason": evict_reason,
+        }
+        _pool_loaded_at = None
+        _pool_last_used_at = None
+        _pool_hit_count = 0
         return True
+
+
+def _pool_status() -> dict[str, Any]:
+    """v0.14.14 协议 §4.3 PoolStatus: cap=1, current_size 0/1, loaded_keys, last_evict.
+
+    sam3 是单档 sam3.1, cap 永远 1; current_size = 1 表示已加载, 0 表示未加载或 idle unload 后.
+    """
+    loaded_keys: list[dict[str, Any]] = []
+    if _predictor is not None and _pool_loaded_at is not None:
+        loaded_keys.append({
+            "key": _POOL_KEY,
+            "loaded_at": _pool_loaded_at.isoformat(),
+            "last_used_at": (_pool_last_used_at or _pool_loaded_at).isoformat(),
+            "hit_count": _pool_hit_count,
+        })
+    last_evict: dict[str, Any] | None = None
+    if _pool_last_evict is not None:
+        last_evict = {
+            "key": _pool_last_evict["key"],
+            "at": _pool_last_evict["at"].isoformat(),
+            "reason": _pool_last_evict["reason"],
+        }
+    return {
+        "cap": 1,
+        "current_size": 1 if _predictor is not None else 0,
+        "loaded_keys": loaded_keys,
+        "last_evict": last_evict,
+    }
 
 
 async def _idle_watcher() -> None:
@@ -153,15 +228,20 @@ async def _idle_watcher() -> None:
 
 @app.on_event("startup")
 async def _load_models() -> None:
-    global _predictor, _idle_task, _last_request_at
+    global _predictor, _idle_task, _last_request_at, _pool_loaded_at, _pool_last_used_at
     logger.info(
         "loading SAM 3 (variant=%s, cache_size=%d, idle_unload=%.0fs)",
         MODEL_VERSION, EMBEDDING_CACHE_SIZE, IDLE_UNLOAD_SECONDS,
     )
     loop = asyncio.get_running_loop()
+    t0 = time.monotonic()
     _predictor = await loop.run_in_executor(None, _build_predictor)
+    load_ms = int((time.monotonic() - t0) * 1000)
     _last_request_at = time.monotonic()
-    logger.info("SAM 3 loaded; device=%s", _predictor.device)
+    now = datetime.now(UTC)
+    _pool_loaded_at = now
+    _pool_last_used_at = now
+    logger.info("SAM 3 loaded; device=%s; load_ms=%d", _predictor.device, load_ms)
     init_perfhud_collectors()
     if IDLE_UNLOAD_SECONDS > 0:
         _idle_task = asyncio.create_task(_idle_watcher())
@@ -212,7 +292,9 @@ def health() -> dict:
         "host": host,
         "cache": _cache.stats(),
         "model_version": MODEL_VERSION,
-        "loaded": _predictor is not None,
+        "loaded": _predictor is not None,  # 老字段, 兼容前端 AdminDashboard
+        # v0.14.14: 协议 §4.3 PoolStatus 统一格式; sam3 cap 永远 1.
+        "pool": _pool_status(),
         "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
         "last_request_age_seconds": round(time.monotonic() - _last_request_at, 2),
     }
@@ -228,6 +310,8 @@ def setup() -> dict:
         "name": "sam3-backend",
         "version": BACKEND_VERSION,
         "model_version": MODEL_VERSION,
+        # v0.14.14: 声明本 backend 支持 POST /warmup (协议 §4.4).
+        "warmup_endpoint": True,
         "labels": [],
         "is_interactive": True,
         # v0.10.0 选项 A: 不暴露 "point" (Sam3Processor image API 不支持).
@@ -387,8 +471,39 @@ async def unload() -> dict:
 async def reload() -> dict:
     """主动 (重新) 加载模型. 已加载时是 noop."""
     was_loaded = _predictor is not None
-    await _ensure_predictor_loaded()
+    await _ensure_predictor_loaded(count_as_hit=False)
     return {"ok": True, "loaded": True, "reloaded": not was_loaded}
+
+
+# v0.14.14 协议 §4.4 · /warmup 端点 (sam3 单档, body 可空).
+
+
+class WarmupRequest(BaseModel):
+    """sam3 是单档 sam3.1; variants 可选 {model_variant: "sam3.1"}, 仅校验."""
+
+    variants: dict[str, str] = {}
+
+
+@app.post("/warmup", response_model=WarmupResponse)
+async def warmup(req: WarmupRequest | None = None) -> WarmupResponse:
+    """v0.14.14: 加载 SAM 3 权重到 GPU 不跑 forward.
+
+    sam3 单档, variants.model_variant 必须等于 sam3.1 (或缺省). 重复预热返回 cache_hit=true.
+    """
+    if req is not None and req.variants:
+        mv = req.variants.get("model_variant")
+        if mv is not None and mv != MODEL_VERSION:
+            raise HTTPException(
+                status_code=422,
+                detail=f"unsupported model_variant: {mv!r}; sam3 only supports {MODEL_VERSION!r}",
+            )
+    _predictor_obj, cache_hit, load_ms = await _ensure_predictor_loaded(count_as_hit=False)
+    return WarmupResponse(
+        ok=True,
+        model_load_ms=load_ms,
+        cache_hit=cache_hit,
+        evicted=None,
+    )
 
 
 def _fetch_image(file_path: str) -> Image.Image:
@@ -528,7 +643,7 @@ def _observe(prompt_type: str, hit: bool, started: float) -> int:
 @app.post("/predict")
 async def predict(request: Request):
     # 懒加载: 若已被 idle / 手动卸载, 此处 await 触发后台 executor 重建模型.
-    p = await _ensure_predictor_loaded()
+    p, pool_cache_hit, model_load_ms = await _ensure_predictor_loaded()
     body = await request.json()
     started = time.perf_counter()
 
@@ -542,6 +657,8 @@ async def predict(request: Request):
             score=max((r.get("score") or 0.0) for r in result) if result else None,
             model_version=MODEL_VERSION,
             inference_time_ms=elapsed_ms,
+            cache_hit=pool_cache_hit,
+            model_load_ms=model_load_ms,
         ).model_dump(exclude_none=True)
 
     if isinstance(body, dict) and "tasks" in body:
@@ -565,6 +682,9 @@ async def predict(request: Request):
                     score=max((r.get("score") or 0.0) for r in result) if result else None,
                     model_version=MODEL_VERSION,
                     inference_time_ms=elapsed_ms,
+                    # 整批共享同一懒加载结果: 第一条 task 触发, 后续都是 True/None.
+                    cache_hit=pool_cache_hit,
+                    model_load_ms=model_load_ms,
                 ).model_dump(exclude_none=True)
             )
         return BatchPredictResponse(results=results).model_dump(exclude_none=True)

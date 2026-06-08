@@ -20,7 +20,12 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from aap_protocol_v2 import BatchPredictResponse, PredictionResult, TaskItem
+from aap_protocol_v2 import (
+    BatchPredictResponse,
+    PredictionResult,
+    TaskItem,
+    WarmupResponse,
+)
 from pydantic import BaseModel, model_validator
 
 __all__ = [
@@ -31,6 +36,7 @@ __all__ = [
     "InteractiveRequest",
     "PredictionResult",
     "TaskItem",
+    "WarmupResponse",
 ]
 
 

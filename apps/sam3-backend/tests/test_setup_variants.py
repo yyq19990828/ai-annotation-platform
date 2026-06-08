@@ -54,3 +54,12 @@ def test_setup_default_variants_match_env_model_variant():
     data = setup()
     for model in data["models"]:
         assert model["default_variants"]["model_variant"] == MODEL_VARIANT
+
+
+# ---------- v0.14.14: warmup_endpoint 声明 ----------
+
+
+def test_setup_warmup_endpoint_true():
+    """v0.14.14 协议 §4.4 · 顶层 warmup_endpoint 必须为 True (sam3 支持 /warmup)."""
+    data = setup()
+    assert data["warmup_endpoint"] is True
