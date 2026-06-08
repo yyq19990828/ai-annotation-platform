@@ -17,6 +17,7 @@ import {
   mlBackendsApi,
   type MLBackendSupportedVariantGroup,
   type MLBackendVariant,
+  type MLModelCapability,
 } from "@/api/ml-backends";
 import type { MLBackendItem } from "@/api/adminMlIntegrations";
 import {
@@ -32,6 +33,12 @@ interface EnumField {
   default?: string;
 }
 
+export interface VariantWarmTarget {
+  task?: string;
+  variants?: MLBackendVariant;
+  taskType?: "image" | "video";
+}
+
 // v0.10.36 · SAM2 视频 tracker 变体常量 (图片侧 /setup.params.sam_variant.enum 缺失时回退用).
 const SAM2_VIDEO_VARIANTS = ["tiny", "small", "base_plus", "large"];
 
@@ -43,8 +50,7 @@ export function VariantPanel({
 }: {
   projectId: string;
   backend: MLBackendItem;
-  // v0.10.36 · taskType 透传给 reload: "video" 预热独立 video tracker 池.
-  onWarm: (variant: MLBackendVariant, taskType?: "image" | "video") => void;
+  onWarm: (target?: VariantWarmTarget) => void;
   isWarming: boolean;
 }) {
   const { data: setup, isLoading, isError } = useQuery({
@@ -118,28 +124,20 @@ export function VariantPanel({
   if (isLoading) return <div className={styles.note}>加载变体能力…</div>;
   if (isError) return <div className={styles.noteError}>无法获取 /setup（后端不可达或未实现）</div>;
 
-  // v0.14.14: 多 model 协议 backend (yolo) 顶层 supported_variants 为空, 各 task 的
-  // series/size 富格式藏在 models[i].supported_variants. 本 panel 是 gsam2 风格的
-  // 单变体 (sam, dino) 运行时视图, 不能直接渲染 yolo 的 task×variants 立方. 显示
-  // 模型概览 + 指引到能力目录, 比"什么都不显示"对用户友好.
   const isMultiModelBackend =
     !supportsVariants && genericVariantGroups.length === 0 && (setup?.models?.length ?? 0) > 0;
   if (isMultiModelBackend) {
     return (
       <div className={styles.panel}>
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>多 model 协议 backend</div>
-          <div className={styles.note}>
-            该 backend 暴露 {setup!.models!.length} 个 task model：
-            {" "}
-            {setup!.models!.map((m) => m.task ?? m.id).filter(Boolean).join("、")}
-          </div>
-          <div className={styles.hint}>
-            每个 task 有独立的 series / size 变体目录。运行时观测面板只列出 backend 级 cap
-            与池中已加载 key（见上方 RuntimeMetrics）；具体 model 的预热请到
-            <strong> 模型市场 → 能力目录 </strong> 卡片中点击预热（v0.14.15 起合并）。
-          </div>
-        </div>
+        {setup!.models!.map((model) => (
+          <ModelVariantWarmSection
+            key={model.id}
+            model={model}
+            loadedKeys={pool?.loaded_keys?.map((key) => key.key) ?? []}
+            isWarming={isWarming}
+            onWarm={onWarm}
+          />
+        ))}
       </div>
     );
   }
@@ -250,7 +248,12 @@ export function VariantPanel({
               )}
               <Button
                 size="sm"
-                onClick={() => onWarm({ sam_variant: sam || undefined, dino_variant: dino || undefined })}
+                onClick={() => onWarm({
+                  variants: {
+                    ...(sam ? { sam_variant: sam } : {}),
+                    ...(dino ? { dino_variant: dino } : {}),
+                  },
+                })}
                 disabled={isWarming || !supportsVariants}
                 title={supportsVariants ? "预热旧 SAM/DINO 变体" : "待 backend 实现通用 warm 接口"}
               >
@@ -321,7 +324,10 @@ export function VariantPanel({
                 </label>
                 <Button
                   size="sm"
-                  onClick={() => onWarm({ sam_variant: videoSam || undefined }, "video")}
+                  onClick={() => onWarm({
+                    taskType: "video",
+                    variants: videoSam ? { sam_variant: videoSam } : {},
+                  })}
                   disabled={isWarming}
                 >
                   <Icon name="play" size={11} />
@@ -338,6 +344,159 @@ export function VariantPanel({
       )}
     </div>
   );
+}
+
+function ModelVariantWarmSection({
+  model,
+  loadedKeys,
+  isWarming,
+  onWarm,
+}: {
+  model: MLModelCapability;
+  loadedKeys: string[];
+  isWarming: boolean;
+  onWarm: (target?: VariantWarmTarget) => void;
+}) {
+  const groups = (model.supported_variants ?? []).filter(
+    (group) => Array.isArray(group.variants) && group.variants.length > 0,
+  );
+  const [variants, setVariants] = useState<Record<string, string>>(() => pickInitialVariants(model));
+
+  useEffect(() => {
+    setVariants(pickInitialVariants(model));
+  }, [model]);
+
+  const selectedKey = selectedLoadedKey(model.task, variants);
+  const isLoaded = selectedKey ? loadedKeys.includes(selectedKey) : false;
+
+  if (groups.length === 0) {
+    return (
+      <div className={styles.section}>
+        <div className={styles.sectionTitle}>{model.display_name ?? model.id}</div>
+        <div className={styles.note}>该 model 无可选变体</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>
+        {model.task ?? model.id}
+        <span className={styles.cap}>{model.display_name ?? model.id}</span>
+      </div>
+      <div className={styles.warmRow}>
+        {groups.map((group, idx) => {
+          const options = filterModelOptions(model, groups, idx, variants);
+          return (
+            <label key={group.key} className={styles.field}>
+              <span className={styles.label}>{group.title ?? group.key}</span>
+              <select
+                value={variants[group.key] ?? ""}
+                onChange={(event) =>
+                  setVariants((current) => sanitizeVariantSelection(
+                    model,
+                    groups,
+                    { ...current, [group.key]: event.target.value },
+                  ))
+                }
+                className={styles.select}
+              >
+                {options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label ?? option.value}
+                    {option.vram_gb != null ? ` · ${option.vram_gb}GB` : ""}
+                    {option.tier ? ` · ${option.tier}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          );
+        })}
+        <Button
+          size="sm"
+          onClick={() => onWarm({ task: model.task, variants })}
+          disabled={isWarming || Object.keys(variants).length === 0}
+        >
+          <Icon name="play" size={11} />
+          预热
+        </Button>
+        {isLoaded && <Badge variant="success">已在显存</Badge>}
+      </div>
+      <GenericVariantDirectory groups={groups} />
+    </div>
+  );
+}
+
+function pickInitialVariants(model: MLModelCapability): Record<string, string> {
+  const out: Record<string, string> = { ...(model.default_variants ?? {}) };
+  for (const group of model.supported_variants ?? []) {
+    if (out[group.key]) continue;
+    const options = group.variants ?? [];
+    const recommended = options.find((option) => option.recommended);
+    const picked = recommended ?? options[0];
+    if (picked?.value) out[group.key] = picked.value;
+  }
+  return sanitizeVariantSelection(
+    model,
+    (model.supported_variants ?? []).filter(
+      (group) => Array.isArray(group.variants) && group.variants.length > 0,
+    ),
+    out,
+  );
+}
+
+function filterModelOptions(
+  model: MLModelCapability,
+  groups: MLBackendSupportedVariantGroup[],
+  axisIndex: number,
+  variants: Record<string, string>,
+) {
+  const group = groups[axisIndex]!;
+  const options = group.variants ?? [];
+  const combos = model.variant_combinations ?? [];
+  if (combos.length === 0) return options;
+  const allowed = new Set<string>();
+  for (const combo of combos) {
+    let matches = true;
+    for (let i = 0; i < axisIndex; i++) {
+      const key = groups[i]!.key;
+      if (variants[key] && combo[i] !== variants[key]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches && combo[axisIndex]) allowed.add(combo[axisIndex]!);
+  }
+  const filtered = options.filter((option) => allowed.has(option.value));
+  return filtered.length > 0 ? filtered : options;
+}
+
+function sanitizeVariantSelection(
+  model: MLModelCapability,
+  groups: MLBackendSupportedVariantGroup[],
+  variants: Record<string, string>,
+): Record<string, string> {
+  const next = { ...variants };
+  for (let idx = 0; idx < groups.length; idx++) {
+    const options = filterModelOptions(model, groups, idx, next);
+    const current = next[groups[idx]!.key];
+    if (!current || !options.some((option) => option.value === current)) {
+      const recommended = options.find((option) => option.recommended);
+      next[groups[idx]!.key] = (recommended ?? options[0])?.value ?? "";
+    }
+  }
+  return Object.fromEntries(Object.entries(next).filter(([, value]) => value));
+}
+
+function selectedLoadedKey(task: string | undefined, variants: Record<string, string>): string | null {
+  const series = variants.series;
+  const size = variants.size;
+  if (task && series && size) return `${series}/${size}/${task}`;
+  if (variants.sam_variant && variants.dino_variant) {
+    return `sam=${variants.sam_variant}/dino=${variants.dino_variant}`;
+  }
+  if (variants.model_variant) return variants.model_variant;
+  return null;
 }
 
 function GenericVariantDirectory({ groups }: { groups: MLBackendSupportedVariantGroup[] }) {

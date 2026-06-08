@@ -43,6 +43,14 @@ from typing import Any
 
 import httpx
 import torch
+from aap_protocol_v2 import (
+    COMPAT_PROTOCOL_VERSIONS,
+    PROTOCOL_VERSION,
+    PlatformRole,
+    VariantNotSupportedError,
+    log_deprecated_model_variant_fields,
+    normalize_context_model_variants,
+)
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from PIL import Image
@@ -210,6 +218,19 @@ def _pool_status() -> dict[str, Any]:
     }
 
 
+def _normalize_predict_context(ctx: dict) -> dict:
+    try:
+        normalized, deprecated = normalize_context_model_variants(ctx)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    log_deprecated_model_variant_fields(logger, deprecated)
+    model_variants = normalized.get("model_variants") or {}
+    model_variant = model_variants.get("model_variant")
+    if model_variant is not None and model_variant != MODEL_VERSION:
+        raise VariantNotSupportedError("model_variant", model_variant, [MODEL_VERSION])
+    return normalized
+
+
 async def _idle_watcher() -> None:
     """周期检查最近请求时间; 超过 IDLE_UNLOAD_SECONDS 触发自动卸载."""
     while True:
@@ -307,6 +328,8 @@ def setup() -> dict:
     # - supported_prompts: 决定 ToolDock 哪些 AI 工具可用 (M2 ToolDock 重构消费)
     # - params: JSON Schema (Draft-07 子集) — 前端 schema-form 自动渲染参数面板
     base = {
+        "protocol_version": PROTOCOL_VERSION,
+        "compat_protocol_versions": COMPAT_PROTOCOL_VERSIONS,
         "name": "sam3-backend",
         "version": BACKEND_VERSION,
         "model_version": MODEL_VERSION,
@@ -353,6 +376,7 @@ def setup() -> dict:
                     "maximum": 1.0,
                     "default": DEFAULT_SCORE_THRESHOLD,
                     "title": "置信度阈值",
+                    "x-platform-role": PlatformRole.CONFIDENCE.value,
                     "description": "只保留置信度高于此值的实例。调高=更少更准的框，调低=更多但可能含误检。",
                 },
                 "simplify_tolerance": {
@@ -361,12 +385,14 @@ def setup() -> dict:
                     "maximum": 10.0,
                     "default": DEFAULT_SIMPLIFY_TOLERANCE,
                     "title": "轮廓简化容差(像素)",
+                    "x-platform-role": PlatformRole.SIMPLIFY_TOLERANCE.value,
                     "description": "多边形轮廓抽稀强度（像素）。调大=顶点更少、边更直更轻量；调小=更贴合细节但顶点更多。仅影响 mask 输出。",
                 },
                 "model_variant": {
                     "type": "string",
                     "default": MODEL_VERSION,
                     "title": "模型版本",
+                    "x-platform-role": PlatformRole.MODEL_VARIANT.value,
                     "readOnly": True,
                     "description": "当前部署的 SAM 3 模型版本，由后端固定，不可在前端切换。",
                 },
@@ -493,10 +519,7 @@ async def warmup(req: WarmupRequest | None = None) -> WarmupResponse:
     if req is not None and req.variants:
         mv = req.variants.get("model_variant")
         if mv is not None and mv != MODEL_VERSION:
-            raise HTTPException(
-                status_code=422,
-                detail=f"unsupported model_variant: {mv!r}; sam3 only supports {MODEL_VERSION!r}",
-            )
+            raise VariantNotSupportedError("model_variant", mv, [MODEL_VERSION])
     _predictor_obj, cache_hit, load_ms = await _ensure_predictor_loaded(count_as_hit=False)
     return WarmupResponse(
         ok=True,
@@ -642,14 +665,14 @@ def _observe(prompt_type: str, hit: bool, started: float) -> int:
 
 @app.post("/predict")
 async def predict(request: Request):
-    # 懒加载: 若已被 idle / 手动卸载, 此处 await 触发后台 executor 重建模型.
-    p, pool_cache_hit, model_load_ms = await _ensure_predictor_loaded()
     body = await request.json()
     started = time.perf_counter()
 
     if isinstance(body, dict) and "task" in body and "context" in body:
         task = body["task"]
-        ctx = body.get("context") or {}
+        ctx = _normalize_predict_context(body.get("context") or {})
+        # 懒加载: 若已被 idle / 手动卸载, 此处 await 触发后台 executor 重建模型.
+        p, pool_cache_hit, model_load_ms = await _ensure_predictor_loaded()
         result, hit = _run_prompt(p, task["file_path"], ctx)
         elapsed_ms = _observe(ctx.get("type") or "unknown", hit, started)
         return PredictionResult(
@@ -663,7 +686,10 @@ async def predict(request: Request):
 
     if isinstance(body, dict) and "tasks" in body:
         tasks = body["tasks"]
-        ctx = body.get("context") or {"type": "text", "text": body.get("text", "")}
+        ctx = _normalize_predict_context(
+            body.get("context") or {"type": "text", "text": body.get("text", "")}
+        )
+        p, pool_cache_hit, model_load_ms = await _ensure_predictor_loaded()
         results = []
         for t in tasks:
             t_started = time.perf_counter()

@@ -16,7 +16,7 @@ ai-annotation-platform 的第三个 ML backend（v0.14.12）—— 基于 [ultra
 | YOLO26   | ✅ | ✅  | ✅   | ✅  | n/s/m/l/x |
 | RT-DETR  | ✅ | –   | –   | –   | l/x |
 
-矩阵基于 [`ultralytics/assets` release v8.3.0 + v8.4.0](https://github.com/ultralytics/assets/releases) 实际预训练权重核对（2026-06-08）；不在矩阵内的组合，`/setup` 不暴露 + `/predict` 返回 400 `INVALID_VARIANT`。
+矩阵基于 [`ultralytics/assets` release v8.3.0 + v8.4.0](https://github.com/ultralytics/assets/releases) 实际预训练权重核对（2026-06-08）；不在矩阵内的组合，`/setup` 不暴露 + `/predict` 返回 422 `variant_not_supported`。
 
 **不做**：classification、YOLO26 的 sem/depth/reid/s3d/objv1 头、tracker、训练（`/fit`）、TensorRT/ONNX 加速、batch 推理优化。具体见 v0.14.12 计划文件 §2.2。
 

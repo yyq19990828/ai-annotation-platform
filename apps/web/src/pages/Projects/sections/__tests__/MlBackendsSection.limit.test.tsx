@@ -52,7 +52,6 @@ function renderSection(project: ProjectWithLimit) {
   const merged = {
     id: "p1",
     ai_enabled: false,
-    ai_model: null,
     ml_backend_id: null,
     iou_dedup_threshold: 0.7,
     text_output_default: null,
@@ -107,7 +106,7 @@ describe("MlBackendsSection 上限态", () => {
     expect(screen.getByRole("button", { name: /注册 backend/ })).not.toBeDisabled();
   });
 
-  it("AI 设置保存时绑定 backend 并回填 ai_model", () => {
+  it("AI 设置保存时绑定 backend", () => {
     mockUseMLBackends.mockReturnValue({ data: [SAMPLE_BACKEND], isLoading: false, isError: false });
     renderSection({ id: "p1", ml_backend_id: null, ml_backend_limit: 0 });
 
@@ -122,7 +121,6 @@ describe("MlBackendsSection 上限态", () => {
     expect(payload).toMatchObject({
       ai_enabled: true,
       ml_backend_id: "b1",
-      ai_model: "grounded-sam2",
       iou_dedup_threshold: 0.7,
     });
   });

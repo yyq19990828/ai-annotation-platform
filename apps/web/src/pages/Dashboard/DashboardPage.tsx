@@ -133,7 +133,7 @@ function ProjectRow({
         {p.ai_enabled ? (
           <Badge variant="ai">
             <Icon name="sparkles" size={10} />
-            {p.ml_backend_id ? p.ai_model ?? "未接入模型" : "未接入模型"}
+            {p.ml_backend_id ? "已接入模型" : "未接入模型"}
           </Badge>
         ) : (
           <span className={styles.mutedSmall}>未启用</span>

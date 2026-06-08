@@ -49,7 +49,12 @@ import {
   isVariantHot,
   markVariantHot,
 } from "./sessionVariantCache";
-import { deriveDefaults, VARIANT_FIELD_KEYS } from "../components/SchemaForm";
+import {
+  deriveDefaults,
+  isVariantField,
+  VARIANT_FIELD_KEYS,
+  type JsonSchemaField,
+} from "../components/SchemaForm";
 import { AIToolDrawer } from "../shell/AIToolDrawer";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
@@ -111,6 +116,21 @@ function omitVariantFields(value: Record<string, unknown> | undefined): Record<s
     if (!VARIANT_FIELD_SET.has(key)) out[key] = v;
   }
   return out;
+}
+
+function asSchemaField(raw: unknown): JsonSchemaField {
+  return raw && typeof raw === "object" ? raw as JsonSchemaField : {};
+}
+
+function buildPredictParams(
+  params: Record<string, unknown> | undefined,
+  modelVariants: Record<string, string>,
+): Record<string, unknown> | undefined {
+  const out = omitVariantFields(params);
+  if (Object.keys(modelVariants).length > 0) {
+    out.model_variants = modelVariants;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 type WorkbenchShellMode = "annotate" | "review";
@@ -244,7 +264,7 @@ export function useWorkbenchShellModel({
 
   const projectName = currentProject?.name ?? "标注工作台";
   const projectDisplayId = currentProject?.display_id ?? "—";
-  const aiModel = currentProject?.ai_model ?? "未接入模型";
+  const aiModel = currentProject?.ml_backend_id ? "已接入模型" : "未接入模型";
 
   const meUserId = useAuthStore((s) => s.user?.id);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(requestedBatchId);
@@ -879,8 +899,11 @@ export function useWorkbenchShellModel({
     for (const g of mlCapabilities.activeModel?.supported_variants ?? []) {
       if (typeof g.key === "string") keys.add(g.key);
     }
+    for (const [key, raw] of Object.entries(mlCapabilities.paramsSchema?.properties ?? {})) {
+      if (isVariantField(key, asSchemaField(raw))) keys.add(key);
+    }
     return keys;
-  }, [mlCapabilities.activeModel]);
+  }, [mlCapabilities.activeModel, mlCapabilities.paramsSchema]);
   const setAiVariantAndPersist = useCallback(
     (next: Record<string, unknown>) => {
       s.setAiVariant(next);
@@ -1233,11 +1256,13 @@ export function useWorkbenchShellModel({
     }
     const prompt = aliases.join(", ");
     pushToast({ msg: "AI 正在分析图像...", sub: `${aiModel} · ${aliases.length} 个类别` });
+    const predictParams = buildPredictParams(s.aiToolParams, currentVariantSlice);
     triggerPreannotation.mutate(
       {
         ml_backend_id: mlBackendId,
         task_ids: taskId ? [taskId] : undefined,
         prompt,
+        params: predictParams,
         // v0.11.24 · 工作台手动「AI 分析」= 重跑覆盖，替换旧 AI 预测（保留人工标注），
         // 否则默认 skip_predicted 会让已预标任务再点无反应。
         predict_mode: "overwrite",
@@ -1253,7 +1278,7 @@ export function useWorkbenchShellModel({
         onError: (err) => pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" }),
       },
     );
-  }, [projectId, currentProject, aiModel, taskId, triggerPreannotation, pushToast, currentVariantSlice]);
+  }, [projectId, currentProject, aiModel, taskId, triggerPreannotation, pushToast, currentVariantSlice, s.aiToolParams]);
 
   const {
     handleVideoCreate,
@@ -1774,7 +1799,11 @@ export function useWorkbenchShellModel({
           onSetSamPolarity={s.setSamPolarity}
           isLoading={mlCapabilities.isLoading}
           isError={mlCapabilities.isError}
-          onRunSamText={(text, mode) => sam.runText(text, mode, { ...s.aiVariant, ...s.aiToolParams })}
+          onRunSamText={(text, mode) => sam.runText(
+            text,
+            mode,
+            buildPredictParams(s.aiToolParams, currentVariantSlice),
+          )}
           samRunning={sam.isRunning}
           samCandidateCount={sam.candidates.length}
           projectId={projectId}
@@ -1944,7 +1973,7 @@ export function useWorkbenchShellModel({
         onCommitRotatedBbox: createRotatedBbox,
         onCommitRotateBbox: handleCommitRotateBbox,
         onSamPrompt: (prompt) => {
-          const extra = { ...s.aiVariant, ...s.aiToolParams };
+          const extra = buildPredictParams(s.aiToolParams, currentVariantSlice);
           if (prompt.kind === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1, extra);
           if (prompt.kind === "exemplar") return sam.runExemplar(prompt.bbox, s.exemplarOutputMode, extra);
           return sam.runBbox(prompt.bbox, extra);

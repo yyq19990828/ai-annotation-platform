@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { SchemaForm, deriveDefaults } from "./index";
+import { SchemaForm, deriveDefaults, type JsonSchemaObject } from "./index";
 
 describe("SchemaForm", () => {
   it("空 schema → 渲染占位提示", () => {
@@ -76,5 +76,48 @@ describe("SchemaForm", () => {
         },
       }),
     ).toEqual({ a: 0.5, b: true });
+  });
+
+  it("x-platform-role → 使用统一角色标签", () => {
+    render(
+      <SchemaForm
+        schema={{
+          type: "object",
+          properties: {
+            conf: {
+              type: "number",
+              minimum: 0,
+              maximum: 1,
+              default: 0.25,
+              title: "conf",
+              "x-platform-role": "confidence",
+            },
+          },
+        }}
+        value={{ conf: 0.25 }}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByText("置信度阈值")).toBeInTheDocument();
+    expect(screen.queryByText("conf")).not.toBeInTheDocument();
+  });
+
+  it("modelVariant role → 从参数表单和 defaults 排除", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        model_variant: {
+          type: "string",
+          enum: ["sam3.1"],
+          default: "sam3.1",
+          "x-platform-role": "modelVariant",
+        },
+        score_threshold: { type: "number", default: 0.5 },
+      },
+    } satisfies JsonSchemaObject;
+    expect(deriveDefaults(schema)).toEqual({ score_threshold: 0.5 });
+    render(<SchemaForm schema={schema} value={{}} onChange={() => {}} />);
+    expect(screen.queryByTestId("schema-field-model_variant")).not.toBeInTheDocument();
+    expect(screen.getByTestId("schema-field-score_threshold")).toBeInTheDocument();
   });
 });

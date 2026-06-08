@@ -15,6 +15,12 @@ def test_setup_top_level_infra_is_pytorch():
     assert data["infra"] == "pytorch"
 
 
+def test_setup_protocol_version_v21():
+    data = setup()
+    assert data["protocol_version"] == "2.1"
+    assert data["compat_protocol_versions"] == ["2.0"]
+
+
 def test_setup_exposes_four_models():
     data = setup()
     assert isinstance(data["models"], list)
@@ -69,3 +75,10 @@ def test_top_level_back_compat_fields_unchanged():
     data = setup()
     assert set(data["supported_prompts"]) == {"point", "bbox", "text"}
     assert data["supported_trackers"] == ["sam2_video"]
+
+
+def test_setup_params_schema_platform_roles():
+    props = setup()["params"]["properties"]
+    assert props["box_threshold"]["x-platform-role"] == "confidence"
+    assert props["text_threshold"]["x-platform-role"] == "textThreshold"
+    assert props["simplify_tolerance"]["x-platform-role"] == "simplifyTolerance"

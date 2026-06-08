@@ -308,7 +308,15 @@ async def warmup_ml_backend(
         # 透传 backend 上游的业务错误 (4xx 变体非法 / 5xx OOM / weight missing).
         status = exc.response.status_code
         detail = exc.response.text or f"backend warmup HTTP {status}"
-        raise HTTPException(status_code=status, detail=detail) from exc
+        headers = {}
+        retry_after = exc.response.headers.get("Retry-After")
+        if retry_after:
+            headers["Retry-After"] = retry_after
+        raise HTTPException(
+            status_code=status,
+            detail=detail,
+            headers=headers or None,
+        ) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"backend warmup failed: {exc}") from exc
     if result is None:
@@ -501,4 +509,6 @@ async def interactive_annotating(
         "result": result.result,
         "score": result.score,
         "inference_time_ms": result.inference_time_ms,
+        "cache_hit": result.cache_hit,
+        "model_load_ms": result.model_load_ms,
     }

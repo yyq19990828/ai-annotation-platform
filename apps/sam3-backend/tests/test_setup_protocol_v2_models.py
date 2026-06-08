@@ -30,6 +30,12 @@ def test_setup_top_level_infra_is_pytorch(setup_fn):
     assert data["infra"] == "pytorch"
 
 
+def test_setup_protocol_version_v21(setup_fn):
+    data = setup_fn()
+    assert data["protocol_version"] == "2.1"
+    assert data["compat_protocol_versions"] == ["2.0"]
+
+
 def test_setup_exposes_three_models(setup_fn):
     data = setup_fn()
     assert isinstance(data["models"], list)
@@ -77,3 +83,10 @@ def test_top_level_back_compat_fields_unchanged(setup_fn):
     """顶层 supported_prompts 保留 (text + exemplar), 供未升级平台合成隐式单 model."""
     data = setup_fn()
     assert set(data["supported_prompts"]) == {"text", "exemplar"}
+
+
+def test_setup_params_schema_platform_roles(setup_fn):
+    props = setup_fn()["params"]["properties"]
+    assert props["score_threshold"]["x-platform-role"] == "confidence"
+    assert props["simplify_tolerance"]["x-platform-role"] == "simplifyTolerance"
+    assert props["model_variant"]["x-platform-role"] == "modelVariant"

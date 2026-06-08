@@ -65,15 +65,16 @@ def test_warmup_second_call_cache_hit(client) -> None:
     assert body["model_load_ms"] is None
 
 
-def test_warmup_invalid_variant_returns_400(client) -> None:
-    """yolov9 在 detection 没有 size=n 组合, 应返回 400 INVALID_VARIANT."""
+def test_warmup_invalid_variant_returns_422(client) -> None:
+    """yolov9 在 detection 没有 size=n 组合, 应返回 422 variant_not_supported."""
     resp = client.post(
         "/warmup",
         json={"task": "detection", "variants": {"series": "yolov9", "size": "n"}},
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 422
     detail = resp.json()["detail"]
-    assert detail["code"] == "INVALID_VARIANT"
+    assert detail["error_code"] == "variant_not_supported"
+    assert detail["axis"] == "size"
 
 
 def test_health_pool_uses_pool_status_format(client) -> None:

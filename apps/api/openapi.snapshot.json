@@ -10516,17 +10516,6 @@
             "title": "Ai Enabled",
             "type": "boolean"
           },
-          "ai_model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ai Model"
-          },
           "attribute_schema": {
             "anyOf": [
               {
@@ -10864,17 +10853,6 @@
             "title": "Ai Enabled",
             "type": "boolean"
           },
-          "ai_model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ai Model"
-          },
           "annotation_guide": {
             "anyOf": [
               {
@@ -11160,7 +11138,6 @@
           "owner_id",
           "status",
           "ai_enabled",
-          "ai_model",
           "total_tasks",
           "completed_tasks",
           "review_tasks",
@@ -11659,17 +11636,6 @@
             "title": "Ai Enabled",
             "type": "boolean"
           },
-          "ai_model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ai Model"
-          },
           "annotation_guide": {
             "anyOf": [
               {
@@ -11884,17 +11850,6 @@
             "default": false,
             "title": "Ai Enabled",
             "type": "boolean"
-          },
-          "ai_model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ai Model"
           },
           "annotation_guide": {
             "anyOf": [
@@ -12116,17 +12071,6 @@
               }
             ],
             "title": "Ai Enabled"
-          },
-          "ai_model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ai Model"
           },
           "annotation_guide": {
             "anyOf": [
@@ -12416,17 +12360,6 @@
               }
             ],
             "title": "Ai Enabled"
-          },
-          "ai_model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ai Model"
           },
           "annotation_guide": {
             "anyOf": [

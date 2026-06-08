@@ -143,7 +143,7 @@ describe("DashboardPage", () => {
     expect(screen.queryByText("图像 · 目标检测")).not.toBeInTheDocument();
   });
 
-  it("项目已解绑 backend 时不显示旧 ai_model", () => {
+  it("项目已解绑 backend 时显示未接入模型", () => {
     mockUseProjects.mockReturnValue({
       data: [
         {
@@ -163,7 +163,6 @@ describe("DashboardPage", () => {
           review_tasks: 0,
           in_progress_tasks: 0,
           ai_enabled: true,
-          ai_model: "gsam2-video",
           ml_backend_id: null,
           updated_at: "2026-05-22T00:00:00Z",
         },
@@ -171,7 +170,6 @@ describe("DashboardPage", () => {
       isLoading: false,
     });
     renderUI();
-    expect(screen.queryByText("gsam2-video")).not.toBeInTheDocument();
     expect(screen.getByText("未接入模型")).toBeInTheDocument();
     expect(screen.getByText("视频")).toBeInTheDocument();
     expect(screen.queryByText("视频 · 时序追踪")).not.toBeInTheDocument();

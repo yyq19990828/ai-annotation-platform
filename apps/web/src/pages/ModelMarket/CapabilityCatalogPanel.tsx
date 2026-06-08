@@ -15,7 +15,11 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
-import { adminMlIntegrationsApi, type MLBackendItem } from "@/api/adminMlIntegrations";
+import {
+  adminMlIntegrationsApi,
+  type MLBackendItem,
+  type PoolEvictRecord,
+} from "@/api/adminMlIntegrations";
 import {
   mlBackendsApi,
   type MLBackendCapability,
@@ -94,6 +98,8 @@ interface FlatModel {
   // backend 默认 infra / modalities, model 缺省时回落.
   backendInfra?: string;
   backendModalities?: string[];
+  healthMeta?: MLBackendItem["health_meta"];
+  warmupEndpoint?: boolean;
   stale: boolean;
 }
 
@@ -257,6 +263,8 @@ export function CapabilityCatalogPanel() {
           registeredProjects: r.registeredProjects,
           backendInfra: cap.infra,
           backendModalities: cap.modalities,
+          healthMeta: r.backend.health_meta,
+          warmupEndpoint: cap.warmup_endpoint ?? r.backend.health_meta?.capabilities?.warmup_endpoint,
           stale,
         });
       }
@@ -294,6 +302,8 @@ export function CapabilityCatalogPanel() {
           registeredProjects: [],
           backendInfra: infraFallback,
           backendModalities: m.modality ? [m.modality] : undefined,
+          healthMeta: undefined,
+          warmupEndpoint: false,
           stale: false,
         });
       }
@@ -816,6 +826,8 @@ interface ListRow {
   geometries: string[];          // 行的输出几何 (跨 task 取 union, 去重保序).
   secondaryLabel: string;        // variants 列 (axis1 或 vram 元信息)
   secondaryTitle?: string;
+  warmVariants: Record<string, string>;
+  runtimeKey?: string;
 }
 
 function uniq<T>(arr: T[]): T[] {
@@ -828,6 +840,95 @@ function uniq<T>(arr: T[]): T[] {
 function taskSuffix(task: string | undefined): string {
   if (!task) return "";
   return TASK_SUFFIX[task] ?? task;
+}
+
+function pickVariantOption<T extends { value: string; recommended?: boolean }>(
+  options: T[],
+  preferred: string | undefined,
+): T | null {
+  return options.find((option) => option.value === preferred)
+    ?? options.find((option) => option.recommended)
+    ?? options[0]
+    ?? null;
+}
+
+function legalAxisOptions(
+  axis0Value: string,
+  axis1: NonNullable<MLModelCapability["supported_variants"]>[number],
+  combos: string[][],
+) {
+  if (combos.length === 0) return axis1.variants ?? [];
+  const legal = combos
+    .filter((combo) => combo[0] === axis0Value && combo.length >= 2)
+    .map((combo) => combo[1]!);
+  return (axis1.variants ?? []).filter((option) => legal.includes(option.value));
+}
+
+function pickDefaultVariants(m: MLModelCapability): Record<string, string> {
+  const out: Record<string, string> = { ...(m.default_variants ?? {}) };
+  for (const group of m.supported_variants ?? []) {
+    if (out[group.key]) continue;
+    const picked = pickVariantOption(group.variants ?? [], undefined);
+    if (picked?.value) out[group.key] = picked.value;
+  }
+  return out;
+}
+
+function runtimeKeyFor(task: string | undefined, variants: Record<string, string>): string | undefined {
+  if (task && variants.series && variants.size) return `${variants.series}/${variants.size}/${task}`;
+  if (variants.sam_variant && variants.dino_variant) {
+    return `sam=${variants.sam_variant}/dino=${variants.dino_variant}`;
+  }
+  if (variants.model_variant) return variants.model_variant;
+  return undefined;
+}
+
+function loadedKeySet(item: FlatModel): Set<string> {
+  const keys = new Set<string>();
+  for (const loaded of item.healthMeta?.pool?.loaded_keys ?? []) keys.add(loaded.key);
+  for (const legacy of item.healthMeta?.pool?.loaded_variants ?? []) {
+    if (legacy.sam_variant && legacy.dino_variant) {
+      keys.add(`sam=${legacy.sam_variant}/dino=${legacy.dino_variant}`);
+    }
+  }
+  return keys;
+}
+
+function isLoadedRuntimeKey(
+  item: FlatModel,
+  variants: Record<string, string>,
+  runtimeKey?: string,
+): boolean {
+  const keys = loadedKeySet(item);
+  if (runtimeKey && keys.has(runtimeKey)) return true;
+  for (const key of keys) {
+    if (variants.sam_variant && key.includes(`sam=${variants.sam_variant}`)) return true;
+    if (variants.dino_variant && key.includes(`dino=${variants.dino_variant}`)) return true;
+    if (variants.model_variant && key === variants.model_variant) return true;
+    if (variants.series && key.startsWith(`${variants.series}/`)) return true;
+  }
+  return false;
+}
+
+function currentPoolSize(item: FlatModel): string {
+  const pool = item.healthMeta?.pool;
+  if (!pool) return "—";
+  const size = pool.current_size ?? pool.loaded_keys?.length ?? pool.loaded_variants?.length ?? 0;
+  return pool.cap != null ? `${size}/${pool.cap}` : String(size);
+}
+
+function lastEvict(item: FlatModel): PoolEvictRecord | null {
+  return item.healthMeta?.pool?.last_evict ?? item.healthMeta?.video_pool?.last_evict ?? null;
+}
+
+function formatEvict(evict: PoolEvictRecord): string {
+  const seconds = Math.max(0, (Date.now() - Date.parse(evict.at)) / 1000);
+  const ago = seconds >= 3600
+    ? `${Math.floor(seconds / 3600)} 小时前`
+    : seconds >= 60
+      ? `${Math.floor(seconds / 60)} 分钟前`
+      : `${Math.floor(seconds)} 秒前`;
+  return `${ago} 淘汰 ${evict.key}，原因 ${evict.reason}`;
 }
 
 // 单 model 的传统拆行: yolo / 每 task 独立权重风格.
@@ -847,6 +948,8 @@ function buildModelRowsLegacy(item: FlatModel): ListRow[] {
       tasks: m.task ? [m.task] : [],
       geometries: geom,
       secondaryLabel: "—",
+      warmVariants: pickDefaultVariants(m),
+      runtimeKey: runtimeKeyFor(m.task, pickDefaultVariants(m)),
     }];
   }
   const axis0 = axes[0]!;
@@ -887,6 +990,11 @@ function buildModelRowsLegacy(item: FlatModel): ListRow[] {
       ].filter(Boolean);
       secondaryLabel = bits.length > 0 ? bits.join(" · ") : "—";
     }
+    const pickedAxis1 = axis1
+      ? pickVariantOption(legalAxisOptions(v0.value, axis1, combos), m.default_variants?.[axis1.key])
+      : null;
+    const warmVariants: Record<string, string> = { [axis0.key]: v0.value };
+    if (axis1 && pickedAxis1?.value) warmVariants[axis1.key] = pickedAxis1.value;
     return {
       parent: item,
       rowKey: `${item.backendId}:${m.id}:${v0.value}`,
@@ -896,6 +1004,8 @@ function buildModelRowsLegacy(item: FlatModel): ListRow[] {
       geometries: geom,
       secondaryLabel,
       secondaryTitle,
+      warmVariants,
+      runtimeKey: runtimeKeyFor(m.task, warmVariants),
     };
   });
 }
@@ -963,6 +1073,8 @@ function buildSharedRows(items: FlatModel[]): ListRow[] {
         tasks: uniq(acc.tasks),
         geometries: uniq(acc.geometries),
         secondaryLabel: bits.length > 0 ? bits.join(" · ") : "—",
+        warmVariants: { [axisKey]: value },
+        runtimeKey: runtimeKeyFor(acc.parent.model.task, { [axisKey]: value }),
       });
     }
   }
@@ -993,7 +1105,7 @@ function ModelListTable({ items }: { items: FlatModel[] }) {
       <table className={styles.modelTable}>
         <thead>
           <tr>
-            {["模型", "task", "infra", "模态", "输出几何", "变体", "来源", "注册状态", "状态"].map((head) => (
+            {["模型", "task", "infra", "模态", "输出几何", "变体", "运行时", "来源", "注册状态", "状态"].map((head) => (
               <th key={head}>{head}</th>
             ))}
           </tr>
@@ -1017,6 +1129,9 @@ function ModelListTable({ items }: { items: FlatModel[] }) {
                 <td>{modalities.length ? modalities.map(modalityLabel).join(" / ") : "—"}</td>
                 <td className={styles.compactCell}>{row.geometries.join(" / ") || "—"}</td>
                 <td className={styles.compactCell} title={row.secondaryTitle}>{row.secondaryLabel}</td>
+                <td>
+                  <RuntimeCell item={item} variants={row.warmVariants} runtimeKey={row.runtimeKey} />
+                </td>
                 <td className={styles.sourceCell}>{item.backendName}</td>
                 <td className={styles.compactCell} title={
                   item.source === "registered" && item.registeredProjects.length > 0
@@ -1043,6 +1158,74 @@ function ModelListTable({ items }: { items: FlatModel[] }) {
   );
 }
 
+function RuntimeCell({
+  item,
+  variants,
+  runtimeKey,
+}: {
+  item: FlatModel;
+  variants: Record<string, string>;
+  runtimeKey?: string;
+}) {
+  const loaded = isLoadedRuntimeKey(item, variants, runtimeKey);
+  return (
+    <div className={styles.runtimeCell}>
+      <span className={styles.runtimeText}>池 {currentPoolSize(item)}</span>
+      <Badge variant={loaded ? "success" : "outline"}>{loaded ? "已加载" : "未加载"}</Badge>
+      <WarmButton item={item} variants={variants} compact />
+    </div>
+  );
+}
+
+function WarmButton({
+  item,
+  variants,
+  compact = false,
+}: {
+  item: FlatModel;
+  variants: Record<string, string>;
+  compact?: boolean;
+}) {
+  const qc = useQueryClient();
+  const pushToast = useToastStore((s) => s.push);
+  const [busy, setBusy] = useState(false);
+  const canWarm = Boolean(item.source === "registered" && item.projectId && item.warmupEndpoint);
+  const onWarm = async () => {
+    if (!canWarm || busy) return;
+    setBusy(true);
+    try {
+      const body: Record<string, unknown> = {
+        ...(item.model.task ? { task: item.model.task } : {}),
+        ...(Object.keys(variants).length > 0 ? { variants } : {}),
+      };
+      const res = await mlBackendsApi.warmup(item.projectId, item.backendId, body);
+      qc.invalidateQueries({ queryKey: ["admin", "ml-integrations", "overview"] });
+      qc.invalidateQueries({ queryKey: ["ml-backend-capabilities"] });
+      pushToast({
+        msg: res.cache_hit ? "模型已在显存中" : "模型已预热到显存",
+        sub: res.evicted ? `淘汰 ${res.evicted}` : undefined,
+        kind: "success",
+      });
+    } catch (err) {
+      pushToast({ msg: "预热失败", sub: (err as Error).message, kind: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Button
+      size="sm"
+      onClick={onWarm}
+      disabled={!canWarm || busy}
+      title={canWarm ? "预热该模型默认变体" : "该 backend 未声明 warmup_endpoint 或未注册到项目"}
+      className={compact ? styles.compactWarmButton : undefined}
+    >
+      <Icon name={busy ? "loader2" : "play"} size={11} className={busy ? "spin" : undefined} />
+      {compact ? "" : "预热"}
+    </Button>
+  );
+}
+
 // ── 单个 model 卡片 ─────────────────────────────────────────────────────
 function ModelCard({ item }: { item: FlatModel }) {
   const { model: m } = item;
@@ -1055,6 +1238,10 @@ function ModelCard({ item }: { item: FlatModel }) {
   );
   const resource = m.resource_profile ?? {};
   const resourceEntries = Object.entries(resource).filter(([, v]) => v != null);
+  const defaultVariants = pickDefaultVariants(m);
+  const cardRuntimeKey = runtimeKeyFor(m.task, defaultVariants);
+  const loaded = isLoadedRuntimeKey(item, defaultVariants, cardRuntimeKey);
+  const evict = lastEvict(item);
 
   return (
     <div className={styles.card}>
@@ -1091,6 +1278,12 @@ function ModelCard({ item }: { item: FlatModel }) {
           {item.projectName} · {item.backendName}
         </span>
       </div>
+
+      <Row label="运行时">
+        <span className={styles.tag}>池 {currentPoolSize(item)}</span>
+        <Badge variant={loaded ? "success" : "outline"}>{loaded ? "已加载" : "未加载"}</Badge>
+        <WarmButton item={item} variants={defaultVariants} />
+      </Row>
 
       {geom.length > 0 && (
         <Row label="输出几何">
@@ -1151,6 +1344,13 @@ function ModelCard({ item }: { item: FlatModel }) {
             </span>
           ))}
         </Row>
+      )}
+
+      {evict && (
+        <div className={styles.evictFooter}>
+          <Icon name="history" size={11} />
+          <span>{formatEvict(evict)}</span>
+        </div>
       )}
     </div>
   );

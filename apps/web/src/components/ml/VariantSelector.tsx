@@ -23,6 +23,7 @@ import type {
 } from "@/api/ml-backends";
 import {
   VARIANT_FIELD_KEYS,
+  isVariantField,
   type JsonSchemaField,
   type JsonSchemaObject,
 } from "@/pages/Workbench/components/SchemaForm";
@@ -162,13 +163,22 @@ function normalizeFields(
     return fields;
   }
 
-  // 路径 B · 老协议 v1 schema-only fallback: 按 VARIANT_FIELD_KEYS 白名单从 schema enum 取.
-  // 仅 sam_variant / dino_variant 兼容, 老 backend 不会有别的 axis_key.
+  // 路径 B · schema-only fallback: 兼容 legacy variant key 与 x-platform-role=modelVariant.
   const fields: NormalizedVariantField[] = [];
-  for (const key of VARIANT_FIELD_KEYS) {
+  const seen = new Set<string>();
+  const schemaEntries = Object.entries(schema?.properties ?? {});
+  const keys = [
+    ...VARIANT_FIELD_KEYS,
+    ...schemaEntries
+      .filter(([key, raw]) => isVariantField(key, asField(raw) ?? {}))
+      .map(([key]) => key),
+  ];
+  for (const key of keys) {
+    if (seen.has(key)) continue;
+    seen.add(key);
     const schemaField = asField(schema?.properties?.[key]);
-    if (!Array.isArray(schemaField?.enum) || schemaField!.enum.length === 0) continue;
-    const options: MLBackendSupportedVariantOption[] = schemaField!.enum.map((v) => ({
+    if (!Array.isArray(schemaField?.enum) || schemaField.enum.length === 0) continue;
+    const options: MLBackendSupportedVariantOption[] = schemaField.enum.map((v) => ({
       value: v,
       label: v,
     }));

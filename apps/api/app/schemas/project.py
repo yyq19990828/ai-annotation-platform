@@ -53,8 +53,6 @@ class ProjectCreate(BaseModel):
         return validate_tool_bindings_keys(v)
 
     ai_enabled: bool = False
-    ai_model: str | None = None
-    # v0.8.6 F3 · 真实绑定 MLBackend；为 None 表示未绑定（ai_model 仍可作为 display hint）
     ml_backend_id: UUID | None = None
     # v0.9.7 · 从 wizard step 4 选一个全局已注册 backend, 后端复制 row 入新项目.
     # 与 ml_backend_id 互斥: 直接给 ml_backend_id 表示已存在本项目下的 backend (罕见);
@@ -110,8 +108,6 @@ class ProjectUpdate(BaseModel):
         return validate_tool_bindings_keys(v)
 
     ai_enabled: bool | None = None
-    ai_model: str | None = None
-    # v0.8.6 F3 · 显式 None 表示解绑（与 ProjectOut 序列化对齐；handler 区分 unset vs None）
     ml_backend_id: UUID | None = None
     due_date: date | None = None
     sampling: str | None = None
@@ -161,7 +157,6 @@ class ProjectOut(BaseModel):
     member_count: int = 0
     status: str
     ai_enabled: bool
-    ai_model: str | None
     ml_backend_id: UUID | None = None
     # v0.10.1 · 单项目可绑定的 ML backend 数量上限 (来自 settings.max_ml_backends_per_project).
     # 前端 ProjectSettings 据此渲染「+ 添加后端」按钮的禁用状态及 Modal 文案 (M3).

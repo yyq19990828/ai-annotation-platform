@@ -11,13 +11,19 @@ import {
   type ObserveTarget,
   type SmokeTestRequest,
 } from "@/api/adminMlIntegrations";
-import type { MLBackendVariant } from "@/api/ml-backends";
+import {
+  mlBackendsApi,
+  type MLBackendCapability,
+  type MLBackendVariant,
+  type MLModelCapability,
+} from "@/api/ml-backends";
 import {
   useMLBackendHealth,
   useMLBackendReload,
   useMLBackendUnload,
+  useMLBackendWarmup,
 } from "@/hooks/useMLBackends";
-import { VariantPanel } from "./VariantPanel";
+import { VariantPanel, type VariantWarmTarget } from "./VariantPanel";
 import styles from "./RuntimeObservePanel.module.css";
 
 interface RegisteredRef {
@@ -158,15 +164,20 @@ function RegisteredRuntimeCard({
   const health = useMLBackendHealth(projectId);
   const unload = useMLBackendUnload(projectId);
   const reload = useMLBackendReload(projectId);
+  const warmup = useMLBackendWarmup(projectId);
 
   const ok = observe?.ok ?? backend.state === "connected";
   const gpu = observe?.gpu_info ?? backend.health_meta?.gpu_info;
   const pool = observe?.pool ?? backend.health_meta?.pool;
   const videoPool = observe?.video_pool ?? backend.health_meta?.video_pool;
   const modelVersion = observe?.model_version ?? backend.health_meta?.model_version;
-  // v0.14.14: 多 model 协议 backend (yolo) 没有 /reload 端点, "预热默认" 调它会 404.
-  // backend.health_meta.capabilities 由 /setup 探测落库, models 非空即多 model 协议.
-  const isMultiModelBackend = (backend.health_meta?.capabilities?.models?.length ?? 0) > 0;
+  const supportsWarmup = backend.health_meta?.capabilities?.warmup_endpoint === true;
+  const setupQ = useQuery({
+    queryKey: ["ml-backend-setup", projectId, backend.id],
+    queryFn: () => mlBackendsApi.setup(projectId, backend.id),
+    enabled: supportsWarmup,
+    staleTime: 30_000,
+  });
 
   const onHealth = () => {
     health.mutate(backend.id, {
@@ -188,7 +199,26 @@ function RegisteredRuntimeCard({
       onError: (e) => pushToast({ msg: "卸载失败", sub: (e as Error).message }),
     });
   };
-  const onReload = (variant?: MLBackendVariant, taskType?: "image" | "video") => {
+  const onWarm = (target?: VariantWarmTarget) => {
+    if (supportsWarmup) {
+      const body = buildWarmupBody(target, setupQ.data);
+      warmup.mutate(
+        { backendId: backend.id, body },
+        {
+          onSuccess: (res) => {
+            pushToast({
+              msg: res.cache_hit ? `${backend.name} 已在显存中` : `${backend.name} 已预热到显存`,
+              kind: "success",
+              sub: res.evicted ? `淘汰 ${res.evicted}` : undefined,
+            });
+          },
+          onError: (e) => pushToast({ msg: "预热失败", sub: (e as Error).message }),
+        },
+      );
+      return;
+    }
+    const variant = target?.variants as MLBackendVariant | undefined;
+    const taskType = target?.taskType;
     reload.mutate(
       { backendId: backend.id, variant, taskType },
       {
@@ -243,13 +273,9 @@ function RegisteredRuntimeCard({
         </Button>
         <Button
           size="sm"
-          onClick={() => onReload()}
-          disabled={reload.isPending || isMultiModelBackend}
-          title={
-            isMultiModelBackend
-              ? "多 model 协议 backend 无单一默认变体，请在能力目录中预热具体 model"
-              : "重新加载默认模型"
-          }
+          onClick={() => onWarm()}
+          disabled={reload.isPending || warmup.isPending || (supportsWarmup && setupQ.isLoading)}
+          title="预热默认模型"
         >
           <Icon name="play" size={11} />
           预热默认
@@ -259,11 +285,44 @@ function RegisteredRuntimeCard({
       <VariantPanel
         projectId={projectId}
         backend={backend}
-        onWarm={(variant, taskType) => onReload(variant, taskType)}
-        isWarming={reload.isPending}
+        onWarm={onWarm}
+        isWarming={reload.isPending || warmup.isPending}
       />
     </div>
   );
+}
+
+function pickDefaultVariants(model: MLModelCapability | undefined): Record<string, string> {
+  const out: Record<string, string> = { ...(model?.default_variants ?? {}) };
+  for (const group of model?.supported_variants ?? []) {
+    if (out[group.key]) continue;
+    const options = group.variants ?? [];
+    const recommended = options.find((option) => option.recommended);
+    const picked = recommended ?? options[0];
+    if (picked?.value) out[group.key] = picked.value;
+  }
+  return out;
+}
+
+function buildWarmupBody(
+  target: VariantWarmTarget | undefined,
+  setup: MLBackendCapability | undefined,
+): Record<string, unknown> {
+  if (target?.taskType === "video") {
+    return { task: "tracker", variants: target.variants ?? {} };
+  }
+  if (target?.task || target?.variants) {
+    return {
+      ...(target.task ? { task: target.task } : {}),
+      ...(target.variants ? { variants: target.variants } : {}),
+    };
+  }
+  const model = setup?.models?.[0];
+  const variants = pickDefaultVariants(model);
+  return {
+    ...(model?.task ? { task: model.task } : {}),
+    ...(Object.keys(variants).length > 0 ? { variants } : {}),
+  };
 }
 
 function EnvOnlyCard({ target }: { target: ObserveTarget }) {

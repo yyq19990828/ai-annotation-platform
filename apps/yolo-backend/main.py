@@ -23,7 +23,15 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from aap_protocol_v2 import BatchPredictResponse, PredictionResult
+from aap_protocol_v2 import (
+    COMPAT_PROTOCOL_VERSIONS,
+    PROTOCOL_VERSION,
+    BatchPredictResponse,
+    ModelUnavailableError,
+    PlatformRole,
+    PredictionResult,
+    VariantNotSupportedError,
+)
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -263,16 +271,19 @@ _PARAMS_SCHEMA = {
         "conf": {
             "type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.25,
             "title": "置信度阈值",
+            "x-platform-role": PlatformRole.CONFIDENCE.value,
             "description": "保留置信度高于此值的检测/分割结果. 调高=更少更准, 调低=更多但含噪.",
         },
         "iou": {
             "type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.70,
             "title": "NMS IoU 阈值",
+            "x-platform-role": PlatformRole.IOU.value,
             "description": "非极大值抑制重叠阈值. 调高保留更多重叠框, 调低更严格去重.",
         },
         "max_det": {
             "type": "integer", "minimum": 1, "maximum": 1000, "default": 300,
             "title": "单图最大检出数",
+            "x-platform-role": PlatformRole.MAX_DET.value,
         },
     },
 }
@@ -334,7 +345,8 @@ def _build_model_entry(
 def setup() -> dict[str, Any]:
     """协议 v2 多模型目录. 详见 docs-site/dev/reference/ml-backend-protocol.md §4.1.6."""
     return {
-        "protocol_version": "v2",
+        "protocol_version": PROTOCOL_VERSION,
+        "compat_protocol_versions": COMPAT_PROTOCOL_VERSIONS,
         "name": "yolo-backend",
         "version": BACKEND_VERSION,
         "model_version": MODEL_VERSION,
@@ -388,14 +400,7 @@ async def predict(req: BatchPredictRequest) -> BatchPredictResponse:
     # 校验 (task, series, size) 组合.
     ctx: Context = req.context
     if not _is_supported_combo(ctx):
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "INVALID_VARIANT",
-                "message": f"task={ctx.type} series={ctx.variants.series} "
-                           f"size={ctx.variants.size} 没有预训练权重",
-            },
-        )
+        raise _unsupported_combo_error(ctx.type, ctx.variants.series, ctx.variants.size)
 
     results: list[PredictionResult] = []
     for t in req.tasks:
@@ -416,11 +421,11 @@ async def predict(req: BatchPredictRequest) -> BatchPredictResponse:
                 )
             )
         except UnsupportedVariantError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise VariantNotSupportedError("model_variants", str(exc), []) from exc
         except FileNotFoundError as exc:
-            raise HTTPException(
-                status_code=400,
-                detail={"code": "WEIGHT_MISSING", "message": str(exc)},
+            raise ModelUnavailableError(
+                _pool_key(ctx.type, ctx.variants.series, ctx.variants.size),
+                str(exc),
             ) from exc
         except Exception as exc:  # noqa: BLE001
             logger.exception("predict failed for task %s", t.id)
@@ -443,6 +448,17 @@ def _is_supported_combo(ctx: Context) -> bool:
     return size in MODEL_MATRIX.get(task, {}).get(series, ())
 
 
+def _unsupported_combo_error(task: str, series: str, size: str) -> VariantNotSupportedError:
+    task_matrix = MODEL_MATRIX.get(task, {})
+    if series not in task_matrix:
+        return VariantNotSupportedError("series", series, tuple(task_matrix))
+    return VariantNotSupportedError("size", size, tuple(task_matrix.get(series, ())))
+
+
+def _pool_key(task: str, series: str, size: str) -> str:
+    return f"{series}/{size}/{task}"
+
+
 @app.post("/unload")
 async def unload() -> dict[str, Any]:
     if _model_pool is None:
@@ -462,20 +478,11 @@ async def warmup(req: WarmupRequest) -> WarmupResponse:
         raise HTTPException(status_code=503, detail="backend not ready")
     series, size = req.variants.series, req.variants.size
     if size not in MODEL_MATRIX.get(req.task, {}).get(series, ()):
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "INVALID_VARIANT",
-                "message": f"task={req.task} series={series} size={size} 没有预训练权重",
-            },
-        )
+        raise _unsupported_combo_error(req.task, series, size)
     try:
         cache_hit, load_ms, evicted = await _model_pool.warmup(req.task, series, size)
     except FileNotFoundError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail={"code": "WEIGHT_MISSING", "message": str(exc)},
-        ) from exc
+        raise ModelUnavailableError(_pool_key(req.task, series, size), str(exc)) from exc
     return WarmupResponse(
         ok=True,
         model_load_ms=load_ms,

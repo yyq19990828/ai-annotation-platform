@@ -75,7 +75,6 @@ function makeProject(
     classes_config: {},
     attribute_schema: { fields: [] },
     ai_enabled: false,
-    ai_model: null,
     ml_backend_id: null,
     member_count: 0,
     iou_dedup_threshold: 0.7,

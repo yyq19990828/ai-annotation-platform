@@ -80,6 +80,20 @@ export function useMLBackendReload(projectId: string) {
   });
 }
 
+export function useMLBackendWarmup(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      backendId,
+      body,
+    }: {
+      backendId: string;
+      body?: Record<string, unknown>;
+    }) => mlBackendsApi.warmup(projectId, backendId, body),
+    onSuccess: () => invalidateBackendQueries(qc, projectId),
+  });
+}
+
 export function useInteractiveAnnotate(projectId: string, backendId: string | undefined) {
   return useMutation({
     mutationFn: (payload: { task_id: string; context: Record<string, unknown> }) => {

@@ -23,8 +23,17 @@ import { resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { isFrameOutside } from "../stage/videoTrackOutside";
 import { displayClassName } from "../stage/colors";
 import { AttributeForm, getMissingRequired } from "./AttributeForm";
-import { SchemaForm, VARIANT_FIELD_KEYS, type JsonSchemaObject } from "../components/SchemaForm";
+import {
+  SchemaForm,
+  isVariantField,
+  type JsonSchemaField,
+  type JsonSchemaObject,
+} from "../components/SchemaForm";
 import styles from "./AIInspectorPanel.module.css";
+
+function asJsonSchemaField(raw: unknown): JsonSchemaField {
+  return raw && typeof raw === "object" ? raw as JsonSchemaField : {};
+}
 
 interface AIInspectorPanelProps {
   open: boolean;
@@ -345,8 +354,8 @@ export function AIPredictionPopover({
 
   const hasVariantSelector =
     (supportedVariants ?? []).some((group) => (group.variants ?? []).length > 0) ||
-    Object.keys(paramsSchema?.properties ?? {}).some(
-      (k) => VARIANT_FIELD_KEYS.includes(k as (typeof VARIANT_FIELD_KEYS)[number]),
+    Object.entries(paramsSchema?.properties ?? {}).some(
+      ([k, raw]) => isVariantField(k, asJsonSchemaField(raw)),
     );
 
   if (!open) return null;
@@ -445,8 +454,8 @@ export function AIPredictionPopover({
           无非变体可调字段时整段隐藏 (避免空白容器)。 */}
       {onSetParams &&
         paramsSchema &&
-        Object.keys(paramsSchema.properties ?? {}).some(
-          (k) => !VARIANT_FIELD_KEYS.includes(k as (typeof VARIANT_FIELD_KEYS)[number]),
+        Object.entries(paramsSchema.properties ?? {}).some(
+          ([k, raw]) => !isVariantField(k, asJsonSchemaField(raw)),
         ) && (
           <div className={styles.aiParamsForm}>
             <SchemaForm schema={paramsSchema} value={params ?? {}} onChange={onSetParams} />

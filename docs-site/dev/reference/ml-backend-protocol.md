@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-24
+last_reviewed: 2026-06-08
 ---
 
 # ML Backend 协议契约
@@ -34,6 +34,7 @@ last_reviewed: 2026-05-24
 | `/health` | GET | 健康检查 | ✅ | `MLBackendClient.health` (`ml_client.py:31`) |
 | `/predict` | POST | 批量 / 交互式预测 | ✅ | `MLBackendClient.predict` (`ml_client.py:41`) / `predict_interactive` (`ml_client.py:64`) |
 | `/setup` | GET | 返回模型配置（schema、超参） | ⚪ | `MLBackendClient.setup` (`ml_client.py:84`) |
+| `/warmup` | POST | 显式预热模型权重到 pool | ⚪ | `MLBackendClient.warmup` |
 | `/versions` | GET | 列出可用模型版本 | ⚪ | `MLBackendClient.get_versions` (`ml_client.py:90`) |
 
 base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；末尾 `/` 会被平台自动 `rstrip` (`ml_client.py:21`)。
@@ -67,7 +68,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 > **`pool` 子对象**（v0.14.14 起三 backend 统一为 `PoolStatus` 结构，详见 §4.3）：`{ cap, current_size, loaded_keys: [{key, loaded_at, last_used_at, hit_count}], last_evict: {key, at, reason} | null }`。`key` 是 backend-defined 的 opaque 字符串（yolo `{series}/{size}/{task}`、gsam2 `sam=X/dino=Y`、sam3 `sam3.1`），前端只做相等比较。`last_evict.reason` 受控为 `lru | manual | idle_timeout`。平台 `health_meta()` 一并缓存到 `ml_backends.health_meta.pool`，模型市场列表用 `loaded_keys[]` 反查每行 variant 的运行时态。**老 backend**（v0.14.13 及之前）的 `pool` 字段结构是各家各异的旧格式，平台层向后兼容；新接入的 backend 必须按 §4.3 落地。
 
-> **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，grounded-sam2 实现）：`/unload` 清空整池释放显存；`/reload` 预热模型进 pool。`/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.sam_variant`）；也接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。
+> **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，grounded-sam2 实现）：`/unload` 清空整池释放显存；`/reload` 预热模型进 pool。`/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.model_variants`）；也接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。新 backend 应优先实现 §4.4 `/warmup`。
 
 ---
 
@@ -137,8 +138,10 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
     "text_threshold": 0.25,                 // 可选; 同上
     "score_threshold": 0.5,                 // SAM 3 PCS text/exemplar 路径 score 过滤阈值
     "simplify_tolerance": 1.0,              // shapely.simplify 像素级覆盖, 仅 mask/both 路径生效
-    "sam_variant": "large",                 // grounded-sam2 请求级模型变体热切换 (tiny|small|base_plus|large); 缺省回退 backend env 默认
-    "dino_variant": "B"                     // 同上 (T|B); 非法值 422
+    "model_variants": {                     // v2.1 通用模型变体轴, key 来自 /setup.supported_variants[].key
+      "sam_variant": "large",
+      "dino_variant": "B"
+    }
   }
 }
 ```
@@ -147,7 +150,9 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 > **`type=text`**：Grounded-SAM-2 走 GroundingDINO 文本 → boxes → SAM mask 复合链路；SAM 3 走 PCS 单模型一步出 mask。两者返回 `result[]` 字面一致（多 polygon / 多 rect / 配对）。`box_threshold` / `text_threshold` 仅 grounded-sam2 消费；`score_threshold` 仅 SAM 3 消费。
 
-> **`sam_variant` / `dino_variant`**（仅 grounded-sam2 消费）：请求级模型变体热切换。backend 内 ModelPool 按 `(sam_variant, dino_variant)` 做 LRU 缓存：命中复用、miss 冷启 1–3s（超 cap 驱逐最久未用变体）、pool 满 + 并发排队超 `MODEL_POOL_BUILD_TIMEOUT` 返回 503。缺省回退 backend env 默认 (`SAM_VARIANT`/`DINO_VARIANT`)；非法值（不在 `SAM2_CONFIGS`/`DINO_CONFIGS` key 内）返回 422，不影响后续请求。变体合法但其 checkpoint 未预拉到 `CHECKPOINT_DIR`（不在 `PREFETCH_SAM_VARIANTS`/`PREFETCH_DINO_VARIANTS` 内）返回 503，提示把该变体加入 prefetch 后重建容器。返回 `model_version` 按本次请求变体拼（如 `grounded-sam2-dinoB-sam2.1large`）。embedding cache 按变体分桶（不同变体张量不可跨用），命中只在同变体同图。SAM 3 忽略这两个字段。
+> **`context.model_variants`（v2.1）**：请求级模型变体热切换。结构是扁平 `dict[axis_key, axis_value]`，`axis_key` 必须来自当前 model 的 `/setup.supported_variants[].key`。yolo 示例：`{"series":"yolov11","size":"s"}`；grounded-sam2 示例：`{"sam_variant":"large","dino_variant":"B"}`；sam3 示例：`{"model_variant":"sam3.1"}`。backend 内 ModelPool 按这些轴组成 cache key：命中复用、miss 冷启；非法值或非法组合返回 422；变体合法但权重缺失 / 显存不可服务返回 503 + `Retry-After`。返回 `model_version` 可按本次请求变体拼（如 `grounded-sam2-dinoB-sam2.1large`）。embedding cache 按变体分桶（不同变体张量不可跨用），命中只在同变体同图。
+>
+> **兼容期旧字段**：v2.1 backend 必须继续接受一版旧写法并 normalize 到 `context.model_variants`：yolo 的 `context.variants`、grounded-sam2 的 `context.sam_variant` / `context.dino_variant`、sam3 的 `context.model_variant`。收到旧字段时应记录 deprecation warning；若新旧字段同时存在，新字段优先。
 
 > **`type=exemplar`**（仅 SAM 3 支持）：取图中已有的一个 bbox 作为视觉示例，由 SAM 3 PCS 一步出全图相似实例的 masks。`bbox` 字段承载 4 坐标（与 `type=bbox` 共用字段，语义靠 `type` 区分）。返回 `result[]` 是多个 `polygonlabels`，`polygonlabels: ["object"]`（前端按当前 active label 批量改写）。apps/api 仅在项目挂了支持 exemplar 的 backend（`/setup.supported_prompts` 含 `exemplar`）时才放行；未挂返回 400。前端 UI 入口在工作台 Shift+拖框。
 
@@ -156,13 +161,13 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 > 落地细节：
 > - **真实推理（gsam2）**：backend 用 `build_sam2_video_predictor` + `SAM2VideoPredictor`（带跨帧 memory bank 的有状态预测，非循环调图片接口），逐帧 mask → 外接 bbox → 归一化坐标。视频解码用容器内 opencv 抽窗内帧到临时 JPEG 目录喂 `init_state`。`confidence` 非空 mask 记 1.0、空 mask（outside）记 0.0。
 > - **独立显存池**：video predictor 用独立的 `VideoPool`（按 `sam_variant` 分桶），与图片 `ModelPool` 显存预算分离、互不驱逐，按 job 结束释放会话状态。遵循 [ADR-0012](../adr/0012-sam-backend-as-independent-gpu-service)，predictor 不入 `apps/api`。
-> - **`sam_variant`**：请求链路可传——AI 传播对话框选 SAM 尺寸 → `VideoTrackerPropagateRequest.sam_variant` → 存入 `job.prompt` → `TrackerContext` → adapter 在 `context.sam_variant` 透传；缺省（未选）时 backend 回退默认 tiny。backend `/predict` video_tracker 分支按 `context.sam_variant` 从 `VideoPool` 取对应尺寸 tracker。
+> - **`sam_variant`**：请求链路可传——AI 传播对话框选 SAM 尺寸 → `VideoTrackerPropagateRequest.sam_variant` → 存入 `job.prompt` → `TrackerContext` → adapter 在 `context.model_variants.sam_variant` 透传；缺省（未选）时 backend 回退默认 tiny。backend `/predict` video_tracker 分支按 `context.model_variants.sam_variant` 从 `VideoPool` 取对应尺寸 tracker。
 > - **跨窗续追（平台侧）**：`video_tracker_runner.py` 窗 1 用原始 keyframe seed，后续窗用上一窗末帧（非 outside）geometry 作 `source_geometry` 续追，避免每窗从首帧框重新起追导致目标漂移。
 > - **只回填网格帧（平台侧）**：采样开启时 `apply_tracker_results` 按项目 `derive_step` 只持久化 `frame_index % step == 0` 的预测帧（tracker 仍逐源帧跑，off-grid 帧丢弃），与导航 / 导出网格一致。
 >
 > **能力声明（`/setup`）**：支持 video tracker 的 backend 在 `/setup` 返回 `supported_trackers: ["sam2_video", ...]`，平台动态消费并用于模态校验。
 >
-> **观测（`/health` + `/metrics`）**：开了 video 独立池的 backend，`/health` 返回 `video_pool` 区块（`{cap, loaded_variants, active_sessions, idle_seconds}`，与图片池 `pool` / `gpu_info.image_pool_loaded_variants` 分列）；`/metrics` 增 `video_tracker_frames_processed_total{sam_variant}` / `video_tracker_latency_seconds{sam_variant}`，并对推理指标加 `task_type="image|video"` 维度。模型市场观测页据此按图像 / 视频分类。
+> **观测（`/health` + `/metrics`）**：开了 video 独立池的 backend，`/health` 返回 `video_pool` 区块（PoolStatus：`cap/current_size/loaded_keys/last_evict`，外加 `active_sessions/idle_seconds`）；`/metrics` 增 `video_tracker_frames_processed_total{sam_variant}` / `video_tracker_latency_seconds{sam_variant}`，并对推理指标加 `task_type="image|video"` 维度。模型市场观测页据此按图像 / 视频分类。
 
 > **`output: "box" | "mask" | "both"`**（仅 `type=text` 生效）：
 > - `box`：仅 GroundingDINO 出框，跳过 SAM image embedding + mask 推理 + cv2/shapely 简化。返回 `result[]` 全为 `rectanglelabels`，单图 ~50-100ms（4060 / tiny），相比 mask 全链路 200-500ms 快 50-80%。**适用 image-det 项目**：标注员要的就是 bbox annotation。
@@ -235,6 +240,8 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 {
   "name": "sam3-backend",                       // 必填. backend 标识
   "version": "0.10.1",                          // 必填. backend 镜像/代码版本
+  "protocol_version": "2.1",                     // v0.14.15 起推荐；缺省按 2.0/legacy 兼容
+  "compat_protocol_versions": ["2.0"],           // 本 backend 仍接受的旧 minor 版本
   "model_version": "sam3.1",                    // 必填. 实际加载的模型 ckpt 版本
   "is_interactive": true,
   "labels": [],                                 // 可选. backend 已知类别 hint
@@ -255,20 +262,22 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
     "properties": {
       "box_threshold": {
         "type": "number", "minimum": 0, "maximum": 1,
-        "default": 0.35, "title": "Box 置信度阈值"
+        "default": 0.35, "title": "Box 置信度阈值",
+        "x-platform-role": "confidence"
       },
       "sam_variant": {
         "type": "string", "enum": ["tiny", "small", "base_plus", "large"],
-        "default": "tiny", "title": "SAM 2 变体"
+        "default": "tiny", "title": "SAM 2 变体",
+        "x-platform-role": "modelVariant"
       }
     }
   }
 }
 ```
 
-> **变体 `readOnly` 语义**：grounded-sam2-backend 内置 ModelPool 后，`sam_variant` / `dino_variant` 去掉了 `readOnly`，前端可按会话切换，每次 `/predict` 经 `context.{sam_variant,dino_variant}` 携带请求级变体（详见 §2.2）。`sam_variant` enum 与 backend `SAM2_CONFIGS` key 一致：`tiny | small | base_plus | large`（注意是 `base_plus` 不是 `base`）。sam3-backend 单模型无 pool，其 variant 字段仍可保留 `readOnly`。
+> **变体 `modelVariant` 语义**：v2.1 起变体选择由 `/setup.supported_variants[].key` 声明，前端发送 `/predict` 时统一放进 `context.model_variants`（详见 §2.2）。如果老 backend 只在 `params.properties.*` 里暴露 enum，则应给该字段标 `x-platform-role: "modelVariant"`；前端会把它移出普通参数表单，渲染到模型变体选择器。
 >
-> **`supported_variants`（可选）**：用于给 `params.sam_variant.enum` / `params.dino_variant.enum` 的裸字符串补富元数据。结构为数组，每项代表一个轴：`{ key, title?, description?, variants: [{ value, label?, vram_gb?, tier?, recommended?, note? }] }`。`key` 必须对应 `params.properties` 里的变体字段；`value` 必须与 enum 使用同一套 runtime 校验来源。前端优先读 `supported_variants` 渲染富选择器，缺失或为空时回落 `params.*_variant.enum`，因此老 backend 不需要立即升级。`tier` 建议使用 `fast | balanced | accurate`，但前端会容忍未知字符串。
+> **`supported_variants`（可选）**：用于声明 model variant 轴并补富元数据。结构为数组，每项代表一个轴：`{ key, title?, description?, variants: [{ value, label?, vram_gb?, tier?, recommended?, note? }] }`。`key` 是 `context.model_variants` 的 axis key；`value` 必须与 backend runtime 校验来源一致。前端优先读 `supported_variants` 渲染富选择器，缺失或为空时回落 `params` 中 `x-platform-role=modelVariant` 或 legacy `*_variant.enum` 字段，因此老 backend 不需要立即升级。`tier` 建议使用 `fast | balanced | accurate`，但前端会容忍未知字符串。
 >
 > v0.14.10 起，超管运行时观测端点 `GET /admin/ml-integrations/observe` 也会把 `/setup.supported_variants` 原样透传到每个 `ObserveTarget.supported_variants`，用于 env-only 容器的只读多轴变体展示。旧 grounded-sam2/sam3 的 `sam_variant` / `dino_variant` enum 仍会通过 `variant_catalog` 双发；仅声明通用 `supported_variants` 的容器暂不启用「试启动」，`POST /admin/ml-integrations/observe/smoke-test` 收到 `variant: {axis: value}` 时返回 `skipped=true`，直到 backend 实现通用 warm 接口。
 
@@ -277,6 +286,8 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 > **`supported_text_outputs`**：text 路径支持的 `Context.output` 取值。
 >
 > **`params` JSON Schema**：当前前端消费的最小类型集 `number | integer | string (含 enum) | boolean`；`readOnly: true` 字段在 UI 上展示但不可改。
+>
+> **`x-platform-role`（v2.1）**：`params.properties.*` 可用该扩展字段声明平台语义，前端用统一标签渲染但仍按原字段名发送。当前受控值：`confidence` / `iou` / `maxDet` / `textThreshold` / `simplifyTolerance` / `modelVariant`。本版**不统一物理参数名**：yolo 仍用 `conf/iou/max_det`，grounded-sam2 仍用 `box_threshold/text_threshold/simplify_tolerance`，sam3 仍用 `score_threshold/simplify_tolerance`。
 
 **平台代理端点**：前端通过 `GET /api/v1/projects/{id}/ml-backends/{bid}/setup` 拉取；apps/api 30s TTL 进程内缓存，update/delete backend 时自动 invalidate。
 
@@ -305,6 +316,8 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   // ── 必填三元组（协议 v1 已有，不变）──
   "name": "yolo-ultralytics-backend",
   "version": "0.1.0",              // backend 镜像/代码版本
+  "protocol_version": "2.1",       // v0.14.15: model_variants + x-platform-role + 422/503 错误模型
+  "compat_protocol_versions": ["2.0"],
   "model_version": "ultralytics-8.3.x",
 
   // ── v2 新增 ──
@@ -321,7 +334,8 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 }
 ```
 
-- `models[]` 存在 ⇒ 平台按多模型目录解析，**忽略顶层能力字段**（顶层仅留 name/version/infra/warmup_endpoint 等 backend 级元数据）。
+- `protocol_version="2.1"` ⇒ backend 支持 `context.model_variants`、`x-platform-role` 与标准 422/503 错误模型。`compat_protocol_versions` 用于声明仍接受的旧 minor 版本；v0.14.15 backend 填 `["2.0"]`。
+- `models[]` 存在 ⇒ 平台按多模型目录解析，**忽略顶层能力字段**（顶层仅留 name/version/protocol_version/infra/warmup_endpoint 等 backend 级元数据）。
 - `models[]` 缺省 ⇒ 平台用顶层字段合成一个隐式 model（老 backend 路径，§4.1.5）。
 
 ### 4.1.2 model 条目结构
@@ -450,8 +464,9 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
       "default_thresholds": { "conf": 0.25, "iou": 0.7 },
       "resource_profile": { "device": "gpu", "batchable": true },
       "params": { "type": "object", "properties": {
-        "conf":   { "type": "number", "minimum": 0, "maximum": 1, "default": 0.25, "title": "置信度阈值" },
-        "iou":    { "type": "number", "minimum": 0, "maximum": 1, "default": 0.7,  "title": "NMS IoU" },
+        "conf":   { "type": "number", "minimum": 0, "maximum": 1, "default": 0.25, "title": "置信度阈值", "x-platform-role": "confidence" },
+        "iou":    { "type": "number", "minimum": 0, "maximum": 1, "default": 0.7,  "title": "NMS IoU", "x-platform-role": "iou" },
+        "max_det": { "type": "integer", "minimum": 1, "maximum": 300, "default": 100, "x-platform-role": "maxDet" },
         "series": { "type": "string", "enum": ["yolov8","yolo11","yolo12"], "default": "yolo11" },
         "size":   { "type": "string", "enum": ["n","s","m","l","x"], "default": "s" } } }
     },
@@ -487,7 +502,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 - inner array 顺序必须与 `supported_variants` 的 axis 顺序一致，即 `[axis0_value, axis1_value, ...]`。
 - 字段缺省 ⇒ 前端按 axes 笛卡尔积处理（适用于 SAM2 × DINO 等真笛卡尔积场景）。
-- 前端目录展示时严格按 `variant_combinations` 过滤；`/predict` 服务端仍独立做 `INVALID_VARIANT` 400 兜底。
+- 前端目录展示时严格按 `variant_combinations` 过滤；`/predict` 服务端仍独立做 `variant_not_supported` 422 兜底。
 
 #### `variants_shared_across_tasks`（可选，v0.14.12 起）
 
@@ -734,7 +749,7 @@ v0.14.12 时三家 backend 的 `/health.pool` 字段各不相同（yolo 用 `poo
 | backend | key 形式 |
 |---|---|
 | yolo-backend | `{series}/{size}/{task}`，如 `yolov11/s/detection` |
-| grounded-sam2-backend | `sam={sam_variant}/dino={dino_variant}`，如 `sam=tiny/dino=B`；video pool 用 `video:sam={sam_variant}` 区分 |
+| grounded-sam2-backend | image pool 用 `sam={sam_variant}/dino={dino_variant}`，如 `sam=tiny/dino=B`；video pool 的 key 就是 `sam_variant` 字符串 |
 | sam3-backend | 模型变体字符串，如 `sam3.1`；cap 永远 `1` |
 
 **LRU evict 触发**：pool 满 + miss 时按 LRU 头部淘汰，`last_evict.reason="lru"`。`/unload` 手动卸载用 `"manual"`，sam3 的 idle 超时用 `"idle_timeout"`。
@@ -790,7 +805,7 @@ POST /warmup
 - 重复预热同一 variant 直接返回 `cache_hit=true, model_load_ms=null`。
 - pool 满时按 LRU 淘汰最旧的 key，把被淘汰的 key 名回填 `evicted` 字段供前端 toast 提示。
 - `hit_count` 不增加（warmup 不算 hit）。
-- 错误码：变体非法返回 `400/422`（同 `/predict`），GPU OOM 返回 `503`。
+- 错误码：变体缺失或类型错返回 422（Pydantic/schema），变体值或组合不支持返回 422 + `error_code=variant_not_supported`，权重缺失 / 显存暂不可服务返回 503 + `Retry-After`。
 
 **平台代理**：`POST /api/v1/projects/{pid}/ml-backends/{bid}/warmup`，body 原样转发，权限沿用现有 RBAC。
 
@@ -809,15 +824,22 @@ POST /warmup
 
 ## 6. 错误响应约定
 
-平台对所有非 2xx 走 `httpx.HTTPStatusError`：
+v2.1 推荐 backend 使用结构化错误体。平台代理会保留上游 4xx；503 会保留为 503 并透传 `Retry-After`；其它上游 5xx / 连接超时仍映射为 502 Bad Gateway。
+
+| 场景 | HTTP | 响应体 |
+|---|---:|---|
+| variant 字段缺失 / 类型错 | 422 | FastAPI/Pydantic 默认 validation error |
+| variant 值合法字段但不受支持，或组合不在 `variant_combinations` 内 | 422 | `{ "detail": { "error_code": "variant_not_supported", "axis": "size", "value": "x", "allowed": ["n","s"] } }` |
+| variant 合法但当前 backend 暂不可服务（权重缺失、未预下载、显存池不可用） | 503 | `{ "detail": { "error_code": "model_unavailable", "key": "yolov11/s/detection", "reason": "checkpoint missing" } }` + `Retry-After` |
+| 输入图片 / prompt 本身非法 | 422 | backend 自定义 detail |
+| backend bug / 未预期异常 | 500 | backend 自定义 detail；平台交互式代理会映射为 502 |
+
+共享实现位于 `apps/_shared/protocol_v2/src/aap_protocol_v2/errors.py`：`VariantNotSupportedError` 与 `ModelUnavailableError`。三家内置 backend 已统一使用这两个错误类。
+
+平台调用行为：
 
 - 同步 batch（`/predict` 批量）：worker 捕获并写一行 `failed_predictions`（`apps/api/app/db/models/prediction.py:59-79`），字段 `error_type` = HTTP 状态码，`message` = response body 截断到 4KB。继续下一 batch。
-- 交互式（`/predict` 单条）：服务层 `predict_interactive` (`ml_client.py`) 把上游响应映射后再抛给 HTTP 端点：**上游 4xx 原样透传 4xx**（如 SAM 3 不支持 `point` 探针返回的 400），**上游 5xx / 连接超时映射为 502** Bad Gateway，detail 带上 backend 原始文案。前端全局拦截器只对 403/≥500 弹 toast，故透传的 4xx 不会刷屏（warmup 探针的预期失败被静默吞掉），真正的 backend 故障才以 502 提示。
-
-推荐 backend 错误格式（不强制）：
-```json
-{ "error": "model_not_loaded", "message": "GPU OOM, please retry" }
-```
+- 交互式（`/predict` 单条）：服务层 `predict_interactive` (`ml_client.py`) 透传上游 4xx 与 503；其它上游 5xx / 连接超时映射为 502。前端按 422 / 503 / 500+ 分流：422 显示“参数错误，请检查输入”，503 显示“模型暂不可用，N 秒后重试”，500+ 显示“服务异常”。
 
 ---
 
@@ -929,15 +951,38 @@ cd docs-site/dev/examples/echo-ml-backend && docker build -t echo-ml-backend . &
 ## 9. 接入 checklist
 
 - [ ] `/health` 返回 200
+- [ ] `/setup` 声明 `protocol_version: "2.1"` 与 `compat_protocol_versions: ["2.0"]`
 - [ ] `/predict` 批量 schema 与 §2.1 对齐，至少回填 `task` + `result`
 - [ ] 如声明 `is_interactive=True`，`/predict` 也接受 §2.2 单条请求
+- [ ] `/predict.context.model_variants` 支持通用 axis dict；旧字段仅作为兼容期 normalize
+- [ ] `/setup.params` 给阈值/数量/简化容差等字段标 `x-platform-role`
 - [ ] 每条 result 的 `type` 与项目类型匹配（image-det 项目至少要有 `rectanglelabels`）
-- [ ] 非 2xx 时返回结构化错误体便于排查（推荐 §6 格式）
+- [ ] 非法 variant 返回 422；模型暂不可用返回 503 + `Retry-After`（见 §6）
 - [ ] 长任务考虑 backend 内部异步 + 在合理时间内（< `ml_predict_timeout`）返回结果，否则平台会判超时并落 `failed_predictions`
 
 ---
 
-## 10. 参考实现
+## 10. 兼容性与迁移
+
+v0.14.15 是 protocol v2.1 minor bump，不是 v3。平台与内置 backend 保留 v2.0 兼容期，避免外部自建 backend 立刻中断。
+
+| 旧字段 | 新字段 | 兼容行为 |
+|---|---|---|
+| `context.variants.{series,size}` | `context.model_variants.{series,size}` | yolo-backend normalize 并记录 deprecation warning |
+| `context.sam_variant` / `context.dino_variant` | `context.model_variants.{sam_variant,dino_variant}` | grounded-sam2-backend normalize；新字段优先 |
+| `context.model_variant` | `context.model_variants.model_variant` | sam3-backend normalize；非 `sam3.1` 仍返回 422 |
+| `params.*_variant.enum` 无 role | `supported_variants[]` 或 `x-platform-role=modelVariant` | 前端仍回落渲染 legacy enum；新 backend 应声明 `supported_variants` |
+| `projects.ai_model` | `projects.ml_backend_id` + backend name 展示 | v0.14.15 DB 迁移删除列；解绑过的项目若残留旧 `ai_model` 字符串会被直接丢弃 |
+
+迁移建议：
+
+1. 先在 `/setup` 加 `protocol_version: "2.1"` 与 `compat_protocol_versions: ["2.0"]`。
+2. `/predict` 接受 `context.model_variants`，保留旧字段 normalize 一版。
+3. 给参数 schema 补 `x-platform-role`，不要改物理参数名。
+4. 把非法 variant 统一改为 422，把权重缺失 / 显存暂不可服务改为 503 + `Retry-After`。
+5. 确认前端或第三方调用方不再读取 `projects.ai_model`；项目是否绑定 backend 只看 `projects.ml_backend_id`。
+
+## 11. 参考实现
 
 社区已有几种现成接入：
 - **Label Studio ML Backends 模板**（兼容平台 schema）：https://github.com/HumanSignal/label-studio-ml-backend

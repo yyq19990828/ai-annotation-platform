@@ -7,13 +7,18 @@ from datetime import datetime, timezone
 import pytest
 from aap_protocol_v2 import (
     BatchPredictResponse,
+    COMPAT_PROTOCOL_VERSIONS,
     EvictRecord,
     LoadedKey,
+    ModelUnavailableError,
     PoolStateSnapshot,
     PoolStatus,
+    PROTOCOL_VERSION,
     PredictionResult,
     TaskItem,
+    VariantNotSupportedError,
     WarmupResponse,
+    normalize_context_model_variants,
 )
 
 
@@ -127,3 +132,49 @@ def test_warmup_response_with_evicted() -> None:
     r = WarmupResponse(model_load_ms=4500, cache_hit=False, evicted="yolov8/n/detection")
     assert r.model_load_ms == 4500
     assert r.evicted == "yolov8/n/detection"
+
+
+# ---------- v0.14.15 / protocol v2.1 ----------
+
+
+def test_protocol_version_constants() -> None:
+    assert PROTOCOL_VERSION == "2.1"
+    assert COMPAT_PROTOCOL_VERSIONS == ["2.0"]
+
+
+def test_normalize_context_model_variants_keeps_new_field() -> None:
+    ctx, deprecated = normalize_context_model_variants(
+        {"model_variants": {"series": "yolo11", "size": "s"}}
+    )
+    assert ctx["model_variants"] == {"series": "yolo11", "size": "s"}
+    assert deprecated == []
+
+
+def test_normalize_context_model_variants_merges_legacy_fields() -> None:
+    ctx, deprecated = normalize_context_model_variants(
+        {
+            "model_variants": {"sam_variant": "small"},
+            "variants": {"sam_variant": "tiny", "dino_variant": "T"},
+            "model_variant": "sam3.1",
+        }
+    )
+    assert ctx["model_variants"] == {
+        "sam_variant": "small",
+        "dino_variant": "T",
+        "model_variant": "sam3.1",
+    }
+    assert set(deprecated) == {"context.variants", "context.model_variant"}
+
+
+def test_shared_variant_error_body() -> None:
+    err = VariantNotSupportedError("size", "z", ["s", "m"])
+    assert err.status_code == 422
+    assert err.detail["error_code"] == "variant_not_supported"
+    assert err.detail["axis"] == "size"
+
+
+def test_shared_model_unavailable_error_body_and_retry_after() -> None:
+    err = ModelUnavailableError("sam=tiny/dino=T", "missing checkpoint")
+    assert err.status_code == 503
+    assert err.headers == {"Retry-After": "30"}
+    assert err.detail["error_code"] == "model_unavailable"

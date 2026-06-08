@@ -118,9 +118,9 @@ class MLBackendVideoTrackerAdapter:
             "prompt": ctx.prompt,
             "source_geometry": ctx.source_geometry,
         }
-        # v0.10.36 · 仅当显式指定时透传 sam_variant, 缺省让后端回退默认 tiny.
+        # v0.14.15 · 仅当显式指定时透传模型变体; 缺省让后端回退默认 tiny.
         if ctx.sam_variant:
-            context["sam_variant"] = ctx.sam_variant
+            context["model_variants"] = {"sam_variant": ctx.sam_variant}
         result = await client.predict_interactive(
             task_data=ctx.task_data,
             context=context,

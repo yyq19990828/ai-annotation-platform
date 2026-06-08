@@ -76,7 +76,6 @@ class MLBackendService:
         )
         for project in bound_projects.scalars():
             project.ml_backend_id = None
-            project.ai_model = None
         await self.db.delete(backend)
         await self.db.flush()
         return True

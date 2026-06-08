@@ -85,7 +85,6 @@ async def test_clone_copies_all_cloneable_fields(
             }
         },
         ai_enabled=True,
-        ai_model="grounded-sam2",
         box_threshold=0.4,
         text_threshold=0.3,
         text_output_default="mask",
@@ -116,7 +115,6 @@ async def test_clone_copies_all_cloneable_fields(
     assert data["classes_config"]["car"]["color"] == "#ff0000"
     assert data["attribute_schema"]["fields"][0]["key"] == "occluded"
     assert data["ai_enabled"] is True
-    assert data["ai_model"] == "grounded-sam2"
     assert data["box_threshold"] == pytest.approx(0.4, rel=1e-5)
     assert data["text_threshold"] == pytest.approx(0.3, rel=1e-5)
     assert data["text_output_default"] == "mask"
@@ -143,7 +141,6 @@ async def test_clone_explicit_field_overrides_source(
         db_session,
         user.id,
         ai_enabled=True,
-        ai_model="grounded-sam2",
         box_threshold=0.4,
     )
     await db_session.commit()
@@ -164,9 +161,6 @@ async def test_clone_explicit_field_overrides_source(
     # 显式字段优先
     assert data["ai_enabled"] is False
     assert data["box_threshold"] == pytest.approx(0.6, rel=1e-5)
-    # ai_model 没显式覆盖, 仍从源克隆 (尽管 ai_enabled=False, 但 ai_model 只是
-    # display hint, 复制是无害的)
-    assert data["ai_model"] == "grounded-sam2"
 
 
 async def test_clone_auto_derives_ml_backend_from_source(
@@ -192,8 +186,6 @@ async def test_clone_auto_derives_ml_backend_from_source(
     # 新项目获得了自己的 backend (id != 源 backend id)
     assert data["ml_backend_id"] is not None
     assert data["ml_backend_id"] != str(backend.id)
-    # ai_model 同步为 backend.name (走 _clone_backend_to_new_project 后的 display hint)
-    assert data["ai_model"] == "auto-clone-backend"
 
 
 async def test_clone_without_view_permission_returns_404(
@@ -352,7 +344,6 @@ async def test_apply_template_with_explicit_field_override(
             "bbox": {"enabled": True, "classes": [{"name": "car", "order": 0}]}
         },
         ai_enabled=True,
-        ai_model="grounded-sam2",
         scope="public",
         created_by=user.id,
     )
@@ -375,8 +366,6 @@ async def test_apply_template_with_explicit_field_override(
     data = resp.json()
     assert data["ai_enabled"] is False
     assert data["classes"] == ["pedestrian"]
-    # 没显式覆盖的字段仍从模板复制
-    assert data["ai_model"] == "grounded-sam2"
 
 
 async def test_apply_nonexistent_template_404(httpx_client_bound, super_admin):

@@ -29,6 +29,39 @@
 
 <!-- 0.14.x 版本变更按版本段追加到本区；进入 0.15.x 后整体移到 docs/changelogs/0.14.x.md -->
 
+## [0.14.15] - 2026-06-08
+
+协议字段名统一 · 把三家 backend 的变体请求字段收敛到 `context.model_variants`，协议版本升到 2.1；参数物理字段名保持 backend 自己的语义，通过 JSON Schema `x-platform-role` 做前端统一展示；同时删除 v0.14.13 已 deprecated 的 `projects.ai_model`，补齐 v0.14.14 延期的 video pool 协议化、yolo warmup 路径、ModelMarket 运行时列与 `cache_hit` 真信号接通。计划见 `docs/plans/2026-06-08-v0.14.15-protocol-field-unification.md`，决策见 [ADR-0039](docs/adr/0039-protocol-field-name-unification.md)。
+
+### Added
+
+- **Protocol v2.1**：`/setup.protocol_version="2.1"` + `compat_protocol_versions=["2.0"]`；三 backend `/predict` 统一接受 `context.model_variants: Record<axis_key, axis_value>`。旧字段（`variants` / `sam_variant` / `dino_variant` / `model_variant`）保留兼容 normalize 并记录 deprecation warning。
+- **共享协议 helpers**：`apps/_shared/protocol_v2` 新增 `normalize_context_model_variants`、`VariantNotSupportedError`、`ModelUnavailableError`、`PlatformRole`、协议版本常量。非法 variant 组合统一 422；权重缺失 / 模型暂不可用统一 503 + `Retry-After`。
+- **`x-platform-role` 参数角色**：yolo / gsam2 / sam3 `/setup.params` 给 `confidence` / `iou` / `maxDet` / `textThreshold` / `simplifyTolerance` / `modelVariant` 打平台语义标签；前端 SchemaForm 用统一标签渲染，变体字段移出普通参数表单。
+- **ModelMarket 运行时收尾**：能力目录增加运行时列、每行预热按钮和卡片 `last_evict` footer；RuntimeObservePanel 对声明 `warmup_endpoint=true` 的 backend 走 `/warmup`，修复 yolo 点“预热默认”打 `/reload` 404。
+
+### Changed
+
+- **前端 predict 发送体**：Workbench 同步 interactive predict 与批量 trigger 均把变体轴放进 `context.model_variants` / `params.model_variants`；同步响应里的 `cache_hit` 会调用 `recordPredictCacheHit` 写真实冷热信号。
+- **VariantSelector / VariantPanel 泛化**：VariantSelector schema fallback 支持 `x-platform-role=modelVariant`；VariantPanel 不再对多 model backend 只显示指引，改按 task section 渲染 series/size 选择并预热。
+- **gsam2 video_pool 协议化**：`/health.video_pool` 输出 PoolStatus（`cap/current_size/loaded_keys/last_evict`），删除老 `loaded_variants` 与 `gpu_info.video_pool_loaded_variants` 注入。
+- **API interactive 代理**：`interactive-annotating` 响应透传 `cache_hit` / `model_load_ms`；`MLBackendClient` 保留上游 503 与 `Retry-After`，其它 5xx 仍按 backend 故障处理。
+
+### Removed
+
+- **`projects.ai_model` / `project_templates.ai_model`**：Alembic `0101_drop_project_ai_model` 删除历史展示列；`ProjectCreate/Update/Out`、模板 schema、clone、Dashboard、Workbench 和项目设置引用同步清理。解绑过的项目可能仍残留旧 `ai_model` 字符串，迁移直接丢弃该 display hint，以 `ml_backend_id` 作为唯一绑定真值。
+
+### Tests
+
+- **Backend contract**：yolo / gsam2 / sam3 新增 v2.1 contract 测试，覆盖新字段、旧字段兼容 warning、非法 variant 422、权重缺失 503；gsam2 新增 video pool observability 测试。
+- **API / frontend**：API project/template/ml_backend 相关测试覆盖 `ai_model` 删除与 interactive `cache_hit` 透传；前端 SchemaForm / VariantSelector / useInteractiveAI 测试覆盖角色标签、modelVariant fallback、`model_variants` 发送与 503 Retry-After 文案。
+- **Schema sync**：刷新 `apps/api/openapi.snapshot.json`、`docs-site/api/openapi.json` 与 `apps/web/src/api/generated/*`，generated types 不再包含 `ai_model`。
+
+### Docs
+
+- `docs-site/dev/reference/ml-backend-protocol.md` 升级到 protocol v2.1：新增 `context.model_variants`、`x-platform-role`、标准 422/503 错误模型和 §10 兼容性迁移表。
+- 新增 [ADR-0039](docs/adr/0039-protocol-field-name-unification.md)，记录选择扁平 `model_variants` 与 role metadata 的原因；docs-site ADR 镜像同步更新。
+
 ## [0.14.14] - 2026-06-08
 
 预标注可观测性 · 把 v0.14.13 的「前端 sessionStorage 猜测是否首次冷启动」换成「backend 真信号」。`PredictionResult` 加 `cache_hit / model_load_ms / pool_state` 三可选字段；`/health.pool` 三 backend 统一为 `PoolStatus`（cap / current_size / loaded_keys[] / last_evict）；新协议端点 `POST /warmup` 让前端 / 运维显式预热权重。计划见 `docs/plans/2026-06-08-v0.14.14-predict-observability.md`。

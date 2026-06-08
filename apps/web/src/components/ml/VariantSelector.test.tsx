@@ -76,6 +76,29 @@ describe("VariantSelector", () => {
     expect(screen.getByRole("option", { name: "B" })).toBeInTheDocument();
   });
 
+  it("falls back to x-platform-role=modelVariant enum when rich metadata is absent", () => {
+    render(
+      <VariantSelector
+        schema={{
+          type: "object",
+          properties: {
+            model_variant: {
+              type: "string",
+              enum: ["sam3.1"],
+              default: "sam3.1",
+              "x-platform-role": "modelVariant",
+            },
+          },
+        }}
+        value={{}}
+        onChange={() => {}}
+      />,
+    );
+
+    const select = screen.getByTestId("ai-variant-model_variant") as HTMLSelectElement;
+    expect(select.value).toBe("sam3.1");
+  });
+
   it("renders nothing when no variant axis is declared", () => {
     const { container } = render(
       <VariantSelector

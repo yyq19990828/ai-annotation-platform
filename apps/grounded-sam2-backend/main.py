@@ -29,6 +29,15 @@ from io import BytesIO
 
 import httpx
 import torch
+from aap_protocol_v2 import (
+    COMPAT_PROTOCOL_VERSIONS,
+    PROTOCOL_VERSION,
+    ModelUnavailableError,
+    PlatformRole,
+    VariantNotSupportedError,
+    log_deprecated_model_variant_fields,
+    normalize_context_model_variants,
+)
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from PIL import Image
@@ -253,19 +262,37 @@ MODEL_VERSION = _model_version(SAM_VARIANT, DINO_VARIANT)
 
 def _resolve_variant(ctx: dict) -> tuple[str, str]:
     """从 context 读请求级变体, 缺省回退全局 env 默认; 非法值 422."""
-    sv = ctx.get("sam_variant") or SAM_VARIANT
-    dv = ctx.get("dino_variant") or DINO_VARIANT
+    ctx = _normalize_predict_context(ctx)
+    model_variants = ctx.get("model_variants") or {}
+    sv = model_variants.get("sam_variant") or SAM_VARIANT
+    dv = model_variants.get("dino_variant") or DINO_VARIANT
     if sv not in SAM2_CONFIGS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"unsupported sam_variant: {sv!r}; allowed={sorted(SAM2_CONFIGS)}",
-        )
+        raise VariantNotSupportedError("sam_variant", sv, sorted(SAM2_CONFIGS))
     if dv not in DINO_CONFIGS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"unsupported dino_variant: {dv!r}; allowed={sorted(DINO_CONFIGS)}",
-        )
+        raise VariantNotSupportedError("dino_variant", dv, sorted(DINO_CONFIGS))
     return sv, dv
+
+
+def _resolve_video_variant(ctx: dict) -> str:
+    ctx = _normalize_predict_context(ctx)
+    model_variants = ctx.get("model_variants") or {}
+    sv = model_variants.get("sam_variant") or SAM_VARIANT
+    if sv not in SAM2_CONFIGS:
+        raise VariantNotSupportedError("sam_variant", sv, sorted(SAM2_CONFIGS))
+    return sv
+
+
+def _normalize_predict_context(ctx: dict) -> dict:
+    try:
+        normalized, deprecated = normalize_context_model_variants(ctx)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    log_deprecated_model_variant_fields(logger, deprecated)
+    return normalized
+
+
+def _model_key(sam_variant: str, dino_variant: str) -> str:
+    return f"sam={sam_variant}/dino={dino_variant}"
 
 
 async def _get_predictor(
@@ -279,13 +306,13 @@ async def _get_predictor(
     try:
         predictor, cache_hit, load_ms = await _pool.get(sam_variant, dino_variant)
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise ModelUnavailableError(_model_key(sam_variant, dino_variant), str(exc)) from exc
     except FileNotFoundError as exc:
         # 该变体的 checkpoint 未落盘 (entrypoint 只预拉了 PREFETCH 列表内的变体).
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                f"variant ({sam_variant}, {dino_variant}) checkpoint not provisioned: {exc}; "
+        raise ModelUnavailableError(
+            _model_key(sam_variant, dino_variant),
+            (
+                f"checkpoint not provisioned: {exc}; "
                 "把该变体加入 PREFETCH_SAM_VARIANTS / PREFETCH_DINO_VARIANTS 后重建容器, "
                 "或手动下载 checkpoint 到 CHECKPOINT_DIR."
             ),
@@ -399,12 +426,6 @@ def health() -> dict:
         "container_cpu_percent": perf["container_cpu_percent"],
         "container_memory_percent": perf["container_memory_percent"],
     }
-    if gpu_info is not None:
-        # v0.10.35 §B · 让 gpu_info 里 video 池的占用可分辨 (整卡 mem_get_info
-        # 无法按进程内 allocator 切分, 这里给出"哪些池有权重常驻"的定性标记).
-        # v0.14.14: image 池迁到 pool.loaded_keys (协议 §4.3) 后这里不再注入老字段;
-        # video 池暂未协议化, 老字段保留. ModelMarket/PerfHud 已切到 loaded_keys.
-        gpu_info["video_pool_loaded_variants"] = _video_pool.loaded_variants()
     return {
         "ok": True,
         "gpu": available,
@@ -414,9 +435,8 @@ def health() -> dict:
         "model_version": MODEL_VERSION,
         "loaded": _pool.loaded,
         # v0.14.14 协议 §4.3 PoolStatus (cap/current_size/loaded_keys[]/last_evict).
-        # 老字段 loaded_variants/evict_count/per_variant_lru_ts 在 v0.14.14 内清掉双发.
         "pool": _pool.pool_status(),
-        # v0.10.35 §B · video tracker 独立池区块 (cap / loaded_variants / active_sessions / idle_seconds).
+        # v0.14.15 · video tracker 独立池同样使用 PoolStatus.loaded_keys 协议形态.
         "video_pool": _video_pool.health(),
         "provisioning": _provisioning,
         "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
@@ -431,6 +451,8 @@ def setup() -> dict:
     # - supported_prompts: 决定 ToolDock 哪些 AI 工具可用 (M2 ToolDock 重构消费)
     # - params: JSON Schema (Draft-07 子集) — 前端 schema-form 自动渲染参数面板
     base = {
+        "protocol_version": PROTOCOL_VERSION,
+        "compat_protocol_versions": COMPAT_PROTOCOL_VERSIONS,
         "name": "grounded-sam2",
         "version": BACKEND_VERSION,
         "model_version": MODEL_VERSION,
@@ -454,6 +476,7 @@ def setup() -> dict:
                     "maximum": 1.0,
                     "default": BOX_THRESHOLD,
                     "title": "Box 置信度阈值",
+                    "x-platform-role": PlatformRole.CONFIDENCE.value,
                     "description": "GroundingDINO 框检测的最低置信度（文本 prompt 路径）。调低=召回更多小物/弱目标但噪声增多；调高=更干净但易漏检。",
                 },
                 "text_threshold": {
@@ -462,6 +485,7 @@ def setup() -> dict:
                     "maximum": 1.0,
                     "default": TEXT_THRESHOLD,
                     "title": "Text 置信度阈值",
+                    "x-platform-role": PlatformRole.TEXT_THRESHOLD.value,
                     "description": "短语与图像区域语义匹配的最低分。调高=匹配更严格、更贴合 prompt 词；调低=更宽松、易误配。",
                 },
                 "simplify_tolerance": {
@@ -470,6 +494,7 @@ def setup() -> dict:
                     "maximum": 10.0,
                     "default": DEFAULT_SIMPLIFY_TOLERANCE,
                     "title": "轮廓简化容差(像素)",
+                    "x-platform-role": PlatformRole.SIMPLIFY_TOLERANCE.value,
                     "description": "多边形轮廓抽稀强度（像素）。调大=顶点更少、更轻量；调小=更贴合细节但顶点更多。仅影响 mask 输出。",
                 },
                 "sam_variant": {
@@ -477,6 +502,7 @@ def setup() -> dict:
                     "enum": ["tiny", "small", "base_plus", "large"],
                     "default": SAM_VARIANT,
                     "title": "SAM 2 变体",
+                    "x-platform-role": PlatformRole.MODEL_VARIANT.value,
                     "description": "SAM 2 分割模型大小。越大越精细但越慢、越吃显存；tiny 最快。切换会触发一次冷加载。",
                 },
                 "dino_variant": {
@@ -484,6 +510,7 @@ def setup() -> dict:
                     "enum": ["T", "B"],
                     "default": DINO_VARIANT,
                     "title": "GroundingDINO 变体",
+                    "x-platform-role": PlatformRole.MODEL_VARIANT.value,
                     "description": "文本检测模型大小：T(Tiny) 更快，B(Base) 更准更吃资源。切换会触发一次冷加载。",
                 },
             },
@@ -624,20 +651,14 @@ async def reload(req: ReloadRequest | None = None) -> dict:
     if task_type == "video":
         sv = (req.sam_variant if req else None) or SAM_VARIANT
         if sv not in SAM2_CONFIGS:
-            raise HTTPException(
-                status_code=422,
-                detail=f"unsupported sam_variant: {sv!r}; allowed={sorted(SAM2_CONFIGS)}",
-            )
-        already = sv in _video_pool.loaded_variants()
+            raise VariantNotSupportedError("sam_variant", sv, sorted(SAM2_CONFIGS))
+        already = _video_pool.is_loaded(sv)
         try:
             await _video_pool.get(sv)
         except RuntimeError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise ModelUnavailableError(sv, str(exc)) from exc
         except FileNotFoundError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail=f"sam_variant {sv!r} video checkpoint not provisioned: {exc}",
-            ) from exc
+            raise ModelUnavailableError(sv, f"video checkpoint not provisioned: {exc}") from exc
         return {
             "ok": True,
             "loaded": True,
@@ -655,15 +676,9 @@ async def reload(req: ReloadRequest | None = None) -> dict:
     sv = (req.sam_variant if req else None) or SAM_VARIANT
     dv = (req.dino_variant if req else None) or DINO_VARIANT
     if sv not in SAM2_CONFIGS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"unsupported sam_variant: {sv!r}; allowed={sorted(SAM2_CONFIGS)}",
-        )
+        raise VariantNotSupportedError("sam_variant", sv, sorted(SAM2_CONFIGS))
     if dv not in DINO_CONFIGS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"unsupported dino_variant: {dv!r}; allowed={sorted(DINO_CONFIGS)}",
-        )
+        raise VariantNotSupportedError("dino_variant", dv, sorted(DINO_CONFIGS))
     already = _pool.is_loaded(sv, dv)
     _predictor, _cache_hit, _load_ms = await _get_predictor(sv, dv)
     return {
@@ -690,24 +705,15 @@ async def warmup(req: WarmupRequest) -> WarmupResponse:
     sv = variants.get("sam_variant") or SAM_VARIANT
     dv = variants.get("dino_variant") or DINO_VARIANT
     if sv not in SAM2_CONFIGS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"unsupported sam_variant: {sv!r}; allowed={sorted(SAM2_CONFIGS)}",
-        )
+        raise VariantNotSupportedError("sam_variant", sv, sorted(SAM2_CONFIGS))
     if dv not in DINO_CONFIGS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"unsupported dino_variant: {dv!r}; allowed={sorted(DINO_CONFIGS)}",
-        )
+        raise VariantNotSupportedError("dino_variant", dv, sorted(DINO_CONFIGS))
     try:
         cache_hit, load_ms, evicted = await _pool.warmup(sv, dv)
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise ModelUnavailableError(_model_key(sv, dv), str(exc)) from exc
     except FileNotFoundError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"variant ({sv}, {dv}) checkpoint not provisioned: {exc}",
-        ) from exc
+        raise ModelUnavailableError(_model_key(sv, dv), f"checkpoint not provisioned: {exc}") from exc
     return WarmupResponse(
         ok=True,
         model_load_ms=load_ms,
@@ -917,12 +923,7 @@ async def _run_video_tracker(file_path: str, ctx: dict) -> tuple[list[dict], str
     返回 (result 列表, sam_variant)。OOM / timeout 等不吞, 让 api 落 error_message
     (ADR-0012: predictor 不进 api, 故障外抛)。
     """
-    sv = ctx.get("sam_variant") or SAM_VARIANT
-    if sv not in SAM2_CONFIGS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"unsupported sam_variant: {sv!r}; allowed={sorted(SAM2_CONFIGS)}",
-        )
+    sv = _resolve_video_variant(ctx)
     try:
         from_frame = int(ctx["from_frame"])
         to_frame = int(ctx["to_frame"])
@@ -942,12 +943,9 @@ async def _run_video_tracker(file_path: str, ctx: dict) -> tuple[list[dict], str
     try:
         tracker = await _video_pool.get(sv)
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise ModelUnavailableError(sv, str(exc)) from exc
     except FileNotFoundError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"sam_variant {sv!r} video checkpoint not provisioned: {exc}",
-        ) from exc
+        raise ModelUnavailableError(sv, f"video checkpoint not provisioned: {exc}") from exc
 
     local_path = _video_local_path(file_path)
     cleanup = local_path != file_path

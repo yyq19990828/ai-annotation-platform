@@ -17,11 +17,7 @@ export interface InteractiveRequest {
   context: Record<string, unknown>;
 }
 
-// v0.10.26 · 模型市场单变体预热. 字段对应 grounded-sam2 /setup.params 的变体 enum.
-export interface MLBackendVariant {
-  sam_variant?: string;
-  dino_variant?: string;
-}
+export type MLBackendVariant = Record<string, string>;
 
 export interface MLBackendSupportedVariantOption {
   value: string;
@@ -78,6 +74,8 @@ export interface MLModelCapability {
 export interface MLBackendCapability {
   name: string;
   version?: string;
+  protocol_version?: string;
+  compat_protocol_versions?: string[];
   model_version?: string;
   is_interactive?: boolean;
   labels?: string[];
@@ -169,7 +167,13 @@ export const mlBackendsApi = {
     apiClient.post(`/projects/${projectId}/ml-backends/${backendId}/predict-test?task_id=${taskId}`),
 
   interactiveAnnotate: (projectId: string, backendId: string, payload: InteractiveRequest) =>
-    apiClient.post<{ result: unknown[]; score: number | null; inference_time_ms: number | null }>(
+    apiClient.post<{
+      result: unknown[];
+      score: number | null;
+      inference_time_ms: number | null;
+      cache_hit?: boolean | null;
+      model_load_ms?: number | null;
+    }>(
       `/projects/${projectId}/ml-backends/${backendId}/interactive-annotating`,
       payload,
     ),
@@ -181,12 +185,12 @@ export const mlBackendsApi = {
   warmup: (
     projectId: string,
     backendId: string,
-    body: Record<string, unknown>,
+    body?: Record<string, unknown>,
   ) =>
     apiClient.post<{
       ok: boolean;
       model_load_ms: number | null;
       cache_hit: boolean;
       evicted: string | null;
-    }>(`/projects/${projectId}/ml-backends/${backendId}/warmup`, body),
+    }>(`/projects/${projectId}/ml-backends/${backendId}/warmup`, body ?? {}),
 };

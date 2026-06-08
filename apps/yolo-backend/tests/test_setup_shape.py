@@ -26,8 +26,9 @@ def setup_dict() -> dict:
     return main.setup()
 
 
-def test_setup_protocol_version_v2(setup_dict: dict) -> None:
-    assert setup_dict["protocol_version"] == "v2"
+def test_setup_protocol_version_v21(setup_dict: dict) -> None:
+    assert setup_dict["protocol_version"] == "2.1"
+    assert setup_dict["compat_protocol_versions"] == ["2.0"]
 
 
 def test_setup_infra_pytorch(setup_dict: dict) -> None:
@@ -130,6 +131,13 @@ def test_setup_params_schema_keys(setup_dict: dict) -> None:
         assert "conf" in props
         assert "iou" in props
         assert "max_det" in props
+
+
+def test_setup_params_schema_platform_roles(setup_dict: dict) -> None:
+    props = setup_dict["params"]["properties"]
+    assert props["conf"]["x-platform-role"] == "confidence"
+    assert props["iou"]["x-platform-role"] == "iou"
+    assert props["max_det"]["x-platform-role"] == "maxDet"
 
 
 def test_setup_top_level_geometric_outputs_union(setup_dict: dict) -> None:

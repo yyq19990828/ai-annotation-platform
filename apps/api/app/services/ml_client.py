@@ -47,9 +47,15 @@ def _raise_for_backend_status(resp: httpx.Response) -> None:
     if resp.status_code < 400:
         return
     detail = _backend_detail(resp)
-    if resp.status_code < 500:
+    headers: dict[str, str] | None = None
+    retry_after = resp.headers.get("Retry-After")
+    if retry_after:
+        headers = {"Retry-After": retry_after}
+    if resp.status_code < 500 or resp.status_code == 503:
         raise HTTPException(
-            status_code=resp.status_code, detail=f"ML backend: {detail}"
+            status_code=resp.status_code,
+            detail=f"ML backend: {detail}",
+            headers=headers,
         )
     raise HTTPException(status_code=502, detail=f"ML backend error: {detail}")
 
@@ -71,6 +77,8 @@ class PredictionResult:
     score: float | None = None
     model_version: str | None = None
     inference_time_ms: int | None = None
+    cache_hit: bool | None = None
+    model_load_ms: int | None = None
     # v0.9.11 · token / cost 透传 (LLM-backed backend 才有, grounded-sam2 当前留 None).
     # worker 累加到 async_job.result.total_cost, prediction_meta 单条留档.
     meta: dict | None = None
@@ -245,6 +253,8 @@ class MLBackendClient:
             score=data.get("score"),
             model_version=data.get("model_version"),
             inference_time_ms=data.get("inference_time_ms") or wall_ms,
+            cache_hit=data.get("cache_hit"),
+            model_load_ms=data.get("model_load_ms"),
             meta=data.get("meta"),
         )
 

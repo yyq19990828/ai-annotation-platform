@@ -7,6 +7,7 @@ Context: 与 sam3/gsam2 的 prompt 驱动不同, yolo 走纯批量 + variants �
 
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 from aap_protocol_v2 import (
@@ -14,6 +15,8 @@ from aap_protocol_v2 import (
     PredictionResult,
     TaskItem,
     WarmupResponse,
+    log_deprecated_model_variant_fields,
+    normalize_context_model_variants,
 )
 from pydantic import BaseModel, Field, model_validator
 
@@ -29,6 +32,8 @@ __all__ = [
     "WarmupRequest",
     "WarmupResponse",
 ]
+
+logger = logging.getLogger("yolo-backend.schemas")
 
 
 class Variants(BaseModel):
@@ -52,8 +57,20 @@ class Context(BaseModel):
     """yolo 的 prompt = none (纯批量). `type` 决定走哪条 task 分支."""
 
     type: Literal["detection", "segmentation", "keypoint", "obb"]
+    model_variants: dict[str, str] | None = None
     variants: Variants
     params: PredictParams = Field(default_factory=PredictParams)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_model_variants(cls, data):
+        if not isinstance(data, dict):
+            return data
+        normalized, deprecated = normalize_context_model_variants(data)
+        log_deprecated_model_variant_fields(logger, deprecated)
+        if "variants" not in normalized and "model_variants" in normalized:
+            normalized["variants"] = normalized["model_variants"]
+        return normalized
 
     @model_validator(mode="after")
     def _validate_combination(self) -> "Context":

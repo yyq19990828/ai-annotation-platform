@@ -72,6 +72,8 @@ def patched_client():
             score=None,
             model_version="mock",
             inference_time_ms=1,
+            cache_hit=False,
+            model_load_ms=123,
         )
 
     with patch(
@@ -148,3 +150,6 @@ async def test_point_prompt_does_not_inject_thresholds(
     ctx = patched_client["context"]
     assert "box_threshold" not in ctx
     assert "text_threshold" not in ctx
+    data = resp.json()
+    assert data["cache_hit"] is False
+    assert data["model_load_ms"] == 123
