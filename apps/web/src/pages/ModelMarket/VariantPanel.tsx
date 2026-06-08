@@ -118,6 +118,32 @@ export function VariantPanel({
   if (isLoading) return <div className={styles.note}>加载变体能力…</div>;
   if (isError) return <div className={styles.noteError}>无法获取 /setup（后端不可达或未实现）</div>;
 
+  // v0.14.14: 多 model 协议 backend (yolo) 顶层 supported_variants 为空, 各 task 的
+  // series/size 富格式藏在 models[i].supported_variants. 本 panel 是 gsam2 风格的
+  // 单变体 (sam, dino) 运行时视图, 不能直接渲染 yolo 的 task×variants 立方. 显示
+  // 模型概览 + 指引到能力目录, 比"什么都不显示"对用户友好.
+  const isMultiModelBackend =
+    !supportsVariants && genericVariantGroups.length === 0 && (setup?.models?.length ?? 0) > 0;
+  if (isMultiModelBackend) {
+    return (
+      <div className={styles.panel}>
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>多 model 协议 backend</div>
+          <div className={styles.note}>
+            该 backend 暴露 {setup!.models!.length} 个 task model：
+            {" "}
+            {setup!.models!.map((m) => m.task ?? m.id).filter(Boolean).join("、")}
+          </div>
+          <div className={styles.hint}>
+            每个 task 有独立的 series / size 变体目录。运行时观测面板只列出 backend 级 cap
+            与池中已加载 key（见上方 RuntimeMetrics）；具体 model 的预热请到
+            <strong> 模型市场 → 能力目录 </strong> 卡片中点击预热（v0.14.15 起合并）。
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const isSelectedLoaded = loaded.some(
     (v) => v.sam_variant === sam && v.dino_variant === dino,
   );

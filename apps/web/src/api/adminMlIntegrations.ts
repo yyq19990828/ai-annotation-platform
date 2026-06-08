@@ -100,6 +100,11 @@ export interface BackendCapabilities {
   supported_text_outputs: string[];
   supported_geometric_outputs: string[];
   modalities: string[];
+  // v0.14.9 协议 v2: 多 model 目录 (yolo 一个进程暴露 detection/segmentation/keypoint/obb
+  // 4 个 task model). gsam2/sam3 是单 model, 此处缺省或长度 0.
+  models?: Array<{ id: string; task?: string }>;
+  // v0.14.14: backend 自报支持 POST /warmup (协议 §4.4); 老 backend 缺字段 = false.
+  warmup_endpoint?: boolean;
 }
 
 export interface MLBackendItem {

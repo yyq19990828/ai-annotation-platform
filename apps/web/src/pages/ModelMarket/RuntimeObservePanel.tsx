@@ -164,6 +164,9 @@ function RegisteredRuntimeCard({
   const pool = observe?.pool ?? backend.health_meta?.pool;
   const videoPool = observe?.video_pool ?? backend.health_meta?.video_pool;
   const modelVersion = observe?.model_version ?? backend.health_meta?.model_version;
+  // v0.14.14: 多 model 协议 backend (yolo) 没有 /reload 端点, "预热默认" 调它会 404.
+  // backend.health_meta.capabilities 由 /setup 探测落库, models 非空即多 model 协议.
+  const isMultiModelBackend = (backend.health_meta?.capabilities?.models?.length ?? 0) > 0;
 
   const onHealth = () => {
     health.mutate(backend.id, {
@@ -238,7 +241,16 @@ function RegisteredRuntimeCard({
           <Icon name="pause" size={11} />
           卸载
         </Button>
-        <Button size="sm" onClick={() => onReload()} disabled={reload.isPending} title="重新加载默认模型">
+        <Button
+          size="sm"
+          onClick={() => onReload()}
+          disabled={reload.isPending || isMultiModelBackend}
+          title={
+            isMultiModelBackend
+              ? "多 model 协议 backend 无单一默认变体，请在能力目录中预热具体 model"
+              : "重新加载默认模型"
+          }
+        >
           <Icon name="play" size={11} />
           预热默认
         </Button>
@@ -263,6 +275,9 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
   const genericGroups = (target.supported_variants ?? []).filter(
     (group) => Array.isArray(group.variants) && group.variants.length > 0,
   );
+  // gsam2 同时上报 params.{sam,dino}_variant.enum (老) 和 supported_variants (富 v0.10.40+);
+  // 两套渲染会重复. 富格式覆盖时隐藏老 sam/dino 下拉, 保留富格式 (含 label/vram/tier 元数据).
+  const showLegacyVariants = genericGroups.length === 0;
   const [sam, setSam] = useState(samEnum[0] ?? "");
   const [dino, setDino] = useState(dinoEnum[0] ?? "");
   const [genericVariant, setGenericVariant] = useState<Record<string, string>>(() =>
@@ -270,12 +285,22 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
       genericGroups.map((group) => [group.key, group.variants?.[0]?.value ?? ""]).filter(([, v]) => v),
     ),
   );
-  const canSmoke = samEnum.length > 0 || dinoEnum.length > 0;
+  const canSmoke =
+    (showLegacyVariants && (samEnum.length > 0 || dinoEnum.length > 0)) ||
+    Object.values(genericVariant).some(Boolean);
 
   const onSmokeTest = async () => {
-    const payload: SmokeTestRequest = canSmoke
+    // 富格式优先: 把 genericVariant 映射回 {sam_variant, dino_variant} (gsam2 admin
+    // smoke-test 端目前只认这两个字段). 富 group.key 与老 axis key 同名 (sam_variant/
+    // dino_variant), 可直接透传.
+    const payload: SmokeTestRequest = showLegacyVariants
       ? { url: target.url, sam_variant: sam || undefined, dino_variant: dino || undefined }
-      : { url: target.url, variant: genericVariant };
+      : {
+          url: target.url,
+          sam_variant: genericVariant.sam_variant || undefined,
+          dino_variant: genericVariant.dino_variant || undefined,
+          variant: genericVariant,
+        };
     setBusy(true);
     try {
       const res = await adminMlIntegrationsApi.observeSmokeTest(payload);
