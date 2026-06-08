@@ -8548,6 +8548,15 @@
         "additionalProperties": true,
         "description": "v0.14.9 · 能力声明协议 v2 — 单个 model 条目 (一个 backend 暴露 N 个).\n\n由 services/ml_capabilities._normalize_model 规范化后存入\nBackendCapabilities.models; `task` 是条目边界 (决定输出几何与项目兼容性),\n`infra` 缺省继承 backend 默认, `modality` 为派生视图。",
         "properties": {
+          "classes": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Classes",
+            "type": "array"
+          },
           "default_thresholds": {
             "additionalProperties": true,
             "default": {},

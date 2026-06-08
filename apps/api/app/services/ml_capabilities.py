@@ -98,6 +98,9 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         "default_thresholds": model.get("default_thresholds") or {},
         "resource_profile": model.get("resource_profile") or {},
         "params": model.get("params") or {},
+        # v0.14.17 · 闭集检测器的原生类别表 (yolo model.names, [{index,name}]); 供前端类别白名单.
+        # 仅在该 task 模型已加载过 (warmup/predict) 时 backend /setup 才带, 否则为空。
+        "classes": list(model.get("classes") or []),
     }
     out["modality"] = _model_modality(out)
     return out

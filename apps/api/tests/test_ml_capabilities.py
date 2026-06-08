@@ -81,6 +81,34 @@ def test_multi_model_parses_each_entry():
     assert models["classify"]["output_attribute_types"] == ["class"]
 
 
+def test_classes_passthrough():
+    """v0.14.17 · 闭集类别表 (yolo model.names) 透传到 model 条目; 缺省为 []."""
+    setup = {
+        "name": "yolo-backend",
+        "infra": "pytorch",
+        "models": [
+            {
+                "id": "detect",
+                "task": "detection",
+                "supported_geometric_outputs": ["bbox"],
+                "classes": [
+                    {"index": 0, "name": "person"},
+                    {"index": 2, "name": "car"},
+                ],
+            },
+            {"id": "segment", "task": "segmentation", "supported_geometric_outputs": ["polygon"]},
+        ],
+    }
+    caps = extract_capabilities(setup)
+    models = {m["id"]: m for m in caps["models"]}
+    assert models["detect"]["classes"] == [
+        {"index": 0, "name": "person"},
+        {"index": 2, "name": "car"},
+    ]
+    # 未带 classes 的 model → 空列表 (前端据此回退"不按类筛选").
+    assert models["segment"]["classes"] == []
+
+
 def test_multi_model_flat_union():
     caps = extract_capabilities(_yolo_setup())
     assert caps is not None
