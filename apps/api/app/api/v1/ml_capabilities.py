@@ -134,6 +134,8 @@ async def get_capability_instances(
                 source=item["source"],
                 name=item["name"],
                 infra=item["infra"],
+                # v0.14.14 · backend 自报是否支持 POST /warmup (协议 §4.4).
+                warmup_endpoint=bool(item.get("warmup_endpoint", False)),
                 models=[InstanceModelItem(**m) for m in item["models"]],
             )
             for item in raw

@@ -287,6 +287,23 @@ class MLBackendClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def warmup(self, body: dict) -> dict:
+        """v0.14.14 协议 §4.4 · 把指定 variant 权重加载到 pool, 不跑 forward.
+
+        body 由前端原样传入 (各 backend schema 不同: yolo 要 task+variants{series,size},
+        gsam2 要 variants{sam_variant,dino_variant}, sam3 可空或 variants{model_variant}).
+        响应统一为 {ok, model_load_ms, cache_hit, evicted}. 用 predict 超时配额 (加载
+        可能数秒).
+        """
+        async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
+            resp = await client.post(
+                f"{self.base_url}/warmup",
+                json=body or {},
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            return resp.json()
+
     async def get_versions(self) -> list[str]:
         async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
             resp = await client.get(

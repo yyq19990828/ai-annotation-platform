@@ -101,6 +101,12 @@ class ModelCapability(BaseModel):
     supported_text_outputs: list[str] = []
     supported_trackers: list[str] = []
     supported_variants: list[dict] = []
+    # v0.14.12 · 多轴 variants 非笛卡尔积时显式列举合法组合 (前端目录展开用).
+    variant_combinations: list[list[str]] = []
+    # v0.14.12 · 同 backend 多 task 是否共享物理权重 (SAM 类共享, yolo 分 task).
+    variants_shared_across_tasks: bool = False
+    # v0.14.13 · backend 自报的默认 variant 组合 (dict[axis_key, value]).
+    default_variants: dict[str, str] = {}
     default_thresholds: dict = {}
     resource_profile: dict = {}
     params: dict = {}
@@ -124,6 +130,8 @@ class BackendCapabilities(BaseModel):
     name: str | None = None
     # v0.14.9 · 协议 v2 新增
     infra: str = "unknown"
+    # v0.14.14 · backend 是否支持 POST /warmup (协议 §4.4). 老 backend 缺字段 = False.
+    warmup_endpoint: bool = False
     models: list[ModelCapability] = []
     # 扁平并集 (向后兼容)
     is_interactive: bool = False

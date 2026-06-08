@@ -286,3 +286,60 @@ async def test_instances_no_sensitive_fields_leaked(
     assert "memory_used_mb" not in body
     assert "auth_token_hint" not in body
     assert "12345" not in body
+
+
+# ---------- v0.14.14: warmup_endpoint 在 instances 中暴露 ----------
+
+
+@pytest.mark.asyncio
+async def test_instances_warmup_endpoint_from_env_only(
+    httpx_client, auth_headers, db_session, super_admin, monkeypatch
+):
+    """env-only backend 自报 warmup_endpoint=true 时, instances 响应应带 true."""
+    from app.services import capability_instances as svc
+
+    user, _ = super_admin
+    await create_project(db_session, owner_id=user.id, name="P-Warm")
+
+    fake_setup = {
+        "name": "yolo-env",
+        "infra": "pytorch",
+        "warmup_endpoint": True,
+        "models": [{"id": "detect", "task": "detection",
+                    "supported_geometric_outputs": ["bbox"]}],
+    }
+    monkeypatch.setattr(svc, "_observe_urls", lambda: ["http://yolo-env:8003"])
+    monkeypatch.setattr(svc, "_probe_setup", AsyncMock(return_value=fake_setup))
+
+    r = await httpx_client.get(
+        "/api/v1/ml-capabilities/instances", headers=auth_headers
+    )
+    data = r.json()
+    assert data["instances"][0]["warmup_endpoint"] is True
+
+
+@pytest.mark.asyncio
+async def test_instances_warmup_endpoint_false_when_missing(
+    httpx_client, auth_headers, db_session, super_admin, monkeypatch
+):
+    """老 backend (没 warmup_endpoint 字段) → instances.warmup_endpoint=False."""
+    from app.services import capability_instances as svc
+
+    user, _ = super_admin
+    await create_project(db_session, owner_id=user.id, name="P-NoWarm")
+
+    fake_setup = {
+        "name": "legacy",
+        "infra": "pytorch",
+        # 没有 warmup_endpoint 字段
+        "models": [{"id": "detect", "task": "detection",
+                    "supported_geometric_outputs": ["bbox"]}],
+    }
+    monkeypatch.setattr(svc, "_observe_urls", lambda: ["http://legacy:8000"])
+    monkeypatch.setattr(svc, "_probe_setup", AsyncMock(return_value=fake_setup))
+
+    r = await httpx_client.get(
+        "/api/v1/ml-capabilities/instances", headers=auth_headers
+    )
+    data = r.json()
+    assert data["instances"][0]["warmup_endpoint"] is False

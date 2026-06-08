@@ -107,6 +107,9 @@ class CapabilityInstanceItem(BaseModel):
     source: str
     name: str
     infra: str = "unknown"
+    # v0.14.14 · backend 是否支持 POST /warmup (协议 §4.4); 前端模型市场"⚡ 预热"
+    # 按钮据此置灰. 老 backend 缺字段 = False.
+    warmup_endpoint: bool = False
     models: list[InstanceModelItem] = []
 
 

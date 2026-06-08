@@ -113,6 +113,8 @@ async def _load_env_only_instances(registered_urls: set[str]) -> list[dict]:
                 "source": "env_only",
                 "name": (setup or {}).get("name") or url.rstrip("/").split("/")[-1],
                 "infra": caps.get("infra", "unknown"),
+                # v0.14.14: backend 自报是否支持 POST /warmup (协议 §4.4).
+                "warmup_endpoint": bool(caps.get("warmup_endpoint", False)),
                 "models": _shape_models(caps),
             }
         )
@@ -171,6 +173,8 @@ async def _load_registered_instances(db: AsyncSession) -> tuple[list[dict], set[
                 "source": "registered",
                 "name": b.name,
                 "infra": (caps or {}).get("infra") or "unknown",
+                # v0.14.14: backend 自报是否支持 POST /warmup (协议 §4.4).
+                "warmup_endpoint": bool((caps or {}).get("warmup_endpoint", False)),
                 "models": models,
             }
         )

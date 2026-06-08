@@ -3207,6 +3207,11 @@
             },
             "title": "Supported Trackers",
             "type": "array"
+          },
+          "warmup_endpoint": {
+            "default": false,
+            "title": "Warmup Endpoint",
+            "type": "boolean"
           }
         },
         "title": "BackendCapabilities",
@@ -5417,6 +5422,11 @@
           "source": {
             "title": "Source",
             "type": "string"
+          },
+          "warmup_endpoint": {
+            "default": false,
+            "title": "Warmup Endpoint",
+            "type": "boolean"
           }
         },
         "required": [
@@ -8544,6 +8554,14 @@
             "title": "Default Thresholds",
             "type": "object"
           },
+          "default_variants": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Default Variants",
+            "type": "object"
+          },
           "display_name": {
             "anyOf": [
               {
@@ -8656,6 +8674,22 @@
             "default": "unknown",
             "title": "Task",
             "type": "string"
+          },
+          "variant_combinations": {
+            "default": [],
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Variant Combinations",
+            "type": "array"
+          },
+          "variants_shared_across_tasks": {
+            "default": false,
+            "title": "Variants Shared Across Tasks",
+            "type": "boolean"
           }
         },
         "required": [
@@ -28473,6 +28507,81 @@
           }
         ],
         "summary": "Unload Ml Backend",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ml-backends/{backend_id}/warmup": {
+      "post": {
+        "description": "v0.14.14 协议 §4.4 · 转发 POST /warmup 到 backend.\n\nbody 原样转发 (各 backend schema 不同). backend 未声明 warmup_endpoint=True 时仍\n转发, 收到 404/405 由上游 502 反馈; 前端 ⚡ 按钮应已通过 health_meta.capabilities.\nwarmup_endpoint 提前置灰.",
+        "operationId": "warmup_ml_backend_api_v1_projects__project_id__ml_backends__backend_id__warmup_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Backend Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Warmup Ml Backend",
         "tags": [
           "ml-backends"
         ]

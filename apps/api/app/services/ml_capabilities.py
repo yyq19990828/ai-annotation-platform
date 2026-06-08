@@ -168,6 +168,9 @@ def extract_capabilities(setup: dict | None) -> dict | None:
         # 能力目录显示「源 backend 名」而非用户取的项目别名 (如 "gsam2.1")。
         "name": setup.get("name"),
         "infra": infra,
+        # v0.14.14 · backend 声明本端是否支持 POST /warmup (协议 §4.4); 前端模型市场
+        # "⚡ 预热" 按钮据此置灰. 老 backend 缺字段 = False.
+        "warmup_endpoint": bool(setup.get("warmup_endpoint", False)),
         "models": models,
         "is_interactive": any(m["is_interactive"] for m in models),
         "supported_prompts": _union(models, "supported_prompts"),

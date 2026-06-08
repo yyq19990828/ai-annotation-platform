@@ -227,3 +227,27 @@ def test_modality_lidar_from_geometry():
 def test_derive_modalities_empty_caps():
     assert derive_modalities(None) == []
     assert derive_modalities({}) == []
+
+
+# ---------- v0.14.14: warmup_endpoint 透传 ----------
+
+
+def test_warmup_endpoint_true_passthrough():
+    """v0.14.14 协议 §4.4 · backend 自报 warmup_endpoint=true 时 caps 也带 true."""
+    setup = {
+        "name": "yolo",
+        "infra": "pytorch",
+        "warmup_endpoint": True,
+        "models": [{"id": "detect", "task": "detection"}],
+    }
+    caps = extract_capabilities(setup)
+    assert caps is not None
+    assert caps["warmup_endpoint"] is True
+
+
+def test_warmup_endpoint_default_false():
+    """老 backend 缺字段时, warmup_endpoint 默认 False (前端 ⚡ 按钮置灰)."""
+    setup = {"name": "echo", "models": [{"id": "d", "task": "detection"}]}
+    caps = extract_capabilities(setup)
+    assert caps is not None
+    assert caps["warmup_endpoint"] is False
