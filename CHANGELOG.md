@@ -29,6 +29,36 @@
 
 <!-- 0.14.x 版本变更按版本段追加到本区；进入 0.15.x 后整体移到 docs/changelogs/0.14.x.md -->
 
+## [0.14.11] - 2026-06-08
+
+协议能力目录与 ML Backend 注册解耦。计划见 `docs/plans/2026-06-08-v0.14.11-protocol-capability-catalog.md`，决策见 [ADR-0037](docs/adr/0037-protocol-capability-catalog-decoupling.md)。本版只解决一件事：「能力目录」从「已注册 backend 实例清单」抽离为「协议级能力定义 + 实例填充」双层视图，零接入用户也能完整看到平台支持的 9 类 AI 标注能力。
+
+### Added
+
+- **协议能力注册表 SSOT**：新增 `apps/api/app/services/capability_registry.py`，集中维护 task / infra / modality / geometry 四张受控词表 + 每条 task 的人类可读元数据（label / summary / protocol_notes / typical_models / suggested_backends）。`services/ml_capabilities.py` 中的受控词表与 `_TASK_DEFAULT_GEOMETRY` 改为从该 SSOT 派生，`extract_capabilities` / `derive_modalities` 行为零变化。
+- **协议能力目录端点**：新增 `GET /api/v1/ml-capabilities/protocol`，无 project 作用域、登录用户即可访问，返回 9 个 task / 6 个 infra / 3 个 modality / 8 个 geometry 受控词表 + 元数据；`Cache-Control: private, max-age=300` + ETag 304 支持。
+- **协议卡视图**：`CapabilityCatalogPanel` 新增 `ProtocolCapabilityCard` 子组件，默认 `groupBy=task` 时遍历 protocol.tasks 渲染 9 张协议卡——已注册 backend 的 model 按 `model.task` 字段挂载到对应卡，空卡显示「暂无接入」徽标 + 典型模型列表 + 推荐 backend（含 GitHub 直达）+ 「去注册 backend」CTA（跳 `?tab=registry`）。
+- **零接入横幅**：新增 `EmptyCatalogBanner`，0 backend 注册时在协议卡上方展示「平台支持 9 类 AI 标注能力，当前还没有 backend 接入」+ 接入引导按钮。
+
+### Changed
+
+- **能力目录默认视角切换**：`CapabilityCatalogPanel` 默认 `groupBy` 从 `backend` 改为 `task`（「协议能力 (默认)」），切到 `backend / infra / 不分组` 时退回 v0.14.10 的 model-centric 视图，零接入时空态文案补充提示「切到分组：task 可查看平台协议层支持的全部能力」。
+- **受控词表派生统一**：`ml_capabilities.INFRA_VALUES / TASK_VALUES / GEOMETRY_VALUES / _TASK_DEFAULT_GEOMETRY` 改为 re-export `capability_registry` 派生值，移除原硬编码元组；外部调用方零回归。
+
+### Compatibility
+
+- 不动 `/setup` / `/predict` / `/projects/{pid}/ml-backends/{bid}/capabilities` / `health_meta` 任何字段。`extract_capabilities` / 合成隐式单 model / 现有 backend（echo / grounded-sam2 / sam3）跑通的路径全部保留。
+- 无 alembic 迁移。
+- 前端 URL state `?tab=catalog` 不变；用户保存的 `groupBy=backend` 深链仍按 v0.14.10 渲染。
+
+### Docs / Tests
+
+- 协议文档 `docs-site/dev/reference/ml-backend-protocol.md` 新增 §4.1.11「协议能力目录端点（v0.14.11）」，说明端点契约、响应 schema、缓存语义，并补「协议层 vs 实例层」职责对照表。
+- 新增 ADR-0037「协议能力目录与 backend 注册解耦」，记录候选方案对比（后端 SSOT / 前端常量 / OpenAPI 派生）与决策细节。
+- 超管手册 `docs-site/user-guide/superadmin/model-market.md` 重写「能力目录」section，强调「协议层 + 实例层双层视图」+ 零接入引导。
+- 后端单测：`test_capability_registry`（9 例，含 research_link 路径有效性校验）+ `test_ml_capabilities_protocol`（5 例，含 ETag 304）。
+- 前端单测：`ProtocolCapabilityCard.test`（4 例：空态徽标 / N model 挂载 / CTA 回调 / stale 标记）+ `CapabilityCatalogPanel.test`（3 例：0 backend 9 张协议卡 / 切 backend 分组退回旧空态 / 搜索 "ocr" 仅 OCR 卡可见）。
+
 ## [0.14.10] - 2026-06-07
 
 画布精细交互 Part A + 模型市场前端重构 Part B。计划见 `docs/plans/2026-06-07-v0.14.10-canvas-precision-tools-and-attribute-mode.md`。

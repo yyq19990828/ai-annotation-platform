@@ -8,6 +8,7 @@
 // 仅消费已落地契约 (api/ml-backends.ts + adminMlIntegrations.ts), 不改 api / types.
 
 import { useMemo, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -20,6 +21,9 @@ import {
   type MLBackendCapability,
   type MLModelCapability,
 } from "@/api/ml-backends";
+import { useProtocolCapabilities } from "@/api/mlCapabilities";
+import { ProtocolCapabilityCard, type MountedModel } from "./ProtocolCapabilityCard";
+import { EmptyCatalogBanner } from "./EmptyCatalogBanner";
 import styles from "./CapabilityCatalogPanel.module.css";
 
 // 受控 task → 中文短标签 (协议 v2 边界枚举).
@@ -113,13 +117,24 @@ function effectiveModalities(m: MLModelCapability, backendModalities?: string[])
 export function CapabilityCatalogPanel() {
   const qc = useQueryClient();
   const pushToast = useToastStore((s) => s.push);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<CatalogViewMode>("cards");
-  const [groupBy, setGroupBy] = useState<CatalogGroupBy>("backend");
+  // v0.14.11 · 默认按协议能力 (task) 分组, 即使无 backend 注册也展示 9 张协议卡。
+  const [groupBy, setGroupBy] = useState<CatalogGroupBy>("task");
   const [sortBy, setSortBy] = useState<CatalogSort>("name");
   const [search, setSearch] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  // v0.14.11 · 协议级能力目录 (与 backend 注册解耦); 用作 groupBy=task 时的协议卡数据源。
+  const { data: protocol } = useProtocolCapabilities();
+
+  const goToRegistry = () => {
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", "registry");
+    setSearchParams(next, { replace: true });
+  };
 
   // 1) 枚举所有项目 + 已注册 backend.
   const {
@@ -270,6 +285,39 @@ export function CapabilityCatalogPanel() {
 
   const grouped = useMemo(() => groupModels(sorted, groupBy), [groupBy, sorted]);
 
+  // v0.14.11 · 协议卡视图: 遍历 protocol.tasks 渲染 9 张卡 (零接入也显示),
+  // 已注册 model 按 model.task 字段挂载。search / taskFilter 同时作用于 task 卡过滤。
+  const protocolView = useMemo(() => {
+    if (!protocol) return null;
+    const needle = search.trim().toLocaleLowerCase();
+    const byTask = new Map<string, MountedModel[]>();
+    for (const f of sorted) {
+      const taskId = f.model.task ?? "unknown";
+      if (!byTask.has(taskId)) byTask.set(taskId, []);
+      byTask.get(taskId)!.push({
+        model: f.model,
+        backendName: f.backendName,
+        projectName: f.projectName,
+        backendInfra: f.backendInfra,
+        stale: f.stale,
+      });
+    }
+    return protocol.tasks
+      .filter((task) => {
+        if (taskFilter.size > 0 && !taskFilter.has(task.id)) return false;
+        if (needle) {
+          const meta = [task.label, task.id, task.summary, ...task.typical_models]
+            .join(" ")
+            .toLocaleLowerCase();
+          if (!meta.includes(needle) && (byTask.get(task.id)?.length ?? 0) === 0) {
+            return false;
+          }
+        }
+        return true;
+      })
+      .map((task) => ({ task, mounted: byTask.get(task.id) ?? [] }));
+  }, [protocol, sorted, taskFilter, search]);
+
   const hasActiveFilter =
     taskFilter.size > 0 ||
     familyFilter.size > 0 ||
@@ -344,11 +392,15 @@ export function CapabilityCatalogPanel() {
               重试
             </button>
           </div>
-        ) : backendRefs.length === 0 ? (
+        ) : backendRefs.length === 0 && groupBy !== "task" ? (
+          // v0.14.11 · 0 backend + 非 task 分组: 沿用旧空态; task 分组下走协议卡视图。
           <div className={styles.emptyState}>
             <Icon name="layers" size={28} className={styles.emptyIcon} />
             <div>尚无项目注册 ML Backend</div>
-            <div className={styles.emptyHint}>在项目设置注册 backend 后, 其能力目录会出现在这里</div>
+            <div className={styles.emptyHint}>
+              切到「分组: task」可查看平台协议层支持的全部能力；
+              或在项目设置注册 backend 后, 其能力目录会出现在这里。
+            </div>
           </div>
         ) : (
           <>
@@ -399,8 +451,8 @@ export function CapabilityCatalogPanel() {
               <label className={styles.selectLabel}>
                 分组
                 <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as CatalogGroupBy)}>
+                  <option value="task">协议能力 (默认)</option>
                   <option value="backend">backend</option>
-                  <option value="task">task</option>
                   <option value="infra">infra</option>
                   <option value="none">不分组</option>
                 </select>
@@ -427,8 +479,42 @@ export function CapabilityCatalogPanel() {
               </div>
             )}
 
-            {anyCapLoading && flatModels.length === 0 ? (
+            {anyCapLoading && flatModels.length === 0 && groupBy !== "task" ? (
               <div className={styles.note}>探测各 backend 能力中…</div>
+            ) : groupBy === "task" && protocolView ? (
+              // v0.14.11 · 协议卡视图: 即使 sorted 为空也展示协议卡 (零接入引导)。
+              <>
+                {backendRefs.length === 0 && (
+                  <EmptyCatalogBanner
+                    taskCount={protocolView.length}
+                    onGoToRegistry={goToRegistry}
+                  />
+                )}
+                {protocolView.length === 0 ? (
+                  <div className={styles.emptyState}>
+                    <Icon name="filter" size={24} className={styles.emptyIcon} />
+                    <div>当前过滤条件无匹配能力</div>
+                    {hasActiveFilter && (
+                      <button className={styles.retryButton} onClick={clearFilters}>
+                        清除过滤
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className={styles.groupedCatalog}>
+                    {protocolView.map(({ task, mounted }) => (
+                      <ProtocolCapabilityCard
+                        key={task.id}
+                        task={task}
+                        mounted={mounted}
+                        infraLabel={infraLabel}
+                        modalityLabel={modalityLabel}
+                        onGoToRegistry={goToRegistry}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
             ) : sorted.length === 0 ? (
               <div className={styles.emptyState}>
                 <Icon name="filter" size={24} className={styles.emptyIcon} />

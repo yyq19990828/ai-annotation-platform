@@ -1,0 +1,155 @@
+/* v0.14.11 · 协议能力卡片样式 (token 与 CapabilityCatalogPanel.module.css 对齐). */
+
+.card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  background: var(--color-bg-elev);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cardEmpty {
+  border-style: dashed;
+  background: var(--color-bg-sunken);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.titleRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-fg);
+  margin: 0;
+}
+
+.taskId {
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+  font-family: var(--font-mono);
+}
+
+.summary {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.modelGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.modelMini {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--color-bg-hover);
+}
+
+.modelMiniName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelMiniMeta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--color-fg-muted);
+}
+
+.modelMiniSource {
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding {
+  border-top: 1px dashed var(--color-border);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onboardingHint {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.suggestedList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.suggestedItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.suggestedName {
+  font-weight: 500;
+  color: var(--color-fg);
+}
+
+.suggestedSummary {
+  color: var(--color-fg-muted);
+  flex: 1 1 auto;
+}
+
+.suggestedLink {
+  color: var(--color-accent);
+  text-decoration: none;
+  font-size: 11px;
+}
+
+.suggestedLink:hover {
+  text-decoration: underline;
+}
+
+.ctaRow {
+  display: flex;
+  gap: 8px;
+}
+
+.typicalModels {
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+}

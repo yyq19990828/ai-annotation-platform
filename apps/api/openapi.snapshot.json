@@ -12443,6 +12443,181 @@
         "title": "PropagateResponse",
         "type": "object"
       },
+      "ProtocolCapabilitiesResponse": {
+        "description": "协议能力目录响应顶层结构。\n\n`version` 与 ml-backend-protocol 协议版本对齐 (当前 v2); 受控词表的不兼容\n变更才 bump (新增 task 不算)。",
+        "properties": {
+          "geometries": {
+            "items": {
+              "$ref": "#/components/schemas/ProtocolGeometryItem"
+            },
+            "title": "Geometries",
+            "type": "array"
+          },
+          "infras": {
+            "items": {
+              "$ref": "#/components/schemas/ProtocolInfraItem"
+            },
+            "title": "Infras",
+            "type": "array"
+          },
+          "modalities": {
+            "items": {
+              "$ref": "#/components/schemas/ProtocolModalityItem"
+            },
+            "title": "Modalities",
+            "type": "array"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/ProtocolTaskItem"
+            },
+            "title": "Tasks",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "tasks",
+          "infras",
+          "modalities",
+          "geometries"
+        ],
+        "title": "ProtocolCapabilitiesResponse",
+        "type": "object"
+      },
+      "ProtocolGeometryItem": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "summary"
+        ],
+        "title": "ProtocolGeometryItem",
+        "type": "object"
+      },
+      "ProtocolInfraItem": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "summary"
+        ],
+        "title": "ProtocolInfraItem",
+        "type": "object"
+      },
+      "ProtocolModalityItem": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "summary"
+        ],
+        "title": "ProtocolModalityItem",
+        "type": "object"
+      },
+      "ProtocolTaskItem": {
+        "properties": {
+          "default_geometry": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Default Geometry",
+            "type": "array"
+          },
+          "default_modalities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Default Modalities",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "protocol_notes": {
+            "title": "Protocol Notes",
+            "type": "string"
+          },
+          "suggested_backends": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SuggestedBackendItem"
+            },
+            "title": "Suggested Backends",
+            "type": "array"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "typical_models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Typical Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "summary",
+          "default_geometry",
+          "default_modalities",
+          "typical_models",
+          "protocol_notes"
+        ],
+        "title": "ProtocolTaskItem",
+        "type": "object"
+      },
       "RecentReviewItem": {
         "properties": {
           "file_name": {
@@ -13833,6 +14008,56 @@
           "total_size_bytes"
         ],
         "title": "StorageOverview",
+        "type": "object"
+      },
+      "SuggestedBackendItem": {
+        "properties": {
+          "builtin": {
+            "default": false,
+            "title": "Builtin",
+            "type": "boolean"
+          },
+          "infra": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Infra"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "repo_url": {
+            "title": "Repo Url",
+            "type": "string"
+          },
+          "research_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Research Link"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "repo_url",
+          "summary"
+        ],
+        "title": "SuggestedBackendItem",
         "type": "object"
       },
       "SystemHealthResponse": {
@@ -23985,6 +24210,36 @@
         "summary": "Revoke My Key",
         "tags": [
           "api-keys"
+        ]
+      }
+    },
+    "/api/v1/ml-capabilities/protocol": {
+      "get": {
+        "description": "协议级能力目录 (静态 SSOT, 与 backend 注册无关)。\n\n`Cache-Control: private, max-age=300` + `ETag`。客户端二次请求带\n`If-None-Match: <etag>` 时返回 304。",
+        "operationId": "get_protocol_capabilities_api_v1_ml_capabilities_protocol_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtocolCapabilitiesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "304": {
+            "description": "Not Modified"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Protocol Capabilities",
+        "tags": [
+          "ml-capabilities"
         ]
       }
     },

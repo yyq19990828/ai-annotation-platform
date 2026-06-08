@@ -25,6 +25,7 @@ from app.api.v1 import (
     invitations_admin,
     me,
     ml_backends,
+    ml_capabilities,
     notifications,
     predictions,
     projects,
@@ -90,6 +91,12 @@ api_router.include_router(
     ml_backends.router,
     prefix="/projects/{project_id}/ml-backends",
     tags=["ml-backends"],
+)
+# v0.14.11 · 协议级能力目录 (与 backend 注册解耦)
+api_router.include_router(
+    ml_capabilities.router,
+    prefix="/ml-capabilities",
+    tags=["ml-capabilities"],
 )
 api_router.include_router(files.router, prefix="/files", tags=["files"])
 api_router.include_router(datasets.router, prefix="/datasets", tags=["datasets"])

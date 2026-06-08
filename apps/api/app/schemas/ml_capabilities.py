@@ -1,0 +1,61 @@
+"""v0.14.11 · 协议级能力目录响应 schema.
+
+承载 `GET /v1/ml-capabilities/protocol` 的 pydantic 模型。与
+`services/capability_registry.py` 的 dataclass 一一对应; 前端 codegen 派生类型。
+"""
+
+from __future__ import annotations
+
+from pydantic import BaseModel
+
+
+class SuggestedBackendItem(BaseModel):
+    name: str
+    repo_url: str
+    summary: str
+    research_link: str | None = None
+    infra: str | None = None  # 与受控 INFRAS 对齐 (pytorch / onnx / ...)
+    builtin: bool = False  # True = 平台 docker-compose 自带; False = 外部推荐
+
+
+class ProtocolTaskItem(BaseModel):
+    id: str
+    label: str
+    summary: str
+    default_geometry: list[str]
+    default_modalities: list[str]
+    typical_models: list[str]
+    protocol_notes: str
+    suggested_backends: list[SuggestedBackendItem] = []
+
+
+class ProtocolInfraItem(BaseModel):
+    id: str
+    label: str
+    summary: str
+
+
+class ProtocolModalityItem(BaseModel):
+    id: str
+    label: str
+    summary: str
+
+
+class ProtocolGeometryItem(BaseModel):
+    id: str
+    label: str
+    summary: str
+
+
+class ProtocolCapabilitiesResponse(BaseModel):
+    """协议能力目录响应顶层结构。
+
+    `version` 与 ml-backend-protocol 协议版本对齐 (当前 v2); 受控词表的不兼容
+    变更才 bump (新增 task 不算)。
+    """
+
+    version: str
+    tasks: list[ProtocolTaskItem]
+    infras: list[ProtocolInfraItem]
+    modalities: list[ProtocolModalityItem]
+    geometries: list[ProtocolGeometryItem]

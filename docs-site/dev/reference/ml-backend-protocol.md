@@ -505,6 +505,60 @@ POST /projects/{pid}/ml-backends/{bid}/capabilities/refresh  # 强制重探 /set
 
 协议 v2 的端到端参考实现见 [`docs-site/dev/examples/mock-v2-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/docs-site/dev/examples/mock-v2-backend)：`/setup` 暴露 YOLO 风格多任务 `models[]`（detection / segmentation / keypoint / obb / classification）+ PaddleOCR / DocLayout 条目，每条带 `task` / `infra` / 几何 / 多轴 `variants`；`/predict` 按 `context.type`（task_type）返回固定 demo 结果，OCR 条目带 `attributes.text`。无真实推理，可直接 `uvicorn main:app --port 9100` 起来做协议 v2 冒烟与接入验证。（最小 v1 参考实现仍见下文 echo-ml-backend。）
 
+### 4.1.11 协议能力目录端点（v0.14.11）
+
+> 决策见 [ADR-0037 — 协议能力目录与 backend 注册解耦](../adr/0037-protocol-capability-catalog-decoupling.md)。
+
+§4.1 描述的 `/projects/{pid}/ml-backends/{bid}/capabilities` 是**实例能力视图**（已注册 backend 探测出的 `models[]` 派生）。但「模型市场 · 能力目录」面板在用户心智里要回答的是「平台支持哪些 AI 标注能力」，与 backend 是否注册无关。v0.14.11 引入**协议级**端点：
+
+```
+GET /api/v1/ml-capabilities/protocol
+```
+
+- **数据源**：`apps/api/app/services/capability_registry.py`（SSOT），与 `services/ml_capabilities.py` 的受控词表同源（后者改为 re-export）。
+- **鉴权**：登录用户即可访问；不暴露任何 backend 实例信息，无需 super_admin。
+- **缓存**：`Cache-Control: private, max-age=300` + ETag；二次请求带 `If-None-Match` 返回 304。
+
+**响应结构**：
+
+```jsonc
+{
+  "version": "v2",        // 与协议 v2 对齐, 受控词表不兼容变更才 bump
+  "tasks": [
+    {
+      "id": "detection",
+      "label": "目标检测",
+      "summary": "在图像或视频帧中输出 bbox + 类别标签。",
+      "default_geometry": ["bbox"],
+      "default_modalities": ["image", "video"],
+      "typical_models": ["YOLO 系", "DETR 系", "Grounding DINO"],
+      "protocol_notes": "/predict 响应 result.type=rectanglelabels, ...",
+      "suggested_backends": [
+        {
+          "name": "Label Studio ML Backend (YOLO)",
+          "repo_url": "https://github.com/HumanSignal/label-studio-ml-backend",
+          "summary": "官方示例覆盖 YOLOv8 / DETR, 适合上手。",
+          "research_link": "docs/research/01-label-studio.md"
+        }
+      ]
+    }
+    // 共 9 个 task
+  ],
+  "infras":     [ { "id": "pytorch", "label": "PyTorch", "summary": "..." }, ... ],   // 6 项
+  "modalities": [ { "id": "image",   "label": "图像",   "summary": "..." }, ... ],   // 3 项 (image/video/lidar)
+  "geometries": [ { "id": "bbox",    "label": "bbox",   "summary": "..." }, ... ]   // 8 项
+}
+```
+
+**消费方**：前端 `CapabilityCatalogPanel` 默认 `groupBy=task`，遍历 `tasks` 渲染 9 张协议卡；已注册 backend 的 model 按 `model.task` 字段挂载到对应卡下。无 backend 注册时协议卡仍可见（带「暂无接入」徽标 + 推荐 backend CTA），不再阻塞用户探索。
+
+**协议与实例的关系**：
+
+| 端点 | 数据源 | 何时可用 | 视角 |
+|------|--------|----------|------|
+| `GET /v1/ml-capabilities/protocol` | `capability_registry.py` SSOT | 启动即可（与注册无关） | 协议层「平台支持什么」 |
+| `GET /projects/{pid}/ml-backends/{bid}/capabilities` | `ml_backends.health_meta["capabilities"]` | backend 注册并 health 探测后 | 实例层「该 backend 暴露了什么」 |
+
 ---
 
 ## 5. `GET /versions`（可选）
