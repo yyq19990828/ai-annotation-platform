@@ -15,6 +15,8 @@ export interface BackendSnapshot {
     gpu_utilization_percent?: number | null;
     gpu_temperature_celsius?: number | null;
     gpu_power_watts?: number | null;
+    // 老 gsam2 backend 把 image/video pool loaded 数量注入 gpu_info 兜底;
+    // v0.14.14 起 pool/video_pool.current_size 是更准来源, 这里保留 fallback 一版.
     image_pool_loaded_variants?: unknown[] | null;
     video_pool_loaded_variants?: unknown[] | null;
   } | null;
@@ -35,10 +37,14 @@ export interface BackendSnapshot {
   last_request_age_seconds?: number | null;
   pool?: {
     cap?: number | null;
+    current_size?: number | null;
+    loaded_keys?: unknown[] | null;
     loaded_variants?: unknown[] | null;
   } | null;
   video_pool?: {
     cap?: number | null;
+    current_size?: number | null;
+    loaded_keys?: unknown[] | null;
     loaded_variants?: unknown[] | null;
     active_sessions?: number | null;
     idle_seconds?: number | null;

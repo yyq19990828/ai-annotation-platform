@@ -15,6 +15,7 @@ import {
   type ObserveTarget,
   type SmokeTestRequest,
 } from "@/api/adminMlIntegrations";
+import { loadedKeysAsGsam2ImageVariants } from "./poolKeyParse";
 import styles from "./ObserveBackendsPanel.module.css";
 
 export function ObserveBackendsPanel() {
@@ -64,12 +65,21 @@ function TargetCard({ target: t }: { target: ObserveTarget }) {
   const dinoEnum = t.variant_catalog?.dino_variant ?? [];
   const [sam, setSam] = useState(samEnum[0] ?? "");
   const [dino, setDino] = useState(dinoEnum[0] ?? "");
-  const loaded = t.pool?.loaded_variants ?? [];
+  // v0.14.14: 优先读 PoolStatus.loaded_keys; 老字段 loaded_variants 作 fallback.
+  const loaded = (() => {
+    const fromKeys = loadedKeysAsGsam2ImageVariants(t.pool?.loaded_keys);
+    if (fromKeys.length > 0) return fromKeys;
+    return t.pool?.loaded_variants ?? [];
+  })();
   // v0.10.36 · 视频追踪观测: supported_trackers + 独立 video 池.
   const supportedTrackers = t.supported_trackers ?? [];
   const supportsVideo = supportedTrackers.length > 0;
   const hasVideoMeta = "video_pool" in t;
-  const videoLoaded = t.video_pool?.loaded_variants ?? [];
+  const videoLoaded: string[] = (() => {
+    const keys = t.video_pool?.loaded_keys;
+    if (keys && keys.length > 0) return keys.map((k) => k.key);
+    return t.video_pool?.loaded_variants ?? [];
+  })();
 
   const onSmokeTest = async () => {
     const payload: SmokeTestRequest = {
@@ -127,7 +137,11 @@ function TargetCard({ target: t }: { target: ObserveTarget }) {
               已加载{" "}
               {loaded.length === 0
                 ? "无（空池）"
-                : loaded.map((v) => `${v.sam_variant}/${v.dino_variant}`).join("、")}
+                : loaded
+                    .map((v: { sam_variant: string; dino_variant: string }) =>
+                      `${v.sam_variant}/${v.dino_variant}`,
+                    )
+                    .join("、")}
               {t.pool?.cap != null && `（${loaded.length}/${t.pool.cap}）`}
             </span>
           </div>

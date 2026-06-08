@@ -19,6 +19,12 @@ import {
   type MLBackendVariant,
 } from "@/api/ml-backends";
 import type { MLBackendItem } from "@/api/adminMlIntegrations";
+import {
+  loadedKeysAsGsam2ImageVariants,
+  loadedKeysLastUsedMap,
+  gsam2ImageVariantsAsCacheBucketKey,
+  gsam2ImageVariantsAsLoadedKey,
+} from "./poolKeyParse";
 import styles from "./VariantPanel.module.css";
 
 interface EnumField {
@@ -61,8 +67,23 @@ export function VariantPanel({
 
   const pool = backend.health_meta?.pool;
   const buckets = backend.health_meta?.cache?.buckets ?? {};
-  const lruTs = pool?.per_variant_lru_ts ?? {};
-  const loaded = useMemo(() => pool?.loaded_variants ?? [], [pool?.loaded_variants]);
+  // v0.14.14: 优先读协议 PoolStatus.loaded_keys (key="sam=X/dino=Y"); 老字段
+  // loaded_variants/per_variant_lru_ts 作 fallback (gsam2 双发期; 旧 backend 兼容).
+  const loaded = useMemo(() => {
+    const fromKeys = loadedKeysAsGsam2ImageVariants(pool?.loaded_keys);
+    if (fromKeys.length > 0) return fromKeys;
+    return pool?.loaded_variants ?? [];
+  }, [pool?.loaded_keys, pool?.loaded_variants]);
+  // last_used 兼容: 新 backend 走 loaded_keys[*].last_used_at (ISO → 秒-ago);
+  // 老 backend 走 per_variant_lru_ts (相对 monotonic_seconds). 展示语义略有偏差
+  // (一个是 "t-Xs", 一个是 "t+Xs"), 这里统一 fallback 用老逻辑.
+  const lruTs = useMemo(() => {
+    if (pool?.loaded_keys && pool.loaded_keys.length > 0) {
+      return loadedKeysLastUsedMap(pool.loaded_keys);
+    }
+    return pool?.per_variant_lru_ts ?? {};
+  }, [pool?.loaded_keys, pool?.per_variant_lru_ts]);
+  const useRelativeAgo = (pool?.loaded_keys?.length ?? 0) > 0;
 
   // v0.10.36 · 视频追踪: 独立 video 池 + supported_trackers.
   const videoPool = backend.health_meta?.video_pool;
@@ -73,7 +94,12 @@ export function VariantPanel({
     ? modalities.includes("image")
     : supportsVariants || genericVariantGroups.length > 0;
   const showVideoGroup = hasModalitySnapshot ? modalities.includes("video") : supportsVideo;
-  const videoLoaded = useMemo(() => videoPool?.loaded_variants ?? [], [videoPool?.loaded_variants]);
+  // v0.14.14: video pool 同样优先 loaded_keys (key 就是 sam_variant 字符串).
+  const videoLoaded = useMemo<string[]>(() => {
+    const keys = videoPool?.loaded_keys;
+    if (keys && keys.length > 0) return keys.map((k) => k.key);
+    return videoPool?.loaded_variants ?? [];
+  }, [videoPool?.loaded_keys, videoPool?.loaded_variants]);
   // 视频 SAM 候选: 优先复用图片侧 enum, 否则用 SAM2 视频变体常量.
   const videoSamEnum = samEnum.length > 0 ? samEnum : SAM2_VIDEO_VARIANTS;
 
@@ -135,20 +161,31 @@ export function VariantPanel({
                   </thead>
                   <tbody>
                     {loaded.map((v) => {
-                      const key = `${v.sam_variant}/${v.dino_variant}`;
-                      const bucket = buckets[key];
-                      const ts = lruTs[key];
+                      // bucket key 用老语义 ("sam/dino") 不变 — cache.buckets 由 backend
+                      // 自己产生, 仍是这个 key 形式.
+                      const bucketKey = gsam2ImageVariantsAsCacheBucketKey(v);
+                      // lru key 取决于来源: 新 loaded_keys 用 "sam=X/dino=Y" 作 key,
+                      // 老 per_variant_lru_ts 用 "sam/dino" 作 key.
+                      const lruKey = useRelativeAgo
+                        ? gsam2ImageVariantsAsLoadedKey(v)
+                        : bucketKey;
+                      const bucket = buckets[bucketKey];
+                      const ts = lruTs[lruKey];
                       return (
-                        <tr key={key}>
-                          <td className={styles.variantCell} title={key}>
-                            <span className="mono">{key}</span>
+                        <tr key={bucketKey}>
+                          <td className={styles.variantCell} title={bucketKey}>
+                            <span className="mono">{bucketKey}</span>
                           </td>
                           <td className={styles.metricCell}>
                             {bucket?.hit_rate != null
                               ? `${(bucket.hit_rate * 100).toFixed(1)}% (${bucket.hits ?? 0}/${(bucket.hits ?? 0) + (bucket.misses ?? 0)})`
                               : "—"}
                           </td>
-                          <td className={styles.muted}>{ts != null ? `t+${ts.toFixed(0)}s` : "—"}</td>
+                          <td className={styles.muted}>
+                            {ts != null
+                              ? (useRelativeAgo ? `t-${ts.toFixed(0)}s` : `t+${ts.toFixed(0)}s`)
+                              : "—"}
+                          </td>
                         </tr>
                       );
                     })}

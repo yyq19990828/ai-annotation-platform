@@ -24,18 +24,46 @@ export interface CacheBucketStat {
   hit_rate?: number;
 }
 
-// v0.10.26 · ModelPool 健康快照 (来自 backend /health.pool)。
+// v0.14.14 · 协议 §4.3 PoolStatus.loaded_keys 元数据 (loaded_at/last_used_at 为 ISO).
+export interface PoolLoadedKey {
+  key: string;
+  loaded_at?: string;
+  last_used_at?: string;
+  hit_count?: number;
+}
+
+// v0.14.14 · 协议 §4.3 last_evict.
+export interface PoolEvictRecord {
+  key: string;
+  at: string;
+  reason: string;
+}
+
+// v0.10.26 · ModelPool 健康快照 (来自 backend /health.pool).
+// v0.14.14 起 backend 改发 PoolStatus 字段 (cap/current_size/loaded_keys/last_evict);
+// 老字段 loaded_variants/evict_count/per_variant_lru_ts 在 gsam2 双发期内并存,
+// 消费方优先读新字段, 老字段仅作 fallback (本仓库 backend 升级到 v0.14.14 后可清).
 export interface BackendPoolMeta {
   cap?: number;
+  current_size?: number;
+  loaded_keys?: PoolLoadedKey[];
+  last_evict?: PoolEvictRecord | null;
+  // 下三个字段是 v0.14.14 协议前的老字段, gsam2 双发期内并存; 消费方应优先读
+  // loaded_keys / last_evict, 这里保留仅为 fallback. 注: 不用 jsdoc @deprecated tag,
+  // 避免触发 TS6385/6387 在 fallback 调用点污染警告 (sessionVariantCache 同款理由).
   loaded_variants?: Array<{ sam_variant: string; dino_variant: string }>;
   evict_count?: number;
   per_variant_lru_ts?: Record<string, number>;
 }
 
-// v0.10.36 · video tracker 独立显存池快照 (来自 backend /health.video_pool)。
-// 注意: video 的 loaded_variants 是 string[] (每项就是一个 sam_variant), 与图片池的对象数组不同; 且不含 dino。
+// v0.10.36 · video tracker 独立显存池快照 (来自 backend /health.video_pool).
+// v0.14.14 起同样上报 PoolStatus loaded_keys; video pool 的 key 就是 sam_variant 字符串.
 export interface VideoPoolMeta {
   cap: number;
+  current_size?: number;
+  loaded_keys?: PoolLoadedKey[];
+  last_evict?: PoolEvictRecord | null;
+  // 老字段, 同 BackendPoolMeta.loaded_variants 说明; 优先读 loaded_keys.
   loaded_variants: string[];
   active_sessions: number;
   idle_seconds?: number;

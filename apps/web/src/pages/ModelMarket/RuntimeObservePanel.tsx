@@ -380,12 +380,33 @@ function RuntimeMetrics({
 }: {
   modelVersion?: string | null;
   gpuInfo?: { memory_used_mb?: number; memory_total_mb?: number } | null;
-  pool?: { cap?: number; loaded_variants?: unknown[] } | null;
-  videoPool?: { cap?: number; loaded_variants?: string[]; active_sessions?: number } | null;
+  // v0.14.14: 接受 PoolStatus.loaded_keys (优先) 与老 loaded_variants (fallback);
+  // 仅用其 length 做"已加载数量"展示, 不解 key 维度.
+  pool?: {
+    cap?: number;
+    current_size?: number;
+    loaded_keys?: unknown[];
+    loaded_variants?: unknown[];
+  } | null;
+  videoPool?: {
+    cap?: number;
+    current_size?: number;
+    loaded_keys?: unknown[];
+    loaded_variants?: string[];
+    active_sessions?: number;
+  } | null;
   cacheHitRate?: number;
 }) {
-  const loaded = pool?.loaded_variants ?? [];
-  const videoLoaded = videoPool?.loaded_variants ?? [];
+  const loadedCount =
+    pool?.current_size ??
+    pool?.loaded_keys?.length ??
+    pool?.loaded_variants?.length ??
+    0;
+  const videoLoadedCount =
+    videoPool?.current_size ??
+    videoPool?.loaded_keys?.length ??
+    videoPool?.loaded_variants?.length ??
+    0;
   return (
     <div className={styles.metrics}>
       {modelVersion && <span className="mono">{modelVersion}</span>}
@@ -396,12 +417,12 @@ function RuntimeMetrics({
       )}
       {cacheHitRate != null && <span>cache {(cacheHitRate * 100).toFixed(1)}%</span>}
       <span>
-        图像池 {loaded.length}
+        图像池 {loadedCount}
         {pool?.cap != null && `/${pool.cap}`}
       </span>
       {videoPool && (
         <span>
-          视频池 {videoLoaded.length}
+          视频池 {videoLoadedCount}
           {videoPool.cap != null && `/${videoPool.cap}`}
           {videoPool.active_sessions != null && ` · ${videoPool.active_sessions} 会话`}
         </span>

@@ -64,11 +64,17 @@ function formatIdleAge(seconds: number | null | undefined): string | null {
 }
 
 function getLoadLabel(snap: BackendSnapshot): string | null {
+  // v0.14.14: 优先读 PoolStatus.current_size / loaded_keys; fallback 到老 loaded_variants
+  // 与 gsam2 注入的 gpu_info.*_pool_loaded_variants.
   const imageLoaded =
+    snap.pool?.current_size ??
+    snap.pool?.loaded_keys?.length ??
     snap.pool?.loaded_variants?.length ??
     snap.gpu_info?.image_pool_loaded_variants?.length ??
     null;
   const videoLoaded =
+    snap.video_pool?.current_size ??
+    snap.video_pool?.loaded_keys?.length ??
     snap.video_pool?.loaded_variants?.length ??
     snap.gpu_info?.video_pool_loaded_variants?.length ??
     null;
