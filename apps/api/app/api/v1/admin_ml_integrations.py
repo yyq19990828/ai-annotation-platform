@@ -10,6 +10,7 @@ v0.9.6 · 加 /probe (无 DB 副作用的 health check) + /runtime-hints (前端
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from typing import Literal
 
@@ -31,6 +32,18 @@ from app.services.audit import AuditService
 from app.services.storage import storage_service
 
 router = APIRouter()
+
+# v0.14.14: gsam2 image pool key 形如 "sam=<sv>/dino=<dv>" (协议 §4.3 loaded_keys[].key
+# 由 backend 自定义命名). admin 试启动只在 message / loaded_variant 字段中沿用旧
+# {sam_variant, dino_variant} 形态展示, 这里 parse 还原, 失败则不还原.
+_GSAM2_IMAGE_KEY_RE = re.compile(r"^sam=(.+?)/dino=(.+)$")
+
+
+def _parse_gsam2_image_key(key: str) -> dict | None:
+    m = _GSAM2_IMAGE_KEY_RE.match(key)
+    if not m:
+        return None
+    return {"sam_variant": m.group(1), "dino_variant": m.group(2)}
 
 
 class ProjectMLBackendsGroup(BaseModel):
@@ -526,16 +539,34 @@ async def smoke_test_backend(
             return r
 
         pool = health.get("pool") or {}
+        # v0.14.14: 优先读协议 PoolStatus.loaded_keys (字符串数组); 老字段
+        # loaded_variants (dict 数组) 作 fallback. current_size 直接表示池中数量,
+        # 取不到时退到数组长度.
+        loaded_keys = pool.get("loaded_keys") or []
         loaded_variants = pool.get("loaded_variants") or []
-        was_loaded = bool(health.get("loaded")) or bool(loaded_variants)
+        current_size = pool.get("current_size")
+        if current_size is None:
+            current_size = len(loaded_keys) or len(loaded_variants)
+        was_loaded = bool(health.get("loaded")) or current_size > 0
 
         if was_loaded:
+            # 回兼 SmokeTestResponse.loaded_variant (dict, 老前端期望 {sam, dino} 形态).
+            # 优先解析 loaded_keys[0].key (gsam2 格式), parse 失败则塞 {"key": raw};
+            # 回落老字段时直接给 dict.
+            first_display: dict | None = None
+            if loaded_keys:
+                raw_key = (loaded_keys[0] or {}).get("key") or ""
+                parsed = _parse_gsam2_image_key(raw_key) if raw_key else None
+                first_display = parsed or ({"key": raw_key} if raw_key else None)
+            elif loaded_variants:
+                first_display = loaded_variants[0]
+            display_payload = first_display if first_display else loaded_variants
             r = SmokeTestResponse(
                 ok=True,
                 skipped=True,
-                loaded_variant=loaded_variants[0] if loaded_variants else None,
+                loaded_variant=first_display,
                 message=(
-                    f"容器已有变体常驻（{loaded_variants}），可加载性已证实；"
+                    f"容器已有变体常驻（{display_payload}），可加载性已证实；"
                     "为避免驱逐在用模型，未执行试启动。"
                 ),
             )

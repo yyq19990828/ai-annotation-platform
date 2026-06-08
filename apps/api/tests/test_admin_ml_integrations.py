@@ -392,6 +392,54 @@ async def test_smoke_test_skips_when_pool_already_loaded(httpx_client, super_adm
 
 
 @pytest.mark.asyncio
+async def test_smoke_test_skips_via_new_pool_status_loaded_keys(
+    httpx_client, super_admin
+):
+    """v0.14.14 · PoolStatus.loaded_keys 单源时也能识别"已加载", 并解析 key 还原 sam/dino."""
+    _, token = super_admin
+    routes = {
+        ("get", "/health"): _FakeResp(
+            200,
+            {
+                "ok": True,
+                "loaded": False,  # 老 loaded 字段为 False, 验证 current_size 触发
+                "pool": {
+                    "cap": 1,
+                    "current_size": 1,
+                    "loaded_keys": [
+                        {
+                            "key": "sam=small/dino=B",
+                            "loaded_at": "2026-06-08T00:00:00Z",
+                            "last_used_at": "2026-06-08T00:00:01Z",
+                            "hit_count": 1,
+                        }
+                    ],
+                    "last_evict": None,
+                },
+            },
+        ),
+    }
+    with patch(
+        "app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client(routes)
+    ):
+        res = await httpx_client.post(
+            "/api/v1/admin/ml-integrations/observe/smoke-test",
+            json={
+                "url": "http://obs1:8001",
+                "sam_variant": "large",
+                "dino_variant": "B",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["skipped"] is True
+    # parse 还原后 loaded_variant 仍是 {sam_variant, dino_variant} 形态
+    assert body["loaded_variant"] == {"sam_variant": "small", "dino_variant": "B"}
+
+
+@pytest.mark.asyncio
 async def test_smoke_test_generic_variant_is_skipped_until_backend_warm_exists(
     httpx_client, super_admin
 ):
