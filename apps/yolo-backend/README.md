@@ -50,7 +50,7 @@ ai-annotation-platform 的第三个 ML backend（v0.14.12）—— 基于 [ultra
 
 ```bash
 # 容器启动
-docker compose --profile gpu-yolo up yolo-backend
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-yolo up yolo-backend
 
 # 健康
 curl http://localhost:8003/health

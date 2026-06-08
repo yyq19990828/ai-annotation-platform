@@ -46,7 +46,8 @@ ai-annotation-platform/
 ├── scripts/                     # 工具脚本（seed.py / eval_simplify.py / sync_vendor.sh）
 ├── docs-site/                   # VitePress 用户手册 + 开发文档 + API
 ├── docs/                        # ADR / changelogs / plans / research
-├── docker-compose.yml           # 本地基础服务（postgres/redis/minio + GPU profile gsam2）
+├── docker-compose.yml           # 本地基础服务（postgres/redis/minio/celery + 监控 profile）
+├── docker-compose.ml.yml        # GPU ML Backend 叠加（grounded-sam2 / sam3 / yolo）
 └── .env.example                 # 环境变量模板
 ```
 
@@ -80,11 +81,11 @@ docker compose up -d
 - Redis 7 — `localhost:6379`
 - MinIO — `localhost:9000` (控制台 `localhost:9001`, minioadmin/minioadmin)
 
-> **GPU profile（可选，需要标注工作台 SAM 工具或 `/ai-pre` 文本批量预标）**：
+> **GPU profile（可选，需要标注工作台 SAM 工具或 `/ai-pre` 文本批量预标）**：GPU backend 在叠加文件 `docker-compose.ml.yml`，须同时 `-f` 两个文件：
 > ```bash
-> docker compose --profile gpu up -d grounded-sam2-backend
+> docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up -d grounded-sam2-backend
 > ```
-> 首次启动自动下载 ~900MB checkpoints（cache 在 `gsam2_checkpoints` volume）；启动 health 探活周期 120s，`curl http://localhost:8001/health` 应返回 `{"ok":true,"loaded":true}`。需 NVIDIA driver ≥ 525 + nvidia-container-toolkit。
+> 嫌麻烦可在 `.env` 设 `COMPOSE_FILE=docker-compose.yml:docker-compose.ml.yml`，之后省去 `-f`。首次启动自动下载 ~900MB checkpoints（cache 在 `gsam2_checkpoints` volume）；启动 health 探活周期 120s，`curl http://localhost:8001/health` 应返回 `{"ok":true,"loaded":true}`。需 NVIDIA driver ≥ 525 + nvidia-container-toolkit。
 
 ### 2. 启动前端
 
@@ -216,9 +217,11 @@ GET  /api/v1/users                # 用户列表
 
 ### 起 / 停
 
+> GPU backend 在叠加文件 `docker-compose.ml.yml`，下方命令均须带 `-f docker-compose.yml -f docker-compose.ml.yml`（或在 `.env` 设 `COMPOSE_FILE=docker-compose.yml:docker-compose.ml.yml` 后省略）。
+
 ```bash
-docker compose --profile gpu up -d grounded-sam2-backend          # 起
-docker compose --profile gpu down                                  # 停（保留 checkpoints / hf_cache volumes）
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up -d grounded-sam2-backend   # 起
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu down                          # 停（保留 checkpoints / hf_cache volumes）
 docker logs -f ai-annotation-platform-grounded-sam2-backend-1     # 看 "models loaded; device=cuda"
 curl -fsS http://localhost:8001/health                             # 探活
 curl -fsS http://localhost:8001/cache/stats                        # SAM 2 image embedding LRU 命中率（v0.9.1）
@@ -230,8 +233,8 @@ build context **从 v0.9.4 phase 3 起升级到 `apps/`**（让 Dockerfile 能 C
 
 ```bash
 # 推荐：走 docker compose
-docker compose --profile gpu build grounded-sam2-backend
-docker compose --profile gpu up -d grounded-sam2-backend          # 重建后重起容器
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu build grounded-sam2-backend
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up -d grounded-sam2-backend   # 重建后重起容器
 
 # 或直接 docker build（需手指定 Dockerfile 路径 + 父目录 context）
 docker build -f apps/grounded-sam2-backend/Dockerfile apps/

@@ -11,7 +11,7 @@
 
 ```bash
 # 1. 拿 SAM backend 起着 (GPU profile)
-docker compose --profile gpu up -d grounded-sam2-backend
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up -d grounded-sam2-backend
 curl -fsS http://localhost:8001/health   # 确认 loaded=true
 
 # 2. 从 MinIO 拷 N 张样本图 (跨 stride 取均匀分布)
