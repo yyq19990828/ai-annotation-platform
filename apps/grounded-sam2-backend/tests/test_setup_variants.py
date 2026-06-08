@@ -71,3 +71,12 @@ def test_setup_default_variants_match_env_defaults():
     seg = by_task["segmentation"]["default_variants"]
     assert seg["sam_variant"] == SAM_VARIANT
     assert seg["dino_variant"] == DINO_VARIANT
+
+
+# ---------- v0.14.14: warmup_endpoint 声明 ----------
+
+
+def test_setup_warmup_endpoint_true():
+    """v0.14.14 协议 §4.4 · 顶层 warmup_endpoint 必须为 True (gsam2 支持 /warmup)."""
+    data = setup()
+    assert data["warmup_endpoint"] is True

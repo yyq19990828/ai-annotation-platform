@@ -9,7 +9,12 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from aap_protocol_v2 import BatchPredictResponse, PredictionResult, TaskItem
+from aap_protocol_v2 import (
+    BatchPredictResponse,
+    PredictionResult,
+    TaskItem,
+    WarmupResponse,
+)
 from pydantic import BaseModel
 
 __all__ = [
@@ -21,6 +26,8 @@ __all__ = [
     "InteractiveRequest",
     "PredictionResult",
     "TaskItem",
+    "WarmupRequest",
+    "WarmupResponse",
 ]
 
 
@@ -52,6 +59,19 @@ class InteractiveRequest(BaseModel):
 class BatchPredictRequest(BaseModel):
     tasks: list[TaskItem]
     context: Context | None = None  # 批量带文本 prompt 时附带
+
+
+class WarmupRequest(BaseModel):
+    """v0.14.14 协议 §4.4 · /warmup 请求体.
+
+    gsam2 同时预热 SAM + DINO 两个权重; task 字段 (detection/segmentation/
+    interactive_seg/tracker) 决定 variants 必填项: detection 只需 dino_variant,
+    interactive_seg/tracker 只需 sam_variant, segmentation 两个都需要.
+    实际加载逻辑用 ModelPool, 缺失字段回退 backend env 默认.
+    """
+
+    task: Literal["detection", "segmentation", "interactive_seg", "tracker"] | None = None
+    variants: dict[str, str] = {}
 
 
 class AnnotationValue(BaseModel):

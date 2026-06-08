@@ -52,7 +52,7 @@ from predictor import (
     SAM2_CONFIGS,
     GroundedSAM2Predictor,
 )
-from schemas import BatchPredictResponse, PredictionResult
+from schemas import BatchPredictResponse, PredictionResult, WarmupRequest, WarmupResponse
 from video_pool import VideoPool
 from video_predictor import SAM2VideoTracker
 
@@ -268,11 +268,16 @@ def _resolve_variant(ctx: dict) -> tuple[str, str]:
     return sv, dv
 
 
-async def _get_predictor(sam_variant: str, dino_variant: str) -> GroundedSAM2Predictor:
-    """从 pool 取 predictor; pool 满 + 排队超时, 或变体 checkpoint 未预置, 翻成 503."""
+async def _get_predictor(
+    sam_variant: str, dino_variant: str
+) -> tuple[GroundedSAM2Predictor, bool, int | None]:
+    """v0.14.14: 返回 (predictor, cache_hit, model_load_ms).
+
+    pool 满 + 排队超时, 或变体 checkpoint 未预置, 翻成 503.
+    """
     global _last_request_at
     try:
-        predictor = await _pool.get(sam_variant, dino_variant)
+        predictor, cache_hit, load_ms = await _pool.get(sam_variant, dino_variant)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except FileNotFoundError as exc:
@@ -286,7 +291,7 @@ async def _get_predictor(sam_variant: str, dino_variant: str) -> GroundedSAM2Pre
             ),
         ) from exc
     _last_request_at = time.monotonic()
-    return predictor
+    return predictor, cache_hit, load_ms
 
 
 async def _idle_watcher() -> None:
@@ -299,7 +304,7 @@ async def _idle_watcher() -> None:
             idle_for = time.monotonic() - _last_request_at
             if idle_for >= IDLE_UNLOAD_SECONDS:
                 logger.info("idle %0.fs; clearing pool", idle_for)
-                _pool.clear_all()
+                _pool.clear_all(reason="idle_timeout")
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
@@ -406,7 +411,9 @@ def health() -> dict:
         "cache": _pool.aggregate_cache_stats(),
         "model_version": MODEL_VERSION,
         "loaded": _pool.loaded,
-        "pool": _pool.health(),
+        # v0.14.14: 同时输出协议 §4.3 PoolStatus (cap/current_size/loaded_keys[]/last_evict)
+        # 和老字段 (loaded_variants/evict_count/per_variant_lru_ts), 给老消费方一版过渡期.
+        "pool": {**_pool.health(), **_pool.pool_status()},
         # v0.10.35 §B · video tracker 独立池区块 (cap / loaded_variants / active_sessions / idle_seconds).
         "video_pool": _video_pool.health(),
         "provisioning": _provisioning,
@@ -427,6 +434,8 @@ def setup() -> dict:
         "model_version": MODEL_VERSION,
         "labels": [],
         "is_interactive": True,
+        # v0.14.14: 声明本 backend 支持 POST /warmup (协议 §4.4).
+        "warmup_endpoint": True,
         "supported_prompts": ["point", "bbox", "text"],
         # v0.9.4 phase 2 · text 路径输出形态选择 (box=DINO 直出, mask=DINO+SAM, both=配对返回).
         "supported_text_outputs": ["box", "mask", "both"],
@@ -582,7 +591,7 @@ def cache_stats() -> dict:
 @app.post("/unload")
 async def unload() -> dict:
     """主动卸载整池释放显存. 已为空闲状态时返回 ok=true, unloaded=false."""
-    unloaded = _pool.clear_all()
+    unloaded = _pool.clear_all(reason="manual")
     _free_gpu_memory()
     return {"ok": True, "unloaded": unloaded, "loaded": _pool.loaded}
 
@@ -654,7 +663,7 @@ async def reload(req: ReloadRequest | None = None) -> dict:
             detail=f"unsupported dino_variant: {dv!r}; allowed={sorted(DINO_CONFIGS)}",
         )
     already = {"sam_variant": sv, "dino_variant": dv} in _pool.loaded_variants()
-    await _get_predictor(sv, dv)
+    _predictor, _cache_hit, _load_ms = await _get_predictor(sv, dv)
     return {
         "ok": True,
         "loaded": True,
@@ -663,6 +672,46 @@ async def reload(req: ReloadRequest | None = None) -> dict:
         "dino_variant": dv,
         "task_type": "image",
     }
+
+
+# ---------- v0.14.14: POST /warmup (协议 §4.4) ----------
+
+
+@app.post("/warmup", response_model=WarmupResponse)
+async def warmup(req: WarmupRequest) -> WarmupResponse:
+    """v0.14.14 协议 §4.4 · 加载指定 (sam_variant, dino_variant) 权重到 pool, 不跑 forward.
+
+    缺失的 axis 回退 backend env 默认 (SAM_VARIANT / DINO_VARIANT). pool 满时按 LRU
+    淘汰最旧 key, evicted 字段回填给前端 toast.
+    """
+    variants = req.variants or {}
+    sv = variants.get("sam_variant") or SAM_VARIANT
+    dv = variants.get("dino_variant") or DINO_VARIANT
+    if sv not in SAM2_CONFIGS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unsupported sam_variant: {sv!r}; allowed={sorted(SAM2_CONFIGS)}",
+        )
+    if dv not in DINO_CONFIGS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unsupported dino_variant: {dv!r}; allowed={sorted(DINO_CONFIGS)}",
+        )
+    try:
+        cache_hit, load_ms, evicted = await _pool.warmup(sv, dv)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"variant ({sv}, {dv}) checkpoint not provisioned: {exc}",
+        ) from exc
+    return WarmupResponse(
+        ok=True,
+        model_load_ms=load_ms,
+        cache_hit=cache_hit,
+        evicted=evicted,
+    )
 
 
 def _fetch_image(file_path: str) -> Image.Image:
@@ -676,14 +725,18 @@ def _fetch_image(file_path: str) -> Image.Image:
     raise HTTPException(status_code=400, detail=f"unsupported file_path scheme: {file_path[:64]}")
 
 
-async def _run_prompt(file_path: str, ctx: dict) -> tuple[list[dict], bool, str, str]:
-    """返回 (results, cache_hit, sam_variant, dino_variant). 命中时 point/bbox 跳过 image fetch.
+async def _run_prompt(
+    file_path: str, ctx: dict
+) -> tuple[list[dict], bool, str, str, bool, int | None]:
+    """v0.14.14 返回 (results, embedding_hit, sam_variant, dino_variant,
+    pool_cache_hit, model_load_ms).
 
-    请求级变体: 从 ctx 解析 (缺省回退 env 默认), 经 pool 取对应 predictor,
-    cache_key / cache 桶都按该变体隔离。
+    - embedding_hit: 图像 embedding 缓存命中 (image fetch / set_image 跳过)
+    - pool_cache_hit: model pool 命中 (权重已加载, 不需冷启)
+    - model_load_ms: 本次 pool miss 的 build 耗时, 命中时 None
     """
     sv, dv = _resolve_variant(ctx)
-    p = await _get_predictor(sv, dv)
+    p, pool_cache_hit, model_load_ms = await _get_predictor(sv, dv)
     cache = _pool.cache_for(sv, dv)
     ptype = ctx.get("type")
     cache_key = compute_cache_key(file_path, sv)
@@ -717,7 +770,7 @@ async def _run_prompt(file_path: str, ctx: dict) -> tuple[list[dict], bool, str,
             results, hit = p.predict_point(
                 None, points, labels, cache_key=cache_key, simplify_tolerance=simplify_tol
             )
-        return results, hit, sv, dv
+        return results, hit, sv, dv, pool_cache_hit, model_load_ms
 
     if ptype == "bbox":
         bbox = ctx.get("bbox")
@@ -732,7 +785,7 @@ async def _run_prompt(file_path: str, ctx: dict) -> tuple[list[dict], bool, str,
             results, hit = p.predict_bbox(
                 None, bbox, cache_key=cache_key, simplify_tolerance=simplify_tol
             )
-        return results, hit, sv, dv
+        return results, hit, sv, dv, pool_cache_hit, model_load_ms
 
     if ptype == "text":
         text = (ctx.get("text") or "").strip()
@@ -759,7 +812,7 @@ async def _run_prompt(file_path: str, ctx: dict) -> tuple[list[dict], bool, str,
             text_threshold=text_th,
             simplify_tolerance=simplify_tol,
         )
-        return results, hit, sv, dv
+        return results, hit, sv, dv, pool_cache_hit, model_load_ms
 
     raise HTTPException(status_code=422, detail=f"unsupported context.type: {ptype}")
 
@@ -938,13 +991,17 @@ async def predict(request: Request):
                 inference_time_ms=elapsed_ms,
             ).model_dump(exclude_none=True)
         # _run_prompt 内部经 pool 取请求级变体 predictor (miss 触发冷启).
-        result, hit, sv, dv = await _run_prompt(task["file_path"], ctx)
+        result, hit, sv, dv, pool_cache_hit, model_load_ms = await _run_prompt(
+            task["file_path"], ctx
+        )
         elapsed_ms = _observe(ctx.get("type") or "unknown", hit, started)
         return PredictionResult(
             result=result,
             score=max((r.get("score") or 0.0) for r in result) if result else None,
             model_version=_model_version(sv, dv),
             inference_time_ms=elapsed_ms,
+            cache_hit=pool_cache_hit,
+            model_load_ms=model_load_ms,
         ).model_dump(exclude_none=True)
 
     # 批量: tasks 数组（M0 仅支持顶层 context.text 时整批同 prompt）
@@ -955,8 +1012,12 @@ async def predict(request: Request):
         for t in tasks:
             t_started = time.perf_counter()
             sv, dv = SAM_VARIANT, DINO_VARIANT
+            pool_cache_hit: bool | None = None
+            model_load_ms: int | None = None
             try:
-                result, hit, sv, dv = await _run_prompt(t["file_path"], ctx)
+                result, hit, sv, dv, pool_cache_hit, model_load_ms = await _run_prompt(
+                    t["file_path"], ctx
+                )
             except HTTPException:
                 raise
             except Exception as exc:  # noqa: BLE001 — 单图失败降级，不中断整批
@@ -970,6 +1031,8 @@ async def predict(request: Request):
                     score=max((r.get("score") or 0.0) for r in result) if result else None,
                     model_version=_model_version(sv, dv),
                     inference_time_ms=elapsed_ms,
+                    cache_hit=pool_cache_hit,
+                    model_load_ms=model_load_ms,
                 ).model_dump(exclude_none=True)
             )
         return BatchPredictResponse(results=results).model_dump(exclude_none=True)
