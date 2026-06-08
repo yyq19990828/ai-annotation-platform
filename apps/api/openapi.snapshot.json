@@ -9820,6 +9820,20 @@
             ],
             "title": "Batch Id"
           },
+          "class_filter": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Filter"
+          },
           "ml_backend_id": {
             "format": "uuid",
             "title": "Ml Backend Id",
@@ -9835,6 +9849,20 @@
               }
             ],
             "title": "Model Id"
+          },
+          "model_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Variants"
           },
           "output_mode": {
             "default": "mask",

@@ -60,6 +60,9 @@ class Context(BaseModel):
     model_variants: dict[str, str] | None = None
     variants: Variants
     params: PredictParams = Field(default_factory=PredictParams)
+    # v0.14.17 · 类别白名单 (模型原生类别 index 子集). 非空时只检出这些类; 空/缺=全部类别.
+    # 平台不做类→项目标签映射 (NG6), 仅在推理层用 ultralytics model.predict(classes=) 过滤.
+    classes: list[int] | None = None
 
     @model_validator(mode="before")
     @classmethod

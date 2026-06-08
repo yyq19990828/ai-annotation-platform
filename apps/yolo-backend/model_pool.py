@@ -72,6 +72,10 @@ class ModelPool:
         self._hit_count: dict[ModelKey, int] = {}
         self._lru_ts: dict[ModelKey, float] = {}  # idle watcher 用 monotonic 秒
         self._last_evict: dict[str, Any] | None = None
+        # v0.14.17: 每 task 缓存模型原生类别表 (model.names), 供 /setup 暴露给前端渲染类别白名单.
+        # 官方权重各 task 内 series/size 共享同一类集 (det/seg=COCO-80, pose=person, obb=DOTA),
+        # 故按 task 缓存即可; 首个该 task 模型 build 后填充, 不额外加载.
+        self._class_names: dict[str, list[dict[str, Any]]] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -83,6 +87,10 @@ class ModelPool:
 
     def has(self, key: ModelKey) -> bool:
         return key in self._models
+
+    def class_names(self, task: str) -> list[dict[str, Any]] | None:
+        """v0.14.17: 该 task 已加载过的模型的类别表 ([{index,name}]); 未加载过返回 None."""
+        return self._class_names.get(task)
 
     @staticmethod
     def _key_str(key: ModelKey) -> str:
@@ -146,6 +154,15 @@ class ModelPool:
             ) from exc
         load_ms = int((time.monotonic() - t0) * 1000)
         record_pool_load(task, series, size)
+
+        # v0.14.17: 记下该 task 的原生类别表 (model.names: dict[int,str]), 供 /setup 暴露.
+        if task not in self._class_names:
+            names = getattr(model, "names", None)
+            if isinstance(names, dict) and names:
+                self._class_names[task] = [
+                    {"index": int(i), "name": str(n)}
+                    for i, n in sorted(names.items(), key=lambda kv: int(kv[0]))
+                ]
 
         build_at = datetime.now(UTC)
 

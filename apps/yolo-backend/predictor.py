@@ -167,12 +167,15 @@ class YoloPredictor:
         img_w, img_h = img.size
 
         t0 = time.time()
+        # v0.14.17 · 类别白名单: 非空时传 ultralytics classes= 只检出选中 index (原生过滤, 不后处理).
+        class_filter = getattr(ctx, "classes", None) or None
         # ultralytics .predict() 返回 list[Results] (一图一项).
         results = model.predict(
             img,
             conf=params.conf,
             iou=params.iou,
             max_det=params.max_det,
+            classes=class_filter,
             verbose=False,
         )
         elapsed = time.time() - t0

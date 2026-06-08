@@ -324,7 +324,7 @@ def _build_model_entry(
     model_id: str, display_name: str, task: str,
     geometric_outputs: list[str],
 ) -> dict[str, Any]:
-    return {
+    entry: dict[str, Any] = {
         "id": model_id,
         "display_name": display_name,
         "task": task,
@@ -339,6 +339,14 @@ def _build_model_entry(
         "default_variants": _default_variants_for(task),
         "params": _PARAMS_SCHEMA,
     }
+    # v0.14.17: 模型原生类别表 (model.names), 供前端渲染类别白名单. 仅在该 task 模型已加载过
+    # (warmup / 首次 predict 后) 时有值; 未加载时省略, 前端回退"不按类筛选". 读自权重 metadata,
+    # 不硬编码 (官方权重与自训练一视同仁).
+    if _model_pool is not None:
+        classes = _model_pool.class_names(task)
+        if classes:
+            entry["classes"] = classes
+    return entry
 
 
 @app.get("/setup")
@@ -350,7 +358,8 @@ def setup() -> dict[str, Any]:
         "name": "yolo-backend",
         "version": BACKEND_VERSION,
         "model_version": MODEL_VERSION,
-        "labels": [],  # yolo 默认 COCO/DOTA 类名, 不在 setup 暴露 (平台不做映射, NG6).
+        "labels": [],  # 顶层 hint 留空; v0.14.17 起类别表逐 model 暴露 (models[].classes) 供前端
+        #               类别白名单 UI. 平台仍不做"模型类→项目标签"映射 (NG6 保留, 由 alias 配置 + 采纳时人选承担).
         "is_interactive": False,
         "supported_prompts": ["none"],
         "supported_geometric_outputs": ["bbox", "polygon", "keypoint", "rotated_bbox"],

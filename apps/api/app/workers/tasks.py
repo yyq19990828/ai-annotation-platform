@@ -36,6 +36,64 @@ def _publish_progress(
         r.close()
 
 
+def _build_predict_context(
+    *,
+    prompt: str | None,
+    output_mode: str,
+    params: dict | None,
+    model_id: str | None,
+    task_type: str | None,
+    model_variants: dict | None,
+    class_filter: list[int] | None = None,
+    box_threshold: float | None = None,
+    text_threshold: float | None = None,
+) -> dict | None:
+    """构造发往 backend /predict 的 context (纯函数, 便于单测).
+
+    两条互斥路径:
+    - **协议 v2 结构化** (model_variants 非空, 由面板 YOLO task 选择器触发): backend (yolo) 要
+      `model_variants` dict + nested `params` + `type=<几何 task>`。修通 YOLO 批量预标
+      (此前 worker 发扁平 series/size + type="text" 被 YOLO 422)。
+    - **既有扁平路径** (gsam2 文本 prompt / OCR / doc_layout): 维持原样不动, 防回归。
+    """
+    if model_variants:
+        ctx: dict = {
+            "type": task_type or "detection",
+            "model_variants": model_variants,
+            "params": params or {},
+        }
+        if model_id:
+            ctx["model_id"] = model_id
+        if class_filter:
+            # v0.14.17 · 类别白名单 (模型原生类别 index 子集); yolo /predict 用 model.predict(classes=) 过滤.
+            ctx["classes"] = class_filter
+        if prompt:
+            # YOLO 当前忽略 text (类别筛选走 classes 字段); 保留通道.
+            ctx["text"] = prompt
+        return ctx
+
+    # ── 既有扁平路径 (gsam2 / OCR / doc_layout), 与 v0.14.9 行为逐字等价 ──
+    context: dict | None = None
+    if prompt:
+        context = {"type": "text", "text": prompt, "output": output_mode}
+        if box_threshold is not None:
+            context["box_threshold"] = box_threshold
+            context["text_threshold"] = text_threshold
+        _reserved = {"type", "text", "output"}
+        if params:
+            context.update(
+                {k: v for k, v in params.items() if v is not None and k not in _reserved}
+            )
+    if task_type or model_id:
+        if context is None:
+            context = {}
+        if task_type:
+            context["type"] = task_type
+        if model_id:
+            context["model_id"] = model_id
+    return context
+
+
 async def _run_batch(
     project_id: str,
     ml_backend_id: str,
@@ -49,6 +107,8 @@ async def _run_batch(
     predict_mode: str = "skip_predicted",
     model_id: str | None = None,
     task_type: str | None = None,
+    model_variants: dict | None = None,
+    class_filter: list[int] | None = None,
 ):
     """v0.9.5 · 批量预标 worker.
 
@@ -105,45 +165,22 @@ async def _run_batch(
             )
             return
 
-        # v0.9.5 · 文本批量预标透传 ctx（DINO 阈值取项目级 override）
-        context: dict | None = None
+        # v0.9.5 / v0.14.9 / v0.14.17 · 构造 /predict context (扁平文本路径 vs v2 结构化路径,
+        # 见 _build_predict_context). DINO 阈值取项目级 override.
         project = await db.get(Project, uuid.UUID(project_id))
         if project is not None:
             project_name = project.name
-        if prompt:
-            context = {
-                "type": "text",
-                "text": prompt,
-                "output": output_mode,
-            }
-            if project is not None:
-                context["box_threshold"] = float(project.box_threshold)
-                context["text_threshold"] = float(project.text_threshold)
-            # v0.10.38 · 按后端参数面板 (epic 阶段 2): 选中 backend 的 /setup.params 值覆盖项目级兜底.
-            # 保留 context 结构性键 (type/text/output) 不被 params 覆盖, 防止破坏 predict 请求语义.
-            _reserved = {"type", "text", "output"}
-            if params:
-                context.update(
-                    {
-                        k: v
-                        for k, v in params.items()
-                        if v is not None and k not in _reserved
-                    }
-                )
-
-        # v0.14.9 · 协议 v2: 多模型路由 + task 别名。
-        # task_type / model_id 即使在无 prompt 的纯图片 task (OCR / doc_layout) 下也要透传,
-        # 故在此处按需起 context (而非内嵌进 `if prompt` 分支)。
-        #   - context["type"] = task_type   覆盖 prompt 分支默认的 "text", 让 backend 路由到对应 task。
-        #   - context["model_id"] = model_id 指定多模型目录中的具体 model 条目。
-        # 纯文本 prompt 现状 (无 task_type / model_id 时) 不受影响。
-        if task_type or model_id:
-            if context is None:
-                context = {}
-            if task_type:
-                context["type"] = task_type
-            if model_id:
-                context["model_id"] = model_id
+        context = _build_predict_context(
+            prompt=prompt,
+            output_mode=output_mode,
+            params=params,
+            model_id=model_id,
+            task_type=task_type,
+            model_variants=model_variants,
+            class_filter=class_filter,
+            box_threshold=float(project.box_threshold) if project is not None else None,
+            text_threshold=float(project.text_threshold) if project is not None else None,
+        )
 
         # v0.11.24 · 幂等：skip_predicted 排除已预标 task；append/overwrite 不排除。
         skip_predicted = predict_mode == "skip_predicted"
@@ -469,6 +506,8 @@ def batch_predict(
     predict_mode: str = "skip_predicted",
     model_id: str | None = None,
     task_type: str | None = None,
+    model_variants: dict | None = None,
+    class_filter: list[int] | None = None,
 ):
     asyncio.run(
         _run_batch(
@@ -484,5 +523,7 @@ def batch_predict(
             predict_mode=predict_mode,
             model_id=model_id,
             task_type=task_type,
+            model_variants=model_variants,
+            class_filter=class_filter,
         )
     )
