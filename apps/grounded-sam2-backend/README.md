@@ -72,7 +72,7 @@ git add vendor/grounded-sam-2 && git commit -m "vendor: bump grounded-sam-2 to <
 bash apps/grounded-sam2-backend/scripts/sync_vendor.sh <commit-sha>
 
 # 2. 通过 docker compose GPU profile 启动
-docker compose --profile gpu up --build grounded-sam2-backend
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up --build grounded-sam2-backend
 
 # 3. 端到端验证
 curl http://localhost:8001/health
@@ -158,11 +158,11 @@ GET  /cache/stats   → {"size": N, "capacity": 16, "hits": ..., "misses": ..., 
 
 **vendor/grounded-sam-2 为空**：先跑 `bash scripts/sync_vendor.sh <commit>`。Dockerfile 在 build 期检测到空目录会 fail-fast。
 
-**首次启动卡住 > 5 分钟**：`docker compose --profile gpu logs -f grounded-sam2-backend` 查看 checkpoints 下载进度。HuggingFace 偶发限速，重试即可。
+**首次启动卡住 > 5 分钟**：`docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu logs -f grounded-sam2-backend` 查看 checkpoints 下载进度。HuggingFace 偶发限速，重试即可。
 
 **CUDA OOM**：切到更小变体（`SAM_VARIANT=tiny`、`DINO_VARIANT=T`），或扩 swap 给 host；4060 8GB 仅能跑 tiny+T 主链。
 
-**Deformable Attention 编译失败 / nvcc not found**：base image 必须是 `cuda12.1-cudnn8-devel`（不是 `runtime`）；如本地 build 缓存了 runtime 版本，先 `docker compose --profile gpu build --no-cache grounded-sam2-backend`。
+**Deformable Attention 编译失败 / nvcc not found**：base image 必须是 `cuda12.1-cudnn8-devel`（不是 `runtime`）；如本地 build 缓存了 runtime 版本，先 `docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu build --no-cache grounded-sam2-backend`。
 
 **driver too old**：`docker run` 报 `Failed to initialize NVML: Driver/library version mismatch` 或 `CUDA driver version is insufficient` → 升级主机驱动到 ≥ 525.60.13。
 
