@@ -89,6 +89,10 @@ export interface CapabilityInstanceModel {
   //   true  → 同 (axis_key, value) 跨 task 合并到一行;
   //   false → 每 task 独立一行, 行名加任务后缀 (YOLOv8-OBB / YOLOv8-Seg).
   variants_shared_across_tasks?: boolean;
+  // v0.14.13 · backend 自报的默认 variant 组合 (dict[axis_key, value]).
+  // 前端 VariantSelector 在用户未选时取此作初值; 优先级:
+  // 项目级 project.default_variants[backend_id] > 本字段 > backend 启动 env 默认.
+  default_variants?: Record<string, string>;
 }
 
 export interface CapabilityInstance {

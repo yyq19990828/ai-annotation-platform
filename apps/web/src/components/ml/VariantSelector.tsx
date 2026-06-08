@@ -1,3 +1,22 @@
+/**
+ * VariantSelector · 协议 v2 / v0.14.13 通用变体选择器
+ *
+ * 数据来源优先级 (高 → 低):
+ * 1. props.supportedVariants (协议 v2 富 metadata 数组, axis_key 任意, 不限于
+ *    sam_variant/dino_variant) — yolo 的 series/size 也走这条路径
+ * 2. props.schema (JSON Schema enum, 老协议 v1 fallback)
+ *
+ * 联动 (协议 v2 v0.14.12 起):
+ * - props.variantCombinations 声明时, 第 N+1 轴的可选项受前 N 轴当前值约束.
+ *   yolo 例: series=yolov9 → size 只显示 {t,s,m,c,e} (没有 n/l/x).
+ *   未声明 → 按 axes 笛卡尔积渲染 (gsam2 sam_variant × dino_variant 是真笛卡尔积).
+ *
+ * 初值 (协议 v2 v0.14.13):
+ * - props.defaults: 当 value 没该 axis_key 时用 defaults; 项目级偏好覆盖了 backend
+ *   默认时, 调用方 (ProjectDetailPanel 等) 合并出 defaults 传入.
+ * - schema.default 仍作最末 fallback (老 backend 兼容).
+ */
+
 import type {
   MLBackendSupportedVariantGroup,
   MLBackendSupportedVariantOption,
@@ -12,6 +31,10 @@ import styles from "./VariantSelector.module.css";
 interface VariantSelectorProps {
   schema?: JsonSchemaObject;
   supportedVariants?: MLBackendSupportedVariantGroup[];
+  /** v0.14.12 · 多轴非真笛卡尔积时声明合法组合; inner array 与 supportedVariants 轴顺序一致. */
+  variantCombinations?: string[][];
+  /** v0.14.13 · backend 自报 / 项目级合并后的默认 variant 组合 (axis_key → value). */
+  defaults?: Record<string, string>;
   value: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
   disabled?: boolean;
@@ -61,30 +84,102 @@ function normalizeOptions(raw: MLBackendSupportedVariantOption[] | undefined) {
   });
 }
 
+/**
+ * 派生当前轴的可选项, 应用 variantCombinations 联动约束.
+ * @param axisIndex 当前轴在 supportedVariants 中的下标
+ * @param baseOptions 该轴的全部 metadata 选项
+ * @param axes 完整 axis_key 顺序 (与 supportedVariants 同序)
+ * @param value 当前已选值映射
+ * @param combinations 合法组合 (可选)
+ */
+function filterByCombinations(
+  axisIndex: number,
+  baseOptions: MLBackendSupportedVariantOption[],
+  axes: string[],
+  value: Record<string, unknown>,
+  combinations: string[][] | undefined,
+): MLBackendSupportedVariantOption[] {
+  if (!combinations || combinations.length === 0) return baseOptions;
+  const allowed = new Set<string>();
+  for (const combo of combinations) {
+    let ok = true;
+    for (let i = 0; i < axisIndex; i++) {
+      const current = typeof value[axes[i]!] === "string" ? (value[axes[i]!] as string) : null;
+      if (current && combo[i] !== current) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok && typeof combo[axisIndex] === "string") {
+      allowed.add(combo[axisIndex]!);
+    }
+  }
+  return baseOptions.filter((opt) => allowed.has(opt.value));
+}
+
 function normalizeFields(
   schema: JsonSchemaObject | undefined,
   supportedVariants: MLBackendSupportedVariantGroup[] | undefined,
+  defaults: Record<string, string> | undefined,
+  variantCombinations: string[][] | undefined,
+  value: Record<string, unknown>,
 ): NormalizedVariantField[] {
-  const richByKey = new Map<string, MLBackendSupportedVariantGroup>();
-  for (const group of supportedVariants ?? []) {
-    if (group && typeof group.key === "string") richByKey.set(group.key, group);
+  const richList = (supportedVariants ?? []).filter(
+    (g): g is MLBackendSupportedVariantGroup => g != null && typeof g.key === "string",
+  );
+
+  // 路径 A · 协议 v2 富元数据: axis_key 任意, 顺序按 supportedVariants 给的顺序;
+  // variantCombinations 按本顺序对齐每个 inner array 元素.
+  if (richList.length > 0) {
+    const axes = richList.map((g) => g.key);
+    const fields: NormalizedVariantField[] = [];
+    richList.forEach((group, idx) => {
+      const baseOptions = normalizeOptions(group.variants);
+      if (baseOptions.length === 0) return;
+      const filtered = filterByCombinations(
+        idx,
+        baseOptions,
+        axes,
+        value,
+        variantCombinations,
+      );
+      const options = filtered.length > 0 ? filtered : baseOptions;
+      // 优先级: defaults > 该轴 recommended option > schema.default > 第一个选项
+      const schemaField = asField(schema?.properties?.[group.key]);
+      const recommended = options.find((opt) => opt.recommended);
+      const fallback =
+        defaults?.[group.key] ??
+        recommended?.value ??
+        (typeof schemaField?.default === "string" ? schemaField.default : options[0]!.value);
+      fields.push({
+        key: group.key,
+        title: group.title ?? schemaField?.title ?? group.key,
+        description: group.description ?? schemaField?.description,
+        fallback,
+        options,
+      });
+    });
+    return fields;
   }
 
+  // 路径 B · 老协议 v1 schema-only fallback: 按 VARIANT_FIELD_KEYS 白名单从 schema enum 取.
+  // 仅 sam_variant / dino_variant 兼容, 老 backend 不会有别的 axis_key.
   const fields: NormalizedVariantField[] = [];
   for (const key of VARIANT_FIELD_KEYS) {
     const schemaField = asField(schema?.properties?.[key]);
-    const rich = richByKey.get(key);
-    const richOptions = normalizeOptions(rich?.variants);
-    const enumOptions: MLBackendSupportedVariantOption[] = Array.isArray(schemaField?.enum)
-      ? schemaField.enum.map((value) => ({ value, label: value }))
-      : [];
-    const options = richOptions.length > 0 ? richOptions : enumOptions;
-    if (options.length === 0) continue;
+    if (!Array.isArray(schemaField?.enum) || schemaField!.enum.length === 0) continue;
+    const options: MLBackendSupportedVariantOption[] = schemaField!.enum.map((v) => ({
+      value: v,
+      label: v,
+    }));
+    const fallback =
+      defaults?.[key] ??
+      (typeof schemaField?.default === "string" ? schemaField.default : options[0]!.value);
     fields.push({
       key,
-      title: rich?.title ?? schemaField?.title ?? key,
-      description: rich?.description ?? schemaField?.description,
-      fallback: typeof schemaField?.default === "string" ? schemaField.default : options[0]!.value,
+      title: schemaField?.title ?? key,
+      description: schemaField?.description,
+      fallback,
       options,
     });
   }
@@ -94,12 +189,44 @@ function normalizeFields(
 export function VariantSelector({
   schema,
   supportedVariants,
+  variantCombinations,
+  defaults,
   value,
   onChange,
   disabled = false,
 }: VariantSelectorProps) {
-  const fields = normalizeFields(schema, supportedVariants);
+  const fields = normalizeFields(
+    schema,
+    supportedVariants,
+    defaults,
+    variantCombinations,
+    value,
+  );
   if (fields.length === 0) return null;
+
+  // 联动: 切换第 N 轴时, 若当前后续轴的 value 已变非法, 自动清空让 fallback 重算.
+  const handleChange = (axisKey: string, nextValue: string) => {
+    const next: Record<string, unknown> = { ...value, [axisKey]: nextValue };
+    if (variantCombinations && variantCombinations.length > 0) {
+      const axes = fields.map((f) => f.key);
+      const idx = axes.indexOf(axisKey);
+      // 重新过滤每个后续轴, 若 next[axes[k]] 已不在 allowed 内, 清掉 (UI 用 fallback).
+      for (let k = idx + 1; k < axes.length; k++) {
+        const filtered = filterByCombinations(
+          k,
+          normalizeOptions(supportedVariants?.[k]?.variants),
+          axes,
+          next,
+          variantCombinations,
+        );
+        const cur = typeof next[axes[k]!] === "string" ? (next[axes[k]!] as string) : null;
+        if (cur && !filtered.find((o) => o.value === cur)) {
+          delete next[axes[k]!];
+        }
+      }
+    }
+    onChange(next);
+  };
 
   return (
     <div data-testid="ai-variant-selector" className={styles.root}>
@@ -107,7 +234,8 @@ export function VariantSelector({
         const current = typeof value[field.key] === "string"
           ? (value[field.key] as string)
           : field.fallback;
-        const selected = field.options.find((option) => option.value === current) ?? field.options[0]!;
+        const selected =
+          field.options.find((option) => option.value === current) ?? field.options[0]!;
         const note = selected.note ?? field.description;
         const hasMeta = selected.vram_gb != null || Boolean(selected.tier) || Boolean(selected.recommended);
         return (
@@ -119,7 +247,7 @@ export function VariantSelector({
               data-testid={`ai-variant-${field.key}`}
               value={selected.value}
               disabled={disabled}
-              onChange={(e) => onChange({ ...value, [field.key]: e.target.value })}
+              onChange={(e) => handleChange(field.key, e.target.value)}
               className={styles.select}
             >
               {field.options.map((option) => (

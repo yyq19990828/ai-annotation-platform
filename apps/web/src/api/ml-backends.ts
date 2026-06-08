@@ -63,6 +63,10 @@ export interface MLModelCapability {
   // v0.14.12 · True 表示同 backend 内多 task 共享同一份物理权重 (gsam2 风格);
   // False/缺省表示每 task 独立权重 (yolo 风格). 前端列表据此切换渲染策略。
   variants_shared_across_tasks?: boolean;
+  // v0.14.13 · backend 自报的默认 variant 组合 (dict[axis_key, value]).
+  // 前端 VariantSelector 在用户未选时取此作初值; 优先级:
+  // 项目级 project.default_variants[backend_id] > 本字段 > backend 启动 env 默认.
+  default_variants?: Record<string, string>;
   default_thresholds?: Record<string, unknown>;
   resource_profile?: Record<string, unknown>;
   params?: { type?: string; properties?: Record<string, unknown> };
