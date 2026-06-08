@@ -262,6 +262,9 @@ interface AIPredictionPopoverProps {
   variantCombinations?: string[][];
   // v0.14.13 · backend / 项目级合并后的默认 variant 组合, 传给 VariantSelector 作初值.
   variantDefaults?: Record<string, string>;
+  // v0.14.13 · 当前选中 variant 是否已 warm (sessionStorage 命中集合); false → 按钮文案
+  // 显示"加载模型中…" 给用户冷启动心理预期. 等 v0.14.14 后端 cache_hit 真信号后替换.
+  isVariantWarm?: boolean;
   aiVariant?: Record<string, unknown>;
   onSetAiVariant?: (next: Record<string, unknown>) => void;
   // 后端级推理参数 (阈值等非变体字段): SchemaForm 渲染。值/回调即 workbench 的 aiToolParams。
@@ -290,6 +293,7 @@ export function AIPredictionPopover({
   supportedVariants,
   variantCombinations,
   variantDefaults,
+  isVariantWarm: isVariantWarmProp,
   aiVariant,
   onSetAiVariant,
   params,
@@ -389,7 +393,11 @@ export function AIPredictionPopover({
             {aiRunning
               ? <Icon name="loader2" size={11} className="spin" />
               : <Icon name="wandSparkles" size={11} />}
-            {aiRunning ? "推理中..." : "开始预标"}
+            {aiRunning
+              ? isVariantWarmProp === false
+                ? "加载中…（首次约 5-15s）"
+                : "推理中..."
+              : "开始预标"}
           </Button>
           <Button size="sm" onClick={onAcceptAll} disabled={aiBoxCount === 0} className={styles.flexButton}>
             <Icon name="check" size={11} />全部采纳

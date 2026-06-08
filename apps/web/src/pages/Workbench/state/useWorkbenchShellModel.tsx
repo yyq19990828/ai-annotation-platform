@@ -45,6 +45,10 @@ import { useInteractiveAI } from "./useInteractiveAI";
 import { useMLCapabilities } from "./useMLCapabilities";
 import { useCapabilityValidation } from "./useCapabilityValidation";
 import { useAiToolParamPrefs } from "./useAiToolParamPrefs";
+import {
+  isVariantWarm as isVariantWarmCache,
+  markVariantWarm,
+} from "./sessionVariantCache";
 import { deriveDefaults, VARIANT_FIELD_KEYS } from "../components/SchemaForm";
 import { AIToolDrawer } from "../shell/AIToolDrawer";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
@@ -901,6 +905,20 @@ export function useWorkbenchShellModel({
     },
     [s, currentProject, variantAxisKeys, updateProjectMu],
   );
+
+  // v0.14.13 · 冷启动 UX 本地猜测: 当前 variant 是否已 warm.
+  const currentVariantSlice = useMemo<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    for (const k of variantAxisKeys) {
+      const v = (s.aiVariant as Record<string, unknown> | undefined)?.[k];
+      if (typeof v === "string") out[k] = v;
+    }
+    return out;
+  }, [s.aiVariant, variantAxisKeys]);
+  const currentVariantIsWarm = useMemo(
+    () => isVariantWarmCache(currentProject?.ml_backend_id ?? null, currentVariantSlice),
+    [currentProject?.ml_backend_id, currentVariantSlice],
+  );
   useEffect(() => {
     sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1222,10 +1240,16 @@ export function useWorkbenchShellModel({
         predict_mode: "overwrite",
       },
       {
+        onSuccess: () => {
+          // v0.14.13 · 推理成功 → 记 variant warm. 失败不入集合 (下次还提示加载中).
+          if (Object.keys(currentVariantSlice).length > 0) {
+            markVariantWarm(mlBackendId, currentVariantSlice);
+          }
+        },
         onError: (err) => pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" }),
       },
     );
-  }, [projectId, currentProject, aiModel, taskId, triggerPreannotation, pushToast]);
+  }, [projectId, currentProject, aiModel, taskId, triggerPreannotation, pushToast, currentVariantSlice]);
 
   const {
     handleVideoCreate,
@@ -2139,6 +2163,7 @@ export function useWorkbenchShellModel({
         mlCapabilities.capability?.supported_variants,
       variantCombinations: mlCapabilities.activeModel?.variant_combinations,
       variantDefaults,
+      isVariantWarm: currentVariantIsWarm,
       aiVariant: s.aiVariant,
       onSetAiVariant: setAiVariantAndPersist,
       params: s.aiToolParams,

@@ -34,6 +34,10 @@ import {
   type JsonSchemaObject,
 } from "@/pages/Workbench/components/SchemaForm";
 import { useAiToolParamPrefs } from "@/pages/Workbench/state/useAiToolParamPrefs";
+import {
+  isVariantWarm,
+  markVariantWarm,
+} from "@/pages/Workbench/state/sessionVariantCache";
 
 import { TabRow } from "@/components/ui/TabRow";
 import { HistoryTable } from "./HistoryTable";
@@ -428,6 +432,9 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       let okCount = 0;
       let failCount = 0;
       const errors: string[] = [];
+      // v0.14.13 · 冷启动 UX 本地猜测: 第一次发起的 variant 组合在响应回来后入 warm 集合.
+      // 即便 backend 内部并未真的命中 cache (本批可能 4 张图分散到不同 size 子串路径),
+      // 后续按钮文案直接走"热"路径; 等 v0.14.14 后端 cache_hit 真信号替换.
       const fireOne = async (bid: string) => {
         try {
           await trigger.mutateAsync({ ...baseArgs, batch_id: bid });
@@ -452,11 +459,38 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       if (failCount > 0 && errors.length > 0) {
         console.warn("[ai-pre] 多批次预标部分失败:", errors);
       }
-      if (okCount > 0) setSelectedBatchIds(new Set());
+      if (okCount > 0) {
+        setSelectedBatchIds(new Set());
+        // v0.14.13 · 至少一批成功 → 记 variant warm.
+        if (selectedBackendId) {
+          const variantSlice: Record<string, string> = {};
+          for (const k of variantAxisKeysRef.current) {
+            const v = paramsValue[k];
+            if (typeof v === "string") variantSlice[k] = v;
+          }
+          if (Object.keys(variantSlice).length > 0) {
+            markVariantWarm(selectedBackendId, variantSlice);
+          }
+        }
+      }
     } finally {
       setRunning(false);
     }
   };
+
+  // v0.14.13 · 当前 variant 选择是否已 warm (用于按钮文案分两态).
+  const currentVariantSlice = useMemo<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    for (const k of variantAxisKeysRef.current) {
+      const v = paramsValue[k];
+      if (typeof v === "string") out[k] = v;
+    }
+    return out;
+  }, [paramsValue, primaryModel]);
+  const isCurrentVariantWarm = useMemo(
+    () => isVariantWarm(selectedBackendId, currentVariantSlice),
+    [selectedBackendId, currentVariantSlice],
+  );
 
   const headerName = summary?.project_name ?? `项目 ${projectId.slice(0, 8)}`;
 
@@ -789,7 +823,11 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
             <div className={styles.actions}>
               <Button onClick={onRun} disabled={!canRun}>
                 <Icon name="bot" size={12} />
-                {running ? "分发中..." : `跑预标（${selectedBatchIds.size} 批）`}
+                {running
+                  ? isCurrentVariantWarm
+                    ? "分发中..."
+                    : "加载模型中…（首次约 5-15s）"
+                  : `跑预标（${selectedBatchIds.size} 批）`}
               </Button>
             </div>
           </div>
