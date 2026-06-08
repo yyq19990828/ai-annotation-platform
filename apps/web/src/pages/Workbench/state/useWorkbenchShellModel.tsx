@@ -4,7 +4,7 @@ import {
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
-import { useProject } from "@/hooks/useProjects";
+import { useProject, useUpdateProject } from "@/hooks/useProjects";
 import {
   useTaskList, useTask, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
   useUpdateAnnotation, useSubmitTask,
@@ -853,6 +853,54 @@ export function useWorkbenchShellModel({
     toolBindings: currentProject?.tool_bindings,
   });
   const aiParamPrefs = useAiToolParamPrefs(currentProject?.ml_backend_id ?? null);
+  const updateProjectMu = useUpdateProject(routeId ?? "");
+
+  // v0.14.13 · variantDefaults = backend.default_variants ⊕ project.default_variants[backend_id]
+  // 用于给 VariantSelector 初值. session 级 s.aiVariant 仍是用户选的 override.
+  const variantDefaults = useMemo<Record<string, string>>(() => {
+    const fromBackend = mlCapabilities.activeModel?.default_variants ?? {};
+    const projectMap = (currentProject as unknown as
+      | { default_variants?: Record<string, Record<string, string>> }
+      | undefined)?.default_variants;
+    const bid = currentProject?.ml_backend_id ?? null;
+    const fromProject = (bid ? projectMap?.[bid] : undefined) ?? {};
+    return { ...fromBackend, ...fromProject };
+  }, [mlCapabilities.activeModel, currentProject]);
+
+  // v0.14.13 · setAiVariant 包装: 维持 session state + PATCH project.default_variants (debounced 隐式去重).
+  // axis_key 由 activeModel.supported_variants 决定 (yolo: series/size; gsam2: sam_variant/dino_variant);
+  // 落到 project 偏好的只是 axis 子集, 非 axis 字段不会污染项目级配置.
+  const variantAxisKeys = useMemo<Set<string>>(() => {
+    const keys = new Set<string>();
+    for (const g of mlCapabilities.activeModel?.supported_variants ?? []) {
+      if (typeof g.key === "string") keys.add(g.key);
+    }
+    return keys;
+  }, [mlCapabilities.activeModel]);
+  const setAiVariantAndPersist = useCallback(
+    (next: Record<string, unknown>) => {
+      s.setAiVariant(next);
+      const bid = currentProject?.ml_backend_id ?? null;
+      if (!bid || variantAxisKeys.size === 0) return;
+      const variantSlice: Record<string, string> = {};
+      for (const k of variantAxisKeys) {
+        const v = next[k];
+        if (typeof v === "string") variantSlice[k] = v;
+      }
+      const projectMap = ((currentProject as unknown as
+        | { default_variants?: Record<string, Record<string, string>> }
+        | undefined)?.default_variants) ?? {};
+      const cur = projectMap[bid] ?? {};
+      const same =
+        Object.keys(variantSlice).length === Object.keys(cur).length &&
+        Object.entries(variantSlice).every(([k, v]) => cur[k] === v);
+      if (same) return;
+      updateProjectMu.mutate({
+        default_variants: { ...projectMap, [bid]: variantSlice },
+      });
+    },
+    [s, currentProject, variantAxisKeys, updateProjectMu],
+  );
   useEffect(() => {
     sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2084,9 +2132,15 @@ export function useWorkbenchShellModel({
       taskAiAvgMs: taskAiMeta.avgMs,
       taskAiPredictionCount: taskAiMeta.count,
       paramsSchema: mlCapabilities.paramsSchema,
-      supportedVariants: mlCapabilities.capability?.supported_variants,
+      // v0.14.13 · supported_variants / variant_combinations / default_variants 优先取
+      // activeModel (yolo 4 task 各自轴, gsam2 按 task 暴露相应轴), 顶层 capability 是并集回落.
+      supportedVariants:
+        mlCapabilities.activeModel?.supported_variants ??
+        mlCapabilities.capability?.supported_variants,
+      variantCombinations: mlCapabilities.activeModel?.variant_combinations,
+      variantDefaults,
       aiVariant: s.aiVariant,
-      onSetAiVariant: s.setAiVariant,
+      onSetAiVariant: setAiVariantAndPersist,
       params: s.aiToolParams,
       onSetParams: s.setAiToolParams,
     },

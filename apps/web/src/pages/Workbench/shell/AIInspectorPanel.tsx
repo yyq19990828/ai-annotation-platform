@@ -258,6 +258,10 @@ interface AIPredictionPopoverProps {
   // v0.10.23 · 会话级模型变体选择 (设计 A): 选项来自 /setup.params 的 sam_variant/dino_variant enum.
   paramsSchema?: JsonSchemaObject;
   supportedVariants?: MLBackendSupportedVariantGroup[];
+  // v0.14.12 · 多轴非笛卡尔积时声明合法组合 (yolo series/size); 缺省时按笛卡尔积渲染.
+  variantCombinations?: string[][];
+  // v0.14.13 · backend / 项目级合并后的默认 variant 组合, 传给 VariantSelector 作初值.
+  variantDefaults?: Record<string, string>;
   aiVariant?: Record<string, unknown>;
   onSetAiVariant?: (next: Record<string, unknown>) => void;
   // 后端级推理参数 (阈值等非变体字段): SchemaForm 渲染。值/回调即 workbench 的 aiToolParams。
@@ -284,6 +288,8 @@ export function AIPredictionPopover({
   taskAiPredictionCount,
   paramsSchema,
   supportedVariants,
+  variantCombinations,
+  variantDefaults,
   aiVariant,
   onSetAiVariant,
   params,
@@ -418,6 +424,8 @@ export function AIPredictionPopover({
           <VariantSelector
             schema={paramsSchema}
             supportedVariants={supportedVariants}
+            variantCombinations={variantCombinations}
+            defaults={variantDefaults}
             value={aiVariant ?? {}}
             onChange={onSetAiVariant}
           />
