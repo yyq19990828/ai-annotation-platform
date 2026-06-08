@@ -49,6 +49,7 @@
 - **Workbench AIInspectorPanel**: 同样取 model 级 `supported_variants / variant_combinations / default_variants`；`setAiVariant` 包装为 `setAiVariantAndPersist`，session state + PATCH project 双写。下次进 AI 预标注页 / 工作台直接显示用户偏好。
 - **API 透传链**: `apps/api/app/services/{ml_capabilities,capability_instances}.py` 加 `default_variants` 透传；`apps/api/app/schemas/{ml_capabilities,project}.py` 加字段；`apps/api/app/db/models/project.py` 加 `default_variants` mapped_column。
 - **前端类型**: `apps/web/src/api/{ml-backends,mlCapabilities,projects}.ts` 加 `default_variants?: Record<string, string>` (类型, ProjectUpdatePayload 字段)。
+- **compose 拆分 ML backend (运维侧命令变化)**: 3 个 GPU backend (grounded-sam2 / sam3 / yolo) 及其命名卷从 `docker-compose.yml` 拆到叠加文件 `docker-compose.ml.yml` (三者 profile-gated、与核心 infra 无 depends_on / 不共享卷，独立维护)。**启动命令改为叠加两个文件**：`docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up -d grounded-sam2-backend` (或在 `.env` 设 `COMPOSE_FILE=docker-compose.yml:docker-compose.ml.yml` 省去 `-f`)。同步删除点云分支专用的 `docker-compose.pcwb.yml`。README / DEV / docs-site / 各 backend README / `.env.example` (+ 重新生成 `env-vars.md`) 命令同步更新。
 
 ### Tests
 
