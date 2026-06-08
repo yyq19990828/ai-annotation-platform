@@ -29,16 +29,12 @@ function makeTask(overrides: Partial<ProtocolTask> = {}): ProtocolTask {
 
 function makeMounted(overrides: Partial<MountedModel> = {}): MountedModel {
   return {
-    model: {
-      id: "yolov8",
-      display_name: "YOLOv8 检测",
-      task: "detection",
-      infra: "pytorch",
-    },
+    id: "yolov8",
+    display_name: "YOLOv8 检测",
+    infra: "pytorch",
+    is_interactive: false,
     backendName: "prod-yolo",
-    projectName: "Project X",
-    backendInfra: "pytorch",
-    stale: false,
+    source: "registered",
     ...overrides,
   };
 }
@@ -65,7 +61,7 @@ describe("ProtocolCapabilityCard", () => {
     render(
       <ProtocolCapabilityCard
         task={makeTask({ id: "detection", label: "目标检测" })}
-        mounted={[makeMounted(), makeMounted({ model: { id: "yolov8n" } as any, backendName: "prod-yolo-2" })]}
+        mounted={[makeMounted(), makeMounted({ id: "yolov8n", display_name: "YOLOv8n", backendName: "prod-yolo-2" })]}
         infraLabel={noopLabel}
         modalityLabel={noopLabel}
       />,
@@ -90,15 +86,19 @@ describe("ProtocolCapabilityCard", () => {
     expect(onGoToRegistry).toHaveBeenCalledTimes(1);
   });
 
-  it("stale 模型显示「缓存」徽标", () => {
+  it("env_only model 显示「自带」徽标; registered 显示「已注册」徽标", () => {
     render(
       <ProtocolCapabilityCard
         task={makeTask({ id: "detection" })}
-        mounted={[makeMounted({ stale: true })]}
+        mounted={[
+          makeMounted({ id: "m-env", source: "env_only", backendName: "gsam2" }),
+          makeMounted({ id: "m-reg", source: "registered", backendName: "sam3.1" }),
+        ]}
         infraLabel={noopLabel}
         modalityLabel={noopLabel}
       />,
     );
-    expect(screen.getByText("缓存")).toBeInTheDocument();
+    expect(screen.getByText("自带")).toBeInTheDocument();
+    expect(screen.getByText("已注册")).toBeInTheDocument();
   });
 });

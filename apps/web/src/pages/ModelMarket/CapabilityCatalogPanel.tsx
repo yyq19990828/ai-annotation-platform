@@ -21,7 +21,10 @@ import {
   type MLBackendCapability,
   type MLModelCapability,
 } from "@/api/ml-backends";
-import { useProtocolCapabilities } from "@/api/mlCapabilities";
+import {
+  useProtocolCapabilities,
+  useCapabilityInstances,
+} from "@/api/mlCapabilities";
 import { ProtocolCapabilityCard, type MountedModel } from "./ProtocolCapabilityCard";
 import { EmptyCatalogBanner } from "./EmptyCatalogBanner";
 import styles from "./CapabilityCatalogPanel.module.css";
@@ -129,6 +132,9 @@ export function CapabilityCatalogPanel() {
 
   // v0.14.11 · 协议级能力目录 (与 backend 注册解耦); 用作 groupBy=task 时的协议卡数据源。
   const { data: protocol } = useProtocolCapabilities();
+  // v0.14.11 · 平台已知 backend 实例 (env-only + 项目级注册合并, 登录用户可访问);
+  // 协议卡视图直接消费这个端点, 不再依赖 admin overview, 让普通用户也能看到 model 清单。
+  const { data: instancesData } = useCapabilityInstances();
 
   const goToRegistry = () => {
     const next = new URLSearchParams(searchParams);
@@ -285,22 +291,34 @@ export function CapabilityCatalogPanel() {
 
   const grouped = useMemo(() => groupModels(sorted, groupBy), [groupBy, sorted]);
 
-  // v0.14.11 · 协议卡视图: 遍历 protocol.tasks 渲染 9 张卡 (零接入也显示),
-  // 已注册 model 按 model.task 字段挂载。search / taskFilter 同时作用于 task 卡过滤。
+  // v0.14.11 · 协议卡视图: 遍历 protocol.tasks 渲染 9 张卡 (零接入也显示);
+  // 数据源是 instances 端点 (env-only + 注册合并, 与 admin overview 完全解耦),
+  // 按 model.task 挂到协议卡。search / taskFilter 同时作用于 task 卡过滤。
   const protocolView = useMemo(() => {
     if (!protocol) return null;
     const needle = search.trim().toLocaleLowerCase();
     const byTask = new Map<string, MountedModel[]>();
-    for (const f of sorted) {
-      const taskId = f.model.task ?? "unknown";
-      if (!byTask.has(taskId)) byTask.set(taskId, []);
-      byTask.get(taskId)!.push({
-        model: f.model,
-        backendName: f.backendName,
-        projectName: f.projectName,
-        backendInfra: f.backendInfra,
-        stale: f.stale,
-      });
+    for (const inst of instancesData?.instances ?? []) {
+      const infraFallback = inst.infra && inst.infra !== "unknown" ? inst.infra : null;
+      for (const m of inst.models) {
+        if (infraFilter.size > 0) {
+          const eff = m.infra ?? infraFallback;
+          if (!eff || !infraFilter.has(eff)) continue;
+        }
+        if (modalityFilter.size > 0) {
+          if (!m.modality || !modalityFilter.has(m.modality)) continue;
+        }
+        const taskId = m.task ?? "unknown";
+        if (!byTask.has(taskId)) byTask.set(taskId, []);
+        byTask.get(taskId)!.push({
+          id: m.id,
+          display_name: m.display_name,
+          infra: m.infra ?? infraFallback,
+          is_interactive: m.is_interactive,
+          backendName: inst.name,
+          source: inst.source,
+        });
+      }
     }
     return protocol.tasks
       .filter((task) => {
@@ -316,7 +334,7 @@ export function CapabilityCatalogPanel() {
         return true;
       })
       .map((task) => ({ task, mounted: byTask.get(task.id) ?? [] }));
-  }, [protocol, sorted, taskFilter, search]);
+  }, [protocol, instancesData, taskFilter, infraFilter, modalityFilter, search]);
 
   const hasActiveFilter =
     taskFilter.size > 0 ||
@@ -484,7 +502,10 @@ export function CapabilityCatalogPanel() {
             ) : groupBy === "task" && protocolView ? (
               // v0.14.11 · 协议卡视图: 即使 sorted 为空也展示协议卡 (零接入引导)。
               <>
-                {backendRefs.length === 0 && (
+                {/* v0.14.11 · 横幅触发改为「所有协议卡都没有 model 挂载」(覆盖
+                    env-only + 注册两条路径), 而非只看注册数。这样 docker-compose
+                    自带的 gsam2 / sam3 在跑时就不会再误显示「未接入」横幅。 */}
+                {protocolView.every((v) => v.mounted.length === 0) && (
                   <EmptyCatalogBanner
                     taskCount={protocolView.length}
                     onGoToRegistry={goToRegistry}

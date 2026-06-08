@@ -6,17 +6,18 @@
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
-import type { MLModelCapability } from "@/api/ml-backends";
 import type { ProtocolTask } from "@/api/mlCapabilities";
 import styles from "./ProtocolCapabilityCard.module.css";
 
-// 与 CapabilityCatalogPanel 共用的扁平 model 视图; 这里只读 model + 来源信息.
+// 协议卡内 model 子卡的最小展示形态. v0.14.11 数据源由 instances 端点提供
+// (env-only + registered 合并), 不含 url / health 等敏感字段。
 export interface MountedModel {
-  model: MLModelCapability;
+  id: string;
+  display_name: string;
+  infra?: string | null;
+  is_interactive?: boolean;
   backendName: string;
-  projectName: string;
-  backendInfra?: string;
-  stale: boolean;
+  source: "env_only" | "registered" | string;
 }
 
 interface Props {
@@ -78,24 +79,25 @@ export function ProtocolCapabilityCard({
 
       {!empty && (
         <div className={styles.modelGrid}>
-          {mounted.map(({ model, backendName, projectName, backendInfra, stale }) => {
-            const infra = model.infra ?? backendInfra;
-            return (
-              <div key={`${backendName}:${model.id}`} className={styles.modelMini}>
-                <div className={styles.modelMiniName} title={model.display_name ?? model.id}>
-                  {model.display_name ?? model.id}
-                </div>
-                <div className={styles.modelMiniMeta}>
-                  {infra && <span>{infraLabel(infra)}</span>}
-                  {model.is_interactive && <span>· 交互式</span>}
-                  {stale && <Badge variant="warning">缓存</Badge>}
-                </div>
-                <div className={styles.modelMiniSource} title={`${projectName} · ${backendName}`}>
-                  <Icon name="bot" size={10} /> {projectName} · {backendName}
-                </div>
+          {mounted.map((m) => (
+            <div key={`${m.backendName}:${m.id}`} className={styles.modelMini}>
+              <div className={styles.modelMiniName} title={m.display_name}>
+                {m.display_name}
               </div>
-            );
-          })}
+              <div className={styles.modelMiniMeta}>
+                {m.infra && <span>{infraLabel(m.infra)}</span>}
+                {m.is_interactive && <span>· 交互式</span>}
+                {m.source === "env_only" ? (
+                  <Badge variant="success">自带</Badge>
+                ) : (
+                  <Badge variant="outline">已注册</Badge>
+                )}
+              </div>
+              <div className={styles.modelMiniSource} title={m.backendName}>
+                <Icon name="bot" size={10} /> {m.backendName}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

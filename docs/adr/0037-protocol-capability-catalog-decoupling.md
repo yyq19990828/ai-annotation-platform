@@ -71,14 +71,25 @@ GET /api/v1/ml-capabilities/protocol
 ## Notes
 
 - 实现代码位置：
-  - `apps/api/app/services/capability_registry.py`（SSOT）
-  - `apps/api/app/api/v1/ml_capabilities.py`（端点）
+  - `apps/api/app/services/capability_registry.py`（SSOT，协议层元数据）
+  - `apps/api/app/services/capability_instances.py`（实例层合并：env-only + registered）
+  - `apps/api/app/api/v1/ml_capabilities.py`（`/protocol` + `/instances` 双端点）
   - `apps/api/app/schemas/ml_capabilities.py`（响应 schema）
-  - `apps/web/src/api/mlCapabilities.ts`（前端 API + hook）
+  - `apps/web/src/api/mlCapabilities.ts`（前端 API + hooks）
   - `apps/web/src/pages/ModelMarket/ProtocolCapabilityCard.tsx`
   - `apps/web/src/pages/ModelMarket/EmptyCatalogBanner.tsx`
   - `apps/web/src/pages/ModelMarket/CapabilityCatalogPanel.tsx`（双层视图改造）
-- 单测：`apps/api/tests/test_capability_registry.py`、`test_ml_capabilities_protocol.py`；`apps/web/src/pages/ModelMarket/{ProtocolCapabilityCard,CapabilityCatalogPanel}.test.tsx`
+- 单测：`apps/api/tests/test_capability_registry.py`、`test_ml_capabilities_protocol.py`、`test_capability_instances.py`；`apps/web/src/pages/ModelMarket/{ProtocolCapabilityCard,CapabilityCatalogPanel}.test.tsx`
+
+### 实例层补丁（同版本，回应「能力目录还是和注册耦合」反馈）
+
+初版 v0.14.11 把协议层解耦（9 张协议卡常驻可见），但每张卡内的「实际可用 model」仍依赖 `admin/ml-integrations/overview`（super_admin only）+ 每个已注册 backend 的 `/capabilities`。结果普通登录用户看到的协议卡全是「暂无接入」——即使 docker-compose 已经把 gsam2 / sam3 跑起来了。
+
+补丁方案：
+
+- 新增 `GET /v1/ml-capabilities/instances`（登录用户可访问），合并 env-only 容器（`settings.ml_backend_observe_urls` 探测 `/setup`）+ 项目级注册 backend（`health_meta.capabilities` 快照）。URL 去重避免重复展示。
+- 字段裁剪：只暴露 `source / name / infra / models[]` 的能力相关字段，**不返回 url / gpu_info / cache / pool / extra_params**，避免普通用户看到运维敏感信息。
+- 前端协议卡视图改为消费 instances（不再 enumerate admin overview）；每个 model 子卡显示来源徽标（「自带」/「已注册」）。横幅触发条件从「0 backend 注册」改为「所有协议卡都没有 model 挂载」。
 - 相关 ADR：[ADR-0036](0036-ml-backend-capability-protocol-v2-multi-model.md)
 - 后续可能演进：
   - i18n（en-US label / summary）—— 当前仅中文，v0.14.12 候选。

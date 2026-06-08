@@ -22,6 +22,7 @@ vi.mock("@/api/ml-backends", () => ({
 }));
 
 const mockGetProtocol = vi.fn();
+const mockGetInstances = vi.fn();
 vi.mock("@/api/mlCapabilities", async () => {
   const { useQuery } = await import("@tanstack/react-query");
   return {
@@ -30,7 +31,15 @@ vi.mock("@/api/mlCapabilities", async () => {
         queryKey: ["ml-capabilities", "protocol"],
         queryFn: () => mockGetProtocol(),
       }),
-    mlCapabilitiesApi: { getProtocol: () => mockGetProtocol() },
+    useCapabilityInstances: () =>
+      useQuery({
+        queryKey: ["ml-capabilities", "instances"],
+        queryFn: () => mockGetInstances(),
+      }),
+    mlCapabilitiesApi: {
+      getProtocol: () => mockGetProtocol(),
+      getInstances: () => mockGetInstances(),
+    },
   };
 });
 
@@ -82,12 +91,14 @@ describe("CapabilityCatalogPanel · 协议双层视图", () => {
   beforeEach(() => {
     mockOverview.mockReset();
     mockGetProtocol.mockReset();
+    mockGetInstances.mockReset();
     mockOverview.mockResolvedValue({
       projects: [],
       total_backends: 0,
       connected_backends: 0,
     });
     mockGetProtocol.mockResolvedValue(makeProtocol());
+    mockGetInstances.mockResolvedValue({ instances: [] });
   });
 
   it("0 backend + 默认 groupBy=task → 渲染 9 张协议卡 + onboarding 横幅", async () => {
@@ -121,6 +132,53 @@ describe("CapabilityCatalogPanel · 协议双层视图", () => {
       expect(screen.getByText("尚无项目注册 ML Backend")).toBeInTheDocument();
     });
     expect(screen.queryAllByText("暂无接入").length).toBe(0);
+  });
+
+  it("env-only 容器的 model 出现在对应协议卡 (即使 admin overview 为空)", async () => {
+    mockGetInstances.mockResolvedValue({
+      instances: [
+        {
+          source: "env_only",
+          name: "gsam2",
+          infra: "pytorch",
+          models: [
+            {
+              id: "grounded-sam2-detection",
+              display_name: "Grounded-SAM 2 · 文本检测",
+              task: "detection",
+              infra: "pytorch",
+              is_interactive: false,
+              supported_prompts: ["text"],
+              supported_geometric_outputs: ["bbox"],
+              supported_trackers: [],
+              modality: "image",
+            },
+            {
+              id: "grounded-sam2-tracker",
+              display_name: "Grounded-SAM 2 · 视频追踪",
+              task: "tracker",
+              infra: "pytorch",
+              is_interactive: true,
+              supported_prompts: ["bbox"],
+              supported_geometric_outputs: ["bbox"],
+              supported_trackers: ["sam2_video"],
+              modality: "video",
+            },
+          ],
+        },
+      ],
+    });
+    renderUI();
+    await screen.findByText("Grounded-SAM 2 · 文本检测");
+    expect(screen.getByText("Grounded-SAM 2 · 视频追踪")).toBeInTheDocument();
+    // env-only model 有「自带」徽标
+    expect(screen.getAllByText("自带").length).toBeGreaterThan(0);
+    // detection / tracker 协议卡都不再是「暂无接入」
+    const undeployedCount = screen.queryAllByText("暂无接入").length;
+    // 9 张卡里只剩 7 张暂无接入 (detection / tracker 各挂了 1 个 model)
+    expect(undeployedCount).toBe(7);
+    // 0 backend 横幅不应再出现
+    expect(screen.queryByText(/支持 9 类 AI 标注能力/)).not.toBeInTheDocument();
   });
 
   it("搜索 'ocr' → 仅 OCR 协议卡可见", async () => {

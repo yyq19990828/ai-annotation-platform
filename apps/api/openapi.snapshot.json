@@ -5383,6 +5383,54 @@
         "title": "CanvasShape",
         "type": "object"
       },
+      "CapabilityInstanceItem": {
+        "description": "平台已知 backend 的实例视图 (env-only 容器 + 项目级注册合并)。\n\n`source` = \"env_only\" 表示 docker-compose 自带或运维 env 配的容器,\n          \"registered\" 表示项目级 ml_backends 表里有记录。\n`name` 是 backend 显示名 (env-only 取 /setup.name, registered 取 ml_backend.name)。\n不暴露 url / project_id / health 指标, 让普通登录用户安全消费。",
+        "properties": {
+          "infra": {
+            "default": "unknown",
+            "title": "Infra",
+            "type": "string"
+          },
+          "models": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InstanceModelItem"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "name"
+        ],
+        "title": "CapabilityInstanceItem",
+        "type": "object"
+      },
+      "CapabilityInstancesResponse": {
+        "properties": {
+          "instances": {
+            "items": {
+              "$ref": "#/components/schemas/CapabilityInstanceItem"
+            },
+            "title": "Instances",
+            "type": "array"
+          }
+        },
+        "required": [
+          "instances"
+        ],
+        "title": "CapabilityInstancesResponse",
+        "type": "object"
+      },
       "CeleryHealthSummary": {
         "properties": {
           "active_count": {
@@ -7536,6 +7584,81 @@
           }
         },
         "title": "HostInfo",
+        "type": "object"
+      },
+      "InstanceModelItem": {
+        "description": "实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 variants /\nresource_profile / params 等运维信息)。",
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "infra": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Infra"
+          },
+          "is_interactive": {
+            "default": false,
+            "title": "Is Interactive",
+            "type": "boolean"
+          },
+          "modality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modality"
+          },
+          "supported_geometric_outputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Geometric Outputs",
+            "type": "array"
+          },
+          "supported_prompts": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Prompts",
+            "type": "array"
+          },
+          "supported_trackers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Trackers",
+            "type": "array"
+          },
+          "task": {
+            "default": "unknown",
+            "title": "Task",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name"
+        ],
+        "title": "InstanceModelItem",
         "type": "object"
       },
       "InteractiveRequest": {
@@ -24210,6 +24333,33 @@
         "summary": "Revoke My Key",
         "tags": [
           "api-keys"
+        ]
+      }
+    },
+    "/api/v1/ml-capabilities/instances": {
+      "get": {
+        "description": "平台已知 backend 实例的能力清单 (与项目级注册解耦).\n\n数据源:\n- env-only: settings.ml_backend_observe_urls 配的容器, 探测 /setup;\n- registered: ml_backends 表中 state=connected 的项, 读 health_meta 快照。\n\n字段裁剪: 不暴露 url / gpu_info / cache / pool 等运维敏感信息,\n让普通登录用户也能看到完整 model 清单。",
+        "operationId": "get_capability_instances_api_v1_ml_capabilities_instances_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityInstancesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Capability Instances",
+        "tags": [
+          "ml-capabilities"
         ]
       }
     },

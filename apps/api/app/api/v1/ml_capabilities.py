@@ -13,10 +13,14 @@ import hashlib
 import json
 
 from fastapi import APIRouter, Depends, Request, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.user import User
-from app.deps import get_current_user
+from app.deps import get_current_user, get_db
 from app.schemas.ml_capabilities import (
+    CapabilityInstanceItem,
+    CapabilityInstancesResponse,
+    InstanceModelItem,
     ProtocolCapabilitiesResponse,
     ProtocolGeometryItem,
     ProtocolInfraItem,
@@ -24,6 +28,7 @@ from app.schemas.ml_capabilities import (
     ProtocolTaskItem,
     SuggestedBackendItem,
 )
+from app.services.capability_instances import load_capability_instances
 from app.services.capability_registry import (
     GEOMETRIES,
     INFRAS,
@@ -106,3 +111,31 @@ async def get_protocol_capabilities(
     response.headers["etag"] = _ETAG
     response.headers["cache-control"] = "private, max-age=300"
     return _PAYLOAD
+
+
+@router.get("/instances", response_model=CapabilityInstancesResponse)
+async def get_capability_instances(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> CapabilityInstancesResponse:
+    """平台已知 backend 实例的能力清单 (与项目级注册解耦).
+
+    数据源:
+    - env-only: settings.ml_backend_observe_urls 配的容器, 探测 /setup;
+    - registered: ml_backends 表中 state=connected 的项, 读 health_meta 快照。
+
+    字段裁剪: 不暴露 url / gpu_info / cache / pool 等运维敏感信息,
+    让普通登录用户也能看到完整 model 清单。
+    """
+    raw = await load_capability_instances(db)
+    return CapabilityInstancesResponse(
+        instances=[
+            CapabilityInstanceItem(
+                source=item["source"],
+                name=item["name"],
+                infra=item["infra"],
+                models=[InstanceModelItem(**m) for m in item["models"]],
+            )
+            for item in raw
+        ]
+    )

@@ -554,10 +554,60 @@ GET /api/v1/ml-capabilities/protocol
 
 **协议与实例的关系**：
 
-| 端点 | 数据源 | 何时可用 | 视角 |
-|------|--------|----------|------|
-| `GET /v1/ml-capabilities/protocol` | `capability_registry.py` SSOT | 启动即可（与注册无关） | 协议层「平台支持什么」 |
-| `GET /projects/{pid}/ml-backends/{bid}/capabilities` | `ml_backends.health_meta["capabilities"]` | backend 注册并 health 探测后 | 实例层「该 backend 暴露了什么」 |
+| 端点 | 数据源 | 何时可用 | 视角 | 鉴权 |
+|------|--------|----------|------|------|
+| `GET /v1/ml-capabilities/protocol` | `capability_registry.py` SSOT | 启动即可（与注册无关） | 协议层「平台支持什么」 | 登录用户 |
+| `GET /v1/ml-capabilities/instances` | env-only 探测 + `ml_backends.health_meta` 合并 | docker-compose 起动或注册任一即可 | 实例层「现在跑着哪些 model 可用」 | 登录用户 |
+| `GET /projects/{pid}/ml-backends/{bid}/capabilities` | `ml_backends.health_meta["capabilities"]` | backend 注册并 health 探测后 | 实例层「该项目绑的 backend 暴露了什么」 | 项目成员 |
+
+### 4.1.12 实例能力清单端点（v0.14.11）
+
+`GET /api/v1/ml-capabilities/instances` 解决「能力目录看不到 env-only 容器」的鸡生蛋问题——即使用户没有在任何项目里注册过 backend，只要 docker-compose 起了自带容器（如 gsam2 / sam3）或运维 env 配了 `ML_BACKEND_OBSERVE_URLS`，普通登录用户都能在能力目录看到这些 backend 实际能跑的 model 清单。
+
+**数据源合并**：
+
+1. **env-only**：读 `settings.ml_backend_observe_urls`（CSV / JSON 数组），对每个 URL 探测 `/setup`，复用 `extract_capabilities()` 取协议 v2 的 `models[]`。
+2. **registered**：从 `ml_backends` 表查 `state="connected"` 的项，直接读 `health_meta["capabilities"]` 快照。
+3. 去重：env-only URL 与已注册 URL 命中时，跳过 env-only 探测（避免重复展示）。
+
+**字段裁剪**（与项目级 `/capabilities` 的差别）：
+
+| 字段 | `/projects/.../capabilities` | `/v1/ml-capabilities/instances` |
+|------|------------------------------|--------------------------------|
+| url | ✓ | ✗（避免暴露内网拓扑） |
+| gpu_info / cache / pool / video_pool | ✓ | ✗（运维敏感） |
+| supported_variants / resource_profile / params | ✓ | ✗（细节给项目级视图） |
+| `models[]` 的核心字段（id / display_name / task / infra / prompts / geometry / trackers / modality） | ✓ | ✓ |
+
+**响应结构**：
+
+```jsonc
+{
+  "instances": [
+    {
+      "source": "env_only",                          // 或 "registered"
+      "name": "grounded-sam2",                       // env-only 取 /setup.name; registered 取 ml_backend.name
+      "infra": "pytorch",
+      "models": [
+        {
+          "id": "grounded-sam2-detection",
+          "display_name": "Grounded-SAM 2 · 文本检测 (DINO)",
+          "task": "detection",
+          "infra": "pytorch",
+          "is_interactive": false,
+          "supported_prompts": ["text"],
+          "supported_geometric_outputs": ["bbox"],
+          "supported_trackers": [],
+          "modality": "image"
+        }
+        // ...
+      ]
+    }
+  ]
+}
+```
+
+**前端消费**：`CapabilityCatalogPanel` 协议卡视图（默认 `groupBy=task`）按 `model.task` 把 instance.models 挂到 9 张协议卡上；子卡按 `source` 显示「自带」（env_only）或「已注册」（registered）徽标。
 
 ---
 

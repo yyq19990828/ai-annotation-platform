@@ -43,6 +43,7 @@
   - `apps/grounded-sam2-backend/main.py` 的 `/setup.models[]` 从 1 条扩到 4 条（`grounded-sam2-detection` / `-segmentation` / `-interactive-seg` / `-tracker`），每条独立声明 task / prompts / geometry，匹配 gsam2 实际四能力。
   - `apps/sam3-backend/main.py` 的 `/setup.models[]` 从 1 条扩到 3 条（`sam3-detection` / `-segmentation` / `-interactive-seg`，全部走 PCS 路径），detection / segmentation 走 text prompt，interactive_seg 走 exemplar prompt。
   - 顶层 `supported_prompts` / `supported_trackers` / `/predict` 协议不动，已绑定的项目和工作台无回归；新增能力卡视图下，已注册的 gsam2 / sam3 会自动挂载到对应的多个协议卡。
+- **实例层与项目级注册解耦**：新增 `GET /v1/ml-capabilities/instances`（登录用户可访问），返回「平台已知 backend 实例」清单——env-only 容器（探测 `ml_backend_observe_urls` 配的 `/setup`）+ 项目级注册 backend（读 `health_meta.capabilities` 快照）合并去重。字段裁剪：只暴露 `source / display_name / infra / models[]`，**不返回 url / gpu_info / cache / pool** 等运维敏感信息。前端 `CapabilityCatalogPanel` 协议卡视图改为消费 instances，不再依赖 admin overview——零项目注册时，只要 docker-compose 自带的 gsam2 / sam3 在跑，普通登录用户就能在能力目录里直接看到它们的 model 清单。每个 model 子卡按来源显示「自带」/「已注册」徽标。
 
 ### Changed
 
