@@ -45,7 +45,13 @@ from observability import (
     update_pool_size,
 )
 from predictor import YoloPredictor
-from schemas import BatchPredictRequest, Context, InteractiveRequest
+from schemas import (
+    BatchPredictRequest,
+    Context,
+    InteractiveRequest,
+    WarmupRequest,
+    WarmupResponse,
+)
 
 logger = logging.getLogger("yolo-backend")
 logging.basicConfig(
@@ -179,13 +185,8 @@ def health() -> dict[str, Any]:
             "strict_offline": STRICT_OFFLINE,
             "checkpoints_dir": str(CHECKPOINTS_DIR),
         },
-        "pool": {
-            "cap": _model_pool.cap if pool_ready else 0,
-            "size": len(_model_pool) if pool_ready else 0,
-            "loaded": [
-                {"task": k[0], "series": k[1], "size": k[2]}
-                for k in (_model_pool.loaded_keys() if pool_ready else [])
-            ],
+        "pool": _model_pool.pool_status() if pool_ready else {
+            "cap": 0, "current_size": 0, "loaded_keys": [], "last_evict": None,
         },
         "perfhud": perf,
     }
@@ -343,6 +344,7 @@ def setup() -> dict[str, Any]:
         "supported_geometric_outputs": ["bbox", "polygon", "keypoint", "rotated_bbox"],
         "supported_variants": [],  # 顶层留空, 由 models[].supported_variants 各自声明.
         "infra": "pytorch",
+        "warmup_endpoint": True,  # v0.14.14: 声明本 backend 支持 POST /warmup (协议 §4.4)
         "params": _PARAMS_SCHEMA,
         "models": [
             _build_model_entry(
@@ -398,7 +400,9 @@ async def predict(req: BatchPredictRequest) -> BatchPredictResponse:
     results: list[PredictionResult] = []
     for t in req.tasks:
         try:
-            result_items = await _predictor.predict_one(t.file_path, ctx)
+            result_items, cache_hit, load_ms, infer_ms = await _predictor.predict_one(
+                t.file_path, ctx
+            )
             score = max((r.get("score", 0.0) for r in result_items), default=0.0)
             results.append(
                 PredictionResult(
@@ -406,6 +410,9 @@ async def predict(req: BatchPredictRequest) -> BatchPredictResponse:
                     result=result_items,
                     score=score,
                     model_version=f"{ctx.variants.series}{ctx.variants.size}",
+                    inference_time_ms=infer_ms,
+                    cache_hit=cache_hit,
+                    model_load_ms=load_ms,
                 )
             )
         except UnsupportedVariantError as exc:
@@ -442,6 +449,39 @@ async def unload() -> dict[str, Any]:
         return {"ok": True, "unloaded": 0}
     n = await _model_pool.unload_all(reason="manual")
     return {"ok": True, "unloaded": n}
+
+
+@app.post("/warmup", response_model=WarmupResponse)
+async def warmup(req: WarmupRequest) -> WarmupResponse:
+    """v0.14.14 协议 §4.4: 加载指定 (task, series, size) 权重到 pool, 不跑 forward.
+
+    重复预热同 variant 返回 cache_hit=true. pool 满时按 LRU 淘汰最旧的 key, evicted 字段
+    回填被淘汰的 key 名供前端 toast 提示.
+    """
+    if _model_pool is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    series, size = req.variants.series, req.variants.size
+    if size not in MODEL_MATRIX.get(req.task, {}).get(series, ()):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_VARIANT",
+                "message": f"task={req.task} series={series} size={size} 没有预训练权重",
+            },
+        )
+    try:
+        cache_hit, load_ms, evicted = await _model_pool.warmup(req.task, series, size)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "WEIGHT_MISSING", "message": str(exc)},
+        ) from exc
+    return WarmupResponse(
+        ok=True,
+        model_load_ms=load_ms,
+        cache_hit=cache_hit,
+        evicted=evicted,
+    )
 
 
 @app.get("/metrics")

@@ -145,17 +145,24 @@ def _obb_to_rectanglelabels(
 
 
 class YoloPredictor:
-    """围绕 model_pool 的薄分发. /predict 单 task 调用一次."""
+    """围绕 model_pool 的薄分发. /predict 单 task 调用一次.
+
+    v0.14.14: predict_one 返回 (results, cache_hit, model_load_ms, inference_time_ms)
+    四元组, main /predict 把后三项透传到 PredictionResult 供前端冷启动反馈.
+    """
 
     def __init__(self, model_pool: Any) -> None:
         self._pool = model_pool
 
-    async def predict_one(self, file_path: str, ctx: Context) -> list[dict[str, Any]]:
+    async def predict_one(
+        self, file_path: str, ctx: Context
+    ) -> tuple[list[dict[str, Any]], bool, int | None, int]:
+        """返回 (results, cache_hit, model_load_ms, inference_time_ms)."""
         variants: Variants = ctx.variants
         task = ctx.type
         params = ctx.params
 
-        model = await self._pool.get(task, variants.series, variants.size)
+        model, cache_hit, load_ms = await self._pool.get(task, variants.series, variants.size)
         img = _load_image(file_path)
         img_w, img_h = img.size
 
@@ -170,21 +177,24 @@ class YoloPredictor:
         )
         elapsed = time.time() - t0
         record_inference(task, variants.series, variants.size, elapsed)
+        inference_ms = int(elapsed * 1000)
 
         if not results:
-            return []
+            return [], cache_hit, load_ms, inference_ms
         r0 = results[0]
         names: dict[int, str] = getattr(r0, "names", {}) or getattr(model, "names", {})
 
         if task == "detection":
-            return _emit_detection(r0, names, img_w, img_h)
-        if task == "segmentation":
-            return _emit_segmentation(r0, names, img_w, img_h)
-        if task == "keypoint":
-            return _emit_keypoint(r0, names, img_w, img_h)
-        if task == "obb":
-            return _emit_obb(r0, names, img_w, img_h)
-        raise ValueError(f"unsupported task: {task}")
+            items = _emit_detection(r0, names, img_w, img_h)
+        elif task == "segmentation":
+            items = _emit_segmentation(r0, names, img_w, img_h)
+        elif task == "keypoint":
+            items = _emit_keypoint(r0, names, img_w, img_h)
+        elif task == "obb":
+            items = _emit_obb(r0, names, img_w, img_h)
+        else:
+            raise ValueError(f"unsupported task: {task}")
+        return items, cache_hit, load_ms, inference_ms
 
 
 def _emit_detection(r0: Any, names: dict[int, str], img_w: int, img_h: int) -> list[dict]:

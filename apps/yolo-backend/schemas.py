@@ -1,6 +1,6 @@
 """yolo-backend 特有的请求 Pydantic schema.
 
-通用部分 (TaskItem / PredictionResult / BatchPredictResponse) 从
+通用部分 (TaskItem / PredictionResult / BatchPredictResponse / WarmupResponse) 从
 `aap_protocol_v2` 共享包引入 (apps/_shared/protocol_v2). 这里只放 yolo 的
 Context: 与 sam3/gsam2 的 prompt 驱动不同, yolo 走纯批量 + variants 驱动.
 """
@@ -9,7 +9,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-from aap_protocol_v2 import BatchPredictResponse, PredictionResult, TaskItem
+from aap_protocol_v2 import (
+    BatchPredictResponse,
+    PredictionResult,
+    TaskItem,
+    WarmupResponse,
+)
 from pydantic import BaseModel, Field, model_validator
 
 __all__ = [
@@ -21,6 +26,8 @@ __all__ = [
     "PredictionResult",
     "TaskItem",
     "Variants",
+    "WarmupRequest",
+    "WarmupResponse",
 ]
 
 
@@ -67,3 +74,10 @@ class InteractiveRequest(BaseModel):
 class BatchPredictRequest(BaseModel):
     tasks: list[TaskItem]
     context: Context
+
+
+class WarmupRequest(BaseModel):
+    """v0.14.14 协议 §4.4 `/warmup` 请求体. 与 predict context 结构相近, 但不带图像."""
+
+    task: Literal["detection", "segmentation", "keypoint", "obb"]
+    variants: Variants

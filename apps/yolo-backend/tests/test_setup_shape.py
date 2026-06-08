@@ -205,3 +205,11 @@ def test_setup_default_variants_prefer_yolo11_s(setup_dict: dict) -> None:
     """yolo11/s 4 task 全覆盖, 推荐组合应被选中."""
     for entry in setup_dict["models"]:
         assert entry["default_variants"] == {"series": "yolo11", "size": "s"}, entry["id"]
+
+
+# ---------- v0.14.14: warmup_endpoint 声明 ----------
+
+
+def test_setup_warmup_endpoint_true(setup_dict: dict) -> None:
+    """v0.14.14 协议 §4.4 · 顶层 warmup_endpoint 必须为 True (yolo 支持 /warmup)."""
+    assert setup_dict["warmup_endpoint"] is True
