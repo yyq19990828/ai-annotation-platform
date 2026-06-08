@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from aap_protocol_v2 import (
     BatchPredictResponse,
+    EvictRecord,
+    LoadedKey,
+    PoolStateSnapshot,
+    PoolStatus,
     PredictionResult,
     TaskItem,
+    WarmupResponse,
 )
 
 
@@ -54,3 +61,69 @@ def test_batch_predict_response_empty() -> None:
 def test_task_item_missing_file_path_rejects() -> None:
     with pytest.raises(Exception):
         TaskItem(id="t1")  # type: ignore[call-arg]
+
+
+# ---------- v0.14.14 新字段 ----------
+
+
+def test_prediction_result_v14_observability_defaults_none() -> None:
+    r = PredictionResult()
+    assert r.cache_hit is None
+    assert r.model_load_ms is None
+    assert r.pool_state is None
+
+
+def test_prediction_result_with_cache_hit_and_pool_state() -> None:
+    r = PredictionResult(
+        cache_hit=True,
+        model_load_ms=0,
+        pool_state=PoolStateSnapshot(current_size=2, cap=4),
+    )
+    assert r.cache_hit is True
+    assert r.model_load_ms == 0
+    assert r.pool_state is not None
+    assert r.pool_state.current_size == 2
+    assert r.pool_state.cap == 4
+
+
+def test_pool_status_minimal_empty() -> None:
+    s = PoolStatus(cap=4, current_size=0)
+    assert s.loaded_keys == []
+    assert s.last_evict is None
+
+
+def test_pool_status_with_loaded_keys_and_evict() -> None:
+    now = datetime(2026, 6, 8, tzinfo=timezone.utc)
+    s = PoolStatus(
+        cap=4,
+        current_size=1,
+        loaded_keys=[
+            LoadedKey(key="yolov11/s/detection", loaded_at=now, last_used_at=now, hit_count=3),
+        ],
+        last_evict=EvictRecord(key="yolov8/x/detection", at=now, reason="lru"),
+    )
+    dumped = s.model_dump()
+    assert dumped["loaded_keys"][0]["key"] == "yolov11/s/detection"
+    assert dumped["loaded_keys"][0]["hit_count"] == 3
+    assert dumped["last_evict"]["reason"] == "lru"
+
+
+def test_evict_record_rejects_unknown_reason() -> None:
+    with pytest.raises(Exception):
+        EvictRecord(
+            key="k", at=datetime(2026, 6, 8, tzinfo=timezone.utc), reason="nope"  # type: ignore[arg-type]
+        )
+
+
+def test_warmup_response_defaults() -> None:
+    r = WarmupResponse()
+    assert r.ok is True
+    assert r.model_load_ms is None
+    assert r.cache_hit is False
+    assert r.evicted is None
+
+
+def test_warmup_response_with_evicted() -> None:
+    r = WarmupResponse(model_load_ms=4500, cache_hit=False, evicted="yolov8/n/detection")
+    assert r.model_load_ms == 4500
+    assert r.evicted == "yolov8/n/detection"

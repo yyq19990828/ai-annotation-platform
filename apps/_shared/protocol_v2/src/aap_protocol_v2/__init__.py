@@ -2,8 +2,13 @@
 
 from aap_protocol_v2.schemas import (
     BatchPredictResponse,
+    EvictRecord,
+    LoadedKey,
+    PoolStateSnapshot,
+    PoolStatus,
     PredictionResult,
     TaskItem,
+    WarmupResponse,
 )
 from aap_protocol_v2.vocab import (
     GEOMETRY_VALUES,
@@ -14,10 +19,15 @@ from aap_protocol_v2.vocab import (
 
 __all__ = [
     "BatchPredictResponse",
+    "EvictRecord",
     "GEOMETRY_VALUES",
     "INFRA_VALUES",
+    "LoadedKey",
+    "PoolStateSnapshot",
+    "PoolStatus",
     "PROMPT_VALUES",
     "PredictionResult",
     "TASK_VALUES",
     "TaskItem",
+    "WarmupResponse",
 ]

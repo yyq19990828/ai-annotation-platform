@@ -8,7 +8,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from datetime import datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,18 +21,81 @@ class TaskItem(BaseModel):
     file_path: str
 
 
+class PoolStateSnapshot(BaseModel):
+    """轻量 pool 快照, 可选附在 `/predict` 响应 (debug / 客户端缓存命中预测)."""
+
+    current_size: int
+    cap: int
+
+
 class PredictionResult(BaseModel):
     """单 task 的预测结果壳. `result` 数组里的元素结构由具体 result.type 决定
-    (rectanglelabels / polygonlabels / keypointlabels 等), 在协议文档 §3 详述."""
+    (rectanglelabels / polygonlabels / keypointlabels 等), 在协议文档 §3 详述.
+
+    v0.14.14 新增 cache_hit / model_load_ms / pool_state 三个可选字段供前端做冷启动反馈。
+    """
 
     task: str | int | None = None
     result: list[dict[str, Any]] = Field(default_factory=list)
     score: float | None = None
     model_version: str | None = None
     inference_time_ms: int | None = None
+    # v0.14.14 · 运行时观测字段 (None = 该 backend 不支持上报)
+    cache_hit: bool | None = None
+    model_load_ms: int | None = None
+    pool_state: PoolStateSnapshot | None = None
 
 
 class BatchPredictResponse(BaseModel):
     """`/predict` 顶层响应. 即便单 task 也包成 results 数组, 统一交互式 + 批量路径."""
 
     results: list[PredictionResult]
+
+
+# ---------- v0.14.14: /health.pool 统一 schema ----------
+
+
+class LoadedKey(BaseModel):
+    """`/health.pool.loaded_keys[]` 单条已加载权重描述.
+
+    `key` 是 backend-defined 的 opaque 字符串 (yolo 用 `task/series/size`,
+    gsam2 用 `sam=tiny/dino=T`, sam3 用 `sam3.1`), 前端只做字符串相等比较.
+    """
+
+    key: str
+    loaded_at: datetime
+    last_used_at: datetime
+    hit_count: int = 0
+
+
+class EvictRecord(BaseModel):
+    """`/health.pool.last_evict` 最近一次淘汰记录."""
+
+    key: str
+    at: datetime
+    reason: Literal["lru", "manual", "idle_timeout"]
+
+
+class PoolStatus(BaseModel):
+    """`/health.pool` 三 backend 统一结构 (v0.14.14 起)."""
+
+    cap: int
+    current_size: int
+    loaded_keys: list[LoadedKey] = Field(default_factory=list)
+    last_evict: EvictRecord | None = None
+
+
+# ---------- v0.14.14: POST /warmup 端点 ----------
+
+
+class WarmupResponse(BaseModel):
+    """`/warmup` 响应. 加载权重到 pool 而不跑真实推理.
+
+    `evicted` 在本次预热因 cap 上限而淘汰其他 key 时不为空,
+    前端 toast 提示 "已加载 X, evict 了 Y".
+    """
+
+    ok: bool = True
+    model_load_ms: int | None = None
+    cache_hit: bool = False
+    evicted: str | None = None

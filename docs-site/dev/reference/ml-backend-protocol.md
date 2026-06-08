@@ -65,7 +65,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 - 项目管理员在前端点「测试连接」（`POST /api/v1/projects/{pid}/ml-backends/{bid}/health`）。
 - 周期健康检查可按 ROADMAP 的 ML Backend 健康检查方案扩展。
 
-> **`pool` 子对象**（仅 grounded-sam2 返回，运维观测用，平台不强制解析）：`{ cap, loaded_variants: [{sam_variant, dino_variant}], evict_count, per_variant_lru_ts: {"sam/dino": <monotonic_ts>} }`，反映 ModelPool 当前并存的变体及 LRU 顺序。`cache` 子对象同步聚合各变体桶（`buckets["sam/dino"]` 各自独立 hits/misses），`/cache/stats` 与 `/metrics` 口径一致。idle 超时后整池清空、`loaded` 变 false。平台 `health_meta()` 把 `pool` 一并缓存到 `ml_backends.health_meta`，供模型市场「变体」面板展示。
+> **`pool` 子对象**（v0.14.14 起三 backend 统一为 `PoolStatus` 结构，详见 §4.3）：`{ cap, current_size, loaded_keys: [{key, loaded_at, last_used_at, hit_count}], last_evict: {key, at, reason} | null }`。`key` 是 backend-defined 的 opaque 字符串（yolo `{series}/{size}/{task}`、gsam2 `sam=X/dino=Y`、sam3 `sam3.1`），前端只做相等比较。`last_evict.reason` 受控为 `lru | manual | idle_timeout`。平台 `health_meta()` 一并缓存到 `ml_backends.health_meta.pool`，模型市场列表用 `loaded_keys[]` 反查每行 variant 的运行时态。**老 backend**（v0.14.13 及之前）的 `pool` 字段结构是各家各异的旧格式，平台层向后兼容；新接入的 backend 必须按 §4.3 落地。
 
 > **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，grounded-sam2 实现）：`/unload` 清空整池释放显存；`/reload` 预热模型进 pool。`/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.sam_variant`）；也接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。
 
@@ -100,12 +100,17 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
       "result": [<annotation>, ...],         // 必填；标注 schema 见下文 §3
       "score": 0.92,                         // 可选；整体置信度，写入 predictions.score
       "model_version": "v1.2.3",             // 可选；写入 predictions.model_version
-      "inference_time_ms": 245               // 可选；写入 prediction_metas.inference_time_ms
+      "inference_time_ms": 245,              // 可选；写入 prediction_metas.inference_time_ms
+      "cache_hit": true,                     // v0.14.14 可选；true=权重在 pool 内复用,false=本次触发加载
+      "model_load_ms": 0,                    // v0.14.14 可选；本次加载耗时(ms)，cache_hit=true 时通常为 0
+      "pool_state": { "current_size": 2, "cap": 4 }  // v0.14.14 可选；轻量 pool 快照
     },
     ...
   ]
 }
 ```
+
+> **v0.14.14 运行时观测三件套**（`cache_hit` / `model_load_ms` / `pool_state`）：详见 §4.2。所有 backend 应在 `/predict` 与 `/warmup`（§4.4）响应里至少填 `cache_hit` 与 `model_load_ms`，前端据此切换"加载中…"和"推理中…"按钮文案。三个字段都是可选的，缺省时前端走"未知"路径（按热路径渲染，第一次响应回来后修正）。
 
 平台侧解析：`MLBackendClient.predict` (`ml_client.py:41-62`) 把每项映射到 `PredictionResult` dataclass，再由调用方落到 `predictions` / `prediction_metas` 表。
 
@@ -304,6 +309,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
   // ── v2 新增 ──
   "infra": "pytorch",             // backend 默认基础设施；可被 model.infra 覆盖
+  "warmup_endpoint": true,        // v0.14.14: 声明本 backend 支持 POST /warmup（详见 §4.4）
   "models": [ /* §4.1.2 model 条目数组 */ ],
 
   // ── v1 顶层字段：仍可用，作为「隐式单 model」的兜底（§4.1.5）──
@@ -315,7 +321,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 }
 ```
 
-- `models[]` 存在 ⇒ 平台按多模型目录解析，**忽略顶层能力字段**（顶层仅留 name/version/infra 等 backend 级元数据）。
+- `models[]` 存在 ⇒ 平台按多模型目录解析，**忽略顶层能力字段**（顶层仅留 name/version/infra/warmup_endpoint 等 backend 级元数据）。
 - `models[]` 缺省 ⇒ 平台用顶层字段合成一个隐式 model（老 backend 路径，§4.1.5）。
 
 ### 4.1.2 model 条目结构
@@ -676,6 +682,117 @@ GET /api/v1/ml-capabilities/protocol
 ```
 
 **前端消费**：`CapabilityCatalogPanel` 协议卡视图（默认 `groupBy=task`）按 `model.task` 把 instance.models 挂到 9 张协议卡上；子卡按 `source` 显示「自带」（env_only）或「已注册」（registered）徽标。
+
+---
+
+## 4.2 PredictionResult 运行时观测字段（v0.14.14）
+
+为了让前端把"猜测冷启动"换成"真信号"，`PredictionResult` 新增三个**可选**字段。语义只与本次请求挂钩，不影响存储与协议主路径。
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `cache_hit` | `bool \| null` | 本次推理是否命中 pool 内已加载权重。`true` = 权重已在内存，本次跳过加载；`false` = 触发了加载（冷启动 / pool evict 后 / 首次拉取 ckpt）；`null` = backend 未上报（前端按"未知"处理） |
+| `model_load_ms` | `int \| null` | 本次加载耗时毫秒。`cache_hit=true` 时通常为 `0`；`cache_hit=false` 时是从 disk → GPU 的真实耗时；`null` 同上 |
+| `pool_state` | `{current_size: int, cap: int} \| null` | 轻量 pool 快照，仅供 debug。常态下为 `null`，按需开启（避免每次响应都带） |
+
+**gsam2 组合判断**：SAM + DINO 双池架构，`cache_hit = sam_hit AND dino_hit`；`model_load_ms = max(sam_load_ms, dino_load_ms)`（取最慢的一边）。若只 SAM hit、DINO miss，`cache_hit=false`，前端感知"冷启动"够用；分轴粒度留给未来扩展。
+
+**sam3 单档**：第一次推理触发懒加载时 `cache_hit=false`；已加载则 `cache_hit=true`；`SAM3_IDLE_UNLOAD_SECONDS` 触发的 idle unload 后再 predict 也是 `cache_hit=false`。
+
+**字段顺序**：响应里 `inference_time_ms`（纯 forward）与 `model_load_ms`（权重加载）分离，**互不相加**，前端按需展示。
+
+---
+
+## 4.3 `/health.pool` 统一 PoolStatus（v0.14.14）
+
+v0.14.12 时三家 backend 的 `/health.pool` 字段各不相同（yolo 用 `pool.loaded[]`、gsam2 用 `pool.loaded_variants[]` + `per_variant_lru_ts`、sam3 用 `loaded: bool`）。v0.14.14 起统一为 `PoolStatus` 结构：
+
+```jsonc
+{
+  "pool": {
+    "cap": 4,                          // 池容量
+    "current_size": 2,                 // 当前已加载条数
+    "loaded_keys": [
+      {
+        "key": "yolov11/s/detection", // backend-defined opaque 字符串，前端只做相等比较
+        "loaded_at": "2026-06-08T03:11:22Z",
+        "last_used_at": "2026-06-08T03:15:00Z",
+        "hit_count": 12               // 命中次数（不含 warmup）
+      }
+    ],
+    "last_evict": {                    // 可为 null
+      "key": "yolov8/x/detection",
+      "at": "2026-06-08T03:14:00Z",
+      "reason": "lru"                 // 受控：lru | manual | idle_timeout
+    }
+  }
+}
+```
+
+**key 命名约定**（backend 自由选择，前端不解析，只做相等匹配）：
+
+| backend | key 形式 |
+|---|---|
+| yolo-backend | `{series}/{size}/{task}`，如 `yolov11/s/detection` |
+| grounded-sam2-backend | `sam={sam_variant}/dino={dino_variant}`，如 `sam=tiny/dino=B`；video pool 用 `video:sam={sam_variant}` 区分 |
+| sam3-backend | 模型变体字符串，如 `sam3.1`；cap 永远 `1` |
+
+**LRU evict 触发**：pool 满 + miss 时按 LRU 头部淘汰，`last_evict.reason="lru"`。`/unload` 手动卸载用 `"manual"`，sam3 的 idle 超时用 `"idle_timeout"`。
+
+**前端消费**：模型市场列表的"运行时态"列直接从 `health_meta.pool.loaded_keys[]` 反查 `key` 即可；卡片视图按分组展示 `current_size/cap` 与 `last_evict` 摘要。
+
+---
+
+## 4.4 `POST /warmup`（可选，v0.14.14）
+
+**用途**：把指定 variant 的权重显式加载到 pool，不消耗推理算力。模型市场"⚡ 预热"按钮、自动化预热脚本、CI 烟测时手动控制 pool warm 状态都走这个端点。
+
+**前置条件**：backend 在 `/setup` 顶层声明 `warmup_endpoint: true`。未声明的 backend 视为不支持，前端 ⚡ 按钮置灰。
+
+**请求**（per-backend 自定义结构；建议与 `/predict` 的 context 部分一致）：
+
+```jsonc
+// yolo-backend
+POST /warmup
+{
+  "task": "detection",
+  "variants": { "series": "yolov11", "size": "s" }
+}
+
+// grounded-sam2-backend (同时预热 SAM + DINO)
+POST /warmup
+{
+  "task": "segmentation",
+  "variants": { "sam_variant": "small", "dino_variant": "B" }
+}
+
+// sam3-backend
+POST /warmup
+{
+  "variants": { "model_variant": "sam3.1" }
+}
+```
+
+**响应**（统一 `WarmupResponse` schema）：
+
+```jsonc
+{
+  "ok": true,
+  "model_load_ms": 4500,             // 加载耗时(ms)，cache_hit=true 时 null/0
+  "cache_hit": false,                // 已经在 pool 内时 true
+  "evicted": "yolov8/n/detection"    // 可选；本次因 cap 上限淘汰的 key（前端 toast）
+}
+```
+
+**行为约定**：
+
+- 只加载权重，不跑真实 forward pass。若 backend 实现上需要触发权重初始化（如 lazy 算子），用最小可能 input（1×1 dummy tensor）。
+- 重复预热同一 variant 直接返回 `cache_hit=true, model_load_ms=null`。
+- pool 满时按 LRU 淘汰最旧的 key，把被淘汰的 key 名回填 `evicted` 字段供前端 toast 提示。
+- `hit_count` 不增加（warmup 不算 hit）。
+- 错误码：变体非法返回 `400/422`（同 `/predict`），GPU OOM 返回 `503`。
+
+**平台代理**：`POST /api/v1/projects/{pid}/ml-backends/{bid}/warmup`，body 原样转发，权限沿用现有 RBAC。
 
 ---
 
