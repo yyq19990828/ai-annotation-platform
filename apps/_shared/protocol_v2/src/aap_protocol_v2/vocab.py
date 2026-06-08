@@ -65,8 +65,8 @@ TASK_DEFAULT_GEOMETRY: dict[str, tuple[str, ...]] = {
     "segmentation": ("polygon",),
     "keypoint": ("keypoint",),
     "classification": ("none",),
-    "ocr": ("polygon",),
+    "ocr": ("bbox",),
     "doc_layout": ("bbox",),
-    "tracker": ("bbox",),
+    "tracker": (),
     "interactive_seg": ("polygon",),
 }

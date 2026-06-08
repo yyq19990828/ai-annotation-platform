@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 from app.services import capability_registry as reg
@@ -17,6 +18,19 @@ from app.services import ml_capabilities as caps
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _load_backend_vocab():
+    """从文件加载 backend 侧镜像 vocab.py (不引入 protocol_v2 → apps/api 反向依赖).
+
+    vocab.py 纯常量、无第三方依赖, 故可独立 exec, 不必把整个包加进 pythonpath。
+    """
+    path = REPO_ROOT / "apps/_shared/protocol_v2/src/aap_protocol_v2/vocab.py"
+    spec = importlib.util.spec_from_file_location("_aap_protocol_v2_vocab", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_re_export_aligned():
@@ -74,6 +88,23 @@ def test_task_default_geometry_matches_re_export():
     assert reg.TASK_DEFAULT_GEOMETRY == caps._TASK_DEFAULT_GEOMETRY  # noqa: SLF001
     for t in reg.TASKS:
         assert list(t.default_geometry) == reg.TASK_DEFAULT_GEOMETRY[t.id]
+
+
+def test_backend_vocab_mirror_matches_registry():
+    """vocab.py 自称是 capability_registry 的最小镜像; 锁死防漂移 (v0.14.17).
+
+    backend 进程不反向依赖 apps/api, 无法在 protocol_v2 包内断言; 由 apps/api 侧
+    (唯一同时知道两边的地方) 用文件加载核对 3 张受控词表 + TASK_DEFAULT_GEOMETRY。
+    历史上 ocr / tracker 的默认几何在两边漂移过 (PR #35 审查发现)。
+    """
+    vocab = _load_backend_vocab()
+    assert vocab.TASK_VALUES == reg.TASK_VALUES
+    assert vocab.INFRA_VALUES == reg.INFRA_VALUES
+    assert vocab.GEOMETRY_VALUES == reg.GEOMETRY_VALUES
+    # registry 侧值是 list、vocab 侧是 tuple, 归一化为 tuple 后逐 task 比较。
+    reg_geom = {k: tuple(v) for k, v in reg.TASK_DEFAULT_GEOMETRY.items()}
+    vocab_geom = {k: tuple(v) for k, v in vocab.TASK_DEFAULT_GEOMETRY.items()}
+    assert vocab_geom == reg_geom
 
 
 def test_suggested_backend_url_is_https():

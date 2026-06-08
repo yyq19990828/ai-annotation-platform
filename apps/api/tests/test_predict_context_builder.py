@@ -77,6 +77,23 @@ def test_v2_no_class_filter_omits_classes_key():
     assert "classes" not in ctx
 
 
+def test_v2_empty_model_variants_still_passes_class_filter():
+    """半就绪态: 几何 backend 已带 class_filter 但 variant 轴未就位 (model_variants={})。
+
+    判定用 `is not None` 而非真值 → 空 dict 仍走 v2 路径, class_filter 不被静默丢弃
+    (PR #35 审查 🟡). 此前 `if model_variants:` 把 {} 判 falsy 落入扁平路径, classes 丢失。
+    """
+    ctx = _ctx(
+        task_type="detection",
+        model_variants={},
+        class_filter=[1, 3],
+    )
+    assert ctx is not None
+    assert ctx["model_variants"] == {}
+    assert ctx["classes"] == [1, 3]
+    assert ctx["type"] == "detection"
+
+
 def test_v2_takes_precedence_over_flat_path():
     """model_variants 非空 → 走 v2, 不退回扁平 text 路径 (即便 prompt 存在)."""
     ctx = _ctx(

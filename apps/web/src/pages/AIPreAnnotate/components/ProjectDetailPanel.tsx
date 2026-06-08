@@ -348,6 +348,11 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
         .filter((k): k is string => typeof k === "string"),
     );
   }, [primaryModel]);
+  // v0.14.17 · variant 写回防抖: 两轴下连续切换/键盘探索会触发多次 PATCH, 合并到最后一次.
+  const patchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
+  }, []);
 
   const onVariantOrParamsChange = (next: Record<string, unknown>) => {
     setParamsValue(next);
@@ -370,7 +375,10 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       ...(project?.default_variants ?? {}),
       [selectedBackendId]: variantSlice,
     };
-    updateProjectMu.mutate({ default_variants: merged });
+    if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
+    patchTimerRef.current = setTimeout(() => {
+      updateProjectMu.mutate({ default_variants: merged });
+    }, 300);
   };
 
   // v0.14.16 · 命名预设 (variant + params 快照, localStorage 按 backend×task 分桶).

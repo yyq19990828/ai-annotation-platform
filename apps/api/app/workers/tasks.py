@@ -51,12 +51,14 @@ def _build_predict_context(
     """构造发往 backend /predict 的 context (纯函数, 便于单测).
 
     两条互斥路径:
-    - **协议 v2 结构化** (model_variants 非空, 由面板 YOLO task 选择器触发): backend (yolo) 要
+    - **协议 v2 结构化** (model_variants 非 None, 由面板几何 backend 触发): backend (yolo) 要
       `model_variants` dict + nested `params` + `type=<几何 task>`。修通 YOLO 批量预标
-      (此前 worker 发扁平 series/size + type="text" 被 YOLO 422)。
-    - **既有扁平路径** (gsam2 文本 prompt / OCR / doc_layout): 维持原样不动, 防回归。
+      (此前 worker 发扁平 series/size + type="text" 被 YOLO 422)。判定用 `is not None` 而非真值:
+      前端几何 backend 恒发 `model_variants` 字段, variant 轴未就位时为空 dict `{}`——此时仍须走
+      v2 路径才能透传 class_filter (类别白名单), 否则空 dict 落入扁平路径会静默丢弃 classes。
+    - **既有扁平路径** (gsam2 文本 prompt / OCR / doc_layout): 不发 model_variants (→ None), 维持原样防回归。
     """
-    if model_variants:
+    if model_variants is not None:
         ctx: dict = {
             "type": task_type or "detection",
             "model_variants": model_variants,
