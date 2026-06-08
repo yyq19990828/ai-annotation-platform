@@ -338,7 +338,8 @@ async def _load_models() -> None:
         IDLE_UNLOAD_SECONDS,
     )
     # 预热默认变体进 pool (保持"单变体常驻"不破坏).
-    predictor = await _pool.get(SAM_VARIANT, DINO_VARIANT)
+    # v0.14.14: pool.get() 返回 (predictor, cache_hit, model_load_ms) 三元组.
+    predictor, _cache_hit, _load_ms = await _pool.get(SAM_VARIANT, DINO_VARIANT)
     _last_request_at = time.monotonic()
     logger.info("default variant loaded; device=%s", predictor.device)
     # v0.9.11 PerfHud · pynvml + psutil 初始化 (无 GPU 环境会降级, 不阻塞 startup)

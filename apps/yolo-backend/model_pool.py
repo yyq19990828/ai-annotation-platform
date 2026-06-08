@@ -22,7 +22,10 @@ import logging
 import time
 from collections import OrderedDict
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+# Python 3.10 兼容: datetime.UTC 是 3.11+ 新增, 容器跑 py3.10 用 timezone.utc 等价.
+UTC = timezone.utc
 from typing import TYPE_CHECKING, Any, Literal
 
 from observability import (
