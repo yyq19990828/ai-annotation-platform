@@ -473,25 +473,69 @@ def setup() -> dict:
             },
         },
     }
-    # v0.14.9 · 协议 v2: 顶层加 infra + 派生单模型目录条目 (复用顶层能力 / params).
-    # grounded-sam2 是单模型族 → 一个 interactive_seg 条目; 顶层老字段全部保留,
-    # 供未升级平台向后兼容 (平台见 models[] 时优先按多模型解析)。
+    # v0.14.9 · 协议 v2: 顶层 infra + 多模型目录 (models[])。
+    # v0.14.11 · 把 grounded-sam2 的 4 条实际能力拆成独立 model 条目, 让平台
+    # 「协议能力目录」按 task 正确归类:
+    #   - detection           (text → bbox, DINO 单跑)
+    #   - segmentation        (text → mask/polygon, DINO + SAM2)
+    #   - interactive_seg     (point/bbox → mask/polygon, SAM2 单跑)
+    #   - tracker             (sam2_video, first frame bbox → 跨帧 bbox)
+    # `/predict` 协议不变 (依旧由 context.type / supported_prompts 路径自路由),
+    # 顶层 supported_prompts / supported_geometric_outputs / supported_trackers
+    # 全部保留, 供未迁移平台向后兼容 (合成隐式单 model 路径)。
     base["infra"] = "pytorch"
     base["models"] = [
         {
-            "id": "grounded-sam2",
-            "display_name": "Grounded-SAM 2",
+            "id": "grounded-sam2-detection",
+            "display_name": "Grounded-SAM 2 · 文本检测 (DINO)",
+            "task": "detection",
+            "model_family": "grounded-sam2",
+            "infra": "pytorch",
+            "is_interactive": False,
+            "supported_prompts": ["text"],
+            "supported_geometric_outputs": ["bbox"],
+            "supported_text_outputs": ["box"],
+            "supported_variants": base["supported_variants"],
+            "params": base["params"],
+        },
+        {
+            "id": "grounded-sam2-segmentation",
+            "display_name": "Grounded-SAM 2 · 文本分割 (DINO + SAM)",
+            "task": "segmentation",
+            "model_family": "grounded-sam2",
+            "infra": "pytorch",
+            "is_interactive": False,
+            "supported_prompts": ["text"],
+            "supported_geometric_outputs": ["polygon"],
+            "supported_text_outputs": ["mask", "both"],
+            "supported_variants": base["supported_variants"],
+            "params": base["params"],
+        },
+        {
+            "id": "grounded-sam2-interactive-seg",
+            "display_name": "Grounded-SAM 2 · 交互分割 (SAM2)",
             "task": "interactive_seg",
             "model_family": "grounded-sam2",
             "infra": "pytorch",
-            "is_interactive": base["is_interactive"],
-            "supported_prompts": base["supported_prompts"],
-            "supported_geometric_outputs": ["bbox", "polygon"],
-            "supported_text_outputs": base["supported_text_outputs"],
-            "supported_trackers": base["supported_trackers"],
+            "is_interactive": True,
+            "supported_prompts": ["point", "bbox"],
+            "supported_geometric_outputs": ["polygon"],
             "supported_variants": base["supported_variants"],
             "params": base["params"],
-        }
+        },
+        {
+            "id": "grounded-sam2-tracker",
+            "display_name": "Grounded-SAM 2 · 视频追踪 (SAM2 Video)",
+            "task": "tracker",
+            "model_family": "grounded-sam2",
+            "infra": "pytorch",
+            "is_interactive": True,
+            "supported_prompts": ["bbox"],
+            "supported_geometric_outputs": ["bbox"],
+            "supported_trackers": ["sam2_video"],
+            "supported_variants": base["supported_variants"],
+            "params": base["params"],
+        },
     ]
     return base
 

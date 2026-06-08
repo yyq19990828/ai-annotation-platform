@@ -39,6 +39,10 @@
 - **协议能力目录端点**：新增 `GET /api/v1/ml-capabilities/protocol`，无 project 作用域、登录用户即可访问，返回 9 个 task / 6 个 infra / 3 个 modality / 8 个 geometry 受控词表 + 元数据；`Cache-Control: private, max-age=300` + ETag 304 支持。
 - **协议卡视图**：`CapabilityCatalogPanel` 新增 `ProtocolCapabilityCard` 子组件，默认 `groupBy=task` 时遍历 protocol.tasks 渲染 9 张协议卡——已注册 backend 的 model 按 `model.task` 字段挂载到对应卡，空卡显示「暂无接入」徽标 + 典型模型列表 + 推荐 backend（含 GitHub 直达）+ 「去注册 backend」CTA（跳 `?tab=registry`）。
 - **零接入横幅**：新增 `EmptyCatalogBanner`，0 backend 注册时在协议卡上方展示「平台支持 9 类 AI 标注能力，当前还没有 backend 接入」+ 接入引导按钮。
+- **gsam2 / sam3 升级到协议 v2 多模型目录**：
+  - `apps/grounded-sam2-backend/main.py` 的 `/setup.models[]` 从 1 条扩到 4 条（`grounded-sam2-detection` / `-segmentation` / `-interactive-seg` / `-tracker`），每条独立声明 task / prompts / geometry，匹配 gsam2 实际四能力。
+  - `apps/sam3-backend/main.py` 的 `/setup.models[]` 从 1 条扩到 3 条（`sam3-detection` / `-segmentation` / `-interactive-seg`，全部走 PCS 路径），detection / segmentation 走 text prompt，interactive_seg 走 exemplar prompt。
+  - 顶层 `supported_prompts` / `supported_trackers` / `/predict` 协议不动，已绑定的项目和工作台无回归；新增能力卡视图下，已注册的 gsam2 / sam3 会自动挂载到对应的多个协议卡。
 
 ### Changed
 

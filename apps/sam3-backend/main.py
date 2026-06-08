@@ -282,24 +282,55 @@ def setup() -> dict:
             },
         },
     }
-    # v0.14.9 · 协议 v2: 顶层加 infra + 派生单模型目录条目 (复用顶层能力 / params).
-    # SAM 3 是单模型族 → 一个 interactive_seg 条目 (text / exemplar 出 bbox / polygon);
-    # 顶层老字段全部保留, 供未升级平台向后兼容。
+    # v0.14.9 · 协议 v2: 顶层 infra + 多模型目录 (models[])。
+    # v0.14.11 · 把 SAM 3 的 3 条实际能力 (PCS 路径) 拆成独立 model 条目, 让平台
+    # 「协议能力目录」按 task 正确归类:
+    #   - detection       (text → bbox, PCS 全图找类相似实例)
+    #   - segmentation    (text → mask/polygon, PCS 出 mask 转 polygon)
+    #   - interactive_seg (exemplar → bbox/polygon, 示例框 PCS 同类实例)
+    # `/predict` 协议不变 (依旧由 context.type / supported_prompts 路径自路由),
+    # 顶层 supported_prompts / supported_geometric_outputs 全部保留, 供未迁移平台
+    # 向后兼容 (合成隐式单 model 路径)。
     base["infra"] = "pytorch"
     base["models"] = [
         {
-            "id": "sam3",
-            "display_name": "SAM 3",
+            "id": "sam3-detection",
+            "display_name": "SAM 3 · 文本检测 (PCS)",
+            "task": "detection",
+            "model_family": "sam3",
+            "infra": "pytorch",
+            "is_interactive": False,
+            "supported_prompts": ["text"],
+            "supported_geometric_outputs": ["bbox"],
+            "supported_text_outputs": ["box"],
+            "supported_variants": base["supported_variants"],
+            "params": base["params"],
+        },
+        {
+            "id": "sam3-segmentation",
+            "display_name": "SAM 3 · 文本分割 (PCS)",
+            "task": "segmentation",
+            "model_family": "sam3",
+            "infra": "pytorch",
+            "is_interactive": False,
+            "supported_prompts": ["text"],
+            "supported_geometric_outputs": ["polygon"],
+            "supported_text_outputs": ["mask", "both"],
+            "supported_variants": base["supported_variants"],
+            "params": base["params"],
+        },
+        {
+            "id": "sam3-interactive-seg",
+            "display_name": "SAM 3 · 交互分割 (Exemplar)",
             "task": "interactive_seg",
             "model_family": "sam3",
             "infra": "pytorch",
-            "is_interactive": base["is_interactive"],
-            "supported_prompts": base["supported_prompts"],
-            "supported_geometric_outputs": ["bbox", "polygon"],
-            "supported_text_outputs": base["supported_text_outputs"],
+            "is_interactive": True,
+            "supported_prompts": ["exemplar"],
+            "supported_geometric_outputs": ["polygon"],
             "supported_variants": base["supported_variants"],
             "params": base["params"],
-        }
+        },
     ]
     return base
 
