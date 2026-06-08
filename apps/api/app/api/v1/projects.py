@@ -532,7 +532,6 @@ async def create_project(
         await _validate_backend_modality(
             db, payload["ml_backend_id"], payload["data_type"]
         )
-        payload = await _apply_backend_display_hint(db, payload)
 
     new_project_id = uuid.uuid4()
     project = Project(
@@ -552,9 +551,6 @@ async def create_project(
         # v0.10.37 · 克隆源项目 backend 落定后, 同样按新项目 data_type 校验模态
         # (clone 复制了 url/auth, 实时探 /setup 与校验 source 等价).
         await _validate_backend_modality(db, new_backend_id, project.data_type)
-        # 同步 ai_model display hint (复制后 backend 名一致, _apply_backend_display_hint
-        # 在此场景与直接读 source.name 等价).
-        project.ai_model = source_backend.name
 
     if template is not None:
         template.usage_count = (template.usage_count or 0) + 1
@@ -604,16 +600,6 @@ async def _clone_backend_to_new_project(
 # projects + project_templates 共享. 这里保留同名 wrapper, 不改调用点.
 def _merge_from_source_project(payload: dict, source: Project) -> dict:
     return _merge_from_source_project_impl(payload, source)
-
-
-async def _apply_backend_display_hint(db: AsyncSession, payload: dict) -> dict:
-    """v0.8.6 F3 helper：ml_backend_id 存在时，用 backend.name 覆盖 ai_model。"""
-    from app.db.models.ml_backend import MLBackend as _MLB
-
-    backend = await db.get(_MLB, payload["ml_backend_id"])
-    if backend is not None:
-        payload["ai_model"] = backend.name
-    return payload
 
 
 async def _validate_backend_modality(
@@ -677,8 +663,6 @@ async def update_project(
             payload.get("data_type", project.data_type),
         )
     await _assert_project_kind_update_allowed(db, project, payload)
-    # v0.8.6 F3 · 绑定 backend 时用 backend.name 覆盖 ai_model（display hint）;
-    # 显式解绑时同步清空 display hint, 避免总览继续显示旧模型名。
     if "ml_backend_id" in payload:
         if payload["ml_backend_id"]:
             # v0.10.37 · 绑定按 data_type 校验模态 (用应用 payload 后的有效 data_type)
@@ -687,9 +671,6 @@ async def update_project(
                 payload["ml_backend_id"],
                 payload.get("data_type") or project.data_type,
             )
-            payload = await _apply_backend_display_hint(db, payload)
-        else:
-            payload["ai_model"] = None
 
     # v0.10.22 · 同 create_project: 旧扁平输入反向派生进 tool_bindings 后剔除.
     from app.services.project import coalesce_legacy_into_tool_bindings
@@ -1227,6 +1208,13 @@ class PreannotateRequest(BaseModel):
     # v0.14.9 · 任务类型便捷别名 ("ocr"/"doc_layout"/"text"): worker 写 context["type"],
     # 让纯文本以外的 task (OCR / 版面分析) 也能走批量预标。缺省走老的纯 prompt / image 行为。
     task_type: str | None = None
+    # v0.14.17 · 协议 v2 结构化路径 (YOLO 等多 task 几何 backend): 选中 variant 组合 (dict[axis,value])。
+    # 非空时 worker 构造 v2 context (model_variants dict + nested params + type=几何 task),
+    # 而非 gsam2 文本路径的扁平形态。修通 YOLO 批量预标 (此前 worker 发 type="text" 被 YOLO 422)。
+    model_variants: dict[str, str] | None = None
+    # v0.14.17 · 类别白名单 (模型原生类别 index 子集): 非空时 backend 只检出这些类。
+    # 平台不做类→项目标签映射 (NG6), 仅透传给 yolo /predict context.classes 做推理层过滤。
+    class_filter: list[int] | None = None
 
 
 @router.post("/{project_id}/preannotate")
@@ -1286,6 +1274,9 @@ async def trigger_preannotation(
         # v0.14.9 · 协议 v2: 多模型路由 + task 别名透传到 /predict context
         model_id=body.model_id,
         task_type=body.task_type,
+        # v0.14.17 · 协议 v2 结构化 variant 路径 (YOLO) + 类别白名单
+        model_variants=body.model_variants,
+        class_filter=body.class_filter,
     )
     # B-5 · AI 预标注触发审计 — 让超管在 /audit 看到 谁/何时/对哪个 batch 跑了 AI
     await AuditService.log(

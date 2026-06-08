@@ -53,8 +53,6 @@ class ProjectCreate(BaseModel):
         return validate_tool_bindings_keys(v)
 
     ai_enabled: bool = False
-    ai_model: str | None = None
-    # v0.8.6 F3 · 真实绑定 MLBackend；为 None 表示未绑定（ai_model 仍可作为 display hint）
     ml_backend_id: UUID | None = None
     # v0.9.7 · 从 wizard step 4 选一个全局已注册 backend, 后端复制 row 入新项目.
     # 与 ml_backend_id 互斥: 直接给 ml_backend_id 表示已存在本项目下的 backend (罕见);
@@ -110,8 +108,6 @@ class ProjectUpdate(BaseModel):
         return validate_tool_bindings_keys(v)
 
     ai_enabled: bool | None = None
-    ai_model: str | None = None
-    # v0.8.6 F3 · 显式 None 表示解绑（与 ProjectOut 序列化对齐；handler 区分 unset vs None）
     ml_backend_id: UUID | None = None
     due_date: date | None = None
     sampling: str | None = None
@@ -136,6 +132,9 @@ class ProjectUpdate(BaseModel):
     scene_mode: bool | None = None
     prefer_same_scene_continuation: bool | None = None
     scene_continuation_window_min: Annotated[int, Field(ge=1, le=480)] | None = None
+    # v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶).
+    # PATCH 用整体替换语义; 前端可只发改动的 backend 桶 (其它桶保留靠业务侧 merge).
+    default_variants: dict[str, dict[str, str]] | None = None
 
 
 class ProjectBatchSummary(BaseModel):
@@ -158,7 +157,6 @@ class ProjectOut(BaseModel):
     member_count: int = 0
     status: str
     ai_enabled: bool
-    ai_model: str | None
     ml_backend_id: UUID | None = None
     # v0.10.1 · 单项目可绑定的 ML backend 数量上限 (来自 settings.max_ml_backends_per_project).
     # 前端 ProjectSettings 据此渲染「+ 添加后端」按钮的禁用状态及 Modal 文案 (M3).
@@ -185,6 +183,8 @@ class ProjectOut(BaseModel):
     scene_mode: bool = False
     prefer_same_scene_continuation: bool = False
     scene_continuation_window_min: int = 30
+    # v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶). 空 dict = 未设, 由前端落到 backend.default_variants.
+    default_variants: dict[str, dict[str, str]] = Field(default_factory=dict)
     # v0.10.13 · E1 · 标注指引 Markdown 原文; None 表示未配置.
     annotation_guide: str | None = None
     # v0.10.13 · E1 · 已上传的指引图片资源元数据列表.

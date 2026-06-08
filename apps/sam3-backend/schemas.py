@@ -10,18 +10,34 @@ v0.10.0 起 `Context.type` 在 grounded-sam2 的 point/bbox/polygon/text 基础�
 `Literal` 保留 "point" 是为了协议层一致性 (apps/api 同一 schema 跨多个 backend);
 sam3-backend main.py 收到 type=point 时返回 400. /setup.supported_prompts 也明确
 不含 "point", 前端按此动态启用工具.
+
+v0.14.12 · 通用部分 (TaskItem / PredictionResult / BatchPredictResponse) 抽到
+`apps/_shared/protocol_v2/` 共享包, 单一来源避免与 grounded-sam2-backend / yolo-backend
+之间漂移. 本仓继续维护 sam3 特有的 Context + 请求壳.
 """
 
 from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from aap_protocol_v2 import (
+    BatchPredictResponse,
+    PredictionResult,
+    TaskItem,
+    WarmupResponse,
+)
+from pydantic import BaseModel, model_validator
 
-
-class TaskItem(BaseModel):
-    id: str | int
-    file_path: str
+__all__ = [
+    "AnnotationResult",
+    "BatchPredictRequest",
+    "BatchPredictResponse",
+    "Context",
+    "InteractiveRequest",
+    "PredictionResult",
+    "TaskItem",
+    "WarmupResponse",
+]
 
 
 class Context(BaseModel):
@@ -61,15 +77,3 @@ class AnnotationResult(BaseModel):
     type: Literal["polygonlabels", "rectanglelabels"]
     value: dict[str, Any]
     score: float | None = None
-
-
-class PredictionResult(BaseModel):
-    task: str | int | None = None
-    result: list[dict[str, Any]] = Field(default_factory=list)
-    score: float | None = None
-    model_version: str | None = None
-    inference_time_ms: int | None = None
-
-
-class BatchPredictResponse(BaseModel):
-    results: list[PredictionResult]

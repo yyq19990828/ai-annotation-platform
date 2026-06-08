@@ -30,7 +30,6 @@ export interface ProjectTemplateOut {
   tool_bindings?: ToolBindings;
   label_config: Record<string, unknown>;
   ai_enabled: boolean;
-  ai_model: string | null;
   sampling: string;
   maximum_annotations: number;
   show_overlap_first: boolean;
@@ -64,7 +63,6 @@ export interface ProjectTemplateCreatePayload {
   tool_bindings?: ToolBindings | null;
   label_config?: Record<string, unknown> | null;
   ai_enabled?: boolean;
-  ai_model?: string | null;
   sampling?: string;
   maximum_annotations?: number;
   show_overlap_first?: boolean;

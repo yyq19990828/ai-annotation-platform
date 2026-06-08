@@ -6,10 +6,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 
+import { ApiError } from "@/api/client";
 import { useInteractiveAI } from "./useInteractiveAI";
 
 const interactiveAnnotateMock = vi.fn();
 const pushToastMock = vi.fn();
+const recordPredictCacheHitMock = vi.fn();
 
 vi.mock("@/api/ml-backends", () => ({
   mlBackendsApi: {
@@ -20,6 +22,10 @@ vi.mock("@/api/ml-backends", () => ({
 vi.mock("@/components/ui/Toast", () => ({
   useToastStore: (selector: (s: { push: typeof pushToastMock }) => unknown) =>
     selector({ push: pushToastMock }),
+}));
+
+vi.mock("./sessionVariantCache", () => ({
+  recordPredictCacheHit: (...args: unknown[]) => recordPredictCacheHitMock(...args),
 }));
 
 const ARGS = { projectId: "p1", taskId: "t1", mlBackendId: "b1" };
@@ -38,6 +44,7 @@ describe("useInteractiveAI", () => {
   beforeEach(() => {
     interactiveAnnotateMock.mockReset();
     pushToastMock.mockReset();
+    recordPredictCacheHitMock.mockReset();
   });
 
   it("runBbox 路由到 ctx.type='bbox'", async () => {
@@ -185,6 +192,31 @@ describe("useInteractiveAI", () => {
     expect(pushToastMock).toHaveBeenCalledWith(
       expect.objectContaining({ msg: "已切换到 SAM large/DINO base", kind: "success" }),
     );
+    expect(interactiveAnnotateMock.mock.calls[0][2].context).toMatchObject({
+      model_variants: { sam_variant: "large", dino_variant: "base" },
+    });
+    expect(interactiveAnnotateMock.mock.calls[0][2].context.sam_variant).toBeUndefined();
+    expect(interactiveAnnotateMock.mock.calls[0][2].context.dino_variant).toBeUndefined();
+  });
+
+  it("model_variants 响应 cache_hit 真信号写入 variant hot map", async () => {
+    interactiveAnnotateMock.mockResolvedValue({ ...POLY_RESPONSE, cache_hit: false });
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() =>
+      result.current.runBbox([0, 0, 0.5, 0.5], {
+        model_variants: { series: "yolov11", size: "s" },
+      }),
+    );
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    expect(interactiveAnnotateMock.mock.calls[0][2].context.model_variants).toEqual({
+      series: "yolov11",
+      size: "s",
+    });
+    expect(recordPredictCacheHitMock).toHaveBeenCalledWith(
+      "b1",
+      { series: "yolov11", size: "s" },
+      false,
+    );
   });
 
   it("同变体的后续预测不再弹切换 toast", async () => {
@@ -221,6 +253,23 @@ describe("useInteractiveAI", () => {
         expect.objectContaining({
           msg: "模型切换失败",
           sub: "checkpoint not provisioned",
+          kind: "error",
+        }),
+      ),
+    );
+  });
+
+  it("503 推理错误 → 显示模型暂不可用与 Retry-After", async () => {
+    interactiveAnnotateMock.mockRejectedValue(
+      new ApiError(503, "ML backend: model unavailable", undefined, { "retry-after": "30" }),
+    );
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() => result.current.runBbox([0, 0, 0.5, 0.5]));
+    await waitFor(() =>
+      expect(pushToastMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          msg: "模型暂不可用",
+          sub: "30 秒后重试",
           kind: "error",
         }),
       ),

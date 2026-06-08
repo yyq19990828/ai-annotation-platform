@@ -81,6 +81,38 @@ def test_multi_model_parses_each_entry():
     assert models["classify"]["output_attribute_types"] == ["class"]
 
 
+def test_classes_passthrough():
+    """v0.14.17 · 闭集类别表 (yolo model.names) 透传到 model 条目; 缺省为 []."""
+    setup = {
+        "name": "yolo-backend",
+        "infra": "pytorch",
+        "models": [
+            {
+                "id": "detect",
+                "task": "detection",
+                "supported_geometric_outputs": ["bbox"],
+                "classes": [
+                    {"index": 0, "name": "person"},
+                    {"index": 2, "name": "car"},
+                ],
+            },
+            {
+                "id": "segment",
+                "task": "segmentation",
+                "supported_geometric_outputs": ["polygon"],
+            },
+        ],
+    }
+    caps = extract_capabilities(setup)
+    models = {m["id"]: m for m in caps["models"]}
+    assert models["detect"]["classes"] == [
+        {"index": 0, "name": "person"},
+        {"index": 2, "name": "car"},
+    ]
+    # 未带 classes 的 model → 空列表 (前端据此回退"不按类筛选").
+    assert models["segment"]["classes"] == []
+
+
 def test_multi_model_flat_union():
     caps = extract_capabilities(_yolo_setup())
     assert caps is not None
@@ -151,6 +183,35 @@ def test_legacy_grounded_sam2_synthesizes_single_model():
     assert caps["modalities"] == ["image", "video"]
 
 
+def test_default_variants_passthrough():
+    """v0.14.13 · backend 自报的 default_variants 必须透传到 caps['models'][].default_variants."""
+    setup = {
+        "name": "yolo",
+        "infra": "pytorch",
+        "models": [
+            {
+                "id": "detect",
+                "task": "detection",
+                "supported_variants": [
+                    {"key": "series", "variants": [{"value": "yolo11"}]},
+                    {"key": "size", "variants": [{"value": "s"}]},
+                ],
+                "default_variants": {"series": "yolo11", "size": "s"},
+            },
+            {
+                "id": "no-default",
+                "task": "detection",
+                # 不报 default_variants → 派生层应给空 dict, 不报错
+            },
+        ],
+    }
+    caps = extract_capabilities(setup)
+    assert caps is not None
+    models = {m["id"]: m for m in caps["models"]}
+    assert models["detect"]["default_variants"] == {"series": "yolo11", "size": "s"}
+    assert models["no-default"]["default_variants"] == {}
+
+
 def test_legacy_detection_only_backend():
     # echo backend: 无 prompts/trackers/models → detection 单 model, 仅展示
     setup = {"name": "echo-backend", "labels": ["demo"], "is_interactive": False}
@@ -198,3 +259,27 @@ def test_modality_lidar_from_geometry():
 def test_derive_modalities_empty_caps():
     assert derive_modalities(None) == []
     assert derive_modalities({}) == []
+
+
+# ---------- v0.14.14: warmup_endpoint 透传 ----------
+
+
+def test_warmup_endpoint_true_passthrough():
+    """v0.14.14 协议 §4.4 · backend 自报 warmup_endpoint=true 时 caps 也带 true."""
+    setup = {
+        "name": "yolo",
+        "infra": "pytorch",
+        "warmup_endpoint": True,
+        "models": [{"id": "detect", "task": "detection"}],
+    }
+    caps = extract_capabilities(setup)
+    assert caps is not None
+    assert caps["warmup_endpoint"] is True
+
+
+def test_warmup_endpoint_default_false():
+    """老 backend 缺字段时, warmup_endpoint 默认 False (前端 ⚡ 按钮置灰)."""
+    setup = {"name": "echo", "models": [{"id": "d", "task": "detection"}]}
+    caps = extract_capabilities(setup)
+    assert caps is not None
+    assert caps["warmup_endpoint"] is False

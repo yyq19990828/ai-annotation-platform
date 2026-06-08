@@ -75,7 +75,6 @@ function makeTemplate(overrides: Partial<ProjectTemplateOut> = {}): ProjectTempl
     attribute_schema: { fields: [] },
     label_config: {},
     ai_enabled: false,
-    ai_model: null,
     sampling: "sequence",
     maximum_annotations: 1,
     show_overlap_first: false,

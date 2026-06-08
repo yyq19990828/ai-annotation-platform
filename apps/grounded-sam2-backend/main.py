@@ -29,6 +29,15 @@ from io import BytesIO
 
 import httpx
 import torch
+from aap_protocol_v2 import (
+    COMPAT_PROTOCOL_VERSIONS,
+    PROTOCOL_VERSION,
+    ModelUnavailableError,
+    PlatformRole,
+    VariantNotSupportedError,
+    log_deprecated_model_variant_fields,
+    normalize_context_model_variants,
+)
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from PIL import Image
@@ -52,7 +61,7 @@ from predictor import (
     SAM2_CONFIGS,
     GroundedSAM2Predictor,
 )
-from schemas import BatchPredictResponse, PredictionResult
+from schemas import BatchPredictResponse, PredictionResult, WarmupRequest, WarmupResponse
 from video_pool import VideoPool
 from video_predictor import SAM2VideoTracker
 
@@ -173,29 +182,28 @@ def _model_version(sam_variant: str, dino_variant: str) -> str:
     return f"grounded-sam2-dino{dino_variant}-sam2.1{sam_variant}"
 
 
+# v0.14.12 · 移除 vram_gb (与 yolo SIZE_META 同理): 之前是粗估占位, 实际 SAM2 .pt
+# 加载远低于声称值且推理峰值还受 batch / 分辨率 / FP16 影响. tier (fast / balanced /
+# accurate) 作为选购粗粒度档位保留, note 给出语义说明。
 SAM2_VARIANT_METADATA = {
     "tiny": {
         "label": "SAM 2.1 Tiny",
-        "vram_gb": 1.5,
         "tier": "fast",
         "note": "最快冷启动，适合快速框选和资源紧张的显卡。",
     },
     "small": {
         "label": "SAM 2.1 Small",
-        "vram_gb": 2.5,
         "tier": "balanced",
         "recommended": True,
         "note": "速度和轮廓质量的默认推荐折中。",
     },
     "base_plus": {
         "label": "SAM 2.1 Base+",
-        "vram_gb": 4.0,
         "tier": "accurate",
         "note": "更稳的细节边界，冷加载和显存占用更高。",
     },
     "large": {
         "label": "SAM 2.1 Large",
-        "vram_gb": 6.0,
         "tier": "accurate",
         "note": "最高精度档，建议大显存环境按需预热。",
     },
@@ -204,14 +212,12 @@ SAM2_VARIANT_METADATA = {
 DINO_VARIANT_METADATA = {
     "T": {
         "label": "GroundingDINO Swin-T",
-        "vram_gb": 1.5,
         "tier": "fast",
         "recommended": True,
         "note": "文本检测默认推荐档，速度优先。",
     },
     "B": {
         "label": "GroundingDINO Swin-B",
-        "vram_gb": 3.5,
         "tier": "accurate",
         "note": "文本检测更准，显存和冷启动成本更高。",
     },
@@ -227,19 +233,27 @@ def _variant_options(
 
 def _supported_variants() -> list[dict]:
     return [
-        {
-            "key": "sam_variant",
-            "title": "SAM 2 变体",
-            "description": "分割模型尺寸。越大通常越精细，但冷加载更慢、显存占用更高。",
-            "variants": _variant_options(SAM2_CONFIGS, SAM2_VARIANT_METADATA),
-        },
-        {
-            "key": "dino_variant",
-            "title": "GroundingDINO 变体",
-            "description": "文本检测模型尺寸。T 更快，B 更准更吃资源。",
-            "variants": _variant_options(DINO_CONFIGS, DINO_VARIANT_METADATA),
-        },
+        _sam_variant_axis(),
+        _dino_variant_axis(),
     ]
+
+
+def _sam_variant_axis() -> dict:
+    return {
+        "key": "sam_variant",
+        "title": "SAM 2 变体",
+        "description": "分割模型尺寸。越大通常越精细，但冷加载更慢、显存占用更高。",
+        "variants": _variant_options(SAM2_CONFIGS, SAM2_VARIANT_METADATA),
+    }
+
+
+def _dino_variant_axis() -> dict:
+    return {
+        "key": "dino_variant",
+        "title": "GroundingDINO 变体",
+        "description": "文本检测模型尺寸。T 更快，B 更准更吃资源。",
+        "variants": _variant_options(DINO_CONFIGS, DINO_VARIANT_METADATA),
+    }
 
 
 # 默认变体的 model_version, 供 /setup / /versions 等"无请求上下文"的端点使用.
@@ -248,40 +262,68 @@ MODEL_VERSION = _model_version(SAM_VARIANT, DINO_VARIANT)
 
 def _resolve_variant(ctx: dict) -> tuple[str, str]:
     """从 context 读请求级变体, 缺省回退全局 env 默认; 非法值 422."""
-    sv = ctx.get("sam_variant") or SAM_VARIANT
-    dv = ctx.get("dino_variant") or DINO_VARIANT
+    ctx = _normalize_predict_context(ctx)
+    model_variants = ctx.get("model_variants") or {}
+    sv = model_variants.get("sam_variant") or SAM_VARIANT
+    dv = model_variants.get("dino_variant") or DINO_VARIANT
     if sv not in SAM2_CONFIGS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"unsupported sam_variant: {sv!r}; allowed={sorted(SAM2_CONFIGS)}",
-        )
+        raise VariantNotSupportedError("sam_variant", sv, sorted(SAM2_CONFIGS))
     if dv not in DINO_CONFIGS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"unsupported dino_variant: {dv!r}; allowed={sorted(DINO_CONFIGS)}",
-        )
+        raise VariantNotSupportedError("dino_variant", dv, sorted(DINO_CONFIGS))
     return sv, dv
 
 
-async def _get_predictor(sam_variant: str, dino_variant: str) -> GroundedSAM2Predictor:
-    """从 pool 取 predictor; pool 满 + 排队超时, 或变体 checkpoint 未预置, 翻成 503."""
+def _resolve_video_variant(ctx: dict) -> str:
+    ctx = _normalize_predict_context(ctx)
+    model_variants = ctx.get("model_variants") or {}
+    sv = model_variants.get("sam_variant") or SAM_VARIANT
+    if sv not in SAM2_CONFIGS:
+        raise VariantNotSupportedError("sam_variant", sv, sorted(SAM2_CONFIGS))
+    return sv
+
+
+def _normalize_predict_context(ctx: dict) -> dict:
+    try:
+        normalized, deprecated = normalize_context_model_variants(ctx)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    # v0.14.17 · 同一请求 ctx 常被图像 (_resolve_variant) 与视频 (_resolve_video_variant)
+    # 两条路径各 normalize 一次; deprecation warning 只在首次记 (标记写回输入 ctx),
+    # 消除重复日志噪声。私有标记键不影响 normalize 结果与 422 校验。
+    if deprecated and not ctx.get("_mv_deprecation_logged"):
+        log_deprecated_model_variant_fields(logger, deprecated)
+        ctx["_mv_deprecation_logged"] = True
+    return normalized
+
+
+def _model_key(sam_variant: str, dino_variant: str) -> str:
+    return f"sam={sam_variant}/dino={dino_variant}"
+
+
+async def _get_predictor(
+    sam_variant: str, dino_variant: str
+) -> tuple[GroundedSAM2Predictor, bool, int | None]:
+    """v0.14.14: 返回 (predictor, cache_hit, model_load_ms).
+
+    pool 满 + 排队超时, 或变体 checkpoint 未预置, 翻成 503.
+    """
     global _last_request_at
     try:
-        predictor = await _pool.get(sam_variant, dino_variant)
+        predictor, cache_hit, load_ms = await _pool.get(sam_variant, dino_variant)
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise ModelUnavailableError(_model_key(sam_variant, dino_variant), str(exc)) from exc
     except FileNotFoundError as exc:
         # 该变体的 checkpoint 未落盘 (entrypoint 只预拉了 PREFETCH 列表内的变体).
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                f"variant ({sam_variant}, {dino_variant}) checkpoint not provisioned: {exc}; "
+        raise ModelUnavailableError(
+            _model_key(sam_variant, dino_variant),
+            (
+                f"checkpoint not provisioned: {exc}; "
                 "把该变体加入 PREFETCH_SAM_VARIANTS / PREFETCH_DINO_VARIANTS 后重建容器, "
                 "或手动下载 checkpoint 到 CHECKPOINT_DIR."
             ),
         ) from exc
     _last_request_at = time.monotonic()
-    return predictor
+    return predictor, cache_hit, load_ms
 
 
 async def _idle_watcher() -> None:
@@ -294,7 +336,7 @@ async def _idle_watcher() -> None:
             idle_for = time.monotonic() - _last_request_at
             if idle_for >= IDLE_UNLOAD_SECONDS:
                 logger.info("idle %0.fs; clearing pool", idle_for)
-                _pool.clear_all()
+                _pool.clear_all(reason="idle_timeout")
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
@@ -328,7 +370,8 @@ async def _load_models() -> None:
         IDLE_UNLOAD_SECONDS,
     )
     # 预热默认变体进 pool (保持"单变体常驻"不破坏).
-    predictor = await _pool.get(SAM_VARIANT, DINO_VARIANT)
+    # v0.14.14: pool.get() 返回 (predictor, cache_hit, model_load_ms) 三元组.
+    predictor, _cache_hit, _load_ms = await _pool.get(SAM_VARIANT, DINO_VARIANT)
     _last_request_at = time.monotonic()
     logger.info("default variant loaded; device=%s", predictor.device)
     # v0.9.11 PerfHud · pynvml + psutil 初始化 (无 GPU 环境会降级, 不阻塞 startup)
@@ -388,11 +431,6 @@ def health() -> dict:
         "container_cpu_percent": perf["container_cpu_percent"],
         "container_memory_percent": perf["container_memory_percent"],
     }
-    if gpu_info is not None:
-        # v0.10.35 §B · 让 gpu_info 里图片池 / video 池的占用可分辨 (整卡 mem_get_info
-        # 无法按进程内 allocator 切分, 这里给出"哪些池有权重常驻"的定性标记).
-        gpu_info["image_pool_loaded_variants"] = _pool.loaded_variants()
-        gpu_info["video_pool_loaded_variants"] = _video_pool.loaded_variants()
     return {
         "ok": True,
         "gpu": available,
@@ -401,8 +439,9 @@ def health() -> dict:
         "cache": _pool.aggregate_cache_stats(),
         "model_version": MODEL_VERSION,
         "loaded": _pool.loaded,
-        "pool": _pool.health(),
-        # v0.10.35 §B · video tracker 独立池区块 (cap / loaded_variants / active_sessions / idle_seconds).
+        # v0.14.14 协议 §4.3 PoolStatus (cap/current_size/loaded_keys[]/last_evict).
+        "pool": _pool.pool_status(),
+        # v0.14.15 · video tracker 独立池同样使用 PoolStatus.loaded_keys 协议形态.
         "video_pool": _video_pool.health(),
         "provisioning": _provisioning,
         "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
@@ -417,11 +456,15 @@ def setup() -> dict:
     # - supported_prompts: 决定 ToolDock 哪些 AI 工具可用 (M2 ToolDock 重构消费)
     # - params: JSON Schema (Draft-07 子集) — 前端 schema-form 自动渲染参数面板
     base = {
+        "protocol_version": PROTOCOL_VERSION,
+        "compat_protocol_versions": COMPAT_PROTOCOL_VERSIONS,
         "name": "grounded-sam2",
         "version": BACKEND_VERSION,
         "model_version": MODEL_VERSION,
         "labels": [],
         "is_interactive": True,
+        # v0.14.14: 声明本 backend 支持 POST /warmup (协议 §4.4).
+        "warmup_endpoint": True,
         "supported_prompts": ["point", "bbox", "text"],
         # v0.9.4 phase 2 · text 路径输出形态选择 (box=DINO 直出, mask=DINO+SAM, both=配对返回).
         "supported_text_outputs": ["box", "mask", "both"],
@@ -438,6 +481,7 @@ def setup() -> dict:
                     "maximum": 1.0,
                     "default": BOX_THRESHOLD,
                     "title": "Box 置信度阈值",
+                    "x-platform-role": PlatformRole.CONFIDENCE.value,
                     "description": "GroundingDINO 框检测的最低置信度（文本 prompt 路径）。调低=召回更多小物/弱目标但噪声增多；调高=更干净但易漏检。",
                 },
                 "text_threshold": {
@@ -446,6 +490,7 @@ def setup() -> dict:
                     "maximum": 1.0,
                     "default": TEXT_THRESHOLD,
                     "title": "Text 置信度阈值",
+                    "x-platform-role": PlatformRole.TEXT_THRESHOLD.value,
                     "description": "短语与图像区域语义匹配的最低分。调高=匹配更严格、更贴合 prompt 词；调低=更宽松、易误配。",
                 },
                 "simplify_tolerance": {
@@ -454,6 +499,7 @@ def setup() -> dict:
                     "maximum": 10.0,
                     "default": DEFAULT_SIMPLIFY_TOLERANCE,
                     "title": "轮廓简化容差(像素)",
+                    "x-platform-role": PlatformRole.SIMPLIFY_TOLERANCE.value,
                     "description": "多边形轮廓抽稀强度（像素）。调大=顶点更少、更轻量；调小=更贴合细节但顶点更多。仅影响 mask 输出。",
                 },
                 "sam_variant": {
@@ -461,6 +507,7 @@ def setup() -> dict:
                     "enum": ["tiny", "small", "base_plus", "large"],
                     "default": SAM_VARIANT,
                     "title": "SAM 2 变体",
+                    "x-platform-role": PlatformRole.MODEL_VARIANT.value,
                     "description": "SAM 2 分割模型大小。越大越精细但越慢、越吃显存；tiny 最快。切换会触发一次冷加载。",
                 },
                 "dino_variant": {
@@ -468,30 +515,93 @@ def setup() -> dict:
                     "enum": ["T", "B"],
                     "default": DINO_VARIANT,
                     "title": "GroundingDINO 变体",
+                    "x-platform-role": PlatformRole.MODEL_VARIANT.value,
                     "description": "文本检测模型大小：T(Tiny) 更快，B(Base) 更准更吃资源。切换会触发一次冷加载。",
                 },
             },
         },
     }
-    # v0.14.9 · 协议 v2: 顶层加 infra + 派生单模型目录条目 (复用顶层能力 / params).
-    # grounded-sam2 是单模型族 → 一个 interactive_seg 条目; 顶层老字段全部保留,
-    # 供未升级平台向后兼容 (平台见 models[] 时优先按多模型解析)。
+    # v0.14.9 · 协议 v2: 顶层 infra + 多模型目录 (models[])。
+    # v0.14.11 · 把 grounded-sam2 的 4 条实际能力拆成独立 model 条目, 让平台
+    # 「协议能力目录」按 task 正确归类:
+    #   - detection           (text → bbox, DINO 单跑)
+    #   - segmentation        (text → mask/polygon, DINO + SAM2)
+    #   - interactive_seg     (point/bbox → mask/polygon, SAM2 单跑)
+    #   - tracker             (sam2_video, first frame bbox → 跨帧 bbox)
+    # `/predict` 协议不变 (依旧由 context.type / supported_prompts 路径自路由),
+    # 顶层 supported_prompts / supported_geometric_outputs / supported_trackers
+    # 全部保留, 供未迁移平台向后兼容 (合成隐式单 model 路径)。
     base["infra"] = "pytorch"
+    # v0.14.12 · 每个 model 只声明真正用到的 axes (而非全暴露 sam+dino 两轴):
+    #   - detection 只用 GroundingDINO 输出 bbox, 不走 SAM;
+    #   - interactive_seg / tracker 只用 SAM2 (prompts 是 point/bbox, 与 text 无关);
+    #   - segmentation 是 DINO + SAM 组合, 两轴都用。
+    # 前端模型市场据此正确聚合: SAM 系列只关联到 seg/iseg/tracker, DINO 系列只到 det/seg。
+    # v0.14.13 · `default_variants`: backend 自报该 task 的默认 variant 组合, 供前端
+    # 用户未选时作初值. 与 model 的 supported_variants 轴一一对应:
+    #   - detection (DINO 路径) 只声明 dino_variant
+    #   - interactive_seg / tracker (SAM2 路径) 只声明 sam_variant
+    #   - segmentation (DINO + SAM2 组合) 两轴都声明
     base["models"] = [
         {
-            "id": "grounded-sam2",
-            "display_name": "Grounded-SAM 2",
+            "id": "grounded-sam2-detection",
+            "display_name": "Grounded-SAM 2 · 文本检测 (DINO)",
+            "task": "detection",
+            "model_family": "grounded-sam2",
+            "infra": "pytorch",
+            "is_interactive": False,
+            "supported_prompts": ["text"],
+            "supported_geometric_outputs": ["bbox"],
+            "supported_text_outputs": ["box"],
+            "supported_variants": [_dino_variant_axis()],
+            "variants_shared_across_tasks": True,
+            "default_variants": {"dino_variant": DINO_VARIANT},
+            "params": base["params"],
+        },
+        {
+            "id": "grounded-sam2-segmentation",
+            "display_name": "Grounded-SAM 2 · 文本分割 (DINO + SAM)",
+            "task": "segmentation",
+            "model_family": "grounded-sam2",
+            "infra": "pytorch",
+            "is_interactive": False,
+            "supported_prompts": ["text"],
+            "supported_geometric_outputs": ["polygon"],
+            "supported_text_outputs": ["mask", "both"],
+            "supported_variants": base["supported_variants"],
+            "variants_shared_across_tasks": True,
+            "default_variants": {"sam_variant": SAM_VARIANT, "dino_variant": DINO_VARIANT},
+            "params": base["params"],
+        },
+        {
+            "id": "grounded-sam2-interactive-seg",
+            "display_name": "Grounded-SAM 2 · 交互分割 (SAM2)",
             "task": "interactive_seg",
             "model_family": "grounded-sam2",
             "infra": "pytorch",
-            "is_interactive": base["is_interactive"],
-            "supported_prompts": base["supported_prompts"],
-            "supported_geometric_outputs": ["bbox", "polygon"],
-            "supported_text_outputs": base["supported_text_outputs"],
-            "supported_trackers": base["supported_trackers"],
-            "supported_variants": base["supported_variants"],
+            "is_interactive": True,
+            "supported_prompts": ["point", "bbox"],
+            "supported_geometric_outputs": ["polygon"],
+            "supported_variants": [_sam_variant_axis()],
+            "variants_shared_across_tasks": True,
+            "default_variants": {"sam_variant": SAM_VARIANT},
             "params": base["params"],
-        }
+        },
+        {
+            "id": "grounded-sam2-tracker",
+            "display_name": "Grounded-SAM 2 · 视频追踪 (SAM2 Video)",
+            "task": "tracker",
+            "model_family": "grounded-sam2",
+            "infra": "pytorch",
+            "is_interactive": True,
+            "supported_prompts": ["bbox"],
+            "supported_geometric_outputs": ["bbox"],
+            "supported_trackers": ["sam2_video"],
+            "supported_variants": [_sam_variant_axis()],
+            "variants_shared_across_tasks": True,
+            "default_variants": {"sam_variant": SAM_VARIANT},
+            "params": base["params"],
+        },
     ]
     return base
 
@@ -515,7 +625,7 @@ def cache_stats() -> dict:
 @app.post("/unload")
 async def unload() -> dict:
     """主动卸载整池释放显存. 已为空闲状态时返回 ok=true, unloaded=false."""
-    unloaded = _pool.clear_all()
+    unloaded = _pool.clear_all(reason="manual")
     _free_gpu_memory()
     return {"ok": True, "unloaded": unloaded, "loaded": _pool.loaded}
 
@@ -546,20 +656,14 @@ async def reload(req: ReloadRequest | None = None) -> dict:
     if task_type == "video":
         sv = (req.sam_variant if req else None) or SAM_VARIANT
         if sv not in SAM2_CONFIGS:
-            raise HTTPException(
-                status_code=422,
-                detail=f"unsupported sam_variant: {sv!r}; allowed={sorted(SAM2_CONFIGS)}",
-            )
-        already = sv in _video_pool.loaded_variants()
+            raise VariantNotSupportedError("sam_variant", sv, sorted(SAM2_CONFIGS))
+        already = _video_pool.is_loaded(sv)
         try:
             await _video_pool.get(sv)
         except RuntimeError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise ModelUnavailableError(sv, str(exc)) from exc
         except FileNotFoundError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail=f"sam_variant {sv!r} video checkpoint not provisioned: {exc}",
-            ) from exc
+            raise ModelUnavailableError(sv, f"video checkpoint not provisioned: {exc}") from exc
         return {
             "ok": True,
             "loaded": True,
@@ -577,17 +681,11 @@ async def reload(req: ReloadRequest | None = None) -> dict:
     sv = (req.sam_variant if req else None) or SAM_VARIANT
     dv = (req.dino_variant if req else None) or DINO_VARIANT
     if sv not in SAM2_CONFIGS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"unsupported sam_variant: {sv!r}; allowed={sorted(SAM2_CONFIGS)}",
-        )
+        raise VariantNotSupportedError("sam_variant", sv, sorted(SAM2_CONFIGS))
     if dv not in DINO_CONFIGS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"unsupported dino_variant: {dv!r}; allowed={sorted(DINO_CONFIGS)}",
-        )
-    already = {"sam_variant": sv, "dino_variant": dv} in _pool.loaded_variants()
-    await _get_predictor(sv, dv)
+        raise VariantNotSupportedError("dino_variant", dv, sorted(DINO_CONFIGS))
+    already = _pool.is_loaded(sv, dv)
+    _predictor, _cache_hit, _load_ms = await _get_predictor(sv, dv)
     return {
         "ok": True,
         "loaded": True,
@@ -596,6 +694,37 @@ async def reload(req: ReloadRequest | None = None) -> dict:
         "dino_variant": dv,
         "task_type": "image",
     }
+
+
+# ---------- v0.14.14: POST /warmup (协议 §4.4) ----------
+
+
+@app.post("/warmup", response_model=WarmupResponse)
+async def warmup(req: WarmupRequest) -> WarmupResponse:
+    """v0.14.14 协议 §4.4 · 加载指定 (sam_variant, dino_variant) 权重到 pool, 不跑 forward.
+
+    缺失的 axis 回退 backend env 默认 (SAM_VARIANT / DINO_VARIANT). pool 满时按 LRU
+    淘汰最旧 key, evicted 字段回填给前端 toast.
+    """
+    variants = req.variants or {}
+    sv = variants.get("sam_variant") or SAM_VARIANT
+    dv = variants.get("dino_variant") or DINO_VARIANT
+    if sv not in SAM2_CONFIGS:
+        raise VariantNotSupportedError("sam_variant", sv, sorted(SAM2_CONFIGS))
+    if dv not in DINO_CONFIGS:
+        raise VariantNotSupportedError("dino_variant", dv, sorted(DINO_CONFIGS))
+    try:
+        cache_hit, load_ms, evicted = await _pool.warmup(sv, dv)
+    except RuntimeError as exc:
+        raise ModelUnavailableError(_model_key(sv, dv), str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise ModelUnavailableError(_model_key(sv, dv), f"checkpoint not provisioned: {exc}") from exc
+    return WarmupResponse(
+        ok=True,
+        model_load_ms=load_ms,
+        cache_hit=cache_hit,
+        evicted=evicted,
+    )
 
 
 def _fetch_image(file_path: str) -> Image.Image:
@@ -609,14 +738,18 @@ def _fetch_image(file_path: str) -> Image.Image:
     raise HTTPException(status_code=400, detail=f"unsupported file_path scheme: {file_path[:64]}")
 
 
-async def _run_prompt(file_path: str, ctx: dict) -> tuple[list[dict], bool, str, str]:
-    """返回 (results, cache_hit, sam_variant, dino_variant). 命中时 point/bbox 跳过 image fetch.
+async def _run_prompt(
+    file_path: str, ctx: dict
+) -> tuple[list[dict], bool, str, str, bool, int | None]:
+    """v0.14.14 返回 (results, embedding_hit, sam_variant, dino_variant,
+    pool_cache_hit, model_load_ms).
 
-    请求级变体: 从 ctx 解析 (缺省回退 env 默认), 经 pool 取对应 predictor,
-    cache_key / cache 桶都按该变体隔离。
+    - embedding_hit: 图像 embedding 缓存命中 (image fetch / set_image 跳过)
+    - pool_cache_hit: model pool 命中 (权重已加载, 不需冷启)
+    - model_load_ms: 本次 pool miss 的 build 耗时, 命中时 None
     """
     sv, dv = _resolve_variant(ctx)
-    p = await _get_predictor(sv, dv)
+    p, pool_cache_hit, model_load_ms = await _get_predictor(sv, dv)
     cache = _pool.cache_for(sv, dv)
     ptype = ctx.get("type")
     cache_key = compute_cache_key(file_path, sv)
@@ -650,7 +783,7 @@ async def _run_prompt(file_path: str, ctx: dict) -> tuple[list[dict], bool, str,
             results, hit = p.predict_point(
                 None, points, labels, cache_key=cache_key, simplify_tolerance=simplify_tol
             )
-        return results, hit, sv, dv
+        return results, hit, sv, dv, pool_cache_hit, model_load_ms
 
     if ptype == "bbox":
         bbox = ctx.get("bbox")
@@ -665,7 +798,7 @@ async def _run_prompt(file_path: str, ctx: dict) -> tuple[list[dict], bool, str,
             results, hit = p.predict_bbox(
                 None, bbox, cache_key=cache_key, simplify_tolerance=simplify_tol
             )
-        return results, hit, sv, dv
+        return results, hit, sv, dv, pool_cache_hit, model_load_ms
 
     if ptype == "text":
         text = (ctx.get("text") or "").strip()
@@ -692,7 +825,7 @@ async def _run_prompt(file_path: str, ctx: dict) -> tuple[list[dict], bool, str,
             text_threshold=text_th,
             simplify_tolerance=simplify_tol,
         )
-        return results, hit, sv, dv
+        return results, hit, sv, dv, pool_cache_hit, model_load_ms
 
     raise HTTPException(status_code=422, detail=f"unsupported context.type: {ptype}")
 
@@ -795,12 +928,7 @@ async def _run_video_tracker(file_path: str, ctx: dict) -> tuple[list[dict], str
     返回 (result 列表, sam_variant)。OOM / timeout 等不吞, 让 api 落 error_message
     (ADR-0012: predictor 不进 api, 故障外抛)。
     """
-    sv = ctx.get("sam_variant") or SAM_VARIANT
-    if sv not in SAM2_CONFIGS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"unsupported sam_variant: {sv!r}; allowed={sorted(SAM2_CONFIGS)}",
-        )
+    sv = _resolve_video_variant(ctx)
     try:
         from_frame = int(ctx["from_frame"])
         to_frame = int(ctx["to_frame"])
@@ -820,12 +948,9 @@ async def _run_video_tracker(file_path: str, ctx: dict) -> tuple[list[dict], str
     try:
         tracker = await _video_pool.get(sv)
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise ModelUnavailableError(sv, str(exc)) from exc
     except FileNotFoundError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"sam_variant {sv!r} video checkpoint not provisioned: {exc}",
-        ) from exc
+        raise ModelUnavailableError(sv, f"video checkpoint not provisioned: {exc}") from exc
 
     local_path = _video_local_path(file_path)
     cleanup = local_path != file_path
@@ -871,13 +996,17 @@ async def predict(request: Request):
                 inference_time_ms=elapsed_ms,
             ).model_dump(exclude_none=True)
         # _run_prompt 内部经 pool 取请求级变体 predictor (miss 触发冷启).
-        result, hit, sv, dv = await _run_prompt(task["file_path"], ctx)
+        result, hit, sv, dv, pool_cache_hit, model_load_ms = await _run_prompt(
+            task["file_path"], ctx
+        )
         elapsed_ms = _observe(ctx.get("type") or "unknown", hit, started)
         return PredictionResult(
             result=result,
             score=max((r.get("score") or 0.0) for r in result) if result else None,
             model_version=_model_version(sv, dv),
             inference_time_ms=elapsed_ms,
+            cache_hit=pool_cache_hit,
+            model_load_ms=model_load_ms,
         ).model_dump(exclude_none=True)
 
     # 批量: tasks 数组（M0 仅支持顶层 context.text 时整批同 prompt）
@@ -888,8 +1017,12 @@ async def predict(request: Request):
         for t in tasks:
             t_started = time.perf_counter()
             sv, dv = SAM_VARIANT, DINO_VARIANT
+            pool_cache_hit: bool | None = None
+            model_load_ms: int | None = None
             try:
-                result, hit, sv, dv = await _run_prompt(t["file_path"], ctx)
+                result, hit, sv, dv, pool_cache_hit, model_load_ms = await _run_prompt(
+                    t["file_path"], ctx
+                )
             except HTTPException:
                 raise
             except Exception as exc:  # noqa: BLE001 — 单图失败降级，不中断整批
@@ -903,6 +1036,8 @@ async def predict(request: Request):
                     score=max((r.get("score") or 0.0) for r in result) if result else None,
                     model_version=_model_version(sv, dv),
                     inference_time_ms=elapsed_ms,
+                    cache_hit=pool_cache_hit,
+                    model_load_ms=model_load_ms,
                 ).model_dump(exclude_none=True)
             )
         return BatchPredictResponse(results=results).model_dump(exclude_none=True)

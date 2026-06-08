@@ -1,8 +1,8 @@
-"""v0.8.6 F3 · Project ↔ MLBackend 真实绑定。
+"""Project ↔ MLBackend 真实绑定。
 
 覆盖：
-- 创建/更新项目带 ml_backend_id 自动同步 ai_model（display hint）
-- 解绑/删除 backend 时项目 ml_backend_id + ai_model 置 null
+- 创建/更新项目带 ml_backend_id 后保存真实绑定
+- 解绑/删除 backend 时项目 ml_backend_id 置 null
 - service.get_project_backend 优先返回显式绑定，否则 fallback
 """
 
@@ -50,7 +50,7 @@ async def _seed_backend(
     return b
 
 
-async def test_create_project_with_ml_backend_id_auto_fills_ai_model(
+async def test_create_project_with_ml_backend_id_binds_backend(
     httpx_client_bound, super_admin, db_session
 ):
     user, token = super_admin
@@ -71,15 +71,13 @@ async def test_create_project_with_ml_backend_id_auto_fills_ai_model(
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["ml_backend_id"] == str(backend.id)
-    # backend.name 自动覆盖 ai_model
-    assert data["ai_model"] == "dino-sam2"
 
 
-async def test_patch_project_bind_backend_overwrites_ai_model(
+async def test_patch_project_bind_backend_updates_binding(
     httpx_client_bound, super_admin, db_session
 ):
     user, token = super_admin
-    proj = await _seed_project(db_session, user.id, ai_model="legacy-name")
+    proj = await _seed_project(db_session, user.id)
     backend = await _seed_backend(db_session, proj.id, name="grounded-sam2")
     await db_session.commit()
 
@@ -92,16 +90,13 @@ async def test_patch_project_bind_backend_overwrites_ai_model(
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["ml_backend_id"] == str(backend.id)
-    assert data["ai_model"] == "grounded-sam2"
 
 
-async def test_patch_project_unbind_backend_clears_ai_model(
+async def test_patch_project_unbind_backend_clears_binding(
     httpx_client_bound, super_admin, db_session
 ):
     user, token = super_admin
-    proj = await _seed_project(
-        db_session, user.id, ai_enabled=True, ai_model="gsam2-video"
-    )
+    proj = await _seed_project(db_session, user.id, ai_enabled=True)
     backend = await _seed_backend(db_session, proj.id, name="gsam2-video")
     proj.ml_backend_id = backend.id
     await db_session.flush()
@@ -116,7 +111,6 @@ async def test_patch_project_unbind_backend_clears_ai_model(
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["ml_backend_id"] is None
-    assert data["ai_model"] is None
 
 
 async def test_delete_ml_backend_sets_project_null(db_session, super_admin):
@@ -143,13 +137,11 @@ async def test_delete_ml_backend_sets_project_null(db_session, super_admin):
     assert refreshed is None
 
 
-async def test_service_delete_ml_backend_clears_project_display_hint(
+async def test_service_delete_ml_backend_clears_project_binding(
     db_session, super_admin
 ):
     user, _ = super_admin
-    proj = await _seed_project(
-        db_session, user.id, ai_enabled=True, ai_model="gsam2-video"
-    )
+    proj = await _seed_project(db_session, user.id, ai_enabled=True)
     backend = await _seed_backend(db_session, proj.id, name="gsam2-video")
     proj.ml_backend_id = backend.id
     await db_session.flush()
@@ -159,12 +151,11 @@ async def test_service_delete_ml_backend_clears_project_display_hint(
 
     row = (
         await db_session.execute(
-            text("SELECT ml_backend_id, ai_model FROM projects WHERE id = :pid"),
+            text("SELECT ml_backend_id FROM projects WHERE id = :pid"),
             {"pid": proj.id},
         )
-    ).one()
-    assert row[0] is None
-    assert row[1] is None
+    ).scalar_one_or_none()
+    assert row is None
 
 
 async def test_get_project_backend_prefers_explicit_binding(db_session, super_admin):

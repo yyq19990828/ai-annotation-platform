@@ -76,6 +76,9 @@ export type ProjectUpdatePayload = ProjectUpdate & {
   rendering_config?: ProjectRenderingConfig | null;
   annotation_guide?: string | null;
   guide_assets?: GuideAssetEntry[] | null;
+  // v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶); 待 codegen 重跑后从 ProjectUpdate 自带.
+  // 形状: {"<backend_uuid>": {"<axis_key>": "<axis_value>", ...}, ...}
+  default_variants?: Record<string, Record<string, string>> | null;
 };
 
 // v0.10.13 · E1 · 项目标注指引图片资源 entry, 与后端 guide_asset.py 同构.

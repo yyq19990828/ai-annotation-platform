@@ -72,3 +72,6 @@
 - [0034](0034-lidar-axis-convention.md) — 点云数据集 lidar 坐标系约定：dataset 级声明 + 加载侧归一化
 - [0035](0035-scene-and-frame-foundation.md) — Scene + frame_index 跨 task 时序帧序列地基
 - [0036](0036-ml-backend-capability-protocol-v2-multi-model.md) — ML Backend 能力声明协议 v2（多模型目录 + infra）
+- [0037](0037-protocol-capability-catalog-decoupling.md) — 协议能力目录与 backend 注册解耦
+- [0038](0038-defer-ml-backend-base-class.md) — ML backend 基类抽象推迟到 N≥4
+- [0039](0039-protocol-field-name-unification.md) — Protocol field name unification with model_variants

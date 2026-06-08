@@ -13,6 +13,13 @@ export interface JsonSchemaField {
   minimum?: number;
   maximum?: number;
   enum?: string[];
+  "x-platform-role"?:
+    | "confidence"
+    | "iou"
+    | "maxDet"
+    | "textThreshold"
+    | "simplifyTolerance"
+    | "modelVariant";
   /** 只读字段 (如模型版本 / 缓存容量): 渲染为禁用控件展示, 不进 aiToolParams。 */
   readOnly?: boolean;
 }
@@ -35,8 +42,26 @@ function asField(v: unknown): JsonSchemaField {
  * v0.10.23 · 模型变体字段移到 AI 面板 (会话级设置), 不在每个子工具 drawer 重复渲染.
  * SchemaForm / deriveDefaults 统一排除这些 key; AI 面板单独消费 (见 VARIANT_FIELD_KEYS 引用方).
  */
-export const VARIANT_FIELD_KEYS = ["sam_variant", "dino_variant"] as const;
+export const VARIANT_FIELD_KEYS = ["sam_variant", "dino_variant", "model_variant"] as const;
 const VARIANT_FIELD_SET = new Set<string>(VARIANT_FIELD_KEYS);
+
+const PLATFORM_ROLE_LABELS: Record<NonNullable<JsonSchemaField["x-platform-role"]>, string> = {
+  confidence: "置信度阈值",
+  iou: "IoU 阈值",
+  maxDet: "最大检出数",
+  textThreshold: "文本阈值",
+  simplifyTolerance: "轮廓简化容差",
+  modelVariant: "模型变体",
+};
+
+export function isVariantField(key: string, field: JsonSchemaField = {}): boolean {
+  return VARIANT_FIELD_SET.has(key) || field["x-platform-role"] === "modelVariant";
+}
+
+function fieldTitle(name: string, field: JsonSchemaField): string {
+  const role = field["x-platform-role"];
+  return (role ? PLATFORM_ROLE_LABELS[role] : undefined) ?? field.title ?? name;
+}
 
 export interface SchemaFormProps {
   schema: JsonSchemaObject | undefined;
@@ -51,8 +76,8 @@ export function deriveDefaults(schema: JsonSchemaObject | undefined): Record<str
   const out: Record<string, unknown> = {};
   if (!schema?.properties) return out;
   for (const [key, raw] of Object.entries(schema.properties)) {
-    if (VARIANT_FIELD_SET.has(key)) continue; // 变体字段归 AI 面板, 不进 aiToolParams.
     const field = asField(raw);
+    if (isVariantField(key, field)) continue; // 变体字段归 AI 面板, 不进 aiToolParams.
     if (field.readOnly) continue; // 只读字段仅展示, 不作为可调参数发给后端.
     if (field.default !== undefined) out[key] = field.default;
   }
@@ -62,7 +87,7 @@ export function deriveDefaults(schema: JsonSchemaObject | undefined): Record<str
 export function SchemaForm({ schema, value, onChange, disabled = false }: SchemaFormProps) {
   const entries = useMemo(
     () => (schema?.properties
-      ? Object.entries(schema.properties).filter(([key]) => !VARIANT_FIELD_SET.has(key))
+      ? Object.entries(schema.properties).filter(([key, raw]) => !isVariantField(key, asField(raw)))
       : []),
     [schema],
   );
@@ -104,7 +129,7 @@ interface SchemaFieldProps {
 }
 
 function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProps) {
-  const title = field.title ?? name;
+  const title = fieldTitle(name, field);
   // 只读字段 (model_variant / embedding_cache_size 等): 禁用控件, 仅作信息展示。
   const ro = disabled || field.readOnly === true;
   const desc = field.description ? (

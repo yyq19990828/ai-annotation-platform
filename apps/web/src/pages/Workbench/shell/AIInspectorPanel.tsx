@@ -23,8 +23,17 @@ import { resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { isFrameOutside } from "../stage/videoTrackOutside";
 import { displayClassName } from "../stage/colors";
 import { AttributeForm, getMissingRequired } from "./AttributeForm";
-import { SchemaForm, VARIANT_FIELD_KEYS, type JsonSchemaObject } from "../components/SchemaForm";
+import {
+  SchemaForm,
+  isVariantField,
+  type JsonSchemaField,
+  type JsonSchemaObject,
+} from "../components/SchemaForm";
 import styles from "./AIInspectorPanel.module.css";
+
+function asJsonSchemaField(raw: unknown): JsonSchemaField {
+  return raw && typeof raw === "object" ? raw as JsonSchemaField : {};
+}
 
 interface AIInspectorPanelProps {
   open: boolean;
@@ -258,6 +267,14 @@ interface AIPredictionPopoverProps {
   // v0.10.23 · 会话级模型变体选择 (设计 A): 选项来自 /setup.params 的 sam_variant/dino_variant enum.
   paramsSchema?: JsonSchemaObject;
   supportedVariants?: MLBackendSupportedVariantGroup[];
+  // v0.14.12 · 多轴非笛卡尔积时声明合法组合 (yolo series/size); 缺省时按笛卡尔积渲染.
+  variantCombinations?: string[][];
+  // v0.14.13 · backend / 项目级合并后的默认 variant 组合, 传给 VariantSelector 作初值.
+  variantDefaults?: Record<string, string>;
+  // 当前选中 variant 是否已 warm (源自 isVariantHot: 单一 hot map, 持久化到
+  // sessionStorage, 接受兜底标热与真信号 cache_hit 多源写入). false → 按钮显示
+  // "加载模型中…" 给用户冷启动心理预期.
+  isVariantWarm?: boolean;
   aiVariant?: Record<string, unknown>;
   onSetAiVariant?: (next: Record<string, unknown>) => void;
   // 后端级推理参数 (阈值等非变体字段): SchemaForm 渲染。值/回调即 workbench 的 aiToolParams。
@@ -284,6 +301,9 @@ export function AIPredictionPopover({
   taskAiPredictionCount,
   paramsSchema,
   supportedVariants,
+  variantCombinations,
+  variantDefaults,
+  isVariantWarm: isVariantWarmProp,
   aiVariant,
   onSetAiVariant,
   params,
@@ -334,8 +354,8 @@ export function AIPredictionPopover({
 
   const hasVariantSelector =
     (supportedVariants ?? []).some((group) => (group.variants ?? []).length > 0) ||
-    Object.keys(paramsSchema?.properties ?? {}).some(
-      (k) => VARIANT_FIELD_KEYS.includes(k as (typeof VARIANT_FIELD_KEYS)[number]),
+    Object.entries(paramsSchema?.properties ?? {}).some(
+      ([k, raw]) => isVariantField(k, asJsonSchemaField(raw)),
     );
 
   if (!open) return null;
@@ -383,7 +403,11 @@ export function AIPredictionPopover({
             {aiRunning
               ? <Icon name="loader2" size={11} className="spin" />
               : <Icon name="wandSparkles" size={11} />}
-            {aiRunning ? "推理中..." : "开始预标"}
+            {aiRunning
+              ? isVariantWarmProp === false
+                ? "加载中…（首次约 5-15s）"
+                : "推理中..."
+              : "开始预标"}
           </Button>
           <Button size="sm" onClick={onAcceptAll} disabled={aiBoxCount === 0} className={styles.flexButton}>
             <Icon name="check" size={11} />全部采纳
@@ -418,6 +442,8 @@ export function AIPredictionPopover({
           <VariantSelector
             schema={paramsSchema}
             supportedVariants={supportedVariants}
+            variantCombinations={variantCombinations}
+            defaults={variantDefaults}
             value={aiVariant ?? {}}
             onChange={onSetAiVariant}
           />
@@ -428,8 +454,8 @@ export function AIPredictionPopover({
           无非变体可调字段时整段隐藏 (避免空白容器)。 */}
       {onSetParams &&
         paramsSchema &&
-        Object.keys(paramsSchema.properties ?? {}).some(
-          (k) => !VARIANT_FIELD_KEYS.includes(k as (typeof VARIANT_FIELD_KEYS)[number]),
+        Object.entries(paramsSchema.properties ?? {}).some(
+          ([k, raw]) => !isVariantField(k, asJsonSchemaField(raw)),
         ) && (
           <div className={styles.aiParamsForm}>
             <SchemaForm schema={paramsSchema} value={params ?? {}} onChange={onSetParams} />

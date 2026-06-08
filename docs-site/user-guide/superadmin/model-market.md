@@ -25,13 +25,21 @@ last_reviewed: 2026-05-27
 
 ### 1. 能力目录
 
-能力目录是 model-centric 视图：枚举所有项目已注册的 backend，对每个 backend 拉 `/capabilities` 取 `models[]`，再按 model 条目展示。
+> v0.14.11 起「能力目录」与 backend 注册解耦：默认按**协议能力 (task)** 分组渲染 9 张协议卡，无 backend 注册时仍完整展示协议层支持的全部能力 + 推荐 backend；详见 [ADR-0037](../../dev/adr/0037-protocol-capability-catalog-decoupling)。
 
-支持：
+能力目录默认按**协议能力 (task)** 分组：
+
+- 始终渲染 9 张协议卡（detection / obb / segmentation / keypoint / classification / ocr / doc_layout / tracker / interactive_seg），数据来自 `GET /v1/ml-capabilities/protocol`（与 backend 注册无关）。
+- 已注册 backend 的 model 按 `model.task` 字段挂载到对应卡片下；卡片标题旁显示「N 个模型已接入」徽标。
+- 未挂任何 model 的协议卡显示「暂无接入」徽标，并列出**典型模型**与**推荐 backend**（含 GitHub 链接），CTA「去注册 backend」可一键跳到 `?tab=registry`。
+- 零接入时顶部加 onboarding 横幅，强调「平台支持 9 类 AI 标注能力，当前还没有 backend 接入」。
+
+切换到「分组：backend / infra / 不分组」时退回 v0.14.10 的 model-centric 视图（按 model 条目展开，零接入时显示原空态）。
+
+通用筛选：
 
 - 卡片 / 紧凑列表切换。
-- 按 backend / task / infra 分组，组可折叠。
-- 搜索模型名、model id、模型族、task 中文标签和来源 backend。
+- 搜索模型名、model id、模型族、task 中文标签和来源 backend；协议能力分组下，搜索同时过滤协议卡（命中 task label / summary / typical_models 的卡保留）。
 - 与 task / model_family / infra / modality chips 过滤叠加。
 - 列表态按模型名、task、infra 轻量排序。
 
@@ -81,16 +89,25 @@ backend 的变体面板拆成两组：
 >
 > 监控内容不变：计数卡（queued / running / completed / failed / cancelled）+ 按状态 / model_key / 项目过滤的 cursor 分页列表（failed 行展开 `error_message`），数据来自 `GET /video-tracker-jobs`。
 
-## 能力目录（多模型）
+## 能力目录（协议层 + 实例层双层视图）
 
-v0.14.9 起页面新增「能力目录」面板，是[能力声明协议 v2](../../dev/reference/ml-backend-protocol) 的消费视图。与「注册管理」按 backend 罗列不同，这里**按 model 条目展开**：枚举所有项目已注册的 backend，对每个 backend 拉 `/capabilities` 取 `models[]`，每个 model 渲染一张卡片或一行列表。
+v0.14.9 引入「能力目录」面板，作为[能力声明协议 v2](../../dev/reference/ml-backend-protocol) 的消费视图。v0.14.11 起目录与 backend 注册解耦，分**协议层**与**实例层**双层渲染（详见 [ADR-0037](../../dev/adr/0037-protocol-capability-catalog-decoupling)）：
 
-卡片信息：
+**协议层**（默认 `groupBy=task`）：
 
-- **task / infra / modality 徽章**：受控 task（检测 / 旋转框 / 分割 / 关键点 / 分类 / 文字识别 / 版面分析 / 追踪 / 交互分割）、infra（pytorch / onnx / paddle / tensorrt / openvino / 其它 / 未知）、modality（图像 / 视频 / 文本 / 点云）。
-- **输出几何 / 输出属性 / variants / resource**：来自 model 条目的 `supported_geometric_outputs` / `output_attribute_types` / `supported_variants` / `resource_profile`。
+- 数据源 `GET /v1/ml-capabilities/protocol`，无 project 作用域，登录用户即可访问；进程内冻结 + ETag 304 缓存。
+- 始终渲染 9 张协议卡，每张卡包含 task 中文标签、协议简介、默认输出几何、默认 modality、典型模型清单、协议输出约束。
+- 卡片内挂载已注册 backend 的 model 子卡（按 `model.task` 字段）；未挂载时显示「暂无接入」徽标 + 推荐 backend 列表 + 「去注册」CTA。
 
-顶部工具栏按 **task / model_family / infra / modality** 提供多选 chips 过滤（空集 = 不过滤该轴），并支持名称搜索、卡片/列表切换、分组和列表排序。「刷新」按钮对每个 backend 调用 `capabilities/refresh` 重探 `/setup` 并刷新缓存。
+**实例层**（切换到 `groupBy=backend / infra / 不分组`）：
+
+- 数据源 `GET /projects/{pid}/ml-backends/{bid}/capabilities`，依赖 backend 注册 + health check。
+- 按 model 条目展开，卡片信息：
+  - **task / infra / modality 徽章**：受控 task（9 项）、infra（pytorch / onnx / paddle / tensorrt / openvino / 其它 / 未知）、modality（图像 / 视频 / 点云）。
+  - **输出几何 / 输出属性 / variants / resource**：来自 model 条目的 `supported_geometric_outputs` / `output_attribute_types` / `supported_variants` / `resource_profile`。
+- 顶部工具栏按 **task / model_family / infra / modality** 提供多选 chips 过滤，支持名称搜索、卡片/列表切换、分组和列表排序。「刷新」按钮对每个 backend 调用 `capabilities/refresh` 重探 `/setup` 并刷新缓存。
+
+兼容性：
 
 - 老 backend（协议 v1）由平台合成单 model 条目，长度为 1，正常显示。
 - backend 离线或上次探测失败时，目录可能展示缓存旧值，卡片会标注 stale。

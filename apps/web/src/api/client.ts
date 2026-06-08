@@ -22,7 +22,7 @@ class ApiError extends Error {
 }
 
 /** v0.9.3 · 仅透传少数白名单响应头（避免序列化无关大头），按需扩展。 */
-const EXPOSED_HEADERS = ["x-login-failed-count"] as const;
+const EXPOSED_HEADERS = ["x-login-failed-count", "retry-after"] as const;
 
 async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?: boolean }): Promise<T> {
   const token = opts?.anonymous ? null : localStorage.getItem("token");

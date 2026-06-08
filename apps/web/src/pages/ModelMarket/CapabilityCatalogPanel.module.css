@@ -368,6 +368,36 @@
   line-height: 1.5;
 }
 
+.runtimeCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 150px;
+}
+
+.runtimeText {
+  color: var(--color-fg-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.compactWarmButton {
+  width: 28px;
+  min-width: 28px;
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.evictFooter {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-top: 7px;
+  border-top: 1px dashed var(--color-border);
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
 /* ── 变体块 ───────────────────────────────────────────────────── */
 .variantBlock {
   display: flex;

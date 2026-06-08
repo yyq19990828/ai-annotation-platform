@@ -184,11 +184,12 @@ PYTHONPATH=. uv run python scripts/seed.py
 # Celery 后台任务：批量预标、导出、视频帧、通知等
 docker compose up -d celery-worker celery-worker-export celery-beat
 
-# Grounded-SAM-2：GPU profile，适合图片 SAM / DINO 与视频 tracker
-docker compose --profile gpu up -d grounded-sam2-backend
+# GPU ML Backend 在叠加文件 docker-compose.ml.yml（grounded-sam2 / sam3 / yolo）
+# Grounded-SAM-2：适合图片 SAM / DINO 与视频 tracker
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up -d grounded-sam2-backend
 
 # SAM 3：独立 GPU profile，需要 HF_TOKEN 与更高显存
-docker compose --profile gpu-sam3 up -d sam3-backend
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-sam3 up -d sam3-backend
 
 # Prometheus + Grafana
 docker compose --profile monitoring up -d prometheus grafana
@@ -254,7 +255,8 @@ ai-annotation-platform/
 │   └── research/                  # 调研报告
 ├── infra/                         # Docker、Prometheus、Grafana、Nginx 等基础设施配置
 ├── scripts/                       # OpenAPI、docs impact、seed、维护脚本
-├── docker-compose.yml
+├── docker-compose.yml             # 基础栈（postgres/redis/minio/celery + 监控 profile）
+├── docker-compose.ml.yml          # GPU ML Backend 叠加（grounded-sam2 / sam3 / yolo）
 ├── pnpm-workspace.yaml
 └── package.json
 ```

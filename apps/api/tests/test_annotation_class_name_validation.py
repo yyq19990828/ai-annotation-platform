@@ -225,6 +225,71 @@ async def test_accept_prediction_raises_when_class_not_in_unit(db_session, super
 
 
 @pytest.mark.asyncio
+async def test_accept_prediction_override_class_name_lands_project_label(
+    db_session, super_admin
+):
+    """v0.14.17 · 采纳时选类: 预测类名不在标签集 (会 422), 但传 override → 落项目标签成功."""
+    user, _ = super_admin
+    proj = await create_project(db_session, owner_id=user.id, type_key="image-det")
+    proj.tool_bindings = _tb("bbox", [{"name": "行人", "order": 0}])
+    task = await create_task(db_session, project_id=proj.id)
+    await db_session.flush()
+
+    # YOLO 输出原生类名 "person" (不在项目标签 "行人"、且无 alias) → 直接采纳会 422.
+    pred = await _create_prediction(
+        db_session,
+        project_id=proj.id,
+        task_id=task.id,
+        tool_unit_id="bbox",
+        result=[
+            {
+                "type": "rectanglelabels",
+                "geometry": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+                "class_name": "person",
+                "tool_unit_id": "bbox",
+            }
+        ],
+    )
+
+    svc = AnnotationService(db_session)
+    ann = await svc.accept_prediction(pred.id, user.id, override_class_name="行人")
+    assert ann is not None
+    assert ann.class_name == "行人"
+
+
+@pytest.mark.asyncio
+async def test_accept_prediction_override_not_in_allowed_raises_422(
+    db_session, super_admin
+):
+    """override 仍走软校验: 选了标签集外的值 → 422."""
+    user, _ = super_admin
+    proj = await create_project(db_session, owner_id=user.id, type_key="image-det")
+    proj.tool_bindings = _tb("bbox", [{"name": "行人", "order": 0}])
+    task = await create_task(db_session, project_id=proj.id)
+    await db_session.flush()
+
+    pred = await _create_prediction(
+        db_session,
+        project_id=proj.id,
+        task_id=task.id,
+        tool_unit_id="bbox",
+        result=[
+            {
+                "type": "rectanglelabels",
+                "geometry": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+                "class_name": "person",
+                "tool_unit_id": "bbox",
+            }
+        ],
+    )
+
+    svc = AnnotationService(db_session)
+    with pytest.raises(HTTPException) as exc_info:
+        await svc.accept_prediction(pred.id, user.id, override_class_name="车")
+    assert exc_info.value.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_accept_prediction_no_match_pass_through_class_name(
     db_session, super_admin
 ):
@@ -254,3 +319,67 @@ async def test_accept_prediction_no_match_pass_through_class_name(
     ann = await svc.accept_prediction(pred.id, user.id)
     assert ann is not None
     assert ann.class_name == "person"
+
+
+# ── update (PATCH 改类) ─────────────────────────────────────────────────────
+
+
+async def _make_annotation(
+    db_session, *, user, proj, tool_unit_id="bbox", class_name="person"
+):
+    task = await create_task(db_session, project_id=proj.id)
+    await db_session.flush()
+    svc = AnnotationService(db_session)
+    ann = await svc.create(
+        task_id=task.id,
+        user_id=user.id,
+        annotation_type="bbox",
+        class_name=class_name,
+        geometry={"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+        tool_unit_id=tool_unit_id,
+    )
+    return svc, ann
+
+
+@pytest.mark.asyncio
+async def test_update_class_name_not_in_allowed_raises_422(db_session, super_admin):
+    """v0.14.17 · PATCH 改类与 create / accept 对齐: 改成项目标签集外的值 → 422."""
+    user, _ = super_admin
+    proj = await create_project(db_session, owner_id=user.id, type_key="image-det")
+    proj.tool_bindings = _tb("bbox", [{"name": "person", "order": 0}])
+    svc, ann = await _make_annotation(db_session, user=user, proj=proj)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc.update(ann.id, class_name="ghost")
+    assert exc_info.value.status_code == 422
+    assert "ghost" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_update_class_name_allowed_passes(db_session, super_admin):
+    """改成项目标签集内的值 → 通过 (采纳后改类的正常流程不被破坏)."""
+    user, _ = super_admin
+    proj = await create_project(db_session, owner_id=user.id, type_key="image-det")
+    proj.tool_bindings = _tb(
+        "bbox", [{"name": "person", "order": 0}, {"name": "car", "order": 1}]
+    )
+    svc, ann = await _make_annotation(db_session, user=user, proj=proj)
+
+    updated = await svc.update(ann.id, class_name="car")
+    assert updated is not None
+    assert updated.class_name == "car"
+
+
+@pytest.mark.asyncio
+async def test_update_without_class_name_skips_validation(db_session, super_admin):
+    """只改 geometry、不带 class_name → 不触发校验."""
+    user, _ = super_admin
+    proj = await create_project(db_session, owner_id=user.id, type_key="image-det")
+    proj.tool_bindings = _tb("bbox", [{"name": "person", "order": 0}])
+    svc, ann = await _make_annotation(db_session, user=user, proj=proj)
+
+    updated = await svc.update(
+        ann.id, geometry={"x": 0.3, "y": 0.3, "w": 0.1, "h": 0.1}
+    )
+    assert updated is not None
+    assert updated.class_name == "person"

@@ -11,13 +11,19 @@ import {
   type ObserveTarget,
   type SmokeTestRequest,
 } from "@/api/adminMlIntegrations";
-import type { MLBackendVariant } from "@/api/ml-backends";
+import {
+  mlBackendsApi,
+  type MLBackendCapability,
+  type MLBackendVariant,
+  type MLModelCapability,
+} from "@/api/ml-backends";
 import {
   useMLBackendHealth,
   useMLBackendReload,
   useMLBackendUnload,
+  useMLBackendWarmup,
 } from "@/hooks/useMLBackends";
-import { VariantPanel } from "./VariantPanel";
+import { VariantPanel, type VariantWarmTarget } from "./VariantPanel";
 import styles from "./RuntimeObservePanel.module.css";
 
 interface RegisteredRef {
@@ -158,12 +164,20 @@ function RegisteredRuntimeCard({
   const health = useMLBackendHealth(projectId);
   const unload = useMLBackendUnload(projectId);
   const reload = useMLBackendReload(projectId);
+  const warmup = useMLBackendWarmup(projectId);
 
   const ok = observe?.ok ?? backend.state === "connected";
   const gpu = observe?.gpu_info ?? backend.health_meta?.gpu_info;
   const pool = observe?.pool ?? backend.health_meta?.pool;
   const videoPool = observe?.video_pool ?? backend.health_meta?.video_pool;
   const modelVersion = observe?.model_version ?? backend.health_meta?.model_version;
+  const supportsWarmup = backend.health_meta?.capabilities?.warmup_endpoint === true;
+  const setupQ = useQuery({
+    queryKey: ["ml-backend-setup", projectId, backend.id],
+    queryFn: () => mlBackendsApi.setup(projectId, backend.id),
+    enabled: supportsWarmup,
+    staleTime: 30_000,
+  });
 
   const onHealth = () => {
     health.mutate(backend.id, {
@@ -185,7 +199,26 @@ function RegisteredRuntimeCard({
       onError: (e) => pushToast({ msg: "卸载失败", sub: (e as Error).message }),
     });
   };
-  const onReload = (variant?: MLBackendVariant, taskType?: "image" | "video") => {
+  const onWarm = (target?: VariantWarmTarget) => {
+    if (supportsWarmup) {
+      const body = buildWarmupBody(target, setupQ.data);
+      warmup.mutate(
+        { backendId: backend.id, body },
+        {
+          onSuccess: (res) => {
+            pushToast({
+              msg: res.cache_hit ? `${backend.name} 已在显存中` : `${backend.name} 已预热到显存`,
+              kind: "success",
+              sub: res.evicted ? `淘汰 ${res.evicted}` : undefined,
+            });
+          },
+          onError: (e) => pushToast({ msg: "预热失败", sub: (e as Error).message }),
+        },
+      );
+      return;
+    }
+    const variant = target?.variants as MLBackendVariant | undefined;
+    const taskType = target?.taskType;
     reload.mutate(
       { backendId: backend.id, variant, taskType },
       {
@@ -238,7 +271,12 @@ function RegisteredRuntimeCard({
           <Icon name="pause" size={11} />
           卸载
         </Button>
-        <Button size="sm" onClick={() => onReload()} disabled={reload.isPending} title="重新加载默认模型">
+        <Button
+          size="sm"
+          onClick={() => onWarm()}
+          disabled={reload.isPending || warmup.isPending || (supportsWarmup && setupQ.isLoading)}
+          title="预热默认模型"
+        >
           <Icon name="play" size={11} />
           预热默认
         </Button>
@@ -247,11 +285,44 @@ function RegisteredRuntimeCard({
       <VariantPanel
         projectId={projectId}
         backend={backend}
-        onWarm={(variant, taskType) => onReload(variant, taskType)}
-        isWarming={reload.isPending}
+        onWarm={onWarm}
+        isWarming={reload.isPending || warmup.isPending}
       />
     </div>
   );
+}
+
+function pickDefaultVariants(model: MLModelCapability | undefined): Record<string, string> {
+  const out: Record<string, string> = { ...(model?.default_variants ?? {}) };
+  for (const group of model?.supported_variants ?? []) {
+    if (out[group.key]) continue;
+    const options = group.variants ?? [];
+    const recommended = options.find((option) => option.recommended);
+    const picked = recommended ?? options[0];
+    if (picked?.value) out[group.key] = picked.value;
+  }
+  return out;
+}
+
+function buildWarmupBody(
+  target: VariantWarmTarget | undefined,
+  setup: MLBackendCapability | undefined,
+): Record<string, unknown> {
+  if (target?.taskType === "video") {
+    return { task: "tracker", variants: target.variants ?? {} };
+  }
+  if (target?.task || target?.variants) {
+    return {
+      ...(target.task ? { task: target.task } : {}),
+      ...(target.variants ? { variants: target.variants } : {}),
+    };
+  }
+  const model = setup?.models?.[0];
+  const variants = pickDefaultVariants(model);
+  return {
+    ...(model?.task ? { task: model.task } : {}),
+    ...(Object.keys(variants).length > 0 ? { variants } : {}),
+  };
 }
 
 function EnvOnlyCard({ target }: { target: ObserveTarget }) {
@@ -263,6 +334,9 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
   const genericGroups = (target.supported_variants ?? []).filter(
     (group) => Array.isArray(group.variants) && group.variants.length > 0,
   );
+  // gsam2 同时上报 params.{sam,dino}_variant.enum (老) 和 supported_variants (富 v0.10.40+);
+  // 两套渲染会重复. 富格式覆盖时隐藏老 sam/dino 下拉, 保留富格式 (含 label/vram/tier 元数据).
+  const showLegacyVariants = genericGroups.length === 0;
   const [sam, setSam] = useState(samEnum[0] ?? "");
   const [dino, setDino] = useState(dinoEnum[0] ?? "");
   const [genericVariant, setGenericVariant] = useState<Record<string, string>>(() =>
@@ -270,12 +344,22 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
       genericGroups.map((group) => [group.key, group.variants?.[0]?.value ?? ""]).filter(([, v]) => v),
     ),
   );
-  const canSmoke = samEnum.length > 0 || dinoEnum.length > 0;
+  const canSmoke =
+    (showLegacyVariants && (samEnum.length > 0 || dinoEnum.length > 0)) ||
+    Object.values(genericVariant).some(Boolean);
 
   const onSmokeTest = async () => {
-    const payload: SmokeTestRequest = canSmoke
+    // 富格式优先: 把 genericVariant 映射回 {sam_variant, dino_variant} (gsam2 admin
+    // smoke-test 端目前只认这两个字段). 富 group.key 与老 axis key 同名 (sam_variant/
+    // dino_variant), 可直接透传.
+    const payload: SmokeTestRequest = showLegacyVariants
       ? { url: target.url, sam_variant: sam || undefined, dino_variant: dino || undefined }
-      : { url: target.url, variant: genericVariant };
+      : {
+          url: target.url,
+          sam_variant: genericVariant.sam_variant || undefined,
+          dino_variant: genericVariant.dino_variant || undefined,
+          variant: genericVariant,
+        };
     setBusy(true);
     try {
       const res = await adminMlIntegrationsApi.observeSmokeTest(payload);
@@ -380,12 +464,33 @@ function RuntimeMetrics({
 }: {
   modelVersion?: string | null;
   gpuInfo?: { memory_used_mb?: number; memory_total_mb?: number } | null;
-  pool?: { cap?: number; loaded_variants?: unknown[] } | null;
-  videoPool?: { cap?: number; loaded_variants?: string[]; active_sessions?: number } | null;
+  // v0.14.14: 接受 PoolStatus.loaded_keys (优先) 与老 loaded_variants (fallback);
+  // 仅用其 length 做"已加载数量"展示, 不解 key 维度.
+  pool?: {
+    cap?: number;
+    current_size?: number;
+    loaded_keys?: unknown[];
+    loaded_variants?: unknown[];
+  } | null;
+  videoPool?: {
+    cap?: number;
+    current_size?: number;
+    loaded_keys?: unknown[];
+    loaded_variants?: string[];
+    active_sessions?: number;
+  } | null;
   cacheHitRate?: number;
 }) {
-  const loaded = pool?.loaded_variants ?? [];
-  const videoLoaded = videoPool?.loaded_variants ?? [];
+  const loadedCount =
+    pool?.current_size ??
+    pool?.loaded_keys?.length ??
+    pool?.loaded_variants?.length ??
+    0;
+  const videoLoadedCount =
+    videoPool?.current_size ??
+    videoPool?.loaded_keys?.length ??
+    videoPool?.loaded_variants?.length ??
+    0;
   return (
     <div className={styles.metrics}>
       {modelVersion && <span className="mono">{modelVersion}</span>}
@@ -396,12 +501,12 @@ function RuntimeMetrics({
       )}
       {cacheHitRate != null && <span>cache {(cacheHitRate * 100).toFixed(1)}%</span>}
       <span>
-        图像池 {loaded.length}
+        图像池 {loadedCount}
         {pool?.cap != null && `/${pool.cap}`}
       </span>
       {videoPool && (
         <span>
-          视频池 {videoLoaded.length}
+          视频池 {videoLoadedCount}
           {videoPool.cap != null && `/${videoPool.cap}`}
           {videoPool.active_sessions != null && ` · ${videoPool.active_sessions} 会话`}
         </span>

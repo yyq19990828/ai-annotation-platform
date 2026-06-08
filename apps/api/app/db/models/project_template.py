@@ -56,7 +56,6 @@ class ProjectTemplate(Base):
     ai_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false", default=False
     )
-    ai_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sampling: Mapped[str] = mapped_column(
         String(30), nullable=False, server_default="sequence", default="sequence"
     )

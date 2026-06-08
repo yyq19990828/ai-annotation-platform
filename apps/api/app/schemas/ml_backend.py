@@ -101,10 +101,19 @@ class ModelCapability(BaseModel):
     supported_text_outputs: list[str] = []
     supported_trackers: list[str] = []
     supported_variants: list[dict] = []
+    # v0.14.12 · 多轴 variants 非笛卡尔积时显式列举合法组合 (前端目录展开用).
+    variant_combinations: list[list[str]] = []
+    # v0.14.12 · 同 backend 多 task 是否共享物理权重 (SAM 类共享, yolo 分 task).
+    variants_shared_across_tasks: bool = False
+    # v0.14.13 · backend 自报的默认 variant 组合 (dict[axis_key, value]).
+    default_variants: dict[str, str] = {}
     default_thresholds: dict = {}
     resource_profile: dict = {}
     params: dict = {}
     modality: str | None = None
+    # v0.14.17 · 闭集检测器原生类别表 ([{index,name}], 读自权重 model.names). 供前端类别白名单;
+    # 仅该 task 模型已加载过 (warmup/predict) 时非空。
+    classes: list[dict] = []
 
     class Config:
         extra = "allow"
@@ -119,8 +128,13 @@ class BackendCapabilities(BaseModel):
     v0.14.9 · 能力声明协议 v2: 新增 `infra` (backend 默认基础设施) + `models` (多模型目录);
     其余顶层字段为各 model 的「扁平并集」, 供未迁移消费方继续读 (向后兼容)。"""
 
+    # v0.14.12 · backend 自报名 (如 "grounded-sam2-backend"), 用于前端能力目录展示
+    # 源 backend 名 (而非用户在项目里取的别名)。
+    name: str | None = None
     # v0.14.9 · 协议 v2 新增
     infra: str = "unknown"
+    # v0.14.14 · backend 是否支持 POST /warmup (协议 §4.4). 老 backend 缺字段 = False.
+    warmup_endpoint: bool = False
     models: list[ModelCapability] = []
     # 扁平并集 (向后兼容)
     is_interactive: bool = False

@@ -37,14 +37,25 @@ import gc
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from io import BytesIO
+from typing import Any
 
 import httpx
 import torch
+from aap_protocol_v2 import (
+    COMPAT_PROTOCOL_VERSIONS,
+    PROTOCOL_VERSION,
+    PlatformRole,
+    VariantNotSupportedError,
+    log_deprecated_model_variant_fields,
+    normalize_context_model_variants,
+)
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from PIL import Image
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from pydantic import BaseModel
 
 from embedding_cache import EmbeddingCache, compute_cache_key
 from observability import (
@@ -61,7 +72,9 @@ from predictor import (
     MODEL_VARIANT,
     SAM3Predictor,
 )
-from schemas import BatchPredictResponse, PredictionResult
+from schemas import BatchPredictResponse, PredictionResult, WarmupResponse
+
+UTC = timezone.utc
 
 logger = logging.getLogger("sam3-backend")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
@@ -84,6 +97,12 @@ _cache = EmbeddingCache(capacity=EMBEDDING_CACHE_SIZE, sam_variant=MODEL_VERSION
 _last_request_at: float = time.monotonic()
 _predictor_lock = asyncio.Lock()
 _idle_task: asyncio.Task | None = None
+# v0.14.14: PoolStatus 元数据 (sam3 是单档 sam3.1, cap 永远 1).
+_pool_loaded_at: datetime | None = None
+_pool_last_used_at: datetime | None = None
+_pool_hit_count: int = 0
+_pool_last_evict: dict[str, Any] | None = None
+_POOL_KEY: str = MODEL_VERSION  # opaque key, 协议 §4.3 sam3 用 model_variant 字符串
 
 
 def _build_predictor() -> SAM3Predictor:
@@ -101,20 +120,44 @@ def _free_gpu_memory() -> None:
             pass
 
 
-async def _ensure_predictor_loaded() -> SAM3Predictor:
-    """懒加载: 若已被 unload, 在锁内重建. 锁避免并发请求并行加载导致 OOM."""
+async def _ensure_predictor_loaded(
+    *, count_as_hit: bool = True,
+) -> tuple[SAM3Predictor, bool, int | None]:
+    """v0.14.14: 懒加载 + 运行时观测.
+
+    返回 `(predictor, cache_hit, model_load_ms)`:
+      - cache_hit=True 时 load_ms=None (模型在内存, 复用); count_as_hit=True 时增 hit_count
+      - cache_hit=False 时 load_ms 是本次 build 毫秒 (冷启动 / idle unload 后 / manual reload 后)
+      - count_as_hit=False 走 warmup 路径, 不增 hit_count
+    """
     global _predictor, _last_request_at
+    global _pool_loaded_at, _pool_last_used_at, _pool_hit_count
     if _predictor is not None:
         _last_request_at = time.monotonic()
-        return _predictor
+        _pool_last_used_at = datetime.now(UTC)
+        if count_as_hit:
+            _pool_hit_count += 1
+        return _predictor, True, None
     async with _predictor_lock:
-        if _predictor is None:
-            logger.info("reloading SAM 3 on demand (after idle unload or manual unload)")
-            loop = asyncio.get_running_loop()
-            _predictor = await loop.run_in_executor(None, _build_predictor)
-            logger.info("SAM 3 reloaded; device=%s", _predictor.device)
+        if _predictor is not None:
+            # 锁内 double-check: 等锁期间别的协程可能已加载完.
+            _last_request_at = time.monotonic()
+            _pool_last_used_at = datetime.now(UTC)
+            if count_as_hit:
+                _pool_hit_count += 1
+            return _predictor, True, None
+        logger.info("reloading SAM 3 on demand (after idle unload or manual unload)")
+        loop = asyncio.get_running_loop()
+        t0 = time.monotonic()
+        _predictor = await loop.run_in_executor(None, _build_predictor)
+        load_ms = int((time.monotonic() - t0) * 1000)
+        now = datetime.now(UTC)
+        _pool_loaded_at = now
+        _pool_last_used_at = now
+        _pool_hit_count = 0  # 新加载, 命中计数重置
+        logger.info("SAM 3 reloaded; device=%s; load_ms=%d", _predictor.device, load_ms)
         _last_request_at = time.monotonic()
-        return _predictor
+        return _predictor, False, load_ms
 
 
 async def _unload_predictor(reason: str) -> bool:
@@ -122,8 +165,10 @@ async def _unload_predictor(reason: str) -> bool:
 
     embedding cache 中持有的 _features 张量指向 GPU 显存, 模型卸载后这些
     引用悬挂等同泄漏, 必须一起 clear (与 grounded-sam2-backend 同款处理).
+
+    v0.14.14: 记录 _pool_last_evict 供 PoolStatus.last_evict 输出.
     """
-    global _predictor
+    global _predictor, _pool_loaded_at, _pool_last_used_at, _pool_hit_count, _pool_last_evict
     async with _predictor_lock:
         if _predictor is None:
             return False
@@ -132,7 +177,58 @@ async def _unload_predictor(reason: str) -> bool:
         _free_gpu_memory()
         _cache.clear()
         _free_gpu_memory()
+        # 归类 evict reason: idle_* / manual / 其他 → manual
+        evict_reason = "idle_timeout" if reason.startswith("idle") else "manual"
+        _pool_last_evict = {
+            "key": _POOL_KEY,
+            "at": datetime.now(UTC),
+            "reason": evict_reason,
+        }
+        _pool_loaded_at = None
+        _pool_last_used_at = None
+        _pool_hit_count = 0
         return True
+
+
+def _pool_status() -> dict[str, Any]:
+    """v0.14.14 协议 §4.3 PoolStatus: cap=1, current_size 0/1, loaded_keys, last_evict.
+
+    sam3 是单档 sam3.1, cap 永远 1; current_size = 1 表示已加载, 0 表示未加载或 idle unload 后.
+    """
+    loaded_keys: list[dict[str, Any]] = []
+    if _predictor is not None and _pool_loaded_at is not None:
+        loaded_keys.append({
+            "key": _POOL_KEY,
+            "loaded_at": _pool_loaded_at.isoformat(),
+            "last_used_at": (_pool_last_used_at or _pool_loaded_at).isoformat(),
+            "hit_count": _pool_hit_count,
+        })
+    last_evict: dict[str, Any] | None = None
+    if _pool_last_evict is not None:
+        last_evict = {
+            "key": _pool_last_evict["key"],
+            "at": _pool_last_evict["at"].isoformat(),
+            "reason": _pool_last_evict["reason"],
+        }
+    return {
+        "cap": 1,
+        "current_size": 1 if _predictor is not None else 0,
+        "loaded_keys": loaded_keys,
+        "last_evict": last_evict,
+    }
+
+
+def _normalize_predict_context(ctx: dict) -> dict:
+    try:
+        normalized, deprecated = normalize_context_model_variants(ctx)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    log_deprecated_model_variant_fields(logger, deprecated)
+    model_variants = normalized.get("model_variants") or {}
+    model_variant = model_variants.get("model_variant")
+    if model_variant is not None and model_variant != MODEL_VERSION:
+        raise VariantNotSupportedError("model_variant", model_variant, [MODEL_VERSION])
+    return normalized
 
 
 async def _idle_watcher() -> None:
@@ -153,15 +249,20 @@ async def _idle_watcher() -> None:
 
 @app.on_event("startup")
 async def _load_models() -> None:
-    global _predictor, _idle_task, _last_request_at
+    global _predictor, _idle_task, _last_request_at, _pool_loaded_at, _pool_last_used_at
     logger.info(
         "loading SAM 3 (variant=%s, cache_size=%d, idle_unload=%.0fs)",
         MODEL_VERSION, EMBEDDING_CACHE_SIZE, IDLE_UNLOAD_SECONDS,
     )
     loop = asyncio.get_running_loop()
+    t0 = time.monotonic()
     _predictor = await loop.run_in_executor(None, _build_predictor)
+    load_ms = int((time.monotonic() - t0) * 1000)
     _last_request_at = time.monotonic()
-    logger.info("SAM 3 loaded; device=%s", _predictor.device)
+    now = datetime.now(UTC)
+    _pool_loaded_at = now
+    _pool_last_used_at = now
+    logger.info("SAM 3 loaded; device=%s; load_ms=%d", _predictor.device, load_ms)
     init_perfhud_collectors()
     if IDLE_UNLOAD_SECONDS > 0:
         _idle_task = asyncio.create_task(_idle_watcher())
@@ -212,7 +313,9 @@ def health() -> dict:
         "host": host,
         "cache": _cache.stats(),
         "model_version": MODEL_VERSION,
-        "loaded": _predictor is not None,
+        "loaded": _predictor is not None,  # 老字段, 兼容前端 AdminDashboard
+        # v0.14.14: 协议 §4.3 PoolStatus 统一格式; sam3 cap 永远 1.
+        "pool": _pool_status(),
         "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
         "last_request_age_seconds": round(time.monotonic() - _last_request_at, 2),
     }
@@ -225,9 +328,13 @@ def setup() -> dict:
     # - supported_prompts: 决定 ToolDock 哪些 AI 工具可用 (M2 ToolDock 重构消费)
     # - params: JSON Schema (Draft-07 子集) — 前端 schema-form 自动渲染参数面板
     base = {
+        "protocol_version": PROTOCOL_VERSION,
+        "compat_protocol_versions": COMPAT_PROTOCOL_VERSIONS,
         "name": "sam3-backend",
         "version": BACKEND_VERSION,
         "model_version": MODEL_VERSION,
+        # v0.14.14: 声明本 backend 支持 POST /warmup (协议 §4.4).
+        "warmup_endpoint": True,
         "labels": [],
         "is_interactive": True,
         # v0.10.0 选项 A: 不暴露 "point" (Sam3Processor image API 不支持).
@@ -241,8 +348,23 @@ def setup() -> dict:
         "supported_text_outputs": ["box", "mask", "both"],
         # exemplar 走 add_geometric_prompt; state 同时产出 boxes/masks, 三档都支持.
         "supported_geometric_outputs": ["box", "mask", "both"],
-        # v0.10.40 · SAM 3 当前只有单模型档, 保留空数组让前端富选择器自然隐藏.
-        "supported_variants": [],
+        # v0.14.12 · 显式暴露单档 variant, 让模型市场能展示该具体权重 (此前 [] 导致
+        # 卡片/列表无法显示「该 backend 加载的是 sam3.1」). 三个 task 共享同一份权重,
+        # variants_shared_across_tasks 在每个 model 上设 True 让列表合并到 1 行。
+        "supported_variants": [
+            {
+                "key": "model_variant",
+                "title": "模型版本",
+                "description": "SAM 3 当前仅有一档官方权重 (facebook/sam3.1).",
+                "variants": [
+                    {
+                        "value": MODEL_VARIANT,
+                        "label": "SAM 3.1" if MODEL_VARIANT == "sam3.1" else MODEL_VARIANT,
+                        "recommended": True,
+                    },
+                ],
+            },
+        ],
         "params": {
             "type": "object",
             "properties": {
@@ -254,6 +376,7 @@ def setup() -> dict:
                     "maximum": 1.0,
                     "default": DEFAULT_SCORE_THRESHOLD,
                     "title": "置信度阈值",
+                    "x-platform-role": PlatformRole.CONFIDENCE.value,
                     "description": "只保留置信度高于此值的实例。调高=更少更准的框，调低=更多但可能含误检。",
                 },
                 "simplify_tolerance": {
@@ -262,12 +385,14 @@ def setup() -> dict:
                     "maximum": 10.0,
                     "default": DEFAULT_SIMPLIFY_TOLERANCE,
                     "title": "轮廓简化容差(像素)",
+                    "x-platform-role": PlatformRole.SIMPLIFY_TOLERANCE.value,
                     "description": "多边形轮廓抽稀强度（像素）。调大=顶点更少、边更直更轻量；调小=更贴合细节但顶点更多。仅影响 mask 输出。",
                 },
                 "model_variant": {
                     "type": "string",
                     "default": MODEL_VERSION,
                     "title": "模型版本",
+                    "x-platform-role": PlatformRole.MODEL_VARIANT.value,
                     "readOnly": True,
                     "description": "当前部署的 SAM 3 模型版本，由后端固定，不可在前端切换。",
                 },
@@ -282,24 +407,65 @@ def setup() -> dict:
             },
         },
     }
-    # v0.14.9 · 协议 v2: 顶层加 infra + 派生单模型目录条目 (复用顶层能力 / params).
-    # SAM 3 是单模型族 → 一个 interactive_seg 条目 (text / exemplar 出 bbox / polygon);
-    # 顶层老字段全部保留, 供未升级平台向后兼容。
+    # v0.14.9 · 协议 v2: 顶层 infra + 多模型目录 (models[])。
+    # v0.14.11 · 把 SAM 3 的 3 条实际能力 (PCS 路径) 拆成独立 model 条目, 让平台
+    # 「协议能力目录」按 task 正确归类:
+    #   - detection       (text → bbox, PCS 全图找类相似实例)
+    #   - segmentation    (text → mask/polygon, PCS 出 mask 转 polygon)
+    #   - interactive_seg (exemplar → bbox/polygon, 示例框 PCS 同类实例)
+    # `/predict` 协议不变 (依旧由 context.type / supported_prompts 路径自路由),
+    # 顶层 supported_prompts / supported_geometric_outputs 全部保留, 供未迁移平台
+    # 向后兼容 (合成隐式单 model 路径)。
     base["infra"] = "pytorch"
+    # v0.14.13 · `default_variants`: 跨 backend 对称声明 (sam3 当前只有单档 sam3.1).
+    # 即便单值, 前端 VariantSelector 仍按统一规则消费 model.default_variants 拿初值,
+    # 避免对"单档 backend"再走特殊分支.
+    _default_variants = {"model_variant": MODEL_VARIANT}
     base["models"] = [
         {
-            "id": "sam3",
-            "display_name": "SAM 3",
+            "id": "sam3-detection",
+            "display_name": "SAM 3 · 文本检测 (PCS)",
+            "task": "detection",
+            "model_family": "sam3",
+            "infra": "pytorch",
+            "is_interactive": False,
+            "supported_prompts": ["text"],
+            "supported_geometric_outputs": ["bbox"],
+            "supported_text_outputs": ["box"],
+            "supported_variants": base["supported_variants"],
+            "variants_shared_across_tasks": True,
+            "default_variants": _default_variants,
+            "params": base["params"],
+        },
+        {
+            "id": "sam3-segmentation",
+            "display_name": "SAM 3 · 文本分割 (PCS)",
+            "task": "segmentation",
+            "model_family": "sam3",
+            "infra": "pytorch",
+            "is_interactive": False,
+            "supported_prompts": ["text"],
+            "supported_geometric_outputs": ["polygon"],
+            "supported_text_outputs": ["mask", "both"],
+            "supported_variants": base["supported_variants"],
+            "variants_shared_across_tasks": True,
+            "default_variants": _default_variants,
+            "params": base["params"],
+        },
+        {
+            "id": "sam3-interactive-seg",
+            "display_name": "SAM 3 · 交互分割 (Exemplar)",
             "task": "interactive_seg",
             "model_family": "sam3",
             "infra": "pytorch",
-            "is_interactive": base["is_interactive"],
-            "supported_prompts": base["supported_prompts"],
-            "supported_geometric_outputs": ["bbox", "polygon"],
-            "supported_text_outputs": base["supported_text_outputs"],
+            "is_interactive": True,
+            "supported_prompts": ["exemplar"],
+            "supported_geometric_outputs": ["polygon"],
             "supported_variants": base["supported_variants"],
+            "variants_shared_across_tasks": True,
+            "default_variants": _default_variants,
             "params": base["params"],
-        }
+        },
     ]
     return base
 
@@ -331,8 +497,36 @@ async def unload() -> dict:
 async def reload() -> dict:
     """主动 (重新) 加载模型. 已加载时是 noop."""
     was_loaded = _predictor is not None
-    await _ensure_predictor_loaded()
+    await _ensure_predictor_loaded(count_as_hit=False)
     return {"ok": True, "loaded": True, "reloaded": not was_loaded}
+
+
+# v0.14.14 协议 §4.4 · /warmup 端点 (sam3 单档, body 可空).
+
+
+class WarmupRequest(BaseModel):
+    """sam3 是单档 sam3.1; variants 可选 {model_variant: "sam3.1"}, 仅校验."""
+
+    variants: dict[str, str] = {}
+
+
+@app.post("/warmup", response_model=WarmupResponse)
+async def warmup(req: WarmupRequest | None = None) -> WarmupResponse:
+    """v0.14.14: 加载 SAM 3 权重到 GPU 不跑 forward.
+
+    sam3 单档, variants.model_variant 必须等于 sam3.1 (或缺省). 重复预热返回 cache_hit=true.
+    """
+    if req is not None and req.variants:
+        mv = req.variants.get("model_variant")
+        if mv is not None and mv != MODEL_VERSION:
+            raise VariantNotSupportedError("model_variant", mv, [MODEL_VERSION])
+    _predictor_obj, cache_hit, load_ms = await _ensure_predictor_loaded(count_as_hit=False)
+    return WarmupResponse(
+        ok=True,
+        model_load_ms=load_ms,
+        cache_hit=cache_hit,
+        evicted=None,
+    )
 
 
 def _fetch_image(file_path: str) -> Image.Image:
@@ -471,14 +665,14 @@ def _observe(prompt_type: str, hit: bool, started: float) -> int:
 
 @app.post("/predict")
 async def predict(request: Request):
-    # 懒加载: 若已被 idle / 手动卸载, 此处 await 触发后台 executor 重建模型.
-    p = await _ensure_predictor_loaded()
     body = await request.json()
     started = time.perf_counter()
 
     if isinstance(body, dict) and "task" in body and "context" in body:
         task = body["task"]
-        ctx = body.get("context") or {}
+        ctx = _normalize_predict_context(body.get("context") or {})
+        # 懒加载: 若已被 idle / 手动卸载, 此处 await 触发后台 executor 重建模型.
+        p, pool_cache_hit, model_load_ms = await _ensure_predictor_loaded()
         result, hit = _run_prompt(p, task["file_path"], ctx)
         elapsed_ms = _observe(ctx.get("type") or "unknown", hit, started)
         return PredictionResult(
@@ -486,11 +680,16 @@ async def predict(request: Request):
             score=max((r.get("score") or 0.0) for r in result) if result else None,
             model_version=MODEL_VERSION,
             inference_time_ms=elapsed_ms,
+            cache_hit=pool_cache_hit,
+            model_load_ms=model_load_ms,
         ).model_dump(exclude_none=True)
 
     if isinstance(body, dict) and "tasks" in body:
         tasks = body["tasks"]
-        ctx = body.get("context") or {"type": "text", "text": body.get("text", "")}
+        ctx = _normalize_predict_context(
+            body.get("context") or {"type": "text", "text": body.get("text", "")}
+        )
+        p, pool_cache_hit, model_load_ms = await _ensure_predictor_loaded()
         results = []
         for t in tasks:
             t_started = time.perf_counter()
@@ -509,6 +708,9 @@ async def predict(request: Request):
                     score=max((r.get("score") or 0.0) for r in result) if result else None,
                     model_version=MODEL_VERSION,
                     inference_time_ms=elapsed_ms,
+                    # 整批共享同一懒加载结果: 第一条 task 触发, 后续都是 True/None.
+                    cache_hit=pool_cache_hit,
+                    model_load_ms=model_load_ms,
                 ).model_dump(exclude_none=True)
             )
         return BatchPredictResponse(results=results).model_dump(exclude_none=True)

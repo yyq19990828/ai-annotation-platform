@@ -47,8 +47,8 @@ graph TB
 # 默认四件套（postgres / redis / minio / celery-worker）
 docker compose up -d
 
-# GPU 推理（需 NVIDIA Container Toolkit）
-docker compose --profile gpu up -d grounded-sam2-backend
+# GPU 推理（需 NVIDIA Container Toolkit；backend 在叠加文件 docker-compose.ml.yml）
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up -d grounded-sam2-backend
 
 # 可观测性（dev 多吃 ~200MB，按需）
 docker compose --profile monitoring up -d prometheus grafana

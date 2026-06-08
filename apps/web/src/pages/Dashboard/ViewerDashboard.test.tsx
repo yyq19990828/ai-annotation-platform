@@ -128,7 +128,6 @@ describe("ViewerDashboard", () => {
           total_tasks: 10,
           completed_tasks: 5,
           ai_enabled: true,
-          ai_model: "yolo-v8",
           ml_backend_id: "mb-1",
           status: "in_progress",
         },
@@ -137,10 +136,10 @@ describe("ViewerDashboard", () => {
     });
     mockUseProjectStats.mockReturnValue({ data: undefined });
     renderUI();
-    expect(screen.getByText("yolo-v8")).toBeInTheDocument();
+    expect(screen.getByText("已接入模型")).toBeInTheDocument();
   });
 
-  it("AI enabled 但已解绑后端 → 不显示残留模型名", () => {
+  it("AI enabled 但已解绑后端 → 显示未接入", () => {
     mockUseProjects.mockReturnValue({
       data: [
         {
@@ -152,7 +151,6 @@ describe("ViewerDashboard", () => {
           total_tasks: 10,
           completed_tasks: 5,
           ai_enabled: true,
-          ai_model: "yolo-v8",
           ml_backend_id: null,
           status: "in_progress",
         },
@@ -161,7 +159,6 @@ describe("ViewerDashboard", () => {
     });
     mockUseProjectStats.mockReturnValue({ data: undefined });
     renderUI();
-    expect(screen.queryByText("yolo-v8")).not.toBeInTheDocument();
     expect(screen.getByText("未接入模型")).toBeInTheDocument();
   });
 

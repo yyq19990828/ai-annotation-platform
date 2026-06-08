@@ -3165,6 +3165,17 @@
             "title": "Models",
             "type": "array"
           },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "supported_geometric_outputs": {
             "default": [],
             "items": {
@@ -3196,6 +3207,11 @@
             },
             "title": "Supported Trackers",
             "type": "array"
+          },
+          "warmup_endpoint": {
+            "default": false,
+            "title": "Warmup Endpoint",
+            "type": "boolean"
           }
         },
         "title": "BackendCapabilities",
@@ -5383,6 +5399,59 @@
         "title": "CanvasShape",
         "type": "object"
       },
+      "CapabilityInstanceItem": {
+        "description": "平台已知 backend 的实例视图 (env-only 容器 + 项目级注册合并)。\n\n`source` = \"env_only\" 表示 docker-compose 自带或运维 env 配的容器,\n          \"registered\" 表示项目级 ml_backends 表里有记录。\n`name` 是 backend 显示名 (env-only 取 /setup.name, registered 取 ml_backend.name)。\n不暴露 url / project_id / health 指标, 让普通登录用户安全消费。",
+        "properties": {
+          "infra": {
+            "default": "unknown",
+            "title": "Infra",
+            "type": "string"
+          },
+          "models": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InstanceModelItem"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "warmup_endpoint": {
+            "default": false,
+            "title": "Warmup Endpoint",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "name"
+        ],
+        "title": "CapabilityInstanceItem",
+        "type": "object"
+      },
+      "CapabilityInstancesResponse": {
+        "properties": {
+          "instances": {
+            "items": {
+              "$ref": "#/components/schemas/CapabilityInstanceItem"
+            },
+            "title": "Instances",
+            "type": "array"
+          }
+        },
+        "required": [
+          "instances"
+        ],
+        "title": "CapabilityInstancesResponse",
+        "type": "object"
+      },
       "CeleryHealthSummary": {
         "properties": {
           "active_count": {
@@ -7538,6 +7607,231 @@
         "title": "HostInfo",
         "type": "object"
       },
+      "InstanceModelItem": {
+        "description": "实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 resource_profile /\nparams 等运维信息; v0.14.12 起补 supported_variants + variant_combinations 让\n前端能按主轴展开「具体模型」行).",
+        "properties": {
+          "default_variants": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Default Variants",
+            "type": "object"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "infra": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Infra"
+          },
+          "is_interactive": {
+            "default": false,
+            "title": "Is Interactive",
+            "type": "boolean"
+          },
+          "modality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modality"
+          },
+          "model_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Family"
+          },
+          "supported_geometric_outputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Geometric Outputs",
+            "type": "array"
+          },
+          "supported_prompts": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Prompts",
+            "type": "array"
+          },
+          "supported_trackers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Trackers",
+            "type": "array"
+          },
+          "supported_variants": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InstanceVariantGroup"
+            },
+            "title": "Supported Variants",
+            "type": "array"
+          },
+          "task": {
+            "default": "unknown",
+            "title": "Task",
+            "type": "string"
+          },
+          "variant_combinations": {
+            "default": [],
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Variant Combinations",
+            "type": "array"
+          },
+          "variants_shared_across_tasks": {
+            "default": false,
+            "title": "Variants Shared Across Tasks",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "display_name"
+        ],
+        "title": "InstanceModelItem",
+        "type": "object"
+      },
+      "InstanceVariantGroup": {
+        "description": "variants 多轴的单根轴 (序列保持与 backend /setup 顺序一致).",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "variants": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InstanceVariantOption"
+            },
+            "title": "Variants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "InstanceVariantGroup",
+        "type": "object"
+      },
+      "InstanceVariantOption": {
+        "description": "variants axis 内一条选项 (透传自 backend /setup; 用于前端列表按 axis 拆行).",
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "recommended": {
+            "default": false,
+            "title": "Recommended",
+            "type": "boolean"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          },
+          "vram_gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vram Gb"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "InstanceVariantOption",
+        "type": "object"
+      },
       "InteractiveRequest": {
         "description": "工作台「AI 助手」单次推理请求。`context` 透传至 backend，平台不做 schema 校验。\n\n`context.type` 协商枚举（详见 `docs-site/dev/ml-backend-protocol.md` §2.2）：\n- ``point``：``{\"type\":\"point\",\"points\":[[x,y],...],\"labels\":[1,0,...]}``\n- ``bbox``：``{\"type\":\"bbox\",\"bbox\":[x1,y1,x2,y2]}``\n- ``polygon``：``{\"type\":\"polygon\",\"points\":[[x,y],...]}``\n- ``text``：``{\"type\":\"text\",\"text\":\"ripe apples\"}``（v0.9.x Grounded-SAM-2）\n- ``exemplar``：留给 v0.10.x SAM 3。",
         "properties": {
@@ -8254,10 +8548,27 @@
         "additionalProperties": true,
         "description": "v0.14.9 · 能力声明协议 v2 — 单个 model 条目 (一个 backend 暴露 N 个).\n\n由 services/ml_capabilities._normalize_model 规范化后存入\nBackendCapabilities.models; `task` 是条目边界 (决定输出几何与项目兼容性),\n`infra` 缺省继承 backend 默认, `modality` 为派生视图。",
         "properties": {
+          "classes": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Classes",
+            "type": "array"
+          },
           "default_thresholds": {
             "additionalProperties": true,
             "default": {},
             "title": "Default Thresholds",
+            "type": "object"
+          },
+          "default_variants": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Default Variants",
             "type": "object"
           },
           "display_name": {
@@ -8372,6 +8683,22 @@
             "default": "unknown",
             "title": "Task",
             "type": "string"
+          },
+          "variant_combinations": {
+            "default": [],
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Variant Combinations",
+            "type": "array"
+          },
+          "variants_shared_across_tasks": {
+            "default": false,
+            "title": "Variants Shared Across Tasks",
+            "type": "boolean"
           }
         },
         "required": [
@@ -9502,6 +9829,20 @@
             ],
             "title": "Batch Id"
           },
+          "class_filter": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Filter"
+          },
           "ml_backend_id": {
             "format": "uuid",
             "title": "Ml Backend Id",
@@ -9517,6 +9858,20 @@
               }
             ],
             "title": "Model Id"
+          },
+          "model_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Variants"
           },
           "output_mode": {
             "default": "mask",
@@ -10198,17 +10553,6 @@
             "title": "Ai Enabled",
             "type": "boolean"
           },
-          "ai_model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ai Model"
-          },
           "attribute_schema": {
             "anyOf": [
               {
@@ -10546,17 +10890,6 @@
             "title": "Ai Enabled",
             "type": "boolean"
           },
-          "ai_model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ai Model"
-          },
           "annotation_guide": {
             "anyOf": [
               {
@@ -10616,6 +10949,16 @@
             "default": "image",
             "title": "Data Type",
             "type": "string"
+          },
+          "default_variants": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Default Variants",
+            "type": "object"
           },
           "display_id": {
             "title": "Display Id",
@@ -10832,7 +11175,6 @@
           "owner_id",
           "status",
           "ai_enabled",
-          "ai_model",
           "total_tasks",
           "completed_tasks",
           "review_tasks",
@@ -11331,17 +11673,6 @@
             "title": "Ai Enabled",
             "type": "boolean"
           },
-          "ai_model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ai Model"
-          },
           "annotation_guide": {
             "anyOf": [
               {
@@ -11556,17 +11887,6 @@
             "default": false,
             "title": "Ai Enabled",
             "type": "boolean"
-          },
-          "ai_model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ai Model"
           },
           "annotation_guide": {
             "anyOf": [
@@ -11788,17 +12108,6 @@
               }
             ],
             "title": "Ai Enabled"
-          },
-          "ai_model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ai Model"
           },
           "annotation_guide": {
             "anyOf": [
@@ -12089,17 +12398,6 @@
             ],
             "title": "Ai Enabled"
           },
-          "ai_model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ai Model"
-          },
           "annotation_guide": {
             "anyOf": [
               {
@@ -12172,6 +12470,23 @@
               }
             ],
             "title": "Data Type"
+          },
+          "default_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Variants"
           },
           "due_date": {
             "anyOf": [
@@ -12441,6 +12756,181 @@
           "annotation"
         ],
         "title": "PropagateResponse",
+        "type": "object"
+      },
+      "ProtocolCapabilitiesResponse": {
+        "description": "协议能力目录响应顶层结构。\n\n`version` 与 ml-backend-protocol 协议版本对齐 (当前 v2); 受控词表的不兼容\n变更才 bump (新增 task 不算)。",
+        "properties": {
+          "geometries": {
+            "items": {
+              "$ref": "#/components/schemas/ProtocolGeometryItem"
+            },
+            "title": "Geometries",
+            "type": "array"
+          },
+          "infras": {
+            "items": {
+              "$ref": "#/components/schemas/ProtocolInfraItem"
+            },
+            "title": "Infras",
+            "type": "array"
+          },
+          "modalities": {
+            "items": {
+              "$ref": "#/components/schemas/ProtocolModalityItem"
+            },
+            "title": "Modalities",
+            "type": "array"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/ProtocolTaskItem"
+            },
+            "title": "Tasks",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "tasks",
+          "infras",
+          "modalities",
+          "geometries"
+        ],
+        "title": "ProtocolCapabilitiesResponse",
+        "type": "object"
+      },
+      "ProtocolGeometryItem": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "summary"
+        ],
+        "title": "ProtocolGeometryItem",
+        "type": "object"
+      },
+      "ProtocolInfraItem": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "summary"
+        ],
+        "title": "ProtocolInfraItem",
+        "type": "object"
+      },
+      "ProtocolModalityItem": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "summary"
+        ],
+        "title": "ProtocolModalityItem",
+        "type": "object"
+      },
+      "ProtocolTaskItem": {
+        "properties": {
+          "default_geometry": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Default Geometry",
+            "type": "array"
+          },
+          "default_modalities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Default Modalities",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "protocol_notes": {
+            "title": "Protocol Notes",
+            "type": "string"
+          },
+          "suggested_backends": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SuggestedBackendItem"
+            },
+            "title": "Suggested Backends",
+            "type": "array"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "typical_models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Typical Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "summary",
+          "default_geometry",
+          "default_modalities",
+          "typical_models",
+          "protocol_notes"
+        ],
+        "title": "ProtocolTaskItem",
         "type": "object"
       },
       "RecentReviewItem": {
@@ -13833,6 +14323,56 @@
           "total_size_bytes"
         ],
         "title": "StorageOverview",
+        "type": "object"
+      },
+      "SuggestedBackendItem": {
+        "properties": {
+          "builtin": {
+            "default": false,
+            "title": "Builtin",
+            "type": "boolean"
+          },
+          "infra": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Infra"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "repo_url": {
+            "title": "Repo Url",
+            "type": "string"
+          },
+          "research_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Research Link"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "repo_url",
+          "summary"
+        ],
+        "title": "SuggestedBackendItem",
         "type": "object"
       },
       "SystemHealthResponse": {
@@ -23988,6 +24528,63 @@
         ]
       }
     },
+    "/api/v1/ml-capabilities/instances": {
+      "get": {
+        "description": "平台已知 backend 实例的能力清单 (与项目级注册解耦).\n\n数据源:\n- env-only: settings.ml_backend_observe_urls 配的容器, 探测 /setup;\n- registered: ml_backends 表中 state=connected 的项, 读 health_meta 快照。\n\n字段裁剪: 不暴露 url / gpu_info / cache / pool 等运维敏感信息,\n让普通登录用户也能看到完整 model 清单。",
+        "operationId": "get_capability_instances_api_v1_ml_capabilities_instances_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityInstancesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Capability Instances",
+        "tags": [
+          "ml-capabilities"
+        ]
+      }
+    },
+    "/api/v1/ml-capabilities/protocol": {
+      "get": {
+        "description": "协议级能力目录 (静态 SSOT, 与 backend 注册无关)。\n\n`Cache-Control: private, max-age=300` + `ETag`。客户端二次请求带\n`If-None-Match: <etag>` 时返回 304。",
+        "operationId": "get_protocol_capabilities_api_v1_ml_capabilities_protocol_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtocolCapabilitiesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "304": {
+            "description": "Not Modified"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Protocol Capabilities",
+        "tags": [
+          "ml-capabilities"
+        ]
+      }
+    },
     "/api/v1/notification-preferences": {
       "get": {
         "description": "v0.7.0：返回所有已知 type 的偏好；无记录默认 in_app=True / email=False。",
@@ -27885,6 +28482,81 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/ml-backends/{backend_id}/warmup": {
+      "post": {
+        "description": "v0.14.14 协议 §4.4 · 转发 POST /warmup 到 backend.\n\nbody 原样转发 (各 backend schema 不同). backend 未声明 warmup_endpoint=True 时仍\n转发, 收到 404/405 由上游 502 反馈; 前端 ⚡ 按钮应已通过 health_meta.capabilities.\nwarmup_endpoint 提前置灰.",
+        "operationId": "warmup_ml_backend_api_v1_projects__project_id__ml_backends__backend_id__warmup_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Backend Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Warmup Ml Backend",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/orphan-tasks/cleanup": {
       "post": {
         "description": "v0.6.7 二修 B-10：删除本项目所有「无源 task」（含 annotations / locks / comments），重算 counters。\n\n适用场景：v0.6.0~v0.6.6 期间 link_project 写 dataset_item_id 但未持久化 batch 关系，\n后续数据集被 unlink / 删除留下的孤儿 task。",
@@ -30910,6 +31582,24 @@
               ],
               "description": "可选: 仅采纳指定下标的 shape (一个 prediction 可含多个 shape).",
               "title": "Shape Index"
+            }
+          },
+          {
+            "description": "可选: 采纳时把类别落到指定项目标签 (v0.14.17). 用于预测类名既不在项目标签集、又无 alias 命中时, 由人当场选项目类别再采纳, 避免 422 拒死。",
+            "in": "query",
+            "name": "override_class_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "可选: 采纳时把类别落到指定项目标签 (v0.14.17). 用于预测类名既不在项目标签集、又无 alias 命中时, 由人当场选项目类别再采纳, 避免 422 拒死。",
+              "title": "Override Class Name"
             }
           }
         ],

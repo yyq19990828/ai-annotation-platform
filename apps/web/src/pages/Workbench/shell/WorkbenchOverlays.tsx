@@ -111,7 +111,11 @@ export function WorkbenchOverlays({
           classes={classes}
           recent={recentClasses}
           defaultClass={editingClass.currentClass}
-          title={`改类别 (当前: ${editingClass.currentClass})`}
+          title={
+            editingClass.accept
+              ? `采纳 → 选项目标签 (模型类别: ${editingClass.currentClass})`
+              : `改类别 (当前: ${editingClass.currentClass})`
+          }
           onPick={changeClassAttrEditing && onChangeClassKeepOpen ? onChangeClassKeepOpen : onCommitChangeClass}
           onCancel={onCancelChangeClass}
           attrEditing={changeClassAttrEditing}
@@ -126,7 +130,11 @@ export function WorkbenchOverlays({
           classes={classes}
           recent={recentClasses}
           defaultClass={editingClass.currentClass}
-          title={`改类别 (当前: ${editingClass.currentClass})`}
+          title={
+            editingClass.accept
+              ? `采纳 → 选项目标签 (模型类别: ${editingClass.currentClass})`
+              : `改类别 (当前: ${editingClass.currentClass})`
+          }
           onPick={changeClassAttrEditing && onChangeClassKeepOpen ? onChangeClassKeepOpen : onCommitChangeClass}
           onCancel={onCancelChangeClass}
           attrEditing={changeClassAttrEditing}

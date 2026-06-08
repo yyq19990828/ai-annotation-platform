@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ApiError } from "@/api/client";
 import { mlBackendsApi } from "@/api/ml-backends";
 import { useToastStore } from "@/components/ui/Toast";
 import { VARIANT_FIELD_KEYS } from "../components/SchemaForm";
+import { recordPredictCacheHit } from "./sessionVariantCache";
 import { createSamCache, makeSamCacheKey } from "./useSamCache";
 
 /**
@@ -125,8 +127,10 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   const dispatch = useCallback(
     async (context: Record<string, unknown>, source: PendingCandidate["source"]) => {
       if (!projectId || !taskId || !mlBackendId) return;
-      const ctxKind = (context.type as string | undefined) ?? source;
-      const cacheKey = makeSamCacheKey({ taskId, mlBackendId, ctxKind, ctx: context });
+      const normalized = normalizePredictContext(context);
+      const requestContext = normalized.context;
+      const ctxKind = (requestContext.type as string | undefined) ?? source;
+      const cacheKey = makeSamCacheKey({ taskId, mlBackendId, ctxKind, ctx: requestContext });
       // 命中前端缓存：直接复用候选，跳过 HTTP。
       const cached = cache.get(cacheKey);
       if (cached) {
@@ -135,25 +139,30 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         return;
       }
       // v0.10.23 · 本次请求携带的变体是否与上次成功应用的不同 → 切换后首次预测, 弹三态通知。
-      const variantSig = variantSignature(context);
+      const variantSig = variantSignature(requestContext);
       const isVariantSwitch =
         variantSig !== null && variantSig !== lastAppliedVariantRef.current;
       if (isVariantSwitch) {
-        pushToast({ msg: `正在切换到 ${variantLabel(context)} 模型…` });
+        pushToast({ msg: `正在切换到 ${variantLabel(requestContext)} 模型…` });
       }
       const myInflight = ++inflightRef.current;
       setIsRunning(true);
       try {
         const resp = await mlBackendsApi.interactiveAnnotate(projectId, mlBackendId, {
           task_id: taskId,
-          context,
+          context: requestContext,
         });
         // 只接受最新一次请求的结果（防止防抖窗口外的旧请求覆盖新候选）
         if (myInflight !== inflightRef.current) return;
         if (isVariantSwitch) {
           lastAppliedVariantRef.current = variantSig;
-          pushToast({ msg: `已切换到 ${variantLabel(context)}`, kind: "success" });
+          pushToast({ msg: `已切换到 ${variantLabel(requestContext)}`, kind: "success" });
         }
+        recordPredictCacheHit(
+          mlBackendId,
+          normalized.modelVariants,
+          Object.keys(normalized.modelVariants).length > 0 ? resp.cache_hit : null,
+        );
         const next: PendingCandidate[] = (resp.result ?? [])
           .map((r, i) => normalizeResult(r, i, source))
           .filter((c): c is PendingCandidate => c !== null);
@@ -170,12 +179,13 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         }
       } catch (err) {
         if (myInflight !== inflightRef.current) return;
+        const formatted = formatPredictError(err);
         const msg = err instanceof Error ? err.message : String(err);
         // 切换后首次预测失败 → 不更新 lastAppliedVariant (下次重试仍视为切换), 落到切换失败态;
         // backend 503 (变体 checkpoint 未预置) 的 detail 经 ApiError.message 透出。
         pushToast({
-          msg: isVariantSwitch ? "模型切换失败" : "SAM 推理失败",
-          sub: msg.slice(0, 120),
+          msg: formatted?.msg ?? (isVariantSwitch ? "模型切换失败" : "SAM 推理失败"),
+          sub: formatted?.sub ?? msg.slice(0, 120),
           kind: "error",
         });
       } finally {
@@ -314,21 +324,81 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
  * 或用户从未选过 → 不弹切换通知)。
  */
 function variantSignature(context: Record<string, unknown>): string | null {
-  const parts = VARIANT_FIELD_KEYS.map((k) => {
-    const v = context[k];
-    return typeof v === "string" ? `${k}=${v}` : null;
-  }).filter((p): p is string => p !== null);
+  const variants = readModelVariants(context);
+  const parts = Object.keys(variants)
+    .sort()
+    .map((key) => `${key}=${variants[key]}`);
   return parts.length > 0 ? parts.join("|") : null;
 }
 
-/** v0.10.23 · 通知文案: 「SAM tiny/DINO base」; 缺 dino_variant 时只显示 SAM 段。 */
+/** v0.10.23 · 通知文案: 「SAM tiny/DINO base」; 其它轴显示 axis=value。 */
 function variantLabel(context: Record<string, unknown>): string {
-  const sam = typeof context.sam_variant === "string" ? context.sam_variant : null;
-  const dino = typeof context.dino_variant === "string" ? context.dino_variant : null;
+  const variants = readModelVariants(context);
+  const sam = variants.sam_variant ?? null;
+  const dino = variants.dino_variant ?? null;
   const segs: string[] = [];
   if (sam) segs.push(`SAM ${sam}`);
   if (dino) segs.push(`DINO ${dino}`);
+  for (const [key, value] of Object.entries(variants)) {
+    if (key === "sam_variant" || key === "dino_variant") continue;
+    segs.push(`${key}=${value}`);
+  }
   return segs.join("/");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function readModelVariants(context: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  const nested = context.model_variants;
+  if (isRecord(nested)) {
+    for (const [key, value] of Object.entries(nested)) {
+      if (typeof value === "string") out[key] = value;
+    }
+  }
+  for (const key of VARIANT_FIELD_KEYS) {
+    const value = context[key];
+    if (typeof value === "string" && out[key] == null) out[key] = value;
+  }
+  return out;
+}
+
+function normalizePredictContext(context: Record<string, unknown>): {
+  context: Record<string, unknown>;
+  modelVariants: Record<string, string>;
+} {
+  const modelVariants = readModelVariants(context);
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(context)) {
+    if (key === "model_variants" || VARIANT_FIELD_KEYS.includes(key as (typeof VARIANT_FIELD_KEYS)[number])) {
+      continue;
+    }
+    next[key] = value;
+  }
+  if (Object.keys(modelVariants).length > 0) {
+    next.model_variants = modelVariants;
+  }
+  return { context: next, modelVariants };
+}
+
+function formatPredictError(err: unknown): { msg: string; sub?: string } | null {
+  if (!(err instanceof ApiError)) return null;
+  if (err.status === 422) {
+    return { msg: "参数错误，请检查输入", sub: err.message.slice(0, 120) };
+  }
+  if (err.status === 503) {
+    const retryAfter = err.headers?.["retry-after"];
+    return {
+      msg: "模型暂不可用",
+      sub: retryAfter ? `${retryAfter} 秒后重试` : err.message.slice(0, 120),
+    };
+  }
+  if (err.status >= 500) {
+    return { msg: "服务异常", sub: `HTTP ${err.status}` };
+  }
+  return null;
 }
 
 

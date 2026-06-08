@@ -47,9 +47,15 @@ def _raise_for_backend_status(resp: httpx.Response) -> None:
     if resp.status_code < 400:
         return
     detail = _backend_detail(resp)
-    if resp.status_code < 500:
+    headers: dict[str, str] | None = None
+    retry_after = resp.headers.get("Retry-After")
+    if retry_after:
+        headers = {"Retry-After": retry_after}
+    if resp.status_code < 500 or resp.status_code == 503:
         raise HTTPException(
-            status_code=resp.status_code, detail=f"ML backend: {detail}"
+            status_code=resp.status_code,
+            detail=f"ML backend: {detail}",
+            headers=headers,
         )
     raise HTTPException(status_code=502, detail=f"ML backend error: {detail}")
 
@@ -71,6 +77,8 @@ class PredictionResult:
     score: float | None = None
     model_version: str | None = None
     inference_time_ms: int | None = None
+    cache_hit: bool | None = None
+    model_load_ms: int | None = None
     # v0.9.11 · token / cost 透传 (LLM-backed backend 才有, grounded-sam2 当前留 None).
     # worker 累加到 async_job.result.total_cost, prediction_meta 单条留档.
     meta: dict | None = None
@@ -121,10 +129,11 @@ class MLBackendClient:
                 except Exception:
                     return True, None
                 # v0.9.11 · 加 host (PerfHud 容器 CPU/RAM); gpu_info/cache/model_version 保留
-                # v0.10.26 · 加 pool (loaded_variants / cap / per_variant_lru_ts),
-                # 供模型市场变体面板展示 (backend 无 pool 字段时静默跳过).
+                # v0.10.26 · 加 pool (cap / loaded_variants / per_variant_lru_ts), v0.14.14
+                # 升级到协议 §4.3 PoolStatus (cap / current_size / loaded_keys / last_evict),
+                # 这里整段透传; 模型市场变体面板按字段优先级展示 (backend 无 pool 时静默跳过).
                 # v0.10.36 · 加 video_pool (cap / loaded_variants / active_sessions / idle_seconds),
-                # 供视频追踪显存池观测 (backend 无该字段时静默跳过).
+                # 供视频追踪显存池观测 (backend 无该字段时静默跳过; video pool 协议化留下版).
                 meta = {
                     k: data[k]
                     for k in (
@@ -244,6 +253,8 @@ class MLBackendClient:
             score=data.get("score"),
             model_version=data.get("model_version"),
             inference_time_ms=data.get("inference_time_ms") or wall_ms,
+            cache_hit=data.get("cache_hit"),
+            model_load_ms=data.get("model_load_ms"),
             meta=data.get("meta"),
         )
 
@@ -284,6 +295,23 @@ class MLBackendClient:
     async def setup(self) -> dict:
         async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
             resp = await client.get(f"{self.base_url}/setup", headers=self._headers())
+            resp.raise_for_status()
+            return resp.json()
+
+    async def warmup(self, body: dict) -> dict:
+        """v0.14.14 协议 §4.4 · 把指定 variant 权重加载到 pool, 不跑 forward.
+
+        body 由前端原样传入 (各 backend schema 不同: yolo 要 task+variants{series,size},
+        gsam2 要 variants{sam_variant,dino_variant}, sam3 可空或 variants{model_variant}).
+        响应统一为 {ok, model_load_ms, cache_hit, evicted}. 用 predict 超时配额 (加载
+        可能数秒).
+        """
+        async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
+            resp = await client.post(
+                f"{self.base_url}/warmup",
+                json=body or {},
+                headers=self._headers(),
+            )
             resp.raise_for_status()
             return resp.json()
 

@@ -17,45 +17,23 @@ v0.14.9 · 能力声明协议 v2 (多模型目录 + infra):
 
 from __future__ import annotations
 
-# ── 受控词表 (与平台内部类型锚点对齐: TOOL_UNIT_IDS / LabelStudio result type) ──
-# 基础设施: backend 顶层声明默认值, model 条目可覆盖。
-INFRA_VALUES = ("pytorch", "onnx", "paddle", "tensorrt", "openvino", "other")
-# 任务能力 (条目边界, 决定输出几何与项目兼容性)。
-TASK_VALUES = (
-    "detection",
-    "obb",
-    "segmentation",
-    "keypoint",
-    "classification",
-    "ocr",
-    "doc_layout",
-    "tracker",
-    "interactive_seg",
-)
-# 输出几何 (复用现有 supported_geometric_outputs 字段名)。
-GEOMETRY_VALUES = (
-    "bbox",
-    "rotated_bbox",
-    "polygon",
-    "polyline",
-    "keypoint",
-    "lidar_box_3d",
-    "point_mask_3d",
-    "none",
+# v0.14.11 · 受控词表与 task→默认几何统一由 capability_registry SSOT 派生,
+# 协议元数据 (label / summary / suggested_backends) 同源, 供
+# `GET /v1/ml-capabilities/protocol` 直接对外暴露。
+from .capability_registry import (
+    GEOMETRY_VALUES,
+    INFRA_VALUES,
+    TASK_DEFAULT_GEOMETRY as _TASK_DEFAULT_GEOMETRY,
+    TASK_VALUES,
 )
 
-# task → 默认输出几何 (条目未声明几何时按 task 补全; 合成隐式单 model 也用)。
-_TASK_DEFAULT_GEOMETRY: dict[str, list[str]] = {
-    "detection": ["bbox"],
-    "obb": ["rotated_bbox"],
-    "segmentation": ["polygon"],
-    "keypoint": ["keypoint"],
-    "classification": ["none"],
-    "ocr": ["bbox"],
-    "doc_layout": ["bbox"],
-    "tracker": [],
-    "interactive_seg": ["polygon"],
-}
+__all__ = [
+    "INFRA_VALUES",
+    "TASK_VALUES",
+    "GEOMETRY_VALUES",
+    "extract_capabilities",
+    "derive_modalities",
+]
 
 # 模态规范顺序 (image < video < lidar)。
 _MODALITY_ORDER = {"image": 0, "video": 1, "lidar": 2}
@@ -112,9 +90,19 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         "supported_text_outputs": list(model.get("supported_text_outputs") or []),
         "supported_trackers": list(model.get("supported_trackers") or []),
         "supported_variants": model.get("supported_variants") or [],
+        "variant_combinations": list(model.get("variant_combinations") or []),
+        "variants_shared_across_tasks": bool(
+            model.get("variants_shared_across_tasks", False)
+        ),
+        # v0.14.13 · backend 自报的默认 variant 组合 (dict[axis_key, value]).
+        # 前端 VariantSelector 在用户未选时取此作初值, 优先级低于项目级 default_variants.
+        "default_variants": dict(model.get("default_variants") or {}),
         "default_thresholds": model.get("default_thresholds") or {},
         "resource_profile": model.get("resource_profile") or {},
         "params": model.get("params") or {},
+        # v0.14.17 · 闭集检测器的原生类别表 (yolo model.names, [{index,name}]); 供前端类别白名单.
+        # 仅在该 task 模型已加载过 (warmup/predict) 时 backend /setup 才带, 否则为空。
+        "classes": list(model.get("classes") or []),
     }
     out["modality"] = _model_modality(out)
     return out
@@ -181,7 +169,13 @@ def extract_capabilities(setup: dict | None) -> dict | None:
         models = [_synthesize_single_model(setup, infra)]
 
     caps: dict = {
+        # v0.14.12 · 透传 backend 自报的 name (如 "grounded-sam2-backend"), 让前端
+        # 能力目录显示「源 backend 名」而非用户取的项目别名 (如 "gsam2.1")。
+        "name": setup.get("name"),
         "infra": infra,
+        # v0.14.14 · backend 声明本端是否支持 POST /warmup (协议 §4.4); 前端模型市场
+        # "⚡ 预热" 按钮据此置灰. 老 backend 缺字段 = False.
+        "warmup_endpoint": bool(setup.get("warmup_endpoint", False)),
         "models": models,
         "is_interactive": any(m["is_interactive"] for m in models),
         "supported_prompts": _union(models, "supported_prompts"),

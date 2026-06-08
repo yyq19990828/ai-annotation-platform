@@ -24,7 +24,6 @@ CLONEABLE_PROJECT_FIELDS: tuple[str, ...] = (
     # attribute_schema 列已删, 配置全部经此字段复制.
     "tool_bindings",
     "ai_enabled",
-    "ai_model",
     "label_config",
     "sampling",
     "maximum_annotations",

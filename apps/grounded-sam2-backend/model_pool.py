@@ -28,7 +28,10 @@ import logging
 import time
 from collections import OrderedDict
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from datetime import datetime, timezone
+
+UTC = timezone.utc
+from typing import TYPE_CHECKING, Any, Literal
 
 from embedding_cache import EmbeddingCache
 
@@ -38,6 +41,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("grounded-sam2-backend.pool")
 
 VariantKey = tuple[str, str]
+EvictReason = Literal["lru", "manual", "idle_timeout"]
 
 
 class ModelPool:
@@ -70,15 +74,22 @@ class ModelPool:
         self._lru_ts: dict[VariantKey, float] = {}
         # per-variant 锁: 同一变体并发 miss 只 build 一次; 不同变体可并行排队。
         self._variant_locks: dict[VariantKey, asyncio.Lock] = {}
-        self._evict_count = 0
+        # v0.14.14: 运行时观测元数据 (协议 §4.3 PoolStatus). 老 `_evict_count` 累加值
+        # 在 v0.14.15 起被 _last_evict 详细记录替代; loaded_at/last_used_at/hit_count
+        # 是 LoadedKey 元数据.
+        self._loaded_at: dict[VariantKey, datetime] = {}
+        self._last_used_at: dict[VariantKey, datetime] = {}
+        self._hit_count: dict[VariantKey, int] = {}
+        self._last_evict: dict[str, Any] | None = None
 
     @property
     def cap(self) -> int:
         return self._cap
 
-    @property
-    def evict_count(self) -> int:
-        return self._evict_count
+    def is_loaded(self, sam_variant: str, dino_variant: str) -> bool:
+        """协议 §4.3 之前曾用 `(sv, dv) in pool.loaded_variants()` 判断; v0.14.14 之后
+        消费方应走 pool_status()['loaded_keys'], 内部调用方用本 helper."""
+        return (sam_variant, dino_variant) in self._predictors
 
     def _lock_for(self, key: VariantKey) -> asyncio.Lock:
         lock = self._variant_locks.get(key)
@@ -100,17 +111,30 @@ class ModelPool:
             self._caches[key] = cache
         return cache
 
-    async def get(self, sam_variant: str, dino_variant: str) -> GroundedSAM2Predictor:
-        """命中返回已 build 的 predictor; miss 在 per-variant 锁内 build。
+    @staticmethod
+    def _key_str(key: VariantKey) -> str:
+        """v0.14.14: 协议 §4.3 opaque key 序列化. gsam2 用 sam=X/dino=Y."""
+        sv, dv = key
+        return f"sam={sv}/dino={dv}"
 
-        超 build_timeout (排队等其他变体腾显存 / 等同变体 build) 抛 RuntimeError。
+    async def get(
+        self, sam_variant: str, dino_variant: str
+    ) -> tuple[GroundedSAM2Predictor, bool, int | None]:
+        """v0.14.14: 返回 (predictor, cache_hit, model_load_ms).
+
+        - cache_hit=True 时 load_ms=None (命中复用, 无加载耗时)
+        - cache_hit=False 时 load_ms 是本次 build 毫秒
+
+        miss 在 per-variant 锁内 build; 超 build_timeout 抛 RuntimeError。
         """
         key: VariantKey = (sam_variant, dino_variant)
         existing = self._predictors.get(key)
         if existing is not None:
             self._predictors.move_to_end(key)
             self._lru_ts[key] = time.monotonic()
-            return existing
+            self._last_used_at[key] = datetime.now(UTC)
+            self._hit_count[key] = self._hit_count.get(key, 0) + 1
+            return existing, True, None
 
         lock = self._lock_for(key)
         try:
@@ -126,7 +150,9 @@ class ModelPool:
             if existing is not None:
                 self._predictors.move_to_end(key)
                 self._lru_ts[key] = time.monotonic()
-                return existing
+                self._last_used_at[key] = datetime.now(UTC)
+                self._hit_count[key] = self._hit_count.get(key, 0) + 1
+                return existing, True, None
 
             # 先腾位 (驱逐到 cap-1), 再 build 新变体, 避免峰值显存 = (cap+1) 个模型。
             self._evict_until(self._cap - 1)
@@ -135,14 +161,77 @@ class ModelPool:
             logger.info(
                 "building variant %s (pool size=%d/%d)", key, len(self._predictors), self._cap
             )
+            t0 = time.monotonic()
             predictor = await loop.run_in_executor(
                 None, self._build_predictor, sam_variant, dino_variant, cache
             )
+            load_ms = int((time.monotonic() - t0) * 1000)
+            now = datetime.now(UTC)
             self._predictors[key] = predictor
             self._predictors.move_to_end(key)
             self._lru_ts[key] = time.monotonic()
+            self._loaded_at[key] = now
+            self._last_used_at[key] = now
+            self._hit_count[key] = 0
             logger.info("variant %s built; pool size=%d/%d", key, len(self._predictors), self._cap)
-            return predictor
+            return predictor, False, load_ms
+        finally:
+            lock.release()
+
+    async def warmup(
+        self, sam_variant: str, dino_variant: str
+    ) -> tuple[bool, int | None, str | None]:
+        """v0.14.14 协议 §4.4: 加载权重不算 hit, 不跑 forward.
+
+        返回 (cache_hit, model_load_ms, evicted_key_str).
+        """
+        key: VariantKey = (sam_variant, dino_variant)
+        existing = self._predictors.get(key)
+        if existing is not None:
+            self._predictors.move_to_end(key)
+            self._lru_ts[key] = time.monotonic()
+            self._last_used_at[key] = datetime.now(UTC)
+            return True, None, None
+
+        lock = self._lock_for(key)
+        try:
+            await asyncio.wait_for(lock.acquire(), timeout=self._build_timeout)
+        except (asyncio.TimeoutError, TimeoutError) as exc:
+            raise RuntimeError(
+                f"model pool busy: timed out warming up variant {key} "
+                f"after {self._build_timeout}s"
+            ) from exc
+        try:
+            existing = self._predictors.get(key)
+            if existing is not None:
+                self._predictors.move_to_end(key)
+                self._lru_ts[key] = time.monotonic()
+                self._last_used_at[key] = datetime.now(UTC)
+                return True, None, None
+
+            # 记录本次 warmup 之前的 last_evict 引用, 用于判断是否新触发 evict.
+            evict_marker = self._last_evict
+            self._evict_until(self._cap - 1)
+            evicted_key_str: str | None = None
+            if self._last_evict is not None and self._last_evict is not evict_marker:
+                evicted_key_str = self._last_evict["key"]
+
+            cache = self.cache_for(sam_variant, dino_variant)
+            loop = asyncio.get_running_loop()
+            t0 = time.monotonic()
+            predictor = await loop.run_in_executor(
+                None, self._build_predictor, sam_variant, dino_variant, cache
+            )
+            load_ms = int((time.monotonic() - t0) * 1000)
+            now = datetime.now(UTC)
+            self._predictors[key] = predictor
+            self._predictors.move_to_end(key)
+            self._lru_ts[key] = time.monotonic()
+            self._loaded_at[key] = now
+            self._last_used_at[key] = now
+            self._hit_count[key] = 0  # warmup 不算 hit
+            logger.info("variant %s warmed; pool size=%d/%d", key, len(self._predictors), self._cap)
+            return False, load_ms, evicted_key_str
         finally:
             lock.release()
 
@@ -153,22 +242,49 @@ class ModelPool:
             logger.info("evicting LRU variant %s", evict_key)
             del predictor
             self._lru_ts.pop(evict_key, None)
+            self._loaded_at.pop(evict_key, None)
+            self._last_used_at.pop(evict_key, None)
+            self._hit_count.pop(evict_key, None)
             cache = self._caches.get(evict_key)
             if cache is not None:
                 cache.clear()
             self._free_gpu_memory()
-            self._evict_count += 1
+            self._last_evict = {
+                "key": self._key_str(evict_key),
+                "at": datetime.now(UTC),
+                "reason": "lru",
+            }
 
-    def clear_all(self) -> bool:
-        """清空整池 + 各 cache 桶 (idle watcher / 手动 unload)。返回是否清了东西。"""
+    def clear_all(self, *, reason: str = "manual") -> bool:
+        """清空整池 + 各 cache 桶 (idle watcher / 手动 unload)。返回是否清了东西。
+
+        v0.14.14: reason 参数区分 idle_timeout / manual, 用于 PoolStatus.last_evict.
+        """
         if not self._predictors:
             return False
-        logger.info("clearing entire pool (%d variants)", len(self._predictors))
+        logger.info("clearing entire pool (%d variants, reason=%s)", len(self._predictors), reason)
+        # 记录最后一个 key 作为 last_evict 代表条目.
+        last_key = next(reversed(self._predictors))
         self._predictors.clear()
         self._lru_ts.clear()
+        self._loaded_at.clear()
+        self._last_used_at.clear()
+        self._hit_count.clear()
         for cache in self._caches.values():
             cache.clear()
         self._free_gpu_memory()
+        evict_reason: EvictReason
+        if reason == "idle_timeout":
+            evict_reason = "idle_timeout"
+        elif reason == "manual":
+            evict_reason = "manual"
+        else:
+            evict_reason = "manual"
+        self._last_evict = {
+            "key": self._key_str(last_key),
+            "at": datetime.now(UTC),
+            "reason": evict_reason,
+        }
         return True
 
     # ---------- 观测 ----------
@@ -177,20 +293,30 @@ class ModelPool:
     def loaded(self) -> bool:
         return bool(self._predictors)
 
-    def loaded_variants(self) -> list[dict]:
-        """已加载变体列表 (LRU 顺序, 最近用在后)。"""
-        return [{"sam_variant": sv, "dino_variant": dv} for (sv, dv) in self._predictors.keys()]
-
-    def per_variant_lru_ts(self) -> dict[str, float]:
-        """每变体最近访问的 monotonic 时间戳 (key 用 'sam/dino' 字面)。"""
-        return {f"{sv}/{dv}": round(ts, 2) for (sv, dv), ts in self._lru_ts.items()}
-
-    def health(self) -> dict:
+    def pool_status(self) -> dict[str, Any]:
+        """v0.14.14 协议 §4.3 PoolStatus: cap / current_size / loaded_keys / last_evict."""
+        loaded_keys: list[dict[str, Any]] = []
+        for key in self._predictors.keys():
+            loaded_at = self._loaded_at.get(key)
+            last_used = self._last_used_at.get(key, loaded_at)
+            loaded_keys.append({
+                "key": self._key_str(key),
+                "loaded_at": loaded_at.isoformat() if loaded_at else None,
+                "last_used_at": last_used.isoformat() if last_used else None,
+                "hit_count": self._hit_count.get(key, 0),
+            })
+        last_evict: dict[str, Any] | None = None
+        if self._last_evict is not None:
+            last_evict = {
+                "key": self._last_evict["key"],
+                "at": self._last_evict["at"].isoformat(),
+                "reason": self._last_evict["reason"],
+            }
         return {
             "cap": self._cap,
-            "loaded_variants": self.loaded_variants(),
-            "evict_count": self._evict_count,
-            "per_variant_lru_ts": self.per_variant_lru_ts(),
+            "current_size": len(self._predictors),
+            "loaded_keys": loaded_keys,
+            "last_evict": last_evict,
         }
 
     def aggregate_cache_stats(self) -> dict:

@@ -113,7 +113,7 @@ git add vendor/sam3 && git commit -m "vendor: bump sam3 to <commit-sha>"
 bash apps/sam3-backend/scripts/sync_vendor.sh <commit-sha>
 
 # 2. 通过 docker compose GPU profile 启动
-docker compose --profile gpu-sam3 up --build sam3-backend
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-sam3 up --build sam3-backend
 
 # 3. 端到端验证 (四种 prompt 都试一遍)
 curl http://localhost:8002/health
@@ -222,7 +222,7 @@ sam3.1 FP16 常驻 ~7GB 显存, 3090 单卡若同时挂 grounded-sam2 (~2GB) 与
 
 **license not accepted**: HuggingFace API 返回 401/403. 浏览器登 [https://huggingface.co/facebook/sam3.1](https://huggingface.co/facebook/sam3.1) 接受 license 后重试.
 
-**首次启动卡住 > 8 分钟**: `docker compose --profile gpu-sam3 logs -f sam3-backend` 查看下载进度. HuggingFace 偶发限速, 重试即可.
+**首次启动卡住 > 8 分钟**: `docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-sam3 logs -f sam3-backend` 查看下载进度. HuggingFace 偶发限速, 重试即可.
 
 **CUDA OOM**: 减小 `SAM3_EMBEDDING_CACHE_SIZE` (默认 32 → 16); 4060 笔记本不要部署 sam3, 走 grounded-sam2.
 

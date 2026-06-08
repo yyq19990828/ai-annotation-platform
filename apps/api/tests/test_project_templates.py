@@ -252,7 +252,6 @@ async def test_create_from_source_project_dumps_fields(
         classes=["car", "person"],
         classes_config={"car": {"color": "#ff0000", "order": 0}},
         ai_enabled=True,
-        ai_model="grounded-sam2",
         annotation_guide="# 源指引",
     )
     db_session.add(src)
@@ -273,7 +272,6 @@ async def test_create_from_source_project_dumps_fields(
     assert data["classes"] == ["car", "person"]
     assert data["classes_config"]["car"]["color"] == "#ff0000"
     assert data["ai_enabled"] is True
-    assert data["ai_model"] == "grounded-sam2"
     assert data["annotation_guide"] == "# 源指引"
     assert data["source_project_id"] == str(src.id)
 
@@ -314,7 +312,6 @@ async def test_apply_template_creates_project_and_bumps_usage(
         scope="public",
         classes=["car"],
         ai_enabled=True,
-        ai_model="grounded-sam2",
         annotation_guide="# 模板指引",
     )
     await db_session.commit()
@@ -333,7 +330,6 @@ async def test_apply_template_creates_project_and_bumps_usage(
     project_data = resp.json()
     assert project_data["classes"] == ["car"]
     assert project_data["ai_enabled"] is True
-    assert project_data["ai_model"] == "grounded-sam2"
     assert project_data["annotation_guide"] == "# 模板指引"
     # 模板不带 guide_assets, 新项目 guide_assets 应为空
     assert project_data["guide_assets"] == []

@@ -76,7 +76,6 @@ class MLBackendService:
         )
         for project in bound_projects.scalars():
             project.ml_backend_id = None
-            project.ai_model = None
         await self.db.delete(backend)
         await self.db.flush()
         return True
@@ -102,6 +101,14 @@ class MLBackendService:
         return await client.reload(
             sam_variant=sam_variant, dino_variant=dino_variant, task_type=task_type
         )
+
+    async def warmup(self, backend_id: uuid.UUID, body: dict) -> dict | None:
+        """v0.14.14 协议 §4.4 · 转发 /warmup. body 原样上抛 backend, 各 backend schema 不同."""
+        backend = await self.get(backend_id)
+        if not backend:
+            return None
+        client = MLBackendClient(backend)
+        return await client.warmup(body)
 
     async def check_health(self, backend_id: uuid.UUID) -> bool:
         from datetime import UTC, datetime

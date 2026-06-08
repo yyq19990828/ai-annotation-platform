@@ -93,6 +93,9 @@ export type EditingClass = {
   geom: Geom;
   currentClass: string;
   anchor?: { left: number; top: number };
+  // v0.14.17 · 采纳时选类: 非空时该弹窗不是"改已存标注的类", 而是"为采纳某预测选项目标签",
+  // commit 时走 accept(override_class_name) 而非 update(class_name). 复用同一 ClassPickerPopover.
+  accept?: { predictionId: string; shapeIndex?: number };
 } | null;
 
 export function useWorkbenchState() {

@@ -29,6 +29,229 @@
 
 <!-- 0.14.x 版本变更按版本段追加到本区；进入 0.15.x 后整体移到 docs/changelogs/0.14.x.md -->
 
+## [0.14.17] - 2026-06-08
+
+YOLO 预标可用性纵切 · 修通 YOLO 批量预标（此前必然 422）、暴露模型原生类别表供类别白名单勾选、采纳时可选项目类别。平台仍不做"模型类→项目标签"自动映射（NG6 保留，由 alias 配置 + 采纳人选承担）。计划见 `docs/plans/2026-06-08-v0.14.16-preannotate-panel-capability-ux.md` §5。
+
+### Fixed
+
+- **YOLO 批量预标 422（此前 YOLO 项目预标必然失败）**：worker 给文本批量预标统一发 `context.type="text"`，但 yolo `Context.type` 只接受 `detection/segmentation/keypoint/obb`，且发的是扁平 `series/size` 而非 YOLO 要求的 `model_variants` dict + nested `params`。修复：面板对闭集多 task 几何 backend 提供「模型任务」选择器，按选中 task 发协议 v2 结构化请求（`task_type`/`model_id`/`model_variants`/nested `params`）；worker 抽出 `_build_predict_context` 纯函数分流 v2 结构化 vs 既有扁平（gsam2 文本）路径，互不影响。
+- **PATCH 改类无 class_name 校验**：`AnnotationService.update` 改类时补 `_validate_class_name`，与 create / accept 对齐，堵住"采纳后 PATCH 成项目标签集外非法值"的数据质量缺口。
+
+### Added
+
+- **YOLO 类别白名单勾选**：yolo-backend 在模型加载后缓存 `model.names`（逐 task，读自权重不硬编码），`/setup.models[].classes` 暴露 `[{index,name}]`，API `extract_capabilities` 透传 `classes`；面板渲染 `[index]类名` 勾选（留空=全部），选中 index 经 `context.classes` 透传给 ultralytics `model.predict(classes=)` 原生过滤。预标结果仍渲染模型原生类名（不映射）。类别表懒加载——面板提供「预热以加载类别」按钮，想按类筛选者手动预热即可（默认全标者无需）；预热后 backend 失效 `/setup` 缓存让类别即时出现。
+- **采纳时选类**：`POST /tasks/{id}/predictions/{pid}/accept` 新增可选 `override_class_name`，预测类名既不在项目标签集、又无 alias 命中时可由人指定项目标签落库（仍走软校验）。工作台采纳遇此类 422 时，自动在该框位置弹出 ClassPickerPopover（复用 `EditingClass.accept` 模式）让用户选项目标签，再带 `override_class_name` 重试采纳。
+
+## [0.14.16] - 2026-06-08
+
+AI 预标注面板深度优化（纯前端）·配置区常驻、按 backend 能力逐 model 变形、推理参数命名预设。计划见 `docs/plans/2026-06-08-v0.14.16-preannotate-panel-capability-ux.md`。
+
+### Added
+
+- **推理参数命名预设**：「AI 预标注」页可把当前 (variant + params) 存成命名预设、一键套用、删除。按 (backend, task) 分桶存 localStorage（`useAiParamPresets`），切 backend/任务互不串台。
+- **配置区常驻**：批跑预标配置面板不再被"先选批次"gate，未选批次也可预先调参 / 存预设；运行按钮在未选批次时禁用并提示。
+
+### Changed
+
+- **输出形态按 capability 逐 model 隐藏**（`derivePanelShape`）：当 model 只支持单一几何输出（YOLO detection→bbox / segmentation→polygon）或无框/掩膜概念（keypoint）时，隐藏无意义的"输出形态"框/掩膜/全部三选并按 model 下发强制形态；gsam2 等同时支持框与掩膜的 backend 维持三选。判定一律以 model 的 `supported_geometric_outputs` 为准、不按 backend 名硬分；能力声明不全时安全兜底为维持显示。（YOLO 文本框的"类别白名单"语义与后端过滤一并放 v0.14.17，本版不改 prompt 区行为。）
+
+## [0.14.15] - 2026-06-08
+
+协议字段名统一 · 把三家 backend 的变体请求字段收敛到 `context.model_variants`，协议版本升到 2.1；参数物理字段名保持 backend 自己的语义，通过 JSON Schema `x-platform-role` 做前端统一展示；同时删除 v0.14.13 已 deprecated 的 `projects.ai_model`，补齐 v0.14.14 延期的 video pool 协议化、yolo warmup 路径、ModelMarket 运行时列与 `cache_hit` 真信号接通。计划见 `docs/plans/2026-06-08-v0.14.15-protocol-field-unification.md`，决策见 [ADR-0039](docs/adr/0039-protocol-field-name-unification.md)。
+
+### Added
+
+- **Protocol v2.1**：`/setup.protocol_version="2.1"` + `compat_protocol_versions=["2.0"]`；三 backend `/predict` 统一接受 `context.model_variants: Record<axis_key, axis_value>`。旧字段（`variants` / `sam_variant` / `dino_variant` / `model_variant`）保留兼容 normalize 并记录 deprecation warning。
+- **共享协议 helpers**：`apps/_shared/protocol_v2` 新增 `normalize_context_model_variants`、`VariantNotSupportedError`、`ModelUnavailableError`、`PlatformRole`、协议版本常量。非法 variant 组合统一 422；权重缺失 / 模型暂不可用统一 503 + `Retry-After`。
+- **`x-platform-role` 参数角色**：yolo / gsam2 / sam3 `/setup.params` 给 `confidence` / `iou` / `maxDet` / `textThreshold` / `simplifyTolerance` / `modelVariant` 打平台语义标签；前端 SchemaForm 用统一标签渲染，变体字段移出普通参数表单。
+- **ModelMarket 运行时收尾**：能力目录增加运行时列、每行预热按钮和卡片 `last_evict` footer；RuntimeObservePanel 对声明 `warmup_endpoint=true` 的 backend 走 `/warmup`，修复 yolo 点“预热默认”打 `/reload` 404。
+
+### Changed
+
+- **前端 predict 发送体**：Workbench 同步 interactive predict 与批量 trigger 均把变体轴放进 `context.model_variants` / `params.model_variants`；同步响应里的 `cache_hit` 会调用 `recordPredictCacheHit` 写真实冷热信号。
+- **VariantSelector / VariantPanel 泛化**：VariantSelector schema fallback 支持 `x-platform-role=modelVariant`；VariantPanel 不再对多 model backend 只显示指引，改按 task section 渲染 series/size 选择并预热。
+- **gsam2 video_pool 协议化**：`/health.video_pool` 输出 PoolStatus（`cap/current_size/loaded_keys/last_evict`），删除老 `loaded_variants` 与 `gpu_info.video_pool_loaded_variants` 注入。
+- **API interactive 代理**：`interactive-annotating` 响应透传 `cache_hit` / `model_load_ms`；`MLBackendClient` 保留上游 503 与 `Retry-After`，其它 5xx 仍按 backend 故障处理。
+
+### Removed
+
+- **`projects.ai_model` / `project_templates.ai_model`**：Alembic `0101_drop_project_ai_model` 删除历史展示列；`ProjectCreate/Update/Out`、模板 schema、clone、Dashboard、Workbench 和项目设置引用同步清理。解绑过的项目可能仍残留旧 `ai_model` 字符串，迁移直接丢弃该 display hint，以 `ml_backend_id` 作为唯一绑定真值。
+
+### Tests
+
+- **Backend contract**：yolo / gsam2 / sam3 新增 v2.1 contract 测试，覆盖新字段、旧字段兼容 warning、非法 variant 422、权重缺失 503；gsam2 新增 video pool observability 测试。
+- **API / frontend**：API project/template/ml_backend 相关测试覆盖 `ai_model` 删除与 interactive `cache_hit` 透传；前端 SchemaForm / VariantSelector / useInteractiveAI 测试覆盖角色标签、modelVariant fallback、`model_variants` 发送与 503 Retry-After 文案。
+- **Schema sync**：刷新 `apps/api/openapi.snapshot.json`、`docs-site/api/openapi.json` 与 `apps/web/src/api/generated/*`，generated types 不再包含 `ai_model`。
+
+### Docs
+
+- `docs-site/dev/reference/ml-backend-protocol.md` 升级到 protocol v2.1：新增 `context.model_variants`、`x-platform-role`、标准 422/503 错误模型和 §10 兼容性迁移表。
+- 新增 [ADR-0039](docs/adr/0039-protocol-field-name-unification.md)，记录选择扁平 `model_variants` 与 role metadata 的原因；docs-site ADR 镜像同步更新。
+
+## [0.14.14] - 2026-06-08
+
+预标注可观测性 · 把 v0.14.13 的「前端 sessionStorage 猜测是否首次冷启动」换成「backend 真信号」。`PredictionResult` 加 `cache_hit / model_load_ms / pool_state` 三可选字段；`/health.pool` 三 backend 统一为 `PoolStatus`（cap / current_size / loaded_keys[] / last_evict）；新协议端点 `POST /warmup` 让前端 / 运维显式预热权重。计划见 `docs/plans/2026-06-08-v0.14.14-predict-observability.md`。
+
+### Added
+
+- **协议字段 `PredictionResult.{cache_hit, model_load_ms, pool_state}` (v0.14.14)**：可选三元组。`cache_hit=True` 表本次推理命中 pool 内权重，`False` 表触发加载（冷启动 / pool evict / 首次拉 ckpt）；`model_load_ms` 是本次 disk→GPU 加载毫秒（`cache_hit=True` 时 `None`）；`pool_state` 是轻量 pool 快照（按需）。三 backend `/predict` 全部上报。
+- **`/health.pool` 统一 `PoolStatus` schema (v0.14.14)**：`{cap, current_size, loaded_keys: [{key, loaded_at, last_used_at, hit_count}], last_evict: {key, at, reason}|null}`。`key` 是 backend-defined opaque 字符串（yolo `{series}/{size}/{task}`、gsam2 `sam=X/dino=Y`、sam3 `sam3.1`）。`last_evict.reason` 受控为 `lru | manual | idle_timeout`。gsam2 兼容期同时输出老字段 (`loaded_variants/evict_count/per_variant_lru_ts`)，让旧消费方过渡。
+- **协议端点 `POST /warmup` (v0.14.14)**：把指定 variant 权重加载到 pool 不跑 forward。yolo / gsam2 / sam3 三 backend 全部实现：body 由 backend 自定义（yolo `{task, variants}` / gsam2 `{variants:{sam,dino}}` / sam3 可空），统一响应 `WarmupResponse {ok, model_load_ms, cache_hit, evicted}`。`/setup` 顶层加 `warmup_endpoint: true` 自声明。pool 满时按 LRU 淘汰并把 evicted key 回填响应字段供前端 toast 提示。
+- **API 代理 `POST /api/v1/projects/{pid}/ml-backends/{bid}/warmup`**：body 原样转发，权限沿用 RBAC，upstream 4xx 透传 / 5xx 502 兜底，含 AuditService 日志。
+- **前端真信号 Map (v0.14.14)**：`sessionVariantCache.ts` 加 `recordPredictCacheHit` / `isVariantHot`。`predict` 响应回来后写 Map<key, cache_hit>，下次同 variant 调用前查 Map 决定按钮文案。`isVariantHot=true` ⇒ "推理中"；`false` ⇒ "加载中"；`undefined` ⇒ 老 sessionStorage 猜测作 fallback。
+
+### Changed
+
+- **三 backend ModelPool**：yolo / gsam2 加 `_loaded_at / _last_used_at / _hit_count / _last_evict` 运行时元数据；`get()` 改返回 `(model, cache_hit, load_ms)` 三元组；新 `warmup()` 方法不增 `hit_count` 且 pool 满时回填 evicted；新 `pool_status()` 输出协议 §4.3 PoolStatus 格式。sam3 无 ModelPool 走 module-level 等价改造。`unload_all/clear_all(reason=)` 区分 `manual / idle_timeout / lru`。
+- **yolo predictor**：`predict_one` 返回签名扩展为 `(results, cache_hit, model_load_ms, inference_time_ms)`，main `/predict` 透传到 PredictionResult。
+- **gsam2 `_run_prompt`**：返回 6 元组 `(results, embedding_hit, sv, dv, pool_cache_hit, model_load_ms)`，区分图像 embedding 缓存命中（v0.9.x）与 model pool 权重命中（v0.14.14）。
+- **API `BackendCapabilities` + `CapabilityInstance` schema**：加 `warmup_endpoint: bool`（缺省 False）；`ModelCapability` 补 v0.14.12-13 字段（`variant_combinations / variants_shared_across_tasks / default_variants`）。`ml_capabilities.extract_capabilities` 透传 `warmup_endpoint`；`capability_instances._load_*` 同步透传。
+- **前端 `ProjectDetailPanel.isCurrentVariantWarm` / `useWorkbenchShellModel.currentVariantIsWarm`**：改为「真信号优先（`isVariantHot != undefined`）→ fallback 老 sessionStorage 猜测」两段式。
+
+### Tests
+
+- **Backend (40+ 新测)**: yolo 加 `test_pool_observability` 11 个（cache_hit/warmup/evict/idle_timeout/manual reason/key string）+ `test_warmup_and_health` 5 个（端点契约）+ `test_setup` 1 个 warmup_endpoint。gsam2 加 `test_pool_observability_v14_14` 11 个 + setup 1 个；sam3 加 `test_pool_status_v14_14` 8 个 + setup 1 个；改 idle_unload 3 个测匹配新 tuple 签名。protocol_v2 加 7 个新 schema 测试（PoolStatus / LoadedKey / EvictRecord / WarmupResponse / PredictionResult v14.14 字段）。
+- **API (6 新测)**: `test_ml_capabilities.py` 加 2 个 warmup_endpoint 透传测；`test_capability_instances.py` 加 2 个（env-only / 缺字段）；`test_ml_backend_warmup_proxy.py` 新文件 4 个（路由转发 / 404 / 4xx 透传 / connection 502）。
+- **前端 (7 新测)**: `sessionVariantCache.test.ts` 加 7 个真信号 Map 用例（未知/true/false/evict 自我修正/null 缺省/跨 backend/null id）。
+- **回归**: yolo 84 (67→84) / gsam2 63 (51→63) / sam3 53 (41→53) / protocol_v2 18 (11→18) / API capability+warmup 50 (44→50) / web sessionVariantCache 14 + VariantSelector 8 全过；`pnpm tsc --noEmit` 0 error。
+
+### Docs
+
+- 协议文档 `docs-site/dev/reference/ml-backend-protocol.md` §2.1 `PredictionResult` 加 cache_hit / model_load_ms / pool_state 字段，§4.1.1 顶层加 `warmup_endpoint`，新建 §4.2（PredictionResult 运行时观测语义）/ §4.3（PoolStatus 统一格式）/ §4.4（POST /warmup 端点 + 三 backend 请求示例）。§1 `/health.pool` 概览句改指 §4.3。
+
+### Migration
+
+- **后端协议向后兼容**: v0.14.14 字段全部可选，老消费方（仅读 `inference_time_ms / pool.loaded_variants`）零改动。gsam2 `/health.pool` 双发新老字段，老 admin / ModelMarket VariantPanel 继续可用。
+- **未删字段**: `projects.ai_model` 等冗余字段保留至 v0.14.15（协议字段名统一时一起清）。`ModelMarket "运行时列 / ⚡ 预热按钮 / 卡片 evict 提示"` 留 v0.14.15。
+
+## [0.14.13] - 2026-06-08
+
+预标注交互闭环 · 把 v0.14.12 在能力目录展示的 variant 富表达贯通到实际预标注链路，让用户在 AI 预标注页 / 工作台都能选 yolo `series/size` (或 gsam2 `sam_variant/dino_variant`、sam3 `model_variant`) 并持久化为项目级偏好。计划见 `docs/plans/2026-06-08-v0.14.13-predict-ux-refinement.md`，配套 v0.14.14 / v0.14.15 路线在 `docs/plans/2026-06-08-v0.14.14-predict-observability.md` / `2026-06-08-v0.14.15-protocol-field-unification.md`。
+
+### Added
+
+- **协议字段 `default_variants` (model 级, v0.14.13)**: backend `/setup` 每个 model 自报默认 variant 组合 (扁平 `dict[axis_key, value]`)，前端 VariantSelector 在用户未选时取此作初值。优先级链：项目级 `projects.default_variants[backend_id]` > backend 自报 > backend 启动 env 默认。三 backend 实现：
+  - yolo: 4 task 均默认 `{series: yolo11, size: s}` (推荐组合, 跨 task 全覆盖)
+  - gsam2: 按 task 暴露相应轴 (detection→`{dino_variant}`, segmentation→`{sam_variant, dino_variant}`, interactive_seg/tracker→`{sam_variant}`)
+  - sam3: 单档 `{model_variant: sam3.1}`，保持跨 backend 协议对称
+- **`projects.default_variants` 字段 (alembic 0100)**: 项目级 variant 偏好持久化，按 `ml_backend_id` 分桶存 JSONB。前端 PATCH 写回后跨设备 / 协作仍保留偏好。
+- **VariantSelector 通用化 (v0.14.13)**: 从「sam_variant / dino_variant 白名单」升级为协议 v2 通用消费，axis_key 任意。新增 props `variantCombinations` (yolo 非笛卡尔积联动约束, series=yolov9 → size 受限到 t/s/m/c/e) + `defaults` (backend / 项目级合并后的默认值)；初值优先级 value > defaults > recommended > schema.default > 第一项。
+- **冷启动 UX 本地猜测 (sessionStorage 命中集合, v0.14.13)**: 后端 `/predict` 暂未暴露 `cache_hit`，前端维护"本会话见过的 variant 组合"集合，没见过 → 按钮文案显示"加载模型中…（首次约 5-15s）"，见过 → "推理中"。AIPreAnnotate / Workbench 两路均接入。等 v0.14.14 后端 cache_hit 真信号替换。
+
+### Changed
+
+- **AI 预标注页 ProjectDetailPanel**: VariantSelector 数据源从 backend 顶层 `supported_variants` (4 task 并集) 切到 model 级 (yolo 各 task 自己的轴 / gsam2 按 task 暴露相应轴)，避免渲染冗余轴。用户切换变体 PATCH `project.default_variants` debounced (与项目当前偏好 diff, 无变化不打 API)。
+- **Workbench AIInspectorPanel**: 同样取 model 级 `supported_variants / variant_combinations / default_variants`；`setAiVariant` 包装为 `setAiVariantAndPersist`，session state + PATCH project 双写。下次进 AI 预标注页 / 工作台直接显示用户偏好。
+- **API 透传链**: `apps/api/app/services/{ml_capabilities,capability_instances}.py` 加 `default_variants` 透传；`apps/api/app/schemas/{ml_capabilities,project}.py` 加字段；`apps/api/app/db/models/project.py` 加 `default_variants` mapped_column。
+- **前端类型**: `apps/web/src/api/{ml-backends,mlCapabilities,projects}.ts` 加 `default_variants?: Record<string, string>` (类型, ProjectUpdatePayload 字段)。
+- **compose 拆分 ML backend (运维侧命令变化)**: 3 个 GPU backend (grounded-sam2 / sam3 / yolo) 及其命名卷从 `docker-compose.yml` 拆到叠加文件 `docker-compose.ml.yml` (三者 profile-gated、与核心 infra 无 depends_on / 不共享卷，独立维护)。**启动命令改为叠加两个文件**：`docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up -d grounded-sam2-backend` (或在 `.env` 设 `COMPOSE_FILE=docker-compose.yml:docker-compose.ml.yml` 省去 `-f`)。同步删除点云分支专用的 `docker-compose.pcwb.yml`。README / DEV / docs-site / 各 backend README / `.env.example` (+ 重新生成 `env-vars.md`) 命令同步更新。
+
+### Tests
+
+- **Backend 协议 (12+ 新测)**: yolo 加 `test_setup_each_model_has_default_variants` / `test_setup_default_variants_legal` / `test_setup_default_variants_prefer_yolo11_s`；gsam2 加 `test_setup_default_variants_per_task_axes` / `test_setup_default_variants_match_env_defaults`；sam3 加 `test_setup_default_variants_present_on_each_model` / `test_setup_default_variants_match_env_model_variant`。yolo 28 / gsam2 13 / sam3 11 setup 测试全过。
+- **API 派生 (1 新测)**: `test_ml_capabilities.py::test_default_variants_passthrough` 验证 backend 自报 + 缺省 (空 dict) 两种路径透传。
+- **前端 VariantSelector (5 新测)**: yolo series/size 渲染 / sam3 单档 / variantCombinations 过滤 / 联动清除非法值 / defaults 优先级。
+- **冷启动 cache (7 新测)**: isWarm 默认 false / markWarm 后 true / variant 互不影响 / backend 互不影响 / null/undefined noop / axis_key 顺序无关 / 非 string value 忽略。
+- **回归**: 全 web `pnpm tsc --noEmit` 0 error；309 个 Workbench shell+state 测试 + 35 个 AIPreAnnotate 测试 0 回归；API 33 个 capability + project 测试 0 回归。
+- **顺手 fix**: sam3 `test_setup_supported_variants_empty` 自 v0.14.12 单档 backend 暴露 model_variant 轴后即失效，重写为 `declare_single_axis`；gsam2 test 旧 vram_gb 断言 (v0.14.12 删字段时遗漏)。
+
+### Docs
+
+- 协议文档 `docs-site/dev/reference/ml-backend-protocol.md` §4.1.2 模型条目结构加 `default_variants` 字段，§4.1.6 新子段含 yolo / gsam2 / sam3 三个 backend 示例 + 优先级链 + 校验说明。
+- v0.14.13 / v0.14.14 / v0.14.15 三份独立 plan 文档落地：
+  - 本版主体 plan: `docs/plans/2026-06-08-v0.14.13-predict-ux-refinement.md`
+  - 下版可观测性: `docs/plans/2026-06-08-v0.14.14-predict-observability.md` (cache_hit / pool 状态统一 / `/warmup` 端点)
+  - 协议规范化: `docs/plans/2026-06-08-v0.14.15-protocol-field-unification.md` (`model_variants` 扁平 dict / HTTP 422/503 / 删 `projects.ai_model`)
+
+## [0.14.12] - 2026-06-08
+
+接入第三个 ML backend：**yolo-backend**（ultralytics 多任务多系列）。计划见 `docs/plans/2026-06-08-v0.14.12-yolo-backend.md`，抽象层决策见 [ADR-0038](docs/adr/0038-defer-ml-backend-base-class.md)。本版交付：协议 v2 第一个「批量预标 backend」真实实例，covers detection / segmentation(instance) / keypoint / obb 四任务 × v8/v9/v10/v11/v12/v26/rt-detr 七系列预训练矩阵（共 80 个有效组合）。
+
+### Added
+
+- **yolo-backend**：新增 `apps/yolo-backend/`，FastAPI 进程暴露协议 v2 合规的 `/health` `/setup` `/versions` `/predict` `/unload` `/metrics`。
+  - `/setup` 暴露 4 个 model 条目（`detect` / `segment` / `pose` / `obb`），每个条目 `supported_variants` 走两轴 `series × size`，series 选项按预训练矩阵严格过滤（v10/v12/rtdetr 只在 detect 出现；v9 在 segment 仅 c/e 两 size）。
+  - `supported_prompts: ["none"]` —— 纯批量预标，不进交互式 workbench；ToolDock 据此把 yolo 排除出工作台交互工具栏。
+  - 零 adapter：det → `rectanglelabels` / seg → `polygonlabels` / pose → `keypointlabels` / obb → `rectanglelabels + value.rotation`，命中 `apps/api/app/services/prediction.py::to_internal_shape` 现有分支（v0.10.28 已就位的 Geometry union）。
+  - `model_pool.py`：`(task, series, size)` LRU 池，默认容量 `YOLO_MODEL_POOL_CAP=2`，单 GPU 显存可控；`YOLO_IDLE_UNLOAD_SECONDS=600` 触发空闲卸载。
+  - `model_registry.py`：80 组合矩阵 + 文件名解析（`yolo11s-seg.pt` / `yolov9c-seg.pt` / `rtdetr-l.pt` 等命名规则）。
+  - `scripts/download_weights.py`：离线预下载脚本，`STRICT_OFFLINE=1` 部署前用。
+- **协议 v2 共享包**：抽 `apps/_shared/protocol_v2/`（`schemas` + `vocab` 受控词表常量），sam3-backend / grounded-sam2-backend / yolo-backend 三家共用，单一来源避免协议字段在 backend 之间漂移。
+- **docker-compose**：新增 `yolo-backend` service（profile `gpu-yolo`，端口 **8003**），与 `gpu` / `gpu-sam3` 完全独立，可三 backend 并存或独立启停。新增 `yolo_checkpoints` 持久卷。
+
+### Changed
+
+- `apps/sam3-backend/schemas.py` / `apps/grounded-sam2-backend/schemas.py`：`TaskItem` / `PredictionResult` / `BatchPredictResponse` 三个跨 backend 一字不差的 Pydantic 模型从本地定义改为 `from aap_protocol_v2 import ...`。`Context` / `AnnotationResult` / 各 backend 特有字段保持原地不动。两 backend `pyproject.toml` 加 `pythonpath` 指向新共享包，Dockerfile 加 `_shared/protocol_v2/` editable install（与既有 `mask_utils` 同款约定）。/setup 字典字面量零改动，行为完全 byte-for-byte 一致。
+- `.env.example`：新增 `YOLO_*` 环境变量段；`ML_BACKEND_OBSERVE_URLS` 注释补充 8003 端口。
+
+### Added (continued · 模型市场 UI 适配协议 v2)
+
+- **协议字段 `variant_combinations` + `variants_shared_across_tasks`**：在 model 条目级新增两个可选字段（详见 `ml-backend-protocol.md` §4.1.2 / §4.1.6）。
+  - `variant_combinations`：多轴非真笛卡尔积时显式列举合法 `[axis0_value, axis1_value, ...]` 组合，避免目录展示虚假权重。yolo 用之表达 MODEL_MATRIX 约束（rtdetr 只有 `l/x`、yolov9 detect 只有 `t/s/m/c/e` 等）。字段缺省 ⇒ 前端按 axes 笛卡尔积处理。
+  - `variants_shared_across_tasks`：布尔，缺省 `false`。`true` 表同 backend 内多 task 共享同一份物理权重（gsam2 的 SAM 2.1 Tiny 一份 `.pt` 同时服务 seg/iseg/tracker；sam3 的 sam3.1 同时服务 3 task），前端列表按 `(backend, axis_key, axis_value)` 聚合到一行；`false` 表每 task 独立权重（yolo 的 yolov8n-det.pt vs yolov8n-obb.pt），每 task 一行 + 任务后缀。
+- **gsam2 / sam3 跟进协议 v2 富表达**：
+  - `apps/grounded-sam2-backend/main.py`：每个 model 只声明该 task **真正用到的 axes**（detection 只 `dino_variant`、interactive_seg / tracker 只 `sam_variant`、segmentation 才两轴），并设 `variants_shared_across_tasks=True`。
+  - `apps/sam3-backend/main.py`：从 `supported_variants: []` 升级为暴露单档 `model_variant: sam3.1`（让模型市场展示该具体权重），每个 model 设 `variants_shared_across_tasks=True`，3 task 聚合到 1 行。
+- **API 层透传**：`extract_capabilities`（`services/ml_capabilities.py`）/ `_shape_models`（`services/capability_instances.py`）/ `InstanceModelItem`（`schemas/ml_capabilities.py`）/ `BackendCapabilities`（`schemas/ml_backend.py`）链路全部支持新字段。`extract_capabilities` 同时透传 `setup.name`，让前端能在列表展示「源 backend 名」而非用户项目别名。
+
+### Changed (continued · 模型市场 UI)
+
+- **能力目录列表视图重构**（`apps/web/src/pages/ModelMarket/CapabilityCatalogPanel.tsx`）：
+  - **每行 = 一个物理权重**：列表行单位从「task model」改为「具体加载的 .pt 权重」。两条渲染路径按 `variants_shared_across_tasks` 自动切换。yolo 17 行（YOLOv8-Det / YOLOv8-Seg / RT-DETR-Det 等），gsam2 6 行（SAM 2.1 ×4 + Swin-T/B），sam3 1 行（SAM 3.1 聚合 3 task）。
+  - **合并 env-only 与 registered**：`flatModels` 同时消费 admin overview（项目级注册）+ `/ml-capabilities/instances`（env-only docker-compose 自带），让 `groupBy=backend` / `infra` / `none` 视图也能看到 docker-compose 自带 backend，而不只在协议卡视图（`groupBy=task`）出现。
+  - **按 URL 合并跨项目同 backend**：同一 ML backend URL 注册到多项目时，`backendRefs` 按 URL 去重（避免 N 倍 `/capabilities` fetch + 重复 group）；新增「注册状态」列展示项目列表（多项目时显示 `项目甲 +2`，hover 列出全部）。
+  - **`backendName` 取 cap.name（源 backend 名）**：替代 `backend.name`（用户取的项目别名），让能力目录展示「grounded-sam2」而非「gsam2.1」。
+- **删除 yolo / gsam2 假 `vram_gb` 数据**：`apps/yolo-backend/model_registry.py SIZE_META` 与 `apps/grounded-sam2-backend/main.py {SAM2,DINO}_VARIANT_METADATA` 移除粗估占位（yolov8n .pt 实际加载 ~300MB 远小于声称的 2GB，gsam2 SAM2 同理）。`tier`（fast / balanced / accurate）作为粗粒度档位保留。
+- **`.env.example` `ML_BACKEND_OBSERVE_URLS`**：注释中三 backend 端口列表加入 8003（yolo-backend），并提示 8001=grounded-sam2、8002=sam3。
+
+### Tests
+
+- `apps/_shared/protocol_v2/tests/`：11 个单测（schema round-trip + vocab 词表一致性）。
+- `apps/yolo-backend/tests/`：58 + 7 个单测覆盖 `model_registry`（矩阵 + 文件名解析，含 v9 conditional sizes、rtdetr 特殊命名、unsupported 组合 reject）、`schemas`（pydantic 入参校验）、`predictor`（四 task 结果映射 + 像素归一化 + OBB 弧度转度数 + keypoint 三档可见性）、`setup`（协议 v2 输出形态全字段断言 + `variant_combinations` 4 task 矩阵规模断言 + 每条组合合法性回归 MODEL_MATRIX）。
+- `apps/web/src/pages/ModelMarket/CapabilityCatalogPanel.test.tsx`：新增「同 URL 跨多项目注册时 groupBy=backend 只渲染一组 + 注册状态列聚合项目名 + capabilities API 只调一次」单测（防止退化）。
+
+### Docs
+
+- 新增 [ADR-0038 — ML backend 基类抽象推迟到 N≥4](docs/adr/0038-defer-ml-backend-base-class.md)：写明本版只抽 schema + vocab，不抽 base class 的决策与未来触发条件。
+- 计划文件 `docs/plans/2026-06-08-v0.14.12-yolo-backend.md`：包含完整设计、80 组合矩阵核对、PR 拆分、验收清单、风险与回退。
+- `docs-site/dev/reference/ml-backend-protocol.md` §4.1.2 / §4.1.6：补 `variant_combinations` + `variants_shared_across_tasks` 字段说明，给出 yolo（非真笛卡尔积）+ gsam2/sam3（跨 task 共享）两类范例。
+
+## [0.14.11] - 2026-06-08
+
+协议能力目录与 ML Backend 注册解耦。计划见 `docs/plans/2026-06-08-v0.14.11-protocol-capability-catalog.md`，决策见 [ADR-0037](docs/adr/0037-protocol-capability-catalog-decoupling.md)。本版只解决一件事：「能力目录」从「已注册 backend 实例清单」抽离为「协议级能力定义 + 实例填充」双层视图，零接入用户也能完整看到平台支持的 9 类 AI 标注能力。
+
+### Added
+
+- **协议能力注册表 SSOT**：新增 `apps/api/app/services/capability_registry.py`，集中维护 task / infra / modality / geometry 四张受控词表 + 每条 task 的人类可读元数据（label / summary / protocol_notes / typical_models / suggested_backends）。`services/ml_capabilities.py` 中的受控词表与 `_TASK_DEFAULT_GEOMETRY` 改为从该 SSOT 派生，`extract_capabilities` / `derive_modalities` 行为零变化。
+- **协议能力目录端点**：新增 `GET /api/v1/ml-capabilities/protocol`，无 project 作用域、登录用户即可访问，返回 9 个 task / 6 个 infra / 3 个 modality / 8 个 geometry 受控词表 + 元数据；`Cache-Control: private, max-age=300` + ETag 304 支持。
+- **协议卡视图**：`CapabilityCatalogPanel` 新增 `ProtocolCapabilityCard` 子组件，默认 `groupBy=task` 时遍历 protocol.tasks 渲染 9 张协议卡——已注册 backend 的 model 按 `model.task` 字段挂载到对应卡，空卡显示「暂无接入」徽标 + 典型模型列表 + 推荐 backend（含 GitHub 直达）+ 「去注册 backend」CTA（跳 `?tab=registry`）。
+- **零接入横幅**：新增 `EmptyCatalogBanner`，0 backend 注册时在协议卡上方展示「平台支持 9 类 AI 标注能力，当前还没有 backend 接入」+ 接入引导按钮。
+- **gsam2 / sam3 升级到协议 v2 多模型目录**：
+  - `apps/grounded-sam2-backend/main.py` 的 `/setup.models[]` 从 1 条扩到 4 条（`grounded-sam2-detection` / `-segmentation` / `-interactive-seg` / `-tracker`），每条独立声明 task / prompts / geometry，匹配 gsam2 实际四能力。
+  - `apps/sam3-backend/main.py` 的 `/setup.models[]` 从 1 条扩到 3 条（`sam3-detection` / `-segmentation` / `-interactive-seg`，全部走 PCS 路径），detection / segmentation 走 text prompt，interactive_seg 走 exemplar prompt。
+  - 顶层 `supported_prompts` / `supported_trackers` / `/predict` 协议不动，已绑定的项目和工作台无回归；新增能力卡视图下，已注册的 gsam2 / sam3 会自动挂载到对应的多个协议卡。
+- **实例层与项目级注册解耦**：新增 `GET /v1/ml-capabilities/instances`（登录用户可访问），返回「平台已知 backend 实例」清单——env-only 容器（探测 `ml_backend_observe_urls` 配的 `/setup`）+ 项目级注册 backend（读 `health_meta.capabilities` 快照）合并去重。字段裁剪：只暴露 `source / display_name / infra / models[]`，**不返回 url / gpu_info / cache / pool** 等运维敏感信息。前端 `CapabilityCatalogPanel` 协议卡视图改为消费 instances，不再依赖 admin overview——零项目注册时，只要 docker-compose 自带的 gsam2 / sam3 在跑，普通登录用户就能在能力目录里直接看到它们的 model 清单。每个 model 子卡按来源显示「自带」/「已注册」徽标。
+
+### Changed
+
+- **能力目录默认视角切换**：`CapabilityCatalogPanel` 默认 `groupBy` 从 `backend` 改为 `task`（「协议能力 (默认)」），切到 `backend / infra / 不分组` 时退回 v0.14.10 的 model-centric 视图，零接入时空态文案补充提示「切到分组：task 可查看平台协议层支持的全部能力」。
+- **受控词表派生统一**：`ml_capabilities.INFRA_VALUES / TASK_VALUES / GEOMETRY_VALUES / _TASK_DEFAULT_GEOMETRY` 改为 re-export `capability_registry` 派生值，移除原硬编码元组；外部调用方零回归。
+
+### Compatibility
+
+- 不动 `/setup` / `/predict` / `/projects/{pid}/ml-backends/{bid}/capabilities` / `health_meta` 任何字段。`extract_capabilities` / 合成隐式单 model / 现有 backend（echo / grounded-sam2 / sam3）跑通的路径全部保留。
+- 无 alembic 迁移。
+- 前端 URL state `?tab=catalog` 不变；用户保存的 `groupBy=backend` 深链仍按 v0.14.10 渲染。
+
+### Docs / Tests
+
+- 协议文档 `docs-site/dev/reference/ml-backend-protocol.md` 新增 §4.1.11「协议能力目录端点（v0.14.11）」，说明端点契约、响应 schema、缓存语义，并补「协议层 vs 实例层」职责对照表。
+- 新增 ADR-0037「协议能力目录与 backend 注册解耦」，记录候选方案对比（后端 SSOT / 前端常量 / OpenAPI 派生）与决策细节。
+- 超管手册 `docs-site/user-guide/superadmin/model-market.md` 重写「能力目录」section，强调「协议层 + 实例层双层视图」+ 零接入引导。
+- 后端单测：`test_capability_registry`（9 例，含 research_link 路径有效性校验）+ `test_ml_capabilities_protocol`（5 例，含 ETag 304）。
+- 前端单测：`ProtocolCapabilityCard.test`（4 例：空态徽标 / N model 挂载 / CTA 回调 / stale 标记）+ `CapabilityCatalogPanel.test`（3 例：0 backend 9 张协议卡 / 切 backend 分组退回旧空态 / 搜索 "ocr" 仅 OCR 卡可见）。
+
 ## [0.14.10] - 2026-06-07
 
 画布精细交互 Part A + 模型市场前端重构 Part B。计划见 `docs/plans/2026-06-07-v0.14.10-canvas-precision-tools-and-attribute-mode.md`。

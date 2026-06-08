@@ -40,10 +40,15 @@ class Project(Base):
     )
     status: Mapped[str] = mapped_column(String(30), default="in_progress")
     ai_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
-    # v0.8.6 F3：保留 ai_model 为「display hint」，由 ml_backend_id 实际驱动行为
-    ai_model: Mapped[str | None] = mapped_column(String(255))
     ml_backend_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ml_backends.id", ondelete="SET NULL")
+    )
+    # v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶).
+    # 形状: { "<backend_uuid>": { "<axis_key>": "<axis_value>", ... }, ... }
+    # 优先级链: 本字段 > backend.default_variants > backend env 默认.
+    # 前端 VariantSelector 用户切换变体时 PATCH 写回; 项目跨设备 / 协作时保留偏好.
+    default_variants: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default="{}", default=dict
     )
     label_config: Mapped[dict] = mapped_column(JSONB, default=dict)
     # v0.10.17 · 工具维度类别 / 属性绑定 (ROADMAP §A 新建向导通用化).

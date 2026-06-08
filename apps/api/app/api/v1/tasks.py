@@ -1498,12 +1498,24 @@ async def accept_prediction(
         ge=0,
         description="可选: 仅采纳指定下标的 shape (一个 prediction 可含多个 shape).",
     ),
+    override_class_name: str | None = Query(
+        None,
+        description=(
+            "可选: 采纳时把类别落到指定项目标签 (v0.14.17). 用于预测类名既不在项目标签集、"
+            "又无 alias 命中时, 由人当场选项目类别再采纳, 避免 422 拒死。"
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
     _assert_task_editable(await _load_task_or_404(db, task_id))
     svc = AnnotationService(db)
-    await svc.accept_prediction(prediction_id, current_user.id, shape_index=shape_index)
+    await svc.accept_prediction(
+        prediction_id,
+        current_user.id,
+        shape_index=shape_index,
+        override_class_name=override_class_name,
+    )
     await TaskLockService(db).heartbeat(task_id, current_user.id)
     await db.commit()
     return await svc.list_by_task(task_id)

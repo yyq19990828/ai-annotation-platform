@@ -121,7 +121,7 @@ last_reviewed: 2026-05-27
 
 ### 2.8 Grounded-SAM-2 ML Backend (GPU profile)
 
-仅当 `docker compose --profile gpu up grounded-sam2-backend` 时生效。详见 §8.5。
+仅当启用 `docker-compose.ml.yml` 的 `--profile gpu` 拉起 grounded-sam2-backend 时生效。详见 §8.5。
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
@@ -157,7 +157,7 @@ last_reviewed: 2026-05-27
 
 ### 2.8.1 SAM 3 ML Backend (gpu-sam3 profile)
 
-v0.10.0+ 的高精度 backend（`facebookresearch/sam3` + `facebook/sam3.1` 权重），独立 profile `gpu-sam3`，与 grounded-sam2 的 `gpu` profile 解耦、两者可并存（sam3 高精度首选，grounded-sam2 4060 友好兜底）。仅当 `docker compose --profile gpu-sam3 up sam3-backend` 时生效，监听 `8002`。
+v0.10.0+ 的高精度 backend（`facebookresearch/sam3` + `facebook/sam3.1` 权重），独立 profile `gpu-sam3`，与 grounded-sam2 的 `gpu` profile 解耦、两者可并存（sam3 高精度首选，grounded-sam2 4060 友好兜底）。仅当启用 `docker-compose.ml.yml` 的 `--profile gpu-sam3` 拉起 sam3-backend 时生效，监听 `8002`。
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
@@ -461,18 +461,23 @@ ML backend（grounded-sam2-backend / sam3-backend 等）需要 nvidia GPU。本�
 
 ### docker compose 启用 GPU service
 
-两个 backend 各有独立 profile，可单独启用也可并存：
+三个 backend 定义在叠加文件 `docker-compose.ml.yml`（从基础 `docker-compose.yml` 拆出，profile-gated 且与核心 infra 无 depends_on / 不共享数据卷），各有独立 profile，可单独启用也可并存。启用时须同时 `-f` 两个文件：
 
 ```bash
-# 默认不启任何 GPU service（节约本地资源）
+# 默认不启任何 GPU service（基础栈不含 ML backend，节约本地资源）
 docker compose up -d
 
 # 启 grounded-sam2（profile gpu，端口 8001）
-docker compose --profile gpu up -d grounded-sam2-backend
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up -d grounded-sam2-backend
 
 # 启 sam3（profile gpu-sam3，端口 8002）
-docker compose --profile gpu-sam3 up -d sam3-backend
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-sam3 up -d sam3-backend
+
+# 启 yolo（profile gpu-yolo，端口 8003）
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-yolo up -d yolo-backend
 ```
+
+> 嫌每次敲两个 `-f` 麻烦，可在 shell 或 `.env` 固化 `COMPOSE_FILE=docker-compose.yml:docker-compose.ml.yml`，之后 `docker compose --profile gpu up -d grounded-sam2-backend` 即可（profile-gated 不影响默认 `docker compose up`）。
 
 要点：
 

@@ -276,13 +276,14 @@ class TestAnnotationAuditTrail:
         assert resp.status_code == 201, resp.text
         ann_id = resp.json()["id"]
 
-        # update
+        # update (改类到项目标签集内的另一类; v0.14.17 起 PATCH 也校验 class_name,
+        # 故须用 classes=["car","person"] 内的合法值, "truck" 会被 422 拒)
         resp = await httpx_client.patch(
             f"/api/v1/tasks/{task.id}/annotations/{ann_id}",
-            json={"class_name": "truck"},
+            json={"class_name": "person"},
             headers=_bearer(token),
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 200, resp.text
 
         # delete
         resp = await httpx_client.delete(

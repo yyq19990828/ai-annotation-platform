@@ -37,7 +37,6 @@ class ProjectTemplateBase(BaseModel):
     tool_bindings: ToolBindings | None = None
     label_config: dict | None = None
     ai_enabled: bool = False
-    ai_model: str | None = None
     sampling: str = "sequence"
     maximum_annotations: int = 1
     show_overlap_first: bool = False
@@ -82,7 +81,6 @@ class ProjectTemplateUpdate(BaseModel):
     tool_bindings: ToolBindings | None = None
     label_config: dict | None = None
     ai_enabled: bool | None = None
-    ai_model: str | None = None
 
     @field_validator("tool_bindings", mode="before")
     @classmethod
@@ -120,7 +118,6 @@ class ProjectTemplateOut(BaseModel):
     tool_bindings: ToolBindings = {}
     label_config: dict = {}
     ai_enabled: bool = False
-    ai_model: str | None = None
     sampling: str = "sequence"
     maximum_annotations: int = 1
     show_overlap_first: bool = False

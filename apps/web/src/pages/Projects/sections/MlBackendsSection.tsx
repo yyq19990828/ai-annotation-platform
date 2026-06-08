@@ -66,15 +66,8 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
-  const selectedBackendName =
-    mlBackendId && backends.find((b) => b.id === mlBackendId)?.name;
-  const effectiveAiModel =
-    selectedBackendName ??
-    (mlBackendId === project.ml_backend_id ? project.ai_model ?? null : null);
-  const nextAiModel = aiEnabled ? effectiveAiModel : null;
   const aiSettingsDirty =
     aiEnabled !== project.ai_enabled ||
-    nextAiModel !== (project.ai_model ?? null) ||
     (mlBackendId ?? null) !== (project.ml_backend_id ?? null) ||
     Math.abs(iouThreshold - (project.iou_dedup_threshold ?? 0.7)) > 0.001 ||
     textOutputDefault !== (project.text_output_default ?? "");
@@ -85,7 +78,6 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
     updateProject.mutate(
       {
         ai_enabled: aiEnabled,
-        ai_model: nextAiModel,
         ml_backend_id: aiEnabled ? mlBackendId : null,
         iou_dedup_threshold: iouThreshold,
         text_output_default: (textOutputDefault || null) as "box" | "mask" | "both" | null,
@@ -103,7 +95,6 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
       {
         ml_backend_id: b.id,
         ai_enabled: true,
-        ai_model: b.name,
       } as Parameters<typeof updateProject.mutate>[0],
       {
         onSuccess: () =>
@@ -281,7 +272,6 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
               value={textOutputDefault as TextOutputDefault}
               onChange={(v) => setTextOutputDefault(v)}
               disabled={!aiEnabled}
-              className={cn(styles.control, styles.selectControl)}
             />
           </div>
         </div>

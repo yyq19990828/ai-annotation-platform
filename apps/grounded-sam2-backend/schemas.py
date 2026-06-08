@@ -1,15 +1,34 @@
-"""Request / response Pydantic schemas, aligned with docs-site/dev/ml-backend-protocol.md §2."""
+"""Request / response Pydantic schemas, aligned with docs-site/dev/ml-backend-protocol.md §2.
+
+v0.14.12 · 通用部分 (TaskItem / PredictionResult / BatchPredictResponse) 抽到
+`apps/_shared/protocol_v2/` 共享包, 单一来源避免与 sam3-backend / yolo-backend 之间
+漂移. 本仓继续维护 grounded-sam2 特有的 Context + AnnotationValue + 请求壳.
+"""
 
 from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from aap_protocol_v2 import (
+    BatchPredictResponse,
+    PredictionResult,
+    TaskItem,
+    WarmupResponse,
+)
+from pydantic import BaseModel
 
-
-class TaskItem(BaseModel):
-    id: str | int
-    file_path: str
+__all__ = [
+    "AnnotationResult",
+    "AnnotationValue",
+    "BatchPredictRequest",
+    "BatchPredictResponse",
+    "Context",
+    "InteractiveRequest",
+    "PredictionResult",
+    "TaskItem",
+    "WarmupRequest",
+    "WarmupResponse",
+]
 
 
 class Context(BaseModel):
@@ -42,6 +61,19 @@ class BatchPredictRequest(BaseModel):
     context: Context | None = None  # 批量带文本 prompt 时附带
 
 
+class WarmupRequest(BaseModel):
+    """v0.14.14 协议 §4.4 · /warmup 请求体.
+
+    gsam2 同时预热 SAM + DINO 两个权重; task 字段 (detection/segmentation/
+    interactive_seg/tracker) 决定 variants 必填项: detection 只需 dino_variant,
+    interactive_seg/tracker 只需 sam_variant, segmentation 两个都需要.
+    实际加载逻辑用 ModelPool, 缺失字段回退 backend env 默认.
+    """
+
+    task: Literal["detection", "segmentation", "interactive_seg", "tracker"] | None = None
+    variants: dict[str, str] = {}
+
+
 class AnnotationValue(BaseModel):
     points: list[list[float]] | None = None
     polygonlabels: list[str] | None = None
@@ -56,15 +88,3 @@ class AnnotationResult(BaseModel):
     type: Literal["polygonlabels", "rectanglelabels"]
     value: dict[str, Any]
     score: float | None = None
-
-
-class PredictionResult(BaseModel):
-    task: str | int | None = None
-    result: list[dict[str, Any]] = Field(default_factory=list)
-    score: float | None = None
-    model_version: str | None = None
-    inference_time_ms: int | None = None
-
-
-class BatchPredictResponse(BaseModel):
-    results: list[PredictionResult]

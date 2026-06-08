@@ -37,7 +37,6 @@ function makeProject(overrides: Partial<ProjectResponse> = {}): ProjectResponse 
     classes: ["car", "person"],
     classes_config: null,
     ai_enabled: false,
-    ai_model: null,
     ml_backend_id: null,
     iou_dedup_threshold: 0.7,
     box_threshold: 0.35,

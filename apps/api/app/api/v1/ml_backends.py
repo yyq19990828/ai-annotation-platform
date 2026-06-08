@@ -1,6 +1,8 @@
 import re
 import time
 import uuid
+
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -284,6 +286,60 @@ async def reload_ml_backend(
     return result
 
 
+@router.post("/{backend_id}/warmup")
+async def warmup_ml_backend(
+    project_id: uuid.UUID,
+    backend_id: uuid.UUID,
+    request: Request,
+    body: dict | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_MANAGERS)),
+):
+    """v0.14.14 协议 §4.4 · 转发 POST /warmup 到 backend.
+
+    body 原样转发 (各 backend schema 不同). backend 未声明 warmup_endpoint=True 时仍
+    转发, 收到 404/405 由上游 502 反馈; 前端 ⚡ 按钮应已通过 health_meta.capabilities.
+    warmup_endpoint 提前置灰.
+    """
+    svc = MLBackendService(db)
+    try:
+        result = await svc.warmup(backend_id, body or {})
+    except httpx.HTTPStatusError as exc:
+        # 透传 backend 上游的业务错误 (4xx 变体非法 / 5xx OOM / weight missing).
+        status = exc.response.status_code
+        detail = exc.response.text or f"backend warmup HTTP {status}"
+        headers = {}
+        retry_after = exc.response.headers.get("Retry-After")
+        if retry_after:
+            headers["Retry-After"] = retry_after
+        raise HTTPException(
+            status_code=status,
+            detail=detail,
+            headers=headers or None,
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail=f"backend warmup failed: {exc}"
+        ) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+    # v0.14.17 · 预热会改变 backend 已加载的模型, 从而改变 /setup.models[].classes (yolo 加载后
+    # 才暴露 model.names). 失效 /setup 缓存, 让随后的 /capabilities 立即拿到新类别表 (否则最坏等 30s TTL)。
+    _setup_cache.pop(backend_id, None)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action="ml_backend.warmup",
+        target_type="ml_backend",
+        target_id=str(backend_id),
+        request=request,
+        status_code=200,
+        detail={"project_id": str(project_id), "body": body, "result": result},
+    )
+    await db.commit()
+    return result
+
+
 async def _fetch_setup_cached(backend, backend_id: uuid.UUID) -> dict:
     """v0.10.1 · 探 backend /setup, 命中 30s TTL 进程内缓存则直接返回.
 
@@ -458,4 +514,6 @@ async def interactive_annotating(
         "result": result.result,
         "score": result.score,
         "inference_time_ms": result.inference_time_ms,
+        "cache_hit": result.cache_hit,
+        "model_load_ms": result.model_load_ms,
     }

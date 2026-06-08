@@ -64,7 +64,7 @@ services:
               capabilities: [gpu]
 ```
 
-**dev vs 生产差异**：
+**dev vs 生产差异**（下表 `--profile gpu` 命令省略了叠加文件前缀；GPU backend 在 `docker-compose.ml.yml`，实际须 `docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu ...`，或设 `COMPOSE_FILE` 固化）：
 
 | 场景 | 启动命令 | GPU 需求 | 显存预算 | 备注 |
 |---|---|---|---|---|

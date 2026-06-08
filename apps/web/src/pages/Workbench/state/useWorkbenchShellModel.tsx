@@ -4,7 +4,7 @@ import {
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
-import { useProject } from "@/hooks/useProjects";
+import { useProject, useUpdateProject } from "@/hooks/useProjects";
 import {
   useTaskList, useTask, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
   useUpdateAnnotation, useSubmitTask,
@@ -45,7 +45,16 @@ import { useInteractiveAI } from "./useInteractiveAI";
 import { useMLCapabilities } from "./useMLCapabilities";
 import { useCapabilityValidation } from "./useCapabilityValidation";
 import { useAiToolParamPrefs } from "./useAiToolParamPrefs";
-import { deriveDefaults, VARIANT_FIELD_KEYS } from "../components/SchemaForm";
+import {
+  isVariantHot,
+  markVariantHot,
+} from "./sessionVariantCache";
+import {
+  deriveDefaults,
+  isVariantField,
+  VARIANT_FIELD_KEYS,
+  type JsonSchemaField,
+} from "../components/SchemaForm";
 import { AIToolDrawer } from "../shell/AIToolDrawer";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
@@ -107,6 +116,21 @@ function omitVariantFields(value: Record<string, unknown> | undefined): Record<s
     if (!VARIANT_FIELD_SET.has(key)) out[key] = v;
   }
   return out;
+}
+
+function asSchemaField(raw: unknown): JsonSchemaField {
+  return raw && typeof raw === "object" ? raw as JsonSchemaField : {};
+}
+
+function buildPredictParams(
+  params: Record<string, unknown> | undefined,
+  modelVariants: Record<string, string>,
+): Record<string, unknown> | undefined {
+  const out = omitVariantFields(params);
+  if (Object.keys(modelVariants).length > 0) {
+    out.model_variants = modelVariants;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 type WorkbenchShellMode = "annotate" | "review";
@@ -240,7 +264,7 @@ export function useWorkbenchShellModel({
 
   const projectName = currentProject?.name ?? "标注工作台";
   const projectDisplayId = currentProject?.display_id ?? "—";
-  const aiModel = currentProject?.ai_model ?? "未接入模型";
+  const aiModel = currentProject?.ml_backend_id ? "已接入模型" : "未接入模型";
 
   const meUserId = useAuthStore((s) => s.user?.id);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(requestedBatchId);
@@ -853,6 +877,74 @@ export function useWorkbenchShellModel({
     toolBindings: currentProject?.tool_bindings,
   });
   const aiParamPrefs = useAiToolParamPrefs(currentProject?.ml_backend_id ?? null);
+  const updateProjectMu = useUpdateProject(routeId ?? "");
+
+  // v0.14.13 · variantDefaults = backend.default_variants ⊕ project.default_variants[backend_id]
+  // 用于给 VariantSelector 初值. session 级 s.aiVariant 仍是用户选的 override.
+  const variantDefaults = useMemo<Record<string, string>>(() => {
+    const fromBackend = mlCapabilities.activeModel?.default_variants ?? {};
+    const projectMap = (currentProject as unknown as
+      | { default_variants?: Record<string, Record<string, string>> }
+      | undefined)?.default_variants;
+    const bid = currentProject?.ml_backend_id ?? null;
+    const fromProject = (bid ? projectMap?.[bid] : undefined) ?? {};
+    return { ...fromBackend, ...fromProject };
+  }, [mlCapabilities.activeModel, currentProject]);
+
+  // v0.14.13 · setAiVariant 包装: 维持 session state + PATCH project.default_variants (debounced 隐式去重).
+  // axis_key 由 activeModel.supported_variants 决定 (yolo: series/size; gsam2: sam_variant/dino_variant);
+  // 落到 project 偏好的只是 axis 子集, 非 axis 字段不会污染项目级配置.
+  const variantAxisKeys = useMemo<Set<string>>(() => {
+    const keys = new Set<string>();
+    for (const g of mlCapabilities.activeModel?.supported_variants ?? []) {
+      if (typeof g.key === "string") keys.add(g.key);
+    }
+    for (const [key, raw] of Object.entries(mlCapabilities.paramsSchema?.properties ?? {})) {
+      if (isVariantField(key, asSchemaField(raw))) keys.add(key);
+    }
+    return keys;
+  }, [mlCapabilities.activeModel, mlCapabilities.paramsSchema]);
+  const setAiVariantAndPersist = useCallback(
+    (next: Record<string, unknown>) => {
+      s.setAiVariant(next);
+      const bid = currentProject?.ml_backend_id ?? null;
+      if (!bid || variantAxisKeys.size === 0) return;
+      const variantSlice: Record<string, string> = {};
+      for (const k of variantAxisKeys) {
+        const v = next[k];
+        if (typeof v === "string") variantSlice[k] = v;
+      }
+      const projectMap = ((currentProject as unknown as
+        | { default_variants?: Record<string, Record<string, string>> }
+        | undefined)?.default_variants) ?? {};
+      const cur = projectMap[bid] ?? {};
+      const same =
+        Object.keys(variantSlice).length === Object.keys(cur).length &&
+        Object.entries(variantSlice).every(([k, v]) => cur[k] === v);
+      if (same) return;
+      updateProjectMu.mutate({
+        default_variants: { ...projectMap, [bid]: variantSlice },
+      });
+    },
+    [s, currentProject, variantAxisKeys, updateProjectMu],
+  );
+
+  // v0.14.13 · 冷启动 UX 本地猜测: 当前 variant 是否已 warm.
+  const currentVariantSlice = useMemo<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    for (const k of variantAxisKeys) {
+      const v = (s.aiVariant as Record<string, unknown> | undefined)?.[k];
+      if (typeof v === "string") out[k] = v;
+    }
+    return out;
+  }, [s.aiVariant, variantAxisKeys]);
+  // v0.14.14: 统一查 isVariantHot (单一 hot map, sessionStorage 持久化).
+  // triggerPreannotation.isPending 变化让 useMemo 在响应回来后重算.
+  const currentVariantIsWarm = useMemo(() => {
+    const bid = currentProject?.ml_backend_id ?? null;
+    if (!bid) return false;
+    return isVariantHot(bid, currentVariantSlice);
+  }, [currentProject?.ml_backend_id, currentVariantSlice, triggerPreannotation.isPending]);
   useEffect(() => {
     sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1164,20 +1256,29 @@ export function useWorkbenchShellModel({
     }
     const prompt = aliases.join(", ");
     pushToast({ msg: "AI 正在分析图像...", sub: `${aiModel} · ${aliases.length} 个类别` });
+    const predictParams = buildPredictParams(s.aiToolParams, currentVariantSlice);
     triggerPreannotation.mutate(
       {
         ml_backend_id: mlBackendId,
         task_ids: taskId ? [taskId] : undefined,
         prompt,
+        params: predictParams,
         // v0.11.24 · 工作台手动「AI 分析」= 重跑覆盖，替换旧 AI 预测（保留人工标注），
         // 否则默认 skip_predicted 会让已预标任务再点无反应。
         predict_mode: "overwrite",
       },
       {
+        onSuccess: () => {
+          // v0.14.13 · 推理成功 → 记 variant 已热. 异步 trigger 拿不到 cache_hit,
+          // 走兜底 (成功 ⇒ pool 中有此 variant). LRU evict 后下次显示偏差一次可接受.
+          if (Object.keys(currentVariantSlice).length > 0) {
+            markVariantHot(mlBackendId, currentVariantSlice);
+          }
+        },
         onError: (err) => pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" }),
       },
     );
-  }, [projectId, currentProject, aiModel, taskId, triggerPreannotation, pushToast]);
+  }, [projectId, currentProject, aiModel, taskId, triggerPreannotation, pushToast, currentVariantSlice, s.aiToolParams]);
 
   const {
     handleVideoCreate,
@@ -1698,7 +1799,11 @@ export function useWorkbenchShellModel({
           onSetSamPolarity={s.setSamPolarity}
           isLoading={mlCapabilities.isLoading}
           isError={mlCapabilities.isError}
-          onRunSamText={(text, mode) => sam.runText(text, mode, { ...s.aiVariant, ...s.aiToolParams })}
+          onRunSamText={(text, mode) => sam.runText(
+            text,
+            mode,
+            buildPredictParams(s.aiToolParams, currentVariantSlice),
+          )}
           samRunning={sam.isRunning}
           samCandidateCount={sam.candidates.length}
           projectId={projectId}
@@ -1868,7 +1973,7 @@ export function useWorkbenchShellModel({
         onCommitRotatedBbox: createRotatedBbox,
         onCommitRotateBbox: handleCommitRotateBbox,
         onSamPrompt: (prompt) => {
-          const extra = { ...s.aiVariant, ...s.aiToolParams };
+          const extra = buildPredictParams(s.aiToolParams, currentVariantSlice);
           if (prompt.kind === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1, extra);
           if (prompt.kind === "exemplar") return sam.runExemplar(prompt.bbox, s.exemplarOutputMode, extra);
           return sam.runBbox(prompt.bbox, extra);
@@ -2084,9 +2189,16 @@ export function useWorkbenchShellModel({
       taskAiAvgMs: taskAiMeta.avgMs,
       taskAiPredictionCount: taskAiMeta.count,
       paramsSchema: mlCapabilities.paramsSchema,
-      supportedVariants: mlCapabilities.capability?.supported_variants,
+      // v0.14.13 · supported_variants / variant_combinations / default_variants 优先取
+      // activeModel (yolo 4 task 各自轴, gsam2 按 task 暴露相应轴), 顶层 capability 是并集回落.
+      supportedVariants:
+        mlCapabilities.activeModel?.supported_variants ??
+        mlCapabilities.capability?.supported_variants,
+      variantCombinations: mlCapabilities.activeModel?.variant_combinations,
+      variantDefaults,
+      isVariantWarm: currentVariantIsWarm,
       aiVariant: s.aiVariant,
-      onSetAiVariant: s.setAiVariant,
+      onSetAiVariant: setAiVariantAndPersist,
       params: s.aiToolParams,
       onSetParams: s.setAiToolParams,
     },

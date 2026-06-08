@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-02
+last_reviewed: 2026-06-08
 ---
 
 # 环境变量参考
@@ -58,7 +58,20 @@ last_reviewed: 2026-06-02
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `ML_BACKEND_OBSERVE_URLS` | `—` | 与项目注册解耦: 没有任何项目注册 backend 时, 运维也能在模型市场直连这些容器看 健康度 / 变体目录 / 试启动。留空则回退到 ML_BACKEND_DEFAULT_URL (若其非空)。 例: ML_BACKEND_OBSERVE_URLS=http://172.17.0.1:8001,http://172.17.0.1:8002 |
+| `ML_BACKEND_OBSERVE_URLS` | `—` | 与项目注册解耦: 没有任何项目注册 backend 时, 运维也能在模型市场直连这些容器看 健康度 / 变体目录 / 试启动。留空则回退到 ML_BACKEND_DEFAULT_URL (若其非空)。 例: ML_BACKEND_OBSERVE_URLS=http://172.17.0.1:8001,http://172.17.0.1:8002,http://172.17.0.1:8003 (8001=grounded-sam2, 8002=sam3, 8003=yolo) |
+
+## yolo-backend (ultralytics 多任务 det/seg/pose/obb)
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `YOLO_DEVICE` | `cuda:0` | profile gpu-yolo · 与 grounded-sam2 / sam3 三 backend 独立启停 |
+| `YOLO_MODEL_POOL_CAP` | `2` | — |
+| `YOLO_BUILD_TIMEOUT` | `30` | — |
+| `YOLO_IDLE_UNLOAD_SECONDS` | `600` | — |
+| `YOLO_IDLE_CHECK_INTERVAL` | `60` | — |
+| `STRICT_OFFLINE` | `1: checkpoints/ 缺权重直接返 400, 不去 GH release 下载.` | — |
+| `YOLO_STRICT_OFFLINE` | `0` | — |
+| `YOLO_LOG_LEVEL` | `INFO` | — |
 
 ## 单项目最多可绑定的 ML backend 数量上限. DB / API / UI 均按 1:N 设计,
 
@@ -170,7 +183,7 @@ last_reviewed: 2026-06-02
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `SAM_VARIANT` | `tiny` | 仅当 docker compose --profile gpu up grounded-sam2-backend 时生效. 模型变体 (按精度/显存递增): tiny | small | base_plus | large; 默认 tiny (4060 友好). |
+| `SAM_VARIANT` | `tiny` | 仅当启用叠加文件 docker-compose.ml.yml 的 --profile gpu 拉起 grounded-sam2-backend 时生效. 模型变体 (按精度/显存递增): tiny | small | base_plus | large; 默认 tiny (4060 友好). |
 | `DINO_VARIANT` | `T` | GroundingDINO 变体: T (Swin-T, 默认) | B (Swin-B, 更准但显存翻倍). |
 | `BOX_THRESHOLD` | `0.35` | DINO 检测阈值; 业务图召回不足可下调到 0.25, 误检多则上调到 0.45. |
 | `TEXT_THRESHOLD` | `0.25` | DINO 文本-标签匹配阈值; 短语 prompt 通常 0.25 即可. |

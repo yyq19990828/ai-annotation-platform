@@ -263,3 +263,60 @@
 .saveThresholdButton:disabled {
   cursor: not-allowed;
 }
+
+/* v0.14.16 · 推理参数命名预设行 */
+.presetRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.presetSelect {
+  min-width: 150px;
+  padding: 4px 8px;
+  color: var(--color-fg);
+  font-family: inherit;
+  font-size: 11px;
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.presetNameInput {
+  width: 140px;
+  padding: 4px 8px;
+  color: var(--color-fg);
+  font-family: inherit;
+  font-size: 11px;
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.presetButton {
+  padding: 3px 10px;
+  color: var(--color-fg);
+  font-size: 11px;
+  cursor: pointer;
+  background: var(--color-ai-soft);
+  border: 1px solid var(--color-ai);
+  border-radius: var(--radius-sm);
+}
+
+.presetButton:disabled {
+  color: var(--color-fg-subtle);
+  cursor: not-allowed;
+  background: var(--color-bg-sunken);
+  border-color: var(--color-border);
+}
+
+.presetGhostButton {
+  padding: 3px 8px;
+  color: var(--color-fg-muted);
+  font-size: 11px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}

@@ -179,9 +179,12 @@ describe("ProjectDetailPanel v0.9.12", () => {
     expect(screen.getByText("grounded-sam2")).toBeInTheDocument();
   });
 
-  it("空选中时不显示 prompt 表单", () => {
+  it("空选中时配置区常驻 · prompt 表单仍显示但运行按钮禁用 (v0.14.16)", () => {
     renderUI();
-    expect(screen.queryByPlaceholderText(/car, person/)).toBeNull();
+    // v0.14.16 配置区常驻: 配置面板 (含 prompt) 不再被『先选批次』gate, 未选也可预先调参 / 存预设;
+    // 防误触发的不变量改由「运行按钮禁用」承担, 而非隐藏表单.
+    expect(screen.getByPlaceholderText(/car, person/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /跑预标/ })).toBeDisabled();
   });
 
   it("选中 1 个 batch 后显示 prompt 表单 (无并发模式)", () => {
