@@ -318,7 +318,9 @@ async def warmup_ml_backend(
             headers=headers or None,
         ) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"backend warmup failed: {exc}") from exc
+        raise HTTPException(
+            status_code=502, detail=f"backend warmup failed: {exc}"
+        ) from exc
     if result is None:
         raise HTTPException(status_code=404, detail="ML Backend not found")
     # v0.14.17 · 预热会改变 backend 已加载的模型, 从而改变 /setup.models[].classes (yolo 加载后

@@ -96,7 +96,11 @@ def test_classes_passthrough():
                     {"index": 2, "name": "car"},
                 ],
             },
-            {"id": "segment", "task": "segmentation", "supported_geometric_outputs": ["polygon"]},
+            {
+                "id": "segment",
+                "task": "segmentation",
+                "supported_geometric_outputs": ["polygon"],
+            },
         ],
     }
     caps = extract_capabilities(setup)

@@ -91,7 +91,9 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         "supported_trackers": list(model.get("supported_trackers") or []),
         "supported_variants": model.get("supported_variants") or [],
         "variant_combinations": list(model.get("variant_combinations") or []),
-        "variants_shared_across_tasks": bool(model.get("variants_shared_across_tasks", False)),
+        "variants_shared_across_tasks": bool(
+            model.get("variants_shared_across_tasks", False)
+        ),
         # v0.14.13 · backend 自报的默认 variant 组合 (dict[axis_key, value]).
         # 前端 VariantSelector 在用户未选时取此作初值, 优先级低于项目级 default_variants.
         "default_variants": dict(model.get("default_variants") or {}),

@@ -19,7 +19,9 @@ from tests.factory import create_project
 pytestmark = pytest.mark.asyncio
 
 
-async def _make_backend(db_session, project_id: uuid.UUID, name: str = "yolo") -> MLBackend:
+async def _make_backend(
+    db_session, project_id: uuid.UUID, name: str = "yolo"
+) -> MLBackend:
     b = MLBackend(
         id=uuid.uuid4(),
         project_id=project_id,
@@ -46,12 +48,14 @@ async def test_warmup_forwards_body_and_returns_backend_response(
 
     from app.services import ml_backend as svc_module
 
-    mock_warmup = AsyncMock(return_value={
-        "ok": True,
-        "model_load_ms": 4500,
-        "cache_hit": False,
-        "evicted": None,
-    })
+    mock_warmup = AsyncMock(
+        return_value={
+            "ok": True,
+            "model_load_ms": 4500,
+            "cache_hit": False,
+            "evicted": None,
+        }
+    )
     monkeypatch.setattr(svc_module.MLBackendService, "warmup", mock_warmup)
 
     body = {"task": "detection", "variants": {"series": "yolo11", "size": "s"}}
@@ -113,7 +117,9 @@ async def test_warmup_propagates_upstream_4xx(
         text='{"code": "INVALID_VARIANT", "message": "no weight"}',
         request=httpx.Request("POST", "http://yolo:8003/warmup"),
     )
-    err = httpx.HTTPStatusError("400 Bad Request", request=fake_resp.request, response=fake_resp)
+    err = httpx.HTTPStatusError(
+        "400 Bad Request", request=fake_resp.request, response=fake_resp
+    )
     monkeypatch.setattr(
         svc_module.MLBackendService,
         "warmup",

@@ -85,7 +85,9 @@ def _shape_models(caps: dict | None) -> list[dict]:
                 "modality": m.get("modality"),
                 "supported_variants": list(m.get("supported_variants") or []),
                 "variant_combinations": list(m.get("variant_combinations") or []),
-                "variants_shared_across_tasks": bool(m.get("variants_shared_across_tasks", False)),
+                "variants_shared_across_tasks": bool(
+                    m.get("variants_shared_across_tasks", False)
+                ),
                 # v0.14.13 · backend 自报的默认 variant 组合, 供前端 VariantSelector 取初值.
                 "default_variants": dict(m.get("default_variants") or {}),
             }
@@ -153,7 +155,10 @@ async def _load_registered_instances(db: AsyncSession) -> tuple[list[dict], set[
         timeout = httpx.Timeout(float(settings.ml_health_timeout))
         async with httpx.AsyncClient(timeout=timeout) as client:
             setups = await asyncio.gather(
-                *[_probe_setup(client, backends[i].url.rstrip("/")) for i in needs_probe]
+                *[
+                    _probe_setup(client, backends[i].url.rstrip("/"))
+                    for i in needs_probe
+                ]
             )
         for i, setup in zip(needs_probe, setups):
             snapshots[i] = extract_capabilities(setup) if setup else None

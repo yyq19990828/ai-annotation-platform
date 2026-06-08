@@ -313,9 +313,7 @@ INFRAS: tuple[InfraSpec, ...] = (
         summary="PaddlePaddle / PaddleOCR / PP-Detection 系。",
     ),
     InfraSpec(id="tensorrt", label="TensorRT", summary="NVIDIA GPU 高性能推理。"),
-    InfraSpec(
-        id="openvino", label="OpenVINO", summary="Intel CPU / iGPU / NPU 优化。"
-    ),
+    InfraSpec(id="openvino", label="OpenVINO", summary="Intel CPU / iGPU / NPU 优化。"),
     InfraSpec(id="other", label="其他", summary="协议允许的自定义运行时声明。"),
 )
 
@@ -343,10 +341,10 @@ GEOMETRIES: tuple[GeometrySpec, ...] = (
         id="polygon", label="polygon", summary="2D 多边形 (单环或 multi_polygon)。"
     ),
     GeometrySpec(id="polyline", label="polyline", summary="2D 折线。"),
+    GeometrySpec(id="keypoint", label="keypoint", summary="2D 关键点集合 (含可见性)。"),
     GeometrySpec(
-        id="keypoint", label="keypoint", summary="2D 关键点集合 (含可见性)。"
+        id="lidar_box_3d", label="3D box", summary="3D 立体框, 用于点云标注。"
     ),
-    GeometrySpec(id="lidar_box_3d", label="3D box", summary="3D 立体框, 用于点云标注。"),
     GeometrySpec(id="point_mask_3d", label="point mask 3D", summary="点云逐点 mask。"),
     GeometrySpec(id="none", label="none", summary="纯分类等无几何输出。"),
 )

@@ -16,9 +16,7 @@ from app.services import capability_registry as reg
 
 @pytest.mark.asyncio
 async def test_protocol_returns_full_catalog(httpx_client, auth_headers):
-    r = await httpx_client.get(
-        "/api/v1/ml-capabilities/protocol", headers=auth_headers
-    )
+    r = await httpx_client.get("/api/v1/ml-capabilities/protocol", headers=auth_headers)
     assert r.status_code == 200, r.text
     data = r.json()
 
@@ -37,9 +35,7 @@ async def test_protocol_returns_full_catalog(httpx_client, auth_headers):
 
 @pytest.mark.asyncio
 async def test_protocol_task_metadata_shape(httpx_client, auth_headers):
-    r = await httpx_client.get(
-        "/api/v1/ml-capabilities/protocol", headers=auth_headers
-    )
+    r = await httpx_client.get("/api/v1/ml-capabilities/protocol", headers=auth_headers)
     assert r.status_code == 200
     tasks = r.json()["tasks"]
     detection = next(t for t in tasks if t["id"] == "detection")
@@ -78,8 +74,6 @@ async def test_protocol_requires_auth(httpx_client):
 
 @pytest.mark.asyncio
 async def test_protocol_cache_control_header(httpx_client, auth_headers):
-    r = await httpx_client.get(
-        "/api/v1/ml-capabilities/protocol", headers=auth_headers
-    )
+    r = await httpx_client.get("/api/v1/ml-capabilities/protocol", headers=auth_headers)
     assert r.status_code == 200
     assert "max-age=300" in r.headers.get("cache-control", "")

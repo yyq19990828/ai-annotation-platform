@@ -252,9 +252,7 @@ async def test_accept_prediction_override_class_name_lands_project_label(
     )
 
     svc = AnnotationService(db_session)
-    ann = await svc.accept_prediction(
-        pred.id, user.id, override_class_name="行人"
-    )
+    ann = await svc.accept_prediction(pred.id, user.id, override_class_name="行人")
     assert ann is not None
     assert ann.class_name == "行人"
 
@@ -326,7 +324,9 @@ async def test_accept_prediction_no_match_pass_through_class_name(
 # ── update (PATCH 改类) ─────────────────────────────────────────────────────
 
 
-async def _make_annotation(db_session, *, user, proj, tool_unit_id="bbox", class_name="person"):
+async def _make_annotation(
+    db_session, *, user, proj, tool_unit_id="bbox", class_name="person"
+):
     task = await create_task(db_session, project_id=proj.id)
     await db_session.flush()
     svc = AnnotationService(db_session)
@@ -378,6 +378,8 @@ async def test_update_without_class_name_skips_validation(db_session, super_admi
     proj.tool_bindings = _tb("bbox", [{"name": "person", "order": 0}])
     svc, ann = await _make_annotation(db_session, user=user, proj=proj)
 
-    updated = await svc.update(ann.id, geometry={"x": 0.3, "y": 0.3, "w": 0.1, "h": 0.1})
+    updated = await svc.update(
+        ann.id, geometry={"x": 0.3, "y": 0.3, "w": 0.1, "h": 0.1}
+    )
     assert updated is not None
     assert updated.class_name == "person"

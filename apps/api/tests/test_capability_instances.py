@@ -125,9 +125,7 @@ async def test_instances_skip_env_only_url_already_registered(
     proj = await create_project(db_session, owner_id=user.id, name="P-Dedup")
 
     probe = AsyncMock()
-    monkeypatch.setattr(
-        svc, "_observe_urls", lambda: ["http://samesource:8001"]
-    )
+    monkeypatch.setattr(svc, "_observe_urls", lambda: ["http://samesource:8001"])
     monkeypatch.setattr(svc, "_probe_setup", probe)
 
     backend = MLBackend(
@@ -305,8 +303,13 @@ async def test_instances_warmup_endpoint_from_env_only(
         "name": "yolo-env",
         "infra": "pytorch",
         "warmup_endpoint": True,
-        "models": [{"id": "detect", "task": "detection",
-                    "supported_geometric_outputs": ["bbox"]}],
+        "models": [
+            {
+                "id": "detect",
+                "task": "detection",
+                "supported_geometric_outputs": ["bbox"],
+            }
+        ],
     }
     monkeypatch.setattr(svc, "_observe_urls", lambda: ["http://yolo-env:8003"])
     monkeypatch.setattr(svc, "_probe_setup", AsyncMock(return_value=fake_setup))
@@ -332,8 +335,13 @@ async def test_instances_warmup_endpoint_false_when_missing(
         "name": "legacy",
         "infra": "pytorch",
         # 没有 warmup_endpoint 字段
-        "models": [{"id": "detect", "task": "detection",
-                    "supported_geometric_outputs": ["bbox"]}],
+        "models": [
+            {
+                "id": "detect",
+                "task": "detection",
+                "supported_geometric_outputs": ["bbox"],
+            }
+        ],
     }
     monkeypatch.setattr(svc, "_observe_urls", lambda: ["http://legacy:8000"])
     monkeypatch.setattr(svc, "_probe_setup", AsyncMock(return_value=fake_setup))

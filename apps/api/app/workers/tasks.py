@@ -82,7 +82,11 @@ def _build_predict_context(
         _reserved = {"type", "text", "output"}
         if params:
             context.update(
-                {k: v for k, v in params.items() if v is not None and k not in _reserved}
+                {
+                    k: v
+                    for k, v in params.items()
+                    if v is not None and k not in _reserved
+                }
             )
     if task_type or model_id:
         if context is None:
@@ -179,7 +183,9 @@ async def _run_batch(
             model_variants=model_variants,
             class_filter=class_filter,
             box_threshold=float(project.box_threshold) if project is not None else None,
-            text_threshold=float(project.text_threshold) if project is not None else None,
+            text_threshold=float(project.text_threshold)
+            if project is not None
+            else None,
         )
 
         # v0.11.24 · 幂等：skip_predicted 排除已预标 task；append/overwrite 不排除。

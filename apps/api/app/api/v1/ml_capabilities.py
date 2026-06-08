@@ -107,7 +107,9 @@ async def get_protocol_capabilities(
     `If-None-Match: <etag>` 时返回 304。
     """
     if request.headers.get("if-none-match") == _ETAG:
-        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"etag": _ETAG})
+        return Response(
+            status_code=status.HTTP_304_NOT_MODIFIED, headers={"etag": _ETAG}
+        )
     response.headers["etag"] = _ETAG
     response.headers["cache-control"] = "private, max-age=300"
     return _PAYLOAD
