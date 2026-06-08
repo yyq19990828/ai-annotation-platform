@@ -40,7 +40,7 @@ YOLO 预标可用性纵切 · 修通 YOLO 批量预标（此前必然 422）、�
 
 ### Added
 
-- **YOLO 类别白名单勾选**：yolo-backend 在模型加载后缓存 `model.names`（逐 task，读自权重不硬编码），`/setup.models[].classes` 暴露 `[{index,name}]`；面板渲染 `[index]类名` 勾选（留空=全部），选中 index 经 `context.classes` 透传给 ultralytics `model.predict(classes=)` 原生过滤。预标结果仍渲染模型原生类名（不映射）。
+- **YOLO 类别白名单勾选**：yolo-backend 在模型加载后缓存 `model.names`（逐 task，读自权重不硬编码），`/setup.models[].classes` 暴露 `[{index,name}]`，API `extract_capabilities` 透传 `classes`；面板渲染 `[index]类名` 勾选（留空=全部），选中 index 经 `context.classes` 透传给 ultralytics `model.predict(classes=)` 原生过滤。预标结果仍渲染模型原生类名（不映射）。类别表懒加载——面板提供「预热以加载类别」按钮，想按类筛选者手动预热即可（默认全标者无需）；预热后 backend 失效 `/setup` 缓存让类别即时出现。
 - **采纳时选类**：`POST /tasks/{id}/predictions/{pid}/accept` 新增可选 `override_class_name`，预测类名既不在项目标签集、又无 alias 命中时可由人指定项目标签落库（仍走软校验）。工作台采纳遇此类 422 时，自动在该框位置弹出 ClassPickerPopover（复用 `EditingClass.accept` 模式）让用户选项目标签，再带 `override_class_name` 重试采纳。
 
 ## [0.14.16] - 2026-06-08

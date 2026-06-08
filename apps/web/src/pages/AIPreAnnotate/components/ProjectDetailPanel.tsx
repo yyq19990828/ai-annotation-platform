@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -264,6 +264,34 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   useEffect(() => {
     setSelectedClassIdx(new Set());
   }, [selectedBackendId, geometricTaskId]);
+
+  // v0.14.17 · 手动预热: 想按类别筛选的用户点一下加载该 task 的类别表 (model.names);
+  // 不需筛选 (默认全标) 的用户无需预热。预热后 backend 失效 /setup 缓存, 刷新 capabilities 即出类别。
+  const qc = useQueryClient();
+  const warmMut = useMutation({
+    mutationFn: () => {
+      const variants: Record<string, string> = {};
+      for (const k of variantAxisKeysRef.current) {
+        const v = paramsValue[k];
+        if (typeof v === "string") variants[k] = v;
+      }
+      return mlBackendsApi.warmup(projectId, selectedBackendId as string, {
+        task: geometricModel?.task,
+        variants,
+      });
+    },
+    onSuccess: () => {
+      pushToast({ msg: "已预热，正在加载类别…", kind: "success" });
+      qc.invalidateQueries({
+        queryKey: ["ml-backends", projectId, selectedBackendId, "capabilities"],
+      });
+      qc.invalidateQueries({
+        queryKey: ["ml-backends", projectId, selectedBackendId, "setup"],
+      });
+    },
+    onError: (err) =>
+      pushToast({ msg: "预热失败", sub: (err as Error)?.message, kind: "error" }),
+  });
 
   // 文本任务用 /setup.params; OCR / 版面用所选 model 条目自带的 params schema.
   const paramsSchema = (
@@ -762,6 +790,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                 classes={geometricModel?.classes}
                 selected={selectedClassIdx}
                 onChange={setSelectedClassIdx}
+                onWarm={() => warmMut.mutate()}
+                warming={warmMut.isPending}
               />
             )}
 

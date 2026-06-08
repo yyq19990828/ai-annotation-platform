@@ -16,16 +16,32 @@ interface Props {
   classes: { index: number; name: string }[] | undefined;
   selected: Set<number>;
   onChange: (next: Set<number>) => void;
+  /** 手动预热该 task 以加载类别表 (model.names); 想按类筛选才需要, 默认全标无需预热. */
+  onWarm?: () => void;
+  warming?: boolean;
 }
 
-export function ClassWhitelistRow({ classes, selected, onChange }: Props) {
+export function ClassWhitelistRow({ classes, selected, onChange, onWarm, warming }: Props) {
   if (!classes || classes.length === 0) {
     return (
       <div className={styles.field}>
         <span className={styles.fieldLabel}>类别筛选</span>
-        <span className={styles.mutedText}>
-          预热该模型后可按类别筛选；当前将检出全部类别。
-        </span>
+        <div className={styles.presetRow}>
+          <span className={styles.mutedText}>
+            当前将检出全部类别。如需只标部分类别，先预热加载类别表。
+          </span>
+          {onWarm && (
+            <button
+              type="button"
+              className={styles.presetButton}
+              disabled={warming}
+              onClick={onWarm}
+              title="加载该模型的类别表 (model.names), 之后可勾选类别白名单"
+            >
+              {warming ? "预热中…（首次约 5-15s）" : "预热以加载类别"}
+            </button>
+          )}
+        </div>
       </div>
     );
   }

@@ -321,6 +321,9 @@ async def warmup_ml_backend(
         raise HTTPException(status_code=502, detail=f"backend warmup failed: {exc}") from exc
     if result is None:
         raise HTTPException(status_code=404, detail="ML Backend not found")
+    # v0.14.17 · 预热会改变 backend 已加载的模型, 从而改变 /setup.models[].classes (yolo 加载后
+    # 才暴露 model.names). 失效 /setup 缓存, 让随后的 /capabilities 立即拿到新类别表 (否则最坏等 30s TTL)。
+    _setup_cache.pop(backend_id, None)
     await AuditService.log(
         db,
         actor=current_user,
