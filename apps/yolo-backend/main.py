@@ -180,6 +180,24 @@ app = FastAPI(title="yolo-backend", version=BACKEND_VERSION, lifespan=lifespan)
 @app.get("/health")
 def health() -> dict[str, Any]:
     perf = sample_perfhud()
+    # 平台 PerfHud / 观测面板读顶层 gpu_info + host (见 api/app/workers/ml_health.py
+    # _PERFHUD_META_KEYS, gsam2 参考实现). sample_perfhud() 是扁平形, 这里映射成协议标准的
+    # 嵌套结构, 否则平台拿不到指标 → 面板四条 bar 全显示 "—".
+    used = perf.get("gpu_memory_used_mb")
+    total = perf.get("gpu_memory_total_mb")
+    gpu_info = {
+        "device_name": perf.get("gpu_device_name"),
+        "memory_used_mb": used,
+        "memory_total_mb": total,
+        "memory_free_mb": (total - used) if (used is not None and total is not None) else None,
+        "gpu_utilization_percent": perf.get("gpu_utilization_percent"),
+        "gpu_temperature_celsius": perf.get("gpu_temperature_celsius"),
+        "gpu_power_watts": perf.get("gpu_power_watts"),
+    }
+    host = {
+        "container_cpu_percent": perf.get("container_cpu_percent"),
+        "container_memory_percent": perf.get("container_memory_percent"),
+    }
     # NOTE: ModelPool 实现了 __len__, 用 `if pool` 会因 __len__()==0 退化为 False;
     # 必须用 `is not None`.
     pool_ready = _model_pool is not None
@@ -196,7 +214,8 @@ def health() -> dict[str, Any]:
         "pool": _model_pool.pool_status() if pool_ready else {
             "cap": 0, "current_size": 0, "loaded_keys": [], "last_evict": None,
         },
-        "perfhud": perf,
+        "gpu_info": gpu_info,
+        "host": host,
     }
 
 

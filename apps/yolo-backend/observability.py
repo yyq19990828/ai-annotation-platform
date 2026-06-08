@@ -119,6 +119,7 @@ def shutdown_perfhud_collectors() -> None:
 def sample_perfhud() -> dict:
     """同步采样一次 GPU + 容器指标, 写入 Gauge 并返回 dict 供 /health 使用."""
     out: dict = {
+        "gpu_device_name": None,
         "gpu_utilization_percent": None,
         "gpu_temperature_celsius": None,
         "gpu_power_watts": None,
@@ -131,6 +132,10 @@ def sample_perfhud() -> dict:
         try:
             import pynvml
 
+            name = pynvml.nvmlDeviceGetName(_pynvml_handle)
+            out["gpu_device_name"] = (
+                name.decode() if isinstance(name, bytes) else name
+            )
             util = pynvml.nvmlDeviceGetUtilizationRates(_pynvml_handle).gpu
             temp = pynvml.nvmlDeviceGetTemperature(
                 _pynvml_handle, pynvml.NVML_TEMPERATURE_GPU

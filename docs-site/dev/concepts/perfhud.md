@@ -78,6 +78,8 @@ Grounded-SAM-2 / SAM-3 等 GPU backend 跑预标时，运维侧需要实时看 G
 | 前端入口 | `apps/web/src/App.tsx` | 全局 `Ctrl+Shift+P` listener + `<PerfHud />` 挂载 |
 | 前端入口 | `apps/web/src/components/shell/TopBar.tsx` | activity icon button (admin only) |
 
+> **新接入 backend 须遵守同一 `/health` 观测契约**：把 GPU/容器指标放进顶层 `gpu_info` + `host` 段（字段名见 gsam2 参考实现 / `_PERFHUD_META_KEYS`），而非自定义扁平 envelope —— 否则 `publish_ml_backend_stats` 拿不到指标，PerfHud 四条 bar 全显示 "—"。yolo-backend `main.py` `/health` 也按此映射。
+
 ## 性能开销
 
 - **后端**: 1s 粒度 publish 仅在 WS 订阅者 > 0 时触发. 单次拉取串行扫描所有
