@@ -53,7 +53,6 @@ export function Step4Ai({
               onChange={(v) =>
                 setForm((s) => ({ ...s, textOutputDefault: v }))
               }
-              className={styles.input}
             />
           </div>
 

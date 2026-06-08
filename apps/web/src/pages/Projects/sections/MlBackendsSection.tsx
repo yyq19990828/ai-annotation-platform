@@ -272,7 +272,6 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
               value={textOutputDefault as TextOutputDefault}
               onChange={(v) => setTextOutputDefault(v)}
               disabled={!aiEnabled}
-              className={cn(styles.control, styles.selectControl)}
             />
           </div>
         </div>
