@@ -18,6 +18,7 @@ import { useProject } from "@/hooks/useProjects";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useMLBackends } from "@/hooks/useMLBackends";
+import { useUpdateProject } from "@/hooks/useProjects";
 import {
   useTriggerPreannotation,
   type TextOutputMode,
@@ -116,6 +117,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
         classes_config?: Record<string, { alias?: string | null }>;
         box_threshold?: number | null;
         text_threshold?: number | null;
+        // v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶), 详见 ProjectOut.default_variants.
+        default_variants?: Record<string, Record<string, string>>;
       }
     | undefined;
   // v0.10.38 · 模态分流: summary 优先 (列表已带), 回落 project 查询.
@@ -198,6 +201,18 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   const activeDocModel = taskType === "ocr" ? ocrModel : taskType === "doc_layout" ? docLayoutModel : undefined;
   const isDocMode = taskType === "ocr" || taskType === "doc_layout";
 
+  // v0.14.13 · 选中 backend 的 "主" model: doc 模式用 OCR / layout 条目;
+  // 否则取 capabilities 里第一个非 doc 模型 (yolo 4 个 model 共用 default_variants, 任取第一即可;
+  // gsam2 / sam3 多 task 共享 supported_variants 时同样).
+  // 主 model 提供 default_variants / variant_combinations / supported_variants 给 VariantSelector.
+  const primaryModel = useMemo<MLModelCapability | undefined>(() => {
+    if (isDocMode) return activeDocModel;
+    const models = capabilitiesQ.data?.models ?? [];
+    return (
+      models.find((m) => m.task !== "ocr" && m.task !== "doc_layout") ?? models[0]
+    );
+  }, [isDocMode, activeDocModel, capabilitiesQ.data]);
+
   // 文本任务用 /setup.params; OCR / 版面用所选 model 条目自带的 params schema.
   const paramsSchema = (
     isDocMode ? activeDocModel?.params : setupQ.data?.params
@@ -209,14 +224,67 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   );
   const { savedParams, save: saveParams } = useAiToolParamPrefs(selectedBackendId);
   const [paramsValue, setParamsValue] = useState<Record<string, unknown>>({});
-  // 选中 backend / schema / 偏好就绪时, 用 偏好 → schema 默认 重建参数值
+
+  // v0.14.13 · 项目级 variant 偏好 merge backend 自报默认, 得到 VariantSelector 的 defaults.
+  // 优先级 (高 → 低): project.default_variants[backend_id] > primaryModel.default_variants.
+  const variantDefaults = useMemo<Record<string, string>>(() => {
+    const fromBackend = primaryModel?.default_variants ?? {};
+    const fromProject = (selectedBackendId
+      ? project?.default_variants?.[selectedBackendId]
+      : undefined) ?? {};
+    return { ...fromBackend, ...fromProject };
+  }, [primaryModel, project?.default_variants, selectedBackendId]);
+
+  // 选中 backend / schema / 偏好就绪时, 用 偏好 → schema 默认 → variantDefaults 重建参数值.
+  // variantDefaults 在 saved 之上叠加, 让 axis_key 即便 saved 没存也有初值给 VariantSelector 渲染.
   useEffect(() => {
     if (!selectedBackendId) return;
-    setParamsValue({ ...deriveDefaults(paramsSchema), ...(savedParams ?? {}) });
-  }, [selectedBackendId, paramsSchema, savedParams]);
+    setParamsValue({
+      ...deriveDefaults(paramsSchema),
+      ...variantDefaults,
+      ...(savedParams ?? {}),
+    });
+  }, [selectedBackendId, paramsSchema, savedParams, variantDefaults]);
+
   const onParamsChange = (next: Record<string, unknown>) => {
     setParamsValue(next);
     saveParams(next);
+  };
+
+  // v0.14.13 · variant 写回项目级偏好 (debounced 跟随 PATCH).
+  // axis_key 来自 primaryModel.supported_variants[].key; 其它非 variant key 落 localStorage (saveParams).
+  const updateProjectMu = useUpdateProject(projectId);
+  const variantAxisKeysRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    variantAxisKeysRef.current = new Set(
+      (primaryModel?.supported_variants ?? [])
+        .map((g) => g.key)
+        .filter((k): k is string => typeof k === "string"),
+    );
+  }, [primaryModel]);
+
+  const onVariantOrParamsChange = (next: Record<string, unknown>) => {
+    setParamsValue(next);
+    saveParams(next);
+    if (!selectedBackendId) return;
+    const axisKeys = variantAxisKeysRef.current;
+    if (axisKeys.size === 0) return;
+    const variantSlice: Record<string, string> = {};
+    for (const k of axisKeys) {
+      const v = next[k];
+      if (typeof v === "string") variantSlice[k] = v;
+    }
+    // 与项目当前偏好对比, 有变化才 PATCH (避免每次 paramsValue 变都打 API).
+    const currentProjectSlice = project?.default_variants?.[selectedBackendId] ?? {};
+    const same =
+      Object.keys(variantSlice).length === Object.keys(currentProjectSlice).length &&
+      Object.entries(variantSlice).every(([k, v]) => currentProjectSlice[k] === v);
+    if (same) return;
+    const merged: Record<string, Record<string, string>> = {
+      ...(project?.default_variants ?? {}),
+      [selectedBackendId]: variantSlice,
+    };
+    updateProjectMu.mutate({ default_variants: merged });
   };
 
   const batchesQ = useBatches(projectId, "active");
@@ -635,13 +703,18 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                 <div className={styles.backendParamsStack}>
                   <VariantSelector
                     schema={paramsSchema}
+                    // v0.14.13 · 取 model 级 supported_variants (yolo 4 task 各自轴; gsam2
+                    // detection/seg/iseg/tracker 按 task 暴露相应轴), 不再用 backend 顶层并集.
                     supportedVariants={
-                      isDocMode
+                      primaryModel?.supported_variants ??
+                      (isDocMode
                         ? activeDocModel?.supported_variants
-                        : setupQ.data?.supported_variants
+                        : setupQ.data?.supported_variants)
                     }
+                    variantCombinations={primaryModel?.variant_combinations}
+                    defaults={variantDefaults}
                     value={paramsValue}
-                    onChange={onParamsChange}
+                    onChange={onVariantOrParamsChange}
                   />
                   {(hasNonVariantParams || !hasAnyParams) && (
                     <SchemaForm
