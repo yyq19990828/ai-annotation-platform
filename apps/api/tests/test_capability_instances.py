@@ -168,6 +168,76 @@ async def test_instances_skip_env_only_url_already_registered(
 
 
 @pytest.mark.asyncio
+async def test_instances_live_probe_when_snapshot_missing(
+    httpx_client, auth_headers, db_session, super_admin, monkeypatch
+):
+    """registered backend health_meta 缺 models 时, fallback 到 live /setup 探测。
+
+    覆盖 v0.14.9 之前注册的老 backend: state=connected 但 health_meta.capabilities
+    为 NULL, 应直接探测 backend.url 拿最新 models[], 而不是被 skip 掉。
+    """
+    from app.services import capability_instances as svc
+
+    user, _ = super_admin
+    proj = await create_project(db_session, owner_id=user.id, name="P-LiveProbe")
+
+    monkeypatch.setattr(svc, "_observe_urls", lambda: [])
+
+    # mock live 探测返回协议 v2 多 model setup
+    fake_live_setup = {
+        "name": "gsam2",
+        "infra": "pytorch",
+        "supported_prompts": ["point", "bbox", "text"],
+        "models": [
+            {
+                "id": "grounded-sam2-detection",
+                "display_name": "gsam2 检测",
+                "task": "detection",
+                "infra": "pytorch",
+                "supported_geometric_outputs": ["bbox"],
+            },
+            {
+                "id": "grounded-sam2-tracker",
+                "display_name": "gsam2 追踪",
+                "task": "tracker",
+                "infra": "pytorch",
+                "supported_geometric_outputs": ["bbox"],
+            },
+        ],
+    }
+    probe = AsyncMock(return_value=fake_live_setup)
+    monkeypatch.setattr(svc, "_probe_setup", probe)
+
+    # 注册 backend 但 health_meta 是协议 v1 时代的快照 (无 capabilities)
+    backend = MLBackend(
+        id=uuid.uuid4(),
+        project_id=proj.id,
+        name="gsam2.legacy",
+        url="http://gsam2-legacy:8001",
+        state="connected",
+        is_interactive=True,
+        auth_method="none",
+        extra_params={},
+        health_meta={"gpu_info": {"memory_used_mb": 100}},  # 没 capabilities
+    )
+    db_session.add(backend)
+    await db_session.flush()
+
+    r = await httpx_client.get(
+        "/api/v1/ml-capabilities/instances", headers=auth_headers
+    )
+    assert r.status_code == 200
+    insts = r.json()["instances"]
+    assert len(insts) == 1
+    assert insts[0]["source"] == "registered"
+    assert insts[0]["name"] == "gsam2.legacy"
+    assert len(insts[0]["models"]) == 2
+    tasks = {m["task"] for m in insts[0]["models"]}
+    assert tasks == {"detection", "tracker"}
+    probe.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_instances_no_sensitive_fields_leaked(
     httpx_client, auth_headers, db_session, super_admin, monkeypatch
 ):

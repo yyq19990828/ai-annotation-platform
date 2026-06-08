@@ -109,7 +109,8 @@ async def _load_env_only_instances(registered_urls: set[str]) -> list[dict]:
 
 
 async def _load_registered_instances(db: AsyncSession) -> tuple[list[dict], set[str]]:
-    """从 ml_backends 表读已注册 backend, 复用 health_meta.capabilities 快照。
+    """从 ml_backends 表读已注册 backend; health_meta 快照缺失时 fallback 到
+    live /setup 探测 (保证 v0.14.9 之前注册的老 backend 也能即时显示)。
 
     返回 (实例列表, 已注册 URL 集合); URL 集合给 env-only 用作去重。
     """
@@ -117,17 +118,42 @@ async def _load_registered_instances(db: AsyncSession) -> tuple[list[dict], set[
     result = await db.execute(stmt)
     backends = result.scalars().all()
 
-    instances: list[dict] = []
-    urls: set[str] = set()
-    for b in backends:
-        urls.add(b.url.rstrip("/"))
-        # health_meta.capabilities 是 extract_capabilities 写入的快照 (含 models[]).
+    urls: set[str] = {b.url.rstrip("/") for b in backends}
+    if not backends:
+        return [], urls
+
+    # 第一遍: 从 health_meta 快照拿 models; 记录需要 live 探测的 backend。
+    snapshots: list[dict | None] = []
+    needs_probe: list[int] = []
+    for idx, b in enumerate(backends):
         caps: dict | None = None
         if b.health_meta and isinstance(b.health_meta, dict):
             caps = b.health_meta.get("capabilities")
+        if _shape_models(caps):
+            snapshots.append(caps)
+        else:
+            snapshots.append(None)
+            needs_probe.append(idx)
+
+    # 第二遍: 并发 live 探测 (只对快照缺 models 的 backend)。
+    if needs_probe:
+        timeout = httpx.Timeout(float(settings.ml_health_timeout))
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            setups = await asyncio.gather(
+                *[_probe_setup(client, backends[i].url.rstrip("/")) for i in needs_probe]
+            )
+        for i, setup in zip(needs_probe, setups):
+            snapshots[i] = extract_capabilities(setup) if setup else None
+
+    instances: list[dict] = []
+    for b, caps in zip(backends, snapshots):
         models = _shape_models(caps)
         if not models:
-            # 未探测过 / 协议 v1 未升级的 backend 略过, 避免 model 字段为空的卡。
+            # 探测失败 / 协议 v1 backend 合成单 model 也失败 → 静默 skip。
+            logger.debug(
+                "instances: skip registered backend %s (no models in snapshot or live probe)",
+                b.name,
+            )
             continue
         instances.append(
             {
