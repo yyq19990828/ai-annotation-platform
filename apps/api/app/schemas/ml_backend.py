@@ -119,6 +119,9 @@ class BackendCapabilities(BaseModel):
     v0.14.9 · 能力声明协议 v2: 新增 `infra` (backend 默认基础设施) + `models` (多模型目录);
     其余顶层字段为各 model 的「扁平并集」, 供未迁移消费方继续读 (向后兼容)。"""
 
+    # v0.14.12 · backend 自报名 (如 "grounded-sam2-backend"), 用于前端能力目录展示
+    # 源 backend 名 (而非用户在项目里取的别名)。
+    name: str | None = None
     # v0.14.9 · 协议 v2 新增
     infra: str = "unknown"
     models: list[ModelCapability] = []

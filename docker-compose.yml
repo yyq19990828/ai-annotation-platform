@@ -280,6 +280,43 @@ services:
       retries: 3
       start_period: 180s
 
+  # v0.14.12 · yolo-backend (ultralytics 多任务多系列, det/seg/pose/obb 四 task).
+  # 与 grounded-sam2 (8001) / sam3 (8002) 解耦的独立 profile:
+  #   docker compose --profile gpu-yolo up yolo-backend
+  # 三 backend 可并存; yolo 走纯批量预标 (supported_prompts=['none']), 不挤占交互式工具栏.
+  # 显存预算: 单 m/l 模型 ~5-8GB; 池容量 YOLO_MODEL_POOL_CAP 默认 2 适配 4060/3060 8G.
+  # 首次推理时按需从 GH release 下载权重到 checkpoints 卷; STRICT_OFFLINE=1 改报 400.
+  yolo-backend:
+    build:
+      context: ./apps
+      dockerfile: yolo-backend/Dockerfile
+    profiles: ["gpu-yolo"]
+    ports:
+      - "8003:8003"
+    environment:
+      YOLO_DEVICE: ${YOLO_DEVICE:-cuda:0}
+      YOLO_MODEL_POOL_CAP: ${YOLO_MODEL_POOL_CAP:-2}
+      YOLO_BUILD_TIMEOUT: ${YOLO_BUILD_TIMEOUT:-30}
+      YOLO_IDLE_UNLOAD_SECONDS: ${YOLO_IDLE_UNLOAD_SECONDS:-600}
+      YOLO_IDLE_CHECK_INTERVAL: ${YOLO_IDLE_CHECK_INTERVAL:-60}
+      YOLO_STRICT_OFFLINE: ${YOLO_STRICT_OFFLINE:-0}
+      LOG_LEVEL: ${YOLO_LOG_LEVEL:-INFO}
+    volumes:
+      - yolo_checkpoints:/app/checkpoints
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   # v0.8.8 · 可观测性 stack（默认 profile=monitoring 不启动，避免 dev 多吃 ~200MB）
   # 启动方式：`docker compose --profile monitoring up -d prometheus grafana`
   # 注意：prometheus scrape 的 host.docker.internal 仅在 Docker Desktop（Mac/Win）
@@ -337,6 +374,7 @@ volumes:
   miniodata:
   gsam2_checkpoints:
   gsam2_hf_cache:
+  yolo_checkpoints:
   sam3_checkpoints:
   sam3_hf_cache:
   prometheus_data:

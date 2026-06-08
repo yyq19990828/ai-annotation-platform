@@ -55,6 +55,14 @@ export interface MLModelCapability {
   supported_text_outputs?: string[];
   supported_trackers?: string[];
   supported_variants?: MLBackendSupportedVariantGroup[];
+  // v0.14.12 · 显式合法组合 (可选): backend 多 axis 非真笛卡尔积时使用. yolo 的
+  // (series, size) 受 MODEL_MATRIX 约束 (rtdetr 只有 l/x; v9 detect 仅 t/s/m/c/e),
+  // 必须列举合法组合避免目录展示虚假权重. 字段缺省时前端按 axes 笛卡尔积处理.
+  // 每条 inner array 与 supported_variants 轴顺序一致, 即 [axis0_value, axis1_value, ...].
+  variant_combinations?: string[][];
+  // v0.14.12 · True 表示同 backend 内多 task 共享同一份物理权重 (gsam2 风格);
+  // False/缺省表示每 task 独立权重 (yolo 风格). 前端列表据此切换渲染策略。
+  variants_shared_across_tasks?: boolean;
   default_thresholds?: Record<string, unknown>;
   resource_profile?: Record<string, unknown>;
   params?: { type?: string; properties?: Record<string, unknown> };

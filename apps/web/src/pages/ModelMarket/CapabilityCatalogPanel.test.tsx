@@ -181,6 +181,63 @@ describe("CapabilityCatalogPanel · 协议双层视图", () => {
     expect(screen.queryByText(/支持 9 类 AI 标注能力/)).not.toBeInTheDocument();
   });
 
+  it("同 URL 跨多项目注册时, groupBy=backend 只渲染一组 + 注册状态列聚合项目名", async () => {
+    // v0.14.12 · backendRefs 按 URL 去重 (避免重复 fetch + 重复显示).
+    const sharedBackend = (projectId: string) => ({
+      id: `${projectId}-bk`,
+      project_id: projectId,
+      name: "shared-yolo",
+      url: "http://172.17.0.1:9999/",
+      state: "connected" as const,
+      auth_method: "none",
+      is_interactive: false,
+      extra_params: {},
+      created_at: "2026-06-01T00:00:00Z",
+      updated_at: "2026-06-01T00:00:00Z",
+      last_checked_at: null,
+      error_message: null,
+      health_meta: null,
+    });
+    mockOverview.mockResolvedValue({
+      projects: [
+        { project_id: "p1", project_name: "项目甲", backends: [sharedBackend("p1")] },
+        { project_id: "p2", project_name: "项目乙", backends: [sharedBackend("p2")] },
+        { project_id: "p3", project_name: "项目丙", backends: [sharedBackend("p3")] },
+      ],
+      total_backends: 3,
+      connected_backends: 3,
+    });
+    const { mlBackendsApi } = await import("@/api/ml-backends");
+    (mlBackendsApi.capabilities as ReturnType<typeof vi.fn>).mockResolvedValue({
+      name: "shared-yolo",
+      infra: "pytorch",
+      is_interactive: false,
+      supported_prompts: ["none"],
+      supported_geometric_outputs: ["bbox"],
+      models: [
+        {
+          id: "detect",
+          display_name: "YOLO 目标检测",
+          task: "detection",
+          infra: "pytorch",
+          supported_geometric_outputs: ["bbox"],
+          supported_prompts: ["none"],
+        },
+      ],
+    });
+    renderUI();
+    // 切到 backend 分组 + 列表视图 (一旦 overview 解析完, 这俩会触发 capability fetch + rerender).
+    const select = await screen.findByRole("combobox") as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "backend" } });
+    fireEvent.click(screen.getByTitle("列表视图"));
+    // 注册状态列聚合显示: "项目甲 +2"
+    await screen.findByText("项目甲 +2");
+    // capabilities API 只调用一次 (按 URL 去重) — 而非 3 次.
+    expect(mlBackendsApi.capabilities).toHaveBeenCalledTimes(1);
+    // 同 backendName 的 group 只出现一次 (按 URL 合并)
+    expect(screen.getAllByText("shared-yolo").length).toBe(2); // group header + 来源列
+  });
+
   it("搜索 'ocr' → 仅 OCR 协议卡可见", async () => {
     renderUI();
     await screen.findByText(/支持 9 类 AI 标注能力/);

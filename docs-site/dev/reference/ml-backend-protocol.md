@@ -336,6 +336,8 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   "supported_trackers": [],             // v1 已有,video tracker 专用
 
   "supported_variants": [ /* series/size 多轴,§4.1.6 */ ],
+  "variant_combinations": [ /* 可选,§4.1.6: 多轴非真笛卡尔积时显式列举合法组合 */ ],
+  "variants_shared_across_tasks": false, /* 可选,§4.1.6: True 表同 backend 内多 task 共享同一份物理权重 */
   "default_thresholds": { "conf": 0.25, "iou": 0.7 },
   "resource_profile": { "device": "gpu", "batchable": true },
   "params": { /* 该 model 专属 JSON Schema(Draft-07 子集),前端 schema-form 渲染 */ }
@@ -409,11 +411,15 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 ### 4.1.6 范例：YOLO 官仓 backend（按任务分条目 + series/size 多轴）
 
+> **真实参考实现**：[`apps/yolo-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/apps/yolo-backend)（v0.14.12 起）。
+> 实仓覆盖 4 task × 7 series × 9 size 的 80 个有效组合，与下方 jsonc 示例完全对齐；本节 jsonc 是缩写说明，实仓 `/setup` 输出是 canonical。
+> 注意实仓在 `models[].task` 维度去掉了 `classify`（v0.14.12 NG1：ImageNet-1k 与项目 LabelConfig 几乎对不上），下方示例保留 classify 仅作协议形态说明。
+
 ```jsonc
 {
-  "name": "yolo-ultralytics-backend",
+  "name": "yolo-backend",                         // 与 apps/yolo-backend 实仓对齐
   "version": "0.1.0",
-  "model_version": "ultralytics-8.3.x",
+  "model_version": "ultralytics-8.4.x",
   "infra": "pytorch",
   "is_interactive": false,
   "models": [
@@ -451,6 +457,39 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 ```
 
 > **关键红利**：det/seg/pose/obb 的输出几何恰好命中现有 4 种 result type（`rectanglelabels` / `polygonlabels` / `keypointlabels` / `rectanglelabels+rotation`），所以 **YOLO backend 的 `/predict` 输出零 adapter**，直接落现有渲染链路（§3）。只有 `classify` 的 class 需走 `attributes.class`。
+
+#### `variant_combinations`（可选，v0.14.12 起）
+
+`supported_variants` 暴露多轴时，前端默认按 axes 笛卡尔积渲染目录。但**多轴非真笛卡尔积**的 backend（如 yolo 的 `rtdetr` 只有 `l/x`、`yolov9 detect` 只有 `t/s/m/c/e`、`yolov10` 不支持 seg/pose/obb）需要显式列举合法组合，否则会列出虚假权重（如 yolov10-keypoint 这种实际不存在的 .pt）。
+
+```jsonc
+{
+  "id": "detect",
+  "supported_variants": [
+    { "key": "series", "variants": [/* 7 个: v8/v9/v10/v11/v12/v26/rtdetr */] },
+    { "key": "size",   "variants": [/* 9 个 union: n/t/s/m/b/c/l/e/x */] }
+  ],
+  "variant_combinations": [
+    ["yolov8","n"], ["yolov8","s"], ["yolov8","m"], ["yolov8","l"], ["yolov8","x"],
+    ["yolov9","t"], ["yolov9","s"], ["yolov9","m"], ["yolov9","c"], ["yolov9","e"],
+    // ...
+    ["rtdetr","l"], ["rtdetr","x"]   // 注意 rtdetr 只有 l/x
+  ]
+}
+```
+
+- inner array 顺序必须与 `supported_variants` 的 axis 顺序一致，即 `[axis0_value, axis1_value, ...]`。
+- 字段缺省 ⇒ 前端按 axes 笛卡尔积处理（适用于 SAM2 × DINO 等真笛卡尔积场景）。
+- 前端目录展示时严格按 `variant_combinations` 过滤；`/predict` 服务端仍独立做 `INVALID_VARIANT` 400 兜底。
+
+#### `variants_shared_across_tasks`（可选，v0.14.12 起）
+
+布尔字段，缺省 `false`。决定前端列表视图如何对待"同 variant 跨多 task"的情形：
+
+- **`false`（yolo 风格，默认）**：每 task 独立物理权重（yolov8n-det.pt / yolov8n-seg.pt / yolov8n-pose.pt / yolov8n-obb.pt 都是独立文件）。模型市场列表中每 (task, variant) 一行，行名加任务后缀（`YOLOv8-Det` / `YOLOv8-OBB`）。
+- **`true`（gsam2 / sam3 风格）**：同 backend 内多 task 共享同一份权重（SAM 2.1 Tiny 一份 `.pt` 同时服务 segmentation / interactive_seg / tracker；GroundingDINO Swin-T 一份 `.pt` 同时服务 detection / segmentation）。模型市场列表按 `(backend, axis_key, axis_value)` 聚合到一行，`task` 列汇总所有用到此权重的 task。
+
+**结合 `supported_variants` 按 task 暴露**：当 `variants_shared_across_tasks=true` 时，每个 model 只声明该 task **真正用到的 axes**（如 grounded-sam2 的 `detection` 只声明 `dino_variant` 轴而非两轴），让前端目录的 task 列准确反映哪些 task 用 SAM、哪些 task 用 DINO。
 
 ### 4.1.7 范例：ONNX 聚合 backend（一个 backend，多家族多任务，统一 infra）
 
@@ -503,7 +542,11 @@ POST /projects/{pid}/ml-backends/{bid}/capabilities/refresh  # 强制重探 /set
 
 ### 4.1.10 可跑参考实现
 
-协议 v2 的端到端参考实现见 [`docs-site/dev/examples/mock-v2-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/docs-site/dev/examples/mock-v2-backend)：`/setup` 暴露 YOLO 风格多任务 `models[]`（detection / segmentation / keypoint / obb / classification）+ PaddleOCR / DocLayout 条目，每条带 `task` / `infra` / 几何 / 多轴 `variants`；`/predict` 按 `context.type`（task_type）返回固定 demo 结果，OCR 条目带 `attributes.text`。无真实推理，可直接 `uvicorn main:app --port 9100` 起来做协议 v2 冒烟与接入验证。（最小 v1 参考实现仍见下文 echo-ml-backend。）
+**真实推理参考实现（v0.14.12 起）**：[`apps/yolo-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/apps/yolo-backend) —— ultralytics 多任务多系列 backend，覆盖 detection / segmentation(instance) / keypoint / obb 四 task × v8/v9/v10/v11/v12/v26/rt-detr 七系列，共 80 个有效预训练组合。`/setup.models[]` 按 task 拆 4 条目，`supported_variants` 走 series × size 两轴，按预训练矩阵严格过滤。`/predict` 零 adapter 命中 4 种 result type，结果直落平台 `apps/api/app/services/prediction.py::to_internal_shape` → internal Geometry。可作为新接入 backend 的首选骨架参考。
+
+**协议形态参考实现（无真实推理）**：[`docs-site/dev/examples/mock-v2-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/docs-site/dev/examples/mock-v2-backend) —— `/setup` 暴露 YOLO 风格多任务 `models[]`（detection / segmentation / keypoint / obb / classification）+ PaddleOCR / DocLayout 条目，每条带 `task` / `infra` / 几何 / 多轴 `variants`；`/predict` 按 `context.type`（task_type）返回固定 demo 结果，OCR 条目带 `attributes.text`。无真实推理，可直接 `uvicorn main:app --port 9100` 起来做协议 v2 冒烟与接入验证。
+
+**最小 v1 参考实现**：见下文 echo-ml-backend。
 
 ### 4.1.11 协议能力目录端点（v0.14.11）
 

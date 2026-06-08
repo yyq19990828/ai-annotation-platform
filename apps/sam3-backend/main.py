@@ -241,8 +241,23 @@ def setup() -> dict:
         "supported_text_outputs": ["box", "mask", "both"],
         # exemplar 走 add_geometric_prompt; state 同时产出 boxes/masks, 三档都支持.
         "supported_geometric_outputs": ["box", "mask", "both"],
-        # v0.10.40 · SAM 3 当前只有单模型档, 保留空数组让前端富选择器自然隐藏.
-        "supported_variants": [],
+        # v0.14.12 · 显式暴露单档 variant, 让模型市场能展示该具体权重 (此前 [] 导致
+        # 卡片/列表无法显示「该 backend 加载的是 sam3.1」). 三个 task 共享同一份权重,
+        # variants_shared_across_tasks 在每个 model 上设 True 让列表合并到 1 行。
+        "supported_variants": [
+            {
+                "key": "model_variant",
+                "title": "模型版本",
+                "description": "SAM 3 当前仅有一档官方权重 (facebook/sam3.1).",
+                "variants": [
+                    {
+                        "value": MODEL_VARIANT,
+                        "label": "SAM 3.1" if MODEL_VARIANT == "sam3.1" else MODEL_VARIANT,
+                        "recommended": True,
+                    },
+                ],
+            },
+        ],
         "params": {
             "type": "object",
             "properties": {
@@ -304,6 +319,7 @@ def setup() -> dict:
             "supported_geometric_outputs": ["bbox"],
             "supported_text_outputs": ["box"],
             "supported_variants": base["supported_variants"],
+            "variants_shared_across_tasks": True,
             "params": base["params"],
         },
         {
@@ -317,6 +333,7 @@ def setup() -> dict:
             "supported_geometric_outputs": ["polygon"],
             "supported_text_outputs": ["mask", "both"],
             "supported_variants": base["supported_variants"],
+            "variants_shared_across_tasks": True,
             "params": base["params"],
         },
         {
@@ -329,6 +346,7 @@ def setup() -> dict:
             "supported_prompts": ["exemplar"],
             "supported_geometric_outputs": ["polygon"],
             "supported_variants": base["supported_variants"],
+            "variants_shared_across_tasks": True,
             "params": base["params"],
         },
     ]

@@ -93,6 +93,11 @@ RUN if [ ! -d "vendor/sam3" ] || [ -z "$(ls -A vendor/sam3 2>/dev/null)" ]; then
 COPY _shared/mask_utils/ /app/mask_utils/
 RUN pip install --no-build-isolation -e /app/mask_utils
 
+# v0.14.12 · 共享协议 v2 schema + 受控词表常量 (apps/_shared/protocol_v2),
+# 与 grounded-sam2-backend / yolo-backend 共用, 避免协议字段在 backend 之间漂移.
+COPY _shared/protocol_v2/ /app/protocol_v2/
+RUN pip install --no-build-isolation -e /app/protocol_v2
+
 COPY sam3-backend/scripts/ ./scripts/
 COPY sam3-backend/main.py sam3-backend/predictor.py sam3-backend/schemas.py sam3-backend/embedding_cache.py sam3-backend/observability.py ./
 COPY sam3-backend/tests/ ./tests/

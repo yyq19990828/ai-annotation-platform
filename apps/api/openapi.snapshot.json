@@ -3165,6 +3165,17 @@
             "title": "Models",
             "type": "array"
           },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "supported_geometric_outputs": {
             "default": [],
             "items": {
@@ -7587,7 +7598,7 @@
         "type": "object"
       },
       "InstanceModelItem": {
-        "description": "实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 variants /\nresource_profile / params 等运维信息)。",
+        "description": "实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 resource_profile /\nparams 等运维信息; v0.14.12 起补 supported_variants + variant_combinations 让\n前端能按主轴展开「具体模型」行).",
         "properties": {
           "display_name": {
             "title": "Display Name",
@@ -7624,6 +7635,17 @@
             ],
             "title": "Modality"
           },
+          "model_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Family"
+          },
           "supported_geometric_outputs": {
             "default": [],
             "items": {
@@ -7648,10 +7670,34 @@
             "title": "Supported Trackers",
             "type": "array"
           },
+          "supported_variants": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InstanceVariantGroup"
+            },
+            "title": "Supported Variants",
+            "type": "array"
+          },
           "task": {
             "default": "unknown",
             "title": "Task",
             "type": "string"
+          },
+          "variant_combinations": {
+            "default": [],
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Variant Combinations",
+            "type": "array"
+          },
+          "variants_shared_across_tasks": {
+            "default": false,
+            "title": "Variants Shared Across Tasks",
+            "type": "boolean"
           }
         },
         "required": [
@@ -7659,6 +7705,113 @@
           "display_name"
         ],
         "title": "InstanceModelItem",
+        "type": "object"
+      },
+      "InstanceVariantGroup": {
+        "description": "variants 多轴的单根轴 (序列保持与 backend /setup 顺序一致).",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "variants": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InstanceVariantOption"
+            },
+            "title": "Variants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "InstanceVariantGroup",
+        "type": "object"
+      },
+      "InstanceVariantOption": {
+        "description": "variants axis 内一条选项 (透传自 backend /setup; 用于前端列表按 axis 拆行).",
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "recommended": {
+            "default": false,
+            "title": "Recommended",
+            "type": "boolean"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          },
+          "vram_gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vram Gb"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "InstanceVariantOption",
         "type": "object"
       },
       "InteractiveRequest": {

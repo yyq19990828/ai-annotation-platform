@@ -173,29 +173,28 @@ def _model_version(sam_variant: str, dino_variant: str) -> str:
     return f"grounded-sam2-dino{dino_variant}-sam2.1{sam_variant}"
 
 
+# v0.14.12 · 移除 vram_gb (与 yolo SIZE_META 同理): 之前是粗估占位, 实际 SAM2 .pt
+# 加载远低于声称值且推理峰值还受 batch / 分辨率 / FP16 影响. tier (fast / balanced /
+# accurate) 作为选购粗粒度档位保留, note 给出语义说明。
 SAM2_VARIANT_METADATA = {
     "tiny": {
         "label": "SAM 2.1 Tiny",
-        "vram_gb": 1.5,
         "tier": "fast",
         "note": "最快冷启动，适合快速框选和资源紧张的显卡。",
     },
     "small": {
         "label": "SAM 2.1 Small",
-        "vram_gb": 2.5,
         "tier": "balanced",
         "recommended": True,
         "note": "速度和轮廓质量的默认推荐折中。",
     },
     "base_plus": {
         "label": "SAM 2.1 Base+",
-        "vram_gb": 4.0,
         "tier": "accurate",
         "note": "更稳的细节边界，冷加载和显存占用更高。",
     },
     "large": {
         "label": "SAM 2.1 Large",
-        "vram_gb": 6.0,
         "tier": "accurate",
         "note": "最高精度档，建议大显存环境按需预热。",
     },
@@ -204,14 +203,12 @@ SAM2_VARIANT_METADATA = {
 DINO_VARIANT_METADATA = {
     "T": {
         "label": "GroundingDINO Swin-T",
-        "vram_gb": 1.5,
         "tier": "fast",
         "recommended": True,
         "note": "文本检测默认推荐档，速度优先。",
     },
     "B": {
         "label": "GroundingDINO Swin-B",
-        "vram_gb": 3.5,
         "tier": "accurate",
         "note": "文本检测更准，显存和冷启动成本更高。",
     },
@@ -227,19 +224,27 @@ def _variant_options(
 
 def _supported_variants() -> list[dict]:
     return [
-        {
-            "key": "sam_variant",
-            "title": "SAM 2 变体",
-            "description": "分割模型尺寸。越大通常越精细，但冷加载更慢、显存占用更高。",
-            "variants": _variant_options(SAM2_CONFIGS, SAM2_VARIANT_METADATA),
-        },
-        {
-            "key": "dino_variant",
-            "title": "GroundingDINO 变体",
-            "description": "文本检测模型尺寸。T 更快，B 更准更吃资源。",
-            "variants": _variant_options(DINO_CONFIGS, DINO_VARIANT_METADATA),
-        },
+        _sam_variant_axis(),
+        _dino_variant_axis(),
     ]
+
+
+def _sam_variant_axis() -> dict:
+    return {
+        "key": "sam_variant",
+        "title": "SAM 2 变体",
+        "description": "分割模型尺寸。越大通常越精细，但冷加载更慢、显存占用更高。",
+        "variants": _variant_options(SAM2_CONFIGS, SAM2_VARIANT_METADATA),
+    }
+
+
+def _dino_variant_axis() -> dict:
+    return {
+        "key": "dino_variant",
+        "title": "GroundingDINO 变体",
+        "description": "文本检测模型尺寸。T 更快，B 更准更吃资源。",
+        "variants": _variant_options(DINO_CONFIGS, DINO_VARIANT_METADATA),
+    }
 
 
 # 默认变体的 model_version, 供 /setup / /versions 等"无请求上下文"的端点使用.
@@ -484,6 +489,11 @@ def setup() -> dict:
     # 顶层 supported_prompts / supported_geometric_outputs / supported_trackers
     # 全部保留, 供未迁移平台向后兼容 (合成隐式单 model 路径)。
     base["infra"] = "pytorch"
+    # v0.14.12 · 每个 model 只声明真正用到的 axes (而非全暴露 sam+dino 两轴):
+    #   - detection 只用 GroundingDINO 输出 bbox, 不走 SAM;
+    #   - interactive_seg / tracker 只用 SAM2 (prompts 是 point/bbox, 与 text 无关);
+    #   - segmentation 是 DINO + SAM 组合, 两轴都用。
+    # 前端模型市场据此正确聚合: SAM 系列只关联到 seg/iseg/tracker, DINO 系列只到 det/seg。
     base["models"] = [
         {
             "id": "grounded-sam2-detection",
@@ -495,7 +505,8 @@ def setup() -> dict:
             "supported_prompts": ["text"],
             "supported_geometric_outputs": ["bbox"],
             "supported_text_outputs": ["box"],
-            "supported_variants": base["supported_variants"],
+            "supported_variants": [_dino_variant_axis()],
+            "variants_shared_across_tasks": True,
             "params": base["params"],
         },
         {
@@ -509,6 +520,7 @@ def setup() -> dict:
             "supported_geometric_outputs": ["polygon"],
             "supported_text_outputs": ["mask", "both"],
             "supported_variants": base["supported_variants"],
+            "variants_shared_across_tasks": True,
             "params": base["params"],
         },
         {
@@ -520,7 +532,8 @@ def setup() -> dict:
             "is_interactive": True,
             "supported_prompts": ["point", "bbox"],
             "supported_geometric_outputs": ["polygon"],
-            "supported_variants": base["supported_variants"],
+            "supported_variants": [_sam_variant_axis()],
+            "variants_shared_across_tasks": True,
             "params": base["params"],
         },
         {
@@ -533,7 +546,8 @@ def setup() -> dict:
             "supported_prompts": ["bbox"],
             "supported_geometric_outputs": ["bbox"],
             "supported_trackers": ["sam2_video"],
-            "supported_variants": base["supported_variants"],
+            "supported_variants": [_sam_variant_axis()],
+            "variants_shared_across_tasks": True,
             "params": base["params"],
         },
     ]

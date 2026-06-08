@@ -44,4 +44,4 @@ py-modules = ["main", "predictor", "schemas", "embedding_cache", "observability"
 testpaths = ["tests"]
 # mask_utils 共享包从 apps/_shared/mask_utils 注入. Docker 容器内由
 # `pip install -e /app/mask_utils` 提供; 本地 pytest 通过 pythonpath 直接定位 src/.
-pythonpath = [".", "../_shared/mask_utils/src"]
+pythonpath = [".", "../_shared/mask_utils/src", "../_shared/protocol_v2/src"]

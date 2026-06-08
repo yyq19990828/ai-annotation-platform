@@ -82,10 +82,15 @@ function taskVariant(task: string): "accent" | "ai" | "success" | "warning" | "o
 // 一个展开后的 model 条目 (附带其来源 backend, 供分组/过滤/标题用).
 interface FlatModel {
   model: MLModelCapability;
-  backendId: string;
+  backendId: string;        // env-only 合成 id 或某条 registered backend id
   backendName: string;
-  projectId: string;
-  projectName: string;
+  projectId: string;        // env_only="", registered=主 project_id (仅供 capabilities API)
+  projectName: string;      // 单 project 名 (向后兼容); 多 project 时取首个
+  // v0.14.12 · 来源: env_only = docker-compose 自带 / observe-only;
+  //            registered = 已注册到具体项目 (projectName 即注册项目).
+  source: "env_only" | "registered";
+  // v0.14.12 · 同 URL 跨多项目注册时, 这里聚合所有注册项目名. env-only 留空。
+  registeredProjects: string[];
   // backend 默认 infra / modalities, model 缺省时回落.
   backendInfra?: string;
   backendModalities?: string[];
@@ -155,13 +160,32 @@ export function CapabilityCatalogPanel() {
     refetchInterval: 60_000,
   });
 
-  // 扁平化 (project, backend) 对.
+  // v0.14.12 · 按 URL 合并跨项目注册. 同一 ML backend (相同 URL) 在 N 个项目下都
+  // 注册过时, 这里只保留首条用于 capabilities 探测, 其余的项目名收入 registeredProjects。
+  // 避免: ① 重复显示同名 group; ② 重复打 /capabilities (浪费请求 + 后端 rate limit)。
   const backendRefs = useMemo(() => {
-    const refs: { backend: MLBackendItem; projectName: string }[] = [];
+    const byUrl = new Map<
+      string,
+      { backend: MLBackendItem; projectName: string; registeredProjects: string[] }
+    >();
     for (const p of overview?.projects ?? []) {
-      for (const b of p.backends) refs.push({ backend: b, projectName: p.project_name });
+      for (const b of p.backends) {
+        const key = b.url.replace(/\/+$/, "");
+        const existing = byUrl.get(key);
+        if (existing) {
+          if (!existing.registeredProjects.includes(p.project_name)) {
+            existing.registeredProjects.push(p.project_name);
+          }
+        } else {
+          byUrl.set(key, {
+            backend: b,
+            projectName: p.project_name,
+            registeredProjects: [p.project_name],
+          });
+        }
+      }
     }
-    return refs;
+    return [...byUrl.values()];
   }, [overview]);
 
   // 2) 对每个 backend 拉 /capabilities (独立 query, 互不阻塞).
@@ -173,23 +197,31 @@ export function CapabilityCatalogPanel() {
     })),
   });
 
-  const results: BackendResult[] = backendRefs.map((ref, i) => {
-    const q = capabilityQueries[i];
-    return {
-      backend: ref.backend,
-      projectName: ref.projectName,
-      data: q?.data,
-      isLoading: q?.isLoading ?? false,
-      isError: q?.isError ?? false,
-      error: q?.error,
-    };
-  });
+  const results: (BackendResult & { registeredProjects: string[] })[] = backendRefs.map(
+    (ref, i) => {
+      const q = capabilityQueries[i];
+      return {
+        backend: ref.backend,
+        projectName: ref.projectName,
+        registeredProjects: ref.registeredProjects,
+        data: q?.data,
+        isLoading: q?.isLoading ?? false,
+        isError: q?.isError ?? false,
+        error: q?.error,
+      };
+    },
+  );
 
   // 3) 展开为 FlatModel 列表 (合成单 model 的老 backend 也走同一路径).
+  //    v0.14.12 · 同时合并 instancesData 中的 env-only 实例 (如 yolo-backend),
+  //    让 groupBy=backend / infra / none 视图也能看到 docker-compose 自带 backend,
+  //    而不仅在协议卡视图 (groupBy=task) 出现。
   const flatModels: FlatModel[] = useMemo(() => {
     const out: FlatModel[] = [];
+    const seenBackendIds = new Set<string>();
     for (const r of results) {
       if (!r.data) continue;
+      seenBackendIds.add(r.backend.id);
       const cap = r.data;
       // capabilities 端点对老 backend 会合成 models[]; 若仍为空, 兜底从顶层字段合成一个.
       const models: MLModelCapability[] =
@@ -210,21 +242,64 @@ export function CapabilityCatalogPanel() {
             ];
       // stale: backend 离线 / 上次探测失败时, 目录可能是缓存旧值.
       const stale = r.backend.state !== "connected";
+      // v0.14.12 · backendName 用 cap.name (源 backend 自报名, 如 "grounded-sam2-backend")
+      // 而非 r.backend.name (用户取的项目别名, 如 "gsam2.1"). 能力目录是对协议层 backend
+      // 的展示, 不依附用户的项目命名. 项目别名信息已经在「注册状态」列体现。
+      const originalBackendName = cap.name || r.backend.name;
       for (const m of models) {
         out.push({
           model: m,
           backendId: r.backend.id,
-          backendName: r.backend.name,
+          backendName: originalBackendName,
           projectId: r.backend.project_id,
           projectName: r.projectName,
+          source: "registered",
+          registeredProjects: r.registeredProjects,
           backendInfra: cap.infra,
           backendModalities: cap.modalities,
           stale,
         });
       }
     }
+    // env-only / 平台直观 backend (来自 /ml-capabilities/instances). 注册项已经在
+    // overview 这条线进来过, 这里只补 env_only; 避免重复展示。
+    for (const inst of instancesData?.instances ?? []) {
+      if (inst.source !== "env_only") continue;
+      const syntheticBackendId = `env-only:${inst.name}`;
+      if (seenBackendIds.has(syntheticBackendId)) continue;
+      seenBackendIds.add(syntheticBackendId);
+      const infraFallback = inst.infra && inst.infra !== "unknown" ? inst.infra : undefined;
+      for (const m of inst.models) {
+        out.push({
+          model: {
+            id: m.id,
+            display_name: m.display_name,
+            task: m.task,
+            model_family: m.model_family ?? undefined,
+            infra: m.infra ?? infraFallback,
+            is_interactive: m.is_interactive,
+            supported_prompts: m.supported_prompts,
+            supported_geometric_outputs: m.supported_geometric_outputs,
+            supported_trackers: m.supported_trackers,
+            supported_variants: m.supported_variants,
+            variant_combinations: m.variant_combinations,
+            variants_shared_across_tasks: m.variants_shared_across_tasks,
+            modality: m.modality ?? undefined,
+          },
+          backendId: syntheticBackendId,
+          backendName: inst.name,
+          projectId: "",
+          projectName: "平台内置",
+          source: "env_only",
+          registeredProjects: [],
+          backendInfra: infraFallback,
+          backendModalities: m.modality ? [m.modality] : undefined,
+          stale: false,
+        });
+      }
+    }
     return out;
-  }, [results]);
+  }, [results, instancesData]);
 
   // 4) 从已加载 model 派生过滤选项.
   const facets = useMemo(() => {
@@ -378,6 +453,11 @@ export function CapabilityCatalogPanel() {
   };
 
   const anyCapLoading = results.some((r) => r.isLoading);
+  // v0.14.12 · 合并 env-only 后, 统计与「项目级 backend 计数」分开。
+  const envOnlyCount = (instancesData?.instances ?? []).filter(
+    (i) => i.source === "env_only",
+  ).length;
+  const distinctBackendCount = backendRefs.length + envOnlyCount;
 
   return (
     <div className={styles.wrap}>
@@ -387,7 +467,7 @@ export function CapabilityCatalogPanel() {
             <Icon name="layers" size={14} className={styles.mutedIcon} />
             <h3 className={styles.title}>能力目录</h3>
             <span className={styles.meta}>
-              {flatModels.length} 个模型条目 · {backendRefs.length} 个 backend
+              {flatModels.length} 个模型条目 · {distinctBackendCount} 个 backend
             </span>
           </div>
           <Button
@@ -410,8 +490,11 @@ export function CapabilityCatalogPanel() {
               重试
             </button>
           </div>
-        ) : backendRefs.length === 0 && groupBy !== "task" ? (
+        ) : backendRefs.length === 0 &&
+          (instancesData?.instances ?? []).length === 0 &&
+          groupBy !== "task" ? (
           // v0.14.11 · 0 backend + 非 task 分组: 沿用旧空态; task 分组下走协议卡视图。
+          // v0.14.12 · 同时有 env-only instances 时, 这里不再显示空态。
           <div className={styles.emptyState}>
             <Icon name="layers" size={28} className={styles.emptyIcon} />
             <div>尚无项目注册 ML Backend</div>
@@ -611,7 +694,9 @@ function groupModels(items: FlatModel[], groupBy: CatalogGroupBy) {
     let label = "未知";
     if (groupBy === "backend") {
       key = item.backendId;
-      label = `${item.projectName} · ${item.backendName}`;
+      // v0.14.12 · group header 只用 backend 名 (不再前缀项目名). 同一 backend
+      // 注册到 N 个项目时仍是 N 个 group, 但区分由「注册状态」列承担, 不靠 header。
+      label = item.backendName;
     } else if (groupBy === "task") {
       key = item.model.task ?? "unknown";
       label = item.model.task ? taskLabel(item.model.task) : "未知任务";
@@ -700,35 +785,253 @@ function FilterToolbar(p: FilterToolbarProps) {
   );
 }
 
+// task → 行名后缀 (yolo 风格: 每 task 独立权重时拼到 variant 后, 例: YOLOv8-OBB).
+// 缺省/未识别 task 不加后缀。
+const TASK_SUFFIX: Record<string, string> = {
+  detection: "Det",
+  obb: "OBB",
+  segmentation: "Seg",
+  keypoint: "Pose",
+  interactive_seg: "ISeg",
+  tracker: "Track",
+  classification: "Cls",
+  ocr: "OCR",
+  doc_layout: "Layout",
+};
+
+// v0.14.12 · 列表行结构. 一行 = 一个物理权重 (一份 .pt 文件).
+// 两条渲染策略:
+//   ① variants_shared_across_tasks=true (gsam2): 同 backend 内多 task 共用同 axis_key 的权重,
+//      按 (backend, axis_key, axis_value) 聚合, task 列汇总所有用到此权重的 task;
+//      行名直接是 variant label (例: "SAM 2.1 Tiny")。
+//   ② variants_shared_across_tasks=false (yolo): 每 (model.task, axis0_value) 一行,
+//      行名加 task 后缀 (例: "YOLOv8-OBB"); axis1 仍在变体列横展。
+//   ③ 0 axes (sam3): 单行 fallback, 行名=display_name。
+interface ListRow {
+  parent: FlatModel;
+  rowKey: string;
+  primaryLabel: string;
+  primaryId: string;
+  tasks: string[];               // 行所覆盖的 task id 列表 (shared=true 时可能 >1).
+  geometries: string[];          // 行的输出几何 (跨 task 取 union, 去重保序).
+  secondaryLabel: string;        // variants 列 (axis1 或 vram 元信息)
+  secondaryTitle?: string;
+}
+
+function uniq<T>(arr: T[]): T[] {
+  const seen = new Set<T>();
+  const out: T[] = [];
+  for (const x of arr) if (!seen.has(x)) { seen.add(x); out.push(x); }
+  return out;
+}
+
+function taskSuffix(task: string | undefined): string {
+  if (!task) return "";
+  return TASK_SUFFIX[task] ?? task;
+}
+
+// 单 model 的传统拆行: yolo / 每 task 独立权重风格.
+function buildModelRowsLegacy(item: FlatModel): ListRow[] {
+  const m = item.model;
+  const axes = (m.supported_variants ?? []).filter(
+    (g) => Array.isArray(g.variants) && g.variants!.length > 0,
+  );
+  const baseName = m.display_name ?? m.id;
+  const geom = m.supported_geometric_outputs ?? [];
+  if (axes.length === 0) {
+    return [{
+      parent: item,
+      rowKey: `${item.backendId}:${m.id}`,
+      primaryLabel: baseName,
+      primaryId: m.id,
+      tasks: m.task ? [m.task] : [],
+      geometries: geom,
+      secondaryLabel: "—",
+    }];
+  }
+  const axis0 = axes[0]!;
+  const axis1 = axes[1];
+  const combos = m.variant_combinations ?? [];
+  const suffix = taskSuffix(m.task);
+  return (axis0.variants ?? []).map((v0) => {
+    const v0Label = v0.label ?? v0.value;
+    let secondaryLabel = "—";
+    let secondaryTitle: string | undefined;
+    if (axis1) {
+      let legal: string[];
+      if (combos.length > 0) {
+        legal = combos
+          .filter((c) => c[0] === v0.value && c.length >= 2)
+          .map((c) => c[1]!);
+      } else {
+        legal = (axis1.variants ?? []).map((v) => v.value);
+      }
+      const opts = (axis1.variants ?? []).filter((v) => legal.includes(v.value));
+      if (opts.length > 0) {
+        secondaryLabel = opts.map((v) => v.label ?? v.value).join(" / ");
+        secondaryTitle = opts
+          .map((v) => {
+            const bits = [
+              v.label ?? v.value,
+              v.vram_gb != null ? `${v.vram_gb}GB` : null,
+              v.tier ? tierLabel(v.tier) : null,
+            ].filter(Boolean);
+            return bits.join(" · ");
+          })
+          .join("\n");
+      }
+    } else {
+      const bits = [
+        v0.vram_gb != null ? `${v0.vram_gb}GB` : null,
+        v0.tier ? tierLabel(v0.tier) : null,
+      ].filter(Boolean);
+      secondaryLabel = bits.length > 0 ? bits.join(" · ") : "—";
+    }
+    return {
+      parent: item,
+      rowKey: `${item.backendId}:${m.id}:${v0.value}`,
+      primaryLabel: suffix ? `${v0Label}-${suffix}` : v0Label,
+      primaryId: `${m.id} / ${v0.value}`,
+      tasks: m.task ? [m.task] : [],
+      geometries: geom,
+      secondaryLabel,
+      secondaryTitle,
+    };
+  });
+}
+
+// 跨 task 共享权重: 同 backend 内多个 shared=true model 按 axis_key 聚合.
+// 每个 axis 内 (axis_key, axis_value) 唯一一行, task 列汇总所有 model.task。
+function buildSharedRows(items: FlatModel[]): ListRow[] {
+  // axis_key → axis_value → 累积信息.
+  type Acc = {
+    parent: FlatModel;
+    label: string;
+    vram_gb?: number;
+    tier?: string;
+    tasks: string[];
+    geometries: string[];
+    modelIds: string[];
+  };
+  const byAxis = new Map<string, { title: string; values: Map<string, Acc> }>();
+
+  for (const item of items) {
+    const m = item.model;
+    const axes = (m.supported_variants ?? []).filter(
+      (g) => Array.isArray(g.variants) && g.variants!.length > 0,
+    );
+    const geom = m.supported_geometric_outputs ?? [];
+    for (const axis of axes) {
+      const axisKey = axis.key;
+      if (!byAxis.has(axisKey)) {
+        byAxis.set(axisKey, { title: axis.title ?? axisKey, values: new Map() });
+      }
+      const bucket = byAxis.get(axisKey)!;
+      for (const v of axis.variants ?? []) {
+        const acc = bucket.values.get(v.value);
+        if (acc) {
+          if (m.task) acc.tasks.push(m.task);
+          for (const g of geom) acc.geometries.push(g);
+          acc.modelIds.push(m.id);
+        } else {
+          bucket.values.set(v.value, {
+            parent: item,
+            label: v.label ?? v.value,
+            vram_gb: v.vram_gb,
+            tier: v.tier,
+            tasks: m.task ? [m.task] : [],
+            geometries: [...geom],
+            modelIds: [m.id],
+          });
+        }
+      }
+    }
+  }
+
+  const rows: ListRow[] = [];
+  for (const [axisKey, bucket] of byAxis) {
+    for (const [value, acc] of bucket.values) {
+      const bits = [
+        acc.vram_gb != null ? `${acc.vram_gb}GB` : null,
+        acc.tier ? tierLabel(acc.tier) : null,
+      ].filter(Boolean);
+      rows.push({
+        parent: acc.parent,
+        rowKey: `${acc.parent.backendId}:${axisKey}:${value}`,
+        primaryLabel: acc.label,
+        primaryId: `${bucket.title} / ${value}`,
+        tasks: uniq(acc.tasks),
+        geometries: uniq(acc.geometries),
+        secondaryLabel: bits.length > 0 ? bits.join(" · ") : "—",
+      });
+    }
+  }
+  return rows;
+}
+
+// 列表入口: 按 backendId 分桶, 每桶按 variants_shared_across_tasks 切换策略.
+function buildListRows(items: FlatModel[]): ListRow[] {
+  const byBackend = new Map<string, FlatModel[]>();
+  for (const it of items) {
+    if (!byBackend.has(it.backendId)) byBackend.set(it.backendId, []);
+    byBackend.get(it.backendId)!.push(it);
+  }
+  const out: ListRow[] = [];
+  for (const [, group] of byBackend) {
+    const shared = group.filter((it) => it.model.variants_shared_across_tasks);
+    const legacy = group.filter((it) => !it.model.variants_shared_across_tasks);
+    if (shared.length > 0) out.push(...buildSharedRows(shared));
+    for (const it of legacy) out.push(...buildModelRowsLegacy(it));
+  }
+  return out;
+}
+
 function ModelListTable({ items }: { items: FlatModel[] }) {
+  const rows = buildListRows(items);
   return (
     <div className={styles.tableScroller}>
       <table className={styles.modelTable}>
         <thead>
           <tr>
-            {["模型", "task", "infra", "模态", "输出几何", "variants", "来源", "状态"].map((head) => (
+            {["模型", "task", "infra", "模态", "输出几何", "变体", "来源", "注册状态", "状态"].map((head) => (
               <th key={head}>{head}</th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => {
+          {rows.map((row) => {
+            const item = row.parent;
             const m = item.model;
             const infra = effectiveInfra(m, item.backendInfra);
             const modalities = effectiveModalities(m, item.backendModalities);
             return (
-              <tr key={`${item.backendId}:${m.id}`}>
+              <tr key={row.rowKey}>
                 <td className={styles.modelCell}>
-                  <div className={styles.modelCellName}>{m.display_name ?? m.id}</div>
-                  <div className={`mono ${styles.modelCellId}`}>{m.id}</div>
+                  <div className={styles.modelCellName}>{row.primaryLabel}</div>
+                  <div className={`mono ${styles.modelCellId}`}>{row.primaryId}</div>
                 </td>
-                <td>{m.task ? taskLabel(m.task) : "—"}</td>
+                <td className={styles.compactCell}>
+                  {row.tasks.length > 0 ? row.tasks.map(taskLabel).join(" / ") : "—"}
+                </td>
                 <td>{infra ? infraLabel(infra) : "—"}</td>
                 <td>{modalities.length ? modalities.map(modalityLabel).join(" / ") : "—"}</td>
-                <td className={styles.compactCell}>{(m.supported_geometric_outputs ?? []).join(" / ") || "—"}</td>
-                <td className={styles.compactCell}>{variantSummary(m)}</td>
-                <td className={styles.sourceCell}>
-                  {item.projectName} · {item.backendName}
+                <td className={styles.compactCell}>{row.geometries.join(" / ") || "—"}</td>
+                <td className={styles.compactCell} title={row.secondaryTitle}>{row.secondaryLabel}</td>
+                <td className={styles.sourceCell}>{item.backendName}</td>
+                <td className={styles.compactCell} title={
+                  item.source === "registered" && item.registeredProjects.length > 0
+                    ? `已注册至项目: ${item.registeredProjects.join(" / ")}`
+                    : undefined
+                }>
+                  {item.source === "env_only" ? (
+                    <Badge variant="outline">平台内置</Badge>
+                  ) : item.registeredProjects.length > 1 ? (
+                    <Badge variant="accent">
+                      {item.registeredProjects[0]} +{item.registeredProjects.length - 1}
+                    </Badge>
+                  ) : (
+                    <Badge variant="accent">{item.projectName}</Badge>
+                  )}
                 </td>
                 <td>{item.stale ? <Badge variant="warning">缓存</Badge> : <Badge variant="success">在线</Badge>}</td>
               </tr>
@@ -738,16 +1041,6 @@ function ModelListTable({ items }: { items: FlatModel[] }) {
       </table>
     </div>
   );
-}
-
-function variantSummary(model: MLModelCapability) {
-  const groups = (model.supported_variants ?? []).filter(
-    (group) => Array.isArray(group.variants) && group.variants.length > 0,
-  );
-  if (groups.length === 0) return "—";
-  return groups
-    .map((group) => `${group.title ?? group.key}:${group.variants?.length ?? 0}`)
-    .join(" / ");
 }
 
 // ── 单个 model 卡片 ─────────────────────────────────────────────────────

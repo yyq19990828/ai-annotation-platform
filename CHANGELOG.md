@@ -29,6 +29,59 @@
 
 <!-- 0.14.x 版本变更按版本段追加到本区；进入 0.15.x 后整体移到 docs/changelogs/0.14.x.md -->
 
+## [0.14.12] - 2026-06-08
+
+接入第三个 ML backend：**yolo-backend**（ultralytics 多任务多系列）。计划见 `docs/plans/2026-06-08-v0.14.12-yolo-backend.md`，抽象层决策见 [ADR-0038](docs/adr/0038-defer-ml-backend-base-class.md)。本版交付：协议 v2 第一个「批量预标 backend」真实实例，covers detection / segmentation(instance) / keypoint / obb 四任务 × v8/v9/v10/v11/v12/v26/rt-detr 七系列预训练矩阵（共 80 个有效组合）。
+
+### Added
+
+- **yolo-backend**：新增 `apps/yolo-backend/`，FastAPI 进程暴露协议 v2 合规的 `/health` `/setup` `/versions` `/predict` `/unload` `/metrics`。
+  - `/setup` 暴露 4 个 model 条目（`detect` / `segment` / `pose` / `obb`），每个条目 `supported_variants` 走两轴 `series × size`，series 选项按预训练矩阵严格过滤（v10/v12/rtdetr 只在 detect 出现；v9 在 segment 仅 c/e 两 size）。
+  - `supported_prompts: ["none"]` —— 纯批量预标，不进交互式 workbench；ToolDock 据此把 yolo 排除出工作台交互工具栏。
+  - 零 adapter：det → `rectanglelabels` / seg → `polygonlabels` / pose → `keypointlabels` / obb → `rectanglelabels + value.rotation`，命中 `apps/api/app/services/prediction.py::to_internal_shape` 现有分支（v0.10.28 已就位的 Geometry union）。
+  - `model_pool.py`：`(task, series, size)` LRU 池，默认容量 `YOLO_MODEL_POOL_CAP=2`，单 GPU 显存可控；`YOLO_IDLE_UNLOAD_SECONDS=600` 触发空闲卸载。
+  - `model_registry.py`：80 组合矩阵 + 文件名解析（`yolo11s-seg.pt` / `yolov9c-seg.pt` / `rtdetr-l.pt` 等命名规则）。
+  - `scripts/download_weights.py`：离线预下载脚本，`STRICT_OFFLINE=1` 部署前用。
+- **协议 v2 共享包**：抽 `apps/_shared/protocol_v2/`（`schemas` + `vocab` 受控词表常量），sam3-backend / grounded-sam2-backend / yolo-backend 三家共用，单一来源避免协议字段在 backend 之间漂移。
+- **docker-compose**：新增 `yolo-backend` service（profile `gpu-yolo`，端口 **8003**），与 `gpu` / `gpu-sam3` 完全独立，可三 backend 并存或独立启停。新增 `yolo_checkpoints` 持久卷。
+
+### Changed
+
+- `apps/sam3-backend/schemas.py` / `apps/grounded-sam2-backend/schemas.py`：`TaskItem` / `PredictionResult` / `BatchPredictResponse` 三个跨 backend 一字不差的 Pydantic 模型从本地定义改为 `from aap_protocol_v2 import ...`。`Context` / `AnnotationResult` / 各 backend 特有字段保持原地不动。两 backend `pyproject.toml` 加 `pythonpath` 指向新共享包，Dockerfile 加 `_shared/protocol_v2/` editable install（与既有 `mask_utils` 同款约定）。/setup 字典字面量零改动，行为完全 byte-for-byte 一致。
+- `.env.example`：新增 `YOLO_*` 环境变量段；`ML_BACKEND_OBSERVE_URLS` 注释补充 8003 端口。
+
+### Added (continued · 模型市场 UI 适配协议 v2)
+
+- **协议字段 `variant_combinations` + `variants_shared_across_tasks`**：在 model 条目级新增两个可选字段（详见 `ml-backend-protocol.md` §4.1.2 / §4.1.6）。
+  - `variant_combinations`：多轴非真笛卡尔积时显式列举合法 `[axis0_value, axis1_value, ...]` 组合，避免目录展示虚假权重。yolo 用之表达 MODEL_MATRIX 约束（rtdetr 只有 `l/x`、yolov9 detect 只有 `t/s/m/c/e` 等）。字段缺省 ⇒ 前端按 axes 笛卡尔积处理。
+  - `variants_shared_across_tasks`：布尔，缺省 `false`。`true` 表同 backend 内多 task 共享同一份物理权重（gsam2 的 SAM 2.1 Tiny 一份 `.pt` 同时服务 seg/iseg/tracker；sam3 的 sam3.1 同时服务 3 task），前端列表按 `(backend, axis_key, axis_value)` 聚合到一行；`false` 表每 task 独立权重（yolo 的 yolov8n-det.pt vs yolov8n-obb.pt），每 task 一行 + 任务后缀。
+- **gsam2 / sam3 跟进协议 v2 富表达**：
+  - `apps/grounded-sam2-backend/main.py`：每个 model 只声明该 task **真正用到的 axes**（detection 只 `dino_variant`、interactive_seg / tracker 只 `sam_variant`、segmentation 才两轴），并设 `variants_shared_across_tasks=True`。
+  - `apps/sam3-backend/main.py`：从 `supported_variants: []` 升级为暴露单档 `model_variant: sam3.1`（让模型市场展示该具体权重），每个 model 设 `variants_shared_across_tasks=True`，3 task 聚合到 1 行。
+- **API 层透传**：`extract_capabilities`（`services/ml_capabilities.py`）/ `_shape_models`（`services/capability_instances.py`）/ `InstanceModelItem`（`schemas/ml_capabilities.py`）/ `BackendCapabilities`（`schemas/ml_backend.py`）链路全部支持新字段。`extract_capabilities` 同时透传 `setup.name`，让前端能在列表展示「源 backend 名」而非用户项目别名。
+
+### Changed (continued · 模型市场 UI)
+
+- **能力目录列表视图重构**（`apps/web/src/pages/ModelMarket/CapabilityCatalogPanel.tsx`）：
+  - **每行 = 一个物理权重**：列表行单位从「task model」改为「具体加载的 .pt 权重」。两条渲染路径按 `variants_shared_across_tasks` 自动切换。yolo 17 行（YOLOv8-Det / YOLOv8-Seg / RT-DETR-Det 等），gsam2 6 行（SAM 2.1 ×4 + Swin-T/B），sam3 1 行（SAM 3.1 聚合 3 task）。
+  - **合并 env-only 与 registered**：`flatModels` 同时消费 admin overview（项目级注册）+ `/ml-capabilities/instances`（env-only docker-compose 自带），让 `groupBy=backend` / `infra` / `none` 视图也能看到 docker-compose 自带 backend，而不只在协议卡视图（`groupBy=task`）出现。
+  - **按 URL 合并跨项目同 backend**：同一 ML backend URL 注册到多项目时，`backendRefs` 按 URL 去重（避免 N 倍 `/capabilities` fetch + 重复 group）；新增「注册状态」列展示项目列表（多项目时显示 `项目甲 +2`，hover 列出全部）。
+  - **`backendName` 取 cap.name（源 backend 名）**：替代 `backend.name`（用户取的项目别名），让能力目录展示「grounded-sam2」而非「gsam2.1」。
+- **删除 yolo / gsam2 假 `vram_gb` 数据**：`apps/yolo-backend/model_registry.py SIZE_META` 与 `apps/grounded-sam2-backend/main.py {SAM2,DINO}_VARIANT_METADATA` 移除粗估占位（yolov8n .pt 实际加载 ~300MB 远小于声称的 2GB，gsam2 SAM2 同理）。`tier`（fast / balanced / accurate）作为粗粒度档位保留。
+- **`.env.example` `ML_BACKEND_OBSERVE_URLS`**：注释中三 backend 端口列表加入 8003（yolo-backend），并提示 8001=grounded-sam2、8002=sam3。
+
+### Tests
+
+- `apps/_shared/protocol_v2/tests/`：11 个单测（schema round-trip + vocab 词表一致性）。
+- `apps/yolo-backend/tests/`：58 + 7 个单测覆盖 `model_registry`（矩阵 + 文件名解析，含 v9 conditional sizes、rtdetr 特殊命名、unsupported 组合 reject）、`schemas`（pydantic 入参校验）、`predictor`（四 task 结果映射 + 像素归一化 + OBB 弧度转度数 + keypoint 三档可见性）、`setup`（协议 v2 输出形态全字段断言 + `variant_combinations` 4 task 矩阵规模断言 + 每条组合合法性回归 MODEL_MATRIX）。
+- `apps/web/src/pages/ModelMarket/CapabilityCatalogPanel.test.tsx`：新增「同 URL 跨多项目注册时 groupBy=backend 只渲染一组 + 注册状态列聚合项目名 + capabilities API 只调一次」单测（防止退化）。
+
+### Docs
+
+- 新增 [ADR-0038 — ML backend 基类抽象推迟到 N≥4](docs/adr/0038-defer-ml-backend-base-class.md)：写明本版只抽 schema + vocab，不抽 base class 的决策与未来触发条件。
+- 计划文件 `docs/plans/2026-06-08-v0.14.12-yolo-backend.md`：包含完整设计、80 组合矩阵核对、PR 拆分、验收清单、风险与回退。
+- `docs-site/dev/reference/ml-backend-protocol.md` §4.1.2 / §4.1.6：补 `variant_combinations` + `variants_shared_across_tasks` 字段说明，给出 yolo（非真笛卡尔积）+ gsam2/sam3（跨 task 共享）两类范例。
+
 ## [0.14.11] - 2026-06-08
 
 协议能力目录与 ML Backend 注册解耦。计划见 `docs/plans/2026-06-08-v0.14.11-protocol-capability-catalog.md`，决策见 [ADR-0037](docs/adr/0037-protocol-capability-catalog-decoupling.md)。本版只解决一件事：「能力目录」从「已注册 backend 实例清单」抽离为「协议级能力定义 + 实例填充」双层视图，零接入用户也能完整看到平台支持的 9 类 AI 标注能力。

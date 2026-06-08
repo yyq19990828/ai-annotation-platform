@@ -90,6 +90,8 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         "supported_text_outputs": list(model.get("supported_text_outputs") or []),
         "supported_trackers": list(model.get("supported_trackers") or []),
         "supported_variants": model.get("supported_variants") or [],
+        "variant_combinations": list(model.get("variant_combinations") or []),
+        "variants_shared_across_tasks": bool(model.get("variants_shared_across_tasks", False)),
         "default_thresholds": model.get("default_thresholds") or {},
         "resource_profile": model.get("resource_profile") or {},
         "params": model.get("params") or {},
@@ -159,6 +161,9 @@ def extract_capabilities(setup: dict | None) -> dict | None:
         models = [_synthesize_single_model(setup, infra)]
 
     caps: dict = {
+        # v0.14.12 · 透传 backend 自报的 name (如 "grounded-sam2-backend"), 让前端
+        # 能力目录显示「源 backend 名」而非用户取的项目别名 (如 "gsam2.1")。
+        "name": setup.get("name"),
         "infra": infra,
         "models": models,
         "is_interactive": any(m["is_interactive"] for m in models),

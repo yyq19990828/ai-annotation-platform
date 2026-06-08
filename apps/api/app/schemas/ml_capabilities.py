@@ -47,19 +47,48 @@ class ProtocolGeometryItem(BaseModel):
     summary: str
 
 
+class InstanceVariantOption(BaseModel):
+    """variants axis 内一条选项 (透传自 backend /setup; 用于前端列表按 axis 拆行)."""
+
+    value: str
+    label: str | None = None
+    vram_gb: float | None = None
+    tier: str | None = None
+    recommended: bool = False
+    note: str | None = None
+
+
+class InstanceVariantGroup(BaseModel):
+    """variants 多轴的单根轴 (序列保持与 backend /setup 顺序一致)."""
+
+    key: str
+    title: str | None = None
+    description: str | None = None
+    variants: list[InstanceVariantOption] = []
+
+
 class InstanceModelItem(BaseModel):
-    """实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 variants /
-    resource_profile / params 等运维信息)。"""
+    """实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 resource_profile /
+    params 等运维信息; v0.14.12 起补 supported_variants + variant_combinations 让
+    前端能按主轴展开「具体模型」行)."""
 
     id: str
     display_name: str
     task: str = "unknown"
+    model_family: str | None = None
     infra: str | None = None
     is_interactive: bool = False
     supported_prompts: list[str] = []
     supported_geometric_outputs: list[str] = []
     supported_trackers: list[str] = []
     modality: str | None = None
+    supported_variants: list[InstanceVariantGroup] = []
+    variant_combinations: list[list[str]] = []
+    # v0.14.12 · True 表示同 backend 内多个 task 共享同一份物理权重 (如 gsam2 的 SAM2
+    # 权重同时被 segmentation / interactive_seg / tracker 用). 前端列表据此把跨 task
+    # 的同 variant 合并到一行, 而不是为每个 task 重复显示。yolo 每 task 独立权重
+    # (yolov8n-det.pt vs yolov8n-obb.pt), 缺省 False 保持「每 task 一行 + 任务后缀」。
+    variants_shared_across_tasks: bool = False
 
 
 class CapabilityInstanceItem(BaseModel):

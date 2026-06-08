@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aap-protocol-v2"
+version = "0.1.0"
+description = "ML backend 协议 v2 共享 Pydantic schema 与受控词表常量, 被 sam3 / grounded-sam2 / yolo 等 backend 复用"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.5",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

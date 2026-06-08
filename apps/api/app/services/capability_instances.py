@@ -59,7 +59,12 @@ async def _probe_setup(client: httpx.AsyncClient, base: str) -> dict | None:
 
 
 def _shape_models(caps: dict | None) -> list[dict]:
-    """从 extract_capabilities 返回值取 models[], 字段裁剪到能力相关。"""
+    """从 extract_capabilities 返回值取 models[], 字段裁剪到能力相关。
+
+    v0.14.12 起补透传 supported_variants + variant_combinations + model_family,
+    支撑前端模型市场列表按主 variant 轴展开「具体模型」行 (yolo 的 series×size
+    受 MODEL_MATRIX 约束, 必须用 variant_combinations 严格列举合法组合)。
+    """
     if not caps:
         return []
     out: list[dict] = []
@@ -69,6 +74,7 @@ def _shape_models(caps: dict | None) -> list[dict]:
                 "id": m.get("id", ""),
                 "display_name": m.get("display_name") or m.get("id", ""),
                 "task": m.get("task", "unknown"),
+                "model_family": m.get("model_family"),
                 "infra": m.get("infra"),
                 "is_interactive": bool(m.get("is_interactive")),
                 "supported_prompts": list(m.get("supported_prompts") or []),
@@ -77,6 +83,9 @@ def _shape_models(caps: dict | None) -> list[dict]:
                 ),
                 "supported_trackers": list(m.get("supported_trackers") or []),
                 "modality": m.get("modality"),
+                "supported_variants": list(m.get("supported_variants") or []),
+                "variant_combinations": list(m.get("variant_combinations") or []),
+                "variants_shared_across_tasks": bool(m.get("variants_shared_across_tasks", False)),
             }
         )
     return out

@@ -53,16 +53,42 @@ export interface ProtocolCapabilities {
 }
 
 // v0.14.11 · 平台已知 backend 实例 (env-only + 项目级注册合并, 与注册解耦)。
+// v0.14.12 起 supported_variants + variant_combinations 透传, 让前端模型市场列表
+// 能按 axis 拆「具体模型」行 (yolo 的 series×size 受 MODEL_MATRIX 约束)。
+export interface InstanceVariantOption {
+  value: string;
+  label?: string;
+  vram_gb?: number;
+  tier?: string;
+  recommended?: boolean;
+  note?: string;
+}
+
+export interface InstanceVariantGroup {
+  key: string;
+  title?: string;
+  description?: string;
+  variants?: InstanceVariantOption[];
+}
+
 export interface CapabilityInstanceModel {
   id: string;
   display_name: string;
   task: string;
+  model_family?: string | null;
   infra: string | null;
   is_interactive: boolean;
   supported_prompts: string[];
   supported_geometric_outputs: string[];
   supported_trackers: string[];
   modality: string | null;
+  supported_variants?: InstanceVariantGroup[];
+  variant_combinations?: string[][];
+  // v0.14.12 · 跨 task 共享物理权重 (gsam2 SAM2 一份权重服务 seg/iseg/tracker, 是 true;
+  // yolo 每 task 独立权重, 是 false). 前端列表行单位据此切换:
+  //   true  → 同 (axis_key, value) 跨 task 合并到一行;
+  //   false → 每 task 独立一行, 行名加任务后缀 (YOLOv8-OBB / YOLOv8-Seg).
+  variants_shared_across_tasks?: boolean;
 }
 
 export interface CapabilityInstance {

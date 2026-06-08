@@ -1,15 +1,27 @@
-"""Request / response Pydantic schemas, aligned with docs-site/dev/ml-backend-protocol.md §2."""
+"""Request / response Pydantic schemas, aligned with docs-site/dev/ml-backend-protocol.md §2.
+
+v0.14.12 · 通用部分 (TaskItem / PredictionResult / BatchPredictResponse) 抽到
+`apps/_shared/protocol_v2/` 共享包, 单一来源避免与 sam3-backend / yolo-backend 之间
+漂移. 本仓继续维护 grounded-sam2 特有的 Context + AnnotationValue + 请求壳.
+"""
 
 from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from aap_protocol_v2 import BatchPredictResponse, PredictionResult, TaskItem
+from pydantic import BaseModel
 
-
-class TaskItem(BaseModel):
-    id: str | int
-    file_path: str
+__all__ = [
+    "AnnotationResult",
+    "AnnotationValue",
+    "BatchPredictRequest",
+    "BatchPredictResponse",
+    "Context",
+    "InteractiveRequest",
+    "PredictionResult",
+    "TaskItem",
+]
 
 
 class Context(BaseModel):
@@ -56,15 +68,3 @@ class AnnotationResult(BaseModel):
     type: Literal["polygonlabels", "rectanglelabels"]
     value: dict[str, Any]
     score: float | None = None
-
-
-class PredictionResult(BaseModel):
-    task: str | int | None = None
-    result: list[dict[str, Any]] = Field(default_factory=list)
-    score: float | None = None
-    model_version: str | None = None
-    inference_time_ms: int | None = None
-
-
-class BatchPredictResponse(BaseModel):
-    results: list[PredictionResult]
