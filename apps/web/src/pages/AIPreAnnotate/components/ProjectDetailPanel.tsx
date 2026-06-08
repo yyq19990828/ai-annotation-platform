@@ -35,10 +35,8 @@ import {
 } from "@/pages/Workbench/components/SchemaForm";
 import { useAiToolParamPrefs } from "@/pages/Workbench/state/useAiToolParamPrefs";
 import {
-  isVariantWarm,
-  markVariantWarm,
   isVariantHot,
-  recordPredictCacheHit,
+  markVariantHot,
 } from "@/pages/Workbench/state/sessionVariantCache";
 
 import { TabRow } from "@/components/ui/TabRow";
@@ -463,7 +461,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       }
       if (okCount > 0) {
         setSelectedBatchIds(new Set());
-        // v0.14.13 · 至少一批成功 → 记 variant warm.
+        // v0.14.13 · 至少一批成功 → 记 variant 已热. 异步 trigger 拿不到 cache_hit,
+        // 走兜底语义 (推理成功 ⇒ backend 完成时 pool 中有此 variant).
         if (selectedBackendId) {
           const variantSlice: Record<string, string> = {};
           for (const k of variantAxisKeysRef.current) {
@@ -471,7 +470,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
             if (typeof v === "string") variantSlice[k] = v;
           }
           if (Object.keys(variantSlice).length > 0) {
-            markVariantWarm(selectedBackendId, variantSlice);
+            markVariantHot(selectedBackendId, variantSlice);
           }
         }
       }
@@ -489,14 +488,11 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     }
     return out;
   }, [paramsValue, primaryModel]);
-  // v0.14.14: 真信号优先 — backend 上报 cache_hit (isVariantHot) 时直接用; 未上报
-  // 时 fallback 到 sessionStorage 猜测 (isVariantWarm). running state 变化让 useMemo
-  // 在 predict 响应回来后重算.
+  // v0.14.14: 统一查 isVariantHot (单一 hot map, 多源写入 — markVariantHot 兜底 +
+  // recordPredictCacheHit 真信号). running 变化让 useMemo 在响应回来后重算.
   const isCurrentVariantWarm = useMemo(() => {
     if (!selectedBackendId) return false;
-    const hot = isVariantHot(selectedBackendId, currentVariantSlice);
-    if (hot !== undefined) return hot;
-    return isVariantWarm(selectedBackendId, currentVariantSlice);
+    return isVariantHot(selectedBackendId, currentVariantSlice);
   }, [selectedBackendId, currentVariantSlice, running]);
 
   const headerName = summary?.project_name ?? `项目 ${projectId.slice(0, 8)}`;

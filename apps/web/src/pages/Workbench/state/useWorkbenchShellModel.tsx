@@ -46,9 +46,8 @@ import { useMLCapabilities } from "./useMLCapabilities";
 import { useCapabilityValidation } from "./useCapabilityValidation";
 import { useAiToolParamPrefs } from "./useAiToolParamPrefs";
 import {
-  isVariantWarm as isVariantWarmCache,
-  isVariantHot as isVariantHotMap,
-  markVariantWarm,
+  isVariantHot,
+  markVariantHot,
 } from "./sessionVariantCache";
 import { deriveDefaults, VARIANT_FIELD_KEYS } from "../components/SchemaForm";
 import { AIToolDrawer } from "../shell/AIToolDrawer";
@@ -916,14 +915,12 @@ export function useWorkbenchShellModel({
     }
     return out;
   }, [s.aiVariant, variantAxisKeys]);
-  // v0.14.14: 真信号优先 — 若有 isVariantHot 真信号则用, 否则 fallback 到老 sessionStorage
-  // 猜测. triggerPreannotation.isPending 变化触发重算 (response 回来后修正).
+  // v0.14.14: 统一查 isVariantHot (单一 hot map, sessionStorage 持久化).
+  // triggerPreannotation.isPending 变化让 useMemo 在响应回来后重算.
   const currentVariantIsWarm = useMemo(() => {
     const bid = currentProject?.ml_backend_id ?? null;
     if (!bid) return false;
-    const hot = isVariantHotMap(bid, currentVariantSlice);
-    if (hot !== undefined) return hot;
-    return isVariantWarmCache(bid, currentVariantSlice);
+    return isVariantHot(bid, currentVariantSlice);
   }, [currentProject?.ml_backend_id, currentVariantSlice, triggerPreannotation.isPending]);
   useEffect(() => {
     sam.cancel();
@@ -1247,9 +1244,10 @@ export function useWorkbenchShellModel({
       },
       {
         onSuccess: () => {
-          // v0.14.13 · 推理成功 → 记 variant warm. 失败不入集合 (下次还提示加载中).
+          // v0.14.13 · 推理成功 → 记 variant 已热. 异步 trigger 拿不到 cache_hit,
+          // 走兜底 (成功 ⇒ pool 中有此 variant). LRU evict 后下次显示偏差一次可接受.
           if (Object.keys(currentVariantSlice).length > 0) {
-            markVariantWarm(mlBackendId, currentVariantSlice);
+            markVariantHot(mlBackendId, currentVariantSlice);
           }
         },
         onError: (err) => pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" }),

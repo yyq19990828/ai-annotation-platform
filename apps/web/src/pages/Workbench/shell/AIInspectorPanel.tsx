@@ -262,8 +262,9 @@ interface AIPredictionPopoverProps {
   variantCombinations?: string[][];
   // v0.14.13 · backend / 项目级合并后的默认 variant 组合, 传给 VariantSelector 作初值.
   variantDefaults?: Record<string, string>;
-  // v0.14.13 · 当前选中 variant 是否已 warm (sessionStorage 命中集合); false → 按钮文案
-  // 显示"加载模型中…" 给用户冷启动心理预期. 等 v0.14.14 后端 cache_hit 真信号后替换.
+  // 当前选中 variant 是否已 warm (源自 isVariantHot: 单一 hot map, 持久化到
+  // sessionStorage, 接受兜底标热与真信号 cache_hit 多源写入). false → 按钮显示
+  // "加载模型中…" 给用户冷启动心理预期.
   isVariantWarm?: boolean;
   aiVariant?: Record<string, unknown>;
   onSetAiVariant?: (next: Record<string, unknown>) => void;
