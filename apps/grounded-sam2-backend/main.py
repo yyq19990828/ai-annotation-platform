@@ -287,7 +287,12 @@ def _normalize_predict_context(ctx: dict) -> dict:
         normalized, deprecated = normalize_context_model_variants(ctx)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    log_deprecated_model_variant_fields(logger, deprecated)
+    # v0.14.17 · 同一请求 ctx 常被图像 (_resolve_variant) 与视频 (_resolve_video_variant)
+    # 两条路径各 normalize 一次; deprecation warning 只在首次记 (标记写回输入 ctx),
+    # 消除重复日志噪声。私有标记键不影响 normalize 结果与 422 校验。
+    if deprecated and not ctx.get("_mv_deprecation_logged"):
+        log_deprecated_model_variant_fields(logger, deprecated)
+        ctx["_mv_deprecation_logged"] = True
     return normalized
 
 
