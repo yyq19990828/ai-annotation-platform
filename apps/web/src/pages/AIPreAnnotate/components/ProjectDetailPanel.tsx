@@ -254,7 +254,13 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     !(primaryModel?.supported_prompts ?? []).includes("text");
   const [geometricTaskId, setGeometricTaskId] = useState<string | null>(null);
   useEffect(() => {
-    setGeometricTaskId(geometricModels[0]?.id ?? null);
+    // 仅在当前选中 task 不再可用时落回第一个 (backend 切换 / model 消失); capabilities 重取
+    // (如预热后 invalidate) 产生新数组引用但内容不变时, 保留用户已选 task — 否则会跳回"检测"。
+    setGeometricTaskId((prev) =>
+      prev && geometricModels.some((m) => m.id === prev)
+        ? prev
+        : (geometricModels[0]?.id ?? null),
+    );
   }, [selectedBackendId, geometricModels]);
   const geometricModel =
     geometricModels.find((m) => m.id === geometricTaskId) ?? geometricModels[0];
