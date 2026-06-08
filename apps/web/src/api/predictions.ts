@@ -57,10 +57,19 @@ export const predictionsApi = {
    * - shapeIndex 给定: 仅采纳指定 shape (画布单点采纳, 避免波及同 prediction 下其它框).
    * - 不传:           采纳整条 prediction 的所有 shape ("全部采纳"按钮).
    */
-  accept: (taskId: string, predictionId: string, shapeIndex?: number) => {
-    const qs = shapeIndex !== undefined ? `?shape_index=${shapeIndex}` : "";
+  accept: (
+    taskId: string,
+    predictionId: string,
+    shapeIndex?: number,
+    overrideClassName?: string,
+  ) => {
+    const qp = new URLSearchParams();
+    if (shapeIndex !== undefined) qp.set("shape_index", String(shapeIndex));
+    // v0.14.17 · 采纳时选类: 预测类名不在项目标签集 (会 422) 时, 带上人选的项目标签重试.
+    if (overrideClassName) qp.set("override_class_name", overrideClassName);
+    const qs = qp.toString();
     return apiClient.post<AnnotationResponse[]>(
-      `/tasks/${taskId}/predictions/${predictionId}/accept${qs}`,
+      `/tasks/${taskId}/predictions/${predictionId}/accept${qs ? `?${qs}` : ""}`,
     );
   },
 

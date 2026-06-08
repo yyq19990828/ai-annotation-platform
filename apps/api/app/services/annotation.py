@@ -174,6 +174,7 @@ class AnnotationService:
         prediction_id: uuid.UUID,
         user_id: uuid.UUID,
         shape_index: int | None = None,
+        override_class_name: str | None = None,
     ) -> Annotation | None:
         """采纳预测 → 转 annotation.
 
@@ -223,7 +224,14 @@ class AnnotationService:
         for idx, raw_shape in indexed:
             shape = to_internal_shape(raw_shape)
             raw_class = shape.get("class_name", "") or ""
-            mapped_class = alias_to_name.get(raw_class.strip().lower(), raw_class)
+            # v0.14.17 · 采纳时选类: override_class_name 非空时直接用它 (人工指定项目标签),
+            # 跳过 alias 反查 — 用于"预测类名既不在标签集、又无 alias 命中"时让人当场选类落库,
+            # 不再 422 拒死。仍走下面同一段软校验。平台不做自动映射 (NG6)。
+            mapped_class = (
+                override_class_name
+                if override_class_name
+                else alias_to_name.get(raw_class.strip().lower(), raw_class)
+            )
             # v0.10.17 · 走与 create 同一段 class_name 软校验, 避免 accept_prediction 写入
             # 不在 unit allowed 集合内的"幽灵类别"导致 UI 看不见 DB 仍有的记录.
             await self._validate_class_name(
@@ -629,6 +637,12 @@ class AnnotationService:
         annotation = await self.db.get(Annotation, annotation_id)
         if not annotation or not annotation.is_active:
             return None
+        if class_name is not None:
+            # v0.14.17 · 与 create / accept_prediction 对齐: PATCH 改类也走软校验,
+            # 堵住"采纳后 PATCH 改成项目标签集外的任意非法值"的数据质量缺口.
+            await self._validate_class_name(
+                annotation.project_id, annotation.tool_unit_id, class_name
+            )
         if geometry is not None:
             annotation.geometry = geometry
         if class_name is not None:

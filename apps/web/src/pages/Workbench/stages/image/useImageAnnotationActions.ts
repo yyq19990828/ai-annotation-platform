@@ -576,9 +576,30 @@ export function useImageAnnotationActions({
           }
           pushToast({ msg: "已采纳 AI 标注", sub: `${box.cls} · 置信度 ${(box.conf * 100).toFixed(0)}%`, kind: "success" });
         },
+        onError: (err) => {
+          // v0.14.17 · 采纳时选类: 预测类名不在项目标签集 (如 YOLO 输出 "person" 而项目标签是 "行人"
+          // 且无 alias) → 后端 422. 复用 ClassPickerPopover 让用户选项目标签, commit 时带
+          // override_class_name 重试采纳 (见 handleCommitChangeClass 的 accept 分支)。
+          const status = (err as { status?: number } | null)?.status;
+          if (status === 422 && box.predictionId) {
+            s.setEditingClass({
+              annotationId: "",
+              geom: box.geometry as Geom,
+              currentClass: box.cls,
+              accept: { predictionId: box.predictionId, shapeIndex: box.shapeIndex },
+            });
+            pushToast({
+              msg: "该类别不在项目标签集",
+              sub: `请为模型类别「${box.cls}」选择对应的项目标签`,
+              kind: "warning",
+            });
+          } else {
+            pushToast({ msg: "采纳失败", sub: (err as Error)?.message, kind: "error" });
+          }
+        },
       },
     );
-  }, [acceptPredictionMut, history, pushToast, mutations.update]);
+  }, [acceptPredictionMut, history, pushToast, mutations.update, s]);
 
   // v0.10.8 · I11 · Mask 精修：候选/已存 polygon → mask 编辑 → commit 路径按 kind 分流。
   // v0.10.9 · 扩三种 kind：prediction（AI 预标 polygon 行）/ sam（SAM 交互候选，未 Enter）/ user（已落库 polygon，update 替换 geometry）。
@@ -819,7 +840,33 @@ export function useImageAnnotationActions({
 
   const handleCommitChangeClass = useCallback((cls: string) => {
     const editing = s.editingClass;
-    if (!editing || !cls || cls === editing.currentClass) {
+    if (!editing || !cls) {
+      s.setEditingClass(null);
+      return;
+    }
+    // v0.14.17 · 采纳模式: 带 override_class_name 采纳预测 (而非改已存标注的类). 不因
+    // cls===currentClass 早返 — 这里 currentClass 是模型原生类名, cls 是人选的项目标签.
+    if (editing.accept) {
+      const { predictionId, shapeIndex } = editing.accept;
+      s.setEditingClass(null);
+      s.setActiveClass(cls);
+      recordRecentClass(cls);
+      acceptPredictionMut.mutate(
+        { predictionId, shapeIndex, overrideClassName: cls },
+        {
+          onSuccess: (created) => {
+            const ids = created.map((a) => a.id);
+            history.push({ kind: "acceptPrediction", predictionId, createdAnnotationIds: ids });
+            pushToast({ msg: `已采纳为 ${cls}`, kind: "success" });
+          },
+          onError: (err) => {
+            pushToast({ msg: "采纳失败", sub: (err as Error)?.message, kind: "error" });
+          },
+        },
+      );
+      return;
+    }
+    if (cls === editing.currentClass) {
       s.setEditingClass(null);
       return;
     }
@@ -840,7 +887,7 @@ export function useImageAnnotationActions({
         },
       },
     );
-  }, [s, mutations.update, history, pushToast, recordRecentClass]);
+  }, [s, mutations.update, history, pushToast, recordRecentClass, acceptPredictionMut]);
 
   const handleCancelChangeClass = useCallback(() => {
     s.setEditingClass(null);

@@ -31574,6 +31574,24 @@
               "description": "可选: 仅采纳指定下标的 shape (一个 prediction 可含多个 shape).",
               "title": "Shape Index"
             }
+          },
+          {
+            "description": "可选: 采纳时把类别落到指定项目标签 (v0.14.17). 用于预测类名既不在项目标签集、又无 alias 命中时, 由人当场选项目类别再采纳, 避免 422 拒死。",
+            "in": "query",
+            "name": "override_class_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "可选: 采纳时把类别落到指定项目标签 (v0.14.17). 用于预测类名既不在项目标签集、又无 alias 命中时, 由人当场选项目类别再采纳, 避免 422 拒死。",
+              "title": "Override Class Name"
+            }
           }
         ],
         "responses": {

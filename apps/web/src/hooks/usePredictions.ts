@@ -34,10 +34,20 @@ export function usePredictions(
 export function useAcceptPrediction(taskId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { predictionId: string; shapeIndex?: number } | string) => {
+    mutationFn: (
+      vars:
+        | { predictionId: string; shapeIndex?: number; overrideClassName?: string }
+        | string,
+    ) => {
       // 兼容旧调用 (传 string predictionId 直接采纳整条).
       if (typeof vars === "string") return predictionsApi.accept(taskId, vars);
-      return predictionsApi.accept(taskId, vars.predictionId, vars.shapeIndex);
+      return predictionsApi.accept(
+        taskId,
+        vars.predictionId,
+        vars.shapeIndex,
+        // v0.14.17 · 采纳时选类: 预测类名不在项目标签集 (会 422) 时带人选的项目标签.
+        vars.overrideClassName,
+      );
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["predictions", taskId] });
