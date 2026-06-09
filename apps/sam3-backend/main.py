@@ -249,20 +249,14 @@ async def _idle_watcher() -> None:
 
 @app.on_event("startup")
 async def _load_models() -> None:
-    global _predictor, _idle_task, _last_request_at, _pool_loaded_at, _pool_last_used_at
+    global _idle_task, _last_request_at
+    # 不再启动急加载: 未注册 / 无流量时白占 ~3.6GB 显存. 改纯懒加载 — 首个推理 / 预热请求
+    # 经 _ensure_predictor_loaded 触发冷启; 需暖启点模型市场「预热默认」。
     logger.info(
-        "loading SAM 3 (variant=%s, cache_size=%d, idle_unload=%.0fs)",
+        "SAM 3 backend ready (lazy load; variant=%s, cache_size=%d, idle_unload=%.0fs)",
         MODEL_VERSION, EMBEDDING_CACHE_SIZE, IDLE_UNLOAD_SECONDS,
     )
-    loop = asyncio.get_running_loop()
-    t0 = time.monotonic()
-    _predictor = await loop.run_in_executor(None, _build_predictor)
-    load_ms = int((time.monotonic() - t0) * 1000)
     _last_request_at = time.monotonic()
-    now = datetime.now(UTC)
-    _pool_loaded_at = now
-    _pool_last_used_at = now
-    logger.info("SAM 3 loaded; device=%s; load_ms=%d", _predictor.device, load_ms)
     init_perfhud_collectors()
     if IDLE_UNLOAD_SECONDS > 0:
         _idle_task = asyncio.create_task(_idle_watcher())

@@ -369,11 +369,9 @@ async def _load_models() -> None:
         MODEL_POOL_CAP,
         IDLE_UNLOAD_SECONDS,
     )
-    # 预热默认变体进 pool (保持"单变体常驻"不破坏).
-    # v0.14.14: pool.get() 返回 (predictor, cache_hit, model_load_ms) 三元组.
-    predictor, _cache_hit, _load_ms = await _pool.get(SAM_VARIANT, DINO_VARIANT)
+    # 不再启动急加载默认变体: 未注册 / 无流量时会白占显存 (与下方 video 池同理).
+    # 纯懒加载 — 首个推理请求经 _get_predictor → _pool.get 触发冷启; 需暖启点模型市场「预热默认」。
     _last_request_at = time.monotonic()
-    logger.info("default variant loaded; device=%s", predictor.device)
     # v0.9.11 PerfHud · pynvml + psutil 初始化 (无 GPU 环境会降级, 不阻塞 startup)
     init_perfhud_collectors()
     if IDLE_UNLOAD_SECONDS > 0:
