@@ -4,8 +4,6 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { VariantSelector } from "@/components/ml/VariantSelector";
-import type { MLBackendSupportedVariantGroup } from "@/api/ml-backends";
 import type { Annotation, AnnotationResponse } from "@/types";
 import type { AttributeSchema } from "@/api/projects";
 import type { CapabilityWarning } from "../state/useCapabilityValidation";
@@ -24,16 +22,10 @@ import { isFrameOutside } from "../stage/videoTrackOutside";
 import { displayClassName } from "../stage/colors";
 import { AttributeForm, getMissingRequired } from "./AttributeForm";
 import {
-  SchemaForm,
-  isVariantField,
-  type JsonSchemaField,
-  type JsonSchemaObject,
-} from "../components/SchemaForm";
+  PreannotateConfigForm,
+} from "@/pages/AIPreAnnotate/components/PreannotateConfigForm";
+import { type PreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
 import styles from "./AIInspectorPanel.module.css";
-
-function asJsonSchemaField(raw: unknown): JsonSchemaField {
-  return raw && typeof raw === "object" ? raw as JsonSchemaField : {};
-}
 
 interface AIInspectorPanelProps {
   open: boolean;
@@ -264,22 +256,11 @@ interface AIPredictionPopoverProps {
   taskAiCost?: number;
   taskAiAvgMs?: number | null;
   taskAiPredictionCount?: number;
-  // v0.10.23 · 会话级模型变体选择 (设计 A): 选项来自 /setup.params 的 sam_variant/dino_variant enum.
-  paramsSchema?: JsonSchemaObject;
-  supportedVariants?: MLBackendSupportedVariantGroup[];
-  // v0.14.12 · 多轴非笛卡尔积时声明合法组合 (yolo series/size); 缺省时按笛卡尔积渲染.
-  variantCombinations?: string[][];
-  // v0.14.13 · backend / 项目级合并后的默认 variant 组合, 传给 VariantSelector 作初值.
-  variantDefaults?: Record<string, string>;
-  // 当前选中 variant 是否已 warm (源自 isVariantHot: 单一 hot map, 持久化到
-  // sessionStorage, 接受兜底标热与真信号 cache_hit 多源写入). false → 按钮显示
-  // "加载模型中…" 给用户冷启动心理预期.
+  // 配置区共享状态 (任务类型 / 模型任务 / 类别白名单 / variant / 参数 / prompt); 与批量页同一 hook.
+  cfg: PreannotateConfig;
+  // 当前选中 variant 是否已 warm (源自 isVariantHot: 单一 hot map, 持久化到 sessionStorage).
+  // false → 按钮显示"加载模型中…"给用户冷启动心理预期.
   isVariantWarm?: boolean;
-  aiVariant?: Record<string, unknown>;
-  onSetAiVariant?: (next: Record<string, unknown>) => void;
-  // 后端级推理参数 (阈值等非变体字段): SchemaForm 渲染。值/回调即 workbench 的 aiToolParams。
-  params?: Record<string, unknown>;
-  onSetParams?: (next: Record<string, unknown>) => void;
 }
 
 export function AIPredictionPopover({
@@ -299,15 +280,8 @@ export function AIPredictionPopover({
   taskAiCost,
   taskAiAvgMs,
   taskAiPredictionCount,
-  paramsSchema,
-  supportedVariants,
-  variantCombinations,
-  variantDefaults,
+  cfg,
   isVariantWarm: isVariantWarmProp,
-  aiVariant,
-  onSetAiVariant,
-  params,
-  onSetParams,
 }: AIPredictionPopoverProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
@@ -367,12 +341,6 @@ export function AIPredictionPopover({
     node.style.setProperty("--ai-inspector-popover-right", `${rightOffset}px`);
     node.style.removeProperty("--ai-inspector-popover-left");
   }, [open, position, rightOffset]);
-
-  const hasVariantSelector =
-    (supportedVariants ?? []).some((group) => (group.variants ?? []).length > 0) ||
-    Object.entries(paramsSchema?.properties ?? {}).some(
-      ([k, raw]) => isVariantField(k, asJsonSchemaField(raw)),
-    );
 
   if (!open) return null;
 
@@ -452,31 +420,11 @@ export function AIPredictionPopover({
         </div>
       </div>
 
-      {/* v0.10.23 · 设计 A · 会话级模型变体选择 (切工具不丢); /setup.params 无变体字段时整段隐藏. */}
-      {onSetAiVariant && hasVariantSelector && (
-        <div className={styles.variantSelector}>
-          <VariantSelector
-            schema={paramsSchema}
-            supportedVariants={supportedVariants}
-            variantCombinations={variantCombinations}
-            defaults={variantDefaults}
-            value={aiVariant ?? {}}
-            onChange={onSetAiVariant}
-          />
-        </div>
-      )}
-
-      {/* 后端级推理参数 (阈值等非变体字段)。SchemaForm 内部已排除 variant 字段, 不与上方变体选择器重复;
-          无非变体可调字段时整段隐藏 (避免空白容器)。 */}
-      {onSetParams &&
-        paramsSchema &&
-        Object.entries(paramsSchema.properties ?? {}).some(
-          ([k, raw]) => !isVariantField(k, asJsonSchemaField(raw)),
-        ) && (
-          <div className={styles.aiParamsForm}>
-            <SchemaForm schema={paramsSchema} value={params ?? {}} onChange={onSetParams} />
-          </div>
-        )}
+      {/* 共享配置区: 任务类型 / 模型任务 (检测/分割…) / 类别白名单 / variant / 后端参数 / prompt.
+          与批量页 ProjectDetailPanel 同一组件 (单一事实源). */}
+      <div className={styles.variantSelector}>
+        <PreannotateConfigForm cfg={cfg} />
+      </div>
 
       <div className={styles.aiStats}>
         <div className={styles.aiStatsLabel}>本次效率</div>
