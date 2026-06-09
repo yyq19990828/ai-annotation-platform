@@ -186,7 +186,7 @@ export function PreannotateConfigForm({
             {backends.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
-                {b.id === projectMlBackendId ? "（绑定）" : ""}
+                {b.id === projectMlBackendId ? "（默认）" : ""}
               </option>
             ))}
           </select>

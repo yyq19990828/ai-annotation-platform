@@ -26,25 +26,27 @@ last_reviewed: 2026-05-27
 
 > **交互能力 / 支持模态自动探测**：「是否交互式 backend」不需要手填。平台在**健康检查**时会顺带探一次 `/setup`，按 backend 自报的 `is_interactive` / `supported_prompts`（图像 prompt）/ `supported_trackers`（视频 tracker）派生交互能力与支持模态，写库后在列表只读展示。注册一个新 backend 后，先在表格里点一次「健康检查」（刷新图标）即可看到检测到的能力。
 
-## 配置 AI 预标注与绑定 backend
+## 配置 AI 预标注与默认 backend
 
 在页面上方的 **AI 预标注设置** 中：
 
 - 勾选 **启用 AI 预标注**。
-- 在 **实际 ML Backend** 下拉中选择已注册 backend。
+- 在 **默认 ML Backend** 下拉中选择已注册 backend。
 - 可设置 **AI 框去重阈值** 和 **SAM 文本预标默认输出**。
 - 点 **保存 AI 设置**。
 
 这些字段原先分散在“基本信息”，现在统一收口到 **ML 模型**。
 
-## 从列表快捷绑定 backend
+## 从列表快捷设为默认 backend
 
-注册后在表格里点 **「绑定到本项目」**：
+> **注册 ≠ 默认**：项目可注册多个 backend（受 `MAX_ML_BACKENDS_PER_PROJECT` 上限约束），它们都可用；「默认」只是单个 `ml_backend_id` 指针，决定工作台 / 批量页打开时**默认预选**哪个，并非「唯一可用」。已注册的其它 backend 仍可在 AI 面板的 backend 选择器里切换使用。
+
+注册后在表格里点 **「设为默认」**：
 
 - 会同时把项目 `ml_backend_id` 设为该 backend、`ai_enabled` 置 true。
-- 已绑定的行显示蓝色 `已绑定` 角标，其他行仍可"绑定到本项目"实现切换。
+- 作为默认的行显示蓝色 `默认` 角标，其他行仍可点 **「设为默认」** 改默认。
 - 工作台进入时会拉这个 backend 的 `/setup`，按返回的 `supported_prompts` 决定工具栏哪些 AI 工具置灰。
-- **模态校验**：绑定时平台会按项目数据类型校验——视频项目只能绑自报 `supported_trackers`（支持视频追踪）的 backend，否则拒绝绑定。若 backend 此刻不可达探测失败，则放行（不因瞬时宕机卡住操作）。
+- **模态校验**：设默认时平台会按项目数据类型校验——视频项目只能设自报 `supported_trackers`（支持视频追踪）的 backend，否则拒绝。若 backend 此刻不可达探测失败，则放行（不因瞬时宕机卡住操作）。
 
 ## 能力列
 
