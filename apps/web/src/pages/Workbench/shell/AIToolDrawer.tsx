@@ -1,8 +1,8 @@
 // v0.10.2 · Prompt-first ToolDock 的右侧抽屉.
-// 任一 AI 工具激活时浮出, 含: 工具标题 + 后端选择器 (1:1 锁定阶段单项 disabled) +
-// 工具特定控件 (smart-point 极性 / 提示文案) + Schema-form 参数面板 + 状态指示.
-// v0.10.23 · 设计 B · text-prompt 工具的输入段 (SamTextPanel) 下沉到此处, 替换原 hint;
-// 预测结果列表仍留右栏 AIInspectorPanel.
+// 任一 AI 工具激活时浮出, 含: 工具标题 + 交互后端选择器 + 工具特定控件 (smart-point 极性 /
+// 提示文案) + Schema-form 参数面板 + 状态指示. 预测结果列表仍留右栏 AIInspectorPanel.
+// v0.14.18 · text-prompt 工具归批量线 (从工具栏摘除), 故 SamTextPanel 输入段不再在此渲染;
+//   「后端」槽位改为交互后端选择器 (≥2 候选时可切, 能力作用域化); 模型选择器按当前工具 prompt 过滤.
 
 import { Icon } from "@/components/ui/Icon";
 import type { MLBackendCapability, MLModelCapability } from "@/api/ml-backends";
@@ -10,27 +10,19 @@ import type { SamPolarity, Tool } from "../state/useWorkbenchState";
 import type { TextOutputMode } from "../state/useInteractiveAI";
 import type { CapabilityWarning } from "../state/useCapabilityValidation";
 import { TOOL_REGISTRY, type ToolId } from "../stage/tools";
-import { SamTextPanel } from "./SamTextPanel";
 import { SamOutputModeTabs } from "./SamOutputModeTabs";
 import styles from "./AIToolDrawer.module.css";
 
 export interface AIToolDrawerProps {
   tool: Tool;
-  /** v0.10.2 · 当前项目挂的 backend 名称 (来自 /setup.name); undefined → "未绑定". */
+  /** v0.10.2 · 解析到的交互后端名称 (来自 /setup.name); undefined → "未绑定". */
   backendName: string | undefined;
   capability: MLBackendCapability | undefined;
   samPolarity: SamPolarity;
   onSetSamPolarity: (p: SamPolarity) => void;
   isLoading: boolean;
   isError: boolean;
-  // v0.10.23 · 设计 B · text-prompt 输入段下沉到 drawer; 沿用现有 runText 链路 (逻辑零改).
-  onRunSamText?: (text: string, outputMode: TextOutputMode) => void;
-  samRunning?: boolean;
-  samCandidateCount?: number;
-  projectId?: string;
-  projectTypeKey?: string | null;
-  samTextFocusKey?: number;
-  // exemplar 工具输出形态 (box/mask/both), 对齐 text-prompt; 会话级状态由 WorkbenchShell 持有.
+  // exemplar 工具输出形态 (box/mask/both); 会话级状态由 WorkbenchShell 持有.
   exemplarOutputMode?: TextOutputMode;
   onSetExemplarOutputMode?: (mode: TextOutputMode) => void;
   // v0.14.9 · 能力声明协议 v2 · 多模型选择. models 长度 <= 1 时**不渲染**选择器 (向后兼容).
@@ -39,6 +31,11 @@ export interface AIToolDrawerProps {
   onSetActiveModelId?: (id: string) => void;
   // v0.14.9 · active model 与项目配置的兼容性警告 (非阻断). 空数组时不渲染。
   capabilityWarnings?: CapabilityWarning[];
+  // v0.14.18 · 交互后端选择器 (能力作用域化): 只列支持当前工具 prompt 的后端, 选中值 = 实际解析后端.
+  //   <2 个候选时退化为只读显示 (无 UI 噪音), 行为 = 单后端现状.
+  interactiveBackends?: Array<{ id: string; name: string }>;
+  selectedInteractiveId?: string | null;
+  onSelectInteractive?: (id: string) => void;
 }
 
 // v0.14.9 · model.task → 中文分组标题. 受控 task 之外的归「其他」。
@@ -87,7 +84,7 @@ const TOOL_HINT: Record<ToolId, string | null> = {
   mask: null,
   "smart-point": "单击图像 = 正向点；Alt+点 = 负向点",
   "smart-box": "在图像上拖框作为 SAM 提示",
-  // v0.10.23 · 设计 B · text-prompt 不再用 hint, 改在下方渲染 SamTextPanel 输入段.
+  // v0.14.18 · text-prompt 已归批量线, 工具栏不再有此工具 (entry 保留仅为类型完整).
   "text-prompt": null,
   exemplar: "拖框圈出某个示例，后端找全图相似实例",
   // v0.10.17 · Magic Box: 复用 SAM bbox prompt 把粗框收紧到对象紧凑外接矩形.
@@ -106,26 +103,38 @@ export function AIToolDrawer({
   onSetSamPolarity,
   isLoading,
   isError,
-  onRunSamText,
-  samRunning,
-  samCandidateCount,
-  projectId,
-  projectTypeKey,
-  samTextFocusKey,
   exemplarOutputMode,
   onSetExemplarOutputMode,
   models,
   activeModelId,
   onSetActiveModelId,
   capabilityWarnings,
+  interactiveBackends,
+  selectedInteractiveId,
+  onSelectInteractive,
 }: AIToolDrawerProps) {
   const meta = TOOL_REGISTRY[tool];
   const hint = TOOL_HINT[tool];
 
-  // v0.14.9 · 多模型选择器: 仅 models 长度 > 1 时渲染 (单模型 / 老 backend 完全维持现状)。
+  // v0.14.18 · 模型选择器按当前工具 prompt 过滤: 只列声明支持该交互 prompt 的图像交互 model
+  // (point → 仅 interactive_seg; tracker 属视频, 排除)。过滤后通常剩 1 个 → 选择器自动隐藏。
+  const toolPrompt = TOOL_REGISTRY[tool]?.requiredPrompt;
   const modelList = models ?? [];
-  const showModelSelector = modelList.length > 1 && !!onSetActiveModelId;
+  const filteredModels =
+    toolPrompt && toolPrompt !== "text"
+      ? modelList.filter(
+          (m) =>
+            m.is_interactive === true &&
+            m.task !== "tracker" &&
+            (m.supported_prompts ?? []).includes(toolPrompt),
+        )
+      : modelList;
+  const showModelSelector = filteredModels.length > 1 && !!onSetActiveModelId;
   const warnings = capabilityWarnings ?? [];
+
+  // v0.14.18 · 交互后端选择器: ≥2 个候选 (支持当前工具 prompt 的后端) 时可切, 否则只读显示。
+  const backendCands = interactiveBackends ?? [];
+  const canSwitchBackend = backendCands.length >= 2 && !!onSelectInteractive;
 
   return (
     <div
@@ -139,22 +148,31 @@ export function AIToolDrawer({
         <b className={styles.title}>{meta.label}</b>
       </div>
 
-      {/* 后端选择器 (1:1 阶段单项 disabled) */}
+      {/* v0.14.18 · 交互后端选择器: ≥2 候选时可切 (只列支持当前工具的后端), 否则只读显示解析后端。 */}
       <div className={styles.field}>
         <span className={styles.label}>后端</span>
         <select
           data-testid="ai-tool-backend-select"
-          value={backendName ?? ""}
-          disabled
+          value={canSwitchBackend ? (selectedInteractiveId ?? "") : (backendName ?? "")}
+          disabled={!canSwitchBackend}
+          onChange={(e) => onSelectInteractive?.(e.target.value)}
           className={styles.backendSelect}
         >
-          <option value={backendName ?? ""}>
-            {backendName ?? "未绑定 ML 后端"}
-          </option>
+          {canSwitchBackend ? (
+            backendCands.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))
+          ) : (
+            <option value={backendName ?? ""}>
+              {backendName ?? "未绑定 ML 后端"}
+            </option>
+          )}
         </select>
       </div>
 
-      {/* v0.14.9 · 多模型选择器 (按 task 分组, 仅 models > 1 时渲染)。 */}
+      {/* v0.14.9 · 多模型选择器 (按 task 分组, 按当前工具 prompt 过滤后 > 1 时渲染)。 */}
       {showModelSelector && (
         <div className={styles.field}>
           <span className={styles.label}>模型</span>
@@ -164,7 +182,7 @@ export function AIToolDrawer({
             onChange={(e) => onSetActiveModelId?.(e.target.value)}
             className={styles.modelSelect}
           >
-            {groupModelsByTask(modelList).map(([task, group]) => (
+            {groupModelsByTask(filteredModels).map(([task, group]) => (
               <optgroup key={task} label={modelTaskLabel(task)}>
                 {group.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -208,18 +226,6 @@ export function AIToolDrawer({
           <span className={styles.label}>输出形态</span>
           <SamOutputModeTabs value={exemplarOutputMode} onChange={onSetExemplarOutputMode} />
         </div>
-      )}
-
-      {/* v0.10.23 · 设计 B · text-prompt 输入段下沉到此处 (文本框 + 输出模式 + 「找全图」). */}
-      {tool === "text-prompt" && onRunSamText && (
-        <SamTextPanel
-          onRun={onRunSamText}
-          running={samRunning ?? false}
-          candidateCount={samCandidateCount ?? 0}
-          projectId={projectId}
-          projectTypeKey={projectTypeKey}
-          focusKey={samTextFocusKey}
-        />
       )}
 
       {/* v0.14.9 · 兼容性警告 (非阻断): active model 输出与项目配置不匹配时提示。 */}

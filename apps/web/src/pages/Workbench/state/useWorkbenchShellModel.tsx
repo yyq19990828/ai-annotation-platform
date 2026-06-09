@@ -45,13 +45,18 @@ import { useInteractiveAI } from "./useInteractiveAI";
 import { usePreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
 import { useMLBackends } from "@/hooks/useMLBackends";
 import { useMLCapabilities } from "./useMLCapabilities";
+import {
+  useBackendRouting,
+  INTERACTIVE_PROMPTS,
+  type InteractivePrompt,
+} from "./useBackendRouting";
 import { useCapabilityValidation } from "./useCapabilityValidation";
 import {
   VARIANT_FIELD_KEYS,
 } from "../components/SchemaForm";
 import { AIToolDrawer } from "../shell/AIToolDrawer";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
-import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
+import { isAIToolId, TOOL_REGISTRY, type ToolId } from "../stage/tools";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
 import { useActiveIssueStore } from "./useActiveIssueStore";
 import { annotationToBox, collectOccludedKeys } from "./transforms";
@@ -217,6 +222,12 @@ function resolveFloatingDiscussionRect(state: FloatingPanelState): FloatingPanel
   });
 }
 
+// v0.14.18 · 工具 → 交互 prompt (text 已归批量线, 映射为 null = 非交互)。供交互后端路由解析。
+function promptOfTool(tool: ToolId): InteractivePrompt | null {
+  const rp = TOOL_REGISTRY[tool]?.requiredPrompt;
+  return rp && rp !== "text" ? rp : null;
+}
+
 export type UseWorkbenchShellModelResult =
   | { kind: "loading" }
   | WorkbenchShellEmptyState
@@ -255,17 +266,18 @@ export function useWorkbenchShellModel({
   const projectName = currentProject?.name ?? "标注工作台";
   const projectDisplayId = currentProject?.display_id ?? "—";
 
-  // 多 backend: 项目可绑 ≤MAX_ML_BACKENDS_PER_PROJECT 个后端 (见 .env), AI 面板按需切换。
-  // 默认选项目绑定值 (ml_backend_id), 回落第一个; 选中值统一驱动 preCfg / sam /
-  // mlCapabilities / warmup / 单图推理, 与批量页 ProjectDetailPanel 同一套切换语义。
+  // v0.14.18 · 多 backend 两条线分流 (见 docs/plans/2026-06-09-v0.14.18-...):
+  //   批量线 batchBackendId — 文本/几何/OCR/版面预标, 默认 = 项目默认后端 (ml_backend_id) 回落第一个,
+  //     驱动 preCfg / handleRunAi / AI 面板 backend 选择器, 沿用批量页 ProjectDetailPanel 切换语义。
+  //   交互线 — point/bbox/exemplar 工具各自按能力路由到交互后端 (见下方 routing / interactiveBackendId)。
   const backendsQ = useMLBackends(projectId);
   const backends = (backendsQ.data ?? []) as unknown as Array<{ id: string; name: string }>;
   const firstBackendId = backends[0]?.id ?? null;
-  const [selectedBackendId, setSelectedBackendId] = useState<string | null>(null);
+  const [batchBackendId, setBatchBackendId] = useState<string | null>(null);
   useEffect(() => {
-    setSelectedBackendId(currentProject?.ml_backend_id ?? firstBackendId);
+    setBatchBackendId(currentProject?.ml_backend_id ?? firstBackendId);
   }, [projectId, currentProject?.ml_backend_id, firstBackendId]);
-  const selectedBackend = backends.find((b) => b.id === selectedBackendId) ?? null;
+  const selectedBackend = backends.find((b) => b.id === batchBackendId) ?? null;
 
   const aiModel = selectedBackend?.name
     ?? (currentProject?.ml_backend_id ? "已接入模型" : "未接入模型");
@@ -373,6 +385,8 @@ export function useWorkbenchShellModel({
   const [showHotkeys, setShowHotkeys] = useState(false);
   const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
   const [aiPopoverPosition, setAiPopoverPosition] = useState<{ left: number; top: number } | null>(null);
+  // v0.14.18 · AI 面板可缩放 (与浮出边栏一致); null = 用 CSS 默认尺寸, 用户拖角后置显式 w/h.
+  const [aiPopoverSize, setAiPopoverSize] = useState<{ w: number; h: number } | null>(null);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(true);
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
@@ -877,14 +891,26 @@ export function useWorkbenchShellModel({
     ],
   );
 
+  // v0.14.18 · 交互线能力路由: 对每个注册后端拉 /setup 建 capIndex, 按当前工具 prompt 解析交互后端。
+  const routing = useBackendRouting({
+    projectId,
+    userId: meUserId,
+    backends,
+    defaultBackendId: currentProject?.ml_backend_id ?? null,
+  });
+  // 当前工具对应的交互 prompt (非交互工具回落 point, 仅用于 sam/warmup 的后端选取, 不参与门控)。
+  const activeInteractivePrompt = promptOfTool(s.tool);
+  const interactiveBackendId = routing.resolveInteractive(activeInteractivePrompt ?? "point");
+
   const sam = useInteractiveAI({
     projectId,
     taskId,
-    mlBackendId: selectedBackendId,
+    mlBackendId: interactiveBackendId,
   });
+  // 交互工具抽屉 (AIToolDrawer) 的能力/模型反映"解析到的交互后端"; 门控 (isPromptSupported) 走 routing 并集。
   const mlCapabilities = useMLCapabilities(
     projectId ?? null,
-    selectedBackendId,
+    interactiveBackendId,
   );
   // v0.14.9 · active model 输出几何 / 文本属性 与项目配置的兼容性警告 (非阻断)。
   const capabilityWarnings = useCapabilityValidation({
@@ -894,47 +920,44 @@ export function useWorkbenchShellModel({
   });
   // AI"配置区"共享状态 (任务类型 / 模型任务 / 类别白名单 / variant / 参数 / 输出形态 / buildArgs);
   // 与批量页 ProjectDetailPanel 同一 hook + PreannotateConfigForm (单一事实源). 驱动批量 AI 面板
-  // (开始预标) 与交互式 SAM (point/bbox/text 的 variant/params 也取自此, 见 buildPredictParams 调用).
+  // (开始预标) — 批量线, 用 batchBackendId.
   const preCfg = usePreannotateConfig({
     projectId: projectId ?? "",
-    backendId: selectedBackendId,
+    backendId: batchBackendId,
   });
   useEffect(() => {
     sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
-  const warmupPointSupported = mlCapabilities.isPromptSupported("point");
+  const warmupPointBackendId = routing.resolveInteractive("point");
   useEffect(() => {
     if (stageKind !== "image") return;
-    if (!taskId || !selectedBackendId) return;
-    if (!warmupPointSupported) return;
+    if (!taskId || !warmupPointBackendId) return;
     sam.warmup();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stageKind, taskId, selectedBackendId, warmupPointSupported]);
+  }, [stageKind, taskId, warmupPointBackendId]);
   useEffect(() => {
     if (!isAIToolId(s.tool) && sam.candidates.length > 0) sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.tool]);
+  // v0.14.18 · 门控走 routing 并集: 某交互 prompt 只要任一交互后端支持, 工具就亮。
+  const routingSig = INTERACTIVE_PROMPTS.map((p) =>
+    routing.isPromptSupported(p) ? "1" : "0",
+  ).join("");
   useEffect(() => {
-    if (s.tool === "text-prompt") s.bumpSamTextFocus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s.tool]);
-  useEffect(() => {
-    if (mlCapabilities.isLoading) return;
+    if (routing.isLoading) return;
     if (!isAIToolId(s.tool)) return;
-    const requiredPrompt = (
-      { "smart-point": "point", "smart-box": "bbox", "text-prompt": "text", exemplar: "exemplar" } as const
-    )[s.tool as "smart-point" | "smart-box" | "text-prompt" | "exemplar"];
-    if (!mlCapabilities.isPromptSupported(requiredPrompt)) {
+    const requiredPrompt = promptOfTool(s.tool);
+    if (requiredPrompt && !routing.isPromptSupported(requiredPrompt)) {
       s.setTool("hand");
       pushToast({
         msg: "当前后端不支持此 AI 工具",
-        sub: "已切回手型；请到项目设置切换后端",
+        sub: "已切回手型；请到项目设置注册支持该交互的后端",
         kind: "warning",
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mlCapabilities.prompts.join(","), mlCapabilities.isLoading]);
+  }, [routingSig, routing.isLoading, s.tool]);
   useEffect(() => {
     if (!isVideoTask) return;
     if (tool !== "box" && tool !== "hand") setTool("box");
@@ -1162,7 +1185,7 @@ export function useWorkbenchShellModel({
 
   const handleRunAi = useCallback(() => {
     if (!projectId) return;
-    const mlBackendId = selectedBackendId;
+    const mlBackendId = batchBackendId;
     if (!mlBackendId) {
       pushToast({
         msg: "AI 暂不可用",
@@ -1195,7 +1218,7 @@ export function useWorkbenchShellModel({
           pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" }),
       },
     );
-  }, [projectId, selectedBackendId, aiModel, taskId, triggerPreannotation, pushToast, preCfg]);
+  }, [projectId, batchBackendId, aiModel, taskId, triggerPreannotation, pushToast, preCfg]);
 
   const {
     handleVideoCreate,
@@ -1716,22 +1739,22 @@ export function useWorkbenchShellModel({
           onSetSamPolarity={s.setSamPolarity}
           isLoading={mlCapabilities.isLoading}
           isError={mlCapabilities.isError}
-          onRunSamText={(text, mode) => sam.runText(
-            text,
-            mode,
-            buildPredictParams(preCfg.paramsValue, preCfg.currentVariantSlice),
-          )}
-          samRunning={sam.isRunning}
-          samCandidateCount={sam.candidates.length}
-          projectId={projectId}
-          projectTypeKey={currentProject?.type_key ?? null}
-          samTextFocusKey={s.samTextFocusKey}
           exemplarOutputMode={s.exemplarOutputMode}
           onSetExemplarOutputMode={s.setExemplarOutputMode}
           models={mlCapabilities.models}
           activeModelId={mlCapabilities.activeModelId}
           onSetActiveModelId={mlCapabilities.setActiveModelId}
           capabilityWarnings={capabilityWarnings}
+          interactiveBackends={
+            (activeInteractivePrompt
+              ? routing.candidatesFor(activeInteractivePrompt)
+              : []
+            )
+              .map((id) => backends.find((b) => b.id === id))
+              .filter((b): b is { id: string; name: string } => !!b)
+          }
+          selectedInteractiveId={interactiveBackendId}
+          onSelectInteractive={routing.setPreferredInteractiveId}
         />
       ) : null,
       reviewMode: mode === "review", videoMode: isVideoTask,
@@ -1892,7 +1915,12 @@ export function useWorkbenchShellModel({
         onCommitRotatedBbox: createRotatedBbox,
         onCommitRotateBbox: handleCommitRotateBbox,
         onSamPrompt: (prompt) => {
-          const extra = buildPredictParams(preCfg.paramsValue, preCfg.currentVariantSlice);
+          // v0.14.18 · 交互 variant/params 仅当交互后端与批量配置后端一致时复用 preCfg (单后端,
+          // 行为不变); 多后端 (交互≠批量) 时不混用批量后端的 variant, 交互后端用其预热/默认变体。
+          const extra =
+            interactiveBackendId === batchBackendId
+              ? buildPredictParams(preCfg.paramsValue, preCfg.currentVariantSlice)
+              : {};
           if (prompt.kind === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1, extra);
           if (prompt.kind === "exemplar") return sam.runExemplar(prompt.bbox, s.exemplarOutputMode, extra);
           return sam.runBbox(prompt.bbox, extra);
@@ -2098,6 +2126,8 @@ export function useWorkbenchShellModel({
       rightOffset: rightOpen ? s.rightWidth + 44 : 44,
       position: aiPopoverPosition,
       onPositionChange: setAiPopoverPosition,
+      size: aiPopoverSize,
+      onSizeChange: setAiPopoverSize,
       aiModel, aiRunning, aiBoxCount: modeState.diffMode !== "final" ? aiBoxes.length : 0,
       confThreshold: s.confThreshold, aiTakeoverRate,
       onClose: () => setAiPopoverOpen(false),
@@ -2110,10 +2140,10 @@ export function useWorkbenchShellModel({
       // 配置区 (任务/类别白名单/variant/参数) 由共享组件 PreannotateConfigForm 渲染, 状态走 preCfg.
       cfg: preCfg,
       isVariantWarm: preCfg.isCurrentVariantWarm,
-      // 多 backend: 项目绑了 >1 个后端时, 面板顶部出 backend 选择器 (单个时 PreannotateConfigForm 自动隐藏).
+      // 多 backend (批量线): 项目绑了 >1 个后端时, 面板顶部出 backend 选择器 (单个时 PreannotateConfigForm 自动隐藏).
       backends,
-      selectedBackendId,
-      onSelectBackend: setSelectedBackendId,
+      selectedBackendId: batchBackendId,
+      onSelectBackend: setBatchBackendId,
       projectMlBackendId: currentProject?.ml_backend_id ?? null,
     },
     hotkeys: { open: showHotkeys, onClose: () => setShowHotkeys(false), attributeSchema: toolView.attributeSchema },

@@ -12,7 +12,11 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useProject, useUpdateProject } from "@/hooks/useProjects";
 import { type TextOutputMode, type PredictMode } from "@/hooks/usePreannotation";
 import { aliasFrequencyApi } from "@/api/aliasFrequency";
-import { mlBackendsApi, type MLModelCapability } from "@/api/ml-backends";
+import {
+  mlBackendsApi,
+  type MLModelCapability,
+  type MLBackendSupportedVariantGroup,
+} from "@/api/ml-backends";
 import {
   VARIANT_FIELD_KEYS,
   deriveDefaults,
@@ -20,7 +24,7 @@ import {
 } from "@/pages/Workbench/components/SchemaForm";
 import { useAiToolParamPrefs } from "@/pages/Workbench/state/useAiToolParamPrefs";
 import { isVariantHot, markVariantHot } from "@/pages/Workbench/state/sessionVariantCache";
-import { derivePanelShape } from "../utils/panelShape";
+import { derivePanelShape, deriveTextPanelShape } from "../utils/panelShape";
 import { useAiParamPresets } from "../utils/useAiParamPresets";
 
 // v0.14.9 · 文本 / OCR / 文档版面三态任务类型 (按选中 backend 的 models[].task 派生).
@@ -134,11 +138,6 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     return models.find((m) => m.task !== "ocr" && m.task !== "doc_layout") ?? models[0];
   }, [isDocMode, activeDocModel, capabilitiesQ.data]);
 
-  const panelShape = useMemo(
-    () => derivePanelShape(primaryModel, isDocMode),
-    [primaryModel, isDocMode],
-  );
-
   const geometricModels = useMemo<MLModelCapability[]>(
     () =>
       (capabilitiesQ.data?.models ?? []).filter((m) =>
@@ -161,6 +160,47 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
   const geometricModel =
     geometricModels.find((m) => m.id === geometricTaskId) ?? geometricModels[0];
 
+  // v0.14.18 · 当前路径的 variant 来源 (修 #3 回归): doc → 文档 model; 几何 → 选中 task model;
+  //   文本 prompt 批量 (gsam2) → **顶层** supported_variants (两组 sam+dino), 不绑单 model
+  //   (primaryModel=detection 只表达 dino, 表达不全; 文本批量是后端级编排能力)。
+  const isTextPath = !isDocMode && !isGeometricBackend;
+  const variantSource = useMemo<{
+    groups: MLBackendSupportedVariantGroup[] | undefined;
+    combinations: string[][] | undefined;
+    defaults: Record<string, string> | undefined;
+  }>(() => {
+    if (isDocMode) {
+      return {
+        groups: activeDocModel?.supported_variants,
+        combinations: activeDocModel?.variant_combinations,
+        defaults: activeDocModel?.default_variants,
+      };
+    }
+    if (isGeometricBackend) {
+      return {
+        groups: geometricModel?.supported_variants,
+        combinations: geometricModel?.variant_combinations,
+        defaults: geometricModel?.default_variants,
+      };
+    }
+    // 文本路径: 顶层能力 (顶层无 variant_combinations / default_variants)。
+    return {
+      groups: setupQ.data?.supported_variants ?? capabilitiesQ.data?.supported_variants,
+      combinations: undefined,
+      defaults: undefined,
+    };
+  }, [isDocMode, isGeometricBackend, activeDocModel, geometricModel, setupQ.data, capabilitiesQ.data]);
+
+  // 输出形态: 文本路径走顶层 supported_text_outputs (box/mask/both); 其余仍按选中 model 几何输出。
+  const panelShape = useMemo(() => {
+    if (isTextPath) {
+      return deriveTextPanelShape(
+        setupQ.data?.supported_text_outputs ?? capabilitiesQ.data?.supported_text_outputs,
+      );
+    }
+    return derivePanelShape(primaryModel, isDocMode);
+  }, [isTextPath, isDocMode, primaryModel, setupQ.data, capabilitiesQ.data]);
+
   // v0.14.17 · 类别白名单: 选中的模型原生类别 index 子集 (空集=全部). 随 task 切换重置.
   const [selectedClassIdx, setSelectedClassIdx] = useState<Set<number>>(new Set());
   useEffect(() => {
@@ -179,13 +219,13 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
   const { savedParams, save: saveParams } = useAiToolParamPrefs(backendId);
   const [paramsValue, setParamsValue] = useState<Record<string, unknown>>({});
 
-  // v0.14.13 · 项目级 variant 偏好 merge backend 自报默认.
+  // v0.14.13 · 项目级 variant 偏好 merge backend 自报默认 (按当前路径的 variant 来源, 见 variantSource).
   const variantDefaults = useMemo<Record<string, string>>(() => {
-    const fromBackend = primaryModel?.default_variants ?? {};
+    const fromBackend = variantSource.defaults ?? {};
     const fromProject =
       (backendId ? project?.default_variants?.[backendId] : undefined) ?? {};
     return { ...fromBackend, ...fromProject };
-  }, [primaryModel, project?.default_variants, backendId]);
+  }, [variantSource, project?.default_variants, backendId]);
 
   useEffect(() => {
     if (!backendId) return;
@@ -206,11 +246,11 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
   const variantAxisKeysRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     variantAxisKeysRef.current = new Set(
-      (primaryModel?.supported_variants ?? [])
+      (variantSource.groups ?? [])
         .map((g) => g.key)
         .filter((k): k is string => typeof k === "string"),
     );
-  }, [primaryModel]);
+  }, [variantSource]);
   const patchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
     if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
@@ -334,9 +374,9 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
       if (typeof v === "string") out[k] = v;
     }
     return out;
-    // primaryModel 变化 → variantAxisKeysRef (ref, 非响应) 可能更新, 显式入依赖一并重算.
+    // variantSource 变化 → variantAxisKeysRef (ref, 非响应) 可能更新, 显式入依赖一并重算.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paramsValue, primaryModel]);
+  }, [paramsValue, variantSource]);
   const isCurrentVariantWarm = useMemo(() => {
     if (!backendId) return false;
     return isVariantHot(backendId, currentVariantSlice);
@@ -435,6 +475,9 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     paramsSchema,
     hasAnyParams,
     hasNonVariantParams,
+    // v0.14.18 · 当前路径的 variant 来源 (文本路径=顶层两组; 几何/doc=选中 model). 供 VariantSelector.
+    variantGroups: variantSource.groups,
+    variantCombinations: variantSource.combinations,
     // variant / 参数
     paramsValue,
     variantDefaults,

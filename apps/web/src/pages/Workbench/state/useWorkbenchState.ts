@@ -115,9 +115,7 @@ export function useWorkbenchState() {
   const [trackColorOverrides, setTrackColorOverrides] = useState<Record<string, string>>(() => ({}));
   // v0.10.2 · samSubTool 改为派生 (见 toolToSamSubTool); polarity + aiToolParams 仍是 state.
   const [samPolarity, setSamPolarity] = useState<SamPolarity>("positive");
-  // text 子工具激活时让 AIToolDrawer 抓焦点; 每次切到 text-prompt 自增.
-  const [samTextFocusKey, setSamTextFocusKey] = useState(0);
-  // exemplar 子工具输出形态 (box/mask/both); 会话级, 与 text 各自独立 (text 走 sessionStorage).
+  // exemplar 子工具输出形态 (box/mask/both); 会话级.
   const [exemplarOutputMode, setExemplarOutputMode] = useState<TextOutputMode>("mask");
   /** v0.10.2 · AIToolDrawer 维护的后端参数 (来自 /setup.params schema). 切换工具时重置. */
   const [aiToolParams, setAiToolParams] = useState<Record<string, unknown>>({});
@@ -335,10 +333,9 @@ export function useWorkbenchState() {
     hiddenVideoTrackIds, lockedVideoTrackIds,
     toggleHiddenVideoTrack, toggleLockedVideoTrack, resetVideoStageUi,
     trackColorOverrides, setVideoTrackColor,
-    // v0.10.2 · 派生 samSubTool (read-only) + polarity + AI 工具参数 + 文本焦点 trigger.
+    // v0.10.2 · 派生 samSubTool (read-only) + polarity + AI 工具参数.
     samSubTool,
     samPolarity, setSamPolarity,
-    samTextFocusKey, bumpSamTextFocus: () => setSamTextFocusKey((k) => k + 1),
     exemplarOutputMode, setExemplarOutputMode,
     aiToolParams, setAiToolParams,
     aiVariant, setAiVariant,

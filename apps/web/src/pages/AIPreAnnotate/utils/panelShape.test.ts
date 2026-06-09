@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MLModelCapability } from "@/api/ml-backends";
-import { derivePanelShape } from "./panelShape";
+import { derivePanelShape, deriveTextPanelShape } from "./panelShape";
 
 function model(overrides: Partial<MLModelCapability>): MLModelCapability {
   return { id: "m1", ...overrides };
@@ -79,5 +79,37 @@ describe("derivePanelShape", () => {
     const shape = derivePanelShape(undefined, false);
     expect(shape.showOutputMode).toBe(true);
     expect(shape.promptKind).toBe("prompt");
+  });
+});
+
+describe("deriveTextPanelShape (文本批量, 顶层 supported_text_outputs)", () => {
+  it("gsam2 [box,mask,both]: 三选可见, 不强制 (修 #3 回归)", () => {
+    const shape = deriveTextPanelShape(["box", "mask", "both"]);
+    expect(shape.showOutputMode).toBe(true);
+    expect(shape.forcedOutputMode).toBe(null);
+    expect(shape.promptKind).toBe("prompt");
+  });
+
+  it("仅 box: 隐藏三选 + 强制 box", () => {
+    const shape = deriveTextPanelShape(["box"]);
+    expect(shape.showOutputMode).toBe(false);
+    expect(shape.forcedOutputMode).toBe("box");
+  });
+
+  it("仅 mask: 隐藏三选 + 强制 mask", () => {
+    const shape = deriveTextPanelShape(["mask"]);
+    expect(shape.showOutputMode).toBe(false);
+    expect(shape.forcedOutputMode).toBe("mask");
+  });
+
+  it("both 单项也视为同时支持框+掩膜 → 三选可见", () => {
+    const shape = deriveTextPanelShape(["both"]);
+    expect(shape.showOutputMode).toBe(true);
+    expect(shape.forcedOutputMode).toBe(null);
+  });
+
+  it("声明不全 (空/缺): 安全兜底为三选可见", () => {
+    expect(deriveTextPanelShape(undefined).showOutputMode).toBe(true);
+    expect(deriveTextPanelShape([]).showOutputMode).toBe(true);
   });
 });

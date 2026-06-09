@@ -69,3 +69,31 @@ export function derivePanelShape(
 
   return { showOutputMode, forcedOutputMode, promptKind };
 }
+
+/**
+ * v0.14.18 · 文本 prompt 批量路径 (gsam2 「找全图」) 的面板形态.
+ *
+ * 文本批量是**后端级**能力 (detection 出框 + segmentation 出掩膜, 由 output_mode 在后端内部编排),
+ * 任何单 model 都表达不全 (#3 回归: primaryModel=detection → 输出锁 box / 变体仅 dino)。
+ * 故输出形态改由顶层 `supported_text_outputs` (box/mask/both) 派生; prompt 区恒为文本框。
+ */
+export function deriveTextPanelShape(
+  supportedTextOutputs: string[] | undefined,
+): PanelShape {
+  // 声明不全时安全兜底: 维持三选可见, 不强行锁定。
+  if (!supportedTextOutputs || supportedTextOutputs.length === 0) {
+    return { showOutputMode: true, forcedOutputMode: null, promptKind: "prompt" };
+  }
+  const set = new Set(supportedTextOutputs);
+  const canBox = set.has("box") || set.has("both");
+  const canMask = set.has("mask") || set.has("both");
+  const showOutputMode = canBox && canMask;
+  const forcedOutputMode: TextOutputMode | null = showOutputMode
+    ? null
+    : canBox
+      ? "box"
+      : canMask
+        ? "mask"
+        : null;
+  return { showOutputMode, forcedOutputMode, promptKind: "prompt" };
+}

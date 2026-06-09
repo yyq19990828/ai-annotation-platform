@@ -29,6 +29,24 @@
 
 <!-- 0.14.x 版本变更按版本段追加到本区；进入 0.15.x 后整体移到 docs/changelogs/0.14.x.md -->
 
+## [0.14.18] - 2026-06-09
+
+多 ML Backend 能力路由 · 一个项目注册多个后端时，工作台 AI 从「单 active 后端驱动一切」改成**按角色 + 能力路由**:交互工具(point/bbox/exemplar)自动路由到支持该 prompt 的交互后端，批量预标走批量后端，两条线**同时就绪**。重点解决「yolo 设为默认 → gsam2 交互失效」。纯前端。计划见 `docs/plans/2026-06-09-v0.14.18-ml-backend-capability-routing.md`。
+
+### Added
+
+- **交互/批量两条线分流**：新增 `useBackendRouting` hook，对每个已注册后端拉 `/setup` 建能力索引(capIndex)，产出 `isPromptSupported`(跨交互后端**并集**) + `resolveInteractive`(逐 prompt 确定性解析，兜底链 = 首选 → 项目默认 → 注册序)。`useWorkbenchShellModel` 拆 `batchBackendId`(批量线) / 交互线 `resolveInteractive(promptOf(tool))`，工具栏门控改用并集。例:yolo 默认(批量几何) + gsam2 注册 → 批量「开始预标」走 yolo、工具栏 point/bbox 自动命中 gsam2。
+- **交互后端选择器(能力作用域化)**：≥2 个支持当前工具的交互后端时，AIToolDrawer 的「后端」下拉可切换，**只列支持当前工具 prompt 的后端**(选不到没该能力的后端)，选中值 = 实际解析后端，显示与执行始终一致。首选**按 user × project 持久化**。
+
+### Changed
+
+- **文本提示「找全图」从工具栏摘除，归批量线**：给词→全图找所有实例本质是批量语义(后端自报 detection/segmentation 文本路径 `is_interactive: False`)，只保留在 AI 面板 / 批量预标页。工具栏交互工具收敛为 point/bbox/exemplar(画布手势驱动)。AIToolDrawer 模型下拉按当前工具 prompt 过滤(智能点 → 仅交互式分割 model)。
+- **`ml_backend_id`(默认)进一步弱化**：路由上线后仅保留「批量默认 + AI 总开关」语义，不再参与交互能力判定。
+
+### Fixed
+
+- **gsam2 文本批量只能选 DINO 变体 / 输出锁 box(协议 2.1 回归)**：文本批量是**后端级**能力(detection 出框 + segmentation 出掩膜由 `output_mode` 在后端内部编排)，此前 `primaryModel=detection` 让变体只剩 dino、`derivePanelShape` 把输出形态锁 box 并隐藏。修复:文本路径的变体来源改走**顶层** `supported_variants`(SAM2 + DINO 两组)、输出形态改走顶层 `supported_text_outputs`(box/mask/both)，几何/doc 路径仍用逐 task model。
+
 ## [0.14.17] - 2026-06-08
 
 YOLO 预标可用性纵切 · 修通 YOLO 批量预标（此前必然 422）、暴露模型原生类别表供类别白名单勾选、采纳时可选项目类别。平台仍不做"模型类→项目标签"自动映射（NG6 保留，由 alias 配置 + 采纳人选承担）。计划见 `docs/plans/2026-06-08-v0.14.16-preannotate-panel-capability-ux.md` §5。

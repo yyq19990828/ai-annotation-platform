@@ -67,6 +67,25 @@ export function PreannotateConfigForm({
 }: Props) {
   return (
     <>
+      {/* v0.14.18 · 多 backend 选择 (批量页) — 置于面板最上方, 先选后端再配置其余字段. */}
+      {backends && backends.length > 1 && onSelectBackend && (
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>ML Backend</span>
+          <select
+            value={selectedBackendId ?? ""}
+            onChange={(e) => onSelectBackend(e.target.value || null)}
+            className={styles.promptInput}
+          >
+            {backends.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+                {b.id === projectMlBackendId ? "（默认）" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
       {/* v0.14.9 · 任务类型选择 (backend 暴露 ocr / doc_layout 模型时). */}
       {cfg.hasDocTasks && (
         <div className={styles.field}>
@@ -174,25 +193,6 @@ export function PreannotateConfigForm({
         </label>
       )}
 
-      {/* v0.10.38 · 多 backend 选择 (批量页). */}
-      {backends && backends.length > 1 && onSelectBackend && (
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>ML Backend</span>
-          <select
-            value={selectedBackendId ?? ""}
-            onChange={(e) => onSelectBackend(e.target.value || null)}
-            className={styles.promptInput}
-          >
-            {backends.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-                {b.id === projectMlBackendId ? "（默认）" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
       {/* v0.10.38 · 按后端参数面板. */}
       <div className={styles.field}>
         <span className={styles.fieldLabel}>
@@ -210,13 +210,8 @@ export function PreannotateConfigForm({
           <div className={styles.backendParamsStack}>
             <VariantSelector
               schema={cfg.paramsSchema}
-              supportedVariants={
-                cfg.primaryModel?.supported_variants ??
-                (cfg.isDocMode
-                  ? cfg.activeDocModel?.supported_variants
-                  : cfg.setupQ.data?.supported_variants)
-              }
-              variantCombinations={cfg.primaryModel?.variant_combinations}
+              supportedVariants={cfg.variantGroups}
+              variantCombinations={cfg.variantCombinations}
               defaults={cfg.variantDefaults}
               value={cfg.paramsValue}
               onChange={cfg.onVariantOrParamsChange}
