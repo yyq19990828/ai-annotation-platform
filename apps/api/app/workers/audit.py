@@ -40,6 +40,8 @@ def persist_audit_entry(payload: dict[str, Any]) -> None:
 async def _async_persist(payload: dict[str, Any]) -> None:
     from uuid import UUID
 
+    from sqlalchemy.exc import IntegrityError
+
     from app.db.models.audit_log import AuditLog
     from app.workers._db import task_session
 
@@ -51,25 +53,40 @@ async def _async_persist(payload: dict[str, Any]) -> None:
         except (ValueError, TypeError):
             actor_id = None
 
-    entry = AuditLog(
-        actor_id=actor_id,
-        actor_email=None,
-        actor_role=payload.get("actor_role"),
-        action=payload["action"],
-        target_type=None,
-        target_id=None,
-        method=payload["method"],
-        path=payload["path"],
-        status_code=payload["status_code"],
-        ip=payload.get("ip"),
-        detail_json=None,
-        request_id=payload.get("request_id"),
-    )
+    def _build(aid: UUID | None) -> AuditLog:
+        return AuditLog(
+            actor_id=aid,
+            actor_email=None,
+            actor_role=payload.get("actor_role"),
+            action=payload["action"],
+            target_type=None,
+            target_id=None,
+            method=payload["method"],
+            path=payload["path"],
+            status_code=payload["status_code"],
+            ip=payload.get("ip"),
+            detail_json=None,
+            request_id=payload.get("request_id"),
+        )
+
     async with task_session() as session:
-        session.add(entry)
+        session.add(_build(actor_id))
         try:
+            await session.commit()
+        except IntegrityError:
+            # actor_id 指向已不存在的用户 (删号后仍有效的 token / 库重置后的幽灵 token) →
+            # actor_id FK 违约。置空 actor_id 重插一次, 把审计行记为匿名保住, 而非丢弃 + 刷 ERROR。
+            await session.rollback()
+            if actor_id is None:
+                raise
+            logger.warning(
+                "audit actor_id=%s not in users; persisted as anonymous", actor_id
+            )
+            session.add(_build(None))
             await session.commit()
         except Exception:
             await session.rollback()
-            logger.warning("persist_audit_entry commit failed action=%s", entry.action)
+            logger.warning(
+                "persist_audit_entry commit failed action=%s", payload["action"]
+            )
             raise
