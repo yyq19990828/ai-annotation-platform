@@ -43,6 +43,7 @@ import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
 import { useInteractiveAI } from "./useInteractiveAI";
 import { usePreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
+import { useMLBackends } from "@/hooks/useMLBackends";
 import { useMLCapabilities } from "./useMLCapabilities";
 import { useCapabilityValidation } from "./useCapabilityValidation";
 import {
@@ -253,7 +254,21 @@ export function useWorkbenchShellModel({
 
   const projectName = currentProject?.name ?? "标注工作台";
   const projectDisplayId = currentProject?.display_id ?? "—";
-  const aiModel = currentProject?.ml_backend_id ? "已接入模型" : "未接入模型";
+
+  // 多 backend: 项目可绑 ≤MAX_ML_BACKENDS_PER_PROJECT 个后端 (见 .env), AI 面板按需切换。
+  // 默认选项目绑定值 (ml_backend_id), 回落第一个; 选中值统一驱动 preCfg / sam /
+  // mlCapabilities / warmup / 单图推理, 与批量页 ProjectDetailPanel 同一套切换语义。
+  const backendsQ = useMLBackends(projectId);
+  const backends = (backendsQ.data ?? []) as unknown as Array<{ id: string; name: string }>;
+  const firstBackendId = backends[0]?.id ?? null;
+  const [selectedBackendId, setSelectedBackendId] = useState<string | null>(null);
+  useEffect(() => {
+    setSelectedBackendId(currentProject?.ml_backend_id ?? firstBackendId);
+  }, [projectId, currentProject?.ml_backend_id, firstBackendId]);
+  const selectedBackend = backends.find((b) => b.id === selectedBackendId) ?? null;
+
+  const aiModel = selectedBackend?.name
+    ?? (currentProject?.ml_backend_id ? "已接入模型" : "未接入模型");
 
   const meUserId = useAuthStore((s) => s.user?.id);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(requestedBatchId);
@@ -865,11 +880,11 @@ export function useWorkbenchShellModel({
   const sam = useInteractiveAI({
     projectId,
     taskId,
-    mlBackendId: currentProject?.ml_backend_id ?? null,
+    mlBackendId: selectedBackendId,
   });
   const mlCapabilities = useMLCapabilities(
     projectId ?? null,
-    currentProject?.ml_backend_id ?? null,
+    selectedBackendId,
   );
   // v0.14.9 · active model 输出几何 / 文本属性 与项目配置的兼容性警告 (非阻断)。
   const capabilityWarnings = useCapabilityValidation({
@@ -882,7 +897,7 @@ export function useWorkbenchShellModel({
   // (开始预标) 与交互式 SAM (point/bbox/text 的 variant/params 也取自此, 见 buildPredictParams 调用).
   const preCfg = usePreannotateConfig({
     projectId: projectId ?? "",
-    backendId: currentProject?.ml_backend_id ?? null,
+    backendId: selectedBackendId,
   });
   useEffect(() => {
     sam.cancel();
@@ -891,11 +906,11 @@ export function useWorkbenchShellModel({
   const warmupPointSupported = mlCapabilities.isPromptSupported("point");
   useEffect(() => {
     if (stageKind !== "image") return;
-    if (!taskId || !currentProject?.ml_backend_id) return;
+    if (!taskId || !selectedBackendId) return;
     if (!warmupPointSupported) return;
     sam.warmup();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stageKind, taskId, currentProject?.ml_backend_id, warmupPointSupported]);
+  }, [stageKind, taskId, selectedBackendId, warmupPointSupported]);
   useEffect(() => {
     if (!isAIToolId(s.tool) && sam.candidates.length > 0) sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1147,7 +1162,7 @@ export function useWorkbenchShellModel({
 
   const handleRunAi = useCallback(() => {
     if (!projectId) return;
-    const mlBackendId = currentProject?.ml_backend_id;
+    const mlBackendId = selectedBackendId;
     if (!mlBackendId) {
       pushToast({
         msg: "AI 暂不可用",
@@ -1180,7 +1195,7 @@ export function useWorkbenchShellModel({
           pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" }),
       },
     );
-  }, [projectId, currentProject, aiModel, taskId, triggerPreannotation, pushToast, preCfg]);
+  }, [projectId, selectedBackendId, aiModel, taskId, triggerPreannotation, pushToast, preCfg]);
 
   const {
     handleVideoCreate,
@@ -2095,6 +2110,11 @@ export function useWorkbenchShellModel({
       // 配置区 (任务/类别白名单/variant/参数) 由共享组件 PreannotateConfigForm 渲染, 状态走 preCfg.
       cfg: preCfg,
       isVariantWarm: preCfg.isCurrentVariantWarm,
+      // 多 backend: 项目绑了 >1 个后端时, 面板顶部出 backend 选择器 (单个时 PreannotateConfigForm 自动隐藏).
+      backends,
+      selectedBackendId,
+      onSelectBackend: setSelectedBackendId,
+      projectMlBackendId: currentProject?.ml_backend_id ?? null,
     },
     hotkeys: { open: showHotkeys, onClose: () => setShowHotkeys(false), attributeSchema: toolView.attributeSchema },
     offlineQueue: { open: offlineDrawerOpen, onClose: closeOfflineDrawer, currentTaskId: taskId, onFlushOne: executeOp, onFlushAll: flushOffline },

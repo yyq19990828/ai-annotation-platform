@@ -261,6 +261,11 @@ interface AIPredictionPopoverProps {
   // 当前选中 variant 是否已 warm (源自 isVariantHot: 单一 hot map, 持久化到 sessionStorage).
   // false → 按钮显示"加载模型中…"给用户冷启动心理预期.
   isVariantWarm?: boolean;
+  // 多 backend: 项目绑了 >1 个后端时, 配置区顶部出 backend 选择器 (≤1 项时自动隐藏).
+  backends?: Array<{ id: string; name: string }>;
+  selectedBackendId?: string | null;
+  onSelectBackend?: (id: string | null) => void;
+  projectMlBackendId?: string | null;
 }
 
 export function AIPredictionPopover({
@@ -282,6 +287,10 @@ export function AIPredictionPopover({
   taskAiPredictionCount,
   cfg,
   isVariantWarm: isVariantWarmProp,
+  backends,
+  selectedBackendId,
+  onSelectBackend,
+  projectMlBackendId,
 }: AIPredictionPopoverProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
@@ -423,7 +432,13 @@ export function AIPredictionPopover({
       {/* 共享配置区: 任务类型 / 模型任务 (检测/分割…) / 类别白名单 / variant / 后端参数 / prompt.
           与批量页 ProjectDetailPanel 同一组件 (单一事实源). */}
       <div className={styles.variantSelector}>
-        <PreannotateConfigForm cfg={cfg} />
+        <PreannotateConfigForm
+          cfg={cfg}
+          backends={backends}
+          selectedBackendId={selectedBackendId}
+          onSelectBackend={onSelectBackend}
+          projectMlBackendId={projectMlBackendId}
+        />
       </div>
 
       <div className={styles.aiStats}>
