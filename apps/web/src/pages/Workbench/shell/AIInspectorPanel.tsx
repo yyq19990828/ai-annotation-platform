@@ -312,6 +312,22 @@ export function AIPredictionPopover({
   const panelRef = useRef<HTMLDivElement | null>(null);
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
 
+  // 冷启动动态计时: variant 未 warm 且推理中 → 模型正载入显存。模型加载无原生进度
+  // 信号(真·逐%拿不到), 故只给"已等 Xs"实时计时 + 静态经验区间, 不做误导性百分比。
+  const coldStarting = aiRunning && isVariantWarmProp === false;
+  const [coldElapsedSec, setColdElapsedSec] = useState(0);
+  useEffect(() => {
+    if (!coldStarting) {
+      setColdElapsedSec(0);
+      return;
+    }
+    const t0 = Date.now();
+    const id = window.setInterval(() => {
+      setColdElapsedSec(Math.floor((Date.now() - t0) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [coldStarting]);
+
   const handleDragStart = (evt: React.PointerEvent<HTMLDivElement>) => {
     if ((evt.target as HTMLElement).closest("button")) return;
     const rect = panelRef.current?.getBoundingClientRect();
@@ -405,7 +421,7 @@ export function AIPredictionPopover({
               : <Icon name="wandSparkles" size={11} />}
             {aiRunning
               ? isVariantWarmProp === false
-                ? "加载中…（首次约 5-15s）"
+                ? `加载中… 已等 ${coldElapsedSec}s（首次约 5-15s）`
                 : "推理中..."
               : "开始预标"}
           </Button>
