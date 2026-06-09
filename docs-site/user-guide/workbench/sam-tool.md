@@ -3,28 +3,29 @@ audience: [annotator]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-09
 ---
 
 # AI 工具组
 
-> 点 / 框 / 文本 / 示例 / Magic Box — 选一种交互方式让 AI 把 polygon 画出来,或直接收紧到 bbox。
+> 点 / 框 / 示例 / Magic Box — 选一种交互方式让 AI 把 polygon 画出来,或直接收紧到 bbox。
 
 <!-- history: prompt-first tools and Magic Box were introduced in separate releases; this page describes the current tool model. -->
 
-工具栏按交互范式拆成 5 个独立 AI 工具。你直接选择「想怎么交互」，AI 自动走对应模型 prompt。
+工具栏按交互范式拆成 4 个独立 AI 工具(均为**画布手势驱动**)。你直接选择「想怎么交互」，AI 自动走对应模型 prompt。
 
 | 工具 | 图标 | 默认快捷键 | 后端要求 | 输出形态 |
 |---|---|---|---|---|
 | **智能点** | 🎯 | `S` 循环 | `point` | polygon 候选 |
 | **智能框** | ▭ | `S` 循环 | `bbox` | polygon 候选 |
 | **Magic Box** | ✨ | `G` / `S` 循环 | `bbox` | **直接** bbox 标注 |
-| **文本提示** | 💬 | `S` 循环 | `text` | polygon / bbox 候选 |
 | **Exemplar 示例** | ⎘ | `S` 循环 | `exemplar` (仅 SAM 3) | polygon / bbox 候选 |
 
-按 `S` 在 5 个 AI 工具之间循环，**跳过当前后端不支持的工具**（按钮置灰）；循环顺序: smart-point → smart-box → **magic-box** → text-prompt → exemplar → 回 smart-point。`Alt+3` 与 `S` 等价。
+> **文本提示「找全图」已归批量线(v0.14.18)**:给词→全图找所有实例本质是批量语义(后端自报 detection/segmentation 文本路径 `is_interactive: False`),不再是工具栏交互工具,改在 **AI 面板 / 批量预标页** 使用(见下方「文本预标『找全图』」一节)。工具栏只保留需要在画布上画点/框/示例的交互工具。
 
-> **能力来自后端 `/setup.supported_prompts`**：项目挂的是 `grounded-sam2`（point/bbox/text）时 Exemplar 灰；挂 `sam3-backend`（text/exemplar）时 **Smart Point、Smart Box、Magic Box 都灰**——sam3 这一档物理上只做 PCS「找全图相似」（走 Exemplar）与文本提示，不做单物体的点/框分割（需 grounded-sam2 或大显存卡开 inst_interactivity）。鼠标 hover 灰按钮会显示「当前后端不支持此交互模式」。
+按 `S` 在 4 个 AI 工具之间循环，**跳过当前后端不支持的工具**（按钮置灰）；循环顺序: smart-point → smart-box → **magic-box** → exemplar → 回 smart-point。`Alt+3` 与 `S` 等价。
+
+> **能力来自后端 `/setup.supported_prompts`(按交互后端并集，v0.14.18)**：项目可注册多个后端,工具栏某交互工具只要**任一已注册的交互后端**支持该 prompt 就亮。挂 `grounded-sam2`（point/bbox）时 Exemplar 灰;挂 `sam3-backend`（exemplar）时 **Smart Point、Smart Box、Magic Box 都灰**——sam3 这一档物理上只做 PCS「找全图相似」(走 Exemplar),不做单物体的点/框分割(需 grounded-sam2 或大显存卡开 inst_interactivity)。鼠标 hover 灰按钮会显示「当前后端不支持此交互模式」。同时注册 gsam2 + sam3 时,point/bbox 自动路由到 gsam2、exemplar 路由到 sam3,各司其职(见[交互后端选择](#交互后端选择多后端))。
 
 ## 工具说明
 
@@ -51,17 +52,19 @@ last_reviewed: 2026-05-27
 
 **注意**: 落库的 bbox 类别取当前 `activeClass`(左侧调色板高亮的类);若未选类则用 SAM 返回的 label 或类别列表首个。Magic Box 的标注归 `ai_interactive` 工具单位,类别集从该单位读取（工具维度类别详见[创建项目](../projects/index.md#工具维度类别--属性)）。
 
-### 文本提示（Text Prompt）— 不知道有几个目标就用文本
+### 文本预标「找全图」— AI 面板(批量线)
 
-激活该工具后，**右栏 AI 面板**会弹出「找全图」输入框（同时 AIToolDrawer 显示提示文案）。输入英文 prompt（如 `ripe apple`、`car . truck . bicycle`），GroundingDINO 或 SAM 3 PCS 批量返回候选。
+> v0.14.18 起,文本提示不再是工具栏交互工具。给词→全图找所有实例属**批量能力**,在悬浮 **AI 面板**(点工具栏「AI」打开)或**批量预标页**使用。
 
-输出形态三选一：
+在 AI 面板的 Prompt 输入框填英文 prompt（如 `ripe apple`、`car . truck . bicycle`），GroundingDINO 或 SAM 3 PCS 批量返回候选。
+
+输出形态三选一(由后端顶层 `supported_text_outputs` 决定可见性,v0.14.18 修复了 gsam2 只能选 box/DINO 变体的问题):
 
 - `□ 框`：仅 box，跳过 mask（速度最快，image-det 项目首选）
 - `○ 掩膜`：mask → polygon（image-seg 项目默认）
-- `⊕ 全部`：同实例配对 box + polygon（Tab 切活跃形态）
+- `⊕ 全部`：同实例配对 box + polygon
 
-项目设置 → ML 模型 →「SAM 文本预标默认输出」可锁定项目级默认。
+变体选择器对 gsam2 文本路径同时给出 **SAM2 变体 + DINO 变体两组**(后端内部按 output_mode 编排 detection/segmentation)。项目设置 → ML 模型 →「SAM 文本预标默认输出」可锁定项目级默认。
 
 ### Exemplar 示例（仅 SAM 3）
 
@@ -97,9 +100,19 @@ AIToolDrawer 提供与文本提示相同的输出形态三选一（`□ 框` / `
 
 调整后再次触发的 AI 请求会带上新参数。普通阈值/容差设置**按你个人 + 后端独立保存**（存入用户偏好），刷新或下次进工作台仍保留；工作台里的模型变体保持会话级，ai-pre 批量预标页面的变体选择则按 backend 记忆。
 
+## 交互后端选择（多后端）
+
+v0.14.18 起,项目注册了**多个交互后端**且不止一个支持当前工具的 prompt 时,AIToolDrawer 的「后端」下拉可切换(能力作用域化:**只列支持当前工具的后端**,所以选不到没该能力的后端)。
+
+- 选中值 = 当前工具**实际会跑**的后端,显示与执行始终一致。
+- 切某个工具的后端后会记为你的「首选交互后端」(**按 user × project 持久化**);切到另一个该首选不支持的工具时,自动按兜底链(首选 → 项目默认 → 注册序)回退到能跑的后端。
+- 只有 1 个候选后端时下拉只读(无 UI 噪音),行为 = 单后端现状。
+
+> 交互线(point/bbox/exemplar)与批量线(文本/几何/OCR/版面)各自独立选后端:工具栏「后端」管交互,AI 面板顶部的 backend 选择器管批量。项目「默认 ML Backend」(`ml_backend_id`)只是批量默认 + AI 总开关,不再是交互能力闸门。
+
 ## 多模型选择与兼容性提示
 
-v0.14.9 起，若所绑定 backend 在[能力声明协议 v2](../../dev/reference/ml-backend-protocol) 中暴露**多个 model 条目**，右栏 AIToolDrawer 顶部会出现「模型」下拉，按 task 中文分组（如「文字识别」「版面分析」）。切换后续 AI 请求改用所选 model。
+v0.14.9 起，若所绑定 backend 在[能力声明协议 v2](../../dev/reference/ml-backend-protocol) 中暴露**多个 model 条目**，右栏 AIToolDrawer 顶部会出现「模型」下拉，按 task 中文分组。v0.14.18 起,该下拉**按当前工具的 prompt 过滤**——只列声明支持该交互的图像 model(如智能点 → 仅交互式分割 model),过滤后通常剩 1 个则自动隐藏,真正的权重选择交给「变体选择器」。切换后续 AI 请求改用所选 model。
 
 > 与「变体选择器」的区别：**变体**是同一 model 的不同权重档位（如 SAM2-L / SAM2-B）；**模型**是同一 backend 暴露的不同 model 条目（往往 task 不同）。backend 只有单个 model（含老 backend / 协议 v1）时不渲染模型下拉，行为完全不变。
 
@@ -114,13 +127,13 @@ v0.14.9 起，若所绑定 backend 在[能力声明协议 v2](../../dev/referenc
 - `S` AI 工具组：给 prompt 让 AI 出 polygon，最省手但需要确认候选。
 - `P` polygon 工具：逐顶点画，最精细。
 
-**典型工作流**：先 `S` → 文本提示「找全图」拿大类目，Tab + Enter 收明显的 → `B` 手补漏的 → `P` 精修 AI 没拟合好的边缘 → 复杂形态目标用 Exemplar 一键批量补齐。
+**典型工作流**：先在 **AI 面板**文本「找全图」拿大类目(批量),Tab + Enter 收明显的 → `B` 手补漏的 → `P` 精修 AI 没拟合好的边缘 → 复杂形态目标用 `S` 切 Exemplar 一键批量补齐 / Smart Point 单点精修。
 
 ## 快捷键速查
 
 | 键 | 行为 |
 |---|---|
-| `S` | 在 5 个 AI 工具间循环（跳过置灰；含 Magic Box） |
+| `S` | 在 4 个 AI 工具间循环（跳过置灰；含 Magic Box） |
 | `G` | 直接切到 Magic Box |
 | `Alt + 3` | 同 `S` |
 | 单击 | Smart Point: positive point |
@@ -133,7 +146,7 @@ v0.14.9 起，若所绑定 backend 在[能力声明协议 v2](../../dev/referenc
 
 ## 常见问题
 
-- **某个 AI 工具置灰**：当前项目挂的后端不支持该 prompt 类型；hover 工具看 tooltip，或到项目设置切换后端。
+- **某个 AI 工具置灰**：当前项目已注册的交互后端都不支持该 prompt 类型；hover 工具看 tooltip，或到项目设置注册一个支持它的后端（无需设为默认）。
 - **AIToolDrawer 没显示**：当前激活的不是 AI 工具，或 `/setup` 拉取失败（看右下状态指示，红 = 失败）。
 - **参数调了没生效**：确认是在悬浮 AI 面板里调（非左侧子工具抽屉）；只读字段（模型版本 / 缓存容量）不可改。参数按个人 + 后端保存，切到使用不同后端的项目会各用各的设置。
 - **Exemplar 框出来 0 个结果**：示例区域太小 / 太模糊；尝试更明显的示例，或调低 `score_threshold`。

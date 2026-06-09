@@ -1293,10 +1293,13 @@ async def trigger_preannotation(
             "batch_id": str(body.batch_id) if body.batch_id else None,
             "task_count": len(body.task_ids) if body.task_ids else total_tasks_hint,
             "prompt": (body.prompt or "")[:200],
-            "output_mode": body.output_mode,
+            # output_mode 仅文本 prompt 路径生效; 几何路径不读它, 留 None 免误导 (与 job payload 一致)
+            "output_mode": body.output_mode if body.prompt else None,
             # v0.14.10 · 协议 v2 多模型路由溯源: 记录具体 model / task 类型
+            # v0.14.18 · 增记 model_variants (实际 variant, 如 series/size=yolov8/l)
             "model_id": body.model_id,
             "task_type": body.task_type,
+            "model_variants": body.model_variants,
         },
     )
     await db.commit()

@@ -369,11 +369,9 @@ async def _load_models() -> None:
         MODEL_POOL_CAP,
         IDLE_UNLOAD_SECONDS,
     )
-    # 预热默认变体进 pool (保持"单变体常驻"不破坏).
-    # v0.14.14: pool.get() 返回 (predictor, cache_hit, model_load_ms) 三元组.
-    predictor, _cache_hit, _load_ms = await _pool.get(SAM_VARIANT, DINO_VARIANT)
+    # 不再启动急加载默认变体: 未注册 / 无流量时会白占显存 (与下方 video 池同理).
+    # 纯懒加载 — 首个推理请求经 _get_predictor → _pool.get 触发冷启; 需暖启点模型市场「预热默认」。
     _last_request_at = time.monotonic()
-    logger.info("default variant loaded; device=%s", predictor.device)
     # v0.9.11 PerfHud · pynvml + psutil 初始化 (无 GPU 环境会降级, 不阻塞 startup)
     init_perfhud_collectors()
     if IDLE_UNLOAD_SECONDS > 0:
@@ -382,7 +380,8 @@ async def _load_models() -> None:
     # 首个 video_tracker 请求触发冷启, 避免空载常驻额外显存.
     if VIDEO_IDLE_UNLOAD_SECONDS > 0:
         _video_idle_task = asyncio.create_task(_video_idle_watcher())
-    # 主变体已就绪可服务; 额外 PREFETCH 变体后台补 (不阻塞 uvicorn / /health).
+    # 默认变体走纯懒加载 (首个推理请求才冷启, 见上); 此处仅把额外 PREFETCH 变体的 checkpoint
+    # 在后台下载补齐 (_prefetch_extras 只下权重、不加载模型), 不阻塞 uvicorn / /health.
     _prefetch_task = asyncio.create_task(_prefetch_extras())
 
 
@@ -410,19 +409,38 @@ def health() -> dict:
     """
     available = torch.cuda.is_available()
     gpu_info: dict | None = None
+    # v0.9.11 PerfHud · 同步采样 GPU util/温度/功耗 + 容器 CPU/RAM (无 GPU 环境字段为 None)
+    perf = sample_perfhud()
     if available:
         try:
             free_b, total_b = torch.cuda.mem_get_info()
+            # 显存以 pynvml (sample_perfhud) 的设备全局视角为准, 与 yolo-backend 对齐;
+            # torch.cuda.mem_get_info() 只反映当前 CUDA 上下文的 free/total, 多进程共享
+            # 同一张卡时会系统性低报已用显存 (观测面板比实际少几百 MB). pynvml 不可用
+            # 时才回落 torch。
+            used_mb = perf.get("gpu_memory_used_mb")
+            total_mb = perf.get("gpu_memory_total_mb")
+            if used_mb is None or total_mb is None:
+                used_mb = int((total_b - free_b) / 1024**2)
+                total_mb = int(total_b / 1024**2)
+            # 本容器自身视角: 占用的物理卡号 + 本进程 torch 已保留显存 (caching allocator,
+            # 不含 ~数百 MB CUDA 上下文). memory_used_mb 仍是整卡全局。
+            # CUDA_VISIBLE_DEVICES 把物理卡重映射为逻辑 0..N-1: 物理卡号 = 列表中第「逻辑 current
+            # device」项 (单卡 "2"→2; 多卡 "2,3"+逻辑1→3); 列表缺失/非法时回落逻辑号。
+            _vis = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+            _logical = torch.cuda.current_device()
+            _ids = [p.strip() for p in _vis.split(",") if p.strip().isdigit()]
+            device_index = int(_ids[_logical]) if _logical < len(_ids) else _logical
             gpu_info = {
                 "device_name": torch.cuda.get_device_name(0),
-                "memory_used_mb": int((total_b - free_b) / 1024**2),
-                "memory_total_mb": int(total_b / 1024**2),
-                "memory_free_mb": int(free_b / 1024**2),
+                "device_index": device_index,
+                "memory_used_mb": used_mb,
+                "memory_total_mb": total_mb,
+                "memory_free_mb": max(total_mb - used_mb, 0),
+                "process_memory_mb": int(torch.cuda.memory_reserved() / 1024**2),
             }
         except Exception:  # noqa: BLE001 — 显存查询失败不阻塞 /health
             gpu_info = None
-    # v0.9.11 PerfHud · 同步采样 GPU util/温度/功耗 + 容器 CPU/RAM (无 GPU 环境字段为 None)
-    perf = sample_perfhud()
     if gpu_info is not None:
         gpu_info["gpu_utilization_percent"] = perf["gpu_utilization_percent"]
         gpu_info["gpu_temperature_celsius"] = perf["gpu_temperature_celsius"]

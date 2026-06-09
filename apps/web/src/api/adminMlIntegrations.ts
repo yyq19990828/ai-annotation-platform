@@ -72,9 +72,11 @@ export interface VideoPoolMeta {
 export interface BackendHealthMeta {
   gpu_info?: {
     device_name?: string;
+    device_index?: number | null;
     memory_used_mb?: number;
     memory_total_mb?: number;
     memory_free_mb?: number;
+    process_memory_mb?: number | null;
   } | null;
   cache?: {
     hit_rate?: number;
@@ -189,7 +191,13 @@ export interface ObserveTarget {
   latency_ms: number;
   status_code?: number | null;
   error?: string | null;
-  gpu_info?: { memory_used_mb?: number; memory_total_mb?: number } | null;
+  gpu_info?: {
+    device_name?: string;
+    device_index?: number | null;
+    memory_used_mb?: number;
+    memory_total_mb?: number;
+    process_memory_mb?: number | null;
+  } | null;
   model_version?: string | null;
   pool?: BackendPoolMeta | null;
   /** v0.10.36 · video tracker 独立显存池观测。 */

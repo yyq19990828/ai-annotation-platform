@@ -93,7 +93,9 @@
   z-index: 30;
   display: flex;
   flex-direction: column;
-  width: min(360px, calc(100vw - 32px));
+  /* v0.14.18 · 尺寸可由用户拖角覆盖 (CSS 变量, 缺省回落默认宽度 / 自适应高度). */
+  width: var(--ai-inspector-popover-w, min(360px, calc(100vw - 32px)));
+  height: var(--ai-inspector-popover-h, auto);
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 92px);
   overflow: hidden;
@@ -111,6 +113,14 @@
 .aiPopoverDocked {
   top: var(--ai-inspector-popover-top);
   right: var(--ai-inspector-popover-right);
+}
+
+/* v0.14.18 · 拖动头以下整体可滚: aiPopover 为 max-height 的 flex column, 头部固定,
+   本容器吃掉剩余高度并在内容超高时纵向滚动 (修底部 输出形态/效率 被截断). */
+.aiPopoverBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .aiPopoverHeader {
@@ -222,14 +232,58 @@
   font-weight: 600;
 }
 
-.thresholdDisplay {
-  padding: 6px 8px;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-sm);
+/* v0.14.18 · 阈值区移出拖动头后落在 body 顶部, 给与其余 body 段一致的内边距/分隔. */
+.thresholdSection {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border);
   background: var(--color-bg-sunken);
-  color: var(--color-fg-muted);
-  font-size: 11px;
-  text-align: center;
+}
+
+/* v0.14.18 · 置信度阈值可拖动滑块 (step 1%, AI 主题色). */
+.thresholdSlider {
+  width: 100%;
+  margin: 2px 0;
+  accent-color: var(--color-ai);
+  cursor: pointer;
+}
+
+/* v0.14.18 · AI 面板右下角缩放手柄 (与 FloatingPanelShell.resizeHandle 同款视觉). */
+.aiPopoverResizeHandle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-fg-subtle);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.aiPopoverResizeHandle::before,
+.aiPopoverResizeHandle::after {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 9px;
+  height: 1px;
+  background: currentColor;
+  content: "";
+  transform-origin: right center;
+  transform: rotate(-45deg);
+}
+
+.aiPopoverResizeHandle::after {
+  right: 4px;
+  bottom: 8px;
+  width: 5px;
+}
+
+.aiPopoverResizeHandle:hover {
+  color: var(--color-ai);
 }
 
 .aiStats {

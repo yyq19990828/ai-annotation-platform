@@ -19,6 +19,8 @@ export interface ImageWorkbenchProps {
   readOnly: boolean;
   fileUrl: string | null;
   blurhash?: string | null;
+  imageWidth?: number | null;
+  imageHeight?: number | null;
   thumbnailUrl: string | null;
   tool: Tool;
   activeClass: string;
@@ -113,6 +115,8 @@ export function ImageWorkbench({
   readOnly,
   fileUrl,
   blurhash,
+  imageWidth,
+  imageHeight,
   thumbnailUrl,
   tool,
   activeClass,
@@ -187,6 +191,8 @@ export function ImageWorkbench({
       readOnly={readOnly}
       fileUrl={fileUrl}
       blurhash={blurhash}
+      imageWidth={imageWidth}
+      imageHeight={imageHeight}
       tool={tool}
       activeClass={activeClass}
       selectedId={selectedId}

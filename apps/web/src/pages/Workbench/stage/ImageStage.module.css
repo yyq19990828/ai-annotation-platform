@@ -33,6 +33,11 @@
   display: block;
 }
 
+/* 翻页换图时 fit 变换算出前隐藏 Konva 层 (blurhash 占位顶着), 避免标注用旧/默认变换闪一帧。 */
+.konvaHostHidden {
+  visibility: hidden;
+}
+
 .samRefineButton {
   position: absolute;
   left: var(--sam-refine-left);

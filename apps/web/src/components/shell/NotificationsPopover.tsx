@@ -115,10 +115,17 @@ function jobTitle(item: NotificationItem): string {
   return "";
 }
 
-function jobSnippet(item: NotificationItem): string {
+export function jobSnippet(item: NotificationItem): string {
   const payload = item.payload || {};
   const error = stringValue((payload as { error_message?: unknown }).error_message);
   if (error) return error;
+
+  // skip_predicted 下候选 task 全部已预标被跳过 → 给明确文案, 免得「成功 0/失败 0」被误读为没生效。
+  const reason = stringValue((payload as { reason?: unknown }).reason);
+  if (reason === "all_predicted") {
+    const skippedCount = (payload as { skipped_count?: unknown }).skipped_count;
+    return `已全部预标，跳过 ${skippedCount ?? 0} 个`;
+  }
 
   const success = (payload as { success_count?: unknown }).success_count;
   const failed = (payload as { failed_count?: unknown }).failed_count;

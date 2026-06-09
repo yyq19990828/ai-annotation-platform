@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { MLModelCapability } from "@/api/ml-backends";
-import { derivePanelShape } from "./panelShape";
+import type {
+  MLModelCapability,
+  MLBackendSupportedVariantGroup,
+} from "@/api/ml-backends";
+import {
+  derivePanelShape,
+  deriveTextPanelShape,
+  deriveVariantSource,
+} from "./panelShape";
 
 function model(overrides: Partial<MLModelCapability>): MLModelCapability {
   return { id: "m1", ...overrides };
@@ -79,5 +86,115 @@ describe("derivePanelShape", () => {
     const shape = derivePanelShape(undefined, false);
     expect(shape.showOutputMode).toBe(true);
     expect(shape.promptKind).toBe("prompt");
+  });
+});
+
+describe("deriveTextPanelShape (文本批量, 顶层 supported_text_outputs)", () => {
+  it("gsam2 [box,mask,both]: 三选可见, 不强制 (修 #3 回归)", () => {
+    const shape = deriveTextPanelShape(["box", "mask", "both"]);
+    expect(shape.showOutputMode).toBe(true);
+    expect(shape.forcedOutputMode).toBe(null);
+    expect(shape.promptKind).toBe("prompt");
+  });
+
+  it("仅 box: 隐藏三选 + 强制 box", () => {
+    const shape = deriveTextPanelShape(["box"]);
+    expect(shape.showOutputMode).toBe(false);
+    expect(shape.forcedOutputMode).toBe("box");
+  });
+
+  it("仅 mask: 隐藏三选 + 强制 mask", () => {
+    const shape = deriveTextPanelShape(["mask"]);
+    expect(shape.showOutputMode).toBe(false);
+    expect(shape.forcedOutputMode).toBe("mask");
+  });
+
+  it("both 单项也视为同时支持框+掩膜 → 三选可见", () => {
+    const shape = deriveTextPanelShape(["both"]);
+    expect(shape.showOutputMode).toBe(true);
+    expect(shape.forcedOutputMode).toBe(null);
+  });
+
+  it("声明不全 (空/缺): 安全兜底为三选可见", () => {
+    expect(deriveTextPanelShape(undefined).showOutputMode).toBe(true);
+    expect(deriveTextPanelShape([]).showOutputMode).toBe(true);
+  });
+});
+
+describe("deriveVariantSource — 文本走顶层 / 几何走选中 model (#3 回归)", () => {
+  const SAM_GROUP: MLBackendSupportedVariantGroup = {
+    key: "sam_variant",
+    title: "SAM2",
+    variants: [{ value: "tiny" }, { value: "large" }],
+  };
+  const DINO_GROUP: MLBackendSupportedVariantGroup = {
+    key: "dino_variant",
+    title: "DINO",
+    variants: [{ value: "swint" }],
+  };
+  const SIZE_GROUP: MLBackendSupportedVariantGroup = {
+    key: "size",
+    title: "尺寸",
+    variants: [{ value: "n" }, { value: "x" }],
+  };
+
+  it("文本路径: 走顶层 supported_variants (SAM2 + DINO 两组), 不绑单 model", () => {
+    const src = deriveVariantSource({
+      isDocMode: false,
+      isGeometricBackend: false,
+      // detection model 只有 dino 一组, 若误用会丢 SAM2 组 (正是 #3 回归)
+      activeDocModel: undefined,
+      geometricModel: model({ task: "detection", supported_variants: [DINO_GROUP] }),
+      topSupportedVariants: [SAM_GROUP, DINO_GROUP],
+    });
+    expect(src.groups).toEqual([SAM_GROUP, DINO_GROUP]);
+    // 顶层无逐 model 概念
+    expect(src.combinations).toBeUndefined();
+    expect(src.defaults).toBeUndefined();
+  });
+
+  it("几何路径: 走选中 task model 的逐 model 变体 + 组合 + 默认", () => {
+    const src = deriveVariantSource({
+      isDocMode: false,
+      isGeometricBackend: true,
+      activeDocModel: undefined,
+      geometricModel: model({
+        task: "detection",
+        supported_variants: [SIZE_GROUP],
+        variant_combinations: [["n"], ["x"]],
+        default_variants: { size: "n" },
+      }),
+      topSupportedVariants: [SAM_GROUP, DINO_GROUP], // 顶层在场也不该被用
+    });
+    expect(src.groups).toEqual([SIZE_GROUP]);
+    expect(src.combinations).toEqual([["n"], ["x"]]);
+    expect(src.defaults).toEqual({ size: "n" });
+  });
+
+  it("doc 路径: 走选中文档 model 的逐 model 变体", () => {
+    const src = deriveVariantSource({
+      isDocMode: true,
+      isGeometricBackend: false,
+      activeDocModel: model({
+        task: "doc_layout",
+        supported_variants: [SIZE_GROUP],
+        default_variants: { size: "x" },
+      }),
+      geometricModel: undefined,
+      topSupportedVariants: [SAM_GROUP],
+    });
+    expect(src.groups).toEqual([SIZE_GROUP]);
+    expect(src.defaults).toEqual({ size: "x" });
+  });
+
+  it("文本路径顶层缺失 → groups undefined (不抛, 上层兜底)", () => {
+    const src = deriveVariantSource({
+      isDocMode: false,
+      isGeometricBackend: false,
+      activeDocModel: undefined,
+      geometricModel: undefined,
+      topSupportedVariants: undefined,
+    });
+    expect(src.groups).toBeUndefined();
   });
 });

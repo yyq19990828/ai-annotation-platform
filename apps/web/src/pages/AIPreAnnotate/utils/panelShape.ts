@@ -9,7 +9,10 @@
  * 闭/开集判定一律逐 model (以 supported_prompts / supported_geometric_outputs 为准): 未来同一
  * yolo-backend 可能并存闭集 (detect/seg/obb) 与开集 (YOLO-World/YOLOE) model, 不可按 backend 名分.
  */
-import type { MLModelCapability } from "@/api/ml-backends";
+import type {
+  MLModelCapability,
+  MLBackendSupportedVariantGroup,
+} from "@/api/ml-backends";
 import type { TextOutputMode } from "@/hooks/usePreannotation";
 
 /** prompt 区的三种形态: 文本 prompt / 类别筛选 (闭集白名单) / 隐藏. */
@@ -68,4 +71,74 @@ export function derivePanelShape(
   }
 
   return { showOutputMode, forcedOutputMode, promptKind };
+}
+
+/**
+ * v0.14.18 · 文本 prompt 批量路径 (gsam2 「找全图」) 的面板形态.
+ *
+ * 文本批量是**后端级**能力 (detection 出框 + segmentation 出掩膜, 由 output_mode 在后端内部编排),
+ * 任何单 model 都表达不全 (#3 回归: primaryModel=detection → 输出锁 box / 变体仅 dino)。
+ * 故输出形态改由顶层 `supported_text_outputs` (box/mask/both) 派生; prompt 区恒为文本框。
+ */
+export function deriveTextPanelShape(
+  supportedTextOutputs: string[] | undefined,
+): PanelShape {
+  // 声明不全时安全兜底: 维持三选可见, 不强行锁定。
+  if (!supportedTextOutputs || supportedTextOutputs.length === 0) {
+    return { showOutputMode: true, forcedOutputMode: null, promptKind: "prompt" };
+  }
+  const set = new Set(supportedTextOutputs);
+  const canBox = set.has("box") || set.has("both");
+  const canMask = set.has("mask") || set.has("both");
+  const showOutputMode = canBox && canMask;
+  const forcedOutputMode: TextOutputMode | null = showOutputMode
+    ? null
+    : canBox
+      ? "box"
+      : canMask
+        ? "mask"
+        : null;
+  return { showOutputMode, forcedOutputMode, promptKind: "prompt" };
+}
+
+/** variant 选择器的来源: 哪一组 variant 轴 + 组合 + 默认值由当前路径决定。 */
+export interface VariantSource {
+  groups: MLBackendSupportedVariantGroup[] | undefined;
+  combinations: string[][] | undefined;
+  defaults: Record<string, string> | undefined;
+}
+
+/**
+ * v0.14.18 · 当前路径的 variant 来源 (修 #3 回归).
+ *
+ * - doc (OCR/版面) → 选中文档 model 的逐 model 变体;
+ * - 几何闭集 (yolo 等) → 选中 task model 的逐 model 变体;
+ * - 文本 prompt 批量 (gsam2「找全图」) → **顶层** supported_variants (SAM2 + DINO 两组)。
+ *   文本批量是后端级编排能力, primaryModel=detection 只表达 dino 一组, 表达不全 → 必须走顶层。
+ *   顶层无 variant_combinations / default_variants (那是逐 model 概念)。
+ */
+export function deriveVariantSource(input: {
+  isDocMode: boolean;
+  isGeometricBackend: boolean;
+  activeDocModel: MLModelCapability | undefined;
+  geometricModel: MLModelCapability | undefined;
+  topSupportedVariants: MLBackendSupportedVariantGroup[] | undefined;
+}): VariantSource {
+  const { isDocMode, isGeometricBackend, activeDocModel, geometricModel, topSupportedVariants } =
+    input;
+  if (isDocMode) {
+    return {
+      groups: activeDocModel?.supported_variants,
+      combinations: activeDocModel?.variant_combinations,
+      defaults: activeDocModel?.default_variants,
+    };
+  }
+  if (isGeometricBackend) {
+    return {
+      groups: geometricModel?.supported_variants,
+      combinations: geometricModel?.variant_combinations,
+      defaults: geometricModel?.default_variants,
+    };
+  }
+  return { groups: topSupportedVariants, combinations: undefined, defaults: undefined };
 }

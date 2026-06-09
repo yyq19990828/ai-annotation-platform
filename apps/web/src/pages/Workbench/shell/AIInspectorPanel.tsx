@@ -4,8 +4,6 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { VariantSelector } from "@/components/ml/VariantSelector";
-import type { MLBackendSupportedVariantGroup } from "@/api/ml-backends";
 import type { Annotation, AnnotationResponse } from "@/types";
 import type { AttributeSchema } from "@/api/projects";
 import type { CapabilityWarning } from "../state/useCapabilityValidation";
@@ -24,16 +22,14 @@ import { isFrameOutside } from "../stage/videoTrackOutside";
 import { displayClassName } from "../stage/colors";
 import { AttributeForm, getMissingRequired } from "./AttributeForm";
 import {
-  SchemaForm,
-  isVariantField,
-  type JsonSchemaField,
-  type JsonSchemaObject,
-} from "../components/SchemaForm";
+  PreannotateConfigForm,
+} from "@/pages/AIPreAnnotate/components/PreannotateConfigForm";
+import { type PreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
+import {
+  SIDE_FLOATING_PANEL_MIN_SIZE,
+  SIDE_FLOATING_PANEL_MAX_SIZE,
+} from "./floatingPanelSizing";
 import styles from "./AIInspectorPanel.module.css";
-
-function asJsonSchemaField(raw: unknown): JsonSchemaField {
-  return raw && typeof raw === "object" ? raw as JsonSchemaField : {};
-}
 
 interface AIInspectorPanelProps {
   open: boolean;
@@ -251,6 +247,9 @@ interface AIPredictionPopoverProps {
   rightOffset: number;
   position: { left: number; top: number } | null;
   onPositionChange: (position: { left: number; top: number }) => void;
+  // v0.14.18 · 可缩放 (与浮出边栏一致): null = CSS 默认尺寸; 拖右下角后为显式 w/h.
+  size?: { w: number; h: number } | null;
+  onSizeChange?: (size: { w: number; h: number }) => void;
   aiModel: string;
   aiRunning: boolean;
   aiBoxCount: number;
@@ -264,22 +263,16 @@ interface AIPredictionPopoverProps {
   taskAiCost?: number;
   taskAiAvgMs?: number | null;
   taskAiPredictionCount?: number;
-  // v0.10.23 · 会话级模型变体选择 (设计 A): 选项来自 /setup.params 的 sam_variant/dino_variant enum.
-  paramsSchema?: JsonSchemaObject;
-  supportedVariants?: MLBackendSupportedVariantGroup[];
-  // v0.14.12 · 多轴非笛卡尔积时声明合法组合 (yolo series/size); 缺省时按笛卡尔积渲染.
-  variantCombinations?: string[][];
-  // v0.14.13 · backend / 项目级合并后的默认 variant 组合, 传给 VariantSelector 作初值.
-  variantDefaults?: Record<string, string>;
-  // 当前选中 variant 是否已 warm (源自 isVariantHot: 单一 hot map, 持久化到
-  // sessionStorage, 接受兜底标热与真信号 cache_hit 多源写入). false → 按钮显示
-  // "加载模型中…" 给用户冷启动心理预期.
+  // 配置区共享状态 (任务类型 / 模型任务 / 类别白名单 / variant / 参数 / prompt); 与批量页同一 hook.
+  cfg: PreannotateConfig;
+  // 当前选中 variant 是否已 warm (源自 isVariantHot: 单一 hot map, 持久化到 sessionStorage).
+  // false → 按钮显示"加载模型中…"给用户冷启动心理预期.
   isVariantWarm?: boolean;
-  aiVariant?: Record<string, unknown>;
-  onSetAiVariant?: (next: Record<string, unknown>) => void;
-  // 后端级推理参数 (阈值等非变体字段): SchemaForm 渲染。值/回调即 workbench 的 aiToolParams。
-  params?: Record<string, unknown>;
-  onSetParams?: (next: Record<string, unknown>) => void;
+  // 多 backend: 项目绑了 >1 个后端时, 配置区顶部出 backend 选择器 (≤1 项时自动隐藏).
+  backends?: Array<{ id: string; name: string }>;
+  selectedBackendId?: string | null;
+  onSelectBackend?: (id: string | null) => void;
+  projectMlBackendId?: string | null;
 }
 
 export function AIPredictionPopover({
@@ -287,6 +280,8 @@ export function AIPredictionPopover({
   rightOffset,
   position,
   onPositionChange,
+  size,
+  onSizeChange,
   aiModel,
   aiRunning,
   aiBoxCount,
@@ -299,18 +294,31 @@ export function AIPredictionPopover({
   taskAiCost,
   taskAiAvgMs,
   taskAiPredictionCount,
-  paramsSchema,
-  supportedVariants,
-  variantCombinations,
-  variantDefaults,
+  cfg,
   isVariantWarm: isVariantWarmProp,
-  aiVariant,
-  onSetAiVariant,
-  params,
-  onSetParams,
+  backends,
+  selectedBackendId,
+  onSelectBackend,
+  projectMlBackendId,
 }: AIPredictionPopoverProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
+
+  // 冷启动动态计时: variant 未 warm 且推理中 → 模型正载入显存。模型加载无原生进度
+  // 信号(真·逐%拿不到), 故只给"已等 Xs"实时计时 + 静态经验区间, 不做误导性百分比。
+  const coldStarting = aiRunning && isVariantWarmProp === false;
+  const [coldElapsedSec, setColdElapsedSec] = useState(0);
+  useEffect(() => {
+    if (!coldStarting) {
+      setColdElapsedSec(0);
+      return;
+    }
+    const t0 = Date.now();
+    const id = window.setInterval(() => {
+      setColdElapsedSec(Math.floor((Date.now() - t0) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [coldStarting]);
 
   const handleDragStart = (evt: React.PointerEvent<HTMLDivElement>) => {
     if ((evt.target as HTMLElement).closest("button")) return;
@@ -338,6 +346,36 @@ export function AIPredictionPopover({
     dragOffsetRef.current = null;
   };
 
+  // v0.14.18 · 右下角缩放 (与 FloatingPanelShell 同款 UX). 尺寸范围与浮出边栏一致
+  // (SIDE_FLOATING_PANEL_MIN/MAX_SIZE), 再按视口可用空间收窄上限.
+  const resizeStartRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
+  const handleResizeStart = (evt: React.PointerEvent<HTMLButtonElement>) => {
+    const rect = panelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    resizeStartRef.current = { x: evt.clientX, y: evt.clientY, w: rect.width, h: rect.height };
+    evt.currentTarget.setPointerCapture?.(evt.pointerId);
+    evt.preventDefault();
+    evt.stopPropagation();
+  };
+  const handleResizeMove = (evt: React.PointerEvent<HTMLButtonElement>) => {
+    const s = resizeStartRef.current;
+    if (!s || !onSizeChange) return;
+    const rect = panelRef.current?.getBoundingClientRect();
+    const left = rect?.left ?? 0;
+    const top = rect?.top ?? 0;
+    const minW = SIDE_FLOATING_PANEL_MIN_SIZE.w;
+    const minH = SIDE_FLOATING_PANEL_MIN_SIZE.h;
+    const maxW = Math.max(minW, Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.w, window.innerWidth - left - 8));
+    const maxH = Math.max(minH, Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.h, window.innerHeight - top - 8));
+    onSizeChange({
+      w: Math.round(Math.min(maxW, Math.max(minW, s.w + evt.clientX - s.x))),
+      h: Math.round(Math.min(maxH, Math.max(minH, s.h + evt.clientY - s.y))),
+    });
+  };
+  const handleResizeEnd = () => {
+    resizeStartRef.current = null;
+  };
+
   useEffect(() => {
     const node = panelRef.current;
     if (!node || !open) return;
@@ -345,18 +383,20 @@ export function AIPredictionPopover({
       node.style.setProperty("--ai-inspector-popover-left", `${position.left}px`);
       node.style.setProperty("--ai-inspector-popover-top", `${position.top}px`);
       node.style.removeProperty("--ai-inspector-popover-right");
-      return;
+    } else {
+      node.style.setProperty("--ai-inspector-popover-top", "58px");
+      node.style.setProperty("--ai-inspector-popover-right", `${rightOffset}px`);
+      node.style.removeProperty("--ai-inspector-popover-left");
     }
-    node.style.setProperty("--ai-inspector-popover-top", "58px");
-    node.style.setProperty("--ai-inspector-popover-right", `${rightOffset}px`);
-    node.style.removeProperty("--ai-inspector-popover-left");
-  }, [open, position, rightOffset]);
-
-  const hasVariantSelector =
-    (supportedVariants ?? []).some((group) => (group.variants ?? []).length > 0) ||
-    Object.entries(paramsSchema?.properties ?? {}).some(
-      ([k, raw]) => isVariantField(k, asJsonSchemaField(raw)),
-    );
+    // 显式尺寸 (用户拖角后): 覆盖 CSS 默认宽度 + 固定高度; null 时回落 CSS 默认.
+    if (size) {
+      node.style.setProperty("--ai-inspector-popover-w", `${size.w}px`);
+      node.style.setProperty("--ai-inspector-popover-h", `${size.h}px`);
+    } else {
+      node.style.removeProperty("--ai-inspector-popover-w");
+      node.style.removeProperty("--ai-inspector-popover-h");
+    }
+  }, [open, position, rightOffset, size]);
 
   if (!open) return null;
 
@@ -405,7 +445,7 @@ export function AIPredictionPopover({
               : <Icon name="wandSparkles" size={11} />}
             {aiRunning
               ? isVariantWarmProp === false
-                ? "加载中…（首次约 5-15s）"
+                ? `加载中… 已等 ${coldElapsedSec}s（首次约 5-15s）`
                 : "推理中..."
               : "开始预标"}
           </Button>
@@ -413,83 +453,93 @@ export function AIPredictionPopover({
             <Icon name="check" size={11} />全部采纳
           </Button>
         </div>
-        <div>
+      </div>
+
+      {/* v0.14.18 · header 以下整体可滚 (拖动头固定), 修面板内容超高时底部 (输出形态/效率) 被截断. */}
+      <div className={styles.aiPopoverBody}>
+        {/* v0.14.18 · 置信度阈值移出拖动头 → body 顶部: 拖面板 (头部) 与拖滑块互不抢手势. */}
+        <div className={styles.thresholdSection}>
           <div className={styles.thresholdHeader}>
             <span className={styles.mutedText}>置信度阈值</span>
             <span className={cn("mono", styles.thresholdValue)}>{(confThreshold * 100).toFixed(0)}%</span>
           </div>
           <div className={styles.thresholdHint}>
-            过滤批量预标注结果：仅显示并采纳置信度 ≥ 此值的 AI 框，低于的隐藏且「全部采纳」也不纳入。
+            过滤批量预标注结果：仅显示并采纳置信度 ≥ 此值的 AI 框，低于的隐藏且「全部采纳」也不纳入。拖动滑块调整，或用工具栏 <kbd>[</kbd> / <kbd>]</kbd>（滚轮 5%、Shift 10%）。
           </div>
-          <div
-            className={styles.thresholdDisplay}
+          {/* 可拖动滑块 (step 1%); 仍支持滚轮 (5%/Shift 10%) 与工具栏 [ / ]. */}
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={confThreshold}
+            onChange={(e) => onSetConfThreshold(Number(parseFloat(e.target.value).toFixed(2)))}
             onWheel={(e) => {
               e.preventDefault();
               const step = e.shiftKey ? 0.1 : 0.05;
               const next = Math.min(1, Math.max(0, confThreshold + (e.deltaY < 0 ? step : -step)));
               onSetConfThreshold(Number(next.toFixed(2)));
             }}
+            className={styles.thresholdSlider}
+            aria-label="置信度阈值"
             data-testid="ai-threshold-display"
-          >
-            在工具栏使用 <kbd>[</kbd> / <kbd>]</kbd> 调整
-          </div>
-        </div>
-      </div>
-
-      {/* v0.10.23 · 设计 A · 会话级模型变体选择 (切工具不丢); /setup.params 无变体字段时整段隐藏. */}
-      {onSetAiVariant && hasVariantSelector && (
-        <div className={styles.variantSelector}>
-          <VariantSelector
-            schema={paramsSchema}
-            supportedVariants={supportedVariants}
-            variantCombinations={variantCombinations}
-            defaults={variantDefaults}
-            value={aiVariant ?? {}}
-            onChange={onSetAiVariant}
           />
         </div>
-      )}
 
-      {/* 后端级推理参数 (阈值等非变体字段)。SchemaForm 内部已排除 variant 字段, 不与上方变体选择器重复;
-          无非变体可调字段时整段隐藏 (避免空白容器)。 */}
-      {onSetParams &&
-        paramsSchema &&
-        Object.entries(paramsSchema.properties ?? {}).some(
-          ([k, raw]) => !isVariantField(k, asJsonSchemaField(raw)),
-        ) && (
-          <div className={styles.aiParamsForm}>
-            <SchemaForm schema={paramsSchema} value={params ?? {}} onChange={onSetParams} />
-          </div>
-        )}
-
-      <div className={styles.aiStats}>
-        <div className={styles.aiStatsLabel}>本次效率</div>
-        <div className={styles.aiStatsRow}>
-          <span>AI 接管率</span>
-          <span className={cn("mono", styles.aiRateValue)}>{aiTakeoverRate}%</span>
+        {/* 共享配置区: 任务类型 / 模型任务 (检测/分割…) / 类别白名单 / variant / 后端参数 / prompt.
+            与批量页 ProjectDetailPanel 同一组件 (单一事实源). */}
+        <div className={styles.variantSelector}>
+          <PreannotateConfigForm
+            cfg={cfg}
+            backends={backends}
+            selectedBackendId={selectedBackendId}
+            onSelectBackend={onSelectBackend}
+            projectMlBackendId={projectMlBackendId}
+          />
         </div>
-        <ProgressBar value={aiTakeoverRate} color="var(--color-ai)" />
-        {taskAiPredictionCount && taskAiPredictionCount > 0 && (
-          <div
-            data-testid="task-ai-cost"
-            className={styles.taskAiCost}
-          >
-            <span>本题</span>
-            <span className={cn("mono", styles.taskAiCostValue)}>
-              {taskAiCost != null && taskAiCost > 0 ? `¥${taskAiCost.toFixed(4)}` : "¥0"}
-              {taskAiAvgMs != null && (
-                <>
-                  <span className={styles.inlineSeparator}>·</span>
-                  {taskAiAvgMs}ms
-                </>
-              )}
-              <span className={styles.predictionCount}>
-                ({taskAiPredictionCount} 次)
-              </span>
-            </span>
+
+        <div className={styles.aiStats}>
+          <div className={styles.aiStatsLabel}>本次效率</div>
+          <div className={styles.aiStatsRow}>
+            <span>AI 接管率</span>
+            <span className={cn("mono", styles.aiRateValue)}>{aiTakeoverRate}%</span>
           </div>
-        )}
+          <ProgressBar value={aiTakeoverRate} color="var(--color-ai)" />
+          {taskAiPredictionCount && taskAiPredictionCount > 0 && (
+            <div
+              data-testid="task-ai-cost"
+              className={styles.taskAiCost}
+            >
+              <span>本题</span>
+              <span className={cn("mono", styles.taskAiCostValue)}>
+                {taskAiCost != null && taskAiCost > 0 ? `¥${taskAiCost.toFixed(4)}` : "¥0"}
+                {taskAiAvgMs != null && (
+                  <>
+                    <span className={styles.inlineSeparator}>·</span>
+                    {taskAiAvgMs}ms
+                  </>
+                )}
+                <span className={styles.predictionCount}>
+                  ({taskAiPredictionCount} 次)
+                </span>
+              </span>
+            </div>
+          )}
+        </div>
       </div>
+      {/* v0.14.18 · 右下角缩放手柄 (与 FloatingPanelShell 同款). */}
+      {onSizeChange && (
+        <button
+          type="button"
+          className={styles.aiPopoverResizeHandle}
+          onPointerDown={handleResizeStart}
+          onPointerMove={handleResizeMove}
+          onPointerUp={handleResizeEnd}
+          onPointerCancel={handleResizeEnd}
+          aria-label="调整 AI 面板尺寸"
+          title="拖拽调整尺寸"
+        />
+      )}
     </div>
   );
 }

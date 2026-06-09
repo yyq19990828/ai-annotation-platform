@@ -100,6 +100,21 @@ def _build_predict_context(
     return context
 
 
+def _model_label(model_variants: dict | None) -> str | None:
+    """从 model_variants 派生展示串, 与 backend 回传的 model_version 一致 (series+size, 如 yolov8l).
+
+    variant 轴未就位时 model_variants 为空 dict {} → 返回 None (不展示误导标签, backend 走默认)。
+    """
+    if not model_variants:
+        return None
+    series = model_variants.get("series")
+    size = model_variants.get("size")
+    if series and size:
+        return f"{series}{size}"
+    vals = [str(v) for v in model_variants.values() if v]
+    return "".join(vals) or None
+
+
 async def _run_batch(
     project_id: str,
     ml_backend_id: str,
@@ -192,28 +207,24 @@ async def _run_batch(
 
         # v0.11.24 · 幂等：skip_predicted 排除已预标 task；append/overwrite 不排除。
         skip_predicted = predict_mode == "skip_predicted"
+        # base_conds 不含预标过滤, 供 total==0 时回数候选区分「批次本就空」vs「全已预标被跳过」。
         if task_ids:
-            uuids = [uuid.UUID(tid) for tid in task_ids]
-            sel = select(Task).where(Task.id.in_(uuids))
-            if skip_predicted:
-                sel = sel.where(Task.total_predictions == 0)
-            result = await db.execute(sel)
+            base_conds = [Task.id.in_([uuid.UUID(tid) for tid in task_ids])]
         elif batch_id:
             # v0.9.5 · 指定 batch 时仅捞 batch 内 pending tasks
-            sel = select(Task).where(
+            base_conds = [
                 Task.batch_id == uuid.UUID(batch_id),
                 Task.status == "pending",
-            )
-            if skip_predicted:
-                sel = sel.where(Task.total_predictions == 0)
-            result = await db.execute(sel)
+            ]
         else:
-            sel = select(Task).where(
-                Task.project_id == uuid.UUID(project_id), Task.status == "pending"
-            )
-            if skip_predicted:
-                sel = sel.where(Task.total_predictions == 0)
-            result = await db.execute(sel)
+            base_conds = [
+                Task.project_id == uuid.UUID(project_id),
+                Task.status == "pending",
+            ]
+        sel = select(Task).where(*base_conds)
+        if skip_predicted:
+            sel = sel.where(Task.total_predictions == 0)
+        result = await db.execute(sel)
         tasks = list(result.scalars().all())
         total = len(tasks)
 
@@ -228,22 +239,36 @@ async def _run_batch(
         # v0.10.49 · async_jobs 单一真值：建 batch_predict 行 (status=running)。
         # domain 字段（batch_id / ml_backend / prompt / total_tasks）进 payload。
         batch = await db.get(TaskBatch, uuid.UUID(batch_id)) if batch_id else None
+        # v0.14.18 · payload 记实际模型路由 (溯源 + 任务页展示用了哪个模型)。
+        # output_mode 只在它真正被消费的文本 prompt 路径才记 (见 _build_predict_context 的
+        # `if prompt:` 分支); 几何/yolo 路径不读 output_mode, 记了会误导成「用了 mask」。
+        job_payload: dict = {
+            "batch_id": batch_id,
+            "batch_display_id": batch.display_id if batch else None,
+            "ml_backend_id": ml_backend_id,
+            "total_tasks": total,
+            "prompt": (prompt or "")[:200],
+            "project_display_id": project.display_id if project else None,
+            "project_name": project.name if project else None,
+            "ml_backend_name": backend.name,
+        }
+        if model_id:
+            job_payload["model_id"] = model_id
+        if task_type:
+            job_payload["task_type"] = task_type
+        if model_variants is not None:
+            job_payload["model_variants"] = model_variants
+            label = _model_label(model_variants)
+            if label:
+                job_payload["model_label"] = label
+        if prompt:
+            job_payload["output_mode"] = output_mode
         aj = await async_job_svc.create_job(
             db,
             kind="batch_predict",
             user_id=uuid.UUID(user_id) if user_id else None,
             project_id=uuid.UUID(project_id),
-            payload={
-                "batch_id": batch_id,
-                "batch_display_id": batch.display_id if batch else None,
-                "ml_backend_id": ml_backend_id,
-                "total_tasks": total,
-                "prompt": (prompt or "")[:200],
-                "project_display_id": project.display_id if project else None,
-                "project_name": project.name if project else None,
-                "ml_backend_name": backend.name,
-                "output_mode": output_mode,
-            },
+            payload=job_payload,
             celery_task_id=celery_task_id,
         )
         await async_job_svc.mark_running(db, aj.id, celery_task_id=celery_task_id)
@@ -314,15 +339,28 @@ async def _run_batch(
 
         if total == 0:
             duration_ms = int((time.perf_counter() - started_perf) * 1000)
+            result_payload: dict = {
+                "success_count": 0,
+                "failed_count": 0,
+                "duration_ms": duration_ms,
+                "total_cost": "0.0000",
+            }
+            # skip_predicted 下 total==0 可能是「候选 task 全部已预标被跳过」而非批次本就空。
+            # 回数不含预标过滤的候选, >0 即全被跳过 → 标 reason 供前端给明确文案。
+            if skip_predicted:
+                from sqlalchemy import func
+
+                cnt = await db.execute(
+                    select(func.count()).select_from(Task).where(*base_conds)
+                )
+                skipped_n = int(cnt.scalar_one() or 0)
+                if skipped_n > 0:
+                    result_payload["skipped_count"] = skipped_n
+                    result_payload["reason"] = "all_predicted"
             await async_job_svc.mark_complete(
                 db,
                 async_job_id,
-                result={
-                    "success_count": 0,
-                    "failed_count": 0,
-                    "duration_ms": duration_ms,
-                    "total_cost": "0.0000",
-                },
+                result=result_payload,
             )
             await notify_job_terminal(db, job_id=async_job_id)
             await db.commit()

@@ -157,6 +157,8 @@ export const TOOL_REGISTRY: Record<ToolId, CanvasTool> = {
 /** v0.10.2 · ToolDock 渲染顺序:
  *   普通绘制 → 分隔 → AI 工具组 (按 prompt 范式排) → 分隔 → 视图工具.
  *   ToolDock 在 polygon/exemplar 后插入分组分隔; canvas 仅评论批注, 不入栏.
+ * v0.14.18 · text-prompt 文本召回本质属批量能力, 从工具栏 AI 工具组摘除 (只留批量 AI 面板);
+ *   TextPromptTool / TOOL_REGISTRY 的 "text-prompt" 条目保留 (类型与历史兼容), 仅不再出现在工具栏。
  */
 export const ALL_TOOLS: CanvasTool[] = [
   BboxTool,
@@ -167,7 +169,6 @@ export const ALL_TOOLS: CanvasTool[] = [
   MaskTool,
   SmartPointTool,
   SmartBoxTool,
-  TextPromptTool,
   ExemplarTool,
   MagicBoxTool,
   HandTool,

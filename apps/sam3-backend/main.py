@@ -249,20 +249,14 @@ async def _idle_watcher() -> None:
 
 @app.on_event("startup")
 async def _load_models() -> None:
-    global _predictor, _idle_task, _last_request_at, _pool_loaded_at, _pool_last_used_at
+    global _idle_task, _last_request_at
+    # 不再启动急加载: 未注册 / 无流量时白占 ~3.6GB 显存. 改纯懒加载 — 首个推理 / 预热请求
+    # 经 _ensure_predictor_loaded 触发冷启; 需暖启点模型市场「预热默认」。
     logger.info(
-        "loading SAM 3 (variant=%s, cache_size=%d, idle_unload=%.0fs)",
+        "SAM 3 backend ready (lazy load; variant=%s, cache_size=%d, idle_unload=%.0fs)",
         MODEL_VERSION, EMBEDDING_CACHE_SIZE, IDLE_UNLOAD_SECONDS,
     )
-    loop = asyncio.get_running_loop()
-    t0 = time.monotonic()
-    _predictor = await loop.run_in_executor(None, _build_predictor)
-    load_ms = int((time.monotonic() - t0) * 1000)
     _last_request_at = time.monotonic()
-    now = datetime.now(UTC)
-    _pool_loaded_at = now
-    _pool_last_used_at = now
-    logger.info("SAM 3 loaded; device=%s; load_ms=%d", _predictor.device, load_ms)
     init_perfhud_collectors()
     if IDLE_UNLOAD_SECONDS > 0:
         _idle_task = asyncio.create_task(_idle_watcher())
@@ -286,18 +280,36 @@ def health() -> dict:
     """与 grounded-sam2 /health 字段对齐, 让 AdminDashboard 卡片直接复用渲染."""
     available = torch.cuda.is_available()
     gpu_info: dict | None = None
+    perf = sample_perfhud()
     if available:
         try:
             free_b, total_b = torch.cuda.mem_get_info()
+            # 显存以 pynvml (sample_perfhud) 的设备全局视角为准, 与 yolo-backend 对齐;
+            # torch.cuda.mem_get_info() 只反映当前 CUDA 上下文的 free/total, 多进程共享
+            # 同一张卡时会系统性低报已用显存. pynvml 不可用时才回落 torch。
+            used_mb = perf.get("gpu_memory_used_mb")
+            total_mb = perf.get("gpu_memory_total_mb")
+            if used_mb is None or total_mb is None:
+                used_mb = int((total_b - free_b) / 1024**2)
+                total_mb = int(total_b / 1024**2)
+            # 本容器自身视角: 占用的物理卡号 + 本进程 torch 已保留显存 (caching allocator,
+            # 不含 ~数百 MB CUDA 上下文). memory_used_mb 仍是整卡全局。
+            # CUDA_VISIBLE_DEVICES 把物理卡重映射为逻辑 0..N-1: 物理卡号 = 列表中第「逻辑 current
+            # device」项 (单卡 "2"→2; 多卡 "2,3"+逻辑1→3); 列表缺失/非法时回落逻辑号。
+            _vis = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+            _logical = torch.cuda.current_device()
+            _ids = [p.strip() for p in _vis.split(",") if p.strip().isdigit()]
+            device_index = int(_ids[_logical]) if _logical < len(_ids) else _logical
             gpu_info = {
                 "device_name": torch.cuda.get_device_name(0),
-                "memory_used_mb": int((total_b - free_b) / 1024**2),
-                "memory_total_mb": int(total_b / 1024**2),
-                "memory_free_mb": int(free_b / 1024**2),
+                "device_index": device_index,
+                "memory_used_mb": used_mb,
+                "memory_total_mb": total_mb,
+                "memory_free_mb": max(total_mb - used_mb, 0),
+                "process_memory_mb": int(torch.cuda.memory_reserved() / 1024**2),
             }
         except Exception:  # noqa: BLE001
             gpu_info = None
-    perf = sample_perfhud()
     if gpu_info is not None:
         gpu_info["gpu_utilization_percent"] = perf["gpu_utilization_percent"]
         gpu_info["gpu_temperature_celsius"] = perf["gpu_temperature_celsius"]

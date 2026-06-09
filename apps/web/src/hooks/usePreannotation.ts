@@ -58,6 +58,8 @@ export interface TriggerPreannotationPayload {
   /** v0.14.17 · 协议 v2 结构化路径 (YOLO 等多 task 几何 backend): 选中 variant 组合 (dict[axis,value]).
    *  非空时后端构造 v2 context (model_variants dict + nested params), 修通 YOLO 批量预标. */
   model_variants?: Record<string, string>;
+  /** v0.14.17 · 类别白名单 (模型原生类别 index 子集); 空/缺=全部类别. 仅几何 backend (YOLO) 用. */
+  class_filter?: number[];
 }
 
 export interface TriggerPreannotationResponse {

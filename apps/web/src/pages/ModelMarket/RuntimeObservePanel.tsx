@@ -398,7 +398,7 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
           />
           {target.supports_variants ? (
             <div className={styles.variantPicker}>
-              {samEnum.length > 0 && (
+              {showLegacyVariants && samEnum.length > 0 && (
                 <select value={sam} onChange={(e) => setSam(e.target.value)} className={styles.select}>
                   {samEnum.map((option) => (
                     <option key={option} value={option}>
@@ -407,7 +407,7 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
                   ))}
                 </select>
               )}
-              {dinoEnum.length > 0 && (
+              {showLegacyVariants && dinoEnum.length > 0 && (
                 <select value={dino} onChange={(e) => setDino(e.target.value)} className={styles.select}>
                   {dinoEnum.map((option) => (
                     <option key={option} value={option}>
@@ -463,7 +463,12 @@ function RuntimeMetrics({
   cacheHitRate,
 }: {
   modelVersion?: string | null;
-  gpuInfo?: { memory_used_mb?: number; memory_total_mb?: number } | null;
+  gpuInfo?: {
+    device_index?: number | null;
+    memory_used_mb?: number;
+    memory_total_mb?: number;
+    process_memory_mb?: number | null;
+  } | null;
   // v0.14.14: 接受 PoolStatus.loaded_keys (优先) 与老 loaded_variants (fallback);
   // 仅用其 length 做"已加载数量"展示, 不解 key 维度.
   pool?: {
@@ -495,8 +500,9 @@ function RuntimeMetrics({
     <div className={styles.metrics}>
       {modelVersion && <span className="mono">{modelVersion}</span>}
       {gpuInfo?.memory_used_mb != null && gpuInfo?.memory_total_mb != null && (
-        <span>
-          GPU {gpuInfo.memory_used_mb}/{gpuInfo.memory_total_mb} MB
+        <span title="卡号 · 整卡已用/总显存 · 本容器自用（torch 保留）">
+          GPU{gpuInfo.device_index ?? 0} {gpuInfo.memory_used_mb}/{gpuInfo.memory_total_mb} MB
+          {gpuInfo.process_memory_mb != null && ` · 自用 ${gpuInfo.process_memory_mb} MB`}
         </span>
       )}
       {cacheHitRate != null && <span>cache {(cacheHitRate * 100).toFixed(1)}%</span>}

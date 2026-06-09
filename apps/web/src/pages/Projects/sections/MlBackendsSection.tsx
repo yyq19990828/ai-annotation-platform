@@ -47,7 +47,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
   const { data: backends = [], isLoading, isError, error } = useMLBackends(project.id);
   const del = useDeleteMLBackend(project.id);
   const health = useMLBackendHealth(project.id);
-  // v0.9.5 · 行内「绑定到本项目」快捷绑定，免回基本信息 tab 手选
+  // v0.9.5 · 行内「设为默认」快捷设置项目默认后端，免回基本信息 tab 手选
   const updateProject = useUpdateProject(project.id);
   const [aiEnabled, setAiEnabled] = useState(project.ai_enabled);
   const [mlBackendId, setMlBackendId] = useState<string | null>(
@@ -98,8 +98,8 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
       } as Parameters<typeof updateProject.mutate>[0],
       {
         onSuccess: () =>
-          pushToast({ msg: `已绑定 backend「${b.name}」`, kind: "success" }),
-        onError: (e) => pushToast({ msg: "绑定失败", sub: (e as Error).message }),
+          pushToast({ msg: `已设为默认后端「${b.name}」`, kind: "success" }),
+        onError: (e) => pushToast({ msg: "设置失败", sub: (e as Error).message }),
       },
     );
   };
@@ -161,7 +161,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
   const registerTitle = !canManage
     ? "需要 PROJECT_ADMIN 权限"
     : atLimit
-    ? `已达上限 ${limit}，请先解绑现有后端`
+    ? `已达上限 ${limit}，请先删除现有后端`
     : undefined;
 
   return (
@@ -217,14 +217,14 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
 
         <div className={styles.aiSettingsGrid}>
           <div>
-            <label className={styles.label}>实际 ML Backend</label>
+            <label className={styles.label}>默认 ML Backend</label>
             <select
               value={mlBackendId ?? ""}
               onChange={(e) => setMlBackendId(e.target.value || null)}
               disabled={!aiEnabled}
               className={cn(styles.control, styles.selectControl)}
             >
-              <option value="">未绑定（项目按肉眼标注运行，AI 待接入）</option>
+              <option value="">未设默认（项目按肉眼标注运行，AI 待接入）</option>
               {backends.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
@@ -234,7 +234,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
               ))}
             </select>
             <div className={styles.hint}>
-              绑定后，平台所有“模型名”展示均直接来自 backend.name。后端专属推理参数仍在工作台 AI 面板按用户独立调整。
+              设为默认后，平台所有“模型名”展示均直接来自 backend.name；该后端作为工作台 / 批量页的默认选项，仍可在 AI 面板切换到其它已注册后端。后端专属推理参数在工作台 AI 面板按用户独立调整。
               {backends.length === 0 && (
                 <span className={styles.warningText}>
                   暂无可用 backend；可先在本页注册。
@@ -378,15 +378,15 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                             variant="ai"
                             onClick={() => onBind(b)}
                             disabled={!canManage || updateProject.isPending}
-                            title={canManage ? "绑定到本项目（同时启用 AI）" : "需要 PROJECT_ADMIN 权限"}
+                            title={canManage ? "设为本项目默认后端（同时启用 AI）" : "需要 PROJECT_ADMIN 权限"}
                           >
-                            绑定到本项目
+                            设为默认
                           </Button>
                         )}
                         {project.ml_backend_id === b.id && (
                           <span className={styles.boundBadge}>
                             <Badge variant="ai">
-                              已绑定
+                              默认
                             </Badge>
                           </span>
                         )}

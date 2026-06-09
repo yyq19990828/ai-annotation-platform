@@ -185,11 +185,17 @@ def health() -> dict[str, Any]:
     # 嵌套结构, 否则平台拿不到指标 → 面板四条 bar 全显示 "—".
     used = perf.get("gpu_memory_used_mb")
     total = perf.get("gpu_memory_total_mb")
+    # 本容器自身视角: 物理卡号 (多卡部署按容器绑卡, CUDA_VISIBLE_DEVICES 固定单卡时取该号)
+    # + 本进程 torch 已保留显存 (不含 ~数百 MB CUDA 上下文). memory_used_mb 仍是整卡全局。
+    _cuda = torch.cuda.is_available()
+    _vis = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
     gpu_info = {
         "device_name": perf.get("gpu_device_name"),
+        "device_index": (int(_vis) if _vis.isdigit() else torch.cuda.current_device()) if _cuda else None,
         "memory_used_mb": used,
         "memory_total_mb": total,
         "memory_free_mb": (total - used) if (used is not None and total is not None) else None,
+        "process_memory_mb": int(torch.cuda.memory_reserved() / 1024**2) if _cuda else None,
         "gpu_utilization_percent": perf.get("gpu_utilization_percent"),
         "gpu_temperature_celsius": perf.get("gpu_temperature_celsius"),
         "gpu_power_watts": perf.get("gpu_power_watts"),

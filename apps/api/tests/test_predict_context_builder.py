@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from app.workers.tasks import _build_predict_context
+from app.workers.tasks import _build_predict_context, _model_label
 
 
 def _ctx(**kw):
@@ -135,3 +135,21 @@ def test_flat_task_type_override_for_ocr():
 
 def test_no_prompt_no_task_returns_none():
     assert _ctx() is None
+
+
+# ── _model_label: 与 backend 回传 model_version 一致的展示串 (series+size) ──
+
+
+def test_model_label_series_size():
+    assert _model_label({"series": "yolov8", "size": "l"}) == "yolov8l"
+
+
+def test_model_label_empty_or_none_returns_none():
+    # variant 轴未就位 (空 dict) / None: 不展示误导标签
+    assert _model_label({}) is None
+    assert _model_label(None) is None
+
+
+def test_model_label_partial_falls_back_to_concat_values():
+    # 缺 size 时退化为拼接所有非空值, 保证非空时有可读串
+    assert _model_label({"series": "rtdetr"}) == "rtdetr"

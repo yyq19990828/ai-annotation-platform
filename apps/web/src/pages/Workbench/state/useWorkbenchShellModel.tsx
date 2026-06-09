@@ -4,7 +4,7 @@ import {
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
-import { useProject, useUpdateProject } from "@/hooks/useProjects";
+import { useProject } from "@/hooks/useProjects";
 import {
   useTaskList, useTask, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
   useUpdateAnnotation, useSubmitTask,
@@ -42,22 +42,21 @@ import { useWorkbenchHotkeys } from "./useWorkbenchHotkeys";
 import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
 import { useInteractiveAI } from "./useInteractiveAI";
+import { usePreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
+import { useMLBackends } from "@/hooks/useMLBackends";
 import { useMLCapabilities } from "./useMLCapabilities";
+import {
+  useBackendRouting,
+  INTERACTIVE_PROMPTS,
+  type InteractivePrompt,
+} from "./useBackendRouting";
 import { useCapabilityValidation } from "./useCapabilityValidation";
-import { useAiToolParamPrefs } from "./useAiToolParamPrefs";
 import {
-  isVariantHot,
-  markVariantHot,
-} from "./sessionVariantCache";
-import {
-  deriveDefaults,
-  isVariantField,
   VARIANT_FIELD_KEYS,
-  type JsonSchemaField,
 } from "../components/SchemaForm";
 import { AIToolDrawer } from "../shell/AIToolDrawer";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
-import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
+import { isAIToolId, TOOL_REGISTRY, type ToolId } from "../stage/tools";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
 import { useActiveIssueStore } from "./useActiveIssueStore";
 import { annotationToBox, collectOccludedKeys } from "./transforms";
@@ -116,10 +115,6 @@ function omitVariantFields(value: Record<string, unknown> | undefined): Record<s
     if (!VARIANT_FIELD_SET.has(key)) out[key] = v;
   }
   return out;
-}
-
-function asSchemaField(raw: unknown): JsonSchemaField {
-  return raw && typeof raw === "object" ? raw as JsonSchemaField : {};
 }
 
 function buildPredictParams(
@@ -227,6 +222,12 @@ function resolveFloatingDiscussionRect(state: FloatingPanelState): FloatingPanel
   });
 }
 
+// v0.14.18 · 工具 → 交互 prompt (text 已归批量线, 映射为 null = 非交互)。供交互后端路由解析。
+function promptOfTool(tool: ToolId): InteractivePrompt | null {
+  const rp = TOOL_REGISTRY[tool]?.requiredPrompt;
+  return rp && rp !== "text" ? rp : null;
+}
+
 export type UseWorkbenchShellModelResult =
   | { kind: "loading" }
   | WorkbenchShellEmptyState
@@ -264,7 +265,38 @@ export function useWorkbenchShellModel({
 
   const projectName = currentProject?.name ?? "标注工作台";
   const projectDisplayId = currentProject?.display_id ?? "—";
-  const aiModel = currentProject?.ml_backend_id ? "已接入模型" : "未接入模型";
+
+  // v0.14.18 · 多 backend 两条线分流 (见 docs/plans/2026-06-09-v0.14.18-...):
+  //   批量线 batchBackendId — 文本/几何/OCR/版面预标, 默认 = 项目默认后端 (ml_backend_id) 回落第一个,
+  //     驱动 preCfg / handleRunAi / AI 面板 backend 选择器, 沿用批量页 ProjectDetailPanel 切换语义。
+  //   交互线 — point/bbox/exemplar 工具各自按能力路由到交互后端 (见下方 routing / interactiveBackendId)。
+  const backendsQ = useMLBackends(projectId);
+  const backends = (backendsQ.data ?? []) as unknown as Array<{ id: string; name: string }>;
+  const firstBackendId = backends[0]?.id ?? null;
+  const [batchBackendId, setBatchBackendId] = useState<string | null>(null);
+  // 工作台是常驻 session: 用户在 AI 面板手动选过批量 backend 后, 不能因项目默认后端被外部改动
+  // (如另一 Tab "设为默认") 或后端列表顺序变化 (firstBackendId 变) 而被静默重置。
+  // 仅切项目时重置手动标记并按默认重新初始化; 同项目内只在用户未手动选过时跟随默认变化补齐。
+  const batchManuallyPickedRef = useRef(false);
+  const batchProjectRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (batchProjectRef.current !== projectId) {
+      batchProjectRef.current = projectId;
+      batchManuallyPickedRef.current = false;
+      setBatchBackendId(currentProject?.ml_backend_id ?? firstBackendId);
+      return;
+    }
+    if (batchManuallyPickedRef.current) return;
+    setBatchBackendId(currentProject?.ml_backend_id ?? firstBackendId);
+  }, [projectId, currentProject?.ml_backend_id, firstBackendId]);
+  const selectBatchBackend = useCallback((id: string | null) => {
+    batchManuallyPickedRef.current = true;
+    setBatchBackendId(id);
+  }, []);
+  const selectedBackend = backends.find((b) => b.id === batchBackendId) ?? null;
+
+  const aiModel = selectedBackend?.name
+    ?? (currentProject?.ml_backend_id ? "已接入模型" : "未接入模型");
 
   const meUserId = useAuthStore((s) => s.user?.id);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(requestedBatchId);
@@ -369,6 +401,26 @@ export function useWorkbenchShellModel({
   const [showHotkeys, setShowHotkeys] = useState(false);
   const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
   const [aiPopoverPosition, setAiPopoverPosition] = useState<{ left: number; top: number } | null>(null);
+  // v0.14.18 · AI 面板可缩放 (与浮出边栏一致); null = 用 CSS 默认尺寸, 用户拖角后置显式 w/h.
+  // 持久化到 localStorage (全局 UI 偏好, 非按项目): 刷新后保留拖定的尺寸。
+  const aiPopoverSizeKey = "wb:ai-popover-size";
+  const [aiPopoverSize, setAiPopoverSize] = useState<{ w: number; h: number } | null>(() => {
+    try {
+      const raw = localStorage.getItem(aiPopoverSizeKey);
+      const v = raw ? JSON.parse(raw) : null;
+      return typeof v?.w === "number" && typeof v?.h === "number" ? { w: v.w, h: v.h } : null;
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (aiPopoverSize) localStorage.setItem(aiPopoverSizeKey, JSON.stringify(aiPopoverSize));
+      else localStorage.removeItem(aiPopoverSizeKey);
+    } catch {
+      /* ignore quota / privacy mode */
+    }
+  }, [aiPopoverSize]);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(true);
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
@@ -769,6 +821,18 @@ export function useWorkbenchShellModel({
 
   const queryClient = useQueryClient();
 
+  // 预标 (含工作台单图 AI) 完成后失效本 task 预测缓存, 让新框无需手动刷新即时渲染.
+  // 单图 trigger 走 Celery 异步, mutation onSuccess 只代表"已派发"; 真正完成靠预标进度
+  // WS (status==='completed') 通知, 故在此监听 status 翻转到 completed 时重拉 predictions.
+  const lastPreannotateStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    const status = preannotationProgress?.status ?? null;
+    if (status === "completed" && lastPreannotateStatusRef.current !== "completed" && taskId) {
+      queryClient.invalidateQueries({ queryKey: ["predictions", taskId] });
+    }
+    lastPreannotateStatusRef.current = status;
+  }, [preannotationProgress?.status, taskId, queryClient]);
+
   // v0.14.1+ · 跨帧目标延续 (Shift+→ / Shift+←): 把选中框 propagate 到同 scene
   // 邻帧 task。目标若不在当前已加载队列里,退化为按 taskId 直开并补选中新框。
   const pendingCrossFrameSelectRef = useRef<{
@@ -861,14 +925,26 @@ export function useWorkbenchShellModel({
     ],
   );
 
+  // v0.14.18 · 交互线能力路由: 对每个注册后端拉 /setup 建 capIndex, 按当前工具 prompt 解析交互后端。
+  const routing = useBackendRouting({
+    projectId,
+    userId: meUserId,
+    backends,
+    defaultBackendId: currentProject?.ml_backend_id ?? null,
+  });
+  // 当前工具对应的交互 prompt (非交互工具回落 point, 仅用于 sam/warmup 的后端选取, 不参与门控)。
+  const activeInteractivePrompt = promptOfTool(s.tool);
+  const interactiveBackendId = routing.resolveInteractive(activeInteractivePrompt ?? "point");
+
   const sam = useInteractiveAI({
     projectId,
     taskId,
-    mlBackendId: currentProject?.ml_backend_id ?? null,
+    mlBackendId: interactiveBackendId,
   });
+  // 交互工具抽屉 (AIToolDrawer) 的能力/模型反映"解析到的交互后端"; 门控 (isPromptSupported) 走 routing 并集。
   const mlCapabilities = useMLCapabilities(
     projectId ?? null,
-    currentProject?.ml_backend_id ?? null,
+    interactiveBackendId,
   );
   // v0.14.9 · active model 输出几何 / 文本属性 与项目配置的兼容性警告 (非阻断)。
   const capabilityWarnings = useCapabilityValidation({
@@ -876,134 +952,46 @@ export function useWorkbenchShellModel({
     enabledToolUnits,
     toolBindings: currentProject?.tool_bindings,
   });
-  const aiParamPrefs = useAiToolParamPrefs(currentProject?.ml_backend_id ?? null);
-  const updateProjectMu = useUpdateProject(routeId ?? "");
-
-  // v0.14.13 · variantDefaults = backend.default_variants ⊕ project.default_variants[backend_id]
-  // 用于给 VariantSelector 初值. session 级 s.aiVariant 仍是用户选的 override.
-  const variantDefaults = useMemo<Record<string, string>>(() => {
-    const fromBackend = mlCapabilities.activeModel?.default_variants ?? {};
-    const projectMap = (currentProject as unknown as
-      | { default_variants?: Record<string, Record<string, string>> }
-      | undefined)?.default_variants;
-    const bid = currentProject?.ml_backend_id ?? null;
-    const fromProject = (bid ? projectMap?.[bid] : undefined) ?? {};
-    return { ...fromBackend, ...fromProject };
-  }, [mlCapabilities.activeModel, currentProject]);
-
-  // v0.14.13 · setAiVariant 包装: 维持 session state + PATCH project.default_variants (debounced 隐式去重).
-  // axis_key 由 activeModel.supported_variants 决定 (yolo: series/size; gsam2: sam_variant/dino_variant);
-  // 落到 project 偏好的只是 axis 子集, 非 axis 字段不会污染项目级配置.
-  const variantAxisKeys = useMemo<Set<string>>(() => {
-    const keys = new Set<string>();
-    for (const g of mlCapabilities.activeModel?.supported_variants ?? []) {
-      if (typeof g.key === "string") keys.add(g.key);
-    }
-    for (const [key, raw] of Object.entries(mlCapabilities.paramsSchema?.properties ?? {})) {
-      if (isVariantField(key, asSchemaField(raw))) keys.add(key);
-    }
-    return keys;
-  }, [mlCapabilities.activeModel, mlCapabilities.paramsSchema]);
-  const setAiVariantAndPersist = useCallback(
-    (next: Record<string, unknown>) => {
-      s.setAiVariant(next);
-      const bid = currentProject?.ml_backend_id ?? null;
-      if (!bid || variantAxisKeys.size === 0) return;
-      const variantSlice: Record<string, string> = {};
-      for (const k of variantAxisKeys) {
-        const v = next[k];
-        if (typeof v === "string") variantSlice[k] = v;
-      }
-      const projectMap = ((currentProject as unknown as
-        | { default_variants?: Record<string, Record<string, string>> }
-        | undefined)?.default_variants) ?? {};
-      const cur = projectMap[bid] ?? {};
-      const same =
-        Object.keys(variantSlice).length === Object.keys(cur).length &&
-        Object.entries(variantSlice).every(([k, v]) => cur[k] === v);
-      if (same) return;
-      updateProjectMu.mutate({
-        default_variants: { ...projectMap, [bid]: variantSlice },
-      });
-    },
-    [s, currentProject, variantAxisKeys, updateProjectMu],
-  );
-
-  // v0.14.13 · 冷启动 UX 本地猜测: 当前 variant 是否已 warm.
-  const currentVariantSlice = useMemo<Record<string, string>>(() => {
-    const out: Record<string, string> = {};
-    for (const k of variantAxisKeys) {
-      const v = (s.aiVariant as Record<string, unknown> | undefined)?.[k];
-      if (typeof v === "string") out[k] = v;
-    }
-    return out;
-  }, [s.aiVariant, variantAxisKeys]);
-  // v0.14.14: 统一查 isVariantHot (单一 hot map, sessionStorage 持久化).
-  // triggerPreannotation.isPending 变化让 useMemo 在响应回来后重算.
-  const currentVariantIsWarm = useMemo(() => {
-    const bid = currentProject?.ml_backend_id ?? null;
-    if (!bid) return false;
-    return isVariantHot(bid, currentVariantSlice);
-  }, [currentProject?.ml_backend_id, currentVariantSlice, triggerPreannotation.isPending]);
+  // AI"配置区"共享状态 (任务类型 / 模型任务 / 类别白名单 / variant / 参数 / 输出形态 / buildArgs);
+  // 与批量页 ProjectDetailPanel 同一 hook + PreannotateConfigForm (单一事实源). 驱动批量 AI 面板
+  // (开始预标) — 批量线, 用 batchBackendId.
+  const preCfg = usePreannotateConfig({
+    projectId: projectId ?? "",
+    backendId: batchBackendId,
+  });
   useEffect(() => {
     sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
-  const warmupPointSupported = mlCapabilities.isPromptSupported("point");
+  const warmupPointBackendId = routing.resolveInteractive("point");
   useEffect(() => {
     if (stageKind !== "image") return;
-    if (!taskId || !currentProject?.ml_backend_id) return;
-    if (!warmupPointSupported) return;
+    if (!taskId || !warmupPointBackendId) return;
     sam.warmup();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stageKind, taskId, currentProject?.ml_backend_id, warmupPointSupported]);
+  }, [stageKind, taskId, warmupPointBackendId]);
   useEffect(() => {
     if (!isAIToolId(s.tool) && sam.candidates.length > 0) sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.tool]);
+  // v0.14.18 · 门控走 routing 并集: 某交互 prompt 只要任一交互后端支持, 工具就亮。
+  const routingSig = INTERACTIVE_PROMPTS.map((p) =>
+    routing.isPromptSupported(p) ? "1" : "0",
+  ).join("");
   useEffect(() => {
-    if (s.tool === "text-prompt") s.bumpSamTextFocus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s.tool]);
-  const aiParamDefaults = useMemo(
-    () => deriveDefaults(mlCapabilities.paramsSchema),
-    [mlCapabilities.paramsSchema],
-  );
-  const seededBackendRef = useRef<string | null>(null);
-  useEffect(() => {
-    const bid = currentProject?.ml_backend_id ?? null;
-    if (!bid || !mlCapabilities.paramsSchema || !aiParamPrefs.loaded) return;
-    if (seededBackendRef.current === bid) return;
-    seededBackendRef.current = bid;
-    s.setAiToolParams({
-      ...aiParamDefaults,
-      ...omitVariantFields(aiParamPrefs.savedParams),
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentProject?.ml_backend_id, mlCapabilities.paramsSchema, aiParamPrefs.loaded, aiParamPrefs.savedParams]);
-  useEffect(() => {
-    if (!currentProject?.ml_backend_id) return;
-    if (Object.keys(s.aiToolParams).length === 0) return;
-    if (JSON.stringify(s.aiToolParams) === JSON.stringify(aiParamDefaults)) return;
-    aiParamPrefs.save({ ...(aiParamPrefs.savedParams ?? {}), ...s.aiToolParams });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s.aiToolParams, currentProject?.ml_backend_id]);
-  useEffect(() => {
-    if (mlCapabilities.isLoading) return;
+    if (routing.isLoading) return;
     if (!isAIToolId(s.tool)) return;
-    const requiredPrompt = (
-      { "smart-point": "point", "smart-box": "bbox", "text-prompt": "text", exemplar: "exemplar" } as const
-    )[s.tool as "smart-point" | "smart-box" | "text-prompt" | "exemplar"];
-    if (!mlCapabilities.isPromptSupported(requiredPrompt)) {
+    const requiredPrompt = promptOfTool(s.tool);
+    if (requiredPrompt && !routing.isPromptSupported(requiredPrompt)) {
       s.setTool("hand");
       pushToast({
         msg: "当前后端不支持此 AI 工具",
-        sub: "已切回手型；请到项目设置切换后端",
+        sub: "已切回手型；请到项目设置注册支持该交互的后端",
         kind: "warning",
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mlCapabilities.prompts.join(","), mlCapabilities.isLoading]);
+  }, [routingSig, routing.isLoading, s.tool]);
   useEffect(() => {
     if (!isVideoTask) return;
     if (tool !== "box" && tool !== "hand") setTool("box");
@@ -1231,7 +1219,7 @@ export function useWorkbenchShellModel({
 
   const handleRunAi = useCallback(() => {
     if (!projectId) return;
-    const mlBackendId = currentProject?.ml_backend_id;
+    const mlBackendId = batchBackendId;
     if (!mlBackendId) {
       pushToast({
         msg: "AI 暂不可用",
@@ -1240,45 +1228,31 @@ export function useWorkbenchShellModel({
       });
       return;
     }
-    const aliases: string[] = [];
-    const cfg = currentProject?.classes_config ?? {};
-    for (const entry of Object.values(cfg)) {
-      const alias = (entry as { alias?: string | null } | undefined)?.alias;
-      if (typeof alias === "string" && alias.trim()) aliases.push(alias.trim());
-    }
-    if (aliases.length === 0) {
+    // 走共享配置区 buildArgs: 几何 backend (YOLO) 发 v2 结构化 (task_type/model_id/model_variants/
+    // class_filter); 文本 backend (gsam2) 发 prompt. 当前图 = 单 task, predict_mode 固定 overwrite.
+    const args = preCfg.buildArgs("overwrite");
+    if (!args) return;
+    if (!preCfg.configReady) {
       pushToast({
         msg: "AI 暂不可用",
-        sub: "项目类别未配置英文 alias,请到「项目设置 → 类别与属性」补全",
+        sub: preCfg.isGeometricBackend
+          ? "请在 AI 面板选择模型任务"
+          : "请在 AI 面板填写 prompt (或为类别配置英文 alias)",
         kind: "error",
       });
       return;
     }
-    const prompt = aliases.join(", ");
-    pushToast({ msg: "AI 正在分析图像...", sub: `${aiModel} · ${aliases.length} 个类别` });
-    const predictParams = buildPredictParams(s.aiToolParams, currentVariantSlice);
+    pushToast({ msg: "AI 正在分析图像...", sub: aiModel });
     triggerPreannotation.mutate(
+      { ...args, task_ids: taskId ? [taskId] : undefined },
       {
-        ml_backend_id: mlBackendId,
-        task_ids: taskId ? [taskId] : undefined,
-        prompt,
-        params: predictParams,
-        // v0.11.24 · 工作台手动「AI 分析」= 重跑覆盖，替换旧 AI 预测（保留人工标注），
-        // 否则默认 skip_predicted 会让已预标任务再点无反应。
-        predict_mode: "overwrite",
-      },
-      {
-        onSuccess: () => {
-          // v0.14.13 · 推理成功 → 记 variant 已热. 异步 trigger 拿不到 cache_hit,
-          // 走兜底 (成功 ⇒ pool 中有此 variant). LRU evict 后下次显示偏差一次可接受.
-          if (Object.keys(currentVariantSlice).length > 0) {
-            markVariantHot(mlBackendId, currentVariantSlice);
-          }
-        },
-        onError: (err) => pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" }),
+        // v0.14.13 · 推理成功 → 记 variant 已热 (异步 trigger 拿不到 cache_hit, 走兜底).
+        onSuccess: () => preCfg.markHot(),
+        onError: (err: unknown) =>
+          pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" }),
       },
     );
-  }, [projectId, currentProject, aiModel, taskId, triggerPreannotation, pushToast, currentVariantSlice, s.aiToolParams]);
+  }, [projectId, batchBackendId, aiModel, taskId, triggerPreannotation, pushToast, preCfg]);
 
   const {
     handleVideoCreate,
@@ -1533,7 +1507,7 @@ export function useWorkbenchShellModel({
     videoMode: isVideoTask,
     samplingActive,
     videoControlsRef,
-    isPromptSupported: mlCapabilities.isPromptSupported,
+    isPromptSupported: routing.isPromptSupported,
     maskEditor,
     commitMaskAsPolygon,
     cancelMaskEdit,
@@ -1788,8 +1762,8 @@ export function useWorkbenchShellModel({
         if (isAIToolId(next)) setAiDrawerOpen(true);
       },
       videoTool: s.videoTool, onSetVideoTool: s.setVideoTool,
-      isPromptSupported: mlCapabilities.isPromptSupported,
-      capabilitiesLoading: mlCapabilities.isLoading,
+      isPromptSupported: routing.isPromptSupported,
+      capabilitiesLoading: routing.isLoading,
       aiToolDrawer: isAIToolId(s.tool) && aiDrawerOpen ? (
         <AIToolDrawer
           tool={s.tool}
@@ -1799,22 +1773,22 @@ export function useWorkbenchShellModel({
           onSetSamPolarity={s.setSamPolarity}
           isLoading={mlCapabilities.isLoading}
           isError={mlCapabilities.isError}
-          onRunSamText={(text, mode) => sam.runText(
-            text,
-            mode,
-            buildPredictParams(s.aiToolParams, currentVariantSlice),
-          )}
-          samRunning={sam.isRunning}
-          samCandidateCount={sam.candidates.length}
-          projectId={projectId}
-          projectTypeKey={currentProject?.type_key ?? null}
-          samTextFocusKey={s.samTextFocusKey}
           exemplarOutputMode={s.exemplarOutputMode}
           onSetExemplarOutputMode={s.setExemplarOutputMode}
           models={mlCapabilities.models}
           activeModelId={mlCapabilities.activeModelId}
           onSetActiveModelId={mlCapabilities.setActiveModelId}
           capabilityWarnings={capabilityWarnings}
+          interactiveBackends={
+            (activeInteractivePrompt
+              ? routing.candidatesFor(activeInteractivePrompt)
+              : []
+            )
+              .map((id) => backends.find((b) => b.id === id))
+              .filter((b): b is { id: string; name: string } => !!b)
+          }
+          selectedInteractiveId={interactiveBackendId}
+          onSelectInteractive={routing.setPreferredInteractiveId}
         />
       ) : null,
       reviewMode: mode === "review", videoMode: isVideoTask,
@@ -1955,6 +1929,8 @@ export function useWorkbenchShellModel({
       image: {
         fileUrl,
         blurhash,
+        imageWidth,
+        imageHeight,
         thumbnailUrl,
         tool: s.tool,
         fadedAiIds: dimmedAiIds,
@@ -1973,7 +1949,12 @@ export function useWorkbenchShellModel({
         onCommitRotatedBbox: createRotatedBbox,
         onCommitRotateBbox: handleCommitRotateBbox,
         onSamPrompt: (prompt) => {
-          const extra = buildPredictParams(s.aiToolParams, currentVariantSlice);
+          // v0.14.18 · 交互 variant/params 仅当交互后端与批量配置后端一致时复用 preCfg (单后端,
+          // 行为不变); 多后端 (交互≠批量) 时不混用批量后端的 variant, 交互后端用其预热/默认变体。
+          const extra =
+            interactiveBackendId === batchBackendId
+              ? buildPredictParams(preCfg.paramsValue, preCfg.currentVariantSlice)
+              : {};
           if (prompt.kind === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1, extra);
           if (prompt.kind === "exemplar") return sam.runExemplar(prompt.bbox, s.exemplarOutputMode, extra);
           return sam.runBbox(prompt.bbox, extra);
@@ -2179,6 +2160,8 @@ export function useWorkbenchShellModel({
       rightOffset: rightOpen ? s.rightWidth + 44 : 44,
       position: aiPopoverPosition,
       onPositionChange: setAiPopoverPosition,
+      size: aiPopoverSize,
+      onSizeChange: setAiPopoverSize,
       aiModel, aiRunning, aiBoxCount: modeState.diffMode !== "final" ? aiBoxes.length : 0,
       confThreshold: s.confThreshold, aiTakeoverRate,
       onClose: () => setAiPopoverOpen(false),
@@ -2188,19 +2171,14 @@ export function useWorkbenchShellModel({
       taskAiCost: taskAiMeta.totalCost,
       taskAiAvgMs: taskAiMeta.avgMs,
       taskAiPredictionCount: taskAiMeta.count,
-      paramsSchema: mlCapabilities.paramsSchema,
-      // v0.14.13 · supported_variants / variant_combinations / default_variants 优先取
-      // activeModel (yolo 4 task 各自轴, gsam2 按 task 暴露相应轴), 顶层 capability 是并集回落.
-      supportedVariants:
-        mlCapabilities.activeModel?.supported_variants ??
-        mlCapabilities.capability?.supported_variants,
-      variantCombinations: mlCapabilities.activeModel?.variant_combinations,
-      variantDefaults,
-      isVariantWarm: currentVariantIsWarm,
-      aiVariant: s.aiVariant,
-      onSetAiVariant: setAiVariantAndPersist,
-      params: s.aiToolParams,
-      onSetParams: s.setAiToolParams,
+      // 配置区 (任务/类别白名单/variant/参数) 由共享组件 PreannotateConfigForm 渲染, 状态走 preCfg.
+      cfg: preCfg,
+      isVariantWarm: preCfg.isCurrentVariantWarm,
+      // 多 backend (批量线): 项目绑了 >1 个后端时, 面板顶部出 backend 选择器 (单个时 PreannotateConfigForm 自动隐藏).
+      backends,
+      selectedBackendId: batchBackendId,
+      onSelectBackend: selectBatchBackend,
+      projectMlBackendId: currentProject?.ml_backend_id ?? null,
     },
     hotkeys: { open: showHotkeys, onClose: () => setShowHotkeys(false), attributeSchema: toolView.attributeSchema },
     offlineQueue: { open: offlineDrawerOpen, onClose: closeOfflineDrawer, currentTaskId: taskId, onFlushOne: executeOp, onFlushAll: flushOffline },

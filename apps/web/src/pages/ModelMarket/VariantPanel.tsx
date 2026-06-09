@@ -112,6 +112,8 @@ export function VariantPanel({
   const [sam, setSam] = useState("");
   const [dino, setDino] = useState("");
   const [videoSam, setVideoSam] = useState("");
+  // 预热/变体面板默认收起 — 运行时观测一屏多个 backend, 展开后(尤其多任务 YOLO)很长.
+  const [collapsed, setCollapsed] = useState(true);
 
   // setup 到达后填默认变体 (首挂载时 enum 还是空, useState 初值填不进).
   useEffect(() => {
@@ -126,29 +128,24 @@ export function VariantPanel({
 
   const isMultiModelBackend =
     !supportsVariants && genericVariantGroups.length === 0 && (setup?.models?.length ?? 0) > 0;
-  if (isMultiModelBackend) {
-    return (
-      <div className={styles.panel}>
-        {setup!.models!.map((model) => (
-          <ModelVariantWarmSection
-            key={model.id}
-            model={model}
-            loadedKeys={pool?.loaded_keys?.map((key) => key.key) ?? []}
-            isWarming={isWarming}
-            onWarm={onWarm}
-          />
-        ))}
-      </div>
-    );
-  }
 
   const isSelectedLoaded = loaded.some(
     (v) => v.sam_variant === sam && v.dino_variant === dino,
   );
   const isVideoSelectedLoaded = videoLoaded.includes(videoSam);
 
-  return (
-    <div className={styles.panel}>
+  const body = isMultiModelBackend ? (
+    setup!.models!.map((model) => (
+      <ModelVariantWarmSection
+        key={model.id}
+        model={model}
+        loadedKeys={pool?.loaded_keys?.map((key) => key.key) ?? []}
+        isWarming={isWarming}
+        onWarm={onWarm}
+      />
+    ))
+  ) : (
+    <>
       {/* 图像推理变体 (走图片池); v0.10.41 起优先按持久化 modalities 门控, 未探测时回落旧 enum 判断. */}
       {showImageGroup && (
         <>
@@ -342,6 +339,22 @@ export function VariantPanel({
           )}
         </div>
       )}
+    </>
+  );
+
+  return (
+    <div className={styles.panel}>
+      <button
+        type="button"
+        className={styles.collapseHeader}
+        onClick={() => setCollapsed((c) => !c)}
+        aria-expanded={!collapsed}
+      >
+        <Icon name={collapsed ? "chevRight" : "chevDown"} size={12} />
+        <span className={styles.collapseTitle}>模型预热 · 变体</span>
+        <span className={styles.collapseHint}>{collapsed ? "展开" : "收起"}</span>
+      </button>
+      {!collapsed && <div className={styles.collapseBody}>{body}</div>}
     </div>
   );
 }
