@@ -402,7 +402,25 @@ export function useWorkbenchShellModel({
   const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
   const [aiPopoverPosition, setAiPopoverPosition] = useState<{ left: number; top: number } | null>(null);
   // v0.14.18 · AI 面板可缩放 (与浮出边栏一致); null = 用 CSS 默认尺寸, 用户拖角后置显式 w/h.
-  const [aiPopoverSize, setAiPopoverSize] = useState<{ w: number; h: number } | null>(null);
+  // 持久化到 localStorage (全局 UI 偏好, 非按项目): 刷新后保留拖定的尺寸。
+  const aiPopoverSizeKey = "wb:ai-popover-size";
+  const [aiPopoverSize, setAiPopoverSize] = useState<{ w: number; h: number } | null>(() => {
+    try {
+      const raw = localStorage.getItem(aiPopoverSizeKey);
+      const v = raw ? JSON.parse(raw) : null;
+      return typeof v?.w === "number" && typeof v?.h === "number" ? { w: v.w, h: v.h } : null;
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (aiPopoverSize) localStorage.setItem(aiPopoverSizeKey, JSON.stringify(aiPopoverSize));
+      else localStorage.removeItem(aiPopoverSizeKey);
+    } catch {
+      /* ignore quota / privacy mode */
+    }
+  }, [aiPopoverSize]);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(true);
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");

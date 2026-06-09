@@ -15,7 +15,6 @@ import { aliasFrequencyApi } from "@/api/aliasFrequency";
 import {
   mlBackendsApi,
   type MLModelCapability,
-  type MLBackendSupportedVariantGroup,
 } from "@/api/ml-backends";
 import {
   VARIANT_FIELD_KEYS,
@@ -24,7 +23,12 @@ import {
 } from "@/pages/Workbench/components/SchemaForm";
 import { useAiToolParamPrefs } from "@/pages/Workbench/state/useAiToolParamPrefs";
 import { isVariantHot, markVariantHot } from "@/pages/Workbench/state/sessionVariantCache";
-import { derivePanelShape, deriveTextPanelShape } from "../utils/panelShape";
+import {
+  derivePanelShape,
+  deriveTextPanelShape,
+  deriveVariantSource,
+  type VariantSource,
+} from "../utils/panelShape";
 import { useAiParamPresets } from "../utils/useAiParamPresets";
 
 // v0.14.9 · 文本 / OCR / 文档版面三态任务类型 (按选中 backend 的 models[].task 派生).
@@ -164,32 +168,18 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
   //   文本 prompt 批量 (gsam2) → **顶层** supported_variants (两组 sam+dino), 不绑单 model
   //   (primaryModel=detection 只表达 dino, 表达不全; 文本批量是后端级编排能力)。
   const isTextPath = !isDocMode && !isGeometricBackend;
-  const variantSource = useMemo<{
-    groups: MLBackendSupportedVariantGroup[] | undefined;
-    combinations: string[][] | undefined;
-    defaults: Record<string, string> | undefined;
-  }>(() => {
-    if (isDocMode) {
-      return {
-        groups: activeDocModel?.supported_variants,
-        combinations: activeDocModel?.variant_combinations,
-        defaults: activeDocModel?.default_variants,
-      };
-    }
-    if (isGeometricBackend) {
-      return {
-        groups: geometricModel?.supported_variants,
-        combinations: geometricModel?.variant_combinations,
-        defaults: geometricModel?.default_variants,
-      };
-    }
-    // 文本路径: 顶层能力 (顶层无 variant_combinations / default_variants)。
-    return {
-      groups: setupQ.data?.supported_variants ?? capabilitiesQ.data?.supported_variants,
-      combinations: undefined,
-      defaults: undefined,
-    };
-  }, [isDocMode, isGeometricBackend, activeDocModel, geometricModel, setupQ.data, capabilitiesQ.data]);
+  const variantSource = useMemo<VariantSource>(
+    () =>
+      deriveVariantSource({
+        isDocMode,
+        isGeometricBackend,
+        activeDocModel,
+        geometricModel,
+        topSupportedVariants:
+          setupQ.data?.supported_variants ?? capabilitiesQ.data?.supported_variants,
+      }),
+    [isDocMode, isGeometricBackend, activeDocModel, geometricModel, setupQ.data, capabilitiesQ.data],
+  );
 
   // 输出形态: 文本路径走顶层 supported_text_outputs (box/mask/both); 其余仍按选中 model 几何输出。
   const panelShape = useMemo(() => {

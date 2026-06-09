@@ -10,6 +10,7 @@ import {
   candidatesFor,
   resolveInteractive,
   pickDefaultPreferred,
+  capFingerprint,
   type CapIndex,
 } from "../useBackendRouting";
 
@@ -168,5 +169,35 @@ describe("pickDefaultPreferred", () => {
   it("无交互后端 → null", () => {
     const idx = mkIndex({ yolo: YOLO });
     expect(pickDefaultPreferred(idx, ["yolo"], "yolo")).toBeNull();
+  });
+});
+
+describe("capFingerprint — capSignature 内容变化感知", () => {
+  it("undefined → 空串", () => {
+    expect(capFingerprint(undefined)).toBe("");
+  });
+  it("同内容稳定 (两次 ok 之间不变 → 不触发多余重建)", () => {
+    expect(capFingerprint(GSAM2)).toBe(capFingerprint(GSAM2));
+    expect(capFingerprint(SAM3)).toBe(capFingerprint(SAM3));
+  });
+  it("supported_prompts 变化 → 指纹变化 (动态宣称能力可被感知)", () => {
+    const sam3NoExemplar: MLBackendCapability = {
+      ...SAM3,
+      supported_prompts: ["bbox", "text"],
+    };
+    expect(capFingerprint(sam3NoExemplar)).not.toBe(capFingerprint(SAM3));
+  });
+  it("多 model 后端某 model 的 prompt 变化 → 指纹变化", () => {
+    const gsam2More: MLBackendCapability = {
+      ...GSAM2,
+      models: GSAM2.models!.map((m) =>
+        m.id === "iseg" ? { ...m, supported_prompts: ["point", "bbox", "exemplar"] } : m,
+      ),
+    };
+    expect(capFingerprint(gsam2More)).not.toBe(capFingerprint(GSAM2));
+  });
+  it("tracker 变化 → 指纹变化", () => {
+    const sam3Trk: MLBackendCapability = { ...SAM3, supported_trackers: ["sam2_video"] };
+    expect(capFingerprint(sam3Trk)).not.toBe(capFingerprint(SAM3));
   });
 });

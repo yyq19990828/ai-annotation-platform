@@ -9,7 +9,7 @@
  * 设计见 docs/plans/2026-06-09-v0.14.18-ml-backend-capability-routing.md (§3/§4)。
  * 纯路由逻辑抽成下方独立函数, 便于单测 (capIndex 构建 / resolveInteractive 三情形 / 兜底链 / reachable 降级)。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { mlBackendsApi, type MLBackendCapability } from "@/api/ml-backends";
 
@@ -72,6 +72,25 @@ export function buildCapEntry(cap: MLBackendCapability | undefined): BackendCapE
 }
 
 export type CapIndex = Record<string, BackendCapEntry>;
+
+/**
+ * /setup 响应的能力指纹: 只取 buildCapEntry 真正消费的字段 (is_interactive / supported_prompts /
+ * supported_trackers), 用于 capSignature 在两次 "ok" 之间内容变化时触发 capIndex 重建。
+ * 后端动态宣称能力 (运维改 supported_prompts) 才会变, 否则恒定 → 不引入多余重建。
+ */
+export function capFingerprint(cap: MLBackendCapability | undefined): string {
+  if (!cap) return "";
+  const models = Array.isArray(cap.models) ? cap.models : [];
+  if (models.length > 0) {
+    return models
+      .map(
+        (m) =>
+          `${m.is_interactive ? 1 : 0}/${(m.supported_prompts ?? []).join(",")}/${(m.supported_trackers ?? []).join(",")}`,
+      )
+      .join(";");
+  }
+  return `${cap.is_interactive === false ? 0 : 1}/${(cap.supported_prompts ?? []).join(",")}/${(cap.supported_trackers ?? []).join(",")}`;
+}
 
 /** reachable 且支持该 prompt 的候选后端 (按注册顺序)。 */
 export function candidatesFor(
@@ -193,8 +212,12 @@ export function useBackendRouting({
 
   // capIndex: backendId → 能力条目。query 成功用 data, 失败 (isError) → reachable=false。
   // 注: queries 数组与 backends 同序; 用 join 的稳定签名做依赖, 避免每渲染重建。
+  // 签名含 ok 态的能力指纹 → /setup 内容变化 (动态宣称能力) 也会触发 capIndex 重建。
   const capSignature = queries
-    .map((q, i) => `${order[i]}:${q.isError ? "err" : q.data ? "ok" : "pend"}`)
+    .map(
+      (q, i) =>
+        `${order[i]}:${q.isError ? "err" : q.data ? `ok(${capFingerprint(q.data)})` : "pend"}`,
+    )
     .join("|");
   const capIndex = useMemo<CapIndex>(() => {
     const idx: CapIndex = {};
@@ -223,10 +246,14 @@ export function useBackendRouting({
     capIndex[preferredOverride].prompts.size > 0;
   const preferredInteractiveId = overrideValid ? preferredOverride : fallbackPreferred;
 
-  const setPreferredInteractiveId = (id: string | null) => {
-    setPreferredOverride(id);
-    writeStoredPreferred(userId, projectId, id);
-  };
+  // useCallback: 引用稳定, 下传到 (可能 memo 化的) AIToolDrawer 选择器时不致每渲染失效。
+  const setPreferredInteractiveId = useCallback(
+    (id: string | null) => {
+      setPreferredOverride(id);
+      writeStoredPreferred(userId, projectId, id);
+    },
+    [userId, projectId],
+  );
 
   return {
     capIndex,

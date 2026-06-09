@@ -50,6 +50,13 @@
 - **图片加载失败时画布永久不可交互(本版回归)**：翻页 jank 修复用 `visibility:hidden` 隐藏 Konva 层直到 `fitted`，而 `fitted` 依赖图加载完；图 404/坏链时永不就绪 → 整个画布(mask 笔刷 / 框选等)永久吞掉交互。修复:`dimsReady` 把 `useImage` 的 `failed` 也视为就绪，用回退尺寸立即揭开。
 - **同一 variant 连跑两次仍误显「加载模型中…」(本版回归)**：`usePreannotateConfig` 抽 hook 后 `isCurrentVariantWarm` 的 useMemo 感知不到 `markHot` 对模块级缓存的写入。修复:`markHot` 写缓存后 bump 内部 `warmTick` 触发重算。
 - **工作台手动选的批量 backend 被静默重置**：常驻 session 中项目默认后端被外部改动 / 后端列表顺序变化会覆盖用户手动选择。修复:仅切项目时重置，同项目内用户手动选过则不再跟随默认变化。
+- **AI 面板拖角尺寸刷新即丢**：`aiPopoverSize` 持久化到 localStorage(全局 UI 偏好)，刷新后保留。
+- **多卡共享容器上报逻辑卡号而非物理卡号**：gsam2/sam3 `/health` 的 `device_index` 在 `CUDA_VISIBLE_DEVICES` 为多卡列表(如 `2,3`)时回落 `current_device()` 给出逻辑索引；改为按 `列表[逻辑 current device]` 解析真实物理卡号(单卡部署行为不变)。
+
+### Internal
+
+- **`useBackendRouting` capSignature 加能力指纹**：两次 `/setup` 「ok」之间内容变化(运维改 `supported_prompts` 等动态宣称能力)也会触发 capIndex 重建；`setPreferredInteractiveId` 包 `useCallback` 稳定引用。
+- **`deriveVariantSource` 抽为纯函数 + 单测**：把「文本走顶层 / 几何·doc 走选中 model」的变体来源判定(#3 回归核心)从 hook 内联 useMemo 提取到 `panelShape.ts`，单测钉死；新增 `capFingerprint` 单测。
 
 ## [0.14.17] - 2026-06-08
 
