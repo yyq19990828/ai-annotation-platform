@@ -292,11 +292,18 @@ def health() -> dict:
             if used_mb is None or total_mb is None:
                 used_mb = int((total_b - free_b) / 1024**2)
                 total_mb = int(total_b / 1024**2)
+            # 本容器自身视角: 占用的物理卡号 (多卡部署按容器绑卡, CUDA_VISIBLE_DEVICES
+            # 固定单卡时取该号; 否则回落 current_device) + 本进程 torch 已保留显存
+            # (caching allocator, 不含 ~数百 MB CUDA 上下文). memory_used_mb 仍是整卡全局。
+            _vis = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+            device_index = int(_vis) if _vis.isdigit() else torch.cuda.current_device()
             gpu_info = {
                 "device_name": torch.cuda.get_device_name(0),
+                "device_index": device_index,
                 "memory_used_mb": used_mb,
                 "memory_total_mb": total_mb,
                 "memory_free_mb": max(total_mb - used_mb, 0),
+                "process_memory_mb": int(torch.cuda.memory_reserved() / 1024**2),
             }
         except Exception:  # noqa: BLE001
             gpu_info = None
