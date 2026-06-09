@@ -274,9 +274,25 @@ export function useWorkbenchShellModel({
   const backends = (backendsQ.data ?? []) as unknown as Array<{ id: string; name: string }>;
   const firstBackendId = backends[0]?.id ?? null;
   const [batchBackendId, setBatchBackendId] = useState<string | null>(null);
+  // 工作台是常驻 session: 用户在 AI 面板手动选过批量 backend 后, 不能因项目默认后端被外部改动
+  // (如另一 Tab "设为默认") 或后端列表顺序变化 (firstBackendId 变) 而被静默重置。
+  // 仅切项目时重置手动标记并按默认重新初始化; 同项目内只在用户未手动选过时跟随默认变化补齐。
+  const batchManuallyPickedRef = useRef(false);
+  const batchProjectRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
+    if (batchProjectRef.current !== projectId) {
+      batchProjectRef.current = projectId;
+      batchManuallyPickedRef.current = false;
+      setBatchBackendId(currentProject?.ml_backend_id ?? firstBackendId);
+      return;
+    }
+    if (batchManuallyPickedRef.current) return;
     setBatchBackendId(currentProject?.ml_backend_id ?? firstBackendId);
   }, [projectId, currentProject?.ml_backend_id, firstBackendId]);
+  const selectBatchBackend = useCallback((id: string | null) => {
+    batchManuallyPickedRef.current = true;
+    setBatchBackendId(id);
+  }, []);
   const selectedBackend = backends.find((b) => b.id === batchBackendId) ?? null;
 
   const aiModel = selectedBackend?.name
@@ -1473,7 +1489,7 @@ export function useWorkbenchShellModel({
     videoMode: isVideoTask,
     samplingActive,
     videoControlsRef,
-    isPromptSupported: mlCapabilities.isPromptSupported,
+    isPromptSupported: routing.isPromptSupported,
     maskEditor,
     commitMaskAsPolygon,
     cancelMaskEdit,
@@ -1728,8 +1744,8 @@ export function useWorkbenchShellModel({
         if (isAIToolId(next)) setAiDrawerOpen(true);
       },
       videoTool: s.videoTool, onSetVideoTool: s.setVideoTool,
-      isPromptSupported: mlCapabilities.isPromptSupported,
-      capabilitiesLoading: mlCapabilities.isLoading,
+      isPromptSupported: routing.isPromptSupported,
+      capabilitiesLoading: routing.isLoading,
       aiToolDrawer: isAIToolId(s.tool) && aiDrawerOpen ? (
         <AIToolDrawer
           tool={s.tool}
@@ -2143,7 +2159,7 @@ export function useWorkbenchShellModel({
       // 多 backend (批量线): 项目绑了 >1 个后端时, 面板顶部出 backend 选择器 (单个时 PreannotateConfigForm 自动隐藏).
       backends,
       selectedBackendId: batchBackendId,
-      onSelectBackend: setBatchBackendId,
+      onSelectBackend: selectBatchBackend,
       projectMlBackendId: currentProject?.ml_backend_id ?? null,
     },
     hotkeys: { open: showHotkeys, onClose: () => setShowHotkeys(false), attributeSchema: toolView.attributeSchema },

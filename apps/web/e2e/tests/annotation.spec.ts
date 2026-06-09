@@ -84,8 +84,8 @@ test.describe("annotation workbench", () => {
 
   /**
    * v0.10.2 · Prompt-first ToolDock + capability 协商.
-   * mock /setup 返回 grounded-sam2 三件套 (point/bbox/text), 断言:
-   *   ① smart-point / smart-box / text-prompt 可点
+   * mock /setup 返回 grounded-sam2 (point/bbox/text), 断言:
+   *   ① smart-point / smart-box 可点 (v0.14.18 · text-prompt 已归批量线, 不在工具栏)
    *   ② exemplar 工具置灰 (aria-disabled="true")
    *   ③ AIToolDrawer 在 smart-point 激活时出现
    *   ④ 点击 stage 触发 /interactive-annotating, body.context.type === "point"
@@ -152,14 +152,12 @@ test.describe("annotation workbench", () => {
     await page.goto(`/projects/${data.project_id}/annotate`);
     await page.waitForLoadState("networkidle");
 
-    // ① 4 个 AI 工具按钮可见
+    // ① 交互 AI 工具按钮可见 (text-prompt 已归批量线, 工具栏不再有)
     const pointBtn = page.getByTestId("tool-btn-smart-point");
     const boxBtn = page.getByTestId("tool-btn-smart-box");
-    const textBtn = page.getByTestId("tool-btn-text-prompt");
     const exemplarBtn = page.getByTestId("tool-btn-exemplar");
     await expect(pointBtn).toBeVisible({ timeout: 10_000 });
     await expect(boxBtn).toBeVisible();
-    await expect(textBtn).toBeVisible();
     await expect(exemplarBtn).toBeVisible();
 
     // ② exemplar 工具置灰

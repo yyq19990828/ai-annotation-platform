@@ -304,14 +304,16 @@ export function ImageStage({
   vpRef.current = vp;
   const vpSize = useElementSize(containerRef);
 
-  const [image] = useImage(fileUrl ?? "");
+  const [image, imageStatus] = useImage(fileUrl ?? "");
   // 已知尺寸 (task 元数据) 优先, 让翻页时无需等 image onload 就能算 fit; 回退到加载后的自然尺寸。
   // 图像与标注都按同一 imgW/imgH 渲染, 故即便已知值与自然值偶有出入也始终对齐 (不产生 jank)。
   const imgW = imageWidth || image?.naturalWidth || 900;
   const imgH = imageHeight || image?.naturalHeight || 600;
   const imageLoaded = !!image?.naturalWidth;
   // 尺寸是否就绪: 已知尺寸成对存在 → 立即就绪 (不等加载); 否则退回「图已加载」。
-  const dimsReady = !!((imageWidth && imageHeight) || imageLoaded);
+  // 图加载失败 (404/坏链) 也算就绪: 否则 konvaHost 因 !fitted 永久 visibility:hidden, 吞掉所有
+  // 画布交互 (mask 笔刷 / 框选等); 失败时没有"正确位置"需保护, 用回退尺寸 (900×600) 立即揭开即可。
+  const dimsReady = !!((imageWidth && imageHeight) || imageLoaded || imageStatus === "failed");
 
   // v0.10.5 M4-β · 按 is_hidden 过滤；按 z_order ASC 排序（高 z_order 后渲染 = 在上层）。
   // 同 z_order 保持原数组顺序作 tie-breaker，避免选中态下渲染顺序闪烁。

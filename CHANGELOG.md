@@ -46,6 +46,10 @@
 ### Fixed
 
 - **gsam2 文本批量只能选 DINO 变体 / 输出锁 box(协议 2.1 回归)**：文本批量是**后端级**能力(detection 出框 + segmentation 出掩膜由 `output_mode` 在后端内部编排)，此前 `primaryModel=detection` 让变体只剩 dino、`derivePanelShape` 把输出形态锁 box 并隐藏。修复:文本路径的变体来源改走**顶层** `supported_variants`(SAM2 + DINO 两组)、输出形态改走顶层 `supported_text_outputs`(box/mask/both)，几何/doc 路径仍用逐 task model。
+- **工具栏门控接错能力源(本版回归)**：ToolDock 的 `isPromptSupported` 误用 `mlCapabilities`(绑定到「按当前工具 prompt 解析的单后端」，默认 point)，当唯一后端不支持 point 时 `interactiveBackendId` 为 null → 所有 AI 工具(含其实支持的 exemplar)被置灰。修复:门控改用 `routing.isPromptSupported`(交互后端并集)，与设计一致；hotkey `ai-cycle` 同步。
+- **图片加载失败时画布永久不可交互(本版回归)**：翻页 jank 修复用 `visibility:hidden` 隐藏 Konva 层直到 `fitted`，而 `fitted` 依赖图加载完；图 404/坏链时永不就绪 → 整个画布(mask 笔刷 / 框选等)永久吞掉交互。修复:`dimsReady` 把 `useImage` 的 `failed` 也视为就绪，用回退尺寸立即揭开。
+- **同一 variant 连跑两次仍误显「加载模型中…」(本版回归)**：`usePreannotateConfig` 抽 hook 后 `isCurrentVariantWarm` 的 useMemo 感知不到 `markHot` 对模块级缓存的写入。修复:`markHot` 写缓存后 bump 内部 `warmTick` 触发重算。
+- **工作台手动选的批量 backend 被静默重置**：常驻 session 中项目默认后端被外部改动 / 后端列表顺序变化会覆盖用户手动选择。修复:仅切项目时重置，同项目内用户手动选过则不再跟随默认变化。
 
 ## [0.14.17] - 2026-06-08
 

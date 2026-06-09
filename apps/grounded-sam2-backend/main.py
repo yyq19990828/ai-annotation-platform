@@ -380,7 +380,8 @@ async def _load_models() -> None:
     # 首个 video_tracker 请求触发冷启, 避免空载常驻额外显存.
     if VIDEO_IDLE_UNLOAD_SECONDS > 0:
         _video_idle_task = asyncio.create_task(_video_idle_watcher())
-    # 主变体已就绪可服务; 额外 PREFETCH 变体后台补 (不阻塞 uvicorn / /health).
+    # 默认变体走纯懒加载 (首个推理请求才冷启, 见上); 此处仅把额外 PREFETCH 变体的 checkpoint
+    # 在后台下载补齐 (_prefetch_extras 只下权重、不加载模型), 不阻塞 uvicorn / /health.
     _prefetch_task = asyncio.create_task(_prefetch_extras())
 
 

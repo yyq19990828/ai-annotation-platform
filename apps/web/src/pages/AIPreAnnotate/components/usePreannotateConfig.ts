@@ -377,11 +377,16 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     // variantSource 变化 → variantAxisKeysRef (ref, 非响应) 可能更新, 显式入依赖一并重算.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paramsValue, variantSource]);
+  // markHot 写入模块级缓存 (sessionVariantCache) 后, 仅靠 [backendId, currentVariantSlice] 无法
+  // 感知缓存写入 → 同一 variant 连续跑两次时, 第二次仍读到旧的 false (按钮误显"加载模型中…")。
+  // 用 warmTick 显式触发重算: markHot 写缓存后 bump, 让 isCurrentVariantWarm 重读缓存。
+  const [warmTick, setWarmTick] = useState(0);
   const isCurrentVariantWarm = useMemo(() => {
     if (!backendId) return false;
     return isVariantHot(backendId, currentVariantSlice);
-    // 外部 run 完成后调用方可通过依赖触发重算 (见 markHot).
-  }, [backendId, currentVariantSlice]);
+    // warmTick: markHot 后重算 (见 markHot); 否则模块缓存写入不被 useMemo 感知。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backendId, currentVariantSlice, warmTick]);
 
   // 换 variant (series/size 等) 视为换模型: 重置类别白名单选择, 避免旧 variant 的勾选套到新模型.
   // (注: backend 的类别表按 task 缓存, 同 task 各 variant 类别一致时白名单内容不变; 此处仅清选择.)
@@ -444,6 +449,7 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     if (!backendId) return;
     if (Object.keys(currentVariantSlice).length > 0) {
       markVariantHot(backendId, currentVariantSlice);
+      setWarmTick((n) => n + 1); // 触发 isCurrentVariantWarm 重算, 否则模块缓存写入不被感知
     }
   };
 
