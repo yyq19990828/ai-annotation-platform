@@ -1,5 +1,9 @@
 # 标注指引（Annotation Guide）
 
+::: warning 此功能当前已下线
+标注指引由前端特性开关 `ANNOTATION_GUIDE_UI_ENABLED`（`apps/web/src/config/featureFlags.ts`）控制，当前**默认关闭**：项目设置页不显示「标注指引」入口，工作台也不会弹出指引浮层。本页保留作为该功能的设计与行为说明，待开关重新打开后即时生效。
+:::
+
 为项目编写一段 Markdown 形式的「指引」，新标注员第一次进入工作台时会自动在左上角浮层弹出，显著降低标注一致性偏差与退回率。参考 CVAT `Project.annotation_guide` 设计。
 
 ## 何时用

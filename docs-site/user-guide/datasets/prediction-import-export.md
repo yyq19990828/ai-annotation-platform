@@ -1,5 +1,5 @@
 ---
-audience: [project_admin, superadmin]
+audience: [project_admin, super_admin]
 type: how-to
 since: v0.10.15
 status: stable
@@ -10,7 +10,7 @@ last_reviewed: 2026-06-10
 
 把外部模型（客户自训模型、第三方推理服务、离线脚本）的预测结果灌进项目，作为**待采纳预测**出现在工作台 AI 候选里；以及反向把项目里的标注 / 预测导出成 COCO / YOLO / AAP JSON 等格式。
 
-本页只讲「外部预测进出本平台」这条链路。如果你要的是把图片 / 视频 / 点云**原始数据**导入数据集，见 [点云 / 多模态数据集导入格式](./import-formats)；平台内置 ML Backend 自动跑预标的流程见 [AI 预标注](../projects/ai-preannotate)。
+本页只讲「外部预测进出本平台」这条链路。如果你要的是把**原始数据**导入数据集，图像见 [图像数据集导入](./import-images)、点云 / 多模态见 [点云 / 多模态数据集导入格式](./import-formats)；平台内置 ML Backend 自动跑预标的流程见 [AI 预标注](../projects/ai-preannotate)。
 
 ## 导入外部预测
 

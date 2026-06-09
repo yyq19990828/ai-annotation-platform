@@ -115,6 +115,36 @@
 - [x] `dev/reference/ws-protocol.md` § 6.2 事件序列：补 stateDiagram-v2 可视化 tracker 事件流
 - [x] `dev/concepts/state-machines.md` § Task 状态机：已含 rejected 转移（旧版即已补，本轮核验确认）
 
+## Batch 1 · 数据集 / 导入导出（新增于 2026-06-10 · IA 重构）
+
+> 文档侧已在对应位置打 `<!-- TODO(v0.14.18) IMAGE_CHECKLIST: ... -->` 注释占位（未嵌 `![]()`，不破图）；下面是配套拍摄清单。新增图片目录 `images/datasets/`。
+
+### 数据集 · 导入
+
+- [ ] `images/datasets/import-images-wizard.png` — 导入数据集向导基本信息步选「图像」+ 来源选「ZIP 上传」；红框：数据类型选择、文件拖放区 `[auto]`
+- [ ] `images/datasets/import-wizard-3d-type.png` — 导入向导基本信息步选「3D 点云」+ 勾「声明为时序数据集」；红框：数据类型、时序开关、axis_convention 选择器
+- [ ] `images/datasets/pointcloud-dir-layout.png` — 单 scene vs 多 scene 目录树并排对比（建议矢量示意图而非真截图）
+
+### 数据集 · 存储连接器
+
+- [ ] `images/datasets/connector-create-form.png` — 新建数据源对话框（S3/OSS 模式）；红框：Endpoint / Bucket / Access key + HTTPS 复选框
+- [ ] `images/datasets/connector-test-result.png` — 连接器列表行测试成功状态；红框：绿色「连接成功」+ 样本计数
+- [ ] `images/datasets/connector-import-step.png` — 导入向导「连接器导入」子面板；红框：source_path / 递归开关 / include_globs
+- [ ] `images/datasets/connector-allowlist.png` — 超管连接器主机白名单配置面板 ⚠️ **前端 UI 尚未实现（仅超管 API），待 UI 就绪再拍**
+
+### 预测导入 / 导出
+
+- [ ] `images/projects/prediction-import-wizard.png` — 导入预测弹窗（AAP JSON / COCO / YOLO 格式选择 + 文件上传 + 替换开关）；红框：格式下拉、YOLO 变体下拉、替换开关
+- [ ] `images/projects/prediction-purge-modal.png` — 清理预测弹窗三种来源范围 + ML Backend 风险确认复选框
+
+### 导出格式
+
+- [ ] `images/export/yolo-dir-tree.png` — 解压后 YOLO 单目标导出包目录树（terminal 截图）；红框：labels/ 镜像层级
+
+### 项目 · 工具单位
+
+- [ ] `images/projects/tool-units-panel.png` — 项目设置「类别与属性」面板，按工具单位 tab 切换；红框：工具单位切换 tab、某工具下的类别列表、属性 schema 区
+
 ## 新增图片时
 
 1. 把图保存到 `docs-site/user-guide/images/<page>/<name>.png`

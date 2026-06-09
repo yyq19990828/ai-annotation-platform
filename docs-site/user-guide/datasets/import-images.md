@@ -1,5 +1,5 @@
 ---
-audience: [project_admin, superadmin]
+audience: [project_admin, super_admin]
 type: how-to
 since: v0.1.0
 status: stable

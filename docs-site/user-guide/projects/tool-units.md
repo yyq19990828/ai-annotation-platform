@@ -1,5 +1,5 @@
 ---
-audience: [project_admin, superadmin]
+audience: [project_admin, super_admin]
 type: explanation
 since: v0.11.0
 status: stable
@@ -24,8 +24,7 @@ last_reviewed: 2026-06-10
 
 工具单位枚举（与后端 `ToolUnitId` 对齐）：`bbox`、`region`（polygon + mask 打包）、`ai_interactive`（SAM 系列 + Magic Box 打包）、`polyline`、`rotated_bbox`、`keypoint`、`lidar_box_3d`、`point_mask_3d`。每个工具单位的具体含义见 [创建项目 · 工具集](./index.md)。
 
-![类别与属性面板](../images/projects/tool-units-panel.png)
-<!-- TODO IMAGE_CHECKLIST: 项目设置「类别与属性」面板，按工具单位 tab 切换；红框：工具单位切换 tab、某工具下的类别列表、属性 schema 区。[manual] -->
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/tool-units-panel.png — 项目设置「类别与属性」面板，按工具单位 tab 切换；标注红框：工具单位切换 tab、某工具下的类别列表、属性 schema 区。[manual] -->
 
 ### 典型场景
 

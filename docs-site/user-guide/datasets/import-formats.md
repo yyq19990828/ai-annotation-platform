@@ -38,7 +38,7 @@ pc-scene-dev/calib/camera/front.json
 pc-scene-dev/calib/camera/left.json
 ```
 
-<!-- screenshot: images/datasets/pointcloud-dir-layout.png — 单 scene vs 多 scene 目录树并排对比(建议矢量示意图而非真截图);左:角色目录布局 lidar/camera/calib → 单 scene,右:顶层多场景名子目录 → 多 scene。[manual] -->
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/datasets/pointcloud-dir-layout.png — 单 scene vs 多 scene 目录树并排对比(建议矢量示意图而非真截图);左:角色目录布局 lidar/camera/calib → 单 scene,右:顶层多场景名子目录 → 多 scene。[manual] -->
 
 ### 顶层多子目录 = 多 scene
 
@@ -97,7 +97,7 @@ scene 模式项目的开启与用法见 [项目管理 · scene 模式项目](/us
 
 在数据集导入向导选 **3D 点云** 类型,上传一个 ZIP 包。**打包时必须保留 `lidar/ camera/ calib/` 三级子目录**(v0.14.2 起 ZIP 上传保留 ZIP 内子目录,不再拍平到 basename)。
 
-<!-- screenshot: images/datasets/import-wizard-3d-type.png — 导入向导「基本信息」步选「3D 点云」+ 勾「声明为时序数据集」;红框:数据类型选择、时序开关、axis_convention 选择器。[manual] -->
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/datasets/import-wizard-3d-type.png — 导入向导「基本信息」步选「3D 点云」+ 勾「声明为时序数据集」;红框:数据类型选择、时序开关、axis_convention 选择器。[manual] -->
 
 - **默认一个 ZIP = 一个 scene**,除非顶层有多个非角色子目录(见上)。
 - 上传上限沿用现有 200MB 整包 / 5000 文件 / 100MB 单文件;nuScenes 单 scene(~80MB)够用,多 scene 请走转换脚本而非向导。整包超 200MB 直接 `413`,错误信息指向本页和转换脚本路线。
