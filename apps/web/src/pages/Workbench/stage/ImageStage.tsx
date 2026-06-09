@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { Stage, Layer, Image as KonvaImage, Rect, Line, Circle, Label, Tag, Text } from "react-konva";
 import type Konva from "konva";
 import useImage from "use-image";
@@ -128,6 +128,9 @@ function SamRefineButton({
 interface ImageStageProps {
   fileUrl: string | null;
   blurhash?: string | null;
+  /** 已知图片尺寸 (task.image_width/height): 有值则翻页时同步算 fit, 不必等 image onload, 首帧即正确。 */
+  imageWidth?: number | null;
+  imageHeight?: number | null;
   tool: Tool;
   activeClass: string;
   selectedId: string | null;
@@ -247,7 +250,7 @@ interface ImageStageProps {
 
 // ── main component ──────────────────────────────────────────────────────────
 export function ImageStage({
-  fileUrl, blurhash, tool, activeClass,
+  fileUrl, blurhash, imageWidth, imageHeight, tool, activeClass,
   selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
   onBatchDelete, onBatchChangeClass, onJoinSelected, onApplyAttributeMode,
@@ -302,9 +305,13 @@ export function ImageStage({
   const vpSize = useElementSize(containerRef);
 
   const [image] = useImage(fileUrl ?? "");
-  const imgW = image?.naturalWidth || 900;
-  const imgH = image?.naturalHeight || 600;
+  // 已知尺寸 (task 元数据) 优先, 让翻页时无需等 image onload 就能算 fit; 回退到加载后的自然尺寸。
+  // 图像与标注都按同一 imgW/imgH 渲染, 故即便已知值与自然值偶有出入也始终对齐 (不产生 jank)。
+  const imgW = imageWidth || image?.naturalWidth || 900;
+  const imgH = imageHeight || image?.naturalHeight || 600;
   const imageLoaded = !!image?.naturalWidth;
+  // 尺寸是否就绪: 已知尺寸成对存在 → 立即就绪 (不等加载); 否则退回「图已加载」。
+  const dimsReady = !!((imageWidth && imageHeight) || imageLoaded);
 
   // v0.10.5 M4-β · 按 is_hidden 过滤；按 z_order ASC 排序（高 z_order 后渲染 = 在上层）。
   // 同 z_order 保持原数组顺序作 tie-breaker，避免选中态下渲染顺序闪烁。
@@ -405,21 +412,31 @@ export function ImageStage({
     setVp({ scale: s, tx: (vpSize.w - imgW * s) / 2, ty: (vpSize.h - imgH * s) / 2 });
   }, [vpSize.w, vpSize.h, imgW, imgH, setVp]);
 
-  const fittedRef = useRef(false);
-  useEffect(() => {
-    if (!fittedRef.current && vpSize.w && vpSize.h && imageLoaded) {
+  // 修翻页首帧 jank: vp 跨 task 持久化, 换图瞬间标注会先用上一张的变换画一帧, 等新图 onload
+  // 算出 fit 后才 snap → 视觉上标注从左上角小比例缩放到正确位置。修法三点:
+  // (1) fitted 设为 state 并在 fileUrl 变化时**渲染期同步**重置 (render-time setState, 比 effect 早
+  //     一帧, 保证新图首个 render 就 fitted=false); (2) fit 跑在 useLayoutEffect → paint 前 setVp 生效,
+  //     onload 那帧的错位永不落屏; (3) 未 fit 完隐藏 Konva 层 (见 konvaHost), 由 blurhash 占位顶着,
+  //     揭开时已在正确位置。
+  const [fitted, setFitted] = useState(false);
+  const prevFileUrlRef = useRef(fileUrl);
+  if (prevFileUrlRef.current !== fileUrl) {
+    prevFileUrlRef.current = fileUrl;
+    setFitted(false);
+  }
+  useLayoutEffect(() => {
+    if (!fitted && vpSize.w && vpSize.h && dimsReady) {
       fitNow();
-      fittedRef.current = true;
+      setFitted(true);
     }
-  }, [vpSize.w, vpSize.h, imageLoaded, fitNow]);
+  }, [fitted, vpSize.w, vpSize.h, dimsReady, fitNow]);
 
-  const prevFileUrl = useRef(fileUrl);
-  useEffect(() => {
-    if (fileUrl !== prevFileUrl.current) {
-      prevFileUrl.current = fileUrl;
-      fittedRef.current = false;
-    }
-  }, [fileUrl]);
+  // 揭开 konvaHost 前强制同步重绘一次: react-konva 的 batchDraw 是 rAF 异步, 否则 fitted 翻 true、
+  // konvaHost 转可见的那一帧 canvas 像素还停在旧 vp (上一张) → 残留「左上角小比例闪一下」。
+  // 此 effect 在 vp/fitted 已应用到 Konva 节点后、浏览器 paint 前跑, 用同步 draw() 刷新像素。
+  useLayoutEffect(() => {
+    if (fitted) stageRef.current?.draw();
+  }, [fitted]);
 
   const lastFitTickRef = useRef(fitTick);
   useEffect(() => {
@@ -924,7 +941,9 @@ export function ImageStage({
         </div>
       )}
 
-      <div className={styles.konvaHost}>
+      <div
+        className={fitted ? styles.konvaHost : `${styles.konvaHost} ${styles.konvaHostHidden}`}
+      >
         <Stage
           ref={stageRef}
           width={vpSize.w || 1}

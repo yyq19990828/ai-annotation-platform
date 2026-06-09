@@ -105,6 +105,9 @@ interface WorkbenchStageHostVideoProps {
 interface WorkbenchStageHostImageProps {
   fileUrl: string | null;
   blurhash?: string | null;
+  // 已知图片尺寸 (task.image_width/height), 让 ImageStage 翻页时同步算 fit, 不必等 image onload。
+  imageWidth?: number | null;
+  imageHeight?: number | null;
   thumbnailUrl: string | null;
   tool: Tool;
   fadedAiIds: Set<string>;
@@ -262,6 +265,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     const {
       fileUrl,
       blurhash,
+      imageWidth,
+      imageHeight,
       thumbnailUrl,
       tool,
       fadedAiIds,
@@ -390,6 +395,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             readOnly={readOnly}
             fileUrl={fileUrl}
             blurhash={blurhash}
+            imageWidth={imageWidth}
+            imageHeight={imageHeight}
             thumbnailUrl={thumbnailUrl}
             tool={tool}
             activeClass={activeClass}

@@ -1955,6 +1955,8 @@ export function useWorkbenchShellModel({
       image: {
         fileUrl,
         blurhash,
+        imageWidth,
+        imageHeight,
         thumbnailUrl,
         tool: s.tool,
         fadedAiIds: dimmedAiIds,
