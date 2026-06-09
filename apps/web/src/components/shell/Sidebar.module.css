@@ -60,6 +60,7 @@
 
 .navBadgeWrap {
   display: inline-flex;
+  gap: 4px;
 }
 
 .badge {

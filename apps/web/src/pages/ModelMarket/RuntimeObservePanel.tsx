@@ -398,7 +398,7 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
           />
           {target.supports_variants ? (
             <div className={styles.variantPicker}>
-              {samEnum.length > 0 && (
+              {showLegacyVariants && samEnum.length > 0 && (
                 <select value={sam} onChange={(e) => setSam(e.target.value)} className={styles.select}>
                   {samEnum.map((option) => (
                     <option key={option} value={option}>
@@ -407,7 +407,7 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
                   ))}
                 </select>
               )}
-              {dinoEnum.length > 0 && (
+              {showLegacyVariants && dinoEnum.length > 0 && (
                 <select value={dino} onChange={(e) => setDino(e.target.value)} className={styles.select}>
                   {dinoEnum.map((option) => (
                     <option key={option} value={option}>

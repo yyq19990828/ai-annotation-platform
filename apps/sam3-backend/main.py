@@ -286,18 +286,26 @@ def health() -> dict:
     """与 grounded-sam2 /health 字段对齐, 让 AdminDashboard 卡片直接复用渲染."""
     available = torch.cuda.is_available()
     gpu_info: dict | None = None
+    perf = sample_perfhud()
     if available:
         try:
             free_b, total_b = torch.cuda.mem_get_info()
+            # 显存以 pynvml (sample_perfhud) 的设备全局视角为准, 与 yolo-backend 对齐;
+            # torch.cuda.mem_get_info() 只反映当前 CUDA 上下文的 free/total, 多进程共享
+            # 同一张卡时会系统性低报已用显存. pynvml 不可用时才回落 torch。
+            used_mb = perf.get("gpu_memory_used_mb")
+            total_mb = perf.get("gpu_memory_total_mb")
+            if used_mb is None or total_mb is None:
+                used_mb = int((total_b - free_b) / 1024**2)
+                total_mb = int(total_b / 1024**2)
             gpu_info = {
                 "device_name": torch.cuda.get_device_name(0),
-                "memory_used_mb": int((total_b - free_b) / 1024**2),
-                "memory_total_mb": int(total_b / 1024**2),
-                "memory_free_mb": int(free_b / 1024**2),
+                "memory_used_mb": used_mb,
+                "memory_total_mb": total_mb,
+                "memory_free_mb": max(total_mb - used_mb, 0),
             }
         except Exception:  # noqa: BLE001
             gpu_info = None
-    perf = sample_perfhud()
     if gpu_info is not None:
         gpu_info["gpu_utilization_percent"] = perf["gpu_utilization_percent"]
         gpu_info["gpu_temperature_celsius"] = perf["gpu_temperature_celsius"]

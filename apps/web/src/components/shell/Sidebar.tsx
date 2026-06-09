@@ -107,24 +107,26 @@ export function Sidebar({ reviewCount }: SidebarProps) {
                   {item.badge}
                 </span>
               )}
-              {item.key === "ai-pre" && preAnnotatedTotal > 0 && (
-                <span
-                  title={`${preAnnotatedTotal} 批 AI 预标完成、待人工接管`}
-                  className={styles.navBadgeWrap}
-                >
-                  <span className={clsx(styles.badge, styles.badgeAi)}>
-                    {preAnnotatedTotal > 99 ? "99+" : preAnnotatedTotal} 待接管
-                  </span>
-                </span>
-              )}
-              {item.key === "model-market" && failedTotal > 0 && (
-                <span
-                  title={`${failedTotal} 条失败预测待处理`}
-                  className={styles.navBadgeWrap}
-                >
-                  <span className={clsx(styles.badge, styles.badgeDanger)}>
-                    {failedTotal > 99 ? "99+" : failedTotal} 失败
-                  </span>
+              {/* AI 预标注：待接管 + 失败预测两枚徽章同挂此项（失败预测已迁到 /ai-pre/jobs?status=failed，
+                  此前误挂在「模型市场」上）。 */}
+              {item.key === "ai-pre" && (preAnnotatedTotal > 0 || failedTotal > 0) && (
+                <span className={styles.navBadgeWrap}>
+                  {preAnnotatedTotal > 0 && (
+                    <span
+                      title={`${preAnnotatedTotal} 批 AI 预标完成、待人工接管`}
+                      className={clsx(styles.badge, styles.badgeAi)}
+                    >
+                      {preAnnotatedTotal > 99 ? "99+" : preAnnotatedTotal} 待接管
+                    </span>
+                  )}
+                  {failedTotal > 0 && (
+                    <span
+                      title={`${failedTotal} 条失败预测待处理`}
+                      className={clsx(styles.badge, styles.badgeDanger)}
+                    >
+                      {failedTotal > 99 ? "99+" : failedTotal} 失败
+                    </span>
+                  )}
                 </span>
               )}
             </NavLink>
