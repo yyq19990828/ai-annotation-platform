@@ -66,7 +66,7 @@ scene 模式适合“一个连续场景被拆成多个 task”的项目，例如
 
 ## 标注指引
 
-为项目编写 Markdown 形式的标注指引，工作台首次打开会自动展开浮层让标注员阅读。详见
+为项目编写 Markdown 形式的标注指引，供标注员在工作台阅读以降低标注偏差。**该功能当前已下线**（特性开关 `ANNOTATION_GUIDE_UI_ENABLED=false`），设计与行为说明见
 [标注指引（Annotation Guide）](./annotation-guide.md)。
 
 ## 从已有项目复制配置

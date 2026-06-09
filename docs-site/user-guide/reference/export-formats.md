@@ -1,5 +1,5 @@
 ---
-audience: [annotator, project_admin]
+audience: [project_admin, super_admin]
 type: reference
 since: v0.1.0
 status: stable
@@ -165,7 +165,7 @@ names:
 
 ### 图像 YOLO ZIP 包目录树
 
-<!-- IMAGE_CHECKLIST: images/export/yolo-dir-tree.png — 解压后 YOLO 单目标导出包目录树（terminal 截图）；红框：labels/ 镜像层级。[manual] -->
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/export/yolo-dir-tree.png — 解压后 YOLO 单目标导出包目录树（terminal 截图）；标注红框：labels/ 镜像层级。[manual] -->
 
 **单目标**（只勾一个 YOLO 变体）落包根，`labels/` 按 `{project_id}/{dataset_id}/labels/<原图相对路径>.txt` 镜像层级：
 

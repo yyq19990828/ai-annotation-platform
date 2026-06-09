@@ -237,6 +237,6 @@ last_reviewed: 2026-06-10
 
 ## 相关文档
 
-- [创建数据集与导入](/user-guide/projects/) 中的上传方式
+- [图像数据集导入](/user-guide/datasets/import-images) — 多文件 / ZIP 上传方式
 - [点云 / 多模态数据集导入格式](/user-guide/datasets/import-formats) — scene 目录布局
 - 开发视角：[概念 · 存储连接器](/dev/concepts/storage-connections)
