@@ -181,7 +181,7 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
                   <th className={styles.tableHeaderCell}>项目</th>
                   <th className={styles.tableHeaderCell}>批次 / 任务</th>
                   <th className={styles.tableHeaderCell}>Prompt / 错误</th>
-                  <th className={styles.tableHeaderCell}>模式</th>
+                  <th className={styles.tableHeaderCell}>模型 / 模式</th>
                   <th className={styles.tableHeaderCell}>状态</th>
                   <th className={styles.tableHeaderCell}>进度</th>
                   <th className={styles.tableHeaderCell}>总数</th>
@@ -280,9 +280,12 @@ function JobRow({
       "")
     : payloadString(job.payload, "prompt") ?? "";
   const promptShort = prompt.length > 50 ? prompt.slice(0, 50) + "…" : prompt;
+  // 几何 backend (yolo): 展示实际模型 (如 yolov8l, 由 worker 从 model_variants 派生);
+  // 文本 prompt 路径: 展示 output_mode (box/mask/both)。retry job 固定 "retry"。
+  const modelLabel = payloadString(job.payload, "model_label");
   const outputMode = isRetry
     ? "retry"
-    : payloadString(job.payload, "output_mode") ?? "—";
+    : modelLabel ?? payloadString(job.payload, "output_mode") ?? "—";
   const totalTasks = isRetry ? 1 : payloadNumber(job.payload, "total_tasks") ?? 0;
   const isTerminal = ["completed", "failed", "cancelled"].includes(job.status);
   const failedCount =

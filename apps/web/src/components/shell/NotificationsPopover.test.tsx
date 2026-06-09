@@ -3,6 +3,7 @@ import {
   filterNotificationItems,
   groupNotificationItems,
 } from "./NotificationsPopover.helpers";
+import { jobSnippet } from "./NotificationsPopover";
 import type { NotificationItem } from "@/api/notifications";
 
 function makeNotification(
@@ -51,5 +52,19 @@ describe("NotificationsPopover helpers", () => {
     expect(grouped.today.map((item) => item.id)).toEqual(["today"]);
     expect(grouped.week.map((item) => item.id)).toEqual(["week"]);
     expect(grouped.earlier.map((item) => item.id)).toEqual(["earlier"]);
+  });
+
+  it("jobSnippet: 全已预标跳过显示明确文案, 而非误导的成功 0", () => {
+    const allPredicted = makeNotification({
+      type: "job.completed",
+      payload: { reason: "all_predicted", skipped_count: 32, success_count: 0 },
+    });
+    expect(jobSnippet(allPredicted)).toBe("已全部预标，跳过 32 个");
+
+    const normal = makeNotification({
+      type: "job.completed",
+      payload: { success_count: 30, failed_count: 2 },
+    });
+    expect(jobSnippet(normal)).toBe("成功 30 / 失败 2");
   });
 });
