@@ -225,6 +225,59 @@ async def resolve_task_scene_frames(
     return out
 
 
+async def get_scene_frame_task_map(
+    db: AsyncSession, scene_id: uuid.UUID
+) -> dict[int, uuid.UUID]:
+    """scene 内 frame_index → task_id 映射(neighbors / 区间插值共用)。
+
+    双路径反查(task.dataset_item_id / primary_lidar link);同 frame_index
+    多模态 item 取首个解析到 task 的(与 neighbors 语义一致)。
+    """
+    items_rows = (
+        await db.execute(
+            select(DatasetItem.id, DatasetItem.frame_index)
+            .where(DatasetItem.scene_id == scene_id)
+            .where(DatasetItem.frame_index.is_not(None))
+            .order_by(DatasetItem.frame_index)
+        )
+    ).all()
+    if not items_rows:
+        return {}
+
+    item_ids = [row[0] for row in items_rows]
+
+    direct_rows = (
+        await db.execute(
+            select(Task.id, Task.dataset_item_id).where(
+                Task.dataset_item_id.in_(item_ids)
+            )
+        )
+    ).all()
+    item_to_task: dict[uuid.UUID, uuid.UUID] = {row[1]: row[0] for row in direct_rows}
+
+    link_rows = (
+        await db.execute(
+            select(
+                TaskDatasetItemLink.dataset_item_id,
+                TaskDatasetItemLink.task_id,
+            )
+            .where(TaskDatasetItemLink.dataset_item_id.in_(item_ids))
+            .where(TaskDatasetItemLink.role == _PRIMARY_LIDAR_ROLE)
+        )
+    ).all()
+    for item_id_, tid in link_rows:
+        item_to_task.setdefault(item_id_, tid)
+
+    # 按 frame_index 排,同 frame_index 取首个有 task 的(多模态去重)
+    frame_to_task: dict[int, uuid.UUID] = {}
+    for item_id_, fi in items_rows:
+        tid = item_to_task.get(item_id_)
+        if tid is None:
+            continue
+        frame_to_task.setdefault(fi, tid)
+    return frame_to_task
+
+
 async def get_neighbors_for_task(
     db: AsyncSession,
     *,
@@ -262,50 +315,11 @@ async def get_neighbors_for_task(
     if scene is None:
         return None
 
-    # scene 下所有"带 frame_index"的 dataset_items(主帧 + 多模态同帧)
-    items_rows = (
-        await db.execute(
-            select(DatasetItem.id, DatasetItem.frame_index)
-            .where(DatasetItem.scene_id == scene_id)
-            .where(DatasetItem.frame_index.is_not(None))
-            .order_by(DatasetItem.frame_index)
-        )
-    ).all()
-    if not items_rows:
+    # scene 下所有"带 frame_index"的 item 反查 task(当前 task 的主 item 自身
+    # 带 scene+frame,故映射至少含当前帧;空 scene 不可达)
+    frame_to_task = await get_scene_frame_task_map(db, scene_id)
+    if not frame_to_task:
         return None
-
-    item_ids = [row[0] for row in items_rows]
-
-    # 反查 task:两条路径合并,task 唯一
-    direct_rows = (
-        await db.execute(
-            select(Task.id, Task.dataset_item_id).where(
-                Task.dataset_item_id.in_(item_ids)
-            )
-        )
-    ).all()
-    item_to_task: dict[uuid.UUID, uuid.UUID] = {row[1]: row[0] for row in direct_rows}
-
-    link_rows = (
-        await db.execute(
-            select(
-                TaskDatasetItemLink.dataset_item_id,
-                TaskDatasetItemLink.task_id,
-            )
-            .where(TaskDatasetItemLink.dataset_item_id.in_(item_ids))
-            .where(TaskDatasetItemLink.role == _PRIMARY_LIDAR_ROLE)
-        )
-    ).all()
-    for item_id_, tid in link_rows:
-        item_to_task.setdefault(item_id_, tid)
-
-    # 按 frame_index 排,同 frame_index 取首个有 task 的(多模态去重)
-    frame_to_task: dict[int, uuid.UUID] = {}
-    for item_id_, fi in items_rows:
-        tid = item_to_task.get(item_id_)
-        if tid is None:
-            continue
-        frame_to_task.setdefault(fi, tid)
 
     ordered_frames = sorted(frame_to_task.keys())
     total = len(ordered_frames)

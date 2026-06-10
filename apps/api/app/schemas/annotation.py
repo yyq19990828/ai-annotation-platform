@@ -149,6 +149,48 @@ class PropagateRequest(BaseModel):
 
 class PropagateResponse(BaseModel):
     annotation: "AnnotationOut"
+    # v0.15.1 · box_3d 且源/目标帧均有 ego pose 时为 True(已做运动补偿);
+    # False = 原样复制(无 pose 数据 / 非 box_3d / override_psr 显式给定)。
+    motion_compensated: bool = False
+
+
+class PropagateBatchRequest(BaseModel):
+    """v0.15.1 · 多目标批量跨帧延续(源 task 走端点路径)。
+
+    annotation_ids=None → 源 task 全部 active box_3d;显式给定时逐条校验
+    归属与几何类型,任一不合法整批拒(同一事务,无部分写入)。
+    """
+
+    target_task_id: UUID
+    annotation_ids: list[UUID] | None = None
+
+
+class PropagateBatchItem(BaseModel):
+    source_annotation_id: UUID
+    annotation: "AnnotationOut"
+
+
+class PropagateBatchResponse(BaseModel):
+    items: list[PropagateBatchItem] = []
+    motion_compensated: bool = False
+
+
+class InterpolateRangeRequest(BaseModel):
+    """v0.15.1 · 关键帧区间插值(from task 走端点路径)。
+
+    同 group_id 链上两端帧各有一个 box_3d,区间内每个中间帧生成一个插值框
+    (source="interpolated",便于审核过滤/批量删)。
+    """
+
+    group_id: int
+    to_task_id: UUID
+
+
+class InterpolateRangeResponse(BaseModel):
+    annotations: list["AnnotationOut"] = []
+    motion_compensated: bool = False
+    # 已有同 group active 标注而被幂等跳过的中间帧
+    skipped_frames: list[int] = []
 
 
 class AnnotationOut(BaseModel):
