@@ -536,10 +536,12 @@ async def get_point_cloud_manifest(
     scene_name_out: str | None = None
     frame_index_out: int | None = None
     scene_total_frames_out: int | None = None
+    ego_pose_out = None
     if primary_link is not None:
         primary_item = items_by_id.get(primary_link.dataset_item_id)
         if primary_item is not None and primary_item.scene_id is not None:
             from app.db.models.dataset import Scene
+            from app.services import scene_pose as scene_pose_svc
 
             scene = await db.get(Scene, primary_item.scene_id)
             if scene is not None:
@@ -552,6 +554,13 @@ async def get_point_cloud_manifest(
                     .where(DatasetItem.frame_index.is_not(None))
                 )
                 scene_total_frames_out = total_row.scalar() or 0
+                # v0.15.0 · 本帧 ego pose 透出;无位姿行(历史/非 nuScenes) → None
+                if primary_item.frame_index is not None:
+                    ego_pose_out = await scene_pose_svc.get_frame_pose(
+                        db,
+                        scene_id=scene.id,
+                        frame_index=primary_item.frame_index,
+                    )
 
     return TaskPointCloudManifestResponse(
         task_id=task.id,
@@ -563,6 +572,7 @@ async def get_point_cloud_manifest(
         scene_name=scene_name_out,
         frame_index=frame_index_out,
         scene_total_frames=scene_total_frames_out,
+        ego_pose=ego_pose_out,
     )
 
 

@@ -286,7 +286,9 @@ async def import_nuscenes(
 
     from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
     from app.db.models.project import Project
+    from app.schemas.scene_pose import FramePose
     from app.services import scene as scene_svc
+    from app.services import scene_pose as scene_pose_svc
     from app.services.dataset import build_tasks_for_link
     from app.services.pointcloud_import import attach_calibration
     from app.services.storage import storage_service
@@ -369,6 +371,7 @@ async def import_nuscenes(
         lidar_items: list[DatasetItem] = []  # 主帧,按帧序
         cam_frame_index: dict[uuid.UUID, int] = {}  # cam item.id -> frame_index
         calib_items: list[DatasetItem] = []  # scene-level(frame_index=NULL)
+        frame_poses: list[FramePose] = []  # v0.15.0 · 逐帧 ego pose(LIDAR_TOP 时钟)
         calib_written = False
 
         for frame_idx, sample in enumerate(samples):
@@ -397,6 +400,16 @@ async def import_nuscenes(
 
             cs_lidar = cs_by_token[lidar_sd["calibrated_sensor_token"]]
             ego_lidar = ego_by_token[lidar_sd["ego_pose_token"]]
+            # v0.15.0 · 逐帧 ego pose(ego→global)+ LIDAR_TOP 时间戳,落 scene_frame_poses
+            frame_poses.append(
+                FramePose(
+                    frame_index=frame_idx,
+                    timestamp_us=int(lidar_sd["timestamp"]),
+                    ego_translation=[float(v) for v in ego_lidar["translation"]],
+                    ego_rotation=[float(v) for v in ego_lidar["rotation"]],
+                    source_metadata={"ego_pose_token": lidar_sd["ego_pose_token"]},
+                )
+            )
             T_ego_from_lidar = _transform(
                 cs_lidar["rotation"],
                 cs_lidar["translation"],
@@ -511,6 +524,11 @@ async def import_nuscenes(
             items_in_order=lidar_items,
             shared_frame_items=cam_frame_index,
             scene_level_items=calib_items,
+        )
+        # v0.15.0 · 逐帧 ego pose 落库(幂等 upsert);已存在同名 scene 走上方
+        # skip 分支不会到这里,补历史 scene 用 scripts/backfill_frame_poses.py
+        await scene_pose_svc.upsert_frame_poses(
+            db, scene_id=scene.id, poses=frame_poses
         )
         report_scenes.append({"name": scene_name, "frames": len(samples)})
 

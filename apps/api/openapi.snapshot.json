@@ -6992,6 +6992,56 @@
         "title": "ForgotPasswordRequest",
         "type": "object"
       },
+      "FramePose": {
+        "properties": {
+          "ego_rotation": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Ego Rotation",
+            "type": "array"
+          },
+          "ego_translation": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Ego Translation",
+            "type": "array"
+          },
+          "frame_index": {
+            "minimum": 0.0,
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "source_metadata": {
+            "additionalProperties": true,
+            "title": "Source Metadata",
+            "type": "object"
+          },
+          "timestamp_us": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp Us"
+          }
+        },
+        "required": [
+          "frame_index",
+          "ego_translation",
+          "ego_rotation"
+        ],
+        "title": "FramePose",
+        "type": "object"
+      },
       "GlobalBackendItem": {
         "description": "v0.9.7 · CreateProjectWizard step 4 dropdown 用的 backend 概要项.",
         "properties": {
@@ -15096,6 +15146,16 @@
             "title": "Cameras",
             "type": "array"
           },
+          "ego_pose": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FramePose"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "expires_in": {
             "title": "Expires In",
             "type": "integer"
@@ -15408,6 +15468,28 @@
           "name"
         ],
         "title": "ToolClassEntry",
+        "type": "object"
+      },
+      "TrajectoryResponse": {
+        "description": "scene 的有序逐帧轨迹(按 frame_index 升序);无位姿 scene → poses=[]。",
+        "properties": {
+          "poses": {
+            "items": {
+              "$ref": "#/components/schemas/FramePose"
+            },
+            "title": "Poses",
+            "type": "array"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scene_id"
+        ],
+        "title": "TrajectoryResponse",
         "type": "object"
       },
       "TriViewFloatState": {
@@ -29554,6 +29636,55 @@
           }
         ],
         "summary": "Update Scene",
+        "tags": [
+          "scenes"
+        ]
+      }
+    },
+    "/api/v1/scenes/{scene_id}/trajectory": {
+      "get": {
+        "description": "v0.15.0 · scene 的有序逐帧 ego 轨迹(frame_index 升序)。\n\n无位姿 scene(历史数据 / 非 nuScenes 来源)→ 200 + poses=[],\n消费方按\"无轨迹\"降级,不报错。",
+        "operationId": "get_scene_trajectory_api_v1_scenes__scene_id__trajectory_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scene_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scene Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrajectoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Scene Trajectory",
         "tags": [
           "scenes"
         ]

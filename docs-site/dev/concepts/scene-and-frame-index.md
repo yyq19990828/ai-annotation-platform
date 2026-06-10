@@ -183,6 +183,41 @@ PYTHONPATH=. uv run python scripts/backfill_scenes.py --all-missing --dry-run
 
 **不**在 docker 启动时自动跑——管理员人工 review 后执行。脚本默认 `mode=auto`;对文件名编码 scene 信息(如 `<ds>/scene_a_000001.pcd` 平铺)会误判为单 scene,需显式 `--mode=per_subdirectory` 或人工 PATCH。
 
+## 逐帧 ego pose / 时间戳(v0.15.0)
+
+scene 只给了"帧的相对顺序";`scene_frame_poses` 表补上"帧的时空"——每帧车体在世界系的位姿 + 时间戳,是 nuScenes `sample_data.ego_pose` / `timestamp` 的平台等价物,也是跨帧自动化(运动补偿 propagate / 插值 / Kalman)的硬前置。
+
+### `scene_frame_poses` 表(迁移 0102)
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | UUID PK | 非用户实体,无 display_id |
+| `scene_id` | UUID FK scenes CASCADE | 随 scene 级联删除 |
+| `frame_index` | int | 与 `dataset_items.frame_index` 同语义 |
+| `timestamp_us` | bigint? | 主帧时钟(nuScenes 取 LIDAR_TOP 的 `sample_data.timestamp`,微秒) |
+| `ego_translation` | JSONB `[x,y,z]` | ego→global(世界系)平移 |
+| `ego_rotation` | JSONB `[w,x,y,z]` | ego→global 四元数(nuScenes 原样) |
+| `source_metadata` | JSONB | 自由格式(如 `ego_pose_token`) |
+| 唯一性 | `(scene_id, frame_index)` | 一帧一行,兼做轨迹查询索引 |
+
+设计要点(沿用 v0.14.0「表优于 JSONB」论证):
+
+- **grain = (scene_id, frame_index)**,与 neighbors 查询对齐;不塞 `dataset_items.metadata_`(轨迹查询会变 JSONB 扫表,且位姿是 lidar 专属语义)。
+- **存原始 ego→global**:跨帧相对位移 = `inv(pose_i) @ pose_j`,由消费方算,不预存。
+- **nullable 友好**:历史 scene / 非 nuScenes 来源无行 → 消费方按"无轨迹"降级,不报错。
+- **世界系只在 scene 内可比**:nuScenes ego_pose 跨 log 世界系不可比,本表只服务 scene 内跨帧,不跨 scene 比绝对坐标。
+- **逐相机 timestamp 偏差不在本表**:同 sample 跨相机 ~50ms 偏差留 v0.15.1+ 处理;本表只存 frame 级主时钟。
+
+### API 与透出
+
+- `GET /api/v1/scenes/{id}/trajectory`:按 `frame_index` 升序返回 `{scene_id, poses: [{frame_index, timestamp_us, ego_translation, ego_rotation, source_metadata}]}`;无位姿 scene → 200 + `poses: []`。
+- manifest(`GET /tasks/{id}/point-cloud/manifest`)新增 `ego_pose` 字段(本帧位姿,无则 null);v0.15.0 前端仅调试可见,不消费。
+
+### 数据来源与回填
+
+- `import_nuscenes_scene.py` 落 scene 后逐帧 upsert(`services/scene_pose.py::upsert_frame_poses`,按唯一键 `ON CONFLICT DO UPDATE`,幂等)。
+- 历史 dataset 用 `scripts/backfill_frame_poses.py --dataset-id <uuid|display_id> --nuscenes-root <root>` 补;按 `scene.source_metadata.scene_token` 反查原元数据。
+
 ## 跨帧 UX 如何消费 neighbors API(v0.14.1)
 
 v0.14.1 在这套地基上落了用户可用的跨帧能力,消费路径:
@@ -217,6 +252,5 @@ v0.14.1 在这套地基上落了用户可用的跨帧能力,消费路径:
 
 - 跨 scene 段内段间无感导航(case C 视频多段)→ v0.14.2+
 - 视频段 `Alt+→` 分流到 `video_tracker_runner`(段内)→ 后续
-- 跨帧自动插值 / Kalman 预测、多目标批量 propagate、`point_mask_3d` 跨帧 → v0.15+
-- scene 跨多 dataset(一 scene 横跨 lidar + image dataset)→ v0.15+
-- ego_pose / 时间戳(nuScenes sample_data 等价物)→ v0.15+
+- 跨帧自动插值 / Kalman 预测、多目标批量 propagate、`point_mask_3d` 跨帧 → v0.15.1+
+- scene 跨多 dataset(一 scene 横跨 lidar + image dataset)→ v0.15.2+
