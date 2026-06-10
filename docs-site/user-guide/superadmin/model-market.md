@@ -19,11 +19,9 @@ last_reviewed: 2026-06-10
 - 对注册 backend 执行健康检查、卸载、预热
 - 全局新增 / 编辑 / 删除项目级 backend
 
-## 三段切换
+## 主要视图
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/model-market-tabs.png — 能力目录/运行时观测/注册管理三 tab [manual] -->
-
-## 主要视图
 
 页面顶部有三段切换：**能力目录 / 运行时观测 / 注册管理**。当前视图写入 `?tab=catalog|runtime|registry`，可直接分享深链。
 

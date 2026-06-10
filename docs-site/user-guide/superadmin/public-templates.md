@@ -13,11 +13,9 @@ last_reviewed: 2026-06-10
 平台支持「公共模板」（`scope=public`）—— 全平台可见可用、不受组织边界限制。
 本页重点讲公共模板的治理要点；通用模板操作见下方「权限说明」。
 
-## 谁能创建
+## 模板创建权限说明
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/public-templates/scope-selector.png — 可见范围下拉「公共」选项 disabled（非超管视角） [manual] -->
-
-## 模板创建权限说明
 
 ### 通用（适用所有角色 ≥ project_admin）
 

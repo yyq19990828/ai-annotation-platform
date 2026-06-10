@@ -15,7 +15,7 @@ ML Backend 是平台对接外部推理服务的契约层。每个 Backend 是一
 - 项目侧：项目设置 → **ML 模型** tab（写权限属项目管理员 / 超级管理员）
 - 全局侧（仅超管）：`/model-market`
 
-## 注册/表单字段
+## 表单字段
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/ml-backend/register-form.png — 注册表单全貌含 max_concurrency/extra_params [manual] -->
 

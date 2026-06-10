@@ -10,7 +10,7 @@ last_reviewed: 2026-06-10
 
 `async_jobs.status='failed'` 的 `batch_predict` / `prediction_retry` 记录，以及 `failed_predictions` 明细行，就是"AI 预标跑过但失败的"——本页讲怎么定位根因。
 
-## 入口/排查
+## 入口
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/failed-predictions/list.png — /ai-pre/jobs?status=failed 列表（状态筛选 + 重试/放弃/显示已放弃 toggle） [manual] -->
 

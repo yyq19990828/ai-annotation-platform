@@ -26,11 +26,11 @@ last_reviewed: 2026-06-10
 | `batch.admin_locked` | 管理员锁定批次 | 跳转工作台（批次视图） | 批次 |
 | `batch.admin_unlocked` | 管理员解锁批次 | 跳转工作台（批次视图） | 批次 |
 | `batch.unarchived` | 批次取消归档 | 跳转工作台（批次视图） | 批次 |
-| `failed_prediction.retry.started` | 失败预测重试已开始 | 跳转 `/ai-pre/jobs` | 后台任务 |
-| `failed_prediction.retry.succeeded` | 失败预测重试成功 | 跳转 `/ai-pre/jobs` | 后台任务 |
-| `failed_prediction.retry.failed` | 失败预测重试失败 | 跳转 `/ai-pre/jobs` | 后台任务 |
-| `export.ready` | 导出完成，可下载 | 直接触发文件下载 | 导出 |
-| `export.failed` | 导出失败 | 直接触发文件下载（无有效 URL） | 导出 |
+| `failed_prediction.retry.started` | 失败预测重试已开始 | 仅标已读（无跳转） | 全部 |
+| `failed_prediction.retry.succeeded` | 失败预测重试成功 | 仅标已读（无跳转） | 全部 |
+| `failed_prediction.retry.failed` | 失败预测重试失败 | 仅标已读（无跳转） | 全部 |
+| `export.ready` | 导出完成，可下载 | 直接触发文件下载（payload 带 `download_url`） | 导出 |
+| `export.failed` | 导出失败 | 仅标已读（失败无下载链接） | 导出 |
 | `job.completed` | 后台任务完成 | 跳转 `/ai-pre/jobs`（数据集导入则跳数据集列表） | 后台任务 |
 | `job.failed` | 后台任务失败 | 跳转 `/ai-pre/jobs` | 后台任务 |
 | `job.cancelled` | 后台任务已取消 | 跳转 `/ai-pre/jobs` | 后台任务 |
@@ -41,6 +41,10 @@ last_reviewed: 2026-06-10
 | `user.deactivation_completed` | 账号注销完成 | 仅标已读 | 全部 |
 
 > **任务类通知点击行为说明**：`task.*` 通知点击后只会标记为已读，不会自动跳转到对应任务。如需进入工作台处理退回任务，请从 Dashboard 的「退回提示」区块直接进入，或在项目卡片点击「打开」后在任务队列筛选。
+>
+> **可跳转的只有 4 类 `target_type`**：`bug_report`（→ `/bugs` 或反馈抽屉）、`batch`（→ 工作台批次视图）、`export`（payload 带 `download_url` 时触发下载）、`async_job`（→ `/ai-pre/jobs`，数据集导入跳 `/datasets`）。其余 `target_type`（`task` / `failed_prediction` / `user`）点击仅标已读。「后台任务」筛选 tab 只匹配 `async_job`，因此 `failed_prediction.retry.*` 只出现在「全部」tab。
+>
+> **失败预测重试**：`failed_prediction.retry.started` 会落一条通知中心条目；`succeeded` / `failed` 主要作为 WebSocket 实时进度事件，重试最终结果通常以后台任务通知（`job.completed` / `job.failed`）形式落地。三者均可在 [通知偏好](./settings#通知偏好) 单独静音。
 
 ## 已读、删除和清空
 
