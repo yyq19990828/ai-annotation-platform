@@ -696,6 +696,7 @@ class AnnotationService:
         to_task_id: uuid.UUID,
         user_id: uuid.UUID,
         assert_task_editable=None,
+        assert_task_visible=None,
     ) -> tuple[list[Annotation], bool, list[int]]:
         """v0.15.1 · 关键帧区间插值: 同 group_id 链上帧 i 与帧 k 各有一框,
         给区间 (i,k) 内每个有 task 的中间帧生成插值框(source="interpolated")。
@@ -707,6 +708,9 @@ class AnnotationService:
           重复触发/人工微调过的帧不重复生成。
         - assert_task_editable: API 层注入的锁态校验(reviewer 例外逻辑在 api 层),
           任一中间帧不可写 → 整批 422/409,不产生部分写入。
+        - assert_task_visible: API 层注入的 batch 可见性/分派校验(async)。两端 task
+          已在端点校验,但中间帧 task 由 group 链 + scene 反查得到,必须逐帧再校验,
+          否则 annotator 凭两端可见即可往不可见/未分派的中间批次写入(权限漂移)。
 
         返回 (新建 annotations, motion_compensated, skipped_frames)。
         """
@@ -792,12 +796,15 @@ class AnnotationService:
                 status_code=422, detail="插值区间内没有可写的中间帧 task"
             )
 
-        # 整批前置校验: 中间帧 task 锁态(api 层注入 reviewer 例外)
+        # 整批前置校验: 中间帧 task 可见性(batch 可见/分派)+ 锁态。
+        # 可见性必须逐帧校验——两端 task 可见不代表中间帧批次对该用户可见/已分派。
         mid_tasks: dict[int, Task] = {}
         for f in mid_frames:
             t = await self.db.get(Task, frame_to_task[f])
             if t is None:
                 continue
+            if assert_task_visible is not None:
+                await assert_task_visible(t)
             if assert_task_editable is not None:
                 assert_task_editable(t)
             mid_tasks[f] = t

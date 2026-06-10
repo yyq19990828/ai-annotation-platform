@@ -714,6 +714,62 @@ async def test_interpolate_range_locked_mid_task_rejected(db_session, super_admi
 
 
 @pytest.mark.asyncio
+async def test_interpolate_range_invisible_mid_task_rejected(db_session, super_admin):
+    """中间帧 task 对用户不可见(跨批次未分派)→ 整批拒,无部分写入。
+
+    防权限漂移: 两端 task 可见不代表中间帧批次对该用户可见/已分派,
+    interpolate_range 必须对每个中间帧 task 再走一遍可见性校验。
+    """
+    from fastapi import HTTPException
+    from sqlalchemy import select as sa_select
+
+    user, _ = super_admin
+    project, _, _, tasks = await _seed_scene(db_session, owner_id=user.id, n=3)
+    await _add_annotation(
+        db_session,
+        task=tasks[0],
+        project=project,
+        user_id=user.id,
+        geometry=_box3d(),
+        group_id=321,
+    )
+    await _add_annotation(
+        db_session,
+        task=tasks[2],
+        project=project,
+        user_id=user.id,
+        geometry=_box3d(),
+        group_id=321,
+    )
+
+    async def _deny_visible(t):
+        # 模拟中间帧 task 所在批次对该用户不可见
+        if t.id == tasks[1].id:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+    svc = AnnotationService(db_session)
+    with pytest.raises(HTTPException) as exc:
+        await svc.interpolate_range(
+            group_id=321,
+            from_task_id=tasks[0].id,
+            to_task_id=tasks[2].id,
+            user_id=user.id,
+            assert_task_visible=_deny_visible,
+        )
+    assert exc.value.status_code == 404
+    rows = (
+        (
+            await db_session.execute(
+                sa_select(Annotation).where(Annotation.task_id == tasks[1].id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert rows == []
+
+
+@pytest.mark.asyncio
 async def test_batch_and_interpolate_endpoints(db_session, httpx_client, super_admin):
     user, token = super_admin
     headers = {"Authorization": f"Bearer {token}"}

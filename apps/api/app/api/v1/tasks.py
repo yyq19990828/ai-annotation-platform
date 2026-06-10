@@ -1179,6 +1179,7 @@ async def propagate_annotations_batch(
             "propagated_batch": True,
             "motion_compensated": motion_compensated,
             "count": len(results),
+            "created_annotation_ids": [str(ann.id) for _, ann in results],
         },
     )
     await db.commit()
@@ -1225,6 +1226,7 @@ async def interpolate_annotations_range(
         to_task_id=data.to_task_id,
         user_id=current_user.id,
         assert_task_editable=lambda t: _assert_task_editable(t, current_user),
+        assert_task_visible=lambda t: _assert_task_visible(db, t, current_user),
     )
     await AuditService.log(
         db,
@@ -1240,6 +1242,7 @@ async def interpolate_annotations_range(
             "to_task_id": str(data.to_task_id),
             "motion_compensated": motion_compensated,
             "created": len(created),
+            "created_annotation_ids": [str(a.id) for a in created],
             "skipped_frames": skipped_frames,
         },
     )

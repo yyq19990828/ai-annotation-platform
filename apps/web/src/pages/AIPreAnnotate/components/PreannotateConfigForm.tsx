@@ -246,7 +246,6 @@ export function PreannotateConfigForm({
       {/* v0.14.16 · 命名预设. */}
       <PresetRow
         presets={cfg.presets}
-        disabled={!cfg.backendId}
         onApply={(p) => cfg.applyPreset(p.values)}
         onSave={(name) => cfg.savePreset(name, cfg.paramsValue)}
         onRemove={cfg.removePreset}
