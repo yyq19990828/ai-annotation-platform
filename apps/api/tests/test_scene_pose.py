@@ -44,7 +44,11 @@ async def test_upsert_and_get_trajectory_ordered(db_session, super_admin):
     n = await scene_pose_svc.upsert_frame_poses(
         db_session,
         scene_id=scene.id,
-        poses=[_pose(2, x=10.0, ts=2_000_000), _pose(0, x=0.0, ts=1_000_000), _pose(1, x=5.0, ts=1_500_000)],
+        poses=[
+            _pose(2, x=10.0, ts=2_000_000),
+            _pose(0, x=0.0, ts=1_000_000),
+            _pose(1, x=5.0, ts=1_500_000),
+        ],
     )
     assert n == 3
 
@@ -80,9 +84,13 @@ async def test_get_frame_pose_hit_and_miss(db_session, super_admin):
     await scene_pose_svc.upsert_frame_poses(
         db_session, scene_id=scene.id, poses=[_pose(3, x=7.0)]
     )
-    hit = await scene_pose_svc.get_frame_pose(db_session, scene_id=scene.id, frame_index=3)
+    hit = await scene_pose_svc.get_frame_pose(
+        db_session, scene_id=scene.id, frame_index=3
+    )
     assert hit is not None and hit.ego_translation[0] == 7.0
-    miss = await scene_pose_svc.get_frame_pose(db_session, scene_id=scene.id, frame_index=4)
+    miss = await scene_pose_svc.get_frame_pose(
+        db_session, scene_id=scene.id, frame_index=4
+    )
     assert miss is None
 
 
@@ -99,7 +107,9 @@ async def test_trajectory_api(db_session, httpx_client, super_admin):
     scene = await _make_scene(db_session, user.id)
 
     # 无位姿 scene → 200 + poses=[]
-    resp = await httpx_client.get(f"/api/v1/scenes/{scene.id}/trajectory", headers=headers)
+    resp = await httpx_client.get(
+        f"/api/v1/scenes/{scene.id}/trajectory", headers=headers
+    )
     assert resp.status_code == 200
     assert resp.json() == {"scene_id": str(scene.id), "poses": []}
 
@@ -108,7 +118,9 @@ async def test_trajectory_api(db_session, httpx_client, super_admin):
         scene_id=scene.id,
         poses=[_pose(1, x=5.0, ts=2), _pose(0, x=0.0, ts=1)],
     )
-    resp = await httpx_client.get(f"/api/v1/scenes/{scene.id}/trajectory", headers=headers)
+    resp = await httpx_client.get(
+        f"/api/v1/scenes/{scene.id}/trajectory", headers=headers
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert [p["frame_index"] for p in body["poses"]] == [0, 1]

@@ -786,9 +786,7 @@ class AnnotationService:
             box_from, box_to = box_to, box_from
 
         frame_to_task = await get_scene_frame_task_map(self.db, from_scene)
-        mid_frames = sorted(
-            f for f in frame_to_task if from_frame < f < to_frame
-        )
+        mid_frames = sorted(f for f in frame_to_task if from_frame < f < to_frame)
         if not mid_frames:
             raise HTTPException(
                 status_code=422, detail="插值区间内没有可写的中间帧 task"

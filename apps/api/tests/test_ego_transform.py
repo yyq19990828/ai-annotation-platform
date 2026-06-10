@@ -31,7 +31,11 @@ def _pose(fi: int, x: float = 0.0, y: float = 0.0, yaw: float = 0.0) -> FramePos
     )
 
 
-_PSR = {"center": [10.0, 2.0, 1.0], "size": [4.0, 2.0, 1.5], "rotation": [0.0, 0.0, 0.3]}
+_PSR = {
+    "center": [10.0, 2.0, 1.0],
+    "size": [4.0, 2.0, 1.5],
+    "rotation": [0.0, 0.0, 0.3],
+}
 
 
 def test_compensate_world_position_invariant():
@@ -53,9 +57,7 @@ def test_compensate_world_position_invariant():
 
 def test_compensate_pure_translation_math():
     """无旋转 ego 平移 dx → 框 ego 系 x 坐标精确减 dx,旋转不变。"""
-    psr_j, _ = compensate_psr(
-        _PSR, pose_src=_pose(0, x=0.0), pose_dst=_pose(1, x=3.0)
-    )
+    psr_j, _ = compensate_psr(_PSR, pose_src=_pose(0, x=0.0), pose_dst=_pose(1, x=3.0))
     assert psr_j["center"] == pytest.approx([7.0, 2.0, 1.0])
     assert psr_j["rotation"] == pytest.approx([0.0, 0.0, 0.3])
 
@@ -73,8 +75,16 @@ def test_interpolate_midpoint_world_center():
     """t=0.5 的世界中心 = 两端世界中心的中点;尺寸线性插值。"""
     pose_a, pose_b = _pose(0, x=0.0), _pose(2, x=10.0)
     pose_m = _pose(1, x=4.0)  # 中间帧 ego 不在正中,验证投影正确性
-    psr_a = {"center": [10.0, 0.0, 0.0], "size": [4.0, 2.0, 1.5], "rotation": [0.0, 0.0, 0.0]}
-    psr_b = {"center": [4.0, 0.0, 0.0], "size": [5.0, 2.0, 1.5], "rotation": [0.0, 0.0, 0.0]}
+    psr_a = {
+        "center": [10.0, 0.0, 0.0],
+        "size": [4.0, 2.0, 1.5],
+        "rotation": [0.0, 0.0, 0.0],
+    }
+    psr_b = {
+        "center": [4.0, 0.0, 0.0],
+        "size": [5.0, 2.0, 1.5],
+        "rotation": [0.0, 0.0, 0.0],
+    }
 
     psr_m, compensated = interpolate_psr(
         psr_a, psr_b, 0.5, pose_a=pose_a, pose_b=pose_b, pose_mid=pose_m
@@ -92,13 +102,23 @@ def test_interpolate_slerp_yaw_midpoint():
     pose = _pose(0)
     psr_a = dict(_PSR, rotation=[0.0, 0.0, 0.0])
     psr_b = dict(_PSR, rotation=[0.0, 0.0, 0.6])
-    psr_m, _ = interpolate_psr(psr_a, psr_b, 0.5, pose_a=pose, pose_b=pose, pose_mid=pose)
+    psr_m, _ = interpolate_psr(
+        psr_a, psr_b, 0.5, pose_a=pose, pose_b=pose, pose_mid=pose
+    )
     assert psr_m["rotation"][2] == pytest.approx(0.3)
 
 
 def test_interpolate_missing_pose_degrades_to_ego_lerp():
-    psr_a = {"center": [0.0, 0.0, 0.0], "size": [4.0, 2.0, 1.5], "rotation": [0.0, 0.0, 0.0]}
-    psr_b = {"center": [8.0, 4.0, 2.0], "size": [4.0, 2.0, 1.5], "rotation": [0.0, 0.0, 0.4]}
+    psr_a = {
+        "center": [0.0, 0.0, 0.0],
+        "size": [4.0, 2.0, 1.5],
+        "rotation": [0.0, 0.0, 0.0],
+    }
+    psr_b = {
+        "center": [8.0, 4.0, 2.0],
+        "size": [4.0, 2.0, 1.5],
+        "rotation": [0.0, 0.0, 0.4],
+    }
     psr_m, compensated = interpolate_psr(
         psr_a, psr_b, 0.25, pose_a=None, pose_b=_pose(2), pose_mid=None
     )

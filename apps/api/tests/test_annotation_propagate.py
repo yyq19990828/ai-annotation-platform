@@ -403,7 +403,10 @@ async def test_propagate_motion_compensation(db_session, super_admin):
     await _seed_poses(db_session, scene.id, frames=3, step=2.0)
 
     src = await _add_annotation(
-        db_session, task=tasks[0], project=project, user_id=user.id,
+        db_session,
+        task=tasks[0],
+        project=project,
+        user_id=user.id,
         geometry=_box3d(center=(10.0, 2.0, 1.0)),
     )
     svc = AnnotationService(db_session)
@@ -459,11 +462,17 @@ async def test_propagate_batch_all_box3d(db_session, super_admin):
     project, _, scene, tasks = await _seed_scene(db_session, owner_id=user.id)
     await _seed_poses(db_session, scene.id, frames=3, step=2.0)
     a1 = await _add_annotation(
-        db_session, task=tasks[0], project=project, user_id=user.id,
+        db_session,
+        task=tasks[0],
+        project=project,
+        user_id=user.id,
         geometry=_box3d(center=(10.0, 0.0, 0.0)),
     )
     a2 = await _add_annotation(
-        db_session, task=tasks[0], project=project, user_id=user.id,
+        db_session,
+        task=tasks[0],
+        project=project,
+        user_id=user.id,
         geometry=_box3d(center=(20.0, 5.0, 0.0)),
     )
     svc = AnnotationService(db_session)
@@ -530,12 +539,18 @@ async def test_interpolate_range_world_lerp(db_session, super_admin):
     # 世界系: 框从 (10,0,0) 匀速移到 (18,4,0); 帧 i 的 ego 在 x=2i
     # → 帧 0 ego 系 center=(10,0,0); 帧 4 ego 系 center=(18-8, 4, 0)=(10,4,0)
     a0 = await _add_annotation(
-        db_session, task=tasks[0], project=project, user_id=user.id,
+        db_session,
+        task=tasks[0],
+        project=project,
+        user_id=user.id,
         geometry=_box3d(center=(10.0, 0.0, 0.0), rotation=(0.0, 0.0, 0.0)),
         group_id=7_000_000_001,
     )
     await _add_annotation(
-        db_session, task=tasks[4], project=project, user_id=user.id,
+        db_session,
+        task=tasks[4],
+        project=project,
+        user_id=user.id,
         geometry=_box3d(center=(10.0, 4.0, 0.0), rotation=(0.0, 0.0, 0.0)),
         group_id=7_000_000_001,
     )
@@ -573,12 +588,18 @@ async def test_interpolate_range_no_pose_degrades(db_session, super_admin):
     user, _ = super_admin
     project, _, _, tasks = await _seed_scene(db_session, owner_id=user.id, n=3)
     await _add_annotation(
-        db_session, task=tasks[0], project=project, user_id=user.id,
+        db_session,
+        task=tasks[0],
+        project=project,
+        user_id=user.id,
         geometry=_box3d(center=(0.0, 0.0, 0.0), rotation=(0.0, 0.0, 0.0)),
         group_id=7_000_000_002,
     )
     await _add_annotation(
-        db_session, task=tasks[2], project=project, user_id=user.id,
+        db_session,
+        task=tasks[2],
+        project=project,
+        user_id=user.id,
         geometry=_box3d(center=(4.0, 2.0, 0.0), rotation=(0.0, 0.0, 0.0)),
         group_id=7_000_000_002,
     )
@@ -614,12 +635,20 @@ async def test_interpolate_range_validations(db_session, super_admin):
 
     # 相邻帧无中间帧 → 422
     await _add_annotation(
-        db_session, task=tasks[0], project=project, user_id=user.id,
-        geometry=_box3d(), group_id=456,
+        db_session,
+        task=tasks[0],
+        project=project,
+        user_id=user.id,
+        geometry=_box3d(),
+        group_id=456,
     )
     await _add_annotation(
-        db_session, task=tasks[1], project=project, user_id=user.id,
-        geometry=_box3d(), group_id=456,
+        db_session,
+        task=tasks[1],
+        project=project,
+        user_id=user.id,
+        geometry=_box3d(),
+        group_id=456,
     )
     with pytest.raises(HTTPException) as exc:
         await svc.interpolate_range(
@@ -640,12 +669,20 @@ async def test_interpolate_range_locked_mid_task_rejected(db_session, super_admi
     user, _ = super_admin
     project, _, _, tasks = await _seed_scene(db_session, owner_id=user.id, n=3)
     await _add_annotation(
-        db_session, task=tasks[0], project=project, user_id=user.id,
-        geometry=_box3d(), group_id=789,
+        db_session,
+        task=tasks[0],
+        project=project,
+        user_id=user.id,
+        geometry=_box3d(),
+        group_id=789,
     )
     await _add_annotation(
-        db_session, task=tasks[2], project=project, user_id=user.id,
-        geometry=_box3d(), group_id=789,
+        db_session,
+        task=tasks[2],
+        project=project,
+        user_id=user.id,
+        geometry=_box3d(),
+        group_id=789,
     )
     tasks[1].status = "completed"
     await db_session.flush()
@@ -665,10 +702,14 @@ async def test_interpolate_range_locked_mid_task_rejected(db_session, super_admi
         )
     assert exc.value.status_code == 409
     rows = (
-        await db_session.execute(
-            sa_select(Annotation).where(Annotation.task_id == tasks[1].id)
+        (
+            await db_session.execute(
+                sa_select(Annotation).where(Annotation.task_id == tasks[1].id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert rows == []
 
 
@@ -679,8 +720,12 @@ async def test_batch_and_interpolate_endpoints(db_session, httpx_client, super_a
     project, _, scene, tasks = await _seed_scene(db_session, owner_id=user.id, n=4)
     await _seed_poses(db_session, scene.id, frames=4, step=2.0)
     await _add_annotation(
-        db_session, task=tasks[0], project=project, user_id=user.id,
-        geometry=_box3d(center=(10.0, 0.0, 0.0)), group_id=9_000_000_001,
+        db_session,
+        task=tasks[0],
+        project=project,
+        user_id=user.id,
+        geometry=_box3d(center=(10.0, 0.0, 0.0)),
+        group_id=9_000_000_001,
     )
 
     # propagate-batch: 帧 0 全部 box_3d → 帧 1
@@ -697,8 +742,12 @@ async def test_batch_and_interpolate_endpoints(db_session, httpx_client, super_a
 
     # interpolate-range: 帧 0 ↔ 帧 3(帧 3 手动补一框),生成帧 1 跳过(已有)、帧 2 新建
     await _add_annotation(
-        db_session, task=tasks[3], project=project, user_id=user.id,
-        geometry=_box3d(center=(10.0, 3.0, 0.0)), group_id=9_000_000_001,
+        db_session,
+        task=tasks[3],
+        project=project,
+        user_id=user.id,
+        geometry=_box3d(center=(10.0, 3.0, 0.0)),
+        group_id=9_000_000_001,
     )
     resp = await httpx_client.post(
         f"/api/v1/tasks/{tasks[0].id}/annotations/interpolate-range",

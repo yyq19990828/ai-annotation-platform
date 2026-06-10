@@ -112,7 +112,9 @@ def _psr_floats(psr: PsrDict) -> PsrDict:
 def box_ego_to_world(psr: PsrDict, pose: FramePose) -> tuple[Vec3, Mat3]:
     """框(某帧 ego 系 PSR)→ 世界系 (center, rotation 矩阵)。size 不变,不返回。"""
     r_p, t_p = _pose_rt(pose)
-    c = _mat_vec(r_p, (float(psr["center"][0]), float(psr["center"][1]), float(psr["center"][2])))
+    c = _mat_vec(
+        r_p, (float(psr["center"][0]), float(psr["center"][1]), float(psr["center"][2]))
+    )
     center_w: Vec3 = (c[0] + t_p[0], c[1] + t_p[1], c[2] + t_p[2])
     box_e = _euler_xyz_to_mat3(
         float(psr["rotation"][0]), float(psr["rotation"][1]), float(psr["rotation"][2])
@@ -120,7 +122,9 @@ def box_ego_to_world(psr: PsrDict, pose: FramePose) -> tuple[Vec3, Mat3]:
     return center_w, _mat_mul(r_p, box_e)
 
 
-def box_world_to_ego(center_w: Vec3, rot_w: Mat3, size: list[float], pose: FramePose) -> PsrDict:
+def box_world_to_ego(
+    center_w: Vec3, rot_w: Mat3, size: list[float], pose: FramePose
+) -> PsrDict:
     """世界系框 → 某帧 ego 系 PSR(逆变换)。"""
     r_p, t_p = _pose_rt(pose)
     rt = _transpose(r_p)
