@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-10
 ---
 
 # 批次与分配
@@ -58,6 +58,8 @@ scene 模式项目在关联数据集时默认使用按 scene 分包。该策略�
 如果项目不是 scene 模式，通常继续使用顺序/随机切分。
 
 ## 批次状态机
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/batch-status-list.png — 批次列表各状态彩色徽标 [manual] -->
 
 批次状态机如下：
 
@@ -156,16 +158,21 @@ stateDiagram-v2
 
 ## 批量操作
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/batch-bulk-actions.png — 多选后批量操作工具栏（含批量通过/驳回）[manual] -->
+
 已实现的多选批量操作是：
 
-- 激活
-- 归档
-- 重新分配
-- 删除
+- 激活（owner）
+- 归档（owner）
+- 重新分配（owner）
+- 删除（owner）
+- **批量通过**（reviewer）：把多个 `reviewing` 批次一次性置为 `approved`
+- **批量驳回**（reviewer）：把多个 `reviewing` 批次一次性置为 `rejected`，同时填写驳回反馈
 
 说明：
 
-- 批量激活只适用于 `draft` 批次
+- 批量激活只适用于 `draft` 批次，且批次须**已分配标注员**且**有任务**（`total_tasks > 0`）；不满足条件的批次会在结果摘要中标记为失败（`no annotator assigned` / `batch has no tasks`）
+- 批量通过 / 批量驳回只适用于 `reviewing` 批次，操作角色为 reviewer（含 super_admin）
 - 批量归档、删除、改派都受当前状态和权限约束，部分批次可能成功，部分批次会被跳过或失败
 
 ## 删除批次
@@ -197,7 +204,17 @@ owner 可以在批次行上点击锁定，为批次写入锁定原因。锁定�
 
 ## 批次导出
 
-项目管理员可以按批次导出当前批次内的任务标注。图片项目沿用 COCO / YOLO / AAP JSON；视频轨迹项目可导出 Video JSON / YOLO 逐帧 / AAP JSON / MOT / KITTI；点云项目可导出 AAP JSON / KITTI 3D / nuScenes JSON / Point Mask。
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/batch-export-dialog.png — 导出格式选择面板 [manual] -->
+
+项目管理员可以按批次导出当前批次内的任务标注。支持格式按项目数据类型如下：
+
+| 数据类型 | 可选导出格式 |
+|---|---|
+| 图片 | `coco`、`yolo`（= `yolo-det`）、`yolo-obb`（旋转框）、`yolo-seg`（实例分割）、`aap_json`、`voc`（仅单独导出，同步下载） |
+| 视频 | `video_json`、`aap_json`、`mot`、`kitti`（tracking label）、`yolo-frames-det` |
+| 3D 点云 | `aap_json`、`kitti`（3D label）、`nuscenes`、`pointmask` |
+
+点云 `aap_json` / `kitti` 导出支持 `axis_frame` 参数（`iso`（默认，平台内部坐标系）或 `source`（数据集原始传感器坐标系））。
 
 视频轨迹批次支持两种帧模式：
 

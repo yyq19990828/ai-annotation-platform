@@ -72,10 +72,15 @@ docker logs ai-annotation-platform-api-1 2>&1 | jq 'select(.status>=500)'
 | api | `/ready` | lifespan 完成 |
 | grounded-sam2-backend | `/health` | 模型加载完成 |
 
+## 系统健康面板
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/system-monitoring/health-panel.png — 4 组件卡 + Celery 队列表 + Workers 心跳表 [manual] -->
+
 系统健康面板基于 `/api/v1/admin/system-health`：
 
 - 组件状态：PostgreSQL、Redis、MinIO、Celery，展示 `ok` / `degraded` / `down` 与 latency。
 - Celery 队列：显示各队列积压数量，`length ≥ 25` 标为降级（`degraded`），`length ≥ 100` 标为不可用（`down`）（`apps/api/app/api/v1/admin_system_health.py:60-65`）。
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/system-monitoring/workers-table.png — Workers 表（名称/Heartbeat/Pool/状态） [manual] -->
 - Worker 心跳：显示 worker 名称、最近心跳距现在的秒数和 pool 并发上限；心跳 `≥ 120s` 标为降级，`≥ 300s` 标为不可用（`apps/api/app/api/v1/admin_system_health.py:68-75`）。
 
 ⚠️ FastAPI lifespan 阻塞会让 `/health` 30s 内不可用——曾在 CI 引发卡死，详见 [CI 服务依赖踩坑](../../dev/troubleshooting/ci-flaky-services)。

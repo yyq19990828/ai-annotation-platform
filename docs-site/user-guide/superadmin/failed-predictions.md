@@ -10,7 +10,9 @@ last_reviewed: 2026-06-10
 
 `async_jobs.status='failed'` 的 `batch_predict` / `prediction_retry` 记录，以及 `failed_predictions` 明细行，就是"AI 预标跑过但失败的"——本页讲怎么定位根因。
 
-## 入口
+## 入口/排查
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/failed-predictions/list.png — /ai-pre/jobs?status=failed 列表（状态筛选 + 重试/放弃/显示已放弃 toggle） [manual] -->
 
 - 超管 / 项目管理员：`/ai-pre/jobs?status=failed`（图像 tab 加状态过滤器）
 - 仪表盘快捷卡：Dashboard → 失败预测卡片 → 点击直跳
@@ -54,7 +56,9 @@ last_reviewed: 2026-06-10
 - 项目侧 `/ai-pre`：选回该批次 + 同 prompt + 「跑预标注」
 - 重置批次 `pre_annotated` 标记位（项目设置 → 数据 → 重置）后再跑
 
-### 放弃（dismiss）与恢复（restore）
+### 放弃/恢复
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/failed-predictions/dismiss-restore.png — 显示已放弃后含「已放弃」badge + 恢复按钮 [manual] -->
 
 - **放弃**：在列表点「放弃」→ `POST /admin/failed-predictions/{id}/dismiss`，软删除（写 `dismissed_at` 时间戳）。放弃后该行从默认列表消失；前端「显示已放弃」开关可重新显示。
 - **恢复**：在已放弃行点「恢复」→ `POST /admin/failed-predictions/{id}/restore`，清空 `dismissed_at`，该行重回默认列表，可再次重试。

@@ -29,6 +29,8 @@ last_reviewed: 2026-06-10
 
 ## 2. 首页一览
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/getting-started/annotator-dashboard.png — 标注员仪表盘全屏，标注红框：产能/质量分区 + 「打开」按钮 -->
+
 登录后默认进入 Dashboard，根据角色展示不同面板。以下为**标注员视角**的主要区块：
 
 | 区块 | 内容 |

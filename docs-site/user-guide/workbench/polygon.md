@@ -26,6 +26,8 @@ last_reviewed: 2026-06-10
 
 ## 编辑
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/polygon/vertex-insert-alt.png — 按住 Alt 悬停边上光标变「+」的瞬间 -->
+
 - 选中已有多边形，鼠标悬停在**边**上 → 出现「+」图标，按住 `Alt` 后单击边插入新顶点
 - 拖动顶点 → 修改形状
 - `Shift + 单击顶点` → 删除该顶点（多边形 ≤ 3 个顶点时拒绝删除）

@@ -26,6 +26,8 @@ last_reviewed: 2026-06-10
 
 ## Step 1：创建项目
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workflows/project-wizard-type-select.png — 向导类型选择（7 种项目类型卡） [auto] -->
+
 1. 左侧菜单 → **项目** → **新建项目**
 2. 填写基本信息（向导 6 步）：
    - 项目名称（唯一）
@@ -50,6 +52,8 @@ last_reviewed: 2026-06-10
 详见 [AI 预标注](../projects/ai-preannotate)。
 
 ## Step 3：创建批次与分配任务
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workflows/batch-assign-dialog.png — 批次分配对话框（标注员/审核员选择） -->
 
 1. 项目详情 → **批次** → **新建批次**（按时间段或数据来源切分）
 2. 批次创建后 → **分配** → 选择标注员（支持多人均分）

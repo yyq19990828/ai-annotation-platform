@@ -25,12 +25,15 @@
 
 ## 角色
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/concepts/role-permission-matrix.png — /users 权限矩阵 5 角色行，标注红框：viewer 行 [auto] -->
+
 | 角色 | 英文 | 权限范围 |
 |---|---|---|
 | **标注员** | Annotator | 查看并完成分配给自己的任务 |
-| **审核员** | Reviewer | 审核已提交任务，通过或回退 |
+| **审核员**（质检员） | Reviewer | 审核已提交任务，通过或回退 |
 | **项目管理员** | Project Admin | 创建项目、上传数据、分配任务、查看项目统计 |
 | **超级管理员** | Super Admin | 全平台用户管理、ML Backend 注册、系统监控 |
+| **观察者** | Viewer | 仅查看，无法操作任务或项目；开放注册默认角色，需管理员升级才可参与标注 |
 
 ## AI 相关
 
@@ -38,25 +41,60 @@
 |---|---|
 | **ML Backend** | 外部模型服务，通过标准协议与平台对接，提供预测或批量预标注能力。详见 [ML Backend 协议](/dev/reference/ml-backend-protocol)。 |
 | **预标注（Pre-annotate）** | 在标注员介入前，先让模型对一批任务生成 Prediction，降低手工标注工作量。 |
-| **Job** | 一次后台任务请求，包含批量预标、导出、视频追踪、连接器导入、大数据集关联建任务等异步流程。状态：pending → running → completed / failed / cancelled。 |
+| **Job** | 一次后台任务请求，覆盖多种异步流程（见下方 kind 列表）。状态：pending → running → completed / failed / cancelled。 |
+
+Job 的 `kind` 完整列表：
+
+| kind | 中文含义 |
+|---|---|
+| `batch_predict` | 批量预标 |
+| `video_tracker` | 视频追踪 |
+| `predictions_import` | 预测导入 |
+| `prediction_retry` | 失败预测重试 |
+| `export` | 标注导出 |
+| `dataset_import` | 数据集（连接器）导入 |
+| `create_tasks` | 建任务（大数据集关联） |
+| `audit_archive` | 审计日志月分区归档 |
 
 ## 状态流转速查
 
-```
-任务状态（任务队列里看到的标签）
-  未开始 / AI 已预标
-    → 进行中（已有人工标注）
-      → 待审核（已提交）
-        → 已完成（审核通过）
-        → 待重做（审核退回）→ 进行中
+### Task 状态
 
-Job 状态
-  pending → running → completed
-                    → failed
-                    → cancelled
+Task 状态描述单条数据的生命周期：
+
+```
+pending（未开始）
+  → in_progress（进行中，已有人工标注）
+    → review（待审核，已提交）
+      → completed（已完成，审核通过）
+      → in_progress（待重做，审核退回后重新进行中）
 ```
 
-> “未开始 / AI 已预标 / 进行中”按当前标注进度展示；“待审核 / 待重做 / 已完成”反映审核流程阶段。各标签含义见 [工作台 · 任务队列里的状态标签](./workbench/#任务队列里的状态标签)。
+> 各状态在任务队列里的显示标签见 [工作台 · 任务队列里的状态标签](./workbench/#任务队列里的状态标签)。
+
+### Batch 状态
+
+Batch 状态描述一批任务的整体推进阶段（独立于 Task 状态）：
+
+```
+draft（草稿）→ active（已激活）
+  → pre_annotated（AI 已预标，等待人工接管）
+  → annotating（标注中）
+    → reviewing（审核中）
+      → approved（已通过）
+      → rejected（被驳回）→ annotating
+  → archived（已归档）
+```
+
+> `pre_annotated` 是 Batch 的状态，表示该批次的 AI 预标注已完成、等待分配给标注员；它不是 Task 级别的状态。
+
+### Job 状态
+
+```
+pending → running → completed
+                  → failed
+                  → cancelled
+```
 
 ## 常见混淆
 

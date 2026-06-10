@@ -19,6 +19,10 @@ last_reviewed: 2026-06-10
 - 对注册 backend 执行健康检查、卸载、预热
 - 全局新增 / 编辑 / 删除项目级 backend
 
+## 三段切换
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/model-market-tabs.png — 能力目录/运行时观测/注册管理三 tab [manual] -->
+
 ## 主要视图
 
 页面顶部有三段切换：**能力目录 / 运行时观测 / 注册管理**。当前视图写入 `?tab=catalog|runtime|registry`，可直接分享深链。
@@ -44,6 +48,8 @@ last_reviewed: 2026-06-10
 - 列表态按模型名、task、infra 轻量排序。
 
 ### 2. 运行时观测
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/model-market-runtime-card.png — backend 卡片（GPU 显存 + 池状态 + 操作按钮） [manual] -->
 
 运行时观测是 runtime-centric 视图。它以**已注册 backend** 为主键展示，因为健康检查、卸载、预热都需要 `project_id + backend_id`。`ML_BACKEND_OBSERVE_URLS` 返回的实时指标按 URL join 到注册 backend：
 

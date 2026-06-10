@@ -12,6 +12,8 @@ Data Manager 是项目内的只读任务运营表。它把任务状态、预测�
 
 ## 进入
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/data-manager-overview.png — 整体布局（视图列表 + 过滤条件栏 + 任务表格）[manual] -->
+
 在项目设置页点击 **Data Manager**。也可以直接访问：
 
 ```text
@@ -47,6 +49,8 @@ Data Manager 是项目内的只读任务运营表。它把任务状态、预测�
 私有视图只有创建者可见。项目共享视图对项目成员可见，但只有项目负责人或超级管理员可编辑。删除视图只删除保存的视图配置，不删除任务、标注、预测或反馈。
 
 ## 过滤字段
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/data-manager-filter-rules.png — 过滤条件行编辑器字段选择器展开 [manual] -->
 
 过滤条件使用受控 DSL，前端当前提供 and-only 条件行。后端会拒绝未知字段、未知操作符和错误类型。
 

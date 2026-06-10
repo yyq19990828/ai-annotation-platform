@@ -34,6 +34,8 @@ last_reviewed: 2026-06-10
 
 ## 标注偏好（Workbench）
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/settings/workbench-preferences.png — 标注偏好四控件全景（CSS 滤镜输入框 + 控制点大小滑块） -->
+
 驱动工作台的用户级配置（`useWorkbenchConfig`），存于后端用户偏好，跨浏览器同步：
 
 | 字段 | 说明 |
@@ -66,6 +68,8 @@ last_reviewed: 2026-06-10
 :::
 
 ## 系统设置（super_admin 专属）
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/settings/system-settings.png — super_admin 系统设置（开放注册 + 邀请有效期 + SMTP） -->
 
 只对 super_admin 显示，对应 `app/services/system_settings_service.py`（`EDITABLE_KEYS` 白名单）。UI 可配条目：
 

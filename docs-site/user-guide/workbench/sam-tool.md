@@ -31,6 +31,8 @@ last_reviewed: 2026-06-10
 
 ## 工具说明
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/sam/ai-tool-drawer.png — AIToolDrawer 全图（后端下拉/极性切换/状态灯） [auto] -->
+
 ### 智能点（Smart Point）— 单击让 SAM 找边缘
 
 - **单击**：在目标上点一下 → SAM 把这个东西的轮廓找出来（positive point）
@@ -72,6 +74,8 @@ last_reviewed: 2026-06-10
 
 ### Exemplar 示例（仅 SAM 3）
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/sam/exemplar-output-mode.png — 输出形态三选一 TabRow [auto] -->
+
 拖框圈出图中**已有的一个示例实例**，SAM 3 PCS 一步返回**全图相似实例**。
 
 AIToolDrawer 提供与文本提示相同的输出形态三选一（`□ 框` / `○ 掩膜` / `⊕ 全部`），默认 `○ 掩膜`；选 `□ 框` 仅返回 box，`⊕ 全部` 同实例配对 box + polygon。
@@ -96,6 +100,8 @@ AIToolDrawer 提供与文本提示相同的输出形态三选一（`□ 框` / `
 AI 候选列表行右侧有「精修」按钮（仅 polygon 类型候选显示）。点击后工具切换到 **Mask 笔刷工具（M）**，可在像素级修改轮廓边缘，完成后按 `Enter` 提交落库。精修不需要先 `Enter` 接受候选——直接在候选态启动 Mask 编辑，commit 时同时清除候选并落库。已落库的人工 polygon 行也有「精修」按钮，通过 update mutation 替换原始几何。
 
 ## 参数面板（悬浮 AI 面板）
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/sam/ai-inspector-panel.png — 悬浮 AI 面板（Prompt/阈值滑块/变体选择） [auto] -->
 
 点工具栏「AI」打开可拖动的悬浮面板，其中有一份**由所绑定后端 `/setup.params` 自动生成的参数表单**，每个字段下方带简短说明。常见字段及项目级默认值：
 

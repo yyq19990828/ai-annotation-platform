@@ -3,29 +3,48 @@ audience: [annotator, reviewer, project_admin, super_admin]
 type: reference
 since: v0.10.50
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-10
 ---
 
 # 通知中心
 
 右上角铃铛是个人通知中心。通知会持久保存，浏览器离线或 WebSocket 断开后，重新打开面板仍能看到未读消息。面板按时间分组，并支持按类型筛选。
 
-## 会进入通知中心的事件
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/notifications/panel-overview.png — 通知面板展开态（筛选 tab + 分组 + 加载更多） -->
 
-常见通知包括：
+## 通知类型完整列表
 
-- 任务审核通过、退回、重新打开
-- 批次被驳回、重新进入审核、被管理员锁定或解锁
-- 失败预测重试开始，以及重试任务完成或失败
-- 导出完成或失败
-- 后台任务完成、失败或取消
-- BUG 反馈评论、状态变化或重新打开
+下表列出平台当前全部 21 种通知类型，以及点击行为与所属筛选 tab：
 
-后台任务通知来自 `async_jobs` 的终态状态。批量预标、失败预测重试、视频追踪、预测导入、数据集连接器导入等任务完成后，除了右上角「后台任务」铃铛里的历史记录，也会在个人通知中心出现一条 `job.*` 通知。
+| type | 业务含义 | 点击行为 | 筛选 tab |
+|---|---|---|---|
+| `task.approved` | 任务审核通过 | 仅标已读（无跳转） | 任务 |
+| `task.rejected` | 任务被退回 | 仅标已读（无跳转） | 任务 |
+| `task.reopened` | 任务重新打开 | 仅标已读（无跳转） | 任务 |
+| `batch.rejected` | 批次被驳回 | 跳转工作台（批次视图） | 批次 |
+| `batch.review_reopened` | 批次审核重新打开 | 跳转工作台（批次视图） | 批次 |
+| `batch.admin_locked` | 管理员锁定批次 | 跳转工作台（批次视图） | 批次 |
+| `batch.admin_unlocked` | 管理员解锁批次 | 跳转工作台（批次视图） | 批次 |
+| `batch.unarchived` | 批次取消归档 | 跳转工作台（批次视图） | 批次 |
+| `failed_prediction.retry.started` | 失败预测重试已开始 | 跳转 `/ai-pre/jobs` | 后台任务 |
+| `failed_prediction.retry.succeeded` | 失败预测重试成功 | 跳转 `/ai-pre/jobs` | 后台任务 |
+| `failed_prediction.retry.failed` | 失败预测重试失败 | 跳转 `/ai-pre/jobs` | 后台任务 |
+| `export.ready` | 导出完成，可下载 | 直接触发文件下载 | 导出 |
+| `export.failed` | 导出失败 | 直接触发文件下载（无有效 URL） | 导出 |
+| `job.completed` | 后台任务完成 | 跳转 `/ai-pre/jobs`（数据集导入则跳数据集列表） | 后台任务 |
+| `job.failed` | 后台任务失败 | 跳转 `/ai-pre/jobs` | 后台任务 |
+| `job.cancelled` | 后台任务已取消 | 跳转 `/ai-pre/jobs` | 后台任务 |
+| `bug_report.commented` | BUG 反馈收到评论 | super_admin/project_admin 跳 `/bugs`，其他角色打开反馈抽屉 | 反馈 |
+| `bug_report.status_changed` | BUG 反馈状态变更 | 同上 | 反馈 |
+| `bug_report.reopened` | BUG 反馈重新打开 | 同上 | 反馈 |
+| `user.deactivation_requested` | 申请注销账号 | 仅标已读 | 全部 |
+| `user.deactivation_completed` | 账号注销完成 | 仅标已读 | 全部 |
+
+> **任务类通知点击行为说明**：`task.*` 通知点击后只会标记为已读，不会自动跳转到对应任务。如需进入工作台处理退回任务，请从 Dashboard 的「退回提示」区块直接进入，或在项目卡片点击「打开」后在任务队列筛选。
 
 ## 已读、删除和清空
 
-- 点开某条通知会按它的目标跳转，并自动标记为已读。
+- 点开某条通知会自动标记为已读，部分类型同时跳转到对应目标（见上表）。
 - 通知行右侧的删除按钮会删除该条通知；如果删除的是未读通知，未读数量会同步减少。
 - 「全部已读」只把当前未读通知标记为已读。
 - 「清空已读」会删除当前用户所有已读通知，不影响未读通知。
@@ -42,6 +61,6 @@ last_reviewed: 2026-05-27
 
 ## 通知偏好
 
-进入「设置」→「通知偏好」可以按通知类型关闭站内通知。关闭后，新事件不会写入通知中心，也不会推送到在线会话；已经存在的历史通知不受影响。
+进入 [设置 → 通知偏好](./settings#通知偏好) 可以按通知类型关闭站内通知。关闭后，新事件不会写入通知中心，也不会推送到在线会话；已经存在的历史通知不受影响。
 
-当前可静音的类型覆盖任务审核、批次审核、失败预测重试、导出、后台任务终态、BUG 反馈和账号注销相关通知。
+以上表格中全部 21 种 type 均可单独静音。静音机制说明见 [设置页 · 通知偏好](./settings#通知偏好)。

@@ -8,6 +8,8 @@ last_reviewed: 2026-06-10
 
 # 视频追踪标注
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench/video-track-overview.png — 视频工作台整体（时间轴 + 工具栏 B/T/V + 轨迹面板） [manual] -->
+
 视频任务在同一个工作台里打开，左侧队列、顶部提交、右侧属性与评论仍沿用图片工作台。画布区域会切换为视频播放器，时间轴悬浮在画布底部。本页讲**矩形框、轨迹与关键帧**的标注。相关页：
 
 - 播放、逐帧、帧采样软网格与章节导航 → [视频播放、帧导航与采样](./video-playback)
@@ -65,6 +67,8 @@ last_reviewed: 2026-06-10
 
 ## 轨迹拆分 / 合并 / 跳连
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench/video-track-compose-dialog.png — 跳连对话框两种 gap 模式 [manual] -->
+
 对齐 CVAT 的 track 组织能力：
 
 | 操作 | 触发 | 说明 |
@@ -95,6 +99,8 @@ last_reviewed: 2026-06-10
 轨迹列表每行同样支持隐藏、锁定（锁定后该轨迹在画布不可拖拽 / 缩放）和**自定义颜色**（点颜色点打开取色器）。这些都是当前工作台的本地视图状态，不写入标注数据。
 
 ## 质量提示
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench/video-track-qc-warnings.png — 画布左上角质量提示浮层 [manual] -->
 
 工作台会在画布左上角提示基础质量问题：
 

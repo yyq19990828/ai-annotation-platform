@@ -26,11 +26,15 @@ last_reviewed: 2026-06-10
 
 ## AI 传播
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/video-propagate/ai-propagate-dialog.png — AI 传播对话框（方向/范围/模型/尺寸下拉） [manual] -->
+
 在选中一条 `video_track_bbox` 后，工具栏「AI 传播」按钮（快捷键 `Ctrl+B`）会弹出对话框，可以选择：
 
 - 方向：向后 / 向前 / 双向。
 - 范围：10 / 30 / 60 帧、到下一关键帧、到结尾。**开启帧采样后，这里的「N」按网格格子计**（与 `←/→` 导航单位一致），底层仍换算成源帧范围。
 - 模型：`mock_bbox`（测试用，无需 ML backend）、`sam2_video`、`sam3_video`（需项目绑定 ML Backend）。`sam2_video` / `sam3_video` 走真实逐帧追踪；模型尺寸选项有 **tiny（默认）/ small / base_plus / large** 四档，更大尺寸更准但更吃显存。
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/video-propagate/tracker-job-badge.png — 进度 badge + 取消按钮 [manual] -->
 
 发起后会弹出 toast 通知（开始 / 完成 / 失败 / 取消），轨迹卡片也会显示进度 badge（`queued / running / completed / failed / cancelled`），运行中可点击 ✕ 取消；顶栏「后台任务」铃铛里也能看到该任务的持久记录与进度，任务完成 / 失败 / 取消后还会进入个人通知中心。job 完成后写回的 prediction 关键帧会自动出现在时间轴和关键帧列表里。
 

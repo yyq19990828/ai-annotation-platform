@@ -35,6 +35,8 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
 
 ## 批量预标图像批次
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/ai-pre-config-panel.png — 项目详情面板（批次列表 + 配置区 + 跑预标按钮 + 导入预测按钮）[manual] -->
+
 1. 勾选一个或多个 `active` 批次。
 2. 选择 ML Backend。项目注册多个 backend 时可在这里切换，不必回设置页改绑定。
 3. 输入英文 prompt，例如 `person`、`ripe apple`、`car, truck, bicycle`。多类别用英文逗号 `,` 分隔。
@@ -50,6 +52,8 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
 7. 点击运行。勾选多个批次时可以选择串行或并行；并行请求仍会受 backend 的 `max_concurrency` 保护。
 
 ## 参数与模型变体
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/ai-pre-variant-selector.png — VariantSelector 两轴选项 + 推荐 badge [manual] -->
 
 参数面板来自当前 backend 的 `/setup.params`，常见字段包括 `box_threshold`、`text_threshold`、`score_threshold` 等。选择值按「用户 + backend」记忆，下次进入同一 backend 会自动恢复。
 

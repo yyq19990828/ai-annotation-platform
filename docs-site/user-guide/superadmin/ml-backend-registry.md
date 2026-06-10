@@ -15,7 +15,9 @@ ML Backend 是平台对接外部推理服务的契约层。每个 Backend 是一
 - 项目侧：项目设置 → **ML 模型** tab（写权限属项目管理员 / 超级管理员）
 - 全局侧（仅超管）：`/model-market`
 
-## 表单字段
+## 注册/表单字段
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/ml-backend/register-form.png — 注册表单全貌含 max_concurrency/extra_params [manual] -->
 
 | 字段 | 含义 | 约束 |
 |---|---|---|
@@ -49,6 +51,8 @@ ML Backend 是平台对接外部推理服务的契约层。每个 Backend 是一
 dev 环境 placeholder 已默认填 `172.17.0.1:8001`。
 
 ## 健康检查
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/ml-backend/health-state-badges.png — connected/error/disconnected 三状态徽章对比 [manual] -->
 
 注册后系统会自动调用 `GET <url>/health`。失败不阻断创建（避免临时网络问题让你卡住），但会在列表里显示红色徽章，状态值为 **`error`**（不是 `unreachable`；`state` 字段枚举：`disconnected` / `connected` / `error`，见 `apps/api/app/services/ml_backend.py:122`）。
 

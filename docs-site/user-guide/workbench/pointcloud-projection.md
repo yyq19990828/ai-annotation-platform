@@ -22,9 +22,13 @@ schema 详情见 [点云 / 多模态数据集导入格式 · 标定 JSON schema]
 
 ## 3D→2D 投影
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench-pointcloud-projection/overlay-wireframe.png — 相机面板线框投影 overlay + 「正对」角标 [manual] -->
+
 选中（或悬停）3D 框时，所有相机面板实时重绘投影线框（类别色）。对各相机可见角点数降序排列，可见角点最多的相机角标「· 正对」，用于快速定位主确认视角。
 
 ## 2D→3D 反选与命中测试
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench-pointcloud-projection/click-to-select-3d.png — 点击投影框联动主视图高亮 [manual] -->
 
 单击相机面板里的投影区域时，系统在画布坐标系做逐框扫描：
 
@@ -35,6 +39,10 @@ schema 详情见 [点云 / 多模态数据集导入格式 · 标定 JSON schema]
 ## 同物体高亮
 
 同 `group_id` 成员经选中联动一并高亮，方便对照跨帧 / 跨视角确认同一物体的所有关联框。
+
+## 相机面板贴边
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench-pointcloud-projection/camera-panel-layout.png — 6 相机环绕布局全景 [manual] -->
 
 ## 相机面板锚点推导
 

@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: how-to
 since: v0.10.14
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-10
 ---
 
 # 项目模板库（Project Templates）
@@ -26,15 +26,18 @@ last_reviewed: 2026-05-27
 
 ## 入口
 
-侧边栏 → 工作区 → **「项目模板」**（`/project-templates`）。
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/template-library-overview.png — 模板库页（管理组入口 + 新建/导出按钮 + 四 tab）[manual] -->
 
-模板库页面包含三个 tab：
+侧边栏 → **管理** → **「项目模板」**（`/project-templates`）。
+
+模板库页面包含四个 tab：
 
 - **我的模板**：自己创建的私有模板（`scope=private`）
 - **组织模板**：本人所在 organization 内被共享的模板（`scope=organization`）
 - **公共模板**：全平台公共模板（`scope=public`，仅超级管理员可创建）
+- **全部**：不按 scope 过滤的全量视图
 
-支持按类型筛选、名称搜索。
+支持按模板名称搜索。
 
 ## 创建模板
 
@@ -54,12 +57,14 @@ last_reviewed: 2026-05-27
 
 ## 应用模板创建项目
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/template-apply-banner.png — 从模板创建 Wizard 顶部 banner [manual] -->
+
 在模板卡片点击「应用」→ 跳转到 CreateProjectWizard，顶部出现 banner「已用模板字段预填表单」。
 后续步骤与普通新建相同；任意字段可在某步覆盖（你的修改优先于模板配置）。
 
 提交后：
 
-- 新项目的字段从模板 deepcopy（**修改新项目不影响模板**）。
+- 新项目的字段从模板 deepcopy（**修改新项目不影响模板**）。复制白名单（`CLONEABLE_PROJECT_FIELDS`）为：`type_label`、`type_key`、`data_type`、`tool_bindings`（类别与属性 schema）、`ai_enabled`、`label_config`、`sampling`、`maximum_annotations`、`show_overlap_first`、`iou_dedup_threshold`、`box_threshold`、`text_threshold`、`text_output_default`、`rendering_config`。**不复制**运行时数据（datasets / tasks / annotations / members / batches）。
 - 模板 `usage_count` + 1。
 - 模板的 `annotation_guide` 文本会复制到新项目；**guide_assets（图片资源）不会复制**，需要在新项目设置页重新上传。
 
@@ -73,7 +78,7 @@ last_reviewed: 2026-05-27
 
 ## 克隆模板
 
-任意可见模板都可点「克隆」按钮，生成一份私有副本（`scope=private`、`name=原模板 (副本)`），方便基于既有公共/组织模板做小幅修改后再用。
+**项目管理员或超级管理员**对任意可见模板均可点「克隆」按钮，生成一份属于当前用户的私有副本（`scope=private`、`name=原模板 (副本)`），方便基于既有公共/组织模板做小幅修改后再用。其他角色无此权限。
 
 ## 删除模板
 

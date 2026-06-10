@@ -13,6 +13,10 @@ last_reviewed: 2026-06-10
 平台支持「公共模板」（`scope=public`）—— 全平台可见可用、不受组织边界限制。
 本页重点讲公共模板的治理要点；通用模板操作见下方「权限说明」。
 
+## 谁能创建
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/public-templates/scope-selector.png — 可见范围下拉「公共」选项 disabled（非超管视角） [manual] -->
+
 ## 模板创建权限说明
 
 ### 通用（适用所有角色 ≥ project_admin）
@@ -29,6 +33,8 @@ last_reviewed: 2026-06-10
 > 设计意图：公共模板是平台层面的"官方背书"，需要超管把关 schema 一致性、命名规范、合规性，避免出现"野生公共模板"污染列表。
 
 ## 推荐流程
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/public-templates/templates-list.png — 模板库四 tab + scope chip + usage_count [manual] -->
 
 1. 项目管理员先在自己组织内打磨模板（`scope=private` → 灰度试用 → 推到 `scope=organization`）。
 2. 跑通后将模板 ID / 用例报给超管，超管 PATCH `scope=public`。

@@ -72,6 +72,8 @@ scene 模式适合“一个连续场景被拆成多个 task”的项目，例如
 
 ## 从已有项目复制配置
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/copy-config-banner.png — 向导顶部预填 banner + 复制指引 checkbox [manual] -->
+
 如果新项目的 classes / 属性 schema / AI 接入配置 / 渲染配置等与既有项目相同（或大致相同），可以直接复制配置：
 
 1. 在 Dashboard 找到要复制的项目卡片 → 右下角 `⋮` → 「复制项目配置」。

@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.10.3
 status: stable
-last_reviewed: 2026-06-09
+last_reviewed: 2026-06-10
 ---
 
 # ML 后端绑定
@@ -16,6 +16,8 @@ last_reviewed: 2026-06-09
 
 ## 注册一个 backend
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/ml-backends/register-form.png — 注册表单（URL 示例 + 最大并发 + 测试连接）[manual] -->
+
 进入 **项目设置 → ML 模型** 标签。页面上方是 AI 预标注设置，页面下方是本项目的 backend 注册列表：
 
 - 标题右侧角标显示 **已用 X / Y**——X 是当前已注册数，Y 是 `MAX_ML_BACKENDS_PER_PROJECT`（默认 1）。
@@ -23,7 +25,10 @@ last_reviewed: 2026-06-09
 - 必填项：
   - **名称**：本项目内唯一，建议带模型/环境后缀，如 `grounded-sam2-prod`。
   - **URL**：后端容器内可达的 HTTP(S) 地址。Docker 同主机宿主网常用 `http://172.17.0.1:8001`。
-- 可选项：鉴权方式、`max_concurrency`（1-32，控制单 backend 并发预标请求数）。
+- 可选项：
+  - **鉴权方式**：`none`（默认，免鉴权，适合内网隔离环境）或 `token`（Bearer Token，平台在请求头加 `Authorization: Bearer <token>`）；选 `token` 时需填写 token 值。
+  - **最大并发**（`max_concurrency`，1–32，默认 **4**）：控制单 backend 同时并行的预标请求数；实际由 asyncio Semaphore 限速，改值需重启 worker 才生效。
+  - **额外参数**（`extra_params`）：透传至 backend 请求的 JSON 键值对，例如 `{"timeout": 60}`。
 - 注册前点 **「测试连接」**——平台会用临时探针打一次 `/health`，确认 URL 可达且鉴权配置正确，**不会**写 DB。
 
 > **交互能力 / 支持模态自动探测**：「是否交互式 backend」不需要手填。平台在**健康检查**时会顺带探一次 `/setup`，按 backend 自报的 `is_interactive` / `supported_prompts`（图像 prompt）/ `supported_trackers`（视频 tracker）派生交互能力与支持模态，写库后在列表只读展示。注册一个新 backend 后，先在表格里点一次「健康检查」（刷新图标）即可看到检测到的能力。
@@ -73,9 +78,11 @@ UI 形态不会变——配额角标自动更新、「注册 backend」按钮自
 
 ## 达到上限时会发生什么？
 
-- 「注册 backend」按钮**置灰**，hover tooltip 提示 "已达上限 N，请先解绑现有后端"。
-- 强行触发或竞态情况下，会弹出 **「🚧 多后端共存暂未支持」** 模态框，文案来自服务器 `409` 响应。
-- 解决：先在目标后端那行点 **删除** 解绑（确认后该 backend 记录从项目中移除），再注册新的。
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/ml-backends/limit-modal.png — 多后端共存限制弹窗 [manual] -->
+
+- 「注册 backend」按钮**置灰**，hover tooltip 提示 "已达上限 N，请先删除现有后端"。
+- 强行触发或竞态情况下，会弹出 **「🚧 多后端共存暂未支持」** 模态框，文案优先取服务器 `409` 响应 `detail.message`，不可达时用前端兜底文案。
+- 解决：先在目标后端那行点 **删除**（确认后该 backend 记录从项目中移除），再注册新的。
 
 ## 解绑与删除
 

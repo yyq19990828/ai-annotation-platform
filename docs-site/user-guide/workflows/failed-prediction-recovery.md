@@ -22,6 +22,8 @@ last_reviewed: 2026-06-10
 
 ## Step 1：定位失败原因
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workflows/failed-prediction-recovery-jobs-list.png — /ai-pre/jobs?status=failed 列表 [auto] -->
+
 **方式 A：AI 预标 Jobs 页面**
 1. 主导航 → **AI 预标** → **Jobs**（`/ai-pre/jobs?status=failed`）
 2. 查看 Job 状态、错误信息；打开 Job 详情可看 Task 级别的失败原因与 payload

@@ -8,6 +8,8 @@ last_reviewed: 2026-06-10
 
 # 3D 立体框标注
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/3d-box/workbench-overview.png — 3D 工作台全局（主视图 + 相机面板 + PSR 面板 + 自动贴合按钮组） [manual] -->
+
 3D 点云项目（`data_type=lidar`）启用 `lidar_box_3d` 或 `point_mask_3d` 工具单位后，工作台进入 Three.js 3D 舞台：主 3D 视图旋转 / 平移 / 缩放查看点云，悬浮在四周的相机面板按物理朝向贴边显示标定的相机图，选中框时浮出可在 3D 画布内拖动 / 调整尺寸的三正交视图精修栏。本页讲 **3D 框的绘制、编辑、属性、批量操作、点云分割与自动贴合**。相关页：
 
 - 视角导航、相机面板与上色 / 深度 → [点云视图与上色](./pointcloud-view)
@@ -25,6 +27,7 @@ last_reviewed: 2026-06-10
 
 - 单击主视图框 → 选中（出现 gizmo + 三正交视图浮层 + 右上 PSR 数值面板）
 - 按 `W` / `E` / `R` 切 gizmo 模式：平移 / 绕 Z 轴旋转 / 缩放
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/3d-box/psr-panel.png — PSR 面板近景，标注红框：l/w/h 尺寸字段 [manual] -->
 - PSR 数值面板：直接输入中心 `cx/cy/cz`、尺寸 `l/w/h`（长宽高，米）、朝向 `yaw/pitch/roll`（°）；「朝向归零」一键复位三轴
 - 三正交视图（俯 / 侧 / 正）：浮窗顶栏可在 3D 画布内拖动，右下角可调整尺寸，顶栏可折叠；位置、尺寸和折叠态会跟随账号偏好保存。视图内部拖边 / 拖角改尺寸、拖方向线转三轴朝向；主视图 gizmo / 数值面板 / 相机投影 overlay 四方实时同步，松手后防抖落 PATCH
 - 按 `V` / `Esc` 回选择工具，`Backspace` / `Delete` 删除选中框
@@ -60,6 +63,8 @@ last_reviewed: 2026-06-10
 分割标注存储的是点云原始点索引 `point_indices`,并记录 `convention_at_create`、抽稀步长和源点数量。再次从右侧标注列表选中该分割时,主 3D 视图会高亮所属点。选中已有分割后再次按 `P` 圈选可加点,按住 Alt 圈选可减点;右上分割面板可改类别、查看点数或删除分割。
 
 ## 自动贴合（一键吸附）
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/3d-box/autofit-buttons.png — 贴合/收尺寸/贴地/朝向按钮组 [manual] -->
 
 放完粗框后按 `Q` 让框自动收缩并贴地，省去逐边拖边。仅在「选中且可编辑」时显示按钮组。框内无点云时返回原状不动。
 

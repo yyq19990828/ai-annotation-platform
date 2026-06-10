@@ -12,6 +12,8 @@ scene 模式的项目里，同一物体会在一段录像里连续出现多帧�
 
 ## 跨帧目标延续
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/pointcloud-crossframe/crossframe-propagate-toast.png — 按 Alt+→ 跳帧自动选中新框 + toast [manual] -->
+
 同一物体在一段录像里连续出现多帧时，不必每帧从零画框：
 
 - **`Alt+→`**（主键，2D 与 3D 通用）：把当前选中的标注延续到**同 scene 的下一帧** task —— 系统在下一帧新建一个几何相同的框（与源框共享 `group_id`，表示"同一物体"），自动跳到下一帧工作台并选中这个新框，你只需微调位置即可继续 `Alt+→`。
@@ -23,6 +25,8 @@ scene 模式的项目里，同一物体会在一段录像里连续出现多帧�
 > 跨帧延续不是破坏性操作：新框只是源框的副本，调坏了可直接删除或撤销。
 
 ## 邻帧参考叠加（仅 3D 点云）
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/pointcloud-crossframe/overlay-k3-triview.png — K=3 时主视图 + 三视图半透明虚线参考框 [manual] -->
 
 工具条「邻帧叠加」切换前后各显示几帧的同 `group_id` 历史 / 未来框作时序参考：
 
