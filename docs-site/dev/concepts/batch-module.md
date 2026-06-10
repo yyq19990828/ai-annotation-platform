@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-06-06
+last_reviewed: 2026-06-10
 ---
 
 # 批次模块
@@ -245,6 +245,8 @@ stateDiagram-v2
 - 通过 `resolve_task_scene_frames` 解析每个 task 的 `scene_id` / `scene_name` / `frame_index`，按 `scene_id` 分组，每组生成一个批次；无 scene 的 task 归入一个「无 scene」批次，排在最后。
 - 批次命名为 `{name_prefix} · {scene_name}`（无 scene 时为 `{name_prefix} · 无 scene`）。
 - 每个批次内调用 `_set_sequence_orders`，把 task 的 `sequence_order` 写为各自的 `frame_index`，使工作台派题顺序与 scene 内帧序一致；`frame_index` 为空的 task 不写 `sequence_order`。
+
+**scene 模式项目强制只能 `by_scene`（v0.15.x）**：scene 项目同一 scene 的连续帧必须落同一批次，`random` / 顺序切分会把连续帧拆散给不同标注员。因此 `split` 入口加了一道门——当 `project.scene_mode` 为真且 `data.strategy != "by_scene"` 时直接抛 `HTTPException(422, "scene 模式项目分包只能按 scene(strategy=by_scene)")`，防御绕过前端直发 API。前端 `BatchesSection` 三个 split 入口对 scene 项目也只暴露「按 scene 建包」（横带的 `random` 一键建包对 scene 项目隐藏，「创建批次」直接走 `by_scene` 不弹对话框）。
 
 scene / frame_index 的语义见 [scene 与 frame_index](scene-and-frame-index)。
 
