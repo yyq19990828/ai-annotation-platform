@@ -218,6 +218,16 @@ scene 只给了"帧的相对顺序";`scene_frame_poses` 表补上"帧的时空"�
 - `import_nuscenes_scene.py` 落 scene 后逐帧 upsert(`services/scene_pose.py::upsert_frame_poses`,按唯一键 `ON CONFLICT DO UPDATE`,幂等)。
 - 历史 dataset 用 `scripts/backfill_frame_poses.py --dataset-id <uuid|display_id> --nuscenes-root <root>` 补;按 `scene.source_metadata.scene_token` 反查原元数据。
 
+### ego 补偿与插值如何消费 trajectory(v0.15.1)
+
+几何核心在 `services/ego_transform.py`(纯函数,euler XYZ 与 `axis_convention.py` / 前端 three.js 同约定),所有变换经世界系:
+
+- **运动补偿 propagate**:`propagate` 对 box_3d 且源/目标帧均有 pose 时,`world = ego_to_world(psr_src, pose_src)` → `psr_dst = world_to_ego(world, pose_dst)`——静止物世界位置不变,目标帧 PSR 自动"追平"ego 运动。响应带 `motion_compensated` 标记;任一帧缺 pose 恒等降级(= v0.14.1 原样复制,byte 级零回归,`test_annotation_propagate.py` 既有用例守)。`override_psr` 显式给定时跳过补偿。
+- **批量**:`POST /tasks/{id}/annotations/propagate-batch` body `{target_task_id, annotation_ids|null}`(null=源帧全部 active box_3d),逐条复用单条 propagate 校验,整批一个事务。
+- **区间插值**:`POST /tasks/{id}/annotations/interpolate-range` body `{group_id, to_task_id}`(路径 task=起点帧)。两端框各 `ego_to_world` → 世界系线性插值中心 + **slerp** 插值朝向 + 线性插值尺寸,按 `t=(m-i)/(k-i)` 投回各中间帧 ego 系。生成框 `source="interpolated"`;已有同 group 标注的中间帧幂等跳过(`skipped_frames` 透出);任一中间帧锁态 → 整批拒。中间帧 task 经 `scene.get_scene_frame_task_map`(与 neighbors 共用)反查。
+- **前端 overlay ego 对齐**:`useSceneTrajectory(sceneId)` 拉 trajectory → `stages/three-d/geometry/egoAlign.ts` 用 `inv(T_cur) @ T_nbr` 把邻帧参考框变换到当前帧 ego 系再 `setReferenceBoxes`,静止物参考框与当前帧重合。无轨迹 → 退回 v0.14.1 原样叠加。
+- **审核口径**:`source="interpolated"` 与 `manual` 可区分,审核侧可按来源过滤/批量删插值框(本期不新建审核 UI,只保证标记可查)。
+
 ## 跨帧 UX 如何消费 neighbors API(v0.14.1)
 
 v0.14.1 在这套地基上落了用户可用的跨帧能力,消费路径:
@@ -252,5 +262,6 @@ v0.14.1 在这套地基上落了用户可用的跨帧能力,消费路径:
 
 - 跨 scene 段内段间无感导航(case C 视频多段)→ v0.14.2+
 - 视频段 `Alt+→` 分流到 `video_tracker_runner`(段内)→ 后续
-- 跨帧自动插值 / Kalman 预测、多目标批量 propagate、`point_mask_3d` 跨帧 → v0.15.1+
+- Kalman / 非线性运动模型(急转弯/加减速时线性插值会偏)→ 后续按需
+- `point_mask_3d` 跨帧(点索引跨帧无意义,需"按世界系框重新分割"另一套机制)→ 明确不做,留更后
 - scene 跨多 dataset(一 scene 横跨 lidar + image dataset)→ v0.15.2+

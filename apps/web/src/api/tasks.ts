@@ -16,6 +16,22 @@ import type {
 /** v0.14.1 · 跨帧 propagate 响应: 复制到目标 task 的新 annotation。 */
 export interface PropagateResponse {
   annotation: AnnotationResponse;
+  /** v0.15.1 · true=已按 ego pose 做运动补偿; false=原样复制(scene 无轨迹等)。 */
+  motion_compensated: boolean;
+}
+
+/** v0.15.1 · 批量跨帧延续响应。 */
+export interface PropagateBatchResponse {
+  items: { source_annotation_id: string; annotation: AnnotationResponse }[];
+  motion_compensated: boolean;
+}
+
+/** v0.15.1 · 区间插值响应。 */
+export interface InterpolateRangeResponse {
+  annotations: AnnotationResponse[];
+  motion_compensated: boolean;
+  /** 已有同 group 标注而被幂等跳过的中间帧。 */
+  skipped_frames: number[];
 }
 
 export interface TaskListResponse {
@@ -154,6 +170,26 @@ export const tasksApi = {
     apiClient.post<PropagateResponse>(
       `/tasks/${taskId}/annotations/${annotationId}/propagate-to-task`,
       { target_task_id: targetTaskId, override_psr: overridePsr ?? null },
+    ),
+
+  // v0.15.1 · 批量跨帧延续: 源 task 的多个(annotationIds 给定)或全部
+  // (undefined → 全部 active box_3d)运动补偿 propagate 到目标 task。
+  propagateBatch: (
+    taskId: string,
+    targetTaskId: string,
+    annotationIds?: string[],
+  ) =>
+    apiClient.post<PropagateBatchResponse>(
+      `/tasks/${taskId}/annotations/propagate-batch`,
+      { target_task_id: targetTaskId, annotation_ids: annotationIds ?? null },
+    ),
+
+  // v0.15.1 · 关键帧区间插值: 路径 task = 起点帧, 同 group 链两端框之间的
+  // 中间帧自动生成插值框(source="interpolated")。
+  interpolateRange: (taskId: string, groupId: number, toTaskId: string) =>
+    apiClient.post<InterpolateRangeResponse>(
+      `/tasks/${taskId}/annotations/interpolate-range`,
+      { group_id: groupId, to_task_id: toTaskId },
     ),
 
   getVideoFrameTimetable: (id: string, params?: VideoFrameTimetableParams) => {
