@@ -3,7 +3,7 @@ audience: [project_admin, reviewer]
 type: how-to
 since: v0.14.8
 status: stable
-last_reviewed: 2026-06-07
+last_reviewed: 2026-06-10
 ---
 
 # Data Manager
@@ -50,16 +50,16 @@ Data Manager 是项目内的只读任务运营表。它把任务状态、预测�
 
 过滤条件使用受控 DSL，前端当前提供 and-only 条件行。后端会拒绝未知字段、未知操作符和错误类型。
 
-首版可用字段包括：
+首版可用字段（字段名含命名空间前缀）：
 
-| 字段族 | 字段 |
+| 字段族 | 完整字段名 |
 |---|---|
-| task | `status`、`assignee`、`reviewer`、`batch_id`、`created_at`、`updated_at` |
-| annotation | `annotation_count`、`class_name` |
-| prediction | `prediction_count`、`model_version`、`avg_confidence`、`source` |
-| feedback | `unresolved_count`、`kind`、`severity` |
-| scene | `scene_name`、`frame_index`、`scene_id` |
-| dataset | `dataset_id`、`file_type` |
+| task | `task.status`、`task.assignee`、`task.reviewer`、`task.batch_id`、`task.created_at`、`task.updated_at` |
+| annotation | `annotation.annotation_count`、`annotation.class_name` |
+| prediction | `prediction.prediction_count`、`prediction.model_version`、`prediction.avg_confidence`、`prediction.source` |
+| feedback | `feedback.unresolved_count`、`feedback.kind`、`feedback.severity` |
+| scene | `scene.scene_name`、`scene.frame_index`、`scene.scene_id` |
+| dataset | `dataset.dataset_id`、`dataset.file_type` |
 
 常见例子：
 
@@ -72,6 +72,13 @@ Data Manager 是项目内的只读任务运营表。它把任务状态、预测�
   ]
 }
 ```
+
+后端同时支持 `"op": "or"` 的规则组；前端当前界面仅提供 `and` 条件行。如需 `or` 逻辑可直接粘贴手写 filter JSON 到 URL 参数或 API。
+
+**硬限制**：
+- 每页最多 **200** 条（`limit` 最大值）。
+- `in` 操作符值列表最多 **200** 项。
+- 保存视图名称长度 **1–120** 字符。
 
 ## 列
 

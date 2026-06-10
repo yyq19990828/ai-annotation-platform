@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-09
+last_reviewed: 2026-06-10
 ---
 
 # AI 工具组
@@ -11,6 +11,8 @@ last_reviewed: 2026-06-09
 > 点 / 框 / 示例 / Magic Box — 选一种交互方式让 AI 把 polygon 画出来,或直接收紧到 bbox。
 
 <!-- history: prompt-first tools and Magic Box were introduced in separate releases; this page describes the current tool model. -->
+
+![AI 工具子工具栏](../images/sam/subtoolbar.png)
 
 工具栏按交互范式拆成 4 个独立 AI 工具(均为**画布手势驱动**)。你直接选择「想怎么交互」，AI 自动走对应模型 prompt。
 
@@ -60,6 +62,8 @@ last_reviewed: 2026-06-09
 
 输出形态三选一(由后端顶层 `supported_text_outputs` 决定可见性,v0.14.18 修复了 gsam2 只能选 box/DINO 变体的问题):
 
+![文本提示三种输出形态](../images/sam/text-three-modes.png)
+
 - `□ 框`：仅 box，跳过 mask（速度最快，image-det 项目首选）
 - `○ 掩膜`：mask → polygon（image-seg 项目默认）
 - `⊕ 全部`：同实例配对 box + polygon
@@ -87,14 +91,23 @@ AIToolDrawer 提供与文本提示相同的输出形态三选一（`□ 框` / `
 - **`Tab` / `Shift+Tab`** — 切换候选（文本 / exemplar 路径常见多条）
 - **`Esc`** — 全部取消
 
+### 精修 SAM 候选（Mask 编辑器）
+
+AI 候选列表行右侧有「精修」按钮（仅 polygon 类型候选显示）。点击后工具切换到 **Mask 笔刷工具（M）**，可在像素级修改轮廓边缘，完成后按 `Enter` 提交落库。精修不需要先 `Enter` 接受候选——直接在候选态启动 Mask 编辑，commit 时同时清除候选并落库。已落库的人工 polygon 行也有「精修」按钮，通过 update mutation 替换原始几何。
+
 ## 参数面板（悬浮 AI 面板）
 
-点工具栏「AI」打开可拖动的悬浮面板，其中有一份**由所绑定后端 `/setup.params` 自动生成的参数表单**，每个字段下方带简短说明。常见字段：
+点工具栏「AI」打开可拖动的悬浮面板，其中有一份**由所绑定后端 `/setup.params` 自动生成的参数表单**，每个字段下方带简短说明。常见字段及项目级默认值：
 
-- `box_threshold` / `text_threshold` — DINO 置信度（grounded-sam2）
-- `score_threshold` — PCS 置信度（sam3）
-- `simplify_tolerance` — 多边形轮廓简化容差（像素）
-- `model_variant` / `embedding_cache_size` — 只读信息（禁用展示，不可改）
+| 字段 | 后端 | 项目级默认 | 范围 | 说明 |
+|---|---|---|---|---|
+| `box_threshold` | grounded-sam2 | 0.35 | [0.0, 1.0] | DINO bbox 置信度阈值 |
+| `text_threshold` | grounded-sam2 | 0.25 | [0.0, 1.0] | DINO token 置信度阈值 |
+| `score_threshold` | sam3 | 后端自定义 | — | PCS 候选置信度 |
+| `simplify_tolerance` | 两者 | 后端自定义 | 像素 | polygon 轮廓 Douglas-Peucker 容差 |
+| `model_variant` / `embedding_cache_size` | — | — | — | 只读信息（禁用展示，不可改）|
+
+> 文本提示格式：在 AI 面板 Prompt 输入框填英文短语，多个类别用 ` . `（空格+点+空格）分隔，格式与 GroundingDINO 一致，例如 `ripe apple . green apple . orange`。
 
 模型变体（SAM2 / DINO 变体）在同一面板的「变体选择器」里切换。backend 若上报 `/setup.supported_variants`，选项会显示显存估算、快速/均衡/精度档位和推荐标识；未上报时回落到 `/setup.params` 的 enum。参数按**所绑定后端**动态显示——绑 sam3 不会出现 DINO 阈值，绑 gsam2 才有。
 

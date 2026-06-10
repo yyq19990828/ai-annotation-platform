@@ -3,7 +3,7 @@ audience: [annotator]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-06-05
+last_reviewed: 2026-06-10
 ---
 
 # 标注工作台 — 界面与快捷键
@@ -73,9 +73,13 @@ last_reviewed: 2026-06-05
 
 <!--@include: ./hotkeys.generated.md-->
 
-## 自动保存
+## 数据持久化与离线队列
 
-每 30 秒自动保存草稿；意外刷新可恢复。
+工作台采用**即时保存**策略：每次标注操作（新增、编辑、删除）都即时通过 API 写入服务端；不存在 30 秒定时器。
+
+当网络断开或后端返回 5xx 时，操作会进入**IndexedDB 离线队列**（`anno.offline-queue.v1`），网络恢复后自动顺序回放（`drain`），多标签页通过 `BroadcastChannel` 同步队列状态。底部状态栏的离线图标可展开「离线队列抽屉」查看待回放的操作条目，并支持逐条重试。
+
+**Canvas 草稿**（画布批注绘制中尚未提交的笔触）以不同机制保留：活跃笔触写入 `sessionStorage`，TTL 5 分钟；刷新或意外关闭时浏览器原生确认弹窗阻止离开。
 
 ## AI 预标注
 
@@ -88,3 +92,5 @@ last_reviewed: 2026-06-05
 - 漏标 → 切换工具自行标注。
 
 人工标注仍在「人工」分组中展示；采纳预测后会进入人工标注列表，并保留 AI 采纳来源标识。
+
+交互式分割（SAM 点/框/Exemplar）的详细说明见 [AI 工具组](./sam-tool)；项目级 AI 预标（批量预标注与批次管理）见 [AI 预标注](../projects/#ai-预标注)。

@@ -15,8 +15,10 @@ last_reviewed: 2026-06-10
 
 ## 步骤
 
+向导共 6 步（类型 → 类别 → 属性 → AI 接入 → 数据 → 成员），提交后项目即创建完成。
+
 1. 顶部菜单 → 「项目管理」 → 「新建项目」
-2. 填写基本信息：
+2. **Step 1 类型**：填写基本信息：
    - **项目名**
    - **数据类型**：图片 / 视频 / 3D 点云（三选一）
    - **工具集**：勾选本项目要用的工具单位
@@ -25,22 +27,21 @@ last_reviewed: 2026-06-10
      - **AI 交互** ⭐ 打包：SAM 点 / 框 / 文本 / 示例 + Magic Box 一起启用
      - **折线 (polyline)** / **旋转框 (rotated_bbox)** / **关键点 (keypoint)**：图片项目可用的新几何工具
      - **3D 立体框 (lidar_box_3d)**：3D 点云项目可启用，对应 Three.js 工作台支持 3D 框绘制 / 选中 / 编辑（PSR + 朝向）与相机投影联动
-   - **类别 + 属性**：每个启用的工具单位独立编辑（详见 [工具维度类别 / 属性](./tool-units.md)）
-   - **AI 接入**（可选）：启用 AI 预标注，并可复用其它项目已注册的 ML Backend
-   - **scene 模式**（图片 / 3D 点云项目可选）：用于逐帧图片序列或点云 scene 标注。开启后，项目会默认优先连续领取同一 scene 的下一帧，并在关联数据集步骤默认使用按 scene 分包。
-3. 上传初始数据集（多文件 / ZIP / 数据源连接器，详见 [图像数据集导入](../datasets/import-images.md) 与 [存储连接器导入](../datasets/storage-connections.md)）
-4. 设置标注规范文档（Markdown，标注员在工作台可见）
-5. 配置审核策略：
-   - **单审**：1 名审核员通过即可
-   - **双审**：2 名审核员一致才通过
-   - **采样审核**：随机抽 N% 审核
+   - **scene 模式**（图片 / 3D 点云项目可选）
+3. **Step 2 类别**：每个启用的工具单位独立编辑类别（详见 [工具维度类别 / 属性](./tool-units.md)）
+4. **Step 3 属性**：每个启用的工具单位独立编辑属性 schema
+5. **Step 4 AI 接入**（可选）：启用 AI 预标注，并可复用其它项目已注册的 ML Backend
+6. **Step 5 数据**：上传初始数据集（多文件 / ZIP / 数据源连接器，详见 [图像数据集导入](../datasets/import-images.md) 与 [存储连接器导入](../datasets/storage-connections.md)）
+7. **Step 6 成员**：邀请标注员 / 审核员加入项目
+
+> **标注规范文档与审核策略**不在向导内配置，需创建后进入 **项目设置页** 分别在「标注指引」与「采样 / 审核」区块配置。
 
 ## 工具维度类别 / 属性
 
 类别与属性 schema 按**工具单位**强隔离绑定（每个工具单位独立持有自己的类别列表与属性 schema，可同名不同色），并涉及「遮挡样式」「视频单帧 / 轨迹框」等配置开关。完整说明、典型场景与后续修改方式见 [工具维度类别 / 属性](./tool-units.md)。
 
 ![向导步骤](../images/projects/wizard-steps.png)
-<!-- TODO(0.8.1) IMAGE_CHECKLIST: 6 步 wizard 各步关键截图（基本信息 / 类型 / 类别 schema / 属性 schema / AI 接入 / 审核策略），可拼成一张长图。 -->
+<!-- TODO(0.8.1) IMAGE_CHECKLIST: 6 步 wizard 各步关键截图（类型 / 类别 / 属性 / AI 接入 / 数据 / 成员），可拼成一张长图。 -->
 
 ## scene 模式项目
 
@@ -76,7 +77,7 @@ scene 模式适合“一个连续场景被拆成多个 task”的项目，例如
 1. 在 Dashboard 找到要复制的项目卡片 → 右下角 `⋮` → 「复制项目配置」。
 2. 自动跳到 Wizard，顶部出现 banner「已用源项目配置预填表单」；新项目名默认为 `{源项目名} (副本)`。
 3. 7 步流程正常往下走，任何字段都可以在某步覆盖（你的修改优先于源配置）。
-4. 提交后新项目就绪。**只复制配置**：classes / classes_config / attribute_schema / AI 配置 / label_config / rendering_config / 阈值 / 采样规则等。**不复制运行时数据**：datasets / tasks / annotations / members / batches。
+4. 提交后新项目就绪。**只复制配置**：`tool_bindings`（类别与属性 schema）/ `type_key` / `data_type` / `ai_enabled` / `label_config` / `sampling` / `rendering_config` / `iou_dedup_threshold` / `box_threshold` / `text_threshold` / `text_output_default` / `maximum_annotations` 等（见后端 `CLONEABLE_PROJECT_FIELDS`）。**不复制运行时数据**：datasets / tasks / annotations / members / batches。
 
 > 需要跨项目共享 / 跨组织共享 / 模板治理？使用「项目模板库」独立资产形态，
 > 详见 [项目模板库（Project Templates）](./project-templates.md)。

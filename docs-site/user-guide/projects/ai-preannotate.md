@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-10
 ---
 
 # AI 预标
@@ -37,7 +37,7 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
 
 1. 勾选一个或多个 `active` 批次。
 2. 选择 ML Backend。项目注册多个 backend 时可在这里切换，不必回设置页改绑定。
-3. 输入英文 prompt，例如 `person`、`ripe apple`、`car . truck . bicycle`。多类别建议用 `.` 分隔。
+3. 输入英文 prompt，例如 `person`、`ripe apple`、`car, truck, bicycle`。多类别用英文逗号 `,` 分隔。
 4. 选择输出形态：
    - `□ 框`：只写 bbox，速度最快；
    - `○ 掩膜`：mask 转 polygon；
@@ -95,7 +95,7 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
 
 批量预标完成后，批次会进入 `pre_annotated` 状态。项目管理员或标注员可以点击「打开标注工作台」进入对应批次。
 
-工作台 Topbar 会显示「AI 预标已就绪」徽章；右侧 AI 面板列出候选预测，标注员逐条接受、修改或拒绝。接管后批次自动进入 `annotating`。
+工作台 Topbar 会显示「AI 预标已就绪」徽章；右侧 AI 面板列出候选预测，标注员逐条接受、修改或拒绝。当批次内第一个任务进入 `in_progress` 状态时，批次自动转为 `annotating`（由后端 `check_auto_transitions` 事件驱动，不需要手动触发）。
 
 ## 重置已预标批次
 
@@ -106,9 +106,17 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
 
 这类操作需要输入原因并写入审计日志。
 
+## 导入外部预测
+
+除了通过 ML Backend 批量预标，也可以把客户自训模型的推理结果以 AAP JSON / COCO Detection / YOLO zip 形式直接导入为候选预测。详见 [导入 / 导出外部预测](../datasets/prediction-import-export.md)。
+
+## 3D 点云项目
+
+3D 点云（lidar）项目暂不支持 AI 预标。在 `/ai-pre` 详情面板中，lidar 项目会显示「点云（lidar）项目暂不支持 AI 预标」提示，运行按钮不可用。
+
 ## 常见问题
 
-- **跑预标按钮灰**：检查项目是否绑定 backend、批次是否 active、prompt 是否非空。
+- **跑预标按钮灰**：检查项目是否绑定 backend、批次是否 `active`、以及当前 backend 是否为文本预标模式（文本模式下 prompt 不能为空；几何 backend 或 OCR/文档版面模式不需要文本 prompt）。
 - **某些 task 失败**：打开 `/ai-pre/jobs` 查看失败原因，可在 job 详情里重试可恢复项。
 - **跑完批次状态没变**：刷新页面；偶发 WebSocket 延迟可能让前端进度滞后，后端状态通常已经更新。
 - **视频项目为什么不能整批跑文本预标**：视频 AI 标注依赖已有轨迹或当前帧框作为 seed，需要在工作台中选中轨迹后发起 `Shift+T` 追踪。

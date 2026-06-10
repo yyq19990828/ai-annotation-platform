@@ -3,15 +3,22 @@ audience: [super_admin]
 type: how-to
 since: v0.7.0
 status: stable
-last_reviewed: 2026-05-29
+last_reviewed: 2026-06-10
 ---
 
 # BUG 反馈管理
 
-平台右下角浮动的「BUG 反馈」按钮收集到的反馈会落在 `bug_reports` 表中，
-超级管理员通过侧边栏 **管理 → BUG 反馈** 进入处理界面（`/bugs`）。
+平台右下角浮动的「BUG 反馈」按钮收集到的反馈会落在 `bug_reports` 表中。
+`super_admin` 和 `project_admin` 均可通过 `GET /api/v1/bug_reports` API 访问工单列表；侧边栏 **管理 → BUG 反馈**（`/bugs`）入口仅对 `super_admin` 前端可见。
 
-> 入口仅对 `super_admin` 角色可见；非超管用户提交反馈后只能在「设置 → 我的反馈」里查看自己提交的工单。
+> 非管理员用户提交反馈后只能在「设置 → 我的反馈」里查看自己提交的工单。
+
+## 截图附件约束
+
+用户提交反馈时最多可上传 **5 个**附件，每个文件限制如下：
+
+- 最大文件大小：**10 MB**
+- 支持格式：**PNG / JPEG / WebP**（其他格式上传时返回 422）
 
 ## 列表与筛选
 
@@ -35,18 +42,29 @@ last_reviewed: 2026-05-29
 
 列表每行展示 `display_id`（B-1、B-2 …）、标题、严重度徽标、状态、提交时间。如果该工单被重开过，状态后会显示 `↻N` 徽标，鼠标悬停可看最近一次重开时间。
 
+支持以 Markdown 格式导出当前筛选结果：`GET /api/v1/bug_reports?format=markdown&status=new`。
+
 ## 详情面板
 
 点击行打开右侧详情面板，自上而下包含：
 
 1. **元信息**：用户提交时所在路由（`route`）、提交者角色、视口尺寸（`viewport`）、重开次数。
 2. **描述正文**：用户填写的 markdown（已渲染为 HTML，由 `MarkdownBlock` 组件做安全过滤）。
-3. **截图附件**：所有 attachments 以图标链接形式列出，文件大小标注在右侧；点击在新标签页打开签名 URL（`bug_reports.attachmentDownloadUrl(id, key)`）。
+3. **截图附件**：所有 attachments 以图标链接形式列出，文件大小标注在右侧；点击在新标签页打开签名 URL。
 4. **处理结果（resolution）**：若已填写，显示在状态按钮上方。
 5. **状态切换按钮**：6 个状态按钮并排，点击直接落库并广播 `bug_report.status_changed` 通知给提交者。当前状态高亮显示，不可重复点击。
 6. **评论区**：内联 markdown 评论，所有评论者的 `author_role` 会跟在名字后；评论会作为 `bug_report.commented` 通知发给提交者。
 
-> 状态从 `fixed` / `wont_fix` 回退到任意非终态时，会触发 `bug_report.reopened` 通知，并把 `reopen_count` +1、`last_reopened_at` 更新为当前时间。
+## 重开机制
+
+工单重开由**提交者（reporter）在评论区发评论**触发，而非管理员手动改状态：
+
+- 触发条件：提交者在 `fixed` / `wont_fix` / `duplicate` 状态的工单上发表评论
+- 触发后：工单自动转为 `triaged` 状态，`reopen_count` +1，`last_reopened_at` 更新为当前时间
+- 速率限制：每个用户对同一工单每日最多触发 **5 次**重开（超限返回 429）；整体评论限制 **60 次/小时**
+- 审计：重开事件记录 `bug_report.reopened` 审计日志
+
+管理员直接通过「状态切换按钮」修改状态**不会**触发重开逻辑（直接写库，不计入 reopen_count）。
 
 ## 通知触达
 
@@ -54,7 +72,7 @@ last_reviewed: 2026-05-29
 
 - `bug_report.commented` — 工单被评论
 - `bug_report.status_changed` — 状态被改动
-- `bug_report.reopened` — 已关闭工单被重开
+- `bug_report.reopened` — 已关闭工单被提交者重开
 
 用户可在 **设置 → 通知偏好** 中单独静音以上 type。
 

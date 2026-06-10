@@ -3,7 +3,7 @@ audience: [super_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-10
 ---
 
 # ML Backend 注册
@@ -19,18 +19,20 @@ ML Backend 是平台对接外部推理服务的契约层。每个 Backend 是一
 
 | 字段 | 含义 | 约束 |
 |---|---|---|
-| 名称 | 显示名 | 项目内唯一 |
-| 类型 | `grounded-sam-2` / 自训类型 | 决定 worker 用哪条调用路径 |
+| 名称 | 显示名 | 无全局唯一性约束（`ml_backends` 表无 UNIQUE 索引） |
 | URL | Backend HTTP 入口 | **不能填 loopback**（详见下） |
+| 交互式 | 是否支持工作台一键推理 | 布尔开关，默认关 |
 | API Key | 可选，header `Authorization: Bearer ...` | — |
-| 默认 prompt / 默认阈值 | 调用兜底参数 | — |
+| 额外参数 | JSON 扩展字段（如 `max_concurrency`） | — |
+
+> **已删除的虚构字段**：`type`（类型选择器）、默认 prompt、默认阈值均**不是**注册表单的真实字段。backend 类型由 backend 自身通过 `/setup` 声明（能力协议 v2），不在注册时指定。`max_concurrency` 等运行时参数写入 `extra_params` JSONB 字段，不在创建表单暴露（`apps/api/app/db/models/ml_backend.py`）。
 
 ## URL 校验：拒绝 loopback
 
-后端 Pydantic `field_validator` 会直接拒绝以下 host：
+后端 Pydantic `field_validator` 会直接拒绝以下 host（`apps/api/app/schemas/ml_backend.py:8`）：
 
 - `localhost`
-- `127.0.0.1` / `127.x.x.x`
+- `127.0.0.1`（精确匹配，**不**拒绝整个 `127.x.x.x` 段）
 - `0.0.0.0`
 - `::1`
 
@@ -48,7 +50,9 @@ dev 环境 placeholder 已默认填 `172.17.0.1:8001`。
 
 ## 健康检查
 
-注册后系统会自动调用 `GET <url>/health`。失败不阻断创建（避免临时网络问题让你卡住），但会在列表里显示红色 `unreachable` 徽章。
+注册后系统会自动调用 `GET <url>/health`。失败不阻断创建（避免临时网络问题让你卡住），但会在列表里显示红色徽章，状态值为 **`error`**（不是 `unreachable`；`state` 字段枚举：`disconnected` / `connected` / `error`，见 `apps/api/app/services/ml_backend.py:122`）。
+
+**注册前连通性测试**：`POST /admin/ml-integrations/probe` 提供无 DB 副作用的探测（`/probe`），注册表单「测试连接」按钮即调用此端点。
 
 ## 项目绑定
 
@@ -68,11 +72,23 @@ dev 环境 placeholder 已默认填 `172.17.0.1:8001`。
 
 ## 删除
 
-仅超管可删除。删除前提示「该 backend 被 N 个项目使用」，确认后级联清理项目绑定（项目侧 ml_backend_id 置 NULL）。
+**超级管理员和项目管理员均可删除**（`require_roles(SUPER_ADMIN, PROJECT_ADMIN)`，`apps/api/app/api/v1/ml_backends.py:185`）。删除前若有正在运行的预测 job，返回 `HTTP 409` 阻断；无 running job 时直接删除，`projects.ml_backend_id` 通过 ON DELETE SET NULL 自动置空（`apps/api/app/db/models/project.py:44`）。
 
 ## 审计
 
-`ml_backend.created` / `ml_backend.updated` / `ml_backend.deleted` 全部进 audit_logs。详见 [审计日志](./audit-logs)。
+以下事件写入 `audit_logs`：
+
+- `ml_backend.created` / `ml_backend.updated` / `ml_backend.deleted`
+- `ml_backend.reloaded` / `ml_backend.unloaded` / `ml_backend.warmup`（生命周期动作）
+- `ml_backend.smoke_tested`（模型市场试启动）
+
+详见 [审计日志](./audit-logs)。
+
+## 相关操作
+
+- **观测（observe）**：`GET /admin/ml-integrations/observe` 直连 env 配的 ML Backend 容器，不需要项目注册即可看健康 / 变体目录。
+- **试启动（smoke-test）**：`POST /admin/ml-integrations/observe/smoke-test`，空池时预热指定变体并自动还原，验证可加载性（`apps/api/app/api/v1/admin_ml_integrations.py:481`）。
+- **`max_concurrency`**：写入 `ml_backends.extra_params.max_concurrency`，前端 /ai-pre 项目卡片会读取并展示。
 
 ## 相关
 
