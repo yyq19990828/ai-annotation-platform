@@ -445,6 +445,15 @@ class BatchService:
         data: BatchSplitRequest,
         created_by: uuid.UUID,
     ) -> list[TaskBatch]:
+        # scene 模式项目分包只能按 scene:同一 scene 的连续帧必须落同一批次,random/顺序
+        # 切分会把连续帧拆散给不同标注员。前端已只暴露 by_scene 入口,这里再加一道后端门
+        # 防御直发 API 的越权策略。
+        project = await self.db.get(Project, project_id)
+        if project and project.scene_mode and data.strategy != "by_scene":
+            raise HTTPException(
+                status_code=422,
+                detail="scene 模式项目分包只能按 scene(strategy=by_scene)",
+            )
         if data.strategy == "random":
             return await self._split_random(project_id, data, created_by)
         elif data.strategy == "metadata":
