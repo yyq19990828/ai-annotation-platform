@@ -8,19 +8,18 @@
 import asyncio
 import sys
 import uuid
-from datetime import date
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import select
 
 # v0.13.11 · 点云夹具脚本与本文件同目录;PYTHONPATH 已含 apps/api,直接 import。
 sys.path.insert(0, str(__file__.rsplit("/", 1)[0]))  # 让 `scripts/` 入 sys.path
-from seed_pointcloud import seed_pointcloud  # noqa: E402  (依赖 sys.path 先扩)
+from seed_pointcloud import seed_pointcloud, seed_nuscenes_scene  # noqa: E402
+from seed_coco8 import seed_coco8  # noqa: E402  (依赖 sys.path 先扩)
 
 from app.config import settings
 from app.core.security import hash_password
 from app.db.models.user import User
-from app.db.models.project import Project
 
 # 生产保护栏：seed.py 仅用于 dev / staging
 if settings.environment == "production":
@@ -84,67 +83,9 @@ USERS = [
     },
 ]
 
-# ── 示例项目（owner 取 pm@example.com 的 id，在运行时填入）─────────────────
-
-
-def make_projects(owner_id: uuid.UUID) -> list[dict]:
-    return [
-        {
-            "display_id": "P-0001",
-            "name": "智能门店货架商品检测",
-            "type_label": "图像 · 目标检测",
-            "type_key": "image-det",
-            "owner_id": owner_id,
-            "status": "in_progress",
-            "ai_enabled": True,
-            "ai_model": "GroundingDINO + SAM",
-            "tool_bindings": {
-                "bbox": {
-                    "enabled": True,
-                    "classes": [
-                        {"name": "商品", "order": 0},
-                        {"name": "价签", "order": 1},
-                        {"name": "标识牌", "order": 2},
-                        {"name": "缺货位", "order": 3},
-                        {"name": "促销贴", "order": 4},
-                    ],
-                }
-            },
-            "total_tasks": 8420,
-            "completed_tasks": 6312,
-            "review_tasks": 412,
-            "due_date": date(2026, 5, 12),
-        },
-        {
-            "display_id": "P-0002",
-            "name": "自动驾驶路面障碍分割",
-            "type_label": "图像 · 实例分割",
-            "type_key": "image-seg",
-            "owner_id": owner_id,
-            "status": "in_progress",
-            "ai_enabled": True,
-            "ai_model": "SAM2",
-            "tool_bindings": {
-                "region": {
-                    "enabled": True,
-                    "classes": [
-                        {"name": "车辆", "order": 0},
-                        {"name": "行人", "order": 1},
-                        {"name": "自行车", "order": 2},
-                        {"name": "路锥", "order": 3},
-                        {"name": "路面坑洞", "order": 4},
-                    ],
-                }
-            },
-            "total_tasks": 12000,
-            "completed_tasks": 4800,
-            "review_tasks": 960,
-            "due_date": date(2026, 6, 30),
-        },
-    ]
-
-
 # ── 主逻辑 ────────────────────────────────────────────────────────────────────
+# 示例项目不再造假数据:图片项目由 seed_coco8(真实 coco8) 单独建, 点云项目由
+# seed_pointcloud / seed_nuscenes_scene 建, 均在 seed() 内按夹具可用性容错调用。
 
 
 async def seed() -> None:
@@ -173,29 +114,26 @@ async def seed() -> None:
             print(f"  add   {data['email']}  [{data['role']}]")
 
         owner = created_users.get("pm") or created_users.get("pm@test.com")
-        if not owner:
-            print("  WARN: pm 用户未找到，跳过项目创建")
-            await db.commit()
-            await engine.dispose()
-            return
-
-        for pdata in make_projects(owner.id):
-            existing = await db.scalar(
-                select(Project).where(Project.display_id == pdata["display_id"])
-            )
-            if existing:
-                if existing.owner_id != owner.id:
-                    existing.owner_id = owner.id
-                    print(f"  fix   project {pdata['display_id']} owner -> pm")
-                else:
-                    print(f"  skip  project {pdata['display_id']} (已存在)")
-                continue
-
-            project = Project(id=uuid.uuid4(), **pdata)
-            db.add(project)
-            print(f"  add   project {pdata['display_id']}  {pdata['name']}")
-
         await db.commit()
+
+        # 图片标注项目:真实 coco8(8 张图)+ GT 框, owner=pm(无 pm 则兜底 admin)。
+        # 依赖 MinIO + third-party/coco8 夹具, 缺失则跳过, 不阻断核心账号种子。
+        img_owner = owner or created_users.get("admin")
+        if img_owner is not None:
+            try:
+                info = await seed_coco8(db, owner_id=img_owner.id)
+                await db.commit()
+                if info is None:
+                    print("  skip  image P-COCO8 (已存在)")
+                else:
+                    print(
+                        f"  add   image {info['project']}  "
+                        f"images={info['images']} tasks={info['tasks']} "
+                        f"pred={info['predictions']}"
+                    )
+            except Exception as e:  # noqa: BLE001 — 夹具/MinIO 不可用时不阻断 seed
+                await db.rollback()
+                print(f"  WARN  coco8 夹具跳过: {e}")
 
         # 点云开发夹具(owner=admin):依赖 MinIO + SUSTechPOINTS 夹具,缺失则跳过,
         # 不影响核心账号/项目种子。幂等:P-PC-DEV 已存在则跳过。
@@ -214,6 +152,23 @@ async def seed() -> None:
             except Exception as e:  # noqa: BLE001 — 夹具/MinIO 不可用时不阻断 seed
                 await db.rollback()
                 print(f"  WARN  point-cloud 夹具跳过: {e}")
+
+            # scene 模式点云项目(owner=admin):nuScenes-mini 取 1 个 scene。依赖 MinIO +
+            # third-party/nuscenes-mini 夹具(~5.1G), 缺失则跳过。幂等:同名 scene 跳过。
+            try:
+                nu = await seed_nuscenes_scene(db, owner_id=admin.id)
+                await db.commit()
+                scenes = ", ".join(
+                    f"{s['name']}({s['frames']}帧{'·已存在' if s.get('skipped') else ''})"
+                    for s in nu["scenes"]
+                )
+                print(
+                    f"  add   nuscenes scene-mode  items={nu['total_items']} "
+                    f"batches={nu['batches']}  {scenes}"
+                )
+            except Exception as e:  # noqa: BLE001 — 夹具/MinIO 不可用时不阻断 seed
+                await db.rollback()
+                print(f"  WARN  nuscenes 夹具跳过: {e}")
 
     await engine.dispose()
 
