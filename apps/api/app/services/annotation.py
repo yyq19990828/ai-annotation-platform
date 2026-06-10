@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +34,29 @@ PROPAGATABLE_GEOMETRY_TYPES = frozenset(
         "keypoint",
     }
 )
+
+
+@dataclass
+class _PropagateContext:
+    """propagate_batch 整批共享的预解析上下文。
+
+    一次 batch 内所有框共享同一 source_task / target_task,故 scene/frame、
+    目标 axis_convention、源/目标帧 ego pose 对整批恒定。循环外解析一次,逐框
+    复用,消除原先逐条 propagate 重复解析造成的 N+1(框数 20-50+ 时尤甚)。
+    box_3d 专用字段(axis_convention / pose_src / pose_dst)首次遇到 box_3d 时
+    才解析并缓存 —— 2D 几何不付这部分 DB 往返。
+    """
+
+    src_task: Task
+    target_task: Task
+    src_scene_id: uuid.UUID | None
+    src_frame_index: int | None
+    target_scene_id: uuid.UUID | None
+    target_frame_index: int | None
+    axis_convention: str | None = None
+    pose_src: object | None = None
+    pose_dst: object | None = None
+    _box3d_resolved: bool = False
 
 
 def _new_track_id() -> str:
@@ -506,13 +530,6 @@ class AnnotationService:
         if src is None or not src.is_active:
             raise HTTPException(status_code=404, detail="source annotation not found")
 
-        geom_type = (src.geometry or {}).get("type")
-        if geom_type not in PROPAGATABLE_GEOMETRY_TYPES:
-            raise HTTPException(
-                status_code=422,
-                detail=f"geometry type '{geom_type}' 不支持跨帧 propagate",
-            )
-
         target_task = await self.db.get(Task, target_task_id)
         if target_task is None:
             raise HTTPException(status_code=404, detail="target task not found")
@@ -520,7 +537,30 @@ class AnnotationService:
         src_task = await self.db.get(Task, src.task_id)
         if src_task is None:
             raise HTTPException(status_code=404, detail="source task not found")
-        if target_task_id == src.task_id:
+
+        ctx = await self._resolve_propagate_context(
+            src_task=src_task, target_task=target_task
+        )
+        new_annotation, motion_compensated = await self._propagate_one(
+            src=src, ctx=ctx, user_id=user_id, override_psr=override_psr
+        )
+        await self.db.flush()
+        await self._update_task_stats(target_task_id)
+        return new_annotation, motion_compensated
+
+    async def _resolve_propagate_context(
+        self, *, src_task: Task, target_task: Task
+    ) -> _PropagateContext:
+        """解析 propagate 的整批恒定上下文: 同 task/project/scene 校验 +
+        源/目标 scene_id / frame_index。
+
+        propagate_batch 一次解析供全框复用; 单条 propagate 解析后即用一次。
+        box_3d 专用的 axis_convention / pose 延迟到 _propagate_one 首次遇到
+        box_3d 时解析(见 _ensure_box3d_context),2D 几何不付这部分往返。
+        """
+        from fastapi import HTTPException
+
+        if target_task.id == src_task.id:
             raise HTTPException(
                 status_code=422, detail="propagate 目标不能是源 task 自身"
             )
@@ -555,7 +595,57 @@ class AnnotationService:
         ):
             raise HTTPException(status_code=422, detail="跨 scene propagate 不被允许")
 
-        # 共享 group_id: 源无则分配并写回。
+        return _PropagateContext(
+            src_task=src_task,
+            target_task=target_task,
+            src_scene_id=src_scene_id,
+            src_frame_index=src_frame_index,
+            target_scene_id=target_scene_id,
+            target_frame_index=target_frame_index,
+        )
+
+    async def _ensure_box3d_context(self, ctx: _PropagateContext) -> None:
+        """box_3d 专用上下文解析: 目标 axis_convention + 源/目标帧 ego pose。
+
+        结果缓存在 ctx 上,整批只在首次遇到 box_3d 时解析一次。
+        """
+        if ctx._box3d_resolved:
+            return
+        ctx.axis_convention = await self._resolve_axis_convention(ctx.target_task)
+        ctx.pose_src = await self._frame_pose(ctx.src_scene_id, ctx.src_frame_index)
+        ctx.pose_dst = await self._frame_pose(
+            ctx.target_scene_id, ctx.target_frame_index
+        )
+        ctx._box3d_resolved = True
+
+    async def _propagate_one(
+        self,
+        *,
+        src: Annotation,
+        ctx: _PropagateContext,
+        user_id: uuid.UUID,
+        override_psr: dict | None = None,
+    ) -> tuple[Annotation, bool]:
+        """单框 propagate 核心: 校验几何类型、延续 group_id、box_3d 运动补偿、
+        建新 annotation。
+
+        使用 ctx 中整批预解析好的 scene/frame/axis/pose,不再逐框解析。
+        **不** flush、**不** 更新 task stats —— 由调用方(propagate / propagate_batch)
+        在循环外统一收尾,避免逐框 N+1。
+        """
+        from fastapi import HTTPException
+
+        if src is None or not src.is_active:
+            raise HTTPException(status_code=404, detail="source annotation not found")
+
+        geom_type = (src.geometry or {}).get("type")
+        if geom_type not in PROPAGATABLE_GEOMETRY_TYPES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"geometry type '{geom_type}' 不支持跨帧 propagate",
+            )
+
+        # 共享 group_id: 源无则分配并写回(每框各自一条独立链,故 nextval 必须逐框)。
         group_id = src.group_id
         if group_id is None:
             seq_row = await self.db.execute(
@@ -568,9 +658,8 @@ class AnnotationService:
         geometry = copy.deepcopy(src.geometry or {})
         motion_compensated = False
         if geom_type == "box_3d":
-            geometry["convention_at_create"] = await self._resolve_axis_convention(
-                target_task
-            )
+            await self._ensure_box3d_context(ctx)
+            geometry["convention_at_create"] = ctx.axis_convention
             if override_psr:
                 for key in ("center", "size", "rotation"):
                     if key in override_psr:
@@ -586,18 +675,16 @@ class AnnotationService:
                         "size": geometry["size"],
                         "rotation": geometry["rotation"],
                     },
-                    pose_src=await self._frame_pose(src_scene_id, src_frame_index),
-                    pose_dst=await self._frame_pose(
-                        target_scene_id, target_frame_index
-                    ),
+                    pose_src=ctx.pose_src,
+                    pose_dst=ctx.pose_dst,
                 )
                 if motion_compensated:
                     geometry.update(psr)
 
         new_annotation = Annotation(
             id=uuid.uuid4(),
-            task_id=target_task_id,
-            project_id=target_task.project_id,
+            task_id=ctx.target_task.id,
+            project_id=ctx.target_task.project_id,
             user_id=user_id,
             source="manual",
             annotation_type=src.annotation_type,
@@ -608,8 +695,6 @@ class AnnotationService:
             attributes=copy.deepcopy(src.attributes or {}),
         )
         self.db.add(new_annotation)
-        await self.db.flush()
-        await self._update_task_stats(target_task_id)
         return new_annotation, motion_compensated
 
     async def propagate_batch(
@@ -676,16 +761,31 @@ class AnnotationService:
                 )
             rows = [by_id[i] for i in annotation_ids]
 
+        # 整批共享同一 source_task / target_task → scene/frame/axis/pose 全恒定。
+        # 循环外解析一次(原先逐条 propagate 会重复解析 → N+1,框数 20-50+ 放大成
+        # 上百次 DB 往返)。校验语义不变: 仍走与单条 propagate 同一份 context 解析。
+        source_task = await self.db.get(Task, source_task_id)
+        if source_task is None:
+            raise HTTPException(status_code=404, detail="source task not found")
+        target_task = await self.db.get(Task, target_task_id)
+        if target_task is None:
+            raise HTTPException(status_code=404, detail="target task not found")
+        ctx = await self._resolve_propagate_context(
+            src_task=source_task, target_task=target_task
+        )
+
         results: list[tuple[uuid.UUID, Annotation]] = []
         motion_compensated = False
         for src in rows:
-            new_annotation, compensated = await self.propagate(
-                source_annotation_id=src.id,
-                target_task_id=target_task_id,
-                user_id=user_id,
+            new_annotation, compensated = await self._propagate_one(
+                src=src, ctx=ctx, user_id=user_id
             )
             motion_compensated = motion_compensated or compensated
             results.append((src.id, new_annotation))
+        # 一次 flush + 一次 task stats 更新(原逐框 _update_task_stats 是 N+1 的另一
+        # 来源: 每框都做 count 查询 + Task.get)。最终计数/状态与逐框累加等价。
+        await self.db.flush()
+        await self._update_task_stats(target_task_id)
         return results, motion_compensated
 
     async def interpolate_range(

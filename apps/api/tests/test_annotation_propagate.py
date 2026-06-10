@@ -493,6 +493,59 @@ async def test_propagate_batch_all_box3d(db_session, super_admin):
 
 
 @pytest.mark.asyncio
+async def test_propagate_batch_resolution_not_amplified_by_box_count(
+    db_session, super_admin, monkeypatch
+):
+    """N+1 回归守卫(PR #38 code-review 🟡): 批量 propagate 的 scene/frame
+    /axis/pose 解析整批只做一次,不随框数线性放大。
+
+    一次 batch 内所有框共享同一 source/target task,context(同 task/project
+    /scene 校验 + axis_convention + 源/目标 ego pose)对整批恒定。这里放 4 个
+    box_3d,断言 _resolve_axis_convention 只被调 1 次、_frame_pose 只被调 2 次
+    (源帧 + 目标帧),而非分别 4 次 / 8 次 —— 直接锁住「不逐框重复解析」。
+    """
+    user, _ = super_admin
+    project, _, scene, tasks = await _seed_scene(db_session, owner_id=user.id)
+    await _seed_poses(db_session, scene.id, frames=3, step=2.0)
+    for i in range(4):
+        await _add_annotation(
+            db_session,
+            task=tasks[0],
+            project=project,
+            user_id=user.id,
+            geometry=_box3d(center=(float(i), 0.0, 0.0)),
+        )
+
+    svc = AnnotationService(db_session)
+    counters = {"axis": 0, "pose": 0}
+    orig_axis = svc._resolve_axis_convention
+    orig_pose = svc._frame_pose
+
+    async def _spy_axis(task):
+        counters["axis"] += 1
+        return await orig_axis(task)
+
+    async def _spy_pose(scene_id, frame_index):
+        counters["pose"] += 1
+        return await orig_pose(scene_id, frame_index)
+
+    monkeypatch.setattr(svc, "_resolve_axis_convention", _spy_axis)
+    monkeypatch.setattr(svc, "_frame_pose", _spy_pose)
+
+    results, compensated = await svc.propagate_batch(
+        source_task_id=tasks[0].id,
+        target_task_id=tasks[1].id,
+        annotation_ids=None,
+        user_id=user.id,
+    )
+    assert len(results) == 4
+    assert compensated is True
+    # 恒定: 与框数(4)无关。若退回逐框 propagate 会是 4 / 8。
+    assert counters["axis"] == 1
+    assert counters["pose"] == 2
+
+
+@pytest.mark.asyncio
 async def test_propagate_batch_empty_source_422(db_session, super_admin):
     from fastapi import HTTPException
 
