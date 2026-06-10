@@ -592,7 +592,10 @@ async def import_coco(
             "h": h / img_h,
         }
         score = ann.get("score")
-        confidence = float(score) if isinstance(score, (int, float)) else None
+        # 预标注导入缺省满分: COCO GT 标注通常无 score, 缺省视作 100% 置信(确定标签)。
+        # 否则 score=null 经 to_internal_shape 落为 confidence=0.0, 被工作台默认 50% 阈值
+        # 全量过滤而不可见。COCO 结果格式若带 score 则保留原值。
+        confidence = float(score) if isinstance(score, (int, float)) else 1.0
 
         ls_shape = internal_geometry_to_ls_shape(geometry, class_name, confidence)
         if ls_shape is None:
@@ -741,7 +744,9 @@ async def import_yolo(
                 continue
             assert parsed is not None
             geometry, class_name = parsed
-            ls_shape = internal_geometry_to_ls_shape(geometry, class_name, None)
+            # 预标注导入缺省满分: YOLO label 无置信度列, 缺省视作 100%(确定标签)。
+            # 否则经 to_internal_shape 落为 confidence=0.0, 被工作台默认 50% 阈值过滤而不可见。
+            ls_shape = internal_geometry_to_ls_shape(geometry, class_name, 1.0)
             if ls_shape is None:
                 result.errors.append(
                     AAPImportErrorEntry(
@@ -765,7 +770,7 @@ async def import_yolo(
             project_id=project_id,
             ml_backend_id=None,
             result=ls_shapes,
-            score=None,
+            score=1.0,  # YOLO label 无分数 → 预测级 score 同样缺省满分(与逐 shape 一致)
             model_version=model_version_fallback,
             source="external_import",
         )
