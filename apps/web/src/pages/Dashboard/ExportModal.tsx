@@ -3,7 +3,7 @@ import { projectsApi, type ExportTarget, type VideoFrameMode } from "@/api/proje
 import { Modal } from "@/components/ui/Modal";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
-import styles from "./ExportSection.module.css";
+import styles from "./ExportModal.module.css";
 
 interface TargetOption {
   value: ExportTarget;

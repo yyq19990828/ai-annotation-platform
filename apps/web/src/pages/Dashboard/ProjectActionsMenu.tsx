@@ -19,7 +19,7 @@ import {
   type ImportTarget,
 } from "@/components/predictions/PredictionImportWizard";
 import { PredictionPurgeModal } from "@/components/predictions/PredictionPurgeModal";
-import { ExportModal } from "./ExportSection";
+import { ExportModal } from "./ExportModal";
 import type { ProjectResponse } from "@/api/projects";
 
 export function ProjectActionsMenu({

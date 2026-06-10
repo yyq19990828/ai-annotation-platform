@@ -25,7 +25,7 @@ vi.mock("./FilterDrawer", () => ({
   EMPTY_FILTERS: { data_type: [], member_id: undefined, created_from: undefined, created_to: undefined, status: undefined },
 }));
 
-vi.mock("./ExportSection", () => ({
+vi.mock("./ExportModal", () => ({
   ExportModal: () => null,
 }));
 

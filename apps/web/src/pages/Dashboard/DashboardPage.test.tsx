@@ -51,7 +51,7 @@ vi.mock("./ProjectGrid", () => ({
   ProjectGrid: () => <div data-testid="project-grid" />,
 }));
 
-vi.mock("./ExportSection", () => ({
+vi.mock("./ExportModal", () => ({
   ExportModal: () => null,
 }));
 
