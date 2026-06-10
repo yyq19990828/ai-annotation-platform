@@ -51,6 +51,9 @@ last_reviewed: 2026-06-10
 ### AI / ML
 - `predictions.import` / `predictions.purge`
 - `failed_prediction.dismissed` / `failed_prediction.restored`
+- `ml_backend.created` / `ml_backend.updated` / `ml_backend.deleted` / `ml_backend.reloaded` / `ml_backend.unloaded` / `ml_backend.warmup` / `ml_backend.smoke_tested`（详见 [ML Backend 注册](./ml-backend-registry)）
+
+> `ml_backend.*` 这组动作在后端以**原始字符串**直接写入（`AuditService.log(action="ml_backend.xxx")`），目前未纳入 `AuditAction` 枚举；按 `action LIKE 'ml_backend.%'` 即可查到。其余命名空间均为枚举常量。
 
 ### 标注
 - `annotation.create` / `annotation.update` / `annotation.delete`
