@@ -52,7 +52,7 @@ vi.mock("./ProjectGrid", () => ({
 }));
 
 vi.mock("./ExportSection", () => ({
-  ExportSection: () => null,
+  ExportModal: () => null,
 }));
 
 vi.mock("@/components/guards/Can", () => ({

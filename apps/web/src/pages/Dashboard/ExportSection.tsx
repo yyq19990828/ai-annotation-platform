@@ -5,11 +5,6 @@ import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import styles from "./ExportSection.module.css";
 
-interface ExportSectionProps {
-  projectId: string;
-  projectTypeKey?: string;
-}
-
 interface TargetOption {
   value: ExportTarget;
   label: string;
@@ -60,34 +55,27 @@ function cn(...xs: Array<string | false | null | undefined>): string {
   return xs.filter(Boolean).join(" ");
 }
 
-/** 项目行的「导出」按钮 + Modal（v0.10.43 多目标多选）。 */
-export function ExportSection({ projectId, projectTypeKey }: ExportSectionProps) {
-  const [open, setOpen] = useState(false);
-
+/** 导出 Modal（v0.10.43 多目标多选）。受控开关，供独立触发器或 ⋮ 菜单复用。 */
+export function ExportModal({
+  open,
+  onClose,
+  projectId,
+  projectTypeKey,
+}: {
+  open: boolean;
+  onClose: () => void;
+  projectId: string;
+  projectTypeKey?: string;
+}) {
   return (
-    <div className={styles.root} onClick={(e) => e.stopPropagation()}>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        title="导出标注数据"
-        className={styles.trigger}
-      >
-        导出
-      </button>
-      <Modal
-        open={open}
-        title="导出标注数据"
-        width={520}
-        onClose={() => setOpen(false)}
-      >
-        <ExportForm
-          projectId={projectId}
-          projectTypeKey={projectTypeKey}
-          onDone={() => setOpen(false)}
-          onCancel={() => setOpen(false)}
-        />
-      </Modal>
-    </div>
+    <Modal open={open} title="导出标注数据" width={520} onClose={onClose}>
+      <ExportForm
+        projectId={projectId}
+        projectTypeKey={projectTypeKey}
+        onDone={onClose}
+        onCancel={onClose}
+      />
+    </Modal>
   );
 }
 

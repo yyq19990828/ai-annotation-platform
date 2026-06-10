@@ -5,7 +5,6 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { type ProjectResponse } from "@/api/projects";
-import { ExportSection } from "./ExportSection";
 import { ProjectActionsMenu } from "./ProjectActionsMenu";
 import { projectDisplayType } from "@/utils/projectDisplay";
 
@@ -26,7 +25,7 @@ interface Props {
 }
 
 /** v0.7.2 · 项目网格视图 — DashboardPage 用作 list 视图的可切换姿态。
- *  v0.7.6 · 卡片右下角次级动作（导出 / 设置）收编到 ⋮ DropdownMenu，主操作"打开"独立。
+ *  B-47 · 卡片操作为 [设置] [⋮(导出 / 复制 / 导入 …)] [打开]（列表视图把 ⋮ 收到末位）。
  */
 export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) {
   if (projects.length === 0) {
@@ -101,18 +100,21 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
               </div>
 
               <div className={styles.cardActions} onClick={(e) => e.stopPropagation()}>
-                <ExportSection projectId={p.id} projectTypeKey={p.type_key} />
-                <ProjectActionsMenu
-                  project={p}
-                  canManage={canManage(p)}
-                  onSettings={onSettings}
-                />
+                {canManage(p) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={(e) => { e.stopPropagation(); onSettings(p); }}
+                  >
+                    <Icon name="settings" size={12} />设置
+                  </Button>
+                )}
+                <ProjectActionsMenu project={p} canManage={canManage(p)} />
                 <Button
                   size="sm"
-                  variant="primary"
                   onClick={(e) => { e.stopPropagation(); onOpen(p); }}
                 >
-                  打开<Icon name="chevRight" size={11} />
+                  打开 <Icon name="chevRight" size={11} />
                 </Button>
               </div>
             </div>

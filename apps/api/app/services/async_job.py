@@ -97,8 +97,18 @@ async def mark_complete(
         job.result = result
 
 
-async def mark_failed(db: AsyncSession, job_id: uuid.UUID, *, error: str) -> None:
-    """v0.10.16 · 失败态。幂等。"""
+async def mark_failed(
+    db: AsyncSession,
+    job_id: uuid.UUID,
+    *,
+    error: str,
+    result: dict | None = None,
+) -> None:
+    """v0.10.16 · 失败态。幂等。
+
+    B-45 · 可选 result：当 batch_predict 全部子项失败需标记 job 为 failed 时，
+    仍要把统计（success/failed_count、failed_prediction_ids）写进 result，
+    以便前端失败重试链路可用。"""
     job = await db.get(AsyncJob, job_id)
     if job is None:
         return
@@ -110,6 +120,8 @@ async def mark_failed(db: AsyncSession, job_id: uuid.UUID, *, error: str) -> Non
     job.status = AsyncJobStatus.FAILED.value
     job.completed_at = datetime.now(timezone.utc)
     job.error_message = (error or "")[:4000]
+    if result is not None:
+        job.result = result
 
 
 async def mark_cancelled(

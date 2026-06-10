@@ -14,7 +14,6 @@ import { useProjects, useProjectStats } from "@/hooks/useProjects";
 import type { ProjectResponse } from "@/api/projects";
 import { CreateProjectWizard } from "@/components/projects/CreateProjectWizard";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
-import { ExportSection } from "./ExportSection";
 import { ProjectActionsMenu } from "./ProjectActionsMenu";
 import { ProjectGrid } from "./ProjectGrid";
 import { FilterDrawer, EMPTY_FILTERS, type DashboardFilters } from "./FilterDrawer";
@@ -144,11 +143,13 @@ function AdminProjectRow({
       </td>
       <td className={styles.projectCellActions} onClick={(e) => e.stopPropagation()}>
         <div className={styles.rowActions}>
-          <ExportSection projectId={p.id} projectTypeKey={p.type_key} />
-          <ProjectActionsMenu project={p} canManage onSettings={onSettings} />
+          <Button size="sm" variant="ghost" onClick={() => onSettings(p)}>
+            <Icon name="settings" size={12} />设置
+          </Button>
           <Button size="sm" onClick={() => onOpen(p)}>
             打开 <Icon name="chevRight" size={11} />
           </Button>
+          <ProjectActionsMenu project={p} canManage />
         </div>
       </td>
     </tr>

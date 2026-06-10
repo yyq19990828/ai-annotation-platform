@@ -13,7 +13,6 @@ import { useToastStore } from "@/components/ui/Toast";
 import { Can } from "@/components/guards/Can";
 import { useProjects, useProjectStats } from "@/hooks/useProjects";
 import { type ProjectResponse } from "@/api/projects";
-import { ExportSection } from "./ExportSection";
 import { CreateProjectWizard } from "@/components/projects/CreateProjectWizard";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { useAuthStore } from "@/stores/authStore";
@@ -153,15 +152,15 @@ function ProjectRow({
         onClick={(e) => e.stopPropagation()}
       >
         <div className={styles.rowActions}>
-          <ExportSection projectId={p.id} projectTypeKey={p.type_key} />
-          <ProjectActionsMenu
-            project={p}
-            canManage={canManage}
-            onSettings={onSettings}
-          />
+          {canManage && (
+            <Button size="sm" variant="ghost" onClick={() => onSettings(p)}>
+              <Icon name="settings" size={12} />设置
+            </Button>
+          )}
           <Button size="sm" onClick={() => onOpen(p)}>
             打开 <Icon name="chevRight" size={11} />
           </Button>
+          <ProjectActionsMenu project={p} canManage={canManage} />
         </div>
       </td>
     </tr>

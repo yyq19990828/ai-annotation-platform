@@ -143,7 +143,7 @@ Dashboard 项目卡片右下角 `⋮` → **「清理预测」**。
 
 反向链路：把项目里的标注与预测导出成外部格式（COCO / YOLO / AAP JSON 等）。
 
-- 入口在 Dashboard 项目的 **「导出」** 按钮，打开导出弹窗，可选导出范围（整个项目 / 单个批次）与一个或多个目标格式。
+- 入口在 Dashboard 项目卡片 / 列表行右下角 `⋮` → **「导出标注数据」**，打开导出弹窗，可选导出范围（整个项目 / 单个批次）与一个或多个目标格式。
 - AAP JSON 是无损中间格式，能把 `predictions[]` 连同 `confidence` / `model_version` 一并带出，常用于「导出空项目结构 → 客户用自家模型回填预测 → 再导回」的闭环。
 
 各格式的字段映射、目录结构、回源脚本等细节见 [导出格式参考](../reference/export-formats)。导出后按 task / scene 维度核对任务时，可用 [Data Manager](../projects/data-manager) 的「有预测候选」视图快速定位。

@@ -26,7 +26,7 @@ vi.mock("./FilterDrawer", () => ({
 }));
 
 vi.mock("./ExportSection", () => ({
-  ExportSection: () => null,
+  ExportModal: () => null,
 }));
 
 vi.mock("@/utils/workbenchNavigation", () => ({
