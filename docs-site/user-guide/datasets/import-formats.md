@@ -1,9 +1,9 @@
 ---
-audience: [admin, superadmin]
+audience: [project_admin, super_admin]
 type: how-to
 since: v0.14.2
 status: stable
-last_reviewed: 2026-06-06
+last_reviewed: 2026-06-10
 ---
 
 # 点云 / 多模态数据集导入格式
@@ -38,16 +38,36 @@ pc-scene-dev/calib/camera/front.json
 pc-scene-dev/calib/camera/left.json
 ```
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/datasets/pointcloud-dir-layout.png — 单 scene vs 多 scene 目录树并排对比(建议矢量示意图而非真截图);左:角色目录布局 lidar/camera/calib → 单 scene,右:顶层多场景名子目录 → 多 scene。[manual] -->
+
 ### 顶层多子目录 = 多 scene
 
 当 ZIP / dataset 顶层**不是**角色目录(`lidar/` `camera/` `calib/` `image/` `video/`)、而是若干"场景名"子目录、每个子目录里再各含自己的 `lidar/ camera/ calib/` 时,平台判定为**多 scene**,每个顶层子目录建成一个独立 scene:
 
 ```
-nu-mini-multi/scene-0061/lidar/...      # scene "scene-0061"
-nu-mini-multi/scene-0061/camera/...
-nu-mini-multi/scene-0103/lidar/...      # scene "scene-0103"
-nu-mini-multi/scene-0103/camera/...
+nu-mini-multi/                              # dataset(storage key 前缀)
+├── scene-0061/                             # → scene "scene-0061"
+│   ├── lidar/
+│   │   ├── scene-0061_000000.pcd
+│   │   └── scene-0061_000001.pcd
+│   ├── camera/
+│   │   ├── CAM_FRONT/scene-0061_000000.jpg
+│   │   └── CAM_FRONT_LEFT/scene-0061_000000.jpg
+│   └── calib/
+│       └── camera/
+│           ├── CAM_FRONT.json
+│           └── CAM_FRONT_LEFT.json
+└── scene-0103/                             # → scene "scene-0103"
+    ├── lidar/
+    │   └── scene-0103_000000.pcd
+    ├── camera/
+    │   └── CAM_FRONT/scene-0103_000000.jpg
+    └── calib/
+        └── camera/
+            └── CAM_FRONT.json
 ```
+
+> 帧 stem 用 `<scene_name>_<6 位序号>`(如 `scene-0061_000000`)而非裸序号:`group_frames` 以**文件名 stem 作帧键**,多 scene 若都用 `000000` 会跨 scene 撞键、漏建 task,加 scene 前缀保证全局唯一。这正是上面 nuScenes 转换脚本对帧命名的处理方式。
 
 scene 边界与 `frame_index` 的概念详见 [Scene + frame_index 跨 task 帧序列地基](/dev/concepts/scene-and-frame-index)。要点:
 
@@ -77,10 +97,40 @@ scene 模式项目的开启与用法见 [项目管理 · scene 模式项目](/us
 
 在数据集导入向导选 **3D 点云** 类型,上传一个 ZIP 包。**打包时必须保留 `lidar/ camera/ calib/` 三级子目录**(v0.14.2 起 ZIP 上传保留 ZIP 内子目录,不再拍平到 basename)。
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/datasets/import-wizard-3d-type.png — 导入向导「基本信息」步选「3D 点云」+ 勾「声明为时序数据集」;红框:数据类型选择、时序开关、axis_convention 选择器。[manual] -->
+
 - **默认一个 ZIP = 一个 scene**,除非顶层有多个非角色子目录(见上)。
-- 上传上限沿用现有 200MB 整包 / 100MB 单文件;nuScenes 单 scene(~80MB)够用,多 scene 请走转换脚本而非向导。
-- 顶层目录如果混用了保留角色名和 scene 名,响应的 `scene_inference_notes` 会提示冲突原因;超过上传上限时错误信息会指向本页和转换脚本路线。
-- 跨子目录同名文件(如 `camera/front/000970.jpg` 与 `camera/left/000970.jpg`)按 **content_hash** 去重,同名不冲突——同帧号跨相机是合法的。
+- 上传上限沿用现有 200MB 整包 / 5000 文件 / 100MB 单文件;nuScenes 单 scene(~80MB)够用,多 scene 请走转换脚本而非向导。整包超 200MB 直接 `413`,错误信息指向本页和转换脚本路线。
+- 顶层目录如果混用了保留角色名和 scene 名,响应的 `scene_inference_notes` 会提示冲突原因。
+- 自动跳过 macOS 元数据(`__MACOSX/`)与隐藏文件(`.DS_Store` 等),计入 `skipped` 计数。
+- 跨子目录同名文件(如 `camera/front/000970.jpg` 与 `camera/left/000970.jpg`)按 **content_hash**(文件字节 MD5)去重,同名不冲突——同帧号跨相机是合法的;字节完全相同的重复文件计入 `deduped`。
+
+`POST /api/v1/datasets/{id}/upload-zip` 的成功响应(`200`)形如:
+
+```json
+{
+  "added": 18,
+  "deduped": 2,
+  "skipped": 1,
+  "errors": [],
+  "total_in_zip": 21,
+  "linked_tasks": 6,
+  "scene_inference_notes": [
+    "[pc-scene-dev] 2 calib items left frame_index=NULL"
+  ]
+}
+```
+
+- `added`:新入库的 DatasetItem 数;`deduped`:按 content_hash 命中已有内容被跳过的数;`skipped`:被规则跳过(隐藏文件 / zip-slip 等)的数(一个整数计数,不是文件名列表)。
+- `errors`:逐条 `{ "name": <ZIP 内路径>, "error": <原因> }`,如单文件超 100MB、解压失败、对象存储写入失败;不阻断其余文件入库。
+- `linked_tasks`:为新 item 创建并关联到 scene 模式项目的 task 数。
+- `scene_inference_notes`:scene 推断说明,逐条多以 `[scene_name]` 前缀标注属于哪个 scene。一切正常的单 scene 上传通常只会有 calib 项「`N calib items left frame_index=NULL`」这类提示(标定是 scene 级、不参与帧序),甚至为空。顶层同时含保留角色目录与 scene 目录时,这里会出现冲突提示,例如:
+
+  ```
+  ZIP 顶层同时包含保留角色目录 (lidar) 与 scene 目录 (scene-0061); 多 scene 顶层目录不要使用 lidar/camera/calib/image/video 等角色名。
+  ```
+
+> ⚠️ 若数据集已声明为时序(`is_temporal`)却没推断出任何 scene,上传整体回滚并返回 `422`(已写入对象存储的对象会被显式清理),提示检查目录结构——这是导入期「早失败」护栏,而非静默零 scene。
 
 ### B. 命令行脚本入库
 
@@ -96,7 +146,43 @@ scene 模式项目的开启与用法见 [项目管理 · scene 模式项目](/us
 | `intrinsic` | 9 float(row-major) | 相机内参 3×3 矩阵 K |
 | `rect`(可选) | 16 float | KITTI 风格 4×4 矫正矩阵;非 KITTI 数据不填 |
 
-非 schema 字段(上游 / 厂商夹带的杂键)入库时自动剥除,不会让一份合法标定整体作废。实例(SUSTechPOINTS `front.json`,截断):
+非 schema 字段(上游 / 厂商夹带的杂键)入库时自动剥除,不会让一份合法标定整体作废。机制(`attach_calibration`):读 calib JSON 后先 `{k: v for k, v in raw if k in {extrinsic, intrinsic, rect}}` 把未建模键过滤掉,再过 `SensorCalibration` 校验(`extra="forbid"`,只接受三字段);若过滤后仍非法(如长度不对)则 `warning` 跳过该相机、不抛错。入库时写的是 `model_dump(exclude_none=True)`,所以不带 `rect` 的标定不会落一个 `rect: null`。
+
+**前后对比**——以 SUSTechPOINTS 示例 `calib/camera/left.json` 为例,上游夹带了一个非 schema 的 `extrinsic_ok` 键(疑似占位 / 历史外参):
+
+上游原始 JSON(截断):
+
+```json
+{
+  "extrinsic_ok": [0.0008, -0.9995, 0.0321, -0.5,
+                   0.0518, -0.0320, -0.9981, 0.0014,
+                   0.9987, 0.0025, 0.0518, -0.1094,
+                   0, 0, 0, 1],
+  "extrinsic": [-0.0394, -0.9972, 0.0634, 0.1248,
+                 0.0502, -0.0653, -0.9966, -0.1844,
+                 0.9980, -0.0361, 0.0527, -0.3944,
+                 0, 0, 0, 1],
+  "intrinsic": [1210.06, 0.0, 1022.43,
+                0.0, 1205.85, 792.54,
+                0.0, 0.0, 1.0]
+}
+```
+
+入库后 `DatasetItem.metadata_.calibration`(仅保留三字段,`extrinsic_ok` 被剥除;此例无 `rect` 故不出现):
+
+```json
+{
+  "extrinsic": [-0.0394, -0.9972, 0.0634, 0.1248,
+                 0.0502, -0.0653, -0.9966, -0.1844,
+                 0.9980, -0.0361, 0.0527, -0.3944,
+                 0, 0, 0, 1],
+  "intrinsic": [1210.06, 0.0, 1022.43,
+                0.0, 1205.85, 792.54,
+                0.0, 0.0, 1.0]
+}
+```
+
+一份干净的最小标定(SUSTechPOINTS `front.json`,无杂键、截断):
 
 ```json
 {
@@ -118,20 +204,24 @@ scene 模式项目的开启与用法见 [项目管理 · scene 模式项目](/us
 
 ### nuScenes
 
-用配套脚本 [`apps/api/scripts/import_nuscenes_scene.py`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/apps/api/scripts/import_nuscenes_scene.py) 离线转换 + 直接入库。脚本**按 nuScenes scene_token 自动建多 scene**,scene_token 1:1 落到 `scenes.name`,sample 顺序赋 `frame_index`:
+用配套脚本 [`apps/api/scripts/import_nuscenes_scene.py`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/apps/api/scripts/import_nuscenes_scene.py) 离线转换 + 直接入库。脚本**为每个传入的 scene 各建一个 scene**,sample 顺序赋 `frame_index`:
+
+> ⚠️ **`--scene-tokens` 的命名有误导**:它接受的是 nuScenes `scene.json` 的 **`name` 字段**(如 `scene-0061`),**不是** scene 的 UUID token(那种形如 `cc8c0bf57f984915a77078b10eb33198` 的 40 位十六进制串)。脚本内部用 `{s["name"]: s}` 按 name 查表,匹配不到就报错。落库时:`scenes.name` = 你传入的 name(如 `scene-0061`),而真正的 UUID token 另存到该 scene 的 `source_metadata.scene_token`。所以传 UUID token 会匹配失败——请填 `scene-XXXX` 形式的 name。
 
 ```bash
 cd apps/api
-# 单 scene
-uv run python scripts/import_nuscenes_scene.py \
+# 单 scene(PYTHONPATH=. 才能 import app.*,与其他 seed 脚本一致)
+PYTHONPATH=. uv run python scripts/import_nuscenes_scene.py \
   --nuscenes-root /data/nuscenes-mini --scene-tokens scene-0061 \
   --dataset-name nu-scene-0061 \
   --frame ego
-# 多 scene 共用一个 dataset
-uv run python scripts/import_nuscenes_scene.py \
+# 多 scene 共用一个 dataset(--scene-tokens 填 name,逗号分隔)
+PYTHONPATH=. uv run python scripts/import_nuscenes_scene.py \
   --nuscenes-root /data/nuscenes-mini --scene-tokens scene-0061,scene-0103,scene-0553 \
   --dataset-name nu-mini-multi
 ```
+
+> 转换脚本入库后的对象存储布局是 `<dataset_name>/<scene_name>/{lidar,camera,calib}/...`(顶层多子目录 = 多 scene),与上文「顶层多子目录 = 多 scene」的目录树一致。每个 scene 的标定取**该 scene 第 1 帧**的内外参对全 scene 通用(逐帧精确补偿留待后续版本)。
 
 脚本只依赖 numpy + Pillow,不需要 `nuscenes-devkit`。数据集下载见 [nuscenes.org/nuscenes#download](https://www.nuscenes.org/nuscenes#download)(选 mini split)。如果 `--dataset-name` 较长,脚本会把内部 `DS-NU-...` / `P-NU-...` display_id 稳定截断并追加 hash,避免超过数据库长度限制;展示名称和对象存储前缀仍保留原始 `dataset_name`。
 

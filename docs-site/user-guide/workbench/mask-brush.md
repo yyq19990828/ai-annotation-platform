@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.10.8
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-10
 ---
 
 # Mask 笔刷编辑器
@@ -18,7 +18,9 @@ Mask 笔刷工具使用 `M` 键进入。常见用法：
 
 mask 编辑器走的是「polygon 中转」：mask 在前端临时态编辑，提交时转回 polygon 落库，schema 不变。
 
-## 三种进入方式
+## 四种进入方式
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/mask-brush/toolbar-overview.png — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto] -->
 
 1. **空白 mask（从零开始）**
    - 按 `M` 或工具栏点 Mask 图标 → 鼠标在画布上拖拽即开始画
@@ -53,6 +55,15 @@ mask 编辑器走的是「polygon 中转」：mask 在前端临时态编辑，�
 
 完整快捷键索引见 [hotkeys.generated.md](./hotkeys.generated.md)。
 
+## 浮动工具栏控件说明
+
+进入 Mask 工具后，画布顶部居中会出现浮动工具栏，从左到右依次为：
+
+- **笔刷 / 橡皮 chip**：两个互斥按钮，分别对应 `B` 和 `E` 快捷键；当前激活态高亮。
+- **半径 slider**：范围 `[1, 200]` px，默认 **16px**；可拖动或用 `Shift + 滚轮` 微调（±2px/格）。右侧实时显示当前半径数值。
+- **状态文字**：未开始涂抹时显示「就绪」，涂抹后变「未保存」（dirty 态）。
+- **取消 / 确认按钮**：确认按钮在 `active && dirty` 同时为真时才可点击；仅 active 但尚未涂抹（`!dirty`）时确认按钮置灰。
+
 ## 已知限制
 
 - **bbox 候选不支持初始化**：AI 给的是 bbox 时「精修」按钮不显示。
@@ -63,7 +74,7 @@ mask 编辑器走的是「polygon 中转」：mask 在前端临时态编辑，�
 ## 故障排查
 
 - **按 M 不响应**：确认非只读模式（task 已锁定 / 已审完），输入框聚焦时 hotkey 会被吞
-- **Enter 后无 polygon 落库**：可能 mask 为空（dirty 指示灰）；toast 会提示
+- **Enter 后无 polygon 落库**：mask 尚未涂抹（`dirty` 为假）或涂抹区域过小（转出顶点 < 3）时 `commitToPolygon` 返回 null，工具栏确认按钮置灰（`!active || !dirty`）；Enter 键虽可触发提交流程，但同样会被 null 结果拦截并弹 toast 提示
 - **mask 与 SAM 候选重叠看不清**：mask 是 `rgba(220,38,38,0.45)` 半透红，SAM 是紫虚线，可按 `E` 临时擦掉 mask 中已被 SAM 覆盖的部分
 
 ## 相关 ADR

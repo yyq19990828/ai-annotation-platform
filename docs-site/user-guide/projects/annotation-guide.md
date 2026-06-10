@@ -1,5 +1,9 @@
 # 标注指引（Annotation Guide）
 
+::: warning 此功能当前已下线
+标注指引由前端特性开关 `ANNOTATION_GUIDE_UI_ENABLED`（`apps/web/src/config/featureFlags.ts`）控制，当前**默认关闭**：项目设置页不显示「标注指引」入口，工作台也不会弹出指引浮层。本页保留作为该功能的设计与行为说明，待开关重新打开后即时生效。
+:::
+
 为项目编写一段 Markdown 形式的「指引」，新标注员第一次进入工作台时会自动在左上角浮层弹出，显著降低标注一致性偏差与退回率。参考 CVAT `Project.annotation_guide` 设计。
 
 ## 何时用
@@ -14,7 +18,7 @@
 1. 进入 `/projects/<id>/settings?section=annotation-guide`（项目设置页 → 「标注指引」）。
 2. 顶部 **编辑 / 预览** tab 切换 Markdown 源码与最终渲染效果。
 3. 支持 GFM（表格、勾选框、删除线）和图片嵌入。
-4. 点 **保存** 写入项目；之后所有标注员进入工作台第一次会自动展开 📖 浮层。
+4. 编辑器**失焦自动保存**（`onBlur`）：切换到「预览」tab 或点击编辑器外区域时触发；有未保存内容离开页面时浏览器会弹确认提示。之后所有标注员进入工作台第一次会自动展开 📖 浮层。
 
 ## 图片资源
 
@@ -32,9 +36,9 @@
 
 ## 工作台浮层行为
 
-- 默认折叠，停留在工作台左上角。
-- **首次进入** + 项目有指引 → 自动展开一次，并写入 `localStorage` `wb:guide-seen:{projectId}`。
-- 标注员手动折叠后写 `localStorage` `wb:guide-collapsed:{projectId}=1`，之后保持折叠。
+- **首次进入** + 项目有指引 → 浮层**默认展开**，同时写入 `localStorage` `wb:guide-seen:{projectId}`（值为时间戳）。
+- 标注员手动折叠后写 `localStorage` `wb:guide-collapsed:{projectId}=1`，后续保持折叠状态。
+- 再次进入工作台时：若 `wb:guide-collapsed:{projectId}=1` 存在则保持折叠；否则展开（仅 `seen` 存在不足以触发折叠）。
 - 项目未配置指引 → 浮层完全不渲染，零界面干扰。
 
 ## 从其它项目复制时的指引行为

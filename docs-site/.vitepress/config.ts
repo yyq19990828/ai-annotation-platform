@@ -152,16 +152,29 @@ export default withMermaid(defineConfig({
           ],
         },
         {
+          text: "数据集 · 导入导出",
+          collapsed: true,
+          items: [
+            { text: "数据集总览", link: "/user-guide/datasets/" },
+            { text: "导入图像数据集", link: "/user-guide/datasets/import-images" },
+            { text: "导入点云 / 多模态", link: "/user-guide/datasets/import-formats" },
+            { text: "存储连接器导入", link: "/user-guide/datasets/storage-connections" },
+            { text: "点云坐标系约定", link: "/user-guide/datasets/lidar-axis-convention" },
+            { text: "导入 / 导出外部预测", link: "/user-guide/datasets/prediction-import-export" },
+            { text: "数据导出格式", link: "/user-guide/reference/export-formats" },
+          ],
+        },
+        {
           text: "项目管理",
           collapsed: true,
           items: [
             { text: "项目管理", link: "/user-guide/projects/" },
+            { text: "工具维度类别 / 属性", link: "/user-guide/projects/tool-units" },
             { text: "Data Manager", link: "/user-guide/projects/data-manager" },
             { text: "批次与分配", link: "/user-guide/projects/batch" },
             { text: "AI 预标注", link: "/user-guide/projects/ai-preannotate" },
             { text: "ML 后端绑定", link: "/user-guide/projects/ml-backends" },
-            { text: "存储连接器", link: "/user-guide/datasets/storage-connections" },
-            { text: "点云 / 多模态导入格式", link: "/user-guide/datasets/import-formats" },
+            { text: "项目模板", link: "/user-guide/projects/project-templates" },
           ],
         },
         {
@@ -182,6 +195,8 @@ export default withMermaid(defineConfig({
             { text: "审计日志", link: "/user-guide/superadmin/audit-logs" },
             { text: "系统监控", link: "/user-guide/superadmin/system-monitoring" },
             { text: "BUG 反馈管理", link: "/user-guide/superadmin/bug-management" },
+            { text: "离线分析", link: "/user-guide/superadmin/analytics" },
+            { text: "公共模板治理", link: "/user-guide/superadmin/public-templates" },
           ],
         },
         {
@@ -197,7 +212,6 @@ export default withMermaid(defineConfig({
           text: "参考",
           collapsed: true,
           items: [
-            { text: "数据导出格式", link: "/user-guide/reference/export-formats" },
             { text: "通知中心", link: "/user-guide/reference/notifications" },
             { text: "设置页", link: "/user-guide/reference/settings" },
           ],

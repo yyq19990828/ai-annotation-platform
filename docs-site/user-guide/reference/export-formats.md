@@ -1,9 +1,9 @@
 ---
-audience: [annotator, project_admin]
+audience: [project_admin, super_admin]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-10
 ---
 
 # 数据导出格式
@@ -16,6 +16,31 @@ last_reviewed: 2026-05-27
 图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧 / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。
 
 > **YOLO 拆三个变体（几何映射不同）**：`YOLO 检测`(det) 导矩形框、`YOLO 旋转框`(obb) 导 rotated_bbox 四角、`YOLO 分割`(seg) 导 polygon / mask 多边形。每个变体只取匹配的几何，其余跳过。
+
+## 格式 × 项目类型对照（先看这张表）
+
+导出弹窗里能勾哪些目标，**取决于项目的媒体类型**（图像 / 视频 / 点云）。跨模态目标会被后端拒绝（400），所以弹窗只展示当前项目可用的目标。下表是三套 `EXPORT_TARGETS` 的实际可选项与「选哪个」决策：
+
+| 项目类型 | 可选导出目标 | 内部 target 名 | 选它的时机 |
+|---|---|---|---|
+| **图像** | COCO | `coco` | 训练 Detectron2 / MMDetection（检测 / 分割 / 关键点） |
+| 图像 | YOLO 检测 | `yolo-det`（`yolo` 为旧别名） | 训练 YOLOv8 检测（矩形框） |
+| 图像 | YOLO 旋转框 | `yolo-obb` | 训练 YOLOv8 OBB（rotated_bbox） |
+| 图像 | YOLO 分割 | `yolo-seg` | 训练 YOLOv8 分割（polygon / mask） |
+| 图像 | AAP JSON | `aap_json` | 跨实例无损迁移 / 客户自训模型预测灌入 / 备份 |
+| **视频轨迹** | Video JSON | `video_json` | 轨迹备份 / 质检 / 继续编辑 |
+| 视频轨迹 | YOLO 逐帧 | `yolo-frames-det` | 视频逐帧检测训练 |
+| 视频轨迹 | AAP JSON | `aap_json` | 视频跨实例无损迁移 |
+| 视频轨迹 | MOT 16/17/20 | `mot` | 多目标跟踪评测（trackeval） |
+| 视频轨迹 | KITTI Tracking | `kitti` | KITTI 跟踪工具链 |
+| **点云** | AAP JSON | `aap_json` | 点云跨实例无损迁移 / 备份（保留 3D 几何） |
+| 点云 | KITTI 3D | `kitti` | KITTI 3D 检测训练前处理（KITTI camera 坐标） |
+| 点云 | nuScenes JSON | `nuscenes` | 单帧 3D 检测训练前处理（nuScenes 风格表集） |
+| 点云 | Point Mask | `pointmask` | 逐点语义分割训练前处理 |
+
+> **VOC** 仍存在于后端（`voc` 目标，仅可单选、走同步下载），但**前端导出弹窗已隐藏**，普通用户在 UI 里看不到，故不在上表。
+>
+> **同名 target 跨模态语义不同**：`kitti` 在视频项目里是 **KITTI Tracking 2D**（逐帧 2D 框），在点云项目里是 **KITTI 3D**（label_2 3D 框 + calib），二者不可混淆。
 
 ## 导出流程
 
@@ -36,13 +61,13 @@ last_reviewed: 2026-05-27
 
 为了控制体积、并尊重「用户本地往往已有原图」的现实，图片导出的 ZIP **只包含标注与回源脚本，不打包图片本体**。无论图片项目选哪种格式，包内都含以下公共文件：
 
-| 文件 | 说明 |
-|---|---|
-| `classes.txt` | 类别清单 |
-| `attribute_schema.json` | 属性 schema |
-| `data.yaml` | YOLO 训练入口，`images` / `labels` 路径已配好 |
-| `images_manifest.json` | 每张图一条记录，含相对路径、所属 dataset，以及 **7 天有效的预签名下载 URL + `expires_at`** |
-| `fetch_images.py` | 回源脚本（纯 Python stdlib），跑它把原图按相对路径下载到 `images/`，与 `labels/` 平行 |
+| 文件 | 条件 | 说明 |
+|---|---|---|
+| `classes.txt` | 总是 | 类别清单（每行一个类名，行号即类别索引） |
+| `attribute_schema.json` | **仅 `include_attributes=True`**（导出弹窗「包含属性数据」勾选，默认勾选） | 属性 schema；取消勾选则**不产出**此文件 |
+| `data.yaml` | 总是 | YOLO 训练入口，`path` / `train` / `val` / `nc` / `names` 已配好 |
+| `images_manifest.json` | 总是 | 每张图一条记录，含相对路径、所属 dataset，以及 **7 天有效的预签名下载 URL + `expires_at`** |
+| `fetch_images.py` | 总是 | 回源脚本（纯 Python stdlib），跑它把原图按相对路径下载到 `images/`，与 `labels/` 平行 |
 
 **回源脚本用法**：解压 ZIP 后执行
 
@@ -67,17 +92,19 @@ COCO 单文件可同时承载多种几何：
 
 > `rotated_bbox` / `polyline` 无 COCO 原生表示，不进 COCO（rotated 走 `YOLO 旋转框`，polyline 走 AAP JSON）；被跳过的条数记在 `info.skipped_annotations`。
 
+> **id 从 0 起**：`images[].id`、`annotations[].id`、`categories[].id` 都是 **0-based** 连续整数（不是 COCO 官方常见的 1-based）。`image_id` / `category_id` 引用的是这些 0 起的 id。下游若假设 1-based 需自行偏移。
+
 结构：
 
 ```json
 {
   "info": {"skipped_annotations": 0, "...": "..."},
-  "images": [{"id": 1, "file_name": "...", "width": 800, "height": 600}],
+  "images": [{"id": 0, "file_name": "...", "width": 800, "height": 600}],
   "annotations": [
     {
-      "id": 1,
-      "image_id": 1,
-      "category_id": 1,
+      "id": 0,
+      "image_id": 0,
+      "category_id": 0,
       "bbox": [x, y, w, h],
       "segmentation": [[x1, y1, x2, y2, ...]],
       "keypoints": [x1, y1, v1, x2, y2, v2],
@@ -87,11 +114,13 @@ COCO 单文件可同时承载多种几何：
     }
   ],
   "categories": [
-    {"id": 1, "name": "person", "supercategory": "keypoint",
+    {"id": 0, "name": "person", "supercategory": "keypoint",
      "keypoints": ["nose", "left_eye"], "skeleton": [[1, 2]]}
   ]
 }
 ```
+
+> COCO `categories[].skeleton` 仍用 **1-indexed** 关节序号（COCO 骨架约定，与 0-based id 无关）；其余 id 全部 0-based。
 
 ## YOLO（det / obb / seg 三个变体）
 
@@ -115,18 +144,69 @@ label 文件按**镜像目录**组织，保留原数据集的递归子目录结�
 
 启用 `include_attributes` 时，每个 label 旁会附一个同名的 `.attrs.json`（如 `001.attrs.json`）。
 
-附带 `data.yaml`：
+附带 `data.yaml`（YOLOv8 Ultralytics 入口格式，`names` 是 **`索引: 类名` 字典**而非 list；`path/train/val` 都指向回源后的 `images/`）：
 
 ```yaml
-names: [person, car, bicycle]
+# YOLO 数据集入口（由 AAP 导出生成）
+# images/ 由 fetch_images.py 按 images_manifest.json 回源；labels/ 已在包内。
+path: .
+train: images
+val: images
 nc: 3
+names:
+  0: person
+  1: car
+  2: bicycle
 ```
+
+> `path: .` 表示数据集根就是 ZIP 解压目录；`train` 与 `val` 都指向同一个 `images/`（导出不做 train/val 划分，需自行切分）。视频逐帧 YOLO 的 `data.yaml` 同构，只是注释改为「由 fetch_frames.py 抽帧」。
 
 导入向导也支持把 YOLO zip 作为外部预测导入。导入时选择对应变体 `det` / `obb` / `seg`；`classes.txt` 或 `data.yaml` 用于把类别索引映射回项目类别。OBB 导入会用 task 对应 `DatasetItem.width/height` 在像素空间还原旋转框，四角不构成矩形时降级为 polygon。
 
-## Label Studio JSON
+### 图像 YOLO ZIP 包目录树
 
-平台间迁移用，含完整原数据 + 标注 + 审核备注。
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/export/yolo-dir-tree.png — 解压后 YOLO 单目标导出包目录树（terminal 截图）；标注红框：labels/ 镜像层级。[manual] -->
+
+**单目标**（只勾一个 YOLO 变体）落包根，`labels/` 按 `{project_id}/{dataset_id}/labels/<原图相对路径>.txt` 镜像层级：
+
+```
+{下载文件名}.zip 解压后/
+├── classes.txt
+├── attribute_schema.json          # 仅 include_attributes=True
+├── data.yaml
+├── images_manifest.json
+├── fetch_images.py
+├── {project_id}/
+│   └── {dataset_id}/
+│       └── labels/                 # ← 镜像原数据集递归子目录
+│           ├── 001.txt             # 来自 dataset 根的 001.jpg
+│           └── animals/
+│               └── cat/
+│                   └── 002.txt     # 来自 animals/cat/002.jpg
+└── images/                         # fetch_images.py 回源后才出现，与 labels/ 平行同层级
+    ├── 001.jpg
+    └── animals/cat/002.jpg
+```
+
+**多目标**（如同时勾 `yolo-det` + `yolo-seg`，或再加 `coco`）时，每个目标各落自己的 `{target}/` 子目录，`classes.txt` / `attribute_schema.json` / `images_manifest.json` / `fetch_images.py` 仍在包根共享：
+
+```
+{下载文件名}.zip 解压后/
+├── classes.txt
+├── attribute_schema.json
+├── images_manifest.json
+├── fetch_images.py
+├── yolo-det/
+│   ├── data.yaml
+│   └── {project_id}/{dataset_id}/labels/...
+├── yolo-seg/
+│   ├── data.yaml
+│   └── {project_id}/{dataset_id}/labels/...
+└── coco/
+    └── annotations.json
+```
+
+> 单目标且只选 COCO / AAP JSON（无 YOLO）时，包根仍补一份 `data.yaml`（兼容旧布局），COCO/AAP 的标注落包根 `annotations.json`。
 
 ## AAP JSON v1.2（无损）
 
@@ -214,15 +294,60 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 
 ## 点云标准训练格式
 
-`lidar` 项目导出统一走异步 zip 管线，可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。标准点云目标只打包标注、标定、manifest 和回源脚本；相机图片与点云本体通过 `images_manifest.json` / `pointclouds_manifest.json` 里的 7 天预签名 URL 回源。
+`lidar` 项目导出统一走异步 zip 管线，可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。标准点云目标只打包标注、标定、manifest 和回源脚本；相机图片与点云本体通过 `images_manifest.json` / `pointclouds_manifest.json` 里的 7 天预签名 URL 回源（点云回源脚本是 `fetch_pointclouds.py`，把点云拉到 `velodyne/`；图片回源脚本是 `fetch_images.py`，把图片拉到 `images/<camera>/`）。
 
 | 目标 | 主要文件 | 用途 |
 |---|---|---|
 | KITTI 3D | `label_2/<frame>.txt`、`calib/<frame>.txt`、`calib_raw/<camera>/<frame>.json` | 3D 检测训练前处理，box 输出为 KITTI camera 坐标 |
-| nuScenes JSON | `sample_annotation.json`、`sample_data.json`、`calibrated_sensor.json`、`ego_pose.json` | 单帧 3D 检测训练前处理 |
-| Point Mask | `segmentation/<frame>.label`、`category_map.json` | `point_mask_3d` 逐点语义 label |
+| nuScenes JSON | **9 个表 JSON**（见下） | 单帧 3D 检测训练前处理 |
+| Point Mask | `segmentation/<frame>.label`、`category_map.json` | `point_mask_3d` 逐点语义 label（little-endian uint32 类别 id） |
 
-nuScenes JSON 当前是**单帧 sample 风格、ego/ISO 坐标、占位 `ego_pose`**的子集。它不等同于完整 nuScenes global 轨迹导出，不能直接用于 nuScenes devkit 的多帧跟踪评测；完整 global 轨迹依赖后续 ego pose 数据模型。
+**nuScenes JSON 实际产出 9 个表文件**（不是早期文档误写的 4 个），每个表落一个同名 `.json`：
+
+`sample.json`、`sample_annotation.json`、`category.json`、`attribute.json`、`visibility.json`、`instance.json`、`calibrated_sensor.json`、`sample_data.json`、`ego_pose.json`。
+
+nuScenes JSON 当前是**单帧 sample 风格、ego/ISO 坐标、占位 `ego_pose`**的子集（`ego_pose` 行是单位平移 + 单位四元数的占位，带 `_aap_note` 说明）。它不等同于完整 nuScenes global 轨迹导出，不能直接用于 nuScenes devkit 的多帧跟踪评测；完整 global 轨迹依赖后续 ego pose 数据模型。
+
+### `axis_frame` 坐标系参数（`iso` | `source`）
+
+导出 API 带一个 `axis_frame` 查询参数（默认 `iso`），控制 **3D box geometry 的坐标轴约定**：
+
+- `axis_frame=iso`（默认）：3D box 的 PSR（position / size / rotation）保持平台**内部归一化 ISO 约定**（+X 前 / +Y 左 / +Z 上）。
+- `axis_frame=source`：把 box 映射回该数据集导入时声明的 `axis_convention`（dataset metadata 里的轴约定），还原到用户原始坐标系。
+
+注意作用范围：`axis_frame` 影响 **AAP JSON 与 COCO**（携带 3D / 框 geometry 的格式）。**KITTI 3D 导出与 `axis_frame` 无关——它的 `label_2` 永远输出 KITTI camera 坐标**（3D 检测标签的固定约定），是 ISO→KITTI camera 的固定逆变换。nuScenes 子集当前固定 ego/ISO 坐标。
+
+### 缺标定时的 `.unverified` 文件名标记
+
+KITTI 3D 的 `calib/<frame>` 标定文件**有标定时叫 `<frame>.txt`，缺标定时改名为 `<frame>.unverified.txt`**：缺标定时文件内容是单位矩阵占位（P2 / R0_rect / Tr_velo_to_cam 全为单位阵），并在文件头写显式警告，禁止下游拿它做 3D→2D 投影。`.unverified.txt` 后缀就是给下游/人工一眼识别「这帧没有真实标定」的信号，避免静默把占位矩阵当真实标定消费。
+
+### 点云 ZIP 包目录树（单目标 KITTI 3D）
+
+```
+{下载文件名}.zip 解压后/
+├── classes.txt
+├── attribute_schema.json          # 仅 include_attributes=True
+├── README.txt
+├── label_2/
+│   ├── scene01_000.txt            # KITTI camera 坐标 3D box（每帧一文件）
+│   └── scene01_001.txt
+├── calib/
+│   ├── scene01_000.txt            # 有标定
+│   └── scene01_001.unverified.txt # 缺标定 → 单位矩阵占位 + 警告头
+├── calib_raw/
+│   └── cam_front/
+│       ├── scene01_000.json       # 原始标定原样透传
+│       └── scene01_001.json
+├── velodyne/                      # 空占位目录，fetch_pointclouds.py 回源点云到此
+├── images/
+│   └── cam_front/                 # 空占位目录，fetch_images.py 回源相机图到此
+├── pointclouds_manifest.json      # 点云预签名 URL + expires_at
+├── images_manifest.json           # 相机图预签名 URL + expires_at
+├── fetch_pointclouds.py
+└── fetch_images.py
+```
+
+> 多目标导出时（如同时勾 KITTI 3D + Point Mask），每个目标各自落 `kitti/` 与 `pointmask/` 子目录，`classes.txt` / `attribute_schema.json` 仍在包根共享。
 
 ## 视频轨迹
 
@@ -243,9 +368,36 @@ nuScenes JSON 当前是**单帧 sample 风格、ego/ISO 坐标、占位 `ego_pos
 
 **MOT 16/17/20**：每个视频 = 一个 sequence，落 `{sequence}/gt/gt.txt`（`frame,id,bb_left,bb_top,bb_w,bb_h,conf,x,y,z`）+ `{sequence}/seqinfo.ini`，可直接喂 trackeval。轨迹整数 `id` 自动派生；帧号按采样网格重排 1..N（如 60fps 采 10fps 则 `frameRate=10`）。
 
-**KITTI Tracking 2D**：每视频落 `labels/{sequence}.txt`，18 列空格分隔（`frame track_id type truncated occluded alpha bbox… 3D占位`），帧号网格序号 0-based。
+**KITTI Tracking 2D**：每视频落 `labels/{sequence}.txt`，**17 列**空格分隔，列顺序为 `frame track_id type truncated occluded alpha x1 y1 x2 y2 h w l x y z rotation_y`。2D 版本里 `truncated=0`、`occluded∈{0,1}`、`alpha` 与全部 3D 字段（`h w l x y z rotation_y`）占位 `-1`，只有 `x1 y1 x2 y2` 是真实 2D 框（像素）。帧号取采样网格序号 0-based。
 
 **AAP JSON**：单文档无损中间格式，`video_track_bbox` geometry 原样保留；详见上节（schema 1.2 的 task 层带 `media_type` + `video` 子块）。
+
+### 视频 ZIP 包目录树（多目标 MOT + YOLO 逐帧示例）
+
+视频导出不物理打包帧：包内只带标注 + 网格帧号，帧由 `fetch_frames.py` 用本地 ffmpeg 就地抽取。MOT/KITTI 的 `{sequence}/img1/` 与 YOLO 逐帧的 `images/{sequence}/` 都是抽帧后才出现的目录。
+
+```
+{下载文件名}.zip 解压后/
+├── manifest.json                  # 各 sequence 的预签名 URL + 网格帧号 + frame_start_number
+├── fetch_videos.py                # 回源视频到 videos/
+├── fetch_frames.py                # 按网格帧号抽帧（MOT/KITTI/YOLO 逐帧才有）
+├── mot/
+│   └── {sequence}/
+│       ├── gt/gt.txt              # frame,id,bb_left,bb_top,bb_w,bb_h,conf,x,y,z（帧号 1-based）
+│       └── seqinfo.ini
+├── yolo-frames-det/
+│   ├── classes.txt
+│   ├── attribute_schema.json      # 仅 include_attributes=True
+│   ├── data.yaml
+│   └── labels/
+│       └── {sequence}/
+│           ├── 000001.txt         # 每个采样帧一个 .txt，空帧写空文件
+│           └── 000002.txt
+└── videos/                        # fetch_videos.py 回源后出现
+    └── {sequence}.mp4
+```
+
+> 视频**单目标**时该目标落包根（无 `{target}/` 前缀），多目标才各落子目录；`manifest.json` / `fetch_videos.py` 始终在包根共享。
 
 目标消失语义（各格式共用）：
 
@@ -253,7 +405,9 @@ nuScenes JSON 当前是**单帧 sample 风格、ego/ISO 坐标、占位 `ego_pos
 - 所有帧模式 / YOLO 逐帧 / MOT / KITTI 都不跨越 `outside` 段插值，也不在其中输出 bbox（MOT/KITTI 直接省略该帧，YOLO 保留该帧空 label 或其它对象的 label）。
 - `occluded=true` 表示目标存在但被遮挡，仍可参与插值；MOT 仍输出该帧，KITTI 置 occluded 列=1。
 
-## 选哪个？
+## 选哪个？（按用途速查）
+
+页首的「格式 × 项目类型对照」表按项目模态列出可选项；下表是同一信息的「按用途」视角速查：
 
 | 用途 | 推荐 |
 |---|---|
@@ -262,7 +416,7 @@ nuScenes JSON 当前是**单帧 sample 风格、ego/ISO 坐标、占位 `ego_pos
 | 训练 YOLOv8 分割 | YOLO 分割 |
 | 训练 Detectron2 / MMDetection（检测 / 分割 / 关键点） | COCO |
 | **跨实例无损迁移 / 客户自训模型预测灌入** | **AAP JSON** |
-| 数据迁移 / 备份 | AAP JSON / Label Studio JSON |
+| 数据迁移 / 备份 | AAP JSON |
 | 视频轨迹备份 / 质检 | Video JSON（关键帧） |
 | 视频逐帧训练（目标检测） | YOLO 逐帧 |
 | 视频逐帧质检 / 自定义脚本处理 | Video JSON（所有帧） |

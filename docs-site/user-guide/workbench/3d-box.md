@@ -3,10 +3,12 @@ audience: [annotator]
 type: how-to
 since: v0.13.3
 status: stable
-last_reviewed: 2026-06-07
+last_reviewed: 2026-06-10
 ---
 
 # 3D 立体框标注
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/3d-box/workbench-overview.png — 3D 工作台全局（主视图 + 相机面板 + PSR 面板 + 自动贴合按钮组） [manual] -->
 
 3D 点云项目（`data_type=lidar`）启用 `lidar_box_3d` 或 `point_mask_3d` 工具单位后，工作台进入 Three.js 3D 舞台：主 3D 视图旋转 / 平移 / 缩放查看点云，悬浮在四周的相机面板按物理朝向贴边显示标定的相机图，选中框时浮出可在 3D 画布内拖动 / 调整尺寸的三正交视图精修栏。本页讲 **3D 框的绘制、编辑、属性、批量操作、点云分割与自动贴合**。相关页：
 
@@ -25,7 +27,8 @@ last_reviewed: 2026-06-07
 
 - 单击主视图框 → 选中（出现 gizmo + 三正交视图浮层 + 右上 PSR 数值面板）
 - 按 `W` / `E` / `R` 切 gizmo 模式：平移 / 绕 Z 轴旋转 / 缩放
-- PSR 数值面板：直接输入中心 `cx/cy/cz`、尺寸 `sx/sy/sz`、朝向 `yaw/pitch/roll`（°）；「朝向归零」一键复位三轴
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/3d-box/psr-panel.png — PSR 面板近景，标注红框：l/w/h 尺寸字段 [manual] -->
+- PSR 数值面板：直接输入中心 `cx/cy/cz`、尺寸 `l/w/h`（长宽高，米）、朝向 `yaw/pitch/roll`（°）；「朝向归零」一键复位三轴
 - 三正交视图（俯 / 侧 / 正）：浮窗顶栏可在 3D 画布内拖动，右下角可调整尺寸，顶栏可折叠；位置、尺寸和折叠态会跟随账号偏好保存。视图内部拖边 / 拖角改尺寸、拖方向线转三轴朝向；主视图 gizmo / 数值面板 / 相机投影 overlay 四方实时同步，松手后防抖落 PATCH
 - 按 `V` / `Esc` 回选择工具，`Backspace` / `Delete` 删除选中框
 
@@ -61,6 +64,8 @@ last_reviewed: 2026-06-07
 
 ## 自动贴合（一键吸附）
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/3d-box/autofit-buttons.png — 贴合/收尺寸/贴地/朝向按钮组 [manual] -->
+
 放完粗框后按 `Q` 让框自动收缩并贴地，省去逐边拖边。仅在「选中且可编辑」时显示按钮组。框内无点云时返回原状不动。
 
 ### 四种动作
@@ -68,7 +73,7 @@ last_reviewed: 2026-06-07
 | 动作 | 快捷键 | 改了什么 | 保持不变 | 典型场景 |
 |---|---|---|---|---|
 | **贴合** | `Q` | 收尺寸 + 贴地（连击） | yaw/pitch/roll | 标常规车辆 — 一键到位 |
-| **收尺寸** | `Shift+Q` | size 收到「框内点云 AABB + 5cm padding」 | 中心 cx/cy/cz、朝向 | 已经手动调好 z 高度（卡车顶 / 屋顶物） |
+| **收尺寸** | `Shift+Q` | size 收到「框内点云 AABB + 5cm padding」；**中心同步对齐到框内点 AABB 中心**（点云分布对称时中心不动，不对称时会沿主体方向微漂） | 朝向 | 已经手动调好 z 高度（卡车顶 / 屋顶物） |
 | **贴地** | `Alt+Q` | cz 下移让框下沿对齐框内最低点 | cx/cy、尺寸、朝向 | 框尺寸已经合适但浮在空中 / 沉地下 |
 | **朝向⚗**（实验） | 仅按钮 | yaw 转到框内点云 XY 主轴方向 | 中心、尺寸、pitch/roll | 框已经包住车体但角度偏斜 |
 
@@ -83,21 +88,48 @@ last_reviewed: 2026-06-07
 4. 如朝向不对，工具栏按「朝向⚗」 → 若 PCA 推错（稀疏点云时主轴可能反转 180°），按 `E` 切 gizmo 转 180° 修正
 
 **修已有框**：
-- 框包住车但松散 → `Shift+Q` 单独收尺寸（不影响 z）
+- 框包住车但松散 → `Shift+Q` 单独收尺寸（中心会对齐到框内点 AABB 中心，点云对称时中心基本不动，不对称时会微漂）
 - 框尺寸合适但 z 高度偏了（漂浮 / 埋地）→ `Alt+Q` 单独贴地
 - 标卡车顶 / 屋顶等离地物体：**不要按 `Q`**，否则会把框拉到地面；改用 `Shift+Q` 只收尺寸
 
 ### 预期结果
 
-- **框内点云覆盖良好**（≥ 50 个点）：四种动作均可信
-- **框内点云稀疏**（< 20 个点）：`朝向⚗` 自动放弃不动；其他动作仍会跑但精度受限
-- **框内空**：所有动作返回原 PSR 不动（不会缩成零体积）
+- **框内点云充足**（≥ 20 个点）：贴合 / 收尺寸 / 贴地三种动作可信；`朝向⚗` 也会尝试 PCA 推算。
+- **框内点云稀疏**（< 20 个点）：`朝向⚗` 自动放弃不动（`FIT_YAW_MIN_POINTS = 20`，来自 `autofit.ts`）；贴合 / 收尺寸 / 贴地仍会跑，但精度受限（点少时 AABB 可能不稳定）。
+- **框内极少点**（< 3 个点）：收尺寸返回原 PSR 不动。
+- **框内空**：所有动作返回原 PSR 不动（不会缩成零体积）。
 
 ### 不做（留后续版本）
 
 - 跨帧轨迹的车头朝向先验（解决稀疏点 PCA 反转 180°）
 - 多帧批量贴合
 - 类别专属 padding（car / pedestrian / cyclist 分别给）
+
+## 导出几何 JSON 结构
+
+### box_3d
+
+```json
+{
+  "type": "box_3d",
+  "center": [cx, cy, cz],
+  "size":   [l, w, h],
+  "rotation": [roll, pitch, yaw]
+}
+```
+
+三个数组均为长度 3 的浮点数列表，单位米（center / size）或弧度（rotation）。UI PSR 面板显示的 `l/w/h` 对应 `size[0]/size[1]/size[2]`，`yaw/pitch/roll` 对应 `rotation[2]/rotation[1]/rotation[0]`（弧度转°显示）。坐标系约定见 [LiDAR 坐标轴约定](../datasets/lidar-axis-convention)。
+
+### point_mask_3d
+
+```json
+{
+  "type": "point_mask_3d",
+  "point_indices": [0, 42, 1337, ...]
+}
+```
+
+`point_indices` 为点云原始点的整数索引列表，单条分割最多 **600 000** 个点（`max_length=600_000`，定义于 `apps/api/app/schemas/_jsonb_types.py`）。
 
 ## 注意
 

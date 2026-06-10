@@ -3,10 +3,12 @@ audience: [annotator]
 type: how-to
 since: v0.9.16
 status: stable
-last_reviewed: 2026-06-06
+last_reviewed: 2026-06-10
 ---
 
 # 视频追踪标注
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench/video-track-overview.png — 视频工作台整体（时间轴 + 工具栏 B/T/V + 轨迹面板） [manual] -->
 
 视频任务在同一个工作台里打开，左侧队列、顶部提交、右侧属性与评论仍沿用图片工作台。画布区域会切换为视频播放器，时间轴悬浮在画布底部。本页讲**矩形框、轨迹与关键帧**的标注。相关页：
 
@@ -53,7 +55,7 @@ last_reviewed: 2026-06-06
 | 操作 | 说明 |
 |---|---|
 | 多选 | `Shift` / `Cmd` / `Ctrl + 点击`轨迹行，显示批量操作条 |
-| 批量操作 | 对已选轨迹批量改类、删除、显隐或锁定 |
+| 批量操作 | 对已选轨迹批量改类、删除、显隐、锁定、合并或跳连 |
 | 显隐 | 临时隐藏 / 显示某条轨迹，只影响当前工作台视图 |
 | 锁定 | 防止误拖动或误追加关键帧，只影响当前工作台视图 |
 | 重命名 | 修改该轨迹的类别名 |
@@ -64,6 +66,8 @@ last_reviewed: 2026-06-06
 “复制为独立框”会保留原轨迹并新增 `video_bbox`；“拆为独立框”会从原轨迹中移除对应关键帧，整条拆分会删除原轨迹。选择“全帧”时会把插值后的可见帧展开为独立框，系统会限制一次最多生成 5000 个框。
 
 ## 轨迹拆分 / 合并 / 跳连
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench/video-track-compose-dialog.png — 跳连对话框两种 gap 模式 [manual] -->
 
 对齐 CVAT 的 track 组织能力：
 
@@ -96,7 +100,9 @@ last_reviewed: 2026-06-06
 
 ## 质量提示
 
-工作台会在画布左下角提示基础质量问题：
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench/video-track-qc-warnings.png — 画布左上角质量提示浮层 [manual] -->
+
+工作台会在画布左上角提示基础质量问题：
 
 - 同一轨迹关键帧间隔过大。
 - 当前帧存在极小框。
@@ -104,9 +110,42 @@ last_reviewed: 2026-06-06
 
 这些提示不会阻止保存，但提交前应尽量处理。
 
-## 当前边界
+## 导出格式结构
 
 视频导出支持 Video Tracks JSON（关键帧 / 所有帧）、YOLO 逐帧检测集、MOT、KITTI 与 AAP JSON。YOLO 逐帧会按项目采样网格抽帧，把单帧 `video_bbox` 与 `video_track_bbox` 摊平框写成检测训练用 label；章节信息暂不进这些导出格式。
+
+### Video Tracks JSON 顶层字段
+
+| 字段 | 说明 |
+|---|---|
+| `export_type` | `"video_tracks"` |
+| `exported_at` | ISO 8601 导出时间戳 |
+| `frame_mode` | `"keyframes"`（默认）或 `"all_frames"` |
+| `project` | 项目元数据（`id / display_id / name / type_key`，含属性 schema 时加 `attribute_schema`） |
+| `categories` | `[{id, name}]`，与项目类别配置对齐 |
+| `tasks` | 任务列表，含文件名、路径、批次 ID、视频元数据等 |
+| `tracks` | 轨迹数组，每条含 `annotation_id / task_id / track_id / class_name / source / confidence / keyframes / outside`（含属性时加 `attributes`）；`frame_mode=all_frames` 时额外含 `frames` 全帧展开数组 |
+| `keyframes` | 所有轨迹的关键帧打平列表（含 `annotation_id / task_id / track_id / class_name` 冗余字段方便离线分析） |
+| `video_bbox` | 单帧 `video_bbox` 数组（旧格式兼容） |
+| `video_metadata` | 以 `task_id` 为键的视频元数据字典 |
+
+### VideoTrackKeyframe 字段
+
+每个关键帧对象包含以下字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `frame_index` | `int` | 原始帧序号（0-based，基于源视频帧率，未经网格采样换算） |
+| `bbox` | `{x, y, w, h}` | 归一化坐标，与单帧 bbox 格式一致 |
+| `source` | `"manual" \| "interpolated" \| "prediction"` | 关键帧来源 |
+| `occluded` | `bool` | 是否标记遮挡 |
+| `attributes` | `object \| null` | 逐帧属性覆盖（仅 `mutable=true` 的 schema 键；`include_attributes=false` 时省略） |
+
+### 全帧展开上限
+
+「复制为独立框 → 全帧」或 `frame_mode=all_frames` 导出时，后端将插值后的可见帧展开为逐帧对象。单次最多生成 **5000** 个框（`VIDEO_BBOX_CONVERSION_LIMIT`，定义于 `apps/api/app/services/annotation.py`），超出时截断并提示。
+
+## 当前边界
 
 旧 `video_bbox` 会继续在对应帧显示；也可以通过矩形框工具继续创建新的单帧 `video_bbox`。
 

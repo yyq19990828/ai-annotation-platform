@@ -3,7 +3,7 @@ audience: [reviewer]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-10
 ---
 
 # 审核流程
@@ -12,16 +12,14 @@ last_reviewed: 2026-05-27
 
 ## 审核工作台
 
-进入「审核」入口后，系统按队列分配一条「待审核」任务：
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/review/review-list-page.png — ReviewPage 左侧批次树 + 任务列表（缩略图 + 批量操作按钮） -->
 
-- 左侧：任务列表（待审 / 已通过 / 已退回）
-- 中间：当前任务的 Stage，图片任务显示画布，视频任务显示时间轴和轨迹
-- 右侧：属性、AI 候选、评论与标注详情
+平台提供两个独立的审核入口：
 
-![审核工作台](../images/review/workbench.png)
-<!-- TODO(0.8.1) IMAGE_CHECKLIST: 审核界面三栏全图，标注员的标注可见，右侧操作面板包含「通过/退回/修改后通过」三个按钮。 -->
+- **ReviewPage**（`/review`）：批次树 + 任务列表入口。审核员在此浏览批次、选择待审任务，也可在列表侧直接通过 / 退回单条任务。
+- **WorkbenchShell review 模式**（`/projects/:id/review`）：全屏审核工作台，进入后显示完整标注画布（图片任务）或时间轴（视频任务）以及 diff 视图，在顶部操作区执行通过 / 退回动作。
 
-审核工作台与标注工作台共用同一个外壳。审核模式只替换顶部操作、横幅、任务锁、通过 / 退回流程和 diff 视图，不复制一套独立页面。因此图片、视频和未来 Stage 的查看方式会同步进入审核入口。
+审核工作台与标注工作台共用同一个 `WorkbenchShell` 外壳，仅 `mode` 参数不同。审核模式只替换顶部操作、横幅、任务锁、通过 / 退回流程和 diff 视图，不复制一套独立页面。因此图片、视频和未来 Stage 的查看方式会同步进入审核入口。
 
 ## 审核操作
 
@@ -29,11 +27,10 @@ last_reviewed: 2026-05-27
 |---|---|---|
 | **通过** | 标注合格 | 任务进入 `completed` |
 | **退回** | 需要修改，必须选「原因类型」（可附自由备注） | 任务回到原标注员，状态变 `rejected` |
-| **修改后通过** | 你直接改正小问题，标注员收到通知 | `completed`，但标注员能看到你的改动 |
 
 ### 退回原因类型
 
-退回时必须从以下 4 类中选一项（**结构化枚举**，便于后续 reject 率统计 → [super_admin 离线分析](../superadmin/analytics)）：
+退回时必须从以下 4 类中选一项（`RejectReasonType` **结构化枚举**，便于后续 reject 率统计 → [super_admin 离线分析](../superadmin/analytics)）：
 
 | 类型 | 中文 label | 适用场景 |
 |---|---|---|
@@ -47,13 +44,19 @@ last_reviewed: 2026-05-27
 ![退回反馈表单](../images/review/reject-form.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 点「退回」弹出的备注表单，含原因下拉 + 富文本备注框。 -->
 
-## IoU 阈值
+### 退回接口请求体
 
-如果项目配置了基准答案（gold standard），会自动计算 IoU：
+调用 `POST /api/v1/tasks/{task_id}/review/reject` 时的 JSON 请求体：
 
-- **IoU ≥ 0.8** — 优秀
-- **IoU ∈ [0.7, 0.8)** — 合格
-- **IoU < 0.7** — 不合格，建议退回
+```json
+{
+  "reason_type": "missing",
+  "reason": "trk_person_01 frame 128: 车辆消失后仍有插值框"
+}
+```
+
+- `reason_type`：必填，取 4 枚举值之一。
+- `reason`：可选自由文本，最长 2000 字符。
 
 ## 视频任务审核
 
@@ -73,14 +76,16 @@ trk_person_01 frame 128: 车辆消失后仍有插值框，请标记为消失。
 
 这样标注员重做时可以直接定位到问题轨迹和帧。
 
-## 双审策略
-
-如果项目设置「双审」，需 2 名独立审核员一致才能通过：
-
-- 两人都通过 → completed
-- 两人都退回 → rejected
-- 一人通过、一人退回 → 升级到项目管理员仲裁
-
 ## 审核员绩效
 
-「审核员」页面显示：审核数量、平均耗时、与同行一致率（用于校准评判尺度）。
+审核员仪表板（`ReviewerDashboard`）显示以下 `ReviewerDashboardStats` 指标：
+
+| 指标 | 字段 | 说明 |
+|---|---|---|
+| 待审队列 | `pending_review_count` | 当前仍在 `review` 状态的任务数 |
+| 今日已审 | `today_reviewed` | 当日通过 + 退回合计 |
+| 平均审核耗时 | `median_review_duration_ms` | 审核耗时中位数 |
+| 累计审核 | `total_reviewed` | 历史总审核数 |
+| 24h 通过率 | `approval_rate_24h` | 过去 24 小时通过 / (通过 + 退回) |
+| 历史通过率 | `approval_rate` | 全量通过率 |
+| 二次返修率 | `reopen_after_approve_rate` | 通过后被标注员 reopen 的比例 |

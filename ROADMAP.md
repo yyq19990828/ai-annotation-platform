@@ -115,6 +115,10 @@
 ### 文档
 
 - **首次登录引导（onboarding）**：用户手册有文档但工作台无 UI walkthrough；新用户进 `/projects/:id/annotate` 时左下浮出一条「画框：拖鼠标；提交：E」级别的 3 步 tooltip + 右上 ✕ 关闭一次性写 localStorage `wb:onboarded:v1`。优先级 P3，等首次客户上线反馈触发。
+- **文档 ↔ 源码漂移修订（PR #37 用户手册审计顺带发现，均 P3）**：
+  - **ADR-0026 与源码对齐**：`ToolUnitId` 现为 8 个（新增 `rotated_bbox` / `keypoint` / `point_mask_3d`），ADR-0026 正文仍写 5 个；legacy 双写 `apply_tool_bindings_legacy_sync` 已于 v0.10.22 删除、`tool_bindings` 为唯一存储真值。更新 ADR 正文与枚举列表。
+  - **`export_video.py` KITTI Tracking 列数注释纠错**：docstring 写「每行 18 列」，实际 header 名单与 format string 均为 17 列（`frame track_id type truncated occluded alpha x1 y1 x2 y2 h w l x y z rotation_y`）。仅需修源码注释。
+  - **连接器主机白名单管理 UI**：当前仅有超管 API `GET/PUT /storage-connections/allowlist`，前端无对应管理界面；用户手册 `datasets/storage-connections.md` 暂按「经接口维护」措辞、截图标记 `connector-allowlist.png` 注明「待 UI 就绪再拍」。补超管侧白名单增删界面后即可落图。
 
 ---
 

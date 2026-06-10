@@ -3,7 +3,7 @@ audience: [super_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-10
 ---
 
 # 失败预测排查
@@ -12,9 +12,12 @@ last_reviewed: 2026-05-27
 
 ## 入口
 
-- 超管：`/model-market` → **Failed Predictions** tab
-- 项目管理员：`/ai-pre` → **失败预测** tab
-- 任何角色：`/ai-pre/jobs` 图像 tab + 状态过滤 = failed
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/failed-predictions/list.png — /ai-pre/jobs?status=failed 列表（状态筛选 + 重试/放弃/显示已放弃 toggle） [manual] -->
+
+- 超管 / 项目管理员：`/ai-pre/jobs?status=failed`（图像 tab 加状态过滤器）
+- 仪表盘快捷卡：Dashboard → 失败预测卡片 → 点击直跳
+
+> **注意**：旧路由 `/model-market` → Failed Predictions tab 已在 v0.9.12（BUG B-14）移除。旧书签访问时前端自动跳转 `/ai-pre/jobs?status=failed`。
 
 ## 失败常见根因
 
@@ -38,12 +41,29 @@ last_reviewed: 2026-05-27
 5. **看 ML Backend 日志**：grounded-sam2-backend 在 `/metrics` + 容器日志
 6. **复现**：拿 job 的 prompt + 一张样本图，直接 `curl` ML Backend `/predict`
 
-## 重跑
+## 重试与放弃
 
-失败 job 不会自动重试（避免雪崩）。手动重跑：
+失败 job 不会自动重试（避免雪崩）。支持以下操作：
+
+### 重试单条
+
+在失败列表中点击「重试」，后端投递 `prediction_retry` Celery 任务（HTTP 202），前端通过 WebSocket 接收进度事件 `failed_prediction.retry.{started,succeeded,failed}`。
+
+**重试上限**：每条 `failed_prediction` 最多重试 **3 次**（`MAX_RETRY_COUNT=3`，`apps/api/app/api/v1/predictions.py:54`）。超限后调用返回 `HTTP 409`，需先放弃再处理。
+
+### 批量重跑
 
 - 项目侧 `/ai-pre`：选回该批次 + 同 prompt + 「跑预标注」
 - 重置批次 `pre_annotated` 标记位（项目设置 → 数据 → 重置）后再跑
+
+### 放弃/恢复
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/failed-predictions/dismiss-restore.png — 显示已放弃后含「已放弃」badge + 恢复按钮 [manual] -->
+
+- **放弃**：在列表点「放弃」→ `POST /admin/failed-predictions/{id}/dismiss`，软删除（写 `dismissed_at` 时间戳）。放弃后该行从默认列表消失；前端「显示已放弃」开关可重新显示。
+- **恢复**：在已放弃行点「恢复」→ `POST /admin/failed-predictions/{id}/restore`，清空 `dismissed_at`，该行重回默认列表，可再次重试。
+- 重复 dismiss 幂等（不更新 `dismissed_at`）；重复 restore 也幂等。
+- 审计事件：`failed_prediction.dismissed` / `failed_prediction.restored`。
 
 ## 大量失败如何排查
 
@@ -53,4 +73,4 @@ last_reviewed: 2026-05-27
 
 ## 监控告警
 
-Prometheus 指标 `prediction_job_failed_total{backend=...}` 可设阈值告警，详见 [监控](../../ops/observability/)。
+平台暴露的 Prometheus 指标中，与预测失败相关的是 `ml_backend_request_duration_seconds{backend_id, outcome}` Histogram（`outcome="error"` 代表 ML backend 调用出错，`apps/api/app/observability/metrics.py:16`）。**不存在**名为 `prediction_job_failed_total` 的 Counter 指标。可通过 `rate(ml_backend_request_duration_seconds_count{outcome="error"}[5m])` 等 PromQL 设定告警阈值，详见 [可观测性](../../ops/observability/)。

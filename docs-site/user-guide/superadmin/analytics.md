@@ -3,7 +3,7 @@ audience: [super_admin]
 type: reference
 since: v0.10.16
 status: stable
-last_reviewed: 2026-06-03
+last_reviewed: 2026-06-10
 ---
 
 # 离线分析面板（DuckDB）
@@ -14,14 +14,40 @@ last_reviewed: 2026-06-03
 
 ## 面板
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/analytics/overview.png — 分析页全屏（时间范围下拉 + 4 面板） [manual] -->
+
 | 面板 | 数据源 | 说明 |
 |---|---|---|
 | **团队日吞吐** | `task_events.kind='annotate'` | 按日聚合全团队提交事件计数，recharts 折线图 |
-| **Reject 原因分布** | `task_events.was_rejected=true AND reject_reason_type IS NOT NULL` | 4 类 enum 占比；旧数据 NULL 不入分母，recharts 横向柱图 |
-| **标注耗时分布** | `task_events.kind='annotate'` 的 claim→submit 间隔 | 样本数 / p50 / p95 / 均值（单位 ms） |
+| **Reject 原因分布** | `task_events.was_rejected=true AND reject_reason_type IS NOT NULL` | 4 类 enum 次数（count）；API 同时返回占比（pct），旧数据 NULL 不入分母，recharts 横向柱图 X 轴为次数 |
+| **标注耗时分布** | `task_events.kind='annotate'` 的 claim→submit 间隔 | 样本数 / p50 / p95 / 均值；底层字段单位 ms，前端除以 1000 后以秒（s）展示 |
 | **工时热力图** | `task_events.kind='annotate'` 的 `started_at` | 星期（0=周日..6=周六）× 小时聚合事件计数；7×24 网格，格子深浅 = 时段计数强度 |
 
 时间范围下拉支持 **近 7 / 30 / 90 天**。
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/analytics/heatmap.png — 7×24 工时热力图网格 [manual] -->
+
+### reject_reason_type 枚举值
+
+`reject_reason_type` 共 4 类，前端 4 个预设按钮一一对应（`apps/api/app/db/models/task.py:RejectReasonType`）：
+
+| 枚举值 | 含义 |
+|---|---|
+| `missing` | 漏标 |
+| `extra` | 多标 |
+| `wrong_label` | 类别错误 |
+| `wrong_geometry` | 位置/尺寸不准 |
+
+### API 面板名称（panel_name）
+
+固定面板通过路由 `GET /api/v1/admin/analytics/{panel_name}` 访问，可接受 `days` 参数（1–365，默认 30）：
+
+| panel_name | 对应面板 |
+|---|---|
+| `throughput_daily` | 团队日吞吐 |
+| `reject_rate_by_type` | Reject 原因分布 |
+| `duration_dist` | 标注耗时分布 |
+| `activity_heatmap` | 工时热力图 |
 
 ## 为什么用 DuckDB 而不是 PG / ClickHouse
 

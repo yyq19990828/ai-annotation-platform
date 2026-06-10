@@ -3,7 +3,7 @@ audience: [super_admin]
 type: reference
 since: v0.8.7
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-10
 ---
 
 # 系统监控
@@ -33,17 +33,19 @@ last_reviewed: 2026-05-27
 
 | 指标 | 含义 |
 |---|---|
-| `celery_tasks_total{status="success"\|"failure"}` | task 成败率 |
-| `celery_task_duration_seconds` | 任务时长 |
-| `prediction_job_total{status=...}` | 预标 job 状态分布 |
+| `celery_queue_length{queue}` | 各队列待处理 + 在执行任务数（Gauge） |
+| `celery_worker_heartbeat_seconds{worker}` | worker 上次心跳距今秒数（Gauge，越小越新鲜） |
+| `ml_backend_request_duration_seconds{backend_id, outcome}` | ML backend predict / interactive 单次调用耗时（Histogram，outcome="success"\|"error"） |
 
-### ML Backend（grounded-sam2-backend）
+> 上述三个指标均在 `apps/api/app/observability/metrics.py` 注册。平台不暴露 `celery_tasks_total` 或 `celery_task_duration_seconds`；预标 job 状态分布通过 `async_jobs` 表查询，不以 Prometheus Counter 形式暴露。
 
-| 指标 | 含义 |
-|---|---|
-| `sam_predict_duration_seconds` | 推理延迟 |
-| `sam_embedding_cache_hits_total` / `misses_total` | LRU 缓存命中率 |
-| `gpu_memory_used_bytes` | 显存水位 |
+### ML Backend（grounded-sam2-backend 容器）
+
+ML backend 容器的自定义指标由 backend 自身暴露，不经过平台 API。常见可观测信号（视 backend 实现而定）：
+
+- GPU 使用率 / 显存 / 温度（通过 `/health.gpu_info` 字段聚合到平台健康面板）
+- 模型加载缓存命中率（通过 `/health.cache` 字段聚合）
+- 容器 CPU / 内存（通过 `/health.host` 字段聚合）
 
 详细 PromQL 见 [可观测性 / 监控](../../ops/observability/)。
 
@@ -70,11 +72,16 @@ docker logs ai-annotation-platform-api-1 2>&1 | jq 'select(.status>=500)'
 | api | `/ready` | lifespan 完成 |
 | grounded-sam2-backend | `/health` | 模型加载完成 |
 
+## 系统健康面板
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/system-monitoring/health-panel.png — 4 组件卡 + Celery 队列表 + Workers 心跳表 [manual] -->
+
 系统健康面板基于 `/api/v1/admin/system-health`：
 
 - 组件状态：PostgreSQL、Redis、MinIO、Celery，展示 `ok` / `degraded` / `down` 与 latency。
-- Celery 队列：显示各队列积压数量，积压达到阈值时标为降级或不可用。
-- Worker 心跳：显示 worker 名称、最近心跳距现在的秒数和 pool 并发上限；心跳过旧时降级。
+- Celery 队列：显示各队列积压数量，`length ≥ 25` 标为降级（`degraded`），`length ≥ 100` 标为不可用（`down`）（`apps/api/app/api/v1/admin_system_health.py:60-65`）。
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/system-monitoring/workers-table.png — Workers 表（名称/Heartbeat/Pool/状态） [manual] -->
+- Worker 心跳：显示 worker 名称、最近心跳距现在的秒数和 pool 并发上限；心跳 `≥ 120s` 标为降级，`≥ 300s` 标为不可用（`apps/api/app/api/v1/admin_system_health.py:68-75`）。
 
 ⚠️ FastAPI lifespan 阻塞会让 `/health` 30s 内不可用——曾在 CI 引发卡死，详见 [CI 服务依赖踩坑](../../dev/troubleshooting/ci-flaky-services)。
 

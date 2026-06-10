@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.10.28
 status: stable
-last_reviewed: 2026-05-21
+last_reviewed: 2026-06-10
 ---
 
 # 旋转框标注（OBB）
@@ -18,6 +18,8 @@ last_reviewed: 2026-05-21
 
 ## 操作
 
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench/rotated-bbox-draw.png — 拖框生成旋转框，标注红框：旋转手柄 + 四角缩放手柄 -->
+
 1. 按 `W` 切到旋转框工具。
 2. 在画布上按下鼠标 → 拖动 → 松开，先生成一个**轴对齐**矩形（角度 0）。
 3. 右侧属性面板选择类别。
@@ -25,15 +27,38 @@ last_reviewed: 2026-05-21
 
 ## 编辑已有旋转框
 
-- 单击 → 选中（顶部出现旋转手柄）。
-- 拖动旋转手柄 → 改变角度（顺时针 `0–360°`）。
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench/rotated-bbox-rotate.png — 旋转约 30° 后状态 + 角度值 -->
+
+- 单击 → 选中（顶部出现旋转手柄，四角及四边出现 8 个缩放手柄）。
+- 拖动旋转手柄 → 改变角度（顺时针，区间 `[0, 360)`，半开区间，不含 360°）。
+- 拖动角/边缩放手柄 → 调整宽高，中心保持不动。
 - 列表中显示框的尺寸与当前角度。
 
 ## 数据语义
 
-旋转框存 `{cx, cy, w, h, angle}`：中心点 + 边长 + 顺时针角度，坐标归一化到 `[0,1]`。开发者细节见 [标注模块 · Geometry union](../../dev/concepts/annotation-module#geometry-union)。
+旋转框几何存为 `{cx, cy, w, h, angle}`，其中：
+
+- `cx` / `cy`：中心点归一化坐标（`[0, 1]`）
+- `w` / `h`：宽高归一化值（`[0, 1]`）
+- `angle`：顺时针旋转角度，`[0, 360)` 半开区间
+
+开发者细节见 [标注模块 · Geometry union](../../dev/concepts/annotation-module#geometry-union)。
+
+## 导出与导入
+
+### 导出
+
+| 导出目标 | 格式说明 |
+|---|---|
+| `yolo-obb` | 每行 `class_id x1 y1 x2 y2 x3 y3 x4 y4`，四角归一化坐标（像素空间旋转后再归一化）|
+| `coco` | 旋转框**不进 COCO**，导出时跳过 |
+| `aap_json` | 原始 `{cx, cy, w, h, angle}` 保留 |
+
+### 导入预测（YOLO OBB）
+
+在「数据集 → 预测导入」时选 YOLO 格式并指定 `yolo_variant=obb`，平台会将四角坐标反解回 `{cx, cy, w, h, angle}` 落入 `rotated_bbox` 几何。详见 [预测导入与导出](../datasets/prediction-import-export)。
 
 ## 常见问题
 
 - **先画后转**：拖框只确定尺寸与中心；角度一律靠旋转手柄二次调整，不能在拖框时直接旋转。
-- **角度归一化**：`angle` 始终落在 `[0,360)`，导出时按此约定解析。
+- **角度归一化**：`angle` 始终落在 `[0, 360)` 半开区间，即 360° 本身不会出现。导出与导入均按此约定解析。

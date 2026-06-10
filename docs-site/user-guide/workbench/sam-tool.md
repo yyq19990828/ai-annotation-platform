@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-09
+last_reviewed: 2026-06-10
 ---
 
 # AI 工具组
@@ -11,6 +11,8 @@ last_reviewed: 2026-06-09
 > 点 / 框 / 示例 / Magic Box — 选一种交互方式让 AI 把 polygon 画出来,或直接收紧到 bbox。
 
 <!-- history: prompt-first tools and Magic Box were introduced in separate releases; this page describes the current tool model. -->
+
+![AI 工具子工具栏](../images/sam/subtoolbar.png)
 
 工具栏按交互范式拆成 4 个独立 AI 工具(均为**画布手势驱动**)。你直接选择「想怎么交互」，AI 自动走对应模型 prompt。
 
@@ -28,6 +30,8 @@ last_reviewed: 2026-06-09
 > **能力来自后端 `/setup.supported_prompts`(按交互后端并集，v0.14.18)**：项目可注册多个后端,工具栏某交互工具只要**任一已注册的交互后端**支持该 prompt 就亮。挂 `grounded-sam2`（point/bbox）时 Exemplar 灰;挂 `sam3-backend`（exemplar）时 **Smart Point、Smart Box、Magic Box 都灰**——sam3 这一档物理上只做 PCS「找全图相似」(走 Exemplar),不做单物体的点/框分割(需 grounded-sam2 或大显存卡开 inst_interactivity)。鼠标 hover 灰按钮会显示「当前后端不支持此交互模式」。同时注册 gsam2 + sam3 时,point/bbox 自动路由到 gsam2、exemplar 路由到 sam3,各司其职(见[交互后端选择](#交互后端选择多后端))。
 
 ## 工具说明
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/sam/ai-tool-drawer.png — AIToolDrawer 全图（后端下拉/极性切换/状态灯） [auto] -->
 
 ### 智能点（Smart Point）— 单击让 SAM 找边缘
 
@@ -60,6 +64,8 @@ last_reviewed: 2026-06-09
 
 输出形态三选一(由后端顶层 `supported_text_outputs` 决定可见性,v0.14.18 修复了 gsam2 只能选 box/DINO 变体的问题):
 
+![文本提示三种输出形态](../images/sam/text-three-modes.png)
+
 - `□ 框`：仅 box，跳过 mask（速度最快，image-det 项目首选）
 - `○ 掩膜`：mask → polygon（image-seg 项目默认）
 - `⊕ 全部`：同实例配对 box + polygon
@@ -67,6 +73,8 @@ last_reviewed: 2026-06-09
 变体选择器对 gsam2 文本路径同时给出 **SAM2 变体 + DINO 变体两组**(后端内部按 output_mode 编排 detection/segmentation)。项目设置 → ML 模型 →「SAM 文本预标默认输出」可锁定项目级默认。
 
 ### Exemplar 示例（仅 SAM 3）
+
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/sam/exemplar-output-mode.png — 输出形态三选一 TabRow [auto] -->
 
 拖框圈出图中**已有的一个示例实例**，SAM 3 PCS 一步返回**全图相似实例**。
 
@@ -87,14 +95,25 @@ AIToolDrawer 提供与文本提示相同的输出形态三选一（`□ 框` / `
 - **`Tab` / `Shift+Tab`** — 切换候选（文本 / exemplar 路径常见多条）
 - **`Esc`** — 全部取消
 
+### 精修 SAM 候选（Mask 编辑器）
+
+AI 候选列表行右侧有「精修」按钮（仅 polygon 类型候选显示）。点击后工具切换到 **Mask 笔刷工具（M）**，可在像素级修改轮廓边缘，完成后按 `Enter` 提交落库。精修不需要先 `Enter` 接受候选——直接在候选态启动 Mask 编辑，commit 时同时清除候选并落库。已落库的人工 polygon 行也有「精修」按钮，通过 update mutation 替换原始几何。
+
 ## 参数面板（悬浮 AI 面板）
 
-点工具栏「AI」打开可拖动的悬浮面板，其中有一份**由所绑定后端 `/setup.params` 自动生成的参数表单**，每个字段下方带简短说明。常见字段：
+<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/sam/ai-inspector-panel.png — 悬浮 AI 面板（Prompt/阈值滑块/变体选择） [auto] -->
 
-- `box_threshold` / `text_threshold` — DINO 置信度（grounded-sam2）
-- `score_threshold` — PCS 置信度（sam3）
-- `simplify_tolerance` — 多边形轮廓简化容差（像素）
-- `model_variant` / `embedding_cache_size` — 只读信息（禁用展示，不可改）
+点工具栏「AI」打开可拖动的悬浮面板，其中有一份**由所绑定后端 `/setup.params` 自动生成的参数表单**，每个字段下方带简短说明。常见字段及项目级默认值：
+
+| 字段 | 后端 | 项目级默认 | 范围 | 说明 |
+|---|---|---|---|---|
+| `box_threshold` | grounded-sam2 | 0.35 | [0.0, 1.0] | DINO bbox 置信度阈值 |
+| `text_threshold` | grounded-sam2 | 0.25 | [0.0, 1.0] | DINO token 置信度阈值 |
+| `score_threshold` | sam3 | 后端自定义 | — | PCS 候选置信度 |
+| `simplify_tolerance` | 两者 | 后端自定义 | 像素 | polygon 轮廓 Douglas-Peucker 容差 |
+| `model_variant` / `embedding_cache_size` | — | — | — | 只读信息（禁用展示，不可改）|
+
+> 文本提示格式：在 AI 面板 Prompt 输入框填英文短语，多个类别用 ` . `（空格+点+空格）分隔，格式与 GroundingDINO 一致，例如 `ripe apple . green apple . orange`。
 
 模型变体（SAM2 / DINO 变体）在同一面板的「变体选择器」里切换。backend 若上报 `/setup.supported_variants`，选项会显示显存估算、快速/均衡/精度档位和推荐标识；未上报时回落到 `/setup.params` 的 enum。参数按**所绑定后端**动态显示——绑 sam3 不会出现 DINO 阈值，绑 gsam2 才有。
 
