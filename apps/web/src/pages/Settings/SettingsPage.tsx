@@ -72,7 +72,7 @@ export function SettingsPage() {
           </Card>
         </nav>
 
-        <div>
+        <div className={styles.content}>
           {section === "profile" && <ProfileSection />}
           {section === "workbench" && <WorkbenchPreferencesSection />}
           {section === "apikeys" && <ApiKeysSection />}
