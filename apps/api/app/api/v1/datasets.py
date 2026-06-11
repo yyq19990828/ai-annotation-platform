@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_db, get_current_user, require_roles
+from app.deps import get_db, get_current_user, require_roles, require_scopes
 from app.db.enums import UserRole
 from app.db.models.user import User
 from app.schemas.dataset import (
@@ -36,7 +36,11 @@ router = APIRouter()
 _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
 
 
-@router.get("", response_model=DatasetListResponse)
+@router.get(
+    "",
+    response_model=DatasetListResponse,
+    dependencies=[Depends(require_scopes("datasets:read"))],
+)
 async def list_datasets(
     search: str | None = None,
     data_type: str | None = None,
@@ -78,7 +82,11 @@ async def create_dataset(
     return result
 
 
-@router.get("/{dataset_id}", response_model=DatasetOut)
+@router.get(
+    "/{dataset_id}",
+    response_model=DatasetOut,
+    dependencies=[Depends(require_scopes("datasets:read"))],
+)
 async def get_dataset(
     dataset_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),

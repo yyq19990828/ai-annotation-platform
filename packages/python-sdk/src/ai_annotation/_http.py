@@ -51,6 +51,8 @@ USED_ENDPOINTS: tuple[tuple[str, str], ...] = (
     ("GET", "/api/v1/projects/{project_id}/ml-backends/{backend_id}"),
     ("GET", "/api/v1/me/api-keys"),
     ("POST", "/api/v1/me/api-keys"),
+    ("PATCH", "/api/v1/me/api-keys/{key_id}"),
+    ("POST", "/api/v1/me/api-keys/{key_id}/rotate"),
     ("DELETE", "/api/v1/me/api-keys/{key_id}"),
 )
 

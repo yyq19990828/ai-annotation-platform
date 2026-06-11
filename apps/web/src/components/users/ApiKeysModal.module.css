@@ -63,6 +63,22 @@
   font-size: 12.5px;
 }
 
+.scopeDisabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.fullAccessOption {
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--color-border);
+  font-weight: 500;
+}
+
+.expiredBadge {
+  margin-left: 6px;
+}
+
 .scopeCode,
 .keyPrefix {
   font-family: var(--font-mono, monospace);

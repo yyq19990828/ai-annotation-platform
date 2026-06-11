@@ -33,7 +33,13 @@ from pydantic import BaseModel
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_current_user, get_db, require_project_owner, require_roles
+from app.deps import (
+    get_current_user,
+    get_db,
+    require_project_owner,
+    require_roles,
+    require_scopes,
+)
 from app.db.enums import UserRole
 from app.db.models.ml_backend import MLBackend
 from app.db.models.prediction import FailedPrediction
@@ -85,7 +91,11 @@ class RetryResponse(BaseModel):
     failed_id: uuid.UUID
 
 
-@router.get("/admin/failed-predictions", response_model=FailedPredictionList)
+@router.get(
+    "/admin/failed-predictions",
+    response_model=FailedPredictionList,
+    dependencies=[Depends(require_scopes("predictions:read"))],
+)
 async def list_failed_predictions(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),

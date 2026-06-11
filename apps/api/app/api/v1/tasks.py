@@ -9,7 +9,13 @@ from pydantic import BaseModel
 from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_db, get_current_user, require_roles, assert_project_visible
+from app.deps import (
+    get_db,
+    get_current_user,
+    require_roles,
+    require_scopes,
+    assert_project_visible,
+)
 from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.task import Task
@@ -987,7 +993,11 @@ async def propagate_video_track(
     return body
 
 
-@router.get("/{task_id}/annotations", response_model=list[AnnotationOut])
+@router.get(
+    "/{task_id}/annotations",
+    response_model=list[AnnotationOut],
+    dependencies=[Depends(require_scopes("annotations:read"))],
+)
 async def get_annotations(
     task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -999,7 +1009,11 @@ async def get_annotations(
     return await svc.list_by_task(task_id)
 
 
-@router.get("/{task_id}/annotations/page", response_model=AnnotationListPage)
+@router.get(
+    "/{task_id}/annotations/page",
+    response_model=AnnotationListPage,
+    dependencies=[Depends(require_scopes("annotations:read"))],
+)
 async def get_annotations_paged(
     task_id: uuid.UUID,
     limit: int = 200,
@@ -1044,7 +1058,12 @@ async def get_annotations_paged(
     )
 
 
-@router.post("/{task_id}/annotations", response_model=AnnotationOut, status_code=201)
+@router.post(
+    "/{task_id}/annotations",
+    response_model=AnnotationOut,
+    status_code=201,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
 async def create_annotation(
     task_id: uuid.UUID,
     data: AnnotationCreate,
@@ -1274,7 +1293,11 @@ async def interpolate_annotations_range(
     )
 
 
-@router.patch("/{task_id}/annotations/{annotation_id}", response_model=AnnotationOut)
+@router.patch(
+    "/{task_id}/annotations/{annotation_id}",
+    response_model=AnnotationOut,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
 async def update_annotation(
     task_id: uuid.UUID,
     annotation_id: uuid.UUID,
@@ -1721,7 +1744,11 @@ async def reject_prediction(
     return None
 
 
-@router.delete("/{task_id}/annotations/{annotation_id}", status_code=204)
+@router.delete(
+    "/{task_id}/annotations/{annotation_id}",
+    status_code=204,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
 async def delete_annotation(
     task_id: uuid.UUID,
     annotation_id: uuid.UUID,

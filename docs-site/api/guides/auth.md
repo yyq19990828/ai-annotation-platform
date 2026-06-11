@@ -71,22 +71,31 @@ CAPTCHA 由 `GET /api/v1/auth/captcha` 获取（PNG + id）。
 
 ## API Key
 
-适合脚本 / 自动化场景，长期凭证：
+适合脚本 / 自动化场景，长期凭证。token 形如 `ak_<随机串>`，仅创建瞬间返回一次明文：
 
 ```http
-POST /api/v1/api-keys           # 创建（仅返回明文一次）
-GET  /api/v1/api-keys           # 列出（不含明文）
-DELETE /api/v1/api-keys/:id     # 撤销
+GET    /api/v1/me/api-keys            # 列出（不含明文，含已撤销）
+POST   /api/v1/me/api-keys            # 创建（仅返回明文一次）
+PATCH  /api/v1/me/api-keys/:id        # 改名 / 改 scope / 改有效期
+POST   /api/v1/me/api-keys/:id/rotate # 轮换（换新明文，旧的立即失效）
+DELETE /api/v1/me/api-keys/:id        # 撤销（软删，保留审计）
 ```
 
-调用时：
+调用时作 Bearer token 发送（与 JWT 同一 header，后端按 `ak_` 前缀区分）：
 
 ```http
 GET /api/v1/projects
-X-API-Key: <key>
+Authorization: Bearer ak_xxxxxxxxxxxx
 ```
 
-API Key 按用户授权，权限 = 用户角色权限。
+**有效期**：创建时可选 `expires_in_days`（省略 = 永不过期）；过期后认证返回 401。
+
+**权限 scope**（v0.15.11 起真正强制）：
+
+- key 的 `scopes` 在路由层经 `require_scopes` 校验；缺少所需 scope → **403**。
+- 含通配 `"*"`（完全访问 / full-access）的 key 绕过 scope 校验，等同用户全权。
+- 已挂强制的 scope：`annotations:read` / `annotations:write` / `datasets:read` / `predictions:read`（其余路由暂不限制）。
+- JWT / 密码登录的会话不受 scope 约束（视为 full-access）。
 
 ## 错误码
 

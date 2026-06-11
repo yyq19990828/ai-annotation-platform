@@ -6,10 +6,14 @@ import { useToastStore } from "@/components/ui/Toast";
 import {
   useApiKeys,
   useCreateApiKey,
+  useUpdateApiKey,
+  useRotateApiKey,
   useRevokeApiKey,
 } from "@/hooks/useApiKeys";
-import type { ApiKey, ApiKeyCreated } from "@/api/apiKeys";
+import type { ApiKey, ApiKeyCreated, ApiKeyUpdatePayload } from "@/api/apiKeys";
 import styles from "./ApiKeysModal.module.css";
+
+const FULL_ACCESS = "*";
 
 const SCOPE_OPTIONS: { id: string; label: string }[] = [
   { id: "annotations:read", label: "标注 - 读" },
@@ -18,50 +22,153 @@ const SCOPE_OPTIONS: { id: string; label: string }[] = [
   { id: "datasets:read", label: "数据集 - 读" },
 ];
 
+type ExpiryMode = "keep" | "never" | "30" | "90" | "365" | "custom";
+
+const EXPIRY_PRESETS: { id: ExpiryMode; label: string }[] = [
+  { id: "30", label: "30 天后过期" },
+  { id: "90", label: "90 天后过期" },
+  { id: "365", label: "1 年后过期" },
+  { id: "never", label: "永不过期" },
+  { id: "custom", label: "自定义天数…" },
+];
+
 function formatDate(iso: string | null) {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("zh-CN", { hour12: false });
 }
 
+function isExpired(iso: string | null) {
+  return !!iso && new Date(iso).getTime() < Date.now();
+}
+
+/** 把表单的有效期模式换算为提交给后端的 expires_in_days（undefined = 不发送该字段）。 */
+function expiryToDays(mode: ExpiryMode, customDays: number): number | null | undefined {
+  switch (mode) {
+    case "keep":
+      return undefined; // PATCH 时不改有效期
+    case "never":
+      return null; // 显式改回永不过期
+    case "custom":
+      return customDays > 0 ? customDays : undefined;
+    default:
+      return Number(mode);
+  }
+}
+
 /**
- * API 密钥管理主体：新建（一次性明文）/ 列表 / 吊销。
+ * API 密钥管理主体：新建 / 编辑 / 轮换（一次性明文）/ 列表 / 吊销。
  * 同时被 ApiKeysModal（用户页弹窗）与个人设置页「API 密钥」分区复用。
  * active 控制列表查询的 enabled 与表单状态重置（弹窗关闭 / 切走分区时归位）。
  */
 export function ApiKeysPanel({ active }: { active: boolean }) {
   const { data: keys = [], isLoading } = useApiKeys(active);
   const createKey = useCreateApiKey();
+  const updateKey = useUpdateApiKey();
+  const rotateKey = useRotateApiKey();
   const revokeKey = useRevokeApiKey();
   const pushToast = useToastStore((s) => s.push);
 
-  const [creating, setCreating] = useState(false);
+  // editing: null=未开表单; {id:null}=新建; {id}=编辑既有 key
+  const [editing, setEditing] = useState<{ id: string | null } | null>(null);
   const [name, setName] = useState("");
+  const [fullAccess, setFullAccess] = useState(false);
   const [scopes, setScopes] = useState<string[]>(["annotations:read"]);
+  const [expiryMode, setExpiryMode] = useState<ExpiryMode>("never");
+  const [customDays, setCustomDays] = useState(90);
   const [secret, setSecret] = useState<ApiKeyCreated | null>(null);
+
+  const resetForm = () => {
+    setEditing(null);
+    setName("");
+    setFullAccess(false);
+    setScopes(["annotations:read"]);
+    setExpiryMode("never");
+    setCustomDays(90);
+  };
 
   useEffect(() => {
     if (!active) {
-      setCreating(false);
-      setName("");
-      setScopes(["annotations:read"]);
+      resetForm();
       setSecret(null);
       createKey.reset();
+      updateKey.reset();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
+  const openCreate = () => {
+    resetForm();
+    setEditing({ id: null });
+  };
+
+  const openEdit = (k: ApiKey) => {
+    const full = k.scopes.includes(FULL_ACCESS);
+    setName(k.name);
+    setFullAccess(full);
+    setScopes(full ? [] : k.scopes);
+    setExpiryMode("keep");
+    setCustomDays(90);
+    setEditing({ id: k.id });
+  };
+
+  const pending = createKey.isPending || updateKey.isPending;
+  const formError = createKey.isError
+    ? (createKey.error as Error).message
+    : updateKey.isError
+      ? (updateKey.error as Error).message
+      : null;
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
-    createKey.mutate(
-      { name: name.trim(), scopes },
-      {
-        onSuccess: (data) => {
-          setSecret(data);
-          setCreating(false);
+    if (!name.trim() || !editing) return;
+    const effectiveScopes = fullAccess ? [FULL_ACCESS] : scopes;
+
+    if (editing.id === null) {
+      const days = expiryToDays(expiryMode, customDays);
+      createKey.mutate(
+        {
+          name: name.trim(),
+          scopes: effectiveScopes,
+          expires_in_days: days === undefined ? undefined : days,
         },
-      },
-    );
+        {
+          onSuccess: (data) => {
+            setSecret(data);
+            resetForm();
+          },
+        },
+      );
+    } else {
+      const payload: ApiKeyUpdatePayload = {
+        name: name.trim(),
+        scopes: effectiveScopes,
+      };
+      const days = expiryToDays(expiryMode, customDays);
+      if (days !== undefined) payload.expires_in_days = days; // keep 时不带该字段
+      updateKey.mutate(
+        { id: editing.id, payload },
+        {
+          onSuccess: () => {
+            pushToast({ msg: "已更新", kind: "success" });
+            resetForm();
+          },
+        },
+      );
+    }
+  };
+
+  const onRotate = (key: ApiKey) => {
+    if (key.revoked_at) return;
+    if (!confirm(`轮换 "${key.name}" ？旧密钥将立即失效，需替换所有使用方。`)) return;
+    rotateKey.mutate(key.id, {
+      onSuccess: (data) => setSecret(data),
+      onError: (err) =>
+        pushToast({
+          msg: "轮换失败",
+          sub: err instanceof Error ? err.message : String(err),
+          kind: "error",
+        }),
+    });
   };
 
   const onRevoke = (key: ApiKey) => {
@@ -99,11 +206,8 @@ export function ApiKeysPanel({ active }: { active: boolean }) {
             密钥用于程序化访问 API（CI / 脚本 / SDK）；创建后请立即复制保存，离开本页后将无法再次查看明文。
           </div>
 
-          {creating ? (
-            <form
-              onSubmit={submit}
-              className={styles.createForm}
-            >
+          {editing ? (
+            <form onSubmit={submit} className={styles.createForm}>
               <Field label="名称">
                 <input
                   type="text"
@@ -115,16 +219,27 @@ export function ApiKeysPanel({ active }: { active: boolean }) {
                   className={styles.input}
                 />
               </Field>
+
               <Field label="权限范围（scope）">
                 <div className={styles.scopeList}>
+                  <label className={`${styles.scopeOption} ${styles.fullAccessOption}`}>
+                    <input
+                      type="checkbox"
+                      checked={fullAccess}
+                      onChange={(e) => setFullAccess(e.target.checked)}
+                    />
+                    <code className={styles.scopeCode}>{FULL_ACCESS}</code>
+                    <span className={styles.muted}>完全访问（full-access，等同所有权限）</span>
+                  </label>
                   {SCOPE_OPTIONS.map((opt) => (
                     <label
                       key={opt.id}
-                      className={styles.scopeOption}
+                      className={`${styles.scopeOption} ${fullAccess ? styles.scopeDisabled : ""}`}
                     >
                       <input
                         type="checkbox"
-                        checked={scopes.includes(opt.id)}
+                        disabled={fullAccess}
+                        checked={!fullAccess && scopes.includes(opt.id)}
                         onChange={(e) => {
                           setScopes((prev) =>
                             e.target.checked
@@ -133,38 +248,61 @@ export function ApiKeysPanel({ active }: { active: boolean }) {
                           );
                         }}
                       />
-                      <code className={styles.scopeCode}>
-                        {opt.id}
-                      </code>
+                      <code className={styles.scopeCode}>{opt.id}</code>
                       <span className={styles.muted}>{opt.label}</span>
                     </label>
                   ))}
                 </div>
               </Field>
+
+              <Field label="有效期">
+                <select
+                  className={styles.input}
+                  value={expiryMode}
+                  onChange={(e) => setExpiryMode(e.target.value as ExpiryMode)}
+                >
+                  {editing.id !== null && <option value="keep">保持不变</option>}
+                  {EXPIRY_PRESETS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+                {expiryMode === "custom" && (
+                  <input
+                    type="number"
+                    min={1}
+                    max={3650}
+                    value={customDays}
+                    onChange={(e) => setCustomDays(Number(e.target.value))}
+                    className={styles.input}
+                    placeholder="天数（1–3650）"
+                  />
+                )}
+              </Field>
+
               <div className={styles.note}>
-                注：v0.9.3 phase 1 仅记录 scope，未在路由层强制拦截；后续版本启用。
+                未勾选「完全访问」的密钥只能访问所选 scope 对应的接口；scope 在路由层强制生效。
               </div>
-              {createKey.isError && (
-                <div className={styles.errorText}>
-                  {(createKey.error as Error).message ?? "创建失败"}
-                </div>
-              )}
+              {formError && <div className={styles.errorText}>{formError ?? "提交失败"}</div>}
               <div className={styles.actions}>
-                <Button type="button" onClick={() => setCreating(false)} disabled={createKey.isPending}>
+                <Button type="button" onClick={resetForm} disabled={pending}>
                   取消
                 </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={!name.trim() || createKey.isPending}
-                >
-                  {createKey.isPending ? "创建中..." : "创建"}
+                <Button type="submit" variant="primary" disabled={!name.trim() || pending}>
+                  {pending
+                    ? editing.id === null
+                      ? "创建中..."
+                      : "保存中..."
+                    : editing.id === null
+                      ? "创建"
+                      : "保存"}
                 </Button>
               </div>
             </form>
           ) : (
             <div className={styles.rightAction}>
-              <Button variant="primary" onClick={() => setCreating(true)}>
+              <Button variant="primary" onClick={openCreate}>
                 <Icon name="plus" size={12} /> 新建密钥
               </Button>
             </div>
@@ -174,11 +312,8 @@ export function ApiKeysPanel({ active }: { active: boolean }) {
             <table className={styles.table}>
               <thead>
                 <tr>
-                  {["名称", "前缀", "权限", "最后使用", "创建", ""].map((h, i) => (
-                    <th
-                      key={i}
-                      className={styles.th}
-                    >
+                  {["名称", "前缀", "权限", "有效期", "最后使用", "创建", ""].map((h, i) => (
+                    <th key={i} className={styles.th}>
                       {h}
                     </th>
                   ))}
@@ -187,35 +322,32 @@ export function ApiKeysPanel({ active }: { active: boolean }) {
               <tbody>
                 {isLoading && (
                   <tr>
-                    <td colSpan={6} className={styles.emptyCell}>
+                    <td colSpan={7} className={styles.emptyCell}>
                       加载中…
                     </td>
                   </tr>
                 )}
                 {!isLoading && keys.length === 0 && (
                   <tr>
-                    <td colSpan={6} className={styles.emptyCell}>
+                    <td colSpan={7} className={styles.emptyCell}>
                       尚未创建任何密钥
                     </td>
                   </tr>
                 )}
                 {keys.map((k) => {
                   const revoked = !!k.revoked_at;
+                  const expired = !revoked && isExpired(k.expires_at);
                   return (
                     <tr key={k.id} className={revoked ? styles.revokedRow : undefined}>
                       <td className={`${styles.cell} ${styles.nameCell}`} title={k.name}>
                         {k.name}
                         {revoked && (
                           <span className={styles.revokedBadge}>
-                            <Badge variant="outline">
-                            已吊销
-                            </Badge>
+                            <Badge variant="outline">已吊销</Badge>
                           </span>
                         )}
                       </td>
-                      <td
-                        className={`${styles.cell} mono ${styles.keyPrefix}`}
-                      >
+                      <td className={`${styles.cell} mono ${styles.keyPrefix}`}>
                         {k.key_prefix}…
                       </td>
                       <td className={styles.cell}>
@@ -225,10 +357,19 @@ export function ApiKeysPanel({ active }: { active: boolean }) {
                           <div className={styles.scopeBadges}>
                             {k.scopes.map((s) => (
                               <Badge key={s} variant="outline">
-                                {s}
+                                {s === FULL_ACCESS ? "完全访问" : s}
                               </Badge>
                             ))}
                           </div>
+                        )}
+                      </td>
+                      <td className={`${styles.cell} ${styles.dateCell}`}>
+                        {k.expires_at === null ? (
+                          <span className={styles.subtle}>永不</span>
+                        ) : expired ? (
+                          <Badge variant="outline">已过期</Badge>
+                        ) : (
+                          formatDate(k.expires_at)
                         )}
                       </td>
                       <td className={`${styles.cell} ${styles.dateCell}`}>
@@ -239,15 +380,34 @@ export function ApiKeysPanel({ active }: { active: boolean }) {
                       </td>
                       <td className={`${styles.cell} ${styles.actionsCell}`}>
                         {!revoked && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => onRevoke(k)}
-                            disabled={revokeKey.isPending}
-                            title="吊销密钥"
-                          >
-                            <Icon name="trash" size={11} className={styles.dangerIcon} />
-                          </Button>
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openEdit(k)}
+                              title="编辑"
+                            >
+                              <Icon name="edit" size={11} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => onRotate(k)}
+                              disabled={rotateKey.isPending}
+                              title="轮换（生成新密钥，旧的失效）"
+                            >
+                              <Icon name="refresh" size={11} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => onRevoke(k)}
+                              disabled={revokeKey.isPending}
+                              title="吊销密钥"
+                            >
+                              <Icon name="trash" size={11} className={styles.dangerIcon} />
+                            </Button>
+                          </>
                         )}
                       </td>
                     </tr>
@@ -285,11 +445,7 @@ function SecretReveal({
       <div className={styles.muted}>
         密钥 <strong>{data.name}</strong> 已生成。请立即复制保存，关闭后无法再次查看。
       </div>
-      <div
-        className={styles.secretBox}
-      >
-        {data.plaintext}
-      </div>
+      <div className={styles.secretBox}>{data.plaintext}</div>
       <div className={styles.actions}>
         <Button onClick={() => onCopy()}>复制</Button>
         <Button variant="primary" onClick={onAck}>

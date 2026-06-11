@@ -392,10 +392,44 @@ class ApiKeys:
         resp = self._http.request("GET", "/me/api-keys")
         return [ApiKey.model_validate(x) for x in resp.json()]
 
-    def create(self, name: str, scopes: Sequence[str] | None = None) -> ApiKeyCreated:
-        resp = self._http.request(
-            "POST", "/me/api-keys", json={"name": name, "scopes": list(scopes or [])}
-        )
+    def create(
+        self,
+        name: str,
+        scopes: Sequence[str] | None = None,
+        expires_in_days: int | None = None,
+    ) -> ApiKeyCreated:
+        body: dict[str, Any] = {"name": name, "scopes": list(scopes or [])}
+        if expires_in_days is not None:
+            body["expires_in_days"] = expires_in_days
+        resp = self._http.request("POST", "/me/api-keys", json=body)
+        return ApiKeyCreated.model_validate(resp.json())
+
+    def update(
+        self,
+        key_id: IdLike,
+        *,
+        name: str | None = None,
+        scopes: Sequence[str] | None = None,
+        expires_in_days: int | None = None,
+    ) -> ApiKey:
+        """部分更新 name / scopes / 有效期。仅传入的字段生效。
+
+        expires_in_days 传 None 时不发送该字段（不改有效期）。如需改回永不过期，
+        请直接走 REST PATCH 显式传 null（SDK 当前不暴露该语义，保持调用简单）。
+        """
+        body: dict[str, Any] = {}
+        if name is not None:
+            body["name"] = name
+        if scopes is not None:
+            body["scopes"] = list(scopes)
+        if expires_in_days is not None:
+            body["expires_in_days"] = expires_in_days
+        resp = self._http.request("PATCH", f"/me/api-keys/{key_id}", json=body)
+        return ApiKey.model_validate(resp.json())
+
+    def rotate(self, key_id: IdLike) -> ApiKeyCreated:
+        """轮换：返回新一次性明文，旧明文立即失效。"""
+        resp = self._http.request("POST", f"/me/api-keys/{key_id}/rotate")
         return ApiKeyCreated.model_validate(resp.json())
 
     def revoke(self, key_id: IdLike) -> None:

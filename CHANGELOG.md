@@ -30,6 +30,22 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.11] - 2026-06-11
+
+API Key 完善:从「phase 1 仅记录 scope」推进到真正强制 + 过期 + 轮换/编辑 + full-access。计划见 `docs/plans/2026-06-11-v0.15.11-apikey-hardening.md`。
+
+### Added
+
+- **过期时间(`expires_at`)**:创建 key 可选 `expires_in_days`(后端换算为绝对时间);`resolve_token` 在认证入口校验,过期 key 一律 401。迁移 `0104`。
+- **Scope 真正强制**:新增 `require_scopes(...)` 依赖工厂,挂到已定义 scope 的读写路由(`annotations:read/write`、`datasets:read`、`predictions:read`)。JWT / 密码登录 principal 视为 full-access 不受约束;api_key 缺 scope → 403。其余路由本版不挂,行为不变。
+- **`full-access` 通配 scope(`"*"`)**:含 `"*"` 的 key 绕过 scope 校验,等同全权。
+- **轮换 / 编辑端点**:`POST /me/api-keys/{id}/rotate`(换新明文,旧的立即失效)、`PATCH /me/api-keys/{id}`(改 name / scopes / 有效期)。SDK 同步新增 `client.api_keys.rotate()` / `update()`,`ApiKey` 模型加 `expires_at`。
+- **前端创建界面美化**:创建表单加「完全访问」开关(选中禁用细分 scope)+ 有效期下拉(30/90/365 天 / 永不 / 自定义);列表加「有效期」列(永不 / 到期日 / 已过期徽标)与「编辑」「轮换」操作。
+
+### Changed
+
+- 删除前端「v0.9.3 phase 1 仅记录 scope,未在路由层强制拦截」提示,scope 现已真实生效。
+
 ## [0.15.10] - 2026-06-11
 
 `aap tui` 仿 WebUI 交互:行下钻进专属详情子路由 + 每个 tab 动作按钮栏。维持「只读为主 + 导出/取消 2 动作」红线,纯呈现层,不动 `client.py`、不新增网络调用 / 写能力。计划见 `docs/plans/2026-06-11-v0.15.10-tui-drilldown-routing.md`。

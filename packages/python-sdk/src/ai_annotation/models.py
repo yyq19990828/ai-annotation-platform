@@ -200,6 +200,7 @@ class ApiKey(_AAPModel):
     name: str
     key_prefix: str
     scopes: list[str] = Field(default_factory=list)
+    expires_at: datetime | None = None
     last_used_at: datetime | None = None
     revoked_at: datetime | None = None
     created_at: datetime | None = None

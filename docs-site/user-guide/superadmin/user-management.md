@@ -91,7 +91,9 @@ last_reviewed: 2026-06-10
 
 - 卡片右上角的 ⋯ 菜单 → **API Keys**
 - 创建时仅返回明文 token 一次，前端应立即复制；token 格式为 `ak_` 前缀 + 32 字符 URL-safe base64
-- 支持 `scopes` 字段限制 Key 的权限范围
+- **权限 scope**：可勾选「完全访问（full-access）」一键全权，或选细分 scope（标注读/写、数据集读、预测读）限制范围；scope 自 v0.15.11 起在路由层真正强制（缺权限 → 403）
+- **有效期**：创建时可选 30/90/365 天 / 永不过期 / 自定义天数；过期后认证失败
+- **轮换 / 编辑**：列表行可轮换（换新明文、旧的立即失效）或编辑名称 / scope / 有效期
 - 调用时通过标准 HTTP Bearer 头携带：`Authorization: Bearer ak_xxxxx`
 
 详细 API 见 [认证](../../api/guides/auth#api-key)。
