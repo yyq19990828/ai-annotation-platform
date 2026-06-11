@@ -176,8 +176,11 @@ def test_login_saves_config_0600(respx_mock, tmp_path):
     assert 'api_key = "ak_new"' in cfg.read_text()
     assert (cfg.stat().st_mode & 0o777) == 0o600
     plain = _plain(result.output)
-    assert "config.toml" in plain  # 提示配置文件路径
-    assert "0600" in plain  # 提示权限说明
+    # 去掉所有空白再比对: 长 tmp 路径在窄终端会被 rich 折行, _plain 把换行归一成空格,
+    # 会把 "config.toml" 拆成 "co nfig.toml", 故剥离空白还原后再断言
+    nospace = plain.replace(" ", "")
+    assert "config.toml" in nospace  # 提示配置文件路径
+    assert "0600" in nospace  # 提示权限说明
 
 
 def test_login_prompts_hidden_api_key(respx_mock, tmp_path):
@@ -186,6 +189,18 @@ def test_login_prompts_hidden_api_key(respx_mock, tmp_path):
     assert result.exit_code == 0
     assert "ak_prompt" not in result.output  # 隐藏输入不回显
     assert 'api_key = "ak_prompt"' in (tmp_path / "config.toml").read_text()
+
+
+def test_login_prompts_url(respx_mock, tmp_path):
+    respx_mock.get(f"{API}/projects").mock(return_value=httpx.Response(200, json=[]))
+    # 省略 --url / --api-key, 依次交互输入平台地址与 key
+    result = runner.invoke(
+        app, ["login"], input=f"{BASE}\nak_prompt\n", env=NO_AUTH_ENV
+    )
+    assert result.exit_code == 0
+    cfg = (tmp_path / "config.toml").read_text()
+    assert f'base_url = "{BASE}"' in cfg
+    assert 'api_key = "ak_prompt"' in cfg
 
 
 def test_login_invalid_key_does_not_save(respx_mock, tmp_path):

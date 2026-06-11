@@ -8,17 +8,25 @@ import typer
 
 from ai_annotation import Client
 from ai_annotation.cli._output import cli_errors, console, print_json
-from ai_annotation.config import save_config
+from ai_annotation.config import load_config, save_config
+
+DEFAULT_URL = "http://localhost:8000"
 
 
 def login(
-    url: str = typer.Option(..., "--url", help="平台地址, 如 http://localhost:8000"),
+    url: Optional[str] = typer.Option(
+        None, "--url", help="平台地址, 如 http://localhost:8000; 省略时交互式输入"
+    ),
     api_key: Optional[str] = typer.Option(
         None, "--api-key", help="API key; 省略时交互式隐藏输入"
     ),
     json_output: bool = typer.Option(False, "--json", help="输出裸 JSON"),
 ) -> None:
     """验证凭据并写入 ~/.config/ai-annotation/config.toml (权限 0600)。"""
+    if url is None:
+        # 默认值优先复用已存配置的 base_url, 否则回退到本地默认地址
+        saved_url, _ = load_config()
+        url = typer.prompt("平台地址", default=saved_url or DEFAULT_URL)
     if api_key is None:
         api_key = typer.prompt("API key", hide_input=True)
     with cli_errors(json_output):
