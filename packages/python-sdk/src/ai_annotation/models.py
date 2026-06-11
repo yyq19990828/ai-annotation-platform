@@ -195,6 +195,30 @@ class MLBackend(_AAPModel):
     updated_at: datetime | None = None
 
 
+class MLBackendStatsSnapshot(_AAPModel):
+    """v0.15.12 · `/ws/ml-backend-stats` 每 1s 推送的单个 backend 实时快照。
+
+    `loaded` / `idle_unload_seconds` / `last_request_age_seconds` / `pool` / `video_pool`
+    是 REST `/health` 拿不到、仅 WS 推送的池/预热维度。
+    """
+
+    backend_id: UUID | None = None
+    backend_name: str | None = None
+    physical_key: str | None = None
+    url_host: str | None = None
+    state: str
+    gpu_info: GpuInfo | None = None
+    host: HostInfo | None = None
+    cache: CacheStats | None = None
+    model_version: str | None = None
+    loaded: bool | None = None
+    idle_unload_seconds: float | None = None
+    last_request_age_seconds: float | None = None
+    pool: dict | None = None
+    video_pool: dict | None = None
+    timestamp: datetime | None = None
+
+
 class ApiKey(_AAPModel):
     id: UUID
     name: str

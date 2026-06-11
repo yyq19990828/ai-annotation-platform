@@ -11,6 +11,7 @@ TUI 是 Client 公开 API 的纯消费方, 不碰 _http / 内部实现; 任务�
 from __future__ import annotations
 
 import sys
+from collections import deque
 from datetime import datetime
 from typing import Any
 
@@ -24,13 +25,20 @@ from textual.widgets import (
     DataTable,
     Footer,
     Header,
+    Sparkline,
     Static,
     TabbedContent,
     TabPane,
 )
 
 from ai_annotation.config import load_config
-from ai_annotation.models import Dataset, Job, MLBackend, Project
+from ai_annotation.models import (
+    Dataset,
+    Job,
+    MLBackend,
+    MLBackendStatsSnapshot,
+    Project,
+)
 
 # job 状态 → 着色 (pending 灰 / running 黄 / completed 绿 / failed 红 / cancelled 暗)
 _STATUS_STYLE = {
@@ -272,6 +280,145 @@ class DetailScreen(Screen[None]):
             self._on_action(event.button.id)
 
 
+def _fmt_secs(v: float | None) -> str:
+    return f"{v:.0f}s" if v is not None else "-"
+
+
+def _fmt_pool(pool: dict | None) -> str:
+    if not isinstance(pool, dict) or not pool:
+        return "-"
+    keys = ("size", "capacity", "in_use", "loaded", "idle")
+    parts = [f"{k}={pool[k]}" for k in keys if k in pool]
+    return " · ".join(parts) if parts else str(pool)[:60]
+
+
+_ML_LIVE_CSS = _DETAIL_CSS + """
+.spark-label {
+    color: $text-muted;
+    margin-top: 1;
+}
+Sparkline {
+    height: 3;
+    margin-bottom: 1;
+}
+#ml-live {
+    color: $accent;
+    margin-top: 1;
+}
+#ml-status {
+    color: $warning;
+    margin-top: 1;
+}
+"""
+
+
+class MlBackendDetailScreen(Screen[None]):
+    """ML Backend 实时详情屏: WS 1s 推流 + 滚动曲线 (v0.15.12)。
+
+    进屏订阅 `/ws/ml-backend-stats` (触发后端 beat 采集), 离屏 cancel (DECR 停采)。
+    WS 不可用 / 鉴权失败 → 顶部静态 REST 快照仍在, 状态行提示降级, 不崩。
+    """
+
+    BINDINGS = [Binding("escape", "back", "返回"), Binding("q", "back", "返回")]
+    CSS = _ML_LIVE_CSS
+    _WINDOW = 60  # 滚动曲线保留最近 N 个 1s 采样点
+
+    def __init__(self, backend: MLBackend, base_url: str, api_key: str):
+        super().__init__()
+        self._backend = backend
+        self._base_url = base_url
+        self._api_key = api_key
+        self._bid = str(backend.id)
+        self._util: deque[float] = deque(maxlen=self._WINDOW)
+        self._mem: deque[float] = deque(maxlen=self._WINDOW)
+        self._hit: deque[float] = deque(maxlen=self._WINDOW)
+        self._worker: Any = None
+
+    def compose(self) -> ComposeResult:
+        yield Static(f"aap tui ▸ Backend {self._backend.name} · 实时", classes="breadcrumb")
+        with VerticalScroll(classes="detail-body") as box:
+            box.border_title = "Backend 实时监控 (WS 1s)"
+            yield Static(_ml_backend_detail(self._backend), id="ml-static")
+            yield Static("等待实时数据…", id="ml-live")
+            yield Static("GPU 利用率 %", classes="spark-label")
+            yield Sparkline([], id="spark-util")
+            yield Static("显存占用 %", classes="spark-label")
+            yield Sparkline([], id="spark-mem")
+            yield Static("缓存命中率 %", classes="spark-label")
+            yield Sparkline([], id="spark-hit")
+            yield Static("", id="ml-status")
+        with Vertical(classes="screen-bottom"):
+            with Horizontal(classes="action-bar"):
+                yield Button("◀ 返回", id="back", variant="primary")
+            yield Footer()
+
+    def on_mount(self) -> None:
+        if not self._api_key or not self._base_url:
+            self.query_one("#ml-status", Static).update("（缺 base_url/api_key，实时不可用）")
+            return
+        from ai_annotation.tui.ml_stats_ws import MlStatsStream
+
+        stream = MlStatsStream(
+            self._base_url, self._api_key, self._on_snaps, self._on_err
+        )
+        self._worker = self.run_worker(
+            stream.run(), exclusive=True, group="ml-ws", name="ml-stats-ws"
+        )
+
+    def on_unmount(self) -> None:
+        if self._worker is not None:
+            self._worker.cancel()
+
+    def _on_snaps(self, snaps: list[MLBackendStatsSnapshot]) -> None:
+        snap = next((s for s in snaps if str(s.backend_id) == self._bid), None)
+        if snap is not None:
+            self._apply(snap)
+
+    def _on_err(self, msg: str) -> None:
+        try:
+            self.query_one("#ml-status", Static).update(f"⚠ {msg}（顶部为最近一次 REST 快照）")
+        except Exception:
+            pass
+
+    def _apply(self, snap: MLBackendStatsSnapshot) -> None:
+        gpu = snap.gpu_info
+        util = float(gpu.gpu_utilization_percent) if gpu and gpu.gpu_utilization_percent is not None else None
+        mem_pct = None
+        if gpu and gpu.memory_used_mb is not None and gpu.memory_total_mb:
+            mem_pct = 100.0 * gpu.memory_used_mb / gpu.memory_total_mb
+        hit = None
+        if snap.cache and snap.cache.hit_rate is not None:
+            hit = 100.0 * snap.cache.hit_rate
+
+        if util is not None:
+            self._util.append(util)
+            self.query_one("#spark-util", Sparkline).data = list(self._util)
+        if mem_pct is not None:
+            self._mem.append(mem_pct)
+            self.query_one("#spark-mem", Sparkline).data = list(self._mem)
+        if hit is not None:
+            self._hit.append(hit)
+            self.query_one("#spark-hit", Sparkline).data = list(self._hit)
+
+        loaded = "✅ 已预热" if snap.loaded else ("⚪ 未加载" if snap.loaded is not None else "-")
+        live = (
+            f"state {snap.state} · {loaded}"
+            f" · 空闲卸载 {_fmt_secs(snap.idle_unload_seconds)}"
+            f" · 上次请求 {_fmt_secs(snap.last_request_age_seconds)} 前\n"
+            f"pool: {_fmt_pool(snap.pool)}\n"
+            f"video_pool: {_fmt_pool(snap.video_pool)}"
+        )
+        self.query_one("#ml-live", Static).update(live)
+        self.query_one("#ml-status", Static).update("")
+
+    def action_back(self) -> None:
+        self.dismiss()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "back":
+            self.dismiss()
+
+
 class ProjectDetailScreen(Screen[None]):
     """项目下钻子路由: 概览 / 本项目任务 / 本项目 Backend 三个 scoped 子 tab。
 
@@ -420,10 +567,10 @@ class ProjectDetailScreen(Screen[None]):
             backend = self._backends.get(key)
             if backend is not None:
                 self.app.push_screen(
-                    DetailScreen(
-                        f"项目 {self._project.display_id} ▸ Backend {backend.name}",
-                        _ml_backend_detail(backend),
-                        title="Backend 详情",
+                    MlBackendDetailScreen(
+                        backend,
+                        getattr(self.app, "_base_url", ""),
+                        getattr(self.app, "_api_key", ""),
                     )
                 )
 
@@ -495,10 +642,17 @@ class AapTuiApp(App[None]):
         Binding("q", "quit", "退出"),
     ]
 
-    def __init__(self, client: Any, base_url: str = "", poll_interval: float = 3.0):
+    def __init__(
+        self,
+        client: Any,
+        base_url: str = "",
+        poll_interval: float = 3.0,
+        api_key: str = "",
+    ):
         super().__init__()
         self._client = client
         self._base_url = base_url
+        self._api_key = api_key
         self._poll_interval = poll_interval
         self._hint = f"{base_url} · jobs 每 {poll_interval:g}s 轮询"
         # 最近一次成功渲染的时刻 (状态栏展示), 给「数据是否新鲜」的反馈
@@ -814,11 +968,7 @@ class AapTuiApp(App[None]):
             backend = self._ml_backends.get(key)
             if backend is not None:
                 self.push_screen(
-                    DetailScreen(
-                        f"Backend {backend.name}",
-                        _ml_backend_detail(backend),
-                        title="Backend 详情",
-                    )
+                    MlBackendDetailScreen(backend, self._base_url, self._api_key)
                 )
 
     def push_job_detail(self, job: Job) -> None:
@@ -950,6 +1100,6 @@ def run() -> None:
         raise SystemExit(1)
     client = Client(base_url=base_url, api_key=api_key)
     try:
-        AapTuiApp(client, base_url=base_url).run()
+        AapTuiApp(client, base_url=base_url, api_key=api_key).run()
     finally:
         client.close()

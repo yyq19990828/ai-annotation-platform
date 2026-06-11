@@ -29,6 +29,7 @@ from ai_annotation.models import (
     JobPage,
     LinkResult,
     MLBackend,
+    MLBackendStatsSnapshot,
     Page,
     Project,
     Task,
@@ -37,7 +38,7 @@ from ai_annotation.models import (
     ZipUploadResult,
 )
 
-__version__ = "0.15.11"
+__version__ = "0.15.12"
 
 __all__ = [
     "__version__",
@@ -66,6 +67,7 @@ __all__ = [
     "JobPage",
     "LinkResult",
     "MLBackend",
+    "MLBackendStatsSnapshot",
     "Page",
     "Project",
     "Task",

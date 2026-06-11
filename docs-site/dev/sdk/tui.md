@@ -61,9 +61,22 @@ aap tui
 
 - **项目详情**(Projects 行下钻):内嵌三个 scoped 子 tab —— **概览**(项目字段 + 进度 + 「⬇ 导出」按钮)、**任务**(对全局 jobs 列表**客户端按 `project_id` 过滤**出本项目的任务,可再下钻进单任务详情)、**Backends**(`ml_backends.list(project_id)`,可再下钻)。
 - **任务详情**(Jobs 行下钻):完整 `error_message` / `result`(导出完成显示 `download_url` 与下载提示);`pending` / `running` 的任务带「✖ 取消」按钮。
-- **Backend / 数据集详情**:只读展开完整 `health_meta` / 字段。
+- **Backend 详情**(v0.15.12 起):**实时监控屏**,见下「ML Backend 实时监控」。
+- **数据集详情**:只读展开完整字段。
 
 所有子页只调用 SDK 公开方法,导出 / 取消复用主屏的二次确认路径,不新增写能力。
+
+## ML Backend 实时监控(v0.15.12)
+
+ML Backends 行下钻进 **实时详情屏**:不再是静态 REST 快照,而是订阅后端 WebSocket `/ws/ml-backend-stats`(Celery beat 每 **1s** 推送),看到 REST `/health` 拿不到的池/预热维度并实时刷新:
+
+- **实时字段**:`state`、模型是否预热(`loaded`)、空闲卸载倒计时(`idle_unload_seconds`)、上次请求年龄(`last_request_age_seconds`)、`pool` / `video_pool` 占用。
+- **滚动曲线**(Textual `Sparkline`,保留最近 60 个 1s 采样点):GPU 利用率 % / 显存占用 % / 缓存命中率 %。
+- **生命周期**:进屏订阅(触发后端 beat 实拉,闲时零开销)、离屏断开(后端订阅者计数 -1 后停采)。
+- **鉴权**:WS 自 v0.15.12 起接受 `ak_` api_key(此前仅 JWT),但仍要求该 key 所属用户是 **super_admin / project_admin**(运维向);普通标注员的 key 会被拒。
+- **降级**:WS 连不上 / 鉴权失败 / 后端旧版本时,顶部仍展示最近一次 REST 快照,状态行提示降级,不崩。
+
+主屏 ML Backends tab 维持 5s REST 轮询的总览列表(避免同时对 N 个 backend 各开一条 WS),实时只在详情屏。
 
 ## 动作(导出 / 取消)
 

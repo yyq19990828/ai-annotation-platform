@@ -9,7 +9,12 @@ import pytest
 from textual.widgets import DataTable, Static, TabbedContent, TabPane
 
 from ai_annotation.models import Dataset, HealthMeta, Job, JobPage, MLBackend, Page, Project
-from ai_annotation.tui.app import AapTuiApp, DetailScreen, ProjectDetailScreen
+from ai_annotation.tui.app import (
+    AapTuiApp,
+    DetailScreen,
+    MlBackendDetailScreen,
+    ProjectDetailScreen,
+)
 
 # pyproject 未配 asyncio_mode=auto, 用模块级 marker 驱动 async 测试
 pytestmark = pytest.mark.asyncio
@@ -211,7 +216,8 @@ async def test_ml_backends_tab_renders_and_colors():
 
 
 async def test_ml_backend_detail_on_enter_pushes_screen():
-    # 回车不再写行内面板, 而是 push 一个只读 DetailScreen 子路由
+    # 回车 push 实时详情屏 MlBackendDetailScreen; 顶部 #ml-static 仍是 REST 快照。
+    # 测试无 api_key (base_url 给了但 api_key 缺), WS 不启动, 仅展示静态体 + 降级提示, 不崩。
     app = _make_app(with_ml=True)
     async with app.run_test(size=(120, 30)) as pilot:
         await _settle(app, pilot)
@@ -221,14 +227,14 @@ async def test_ml_backend_detail_on_enter_pushes_screen():
         table.focus()
         await pilot.press("enter")
         await pilot.pause()
-        assert isinstance(app.screen, DetailScreen)
-        detail = str(app.screen.query_one("#detail-body", Static).render())
+        assert isinstance(app.screen, MlBackendDetailScreen)
+        detail = str(app.screen.query_one("#ml-static", Static).render())
         assert "model_version: v1.2" in detail
         assert "util 73%" in detail
         # esc 返回主屏 (栈回到只剩主屏)
         await pilot.press("escape")
         await pilot.pause()
-        assert not isinstance(app.screen, DetailScreen)
+        assert not isinstance(app.screen, MlBackendDetailScreen)
         assert app.query_one("#tabs", TabbedContent) is not None
 
 

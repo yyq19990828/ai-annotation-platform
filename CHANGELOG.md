@@ -30,6 +30,19 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.12] - 2026-06-11
+
+`aap tui` ML Backend 监控从「5s 轮询 REST」升级为「1s WebSocket 推流 + 滚动曲线」。计划见 `docs/plans/2026-06-11-v0.15.12-tui-realtime-monitoring.md`。
+
+### Added
+
+- **TUI ML Backend 实时详情屏**:订阅 `/ws/ml-backend-stats`(1s 推送),展示 REST `/health` 拿不到的池/预热维度 —— `loaded`(预热)、`idle_unload_seconds`(空闲卸载倒计时)、`last_request_age_seconds`、`pool` / `video_pool`;Textual `Sparkline` 渲染 GPU 利用率 / 显存 / 缓存命中率最近 60 点滚动曲线。进屏订阅(触发后端 beat 实拉)、离屏断开(订阅者计数 -1 停采);WS 不可用时降级展示 REST 快照,不崩。
+- **SDK 异步 WS 消费器**(`ai_annotation.tui.ml_stats_ws`):`[tui]` extra 加 `websockets` 依赖;`MLBackendStatsSnapshot` 模型;同步 `Client` / `_http` 不动。
+
+### Changed
+
+- **WS `/ws/ml-backend-stats` 鉴权**:除 JWT 外也接受 `ak_` api_key(SDK/TUI 用),role 校验(super_admin / project_admin)不变;只动这一个 WS 端点。
+
 ## [0.15.11] - 2026-06-11
 
 API Key 完善:从「phase 1 仅记录 scope」推进到真正强制 + 过期 + 轮换/编辑 + full-access。计划见 `docs/plans/2026-06-11-v0.15.11-apikey-hardening.md`。

@@ -288,14 +288,30 @@ async def ml_backend_stats_socket(
     决定是否实拉 — 0 订阅者时直接 skip, 节省 GPU 探活成本.
 
     鉴权: super_admin / project_admin 才能看 (运维向, 标注员不需要).
+    v0.15.12 · 除 JWT 外也接受 ak_ api_key (SDK/TUI 用), role 校验不变.
     """
     try:
-        payload = decode_access_token(token)
-        user_id = payload.get("sub")
-        role = payload.get("role")
-        if not user_id:
-            raise ValueError("missing sub")
-        uuid.UUID(user_id)
+        from app.services import api_key_service
+
+        if api_key_service.is_api_key_token(token):
+            # ak_ 路径: 解析 api_key → 取关联 user 的 role
+            from app.db.base import async_session
+
+            async with async_session() as db:
+                resolved = await api_key_service.resolve_token(db, token)
+                if resolved is None:
+                    raise PermissionError("invalid api key")
+                _key, user = resolved
+                user_id = str(user.id)
+                role = user.role
+                await db.commit()  # 持久化 last_used_at
+        else:
+            payload = decode_access_token(token)
+            user_id = payload.get("sub")
+            role = payload.get("role")
+            if not user_id:
+                raise ValueError("missing sub")
+            uuid.UUID(user_id)
         if role not in ("super_admin", "project_admin"):
             raise PermissionError("not admin")
     except Exception:
