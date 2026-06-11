@@ -114,7 +114,7 @@ async def test_renders_three_tabs_and_status_bar():
             "tab-jobs",
         ]
         bar = app.query_one("#status-bar", Static)
-        assert BASE in str(bar.renderable)
+        assert BASE in str(bar.render())
 
 
 async def test_tables_show_stub_rows():
@@ -149,7 +149,7 @@ async def test_refresh_reflects_status_flip():
         # 翻转行高亮 + 状态栏提示
         assert "✔" in jobs.get_row_at(0)[1].plain
         bar = app.query_one("#status-bar", Static)
-        assert "完成" in str(bar.renderable)
+        assert "完成" in str(bar.render())
 
 
 async def test_quit_key():
