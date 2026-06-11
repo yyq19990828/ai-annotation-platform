@@ -19,11 +19,16 @@ from ai_annotation.models import (
     Annotation,
     ApiKey,
     ApiKeyCreated,
+    CacheStats,
     Dataset,
+    GpuInfo,
+    HealthMeta,
+    HostInfo,
     ImportResult,
     Job,
     JobPage,
     LinkResult,
+    MLBackend,
     Page,
     Project,
     Task,
@@ -32,7 +37,7 @@ from ai_annotation.models import (
     ZipUploadResult,
 )
 
-__version__ = "0.15.2"
+__version__ = "0.15.8"
 
 __all__ = [
     "__version__",
@@ -51,11 +56,16 @@ __all__ = [
     "Annotation",
     "ApiKey",
     "ApiKeyCreated",
+    "CacheStats",
     "Dataset",
+    "GpuInfo",
+    "HealthMeta",
+    "HostInfo",
     "ImportResult",
     "Job",
     "JobPage",
     "LinkResult",
+    "MLBackend",
     "Page",
     "Project",
     "Task",

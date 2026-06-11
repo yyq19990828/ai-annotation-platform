@@ -146,6 +146,55 @@ class JobPage(_AAPModel):
     total: int
 
 
+class GpuInfo(_AAPModel):
+    """ML Backend `/health` 缓存的 GPU 指标 (字段缺失 = backend 未上报)。"""
+
+    device_name: str | None = None
+    memory_used_mb: int | None = None
+    memory_total_mb: int | None = None
+    memory_free_mb: int | None = None
+    gpu_utilization_percent: int | None = None
+    gpu_temperature_celsius: int | None = None
+    gpu_power_watts: float | None = None
+
+
+class HostInfo(_AAPModel):
+    container_cpu_percent: float | None = None
+    container_memory_percent: float | None = None
+
+
+class CacheStats(_AAPModel):
+    hits: int | None = None
+    misses: int | None = None
+    size: int | None = None
+    capacity: int | None = None
+    hit_rate: float | None = None
+
+
+class HealthMeta(_AAPModel):
+    """backend `/health` 深度指标缓存; capabilities 等未声明字段经 extra="allow" 仍可访问。"""
+
+    gpu_info: GpuInfo | None = None
+    host: HostInfo | None = None
+    cache: CacheStats | None = None
+    model_version: str | None = None
+
+
+class MLBackend(_AAPModel):
+    """项目挂载的 ML Backend (只读监控)。state: connected / error。"""
+
+    id: UUID
+    project_id: UUID
+    name: str
+    url: str
+    state: str
+    health_meta: HealthMeta | None = None
+    error_message: str | None = None
+    last_checked_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
 class ApiKey(_AAPModel):
     id: UUID
     name: str

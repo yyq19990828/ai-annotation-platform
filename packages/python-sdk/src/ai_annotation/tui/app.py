@@ -1,6 +1,7 @@
-"""aap tui 监控面板 (Textual, v0.15.2 MVP)。
+"""aap tui 监控面板 (Textual)。
 
-只读监控三视图: Projects / Datasets / Jobs; jobs 默认 3s 轮询。
+监控四视图: Projects / Datasets / Jobs / ML Backends; jobs 默认 3s 轮询。
+轻量动作 (v0.15.8): Projects tab `e` 发起导出, Jobs tab `c` 软取消 job, 均经二次确认弹窗。
 SDK Client 是同步 httpx —— 所有网络调用放 thread worker, 经 call_from_thread 回 UI 线程。
 TUI 是 Client 公开 API 的纯消费方, 不碰 _http / 内部实现。
 """
@@ -14,10 +15,12 @@ from typing import Any
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.containers import Vertical
+from textual.screen import ModalScreen
 from textual.widgets import DataTable, Static, TabbedContent, TabPane
 
 from ai_annotation.config import load_config
-from ai_annotation.models import Dataset, Job, Project
+from ai_annotation.models import Dataset, Job, MLBackend, Project
 
 # job 状态 → 着色 (pending 灰 / running 黄 / completed 绿 / failed 红 / cancelled 暗)
 _STATUS_STYLE = {
@@ -30,6 +33,12 @@ _STATUS_STYLE = {
 
 # running/pending → completed 翻转时的整行高亮样式
 _FLIP_STYLE = "bold black on green"
+
+# ML Backend state → 着色 (connected 绿 / error 红)
+_ML_STATE_STYLE = {"connected": "green", "error": "red"}
+
+# 仅 pending/running 的 job 可在 TUI 发起取消 (其余终态后端必拒, 不发请求)
+_CANCELLABLE_STATUS = frozenset({"pending", "running"})
 
 
 def _fmt_dt(dt: datetime | None) -> str:
@@ -60,6 +69,93 @@ def _format_fields(model: Any) -> str:
             s = s[:200] + "…"
         lines.append(f"{k}: {s}")
     return "\n".join(lines)
+
+
+def _ml_util(b: MLBackend) -> str:
+    gpu = b.health_meta.gpu_info if b.health_meta else None
+    pct = gpu.gpu_utilization_percent if gpu else None
+    return f"{pct}%" if pct is not None else "-"
+
+
+def _ml_mem(b: MLBackend) -> str:
+    gpu = b.health_meta.gpu_info if b.health_meta else None
+    if not gpu or gpu.memory_used_mb is None or gpu.memory_total_mb is None:
+        return "-"
+    return f"{gpu.memory_used_mb}/{gpu.memory_total_mb}MB"
+
+
+def _ml_backend_detail(b: MLBackend) -> str:
+    lines = [
+        f"id: {b.id}",
+        f"name: {b.name}",
+        f"url: {b.url}",
+        f"state: {b.state}",
+        f"last_checked_at: {_fmt_dt(b.last_checked_at)}",
+    ]
+    if b.error_message:
+        lines.append(f"error_message: {b.error_message}")
+    hm = b.health_meta
+    if hm:
+        if hm.model_version:
+            lines.append(f"model_version: {hm.model_version}")
+        gpu = hm.gpu_info
+        if gpu:
+            lines.append(
+                f"gpu: {gpu.device_name or '-'} · util {_ml_util(b)} · mem {_ml_mem(b)}"
+                f" · temp {gpu.gpu_temperature_celsius or '-'}℃ · power {gpu.gpu_power_watts or '-'}W"
+            )
+        if hm.host:
+            lines.append(
+                f"host: cpu {hm.host.container_cpu_percent or '-'}%"
+                f" · mem {hm.host.container_memory_percent or '-'}%"
+            )
+        if hm.cache:
+            lines.append(
+                f"cache: hit_rate {hm.cache.hit_rate or '-'}"
+                f" · size {hm.cache.size or '-'}/{hm.cache.capacity or '-'}"
+            )
+    return "\n".join(lines)
+
+
+class ConfirmModal(ModalScreen[bool]):
+    """二次确认弹窗: y 确认 / n·esc 取消; dismiss(bool) 回传给 push_screen 回调。"""
+
+    BINDINGS = [
+        Binding("y", "confirm", "确认"),
+        Binding("n", "cancel", "取消"),
+        Binding("escape", "cancel", "取消"),
+    ]
+    CSS = """
+    ConfirmModal {
+        align: center middle;
+    }
+    #confirm-box {
+        width: 60;
+        height: auto;
+        padding: 1 2;
+        border: thick $accent;
+        background: $panel;
+    }
+    #confirm-hint {
+        color: $text-muted;
+        margin-top: 1;
+    }
+    """
+
+    def __init__(self, prompt: str):
+        super().__init__()
+        self._prompt = prompt
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="confirm-box"):
+            yield Static(self._prompt, id="confirm-prompt")
+            yield Static("y 确认 · n / esc 取消", id="confirm-hint")
+
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
 
 
 def _job_detail(job: Job) -> str:
@@ -104,6 +200,8 @@ class AapTuiApp(App[None]):
     """
     BINDINGS = [
         Binding("r", "refresh", "刷新"),
+        Binding("e", "export", "导出"),
+        Binding("c", "cancel_job", "取消 job"),
         Binding("q", "quit", "退出"),
     ]
 
@@ -111,12 +209,17 @@ class AapTuiApp(App[None]):
         super().__init__()
         self._client = client
         self._poll_interval = poll_interval
-        self._hint = f"{base_url} · r=刷新 q=退出 · jobs 每 {poll_interval:g}s 轮询"
+        self._hint = (
+            f"{base_url} · r=刷新 e=导出 c=取消 q=退出 · jobs 每 {poll_interval:g}s 轮询"
+        )
         # row key (str(id)) → 模型, 供详情面板查找
         self._projects: dict[str, Project] = {}
         self._jobs: dict[str, Job] = {}
+        self._ml_backends: dict[str, MLBackend] = {}
         # 上一轮 job 状态, 用于检测 → completed 翻转
         self._job_prev: dict[str, str] = {}
+        # 各表当前高亮行 key (table id → key), 供动作键定位选中行
+        self._cursor: dict[str, str] = {}
 
     def compose(self) -> ComposeResult:
         with TabbedContent(id="tabs"):
@@ -128,7 +231,14 @@ class AapTuiApp(App[None]):
             with TabPane("Jobs", id="tab-jobs"):
                 yield DataTable(id="jobs-table", cursor_type="row")
                 yield Static(
-                    "选中行后按回车查看 error / result 详情", id="job-detail", classes="detail"
+                    "选中行后按回车查看 error / result 详情 · c 取消选中 job",
+                    id="job-detail",
+                    classes="detail",
+                )
+            with TabPane("ML Backends", id="tab-ml-backends"):
+                yield DataTable(id="ml-backends-table", cursor_type="row")
+                yield Static(
+                    "选中行后按回车查看 health_meta 详情", id="ml-detail", classes="detail"
                 )
         yield Static(self._hint, id="status-bar")
 
@@ -142,10 +252,16 @@ class AapTuiApp(App[None]):
         self.query_one("#jobs-table", DataTable).add_columns(
             "kind", "status", "progress", "created_at"
         )
+        self.query_one("#ml-backends-table", DataTable).add_columns(
+            "name", "项目", "state", "model_version", "GPU", "显存", "last_checked"
+        )
         self._refresh_projects()
         self._refresh_datasets()
         self._refresh_jobs()
+        self._refresh_ml_backends()
         self.set_interval(self._poll_interval, self._refresh_jobs)
+        # ML Backends N+1 聚合较重, 仅在该 tab 激活时按 5s 轮询 (见 _tick_ml_backends)
+        self.set_interval(5.0, self._tick_ml_backends)
 
     # ---- 刷新调度 (UI 线程发起, 网络调用在 thread worker) ----
 
@@ -156,6 +272,8 @@ class AapTuiApp(App[None]):
             self._refresh_projects()
         elif active == "tab-datasets":
             self._refresh_datasets()
+        elif active == "tab-ml-backends":
+            self._refresh_ml_backends()
         else:
             self._refresh_jobs()
 
@@ -167,6 +285,16 @@ class AapTuiApp(App[None]):
 
     def _refresh_jobs(self) -> None:
         self.run_worker(self._load_jobs, thread=True, exclusive=True, group="jobs")
+
+    def _refresh_ml_backends(self) -> None:
+        self.run_worker(
+            self._load_ml_backends, thread=True, exclusive=True, group="ml-backends"
+        )
+
+    def _tick_ml_backends(self) -> None:
+        """定时器: 仅当 ML Backends tab 激活时才发起 N+1 聚合刷新。"""
+        if self.query_one("#tabs", TabbedContent).active == "tab-ml-backends":
+            self._refresh_ml_backends()
 
     # ---- thread workers: 阻塞网络调用, 结果经 call_from_thread 回 UI ----
 
@@ -193,6 +321,19 @@ class AapTuiApp(App[None]):
             self.call_from_thread(self._set_status, f"jobs 加载失败: {exc}")
             return
         self.call_from_thread(self._render_jobs, page.items)
+
+    def _load_ml_backends(self) -> None:
+        """ml-backends 列表是 project-scoped: 遍历项目逐个聚合 (N+1, 单 worker 内串行)。"""
+        try:
+            projects = self._client.projects.list()
+            rows: list[tuple[Project, MLBackend]] = []
+            for p in projects:
+                for b in self._client.ml_backends.list(p.id):
+                    rows.append((p, b))
+        except Exception as exc:  # noqa: BLE001
+            self.call_from_thread(self._set_status, f"ml-backends 加载失败: {exc}")
+            return
+        self.call_from_thread(self._render_ml_backends, rows)
 
     # ---- 渲染 (UI 线程) ----
 
@@ -256,7 +397,100 @@ class AapTuiApp(App[None]):
         if flipped:
             self._set_status(f"{len(flipped)} 个 job 刚完成")
 
-    # ---- 行选中 → 详情面板 ----
+    def _render_ml_backends(self, rows: list[tuple[Project, MLBackend]]) -> None:
+        table = self.query_one("#ml-backends-table", DataTable)
+        self._ml_backends = {str(b.id): b for _, b in rows}
+        table.clear()
+        for project, b in rows:
+            state_style = _ML_STATE_STYLE.get(b.state, "")
+            model_version = (b.health_meta.model_version if b.health_meta else None) or "-"
+            table.add_row(
+                b.name,
+                project.display_id,
+                Text(b.state, style=state_style),
+                model_version,
+                _ml_util(b),
+                _ml_mem(b),
+                _fmt_dt(b.last_checked_at),
+                key=str(b.id),
+            )
+
+    # ---- 动作: 导出 (Projects) / 取消 (Jobs), 均经二次确认 ----
+
+    def action_export(self) -> None:
+        """e: 对 Projects tab 选中项目发起导出 (target=aap_json)。"""
+        if self.query_one("#tabs", TabbedContent).active != "tab-projects":
+            self._set_status("导出仅在 Projects tab 可用")
+            return
+        key = self._cursor.get("projects-table")
+        project = self._projects.get(key) if key else None
+        if project is None:
+            self._set_status("请先在 Projects 选中一个项目")
+            return
+
+        def _on_confirm(ok: bool | None) -> None:
+            if ok:
+                self.run_worker(
+                    lambda: self._do_export(project),
+                    thread=True,
+                    group="action",
+                )
+
+        self.push_screen(
+            ConfirmModal(f"导出项目 {project.display_id} {project.name} (target=aap_json)?"),
+            _on_confirm,
+        )
+
+    def action_cancel_job(self) -> None:
+        """c: 对 Jobs tab 选中且处于 pending/running 的 job 发起软取消。"""
+        if self.query_one("#tabs", TabbedContent).active != "tab-jobs":
+            self._set_status("取消仅在 Jobs tab 可用")
+            return
+        key = self._cursor.get("jobs-table")
+        job = self._jobs.get(key) if key else None
+        if job is None:
+            self._set_status("请先在 Jobs 选中一个任务")
+            return
+        if job.status not in _CANCELLABLE_STATUS:
+            self._set_status(f"job 处于 {job.status}, 不可取消 (仅 pending/running 可取消)")
+            return
+
+        def _on_confirm(ok: bool | None) -> None:
+            if ok:
+                self.run_worker(
+                    lambda: self._do_cancel(job), thread=True, group="action"
+                )
+
+        self.push_screen(
+            ConfirmModal(f"取消 job {job.kind} ({job.status})? 取消是协作式, 终态稍后落定。"),
+            _on_confirm,
+        )
+
+    def _do_export(self, project: Project) -> None:
+        try:
+            job_id = self._client.exports.create(project.id, targets=["aap_json"])
+        except Exception as exc:  # noqa: BLE001
+            self.call_from_thread(self._set_status, f"导出发起失败: {exc}")
+            return
+        self.call_from_thread(
+            self._set_status, f"导出 job 已创建 ({job_id}), 见 Jobs tab"
+        )
+        self.call_from_thread(self._refresh_jobs)
+
+    def _do_cancel(self, job: Job) -> None:
+        try:
+            self._client.jobs.cancel(job.id)
+        except Exception as exc:  # noqa: BLE001
+            self.call_from_thread(self._set_status, f"取消失败: {exc}")
+            return
+        self.call_from_thread(self._set_status, f"已请求取消 job {job.id}")
+        self.call_from_thread(self._refresh_jobs)
+
+    # ---- 行高亮跟踪 (供动作键定位) + 行选中 → 详情面板 ----
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        if event.control.id is not None and event.row_key.value is not None:
+            self._cursor[event.control.id] = event.row_key.value
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         key = event.row_key.value
@@ -270,6 +504,10 @@ class AapTuiApp(App[None]):
             job = self._jobs.get(key)
             if job is not None:
                 self.query_one("#job-detail", Static).update(_job_detail(job))
+        elif event.control.id == "ml-backends-table":
+            backend = self._ml_backends.get(key)
+            if backend is not None:
+                self.query_one("#ml-detail", Static).update(_ml_backend_detail(backend))
 
 
 def run() -> None:

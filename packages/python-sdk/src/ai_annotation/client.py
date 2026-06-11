@@ -23,6 +23,7 @@ from ai_annotation.models import (
     Job,
     JobPage,
     LinkResult,
+    MLBackend,
     Page,
     Project,
     Task,
@@ -293,6 +294,15 @@ class Jobs:
         resp = self._http.request("GET", f"/async-jobs/{job_id}")
         return Job.model_validate(resp.json())
 
+    def cancel(self, job_id: IdLike) -> None:
+        """请求软取消一个 job。
+
+        仅对可取消 kind 且 status ∈ {pending, running} 有效; 否则后端返回 400/409。
+        取消是协作式的 (worker 在下一条任务边界落 cancelled 终态), 返回不代表已终止,
+        终态需后续 get/list 反映。
+        """
+        self._http.request("POST", f"/async-jobs/{job_id}/cancel")
+
     def wait(
         self,
         job_id: IdLike,
@@ -357,6 +367,23 @@ class Exports:
         return self._http.stream_download(url, Path(dest_path))
 
 
+class MLBackends:
+    """项目挂载的 ML Backend 只读监控 (健康状态 + GPU/cache 指标)。"""
+
+    def __init__(self, http: HttpTransport):
+        self._http = http
+
+    def list(self, project_id: IdLike) -> list[MLBackend]:
+        resp = self._http.request("GET", f"/projects/{project_id}/ml-backends")
+        return [MLBackend.model_validate(x) for x in resp.json()]
+
+    def get(self, project_id: IdLike, backend_id: IdLike) -> MLBackend:
+        resp = self._http.request(
+            "GET", f"/projects/{project_id}/ml-backends/{backend_id}"
+        )
+        return MLBackend.model_validate(resp.json())
+
+
 class ApiKeys:
     def __init__(self, http: HttpTransport):
         self._http = http
@@ -402,6 +429,7 @@ class Client:
         self.predictions = Predictions(self._http)
         self.jobs = Jobs(self._http)
         self.exports = Exports(self._http, self.jobs)
+        self.ml_backends = MLBackends(self._http)
         self.api_keys = ApiKeys(self._http)
 
     def close(self) -> None:

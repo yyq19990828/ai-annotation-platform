@@ -86,12 +86,29 @@ aap predictions import 0199bb... preds.json --format aap_json
 
 ```text
 aap jobs wait <job-id> [--json]
+aap jobs cancel <job-id> [--json]
 ```
 
-轮询异步任务直到终态,rich 进度条跟随 `progress_pct`。job 以 failed / cancelled 结束时输出错误并以退出码 1 结束。
+- `wait`:轮询异步任务直到终态,rich 进度条跟随 `progress_pct`。job 以 failed / cancelled 结束时输出错误并以退出码 1 结束。
+- `cancel`:请求**软取消**一个 job(协作式——后端写取消标记,worker 在下一条任务边界落 `cancelled`)。仅可取消的 kind 且处于 pending/running 时有效,否则后端返回 400/409、命令以退出码 1 结束。终态由后续 `jobs wait` / `tui` 反映。
 
 ```bash
 aap jobs wait 0199cc...
+aap jobs cancel 0199cc...
+```
+
+### aap ml-backends
+
+```text
+aap ml-backends list --project <project-id> [--json]
+aap ml-backends get <backend-id> --project <project-id> [--json]
+```
+
+只读查看某项目挂载的 ML Backend 及健康状态。`list` 输出 rich 表格(名称 / 状态 / model_version / GPU 利用率 / url),`state` 为 `connected` / `error`;`get` 输出含 `health_meta`(GPU / cache / capabilities)的完整对象。
+
+```bash
+aap ml-backends list --project 0199bb...
+aap ml-backends get 0199dd... --project 0199bb... --json
 ```
 
 ### aap export
@@ -137,6 +154,9 @@ aap tui
 | `datasets link` | `{"link": LinkResult, "job": Job \| null}` |
 | `predictions import` | ImportResult 对象 |
 | `jobs wait` | 终态 Job 对象 |
+| `jobs cancel` | `{"job_id": "...", "cancel_requested": true}` |
+| `ml-backends list` | MLBackend 对象数组 |
+| `ml-backends get` | MLBackend 对象 |
 | `export project` | `{"job_id": "...", "status": "...", "out": "..."}` |
 
 对象字段与 [SDK 响应模型](./python-client#响应模型与前向兼容)一致(`model_dump(mode="json")` 序列化);服务端新增字段会原样透传,脚本应容忍未知字段。

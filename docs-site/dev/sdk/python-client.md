@@ -111,7 +111,10 @@ with Client() as client:
 |---|---|---|
 | `list` | `list(status: str \| Sequence[str] \| None = None, kind: str \| Sequence[str] \| None = None, project_id=None, limit: int = 50, offset: int = 0)` | `JobPage` |
 | `get` | `get(job_id)` | `Job` |
+| `cancel` | `cancel(job_id)` | `None` |
 | `wait` | `wait(job_id, timeout: float = 600.0, poll_interval: float = 2.0, on_progress: Callable[[Job], None] \| None = None)` | `Job` |
+
+`cancel` 请求**软取消**:协作式——后端写取消标记,worker 在下一条任务边界落 `cancelled` 终态,返回不代表已终止。仅可取消的 kind 且 `status ∈ {pending, running}` 时有效,否则抛 `APIStatusError`(400/409)。
 
 **`wait` 轮询语义**:每 `poll_interval` 秒 GET 一次 job,每轮先调用 `on_progress(job)`(若提供),然后判定:
 
@@ -129,6 +132,17 @@ with Client() as client:
 
 - `create`:发起异步导出(HTTP 202),返回 job_id;参数走 query string(与后端端点一致)。导出格式清单见[导出格式参考](/user-guide/reference/export-formats)。
 - `download`:从 `job.result["download_url"]` 流式下载导出包;传 job_id 时会先 GET 一次 job。job 无 `result.download_url`(如尚未完成)时抛 `AAPError`。
+
+### client.ml_backends
+
+只读监控某项目挂载的 ML Backend(健康状态 + GPU / cache 指标)。
+
+| 方法 | 签名 | 返回 |
+|---|---|---|
+| `list` | `list(project_id)` | `list[MLBackend]` |
+| `get` | `get(project_id, backend_id)` | `MLBackend` |
+
+`MLBackend.state` 为 `connected` / `error`;`health_meta`(`HealthMeta`)含 `gpu_info` / `host` / `cache` / `model_version`,由后端 `/health` 缓存,`last_checked_at` 反映最近探测时间。
 
 ### client.api_keys
 

@@ -412,6 +412,69 @@ def test_jobs_wait_failed(respx_mock):
     assert "Traceback" not in result.stderr
 
 
+def test_jobs_cancel(respx_mock):
+    route = respx_mock.post(f"{API}/async-jobs/{JOB_ID}/cancel").mock(
+        return_value=httpx.Response(200, json={"ok": True})
+    )
+    result = runner.invoke(app, ["jobs", "cancel", JOB_ID], env=ENV)
+    assert result.exit_code == 0
+    assert route.called
+    assert "已请求取消" in _plain(result.output)
+
+
+def test_jobs_cancel_conflict(respx_mock):
+    respx_mock.post(f"{API}/async-jobs/{JOB_ID}/cancel").mock(
+        return_value=httpx.Response(409, json={"detail": "cannot cancel terminal job"})
+    )
+    result = runner.invoke(app, ["jobs", "cancel", JOB_ID], env=ENV)
+    assert result.exit_code == 1
+    assert "Traceback" not in result.stderr
+
+
+# ---------- ml-backends ----------
+
+
+def _ml_backend() -> dict:
+    return {
+        "id": str(uuid4()),
+        "project_id": str(uuid4()),
+        "name": "sam2-backend",
+        "url": "http://gpu-host:9000",
+        "state": "connected",
+        "health_meta": {"model_version": "v1.2", "gpu_info": {"gpu_utilization_percent": 73}},
+        "error_message": None,
+        "last_checked_at": "2026-06-11T00:00:00Z",
+        "created_at": "2026-06-11T00:00:00Z",
+        "updated_at": "2026-06-11T00:00:00Z",
+    }
+
+
+def test_ml_backends_list_table(respx_mock):
+    pid = str(uuid4())
+    respx_mock.get(f"{API}/projects/{pid}/ml-backends").mock(
+        return_value=httpx.Response(200, json=[_ml_backend()])
+    )
+    result = runner.invoke(app, ["ml-backends", "list", "--project", pid], env=ENV)
+    assert result.exit_code == 0
+    plain = _plain(result.output)
+    for cell in ["名称", "状态", "model_version", "sam2-backend", "connected", "v1.2", "73%"]:
+        assert cell in plain
+
+
+def test_ml_backends_list_json(respx_mock):
+    pid = str(uuid4())
+    respx_mock.get(f"{API}/projects/{pid}/ml-backends").mock(
+        return_value=httpx.Response(200, json=[_ml_backend()])
+    )
+    result = runner.invoke(
+        app, ["ml-backends", "list", "--project", pid, "--json"], env=ENV
+    )
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert data[0]["state"] == "connected"
+    assert data[0]["health_meta"]["model_version"] == "v1.2"
+
+
 # ---------- export ----------
 
 

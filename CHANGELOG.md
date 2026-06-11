@@ -30,6 +30,18 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.8] - 2026-06-11
+
+SDK / CLI / TUI 功能补完:`aap tui` 从只读监控扩展出轻量动作与 ML Backend 健康监控。SDK 新增只读 `client.ml_backends` 资源与 `client.jobs.cancel()`,CLI 对齐补 `aap ml-backends` / `aap jobs cancel`。计划见 `docs/plans/2026-06-11-v0.15.8-sdk-tui-actions.md`。
+
+### Added
+
+- **SDK ML Backend 只读监控**:新增 `client.ml_backends.list(project_id)` / `get(project_id, backend_id)` 与 `MLBackend` / `HealthMeta` / `GpuInfo` / `HostInfo` / `CacheStats` 模型(顶层导出);暴露 backend `state`(connected/error)与 `/health` 缓存的 GPU / cache / model_version 指标。
+- **SDK 取消 job**:`client.jobs.cancel(job_id)` 软取消(协作式,worker 下一条边界落 cancelled);仅 pending/running 且可取消 kind 有效。
+- **CLI**:`aap ml-backends list --project <id>` / `get <id> --project <id>`(只读表格 + `--json`);`aap jobs cancel <id>`。
+- **TUI**:新增 **ML Backends** tab(遍历项目聚合,project-scoped;仅激活时 5s 轮询,state 着色 + health_meta 详情);Projects tab `e` 发起导出、Jobs tab `c` 软取消,均经二次确认弹窗(`y`/`n`·esc),终态 job 的取消键禁用。
+- **前端「API 密钥」自助入口**:个人设置页(`/settings`)新增「API 密钥」分区,所有登录用户可自助创建 / 吊销个人 key(此前入口仅在管理员可见的「用户与权限」页)。`ApiKeysModal` 主体抽成 `ApiKeysPanel` 由弹窗与设置页共用。
+
 ## [0.15.7] - 2026-06-11
 
 项目级工作台规范与性能档位。Project `rendering_config` 从图片渲染覆盖扩展到跨模态工作台行为;用户偏好新增通用性能档位,标准档保持旧硬编码性能参数。计划见 `docs/plans/2026-06-11-v0.15.7-project-level-settings-and-perf-tiers.md`。

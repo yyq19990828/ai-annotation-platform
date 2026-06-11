@@ -50,3 +50,18 @@ def wait(
             job = wait_job(client, job_id, json_output)
     if json_output:
         print_json(job.model_dump(mode="json"))
+
+
+@app.command("cancel")
+def cancel(
+    job_id: str = typer.Argument(..., help="async job ID"),
+    json_output: bool = typer.Option(False, "--json", help="输出裸 JSON"),
+) -> None:
+    """请求软取消一个异步任务 (协作式; 终态由后续轮询反映)。"""
+    with cli_errors(json_output):
+        with get_client(json_output) as client:
+            client.jobs.cancel(job_id)
+    if json_output:
+        print_json({"job_id": job_id, "cancel_requested": True})
+    else:
+        console.print(f"[green]已请求取消 job {job_id}[/green] (终态稍后由后端落定)")

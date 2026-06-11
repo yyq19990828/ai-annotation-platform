@@ -14,6 +14,7 @@ import { bugReportsApi, type BugReportResponse } from "@/api/bug-reports";
 import { notificationsApi, type NotificationPreferenceItem } from "@/api/notifications";
 import { useWorkbenchConfig } from "@/pages/Workbench/state/useWorkbenchConfig";
 import { SettingsFieldControl } from "@/pages/Workbench/components/SettingsFieldControl";
+import { ApiKeysPanel } from "@/components/users/ApiKeysPanel";
 import {
   WORKBENCH_SETTING_CATEGORY_LABELS,
   WORKBENCH_SETTING_FIELDS,
@@ -27,16 +28,17 @@ import {
 import type { UserRole } from "@/types";
 import styles from "./SettingsPage.module.css";
 
-type SectionKey = "profile" | "workbench" | "feedback" | "notifications" | "system";
+type SectionKey = "profile" | "workbench" | "apikeys" | "feedback" | "notifications" | "system";
 
 export function SettingsPage() {
   const { role } = usePermissions();
   const isAdmin = role === "super_admin";
   const [section, setSection] = useState<SectionKey>("profile");
 
-  const sections: { key: SectionKey; label: string; icon: "user" | "flag" | "bell" | "settings" | "image" }[] = [
+  const sections: { key: SectionKey; label: string; icon: "user" | "flag" | "bell" | "settings" | "image" | "key" }[] = [
     { key: "profile", label: "个人资料", icon: "user" },
     { key: "workbench", label: "标注偏好", icon: "image" },
+    { key: "apikeys", label: "API 密钥", icon: "key" },
     { key: "feedback", label: "我的反馈", icon: "flag" },
     { key: "notifications", label: "通知偏好", icon: "bell" },
     ...(isAdmin ? [{ key: "system" as SectionKey, label: "系统设置", icon: "settings" as const }] : []),
@@ -73,6 +75,7 @@ export function SettingsPage() {
         <div>
           {section === "profile" && <ProfileSection />}
           {section === "workbench" && <WorkbenchPreferencesSection />}
+          {section === "apikeys" && <ApiKeysSection />}
           {section === "feedback" && <MyFeedbackSection />}
           {section === "notifications" && <NotificationPreferencesSection />}
           {section === "system" && isAdmin && <SystemSection />}
@@ -608,6 +611,15 @@ function WorkbenchPreferencesSection() {
         ))}
         {saving && <div className={styles.savingText}>保存中…</div>}
       </div>
+    </Card>
+  );
+}
+
+function ApiKeysSection() {
+  return (
+    <Card>
+      <SectionHeader title="API 密钥" />
+      <ApiKeysPanel active />
     </Card>
   );
 }

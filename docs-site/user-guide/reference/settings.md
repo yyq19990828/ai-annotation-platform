@@ -14,6 +14,7 @@ last_reviewed: 2026-06-11
 |---|---|---|
 | 个人资料 | 所有人 | 姓名、邮箱、密码、注销账号 |
 | 标注偏好 | 所有人 | 工作台默认值（图像显示、视频播放、点云视角 / 上色、性能采样率） |
+| API 密钥 | 所有人 | 自助创建 / 吊销个人 API key（程序化访问 / SDK / CLI） |
 | 我的反馈 | 所有人 | 自己提交的 BUG 工单与状态 |
 | 通知偏好 | 所有人 | 单独静音 in-app / 邮件通知 type |
 | **系统设置** | **仅 super_admin** | SMTP、开放注册、邀请有效期、前端基础地址等全局配置 |
@@ -56,6 +57,20 @@ last_reviewed: 2026-06-11
 | 点云 | `showGrid` / `showAxisGizmo` / `cameraDamping` | 地面网格、坐标轴和 OrbitControls 阻尼 |
 
 修改即时生效，不需要重登。被项目级工作台规范锁定的字段显示「项目锁定」并禁用。
+
+## API 密钥
+
+自助管理**个人** API key，用于程序化访问平台 API（CI / 脚本 / 官方 [Python SDK / CLI / TUI](../../dev/sdk/quickstart)）。所有登录用户都可在此创建，无需管理员协助（超管也可在「用户与权限」页顶部的「API 密钥」按钮进入同一界面）。
+
+- **新建密钥**：填名称 + 勾选权限范围 scope（`annotations:read` / `annotations:write` / `predictions:read` / `datasets:read`，默认 `annotations:read`）。创建后弹出**一次性明文** key，请立即复制保存——离开本页后无法再次查看，只剩前缀。
+- **列表**：显示名称 / 前缀 / 权限 / 最后使用 / 创建时间；已吊销的标灰。
+- **吊销**：不可恢复，吊销后该 key 立即失效。
+
+::: warning scope 暂不强制
+当前版本（v0.9.3 phase 1）仅**记录** scope，未在路由层强制拦截——key 实际拥有该用户的完整权限。后续版本启用细粒度拦截。
+:::
+
+拿到 key 后接入 SDK：`aap login --url <平台地址> --api-key ak_...`，详见 [SDK 快速上手](../../dev/sdk/quickstart)。
 
 ## 我的反馈
 
