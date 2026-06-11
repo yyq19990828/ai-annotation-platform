@@ -102,7 +102,11 @@ export function ProjectSettingsPage() {
   }
 
   const isVideoProject = project.data_type === "video";
-  const canOpenWorkbench = project.type_key === "image-det" || isVideoProject;
+  const isPointCloudProject =
+    project.data_type === "lidar" ||
+    project.data_type === "point_cloud" ||
+    project.type_key === "lidar";
+  const canOpenWorkbench = project.type_key === "image-det" || isVideoProject || isPointCloudProject;
   const visibleSections = SECTIONS.filter((s) => {
     if (s.key === "owner") return role === "super_admin";
     if (s.key === "danger") return isOwner;

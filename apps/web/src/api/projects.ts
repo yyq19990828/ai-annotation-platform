@@ -220,12 +220,6 @@ export const projectsApi = {
   removeMember: (id: string, memberId: string) =>
     apiClient.delete<void>(`/projects/${id}/members/${memberId}`),
 
-  // v0.6.7 二修 B-10：清理无源 task（v0.6.0~v0.6.6 期间 link 留下的孤儿）
-  previewOrphanTasks: (id: string) =>
-    apiClient.get<{ orphan_tasks: number; orphan_annotations: number }>(`/projects/${id}/orphan-tasks/preview`),
-  cleanupOrphanTasks: (id: string) =>
-    apiClient.post<{ deleted_tasks: number; deleted_annotations: number }>(`/projects/${id}/orphan-tasks/cleanup`),
-
   // v0.10.13 · E1 · 标注指引图片资源
   guideAssets: {
     uploadInit: (projectId: string, payload: { filename: string; content_type: string; size: number }) =>
