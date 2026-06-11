@@ -8,6 +8,7 @@ import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoMani
 import { useQuery } from "@tanstack/react-query";
 import { videoApi } from "@/api/videos";
 import type { AnnotationFeedback } from "@/api/feedbacks";
+import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { PendingDrawing, VideoTool } from "../state/useWorkbenchState";
 import { useElementSize, useViewportTransform } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
@@ -29,6 +30,7 @@ import { buildEncodedVideoChunks } from "./videoChunkDemux";
 import { useVideoFramePreview } from "./useVideoFramePreview";
 import { useVideoTrackActions } from "./useVideoTrackActions";
 import { useCanvasContextMenu } from "./useCanvasContextMenu";
+import { resolveWorkbenchPerformanceTier } from "../state/performanceTier";
 import {
   emptyVideoJumpHistory,
   jumpVideoHistory,
@@ -142,6 +144,7 @@ interface VideoStageProps {
   defaultPlaybackRate?: VideoPlaybackRate;
   /** v0.15.5 · 时间轴聚焦时 Shift+←/→ 的大步进策略。 */
   largeFrameStep?: VideoLargeFrameStep;
+  performanceTier?: WorkbenchCommonPreferences["performanceTier"];
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onFrameIndexChange?: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: VideoStageGeom) => void;
@@ -211,6 +214,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   videoSampling = null,
   defaultPlaybackRate = DEFAULT_VIDEO_PLAYBACK_RATE,
   largeFrameStep = 10,
+  performanceTier = "standard",
   onSelect,
   onFrameIndexChange,
   onCreate,
@@ -259,6 +263,10 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const [jumpHistory, setJumpHistory] = useState<VideoJumpHistory>(() => emptyVideoJumpHistory());
   const contextMenu = useCanvasContextMenu();
   const [contextMenuTargetId, setContextMenuTargetId] = useState<string | null>(null);
+  const performanceConfig = useMemo(
+    () => resolveWorkbenchPerformanceTier(performanceTier),
+    [performanceTier],
+  );
   const onSelectRef = useRef(onSelect);
   const lastResetTaskIdRef = useRef<string | null>(null);
   const fittedTaskIdRef = useRef<string | null>(null);
@@ -465,6 +473,9 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     enabled: Boolean(manifest),
     width: 320,
     format: "webp",
+    maxCacheItems: performanceConfig.previewCache,
+    scrubPrefetchHalfWindow: performanceConfig.prefetchHalfWindow,
+    anchorPrefetchCount: performanceConfig.anchorPrefetch,
   });
   const {
     activeBitmap,
@@ -474,11 +485,15 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     diagnostics: bitmapCacheDiagnostics,
   } = useVideoBitmapCache({
     taskId: manifest?.task_id,
+    maxItems: performanceConfig.videoBitmapCache,
   });
   // v0.10.29 · Wave3-H · 实验性 WebCodecs 精确帧解码 (默认关闭, 由 ?webcodecs=1 /
   // localStorage video.experimental.webcodecs 开启)。关闭 / 不支持时 active=false,
   // decoderBitmap 恒为 null, 本路径零行为变化, 继续走 <video> 位图缓存。
-  const chunkDecoder = useVideoChunkDecoder({ taskId: manifest?.task_id });
+  const chunkDecoder = useVideoChunkDecoder({
+    taskId: manifest?.task_id,
+    maxItems: performanceConfig.videoDecoderCache,
+  });
   const { activeBitmap: decoderBitmap, diagnostics: chunkDecoderDiagnostics } = chunkDecoder;
 
   // v0.10.46 · WebCodecs demux 集成: frameIndex → chunk → samples → 字节切割 → 解码。

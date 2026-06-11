@@ -32,7 +32,7 @@ function presetLabel(value: RangePresetValue, step: number): string {
   return step > 1 ? `${n} 格 (≈${n * step} 帧)` : `${n} 帧`;
 }
 
-const MODELS: Array<{ value: string; label: string; note?: string }> = [
+export const TRACKER_MODEL_OPTIONS: Array<{ value: string; label: string; note?: string }> = [
   { value: "mock_bbox", label: "mock_bbox", note: "测试用 (不依赖 ML backend)" },
   { value: "sam2_video", label: "sam2_video", note: "需项目绑定 ML backend" },
   { value: "sam3_video", label: "sam3_video", note: "需项目绑定 ML backend" },
@@ -54,6 +54,27 @@ const DEFAULT_TRACKER_MEMORY: TrackerDialogMemory = {
   samVariant: "",
 };
 
+export function resolveTrackerDefaultModel({
+  projectDefaultModel,
+  rememberedModel,
+  preferNonMockModel,
+  options = TRACKER_MODEL_OPTIONS,
+}: {
+  projectDefaultModel?: string | null;
+  rememberedModel?: string | null;
+  preferNonMockModel: boolean;
+  options?: Array<{ value: string }>;
+}): string {
+  const values = new Set(options.map((model) => model.value));
+  if (projectDefaultModel && values.has(projectDefaultModel)) return projectDefaultModel;
+  if (rememberedModel && values.has(rememberedModel)) return rememberedModel;
+  if (preferNonMockModel) {
+    const realModel = options.find((model) => model.value !== "mock_bbox");
+    if (realModel) return realModel.value;
+  }
+  return values.has("mock_bbox") ? "mock_bbox" : options[0]?.value ?? "mock_bbox";
+}
+
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
@@ -68,7 +89,7 @@ function hasOption<T extends string>(
 function validateTrackerMemory(value: unknown): TrackerDialogMemory | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Partial<TrackerDialogMemory>;
-  const modelValues = MODELS.map((m) => m.value);
+  const modelValues = TRACKER_MODEL_OPTIONS.map((m) => m.value);
   const variantValues = SAM_VARIANTS.map((v) => v.value);
   return {
     rangePreset: hasOption(RANGE_PRESETS, raw.rangePreset)
@@ -99,6 +120,8 @@ interface VideoTrackerPropagateDialogProps {
   userId?: string | null;
   /** 采样网格步长 (源帧). >1 时数字预设以网格格子为单位; 缺省 1 = 现状 (按源帧). */
   samplingStep?: number;
+  projectDefaultModel?: string | null;
+  preferNonMockModel?: boolean;
   submitting: boolean;
   onCancel: () => void;
   onSubmit: (payload: VideoTrackerPropagatePayload) => Promise<void>;
@@ -111,6 +134,8 @@ export function VideoTrackerPropagateDialog({
   nextKeyframeAfter,
   userId,
   samplingStep = 1,
+  projectDefaultModel = null,
+  preferNonMockModel = false,
   submitting,
   onCancel,
   onSubmit,
@@ -129,11 +154,15 @@ export function VideoTrackerPropagateDialog({
         DEFAULT_TRACKER_MEMORY;
       setDirection(remembered.direction);
       setRangePreset(remembered.rangePreset);
-      setModelKey(remembered.modelKey);
+      setModelKey(resolveTrackerDefaultModel({
+        projectDefaultModel,
+        rememberedModel: remembered.modelKey,
+        preferNonMockModel,
+      }));
       setSamVariant(remembered.samVariant);
       setError(null);
     }
-  }, [open, userId]);
+  }, [open, preferNonMockModel, projectDefaultModel, userId]);
 
   const grid = Math.max(1, Math.round(samplingStep));
 
@@ -261,14 +290,14 @@ export function VideoTrackerPropagateDialog({
             onChange={(e) => setModelKey(e.target.value)}
             className={styles.select}
           >
-            {MODELS.map((m) => (
+            {TRACKER_MODEL_OPTIONS.map((m) => (
               <option key={m.value} value={m.value}>
                 {m.label}
               </option>
             ))}
           </select>
           <span className={styles.modelNote}>
-            {MODELS.find((m) => m.value === modelKey)?.note}
+            {TRACKER_MODEL_OPTIONS.find((m) => m.value === modelKey)?.note}
           </span>
         </label>
 

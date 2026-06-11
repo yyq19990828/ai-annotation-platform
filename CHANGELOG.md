@@ -30,6 +30,21 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.7] - 2026-06-11
+
+项目级工作台规范与性能档位。Project `rendering_config` 从图片渲染覆盖扩展到跨模态工作台行为;用户偏好新增通用性能档位,标准档保持旧硬编码性能参数。计划见 `docs/plans/2026-06-11-v0.15.7-project-level-settings-and-perf-tiers.md`。
+
+### Added
+
+- **项目级工作台规范**:项目设置「渲染配置」改为「工作台规范」,新增 3D 新框默认尺寸、关键帧复制覆盖策略和 AI 传播默认模型;项目值优先于个人记忆 / 个人偏好。
+- **性能档位**:`workbench.common.performanceTier` 新增轻量 / 标准 / 激进三档,控制视频帧预览缓存、`ImageBitmap` / WebCodecs 缓存、预取窗口和点云抽稀上限;标准档等于旧默认值。
+
+### Changed
+
+- 3D 点云点击放置新框时优先使用项目 `box3dDefaultSize`,未配置时回退 `4.0 / 1.8 / 1.6` 米。
+- 视频关键帧复制对话框在项目配置 `propagateOverwrite` 时锁定覆盖选项,且不把项目锁定值写回用户粘性记忆。
+- AI 传播默认模型解析顺序调整为:项目默认模型(在可用列表内) → 用户上次选择 → 项目已绑定真实 ML backend 时首个非 mock 模型 → `mock_bbox`。
+
 ## [0.15.6] - 2026-06-11
 
 点云工作台设置补完。`workbench.pointcloud.*` 填充点大小、点掩膜模式、网格/坐标轴显隐和相机阻尼;`workbench.common.crossFrameOverlayK` 收编邻帧叠加 K。计划见 `docs/plans/2026-06-11-v0.15.6-pointcloud-workbench-settings.md`。

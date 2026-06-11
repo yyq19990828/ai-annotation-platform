@@ -23,6 +23,9 @@ const DEFAULTS: Required<{
   cssImageFilter: "",
   controlPointsSize: 6,
   snapToGrid: false,
+  box3dDefaultSize: [4.0, 1.8, 1.6],
+  propagateOverwrite: false,
+  trackerDefaultModel: "sam2_video",
 };
 
 export interface RenderingConfigEditorProps {
@@ -39,6 +42,9 @@ export function RenderingConfigEditor({
   const [filterInput, setFilterInput] = useState<string>(
     value.cssImageFilter ?? DEFAULTS.cssImageFilter,
   );
+  const [trackerInput, setTrackerInput] = useState<string>(
+    value.trackerDefaultModel ?? DEFAULTS.trackerDefaultModel,
+  );
 
   const isOverridden = (key: keyof ProjectRenderingConfig) =>
     value[key] !== null && value[key] !== undefined;
@@ -51,11 +57,13 @@ export function RenderingConfigEditor({
     if (on) {
       commit({ ...value, [key]: DEFAULTS[key] });
       if (key === "cssImageFilter") setFilterInput(DEFAULTS.cssImageFilter);
+      if (key === "trackerDefaultModel") setTrackerInput(DEFAULTS.trackerDefaultModel);
     } else {
       const next = { ...value };
       next[key] = null;
       commit(next);
       if (key === "cssImageFilter") setFilterInput(DEFAULTS.cssImageFilter);
+      if (key === "trackerDefaultModel") setTrackerInput(DEFAULTS.trackerDefaultModel);
     }
   };
 
@@ -144,7 +152,7 @@ export function RenderingConfigEditor({
       </div>
 
       {/* snapToGrid */}
-      <div className={cn(styles.row, styles.rowLast)}>
+      <div className={styles.row}>
         <span className={styles.label}>网格吸附</span>
         <label className={styles.overrideToggle}>
           <input
@@ -165,6 +173,96 @@ export function RenderingConfigEditor({
           </label>
         ) : (
           <span className={styles.followsHint}>跟随用户偏好</span>
+        )}
+      </div>
+
+      {/* box3dDefaultSize */}
+      <div className={styles.row}>
+        <span className={styles.label}>3D 新框默认尺寸（长 / 宽 / 高，米）</span>
+        <label className={styles.overrideToggle}>
+          <input
+            type="checkbox"
+            checked={isOverridden("box3dDefaultSize")}
+            onChange={(e) => toggleOverride("box3dDefaultSize", e.target.checked)}
+          />
+          <span>覆盖默认值</span>
+        </label>
+        {isOverridden("box3dDefaultSize") ? (
+          <div className={styles.inlineInputs}>
+            {(["长", "宽", "高"] as const).map((label, idx) => (
+              <label key={label} className={styles.compactNumber}>
+                <span>{label}</span>
+                <input
+                  type="number"
+                  min={0.1}
+                  step={0.1}
+                  value={(value.box3dDefaultSize ?? DEFAULTS.box3dDefaultSize)[idx]}
+                  onChange={(e) => {
+                    const next = [...(value.box3dDefaultSize ?? DEFAULTS.box3dDefaultSize)] as [number, number, number];
+                    next[idx] = Math.max(0.1, Number(e.target.value) || DEFAULTS.box3dDefaultSize[idx]);
+                    commit({ ...value, box3dDefaultSize: next });
+                  }}
+                  className={styles.numberInput}
+                />
+              </label>
+            ))}
+          </div>
+        ) : (
+          <span className={styles.followsHint}>使用平台默认 4.0 / 1.8 / 1.6</span>
+        )}
+      </div>
+
+      {/* propagateOverwrite */}
+      <div className={styles.row}>
+        <span className={styles.label}>关键帧复制覆盖策略</span>
+        <label className={styles.overrideToggle}>
+          <input
+            type="checkbox"
+            checked={isOverridden("propagateOverwrite")}
+            onChange={(e) => toggleOverride("propagateOverwrite", e.target.checked)}
+          />
+          <span>项目锁定</span>
+        </label>
+        {isOverridden("propagateOverwrite") ? (
+          <label className={styles.inlineChoice}>
+            <input
+              type="checkbox"
+              checked={value.propagateOverwrite ?? false}
+              onChange={(e) => commit({ ...value, propagateOverwrite: e.target.checked })}
+            />
+            {value.propagateOverwrite ? "强制覆盖目标关键帧" : "强制保留目标关键帧"}
+          </label>
+        ) : (
+          <span className={styles.followsHint}>由用户在复制对话框中决定</span>
+        )}
+      </div>
+
+      {/* trackerDefaultModel */}
+      <div className={cn(styles.row, styles.rowLast)}>
+        <span className={styles.label}>AI 传播默认模型</span>
+        <label className={styles.overrideToggle}>
+          <input
+            type="checkbox"
+            checked={isOverridden("trackerDefaultModel")}
+            onChange={(e) => toggleOverride("trackerDefaultModel", e.target.checked)}
+          />
+          <span>覆盖默认值</span>
+        </label>
+        {isOverridden("trackerDefaultModel") ? (
+          <input
+            value={trackerInput}
+            onChange={(e) => setTrackerInput(e.target.value.slice(0, 128))}
+            onBlur={() => {
+              const next = trackerInput.trim();
+              if (next !== value.trackerDefaultModel) {
+                commit({ ...value, trackerDefaultModel: next || DEFAULTS.trackerDefaultModel });
+              }
+            }}
+            placeholder="sam2_video"
+            className={styles.input}
+          />
+        ) : (
+          <span className={styles.followsHint}>跟随项目后端与用户记忆</span>
         )}
       </div>
     </fieldset>

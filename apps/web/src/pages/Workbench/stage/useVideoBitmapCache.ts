@@ -96,6 +96,19 @@ export function useVideoBitmapCache({
     bumpVersion();
   }, [bumpVersion, maxItems, supported]);
 
+  useEffect(() => {
+    const cache = cacheRef.current;
+    while (cache.size > maxItems) {
+      const oldestKey = cache.keys().next().value;
+      if (!oldestKey) break;
+      const oldest = cache.get(oldestKey);
+      if (oldest) closeBitmap(oldest.bitmap);
+      cache.delete(oldestKey);
+    }
+    setDiagnostics((cur) => ({ ...cur, supported, cacheSize: cache.size }));
+    bumpVersion();
+  }, [bumpVersion, maxItems, supported]);
+
   const capture = useCallback(async (video: HTMLVideoElement | null, frameIndex: number) => {
     if (!taskId || !supported || !video) return null;
     if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return null;

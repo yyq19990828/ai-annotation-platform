@@ -113,6 +113,39 @@ describe("VideoKeyframesPropagateDialog", () => {
     expect(screen.getByLabelText("覆盖目标帧已有关键帧")).toBeChecked();
   });
 
+  it("项目锁定 overwrite 时按锁定值提交且不写入个人记忆", () => {
+    const key = videoDialogMemoryStorageKey("u1", "kfPropagate");
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({ direction: "forward", count: 10, overwrite: true }),
+    );
+    const onSubmit = vi.fn();
+    render(
+      <VideoKeyframesPropagateDialog
+        open
+        frameIndex={20}
+        userId="u1"
+        overwriteOverride={false}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    const checkbox = screen.getByLabelText(/覆盖目标帧已有关键帧/) as HTMLInputElement;
+    expect(checkbox).toBeDisabled();
+    expect(checkbox).not.toBeChecked();
+    fireEvent.click(screen.getByText("复制"));
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      direction: "forward",
+      count: 10,
+      overwrite: false,
+    });
+    expect(window.localStorage.getItem(key)).toBe(
+      JSON.stringify({ direction: "forward", count: 10, overwrite: true }),
+    );
+  });
+
   it("取消不写记忆,脏记忆回退默认值", () => {
     const key = videoDialogMemoryStorageKey("u1", "kfPropagate");
     window.localStorage.setItem(key, JSON.stringify({ count: -1, direction: "sideways" }));

@@ -99,6 +99,7 @@ interface VideoTrackPanelProps {
   onSetTrackColor?: (trackId: string, colorToken: string | null) => void;
   // v0.10.35 · §A: 采样网格步长, 透传给 propagate 对话框 (>1 时 count 以网格格子为单位)。
   samplingStep?: number;
+  propagateOverwrite?: boolean | null;
 }
 
 function frameRange(frames: number[]): string {
@@ -231,6 +232,7 @@ export function VideoTrackPanel({
   trackColorOverrides,
   onSetTrackColor,
   samplingStep,
+  propagateOverwrite,
 }: VideoTrackPanelProps) {
   const batchCount = selectedTrackIds.size;
   const batchSelectionDisabled = batchCount <= 1;
@@ -973,6 +975,7 @@ export function VideoTrackPanel({
         frameIndex={frameIndex}
         userId={userId}
         samplingStep={samplingStep}
+        overwriteOverride={propagateOverwrite}
         onCancel={() => setPropagateOpen(false)}
         onSubmit={(payload: VideoKeyframesPropagateSubmit) => {
           setPropagateOpen(false);

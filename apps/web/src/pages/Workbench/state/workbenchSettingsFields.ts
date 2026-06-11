@@ -118,6 +118,20 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     },
   },
   {
+    key: "common.performanceTier",
+    category: "common",
+    label: "性能档位",
+    description: "控制视频缓存、预取窗口与点云抽稀上限",
+    control: {
+      type: "select",
+      options: [
+        { value: "light", label: "轻量" },
+        { value: "standard", label: "标准" },
+        { value: "aggressive", label: "激进" },
+      ],
+    },
+  },
+  {
     key: "image.smoothImage",
     category: "image",
     label: "图像平滑",

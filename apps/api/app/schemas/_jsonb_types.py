@@ -341,8 +341,23 @@ class ProjectRenderingConfig(BaseModel):
     cssImageFilter: str | None = Field(default=None, max_length=255)
     controlPointsSize: int | None = Field(default=None, ge=2, le=20)
     snapToGrid: bool | None = None
+    box3dDefaultSize: tuple[float, float, float] | None = None
+    propagateOverwrite: bool | None = None
+    trackerDefaultModel: str | None = Field(default=None, max_length=128)
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("box3dDefaultSize")
+    @classmethod
+    def _check_box3d_default_size(
+        cls,
+        v: tuple[float, float, float] | None,
+    ) -> tuple[float, float, float] | None:
+        if v is None:
+            return v
+        if any(size <= 0 for size in v):
+            raise ValueError("box3dDefaultSize entries must be positive")
+        return v
 
 
 # ── Geometry discriminated union ────────────────────────────────────

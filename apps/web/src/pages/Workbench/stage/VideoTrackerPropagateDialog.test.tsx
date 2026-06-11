@@ -1,7 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { VideoTrackerPropagateDialog } from "./VideoTrackerPropagateDialog";
+import {
+  resolveTrackerDefaultModel,
+  VideoTrackerPropagateDialog,
+} from "./VideoTrackerPropagateDialog";
 import { videoDialogMemoryStorageKey } from "../state/videoDialogMemory";
 
 const baseProps = {
@@ -13,6 +16,29 @@ const baseProps = {
 };
 
 describe("VideoTrackerPropagateDialog", () => {
+  it("按 项目默认 > 用户记忆 > 首个真实模型 > mock 解析默认模型", () => {
+    expect(resolveTrackerDefaultModel({
+      projectDefaultModel: "sam3_video",
+      rememberedModel: "sam2_video",
+      preferNonMockModel: true,
+    })).toBe("sam3_video");
+    expect(resolveTrackerDefaultModel({
+      projectDefaultModel: "missing",
+      rememberedModel: "sam2_video",
+      preferNonMockModel: true,
+    })).toBe("sam2_video");
+    expect(resolveTrackerDefaultModel({
+      projectDefaultModel: null,
+      rememberedModel: null,
+      preferNonMockModel: true,
+    })).toBe("sam2_video");
+    expect(resolveTrackerDefaultModel({
+      projectDefaultModel: null,
+      rememberedModel: null,
+      preferNonMockModel: false,
+    })).toBe("mock_bbox");
+  });
+
   it("closed 时不渲染", () => {
     render(
       <VideoTrackerPropagateDialog {...baseProps} open={false} frameIndex={5} onSubmit={vi.fn()} />,
@@ -127,6 +153,30 @@ describe("VideoTrackerPropagateDialog", () => {
     expect((screen.getAllByRole("combobox")[1] as HTMLSelectElement).value).toBe("sam2_video");
     expect((screen.getAllByRole("combobox")[2] as HTMLSelectElement).value).toBe("large");
   });
+
+  it("项目默认模型优先于用户记忆作为打开时初值", async () => {
+    window.localStorage.setItem(
+      videoDialogMemoryStorageKey("u1", "trackerPropagate"),
+      JSON.stringify({
+        rangePreset: "30",
+        direction: "forward",
+        modelKey: "mock_bbox",
+        samVariant: "",
+      }),
+    );
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={80}
+        userId="u1"
+        projectDefaultModel="sam3_video"
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect((screen.getAllByRole("combobox")[1] as HTMLSelectElement).value).toBe("sam3_video");
+  });
+
 
   it("取消不写记忆,且非法模型 / 变体安全回退", () => {
     const key = videoDialogMemoryStorageKey("u1", "trackerPropagate");

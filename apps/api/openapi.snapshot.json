@@ -11393,6 +11393,30 @@
       "ProjectRenderingConfig": {
         "additionalProperties": false,
         "properties": {
+          "box3dDefaultSize": {
+            "anyOf": [
+              {
+                "maxItems": 3,
+                "minItems": 3,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Box3Ddefaultsize"
+          },
           "controlPointsSize": {
             "anyOf": [
               {
@@ -11418,6 +11442,17 @@
             ],
             "title": "Cssimagefilter"
           },
+          "propagateOverwrite": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Propagateoverwrite"
+          },
           "smoothImage": {
             "anyOf": [
               {
@@ -11439,6 +11474,18 @@
               }
             ],
             "title": "Snaptogrid"
+          },
+          "trackerDefaultModel": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trackerdefaultmodel"
           }
         },
         "title": "ProjectRenderingConfig",
@@ -18619,6 +18666,16 @@
             "minimum": 0.0,
             "title": "Longtasksamplerate",
             "type": "number"
+          },
+          "performanceTier": {
+            "default": "standard",
+            "enum": [
+              "light",
+              "standard",
+              "aggressive"
+            ],
+            "title": "Performancetier",
+            "type": "string"
           },
           "recentClassesLimit": {
             "default": 5,

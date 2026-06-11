@@ -51,15 +51,18 @@ interface UseVideoFramePreviewArgs {
   enabled?: boolean;
   width?: number;
   format?: VideoFramePreviewFormat;
+  maxCacheItems?: number;
+  scrubPrefetchHalfWindow?: number;
+  anchorPrefetchCount?: number;
 }
 
-const MAX_CACHE_ITEMS = 120;
+const DEFAULT_MAX_CACHE_ITEMS = 120;
 const MAX_PENDING_RETRIES = 10;
 const RETRY_DELAY_MS = 800;
 const RETRY_INITIAL_DELAY_MS = 200;
-const SCRUB_PREFETCH_HALF_WINDOW = 3;
+const DEFAULT_SCRUB_PREFETCH_HALF_WINDOW = 3;
 const SCRUB_PREFETCH_MIN_STEP = 2;
-const ANCHOR_PREFETCH_COUNT = 8;
+const DEFAULT_ANCHOR_PREFETCH_COUNT = 8;
 const EMPTY_DIAGNOSTICS: VideoFramePreviewDiagnostics = {
   cacheSize: 0,
   inFlight: 0,
@@ -124,6 +127,9 @@ export function useVideoFramePreview({
   enabled = true,
   width = 320,
   format = "webp",
+  maxCacheItems = DEFAULT_MAX_CACHE_ITEMS,
+  scrubPrefetchHalfWindow = DEFAULT_SCRUB_PREFETCH_HALF_WINDOW,
+  anchorPrefetchCount = DEFAULT_ANCHOR_PREFETCH_COUNT,
 }: UseVideoFramePreviewArgs) {
   const [preview, setPreview] = useState<VideoFramePreview | null>(null);
   const [diagnostics, setDiagnostics] = useState<VideoFramePreviewDiagnostics>(EMPTY_DIAGNOSTICS);
@@ -160,13 +166,23 @@ export function useVideoFramePreview({
     const cache = cacheRef.current;
     cache.delete(key);
     cache.set(key, value);
-    while (cache.size > MAX_CACHE_ITEMS) {
+    while (cache.size > maxCacheItems) {
       const oldest = cache.keys().next().value;
       if (!oldest) break;
       cache.delete(oldest);
     }
     patchDiagnostics({ cacheSize: cache.size });
-  }, [patchDiagnostics]);
+  }, [maxCacheItems, patchDiagnostics]);
+
+  useEffect(() => {
+    const cache = cacheRef.current;
+    while (cache.size > maxCacheItems) {
+      const oldest = cache.keys().next().value;
+      if (!oldest) break;
+      cache.delete(oldest);
+    }
+    patchDiagnostics({ cacheSize: cache.size });
+  }, [maxCacheItems, patchDiagnostics]);
 
   const fetchFrame = useCallback((
     frameIndex: number,
@@ -286,7 +302,7 @@ export function useVideoFramePreview({
     if (last !== null && Math.abs(anchor - last) < SCRUB_PREFETCH_MIN_STEP) return;
     lastPrefetchAnchorRef.current = anchor;
     const frames: number[] = [];
-    for (let offset = -SCRUB_PREFETCH_HALF_WINDOW; offset <= SCRUB_PREFETCH_HALF_WINDOW; offset++) {
+    for (let offset = -scrubPrefetchHalfWindow; offset <= scrubPrefetchHalfWindow; offset++) {
       if (offset === 0) continue;
       const f = anchor + offset;
       if (f < 0 || f > maxFrame) continue;
@@ -317,22 +333,23 @@ export function useVideoFramePreview({
           patchDiagnostics({ unsupported: true });
         }
       });
-  }, [enabled, format, maxFrame, patchDiagnostics, remember, taskId, width]);
+  }, [enabled, format, maxFrame, patchDiagnostics, remember, scrubPrefetchHalfWindow, taskId, width]);
 
   const seedAnchorsIfNeeded = useCallback(() => {
     if (!taskId || maxFrame <= 0) return;
     if (anchorPrefetchedTaskRef.current === taskId) return;
     anchorPrefetchedTaskRef.current = taskId;
     const anchors: number[] = [];
-    const span = Math.max(1, ANCHOR_PREFETCH_COUNT - 1);
-    for (let i = 0; i < ANCHOR_PREFETCH_COUNT; i++) {
+    const count = Math.max(1, Math.round(anchorPrefetchCount));
+    const span = Math.max(1, count - 1);
+    for (let i = 0; i < count; i++) {
       anchors.push(Math.round((i / span) * maxFrame));
     }
     // First scrub on a fresh task: seed evenly-spaced anchor frames so distant
     // jumps later (e.g. clicking a bookmark) land on a warm cache instead of a
     // cold worker.
     prefetch(anchors);
-  }, [maxFrame, prefetch, taskId]);
+  }, [anchorPrefetchCount, maxFrame, prefetch, taskId]);
 
   const flushScheduledFetch = useCallback(() => {
     rafHandleRef.current = null;

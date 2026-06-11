@@ -19,7 +19,7 @@ import { estimateGroundZ } from "./geometry/ground";
 import { isPointInPolygon, type ScreenPoint } from "./geometry/pointInPolygon";
 
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
-const DECIMATE_THRESHOLD = 500_000;
+const DEFAULT_DECIMATE_THRESHOLD = 500_000;
 
 // 选中框高亮色(线框)。未选中用类别色。
 const SELECTED_EDGE_COLOR = 0xffd54a;
@@ -120,6 +120,7 @@ export class PointCloudScene {
   private readonly grid: THREE.GridHelper;
   private axisGizmoVisible = true;
   private pointSize = 0.06;
+  private decimateThreshold = DEFAULT_DECIMATE_THRESHOLD;
   private orbitMode: PointCloudViewState["mode"] = "orbit";
   private onViewChange: ((view: PointCloudViewState) => void) | null = null;
 
@@ -129,8 +130,9 @@ export class PointCloudScene {
   // 拖拽结束会触发一次 click,不应改变选中 —— 用此标记吞掉那次 click。
   private suppressClickAfterDrag = false;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, options: { decimateThreshold?: number } = {}) {
     this.container = container;
+    this.setDecimateThreshold(options.decimateThreshold ?? DEFAULT_DECIMATE_THRESHOLD);
     const { clientWidth: w, clientHeight: h } = container;
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -176,6 +178,14 @@ export class PointCloudScene {
     this.scene.add(this.transform.getHelper());
 
     this.animate();
+  }
+
+  setDecimateThreshold(value: number): void {
+    if (!Number.isFinite(value) || value <= 0) {
+      this.decimateThreshold = DEFAULT_DECIMATE_THRESHOLD;
+      return;
+    }
+    this.decimateThreshold = Math.max(1, Math.round(value));
   }
 
   private animate = () => {
@@ -319,8 +329,8 @@ export class PointCloudScene {
     const srcPos = srcGeom.getAttribute("position") as THREE.BufferAttribute;
     const total = srcPos.count;
 
-    const decimated = total > DECIMATE_THRESHOLD;
-    const stride = decimated ? Math.ceil(total / DECIMATE_THRESHOLD) : 1;
+    const decimated = total > this.decimateThreshold;
+    const stride = decimated ? Math.ceil(total / this.decimateThreshold) : 1;
     const rendered = decimated ? Math.floor(total / stride) : total;
     this.pointIndexStride = stride;
     this.sourcePointCount = total;

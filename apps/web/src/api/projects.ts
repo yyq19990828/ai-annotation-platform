@@ -49,6 +49,9 @@ export interface ProjectRenderingConfig {
   cssImageFilter?: string | null;
   controlPointsSize?: number | null;
   snapToGrid?: boolean | null;
+  box3dDefaultSize?: [number, number, number] | null;
+  propagateOverwrite?: boolean | null;
+  trackerDefaultModel?: string | null;
 }
 
 /** v0.6.4 起 ProjectOut 已强类型，ProjectResponse 仅作为旧导出名保留。 */

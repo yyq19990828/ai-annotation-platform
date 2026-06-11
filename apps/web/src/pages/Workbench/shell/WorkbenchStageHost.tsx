@@ -15,6 +15,7 @@ import type {
   WorkbenchLayoutPreferences,
   WorkbenchPointcloudPreferences,
 } from "@/api/auth";
+import type { ProjectRenderingConfig } from "@/api/projects";
 import type { AiBox } from "../state/transforms";
 import type { PendingDrawing, SamPolarity, SamSubTool, ThreeDTool, Tool, VideoTool } from "../state/useWorkbenchState";
 import type { WorkbenchConfigPatch, WorkbenchLayoutPatch } from "../state/useWorkbenchConfig";
@@ -84,6 +85,7 @@ interface WorkbenchStageHostCommonProps {
   workbenchConfigLoaded: boolean;
   onWorkbenchConfigChange: (patch: WorkbenchConfigPatch) => void;
   onWorkbenchConfigUpdate: (patch: WorkbenchConfigPatch) => Promise<void>;
+  projectRenderingConfig?: ProjectRenderingConfig | null;
 }
 
 interface WorkbenchStageHostVideoProps {
@@ -256,6 +258,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       workbenchConfigLoaded,
       onWorkbenchConfigChange,
       onWorkbenchConfigUpdate,
+      projectRenderingConfig: stageProjectRenderingConfig,
     } = common;
     const videoProps = stageKind === "video" ? requireStageGroup(video, "video", stageKind) : undefined;
     const imageProps = stageKind === "image" ? requireStageGroup(image, "image", stageKind) : undefined;
@@ -381,6 +384,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
               workbenchConfigLoaded={workbenchConfigLoaded}
               onWorkbenchConfigChange={onWorkbenchConfigChange}
               onWorkbenchConfigUpdate={onWorkbenchConfigUpdate}
+              box3dDefaultSize={stageProjectRenderingConfig?.box3dDefaultSize ?? null}
             />
           </Suspense>
         ) : stageKind === "video" ? (
@@ -405,6 +409,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             pendingDrawing={pendingDrawing}
             chapters={videoChapters}
             videoSampling={videoSampling}
+            performanceTier={workbenchCommon.performanceTier}
             onSelect={onSelectBox}
             onFrameIndexChange={onVideoFrameIndexChange}
             onCreate={onVideoCreate}

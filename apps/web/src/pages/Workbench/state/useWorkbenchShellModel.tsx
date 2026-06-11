@@ -2085,6 +2085,7 @@ export function useWorkbenchShellModel({
         workbenchConfigLoaded: s.workbenchConfigLoaded,
         onWorkbenchConfigChange: s.setWorkbenchFields,
         onWorkbenchConfigUpdate: s.updateWorkbenchConfig,
+        projectRenderingConfig: currentProject?.rendering_config ?? null,
         overlays: (
           <>
             {s.tool === "mask" && (
@@ -2320,6 +2321,7 @@ export function useWorkbenchShellModel({
             onUpdateKeyframeAttributes={handleUpdateKeyframeAttributes}
             onPropagateKeyframe={handlePropagateKeyframe}
             samplingStep={samplingStep}
+            propagateOverwrite={currentProject?.rendering_config?.propagateOverwrite ?? null}
           />
           <VideoChapterSidebar
             datasetItemId={videoDatasetItemId}
@@ -2469,6 +2471,8 @@ export function useWorkbenchShellModel({
     nextKeyframeAfter: propagateDialogNextKeyframe,
     userId: meUserId ?? null,
     samplingStep,
+    projectDefaultModel: currentProject?.rendering_config?.trackerDefaultModel ?? null,
+    preferNonMockModel: Boolean(currentProject?.ml_backend_id),
     submitting: Boolean(propagateDialog?.submitting),
     onCancel: () => setPropagateDialog(null),
     onSubmit: handlePropagateSubmit,

@@ -93,6 +93,7 @@ import {
   isCrossFrameOverlayK,
   isPointMaskSelectMode,
 } from "./pointcloudPreferenceStorage";
+import { resolveWorkbenchPerformanceTier } from "../../state/performanceTier";
 import styles from "./ThreeDWorkbench.module.css";
 
 interface ThreeDWorkbenchProps {
@@ -129,6 +130,7 @@ interface ThreeDWorkbenchProps {
   workbenchConfigLoaded: boolean;
   onWorkbenchConfigChange: (patch: WorkbenchConfigPatch) => void;
   onWorkbenchConfigUpdate: (patch: WorkbenchConfigPatch) => Promise<void>;
+  box3dDefaultSize?: [number, number, number] | null;
 }
 
 // v0.13.3 · 新框默认尺寸(米,长宽高;约一辆轿车),放置后用面板/gizmo 精修。
@@ -163,6 +165,17 @@ function resolveTriViewFloatRect(
     w,
     h,
   };
+}
+
+function resolveBox3dDefaultSize(value?: [number, number, number] | null): [number, number, number] {
+  if (
+    value &&
+    value.length === 3 &&
+    value.every((n) => Number.isFinite(n) && n > 0)
+  ) {
+    return [value[0], value[1], value[2]];
+  }
+  return DEFAULT_BOX_SIZE;
 }
 // 点云项目的 3D 框工具单位(类别 / 属性绑定都挂在它下面)。
 const LIDAR_TOOL_UNIT = LIDAR_BOX_3D_TOOL_UNIT;
@@ -304,6 +317,7 @@ export function ThreeDWorkbench({
   workbenchConfigLoaded,
   onWorkbenchConfigChange,
   onWorkbenchConfigUpdate,
+  box3dDefaultSize,
 }: ThreeDWorkbenchProps) {
   const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
   const pushToast = useToastStore((st) => st.push);
@@ -334,6 +348,14 @@ export function ThreeDWorkbench({
   const viewportRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<PointCloudScene | null>(null);
+  const performanceConfig = useMemo(
+    () => resolveWorkbenchPerformanceTier(workbenchCommon.performanceTier),
+    [workbenchCommon.performanceTier],
+  );
+  const defaultBoxSize = useMemo(
+    () => resolveBox3dDefaultSize(box3dDefaultSize),
+    [box3dDefaultSize],
+  );
   const persistCameraViewRef = useRef(workbenchPointcloud.persistCameraView);
   persistCameraViewRef.current = workbenchPointcloud.persistCameraView;
   const pointcloudCameraRef = useRef(pointcloudCamera);
@@ -747,7 +769,9 @@ export function ThreeDWorkbench({
   // 实例化 / 销毁 Scene(随容器挂载一次)。
   useEffect(() => {
     if (!viewportRef.current) return;
-    const scene = new PointCloudScene(viewportRef.current);
+    const scene = new PointCloudScene(viewportRef.current, {
+      decimateThreshold: performanceConfig.pcdDecimate,
+    });
     sceneRef.current = scene;
     scene.setPointSize(pointSize);
     scene.setGridVisible(workbenchPointcloud.showGrid);
@@ -807,6 +831,10 @@ export function ThreeDWorkbench({
   useEffect(() => {
     sceneRef.current?.setCameraDamping(workbenchPointcloud.cameraDamping);
   }, [workbenchPointcloud.cameraDamping]);
+
+  useEffect(() => {
+    sceneRef.current?.setDecimateThreshold(performanceConfig.pcdDecimate);
+  }, [performanceConfig.pcdDecimate]);
 
   // manifest 到位后加载点云。
   // v0.13.11 · 传入 axisConvention,scene 内部加载完 PCD 立即把 positions 旋到 ISO 系。
@@ -1198,7 +1226,7 @@ export function ThreeDWorkbench({
       if (!scene || !boxPlaceClass) return;
       const ground = scene.placeOnGround(clientX, clientY);
       if (!ground) return;
-      const [l, w, h] = DEFAULT_BOX_SIZE;
+      const [l, w, h] = defaultBoxSize;
       const geometry = boxGeometryFromPsr(
         {
           center: [ground[0], ground[1], ground[2] + h / 2],
@@ -1224,7 +1252,7 @@ export function ThreeDWorkbench({
       );
       onSetThreeDTool("select"); // 单次放置后回到选择工具
     },
-    [boxPlaceClass, axisConvention, createAnnotation, history, onSelectBox, onSetThreeDTool],
+    [axisConvention, boxPlaceClass, createAnnotation, defaultBoxSize, history, onSelectBox, onSetThreeDTool],
   );
 
   // v0.13.9 · 框选画框 (frustum 选点): 在 box 工具下按住拖出屏幕矩形 → 选中投影落在矩形内的真实

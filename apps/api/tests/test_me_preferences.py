@@ -253,7 +253,7 @@ async def test_patch_pointcloud_subtree_fields(httpx_client, annotator):
                     "pointMaskSelectMode": "lasso",
                     "showGrid": False,
                 },
-                "common": {"crossFrameOverlayK": 5},
+                "common": {"crossFrameOverlayK": 5, "performanceTier": "aggressive"},
             }
         },
         headers=_bearer(token),
@@ -273,6 +273,7 @@ async def test_patch_pointcloud_subtree_fields(httpx_client, annotator):
     assert wb["pointcloud"]["showAxisGizmo"] is True
     assert wb["pointcloud"]["cameraDamping"] == 0.1
     assert wb["common"]["crossFrameOverlayK"] == 5
+    assert wb["common"]["performanceTier"] == "aggressive"
 
 
 async def test_patch_pointcloud_camera_layout_snapshot(httpx_client, annotator):
@@ -305,6 +306,7 @@ async def test_patch_pointcloud_range_and_enum_violations_422(
         {"pointcloud": {"cameraDamping": 0.01}},  # < 0.05
         {"pointcloud": {"pointMaskSelectMode": "circle"}},  # 非法枚举
         {"common": {"crossFrameOverlayK": 2}},  # 档位只允许 0/1/3/5/7
+        {"common": {"performanceTier": "max"}},  # 只允许 light/standard/aggressive
     ):
         resp = await httpx_client.patch(
             PREFS_URL,

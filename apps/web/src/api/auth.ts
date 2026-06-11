@@ -19,6 +19,7 @@ export interface WorkbenchCommonPreferences {
   recentClassesLimit: number;
   /** v0.15.6 · 邻帧叠加 K(0=关,档位 0/1/3/5/7)。当前 3D 点云消费,放 common 供视频侧后续复用。 */
   crossFrameOverlayK: number;
+  performanceTier: "light" | "standard" | "aggressive";
 }
 
 /** v0.15.3 · 图像工作台渲染偏好(原顶层平铺字段归位)。 */
@@ -131,6 +132,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     confirmDelete: "never",
     recentClassesLimit: 5,
     crossFrameOverlayK: 0,
+    performanceTier: "standard",
   },
   image: {
     smoothImage: true,
