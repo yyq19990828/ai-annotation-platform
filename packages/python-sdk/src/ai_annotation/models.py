@@ -1,0 +1,162 @@
+"""公开 pydantic 模型。
+
+只声明 SDK 用户关心的稳定字段; extra="allow" 容忍服务端新增字段 (前向兼容),
+未声明字段仍可通过属性访问。
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any, Generic, TypeVar
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
+
+T = TypeVar("T")
+
+
+class _AAPModel(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
+class Page(_AAPModel, Generic[T]):
+    """limit/offset 分页响应 (datasets 等)。"""
+
+    items: list[T]
+    total: int
+    limit: int
+    offset: int
+
+
+class Project(_AAPModel):
+    id: UUID
+    display_id: str
+    name: str
+    type_key: str
+    data_type: str = "image"
+    status: str
+    created_at: datetime | None = None
+
+
+class Dataset(_AAPModel):
+    id: UUID
+    display_id: str
+    name: str
+    description: str = ""
+    data_type: str = "image"
+    is_temporal: bool = False
+    file_count: int = 0
+    total_size: int = 0
+    created_at: datetime | None = None
+
+
+class UploadedItem(_AAPModel):
+    """upload_files 单文件三步流的结果 (file_name 由 SDK 补充)。"""
+
+    item_id: UUID
+    file_name: str
+    status: str = "ok"
+    linked_tasks: Any = None
+
+
+class ZipUploadResult(_AAPModel):
+    added: int = 0
+    deduped: int = 0
+    skipped: int = 0
+    errors: list[Any] = Field(default_factory=list)
+    total_in_zip: int = 0
+    linked_tasks: Any = None
+    scene_inference_notes: list[str] = Field(default_factory=list)
+
+
+class LinkResult(_AAPModel):
+    """status="linking" 时建 task 走异步, 用 async_job_id 配合 jobs.wait。"""
+
+    status: str
+    dataset_id: UUID
+    project_id: UUID
+    async_job_id: UUID | None = None
+    created_tasks: int | None = None
+
+
+class Task(_AAPModel):
+    id: UUID
+    project_id: UUID
+    display_id: str
+    file_name: str
+    file_type: str
+    status: str
+    file_url: str | None = None
+    assignee_id: UUID | None = None
+    batch_id: UUID | None = None
+    sequence_order: int | None = None
+    created_at: datetime | None = None
+
+
+class TaskPage(_AAPModel):
+    """tasks.list 响应; cursor 翻页时 total 为 None (复用首页值)。"""
+
+    items: list[Task]
+    total: int | None = None
+    limit: int = 50
+    offset: int = 0
+    next_cursor: str | None = None
+
+
+class Annotation(_AAPModel):
+    id: UUID
+    task_id: UUID
+    source: str
+    annotation_type: str
+    tool_unit_id: str = "bbox"
+    class_name: str
+    geometry: dict[str, Any]
+    confidence: float | None = None
+    group_id: int | None = None
+    is_active: bool = True
+    version: int = 1
+    created_at: datetime | None = None
+
+
+class ImportResult(_AAPModel):
+    """predictions.import_file 响应 (后端 AAPImportResult)。"""
+
+    imported: int = 0
+    skipped: int = 0
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+    dry_run: bool = False
+
+
+class Job(_AAPModel):
+    id: UUID
+    kind: str
+    status: str
+    project_id: UUID | None = None
+    user_id: UUID | None = None
+    progress_pct: int = 0
+    payload: dict[str, Any] = Field(default_factory=dict)
+    result: dict[str, Any] = Field(default_factory=dict)
+    error_message: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class JobPage(_AAPModel):
+    items: list[Job]
+    total: int
+
+
+class ApiKey(_AAPModel):
+    id: UUID
+    name: str
+    key_prefix: str
+    scopes: list[str] = Field(default_factory=list)
+    last_used_at: datetime | None = None
+    revoked_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+class ApiKeyCreated(ApiKey):
+    """创建响应附带一次性 plaintext, 之后无法再次查看。"""
+
+    plaintext: str
