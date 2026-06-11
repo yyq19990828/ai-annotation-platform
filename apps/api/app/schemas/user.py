@@ -75,9 +75,16 @@ class WorkbenchLayoutPreferences(BaseModel):
     )
 
 
-class WorkbenchPreferences(BaseModel):
-    """v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。
-    v0.13.10 · 增加 layout 子树承载跨设备布局偏好。"""
+class WorkbenchCommonPreferences(BaseModel):
+    """v0.15.3 · 跨模态通用偏好（性能观测等）。"""
+
+    model_config = {"extra": "forbid"}
+
+    longTaskSampleRate: float = Field(default=0.05, ge=0.0, le=1.0)
+
+
+class WorkbenchImagePreferences(BaseModel):
+    """v0.15.3 · 图像模态偏好（2D 画布渲染 / 顶点手柄）。"""
 
     model_config = {"extra": "forbid"}
 
@@ -85,7 +92,39 @@ class WorkbenchPreferences(BaseModel):
     cssImageFilter: str = Field(default="", max_length=255)
     controlPointsSize: int = Field(default=6, ge=2, le=20)
     snapToGrid: bool = False
-    longTaskSampleRate: float = Field(default=0.05, ge=0.0, le=1.0)
+
+
+class WorkbenchVideoPreferences(BaseModel):
+    """v0.15.3 · 视频模态偏好。本版为空占位，后续版本填充。"""
+
+    model_config = {"extra": "forbid"}
+
+
+class WorkbenchPointcloudPreferences(BaseModel):
+    """v0.15.3 · 点云模态偏好。本版为空占位，后续版本填充。"""
+
+    model_config = {"extra": "forbid"}
+
+
+class WorkbenchPreferences(BaseModel):
+    """v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。
+    v0.13.10 · 增加 layout 子树承载跨设备布局偏好。
+    v0.15.3 · 平铺字段拆为 common/image/video/pointcloud 四子树；layout 保持顶层。"""
+
+    model_config = {"extra": "forbid"}
+
+    common: WorkbenchCommonPreferences = Field(
+        default_factory=WorkbenchCommonPreferences
+    )
+    image: WorkbenchImagePreferences = Field(
+        default_factory=WorkbenchImagePreferences
+    )
+    video: WorkbenchVideoPreferences = Field(
+        default_factory=WorkbenchVideoPreferences
+    )
+    pointcloud: WorkbenchPointcloudPreferences = Field(
+        default_factory=WorkbenchPointcloudPreferences
+    )
     layout: WorkbenchLayoutPreferences = Field(
         default_factory=WorkbenchLayoutPreferences
     )
