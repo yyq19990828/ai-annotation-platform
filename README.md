@@ -228,6 +228,7 @@ API 变更后同步跑 `pnpm openapi:export` 和 `pnpm codegen`；环境变量�
 | 本地开发 | [docs-site/dev/tutorials/local-dev.md](./docs-site/dev/tutorials/local-dev.md) |
 | 测试策略 | [docs-site/dev/testing.md](./docs-site/dev/testing.md) |
 | API 文档 | [docs-site/api/](./docs-site/api/) |
+| Python SDK / CLI | [docs-site/dev/sdk/quickstart.md](./docs-site/dev/sdk/quickstart.md) |
 | ML Backend 协议 | [docs-site/dev/reference/ml-backend-protocol.md](./docs-site/dev/reference/ml-backend-protocol.md) |
 | 视频帧服务 | [docs-site/dev/reference/video-frame-service.md](./docs-site/dev/reference/video-frame-service.md) |
 | 导出格式 | [docs-site/user-guide/reference/export-formats.md](./docs-site/user-guide/reference/export-formats.md) |
