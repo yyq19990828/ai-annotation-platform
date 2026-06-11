@@ -103,6 +103,42 @@ describe("useMLBackendStats", () => {
     expect(result.current.snapshots["b1"]?.pool?.loaded_variants).toEqual([]);
   });
 
+  it("有 physical_key 时按物理 backend 维护 snapshots 和 history", () => {
+    const { result } = renderHook(() => useMLBackendStats());
+    act(() => {
+      MockWebSocket.instances[0].triggerOpen();
+      MockWebSocket.instances[0].triggerMessage({
+        backends: [
+          {
+            physical_key: "http://ml.local:9000",
+            url_host: "ml.local:9000",
+            backend_id: "binding-a",
+            backend_name: "sam-a",
+            state: "connected",
+            gpu_info: { gpu_utilization_percent: 42, memory_used_mb: 2, memory_total_mb: 4 },
+            bindings: [
+              {
+                backend_id: "binding-a",
+                backend_name: "sam-a",
+                project_display_id: "P-A",
+              },
+              {
+                backend_id: "binding-b",
+                backend_name: "sam-b",
+                project_display_id: "P-B",
+              },
+            ],
+          },
+        ],
+      });
+    });
+
+    const snap = result.current.snapshots["http://ml.local:9000"];
+    expect(snap?.bindings?.map((b) => b.backend_name)).toEqual(["sam-a", "sam-b"]);
+    expect(result.current.snapshots["binding-a"]).toBeUndefined();
+    expect(result.current.history["http://ml.local:9000"]?.gpuUtil).toEqual([42]);
+  });
+
   it("ping 帧不触发 state 变化", () => {
     const { result } = renderHook(() => useMLBackendStats());
     act(() => {

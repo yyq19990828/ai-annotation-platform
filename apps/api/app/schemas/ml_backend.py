@@ -183,14 +183,30 @@ class MLBackendOut(BaseModel):
 
 
 # v0.9.11 PerfHud · WS /ws/ml-backend-stats 推送的单次快照
+class MLBackendStatsBinding(BaseModel):
+    backend_id: UUID
+    backend_name: str
+    project_id: UUID | None = None
+    project_display_id: str | None = None
+    project_name: str | None = None
+
+
 class MLBackendStatsSnapshot(BaseModel):
+    physical_key: str | None = None
+    url_host: str | None = None
     backend_id: UUID
     backend_name: str | None = None
+    bindings: list[MLBackendStatsBinding] = Field(default_factory=list)
     state: str
     gpu_info: GpuInfo | None = None
     host: HostInfo | None = None
     cache: CacheStats | None = None
     model_version: str | None = None
+    loaded: bool | None = None
+    idle_unload_seconds: float | None = None
+    last_request_age_seconds: float | None = None
+    pool: dict | None = None
+    video_pool: dict | None = None
     timestamp: datetime
 
 

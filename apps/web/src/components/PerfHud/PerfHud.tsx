@@ -1,5 +1,6 @@
 import { useMemo, useState, type CSSProperties } from "react";
 import { clsx } from "clsx";
+import { Icon } from "@/components/ui/Icon";
 import { Sparkline } from "@/components/ui/Sparkline";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useAuthStore } from "@/stores/authStore";
@@ -17,10 +18,10 @@ import styles from "./PerfHud.module.css";
  */
 
 function colorFor(pct: number | null | undefined): string {
-  if (pct == null) return "var(--color-fg-muted, #888)";
-  if (pct >= 90) return "var(--color-danger, #e54d4d)";
-  if (pct >= 70) return "var(--color-warning, #e6a700)";
-  return "var(--color-success, #2da44e)";
+  if (pct == null) return "var(--color-fg-muted)";
+  if (pct >= 90) return "var(--color-danger)";
+  if (pct >= 70) return "var(--color-warning)";
+  return "var(--color-success)";
 }
 
 function MetricBar({
@@ -84,6 +85,21 @@ function getLoadLabel(snap: BackendSnapshot): string | null {
   return null;
 }
 
+function getBackendLabel(snap: BackendSnapshot): string {
+  const bindings = snap.bindings ?? [];
+  const physicalLabel = snap.url_host ?? snap.physical_key ?? snap.backend_id.slice(0, 6);
+  if (bindings.length > 1) {
+    return `${physicalLabel} · ${bindings.length} projects`;
+  }
+  const alias = bindings[0]?.backend_name ?? snap.backend_name;
+  return alias ? `${physicalLabel} · ${alias}` : physicalLabel;
+}
+
+function formatBinding(binding: NonNullable<BackendSnapshot["bindings"]>[number]): string {
+  const project = binding.project_display_id ?? binding.project_name;
+  return project ? `${project}: ${binding.backend_name}` : binding.backend_name;
+}
+
 function BackendPanel({
   snap,
   hist,
@@ -104,6 +120,7 @@ function BackendPanel({
   const hitRate = snap.cache?.hit_rate;
   const loadLabel = getLoadLabel(snap);
   const idleAge = formatIdleAge(snap.last_request_age_seconds);
+  const bindings = snap.bindings ?? [];
 
   return (
     <div className={styles.backendPanel}>
@@ -130,14 +147,16 @@ function BackendPanel({
       />
       {expanded && hist ? (
         <div className={styles.sparkGrid}>
-          <SparkRow label="GPU" values={hist.gpuUtil} color="var(--color-success, #2da44e)" />
-          <SparkRow label="VRAM" values={hist.vramPercent} color="var(--color-accent, #5e92ff)" />
-          <SparkRow label="CPU" values={hist.cpu} color="var(--color-warning, #e6a700)" />
-          <SparkRow label="RAM" values={hist.mem} color="var(--color-danger, #e54d4d)" />
+          <SparkRow label="GPU" values={hist.gpuUtil} color="var(--color-success)" />
+          <SparkRow label="VRAM" values={hist.vramPercent} color="var(--color-accent)" />
+          <SparkRow label="CPU" values={hist.cpu} color="var(--color-warning)" />
+          <SparkRow label="RAM" values={hist.mem} color="var(--color-danger)" />
         </div>
       ) : null}
       <div className={styles.backendMeta}>
+        {bindings.length > 0 ? <span>{bindings.map(formatBinding).join(" · ")}</span> : null}
         {snap.gpu_info?.device_name ? <span>{snap.gpu_info.device_name}</span> : null}
+        {snap.url_host ? <span>· {snap.url_host}</span> : null}
         {loadLabel ? <span>· {loadLabel}</span> : null}
         {idleAge ? <span>· {idleAge}</span> : null}
         {temp != null ? <span>· {temp}°C</span> : null}
@@ -207,9 +226,10 @@ export function PerfHud() {
   const { snapshots, history, connected, status } = useMLBackendStats();
   const backendIds = useMemo(() => Object.keys(snapshots), [snapshots]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const activeId = selectedId ?? backendIds[0] ?? null;
+  const activeId = selectedId && snapshots[selectedId] ? selectedId : backendIds[0] ?? null;
   const activeSnap = activeId ? snapshots[activeId] : null;
   const activeHist = activeId ? history[activeId] : undefined;
+  const activeLabel = activeSnap ? getBackendLabel(activeSnap) : undefined;
 
   if (!visible || !isAdmin) return null;
 
@@ -231,10 +251,11 @@ export function PerfHud() {
             value={activeId ?? ""}
             onChange={(e) => setSelectedId(e.target.value)}
             className={styles.backendSelect}
+            title={activeLabel}
           >
             {backendIds.map((id) => (
               <option key={id} value={id}>
-                {snapshots[id].backend_name ?? id.slice(0, 6)}
+                {getBackendLabel(snapshots[id])}
               </option>
             ))}
           </select>
@@ -246,7 +267,7 @@ export function PerfHud() {
           title={expanded ? "收起" : "展开 60s 趋势"}
           className={styles.iconButton}
         >
-          {expanded ? "▴" : "▾"}
+          <Icon name={expanded ? "chevUp" : "chevDown"} size={14} />
         </button>
         <button
           type="button"
@@ -254,7 +275,7 @@ export function PerfHud() {
           aria-label="关闭"
           className={styles.closeButton}
         >
-          ×
+          <Icon name="x" size={14} />
         </button>
       </div>
       <div className={styles.body}>

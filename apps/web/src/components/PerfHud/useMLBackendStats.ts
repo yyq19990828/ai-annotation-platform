@@ -4,8 +4,17 @@ import { buildWsUrl } from "@/lib/wsHost";
 import { usePerfHudStore } from "./usePerfHudStore";
 
 export interface BackendSnapshot {
+  physical_key?: string | null;
+  url_host?: string | null;
   backend_id: string;
   backend_name?: string | null;
+  bindings?: Array<{
+    backend_id: string;
+    backend_name: string;
+    project_id?: string | null;
+    project_display_id?: string | null;
+    project_name?: string | null;
+  }> | null;
   state: string;
   gpu_info?: {
     device_name?: string | null;
@@ -67,6 +76,10 @@ function pushRing(arr: number[], v: number): number[] {
   return next;
 }
 
+function snapshotKey(snap: BackendSnapshot): string {
+  return snap.physical_key || snap.backend_id;
+}
+
 /**
  * v0.9.11 PerfHud · 订阅 /ws/ml-backend-stats, 维护 60s ring buffer.
  * 仅在 PerfHud 浮窗 visible 时建连; 关闭即断 (节省后端 1s pull).
@@ -108,13 +121,14 @@ export function useMLBackendStats() {
 
         const nextSnap: Record<string, BackendSnapshot> = {};
         for (const b of msg.backends as BackendSnapshot[]) {
-          nextSnap[b.backend_id] = b;
+          nextSnap[snapshotKey(b)] = b;
         }
         setSnapshots(nextSnap);
         setHistory((prev) => {
           const next: Record<string, BackendHistory> = { ...prev };
           for (const b of msg.backends as BackendSnapshot[]) {
-            const cur = next[b.backend_id] ?? {
+            const key = snapshotKey(b);
+            const cur = next[key] ?? {
               gpuUtil: [],
               vramPercent: [],
               cpu: [],
@@ -124,7 +138,7 @@ export function useMLBackendStats() {
               b.gpu_info?.memory_used_mb != null && b.gpu_info?.memory_total_mb
                 ? (b.gpu_info.memory_used_mb / b.gpu_info.memory_total_mb) * 100
                 : 0;
-            next[b.backend_id] = {
+            next[key] = {
               gpuUtil: pushRing(cur.gpuUtil, b.gpu_info?.gpu_utilization_percent ?? 0),
               vramPercent: pushRing(cur.vramPercent, vramPct),
               cpu: pushRing(cur.cpu, b.host?.container_cpu_percent ?? 0),
