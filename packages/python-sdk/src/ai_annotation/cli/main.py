@@ -1,4 +1,4 @@
-"""aap CLI 骨架 (v0.15.2)。完整命令集 (login / projects / datasets / ...) 由后续版本补齐。
+"""aap CLI 入口: 命令组装 (v0.15.2)。
 
 需要 cli extras: pip install 'ai-annotation-sdk[cli]'。
 """
@@ -8,8 +8,15 @@ from __future__ import annotations
 import typer
 
 from ai_annotation import __version__
+from ai_annotation.cli import datasets, export, jobs, login, predictions, projects
 
 app = typer.Typer(name="aap", help="AI 标注平台命令行工具", no_args_is_help=True)
+app.command(name="login")(login.login)
+app.add_typer(projects.app, name="projects")
+app.add_typer(datasets.app, name="datasets")
+app.add_typer(predictions.app, name="predictions")
+app.add_typer(jobs.app, name="jobs")
+app.add_typer(export.app, name="export")
 
 
 def _version_callback(value: bool) -> None:
