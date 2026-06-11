@@ -38,6 +38,8 @@ interface TopbarProps {
   onSmartNextUncertain?: () => void;
   hideOrphanAnnotations?: boolean;
   onToggleHideOrphans?: () => void;
+  /** v0.15.3 · 齿轮菜单「工作台设置」入口,打开设置抽屉;缺省不渲染该项。 */
+  onOpenWorkbenchSettings?: () => void;
   /** v0.6.5 状态机：审核中可撤回 / 已通过可重开。 */
   canWithdraw?: boolean;
   canReopen?: boolean;
@@ -75,7 +77,7 @@ export function Topbar({
   task, taskIdx, taskTotal, aiRunning, batchStatus, isSubmitting, confThreshold,
   onShowHotkeys, onBack, leftSidebarOpen, rightSidebarOpen, onToggleLeftSidebar, onToggleRightSidebar,
   onRunAi, aiDisabled = false, onPrev, onNext, onSubmit, onSmartNextOpen, onSmartNextUncertain,
-  hideOrphanAnnotations = false, onToggleHideOrphans,
+  hideOrphanAnnotations = false, onToggleHideOrphans, onOpenWorkbenchSettings,
   canWithdraw = false, canReopen = false, isWithdrawing = false, isReopening = false,
   onWithdraw, onReopen,
   isSkipping = false, onSkip,
@@ -314,8 +316,25 @@ export function Topbar({
 
         <DropdownMenu
           minWidth={220}
-          content={() => (
+          content={({ close }) => (
             <div className={styles.settingsMenu}>
+              {onOpenWorkbenchSettings && (
+                <button
+                  type="button"
+                  className={styles.switchRow}
+                  data-testid="open-workbench-settings"
+                  onClick={() => {
+                    close();
+                    onOpenWorkbenchSettings();
+                  }}
+                >
+                  <span className={styles.switchText}>
+                    <span className={styles.switchLabel}>工作台设置</span>
+                    <span className={styles.switchHint}>通用 + 当前模态偏好，改动实时生效</span>
+                  </span>
+                  <Icon name="chevRight" size={12} />
+                </button>
+              )}
               {onToggleHideOrphans && (
                 <label className={styles.switchRow}>
                   <span className={styles.switchText}>

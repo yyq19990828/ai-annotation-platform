@@ -1,0 +1,84 @@
+// v0.15.3 · 共享设置控件:按注册表 control 类型渲染、锁定禁用 + badge、提交回调。
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { SettingsFieldControl } from "./SettingsFieldControl";
+import type { WorkbenchSettingField } from "../state/workbenchSettingsFields";
+
+const toggleField: WorkbenchSettingField = {
+  key: "image.smoothImage",
+  category: "image",
+  label: "图像平滑",
+  control: { type: "toggle", onText: "开", offText: "关" },
+  lockable: true,
+};
+
+const sliderField: WorkbenchSettingField = {
+  key: "image.controlPointsSize",
+  category: "image",
+  label: "控制点大小",
+  control: { type: "slider", min: 2, max: 20, step: 1, format: (v) => `${v}px` },
+};
+
+const selectField: WorkbenchSettingField = {
+  key: "video.demo",
+  category: "video",
+  label: "演示",
+  control: {
+    type: "select",
+    options: [
+      { value: "a", label: "A" },
+      { value: "b", label: "B" },
+    ],
+  },
+};
+
+const textField: WorkbenchSettingField = {
+  key: "image.cssImageFilter",
+  category: "image",
+  label: "CSS 图像滤镜",
+  control: { type: "text", maxLength: 255, placeholder: "brightness(1.2)" },
+};
+
+describe("SettingsFieldControl", () => {
+  it("toggle:渲染 checkbox,切换触发 onCommit(boolean)", () => {
+    const onCommit = vi.fn();
+    render(<SettingsFieldControl field={toggleField} value={true} onCommit={onCommit} />);
+    const box = screen.getByRole("checkbox");
+    fireEvent.click(box);
+    expect(onCommit).toHaveBeenCalledWith(false);
+  });
+
+  it("slider:label 含格式化值,拖动触发 onCommit(number)", () => {
+    const onCommit = vi.fn();
+    render(<SettingsFieldControl field={sliderField} value={6} onCommit={onCommit} />);
+    expect(screen.getByText(/6px/)).toBeTruthy();
+    fireEvent.change(screen.getByRole("slider"), { target: { value: "12" } });
+    expect(onCommit).toHaveBeenCalledWith(12);
+  });
+
+  it("select:渲染 options,切换触发 onCommit(string)", () => {
+    const onCommit = vi.fn();
+    render(<SettingsFieldControl field={selectField} value="a" onCommit={onCommit} />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "b" } });
+    expect(onCommit).toHaveBeenCalledWith("b");
+  });
+
+  it("text:blur 时 trim 提交,值未变不提交", () => {
+    const onCommit = vi.fn();
+    render(<SettingsFieldControl field={textField} value="" onCommit={onCommit} />);
+    const input = screen.getByPlaceholderText("brightness(1.2)");
+    fireEvent.blur(input);
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: " invert(1) " } });
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenCalledWith("invert(1)");
+  });
+
+  it("locked:控件禁用 + 「项目锁定」badge", () => {
+    render(
+      <SettingsFieldControl field={toggleField} value={true} locked onCommit={vi.fn()} />,
+    );
+    expect((screen.getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByText("项目锁定")).toBeTruthy();
+  });
+});

@@ -126,4 +126,22 @@ DiscussionPanel 是默认组件：旧 feature flag `DISCUSSION_PANEL_ENABLED` �
 - 登录在线时再以 **300ms debounce** `PATCH /me/preferences`，提交**全量 `workbench` 子树**（不是只发 nested `layout`），避免覆盖同子树下的其它渲染偏好。后端只做顶层 `workbench` / `ai` 合并。
 - 远端值缺失字段用 `localStorage` / `DEFAULT_WORKBENCH_PREFERENCES` 逐字段兜底合并（`mergeFloatingPanelState` / `mergeTriViewFloatState`）。
 
-<!-- history: DiscussionPanel and the split right rail shipped through the v0.11 workbench slices. FloatingPanelShell + layout preferences shipped in v0.13.10. -->
+## 偏好四分树与设置抽屉（v0.15.3）
+
+`user.preferences.workbench` 从平铺字段重构为四个模态子树 + 顶层 `layout`：
+
+```
+workbench
+├── common      # 跨模态通用（longTaskSampleRate）
+├── image       # 图像渲染（smoothImage / cssImageFilter / controlPointsSize / snapToGrid）
+├── video       # 视频（v0.15.3 为空壳，后续版本填充）
+├── pointcloud  # 点云（同上）
+└── layout      # 壳层布局，保持顶层不动（见上节）
+```
+
+- **后端**：`apps/api/app/schemas/user.py` 四个子树 Model 均 `extra="forbid"`；存量 JSONB 由 alembic `0103` 数据迁移就地改写（up/down 可逆、幂等）。`update_preferences` 入口保留一层 legacy 平铺键提升器兼容窗口期旧 tab（v0.16 移除）。
+- **`ProjectRenderingConfig` 保持平铺**：项目侧不迁移；`useWorkbenchConfig.applyProjectOverride` 把平铺的项目覆盖映射到 `image.*` 子树字段,`lockedFields` 语义不变。
+- **字段注册表**：`state/workbenchSettingsFields.ts` 是设置 UI 的单一来源（key / 分类 / 控件类型 / 是否可锁定）。Settings 页「标注偏好」与工作台设置抽屉共用它 + `components/SettingsFieldControl` 渲染，**新增设置项 = 后端子树加字段 → `auth.ts` 类型同步 → 注册表加一行 → 消费点读配置**。
+- **设置抽屉**：`shell/WorkbenchSettingsDrawer.tsx`，齿轮菜单入口，只显示「通用 + 当前模态」分组。写路径走 `useWorkbenchConfig.setFields()`（本地立即生效 + 与 `setLayout` 共用的 300ms 防抖 PATCH 和卸载 flush）；多实例（抽屉 ↔ 画布）经模块级广播同步，实现拖滑块画布实时预览。
+
+<!-- history: DiscussionPanel and the split right rail shipped through the v0.11 workbench slices. FloatingPanelShell + layout preferences shipped in v0.13.10. The four-subtree preferences split + settings drawer shipped in v0.15.3. -->

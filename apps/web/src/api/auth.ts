@@ -12,12 +12,32 @@ export interface TokenResponse {
   token_type: string;
 }
 
-export interface WorkbenchPreferences {
+/** v0.15.3 · 偏好四分树:跨模态通用项。 */
+export interface WorkbenchCommonPreferences {
+  longTaskSampleRate: number;
+}
+
+/** v0.15.3 · 图像工作台渲染偏好(原顶层平铺字段归位)。 */
+export interface WorkbenchImagePreferences {
   smoothImage: boolean;
   cssImageFilter: string;
   controlPointsSize: number;
   snapToGrid: boolean;
-  longTaskSampleRate: number;
+}
+
+/** v0.15.3 · 视频子树本版为空壳,后续版本填充。Record<never, never> 而非 Record<string, never>:
+ *  后者的 Partial 带 string 索引签名,与 spread 子树合并不兼容(TS2322)。 */
+export type WorkbenchVideoPreferences = Record<never, never>;
+
+/** v0.15.3 · 点云子树本版为空壳,后续版本填充。 */
+export type WorkbenchPointcloudPreferences = Record<never, never>;
+
+/** v0.15.3 · common/image/video/pointcloud 四子树;layout 保持顶层(壳层/设备维度)。 */
+export interface WorkbenchPreferences {
+  common: WorkbenchCommonPreferences;
+  image: WorkbenchImagePreferences;
+  video: WorkbenchVideoPreferences;
+  pointcloud: WorkbenchPointcloudPreferences;
   layout: WorkbenchLayoutPreferences;
 }
 
@@ -70,11 +90,17 @@ export interface UserPreferences {
 }
 
 export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
-  smoothImage: true,
-  cssImageFilter: "",
-  controlPointsSize: 6,
-  snapToGrid: false,
-  longTaskSampleRate: 0.05,
+  common: {
+    longTaskSampleRate: 0.05,
+  },
+  image: {
+    smoothImage: true,
+    cssImageFilter: "",
+    controlPointsSize: 6,
+    snapToGrid: false,
+  },
+  video: {},
+  pointcloud: {},
   layout: {
     leftOpen: true,
     rightOpen: true,

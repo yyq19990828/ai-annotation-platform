@@ -399,6 +399,8 @@ export function useWorkbenchShellModel({
   const [fitTick, setFitTick] = useState(0);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [showHotkeys, setShowHotkeys] = useState(false);
+  // v0.15.3 · 工作台设置抽屉(齿轮菜单入口)。
+  const [workbenchSettingsOpen, setWorkbenchSettingsOpen] = useState(false);
   const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
   const [aiPopoverPosition, setAiPopoverPosition] = useState<{ left: number; top: number } | null>(null);
   // v0.14.18 · AI 面板可缩放 (与浮出边栏一致); null = 用 CSS 默认尺寸, 用户拖角后置显式 w/h.
@@ -1984,6 +1986,7 @@ export function useWorkbenchShellModel({
       onSmartNextUncertain: topbarActions.onSmartNextUncertain,
       hideOrphanAnnotations,
       onToggleHideOrphans: () => setHideOrphanAnnotations((value) => !value),
+      onOpenWorkbenchSettings: () => setWorkbenchSettingsOpen(true),
       canWithdraw: topbarActions.canWithdraw, canReopen: topbarActions.canReopen,
       isWithdrawing: topbarActions.isWithdrawing, isReopening: topbarActions.isReopening,
       onWithdraw: topbarActions.onWithdraw, onReopen: topbarActions.onReopen,
@@ -2346,6 +2349,12 @@ export function useWorkbenchShellModel({
     },
     hotkeys: { open: showHotkeys, onClose: () => setShowHotkeys(false), attributeSchema: toolView.attributeSchema },
     offlineQueue: { open: offlineDrawerOpen, onClose: closeOfflineDrawer, currentTaskId: taskId, onFlushOne: executeOp, onFlushAll: flushOffline },
+    workbenchSettings: {
+      open: workbenchSettingsOpen,
+      onClose: () => setWorkbenchSettingsOpen(false),
+      stageKind,
+      projectRenderingConfig: currentProject?.rendering_config ?? null,
+    },
     conflict: { open: conflictOpen, onReload: handleConflictReload, onOverwrite: handleConflictOverwrite, onClose: () => setConflictOpen(false) },
     rejectModal: modeState.rejectModal ? {
       open: modeState.rejectModal.open, count: 1, onClose: modeState.rejectModal.onClose,

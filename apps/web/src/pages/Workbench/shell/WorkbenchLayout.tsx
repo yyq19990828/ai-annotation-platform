@@ -13,6 +13,7 @@ import { TaskQueuePanel } from "./TaskQueuePanel";
 import { ToolDock } from "./ToolDock";
 import { Topbar } from "./Topbar";
 import { WorkbenchBanners } from "./WorkbenchBanners";
+import { WorkbenchSettingsDrawer } from "./WorkbenchSettingsDrawer";
 import { WorkbenchStageHost } from "./WorkbenchStageHost";
 import { SIDE_FLOATING_PANEL_MAX_SIZE, SIDE_FLOATING_PANEL_MIN_SIZE } from "./floatingPanelSizing";
 import { GuidePanel } from "../sidebar/GuidePanel";
@@ -51,6 +52,8 @@ interface WorkbenchLayoutProps {
   aiPopover: ComponentProps<typeof AIPredictionPopover>;
   hotkeys: ComponentProps<typeof HotkeyCheatSheet>;
   offlineQueue: ComponentProps<typeof OfflineQueueDrawer>;
+  /** v0.15.3 · 工作台设置抽屉(齿轮菜单入口)。 */
+  workbenchSettings: ComponentProps<typeof WorkbenchSettingsDrawer>;
   conflict: ComponentProps<typeof ConflictModal>;
   rejectModal?: ComponentProps<typeof RejectReasonModal>;
   // v0.10.13 · E1 · 标注指引浮层 (可选; 项目无 guide 时不渲染).
@@ -76,6 +79,7 @@ export function WorkbenchLayout({
   aiPopover,
   hotkeys,
   offlineQueue,
+  workbenchSettings,
   conflict,
   rejectModal,
   guidePanel,
@@ -245,6 +249,7 @@ export function WorkbenchLayout({
       <AIPredictionPopover {...aiPopover} />
       <HotkeyCheatSheet {...hotkeys} />
       <OfflineQueueDrawer {...offlineQueue} />
+      <WorkbenchSettingsDrawer {...workbenchSettings} />
       <ConflictModal {...conflict} />
       {rejectModal && <RejectReasonModal {...rejectModal} />}
       {guidePanel && <GuidePanel {...guidePanel} />}

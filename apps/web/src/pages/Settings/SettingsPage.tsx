@@ -13,6 +13,16 @@ import { ROLE_LABELS } from "@/constants/roles";
 import { bugReportsApi, type BugReportResponse } from "@/api/bug-reports";
 import { notificationsApi, type NotificationPreferenceItem } from "@/api/notifications";
 import { useWorkbenchConfig } from "@/pages/Workbench/state/useWorkbenchConfig";
+import { SettingsFieldControl } from "@/pages/Workbench/components/SettingsFieldControl";
+import {
+  WORKBENCH_SETTING_CATEGORY_LABELS,
+  WORKBENCH_SETTING_FIELDS,
+  buildFieldPatch,
+  getFieldValue,
+  type WorkbenchSettingCategory,
+  type WorkbenchSettingField,
+  type WorkbenchSettingValue,
+} from "@/pages/Workbench/state/workbenchSettingsFields";
 import type { UserRole } from "@/types";
 import styles from "./SettingsPage.module.css";
 
@@ -548,8 +558,6 @@ function SystemSection() {
 function WorkbenchPreferencesSection() {
   const { config, loaded, saving, update } = useWorkbenchConfig();
   const pushToast = useToastStore((s) => s.push);
-  const [localFilter, setLocalFilter] = useState(config.cssImageFilter);
-  useEffect(() => { setLocalFilter(config.cssImageFilter); }, [config.cssImageFilter]);
 
   if (!loaded) {
     return (
@@ -560,61 +568,41 @@ function WorkbenchPreferencesSection() {
     );
   }
 
-  const commit = (patch: Parameters<typeof update>[0]) => {
-    update(patch).catch(() => pushToast({ msg: "保存失败", kind: "warning" }));
+  const commit = (field: WorkbenchSettingField, value: WorkbenchSettingValue) => {
+    update(buildFieldPatch(field, value)).catch(() =>
+      pushToast({ msg: "保存失败", kind: "warning" }),
+    );
   };
+
+  // v0.15.3 · 注册表驱动的四分组(通用/图片/视频/点云);空分组(本版 video/pointcloud)
+  // 不渲染。与工作台设置抽屉共用 WORKBENCH_SETTING_FIELDS + SettingsFieldControl。
+  const groups = (Object.keys(WORKBENCH_SETTING_CATEGORY_LABELS) as WorkbenchSettingCategory[])
+    .map((category) => ({
+      category,
+      fields: WORKBENCH_SETTING_FIELDS.filter((f) => f.category === category && !f.hidden),
+    }))
+    .filter((g) => g.fields.length > 0);
 
   return (
     <Card>
       <SectionHeader title="标注偏好" />
       <div className={styles.form}>
-        <Field label="图像平滑（关闭后像素清晰，适合医学影像 / 像素艺术）">
-          <label className={styles.checkLabel}>
-            <input
-              type="checkbox"
-              checked={config.smoothImage}
-              disabled={saving}
-              onChange={(e) => commit({ smoothImage: e.target.checked })}
-            />
-            <span>{config.smoothImage ? "已开启 — 默认双线性插值" : "已关闭 — 像素 nearest-neighbor"}</span>
-          </label>
-        </Field>
-
-        <Field label="CSS 图像滤镜（例：brightness(1.2) contrast(1.1) invert(0)；留空恢复原图）">
-          <input
-            value={localFilter}
-            onChange={(e) => setLocalFilter(e.target.value.slice(0, 255))}
-            onBlur={() => { if (localFilter !== config.cssImageFilter) commit({ cssImageFilter: localFilter.trim() }); }}
-            placeholder="brightness(1.2) contrast(1.1)"
-            className={styles.input}
-          />
-        </Field>
-
-        <Field label={`控制点大小（顶点拖拽手柄半径）：${config.controlPointsSize}px`}>
-          <input
-            type="range"
-            min={2}
-            max={20}
-            value={config.controlPointsSize}
-            disabled={saving}
-            onChange={(e) => commit({ controlPointsSize: Number(e.target.value) })}
-            className={styles.range}
-          />
-        </Field>
-
-        <Field label={`性能采样率（PerformanceObserver longtask 采样率，0–1）：${config.longTaskSampleRate.toFixed(2)}`}>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={config.longTaskSampleRate}
-            disabled={saving}
-            onChange={(e) => commit({ longTaskSampleRate: Number(e.target.value) })}
-            className={styles.range}
-          />
-        </Field>
-
+        {groups.map(({ category, fields }) => (
+          <div key={category} className={styles.fieldGroup}>
+            <div className={styles.groupLabel}>
+              {WORKBENCH_SETTING_CATEGORY_LABELS[category]}
+            </div>
+            {fields.map((field) => (
+              <SettingsFieldControl
+                key={field.key}
+                field={field}
+                value={getFieldValue(config, field)}
+                disabled={saving}
+                onCommit={(value) => commit(field, value)}
+              />
+            ))}
+          </div>
+        ))}
         {saving && <div className={styles.savingText}>保存中…</div>}
       </div>
     </Card>

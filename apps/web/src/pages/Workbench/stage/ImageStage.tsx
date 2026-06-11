@@ -297,7 +297,7 @@ export function ImageStage({
   // v0.9.41 · 标注偏好（I17）：smoothImage / cssImageFilter / longTaskSampleRate。
   // v0.10.10 · I17.3 · 合并项目级 rendering_config 覆盖（项目级 > 用户级 > 默认）。
   const { config: workbenchConfig } = useWorkbenchConfig(projectRenderingConfig);
-  useWorkbenchPerf(workbenchConfig.longTaskSampleRate);
+  useWorkbenchPerf(workbenchConfig.common.longTaskSampleRate);
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const vpRef = useRef(vp);
@@ -778,12 +778,12 @@ export function ImageStage({
     const el = containerRef.current;
     if (!el) return;
     el.style.setProperty("--image-stage-cursor", containerCursor);
-    if (workbenchConfig.cssImageFilter) {
-      el.style.setProperty("--image-stage-filter", workbenchConfig.cssImageFilter);
+    if (workbenchConfig.image.cssImageFilter) {
+      el.style.setProperty("--image-stage-filter", workbenchConfig.image.cssImageFilter);
     } else {
       el.style.removeProperty("--image-stage-filter");
     }
-  }, [containerCursor, workbenchConfig.cssImageFilter]);
+  }, [containerCursor, workbenchConfig.image.cssImageFilter]);
 
   // polygon 草稿当前光标位置（用于动态预览线段）
   const [polygonCursor, setPolygonCursor] = useState<{ x: number; y: number } | null>(null);
@@ -968,7 +968,7 @@ export function ImageStage({
               width={imgW}
               height={imgH}
               listening={false}
-              imageSmoothingEnabled={workbenchConfig.smoothImage}
+              imageSmoothingEnabled={workbenchConfig.image.smoothImage}
             />
           )}
         </Layer>
