@@ -115,9 +115,10 @@ class HttpTransport:
             raise map_status_error(resp)
         return resp
 
-    def put_presigned(self, url: str, content: bytes, content_type: str) -> None:
-        """向预签名 URL PUT 文件内容 (不带平台 auth header)。"""
-        resp = self.bare.put(url, content=content, headers={"Content-Type": content_type})
+    def put_presigned(self, url: str, file_path: Path, content_type: str) -> None:
+        """向预签名 URL 流式 PUT 文件 (不带平台 auth header; 大文件不整读进内存)。"""
+        with file_path.open("rb") as f:
+            resp = self.bare.put(url, content=f, headers={"Content-Type": content_type})
         if resp.status_code >= 400:
             raise APIStatusError(resp.status_code, f"预签名上传失败: {resp.text[:200]}")
 

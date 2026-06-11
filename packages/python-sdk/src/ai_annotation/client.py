@@ -122,7 +122,7 @@ class Datasets:
                 f"/datasets/{dataset_id}/items/upload-init",
                 json={"file_name": path.name, "content_type": content_type},
             ).json()
-            self._http.put_presigned(init["upload_url"], path.read_bytes(), content_type)
+            self._http.put_presigned(init["upload_url"], path, content_type)
             done = self._http.request(
                 "POST",
                 f"/datasets/{dataset_id}/items/upload-complete/{init['item_id']}",

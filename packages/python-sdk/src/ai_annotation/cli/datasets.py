@@ -7,7 +7,14 @@ from pathlib import Path
 import typer
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
-from ai_annotation.cli._output import cli_errors, console, get_client, print_error, print_json
+from ai_annotation.cli._output import (
+    cli_errors,
+    console,
+    get_client,
+    print_error,
+    print_json,
+    progress_console,
+)
 from ai_annotation.cli.jobs import wait_job
 
 app = typer.Typer(help="数据集管理", no_args_is_help=True)
@@ -69,7 +76,7 @@ def upload(
                     TextColumn("[progress.description]{task.description}"),
                     BarColumn(),
                     TaskProgressColumn(),
-                    console=console,
+                    console=progress_console,
                 ) as progress:
                     task = progress.add_task("上传", total=len(files))
                     items = client.datasets.upload_files(

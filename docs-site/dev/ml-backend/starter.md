@@ -86,7 +86,8 @@ async def _fetch_image(file_path: str) -> bytes:
             resp = await client.get(file_path, timeout=30)
             resp.raise_for_status()
             return resp.content
-    return open(file_path, "rb").read()  # 本地路径调试用
+    with open(file_path, "rb") as f:  # 本地路径调试用
+        return f.read()
 ```
 
 ### 3.2 `/setup` 能力声明

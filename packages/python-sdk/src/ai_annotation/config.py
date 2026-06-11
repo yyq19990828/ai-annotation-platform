@@ -42,7 +42,10 @@ def save_config(base_url: str, api_key: str) -> Path:
     """写 config.toml (chmod 0600, api_key 是敏感凭据)。"""
     p = config_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    # 手写两行 toml, 避免引入写依赖; 值为 URL / token, 无需转义
-    p.write_text(f'base_url = "{base_url}"\napi_key = "{api_key}"\n', encoding="utf-8")
-    p.chmod(0o600)
+    # 手写两行 toml, 避免引入写依赖; 值为 URL / token, 无需转义。
+    # O_CREAT 0600 原子创建, 避免「先写后 chmod」窗口期 api_key 可被他人读取
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(f'base_url = "{base_url}"\napi_key = "{api_key}"\n')
+    p.chmod(0o600)  # 覆盖已存在文件时同样收紧权限
     return p

@@ -21,6 +21,8 @@ from ai_annotation.errors import AAPError, APIStatusError, AuthenticationError
 
 console = Console()
 err_console = Console(stderr=True)
+# 进度条/spinner 是瞬态 UI 而非命令输出, 走 stderr, 避免污染管道中的 stdout
+progress_console = Console(stderr=True)
 
 
 def print_json(data: Any) -> None:

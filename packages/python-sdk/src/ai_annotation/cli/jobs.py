@@ -6,7 +6,7 @@ import typer
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeElapsedColumn
 
 from ai_annotation import Client
-from ai_annotation.cli._output import cli_errors, console, get_client, print_json
+from ai_annotation.cli._output import cli_errors, console, get_client, print_json, progress_console
 from ai_annotation.models import Job
 
 app = typer.Typer(help="异步任务", no_args_is_help=True)
@@ -24,7 +24,7 @@ def wait_job(client: Client, job_id: str, json_mode: bool = False) -> Job:
         BarColumn(),
         TaskProgressColumn(),
         TimeElapsedColumn(),
-        console=console,
+        console=progress_console,
     ) as progress:
         task = progress.add_task(f"等待 job {job_id}", total=100)
 
