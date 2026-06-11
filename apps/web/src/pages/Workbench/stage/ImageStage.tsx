@@ -34,6 +34,7 @@ import {
   shouldSuppressImageContextMenu,
   type ImageContextMenuClipboardActions,
 } from "./imageStageContextMenu";
+import { wheelZoomFactor } from "./imageStageSettings";
 import { IssueLayer } from "./image/IssueLayer";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 import { useWorkbenchPerf } from "./shared/useWorkbenchPerf";
@@ -41,7 +42,6 @@ import { useCanvasContextMenu } from "./useCanvasContextMenu";
 import styles from "./ImageStage.module.css";
 
 type Geom = { x: number; y: number; w: number; h: number };
-const SNAP_THRESHOLD_PX = 8;
 type Drag =
   | { kind: "draw"; sx: number; sy: number; cx: number; cy: number }
   | {
@@ -390,12 +390,13 @@ export function ImageStage({
     const segments = excludeAnnotationId
       ? snapIndex.segments.filter((candidate) => candidate.annotationId !== excludeAnnotationId)
       : snapIndex.segments;
-    const pointMatch = snapPointToCandidates(point, points, SNAP_THRESHOLD_PX, transform);
-    const segmentMatch = snapPointToSegments(point, segments, SNAP_THRESHOLD_PX, transform);
+    const thresholdPx = workbenchConfig.image.snapThresholdPx;
+    const pointMatch = snapPointToCandidates(point, points, thresholdPx, transform);
+    const segmentMatch = snapPointToSegments(point, segments, thresholdPx, transform);
     if (!pointMatch) return segmentMatch;
     if (!segmentMatch) return pointMatch;
     return pointMatch.distancePx <= segmentMatch.distancePx ? pointMatch : segmentMatch;
-  }, [imgW, imgH, snapIndex]);
+  }, [imgW, imgH, snapIndex, workbenchConfig.image.snapThresholdPx]);
 
   const snapImagePoint = useCallback((
     pt: { x: number; y: number },
@@ -471,7 +472,7 @@ export function ImageStage({
       const rect = el.getBoundingClientRect();
       const cx = e.clientX - rect.left;
       const cy = e.clientY - rect.top;
-      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      const factor = wheelZoomFactor(e.deltaY, workbenchConfig.image.zoomStepFactor);
       const nextScale = Math.min(8, Math.max(0.2, vpRef.current.scale * factor));
       const cur = vpRef.current;
       const ratio = nextScale / cur.scale;
@@ -479,7 +480,7 @@ export function ImageStage({
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [setVp, maskEditor, tool]);
+  }, [setVp, maskEditor, tool, workbenchConfig.image.zoomStepFactor]);
 
   // ── window-level drag events (rAF-throttled) ─────────────────────────────
   // 依赖数组用 `!!drag` 而非 `drag` 本身：mousemove 期间 setDrag 频繁触发 React
@@ -984,6 +985,8 @@ export function ImageStage({
                 isAi
                 selected={selSet.has(b.id)}
                 faded={fadedAiIds?.has(b.id) ?? false}
+                fadedOpacity={workbenchConfig.image.fadedOpacity}
+                showLabel={workbenchConfig.image.showBoxLabels}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
                 points={b.polyline as Pt[]}
                 onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
@@ -995,6 +998,8 @@ export function ImageStage({
                 isAi
                 selected={selSet.has(b.id)}
                 faded={fadedAiIds?.has(b.id) ?? false}
+                fadedOpacity={workbenchConfig.image.fadedOpacity}
+                showLabel={workbenchConfig.image.showBoxLabels}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
                 onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
               />
@@ -1005,6 +1010,8 @@ export function ImageStage({
                 isAi
                 selected={selSet.has(b.id)}
                 faded={fadedAiIds?.has(b.id) ?? false}
+                fadedOpacity={workbenchConfig.image.fadedOpacity}
+                showLabel={workbenchConfig.image.showBoxLabels}
                 editable={!readOnly}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
                 onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
@@ -1038,6 +1045,8 @@ export function ImageStage({
                   selected={selSet.has(b.id)}
                   editable={isPrimarySingleSelect}
                   faded={false}
+                  fadedOpacity={workbenchConfig.image.fadedOpacity}
+                  showLabel={workbenchConfig.image.showBoxLabels}
                   occluded={!!b.occluded}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   onClick={(evt) => handleUserShapeClick(b.id, evt)}
@@ -1075,6 +1084,8 @@ export function ImageStage({
                   isAi={false}
                   selected={selSet.has(b.id)}
                   faded={false}
+                  fadedOpacity={workbenchConfig.image.fadedOpacity}
+                  showLabel={workbenchConfig.image.showBoxLabels}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   points={livePoints}
                   editable={isOnlySelected}
@@ -1123,6 +1134,8 @@ export function ImageStage({
                   isAi={false}
                   selected={selSet.has(b.id)}
                   faded={false}
+                  fadedOpacity={workbenchConfig.image.fadedOpacity}
+                  showLabel={workbenchConfig.image.showBoxLabels}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   schema={keypointSchema}
                   editable={isKpEditable}
@@ -1163,6 +1176,8 @@ export function ImageStage({
                   isAi={false}
                   selected={selSet.has(b.id)}
                   faded={false}
+                  fadedOpacity={workbenchConfig.image.fadedOpacity}
+                  showLabel={workbenchConfig.image.showBoxLabels}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   points={livePoints}
                   selfIntersect={intersects}
@@ -1211,6 +1226,8 @@ export function ImageStage({
                 isAi={false}
                 selected={selSet.has(b.id)}
                 faded={false}
+                fadedOpacity={workbenchConfig.image.fadedOpacity}
+                showLabel={workbenchConfig.image.showBoxLabels}
                 editable={!readOnly && !b.is_locked}
                 occluded={!!b.occluded}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
@@ -1237,6 +1254,7 @@ export function ImageStage({
             revision={maskEditor.revision}
             imgW={imgW}
             imgH={imgH}
+            opacity={workbenchConfig.image.maskOverlayOpacity}
             visible={true}
           />
         )}

@@ -25,7 +25,7 @@ describe("workbenchSettingsFields 注册表", () => {
   });
 
   it("注册表默认值与现状一致", () => {
-    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(8);
+    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(22);
     const byKey = Object.fromEntries(
       WORKBENCH_SETTING_FIELDS.map((f) => [
         f.key,
@@ -34,12 +34,26 @@ describe("workbenchSettingsFields 注册表", () => {
     );
     expect(byKey).toEqual({
       "common.longTaskSampleRate": 0.05,
+      "common.confirmDelete": "never",
+      "common.recentClassesLimit": 5,
+      "common.crossFrameOverlayK": 0,
       "image.smoothImage": true,
       "image.cssImageFilter": "",
       "image.controlPointsSize": 6,
       "image.snapToGrid": false,
+      "image.afterBoxCreate": "pick_class",
+      "image.snapThresholdPx": 8,
+      "image.zoomStepFactor": 1.1,
+      "image.fadedOpacity": 0.35,
+      "image.showBoxLabels": true,
+      "image.maskOverlayOpacity": 0.45,
       "video.defaultPlaybackRate": 1,
       "video.largeFrameStep": 10,
+      "pointcloud.pointSize": 0.06,
+      "pointcloud.pointMaskSelectMode": "rect",
+      "pointcloud.showGrid": true,
+      "pointcloud.showAxisGizmo": true,
+      "pointcloud.cameraDamping": 0.1,
       "experiment.webcodecs": false,
     });
   });
@@ -53,6 +67,10 @@ describe("workbenchSettingsFields 注册表", () => {
       (f) => f.key === "common.longTaskSampleRate",
     )!;
     expect(buildFieldPatch(common, 0.2)).toEqual({ common: { longTaskSampleRate: 0.2 } });
+    const pointcloud = WORKBENCH_SETTING_FIELDS.find(
+      (f) => f.key === "pointcloud.showGrid",
+    )!;
+    expect(buildFieldPatch(pointcloud, false)).toEqual({ pointcloud: { showGrid: false } });
     const video = WORKBENCH_SETTING_FIELDS.find(
       (f) => f.key === "video.largeFrameStep",
     )!;

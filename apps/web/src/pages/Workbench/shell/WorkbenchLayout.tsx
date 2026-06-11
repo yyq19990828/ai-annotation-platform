@@ -3,6 +3,7 @@ import { ConflictModal } from "@/components/workbench/ConflictModal";
 import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
 import type { VideoStageControls } from "../stage/VideoStage";
 import { AIInspectorPanel, AIPredictionPopover } from "./AIInspectorPanel";
+import { DeleteConfirmModal } from "./DeleteConfirmModal";
 import { DiscussionPanel } from "./DiscussionPanel";
 import { FloatingPanelShell, type FloatingPanelRect } from "./FloatingPanelShell";
 import { HotkeyCheatSheet } from "./HotkeyCheatSheet";
@@ -56,6 +57,7 @@ interface WorkbenchLayoutProps {
   workbenchSettings: ComponentProps<typeof WorkbenchSettingsDrawer>;
   conflict: ComponentProps<typeof ConflictModal>;
   rejectModal?: ComponentProps<typeof RejectReasonModal>;
+  deleteConfirm?: ComponentProps<typeof DeleteConfirmModal>;
   // v0.10.13 · E1 · 标注指引浮层 (可选; 项目无 guide 时不渲染).
   guidePanel?: ComponentProps<typeof GuidePanel>;
   // v0.11.5 · B 组 · 右栏下段统一讨论面板 (转正; 上 AIInspectorPanel + 下 DiscussionPanel 两段固定).
@@ -82,6 +84,7 @@ export function WorkbenchLayout({
   workbenchSettings,
   conflict,
   rejectModal,
+  deleteConfirm,
   guidePanel,
   discussionPanel,
   floatingTaskQueue,
@@ -252,6 +255,7 @@ export function WorkbenchLayout({
       <WorkbenchSettingsDrawer {...workbenchSettings} />
       <ConflictModal {...conflict} />
       {rejectModal && <RejectReasonModal {...rejectModal} />}
+      {deleteConfirm && <DeleteConfirmModal {...deleteConfirm} />}
       {guidePanel && <GuidePanel {...guidePanel} />}
     </div>
   );

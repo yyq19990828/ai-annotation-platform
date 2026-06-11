@@ -68,10 +68,11 @@ describe("WorkbenchSettingsDrawer", () => {
     expect(screen.queryByText("点云")).toBeNull();
   });
 
-  it("3d 模态:点云子树本版为空 → 只渲染「通用」组", () => {
+  it("3d 模态:渲染「通用 + 点云」两组", () => {
     renderDrawer({ stageKind: "3d" });
     expect(screen.getByText("通用")).toBeTruthy();
-    expect(screen.queryByText("点云")).toBeNull();
+    expect(screen.getByText("点云")).toBeTruthy();
+    expect(screen.getByText(/点大小/)).toBeTruthy();
     expect(screen.queryByText(/图像平滑/)).toBeNull();
   });
 

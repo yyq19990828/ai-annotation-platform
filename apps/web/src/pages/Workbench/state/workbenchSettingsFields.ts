@@ -83,6 +83,41 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     control: { type: "slider", min: 0, max: 1, step: 0.05, format: (v) => v.toFixed(2) },
   },
   {
+    key: "common.confirmDelete",
+    category: "common",
+    label: "删除确认",
+    control: {
+      type: "select",
+      options: [
+        { value: "never", label: "不确认" },
+        { value: "multi_only", label: "仅多选确认" },
+        { value: "always", label: "始终确认" },
+      ],
+    },
+  },
+  {
+    key: "common.recentClassesLimit",
+    category: "common",
+    label: "最近类别数量",
+    control: { type: "slider", min: 3, max: 20, step: 1, format: (v) => `${v}` },
+  },
+  {
+    key: "common.crossFrameOverlayK",
+    category: "common",
+    label: "邻帧叠加",
+    description: "前后各显示几帧参考框，0 为关闭",
+    control: {
+      type: "select",
+      options: [
+        { value: 0, label: "关闭" },
+        { value: 1, label: "前后 1 帧" },
+        { value: 3, label: "前后 3 帧" },
+        { value: 5, label: "前后 5 帧" },
+        { value: 7, label: "前后 7 帧" },
+      ],
+    },
+  },
+  {
     key: "image.smoothImage",
     category: "image",
     label: "图像平滑",
@@ -120,6 +155,56 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     hidden: true,
   },
   {
+    key: "image.afterBoxCreate",
+    category: "image",
+    label: "画框后行为",
+    control: {
+      type: "select",
+      options: [
+        { value: "pick_class", label: "选择类别" },
+        { value: "reuse_active", label: "沿用当前类别" },
+      ],
+    },
+  },
+  {
+    key: "image.snapThresholdPx",
+    category: "image",
+    label: "吸附阈值",
+    control: { type: "slider", min: 4, max: 16, step: 1, format: (v) => `${v}px` },
+  },
+  {
+    key: "image.zoomStepFactor",
+    category: "image",
+    label: "滚轮缩放步长",
+    control: {
+      type: "select",
+      options: [
+        { value: 1.05, label: "5%" },
+        { value: 1.1, label: "10%" },
+        { value: 1.15, label: "15%" },
+        { value: 1.2, label: "20%" },
+      ],
+    },
+  },
+  {
+    key: "image.fadedOpacity",
+    category: "image",
+    label: "淡化透明度",
+    control: { type: "slider", min: 0.1, max: 0.8, step: 0.05, format: (v) => v.toFixed(2) },
+  },
+  {
+    key: "image.showBoxLabels",
+    category: "image",
+    label: "显示框标签",
+    control: { type: "toggle" },
+  },
+  {
+    key: "image.maskOverlayOpacity",
+    category: "image",
+    label: "Mask 覆盖透明度",
+    control: { type: "slider", min: 0.2, max: 0.8, step: 0.05, format: (v) => v.toFixed(2) },
+  },
+  {
     key: "video.defaultPlaybackRate",
     category: "video",
     label: "默认播放速率",
@@ -149,6 +234,45 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
         { value: "grid", label: "采样网格" },
       ],
     },
+  },
+  {
+    key: "pointcloud.pointSize",
+    category: "pointcloud",
+    label: "点大小",
+    description: "点云渲染点径",
+    control: { type: "slider", min: 0.01, max: 0.3, step: 0.01, format: (v) => v.toFixed(2) },
+  },
+  {
+    key: "pointcloud.pointMaskSelectMode",
+    category: "pointcloud",
+    label: "点选模式",
+    control: {
+      type: "select",
+      options: [
+        { value: "rect", label: "矩形" },
+        { value: "lasso", label: "套索" },
+        { value: "polygon", label: "多边形" },
+      ],
+    },
+  },
+  {
+    key: "pointcloud.showGrid",
+    category: "pointcloud",
+    label: "显示地面网格",
+    control: { type: "toggle" },
+  },
+  {
+    key: "pointcloud.showAxisGizmo",
+    category: "pointcloud",
+    label: "显示坐标轴",
+    control: { type: "toggle" },
+  },
+  {
+    key: "pointcloud.cameraDamping",
+    category: "pointcloud",
+    label: "相机灵敏度",
+    description: "值越小惯性越强",
+    control: { type: "slider", min: 0.05, max: 0.3, step: 0.05, format: (v) => v.toFixed(2) },
   },
   {
     key: "experiment.webcodecs",

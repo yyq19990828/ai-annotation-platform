@@ -5,15 +5,23 @@ import {
   readStoredOutputMode,
   resolveInitialOutputMode,
   samOutputStorageKey,
+  samOutputUserStorageKey,
   writeStoredOutputMode,
 } from "./samTextOutput";
 
 describe("samTextOutput", () => {
-  beforeEach(() => window.sessionStorage.clear());
-  afterEach(() => window.sessionStorage.clear());
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+  });
+  afterEach(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+  });
 
   it("samOutputStorageKey 按 projectId 分桶", () => {
     expect(samOutputStorageKey("p1")).toBe(`${SAM_OUTPUT_STORAGE_PREFIX}p1`);
+    expect(samOutputUserStorageKey("u1", "p1")).toBe("workbench.u1.sam.outputMode:p1");
   });
 
   it("defaultOutputMode: image-det → box，其它 → mask", () => {
@@ -25,21 +33,28 @@ describe("samTextOutput", () => {
 
   it("read/writeStoredOutputMode 往返，非法值返回 null", () => {
     expect(readStoredOutputMode("p1")).toBeNull();
-    writeStoredOutputMode("p1", "both");
+    writeStoredOutputMode("p1", "both", "u1");
     expect(readStoredOutputMode("p1")).toBe("both");
+    expect(window.localStorage.getItem(samOutputUserStorageKey("u1", "p1"))).toBe("both");
     // 直接写入非法值 → 读出 null
     window.sessionStorage.setItem(samOutputStorageKey("p1"), "garbage");
-    expect(readStoredOutputMode("p1")).toBeNull();
+    window.localStorage.setItem(samOutputUserStorageKey("u1", "p1"), "garbage");
+    expect(readStoredOutputMode("p1", "u1")).toBeNull();
   });
 
-  it("resolveInitialOutputMode 优先级: projectDefault > sessionStorage > typeKey 默认", () => {
+  it("resolveInitialOutputMode 优先级: projectDefault > sessionStorage > localStorage > typeKey 默认", () => {
     // projectDefault 命中
-    expect(resolveInitialOutputMode("p1", "image-det", "mask")).toBe("mask");
-    // projectDefault 非法 → 忽略，落 sessionStorage
-    writeStoredOutputMode("p1", "box");
-    expect(resolveInitialOutputMode("p1", "image-seg", "nope")).toBe("box");
+    window.sessionStorage.setItem(samOutputStorageKey("p1"), "both");
+    window.localStorage.setItem(samOutputUserStorageKey("u1", "p1"), "box");
+    expect(resolveInitialOutputMode("p1", "image-det", "mask", "u1")).toBe("mask");
+    // projectDefault 非法 → 忽略，先落 sessionStorage
+    expect(resolveInitialOutputMode("p1", "image-seg", "nope", "u1")).toBe("both");
+    // 无 sessionStorage → 落用户级 localStorage
+    window.sessionStorage.clear();
+    expect(resolveInitialOutputMode("p1", "image-seg", undefined, "u1")).toBe("box");
     // 无 projectDefault、无 stored → typeKey 智能默认
     window.sessionStorage.clear();
+    window.localStorage.clear();
     expect(resolveInitialOutputMode("p2", "image-det")).toBe("box");
     expect(resolveInitialOutputMode(undefined, "image-seg")).toBe("mask");
   });

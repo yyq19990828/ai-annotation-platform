@@ -18518,12 +18518,41 @@
         "additionalProperties": false,
         "description": "v0.15.3 · 跨模态通用偏好（性能观测等）。",
         "properties": {
+          "confirmDelete": {
+            "default": "never",
+            "enum": [
+              "never",
+              "multi_only",
+              "always"
+            ],
+            "title": "Confirmdelete",
+            "type": "string"
+          },
+          "crossFrameOverlayK": {
+            "default": 0,
+            "enum": [
+              0,
+              1,
+              3,
+              5,
+              7
+            ],
+            "title": "Crossframeoverlayk",
+            "type": "integer"
+          },
           "longTaskSampleRate": {
             "default": 0.05,
             "maximum": 1.0,
             "minimum": 0.0,
             "title": "Longtasksamplerate",
             "type": "number"
+          },
+          "recentClassesLimit": {
+            "default": 5,
+            "maximum": 20.0,
+            "minimum": 3.0,
+            "title": "Recentclasseslimit",
+            "type": "integer"
           }
         },
         "title": "WorkbenchCommonPreferences",
@@ -18533,6 +18562,15 @@
         "additionalProperties": false,
         "description": "v0.15.3 · 图像模态偏好（2D 画布渲染 / 顶点手柄）。",
         "properties": {
+          "afterBoxCreate": {
+            "default": "pick_class",
+            "enum": [
+              "pick_class",
+              "reuse_active"
+            ],
+            "title": "Afterboxcreate",
+            "type": "string"
+          },
           "controlPointsSize": {
             "default": 6,
             "maximum": 20.0,
@@ -18546,15 +18584,52 @@
             "title": "Cssimagefilter",
             "type": "string"
           },
+          "fadedOpacity": {
+            "default": 0.35,
+            "maximum": 0.8,
+            "minimum": 0.1,
+            "title": "Fadedopacity",
+            "type": "number"
+          },
+          "maskOverlayOpacity": {
+            "default": 0.45,
+            "maximum": 0.8,
+            "minimum": 0.2,
+            "title": "Maskoverlayopacity",
+            "type": "number"
+          },
+          "showBoxLabels": {
+            "default": true,
+            "title": "Showboxlabels",
+            "type": "boolean"
+          },
           "smoothImage": {
             "default": true,
             "title": "Smoothimage",
             "type": "boolean"
           },
+          "snapThresholdPx": {
+            "default": 8,
+            "maximum": 16.0,
+            "minimum": 4.0,
+            "title": "Snapthresholdpx",
+            "type": "integer"
+          },
           "snapToGrid": {
             "default": false,
             "title": "Snaptogrid",
             "type": "boolean"
+          },
+          "zoomStepFactor": {
+            "default": 1.1,
+            "enum": [
+              1.05,
+              1.1,
+              1.15,
+              1.2
+            ],
+            "title": "Zoomstepfactor",
+            "type": "number"
           }
         },
         "title": "WorkbenchImagePreferences",
@@ -18675,8 +18750,43 @@
       },
       "WorkbenchPointcloudPreferences": {
         "additionalProperties": false,
-        "description": "v0.15.3 · 点云模态偏好。本版为空占位，后续版本填充。",
-        "properties": {},
+        "description": "v0.15.3 · 点云模态偏好。v0.15.6 填充渲染 / 导航字段（默认值 = 拆分前现状值）。",
+        "properties": {
+          "cameraDamping": {
+            "default": 0.1,
+            "maximum": 0.3,
+            "minimum": 0.05,
+            "title": "Cameradamping",
+            "type": "number"
+          },
+          "pointMaskSelectMode": {
+            "default": "rect",
+            "enum": [
+              "rect",
+              "lasso",
+              "polygon"
+            ],
+            "title": "Pointmaskselectmode",
+            "type": "string"
+          },
+          "pointSize": {
+            "default": 0.06,
+            "maximum": 0.3,
+            "minimum": 0.01,
+            "title": "Pointsize",
+            "type": "number"
+          },
+          "showAxisGizmo": {
+            "default": true,
+            "title": "Showaxisgizmo",
+            "type": "boolean"
+          },
+          "showGrid": {
+            "default": true,
+            "title": "Showgrid",
+            "type": "boolean"
+          }
+        },
         "title": "WorkbenchPointcloudPreferences",
         "type": "object"
       },

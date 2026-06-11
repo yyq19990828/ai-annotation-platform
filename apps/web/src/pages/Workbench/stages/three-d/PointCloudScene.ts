@@ -110,6 +110,9 @@ export class PointCloudScene {
   private readonly axisScene = new THREE.Scene();
   private readonly axisCamera = new THREE.PerspectiveCamera(35, 1, 0.1, 20);
   private readonly axisGroup = new THREE.Group();
+  private readonly grid: THREE.GridHelper;
+  private axisGizmoVisible = true;
+  private pointSize = 0.06;
 
   // v0.13.3 · 选中框拖拽编辑(平移/yaw/缩放)。gizmo 挂 getHelper() 到场景。
   private readonly transform: TransformControls;
@@ -139,9 +142,9 @@ export class PointCloudScene {
     this.setOrbitMouseMode("orbit");
 
     // 网格地平面参考(xy 平面)。
-    const grid = new THREE.GridHelper(100, 50, 0x2a2f3a, 0x1a1d24);
-    grid.rotation.x = Math.PI / 2;
-    this.scene.add(grid);
+    this.grid = new THREE.GridHelper(100, 50, 0x2a2f3a, 0x1a1d24);
+    this.grid.rotation.x = Math.PI / 2;
+    this.scene.add(this.grid);
 
     this.scene.add(this.boxLayer);
     this.scene.add(this.referenceLayer);
@@ -243,6 +246,7 @@ export class PointCloudScene {
   }
 
   private renderAxisGizmo() {
+    if (!this.axisGizmoVisible) return;
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
     if (!w || !h) return;
@@ -328,7 +332,7 @@ export class PointCloudScene {
     geom.computeBoundingBox();
 
     const material = new THREE.PointsMaterial({
-      size: 0.06,
+      size: this.pointSize,
       vertexColors: true,
       sizeAttenuation: true,
     });
@@ -577,9 +581,23 @@ export class PointCloudScene {
   }
 
   setPointSize(size: number) {
+    this.pointSize = size;
     if (this.points) {
       (this.points.material as THREE.PointsMaterial).size = size;
     }
+  }
+
+  setGridVisible(visible: boolean) {
+    this.grid.visible = visible;
+  }
+
+  setAxisGizmoVisible(visible: boolean) {
+    this.axisGizmoVisible = visible;
+    this.axisGroup.visible = visible;
+  }
+
+  setCameraDamping(dampingFactor: number) {
+    this.controls.dampingFactor = dampingFactor;
   }
 
   /** v0.13.6 · 当前点坐标 (N*3, lidar/world 系, 与标定同系); 供相机上色逐点投影。 */

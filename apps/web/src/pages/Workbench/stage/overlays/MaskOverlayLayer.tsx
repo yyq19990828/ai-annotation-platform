@@ -4,7 +4,7 @@
 // 首次激活时强制走一次全图（rect = 全图），保证 canvas 与 buffer 初态一致。
 //
 // 仍以 useMaskEditor.revision 作为「需要重画」的通知信号；脏区数据不进 React state。
-// 颜色固定 rgba(220,38,38,0.45)（半透红），与已有紫色 SAM 候选区分。
+// 颜色固定为红色，alpha 由工作台图片设置控制，与已有紫色 SAM 候选区分。
 
 import { useEffect, useMemo, useRef } from "react";
 import { Layer, Image as KonvaImage } from "react-konva";
@@ -14,18 +14,25 @@ import type { MaskBuffer } from "../shared/geometry/maskBuffer";
 const FILL_R = 220;
 const FILL_G = 38;
 const FILL_B = 38;
-const FILL_A_NUM = 115; // 0.45 * 255 ≈ 115
 
 interface MaskOverlayLayerProps {
   buffer: MaskBuffer | null;
   revision: number;
   imgW: number;
   imgH: number;
+  opacity?: number;
   /** 仅 mask 工具激活且 active 为 true 时挂载。 */
   visible: boolean;
 }
 
-export function MaskOverlayLayer({ buffer, revision, imgW, imgH, visible }: MaskOverlayLayerProps) {
+export function MaskOverlayLayer({
+  buffer,
+  revision,
+  imgW,
+  imgH,
+  opacity = 0.45,
+  visible,
+}: MaskOverlayLayerProps) {
   const canvas = useMemo(() => {
     if (typeof document === "undefined") return null;
     const c = document.createElement("canvas");
@@ -37,6 +44,8 @@ export function MaskOverlayLayer({ buffer, revision, imgW, imgH, visible }: Mask
   // buffer 实例首次见到时强制全量重绘一次（保险：忽略 buffer 已积累的脏区状态，
   // 直接画当前像素到 canvas）。后续都按 consumeDirty 增量。
   const seenBufferRef = useRef<MaskBuffer | null>(null);
+  const opacityByte = Math.round(Math.max(0, Math.min(1, opacity)) * 255);
+  const lastOpacityByteRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!buffer || !canvas) return;
@@ -44,13 +53,15 @@ export function MaskOverlayLayer({ buffer, revision, imgW, imgH, visible }: Mask
     if (!ctx) return;
     const isFirstSight = seenBufferRef.current !== buffer;
     seenBufferRef.current = buffer;
+    const opacityChanged = lastOpacityByteRef.current !== opacityByte;
+    lastOpacityByteRef.current = opacityByte;
     // 首次看到该 buffer → 全图；后续 → 取脏区，无脏区直接 skip
-    const rect = isFirstSight
+    const rect = isFirstSight || opacityChanged
       ? { x0: 0, y0: 0, x1: buffer.width, y1: buffer.height }
       : buffer.consumeDirty();
     if (!rect) return;
     // 首次全量时也把 buffer 内部脏区一并清空，避免下一笔被首次全量「吃掉」
-    if (isFirstSight) buffer.consumeDirty();
+    if (isFirstSight || opacityChanged) buffer.consumeDirty();
     const w = rect.x1 - rect.x0;
     const h = rect.y1 - rect.y0;
     const data = buffer.toAlphaImageDataRect(rect);
@@ -59,7 +70,7 @@ export function MaskOverlayLayer({ buffer, revision, imgW, imgH, visible }: Mask
         data[i] = FILL_R;
         data[i + 1] = FILL_G;
         data[i + 2] = FILL_B;
-        data[i + 3] = FILL_A_NUM;
+        data[i + 3] = opacityByte;
       }
     }
     const img = ctx.createImageData(w, h);
@@ -67,7 +78,7 @@ export function MaskOverlayLayer({ buffer, revision, imgW, imgH, visible }: Mask
     ctx.putImageData(img, rect.x0, rect.y0);
     const node = imageRef.current;
     if (node) node.getLayer()?.batchDraw();
-  }, [buffer, canvas, revision, imgW, imgH]);
+  }, [buffer, canvas, revision, imgW, imgH, opacityByte]);
 
   if (!visible || !buffer || !canvas) return null;
 

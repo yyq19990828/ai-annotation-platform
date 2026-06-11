@@ -41,7 +41,9 @@ import { useSessionStats } from "./useSessionStats";
 import { useWorkbenchHotkeys } from "./useWorkbenchHotkeys";
 import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
-import { useInteractiveAI } from "./useInteractiveAI";
+import { useInteractiveAI, type TextOutputMode } from "./useInteractiveAI";
+import { resolveInitialOutputMode, writeStoredOutputMode } from "./samTextOutput";
+import { shouldConfirmAnnotationDelete } from "./deleteConfirmation";
 import { usePreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
 import { useMLBackends } from "@/hooks/useMLBackends";
 import { useMLCapabilities } from "./useMLCapabilities";
@@ -262,6 +264,9 @@ export function useWorkbenchShellModel({
 
   const { data: currentProject, isLoading: isProjectLoading } = useProject(routeId ?? "");
   const projectId = currentProject?.id;
+  const projectTextOutputDefault = (
+    currentProject as { text_output_default?: TextOutputMode | null } | null | undefined
+  )?.text_output_default;
 
   const projectName = currentProject?.name ?? "标注工作台";
   const projectDisplayId = currentProject?.display_id ?? "—";
@@ -351,6 +356,24 @@ export function useWorkbenchShellModel({
   const s = useWorkbenchState();
   // v0.13.x · 点云 3D 项目无对应 2D 工具,按当前 3D 工具显式选择工具单位。
   const is3DProject = currentProject?.type_key === "lidar";
+  const setExemplarOutputMode = s.setExemplarOutputMode;
+  useEffect(() => {
+    if (!projectId) return;
+    setExemplarOutputMode(resolveInitialOutputMode(
+      projectId,
+      currentProject?.type_key,
+      projectTextOutputDefault,
+      meUserId,
+    ));
+  }, [projectId, currentProject?.type_key, projectTextOutputDefault, meUserId, setExemplarOutputMode]);
+  const handleSetExemplarOutputMode = useCallback((mode: TextOutputMode) => {
+    setExemplarOutputMode(mode);
+    if (projectId) writeStoredOutputMode(projectId, mode, meUserId);
+  }, [projectId, meUserId, setExemplarOutputMode]);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    count: number;
+    onConfirm: () => void;
+  } | null>(null);
   const threeDToolUnit = s.threeDTool === "point-mask" ? "point_mask_3d" : "lidar_box_3d";
   const toolView = useToolBindings(
     currentProject ?? null,
@@ -426,7 +449,10 @@ export function useWorkbenchShellModel({
   const [aiDrawerOpen, setAiDrawerOpen] = useState(true);
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
-  const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(routeId);
+  const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(
+    routeId,
+    s.workbenchConfig.common.recentClassesLimit,
+  );
 
   const [debouncedConf, setDebouncedConf] = useState(s.confThreshold);
   useEffect(() => {
@@ -1330,7 +1356,7 @@ export function useWorkbenchShellModel({
     handlePickPendingClass,
     submitPolygon,
     submitPolyline,
-    handleDeleteBox,
+    handleDeleteBox: handleDeleteBoxNow,
     handlePatchShapeFlag,
     handleCommitMove,
     handleCommitResize,
@@ -1341,7 +1367,7 @@ export function useWorkbenchShellModel({
     polygonHandle,
     polylineHandle,
     keypointHandle,
-    handleBatchDelete,
+    handleBatchDelete: handleBatchDeleteNow,
     handleJoinSelectedPolygons,
     handleStartBatchChangeClass,
     handleCommitBatchChangeClass,
@@ -1369,6 +1395,42 @@ export function useWorkbenchShellModel({
     paste: clipboard.paste,
     hasClipboard: clipboard.hasClipboard,
   }), [clipboard]);
+
+  const requestDelete = useCallback(
+    (count: number, run: () => void) => {
+      if (count <= 0) return;
+      if (!shouldConfirmAnnotationDelete(s.workbenchConfig.common.confirmDelete, count)) {
+        run();
+        return;
+      }
+      setDeleteConfirm({ count, onConfirm: run });
+    },
+    [s.workbenchConfig.common.confirmDelete],
+  );
+
+  const handleDeleteBox = useCallback(
+    (id: string) => {
+      requestDelete(1, () => handleDeleteBoxNow(id));
+    },
+    [handleDeleteBoxNow, requestDelete],
+  );
+
+  const handleBatchDelete = useCallback(() => {
+    const ids = s.selectedIds.filter((id) =>
+      annotationsRef.current.some((a) => a.id === id),
+    );
+    requestDelete(ids.length, () => handleBatchDeleteNow(ids));
+  }, [annotationsRef, handleBatchDeleteNow, requestDelete, s.selectedIds]);
+
+  const closeDeleteConfirm = useCallback(() => {
+    setDeleteConfirm(null);
+  }, []);
+
+  const confirmDelete = useCallback(() => {
+    const run = deleteConfirm?.onConfirm;
+    setDeleteConfirm(null);
+    run?.();
+  }, [deleteConfirm]);
 
   const handleSelectBox = useCallback((id: string | null, opts?: { shift?: boolean }) => {
     if (!id) { s.setSelectedId(null); return; }
@@ -1937,7 +1999,7 @@ export function useWorkbenchShellModel({
           isLoading={mlCapabilities.isLoading}
           isError={mlCapabilities.isError}
           exemplarOutputMode={s.exemplarOutputMode}
-          onSetExemplarOutputMode={s.setExemplarOutputMode}
+          onSetExemplarOutputMode={handleSetExemplarOutputMode}
           models={mlCapabilities.models}
           activeModelId={mlCapabilities.activeModelId}
           onSetActiveModelId={mlCapabilities.setActiveModelId}
@@ -2020,6 +2082,11 @@ export function useWorkbenchShellModel({
         rightSidebarWidth: rightOpen ? s.rightWidth : 0,
         workbenchLayout: s.workbenchLayout,
         onWorkbenchLayoutChange: s.setWorkbenchLayout,
+        workbenchCommon: s.workbenchConfig.common,
+        workbenchPointcloud: s.workbenchConfig.pointcloud,
+        workbenchConfigLoaded: s.workbenchConfigLoaded,
+        onWorkbenchConfigChange: s.setWorkbenchFields,
+        onWorkbenchConfigUpdate: s.updateWorkbenchConfig,
         overlays: (
           <>
             {s.tool === "mask" && (
@@ -2360,6 +2427,12 @@ export function useWorkbenchShellModel({
     rejectModal: modeState.rejectModal ? {
       open: modeState.rejectModal.open, count: 1, onClose: modeState.rejectModal.onClose,
       onConfirm: modeState.rejectModal.onConfirm, skipReasonHint: modeState.rejectModal.skipReasonHint,
+    } : undefined,
+    deleteConfirm: deleteConfirm ? {
+      open: true,
+      count: deleteConfirm.count,
+      onCancel: closeDeleteConfirm,
+      onConfirm: confirmDelete,
     } : undefined,
     guidePanel: ANNOTATION_GUIDE_UI_ENABLED && projectId ? {
       projectId,

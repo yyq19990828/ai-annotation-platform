@@ -30,6 +30,21 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.6] - 2026-06-11
+
+点云工作台设置补完。`workbench.pointcloud.*` 填充点大小、点掩膜模式、网格/坐标轴显隐和相机阻尼;`workbench.common.crossFrameOverlayK` 收编邻帧叠加 K。计划见 `docs/plans/2026-06-11-v0.15.6-pointcloud-workbench-settings.md`。
+
+### Added
+
+- **点云设置字段**:工作台设置抽屉与个人设置页新增点大小、点选模式、显示地面网格、显示坐标轴、相机灵敏度;默认值全部等于旧硬编码行为。
+- **旧 localStorage 收编**:首次加载时把 `workbench.pointMaskSelectMode` / `workbench.crossFrameOverlayK` 迁入账号级 preferences,并用 `workbench.{userId}.pcd.migrated` 标记避免重复 seed。
+- **融合开关粘性**:相机上色与深度提示继续作为本机开关,但按 `workbench.{userId}.pcd.*` 分桶记忆,避免共享浏览器串台。
+
+### Changed
+
+- 3D 工具条中的点大小滑块、点掩膜模式下拉和邻帧叠加档位改为读写同一份 preferences;抽屉、个人设置页与工具条实时同步。
+- `PointCloudScene` 增加网格、坐标轴和 OrbitControls 阻尼 setter,设置变化无需重建 Three.js 场景。
+
 ## [0.15.5] - 2026-06-11
 
 视频工作台设置切片。`workbench.video.*` 增加默认播放速率和大步进帧数;关键帧传播与 AI Tracker 传播对话框按用户记住上次选择;WebCodecs 实验开关进入视频任务的工作台设置抽屉。计划见 `docs/plans/2026-06-11-v0.15.5-video-workbench-settings.md`。
@@ -43,6 +58,21 @@
 ### Changed
 
 - 时间轴聚焦时 `Shift+←/→` 的大步进支持 5 / 10 / 30 帧或采样网格;`grid` 模式在采样开启时跳一个采样单元,否则回退 10 帧。
+
+## [0.15.4] - 2026-06-11
+
+图片工作台设置切片。`workbench.image.*` 增加画框后行为、吸附阈值、缩放步长、淡化/标签/Mask 覆盖显示偏好;`workbench.common.*` 增加删除确认和最近类别数量。计划见 `docs/plans/2026-06-11-v0.15.4-image-workbench-settings.md`。
+
+### Added
+
+- **图片设置字段**:工作台设置抽屉与个人设置页新增画框后行为、吸附阈值、滚轮缩放步长、淡化透明度、框标签显隐和 Mask 覆盖透明度;默认值全部等于旧硬编码行为。
+- **通用设置首批**:新增删除确认策略和最近类别数量;`multi_only` 仅多选删除前确认,`always` 单删/多删都确认。
+- **SAM 输出形态记忆**:文本 / Exemplar 输出形态按账号写入本地记忆;项目级默认仍优先。
+
+### Changed
+
+- `afterBoxCreate=reuse_active` 时,手画 bbox 会沿用当前类别直接落库;没有当前类别时仍回退到类别选择器。
+- 最近类别列表按配置上限读取和写回,缩小上限无需迁移旧 localStorage。
 
 ## [0.15.3] - 2026-06-11
 

@@ -32,6 +32,19 @@ const selectField: WorkbenchSettingField = {
   },
 };
 
+const numericSelectField: WorkbenchSettingField = {
+  key: "image.zoomStepFactor",
+  category: "image",
+  label: "滚轮缩放步长",
+  control: {
+    type: "select",
+    options: [
+      { value: 1.05, label: "1.05x" },
+      { value: 1.1, label: "1.10x" },
+    ],
+  },
+};
+
 const textField: WorkbenchSettingField = {
   key: "image.cssImageFilter",
   category: "image",
@@ -61,6 +74,19 @@ describe("SettingsFieldControl", () => {
     render(<SettingsFieldControl field={selectField} value="a" onCommit={onCommit} />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "b" } });
     expect(onCommit).toHaveBeenCalledWith("b");
+  });
+
+  it("select:数字 option 保持 number 类型提交", () => {
+    const onCommit = vi.fn();
+    render(
+      <SettingsFieldControl
+        field={numericSelectField}
+        value={1.05}
+        onCommit={onCommit}
+      />,
+    );
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "1.1" } });
+    expect(onCommit).toHaveBeenCalledWith(1.1);
   });
 
   it("text:blur 时 trim 提交,值未变不提交", () => {

@@ -41,7 +41,15 @@ async def test_patch_image_subtree_only_touches_submitted_field(
     assert wb["image"]["smoothImage"] is True
     assert wb["image"]["cssImageFilter"] == ""
     assert wb["image"]["snapToGrid"] is False
+    assert wb["image"]["afterBoxCreate"] == "pick_class"
+    assert wb["image"]["snapThresholdPx"] == 8
+    assert wb["image"]["zoomStepFactor"] == 1.1
+    assert wb["image"]["fadedOpacity"] == 0.35
+    assert wb["image"]["showBoxLabels"] is True
+    assert wb["image"]["maskOverlayOpacity"] == 0.45
     assert wb["common"]["longTaskSampleRate"] == 0.05
+    assert wb["common"]["confirmDelete"] == "never"
+    assert wb["common"]["recentClassesLimit"] == 5
 
     # GET 读回同形态
     resp = await httpx_client.get(PREFS_URL, headers=_bearer(token))
@@ -113,7 +121,72 @@ async def test_patch_unknown_keys_still_422(httpx_client, annotator):
     assert resp.status_code == 422
 
 
-# ── 3. v0.15.5 视频子树 ───────────────────────────────────────────────
+# ── 3. v0.15.4 图片子树 + common 首批 ────────────────────────────────
+
+
+async def test_patch_image_workbench_settings_fields(httpx_client, annotator):
+    _, token = annotator
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={
+            "workbench": {
+                "common": {
+                    "confirmDelete": "multi_only",
+                    "recentClassesLimit": 12,
+                },
+                "image": {
+                    "afterBoxCreate": "reuse_active",
+                    "snapThresholdPx": 12,
+                    "zoomStepFactor": 1.15,
+                    "fadedOpacity": 0.5,
+                    "showBoxLabels": False,
+                    "maskOverlayOpacity": 0.6,
+                },
+            }
+        },
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    wb = resp.json()["workbench"]
+    assert wb["common"]["confirmDelete"] == "multi_only"
+    assert wb["common"]["recentClassesLimit"] == 12
+    assert wb["image"]["afterBoxCreate"] == "reuse_active"
+    assert wb["image"]["snapThresholdPx"] == 12
+    assert wb["image"]["zoomStepFactor"] == 1.15
+    assert wb["image"]["fadedOpacity"] == 0.5
+    assert wb["image"]["showBoxLabels"] is False
+    assert wb["image"]["maskOverlayOpacity"] == 0.6
+    # 未提交字段保持默认值。
+    assert wb["image"]["smoothImage"] is True
+    assert wb["common"]["longTaskSampleRate"] == 0.05
+
+
+async def test_patch_image_workbench_range_and_enum_violations_422(
+    httpx_client, annotator
+):
+    _, token = annotator
+    for bad_subtree in (
+        {"common": {"confirmDelete": "single_only"}},
+        {"common": {"recentClassesLimit": 2}},
+        {"common": {"recentClassesLimit": 21}},
+        {"image": {"afterBoxCreate": "silent"}},
+        {"image": {"snapThresholdPx": 3}},
+        {"image": {"snapThresholdPx": 17}},
+        {"image": {"zoomStepFactor": 1.07}},
+        {"image": {"fadedOpacity": 0.05}},
+        {"image": {"fadedOpacity": 0.9}},
+        {"image": {"maskOverlayOpacity": 0.1}},
+        {"image": {"maskOverlayOpacity": 0.9}},
+    ):
+        resp = await httpx_client.patch(
+            PREFS_URL,
+            json={"workbench": bad_subtree},
+            headers=_bearer(token),
+        )
+        assert resp.status_code == 422, bad_subtree
+
+
+# ── 4. v0.15.5 视频子树 ───────────────────────────────────────────────
 
 
 async def test_patch_video_subtree_fields(httpx_client, annotator):
@@ -160,7 +233,56 @@ async def test_patch_video_range_and_enum_violations_422(httpx_client, annotator
         assert resp.status_code == 422, bad_video
 
 
-# ── 4. 0103 迁移 SQL ────────────────────────────────────────────────
+# ── 5. v0.15.6 点云子树 + common.crossFrameOverlayK ──────────────────
+
+
+async def test_patch_pointcloud_subtree_fields(httpx_client, annotator):
+    _, token = annotator
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={
+            "workbench": {
+                "pointcloud": {
+                    "pointSize": 0.12,
+                    "pointMaskSelectMode": "lasso",
+                    "showGrid": False,
+                },
+                "common": {"crossFrameOverlayK": 5},
+            }
+        },
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    wb = resp.json()["workbench"]
+    assert wb["pointcloud"]["pointSize"] == 0.12
+    assert wb["pointcloud"]["pointMaskSelectMode"] == "lasso"
+    assert wb["pointcloud"]["showGrid"] is False
+    # 未提交字段保持默认值（默认值 = 现状红线）
+    assert wb["pointcloud"]["showAxisGizmo"] is True
+    assert wb["pointcloud"]["cameraDamping"] == 0.1
+    assert wb["common"]["crossFrameOverlayK"] == 5
+
+
+async def test_patch_pointcloud_range_and_enum_violations_422(
+    httpx_client, annotator
+):
+    _, token = annotator
+    for bad_subtree in (
+        {"pointcloud": {"pointSize": 0.5}},  # > 0.3
+        {"pointcloud": {"pointSize": 0.001}},  # < 0.01
+        {"pointcloud": {"cameraDamping": 0.01}},  # < 0.05
+        {"pointcloud": {"pointMaskSelectMode": "circle"}},  # 非法枚举
+        {"common": {"crossFrameOverlayK": 2}},  # 档位只允许 0/1/3/5/7
+    ):
+        resp = await httpx_client.patch(
+            PREFS_URL,
+            json={"workbench": bad_subtree},
+            headers=_bearer(token),
+        )
+        assert resp.status_code == 422, bad_subtree
+
+
+# ── 6. 0103 迁移 SQL ────────────────────────────────────────────────
 
 
 def _load_migration_0103():

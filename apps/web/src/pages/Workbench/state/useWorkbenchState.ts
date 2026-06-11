@@ -100,8 +100,11 @@ export type EditingClass = {
 
 export function useWorkbenchState() {
   const {
+    config: workbenchConfig,
     layout: workbenchLayout,
-    loaded: workbenchLayoutLoaded,
+    loaded: workbenchConfigLoaded,
+    update: updateWorkbenchConfig,
+    setFields: setWorkbenchFields,
     setLayout: setWorkbenchLayout,
   } = useWorkbenchConfig();
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
@@ -155,7 +158,7 @@ export function useWorkbenchState() {
   const [rightWidth, setRightWidthRaw] = useState<number>(workbenchLayout.rightWidth);
 
   useEffect(() => {
-    if (!workbenchLayoutLoaded) return;
+    if (!workbenchConfigLoaded) return;
     if (!layoutTouchedRef.current.leftOpen) setLeftOpenRaw(workbenchLayout.leftOpen);
     if (!layoutTouchedRef.current.rightOpen) setRightOpenRaw(workbenchLayout.rightOpen);
     if (!layoutTouchedRef.current.leftWidth) setLeftWidthRaw(workbenchLayout.leftWidth);
@@ -165,7 +168,7 @@ export function useWorkbenchState() {
     workbenchLayout.rightOpen,
     workbenchLayout.leftWidth,
     workbenchLayout.rightWidth,
-    workbenchLayoutLoaded,
+    workbenchConfigLoaded,
   ]);
 
   const setLeftOpen = useCallback(
@@ -350,6 +353,7 @@ export function useWorkbenchState() {
     rightOpen, setRightOpen,
     leftWidth, setLeftWidth,
     rightWidth, setRightWidth,
+    workbenchConfig, workbenchConfigLoaded, updateWorkbenchConfig, setWorkbenchFields,
     workbenchLayout, setWorkbenchLayout,
     clipboard, setClipboard,
     canvasDraft,
