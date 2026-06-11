@@ -30,6 +30,24 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.2] - 2026-06-11
+
+Python SDK / CLI / TUI + ML Backend starter 教程。把平台已有 OpenAPI、API key、ML Backend 协议产品化为外部集成入口;ML Backend starter 模板判定为时过早,降级为「教程 + 现有示例打磨」。计划见 `docs/plans/2026-06-07-v0.15.2-sdk-cli-and-ml-backend-starter.md`。
+
+### Added
+
+- **Python SDK `ai-annotation-sdk`**(`packages/python-sdk/`,beta,版本随平台 minor):`from ai_annotation import Client`,覆盖 8 个稳定工作流——`projects.list/create/get`、`datasets.create/upload_files/upload_zip/link_project`、`tasks.list/get/next`、`annotations.list/create/update/delete`、`predictions.import_file`、`jobs.list/get/wait`、`exports.create/wait/download`、`api_keys.list/create/revoke`。核心仅依赖 httpx + pydantic;模型 `extra="allow"` 前向兼容;统一异常层级(`APIStatusError` 按状态码细分 + `JobFailedError`/`JobTimeoutError`);幂等 GET 对 429/5xx 指数退避重试。
+- **CLI `aap`**(`[cli]` extra,Typer + Rich):`login`(连通验证后写 `~/.config/ai-annotation/config.toml`,chmod 0600)、`projects list/create`、`datasets create/upload/link`、`predictions import`、`jobs wait`、`export project`;rich 表格/进度条,**所有命令提供 `--json` 可脚本化契约**(裸 JSON、无装饰,CI/脚本只依赖它);env `AAP_BASE_URL`/`AAP_API_KEY` 覆盖配置。
+- **TUI 面板 `aap tui`**(`[tui]` extra,Textual):Projects / Datasets / Jobs 三 tab 只读监控;jobs 默认 3s 轮询,progress 文本进度条 + 状态着色,running→completed 翻转高亮;`r` 刷新、回车看详情(导出 job 显式给出 download_url)、`q` 退出。同步 Client 全部走 thread worker,事件循环零阻塞。
+- **ML Backend starter 教程**:`docs-site/dev/ml-backend/starter.md`——「从 echo 示例出发接入一个真实模型」tutorial(贯穿 OCR backend 改造示例),进阶指向 mock-v2 与 `aap_protocol_v2`;独立 starter 模板按计划判定暂不立项(协议尚在快速收敛期)。
+- **示例升级 + contract test 保活**:echo 示例升级为协议 v2.1 最小合规骨架(protocol_version/compat/models[] 目录/运行时观测字段);mock-v2 补齐 v0.14.13–0.14.15 字段(default_variants、`POST /warmup`、`context.model_variants`、422 `variant_not_supported` / 503 `model_unavailable` 演示);两示例各配 contract tests 并接入 CI(`examples-pytest` job),防示例与协议脱节。
+
+### Notes
+
+- 生成策略调整:OpenAPI 快照 3.5 万行,全量 codegen 维护成本与「生成层泄漏」风险均高——首版改为**手写 typed 层 + OpenAPI 快照 contract test**(断言 SDK 使用的全部 24 个 method+path 存在于 snapshot),公开 API 仅限 wrapper。
+- 生产 backend 重复样板(presigned 下载、observability 采样,~525 行)下沉 `aap_protocol_v2` 留待后续择机,不阻塞本版。
+- SDK / CLI / TUI 测试(respx mock + CliRunner + Textual Pilot)接入 CI `python-sdk-pytest` job。
+
 ## [0.15.1] - 2026-06-10
 
 跨帧插值 + 多目标批量 propagate。在 v0.15.0 的 ego 地基上,把 v0.14.1 的「`Shift+→` 逐帧手搬框」升级成「ego 运动补偿 + 关键帧插值 + 批量」,减少长 scene 的逐帧重复劳动。计划见 `docs/plans/2026-06-06-v0.15.1-crossframe-interpolation-and-batch-propagate.md`。
