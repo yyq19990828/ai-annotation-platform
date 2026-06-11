@@ -164,22 +164,35 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
         raise HTTPException(status_code=404, detail="Task not found")
 
 
-def _encode_task_cursor(created_at, task_id: uuid.UUID) -> str:
+# sequence_order 为 NULL 的非序列任务(图像标注等)用该哨兵参与排序,稳定排在
+# 序列任务(点云 scene 帧)之后。取 int32 上限,真实帧序号不可能触及。
+_SEQ_NULL_SENTINEL = 2147483647
+
+
+def _encode_task_cursor(seq_order: int | None, created_at, task_id: uuid.UUID) -> str:
+    seq = _SEQ_NULL_SENTINEL if seq_order is None else seq_order
     ts = (
         created_at.astimezone(timezone.utc).isoformat()
         if created_at.tzinfo
         else created_at.isoformat()
     )
-    return base64.urlsafe_b64encode(f"{ts}|{task_id.hex}".encode()).decode()
+    return base64.urlsafe_b64encode(f"{seq}|{ts}|{task_id.hex}".encode()).decode()
 
 
 def _decode_task_cursor(cursor: str):
     raw = base64.urlsafe_b64decode(cursor.encode()).decode()
-    ts_str, id_hex = raw.split("|", 1)
     from datetime import datetime
 
+    parts = raw.split("|", 2)
+    if len(parts) == 3:
+        seq_str, ts_str, id_hex = parts
+        seq = int(seq_str)
+    else:
+        # 兼容旧 2 段游标((created_at, id) 时代):seq 取哨兵,降级为按时间/ id 续翻。
+        ts_str, id_hex = parts
+        seq = _SEQ_NULL_SENTINEL
     ts = datetime.fromisoformat(ts_str)
-    return ts, uuid.UUID(id_hex)
+    return seq, ts, uuid.UUID(id_hex)
 
 
 @router.get("", response_model=TaskListResponse)
@@ -242,18 +255,23 @@ async def list_tasks(
         q = q.where(Task.batch_id == batch_id)
         count_q = count_q.where(Task.batch_id == batch_id)
 
-    # v0.6.8 B-15：首屏与游标分支统一排序为 (created_at, id)，并都产出 next_cursor，
-    # 修前端 useInfiniteQuery 因首屏拿不到 next_cursor 而判定 hasNextPage=false 卡在 100 条的 BUG。
+    # v0.6.8 B-15：首屏与游标分支统一排序，并都产出 next_cursor，修前端 useInfiniteQuery
+    # 因首屏拿不到 next_cursor 而判定 hasNextPage=false 卡在 100 条的 BUG。
+    # 排序主键改为 sequence_order(点云 scene 按帧时序分包时,同 scene 的 task 是同一刻批量
+    # 创建的、created_at 全相同,旧的 (created_at, id) 排序退化为按随机 UUID id 乱序)。
+    # 非序列任务 sequence_order 为 NULL → coalesce 到哨兵,排序退回 (created_at, id),行为不变。
+    seq_key = func.coalesce(Task.sequence_order, _SEQ_NULL_SENTINEL)
     if cursor:
-        last_ts, last_id = _decode_task_cursor(cursor)
+        last_seq, last_ts, last_id = _decode_task_cursor(cursor)
         q = q.where(
             or_(
-                Task.created_at > last_ts,
-                and_(Task.created_at == last_ts, Task.id > last_id),
+                seq_key > last_seq,
+                and_(seq_key == last_seq, Task.created_at > last_ts),
+                and_(seq_key == last_seq, Task.created_at == last_ts, Task.id > last_id),
             )
         )
 
-    q = q.order_by(Task.created_at, Task.id).limit(limit)
+    q = q.order_by(seq_key, Task.created_at, Task.id).limit(limit)
     if not cursor and offset:
         q = q.offset(offset)
     tasks = list((await db.execute(q)).scalars().all())
@@ -268,7 +286,7 @@ async def list_tasks(
     }
     briefs = await resolve_briefs(db, user_ids) if user_ids else {}
     next_cursor = (
-        _encode_task_cursor(tasks[-1].created_at, tasks[-1].id)
+        _encode_task_cursor(tasks[-1].sequence_order, tasks[-1].created_at, tasks[-1].id)
         if len(tasks) == limit
         else None
     )
