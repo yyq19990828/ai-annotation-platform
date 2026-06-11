@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_WORKBENCH_PREFERENCES } from "@/api/auth";
+import { WEBCODECS_FLAG_STORAGE_KEY } from "../stage/useVideoChunkDecoder";
 import type { LockableField } from "../state/useWorkbenchConfig";
 
 const mockSetFields = vi.fn();
@@ -46,6 +47,7 @@ function renderDrawer(props?: Partial<Parameters<typeof WorkbenchSettingsDrawer>
 describe("WorkbenchSettingsDrawer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     mockLockedFields.current = [];
   });
 
@@ -80,6 +82,29 @@ describe("WorkbenchSettingsDrawer", () => {
       .querySelector("input[type=checkbox]") as HTMLInputElement;
     fireEvent.click(smooth);
     expect(mockSetFields).toHaveBeenCalledWith({ image: { smoothImage: false } });
+  });
+
+  it("video 模态:渲染视频设置与实验特性,WebCodecs 直接写 localStorage", () => {
+    renderDrawer({ stageKind: "video" });
+    expect(screen.getByText("视频")).toBeTruthy();
+    expect(screen.getByText("实验特性")).toBeTruthy();
+    fireEvent.change(
+      screen
+        .getByTestId("setting-field-video.defaultPlaybackRate")
+        .querySelector("select") as HTMLSelectElement,
+      { target: { value: "0.5" } },
+    );
+    expect(mockSetFields).toHaveBeenCalledWith({
+      video: { defaultPlaybackRate: 0.5 },
+    });
+
+    const webcodecs = screen
+      .getByTestId("setting-field-experiment.webcodecs")
+      .querySelector("input[type=checkbox]") as HTMLInputElement;
+    fireEvent.click(webcodecs);
+
+    expect(window.localStorage.getItem(WEBCODECS_FLAG_STORAGE_KEY)).toBe("1");
+    expect(mockSetFields).toHaveBeenCalledTimes(1);
   });
 
   it("被项目锁定的字段禁用", () => {

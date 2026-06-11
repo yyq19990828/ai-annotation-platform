@@ -2,37 +2,77 @@
 // 共用本数组渲染,杜绝两处 UI 漂移。新增字段流程:后端子树加字段 → auth.ts 类型同步 →
 // 这里加一行 → 消费点读配置。
 import type { WorkbenchPreferences } from "@/api/auth";
+import { WEBCODECS_FLAG_STORAGE_KEY } from "../stage/useVideoChunkDecoder";
 import type { LockableField, WorkbenchConfigPatch } from "./useWorkbenchConfig";
 
-export type WorkbenchSettingCategory = "common" | "image" | "video" | "pointcloud";
+export type WorkbenchPreferenceSettingCategory = "common" | "image" | "video" | "pointcloud";
+export type WorkbenchSettingCategory = WorkbenchPreferenceSettingCategory | "experiment";
 
 export type WorkbenchSettingValue = boolean | number | string;
 
 export type WorkbenchSettingControl =
   | { type: "toggle"; onText?: string; offText?: string }
   | { type: "slider"; min: number; max: number; step: number; format?: (v: number) => string }
-  | { type: "select"; options: Array<{ value: string; label: string }> }
+  | { type: "select"; options: Array<{ value: WorkbenchSettingValue; label: string }> }
   | { type: "text"; maxLength: number; placeholder?: string };
 
-export interface WorkbenchSettingField {
+interface WorkbenchSettingFieldBase {
   /** "image.controlPointsSize" — 与 WorkbenchPreferences 子树路径一致(category.字段名)。 */
   key: `${WorkbenchSettingCategory}.${string}`;
   category: WorkbenchSettingCategory;
   label: string;
   description?: string;
   control: WorkbenchSettingControl;
-  /** 是否参与项目锁定(ProjectRenderingConfig 平铺同名字段可覆盖,v0.10.10)。 */
-  lockable?: boolean;
   /** 注册但不渲染。v0.15.3 红线:不新增用户可感知项(snapToGrid 现状无设置 UI)。 */
   hidden?: boolean;
 }
+
+export interface WorkbenchPreferenceSettingField extends WorkbenchSettingFieldBase {
+  key: `${WorkbenchPreferenceSettingCategory}.${string}`;
+  category: WorkbenchPreferenceSettingCategory;
+  storage?: "preferences";
+  /** 是否参与项目锁定(ProjectRenderingConfig 平铺同名字段可覆盖,v0.10.10)。 */
+  lockable?: boolean;
+}
+
+export interface WorkbenchLocalSettingField extends WorkbenchSettingFieldBase {
+  key: `experiment.${string}`;
+  category: "experiment";
+  storage: "local";
+  read: () => WorkbenchSettingValue;
+  write: (value: WorkbenchSettingValue) => void;
+}
+
+export type WorkbenchSettingField =
+  | WorkbenchPreferenceSettingField
+  | WorkbenchLocalSettingField;
 
 export const WORKBENCH_SETTING_CATEGORY_LABELS: Record<WorkbenchSettingCategory, string> = {
   common: "通用",
   image: "图片",
   video: "视频",
   pointcloud: "点云",
+  experiment: "实验特性",
 };
+
+function readLocalBoolean(key: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw === "1" || raw === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeLocalBoolean(key: string, value: WorkbenchSettingValue): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, value ? "1" : "0");
+  } catch {
+    /* local device flag is best-effort */
+  }
+}
 
 export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   {
@@ -79,15 +119,63 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     // 现状只有项目级覆盖入口,用户侧无 UI;本版不新增可感知项,先注册不渲染。
     hidden: true,
   },
+  {
+    key: "video.defaultPlaybackRate",
+    category: "video",
+    label: "默认播放速率",
+    description: "打开视频任务时的初始播放速率",
+    control: {
+      type: "select",
+      options: [
+        { value: 0.25, label: "0.25x" },
+        { value: 0.5, label: "0.5x" },
+        { value: 1, label: "1x" },
+        { value: 2, label: "2x" },
+        { value: 4, label: "4x" },
+      ],
+    },
+  },
+  {
+    key: "video.largeFrameStep",
+    category: "video",
+    label: "大步进帧数",
+    description: "时间轴聚焦时 Shift+←/→ 使用",
+    control: {
+      type: "select",
+      options: [
+        { value: 5, label: "5 帧" },
+        { value: 10, label: "10 帧" },
+        { value: 30, label: "30 帧" },
+        { value: "grid", label: "采样网格" },
+      ],
+    },
+  },
+  {
+    key: "experiment.webcodecs",
+    category: "experiment",
+    storage: "local",
+    label: "WebCodecs 精确解码",
+    description: "实验性,刷新后生效",
+    control: { type: "toggle" },
+    read: () => readLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY),
+    write: (value) => writeLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY, value),
+  },
 ];
+
+export function isLocalSettingField(
+  field: WorkbenchSettingField,
+): field is WorkbenchLocalSettingField {
+  return field.storage === "local";
+}
 
 /** 按 key 的子树路径从配置中取当前值。 */
 export function getFieldValue(
   config: WorkbenchPreferences,
   field: WorkbenchSettingField,
 ): WorkbenchSettingValue {
+  if (isLocalSettingField(field)) return field.read();
   const name = field.key.slice(field.category.length + 1);
-  return (config[field.category] as Record<string, WorkbenchSettingValue>)[name];
+  return (config[field.category] as unknown as Record<string, WorkbenchSettingValue>)[name];
 }
 
 /** 把单字段新值包装成子树级 patch(useWorkbenchConfig.update / setFields 入参)。 */
@@ -95,12 +183,16 @@ export function buildFieldPatch(
   field: WorkbenchSettingField,
   value: WorkbenchSettingValue,
 ): WorkbenchConfigPatch {
+  if (isLocalSettingField(field)) {
+    throw new Error("Local workbench setting fields do not build preference patches");
+  }
   const name = field.key.slice(field.category.length + 1);
   return { [field.category]: { [name]: value } } as WorkbenchConfigPatch;
 }
 
 /** lockable 字段对应的 LockableField 名(平铺命名,与 lockedFields 比对);非 lockable 返回 null。 */
 export function lockableFieldName(field: WorkbenchSettingField): LockableField | null {
+  if (isLocalSettingField(field)) return null;
   if (!field.lockable) return null;
   return field.key.slice(field.category.length + 1) as LockableField;
 }

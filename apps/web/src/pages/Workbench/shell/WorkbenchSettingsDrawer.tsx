@@ -1,7 +1,7 @@
 // v0.15.3 · 工作台设置抽屉:齿轮菜单「工作台设置」入口打开,按「通用 + 当前模态」两组渲染
 // 字段注册表(workbenchSettingsFields.ts),改动经 useWorkbenchConfig.setFields 本地立即生效
 // (画布实时预览)+ 300ms 防抖 PATCH。被项目 rendering_config 锁定的字段禁用 + badge。
-import { useEffect } from "react";
+import { useEffect, useReducer } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
@@ -13,6 +13,7 @@ import {
   WORKBENCH_SETTING_FIELDS,
   buildFieldPatch,
   getFieldValue,
+  isLocalSettingField,
   lockableFieldName,
   type WorkbenchSettingCategory,
 } from "../state/workbenchSettingsFields";
@@ -44,6 +45,7 @@ export function WorkbenchSettingsDrawer({
   const { config, loaded, lockedFields, setFields } = useWorkbenchConfig(
     projectRenderingConfig,
   );
+  const [, refreshLocalFields] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
     if (!open) return;
@@ -56,8 +58,10 @@ export function WorkbenchSettingsDrawer({
 
   if (!open) return null;
 
-  // 仅展示「通用 + 当前模态」;空分组(本版 video/pointcloud)不渲染。
-  const categories: WorkbenchSettingCategory[] = ["common", STAGE_CATEGORY[stageKind]];
+  const categories: WorkbenchSettingCategory[] =
+    stageKind === "video"
+      ? ["common", "video", "experiment"]
+      : ["common", STAGE_CATEGORY[stageKind]];
   const groups = categories
     .map((category) => ({
       category,
@@ -111,7 +115,14 @@ export function WorkbenchSettingsDrawer({
                       field={field}
                       value={getFieldValue(config, field)}
                       locked={lockName !== null && lockedFields.includes(lockName)}
-                      onCommit={(value) => setFields(buildFieldPatch(field, value))}
+                      onCommit={(value) => {
+                        if (isLocalSettingField(field)) {
+                          field.write(value);
+                          refreshLocalFields();
+                          return;
+                        }
+                        setFields(buildFieldPatch(field, value));
+                      }}
                     />
                   );
                 })}

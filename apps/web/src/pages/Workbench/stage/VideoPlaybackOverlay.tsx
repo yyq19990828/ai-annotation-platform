@@ -15,6 +15,7 @@ import styles from "./VideoPlaybackOverlay.module.css";
 
 type HighlightAction = "prev" | "next" | "play" | null;
 type CSSVars = Record<`--${string}`, string | number>;
+export type VideoLargeFrameStep = 5 | 10 | 30 | "grid";
 
 export interface VideoTimelineChapter {
   id: string;
@@ -29,6 +30,8 @@ interface VideoPlaybackOverlayProps {
   maxFrame: number;
   /** v0.10.29 · 采样网格步长 (源帧空间)。>1 时在时间轴渲染网格刻度；1 时不画。 */
   samplingStep?: number;
+  /** v0.15.5 · 时间轴聚焦时 Shift+←/→ 的大步进策略。 */
+  largeFrameStep?: VideoLargeFrameStep;
   timebase: FrameTimebase;
   isPlaying: boolean;
   playbackRateLabel?: string;
@@ -72,6 +75,14 @@ function cn(...classes: Array<string | false | null | undefined>) {
 // 密度条半透明色: 轨迹色 (oklch) 或 accent token 兑入透明, 避免密度条过抢眼。
 function densityTint(color: string) {
   return `color-mix(in oklch, ${color} 68%, transparent)`;
+}
+
+export function resolveLargeFrameStep(
+  largeFrameStep: VideoLargeFrameStep,
+  samplingStep: number,
+): number {
+  if (largeFrameStep !== "grid") return largeFrameStep;
+  return samplingStep > 1 ? samplingStep : 10;
 }
 
 /**
@@ -130,6 +141,7 @@ export function VideoPlaybackOverlay({
   frameIndex,
   maxFrame,
   samplingStep = 1,
+  largeFrameStep = 10,
   timebase,
   isPlaying,
   playbackRateLabel,
@@ -212,7 +224,7 @@ export function VideoPlaybackOverlay({
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return false;
     e.preventDefault();
     e.stopPropagation();
-    const step = e.shiftKey ? 10 : 1;
+    const step = e.shiftKey ? resolveLargeFrameStep(largeFrameStep, samplingStep) : 1;
     onSeekByFrames(e.key === "ArrowRight" ? step : -step);
     target.focus({ preventScroll: true });
     return true;
@@ -235,12 +247,12 @@ export function VideoPlaybackOverlay({
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       e.preventDefault();
       e.stopPropagation();
-      const step = e.shiftKey ? 10 : 1;
+      const step = e.shiftKey ? resolveLargeFrameStep(largeFrameStep, samplingStep) : 1;
       onSeekByFrames(e.key === "ArrowRight" ? step : -step);
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [interactive, onSeekByFrames, visible]);
+  }, [interactive, largeFrameStep, onSeekByFrames, samplingStep, visible]);
   const hoverLeft = maxFrame > 0 ? ((hoverFrame ?? 0) / maxFrame) * 100 : 0;
   const hoverPopoverLeft = `${Math.max(12, Math.min(88, hoverLeft))}%`;
 

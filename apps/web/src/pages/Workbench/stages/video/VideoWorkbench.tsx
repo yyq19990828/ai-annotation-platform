@@ -12,6 +12,7 @@ import type { AnnotationFeedback } from "@/api/feedbacks";
 import type { VideoTimelineChapter } from "../../stage/VideoPlaybackOverlay";
 import type { VideoTrackAnnotation } from "../../stage/videoStageTypes";
 import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
+import { useWorkbenchConfig } from "../../state/useWorkbenchConfig";
 import type { DiffMode } from "../../modes/types";
 import type { VideoConvertOptions, VideoTrackCompositionOptions } from "./useVideoAnnotationActions";
 
@@ -103,6 +104,8 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     issueHighlightId,
     onIssuePinClick,
   }, ref) {
+    const { config: workbenchConfig } = useWorkbenchConfig();
+    const workbenchVideo = workbenchConfig.video;
     return (
       <VideoStage
         ref={ref}
@@ -125,6 +128,8 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         pendingDrawing={pendingDrawing}
         chapters={chapters}
         videoSampling={videoSampling}
+        defaultPlaybackRate={workbenchVideo.defaultPlaybackRate}
+        largeFrameStep={workbenchVideo.largeFrameStep}
         onSelect={onSelect}
         onFrameIndexChange={onFrameIndexChange}
         onCreate={onCreate}

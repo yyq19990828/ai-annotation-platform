@@ -2228,6 +2228,7 @@ export function useWorkbenchShellModel({
             selectedId={s.selectedId}
             selectedIds={s.selectedIds}
             frameIndex={s.videoFrameIndex}
+            userId={meUserId ?? null}
             trackFilter={frameFilter}
             readOnly={isLocked}
             hiddenTrackIds={s.hiddenVideoTrackIds}
@@ -2393,6 +2394,7 @@ export function useWorkbenchShellModel({
     frameIndex: s.videoFrameIndex,
     maxFrame: Math.max(0, videoFrameCount - 1),
     nextKeyframeAfter: propagateDialogNextKeyframe,
+    userId: meUserId ?? null,
     samplingStep,
     submitting: Boolean(propagateDialog?.submitting),
     onCancel: () => setPropagateDialog(null),

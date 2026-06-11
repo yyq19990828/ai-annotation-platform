@@ -39,6 +39,7 @@ interface VideoTrackPanelProps {
   selectedTrackLocked: boolean;
   currentFrameOutside: boolean;
   frameIndex: number;
+  userId?: string | null;
   trackFilter?: TrackFilter;
   readOnly: boolean;
   selectedBboxCount?: number;
@@ -182,6 +183,7 @@ export function VideoTrackPanel({
   selectedTrackLocked,
   currentFrameOutside,
   frameIndex,
+  userId,
   trackFilter = "all",
   readOnly,
   selectedBboxCount = 0,
@@ -969,6 +971,7 @@ export function VideoTrackPanel({
       <VideoKeyframesPropagateDialog
         open={propagateOpen}
         frameIndex={frameIndex}
+        userId={userId}
         samplingStep={samplingStep}
         onCancel={() => setPropagateOpen(false)}
         onSubmit={(payload: VideoKeyframesPropagateSubmit) => {

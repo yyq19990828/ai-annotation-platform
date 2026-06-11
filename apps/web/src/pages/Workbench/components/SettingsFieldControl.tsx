@@ -80,11 +80,16 @@ export function SettingsFieldControl({
         <select
           value={String(value)}
           disabled={disabled || locked}
-          onChange={(e) => onCommit(e.target.value)}
+          onChange={(e) => {
+            const selected = control.options.find(
+              (opt) => String(opt.value) === e.target.value,
+            );
+            if (selected) onCommit(selected.value);
+          }}
           className={styles.input}
         >
           {control.options.map((opt) => (
-            <option key={opt.value} value={opt.value}>
+            <option key={String(opt.value)} value={String(opt.value)}>
               {opt.label}
             </option>
           ))}

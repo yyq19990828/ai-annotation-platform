@@ -18705,8 +18705,30 @@
       },
       "WorkbenchVideoPreferences": {
         "additionalProperties": false,
-        "description": "v0.15.3 · 视频模态偏好。本版为空占位，后续版本填充。",
-        "properties": {},
+        "description": "v0.15.5 · 视频模态偏好（播放 / 步进）。",
+        "properties": {
+          "defaultPlaybackRate": {
+            "default": 1,
+            "enum": [
+              0.25,
+              0.5,
+              1,
+              2,
+              4
+            ],
+            "title": "Defaultplaybackrate"
+          },
+          "largeFrameStep": {
+            "default": 10,
+            "enum": [
+              5,
+              10,
+              30,
+              "grid"
+            ],
+            "title": "Largeframestep"
+          }
+        },
         "title": "WorkbenchVideoPreferences",
         "type": "object"
       }

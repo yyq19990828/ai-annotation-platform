@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { VideoKeyframesPropagateDialog } from "./VideoKeyframesPropagateDialog";
+import { videoDialogMemoryStorageKey } from "../state/videoDialogMemory";
 
 describe("VideoKeyframesPropagateDialog", () => {
   it("closed 时不渲染", () => {
@@ -65,5 +66,74 @@ describe("VideoKeyframesPropagateDialog", () => {
     expect(screen.getByText("G20 → G15 (F100 → F75)")).toBeTruthy();
     fireEvent.click(screen.getByText("复制"));
     expect(onSubmit).toHaveBeenCalledWith({ direction: "backward", count: 25, overwrite: false });
+  });
+
+  it("提交成功后记住上次选择,重开作为初值", () => {
+    const onSubmit = vi.fn();
+    const { rerender } = render(
+      <VideoKeyframesPropagateDialog
+        open
+        frameIndex={20}
+        userId="u1"
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    );
+    fireEvent.click(screen.getByText("向前"));
+    fireEvent.click(screen.getByText("30"));
+    fireEvent.click(screen.getByLabelText("覆盖目标帧已有关键帧"));
+    fireEvent.click(screen.getByText("复制"));
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      direction: "backward",
+      count: 30,
+      overwrite: true,
+    });
+
+    rerender(
+      <VideoKeyframesPropagateDialog
+        open={false}
+        frameIndex={20}
+        userId="u1"
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    );
+    rerender(
+      <VideoKeyframesPropagateDialog
+        open
+        frameIndex={20}
+        userId="u1"
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    expect(screen.getByText("F20 → F0")).toBeTruthy();
+    expect(screen.getByLabelText("覆盖目标帧已有关键帧")).toBeChecked();
+  });
+
+  it("取消不写记忆,脏记忆回退默认值", () => {
+    const key = videoDialogMemoryStorageKey("u1", "kfPropagate");
+    window.localStorage.setItem(key, JSON.stringify({ count: -1, direction: "sideways" }));
+    const onCancel = vi.fn();
+    render(
+      <VideoKeyframesPropagateDialog
+        open
+        frameIndex={5}
+        userId="u1"
+        onCancel={onCancel}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("F5 → F15")).toBeTruthy();
+    fireEvent.click(screen.getByText("向前"));
+    fireEvent.click(screen.getByTestId("video-keyframes-propagate-dialog"));
+
+    expect(onCancel).toHaveBeenCalled();
+    expect(window.localStorage.getItem(key)).toBe(
+      JSON.stringify({ count: -1, direction: "sideways" }),
+    );
   });
 });

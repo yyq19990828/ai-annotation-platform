@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import datetime
@@ -95,9 +95,12 @@ class WorkbenchImagePreferences(BaseModel):
 
 
 class WorkbenchVideoPreferences(BaseModel):
-    """v0.15.3 · 视频模态偏好。本版为空占位，后续版本填充。"""
+    """v0.15.5 · 视频模态偏好（播放 / 步进）。"""
 
     model_config = {"extra": "forbid"}
+
+    defaultPlaybackRate: Literal[0.25, 0.5, 1, 2, 4] = 1
+    largeFrameStep: Literal[5, 10, 30, "grid"] = 10
 
 
 class WorkbenchPointcloudPreferences(BaseModel):

@@ -25,9 +25,14 @@ export interface WorkbenchImagePreferences {
   snapToGrid: boolean;
 }
 
-/** v0.15.3 · 视频子树本版为空壳,后续版本填充。Record<never, never> 而非 Record<string, never>:
- *  后者的 Partial 带 string 索引签名,与 spread 子树合并不兼容(TS2322)。 */
-export type WorkbenchVideoPreferences = Record<never, never>;
+export type VideoDefaultPlaybackRate = 0.25 | 0.5 | 1 | 2 | 4;
+export type VideoLargeFrameStep = 5 | 10 | 30 | "grid";
+
+/** v0.15.5 · 视频工作台播放 / 步进偏好。 */
+export interface WorkbenchVideoPreferences {
+  defaultPlaybackRate: VideoDefaultPlaybackRate;
+  largeFrameStep: VideoLargeFrameStep;
+}
 
 /** v0.15.3 · 点云子树本版为空壳,后续版本填充。 */
 export type WorkbenchPointcloudPreferences = Record<never, never>;
@@ -99,7 +104,10 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     controlPointsSize: 6,
     snapToGrid: false,
   },
-  video: {},
+  video: {
+    defaultPlaybackRate: 1,
+    largeFrameStep: 10,
+  },
   pointcloud: {},
   layout: {
     leftOpen: true,

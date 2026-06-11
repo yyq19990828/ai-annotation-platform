@@ -24,8 +24,8 @@ describe("workbenchSettingsFields 注册表", () => {
     }
   });
 
-  it("v0.15.3 红线:注册表只含现有 5 字段,默认值与现状一致", () => {
-    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(5);
+  it("注册表默认值与现状一致", () => {
+    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(8);
     const byKey = Object.fromEntries(
       WORKBENCH_SETTING_FIELDS.map((f) => [
         f.key,
@@ -38,6 +38,9 @@ describe("workbenchSettingsFields 注册表", () => {
       "image.cssImageFilter": "",
       "image.controlPointsSize": 6,
       "image.snapToGrid": false,
+      "video.defaultPlaybackRate": 1,
+      "video.largeFrameStep": 10,
+      "experiment.webcodecs": false,
     });
   });
 
@@ -50,6 +53,17 @@ describe("workbenchSettingsFields 注册表", () => {
       (f) => f.key === "common.longTaskSampleRate",
     )!;
     expect(buildFieldPatch(common, 0.2)).toEqual({ common: { longTaskSampleRate: 0.2 } });
+    const video = WORKBENCH_SETTING_FIELDS.find(
+      (f) => f.key === "video.largeFrameStep",
+    )!;
+    expect(buildFieldPatch(video, "grid")).toEqual({ video: { largeFrameStep: "grid" } });
+  });
+
+  it("local fields do not build preference patches", () => {
+    const field = WORKBENCH_SETTING_FIELDS.find(
+      (f) => f.key === "experiment.webcodecs",
+    )!;
+    expect(() => buildFieldPatch(field, true)).toThrow(/Local workbench setting/);
   });
 
   it("lockableFieldName:image 4 个可锁字段映射平铺名,其余 null", () => {

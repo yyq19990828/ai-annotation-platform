@@ -19,6 +19,7 @@ import {
   WORKBENCH_SETTING_FIELDS,
   buildFieldPatch,
   getFieldValue,
+  isLocalSettingField,
   type WorkbenchSettingCategory,
   type WorkbenchSettingField,
   type WorkbenchSettingValue,
@@ -579,7 +580,9 @@ function WorkbenchPreferencesSection() {
   const groups = (Object.keys(WORKBENCH_SETTING_CATEGORY_LABELS) as WorkbenchSettingCategory[])
     .map((category) => ({
       category,
-      fields: WORKBENCH_SETTING_FIELDS.filter((f) => f.category === category && !f.hidden),
+      fields: WORKBENCH_SETTING_FIELDS.filter(
+        (f) => f.category === category && !f.hidden && !isLocalSettingField(f),
+      ),
     }))
     .filter((g) => g.fields.length > 0);
 

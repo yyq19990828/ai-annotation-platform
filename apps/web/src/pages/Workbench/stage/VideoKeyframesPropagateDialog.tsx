@@ -2,12 +2,28 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import type { VideoPropagateDirection } from "../state/videoTrackCommands";
+import { readDialogMemory, writeDialogMemory } from "../state/videoDialogMemory";
 import styles from "./VideoKeyframesPropagateDialog.module.css";
 
 const COUNT_PRESETS = [1, 5, 10, 30] as const;
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
+}
+
+function validateKeyframesMemory(value: unknown): VideoKeyframesPropagateSubmit | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Partial<VideoKeyframesPropagateSubmit>;
+  const direction =
+    raw.direction === "forward" || raw.direction === "backward"
+      ? raw.direction
+      : null;
+  const count =
+    typeof raw.count === "number" && Number.isFinite(raw.count) && raw.count > 0
+      ? Math.floor(raw.count)
+      : null;
+  if (!direction || !count || typeof raw.overwrite !== "boolean") return null;
+  return { direction, count, overwrite: raw.overwrite };
 }
 
 export interface VideoKeyframesPropagateSubmit {
@@ -19,6 +35,7 @@ export interface VideoKeyframesPropagateSubmit {
 interface VideoKeyframesPropagateDialogProps {
   open: boolean;
   frameIndex: number;
+  userId?: string | null;
   /** 采样网格步长 (源帧). >1 时 count 以网格格子为单位; 缺省 1 = 现状 (按源帧). */
   samplingStep?: number;
   onCancel: () => void;
@@ -35,6 +52,7 @@ interface VideoKeyframesPropagateDialogProps {
 export function VideoKeyframesPropagateDialog({
   open,
   frameIndex,
+  userId,
   samplingStep = 1,
   onCancel,
   onSubmit,
@@ -45,11 +63,16 @@ export function VideoKeyframesPropagateDialog({
 
   useEffect(() => {
     if (open) {
-      setDirection("forward");
-      setCount(10);
-      setOverwrite(false);
+      const remembered = readDialogMemory(
+        userId,
+        "kfPropagate",
+        validateKeyframesMemory,
+      );
+      setDirection(remembered?.direction ?? "forward");
+      setCount(remembered?.count ?? 10);
+      setOverwrite(remembered?.overwrite ?? false);
     }
-  }, [open]);
+  }, [open, userId]);
 
   if (!open) return null;
 
@@ -62,6 +85,7 @@ export function VideoKeyframesPropagateDialog({
   const handleSubmit = () => {
     if (count <= 0) return;
     onSubmit({ direction, count: sourceCount, overwrite });
+    writeDialogMemory(userId, "kfPropagate", { direction, count, overwrite });
   };
 
   return (

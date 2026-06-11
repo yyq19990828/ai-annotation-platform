@@ -113,7 +113,54 @@ async def test_patch_unknown_keys_still_422(httpx_client, annotator):
     assert resp.status_code == 422
 
 
-# ── 3. 0103 迁移 SQL ────────────────────────────────────────────────
+# ── 3. v0.15.5 视频子树 ───────────────────────────────────────────────
+
+
+async def test_patch_video_subtree_fields(httpx_client, annotator):
+    _, token = annotator
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={
+            "workbench": {
+                "video": {
+                    "defaultPlaybackRate": 0.5,
+                    "largeFrameStep": "grid",
+                }
+            }
+        },
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    video = resp.json()["workbench"]["video"]
+    assert video["defaultPlaybackRate"] == 0.5
+    assert video["largeFrameStep"] == "grid"
+
+    # GET 读回同形态,未提交字段不丢默认。
+    resp = await httpx_client.get(PREFS_URL, headers=_bearer(token))
+    assert resp.status_code == 200
+    assert resp.json()["workbench"]["video"] == {
+        "defaultPlaybackRate": 0.5,
+        "largeFrameStep": "grid",
+    }
+
+
+async def test_patch_video_range_and_enum_violations_422(httpx_client, annotator):
+    _, token = annotator
+    for bad_video in (
+        {"defaultPlaybackRate": 3},
+        {"defaultPlaybackRate": 0.75},
+        {"largeFrameStep": 1},
+        {"largeFrameStep": "sampling"},
+    ):
+        resp = await httpx_client.patch(
+            PREFS_URL,
+            json={"workbench": {"video": bad_video}},
+            headers=_bearer(token),
+        )
+        assert resp.status_code == 422, bad_video
+
+
+# ── 4. 0103 迁移 SQL ────────────────────────────────────────────────
 
 
 def _load_migration_0103():
