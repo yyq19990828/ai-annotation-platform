@@ -258,12 +258,20 @@
 | DELETE | `/{backend_id}` |
 | POST | `/{backend_id}/unload` |
 | POST | `/{backend_id}/reload` |
+| POST | `/{backend_id}/warmup` |
 | GET | `/{backend_id}/setup` |
 | GET | `/{backend_id}/capabilities` |
 | POST | `/{backend_id}/capabilities/refresh` |
 | POST | `/{backend_id}/health` |
 | POST | `/{backend_id}/predict-test` |
 | POST | `/{backend_id}/interactive-annotating` |
+
+## `ml_capabilities.py`
+
+| Method | Path |
+|---|---|
+| GET | `/protocol` |
+| GET | `/instances` |
 
 ## `notifications.py`
 
@@ -324,6 +332,7 @@
 | Method | Path |
 |---|---|
 | GET | `/{scene_id}` |
+| GET | `/{scene_id}/trajectory` |
 | PATCH | `/{scene_id}` |
 
 ## `storage.py`
@@ -392,6 +401,8 @@
 | GET | `/{task_id}/annotations/page` |
 | POST | `/{task_id}/annotations` |
 | POST | `/{task_id}/annotations/{annotation_id}/propagate-to-task` |
+| POST | `/{task_id}/annotations/propagate-batch` |
+| POST | `/{task_id}/annotations/interpolate-range` |
 | PATCH | `/{task_id}/annotations/{annotation_id}` |
 | POST | `/{task_id}/annotations/video/track-compositions` |
 | POST | `/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes` |
@@ -451,4 +462,4 @@
 
 ---
 
-_共 40 模块 / 259 路由_
+_共 41 模块 / 265 路由_
