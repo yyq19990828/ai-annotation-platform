@@ -45,12 +45,27 @@ with Client(base_url="http://localhost:8000", api_key="ak_...") as client:
 
 ## CLI
 
+需要 `[cli]` extras。首次使用先登录(验证连通后写入 `~/.config/ai-annotation/config.toml`,权限 0600):
+
 ```bash
-aap --version
+aap login --url http://localhost:8000 --api-key ak_...   # 省略 --api-key 则隐藏输入
+
+aap projects list                                  # rich 表格;加 --json 输出裸 JSON
+aap projects create --name demo --type image       # image|video|lidar
+
+aap datasets create --name demo-ds
+aap datasets upload <dataset-id> ./imgs            # 目录/单文件逐个上传(进度条)
+aap datasets upload <dataset-id> ./data.zip --zip  # ZIP 整包上传
+aap datasets link <dataset-id> <project-id>        # 异步建任务时自动等待 job
+
+aap predictions import <project-id> result.json --format aap_json [--dry-run]
+aap jobs wait <job-id>                             # 进度条跟随到终态
+aap export project <project-id> --target aap_json --out out.zip
+
 aap tui        # 需要 [tui] extras
 ```
 
-v0.15.2 为 CLI 骨架,完整命令集(login / projects / datasets / ...)在后续版本提供。
+所有命令支持 `--json`:输出裸 JSON、无 rich 装饰/进度条,退出码非 0 表示失败,供 CI/脚本使用。错误统一一行 stderr 提示(401 时提示先 `aap login`)。
 
 ## 测试
 
