@@ -8,7 +8,15 @@ import typer
 
 from ai_annotation.cli._output import cli_errors, console, get_client, print_json
 
-app = typer.Typer(help="预测结果导入", no_args_is_help=True)
+app = typer.Typer(
+    help="预测结果导入: 把外部模型产出 (aap_json / coco / yolo) 导入项目。",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+    epilog=(
+        "示例: [dim]aap predictions import P-1 preds.json[/] · "
+        "[dim]aap predictions import P-1 preds.json --format coco --dry-run[/]"
+    ),
+)
 
 
 @app.command("import")

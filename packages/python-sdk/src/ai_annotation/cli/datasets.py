@@ -17,7 +17,17 @@ from ai_annotation.cli._output import (
 )
 from ai_annotation.cli.jobs import wait_job
 
-app = typer.Typer(help="数据集管理", no_args_is_help=True)
+app = typer.Typer(
+    help="数据集管理: 创建数据集、上传文件 (目录 / ZIP)、关联到项目建任务。",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+    epilog=(
+        "示例: [dim]aap datasets create --name imgs[/] · "
+        "[dim]aap datasets upload D-1 ./images/[/] · "
+        "[dim]aap datasets upload D-1 pack.zip --zip[/] · "
+        "[dim]aap datasets link D-1 P-1[/]"
+    ),
+)
 
 
 @app.command("create")

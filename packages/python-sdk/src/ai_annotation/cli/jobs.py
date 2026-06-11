@@ -9,7 +9,12 @@ from ai_annotation import Client
 from ai_annotation.cli._output import cli_errors, console, get_client, print_json, progress_console
 from ai_annotation.models import Job
 
-app = typer.Typer(help="异步任务", no_args_is_help=True)
+app = typer.Typer(
+    help="异步任务: 等待任务到终态 (跟随进度)、请求软取消。",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+    epilog="示例: [dim]aap jobs wait <job_id>[/] · [dim]aap jobs cancel <job_id>[/]",
+)
 
 
 def wait_job(client: Client, job_id: str, json_mode: bool = False) -> Job:

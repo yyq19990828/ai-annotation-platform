@@ -8,7 +8,15 @@ from rich.table import Table
 from ai_annotation.cli._output import cli_errors, console, get_client, print_json
 from ai_annotation.models import MLBackend
 
-app = typer.Typer(help="ML Backend 健康监控 (只读)", no_args_is_help=True)
+app = typer.Typer(
+    help="ML Backend 健康监控 (只读): 查看项目挂载的推理后端状态与 health_meta。",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+    epilog=(
+        "示例: [dim]aap ml-backends list --project P-1[/] · "
+        "[dim]aap ml-backends get <backend_id> --project P-1[/]"
+    ),
+)
 
 
 def _gpu_util(b: MLBackend) -> str:

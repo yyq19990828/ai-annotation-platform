@@ -18,14 +18,45 @@ from ai_annotation.cli import (
     projects,
 )
 
-app = typer.Typer(name="aap", help="AI 标注平台命令行工具", no_args_is_help=True)
-app.command(name="login")(login.login)
-app.add_typer(projects.app, name="projects")
-app.add_typer(datasets.app, name="datasets")
-app.add_typer(predictions.app, name="predictions")
-app.add_typer(jobs.app, name="jobs")
-app.add_typer(export.app, name="export")
-app.add_typer(ml_backends.app, name="ml-backends")
+# 让 -h 等价 --help (root 设置经 Click context 继承到所有子命令)
+CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
+
+# 顶层命令分组 (rich_help_panel), 顺序即面板展示顺序
+PANEL_CONFIG = "配置与交互"
+PANEL_RESOURCE = "资源管理"
+PANEL_PIPELINE = "标注流水线"
+PANEL_MONITOR = "监控"
+
+app = typer.Typer(
+    name="aap",
+    help=(
+        "AI 标注平台命令行工具 —— 项目 / 数据集 / 预测 / 导出 / 异步任务的脚本化入口。\n\n"
+        "凭据二选一: 运行 [bold cyan]aap login[/] 写入配置, "
+        "或设环境变量 [bold]AAP_BASE_URL[/] / [bold]AAP_API_KEY[/]。\n"
+        "脚本 / CI 场景给任意命令加 [bold]--json[/] 输出裸 JSON (无装饰, 错误走 stderr)。"
+    ),
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+    context_settings=CONTEXT_SETTINGS,
+    epilog=(
+        "快速上手: [dim]aap login --url http://localhost:8000[/] → "
+        "[dim]aap projects list[/] → [dim]aap tui[/]。\n\n"
+        "每个子命令都支持 [bold]-h[/] / [bold]--help[/] 查看用法与可复制示例。"
+    ),
+)
+app.command(
+    name="login",
+    rich_help_panel=PANEL_CONFIG,
+    epilog=(
+        "示例: [dim]aap login --url http://localhost:8000[/] (省略 --api-key 时交互式隐藏输入)"
+    ),
+)(login.login)
+app.add_typer(projects.app, name="projects", rich_help_panel=PANEL_RESOURCE)
+app.add_typer(datasets.app, name="datasets", rich_help_panel=PANEL_RESOURCE)
+app.add_typer(predictions.app, name="predictions", rich_help_panel=PANEL_PIPELINE)
+app.add_typer(jobs.app, name="jobs", rich_help_panel=PANEL_PIPELINE)
+app.add_typer(export.app, name="export", rich_help_panel=PANEL_PIPELINE)
+app.add_typer(ml_backends.app, name="ml-backends", rich_help_panel=PANEL_MONITOR)
 
 
 def _version_callback(value: bool) -> None:
@@ -37,15 +68,22 @@ def _version_callback(value: bool) -> None:
 @app.callback()
 def _main(
     version: bool = typer.Option(
-        False, "--version", callback=_version_callback, is_eager=True, help="显示版本号"
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="显示版本号并退出",
     ),
 ) -> None:
     """AI 标注平台 CLI。"""
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_CONFIG)
 def tui() -> None:
-    """启动 TUI 面板 (需要安装 tui extras)。"""
+    """启动终端监控面板 (Projects / Datasets / Jobs / ML Backends; 需要 tui extras)。
+
+    安装: [bold]pip install 'ai-annotation-sdk\\[tui]'[/]
+    """
     try:
         from ai_annotation.tui.app import run  # type: ignore[import-not-found]
     except ImportError:

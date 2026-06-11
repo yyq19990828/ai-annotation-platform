@@ -31,17 +31,39 @@ aap tui
 | **Jobs** | 异步任务列表(最多 50 条) | kind / status / progress / created_at |
 | **ML Backends** | 各项目挂载的 ML Backend 健康状态 | name / 项目 / state / model_version / GPU 利用率 / 显存 / last_checked |
 
-Projects / Jobs / ML Backends tab 在表格下方各有一个详情面板,选中行后按回车展开;Jobs 详情包含 `error_message` / `result`,导出 job 完成后还会显示 `result.download_url` 及下载提示;ML Backends 详情展开完整 `health_meta`(GPU 温度/功耗/显存、cache 命中率、host CPU/内存、`error_message`)。
+每个主 tab 顶部有一条**动作按钮栏**(鼠标可点,与键盘等价);选中行后回车 / 按 `o` / 点「打开」按钮可**下钻进专属详情子页**(见下「下钻子路由」)。
+
+## 界面布局
+
+- 顶部 **Header**(带标题与时钟),底部 **Footer** 标准化展示当前可用按键。
+- 每张表是带圆角边框的面板,边框标题随刷新更新行数计数(如 `异步任务 · 3`)。
+- 每个 tab 顶部一条动作按钮栏:刷新 / 打开 / 导出(Projects)/ 取消(Jobs);按钮变体着色。
+- 底栏在 Footer 之上有一行**状态栏**,展示当前平台地址、轮询间隔与上次刷新时刻,网络/认证错误也在此提示。
+- 配色走内置 **nord** 主题;按 `ctrl+p` 可调出 Textual 命令面板(切主题等)。
 
 ## 按键
+
+按键由底部 Footer 实时展示,并**按当前 tab 上下文启用**:`e`(导出)仅在 Projects tab 可用、`c`(取消)仅在 Jobs tab 可用,其余 tab 下这两个键在 Footer 中不显示;进入详情子页后主屏动作键也从子页 Footer 隐藏。
 
 | 按键 | 动作 |
 |---|---|
 | `r` | 刷新当前激活的 tab |
+| `o` / `回车` | 下钻打开选中行详情子页 |
 | `e` | 对 Projects tab 选中项目发起导出(target=`aap_json`,二次确认) |
 | `c` | 对 Jobs tab 选中的 pending/running job 软取消(二次确认) |
 | `q` | 退出 |
-| `回车` | 查看选中行详情(Projects / Jobs / ML Backends tab) |
+| `ctrl+p` | Textual 命令面板 |
+| `esc` | 在详情子页内返回上一层 |
+
+## 下钻子路由(v0.15.10)
+
+行选中(回车 / 点击)、按 `o`、或点动作栏的「打开」按钮,会 **push 一个专属详情子页**(Textual Screen 栈),屏顶有面包屑 `aap tui ▸ …`,底部有「◀ 返回」按钮,`esc` 返回上一层:
+
+- **项目详情**(Projects 行下钻):内嵌三个 scoped 子 tab —— **概览**(项目字段 + 进度 + 「⬇ 导出」按钮)、**任务**(对全局 jobs 列表**客户端按 `project_id` 过滤**出本项目的任务,可再下钻进单任务详情)、**Backends**(`ml_backends.list(project_id)`,可再下钻)。
+- **任务详情**(Jobs 行下钻):完整 `error_message` / `result`(导出完成显示 `download_url` 与下载提示);`pending` / `running` 的任务带「✖ 取消」按钮。
+- **Backend / 数据集详情**:只读展开完整 `health_meta` / 字段。
+
+所有子页只调用 SDK 公开方法,导出 / 取消复用主屏的二次确认路径,不新增写能力。
 
 ## 动作(导出 / 取消)
 
@@ -59,21 +81,29 @@ Projects / Jobs / ML Backends tab 在表格下方各有一个详情面板,选中
 
 Jobs tab 大致布局(文本示意,实际效果请安装后运行 `aap tui` 体验;调试 UI 可用 Textual 自带的 `textual run --dev` / `textual console` 工具链):
 
+主屏 Jobs tab + 下钻任务详情子页(文本示意,实际效果请安装后运行 `aap tui` 体验;调试 UI 可用 Textual 自带的 `textual run --dev` / `textual console` 工具链):
+
 ```text
-┌─ aap tui ────────────────────────────────────────────────────┐
-│  Projects │ Datasets │ [Jobs]                                │
-│ ┌──────────────────────────────────────────────────────────┐ │
-│ │ kind            status       progress         created_at│ │
-│ │ export          running      ███████░░░  70%  06-11 10:02│ │
-│ │ link_dataset    completed ✔  ██████████ 100%  06-11 09:58│ │
-│ │ predict_batch   failed       ███░░░░░░░  30%  06-11 09:41│ │
-│ └──────────────────────────────────────────────────────────┘ │
-│ ──────────────────────────────────────────────────────────── │
-│ id: 0199cc...            ← 选中行按回车后的详情面板          │
-│ status: failed                                               │
-│ error_message: ...                                           │
-├──────────────────────────────────────────────────────────────┤
-│ http://localhost:8000 · r=刷新 e=导出 c=取消 q=退出 · jobs 每 3s 轮询 │
+┌ aap tui — 标注平台监控面板 ──────────────────────────── 10:02:31 ┐  ← Header + 时钟
+│ 📁 Projects │ 🗂 Datasets │ ⚙ Jobs │ 🖥 ML Backends            │
+│ [🔄 刷新] [↳ 打开] [✖ 取消]                                    │  ← 动作按钮栏 (可点)
+│ ╭─ 异步任务 · 3 ─────────────────────────────────────────────╮ │  ← 边框标题 + 行数
+│ │ kind            status       progress         created_at  │ │
+│ │ export          running      ███████░░░  70%  06-11 10:02  │ │  ← 回车/o 下钻 ↓
+│ │ link_dataset    completed ✔  ██████████ 100%  06-11 09:58  │ │
+│ ╰────────────────────────────────────────────────────────────╯ │
+│ http://localhost:8000 · jobs 每 3s 轮询 · 刷新 10:02:31         │  ← 状态栏
+│ r 刷新   o 打开   c 取消   q 退出                    ^p palette │  ← Footer (上下文按键)
+└──────────────────────────────────────────────────────────────┘
+
+  ↓ 回车下钻 → 任务详情子页 (Screen 栈)
+
+┌ aap tui ▸ 任务 export (running) ───────────────────────────────┐  ← 面包屑
+│ ╭─ 任务详情 ─────────────────────────────────────────────────╮ │
+│ │ id: 0199cc...  kind: export  status: running  progress:40% │ │
+│ ╰────────────────────────────────────────────────────────────╯ │
+│ [◀ 返回] [✖ 取消]                                              │  ← 子页动作按钮
+│ esc 返回                                             ^p palette │  ← 子页 Footer
 └──────────────────────────────────────────────────────────────┘
 ```
 

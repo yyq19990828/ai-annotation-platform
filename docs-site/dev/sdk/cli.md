@@ -25,6 +25,15 @@ CLI 凭据按以下优先级解析:
 
 两处都没有时,命令提示先 `aap login` 并以退出码 1 结束。
 
+## 帮助系统
+
+所有命令都支持 `-h` / `--help`(二者等价)查看用法。顶层 `aap -h` 按用途把命令分四组展示:**配置与交互**(`login` / `tui`)、**资源管理**(`projects` / `datasets`)、**标注流水线**(`predictions` / `jobs` / `export`)、**监控**(`ml-backends`);每个子命令的帮助末尾带可复制的示例(epilog)。
+
+```bash
+aap -h                       # 顶层: 分组命令 + 快速上手 + env 说明
+aap export -h                # 子命令: 用法 + 参数 + 示例
+```
+
 ## 命令一览
 
 ### aap login

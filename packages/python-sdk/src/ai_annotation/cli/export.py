@@ -9,7 +9,12 @@ import typer
 from ai_annotation.cli._output import cli_errors, console, get_client, print_json
 from ai_annotation.cli.jobs import wait_job
 
-app = typer.Typer(help="标注导出", no_args_is_help=True)
+app = typer.Typer(
+    help="标注导出: 创建导出 job → 等待完成 → 下载到本地。",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+    epilog="示例: [dim]aap export project P-1 --target coco --out ./out.zip[/]",
+)
 
 
 @app.command("project")

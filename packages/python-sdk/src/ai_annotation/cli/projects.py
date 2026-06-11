@@ -10,7 +10,12 @@ from rich.table import Table
 from ai_annotation.cli._output import cli_errors, console, get_client, print_json
 from ai_annotation.models import Project
 
-app = typer.Typer(help="项目管理", no_args_is_help=True)
+app = typer.Typer(
+    help="项目管理: 列出已有项目、创建新项目。",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+    epilog="示例: [dim]aap projects create --name demo --type image[/] · [dim]aap projects list --json[/]",
+)
 
 
 class ProjectType(str, Enum):

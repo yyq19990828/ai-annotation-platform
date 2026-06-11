@@ -30,6 +30,30 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.10] - 2026-06-11
+
+`aap tui` 仿 WebUI 交互:行下钻进专属详情子路由 + 每个 tab 动作按钮栏。维持「只读为主 + 导出/取消 2 动作」红线,纯呈现层,不动 `client.py`、不新增网络调用 / 写能力。计划见 `docs/plans/2026-06-11-v0.15.10-tui-drilldown-routing.md`。
+
+### Added
+
+- **下钻子路由(Screen 栈)**:行选中 / `o` / 「打开」按钮 push 专属详情子页,屏顶面包屑 + 「◀ 返回」按钮,`esc` 返回。**项目详情**内嵌 概览 / 本项目任务(全局 jobs 客户端按 `project_id` 过滤)/ 本项目 Backend 三个 scoped 子 tab,任务 / Backend 行可再下钻;**任务详情**带「✖ 取消」按钮(仅 pending/running);Backend / 数据集详情只读展开。行内详情面板由详情子页取代。
+- **动作按钮栏**:每个主 tab 顶部一条可点按钮栏(刷新 / 打开 / 导出 / 取消,变体着色),与键盘等价;导出 / 取消复用既有二次确认路径。
+
+### Changed
+
+- 主屏新增 `o`(打开)绑定;进入详情子页后主屏动作键(`r`/`o`/`e`/`c`)从子页 Footer 隐藏且不触发,避免误操作。
+
+## [0.15.9] - 2026-06-11
+
+SDK 呈现层打磨:`aap tui` 从「能用」深度优化到「好用 + 好看」,`aap` CLI 帮助系统细化。纯呈现层改动,不动 `client.py`、不新增网络调用。计划见 `docs/plans/2026-06-11-v0.15.9-sdk-tui-cli-polish.md`。
+
+### Added
+
+- **TUI 标准 Header / Footer**:顶部 Header(标题 + 时钟),底部 Footer 标准化展示按键;手写按键串从状态栏移除,状态栏改为承载平台地址 / 轮询间隔 / **上次刷新时刻**与瞬态提示。
+- **TUI 上下文感知按键**:`e`(导出)仅在 Projects tab、`c`(取消)仅在 Jobs tab 可用,切 tab 时 Footer 实时重算并隐藏不适用的键(`check_action`)。
+- **TUI 视觉优化**:表格圆角边框 + 标题 + **实时行数计数**(如 `异步任务 · 3`)、斑马纹、聚焦高亮;详情面板带边框标题;tab 标签加图标;`ConfirmModal` 加标题与半透明遮罩;内置 **nord** 主题;job 完成翻转额外弹一次通知。
+- **CLI 帮助细化**:所有命令支持 `-h`(等价 `--help`);顶层命令按 配置与交互 / 资源管理 / 标注流水线 / 监控 四组分栏;启用 rich 帮助渲染;每个子命令补可复制示例 epilog;顶层补 env 变量与快速上手说明。
+
 ## [0.15.8] - 2026-06-11
 
 SDK / CLI / TUI 功能补完:`aap tui` 从只读监控扩展出轻量动作与 ML Backend 健康监控。SDK 新增只读 `client.ml_backends` 资源与 `client.jobs.cancel()`,CLI 对齐补 `aap ml-backends` / `aap jobs cancel`。计划见 `docs/plans/2026-06-11-v0.15.8-sdk-tui-actions.md`。

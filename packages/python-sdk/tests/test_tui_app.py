@@ -9,7 +9,7 @@ import pytest
 from textual.widgets import DataTable, Static, TabbedContent, TabPane
 
 from ai_annotation.models import Dataset, HealthMeta, Job, JobPage, MLBackend, Page, Project
-from ai_annotation.tui.app import AapTuiApp
+from ai_annotation.tui.app import AapTuiApp, DetailScreen, ProjectDetailScreen
 
 # pyproject 未配 asyncio_mode=auto, 用模块级 marker 驱动 async 测试
 pytestmark = pytest.mark.asyncio
@@ -210,7 +210,8 @@ async def test_ml_backends_tab_renders_and_colors():
         assert "73%" in row[4]
 
 
-async def test_ml_backend_detail_on_enter():
+async def test_ml_backend_detail_on_enter_pushes_screen():
+    # 回车不再写行内面板, 而是 push 一个只读 DetailScreen 子路由
     app = _make_app(with_ml=True)
     async with app.run_test(size=(120, 30)) as pilot:
         await _settle(app, pilot)
@@ -220,9 +221,15 @@ async def test_ml_backend_detail_on_enter():
         table.focus()
         await pilot.press("enter")
         await pilot.pause()
-        detail = str(app.query_one("#ml-detail", Static).render())
+        assert isinstance(app.screen, DetailScreen)
+        detail = str(app.screen.query_one("#detail-body", Static).render())
         assert "model_version: v1.2" in detail
         assert "util 73%" in detail
+        # esc 返回主屏 (栈回到只剩主屏)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, DetailScreen)
+        assert app.query_one("#tabs", TabbedContent) is not None
 
 
 async def test_export_action_confirm_triggers_create():
@@ -283,3 +290,105 @@ async def test_quit_key():
         await _settle(app, pilot)
         await pilot.press("q")
     assert app.return_code == 0
+
+
+async def _settle_screen(app, pilot):
+    """等子屏 worker 落地 (push 详情屏后调用)。"""
+    await pilot.pause()
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+
+
+# ---- v0.15.10: 下钻子路由 + 动作按钮 ----
+
+
+async def test_open_project_pushes_detail_with_subtabs():
+    project = _project()
+    job = _job("running", project_id=project.id)  # 命中本项目的 job
+    pages = [JobPage(items=[job], total=1)]
+    client = _StubClient([project], [_dataset()], pages, {project.id: [_ml_backend(project.id)]})
+    app = AapTuiApp(client, base_url=BASE)
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        await pilot.press("o")  # 打开 Projects 高亮首行
+        await _settle_screen(app, pilot)
+        assert isinstance(app.screen, ProjectDetailScreen)
+        # 三个 scoped 子 tab
+        assert [t.id for t in app.screen.query(TabPane)] == [
+            "pd-overview",
+            "pd-jobs",
+            "pd-backends",
+        ]
+        # 任务表按 project_id 过滤后命中 1 条; backend 表 project-scoped 1 条
+        assert app.screen.query_one("#pd-jobs-table", DataTable).row_count == 1
+        assert app.screen.query_one("#pd-backends-table", DataTable).row_count == 1
+
+
+async def test_project_detail_jobs_filtered_excludes_other_project():
+    project = _project()
+    other = _job("running")  # project_id=None → 应被过滤掉
+    pages = [JobPage(items=[other], total=1)]
+    client = _StubClient([project], [_dataset()], pages, {})
+    app = AapTuiApp(client, base_url=BASE)
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        await pilot.press("o")
+        await _settle_screen(app, pilot)
+        assert isinstance(app.screen, ProjectDetailScreen)
+        assert app.screen.query_one("#pd-jobs-table", DataTable).row_count == 0
+
+
+async def test_project_detail_export_via_key_confirms_and_creates():
+    app = _make_app(with_ml=True)
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        await pilot.press("o")
+        await _settle_screen(app, pilot)
+        assert isinstance(app.screen, ProjectDetailScreen)
+        await pilot.press("e")  # 项目详情屏内发起导出
+        await pilot.pause()
+        await pilot.press("y")  # 二次确认
+        await _settle(app, pilot)
+        assert len(app._client.exports.created) == 1
+
+
+async def test_action_bar_open_button_pushes_project_detail():
+    app = _make_app()
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        await pilot.click("#proj-open")  # 点击「打开」按钮
+        await _settle_screen(app, pilot)
+        assert isinstance(app.screen, ProjectDetailScreen)
+
+
+async def test_job_detail_cancel_button_triggers_cancel():
+    app = _make_app(job_statuses=("running",))
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        app.query_one("#tabs", TabbedContent).active = "tab-jobs"
+        await pilot.pause()
+        app.query_one("#jobs-table", DataTable).focus()
+        await pilot.press("enter")  # 下钻 job 详情
+        await pilot.pause()
+        assert isinstance(app.screen, DetailScreen)
+        # 运行中 job → 详情屏带取消按钮
+        assert app.screen.query("#cancel")
+        await pilot.click("#cancel")
+        await pilot.pause()
+        await pilot.press("y")  # 确认取消
+        await _settle(app, pilot)
+        assert app._client.jobs.cancelled == [JOB_ID]
+
+
+async def test_job_detail_terminal_has_no_cancel_button():
+    app = _make_app(job_statuses=("completed",))
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        app.query_one("#tabs", TabbedContent).active = "tab-jobs"
+        await pilot.pause()
+        app.query_one("#jobs-table", DataTable).focus()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, DetailScreen)
+        # 终态 job 不提供取消按钮
+        assert not app.screen.query("#cancel")
