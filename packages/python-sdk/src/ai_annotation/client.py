@@ -186,7 +186,9 @@ class Tasks:
         params = {"project_id": str(project_id)}
         if batch_id is not None:
             params["batch_id"] = str(batch_id)
-        data = self._http.request("GET", "/tasks/next", params=params).json()
+        resp = self._http.request("GET", "/tasks/next", params=params)
+        # 无可领任务时后端返回 null; 空 body 同样按 None 处理
+        data = resp.json() if resp.content else None
         return Task.model_validate(data) if data is not None else None
 
 
