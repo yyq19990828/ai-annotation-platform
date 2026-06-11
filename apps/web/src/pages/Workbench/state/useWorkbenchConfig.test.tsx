@@ -178,6 +178,36 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
     });
     vi.useRealTimers();
   });
+
+  it("setLayout 支持 3D 相机面板和主视角快照", async () => {
+    mockGetPreferences.mockResolvedValue({ workbench: {} });
+    mockUpdatePreferences.mockImplementation(async (payload) => payload);
+    const { result } = renderHook(() => useWorkbenchConfig(), { wrapper });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    const pointcloudCamera = {
+      position: [1, 2, 3] as [number, number, number],
+      target: [0, 0, 0] as [number, number, number],
+      up: [0, 0, 1] as [number, number, number],
+      mode: "orbit" as const,
+    };
+
+    act(() => {
+      result.current.setLayout({
+        cameraPanels: { front: { x: 120, y: 80, collapsed: true } },
+        pointcloudCamera,
+      });
+    });
+
+    expect(result.current.layout.cameraPanels.front).toEqual({
+      x: 120,
+      y: 80,
+      collapsed: true,
+    });
+    expect(result.current.layout.pointcloudCamera).toEqual(pointcloudCamera);
+    expect(window.localStorage.getItem("workbench.u1.cameraPanels")).toContain("front");
+    expect(window.localStorage.getItem("workbench.u1.pointcloudCamera")).toContain("position");
+  });
 });
 
 describe("useWorkbenchConfig · v0.15.3 setFields + 多实例广播", () => {

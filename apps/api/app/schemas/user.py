@@ -41,6 +41,17 @@ class CameraPanelState(BaseModel):
     collapsed: bool = False
 
 
+class PointcloudCameraState(BaseModel):
+    """v0.15.x · 点云主视角快照。由前端 OrbitControls 写入/恢复。"""
+
+    model_config = {"extra": "forbid"}
+
+    position: tuple[float, float, float]
+    target: tuple[float, float, float]
+    up: tuple[float, float, float]
+    mode: Literal["orbit", "bev"] = "orbit"
+
+
 class WorkbenchLayoutPreferences(BaseModel):
     """v0.13.10 · 工作台布局偏好。
 
@@ -73,6 +84,9 @@ class WorkbenchLayoutPreferences(BaseModel):
     camera_panels: dict[str, CameraPanelState] = Field(
         default_factory=dict, alias="cameraPanels"
     )
+    pointcloud_camera: PointcloudCameraState | None = Field(
+        default=None, alias="pointcloudCamera"
+    )
 
 
 class WorkbenchCommonPreferences(BaseModel):
@@ -96,6 +110,7 @@ class WorkbenchImagePreferences(BaseModel):
     smoothImage: bool = True
     cssImageFilter: str = Field(default="", max_length=255)
     controlPointsSize: int = Field(default=6, ge=2, le=20)
+    autoFitOnResize: bool = True
     snapToGrid: bool = False
     afterBoxCreate: Literal["pick_class", "reuse_active"] = "pick_class"
     snapThresholdPx: int = Field(default=8, ge=4, le=16)
@@ -120,6 +135,12 @@ class WorkbenchPointcloudPreferences(BaseModel):
     model_config = {"extra": "forbid"}
 
     pointSize: float = Field(default=0.06, ge=0.01, le=0.3)
+    persistCameraView: bool = False
+    colorizeWithCamera: bool = False
+    colorizeContrast: float = Field(default=1, ge=0.5, le=2.5)
+    colorizeBrightness: float = Field(default=0, ge=-0.5, le=0.5)
+    colorizeGamma: float = Field(default=1, ge=0.5, le=3)
+    showDepthHint: bool = False
     pointMaskSelectMode: Literal["rect", "lasso", "polygon"] = "rect"
     showGrid: bool = True
     showAxisGizmo: bool = True

@@ -428,11 +428,11 @@ export function ImageStage({
     setFitted(false);
   }
   useLayoutEffect(() => {
-    if (!fitted && vpSize.w && vpSize.h && dimsReady) {
+    if (vpSize.w && vpSize.h && dimsReady && (!fitted || workbenchConfig.image.autoFitOnResize)) {
       fitNow();
-      setFitted(true);
+      if (!fitted) setFitted(true);
     }
-  }, [fitted, vpSize.w, vpSize.h, dimsReady, fitNow]);
+  }, [fitted, vpSize.w, vpSize.h, dimsReady, fitNow, workbenchConfig.image.autoFitOnResize]);
 
   // 揭开 konvaHost 前强制同步重绘一次: react-konva 的 batchDraw 是 rAF 异步, 否则 fitted 翻 true、
   // konvaHost 转可见的那一帧 canvas 像素还停在旧 vp (上一张) → 残留「左上角小比例闪一下」。

@@ -66,6 +66,13 @@ export interface PointMaskSelection {
   sourcePointCount: number;
 }
 
+export interface PointCloudViewState {
+  position: [number, number, number];
+  target: [number, number, number];
+  up: [number, number, number];
+  mode: "orbit" | "bev";
+}
+
 type TransformMode = "translate" | "rotate" | "scale";
 
 export class PointCloudScene {
@@ -113,6 +120,8 @@ export class PointCloudScene {
   private readonly grid: THREE.GridHelper;
   private axisGizmoVisible = true;
   private pointSize = 0.06;
+  private orbitMode: PointCloudViewState["mode"] = "orbit";
+  private onViewChange: ((view: PointCloudViewState) => void) | null = null;
 
   // v0.13.3 · 选中框拖拽编辑(平移/yaw/缩放)。gizmo 挂 getHelper() 到场景。
   private readonly transform: TransformControls;
@@ -140,6 +149,9 @@ export class PointCloudScene {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.1;
     this.setOrbitMouseMode("orbit");
+    this.controls.addEventListener("change", () => {
+      this.onViewChange?.(this.getViewState());
+    });
 
     // 网格地平面参考(xy 平面)。
     this.grid = new THREE.GridHelper(100, 50, 0x2a2f3a, 0x1a1d24);
@@ -252,6 +264,7 @@ export class PointCloudScene {
     if (!w || !h) return;
     const size = Math.min(128, Math.max(96, Math.floor(Math.min(w, h) * 0.18)));
     const margin = 14;
+    const bottomMargin = 54;
     const offset = new THREE.Vector3().copy(this.camera.position).sub(this.controls.target);
     if (offset.lengthSq() < 1e-6) offset.set(2, -3, 2);
     this.axisCamera.position.copy(offset.normalize().multiplyScalar(5));
@@ -265,8 +278,8 @@ export class PointCloudScene {
     r.clearDepth();
     try {
       r.setScissorTest(true);
-      r.setViewport(margin, margin, size, size);
-      r.setScissor(margin, margin, size, size);
+      r.setViewport(margin, bottomMargin, size, size);
+      r.setScissor(margin, bottomMargin, size, size);
       r.render(this.axisScene, this.axisCamera);
     } finally {
       r.setScissorTest(false);
@@ -441,6 +454,7 @@ export class PointCloudScene {
   }
 
   private setOrbitMouseMode(mode: "orbit" | "bev") {
+    this.orbitMode = mode;
     if (mode === "bev") {
       this.controls.mouseButtons = {
         LEFT: THREE.MOUSE.PAN,
@@ -598,6 +612,31 @@ export class PointCloudScene {
 
   setCameraDamping(dampingFactor: number) {
     this.controls.dampingFactor = dampingFactor;
+  }
+
+  setViewChangeHandler(handler: ((view: PointCloudViewState) => void) | null) {
+    this.onViewChange = handler;
+  }
+
+  getViewState(): PointCloudViewState {
+    return {
+      position: this.camera.position.toArray() as [number, number, number],
+      target: this.controls.target.toArray() as [number, number, number],
+      up: this.camera.up.toArray() as [number, number, number],
+      mode: this.orbitMode,
+    };
+  }
+
+  applyViewState(view: PointCloudViewState | null | undefined) {
+    if (!view) return;
+    const values = [...view.position, ...view.target, ...view.up];
+    if (values.length !== 9 || values.some((v) => !Number.isFinite(v))) return;
+    this.camera.position.fromArray(view.position);
+    this.controls.target.fromArray(view.target);
+    this.camera.up.fromArray(view.up);
+    this.setOrbitMouseMode(view.mode === "bev" ? "bev" : "orbit");
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
   }
 
   /** v0.13.6 · 当前点坐标 (N*3, lidar/world 系, 与标定同系); 供相机上色逐点投影。 */

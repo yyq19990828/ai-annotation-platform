@@ -4,6 +4,7 @@ import {
   DEFAULT_WORKBENCH_PREFERENCES,
   type CameraPanelState,
   type FloatingPanelState,
+  type PointcloudCameraState,
   type TriViewFloatState,
   type WorkbenchCommonPreferences,
   type WorkbenchImagePreferences,
@@ -32,6 +33,7 @@ export type WorkbenchLayoutPatch = Omit<
   | "floatingDiscussion"
   | "triViewFloat"
   | "cameraPanels"
+  | "pointcloudCamera"
 > & {
   floatingTaskQueue?: Partial<FloatingPanelState> | null;
   floatingClassPalette?: Partial<FloatingPanelState> | null;
@@ -40,6 +42,7 @@ export type WorkbenchLayoutPatch = Omit<
   triViewFloat?: Partial<TriViewFloatState> | null;
   // cameraPanels 是按 role 分桶的全量 Record(由调用方合并好整份传入),非逐字段 patch。
   cameraPanels?: Record<string, CameraPanelState>;
+  pointcloudCamera?: PointcloudCameraState | null;
 };
 
 /** v0.15.3 · 子树级 patch:每个子树内字段可单独提交,layout 同 update 既有语义(整树合并)。 */
@@ -120,6 +123,7 @@ const LAYOUT_KEY_NAMES = [
   "floatingDiscussion",
   "triViewFloat",
   "cameraPanels",
+  "pointcloudCamera",
 ] as const;
 
 type LayoutKeyName = (typeof LAYOUT_KEY_NAMES)[number];
@@ -194,6 +198,9 @@ function readLocalLayout(
     cameraPanels: readJsonObject<Record<string, CameraPanelState>>(
       K.cameraPanels,
     ) as Record<string, CameraPanelState> | undefined,
+    pointcloudCamera: readJsonObject<PointcloudCameraState>(
+      K.pointcloudCamera,
+    ) as PointcloudCameraState | undefined,
   };
 }
 
@@ -256,6 +263,10 @@ function writeLocalLayout(
     window.localStorage.setItem(
       K.cameraPanels,
       JSON.stringify(layout.cameraPanels),
+    );
+    window.localStorage.setItem(
+      K.pointcloudCamera,
+      JSON.stringify(layout.pointcloudCamera),
     );
   } catch {
     /* local fallback is best-effort */
@@ -330,6 +341,9 @@ function mergeLayout(
   const cameraPanels = preferLocal
     ? (local.cameraPanels ?? remote?.cameraPanels)
     : (remote?.cameraPanels ?? local.cameraPanels);
+  const pointcloudCamera = preferLocal
+    ? (local.pointcloudCamera ?? remote?.pointcloudCamera)
+    : (remote?.pointcloudCamera ?? local.pointcloudCamera);
   return {
     leftOpen: merged.leftOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.leftOpen,
     rightOpen: merged.rightOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.rightOpen,
@@ -354,6 +368,8 @@ function mergeLayout(
     triViewFloat: mergeTriViewFloat(triViewFloat),
     cameraPanels:
       cameraPanels ?? DEFAULT_WORKBENCH_PREFERENCES.layout.cameraPanels,
+    pointcloudCamera:
+      pointcloudCamera ?? DEFAULT_WORKBENCH_PREFERENCES.layout.pointcloudCamera,
   };
 }
 
@@ -402,6 +418,12 @@ function applyLayoutPatch(
             ...current.triViewFloat,
             ...(patch.triViewFloat ?? {}),
           }),
+    cameraPanels:
+      patch.cameraPanels === undefined ? current.cameraPanels : patch.cameraPanels,
+    pointcloudCamera:
+      patch.pointcloudCamera === undefined
+        ? current.pointcloudCamera
+        : patch.pointcloudCamera,
   };
 }
 

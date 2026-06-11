@@ -72,6 +72,12 @@ export function FloatingCameraPanel({
     (next: FloatingPanelPoint) => onPositionChange(role, next),
     [onPositionChange, role],
   );
+  const freezeCurrentPosition = useCallback(
+    (next: FloatingPanelPoint) => {
+      if (!position) onPositionChange(role, next);
+    },
+    [onPositionChange, position, role],
+  );
   const resetPosition = useCallback(
     () => onPositionChange(role, null),
     [onPositionChange, role],
@@ -80,13 +86,15 @@ export function FloatingCameraPanel({
     position: dragPosition,
     size: CAM_PANEL_SIZE,
     bounds: dragBounds,
+    onStart: freezeCurrentPosition,
     onChange: setPosition,
   });
 
-  const floatingStyle = position
+  const floatingPoint = position ?? (isDragging ? dragPosition : null);
+  const floatingStyle = floatingPoint
     ? ({
-        "--cam-panel-x": `${position.x}px`,
-        "--cam-panel-y": `${position.y}px`,
+        "--cam-panel-x": `${floatingPoint.x}px`,
+        "--cam-panel-y": `${floatingPoint.y}px`,
       } as CSSProperties)
     : undefined;
 
@@ -94,7 +102,7 @@ export function FloatingCameraPanel({
     return (
       <button
         type="button"
-        className={`${styles.camPanelTab} ${position ? styles.camPanelFloating : ""}`}
+        className={`${styles.camPanelTab} ${floatingPoint ? styles.camPanelFloating : ""}`}
         // eslint-disable-next-line no-restricted-syntax -- 拖动位置是逐帧动态值, 经 CSS custom property 注入
         style={floatingStyle}
         onClick={() => setCollapsed(false)}
@@ -107,7 +115,7 @@ export function FloatingCameraPanel({
 
   return (
     <div
-      className={`${styles.camPanel} ${position ? styles.camPanelFloating : ""} ${
+      className={`${styles.camPanel} ${floatingPoint ? styles.camPanelFloating : ""} ${
         isDragging ? styles.camPanelDragging : ""
       }`}
       // eslint-disable-next-line no-restricted-syntax -- 拖动位置是逐帧动态值, 经 CSS custom property 注入

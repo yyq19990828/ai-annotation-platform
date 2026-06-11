@@ -36,14 +36,16 @@
 
 ### Added
 
-- **点云设置字段**:工作台设置抽屉与个人设置页新增点大小、点选模式、显示地面网格、显示坐标轴、相机灵敏度;默认值全部等于旧硬编码行为。
+- **点云设置字段**:工作台设置抽屉与个人设置页新增点大小、3D 视角持久化、相机上色、上色对比度 / 亮度 / Gamma、深度提示、点选模式、显示地面网格、显示坐标轴、相机灵敏度;默认值全部等于旧硬编码行为。
+- **图片自动适应设置**:`workbench.image.autoFitOnResize` 控制图片画布在边栏开合 / 容器尺寸变化后是否自动重新 fit,默认开启。
 - **旧 localStorage 收编**:首次加载时把 `workbench.pointMaskSelectMode` / `workbench.crossFrameOverlayK` 迁入账号级 preferences,并用 `workbench.{userId}.pcd.migrated` 标记避免重复 seed。
-- **融合开关粘性**:相机上色与深度提示继续作为本机开关,但按 `workbench.{userId}.pcd.*` 分桶记忆,避免共享浏览器串台。
+- **3D 视角快照**:`workbench.layout.pointcloudCamera` 保存点云主视图 `position/target/up/mode`,由 `persistCameraView` 开关控制是否写入 / 恢复。
 
 ### Changed
 
-- 3D 工具条中的点大小滑块、点掩膜模式下拉和邻帧叠加档位改为读写同一份 preferences;抽屉、个人设置页与工具条实时同步。
-- `PointCloudScene` 增加网格、坐标轴和 OrbitControls 阻尼 setter,设置变化无需重建 Three.js 场景。
+- 3D 工具条中的点大小滑块、点掩膜模式下拉、相机上色 / 深度提示和邻帧叠加档位改为读写同一份 preferences;抽屉、个人设置页与工具条实时同步。
+- `PointCloudScene` 增加网格、坐标轴、OrbitControls 阻尼 setter 和相机快照读写接口,设置变化无需重建 Three.js 场景。
+- 点云 2D 相机面板拖拽从默认贴边位开始时先冻结当前位置,避免轻拖跳出画布;「重置相机布局」只清空 2D 相机面板布局,不重置 3D 主视角。
 
 ## [0.15.5] - 2026-06-11
 

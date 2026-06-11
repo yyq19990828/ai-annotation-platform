@@ -26,6 +26,7 @@ export interface WorkbenchImagePreferences {
   smoothImage: boolean;
   cssImageFilter: string;
   controlPointsSize: number;
+  autoFitOnResize: boolean;
   snapToGrid: boolean;
   afterBoxCreate: "pick_class" | "reuse_active";
   snapThresholdPx: number;
@@ -47,6 +48,12 @@ export interface WorkbenchVideoPreferences {
 /** v0.15.6 · 点云工作台渲染 / 导航偏好。 */
 export interface WorkbenchPointcloudPreferences {
   pointSize: number;
+  persistCameraView: boolean;
+  colorizeWithCamera: boolean;
+  colorizeContrast: number;
+  colorizeBrightness: number;
+  colorizeGamma: number;
+  showDepthHint: boolean;
   pointMaskSelectMode: "rect" | "lasso" | "polygon";
   showGrid: boolean;
   showAxisGizmo: boolean;
@@ -87,6 +94,13 @@ export interface CameraPanelState {
   collapsed?: boolean;
 }
 
+export interface PointcloudCameraState {
+  position: [number, number, number];
+  target: [number, number, number];
+  up: [number, number, number];
+  mode: "orbit" | "bev";
+}
+
 export interface WorkbenchLayoutPreferences {
   leftOpen: boolean;
   rightOpen: boolean;
@@ -98,6 +112,7 @@ export interface WorkbenchLayoutPreferences {
   floatingDiscussion: FloatingPanelState;
   triViewFloat: TriViewFloatState;
   cameraPanels: Record<string, CameraPanelState>;
+  pointcloudCamera: PointcloudCameraState | null;
 }
 
 /** 每用户的 AI 工具推理参数偏好，按 ML backend id 分桶（不同后端参数 schema 不同）。 */
@@ -121,6 +136,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     smoothImage: true,
     cssImageFilter: "",
     controlPointsSize: 6,
+    autoFitOnResize: true,
     snapToGrid: false,
     afterBoxCreate: "pick_class",
     snapThresholdPx: 8,
@@ -135,6 +151,12 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
   },
   pointcloud: {
     pointSize: 0.06,
+    persistCameraView: false,
+    colorizeWithCamera: false,
+    colorizeContrast: 1,
+    colorizeBrightness: 0,
+    colorizeGamma: 1,
+    showDepthHint: false,
     pointMaskSelectMode: "rect",
     showGrid: true,
     showAxisGizmo: true,
@@ -181,6 +203,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
       h: null,
     },
     cameraPanels: {},
+    pointcloudCamera: null,
   },
 };
 

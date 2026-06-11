@@ -1,10 +1,11 @@
-// v0.15.3 · 工作台设置抽屉:齿轮菜单「工作台设置」入口打开,按「通用 + 当前模态」两组渲染
+// v0.15.3 · 工作台设置抽屉:齿轮图标直接打开,按「通用 + 当前模态」分组渲染
 // 字段注册表(workbenchSettingsFields.ts),改动经 useWorkbenchConfig.setFields 本地立即生效
 // (画布实时预览)+ 300ms 防抖 PATCH。被项目 rendering_config 锁定的字段禁用 + badge。
 import { useEffect, useReducer } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
+import { Switch } from "@/components/ui/Switch";
 import type { ProjectRenderingConfig } from "@/api/projects";
 import { SettingsFieldControl } from "../components/SettingsFieldControl";
 import type { StageKind } from "../stages/types";
@@ -33,6 +34,9 @@ interface WorkbenchSettingsDrawerProps {
   stageKind: StageKind;
   /** 项目级渲染覆盖;锁定字段在抽屉中禁用(与画布合并结果一致)。 */
   projectRenderingConfig?: ProjectRenderingConfig | null;
+  /** 孤儿标注过滤开关(局部 UI 状态,不持久化)。 */
+  hideOrphanAnnotations?: boolean;
+  onToggleHideOrphans?: () => void;
 }
 
 export function WorkbenchSettingsDrawer({
@@ -40,6 +44,8 @@ export function WorkbenchSettingsDrawer({
   onClose,
   stageKind,
   projectRenderingConfig,
+  hideOrphanAnnotations,
+  onToggleHideOrphans,
 }: WorkbenchSettingsDrawerProps) {
   // 独立 hook 实例:setFields 改动经模块级广播同步到画布侧实例 → 实时预览。
   const { config, loaded, lockedFields, setFields } = useWorkbenchConfig(
@@ -126,6 +132,19 @@ export function WorkbenchSettingsDrawer({
                     />
                   );
                 })}
+                {category === "common" && onToggleHideOrphans && (
+                  <div className={styles.orphanRow}>
+                    <span className={styles.orphanLabel}>
+                      <span>隐藏孤儿标注</span>
+                      <span className={styles.orphanHint}>筛掉无匹配预测的人工框</span>
+                    </span>
+                    <Switch
+                      checked={hideOrphanAnnotations ?? false}
+                      onChange={onToggleHideOrphans}
+                      data-testid="toggle-hide-orphans"
+                    />
+                  </div>
+                )}
               </section>
             ))}
         </div>

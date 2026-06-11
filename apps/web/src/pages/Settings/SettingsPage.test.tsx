@@ -75,15 +75,42 @@ vi.mock("@/hooks/useSystemSettings", () => ({
 // --- workbench config ---
 // v0.15.3 · 偏好四分树形态(common/image/video/pointcloud 子树)。
 const mockWorkbenchConfig = {
-  common: { longTaskSampleRate: 0.1 },
+  common: {
+    longTaskSampleRate: 0.1,
+    confirmDelete: "never",
+    recentClassesLimit: 5,
+    crossFrameOverlayK: 0,
+  },
   image: {
     smoothImage: true,
     cssImageFilter: "",
     controlPointsSize: 6,
+    autoFitOnResize: true,
     snapToGrid: false,
+    afterBoxCreate: "pick_class",
+    snapThresholdPx: 8,
+    zoomStepFactor: 1.1,
+    fadedOpacity: 0.35,
+    showBoxLabels: true,
+    maskOverlayOpacity: 0.45,
   },
-  video: {},
-  pointcloud: {},
+  video: {
+    defaultPlaybackRate: 1,
+    largeFrameStep: 10,
+  },
+  pointcloud: {
+    pointSize: 0.06,
+    persistCameraView: false,
+    colorizeWithCamera: false,
+    colorizeContrast: 1,
+    colorizeBrightness: 0,
+    colorizeGamma: 1,
+    showDepthHint: false,
+    pointMaskSelectMode: "rect",
+    showGrid: true,
+    showAxisGizmo: true,
+    cameraDamping: 0.1,
+  },
 };
 const mockWorkbenchUpdate = vi.fn();
 vi.mock("@/pages/Workbench/state/useWorkbenchConfig", () => ({

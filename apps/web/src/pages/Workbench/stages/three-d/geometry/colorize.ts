@@ -129,3 +129,45 @@ export function colorizePoints(
   }
   return out;
 }
+
+/**
+ * v0.15.x · 相机上色色调调整参数。中性值 = 不改色。
+ * gamma > 1 提亮中间调；contrast 绕 0.5 灰点拉伸；brightness 整体平移。
+ */
+export interface ColorAdjust {
+  contrast: number;
+  brightness: number;
+  gamma: number;
+}
+
+export const NEUTRAL_ADJUST: ColorAdjust = { contrast: 1, brightness: 0, gamma: 1 };
+
+export function isNeutralAdjust(a: ColorAdjust): boolean {
+  return a.contrast === 1 && a.brightness === 0 && a.gamma === 1;
+}
+
+const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+export function adjustColors(
+  raw: Float32Array,
+  adjust: ColorAdjust,
+  out?: Float32Array,
+): Float32Array {
+  const dst = out && out.length === raw.length ? out : new Float32Array(raw.length);
+  if (isNeutralAdjust(adjust)) {
+    dst.set(raw);
+    return dst;
+  }
+
+  const invGamma = 1 / adjust.gamma;
+  const lut = new Float32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    const gammaValue = Math.pow(i / 255, invGamma);
+    const contrasted = (gammaValue - 0.5) * adjust.contrast + 0.5;
+    lut[i] = clamp01(contrasted + adjust.brightness);
+  }
+  for (let i = 0; i < raw.length; i += 1) {
+    dst[i] = lut[Math.round(clamp01(raw[i]) * 255)];
+  }
+  return dst;
+}

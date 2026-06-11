@@ -244,6 +244,12 @@ async def test_patch_pointcloud_subtree_fields(httpx_client, annotator):
             "workbench": {
                 "pointcloud": {
                     "pointSize": 0.12,
+                    "persistCameraView": True,
+                    "colorizeWithCamera": True,
+                    "colorizeContrast": 1.4,
+                    "colorizeBrightness": 0.15,
+                    "colorizeGamma": 1.2,
+                    "showDepthHint": True,
                     "pointMaskSelectMode": "lasso",
                     "showGrid": False,
                 },
@@ -255,12 +261,35 @@ async def test_patch_pointcloud_subtree_fields(httpx_client, annotator):
     assert resp.status_code == 200
     wb = resp.json()["workbench"]
     assert wb["pointcloud"]["pointSize"] == 0.12
+    assert wb["pointcloud"]["persistCameraView"] is True
+    assert wb["pointcloud"]["colorizeWithCamera"] is True
+    assert wb["pointcloud"]["colorizeContrast"] == 1.4
+    assert wb["pointcloud"]["colorizeBrightness"] == 0.15
+    assert wb["pointcloud"]["colorizeGamma"] == 1.2
+    assert wb["pointcloud"]["showDepthHint"] is True
     assert wb["pointcloud"]["pointMaskSelectMode"] == "lasso"
     assert wb["pointcloud"]["showGrid"] is False
     # 未提交字段保持默认值（默认值 = 现状红线）
     assert wb["pointcloud"]["showAxisGizmo"] is True
     assert wb["pointcloud"]["cameraDamping"] == 0.1
     assert wb["common"]["crossFrameOverlayK"] == 5
+
+
+async def test_patch_pointcloud_camera_layout_snapshot(httpx_client, annotator):
+    _, token = annotator
+    camera = {
+        "position": [1.0, -2.0, 3.5],
+        "target": [0.0, 0.0, 1.0],
+        "up": [0.0, 0.0, 1.0],
+        "mode": "orbit",
+    }
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"workbench": {"layout": {"pointcloudCamera": camera}}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["workbench"]["layout"]["pointcloudCamera"] == camera
 
 
 async def test_patch_pointcloud_range_and_enum_violations_422(
@@ -270,6 +299,9 @@ async def test_patch_pointcloud_range_and_enum_violations_422(
     for bad_subtree in (
         {"pointcloud": {"pointSize": 0.5}},  # > 0.3
         {"pointcloud": {"pointSize": 0.001}},  # < 0.01
+        {"pointcloud": {"colorizeContrast": 0.1}},  # < 0.5
+        {"pointcloud": {"colorizeBrightness": 0.8}},  # > 0.5
+        {"pointcloud": {"colorizeGamma": 4}},  # > 3
         {"pointcloud": {"cameraDamping": 0.01}},  # < 0.05
         {"pointcloud": {"pointMaskSelectMode": "circle"}},  # 非法枚举
         {"common": {"crossFrameOverlayK": 2}},  # 档位只允许 0/1/3/5/7

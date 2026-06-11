@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
-import { Switch } from "@/components/ui/Switch";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
 import { SkipTaskModal, type SkipReason } from "./SkipTaskModal";
@@ -36,9 +35,7 @@ interface TopbarProps {
   onSubmit: () => void;
   onSmartNextOpen?: () => void;
   onSmartNextUncertain?: () => void;
-  hideOrphanAnnotations?: boolean;
-  onToggleHideOrphans?: () => void;
-  /** v0.15.3 · 齿轮菜单「工作台设置」入口,打开设置抽屉;缺省不渲染该项。 */
+  /** v0.15.3 · 齿轮图标直接打开设置抽屉;缺省不渲染该项。 */
   onOpenWorkbenchSettings?: () => void;
   /** v0.6.5 状态机：审核中可撤回 / 已通过可重开。 */
   canWithdraw?: boolean;
@@ -77,7 +74,7 @@ export function Topbar({
   task, taskIdx, taskTotal, aiRunning, batchStatus, isSubmitting, confThreshold,
   onShowHotkeys, onBack, leftSidebarOpen, rightSidebarOpen, onToggleLeftSidebar, onToggleRightSidebar,
   onRunAi, aiDisabled = false, onPrev, onNext, onSubmit, onSmartNextOpen, onSmartNextUncertain,
-  hideOrphanAnnotations = false, onToggleHideOrphans, onOpenWorkbenchSettings,
+  onOpenWorkbenchSettings,
   canWithdraw = false, canReopen = false, isWithdrawing = false, isReopening = false,
   onWithdraw, onReopen,
   isSkipping = false, onSkip,
@@ -314,54 +311,18 @@ export function Topbar({
           <Icon name={themeIcon} size={14} />
         </Button>
 
-        <DropdownMenu
-          minWidth={220}
-          content={({ close }) => (
-            <div className={styles.settingsMenu}>
-              {onOpenWorkbenchSettings && (
-                <button
-                  type="button"
-                  className={styles.switchRow}
-                  data-testid="open-workbench-settings"
-                  onClick={() => {
-                    close();
-                    onOpenWorkbenchSettings();
-                  }}
-                >
-                  <span className={styles.switchText}>
-                    <span className={styles.switchLabel}>工作台设置</span>
-                    <span className={styles.switchHint}>通用 + 当前模态偏好，改动实时生效</span>
-                  </span>
-                  <Icon name="chevRight" size={12} />
-                </button>
-              )}
-              {onToggleHideOrphans && (
-                <label className={styles.switchRow}>
-                  <span className={styles.switchText}>
-                    <span className={styles.switchLabel}>隐藏孤儿标注</span>
-                    <span className={styles.switchHint}>筛掉无匹配预测的人工框</span>
-                  </span>
-                  <Switch
-                    checked={hideOrphanAnnotations}
-                    onChange={onToggleHideOrphans}
-                  />
-                </label>
-              )}
-            </div>
-          )}
-          trigger={({ toggle, ref, open }) => (
-            <Button
-              ref={ref}
-              variant="ghost"
-              size="sm"
-              onClick={toggle}
-              title="更多"
-              className={cn(styles.compactGhostButton, styles.toolbarIconButton, open && styles.toolbarIconButtonOpen)}
-            >
-              <Icon name="settings" size={14} />
-            </Button>
-          )}
-        />
+        {onOpenWorkbenchSettings && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onOpenWorkbenchSettings}
+            title="工作台设置"
+            aria-label="工作台设置"
+            className={cn(styles.compactGhostButton, styles.toolbarIconButton)}
+          >
+            <Icon name="settings" size={14} />
+          </Button>
+        )}
         {onToggleRightSidebar && (
           <Button
             variant="ghost"

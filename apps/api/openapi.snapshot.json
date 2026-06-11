@@ -9656,6 +9656,79 @@
         "title": "PointMaskGeometry",
         "type": "object"
       },
+      "PointcloudCameraState": {
+        "additionalProperties": false,
+        "description": "v0.15.x · 点云主视角快照。由前端 OrbitControls 写入/恢复。",
+        "properties": {
+          "mode": {
+            "default": "orbit",
+            "enum": [
+              "orbit",
+              "bev"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "position": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Position",
+            "type": "array"
+          },
+          "target": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Target",
+            "type": "array"
+          },
+          "up": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Up",
+            "type": "array"
+          }
+        },
+        "required": [
+          "position",
+          "target",
+          "up"
+        ],
+        "title": "PointcloudCameraState",
+        "type": "object"
+      },
       "PolygonGeometry": {
         "additionalProperties": false,
         "description": "单连通域 polygon。\n\nv0.9.14 · holes 字段新增, 默认 [] 向后兼容。老存量 / 老前端写入仍走 type=polygon\n+ 仅 points 路径; 新 prediction 在有 hole 时把 hole 顶点列表填进 holes, 多连通域\n走 MultiPolygonGeometry 分支。",
@@ -18571,6 +18644,11 @@
             "title": "Afterboxcreate",
             "type": "string"
           },
+          "autoFitOnResize": {
+            "default": true,
+            "title": "Autofitonresize",
+            "type": "boolean"
+          },
           "controlPointsSize": {
             "default": 6,
             "maximum": 20.0,
@@ -18710,6 +18788,16 @@
             ],
             "title": "Leftwidth"
           },
+          "pointcloudCamera": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PointcloudCameraState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "rightOpen": {
             "anyOf": [
               {
@@ -18759,6 +18847,37 @@
             "title": "Cameradamping",
             "type": "number"
           },
+          "colorizeBrightness": {
+            "default": 0,
+            "maximum": 0.5,
+            "minimum": -0.5,
+            "title": "Colorizebrightness",
+            "type": "number"
+          },
+          "colorizeContrast": {
+            "default": 1,
+            "maximum": 2.5,
+            "minimum": 0.5,
+            "title": "Colorizecontrast",
+            "type": "number"
+          },
+          "colorizeGamma": {
+            "default": 1,
+            "maximum": 3.0,
+            "minimum": 0.5,
+            "title": "Colorizegamma",
+            "type": "number"
+          },
+          "colorizeWithCamera": {
+            "default": false,
+            "title": "Colorizewithcamera",
+            "type": "boolean"
+          },
+          "persistCameraView": {
+            "default": false,
+            "title": "Persistcameraview",
+            "type": "boolean"
+          },
           "pointMaskSelectMode": {
             "default": "rect",
             "enum": [
@@ -18779,6 +18898,11 @@
           "showAxisGizmo": {
             "default": true,
             "title": "Showaxisgizmo",
+            "type": "boolean"
+          },
+          "showDepthHint": {
+            "default": false,
+            "title": "Showdepthhint",
             "type": "boolean"
           },
           "showGrid": {

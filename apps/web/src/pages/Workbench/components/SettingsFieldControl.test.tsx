@@ -16,6 +16,7 @@ const sliderField: WorkbenchSettingField = {
   key: "image.controlPointsSize",
   category: "image",
   label: "控制点大小",
+  description: "顶点拖拽手柄半径",
   control: { type: "slider", min: 2, max: 20, step: 1, format: (v) => `${v}px` },
 };
 
@@ -53,19 +54,23 @@ const textField: WorkbenchSettingField = {
 };
 
 describe("SettingsFieldControl", () => {
-  it("toggle:渲染 checkbox,切换触发 onCommit(boolean)", () => {
+  it("toggle:渲染 switch,切换触发 onCommit(boolean)", () => {
     const onCommit = vi.fn();
     render(<SettingsFieldControl field={toggleField} value={true} onCommit={onCommit} />);
-    const box = screen.getByRole("checkbox");
+    const box = screen.getByRole("switch");
     fireEvent.click(box);
     expect(onCommit).toHaveBeenCalledWith(false);
   });
 
-  it("slider:label 含格式化值,拖动触发 onCommit(number)", () => {
+  it("slider:label 含格式化值和说明 tooltip,松手提交 onCommit(number)", () => {
     const onCommit = vi.fn();
     render(<SettingsFieldControl field={sliderField} value={6} onCommit={onCommit} />);
     expect(screen.getByText(/6px/)).toBeTruthy();
+    expect(screen.queryByText(/顶点拖拽手柄半径/)).toBeNull();
+    expect(screen.getByLabelText("顶点拖拽手柄半径")).toBeTruthy();
     fireEvent.change(screen.getByRole("slider"), { target: { value: "12" } });
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.pointerUp(screen.getByRole("slider"));
     expect(onCommit).toHaveBeenCalledWith(12);
   });
 
@@ -104,7 +109,7 @@ describe("SettingsFieldControl", () => {
     render(
       <SettingsFieldControl field={toggleField} value={true} locked onCommit={vi.fn()} />,
     );
-    expect((screen.getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole("switch") as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByText("项目锁定")).toBeTruthy();
   });
 });

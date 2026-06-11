@@ -1,7 +1,8 @@
 // v0.15.3 · 注册表驱动的共享设置控件:工作台设置抽屉与 Settings 页「标注偏好」共用,
 // 按 field.control 类型渲染 toggle / slider / select / text。锁定字段禁用 + 「项目锁定」badge。
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
+import { Switch } from "@/components/ui/Switch";
 import type {
   WorkbenchSettingField,
   WorkbenchSettingValue,
@@ -28,22 +29,25 @@ export function SettingsFieldControl({
   onCommit,
 }: SettingsFieldControlProps) {
   const { control } = field;
-  const baseLabel = field.description
-    ? `${field.label}（${field.description}）`
-    : field.label;
   const labelText =
     control.type === "slider"
-      ? `${baseLabel}：${control.format ? control.format(Number(value)) : String(value)}`
-      : baseLabel;
+      ? `${field.label}：${control.format ? control.format(Number(value)) : String(value)}`
+      : field.label;
+  const title = locked ? LOCKED_TITLE : field.description;
 
   return (
     <label
       className={styles.field}
-      title={locked ? LOCKED_TITLE : undefined}
+      title={title}
       data-testid={`setting-field-${field.key}`}
     >
       <div className={styles.label}>
         {labelText}
+        {field.description && !locked && (
+          <span className={styles.helpIcon} aria-label={field.description} title={field.description}>
+            <Icon name="info" size={11} />
+          </span>
+        )}
         {locked && (
           <span className={styles.lockBadge} title={LOCKED_TITLE}>
             <Icon name="lock" size={10} />
@@ -52,28 +56,25 @@ export function SettingsFieldControl({
         )}
       </div>
       {control.type === "toggle" && (
-        <span className={styles.checkLabel}>
-          <input
-            type="checkbox"
+        <span className={styles.toggleWrap}>
+          <Switch
             checked={Boolean(value)}
             disabled={disabled || locked}
-            onChange={(e) => onCommit(e.target.checked)}
+            onChange={onCommit}
           />
           {(control.onText || control.offText) && (
-            <span>{value ? control.onText : control.offText}</span>
+            <span className={styles.toggleLabel}>{value ? control.onText : control.offText}</span>
           )}
         </span>
       )}
       {control.type === "slider" && (
-        <input
-          type="range"
+        <SliderControl
+          value={Number(value)}
           min={control.min}
           max={control.max}
           step={control.step}
-          value={Number(value)}
           disabled={disabled || locked}
-          onChange={(e) => onCommit(Number(e.target.value))}
-          className={styles.range}
+          onCommit={onCommit}
         />
       )}
       {control.type === "select" && (
@@ -105,6 +106,63 @@ export function SettingsFieldControl({
         />
       )}
     </label>
+  );
+}
+
+function SliderControl({
+  value,
+  min,
+  max,
+  step,
+  disabled,
+  onCommit,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  disabled: boolean;
+  onCommit: (value: number) => void;
+}) {
+  const [local, setLocal] = useState(value);
+  const localRef = useRef(value);
+  const [dragging, setDragging] = useState(false);
+
+  useEffect(() => {
+    if (!dragging) {
+      setLocal(value);
+      localRef.current = value;
+    }
+  }, [dragging, value]);
+
+  const commit = () => {
+    setDragging(false);
+    if (localRef.current !== value) onCommit(localRef.current);
+  };
+
+  return (
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={local}
+      disabled={disabled}
+      onPointerDown={() => setDragging(true)}
+      onChange={(e) => {
+        const next = Number(e.target.value);
+        localRef.current = next;
+        setLocal(next);
+      }}
+      onPointerUp={commit}
+      onBlur={commit}
+      onKeyUp={(e) => {
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Home" || e.key === "End") {
+          commit();
+        }
+      }}
+      className={styles.range}
+    />
   );
 }
 

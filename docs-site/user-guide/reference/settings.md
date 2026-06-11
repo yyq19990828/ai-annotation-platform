@@ -3,7 +3,7 @@ audience: [annotator, reviewer, project_admin, super_admin]
 type: reference
 since: v0.6.0
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-06-11
 ---
 
 # 设置页
@@ -13,7 +13,7 @@ last_reviewed: 2026-06-10
 | 分区 | 谁能看 | 主要内容 |
 |---|---|---|
 | 个人资料 | 所有人 | 姓名、邮箱、密码、注销账号 |
-| 标注偏好 | 所有人 | 工作台默认值（图像平滑、CSS 滤镜、控制点大小、性能采样率） |
+| 标注偏好 | 所有人 | 工作台默认值（图像显示、视频播放、点云视角 / 上色、性能采样率） |
 | 我的反馈 | 所有人 | 自己提交的 BUG 工单与状态 |
 | 通知偏好 | 所有人 | 单独静音 in-app / 邮件通知 type |
 | **系统设置** | **仅 super_admin** | SMTP、开放注册、邀请有效期、前端基础地址等全局配置 |
@@ -44,6 +44,13 @@ last_reviewed: 2026-06-10
 | 图片 | `smoothImage` | 图像平滑开关；关闭后显示像素级 nearest-neighbor（适合医学影像 / 像素艺术） |
 | 图片 | `cssImageFilter` | 任意 CSS 滤镜字符串（如 `brightness(1.2) contrast(1.1)`）；失焦时保存；留空恢复原图 |
 | 图片 | `controlPointsSize` | 多边形 / 折线顶点控制点半径（像素，2–20），影响拖拽手柄大小 |
+| 图片 | `autoFitOnResize` | 展开 / 收起边栏或画布容器尺寸变化后，自动让图片重新适应画布 |
+| 视频 | `defaultPlaybackRate` / `largeFrameStep` | 视频任务默认播放速率和大步进帧数 |
+| 点云 | `pointSize` / `pointMaskSelectMode` | 点云点径和点云分割工具的默认点选模式 |
+| 点云 | `persistCameraView` | 记住 3D 主视角的相机位置、目标点、up 向量和 orbit / BEV 模式 |
+| 点云 | `colorizeWithCamera` / `colorizeContrast` / `colorizeBrightness` / `colorizeGamma` | 相机 RGB 上色开关与色彩调整 |
+| 点云 | `showDepthHint` | 相机图深度热力与 hover 深度读数 |
+| 点云 | `showGrid` / `showAxisGizmo` / `cameraDamping` | 地面网格、坐标轴和 OrbitControls 阻尼 |
 
 修改即时生效，不需要重登。被项目级渲染配置锁定的字段显示「项目锁定」并禁用。
 

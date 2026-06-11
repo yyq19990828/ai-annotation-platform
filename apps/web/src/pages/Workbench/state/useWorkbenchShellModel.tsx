@@ -2046,8 +2046,6 @@ export function useWorkbenchShellModel({
       onPrev: () => navigateTask("prev"), onNext: () => navigateTask("next"),
       onSubmit: topbarActions.onSubmit ?? handleSubmitTask, onSmartNextOpen: topbarActions.onSmartNextOpen,
       onSmartNextUncertain: topbarActions.onSmartNextUncertain,
-      hideOrphanAnnotations,
-      onToggleHideOrphans: () => setHideOrphanAnnotations((value) => !value),
       onOpenWorkbenchSettings: () => setWorkbenchSettingsOpen(true),
       canWithdraw: topbarActions.canWithdraw, canReopen: topbarActions.canReopen,
       isWithdrawing: topbarActions.isWithdrawing, isReopening: topbarActions.isReopening,
@@ -2422,6 +2420,8 @@ export function useWorkbenchShellModel({
       onClose: () => setWorkbenchSettingsOpen(false),
       stageKind,
       projectRenderingConfig: currentProject?.rendering_config ?? null,
+      hideOrphanAnnotations,
+      onToggleHideOrphans: () => setHideOrphanAnnotations((value) => !value),
     },
     conflict: { open: conflictOpen, onReload: handleConflictReload, onOverwrite: handleConflictOverwrite, onClose: () => setConflictOpen(false) },
     rejectModal: modeState.rejectModal ? {

@@ -1,6 +1,6 @@
 // v0.15.3 · 工作台设置抽屉:分组渲染(通用 + 当前模态)、空分组不渲染、锁定禁用、
 // 改动经 setFields 提交。useWorkbenchConfig 整体 mock,写路径防抖在 hook 自身单测覆盖。
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_WORKBENCH_PREFERENCES } from "@/api/auth";
@@ -78,9 +78,8 @@ describe("WorkbenchSettingsDrawer", () => {
 
   it("改动控件 → setFields 收到子树级 patch", () => {
     renderDrawer();
-    const smooth = screen
-      .getByTestId("setting-field-image.smoothImage")
-      .querySelector("input[type=checkbox]") as HTMLInputElement;
+    const label = screen.getByTestId("setting-field-image.smoothImage");
+    const smooth = within(label).getByRole("switch") as HTMLInputElement;
     fireEvent.click(smooth);
     expect(mockSetFields).toHaveBeenCalledWith({ image: { smoothImage: false } });
   });
@@ -99,9 +98,8 @@ describe("WorkbenchSettingsDrawer", () => {
       video: { defaultPlaybackRate: 0.5 },
     });
 
-    const webcodecs = screen
-      .getByTestId("setting-field-experiment.webcodecs")
-      .querySelector("input[type=checkbox]") as HTMLInputElement;
+    const webcodecsLabel = screen.getByTestId("setting-field-experiment.webcodecs");
+    const webcodecs = within(webcodecsLabel).getByRole("switch") as HTMLInputElement;
     fireEvent.click(webcodecs);
 
     expect(window.localStorage.getItem(WEBCODECS_FLAG_STORAGE_KEY)).toBe("1");
@@ -111,9 +109,8 @@ describe("WorkbenchSettingsDrawer", () => {
   it("被项目锁定的字段禁用", () => {
     mockLockedFields.current = ["smoothImage"];
     renderDrawer();
-    const smooth = screen
-      .getByTestId("setting-field-image.smoothImage")
-      .querySelector("input[type=checkbox]") as HTMLInputElement;
+    const label = screen.getByTestId("setting-field-image.smoothImage");
+    const smooth = within(label).getByRole("switch") as HTMLInputElement;
     expect(smooth.disabled).toBe(true);
     expect(screen.getByText("项目锁定")).toBeTruthy();
   });

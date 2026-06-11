@@ -374,6 +374,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
               rightSidebarWidth={rightSidebarWidth}
               triViewFloat={workbenchLayout.triViewFloat}
               cameraPanels={workbenchLayout.cameraPanels}
+              pointcloudCamera={workbenchLayout.pointcloudCamera}
               onWorkbenchLayoutChange={onWorkbenchLayoutChange}
               workbenchCommon={workbenchCommon}
               workbenchPointcloud={workbenchPointcloud}

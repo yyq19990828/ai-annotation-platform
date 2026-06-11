@@ -78,7 +78,7 @@ type StageKind = "image" | "video" | "3d";
 - **上段 `.rightSplitTop`**：`AIInspectorPanel`，与下段之间有一个上下拖拽 handle。上段高度持久化到 localStorage `workbench.rightSplit.topHeight`（默认 360px，范围 160–720px）。
 - **下段 `.rightSplitBottom`**：`DiscussionPanel`，承载评论 / 历史 / issue 的统一讨论入口。
 - **列宽拖拽 handle** 提升到 `.rightSplit` 全高层级，覆盖两段，不再只贴在 AI 检查器一侧。
-- **布局偏好**：左右栏开合、左右栏宽度、任务队列 / 类别面板 / 标注详情 / 讨论面板浮窗、3D 三视图浮层状态写入 `user.preferences.workbench.layout`；前端提交全量 `workbench` 子树，后端只做顶层 `workbench` / `ai` 合并。
+- **布局偏好**：左右栏开合、左右栏宽度、任务队列 / 类别面板 / 标注详情 / 讨论面板浮窗、3D 三视图浮层、2D 相机面板布局和点云主视角快照写入 `user.preferences.workbench.layout`；前端提交全量 `workbench` 子树，后端只做顶层 `workbench` / `ai` 合并。
 - **侧栏区块分离**：`TaskQueuePanel` 内的任务队列和类别面板、`AIInspectorPanel`、`DiscussionPanel` 都可由 `WorkbenchLayout` 改用 `FloatingPanelShell` 渲染。分离操作默认收起对应侧栏；后续展开只显示仍嵌入的区块，不会自动合并浮窗。合并回侧栏只恢复嵌入状态，不主动展开侧栏。若一侧两个区块都已分离，侧栏 toggle 是可见 no-op。
 
 `DiscussionPanel`（`shell/DiscussionPanel.tsx`）有三个常驻 tab：
@@ -108,8 +108,11 @@ DiscussionPanel 是默认组件：旧 feature flag `DISCUSSION_PANEL_ENABLED` �
 | `floatingTaskQueue` / `floatingClassPalette` / `floatingInspector` / `floatingDiscussion` | `FloatingPanelState` | 四个侧栏区块的浮窗态 |
 | `triViewFloat` | `TriViewFloatState` | 3D 三视图浮层态 |
 | `cameraPanels` | `Record<string, CameraPanelState>` | 3D 悬浮相机面板位置 + 折叠态，按相机 role 分桶 |
+| `pointcloudCamera` | `PointcloudCameraState｜null` | 点云主视图相机快照；仅当 `workbench.pointcloud.persistCameraView` 开启时写入和恢复 |
 
 `FloatingPanelState = { detached: boolean; x/y/w/h: number｜null }`；`TriViewFloatState` 把 `detached` 换成 `collapsed`（三视图常驻浮层，只折叠不分离）。`x/y/w/h` 为 `null` 表示尚未拖动过、用首次默认位置。`CameraPanelState = { x/y: number｜null; collapsed?: boolean }`（x/y 为 `null` = 未拖动、用默认贴边位）；某 role 无键 = 用默认位置 + 自动折叠态。早期版本用 `pcwb:cam-pos:*` / `pcwb:cam-collapsed:*` 两个 localStorage 键，v0.15.x 起迁移到此处由后端持久化，旧键首次加载时一次性迁移后清除。
+
+`PointcloudCameraState = { position: [x,y,z]; target: [x,y,z]; up: [x,y,z]; mode: "orbit" | "bev" }`。该字段是布局状态而非渲染偏好：开关 `workbench.pointcloud.persistCameraView` 控制是否记录，实际相机 pose 跟随 `setLayout({ pointcloudCamera })` 走同一条本地缓存 + 300ms PATCH 管线。
 
 ### 分离 / 合并状态机
 
@@ -132,10 +135,10 @@ DiscussionPanel 是默认组件：旧 feature flag `DISCUSSION_PANEL_ENABLED` �
 
 ```
 workbench
-├── common      # 跨模态通用（longTaskSampleRate）
-├── image       # 图像渲染（smoothImage / cssImageFilter / controlPointsSize / snapToGrid）
-├── video       # 视频（v0.15.3 为空壳，后续版本填充）
-├── pointcloud  # 点云（同上）
+├── common      # 跨模态通用（longTaskSampleRate / confirmDelete / recentClassesLimit / crossFrameOverlayK）
+├── image       # 图像渲染与交互（smoothImage / cssImageFilter / controlPointsSize / autoFitOnResize / ...）
+├── video       # 视频播放与步进（defaultPlaybackRate / largeFrameStep）
+├── pointcloud  # 点云渲染、导航、上色与深度（pointSize / persistCameraView / colorize* / showDepthHint / ...）
 └── layout      # 壳层布局，保持顶层不动（见上节）
 ```
 
