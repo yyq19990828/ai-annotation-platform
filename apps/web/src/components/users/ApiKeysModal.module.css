@@ -171,6 +171,21 @@
   gap: 3px;
 }
 
+/* 列表里权限列的紧凑摘要: 一行「N 项权限」, 完整 scope 走 hover 居中浮层, 避免撑宽行 */
+.scopeSummary {
+  color: var(--color-fg-muted);
+  border-bottom: 1px dotted var(--color-border-strong);
+  cursor: help;
+  white-space: nowrap;
+}
+
+.scopeTipList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono, monospace);
+}
+
 .dateCell {
   color: var(--color-fg-muted);
   white-space: nowrap;

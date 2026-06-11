@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { useToastStore } from "@/components/ui/Toast";
 import {
   useApiKeys,
@@ -353,14 +354,24 @@ export function ApiKeysPanel({ active }: { active: boolean }) {
                       <td className={styles.cell}>
                         {k.scopes.length === 0 ? (
                           <span className={styles.subtle}>—</span>
+                        ) : k.scopes.includes(FULL_ACCESS) ? (
+                          <Badge variant="outline">完全访问</Badge>
                         ) : (
-                          <div className={styles.scopeBadges}>
-                            {k.scopes.map((s) => (
-                              <Badge key={s} variant="outline">
-                                {s === FULL_ACCESS ? "完全访问" : s}
-                              </Badge>
-                            ))}
-                          </div>
+                          <Tooltip
+                            side="top"
+                            name="权限范围"
+                            desc={
+                              <div className={styles.scopeTipList}>
+                                {k.scopes.map((s) => (
+                                  <code key={s}>{s}</code>
+                                ))}
+                              </div>
+                            }
+                          >
+                            <span className={styles.scopeSummary} tabIndex={0}>
+                              {k.scopes.length} 项权限
+                            </span>
+                          </Tooltip>
                         )}
                       </td>
                       <td className={`${styles.cell} ${styles.dateCell}`}>
