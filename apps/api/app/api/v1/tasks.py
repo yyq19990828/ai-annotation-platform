@@ -49,6 +49,11 @@ from app.schemas.annotation import (
     AnnotationListPage,
     AnnotationOut,
     AnnotationUpdate,
+    InterpolateRangeRequest,
+    InterpolateRangeResponse,
+    PropagateBatchItem,
+    PropagateBatchRequest,
+    PropagateBatchResponse,
     PropagateRequest,
     PropagateResponse,
     VideoTrackCompositionRequest,
@@ -536,10 +541,12 @@ async def get_point_cloud_manifest(
     scene_name_out: str | None = None
     frame_index_out: int | None = None
     scene_total_frames_out: int | None = None
+    ego_pose_out = None
     if primary_link is not None:
         primary_item = items_by_id.get(primary_link.dataset_item_id)
         if primary_item is not None and primary_item.scene_id is not None:
             from app.db.models.dataset import Scene
+            from app.services import scene_pose as scene_pose_svc
 
             scene = await db.get(Scene, primary_item.scene_id)
             if scene is not None:
@@ -552,6 +559,13 @@ async def get_point_cloud_manifest(
                     .where(DatasetItem.frame_index.is_not(None))
                 )
                 scene_total_frames_out = total_row.scalar() or 0
+                # v0.15.0 · 本帧 ego pose 透出;无位姿行(历史/非 nuScenes) → None
+                if primary_item.frame_index is not None:
+                    ego_pose_out = await scene_pose_svc.get_frame_pose(
+                        db,
+                        scene_id=scene.id,
+                        frame_index=primary_item.frame_index,
+                    )
 
     return TaskPointCloudManifestResponse(
         task_id=task.id,
@@ -563,6 +577,7 @@ async def get_point_cloud_manifest(
         scene_name=scene_name_out,
         frame_index=frame_index_out,
         scene_total_frames=scene_total_frames_out,
+        ego_pose=ego_pose_out,
     )
 
 
@@ -1088,7 +1103,7 @@ async def propagate_annotation_to_task(
     _assert_task_editable(target_task, current_user)
 
     svc = AnnotationService(db)
-    new_annotation = await svc.propagate(
+    new_annotation, motion_compensated = await svc.propagate(
         source_annotation_id=annotation_id,
         target_task_id=data.target_task_id,
         user_id=current_user.id,
@@ -1108,13 +1123,137 @@ async def propagate_annotation_to_task(
             "source_task_id": str(task_id),
             "source_annotation_id": str(annotation_id),
             "propagated": True,
+            "motion_compensated": motion_compensated,
             "group_id": new_annotation.group_id,
             "class_name": new_annotation.class_name,
         },
     )
     await db.commit()
     await db.refresh(new_annotation)
-    return PropagateResponse(annotation=AnnotationOut.model_validate(new_annotation))
+    return PropagateResponse(
+        annotation=AnnotationOut.model_validate(new_annotation),
+        motion_compensated=motion_compensated,
+    )
+
+
+@router.post(
+    "/{task_id}/annotations/propagate-batch",
+    response_model=PropagateBatchResponse,
+    status_code=201,
+)
+async def propagate_annotations_batch(
+    task_id: uuid.UUID,
+    data: PropagateBatchRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """v0.15.1 · 多目标批量跨帧延续: 把源 task 的多个(或全部)box_3d 一次
+    运动补偿 propagate 到目标 task。整批一个事务,任一失败全部回滚。
+    """
+    source_task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, source_task, current_user)
+
+    target_task = await _load_task_or_404(db, data.target_task_id)
+    await _assert_task_visible(db, target_task, current_user)
+    _assert_task_editable(target_task, current_user)
+
+    svc = AnnotationService(db)
+    results, motion_compensated = await svc.propagate_batch(
+        source_task_id=task_id,
+        target_task_id=data.target_task_id,
+        annotation_ids=data.annotation_ids,
+        user_id=current_user.id,
+    )
+    await TaskLockService(db).heartbeat(data.target_task_id, current_user.id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_CREATE,
+        target_type="task",
+        target_id=str(data.target_task_id),
+        request=request,
+        status_code=201,
+        detail={
+            "source_task_id": str(task_id),
+            "propagated_batch": True,
+            "motion_compensated": motion_compensated,
+            "count": len(results),
+            "created_annotation_ids": [str(ann.id) for _, ann in results],
+        },
+    )
+    await db.commit()
+    for _, ann in results:
+        await db.refresh(ann)
+    return PropagateBatchResponse(
+        items=[
+            PropagateBatchItem(
+                source_annotation_id=src_id,
+                annotation=AnnotationOut.model_validate(ann),
+            )
+            for src_id, ann in results
+        ],
+        motion_compensated=motion_compensated,
+    )
+
+
+@router.post(
+    "/{task_id}/annotations/interpolate-range",
+    response_model=InterpolateRangeResponse,
+    status_code=201,
+)
+async def interpolate_annotations_range(
+    task_id: uuid.UUID,
+    data: InterpolateRangeRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """v0.15.1 · 关键帧区间插值: 路径 task = 区间起点帧,body.to_task_id =
+    终点帧;同 group_id 链两端各有一个 box_3d,中间帧自动生成插值框
+    (source="interpolated")。中间帧已有同 group 标注 → 幂等跳过。
+    """
+    from_task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, from_task, current_user)
+
+    to_task = await _load_task_or_404(db, data.to_task_id)
+    await _assert_task_visible(db, to_task, current_user)
+
+    svc = AnnotationService(db)
+    created, motion_compensated, skipped_frames = await svc.interpolate_range(
+        group_id=data.group_id,
+        from_task_id=task_id,
+        to_task_id=data.to_task_id,
+        user_id=current_user.id,
+        assert_task_editable=lambda t: _assert_task_editable(t, current_user),
+        assert_task_visible=lambda t: _assert_task_visible(db, t, current_user),
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_CREATE,
+        target_type="task",
+        target_id=str(task_id),
+        request=request,
+        status_code=201,
+        detail={
+            "interpolate_range": True,
+            "group_id": data.group_id,
+            "to_task_id": str(data.to_task_id),
+            "motion_compensated": motion_compensated,
+            "created": len(created),
+            "created_annotation_ids": [str(a.id) for a in created],
+            "skipped_frames": skipped_frames,
+        },
+    )
+    await db.commit()
+    for ann in created:
+        await db.refresh(ann)
+    return InterpolateRangeResponse(
+        annotations=[AnnotationOut.model_validate(a) for a in created],
+        motion_compensated=motion_compensated,
+        skipped_frames=skipped_frames,
+    )
 
 
 @router.patch("/{task_id}/annotations/{annotation_id}", response_model=AnnotationOut)

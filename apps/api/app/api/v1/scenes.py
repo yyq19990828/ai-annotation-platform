@@ -17,7 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.user import User
 from app.deps import get_current_user, get_db
 from app.schemas.scene import SceneOut, SceneUpdate
+from app.schemas.scene_pose import TrajectoryResponse
 from app.services import scene as scene_svc
+from app.services import scene_pose as scene_pose_svc
 
 router = APIRouter()
 
@@ -43,6 +45,24 @@ async def get_scene(
     if scene is None:
         raise HTTPException(status_code=404, detail="Scene not found")
     return SceneOut.model_validate(scene)
+
+
+@router.get("/{scene_id}/trajectory", response_model=TrajectoryResponse)
+async def get_scene_trajectory(
+    scene_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """v0.15.0 · scene 的有序逐帧 ego 轨迹(frame_index 升序)。
+
+    无位姿 scene(历史数据 / 非 nuScenes 来源)→ 200 + poses=[],
+    消费方按"无轨迹"降级,不报错。
+    """
+    scene = await scene_svc.get_scene(db, scene_id)
+    if scene is None:
+        raise HTTPException(status_code=404, detail="Scene not found")
+    poses = await scene_pose_svc.get_trajectory(db, scene_id)
+    return TrajectoryResponse(scene_id=scene_id, poses=poses)
 
 
 @router.patch("/{scene_id}", response_model=SceneOut)

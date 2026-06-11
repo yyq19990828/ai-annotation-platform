@@ -22,6 +22,7 @@ from app.db.models.dataset import (
     VideoFrameIndex,
     VideoSegment,
 )
+from app.db.models.scene_pose import SceneFramePose
 from app.db.models.ml_backend import MLBackend
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
@@ -68,6 +69,7 @@ __all__ = [
     "VideoFrameCache",
     "VideoFrameIndex",
     "VideoSegment",
+    "SceneFramePose",
     "MLBackend",
     "Prediction",
     "PredictionMeta",

@@ -309,6 +309,20 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
     );
   };
 
+  // scene 模式项目只能按 scene 建包：未归类任务(向导自动分包之外的后补/回归任务,
+  // 如删包后回归、追加 scene 数据集)按 by_scene 一键重分。name_prefix 与向导一致用 "Scene"。
+  const handleCreateByScene = () => {
+    splitBatches.mutate(
+      { strategy: "by_scene", name_prefix: "Scene", priority: 50 },
+      {
+        onSuccess: (res) => {
+          pushToast({ msg: `已按 scene 建 ${res.length} 个批次`, kind: "success" });
+        },
+        onError: (e) => pushToast({ msg: "建包失败", sub: (e as Error).message }),
+      },
+    );
+  };
+
   const handleCreate = () => {
     splitBatches.mutate(
       { strategy: "random", n_batches: nBatches, shuffle, name_prefix: namePrefix, priority },
@@ -399,7 +413,11 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
             >
               <Icon name="users" size={12} />按项目分派批次
             </Button>
-            <Button onClick={() => setShowCreate(true)}>
+            {/* scene 模式项目分包只能 by scene：头部入口也走 by_scene，不开 random modal。 */}
+            <Button
+              onClick={project.scene_mode ? handleCreateByScene : () => setShowCreate(true)}
+              disabled={project.scene_mode && splitBatches.isPending}
+            >
               <Icon name="plus" size={12} />创建批次
             </Button>
           </div>
@@ -419,23 +437,36 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
               本项目有 <strong>{unclassifiedCount}</strong> 个 <strong>未归类任务</strong>（数据集已关联但尚未划分到批次）。
             </span>
             {isOwner && (
-              <>
+              // scene 模式项目只能按 scene 建包：隐藏 random 系入口(一键全量/去分包),
+              // 仅留「按 scene 建包」,与向导自动分包同策略,保证批次边界对齐 scene。
+              project.scene_mode ? (
                 <Button
-                  onClick={handleCreateAll}
+                  onClick={handleCreateByScene}
                   disabled={splitBatches.isPending}
                   className={styles.bannerListGoSplit}
-                  title="把全部未归类任务一次性注入 1 个批次，立即进入工作流"
+                  title="按 scene 把未归类任务分包，每个 scene 一个批次"
                 >
-                  <Icon name="flame" size={12} /> 一键全量建包
+                  <Icon name="layers" size={12} /> 按 scene 建包
                 </Button>
-                <Button
-                  onClick={() => setShowCreate(true)}
-                  className={styles.bannerListGoSplit}
-                  title="按随机切分把未归类任务拆成 N 个批次"
-                >
-                  <Icon name="layers" size={12} /> 去分包
-                </Button>
-              </>
+              ) : (
+                <>
+                  <Button
+                    onClick={handleCreateAll}
+                    disabled={splitBatches.isPending}
+                    className={styles.bannerListGoSplit}
+                    title="把全部未归类任务一次性注入 1 个批次，立即进入工作流"
+                  >
+                    <Icon name="flame" size={12} /> 一键全量建包
+                  </Button>
+                  <Button
+                    onClick={() => setShowCreate(true)}
+                    className={styles.bannerListGoSplit}
+                    title="按随机切分把未归类任务拆成 N 个批次"
+                  >
+                    <Icon name="layers" size={12} /> 去分包
+                  </Button>
+                </>
+              )
             )}
             <Button
               onClick={() => setBrowseUnbatched(true)}

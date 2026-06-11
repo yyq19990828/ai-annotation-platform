@@ -148,12 +148,15 @@ def _write_fake_nuscenes(
             )
             ego_lidar = f"ego-lidar-{s_i}-{i}"
             ego_cam = f"ego-cam-{s_i}-{i}"
+            # v0.15.0 · 每帧 ego 沿 x 直线前进 2m(造一段可断言差分的轨迹);
+            # 同 sample 的 lidar/cam ego 取同值,首帧 calib 外参计算不受影响
+            ego_translation = [(s_i * 100 + i) * 2.0, 0.0, 0.0]
             ego_pose_tbl.append(
                 {
                     "token": ego_lidar,
                     "timestamp": (s_i * 100 + i) * 500000,
                     "rotation": _IDENTITY_QUAT,
-                    "translation": _ZERO_TRANS,
+                    "translation": ego_translation,
                 }
             )
             ego_pose_tbl.append(
@@ -161,7 +164,7 @@ def _write_fake_nuscenes(
                     "token": ego_cam,
                     "timestamp": (s_i * 100 + i) * 500000,
                     "rotation": _IDENTITY_QUAT,
-                    "translation": _ZERO_TRANS,
+                    "translation": ego_translation,
                 }
             )
             sample_data_tbl.append(
@@ -261,6 +264,20 @@ async def test_import_nuscenes_two_scenes(
         assert [r.frame_index for r in lidar_rows] == [0, 1, 2]
         assert all(r.scene_id == scene.id for r in lidar_rows)
 
+    # 3.5 v0.15.0 · 每 scene 落 3 行 ego pose:frame_index 对齐、timestamp 单调、
+    # translation 差分 = 设定步长(2m/帧)
+    from app.services import scene_pose as scene_pose_svc
+
+    for scene in scenes:
+        traj = await scene_pose_svc.get_trajectory(db_session, scene.id)
+        assert [p.frame_index for p in traj] == [0, 1, 2]
+        ts = [p.timestamp_us for p in traj]
+        assert ts == sorted(ts) and len(set(ts)) == 3
+        xs = [p.ego_translation[0] for p in traj]
+        assert xs[1] - xs[0] == pytest.approx(2.0)
+        assert xs[2] - xs[1] == pytest.approx(2.0)
+        assert all(p.ego_rotation == [1.0, 0.0, 0.0, 0.0] for p in traj)
+
     # 4. 跨 scene neighbors 不串:scene A 末帧 task 的 next 为空
     from app.db.models.task import Task
 
@@ -288,6 +305,105 @@ async def test_import_nuscenes_two_scenes(
     assert neighbors.next == []  # 不串到 scene B 首帧
     assert len(neighbors.prev) == 1
     assert neighbors.prev[0].frame_index == 1
+
+
+async def test_backfill_frame_poses_restores_deleted_rows(
+    tmp_path, db_session, super_admin, monkeypatch
+):
+    """v0.15.0 · backfill 脚本:模拟 v0.15.0 前导入的库(无 pose 行)→ 补齐。"""
+    from sqlalchemy import delete
+
+    from app.db.models.scene_pose import SceneFramePose
+    from app.services import scene_pose as scene_pose_svc
+    from scripts.backfill_frame_poses import backfill_frame_poses
+
+    user, _ = super_admin
+    root = tmp_path / "nuscenes-mini"
+    _write_fake_nuscenes(root, scenes=1, samples_per=3)
+    monkeypatch.setattr(storage_service, "client", _FakeS3Client())
+
+    result = await import_nuscenes(
+        db_session,
+        nuscenes_root=root,
+        scene_names=["scene-0000"],
+        dataset_name="nu-lite-bf",
+        owner_id=user.id,
+    )
+    await db_session.execute(delete(SceneFramePose))
+
+    report = await backfill_frame_poses(
+        db_session,
+        dataset_ref=str(result["dataset_id"]),
+        nuscenes_root=root,
+    )
+    assert report == [{"name": "scene-0000", "poses": 3}]
+
+    scene = (
+        await db_session.execute(
+            select(Scene).where(Scene.dataset_id == result["dataset_id"])
+        )
+    ).scalar_one()
+    traj = await scene_pose_svc.get_trajectory(db_session, scene.id)
+    assert [p.frame_index for p in traj] == [0, 1, 2]
+    assert [p.ego_translation[0] for p in traj] == [0.0, 2.0, 4.0]
+
+    # display_id 引用同样可用,且 upsert 幂等(重跑不翻倍)
+    report2 = await backfill_frame_poses(
+        db_session, dataset_ref="DS-NU-nu-lite-bf", nuscenes_root=root
+    )
+    assert report2 == [{"name": "scene-0000", "poses": 3}]
+    assert len(await scene_pose_svc.get_trajectory(db_session, scene.id)) == 3
+
+
+async def test_manifest_exposes_ego_pose(
+    tmp_path, db_session, httpx_client, super_admin, monkeypatch
+):
+    """v0.15.0 · manifest 透出本帧 ego_pose(无位姿时为 null,此处验证有值路径)。"""
+    from app.db.models.task import Task
+
+    user, token = super_admin
+    root = tmp_path / "nuscenes-mini"
+    _write_fake_nuscenes(root, scenes=1, samples_per=2)
+    monkeypatch.setattr(storage_service, "client", _FakeS3Client())
+    monkeypatch.setattr(
+        storage_service,
+        "generate_download_url",
+        lambda key, **kw: f"https://fake/{key}",
+    )
+
+    result = await import_nuscenes(
+        db_session,
+        nuscenes_root=root,
+        scene_names=["scene-0000"],
+        dataset_name="nu-lite-mani",
+        owner_id=user.id,
+    )
+
+    frame1_item = (
+        await db_session.execute(
+            select(DatasetItem)
+            .where(DatasetItem.dataset_id == result["dataset_id"])
+            .where(DatasetItem.file_type == "point_cloud")
+            .where(DatasetItem.frame_index == 1)
+        )
+    ).scalar_one()
+    task = (
+        await db_session.execute(
+            select(Task).where(Task.dataset_item_id == frame1_item.id)
+        )
+    ).scalar_one()
+
+    resp = await httpx_client.get(
+        f"/api/v1/tasks/{task.id}/point-cloud/manifest",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["frame_index"] == 1
+    assert body["ego_pose"]["frame_index"] == 1
+    assert body["ego_pose"]["ego_translation"] == [2.0, 0.0, 0.0]
+    assert body["ego_pose"]["ego_rotation"] == [1.0, 0.0, 0.0, 0.0]
+    assert body["ego_pose"]["timestamp_us"] == 500000
 
 
 async def test_import_nuscenes_bounds_long_derived_display_ids(

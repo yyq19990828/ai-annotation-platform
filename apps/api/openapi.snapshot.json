@@ -6992,6 +6992,56 @@
         "title": "ForgotPasswordRequest",
         "type": "object"
       },
+      "FramePose": {
+        "properties": {
+          "ego_rotation": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Ego Rotation",
+            "type": "array"
+          },
+          "ego_translation": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Ego Translation",
+            "type": "array"
+          },
+          "frame_index": {
+            "minimum": 0.0,
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "source_metadata": {
+            "additionalProperties": true,
+            "title": "Source Metadata",
+            "type": "object"
+          },
+          "timestamp_us": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp Us"
+          }
+        },
+        "required": [
+          "frame_index",
+          "ego_translation",
+          "ego_rotation"
+        ],
+        "title": "FramePose",
+        "type": "object"
+      },
       "GlobalBackendItem": {
         "description": "v0.9.7 · CreateProjectWizard step 4 dropdown 用的 backend 概要项.",
         "properties": {
@@ -7851,6 +7901,53 @@
           "task_id"
         ],
         "title": "InteractiveRequest",
+        "type": "object"
+      },
+      "InterpolateRangeRequest": {
+        "description": "v0.15.1 · 关键帧区间插值(from task 走端点路径)。\n\n同 group_id 链上两端帧各有一个 box_3d,区间内每个中间帧生成一个插值框\n(source=\"interpolated\",便于审核过滤/批量删)。",
+        "properties": {
+          "group_id": {
+            "title": "Group Id",
+            "type": "integer"
+          },
+          "to_task_id": {
+            "format": "uuid",
+            "title": "To Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group_id",
+          "to_task_id"
+        ],
+        "title": "InterpolateRangeRequest",
+        "type": "object"
+      },
+      "InterpolateRangeResponse": {
+        "properties": {
+          "annotations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AnnotationOut"
+            },
+            "title": "Annotations",
+            "type": "array"
+          },
+          "motion_compensated": {
+            "default": false,
+            "title": "Motion Compensated",
+            "type": "boolean"
+          },
+          "skipped_frames": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Skipped Frames",
+            "type": "array"
+          }
+        },
+        "title": "InterpolateRangeResponse",
         "type": "object"
       },
       "InvitationCreate": {
@@ -12719,6 +12816,73 @@
         "title": "ProjectUpdate",
         "type": "object"
       },
+      "PropagateBatchItem": {
+        "properties": {
+          "annotation": {
+            "$ref": "#/components/schemas/AnnotationOut"
+          },
+          "source_annotation_id": {
+            "format": "uuid",
+            "title": "Source Annotation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_annotation_id",
+          "annotation"
+        ],
+        "title": "PropagateBatchItem",
+        "type": "object"
+      },
+      "PropagateBatchRequest": {
+        "description": "v0.15.1 · 多目标批量跨帧延续(源 task 走端点路径)。\n\nannotation_ids=None → 源 task 全部 active box_3d;显式给定时逐条校验\n归属与几何类型,任一不合法整批拒(同一事务,无部分写入)。",
+        "properties": {
+          "annotation_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Ids"
+          },
+          "target_task_id": {
+            "format": "uuid",
+            "title": "Target Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_task_id"
+        ],
+        "title": "PropagateBatchRequest",
+        "type": "object"
+      },
+      "PropagateBatchResponse": {
+        "properties": {
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PropagateBatchItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "motion_compensated": {
+            "default": false,
+            "title": "Motion Compensated",
+            "type": "boolean"
+          }
+        },
+        "title": "PropagateBatchResponse",
+        "type": "object"
+      },
       "PropagateRequest": {
         "description": "v0.14.1 · 跨帧目标延续: 把源 annotation 复制到目标 task(同 project 同 scene)。\n\ntarget_task_id 走 body(端点路径已含源 task_id + annotation_id)。\noverride_psr 留扩展位: 本期前端总传 None = 完全复制源几何; 给定时按 key\n覆盖 box_3d 的 center/size/rotation(其它几何忽略, 高阶 propagate 用)。",
         "properties": {
@@ -12750,6 +12914,11 @@
         "properties": {
           "annotation": {
             "$ref": "#/components/schemas/AnnotationOut"
+          },
+          "motion_compensated": {
+            "default": false,
+            "title": "Motion Compensated",
+            "type": "boolean"
           }
         },
         "required": [
@@ -15096,6 +15265,16 @@
             "title": "Cameras",
             "type": "array"
           },
+          "ego_pose": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FramePose"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "expires_in": {
             "title": "Expires In",
             "type": "integer"
@@ -15408,6 +15587,28 @@
           "name"
         ],
         "title": "ToolClassEntry",
+        "type": "object"
+      },
+      "TrajectoryResponse": {
+        "description": "scene 的有序逐帧轨迹(按 frame_index 升序);无位姿 scene → poses=[]。",
+        "properties": {
+          "poses": {
+            "items": {
+              "$ref": "#/components/schemas/FramePose"
+            },
+            "title": "Poses",
+            "type": "array"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scene_id"
+        ],
+        "title": "TrajectoryResponse",
         "type": "object"
       },
       "TriViewFloatState": {
@@ -29559,6 +29760,55 @@
         ]
       }
     },
+    "/api/v1/scenes/{scene_id}/trajectory": {
+      "get": {
+        "description": "v0.15.0 · scene 的有序逐帧 ego 轨迹(frame_index 升序)。\n\n无位姿 scene(历史数据 / 非 nuScenes 来源)→ 200 + poses=[],\n消费方按\"无轨迹\"降级,不报错。",
+        "operationId": "get_scene_trajectory_api_v1_scenes__scene_id__trajectory_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scene_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scene Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrajectoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Scene Trajectory",
+        "tags": [
+          "scenes"
+        ]
+      }
+    },
     "/api/v1/search": {
       "get": {
         "operationId": "global_search_api_v1_search_get",
@@ -30670,6 +30920,65 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/annotations/interpolate-range": {
+      "post": {
+        "description": "v0.15.1 · 关键帧区间插值: 路径 task = 区间起点帧,body.to_task_id =\n终点帧;同 group_id 链两端各有一个 box_3d,中间帧自动生成插值框\n(source=\"interpolated\")。中间帧已有同 group 标注 → 幂等跳过。",
+        "operationId": "interpolate_annotations_range_api_v1_tasks__task_id__annotations_interpolate_range_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterpolateRangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterpolateRangeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Interpolate Annotations Range",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/annotations/page": {
       "get": {
         "description": "v0.7.6 · keyset 分页变体。单 task 1000+ 框场景下避免一次性大列表阻塞。\n\ncursor 编码：base64(`{ts_isoformat}|{annotation_id}`)，与 audit_logs 端点一致。",
@@ -30740,6 +31049,65 @@
           }
         ],
         "summary": "Get Annotations Paged",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/annotations/propagate-batch": {
+      "post": {
+        "description": "v0.15.1 · 多目标批量跨帧延续: 把源 task 的多个(或全部)box_3d 一次\n运动补偿 propagate 到目标 task。整批一个事务,任一失败全部回滚。",
+        "operationId": "propagate_annotations_batch_api_v1_tasks__task_id__annotations_propagate_batch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PropagateBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PropagateBatchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Propagate Annotations Batch",
         "tags": [
           "tasks"
         ]

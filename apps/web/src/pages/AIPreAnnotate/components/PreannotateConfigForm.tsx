@@ -86,6 +86,22 @@ export function PreannotateConfigForm({
         </label>
       )}
 
+      {/* 未接入 ML 后端 (cfg.backendId 为空): 不渲染任何预标参数 (prompt / 后端参数 / 预设 /
+          输出形态), 仅给引导提示。修"项目未接后端却暴露 SAM 风格预标配置"的展示 bug:
+          这些区块的旧条件 (panelShape 安全兜底 / setupQ 禁用空态) 把"未接后端"误当成
+          "已接后端但能力声明不全", 导致全部以空态渲染出来。 */}
+      {!cfg.backendId ? (
+        <div className={cx(styles.field, styles.docHint)}>
+          <Icon name="info" size={12} />
+          <span>
+            {backends && backends.length > 1
+              ? "请先在上方选择 ML 后端，再配置预标参数。"
+              : "该项目尚未接入 ML 后端，请先在项目设置中接入模型后再配置预标参数。"}
+          </span>
+        </div>
+      ) : (
+        <>
+
       {/* v0.14.9 · 任务类型选择 (backend 暴露 ocr / doc_layout 模型时). */}
       {cfg.hasDocTasks && (
         <div className={styles.field}>
@@ -230,7 +246,6 @@ export function PreannotateConfigForm({
       {/* v0.14.16 · 命名预设. */}
       <PresetRow
         presets={cfg.presets}
-        disabled={!cfg.backendId}
         onApply={(p) => cfg.applyPreset(p.values)}
         onSave={(name) => cfg.savePreset(name, cfg.paramsValue)}
         onRemove={cfg.removePreset}
@@ -249,6 +264,8 @@ export function PreannotateConfigForm({
             }}
           />
         </div>
+      )}
+        </>
       )}
     </>
   );

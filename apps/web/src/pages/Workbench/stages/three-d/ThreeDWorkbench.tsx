@@ -19,6 +19,8 @@ import {
 import { useProject } from "@/hooks/useProjects";
 import { useFrameNeighbors } from "@/hooks/useFrameNeighbors";
 import { useNeighborAnnotations } from "@/hooks/useNeighborAnnotations";
+import { useSceneTrajectory } from "@/hooks/useSceneTrajectory";
+import { alignPsrToFrame } from "./geometry/egoAlign";
 import { useToastStore } from "@/components/ui/Toast";
 import { classColorForCanvas } from "@/pages/Workbench/stage/colors";
 import type { ThreeDTool } from "@/pages/Workbench/state/useWorkbenchState";
@@ -37,6 +39,7 @@ import {
   type ReferenceBox,
 } from "./PointCloudScene";
 import { CrossFrameOverlayToggle } from "../../components/CrossFrameOverlayToggle";
+import { CrossFrameInterpolateBar } from "../../components/CrossFrameInterpolateBar";
 import CameraProjectionView from "./CameraProjectionView";
 import FloatingCameraPanel from "./FloatingCameraPanel";
 import TriViewPanel from "./TriViewPanel";
@@ -88,6 +91,12 @@ interface ThreeDWorkbenchProps {
   onSetThreeDTool: (t: ThreeDTool) => void;
   /** v0.14.1 · 跨帧目标延续 (Shift+→ / Shift+←): 把选中框 propagate 到同 scene 邻帧。 */
   onCrossFramePropagate: (direction: "next" | "prev") => void;
+  /** v0.15.1 · 批量延续 (Ctrl+Shift+→/←): 当前帧全部 box_3d 延续到邻帧。 */
+  onCrossFramePropagateBatch: (direction: "next" | "prev") => void;
+  /** v0.15.1 · 把选中框延续到 scene 内指定帧(插值工作流建链)。 */
+  onCrossFramePropagateToTask: (targetTaskId: string, targetFrameIndex: number) => void;
+  /** v0.15.1 · 区间插值填充(当前 task 为起点帧)。 */
+  onCrossFrameInterpolate: (groupId: number, toTaskId: string) => void;
   /** v0.13.10 · 右栏避让与三视图浮窗持久化。 */
   rightSidebarOpen: boolean;
   rightSidebarWidth: number;
@@ -268,6 +277,9 @@ export function ThreeDWorkbench({
   threeDTool,
   onSetThreeDTool,
   onCrossFramePropagate,
+  onCrossFramePropagateBatch,
+  onCrossFramePropagateToTask,
+  onCrossFrameInterpolate,
   rightSidebarOpen,
   rightSidebarWidth,
   triViewFloat,
@@ -678,6 +690,12 @@ export function ThreeDWorkbench({
       // NaN 写进 nudgeMap)。
       e.preventDefault();
       e.stopPropagation();
+      const dir = e.key === "ArrowRight" ? "next" : "prev";
+      // v0.15.1 · Ctrl+Shift+→/←: 批量延续当前帧全部 box_3d(不要求选中)。
+      if (e.ctrlKey || e.metaKey) {
+        void onCrossFramePropagateBatch(dir);
+        return;
+      }
       if (!selectedId) {
         pushToast({ msg: "请先选中一个 3D 框", kind: "" });
         return;
@@ -689,11 +707,11 @@ export function ThreeDWorkbench({
         pushToast({ msg: "跨帧延续仅支持 3D 框", kind: "" });
         return;
       }
-      void onCrossFramePropagate(e.key === "ArrowRight" ? "next" : "prev");
+      void onCrossFramePropagate(dir);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [readOnly, selectedId, onCrossFramePropagate, pushToast]);
+  }, [readOnly, selectedId, onCrossFramePropagate, onCrossFramePropagateBatch, pushToast]);
 
   // 切任务回到选择工具(选中态由壳层在切任务时统管,3D 不再本地清)。
   useEffect(() => {
@@ -1521,8 +1539,23 @@ export function ThreeDWorkbench({
     neighborTaskIds,
     overlayK > 0 ? selectedGroupId : null,
   );
+  // v0.15.1 · overlay ego 对齐: 邻帧框经 trajectory 变换到当前帧 ego 系再叠加,
+  // 静止物参考框与当前帧重合。无轨迹 scene → poseByFrame=null,退回原样叠加。
+  const { poseByFrame } = useSceneTrajectory(
+    overlayK > 0 ? (neighborsData?.scene_id ?? null) : null,
+  );
+  const neighborFrameByTask = useMemo<Map<string, number>>(() => {
+    if (!neighborsData) return new Map();
+    return new Map(
+      [...(neighborsData.prev ?? []), ...(neighborsData.next ?? [])].map((n) => [
+        n.task_id,
+        n.frame_index,
+      ]),
+    );
+  }, [neighborsData]);
   const referenceBoxes = useMemo<ReferenceBox[]>(() => {
     if (overlayK <= 0 || selectedGroupId == null) return [];
+    const curFrame = neighborsData?.frame_index ?? null;
     const out: ReferenceBox[] = [];
     for (const tid of neighborTaskIds) {
       for (const a of neighborAnnsByTask[tid] ?? []) {
@@ -1533,17 +1566,39 @@ export function ThreeDWorkbench({
           rotation?: number[];
         };
         if (g?.type !== "box_3d" || !g.center || !g.size || !g.rotation) continue;
+        let center = g.center as [number, number, number];
+        let rotation = g.rotation as [number, number, number];
+        if (poseByFrame && curFrame != null) {
+          const nbrFrame = neighborFrameByTask.get(tid);
+          const aligned = alignPsrToFrame(
+            { center, rotation },
+            nbrFrame != null ? poseByFrame.get(nbrFrame) : undefined,
+            poseByFrame.get(curFrame),
+          );
+          if (aligned) {
+            center = aligned.center;
+            rotation = aligned.rotation;
+          }
+        }
         out.push({
           id: `${tid}:${a.id}`,
-          center: g.center as [number, number, number],
+          center,
           size: g.size.map((v) => Math.abs(v)) as [number, number, number],
-          rotation: g.rotation as [number, number, number],
+          rotation,
           color: classColorForCanvas(a.class_name),
         });
       }
     }
     return out;
-  }, [overlayK, selectedGroupId, neighborTaskIds, neighborAnnsByTask]);
+  }, [
+    overlayK,
+    selectedGroupId,
+    neighborTaskIds,
+    neighborAnnsByTask,
+    neighborsData,
+    poseByFrame,
+    neighborFrameByTask,
+  ]);
   useEffect(() => {
     sceneRef.current?.setReferenceBoxes(referenceBoxes);
   }, [referenceBoxes]);
@@ -1750,6 +1805,20 @@ export function ThreeDWorkbench({
           )}
           {manifest?.scene_id && (
             <CrossFrameOverlayToggle value={overlayK} onChange={setOverlayKPersist} />
+          )}
+          {manifest?.scene_id && taskId && (
+            <CrossFrameInterpolateBar
+              taskId={taskId}
+              frameIndex={manifest.frame_index ?? null}
+              sceneTotalFrames={manifest.scene_total_frames ?? null}
+              selectedGroupId={selectedGroupId}
+              selectedIsBox3d={!!selectedBox}
+              readOnly={readOnly}
+              onPropagateBatch={onCrossFramePropagateBatch}
+              onPropagateToTask={onCrossFramePropagateToTask}
+              onInterpolate={onCrossFrameInterpolate}
+              pushToast={pushToast}
+            />
           )}
         </div>
 

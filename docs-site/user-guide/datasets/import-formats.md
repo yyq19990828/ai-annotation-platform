@@ -227,6 +227,17 @@ PYTHONPATH=. uv run python scripts/import_nuscenes_scene.py \
 
 脚本入库的数据集会自动声明为时序数据集(`is_temporal`),并配套创建一个已开启 scene 模式的项目,导入完成即可直接按 scene 分包标注(见上文「时序数据集声明与 scene 模式项目」)。
 
+> **逐帧 ego pose 回填(v0.15.0)**:脚本会顺带把每帧的车体位姿(nuScenes `ego_pose.json` 的 ego→global translation/rotation)与 LIDAR_TOP 时间戳落到 `scene_frame_poses` 表,作为跨帧自动化(运动补偿 / 插值)的数据地基。v0.15.0 之前导入的 nuScenes 数据集没有这些行,用回填脚本补:
+>
+> ```bash
+> cd apps/api
+> PYTHONPATH=. uv run python scripts/backfill_frame_poses.py \
+>   --dataset-id DS-NU-nu-scene-0061 \
+>   --nuscenes-root /data/nuscenes-mini
+> ```
+>
+> `--dataset-id` 接受 UUID 或 `DS-NU-*` display_id;脚本按 scene 的 `source_metadata.scene_token` 反查同一份 nuScenes 元数据,幂等可重跑。非 nuScenes 来源(如 SUSTechPOINTS 示例)没有 ego pose 数据,跨帧自动化对这类 scene 自动降级,这是预期行为。
+
 > **坐标系**:v0.14.3 起脚本默认 `--frame ego`,逐点乘 `T_ego_from_lidar` 把 LIDAR_TOP 原始点落到 nuScenes ego(车体)系,并写 `axis_convention=iso_8855`;相机标定同步写为 `cam_from_ego`,投影仍与点云自洽。若需要保留 v0.14.2 的原始 LIDAR_TOP 传感器系点,可显式传 `--frame sensor`,此时脚本写 `axis_convention=apollo` 和 `cam_from_lidar`。
 >
 > ⚠️ 同一个 dataset 不能混用 `--frame ego` 与 `--frame sensor`;脚本发现已存在 dataset 的 `axis_convention` 与本次模式不一致时会拒绝继续导入。多相机装置的 `sniff-axis-convention` 响应会透出 `per_camera` 和 `agreement`,可用于判断侧/后相机是否与正前相机有分歧。

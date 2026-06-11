@@ -102,6 +102,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Ctrl", "→"], desc: "下一题", group: "nav", actionType: "navigateTask" },
   { keys: ["Ctrl", "←"], desc: "上一题", group: "nav", actionType: "navigateTask" },
   { keys: ["Alt", "→ / ←"], desc: "跨帧延续选中框到同 scene 邻帧(3D 也可 Shift+→/←)", group: "nav", actionType: "crossFramePropagate" },
+  { keys: ["Ctrl", "Shift", "→ / ←"], desc: "批量延续当前帧全部 3D 框到邻帧(3D 工作台)", group: "nav" },
   { keys: ["N"], desc: "智能切题：下一未标注", group: "nav", actionType: "smartNext" },
   { keys: ["U"], desc: "智能切题：下一最不确定", group: "nav", actionType: "smartNext" },
   { keys: ["E"], desc: "提交质检", group: "nav", actionType: "submit" },

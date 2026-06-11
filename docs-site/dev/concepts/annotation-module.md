@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-10
 ---
 
 # 标注模块
@@ -66,13 +66,14 @@ graph TD
 | `task_id` | 所属任务 |
 | `project_id` | 所属项目，便于跨 task 聚合 |
 | `user_id` | 标注创建者 |
-| `source` | `manual` 或 `prediction_based` |
+| `source` | `manual` / `prediction_based` / `interpolated`（v0.15.x 跨帧区间插值生成框） |
 | `annotation_type` | 几何类型，如 `bbox`、`polygon`、`video_bbox`、`video_track_bbox` |
 | `class_name` | 类目名 |
 | `geometry` | JSONB 几何体 |
 | `confidence` | 置信度，可空 |
 | `parent_prediction_id` | 来自哪条 prediction，可空 |
 | `parent_annotation_id` | 派生自哪条 annotation，可空 |
+| `group_id` | 「平等成员同组」序号（`BigInteger`，可空；Ctrl+G 成组 / 跨帧链共享），区别于 `parent_annotation_id` 的层级语义 |
 | `lead_time` | 标注耗时 |
 | `attributes` | 扩展属性 |
 | `was_cancelled` | 逻辑取消标记 |
@@ -208,6 +209,36 @@ graph TD
 - 重新计算 task 统计
 - 续期 task lock
 - 写 `ANNOTATION_DELETE` 审计
+
+## 跨帧 propagate 与插值（3D 时序）
+
+v0.15.x 给点云 3D 时序标注加了「跨帧延续 + 区间插值」，把同一物体在 scene 多帧间的 `box_3d` 标注从「逐帧手搬框」升级为「ego 运动补偿延续 + 关键帧插值」。几何核心在 `apps/api/app/services/ego_transform.py`（`box_ego_to_world` / `box_world_to_ego` / `compensate_psr` / `interpolate_psr` 等纯函数，euler 约定与前端 three.js 锁步），业务编排在 `AnnotationService.propagate` / `propagate_batch` / `interpolate_range`，HTTP 入口都在 `api/v1/tasks.py`。
+
+### group_id：跨帧链的键
+
+`Annotation.group_id`（见上表）是跨帧延续的链键：同一物体在各帧的框共享同一个 `group_id` 形成一条链。源框无 `group_id` 时从全局序列 `cross_frame_group_seq` 分配并写回源框（区别于同 task 内 Ctrl+G 成组用的 `tasks.next_group_seq`）。区间插值据此找到链两端的关键帧。
+
+### 单条 / 批量 propagate（运动补偿延续）
+
+| 端点 | service | 语义 |
+|---|---|---|
+| `POST /tasks/{task_id}/annotations/{annotation_id}/propagate-to-task` | `propagate()` | 把单条 `box_3d` 延续到目标 task |
+| `POST /tasks/{task_id}/annotations/propagate-batch` | `propagate_batch()` | 整批延续，一个事务，任一失败全部回滚 |
+
+- `PropagateBatchRequest`：`annotation_ids: list[UUID] | None`（`None` → 源 task 全部 active `box_3d`）+ `to_task_id`。
+- 运动补偿：源 / 目标帧均有 ego pose 时，由「世界位置不变」反算目标帧 PSR（`compensate_psr`），静止物在下一帧自动套住目标；任一帧缺 pose 则退化为原样复制（零回归）。响应带 `motion_compensated: bool` 标记，前端据此轻提示一次。
+- 各源框延续后与源共享 `group_id` 链。
+
+### 区间插值
+
+`POST /tasks/{task_id}/annotations/interpolate-range` → `interpolate_range()`，`InterpolateRangeRequest`：`group_id: int` + `to_task_id`。
+
+- 在同 `group_id` 链两端关键帧之间，给区间内每个有 task 的中间帧生成一个插值框（世界系线性内插中心 + slerp 朝向 + 线性尺寸，见 `interpolate_psr`）。
+- 生成框 `source="interpolated"`，便于审核按来源过滤 / 批量删。
+- 幂等：中间帧已有同 `group_id` 标注则跳过；返回 `(created, motion_compensated, skipped_frames)`。
+- 任一帧缺 pose → 纯 ego 系插值（`motion_compensated=False`）。
+
+> `point_mask_3d` 跨帧明确不做（点索引跨帧无意义）；Kalman / 非线性运动模型留后续。邻帧 overlay 的 ego 对齐是前端能力（`useSceneTrajectory` + `egoAlign.ts`），见用户指南 [点云跨帧标注](/user-guide/workbench/pointcloud-crossframe)。
 
 ## 预测采纳
 

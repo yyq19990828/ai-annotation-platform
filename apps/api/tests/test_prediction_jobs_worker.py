@@ -231,6 +231,70 @@ async def test_run_batch_accumulates_total_cost(
 
 
 @pytest.mark.asyncio
+async def test_run_batch_all_failed_marks_job_failed(
+    db_session: AsyncSession, monkeypatch, super_admin
+):
+    """B-45 · batch_predict 全部子项失败时 job 落 failed（不再「失败也显示已完成」），
+    且仍把 failed_count / failed_prediction_ids 写进 result 供失败重试链路使用。"""
+    from app.db.models.task import Task
+    from app.workers import tasks as worker_tasks
+
+    user, _ = super_admin
+    proj, backend = await _seed_project_and_backend(db_session, user.id)
+
+    tasks = [
+        Task(
+            id=uuid.uuid4(),
+            project_id=proj.id,
+            display_id=f"T-FAIL-{i}",
+            file_name=f"{i}.jpg",
+            file_path=f"http://x/{i}.jpg",
+            file_type="image",
+            status="pending",
+        )
+        for i in range(2)
+    ]
+    db_session.add_all(tasks)
+    await db_session.flush()
+
+    class _FailingClient:
+        def __init__(self, _backend):
+            self._backend = _backend
+
+        async def predict(self, tasks_payload, context=None):
+            raise RuntimeError("ml backend down")
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient", _FailingClient, raising=True
+    )
+
+    fake_engine, fake_factory = _passthrough_engine_and_factory(db_session)
+    import sqlalchemy.ext.asyncio as sa_async
+
+    monkeypatch.setattr(sa_async, "create_async_engine", fake_engine)
+    monkeypatch.setattr(sa_async, "async_sessionmaker", fake_factory)
+
+    await worker_tasks._run_batch(
+        project_id=str(proj.id),
+        ml_backend_id=str(backend.id),
+        task_ids=[str(t.id) for t in tasks],
+        prompt="x",
+    )
+
+    res = await db_session.execute(
+        select(AsyncJob).where(
+            AsyncJob.kind == "batch_predict", AsyncJob.project_id == proj.id
+        )
+    )
+    job = res.scalar_one()
+    assert job.status == AsyncJobStatus.FAILED.value
+    assert job.result["success_count"] == 0
+    assert job.result["failed_count"] == 2
+    assert len(job.result["failed_prediction_ids"]) == 2
+    assert job.error_message
+
+
+@pytest.mark.asyncio
 async def test_run_batch_stops_on_cooperative_cancel(
     db_session: AsyncSession, monkeypatch, super_admin
 ):

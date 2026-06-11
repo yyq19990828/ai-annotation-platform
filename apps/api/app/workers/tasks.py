@@ -437,8 +437,12 @@ async def _run_batch(
             await engine.dispose()
             return
 
+        # B-45 · 全部子项失败 → job 视为失败（避免「失败也显示已完成」），
+        # 不推进 batch 状态、终态走 failed 分支。
+        all_failed = success_count == 0 and failed_count > 0
+
         # v0.9.5 · 跑完自动 active → pre_annotated（仅当指定 batch + 当前还在 active 时）
-        if batch_id:
+        if batch_id and not all_failed:
             batch = await db.get(TaskBatch, uuid.UUID(batch_id))
             if batch and batch.status == BatchStatus.ACTIVE:
                 batch.status = BatchStatus.PRE_ANNOTATED
@@ -446,18 +450,27 @@ async def _run_batch(
 
         # v0.10.49 · 结束时点 → 写 async_job final stats (result JSONB)
         duration_ms = int((time.perf_counter() - started_perf) * 1000)
-        await async_job_svc.mark_complete(
-            db,
-            async_job_id,
-            result={
-                "success_count": success_count,
-                "failed_count": failed_count,
-                "failed_prediction_ids": failed_prediction_ids,
-                "duration_ms": duration_ms,
-                # v0.9.11 · total_cost 接通 PredictionMeta.total_cost 累加
-                "total_cost": f"{running_total_cost:.4f}",
-            },
-        )
+        result_stats = {
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "failed_prediction_ids": failed_prediction_ids,
+            "duration_ms": duration_ms,
+            # v0.9.11 · total_cost 接通 PredictionMeta.total_cost 累加
+            "total_cost": f"{running_total_cost:.4f}",
+        }
+        if all_failed:
+            await async_job_svc.mark_failed(
+                db,
+                async_job_id,
+                error=f"全部 {failed_count} 条预标失败",
+                result=result_stats,
+            )
+        else:
+            await async_job_svc.mark_complete(
+                db,
+                async_job_id,
+                result=result_stats,
+            )
         await notify_job_terminal(db, job_id=async_job_id)
         await db.commit()
 
@@ -465,7 +478,7 @@ async def _run_batch(
             project_id,
             total,
             total,
-            status="completed",
+            status="failed" if all_failed else "completed",
             job_meta={
                 **job_meta_base,
                 "success_count": success_count,

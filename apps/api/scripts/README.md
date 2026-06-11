@@ -54,7 +54,10 @@ dataset 按 DS-NU-<name> 复用;同名 scene 已存在则跳过。详见脚本�
 
 ## 其他脚本
 
-- `seed.py` / `seed_pointcloud.py` / `seed_scale.py`:dev 夹具种子
+- `seed.py`:dev 账号 + 调用下方各夹具种子(图片 coco8 + 点云 SUSTech/nuScenes),不再造假项目
+- `seed_coco8.py`:真实 `third-party/coco8`(8 图)→ 图片检测项目 + 每图 Task + YOLO 框走 `import_yolo` 作**预标注**导入(非人工标注)
+- `seed_pointcloud.py`:SUSTechPOINTS 点云 demo + `third-party/nuscenes-mini` scene-0061 → scene 模式项目并按 scene 建包(by_scene split)
+- `seed_scale.py`:大规模压测夹具种子
 - `import_images.py`:批量导入本地图片到 dataset
 - `bootstrap_admin.py`:从 ENV 建超管
 - `reset_datasets.py`:清空 datasets + 关联表

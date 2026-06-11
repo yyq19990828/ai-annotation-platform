@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { StatCard } from "@/components/ui/StatCard";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { useToastStore } from "@/components/ui/Toast";
 import { useAdminStats, usePredictionCostStats } from "@/hooks/useDashboard";
 import { useProjects } from "@/hooks/useProjects";
 import { useAuditLogs } from "@/hooks/useAudit";
@@ -15,15 +16,21 @@ import { CreateProjectWizard } from "@/components/projects/CreateProjectWizard";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { auditActionLabel } from "@/utils/auditLabels";
 import { projectDisplayType } from "@/utils/projectDisplay";
+import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import type { ProjectResponse } from "@/api/projects";
 import type { UserRole } from "@/types";
 import type { RegistrationDayPoint } from "@/api/dashboard";
 import styles from "./AdminDashboard.module.css";
+
+const WORKBENCH_PROJECT_TYPES = new Set(["image-det", "video-track", "lidar"]);
 
 export function AdminDashboard() {
   const { data: stats, isLoading } = useAdminStats();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
   const { data: audit } = useAuditLogs({ page: 1, page_size: 8 });
   const navigate = useNavigate();
+  const location = useLocation();
+  const pushToast = useToastStore((s) => s.push);
   const [searchParams, setSearchParams] = useSearchParams();
   const wizardOpen = searchParams.get("new") === "1";
   // v0.10.11 · 从 ProjectGrid "复制项目" 跳来时携带 ?from=<id>; Wizard 据此预填.
@@ -42,6 +49,15 @@ export function AdminDashboard() {
     next.delete("new");
     next.delete("from");
     setSearchParams(next, { replace: true });
+  };
+
+  // B-46 · 项目行「打开」入口 — 与其它 dashboard 一致: 工作台型项目进工作台, 其余 toast 提示.
+  const onOpenProject = (p: ProjectResponse) => {
+    if (WORKBENCH_PROJECT_TYPES.has(p.type_key)) {
+      navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
+    } else {
+      pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `${projectDisplayType(p)} 的标注界面尚未实现` });
+    }
   };
 
   if (isLoading || !stats) {
@@ -312,6 +328,10 @@ export function AdminDashboard() {
                         </Button>
                         <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); navigate(`/projects/${p.id}/settings`); }}>
                           <Icon name="settings" size={13} />设置
+                        </Button>
+                        {/* B-46 · 「打开」入口 — 进工作台标注界面（样式与项目总览统一） */}
+                        <Button size="sm" onClick={(e) => { e.stopPropagation(); onOpenProject(p); }}>
+                          打开 <Icon name="chevRight" size={11} />
                         </Button>
                       </div>
                     </td>

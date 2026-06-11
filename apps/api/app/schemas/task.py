@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Literal
 
 from app.schemas._jsonb_types import LidarAxisConvention, SensorCalibration
+from app.schemas.scene_pose import FramePose
 from app.schemas.user import UserBrief
 
 
@@ -108,6 +109,9 @@ class TaskPointCloudManifestResponse(BaseModel):
     scene_name: str | None = None
     frame_index: int | None = None
     scene_total_frames: int | None = None
+    # v0.15.0 · 本帧 ego pose(ego→global)透出;无 scene / 无位姿行 → None。
+    # 本版前端只做调试可见,不消费(跨帧自动化消费留 v0.15.1)。
+    ego_pose: FramePose | None = None
 
 
 class VideoFrameTimetableEntry(BaseModel):

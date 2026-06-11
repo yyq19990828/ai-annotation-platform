@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +34,29 @@ PROPAGATABLE_GEOMETRY_TYPES = frozenset(
         "keypoint",
     }
 )
+
+
+@dataclass
+class _PropagateContext:
+    """propagate_batch 整批共享的预解析上下文。
+
+    一次 batch 内所有框共享同一 source_task / target_task,故 scene/frame、
+    目标 axis_convention、源/目标帧 ego pose 对整批恒定。循环外解析一次,逐框
+    复用,消除原先逐条 propagate 重复解析造成的 N+1(框数 20-50+ 时尤甚)。
+    box_3d 专用字段(axis_convention / pose_src / pose_dst)首次遇到 box_3d 时
+    才解析并缓存 —— 2D 几何不付这部分 DB 往返。
+    """
+
+    src_task: Task
+    target_task: Task
+    src_scene_id: uuid.UUID | None
+    src_frame_index: int | None
+    target_scene_id: uuid.UUID | None
+    target_frame_index: int | None
+    axis_convention: str | None = None
+    pose_src: object | None = None
+    pose_dst: object | None = None
+    _box3d_resolved: bool = False
 
 
 def _new_track_id() -> str:
@@ -466,6 +490,16 @@ class AnnotationService:
             return None
         return (dataset.metadata_ or {}).get("axis_convention")
 
+    async def _frame_pose(self, scene_id, frame_index):
+        """v0.15.1 · 取 (scene_id, frame_index) 的 ego pose;任一参数缺/无行 → None。"""
+        if scene_id is None or frame_index is None:
+            return None
+        from app.services import scene_pose as scene_pose_svc
+
+        return await scene_pose_svc.get_frame_pose(
+            self.db, scene_id=scene_id, frame_index=frame_index
+        )
+
     async def propagate(
         self,
         *,
@@ -473,7 +507,7 @@ class AnnotationService:
         target_task_id: uuid.UUID,
         user_id: uuid.UUID,
         override_psr: dict | None = None,
-    ) -> Annotation:
+    ) -> tuple[Annotation, bool]:
         """v0.14.1 · 跨帧目标延续: 把源 annotation 复制到目标 task。
 
         语义:
@@ -483,20 +517,18 @@ class AnnotationService:
         - box_3d 的 convention_at_create 取**目标** dataset 的 axis_convention:
           DB 内 PSR 永远是 ISO 系字节, 原值复制即对齐世界坐标; convention_at_create
           写目标值仅为让前端 banner 不误报(v0.13.11 安全网)。
-        - override_psr 留扩展位, 给定时覆盖 box_3d 的 center/size/rotation。
+        - override_psr 留扩展位, 给定时覆盖 box_3d 的 center/size/rotation
+          (并跳过运动补偿——调用方已显式给定目标 PSR)。
+        - v0.15.1 · 运动补偿: box_3d 且源/目标帧都有 ego pose 时, 由「世界位置
+          不变」反算目标帧 PSR(静止物自动对齐); 无 pose 退化为原样复制。
+
+        返回 (新 annotation, motion_compensated)。
         """
         from fastapi import HTTPException
 
         src = await self.db.get(Annotation, source_annotation_id)
         if src is None or not src.is_active:
             raise HTTPException(status_code=404, detail="source annotation not found")
-
-        geom_type = (src.geometry or {}).get("type")
-        if geom_type not in PROPAGATABLE_GEOMETRY_TYPES:
-            raise HTTPException(
-                status_code=422,
-                detail=f"geometry type '{geom_type}' 不支持跨帧 propagate",
-            )
 
         target_task = await self.db.get(Task, target_task_id)
         if target_task is None:
@@ -505,7 +537,30 @@ class AnnotationService:
         src_task = await self.db.get(Task, src.task_id)
         if src_task is None:
             raise HTTPException(status_code=404, detail="source task not found")
-        if target_task_id == src.task_id:
+
+        ctx = await self._resolve_propagate_context(
+            src_task=src_task, target_task=target_task
+        )
+        new_annotation, motion_compensated = await self._propagate_one(
+            src=src, ctx=ctx, user_id=user_id, override_psr=override_psr
+        )
+        await self.db.flush()
+        await self._update_task_stats(target_task_id)
+        return new_annotation, motion_compensated
+
+    async def _resolve_propagate_context(
+        self, *, src_task: Task, target_task: Task
+    ) -> _PropagateContext:
+        """解析 propagate 的整批恒定上下文: 同 task/project/scene 校验 +
+        源/目标 scene_id / frame_index。
+
+        propagate_batch 一次解析供全框复用; 单条 propagate 解析后即用一次。
+        box_3d 专用的 axis_convention / pose 延迟到 _propagate_one 首次遇到
+        box_3d 时解析(见 _ensure_box3d_context),2D 几何不付这部分往返。
+        """
+        from fastapi import HTTPException
+
+        if target_task.id == src_task.id:
             raise HTTPException(
                 status_code=422, detail="propagate 目标不能是源 task 自身"
             )
@@ -521,12 +576,18 @@ class AnnotationService:
         target_item_id = await resolve_primary_item_id(self.db, target_task)
         src_scene_id = None
         target_scene_id = None
+        src_frame_index = None
+        target_frame_index = None
         if src_item_id is not None:
             src_item = await self.db.get(DatasetItem, src_item_id)
-            src_scene_id = src_item.scene_id if src_item is not None else None
+            if src_item is not None:
+                src_scene_id = src_item.scene_id
+                src_frame_index = src_item.frame_index
         if target_item_id is not None:
             target_item = await self.db.get(DatasetItem, target_item_id)
-            target_scene_id = target_item.scene_id if target_item is not None else None
+            if target_item is not None:
+                target_scene_id = target_item.scene_id
+                target_frame_index = target_item.frame_index
         if (
             src_scene_id is None
             or target_scene_id is None
@@ -534,7 +595,57 @@ class AnnotationService:
         ):
             raise HTTPException(status_code=422, detail="跨 scene propagate 不被允许")
 
-        # 共享 group_id: 源无则分配并写回。
+        return _PropagateContext(
+            src_task=src_task,
+            target_task=target_task,
+            src_scene_id=src_scene_id,
+            src_frame_index=src_frame_index,
+            target_scene_id=target_scene_id,
+            target_frame_index=target_frame_index,
+        )
+
+    async def _ensure_box3d_context(self, ctx: _PropagateContext) -> None:
+        """box_3d 专用上下文解析: 目标 axis_convention + 源/目标帧 ego pose。
+
+        结果缓存在 ctx 上,整批只在首次遇到 box_3d 时解析一次。
+        """
+        if ctx._box3d_resolved:
+            return
+        ctx.axis_convention = await self._resolve_axis_convention(ctx.target_task)
+        ctx.pose_src = await self._frame_pose(ctx.src_scene_id, ctx.src_frame_index)
+        ctx.pose_dst = await self._frame_pose(
+            ctx.target_scene_id, ctx.target_frame_index
+        )
+        ctx._box3d_resolved = True
+
+    async def _propagate_one(
+        self,
+        *,
+        src: Annotation,
+        ctx: _PropagateContext,
+        user_id: uuid.UUID,
+        override_psr: dict | None = None,
+    ) -> tuple[Annotation, bool]:
+        """单框 propagate 核心: 校验几何类型、延续 group_id、box_3d 运动补偿、
+        建新 annotation。
+
+        使用 ctx 中整批预解析好的 scene/frame/axis/pose,不再逐框解析。
+        **不** flush、**不** 更新 task stats —— 由调用方(propagate / propagate_batch)
+        在循环外统一收尾,避免逐框 N+1。
+        """
+        from fastapi import HTTPException
+
+        if src is None or not src.is_active:
+            raise HTTPException(status_code=404, detail="source annotation not found")
+
+        geom_type = (src.geometry or {}).get("type")
+        if geom_type not in PROPAGATABLE_GEOMETRY_TYPES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"geometry type '{geom_type}' 不支持跨帧 propagate",
+            )
+
+        # 共享 group_id: 源无则分配并写回(每框各自一条独立链,故 nextval 必须逐框)。
         group_id = src.group_id
         if group_id is None:
             seq_row = await self.db.execute(
@@ -545,19 +656,35 @@ class AnnotationService:
             src.version += 1
 
         geometry = copy.deepcopy(src.geometry or {})
+        motion_compensated = False
         if geom_type == "box_3d":
-            geometry["convention_at_create"] = await self._resolve_axis_convention(
-                target_task
-            )
+            await self._ensure_box3d_context(ctx)
+            geometry["convention_at_create"] = ctx.axis_convention
             if override_psr:
                 for key in ("center", "size", "rotation"):
                     if key in override_psr:
                         geometry[key] = override_psr[key]
+            elif all(k in geometry for k in ("center", "size", "rotation")):
+                # v0.15.1 · 运动补偿: 世界位置不变, 投回目标帧 ego 系;
+                # 任一帧无 pose → compensate_psr 恒等返回(= v0.14.1 原样复制)
+                from app.services.ego_transform import compensate_psr
+
+                psr, motion_compensated = compensate_psr(
+                    {
+                        "center": geometry["center"],
+                        "size": geometry["size"],
+                        "rotation": geometry["rotation"],
+                    },
+                    pose_src=ctx.pose_src,
+                    pose_dst=ctx.pose_dst,
+                )
+                if motion_compensated:
+                    geometry.update(psr)
 
         new_annotation = Annotation(
             id=uuid.uuid4(),
-            task_id=target_task_id,
-            project_id=target_task.project_id,
+            task_id=ctx.target_task.id,
+            project_id=ctx.target_task.project_id,
             user_id=user_id,
             source="manual",
             annotation_type=src.annotation_type,
@@ -568,9 +695,286 @@ class AnnotationService:
             attributes=copy.deepcopy(src.attributes or {}),
         )
         self.db.add(new_annotation)
+        return new_annotation, motion_compensated
+
+    async def propagate_batch(
+        self,
+        *,
+        source_task_id: uuid.UUID,
+        target_task_id: uuid.UUID,
+        annotation_ids: list[uuid.UUID] | None,
+        user_id: uuid.UUID,
+    ) -> tuple[list[tuple[uuid.UUID, Annotation]], bool]:
+        """v0.15.1 · 多目标批量 propagate: 一次把源 task 的多个(或全部)box_3d
+        运动补偿延续到目标 task,各自延续 group_id 链。
+
+        - annotation_ids=None → 源 task 全部 active box_3d(空 → 422)。
+        - 显式 ids → 必须都属于源 task 且 active(否则 404),逐条复用单条
+          propagate 的全部校验;任一失败整批回滚(同一事务)。
+
+        返回 ([(src_id, 新 annotation)...], motion_compensated)。
+        """
+        from fastapi import HTTPException
+
+        if annotation_ids is None:
+            rows = (
+                (
+                    await self.db.execute(
+                        select(Annotation)
+                        .where(Annotation.task_id == source_task_id)
+                        .where(Annotation.is_active.is_(True))
+                        .where(Annotation.geometry["type"].astext == "box_3d")
+                        .order_by(Annotation.created_at, Annotation.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if not rows:
+                raise HTTPException(
+                    status_code=422, detail="源 task 没有可延续的 box_3d 标注"
+                )
+        else:
+            if not annotation_ids:
+                raise HTTPException(status_code=422, detail="annotation_ids 不能为空")
+            rows = (
+                (
+                    await self.db.execute(
+                        select(Annotation).where(Annotation.id.in_(annotation_ids))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            by_id = {r.id: r for r in rows}
+            missing = [
+                str(i)
+                for i in annotation_ids
+                if i not in by_id
+                or not by_id[i].is_active
+                or by_id[i].task_id != source_task_id
+            ]
+            if missing:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"annotations 不存在/不属于源 task: {', '.join(missing)}",
+                )
+            rows = [by_id[i] for i in annotation_ids]
+
+        # 整批共享同一 source_task / target_task → scene/frame/axis/pose 全恒定。
+        # 循环外解析一次(原先逐条 propagate 会重复解析 → N+1,框数 20-50+ 放大成
+        # 上百次 DB 往返)。校验语义不变: 仍走与单条 propagate 同一份 context 解析。
+        source_task = await self.db.get(Task, source_task_id)
+        if source_task is None:
+            raise HTTPException(status_code=404, detail="source task not found")
+        target_task = await self.db.get(Task, target_task_id)
+        if target_task is None:
+            raise HTTPException(status_code=404, detail="target task not found")
+        ctx = await self._resolve_propagate_context(
+            src_task=source_task, target_task=target_task
+        )
+
+        results: list[tuple[uuid.UUID, Annotation]] = []
+        motion_compensated = False
+        for src in rows:
+            new_annotation, compensated = await self._propagate_one(
+                src=src, ctx=ctx, user_id=user_id
+            )
+            motion_compensated = motion_compensated or compensated
+            results.append((src.id, new_annotation))
+        # 一次 flush + 一次 task stats 更新(原逐框 _update_task_stats 是 N+1 的另一
+        # 来源: 每框都做 count 查询 + Task.get)。最终计数/状态与逐框累加等价。
         await self.db.flush()
         await self._update_task_stats(target_task_id)
-        return new_annotation
+        return results, motion_compensated
+
+    async def interpolate_range(
+        self,
+        *,
+        group_id: int,
+        from_task_id: uuid.UUID,
+        to_task_id: uuid.UUID,
+        user_id: uuid.UUID,
+        assert_task_editable=None,
+        assert_task_visible=None,
+    ) -> tuple[list[Annotation], bool, list[int]]:
+        """v0.15.1 · 关键帧区间插值: 同 group_id 链上帧 i 与帧 k 各有一框,
+        给区间 (i,k) 内每个有 task 的中间帧生成插值框(source="interpolated")。
+
+        - 两端框: 各自 task 上该 group 的唯一 active box_3d(0 或 >1 → 422)。
+        - 几何: 世界系线性内插中心 + slerp 朝向 + 线性尺寸,投回各帧 ego 系;
+          任一帧缺 pose → 纯 ego 系插值(motion_compensated=False)。
+        - 幂等: 中间帧已有该 group 的 active 标注 → 跳过(记入 skipped_frames),
+          重复触发/人工微调过的帧不重复生成。
+        - assert_task_editable: API 层注入的锁态校验(reviewer 例外逻辑在 api 层),
+          任一中间帧不可写 → 整批 422/409,不产生部分写入。
+        - assert_task_visible: API 层注入的 batch 可见性/分派校验(async)。两端 task
+          已在端点校验,但中间帧 task 由 group 链 + scene 反查得到,必须逐帧再校验,
+          否则 annotator 凭两端可见即可往不可见/未分派的中间批次写入(权限漂移)。
+
+        返回 (新建 annotations, motion_compensated, skipped_frames)。
+        """
+        from fastapi import HTTPException
+
+        from app.db.models.dataset import DatasetItem
+        from app.services import scene_pose as scene_pose_svc
+        from app.services.ego_transform import interpolate_psr
+        from app.services.scene import (
+            get_scene_frame_task_map,
+            resolve_primary_item_id,
+        )
+
+        if from_task_id == to_task_id:
+            raise HTTPException(status_code=422, detail="插值区间两端不能是同一 task")
+
+        from_task = await self.db.get(Task, from_task_id)
+        to_task = await self.db.get(Task, to_task_id)
+        if from_task is None or to_task is None:
+            raise HTTPException(status_code=404, detail="task not found")
+        if from_task.project_id != to_task.project_id:
+            raise HTTPException(status_code=422, detail="跨 project 插值不被允许")
+
+        async def _scene_frame(task: Task) -> tuple[uuid.UUID | None, int | None]:
+            item_id = await resolve_primary_item_id(self.db, task)
+            if item_id is None:
+                return None, None
+            item = await self.db.get(DatasetItem, item_id)
+            if item is None:
+                return None, None
+            return item.scene_id, item.frame_index
+
+        from_scene, from_frame = await _scene_frame(from_task)
+        to_scene, to_frame = await _scene_frame(to_task)
+        if (
+            from_scene is None
+            or from_scene != to_scene
+            or from_frame is None
+            or to_frame is None
+        ):
+            raise HTTPException(status_code=422, detail="插值区间必须在同一 scene 内")
+        if abs(to_frame - from_frame) < 2:
+            raise HTTPException(
+                status_code=422, detail="插值区间无中间帧(两端帧需间隔 ≥ 2)"
+            )
+
+        async def _endpoint_box(task_id: uuid.UUID) -> Annotation:
+            rows = (
+                (
+                    await self.db.execute(
+                        select(Annotation)
+                        .where(Annotation.task_id == task_id)
+                        .where(Annotation.group_id == group_id)
+                        .where(Annotation.is_active.is_(True))
+                        .where(Annotation.geometry["type"].astext == "box_3d")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if len(rows) != 1:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"task {task_id} 上 group {group_id} 的 active box_3d "
+                        f"数量为 {len(rows)},插值要求恰好 1 个"
+                    ),
+                )
+            return rows[0]
+
+        box_from = await _endpoint_box(from_task_id)
+        box_to = await _endpoint_box(to_task_id)
+
+        # 统一成 i < k(几何插值对称,t 取向不影响结果)
+        if from_frame > to_frame:
+            from_frame, to_frame = to_frame, from_frame
+            box_from, box_to = box_to, box_from
+
+        frame_to_task = await get_scene_frame_task_map(self.db, from_scene)
+        mid_frames = sorted(f for f in frame_to_task if from_frame < f < to_frame)
+        if not mid_frames:
+            raise HTTPException(
+                status_code=422, detail="插值区间内没有可写的中间帧 task"
+            )
+
+        # 整批前置校验: 中间帧 task 可见性(batch 可见/分派)+ 锁态。
+        # 可见性必须逐帧校验——两端 task 可见不代表中间帧批次对该用户可见/已分派。
+        mid_tasks: dict[int, Task] = {}
+        for f in mid_frames:
+            t = await self.db.get(Task, frame_to_task[f])
+            if t is None:
+                continue
+            if assert_task_visible is not None:
+                await assert_task_visible(t)
+            if assert_task_editable is not None:
+                assert_task_editable(t)
+            mid_tasks[f] = t
+
+        trajectory = {
+            p.frame_index: p
+            for p in await scene_pose_svc.get_trajectory(self.db, from_scene)
+        }
+        psr_a = {
+            "center": box_from.geometry["center"],
+            "size": box_from.geometry["size"],
+            "rotation": box_from.geometry["rotation"],
+        }
+        psr_b = {
+            "center": box_to.geometry["center"],
+            "size": box_to.geometry["size"],
+            "rotation": box_to.geometry["rotation"],
+        }
+        convention = await self._resolve_axis_convention(from_task)
+
+        created: list[Annotation] = []
+        skipped_frames: list[int] = []
+        motion_compensated = True
+        for f, mid_task in mid_tasks.items():
+            # 幂等: 该帧已有同 group 的 active 标注 → 跳过
+            existing = await self.db.scalar(
+                select(func.count())
+                .select_from(Annotation)
+                .where(Annotation.task_id == mid_task.id)
+                .where(Annotation.group_id == group_id)
+                .where(Annotation.is_active.is_(True))
+            )
+            if existing:
+                skipped_frames.append(f)
+                continue
+
+            t = (f - from_frame) / (to_frame - from_frame)
+            psr, compensated = interpolate_psr(
+                psr_a,
+                psr_b,
+                t,
+                pose_a=trajectory.get(from_frame),
+                pose_b=trajectory.get(to_frame),
+                pose_mid=trajectory.get(f),
+            )
+            motion_compensated = motion_compensated and compensated
+
+            geometry = copy.deepcopy(box_from.geometry or {})
+            geometry.update(psr)
+            geometry["convention_at_create"] = convention
+            ann = Annotation(
+                id=uuid.uuid4(),
+                task_id=mid_task.id,
+                project_id=mid_task.project_id,
+                user_id=user_id,
+                source="interpolated",
+                annotation_type=box_from.annotation_type,
+                tool_unit_id=box_from.tool_unit_id,
+                class_name=box_from.class_name,
+                geometry=geometry,
+                group_id=group_id,
+                attributes=copy.deepcopy(box_from.attributes or {}),
+            )
+            self.db.add(ann)
+            created.append(ann)
+
+        await self.db.flush()
+        for ann in created:
+            await self._update_task_stats(ann.task_id)
+        return created, motion_compensated and bool(created), skipped_frames
 
     async def ungroup(
         self,
