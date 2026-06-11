@@ -73,11 +73,17 @@ vi.mock("@/hooks/useSystemSettings", () => ({
 }));
 
 // --- workbench config ---
+// v0.15.3 · 偏好四分树形态(common/image/video/pointcloud 子树)。
 const mockWorkbenchConfig = {
-  smoothImage: true,
-  cssImageFilter: "",
-  controlPointsSize: 6,
-  longTaskSampleRate: 0.1,
+  common: { longTaskSampleRate: 0.1 },
+  image: {
+    smoothImage: true,
+    cssImageFilter: "",
+    controlPointsSize: 6,
+    snapToGrid: false,
+  },
+  video: {},
+  pointcloud: {},
 };
 const mockWorkbenchUpdate = vi.fn();
 vi.mock("@/pages/Workbench/state/useWorkbenchConfig", () => ({

@@ -29,6 +29,7 @@ interface VideoTrackSidebarProps {
   selectedId: string | null;
   selectedIds?: string[];
   frameIndex: number;
+  userId?: string | null;
   trackFilter?: TrackFilter;
   readOnly: boolean;
   hiddenTrackIds: Set<string>;
@@ -109,6 +110,7 @@ export function VideoTrackSidebar({
   selectedId,
   selectedIds = [],
   frameIndex,
+  userId,
   trackFilter = "all",
   readOnly,
   hiddenTrackIds,
@@ -404,6 +406,7 @@ export function VideoTrackSidebar({
       selectedTrackLocked={selectedTrackLocked}
       currentFrameOutside={trackActions.currentFrameOutside}
       frameIndex={frameIndex}
+      userId={userId}
       trackFilter={trackFilter}
       readOnly={readOnly}
       selectedBboxCount={selectedBboxes.length}

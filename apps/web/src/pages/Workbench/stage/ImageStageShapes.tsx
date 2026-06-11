@@ -20,6 +20,7 @@ import {
 const LOD_VERTEX_THRESHOLD = 60; // ≤60 顶点不简化（O(n²) 渲染开销低于 RDP 设置成本）。
 // v0.10.4 I2.3 · 编辑态顶点视口粗筛门限：>60 顶点才走 rbush 粗筛，避免小 polygon 开销。
 const VERTEX_CULL_THRESHOLD = 60;
+const DEFAULT_FADED_OPACITY = 0.35;
 
 function shapeLabelText(b: Annotation, isAi: boolean): string {
   if (!isAi) return displayClassName(b.cls);
@@ -51,6 +52,8 @@ interface KonvaBoxProps {
   selected: boolean;
   editable: boolean;
   faded: boolean;
+  fadedOpacity?: number;
+  showLabel?: boolean;
   /** v0.10.5 M4-β · I15 occluded：渲染为虚线 + 半透。 */
   occluded?: boolean;
   imgW: number;
@@ -79,6 +82,8 @@ export function groupOutlineColor(groupId: number): string {
 
 export function KonvaBox({
   b, annotationId, isAi, selected, editable, faded, occluded = false,
+  fadedOpacity = DEFAULT_FADED_OPACITY,
+  showLabel = true,
   imgW, imgH, scale,
   onClick,
   onMoveStart,
@@ -102,7 +107,7 @@ export function KonvaBox({
         strokeWidth={sw}
         dash={isAi || occluded ? [4 / scale, 3 / scale] : undefined}
         fill={hexToRgba(color, isAi ? 0.08 : 0.07)}
-        opacity={faded ? 0.35 : occluded ? 0.5 : 1}
+        opacity={faded ? fadedOpacity : occluded ? 0.5 : 1}
         shadowEnabled={selected && !faded}
         shadowColor={color}
         shadowBlur={8 / scale}
@@ -123,7 +128,7 @@ export function KonvaBox({
         }}
       />
 
-      {!(isAi && faded) && (
+      {showLabel && !(isAi && faded) && (
         <Label x={b.x * imgW} y={b.y * imgH - BOX_LABEL_OFFSET_PX / scale} listening={false}>
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text
@@ -186,6 +191,8 @@ interface KonvaPolygonProps {
   isAi: boolean;
   selected: boolean;
   faded: boolean;
+  fadedOpacity?: number;
+  showLabel?: boolean;
   /** v0.10.5 M4-β · I15 occluded：渲染为虚线 + 半透（与 selfIntersect 红色互斥）。 */
   occluded?: boolean;
   imgW: number;
@@ -204,6 +211,8 @@ interface KonvaPolygonProps {
 
 export function KonvaPolygon({
   b, annotationId, isAi, selected, faded, occluded = false, imgW, imgH, scale, onClick,
+  fadedOpacity = DEFAULT_FADED_OPACITY,
+  showLabel = true,
   points,
   selfIntersect,
   editable,
@@ -250,7 +259,7 @@ export function KonvaPolygon({
         strokeWidth={sw}
         dash={isAi || selfIntersect || occluded ? [4 / scale, 3 / scale] : undefined}
         fill={hexToRgba(color, isAi ? 0.08 : 0.07)}
-        opacity={faded ? 0.35 : occluded ? 0.5 : 1}
+        opacity={faded ? fadedOpacity : occluded ? 0.5 : 1}
         shadowEnabled={selected && !faded}
         shadowColor={selfIntersect ? "oklch(0.55 0.22 25)" : color}
         shadowBlur={8 / scale}
@@ -270,7 +279,7 @@ export function KonvaPolygon({
           if (stage) stage.container().style.cursor = "";
         }}
       />
-      {flat.length >= 2 && !(isAi && faded) && (
+      {showLabel && flat.length >= 2 && !(isAi && faded) && (
         <Label x={flat[0]} y={flat[1] - BOX_LABEL_OFFSET_PX / scale} listening={false}>
           <Tag fill={strokeColor} cornerRadius={3 / scale} />
           <Text
@@ -362,6 +371,8 @@ interface KonvaRotatedBoxProps {
   selected: boolean;
   editable: boolean;
   faded: boolean;
+  fadedOpacity?: number;
+  showLabel?: boolean;
   occluded?: boolean;
   imgW: number;
   imgH: number;
@@ -373,6 +384,8 @@ interface KonvaRotatedBoxProps {
 
 export function KonvaRotatedBox({
   b, annotationId, geometry, angle, isAi, selected, editable, faded, occluded = false,
+  fadedOpacity = DEFAULT_FADED_OPACITY,
+  showLabel = true,
   imgW, imgH, scale,
   onClick,
   onRotateStart,
@@ -408,7 +421,7 @@ export function KonvaRotatedBox({
         strokeWidth={sw}
         dash={isAi || occluded ? [4 / scale, 3 / scale] : undefined}
         fill={hexToRgba(color, isAi ? 0.08 : 0.07)}
-        opacity={faded ? 0.35 : occluded ? 0.5 : 1}
+        opacity={faded ? fadedOpacity : occluded ? 0.5 : 1}
         shadowEnabled={selected && !faded}
         shadowColor={color}
         shadowBlur={8 / scale}
@@ -416,7 +429,7 @@ export function KonvaRotatedBox({
         onClick={(e) => { e.cancelBubble = true; onClick(e); }}
       />
 
-      {!(isAi && faded) && (
+      {showLabel && !(isAi && faded) && (
         <Label x={-hw} y={-hh - BOX_LABEL_OFFSET_PX / scale} listening={false}>
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text
@@ -498,6 +511,8 @@ interface KonvaPolylineProps {
   isAi: boolean;
   selected: boolean;
   faded: boolean;
+  fadedOpacity?: number;
+  showLabel?: boolean;
   /** v0.10.5 M4-β · I15 occluded：渲染为虚线 + 半透。 */
   occluded?: boolean;
   imgW: number;
@@ -518,6 +533,8 @@ interface KonvaPolylineProps {
  */
 export function KonvaPolyline({
   b, annotationId, isAi, selected, faded, occluded = false, imgW, imgH, scale, onClick,
+  fadedOpacity = DEFAULT_FADED_OPACITY,
+  showLabel = true,
   points,
   editable,
   onVertexMouseDown,
@@ -542,7 +559,7 @@ export function KonvaPolyline({
         lineCap="round"
         lineJoin="round"
         dash={isAi || occluded ? [4 / scale, 3 / scale] : undefined}
-        opacity={faded ? 0.35 : occluded ? 0.5 : 1}
+        opacity={faded ? fadedOpacity : occluded ? 0.5 : 1}
         hitStrokeWidth={10 / scale}
         shadowEnabled={selected && !faded}
         shadowColor={color}
@@ -563,7 +580,7 @@ export function KonvaPolyline({
           if (stage) stage.container().style.cursor = "";
         }}
       />
-      {flat.length >= 2 && !(isAi && faded) && (
+      {showLabel && flat.length >= 2 && !(isAi && faded) && (
         <Label x={flat[0]} y={flat[1] - BOX_LABEL_OFFSET_PX / scale} listening={false}>
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text
@@ -648,6 +665,8 @@ interface KonvaKeypointProps {
   isAi: boolean;
   selected: boolean;
   faded: boolean;
+  fadedOpacity?: number;
+  showLabel?: boolean;
   imgW: number;
   imgH: number;
   scale: number;
@@ -668,7 +687,8 @@ interface KonvaKeypointProps {
  *   - 节点标签 = schema.nodes[i].name；选中态加阴影 + 类别标签。
  */
 export function KonvaKeypoint({
-  b, annotationId, isAi, selected, faded, imgW, imgH, scale, schema,
+  b, annotationId, isAi, selected, faded, fadedOpacity = DEFAULT_FADED_OPACITY,
+  showLabel = true, imgW, imgH, scale, schema,
   onClick, editable = false, onNodeMouseDown, onToggleVisibility,
 }: KonvaKeypointProps) {
   const color = classColorForCanvas(b.cls);
@@ -685,7 +705,7 @@ export function KonvaKeypoint({
   const anchorY = (anchor?.y ?? b.y) * imgH;
 
   return (
-    <Group id={annotationId} opacity={faded ? 0.35 : 1}>
+    <Group id={annotationId} opacity={faded ? fadedOpacity : 1}>
       {/* 骨骼连线 (两端可见 / 遮挡才连) */}
       {edges.map(([i, j], idx) => {
         const a = kps[i];
@@ -781,7 +801,7 @@ export function KonvaKeypoint({
       })}
 
       {/* 类别标签 */}
-      {!(isAi && faded) && (
+      {showLabel && !(isAi && faded) && (
         <Label x={anchorX} y={anchorY - BOX_LABEL_OFFSET_PX / scale} listening={false}>
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text

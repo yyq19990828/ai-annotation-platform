@@ -75,7 +75,7 @@ mask 编辑器走的是「polygon 中转」：mask 在前端临时态编辑，�
 
 - **按 M 不响应**：确认非只读模式（task 已锁定 / 已审完），输入框聚焦时 hotkey 会被吞
 - **Enter 后无 polygon 落库**：mask 尚未涂抹（`dirty` 为假）或涂抹区域过小（转出顶点 < 3）时 `commitToPolygon` 返回 null，工具栏确认按钮置灰（`!active || !dirty`）；Enter 键虽可触发提交流程，但同样会被 null 结果拦截并弹 toast 提示
-- **mask 与 SAM 候选重叠看不清**：mask 是 `rgba(220,38,38,0.45)` 半透红，SAM 是紫虚线，可按 `E` 临时擦掉 mask 中已被 SAM 覆盖的部分
+- **mask 与 SAM 候选重叠看不清**：mask 是半透红，透明度可在工作台设置的「图片 → Mask 覆盖透明度」调整；SAM 是紫虚线，可按 `E` 临时擦掉 mask 中已被 SAM 覆盖的部分
 
 ## 相关 ADR
 

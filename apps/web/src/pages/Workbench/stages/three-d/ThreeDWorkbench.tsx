@@ -7,7 +7,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 
-import type { CameraPanelState, TriViewFloatState } from "@/api/auth";
+import type {
+  CameraPanelState,
+  TriViewFloatState,
+  WorkbenchCommonPreferences,
+  WorkbenchPointcloudPreferences,
+} from "@/api/auth";
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
 import {
   useAnnotations,
@@ -22,9 +27,10 @@ import { useNeighborAnnotations } from "@/hooks/useNeighborAnnotations";
 import { useSceneTrajectory } from "@/hooks/useSceneTrajectory";
 import { alignPsrToFrame } from "./geometry/egoAlign";
 import { useToastStore } from "@/components/ui/Toast";
+import { useAuthStore } from "@/stores/authStore";
 import { classColorForCanvas } from "@/pages/Workbench/stage/colors";
 import type { ThreeDTool } from "@/pages/Workbench/state/useWorkbenchState";
-import type { WorkbenchLayoutPatch } from "@/pages/Workbench/state/useWorkbenchConfig";
+import type { WorkbenchConfigPatch, WorkbenchLayoutPatch } from "@/pages/Workbench/state/useWorkbenchConfig";
 import type { Box3DGeometry, PointMaskGeometry, SensorCalibration } from "@/types";
 
 import { AttributeForm } from "../../shell/AttributeForm";
@@ -74,6 +80,14 @@ import {
   type ClipboardBox3D,
 } from "./geometry/box3dClipboard";
 import { useThreeDHistory } from "./useThreeDHistory";
+import {
+  buildPointcloudLegacyMigration,
+  finishPointcloudLegacyMigration,
+  isCrossFrameOverlayK,
+  isPointMaskSelectMode,
+  readPointcloudStickyToggle,
+  writePointcloudStickyToggle,
+} from "./pointcloudPreferenceStorage";
 import styles from "./ThreeDWorkbench.module.css";
 
 interface ThreeDWorkbenchProps {
@@ -104,18 +118,19 @@ interface ThreeDWorkbenchProps {
   /** v0.15.x · 悬浮相机面板位置 + 折叠态(按相机 role 分桶,迁自旧 localStorage)。 */
   cameraPanels: Record<string, CameraPanelState>;
   onWorkbenchLayoutChange: (patch: WorkbenchLayoutPatch) => void;
+  workbenchCommon: WorkbenchCommonPreferences;
+  workbenchPointcloud: WorkbenchPointcloudPreferences;
+  workbenchConfigLoaded: boolean;
+  onWorkbenchConfigChange: (patch: WorkbenchConfigPatch) => void;
+  onWorkbenchConfigUpdate: (patch: WorkbenchConfigPatch) => Promise<void>;
 }
 
 // v0.13.3 · 新框默认尺寸(米,长宽高;约一辆轿车),放置后用面板/gizmo 精修。
 const DEFAULT_BOX_SIZE: [number, number, number] = [4.0, 1.8, 1.6];
-// v0.14.1 · 邻帧叠加 K 值持久化键(全局, 切 task 不重置)。
-const CROSS_FRAME_OVERLAY_K_KEY = "workbench.crossFrameOverlayK";
-const POINT_MASK_MODE_KEY = "workbench.pointMaskSelectMode";
 const CAMERA_AUTO_COLLAPSE_WIDTH = 1366;
 const CAMERA_STACK_VISIBLE = 2;
 const TRI_FLOAT_DEFAULT_W = 240;
 const TRI_FLOAT_DEFAULT_H = 440;
-type PointMaskSelectMode = "rect" | "lasso" | "polygon";
 // v0.13.9 · 框选预览矩形位置/尺寸经 CSS custom property 注入(逐帧动态值)。
 type BoxSelectRectVars = CSSProperties & {
   "--rect-l": string;
@@ -123,16 +138,6 @@ type BoxSelectRectVars = CSSProperties & {
   "--rect-w": string;
   "--rect-h": string;
 };
-
-function readPointMaskMode(): PointMaskSelectMode {
-  try {
-    const raw = localStorage.getItem(POINT_MASK_MODE_KEY);
-    if (raw === "rect" || raw === "lasso" || raw === "polygon") return raw;
-  } catch {
-    /* ignore */
-  }
-  return "rect";
-}
 
 function sortedIndices(indices: Iterable<number>): number[] {
   return [...indices].sort((a, b) => a - b);
@@ -287,9 +292,15 @@ export function ThreeDWorkbench({
   triViewFloat,
   cameraPanels,
   onWorkbenchLayoutChange,
+  workbenchCommon,
+  workbenchPointcloud,
+  workbenchConfigLoaded,
+  onWorkbenchConfigChange,
+  onWorkbenchConfigUpdate,
 }: ThreeDWorkbenchProps) {
   const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
   const pushToast = useToastStore((st) => st.push);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
   // v0.13.11 · dataset 声明的 lidar 系约定;前端把点云 positions + 相机 extrinsic 一次性
   // 旋转到 ISO 8855 (+X 前 / +Y 左 / +Z 上),上层几何代码继续锁死 ISO。null / 缺省 = iso_8855。
   const axisConvention: LidarAxisConvention = manifest?.axis_convention ?? "iso_8855";
@@ -319,7 +330,13 @@ export function ThreeDWorkbench({
   const [triFloatBounds, setTriFloatBounds] = useState<FloatingPanelBounds | null>(null);
   const [stats, setStats] = useState<PointCloudStats | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [pointSize, setPointSize] = useState(0.06);
+  const pointSize = workbenchPointcloud.pointSize;
+  const pointMaskSelectMode = isPointMaskSelectMode(workbenchPointcloud.pointMaskSelectMode)
+    ? workbenchPointcloud.pointMaskSelectMode
+    : "rect";
+  const overlayK = isCrossFrameOverlayK(workbenchCommon.crossFrameOverlayK)
+    ? workbenchCommon.crossFrameOverlayK
+    : 0;
   const [pointCloudViewMode, setPointCloudViewMode] = useState<"orbit" | "bev">("orbit");
   // v0.13.6 · 相机 RGB 上色开关(默认关:无标定相机降级,且省一次性投影采样开销)。
   const [colorizeOn, setColorizeOn] = useState(false);
@@ -329,9 +346,6 @@ export function ThreeDWorkbench({
   // v0.13.7 · 放大查看的相机 role(L3);null = 无放大。点⛶开,ESC/遮罩/关闭钮收。
   const [enlargedRole, setEnlargedRole] = useState<string | null>(null);
   const [autoCollapseCameras, setAutoCollapseCameras] = useState(false);
-  const [pointMaskSelectMode, setPointMaskSelectMode] = useState<PointMaskSelectMode>(() =>
-    readPointMaskMode(),
-  );
   const [pointMaskPolygonPoints, setPointMaskPolygonPoints] = useState<ScreenPoint[]>([]);
   const [pointMaskCursor, setPointMaskCursor] = useState<ScreenPoint | null>(null);
   const finishPointMaskPolygonRef = useRef<(subtract: boolean) => void>(() => undefined);
@@ -570,12 +584,51 @@ export function ThreeDWorkbench({
   }, []);
 
   useEffect(() => {
+    if (!workbenchConfigLoaded || !userId || typeof window === "undefined") return;
+    let cancelled = false;
+    let migration;
     try {
-      localStorage.setItem(POINT_MASK_MODE_KEY, pointMaskSelectMode);
+      migration = buildPointcloudLegacyMigration(userId, window.localStorage);
     } catch {
-      /* ignore */
+      return;
     }
-  }, [pointMaskSelectMode]);
+    if (!migration) return;
+    if (!migration.patch) {
+      finishPointcloudLegacyMigration(migration, window.localStorage);
+      return;
+    }
+    void onWorkbenchConfigUpdate(migration.patch)
+      .then(() => {
+        if (!cancelled) finishPointcloudLegacyMigration(migration, window.localStorage);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [workbenchConfigLoaded, userId, onWorkbenchConfigUpdate]);
+
+  const [stickyUserId, setStickyUserId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!userId || typeof window === "undefined") {
+      setStickyUserId(null);
+      setColorizeOn(false);
+      setDepthOn(false);
+      return;
+    }
+    setColorizeOn(readPointcloudStickyToggle(userId, "colorizeOn", window.localStorage));
+    setDepthOn(readPointcloudStickyToggle(userId, "depthOn", window.localStorage));
+    setStickyUserId(userId);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId || stickyUserId !== userId || typeof window === "undefined") return;
+    writePointcloudStickyToggle(userId, "colorizeOn", colorizeOn, window.localStorage);
+  }, [colorizeOn, stickyUserId, userId]);
+
+  useEffect(() => {
+    if (!userId || stickyUserId !== userId || typeof window === "undefined") return;
+    writePointcloudStickyToggle(userId, "depthOn", depthOn, window.localStorage);
+  }, [depthOn, stickyUserId, userId]);
 
   useEffect(() => {
     if (pointMasking) return;
@@ -675,6 +728,10 @@ export function ThreeDWorkbench({
     if (!viewportRef.current) return;
     const scene = new PointCloudScene(viewportRef.current);
     sceneRef.current = scene;
+    scene.setPointSize(pointSize);
+    scene.setGridVisible(workbenchPointcloud.showGrid);
+    scene.setAxisGizmoVisible(workbenchPointcloud.showAxisGizmo);
+    scene.setCameraDamping(workbenchPointcloud.cameraDamping);
     // 拖拽结束:回写表单 + PATCH 持久化(与数值面板共用持久化管线)。
     scene.setTransformHandler((id, psr) => {
       setForm(psrToForm(psr));
@@ -705,7 +762,25 @@ export function ThreeDWorkbench({
       scene.dispose();
       sceneRef.current = null;
     };
+    // 场景生命周期只跟 DOM 容器绑定；偏好变化由下方独立 effects 同步。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    sceneRef.current?.setPointSize(pointSize);
+  }, [pointSize, stats]);
+
+  useEffect(() => {
+    sceneRef.current?.setGridVisible(workbenchPointcloud.showGrid);
+  }, [workbenchPointcloud.showGrid]);
+
+  useEffect(() => {
+    sceneRef.current?.setAxisGizmoVisible(workbenchPointcloud.showAxisGizmo);
+  }, [workbenchPointcloud.showAxisGizmo]);
+
+  useEffect(() => {
+    sceneRef.current?.setCameraDamping(workbenchPointcloud.cameraDamping);
+  }, [workbenchPointcloud.cameraDamping]);
 
   // manifest 到位后加载点云。
   // v0.13.11 · 传入 axisConvention,scene 内部加载完 PCD 立即把 positions 旋到 ISO 系。
@@ -1450,7 +1525,7 @@ export function ThreeDWorkbench({
   };
 
   const handlePointSize = (v: number) => {
-    setPointSize(v);
+    onWorkbenchConfigChange({ pointcloud: { pointSize: v } });
     sceneRef.current?.setPointSize(v);
   };
   const handleResetView = useCallback(() => {
@@ -1597,20 +1672,11 @@ export function ThreeDWorkbench({
     return s;
   }, [selectedIds, selectedGroupId, annotations]);
 
-  // v0.14.1 · 邻帧参考框叠加: overlayK 控制前后各拉多少帧(0=关)。per scene 持久化到
-  // localStorage; 选中某框 + 该框有 group_id 时, 拉同 group_id 的邻帧框作半透明参考。
-  const [overlayK, setOverlayK] = useState<number>(() => {
-    if (typeof window === "undefined") return 0;
-    const raw = window.localStorage.getItem(CROSS_FRAME_OVERLAY_K_KEY);
-    const n = raw ? Number(raw) : 0;
-    return [0, 1, 3, 5, 7].includes(n) ? n : 0;
-  });
   const setOverlayKPersist = useCallback((k: number) => {
-    setOverlayK(k);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(CROSS_FRAME_OVERLAY_K_KEY, String(k));
+    if (isCrossFrameOverlayK(k)) {
+      onWorkbenchConfigChange({ common: { crossFrameOverlayK: k } });
     }
-  }, []);
+  }, [onWorkbenchConfigChange]);
   const { data: neighborsData } = useFrameNeighbors(
     overlayK > 0 ? taskId : null,
     Math.max(1, overlayK),
@@ -1882,7 +1948,14 @@ export function ThreeDWorkbench({
                 className={styles.selectCtl}
                 value={pointMaskSelectMode}
                 disabled={!canPlacePointMask}
-                onChange={(e) => setPointMaskSelectMode(e.target.value as PointMaskSelectMode)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (isPointMaskSelectMode(next)) {
+                    onWorkbenchConfigChange({
+                      pointcloud: { pointMaskSelectMode: next },
+                    });
+                  }
+                }}
               >
                 <option value="rect">矩形</option>
                 <option value="lasso">套索</option>

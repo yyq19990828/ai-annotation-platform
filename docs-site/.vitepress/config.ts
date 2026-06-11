@@ -120,6 +120,7 @@ export default withMermaid(defineConfig({
           text: "工作台 · 通用",
           items: [
             { text: "工作台概览与快捷键", link: "/user-guide/workbench/" },
+            { text: "工作台设置", link: "/user-guide/workbench/settings" },
           ],
         },
         {

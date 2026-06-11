@@ -1,7 +1,11 @@
 import { fireEvent, render } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { VideoPlaybackOverlay, densityBinGradient } from "./VideoPlaybackOverlay";
+import {
+  VideoPlaybackOverlay,
+  densityBinGradient,
+  resolveLargeFrameStep,
+} from "./VideoPlaybackOverlay";
 import { getTrackColor } from "./colors";
 import { buildFrameTimebase } from "./frameTimebase";
 import type { VideoTimelineDensityBin } from "./videoTrackTimeline";
@@ -199,6 +203,20 @@ describe("VideoPlaybackOverlay", () => {
     expect(onSeekByFrames).toHaveBeenNthCalledWith(2, -10);
   });
 
+  it("uses configured large frame step for Shift + range arrow keys", () => {
+    const onSeekByFrames = vi.fn();
+    const { getByLabelText } = renderOverlay({
+      largeFrameStep: "grid",
+      samplingStep: 5,
+      onSeekByFrames,
+    });
+    const range = getByLabelText("视频帧时间轴");
+
+    fireEvent.keyDown(range, { key: "ArrowRight", shiftKey: true });
+
+    expect(onSeekByFrames).toHaveBeenCalledWith(5);
+  });
+
   it("moves keyboard focus from the range to the timeline shell after pointer interaction", () => {
     const { getByLabelText, getByTestId } = renderOverlay();
     const shell = getByTestId("video-timeline-shell") as HTMLDivElement;
@@ -291,6 +309,14 @@ describe("densityBinGradient", () => {
     expect(gradient).toContain("0.00%");
     expect(gradient).toContain("50.00%");
     expect(gradient).toContain("100.00%");
+  });
+});
+
+describe("resolveLargeFrameStep", () => {
+  it("resolves grid to sampling step, falling back to 10 without sampling grid", () => {
+    expect(resolveLargeFrameStep("grid", 5)).toBe(5);
+    expect(resolveLargeFrameStep("grid", 1)).toBe(10);
+    expect(resolveLargeFrameStep(30, 5)).toBe(30);
   });
 });
 

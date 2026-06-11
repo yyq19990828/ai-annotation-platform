@@ -10,10 +10,14 @@ import type {
   VideoTrackGeometry,
 } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
-import type { WorkbenchLayoutPreferences } from "@/api/auth";
+import type {
+  WorkbenchCommonPreferences,
+  WorkbenchLayoutPreferences,
+  WorkbenchPointcloudPreferences,
+} from "@/api/auth";
 import type { AiBox } from "../state/transforms";
 import type { PendingDrawing, SamPolarity, SamSubTool, ThreeDTool, Tool, VideoTool } from "../state/useWorkbenchState";
-import type { WorkbenchLayoutPatch } from "../state/useWorkbenchConfig";
+import type { WorkbenchConfigPatch, WorkbenchLayoutPatch } from "../state/useWorkbenchConfig";
 import type { Viewport } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
@@ -75,6 +79,11 @@ interface WorkbenchStageHostCommonProps {
   rightSidebarWidth: number;
   workbenchLayout: WorkbenchLayoutPreferences;
   onWorkbenchLayoutChange: (patch: WorkbenchLayoutPatch) => void;
+  workbenchCommon: WorkbenchCommonPreferences;
+  workbenchPointcloud: WorkbenchPointcloudPreferences;
+  workbenchConfigLoaded: boolean;
+  onWorkbenchConfigChange: (patch: WorkbenchConfigPatch) => void;
+  onWorkbenchConfigUpdate: (patch: WorkbenchConfigPatch) => Promise<void>;
 }
 
 interface WorkbenchStageHostVideoProps {
@@ -242,6 +251,11 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       rightSidebarWidth,
       workbenchLayout,
       onWorkbenchLayoutChange,
+      workbenchCommon,
+      workbenchPointcloud,
+      workbenchConfigLoaded,
+      onWorkbenchConfigChange,
+      onWorkbenchConfigUpdate,
     } = common;
     const videoProps = stageKind === "video" ? requireStageGroup(video, "video", stageKind) : undefined;
     const imageProps = stageKind === "image" ? requireStageGroup(image, "image", stageKind) : undefined;
@@ -361,6 +375,11 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
               triViewFloat={workbenchLayout.triViewFloat}
               cameraPanels={workbenchLayout.cameraPanels}
               onWorkbenchLayoutChange={onWorkbenchLayoutChange}
+              workbenchCommon={workbenchCommon}
+              workbenchPointcloud={workbenchPointcloud}
+              workbenchConfigLoaded={workbenchConfigLoaded}
+              onWorkbenchConfigChange={onWorkbenchConfigChange}
+              onWorkbenchConfigUpdate={onWorkbenchConfigUpdate}
             />
           </Suspense>
         ) : stageKind === "video" ? (

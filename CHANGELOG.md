@@ -30,6 +30,68 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.6] - 2026-06-11
+
+点云工作台设置补完。`workbench.pointcloud.*` 填充点大小、点掩膜模式、网格/坐标轴显隐和相机阻尼;`workbench.common.crossFrameOverlayK` 收编邻帧叠加 K。计划见 `docs/plans/2026-06-11-v0.15.6-pointcloud-workbench-settings.md`。
+
+### Added
+
+- **点云设置字段**:工作台设置抽屉与个人设置页新增点大小、点选模式、显示地面网格、显示坐标轴、相机灵敏度;默认值全部等于旧硬编码行为。
+- **旧 localStorage 收编**:首次加载时把 `workbench.pointMaskSelectMode` / `workbench.crossFrameOverlayK` 迁入账号级 preferences,并用 `workbench.{userId}.pcd.migrated` 标记避免重复 seed。
+- **融合开关粘性**:相机上色与深度提示继续作为本机开关,但按 `workbench.{userId}.pcd.*` 分桶记忆,避免共享浏览器串台。
+
+### Changed
+
+- 3D 工具条中的点大小滑块、点掩膜模式下拉和邻帧叠加档位改为读写同一份 preferences;抽屉、个人设置页与工具条实时同步。
+- `PointCloudScene` 增加网格、坐标轴和 OrbitControls 阻尼 setter,设置变化无需重建 Three.js 场景。
+
+## [0.15.5] - 2026-06-11
+
+视频工作台设置切片。`workbench.video.*` 增加默认播放速率和大步进帧数;关键帧传播与 AI Tracker 传播对话框按用户记住上次选择;WebCodecs 实验开关进入视频任务的工作台设置抽屉。计划见 `docs/plans/2026-06-11-v0.15.5-video-workbench-settings.md`。
+
+### Added
+
+- **视频设置字段**:工作台设置抽屉与个人设置页新增默认播放速率、大步进帧数;默认值保持 1x 和 10 帧。
+- **传播对话框粘性记忆**:关键帧传播记住数量 / 方向 / 覆盖选项;AI Tracker 传播记住范围 / 方向 / 模型 / SAM 尺寸,取消或提交失败不回写。
+- **WebCodecs 设置入口**:视频任务抽屉新增「实验特性」分组,直接读写既有 `video.experimental.webcodecs` localStorage 开关,刷新后生效。
+
+### Changed
+
+- 时间轴聚焦时 `Shift+←/→` 的大步进支持 5 / 10 / 30 帧或采样网格;`grid` 模式在采样开启时跳一个采样单元,否则回退 10 帧。
+
+## [0.15.4] - 2026-06-11
+
+图片工作台设置切片。`workbench.image.*` 增加画框后行为、吸附阈值、缩放步长、淡化/标签/Mask 覆盖显示偏好;`workbench.common.*` 增加删除确认和最近类别数量。计划见 `docs/plans/2026-06-11-v0.15.4-image-workbench-settings.md`。
+
+### Added
+
+- **图片设置字段**:工作台设置抽屉与个人设置页新增画框后行为、吸附阈值、滚轮缩放步长、淡化透明度、框标签显隐和 Mask 覆盖透明度;默认值全部等于旧硬编码行为。
+- **通用设置首批**:新增删除确认策略和最近类别数量;`multi_only` 仅多选删除前确认,`always` 单删/多删都确认。
+- **SAM 输出形态记忆**:文本 / Exemplar 输出形态按账号写入本地记忆;项目级默认仍优先。
+
+### Changed
+
+- `afterBoxCreate=reuse_active` 时,手画 bbox 会沿用当前类别直接落库;没有当前类别时仍回退到类别选择器。
+- 最近类别列表按配置上限读取和写回,缩小上限无需迁移旧 localStorage。
+
+## [0.15.3] - 2026-06-11
+
+工作台设置体系地基(epic v0.15.3-0.15.7 第一版)。`WorkbenchPreferences` 从平铺字段重构为 **通用/图片/视频/点云** 四子树,工作台内立起「设置抽屉」(齿轮菜单入口、改动实时预览),Settings 页「标注偏好」同步改为注册表驱动的分组渲染。**本版不新增任何用户可感知设置项**,只做结构 + 归位,所有默认值与原硬编码一致。计划见 `docs/plans/2026-06-11-v0.15.3-preferences-schema-and-settings-shell.md`。
+
+### Added
+
+- **工作台设置抽屉**:齿轮菜单 →「工作台设置」,按「通用 + 当前模态」分组,改动本地立即生效(画布实时预览)+ 300ms 防抖 PATCH;被项目锁定的字段禁用 + 「项目锁定」badge。
+- **字段注册表** `workbenchSettingsFields.ts`:设置 UI 单一来源(key/分类/控件/可锁定),抽屉与 Settings 页共用 `SettingsFieldControl` 渲染;后续版本新增设置项 = 注册表加一行。
+
+### Changed
+
+- **偏好四分树**:`workbench.{smoothImage,cssImageFilter,controlPointsSize,snapToGrid}` → `workbench.image.*`;`longTaskSampleRate` → `workbench.common.*`;`layout` 保持顶层。存量 JSONB 由迁移 0103 就地改写(up/down 可逆、幂等);`ProjectRenderingConfig` 保持平铺,合并逻辑映射到 `image.*` 子树。
+- Settings 页「标注偏好」改为注册表驱动的四分组(空分组不渲染),与抽屉读写同一份数据。
+
+### Notes
+
+- 部署窗口期:已打开的旧前端 tab PATCH 平铺键会被服务端 legacy 提升器接住(v0.16 移除);旧 tab GET 到新形态后渲染默认值,刷新即愈。
+
 ## [0.15.2] - 2026-06-11
 
 Python SDK / CLI / TUI + ML Backend starter 教程。把平台已有 OpenAPI、API key、ML Backend 协议产品化为外部集成入口;ML Backend starter 模板判定为时过早,降级为「教程 + 现有示例打磨」。计划见 `docs/plans/2026-06-07-v0.15.2-sdk-cli-and-ml-backend-starter.md`。

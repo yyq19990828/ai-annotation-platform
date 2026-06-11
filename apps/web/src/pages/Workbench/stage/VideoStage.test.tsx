@@ -409,6 +409,37 @@ describe("VideoStage", () => {
     expect(queryByTestId("video-playback-rate")).not.toBeInTheDocument();
   });
 
+  it("uses defaultPlaybackRate for initial task playback and pause reset", async () => {
+    const ref = createRef<VideoStageControls>();
+    const { container } = render(
+      <VideoStage
+        ref={ref}
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        defaultPlaybackRate={0.5}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+    const video = container.querySelector("video")!;
+
+    await waitFor(() => expect(video.playbackRate).toBe(0.5));
+
+    await act(async () => {
+      ref.current?.togglePlayback();
+    });
+    expect(video.playbackRate).toBe(0.5);
+
+    await act(async () => {
+      ref.current?.pausePlayback();
+    });
+    expect(video.playbackRate).toBe(0.5);
+  });
+
   it("starts reverse jog playback without using negative native playbackRate", async () => {
     const ref = createRef<VideoStageControls>();
     const { container, getByTestId } = render(

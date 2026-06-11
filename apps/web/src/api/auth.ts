@@ -12,12 +12,53 @@ export interface TokenResponse {
   token_type: string;
 }
 
-export interface WorkbenchPreferences {
+/** v0.15.3 · 偏好四分树:跨模态通用项。 */
+export interface WorkbenchCommonPreferences {
+  longTaskSampleRate: number;
+  confirmDelete: "never" | "multi_only" | "always";
+  recentClassesLimit: number;
+  /** v0.15.6 · 邻帧叠加 K(0=关,档位 0/1/3/5/7)。当前 3D 点云消费,放 common 供视频侧后续复用。 */
+  crossFrameOverlayK: number;
+}
+
+/** v0.15.3 · 图像工作台渲染偏好(原顶层平铺字段归位)。 */
+export interface WorkbenchImagePreferences {
   smoothImage: boolean;
   cssImageFilter: string;
   controlPointsSize: number;
   snapToGrid: boolean;
-  longTaskSampleRate: number;
+  afterBoxCreate: "pick_class" | "reuse_active";
+  snapThresholdPx: number;
+  zoomStepFactor: 1.05 | 1.1 | 1.15 | 1.2;
+  fadedOpacity: number;
+  showBoxLabels: boolean;
+  maskOverlayOpacity: number;
+}
+
+export type VideoDefaultPlaybackRate = 0.25 | 0.5 | 1 | 2 | 4;
+export type VideoLargeFrameStep = 5 | 10 | 30 | "grid";
+
+/** v0.15.5 · 视频工作台播放 / 步进偏好。 */
+export interface WorkbenchVideoPreferences {
+  defaultPlaybackRate: VideoDefaultPlaybackRate;
+  largeFrameStep: VideoLargeFrameStep;
+}
+
+/** v0.15.6 · 点云工作台渲染 / 导航偏好。 */
+export interface WorkbenchPointcloudPreferences {
+  pointSize: number;
+  pointMaskSelectMode: "rect" | "lasso" | "polygon";
+  showGrid: boolean;
+  showAxisGizmo: boolean;
+  cameraDamping: number;
+}
+
+/** v0.15.3 · common/image/video/pointcloud 四子树;layout 保持顶层(壳层/设备维度)。 */
+export interface WorkbenchPreferences {
+  common: WorkbenchCommonPreferences;
+  image: WorkbenchImagePreferences;
+  video: WorkbenchVideoPreferences;
+  pointcloud: WorkbenchPointcloudPreferences;
   layout: WorkbenchLayoutPreferences;
 }
 
@@ -70,11 +111,35 @@ export interface UserPreferences {
 }
 
 export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
-  smoothImage: true,
-  cssImageFilter: "",
-  controlPointsSize: 6,
-  snapToGrid: false,
-  longTaskSampleRate: 0.05,
+  common: {
+    longTaskSampleRate: 0.05,
+    confirmDelete: "never",
+    recentClassesLimit: 5,
+    crossFrameOverlayK: 0,
+  },
+  image: {
+    smoothImage: true,
+    cssImageFilter: "",
+    controlPointsSize: 6,
+    snapToGrid: false,
+    afterBoxCreate: "pick_class",
+    snapThresholdPx: 8,
+    zoomStepFactor: 1.1,
+    fadedOpacity: 0.35,
+    showBoxLabels: true,
+    maskOverlayOpacity: 0.45,
+  },
+  video: {
+    defaultPlaybackRate: 1,
+    largeFrameStep: 10,
+  },
+  pointcloud: {
+    pointSize: 0.06,
+    pointMaskSelectMode: "rect",
+    showGrid: true,
+    showAxisGizmo: true,
+    cameraDamping: 0.1,
+  },
   layout: {
     leftOpen: true,
     rightOpen: true,

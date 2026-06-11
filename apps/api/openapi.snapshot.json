@@ -18514,6 +18514,127 @@
         "title": "VisibleIfRule",
         "type": "object"
       },
+      "WorkbenchCommonPreferences": {
+        "additionalProperties": false,
+        "description": "v0.15.3 · 跨模态通用偏好（性能观测等）。",
+        "properties": {
+          "confirmDelete": {
+            "default": "never",
+            "enum": [
+              "never",
+              "multi_only",
+              "always"
+            ],
+            "title": "Confirmdelete",
+            "type": "string"
+          },
+          "crossFrameOverlayK": {
+            "default": 0,
+            "enum": [
+              0,
+              1,
+              3,
+              5,
+              7
+            ],
+            "title": "Crossframeoverlayk",
+            "type": "integer"
+          },
+          "longTaskSampleRate": {
+            "default": 0.05,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Longtasksamplerate",
+            "type": "number"
+          },
+          "recentClassesLimit": {
+            "default": 5,
+            "maximum": 20.0,
+            "minimum": 3.0,
+            "title": "Recentclasseslimit",
+            "type": "integer"
+          }
+        },
+        "title": "WorkbenchCommonPreferences",
+        "type": "object"
+      },
+      "WorkbenchImagePreferences": {
+        "additionalProperties": false,
+        "description": "v0.15.3 · 图像模态偏好（2D 画布渲染 / 顶点手柄）。",
+        "properties": {
+          "afterBoxCreate": {
+            "default": "pick_class",
+            "enum": [
+              "pick_class",
+              "reuse_active"
+            ],
+            "title": "Afterboxcreate",
+            "type": "string"
+          },
+          "controlPointsSize": {
+            "default": 6,
+            "maximum": 20.0,
+            "minimum": 2.0,
+            "title": "Controlpointssize",
+            "type": "integer"
+          },
+          "cssImageFilter": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Cssimagefilter",
+            "type": "string"
+          },
+          "fadedOpacity": {
+            "default": 0.35,
+            "maximum": 0.8,
+            "minimum": 0.1,
+            "title": "Fadedopacity",
+            "type": "number"
+          },
+          "maskOverlayOpacity": {
+            "default": 0.45,
+            "maximum": 0.8,
+            "minimum": 0.2,
+            "title": "Maskoverlayopacity",
+            "type": "number"
+          },
+          "showBoxLabels": {
+            "default": true,
+            "title": "Showboxlabels",
+            "type": "boolean"
+          },
+          "smoothImage": {
+            "default": true,
+            "title": "Smoothimage",
+            "type": "boolean"
+          },
+          "snapThresholdPx": {
+            "default": 8,
+            "maximum": 16.0,
+            "minimum": 4.0,
+            "title": "Snapthresholdpx",
+            "type": "integer"
+          },
+          "snapToGrid": {
+            "default": false,
+            "title": "Snaptogrid",
+            "type": "boolean"
+          },
+          "zoomStepFactor": {
+            "default": 1.1,
+            "enum": [
+              1.05,
+              1.1,
+              1.15,
+              1.2
+            ],
+            "title": "Zoomstepfactor",
+            "type": "number"
+          }
+        },
+        "title": "WorkbenchImagePreferences",
+        "type": "object"
+      },
       "WorkbenchLayoutPreferences": {
         "additionalProperties": false,
         "description": "v0.13.10 · 工作台布局偏好。\n\n后端只校验结构；默认值和 PATCH 全量 workbench 契约由前端维护。",
@@ -18627,45 +18748,98 @@
         "title": "WorkbenchLayoutPreferences",
         "type": "object"
       },
+      "WorkbenchPointcloudPreferences": {
+        "additionalProperties": false,
+        "description": "v0.15.3 · 点云模态偏好。v0.15.6 填充渲染 / 导航字段（默认值 = 拆分前现状值）。",
+        "properties": {
+          "cameraDamping": {
+            "default": 0.1,
+            "maximum": 0.3,
+            "minimum": 0.05,
+            "title": "Cameradamping",
+            "type": "number"
+          },
+          "pointMaskSelectMode": {
+            "default": "rect",
+            "enum": [
+              "rect",
+              "lasso",
+              "polygon"
+            ],
+            "title": "Pointmaskselectmode",
+            "type": "string"
+          },
+          "pointSize": {
+            "default": 0.06,
+            "maximum": 0.3,
+            "minimum": 0.01,
+            "title": "Pointsize",
+            "type": "number"
+          },
+          "showAxisGizmo": {
+            "default": true,
+            "title": "Showaxisgizmo",
+            "type": "boolean"
+          },
+          "showGrid": {
+            "default": true,
+            "title": "Showgrid",
+            "type": "boolean"
+          }
+        },
+        "title": "WorkbenchPointcloudPreferences",
+        "type": "object"
+      },
       "WorkbenchPreferences": {
         "additionalProperties": false,
-        "description": "v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。\nv0.13.10 · 增加 layout 子树承载跨设备布局偏好。",
+        "description": "v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。\nv0.13.10 · 增加 layout 子树承载跨设备布局偏好。\nv0.15.3 · 平铺字段拆为 common/image/video/pointcloud 四子树；layout 保持顶层。",
         "properties": {
-          "controlPointsSize": {
-            "default": 6,
-            "maximum": 20.0,
-            "minimum": 2.0,
-            "title": "Controlpointssize",
-            "type": "integer"
+          "common": {
+            "$ref": "#/components/schemas/WorkbenchCommonPreferences"
           },
-          "cssImageFilter": {
-            "default": "",
-            "maxLength": 255,
-            "title": "Cssimagefilter",
-            "type": "string"
+          "image": {
+            "$ref": "#/components/schemas/WorkbenchImagePreferences"
           },
           "layout": {
             "$ref": "#/components/schemas/WorkbenchLayoutPreferences"
           },
-          "longTaskSampleRate": {
-            "default": 0.05,
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Longtasksamplerate",
-            "type": "number"
+          "pointcloud": {
+            "$ref": "#/components/schemas/WorkbenchPointcloudPreferences"
           },
-          "smoothImage": {
-            "default": true,
-            "title": "Smoothimage",
-            "type": "boolean"
-          },
-          "snapToGrid": {
-            "default": false,
-            "title": "Snaptogrid",
-            "type": "boolean"
+          "video": {
+            "$ref": "#/components/schemas/WorkbenchVideoPreferences"
           }
         },
         "title": "WorkbenchPreferences",
+        "type": "object"
+      },
+      "WorkbenchVideoPreferences": {
+        "additionalProperties": false,
+        "description": "v0.15.5 · 视频模态偏好（播放 / 步进）。",
+        "properties": {
+          "defaultPlaybackRate": {
+            "default": 1,
+            "enum": [
+              0.25,
+              0.5,
+              1,
+              2,
+              4
+            ],
+            "title": "Defaultplaybackrate"
+          },
+          "largeFrameStep": {
+            "default": 10,
+            "enum": [
+              5,
+              10,
+              30,
+              "grid"
+            ],
+            "title": "Largeframestep"
+          }
+        },
+        "title": "WorkbenchVideoPreferences",
         "type": "object"
       }
     },
@@ -21068,13 +21242,15 @@
         ]
       },
       "patch": {
-        "description": "更新 preferences，按顶层子树（workbench / ai）合并，未提交的子树保持不变。\n\npydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与\nAI 工具参数偏好可各自独立保存，互不覆盖。workbench 内部仍由前端提交全量子树；\n单独 PATCH layout 会覆盖旧 workbench 渲染字段。",
+        "description": "更新 preferences，按顶层子树（workbench / ai）合并，未提交的子树保持不变。\n\npydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与\nAI 工具参数偏好可各自独立保存，互不覆盖。workbench 内部仍由前端提交全量子树；\n单独 PATCH layout 会覆盖旧 workbench 渲染字段。\n\n入参收 raw dict：先过 legacy 平铺键提升器（v0.16 移除）再手动走 pydantic 校验，\n校验失败按 FastAPI 原生 422 形态抛出。",
         "operationId": "update_preferences_api_v1_auth_me_preferences_patch",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UserPreferences"
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
               }
             }
           },

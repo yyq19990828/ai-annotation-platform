@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import datetime
@@ -75,9 +75,21 @@ class WorkbenchLayoutPreferences(BaseModel):
     )
 
 
-class WorkbenchPreferences(BaseModel):
-    """v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。
-    v0.13.10 · 增加 layout 子树承载跨设备布局偏好。"""
+class WorkbenchCommonPreferences(BaseModel):
+    """v0.15.3 · 跨模态通用偏好（性能观测等）。"""
+
+    model_config = {"extra": "forbid"}
+
+    longTaskSampleRate: float = Field(default=0.05, ge=0.0, le=1.0)
+    confirmDelete: Literal["never", "multi_only", "always"] = "never"
+    recentClassesLimit: int = Field(default=5, ge=3, le=20)
+    # v0.15.6 · 邻帧叠加 K（0=关）。当前 3D 点云消费（迁自旧全局 localStorage 键）；
+    # 放 common 供视频侧后续复用。档位与前端 CrossFrameOverlayToggle OPTIONS 一致。
+    crossFrameOverlayK: Literal[0, 1, 3, 5, 7] = 0
+
+
+class WorkbenchImagePreferences(BaseModel):
+    """v0.15.3 · 图像模态偏好（2D 画布渲染 / 顶点手柄）。"""
 
     model_config = {"extra": "forbid"}
 
@@ -85,7 +97,55 @@ class WorkbenchPreferences(BaseModel):
     cssImageFilter: str = Field(default="", max_length=255)
     controlPointsSize: int = Field(default=6, ge=2, le=20)
     snapToGrid: bool = False
-    longTaskSampleRate: float = Field(default=0.05, ge=0.0, le=1.0)
+    afterBoxCreate: Literal["pick_class", "reuse_active"] = "pick_class"
+    snapThresholdPx: int = Field(default=8, ge=4, le=16)
+    zoomStepFactor: Literal[1.05, 1.1, 1.15, 1.2] = 1.1
+    fadedOpacity: float = Field(default=0.35, ge=0.1, le=0.8)
+    showBoxLabels: bool = True
+    maskOverlayOpacity: float = Field(default=0.45, ge=0.2, le=0.8)
+
+
+class WorkbenchVideoPreferences(BaseModel):
+    """v0.15.5 · 视频模态偏好（播放 / 步进）。"""
+
+    model_config = {"extra": "forbid"}
+
+    defaultPlaybackRate: Literal[0.25, 0.5, 1, 2, 4] = 1
+    largeFrameStep: Literal[5, 10, 30, "grid"] = 10
+
+
+class WorkbenchPointcloudPreferences(BaseModel):
+    """v0.15.3 · 点云模态偏好。v0.15.6 填充渲染 / 导航字段（默认值 = 拆分前现状值）。"""
+
+    model_config = {"extra": "forbid"}
+
+    pointSize: float = Field(default=0.06, ge=0.01, le=0.3)
+    pointMaskSelectMode: Literal["rect", "lasso", "polygon"] = "rect"
+    showGrid: bool = True
+    showAxisGizmo: bool = True
+    # OrbitControls dampingFactor：值越小惯性越强（前端文案「相机灵敏度」）。
+    cameraDamping: float = Field(default=0.1, ge=0.05, le=0.3)
+
+
+class WorkbenchPreferences(BaseModel):
+    """v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。
+    v0.13.10 · 增加 layout 子树承载跨设备布局偏好。
+    v0.15.3 · 平铺字段拆为 common/image/video/pointcloud 四子树；layout 保持顶层。"""
+
+    model_config = {"extra": "forbid"}
+
+    common: WorkbenchCommonPreferences = Field(
+        default_factory=WorkbenchCommonPreferences
+    )
+    image: WorkbenchImagePreferences = Field(
+        default_factory=WorkbenchImagePreferences
+    )
+    video: WorkbenchVideoPreferences = Field(
+        default_factory=WorkbenchVideoPreferences
+    )
+    pointcloud: WorkbenchPointcloudPreferences = Field(
+        default_factory=WorkbenchPointcloudPreferences
+    )
     layout: WorkbenchLayoutPreferences = Field(
         default_factory=WorkbenchLayoutPreferences
     )
