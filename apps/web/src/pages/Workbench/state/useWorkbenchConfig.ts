@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   authApi,
   DEFAULT_WORKBENCH_PREFERENCES,
+  type CameraPanelState,
   type FloatingPanelState,
   type TriViewFloatState,
   type WorkbenchLayoutPreferences,
@@ -25,12 +26,15 @@ export type WorkbenchLayoutPatch = Omit<
   | "floatingInspector"
   | "floatingDiscussion"
   | "triViewFloat"
+  | "cameraPanels"
 > & {
   floatingTaskQueue?: Partial<FloatingPanelState> | null;
   floatingClassPalette?: Partial<FloatingPanelState> | null;
   floatingInspector?: Partial<FloatingPanelState> | null;
   floatingDiscussion?: Partial<FloatingPanelState> | null;
   triViewFloat?: Partial<TriViewFloatState> | null;
+  // cameraPanels 是按 role 分桶的全量 Record(由调用方合并好整份传入),非逐字段 patch。
+  cameraPanels?: Record<string, CameraPanelState>;
 };
 
 interface WorkbenchConfigState {
@@ -71,6 +75,7 @@ const LAYOUT_KEY_NAMES = [
   "floatingInspector",
   "floatingDiscussion",
   "triViewFloat",
+  "cameraPanels",
 ] as const;
 
 type LayoutKeyName = (typeof LAYOUT_KEY_NAMES)[number];
@@ -140,6 +145,11 @@ function readLocalLayout(
       K.floatingDiscussion,
     ),
     triViewFloat: readJsonObject<TriViewFloatState>(K.triViewFloat),
+    // 整份 Record(非逐字段 patch):readJsonObject 泛型回 Partial,JSON 解析出的值实为
+    // 完整 CameraPanelState,断言回整份类型对齐 setter 语义。
+    cameraPanels: readJsonObject<Record<string, CameraPanelState>>(
+      K.cameraPanels,
+    ) as Record<string, CameraPanelState> | undefined,
   };
 }
 
@@ -198,6 +208,10 @@ function writeLocalLayout(
     window.localStorage.setItem(
       K.triViewFloat,
       JSON.stringify(layout.triViewFloat),
+    );
+    window.localStorage.setItem(
+      K.cameraPanels,
+      JSON.stringify(layout.cameraPanels),
     );
   } catch {
     /* local fallback is best-effort */
@@ -268,6 +282,10 @@ function mergeLayout(
     remote?.triViewFloat,
     preferLocal,
   );
+  // cameraPanels 是整份 Record(非逐字段 patch):优先方整份覆盖,缺省回另一方再回默认空。
+  const cameraPanels = preferLocal
+    ? (local.cameraPanels ?? remote?.cameraPanels)
+    : (remote?.cameraPanels ?? local.cameraPanels);
   return {
     leftOpen: merged.leftOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.leftOpen,
     rightOpen: merged.rightOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.rightOpen,
@@ -290,6 +308,8 @@ function mergeLayout(
       floatingDiscussion,
     ),
     triViewFloat: mergeTriViewFloat(triViewFloat),
+    cameraPanels:
+      cameraPanels ?? DEFAULT_WORKBENCH_PREFERENCES.layout.cameraPanels,
   };
 }
 

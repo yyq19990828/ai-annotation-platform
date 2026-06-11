@@ -28,6 +28,19 @@ class TriViewFloatState(BaseModel):
     h: int | None = Field(default=None, ge=240, le=720)
 
 
+class CameraPanelState(BaseModel):
+    """v0.15.x · 3D 悬浮相机面板的位置 + 折叠态。按相机 role 分桶存。
+
+    位置像素由前端按视图计算后落库;无该 role 键 = 用默认贴边位置 + 自动折叠态。
+    """
+
+    model_config = {"extra": "forbid"}
+
+    x: float | None = None
+    y: float | None = None
+    collapsed: bool = False
+
+
 class WorkbenchLayoutPreferences(BaseModel):
     """v0.13.10 · 工作台布局偏好。
 
@@ -57,6 +70,9 @@ class WorkbenchLayoutPreferences(BaseModel):
         alias="floatingDiscussion",
     )
     tri_view_float: TriViewFloatState | None = Field(default=None, alias="triViewFloat")
+    camera_panels: dict[str, CameraPanelState] = Field(
+        default_factory=dict, alias="cameraPanels"
+    )
 
 
 class WorkbenchPreferences(BaseModel):

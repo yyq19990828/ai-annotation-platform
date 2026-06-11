@@ -39,6 +39,13 @@ export interface TriViewFloatState {
   h: number | null;
 }
 
+/** v0.15.x · 3D 悬浮相机面板位置 + 折叠态,按相机 role 分桶。x/y 为 null = 未拖动,用默认贴边位。 */
+export interface CameraPanelState {
+  x: number | null;
+  y: number | null;
+  collapsed?: boolean;
+}
+
 export interface WorkbenchLayoutPreferences {
   leftOpen: boolean;
   rightOpen: boolean;
@@ -49,6 +56,7 @@ export interface WorkbenchLayoutPreferences {
   floatingInspector: FloatingPanelState;
   floatingDiscussion: FloatingPanelState;
   triViewFloat: TriViewFloatState;
+  cameraPanels: Record<string, CameraPanelState>;
 }
 
 /** 每用户的 AI 工具推理参数偏好，按 ML backend id 分桶（不同后端参数 schema 不同）。 */
@@ -107,6 +115,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
       w: null,
       h: null,
     },
+    cameraPanels: {},
   },
 };
 

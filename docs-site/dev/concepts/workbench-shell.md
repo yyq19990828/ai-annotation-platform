@@ -107,8 +107,9 @@ DiscussionPanel 是默认组件：旧 feature flag `DISCUSSION_PANEL_ENABLED` �
 | `leftWidth` / `rightWidth` | `number` | 侧栏列宽（clamp 200–560 / 220–600） |
 | `floatingTaskQueue` / `floatingClassPalette` / `floatingInspector` / `floatingDiscussion` | `FloatingPanelState` | 四个侧栏区块的浮窗态 |
 | `triViewFloat` | `TriViewFloatState` | 3D 三视图浮层态 |
+| `cameraPanels` | `Record<string, CameraPanelState>` | 3D 悬浮相机面板位置 + 折叠态，按相机 role 分桶 |
 
-`FloatingPanelState = { detached: boolean; x/y/w/h: number｜null }`；`TriViewFloatState` 把 `detached` 换成 `collapsed`（三视图常驻浮层，只折叠不分离）。`x/y/w/h` 为 `null` 表示尚未拖动过、用首次默认位置。
+`FloatingPanelState = { detached: boolean; x/y/w/h: number｜null }`；`TriViewFloatState` 把 `detached` 换成 `collapsed`（三视图常驻浮层，只折叠不分离）。`x/y/w/h` 为 `null` 表示尚未拖动过、用首次默认位置。`CameraPanelState = { x/y: number｜null; collapsed?: boolean }`（x/y 为 `null` = 未拖动、用默认贴边位）；某 role 无键 = 用默认位置 + 自动折叠态。早期版本用 `pcwb:cam-pos:*` / `pcwb:cam-collapsed:*` 两个 localStorage 键，v0.15.x 起迁移到此处由后端持久化，旧键首次加载时一次性迁移后清除。
 
 ### 分离 / 合并状态机
 

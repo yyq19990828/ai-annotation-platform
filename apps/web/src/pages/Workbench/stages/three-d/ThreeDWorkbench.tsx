@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 
-import type { TriViewFloatState } from "@/api/auth";
+import type { CameraPanelState, TriViewFloatState } from "@/api/auth";
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
 import {
   useAnnotations,
@@ -101,6 +101,8 @@ interface ThreeDWorkbenchProps {
   rightSidebarOpen: boolean;
   rightSidebarWidth: number;
   triViewFloat: TriViewFloatState;
+  /** v0.15.x · 悬浮相机面板位置 + 折叠态(按相机 role 分桶,迁自旧 localStorage)。 */
+  cameraPanels: Record<string, CameraPanelState>;
   onWorkbenchLayoutChange: (patch: WorkbenchLayoutPatch) => void;
 }
 
@@ -283,6 +285,7 @@ export function ThreeDWorkbench({
   rightSidebarOpen,
   rightSidebarWidth,
   triViewFloat,
+  cameraPanels,
   onWorkbenchLayoutChange,
 }: ThreeDWorkbenchProps) {
   const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
@@ -411,6 +414,90 @@ export function ThreeDWorkbench({
     },
     [onWorkbenchLayoutChange, triViewFloat],
   );
+
+  // v0.15.x · 相机面板位置/折叠态落库:多面板可连续拖动,故用 ref 取最新整份 Record,
+  // 避免相邻回调读到 props 旧值互相覆盖。复位则删该 role 键。
+  const cameraPanelsRef = useRef(cameraPanels);
+  cameraPanelsRef.current = cameraPanels;
+  const handleCameraPanelPosition = useCallback(
+    (role: string, pos: { x: number; y: number } | null) => {
+      const next = { ...cameraPanelsRef.current };
+      const prev = next[role];
+      if (pos === null) {
+        // 归位:仅清位置;若仍有非默认折叠态则保留该 role 键,否则整键删除。
+        if (prev?.collapsed) {
+          next[role] = { x: null, y: null, collapsed: true };
+        } else {
+          delete next[role];
+        }
+      } else {
+        next[role] = { ...prev, x: pos.x, y: pos.y };
+      }
+      cameraPanelsRef.current = next;
+      onWorkbenchLayoutChange({ cameraPanels: next });
+    },
+    [onWorkbenchLayoutChange],
+  );
+  const handleCameraPanelCollapsed = useCallback(
+    (role: string, collapsed: boolean) => {
+      const prev = cameraPanelsRef.current[role];
+      const next = { ...cameraPanelsRef.current };
+      // 折叠态独立于位置;回到默认(展开)且无自定义位置时整键删除,保持 Record 干净。
+      if (!collapsed && prev?.x == null && prev?.y == null) {
+        delete next[role];
+      } else {
+        next[role] = { x: prev?.x ?? null, y: prev?.y ?? null, collapsed };
+      }
+      cameraPanelsRef.current = next;
+      onWorkbenchLayoutChange({ cameraPanels: next });
+    },
+    [onWorkbenchLayoutChange],
+  );
+
+  // v0.15.x · 一次性迁移兜底:user config 的 cameraPanels 为空但本地仍有旧
+  // pcwb:cam-pos / pcwb:cam-collapsed 键时,读出灌入 config 后清掉旧键(避免双写)。
+  useEffect(() => {
+    if (Object.keys(cameraPanelsRef.current).length > 0) return;
+    let migrated: Record<string, CameraPanelState> | null = null;
+    const staleKeys: string[] = [];
+    try {
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const key = window.localStorage.key(i);
+        if (!key) continue;
+        const posMatch = key.match(/^pcwb:cam-pos:(.+)$/);
+        const collMatch = key.match(/^pcwb:cam-collapsed:(.+)$/);
+        const role = posMatch?.[1] ?? collMatch?.[1];
+        if (!role) continue;
+        staleKeys.push(key);
+        migrated ??= {};
+        const entry = (migrated[role] ??= { x: null, y: null });
+        if (posMatch) {
+          const parsed = JSON.parse(window.localStorage.getItem(key) ?? "{}");
+          if (Number.isFinite(parsed?.x) && Number.isFinite(parsed?.y)) {
+            entry.x = Number(parsed.x);
+            entry.y = Number(parsed.y);
+          }
+        } else {
+          entry.collapsed = window.localStorage.getItem(key) === "1";
+        }
+      }
+    } catch {
+      /* 隐私模式 / 解析失败:放弃迁移,不影响功能 */
+    }
+    if (migrated && Object.keys(migrated).length > 0) {
+      cameraPanelsRef.current = migrated;
+      onWorkbenchLayoutChange({ cameraPanels: migrated });
+    }
+    for (const key of staleKeys) {
+      try {
+        window.localStorage.removeItem(key);
+      } catch {
+        /* ignore */
+      }
+    }
+    // 仅首挂载跑一次;onWorkbenchLayoutChange 稳定(useCallback),不进依赖避免重复迁移。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useLayoutEffect(() => {
     const controls = controlsRef.current;
@@ -2118,6 +2205,18 @@ export function ThreeDWorkbench({
                 onEnlarge={() => setEnlargedRole(cam.role)}
                 autoCollapsed={autoCollapseCameras || index >= CAMERA_STACK_VISIBLE}
                 dragBounds={triFloatBounds}
+                position={
+                  cameraPanels[cam.role]?.x != null &&
+                  cameraPanels[cam.role]?.y != null
+                    ? {
+                        x: cameraPanels[cam.role]!.x!,
+                        y: cameraPanels[cam.role]!.y!,
+                      }
+                    : null
+                }
+                collapsed={cameraPanels[cam.role]?.collapsed}
+                onPositionChange={handleCameraPanelPosition}
+                onCollapsedChange={handleCameraPanelCollapsed}
               />
             ))}
           </div>

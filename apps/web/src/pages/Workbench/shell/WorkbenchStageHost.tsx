@@ -359,6 +359,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
               rightSidebarOpen={rightSidebarOpen}
               rightSidebarWidth={rightSidebarWidth}
               triViewFloat={workbenchLayout.triViewFloat}
+              cameraPanels={workbenchLayout.cameraPanels}
               onWorkbenchLayoutChange={onWorkbenchLayoutChange}
             />
           </Suspense>
