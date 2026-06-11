@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { Modal } from "@/components/ui/Modal";
 import { useToastStore } from "@/components/ui/Toast";
 import {
   useApiKeys,
@@ -186,29 +187,37 @@ export function ApiKeysPanel({ active }: { active: boolean }) {
     });
   };
 
+  const onCopySecret = async () => {
+    if (!secret) return;
+    try {
+      await navigator.clipboard.writeText(secret.plaintext);
+      pushToast({ msg: "已复制到剪贴板", kind: "success" });
+    } catch {
+      pushToast({ msg: "复制失败，请手动选择文本", kind: "warning" });
+    }
+  };
+
   return (
     <div className={styles.root}>
-      {secret ? (
-        <SecretReveal
-          data={secret}
-          onAck={() => setSecret(null)}
-          onCopy={async () => {
-            try {
-              await navigator.clipboard.writeText(secret.plaintext);
-              pushToast({ msg: "已复制到剪贴板", kind: "success" });
-            } catch {
-              pushToast({ msg: "复制失败，请手动选择文本", kind: "warning" });
-            }
-          }}
-        />
-      ) : (
-        <>
-          <div className={styles.muted}>
-            密钥用于程序化访问 API（CI / 脚本 / SDK）；创建后请立即复制保存，离开本页后将无法再次查看明文。
-          </div>
+      <div className={styles.panelHeader}>
+        <div className={styles.muted}>
+          密钥用于程序化访问 API（CI / 脚本 / SDK）；创建后请立即复制保存，离开本页后将无法再次查看明文。
+        </div>
+        <Button variant="primary" onClick={openCreate} className={styles.newKeyBtn}>
+          <Icon name="plus" size={12} /> 新建密钥
+        </Button>
+      </div>
 
-          {editing ? (
-            <form onSubmit={submit} className={styles.createForm}>
+      <Modal
+        open={!!editing || !!secret}
+        onClose={() => (secret ? setSecret(null) : resetForm())}
+        title={secret ? "密钥已创建" : editing?.id === null ? "新建密钥" : "编辑密钥"}
+        width={520}
+      >
+        {secret ? (
+          <SecretReveal data={secret} onAck={() => setSecret(null)} onCopy={onCopySecret} />
+        ) : editing ? (
+          <form onSubmit={submit} className={styles.modalForm}>
               <Field label="名称">
                 <input
                   type="text"
@@ -301,15 +310,10 @@ export function ApiKeysPanel({ active }: { active: boolean }) {
                 </Button>
               </div>
             </form>
-          ) : (
-            <div className={styles.rightAction}>
-              <Button variant="primary" onClick={openCreate}>
-                <Icon name="plus" size={12} /> 新建密钥
-              </Button>
-            </div>
-          )}
+          ) : null}
+      </Modal>
 
-          <div className={styles.tableShell}>
+      <div className={styles.tableShell}>
             <table className={styles.table}>
               <thead>
                 <tr>
@@ -427,8 +431,6 @@ export function ApiKeysPanel({ active }: { active: boolean }) {
               </tbody>
             </table>
           </div>
-        </>
-      )}
     </div>
   );
 }

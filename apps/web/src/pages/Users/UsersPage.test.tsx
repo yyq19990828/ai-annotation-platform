@@ -95,10 +95,6 @@ vi.mock("@/components/users/GroupManageModal", () => ({
 vi.mock("@/components/users/InvitationListPanel", () => ({
   InvitationListPanel: () => <div data-testid="invitation-panel">InvitationPanel</div>,
 }));
-vi.mock("@/components/users/ApiKeysModal", () => ({
-  ApiKeysModal: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="api-keys-modal">ApiKeysModal</div> : null,
-}));
 
 // --- toast ---
 vi.mock("@/components/ui/Toast", async () => {
