@@ -544,3 +544,37 @@ def test_export_project_json(respx_mock, tmp_path):
     assert data["status"] == "completed"
     assert data["out"] == str(out)
     assert out.is_file()
+
+
+def test_export_project_multi_target_options(respx_mock):
+    pid = str(uuid4())
+    route = respx_mock.post(f"{API}/projects/{pid}/export").mock(
+        return_value=httpx.Response(202, json={"job_id": JOB_ID})
+    )
+    # --no-wait: 只创建, 不下载; 多 target + 选项透传到 query
+    result = runner.invoke(
+        app,
+        [
+            "export", "project", pid,
+            "--target", "coco", "--target", "yolo-det",
+            "--no-include-attributes", "--axis-frame", "source", "--no-wait", "--json",
+        ],
+        env=ENV,
+    )
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert data["job_id"] == JOB_ID and data["waited"] is False
+    q = route.calls.last.request.url.params
+    assert q.get_list("targets") == ["coco", "yolo-det"]
+    assert q["include_attributes"] == "false"
+    assert q["axis_frame"] == "source"
+
+
+def test_export_project_wait_requires_out(respx_mock):
+    pid = str(uuid4())
+    _mock_export_flow(respx_mock, pid)
+    # --wait (默认) 但缺 --out → BadParameter, 非 0 退出
+    result = runner.invoke(
+        app, ["export", "project", pid, "--target", "coco"], env=ENV
+    )
+    assert result.exit_code != 0

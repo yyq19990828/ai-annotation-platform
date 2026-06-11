@@ -123,13 +123,19 @@ aap ml-backends get 0199dd... --project 0199bb... --json
 ### aap export
 
 ```text
-aap export project <project-id> --target <格式> --out <输出路径> [--json]
+aap export project <project-id> --target <格式> [--target ...] --out <输出路径>
+    [--include-attributes/--no-include-attributes] [--video-frame-mode <m>]
+    [--axis-frame <f>] [--wait/--no-wait] [--json]
 ```
 
-一条命令完成「创建导出 job → 等待完成 → 下载到 `--out`」全流程。`--target` 为导出格式,如 `aap_json` / `coco`(完整清单见[导出格式参考](/user-guide/reference/export-formats))。
+一条命令完成「创建导出 job →(默认 `--wait`)等待完成 → 下载到 `--out`」全流程。`--target` 可重复以一次导出多个格式(如 `aap_json` / `coco` / `yolo-det` / `video_json` / `kitti`,完整清单见[导出格式参考](/user-guide/reference/export-formats))。选项与 Web / TUI 对齐:`--include-attributes`(默认含属性数据)、`--video-frame-mode`(video 项目 `keyframes` | `all_frames`)、`--axis-frame`(lidar 3D box `iso` | `source`)。`--no-wait` 只创建返回 `job_id`(配合 `aap jobs wait` 跟进),此时不需要 `--out`。
 
 ```bash
-aap export project 0199bb... --target aap_json --out ./export.zip
+# 多格式一次导出, 等待并下载
+aap export project 0199bb... --target coco --target yolo-det --out ./export.zip
+
+# 只创建, 异步跟进
+aap export project 0199bb... --target aap_json --no-wait
 ```
 
 ### aap tui
@@ -166,7 +172,7 @@ aap tui
 | `jobs cancel` | `{"job_id": "...", "cancel_requested": true}` |
 | `ml-backends list` | MLBackend 对象数组 |
 | `ml-backends get` | MLBackend 对象 |
-| `export project` | `{"job_id": "...", "status": "...", "out": "..."}` |
+| `export project` | `--wait`: `{"job_id": "...", "status": "...", "out": "..."}` · `--no-wait`: `{"job_id": "...", "waited": false}` |
 
 对象字段与 [SDK 响应模型](./python-client#响应模型与前向兼容)一致(`model_dump(mode="json")` 序列化);服务端新增字段会原样透传,脚本应容忍未知字段。
 

@@ -9,7 +9,7 @@ last_reviewed: 2026-06-11
 
 # aap tui 监控面板
 
-`aap tui` 是一个终端监控面板(基于 Textual),提供 Projects / Datasets / Jobs / ML Backends 四个视图,适合在服务器 / SSH 环境下盯异步任务进度与 backend 健康,不复刻 Web 前端。除监控外还提供两个轻量动作(v0.15.8):Projects tab 发起导出、Jobs tab 软取消 job,均经二次确认弹窗。
+`aap tui` 是一个终端监控面板(基于 Textual),提供 Projects / Datasets / Jobs / ML Backends 四个视图,适合在服务器 / SSH 环境下盯异步任务进度与 backend 健康,不复刻 Web 前端。除监控外还提供两个轻量动作(v0.15.8):Projects tab 发起导出(v0.15.13 起为可选格式 / 选项的导出配置框)、Jobs tab 软取消 job,弹窗均为键盘 + 按钮双通道。
 
 ## 安装与启动
 
@@ -49,7 +49,7 @@ aap tui
 |---|---|
 | `r` | 刷新当前激活的 tab |
 | `o` / `回车` | 下钻打开选中行详情子页 |
-| `e` | 对 Projects tab 选中项目发起导出(target=`aap_json`,二次确认) |
+| `e` | 对 Projects tab 选中项目打开**导出配置框**(按项目类型选格式 + 选项) |
 | `c` | 对 Jobs tab 选中的 pending/running job 软取消(二次确认) |
 | `q` | 退出 |
 | `ctrl+p` | Textual 命令面板 |
@@ -60,11 +60,11 @@ aap tui
 行选中(回车 / 点击)、按 `o`、或点动作栏的「打开」按钮,会 **push 一个专属详情子页**(Textual Screen 栈),屏顶有面包屑 `aap tui ▸ …`,底部有「◀ 返回」按钮,`esc` 返回上一层:
 
 - **项目详情**(Projects 行下钻):内嵌三个 scoped 子 tab —— **概览**(项目字段 + 进度 + 「⬇ 导出」按钮)、**任务**(对全局 jobs 列表**客户端按 `project_id` 过滤**出本项目的任务,可再下钻进单任务详情)、**Backends**(`ml_backends.list(project_id)`,可再下钻)。
-- **任务详情**(Jobs 行下钻):完整 `error_message` / `result`(导出完成显示 `download_url` 与下载提示);`pending` / `running` 的任务带「✖ 取消」按钮。
+- **任务详情**(Jobs 行下钻):完整 `error_message` / `result`(导出 job 展示结构化摘要:文件数 / 大小 / 缓存命中 / 链接有效期);`pending` / `running` 的任务带「✖ 取消」按钮,**完成态的导出 job 带「⬇ 下载到本地」按钮**(就地输入路径即可落地,无需切到 CLI)。
 - **Backend 详情**(v0.15.12 起):**实时监控屏**,见下「ML Backend 实时监控」。
 - **数据集详情**:只读展开完整字段。
 
-所有子页只调用 SDK 公开方法,导出 / 取消复用主屏的二次确认路径,不新增写能力。
+所有子页只调用 SDK 公开方法,导出复用主屏的导出配置框、取消复用二次确认路径,不新增写能力。
 
 ## ML Backend 实时监控(v0.15.12)
 
@@ -80,9 +80,9 @@ ML Backends 行下钻进 **实时详情屏**:不再是静态 REST 快照,而是�
 
 ## 动作(导出 / 取消)
 
-监控之外,TUI 提供两个就地动作,均**先弹二次确认框**(`y` 确认 / `n`·`esc` 取消),只调用 SDK 公开 API:
+监控之外,TUI 提供两个就地动作,只调用 SDK 公开 API。所有弹窗均为**键盘 + 按钮双通道**(`y`/`n`·`esc` 与「确认」/「取消」按钮等价,破坏性动作默认聚焦「取消」):
 
-- **导出**(Projects tab 按 `e`):对选中项目调用 `client.exports.create(..., targets=["aap_json"])`,创建的导出 job 进入 Jobs tab 由轮询接管进度;完成后在 Jobs 详情看 `download_url`。当前固定 `aap_json` 格式,需要其他格式 / 落地下载用 CLI `aap export project`。
+- **导出**(Projects tab 按 `e`,v0.15.13 起对齐 Web):打开**导出配置框**而非固定格式——按 `project.data_type` 自适应给出格式目录(image:COCO / YOLO det/obb/seg / AAP JSON;video:Video JSON / YOLO 逐帧 / AAP JSON / MOT / KITTI;lidar:AAP JSON / KITTI 3D / nuScenes / Point Mask),可多选;另有「包含属性数据」开关、video 项目的帧模式(keyframes / all_frames)、lidar 项目的 3D 坐标系(iso / source)、输出路径,以及可选「完成后自动下载」。确认后 `client.exports.create(...)` 创建的 job 进入 Jobs tab 由轮询接管;**完成后可直接在任务详情屏点「⬇ 下载到本地」落地**,无需切到 CLI。
 - **取消**(Jobs tab 按 `c`):对选中且处于 `pending` / `running` 的 job 调用 `client.jobs.cancel()`。取消是**协作式软取消**——后端写取消标记,worker 在下一条任务边界才落 `cancelled` 终态,因此状态栏提示「已请求取消」,最终终态由轮询反映。对终态 job 按 `c` 不弹框、不发请求,状态栏提示不可取消。
 
 ## Jobs 轮询与状态着色

@@ -30,6 +30,20 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.13] - 2026-06-12
+
+`aap tui` / `aap export` 导出能力对齐 Web：从「固定 `aap_json`」升级为「按项目类型自适应多格式 + 选项 + 完成后就地下载」，弹窗统一为键盘 + 按钮双通道。计划见 `docs/plans/2026-06-12-v0.15.13-tui-export-alignment.md`。零后端 / 零 `client.py` 改动。
+
+### Added
+
+- **TUI 导出配置框**(`ExportConfigModal`):按 `project.data_type` 自适应格式目录(image / video / lidar 各一套，对齐 Web `ExportModal`)，支持多格式多选、`include_attributes` 开关、video 帧模式(keyframes / all_frames)、lidar 3D 坐标系(iso / source)、输出路径与可选「完成后自动下载」。取代此前硬编码的 `targets=["aap_json"]`。
+- **TUI 导出闭环下载**:完成态的导出 job 详情屏新增「⬇ 下载到本地」按钮(就地输入路径即 `client.exports.download` 落地)，并把 `result` 裸 dict 换成结构化摘要(文件数 / 大小 / 缓存命中 / 链接有效期)。
+- **CLI `aap export` 多格式与选项**:`--target` 可重复，新增 `--include-attributes/--no-include-attributes`、`--video-frame-mode`、`--axis-frame`、`--wait/--no-wait`(`--no-wait` 只创建返回 `job_id`)。
+
+### Changed
+
+- **悬浮框按钮化**:抽 `_ConfirmCancelModal` 基类(居中盒子 + 确认/取消按钮栏 + 键盘双通道 + 可滚动正文)，`ConfirmModal` / `ExportConfigModal` / `PathInputModal` 复用。`ConfirmModal` 此前仅键盘 `y/n/esc`，现同时可点按钮；破坏性动作(取消 job)默认聚焦「取消」。
+
 ## [0.15.12] - 2026-06-11
 
 `aap tui` ML Backend 监控从「5s 轮询 REST」升级为「1s WebSocket 推流 + 滚动曲线」。计划见 `docs/plans/2026-06-11-v0.15.12-tui-realtime-monitoring.md`。

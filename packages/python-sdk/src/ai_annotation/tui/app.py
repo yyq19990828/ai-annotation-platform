@@ -25,11 +25,17 @@ from textual.widgets import (
     DataTable,
     Footer,
     Header,
+    Input,
+    RadioButton,
+    RadioSet,
+    SelectionList,
     Sparkline,
     Static,
+    Switch,
     TabbedContent,
     TabPane,
 )
+from textual.widgets.selection_list import Selection
 
 from ai_annotation.config import load_config
 from ai_annotation.models import (
@@ -57,6 +63,36 @@ _ML_STATE_STYLE = {"connected": "green", "error": "red"}
 
 # 仅 pending/running 的 job 可在 TUI 发起取消 (其余终态后端必拒, 不发请求)
 _CANCELLABLE_STATUS = frozenset({"pending", "running"})
+
+# 导出格式目录: data_type → [(target_id, 中文标签)]; 与 web ExportModal / 后端 export_packaging 对齐。
+# voc 走后端同步返回 (非 job), TUI 不暴露; 裸 "yolo" 后端接受但 web/TUI 用细分变体。
+_EXPORT_TARGETS: dict[str, list[tuple[str, str]]] = {
+    "image": [
+        ("coco", "COCO"),
+        ("yolo-det", "YOLO 检测"),
+        ("yolo-obb", "YOLO 旋转框"),
+        ("yolo-seg", "YOLO 分割"),
+        ("aap_json", "AAP JSON"),
+    ],
+    "video": [
+        ("video_json", "Video JSON"),
+        ("yolo-frames-det", "YOLO 逐帧"),
+        ("aap_json", "AAP JSON"),
+        ("mot", "MOT"),
+        ("kitti", "KITTI"),
+    ],
+    "lidar": [
+        ("aap_json", "AAP JSON"),
+        ("kitti", "KITTI 3D"),
+        ("nuscenes", "nuScenes"),
+        ("pointmask", "Point Mask"),
+    ],
+}
+# 默认勾选项 (对齐 web): image→coco / video→video_json / lidar→aap_json
+_EXPORT_DEFAULT: dict[str, str] = {"image": "coco", "video": "video_json", "lidar": "aap_json"}
+# RadioSet pressed_index → 参数值
+_FRAME_MODES = ["keyframes", "all_frames"]
+_AXIS_FRAMES = ["iso", "source"]
 
 
 def _fmt_dt(dt: datetime | None) -> str:
@@ -135,50 +171,270 @@ def _ml_backend_detail(b: MLBackend) -> str:
     return "\n".join(lines)
 
 
-class ConfirmModal(ModalScreen[bool]):
-    """二次确认弹窗: y 确认 / n·esc 取消; dismiss(bool) 回传给 push_screen 回调。"""
+# 模态共用样式: 居中盒子 + 确认/取消按钮栏 (三个子类共享同一套, 故类型选择器并列)
+_MODAL_CSS = """
+ConfirmModal, ExportConfigModal, PathInputModal {
+    align: center middle;
+    background: $background 60%;
+}
+#modal-box {
+    width: 64;
+    height: auto;
+    max-height: 90%;
+    padding: 1 2;
+    border: round $accent;
+    border-title-color: $accent;
+    border-title-align: center;
+    background: $panel;
+}
+#modal-body {
+    height: auto;
+    max-height: 16;
+}
+#modal-buttons {
+    height: auto;
+    align-horizontal: center;
+    margin-top: 1;
+}
+#modal-buttons Button {
+    margin: 0 1;
+}
+.modal-hint {
+    color: $text-muted;
+    margin-top: 1;
+    text-align: center;
+}
+.modal-label {
+    color: $text-muted;
+    margin-top: 1;
+}
+"""
+
+
+class _ConfirmCancelModal(ModalScreen):
+    """模态基类: 居中盒子 + 确认/取消按钮栏 + esc 取消 + 回车/Input 提交确认。
+
+    子类覆盖 compose_body() 提供盒内内容、_result() 返回确认时 dismiss 的值、
+    _cancel_value() 返回取消时 dismiss 的值。按钮点击与键盘双通道, 行为等价。
+    """
+
+    BINDINGS = [Binding("escape", "cancel", "取消")]
+    CSS = _MODAL_CSS
+    _box_title = "确认操作"
+    _confirm_label = "确认"
+    _confirm_variant = "primary"
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-box") as box:
+            box.border_title = self._box_title
+            with VerticalScroll(id="modal-body"):
+                yield from self.compose_body()
+            with Horizontal(id="modal-buttons"):
+                yield Button(
+                    self._confirm_label, id="modal-ok", variant=self._confirm_variant  # type: ignore[arg-type]
+                )
+                yield Button("取消", id="modal-cancel", variant="default")
+
+    def compose_body(self) -> ComposeResult:
+        return iter(())  # 子类覆盖
+
+    def _result(self) -> Any:
+        return True
+
+    def _cancel_value(self) -> Any:
+        return False
+
+    def action_confirm(self) -> None:
+        self.dismiss(self._result())
+
+    def action_cancel(self) -> None:
+        self.dismiss(self._cancel_value())
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "modal-ok":
+            self.action_confirm()
+        elif event.button.id == "modal-cancel":
+            self.action_cancel()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.action_confirm()
+
+
+class ConfirmModal(_ConfirmCancelModal):
+    """二次确认弹窗: y/「确认」按钮 → True; n/esc/「取消」按钮 → False。"""
 
     BINDINGS = [
         Binding("y", "confirm", "确认"),
         Binding("n", "cancel", "取消"),
         Binding("escape", "cancel", "取消"),
     ]
-    CSS = """
-    ConfirmModal {
-        align: center middle;
-        background: $background 60%;
-    }
-    #confirm-box {
-        width: 64;
-        height: auto;
-        padding: 1 2;
-        border: round $warning;
-        border-title-color: $warning;
-        border-title-align: center;
-        background: $panel;
-    }
-    #confirm-hint {
-        color: $text-muted;
-        margin-top: 1;
-        text-align: center;
-    }
-    """
 
-    def __init__(self, prompt: str):
+    def __init__(
+        self,
+        prompt: str,
+        confirm_label: str = "确认",
+        confirm_variant: str = "primary",
+        destructive: bool = False,
+    ):
         super().__init__()
         self._prompt = prompt
+        self._confirm_label = confirm_label
+        self._confirm_variant = confirm_variant
+        self._destructive = destructive
 
-    def compose(self) -> ComposeResult:
-        with Vertical(id="confirm-box") as box:
-            box.border_title = "确认操作"
-            yield Static(self._prompt, id="confirm-prompt")
-            yield Static("[b]y[/b] 确认 · [b]n[/b] / [b]esc[/b] 取消", id="confirm-hint")
+    def compose_body(self) -> ComposeResult:
+        yield Static(self._prompt, id="confirm-prompt")
+        yield Static("[b]y[/b] 确认 · [b]n[/b] / [b]esc[/b] 取消", classes="modal-hint")
+
+    def on_mount(self) -> None:
+        # 破坏性动作默认聚焦「取消」, 良性默认聚焦「确认」, 回车=默认动作降低误触
+        self.query_one(
+            "#modal-cancel" if self._destructive else "#modal-ok", Button
+        ).focus()
+
+
+class ExportConfigModal(_ConfirmCancelModal):
+    """导出配置弹窗: 按 data_type 自适应格式目录 + 选项 + 输出路径。
+
+    确认 → dismiss(config dict); 取消 / 空选 → dismiss(None)。对齐 web ExportModal。
+    """
+
+    _box_title = "导出配置"
+    _confirm_label = "⬇ 导出"
+    _confirm_variant = "success"
+    CSS = (
+        _MODAL_CSS
+        + """
+    ExportConfigModal #modal-box { width: 72; }
+    ExportConfigModal SelectionList { height: auto; max-height: 8; margin-top: 1; }
+    ExportConfigModal RadioSet { height: auto; }
+    """
+    )
+
+    def __init__(self, project: Project):
+        super().__init__()
+        self._project = project
+        self._data_type = (
+            project.data_type if project.data_type in _EXPORT_TARGETS else "image"
+        )
+
+    def compose_body(self) -> ComposeResult:
+        catalog = _EXPORT_TARGETS[self._data_type]
+        default = _EXPORT_DEFAULT[self._data_type]
+        yield Static(
+            f"项目 {self._project.display_id} · {self._project.name}  （{self._data_type}）",
+            classes="modal-label",
+        )
+        yield Static("导出格式（空格多选）", classes="modal-label")
+        yield SelectionList(
+            *[Selection(label, tid, tid == default) for tid, label in catalog],
+            id="export-targets",
+        )
+        yield Static("包含属性数据", classes="modal-label")
+        yield Switch(value=True, id="export-attrs")
+        if self._data_type == "video":
+            yield Static("帧模式", classes="modal-label")
+            yield RadioSet(
+                RadioButton("关键帧", value=True),
+                RadioButton("所有帧"),
+                id="export-frame",
+            )
+        if self._data_type == "lidar":
+            yield Static("3D 坐标系", classes="modal-label")
+            yield RadioSet(
+                RadioButton("iso（平台标准化）", value=True),
+                RadioButton("source（原始数据集）"),
+                id="export-axis",
+            )
+        yield Static("输出路径", classes="modal-label")
+        yield Input(value=f"./{self._project.display_id}-export.zip", id="export-out")
+        yield Static("完成后自动下载到上面路径", classes="modal-label")
+        yield Switch(value=False, id="export-autodl")
+
+    def on_mount(self) -> None:
+        self.query_one("#export-targets", SelectionList).focus()
+
+    def _result(self) -> dict | None:
+        sel = self.query_one("#export-targets", SelectionList)
+        targets = list(sel.selected)
+        if not targets:
+            self.app.bell()
+            sel.border_title = "⚠ 至少选一个格式"
+            return None
+        cfg: dict[str, Any] = {
+            "targets": targets,
+            "include_attributes": self.query_one("#export-attrs", Switch).value,
+            "out": self.query_one("#export-out", Input).value.strip(),
+            "auto_download": self.query_one("#export-autodl", Switch).value,
+        }
+        if self._data_type == "video":
+            idx = self.query_one("#export-frame", RadioSet).pressed_index
+            cfg["video_frame_mode"] = _FRAME_MODES[max(0, idx)]
+        if self._data_type == "lidar":
+            idx = self.query_one("#export-axis", RadioSet).pressed_index
+            cfg["axis_frame"] = _AXIS_FRAMES[max(0, idx)]
+        return cfg
+
+    def _cancel_value(self) -> None:
+        return None
 
     def action_confirm(self) -> None:
-        self.dismiss(True)
+        cfg = self._result()
+        if cfg is None:
+            return  # 空选: 不关闭, 已 bell + 边框提示
+        self.dismiss(cfg)
 
-    def action_cancel(self) -> None:
-        self.dismiss(False)
+
+class PathInputModal(_ConfirmCancelModal):
+    """单行路径输入弹窗: 确认 → dismiss(path str); 取消 / 空 → dismiss(None)。"""
+
+    _box_title = "下载导出包"
+    _confirm_label = "下载"
+    _confirm_variant = "success"
+
+    def __init__(self, prompt: str, default: str = ""):
+        super().__init__()
+        self._prompt = prompt
+        self._default = default
+
+    def compose_body(self) -> ComposeResult:
+        yield Static(self._prompt, classes="modal-label")
+        yield Input(value=self._default, id="path-input")
+
+    def on_mount(self) -> None:
+        self.query_one("#path-input", Input).focus()
+
+    def _result(self) -> str | None:
+        return self.query_one("#path-input", Input).value.strip() or None
+
+    def _cancel_value(self) -> None:
+        return None
+
+
+def _is_downloadable_export(job: Job) -> bool:
+    """完成态、带 download_url 的导出 job → TUI 可直接下载。"""
+    return (
+        job.kind == "export"
+        and job.status == "completed"
+        and bool((job.result or {}).get("download_url"))
+    )
+
+
+def _export_result_summary(result: dict) -> str:
+    """导出 job.result 结构化摘要 (file_count / size / cache_hit / 有效期)。"""
+    parts = []
+    if result.get("file_count") is not None:
+        parts.append(f"文件数 {result['file_count']}")
+    if result.get("size_bytes") is not None:
+        parts.append(f"大小 {_fmt_size(int(result['size_bytes']))}")
+    if result.get("cache_hit"):
+        parts.append("缓存命中")
+    lines = []
+    if parts:
+        lines.append(" · ".join(parts))
+    if result.get("expires_at"):
+        lines.append(f"下载链接有效期至: {result['expires_at']}")
+    return "\n".join(lines)
 
 
 def _job_detail(job: Job) -> str:
@@ -192,10 +448,17 @@ def _job_detail(job: Job) -> str:
     if job.error_message:
         lines.append(f"error_message: {job.error_message}")
     if job.result:
-        lines.append(f"result: {job.result}")
-        if job.result.get("download_url"):
-            lines.append(f"导出包地址: {job.result['download_url']}")
-            lines.append("提示: 用 client.exports.download(job_id, dest) 下载到本地")
+        if job.kind == "export":
+            summary = _export_result_summary(job.result)
+            if summary:
+                lines.append(summary)
+            if _is_downloadable_export(job):
+                lines.append("提示: 点下方「⬇ 下载到本地」按钮直接落地")
+        else:
+            lines.append(f"result: {job.result}")
+            if job.result.get("download_url"):
+                lines.append(f"导出包地址: {job.result['download_url']}")
+                lines.append("提示: 用 client.exports.download(job_id, dest) 下载到本地")
     return "\n".join(lines)
 
 
@@ -972,19 +1235,46 @@ class AapTuiApp(App[None]):
                 )
 
     def push_job_detail(self, job: Job) -> None:
-        """push job 详情子屏; pending/running 时带「取消」动作按钮。"""
+        """push job 详情子屏; pending/running 带「取消」, 完成态导出 job 带「下载」。"""
         actions: list[tuple[str, str, str]] = []
         if job.status in _CANCELLABLE_STATUS:
             actions = [("cancel", "✖ 取消", "error")]
+        elif _is_downloadable_export(job):
+            actions = [("download", "⬇ 下载到本地", "success")]
         self.push_screen(
             DetailScreen(
                 f"任务 {job.kind} ({job.status})",
                 _job_detail(job),
                 title="任务详情",
                 actions=actions,
-                on_action=lambda _bid: self._confirm_and_cancel(job),
+                on_action=lambda bid: self._on_job_action(bid, job),
             )
         )
+
+    def _on_job_action(self, bid: str, job: Job) -> None:
+        if bid == "cancel":
+            self._confirm_and_cancel(job)
+        elif bid == "download":
+            self._prompt_download(job)
+
+    def _prompt_download(self, job: Job) -> None:
+        """弹路径输入 → 确认后 thread worker 下载导出包到本地。"""
+
+        def _on_path(path: str | None) -> None:
+            if path:
+                self.run_worker(
+                    lambda: self._do_download(job, path), thread=True, group="action"
+                )
+
+        self.push_screen(PathInputModal("下载导出包到:", f"./{job.id}.zip"), _on_path)
+
+    def _do_download(self, job: Job, dest: str) -> None:
+        try:
+            path = self._client.exports.download(job, dest)
+        except Exception as exc:  # noqa: BLE001
+            self.call_from_thread(self._set_status, f"下载失败: {exc}")
+            return
+        self.call_from_thread(self._set_status, f"已下载导出包 → {path}")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """主屏各 tab 动作栏按钮 → 派发到对应 action (与键盘等价)。"""
@@ -1025,18 +1315,15 @@ class AapTuiApp(App[None]):
         self._confirm_and_cancel(job)
 
     def _confirm_and_export(self, project: Project) -> None:
-        """对给定项目弹确认 → 导出 (主屏动作键 / 项目详情屏共用)。"""
+        """对给定项目弹导出配置框 → 导出 (主屏动作键 / 项目详情屏共用)。"""
 
-        def _on_confirm(ok: bool | None) -> None:
-            if ok:
+        def _on_done(cfg: dict | None) -> None:
+            if cfg:
                 self.run_worker(
-                    lambda: self._do_export(project), thread=True, group="action"
+                    lambda: self._do_export(project, cfg), thread=True, group="action"
                 )
 
-        self.push_screen(
-            ConfirmModal(f"导出项目 {project.display_id} {project.name} (target=aap_json)?"),
-            _on_confirm,
-        )
+        self.push_screen(ExportConfigModal(project), _on_done)
 
     def _confirm_and_cancel(self, job: Job) -> None:
         """对给定 job 弹确认 → 软取消 (主屏动作键 / 任务详情屏共用)。终态 job 直接提示。"""
@@ -1051,15 +1338,37 @@ class AapTuiApp(App[None]):
                 )
 
         self.push_screen(
-            ConfirmModal(f"取消 job {job.kind} ({job.status})? 取消是协作式, 终态稍后落定。"),
+            ConfirmModal(
+                f"取消 job {job.kind} ({job.status})? 取消是协作式, 终态稍后落定。",
+                confirm_label="✖ 确认取消",
+                confirm_variant="error",
+                destructive=True,
+            ),
             _on_confirm,
         )
 
-    def _do_export(self, project: Project) -> None:
+    def _do_export(self, project: Project, cfg: dict) -> None:
+        extra = {k: cfg[k] for k in ("video_frame_mode", "axis_frame") if k in cfg}
         try:
-            job_id = self._client.exports.create(project.id, targets=["aap_json"])
+            job_id = self._client.exports.create(
+                project.id,
+                targets=cfg["targets"],
+                include_attributes=cfg.get("include_attributes"),
+                **extra,
+            )
         except Exception as exc:  # noqa: BLE001
             self.call_from_thread(self._set_status, f"导出发起失败: {exc}")
+            return
+        if cfg.get("auto_download") and cfg.get("out"):
+            try:
+                job = self._client.exports.wait(job_id)
+                dest = self._client.exports.download(job, cfg["out"])
+            except Exception as exc:  # noqa: BLE001
+                self.call_from_thread(self._set_status, f"导出已完成但下载失败: {exc}")
+                self.call_from_thread(self._refresh_jobs)
+                return
+            self.call_from_thread(self._set_status, f"导出完成 → {dest}")
+            self.call_from_thread(self._refresh_jobs)
             return
         self.call_from_thread(
             self._set_status, f"导出 job 已创建 ({job_id}), 见 Jobs tab"

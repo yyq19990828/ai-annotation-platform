@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -12,7 +13,9 @@ from ai_annotation.models import Dataset, HealthMeta, Job, JobPage, MLBackend, P
 from ai_annotation.tui.app import (
     AapTuiApp,
     DetailScreen,
+    ExportConfigModal,
     MlBackendDetailScreen,
+    PathInputModal,
     ProjectDetailScreen,
 )
 
@@ -107,12 +110,21 @@ class _StubJobs:
 
 
 class _StubExports:
-    def __init__(self):
+    def __init__(self, job=None):
         self.created: list = []
+        self.downloaded: list = []
+        self._job = job
 
-    def create(self, project_id, targets):
-        self.created.append((project_id, targets))
+    def create(self, project_id, targets, **kwargs):
+        self.created.append((project_id, targets, kwargs))
         return str(uuid4())
+
+    def wait(self, job_id, **kw):
+        return self._job
+
+    def download(self, job_or_id, dest):
+        self.downloaded.append((job_or_id, str(dest)))
+        return Path(dest)
 
 
 class _StubMLBackends:
@@ -238,28 +250,57 @@ async def test_ml_backend_detail_on_enter_pushes_screen():
         assert app.query_one("#tabs", TabbedContent) is not None
 
 
-async def test_export_action_confirm_triggers_create():
+async def test_export_action_opens_modal_and_create():
     app = _make_app()
     async with app.run_test(size=(100, 30)) as pilot:
         await _settle(app, pilot)
         # 默认在 Projects tab, 首行已高亮
         await pilot.press("e")
         await pilot.pause()
-        await pilot.press("y")  # 确认
+        assert isinstance(app.screen, ExportConfigModal)  # 弹导出配置框, 非简单确认
+        await pilot.click("#modal-ok")  # image 项目默认勾 coco
         await _settle(app, pilot)
         assert len(app._client.exports.created) == 1
-        assert app._client.exports.created[0][1] == ["aap_json"]
+        _pid, targets, kwargs = app._client.exports.created[0]
+        assert targets == ["coco"]
+        assert kwargs.get("include_attributes") is True
 
 
-async def test_export_action_cancel_does_not_create():
+async def test_export_modal_cancel_does_not_create():
     app = _make_app()
     async with app.run_test(size=(100, 30)) as pilot:
         await _settle(app, pilot)
         await pilot.press("e")
         await pilot.pause()
-        await pilot.press("n")  # 放弃
+        await pilot.click("#modal-cancel")  # 取消按钮
         await _settle(app, pilot)
         assert app._client.exports.created == []
+
+
+async def test_export_modal_lidar_has_axis_frame():
+    project = Project(
+        id=uuid4(),
+        display_id="P-2",
+        name="lidar-proj",
+        type_key="lidar",
+        data_type="lidar",
+        status="active",
+    )
+    client = _StubClient([project], [_dataset()], [JobPage(items=[], total=0)])
+    app = AapTuiApp(client, base_url=BASE)
+    async with app.run_test(size=(100, 30)) as pilot:
+        await _settle(app, pilot)
+        await pilot.press("e")
+        await pilot.pause()
+        assert isinstance(app.screen, ExportConfigModal)
+        # lidar: 有坐标系 RadioSet, 无帧模式
+        assert app.screen.query("#export-axis")
+        assert not app.screen.query("#export-frame")
+        await pilot.click("#modal-ok")
+        await _settle(app, pilot)
+        _pid, targets, kwargs = app._client.exports.created[0]
+        assert targets == ["aap_json"]  # lidar 默认勾选
+        assert kwargs.get("axis_frame") == "iso"
 
 
 async def test_cancel_action_confirm_triggers_cancel():
@@ -353,7 +394,8 @@ async def test_project_detail_export_via_key_confirms_and_creates():
         assert isinstance(app.screen, ProjectDetailScreen)
         await pilot.press("e")  # 项目详情屏内发起导出
         await pilot.pause()
-        await pilot.press("y")  # 二次确认
+        assert isinstance(app.screen, ExportConfigModal)
+        await pilot.click("#modal-ok")  # 导出配置框确认
         await _settle(app, pilot)
         assert len(app._client.exports.created) == 1
 
@@ -396,5 +438,56 @@ async def test_job_detail_terminal_has_no_cancel_button():
         await pilot.press("enter")
         await pilot.pause()
         assert isinstance(app.screen, DetailScreen)
-        # 终态 job 不提供取消按钮
+        # 终态 (无 download_url) job 既不提供取消也不提供下载
         assert not app.screen.query("#cancel")
+        assert not app.screen.query("#download")
+
+
+# ---- v0.15.13: 导出对齐 + 闭环下载 + 悬浮框按钮化 ----
+
+
+async def test_cancel_confirm_via_button_triggers_cancel():
+    # ConfirmModal 按钮通道: 点「确认取消」按钮等价于按 y
+    app = _make_app(job_statuses=("running",))
+    async with app.run_test(size=(100, 30)) as pilot:
+        await _settle(app, pilot)
+        app.query_one("#tabs", TabbedContent).active = "tab-jobs"
+        await pilot.pause()
+        app.query_one("#jobs-table", DataTable).focus()
+        await pilot.press("c")
+        await pilot.pause()
+        await pilot.click("#modal-ok")  # 点确认按钮 (而非按 y)
+        await _settle(app, pilot)
+        assert app._client.jobs.cancelled == [JOB_ID]
+
+
+async def test_completed_export_job_detail_download_closure():
+    result = {
+        "download_url": "http://x/out.zip",
+        "file_count": 3,
+        "size_bytes": 2048,
+        "cache_hit": False,
+        "expires_at": "2026-06-20T00:00:00Z",
+    }
+    job = _job("completed", result=result)  # _job 默认 kind="export"
+    client = _StubClient([_project()], [_dataset()], [JobPage(items=[job], total=1)])
+    app = AapTuiApp(client, base_url=BASE)
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        app.query_one("#tabs", TabbedContent).active = "tab-jobs"
+        await pilot.pause()
+        app.query_one("#jobs-table", DataTable).focus()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, DetailScreen)
+        # 完成态导出 job → 详情屏有下载按钮 + 结构化 result 摘要
+        assert app.screen.query("#download")
+        body = str(app.screen.query_one("#detail-body", Static).render())
+        assert "文件数 3" in body
+        # 点下载 → 弹路径框 → 确认 → stub download 落地
+        await pilot.click("#download")
+        await pilot.pause()
+        assert isinstance(app.screen, PathInputModal)
+        await pilot.click("#modal-ok")
+        await _settle(app, pilot)
+        assert len(app._client.exports.downloaded) == 1

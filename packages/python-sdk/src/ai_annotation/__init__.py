@@ -38,7 +38,7 @@ from ai_annotation.models import (
     ZipUploadResult,
 )
 
-__version__ = "0.15.12"
+__version__ = "0.15.13"
 
 __all__ = [
     "__version__",
