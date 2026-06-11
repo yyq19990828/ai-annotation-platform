@@ -1,17 +1,25 @@
-"""Mock 协议 v2 ML backend — 多模型目录 + infra + OCR / doc_layout 演示 (无真实推理).
+"""Mock 协议 v2.1 ML backend — 多模型目录 + variants + warmup + 错误形态演示 (无真实推理).
 
-用途: 平台「能力声明协议 v2」端到端冒烟与接入参考。
+用途: 平台「能力声明协议 v2.1」端到端冒烟与接入参考。
 - `/setup` 暴露 YOLO 风格多任务 models[] (detection / segmentation / keypoint / obb /
-  classification) + PaddleOCR / DocLayout 条目, 每条带 task / infra / 几何 / variants。
+  classification) + PaddleOCR / DocLayout 条目, 每条带 task / infra / 几何 / variants;
+  yolo 条目演示 default_variants 与 variant_combinations (非全笛卡尔积)。
 - `/predict` 按 `context.type` (task_type) 返回固定 demo 结果; OCR 条目在 result shape
   顶层带 `attributes.text`, 供平台 OCR adapter 提取 → annotation.attributes。
+- `/warmup` 演示统一 WarmupResponse 形态 (ok / cache_hit / model_load_ms)。
+- 非法 variant → 422 `variant_not_supported`; `size=x` 约定为「权重未下载」→
+  503 `model_unavailable` + Retry-After (演示错误形态, 见 _resolve_variants)。
+
+为保持示例零外部依赖 (仅 fastapi + pydantic), 错误体在本文件手写;
+生产 backend 请直接用共享库 `apps/_shared/protocol_v2` 的
+`VariantNotSupportedError` / `ModelUnavailableError` / `WarmupResponse`。
 
 启动:
     pip install -r requirements.txt
     uvicorn main:app --host 0.0.0.0 --port 9100
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 app = FastAPI()
@@ -41,52 +49,50 @@ _YOLO_VARIANTS = [
     },
 ]
 
+# 多轴非全笛卡尔积演示: mock 约定 yolo12 只有 n/s/m 三档,
+# 其余 series 全 5 档。inner array 顺序与 supported_variants 轴顺序一致 [series, size]。
+_YOLO_COMBINATIONS = [
+    [series, size]
+    for series in ("yolov8", "yolo11")
+    for size in ("n", "s", "m", "l", "x")
+] + [["yolo12", size] for size in ("n", "s", "m")]
+
+# 各 model 自报的默认 variant 组合 (前端 VariantSelector 初值, 协议 §4.1.6)。
+_YOLO_DEFAULT_VARIANTS = {"series": "yolo11", "size": "s"}
+
 
 def _yolo_params() -> dict:
     return {
         "type": "object",
         "properties": {
-            "conf": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.25, "title": "置信度阈值"},
-            "iou": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.7, "title": "NMS IoU"},
+            "conf": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.25, "title": "置信度阈值", "x-platform-role": "confidence"},
+            "iou": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.7, "title": "NMS IoU", "x-platform-role": "iou"},
             "series": {"type": "string", "enum": ["yolov8", "yolo11", "yolo12"], "default": "yolo11", "title": "版本系列"},
             "size": {"type": "string", "enum": ["n", "s", "m", "l", "x"], "default": "s", "title": "尺寸"},
         },
     }
 
 
+def _yolo_model(id_: str, display_name: str, task: str, geometry: str, **extra) -> dict:
+    return {
+        "id": id_, "display_name": display_name, "task": task,
+        "model_family": "yolo", "infra": "pytorch", "supported_prompts": ["none"],
+        "supported_geometric_outputs": [geometry], "supported_variants": _YOLO_VARIANTS,
+        "variant_combinations": _YOLO_COMBINATIONS,
+        "default_variants": _YOLO_DEFAULT_VARIANTS,
+        "resource_profile": {"device": "gpu", "batchable": True}, "params": _yolo_params(),
+        **extra,
+    }
+
+
 MODELS = [
-    {
-        "id": "yolo-detect", "display_name": "YOLO 目标检测", "task": "detection",
-        "model_family": "yolo", "infra": "pytorch", "supported_prompts": ["none"],
-        "supported_geometric_outputs": ["bbox"], "supported_variants": _YOLO_VARIANTS,
-        "default_thresholds": {"conf": 0.25, "iou": 0.7},
-        "resource_profile": {"device": "gpu", "batchable": True}, "params": _yolo_params(),
-    },
-    {
-        "id": "yolo-segment", "display_name": "YOLO 实例分割", "task": "segmentation",
-        "model_family": "yolo", "infra": "pytorch", "supported_prompts": ["none"],
-        "supported_geometric_outputs": ["polygon"], "supported_variants": _YOLO_VARIANTS,
-        "resource_profile": {"device": "gpu", "batchable": True}, "params": _yolo_params(),
-    },
-    {
-        "id": "yolo-pose", "display_name": "YOLO 姿态 / 关键点", "task": "keypoint",
-        "model_family": "yolo", "infra": "pytorch", "supported_prompts": ["none"],
-        "supported_geometric_outputs": ["keypoint"], "supported_variants": _YOLO_VARIANTS,
-        "resource_profile": {"device": "gpu", "batchable": True}, "params": _yolo_params(),
-    },
-    {
-        "id": "yolo-obb", "display_name": "YOLO 旋转框", "task": "obb",
-        "model_family": "yolo", "infra": "pytorch", "supported_prompts": ["none"],
-        "supported_geometric_outputs": ["rotated_bbox"], "supported_variants": _YOLO_VARIANTS,
-        "resource_profile": {"device": "gpu", "batchable": True}, "params": _yolo_params(),
-    },
-    {
-        "id": "yolo-classify", "display_name": "YOLO 图像分类", "task": "classification",
-        "model_family": "yolo", "infra": "pytorch", "supported_prompts": ["none"],
-        "supported_geometric_outputs": ["none"], "output_attribute_types": ["class"],
-        "supported_variants": _YOLO_VARIANTS,
-        "resource_profile": {"device": "gpu", "batchable": True}, "params": _yolo_params(),
-    },
+    _yolo_model("yolo-detect", "YOLO 目标检测", "detection", "bbox",
+                default_thresholds={"conf": 0.25, "iou": 0.7}),
+    _yolo_model("yolo-segment", "YOLO 实例分割", "segmentation", "polygon"),
+    _yolo_model("yolo-pose", "YOLO 姿态 / 关键点", "keypoint", "keypoint"),
+    _yolo_model("yolo-obb", "YOLO 旋转框", "obb", "rotated_bbox"),
+    _yolo_model("yolo-classify", "YOLO 图像分类", "classification", "none",
+                output_attribute_types=["class"]),
     {
         "id": "ppocr", "display_name": "PaddleOCR (mock)", "task": "ocr",
         "model_family": "paddleocr", "infra": "paddle", "supported_prompts": ["none"],
@@ -121,13 +127,16 @@ def health() -> dict:
 
 @app.get("/setup")
 def setup() -> dict:
-    # 协议 v2: backend 默认 infra=onnx, 各 model 条目可覆盖 (yolo→pytorch, ppocr→paddle)。
+    # 协议 v2.1: backend 默认 infra=onnx, 各 model 条目可覆盖 (yolo→pytorch, ppocr→paddle)。
     return {
         "name": "mock-v2-backend",
         "version": "0.1.0",
+        "protocol_version": "2.1",
+        "compat_protocol_versions": ["2.0"],
         "model_version": "mock-v2",
         "is_interactive": False,
         "infra": "onnx",
+        "warmup_endpoint": True,
         "models": MODELS,
     }
 
@@ -135,6 +144,46 @@ def setup() -> dict:
 @app.get("/versions")
 def versions() -> dict:
     return {"versions": ["mock-v2"]}
+
+
+# ---------- variants 校验 (协议 §2.2 / §6 错误形态演示) ----------
+
+_AXIS_ALLOWED = {
+    axis["key"]: [v["value"] for v in axis["variants"]] for axis in _YOLO_VARIANTS
+}
+
+
+def _resolve_variants(variants: dict) -> dict:
+    """校验 model_variants 并演示 422 / 503 两种标准错误形态。
+
+    生产 backend 用 aap_protocol_v2.VariantNotSupportedError / ModelUnavailableError,
+    HTTP 形态与这里手写的完全一致。
+    """
+    resolved = {**_YOLO_DEFAULT_VARIANTS, **variants}
+    for axis, allowed in _AXIS_ALLOWED.items():
+        value = resolved[axis]
+        if value not in allowed:
+            # 422: 值不在该轴枚举内。
+            raise HTTPException(
+                status_code=422,
+                detail={"error_code": "variant_not_supported", "axis": axis, "value": value, "allowed": allowed},
+            )
+    if [resolved["series"], resolved["size"]] not in _YOLO_COMBINATIONS:
+        # 422: 两轴各自合法但组合不在 variant_combinations 内 (如 yolo12 + l)。
+        allowed_sizes = [c[1] for c in _YOLO_COMBINATIONS if c[0] == resolved["series"]]
+        raise HTTPException(
+            status_code=422,
+            detail={"error_code": "variant_not_supported", "axis": "size", "value": resolved["size"], "allowed": allowed_sizes},
+        )
+    if resolved["size"] == "x":
+        # 503 演示: mock 约定 size=x 视为「权重未下载」→ model_unavailable + Retry-After。
+        key = f"{resolved['series']}/{resolved['size']}"
+        raise HTTPException(
+            status_code=503,
+            detail={"error_code": "model_unavailable", "key": key, "reason": "checkpoint missing (mock: size=x 演示 503)"},
+            headers={"Retry-After": "30"},
+        )
+    return resolved
 
 
 class TaskItem(BaseModel):
@@ -176,16 +225,49 @@ def _demo_shapes(task_type: str | None) -> list[dict]:
     ]
 
 
+# /warmup 预热过的 variant key 集合 (mock 仅内存标记, 演示 cache_hit 翻转)。
+_warmed: set[str] = set()
+
+
 @app.post("/predict")
 def predict(req: PredictRequest) -> dict:
-    task_type = (req.context or {}).get("type")
+    ctx = req.context or {}
+    # v2.1 通用 axis dict; 兼容期继续接受旧字段 context.variants (yolo 风格) 并 normalize。
+    variants = ctx.get("model_variants") or ctx.get("variants") or {}
+    resolved = _resolve_variants(variants)
+    task_type = ctx.get("type")
     shapes = _demo_shapes(task_type)
+    key = f"{resolved['series']}/{resolved['size']}"
+    cache_hit = key in _warmed
+    _warmed.add(key)
+    # 运行时观测字段 (协议 §4.2): cache_hit / model_load_ms / pool_state, 均为演示值。
+    meta = {
+        "score": 0.9,
+        "model_version": f"mock-{key.replace('/', '-')}",
+        "inference_time_ms": 5,
+        "cache_hit": cache_hit,
+        "model_load_ms": 0 if cache_hit else 120,
+        "pool_state": {"current_size": min(len(_warmed), 4), "cap": 4},
+    }
     # 交互式单条 (无外层 results 数组)。
     if req.task is not None and not req.tasks:
-        return {"result": shapes, "score": 0.9, "model_version": "mock-v2", "inference_time_ms": 5}
+        return {"result": shapes, **meta}
     # 批量。
-    results = [
-        {"task": t.id, "result": shapes, "score": 0.9, "model_version": "mock-v2", "inference_time_ms": 5}
-        for t in req.tasks
-    ]
+    results = [{"task": t.id, "result": shapes, **meta} for t in req.tasks]
     return {"results": results}
+
+
+class WarmupRequest(BaseModel):
+    task: str | None = None
+    variants: dict = {}
+
+
+@app.post("/warmup")
+def warmup(req: WarmupRequest) -> dict:
+    """显式预热 (协议 §4.4)。统一 WarmupResponse 形态: ok / cache_hit / model_load_ms。"""
+    resolved = _resolve_variants(req.variants)
+    key = f"{resolved['series']}/{resolved['size']}"
+    if key in _warmed:
+        return {"ok": True, "cache_hit": True, "model_load_ms": None}
+    _warmed.add(key)
+    return {"ok": True, "cache_hit": False, "model_load_ms": 120}

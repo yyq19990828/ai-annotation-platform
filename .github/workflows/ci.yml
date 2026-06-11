@@ -78,6 +78,24 @@ jobs:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  # 示例 ML backend contract tests 保活：防 docs-site/dev/examples 与协议文档脱节。
+  examples-pytest:
+    name: ML backend examples pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        run: pip install uv
+      - name: echo-ml-backend contract tests
+        working-directory: docs-site/dev/examples/echo-ml-backend
+        run: uv run --extra test pytest -q
+      - name: mock-v2-backend contract tests
+        working-directory: docs-site/dev/examples/mock-v2-backend
+        run: uv run --extra test pytest -q
+
   vitest:
     name: Frontend vitest + tsc + build
     runs-on: ubuntu-latest
