@@ -30,6 +30,21 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.17] - 2026-06-12
+
+临帧框叠加产品化。v0.15.1 交付了「邻帧框 overlay + ego 对齐」,本版补四个落地缺口:叠加范围可配(对象级/场景级)、批量端点收敛请求、无轨迹降级常驻可见、scene 门控复核。计划见 `docs/plans/2026-06-12-v0.15.17-crossframe-box-overlay-productization.md`。
+
+### Added
+
+- **对象级↔场景级叠加范围**:新增 `workbench.common.crossFrameOverlayScope` 偏好(`selected`=仅叠选中对象的 group,现状默认;`all`=不选对象也叠邻帧全部框,整体时序感知)。3D 工具栏邻帧叠加控件旁加「对象/全部」切换;`all` 模式下选中某对象时,其 group 邻帧框正常显示、其余弱化(dim,更低透明度)。
+- **批量邻帧标注端点** `GET /tasks/{id}/neighbor-annotations?k=&group_id=`:一次返回 ±k 帧的邻帧标注,替代前端「对 2k 个邻帧 task 各发一条 `getAnnotations` + client 端按 group 过滤」。`group_id` 给定 → 服务端只回该 group(`selected`,payload 最小);省略 → 回区间全部(`all`)。非 scene task → 200 + `frames=[]`。新增 `AnnotationService.list_by_tasks`(单条 IN 查询)。
+- **无 ego 轨迹降级常驻可见**:overlay 开启但该 scene 无 ego pose 时,工具栏常驻 badge「无 ego 轨迹·未对齐」(warning 色),取代仅 propagate 路径的一次性 toast——overlay 显示态的可信度信号常显。
+
+### Notes
+
+- scene 门控复核:邻帧叠加仅 3D 点云工作台使用,gated on `manifest.scene_id`(数据属于 scene 才暴露),语义正确;`CrossFrameOverlayToggle` 无视频侧引用,不存在非 scene 场景误露出。`Project.scene_mode` 是项目调度声明而非 overlay 前提,不强加。
+- 前端 overlay 仍保留 `useFrameNeighbors`(取 scene_id / 中心帧 / 邻帧 frame_index 供 ego 对齐),邻帧标注改走批量端点;两者同源(`get_neighbors_for_task`),task 集一致。
+
 ## [0.15.16] - 2026-06-12
 
 `aap tui` 监控曲线与交互细节打磨:趋势 / 实时曲线从 `Sparkline` 升级为带横纵坐标的自绘折线图,Jobs 轮询不再把视图弹回顶部,弹窗按钮收敛到与全局一致的扁平风格。纯 TUI/UI 改动,零后端 / 零 `client.py` 改动。
