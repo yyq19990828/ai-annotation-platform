@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * 赛博朋克风格文档站首页 Hero。
- * 鼠标动效(光晕跟随 / 卡片 3D 倾斜 / 磁吸按钮 / glitch / 拖尾)全部在
- * onMounted 中绑定、onUnmounted 中清理,SSR 期间不触碰 window/document。
+ * 鼠标动效 = 页面元素随鼠标移动产生响应(背景光晕跟随 / 网格视差 /
+ * 卡片 3D 倾斜 / 磁吸按钮 / 标题 glitch),使用系统默认光标。
+ * 所有 DOM 绑定在 onMounted、清理在 onUnmounted,SSR 期间不触碰 window/document。
  */
 import { onMounted, onUnmounted, ref } from "vue";
 
@@ -36,41 +37,18 @@ onMounted(() => {
   fontLink.rel = "stylesheet";
   fontLink.href = "https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap";
   document.head.appendChild(fontLink);
-
-  document.body.classList.add("cyber-active");
+  cleanup.push(() => fontLink.remove());
 
   const glow = root.querySelector<HTMLElement>(".cursor-glow");
-  const ring = root.querySelector<HTMLElement>(".cursor-ring");
-  const dot = root.querySelector<HTMLElement>(".cursor-dot");
   const gridFloor = root.querySelector<HTMLElement>(".grid-floor");
-  let mx = window.innerWidth / 2, my = window.innerHeight / 2, rx = mx, ry = my;
 
+  // 背景光晕跟随 + 网格地面随鼠标视差
   const onMove = (e: MouseEvent) => {
-    mx = e.clientX; my = e.clientY;
-    if (glow) { glow.style.setProperty("--mx", mx + "px"); glow.style.setProperty("--my", my + "px"); }
-    if (dot) { dot.style.left = mx + "px"; dot.style.top = my + "px"; }
-    if (gridFloor) gridFloor.style.setProperty("--gridShift", ((mx / window.innerWidth - 0.5) * 30) + "px");
+    if (glow) { glow.style.setProperty("--mx", e.clientX + "px"); glow.style.setProperty("--my", e.clientY + "px"); }
+    if (gridFloor) gridFloor.style.setProperty("--gridShift", ((e.clientX / window.innerWidth - 0.5) * 30) + "px");
   };
   window.addEventListener("mousemove", onMove);
   cleanup.push(() => window.removeEventListener("mousemove", onMove));
-
-  // 光标环惯性跟随
-  let raf = 0;
-  const loop = () => {
-    rx += (mx - rx) * 0.18; ry += (my - ry) * 0.18;
-    if (ring) { ring.style.left = rx + "px"; ring.style.top = ry + "px"; }
-    raf = requestAnimationFrame(loop);
-  };
-  loop();
-  cleanup.push(() => cancelAnimationFrame(raf));
-
-  // hover 放大光标环
-  root.querySelectorAll<HTMLElement>("[data-hot],.cyber-card,.cyber-cap,.cyber-btn").forEach((el) => {
-    const en = () => ring?.classList.add("hot");
-    const lv = () => ring?.classList.remove("hot");
-    el.addEventListener("mouseenter", en); el.addEventListener("mouseleave", lv);
-    cleanup.push(() => { el.removeEventListener("mouseenter", en); el.removeEventListener("mouseleave", lv); });
-  });
 
   // 卡片 3D 倾斜 + 光斑追踪
   root.querySelectorAll<HTMLElement>(".cyber-card").forEach((card) => {
@@ -97,28 +75,12 @@ onMounted(() => {
     cleanup.push(() => { btn.removeEventListener("mousemove", mv); btn.removeEventListener("mouseleave", lv); });
   });
 
-  // 标题 glitch
+  // 标题 glitch(hover 触发 + 定时)
   const g = root.querySelector<HTMLElement>(".glitch");
   const fire = () => { if (!g) return; g.classList.remove("go"); void g.offsetWidth; g.classList.add("go"); };
   g?.addEventListener("mouseenter", fire);
   const gi = window.setInterval(fire, 4200);
   cleanup.push(() => { g?.removeEventListener("mouseenter", fire); clearInterval(gi); });
-
-  // 鼠标拖尾光点
-  let last = 0;
-  const trail = (e: MouseEvent) => {
-    const now = performance.now(); if (now - last < 36) return; last = now;
-    const p = document.createElement("div");
-    p.className = "cyber-trail";
-    p.style.cssText = `left:${e.clientX}px;top:${e.clientY}px`;
-    root.appendChild(p);
-    requestAnimationFrame(() => { p.style.opacity = "0"; p.style.transform = "translate(-50%,-50%) scale(.2)"; });
-    window.setTimeout(() => p.remove(), 520);
-  };
-  window.addEventListener("mousemove", trail);
-  cleanup.push(() => window.removeEventListener("mousemove", trail));
-
-  cleanup.push(() => { document.body.classList.remove("cyber-active"); fontLink.remove(); });
 });
 
 onUnmounted(() => { cleanup.forEach((fn) => fn()); cleanup = []; });
@@ -130,8 +92,6 @@ onUnmounted(() => { cleanup.forEach((fn) => fn()); cleanup = []; });
     <div class="grid-floor"></div>
     <div class="scanlines"></div>
     <div class="vignette"></div>
-    <div class="cursor-ring"></div>
-    <div class="cursor-dot"></div>
 
     <section class="hero">
       <span class="eyebrow">SYSTEM ONLINE · AI-ASSISTED</span>
@@ -186,10 +146,6 @@ onUnmounted(() => { cleanup.forEach((fn) => fn()); cleanup = []; });
 .cursor-glow{position:fixed; inset:0; pointer-events:none; z-index:1;
   background:radial-gradient(380px circle at var(--mx,50%) var(--my,30%), rgba(0,240,255,.10), transparent 60%),
              radial-gradient(520px circle at var(--mx,50%) var(--my,30%), rgba(255,0,229,.06), transparent 65%);}
-.cursor-dot,.cursor-ring{position:fixed; top:0; left:0; pointer-events:none; z-index:9999; border-radius:50%; transform:translate(-50%,-50%);}
-.cursor-dot{width:7px; height:7px; background:var(--cyan); box-shadow:0 0 12px var(--cyan),0 0 24px var(--cyan);}
-.cursor-ring{width:34px; height:34px; border:1.5px solid rgba(0,240,255,.6); box-shadow:0 0 14px rgba(0,240,255,.4), inset 0 0 10px rgba(0,240,255,.2); transition:width .2s,height .2s,border-color .2s;}
-.cursor-ring.hot{width:54px; height:54px; border-color:var(--magenta); box-shadow:0 0 20px rgba(255,0,229,.6), inset 0 0 14px rgba(255,0,229,.3);}
 
 .scanlines{position:fixed; inset:0; pointer-events:none; z-index:50; opacity:.5; mix-blend-mode:multiply;
   background:repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,.25) 3px, transparent 4px);}
@@ -202,8 +158,6 @@ onUnmounted(() => { cleanup.forEach((fn) => fn()); cleanup = []; });
   -webkit-mask-image:linear-gradient(to top, #000 0%, transparent 85%); mask-image:linear-gradient(to top, #000 0%, transparent 85%);
   animation:gridmove 3s linear infinite;}
 @keyframes gridmove{from{background-position:0 0;}to{background-position:0 46px;}}
-
-:deep(.cyber-trail){position:fixed; width:5px; height:5px; border-radius:50%; background:var(--cyan); box-shadow:0 0 8px var(--cyan); pointer-events:none; z-index:60; transform:translate(-50%,-50%); transition:opacity .5s, transform .5s;}
 
 .hero{position:relative; z-index:10; padding:96px 42px 70px; text-align:center; min-height:82vh; display:flex; flex-direction:column; align-items:center; justify-content:center;}
 .eyebrow{font-family:'Share Tech Mono',monospace; font-size:13px; letter-spacing:.3em; color:var(--cyan); border:1px solid var(--c-border); padding:7px 18px; margin-bottom:34px; text-transform:uppercase; background:rgba(0,240,255,.04); box-shadow:0 0 18px rgba(0,240,255,.15), inset 0 0 18px rgba(0,240,255,.06);}
@@ -243,7 +197,6 @@ onUnmounted(() => { cleanup.forEach((fn) => fn()); cleanup = []; });
 
 .grid{display:grid; grid-template-columns:repeat(3,1fr); gap:24px;}
 .cyber-card{position:relative; display:block; text-decoration:none; background:linear-gradient(160deg,rgba(13,13,26,.9),rgba(10,10,20,.7)); border:1px solid var(--c-border); padding:30px 26px; transform-style:preserve-3d; transition:border-color .25s, box-shadow .25s; will-change:transform; overflow:hidden;}
-.cyber-card .spot,.cyber-card::after,.cyber-card::before{}
 .cyber-card .ico,.cyber-card h3,.cyber-card p,.cyber-card .more{position:relative; z-index:2;}
 .cyber-card::after{content:''; position:absolute; inset:0; z-index:1; opacity:0; transition:opacity .25s; background:radial-gradient(220px circle at var(--cx,50%) var(--cy,50%), rgba(0,240,255,.16), transparent 60%);}
 .cyber-card:hover{border-color:rgba(0,240,255,.6); box-shadow:0 0 0 1px rgba(0,240,255,.3), 0 18px 50px -16px rgba(0,240,255,.5);}

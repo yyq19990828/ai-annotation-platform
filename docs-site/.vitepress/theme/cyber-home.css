@@ -50,9 +50,3 @@
 .cyber-home-page .VPNavBarMenuLink:hover {
   color: #00f0ff !important;
 }
-
-/* 自定义光标:首页激活时隐藏系统光标 */
-body.cyber-active,
-body.cyber-active * {
-  cursor: none !important;
-}
