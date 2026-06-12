@@ -96,27 +96,34 @@ export const AI_PRE_SCENES: ScreenshotScene[] = [
     },
     target: "docs-site/user-guide/images/projects/ai-pre-history-search.png",
   },
-  {
-    name: "ai-pre/empty-alias",
-    role: "admin",
-    route: () => "/ai-pre",
-    prepare: async (page) => {
-      // v0.10.18 · "类别无 alias" 警告位于 PromptComposer.tsx (深层 modal 流: 进 /ai-pre →
-      // 选项目 → 进入 PromptComposer)。自动化深入此层 cost > benefit; 留作 maintainer 手截.
-      // 当前 prepare 仅截 /ai-pre 入口态作占位.
-      await page.waitForLoadState("networkidle");
-    },
-    target: "docs-site/user-guide/images/projects/ai-pre-empty-alias.png",
-  },
+  // NOTE: ai-pre/empty-alias 已移除 —— PromptComposer（旧「类别无 alias」警告所在）在
+  // v0.10.40 ai-pre 重构（项目卡片 + ProjectDetailPanel）中已删除，无对应 UI 可截。
   {
     name: "wizard/step4-backend",
     role: "admin",
     route: () => "/projects",
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
-      // 需 seed 注册过的 backend + 手动走 wizard step1-3
-      // 自动化截 wizard 入口态，maintainer 后续补完整流程图
+      const newBtn = page.getByRole("button", { name: /新建项目|新建/ }).first();
+      if (await newBtn.count()) {
+        await newBtn.click();
+        await page.waitForTimeout(300);
+      }
+      await page.waitForSelector('[data-testid="project-wizard"]', { timeout: 3000 }).catch(() => {});
+      // step1 需填项目名才能前进（数据类型/工具单位默认已选）
+      const nameInput = page.getByPlaceholder(/智能门店货架/).first();
+      if (await nameInput.count()) await nameInput.fill("演示项目-A");
+      // 步骤指示器不可点，逐步点「下一步」到第 4 步「AI 接入」（按钮文本含箭头，正则不锚定）
+      for (let i = 0; i < 3; i++) {
+        const next = page.getByRole("button", { name: /下一步/ }).first();
+        if ((await next.count()) && (await next.isEnabled().catch(() => false))) {
+          await next.click();
+          await page.waitForTimeout(400);
+        }
+      }
+      await page.waitForTimeout(200);
     },
+    capture: { kind: "locator", selector: '[data-testid="project-wizard"]', padding: 0 },
     target: "docs-site/user-guide/images/projects/wizard-step4-backend.png",
   },
 ];

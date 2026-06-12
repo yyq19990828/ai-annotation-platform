@@ -58,7 +58,7 @@
 - [x] `images/projects/error-state.png` — 项目列表错误状态 `[auto]`
 - [x] `images/projects/ai-pre-stepper.png` — AI 预标注步骤条 `[auto]`
 - [x] `images/projects/ai-pre-history-search.png` — 预标注历史搜索 `[auto]`
-- [x] `images/projects/ai-pre-empty-alias.png` — 预标注 alias 为空提示 `[auto]`
+- [~] ~~`images/projects/ai-pre-empty-alias.png` — 预标注 alias 为空提示~~ — **已废弃**：PromptComposer（alias 警告所在）在 ai-pre 重构中删除，无对应 UI
 
 ### Review
 
@@ -68,7 +68,7 @@
 ### Export
 
 - [x] `images/export/format-select.png` — 导出对话框 + 格式选项 `[auto]`
-- [x] `images/export/progress.png` — 进度条 + 下载链接 toast `[auto]`
+- [~] ~~`images/export/progress.png` — 进度条 + 下载链接 toast~~ — **已废弃**：导出异步化，进度移至右上角任务铃 JobsBell，无独立进度条页（待补 JobsBell 截图）
 
 ### Superadmin / BUG 反馈管理（新增于 2026-05-29 审计）
 
