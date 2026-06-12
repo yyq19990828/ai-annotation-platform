@@ -26,6 +26,21 @@ x-prod-infra-env: &prod-infra-env
   MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?.env.production 必须设置 MINIO_SECRET_KEY}
 
 services:
+  # 生产不把基础设施端口发布到宿主：api/web/worker 都在 compose 内网，经 service 名
+  # DNS（postgres:5432 / redis:6379 / minio:9000）直连即可，无需 host 发布。
+  # 基础 docker-compose.yml 为 dev 把它们绑在 0.0.0.0（host 工具直连方便），生产必须收回，
+  # 否则 PG/Redis/MinIO 直接暴露在宿主公网网卡上（比 api 端口更危险的直连入口）。
+  # ports 合并是 append（覆盖写法盖不掉基础 0.0.0.0），故用 !reset 清空（Compose v2.24+）。
+  postgres:
+    ports: !reset []
+  redis:
+    ports: !reset []
+  minio:
+    ports: !reset []
+  # mailpit 是 dev 假收件箱，生产本应禁用并改真实 SMTP；若仍随基础栈起来，至少不发布端口。
+  mailpit:
+    ports: !reset []
+
   api:
     build:
       context: .

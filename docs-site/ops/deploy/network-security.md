@@ -26,18 +26,20 @@ last_reviewed: 2026-06-12
 
 平台默认涉及的宿主端口（生产 `docker-compose.prod.yml` + 基础 `docker-compose.yml`）：
 
-| 端口 | 服务 | 对公网 | 说明 |
+| 端口 | 服务 | 生产是否发布到宿主 | 说明 |
 |---|---|:-:|---|
-| 443 | 外层反代（nginx / Caddy） | ✅ **唯一入口** | 终结 TLS，转发到 web / api 容器 |
-| 8088 | web 容器内 nginx（`8088:80`） | ❌ 内网 | 托管静态产物 + 反代 `/api/` `/ws/` → `api:8000`；交给外层反代指向它 |
-| 8080 | api 容器（`8080:8000`） | ❌ 内网/回环 | FastAPI/uvicorn。**最该警惕的端口**——绝不直接开公网 |
-| 5432 | postgres | ❌ 内网 | 数据库 |
-| 6379 | redis | ❌ 内网 | broker / 限流 / 黑名单 |
-| 9000 / 9001 | MinIO API / 控制台 | ⚠️ 见 §5 | presigned URL 的可达性有讲究 |
-| 8025 / 1025 | mailpit（dev） | ❌ | 假收件箱，**生产应禁用**，改真实 SMTP |
-| 9090 / 3001 / 9093 | Prometheus / Grafana / Alertmanager | ❌ 内网 | 监控 profile，仅内网/VPN |
+| 443 | 外层反代（nginx / Caddy） | ✅ **唯一公网入口** | 终结 TLS，转发到 web / api 容器 |
+| 8088 | web 容器（`8088:80`） | 仅回环 `127.0.0.1` | 托管静态产物 + 反代 `/api/` `/ws/` → `api:8000`；交给外层反代指向它 |
+| 8080 | api 容器（`8080:8000`） | 仅回环 `127.0.0.1` | FastAPI/uvicorn。**最该警惕的端口**——绝不直接开公网 |
+| 5432 | postgres | ❌ **不发布** | prod 叠加文件 `ports: !reset []`；api/worker 经内网 `postgres:5432` 直连 |
+| 6379 | redis | ❌ **不发布** | 同上 `redis:6379`；broker / 限流 / 黑名单 |
+| 9000 / 9001 | MinIO API / 控制台 | ❌ **不发布** | 同上 `minio:9000`；presigned URL 可达性见 §5 |
+| 8025 / 1025 | mailpit（dev） | ❌ **不发布** | 假收件箱，**生产应禁用**，改真实 SMTP |
+| 9090 / 3001 / 9093 | Prometheus / Grafana / Alertmanager | ⚠️ 仅内网/VPN | 监控 profile，默认不启动；启用时务必限内网 |
 
-> Docker 端口映射写法决定了绑定范围：`"8080:8000"` 绑 `0.0.0.0`（所有网卡，含公网网卡）；`"127.0.0.1:8080:8000"` 只绑回环。生产务必用后者或内网网段，详见 §4。
+> **两层绑定**：① 容器**内部**互通走 compose 内网 service DNS（`postgres:5432` 等），不需要发布到宿主——所以 prod 用 `ports: !reset []` 把基础文件给 dev 用的 `0.0.0.0` 发布**整个移除**，PG/Redis/MinIO 在宿主网卡上完全不可见。② api/web 仍需让外层反代够到，故发布但绑回环 `${PROXY_BIND_HOST:-127.0.0.1}`。
+>
+> 端口映射写法决定绑定范围：`"8080:8000"` 绑 `0.0.0.0`（所有网卡，含公网）；`"127.0.0.1:8080:8000"` 只绑回环。注意 compose 的 `ports` 合并是 **append**——叠加文件里再写一条绑回环**盖不掉**基础的 `0.0.0.0`，必须用 `!reset []` 清空（Compose v2.24+）。详见 §4。
 
 ---
 
@@ -77,6 +79,11 @@ services:
   web:
     ports:
       - "${PROXY_BIND_HOST:-127.0.0.1}:8088:80"
+  # PG/Redis/MinIO 容器间走内网 service DNS，生产根本不需要发布到宿主——
+  # 直接清空基础文件的 ports（绑定写法是 append，盖不掉，必须 !reset）：
+  postgres: { ports: !reset [] }
+  redis:    { ports: !reset [] }
+  minio:    { ports: !reset [] }
 ```
 
 外层反代**同机**时无需任何配置，`proxy_pass http://127.0.0.1:8088;` 转发即可。反代在**另一台机器**时，于 `.env.production` 设 `PROXY_BIND_HOST=<内网IP>`（如 `10.0.0.5`），**切勿设 `0.0.0.0`**——那等于放回公网。
@@ -174,11 +181,13 @@ export AAP_BASE_URL=http://1.2.3.4:8000
 ## 6. 纵深防御 checklist（上线前过一遍）
 
 - [ ] 后端 8080 / web 8088 端口绑 `127.0.0.1:` 或内网 IP，**不是** `0.0.0.0`（prod compose 已默认绑回环，确认没被 `PROXY_BIND_HOST=0.0.0.0` 覆盖；`ss -tlnp` 验证）
+- [ ] PG 5432 / Redis 6379 / MinIO 9000 **完全不向宿主发布**（prod 叠加文件 `ports: !reset []`；`docker compose ... config` 里这几个服务应无 `ports`，`ss -tlnp` 看不到对应监听）
 - [ ] 确认 ufw 没被 Docker 绕过（用 §4 的绑定姿势或 `DOCKER-USER` 链）
 - [ ] 公网只开 443，外层反代终结 TLS（证书有效、HSTS 已开）
 - [ ] `ENVIRONMENT=production`、`SECRET_KEY` 已换强随机、`CORS_ALLOW_ORIGINS` 显式列（这三项启动断言，见[安全模型 §6](/ops/security/)）
 - [ ] `/metrics` 反代里限内网 `allow / deny`
 - [ ] `MINIO_PUBLIC_URL` 指向对外可达地址，`MINIO_USE_SSL=true`，MinIO 默认凭据已换
+- [ ] Redis 设 `requirepass`（并同步 `REDIS_URL` 带密码）——纵深防御，即便端口不发布，共享宿主上 Redis 仍是经典横向移动目标
 - [ ] mailpit 已禁用，改真实 SMTP
 - [ ] 远程 SDK 调用方用 `https://` base_url，API Key 走 `0600` 配置文件、定期轮换
 - [ ] 监控端口（9090/3001/9093）仅内网 / VPN 可达
