@@ -1904,11 +1904,20 @@ export function ThreeDWorkbench({
     type NeighborFrame = {
       positions: Float32Array;
       matrix: NonNullable<ReturnType<typeof frameRelMatrix>>;
+      dir: "past" | "future";
+      distance: number;
     };
     const frames = neighborPcds
       .map((pcd): NeighborFrame | null => {
         const matrix = frameRelMatrix(poseByFrame.get(pcd.frameIndex), toPose);
-        return matrix ? { positions: pcd.positions, matrix } : null;
+        if (!matrix) return null;
+        // 前/后帧分色 + 按帧距淡出(视觉缓解动态拖影)。
+        return {
+          positions: pcd.positions,
+          matrix,
+          dir: pcd.frameIndex >= curFrame ? "future" : "past",
+          distance: Math.abs(pcd.frameIndex - curFrame),
+        };
       })
       .filter((f): f is NeighborFrame => f != null);
     scene.setNeighborPoints(frames);

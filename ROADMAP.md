@@ -147,6 +147,16 @@
 - **I18 Konva pin 渲染**（v0.10.19 已落 `annotation_feedbacks` 表 + API + 浮动入口）：剩 `IssueLayer.tsx` Konva 层 + 单击图像建 pin 入口 + ADR-0027 第二段 `v_annotation_feedback_unified` view + 旧三表双写。
 - **I21 用户级快捷键自定义**（M，纯前端）：`User.preferences.keymap` + 冲突校验；SettingsPage 录制框 UI；`?` 弹快捷键参考卡按 keymap 渲染（取代硬编码 KeyboardHintOverlay）。
 
+### C.8 邻帧点云叠加 · 动态目标拖影彻底消除（v0.15.18 落地后衍生）
+
+> 背景：v0.15.18 邻帧点云叠加用 **ego-only 刚体补偿**——只抵消车自身运动，抵消不了目标自身运动，故静止背景重合加密、**动态目标必然留拖影**。v0.15.18 已补视觉缓解(前/后帧分色 + 时序淡出，让拖影读成"运动方向")。下面是**彻底消除拖影**(让动态目标也对齐加密 / 或干脆不显示)的两条路 + 一条重路：
+
+- **A. box 轨迹逐目标补偿**（**P3**，中等体量）：对落在 tracked box(`group_id` 跨帧链，v0.15.1 已有)内的邻帧点，用**该目标 box 邻帧→当前帧的位姿变换**替代 ego 变换;框外点仍走 ego。动态目标的点也对齐到当前位置一起加密、**无拖影**——等于用 box 轨迹做 lite 版 scene flow。吃平台已有 track 数据;仅对**已标注**目标有效(未标注动态物仍拖影)。触发：用户需要动态目标也加密 / 拖影干扰标注。
+- **B. box 内动态点剔除**（**P3**，轻）：邻帧点落在 tracked box 内的**直接剔除**，只叠静止背景。比 A 简单(只判点-在-框内，不做逐目标变换)，代价是动态目标完全不显示。可作为 A 的开关式简化版先上。
+- **D. 学习式动静分割**（**P3**，重，性价比低）：不依赖标注的动静点分类(需模型 / 几何启发)，能处理未标注动态物，但成本高;非必要不做。
+
+> 共同前置：A/B 需当前帧 + 邻帧的 box_3d 标注(理想是已 propagate/插值的 track)。与 §A `lidar_box_3d` 真实 3D 接入正交,可在点云叠加被真实使用后按反馈触发。
+
 ### C.4 工作台架构分层（多任务类型如何复用同一外壳）
 
 > **已落地的架构基线，非待办**。单工作台外壳 + Mode 轴 + StageHost + 按类型独立 action hooks 的四层结构（含 `StageKind` / `StageCapabilities` / overlay 边界 / 3D 约束）SoT 见 [`dev/concepts/workbench-shell.md`](docs-site/dev/concepts/workbench-shell.md) 与 [ADR-0017](docs/adr/0017-workbench-shell-mode-and-stage-adapters.md)。
@@ -176,6 +186,7 @@
 | **P3** | 新几何 ML 预测协议按客户 backend 输出补齐 | 平台读路径 (`to_internal_shape`) + 协议文档 + 导入(AAP/YOLO)/导出/测试均已支持 rotated_bbox/polyline/keypoint；等真实客户 backend 产出这些几何时按实际输出对账 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志月度汇总物化视图 | partition + archive + 回源端点已落（v0.10.25）；剩 BI 月度汇总物化视图，等 10M+ 行触发 | [0007](docs/adr/0007-audit-log-partitioning.md) |
+| **P3** | 邻帧点云叠加动态拖影彻底消除（§C.8 A/B/D） | v0.15.18 已用 ego-only 补偿 + 视觉缓解(分色/淡出)；彻底消除需按 box 轨迹逐目标补偿 / box 内动态点剔除。等点云叠加真实使用后按反馈触发 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 
 ---
 

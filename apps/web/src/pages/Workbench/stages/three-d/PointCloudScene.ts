@@ -21,8 +21,14 @@ import { isPointInPolygon, type ScreenPoint } from "./geometry/pointInPolygon";
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
 const DEFAULT_DECIMATE_THRESHOLD = 500_000;
 
-// v0.15.18 · 邻帧叠加点云的弱化单色(冷灰蓝),与当前帧的高度色带 / 相机上色强区分。
-const NEIGHBOR_POINT_COLOR = 0x6b8299;
+// v0.15.18 · 邻帧叠加点云弱化色,与当前帧的高度色带 / 相机上色强区分。
+// 前/后帧分色(过去冷蓝 / 未来暖橙),让动态目标拖影读起来是"运动方向"而非乱噪。
+const NEIGHBOR_PAST_COLOR = 0x4a90d9; // 过去帧:冷蓝
+const NEIGHBOR_FUTURE_COLOR = 0xd98a4a; // 未来帧:暖橙
+// 时序淡出:帧距越远越淡(distance=1 最实),拖影随距离自然衰减。
+function neighborOpacity(distance: number): number {
+  return Math.max(0.15, 0.5 - (Math.max(1, distance) - 1) * 0.12);
+}
 
 // 选中框高亮色(线框)。未选中用类别色。
 const SELECTED_EDGE_COLOR = 0xffd54a;
@@ -789,9 +795,17 @@ export class PointCloudScene {
    * v0.15.18 · 邻帧点云叠加。每个 frame 的 positions 是该邻帧 ISO ego 系点;matrix 是
    * inv(T_cur)@T_nbr(frameRelMatrix),作为对象矩阵直接把整片点云对齐到当前帧 ego 系
    * (刚体变换,GPU 端做,无逐点 CPU 开销)。静止背景重合加密,动态目标留拖影。
-   * 弱化单色 + 低透明,与当前帧点区分。整层重建,旧 geometry/material 全部 dispose。
+   * v0.15.18 · 视觉缓解动态拖影:前/后帧分色(过去冷蓝 / 未来暖橙)+ 按帧距时序淡出,
+   * 拖影读起来是运动方向而非乱噪。整层重建,旧 geometry/material 全部 dispose。
    */
-  setNeighborPoints(frames: { positions: Float32Array; matrix: THREE.Matrix4 }[]) {
+  setNeighborPoints(
+    frames: {
+      positions: Float32Array;
+      matrix: THREE.Matrix4;
+      dir: "past" | "future";
+      distance: number;
+    }[],
+  ) {
     for (const p of this.neighborPoints) {
       this.neighborLayer.remove(p);
       p.geometry.dispose();
@@ -803,9 +817,9 @@ export class PointCloudScene {
       geom.setAttribute("position", new THREE.BufferAttribute(f.positions, 3));
       const mat = new THREE.PointsMaterial({
         size: this.pointSize * 0.8,
-        color: NEIGHBOR_POINT_COLOR,
+        color: f.dir === "future" ? NEIGHBOR_FUTURE_COLOR : NEIGHBOR_PAST_COLOR,
         transparent: true,
-        opacity: 0.4,
+        opacity: neighborOpacity(f.distance),
         sizeAttenuation: true,
         depthWrite: false,
       });
