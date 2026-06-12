@@ -8,6 +8,10 @@ import { PROJECT_SCENES } from "./projects";
 import { REVIEW_SCENES } from "./review";
 import { EXPORT_SCENES } from "./export";
 import { AI_PRE_SCENES } from "./ai-pre";
+import { PLATFORM_SCENES } from "./platform";
+import { WORKFLOW_SCENES } from "./workflows";
+import { WORKBENCH_AI_SCENES } from "./workbench-ai";
+import { DATASET_SCENES } from "./datasets";
 
 export const SCENES = [
   ...AUTH_SCENES,
@@ -18,4 +22,8 @@ export const SCENES = [
   ...REVIEW_SCENES,
   ...EXPORT_SCENES,
   ...AI_PRE_SCENES,
+  ...PLATFORM_SCENES,
+  ...WORKFLOW_SCENES,
+  ...WORKBENCH_AI_SCENES,
+  ...DATASET_SCENES,
 ];

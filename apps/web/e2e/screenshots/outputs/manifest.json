@@ -1,14 +1,182 @@
 {
+  "docs-site/user-guide/images/getting-started/login.png": {
+    "auto": true,
+    "scene": "getting-started/login",
+    "lastRun": "2026-06-12T09:34:38.282Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/getting-started/forgot-password.png": {
+    "auto": true,
+    "scene": "getting-started/forgot-password",
+    "lastRun": "2026-06-12T09:34:39.932Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/bbox/toolbar.png": {
+    "auto": true,
+    "scene": "bbox/toolbar",
+    "lastRun": "2026-06-12T09:34:42.176Z",
+    "project": "desktop-light"
+  },
   "docs-site/user-guide/images/bbox/iou.png": {
     "auto": true,
     "scene": "bbox/iou",
-    "lastRun": "2026-05-19T11:37:04.079Z",
+    "lastRun": "2026-06-12T09:34:45.846Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/bbox/bulk-edit.png": {
     "auto": true,
     "scene": "bbox/bulk-edit",
-    "lastRun": "2026-05-19T11:37:07.470Z",
+    "lastRun": "2026-06-12T09:34:49.539Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/polygon/vertex-edit.png": {
+    "auto": true,
+    "scene": "polygon/vertex-edit",
+    "lastRun": "2026-06-12T09:34:51.769Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/polygon/close-hint.png": {
+    "auto": true,
+    "scene": "polygon/close-hint",
+    "lastRun": "2026-06-12T09:34:54.080Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/sam/subtoolbar.png": {
+    "auto": true,
+    "scene": "sam/subtoolbar",
+    "lastRun": "2026-06-12T09:34:56.817Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/create-entry.png": {
+    "auto": true,
+    "scene": "projects/create-entry",
+    "lastRun": "2026-06-12T09:34:58.522Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/wizard-steps.png": {
+    "auto": true,
+    "scene": "projects/wizard-steps",
+    "lastRun": "2026-06-12T09:35:00.594Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/empty-state.png": {
+    "auto": true,
+    "scene": "projects/empty-state",
+    "lastRun": "2026-06-12T09:35:02.815Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/error-state.png": {
+    "auto": true,
+    "scene": "projects/error-state",
+    "lastRun": "2026-06-12T09:35:06.136Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/review/workbench.png": {
+    "auto": true,
+    "scene": "review/workbench",
+    "lastRun": "2026-06-12T09:35:07.843Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/review/reject-form.png": {
+    "auto": true,
+    "scene": "review/reject-form",
+    "lastRun": "2026-06-12T09:35:09.496Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/export/format-select.png": {
+    "auto": true,
+    "scene": "export/format-select",
+    "lastRun": "2026-06-12T09:35:11.377Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/export/progress.png": {
+    "auto": true,
+    "scene": "export/progress",
+    "lastRun": "2026-06-12T09:35:13.226Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/ai-pre-stepper.png": {
+    "auto": true,
+    "scene": "ai-pre/stepper",
+    "lastRun": "2026-06-12T09:35:15.018Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/ai-pre-history-search.png": {
+    "auto": true,
+    "scene": "ai-pre/history-search",
+    "lastRun": "2026-06-12T09:35:17.232Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/ai-pre-empty-alias.png": {
+    "auto": true,
+    "scene": "ai-pre/empty-alias",
+    "lastRun": "2026-06-12T09:35:18.921Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/wizard-step4-backend.png": {
+    "auto": true,
+    "scene": "wizard/step4-backend",
+    "lastRun": "2026-06-12T09:35:20.591Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/getting-started/platform-nav-overview.png": {
+    "auto": true,
+    "scene": "platform/nav-overview",
+    "lastRun": "2026-06-12T09:35:22.319Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/getting-started/role-dashboard-overview.png": {
+    "auto": true,
+    "scene": "platform/role-dashboard-overview",
+    "lastRun": "2026-06-12T09:35:24.397Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/concepts/role-permission-matrix.png": {
+    "auto": true,
+    "scene": "platform/role-permission-matrix",
+    "lastRun": "2026-06-12T09:35:26.410Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/workflows/failed-prediction-recovery-jobs-list.png": {
+    "auto": true,
+    "scene": "workflows/failed-prediction-recovery-jobs-list",
+    "lastRun": "2026-06-12T09:35:28.436Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/workflows/project-wizard-type-select.png": {
+    "auto": true,
+    "scene": "workflows/project-wizard-type-select",
+    "lastRun": "2026-06-12T09:35:33.516Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/workflows/ai-pre-project-detail-panel.png": {
+    "auto": true,
+    "scene": "workflows/ai-pre-project-detail-panel",
+    "lastRun": "2026-06-12T09:35:35.749Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/workbench/layout-overview.png": {
+    "auto": true,
+    "scene": "workbench/layout-overview",
+    "lastRun": "2026-06-12T09:35:38.344Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/mask-brush/toolbar-overview.png": {
+    "auto": true,
+    "scene": "mask-brush/toolbar-overview",
+    "lastRun": "2026-06-12T09:35:40.744Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/sam/ai-tool-drawer.png": {
+    "auto": true,
+    "scene": "sam/ai-tool-drawer",
+    "lastRun": "2026-06-12T09:35:43.298Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/datasets/import-images-wizard.png": {
+    "auto": true,
+    "scene": "datasets/import-images-wizard",
+    "lastRun": "2026-06-12T09:35:45.554Z",
     "project": "desktop-light"
   }
 }
