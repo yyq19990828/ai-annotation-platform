@@ -63,6 +63,41 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
     capture: { kind: "locator", selector: '[data-testid="ai-tool-drawer"]', padding: 8 },
     target: "docs-site/user-guide/images/sam/ai-tool-drawer.png",
   },
-  // NOTE: sam/exemplar-output-mode 暂不自动化 —— gsam2 不支持 exemplar prompt，
-  // 工具按钮置灰无法激活。需注册支持 exemplar 的 backend 后再补 scene。
+  {
+    name: "sam/exemplar-output-mode",
+    role: "annotator",
+    // P-COCO8（= seed peek 默认项目）注册了 sam3，支持 exemplar prompt
+    route: (d) => `/projects/${d.project_id}/annotate`,
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 }).catch(() => {});
+      // 激活 exemplar 工具，AIToolDrawer 内出现「输出形态」TabRow
+      const btn = page.locator('[data-testid="tool-btn-exemplar"]');
+      if (await btn.count()) await btn.click({ timeout: 4000 }).catch(() => {});
+      await page.waitForSelector('[data-testid="exemplar-output-mode"]', { timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(200);
+    },
+    capture: { kind: "locator", selector: '[data-testid="ai-tool-drawer"]', padding: 8 },
+    annotate: [
+      { selector: '[data-testid="exemplar-output-mode"]', style: "rect-red", label: "输出形态" },
+    ],
+    target: "docs-site/user-guide/images/sam/exemplar-output-mode.png",
+  },
+  {
+    name: "sam/ai-inspector-panel",
+    role: "annotator",
+    // Topbar「打开 AI 面板」→ AIPredictionPopover（悬浮 AI 面板：置信度阈值滑块 + 单图预标）
+    route: (d) => `/projects/${d.project_id}/annotate`,
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const aiBtn = page.getByTitle("打开 AI 面板");
+      if (await aiBtn.count()) await aiBtn.first().click({ timeout: 4000 }).catch(() => {});
+      await page.waitForSelector('[data-testid="ai-prediction-popover"]', { timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(300);
+    },
+    capture: { kind: "locator", selector: '[data-testid="ai-prediction-popover"]', padding: 8 },
+    target: "docs-site/user-guide/images/sam/ai-inspector-panel.png",
+  },
 ];
