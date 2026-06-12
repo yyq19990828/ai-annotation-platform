@@ -12,6 +12,8 @@ import { PLATFORM_SCENES } from "./platform";
 import { WORKFLOW_SCENES } from "./workflows";
 import { WORKBENCH_AI_SCENES } from "./workbench-ai";
 import { DATASET_SCENES } from "./datasets";
+import { SETTINGS_SCENES } from "./settings";
+import { SUPERADMIN_SCENES } from "./superadmin";
 
 export const SCENES = [
   ...AUTH_SCENES,
@@ -26,4 +28,6 @@ export const SCENES = [
   ...WORKFLOW_SCENES,
   ...WORKBENCH_AI_SCENES,
   ...DATASET_SCENES,
+  ...SETTINGS_SCENES,
+  ...SUPERADMIN_SCENES,
 ];

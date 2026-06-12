@@ -72,14 +72,14 @@
 
 ### Superadmin / BUG 反馈管理（新增于 2026-05-29 审计）
 
-- [ ] `images/superadmin/bugs/list.png` — `/bugs` 列表全图，含状态/严重度筛选 + 重开徽标 `↻N`
-- [ ] `images/superadmin/bugs/detail-panel.png` — 详情面板：元信息行、Markdown 描述、截图附件、状态切换按钮
+- [x] `images/superadmin/bugs/list.png` — `/bugs` 列表全图，含状态/严重度筛选 + 重开徽标 `↻N`
+- [x] `images/superadmin/bugs/detail-panel.png` — 详情面板：元信息行、Markdown 描述、截图附件、状态切换按钮
 - [ ] `images/superadmin/bugs/status-transitions.png` — 状态切换按钮高亮 + 关闭后再重开的 reopen 徽标
 
 ### Superadmin / 用户与权限（新增于 2026-05-29）
 
-- [ ] `images/superadmin/users/list.png` — `/users` 卡片列表 + 顶部 4 张统计卡 + 角色徽标颜色
-- [ ] `images/superadmin/users/invite-modal.png` — 邀请用户对话框
+- [x] `images/superadmin/users/list.png` — `/users` 卡片列表 + 顶部 4 张统计卡 + 角色徽标颜色
+- [x] `images/superadmin/users/invite-modal.png` — 邀请用户对话框
 - [ ] `images/superadmin/users/edit-modal.png` — 编辑用户对话框（角色选择 + 停用按钮）
 - [ ] `images/superadmin/users/permission-matrix.png` — 权限矩阵预览（PERMISSION_GROUPS × ROLE_PERMISSIONS）
 - [ ] `images/superadmin/users/groups-tab.png` — 用户组 tab，演示组创建与成员添加
@@ -87,11 +87,11 @@
 
 ### Settings 页（新增于 2026-05-29）
 
-- [ ] `images/settings/profile.png` — 设置 / 个人资料 区
-- [ ] `images/settings/workbench-prefs.png` — 标注偏好（自动保存周期 + 颜色策略）
-- [ ] `images/settings/notification-prefs.png` — 通知偏好的 in-app / email 开关矩阵
-- [ ] `images/settings/system-smtp.png` — 系统设置 / SMTP 配置 + 发送测试邮件按钮（仅 super_admin）
-- [ ] `images/settings/my-feedback.png` — 我的反馈：用户视角看自己提交的 BUG 工单与状态
+- [x] `images/settings/profile.png` — 设置 / 个人资料 区
+- [x] `images/settings/workbench-prefs.png` — 标注偏好（自动保存周期 + 颜色策略）
+- [x] `images/settings/notification-prefs.png` — 通知偏好的 in-app / email 开关矩阵
+- [x] `images/settings/system-smtp.png` — 系统设置 / SMTP 配置 + 发送测试邮件按钮（仅 super_admin）
+- [x] `images/settings/my-feedback.png` — 我的反馈：用户视角看自己提交的 BUG 工单与状态
 
 ### Workbench 截图（待补真实截图，目前部分仅 ASCII 图）
 
@@ -103,7 +103,7 @@
 
 - [ ] `images/superadmin/ml-backend/register-form.png` — 注册 ML Backend 表单（URL/auth/capability）
 - [ ] `images/superadmin/ml-backend/health-card.png` — 实时 `/health` 卡片（GPU / video_pool meta）
-- [ ] `images/superadmin/model-market/list.png` — 模型市场 3 个 tab 全图
+- [x] `images/superadmin/model-market/list.png` — 模型市场 3 个 tab 全图
 - [ ] `images/superadmin/model-market/video-pool.png` — `_video_pool` 视频模态独立池 UI
 
 ### Dev / 协议图（新增于 2026-05-29 — 替换文字为时序图）
@@ -173,7 +173,7 @@
 - [ ] `images/projects/template-apply-banner.png` — 从模板创建 Wizard 顶部 banner [manual]
 
 ### 参考
-- [ ] `images/notifications/panel-overview.png` — 通知面板展开态（筛选 tab + 分组 + 加载更多）
+- [x] `images/notifications/panel-overview.png` — 通知面板展开态（筛选 tab + 分组 + 加载更多）
 - [ ] `images/settings/workbench-preferences.png` — 标注偏好四控件全景（CSS 滤镜输入框 + 控制点大小滑块）
 - [ ] `images/settings/system-settings.png` — super_admin 系统设置（开放注册 + 邀请有效期 + SMTP）
 
@@ -181,10 +181,10 @@
 - [ ] `images/review/review-list-page.png` — ReviewPage 左侧批次树 + 任务列表（缩略图 + 批量操作按钮）
 
 ### 平台管理
-- [ ] `images/superadmin/analytics/overview.png` — 分析页全屏（时间范围下拉 + 4 面板） [manual]
-- [ ] `images/superadmin/analytics/heatmap.png` — 7×24 工时热力图网格 [manual]
+- [x] `images/superadmin/analytics/overview.png` — 分析页全屏（时间范围下拉 + 4 面板）
+- [x] `images/superadmin/analytics/heatmap.png` — 7×24 工时热力图网格
 - [ ] `images/superadmin/audit-logs/detail-modal.png` — 详情 Modal detail_json + 时间线追溯按钮 [manual]
-- [ ] `images/superadmin/audit-logs/filter-bar.png` — 筛选栏（scope 切换 + detail 键名/键值输入框） [manual]
+- [x] `images/superadmin/audit-logs/filter-bar.png` — 筛选栏（scope 切换 + detail 键名/键值输入框）
 - [ ] `images/superadmin/failed-predictions/list.png` — /ai-pre/jobs?status=failed 列表（状态筛选 + 重试/放弃/显示已放弃 toggle） [manual]
 - [ ] `images/superadmin/failed-predictions/dismiss-restore.png` — 显示已放弃后含「已放弃」badge + 恢复按钮 [manual]
 - [ ] `images/superadmin/ml-backend/register-form.png` — 注册表单全貌含 max_concurrency/extra_params [manual]
@@ -193,7 +193,7 @@
 - [ ] `images/superadmin/model-market-runtime-card.png` — backend 卡片（GPU 显存 + 池状态 + 操作按钮） [manual]
 - [ ] `images/superadmin/public-templates/scope-selector.png` — 可见范围下拉「公共」选项 disabled（非超管视角） [manual]
 - [ ] `images/superadmin/public-templates/templates-list.png` — 模板库四 tab + scope chip + usage_count [manual]
-- [ ] `images/superadmin/system-monitoring/health-panel.png` — 4 组件卡 + Celery 队列表 + Workers 心跳表 [manual]
+- [x] `images/superadmin/system-monitoring/health-panel.png` — 4 组件卡 + Celery 队列表 + Workers 心跳表
 - [ ] `images/superadmin/system-monitoring/workers-table.png` — Workers 表（名称/Heartbeat/Pool/状态） [manual]
 
 ### 工作台
