@@ -6,7 +6,10 @@
 
 ### 部署
 
-- [部署指南](/ops/deploy/docker-compose) — Docker Compose 生产部署、环境变量、反向代理
+- [部署总览](/ops/deploy/) — 开发 / 生产分流入口，两态差异速览
+- [开发部署（本地）](/ops/deploy/development) — 基础设施进容器、API/Web 跑宿主机热更新
+- [生产部署](/ops/deploy/docker-compose) — Docker Compose 生产部署、环境变量、反向代理
+- [端口暴露与网络安全](/ops/deploy/network-security) — 端口该不该对外、Docker 绕 ufw、远程 SDK 安全访问
 - [升级指南](/ops/upgrade-guide) — 镜像 rebuild / restart、数据库迁移与版本升级检查
 
 ### 可观测性
