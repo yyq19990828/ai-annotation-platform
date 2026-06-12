@@ -28,6 +28,30 @@
   background: var(--color-bg-sunken);
 }
 
+/* 列表头部: intro 文案占主, 新建按钮靠右同行(避免文案独占一行后留怪空档) */
+.panelHeader {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.panelHeader .muted {
+  flex: 1;
+  min-width: 0;
+}
+
+.newKeyBtn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Modal 内表单: 不再需要卡片边框(Modal 自带容器), 仅竖排间距 */
+.modalForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -61,6 +85,22 @@
   gap: 8px;
   cursor: pointer;
   font-size: 12.5px;
+}
+
+.scopeDisabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.fullAccessOption {
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--color-border);
+  font-weight: 500;
+}
+
+.expiredBadge {
+  margin-left: 6px;
 }
 
 .scopeCode,
@@ -153,6 +193,21 @@
   display: flex;
   flex-wrap: nowrap;
   gap: 3px;
+}
+
+/* 列表里权限列的紧凑摘要: 一行「N 项权限」, 完整 scope 走 hover 居中浮层, 避免撑宽行 */
+.scopeSummary {
+  color: var(--color-fg-muted);
+  border-bottom: 1px dotted var(--color-border-strong);
+  cursor: help;
+  white-space: nowrap;
+}
+
+.scopeTipList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono, monospace);
 }
 
 .dateCell {

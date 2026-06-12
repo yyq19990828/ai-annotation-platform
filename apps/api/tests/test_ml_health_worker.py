@@ -125,11 +125,25 @@ def test_build_stats_snapshot_keeps_runtime_load_state():
     """PerfHud WS 帧需保留 loaded/pool 状态, 避免 idle unloaded 时误读 VRAM."""
     from app.workers.ml_health import _build_stats_snapshot
 
-    backend = MLBackend(id=uuid.uuid4(), name="sam2", url="http://example")
+    project_id = uuid.uuid4()
+    backend = MLBackend(
+        id=uuid.uuid4(), project_id=project_id, name="sam2", url="http://example"
+    )
     snap = _build_stats_snapshot(
         backend,
         ok=True,
         timestamp="2026-05-26T00:00:00+00:00",
+        physical_key="http://example",
+        url_host="example",
+        bindings=[
+            {
+                "backend_id": str(backend.id),
+                "backend_name": "sam2",
+                "project_id": str(project_id),
+                "project_display_id": "P-1",
+                "project_name": "Project One",
+            }
+        ],
         meta={
             "gpu_info": {"memory_used_mb": 448},
             "model_version": "grounded-sam2-dinoT-sam2.1tiny",
@@ -142,10 +156,61 @@ def test_build_stats_snapshot_keeps_runtime_load_state():
     )
 
     assert snap["backend_name"] == "sam2"
+    assert snap["physical_key"] == "http://example"
+    assert snap["url_host"] == "example"
+    assert snap["bindings"][0]["project_display_id"] == "P-1"
     assert snap["loaded"] is False
     assert snap["pool"]["loaded_variants"] == []
     assert snap["video_pool"]["active_sessions"] == 0
     assert snap["last_request_age_seconds"] == 2831.8
+
+
+def test_group_backend_rows_merges_same_physical_backend_by_auth_scope():
+    """PerfHud 按物理 endpoint 聚合, 但不同鉴权配置不能共用一次 health probe."""
+    from app.workers.ml_health import _group_backend_rows
+
+    project_a = uuid.uuid4()
+    project_b = uuid.uuid4()
+    project_c = uuid.uuid4()
+    backend_a = MLBackend(
+        id=uuid.uuid4(),
+        project_id=project_a,
+        name="sam-a",
+        url="http://ml.local:9000/api",
+        auth_method="token",
+        auth_token="shared",
+    )
+    backend_b = MLBackend(
+        id=uuid.uuid4(),
+        project_id=project_b,
+        name="sam-b",
+        url="http://ml.local:9000/",
+        auth_method="token",
+        auth_token="shared",
+    )
+    backend_c = MLBackend(
+        id=uuid.uuid4(),
+        project_id=project_c,
+        name="sam-c",
+        url="http://ml.local:9000/",
+        auth_method="token",
+        auth_token="other",
+    )
+
+    groups = _group_backend_rows(
+        [
+            (backend_a, "P-A", "Project A"),
+            (backend_b, "P-B", "Project B"),
+            (backend_c, "P-C", "Project C"),
+        ]
+    )
+
+    assert len(groups) == 2
+    merged = next(g for g in groups if len(g["bindings"]) == 2)
+    assert merged["physical_key"].startswith("http://ml.local:9000|auth:")
+    assert merged["url_host"] == "ml.local:9000"
+    assert [b["backend_name"] for b in merged["bindings"]] == ["sam-a", "sam-b"]
+    assert len({g["physical_key"] for g in groups}) == 2
 
 
 @pytest.mark.parametrize("jitter", [0.0])

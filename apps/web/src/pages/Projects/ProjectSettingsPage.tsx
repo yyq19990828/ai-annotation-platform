@@ -47,7 +47,7 @@ const SECTIONS: {
   { key: "batches", label: "批次管理", icon: "layers" },
   { key: "ml-backends", label: "ML 模型", icon: "bot" },
   // v0.10.10 · I17.3
-  { key: "rendering", label: "渲染配置", icon: "eye" },
+  { key: "rendering", label: "工作台规范", icon: "eye" },
   // v0.10.29 · 视频帧采样（仅 video 项目可见）
   { key: "video-sampling", label: "视频采样", icon: "target" },
   // v0.10.13 · E1
@@ -102,7 +102,11 @@ export function ProjectSettingsPage() {
   }
 
   const isVideoProject = project.data_type === "video";
-  const canOpenWorkbench = project.type_key === "image-det" || isVideoProject;
+  const isPointCloudProject =
+    project.data_type === "lidar" ||
+    project.data_type === "point_cloud" ||
+    project.type_key === "lidar";
+  const canOpenWorkbench = project.type_key === "image-det" || isVideoProject || isPointCloudProject;
   const visibleSections = SECTIONS.filter((s) => {
     if (s.key === "owner") return role === "super_admin";
     if (s.key === "danger") return isOwner;

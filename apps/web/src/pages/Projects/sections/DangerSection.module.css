@@ -1,13 +1,5 @@
 /* v0.10.12 · CSP style-src 收紧续推 — DangerSection.tsx inline style 迁移到 CSS modules. */
 
-.orphanCard {
-  background: var(--color-bg-elev);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  border-color: var(--color-warning);
-  margin-bottom: 16px;
-}
-
 .dangerCard {
   background: var(--color-bg-elev);
   border: 1px solid var(--color-border);
@@ -18,13 +10,6 @@
 .cardHeader {
   padding: 14px 16px;
   border-bottom: 1px solid var(--color-border);
-}
-
-.warningTitle {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-warning);
 }
 
 .dangerTitle {
@@ -45,28 +30,6 @@
   font-size: 13px;
   color: var(--color-fg-muted);
   line-height: 1.6;
-}
-
-.subtleText {
-  font-size: 12px;
-  color: var(--color-fg-subtle);
-}
-
-.successText {
-  font-size: 12px;
-  color: var(--color-success);
-}
-
-.orphanPreview {
-  padding: 10px;
-  font-size: 12.5px;
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-warning);
-}
-
-.warningText {
-  color: var(--color-warning);
 }
 
 .deleteIntro {
@@ -98,22 +61,4 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.cleanupBody {
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.cleanupLead {
-  margin: 0 0 8px;
-}
-
-.cleanupNote {
-  margin: 0 0 16px;
-  color: var(--color-fg-muted);
-}
-
-.dangerText {
-  color: var(--color-danger);
 }

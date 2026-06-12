@@ -63,9 +63,10 @@ export function useDragMove(opts: {
   position: FloatingPanelPoint;
   size: FloatingPanelSize;
   bounds?: FloatingPanelBounds | null;
+  onStart?: (pos: FloatingPanelPoint) => void;
   onChange: (pos: FloatingPanelPoint) => void;
 }): { handleProps: HTMLAttributes<HTMLElement>; isDragging: boolean } {
-  const { position, size, bounds, onChange } = opts;
+  const { position, size, bounds, onChange, onStart } = opts;
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -75,15 +76,19 @@ export function useDragMove(opts: {
       if (isInteractiveTarget(event.target)) return;
       const panel = event.currentTarget.closest("[data-floating-panel]");
       const rect = panel?.getBoundingClientRect();
+      const startPos = rect
+        ? clampFloatingPosition({ x: rect.left, y: rect.top }, size, bounds)
+        : position;
+      onStart?.(startPos);
       dragRef.current = {
-        dx: event.clientX - (rect?.left ?? position.x),
-        dy: event.clientY - (rect?.top ?? position.y),
+        dx: event.clientX - startPos.x,
+        dy: event.clientY - startPos.y,
       };
       event.preventDefault();
       event.currentTarget.setPointerCapture?.(event.pointerId);
       setIsDragging(true);
     },
-    [position.x, position.y],
+    [bounds, onStart, position, size],
   );
 
   useEffect(() => {

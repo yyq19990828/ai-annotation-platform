@@ -7,7 +7,7 @@ def test_workbench_layout_preferences_accept_camelcase_and_dump_aliases():
     prefs = UserPreferences.model_validate(
         {
             "workbench": {
-                "smoothImage": False,
+                "image": {"smoothImage": False},
                 "layout": {
                     "leftOpen": False,
                     "rightOpen": True,
@@ -70,7 +70,7 @@ def test_workbench_layout_preferences_accept_camelcase_and_dump_aliases():
     assert layout.tri_view_float.collapsed is True
 
     dumped = prefs.model_dump(mode="json", exclude_unset=True, by_alias=True)
-    assert dumped["workbench"]["smoothImage"] is False
+    assert dumped["workbench"]["image"]["smoothImage"] is False
     assert dumped["workbench"]["layout"]["leftOpen"] is False
     assert dumped["workbench"]["layout"]["floatingTaskQueue"]["detached"] is True
     assert dumped["workbench"]["layout"]["floatingClassPalette"]["w"] == 300
@@ -82,7 +82,7 @@ def test_workbench_layout_preferences_accept_camelcase_and_dump_aliases():
 def test_workbench_layout_preferences_keep_default_subtree():
     prefs = UserPreferences.model_validate({})
 
-    assert prefs.workbench.smoothImage is True
+    assert prefs.workbench.image.smoothImage is True
     assert prefs.workbench.layout.left_open is None
     assert prefs.workbench.layout.floating_task_queue is None
     assert prefs.workbench.layout.floating_class_palette is None
@@ -92,13 +92,13 @@ def test_workbench_layout_preferences_keep_default_subtree():
 
 def test_preferences_top_level_merge_contract_keeps_other_subtrees():
     existing = {
-        "workbench": {"smoothImage": True},
+        "workbench": {"image": {"smoothImage": True}},
         "ai": {"params_by_backend": {"sam": {"score_threshold": 0.7}}},
     }
     incoming = UserPreferences.model_validate(
         {
             "workbench": {
-                "smoothImage": False,
+                "image": {"smoothImage": False},
                 "layout": {"rightWidth": 420},
             }
         }
@@ -107,7 +107,7 @@ def test_preferences_top_level_merge_contract_keeps_other_subtrees():
     merged = {**existing, **incoming}
 
     assert merged["ai"] == existing["ai"]
-    assert merged["workbench"]["smoothImage"] is False
+    assert merged["workbench"]["image"]["smoothImage"] is False
     assert merged["workbench"]["layout"]["rightWidth"] == 420
 
 

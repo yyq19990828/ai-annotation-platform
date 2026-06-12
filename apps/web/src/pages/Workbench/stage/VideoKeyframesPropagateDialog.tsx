@@ -2,12 +2,28 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import type { VideoPropagateDirection } from "../state/videoTrackCommands";
+import { readDialogMemory, writeDialogMemory } from "../state/videoDialogMemory";
 import styles from "./VideoKeyframesPropagateDialog.module.css";
 
 const COUNT_PRESETS = [1, 5, 10, 30] as const;
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
+}
+
+function validateKeyframesMemory(value: unknown): VideoKeyframesPropagateSubmit | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Partial<VideoKeyframesPropagateSubmit>;
+  const direction =
+    raw.direction === "forward" || raw.direction === "backward"
+      ? raw.direction
+      : null;
+  const count =
+    typeof raw.count === "number" && Number.isFinite(raw.count) && raw.count > 0
+      ? Math.floor(raw.count)
+      : null;
+  if (!direction || !count || typeof raw.overwrite !== "boolean") return null;
+  return { direction, count, overwrite: raw.overwrite };
 }
 
 export interface VideoKeyframesPropagateSubmit {
@@ -19,8 +35,10 @@ export interface VideoKeyframesPropagateSubmit {
 interface VideoKeyframesPropagateDialogProps {
   open: boolean;
   frameIndex: number;
+  userId?: string | null;
   /** 采样网格步长 (源帧). >1 时 count 以网格格子为单位; 缺省 1 = 现状 (按源帧). */
   samplingStep?: number;
+  overwriteOverride?: boolean | null;
   onCancel: () => void;
   onSubmit: (payload: VideoKeyframesPropagateSubmit) => void;
 }
@@ -35,7 +53,9 @@ interface VideoKeyframesPropagateDialogProps {
 export function VideoKeyframesPropagateDialog({
   open,
   frameIndex,
+  userId,
   samplingStep = 1,
+  overwriteOverride = null,
   onCancel,
   onSubmit,
 }: VideoKeyframesPropagateDialogProps) {
@@ -45,11 +65,16 @@ export function VideoKeyframesPropagateDialog({
 
   useEffect(() => {
     if (open) {
-      setDirection("forward");
-      setCount(10);
-      setOverwrite(false);
+      const remembered = readDialogMemory(
+        userId,
+        "kfPropagate",
+        validateKeyframesMemory,
+      );
+      setDirection(remembered?.direction ?? "forward");
+      setCount(remembered?.count ?? 10);
+      setOverwrite(overwriteOverride ?? remembered?.overwrite ?? false);
     }
-  }, [open]);
+  }, [open, overwriteOverride, userId]);
 
   if (!open) return null;
 
@@ -58,10 +83,15 @@ export function VideoKeyframesPropagateDialog({
   // count 是网格格子数; 采样开启时换算成源帧跨度。
   const sourceCount = count * grid;
   const target = Math.max(0, frameIndex + dir * sourceCount);
+  const overwriteLocked = overwriteOverride !== null && overwriteOverride !== undefined;
+  const effectiveOverwrite = overwriteLocked ? overwriteOverride === true : overwrite;
 
   const handleSubmit = () => {
     if (count <= 0) return;
-    onSubmit({ direction, count: sourceCount, overwrite });
+    onSubmit({ direction, count: sourceCount, overwrite: effectiveOverwrite });
+    if (!overwriteLocked) {
+      writeDialogMemory(userId, "kfPropagate", { direction, count, overwrite });
+    }
   };
 
   return (
@@ -136,10 +166,11 @@ export function VideoKeyframesPropagateDialog({
         <label className={styles.checkboxField}>
           <input
             type="checkbox"
-            checked={overwrite}
+            checked={effectiveOverwrite}
+            disabled={overwriteLocked}
             onChange={(e) => setOverwrite(e.target.checked)}
           />
-          覆盖目标帧已有关键帧
+          {overwriteLocked ? "覆盖目标帧已有关键帧（项目锁定）" : "覆盖目标帧已有关键帧"}
         </label>
 
         <div className={styles.actions}>

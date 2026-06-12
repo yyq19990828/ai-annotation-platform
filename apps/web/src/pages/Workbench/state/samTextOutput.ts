@@ -8,7 +8,7 @@
  * "both" 不作智能默认, 仅作用户 opt-in (Tab 切活跃几何, 复杂度高).
  *
  * 用户切换写 sessionStorage `wb:sam:textOutput:{projectId}` 跨切题保留;
- * 跨 project 不串扰 (key 含 projectId).
+ * 同时写用户级 localStorage `workbench.{userId}.sam.outputMode:{projectId}` 跨会话记忆。
  */
 
 import type { TextOutputMode } from "./useInteractiveAI";
@@ -19,6 +19,10 @@ export function samOutputStorageKey(projectId: string): string {
   return `${SAM_OUTPUT_STORAGE_PREFIX}${projectId}`;
 }
 
+export function samOutputUserStorageKey(userId: string, projectId: string): string {
+  return `workbench.${userId}.sam.outputMode:${projectId}`;
+}
+
 export function defaultOutputMode(typeKey: string | undefined | null): TextOutputMode {
   if (typeKey === "image-det") return "box";
   return "mask";
@@ -26,40 +30,67 @@ export function defaultOutputMode(typeKey: string | undefined | null): TextOutpu
 
 const VALID: ReadonlySet<TextOutputMode> = new Set(["box", "mask", "both"]);
 
-export function readStoredOutputMode(projectId: string): TextOutputMode | null {
+function readMode(storage: Storage, key: string): TextOutputMode | null {
+  const raw = storage.getItem(key);
+  return raw && VALID.has(raw as TextOutputMode) ? raw as TextOutputMode : null;
+}
+
+export function readStoredOutputMode(
+  projectId: string,
+  userId?: string | null,
+): TextOutputMode | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.sessionStorage.getItem(samOutputStorageKey(projectId));
-    if (raw && VALID.has(raw as TextOutputMode)) return raw as TextOutputMode;
+    const sessionMode = readMode(window.sessionStorage, samOutputStorageKey(projectId));
+    if (sessionMode) return sessionMode;
   } catch {
     // sessionStorage 不可用 (隐私模式 / SSR) 静默回退
+  }
+  if (userId) {
+    try {
+      return readMode(window.localStorage, samOutputUserStorageKey(userId, projectId));
+    } catch {
+      // localStorage 同样 best-effort
+    }
   }
   return null;
 }
 
-export function writeStoredOutputMode(projectId: string, mode: TextOutputMode): void {
+export function writeStoredOutputMode(
+  projectId: string,
+  mode: TextOutputMode,
+  userId?: string | null,
+): void {
   if (typeof window === "undefined") return;
   try {
     window.sessionStorage.setItem(samOutputStorageKey(projectId), mode);
   } catch {
     // 同上
   }
+  if (userId) {
+    try {
+      window.localStorage.setItem(samOutputUserStorageKey(userId, projectId), mode);
+    } catch {
+      // localStorage 记忆失败不影响本会话
+    }
+  }
 }
 
 /**
  * 计算初始 outputMode: 项目级 text_output_default 优先 (v0.9.5 持久化),
- * 其次 sessionStorage (用户最近选择), 最后 type_key 智能默认.
+ * 其次 sessionStorage (本会话显式选择),再其次用户级 localStorage 记忆,最后 type_key 智能默认.
  */
 export function resolveInitialOutputMode(
   projectId: string | undefined,
   typeKey: string | undefined | null,
   projectDefault?: string | null | undefined,
+  userId?: string | null,
 ): TextOutputMode {
   if (projectDefault && VALID.has(projectDefault as TextOutputMode)) {
     return projectDefault as TextOutputMode;
   }
   if (projectId) {
-    const stored = readStoredOutputMode(projectId);
+    const stored = readStoredOutputMode(projectId, userId);
     if (stored) return stored;
   }
   return defaultOutputMode(typeKey);

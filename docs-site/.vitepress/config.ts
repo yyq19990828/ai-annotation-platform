@@ -120,6 +120,7 @@ export default withMermaid(defineConfig({
           text: "工作台 · 通用",
           items: [
             { text: "工作台概览与快捷键", link: "/user-guide/workbench/" },
+            { text: "工作台设置", link: "/user-guide/workbench/settings" },
           ],
         },
         {
@@ -319,10 +320,22 @@ export default withMermaid(defineConfig({
           ],
         },
         {
+          text: "SDK 与 CLI",
+          collapsed: true,
+          items: [
+            { text: "快速上手", link: "/dev/sdk/quickstart" },
+            { text: "Python SDK 参考", link: "/dev/sdk/python-client" },
+            { text: "CLI 参考", link: "/dev/sdk/cli" },
+            { text: "TUI 监控面板", link: "/dev/sdk/tui" },
+            { text: "Cookbook", link: "/dev/sdk/cookbook" },
+          ],
+        },
+        {
           text: "协议与规范",
           collapsed: true,
           items: [
             { text: "ML Backend 协议", link: "/dev/reference/ml-backend-protocol" },
+            { text: "ML Backend 接入教程", link: "/dev/ml-backend/starter" },
             { text: "YOLO 导入适配", link: "/dev/reference/yolo-import" },
             { text: "WebSocket 协议", link: "/dev/reference/ws-protocol" },
             { text: "视频帧服务", link: "/dev/reference/video-frame-service" },
@@ -368,7 +381,10 @@ export default withMermaid(defineConfig({
         {
           text: "部署",
           items: [
-            { text: "Docker Compose 部署", link: "/ops/deploy/docker-compose" },
+            { text: "部署总览", link: "/ops/deploy/" },
+            { text: "开发部署（本地）", link: "/ops/deploy/development" },
+            { text: "生产部署（Docker Compose）", link: "/ops/deploy/docker-compose" },
+            { text: "端口暴露与网络安全", link: "/ops/deploy/network-security" },
           ],
         },
         {

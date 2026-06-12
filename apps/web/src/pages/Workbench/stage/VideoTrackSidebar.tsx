@@ -29,6 +29,7 @@ interface VideoTrackSidebarProps {
   selectedId: string | null;
   selectedIds?: string[];
   frameIndex: number;
+  userId?: string | null;
   trackFilter?: TrackFilter;
   readOnly: boolean;
   hiddenTrackIds: Set<string>;
@@ -64,6 +65,7 @@ interface VideoTrackSidebarProps {
   onUpdateSemanticLabel?: (annotation: VideoTrackAnnotation, semanticLabel: string) => void;
   /** v0.10.35 · §A: 采样网格步长, 透传给 propagate 对话框 (>1 时 count 以网格格子为单位)。 */
   samplingStep?: number;
+  propagateOverwrite?: boolean | null;
 }
 
 interface CopiedKeyframe {
@@ -109,6 +111,7 @@ export function VideoTrackSidebar({
   selectedId,
   selectedIds = [],
   frameIndex,
+  userId,
   trackFilter = "all",
   readOnly,
   hiddenTrackIds,
@@ -136,6 +139,7 @@ export function VideoTrackSidebar({
   onPropagateKeyframe,
   onUpdateSemanticLabel,
   samplingStep,
+  propagateOverwrite,
 }: VideoTrackSidebarProps) {
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
   const selectedBboxes = useMemo(
@@ -404,6 +408,7 @@ export function VideoTrackSidebar({
       selectedTrackLocked={selectedTrackLocked}
       currentFrameOutside={trackActions.currentFrameOutside}
       frameIndex={frameIndex}
+      userId={userId}
       trackFilter={trackFilter}
       readOnly={readOnly}
       selectedBboxCount={selectedBboxes.length}
@@ -451,6 +456,7 @@ export function VideoTrackSidebar({
       onPropagateKeyframe={onPropagateKeyframe}
       onUpdateSemanticLabel={onUpdateSemanticLabel ?? updateSemanticLabel}
       samplingStep={samplingStep}
+      propagateOverwrite={propagateOverwrite}
     />
   );
 }

@@ -2,16 +2,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   authApi,
   DEFAULT_WORKBENCH_PREFERENCES,
+  type CameraPanelState,
   type FloatingPanelState,
+  type PointcloudCameraState,
   type TriViewFloatState,
+  type WorkbenchCommonPreferences,
+  type WorkbenchImagePreferences,
   type WorkbenchLayoutPreferences,
+  type WorkbenchPointcloudPreferences,
   type WorkbenchPreferences,
+  type WorkbenchVideoPreferences,
 } from "@/api/auth";
 import type { ProjectRenderingConfig } from "@/api/projects";
 import { useAuthStore } from "@/stores/authStore";
 
 // v0.10.10 · I17.3 · 项目级覆盖的字段名集合（用于 SettingsPage badge 与控件 disabled）。
-// 与 ProjectRenderingConfig 字段同集，不含 longTaskSampleRate / layout（后两者属用户层）。
+// 与 ProjectRenderingConfig 字段同集（平铺命名不变），不含 longTaskSampleRate / layout。
+// v0.15.3 · 偏好四分树后,这些字段落在用户偏好的 image.* 子树。
 export type LockableField =
   | "smoothImage"
   | "cssImageFilter"
@@ -25,20 +32,36 @@ export type WorkbenchLayoutPatch = Omit<
   | "floatingInspector"
   | "floatingDiscussion"
   | "triViewFloat"
+  | "cameraPanels"
+  | "pointcloudCamera"
 > & {
   floatingTaskQueue?: Partial<FloatingPanelState> | null;
   floatingClassPalette?: Partial<FloatingPanelState> | null;
   floatingInspector?: Partial<FloatingPanelState> | null;
   floatingDiscussion?: Partial<FloatingPanelState> | null;
   triViewFloat?: Partial<TriViewFloatState> | null;
+  // cameraPanels 是按 role 分桶的全量 Record(由调用方合并好整份传入),非逐字段 patch。
+  cameraPanels?: Record<string, CameraPanelState>;
+  pointcloudCamera?: PointcloudCameraState | null;
 };
+
+/** v0.15.3 · 子树级 patch:每个子树内字段可单独提交,layout 同 update 既有语义(整树合并)。 */
+export interface WorkbenchConfigPatch {
+  common?: Partial<WorkbenchCommonPreferences>;
+  image?: Partial<WorkbenchImagePreferences>;
+  video?: Partial<WorkbenchVideoPreferences>;
+  pointcloud?: Partial<WorkbenchPointcloudPreferences>;
+  layout?: Partial<WorkbenchLayoutPreferences>;
+}
 
 interface WorkbenchConfigState {
   config: WorkbenchPreferences;
   layout: WorkbenchLayoutPreferences;
   loaded: boolean;
   saving: boolean;
-  update: (patch: Partial<WorkbenchPreferences>) => Promise<void>;
+  update: (patch: WorkbenchConfigPatch) => Promise<void>;
+  /** v0.15.3 · 设置抽屉写路径:本地立即生效 + 300ms 防抖 PATCH(与 setLayout 同款,共用卸载 flush)。 */
+  setFields: (patch: WorkbenchConfigPatch) => void;
   setLayout: (patch: WorkbenchLayoutPatch) => void;
   /** v0.10.10 · I17.3 · 被项目级覆盖的字段名（用户级修改会立刻被合并覆盖）。 */
   lockedFields: LockableField[];
@@ -47,15 +70,43 @@ interface WorkbenchConfigState {
 const clampNum = (v: number, lo: number, hi: number): number =>
   Math.min(hi, Math.max(lo, v));
 
+// v0.15.3 · 多实例同步:抽屉与画布(ImageStage)各自挂载本 hook,任一实例改动用户配置后
+// 广播给其余实例 → 抽屉拖滑块画布实时预览。只广播内存态,不引入模块级缓存。
+type ConfigListener = (config: WorkbenchPreferences, source: object) => void;
+const configListeners = new Set<ConfigListener>();
+function broadcastConfig(config: WorkbenchPreferences, source: object): void {
+  for (const listener of configListeners) listener(config, source);
+}
+
 function mergeUser(
   remote: Partial<WorkbenchPreferences> | undefined | null,
   userId: string | null | undefined,
   options?: { preferLocalLayout?: boolean },
 ): WorkbenchPreferences {
   return {
-    ...DEFAULT_WORKBENCH_PREFERENCES,
-    ...(remote ?? {}),
+    common: { ...DEFAULT_WORKBENCH_PREFERENCES.common, ...(remote?.common ?? {}) },
+    image: { ...DEFAULT_WORKBENCH_PREFERENCES.image, ...(remote?.image ?? {}) },
+    video: { ...DEFAULT_WORKBENCH_PREFERENCES.video, ...(remote?.video ?? {}) },
+    pointcloud: {
+      ...DEFAULT_WORKBENCH_PREFERENCES.pointcloud,
+      ...(remote?.pointcloud ?? {}),
+    },
     layout: mergeLayout(remote?.layout, userId, options),
+  };
+}
+
+/** v0.15.3 · 把子树级 patch 应用到完整配置(子树内字段级合并;layout 由调用方决定合并策略)。 */
+function applyConfigPatch(
+  prev: WorkbenchPreferences,
+  patch: WorkbenchConfigPatch,
+  layout: WorkbenchLayoutPreferences,
+): WorkbenchPreferences {
+  return {
+    common: { ...prev.common, ...(patch.common ?? {}) },
+    image: { ...prev.image, ...(patch.image ?? {}) },
+    video: { ...prev.video, ...(patch.video ?? {}) },
+    pointcloud: { ...prev.pointcloud, ...(patch.pointcloud ?? {}) },
+    layout,
   };
 }
 
@@ -71,6 +122,8 @@ const LAYOUT_KEY_NAMES = [
   "floatingInspector",
   "floatingDiscussion",
   "triViewFloat",
+  "cameraPanels",
+  "pointcloudCamera",
 ] as const;
 
 type LayoutKeyName = (typeof LAYOUT_KEY_NAMES)[number];
@@ -140,6 +193,14 @@ function readLocalLayout(
       K.floatingDiscussion,
     ),
     triViewFloat: readJsonObject<TriViewFloatState>(K.triViewFloat),
+    // 整份 Record(非逐字段 patch):readJsonObject 泛型回 Partial,JSON 解析出的值实为
+    // 完整 CameraPanelState,断言回整份类型对齐 setter 语义。
+    cameraPanels: readJsonObject<Record<string, CameraPanelState>>(
+      K.cameraPanels,
+    ) as Record<string, CameraPanelState> | undefined,
+    pointcloudCamera: readJsonObject<PointcloudCameraState>(
+      K.pointcloudCamera,
+    ) as PointcloudCameraState | undefined,
   };
 }
 
@@ -198,6 +259,14 @@ function writeLocalLayout(
     window.localStorage.setItem(
       K.triViewFloat,
       JSON.stringify(layout.triViewFloat),
+    );
+    window.localStorage.setItem(
+      K.cameraPanels,
+      JSON.stringify(layout.cameraPanels),
+    );
+    window.localStorage.setItem(
+      K.pointcloudCamera,
+      JSON.stringify(layout.pointcloudCamera),
     );
   } catch {
     /* local fallback is best-effort */
@@ -268,6 +337,13 @@ function mergeLayout(
     remote?.triViewFloat,
     preferLocal,
   );
+  // cameraPanels 是整份 Record(非逐字段 patch):优先方整份覆盖,缺省回另一方再回默认空。
+  const cameraPanels = preferLocal
+    ? (local.cameraPanels ?? remote?.cameraPanels)
+    : (remote?.cameraPanels ?? local.cameraPanels);
+  const pointcloudCamera = preferLocal
+    ? (local.pointcloudCamera ?? remote?.pointcloudCamera)
+    : (remote?.pointcloudCamera ?? local.pointcloudCamera);
   return {
     leftOpen: merged.leftOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.leftOpen,
     rightOpen: merged.rightOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.rightOpen,
@@ -290,6 +366,10 @@ function mergeLayout(
       floatingDiscussion,
     ),
     triViewFloat: mergeTriViewFloat(triViewFloat),
+    cameraPanels:
+      cameraPanels ?? DEFAULT_WORKBENCH_PREFERENCES.layout.cameraPanels,
+    pointcloudCamera:
+      pointcloudCamera ?? DEFAULT_WORKBENCH_PREFERENCES.layout.pointcloudCamera,
   };
 }
 
@@ -338,6 +418,12 @@ function applyLayoutPatch(
             ...current.triViewFloat,
             ...(patch.triViewFloat ?? {}),
           }),
+    cameraPanels:
+      patch.cameraPanels === undefined ? current.cameraPanels : patch.cameraPanels,
+    pointcloudCamera:
+      patch.pointcloudCamera === undefined
+        ? current.pointcloudCamera
+        : patch.pointcloudCamera,
   };
 }
 
@@ -345,13 +431,14 @@ function applyLayoutPatch(
  * v0.10.10 · 把项目级 rendering_config 合进用户级 preferences。
  * 仅 non-null/non-undefined 字段覆盖；其余字段沿用用户级。
  * 同时返回被覆盖的字段名列表，供 UI 渲染「项目锁定」badge。
+ * v0.15.3 · ProjectRenderingConfig 保持平铺(项目侧不迁移),覆盖映射到 image.* 子树字段。
  */
 function applyProjectOverride(
   user: WorkbenchPreferences,
   project: ProjectRenderingConfig | null | undefined,
 ): { merged: WorkbenchPreferences; lockedFields: LockableField[] } {
   if (!project) return { merged: user, lockedFields: [] };
-  const merged: WorkbenchPreferences = { ...user };
+  const image = { ...user.image };
   const locked: LockableField[] = [];
   const fields: LockableField[] = [
     "smoothImage",
@@ -362,12 +449,12 @@ function applyProjectOverride(
   for (const key of fields) {
     const v = project[key];
     if (v !== null && v !== undefined) {
-      (merged[key] as WorkbenchPreferences[typeof key]) =
-        v as WorkbenchPreferences[typeof key];
+      (image[key] as WorkbenchImagePreferences[typeof key]) =
+        v as WorkbenchImagePreferences[typeof key];
       locked.push(key);
     }
   }
-  return { merged, lockedFields: locked };
+  return { merged: { ...user, image }, lockedFields: locked };
 }
 
 /**
@@ -389,10 +476,24 @@ export function useWorkbenchConfig(
   const layoutSaveTimerRef = useRef<number | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  // v0.15.3 · 多实例同步:本实例广播时携带 sourceRef 标识,收到自己发的广播不回灌。
+  const sourceRef = useRef<object>({});
 
   useEffect(() => {
     userConfigRef.current = userConfig;
   }, [userConfig]);
+
+  useEffect(() => {
+    const listener: ConfigListener = (config, source) => {
+      if (source === sourceRef.current) return;
+      userConfigRef.current = config;
+      setUserConfig(config);
+    };
+    configListeners.add(listener);
+    return () => {
+      configListeners.delete(listener);
+    };
+  }, []);
 
   useEffect(
     () => () => {
@@ -433,31 +534,62 @@ export function useWorkbenchConfig(
   }, [userId]);
 
   const update = useCallback(
-    async (patch: Partial<WorkbenchPreferences>) => {
+    async (patch: WorkbenchConfigPatch) => {
       const prev = userConfigRef.current;
-      const next = {
-        ...prev,
-        ...patch,
-        layout: patch.layout ? mergeLayout(patch.layout, userId) : prev.layout,
-      };
+      const next = applyConfigPatch(
+        prev,
+        patch,
+        patch.layout ? mergeLayout(patch.layout, userId) : prev.layout,
+      );
       userConfigRef.current = next;
       setUserConfig(next);
+      broadcastConfig(next, sourceRef.current);
       setSaving(true);
       try {
         const res = await authApi.updatePreferences({ workbench: next });
         const saved = mergeUser(res.workbench, userId);
         userConfigRef.current = saved;
         setUserConfig(saved);
+        broadcastConfig(saved, sourceRef.current);
         writeLocalLayout(saved.layout, userId);
       } catch {
         userConfigRef.current = prev;
         setUserConfig(prev);
+        broadcastConfig(prev, sourceRef.current);
       } finally {
         setSaving(false);
       }
     },
     [userId],
   );
+
+  // setLayout / setFields 共用的 300ms 防抖全量 PATCH(卸载时由上方 cleanup flush)。
+  const scheduleDebouncedSave = useCallback(() => {
+    if (layoutSaveTimerRef.current !== null) {
+      window.clearTimeout(layoutSaveTimerRef.current);
+    }
+    if (!userId) return;
+
+    layoutSaveTimerRef.current = window.setTimeout(() => {
+      // 已触发，标记为「无待写」，卸载时不再冗余 flush(见上方 cleanup)。
+      layoutSaveTimerRef.current = null;
+      const payload = userConfigRef.current;
+      setSaving(true);
+      authApi
+        .updatePreferences({ workbench: payload })
+        .then((res) => {
+          const saved = mergeUser(res.workbench, userId);
+          userConfigRef.current = saved;
+          setUserConfig(saved);
+          broadcastConfig(saved, sourceRef.current);
+          writeLocalLayout(saved.layout, userId);
+        })
+        .catch((err) => {
+          console.warn("Failed to persist workbench preferences", err);
+        })
+        .finally(() => setSaving(false));
+    }, 300);
+  }, [userId]);
 
   const setLayout = useCallback(
     (patch: WorkbenchLayoutPatch) => {
@@ -468,33 +600,28 @@ export function useWorkbenchConfig(
       };
       userConfigRef.current = next;
       setUserConfig(next);
+      broadcastConfig(next, sourceRef.current);
       writeLocalLayout(next.layout, userId);
-
-      if (layoutSaveTimerRef.current !== null) {
-        window.clearTimeout(layoutSaveTimerRef.current);
-      }
-      if (!userId) return;
-
-      layoutSaveTimerRef.current = window.setTimeout(() => {
-        // 已触发，标记为「无待写」，卸载时不再冗余 flush(见上方 cleanup)。
-        layoutSaveTimerRef.current = null;
-        const payload = userConfigRef.current;
-        setSaving(true);
-        authApi
-          .updatePreferences({ workbench: payload })
-          .then((res) => {
-            const saved = mergeUser(res.workbench, userId);
-            userConfigRef.current = saved;
-            setUserConfig(saved);
-            writeLocalLayout(saved.layout, userId);
-          })
-          .catch((err) => {
-            console.warn("Failed to persist workbench layout preferences", err);
-          })
-          .finally(() => setSaving(false));
-      }, 300);
+      scheduleDebouncedSave();
     },
-    [userId],
+    [userId, scheduleDebouncedSave],
+  );
+
+  // v0.15.3 · 设置抽屉写路径:本地立即生效(画布实时预览)+ 防抖 PATCH。
+  const setFields = useCallback(
+    (patch: WorkbenchConfigPatch) => {
+      const prev = userConfigRef.current;
+      const next = applyConfigPatch(
+        prev,
+        patch,
+        patch.layout ? applyLayoutPatch(prev.layout, patch.layout) : prev.layout,
+      );
+      userConfigRef.current = next;
+      setUserConfig(next);
+      broadcastConfig(next, sourceRef.current);
+      scheduleDebouncedSave();
+    },
+    [scheduleDebouncedSave],
   );
 
   const { merged, lockedFields } = useMemo(
@@ -508,6 +635,7 @@ export function useWorkbenchConfig(
     loaded,
     saving,
     update,
+    setFields,
     setLayout,
     lockedFields,
   };

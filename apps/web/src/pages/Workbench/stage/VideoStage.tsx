@@ -8,13 +8,14 @@ import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoMani
 import { useQuery } from "@tanstack/react-query";
 import { videoApi } from "@/api/videos";
 import type { AnnotationFeedback } from "@/api/feedbacks";
+import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { PendingDrawing, VideoTool } from "../state/useWorkbenchState";
 import { useElementSize, useViewportTransform } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
 import { Minimap } from "./Minimap";
 import { VideoFrameOverlay } from "./VideoFrameOverlay";
 import { VideoMediaLayer } from "./VideoMediaLayer";
-import { VideoPlaybackOverlay, type VideoTimelineChapter } from "./VideoPlaybackOverlay";
+import { VideoPlaybackOverlay, type VideoLargeFrameStep, type VideoTimelineChapter } from "./VideoPlaybackOverlay";
 import { VideoQcWarnings } from "./VideoQcWarnings";
 import { VideoSelectionActions } from "./VideoSelectionActions";
 import { VideoStageSurface } from "./VideoStageSurface";
@@ -29,6 +30,7 @@ import { buildEncodedVideoChunks } from "./videoChunkDemux";
 import { useVideoFramePreview } from "./useVideoFramePreview";
 import { useVideoTrackActions } from "./useVideoTrackActions";
 import { useCanvasContextMenu } from "./useCanvasContextMenu";
+import { resolveWorkbenchPerformanceTier } from "../state/performanceTier";
 import {
   emptyVideoJumpHistory,
   jumpVideoHistory,
@@ -82,12 +84,16 @@ import styles from "./VideoStage.module.css";
 
 const EMPTY_TRACK_ID_SET = new Set<string>();
 const VIDEO_PLAYBACK_RATES = [0.25, 0.5, 1, 2, 4] as const;
+const DEFAULT_VIDEO_PLAYBACK_RATE: VideoPlaybackRate = 1;
 const CONTEXT_MENU_DRAG_THRESHOLD_PX = 5;
 
 type VideoPlaybackRate = typeof VIDEO_PLAYBACK_RATES[number];
 type VideoJogPlayback = { direction: -1 | 0 | 1; rate: VideoPlaybackRate };
 
-const PAUSED_JOG_PLAYBACK: VideoJogPlayback = { direction: 0, rate: 1 };
+const DEFAULT_PAUSED_JOG_PLAYBACK: VideoJogPlayback = {
+  direction: 0,
+  rate: DEFAULT_VIDEO_PLAYBACK_RATE,
+};
 
 function nextHigherPlaybackRate(rate: VideoPlaybackRate): VideoPlaybackRate {
   const idx = VIDEO_PLAYBACK_RATES.indexOf(rate);
@@ -134,6 +140,11 @@ interface VideoStageProps {
   chapters?: VideoTimelineChapter[];
   /** v0.10.29 · 项目级采样配置 (软网格导航)。缺省 / mode=none → step=1 退化为现状。 */
   videoSampling?: VideoSamplingConfig | null;
+  /** v0.15.5 · 打开视频任务 / 暂停复位时使用的默认播放速率。 */
+  defaultPlaybackRate?: VideoPlaybackRate;
+  /** v0.15.5 · 时间轴聚焦时 Shift+←/→ 的大步进策略。 */
+  largeFrameStep?: VideoLargeFrameStep;
+  performanceTier?: WorkbenchCommonPreferences["performanceTier"];
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onFrameIndexChange?: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: VideoStageGeom) => void;
@@ -201,6 +212,9 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   pendingDrawing = null,
   chapters = [],
   videoSampling = null,
+  defaultPlaybackRate = DEFAULT_VIDEO_PLAYBACK_RATE,
+  largeFrameStep = 10,
+  performanceTier = "standard",
   onSelect,
   onFrameIndexChange,
   onCreate,
@@ -218,6 +232,12 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   issueHighlightId,
   onIssuePinClick,
 }: VideoStageProps, ref) {
+  const pausedJogPlayback = useMemo<VideoJogPlayback>(
+    () => ({ direction: 0, rate: defaultPlaybackRate }),
+    [defaultPlaybackRate],
+  );
+  const pausedJogPlaybackRef = useRef<VideoJogPlayback>(pausedJogPlayback);
+  pausedJogPlaybackRef.current = pausedJogPlayback;
   const containerRef = useRef<HTMLDivElement>(null);
   const stageLayerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -231,7 +251,9 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   }, []);
   const [uncontrolledFrameIndex, setUncontrolledFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [jogPlayback, setJogPlayback] = useState<VideoJogPlayback>(PAUSED_JOG_PLAYBACK);
+  const [jogPlayback, setJogPlayback] = useState<VideoJogPlayback>(
+    () => pausedJogPlayback,
+  );
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [drag, setDrag] = useState<VideoDragState>(null);
   const [playbackOverlayVisible, setPlaybackOverlayVisible] = useState(true);
@@ -241,6 +263,10 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const [jumpHistory, setJumpHistory] = useState<VideoJumpHistory>(() => emptyVideoJumpHistory());
   const contextMenu = useCanvasContextMenu();
   const [contextMenuTargetId, setContextMenuTargetId] = useState<string | null>(null);
+  const performanceConfig = useMemo(
+    () => resolveWorkbenchPerformanceTier(performanceTier),
+    [performanceTier],
+  );
   const onSelectRef = useRef(onSelect);
   const lastResetTaskIdRef = useRef<string | null>(null);
   const fittedTaskIdRef = useRef<string | null>(null);
@@ -248,7 +274,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const overlayHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const frameIndexRef = useRef(0);
-  const jogPlaybackRef = useRef<VideoJogPlayback>(PAUSED_JOG_PLAYBACK);
+  const jogPlaybackRef = useRef<VideoJogPlayback>(DEFAULT_PAUSED_JOG_PLAYBACK);
   const selectedTrackRef = useRef<VideoTrackAnnotation | null>(null);
   const rightDownRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -266,6 +292,14 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   jogPlaybackRef.current = jogPlayback;
   const isJogPlaying = jogPlayback.direction !== 0;
   const isPlaybackActive = isPlaying || isJogPlaying;
+  useEffect(() => {
+    if (jogPlaybackRef.current.direction === 0) {
+      setJogPlayback(pausedJogPlayback);
+    }
+    if (!isPlaybackActive && videoRef.current) {
+      videoRef.current.playbackRate = defaultPlaybackRate;
+    }
+  }, [defaultPlaybackRate, isPlaybackActive, pausedJogPlayback]);
   const setFrameIndex = useCallback((nextFrame: number) => {
     frameIndexRef.current = nextFrame;
     if (controlledFrameIndex === undefined) setUncontrolledFrameIndex(nextFrame);
@@ -439,6 +473,9 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     enabled: Boolean(manifest),
     width: 320,
     format: "webp",
+    maxCacheItems: performanceConfig.previewCache,
+    scrubPrefetchHalfWindow: performanceConfig.prefetchHalfWindow,
+    anchorPrefetchCount: performanceConfig.anchorPrefetch,
   });
   const {
     activeBitmap,
@@ -448,11 +485,15 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     diagnostics: bitmapCacheDiagnostics,
   } = useVideoBitmapCache({
     taskId: manifest?.task_id,
+    maxItems: performanceConfig.videoBitmapCache,
   });
   // v0.10.29 · Wave3-H · 实验性 WebCodecs 精确帧解码 (默认关闭, 由 ?webcodecs=1 /
   // localStorage video.experimental.webcodecs 开启)。关闭 / 不支持时 active=false,
   // decoderBitmap 恒为 null, 本路径零行为变化, 继续走 <video> 位图缓存。
-  const chunkDecoder = useVideoChunkDecoder({ taskId: manifest?.task_id });
+  const chunkDecoder = useVideoChunkDecoder({
+    taskId: manifest?.task_id,
+    maxItems: performanceConfig.videoDecoderCache,
+  });
   const { activeBitmap: decoderBitmap, diagnostics: chunkDecoderDiagnostics } = chunkDecoder;
 
   // v0.10.46 · WebCodecs demux 集成: frameIndex → chunk → samples → 字节切割 → 解码。
@@ -550,7 +591,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const handleFrameClockChange = useCallback((nextFrame: number) => {
     if (!stageModeGuard.canSetupFrame) {
       videoRef.current?.pause();
-      setJogPlayback(PAUSED_JOG_PLAYBACK);
+      setJogPlayback(pausedJogPlaybackRef.current);
       return;
     }
     if (isPlaybackActive && loopRegion && nextFrame > loopRegion.endFrame) {
@@ -590,10 +631,10 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     const video = videoRef.current;
     if (video) {
       video.pause();
-      video.playbackRate = 1;
+      video.playbackRate = defaultPlaybackRate;
     }
     setIsPlaying(false);
-    setJogPlayback(PAUSED_JOG_PLAYBACK);
+    setJogPlayback(pausedJogPlaybackRef.current);
     // v0.10.29 · 暂停吸附：采样开启 (step>1) 时把当前帧吸附到最近网格点并 seek 过去；
     //            step=1 时网格点 = 所有源帧，吸附为 no-op，行为不变 (向后兼容)。
     const step = samplingStepRef.current;
@@ -603,7 +644,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         void seekFrameAsyncRef.current(snapped, { recordHistory: false });
       }
     }
-  }, [maxFrame]);
+  }, [defaultPlaybackRate, maxFrame]);
 
   const seekFrameAsync = useCallback(
     async (nextFrame: number, options?: { recordHistory?: boolean }) => {
@@ -654,8 +695,8 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       void seekFrameAsync(loopRegion.startFrame, { recordHistory: true });
     }
     setPlaybackError(null);
-    setJogPlayback(PAUSED_JOG_PLAYBACK);
-    video.playbackRate = 1;
+    setJogPlayback(pausedJogPlaybackRef.current);
+    video.playbackRate = defaultPlaybackRate;
     setIsPlaying(true);
     const playResult = video.play();
     if (playResult && typeof playResult.catch === "function") {
@@ -664,7 +705,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         setPlaybackError(err instanceof Error ? err.message : "视频无法播放");
       });
     }
-  }, [flashPlaybackAction, frameIndex, isPlaybackActive, loopRegion, pausePlayback, seekFrameAsync, showPlaybackOverlay]);
+  }, [defaultPlaybackRate, flashPlaybackAction, frameIndex, isPlaybackActive, loopRegion, pausePlayback, seekFrameAsync, showPlaybackOverlay]);
 
   const jogPlaybackBy = useCallback((dir: -1 | 1) => {
     showPlaybackOverlay();
@@ -672,12 +713,12 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     setPlaybackError(null);
     const current = jogPlaybackRef.current;
     const next = current.direction === 0
-      ? { direction: dir, rate: 1 as VideoPlaybackRate }
+      ? { direction: dir, rate: pausedJogPlaybackRef.current.rate }
       : current.direction === dir
         ? { direction: dir, rate: nextHigherPlaybackRate(current.rate) }
         : (() => {
           const lower = nextLowerPlaybackRate(current.rate);
-          return lower ? { ...current, rate: lower } : PAUSED_JOG_PLAYBACK;
+          return lower ? { ...current, rate: lower } : pausedJogPlaybackRef.current;
         })();
     if (next.direction === 0) {
       pausePlayback();
@@ -800,7 +841,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     if (playResult && typeof playResult.catch === "function") {
       void playResult.catch((err: unknown) => {
         setIsPlaying(false);
-        setJogPlayback(PAUSED_JOG_PLAYBACK);
+        setJogPlayback(pausedJogPlaybackRef.current);
         setPlaybackError(err instanceof Error ? err.message : "视频无法播放");
       });
     }
@@ -811,7 +852,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     const video = videoRef.current;
     if (video) {
       video.pause();
-      video.playbackRate = 1;
+      video.playbackRate = defaultPlaybackRate;
     }
     setIsPlaying(false);
     let raf = 0;
@@ -840,7 +881,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
           if (nextFrame < loopRegion.startFrame) nextFrame = loopRegion.endFrame;
         } else if (nextFrame < 0) {
           nextFrame = 0;
-          setJogPlayback(PAUSED_JOG_PLAYBACK);
+          setJogPlayback(pausedJogPlaybackRef.current);
         }
         seeking = true;
         void Promise.resolve(seekFrameAsyncRef.current(nextFrame, { recordHistory: false })).finally(() => {
@@ -855,7 +896,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       cancelled = true;
       cancel(raf);
     };
-  }, [fps, jogPlayback.direction, jogPlayback.rate, loopRegion]);
+  }, [defaultPlaybackRate, fps, jogPlayback.direction, jogPlayback.rate, loopRegion]);
 
   useImperativeHandle(
     ref,
@@ -905,7 +946,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     lastResetTaskIdRef.current = taskId;
     setFrameIndex(0);
     setIsPlaying(false);
-    setJogPlayback(PAUSED_JOG_PLAYBACK);
+    setJogPlayback(pausedJogPlaybackRef.current);
     setPlaybackError(null);
     setDrag(null);
     setPlaybackOverlayVisible(true);
@@ -1069,11 +1110,11 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     const onPause = () => setIsPlaying(false);
     const onEnded = () => {
       setIsPlaying(false);
-      setJogPlayback(PAUSED_JOG_PLAYBACK);
+      setJogPlayback(pausedJogPlaybackRef.current);
     };
     const onError = () => {
       setIsPlaying(false);
-      setJogPlayback(PAUSED_JOG_PLAYBACK);
+      setJogPlayback(pausedJogPlaybackRef.current);
       setPlaybackError(video.error?.message || "当前浏览器无法播放该视频源");
     };
     video.addEventListener("play", onPlay);
@@ -1761,6 +1802,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             frameIndex={frameIndex}
             maxFrame={maxFrame}
             samplingStep={samplingStep}
+            largeFrameStep={largeFrameStep}
             timebase={timebase}
             isPlaying={isPlaybackActive}
             playbackRateLabel={isJogPlaying ? `${jogPlayback.direction < 0 ? "-" : ""}${jogPlayback.rate}x` : undefined}

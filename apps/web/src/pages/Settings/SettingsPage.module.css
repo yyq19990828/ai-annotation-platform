@@ -55,6 +55,12 @@
   font-weight: 600;
 }
 
+/* grid 1fr 列默认 min-width:auto，会被内部宽表格(API 密钥)的 min-width 撑超页宽。
+   置 0 让该列回到可用宽度，超宽表格由内部 overflow-x 滚动，保持与其它分区对齐。 */
+.content {
+  min-width: 0;
+}
+
 .sectionStack {
   display: flex;
   flex-direction: column;

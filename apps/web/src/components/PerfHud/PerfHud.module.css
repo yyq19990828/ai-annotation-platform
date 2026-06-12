@@ -114,28 +114,64 @@
 }
 
 .backendSelect {
-  color: inherit;
+  min-width: 132px;
+  max-width: 176px;
+  height: 24px;
+  padding: 0 24px 0 7px;
+  overflow: hidden;
+  color: var(--color-fg);
   font-size: 11px;
-  background: transparent;
+  text-overflow: ellipsis;
+  background: var(--color-bg-sunken);
   border: 1px solid var(--color-border);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
+  color-scheme: light dark;
+  cursor: pointer;
+}
+
+.backendSelect:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-hover);
+}
+
+.backendSelect:focus-visible {
+  border-color: var(--color-accent);
+  outline: 2px solid var(--color-accent-soft);
+  outline-offset: 1px;
+}
+
+.backendSelect option {
+  color: var(--color-fg);
+  background: var(--color-bg-elev);
 }
 
 .iconButton,
 .closeButton {
-  padding: 0 4px;
-  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--color-fg-muted);
   cursor: pointer;
-  background: transparent;
-  border: none;
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
 }
 
-.iconButton {
-  font-size: 12px;
+.iconButton:hover,
+.closeButton:hover {
+  color: var(--color-accent);
+  background: var(--color-bg-hover);
+  border-color: var(--color-accent);
 }
 
-.closeButton {
-  font-size: 14px;
+.iconButton:focus-visible,
+.closeButton:focus-visible {
+  border-color: var(--color-accent);
+  outline: 2px solid var(--color-accent-soft);
+  outline-offset: 1px;
 }
 
 .body {

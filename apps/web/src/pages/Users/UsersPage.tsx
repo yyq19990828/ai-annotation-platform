@@ -21,7 +21,6 @@ import { InviteUserModal } from "@/components/users/InviteUserModal";
 import { EditUserModal } from "@/components/users/EditUserModal";
 import { GroupManageModal } from "@/components/users/GroupManageModal";
 import { InvitationListPanel } from "@/components/users/InvitationListPanel";
-import { ApiKeysModal } from "@/components/users/ApiKeysModal";
 import { usersApi, type UserResponse } from "@/api/users";
 import { ApiError } from "@/api/client";
 import type { UserRole } from "@/types";
@@ -78,7 +77,6 @@ export function UsersPage() {
   } | null>(null);
   const [transferToId, setTransferToId] = useState<string>("");
   const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
-  const [apiKeysOpen, setApiKeysOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const pushToast = useToastStore((s) => s.push);
   const deleteUser = useDeleteUser();
@@ -133,9 +131,6 @@ export function UsersPage() {
           <p className={styles.subtitle}>管理团队成员、角色权限与数据组分配</p>
         </div>
         <div className={styles.headerActions}>
-          <Button onClick={() => setApiKeysOpen(true)} title="管理我的 API 密钥（用于 CI / 脚本访问）">
-            <Icon name="key" size={13} />API 密钥
-          </Button>
           <Can permission="user.export">
             <Button onClick={handleExport} disabled={exporting}>
               <Icon name="download" size={13} />{exporting ? "导出中…" : "导出名单"}
@@ -382,7 +377,6 @@ export function UsersPage() {
       <InviteUserModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
       <EditUserModal open={!!editing} user={editing} onClose={() => setEditing(null)} />
       <GroupManageModal open={manageGroupsOpen} onClose={() => setManageGroupsOpen(false)} />
-      <ApiKeysModal open={apiKeysOpen} onClose={() => setApiKeysOpen(false)} />
 
       <Modal
         open={!!resettingPwd}

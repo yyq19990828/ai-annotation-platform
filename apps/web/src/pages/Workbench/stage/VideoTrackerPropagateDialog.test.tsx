@@ -1,7 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { VideoTrackerPropagateDialog } from "./VideoTrackerPropagateDialog";
+import {
+  resolveTrackerDefaultModel,
+  VideoTrackerPropagateDialog,
+} from "./VideoTrackerPropagateDialog";
+import { videoDialogMemoryStorageKey } from "../state/videoDialogMemory";
 
 const baseProps = {
   open: true as const,
@@ -12,6 +16,29 @@ const baseProps = {
 };
 
 describe("VideoTrackerPropagateDialog", () => {
+  it("按 项目默认 > 用户记忆 > 首个真实模型 > mock 解析默认模型", () => {
+    expect(resolveTrackerDefaultModel({
+      projectDefaultModel: "sam3_video",
+      rememberedModel: "sam2_video",
+      preferNonMockModel: true,
+    })).toBe("sam3_video");
+    expect(resolveTrackerDefaultModel({
+      projectDefaultModel: "missing",
+      rememberedModel: "sam2_video",
+      preferNonMockModel: true,
+    })).toBe("sam2_video");
+    expect(resolveTrackerDefaultModel({
+      projectDefaultModel: null,
+      rememberedModel: null,
+      preferNonMockModel: true,
+    })).toBe("sam2_video");
+    expect(resolveTrackerDefaultModel({
+      projectDefaultModel: null,
+      rememberedModel: null,
+      preferNonMockModel: false,
+    })).toBe("mock_bbox");
+  });
+
   it("closed 时不渲染", () => {
     render(
       <VideoTrackerPropagateDialog {...baseProps} open={false} frameIndex={5} onSubmit={vi.fn()} />,
@@ -67,5 +94,113 @@ describe("VideoTrackerPropagateDialog", () => {
     );
     expect(screen.getByText("到结尾")).toBeTruthy();
     expect(screen.getByText("到下一关键帧")).toBeTruthy();
+  });
+
+  it("提交成功后记住范围 / 方向 / 模型 / 变体,重开作为初值", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={80}
+        userId="u1"
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "60" } });
+    fireEvent.click(screen.getByText("向前"));
+    fireEvent.change(screen.getAllByRole("combobox")[1], {
+      target: { value: "sam2_video" },
+    });
+    fireEvent.change(screen.getAllByRole("combobox")[2], {
+      target: { value: "large" },
+    });
+    fireEvent.click(screen.getByText("发起传播"));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from_frame: 20,
+        to_frame: 80,
+        direction: "backward",
+        model_key: "sam2_video",
+        sam_variant: "large",
+      }),
+    );
+    await waitFor(() =>
+      expect(window.localStorage.getItem(videoDialogMemoryStorageKey("u1", "trackerPropagate")))
+        .toContain("sam2_video"),
+    );
+
+    rerender(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        open={false}
+        frameIndex={80}
+        userId="u1"
+        onSubmit={onSubmit}
+      />,
+    );
+    rerender(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={80}
+        userId="u1"
+        onSubmit={onSubmit}
+      />,
+    );
+
+    expect(screen.getByText("F20 → F80")).toBeTruthy();
+    expect((screen.getAllByRole("combobox")[1] as HTMLSelectElement).value).toBe("sam2_video");
+    expect((screen.getAllByRole("combobox")[2] as HTMLSelectElement).value).toBe("large");
+  });
+
+  it("项目默认模型优先于用户记忆作为打开时初值", async () => {
+    window.localStorage.setItem(
+      videoDialogMemoryStorageKey("u1", "trackerPropagate"),
+      JSON.stringify({
+        rangePreset: "30",
+        direction: "forward",
+        modelKey: "mock_bbox",
+        samVariant: "",
+      }),
+    );
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={80}
+        userId="u1"
+        projectDefaultModel="sam3_video"
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect((screen.getAllByRole("combobox")[1] as HTMLSelectElement).value).toBe("sam3_video");
+  });
+
+
+  it("取消不写记忆,且非法模型 / 变体安全回退", () => {
+    const key = videoDialogMemoryStorageKey("u1", "trackerPropagate");
+    const remembered = {
+      rangePreset: "60",
+      direction: "bidirectional",
+      modelKey: "missing-model",
+      samVariant: "huge",
+    };
+    window.localStorage.setItem(key, JSON.stringify(remembered));
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={80}
+        userId="u1"
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("F20 → F140")).toBeTruthy();
+    expect((screen.getAllByRole("combobox")[1] as HTMLSelectElement).value).toBe("mock_bbox");
+    fireEvent.click(screen.getByText("向前"));
+    fireEvent.click(screen.getByTestId("video-tracker-propagate-dialog"));
+
+    expect(window.localStorage.getItem(key)).toBe(JSON.stringify(remembered));
   });
 });

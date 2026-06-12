@@ -38,6 +38,7 @@ from app.deps import (
     get_db,
     require_project_owner,
     require_roles,
+    require_scopes,
 )
 from app.schemas.aap_json import AAPImportResult
 from app.schemas.annotation import (
@@ -112,6 +113,7 @@ async def _load_single_task_for_ids(
 @router.post(
     "/annotations/bulk-update",
     response_model=AnnotationBulkUpdateResponse,
+    dependencies=[Depends(require_scopes("annotations:write"))],
 )
 async def bulk_update_annotations(
     payload: AnnotationBulkUpdateRequest,
@@ -165,6 +167,7 @@ async def bulk_update_annotations(
 @router.post(
     "/annotations/group",
     response_model=AnnotationGroupResponse,
+    dependencies=[Depends(require_scopes("annotations:write"))],
 )
 async def group_annotations(
     payload: AnnotationGroupRequest,
@@ -207,6 +210,7 @@ async def group_annotations(
 @router.post(
     "/annotations/ungroup",
     response_model=AnnotationUngroupResponse,
+    dependencies=[Depends(require_scopes("annotations:write"))],
 )
 async def ungroup_annotations(
     payload: AnnotationUngroupRequest,
@@ -247,6 +251,7 @@ async def ungroup_annotations(
 @router.post(
     "/projects/{project_id}/annotations/import",
     response_model=AAPImportResult,
+    dependencies=[Depends(require_scopes("annotations:write"))],
 )
 async def import_annotations(
     request: Request,

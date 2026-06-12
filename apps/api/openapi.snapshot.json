@@ -2166,6 +2166,19 @@
       },
       "ApiKeyCreate": {
         "properties": {
+          "expires_in_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In Days"
+          },
           "name": {
             "maxLength": 60,
             "minLength": 1,
@@ -2193,6 +2206,18 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
           },
           "id": {
             "format": "uuid",
@@ -2248,6 +2273,7 @@
           "name",
           "key_prefix",
           "scopes",
+          "expires_at",
           "last_used_at",
           "revoked_at",
           "created_at",
@@ -2263,6 +2289,18 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
           },
           "id": {
             "format": "uuid",
@@ -2314,11 +2352,59 @@
           "name",
           "key_prefix",
           "scopes",
+          "expires_at",
           "last_used_at",
           "revoked_at",
           "created_at"
         ],
         "title": "ApiKeyOut",
+        "type": "object"
+      },
+      "ApiKeyUpdate": {
+        "description": "PATCH 部分更新。仅提交的字段生效（靠 model_fields_set 判定）。\n\nexpires_in_days 显式传 null = 改回永不过期；不传 = 不动有效期。",
+        "properties": {
+          "expires_in_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In Days"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "scopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopes"
+          }
+        },
+        "title": "ApiKeyUpdate",
         "type": "object"
       },
       "AsyncJobListResponse": {
@@ -5309,6 +5395,41 @@
           }
         },
         "title": "CacheStats",
+        "type": "object"
+      },
+      "CameraPanelState": {
+        "additionalProperties": false,
+        "description": "v0.15.x · 3D 悬浮相机面板的位置 + 折叠态。按相机 role 分桶存。\n\n位置像素由前端按视图计算后落库;无该 role 键 = 用默认贴边位置 + 自动折叠态。",
+        "properties": {
+          "collapsed": {
+            "default": false,
+            "title": "Collapsed",
+            "type": "boolean"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          }
+        },
+        "title": "CameraPanelState",
         "type": "object"
       },
       "CanvasDrawing": {
@@ -9621,6 +9742,79 @@
         "title": "PointMaskGeometry",
         "type": "object"
       },
+      "PointcloudCameraState": {
+        "additionalProperties": false,
+        "description": "v0.15.x · 点云主视角快照。由前端 OrbitControls 写入/恢复。",
+        "properties": {
+          "mode": {
+            "default": "orbit",
+            "enum": [
+              "orbit",
+              "bev"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "position": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Position",
+            "type": "array"
+          },
+          "target": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Target",
+            "type": "array"
+          },
+          "up": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Up",
+            "type": "array"
+          }
+        },
+        "required": [
+          "position",
+          "target",
+          "up"
+        ],
+        "title": "PointcloudCameraState",
+        "type": "object"
+      },
       "PolygonGeometry": {
         "additionalProperties": false,
         "description": "单连通域 polygon。\n\nv0.9.14 · holes 字段新增, 默认 [] 向后兼容。老存量 / 老前端写入仍走 type=polygon\n+ 仅 points 路径; 新 prediction 在有 hole 时把 hole 顶点列表填进 holes, 多连通域\n走 MultiPolygonGeometry 分支。",
@@ -11285,6 +11479,30 @@
       "ProjectRenderingConfig": {
         "additionalProperties": false,
         "properties": {
+          "box3dDefaultSize": {
+            "anyOf": [
+              {
+                "maxItems": 3,
+                "minItems": 3,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Box3Ddefaultsize"
+          },
           "controlPointsSize": {
             "anyOf": [
               {
@@ -11310,6 +11528,17 @@
             ],
             "title": "Cssimagefilter"
           },
+          "propagateOverwrite": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Propagateoverwrite"
+          },
           "smoothImage": {
             "anyOf": [
               {
@@ -11331,6 +11560,18 @@
               }
             ],
             "title": "Snaptogrid"
+          },
+          "trackerDefaultModel": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trackerdefaultmodel"
           }
         },
         "title": "ProjectRenderingConfig",
@@ -18479,10 +18720,153 @@
         "title": "VisibleIfRule",
         "type": "object"
       },
+      "WorkbenchCommonPreferences": {
+        "additionalProperties": false,
+        "description": "v0.15.3 · 跨模态通用偏好（性能观测等）。",
+        "properties": {
+          "confirmDelete": {
+            "default": "never",
+            "enum": [
+              "never",
+              "multi_only",
+              "always"
+            ],
+            "title": "Confirmdelete",
+            "type": "string"
+          },
+          "crossFrameOverlayK": {
+            "default": 0,
+            "enum": [
+              0,
+              1,
+              3,
+              5,
+              7
+            ],
+            "title": "Crossframeoverlayk",
+            "type": "integer"
+          },
+          "longTaskSampleRate": {
+            "default": 0.05,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Longtasksamplerate",
+            "type": "number"
+          },
+          "performanceTier": {
+            "default": "standard",
+            "enum": [
+              "light",
+              "standard",
+              "aggressive"
+            ],
+            "title": "Performancetier",
+            "type": "string"
+          },
+          "recentClassesLimit": {
+            "default": 5,
+            "maximum": 20.0,
+            "minimum": 3.0,
+            "title": "Recentclasseslimit",
+            "type": "integer"
+          }
+        },
+        "title": "WorkbenchCommonPreferences",
+        "type": "object"
+      },
+      "WorkbenchImagePreferences": {
+        "additionalProperties": false,
+        "description": "v0.15.3 · 图像模态偏好（2D 画布渲染 / 顶点手柄）。",
+        "properties": {
+          "afterBoxCreate": {
+            "default": "pick_class",
+            "enum": [
+              "pick_class",
+              "reuse_active"
+            ],
+            "title": "Afterboxcreate",
+            "type": "string"
+          },
+          "autoFitOnResize": {
+            "default": true,
+            "title": "Autofitonresize",
+            "type": "boolean"
+          },
+          "controlPointsSize": {
+            "default": 6,
+            "maximum": 20.0,
+            "minimum": 2.0,
+            "title": "Controlpointssize",
+            "type": "integer"
+          },
+          "cssImageFilter": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Cssimagefilter",
+            "type": "string"
+          },
+          "fadedOpacity": {
+            "default": 0.35,
+            "maximum": 0.8,
+            "minimum": 0.1,
+            "title": "Fadedopacity",
+            "type": "number"
+          },
+          "maskOverlayOpacity": {
+            "default": 0.45,
+            "maximum": 0.8,
+            "minimum": 0.2,
+            "title": "Maskoverlayopacity",
+            "type": "number"
+          },
+          "showBoxLabels": {
+            "default": true,
+            "title": "Showboxlabels",
+            "type": "boolean"
+          },
+          "smoothImage": {
+            "default": true,
+            "title": "Smoothimage",
+            "type": "boolean"
+          },
+          "snapThresholdPx": {
+            "default": 8,
+            "maximum": 16.0,
+            "minimum": 4.0,
+            "title": "Snapthresholdpx",
+            "type": "integer"
+          },
+          "snapToGrid": {
+            "default": false,
+            "title": "Snaptogrid",
+            "type": "boolean"
+          },
+          "zoomStepFactor": {
+            "default": 1.1,
+            "enum": [
+              1.05,
+              1.1,
+              1.15,
+              1.2
+            ],
+            "title": "Zoomstepfactor",
+            "type": "number"
+          }
+        },
+        "title": "WorkbenchImagePreferences",
+        "type": "object"
+      },
       "WorkbenchLayoutPreferences": {
         "additionalProperties": false,
         "description": "v0.13.10 · 工作台布局偏好。\n\n后端只校验结构；默认值和 PATCH 全量 workbench 契约由前端维护。",
         "properties": {
+          "cameraPanels": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CameraPanelState"
+            },
+            "title": "Camerapanels",
+            "type": "object"
+          },
           "floatingClassPalette": {
             "anyOf": [
               {
@@ -18547,6 +18931,16 @@
             ],
             "title": "Leftwidth"
           },
+          "pointcloudCamera": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PointcloudCameraState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "rightOpen": {
             "anyOf": [
               {
@@ -18585,45 +18979,134 @@
         "title": "WorkbenchLayoutPreferences",
         "type": "object"
       },
+      "WorkbenchPointcloudPreferences": {
+        "additionalProperties": false,
+        "description": "v0.15.3 · 点云模态偏好。v0.15.6 填充渲染 / 导航字段（默认值 = 拆分前现状值）。",
+        "properties": {
+          "cameraDamping": {
+            "default": 0.1,
+            "maximum": 0.3,
+            "minimum": 0.05,
+            "title": "Cameradamping",
+            "type": "number"
+          },
+          "colorizeBrightness": {
+            "default": 0,
+            "maximum": 0.5,
+            "minimum": -0.5,
+            "title": "Colorizebrightness",
+            "type": "number"
+          },
+          "colorizeContrast": {
+            "default": 1,
+            "maximum": 2.5,
+            "minimum": 0.5,
+            "title": "Colorizecontrast",
+            "type": "number"
+          },
+          "colorizeGamma": {
+            "default": 1,
+            "maximum": 3.0,
+            "minimum": 0.5,
+            "title": "Colorizegamma",
+            "type": "number"
+          },
+          "colorizeWithCamera": {
+            "default": false,
+            "title": "Colorizewithcamera",
+            "type": "boolean"
+          },
+          "persistCameraView": {
+            "default": false,
+            "title": "Persistcameraview",
+            "type": "boolean"
+          },
+          "pointMaskSelectMode": {
+            "default": "rect",
+            "enum": [
+              "rect",
+              "lasso",
+              "polygon"
+            ],
+            "title": "Pointmaskselectmode",
+            "type": "string"
+          },
+          "pointSize": {
+            "default": 0.06,
+            "maximum": 0.3,
+            "minimum": 0.01,
+            "title": "Pointsize",
+            "type": "number"
+          },
+          "showAxisGizmo": {
+            "default": true,
+            "title": "Showaxisgizmo",
+            "type": "boolean"
+          },
+          "showDepthHint": {
+            "default": false,
+            "title": "Showdepthhint",
+            "type": "boolean"
+          },
+          "showGrid": {
+            "default": true,
+            "title": "Showgrid",
+            "type": "boolean"
+          }
+        },
+        "title": "WorkbenchPointcloudPreferences",
+        "type": "object"
+      },
       "WorkbenchPreferences": {
         "additionalProperties": false,
-        "description": "v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。\nv0.13.10 · 增加 layout 子树承载跨设备布局偏好。",
+        "description": "v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。\nv0.13.10 · 增加 layout 子树承载跨设备布局偏好。\nv0.15.3 · 平铺字段拆为 common/image/video/pointcloud 四子树；layout 保持顶层。",
         "properties": {
-          "controlPointsSize": {
-            "default": 6,
-            "maximum": 20.0,
-            "minimum": 2.0,
-            "title": "Controlpointssize",
-            "type": "integer"
+          "common": {
+            "$ref": "#/components/schemas/WorkbenchCommonPreferences"
           },
-          "cssImageFilter": {
-            "default": "",
-            "maxLength": 255,
-            "title": "Cssimagefilter",
-            "type": "string"
+          "image": {
+            "$ref": "#/components/schemas/WorkbenchImagePreferences"
           },
           "layout": {
             "$ref": "#/components/schemas/WorkbenchLayoutPreferences"
           },
-          "longTaskSampleRate": {
-            "default": 0.05,
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Longtasksamplerate",
-            "type": "number"
+          "pointcloud": {
+            "$ref": "#/components/schemas/WorkbenchPointcloudPreferences"
           },
-          "smoothImage": {
-            "default": true,
-            "title": "Smoothimage",
-            "type": "boolean"
-          },
-          "snapToGrid": {
-            "default": false,
-            "title": "Snaptogrid",
-            "type": "boolean"
+          "video": {
+            "$ref": "#/components/schemas/WorkbenchVideoPreferences"
           }
         },
         "title": "WorkbenchPreferences",
+        "type": "object"
+      },
+      "WorkbenchVideoPreferences": {
+        "additionalProperties": false,
+        "description": "v0.15.5 · 视频模态偏好（播放 / 步进）。",
+        "properties": {
+          "defaultPlaybackRate": {
+            "default": 1,
+            "enum": [
+              0.25,
+              0.5,
+              1,
+              2,
+              4
+            ],
+            "title": "Defaultplaybackrate"
+          },
+          "largeFrameStep": {
+            "default": 10,
+            "enum": [
+              5,
+              10,
+              30,
+              "grid"
+            ],
+            "title": "Largeframestep"
+          }
+        },
+        "title": "WorkbenchVideoPreferences",
         "type": "object"
       }
     },
@@ -21026,13 +21509,15 @@
         ]
       },
       "patch": {
-        "description": "更新 preferences，按顶层子树（workbench / ai）合并，未提交的子树保持不变。\n\npydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与\nAI 工具参数偏好可各自独立保存，互不覆盖。workbench 内部仍由前端提交全量子树；\n单独 PATCH layout 会覆盖旧 workbench 渲染字段。",
+        "description": "更新 preferences，按顶层子树（workbench / ai）合并，未提交的子树保持不变。\n\npydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与\nAI 工具参数偏好可各自独立保存，互不覆盖。workbench 内部仍由前端提交全量子树；\n单独 PATCH layout 会覆盖旧 workbench 渲染字段。\n\n入参收 raw dict：先过 legacy 平铺键提升器（v0.16 移除）再手动走 pydantic 校验，\n校验失败按 FastAPI 原生 422 形态抛出。",
         "operationId": "update_preferences_api_v1_auth_me_preferences_patch",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UserPreferences"
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
               }
             }
           },
@@ -24724,6 +25209,110 @@
           }
         ],
         "summary": "Revoke My Key",
+        "tags": [
+          "api-keys"
+        ]
+      },
+      "patch": {
+        "operationId": "update_my_key_api_v1_me_api_keys__key_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update My Key",
+        "tags": [
+          "api-keys"
+        ]
+      }
+    },
+    "/api/v1/me/api-keys/{key_id}/rotate": {
+      "post": {
+        "operationId": "rotate_my_key_api_v1_me_api_keys__key_id__rotate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rotate My Key",
         "tags": [
           "api-keys"
         ]

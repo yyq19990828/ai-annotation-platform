@@ -3,9 +3,12 @@
  * 悬浮在主 3D 视图之上。位置由外层「按朝向分组的定位容器」决定(本组件不自带定位)。
  *
  * 展开:细标题条(收起钮)+ 相机图(自带 figcaption:名字 · 正对 · 深度)。
- * 折叠:仅留一个贴边小标签「名字 ▸」。折叠态按 role 存 localStorage(会话间记住)。
+ * 折叠:仅留一个贴边小标签「名字 ▸」。
+ *
+ * v0.15.x · 位置 / 折叠态改为受控:由壳层从 user config(preferences.workbench.layout
+ * .cameraPanels)按 role 传入并回写,后端 / 管理端可一键复位。本组件不再读写 localStorage。
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import type { CSSProperties } from "react";
 
 import type { SensorCalibration } from "@/types";
@@ -17,7 +20,7 @@ import type { SceneBox } from "./PointCloudScene";
 import styles from "./ThreeDWorkbench.module.css";
 
 interface FloatingCameraPanelProps {
-  /** 相机 role(canonical),作折叠态 localStorage key 与稳定标识。 */
+  /** 相机 role(canonical),作 user config cameraPanels 的 key 与稳定标识。 */
   role: string;
   name: string;
   imageUrl: string;
@@ -32,36 +35,16 @@ interface FloatingCameraPanelProps {
   onEnlarge?: () => void;
   autoCollapsed?: boolean;
   dragBounds?: FloatingPanelBounds | null;
+  /** v0.15.x · 受控位置(来自 user config);null = 未拖动,用默认贴边位。 */
+  position?: FloatingPanelPoint | null;
+  /** v0.15.x · 受控折叠态(来自 user config);undefined = 跟随 autoCollapsed。 */
+  collapsed?: boolean;
+  /** v0.15.x · 拖动 / 归位回写;pos=null 表示归位(清除自定义位置)。 */
+  onPositionChange: (role: string, pos: FloatingPanelPoint | null) => void;
+  onCollapsedChange: (role: string, collapsed: boolean) => void;
 }
 
-const collapseKey = (role: string) => `pcwb:cam-collapsed:${role}`;
-const positionKey = (role: string) => `pcwb:cam-pos:${role}`;
 const CAM_PANEL_SIZE = { w: 210, h: 170 };
-
-function readCollapsed(role: string): boolean | null {
-  try {
-    const raw = localStorage.getItem(collapseKey(role));
-    if (raw === "1") return true;
-    if (raw === "0") return false;
-  } catch {
-    /* 隐私模式 / 配额满:忽略,只丢持久化不丢功能 */
-  }
-  return null;
-}
-
-function readPosition(role: string): FloatingPanelPoint | null {
-  try {
-    const raw = localStorage.getItem(positionKey(role));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<FloatingPanelPoint>;
-    if (Number.isFinite(parsed.x) && Number.isFinite(parsed.y)) {
-      return { x: Number(parsed.x), y: Number(parsed.y) };
-    }
-  } catch {
-    /* ignore */
-  }
-  return null;
-}
 
 export function FloatingCameraPanel({
   role,
@@ -69,57 +52,49 @@ export function FloatingCameraPanel({
   onEnlarge,
   autoCollapsed = false,
   dragBounds,
+  position = null,
+  collapsed: collapsedProp,
+  onPositionChange,
+  onCollapsedChange,
   ...camProps
 }: FloatingCameraPanelProps) {
-  const [manualCollapsed, setManualCollapsed] = useState<boolean | null>(() => readCollapsed(role));
-  const [position, setPosition] = useState<FloatingPanelPoint | null>(() => readPosition(role));
-  const collapsed = manualCollapsed ?? autoCollapsed;
+  const collapsed = collapsedProp ?? autoCollapsed;
   const dragPosition = useMemo(
     () => position ?? { x: (dragBounds?.left ?? 0) + 12, y: (dragBounds?.top ?? 0) + 12 },
     [dragBounds?.left, dragBounds?.top, position],
   );
 
-  const setAndPersist = useCallback(
-    (next: boolean) => {
-      setManualCollapsed(next);
-      try {
-        localStorage.setItem(collapseKey(role), next ? "1" : "0");
-      } catch {
-        /* 隐私模式 / 配额满:忽略,只丢持久化不丢功能 */
-      }
-    },
-    [role],
+  const setCollapsed = useCallback(
+    (next: boolean) => onCollapsedChange(role, next),
+    [onCollapsedChange, role],
   );
-  const setAndPersistPosition = useCallback(
+  const setPosition = useCallback(
+    (next: FloatingPanelPoint) => onPositionChange(role, next),
+    [onPositionChange, role],
+  );
+  const freezeCurrentPosition = useCallback(
     (next: FloatingPanelPoint) => {
-      setPosition(next);
-      try {
-        localStorage.setItem(positionKey(role), JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
+      if (!position) onPositionChange(role, next);
     },
-    [role],
+    [onPositionChange, position, role],
   );
-  const resetPosition = useCallback(() => {
-    setPosition(null);
-    try {
-      localStorage.removeItem(positionKey(role));
-    } catch {
-      /* ignore */
-    }
-  }, [role]);
+  const resetPosition = useCallback(
+    () => onPositionChange(role, null),
+    [onPositionChange, role],
+  );
   const { handleProps, isDragging } = useDragMove({
     position: dragPosition,
     size: CAM_PANEL_SIZE,
     bounds: dragBounds,
-    onChange: setAndPersistPosition,
+    onStart: freezeCurrentPosition,
+    onChange: setPosition,
   });
 
-  const floatingStyle = position
+  const floatingPoint = position ?? (isDragging ? dragPosition : null);
+  const floatingStyle = floatingPoint
     ? ({
-        "--cam-panel-x": `${position.x}px`,
-        "--cam-panel-y": `${position.y}px`,
+        "--cam-panel-x": `${floatingPoint.x}px`,
+        "--cam-panel-y": `${floatingPoint.y}px`,
       } as CSSProperties)
     : undefined;
 
@@ -127,10 +102,10 @@ export function FloatingCameraPanel({
     return (
       <button
         type="button"
-        className={`${styles.camPanelTab} ${position ? styles.camPanelFloating : ""}`}
+        className={`${styles.camPanelTab} ${floatingPoint ? styles.camPanelFloating : ""}`}
         // eslint-disable-next-line no-restricted-syntax -- 拖动位置是逐帧动态值, 经 CSS custom property 注入
         style={floatingStyle}
-        onClick={() => setAndPersist(false)}
+        onClick={() => setCollapsed(false)}
         title="展开相机"
       >
         {name} ▸
@@ -140,7 +115,7 @@ export function FloatingCameraPanel({
 
   return (
     <div
-      className={`${styles.camPanel} ${position ? styles.camPanelFloating : ""} ${
+      className={`${styles.camPanel} ${floatingPoint ? styles.camPanelFloating : ""} ${
         isDragging ? styles.camPanelDragging : ""
       }`}
       // eslint-disable-next-line no-restricted-syntax -- 拖动位置是逐帧动态值, 经 CSS custom property 注入
@@ -176,7 +151,7 @@ export function FloatingCameraPanel({
         <button
           type="button"
           className={styles.floatToggleBtn}
-          onClick={() => setAndPersist(true)}
+          onClick={() => setCollapsed(true)}
           title="收起相机"
         >
           收起 ▾

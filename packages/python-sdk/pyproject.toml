@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-annotation-sdk"
+version = "0.15.16"
+description = "AI 标注平台官方 Python SDK: 同步 Client 覆盖稳定工作流 (含 ML Backend 只读监控), extras 提供 aap CLI / TUI"
+requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 4 - Beta",
+]
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.5",
+]
+
+[project.optional-dependencies]
+cli = ["typer>=0.12", "rich>=13.0"]
+# tui 隐含 cli (aap tui 子命令从 CLI 入口启动)
+# websockets: ML Backend 实时统计 WS 消费 (v0.15.12), 仅 TUI 用; 同步 Client 仍只依赖 httpx
+tui = ["textual>=0.80", "typer>=0.12", "rich>=13.0", "websockets>=12"]
+test = [
+    "pytest>=8.3",
+    "respx>=0.21",
+    "typer>=0.12",
+    "rich>=13.0",
+    "textual>=0.80",
+    "pytest-asyncio>=0.24",
+]
+
+[project.scripts]
+aap = "ai_annotation.cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

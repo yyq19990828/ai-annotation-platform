@@ -22,6 +22,7 @@ import {
 import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
 import { tightenBboxFromPolygon } from "../../stage/shared/geometry/bbox";
 import { UNKNOWN_CLASS } from "../../stage/colors";
+import { classNameForCommittedDrawing } from "../../stage/imageStageSettings";
 import { resolveTrackAtFrame } from "../../stage/videoStageGeometry";
 import { useClipboard } from "../../state/useClipboard";
 import {
@@ -391,8 +392,10 @@ export function useImageAnnotationActions({
     return () => window.removeEventListener("keydown", handler, true);
   }, [s.tool, sam, samPendingAccept]);
 
-  const handleBatchDelete = useCallback(() => {
-    const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
+  const handleBatchDelete = useCallback((targetIds?: string[]) => {
+    const ids = (targetIds ?? s.selectedIds).filter((id) =>
+      annotationsRef.current.some((a) => a.id === id),
+    );
     if (ids.length === 0) return;
     const targets = ids
       .map((id) => annotationsRef.current.find((a) => a.id === id))
@@ -805,6 +808,16 @@ export function useImageAnnotationActions({
     // 修复老项目用无类别工具落框仍弹窗 (借 bbox/region 类) 的 BUG。
     if (!activeToolHasOwnClasses) {
       annotationActions.createBboxWithClass(g, UNKNOWN_CLASS);
+      return;
+    }
+    const reuseClass = classNameForCommittedDrawing(
+      s.workbenchConfig.image.afterBoxCreate,
+      s.activeClass,
+    );
+    if (reuseClass) {
+      if (annotationActions.createBboxWithClass(g, reuseClass)) {
+        pushToast({ msg: "已沿用当前类别", sub: reuseClass, kind: "success" });
+      }
       return;
     }
     s.setPendingDrawing({ geom: g });

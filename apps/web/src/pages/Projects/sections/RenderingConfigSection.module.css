@@ -53,6 +53,20 @@
   gap: 8px;
 }
 
+.inlineInputs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.compactNumber {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
 .followsHint {
   font-size: 12px;
   color: var(--color-fg-muted);
@@ -74,6 +88,18 @@
 
 .rangeInput {
   width: 100%;
+}
+
+.numberInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  font-size: 13px;
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-fg);
+  outline: none;
 }
 
 .savingHint {

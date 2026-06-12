@@ -72,13 +72,15 @@ last_reviewed: 2026-06-10
 
 变体选择器对 gsam2 文本路径同时给出 **SAM2 变体 + DINO 变体两组**(后端内部按 output_mode 编排 detection/segmentation)。项目设置 → ML 模型 →「SAM 文本预标默认输出」可锁定项目级默认。
 
+输出形态会按账号记住上次显式选择。下次进入没有项目默认的项目时,优先使用本会话选择,再使用账号记忆;项目级「SAM 文本预标默认输出」始终优先。
+
 ### Exemplar 示例（仅 SAM 3）
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/sam/exemplar-output-mode.png — 输出形态三选一 TabRow [auto] -->
 
 拖框圈出图中**已有的一个示例实例**，SAM 3 PCS 一步返回**全图相似实例**。
 
-AIToolDrawer 提供与文本提示相同的输出形态三选一（`□ 框` / `○ 掩膜` / `⊕ 全部`），默认 `○ 掩膜`；选 `□ 框` 仅返回 box，`⊕ 全部` 同实例配对 box + polygon。
+AIToolDrawer 提供与文本提示相同的输出形态三选一（`□ 框` / `○ 掩膜` / `⊕ 全部`），默认 `○ 掩膜`；选 `□ 框` 仅返回 box，`⊕ 全部` 同实例配对 box + polygon。该选择与文本提示共用账号级记忆规则。
 
 适用场景：
 

@@ -5,6 +5,7 @@ import type {
   VideoTrackerDirection,
   VideoTrackerPropagatePayload,
 } from "@/api/videoTracker";
+import { readDialogMemory, writeDialogMemory } from "../state/videoDialogMemory";
 import styles from "./VideoTrackerPropagateDialog.module.css";
 
 const SPAN_PRESETS = ["10", "30", "60"] as const;
@@ -15,6 +16,12 @@ const RANGE_PRESETS = [
 ] as const;
 
 type RangePresetValue = (typeof RANGE_PRESETS)[number];
+type TrackerDialogMemory = {
+  rangePreset: RangePresetValue;
+  direction: VideoTrackerDirection;
+  modelKey: string;
+  samVariant: string;
+};
 
 // 采样开启 (step>1) 时数字预设以网格格子为单位, 标签显示如「10 格 (≈100 帧)」;
 // 关闭时维持「N 帧」。next-keyframe / end 与单位无关, 标签固定。
@@ -25,7 +32,7 @@ function presetLabel(value: RangePresetValue, step: number): string {
   return step > 1 ? `${n} 格 (≈${n * step} 帧)` : `${n} 帧`;
 }
 
-const MODELS: Array<{ value: string; label: string; note?: string }> = [
+export const TRACKER_MODEL_OPTIONS: Array<{ value: string; label: string; note?: string }> = [
   { value: "mock_bbox", label: "mock_bbox", note: "测试用 (不依赖 ML backend)" },
   { value: "sam2_video", label: "sam2_video", note: "需项目绑定 ML backend" },
   { value: "sam3_video", label: "sam3_video", note: "需项目绑定 ML backend" },
@@ -40,8 +47,69 @@ const SAM_VARIANTS: Array<{ value: string; label: string }> = [
   { value: "large", label: "large" },
 ];
 
+const DEFAULT_TRACKER_MEMORY: TrackerDialogMemory = {
+  rangePreset: "30",
+  direction: "forward",
+  modelKey: "mock_bbox",
+  samVariant: "",
+};
+
+export function resolveTrackerDefaultModel({
+  projectDefaultModel,
+  rememberedModel,
+  preferNonMockModel,
+  options = TRACKER_MODEL_OPTIONS,
+}: {
+  projectDefaultModel?: string | null;
+  rememberedModel?: string | null;
+  preferNonMockModel: boolean;
+  options?: Array<{ value: string }>;
+}): string {
+  const values = new Set(options.map((model) => model.value));
+  if (projectDefaultModel && values.has(projectDefaultModel)) return projectDefaultModel;
+  if (rememberedModel && values.has(rememberedModel)) return rememberedModel;
+  if (preferNonMockModel) {
+    const realModel = options.find((model) => model.value !== "mock_bbox");
+    if (realModel) return realModel.value;
+  }
+  return values.has("mock_bbox") ? "mock_bbox" : options[0]?.value ?? "mock_bbox";
+}
+
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
+}
+
+function hasOption<T extends string>(
+  options: readonly T[],
+  value: unknown,
+): value is T {
+  return typeof value === "string" && options.includes(value as T);
+}
+
+function validateTrackerMemory(value: unknown): TrackerDialogMemory | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Partial<TrackerDialogMemory>;
+  const modelValues = TRACKER_MODEL_OPTIONS.map((m) => m.value);
+  const variantValues = SAM_VARIANTS.map((v) => v.value);
+  return {
+    rangePreset: hasOption(RANGE_PRESETS, raw.rangePreset)
+      ? raw.rangePreset
+      : DEFAULT_TRACKER_MEMORY.rangePreset,
+    direction:
+      raw.direction === "forward" ||
+      raw.direction === "backward" ||
+      raw.direction === "bidirectional"
+        ? raw.direction
+        : DEFAULT_TRACKER_MEMORY.direction,
+    modelKey:
+      typeof raw.modelKey === "string" && modelValues.includes(raw.modelKey)
+        ? raw.modelKey
+        : DEFAULT_TRACKER_MEMORY.modelKey,
+    samVariant:
+      typeof raw.samVariant === "string" && variantValues.includes(raw.samVariant)
+        ? raw.samVariant
+        : DEFAULT_TRACKER_MEMORY.samVariant,
+  };
 }
 
 interface VideoTrackerPropagateDialogProps {
@@ -49,8 +117,11 @@ interface VideoTrackerPropagateDialogProps {
   frameIndex: number;
   maxFrame: number;
   nextKeyframeAfter: number | null;
+  userId?: string | null;
   /** 采样网格步长 (源帧). >1 时数字预设以网格格子为单位; 缺省 1 = 现状 (按源帧). */
   samplingStep?: number;
+  projectDefaultModel?: string | null;
+  preferNonMockModel?: boolean;
   submitting: boolean;
   onCancel: () => void;
   onSubmit: (payload: VideoTrackerPropagatePayload) => Promise<void>;
@@ -61,7 +132,10 @@ export function VideoTrackerPropagateDialog({
   frameIndex,
   maxFrame,
   nextKeyframeAfter,
+  userId,
   samplingStep = 1,
+  projectDefaultModel = null,
+  preferNonMockModel = false,
   submitting,
   onCancel,
   onSubmit,
@@ -75,13 +149,20 @@ export function VideoTrackerPropagateDialog({
 
   useEffect(() => {
     if (open) {
-      setDirection("forward");
-      setRangePreset("30");
-      setModelKey("mock_bbox");
-      setSamVariant("");
+      const remembered =
+        readDialogMemory(userId, "trackerPropagate", validateTrackerMemory) ??
+        DEFAULT_TRACKER_MEMORY;
+      setDirection(remembered.direction);
+      setRangePreset(remembered.rangePreset);
+      setModelKey(resolveTrackerDefaultModel({
+        projectDefaultModel,
+        rememberedModel: remembered.modelKey,
+        preferNonMockModel,
+      }));
+      setSamVariant(remembered.samVariant);
       setError(null);
     }
-  }, [open]);
+  }, [open, preferNonMockModel, projectDefaultModel, userId]);
 
   const grid = Math.max(1, Math.round(samplingStep));
 
@@ -125,6 +206,12 @@ export function VideoTrackerPropagateDialog({
         model_key: modelKey,
         direction,
         sam_variant: samVariant || undefined,
+      });
+      writeDialogMemory(userId, "trackerPropagate", {
+        rangePreset,
+        direction,
+        modelKey,
+        samVariant,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "提交失败");
@@ -203,14 +290,14 @@ export function VideoTrackerPropagateDialog({
             onChange={(e) => setModelKey(e.target.value)}
             className={styles.select}
           >
-            {MODELS.map((m) => (
+            {TRACKER_MODEL_OPTIONS.map((m) => (
               <option key={m.value} value={m.value}>
                 {m.label}
               </option>
             ))}
           </select>
           <span className={styles.modelNote}>
-            {MODELS.find((m) => m.value === modelKey)?.note}
+            {TRACKER_MODEL_OPTIONS.find((m) => m.value === modelKey)?.note}
           </span>
         </label>
 

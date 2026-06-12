@@ -14,10 +14,12 @@ v0.9.11 PerfHud · 新增 publish_ml_backend_stats: 每 1s 把所有 is_active=t
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import random
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 import redis as redis_sync
 from sqlalchemy import select
@@ -29,6 +31,7 @@ from sqlalchemy.ext.asyncio import (
 
 from app.config import settings
 from app.db.models.ml_backend import MLBackend
+from app.db.models.project import Project
 from app.services.ml_backend import MLBackendService
 from app.workers._db import task_session
 from app.services.ml_client import MLBackendClient
@@ -50,11 +53,21 @@ _PERFHUD_META_KEYS = (
 
 
 def _build_stats_snapshot(
-    backend: MLBackend, *, ok: bool, meta: dict | None, timestamp: str
+    backend: MLBackend,
+    *,
+    ok: bool,
+    meta: dict | None,
+    timestamp: str,
+    physical_key: str | None = None,
+    url_host: str | None = None,
+    bindings: list[dict] | None = None,
 ) -> dict:
     snap = {
+        "physical_key": physical_key or f"backend:{backend.id}",
+        "url_host": url_host,
         "backend_id": str(backend.id),
         "backend_name": backend.name,
+        "bindings": bindings or [_binding_for_backend(backend)],
         "state": "ok" if ok else "error",
         "timestamp": timestamp,
     }
@@ -63,6 +76,72 @@ def _build_stats_snapshot(
             if key in meta:
                 snap[key] = meta[key]
     return snap
+
+
+def _endpoint_identity(url: str) -> tuple[str, str] | None:
+    """Return a stable physical endpoint identity and a user-facing host label."""
+    parsed = urlparse(url if "://" in url else f"//{url}")
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return None
+    scheme = parsed.scheme or "http"
+    hostport = f"{host}:{parsed.port}" if parsed.port else host
+    return f"{scheme}://{hostport}", hostport
+
+
+def _backend_group_key(backend: MLBackend) -> tuple[str, str, str | None]:
+    endpoint = _endpoint_identity(backend.url)
+    if endpoint is None:
+        fallback = f"backend:{backend.id}"
+        return fallback, fallback, None
+    endpoint_key, hostport = endpoint
+    auth_key = f"{backend.auth_method}:{backend.auth_token or ''}"
+    if backend.auth_method == "none" and not backend.auth_token:
+        public_key = endpoint_key
+    else:
+        auth_fingerprint = hashlib.sha256(auth_key.encode("utf-8")).hexdigest()[:8]
+        public_key = f"{endpoint_key}|auth:{auth_fingerprint}"
+    return f"{endpoint_key}|auth:{auth_key}", public_key, hostport
+
+
+def _binding_for_backend(
+    backend: MLBackend,
+    *,
+    project_display_id: str | None = None,
+    project_name: str | None = None,
+) -> dict:
+    return {
+        "backend_id": str(backend.id),
+        "backend_name": backend.name,
+        "project_id": str(backend.project_id) if backend.project_id else None,
+        "project_display_id": project_display_id,
+        "project_name": project_name,
+    }
+
+
+def _group_backend_rows(
+    rows: list[tuple[MLBackend, str | None, str | None]],
+) -> list[dict]:
+    grouped: dict[str, dict] = {}
+    for backend, project_display_id, project_name in rows:
+        group_key, physical_key, url_host = _backend_group_key(backend)
+        group = grouped.setdefault(
+            group_key,
+            {
+                "backend": backend,
+                "physical_key": physical_key,
+                "url_host": url_host,
+                "bindings": [],
+            },
+        )
+        group["bindings"].append(
+            _binding_for_backend(
+                backend,
+                project_display_id=project_display_id,
+                project_name=project_name,
+            )
+        )
+    return list(grouped.values())
 
 
 @celery_app.task(name="app.workers.ml_health.check_ml_backends_health")
@@ -109,33 +188,43 @@ async def _publish_stats_async() -> dict:
         async with SessionLocal() as db:
             # ml_backends 无 is_active 字段; state == 'disconnected' 跳过 (一直 down 的 backend 不打)
             rows = (
-                (
-                    await db.execute(
-                        select(MLBackend).where(MLBackend.state != "disconnected")
-                    )
+                await db.execute(
+                    select(MLBackend, Project.display_id, Project.name)
+                    .join(Project, Project.id == MLBackend.project_id)
+                    .where(MLBackend.state != "disconnected")
+                    .order_by(Project.display_id.asc(), MLBackend.created_at.asc())
                 )
-                .scalars()
-                .all()
-            )
-            backends = list(rows)
+            ).all()
     finally:
         await engine.dispose()
 
     snapshots: list[dict] = []
     now = datetime.now(timezone.utc).isoformat()
-    for backend in backends:
+    for group in _group_backend_rows(list(rows)):
+        backend = group["backend"]
         try:
             client = MLBackendClient(backend)
             ok, meta = await client.health_meta()
             snapshots.append(
-                _build_stats_snapshot(backend, ok=ok, meta=meta, timestamp=now)
+                _build_stats_snapshot(
+                    backend,
+                    ok=ok,
+                    meta=meta,
+                    timestamp=now,
+                    physical_key=group["physical_key"],
+                    url_host=group["url_host"],
+                    bindings=group["bindings"],
+                )
             )
         except Exception as exc:  # noqa: BLE001 — 单 backend 失败不影响其他
             log.debug("publish_ml_backend_stats: backend=%s err=%s", backend.id, exc)
             snapshots.append(
                 {
+                    "physical_key": group["physical_key"],
+                    "url_host": group["url_host"],
                     "backend_id": str(backend.id),
                     "backend_name": backend.name,
+                    "bindings": group["bindings"],
                     "state": "error",
                     "timestamp": now,
                 }
@@ -143,7 +232,7 @@ async def _publish_stats_async() -> dict:
 
     r2 = redis_sync.from_url(settings.redis_url)
     try:
-        # 单帧 publish 整个 list, 前端按 backend_id 路由到对应 PerfHud panel
+        # 单帧 publish 整个 list, 前端按 physical_key 路由到对应 PerfHud panel.
         r2.publish(
             "ml-backend-stats:global",
             json.dumps({"backends": snapshots, "timestamp": now}),

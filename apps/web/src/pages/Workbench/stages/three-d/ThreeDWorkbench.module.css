@@ -355,11 +355,11 @@
 .statusBar {
   position: absolute;
   bottom: 12px;
-  left: 126px;
+  left: 14px;
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  max-width: calc(100% - 138px);
+  gap: 8px;
+  max-width: min(420px, calc(100% - 28px));
   padding: 4px 10px;
   border-radius: var(--radius-sm);
   background: var(--color-bg-elev);

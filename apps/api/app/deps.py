@@ -1,6 +1,6 @@
 import uuid
 from typing import AsyncGenerator, Callable
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +22,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
@@ -32,6 +33,10 @@ async def get_current_user(
     )
     token = credentials.credentials
 
+    # v0.15.11 · None = JWT/密码登录 principal（视为 full-access，不受 require_scopes 约束）；
+    # 非 None = api_key principal 的 scopes 列表，供 require_scopes 校验。
+    request.state.api_key_scopes = None
+
     # v0.9.3 · ak_ 前缀走 api_key 路径；不走 JWT 解码（避免 jose 抛形错日志）
     from app.services import api_key_service
 
@@ -39,7 +44,8 @@ async def get_current_user(
         resolved = await api_key_service.resolve_token(db, token)
         if resolved is None:
             raise exc
-        _key, user = resolved
+        key, user = resolved
+        request.state.api_key_scopes = list(key.scopes or [])
         await db.commit()  # 持久化 last_used_at
         return user
 
@@ -87,6 +93,37 @@ def require_roles(*roles: str) -> Callable:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"需要角色权限: {'或'.join(roles)}",
+            )
+        return current_user
+
+    return checker
+
+
+# v0.15.11 · full-access 通配 scope；含 "*" 的 api_key 视为全权，绕过 scope 校验。
+WILDCARD_SCOPE = "*"
+
+
+def require_scopes(*needed: str) -> Callable:
+    """工厂函数：要求 api_key principal 持有全部 ``needed`` scope。
+
+    - JWT / 密码登录（request.state.api_key_scopes is None）→ full-access，放行。
+    - api_key 含 ``"*"``（full-access）→ 放行。
+    - api_key scopes ⊇ needed → 放行；否则 403 insufficient_scope。
+    """
+
+    async def checker(
+        request: Request,
+        current_user: User = Depends(get_current_user),
+    ) -> User:
+        scopes = getattr(request.state, "api_key_scopes", None)
+        if scopes is None or WILDCARD_SCOPE in scopes:
+            return current_user
+        missing = [s for s in needed if s not in scopes]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"API key 缺少所需权限: {', '.join(missing)}",
+                headers={"WWW-Authenticate": f'Bearer scope="{" ".join(needed)}"'},
             )
         return current_user
 

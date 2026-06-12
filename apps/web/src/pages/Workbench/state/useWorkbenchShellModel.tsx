@@ -41,7 +41,9 @@ import { useSessionStats } from "./useSessionStats";
 import { useWorkbenchHotkeys } from "./useWorkbenchHotkeys";
 import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
-import { useInteractiveAI } from "./useInteractiveAI";
+import { useInteractiveAI, type TextOutputMode } from "./useInteractiveAI";
+import { resolveInitialOutputMode, writeStoredOutputMode } from "./samTextOutput";
+import { shouldConfirmAnnotationDelete } from "./deleteConfirmation";
 import { usePreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
 import { useMLBackends } from "@/hooks/useMLBackends";
 import { useMLCapabilities } from "./useMLCapabilities";
@@ -262,6 +264,9 @@ export function useWorkbenchShellModel({
 
   const { data: currentProject, isLoading: isProjectLoading } = useProject(routeId ?? "");
   const projectId = currentProject?.id;
+  const projectTextOutputDefault = (
+    currentProject as { text_output_default?: TextOutputMode | null } | null | undefined
+  )?.text_output_default;
 
   const projectName = currentProject?.name ?? "标注工作台";
   const projectDisplayId = currentProject?.display_id ?? "—";
@@ -351,6 +356,24 @@ export function useWorkbenchShellModel({
   const s = useWorkbenchState();
   // v0.13.x · 点云 3D 项目无对应 2D 工具,按当前 3D 工具显式选择工具单位。
   const is3DProject = currentProject?.type_key === "lidar";
+  const setExemplarOutputMode = s.setExemplarOutputMode;
+  useEffect(() => {
+    if (!projectId) return;
+    setExemplarOutputMode(resolveInitialOutputMode(
+      projectId,
+      currentProject?.type_key,
+      projectTextOutputDefault,
+      meUserId,
+    ));
+  }, [projectId, currentProject?.type_key, projectTextOutputDefault, meUserId, setExemplarOutputMode]);
+  const handleSetExemplarOutputMode = useCallback((mode: TextOutputMode) => {
+    setExemplarOutputMode(mode);
+    if (projectId) writeStoredOutputMode(projectId, mode, meUserId);
+  }, [projectId, meUserId, setExemplarOutputMode]);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    count: number;
+    onConfirm: () => void;
+  } | null>(null);
   const threeDToolUnit = s.threeDTool === "point-mask" ? "point_mask_3d" : "lidar_box_3d";
   const toolView = useToolBindings(
     currentProject ?? null,
@@ -399,6 +422,8 @@ export function useWorkbenchShellModel({
   const [fitTick, setFitTick] = useState(0);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [showHotkeys, setShowHotkeys] = useState(false);
+  // v0.15.3 · 工作台设置抽屉(齿轮菜单入口)。
+  const [workbenchSettingsOpen, setWorkbenchSettingsOpen] = useState(false);
   const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
   const [aiPopoverPosition, setAiPopoverPosition] = useState<{ left: number; top: number } | null>(null);
   // v0.14.18 · AI 面板可缩放 (与浮出边栏一致); null = 用 CSS 默认尺寸, 用户拖角后置显式 w/h.
@@ -424,7 +449,10 @@ export function useWorkbenchShellModel({
   const [aiDrawerOpen, setAiDrawerOpen] = useState(true);
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
-  const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(routeId);
+  const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(
+    routeId,
+    s.workbenchConfig.common.recentClassesLimit,
+  );
 
   const [debouncedConf, setDebouncedConf] = useState(s.confThreshold);
   useEffect(() => {
@@ -1328,7 +1356,7 @@ export function useWorkbenchShellModel({
     handlePickPendingClass,
     submitPolygon,
     submitPolyline,
-    handleDeleteBox,
+    handleDeleteBox: handleDeleteBoxNow,
     handlePatchShapeFlag,
     handleCommitMove,
     handleCommitResize,
@@ -1339,7 +1367,7 @@ export function useWorkbenchShellModel({
     polygonHandle,
     polylineHandle,
     keypointHandle,
-    handleBatchDelete,
+    handleBatchDelete: handleBatchDeleteNow,
     handleJoinSelectedPolygons,
     handleStartBatchChangeClass,
     handleCommitBatchChangeClass,
@@ -1367,6 +1395,42 @@ export function useWorkbenchShellModel({
     paste: clipboard.paste,
     hasClipboard: clipboard.hasClipboard,
   }), [clipboard]);
+
+  const requestDelete = useCallback(
+    (count: number, run: () => void) => {
+      if (count <= 0) return;
+      if (!shouldConfirmAnnotationDelete(s.workbenchConfig.common.confirmDelete, count)) {
+        run();
+        return;
+      }
+      setDeleteConfirm({ count, onConfirm: run });
+    },
+    [s.workbenchConfig.common.confirmDelete],
+  );
+
+  const handleDeleteBox = useCallback(
+    (id: string) => {
+      requestDelete(1, () => handleDeleteBoxNow(id));
+    },
+    [handleDeleteBoxNow, requestDelete],
+  );
+
+  const handleBatchDelete = useCallback(() => {
+    const ids = s.selectedIds.filter((id) =>
+      annotationsRef.current.some((a) => a.id === id),
+    );
+    requestDelete(ids.length, () => handleBatchDeleteNow(ids));
+  }, [annotationsRef, handleBatchDeleteNow, requestDelete, s.selectedIds]);
+
+  const closeDeleteConfirm = useCallback(() => {
+    setDeleteConfirm(null);
+  }, []);
+
+  const confirmDelete = useCallback(() => {
+    const run = deleteConfirm?.onConfirm;
+    setDeleteConfirm(null);
+    run?.();
+  }, [deleteConfirm]);
 
   const handleSelectBox = useCallback((id: string | null, opts?: { shift?: boolean }) => {
     if (!id) { s.setSelectedId(null); return; }
@@ -1935,7 +1999,7 @@ export function useWorkbenchShellModel({
           isLoading={mlCapabilities.isLoading}
           isError={mlCapabilities.isError}
           exemplarOutputMode={s.exemplarOutputMode}
-          onSetExemplarOutputMode={s.setExemplarOutputMode}
+          onSetExemplarOutputMode={handleSetExemplarOutputMode}
           models={mlCapabilities.models}
           activeModelId={mlCapabilities.activeModelId}
           onSetActiveModelId={mlCapabilities.setActiveModelId}
@@ -1982,8 +2046,7 @@ export function useWorkbenchShellModel({
       onPrev: () => navigateTask("prev"), onNext: () => navigateTask("next"),
       onSubmit: topbarActions.onSubmit ?? handleSubmitTask, onSmartNextOpen: topbarActions.onSmartNextOpen,
       onSmartNextUncertain: topbarActions.onSmartNextUncertain,
-      hideOrphanAnnotations,
-      onToggleHideOrphans: () => setHideOrphanAnnotations((value) => !value),
+      onOpenWorkbenchSettings: () => setWorkbenchSettingsOpen(true),
       canWithdraw: topbarActions.canWithdraw, canReopen: topbarActions.canReopen,
       isWithdrawing: topbarActions.isWithdrawing, isReopening: topbarActions.isReopening,
       onWithdraw: topbarActions.onWithdraw, onReopen: topbarActions.onReopen,
@@ -2017,6 +2080,12 @@ export function useWorkbenchShellModel({
         rightSidebarWidth: rightOpen ? s.rightWidth : 0,
         workbenchLayout: s.workbenchLayout,
         onWorkbenchLayoutChange: s.setWorkbenchLayout,
+        workbenchCommon: s.workbenchConfig.common,
+        workbenchPointcloud: s.workbenchConfig.pointcloud,
+        workbenchConfigLoaded: s.workbenchConfigLoaded,
+        onWorkbenchConfigChange: s.setWorkbenchFields,
+        onWorkbenchConfigUpdate: s.updateWorkbenchConfig,
+        projectRenderingConfig: currentProject?.rendering_config ?? null,
         overlays: (
           <>
             {s.tool === "mask" && (
@@ -2225,6 +2294,7 @@ export function useWorkbenchShellModel({
             selectedId={s.selectedId}
             selectedIds={s.selectedIds}
             frameIndex={s.videoFrameIndex}
+            userId={meUserId ?? null}
             trackFilter={frameFilter}
             readOnly={isLocked}
             hiddenTrackIds={s.hiddenVideoTrackIds}
@@ -2251,6 +2321,7 @@ export function useWorkbenchShellModel({
             onUpdateKeyframeAttributes={handleUpdateKeyframeAttributes}
             onPropagateKeyframe={handlePropagateKeyframe}
             samplingStep={samplingStep}
+            propagateOverwrite={currentProject?.rendering_config?.propagateOverwrite ?? null}
           />
           <VideoChapterSidebar
             datasetItemId={videoDatasetItemId}
@@ -2346,10 +2417,24 @@ export function useWorkbenchShellModel({
     },
     hotkeys: { open: showHotkeys, onClose: () => setShowHotkeys(false), attributeSchema: toolView.attributeSchema },
     offlineQueue: { open: offlineDrawerOpen, onClose: closeOfflineDrawer, currentTaskId: taskId, onFlushOne: executeOp, onFlushAll: flushOffline },
+    workbenchSettings: {
+      open: workbenchSettingsOpen,
+      onClose: () => setWorkbenchSettingsOpen(false),
+      stageKind,
+      projectRenderingConfig: currentProject?.rendering_config ?? null,
+      hideOrphanAnnotations,
+      onToggleHideOrphans: () => setHideOrphanAnnotations((value) => !value),
+    },
     conflict: { open: conflictOpen, onReload: handleConflictReload, onOverwrite: handleConflictOverwrite, onClose: () => setConflictOpen(false) },
     rejectModal: modeState.rejectModal ? {
       open: modeState.rejectModal.open, count: 1, onClose: modeState.rejectModal.onClose,
       onConfirm: modeState.rejectModal.onConfirm, skipReasonHint: modeState.rejectModal.skipReasonHint,
+    } : undefined,
+    deleteConfirm: deleteConfirm ? {
+      open: true,
+      count: deleteConfirm.count,
+      onCancel: closeDeleteConfirm,
+      onConfirm: confirmDelete,
     } : undefined,
     guidePanel: ANNOTATION_GUIDE_UI_ENABLED && projectId ? {
       projectId,
@@ -2384,7 +2469,10 @@ export function useWorkbenchShellModel({
     frameIndex: s.videoFrameIndex,
     maxFrame: Math.max(0, videoFrameCount - 1),
     nextKeyframeAfter: propagateDialogNextKeyframe,
+    userId: meUserId ?? null,
     samplingStep,
+    projectDefaultModel: currentProject?.rendering_config?.trackerDefaultModel ?? null,
+    preferNonMockModel: Boolean(currentProject?.ml_backend_id),
     submitting: Boolean(propagateDialog?.submitting),
     onCancel: () => setPropagateDialog(null),
     onSubmit: handlePropagateSubmit,

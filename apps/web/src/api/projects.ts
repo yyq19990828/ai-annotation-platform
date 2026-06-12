@@ -49,6 +49,9 @@ export interface ProjectRenderingConfig {
   cssImageFilter?: string | null;
   controlPointsSize?: number | null;
   snapToGrid?: boolean | null;
+  box3dDefaultSize?: [number, number, number] | null;
+  propagateOverwrite?: boolean | null;
+  trackerDefaultModel?: string | null;
 }
 
 /** v0.6.4 起 ProjectOut 已强类型，ProjectResponse 仅作为旧导出名保留。 */
@@ -216,12 +219,6 @@ export const projectsApi = {
 
   removeMember: (id: string, memberId: string) =>
     apiClient.delete<void>(`/projects/${id}/members/${memberId}`),
-
-  // v0.6.7 二修 B-10：清理无源 task（v0.6.0~v0.6.6 期间 link 留下的孤儿）
-  previewOrphanTasks: (id: string) =>
-    apiClient.get<{ orphan_tasks: number; orphan_annotations: number }>(`/projects/${id}/orphan-tasks/preview`),
-  cleanupOrphanTasks: (id: string) =>
-    apiClient.post<{ deleted_tasks: number; deleted_annotations: number }>(`/projects/${id}/orphan-tasks/cleanup`),
 
   // v0.10.13 · E1 · 标注指引图片资源
   guideAssets: {

@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
 import type { SensorCalibration } from "@/types";
-import { colorizePoints, OCCLUSION_TOL_M, type CameraSample } from "./colorize";
+import {
+  adjustColors,
+  colorizePoints,
+  isNeutralAdjust,
+  NEUTRAL_ADJUST,
+  OCCLUSION_TOL_M,
+  type CameraSample,
+} from "./colorize";
 import { buildDepthRaster } from "./depthmap";
 
 /* ──────────────────────────────────────────────────────────────────────
@@ -173,5 +180,52 @@ describe("colorizePoints", () => {
     expect(Array.from(b)).toEqual(Array.from(a));
     expect(Array.from(c)).toEqual(Array.from(a));
     expect(Array.from(d)).toEqual(Array.from(a));
+  });
+});
+
+describe("adjustColors", () => {
+  it("中性参数返回原色拷贝", () => {
+    expect(isNeutralAdjust(NEUTRAL_ADJUST)).toBe(true);
+    const raw = new Float32Array([0.2, 0.5, 0.8]);
+    const out = adjustColors(raw, NEUTRAL_ADJUST);
+    expectColors(out, [0.2, 0.5, 0.8]);
+    expect(out).not.toBe(raw);
+  });
+
+  it("contrast>1 绕 0.5 灰点拉伸", () => {
+    const out = adjustColors(
+      new Float32Array([0.25, 0.5, 0.75]),
+      { contrast: 2, brightness: 0, gamma: 1 },
+    );
+    expect(out[0]).toBeLessThan(0.25);
+    expect(out[1]).toBeCloseTo(0.5, 2);
+    expect(out[2]).toBeGreaterThan(0.75);
+  });
+
+  it("brightness 正向整体提亮并夹到 [0,1]", () => {
+    const out = adjustColors(
+      new Float32Array([0.1, 0.9]),
+      { contrast: 1, brightness: 0.2, gamma: 1 },
+    );
+    expect(out[0]).toBeCloseTo(0.3, 2);
+    expect(out[1]).toBe(1);
+  });
+
+  it("gamma>1 提亮中间调", () => {
+    const out = adjustColors(
+      new Float32Array([0.5]),
+      { contrast: 1, brightness: 0, gamma: 2 },
+    );
+    expect(out[0]).toBeGreaterThan(0.5);
+  });
+
+  it("复用长度匹配的 out buffer", () => {
+    const buf = new Float32Array(3);
+    const out = adjustColors(
+      new Float32Array([0.2, 0.4, 0.6]),
+      { contrast: 1.5, brightness: 0, gamma: 1 },
+      buf,
+    );
+    expect(out).toBe(buf);
   });
 });

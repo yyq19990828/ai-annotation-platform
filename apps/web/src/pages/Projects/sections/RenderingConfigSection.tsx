@@ -34,9 +34,9 @@ export function RenderingConfigSection({ project }: { project: ProjectResponse }
   return (
     <Card>
       <div className={styles.body}>
-        <h3 className={styles.title}>渲染配置（项目级覆盖）</h3>
+        <h3 className={styles.title}>工作台规范（项目级覆盖）</h3>
         <p className={styles.description}>
-          项目级覆盖优先于成员的个人「标注偏好」。常用于医学影像等强制「无插值 / 灰度反色」的场景。
+          项目级覆盖优先于成员的个人「标注偏好」，也可锁定 3D 新框尺寸、关键帧复制策略和 AI 传播默认模型。
         </p>
         <RenderingConfigEditor
           value={draft}

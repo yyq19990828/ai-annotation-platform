@@ -10,10 +10,15 @@ import type {
   VideoTrackGeometry,
 } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
-import type { WorkbenchLayoutPreferences } from "@/api/auth";
+import type {
+  WorkbenchCommonPreferences,
+  WorkbenchLayoutPreferences,
+  WorkbenchPointcloudPreferences,
+} from "@/api/auth";
+import type { ProjectRenderingConfig } from "@/api/projects";
 import type { AiBox } from "../state/transforms";
 import type { PendingDrawing, SamPolarity, SamSubTool, ThreeDTool, Tool, VideoTool } from "../state/useWorkbenchState";
-import type { WorkbenchLayoutPatch } from "../state/useWorkbenchConfig";
+import type { WorkbenchConfigPatch, WorkbenchLayoutPatch } from "../state/useWorkbenchConfig";
 import type { Viewport } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
@@ -75,6 +80,12 @@ interface WorkbenchStageHostCommonProps {
   rightSidebarWidth: number;
   workbenchLayout: WorkbenchLayoutPreferences;
   onWorkbenchLayoutChange: (patch: WorkbenchLayoutPatch) => void;
+  workbenchCommon: WorkbenchCommonPreferences;
+  workbenchPointcloud: WorkbenchPointcloudPreferences;
+  workbenchConfigLoaded: boolean;
+  onWorkbenchConfigChange: (patch: WorkbenchConfigPatch) => void;
+  onWorkbenchConfigUpdate: (patch: WorkbenchConfigPatch) => Promise<void>;
+  projectRenderingConfig?: ProjectRenderingConfig | null;
 }
 
 interface WorkbenchStageHostVideoProps {
@@ -242,6 +253,12 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       rightSidebarWidth,
       workbenchLayout,
       onWorkbenchLayoutChange,
+      workbenchCommon,
+      workbenchPointcloud,
+      workbenchConfigLoaded,
+      onWorkbenchConfigChange,
+      onWorkbenchConfigUpdate,
+      projectRenderingConfig: stageProjectRenderingConfig,
     } = common;
     const videoProps = stageKind === "video" ? requireStageGroup(video, "video", stageKind) : undefined;
     const imageProps = stageKind === "image" ? requireStageGroup(image, "image", stageKind) : undefined;
@@ -359,7 +376,15 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
               rightSidebarOpen={rightSidebarOpen}
               rightSidebarWidth={rightSidebarWidth}
               triViewFloat={workbenchLayout.triViewFloat}
+              cameraPanels={workbenchLayout.cameraPanels}
+              pointcloudCamera={workbenchLayout.pointcloudCamera}
               onWorkbenchLayoutChange={onWorkbenchLayoutChange}
+              workbenchCommon={workbenchCommon}
+              workbenchPointcloud={workbenchPointcloud}
+              workbenchConfigLoaded={workbenchConfigLoaded}
+              onWorkbenchConfigChange={onWorkbenchConfigChange}
+              onWorkbenchConfigUpdate={onWorkbenchConfigUpdate}
+              box3dDefaultSize={stageProjectRenderingConfig?.box3dDefaultSize ?? null}
             />
           </Suspense>
         ) : stageKind === "video" ? (
@@ -384,6 +409,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             pendingDrawing={pendingDrawing}
             chapters={videoChapters}
             videoSampling={videoSampling}
+            performanceTier={workbenchCommon.performanceTier}
             onSelect={onSelectBox}
             onFrameIndexChange={onVideoFrameIndexChange}
             onCreate={onVideoCreate}

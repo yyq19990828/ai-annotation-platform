@@ -120,6 +120,25 @@ describe("ProjectSettingsPage", () => {
     );
   });
 
+  it("shows the workbench entry for point cloud projects", () => {
+    renderSettingsPage({
+      id: "p-lidar",
+      name: "Point Cloud Project",
+      display_id: "P-LIDAR",
+      type_label: "3D 点云",
+      type_key: "lidar",
+      data_type: "lidar",
+      status: "in_progress",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /打开工作台/ }));
+
+    expect(screen.getByText("workbench-target")).toBeInTheDocument();
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      "/projects/p-lidar/annotate?returnTo=%2Fprojects%2Fp-lidar%2Fsettings",
+    );
+  });
+
   it("uses one combined classes and attributes settings tab", () => {
     renderSettingsPage({
       id: "p-image",

@@ -119,12 +119,18 @@ def test_project_rendering_config_v0_10_10():
                 "cssImageFilter": "invert(1)",
                 "controlPointsSize": 8,
                 "snapToGrid": True,
+                "box3dDefaultSize": [4.5, 2.0, 1.7],
+                "propagateOverwrite": False,
+                "trackerDefaultModel": "sam2_video",
             }
         }
     )
     assert pu.rendering_config is not None
     assert pu.rendering_config.smoothImage is False
     assert pu.rendering_config.controlPointsSize == 8
+    assert pu.rendering_config.box3dDefaultSize == (4.5, 2.0, 1.7)
+    assert pu.rendering_config.propagateOverwrite is False
+    assert pu.rendering_config.trackerDefaultModel == "sam2_video"
 
     # 部分字段：未提供的字段 = None（前端按 None 视作「不覆盖」）
     pu2 = ProjectUpdate.model_validate({"rendering_config": {"smoothImage": True}})
@@ -146,6 +152,14 @@ def test_project_rendering_config_v0_10_10():
     with pytest.raises(ValidationError):
         ProjectUpdate.model_validate(
             {"rendering_config": {"cssImageFilter": "x" * 300}}
+        )
+
+    # box3dDefaultSize 必须是三元正数
+    with pytest.raises(ValidationError):
+        ProjectUpdate.model_validate({"rendering_config": {"box3dDefaultSize": [4, 2]}})
+    with pytest.raises(ValidationError):
+        ProjectUpdate.model_validate(
+            {"rendering_config": {"box3dDefaultSize": [4, 0, 1]}}
         )
 
 

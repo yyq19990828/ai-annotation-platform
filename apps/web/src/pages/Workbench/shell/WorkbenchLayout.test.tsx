@@ -1,6 +1,6 @@
 // v0.10.18 · WorkbenchLayout focused render tests.
 // 验证布局 shell 把 12 个子组件按预期插槽渲染, gridTemplateColumns 写入 CSS 变量,
-// 可选模块 (rejectModal / guidePanel) 不传时不渲染.
+// 可选模块 (rejectModal / deleteConfirm / guidePanel) 不传时不渲染.
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -54,11 +54,17 @@ vi.mock("./HotkeyCheatSheet", () => ({
 vi.mock("./OfflineQueueDrawer", () => ({
   OfflineQueueDrawer: () => <div data-testid="offline-queue" />,
 }));
+vi.mock("./WorkbenchSettingsDrawer", () => ({
+  WorkbenchSettingsDrawer: () => <div data-testid="workbench-settings-drawer" />,
+}));
 vi.mock("@/components/workbench/ConflictModal", () => ({
   ConflictModal: () => <div data-testid="conflict" />,
 }));
 vi.mock("@/pages/Review/RejectReasonModal", () => ({
   RejectReasonModal: () => <div data-testid="reject-modal" />,
+}));
+vi.mock("./DeleteConfirmModal", () => ({
+  DeleteConfirmModal: () => <div data-testid="delete-confirm-modal" />,
 }));
 vi.mock("../sidebar/GuidePanel", () => ({
   GuidePanel: () => <div data-testid="guide-panel" />,
@@ -81,6 +87,7 @@ const baseProps = {
   aiPopover: {} as never,
   hotkeys: {} as never,
   offlineQueue: {} as never,
+  workbenchSettings: {} as never,
   conflict: {} as never,
   discussionPanel: {} as never,
 };
@@ -99,23 +106,27 @@ describe("WorkbenchLayout", () => {
     expect(screen.getByTestId("ai-popover")).toBeTruthy();
     expect(screen.getByTestId("hotkeys")).toBeTruthy();
     expect(screen.getByTestId("offline-queue")).toBeTruthy();
+    expect(screen.getByTestId("workbench-settings-drawer")).toBeTruthy();
     expect(screen.getByTestId("conflict")).toBeTruthy();
 
     // 可选项缺省时不渲染
     expect(screen.queryByTestId("reject-modal")).toBeNull();
+    expect(screen.queryByTestId("delete-confirm-modal")).toBeNull();
     expect(screen.queryByTestId("guide-panel")).toBeNull();
   });
 
-  it("renders optional rejectModal and guidePanel when provided", () => {
+  it("renders optional modals and guidePanel when provided", () => {
     render(
       <WorkbenchLayout
         {...baseProps}
         rejectModal={{} as never}
+        deleteConfirm={{} as never}
         guidePanel={{} as never}
       />,
     );
 
     expect(screen.getByTestId("reject-modal")).toBeTruthy();
+    expect(screen.getByTestId("delete-confirm-modal")).toBeTruthy();
     expect(screen.getByTestId("guide-panel")).toBeTruthy();
   });
 

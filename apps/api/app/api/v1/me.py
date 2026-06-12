@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password, verify_password
@@ -118,9 +119,44 @@ async def get_preferences(user: User = Depends(get_current_user)) -> UserPrefere
     return UserPreferences.model_validate(user.preferences or {})
 
 
+# v0.16 移除 · v0.15.3 把 workbench 平铺键拆为 common/image 子树后，部署窗口期内
+# 已打开的旧前端 tab 仍会 PATCH 平铺键；在 pydantic 校验前把已知旧键提升到对应子树。
+_LEGACY_WORKBENCH_KEYS: dict[str, str] = {
+    "smoothImage": "image",
+    "cssImageFilter": "image",
+    "controlPointsSize": "image",
+    "snapToGrid": "image",
+    "longTaskSampleRate": "common",
+}
+
+
+def _promote_legacy_workbench_keys(payload: dict) -> dict:
+    """把 workbench 子树里的旧平铺键提升到对应子树；新旧位置同时出现以新子树值为准。
+
+    v0.16 移除（连同 _LEGACY_WORKBENCH_KEYS 与 update_preferences 的调用点）。"""
+    workbench = payload.get("workbench")
+    if not isinstance(workbench, dict) or not any(
+        key in workbench for key in _LEGACY_WORKBENCH_KEYS
+    ):
+        return payload
+    workbench = dict(workbench)
+    for key, subtree_key in _LEGACY_WORKBENCH_KEYS.items():
+        if key not in workbench:
+            continue
+        subtree = workbench.get(subtree_key)
+        if subtree is not None and not isinstance(subtree, dict):
+            # 子树类型非法：不动，留给 pydantic 校验报错
+            continue
+        value = workbench.pop(key)
+        merged_subtree = dict(subtree or {})
+        merged_subtree.setdefault(key, value)
+        workbench[subtree_key] = merged_subtree
+    return {**payload, "workbench": workbench}
+
+
 @router.patch("/preferences", response_model=UserPreferences)
 async def update_preferences(
-    payload: UserPreferences,
+    payload: dict,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> UserPreferences:
@@ -128,8 +164,28 @@ async def update_preferences(
 
     pydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与
     AI 工具参数偏好可各自独立保存，互不覆盖。workbench 内部仍由前端提交全量子树；
-    单独 PATCH layout 会覆盖旧 workbench 渲染字段。"""
-    incoming = payload.model_dump(mode="json", exclude_unset=True, by_alias=True)
+    单独 PATCH layout 会覆盖旧 workbench 渲染字段。
+
+    入参收 raw dict：先过 legacy 平铺键提升器（v0.16 移除）再手动走 pydantic 校验，
+    校验失败按 FastAPI 原生 422 形态抛出。"""
+    promoted = _promote_legacy_workbench_keys(payload)
+    try:
+        validated = UserPreferences.model_validate(promoted)
+    except ValidationError as exc:
+        # 只透传 JSON 可序列化字段：pydantic 的 err["ctx"] 可能含 ValueError 等
+        # 非可序列化对象，整条 **err 透传会让 FastAPI 兜底编码 422 体时 500。
+        raise RequestValidationError(
+            [
+                {
+                    "type": err["type"],
+                    "loc": ("body", *err["loc"]),
+                    "msg": err["msg"],
+                    "input": err.get("input"),
+                }
+                for err in exc.errors()
+            ]
+        ) from exc
+    incoming = validated.model_dump(mode="json", exclude_unset=True, by_alias=True)
     merged = {**(user.preferences or {}), **incoming}
     user.preferences = merged
     await db.commit()

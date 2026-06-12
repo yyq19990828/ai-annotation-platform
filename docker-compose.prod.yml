@@ -26,6 +26,21 @@ x-prod-infra-env: &prod-infra-env
   MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?.env.production 必须设置 MINIO_SECRET_KEY}
 
 services:
+  # 生产不把基础设施端口发布到宿主：api/web/worker 都在 compose 内网，经 service 名
+  # DNS（postgres:5432 / redis:6379 / minio:9000）直连即可，无需 host 发布。
+  # 基础 docker-compose.yml 为 dev 把它们绑在 0.0.0.0（host 工具直连方便），生产必须收回，
+  # 否则 PG/Redis/MinIO 直接暴露在宿主公网网卡上（比 api 端口更危险的直连入口）。
+  # ports 合并是 append（覆盖写法盖不掉基础 0.0.0.0），故用 !reset 清空（Compose v2.24+）。
+  postgres:
+    ports: !reset []
+  redis:
+    ports: !reset []
+  minio:
+    ports: !reset []
+  # mailpit 是 dev 假收件箱，生产本应禁用并改真实 SMTP；若仍随基础栈起来，至少不发布端口。
+  mailpit:
+    ports: !reset []
+
   api:
     build:
       context: .
@@ -33,8 +48,10 @@ services:
     # entrypoint.sh 启动时自动 alembic upgrade head，再跑 Dockerfile CMD 的 uvicorn。
     env_file:
       - .env.production
+    # 默认只绑宿主回环 127.0.0.1：强制流量走外层反代，不直接暴露公网（Docker 发布端口会绕过 ufw）。
+    # 外层反代在别的机器时，于 .env.production 设 PROXY_BIND_HOST=<内网IP>（勿用 0.0.0.0）。
     ports:
-      - "8080:8000"
+      - "${PROXY_BIND_HOST:-127.0.0.1}:8080:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,8 +71,9 @@ services:
       dockerfile: infra/docker/Dockerfile.web
     # 容器内 nginx 监听 80：托管静态产物 + 反代 /api/ /ws/ 到 api:8000。
     # 宿主端口 8088 避开 dev 前端 3000 与 grafana 3001；生产由外层反代 (nginx/Caddy) 终结 TLS 指向它。
+    # 同 api：默认绑回环，反代异机时用 PROXY_BIND_HOST 覆盖（见上）。
     ports:
-      - "8088:80"
+      - "${PROXY_BIND_HOST:-127.0.0.1}:8088:80"
     depends_on:
       api:
         condition: service_healthy

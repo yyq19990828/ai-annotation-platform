@@ -216,6 +216,19 @@ export function useVideoChunkDecoder({
     bumpVersion();
   }, [bumpVersion, maxItems, resolvedEnabled, supported]);
 
+  useEffect(() => {
+    const cache = cacheRef.current;
+    while (cache.size > maxItems) {
+      const oldestKey = cache.keys().next().value;
+      if (!oldestKey) break;
+      const oldest = cache.get(oldestKey);
+      if (oldest) closeBitmap(oldest.bitmap);
+      cache.delete(oldestKey);
+    }
+    setDiagnostics((cur) => ({ ...cur, supported, enabled: resolvedEnabled, cacheSize: cache.size }));
+    bumpVersion();
+  }, [bumpVersion, maxItems, resolvedEnabled, supported]);
+
   /**
    * 解码目标帧并入缓存。flag 关闭 / 不支持时直接 no-op 返回 null（调用方降级到 <video>）。
    * @param config WebCodecs codec 配置（codec / description / coded 尺寸）。

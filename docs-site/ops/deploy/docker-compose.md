@@ -6,36 +6,54 @@ status: stable
 last_reviewed: 2026-05-27
 ---
 
-# 部署指南
+# 生产部署（Docker Compose）
 
-> 适用读者：第一次把平台搬到 staging / production 的运维或开发者。
+> 适用读者：第一次把平台搬到 staging / production 的运维或开发者。本机开发部署见[开发部署（本地）](/ops/deploy/development)，不确定去哪先看[部署总览](/ops/deploy/)。
 >
-> 当前部署形态：API + Web 进程式跑（Node + Python），基础设施（PG / Redis / MinIO / Celery）走 docker-compose。完整 K8s / Terraform 模板暂未维护。
+> 当前部署形态：叠加 `docker-compose.prod.yml` 把 **api / web 容器化**（api 镜像 entrypoint 自动跑迁移 + uvicorn，web 镜像 nginx 托管构建产物 + 反代），基础设施（PG / Redis / MinIO / Celery）沿用基础 `docker-compose.yml`。完整 K8s / Terraform 模板暂未维护。不走容器、改 systemd 进程式跑 api/web 的替代路径见 §4.5。
 >
 > 想先理解开发态 / staging / 生产态的整体差异（谁进容器、profile、`ENVIRONMENT` 断言行为），先读[运行环境形态](/dev/concepts/runtime-environments)。
+>
+> 端口暴露 / 防火墙 / 远程 SDK 安全访问独立成篇：[端口暴露与网络安全](/ops/deploy/network-security)。
 
 ---
 
 ## 1. 拓扑
 
-```
-┌─ Reverse Proxy (nginx / Caddy) ─ TLS 终结
-│   │
-│   ├── /api/*  → FastAPI (uvicorn, port 8000)
-│   ├── /ws/*   → FastAPI WS（同进程）
-│   ├── /metrics → 只允许内网 / 监控网段
-│   └── /*       → 静态站点（pnpm build:web 产物）
-│
-├─ Postgres 16
-├─ Redis 7              （Celery broker + Pub/Sub + 限流 + token 黑名单）
-├─ MinIO               （或 S3 / OSS 兼容存储）
-├─ Celery worker × N   （default,ml,media,gpu,cleanup,audit 队列）
-├─ Celery worker (export) （独立 export 队列，导出大任务资源隔离，v0.10.27）
-├─ Celery beat × 1     （单实例！定时任务：审计归档 / PerfHud 推送 / ml health 巡检，v0.9.11）
-└─ ML backend（可选，GPU profile）：grounded-sam2 (8001) / sam3 (8002)
+```mermaid
+graph TB
+  Client[客户端 / 浏览器 / SDK]
+  Proxy[Reverse Proxy<br/>nginx/Caddy · TLS 终结]
+
+  subgraph App[应用容器 docker-compose.prod.yml]
+    Web[web 容器 :8088→80<br/>nginx 静态托管 + 反代]
+    API[api 容器 :8080→8000<br/>uvicorn · WS · 自动迁移]
+    Worker[Celery worker × N<br/>消费 6 个队列]
+    Export[Celery worker export<br/>导出任务隔离队列]
+    Beat[Celery beat × 1<br/>单实例 · 定时任务]
+  end
+
+  subgraph Infra[基础设施]
+    DB[(Postgres 16)]
+    RD[(Redis 7<br/>broker / 限流 / 黑名单)]
+    S3[(MinIO<br/>或 S3/OSS 兼容)]
+  end
+
+  SAM[ML backend 可选·GPU<br/>sam2:8001 / sam3:8002]
+
+  Client -->|HTTPS 443| Proxy
+  Proxy -->|转发 /*| Web
+  Web -->|/api/* /ws/* 反代| API
+  Proxy -.->|/metrics 仅内网 / 监控网段| API
+
+  API --> DB & RD & S3
+  Worker --> RD & DB & S3
+  Export --> RD & DB & S3
+  Beat --> RD
+  Worker -.->|HTTP 调用| SAM
 ```
 
-> **Celery beat 必须单实例**：worker 可水平扩多副本，但 beat 多实例会重复触发定时任务。进程式部署务必单独跑 beat（见 §4.3），漏了它则审计归档、PerfHud、ml health 等全部静默失效。
+> **Celery beat 必须单实例**：worker 可水平扩多副本，但 beat 多实例会重复触发定时任务（见 §4.2），漏了它则审计归档、PerfHud、ml health 等全部静默失效。
 
 最小生产部署：1 台 4C8G + 1 个独立 PG 实例（托管 RDS 优先）。
 
@@ -54,7 +72,7 @@ last_reviewed: 2026-05-27
 | `DATABASE_URL` **必填** | dev 连本机 | asyncpg 连接串，格式 `postgresql+asyncpg://用户名:密码@主机:端口/库`。驱动必须 `postgresql+asyncpg`；托管库走 SSL 用 `?ssl=require`（asyncpg **不认** `sslmode=`）。密码含特殊字符要 URL 编码（`@`→`%40`）。生产用托管 RDS / Cloud SQL 优先。 |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `user` / `pass` / `annotation` | 仅 `docker-compose.yml` 的 postgres 容器初始化用，后端不读。**沿用 compose 自带 postgres 时**生产须设强凭据，且与 `DATABASE_URL` 的用户名/密码/库名一致；用托管库时忽略。 |
 
-迁移在容器外手动跑：`uv run alembic upgrade head`。详见 §4.2。
+容器化生产由 api 镜像 entrypoint（`apps/api/scripts/entrypoint.sh`）在启动时**自动** `alembic upgrade head`，无需手动跑。进程式部署才需手动 `uv run alembic upgrade head`（见 §4.5）。
 
 ### 2.2 缓存 / 消息队列 (Redis)
 
@@ -197,6 +215,10 @@ v0.10.0+ 的高精度 backend（`facebookresearch/sam3` + `facebook/sam3.1` 权�
 
 ## 3. 反向代理（nginx 示例）
 
+> **容器化生产（§4.1 标准路径）**：web 容器内的 nginx 已经做了「托管静态产物 + 反代 `/api/` `/ws/`→`api:8000`」。所以**外层反代只需把 443 整体转发到 web 容器**（宿主 `8088`）：`location / { proxy_pass http://127.0.0.1:8088; }` 加下面的 WS 头与超时即可，**不必**自己托管静态或单独反代 `/api/`。唯一例外是 `/metrics`——它在 api 容器（宿主 `8080`），需单独 `location /metrics { allow ...; proxy_pass http://127.0.0.1:8080; }` 并限内网。
+>
+> 下面这份是**进程式部署 / 精细化外层反代**的完整示例（外层 nginx 自己托管静态、按 path 反代到 uvicorn）。容器化时按上面那段简化。
+
 ```nginx
 upstream anno_api { server 127.0.0.1:8000; }
 
@@ -246,33 +268,30 @@ server {
 
 ## 4. 启动顺序
 
-### 4.1 基础设施
+### 4.1 一键拉起（容器化生产标准路径）
 
 ```bash
-docker compose up -d postgres redis minio
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-`docker-compose.yml` **默认（不带 `--profile`）** 会起 7 个 service：postgres / redis / minio / mailpit / `celery-worker` / `celery-worker-export` / `celery-beat`；GPU backend（profile `gpu` / `gpu-sam3`）与监控（profile `monitoring`）按需单独启用。mailpit 只是 dev SMTP 收件箱，**生产应禁用并改用真实 SMTP**（见 §2.10）。API/Web 当前推荐进程式跑（开发时也是这样）。
+这一条命令做完整套生产部署：
 
-### 4.2 API（uvicorn）
+- **构建并起 api 容器**（`infra/docker/Dockerfile.api`）：entrypoint `apps/api/scripts/entrypoint.sh` 先 `alembic upgrade head`，再 exec uvicorn（`--host 0.0.0.0 --port 8000`，宿主映射 `8080:8000`）。**迁移自动跑，无需手动**。
+- **构建并起 web 容器**（`infra/docker/Dockerfile.web`，多阶段）：`pnpm build` 产物交容器内 nginx 托管，nginx 反代 `/api/` `/ws/`→`api:8000`（`infra/docker/nginx.conf`），宿主映射 `8088:80`。
+- **celery-worker / celery-worker-export / celery-beat** 改用生产配置（`env_file: .env.production` + inline 覆盖基础文件硬编码的 dev infra 凭据）。
 
-```bash
-cd apps/api
-uv sync
-uv run alembic upgrade head
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
-```
+两个 `-f` 与 `--env-file .env.production` **都不可省**：前者把 prod 叠加文件合进来才会容器化 api/web，后者是 worker 用 `${VAR}` 覆盖 dev 凭据的插值源（原理见[运行环境形态](/dev/concepts/runtime-environments)）。
 
-`--workers 4` 仅对 sync code 有意义，但 FastAPI async 路由也能利用。建议用 `--workers $(($(nproc) * 2 + 1))` 或挂 systemd 单元。
+跑完后栈内共 9 个容器：postgres / redis / minio / mailpit / api / web / celery-worker / celery-worker-export / celery-beat。GPU backend（profile `gpu` / `gpu-sam3`）与监控（profile `monitoring`）按需单独启用；mailpit 是 dev SMTP 收件箱，**生产应禁用并改真实 SMTP**（见 §2.10）。
 
-### 4.3 Celery worker
+> 宿主端口 `8080`（api）/ `8088`（web）只供外层反代转发，**绝不直接暴露公网**。prod 叠加文件默认把它们绑在宿主回环 `127.0.0.1`（`${PROXY_BIND_HOST:-127.0.0.1}`）——外层反代同机时开箱即安全；反代在**别的机器**时于 `.env.production` 设 `PROXY_BIND_HOST=<内网IP>`（勿用 `0.0.0.0`）。详见[端口暴露与网络安全](/ops/deploy/network-security)。
 
-```bash
-cd apps/api
-uv run celery -A app.workers.celery_app worker -l info -Q default,ml,media,gpu,cleanup,audit --concurrency=4
-```
+### 4.2 Celery 队列与 beat（容器已配好，理解即可）
 
-队列含义（worker 必须订阅全部 6 个，否则未订阅队列的任务静默堆积）：
+worker/beat 容器已在 `docker-compose.yml` 定义、由 §4.1 一并拉起，下面是排障时需要的背景。
+
+主 worker 订阅 6 个队列（少订阅一个 → 该队列任务静默堆积）：
 - `default` — 兜底队列（`task_default_queue`）、PerfHud 推送、心跳、在线状态、分区维护等
 - `ml` — 自动预标注、模型调用
 - `media` — 图像/视频转码、缩略图、视频帧
@@ -280,40 +299,20 @@ uv run celery -A app.workers.celery_app worker -l info -Q default,ml,media,gpu,c
 - `cleanup` — 软删清理、效率看板物化视图刷新、DuckDB 同步
 - `audit` — 审计日志 / task event 批量入库
 
-或直接用 `docker compose up -d celery-worker`（已配置好）。
+**导出专用 worker（`celery-worker-export`，v0.10.27）**：`export` 队列由独立 worker 处理，让导出大任务资源隔离、不拖累预标 / 媒体；主 worker **不订阅** `export`，故单独成一个容器。
 
-#### 导出专用 worker（v0.10.27）
+**Celery beat（`celery-beat`，必须单实例，v0.9.11）**：定时任务调度（审计 partition 月度归档、PerfHud 推送、ml health 巡检等）。worker 可水平扩多副本（`docker compose up -d --scale celery-worker=N`），但 **beat 多实例会重复触发，绝不能扩副本**。漏了 beat 不报错，但所有定时任务静默不跑。
 
-`export` 队列由独立 worker 处理，让导出大任务资源隔离、不拖累预标 / 媒体处理。上面那个主 worker **不订阅** `export`，所以进程式部署必须再起一个：
+### 4.3 首个 super_admin（bootstrap_admin）
 
-```bash
-cd apps/api
-uv run celery -A app.workers.celery_app worker -l info -Q export --concurrency=2
-```
-
-或 `docker compose up -d celery-worker-export`。
-
-#### Celery beat（必须单实例，v0.9.11）
-
-beat 是定时任务调度进程（审计 partition 月度归档、PerfHud 推送、ml health 巡检等），**必须且只能起一个实例**——多实例会重复触发。worker 可以多副本，beat 不行：
+平台没有「第一个用户自动当管理员」的逻辑。第一次部署后在 api 容器内跑一次（依赖已 `--system` 装在镜像里，可直接 `python -m`）：
 
 ```bash
-cd apps/api
-uv run celery -A app.workers.celery_app beat -l info --schedule=/tmp/celerybeat-schedule
-```
-
-或 `docker compose up -d celery-beat`。漏了 beat 不会报错，但所有定时任务静默不跑。
-
-### 4.4 首个 super_admin（bootstrap_admin）
-
-平台没有「第一个用户自动当管理员」的逻辑。第一次部署后必须手动跑：
-
-```bash
-cd apps/api
-ADMIN_EMAIL=ops@your-org.com \
-ADMIN_PASSWORD='set-a-strong-one' \
-ADMIN_NAME='平台管理员' \
-uv run python -m scripts.bootstrap_admin
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec \
+  -e ADMIN_EMAIL=ops@your-org.com \
+  -e ADMIN_PASSWORD='set-a-strong-one' \
+  -e ADMIN_NAME='平台管理员' \
+  api python -m scripts.bootstrap_admin
 ```
 
 脚本：[`apps/api/scripts/bootstrap_admin.py`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/apps/api/scripts/bootstrap_admin.py)。
@@ -321,15 +320,40 @@ uv run python -m scripts.bootstrap_admin
 - 写一行 `audit_logs.action = system.bootstrap_admin`，可在 SettingsPage 审计日志页搜索追溯
 - **跑完后立即从 shell history 清除明文密码**，并要求该账号首次登录后改密
 
-### 4.5 Web
+### 4.4 升级时重新构建
+
+`git pull` 后镜像不会自动更新，需带 `--build` 重新拉起（entrypoint 会自动跑新迁移）：
 
 ```bash
-pnpm install --filter @anno/web
-pnpm --filter @anno/web build
-# 把 apps/web/dist/ rsync 到 nginx 的 root 目录
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-前端调用硬编码同源 `/api/v1`，由托管它的 nginx 反代 `/api/`→后端即可（见 `infra/docker/nginx.conf`），无需构建时配置 API 地址。
+rebuild 与 restart 的判断规则见[升级指南](/ops/upgrade-guide)。
+
+### 4.5 进程式部署（替代路径，不走容器）
+
+如果不容器化 api/web（例如裸机 + systemd），改为手动跑进程；此时迁移要自己跑：
+
+```bash
+# API
+cd apps/api
+uv sync
+uv run alembic upgrade head
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers $(($(nproc) * 2 + 1))
+
+# Celery（主 worker / 导出 worker / beat 各一个进程，beat 务必单实例）
+uv run celery -A app.workers.celery_app worker -l info -Q default,ml,media,gpu,cleanup,audit --concurrency=4
+uv run celery -A app.workers.celery_app worker -l info -Q export --concurrency=2
+uv run celery -A app.workers.celery_app beat -l info --schedule=/tmp/celerybeat-schedule
+
+# Web：构建静态产物后交给宿主机 nginx 托管
+pnpm install --filter @anno/web
+pnpm --filter @anno/web build
+# 把 apps/web/dist/ rsync 到 nginx 的 root 目录；nginx 反代 /api/ /ws/→后端（参考 infra/docker/nginx.conf）
+```
+
+前端调用硬编码同源 `/api/v1`，无需构建时配 API 地址；用 systemd 管理各进程、`--workers` 取 `nproc*2+1`。基础设施仍走 `docker compose up -d postgres redis minio`。
 
 ---
 
@@ -393,29 +417,24 @@ docker compose -f docker-compose.yml -f docker-compose.hostvols.yml up -d
 
 ## 6. 升级与迁移 runbook
 
-每次 `git pull` 主分支后：
+每次 `git pull` 主分支后（容器化生产）：
 
 1. **读 CHANGELOG**：包含 Alembic 迁移的版本需要先确认迁移顺序和回滚策略。
 2. **先备份**：`pg_dump` + `mc mirror`（见 §5）。
-3. **更新依赖**：
+3. **重新构建并拉起**：
    ```bash
-   cd apps/api && uv sync
-   pnpm install
+   docker compose --env-file .env.production \
+     -f docker-compose.yml -f docker-compose.prod.yml up -d --build
    ```
-4. **跑迁移**：
-   ```bash
-   cd apps/api && uv run alembic upgrade head
-   ```
-   失败立即停下，read 错误日志，**不要**手动 `alembic stamp`（除非熟悉 alembic 内部）。
-5. **重启 API + worker**：systemd / supervisor 滚动重启；蓝绿部署优先。
-6. **冒烟测试**：
+   依赖（`uv.lock` / `pnpm-lock.yaml`）烤进新镜像、api entrypoint 自动 `alembic upgrade head`，一步到位。迁移失败时容器启动失败、read 容器日志，**不要**手动 `alembic stamp`（除非熟悉 alembic 内部）。worker 仅改业务码时可 `docker compose restart celery-worker` 免重建（规则见[升级指南](/ops/upgrade-guide)）。
+4. **冒烟测试**：
    ```bash
    curl -fsS https://app.example.com/api/v1/health/db | jq
    curl -fsS https://app.example.com/api/v1/health/redis | jq
    curl -fsS https://app.example.com/api/v1/health/minio | jq
    curl -fsS https://app.example.com/api/v1/health/celery | jq
    ```
-7. **回滚预案**：`alembic downgrade -1` + 旧 commit 重启。MinIO 数据通常向前兼容；audit_logs 触发器 downgrade 已写在 0032 迁移里。
+5. **回滚预案**：`git checkout <旧 commit>` 后 `up -d --build` 重新构建旧镜像；含迁移时先 `docker compose ... exec api alembic downgrade -1`。MinIO 数据通常向前兼容；audit_logs 触发器 downgrade 已写在 0032 迁移里。
 
 ---
 

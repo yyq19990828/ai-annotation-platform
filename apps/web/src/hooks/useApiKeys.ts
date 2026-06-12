@@ -1,5 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiKeysApi, type ApiKeyCreatePayload } from "../api/apiKeys";
+import {
+  apiKeysApi,
+  type ApiKeyCreatePayload,
+  type ApiKeyUpdatePayload,
+} from "../api/apiKeys";
 
 export function useApiKeys(enabled = true) {
   return useQuery({
@@ -13,6 +17,23 @@ export function useCreateApiKey() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: ApiKeyCreatePayload) => apiKeysApi.create(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["api-keys"] }),
+  });
+}
+
+export function useUpdateApiKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: ApiKeyUpdatePayload }) =>
+      apiKeysApi.update(id, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["api-keys"] }),
+  });
+}
+
+export function useRotateApiKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiKeysApi.rotate(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["api-keys"] }),
   });
 }
