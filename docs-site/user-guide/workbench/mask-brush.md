@@ -20,7 +20,7 @@ mask 编辑器走的是「polygon 中转」：mask 在前端临时态编辑，�
 
 ## 四种进入方式
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/mask-brush/toolbar-overview.png — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto] -->
+![Mask 笔刷工具栏](../images/mask-brush/toolbar-overview.png)
 
 1. **空白 mask（从零开始）**
    - 按 `M` 或工具栏点 Mask 图标 → 鼠标在画布上拖拽即开始画

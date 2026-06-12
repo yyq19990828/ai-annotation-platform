@@ -33,6 +33,8 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
 
 打开图像项目后，详情页会列出可预标的 `active` 批次。打开视频项目时，页面会显示引导卡片，提示你进入视频工作台选中轨迹后用 `Ctrl+B` 发起 AI 追踪，并提供视频 job 历史入口。
 
+![AI 预标注步骤条](../images/projects/ai-pre-stepper.png)
+
 ## 批量预标图像批次
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/ai-pre-config-panel.png — 项目详情面板（批次列表 + 配置区 + 跑预标按钮 + 导入预测按钮）[manual] -->
@@ -88,6 +90,8 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
 - 取消结果会保留已处理、跳过、取消位置等摘要。
 
 后台任务铃支持「全部 / 进行中」筛选，并可本地隐藏已完成、失败或取消的历史条目。隐藏只影响当前浏览器显示，完整历史仍在 `/ai-pre/jobs`。
+
+![预标注历史搜索](../images/projects/ai-pre-history-search.png)
 
 ## 失败重试
 

@@ -23,6 +23,8 @@ last_reviewed: 2026-06-11
 
 ## 个人资料
 
+![个人资料设置](../images/settings/profile.png)
+
 - **显示名**：可修改；提交后立即生效
 - **邮箱**：只读，不可在设置页自助修改
 - **修改密码**：需要旧密码，新密码强度规则与注册一致（≥ 8 字符，需含大小写字母 + 数字，三项缺一不可）
@@ -35,7 +37,7 @@ last_reviewed: 2026-06-11
 
 ## 标注偏好（Workbench）
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/settings/workbench-preferences.png — 标注偏好四控件全景（CSS 滤镜输入框 + 控制点大小滑块） -->
+![标注偏好](../images/settings/workbench-prefs.png)
 
 驱动工作台的用户级配置（`useWorkbenchConfig`），存于后端用户偏好，跨浏览器同步。v0.15.3 起按 **通用 / 图片 / 视频 / 点云** 四分类组织（暂无字段的分类不显示），并新增工作台内的设置抽屉入口（齿轮菜单 →「工作台设置」，改动实时预览），详见 [工作台设置](../workbench/settings)：
 
@@ -75,6 +77,8 @@ key 的权限在路由层经 `require_scopes` 校验，缺少所需 scope 的请
 
 ## 我的反馈
 
+![我的反馈](../images/settings/my-feedback.png)
+
 罗列当前用户通过右下角浮动按钮提交过的 BUG 工单，按时间倒序。每条显示 `display_id` + 标题 + 严重度 + 状态。
 
 点击展开查看：
@@ -87,6 +91,8 @@ key 的权限在路由层经 `require_scopes` 校验，缺少所需 scope 的请
 
 ## 通知偏好
 
+![通知偏好](../images/settings/notification-prefs.png)
+
 逐 type 切换 **站内通知（in-app）** 开关。关闭后，新事件不进入站内通知中心；已存档通知不受影响。邮件 digest 当前尚未开放配置。所有已知 type 见 [通知中心](./notifications)。
 
 ::: tip 静音 = 全链路屏蔽
@@ -95,7 +101,7 @@ key 的权限在路由层经 `require_scopes` 校验，缺少所需 scope 的请
 
 ## 系统设置（super_admin 专属）
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/settings/system-settings.png — super_admin 系统设置（开放注册 + 邀请有效期 + SMTP） -->
+![系统 SMTP 设置](../images/settings/system-smtp.png)
 
 只对 super_admin 显示，对应 `app/services/system_settings_service.py`（`EDITABLE_KEYS` 白名单）。UI 可配条目：
 

@@ -73,7 +73,7 @@ last_reviewed: 2026-06-10
 
 ## 查询界面
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/audit-logs/filter-bar.png — 筛选栏（scope 切换 + detail 键名/键值输入框） [manual] -->
+![审计日志筛选栏](../images/superadmin/audit-logs/filter-bar.png)
 
 前端提供以下过滤维度（`GET /api/v1/audit-logs`）：
 

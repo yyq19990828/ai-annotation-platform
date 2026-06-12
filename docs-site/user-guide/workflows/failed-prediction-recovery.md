@@ -22,7 +22,7 @@ last_reviewed: 2026-06-10
 
 ## Step 1：定位失败原因
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workflows/failed-prediction-recovery-jobs-list.png — /ai-pre/jobs?status=failed 列表 [auto] -->
+![失败预测任务列表](../images/workflows/failed-prediction-recovery-jobs-list.png)
 
 **方式 A：AI 预标 Jobs 页面**
 1. 主导航 → **AI 预标** → **Jobs**（`/ai-pre/jobs?status=failed`）

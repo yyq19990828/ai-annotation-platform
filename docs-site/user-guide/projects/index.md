@@ -13,6 +13,10 @@ last_reviewed: 2026-06-10
 ![创建项目入口](../images/projects/create-entry.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: ProjectsPage「新建项目」按钮高亮。 -->
 
+![项目列表空状态](../images/projects/empty-state.png)
+
+![项目列表错误状态](../images/projects/error-state.png)
+
 ## 步骤
 
 向导共 6 步（类型 → 类别 → 属性 → AI 接入 → 数据 → 成员），提交后项目即创建完成。
@@ -42,6 +46,8 @@ last_reviewed: 2026-06-10
 
 ![向导步骤](../images/projects/wizard-steps.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 6 步 wizard 各步关键截图（类型 / 类别 / 属性 / AI 接入 / 数据 / 成员），可拼成一张长图。 -->
+
+![向导 ML Backend 配置](../images/projects/wizard-step4-backend.png)
 
 ## scene 模式项目
 

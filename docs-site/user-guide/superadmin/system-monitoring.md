@@ -74,7 +74,7 @@ docker logs ai-annotation-platform-api-1 2>&1 | jq 'select(.status>=500)'
 
 ## 系统健康面板
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/system-monitoring/health-panel.png — 4 组件卡 + Celery 队列表 + Workers 心跳表 [manual] -->
+![系统健康面板](../images/superadmin/system-monitoring/health-panel.png)
 
 系统健康面板基于 `/api/v1/admin/system-health`：
 

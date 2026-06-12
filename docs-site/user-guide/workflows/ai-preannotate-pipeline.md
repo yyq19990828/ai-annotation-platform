@@ -38,7 +38,7 @@ last_reviewed: 2026-06-10
 
 ## Step 3：触发批量预标注
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workflows/ai-pre-project-detail-panel.png — ProjectDetailPanel（批次勾选 + predict_mode 三 tab + 跑预标按钮） [auto] -->
+![AI 预标注项目详情面板](../images/workflows/ai-pre-project-detail-panel.png)
 
 1. 主导航 → **AI 预标**（`/ai-pre`）→ 选择项目卡片，进入 ProjectDetailPanel
 2. 勾选一个或多个 `active` 批次

@@ -22,6 +22,8 @@ last_reviewed: 2026-06-10
 
 ## 列表与筛选
 
+![BUG 反馈列表](../images/superadmin/bugs/list.png)
+
 进入后默认展示最近 50 条工单，支持按 **状态 + 严重度** 两个维度过滤：
 
 | 状态 | 含义 |
@@ -45,6 +47,8 @@ last_reviewed: 2026-06-10
 支持以 Markdown 格式导出当前筛选结果：`GET /api/v1/bug_reports?format=markdown&status=new`。
 
 ## 详情面板
+
+![BUG 反馈详情面板](../images/superadmin/bugs/detail-panel.png)
 
 点击行打开右侧详情面板，自上而下包含：
 

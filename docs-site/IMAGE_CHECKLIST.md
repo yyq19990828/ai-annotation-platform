@@ -95,7 +95,7 @@
 
 ### Workbench 截图（待补真实截图，目前部分仅 ASCII 图）
 
-- [ ] `images/workbench/layout-overview.png` — 工作台四区布局真实截图（顶栏 / 左工具栏 / 画布 / 右侧抽屉）
+- [x] `images/workbench/layout-overview.png` — 工作台四区布局真实截图（顶栏 / 左工具栏 / 画布 / 右侧抽屉）
 - [ ] `images/workbench/video-track-timeline.png` — 视频轨道时间轴 + 关键帧 + 软网格 `[auto]`
 - [ ] `images/workbench/mask-brush-overlay.png` — Mask brush 工具半透明涂抹 + Tab 切换刷子/橡皮
 
@@ -121,7 +121,7 @@
 
 ### 数据集 · 导入
 
-- [ ] `images/datasets/import-images-wizard.png` — 导入数据集向导基本信息步选「图像」+ 来源选「ZIP 上传」；红框：数据类型选择、文件拖放区 `[auto]`
+- [x] `images/datasets/import-images-wizard.png` — 导入数据集向导基本信息步选「图像」+ 来源选「ZIP 上传」；红框：数据类型选择、文件拖放区 `[auto]`
 - [ ] `images/datasets/import-wizard-3d-type.png` — 导入向导基本信息步选「3D 点云」+ 勾「声明为时序数据集」；红框：数据类型、时序开关、axis_convention 选择器
 - [ ] `images/datasets/pointcloud-dir-layout.png` — 单 scene vs 多 scene 目录树并排对比（建议矢量示意图而非真截图）
 
@@ -149,10 +149,10 @@
 
 > 文档侧已在对应小节打 `<!-- TODO(v0.14.18) IMAGE_CHECKLIST: ... -->` 注释占位（未嵌 `![]()`）。本批 69 张，按区域分组。
 ### 入口
-- [ ] `images/concepts/role-permission-matrix.png` — /users 权限矩阵 5 角色行，标注红框：viewer 行 [auto]
+- [x] `images/concepts/role-permission-matrix.png` — /users 权限矩阵 5 角色行，标注红框：viewer 行 [auto]
 - [ ] `images/getting-started/annotator-dashboard.png` — 标注员仪表盘全屏，标注红框：产能/质量分区 + 「打开」按钮
-- [ ] `images/getting-started/role-dashboard-overview.png` — 四种角色 Dashboard 拼图 [auto]
-- [ ] `images/getting-started/platform-nav-overview.png` — 平台主界面侧边栏各分区 [auto]
+- [x] `images/getting-started/role-dashboard-overview.png` — 四种角色 Dashboard 拼图 [auto]
+- [x] `images/getting-started/platform-nav-overview.png` — 平台主界面侧边栏各分区 [auto]
 
 ### 数据集
 - [ ] `images/datasets/lidar-axis-wizard-step2.png` — 向导第 2 步选「3D 点云」后出现 AxisConventionPicker + 自动检测按钮 [manual]
@@ -174,8 +174,8 @@
 
 ### 参考
 - [x] `images/notifications/panel-overview.png` — 通知面板展开态（筛选 tab + 分组 + 加载更多）
-- [ ] `images/settings/workbench-preferences.png` — 标注偏好四控件全景（CSS 滤镜输入框 + 控制点大小滑块）
-- [ ] `images/settings/system-settings.png` — super_admin 系统设置（开放注册 + 邀请有效期 + SMTP）
+- [x] `images/settings/workbench-prefs.png` — 标注偏好（自动保存周期 + 颜色策略）
+- [x] `images/settings/system-smtp.png` — 系统设置 / SMTP 配置 + 发送测试邮件按钮（仅 super_admin）
 
 ### 审核
 - [ ] `images/review/review-list-page.png` — ReviewPage 左侧批次树 + 任务列表（缩略图 + 批量操作按钮）
@@ -189,7 +189,7 @@
 - [ ] `images/superadmin/failed-predictions/dismiss-restore.png` — 显示已放弃后含「已放弃」badge + 恢复按钮 [manual]
 - [ ] `images/superadmin/ml-backend/register-form.png` — 注册表单全貌含 max_concurrency/extra_params [manual]
 - [ ] `images/superadmin/ml-backend/health-state-badges.png` — connected/error/disconnected 三状态徽章对比 [manual]
-- [ ] `images/superadmin/model-market-tabs.png` — 能力目录/运行时观测/注册管理三 tab [manual]
+- [x] `images/superadmin/model-market/list.png` — 模型市场 3 个 tab 全图
 - [ ] `images/superadmin/model-market-runtime-card.png` — backend 卡片（GPU 显存 + 池状态 + 操作按钮） [manual]
 - [ ] `images/superadmin/public-templates/scope-selector.png` — 可见范围下拉「公共」选项 disabled（非超管视角） [manual]
 - [ ] `images/superadmin/public-templates/templates-list.png` — 模板库四 tab + scope chip + usage_count [manual]
@@ -200,9 +200,9 @@
 - [ ] `images/3d-box/workbench-overview.png` — 3D 工作台全局（主视图 + 相机面板 + PSR 面板 + 自动贴合按钮组） [manual]
 - [ ] `images/3d-box/psr-panel.png` — PSR 面板近景，标注红框：l/w/h 尺寸字段 [manual]
 - [ ] `images/3d-box/autofit-buttons.png` — 贴合/收尺寸/贴地/朝向按钮组 [manual]
-- [ ] `images/workbench/layout-overview.png` — 四区布局全图（顶栏/左工具栏/画布/右抽屉） [auto]
+- [x] `images/workbench/layout-overview.png` — 四区布局全图（顶栏/左工具栏/画布/右抽屉） [auto]
 - [ ] `images/workbench/task-status-labels.png` — 六种状态标签竖列
-- [ ] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
+- [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
 - [ ] `images/pointcloud-crossframe/crossframe-propagate-toast.png` — 按 Alt+→ 跳帧自动选中新框 + toast [manual]
 - [ ] `images/pointcloud-crossframe/overlay-k3-triview.png` — K=3 时主视图 + 三视图半透明虚线参考框 [manual]
 - [ ] `images/workbench-pointcloud-projection/overlay-wireframe.png` — 相机面板线框投影 overlay + 「正对」角标 [manual]
@@ -216,9 +216,9 @@
 - [ ] `images/polyline/vertex-edit.png` — 折线选中态 Alt 插入/Shift 删除提示
 - [ ] `images/workbench/rotated-bbox-draw.png` — 拖框生成旋转框，标注红框：旋转手柄 + 四角缩放手柄
 - [ ] `images/workbench/rotated-bbox-rotate.png` — 旋转约 30° 后状态 + 角度值
-- [ ] `images/sam/ai-tool-drawer.png` — AIToolDrawer 全图（后端下拉/极性切换/状态灯） [auto]
-- [ ] `images/sam/exemplar-output-mode.png` — 输出形态三选一 TabRow [auto]
-- [ ] `images/sam/ai-inspector-panel.png` — 悬浮 AI 面板（Prompt/阈值滑块/变体选择） [auto]
+- [x] `images/sam/ai-tool-drawer.png` — AIToolDrawer 全图（后端下拉/极性切换/状态灯） [auto]
+- [x] `images/sam/exemplar-output-mode.png` — 输出形态三选一 TabRow [auto]
+- [x] `images/sam/ai-inspector-panel.png` — 悬浮 AI 面板（Prompt/阈值滑块/变体选择） [auto]
 - [ ] `images/video-playback/sampling-config.png` — 项目设置帧采样配置区（mode/target_fps/frame_step） [manual]
 - [ ] `images/video-playback/chapter-sidebar.png` — 章节侧栏含彩色色带 + 章节列表 [manual]
 - [ ] `images/video-propagate/ai-propagate-dialog.png` — AI 传播对话框（方向/范围/模型/尺寸下拉） [manual]
@@ -228,9 +228,9 @@
 - [ ] `images/workbench/video-track-qc-warnings.png` — 画布左上角质量提示浮层 [manual]
 
 ### 工作流
-- [ ] `images/workflows/ai-pre-project-detail-panel.png` — ProjectDetailPanel（批次勾选 + predict_mode 三 tab + 跑预标按钮） [auto]
-- [ ] `images/workflows/failed-prediction-recovery-jobs-list.png` — /ai-pre/jobs?status=failed 列表 [auto]
-- [ ] `images/workflows/project-wizard-type-select.png` — 向导类型选择（7 种项目类型卡） [auto]
+- [x] `images/workflows/ai-pre-project-detail-panel.png` — ProjectDetailPanel（批次勾选 + predict_mode 三 tab + 跑预标按钮） [auto]
+- [x] `images/workflows/failed-prediction-recovery-jobs-list.png` — /ai-pre/jobs?status=failed 列表 [auto]
+- [x] `images/workflows/project-wizard-type-select.png` — 向导类型选择（7 种项目类型卡） [auto]
 - [ ] `images/workflows/batch-assign-dialog.png` — 批次分配对话框（标注员/审核员选择）
 
 ## 新增图片时

@@ -25,7 +25,7 @@
 
 ## 角色
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/concepts/role-permission-matrix.png — /users 权限矩阵 5 角色行，标注红框：viewer 行 [auto] -->
+![角色权限矩阵](./images/concepts/role-permission-matrix.png)
 
 | 角色 | 英文 | 权限范围 |
 |---|---|---|
