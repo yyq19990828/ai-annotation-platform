@@ -665,7 +665,7 @@ def _person() -> PersonStat:
 
 
 async def test_stats_tab_renders_sparklines():
-    from textual.widgets import Sparkline
+    from ai_annotation.tui.app import AxisChart
 
     app = _make_app()
     async with app.run_test(size=(120, 32)) as pilot:
@@ -673,10 +673,42 @@ async def test_stats_tab_renders_sparklines():
         headline = str(app.query_one("#stats-headline", Static).render())
         assert "总量 100" in headline
         assert "AI率 40%" in headline
-        # 4 条曲线都拿到了序列数据
-        assert app.query_one("#spark-total", Sparkline).data
-        assert len(app.query_one("#spark-completed", Sparkline).data) == 12
-        assert app.query_one("#spark-airate", Sparkline).data
+        # 4 条折线图都拿到了序列数据
+        assert app.query_one("#spark-total", AxisChart)._data
+        assert len(app.query_one("#spark-completed", AxisChart)._data) == 12
+        assert app.query_one("#spark-airate", AxisChart)._data
+
+
+async def test_axis_chart_renders_axes_and_line():
+    from ai_annotation.tui.app import _render_axis_chart
+
+    plain = _render_axis_chart(
+        [50, 60, 55, 80, 40, 95], width=60, height=8, unit="%",
+        x_left="-12w", x_right="now",
+    ).plain
+    # 自适应纵轴: 顶=max 底=min; 横轴: 首末标签 + └ 基线; braille 连线
+    assert "95%" in plain and "40%" in plain
+    assert "-12w" in plain and "now" in plain
+    assert "└" in plain
+    assert any(0x2800 <= ord(c) <= 0x28FF and c != "⠀" for c in plain)
+    # 数据不足时降级为占位, 不抛
+    assert "等待数据" in _render_axis_chart([], 60, 8, "%", "-12w", "now").plain
+
+
+async def test_fmt_pool_summarizes_protocol_fields():
+    from ai_annotation.tui.app import _fmt_pool
+
+    # 协议 PoolStatus / video_pool 字段 → 简洁摘要, 不退化打印原始长 dict
+    img = _fmt_pool({"cap": 1, "current_size": 0, "loaded_keys": [], "last_evict": None})
+    assert img == "cap=1 · loaded=0"
+    vid = _fmt_pool(
+        {"cap": 1, "loaded_variants": [], "active_sessions": 0, "idle_seconds": 600}
+    )
+    assert vid == "cap=1 · loaded=0 · active=0 · idle=600s"
+    # current_size 缺失 → 回落到 loaded_keys 长度
+    assert _fmt_pool({"cap": 2, "loaded_keys": [{"key": "a"}, {"key": "b"}]}) == "cap=2 · loaded=2"
+    assert _fmt_pool({}) == "-"
+    assert "loaded_keys" not in img  # 不出现原始键名
 
 
 async def test_people_tab_loads_for_super_admin():

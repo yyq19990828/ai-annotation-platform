@@ -15,11 +15,13 @@ from collections import deque
 from datetime import datetime
 from typing import Any
 
+from rich.console import RenderableType
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen, Screen
+from textual.widget import Widget
 from textual.widgets import (
     Button,
     DataTable,
@@ -29,7 +31,6 @@ from textual.widgets import (
     RadioButton,
     RadioSet,
     SelectionList,
-    Sparkline,
     Static,
     Switch,
     TabbedContent,
@@ -137,6 +138,137 @@ def _spark_text(values: list[int]) -> str:
     return "".join(_SPARK_CHARS[min(last, int((v - lo) / span * last))] for v in nums)
 
 
+# braille 2x4 点阵: [子行][子列] → 点位 bit (基址 0x2800)
+_BRAILLE_DOTS = ((0x01, 0x08), (0x02, 0x10), (0x04, 0x20), (0x40, 0x80))
+
+
+def _fmt_axis(v: float, unit: str) -> str:
+    """纵轴刻度格式化: 百分比保留整数, 大计数缩成 k。"""
+    if unit == "%":
+        return f"{v:.0f}%"
+    if abs(v) >= 1000:
+        return f"{v / 1000:.1f}k"
+    return f"{v:.0f}"
+
+
+# 折线图配色 (GitHub 深色主题, 在 nord 背景上清晰好看): 标签柔灰 / 轴线灰
+_CHART_LABEL = "#8b949e"
+_CHART_AXIS = "#6e7681"
+
+
+def _render_axis_chart(
+    data: list[float],
+    width: int,
+    height: int,
+    unit: str,
+    x_left: str,
+    x_right: str,
+    line_color: str = "#79c0ff",
+) -> Text:
+    """data → braille 折线图 Text: 顶/底自适应纵轴标签 + 首末横轴标签 + 轴线。
+
+    线段用 braille 点阵 (单元 2x4 子像素), 相邻子列纵向补点以连成连续折线。
+    纵轴范围取 data 的 min/max 自适应; 折线用 line_color, 标签/轴线柔灰。
+    """
+    if not data or width < 12 or height < 4:
+        return Text("等待数据…", style="dim")
+    lo, hi = min(data), max(data)
+    if hi - lo < 1e-9:  # 平线: 上下留余量, 折线居中可见
+        pad = abs(hi) * 0.1 or 1.0
+        hi, lo = hi + pad, lo - pad
+    lab_hi, lab_lo = _fmt_axis(max(data), unit), _fmt_axis(min(data), unit)
+    gutter = max(len(lab_hi), len(lab_lo))
+    plot_w = width - gutter - 1  # 1 = 纵轴线 │
+    plot_rows = height - 2  # 末两行留给横轴线 + 横轴标签
+    if plot_w < 4 or plot_rows < 1:
+        return Text("等待数据…", style="dim")
+    sub_w, sub_h = plot_w * 2, plot_rows * 4
+    grid = [[0] * plot_w for _ in range(plot_rows)]
+    n = len(data)
+
+    def y_sub(val: float) -> int:
+        frac = min(1.0, max(0.0, (val - lo) / (hi - lo)))
+        return int(round((1.0 - frac) * (sub_h - 1)))
+
+    prev_y: int | None = None
+    for sx in range(sub_w):
+        if n == 1:
+            val = data[0]
+        else:  # 子列 → data 浮点索引, 线性插值取值
+            t = sx / (sub_w - 1) * (n - 1)
+            i0 = int(t)
+            i1 = min(i0 + 1, n - 1)
+            val = data[i0] + (data[i1] - data[i0]) * (t - i0)
+        cy = y_sub(val)
+        span = [cy] if prev_y is None else range(min(prev_y, cy), max(prev_y, cy) + 1)
+        for sy in span:
+            grid[sy // 4][sx // 2] |= _BRAILLE_DOTS[sy % 4][sx % 2]
+        prev_y = cy
+
+    out = Text()
+    for r in range(plot_rows):
+        lab = lab_hi if r == 0 else (lab_lo if r == plot_rows - 1 else "")
+        out.append(lab.rjust(gutter), style=_CHART_LABEL)
+        out.append("│", style=_CHART_AXIS)
+        out.append(
+            "".join(chr(0x2800 + grid[r][c]) for c in range(plot_w)) + "\n",
+            style=line_color,
+        )
+    out.append(" " * gutter + "└" + "─" * plot_w + "\n", style=_CHART_AXIS)
+    mid = max(1, plot_w - len(x_left) - len(x_right))
+    xline = (x_left + " " * mid + x_right)[:plot_w]
+    out.append(" " * (gutter + 1) + xline, style=_CHART_LABEL)
+    return out
+
+
+class AxisChart(Widget):
+    """自绘折线图: braille 连线 + 自适应纵轴(顶/底标签)/横轴(首末标签)。
+
+    Sparkline 的带坐标替代; 纯自绘不引绘图依赖 (TUI 仍可整体删除)。
+    set_data() 更新数据并重绘; 宽高随容器自适应。
+    """
+
+    # 宽高固定, 保证各图尺寸一致 (不随容器伸缩); 窄终端会出现横向裁切, 取常见终端可容纳的 64x8
+    DEFAULT_CSS = """
+    AxisChart {
+        width: 64;
+        height: 8;
+        margin-bottom: 1;
+    }
+    """
+
+    def __init__(
+        self,
+        *,
+        unit: str = "",
+        x_left: str = "",
+        x_right: str = "now",
+        color: str = "#79c0ff",
+        id: str | None = None,
+    ):
+        super().__init__(id=id)
+        self._data: list[float] = []
+        self._unit = unit
+        self._x_left = x_left
+        self._x_right = x_right
+        self._color = color
+
+    def set_data(self, data: list[float]) -> None:
+        self._data = [float(v) for v in data]
+        self.refresh()
+
+    def render(self) -> RenderableType:
+        return _render_axis_chart(
+            self._data,
+            self.size.width,
+            self.size.height,
+            self._unit,
+            self._x_left,
+            self._x_right,
+            self._color,
+        )
+
+
 def _format_fields(model: Any) -> str:
     """模型字段平铺为 key: value 多行文本 (详情面板用), 长值截断。"""
     lines = []
@@ -215,11 +347,16 @@ ConfirmModal, ExportConfigModal, PathInputModal {
     max-height: 16;
 }
 #modal-buttons {
-    height: auto;
+    height: 1;
     align-horizontal: center;
     margin-top: 1;
 }
+/* 扁平按钮, 与全局 .action-bar Button 一致, 不用 Textual 默认的 3 行带框大按钮 */
 #modal-buttons Button {
+    height: 1;
+    min-width: 0;
+    border: none;
+    padding: 0 2;
     margin: 0 1;
 }
 .modal-hint {
@@ -571,11 +708,29 @@ def _fmt_secs(v: float | None) -> str:
 
 
 def _fmt_pool(pool: dict | None) -> str:
+    """显存池摘要 (协议 §4.3 PoolStatus / video_pool): 取关键字段, 不打印原始长 dict。
+
+    image pool: cap / current_size / loaded_keys; video_pool: cap / loaded_variants
+    / active_sessions / idle_seconds。字段缺失则跳过, 全缺时显示「空闲」。
+    """
     if not isinstance(pool, dict) or not pool:
         return "-"
-    keys = ("size", "capacity", "in_use", "loaded", "idle")
-    parts = [f"{k}={pool[k]}" for k in keys if k in pool]
-    return " · ".join(parts) if parts else str(pool)[:60]
+    parts: list[str] = []
+    if (cap := pool.get("cap")) is not None:
+        parts.append(f"cap={cap}")
+    loaded = pool.get("current_size")
+    if loaded is None:
+        for k in ("loaded_keys", "loaded_variants"):
+            if isinstance(pool.get(k), list):
+                loaded = len(pool[k])
+                break
+    if loaded is not None:
+        parts.append(f"loaded={loaded}")
+    if (act := pool.get("active_sessions")) is not None:
+        parts.append(f"active={act}")
+    if (idle := pool.get("idle_seconds")) is not None:
+        parts.append(f"idle={idle}s")
+    return " · ".join(parts) if parts else "空闲"
 
 
 _ML_LIVE_CSS = _DETAIL_CSS + """
@@ -583,9 +738,10 @@ _ML_LIVE_CSS = _DETAIL_CSS + """
     color: $text-muted;
     margin-top: 1;
 }
-Sparkline {
-    height: 3;
-    margin-bottom: 1;
+/* 撑满容器宽, 让 gpu/pool 等长行自动换行而非被横向裁切 */
+#ml-static, #ml-live {
+    width: 1fr;
+    height: auto;
 }
 #ml-live {
     color: $accent;
@@ -627,11 +783,11 @@ class MlBackendDetailScreen(Screen[None]):
             yield Static(_ml_backend_detail(self._backend), id="ml-static")
             yield Static("等待实时数据…", id="ml-live")
             yield Static("GPU 利用率 %", classes="spark-label")
-            yield Sparkline([], id="spark-util")
+            yield AxisChart(unit="%", x_left="-60s", color="#56d4dd", id="spark-util")
             yield Static("显存占用 %", classes="spark-label")
-            yield Sparkline([], id="spark-mem")
+            yield AxisChart(unit="%", x_left="-60s", color="#ffa657", id="spark-mem")
             yield Static("缓存命中率 %", classes="spark-label")
-            yield Sparkline([], id="spark-hit")
+            yield AxisChart(unit="%", x_left="-60s", color="#7ee787", id="spark-hit")
             yield Static("", id="ml-status")
         with Vertical(classes="screen-bottom"):
             with Horizontal(classes="action-bar"):
@@ -678,13 +834,13 @@ class MlBackendDetailScreen(Screen[None]):
 
         if util is not None:
             self._util.append(util)
-            self.query_one("#spark-util", Sparkline).data = list(self._util)
+            self.query_one("#spark-util", AxisChart).set_data(list(self._util))
         if mem_pct is not None:
             self._mem.append(mem_pct)
-            self.query_one("#spark-mem", Sparkline).data = list(self._mem)
+            self.query_one("#spark-mem", AxisChart).set_data(list(self._mem))
         if hit is not None:
             self._hit.append(hit)
-            self.query_one("#spark-hit", Sparkline).data = list(self._hit)
+            self.query_one("#spark-hit", AxisChart).set_data(list(self._hit))
 
         loaded = "✅ 已预热" if snap.loaded else ("⚪ 未加载" if snap.loaded is not None else "-")
         live = (
@@ -980,10 +1136,6 @@ class AapTuiApp(App[None]):
         color: $text-muted;
         margin-top: 1;
     }
-    #stats-body Sparkline {
-        height: 3;
-        margin-bottom: 1;
-    }
     #stats-headline {
         color: $accent;
         text-style: bold;
@@ -1061,13 +1213,13 @@ class AapTuiApp(App[None]):
                 with VerticalScroll(id="stats-body"):
                     yield Static("加载中…", id="stats-headline")
                     yield Static("数据总量 (12 周)", classes="spark-label")
-                    yield Sparkline([], id="spark-total")
+                    yield AxisChart(x_left="-12w", color="#79c0ff", id="spark-total")
                     yield Static("完成量 (12 周)", classes="spark-label")
-                    yield Sparkline([], id="spark-completed")
+                    yield AxisChart(x_left="-12w", color="#56d364", id="spark-completed")
                     yield Static("AI 标注率 (12 周)", classes="spark-label")
-                    yield Sparkline([], id="spark-airate")
+                    yield AxisChart(unit="%", x_left="-12w", color="#d2a8ff", id="spark-airate")
                     yield Static("待审 (12 周)", classes="spark-label")
-                    yield Sparkline([], id="spark-review")
+                    yield AxisChart(x_left="-12w", color="#e3b341", id="spark-review")
             with TabPane("🏆 绩效", id="tab-people"):
                 yield Static("", id="people-note")
                 yield DataTable(id="people-table", cursor_type="row", zebra_stripes=True)
@@ -1303,6 +1455,9 @@ class AapTuiApp(App[None]):
         }
         self._job_prev = {str(j.id): j.status for j in jobs}
         self._jobs = {str(j.id): j for j in jobs}
+        # 轮询重建前存光标/滚动, 重建后还原 —— 否则每 3s clear() 把视图弹回顶部
+        prev_cursor = table.cursor_coordinate
+        prev_scroll_y = table.scroll_offset.y
         table.clear()
         for j in jobs:
             key = str(j.id)
@@ -1321,6 +1476,14 @@ class AapTuiApp(App[None]):
                 key=key,
             )
         table.border_title = self._count_title("异步任务", len(jobs))
+        if table.row_count:
+            table.move_cursor(
+                row=min(prev_cursor.row, table.row_count - 1),
+                column=prev_cursor.column,
+                animate=False,
+                scroll=False,
+            )
+            table.scroll_to(y=prev_scroll_y, animate=False)
         self._mark_refreshed()
         if flipped:
             self._set_status(f"{len(flipped)} 个 job 刚完成")
@@ -1352,18 +1515,18 @@ class AapTuiApp(App[None]):
             f"总量 {stats.total_data} · 完成 {stats.completed}"
             f" · AI率 {rate:.0f}% · 待审 {stats.pending_review}"
         )
-        self.query_one("#spark-total", Sparkline).data = [
-            float(v) for v in stats.total_data_series
-        ]
-        self.query_one("#spark-completed", Sparkline).data = [
-            float(v) for v in stats.completed_series
-        ]
-        self.query_one("#spark-airate", Sparkline).data = [
-            float(v) for v in stats.ai_rate_series
-        ]
-        self.query_one("#spark-review", Sparkline).data = [
-            float(v) for v in stats.pending_review_series
-        ]
+        self.query_one("#spark-total", AxisChart).set_data(
+            [float(v) for v in stats.total_data_series]
+        )
+        self.query_one("#spark-completed", AxisChart).set_data(
+            [float(v) for v in stats.completed_series]
+        )
+        self.query_one("#spark-airate", AxisChart).set_data(
+            [float(v) for v in stats.ai_rate_series]
+        )
+        self.query_one("#spark-review", AxisChart).set_data(
+            [float(v) for v in stats.pending_review_series]
+        )
         self._mark_refreshed()
 
     def _apply_role(self, role: str | None) -> None:
