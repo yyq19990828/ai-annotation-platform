@@ -18798,8 +18798,13 @@
             "title": "Confirmdelete",
             "type": "string"
           },
+          "crossFrameOverlayEnabled": {
+            "default": false,
+            "title": "Crossframeoverlayenabled",
+            "type": "boolean"
+          },
           "crossFrameOverlayK": {
-            "default": 0,
+            "default": 1,
             "enum": [
               0,
               1,
@@ -18809,6 +18814,15 @@
             ],
             "title": "Crossframeoverlayk",
             "type": "integer"
+          },
+          "crossFrameOverlayScope": {
+            "default": "selected",
+            "enum": [
+              "selected",
+              "all"
+            ],
+            "title": "Crossframeoverlayscope",
+            "type": "string"
           },
           "longTaskSampleRate": {
             "default": 0.05,
@@ -19079,6 +19093,21 @@
             "default": false,
             "title": "Colorizewithcamera",
             "type": "boolean"
+          },
+          "neighborPointOverlay": {
+            "default": false,
+            "title": "Neighborpointoverlay",
+            "type": "boolean"
+          },
+          "neighborPointOverlayK": {
+            "default": 1,
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "title": "Neighborpointoverlayk",
+            "type": "integer"
           },
           "persistCameraView": {
             "default": false,

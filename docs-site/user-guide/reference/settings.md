@@ -45,7 +45,7 @@ last_reviewed: 2026-06-11
 |---|---|---|
 | 通用 | `longTaskSampleRate` | PerformanceObserver longtask 采样率（0–1），性能调试用；普通用户保持默认 |
 | 通用 | `confirmDelete` / `recentClassesLimit` | 删除确认策略和最近类别数量 |
-| 通用 | `crossFrameOverlayK` | 点云跨帧邻帧叠加 K，0 表示关闭 |
+| 通用 | `crossFrameOverlayEnabled` / `crossFrameOverlayK` / `crossFrameOverlayScope` | 邻帧框叠加开关、帧数与对象范围 |
 | 通用 | `performanceTier` | 视频缓存 / 预取窗口与点云抽稀上限档位（轻量 / 标准 / 激进） |
 | 图片 | `smoothImage` | 图像平滑开关；关闭后显示像素级 nearest-neighbor（适合医学影像 / 像素艺术） |
 | 图片 | `cssImageFilter` | 任意 CSS 滤镜字符串（如 `brightness(1.2) contrast(1.1)`）；失焦时保存；留空恢复原图 |
@@ -53,6 +53,7 @@ last_reviewed: 2026-06-11
 | 图片 | `autoFitOnResize` | 展开 / 收起边栏或画布容器尺寸变化后，自动让图片重新适应画布 |
 | 视频 | `defaultPlaybackRate` / `largeFrameStep` | 视频任务默认播放速率和大步进帧数 |
 | 点云 | `pointSize` / `pointMaskSelectMode` | 点云点径和点云分割工具的默认点选模式 |
+| 点云 | `neighborPointOverlay` / `neighborPointOverlayK` | 邻帧点云叠加开关与帧数 |
 | 点云 | `persistCameraView` | 记住 3D 主视角的相机位置、目标点、up 向量和 orbit / BEV 模式 |
 | 点云 | `colorizeWithCamera` / `colorizeContrast` / `colorizeBrightness` / `colorizeGamma` | 相机 RGB 上色开关与色彩调整 |
 | 点云 | `showDepthHint` | 相机图深度热力与 hover 深度读数 |

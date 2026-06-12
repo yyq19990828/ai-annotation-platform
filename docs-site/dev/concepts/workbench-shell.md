@@ -135,7 +135,7 @@ DiscussionPanel 是默认组件：旧 feature flag `DISCUSSION_PANEL_ENABLED` �
 
 ```
 workbench
-├── common      # 跨模态通用（longTaskSampleRate / confirmDelete / recentClassesLimit / crossFrameOverlayK）
+├── common      # 跨模态通用（longTaskSampleRate / confirmDelete / recentClassesLimit / crossFrameOverlay*）
 ├── image       # 图像渲染与交互（smoothImage / cssImageFilter / controlPointsSize / autoFitOnResize / ...）
 ├── video       # 视频播放与步进（defaultPlaybackRate / largeFrameStep）
 ├── pointcloud  # 点云渲染、导航、上色与深度（pointSize / persistCameraView / colorize* / showDepthHint / ...）

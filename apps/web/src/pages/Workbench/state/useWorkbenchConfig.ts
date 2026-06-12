@@ -83,8 +83,20 @@ function mergeUser(
   userId: string | null | undefined,
   options?: { preferLocalLayout?: boolean },
 ): WorkbenchPreferences {
+  const common = {
+    ...DEFAULT_WORKBENCH_PREFERENCES.common,
+    ...(remote?.common ?? {}),
+  };
+  const remoteCommon = remote?.common as Record<string, unknown> | undefined;
+  if (
+    remoteCommon &&
+    !("crossFrameOverlayEnabled" in remoteCommon) &&
+    typeof remoteCommon.crossFrameOverlayK === "number"
+  ) {
+    common.crossFrameOverlayEnabled = remoteCommon.crossFrameOverlayK > 0;
+  }
   return {
-    common: { ...DEFAULT_WORKBENCH_PREFERENCES.common, ...(remote?.common ?? {}) },
+    common,
     image: { ...DEFAULT_WORKBENCH_PREFERENCES.image, ...(remote?.image ?? {}) },
     video: { ...DEFAULT_WORKBENCH_PREFERENCES.video, ...(remote?.video ?? {}) },
     pointcloud: {

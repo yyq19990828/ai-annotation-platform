@@ -52,7 +52,8 @@ export function buildPointcloudLegacyMigration(
   const rawOverlayK = storage.getItem(LEGACY_CROSS_FRAME_OVERLAY_K_KEY);
   const overlayK = rawOverlayK == null ? NaN : Number(rawOverlayK);
   if (isCrossFrameOverlayK(overlayK)) {
-    common.crossFrameOverlayK = overlayK;
+    common.crossFrameOverlayEnabled = overlayK > 0;
+    common.crossFrameOverlayK = overlayK > 0 ? overlayK : 1;
     staleKeys.push(LEGACY_CROSS_FRAME_OVERLAY_K_KEY);
   }
 

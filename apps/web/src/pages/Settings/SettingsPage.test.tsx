@@ -79,7 +79,10 @@ const mockWorkbenchConfig = {
     longTaskSampleRate: 0.1,
     confirmDelete: "never",
     recentClassesLimit: 5,
-    crossFrameOverlayK: 0,
+    crossFrameOverlayEnabled: false,
+    crossFrameOverlayK: 1,
+    crossFrameOverlayScope: "selected",
+    performanceTier: "standard",
   },
   image: {
     smoothImage: true,
@@ -110,6 +113,8 @@ const mockWorkbenchConfig = {
     showGrid: true,
     showAxisGizmo: true,
     cameraDamping: 0.1,
+    neighborPointOverlay: false,
+    neighborPointOverlayK: 1,
   },
 };
 const mockWorkbenchUpdate = vi.fn();

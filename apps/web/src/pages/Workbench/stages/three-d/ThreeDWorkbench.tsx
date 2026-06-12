@@ -47,7 +47,6 @@ import {
   type SceneBox,
   type ReferenceBox,
 } from "./PointCloudScene";
-import { CrossFrameOverlayToggle } from "../../components/CrossFrameOverlayToggle";
 import { CrossFrameInterpolateBar } from "../../components/CrossFrameInterpolateBar";
 import CameraProjectionView from "./CameraProjectionView";
 import FloatingCameraPanel from "./FloatingCameraPanel";
@@ -386,15 +385,24 @@ export function ThreeDWorkbench({
   const pointMaskSelectMode = isPointMaskSelectMode(workbenchPointcloud.pointMaskSelectMode)
     ? workbenchPointcloud.pointMaskSelectMode
     : "rect";
-  const overlayK = isCrossFrameOverlayK(workbenchCommon.crossFrameOverlayK)
-    ? workbenchCommon.crossFrameOverlayK
-    : 0;
-  // v0.15.17 · 邻帧叠加范围:selected=仅选中对象 group(现状);all=不选对象也叠全部邻帧框。
+  const overlayEnabled =
+    workbenchCommon.crossFrameOverlayEnabled ??
+    (workbenchCommon.crossFrameOverlayK > 0);
+  const overlayFrameK = isCrossFrameOverlayK(workbenchCommon.crossFrameOverlayK)
+    ? Math.max(workbenchCommon.crossFrameOverlayK, 1)
+    : 1;
+  const overlayK = overlayEnabled ? overlayFrameK : 0;
+  // v0.15.17 · 邻帧框叠加范围:selected=仅选中对象 group(现状);all=不选对象也叠全部邻帧框。
   const overlayScope =
     workbenchCommon.crossFrameOverlayScope === "all" ? "all" : "selected";
-  // v0.15.18 · 邻帧点云叠加开关 + 帧数(点云比框重,前后各 ≤3 帧;框叠加关时默认 ±1)。
+  // v0.15.19 · 邻帧点云叠加开关 + 独立帧数(点云比框重,前后各 ≤3 帧)。
   const pointOverlayOn = workbenchPointcloud.neighborPointOverlay;
-  const pointOverlayK = pointOverlayOn ? Math.min(Math.max(overlayK, 1), 3) : 0;
+  const pointOverlayFrameK =
+    workbenchPointcloud.neighborPointOverlayK === 2 ||
+    workbenchPointcloud.neighborPointOverlayK === 3
+      ? workbenchPointcloud.neighborPointOverlayK
+      : 1;
+  const pointOverlayK = pointOverlayOn ? pointOverlayFrameK : 0;
   const [pointCloudViewMode, setPointCloudViewMode] = useState<"orbit" | "bev">("orbit");
   const [colorizing, setColorizing] = useState(false);
   const colorizedRawRef = useRef<Float32Array | null>(null);
@@ -1755,17 +1763,6 @@ export function ThreeDWorkbench({
     return s;
   }, [selectedIds, selectedGroupId, annotations]);
 
-  const setOverlayKPersist = useCallback((k: number) => {
-    if (isCrossFrameOverlayK(k)) {
-      onWorkbenchConfigChange({ common: { crossFrameOverlayK: k } });
-    }
-  }, [onWorkbenchConfigChange]);
-  const setOverlayScopePersist = useCallback(
-    (s: "selected" | "all") => {
-      onWorkbenchConfigChange({ common: { crossFrameOverlayScope: s } });
-    },
-    [onWorkbenchConfigChange],
-  );
   // v0.15.18 · 框叠加(overlayK)或点云叠加(pointOverlayK)任一开启都要邻帧 + 轨迹;
   // 取两者最大帧数拉取,各自再按需切片(框用 overlayK,点云用 pointOverlayK),互不放大。
   const neighborsActive = overlayK > 0 || pointOverlayK > 0;
@@ -1783,26 +1780,20 @@ export function ThreeDWorkbench({
   }, [overlayK, neighborsData]);
   // v0.15.17 · 批量端点拉邻帧标注。scope=selected 需选中对象(传 group_id 服务端过滤);
   // scope=all 不依赖选中(group_id=null,回全部框)。
-  const overlayEnabled =
+  const boxAnnotationOverlayEnabled =
     overlayK > 0 && (overlayScope === "all" || selectedGroupId != null);
   const overlayGroupId = overlayScope === "all" ? null : selectedGroupId;
   const { byTask: neighborAnnsByTask } = useNeighborAnnotations(
     overlayK > 0 ? taskId : null,
     overlayK,
     overlayGroupId,
-    overlayEnabled,
+    boxAnnotationOverlayEnabled,
   );
   // v0.15.1 · overlay ego 对齐: 邻帧框经 trajectory 变换到当前帧 ego 系再叠加,
   // 静止物参考框与当前帧重合。无轨迹 scene → poseByFrame=null,退回原样叠加。
-  const { poseByFrame, isLoading: trajectoryLoading } = useSceneTrajectory(
+  const { poseByFrame } = useSceneTrajectory(
     neighborsActive ? (neighborsData?.scene_id ?? null) : null,
   );
-  // v0.15.17 · 降级常驻可见:overlay 开启但该 scene 无 ego 轨迹 → 邻帧框未对齐。
-  const overlayNoPose =
-    neighborsActive &&
-    !!neighborsData?.scene_id &&
-    !trajectoryLoading &&
-    !poseByFrame;
   const neighborFrameByTask = useMemo<Map<string, number>>(() => {
     if (!neighborsData) return new Map();
     return new Map(
@@ -2111,15 +2102,6 @@ export function ThreeDWorkbench({
                 <option value="polygon">多边形</option>
               </select>
             </label>
-          )}
-          {manifest?.scene_id && (
-            <CrossFrameOverlayToggle
-              value={overlayK}
-              onChange={setOverlayKPersist}
-              scope={overlayScope}
-              onScopeChange={setOverlayScopePersist}
-              noPose={overlayNoPose}
-            />
           )}
           {manifest?.scene_id && taskId && (
             <CrossFrameInterpolateBar

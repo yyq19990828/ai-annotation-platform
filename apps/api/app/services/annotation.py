@@ -311,7 +311,7 @@ class AnnotationService:
         task_ids: list[uuid.UUID],
         group_id: int | None = None,
     ) -> list[Annotation]:
-        """v0.15.17 · 一次性拉多个 task 的 active 标注(邻帧叠加批量端点用)。
+        """v0.15.17 · 一次性拉多个 task 的 active 标注(邻帧框叠加批量端点用)。
 
         group_id 非空 → 服务端只回该 group(scope=selected);
         省略 → 回全部(scope=all)。空 task_ids 直接回 []。

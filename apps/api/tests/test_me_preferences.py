@@ -252,8 +252,14 @@ async def test_patch_pointcloud_subtree_fields(httpx_client, annotator):
                     "showDepthHint": True,
                     "pointMaskSelectMode": "lasso",
                     "showGrid": False,
+                    "neighborPointOverlay": True,
+                    "neighborPointOverlayK": 2,
                 },
-                "common": {"crossFrameOverlayK": 5, "performanceTier": "aggressive"},
+                "common": {
+                    "crossFrameOverlayEnabled": True,
+                    "crossFrameOverlayK": 5,
+                    "performanceTier": "aggressive",
+                },
             }
         },
         headers=_bearer(token),
@@ -269,9 +275,12 @@ async def test_patch_pointcloud_subtree_fields(httpx_client, annotator):
     assert wb["pointcloud"]["showDepthHint"] is True
     assert wb["pointcloud"]["pointMaskSelectMode"] == "lasso"
     assert wb["pointcloud"]["showGrid"] is False
+    assert wb["pointcloud"]["neighborPointOverlay"] is True
+    assert wb["pointcloud"]["neighborPointOverlayK"] == 2
     # 未提交字段保持默认值（默认值 = 现状红线）
     assert wb["pointcloud"]["showAxisGizmo"] is True
     assert wb["pointcloud"]["cameraDamping"] == 0.1
+    assert wb["common"]["crossFrameOverlayEnabled"] is True
     assert wb["common"]["crossFrameOverlayK"] == 5
     assert wb["common"]["performanceTier"] == "aggressive"
 
@@ -303,6 +312,7 @@ async def test_patch_pointcloud_range_and_enum_violations_422(httpx_client, anno
         {"pointcloud": {"colorizeGamma": 4}},  # > 3
         {"pointcloud": {"cameraDamping": 0.01}},  # < 0.05
         {"pointcloud": {"pointMaskSelectMode": "circle"}},  # 非法枚举
+        {"pointcloud": {"neighborPointOverlayK": 4}},  # 点云最多前后 3 帧
         {"common": {"crossFrameOverlayK": 2}},  # 档位只允许 0/1/3/5/7
         {"common": {"performanceTier": "max"}},  # 只允许 light/standard/aggressive
     ):

@@ -21,7 +21,7 @@ import { isPointInPolygon, type ScreenPoint } from "./geometry/pointInPolygon";
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
 const DEFAULT_DECIMATE_THRESHOLD = 500_000;
 
-// v0.15.18 · 邻帧叠加点云弱化色,与当前帧的高度色带 / 相机上色强区分。
+// v0.15.18 · 邻帧点云叠加弱化色,与当前帧的高度色带 / 相机上色强区分。
 // 前/后帧分色(过去冷蓝 / 未来暖橙),让动态目标拖影读起来是"运动方向"而非乱噪。
 const NEIGHBOR_PAST_COLOR = 0x4a90d9; // 过去帧:冷蓝
 const NEIGHBOR_FUTURE_COLOR = 0xd98a4a; // 未来帧:暖橙

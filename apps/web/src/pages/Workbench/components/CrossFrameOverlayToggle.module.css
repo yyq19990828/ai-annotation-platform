@@ -34,6 +34,10 @@
   cursor: pointer;
   font-size: 12px;
 }
+.seg:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
 .segActive,
 .segActive:hover {
   border-color: var(--color-accent);

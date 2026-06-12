@@ -34,7 +34,7 @@ describe("pointcloudPreferenceStorage", () => {
 
     expect(migration?.patch).toEqual({
       pointcloud: { pointMaskSelectMode: "lasso" },
-      common: { crossFrameOverlayK: 5 },
+      common: { crossFrameOverlayEnabled: true, crossFrameOverlayK: 5 },
     });
 
     finishPointcloudLegacyMigration(migration!, storage);

@@ -1,21 +1,26 @@
 /**
- * v0.14.1 · 邻帧参考框叠加 K 数切换(0=关 / 1 / 3 / 5 / 7)。
+ * v0.14.1 · 邻帧参考框叠加 K 数切换(1 / 3 / 5 / 7)。
  * v0.15.17 · 增「范围」切换(对象/全部)+ 无 ego 轨迹常驻降级 badge。
+ * v0.15.19 · 关闭从 K=0 拆为独立开关,帧数与范围单独设置。
  *
- * 3D / 2D 工作台共用:K>0 时拉前后各 K 帧的标注作半透明只读参考框。
+ * 3D / 2D 工作台共用:enabled 时拉前后各 K 帧的标注作半透明只读参考框。
  * 当前值由调用方持久化到 workbench preferences。
  */
 import styles from "./CrossFrameOverlayToggle.module.css";
 
-const OPTIONS = [0, 1, 3, 5, 7] as const;
+const OPTIONS = [1, 3, 5, 7] as const;
 
 export function CrossFrameOverlayToggle({
+  enabled,
+  onEnabledChange,
   value,
   onChange,
   scope,
   onScopeChange,
   noPose = false,
 }: {
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
   value: number;
   onChange: (k: number) => void;
   /** v0.15.17 · 叠加范围;省略则不渲染范围切换(视频侧暂不需要)。 */
@@ -25,20 +30,29 @@ export function CrossFrameOverlayToggle({
   noPose?: boolean;
 }) {
   return (
-    <div className={styles.wrap} role="group" aria-label="邻帧叠加">
-      <span className={styles.label}>邻帧叠加</span>
+    <div className={styles.wrap} role="group" aria-label="邻帧框叠加">
+      <span className={styles.label}>邻帧框叠加</span>
+      <button
+        type="button"
+        className={`${styles.seg} ${enabled ? styles.segActive : ""}`}
+        aria-pressed={enabled}
+        onClick={() => onEnabledChange(!enabled)}
+      >
+        {enabled ? "开" : "关"}
+      </button>
       {OPTIONS.map((k) => (
         <button
           key={k}
           type="button"
           className={`${styles.seg} ${value === k ? styles.segActive : ""}`}
           aria-pressed={value === k}
+          disabled={!enabled}
           onClick={() => onChange(k)}
         >
-          {k === 0 ? "关" : k}
+          {k}
         </button>
       ))}
-      {value > 0 && scope && onScopeChange && (
+      {enabled && scope && onScopeChange && (
         <span className={styles.scope} role="group" aria-label="叠加范围">
           <button
             type="button"
@@ -58,7 +72,7 @@ export function CrossFrameOverlayToggle({
           </button>
         </span>
       )}
-      {value > 0 && noPose && (
+      {enabled && noPose && (
         <span
           className={styles.badge}
           title="该 scene 无 ego 轨迹,邻帧框按原样叠加,未做运动对齐"

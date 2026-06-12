@@ -151,7 +151,7 @@
 - [ ] `images/workbench-pointcloud-projection/overlay-wireframe.png` — 相机面板线框投影 overlay + 「正对」角标 [manual]
 - [ ] `images/workbench-pointcloud-projection/click-to-select-3d.png` — 点击投影框联动主视图高亮 [manual]
 - [ ] `images/workbench-pointcloud-projection/camera-panel-layout.png` — 6 相机环绕布局全景 [manual]
-- [ ] `images/workbench/pointcloud-controls-bar.png` — 控件浮条全景（重置/俯视/点大小滑杆/上色/深度/邻帧叠加） [manual]
+- [ ] `images/workbench/pointcloud-controls-bar.png` — 控件浮条全景（重置/俯视/点大小滑杆/上色/深度/邻帧框叠加） [manual]
 - [ ] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比 [manual]
 - [ ] `images/workbench/pointcloud-depth-heatmap.png` — 深度热力图 + figcaption 深度读数 [manual]
 - [ ] `images/polygon/vertex-insert-alt.png` — 按住 Alt 悬停边上光标变「+」的瞬间

@@ -228,7 +228,7 @@ scene 模式把一段时序录像切成多个 task，每个 task 通过其关联
 
 ### 邻帧查询
 
-`GET /tasks/{task_id}/neighbors`（v0.14.0）返回该 task 在所属 scene 内的前后 k 个邻居 task，供工作台取相邻帧叠加显示 / 前后导航。
+`GET /tasks/{task_id}/neighbors`（v0.14.0）返回该 task 在所属 scene 内的前后 k 个邻居 task，供工作台取相邻帧框叠加显示 / 前后导航。
 
 - 参数 `k`：方向上各取多少帧，`1 ≤ k ≤ 20`，默认 `1`
 - 返回 `NeighborsResponse`：scene 元数据（`scene_id` / `scene_name` / `frame_index` / `scene_total_frames`）+ `prev[]` / `next[]`

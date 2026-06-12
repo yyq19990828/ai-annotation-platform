@@ -17,9 +17,11 @@ export interface WorkbenchCommonPreferences {
   longTaskSampleRate: number;
   confirmDelete: "never" | "multi_only" | "always";
   recentClassesLimit: number;
-  /** v0.15.6 · 邻帧叠加 K(0=关,档位 0/1/3/5/7)。当前 3D 点云消费,放 common 供视频侧后续复用。 */
+  /** v0.15.19 · 邻帧框叠加独立开关;历史 crossFrameOverlayK=0 仍按关闭兼容。 */
+  crossFrameOverlayEnabled: boolean;
+  /** v0.15.6 · 邻帧框叠加帧数档位(1/3/5/7;0 仅兼容旧关闭值)。 */
   crossFrameOverlayK: number;
-  /** v0.15.17 · 邻帧叠加范围:selected=仅选中对象的 group(现状);all=不选对象也叠邻帧全部框。 */
+  /** v0.15.17 · 邻帧框叠加范围:selected=仅选中对象的 group(现状);all=不选对象也叠邻帧全部框。 */
   crossFrameOverlayScope: "selected" | "all";
   performanceTier: "light" | "standard" | "aggressive";
 }
@@ -63,6 +65,8 @@ export interface WorkbenchPointcloudPreferences {
   cameraDamping: number;
   /** v0.15.18 · 邻帧点云叠加(ego 补偿对齐前后帧点云,静止背景加密/动态拖影)。需 ego 轨迹。 */
   neighborPointOverlay: boolean;
+  /** v0.15.19 · 邻帧点云叠加帧数,独立于邻帧框叠加;点云较重,限制为 1-3。 */
+  neighborPointOverlayK: 1 | 2 | 3;
 }
 
 /** v0.15.3 · common/image/video/pointcloud 四子树;layout 保持顶层(壳层/设备维度)。 */
@@ -135,7 +139,8 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     longTaskSampleRate: 0.05,
     confirmDelete: "never",
     recentClassesLimit: 5,
-    crossFrameOverlayK: 0,
+    crossFrameOverlayEnabled: false,
+    crossFrameOverlayK: 1,
     crossFrameOverlayScope: "selected",
     performanceTier: "standard",
   },
@@ -169,6 +174,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     showAxisGizmo: true,
     cameraDamping: 0.1,
     neighborPointOverlay: false,
+    neighborPointOverlayK: 1,
   },
   layout: {
     leftOpen: true,

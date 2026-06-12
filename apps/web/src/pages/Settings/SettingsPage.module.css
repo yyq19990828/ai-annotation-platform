@@ -93,6 +93,18 @@
   padding: 16px;
 }
 
+.settingsFieldList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settingsFieldCluster {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
 .actionsEnd {
   display: flex;
   justify-content: flex-end;

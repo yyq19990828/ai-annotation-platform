@@ -30,6 +30,16 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.19] - 2026-06-13
+
+邻帧叠加设置拆分。把邻帧框叠加从“0=关闭的 K 档位”改为独立开关 + 帧数 + 对象范围;邻帧点云叠加也获得独立帧数设置,不再借用邻帧框叠加档位。
+
+### Changed
+
+- **邻帧框叠加设置**:新增 `workbench.common.crossFrameOverlayEnabled`;`crossFrameOverlayK` 仅表示前后帧数(1/3/5/7),`crossFrameOverlayScope` 继续表示对象 / 全部范围。历史 `crossFrameOverlayK=0` 兼容为关闭,历史 `K>0` 自动视为开启。
+- **邻帧点云叠加设置**:新增 `workbench.pointcloud.neighborPointOverlayK`(1/2/3),与邻帧框帧数解耦。点云叠加仍默认关闭,开启后默认前后各 1 帧。
+- **旧 localStorage 迁移**:`workbench.crossFrameOverlayK` 迁移时同步写入新开关;旧 `0` → 关闭 + 默认 1 帧,旧 `1/3/5/7` → 开启 + 对应帧数。
+
 ## [0.15.18] - 2026-06-12
 
 邻帧点云叠加。把 v0.15.1 的「邻帧**框**叠加」延伸到「邻帧**点云**叠加」——用 ego 轨迹把前后帧点云对齐到当前帧车体系一起渲染,解决车端运动场景「背景相对车也在动」时如何有意义叠点云的问题。计划见 `docs/plans/2026-06-12-v0.15.18-neighbor-pointcloud-overlay.md`。纯前端渲染能力,后端零改动。
