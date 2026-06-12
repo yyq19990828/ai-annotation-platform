@@ -19,6 +19,7 @@ from ai_annotation.models import (
     ApiKey,
     ApiKeyCreated,
     Batch,
+    DashboardStats,
     Dataset,
     ImportResult,
     Job,
@@ -27,8 +28,11 @@ from ai_annotation.models import (
     Me,
     Member,
     MLBackend,
+    MyPerformance,
     Page,
+    PersonStat,
     Project,
+    ProjectStats,
     Task,
     TaskPage,
     UploadedItem,
@@ -75,6 +79,11 @@ class Projects:
     def get(self, project_id: IdLike) -> Project:
         resp = self._http.request("GET", f"/projects/{project_id}")
         return Project.model_validate(resp.json())
+
+    def stats(self) -> ProjectStats:
+        """可见项目聚合统计 (含最近 12 周时间序列)。任意已认证用户可达。"""
+        resp = self._http.request("GET", "/projects/stats")
+        return ProjectStats.model_validate(resp.json())
 
 
 class Datasets:
@@ -419,6 +428,58 @@ class Members:
         return [Member.model_validate(x) for x in resp.json()]
 
 
+class Dashboard:
+    """看板 / 绩效只读查询。多数端点有角色门控 (admin/people 限 super_admin/project_admin)。"""
+
+    def __init__(self, http: HttpTransport):
+        self._http = http
+
+    def admin(self) -> DashboardStats:
+        """全局管理仪表盘 (super_admin)。字段经 extra 透传。"""
+        resp = self._http.request("GET", "/dashboard/admin")
+        return DashboardStats.model_validate(resp.json())
+
+    def reviewer(self) -> DashboardStats:
+        """审核员仪表盘 (super_admin / project_admin / reviewer)。"""
+        resp = self._http.request("GET", "/dashboard/reviewer")
+        return DashboardStats.model_validate(resp.json())
+
+    def annotator(self) -> DashboardStats:
+        """标注员仪表盘。"""
+        resp = self._http.request("GET", "/dashboard/annotator")
+        return DashboardStats.model_validate(resp.json())
+
+    def people(
+        self,
+        role: str | None = None,
+        project: IdLike | None = None,
+        period: str | None = None,
+        sort: str | None = None,
+        q: str | None = None,
+    ) -> list[PersonStat]:
+        """全员绩效卡片 (super_admin / project_admin; project_admin 须传 project)。"""
+        params = _drop_none(
+            {
+                "role": role,
+                "project": str(project) if project is not None else None,
+                "period": period,
+                "sort": sort,
+                "q": q,
+            }
+        )
+        resp = self._http.request("GET", "/dashboard/admin/people", params=params)
+        data = resp.json()
+        items = data.get("items", []) if isinstance(data, dict) else data
+        return [PersonStat.model_validate(x) for x in items]
+
+    def me_performance(self, period: str | None = None) -> MyPerformance:
+        """当前用户自助绩效 (任意已认证, 强制 self)。"""
+        resp = self._http.request(
+            "GET", "/dashboard/me/performance", params=_drop_none({"period": period})
+        )
+        return MyPerformance.model_validate(resp.json())
+
+
 class ApiKeys:
     def __init__(self, http: HttpTransport):
         self._http = http
@@ -501,6 +562,7 @@ class Client:
         self.ml_backends = MLBackends(self._http)
         self.batches = Batches(self._http)
         self.members = Members(self._http)
+        self.dashboard = Dashboard(self._http)
         self.api_keys = ApiKeys(self._http)
 
     def me(self) -> Me:

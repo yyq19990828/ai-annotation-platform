@@ -30,6 +30,21 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.15] - 2026-06-12
+
+SDK 看板 / 绩效命名空间 + TUI 趋势曲线与角色门控绩效。把 v0.15.12 的 `Sparkline` 从「单设备实时」推广到「项目生产趋势 + 团队绩效」。计划见 `docs/plans/2026-06-12-v0.15.15-dashboard-stats-trends.md`。零后端改动(端点均已存在)。
+
+### Added
+
+- **SDK 统计 / 看板命名空间**:`client.projects.stats()`(`ProjectStats`:标量 + 最近 12 周 `*_series`)、`client.dashboard.admin()/reviewer()/annotator()`(`DashboardStats`,字段经 extra 透传)、`client.dashboard.people(...)`(`list[PersonStat]`)、`client.dashboard.me_performance()`(`MyPerformance`)。
+- **CLI `aap stats` / `aap dashboard people` / `aap dashboard me`**:`aap stats` 用 unicode 块字符画 12 周趋势条;`dashboard people` 支持 `--project`/`--role`/`--period`;均带 `--json`。新增共享 `sparkline()` 文本趋势助手。
+- **TUI「📊 看板」tab**:`projects.stats()` 标量 + 4 条 12 周 `Sparkline` 趋势(数据总量 / 完成量 / AI 率 / 待审),`r` 刷新不轮询。
+- **TUI「🏆 绩效」tab**:`dashboard.people()` 全员绩效排行(产出 / 质量 / 退回率 / 7 日趋势)。进屏经 `client.me()` 解析角色,仅 super_admin 自动拉全局榜单,project_admin 提示用 CLI 按项目切分,其余角色显示无权限 —— **前置判角色而非吃 403**;`me()` 不可用时降级「角色未知」,看板 tab 不受影响。
+
+### Fixed
+
+- TUI `on_mount` 误在 UI 线程直跑 `_load_principal`(内含 `call_from_thread`)→ 改为 thread worker,消除 `RuntimeError: call_from_thread must run in a different thread`。
+
 ## [0.15.14] - 2026-06-12
 
 SDK 可观测面扩展:新增**批次 / 成员 / 当前主体**只读命名空间，TUI 项目详情长出「批次」「成员」子 tab。计划见 `docs/plans/2026-06-12-v0.15.14-sdk-batches-members.md`。零后端改动(端点均已存在)。

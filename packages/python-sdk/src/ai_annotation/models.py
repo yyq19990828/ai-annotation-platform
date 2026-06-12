@@ -268,6 +268,60 @@ class Me(_AAPModel):
     role: str
 
 
+class ProjectStats(_AAPModel):
+    """可见项目聚合统计 (GET /projects/stats)。*_series 为最近 12 周时间序列。"""
+
+    total_data: int = 0
+    completed: int = 0
+    ai_rate: float = 0.0
+    pending_review: int = 0
+    total_annotations: int = 0
+    ai_derived_annotations: int = 0
+    total_data_series: list[int] = Field(default_factory=list)
+    completed_series: list[int] = Field(default_factory=list)
+    ai_rate_series: list[float] = Field(default_factory=list)
+    pending_review_series: list[int] = Field(default_factory=list)
+
+
+class PersonStat(_AAPModel):
+    """全员绩效卡片项 (GET /dashboard/admin/people 的 items)。"""
+
+    user_id: str
+    name: str
+    email: str | None = None
+    role: str
+    main_metric: int = 0
+    main_metric_label: str | None = None
+    throughput_score: int = 0
+    quality_score: int = 0
+    activity_score: int = 0
+    rejected_rate: float | None = None
+    sparkline_7d: list[int] = Field(default_factory=list)
+    weekly_compare_pct: float | None = None
+    alerts: list[str] = Field(default_factory=list)
+
+
+class MyPerformance(_AAPModel):
+    """标注员自助绩效 (GET /dashboard/me/performance)。自身 4 周趋势 + 团队均线对标。"""
+
+    user_id: str
+    name: str
+    period: str | None = None
+    throughput: int = 0
+    quality_score: int = 0
+    weekly_compare_pct: float | None = None
+    trend_throughput: list[int] = Field(default_factory=list)
+    trend_quality: list[int] = Field(default_factory=list)
+    team_trend_throughput: list[float] = Field(default_factory=list)
+    p50_duration_ms: int | None = None
+    p95_duration_ms: int | None = None
+    first_pass_yield: float | None = None
+
+
+class DashboardStats(_AAPModel):
+    """admin / reviewer / annotator 仪表盘原始数据 (字段随角色而异, 全经 extra 透传)。"""
+
+
 class ApiKey(_AAPModel):
     id: UUID
     name: str

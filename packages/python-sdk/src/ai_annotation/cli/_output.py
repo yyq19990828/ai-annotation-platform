@@ -30,6 +30,22 @@ def print_json(data: Any) -> None:
     typer.echo(json.dumps(data, ensure_ascii=False))
 
 
+_SPARK_CHARS = "▁▂▃▄▅▆▇█"
+
+
+def sparkline(values: list[float]) -> str:
+    """unicode 块字符趋势条 (CLI 无 Textual 时画时间序列)。空 / 单值降级。"""
+    nums = [float(v) for v in values]
+    if not nums:
+        return ""
+    lo, hi = min(nums), max(nums)
+    span = hi - lo
+    if span <= 0:
+        return _SPARK_CHARS[0] * len(nums)
+    last = len(_SPARK_CHARS) - 1
+    return "".join(_SPARK_CHARS[min(last, int((v - lo) / span * last))] for v in nums)
+
+
 def print_error(message: str, json_mode: bool = False) -> None:
     """stderr 一行友好错误; --json 模式纯文本, 否则 rich 红色。"""
     if json_mode:

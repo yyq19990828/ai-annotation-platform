@@ -15,10 +15,13 @@ from ai_annotation.models import (
     HealthMeta,
     Job,
     JobPage,
+    Me,
     MLBackend,
     Member,
     Page,
+    PersonStat,
     Project,
+    ProjectStats,
     UserBrief,
 )
 from ai_annotation.tui.app import (
@@ -89,11 +92,24 @@ def _ml_backend(project_id, state="connected") -> MLBackend:
 
 
 class _StubProjects:
-    def __init__(self, items):
+    def __init__(self, items, stats=None):
         self._items = items
+        self._stats = stats or ProjectStats(
+            total_data=100,
+            completed=60,
+            ai_rate=0.4,
+            pending_review=8,
+            total_data_series=[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 100, 100],
+            completed_series=[5, 10, 18, 25, 33, 40, 46, 50, 55, 58, 59, 60],
+            ai_rate_series=[0.1, 0.2, 0.25, 0.3, 0.32, 0.35, 0.36, 0.38, 0.39, 0.4, 0.4, 0.4],
+            pending_review_series=[2, 3, 4, 5, 6, 7, 8, 9, 8, 8, 8, 8],
+        )
 
     def list(self, **kw):
         return self._items
+
+    def stats(self):
+        return self._stats
 
 
 class _StubDatasets:
@@ -164,6 +180,14 @@ class _StubMembers:
         return self._by_project.get(project_id, [])
 
 
+class _StubDashboard:
+    def __init__(self, people=None):
+        self._people = people or []
+
+    def people(self, **kw):
+        return self._people
+
+
 class _StubClient:
     def __init__(
         self,
@@ -173,24 +197,34 @@ class _StubClient:
         ml_by_project=None,
         batches_by_project=None,
         members_by_project=None,
+        role="annotator",
+        people=None,
+        stats=None,
     ):
-        self.projects = _StubProjects(projects)
+        self.projects = _StubProjects(projects, stats=stats)
         self.datasets = _StubDatasets(datasets)
         self.jobs = _StubJobs(job_pages)
         self.exports = _StubExports()
         self.ml_backends = _StubMLBackends(ml_by_project or {})
         self.batches = _StubBatches(batches_by_project)
         self.members = _StubMembers(members_by_project)
+        self.dashboard = _StubDashboard(people)
+        self._role = role
+
+    def me(self):
+        if self._role is None:
+            raise RuntimeError("no /auth/me")
+        return Me(id=uuid4(), email="me@x.io", name="Me", role=self._role)
 
     def close(self):
         pass
 
 
-def _make_app(job_statuses=("running",), with_ml=False) -> AapTuiApp:
+def _make_app(job_statuses=("running",), with_ml=False, role="annotator") -> AapTuiApp:
     pages = [JobPage(items=[_job(s)], total=1) for s in job_statuses]
     project = _project()
     ml_by_project = {project.id: [_ml_backend(project.id)]} if with_ml else {}
-    client = _StubClient([project], [_dataset()], pages, ml_by_project)
+    client = _StubClient([project], [_dataset()], pages, ml_by_project, role=role)
     return AapTuiApp(client, base_url=BASE)
 
 
@@ -200,7 +234,7 @@ async def _settle(app, pilot):
     await pilot.pause()
 
 
-async def test_renders_four_tabs_and_status_bar():
+async def test_renders_tabs_and_status_bar():
     app = _make_app()
     async with app.run_test(size=(100, 30)) as pilot:
         await _settle(app, pilot)
@@ -209,6 +243,8 @@ async def test_renders_four_tabs_and_status_bar():
             "tab-datasets",
             "tab-jobs",
             "tab-ml-backends",
+            "tab-stats",
+            "tab-people",
         ]
         bar = app.query_one("#status-bar", Static)
         assert BASE in str(bar.render())
@@ -610,3 +646,71 @@ async def test_project_detail_degrades_when_batches_endpoint_unavailable():
         # 批次表空, 但详情屏正常 (成员表仍在)
         assert app.screen.query_one("#pd-batches-table", DataTable).row_count == 0
         assert app.screen.query_one("#pd-members-table", DataTable) is not None
+
+
+# ---- v0.15.15: 看板趋势 + 角色门控绩效 ----
+
+
+def _person() -> PersonStat:
+    return PersonStat(
+        user_id=str(uuid4()),
+        name="标注员甲",
+        email="a@x.io",
+        role="annotator",
+        throughput_score=82,
+        quality_score=91,
+        rejected_rate=0.05,
+        sparkline_7d=[3, 5, 4, 8, 6, 9, 7],
+    )
+
+
+async def test_stats_tab_renders_sparklines():
+    from textual.widgets import Sparkline
+
+    app = _make_app()
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        headline = str(app.query_one("#stats-headline", Static).render())
+        assert "总量 100" in headline
+        assert "AI率 40%" in headline
+        # 4 条曲线都拿到了序列数据
+        assert app.query_one("#spark-total", Sparkline).data
+        assert len(app.query_one("#spark-completed", Sparkline).data) == 12
+        assert app.query_one("#spark-airate", Sparkline).data
+
+
+async def test_people_tab_loads_for_super_admin():
+    project = _project()
+    client = _StubClient(
+        [project], [_dataset()], [JobPage(items=[], total=0)],
+        role="super_admin", people=[_person()],
+    )
+    app = AapTuiApp(client, base_url=BASE)
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        table = app.query_one("#people-table", DataTable)
+        assert table.row_count == 1
+        row = table.get_row_at(0)
+        assert row[0] == "标注员甲"
+        assert row[2] == "82"  # 产出分
+        assert "5%" in row[4]  # 退回率
+
+
+async def test_people_tab_gated_for_annotator():
+    # 非 super_admin → 不拉 people (避免 403), note 提示, 表为空
+    app = _make_app(role="annotator")
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        assert app.query_one("#people-table", DataTable).row_count == 0
+        note = str(app.query_one("#people-note", Static).render())
+        assert "super_admin" in note
+
+
+async def test_me_failure_degrades_people_tab():
+    # me() 不可用 (老后端) → 角色未知, 绩效不拉数, 主流程不崩
+    app = _make_app(role=None)
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        assert app.query_one("#people-table", DataTable).row_count == 0
+        # 看板 tab 仍正常 (stats 与 me 独立)
+        assert app.query_one("#stats-headline", Static)

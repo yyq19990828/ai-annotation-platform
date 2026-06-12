@@ -57,8 +57,11 @@ with Client() as client:
 | `list` | `list(status: str \| None = None, search: str \| None = None)` | `list[Project]` |
 | `create` | `create(name: str, type_key: str \| None = None, data_type: str \| None = None, **kwargs)` | `Project` |
 | `get` | `get(project_id)` | `Project` |
+| `stats` | `stats()` | `ProjectStats` |
 
 `create` 说明:后端 `type_label` 必填,未通过 `kwargs` 显式给出时 SDK 按 `type_key` → `data_type` → `name` 顺序兜底填充。
+
+`stats()` 返回可见项目聚合(`total_data` / `completed` / `ai_rate` / `pending_review`)+ 最近 12 周时间序列(`*_series`),任意已认证用户可达。
 
 ### client.datasets
 
@@ -167,6 +170,20 @@ with Client() as client:
 
 `client.me() -> Me`:返回当前认证主体(`GET /auth/me`),`Me.role` 用于角色感知 / 凭据自检。
 
+### client.dashboard
+
+看板 / 绩效只读查询。多数端点有角色门控,无权限抛 `PermissionDeniedError`(403)。
+
+| 方法 | 签名 | 返回 | 角色 |
+|---|---|---|---|
+| `admin` | `admin()` | `DashboardStats` | super_admin |
+| `reviewer` | `reviewer()` | `DashboardStats` | super_admin / project_admin / reviewer |
+| `annotator` | `annotator()` | `DashboardStats` | annotator+ |
+| `people` | `people(role=None, project=None, period=None, sort=None, q=None)` | `list[PersonStat]` | super_admin / project_admin |
+| `me_performance` | `me_performance(period=None)` | `MyPerformance` | 任意已认证(self) |
+
+`people()`:全员绩效卡片;**project_admin 须传 `project`** 指定其管理范围,super_admin 可全局或任意项目。`admin/reviewer/annotator` 字段随角色而异,经 `DashboardStats`(`extra="allow"`)透传。
+
 ### client.api_keys
 
 | 方法 | 签名 | 返回 |
@@ -207,6 +224,6 @@ with Client() as client:
 
 ## 响应模型与前向兼容
 
-顶层导出的 pydantic 模型:`Project` / `Dataset` / `Task` / `TaskPage` / `Annotation` / `Job` / `JobPage` / `Page` / `UploadedItem` / `ZipUploadResult` / `LinkResult` / `ImportResult` / `ApiKey` / `ApiKeyCreated` / `Batch` / `Member` / `Me` / `UserBrief`。
+顶层导出的 pydantic 模型:`Project` / `Dataset` / `Task` / `TaskPage` / `Annotation` / `Job` / `JobPage` / `Page` / `UploadedItem` / `ZipUploadResult` / `LinkResult` / `ImportResult` / `ApiKey` / `ApiKeyCreated` / `Batch` / `Member` / `Me` / `UserBrief` / `ProjectStats` / `PersonStat` / `MyPerformance` / `DashboardStats`。
 
 所有模型 `extra="allow"`:只声明 SDK 用户关心的稳定字段,**容忍服务端新增字段**——未声明字段不会导致校验失败,且仍可通过属性访问(如 `project.total_tasks`,服务端附加字段,可能缺失,建议 `getattr(p, "total_tasks", None)` 取用)。

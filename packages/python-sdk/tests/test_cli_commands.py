@@ -675,3 +675,94 @@ def test_me_command(respx_mock):
     plain = _plain(result.output)
     assert "project_admin" in plain
     assert "me@x.io" in plain
+
+
+# ---------- stats / dashboard (v0.15.15) ----------
+
+
+def test_stats_command(respx_mock):
+    respx_mock.get(f"{API}/projects/stats").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "total_data": 100,
+                "completed": 60,
+                "ai_rate": 0.4,
+                "pending_review": 8,
+                "total_data_series": [10, 50, 100],
+                "completed_series": [5, 30, 60],
+                "ai_rate_series": [0.1, 0.3, 0.4],
+                "pending_review_series": [2, 5, 8],
+            },
+        )
+    )
+    result = runner.invoke(app, ["stats"], env=ENV)
+    assert result.exit_code == 0
+    plain = _plain(result.output)
+    assert "总量 100" in plain
+    assert "40%" in plain
+
+
+def test_stats_command_json(respx_mock):
+    respx_mock.get(f"{API}/projects/stats").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "total_data": 5,
+                "completed": 1,
+                "ai_rate": 0.2,
+                "pending_review": 0,
+                "total_data_series": [],
+                "completed_series": [],
+                "ai_rate_series": [],
+                "pending_review_series": [],
+            },
+        )
+    )
+    result = runner.invoke(app, ["stats", "--json"], env=ENV)
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["total_data"] == 5
+
+
+def test_dashboard_people_table(respx_mock):
+    respx_mock.get(f"{API}/dashboard/admin/people").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "user_id": "u1",
+                        "name": "甲",
+                        "email": "a@x.io",
+                        "role": "annotator",
+                        "status": "online",
+                        "project_count": 1,
+                        "main_metric": 30,
+                        "main_metric_label": "本周完成",
+                        "throughput_score": 82,
+                        "quality_score": 91,
+                        "activity_score": 70,
+                        "sparkline_7d": [3, 5, 4, 8, 6, 9, 7],
+                        "rejected_rate": 0.05,
+                        "alerts": [],
+                    }
+                ],
+                "total": 1,
+                "period": "7d",
+            },
+        )
+    )
+    result = runner.invoke(app, ["dashboard", "people"], env=ENV)
+    assert result.exit_code == 0
+    plain = _plain(result.output)
+    assert "甲" in plain
+    assert "82" in plain
+
+
+def test_dashboard_people_forbidden_exit1(respx_mock):
+    respx_mock.get(f"{API}/dashboard/admin/people").mock(
+        return_value=httpx.Response(403, json={"detail": "forbidden"})
+    )
+    result = runner.invoke(app, ["dashboard", "people"], env=ENV)
+    assert result.exit_code == 1
+    assert "403" in _plain(result.stderr)

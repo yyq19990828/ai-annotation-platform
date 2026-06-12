@@ -9,7 +9,7 @@ last_reviewed: 2026-06-11
 
 # aap tui 监控面板
 
-`aap tui` 是一个终端监控面板(基于 Textual),提供 Projects / Datasets / Jobs / ML Backends 四个视图,适合在服务器 / SSH 环境下盯异步任务进度与 backend 健康,不复刻 Web 前端。除监控外还提供两个轻量动作(v0.15.8):Projects tab 发起导出(v0.15.13 起为可选格式 / 选项的导出配置框)、Jobs tab 软取消 job,弹窗均为键盘 + 按钮双通道。
+`aap tui` 是一个终端监控面板(基于 Textual),提供 Projects / Datasets / Jobs / ML Backends / 看板 / 绩效 六个视图,适合在服务器 / SSH 环境下盯异步任务进度、生产趋势与 backend 健康,不复刻 Web 前端。除监控外还提供两个轻量动作(v0.15.8):Projects tab 发起导出(v0.15.13 起为可选格式 / 选项的导出配置框)、Jobs tab 软取消 job,弹窗均为键盘 + 按钮双通道。
 
 ## 安装与启动
 
@@ -77,6 +77,13 @@ ML Backends 行下钻进 **实时详情屏**:不再是静态 REST 快照,而是�
 - **降级**:WS 连不上 / 鉴权失败 / 后端旧版本时,顶部仍展示最近一次 REST 快照,状态行提示降级,不崩。
 
 主屏 ML Backends tab 维持 5s REST 轮询的总览列表(避免同时对 N 个 backend 各开一条 WS),实时只在详情屏。
+
+## 看板与绩效(v0.15.15)
+
+把 v0.15.12 的 `Sparkline` 曲线能力从「单设备实时」推广到「项目生产趋势 + 团队绩效」,两个只读视图(非 web 仪表盘交互):
+
+- **📊 看板**:`client.projects.stats()` 的可见项目聚合 —— 顶部标量(总量 / 完成 / AI 率 / 待审)+ 4 条最近 12 周 `Sparkline` 趋势(数据总量 / 完成量 / AI 率 / 待审)。统计是周级数据,`r` 手动刷新,不做高频轮询。
+- **🏆 绩效**:`client.dashboard.people()` 全员绩效排行(姓名 / 角色 / 产出分 / 质量分 / 退回率 / 7 日趋势)。**角色门控**:进屏经 `client.me()` 解析角色,仅 **super_admin** 自动拉全局榜单;`project_admin` 须按项目切分(提示用 CLI `aap dashboard people --project <id>`),其余角色显示无权限说明 —— **前置判角色而非吃 403**。`me()` 不可用(老后端)时降级为「角色未知」,看板 tab 不受影响。
 
 ## 动作(导出 / 取消)
 

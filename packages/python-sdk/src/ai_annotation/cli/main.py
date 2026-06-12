@@ -10,6 +10,7 @@ import typer
 from ai_annotation import __version__
 from ai_annotation.cli import (
     batches,
+    dashboard,
     datasets,
     export,
     jobs,
@@ -19,7 +20,13 @@ from ai_annotation.cli import (
     predictions,
     projects,
 )
-from ai_annotation.cli._output import cli_errors, console, get_client, print_json
+from ai_annotation.cli._output import (
+    cli_errors,
+    console,
+    get_client,
+    print_json,
+    sparkline,
+)
 
 # 让 -h 等价 --help (root 设置经 Click context 继承到所有子命令)
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
@@ -62,6 +69,7 @@ app.add_typer(predictions.app, name="predictions", rich_help_panel=PANEL_PIPELIN
 app.add_typer(jobs.app, name="jobs", rich_help_panel=PANEL_PIPELINE)
 app.add_typer(export.app, name="export", rich_help_panel=PANEL_PIPELINE)
 app.add_typer(ml_backends.app, name="ml-backends", rich_help_panel=PANEL_MONITOR)
+app.add_typer(dashboard.app, name="dashboard", rich_help_panel=PANEL_MONITOR)
 
 
 @app.command(rich_help_panel=PANEL_CONFIG)
@@ -78,6 +86,28 @@ def me(
         console.print(
             f"[green]{principal.name}[/green] <{principal.email}> · role={principal.role}"
         )
+
+
+@app.command(rich_help_panel=PANEL_MONITOR)
+def stats(
+    json_output: bool = typer.Option(False, "--json", help="输出裸 JSON"),
+) -> None:
+    """可见项目聚合统计 + 最近 12 周趋势 (文本 sparkline)。"""
+    with cli_errors(json_output):
+        with get_client(json_output) as client:
+            s = client.projects.stats()
+    if json_output:
+        print_json(s.model_dump(mode="json"))
+        return
+    rate = s.ai_rate * 100 if s.ai_rate <= 1 else s.ai_rate
+    console.print(
+        f"总量 [b]{s.total_data}[/b] · 完成 [b]{s.completed}[/b] · "
+        f"AI率 [b]{rate:.0f}%[/b] · 待审 [b]{s.pending_review}[/b]"
+    )
+    console.print(f"数据总量(12周): {sparkline(s.total_data_series)}")
+    console.print(f"完成量(12周):   {sparkline(s.completed_series)}")
+    console.print(f"AI率(12周):     {sparkline(s.ai_rate_series)}")
+    console.print(f"待审(12周):     {sparkline(s.pending_review_series)}")
 
 
 def _version_callback(value: bool) -> None:

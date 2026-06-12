@@ -21,6 +21,7 @@ from ai_annotation.models import (
     ApiKeyCreated,
     Batch,
     CacheStats,
+    DashboardStats,
     Dataset,
     GpuInfo,
     HealthMeta,
@@ -33,8 +34,11 @@ from ai_annotation.models import (
     Member,
     MLBackend,
     MLBackendStatsSnapshot,
+    MyPerformance,
     Page,
+    PersonStat,
     Project,
+    ProjectStats,
     Task,
     TaskPage,
     UploadedItem,
@@ -42,7 +46,7 @@ from ai_annotation.models import (
     ZipUploadResult,
 )
 
-__version__ = "0.15.14"
+__version__ = "0.15.15"
 
 __all__ = [
     "__version__",
@@ -63,6 +67,7 @@ __all__ = [
     "ApiKeyCreated",
     "Batch",
     "CacheStats",
+    "DashboardStats",
     "Dataset",
     "GpuInfo",
     "HealthMeta",
@@ -75,8 +80,11 @@ __all__ = [
     "Member",
     "MLBackend",
     "MLBackendStatsSnapshot",
+    "MyPerformance",
     "Page",
+    "PersonStat",
     "Project",
+    "ProjectStats",
     "Task",
     "TaskPage",
     "UploadedItem",

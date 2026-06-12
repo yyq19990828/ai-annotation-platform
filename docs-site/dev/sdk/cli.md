@@ -27,7 +27,7 @@ CLI 凭据按以下优先级解析:
 
 ## 帮助系统
 
-所有命令都支持 `-h` / `--help`(二者等价)查看用法。顶层 `aap -h` 按用途把命令分四组展示:**配置与交互**(`login` / `me` / `tui`)、**资源管理**(`projects` / `datasets` / `batches` / `members`)、**标注流水线**(`predictions` / `jobs` / `export`)、**监控**(`ml-backends`);每个子命令的帮助末尾带可复制的示例(epilog)。
+所有命令都支持 `-h` / `--help`(二者等价)查看用法。顶层 `aap -h` 按用途把命令分四组展示:**配置与交互**(`login` / `me` / `tui`)、**资源管理**(`projects` / `datasets` / `batches` / `members`)、**标注流水线**(`predictions` / `jobs` / `export`)、**监控**(`ml-backends` / `stats` / `dashboard`);每个子命令的帮助末尾带可复制的示例(epilog)。
 
 ```bash
 aap -h                       # 顶层: 分组命令 + 快速上手 + env 说明
@@ -157,6 +157,34 @@ aap ml-backends list --project 0199bb...
 aap ml-backends get 0199dd... --project 0199bb... --json
 ```
 
+### aap stats
+
+```text
+aap stats [--json]
+```
+
+可见项目聚合统计 + 最近 12 周趋势(无 Textual 时用 unicode 块字符画 sparkline):数据总量 / 完成量 / AI 标注率 / 待审,各一条趋势条。
+
+```bash
+aap stats
+```
+
+### aap dashboard
+
+```text
+aap dashboard people [--project <id>] [--role <r>] [--period <p>] [--json]
+aap dashboard me [--period <p>] [--json]
+```
+
+- `people`:全员绩效卡片(super_admin / project_admin;**project_admin 必须 `--project`** 指定其管理范围)。表格列 姓名 / 角色 / 产出分 / 质量分 / 退回率 / 7 日趋势。
+- `me`:当前用户自助绩效(任意已认证),输出本期产出 / 质量 + 自身与团队均线 4 周趋势条 + 一次通过率。
+
+```bash
+aap dashboard people --period 7d
+aap dashboard people --project 0199bb...   # project_admin 视角
+aap dashboard me
+```
+
 ### aap export
 
 ```text
@@ -212,6 +240,9 @@ aap tui
 | `jobs cancel` | `{"job_id": "...", "cancel_requested": true}` |
 | `ml-backends list` | MLBackend 对象数组 |
 | `ml-backends get` | MLBackend 对象 |
+| `stats` | ProjectStats 对象(标量 + 4 条 12 周序列) |
+| `dashboard people` | PersonStat 对象数组 |
+| `dashboard me` | MyPerformance 对象 |
 | `export project` | `--wait`: `{"job_id": "...", "status": "...", "out": "..."}` · `--no-wait`: `{"job_id": "...", "waited": false}` |
 
 对象字段与 [SDK 响应模型](./python-client#响应模型与前向兼容)一致(`model_dump(mode="json")` 序列化);服务端新增字段会原样透传,脚本应容忍未知字段。

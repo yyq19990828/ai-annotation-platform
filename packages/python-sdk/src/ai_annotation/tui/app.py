@@ -45,7 +45,9 @@ from ai_annotation.models import (
     MLBackend,
     MLBackendStatsSnapshot,
     Member,
+    PersonStat,
     Project,
+    ProjectStats,
 )
 
 # job 状态 → 着色 (pending 灰 / running 黄 / completed 绿 / failed 红 / cancelled 暗)
@@ -92,6 +94,9 @@ _EXPORT_TARGETS: dict[str, list[tuple[str, str]]] = {
 }
 # 默认勾选项 (对齐 web): image→coco / video→video_json / lidar→aap_json
 _EXPORT_DEFAULT: dict[str, str] = {"image": "coco", "video": "video_json", "lidar": "aap_json"}
+
+# 全员绩效看板需 super_admin 全局可见 (project_admin 须按项目切分, 用 CLI aap dashboard people --project)
+_PEOPLE_ROLE = "super_admin"
 # RadioSet pressed_index → 参数值
 _FRAME_MODES = ["keyframes", "all_frames"]
 _AXIS_FRAMES = ["iso", "source"]
@@ -114,6 +119,22 @@ def _fmt_size(n: int) -> str:
 def _progress_cell(pct: int) -> str:
     filled = max(0, min(10, pct // 10))
     return f"{'█' * filled}{'░' * (10 - filled)} {pct:>3}%"
+
+
+_SPARK_CHARS = "▁▂▃▄▅▆▇█"
+
+
+def _spark_text(values: list[int]) -> str:
+    """unicode 块字符趋势条 (DataTable 单元格内画 7 日 sparkline)。"""
+    nums = [float(v) for v in values]
+    if not nums:
+        return "-"
+    lo, hi = min(nums), max(nums)
+    span = hi - lo
+    if span <= 0:
+        return _SPARK_CHARS[0] * len(nums)
+    last = len(_SPARK_CHARS) - 1
+    return "".join(_SPARK_CHARS[min(last, int((v - lo) / span * last))] for v in nums)
 
 
 def _format_fields(model: Any) -> str:
@@ -955,6 +976,24 @@ class AapTuiApp(App[None]):
         background: $panel;
         color: $text-muted;
     }
+    .spark-label {
+        color: $text-muted;
+        margin-top: 1;
+    }
+    #stats-body Sparkline {
+        height: 3;
+        margin-bottom: 1;
+    }
+    #stats-headline {
+        color: $accent;
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    #people-note {
+        color: $text-muted;
+        height: 1;
+        padding: 0 1;
+    }
     """
     BINDINGS = [
         Binding("r", "refresh", "刷新", tooltip="刷新当前 tab"),
@@ -988,6 +1027,8 @@ class AapTuiApp(App[None]):
         self._job_prev: dict[str, str] = {}
         # 各表当前高亮行 key (table id → key), 供动作键定位选中行
         self._cursor: dict[str, str] = {}
+        # 当前主体角色 (me() 解析), 用于绩效 tab 门控; None = 未知/降级
+        self._role: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -1016,6 +1057,20 @@ class AapTuiApp(App[None]):
                 yield DataTable(
                     id="ml-backends-table", cursor_type="row", zebra_stripes=True
                 )
+            with TabPane("📊 看板", id="tab-stats"):
+                with VerticalScroll(id="stats-body"):
+                    yield Static("加载中…", id="stats-headline")
+                    yield Static("数据总量 (12 周)", classes="spark-label")
+                    yield Sparkline([], id="spark-total")
+                    yield Static("完成量 (12 周)", classes="spark-label")
+                    yield Sparkline([], id="spark-completed")
+                    yield Static("AI 标注率 (12 周)", classes="spark-label")
+                    yield Sparkline([], id="spark-airate")
+                    yield Static("待审 (12 周)", classes="spark-label")
+                    yield Sparkline([], id="spark-review")
+            with TabPane("🏆 绩效", id="tab-people"):
+                yield Static("", id="people-note")
+                yield DataTable(id="people-table", cursor_type="row", zebra_stripes=True)
         # 底栏: status-bar(动态信息) 在上, Footer(上下文感知按键) 在下
         with Vertical(id="bottom-bar"):
             yield Static(self._hint, id="status-bar")
@@ -1038,10 +1093,18 @@ class AapTuiApp(App[None]):
             "name", "项目", "state", "model_version", "GPU", "显存", "last_checked"
         )
         ml_table.border_title = "ML Backend"
+        people_table = self.query_one("#people-table", DataTable)
+        people_table.add_columns(
+            "姓名", "角色", "产出分", "质量分", "退回率", "7日趋势"
+        )
+        people_table.border_title = "全员绩效"
         self._refresh_projects()
         self._refresh_datasets()
         self._refresh_jobs()
         self._refresh_ml_backends()
+        self._refresh_stats()
+        # 解析角色 → 决定绩效 tab 是否拉数 (网络调用须在 thread worker, 不可在 UI 线程直跑)
+        self.run_worker(self._load_principal, thread=True, exclusive=True, group="me")
         self.set_interval(self._poll_interval, self._refresh_jobs)
         # ML Backends N+1 聚合较重, 仅在该 tab 激活时按 5s 轮询 (见 _tick_ml_backends)
         self.set_interval(5.0, self._tick_ml_backends)
@@ -1083,11 +1146,23 @@ class AapTuiApp(App[None]):
             self._refresh_datasets()
         elif active == "tab-ml-backends":
             self._refresh_ml_backends()
+        elif active == "tab-stats":
+            self._refresh_stats()
+        elif active == "tab-people":
+            self._refresh_people()
         else:
             self._refresh_jobs()
 
     def _refresh_projects(self) -> None:
         self.run_worker(self._load_projects, thread=True, exclusive=True, group="projects")
+
+    def _refresh_stats(self) -> None:
+        self.run_worker(self._load_stats, thread=True, exclusive=True, group="stats")
+
+    def _refresh_people(self) -> None:
+        """绩效仅 super_admin 全局可见; 其余角色不发请求 (避免 403)。"""
+        if self._role == _PEOPLE_ROLE:
+            self.run_worker(self._load_people, thread=True, exclusive=True, group="people")
 
     def _refresh_datasets(self) -> None:
         self.run_worker(self._load_datasets, thread=True, exclusive=True, group="datasets")
@@ -1143,6 +1218,30 @@ class AapTuiApp(App[None]):
             self.call_from_thread(self._set_status, f"ml-backends 加载失败: {exc}")
             return
         self.call_from_thread(self._render_ml_backends, rows)
+
+    def _load_stats(self) -> None:
+        try:
+            stats = self._client.projects.stats()
+        except Exception as exc:  # noqa: BLE001
+            self.call_from_thread(self._set_status, f"看板加载失败: {exc}")
+            return
+        self.call_from_thread(self._render_stats, stats)
+
+    def _load_principal(self) -> None:
+        """解析当前主体角色 (me()); 失败则降级未知, 不阻塞主流程。"""
+        try:
+            role = self._client.me().role
+        except Exception:  # noqa: BLE001 — 老后端无 /auth/me 或鉴权问题时降级
+            role = None
+        self.call_from_thread(self._apply_role, role)
+
+    def _load_people(self) -> None:
+        try:
+            people = self._client.dashboard.people()
+        except Exception as exc:  # noqa: BLE001
+            self.call_from_thread(self._set_status, f"绩效加载失败: {exc}")
+            return
+        self.call_from_thread(self._render_people, people)
 
     # ---- 渲染 (UI 线程) ----
 
@@ -1245,6 +1344,59 @@ class AapTuiApp(App[None]):
                 key=str(b.id),
             )
         table.border_title = self._count_title("ML Backend", len(rows))
+        self._mark_refreshed()
+
+    def _render_stats(self, stats: ProjectStats) -> None:
+        rate = stats.ai_rate * 100 if stats.ai_rate <= 1 else stats.ai_rate
+        self.query_one("#stats-headline", Static).update(
+            f"总量 {stats.total_data} · 完成 {stats.completed}"
+            f" · AI率 {rate:.0f}% · 待审 {stats.pending_review}"
+        )
+        self.query_one("#spark-total", Sparkline).data = [
+            float(v) for v in stats.total_data_series
+        ]
+        self.query_one("#spark-completed", Sparkline).data = [
+            float(v) for v in stats.completed_series
+        ]
+        self.query_one("#spark-airate", Sparkline).data = [
+            float(v) for v in stats.ai_rate_series
+        ]
+        self.query_one("#spark-review", Sparkline).data = [
+            float(v) for v in stats.pending_review_series
+        ]
+        self._mark_refreshed()
+
+    def _apply_role(self, role: str | None) -> None:
+        self._role = role
+        note = self.query_one("#people-note", Static)
+        if role == _PEOPLE_ROLE:
+            note.update(f"全员绩效 · 当前角色 {role}")
+            self._refresh_people()
+        elif role == "project_admin":
+            note.update(
+                "全员绩效需 super_admin；project_admin 请用 CLI "
+                "[dim]aap dashboard people --project <id>[/]"
+            )
+        elif role is None:
+            note.update("（角色未知，绩效看板不可用）")
+        else:
+            note.update(f"（绩效看板需要 super_admin 角色，当前 {role}）")
+
+    def _render_people(self, people: list[PersonStat]) -> None:
+        table = self.query_one("#people-table", DataTable)
+        table.clear()
+        for p in people:
+            rejected = f"{p.rejected_rate * 100:.0f}%" if p.rejected_rate is not None else "-"
+            table.add_row(
+                p.name,
+                p.role,
+                str(p.throughput_score),
+                str(p.quality_score),
+                rejected,
+                _spark_text(p.sparkline_7d),
+                key=p.user_id,
+            )
+        table.border_title = self._count_title("全员绩效", len(people))
         self._mark_refreshed()
 
     # ---- 下钻: 打开选中行的详情子路由 (回车 / o / 「打开」按钮) ----
