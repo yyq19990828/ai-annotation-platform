@@ -188,6 +188,9 @@ importers:
       mermaid:
         specifier: ^11.14.0
         version: 11.14.0
+      svg-pan-zoom:
+        specifier: ^3.6.2
+        version: 3.6.2
       vitepress:
         specifier: ^1.5.0
         version: 1.6.4(@algolia/client-search@5.52.0)(@types/node@25.6.0)(@types/react@18.3.28)(fuse.js@7.3.0)(idb-keyval@6.2.2)(lightningcss@1.32.0)(postcss@8.5.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(search-insights@2.17.3)(typescript@5.6.3)
@@ -4086,6 +4089,9 @@ packages:
   supports-color@7.2.0:
     resolution: {integrity: sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw==}
     engines: {node: '>=8'}
+
+  svg-pan-zoom@3.6.2:
+    resolution: {integrity: sha512-JwnvRWfVKw/Xzfe6jriFyfey/lWJLq4bUh2jwoR5ChWQuQoOH8FEh1l/bEp46iHHKHEJWIyFJETbazraxNWECg==}
 
   swrv@1.2.0:
     resolution: {integrity: sha512-lH/g4UcNyj+7lzK4eRGT4C68Q4EhQ6JtM9otPRIASfhhzfLWtbZPHcMuhuba7S9YVYuxkMUGImwMyGpfbkH07A==}
@@ -9309,6 +9315,8 @@ snapshots:
   supports-color@7.2.0:
     dependencies:
       has-flag: 4.0.0
+
+  svg-pan-zoom@3.6.2: {}
 
   swrv@1.2.0(vue@3.5.33(typescript@5.6.3)):
     dependencies:

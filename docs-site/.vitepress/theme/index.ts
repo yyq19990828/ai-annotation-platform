@@ -4,11 +4,14 @@
  */
 import DefaultTheme from "vitepress/theme";
 import AutoImage from "./components/AutoImage.vue";
+import { setupMermaidZoom } from "./mermaid-zoom";
+import "./mermaid-zoom.css";
 import type { Theme } from "vitepress";
 
 export default {
   extends: DefaultTheme,
   enhanceApp({ app }) {
     app.component("AutoImage", AutoImage);
+    setupMermaidZoom();
   },
 } satisfies Theme;

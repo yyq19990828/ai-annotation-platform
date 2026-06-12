@@ -1,0 +1,52 @@
+/* mermaid 缩放容器：定高画布 + 可手动纵向拖拽改高。背景透明，保持图自身对比度。 */
+.mermaid-zoom {
+  position: relative;
+  width: 100%;
+  margin: 16px 0;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: transparent;
+  overflow: hidden;
+  resize: vertical; /* 拖右下角可改容器高度 */
+  cursor: grab;
+}
+
+.mermaid-zoom:active {
+  cursor: grabbing;
+}
+
+.mermaid-zoom svg {
+  display: block;
+}
+
+/* 右上角自定义缩放控件 */
+.mermaid-zoom-ctrl {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  z-index: 2;
+}
+
+.mermaid-zoom-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.2s, background 0.2s;
+}
+
+.mermaid-zoom-btn:hover {
+  opacity: 1;
+  background: var(--vp-c-bg-soft);
+}
