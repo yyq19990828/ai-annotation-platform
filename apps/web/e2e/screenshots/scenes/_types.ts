@@ -30,8 +30,8 @@ export interface ScreenshotScene {
   /**
    * 网络状态模拟（使用 page.route 拦截 API 请求）。
    * - happy    : 正常（不拦截，默认）
-   * - empty    : 列表端点返回空数组
-   * - error    : 所有 /api/v1/** 返回 500
+   * - empty    : 目标页列表端点返回空结果
+   * - error    : 目标页关键端点返回 500
    * - loading  : 所有 /api/v1/** 延迟 30s（截图前已禁动画，用于展示 skeleton）
    * - rate-limited : 返回 429
    */

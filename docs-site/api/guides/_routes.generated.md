@@ -79,6 +79,8 @@
 
 | Method | Path |
 |---|---|
+| PATCH | `/{key_id}` |
+| POST | `/{key_id}/rotate` |
 | DELETE | `/{key_id}` |
 
 ## `async_jobs.py`
@@ -385,6 +387,7 @@
 | GET | `/{task_id}/video/manifest` |
 | GET | `/{task_id}/point-cloud/manifest` |
 | GET | `/{task_id}/neighbors` |
+| GET | `/{task_id}/neighbor-annotations` |
 | GET | `/{task_id}/video/frame-timetable` |
 | GET | `/{task_id}/video/manifest-v2` |
 | GET | `/{task_id}/video/segments` |
@@ -462,4 +465,4 @@
 
 ---
 
-_共 41 模块 / 265 路由_
+_共 41 模块 / 268 路由_

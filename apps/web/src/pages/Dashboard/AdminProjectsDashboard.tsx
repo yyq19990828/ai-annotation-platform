@@ -238,7 +238,7 @@ export function AdminProjectsDashboard() {
             onClose={() => setImportOpen(false)}
             onUploaded={() => navigate("/datasets")}
           />
-          <Button variant="primary" onClick={openWizard}>
+          <Button variant="primary" onClick={openWizard} data-testid="new-project-btn">
             <Icon name="plus" size={13} />新建项目
           </Button>
           <CreateProjectWizard

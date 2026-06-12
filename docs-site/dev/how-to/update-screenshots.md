@@ -22,6 +22,8 @@ pnpm screenshots:regression       # 视觉回归（每次 release 前跑）
 pnpm screenshots:lint             # 检查文档引用图是否都在 manifest
 ```
 
+截图脚本默认用本地 seed 账号 `admin`（密码 `123456`）作为超管身份；需要覆盖时可设置 `SCREENSHOT_ADMIN_EMAIL=<email>`。
+
 ## 目录结构
 
 ```

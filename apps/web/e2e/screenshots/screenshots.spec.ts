@@ -33,6 +33,7 @@ import fs from "fs";
 const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
 const REPO_ROOT = HERE.replace(/\/apps\/web\/e2e\/screenshots\/?$/, "");
 const MANIFEST_PATH = path.join(REPO_ROOT, "apps/web/e2e/screenshots/outputs/manifest.json");
+const SCREENSHOT_ADMIN_EMAIL = process.env.SCREENSHOT_ADMIN_EMAIL ?? "admin";
 
 // Playwright project name → MatrixAxis
 const PROJECT_AXIS: Record<string, MatrixAxis> = {
@@ -56,7 +57,16 @@ type ManifestEntry = {
   project: string;
 };
 
-const manifest: Record<string, ManifestEntry> = {};
+function readExistingManifest(): Record<string, ManifestEntry> {
+  if (!fs.existsSync(MANIFEST_PATH)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8")) as Record<string, ManifestEntry>;
+  } catch {
+    return {};
+  }
+}
+
+const manifest: Record<string, ManifestEntry> = readExistingManifest();
 
 /** 判断 scene 是否应在当前 Playwright project 中跑 */
 function shouldRunInProject(scene: ScreenshotScene, axis: MatrixAxis): boolean {
@@ -101,15 +111,16 @@ test.describe("screenshots automation", () => {
       project_id: string | null;
       task_id: string | null;
     };
-    if (!peek.admin_email) {
+    const adminEmail = SCREENSHOT_ADMIN_EMAIL || peek.admin_email;
+    if (!adminEmail) {
       throw new Error(
-        "seed/peek 找不到 super_admin 用户。请先跑 `cd apps/api && PYTHONPATH=. uv run python scripts/seed.py`。",
+        "截图脚本找不到 super_admin 用户。请先跑 `cd apps/api && PYTHONPATH=. uv run python scripts/seed.py`，或设置 SCREENSHOT_ADMIN_EMAIL。",
       );
     }
     cached = {
-      admin_email:     peek.admin_email,
-      annotator_email: peek.admin_email,
-      reviewer_email:  peek.admin_email,
+      admin_email:     adminEmail,
+      annotator_email: adminEmail,
+      reviewer_email:  adminEmail,
       project_id:      peek.project_id ?? "",
       task_ids:        peek.task_id ? [peek.task_id] : [],
       ml_backend_id:   "",
