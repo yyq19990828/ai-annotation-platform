@@ -159,12 +159,8 @@ class WorkbenchPreferences(BaseModel):
     common: WorkbenchCommonPreferences = Field(
         default_factory=WorkbenchCommonPreferences
     )
-    image: WorkbenchImagePreferences = Field(
-        default_factory=WorkbenchImagePreferences
-    )
-    video: WorkbenchVideoPreferences = Field(
-        default_factory=WorkbenchVideoPreferences
-    )
+    image: WorkbenchImagePreferences = Field(default_factory=WorkbenchImagePreferences)
+    video: WorkbenchVideoPreferences = Field(default_factory=WorkbenchVideoPreferences)
     pointcloud: WorkbenchPointcloudPreferences = Field(
         default_factory=WorkbenchPointcloudPreferences
     )

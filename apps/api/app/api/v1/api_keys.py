@@ -47,7 +47,9 @@ async def create_my_key(
     )
     await db.commit()
     await db.refresh(key)
-    return ApiKeyCreated(**ApiKeyOut.model_validate(key).model_dump(), plaintext=plaintext)
+    return ApiKeyCreated(
+        **ApiKeyOut.model_validate(key).model_dump(), plaintext=plaintext
+    )
 
 
 @router.patch("/{key_id}", response_model=ApiKeyOut)
@@ -85,7 +87,9 @@ async def rotate_my_key(
     key, plaintext = result
     await db.commit()
     await db.refresh(key)
-    return ApiKeyCreated(**ApiKeyOut.model_validate(key).model_dump(), plaintext=plaintext)
+    return ApiKeyCreated(
+        **ApiKeyOut.model_validate(key).model_dump(), plaintext=plaintext
+    )
 
 
 @router.delete("/{key_id}", status_code=204)

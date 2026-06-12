@@ -158,7 +158,9 @@ def test_project_rendering_config_v0_10_10():
     with pytest.raises(ValidationError):
         ProjectUpdate.model_validate({"rendering_config": {"box3dDefaultSize": [4, 2]}})
     with pytest.raises(ValidationError):
-        ProjectUpdate.model_validate({"rendering_config": {"box3dDefaultSize": [4, 0, 1]}})
+        ProjectUpdate.model_validate(
+            {"rendering_config": {"box3dDefaultSize": [4, 0, 1]}}
+        )
 
 
 def test_audit_query_supports_detail_filter():

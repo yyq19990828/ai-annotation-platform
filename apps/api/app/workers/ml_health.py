@@ -119,7 +119,9 @@ def _binding_for_backend(
     }
 
 
-def _group_backend_rows(rows: list[tuple[MLBackend, str | None, str | None]]) -> list[dict]:
+def _group_backend_rows(
+    rows: list[tuple[MLBackend, str | None, str | None]],
+) -> list[dict]:
     grouped: dict[str, dict] = {}
     for backend, project_display_id, project_name in rows:
         group_key, physical_key, url_host = _backend_group_key(backend)
@@ -186,16 +188,13 @@ async def _publish_stats_async() -> dict:
         async with SessionLocal() as db:
             # ml_backends 无 is_active 字段; state == 'disconnected' 跳过 (一直 down 的 backend 不打)
             rows = (
-                (
-                    await db.execute(
-                        select(MLBackend, Project.display_id, Project.name)
-                        .join(Project, Project.id == MLBackend.project_id)
-                        .where(MLBackend.state != "disconnected")
-                        .order_by(Project.display_id.asc(), MLBackend.created_at.asc())
-                    )
+                await db.execute(
+                    select(MLBackend, Project.display_id, Project.name)
+                    .join(Project, Project.id == MLBackend.project_id)
+                    .where(MLBackend.state != "disconnected")
+                    .order_by(Project.display_id.asc(), MLBackend.created_at.asc())
                 )
-                .all()
-            )
+            ).all()
     finally:
         await engine.dispose()
 

@@ -273,7 +273,9 @@ async def list_tasks(
             or_(
                 seq_key > last_seq,
                 and_(seq_key == last_seq, Task.created_at > last_ts),
-                and_(seq_key == last_seq, Task.created_at == last_ts, Task.id > last_id),
+                and_(
+                    seq_key == last_seq, Task.created_at == last_ts, Task.id > last_id
+                ),
             )
         )
 
@@ -292,7 +294,9 @@ async def list_tasks(
     }
     briefs = await resolve_briefs(db, user_ids) if user_ids else {}
     next_cursor = (
-        _encode_task_cursor(tasks[-1].sequence_order, tasks[-1].created_at, tasks[-1].id)
+        _encode_task_cursor(
+            tasks[-1].sequence_order, tasks[-1].created_at, tasks[-1].id
+        )
         if len(tasks) == limit
         else None
     )

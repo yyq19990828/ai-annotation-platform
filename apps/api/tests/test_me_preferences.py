@@ -293,9 +293,7 @@ async def test_patch_pointcloud_camera_layout_snapshot(httpx_client, annotator):
     assert resp.json()["workbench"]["layout"]["pointcloudCamera"] == camera
 
 
-async def test_patch_pointcloud_range_and_enum_violations_422(
-    httpx_client, annotator
-):
+async def test_patch_pointcloud_range_and_enum_violations_422(httpx_client, annotator):
     _, token = annotator
     for bad_subtree in (
         {"pointcloud": {"pointSize": 0.5}},  # > 0.3
