@@ -144,6 +144,29 @@ with Client() as client:
 
 `MLBackend.state` 为 `connected` / `error`;`health_meta`(`HealthMeta`)含 `gpu_info` / `host` / `cache` / `model_version`,由后端 `/health` 缓存,`last_checked_at` 反映最近探测时间。
 
+### client.batches
+
+只读查询某项目的批次(进度 / 责任人 / 退回数)。
+
+| 方法 | 签名 | 返回 |
+|---|---|---|
+| `list` | `list(project_id, status: str \| None = None)` | `list[Batch]` |
+| `get` | `get(project_id, batch_id)` | `Batch` |
+
+`Batch.progress_pct` 为 0–100 浮点;`annotator` / `reviewer` 为 `UserBrief \| None`(责任人摘要)。端点对项目可见者开放。
+
+### client.members
+
+| 方法 | 签名 | 返回 |
+|---|---|---|
+| `list` | `list(project_id)` | `list[Member]` |
+
+`Member` 含 `user_name` / `user_email` / `role` / `assigned_at`。端点对项目可见者开放。
+
+### client.me()
+
+`client.me() -> Me`:返回当前认证主体(`GET /auth/me`),`Me.role` 用于角色感知 / 凭据自检。
+
 ### client.api_keys
 
 | 方法 | 签名 | 返回 |
@@ -184,6 +207,6 @@ with Client() as client:
 
 ## 响应模型与前向兼容
 
-顶层导出的 pydantic 模型:`Project` / `Dataset` / `Task` / `TaskPage` / `Annotation` / `Job` / `JobPage` / `Page` / `UploadedItem` / `ZipUploadResult` / `LinkResult` / `ImportResult` / `ApiKey` / `ApiKeyCreated`。
+顶层导出的 pydantic 模型:`Project` / `Dataset` / `Task` / `TaskPage` / `Annotation` / `Job` / `JobPage` / `Page` / `UploadedItem` / `ZipUploadResult` / `LinkResult` / `ImportResult` / `ApiKey` / `ApiKeyCreated` / `Batch` / `Member` / `Me` / `UserBrief`。
 
 所有模型 `extra="allow"`:只声明 SDK 用户关心的稳定字段,**容忍服务端新增字段**——未声明字段不会导致校验失败,且仍可通过属性访问(如 `project.total_tasks`,服务端附加字段,可能缺失,建议 `getattr(p, "total_tasks", None)` 取用)。

@@ -30,6 +30,17 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.14] - 2026-06-12
+
+SDK 可观测面扩展:新增**批次 / 成员 / 当前主体**只读命名空间，TUI 项目详情长出「批次」「成员」子 tab。计划见 `docs/plans/2026-06-12-v0.15.14-sdk-batches-members.md`。零后端改动(端点均已存在)。
+
+### Added
+
+- **SDK 批次 / 成员命名空间**:`client.batches.list(project_id, status=)` / `.get(...)`(`Batch` 模型:进度 / 审核 / 退回 / `annotator` / `reviewer`)、`client.members.list(project_id)`(`Member` 模型)。新增 `UserBrief` 责任人摘要模型。端点均对项目可见者开放。
+- **SDK `client.me()`**:返回当前认证主体(`GET /auth/me`,`Me` 模型含 `role`),用于凭据自检 / 角色感知。
+- **CLI `aap batches list` / `aap members list` / `aap me`**:表格 + `--json`;`aap batches list` 支持 `--status` 过滤。
+- **TUI 项目详情子 tab**:`ProjectDetailScreen` 从概览 / 任务 / Backends 三 tab 增至五 tab,新增「📦 批次」(进度 / 审核 / 退回 / 责任人)与「👥 成员」(用户 / 角色)。批次 / 成员端点在旧后端或无权限时降级为空表,不拖垮详情屏。
+
 ## [0.15.13] - 2026-06-12
 
 `aap tui` / `aap export` 导出能力对齐 Web：从「固定 `aap_json`」升级为「按项目类型自适应多格式 + 选项 + 完成后就地下载」，弹窗统一为键盘 + 按钮双通道。计划见 `docs/plans/2026-06-12-v0.15.13-tui-export-alignment.md`。零后端 / 零 `client.py` 改动。

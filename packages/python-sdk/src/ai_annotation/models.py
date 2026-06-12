@@ -219,6 +219,55 @@ class MLBackendStatsSnapshot(_AAPModel):
     timestamp: datetime | None = None
 
 
+class UserBrief(_AAPModel):
+    """责任人 inline 摘要 (batch annotator / reviewer 等)。"""
+
+    id: UUID
+    name: str
+    email: str | None = None
+    role: str | None = None
+    avatar_initial: str | None = None
+
+
+class Batch(_AAPModel):
+    """项目批次 (只读)。progress_pct 为 0-100 浮点; annotator/reviewer 为责任人摘要。"""
+
+    id: UUID
+    project_id: UUID
+    display_id: str
+    name: str
+    status: str
+    total_tasks: int = 0
+    completed_tasks: int = 0
+    review_tasks: int = 0
+    approved_tasks: int = 0
+    rejected_tasks: int = 0
+    progress_pct: float = 0.0
+    annotator: UserBrief | None = None
+    reviewer: UserBrief | None = None
+    created_at: datetime | None = None
+
+
+class Member(_AAPModel):
+    """项目成员 (只读)。"""
+
+    id: UUID
+    user_id: UUID
+    user_name: str
+    user_email: str
+    role: str
+    assigned_at: datetime | None = None
+
+
+class Me(_AAPModel):
+    """当前认证主体 (GET /auth/me)。role 用于 TUI/CLI 角色感知; 其余字段经 extra 透传。"""
+
+    id: UUID
+    email: str
+    name: str
+    role: str
+
+
 class ApiKey(_AAPModel):
     id: UUID
     name: str

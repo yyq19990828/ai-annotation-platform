@@ -9,7 +9,18 @@ from uuid import uuid4
 import pytest
 from textual.widgets import DataTable, Static, TabbedContent, TabPane
 
-from ai_annotation.models import Dataset, HealthMeta, Job, JobPage, MLBackend, Page, Project
+from ai_annotation.models import (
+    Batch,
+    Dataset,
+    HealthMeta,
+    Job,
+    JobPage,
+    MLBackend,
+    Member,
+    Page,
+    Project,
+    UserBrief,
+)
 from ai_annotation.tui.app import (
     AapTuiApp,
     DetailScreen,
@@ -137,13 +148,39 @@ class _StubMLBackends:
         return self._by_project.get(project_id, [])
 
 
+class _StubBatches:
+    def __init__(self, by_project=None):
+        self._by_project = by_project or {}
+
+    def list(self, project_id, status=None):
+        return self._by_project.get(project_id, [])
+
+
+class _StubMembers:
+    def __init__(self, by_project=None):
+        self._by_project = by_project or {}
+
+    def list(self, project_id):
+        return self._by_project.get(project_id, [])
+
+
 class _StubClient:
-    def __init__(self, projects, datasets, job_pages, ml_by_project=None):
+    def __init__(
+        self,
+        projects,
+        datasets,
+        job_pages,
+        ml_by_project=None,
+        batches_by_project=None,
+        members_by_project=None,
+    ):
         self.projects = _StubProjects(projects)
         self.datasets = _StubDatasets(datasets)
         self.jobs = _StubJobs(job_pages)
         self.exports = _StubExports()
         self.ml_backends = _StubMLBackends(ml_by_project or {})
+        self.batches = _StubBatches(batches_by_project)
+        self.members = _StubMembers(members_by_project)
 
     def close(self):
         pass
@@ -360,9 +397,11 @@ async def test_open_project_pushes_detail_with_subtabs():
         await pilot.press("o")  # 打开 Projects 高亮首行
         await _settle_screen(app, pilot)
         assert isinstance(app.screen, ProjectDetailScreen)
-        # 三个 scoped 子 tab
+        # 五个 scoped 子 tab (v0.15.14 加批次 / 成员)
         assert [t.id for t in app.screen.query(TabPane)] == [
             "pd-overview",
+            "pd-batches",
+            "pd-members",
             "pd-jobs",
             "pd-backends",
         ]
@@ -491,3 +530,83 @@ async def test_completed_export_job_detail_download_closure():
         await pilot.click("#modal-ok")
         await _settle(app, pilot)
         assert len(app._client.exports.downloaded) == 1
+
+
+# ---- v0.15.14: 项目详情 批次 / 成员 子 tab ----
+
+
+def _batch(project_id) -> Batch:
+    return Batch(
+        id=uuid4(),
+        project_id=project_id,
+        display_id="B-1",
+        name="batch-alpha",
+        status="active",
+        total_tasks=20,
+        completed_tasks=12,
+        review_tasks=3,
+        rejected_tasks=1,
+        progress_pct=60.0,
+        annotator=UserBrief(id=uuid4(), name="标注员甲", email="a@x.io", avatar_initial="甲"),
+        reviewer=UserBrief(id=uuid4(), name="审核员乙", email="b@x.io", avatar_initial="乙"),
+    )
+
+
+def _member() -> Member:
+    return Member(
+        id=uuid4(),
+        user_id=uuid4(),
+        user_name="张三",
+        user_email="zhang@x.io",
+        role="annotator",
+        assigned_at=datetime(2026, 6, 10, tzinfo=timezone.utc),
+    )
+
+
+async def test_project_detail_batches_and_members_subtabs():
+    project = _project()
+    client = _StubClient(
+        [project],
+        [_dataset()],
+        [JobPage(items=[], total=0)],
+        batches_by_project={project.id: [_batch(project.id)]},
+        members_by_project={project.id: [_member()]},
+    )
+    app = AapTuiApp(client, base_url=BASE)
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        await pilot.press("o")
+        await _settle_screen(app, pilot)
+        assert isinstance(app.screen, ProjectDetailScreen)
+        bat = app.screen.query_one("#pd-batches-table", DataTable)
+        assert bat.row_count == 1
+        row = bat.get_row_at(0)
+        assert row[0] == "batch-alpha"
+        assert row[1] == "active"
+        assert "60%" in row[2]  # progress_cell
+        assert row[5] == "标注员甲"
+        assert row[6] == "审核员乙"
+        mt = app.screen.query_one("#pd-members-table", DataTable)
+        assert mt.row_count == 1
+        assert mt.get_row_at(0)[0] == "张三"
+        assert mt.get_row_at(0)[2] == "annotator"
+
+
+async def test_project_detail_degrades_when_batches_endpoint_unavailable():
+    # 批次端点抛错 (旧后端/无权限) → 空表降级, 不拖垮整个详情屏
+    project = _project()
+    client = _StubClient([project], [_dataset()], [JobPage(items=[], total=0)])
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("404 batches not found")
+
+    client.batches.list = _boom  # type: ignore[assignment]
+    app = AapTuiApp(client, base_url=BASE)
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        await pilot.press("o")
+        await _settle_screen(app, pilot)
+        assert isinstance(app.screen, ProjectDetailScreen)
+        # 批次表空, 但详情屏正常 (成员表仍在)
+        assert app.screen.query_one("#pd-batches-table", DataTable).row_count == 0
+        assert app.screen.query_one("#pd-members-table", DataTable) is not None

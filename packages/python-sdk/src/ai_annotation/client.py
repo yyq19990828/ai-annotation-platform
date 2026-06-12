@@ -18,11 +18,14 @@ from ai_annotation.models import (
     Annotation,
     ApiKey,
     ApiKeyCreated,
+    Batch,
     Dataset,
     ImportResult,
     Job,
     JobPage,
     LinkResult,
+    Me,
+    Member,
     MLBackend,
     Page,
     Project,
@@ -384,6 +387,38 @@ class MLBackends:
         return MLBackend.model_validate(resp.json())
 
 
+class Batches:
+    """项目批次只读查询 (进度 / 责任人 / 退回数)。"""
+
+    def __init__(self, http: HttpTransport):
+        self._http = http
+
+    def list(self, project_id: IdLike, status: str | None = None) -> list[Batch]:
+        resp = self._http.request(
+            "GET",
+            f"/projects/{project_id}/batches",
+            params=_drop_none({"status": status}),
+        )
+        return [Batch.model_validate(x) for x in resp.json()]
+
+    def get(self, project_id: IdLike, batch_id: IdLike) -> Batch:
+        resp = self._http.request(
+            "GET", f"/projects/{project_id}/batches/{batch_id}"
+        )
+        return Batch.model_validate(resp.json())
+
+
+class Members:
+    """项目成员只读查询 (用户 / 角色 / 加入时间)。"""
+
+    def __init__(self, http: HttpTransport):
+        self._http = http
+
+    def list(self, project_id: IdLike) -> list[Member]:
+        resp = self._http.request("GET", f"/projects/{project_id}/members")
+        return [Member.model_validate(x) for x in resp.json()]
+
+
 class ApiKeys:
     def __init__(self, http: HttpTransport):
         self._http = http
@@ -464,7 +499,14 @@ class Client:
         self.jobs = Jobs(self._http)
         self.exports = Exports(self._http, self.jobs)
         self.ml_backends = MLBackends(self._http)
+        self.batches = Batches(self._http)
+        self.members = Members(self._http)
         self.api_keys = ApiKeys(self._http)
+
+    def me(self) -> Me:
+        """当前认证主体 (GET /auth/me)。用于自检凭据 / 角色感知。"""
+        resp = self._http.request("GET", "/auth/me")
+        return Me.model_validate(resp.json())
 
     def close(self) -> None:
         self._http.close()

@@ -578,3 +578,100 @@ def test_export_project_wait_requires_out(respx_mock):
         app, ["export", "project", pid, "--target", "coco"], env=ENV
     )
     assert result.exit_code != 0
+
+
+# ---------- batches / members / me (v0.15.14) ----------
+
+
+def test_batches_list_table(respx_mock):
+    pid = str(uuid4())
+    respx_mock.get(f"{API}/projects/{pid}/batches").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": str(uuid4()),
+                    "project_id": pid,
+                    "display_id": "B-1",
+                    "name": "batch-alpha",
+                    "status": "active",
+                    "total_tasks": 20,
+                    "completed_tasks": 12,
+                    "review_tasks": 3,
+                    "rejected_tasks": 1,
+                    "progress_pct": 60.0,
+                    "annotator": {
+                        "id": str(uuid4()),
+                        "name": "标注员甲",
+                        "email": "a@x.io",
+                        "avatar_initial": "甲",
+                    },
+                    "reviewer": None,
+                    "created_at": "2026-06-11T00:00:00Z",
+                }
+            ],
+        )
+    )
+    result = runner.invoke(app, ["batches", "list", pid], env=ENV)
+    assert result.exit_code == 0
+    plain = _plain(result.output)
+    assert "batch-alpha" in plain
+    assert "12/20" in plain
+    assert "标注员甲" in plain
+
+
+def test_batches_list_status_filter_json(respx_mock):
+    pid = str(uuid4())
+    route = respx_mock.get(f"{API}/projects/{pid}/batches").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    result = runner.invoke(
+        app, ["batches", "list", pid, "--status", "reviewing", "--json"], env=ENV
+    )
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == []
+    assert route.calls.last.request.url.params["status"] == "reviewing"
+
+
+def test_members_list_table(respx_mock):
+    pid = str(uuid4())
+    respx_mock.get(f"{API}/projects/{pid}/members").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": str(uuid4()),
+                    "user_id": str(uuid4()),
+                    "user_name": "张三",
+                    "user_email": "zhang@x.io",
+                    "role": "annotator",
+                    "assigned_at": "2026-06-10T00:00:00Z",
+                }
+            ],
+        )
+    )
+    result = runner.invoke(app, ["members", "list", pid], env=ENV)
+    assert result.exit_code == 0
+    plain = _plain(result.output)
+    assert "张三" in plain
+    assert "annotator" in plain
+
+
+def test_me_command(respx_mock):
+    respx_mock.get(f"{API}/auth/me").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": str(uuid4()),
+                "email": "me@x.io",
+                "name": "Me",
+                "role": "project_admin",
+                "status": "active",
+            },
+        )
+    )
+    result = runner.invoke(app, ["me"], env=ENV)
+    assert result.exit_code == 0
+    plain = _plain(result.output)
+    assert "project_admin" in plain
+    assert "me@x.io" in plain

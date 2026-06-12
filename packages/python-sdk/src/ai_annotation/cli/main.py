@@ -9,14 +9,17 @@ import typer
 
 from ai_annotation import __version__
 from ai_annotation.cli import (
+    batches,
     datasets,
     export,
     jobs,
     login,
+    members,
     ml_backends,
     predictions,
     projects,
 )
+from ai_annotation.cli._output import cli_errors, console, get_client, print_json
 
 # 让 -h 等价 --help (root 设置经 Click context 继承到所有子命令)
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
@@ -53,10 +56,28 @@ app.command(
 )(login.login)
 app.add_typer(projects.app, name="projects", rich_help_panel=PANEL_RESOURCE)
 app.add_typer(datasets.app, name="datasets", rich_help_panel=PANEL_RESOURCE)
+app.add_typer(batches.app, name="batches", rich_help_panel=PANEL_RESOURCE)
+app.add_typer(members.app, name="members", rich_help_panel=PANEL_RESOURCE)
 app.add_typer(predictions.app, name="predictions", rich_help_panel=PANEL_PIPELINE)
 app.add_typer(jobs.app, name="jobs", rich_help_panel=PANEL_PIPELINE)
 app.add_typer(export.app, name="export", rich_help_panel=PANEL_PIPELINE)
 app.add_typer(ml_backends.app, name="ml-backends", rich_help_panel=PANEL_MONITOR)
+
+
+@app.command(rich_help_panel=PANEL_CONFIG)
+def me(
+    json_output: bool = typer.Option(False, "--json", help="输出裸 JSON"),
+) -> None:
+    """显示当前认证主体 (用户 / 角色), 用于自检凭据。"""
+    with cli_errors(json_output):
+        with get_client(json_output) as client:
+            principal = client.me()
+    if json_output:
+        print_json(principal.model_dump(mode="json"))
+    else:
+        console.print(
+            f"[green]{principal.name}[/green] <{principal.email}> · role={principal.role}"
+        )
 
 
 def _version_callback(value: bool) -> None:

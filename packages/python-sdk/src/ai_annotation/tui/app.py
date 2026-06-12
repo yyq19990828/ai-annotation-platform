@@ -39,10 +39,12 @@ from textual.widgets.selection_list import Selection
 
 from ai_annotation.config import load_config
 from ai_annotation.models import (
+    Batch,
     Dataset,
     Job,
     MLBackend,
     MLBackendStatsSnapshot,
+    Member,
     Project,
 )
 
@@ -725,6 +727,14 @@ class ProjectDetailScreen(Screen[None]):
                 yield Static(
                     _project_overview(p), id="pd-overview-body", classes="detail-body"
                 )
+            with TabPane("📦 批次", id="pd-batches"):
+                yield DataTable(
+                    id="pd-batches-table", cursor_type="row", zebra_stripes=True
+                )
+            with TabPane("👥 成员", id="pd-members"):
+                yield DataTable(
+                    id="pd-members-table", cursor_type="row", zebra_stripes=True
+                )
             with TabPane("⚙ 任务", id="pd-jobs"):
                 yield DataTable(id="pd-jobs-table", cursor_type="row", zebra_stripes=True)
             with TabPane("🖥 Backends", id="pd-backends"):
@@ -739,6 +749,12 @@ class ProjectDetailScreen(Screen[None]):
             yield Footer()
 
     def on_mount(self) -> None:
+        bat = self.query_one("#pd-batches-table", DataTable)
+        bat.add_columns("批次", "状态", "进度", "审核", "退回", "标注员", "审核员")
+        bat.border_title = "本项目批次"
+        mt = self.query_one("#pd-members-table", DataTable)
+        mt.add_columns("用户", "邮箱", "角色", "加入时间")
+        mt.border_title = "本项目成员"
         jt = self.query_one("#pd-jobs-table", DataTable)
         jt.add_columns("kind", "status", "progress", "created_at")
         jt.border_title = "本项目任务"
@@ -750,6 +766,14 @@ class ProjectDetailScreen(Screen[None]):
 
     def _load(self) -> None:
         self.run_worker(self._load_worker, thread=True, exclusive=True, group="pd-load")
+
+    @staticmethod
+    def _safe_list(fn: Any, *args: Any) -> list:
+        """批次/成员端点不可用 (旧后端 / 无权限) 时降级空列表, 不拖垮整个详情。"""
+        try:
+            return list(fn(*args))
+        except Exception:  # noqa: BLE001
+            return []
 
     def _load_worker(self) -> None:
         pid = str(self._project.id)
@@ -763,9 +787,17 @@ class ProjectDetailScreen(Screen[None]):
         except Exception as exc:  # noqa: BLE001 — 错误回主屏状态栏
             self.app.call_from_thread(self.app._set_status, f"项目详情加载失败: {exc}")
             return
-        self.app.call_from_thread(self._populate, jobs, backends)
+        batches = self._safe_list(self._client.batches.list, self._project.id)
+        members = self._safe_list(self._client.members.list, self._project.id)
+        self.app.call_from_thread(self._populate, jobs, backends, batches, members)
 
-    def _populate(self, jobs: list[Job], backends: list[MLBackend]) -> None:
+    def _populate(
+        self,
+        jobs: list[Job],
+        backends: list[MLBackend],
+        batches: list[Batch],
+        members: list[Member],
+    ) -> None:
         self._jobs = {str(j.id): j for j in jobs}
         jt = self.query_one("#pd-jobs-table", DataTable)
         jt.clear()
@@ -795,6 +827,33 @@ class ProjectDetailScreen(Screen[None]):
                 key=str(b.id),
             )
         bt.border_title = f"本项目 Backend · {len(backends)}"
+        bat = self.query_one("#pd-batches-table", DataTable)
+        bat.clear()
+        for b in batches:
+            annotator = b.annotator.name if b.annotator else "-"
+            reviewer = b.reviewer.name if b.reviewer else "-"
+            bat.add_row(
+                b.name,
+                b.status,
+                _progress_cell(int(b.progress_pct)),
+                str(b.review_tasks),
+                str(b.rejected_tasks),
+                annotator,
+                reviewer,
+                key=str(b.id),
+            )
+        bat.border_title = f"本项目批次 · {len(batches)}"
+        mt = self.query_one("#pd-members-table", DataTable)
+        mt.clear()
+        for m in members:
+            mt.add_row(
+                m.user_name,
+                m.user_email,
+                m.role,
+                _fmt_dt(m.assigned_at),
+                key=str(m.id),
+            )
+        mt.border_title = f"本项目成员 · {len(members)}"
 
     def action_back(self) -> None:
         self.dismiss()

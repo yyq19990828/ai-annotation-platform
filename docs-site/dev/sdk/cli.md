@@ -27,7 +27,7 @@ CLI 凭据按以下优先级解析:
 
 ## 帮助系统
 
-所有命令都支持 `-h` / `--help`(二者等价)查看用法。顶层 `aap -h` 按用途把命令分四组展示:**配置与交互**(`login` / `tui`)、**资源管理**(`projects` / `datasets`)、**标注流水线**(`predictions` / `jobs` / `export`)、**监控**(`ml-backends`);每个子命令的帮助末尾带可复制的示例(epilog)。
+所有命令都支持 `-h` / `--help`(二者等价)查看用法。顶层 `aap -h` 按用途把命令分四组展示:**配置与交互**(`login` / `me` / `tui`)、**资源管理**(`projects` / `datasets` / `batches` / `members`)、**标注流水线**(`predictions` / `jobs` / `export`)、**监控**(`ml-backends`);每个子命令的帮助末尾带可复制的示例(epilog)。
 
 ```bash
 aap -h                       # 顶层: 分组命令 + 快速上手 + env 说明
@@ -76,6 +76,43 @@ aap datasets create --name demo-ds
 aap datasets upload 0199aa... ./imgs
 aap datasets upload 0199aa... ./data.zip --zip
 aap datasets link 0199aa... 0199bb...
+```
+
+### aap batches
+
+```text
+aap batches list <project-id> [--status <批次状态>] [--json]
+```
+
+列出项目下的批次(只读):进度(完成/总数)、审核中 / 退回任务数、标注员 / 审核员。`--status` 按批次状态过滤(如 `active` / `reviewing` / `approved`)。
+
+```bash
+aap batches list P-1
+aap batches list P-1 --status reviewing --json
+```
+
+### aap members
+
+```text
+aap members list <project-id> [--json]
+```
+
+列出项目成员(只读):用户 / 邮箱 / 角色 / 加入时间。
+
+```bash
+aap members list P-1
+```
+
+### aap me
+
+```text
+aap me [--json]
+```
+
+显示当前认证主体(用户 / 邮箱 / 角色),用于自检凭据与确认权限边界。
+
+```bash
+aap me
 ```
 
 ### aap predictions
@@ -163,6 +200,9 @@ aap tui
 | `login` | `{"config_path": "...", "base_url": "..."}` |
 | `projects list` | Project 对象数组 |
 | `projects create` | Project 对象 |
+| `batches list` | Batch 对象数组 |
+| `members list` | Member 对象数组 |
+| `me` | Me 对象(`id` / `email` / `name` / `role` …) |
 | `datasets create` | Dataset 对象 |
 | `datasets upload`(逐文件) | UploadedItem 对象数组 |
 | `datasets upload --zip` | ZipUploadResult 对象 |

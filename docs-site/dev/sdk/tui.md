@@ -59,7 +59,7 @@ aap tui
 
 行选中(回车 / 点击)、按 `o`、或点动作栏的「打开」按钮,会 **push 一个专属详情子页**(Textual Screen 栈),屏顶有面包屑 `aap tui ▸ …`,底部有「◀ 返回」按钮,`esc` 返回上一层:
 
-- **项目详情**(Projects 行下钻):内嵌三个 scoped 子 tab —— **概览**(项目字段 + 进度 + 「⬇ 导出」按钮)、**任务**(对全局 jobs 列表**客户端按 `project_id` 过滤**出本项目的任务,可再下钻进单任务详情)、**Backends**(`ml_backends.list(project_id)`,可再下钻)。
+- **项目详情**(Projects 行下钻):内嵌五个 scoped 子 tab —— **概览**(项目字段 + 进度 + 「⬇ 导出」按钮)、**批次**(`batches.list(project_id)`:进度 / 审核 / 退回 / 标注员 / 审核员,v0.15.14)、**成员**(`members.list(project_id)`:用户 / 邮箱 / 角色,v0.15.14)、**任务**(对全局 jobs 列表**客户端按 `project_id` 过滤**出本项目的任务,可再下钻进单任务详情)、**Backends**(`ml_backends.list(project_id)`,可再下钻)。批次 / 成员端点在旧后端或无权限时降级为空表,不拖垮详情屏。
 - **任务详情**(Jobs 行下钻):完整 `error_message` / `result`(导出 job 展示结构化摘要:文件数 / 大小 / 缓存命中 / 链接有效期);`pending` / `running` 的任务带「✖ 取消」按钮,**完成态的导出 job 带「⬇ 下载到本地」按钮**(就地输入路径即可落地,无需切到 CLI)。
 - **Backend 详情**(v0.15.12 起):**实时监控屏**,见下「ML Backend 实时监控」。
 - **数据集详情**:只读展开完整字段。
