@@ -62,12 +62,13 @@ last_reviewed: 2026-06-11
 
 自助管理**个人** API key，用于程序化访问平台 API（CI / 脚本 / 官方 [Python SDK / CLI / TUI](../../dev/sdk/quickstart)）。所有登录用户都可在此创建，无需管理员协助（超管也可在「用户与权限」页顶部的「API 密钥」按钮进入同一界面）。
 
-- **新建密钥**：填名称 + 勾选权限范围 scope（`annotations:read` / `annotations:write` / `predictions:read` / `datasets:read`，默认 `annotations:read`）。创建后弹出**一次性明文** key，请立即复制保存——离开本页后无法再次查看，只剩前缀。
-- **列表**：显示名称 / 前缀 / 权限 / 最后使用 / 创建时间；已吊销的标灰。
+- **新建密钥**：填名称 + 选权限——勾「完全访问」（full-access，等同你本人全部权限），或细选权限范围 scope（`annotations:read` / `annotations:write` / `predictions:read` / `datasets:read`，默认 `annotations:read`）。可选**有效期**（30 / 90 / 365 天 / 永不 / 自定义）。创建后弹出**一次性明文** key，请立即复制保存——离开本页后无法再次查看，只剩前缀。
+- **列表**：显示名称 / 前缀 / 权限 / 有效期 / 最后使用 / 创建时间；已吊销的标灰，已过期的带徽标。
+- **编辑 / 轮换**：可改名称 / scope / 有效期；轮换换发新明文、旧 key 立即失效。
 - **吊销**：不可恢复，吊销后该 key 立即失效。
 
-::: warning scope 暂不强制
-当前版本（v0.9.3 phase 1）仅**记录** scope，未在路由层强制拦截——key 实际拥有该用户的完整权限。后续版本启用细粒度拦截。
+::: warning scope 自 v0.15.11 起强制
+key 的权限在路由层经 `require_scopes` 校验，缺少所需 scope 的请求返回 **403**；过期的 key 一律 **401**。含「完全访问」（`*`）的 key 绕过 scope 校验、等同全权。已挂强制的 scope：`annotations:read` / `annotations:write` / `datasets:read` / `predictions:read`（其余路由暂不限制）。详见 [API 鉴权指南](../../api/guides/auth#api-key)。
 :::
 
 拿到 key 后接入 SDK：`aap login --url <平台地址> --api-key ak_...`，详见 [SDK 快速上手](../../dev/sdk/quickstart)。
