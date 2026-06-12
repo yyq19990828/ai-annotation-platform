@@ -172,8 +172,18 @@ async def update_preferences(
     try:
         validated = UserPreferences.model_validate(promoted)
     except ValidationError as exc:
+        # 只透传 JSON 可序列化字段：pydantic 的 err["ctx"] 可能含 ValueError 等
+        # 非可序列化对象，整条 **err 透传会让 FastAPI 兜底编码 422 体时 500。
         raise RequestValidationError(
-            [{**err, "loc": ("body", *err["loc"])} for err in exc.errors()]
+            [
+                {
+                    "type": err["type"],
+                    "loc": ("body", *err["loc"]),
+                    "msg": err["msg"],
+                    "input": err.get("input"),
+                }
+                for err in exc.errors()
+            ]
         ) from exc
     incoming = validated.model_dump(mode="json", exclude_unset=True, by_alias=True)
     merged = {**(user.preferences or {}), **incoming}
