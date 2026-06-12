@@ -21,6 +21,9 @@ import { isPointInPolygon, type ScreenPoint } from "./geometry/pointInPolygon";
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
 const DEFAULT_DECIMATE_THRESHOLD = 500_000;
 
+// v0.15.18 · 邻帧叠加点云的弱化单色(冷灰蓝),与当前帧的高度色带 / 相机上色强区分。
+const NEIGHBOR_POINT_COLOR = 0x6b8299;
+
 // 选中框高亮色(线框)。未选中用类别色。
 const SELECTED_EDGE_COLOR = 0xffd54a;
 const TRANSFORM_SIZE_MIN = 0.35;
@@ -104,6 +107,11 @@ export class PointCloudScene {
   private referenceLayer = new THREE.Group();
   private referenceBoxes: THREE.LineSegments[] = [];
 
+  // v0.15.18 · 邻帧点云叠加图层:各邻帧点云经 ego 补偿(对象矩阵)对齐到当前帧 ego 系,
+  // 弱化单色 + 低透明,与当前帧点区分。切帧 / 关开关时整层重建并 dispose。
+  private neighborLayer = new THREE.Group();
+  private neighborPoints: THREE.Points[] = [];
+
   // v0.13.3 · 鲁棒取景中心/半径(mean ± 2.5σ,见 setRobustFrame)。
   private readonly viewCenter = new THREE.Vector3();
   private viewRadius = 10;
@@ -164,6 +172,7 @@ export class PointCloudScene {
 
     this.scene.add(this.boxLayer);
     this.scene.add(this.referenceLayer);
+    this.scene.add(this.neighborLayer);
     this.initAxisGizmo();
 
     // 变换 gizmo:在框 local 空间编辑(缩放/旋转沿框自身轴)。
@@ -776,6 +785,39 @@ export class PointCloudScene {
     }
   }
 
+  /**
+   * v0.15.18 · 邻帧点云叠加。每个 frame 的 positions 是该邻帧 ISO ego 系点;matrix 是
+   * inv(T_cur)@T_nbr(frameRelMatrix),作为对象矩阵直接把整片点云对齐到当前帧 ego 系
+   * (刚体变换,GPU 端做,无逐点 CPU 开销)。静止背景重合加密,动态目标留拖影。
+   * 弱化单色 + 低透明,与当前帧点区分。整层重建,旧 geometry/material 全部 dispose。
+   */
+  setNeighborPoints(frames: { positions: Float32Array; matrix: THREE.Matrix4 }[]) {
+    for (const p of this.neighborPoints) {
+      this.neighborLayer.remove(p);
+      p.geometry.dispose();
+      (p.material as THREE.Material).dispose();
+    }
+    this.neighborPoints = [];
+    for (const f of frames) {
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute("position", new THREE.BufferAttribute(f.positions, 3));
+      const mat = new THREE.PointsMaterial({
+        size: this.pointSize * 0.8,
+        color: NEIGHBOR_POINT_COLOR,
+        transparent: true,
+        opacity: 0.4,
+        sizeAttenuation: true,
+        depthWrite: false,
+      });
+      const pts = new THREE.Points(geom, mat);
+      pts.matrixAutoUpdate = false;
+      pts.matrix.copy(f.matrix);
+      pts.renderOrder = 0; // 在当前帧点(默认)与框之下
+      this.neighborLayer.add(pts);
+      this.neighborPoints.push(pts);
+    }
+  }
+
   private createBoxGroup(id: string): THREE.Group {
     const group = new THREE.Group();
     group.userData.boxId = id; // 供 TransformControls 拖拽结束回查
@@ -952,6 +994,13 @@ export class PointCloudScene {
       (seg.material as THREE.Material).dispose();
     }
     this.referenceBoxes = [];
+    // v0.15.18 · 邻帧点云图层:各自持有 geometry + material,全部 dispose。
+    for (const p of this.neighborPoints) {
+      this.neighborLayer.remove(p);
+      p.geometry.dispose();
+      (p.material as THREE.Material).dispose();
+    }
+    this.neighborPoints = [];
     this.unitEdges.dispose();
     this.unitBox.dispose();
     this.transform.detach();

@@ -25,6 +25,19 @@ function poseToMatrix(pose: FramePose): THREE.Matrix4 {
 }
 
 /**
+ * v0.15.18 · 邻帧→当前帧的相对刚体变换 inv(T_cur) @ T_nbr。
+ * 框对齐(alignPsrToFrame)与点云对齐(邻帧点云叠加)共用同一矩阵。
+ * 任一帧缺 pose → null(调用方退回不对齐 / 不叠加)。
+ */
+export function frameRelMatrix(
+  fromPose: FramePose | undefined,
+  toPose: FramePose | undefined,
+): THREE.Matrix4 | null {
+  if (!fromPose || !toPose) return null;
+  return poseToMatrix(toPose).invert().multiply(poseToMatrix(fromPose));
+}
+
+/**
  * 把"邻帧 ego 系"的框 PSR 对齐到"当前帧 ego 系"。
  * 任一帧缺 pose → null(调用方退回不对齐的原样叠加,= v0.14.1 行为)。
  */
@@ -33,9 +46,8 @@ export function alignPsrToFrame(
   fromPose: FramePose | undefined,
   toPose: FramePose | undefined,
 ): AlignablePsr | null {
-  if (!fromPose || !toPose) return null;
-
-  const rel = poseToMatrix(toPose).invert().multiply(poseToMatrix(fromPose));
+  const rel = frameRelMatrix(fromPose, toPose);
+  if (!rel) return null;
 
   const center = new THREE.Vector3(...psr.center).applyMatrix4(rel);
   const rot = new THREE.Quaternion()

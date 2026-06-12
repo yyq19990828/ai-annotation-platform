@@ -25,7 +25,7 @@ describe("workbenchSettingsFields 注册表", () => {
   });
 
   it("注册表默认值与现状一致", () => {
-    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(31);
+    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(32);
     const byKey = Object.fromEntries(
       WORKBENCH_SETTING_FIELDS.map((f) => [
         f.key,
@@ -63,6 +63,7 @@ describe("workbenchSettingsFields 注册表", () => {
       "pointcloud.showGrid": true,
       "pointcloud.showAxisGizmo": true,
       "pointcloud.cameraDamping": 0.1,
+      "pointcloud.neighborPointOverlay": false,
       "experiment.webcodecs": false,
     });
   });

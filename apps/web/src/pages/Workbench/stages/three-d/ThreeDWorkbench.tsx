@@ -25,8 +25,9 @@ import {
 import { useProject } from "@/hooks/useProjects";
 import { useFrameNeighbors } from "@/hooks/useFrameNeighbors";
 import { useNeighborAnnotations } from "@/hooks/useNeighborAnnotations";
+import { useNeighborPointClouds } from "@/hooks/useNeighborPointClouds";
 import { useSceneTrajectory } from "@/hooks/useSceneTrajectory";
-import { alignPsrToFrame } from "./geometry/egoAlign";
+import { alignPsrToFrame, frameRelMatrix } from "./geometry/egoAlign";
 import { useToastStore } from "@/components/ui/Toast";
 import { useAuthStore } from "@/stores/authStore";
 import { classColorForCanvas } from "@/pages/Workbench/stage/colors";
@@ -391,6 +392,9 @@ export function ThreeDWorkbench({
   // v0.15.17 · 邻帧叠加范围:selected=仅选中对象 group(现状);all=不选对象也叠全部邻帧框。
   const overlayScope =
     workbenchCommon.crossFrameOverlayScope === "all" ? "all" : "selected";
+  // v0.15.18 · 邻帧点云叠加开关 + 帧数(点云比框重,前后各 ≤3 帧;框叠加关时默认 ±1)。
+  const pointOverlayOn = workbenchPointcloud.neighborPointOverlay;
+  const pointOverlayK = pointOverlayOn ? Math.min(Math.max(overlayK, 1), 3) : 0;
   const [pointCloudViewMode, setPointCloudViewMode] = useState<"orbit" | "bev">("orbit");
   const [colorizing, setColorizing] = useState(false);
   const colorizedRawRef = useRef<Float32Array | null>(null);
@@ -1762,15 +1766,19 @@ export function ThreeDWorkbench({
     },
     [onWorkbenchConfigChange],
   );
+  // v0.15.18 · 框叠加(overlayK)或点云叠加(pointOverlayK)任一开启都要邻帧 + 轨迹;
+  // 取两者最大帧数拉取,各自再按需切片(框用 overlayK,点云用 pointOverlayK),互不放大。
+  const neighborsActive = overlayK > 0 || pointOverlayK > 0;
+  const neighborsFetchK = Math.max(1, overlayK, pointOverlayK);
   const { data: neighborsData } = useFrameNeighbors(
-    overlayK > 0 ? taskId : null,
-    Math.max(1, overlayK),
+    neighborsActive ? taskId : null,
+    neighborsFetchK,
   );
   const neighborTaskIds = useMemo(() => {
     if (overlayK <= 0 || !neighborsData) return [];
     return [
-      ...(neighborsData.prev ?? []),
-      ...(neighborsData.next ?? []),
+      ...(neighborsData.prev ?? []).slice(0, overlayK),
+      ...(neighborsData.next ?? []).slice(0, overlayK),
     ].map((n) => n.task_id);
   }, [overlayK, neighborsData]);
   // v0.15.17 · 批量端点拉邻帧标注。scope=selected 需选中对象(传 group_id 服务端过滤);
@@ -1787,11 +1795,14 @@ export function ThreeDWorkbench({
   // v0.15.1 · overlay ego 对齐: 邻帧框经 trajectory 变换到当前帧 ego 系再叠加,
   // 静止物参考框与当前帧重合。无轨迹 scene → poseByFrame=null,退回原样叠加。
   const { poseByFrame, isLoading: trajectoryLoading } = useSceneTrajectory(
-    overlayK > 0 ? (neighborsData?.scene_id ?? null) : null,
+    neighborsActive ? (neighborsData?.scene_id ?? null) : null,
   );
   // v0.15.17 · 降级常驻可见:overlay 开启但该 scene 无 ego 轨迹 → 邻帧框未对齐。
   const overlayNoPose =
-    overlayK > 0 && !!neighborsData?.scene_id && !trajectoryLoading && !poseByFrame;
+    neighborsActive &&
+    !!neighborsData?.scene_id &&
+    !trajectoryLoading &&
+    !poseByFrame;
   const neighborFrameByTask = useMemo<Map<string, number>>(() => {
     if (!neighborsData) return new Map();
     return new Map(
@@ -1859,6 +1870,49 @@ export function ThreeDWorkbench({
   useEffect(() => {
     sceneRef.current?.setReferenceBoxes(referenceBoxes);
   }, [referenceBoxes]);
+
+  // v0.15.18 · 邻帧点云叠加。需 scene + ego 轨迹(无轨迹直接叠会乱,故 gate on poseByFrame)。
+  const pointOverlayActive =
+    pointOverlayK > 0 && !!neighborsData?.scene_id && !!poseByFrame;
+  const pointNeighbors = useMemo(() => {
+    if (!pointOverlayActive || !neighborsData) return [];
+    return [
+      ...(neighborsData.prev ?? []).slice(0, pointOverlayK),
+      ...(neighborsData.next ?? []).slice(0, pointOverlayK),
+    ].map((n) => ({ taskId: n.task_id, frameIndex: n.frame_index }));
+  }, [pointOverlayActive, neighborsData, pointOverlayK]);
+  // 邻帧点云下采样目标:当前帧抽稀阈值的 1/8,上限 8 万(邻帧仅作参考,远低于当前帧)。
+  const neighborPointTarget = Math.min(
+    80_000,
+    Math.round(performanceConfig.pcdDecimate / 8),
+  );
+  const { items: neighborPcds } = useNeighborPointClouds(
+    pointNeighbors,
+    axisConvention,
+    neighborPointTarget,
+    pointOverlayActive,
+  );
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const curFrame = neighborsData?.frame_index ?? null;
+    if (!pointOverlayActive || !poseByFrame || curFrame == null) {
+      scene.setNeighborPoints([]);
+      return;
+    }
+    const toPose = poseByFrame.get(curFrame);
+    type NeighborFrame = {
+      positions: Float32Array;
+      matrix: NonNullable<ReturnType<typeof frameRelMatrix>>;
+    };
+    const frames = neighborPcds
+      .map((pcd): NeighborFrame | null => {
+        const matrix = frameRelMatrix(poseByFrame.get(pcd.frameIndex), toPose);
+        return matrix ? { positions: pcd.positions, matrix } : null;
+      })
+      .filter((f): f is NeighborFrame => f != null);
+    scene.setNeighborPoints(frames);
+  }, [pointOverlayActive, neighborPcds, poseByFrame, neighborsData]);
 
   // v0.13.4 · 选中框被哪些相机看到(可见角点数 > 0),按可见角点数降序;首个 = 最正对。
   const selectedCameraVis = useMemo(() => {

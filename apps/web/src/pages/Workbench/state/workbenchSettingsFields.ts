@@ -351,6 +351,13 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     control: { type: "slider", min: 0.05, max: 0.3, step: 0.05, format: (v) => v.toFixed(2) },
   },
   {
+    key: "pointcloud.neighborPointOverlay",
+    category: "pointcloud",
+    label: "邻帧点云叠加",
+    description: "把前后帧点云按车体位姿对齐叠到当前帧:静止背景加密、动态目标留拖影。需 scene 有 ego 轨迹;点数大,建议配合较小邻帧叠加档位",
+    control: { type: "toggle" },
+  },
+  {
     key: "experiment.webcodecs",
     category: "experiment",
     storage: "local",

@@ -61,6 +61,8 @@ export interface WorkbenchPointcloudPreferences {
   showGrid: boolean;
   showAxisGizmo: boolean;
   cameraDamping: number;
+  /** v0.15.18 · 邻帧点云叠加(ego 补偿对齐前后帧点云,静止背景加密/动态拖影)。需 ego 轨迹。 */
+  neighborPointOverlay: boolean;
 }
 
 /** v0.15.3 · common/image/video/pointcloud 四子树;layout 保持顶层(壳层/设备维度)。 */
@@ -166,6 +168,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     showGrid: true,
     showAxisGizmo: true,
     cameraDamping: 0.1,
+    neighborPointOverlay: false,
   },
   layout: {
     leftOpen: true,

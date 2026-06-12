@@ -149,6 +149,8 @@ class WorkbenchPointcloudPreferences(BaseModel):
     showAxisGizmo: bool = True
     # OrbitControls dampingFactor：值越小惯性越强（前端文案「相机灵敏度」）。
     cameraDamping: float = Field(default=0.1, ge=0.05, le=0.3)
+    # v0.15.18 · 邻帧点云叠加(ego 补偿对齐前后帧点云)。需 ego 轨迹;默认关。
+    neighborPointOverlay: bool = False
 
 
 class WorkbenchPreferences(BaseModel):
