@@ -388,6 +388,9 @@ export function ThreeDWorkbench({
   const overlayK = isCrossFrameOverlayK(workbenchCommon.crossFrameOverlayK)
     ? workbenchCommon.crossFrameOverlayK
     : 0;
+  // v0.15.17 · 邻帧叠加范围:selected=仅选中对象 group(现状);all=不选对象也叠全部邻帧框。
+  const overlayScope =
+    workbenchCommon.crossFrameOverlayScope === "all" ? "all" : "selected";
   const [pointCloudViewMode, setPointCloudViewMode] = useState<"orbit" | "bev">("orbit");
   const [colorizing, setColorizing] = useState(false);
   const colorizedRawRef = useRef<Float32Array | null>(null);
@@ -1753,6 +1756,12 @@ export function ThreeDWorkbench({
       onWorkbenchConfigChange({ common: { crossFrameOverlayK: k } });
     }
   }, [onWorkbenchConfigChange]);
+  const setOverlayScopePersist = useCallback(
+    (s: "selected" | "all") => {
+      onWorkbenchConfigChange({ common: { crossFrameOverlayScope: s } });
+    },
+    [onWorkbenchConfigChange],
+  );
   const { data: neighborsData } = useFrameNeighbors(
     overlayK > 0 ? taskId : null,
     Math.max(1, overlayK),
@@ -1764,15 +1773,25 @@ export function ThreeDWorkbench({
       ...(neighborsData.next ?? []),
     ].map((n) => n.task_id);
   }, [overlayK, neighborsData]);
+  // v0.15.17 · 批量端点拉邻帧标注。scope=selected 需选中对象(传 group_id 服务端过滤);
+  // scope=all 不依赖选中(group_id=null,回全部框)。
+  const overlayEnabled =
+    overlayK > 0 && (overlayScope === "all" || selectedGroupId != null);
+  const overlayGroupId = overlayScope === "all" ? null : selectedGroupId;
   const { byTask: neighborAnnsByTask } = useNeighborAnnotations(
-    neighborTaskIds,
-    overlayK > 0 ? selectedGroupId : null,
+    overlayK > 0 ? taskId : null,
+    overlayK,
+    overlayGroupId,
+    overlayEnabled,
   );
   // v0.15.1 · overlay ego 对齐: 邻帧框经 trajectory 变换到当前帧 ego 系再叠加,
   // 静止物参考框与当前帧重合。无轨迹 scene → poseByFrame=null,退回原样叠加。
-  const { poseByFrame } = useSceneTrajectory(
+  const { poseByFrame, isLoading: trajectoryLoading } = useSceneTrajectory(
     overlayK > 0 ? (neighborsData?.scene_id ?? null) : null,
   );
+  // v0.15.17 · 降级常驻可见:overlay 开启但该 scene 无 ego 轨迹 → 邻帧框未对齐。
+  const overlayNoPose =
+    overlayK > 0 && !!neighborsData?.scene_id && !trajectoryLoading && !poseByFrame;
   const neighborFrameByTask = useMemo<Map<string, number>>(() => {
     if (!neighborsData) return new Map();
     return new Map(
@@ -1783,7 +1802,9 @@ export function ThreeDWorkbench({
     );
   }, [neighborsData]);
   const referenceBoxes = useMemo<ReferenceBox[]>(() => {
-    if (overlayK <= 0 || selectedGroupId == null) return [];
+    if (overlayK <= 0) return [];
+    // scope=selected:必须选中对象;scope=all:不选也叠全部邻帧框。
+    if (overlayScope === "selected" && selectedGroupId == null) return [];
     const curFrame = neighborsData?.frame_index ?? null;
     const out: ReferenceBox[] = [];
     for (const tid of neighborTaskIds) {
@@ -1809,18 +1830,25 @@ export function ThreeDWorkbench({
             rotation = aligned.rotation;
           }
         }
+        // scope=all 且有选中对象:非选中 group 的邻帧框弱化(dim),突出当前对象轨迹。
+        const dim =
+          overlayScope === "all" &&
+          selectedGroupId != null &&
+          a.group_id !== selectedGroupId;
         out.push({
           id: `${tid}:${a.id}`,
           center,
           size: g.size.map((v) => Math.abs(v)) as [number, number, number],
           rotation,
           color: classColorForCanvas(a.class_name),
+          dim,
         });
       }
     }
     return out;
   }, [
     overlayK,
+    overlayScope,
     selectedGroupId,
     neighborTaskIds,
     neighborAnnsByTask,
@@ -2022,7 +2050,13 @@ export function ThreeDWorkbench({
             </label>
           )}
           {manifest?.scene_id && (
-            <CrossFrameOverlayToggle value={overlayK} onChange={setOverlayKPersist} />
+            <CrossFrameOverlayToggle
+              value={overlayK}
+              onChange={setOverlayKPersist}
+              scope={overlayScope}
+              onScopeChange={setOverlayScopePersist}
+              noPose={overlayNoPose}
+            />
           )}
           {manifest?.scene_id && taskId && (
             <CrossFrameInterpolateBar

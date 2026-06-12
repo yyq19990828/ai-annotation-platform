@@ -1,5 +1,5 @@
 /**
- * v0.14.1 · useNeighborAnnotations 单测: group_id 短路 + 跨 task 拉取 + group 过滤。
+ * v0.15.17 · useNeighborAnnotations 单测:批量端点 + enabled 短路 + byTask 展开。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
@@ -8,14 +8,14 @@ import type { ReactNode } from "react";
 
 vi.mock("@/api/tasks", () => ({
   tasksApi: {
-    getAnnotations: vi.fn(),
+    getNeighborAnnotations: vi.fn(),
   },
 }));
 
 import { tasksApi } from "@/api/tasks";
 import { useNeighborAnnotations } from "./useNeighborAnnotations";
 
-const mockGetAnnotations = tasksApi.getAnnotations as unknown as ReturnType<
+const mockGet = tasksApi.getNeighborAnnotations as unknown as ReturnType<
   typeof vi.fn
 >;
 
@@ -33,36 +33,47 @@ function ann(id: string, group_id: number | null) {
 }
 
 describe("useNeighborAnnotations", () => {
-  beforeEach(() => mockGetAnnotations.mockReset());
+  beforeEach(() => mockGet.mockReset());
 
-  it("selectedGroupId 为 null → 短路不发请求", () => {
-    renderHook(() => useNeighborAnnotations(["t1", "t2"], null), {
+  it("enabled=false → 短路不发请求", () => {
+    renderHook(() => useNeighborAnnotations("t0", 5, 5, false), {
       wrapper: makeWrapper(),
     });
-    expect(mockGetAnnotations).not.toHaveBeenCalled();
+    expect(mockGet).not.toHaveBeenCalled();
   });
 
-  it("按 group_id 过滤跨 task 的 annotations", async () => {
-    mockGetAnnotations.mockImplementation(async (tid: string) =>
-      tid === "t1"
-        ? [ann("a1", 5), ann("a2", 9)]
-        : [ann("b1", 5), ann("b2", 5)],
-    );
+  it("k<=0 → 短路不发请求", () => {
+    renderHook(() => useNeighborAnnotations("t0", 0, null, true), {
+      wrapper: makeWrapper(),
+    });
+    expect(mockGet).not.toHaveBeenCalled();
+  });
+
+  it("批量返回 frames → 展开为 byTask", async () => {
+    mockGet.mockResolvedValue({
+      scene_id: "s1",
+      frame_index: 2,
+      frames: [
+        { task_id: "t1", frame_index: 1, annotations: [ann("a1", 5)] },
+        { task_id: "t2", frame_index: 3, annotations: [ann("b1", 5), ann("b2", 5)] },
+      ],
+    });
     const { result } = renderHook(
-      () => useNeighborAnnotations(["t1", "t2"], 5),
+      () => useNeighborAnnotations("t0", 5, 5, true),
       { wrapper: makeWrapper() },
     );
     await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(mockGet).toHaveBeenCalledWith("t0", 5, 5);
     expect(result.current.byTask["t1"].map((a) => a.id)).toEqual(["a1"]);
     expect(result.current.byTask["t2"].map((a) => a.id)).toEqual(["b1", "b2"]);
   });
 
-  it("去重重复 task_id", async () => {
-    mockGetAnnotations.mockResolvedValue([ann("a1", 7)]);
-    renderHook(() => useNeighborAnnotations(["t1", "t1", "t1"], 7), {
+  it("scope=all 时 groupId=null 仍发请求(回全部)", async () => {
+    mockGet.mockResolvedValue({ scene_id: "s1", frame_index: 2, frames: [] });
+    renderHook(() => useNeighborAnnotations("t0", 3, null, true), {
       wrapper: makeWrapper(),
     });
-    await waitFor(() => expect(mockGetAnnotations).toHaveBeenCalled());
-    expect(mockGetAnnotations).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+    expect(mockGet).toHaveBeenCalledWith("t0", 3, null);
   });
 });

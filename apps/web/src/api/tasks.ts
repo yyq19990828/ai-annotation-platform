@@ -9,6 +9,7 @@ import type {
   TaskVideoManifestResponse,
   TaskPointCloudManifestResponse,
   NeighborsResponse,
+  NeighborAnnotationsResponse,
   VideoFrameOut,
   VideoFramePrefetchResponse,
 } from "@/types";
@@ -159,6 +160,18 @@ export const tasksApi = {
   // v0.14.0 · scene 内前后 k 个邻居 task(跨帧导航 backing)。
   getNeighbors: (id: string, k = 1) =>
     apiClient.get<NeighborsResponse>(`/tasks/${id}/neighbors?k=${k}`),
+
+  // v0.15.17 · 一次性拉 ±k 帧邻帧标注(替代 2k 条并发 getAnnotations + client 过滤)。
+  // groupId 给定 → 服务端只回该 group(scope=selected);省略 → 回全部(scope=all)。
+  getNeighborAnnotations: (id: string, k = 1, groupId?: number | null) => {
+    const q =
+      groupId != null
+        ? `?k=${k}&group_id=${groupId}`
+        : `?k=${k}`;
+    return apiClient.get<NeighborAnnotationsResponse>(
+      `/tasks/${id}/neighbor-annotations${q}`,
+    );
+  },
 
   // v0.14.1 · 把源 annotation 跨帧 propagate 到目标 task(同 project 同 scene)。
   propagateToTask: (

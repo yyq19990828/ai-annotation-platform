@@ -118,6 +118,19 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     },
   },
   {
+    key: "common.crossFrameOverlayScope",
+    category: "common",
+    label: "邻帧叠加范围",
+    description: "选中对象=仅叠当前对象的邻帧框；全部=不选对象也叠邻帧所有框(渲染量更大)",
+    control: {
+      type: "select",
+      options: [
+        { value: "selected", label: "选中对象" },
+        { value: "all", label: "全部" },
+      ],
+    },
+  },
+  {
     key: "common.performanceTier",
     category: "common",
     label: "性能档位",

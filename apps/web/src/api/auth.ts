@@ -19,6 +19,8 @@ export interface WorkbenchCommonPreferences {
   recentClassesLimit: number;
   /** v0.15.6 · 邻帧叠加 K(0=关,档位 0/1/3/5/7)。当前 3D 点云消费,放 common 供视频侧后续复用。 */
   crossFrameOverlayK: number;
+  /** v0.15.17 · 邻帧叠加范围:selected=仅选中对象的 group(现状);all=不选对象也叠邻帧全部框。 */
+  crossFrameOverlayScope: "selected" | "all";
   performanceTier: "light" | "standard" | "aggressive";
 }
 
@@ -132,6 +134,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     confirmDelete: "never",
     recentClassesLimit: 5,
     crossFrameOverlayK: 0,
+    crossFrameOverlayScope: "selected",
     performanceTier: "standard",
   },
   image: {

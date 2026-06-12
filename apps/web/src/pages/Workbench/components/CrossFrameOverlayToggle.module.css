@@ -3,6 +3,22 @@
   align-items: center;
   gap: 4px;
 }
+.scope {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+}
+.badge {
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-warning);
+  background: var(--color-warning-soft);
+  color: var(--color-warning-fg);
+  font-size: 11px;
+  white-space: nowrap;
+}
 .label {
   font-size: 12px;
   color: var(--color-fg-muted);

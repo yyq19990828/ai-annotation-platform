@@ -37,6 +37,7 @@ describe("workbenchSettingsFields 注册表", () => {
       "common.confirmDelete": "never",
       "common.recentClassesLimit": 5,
       "common.crossFrameOverlayK": 0,
+      "common.crossFrameOverlayScope": "selected",
       "common.performanceTier": "standard",
       "image.smoothImage": true,
       "image.cssImageFilter": "",

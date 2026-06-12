@@ -51,6 +51,8 @@ export interface ReferenceBox {
   size: [number, number, number];
   rotation: [number, number, number];
   color: string;
+  /** v0.15.17 · scope=all 下非选中 group 的框弱化显示(更低透明度)。 */
+  dim?: boolean;
 }
 
 /** v0.13.3 · TransformControls 拖拽结束时回传的 PSR(center/size/rotation)。 */
@@ -755,7 +757,8 @@ export class PointCloudScene {
       const mat = new THREE.LineDashedMaterial({
         color: new THREE.Color(b.color).multiplyScalar(0.5),
         transparent: true,
-        opacity: 0.5,
+        // v0.15.17 · scope=all 非选中 group 的框更淡,突出当前对象。
+        opacity: b.dim ? 0.22 : 0.5,
         depthTest: false,
         dashSize: 0.3,
         gapSize: 0.15,

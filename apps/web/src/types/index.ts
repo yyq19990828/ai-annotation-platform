@@ -436,6 +436,12 @@ export type {
   NeighborsResponse,
 } from "@/api/generated/types.gen";
 
+// v0.15.17 · 批量邻帧标注 (一次返回 ±k 帧的邻帧框). 由后端 schema 派生.
+export type {
+  NeighborFrameAnnotations,
+  NeighborAnnotationsResponse,
+} from "@/api/generated/types.gen";
+
 export type PredictionShape = Omit<GeneratedPredictionShape, "geometry"> & {
   geometry: Geometry;
   shape_index?: number;

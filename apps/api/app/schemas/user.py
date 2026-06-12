@@ -100,6 +100,8 @@ class WorkbenchCommonPreferences(BaseModel):
     # v0.15.6 · 邻帧叠加 K（0=关）。当前 3D 点云消费（迁自旧全局 localStorage 键）；
     # 放 common 供视频侧后续复用。档位与前端 CrossFrameOverlayToggle OPTIONS 一致。
     crossFrameOverlayK: Literal[0, 1, 3, 5, 7] = 0
+    # v0.15.17 · 邻帧叠加范围:selected=仅选中对象 group(现状);all=不选对象也叠全部邻帧框。
+    crossFrameOverlayScope: Literal["selected", "all"] = "selected"
     performanceTier: Literal["light", "standard", "aggressive"] = "standard"
 
 
