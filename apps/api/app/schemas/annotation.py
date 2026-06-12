@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from uuid import UUID
 from datetime import datetime
 from typing import Literal
@@ -228,6 +228,29 @@ class AnnotationOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class NeighborFrameAnnotations(BaseModel):
+    """v0.15.17 · 单个邻帧 task 的标注集合(若请求带 group_id 则已服务端过滤)。"""
+
+    task_id: UUID
+    frame_index: int
+    annotations: list[AnnotationOut] = Field(default_factory=list)
+
+
+class NeighborAnnotationsResponse(BaseModel):
+    """v0.15.17 · 中心 task 前后 k 帧的邻帧标注,一次性返回。
+
+    替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 group_id 过滤」:
+    - group_id 给定 → 服务端只回该 group(scope=selected,payload 最小);
+    - group_id 省略 → 回区间全部框(scope=all)。
+    几何坐标不变(各帧 ego 系 PSR),ego 对齐仍由前端 egoAlign 做。
+    非 scene / 历史未 backfill 的 task → frames=[](不报错)。
+    """
+
+    scene_id: UUID | None = None
+    frame_index: int | None = None  # 中心帧 frame_index
+    frames: list[NeighborFrameAnnotations] = Field(default_factory=list)
 
 
 AnnotationListPage.model_rebuild()

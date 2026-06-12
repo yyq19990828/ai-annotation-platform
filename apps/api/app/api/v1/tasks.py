@@ -57,6 +57,8 @@ from app.schemas.annotation import (
     AnnotationUpdate,
     InterpolateRangeRequest,
     InterpolateRangeResponse,
+    NeighborAnnotationsResponse,
+    NeighborFrameAnnotations,
     PropagateBatchItem,
     PropagateBatchRequest,
     PropagateBatchResponse,
@@ -648,6 +650,75 @@ async def get_task_neighbors(
             next=[],
         )
     return result
+
+
+@router.get(
+    "/{task_id}/neighbor-annotations",
+    response_model=NeighborAnnotationsResponse,
+    dependencies=[Depends(require_scopes("annotations:read"))],
+)
+async def get_neighbor_annotations(
+    task_id: uuid.UUID,
+    k: int = Query(1, ge=1, le=20),
+    group_id: int | None = Query(
+        None, description="给定则服务端只回该 group(scope=selected);省略回全部(scope=all)"
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """v0.15.17 · 中心 task 前后 k 帧的邻帧标注,一次性返回。
+
+    替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 group_id 过滤」。
+    非 scene / 历史未 backfill 的 task → 200 + frames=[](与 neighbors 端点一致,不报错)。
+    """
+    from app.services.scene import (
+        SceneFrameIndexInconsistent,
+        get_neighbors_for_task,
+    )
+
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+
+    try:
+        neighbors = await get_neighbors_for_task(db, task_id=task_id, k=k)
+    except SceneFrameIndexInconsistent as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    if neighbors is None or neighbors.scene_id is None:
+        return NeighborAnnotationsResponse(scene_id=None, frame_index=None, frames=[])
+
+    frame_by_task = {
+        n.task_id: n.frame_index for n in (*neighbors.prev, *neighbors.next)
+    }
+    if not frame_by_task:
+        return NeighborAnnotationsResponse(
+            scene_id=neighbors.scene_id,
+            frame_index=neighbors.frame_index,
+            frames=[],
+        )
+
+    svc = AnnotationService(db)
+    anns = await svc.list_by_tasks(list(frame_by_task.keys()), group_id=group_id)
+
+    by_task: dict[uuid.UUID, list[AnnotationOut]] = {tid: [] for tid in frame_by_task}
+    for a in anns:
+        by_task[a.task_id].append(AnnotationOut.model_validate(a))
+
+    # 按距中心帧远近排序(与 neighbors prev/next 顺序一致),便于前端就近渲染
+    ordered = [*neighbors.prev, *neighbors.next]
+    frames = [
+        NeighborFrameAnnotations(
+            task_id=n.task_id,
+            frame_index=n.frame_index,
+            annotations=by_task.get(n.task_id, []),
+        )
+        for n in ordered
+    ]
+    return NeighborAnnotationsResponse(
+        scene_id=neighbors.scene_id,
+        frame_index=neighbors.frame_index,
+        frames=frames,
+    )
 
 
 @router.get(

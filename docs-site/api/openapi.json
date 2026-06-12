@@ -9189,6 +9189,70 @@
         "title": "MyPerformance",
         "type": "object"
       },
+      "NeighborAnnotationsResponse": {
+        "description": "v0.15.17 · 中心 task 前后 k 帧的邻帧标注,一次性返回。\n\n替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 group_id 过滤」:\n- group_id 给定 → 服务端只回该 group(scope=selected,payload 最小);\n- group_id 省略 → 回区间全部框(scope=all)。\n几何坐标不变(各帧 ego 系 PSR),ego 对齐仍由前端 egoAlign 做。\n非 scene / 历史未 backfill 的 task → frames=[](不报错)。",
+        "properties": {
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/NeighborFrameAnnotations"
+            },
+            "title": "Frames",
+            "type": "array"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          }
+        },
+        "title": "NeighborAnnotationsResponse",
+        "type": "object"
+      },
+      "NeighborFrameAnnotations": {
+        "description": "v0.15.17 · 单个邻帧 task 的标注集合(若请求带 group_id 则已服务端过滤)。",
+        "properties": {
+          "annotations": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationOut"
+            },
+            "title": "Annotations",
+            "type": "array"
+          },
+          "frame_index": {
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "frame_index"
+        ],
+        "title": "NeighborFrameAnnotations",
+        "type": "object"
+      },
       "NeighborInfo": {
         "properties": {
           "frame_index": {
@@ -32268,6 +32332,85 @@
           }
         ],
         "summary": "Heartbeat Lock",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/neighbor-annotations": {
+      "get": {
+        "description": "v0.15.17 · 中心 task 前后 k 帧的邻帧标注,一次性返回。\n\n替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 group_id 过滤」。\n非 scene / 历史未 backfill 的 task → 200 + frames=[](与 neighbors 端点一致,不报错)。",
+        "operationId": "get_neighbor_annotations_api_v1_tasks__task_id__neighbor_annotations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "k",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "K",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "给定则服务端只回该 group(scope=selected);省略回全部(scope=all)",
+            "in": "query",
+            "name": "group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "给定则服务端只回该 group(scope=selected);省略回全部(scope=all)",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NeighborAnnotationsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Neighbor Annotations",
         "tags": [
           "tasks"
         ]
