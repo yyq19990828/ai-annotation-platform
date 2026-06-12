@@ -1,43 +1,27 @@
 import type { ScreenshotScene } from "./_types";
 
+// SAM 工具截图。
+// 历史变更：旧的 sam-subtoolbar / sam-text-output-mode 体系已重构为 AIToolDrawer
+// （激活 AI 工具后右侧抽屉，testid=ai-tool-drawer）。文字提示(text-prompt)已从工具栏摘除
+// （见 stage/tools/index.ts:160），故旧 sam/text-three-modes 场景移除。
+// AI 工具需绑定 backend 的项目才能激活：dev 环境 P-0001 注册了 gsam2。
+const PROJECT_AI = "3f999396-65da-4f2b-a32d-d1560bad74b0"; // P-0001 · gsam2 connected
+
 export const SAM_SCENES: ScreenshotScene[] = [
   {
     name: "sam/subtoolbar",
     role: "annotator",
-    route: (d) => `/projects/${d.project_id}/annotate`,
+    route: () => `/projects/${PROJECT_AI}/annotate`,
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
-      await page.keyboard.press("s");
-      await page.waitForTimeout(150);
-      await page.waitForSelector('[data-testid="sam-subtoolbar"]', { timeout: 2000 });
+      await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 }).catch(() => {});
+      // 激活 AI 工具 smart-box，打开 AIToolDrawer（即新版「SAM 工具配置」）
+      const btn = page.locator('[data-testid="tool-btn-smart-box"]');
+      if (await btn.count()) await btn.click();
+      await page.waitForSelector('[data-testid="ai-tool-drawer"]', { timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(200);
     },
-    capture: { kind: "locator", selector: '[data-testid="sam-subtoolbar"]', padding: 8 },
-    // 三个子工具按钮编号
-    annotate: [
-      { selector: '[data-testid="sam-tool-point"]', style: "numbered" },
-      { selector: '[data-testid="sam-tool-bbox"]',  style: "numbered" },
-      { selector: '[data-testid="sam-tool-text"]',  style: "numbered" },
-    ],
+    capture: { kind: "locator", selector: '[data-testid="ai-tool-drawer"]', padding: 8 },
     target: "docs-site/user-guide/images/sam/subtoolbar.png",
-  },
-  {
-    name: "sam/text-three-modes",
-    role: "annotator",
-    route: (d) => `/projects/${d.project_id}/annotate`,
-    prepare: async (page) => {
-      await page.waitForLoadState("networkidle");
-      await page.keyboard.press("s"); await page.waitForTimeout(80);
-      await page.keyboard.press("s"); await page.waitForTimeout(80);
-      await page.keyboard.press("s"); await page.waitForTimeout(80);
-      await page.waitForSelector('[data-testid="sam-text-output-mode"]', { timeout: 2000 });
-    },
-    capture: { kind: "locator", selector: '[data-testid="sam-text-output-mode"]', padding: 12 },
-    // 红框高亮三个输出模式选项
-    annotate: [
-      { selector: '[data-testid="sam-mode-box"]',  style: "rect-red", label: "box"  },
-      { selector: '[data-testid="sam-mode-mask"]', style: "rect-red", label: "mask" },
-      { selector: '[data-testid="sam-mode-both"]', style: "rect-red", label: "both" },
-    ],
-    target: "docs-site/user-guide/images/sam/text-three-modes.png",
   },
 ];

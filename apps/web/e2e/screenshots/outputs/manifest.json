@@ -1,14 +1,92 @@
 {
-  "docs-site/user-guide/images/bbox/iou.png": {
+  "docs-site/user-guide/images/settings/profile.png": {
     "auto": true,
-    "scene": "bbox/iou",
-    "lastRun": "2026-05-19T11:37:04.079Z",
+    "scene": "settings/profile",
+    "lastRun": "2026-06-12T10:27:31.902Z",
     "project": "desktop-light"
   },
-  "docs-site/user-guide/images/bbox/bulk-edit.png": {
+  "docs-site/user-guide/images/settings/workbench-prefs.png": {
     "auto": true,
-    "scene": "bbox/bulk-edit",
-    "lastRun": "2026-05-19T11:37:07.470Z",
+    "scene": "settings/workbench-prefs",
+    "lastRun": "2026-06-12T10:27:33.907Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/settings/notification-prefs.png": {
+    "auto": true,
+    "scene": "settings/notification-prefs",
+    "lastRun": "2026-06-12T10:27:35.919Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/settings/system-smtp.png": {
+    "auto": true,
+    "scene": "settings/system-smtp",
+    "lastRun": "2026-06-12T10:27:37.897Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/settings/my-feedback.png": {
+    "auto": true,
+    "scene": "settings/my-feedback",
+    "lastRun": "2026-06-12T10:27:39.889Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/users/list.png": {
+    "auto": true,
+    "scene": "superadmin/users/list",
+    "lastRun": "2026-06-12T10:27:41.781Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/users/invite-modal.png": {
+    "auto": true,
+    "scene": "superadmin/users/invite-modal",
+    "lastRun": "2026-06-12T10:27:43.804Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/bugs/list.png": {
+    "auto": true,
+    "scene": "superadmin/bugs/list",
+    "lastRun": "2026-06-12T10:27:45.862Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/bugs/detail-panel.png": {
+    "auto": true,
+    "scene": "superadmin/bugs/detail-panel",
+    "lastRun": "2026-06-12T10:27:48.047Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/analytics/overview.png": {
+    "auto": true,
+    "scene": "superadmin/analytics/overview",
+    "lastRun": "2026-06-12T10:27:50.636Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/analytics/heatmap.png": {
+    "auto": true,
+    "scene": "superadmin/analytics/heatmap",
+    "lastRun": "2026-06-12T10:27:52.792Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/system-monitoring/health-panel.png": {
+    "auto": true,
+    "scene": "superadmin/system-monitoring/health-panel",
+    "lastRun": "2026-06-12T10:27:55.710Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/model-market/list.png": {
+    "auto": true,
+    "scene": "superadmin/model-market/list",
+    "lastRun": "2026-06-12T10:27:58.341Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/audit-logs/filter-bar.png": {
+    "auto": true,
+    "scene": "superadmin/audit-logs/filter-bar",
+    "lastRun": "2026-06-12T10:28:00.467Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/notifications/panel-overview.png": {
+    "auto": true,
+    "scene": "notifications/panel-overview",
+    "lastRun": "2026-06-12T10:28:02.559Z",
     "project": "desktop-light"
   }
 }
