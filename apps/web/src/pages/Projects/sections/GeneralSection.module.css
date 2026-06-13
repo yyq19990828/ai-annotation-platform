@@ -75,6 +75,11 @@
   color: var(--color-fg-subtle);
 }
 
+.readonlyNote {
+  margin-left: 8px;
+  color: var(--color-fg-subtle);
+}
+
 .classInputRow {
   display: flex;
   gap: 6px;

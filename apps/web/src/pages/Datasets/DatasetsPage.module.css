@@ -218,6 +218,24 @@
   border-bottom: 1px solid var(--color-border);
 }
 
+.infoStack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.infoRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.infoLabel {
+  color: var(--color-fg-muted);
+}
+
 .detailHeader {
   display: flex;
   align-items: center;

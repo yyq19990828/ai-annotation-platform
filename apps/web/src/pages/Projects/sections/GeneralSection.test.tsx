@@ -80,8 +80,17 @@ describe("GeneralSection", () => {
     const nameInput = screen.getByDisplayValue("Demo Project") as HTMLInputElement;
     expect(nameInput).toBeInTheDocument();
     expect(screen.getByText("图像检测")).toBeInTheDocument();
+    expect(screen.getByText("Scene 模式")).toBeInTheDocument();
+    expect(screen.getByText("未开启")).toBeInTheDocument();
     expect(screen.queryByText("启用 AI 预标注")).not.toBeInTheDocument();
     expect(screen.queryByText("标注类别")).not.toBeInTheDocument();
+  });
+
+  it("scene_mode=true → 基本信息显示 Scene 模式已开启", () => {
+    renderUI(makeProject({ scene_mode: true }));
+    expect(screen.getByText("Scene 模式")).toBeInTheDocument();
+    expect(screen.getByText("已开启")).toBeInTheDocument();
+    expect(screen.getByText("按 scene 保持连续帧任务与批次边界")).toBeInTheDocument();
   });
 
   it("修改状态 → 即时保存只提交 status", () => {

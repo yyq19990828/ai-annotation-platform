@@ -112,6 +112,12 @@ function DatasetRow({ ds, isExpanded, onToggle }: { ds: DatasetResponse; isExpan
         </Badge>
       </td>
       <td className={styles.datasetCell}>
+        <Badge variant={ds.has_scenes ? "success" : "outline"}>
+          <Icon name="layers" size={10} />
+          {ds.has_scenes ? "含 Scene" : "无 Scene"}
+        </Badge>
+      </td>
+      <td className={styles.datasetCell}>
         <span className={`mono ${styles.monoCell}`}>{ds.file_count.toLocaleString()}</span>
       </td>
       <td className={styles.datasetCell}>
@@ -181,7 +187,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
 
   return (
     <tr>
-      <td colSpan={6} className={styles.detailCell}>
+      <td colSpan={7} className={styles.detailCell}>
         <div className={styles.detailPanel}>
           <div className={styles.detailLayout}>
             {/* 文件列表 */}
@@ -329,6 +335,25 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
 
             {/* 关联项目 */}
             <div className={styles.projectsColumn}>
+              <div className={styles.settingsBlock}>
+                <div className={styles.detailHeader}>
+                  <h4 className={styles.detailTitle}>Scene 信息</h4>
+                </div>
+                <div className={styles.infoStack}>
+                  <div className={styles.infoRow}>
+                    <span className={styles.infoLabel}>Scene</span>
+                    <Badge variant={ds.has_scenes ? "success" : "outline"}>
+                      {ds.has_scenes ? "已识别" : "未识别"}
+                    </Badge>
+                  </div>
+                  <div className={styles.infoRow}>
+                    <span className={styles.infoLabel}>时序声明</span>
+                    <Badge variant={ds.is_temporal ? "accent" : "outline"}>
+                      {ds.is_temporal ? "时序数据集" : "普通数据集"}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
               {isPointCloudDataset && (
                 <div className={styles.settingsBlock}>
                   <div className={styles.detailHeader}>
@@ -620,7 +645,7 @@ export function DatasetsPage() {
               <table className={styles.table}>
                 <thead>
                   <tr>
-                    {["数据集", "类型", "文件数", "关联项目", "创建时间", ""].map((h, i) => (
+                    {["数据集", "类型", "Scene", "文件数", "关联项目", "创建时间", ""].map((h, i) => (
                       <th key={i} className={styles.headerCell}>
                         {h}
                       </th>
@@ -629,7 +654,7 @@ export function DatasetsPage() {
                 </thead>
                 <tbody>
                   {isLoading && (
-                    <tr><td colSpan={6} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>加载中...</td></tr>
+                    <tr><td colSpan={7} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>加载中...</td></tr>
                   )}
                   {!isLoading && datasets.map((ds) => (
                     <Fragment key={ds.id}>
@@ -642,7 +667,7 @@ export function DatasetsPage() {
                     </Fragment>
                   ))}
                   {!isLoading && datasets.length === 0 && (
-                    <tr><td colSpan={6} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>
+                    <tr><td colSpan={7} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>
                       {query || filter !== "全部" ? "没有匹配的数据集" : '暂无数据集，点击「新建数据集」开始'}
                     </td></tr>
                   )}
