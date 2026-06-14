@@ -37,7 +37,7 @@ import type { Box3DGeometry, PointMaskGeometry, SensorCalibration } from "@/type
 
 import { AttributeForm } from "../../shell/AttributeForm";
 import { FloatingPanelShell, type FloatingPanelRect } from "../../shell/FloatingPanelShell";
-import type { FloatingPanelBounds } from "../../shell/useDragMove";
+import { useDragMove, type FloatingPanelBounds } from "../../shell/useDragMove";
 import { usePointCloudManifest } from "./usePointCloudManifest";
 import {
   PointCloudScene,
@@ -147,6 +147,10 @@ const CAMERA_AUTO_COLLAPSE_WIDTH = 1366;
 const CAMERA_STACK_VISIBLE = 2;
 const TRI_FLOAT_DEFAULT_W = 240;
 const TRI_FLOAT_DEFAULT_H = 440;
+// 收起标签的近似尺寸,仅用于拖动时把标签 clamp 在视口内(略放大留余量)。
+const TRI_TAB_DRAG_SIZE = { w: 96, h: 34 };
+// 收起标签拖动判定阈值:位移超过此值才算"拖动"(否则按点击展开),px。
+const TRI_TAB_DRAG_THRESHOLD = 3;
 // v0.13.9 · 框选预览矩形位置/尺寸经 CSS custom property 注入(逐帧动态值)。
 type BoxSelectRectVars = CSSProperties & {
   "--rect-l": string;
@@ -500,6 +504,31 @@ export function ThreeDWorkbench({
     },
     [onWorkbenchLayoutChange, triViewFloat],
   );
+
+  // 收起的「三视图 ▸」标签也可整体拖动:与展开面板共享记忆坐标(triViewFloat.x/y),
+  // 拖动落库位置;位移不过阈值则视为点击 → 展开。moved 区分二者,避免拖完误触发展开。
+  const triTabStartRef = useRef<{ x: number; y: number } | null>(null);
+  const triTabMovedRef = useRef(false);
+  const triTabDrag = useDragMove({
+    position: triFloatPosition,
+    size: TRI_TAB_DRAG_SIZE,
+    bounds: triFloatBounds,
+    onStart: (pos) => {
+      triTabStartRef.current = pos;
+      triTabMovedRef.current = false;
+    },
+    onChange: (pos) => {
+      const start = triTabStartRef.current;
+      if (
+        start &&
+        (Math.abs(pos.x - start.x) > TRI_TAB_DRAG_THRESHOLD ||
+          Math.abs(pos.y - start.y) > TRI_TAB_DRAG_THRESHOLD)
+      ) {
+        triTabMovedRef.current = true;
+      }
+      updateTriViewFloat({ x: pos.x, y: pos.y });
+    },
+  });
 
   // v0.15.x · 相机面板位置/折叠态落库:多面板可连续拖动,故用 ref 取最新整份 Record,
   // 避免相邻回调读到 props 旧值互相覆盖。复位则删该 role 键。
@@ -2592,13 +2621,38 @@ export function ThreeDWorkbench({
           </FloatingPanelShell>
         )}
         {triSelected && triViewFloat.collapsed && (
-          <button
-            type="button"
-            className={styles.triFloatTab}
-            onClick={() => updateTriViewFloat({ collapsed: false })}
+          // 不能用 <button>/role=button:useDragMove 的 isInteractiveTarget 会拦掉其 pointerdown。
+          // 用 div + tabIndex 保留键盘可达;拖动经 handleProps,纯点击(未拖动)才展开。
+          <div
+            tabIndex={0}
+            data-floating-panel
+            aria-label="展开三视图精修(可拖动)"
+            className={[
+              styles.triFloatTab,
+              triTabDrag.isDragging ? styles.triFloatTabDragging : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            // eslint-disable-next-line no-restricted-syntax -- 收起标签沿用展开面板的记忆位置，经 CSS 变量注入。
+            style={
+              {
+                "--tri-tab-x": `${triFloatPosition.x}px`,
+                "--tri-tab-y": `${triFloatPosition.y}px`,
+              } as CSSProperties
+            }
+            {...triTabDrag.handleProps}
+            onClick={() => {
+              if (!triTabMovedRef.current) updateTriViewFloat({ collapsed: false });
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                updateTriViewFloat({ collapsed: false });
+              }
+            }}
           >
             三视图 ▸
-          </button>
+          </div>
         )}
 
         {/* v0.13.7 · 悬浮相机面板:按物理朝向贴主视图边缘,同朝向沿边堆叠。

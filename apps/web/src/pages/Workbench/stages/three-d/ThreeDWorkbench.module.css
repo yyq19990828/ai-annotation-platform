@@ -74,23 +74,34 @@
 
 /* 折叠后的小标签(右下角)。 */
 .triFloatTab {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  z-index: 4;
+  /* fixed:与展开面板(FloatingPanelShell)/相机面板同坐标系(视口),否则 useDragMove
+     存的 clientX/Y 视口坐标被当成相对 offsetParent 的偏移,拖动时逐帧叠加容器偏移会跳变。 */
+  position: fixed;
+  left: var(--tri-tab-x);
+  top: var(--tri-tab-y);
+  /* 高于相机浮动面板(z-index:5),作为三视图入口须可见可点。 */
+  z-index: 6;
   padding: 6px 10px;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   background: var(--color-bg-elev);
   box-shadow: var(--shadow-sm);
   color: var(--color-fg);
-  cursor: pointer;
+  cursor: grab;
   font-size: 12px;
+  user-select: none;
+  touch-action: none;
 }
 
 .triFloatTab:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
+}
+
+.triFloatTabDragging {
+  cursor: grabbing;
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-md);
 }
 
 /* 浮层 / 标签上的小按钮(收起 / 关闭等)。 */
