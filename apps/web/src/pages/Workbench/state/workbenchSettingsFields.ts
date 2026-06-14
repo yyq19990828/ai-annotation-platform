@@ -390,12 +390,14 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     parentKey: "pointcloud.neighborPointOverlay",
     category: "pointcloud",
     label: "邻帧动态点",
-    description: "剔除落在当前帧已标注框内的邻帧点,只叠静止背景(消除动态目标拖影);仅对已标注目标有效",
+    description:
+      "对落在已标注框内的邻帧点:保留=留拖影 / 剔除=只叠静止背景 / 逐目标对齐=把点搬到当前帧位置一起加密(无拖影)。仅对已标注目标有效",
     control: {
       type: "select",
       options: [
         { value: "keep", label: "保留(拖影)" },
         { value: "cull", label: "剔除动态点" },
+        { value: "align", label: "逐目标对齐" },
       ],
     },
   },

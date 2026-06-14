@@ -67,8 +67,11 @@ export interface WorkbenchPointcloudPreferences {
   neighborPointOverlay: boolean;
   /** v0.15.19 · 邻帧点云叠加帧数,独立于邻帧框叠加;点云较重,限制为 1-3。 */
   neighborPointOverlayK: 1 | 2 | 3;
-  /** v0.15.22 · §C.8-B 邻帧点云动态点剔除:keep=保留拖影 / cull=剔除落在当前帧 box 内的邻帧点。 */
-  neighborPointCull: "keep" | "cull";
+  /**
+   * v0.15.22 · §C.8-B / v0.15.23 · §C.8-A 邻帧点云动态点处理:
+   * keep=保留拖影 / cull=剔除落在当前帧 box 内的邻帧点 / align=逐目标把邻帧点搬到当前位置。
+   */
+  neighborPointCull: "keep" | "cull" | "align";
 }
 
 /** v0.15.3 · common/image/video/pointcloud 四子树;layout 保持顶层(壳层/设备维度)。 */

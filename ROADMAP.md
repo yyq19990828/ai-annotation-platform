@@ -152,7 +152,7 @@
 > 背景：v0.15.18 邻帧点云叠加用 **ego-only 刚体补偿**——只抵消车自身运动，抵消不了目标自身运动，故静止背景重合加密、**动态目标必然留拖影**。v0.15.18 已补视觉缓解(前/后帧分色 + 时序淡出，让拖影读成"运动方向")。下面是**彻底消除拖影**(让动态目标也对齐加密 / 或干脆不显示)的两条路 + 一条重路：
 
 - ~~**B. box 内动态点剔除**~~ → **已落地 v0.15.22**（设置项 `点云 › 邻帧动态点`,`cullDynamicPoints.ts` 投影法 OBB 剔除 + 状态栏透出剔除数,详见 [CHANGELOG](CHANGELOG.md) / 计划 [`docs/plans/2026-06-14-v0.15.22-neighbor-pointcloud-dynamic-cull.md`](docs/plans/2026-06-14-v0.15.22-neighbor-pointcloud-dynamic-cull.md))。代价:动态目标完全不显示;让其也对齐加密见 A(v0.15.23)。
-- **A. box 轨迹逐目标补偿**（**P3**，中等体量）→ **已排期 v0.15.23**(依赖 B 的 point-in-box 路由)，计划 [`docs/plans/2026-06-14-v0.15.23-neighbor-pointcloud-per-object-compensation.md`](docs/plans/2026-06-14-v0.15.23-neighbor-pointcloud-per-object-compensation.md)：对落在 tracked box(`group_id` 跨帧链，v0.15.1 已有)内的邻帧点，用**该目标 box 邻帧→当前帧的位姿变换**替代 ego 变换;框外点仍走 ego。动态目标的点也对齐到当前位置一起加密、**无拖影**——等于用 box 轨迹做 lite 版 scene flow。吃平台已有 track 数据(v0.15.17 邻帧框已拉);仅对**已标注**目标有效(未标注动态物按 fallback)。
+- ~~**A. box 轨迹逐目标补偿**~~ → **已落地 v0.15.23**（设置项 `点云 › 邻帧动态点` 第三档「逐目标对齐」,`perObjectAlign.ts` 用 `T = M_当前框 · M_邻帧框⁻¹` 把落在邻帧 box 内的点搬到当前帧位置一起加密、框外走 ego + 状态栏透出搬运数,详见 [CHANGELOG](CHANGELOG.md) / 计划 [`docs/plans/2026-06-14-v0.15.23-neighbor-pointcloud-per-object-compensation.md`](docs/plans/2026-06-14-v0.15.23-neighbor-pointcloud-per-object-compensation.md)）。复用 B 的 point-in-box 路由 + v0.15.17 邻帧框 + v0.15.1 `group_id` 跨帧链;动态目标也对齐加密、**无拖影**——等于用 box 轨迹做 lite 版 scene flow。仅对**已标注且跨帧成链**目标有效(未标注动态物按 fallback 默认剔除)。
 - **D. 学习式动静分割**（**P3**，重，性价比低）：不依赖标注的动静点分类(需模型 / 几何启发)，能处理未标注动态物，但成本高;非必要不做。
 
 > 共同前置：A/B 需当前帧 + 邻帧的 box_3d 标注(理想是已 propagate/插值的 track)。与 §A `lidar_box_3d` 真实 3D 接入正交,可在点云叠加被真实使用后按反馈触发。
@@ -185,7 +185,7 @@
 | **P3** | 新几何 ML 预测协议按客户 backend 输出补齐 | 平台读路径 (`to_internal_shape`) + 协议文档 + 导入(AAP/YOLO)/导出/测试均已支持 rotated_bbox/polyline/keypoint；等真实客户 backend 产出这些几何时按实际输出对账 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志月度汇总物化视图 | partition + archive + 回源端点已落（v0.10.25）；剩 BI 月度汇总物化视图，等 10M+ 行触发 | [0007](docs/adr/0007-audit-log-partitioning.md) |
-| **P3** | 邻帧点云叠加动态拖影彻底消除（§C.8 A/B/D） | v0.15.18 已用 ego-only 补偿 + 视觉缓解(分色/淡出)；彻底消除需按 box 轨迹逐目标补偿 / box 内动态点剔除。等点云叠加真实使用后按反馈触发 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
+| **P3** | 邻帧点云叠加动态拖影彻底消除（§C.8 D 学习式动静分割） | B 剔除(v0.15.22)+ A 逐目标对齐(v0.15.23)已落地,覆盖**已标注且跨帧成链**目标;剩 D=不依赖标注的学习式动静分割(能处理未标注动态物,重、性价比低),非必要不做 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 
 ---
 

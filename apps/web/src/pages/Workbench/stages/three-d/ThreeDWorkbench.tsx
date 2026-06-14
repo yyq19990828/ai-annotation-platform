@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
+import * as THREE from "three";
 
 import type {
   CameraPanelState,
@@ -29,6 +30,11 @@ import { useNeighborPointClouds } from "@/hooks/useNeighborPointClouds";
 import { useSceneTrajectory } from "@/hooks/useSceneTrajectory";
 import { alignPsrToFrame, frameRelMatrix } from "./geometry/egoAlign";
 import { cullPointsInBoxes } from "./geometry/cullDynamicPoints";
+import {
+  alignNeighborPointsPerObject,
+  type AlignNeighborBox,
+  type AlignPsr,
+} from "./geometry/perObjectAlign";
 import { useToastStore } from "@/components/ui/Toast";
 import { useAuthStore } from "@/stores/authStore";
 import { classColorForCanvas } from "@/pages/Workbench/stage/colors";
@@ -144,6 +150,8 @@ interface ThreeDWorkbenchProps {
 
 // v0.13.3 · 新框默认尺寸(米,长宽高;约一辆轿车),放置后用面板/gizmo 精修。
 const DEFAULT_BOX_SIZE: [number, number, number] = [4.0, 1.8, 1.6];
+// v0.15.23 · align 模式下邻帧点已预变换到当前帧 ego 系,渲染走 identity(共享单例,免重复分配)。
+const IDENTITY_MATRIX = new THREE.Matrix4();
 const CAMERA_AUTO_COLLAPSE_WIDTH = 1366;
 const CAMERA_STACK_VISIBLE = 2;
 const TRI_FLOAT_DEFAULT_W = 240;
@@ -416,10 +424,16 @@ export function ThreeDWorkbench({
       ? workbenchPointcloud.neighborPointOverlayK
       : 1;
   const pointOverlayK = pointOverlayOn ? pointOverlayFrameK : 0;
-  // v0.15.22 · §C.8-B 邻帧点云动态点剔除:cull=剔除落在当前帧 box 内的邻帧点(消除拖影)。
-  const neighborPointCull =
-    workbenchPointcloud.neighborPointCull === "cull" ? "cull" : "keep";
+  // v0.15.22 · §C.8-B / v0.15.23 · §C.8-A 邻帧点云动态点处理:
+  // cull=剔除落在当前帧 box 内的邻帧点;align=逐目标把邻帧点搬到当前帧位置(无拖影)。
+  const neighborPointCull: "keep" | "cull" | "align" =
+    workbenchPointcloud.neighborPointCull === "cull"
+      ? "cull"
+      : workbenchPointcloud.neighborPointCull === "align"
+        ? "align"
+        : "keep";
   const [neighborCulledCount, setNeighborCulledCount] = useState(0);
+  const [neighborMovedCount, setNeighborMovedCount] = useState(0);
   const [pointCloudViewMode, setPointCloudViewMode] = useState<"orbit" | "bev">("orbit");
   const [colorizing, setColorizing] = useState(false);
   const colorizedRawRef = useRef<Float32Array | null>(null);
@@ -2048,6 +2062,63 @@ export function ThreeDWorkbench({
       ...(neighborsData.next ?? []).slice(0, pointOverlayK),
     ].map((n) => ({ taskId: n.task_id, frameIndex: n.frame_index }));
   }, [pointOverlayActive, neighborsData, pointOverlayK]);
+  // v0.15.23 · §C.8-A align 模式:把落在邻帧 box 内的点按目标位姿搬到当前帧位置(逐目标
+  // 补偿,真·消除拖影)。需邻帧「全部」框(按 group_id 与当前帧框配对),独立于框叠加
+  // (overlayK)且 scope 恒为 all;仅 align 时拉取,避免无谓请求。
+  const alignActive = pointOverlayActive && neighborPointCull === "align";
+  const { byTask: alignAnnsByTask } = useNeighborAnnotations(
+    alignActive ? taskId : null,
+    pointOverlayK,
+    null,
+    alignActive,
+  );
+  // 当前帧 box:group_id → PSR(逐目标搬运的配对目标)。
+  const currentBoxesByGroup = useMemo<Map<number, AlignPsr>>(() => {
+    const m = new Map<number, AlignPsr>();
+    if (!alignActive) return m;
+    for (const a of annotations ?? []) {
+      if (a.group_id == null) continue;
+      const g = a.geometry as {
+        type?: string;
+        center?: number[];
+        size?: number[];
+        rotation?: number[];
+      };
+      if (g?.type !== "box_3d" || !g.center || !g.size || !g.rotation) continue;
+      m.set(a.group_id, {
+        center: g.center as [number, number, number],
+        size: g.size.map((v) => Math.abs(v)) as [number, number, number],
+        rotation: g.rotation as [number, number, number],
+      });
+    }
+    return m;
+  }, [alignActive, annotations]);
+  // 邻帧 box(原始邻帧 ego 系 PSR + group_id),按 task 分组;不预对齐(搬运矩阵自带 ego 补偿)。
+  const neighborBoxesByTask = useMemo<Map<string, AlignNeighborBox[]>>(() => {
+    const m = new Map<string, AlignNeighborBox[]>();
+    if (!alignActive) return m;
+    for (const [tid, anns] of Object.entries(alignAnnsByTask)) {
+      const list: AlignNeighborBox[] = [];
+      for (const a of anns) {
+        if (a.group_id == null) continue;
+        const g = a.geometry as {
+          type?: string;
+          center?: number[];
+          size?: number[];
+          rotation?: number[];
+        };
+        if (g?.type !== "box_3d" || !g.center || !g.size || !g.rotation) continue;
+        list.push({
+          groupId: a.group_id,
+          center: g.center as [number, number, number],
+          size: g.size.map((v) => Math.abs(v)) as [number, number, number],
+          rotation: g.rotation as [number, number, number],
+        });
+      }
+      m.set(tid, list);
+    }
+    return m;
+  }, [alignActive, alignAnnsByTask]);
   // 邻帧点云下采样目标:当前帧抽稀阈值的 1/8,上限 8 万(邻帧仅作参考,远低于当前帧)。
   const neighborPointTarget = Math.min(
     80_000,
@@ -2066,6 +2137,7 @@ export function ThreeDWorkbench({
     if (!pointOverlayActive || !poseByFrame || curFrame == null) {
       scene.setNeighborPoints([]);
       setNeighborCulledCount(0);
+      setNeighborMovedCount(0);
       return;
     }
     const toPose = poseByFrame.get(curFrame);
@@ -2075,15 +2147,30 @@ export function ThreeDWorkbench({
       dir: "past" | "future";
       distance: number;
     };
-    // v0.15.22 · cull 模式:把对齐到当前帧后落在 tracked box 内的邻帧点剔除,只叠静止背景。
+    // v0.15.22 · cull:把对齐到当前帧后落在 tracked box 内的邻帧点剔除,只叠静止背景。
+    // v0.15.23 · align:落在邻帧 box 内的点按目标位姿搬到当前帧位置(逐目标补偿,无拖影);
+    //   搬运后点已是当前帧 ego 系坐标,渲染走 identity 矩阵(其余背景点仍 ego 对齐)。
     const cullOn = neighborPointCull === "cull" && boxes.length > 0;
+    const alignOn = neighborPointCull === "align" && currentBoxesByGroup.size > 0;
     let culledTotal = 0;
+    let movedTotal = 0;
     const frames = neighborPcds
       .map((pcd): NeighborFrame | null => {
         const matrix = frameRelMatrix(poseByFrame.get(pcd.frameIndex), toPose);
         if (!matrix) return null;
         let positions = pcd.positions;
-        if (cullOn) {
+        let renderMatrix = matrix;
+        if (alignOn) {
+          const res = alignNeighborPointsPerObject(
+            positions,
+            matrix,
+            neighborBoxesByTask.get(pcd.taskId) ?? [],
+            currentBoxesByGroup,
+          );
+          positions = res.aligned;
+          movedTotal += res.movedCount;
+          renderMatrix = IDENTITY_MATRIX; // 点已预变换到当前帧 ego 系
+        } else if (cullOn) {
           const res = cullPointsInBoxes(positions, matrix, boxes);
           positions = res.kept;
           culledTotal += res.culledCount;
@@ -2091,7 +2178,7 @@ export function ThreeDWorkbench({
         // 前/后帧分色 + 按帧距淡出(视觉缓解动态拖影)。
         return {
           positions,
-          matrix,
+          matrix: renderMatrix,
           dir: pcd.frameIndex >= curFrame ? "future" : "past",
           distance: Math.abs(pcd.frameIndex - curFrame),
         };
@@ -2099,7 +2186,17 @@ export function ThreeDWorkbench({
       .filter((f): f is NeighborFrame => f != null);
     scene.setNeighborPoints(frames);
     setNeighborCulledCount(cullOn ? culledTotal : 0);
-  }, [pointOverlayActive, neighborPcds, poseByFrame, neighborsData, neighborPointCull, boxes]);
+    setNeighborMovedCount(alignOn ? movedTotal : 0);
+  }, [
+    pointOverlayActive,
+    neighborPcds,
+    poseByFrame,
+    neighborsData,
+    neighborPointCull,
+    boxes,
+    currentBoxesByGroup,
+    neighborBoxesByTask,
+  ]);
 
   // v0.13.4 · 选中框被哪些相机看到(可见角点数 > 0),按可见角点数降序;首个 = 最正对。
   const selectedCameraVis = useMemo(() => {
@@ -2365,6 +2462,9 @@ export function ThreeDWorkbench({
           {boxes.length > 0 && <span>· {boxes.length} 框</span>}
           {neighborCulledCount > 0 && (
             <span>· 邻帧剔除 {neighborCulledCount.toLocaleString()} 动态点</span>
+          )}
+          {neighborMovedCount > 0 && (
+            <span>· 邻帧对齐 {neighborMovedCount.toLocaleString()} 动态点</span>
           )}
           {pointMasks.length > 0 && <span>· {pointMasks.length} 分割</span>}
           {placing && (
