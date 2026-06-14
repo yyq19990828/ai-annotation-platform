@@ -15977,6 +15977,24 @@
         "title": "TriViewFloatState",
         "type": "object"
       },
+      "UIPreferences": {
+        "additionalProperties": false,
+        "description": "v0.15.25 · 全局 UI 偏好（工作台之外）。当前仅主题；跟随账号跨设备。\n\n主题原先只存 localStorage（仅本机），升级到服务端偏好后换设备登录即保持。\n'system' = 跟随操作系统 prefers-color-scheme。",
+        "properties": {
+          "theme": {
+            "default": "system",
+            "enum": [
+              "light",
+              "dark",
+              "system"
+            ],
+            "title": "Theme",
+            "type": "string"
+          }
+        },
+        "title": "UIPreferences",
+        "type": "object"
+      },
       "UnreadCount": {
         "properties": {
           "unread": {
@@ -16231,6 +16249,9 @@
         "properties": {
           "ai": {
             "$ref": "#/components/schemas/AIToolPreferences"
+          },
+          "ui": {
+            "$ref": "#/components/schemas/UIPreferences"
           },
           "workbench": {
             "$ref": "#/components/schemas/WorkbenchPreferences"

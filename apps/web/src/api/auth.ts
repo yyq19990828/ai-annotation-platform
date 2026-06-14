@@ -134,9 +134,18 @@ export interface AIToolPreferences {
   params_by_backend: Record<string, Record<string, unknown>>;
 }
 
+/** v0.15.25 · 主题偏好:light/dark 固定，system 跟随 OS prefers-color-scheme。 */
+export type ThemePref = "light" | "dark" | "system";
+
+/** v0.15.25 · 全局 UI 偏好(工作台之外);主题从 localStorage 升到服务端,跟随账号跨设备。 */
+export interface UIPreferences {
+  theme: ThemePref;
+}
+
 export interface UserPreferences {
   workbench: WorkbenchPreferences;
   ai: AIToolPreferences;
+  ui: UIPreferences;
 }
 
 export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {

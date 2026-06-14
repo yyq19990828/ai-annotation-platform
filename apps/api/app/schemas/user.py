@@ -200,6 +200,17 @@ class AIToolPreferences(BaseModel):
     params_by_backend: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
+class UIPreferences(BaseModel):
+    """v0.15.25 · 全局 UI 偏好（工作台之外）。当前仅主题；跟随账号跨设备。
+
+    主题原先只存 localStorage（仅本机），升级到服务端偏好后换设备登录即保持。
+    'system' = 跟随操作系统 prefers-color-scheme。"""
+
+    model_config = {"extra": "forbid"}
+
+    theme: Literal["light", "dark", "system"] = "system"
+
+
 class UserPreferences(BaseModel):
     """User.preferences JSONB root. 仅声明已知子树；未来按 epic 追加。"""
 
@@ -207,6 +218,7 @@ class UserPreferences(BaseModel):
 
     workbench: WorkbenchPreferences = Field(default_factory=WorkbenchPreferences)
     ai: AIToolPreferences = Field(default_factory=AIToolPreferences)
+    ui: UIPreferences = Field(default_factory=UIPreferences)
 
 
 class UserCreate(BaseModel):

@@ -30,6 +30,18 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.25] - 2026-06-15
+
+主题偏好持久化到服务端。深色 / 浅色 / 跟随系统主题原先只存浏览器 localStorage(仅本机),升级到用户服务端偏好(`preferences.ui.theme`)后,换设备 / 换浏览器登录同一账号即保持。复用 v0.15.3 偏好基建(`/auth/me/preferences` 顶层子树合并),顺手收尾。
+
+### Changed
+
+- **主题跟随账号跨设备**:`useTheme` 真值源分层——登录后以服务端 `preferences.ui.theme` 为准,登出 / 首屏 hydration 前回落 localStorage(本机缓存),都没有则 `system`。切换主题时本地即时生效 + 写本机缓存,登录态再乐观更新 authStore + `PATCH /auth/me/preferences {ui:{theme}}` 持久化。首屏仍由 localStorage bootstrap(`initThemeFromStorage`)避免闪烁,服务端值在登录后对齐(一般相同,故无闪)。
+
+### Added
+
+- 后端 `UserPreferences.ui` 子树(`theme: light|dark|system`,默认 `system`,`extra:forbid`);沿用既有顶层子树合并,PATCH `ui` 不动 `workbench`/`ai`。+ 端点测试(ui 持久化 / 与 workbench 隔离 / 默认 system / 非法枚举 422)+ `useTheme` 单测(登出只写本地 / 登录 PATCH 服务端 + 乐观写 store / 服务端主题采纳)。
+
 ## [0.15.24] - 2026-06-15
 
 点云+图像联合标注 epic · Phase 1 首版:相机图「2D 框种 3D 框」。在放大的相机投影视图上拖一个 2D 矩形 → 该相机标定反算视锥 → 选出锥内点云 → 拟合一个 3D 框初值并选中微调。读方向(3D→2D 投影)v0.13.4 已完成,本版补写方向起点。计划见 `docs/plans/2026-06-14-v0.15.24-camera-2d-box-to-3d-frustum.md`,epic 见 `ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md`。纯前端几何,后端零改动。

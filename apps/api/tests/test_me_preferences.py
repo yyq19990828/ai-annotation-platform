@@ -327,6 +327,61 @@ async def test_patch_pointcloud_range_and_enum_violations_422(httpx_client, anno
         assert resp.status_code == 422, bad_subtree
 
 
+# ── 5b. v0.15.25 UI 主题子树 ─────────────────────────────────────────
+
+
+async def test_patch_ui_theme_persists_and_isolated_from_workbench(
+    httpx_client, annotator
+):
+    _, token = annotator
+    # 先写一个 workbench 字段,确认随后 PATCH ui 不会清掉它(顶层子树合并)。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"workbench": {"image": {"controlPointsSize": 9}}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"ui": {"theme": "dark"}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ui"]["theme"] == "dark"
+    # workbench 子树不受影响。
+    assert body["workbench"]["image"]["controlPointsSize"] == 9
+
+    # GET 读回同形态。
+    resp = await httpx_client.get(PREFS_URL, headers=_bearer(token))
+    assert resp.status_code == 200
+    assert resp.json()["ui"]["theme"] == "dark"
+    assert resp.json()["workbench"]["image"]["controlPointsSize"] == 9
+
+
+async def test_patch_ui_theme_default_and_invalid(httpx_client, annotator):
+    _, token = annotator
+    # 默认主题为 system(未写过 ui 时)。
+    resp = await httpx_client.get(PREFS_URL, headers=_bearer(token))
+    assert resp.status_code == 200
+    assert resp.json()["ui"]["theme"] == "system"
+    # 非法枚举 422。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"ui": {"theme": "sepia"}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 422
+    # 子树内未知键仍 422(forbid)。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"ui": {"bogus": 1}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 422
+
+
 # ── 6. 0103 迁移 SQL ────────────────────────────────────────────────
 
 
