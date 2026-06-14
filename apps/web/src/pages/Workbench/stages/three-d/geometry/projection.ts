@@ -46,6 +46,11 @@ export interface ProjectionResult {
   pixels: [number, number][];
   /** 该点是否在相机前方 (w > 0)。 */
   visible: boolean[];
+  /**
+   * v0.15.24 · 该点的相机系深度 (= 透视除法的 w; 内参末行 [0,0,1] 时即相机系 z, 单位米)。
+   * 供视锥选点的深度门控 (frustum.depthGate) 取最近簇用; 相机后方点为负。
+   */
+  depths: number[];
 }
 
 /**
@@ -91,6 +96,7 @@ export function projectPoints(
   const { extrinsic, intrinsic, rect } = calib;
   const pixels: [number, number][] = [];
   const visible: boolean[] = [];
+  const depths: number[] = [];
 
   for (const p of points) {
     // 兼容 THREE.Vector3 与 [x,y,z] 元组。
@@ -122,7 +128,8 @@ export function projectPoints(
 
     // 6. 可见性: 相机前方 (w>0)。behind-camera 仍计算像素, 由调用方据 visible 取舍。
     visible.push(w > 0);
+    depths.push(w);
   }
 
-  return { pixels, visible };
+  return { pixels, visible, depths };
 }

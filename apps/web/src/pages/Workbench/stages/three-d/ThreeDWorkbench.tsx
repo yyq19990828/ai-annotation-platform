@@ -84,6 +84,13 @@ import {
   psrFromPoints,
 } from "./geometry/autofit";
 import {
+  centralRay,
+  depthGate,
+  gatherPoints,
+  selectPointsInRect,
+  type SeedRect,
+} from "./geometry/frustum";
+import {
   applyConventionToPsr,
   applyConventionToExtrinsic,
   type LidarAxisConvention,
@@ -152,6 +159,8 @@ interface ThreeDWorkbenchProps {
 const DEFAULT_BOX_SIZE: [number, number, number] = [4.0, 1.8, 1.6];
 // v0.15.23 · align 模式下邻帧点已预变换到当前帧 ego 系,渲染走 identity(共享单例,免重复分配)。
 const IDENTITY_MATRIX = new THREE.Matrix4();
+// v0.15.24 · 种框空簇 fallback:沿中央射线的估计深度(米)。图上可见但无 lidar 返回时按此放默认框。
+const SEED_FALLBACK_RANGE_M = 12;
 const CAMERA_AUTO_COLLAPSE_WIDTH = 1366;
 const CAMERA_STACK_VISIBLE = 2;
 const TRI_FLOAT_DEFAULT_W = 240;
@@ -440,6 +449,8 @@ export function ThreeDWorkbench({
   const adjustedColorBufferRef = useRef<Float32Array | null>(null);
   // v0.13.7 · 放大查看的相机 role(L3);null = 无放大。点⛶开,ESC/遮罩/关闭钮收。
   const [enlargedRole, setEnlargedRole] = useState<string | null>(null);
+  // v0.15.24 · 放大相机模态里的「种框」模式:拖 2D 框 → 视锥选点 → 拟合 box_3d。仅放大视图启用。
+  const [seedMode, setSeedMode] = useState(false);
   const [autoCollapseCameras, setAutoCollapseCameras] = useState(false);
   const [pointMaskPolygonPoints, setPointMaskPolygonPoints] = useState<ScreenPoint[]>([]);
   const [pointMaskCursor, setPointMaskCursor] = useState<ScreenPoint | null>(null);
@@ -1368,6 +1379,49 @@ export function ThreeDWorkbench({
     [boxPlaceClass, axisConvention, createAnnotation, history, onSelectBox, onSetThreeDTool],
   );
 
+  // v0.15.24 · §Phase1 相机图「2D 框种 3D 框」:在放大相机图上拖矩形 → 该相机标定反算视锥选点
+  // → depthGate 取最近簇 → psrFromPoints + fitYaw/fitBottom 拟合 → 落 box_3d 并选中微调。
+  // 空簇(图上可见但无 lidar 返回)→ 沿中央射线放默认尺寸框 + 提示微调。唯一产物是 box_3d(2D 不落库)。
+  const handleSeedBox = useCallback(
+    (rect: SeedRect, calibration: SensorCalibration) => {
+      const scene = sceneRef.current;
+      if (!scene || !boxPlaceClass) return;
+      const positions = scene.getPointPositions();
+      if (!positions) return;
+      const gated = depthGate(selectPointsInRect(positions, rect, calibration));
+      let psr: Psr;
+      if (gated.length >= 3) {
+        const cluster = gatherPoints(positions, gated);
+        psr = fitBottom(cluster, fitYaw(cluster, psrFromPoints(cluster)));
+      } else {
+        // 空簇 / 点太少:沿矩形中心射线按固定估计深度放默认尺寸框(用户再微调)。
+        const ray = centralRay(rect, calibration);
+        const center: [number, number, number] = [
+          ray.origin[0] + ray.direction[0] * SEED_FALLBACK_RANGE_M,
+          ray.origin[1] + ray.direction[1] * SEED_FALLBACK_RANGE_M,
+          ray.origin[2] + ray.direction[2] * SEED_FALLBACK_RANGE_M,
+        ];
+        psr = { center, size: defaultBoxSize, rotation: [0, 0, 0] };
+        pushToast({ msg: "视锥内无点云,已按默认尺寸放置,请微调", kind: "" });
+      }
+      const geometry = boxGeometryFromPsr(psr, axisConvention);
+      const payload: AnnotationPayload = {
+        annotation_type: "box_3d",
+        tool_unit_id: LIDAR_TOOL_UNIT,
+        class_name: boxPlaceClass,
+        geometry,
+      };
+      createAnnotation.mutate(payload, {
+        onSuccess: (created) => {
+          history.push({ kind: "create", annotationId: created.id, payload });
+          onSelectBox(created.id);
+        },
+      });
+      setSeedMode(false);
+    },
+    [boxPlaceClass, axisConvention, defaultBoxSize, createAnnotation, history, onSelectBox, pushToast],
+  );
+
   const applyPointMaskSelection = useCallback(
     (selected: PointMaskSelection | null, subtract: boolean) => {
       if (!selected) return;
@@ -1857,12 +1911,14 @@ export function ThreeDWorkbench({
     const fwd = frontCameraForward(cameras);
     scene.setViewForward(fwd?.[0] ?? 0, fwd?.[1] ?? 1);
   }, [cameras]);
-  // v0.13.7 · 放大浮层:ESC 关闭。
+  // v0.13.7 · 放大浮层:ESC 关闭(v0.15.24:种框模式下 ESC 先退出种框,再次 ESC 才关浮层)。
   useEffect(() => {
     if (!enlargedRole) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setEnlargedRole(null);
-      else if (e.key === "ArrowLeft") {
+      if (e.key === "Escape") {
+        if (seedMode) setSeedMode(false);
+        else setEnlargedRole(null);
+      } else if (e.key === "ArrowLeft") {
         e.preventDefault();
         cycleEnlargedCamera(-1);
       } else if (e.key === "ArrowRight") {
@@ -1872,7 +1928,11 @@ export function ThreeDWorkbench({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cycleEnlargedCamera, enlargedRole]);
+  }, [cycleEnlargedCamera, enlargedRole, seedMode]);
+  // v0.15.24 · 关闭放大浮层时复位种框模式(种框仅在放大视图内有意义)。
+  useEffect(() => {
+    if (!enlargedRole) setSeedMode(false);
+  }, [enlargedRole]);
   // v0.13.6 · 点云坐标(载帧后稳定);供相机视图建深度栅格。stats 变化即点云换帧。
   const pointPositions = useMemo(
     () => (stats ? (sceneRef.current?.getPointPositions() ?? null) : null),
@@ -2831,6 +2891,17 @@ export function ThreeDWorkbench({
               >
                 关闭 ✕
               </button>
+              {!readOnly && enlargedCam.calibration && boxPlaceClass && (
+                <button
+                  type="button"
+                  className={`${styles.camModalSeed} ${seedMode ? styles.camModalSeedActive : ""}`}
+                  onClick={() => setSeedMode((v) => !v)}
+                  aria-pressed={seedMode}
+                  title="在相机图上拖一个 2D 框,自动在 3D 里生成框(视锥选点拟合)"
+                >
+                  {seedMode ? "种框中 · 拖矩形" : "种框 ⊹"}
+                </button>
+              )}
               {cameras.length > 1 && (
                 <>
                   <button
@@ -2861,6 +2932,8 @@ export function ThreeDWorkbench({
                 bestForSelected={enlargedCam.role === bestCameraRole}
                 pointPositions={pointPositions}
                 showDepth={depthOn}
+                seedMode={seedMode}
+                onSeedBox={handleSeedBox}
               />
             </div>
           </div>
