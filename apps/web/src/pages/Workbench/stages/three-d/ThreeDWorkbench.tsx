@@ -28,6 +28,7 @@ import { useNeighborAnnotations } from "@/hooks/useNeighborAnnotations";
 import { useNeighborPointClouds } from "@/hooks/useNeighborPointClouds";
 import { useSceneTrajectory } from "@/hooks/useSceneTrajectory";
 import { alignPsrToFrame, frameRelMatrix } from "./geometry/egoAlign";
+import { cullPointsInBoxes } from "./geometry/cullDynamicPoints";
 import { useToastStore } from "@/components/ui/Toast";
 import { useAuthStore } from "@/stores/authStore";
 import { classColorForCanvas } from "@/pages/Workbench/stage/colors";
@@ -415,6 +416,10 @@ export function ThreeDWorkbench({
       ? workbenchPointcloud.neighborPointOverlayK
       : 1;
   const pointOverlayK = pointOverlayOn ? pointOverlayFrameK : 0;
+  // v0.15.22 · §C.8-B 邻帧点云动态点剔除:cull=剔除落在当前帧 box 内的邻帧点(消除拖影)。
+  const neighborPointCull =
+    workbenchPointcloud.neighborPointCull === "cull" ? "cull" : "keep";
+  const [neighborCulledCount, setNeighborCulledCount] = useState(0);
   const [pointCloudViewMode, setPointCloudViewMode] = useState<"orbit" | "bev">("orbit");
   const [colorizing, setColorizing] = useState(false);
   const colorizedRawRef = useRef<Float32Array | null>(null);
@@ -2060,6 +2065,7 @@ export function ThreeDWorkbench({
     const curFrame = neighborsData?.frame_index ?? null;
     if (!pointOverlayActive || !poseByFrame || curFrame == null) {
       scene.setNeighborPoints([]);
+      setNeighborCulledCount(0);
       return;
     }
     const toPose = poseByFrame.get(curFrame);
@@ -2069,13 +2075,22 @@ export function ThreeDWorkbench({
       dir: "past" | "future";
       distance: number;
     };
+    // v0.15.22 · cull 模式:把对齐到当前帧后落在 tracked box 内的邻帧点剔除,只叠静止背景。
+    const cullOn = neighborPointCull === "cull" && boxes.length > 0;
+    let culledTotal = 0;
     const frames = neighborPcds
       .map((pcd): NeighborFrame | null => {
         const matrix = frameRelMatrix(poseByFrame.get(pcd.frameIndex), toPose);
         if (!matrix) return null;
+        let positions = pcd.positions;
+        if (cullOn) {
+          const res = cullPointsInBoxes(positions, matrix, boxes);
+          positions = res.kept;
+          culledTotal += res.culledCount;
+        }
         // 前/后帧分色 + 按帧距淡出(视觉缓解动态拖影)。
         return {
-          positions: pcd.positions,
+          positions,
           matrix,
           dir: pcd.frameIndex >= curFrame ? "future" : "past",
           distance: Math.abs(pcd.frameIndex - curFrame),
@@ -2083,7 +2098,8 @@ export function ThreeDWorkbench({
       })
       .filter((f): f is NeighborFrame => f != null);
     scene.setNeighborPoints(frames);
-  }, [pointOverlayActive, neighborPcds, poseByFrame, neighborsData]);
+    setNeighborCulledCount(cullOn ? culledTotal : 0);
+  }, [pointOverlayActive, neighborPcds, poseByFrame, neighborsData, neighborPointCull, boxes]);
 
   // v0.13.4 · 选中框被哪些相机看到(可见角点数 > 0),按可见角点数降序;首个 = 最正对。
   const selectedCameraVis = useMemo(() => {
@@ -2347,6 +2363,9 @@ export function ThreeDWorkbench({
             </span>
           )}
           {boxes.length > 0 && <span>· {boxes.length} 框</span>}
+          {neighborCulledCount > 0 && (
+            <span>· 邻帧剔除 {neighborCulledCount.toLocaleString()} 动态点</span>
+          )}
           {pointMasks.length > 0 && <span>· {pointMasks.length} 分割</span>}
           {placing && (
             <span>· 拖框选 / 点击放置 {boxPlaceClass ?? ""} · V/Esc 取消</span>

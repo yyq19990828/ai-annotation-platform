@@ -115,6 +115,7 @@ const mockWorkbenchConfig = {
     cameraDamping: 0.1,
     neighborPointOverlay: false,
     neighborPointOverlayK: 1,
+    neighborPointCull: "keep",
   },
 };
 const mockWorkbenchUpdate = vi.fn();

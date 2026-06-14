@@ -151,7 +151,7 @@
 
 > 背景：v0.15.18 邻帧点云叠加用 **ego-only 刚体补偿**——只抵消车自身运动，抵消不了目标自身运动，故静止背景重合加密、**动态目标必然留拖影**。v0.15.18 已补视觉缓解(前/后帧分色 + 时序淡出，让拖影读成"运动方向")。下面是**彻底消除拖影**(让动态目标也对齐加密 / 或干脆不显示)的两条路 + 一条重路：
 
-- **B. box 内动态点剔除**（**P3**，轻）→ **已排期 v0.15.22**，计划 [`docs/plans/2026-06-14-v0.15.22-neighbor-pointcloud-dynamic-cull.md`](docs/plans/2026-06-14-v0.15.22-neighbor-pointcloud-dynamic-cull.md)：邻帧点落在 tracked box 内的**直接剔除**，只叠静止背景。比 A 简单(只判点-在-框内，不做逐目标变换)，代价是动态目标完全不显示。作为 A 的开关式简化版先上。
+- ~~**B. box 内动态点剔除**~~ → **已落地 v0.15.22**（设置项 `点云 › 邻帧动态点`,`cullDynamicPoints.ts` 投影法 OBB 剔除 + 状态栏透出剔除数,详见 [CHANGELOG](CHANGELOG.md) / 计划 [`docs/plans/2026-06-14-v0.15.22-neighbor-pointcloud-dynamic-cull.md`](docs/plans/2026-06-14-v0.15.22-neighbor-pointcloud-dynamic-cull.md))。代价:动态目标完全不显示;让其也对齐加密见 A(v0.15.23)。
 - **A. box 轨迹逐目标补偿**（**P3**，中等体量）→ **已排期 v0.15.23**(依赖 B 的 point-in-box 路由)，计划 [`docs/plans/2026-06-14-v0.15.23-neighbor-pointcloud-per-object-compensation.md`](docs/plans/2026-06-14-v0.15.23-neighbor-pointcloud-per-object-compensation.md)：对落在 tracked box(`group_id` 跨帧链，v0.15.1 已有)内的邻帧点，用**该目标 box 邻帧→当前帧的位姿变换**替代 ego 变换;框外点仍走 ego。动态目标的点也对齐到当前位置一起加密、**无拖影**——等于用 box 轨迹做 lite 版 scene flow。吃平台已有 track 数据(v0.15.17 邻帧框已拉);仅对**已标注**目标有效(未标注动态物按 fallback)。
 - **D. 学习式动静分割**（**P3**，重，性价比低）：不依赖标注的动静点分类(需模型 / 几何启发)，能处理未标注动态物，但成本高;非必要不做。
 
