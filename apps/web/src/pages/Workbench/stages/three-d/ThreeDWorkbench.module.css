@@ -531,29 +531,33 @@
 
 .camAnchorTop {
   top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  justify-content: center;
   flex-direction: row;
 }
 
 .camAnchorBottom {
   bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  justify-content: center;
   flex-direction: row;
 }
 
 .camAnchorLeft {
   left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
+  top: var(--top-toolbar-height);
+  bottom: 12px;
+  justify-content: center;
   flex-direction: column;
 }
 
 .camAnchorRight {
   right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
+  top: var(--top-toolbar-height);
+  bottom: 12px;
+  justify-content: center;
   flex-direction: column;
 }
 
@@ -586,8 +590,9 @@
 
 .camAnchorOverflow {
   bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  justify-content: center;
   flex-direction: row;
 }
 
