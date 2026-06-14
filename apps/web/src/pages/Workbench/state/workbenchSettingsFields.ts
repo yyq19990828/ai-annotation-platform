@@ -302,6 +302,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.colorizeContrast",
+    parentKey: "pointcloud.colorizeWithCamera",
     category: "pointcloud",
     label: "上色对比度",
     description: "相机上色后的 RGB 对比度",
@@ -309,6 +310,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.colorizeBrightness",
+    parentKey: "pointcloud.colorizeWithCamera",
     category: "pointcloud",
     label: "上色亮度",
     description: "相机上色后的 RGB 亮度偏移",
@@ -316,6 +318,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.colorizeGamma",
+    parentKey: "pointcloud.colorizeWithCamera",
     category: "pointcloud",
     label: "上色 Gamma",
     description: "相机上色后的中间调曲线",
