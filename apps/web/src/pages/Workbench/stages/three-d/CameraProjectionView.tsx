@@ -274,7 +274,9 @@ export function CameraProjectionView({
       }
       const { x, y } = localXY(e);
       draw(); // 清掉橡皮筋
-      if (Math.abs(x - start.x) < MIN_SEED_DRAG_PX || Math.abs(y - start.y) < MIN_SEED_DRAG_PX) {
+      // 对角线位移小于阈值才算误点(与 ThreeDWorkbench 的 DRAG_CLICK_TOL 同口径);
+      // 用 hypot 而非「任一边 < 阈值」,避免吃掉细长矩形(行人/杆子/路灯侧影)。
+      if (Math.hypot(x - start.x, y - start.y) < MIN_SEED_DRAG_PX) {
         return; // 误点,不种框
       }
       const img = imgRef.current;

@@ -63,7 +63,7 @@ describe("buildThreeDBoxContextMenuItems", () => {
     );
   });
 
-  it("scene 任务含「延续到指定帧」与「向后插值填充」", () => {
+  it("scene 任务含「延续到指定帧」与「插值填充到指定帧」", () => {
     const items = ids(buildThreeDBoxContextMenuItems(boxArgs));
     expect(items).toContain("propagate-to-frame");
     expect(items).toContain("interpolate");

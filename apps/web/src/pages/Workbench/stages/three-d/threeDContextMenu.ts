@@ -61,7 +61,7 @@ export function buildThreeDBoxContextMenuItems(a: ThreeDBoxContextMenuArgs): Dro
       },
       {
         id: "interpolate",
-        label: "向后插值填充…",
+        label: "插值填充到指定帧…",
         disabled: a.readOnly || !a.canInterpolate,
         onSelect: a.onInterpolate,
       },

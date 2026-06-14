@@ -16,7 +16,7 @@ import uuid
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem, Scene
 from app.db.models.task import Task
-from tests.factory import create_project
+from tests.factory import create_batch, create_project, create_user
 
 
 async def _seed_scene_with_n_tasks(db, *, owner_id, n: int):
@@ -231,3 +231,46 @@ async def test_neighbor_annotations_k_out_of_range_422(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 422
+
+
+async def test_neighbor_annotations_filters_cross_batch(
+    db_session, httpx_client, super_admin, annotator
+):
+    """v0.15.26 · annotator 只看到自己 batch 内邻帧的框;落在他人 batch 的邻帧返回
+    frame 占位但 annotations=[],不外泄其几何(与旧逐 task getAnnotations 链路同口径)。"""
+    admin, _ = super_admin
+    anno, anno_token = annotator
+    # 项目 owner 为 admin(非 annotator),否则 annotator 成 owner 即特权全可见。
+    project, _, scene, tasks = await _seed_scene_with_n_tasks(
+        db_session, owner_id=admin.id, n=3
+    )
+    # 中心帧(1)与后邻帧(2)在 annotator 自己的 active batch;前邻帧(0)在别人的 batch。
+    other_anno = await create_user(
+        db_session, "annotator", f"anno2-{uuid.uuid4().hex[:6]}@test.local", "Anno2"
+    )
+    mine = await create_batch(db_session, project_id=project.id, status="active")
+    mine.annotator_id = anno.id
+    other = await create_batch(db_session, project_id=project.id, status="active")
+    other.annotator_id = other_anno.id  # 分派给别人
+    await db_session.flush()
+    tasks[0].batch_id = other.id
+    tasks[1].batch_id = mine.id
+    tasks[2].batch_id = mine.id
+    await db_session.flush()
+
+    for t in tasks:
+        await _add_box(db_session, task=t, project=project, user_id=admin.id, group_id=7)
+
+    resp = await httpx_client.get(
+        f"/api/v1/tasks/{tasks[1].id}/neighbor-annotations?k=1",
+        headers={"Authorization": f"Bearer {anno_token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["scene_id"] == str(scene.id)
+    frames = {f["frame_index"]: f for f in body["frames"]}
+    assert set(frames) == {0, 2}
+    # 前邻帧 0 在他人 batch → 占位但无框(不外泄)
+    assert frames[0]["annotations"] == []
+    # 后邻帧 2 在自己 batch → 正常返回框
+    assert len(frames[2]["annotations"]) == 1

@@ -172,6 +172,55 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
         raise HTTPException(status_code=404, detail="Task not found")
 
 
+async def _visible_task_ids(
+    db: AsyncSession,
+    project,
+    user: User,
+    task_ids: list[uuid.UUID],
+) -> set[uuid.UUID]:
+    """v0.15.26 · `_assert_task_visible` 的批量非抛错版,返回 task_ids 中可见的子集。
+
+    邻帧标注批量端点用它逐邻帧 task 复核 batch 可见性 / 分派状态:该端点替代的
+    旧链路(前端对每个邻帧各发一条 getAnnotations)会逐 task 触发 _assert_task_visible,
+    所以批量化后必须补回同口径过滤,否则 annotator 凭中心 task 可见即可拿到「分派给
+    别人 / 状态不可见」的邻帧框几何(权限漂移)。口径与 _assert_task_visible 完全一致:
+    特权放行;否则按 batch 状态白名单 + annotator 单值分派校验。
+    """
+    if not task_ids:
+        return set()
+    if is_privileged_for_project(user, project):
+        return set(task_ids)
+
+    rows = (
+        await db.execute(select(Task.id, Task.batch_id).where(Task.id.in_(task_ids)))
+    ).all()
+    batch_ids = {bid for _, bid in rows if bid is not None}
+    batches: dict[uuid.UUID, TaskBatch] = {}
+    if batch_ids:
+        result = await db.execute(select(TaskBatch).where(TaskBatch.id.in_(batch_ids)))
+        batches = {b.id: b for b in result.scalars()}
+
+    visible_statuses = visible_batch_statuses_for(user)
+    is_reviewer = user.role == UserRole.REVIEWER
+    visible: set[uuid.UUID] = set()
+    for tid, bid in rows:
+        if bid is None:
+            continue
+        batch = batches.get(bid)
+        if batch is None or batch.status not in visible_statuses:
+            continue
+        if is_reviewer:
+            visible.add(tid)
+            continue
+        is_assigned = batch.annotator_id is not None and batch.annotator_id == user.id
+        if batch.status == "rejected" and not is_assigned:
+            continue
+        if batch.annotator_id is not None and not is_assigned:
+            continue
+        visible.add(tid)
+    return visible
+
+
 # sequence_order 为 NULL 的非序列任务(图像标注等)用该哨兵参与排序,稳定排在
 # 序列任务(点云 scene 帧)之后。取 int32 上限,真实帧序号不可能触及。
 _SEQ_NULL_SENTINEL = 2147483647
@@ -670,6 +719,10 @@ async def get_neighbor_annotations(
 
     替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 group_id 过滤」。
     非 scene / 历史未 backfill 的 task → 200 + frames=[](与 neighbors 端点一致,不报错)。
+
+    v0.15.26 · 可见性:与被替代的旧链路一致,邻帧逐 task 复核 batch 可见性 / 分派状态
+    (`_visible_task_ids`)。对调用者不可见的邻帧(如分派给别人 / 状态非可见的 batch)
+    仍返回 frame 占位但 `annotations=[]`,不外泄他人 batch 的框几何。
     """
     from app.services.scene import (
         SceneFrameIndexInconsistent,
@@ -697,8 +750,20 @@ async def get_neighbor_annotations(
             frames=[],
         )
 
+    # v0.15.26 · 逐邻帧复核可见性,不可见的邻帧 task 不取其 annotation(下面 by_task 占位为空)。
+    from app.db.models.project import Project
+
+    project = await db.get(Project, task.project_id)
+    visible_ids = await _visible_task_ids(
+        db, project, current_user, list(frame_by_task.keys())
+    )
+
     svc = AnnotationService(db)
-    anns = await svc.list_by_tasks(list(frame_by_task.keys()), group_id=group_id)
+    anns = (
+        await svc.list_by_tasks(list(visible_ids), group_id=group_id)
+        if visible_ids
+        else []
+    )
 
     by_task: dict[uuid.UUID, list[AnnotationOut]] = {tid: [] for tid in frame_by_task}
     for a in anns:

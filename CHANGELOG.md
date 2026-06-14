@@ -30,6 +30,20 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.26] - 2026-06-15
+
+PR #40 代码评审 follow-up 收口:邻帧标注批量端点的可见性回归 + 3 处前端体验/一致性修正。
+
+### Fixed
+
+- **邻帧标注批量端点补回逐帧可见性过滤**(后端):`GET /tasks/{id}/neighbor-annotations`(v0.15.17 用一次批量请求替代前端逐邻帧 `getAnnotations`)此前只校验中心 task 可见性,邻帧内容按 scene 反查直接下发——annotator 凭中心 task 可见即可拿到分派给别人 / 状态不可见 batch 的邻帧框几何。新增 `_visible_task_ids`(`_assert_task_visible` 的批量非抛错版)逐邻帧复核 batch 可见性 / 分派状态,不可见邻帧返回 frame 占位但 `annotations=[]`,与被替代的旧逐 task 链路保持同一可见边界。+ 跨 batch 用例。
+- **相机图种框误点判定改用对角线距离**(前端):`CameraProjectionView` 原 `|dx|<5 || |dy|<5` 会吃掉细长矩形(行人 / 杆子 / 路灯侧影);改为 `hypot(dx,dy) < MIN_SEED_DRAG_PX`,与 `ThreeDWorkbench` 的 `DRAG_CLICK_TOL` 同口径。
+- **「插值填充」菜单文案与双向行为对齐**(前端):右键菜单原写「向后插值填充」,但 `FramePicker` 不强制目标帧大于当前帧、后端 `interpolate_range` 也接受双向;菜单改为「插值填充到指定帧…」,与对话框标题一致,不再误导方向。
+
+### Removed
+
+- 删除已无生产引用的 `CrossFrameOverlayToggle` 组件(+ module.css + 单测):本轮删掉 `CrossFrameInterpolateBar` 后该组件的唯一调用点(`ThreeDWorkbench` 工具栏)已移除,邻帧叠加开关现统一走 `WorkbenchSettingsDrawer`,留着只剩同名单测的死组件易误导。
+
 ## [0.15.25] - 2026-06-15
 
 主题偏好持久化到服务端。深色 / 浅色 / 跟随系统主题原先只存浏览器 localStorage(仅本机),升级到用户服务端偏好(`preferences.ui.theme`)后,换设备 / 换浏览器登录同一账号即保持。复用 v0.15.3 偏好基建(`/auth/me/preferences` 顶层子树合并),顺手收尾。
