@@ -259,7 +259,9 @@ async def test_neighbor_annotations_filters_cross_batch(
     await db_session.flush()
 
     for t in tasks:
-        await _add_box(db_session, task=t, project=project, user_id=admin.id, group_id=7)
+        await _add_box(
+            db_session, task=t, project=project, user_id=admin.id, group_id=7
+        )
 
     resp = await httpx_client.get(
         f"/api/v1/tasks/{tasks[1].id}/neighbor-annotations?k=1",

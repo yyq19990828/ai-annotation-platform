@@ -710,7 +710,8 @@ async def get_neighbor_annotations(
     task_id: uuid.UUID,
     k: int = Query(1, ge=1, le=20),
     group_id: int | None = Query(
-        None, description="给定则服务端只回该 group(scope=selected);省略回全部(scope=all)"
+        None,
+        description="给定则服务端只回该 group(scope=selected);省略回全部(scope=all)",
     ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
