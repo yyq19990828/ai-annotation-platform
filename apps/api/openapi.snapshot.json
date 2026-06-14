@@ -19094,6 +19094,16 @@
             "title": "Colorizewithcamera",
             "type": "boolean"
           },
+          "neighborPointCull": {
+            "default": "keep",
+            "enum": [
+              "keep",
+              "cull",
+              "align"
+            ],
+            "title": "Neighborpointcull",
+            "type": "string"
+          },
           "neighborPointOverlay": {
             "default": false,
             "title": "Neighborpointoverlay",

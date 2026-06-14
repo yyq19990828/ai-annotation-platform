@@ -254,6 +254,7 @@ async def test_patch_pointcloud_subtree_fields(httpx_client, annotator):
                     "showGrid": False,
                     "neighborPointOverlay": True,
                     "neighborPointOverlayK": 2,
+                    "neighborPointCull": "align",
                 },
                 "common": {
                     "crossFrameOverlayEnabled": True,
@@ -277,6 +278,7 @@ async def test_patch_pointcloud_subtree_fields(httpx_client, annotator):
     assert wb["pointcloud"]["showGrid"] is False
     assert wb["pointcloud"]["neighborPointOverlay"] is True
     assert wb["pointcloud"]["neighborPointOverlayK"] == 2
+    assert wb["pointcloud"]["neighborPointCull"] == "align"
     # 未提交字段保持默认值（默认值 = 现状红线）
     assert wb["pointcloud"]["showAxisGizmo"] is True
     assert wb["pointcloud"]["cameraDamping"] == 0.1
@@ -313,6 +315,7 @@ async def test_patch_pointcloud_range_and_enum_violations_422(httpx_client, anno
         {"pointcloud": {"cameraDamping": 0.01}},  # < 0.05
         {"pointcloud": {"pointMaskSelectMode": "circle"}},  # 非法枚举
         {"pointcloud": {"neighborPointOverlayK": 4}},  # 点云最多前后 3 帧
+        {"pointcloud": {"neighborPointCull": "ghost"}},  # 只允许 keep/cull/align
         {"common": {"crossFrameOverlayK": 2}},  # 档位只允许 0/1/3/5/7
         {"common": {"performanceTier": "max"}},  # 只允许 light/standard/aggressive
     ):

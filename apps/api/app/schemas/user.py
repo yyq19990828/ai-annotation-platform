@@ -164,6 +164,8 @@ class WorkbenchPointcloudPreferences(BaseModel):
     neighborPointOverlay: bool = False
     # v0.15.19 · 邻帧点云叠加帧数,独立于邻帧框叠加;点云较重,限制为 1-3。
     neighborPointOverlayK: Literal[1, 2, 3] = 1
+    # v0.15.22/v0.15.23 · 邻帧点云动态目标处理:保留拖影 / 剔除 / 逐目标对齐。
+    neighborPointCull: Literal["keep", "cull", "align"] = "keep"
 
 
 class WorkbenchPreferences(BaseModel):
