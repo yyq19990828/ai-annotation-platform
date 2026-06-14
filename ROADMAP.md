@@ -14,6 +14,7 @@
 
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
+- **[点云 + 图像联合标注（2026-06-14）](./ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)**：3D 旗舰独立 epic。读方向(3D 框投影到相机图)已落 v0.13.4；写方向(相机图 2D 框种 3D 框 frustum fit → 投影手柄微调 → 多相机一致性)Phase 1-3 待开工，首版计划 v0.15.24。配套 §C.8 拖影消除两版本(v0.15.22 剔除 / v0.15.23 逐目标补偿)构成「3D 前线深化」近期切片。
 - **[视频工作台总路线图（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：视频专项独立 epic。进度：Phase 1-4 主体已落（帧采样 / 轨迹工具 2.1–2.8 / `sam2_video` backend + 能力协商 / 视频导出 + 逐帧 YOLO），Phase 5-6 待开工（sam3_video 待续）。衍生 epic [ML Backend 能力协商 + AI 预标注模态化重设计](ROADMAP/[archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 三阶段已落地归档。
   - **延后项**：**2.9 多几何 track（polygon / polyline / mask）**（P1，体量大）——扩 `video_track.geometry.kind`，按周长/长度参数化插值；mask track 依赖 canvas/bitmap，DAVIS mask 导出（Phase 4.5）依赖此项。
 
@@ -44,9 +45,9 @@
 
 ### 项目模块
 - **3D / 视频多模态工作台**（v0.10.17 项目"类型"已收敛到「image / video / lidar 数据载体 + 工具集多选」，详见 [ADR-0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md)）:
-  - `lidar` 在 Workbench StageHost 仍是 3D placeholder，Dashboard 入口未开放，`tool_unit=lidar_box_3d` 留位置灰；接入真实 3D 前不要复用图片 / 视频 geometry。
+  - **lidar 3D 点云工作台已落地**（v0.13.2–v0.15.21，原 P0「`lidar_box_3d` 工具实现」已完成）：真实 Three.js `PointCloudScene` + `lidar_box_3d` 7-DoF 框标注 + 后端 `point-cloud/manifest` + KITTI/nuScenes 导出 + ego pose 跨帧插值/批量 propagate + 邻帧框/点云叠加 + PSR 面板 + 3D 右键菜单/帧选择器。`lidar` 数据类型入口已开放（`toolUnits.ts` `available:true`），仅 `PROJECT_DATA_TYPES` 的「本版占位」文案待改。剩余优化见 §C.8（拖影彻底消除）与下方 3D 延伸项。
   - `video-mm` / `mm` 多模态工作台未实现；视频侧能力详见 [视频工作台总 epic](ROADMAP/2026-05-21-video-workbench-roadmap.md)。
-  - **`lidar_box_3d` 工具实现**（**P0**，体量大）：依赖 3D viewer + 后端 frame service 视点处理。独立 epic，与长期 L3 跨模态挂钩。
+  - **3D 延伸项**：① **点云 + 图像联合标注（2D⇄3D 互标）** → 抽为独立 epic [`ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md`](ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)：读方向(3D 框投影到相机图)已于 v0.13.4 完成，写方向(相机图画框种 3D 框 / 投影手柄微调)Phase 1-3 待开工，首版 v0.15.24；② 多 lidar 融合标注（按反馈触发）；③ `PROJECT_DATA_TYPES` lidar hint 文案去「占位」（顺手）。
   - **跨 tool_unit 类别软关联 (`alias_to`)**（**P3**）：强隔离意味同名颜色 / alias 跨 unit 要重复输入。设计走 `ToolClassEntry.alias_to` 链（可选叠加，不破坏 ADR-0026 强隔离底线）。触发：客户反馈"想共享类别名字"。
   - **rename_class 跨 unit 重命名 UX**（**P3**）：`useRenameClass` 已带 `tool_unit_id` 参数，但 ClassesSection 仅传 active unit；"同时在所有 unit 内重命名"需扩 UI（批量勾选 unit）。触发：客户反馈"重命名要跑 N 次"。
 - **项目模板开放项**（按客户反馈触发）：
@@ -74,7 +75,7 @@
 
 ### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
-- **个人偏好**：语言 / 主题 / 时区 / 通知偏好均无（依赖 i18n / 主题基础设施先建立）。
+- **个人偏好**（部分实现）：通知偏好（v0.7.0，`NotificationPreference` 表 + SettingsPage 分区）与标注工作台偏好（v0.15.3 四分树：通用/图片/视频/点云/布局 50+ 字段 + 设置抽屉）均已落地；**仍缺**：主题（当前 `useTheme` 仅 localStorage，未服务端持久化）、语言（依赖 i18n 框架，见 §B）、时区。
 
 ### TopBar / Dashboard 控件
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast；Organization 表已存在但前端无切换 UI。
@@ -95,10 +96,10 @@
 - **2FA / TOTP**：super_admin 必选、其它角色可选。
 
 ### 治理 / 合规
-- **Webhook 集成**：关键审计事件（角色变更、项目删除、bootstrap_admin）外发到运维群组（通用 Webhook，对接企业微信 / 钉钉 / 飞书）。
+- **Webhook 集成**：关键审计事件（角色变更、项目删除、bootstrap_admin）外发到运维群组（通用 Webhook，对接企业微信 / 钉钉 / 飞书）。`event_envelope.py` 的信封 schema + 事件名 Literal 已占位（v0.10.16），**仅差 publisher / outbox / delivery 实现**。
 
 ### 可观测性
-- **Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest**：v0.6.9 闭环 + 通知已落，剩 LLM SDK + SMTP 链路；`bug_reports` 加 `cluster_id` / `llm_distance`；与通知偏好（按 type 静音）协同。
+- **Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest**：v0.6.9 闭环 + 通知已落，SMTP 配置框架已就位（`config.py` + Alertmanager 邮件投递）；剩 LLM 聚类 + `bug_reports` 加 `cluster_id` / `llm_distance` 字段 + 邮件 digest 工作流；与通知偏好（按 type 静音）协同。
 
 ### 性能 / 扩展
 暂无
@@ -142,17 +143,16 @@
 
 - **I1 大图 tile**（v0.11.0 独立 epic，**必做**）：>4K 图后端 Celery 切 IIIF / 自定义 tile 金字塔（zoom 0/1/2 ... 每级 512×512 PNG/WebP），元数据 `ImageTilePyramid(image_id, max_level, tile_size, format)`；前端 `useTileSource` hook + LRU 缓存 ImageBitmap；Konva 背景 bg 层改 `<Group>` + 多张 `<Image>` tile；保留 BlurhashLayer 兜底。衡量：8K×8K 图、4x 缩放局部、内存 <300MB、FPS ≥30。后端切片服务可与视频 chunk service 共用基础设施。
 - **I10 Skeleton 进阶**（基础 COCO 关键点已落 v0.10.28）：① 配置器升级为 SVG 拖点 + 连线可视化；② 2 层子标签命名（禁止任意嵌套，见决策底线「Skeleton 嵌套」）；③ keypoint 导出 / 导入 / ML 预测协议（见 §A）。
-- **I12 Object Group UI 细节**（v0.10.19 已落契约 + 快捷键 + Konva 虚线）：剩 BoxList 同 group 折叠卡片 + AttributeForm batch banner 消费 `useAnnotationBulkUpdate` + 导出 COCO 时 group_id 映射 `attributes.__group_id`。
-- **I14 Polygon Crop**（M，纯前端）：新建多边形重叠时提供「裁切重叠区」（布尔差集，基于已依赖的 `polygon-clipping@0.15.7`）。
-- **I18 Konva pin 渲染**（v0.10.19 已落 `annotation_feedbacks` 表 + API + 浮动入口）：剩 `IssueLayer.tsx` Konva 层 + 单击图像建 pin 入口 + ADR-0027 第二段 `v_annotation_feedback_unified` view + 旧三表双写。
-- **I21 用户级快捷键自定义**（M，纯前端）：`User.preferences.keymap` + 冲突校验；SettingsPage 录制框 UI；`?` 弹快捷键参考卡按 keymap 渲染（取代硬编码 KeyboardHintOverlay）。
+- **I14 Polygon Crop**（M，纯前端）：新建多边形重叠时提供「裁切重叠区」（布尔差集，基于已依赖的 `polygon-clipping@0.15.7`；当前 `polygonOps.ts` 仅实现 union，缺 difference）。
+- **I18 续作（仅余视频帧 pin）**：图片 `IssueLayer.tsx` Konva pin 层 + 单击建 pin 入口已落（v0.15.x）；剩**视频帧 pin**（按 `frame_index` 锚定）+ ADR-0027 第三段切单源（legacy-table-retirement）。
+- **I21 用户级快捷键自定义**（M，纯前端；v0.15.3 偏好注册表地基已就位，成本降低）：`User.preferences.keymap` + 冲突校验；SettingsPage 录制框 UI；`?` 弹快捷键参考卡按 keymap 渲染（取代硬编码 KeyboardHintOverlay）。
 
 ### C.8 邻帧点云叠加 · 动态目标拖影彻底消除（v0.15.18 落地后衍生）
 
 > 背景：v0.15.18 邻帧点云叠加用 **ego-only 刚体补偿**——只抵消车自身运动，抵消不了目标自身运动，故静止背景重合加密、**动态目标必然留拖影**。v0.15.18 已补视觉缓解(前/后帧分色 + 时序淡出，让拖影读成"运动方向")。下面是**彻底消除拖影**(让动态目标也对齐加密 / 或干脆不显示)的两条路 + 一条重路：
 
-- **A. box 轨迹逐目标补偿**（**P3**，中等体量）：对落在 tracked box(`group_id` 跨帧链，v0.15.1 已有)内的邻帧点，用**该目标 box 邻帧→当前帧的位姿变换**替代 ego 变换;框外点仍走 ego。动态目标的点也对齐到当前位置一起加密、**无拖影**——等于用 box 轨迹做 lite 版 scene flow。吃平台已有 track 数据;仅对**已标注**目标有效(未标注动态物仍拖影)。触发：用户需要动态目标也加密 / 拖影干扰标注。
-- **B. box 内动态点剔除**（**P3**，轻）：邻帧点落在 tracked box 内的**直接剔除**，只叠静止背景。比 A 简单(只判点-在-框内，不做逐目标变换)，代价是动态目标完全不显示。可作为 A 的开关式简化版先上。
+- **B. box 内动态点剔除**（**P3**，轻）→ **已排期 v0.15.22**，计划 [`docs/plans/2026-06-14-v0.15.22-neighbor-pointcloud-dynamic-cull.md`](docs/plans/2026-06-14-v0.15.22-neighbor-pointcloud-dynamic-cull.md)：邻帧点落在 tracked box 内的**直接剔除**，只叠静止背景。比 A 简单(只判点-在-框内，不做逐目标变换)，代价是动态目标完全不显示。作为 A 的开关式简化版先上。
+- **A. box 轨迹逐目标补偿**（**P3**，中等体量）→ **已排期 v0.15.23**(依赖 B 的 point-in-box 路由)，计划 [`docs/plans/2026-06-14-v0.15.23-neighbor-pointcloud-per-object-compensation.md`](docs/plans/2026-06-14-v0.15.23-neighbor-pointcloud-per-object-compensation.md)：对落在 tracked box(`group_id` 跨帧链，v0.15.1 已有)内的邻帧点，用**该目标 box 邻帧→当前帧的位姿变换**替代 ego 变换;框外点仍走 ego。动态目标的点也对齐到当前位置一起加密、**无拖影**——等于用 box 轨迹做 lite 版 scene flow。吃平台已有 track 数据(v0.15.17 邻帧框已拉);仅对**已标注**目标有效(未标注动态物按 fallback)。
 - **D. 学习式动静分割**（**P3**，重，性价比低）：不依赖标注的动静点分类(需模型 / 几何启发)，能处理未标注动态物，但成本高;非必要不做。
 
 > 共同前置：A/B 需当前帧 + 邻帧的 box_3d 标注(理想是已 propagate/插值的 track)。与 §A `lidar_box_3d` 真实 3D 接入正交,可在点云叠加被真实使用后按反馈触发。
@@ -161,7 +161,7 @@
 
 > **已落地的架构基线，非待办**。单工作台外壳 + Mode 轴 + StageHost + 按类型独立 action hooks 的四层结构（含 `StageKind` / `StageCapabilities` / overlay 边界 / 3D 约束）SoT 见 [`dev/concepts/workbench-shell.md`](docs-site/dev/concepts/workbench-shell.md) 与 [ADR-0017](docs/adr/0017-workbench-shell-mode-and-stage-adapters.md)。
 >
-> 唯一仍 open 的触发条件：真实 lidar / 3D 接入（设计 `LidarStage` / 3D geometry / camera controls，只复用 `StageKind` / `StageCapabilities` / `WorkbenchStageHost` 外围边界）——已在 §A `lidar_box_3d`（P0，客户需求触发）跟踪。
+> 真实 lidar / 3D 接入**已落地**（v0.13.2+，`ThreeDWorkbench` + `PointCloudScene` 复用 `StageKind` / `StageCapabilities` / `WorkbenchStageHost` 边界，未破坏 overlay / 3D 约束）。架构基线无 open 项；具体能力优化见 §C.8（拖影消除）与 §A 3D 延伸项。
 
 ---
 
@@ -172,17 +172,16 @@
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
 | **P0/P1** | 视频工作台总 epic（导入帧采样 / 轨迹工具对齐 CVAT / 视频导出 / 长视频协同 / 质量评估） | 已抽离为独立 epic，前后端 Phase 1-6 详见 [`ROADMAP/2026-05-21-video-workbench-roadmap.md`](ROADMAP/2026-05-21-video-workbench-roadmap.md) | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
-| **P2** | 图片工作台能力扩展剩余（I1 / I10 / I14 / I21） | 大图 tile / Skeleton / Polygon Crop / 快捷键自定义；详见 §C.7（I12/I18 仅余 UI 细节） | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
+| **P2** | 图片工作台能力扩展剩余（I1 / I10 / I14 / I21） | 大图 tile / Skeleton / Polygon Crop / 快捷键自定义；详见 §C.7（I12 Object Group + I18 图片 pin 已落） | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |
-| **P2** | 非视频工作台 lidar 真实 3D | v0.10.17 已把 `tool_unit=lidar_box_3d` 留位置灰; 图片侧形状 region / polyline / rotated_bbox / keypoint 已通过 tool_unit 维度落地(v0.10.17 + v0.10.28), 不再算独立工作台 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | 截图 fixture 实际重跑 | v0.10.18 已落 `page.route` mock 注入式 prepare；maintainer 跑 `playwright test --config=playwright.screenshots.config.ts` 验证 | — |
 | **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
 | **P3** | C.3 SAM 后续延伸: 类别确认 hint | Magic Box 已 v0.10.17 落地; 剩类别确认 hint(画完一框 SAM 跑分类弹建议) | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | 跨 tool_unit 类别软关联 (`alias_to`) | 强隔离默认底线;客户反馈"想共享类别名字"再做。设计走 `ToolClassEntry.alias_to` 链, 不破坏 ADR-0026 决策 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
-| **P3** | I4/I12/I18 epic 续作余 | 剩 ADR-0027 第三段切单源 (legacy-table-retirement) + IssueLayer video frame pin；详见 §C.7 | [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
+| **P3** | I4/I18 epic 续作余（I12 已落 / I18 图片 pin 已落） | 剩 ADR-0027 第三段切单源 (legacy-table-retirement) + IssueLayer **视频帧** pin；详见 §C.7 | [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | 新几何 ML 预测协议按客户 backend 输出补齐 | 平台读路径 (`to_internal_shape`) + 协议文档 + 导入(AAP/YOLO)/导出/测试均已支持 rotated_bbox/polyline/keypoint；等真实客户 backend 产出这些几何时按实际输出对账 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志月度汇总物化视图 | partition + archive + 回源端点已落（v0.10.25）；剩 BI 月度汇总物化视图，等 10M+ 行触发 | [0007](docs/adr/0007-audit-log-partitioning.md) |
