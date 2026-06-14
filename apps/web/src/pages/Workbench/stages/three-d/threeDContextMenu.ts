@@ -1,0 +1,167 @@
+/**
+ * v0.15.20 · 3D 点云工作台画布右键菜单项构建。
+ *
+ * 两套上下文敏感菜单(对标 2D 的 imageStageContextMenu):
+ * - 命中框(buildThreeDBoxContextMenuItems): 针对右键选中的 box_3d。
+ * - 空白(buildThreeDEmptyContextMenuItems): 当前帧整体的帧级操作。
+ *
+ * 通用操作(改类别/锁定/隐藏/复制/粘贴/删除)复用画布内部已有回调,与右栏标注列表
+ * (AIInspectorPanel)同源(同走 is_locked/is_hidden 字段 + 同一 mutation),行为一致。
+ * 延续/批量延续仅在 scene 任务(canPropagate)下出现。
+ */
+import type { DropdownItem } from "@/components/ui/DropdownMenu";
+
+export interface ThreeDBoxContextMenuArgs {
+  readOnly: boolean;
+  locked: boolean;
+  hidden: boolean;
+  hasClipboard: boolean;
+  /** scene 任务才有邻帧,可延续。 */
+  canPropagate: boolean;
+  /** 选中框已建跨帧链(group_id != null)才能插值填充。 */
+  canInterpolate: boolean;
+  onPropagateNext: () => void;
+  onPropagatePrev: () => void;
+  onPropagateToFrame: () => void;
+  onInterpolate: () => void;
+  onChangeClass: () => void;
+  onToggleLock: () => void;
+  onToggleHidden: () => void;
+  onCopy: () => void;
+  onPaste: () => void;
+  onDelete: () => void;
+}
+
+export function buildThreeDBoxContextMenuItems(a: ThreeDBoxContextMenuArgs): DropdownItem[] {
+  // 形变/删除类(改类别 / 隐藏 / 删除)在只读或锁定时禁用,与 2D 一致。
+  const mutationDisabled = a.readOnly || a.locked;
+  const items: DropdownItem[] = [];
+
+  if (a.canPropagate) {
+    items.push(
+      {
+        id: "propagate-next",
+        label: "延续到下一帧",
+        kbd: "Shift+→",
+        disabled: a.readOnly,
+        onSelect: a.onPropagateNext,
+      },
+      {
+        id: "propagate-prev",
+        label: "延续到上一帧",
+        kbd: "Shift+←",
+        disabled: a.readOnly,
+        onSelect: a.onPropagatePrev,
+      },
+      {
+        id: "propagate-to-frame",
+        label: "延续到指定帧…",
+        disabled: a.readOnly,
+        onSelect: a.onPropagateToFrame,
+      },
+      {
+        id: "interpolate",
+        label: "向后插值填充…",
+        disabled: a.readOnly || !a.canInterpolate,
+        onSelect: a.onInterpolate,
+      },
+      { id: "propagate-divider", divider: true, label: "" },
+    );
+  }
+
+  items.push(
+    {
+      id: "class",
+      label: "改类别",
+      icon: "tag",
+      disabled: mutationDisabled,
+      onSelect: a.onChangeClass,
+    },
+    {
+      id: "lock",
+      label: a.locked ? "解锁" : "锁定",
+      icon: a.locked ? "unlock" : "lock",
+      disabled: a.readOnly,
+      onSelect: a.onToggleLock,
+    },
+    {
+      id: "hidden",
+      label: a.hidden ? "显示" : "隐藏",
+      icon: a.hidden ? "eyeOff" : "eye",
+      disabled: mutationDisabled,
+      onSelect: a.onToggleHidden,
+    },
+    {
+      id: "copy",
+      label: "复制",
+      icon: "copy",
+      kbd: "Ctrl+C",
+      onSelect: a.onCopy,
+    },
+    {
+      id: "paste",
+      label: "粘贴",
+      icon: "clipboardPaste",
+      kbd: "Ctrl+V",
+      disabled: a.readOnly || !a.hasClipboard,
+      onSelect: a.onPaste,
+    },
+    { id: "delete-divider", divider: true, label: "" },
+    {
+      id: "delete",
+      label: "删除",
+      icon: "trash",
+      kbd: "Del",
+      disabled: mutationDisabled,
+      onSelect: a.onDelete,
+    },
+  );
+
+  return items;
+}
+
+export interface ThreeDEmptyContextMenuArgs {
+  readOnly: boolean;
+  hasClipboard: boolean;
+  canPropagate: boolean;
+  onPropagateBatchNext: () => void;
+  onPropagateBatchPrev: () => void;
+  onPaste: () => void;
+}
+
+export function buildThreeDEmptyContextMenuItems(a: ThreeDEmptyContextMenuArgs): DropdownItem[] {
+  const items: DropdownItem[] = [];
+
+  if (a.canPropagate) {
+    items.push(
+      {
+        id: "batch-next",
+        label: "批量延续到下一帧",
+        kbd: "Ctrl+Shift+→",
+        disabled: a.readOnly,
+        onSelect: a.onPropagateBatchNext,
+      },
+      {
+        id: "batch-prev",
+        label: "批量延续到上一帧",
+        kbd: "Ctrl+Shift+←",
+        disabled: a.readOnly,
+        onSelect: a.onPropagateBatchPrev,
+      },
+    );
+  }
+
+  if (a.hasClipboard) {
+    if (items.length > 0) items.push({ id: "paste-divider", divider: true, label: "" });
+    items.push({
+      id: "paste",
+      label: "粘贴",
+      icon: "clipboardPaste",
+      kbd: "Ctrl+V",
+      disabled: a.readOnly,
+      onSelect: a.onPaste,
+    });
+  }
+
+  return items;
+}

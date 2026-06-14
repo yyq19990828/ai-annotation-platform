@@ -47,7 +47,11 @@ import {
   type SceneBox,
   type ReferenceBox,
 } from "./PointCloudScene";
-import { CrossFrameInterpolateBar } from "../../components/CrossFrameInterpolateBar";
+import { ContextMenu } from "@/components/ui/ContextMenu";
+import { useCanvasContextMenu } from "../../stage/useCanvasContextMenu";
+import { ClassPickerPopover } from "../../shell/ClassPickerPopover";
+import { buildThreeDBoxContextMenuItems, buildThreeDEmptyContextMenuItems } from "./threeDContextMenu";
+import { FramePicker, type FramePickerMode } from "./FramePicker";
 import CameraProjectionView from "./CameraProjectionView";
 import FloatingCameraPanel from "./FloatingCameraPanel";
 import TriViewPanel from "./TriViewPanel";
@@ -776,6 +780,7 @@ export function ThreeDWorkbench({
       : null;
   // 单框锁定(列表 L 切换)→ 不可编辑(无 gizmo / 面板禁用 / 不可删),但仍可选中查看。
   const selectedLocked = !!selectedAnn?.is_locked;
+  const selectedHidden = !!selectedAnn?.is_hidden;
   // 可编辑 = 任务级非只读 且 该框未锁定。
   const selectedEditable = !readOnly && !selectedLocked;
   const selectedPsrEditable = selectedEditable && !multiBoxSelected;
@@ -1234,6 +1239,15 @@ export function ThreeDWorkbench({
     });
   }, [selectedId, selectedLocked, updateAnnotation]);
 
+  // v0.15.20 · 隐藏 / 显示选中框(与右栏列表同源 is_hidden;仅可见性,渲染侧读 a.is_hidden)。
+  const handleToggleHidden = useCallback(() => {
+    if (!selectedId) return;
+    updateAnnotation.mutate({
+      annotationId: selectedId,
+      payload: { is_hidden: !selectedHidden },
+    });
+  }, [selectedId, selectedHidden, updateAnnotation]);
+
   // 放置:点地面 → 默认尺寸框(落在地面上)→ 持久化 → 选中新框精修;单次放置后退出。
   const handlePlace = useCallback(
     (clientX: number, clientY: number) => {
@@ -1596,6 +1610,76 @@ export function ThreeDWorkbench({
     if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_CLICK_TOL) return;
     onSelectBox(sceneRef.current?.pickBox(e.clientX, e.clientY) ?? null, { shift: e.shiftKey });
   };
+
+  // ── v0.15.20 · 画布右键菜单(命中框/空白分流;右键拖动=相机 pan 则抑制)────────────
+  const contextMenu = useCanvasContextMenu();
+  const [ctxTargetId, setCtxTargetId] = useState<string | null>(null);
+  const [classPickerAnchor, setClassPickerAnchor] = useState<{ left: number; top: number } | null>(null);
+  const [framePicker, setFramePicker] = useState<{ mode: FramePickerMode; anchor: { left: number; top: number } } | null>(null);
+  const closeContextMenu = () => {
+    contextMenu.close();
+    setCtxTargetId(null);
+  };
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    // 右键拖动 = OrbitControls 相机平移, 抑制菜单; 右键点击才弹(与 click 判定同阈值)。
+    const down = pointerDownRef.current;
+    pointerDownRef.current = null;
+    if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_CLICK_TOL) {
+      closeContextMenu();
+      return;
+    }
+    // 放置/框选进行中右键 = 取消这一笔(window 级 cancel 处理), 不弹菜单。
+    if (drawingSelection || isBoxSelecting) {
+      closeContextMenu();
+      return;
+    }
+    const hitId = sceneRef.current?.pickBox(e.clientX, e.clientY) ?? null;
+    setCtxTargetId(hitId);
+    if (hitId && !selectedIdSet.has(hitId)) onSelectBox(hitId);
+    contextMenu.openAt(e.clientX, e.clientY);
+  };
+  const contextMenuItems = useMemo(() => {
+    if (!contextMenu.open) return [];
+    const canPropagate = !!manifest?.scene_id;
+    const hasClipboard = clipboardRef.current != null;
+    if (ctxTargetId) {
+      const ann = (annotations ?? []).find((a) => a.id === ctxTargetId);
+      return buildThreeDBoxContextMenuItems({
+        readOnly,
+        locked: !!ann?.is_locked,
+        hidden: !!ann?.is_hidden,
+        hasClipboard,
+        canPropagate,
+        canInterpolate: ann?.group_id != null,
+        onPropagateNext: () => onCrossFramePropagate("next"),
+        onPropagatePrev: () => onCrossFramePropagate("prev"),
+        onPropagateToFrame: () =>
+          setFramePicker({ mode: "propagate", anchor: { left: contextMenu.x, top: contextMenu.y } }),
+        onInterpolate: () =>
+          setFramePicker({ mode: "interpolate", anchor: { left: contextMenu.x, top: contextMenu.y } }),
+        onChangeClass: () => setClassPickerAnchor({ left: contextMenu.x, top: contextMenu.y }),
+        onToggleLock: handleToggleLock,
+        onToggleHidden: handleToggleHidden,
+        onCopy: copySelected,
+        onPaste: pasteClipboard,
+        onDelete: handleDeleteSelected,
+      });
+    }
+    return buildThreeDEmptyContextMenuItems({
+      readOnly,
+      hasClipboard,
+      canPropagate,
+      onPropagateBatchNext: () => onCrossFramePropagateBatch("next"),
+      onPropagateBatchPrev: () => onCrossFramePropagateBatch("prev"),
+      onPaste: pasteClipboard,
+    });
+  }, [
+    contextMenu.open, contextMenu.x, contextMenu.y, ctxTargetId,
+    manifest?.scene_id, annotations, readOnly,
+    onCrossFramePropagate, onCrossFramePropagateBatch,
+    handleToggleLock, handleToggleHidden, copySelected, pasteClipboard, handleDeleteSelected,
+  ]);
 
   const handleResetView = useCallback(() => {
     sceneRef.current?.resetView();
@@ -2015,6 +2099,7 @@ export function ThreeDWorkbench({
           onMouseMove={handleViewportMouseMove}
           onClick={handleViewportClick}
           onDoubleClick={handleViewportDoubleClick}
+          onContextMenu={handleContextMenu}
         />
 
         {/* v0.13.9 · 框选预览矩形(地面 footprint), 仅拖拽期出现, 不拦事件。 */}
@@ -2103,21 +2188,49 @@ export function ThreeDWorkbench({
               </select>
             </label>
           )}
-          {manifest?.scene_id && taskId && (
-            <CrossFrameInterpolateBar
-              taskId={taskId}
-              frameIndex={manifest.frame_index ?? null}
-              sceneTotalFrames={manifest.scene_total_frames ?? null}
-              selectedGroupId={selectedGroupId}
-              selectedIsBox3d={!!selectedBox}
-              readOnly={readOnly}
-              onPropagateBatch={onCrossFramePropagateBatch}
-              onPropagateToTask={onCrossFramePropagateToTask}
-              onInterpolate={onCrossFrameInterpolate}
-              pushToast={pushToast}
-            />
-          )}
         </div>
+
+        <ContextMenu
+          open={contextMenu.open && contextMenuItems.length > 0}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenuItems}
+          onClose={closeContextMenu}
+        />
+        {classPickerAnchor && (
+          <ClassPickerPopover
+            position="fixed"
+            anchor={classPickerAnchor}
+            classes={boxClasses}
+            recent={[]}
+            defaultClass={selectedClass ?? boxClasses[0] ?? ""}
+            title="改类别"
+            onPick={(cls) => {
+              handleChangeClass(cls);
+              setClassPickerAnchor(null);
+            }}
+            onCancel={() => setClassPickerAnchor(null)}
+          />
+        )}
+        {framePicker && taskId && (
+          <FramePicker
+            taskId={taskId}
+            frameIndex={manifest?.frame_index ?? null}
+            sceneTotalFrames={manifest?.scene_total_frames ?? null}
+            mode={framePicker.mode}
+            anchor={framePicker.anchor}
+            pushToast={pushToast}
+            onConfirm={({ targetTaskId, targetFrame }) => {
+              if (framePicker.mode === "propagate") {
+                onCrossFramePropagateToTask(targetTaskId, targetFrame);
+              } else if (selectedGroupId != null) {
+                onCrossFrameInterpolate(selectedGroupId, targetTaskId);
+              }
+              setFramePicker(null);
+            }}
+            onCancel={() => setFramePicker(null)}
+          />
+        )}
 
         {conventionMismatches.length > 0 && (
           <div className={styles.mismatchBanner}>

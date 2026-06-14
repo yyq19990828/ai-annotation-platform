@@ -1,0 +1,211 @@
+/**
+ * v0.15.20 · 跨帧延续 / 区间插值的「目标帧」选择器。
+ *
+ * 替代 CrossFrameInterpolateBar 的裸数字输入:
+ * - Layer 1:回显当前 / 目标帧在 scene 内的位置 + 语义步进(+5 / +10 / 到末帧)+ 数字兜底;
+ *   目标 task 经 neighbors(k=20) 反查,超 ±20 帧给出不可达提示。
+ * - Layer 2:相机图缩略图条(±5 邻帧),点缩略图即设目标帧;无相机图的帧降级为占位,
+ *   整条无图时不渲染(回落纯 Layer 1)。
+ * 由 3D 画布右键菜单的「延续到指定帧 / 向后插值填充」触发,fixed 定位在鼠标点。
+ */
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useFrameNeighbors } from "@/hooks/useFrameNeighbors";
+import { Button } from "@/components/ui/Button";
+import { useNeighborFrameThumbs } from "./useNeighborFrameThumbs";
+import styles from "./FramePicker.module.css";
+
+export type FramePickerMode = "propagate" | "interpolate";
+
+interface FramePickerProps {
+  taskId: string;
+  frameIndex: number | null;
+  sceneTotalFrames: number | null;
+  mode: FramePickerMode;
+  anchor: { left: number; top: number };
+  onConfirm: (resolved: { targetTaskId: string; targetFrame: number }) => void;
+  onCancel: () => void;
+  pushToast: (t: { msg: string; kind?: "success" | "warning" | "error" | "" }) => void;
+}
+
+export function FramePicker({
+  taskId,
+  frameIndex,
+  sceneTotalFrames,
+  mode,
+  anchor,
+  onConfirm,
+  onCancel,
+  pushToast,
+}: FramePickerProps) {
+  const ref = useRef<HTMLDivElement>(null);
+  // 展开即拉 k=20 邻帧(目标帧 → task 反查表)。
+  const { data: neighbors } = useFrameNeighbors(taskId, 20);
+  const taskByFrame = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const n of [...(neighbors?.prev ?? []), ...(neighbors?.next ?? [])]) m.set(n.frame_index, n.task_id);
+    return m;
+  }, [neighbors]);
+
+  // Layer 2 · 相机图缩略图条(±5 邻帧;无相机图时整条不渲染,回落纯 Layer 1)。
+  const thumbs = useNeighborFrameThumbs(taskId, frameIndex, 5, true);
+
+  const maxFrame = sceneTotalFrames != null ? sceneTotalFrames - 1 : null;
+  const suggested = frameIndex != null ? Math.min(frameIndex + 5, maxFrame ?? frameIndex + 5) : 0;
+  const [raw, setRaw] = useState(String(suggested));
+  const target = raw === "" ? null : Number(raw);
+  const targetValid = target != null && Number.isInteger(target);
+  const reachable = targetValid && target !== frameIndex && taskByFrame.has(target);
+
+  // fixed 定位 + 视口边界回拉(参考 ClassPickerPopover 的 fixed clamp)。
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const m = 8;
+    const r = el.getBoundingClientRect();
+    let l = anchor.left;
+    let t = anchor.top;
+    if (l + r.width > window.innerWidth - m) l = window.innerWidth - m - r.width;
+    if (l < m) l = m;
+    if (t + r.height > window.innerHeight - m) t = Math.max(m, window.innerHeight - m - r.height);
+    if (t < m) t = m;
+    el.style.setProperty("--frame-picker-left", `${l}px`);
+    el.style.setProperty("--frame-picker-top", `${t}px`);
+  }, [anchor]);
+
+  // Esc / 点击外部取消(延迟绑定 mousedown,避免捕获到打开这一次的点击)。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    const t = setTimeout(() => document.addEventListener("mousedown", onDown), 0);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      clearTimeout(t);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [onCancel]);
+
+  const stepTo = (frame: number) => {
+    if (maxFrame == null) return;
+    setRaw(String(Math.min(maxFrame, Math.max(0, frame))));
+  };
+
+  const confirm = () => {
+    if (!targetValid) {
+      pushToast({ msg: "请填写目标帧号", kind: "" });
+      return;
+    }
+    if (target === frameIndex) {
+      pushToast({ msg: "目标帧不能是当前帧", kind: "" });
+      return;
+    }
+    if (maxFrame != null && (target < 0 || target > maxFrame)) {
+      pushToast({ msg: `目标帧超出范围 (0–${maxFrame})`, kind: "" });
+      return;
+    }
+    const tid = taskByFrame.get(target);
+    if (!tid) {
+      pushToast({ msg: "目标帧超出 ±20 帧反查范围, 请先跳到更近的帧分段操作", kind: "warning" });
+      return;
+    }
+    onConfirm({ targetTaskId: tid, targetFrame: target });
+  };
+
+  return (
+    <div
+      ref={ref}
+      className={styles.popover}
+      role="dialog"
+      aria-label={mode === "propagate" ? "延续到指定帧" : "插值填充到指定帧"}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <div className={styles.title}>{mode === "propagate" ? "延续到指定帧" : "插值填充到指定帧"}</div>
+      <div className={styles.hint}>当前 第 {frameIndex ?? "?"} / {sceneTotalFrames ?? "?"} 帧</div>
+      {thumbs.some((t) => t.imageUrl) && (
+        <div className={styles.filmstrip}>
+          {thumbs.map((t) => (
+            <button
+              key={t.frameIndex}
+              type="button"
+              className={[
+                styles.thumb,
+                t.frameIndex === target ? styles.thumbActive : "",
+                t.isCurrent ? styles.thumbCurrent : "",
+              ].filter(Boolean).join(" ")}
+              title={`第 ${t.frameIndex} 帧${t.isCurrent ? " · 当前" : ""}`}
+              onClick={() => setRaw(String(t.frameIndex))}
+            >
+              {t.imageUrl ? (
+                <img src={t.imageUrl} alt={`第 ${t.frameIndex} 帧`} className={styles.thumbImg} loading="lazy" />
+              ) : (
+                <span className={styles.thumbPlaceholder}>—</span>
+              )}
+              <span className={styles.thumbNum}>{t.frameIndex}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className={styles.steps}>
+        <button
+          type="button"
+          className={styles.chip}
+          disabled={frameIndex == null}
+          onClick={() => frameIndex != null && stepTo(frameIndex + 5)}
+        >
+          +5
+        </button>
+        <button
+          type="button"
+          className={styles.chip}
+          disabled={frameIndex == null}
+          onClick={() => frameIndex != null && stepTo(frameIndex + 10)}
+        >
+          +10
+        </button>
+        <button
+          type="button"
+          className={styles.chip}
+          disabled={maxFrame == null}
+          onClick={() => maxFrame != null && stepTo(maxFrame)}
+        >
+          到末帧
+        </button>
+      </div>
+      <label className={styles.label}>
+        目标帧
+        <input
+          type="number"
+          className={styles.input}
+          min={0}
+          max={maxFrame ?? undefined}
+          value={raw}
+          onChange={(e) => setRaw(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") confirm();
+          }}
+        />
+      </label>
+      <div className={styles.feedback}>
+        {!targetValid ? (
+          <span className={styles.hint}>输入或步进选择目标帧</span>
+        ) : reachable ? (
+          <span className={styles.ok}>→ 第 {target} / {sceneTotalFrames} 帧 · 可达</span>
+        ) : (
+          <span className={styles.warn}>第 {target} 帧不可达(同帧或超 ±20 反查范围)</span>
+        )}
+      </div>
+      <div className={styles.actions}>
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          取消
+        </Button>
+        <Button variant="primary" size="sm" disabled={!reachable} onClick={confirm}>
+          {mode === "propagate" ? "延续到此帧" : "插值填充"}
+        </Button>
+      </div>
+    </div>
+  );
+}
