@@ -397,6 +397,7 @@
   top: 12px;
   right: 12px;
   width: 210px;
+  transform: translate(var(--psr-dx, 0px), var(--psr-dy, 0px));
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -407,6 +408,60 @@
   box-shadow: var(--shadow-sm);
   font-size: 12px;
   color: var(--color-fg);
+}
+
+/* v0.15.21 · 头部 = 拖柄(类别 + 尺寸摘要 + 锁 + 删 + 展开钮);渐进展开的常驻部分。 */
+.editHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: grab;
+}
+
+.editPanelDragging {
+  user-select: none;
+}
+
+.editPanelDragging .editHeader {
+  cursor: grabbing;
+}
+
+/* 拖动提示小图标(纯装饰,不参与交互)。 */
+.dragHint {
+  flex: 0 0 auto;
+  color: var(--color-fg-muted);
+}
+
+/* 头部图标按钮(删除 / 展开收起)。 */
+.iconBtn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-fg-muted);
+  cursor: pointer;
+}
+
+.iconBtn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* 尺寸摘要(折叠态也常驻可见)。 */
+.editSummary {
+  font-size: 11px;
+  color: var(--color-fg-muted);
+}
+
+/* 展开后的主体:贴合 / 三组数值 / 属性。 */
+.editBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .editTitle {

@@ -48,6 +48,7 @@ import {
   type ReferenceBox,
 } from "./PointCloudScene";
 import { ContextMenu } from "@/components/ui/ContextMenu";
+import { Icon } from "@/components/ui/Icon";
 import { useCanvasContextMenu } from "../../stage/useCanvasContextMenu";
 import { ClassPickerPopover } from "../../shell/ClassPickerPopover";
 import { buildThreeDBoxContextMenuItems, buildThreeDEmptyContextMenuItems } from "./threeDContextMenu";
@@ -96,6 +97,9 @@ import {
   finishPointcloudLegacyMigration,
   isCrossFrameOverlayK,
   isPointMaskSelectMode,
+  readPsrPanelUiState,
+  writePsrPanelUiState,
+  type PsrPanelUiState,
 } from "./pointcloudPreferenceStorage";
 import { resolveWorkbenchPerformanceTier } from "../../state/performanceTier";
 import styles from "./ThreeDWorkbench.module.css";
@@ -1616,6 +1620,60 @@ export function ThreeDWorkbench({
   const [ctxTargetId, setCtxTargetId] = useState<string | null>(null);
   const [classPickerAnchor, setClassPickerAnchor] = useState<{ left: number; top: number } | null>(null);
   const [framePicker, setFramePicker] = useState<{ mode: FramePickerMode; anchor: { left: number; top: number } } | null>(null);
+
+  // v0.15.21 · 选中框 PSR 面板:渐进展开 + 整体拖动,展开态与位置偏移按用户记忆(localStorage)。
+  const [psrPanel, setPsrPanel] = useState<PsrPanelUiState>({ expanded: false, dx: 0, dy: 0 });
+  const psrPanelRef = useRef(psrPanel);
+  psrPanelRef.current = psrPanel;
+  useEffect(() => {
+    if (!userId || typeof window === "undefined") return;
+    setPsrPanel(readPsrPanelUiState(userId, window.localStorage));
+  }, [userId]);
+  const persistPsrPanel = useCallback(
+    (next: PsrPanelUiState) => {
+      if (userId && typeof window !== "undefined") writePsrPanelUiState(userId, next, window.localStorage);
+    },
+    [userId],
+  );
+  const togglePsrExpanded = useCallback(() => {
+    setPsrPanel((p) => {
+      const next = { ...p, expanded: !p.expanded };
+      persistPsrPanel(next);
+      return next;
+    });
+  }, [persistPsrPanel]);
+  const psrDragRef = useRef<{ sx: number; sy: number; dx0: number; dy0: number } | null>(null);
+  const [psrDragging, setPsrDragging] = useState(false);
+  const onPsrHeaderPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
+      // 拖柄落在交互控件(类别下拉 / 锁 / 删 / 展开钮)上时不起拖,保持可点。
+      if ((e.target as HTMLElement).closest("button, select, input, a")) return;
+      psrDragRef.current = { sx: e.clientX, sy: e.clientY, dx0: psrPanelRef.current.dx, dy0: psrPanelRef.current.dy };
+      setPsrDragging(true);
+    },
+    [],
+  );
+  useEffect(() => {
+    if (!psrDragging) return;
+    const onMove = (e: PointerEvent) => {
+      const d = psrDragRef.current;
+      if (!d) return;
+      setPsrPanel((p) => ({ ...p, dx: d.dx0 + e.clientX - d.sx, dy: d.dy0 + e.clientY - d.sy }));
+    };
+    const onUp = () => {
+      psrDragRef.current = null;
+      setPsrDragging(false);
+      persistPsrPanel(psrPanelRef.current);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [psrDragging, persistPsrPanel]);
+
   const closeContextMenu = () => {
     contextMenu.close();
     setCtxTargetId(null);
@@ -2287,138 +2345,173 @@ export function ThreeDWorkbench({
           )}
         </div>
 
-        {/* 选中框 PSR 数值编辑面板(右上) */}
+        {/* 选中框 PSR 数值编辑面板(右上;头部可拖动 + 渐进展开) */}
         {selectedBox && form && (
-          <div className={styles.editPanel}>
-            <div className={styles.editTitle}>
-              {boxClasses.length > 0 ? (
-                <select
-                  className={styles.classSelect}
-                  value={selectedClass ?? ""}
-                  aria-label="框类别"
-                  disabled={!selectedEditable}
-                  onChange={(e) => handleChangeClass(e.target.value)}
-                >
-                  {/* 当前类别若不在配置集合内(历史数据)仍可见,不丢选中项 */}
-                  {selectedClass && !boxClasses.includes(selectedClass) && (
-                    <option value={selectedClass}>{selectedClass}</option>
-                  )}
-                  {boxClasses.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span>3D 框 · {selectedClass ?? ""}</span>
-              )}
-              {!readOnly && (
+          <div
+            className={[styles.editPanel, psrDragging ? styles.editPanelDragging : ""]
+              .filter(Boolean)
+              .join(" ")}
+            // eslint-disable-next-line no-restricted-syntax -- 面板拖动偏移是用户拖拽态, 经 CSS 变量注入。
+            style={
+              { "--psr-dx": `${psrPanel.dx}px`, "--psr-dy": `${psrPanel.dy}px` } as CSSProperties & {
+                "--psr-dx": string;
+                "--psr-dy": string;
+              }
+            }
+          >
+            <div className={styles.editHeader} onPointerDown={onPsrHeaderPointerDown}>
+              <div className={styles.editTitle}>
+                <Icon name="move" size={12} className={styles.dragHint} />
+                {boxClasses.length > 0 ? (
+                  <select
+                    className={styles.classSelect}
+                    value={selectedClass ?? ""}
+                    aria-label="框类别"
+                    disabled={!selectedEditable}
+                    onChange={(e) => handleChangeClass(e.target.value)}
+                  >
+                    {/* 当前类别若不在配置集合内(历史数据)仍可见,不丢选中项 */}
+                    {selectedClass && !boxClasses.includes(selectedClass) && (
+                      <option value={selectedClass}>{selectedClass}</option>
+                    )}
+                    {boxClasses.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span>3D 框 · {selectedClass ?? ""}</span>
+                )}
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className={selectedLocked ? `${styles.lockBtn} ${styles.lockBtnOn}` : styles.lockBtn}
+                    aria-pressed={selectedLocked}
+                    onClick={handleToggleLock}
+                  >
+                    {selectedLocked ? "已锁定" : "锁定"}
+                  </button>
+                )}
+                {!readOnly && selectedBoxIds.length > 0 && (
+                  <button
+                    type="button"
+                    className={styles.iconBtn}
+                    onClick={handleDeleteSelected}
+                    aria-label={multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"}
+                    title={multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"}
+                  >
+                    <Icon name="trash" size={14} />
+                  </button>
+                )}
                 <button
                   type="button"
-                  className={selectedLocked ? `${styles.lockBtn} ${styles.lockBtnOn}` : styles.lockBtn}
-                  aria-pressed={selectedLocked}
-                  onClick={handleToggleLock}
+                  className={styles.iconBtn}
+                  onClick={togglePsrExpanded}
+                  aria-expanded={psrPanel.expanded}
+                  aria-label={psrPanel.expanded ? "收起详情" : "展开详情"}
+                  title={psrPanel.expanded ? "收起" : "展开"}
                 >
-                  {selectedLocked ? "已锁定" : "锁定"}
-                </button>
-              )}
-            </div>
-            <div className={styles.editGroupLabel}>
-              {readOnly
-                ? "只读 · 锁定 / 审阅态"
-                : multiBoxSelected
-                  ? `${selectedBoxIds.length} 个框已选中 · 可批量改类 / 删除`
-                  : selectedLocked
-                  ? "已锁定 · 点「已锁定」解锁后可编辑"
-                  : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
-            </div>
-            {/* v0.13.8 · 选中框自动贴合:Q 默认连击(收尺寸+贴地);
-                Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发。 */}
-            {selectedPsrEditable && (
-              <div className={styles.fitGroup} role="group" aria-label="自动贴合">
-                <button
-                  type="button"
-                  className={styles.btn}
-                  onClick={handleFitDefault}
-                  title="贴合 (Q):收尺寸 + 贴地"
-                >
-                  贴合
-                </button>
-                <button
-                  type="button"
-                  className={styles.btn}
-                  onClick={handleFitSize}
-                  title="只收尺寸 (Shift+Q)"
-                >
-                  收尺寸
-                </button>
-                <button
-                  type="button"
-                  className={styles.btn}
-                  onClick={handleFitBottom}
-                  title="只贴地 (Alt+Q)"
-                >
-                  贴地
-                </button>
-                <button
-                  type="button"
-                  className={styles.btn}
-                  onClick={handleFitYaw}
-                  title="贴朝向(实验):点云稀疏时主轴可能反转 180°"
-                >
-                  朝向⚗
+                  <Icon name={psrPanel.expanded ? "chevUp" : "chevDown"} size={14} />
                 </button>
               </div>
-            )}
-            {PSR_GROUPS.map((g) => (
-              <div key={g.label}>
-                <div className={styles.editGroupLabelRow}>
-                  <span className={styles.editGroupLabel}>{g.label}</span>
-                  {g.reset && selectedPsrEditable && (
+              <div className={styles.editSummary}>
+                {multiBoxSelected
+                  ? `${selectedBoxIds.length} 个框已选中`
+                  : `尺寸 ${selectedBox.size.map((n) => n.toFixed(2)).join(" × ")} m`}
+              </div>
+            </div>
+            {psrPanel.expanded && (
+              <div className={styles.editBody}>
+                <div className={styles.editGroupLabel}>
+                  {readOnly
+                    ? "只读 · 锁定 / 审阅态"
+                    : multiBoxSelected
+                      ? `${selectedBoxIds.length} 个框已选中 · 可批量改类 / 删除`
+                      : selectedLocked
+                      ? "已锁定 · 点「已锁定」解锁后可编辑"
+                      : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
+                </div>
+                {/* v0.13.8 · 选中框自动贴合:Q 默认连击(收尺寸+贴地);
+                    Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发。 */}
+                {selectedPsrEditable && (
+                  <div className={styles.fitGroup} role="group" aria-label="自动贴合">
                     <button
                       type="button"
-                      className={styles.resetBtn}
-                      onClick={handleResetRotation}
-                      title="把偏航/俯仰/翻滚全部归零"
+                      className={styles.btn}
+                      onClick={handleFitDefault}
+                      title="贴合 (Q):收尺寸 + 贴地"
                     >
-                      归零
+                      贴合
                     </button>
-                  )}
-                </div>
-                <div className={styles.editRow}>
-                  {g.keys.map((k) => (
-                    <input
-                      key={k}
-                      type="number"
-                      step={g.step}
-                      min={g.min}
-                      value={form[k]}
-                      aria-label={k}
-                      disabled={!selectedPsrEditable}
-                      onChange={(e) => handleField(k, e.target.value)}
-                      onBlur={() => handleFieldBlur(k)}
-                    />
-                  ))}
-                </div>
+                    <button
+                      type="button"
+                      className={styles.btn}
+                      onClick={handleFitSize}
+                      title="只收尺寸 (Shift+Q)"
+                    >
+                      收尺寸
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.btn}
+                      onClick={handleFitBottom}
+                      title="只贴地 (Alt+Q)"
+                    >
+                      贴地
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.btn}
+                      onClick={handleFitYaw}
+                      title="贴朝向(实验):点云稀疏时主轴可能反转 180°"
+                    >
+                      朝向⚗
+                    </button>
+                  </div>
+                )}
+                {PSR_GROUPS.map((g) => (
+                  <div key={g.label}>
+                    <div className={styles.editGroupLabelRow}>
+                      <span className={styles.editGroupLabel}>{g.label}</span>
+                      {g.reset && selectedPsrEditable && (
+                        <button
+                          type="button"
+                          className={styles.resetBtn}
+                          onClick={handleResetRotation}
+                          title="把偏航/俯仰/翻滚全部归零"
+                        >
+                          归零
+                        </button>
+                      )}
+                    </div>
+                    <div className={styles.editRow}>
+                      {g.keys.map((k) => (
+                        <input
+                          key={k}
+                          type="number"
+                          step={g.step}
+                          min={g.min}
+                          value={form[k]}
+                          aria-label={k}
+                          disabled={!selectedPsrEditable}
+                          onChange={(e) => handleField(k, e.target.value)}
+                          onBlur={() => handleFieldBlur(k)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {!multiBoxSelected && (
+                  <AttributeForm
+                    schema={boxAttributeSchema}
+                    className={selectedClass ?? ""}
+                    attributes={selectedAnn?.attributes ?? {}}
+                    readOnly={!selectedEditable}
+                    onChange={handleChangeAttributes}
+                  />
+                )}
               </div>
-            ))}
-            {!multiBoxSelected && (
-              <AttributeForm
-                schema={boxAttributeSchema}
-                className={selectedClass ?? ""}
-                attributes={selectedAnn?.attributes ?? {}}
-                readOnly={!selectedEditable}
-                onChange={handleChangeAttributes}
-              />
-            )}
-            {!readOnly && selectedBoxIds.length > 0 && (
-              <button
-                type="button"
-                className={styles.deleteBtn}
-                onClick={handleDeleteSelected}
-              >
-                {multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"}
-              </button>
             )}
           </div>
         )}

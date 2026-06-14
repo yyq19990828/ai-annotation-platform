@@ -99,3 +99,39 @@ export function writePointcloudStickyToggle(
 ): void {
   storage.setItem(pointcloudStickyKey(userId, name), value ? "1" : "0");
 }
+
+/** v0.15.21 · 选中框 PSR 面板的 UI 记忆:展开态 + 整体拖动偏移(相对默认右上锚点)。 */
+export interface PsrPanelUiState {
+  expanded: boolean;
+  dx: number;
+  dy: number;
+}
+
+const PSR_PANEL_DEFAULT: PsrPanelUiState = { expanded: false, dx: 0, dy: 0 };
+
+function psrPanelKey(userId: string): string {
+  return `workbench.${userId}.pcd.psrPanel`;
+}
+
+export function readPsrPanelUiState(userId: string, storage: StorageLike): PsrPanelUiState {
+  const raw = storage.getItem(psrPanelKey(userId));
+  if (!raw) return { ...PSR_PANEL_DEFAULT };
+  try {
+    const parsed = JSON.parse(raw) as Partial<PsrPanelUiState>;
+    return {
+      expanded: parsed.expanded === true,
+      dx: Number.isFinite(parsed.dx) ? Number(parsed.dx) : 0,
+      dy: Number.isFinite(parsed.dy) ? Number(parsed.dy) : 0,
+    };
+  } catch {
+    return { ...PSR_PANEL_DEFAULT };
+  }
+}
+
+export function writePsrPanelUiState(
+  userId: string,
+  state: PsrPanelUiState,
+  storage: StorageLike,
+): void {
+  storage.setItem(psrPanelKey(userId), JSON.stringify(state));
+}
