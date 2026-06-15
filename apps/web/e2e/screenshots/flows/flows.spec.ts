@@ -12,6 +12,8 @@ import type { SeedData } from "../../fixtures/seed";
 import { runE2eQuickstart } from "./e2e-quickstart";
 import { runAiPreannotate } from "./ai-preannotate";
 import { runReviewReject } from "./review-reject";
+import { runBatchBulkActions } from "./batch-bulk-actions";
+import { runAiPreVariantSelector } from "./ai-pre-variant-selector";
 import { convertToGif, copyAsWebm } from "../_helpers/recorder";
 import path from "path";
 import fs from "fs";
@@ -20,6 +22,7 @@ const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
 const REPO_ROOT = HERE.replace(/\/apps\/web\/e2e\/screenshots\/flows\/?$/, "");
 const FLOWS_OUT = path.join(REPO_ROOT, "apps/web/e2e/screenshots/outputs/flows");
 const DOCS_GIF  = path.join(REPO_ROOT, "docs-site/user-guide/images/getting-started");
+const DOCS_IMAGES = path.join(REPO_ROOT, "docs-site/user-guide/images");
 
 let cached: SeedData | null = null;
 
@@ -47,6 +50,8 @@ test.beforeAll(async ({ request }) => {
 async function finalize(
   page: { video(): { path(): Promise<string | null> } | null },
   gifName: string,
+  // 文档站目标 gif 绝对路径（不填则只产出到 outputs/flows/）
+  docsTarget?: string,
 ) {
   const video = page.video();
   if (!video) {
@@ -62,14 +67,12 @@ async function finalize(
   await copyAsWebm(webmPath, outWebm);
   await convertToGif(webmPath, outGif, { fps: 10, maxWidth: 1280 });
 
-  // e2e-quickstart.gif 同步到文档站
-  if (gifName === "e2e-quickstart") {
-    const docsGif = path.join(DOCS_GIF, "e2e.gif");
+  // 同步 gif 到文档站
+  const docsGif = docsTarget ?? (gifName === "e2e-quickstart" ? path.join(DOCS_GIF, "e2e.gif") : null);
+  if (docsGif && fs.existsSync(outGif)) {
     fs.mkdirSync(path.dirname(docsGif), { recursive: true });
-    if (fs.existsSync(outGif)) {
-      fs.copyFileSync(outGif, docsGif);
-      console.log(`[flows] ✓ 同步 e2e.gif 到文档站：${docsGif}`);
-    }
+    fs.copyFileSync(outGif, docsGif);
+    console.log(`[flows] ✓ 同步 gif 到文档站：${docsGif}`);
   }
 }
 
@@ -93,5 +96,19 @@ test.describe("flow recordings", () => {
     await seed.injectToken(page, cached.reviewer_email);
     await runReviewReject(page, cached);
     await finalize(page, "review-reject");
+  });
+
+  test("batch-bulk-actions — 批次多选批量操作", async ({ page, seed }) => {
+    if (!cached) throw new Error("seed peek 未完成");
+    await seed.injectToken(page, cached.admin_email);
+    await runBatchBulkActions(page);
+    await finalize(page, "batch-bulk-actions", path.join(DOCS_IMAGES, "projects/batch-bulk-actions.gif"));
+  });
+
+  test("ai-pre-variant-selector — 变体两轴联动", async ({ page, seed }) => {
+    if (!cached) throw new Error("seed peek 未完成");
+    await seed.injectToken(page, cached.admin_email);
+    await runAiPreVariantSelector(page);
+    await finalize(page, "ai-pre-variant-selector", path.join(DOCS_IMAGES, "projects/ai-pre-variant-selector.gif"));
   });
 });
