@@ -8,21 +8,18 @@
  * 画布是 Konva canvas，手柄无 DOM 句柄，全程用 page.mouse 坐标操作。
  *
  * 返回 { drawStartMs, drawEndMs }：绘制段的起止时间戳，供 finalize 裁掉开头(隐藏预测)
- * 与结尾(删除清理)，GIF 只保留绘制过程。
+ * 与结尾(落库等待)，GIF 只保留绘制过程。画完的标注由 flows.spec 的 afterAll 经 psql 清理。
  */
 import type { Page } from "@playwright/test";
 import type { SeedData } from "../../fixtures/seed";
-import { hidePredictions, trackTaskId } from "./_canvas";
+import { hidePredictions } from "./_canvas";
 
 export interface DrawWindow {
   drawStartMs: number;
   drawEndMs: number;
-  /** 实际绘制所在的任务 id（供 afterEach 清理；workbench 不一定开 ?task= 指定的任务）。 */
-  taskId: string | null;
 }
 
 export async function runRotatedBbox(page: Page, data: SeedData): Promise<DrawWindow | null> {
-  const getTaskId = trackTaskId(page);
   const task = data.task_ids[0] ? `?task=${data.task_ids[0]}` : "";
   await page.goto(`/projects/${data.project_id}/annotate${task}`);
   await page.waitForLoadState("networkidle");
@@ -68,9 +65,9 @@ export async function runRotatedBbox(page: Page, data: SeedData): Promise<DrawWi
 
   const drawEndMs = Date.now();
 
-  // 等 autosave 把新框落库，afterEach 才查得到并删除（清理由 afterEach 经 API 完成）
+  // 等 autosave 把新框落库（清理由 flows.spec 的 afterAll 经 psql 完成）
   await page.waitForLoadState("networkidle").catch(() => {});
   await page.waitForTimeout(1200);
 
-  return { drawStartMs, drawEndMs, taskId: getTaskId() };
+  return { drawStartMs, drawEndMs };
 }
