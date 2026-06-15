@@ -22,6 +22,7 @@ import { runPolygonDraw } from "./polygon-draw";
 import { runMaskDraw } from "./mask-draw";
 import { runVideoTrack } from "./video-track";
 import { runPointcloudControls } from "./pointcloud-controls";
+import { runPointcloudView } from "./pointcloud-view";
 import { runVideoDraw } from "./video-draw";
 import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
 import { convertToGif } from "../_helpers/recorder";
@@ -254,6 +255,21 @@ test.describe("flow recordings", () => {
       "pointcloud-controls",
       // 3D 点云画面细节密、调色板帧间变化大，沿用视频档 fps6/720 压到 5MB 内。
       path.join(DOCS_IMAGES, "workbench/pointcloud-controls-bar.gif"),
+      { fps: 6, maxWidth: 720, ...drawTrim(win, t0) },
+    );
+  });
+
+  test("pointcloud-view — 点云视图导航(拖动旋转)", async ({ page, seed }) => {
+    if (!cached) throw new Error("seed peek 未完成");
+    test.setTimeout(60000); // 点云 PCD 加载 + SwiftShader 渲染重, 默认 30s 不够
+    const t0 = Date.now();
+    await seed.injectToken(page, cached.admin_email);
+    const win = await runPointcloudView(page, cached.admin_email);
+    await finalize(
+      page,
+      "pointcloud-view",
+      // 3D 点云画面细节密、orbit 帧间变化大，沿用控件档 fps6/720 压到 5MB 内。
+      path.join(DOCS_IMAGES, "workbench/pointcloud-view-orbit.gif"),
       { fps: 6, maxWidth: 720, ...drawTrim(win, t0) },
     );
   });

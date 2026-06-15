@@ -12,7 +12,7 @@ last_reviewed: 2026-06-11
 
 ## 视图导航
 
-![点云控件演示：工作台设置抽屉切换相机上色（高度色→相机 RGB）/ 点大小 / 深度提示](../images/workbench/pointcloud-controls-bar.gif)
+![拖动主 3D 视图旋转点云：左键按住拖拽即沿轨道环绕（orbit）观察](../images/workbench/pointcloud-view-orbit.gif)
 
 - 主 3D 视图可旋转 / 平移 / 缩放查看点云。
 - 控件浮条「重置视角」回到默认斜视（跟随车头朝向）；「俯视」切到正上方鸟瞰（BEV），便于框选地面 footprint。两者随时切换。
@@ -31,6 +31,8 @@ last_reviewed: 2026-06-11
 - 3D 框会实时投影到这些相机面板上，并支持 2D↔3D 双向选中——详见 [点云跨模态联动](./pointcloud-projection)。
 
 ## 上色与深度
+
+![点云控件演示：工作台设置抽屉切换相机上色（高度色→相机 RGB）/ 点大小 / 深度提示](../images/workbench/pointcloud-controls-bar.gif)
 
 ### 相机 RGB 上色
 

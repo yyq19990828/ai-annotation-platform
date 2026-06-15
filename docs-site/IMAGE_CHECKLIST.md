@@ -152,6 +152,7 @@
 - [ ] `images/workbench-pointcloud-projection/overlay-wireframe.png` — 相机面板线框投影 overlay + 「正对」角标 [manual]
 - [ ] `images/workbench-pointcloud-projection/click-to-select-3d.png` — 点击投影框联动主视图高亮 [manual]
 - [ ] `images/workbench-pointcloud-projection/camera-panel-layout.png` — 6 相机环绕布局全景 [manual]
+- [x] `images/workbench/pointcloud-view-orbit.gif` — 点云视图导航：收起两边栏后左键拖拽 orbit 环绕 + 滚轮缩放 `[auto-gif]`（flows/pointcloud-view，nuScenes-mini）
 - [x] `images/workbench/pointcloud-controls-bar.gif` — 工作台设置抽屉点云控件演示（相机上色 / 点大小 / 深度提示逐项切换）`[auto-gif]`（flows/pointcloud-controls，nuScenes-mini）
 - [x] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比（同上 `pointcloud-controls-bar.gif` 内含青蓝高度色→相机 RGB 的切换）`[auto-gif]`
 - [ ] `images/workbench/pointcloud-depth-heatmap.png` — 深度热力图 + figcaption 深度读数（控件 GIF 已演示开关，相机视图悬停深度读数特写仍 [manual]） [manual]

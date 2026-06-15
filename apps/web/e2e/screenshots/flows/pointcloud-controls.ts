@@ -19,7 +19,7 @@ import type { DrawWindow } from "./rotated-bbox";
 const API = process.env.PLAYWRIGHT_API_BASE ?? "http://localhost:8000";
 
 /** 用 admin token 解析 P-NU-nuscenes-mini 的 project_id 与首个 task id。 */
-async function resolvePointcloudProject(
+export async function resolvePointcloudProject(
   page: Page,
   adminEmail: string,
 ): Promise<{ projectId: string; taskId: string | null } | null> {
