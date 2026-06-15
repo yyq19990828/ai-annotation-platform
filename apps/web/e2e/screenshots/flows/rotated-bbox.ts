@@ -12,14 +12,17 @@
  */
 import type { Page } from "@playwright/test";
 import type { SeedData } from "../../fixtures/seed";
-import { hidePredictions } from "./_canvas";
+import { hidePredictions, trackTaskId } from "./_canvas";
 
 export interface DrawWindow {
   drawStartMs: number;
   drawEndMs: number;
+  /** 实际绘制所在的任务 id（供 afterEach 清理；workbench 不一定开 ?task= 指定的任务）。 */
+  taskId: string | null;
 }
 
 export async function runRotatedBbox(page: Page, data: SeedData): Promise<DrawWindow | null> {
+  const getTaskId = trackTaskId(page);
   const task = data.task_ids[0] ? `?task=${data.task_ids[0]}` : "";
   await page.goto(`/projects/${data.project_id}/annotate${task}`);
   await page.waitForLoadState("networkidle");
@@ -64,6 +67,10 @@ export async function runRotatedBbox(page: Page, data: SeedData): Promise<DrawWi
   // 故本 GIF 只演示「绘制」；旋转演示留待后续(需精确手柄坐标或 DOM 句柄)。
 
   const drawEndMs = Date.now();
-  // 清理由 flows.spec.ts 的 afterEach 经 API 删除（画布键盘删除不可靠）。
-  return { drawStartMs, drawEndMs };
+
+  // 等 autosave 把新框落库，afterEach 才查得到并删除（清理由 afterEach 经 API 完成）
+  await page.waitForLoadState("networkidle").catch(() => {});
+  await page.waitForTimeout(1200);
+
+  return { drawStartMs, drawEndMs, taskId: getTaskId() };
 }

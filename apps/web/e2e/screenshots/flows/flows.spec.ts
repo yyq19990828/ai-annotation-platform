@@ -28,6 +28,8 @@ const DOCS_GIF  = path.join(REPO_ROOT, "docs-site/user-guide/images/getting-star
 const DOCS_IMAGES = path.join(REPO_ROOT, "docs-site/user-guide/images");
 
 let cached: SeedData | null = null;
+// 画布 flow 实际绘制所在的任务 id（workbench 未必开 ?task= 指定的任务）；afterEach 据此清理。
+let cleanupTaskId: string | null = null;
 
 test.beforeAll(async ({ request }) => {
   const res = await request.get(
@@ -53,7 +55,8 @@ test.beforeAll(async ({ request }) => {
 // 画完删除：每条 flow 跑完后用 API 清掉它在演示任务上落下的标注，保持 DB 干净。
 // 用 API（而非画布 Ctrl+A/Delete）因后者受绘制态/焦点/防抖落库影响不可靠。
 test.afterEach(async ({ request }) => {
-  const taskId = cached?.task_ids[0];
+  const taskId = cleanupTaskId ?? cached?.task_ids[0];
+  cleanupTaskId = null; // 用后即清，避免串到下一条 flow
   if (!taskId || !cached) return;
   const apiBase = process.env.PLAYWRIGHT_API_BASE ?? "http://localhost:8000";
   try {
@@ -157,6 +160,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now(); // 录屏起点参照（page 在测试体前创建，t0≈video t=0）
     await seed.injectToken(page, cached.admin_email);
     const win = await runRotatedBbox(page, cached);
+    cleanupTaskId = win?.taskId ?? null; // afterEach 据此清理实际绘制的任务
     await finalize(
       page,
       "rotated-bbox",
@@ -170,6 +174,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await seed.injectToken(page, cached.admin_email);
     const win = await runPolylineDraw(page, cached);
+    cleanupTaskId = win?.taskId ?? null;
     await finalize(
       page,
       "polyline-draw",

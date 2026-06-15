@@ -10,10 +10,11 @@
  */
 import type { Page } from "@playwright/test";
 import type { SeedData } from "../../fixtures/seed";
-import { hidePredictions } from "./_canvas";
+import { hidePredictions, trackTaskId } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 export async function runPolylineDraw(page: Page, data: SeedData): Promise<DrawWindow | null> {
+  const getTaskId = trackTaskId(page);
   const task = data.task_ids[0] ? `?task=${data.task_ids[0]}` : "";
   await page.goto(`/projects/${data.project_id}/annotate${task}`);
   await page.waitForLoadState("networkidle");
@@ -63,6 +64,10 @@ export async function runPolylineDraw(page: Page, data: SeedData): Promise<DrawW
   await page.waitForTimeout(1100);
 
   const drawEndMs = Date.now();
-  // 清理由 flows.spec.ts 的 afterEach 经 API 删除（画布键盘删除不可靠）。
-  return { drawStartMs, drawEndMs };
+
+  // 等 autosave 把折线落库，afterEach 才查得到并删除
+  await page.waitForLoadState("networkidle").catch(() => {});
+  await page.waitForTimeout(1200);
+
+  return { drawStartMs, drawEndMs, taskId: getTaskId() };
 }
