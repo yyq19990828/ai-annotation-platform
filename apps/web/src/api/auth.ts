@@ -48,6 +48,7 @@ export type VideoLargeFrameStep = 5 | 10 | 30 | "grid";
 export interface WorkbenchVideoPreferences {
   defaultPlaybackRate: VideoDefaultPlaybackRate;
   largeFrameStep: VideoLargeFrameStep;
+  autoFitOnResize: boolean;
 }
 
 /** v0.15.6 · 点云工作台渲染 / 导航偏好。 */
@@ -174,6 +175,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
   video: {
     defaultPlaybackRate: 1,
     largeFrameStep: 10,
+    autoFitOnResize: true,
   },
   pointcloud: {
     pointSize: 0.06,
