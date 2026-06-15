@@ -18845,6 +18845,13 @@
             "title": "Crossframeoverlayscope",
             "type": "string"
           },
+          "leftWidthPct": {
+            "default": 15.0,
+            "maximum": 35.0,
+            "minimum": 10.0,
+            "title": "Leftwidthpct",
+            "type": "number"
+          },
           "longTaskSampleRate": {
             "default": 0.05,
             "maximum": 1.0,
@@ -18868,6 +18875,13 @@
             "minimum": 3.0,
             "title": "Recentclasseslimit",
             "type": "integer"
+          },
+          "rightWidthPct": {
+            "default": 15.0,
+            "maximum": 35.0,
+            "minimum": 10.0,
+            "title": "Rightwidthpct",
+            "type": "number"
           }
         },
         "title": "WorkbenchCommonPreferences",
@@ -19017,19 +19031,6 @@
             ],
             "title": "Leftopen"
           },
-          "leftWidth": {
-            "anyOf": [
-              {
-                "maximum": 560.0,
-                "minimum": 200.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Leftwidth"
-          },
           "pointcloudCamera": {
             "anyOf": [
               {
@@ -19050,19 +19051,6 @@
               }
             ],
             "title": "Rightopen"
-          },
-          "rightWidth": {
-            "anyOf": [
-              {
-                "maximum": 600.0,
-                "minimum": 220.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rightwidth"
           },
           "triViewFloat": {
             "anyOf": [
