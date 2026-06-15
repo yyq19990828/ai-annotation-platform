@@ -127,8 +127,6 @@ function applyConfigPatch(
 const LAYOUT_KEY_NAMES = [
   "leftOpen",
   "rightOpen",
-  "leftWidth",
-  "rightWidth",
   "floatingTaskQueue",
   "floatingClassPalette",
   "floatingInspector",
@@ -161,20 +159,6 @@ function readBool(key: string): boolean | undefined {
   return undefined;
 }
 
-function readClampedNumber(
-  key: string,
-  min: number,
-  max: number,
-): number | undefined {
-  if (typeof window === "undefined") return undefined;
-  try {
-    const v = Number(window.localStorage.getItem(key));
-    return Number.isFinite(v) && v >= min && v <= max ? v : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function readJsonObject<T extends object>(key: string): Partial<T> | undefined {
   if (typeof window === "undefined") return undefined;
   try {
@@ -194,8 +178,6 @@ function readLocalLayout(
   return {
     leftOpen: readBool(K.leftOpen),
     rightOpen: readBool(K.rightOpen),
-    leftWidth: readClampedNumber(K.leftWidth, 200, 560),
-    rightWidth: readClampedNumber(K.rightWidth, 220, 600),
     floatingTaskQueue: readJsonObject<FloatingPanelState>(K.floatingTaskQueue),
     floatingClassPalette: readJsonObject<FloatingPanelState>(
       K.floatingClassPalette,
@@ -250,8 +232,6 @@ function writeLocalLayout(
   try {
     window.localStorage.setItem(K.leftOpen, layout.leftOpen ? "1" : "0");
     window.localStorage.setItem(K.rightOpen, layout.rightOpen ? "1" : "0");
-    window.localStorage.setItem(K.leftWidth, String(layout.leftWidth));
-    window.localStorage.setItem(K.rightWidth, String(layout.rightWidth));
     window.localStorage.setItem(
       K.floatingTaskQueue,
       JSON.stringify(layout.floatingTaskQueue),
@@ -359,8 +339,6 @@ function mergeLayout(
   return {
     leftOpen: merged.leftOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.leftOpen,
     rightOpen: merged.rightOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.rightOpen,
-    leftWidth: merged.leftWidth ?? DEFAULT_WORKBENCH_PREFERENCES.layout.leftWidth,
-    rightWidth: merged.rightWidth ?? DEFAULT_WORKBENCH_PREFERENCES.layout.rightWidth,
     floatingTaskQueue: mergeFloatingPanel(
       DEFAULT_WORKBENCH_PREFERENCES.layout.floatingTaskQueue,
       floatingTaskQueue,
@@ -392,9 +370,6 @@ function applyLayoutPatch(
   return {
     ...current,
     ...patch,
-    // 列宽与后端约束对齐(left 200–560 / right 220–600)，同浮窗 w/h 一并防 422。
-    leftWidth: clampNum(patch.leftWidth ?? current.leftWidth, 200, 560),
-    rightWidth: clampNum(patch.rightWidth ?? current.rightWidth, 220, 600),
     floatingTaskQueue:
       patch.floatingTaskQueue === undefined
         ? current.floatingTaskQueue

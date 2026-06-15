@@ -12,7 +12,7 @@ export type WorkbenchSettingValue = boolean | number | string;
 
 export type WorkbenchSettingControl =
   | { type: "toggle"; onText?: string; offText?: string }
-  | { type: "slider"; min: number; max: number; step: number; format?: (v: number) => string }
+  | { type: "slider"; min: number; max: number; step: number; format?: (v: number) => string; resetTo?: number }
   | { type: "select"; options: Array<{ value: WorkbenchSettingValue; label: string }> }
   | { type: "text"; maxLength: number; placeholder?: string };
 
@@ -77,6 +77,20 @@ function writeLocalBoolean(key: string, value: WorkbenchSettingValue): void {
 }
 
 export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
+  {
+    key: "common.leftWidthPct",
+    category: "common",
+    label: "左栏宽度",
+    description: "占工作台宽度的百分比;也可直接拖拽边栏分隔条,双击或此处重置回 15%",
+    control: { type: "slider", min: 10, max: 35, step: 1, format: (v) => `${v}%`, resetTo: 15 },
+  },
+  {
+    key: "common.rightWidthPct",
+    category: "common",
+    label: "右栏宽度",
+    description: "占工作台宽度的百分比;也可直接拖拽边栏分隔条,双击或此处重置回 15%",
+    control: { type: "slider", min: 10, max: 35, step: 1, format: (v) => `${v}%`, resetTo: 15 },
+  },
   {
     key: "common.longTaskSampleRate",
     category: "common",

@@ -24,6 +24,9 @@ export interface WorkbenchCommonPreferences {
   /** v0.15.17 · 邻帧框叠加范围:selected=仅选中对象的 group(现状);all=不选对象也叠邻帧全部框。 */
   crossFrameOverlayScope: "selected" | "all";
   performanceTier: "light" | "standard" | "aggressive";
+  /** 左右边栏宽度,占工作台宽度百分比;拖拽与设置面板双向同步,默认 15。 */
+  leftWidthPct: number;
+  rightWidthPct: number;
 }
 
 /** v0.15.3 · 图像工作台渲染偏好(原顶层平铺字段归位)。 */
@@ -119,8 +122,6 @@ export interface PointcloudCameraState {
 export interface WorkbenchLayoutPreferences {
   leftOpen: boolean;
   rightOpen: boolean;
-  leftWidth: number;
-  rightWidth: number;
   floatingTaskQueue: FloatingPanelState;
   floatingClassPalette: FloatingPanelState;
   floatingInspector: FloatingPanelState;
@@ -158,6 +159,8 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     crossFrameOverlayK: 1,
     crossFrameOverlayScope: "selected",
     performanceTier: "standard",
+    leftWidthPct: 15,
+    rightWidthPct: 15,
   },
   image: {
     smoothImage: true,
@@ -196,8 +199,6 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
   layout: {
     leftOpen: true,
     rightOpen: true,
-    leftWidth: 260,
-    rightWidth: 280,
     floatingTaskQueue: {
       detached: false,
       x: null,

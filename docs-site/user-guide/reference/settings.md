@@ -43,6 +43,7 @@ last_reviewed: 2026-06-11
 
 | 分类 | 字段 | 说明 |
 |---|---|---|
+| 通用 | `leftWidthPct` / `rightWidthPct` | 左 / 右边栏宽度，占工作台宽度的百分比（10%–35%，默认 15%）；也可直接拖拽边栏分隔条调整，与设置面板双向同步，双击分隔条或点「重置」回到 15% |
 | 通用 | `longTaskSampleRate` | PerformanceObserver longtask 采样率（0–1），性能调试用；普通用户保持默认 |
 | 通用 | `confirmDelete` / `recentClassesLimit` | 删除确认策略和最近类别数量 |
 | 通用 | `crossFrameOverlayEnabled` / `crossFrameOverlayK` / `crossFrameOverlayScope` | 邻帧框叠加开关、帧数与对象范围 |
