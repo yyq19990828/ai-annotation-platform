@@ -171,7 +171,8 @@
 - [ ] `images/video-propagate/ai-propagate-dialog.png` — AI 传播对话框（方向/范围/模型/尺寸下拉） [manual]
 - [ ] `images/video-propagate/tracker-job-badge.png` — 进度 badge + 取消按钮 [manual]
 - [x] `images/workbench/video-track-overview.gif` — 视频工作台整体（时间轴 + 逐帧前进 + 播放）`[auto-gif]`（flows/video-track，开源 P-VIDEO-DEV，seed_video.py）
-- [ ] `images/workbench/video-track-timeline.png` — 视频轨道时间轴 + 关键帧 + 软网格 [auto]
+- [x] `images/workbench/video-track-trajectory.gif` — track 工具画框：两关键帧 + 逐帧线性插值 bbox 平滑移动（含类别 popover Enter 提交）`[auto-gif]`（flows/video-draw，P-VIDEO-DEV）
+- [x] `images/workbench/video-track-timeline.png` — 视频轨道时间轴 + 关键帧 + 软网格（同上 `video-track-trajectory.gif` 画关键帧时时间轴同步呈现）`[auto-gif]`
 - [ ] `images/workbench/video-track-compose-dialog.png` — 跳连对话框两种 gap 模式 [manual]
 - [ ] `images/workbench/video-track-qc-warnings.png` — 画布左上角质量提示浮层 [manual]
 

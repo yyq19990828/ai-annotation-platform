@@ -21,6 +21,7 @@ import { runPolygonDraw } from "./polygon-draw";
 import { runMaskDraw } from "./mask-draw";
 import { runVideoTrack } from "./video-track";
 import { runPointcloudControls } from "./pointcloud-controls";
+import { runVideoDraw } from "./video-draw";
 import { convertToGif } from "../_helpers/recorder";
 import { execFileSync } from "child_process";
 import path from "path";
@@ -61,22 +62,28 @@ test.beforeAll(async ({ request }) => {
 // 未分配给当前用户的任务返回空，定位不到要删的标注；画布 Ctrl+A/Delete 又受绘制态/焦点影响不可靠。
 // 故直接经 docker postgres 容器 psql 删除（flows 本就依赖 docker 开发栈，容器名见 CLAUDE.md）。
 // 用 display_id='P-COCO8' 连 projects 表定位（项目 UUID 由 seed 随机生成，重 seed 即变，不可硬编码）。
+// 清理覆盖两类演示项目：图片画布(P-COCO8)落的几何 + 视频(P-VIDEO-DEV)落的轨迹/单帧框。
+// 这些几何类型只可能来自本套录制脚本，按 display_id + geometry.type 双重定位，删除安全。
 test.afterAll(() => {
-  try {
-    execFileSync(
-      "docker",
-      [
-        "exec", "ai-annotation-platform-postgres-1",
-        "psql", "-U", "user", "-d", "annotation", "-c",
-        "DELETE FROM annotations a USING tasks t, projects p " +
-          "WHERE a.task_id=t.id AND t.project_id=p.id AND p.display_id='P-COCO8' " +
-          "AND a.geometry->>'type' IN ('rotated_bbox','polyline','region','polygon','multi_polygon');",
-      ],
-      { stdio: "ignore" },
-    );
-  } catch {
-    console.warn("[flows] 演示标注清理失败（需 docker postgres 容器在运行）");
-  }
+  const del = (displayId: string, types: string[]) => {
+    try {
+      execFileSync(
+        "docker",
+        [
+          "exec", "ai-annotation-platform-postgres-1",
+          "psql", "-U", "user", "-d", "annotation", "-c",
+          "DELETE FROM annotations a USING tasks t, projects p " +
+            `WHERE a.task_id=t.id AND t.project_id=p.id AND p.display_id='${displayId}' ` +
+            `AND a.geometry->>'type' IN (${types.map((t) => `'${t}'`).join(",")});`,
+        ],
+        { stdio: "ignore" },
+      );
+    } catch {
+      console.warn(`[flows] ${displayId} 演示标注清理失败（需 docker postgres 容器在运行）`);
+    }
+  };
+  del("P-COCO8", ["rotated_bbox", "polyline", "region", "polygon", "multi_polygon"]);
+  del("P-VIDEO-DEV", ["video_bbox", "video_track_bbox"]);
 });
 
 async function finalize(
@@ -232,6 +239,21 @@ test.describe("flow recordings", () => {
       // 3D 点云画面细节密、调色板帧间变化大，沿用视频档 fps6/720 压到 5MB 内。
       path.join(DOCS_IMAGES, "workbench/pointcloud-controls-bar.gif"),
       { fps: 6, maxWidth: 720, ...drawTrim(win, t0) },
+    );
+  });
+
+  test("video-draw — 视频画框轨迹(track 关键帧插值)", async ({ page, seed }) => {
+    if (!cached) throw new Error("seed peek 未完成");
+    test.setTimeout(60000); // 视频解码 + 两次画框 + 来回逐帧, 默认 30s 不够
+    const t0 = Date.now();
+    await seed.injectToken(page, cached.admin_email);
+    const win = await runVideoDraw(page, cached.admin_email);
+    await finalize(
+      page,
+      "video-draw",
+      // 画框+逐帧插值帧间变化大, 比其它 flow 再降一档(fps5/620)压到 5MB 内。
+      path.join(DOCS_IMAGES, "workbench/video-track-trajectory.gif"),
+      { fps: 5, maxWidth: 620, ...drawTrim(win, t0) },
     );
   });
 });
