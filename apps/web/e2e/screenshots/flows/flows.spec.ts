@@ -55,8 +55,9 @@ async function finalize(
   gifName: string,
   // 文档站目标 gif 绝对路径（不填则只产出到 outputs/flows/）
   docsTarget?: string,
-  // GIF 转码参数（不填默认 fps:10 / maxWidth:1280）；工作台画面细节多时调小避免超 5MB
-  gifOpts?: { fps?: number; maxWidth?: number },
+  // GIF 转码参数（不填默认 fps:10 / maxWidth:1280）；工作台画面细节多时调小避免超 5MB；
+  // startSec/durationSec 裁掉录屏开头(准备)与结尾(清理)，只留核心片段。
+  gifOpts?: { fps?: number; maxWidth?: number; startSec?: number; durationSec?: number },
 ) {
   const video = page.video();
   if (!video) {
@@ -72,7 +73,12 @@ async function finalize(
   await page.close();
   fs.mkdirSync(FLOWS_OUT, { recursive: true });
   await video.saveAs(outWebm);
-  await convertToGif(outWebm, outGif, { fps: gifOpts?.fps ?? 10, maxWidth: gifOpts?.maxWidth ?? 1280 });
+  await convertToGif(outWebm, outGif, {
+    fps: gifOpts?.fps ?? 10,
+    maxWidth: gifOpts?.maxWidth ?? 1280,
+    startSec: gifOpts?.startSec,
+    durationSec: gifOpts?.durationSec,
+  });
 
   // 同步 gif 到文档站
   const docsGif = docsTarget ?? (gifName === "e2e-quickstart" ? path.join(DOCS_GIF, "e2e.gif") : null);
@@ -121,15 +127,39 @@ test.describe("flow recordings", () => {
 
   test("rotated-bbox — 旋转框绘制+旋转", async ({ page, seed }) => {
     if (!cached) throw new Error("seed peek 未完成");
+    const t0 = Date.now(); // 录屏起点参照（page 在测试体前创建，t0≈video t=0）
     await seed.injectToken(page, cached.admin_email);
-    await runRotatedBbox(page, cached);
-    await finalize(page, "rotated-bbox", path.join(DOCS_IMAGES, "workbench/rotated-bbox.gif"), { fps: 8, maxWidth: 900 });
+    const win = await runRotatedBbox(page, cached);
+    await finalize(
+      page,
+      "rotated-bbox",
+      path.join(DOCS_IMAGES, "workbench/rotated-bbox.gif"),
+      { fps: 8, maxWidth: 900, ...drawTrim(win, t0) },
+    );
   });
 
   test("polyline-draw — 折线逐点绘制", async ({ page, seed }) => {
     if (!cached) throw new Error("seed peek 未完成");
+    const t0 = Date.now();
     await seed.injectToken(page, cached.admin_email);
-    await runPolylineDraw(page, cached);
-    await finalize(page, "polyline-draw", path.join(DOCS_IMAGES, "polyline/draw-in-progress.gif"), { fps: 8, maxWidth: 900 });
+    const win = await runPolylineDraw(page, cached);
+    await finalize(
+      page,
+      "polyline-draw",
+      path.join(DOCS_IMAGES, "polyline/draw-in-progress.gif"),
+      { fps: 8, maxWidth: 900, ...drawTrim(win, t0) },
+    );
   });
 });
+
+// 由绘制起止时间戳算 GIF 裁剪窗口：startSec 跳过开头(加载/隐藏预测/选工具)，
+// durationSec 只留绘制段(裁掉结尾的删除清理)。win 为 null(工具缺失)时不裁。
+function drawTrim(
+  win: { drawStartMs: number; drawEndMs: number } | null,
+  t0: number,
+): { startSec?: number; durationSec?: number } {
+  if (!win) return {};
+  const startSec = Math.max(0, (win.drawStartMs - t0) / 1000 - 0.4);
+  const durationSec = (win.drawEndMs - win.drawStartMs) / 1000 + 0.8;
+  return { startSec, durationSec };
+}

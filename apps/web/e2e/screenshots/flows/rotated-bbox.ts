@@ -6,25 +6,32 @@
  * P-COCO8 已绑定 rotated_bbox 工具单位（seed_coco8.py）。选「旋转框」工具 → 在画布拖出
  * 轴对齐矩形（提交 angle=0 的 rotated_bbox）→ 抓顶边外侧旋转手柄拖动改 angle。
  * 画布是 Konva canvas，手柄无 DOM 句柄，全程用 page.mouse 坐标操作。
+ *
+ * 返回 { drawStartMs, drawEndMs }：绘制段的起止时间戳，供 finalize 裁掉开头(隐藏预测)
+ * 与结尾(删除清理)，GIF 只保留绘制过程。
  */
 import type { Page } from "@playwright/test";
 import type { SeedData } from "../../fixtures/seed";
-import { hidePredictions } from "./_canvas";
+import { hidePredictions, deleteDrawn } from "./_canvas";
 
-export async function runRotatedBbox(page: Page, data: SeedData): Promise<void> {
+export interface DrawWindow {
+  drawStartMs: number;
+  drawEndMs: number;
+}
+
+export async function runRotatedBbox(page: Page, data: SeedData): Promise<DrawWindow | null> {
   const task = data.task_ids[0] ? `?task=${data.task_ids[0]}` : "";
   await page.goto(`/projects/${data.project_id}/annotate${task}`);
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(1400);
 
-  // 关掉预测来源可见性：COCO8 满屏预测框会拦截画框手势触发采纳/驳回，先隐藏让画布干净
+  // 准备（不进 GIF）：隐藏满屏预测框 → 选旋转框工具
   await hidePredictions(page);
 
-  // 选「旋转框」工具
   const btn = page.getByTestId("tool-btn-rotated-box");
   if (!(await btn.count())) {
     console.warn("[rotated-bbox] 无 tool-btn-rotated-box（项目未绑定 rotated_bbox?），跳过");
-    return;
+    return null;
   }
   await btn.click();
   await page.waitForTimeout(900);
@@ -33,34 +40,43 @@ export async function runRotatedBbox(page: Page, data: SeedData): Promise<void> 
   const box = await stage.boundingBox();
   if (!box) {
     console.warn("[rotated-bbox] 无 workbench-stage 边界，跳过");
-    return;
+    return null;
   }
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
   const halfW = 130;
   const halfH = 80;
 
-  // ── Step 1：拖出一个轴对齐矩形（左上 → 右下，分步移动让录屏看到拉框过程）──
+  const drawStartMs = Date.now();
+
+  // ── 拖出一个轴对齐矩形（左上 → 右下，分步移动让录屏看到拉框过程）──
   await page.mouse.move(cx - halfW, cy - halfH);
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(400);
   await page.mouse.down();
   for (let i = 1; i <= 12; i++) {
     await page.mouse.move(cx - halfW + (2 * halfW * i) / 12, cy - halfH + (2 * halfH * i) / 12);
     await page.waitForTimeout(55);
   }
   await page.mouse.up();
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(1100);
 
-  // ── Step 2：抓顶边中点外侧的旋转手柄，左右拖动旋转 ~30° ──
+  // ── 抓顶边中点外侧的旋转手柄，左右拖动旋转 ~30° ──
   const handleX = cx;
-  const handleY = cy - halfH - 26; // 顶边外侧
+  const handleY = cy - halfH - 26;
   await page.mouse.move(handleX, handleY);
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(400);
   await page.mouse.down();
   for (let i = 1; i <= 14; i++) {
     await page.mouse.move(handleX + (95 * i) / 14, handleY + (40 * i) / 14);
     await page.waitForTimeout(70);
   }
   await page.mouse.up();
-  await page.waitForTimeout(1600);
+  await page.waitForTimeout(1200);
+
+  const drawEndMs = Date.now();
+
+  // 清理（不进 GIF）：删掉刚画的旋转框
+  await deleteDrawn(page);
+
+  return { drawStartMs, drawEndMs };
 }

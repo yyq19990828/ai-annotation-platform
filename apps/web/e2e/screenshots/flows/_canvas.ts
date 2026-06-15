@@ -21,3 +21,14 @@ export async function hidePredictions(page: Page): Promise<void> {
     await page.waitForTimeout(350);
   }
 }
+
+/**
+ * 清掉刚画的标注（Ctrl+A 全选当前帧 user 框 → Delete），避免演示标注落库污染。
+ * 在录屏裁剪窗口之后调用，删除动作不会进 GIF。
+ */
+export async function deleteDrawn(page: Page): Promise<void> {
+  await page.keyboard.press("Control+a");
+  await page.waitForTimeout(300);
+  await page.keyboard.press("Delete");
+  await page.waitForTimeout(500);
+}
