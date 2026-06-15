@@ -156,6 +156,7 @@
 - [ ] `images/workbench/pointcloud-controls-bar.png` — 控件浮条全景（重置/俯视/点大小滑杆/上色/深度/邻帧框叠加） [manual]
 - [ ] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比 [manual]
 - [ ] `images/workbench/pointcloud-depth-heatmap.png` — 深度热力图 + figcaption 深度读数 [manual]
+- [x] `images/polygon/draw-in-progress.gif` — 多边形逐点绘制全过程（落点 + 预览线，Enter 闭合提交）`[auto-gif]`（flows/polygon-draw，P-COCO8）
 - [ ] `images/polygon/vertex-insert-alt.png` — 按住 Alt 悬停边上光标变「+」的瞬间
 - [x] `images/polyline/draw-in-progress.gif` — 折线逐点绘制全过程（落点 + 预览线段，Enter 收尾）`[auto-gif]`（flows/polyline-draw，P-COCO8）
 - [ ] `images/polyline/vertex-edit.png` — 折线选中态 Alt 插入/Shift 删除提示
