@@ -62,11 +62,15 @@ export function useElementSize<T extends HTMLElement>(ref: React.RefObject<T | n
   const [el, setEl] = useState<T | null>(null);
   // 每次 render 后检测 ref.current 与上次 observed 节点的差异; 仅在变化时 setEl 触发
   // 第二个 effect 重新 observe. ref.current 变化会伴随 remount render, el 变更后再完成订阅切换.
+  // 必须无依赖数组、每次 render 都跑: 容器在 isLoading / 无 manifest 时不渲染 (ref.current=null),
+  // manifest 异步到达后才挂载真节点 — 此时 [ref, el] 均未变, 带依赖数组的 effect 不会重跑,
+  // el 永远停在 null → ResizeObserver 从未订阅 → viewport.size 恒为 0×0 → fit/zoom 全失效
+  // (刷新视频工作台后画面不自适应, B-55 跟进)。setEl(同值) 是 no-op, 不会造成无限渲染。
   useEffect(() => {
     if (ref.current !== el) {
       setEl(ref.current);
     }
-  }, [ref, el]);
+  });
   useEffect(() => {
     if (!el) return;
     if (typeof ResizeObserver === "undefined") {
