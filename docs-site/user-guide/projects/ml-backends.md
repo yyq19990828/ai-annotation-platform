@@ -16,7 +16,7 @@ last_reviewed: 2026-06-10
 
 ## 注册一个 backend
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/ml-backends/register-form.png — 注册表单（URL 示例 + 最大并发 + 测试连接）[manual] -->
+![注册表单（URL 示例 + 最大并发 + 测试连接）](../images/projects/ml-backends/register-form.png)
 
 进入 **项目设置 → ML 模型** 标签。页面上方是 AI 预标注设置，页面下方是本项目的 backend 注册列表：
 

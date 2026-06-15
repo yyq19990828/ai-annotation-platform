@@ -63,7 +63,7 @@ scene 模式项目在关联数据集时（经新建项目向导）会**自动**�
 
 ## 批次状态机
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/batch-status-list.png — 批次列表各状态彩色徽标 [manual] -->
+![批次列表各状态彩色徽标](../images/projects/batch-status-list.png)
 
 批次状态机如下：
 

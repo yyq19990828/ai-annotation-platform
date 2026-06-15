@@ -59,6 +59,8 @@ last_reviewed: 2026-06-10
 5. **状态切换按钮**：6 个状态按钮并排，点击直接落库并广播 `bug_report.status_changed` 通知给提交者。当前状态高亮显示，不可重复点击。
 6. **评论区**：内联 markdown 评论，所有评论者的 `author_role` 会跟在名字后；评论会作为 `bug_report.commented` 通知发给提交者。
 
+![BUG 工单状态切换：6 个状态按钮并排，当前状态高亮](../images/superadmin/bugs/status-transitions.png)
+
 ## 重开机制
 
 工单重开由**提交者（reporter）在评论区发评论**触发，而非管理员手动改状态：

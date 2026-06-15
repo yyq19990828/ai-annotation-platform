@@ -62,6 +62,8 @@ last_reviewed: 2026-06-10
 
 ## 编辑用户
 
+![编辑用户对话框：角色选择 + 停用按钮](../images/superadmin/users/edit-modal.png)
+
 点击用户卡片打开 `EditUserModal`（`EditUserModal` 仅支持改角色 + 调整所属数据组）：
 
 - 切换 **角色**（受 actor.role × target.role 矩阵限制，邮箱只读不可改）
@@ -78,6 +80,8 @@ last_reviewed: 2026-06-10
 超级管理员可通过 `POST /api/v1/users/{user_id}/admin-reset-password` 为他人生成临时密码，记录 `user.password_admin_reset` 审计事件。前端在用户卡片的 ⋯ 菜单中提供此入口。
 
 ## 用户组（v0.10+）
+
+![用户组 tab：分组列表与成员管理](../images/superadmin/users/groups-tab.png)
 
 用户组是给项目和 batch 派题用的批量选择器：
 
@@ -103,6 +107,8 @@ last_reviewed: 2026-06-10
 详细 API 见 [认证](../../api/guides/auth#api-key)。
 
 ## 权限矩阵预览
+
+![权限矩阵预览：PERMISSION_GROUPS × ROLE_PERMISSIONS 表](../images/superadmin/users/permission-matrix.png)
 
 侧边栏 **用户与权限** → **角色** tab 展示 `PERMISSION_GROUPS × ROLE_PERMISSIONS` 表，便于核对。实际权限名（来自 `apps/web/src/constants/permissions.ts`）：
 

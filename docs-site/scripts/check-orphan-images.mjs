@@ -27,29 +27,9 @@ const IMAGES_ROOT = path.join(REPO_ROOT, "docs-site/user-guide/images");
 const strict = process.argv.includes("--strict");
 const json   = process.argv.includes("--json");
 
-// 引入本检查前就已存在的「截图矩阵 PNG 产出但未回填」存量孤儿（相对 IMAGES_ROOT，正斜杠）。
-// 这是 grandfather 基线：让守卫现在即可 green、只拦**新增**孤儿。逐步在对应 user-guide
-// 页面补 ![](../images/…) 引用后，从本表删除对应项即可（清空即基线归零）。
-const IGNORE = new Set([
-  "projects/ai-pre-config-panel.png",
-  "projects/batch-status-list.png",
-  "projects/data-manager-filter-rules.png",
-  "projects/data-manager-overview.png",
-  "projects/ml-backends/register-form.png",
-  "projects/prediction-import-wizard.png",
-  "projects/prediction-purge-modal.png",
-  "projects/template-library-overview.png",
-  "projects/tool-units-panel.png",
-  "review/review-list-page.png",
-  "superadmin/audit-logs/detail-modal.png",
-  "superadmin/bugs/status-transitions.png",
-  "superadmin/ml-backend/register-form.png",
-  "superadmin/public-templates/templates-list.png",
-  "superadmin/system-monitoring/workers-table.png",
-  "superadmin/users/edit-modal.png",
-  "superadmin/users/groups-tab.png",
-  "superadmin/users/permission-matrix.png",
-]);
+// 有意保留、暂不嵌入文档的图片（相对 IMAGES_ROOT，正斜杠）。需要时在此登记豁免。
+// 基线已归零：引入本检查时的 20 张存量孤儿已全部回填到对应 user-guide 页面。
+const IGNORE = new Set([]);
 
 const IMG_EXT = /\.(png|gif|jpe?g|webp|svg)$/i;
 

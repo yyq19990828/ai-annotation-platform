@@ -23,7 +23,7 @@ last_reviewed: 2026-06-10
 
 该入口**不要求项目已绑定 ML Backend**——即使头部显示「未绑定 ML backend」也能导入，因为外部预测走的是上传文件这条路，不经过平台推理。导入的预测行 `source='external_import'`、`ml_backend_id` 为空，与 ML Backend 跑出来的预标在来源上区分开。
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/prediction-import-wizard.png — 导入预测弹窗（AAP JSON / COCO / YOLO 格式选择 + 文件上传 + 替换开关）；标注红框：格式下拉、YOLO 变体下拉、替换开关。 [manual] -->
+![导入预测弹窗（AAP JSON / COCO / YOLO 格式选择 + 文件上传 + 替换开关）](../images/projects/prediction-import-wizard.png)
 
 ### 向导流程
 
@@ -123,7 +123,7 @@ label 路径按**文件 stem** 匹配任务：归一化时会剥掉直到最后�
 
 Dashboard 项目卡片右下角 `⋮` → **「清理预测」**。
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/prediction-purge-modal.png — 清理预测弹窗三种来源范围 + ML Backend 风险确认复选框。 [manual] -->
+![清理预测弹窗三种来源范围 + ML Backend 风险确认复选框](../images/projects/prediction-purge-modal.png)
 
 ### 来源范围
 
