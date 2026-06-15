@@ -19,6 +19,7 @@ import { runRotatedBbox } from "./rotated-bbox";
 import { runPolylineDraw } from "./polyline-draw";
 import { runPolygonDraw } from "./polygon-draw";
 import { runMaskDraw } from "./mask-draw";
+import { runVideoTrack } from "./video-track";
 import { convertToGif } from "../_helpers/recorder";
 import { execFileSync } from "child_process";
 import path from "path";
@@ -201,6 +202,20 @@ test.describe("flow recordings", () => {
       "mask-draw",
       path.join(DOCS_IMAGES, "mask-brush/draw-in-progress.gif"),
       { fps: 8, maxWidth: 900, ...drawTrim(win, t0) },
+    );
+  });
+
+  test("video-track — 视频时序工作台", async ({ page, seed }) => {
+    if (!cached) throw new Error("seed peek 未完成");
+    const t0 = Date.now();
+    await seed.injectToken(page, cached.admin_email);
+    const win = await runVideoTrack(page, cached.admin_email);
+    await finalize(
+      page,
+      "video-track",
+      // 视频运动多、调色板帧间变化大，fps/宽度比画布 flow 再降一档以压到 5MB 内。
+      path.join(DOCS_IMAGES, "workbench/video-track-overview.gif"),
+      { fps: 6, maxWidth: 720, ...drawTrim(win, t0) },
     );
   });
 });

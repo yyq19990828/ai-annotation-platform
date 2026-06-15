@@ -16,6 +16,7 @@ from sqlalchemy import select
 sys.path.insert(0, str(__file__.rsplit("/", 1)[0]))  # 让 `scripts/` 入 sys.path
 from seed_pointcloud import seed_pointcloud, seed_nuscenes_scene  # noqa: E402
 from seed_coco8 import seed_coco8  # noqa: E402  (依赖 sys.path 先扩)
+from seed_video import seed_video  # noqa: E402  (开源视频 video-track 夹具)
 
 from app.config import settings
 from app.core.security import hash_password
@@ -134,6 +135,24 @@ async def seed() -> None:
             except Exception as e:  # noqa: BLE001 — 夹具/MinIO 不可用时不阻断 seed
                 await db.rollback()
                 print(f"  WARN  coco8 夹具跳过: {e}")
+
+            # 视频时序追踪项目:开源行车视频 tracking_car.mp4(grounded-sam-2 vendor)。
+            # 依赖 MinIO + 宿主 ffprobe, 缺失则跳过。幂等:P-VIDEO-DEV 已存在则跳过。
+            try:
+                info = await seed_video(db, owner_id=img_owner.id)
+                await db.commit()
+                if info is None:
+                    print("  skip  video P-VIDEO-DEV (已存在)")
+                else:
+                    m = info["video_meta"]
+                    print(
+                        f"  add   video {info['project']}  "
+                        f"{m['width']}x{m['height']} {m['fps']}fps "
+                        f"frames={m['frame_count']} tasks={info['tasks']}"
+                    )
+            except Exception as e:  # noqa: BLE001 — 夹具/MinIO/ffprobe 不可用时不阻断 seed
+                await db.rollback()
+                print(f"  WARN  video 夹具跳过: {e}")
 
         # 点云开发夹具(owner=admin):依赖 MinIO + SUSTechPOINTS 夹具,缺失则跳过,
         # 不影响核心账号/项目种子。幂等:P-PC-DEV 已存在则跳过。
