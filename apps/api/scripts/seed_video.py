@@ -169,6 +169,20 @@ async def main() -> None:
         info = await seed_video(db, owner_id=owner_id)
         await db.commit()
 
+        # 缩略图回填:seed 同步填了 video metadata,但未生成 poster,thumbnail_path 一直
+        # 为 NULL。提交后对本数据集派发 backfill_media(幂等),由 media worker 异步生成
+        # poster。依赖 media worker 在跑。
+        from sqlalchemy import select
+
+        from app.db.models.dataset import Dataset
+        from app.workers.media import backfill_media
+
+        ds = await db.scalar(
+            select(Dataset).where(Dataset.display_id == DATASET_DISPLAY_ID)
+        )
+        if ds is not None:
+            backfill_media.delay(str(ds.id))
+
     print("=== 开源视频 video-track dev 数据 ===")
     if info is None:
         print(f"项目 {PROJECT_DISPLAY_ID} 已存在,跳过")

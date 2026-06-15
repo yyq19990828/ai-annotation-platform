@@ -227,6 +227,20 @@ async def main() -> None:
         info = await seed_coco8(db, owner_id=owner_id)
         await db.commit()
 
+        # 缩略图回填:seed 直接写 DatasetItem,绕过了上传路径的 enqueue,thumbnail_path
+        # 一直为 NULL。提交后对本数据集派发 backfill_media(幂等,只补缺失的),由 media
+        # worker 异步生成。依赖 media worker 在跑。
+        from sqlalchemy import select
+
+        from app.db.models.dataset import Dataset
+        from app.workers.media import backfill_media
+
+        ds = await db.scalar(
+            select(Dataset).where(Dataset.display_id == DATASET_DISPLAY_ID)
+        )
+        if ds is not None:
+            backfill_media.delay(str(ds.id))
+
     print("=== coco8 图片标注 dev 数据 ===")
     if info is None:
         print(f"项目 {PROJECT_DISPLAY_ID} 已存在,工具绑定无需更新,跳过")
