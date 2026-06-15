@@ -9,12 +9,13 @@
  */
 import { test } from "../../fixtures/seed";
 import type { SeedData } from "../../fixtures/seed";
+import type { Page } from "@playwright/test";
 import { runE2eQuickstart } from "./e2e-quickstart";
 import { runAiPreannotate } from "./ai-preannotate";
 import { runReviewReject } from "./review-reject";
 import { runBatchBulkActions } from "./batch-bulk-actions";
 import { runAiPreVariantSelector } from "./ai-pre-variant-selector";
-import { convertToGif, copyAsWebm } from "../_helpers/recorder";
+import { convertToGif } from "../_helpers/recorder";
 import path from "path";
 import fs from "fs";
 
@@ -48,7 +49,7 @@ test.beforeAll(async ({ request }) => {
 });
 
 async function finalize(
-  page: { video(): { path(): Promise<string | null> } | null },
+  page: Page,
   gifName: string,
   // 文档站目标 gif 绝对路径（不填则只产出到 outputs/flows/）
   docsTarget?: string,
@@ -58,14 +59,16 @@ async function finalize(
     console.warn("[flows] video 未开启，检查 playwright config 的 flows project");
     return;
   }
-  const webmPath = await video.path();
-  if (!webmPath) { console.warn("[flows] 无法获取 video 路径"); return; }
 
   const outWebm = path.join(FLOWS_OUT, `${gifName}.webm`);
   const outGif  = path.join(FLOWS_OUT, `${gifName}.gif`);
 
-  await copyAsWebm(webmPath, outWebm);
-  await convertToGif(webmPath, outGif, { fps: 10, maxWidth: 1280 });
+  // video 只在 page 关闭后才写完整；先 close 再 saveAs（saveAs 会等视频落盘），
+  // 避免直接读 video.path() 拿到半截 webm 导致 ffmpeg palettegen 失败（短流程必踩）。
+  await page.close();
+  fs.mkdirSync(FLOWS_OUT, { recursive: true });
+  await video.saveAs(outWebm);
+  await convertToGif(outWebm, outGif, { fps: 10, maxWidth: 1280 });
 
   // 同步 gif 到文档站
   const docsGif = docsTarget ?? (gifName === "e2e-quickstart" ? path.join(DOCS_GIF, "e2e.gif") : null);
