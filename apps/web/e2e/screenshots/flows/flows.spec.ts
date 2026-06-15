@@ -18,6 +18,7 @@ import { runAiPreVariantSelector } from "./ai-pre-variant-selector";
 import { runRotatedBbox } from "./rotated-bbox";
 import { runPolylineDraw } from "./polyline-draw";
 import { runPolygonDraw } from "./polygon-draw";
+import { runMaskDraw } from "./mask-draw";
 import { convertToGif } from "../_helpers/recorder";
 import { execFileSync } from "child_process";
 import path from "path";
@@ -186,6 +187,19 @@ test.describe("flow recordings", () => {
       page,
       "polygon-draw",
       path.join(DOCS_IMAGES, "polygon/draw-in-progress.gif"),
+      { fps: 8, maxWidth: 900, ...drawTrim(win, t0) },
+    );
+  });
+
+  test("mask-draw — Mask 笔刷涂抹", async ({ page, seed }) => {
+    if (!cached) throw new Error("seed peek 未完成");
+    const t0 = Date.now();
+    await seed.injectToken(page, cached.admin_email);
+    const win = await runMaskDraw(page, cached);
+    await finalize(
+      page,
+      "mask-draw",
+      path.join(DOCS_IMAGES, "mask-brush/draw-in-progress.gif"),
       { fps: 8, maxWidth: 900, ...drawTrim(win, t0) },
     );
   });
