@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
-// Advisory check: flag changelog-style version-prefixed entries added to narrative docs.
+// Advisory check: flag any user-readable version number (e.g. `v0.14.14`) in narrative docs.
 //
-// Project convention: docs should read as the *current* state of the system. When a doc is
-// updated after a code change, the change should be woven into the prose — NOT appended as a
-// version-prefixed changelog entry (e.g. `v1.2.3: ...`, `## v1.2.3`, `- v1.2.3 — ...`).
-// Version provenance, if needed, belongs in an HTML comment (`<!-- since v1.2.3 -->`), which
-// this check does not flag (it only inspects line-leading version tokens).
+// Project convention: docs should read as the *current* state of the system, with NO visible
+// version numbers. When a doc is updated after a code change, weave the change into the prose;
+// do not leave version annotations a reader can see — neither line-leading changelog prefixes
+// (`v1.2.3: ...`, `## v1.2.3`) nor inline provenance (`... 端点（v0.14.11）`).
+// Version provenance, if it must be recorded, belongs in an HTML comment (`<!-- since v1.2.3 -->`),
+// which renders invisibly and is therefore NOT flagged.
 //
 // This is ADVISORY: it prints findings and exits 0 (never blocks), unless --strict is passed.
 // It mirrors scripts/check-doc-impact.mjs for arg/git conventions.
@@ -30,12 +31,35 @@ const EXEMPT = [
   /^docs-site\/\.vitepress\/dist\//,
 ];
 
-// A version used as a changelog-style prefix. The leading `v` is REQUIRED: it is what
-// distinguishes a changelog entry (`## v1.2.3`, `v1.2.3: ...`) from a numbered section
-// heading (`## 4.1 ...`, `### 7.4 ...`) or a section number, which must not be flagged.
-const RE_HEADING = /^#{1,6}\s+v\d+\.\d+(?:\.\d+)?\b/i; // "## v1.2.3", "## v0.8"
-const RE_PREFIX = /^\s*(?:[-*+]\s+)?v\d+\.\d+\.\d+\s*[:：\-–—]/i; // "v1.2.3: ...", "- v1.2.3 — ..."
-const RE_FENCE = /^\s*(?:```|~~~)/;
+// Any user-readable version token like `v0.14.14` / `v1.2`. The leading `v` plus a dot is what
+// marks a version annotation; this deliberately does NOT match `/v1/` routes, a bare `v2`, a
+// section number (`4.1`), or "Node v18+" (no dot). Matched anywhere a reader can see it.
+const RE_VERSION = /(?<![A-Za-z0-9])v\d+\.\d+(?:\.\d+)*/i;
+
+// Remove HTML-comment spans from a line, carrying multi-line comment state across lines, so a
+// version that lives only inside `<!-- ... -->` (the sanctioned place) is not flagged.
+function stripComments(line, inComment) {
+  let out = "";
+  let i = 0;
+  while (i < line.length) {
+    if (inComment) {
+      const end = line.indexOf("-->", i);
+      if (end === -1) break;
+      i = end + 3;
+      inComment = false;
+    } else {
+      const start = line.indexOf("<!--", i);
+      if (start === -1) {
+        out += line.slice(i);
+        break;
+      }
+      out += line.slice(i, start);
+      i = start + 4;
+      inComment = true;
+    }
+  }
+  return { visible: out, inComment };
+}
 
 function parseArgs(argv) {
   const out = { base: "", head: "", staged: false, files: [], format: "text", writeMarkdown: "", strict: false };
@@ -105,16 +129,33 @@ function addedLines(file, opts) {
   return added;
 }
 
+// YAML frontmatter (the leading `---` ... `---` block) is metadata VitePress consumes; it is
+// NOT rendered to readers, so a `since: v0.1.0` field there is invisible and must not be flagged.
+// Returns the 1-based line number of the closing `---`, or 0 if there is no frontmatter.
+function frontmatterEnd(file) {
+  let text;
+  try {
+    text = readFileSync(resolve(repoRoot, file), "utf8");
+  } catch {
+    return 0;
+  }
+  const lines = text.split("\n");
+  if (lines[0]?.trim() !== "---") return 0;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === "---") return i + 1;
+  }
+  return 0;
+}
+
 function scanFile(file, opts) {
   const findings = [];
-  let inFence = false;
+  const fmEnd = frontmatterEnd(file);
+  let inComment = false;
   for (const { line, content } of addedLines(file, opts)) {
-    if (RE_FENCE.test(content)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
-    if (RE_HEADING.test(content) || RE_PREFIX.test(content)) {
+    const stripped = stripComments(content, inComment);
+    inComment = stripped.inComment;
+    if (line <= fmEnd) continue; // skip invisible frontmatter
+    if (RE_VERSION.test(stripped.visible)) {
       findings.push({ path: file, line, snippet: content.trim().slice(0, 120) });
     }
   }
@@ -125,12 +166,12 @@ const args = parseArgs(process.argv.slice(2));
 const findings = changedDocFiles(args).flatMap((f) => scanFile(f, args));
 
 const HINT =
-  "把改动融入正文,或将版本信息放进 HTML 注释 (<!-- since vX.Y.Z -->),不要用 changelog 式版本前缀";
+  "文档不应出现用户可见的版本号(如 v0.14.14);删除它, 或把版本信息移入 HTML 注释 (<!-- since vX.Y.Z -->)";
 
 function toMarkdown() {
   const lines = ["<!-- doc-version-prefix-check -->", "## Doc Version-Prefix Style Check", ""];
   if (findings.length === 0) {
-    lines.push("- No version-prefixed changelog entries found in changed docs.");
+    lines.push("- No user-readable version numbers found in changed docs.");
     return lines.join("\n");
   }
   lines.push(`- Findings: ${findings.length} — ${HINT}`, "", "### Findings");
@@ -146,14 +187,14 @@ if (args.writeMarkdown) {
 
 if (args.format === "github") {
   for (const f of findings) {
-    process.stdout.write(`::warning file=${f.path},line=${f.line}::doc version-prefix: ${HINT}\n`);
+    process.stdout.write(`::warning file=${f.path},line=${f.line}::doc version: ${HINT}\n`);
   }
 }
 
 if (findings.length === 0) {
-  process.stdout.write("文档版本前缀检查: 未发现 changelog 式版本前缀。\n");
+  process.stdout.write("文档版本号检查: 未发现用户可见的版本号。\n");
 } else {
-  process.stdout.write(`文档版本前缀检查: 发现 ${findings.length} 处建议改写 (${HINT}):\n`);
+  process.stdout.write(`文档版本号检查: 发现 ${findings.length} 处建议改写 (${HINT}):\n`);
   for (const f of findings) process.stdout.write(`  ${f.path}:${f.line}  ${f.snippet}\n`);
 }
 
