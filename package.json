@@ -17,6 +17,8 @@
     "docs:build": "pnpm --filter @anno/docs-site build",
     "docs:preview": "pnpm --filter @anno/docs-site preview",
     "docs:hotkeys": "pnpm --filter @anno/docs-site hotkeys",
+    "docs:settings": "pnpm --filter @anno/docs-site settings",
+    "docs:gen": "pnpm --filter @anno/docs-site gen",
     "docs:gen-env-vars": "node docs-site/scripts/generate-env-vars.mjs",
     "docs:impact": "node scripts/check-doc-impact.mjs"
   },

@@ -8,6 +8,10 @@ on:
       - "apps/api/openapi.snapshot.json"
       - "CHANGELOG.md"
       - ".github/workflows/docs-validate.yml"
+      # 生成文档的真值来源:改了它们但忘了重新生成,本工作流的 check:codegen 拦住
+      - "apps/web/src/pages/Workbench/state/hotkeys.ts"
+      - "apps/web/src/pages/Workbench/state/workbenchSettingsFields.ts"
+      - "apps/web/src/api/auth.ts"
   push:
     branches: [main]
     paths:
@@ -15,6 +19,9 @@ on:
       - "docs/**"
       - "apps/api/openapi.snapshot.json"
       - "CHANGELOG.md"
+      - "apps/web/src/pages/Workbench/state/hotkeys.ts"
+      - "apps/web/src/pages/Workbench/state/workbenchSettingsFields.ts"
+      - "apps/web/src/api/auth.ts"
 
 permissions:
   contents: read
@@ -44,6 +51,9 @@ jobs:
 
       - name: CHANGELOG vs git tag (warning only)
         run: pnpm --filter @anno/docs-site check:changelog
+
+      - name: Generated docs in sync with code (hotkeys + workbench settings)
+        run: pnpm --filter @anno/docs-site check:codegen
 
       - name: Build docs site (catches broken links via VitePress)
         env:
