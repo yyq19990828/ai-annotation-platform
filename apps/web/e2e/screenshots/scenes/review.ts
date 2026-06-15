@@ -49,4 +49,23 @@ export const REVIEW_SCENES: ScreenshotScene[] = [
     capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
     target: "docs-site/user-guide/images/review/reject-form.png",
   },
+  {
+    // ReviewPage 全貌：左侧批次树 + 中央任务列表（缩略图 + 批量操作）
+    name: "review/review-list-page",
+    role: "reviewer",
+    route: () => "/review",
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(400);
+      // 点左侧批次加载中央任务列表，但不打开单任务画布
+      const batch = page.getByText(/Batch 1/).first();
+      if (await batch.count()) {
+        await batch.click().catch(() => {});
+        await page.waitForTimeout(500);
+      }
+      await page.waitForLoadState("networkidle");
+    },
+    capture: { kind: "fullPage" },
+    target: "docs-site/user-guide/images/review/review-list-page.png",
+  },
 ];
