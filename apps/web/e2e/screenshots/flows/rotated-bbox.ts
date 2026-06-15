@@ -60,8 +60,28 @@ export async function runRotatedBbox(page: Page, adminEmail: string): Promise<Dr
   await page.mouse.up();
   await page.waitForTimeout(1400); // 停留展示画好的旋转框(angle=0)被选中态 + 手柄
 
-  // 注：旋转手柄是 Konva 绘制无 DOM 句柄，盲拖坐标易在 rotated-box 工具下空拖出第二个框，
-  // 故本 GIF 只演示「绘制」；旋转演示留待后续(需精确手柄坐标或 DOM 句柄)。
+  // ── 抓旋转手柄改 angle ──
+  // 手柄是 Konva Circle，无 DOM 句柄，但屏幕坐标可精确推算：它在框中心正上方
+  // halfH + handleOffset 处（ImageStageShapes：handleY = -hh - 18/scale；18/scale 经
+  // scale 补偿后恒为 18 屏幕 px，故与缩放无关）。命中圈带 hitStrokeWidth 容差，盲拖风险已消除。
+  // 旋转角算法（ImageStage rotateBox）：deg = atan2(dx, -dy)，正上方为 0°、顺时针为正；
+  // 故让光标保持半径 r 绕框中心 (cx,cy) 顺时针扫角，即可把 angle 从 0 拖到 targetDeg。
+  const handleOffset = 18;
+  const r = halfH + handleOffset;
+  await page.mouse.move(cx, cy - r); // 命中正上方手柄
+  await page.waitForTimeout(450);
+  await page.mouse.down();
+  await page.waitForTimeout(200);
+  const targetDeg = 35;
+  const rotSteps = 14;
+  for (let i = 1; i <= rotSteps; i++) {
+    const rad = ((targetDeg * i) / rotSteps) * (Math.PI / 180);
+    await page.mouse.move(cx + r * Math.sin(rad), cy - r * Math.cos(rad));
+    await page.waitForTimeout(60);
+  }
+  await page.waitForTimeout(700); // 停留展示旋转到位的框
+  await page.mouse.up();
+  await page.waitForTimeout(1000); // 等 commit 落库 + 选中态稳定
 
   const drawEndMs = Date.now();
 
