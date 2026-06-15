@@ -3,6 +3,8 @@
 > 这个文件**不上侧边栏**，仅作为 maintainer 的工作清单。
 >
 > 标 `[auto]` 的图由 `pnpm --filter web screenshots` 自动生成（脚本：`apps/web/e2e/screenshots/`），输出到 `docs-site/user-guide/images/`。
+>
+> 标 `[auto-gif]` 的动图由 `pnpm --filter web screenshots:flows` 录制（流程脚本：`apps/web/e2e/screenshots/flows/`），webm→GIF（需 ffmpeg），多步交互用，直接落到 `docs-site/user-guide/images/<page>/<name>.gif`。
 > 更新流程：
 >
 > 1. 启动 docker / api / dev 三件套（同 `pnpm test:e2e`）
@@ -76,9 +78,9 @@
 - [x] `images/projects/ai-pre-history-search.png` — 预标注历史搜索 [auto]
 - [~] ~~`images/projects/ai-pre-empty-alias.png` — 预标注 alias 为空提示~~ — **已废弃**：PromptComposer（alias 警告所在）在 ai-pre 重构中删除，无对应 UI
 - [x] `images/projects/ai-pre-config-panel.png` — 项目详情面板（批次列表 + 配置区 + 跑预标按钮 + 导入预测按钮）`[auto]`
-- [ ] `images/projects/ai-pre-variant-selector.png` — VariantSelector 两轴选项 + 推荐 badge [manual]
+- [x] `images/projects/ai-pre-variant-selector.gif` — VariantSelector 两轴选项 + 推荐 badge `[auto-gif]`（flows/ai-pre-variant-selector，切 select 看 显存/精度/推荐 pill 联动）
 - [x] `images/projects/batch-status-list.png` — 批次列表各状态彩色徽标 `[auto]`（指向 P-0001，有 BT-260/261/262 多批次）
-- [ ] `images/projects/batch-bulk-actions.png` — 多选后批量操作工具栏（含批量通过/驳回）[manual]
+- [x] `images/projects/batch-bulk-actions.gif` — 多选后批量操作工具栏（含批量通过/驳回）`[auto-gif]`（flows/batch-bulk-actions，勾选批次→工具栏浮现，P-0001）
 - [ ] `images/projects/batch-export-dialog.png` — 导出格式选择面板 [manual]
 - [x] `images/projects/data-manager-overview.png` — 整体布局（视图列表 + 过滤条件栏 + 任务表格）`[auto]`
 - [x] `images/projects/data-manager-filter-rules.png` — 过滤条件行编辑器字段选择器展开 `[auto]`
