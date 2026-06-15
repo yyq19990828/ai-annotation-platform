@@ -17,6 +17,7 @@ import { runBatchBulkActions } from "./batch-bulk-actions";
 import { runAiPreVariantSelector } from "./ai-pre-variant-selector";
 import { runRotatedBbox } from "./rotated-bbox";
 import { runPolylineDraw } from "./polyline-draw";
+import { runPolygonDraw } from "./polygon-draw";
 import { convertToGif } from "../_helpers/recorder";
 import { execFileSync } from "child_process";
 import path from "path";
@@ -66,7 +67,7 @@ test.afterAll(() => {
         "psql", "-U", "user", "-d", "annotation", "-c",
         "DELETE FROM annotations a USING tasks t, projects p " +
           "WHERE a.task_id=t.id AND t.project_id=p.id AND p.display_id='P-COCO8' " +
-          "AND a.geometry->>'type' IN ('rotated_bbox','polyline','region');",
+          "AND a.geometry->>'type' IN ('rotated_bbox','polyline','region','polygon','multi_polygon');",
       ],
       { stdio: "ignore" },
     );
@@ -172,6 +173,19 @@ test.describe("flow recordings", () => {
       page,
       "polyline-draw",
       path.join(DOCS_IMAGES, "polyline/draw-in-progress.gif"),
+      { fps: 8, maxWidth: 900, ...drawTrim(win, t0) },
+    );
+  });
+
+  test("polygon-draw — 多边形逐点绘制", async ({ page, seed }) => {
+    if (!cached) throw new Error("seed peek 未完成");
+    const t0 = Date.now();
+    await seed.injectToken(page, cached.admin_email);
+    const win = await runPolygonDraw(page, cached);
+    await finalize(
+      page,
+      "polygon-draw",
+      path.join(DOCS_IMAGES, "polygon/draw-in-progress.gif"),
       { fps: 8, maxWidth: 900, ...drawTrim(win, t0) },
     );
   });
