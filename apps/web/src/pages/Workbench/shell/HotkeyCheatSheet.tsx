@@ -5,7 +5,7 @@ import { GROUP_LABEL, HOTKEYS, type HotkeyDef, type HotkeyGroup } from "../state
 import { getHotkeyUsage } from "../state/hotkeyUsage";
 import styles from "./HotkeyCheatSheet.module.css";
 
-const GROUPS: HotkeyGroup[] = ["draw", "video", "view", "ai", "nav", "system"];
+const GROUPS: HotkeyGroup[] = ["draw", "video", "view", "ai", "nav", "threed", "system"];
 
 interface HotkeyCheatSheetProps {
   open: boolean;
