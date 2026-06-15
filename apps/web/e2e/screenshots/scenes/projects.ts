@@ -184,21 +184,22 @@ export const PROJECT_SCENES: ScreenshotScene[] = [
   {
     name: "projects/prediction-purge-modal",
     role: "admin",
-    route: () => "/dashboard",
+    // /projects（AdminProjectsDashboard）的项目卡/行才有 ProjectActionsMenu ⋮ 菜单
+    route: () => "/projects",
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
       await page.waitForTimeout(400);
-      // 项目卡片「更多操作」菜单 → 清理预测
-      const menuBtn = page.getByRole("button", { name: /更多操作|更多|操作/ }).first();
+      // 项目行「更多操作」⋮ 菜单（title="更多操作"）→ 清理预测
+      // 所有 click 显式带 timeout，避免点到不可交互元素时挂到测试级 30s 超时
+      const menuBtn = page.getByRole("button", { name: "更多操作" }).first();
       if (await menuBtn.count()) {
-        await menuBtn.click().catch(() => {});
-        await page.waitForTimeout(250);
+        await menuBtn.click({ timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(300);
       }
-      const purge = page.getByRole("menuitem", { name: /清理预测/ }).first();
+      const purge = page.getByText("清理预测", { exact: true }).first();
       if (await purge.count()) {
-        await purge.click().catch(() => {});
-      } else {
-        await page.getByText(/清理预测/).first().click().catch(() => {});
+        await purge.click({ timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(300);
       }
       await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});
       await page.waitForTimeout(200);
