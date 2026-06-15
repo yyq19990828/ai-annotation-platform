@@ -302,7 +302,7 @@ export function ImageStage({
   const stageRef = useRef<Konva.Stage>(null);
   const vpRef = useRef(vp);
   vpRef.current = vp;
-  const vpSize = useElementSize(containerRef);
+  const { ref: setContainerNode, size: vpSize } = useElementSize(containerRef);
 
   const [image, imageStatus] = useImage(fileUrl ?? "");
   // 已知尺寸 (task 元数据) 优先, 让翻页时无需等 image onload 就能算 fit; 回退到加载后的自然尺寸。
@@ -911,7 +911,7 @@ export function ImageStage({
 
   return (
     <div
-      ref={containerRef}
+      ref={setContainerNode}
       data-testid="workbench-stage"
       className={styles.root}
       onMouseLeave={() => {

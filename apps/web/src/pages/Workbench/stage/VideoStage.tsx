@@ -242,7 +242,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const stageLayerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<SVGSVGElement>(null);
-  const viewportSize = useElementSize(containerRef);
+  const { ref: setContainerNode, size: viewportSize } = useElementSize(containerRef);
   const { vp, vpRef, setVp, fit, zoomAt } = useViewportTransform();
   // v0.11.28：给 overlay SVG 打标记，供改类悬浮框按"画布上的框"定位
   //（handleStartChangeClass 用 querySelector 取其屏幕矩形 + 当前帧 bbox 算锚点）。
@@ -1617,7 +1617,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
 
   return (
     <div
-      ref={containerRef}
+      ref={setContainerNode}
       data-testid="video-stage"
       onContextMenu={handleContextMenu}
       onMouseEnter={showPlaybackOverlay}
