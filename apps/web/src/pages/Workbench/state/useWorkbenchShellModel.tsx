@@ -33,7 +33,8 @@ import type { Annotation, TaskResponse, AnnotationResponse } from "@/types";
 import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 import { useWorkbenchState } from "./useWorkbenchState";
-import { useToolBindings } from "./useToolBindings";
+import { useToolBindings, classesForUnit } from "./useToolBindings";
+import type { ToolUnitId } from "@/constants/toolUnits";
 import { useViewportTransform } from "./useViewportTransform";
 import { useAnnotationHistory } from "./useAnnotationHistory";
 import { useRecentClasses } from "./useRecentClasses";
@@ -398,6 +399,14 @@ export function useWorkbenchShellModel({
   const classes = toolView.classes;
   const classesConfig = toolView.classesConfig;
   void toolView.toolUnitId;
+  // B-57 · 采纳预测选类时, popover 须按预测自身的 tool_unit (如 region) 列出类别, 而非当前
+  // 激活工具 (bbox) 的 classes — 后者会让多边形预测只显示矩形框的类, 选不到正确类别 → 反复 422。
+  // 非采纳态 / 缺 unit 时退回当前工具 classes, 保持原有改类行为不变。
+  const editingAcceptUnit = s.editingClass?.accept?.toolUnitId;
+  const editingAcceptClasses = useMemo(() => {
+    if (!editingAcceptUnit) return classes;
+    return classesForUnit(currentProject?.tool_bindings, editingAcceptUnit as ToolUnitId);
+  }, [editingAcceptUnit, currentProject?.tool_bindings, classes]);
   const activeClass = s.activeClass;
   const setActiveClass = s.setActiveClass;
   const tool = s.tool;
@@ -2119,6 +2128,7 @@ export function useWorkbenchShellModel({
               stageGeom={stageGeom}
               vp={vp}
               classes={classes}
+              editingClassClasses={editingAcceptClasses}
               recentClasses={recentClasses}
               activeClass={s.activeClass}
               onPickPendingClass={handlePickPendingClassAny}

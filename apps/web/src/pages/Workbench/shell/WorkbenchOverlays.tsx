@@ -24,6 +24,8 @@ interface WorkbenchOverlaysProps {
   stageGeom: StageGeometry;
   vp: Viewport;
   classes: string[];
+  /** B-57 · 采纳预测选类时按预测自身工具单位 (如 region) 列出的类别; 非采纳态等于 classes。 */
+  editingClassClasses: string[];
   recentClasses: string[];
   activeClass: string;
   onPickPendingClass: (cls: string) => void;
@@ -63,6 +65,7 @@ export function WorkbenchOverlays({
   stageGeom,
   vp,
   classes,
+  editingClassClasses,
   recentClasses,
   activeClass,
   onPickPendingClass,
@@ -108,7 +111,7 @@ export function WorkbenchOverlays({
         <ClassPickerPopover
           position="fixed"
           anchor={editingClass.anchor}
-          classes={classes}
+          classes={editingClassClasses}
           recent={recentClasses}
           defaultClass={editingClass.currentClass}
           title={
@@ -127,7 +130,7 @@ export function WorkbenchOverlays({
           imgW={stageGeom.imgW}
           imgH={stageGeom.imgH}
           vp={vp}
-          classes={classes}
+          classes={editingClassClasses}
           recent={recentClasses}
           defaultClass={editingClass.currentClass}
           title={

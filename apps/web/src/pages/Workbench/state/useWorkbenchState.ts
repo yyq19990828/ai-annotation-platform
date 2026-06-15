@@ -95,7 +95,9 @@ export type EditingClass = {
   anchor?: { left: number; top: number };
   // v0.14.17 · 采纳时选类: 非空时该弹窗不是"改已存标注的类", 而是"为采纳某预测选项目标签",
   // commit 时走 accept(override_class_name) 而非 update(class_name). 复用同一 ClassPickerPopover.
-  accept?: { predictionId: string; shapeIndex?: number };
+  // B-57 · toolUnitId: 预测自身的工具单位 (如 polygon→region), 让 popover 按它取类别集合,
+  // 而非当前激活工具 (bbox) 的集合 — 否则采纳多边形时只列出矩形框的类, 选不到正确类别。
+  accept?: { predictionId: string; shapeIndex?: number; toolUnitId?: string };
 } | null;
 
 export function useWorkbenchState() {

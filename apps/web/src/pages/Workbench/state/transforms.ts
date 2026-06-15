@@ -251,6 +251,8 @@ export function predictionsToBoxes(
         id: `pred-${p.id}-${shapeIndex}`,
         annotation_type: shape.geometry.type,
         geometry: shape.geometry,
+        // B-57 · 采纳时让选类 popover 能按预测自身的工具单位 (而非当前激活工具) 取类别集合。
+        tool_unit_id: unit,
         predictionId: p.id,
         shapeIndex,
         ...s,

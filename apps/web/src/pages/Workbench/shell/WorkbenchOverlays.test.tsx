@@ -15,6 +15,7 @@ const baseProps = {
   stageGeom: { imgW: 0, imgH: 0 },
   vp: { scale: 1, tx: 0, ty: 0 },
   classes: ["Car", "Bike"],
+  editingClassClasses: ["Car", "Bike"],
   recentClasses: [],
   activeClass: "Car",
   onPickPendingClass: noop,
