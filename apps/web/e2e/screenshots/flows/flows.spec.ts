@@ -23,6 +23,7 @@ import { runMaskDraw } from "./mask-draw";
 import { runVideoTrack } from "./video-track";
 import { runPointcloudControls } from "./pointcloud-controls";
 import { runVideoDraw } from "./video-draw";
+import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
 import { convertToGif } from "../_helpers/recorder";
 import { execFileSync } from "child_process";
 import path from "path";
@@ -269,6 +270,20 @@ test.describe("flow recordings", () => {
       // 画框+逐帧插值帧间变化大, 比其它 flow 再降一档(fps5/620)压到 5MB 内。
       path.join(DOCS_IMAGES, "workbench/video-track-trajectory.gif"),
       { fps: 5, maxWidth: 620, ...drawTrim(win, t0) },
+    );
+  });
+
+  test("hotkey-cheatsheet — 键盘快捷键面板(? 打开)", async ({ page, seed }) => {
+    if (!cached) throw new Error("seed peek 未完成");
+    const t0 = Date.now();
+    await seed.injectToken(page, cached.admin_email);
+    const win = await runHotkeyCheatSheet(page, cached.admin_email);
+    await finalize(
+      page,
+      "hotkey-cheatsheet",
+      // 面板以文字 + kbd 为主、帧间变化小，沿用画布档 fps8/900 即可压到 5MB 内。
+      path.join(DOCS_IMAGES, "workbench/hotkey-cheatsheet.gif"),
+      { fps: 8, maxWidth: 900, ...drawTrim(win, t0) },
     );
   });
 });
