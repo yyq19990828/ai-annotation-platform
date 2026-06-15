@@ -37,7 +37,7 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
 
 ## 批量预标图像批次
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/ai-pre-config-panel.png — 项目详情面板（批次列表 + 配置区 + 跑预标按钮 + 导入预测按钮）[manual] -->
+![项目详情面板（批次列表 + 配置区 + 跑预标按钮 + 导入预测按钮）](../images/projects/ai-pre-config-panel.png)
 
 1. 勾选一个或多个 `active` 批次。
 2. 选择 ML Backend。项目注册多个 backend 时可在这里切换，不必回设置页改绑定。

@@ -16,7 +16,7 @@ last_reviewed: 2026-06-10
 
 ## 表结构要点
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/audit-logs/detail-modal.png — 详情 Modal detail_json + 时间线追溯按钮 [manual] -->
+![详情 Modal detail_json + 时间线追溯按钮](../images/superadmin/audit-logs/detail-modal.png)
 
 | 字段 | 含义 |
 |---|---|
