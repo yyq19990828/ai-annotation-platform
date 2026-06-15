@@ -37,75 +37,93 @@ def _clamp(value: float, lo: int, hi: int) -> int:
     return max(lo, min(hi, round(value)))
 
 
+def _upgrade_prefs(prefs):
+    """单行 up 转换：旧像素宽度 → common 百分比，并剥除 layout 旧键。
+
+    无 leftWidth/rightWidth 旧键（或结构不符）时返回 None，表示该行无需更新。
+    就地改 prefs 后返回（纯逻辑，与 op/bind 解耦，供 upgrade() 与单测复用）。"""
+    if not isinstance(prefs, dict):
+        return None
+    workbench = prefs.get("workbench")
+    if not isinstance(workbench, dict):
+        return None
+    layout = workbench.get("layout")
+    if not isinstance(layout, dict):
+        return None
+    if "leftWidth" not in layout and "rightWidth" not in layout:
+        return None
+
+    common = workbench.get("common")
+    if not isinstance(common, dict):
+        common = {}
+
+    left_px = layout.pop("leftWidth", None)
+    right_px = layout.pop("rightWidth", None)
+    if isinstance(left_px, (int, float)):
+        common["leftWidthPct"] = _clamp(left_px / REF_WIDTH * 100, 10, 35)
+    if isinstance(right_px, (int, float)):
+        common["rightWidthPct"] = _clamp(right_px / REF_WIDTH * 100, 10, 35)
+
+    workbench["common"] = common
+    workbench["layout"] = layout
+    prefs["workbench"] = workbench
+    return prefs
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     rows = bind.execute(sa.text("SELECT id, preferences FROM users")).fetchall()
     for row_id, prefs in rows:
-        if not isinstance(prefs, dict):
+        new_prefs = _upgrade_prefs(prefs)
+        if new_prefs is None:
             continue
-        workbench = prefs.get("workbench")
-        if not isinstance(workbench, dict):
-            continue
-        layout = workbench.get("layout")
-        if not isinstance(layout, dict):
-            continue
-        if "leftWidth" not in layout and "rightWidth" not in layout:
-            continue
-
-        common = workbench.get("common")
-        if not isinstance(common, dict):
-            common = {}
-
-        left_px = layout.pop("leftWidth", None)
-        right_px = layout.pop("rightWidth", None)
-        if isinstance(left_px, (int, float)):
-            common["leftWidthPct"] = _clamp(left_px / REF_WIDTH * 100, 10, 35)
-        if isinstance(right_px, (int, float)):
-            common["rightWidthPct"] = _clamp(right_px / REF_WIDTH * 100, 10, 35)
-
-        workbench["common"] = common
-        workbench["layout"] = layout
-        prefs["workbench"] = workbench
         bind.execute(
-            sa.text(
-                "UPDATE users SET preferences = CAST(:p AS jsonb) WHERE id = :id"
-            ),
-            {"p": json.dumps(prefs), "id": row_id},
+            sa.text("UPDATE users SET preferences = CAST(:p AS jsonb) WHERE id = :id"),
+            {"p": json.dumps(new_prefs), "id": row_id},
         )
+
+
+def _downgrade_prefs(prefs):
+    """单行 down 转换：common 百分比 → layout 像素，并剥除 pct 键。
+
+    无 leftWidthPct/rightWidthPct（或结构不符）时返回 None。像素下限截断（200/220）
+    使 up→down round-trip 非双射。就地改 prefs 后返回（供 downgrade() 与单测复用）。"""
+    if not isinstance(prefs, dict):
+        return None
+    workbench = prefs.get("workbench")
+    if not isinstance(workbench, dict):
+        return None
+    common = workbench.get("common")
+    if not isinstance(common, dict):
+        return None
+    if "leftWidthPct" not in common and "rightWidthPct" not in common:
+        return None
+
+    layout = workbench.get("layout")
+    if not isinstance(layout, dict):
+        layout = {}
+
+    left_pct = common.pop("leftWidthPct", None)
+    right_pct = common.pop("rightWidthPct", None)
+    if isinstance(left_pct, (int, float)):
+        layout["leftWidth"] = _clamp(left_pct / 100 * REF_WIDTH, 200, 560)
+    if isinstance(right_pct, (int, float)):
+        layout["rightWidth"] = _clamp(right_pct / 100 * REF_WIDTH, 220, 600)
+
+    workbench["common"] = common
+    workbench["layout"] = layout
+    prefs["workbench"] = workbench
+    return prefs
 
 
 def downgrade() -> None:
     bind = op.get_bind()
     rows = bind.execute(sa.text("SELECT id, preferences FROM users")).fetchall()
     for row_id, prefs in rows:
-        if not isinstance(prefs, dict):
+        new_prefs = _downgrade_prefs(prefs)
+        if new_prefs is None:
             continue
-        workbench = prefs.get("workbench")
-        if not isinstance(workbench, dict):
-            continue
-        common = workbench.get("common")
-        if not isinstance(common, dict):
-            continue
-        if "leftWidthPct" not in common and "rightWidthPct" not in common:
-            continue
-
-        layout = workbench.get("layout")
-        if not isinstance(layout, dict):
-            layout = {}
-
-        left_pct = common.pop("leftWidthPct", None)
-        right_pct = common.pop("rightWidthPct", None)
-        if isinstance(left_pct, (int, float)):
-            layout["leftWidth"] = _clamp(left_pct / 100 * REF_WIDTH, 200, 560)
-        if isinstance(right_pct, (int, float)):
-            layout["rightWidth"] = _clamp(right_pct / 100 * REF_WIDTH, 220, 600)
-
-        workbench["common"] = common
-        workbench["layout"] = layout
-        prefs["workbench"] = workbench
         bind.execute(
-            sa.text(
-                "UPDATE users SET preferences = CAST(:p AS jsonb) WHERE id = :id"
-            ),
-            {"p": json.dumps(prefs), "id": row_id},
+            sa.text("UPDATE users SET preferences = CAST(:p AS jsonb) WHERE id = :id"),
+            {"p": json.dumps(new_prefs), "id": row_id},
         )

@@ -21626,7 +21626,7 @@
         ]
       },
       "patch": {
-        "description": "更新 preferences，按顶层子树（workbench / ai）合并，未提交的子树保持不变。\n\npydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与\nAI 工具参数偏好可各自独立保存，互不覆盖。workbench 内部仍由前端提交全量子树；\n单独 PATCH layout 会覆盖旧 workbench 渲染字段。\n\n入参收 raw dict：先过 legacy 平铺键提升器（v0.16 移除）再手动走 pydantic 校验，\n校验失败按 FastAPI 原生 422 形态抛出。",
+        "description": "更新 preferences，按顶层子树（workbench / ai）合并，未提交的子树保持不变。\n\npydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与\nAI 工具参数偏好可各自独立保存，互不覆盖。workbench 内部仍由前端提交全量子树；\n单独 PATCH layout 会覆盖旧 workbench 渲染字段。\n\n入参收 raw dict：先过 legacy 平铺键提升器 + 移除键剥离器（均 v0.16 移除）再手动走\npydantic 校验，校验失败按 FastAPI 原生 422 形态抛出。",
         "operationId": "update_preferences_api_v1_auth_me_preferences_patch",
         "requestBody": {
           "content": {

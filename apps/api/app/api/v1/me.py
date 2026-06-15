@@ -116,7 +116,9 @@ async def request_self_deactivation(
 @router.get("/preferences", response_model=UserPreferences)
 async def get_preferences(user: User = Depends(get_current_user)) -> UserPreferences:
     """v0.9.41 · 读取当前用户的标注偏好。空字段走 schema 默认值。"""
-    return UserPreferences.model_validate(user.preferences or {})
+    return UserPreferences.model_validate(
+        _strip_removed_workbench_keys(user.preferences or {})
+    )
 
 
 # v0.16 移除 · v0.15.3 把 workbench 平铺键拆为 common/image 子树后，部署窗口期内
@@ -154,6 +156,33 @@ def _promote_legacy_workbench_keys(payload: dict) -> dict:
     return {**payload, "workbench": workbench}
 
 
+# v0.16 移除 · 已从 schema 移除、但存量 JSONB 仍可能残留的 workbench.layout 旧键。
+# 0105 迁移已批量清除；这里作为运行期安全网，防迁移未跑 / 灰度 / 回滚时
+# GET/PATCH /me/preferences 因 WorkbenchLayoutPreferences(extra="forbid") 直接 422。
+_REMOVED_WORKBENCH_LAYOUT_KEYS = ("leftWidth", "rightWidth")
+
+
+def _strip_removed_workbench_keys(prefs: dict) -> dict:
+    """剥除 workbench.layout 里已移除的边栏像素宽度旧键（leftWidth/rightWidth）。
+
+    不可变：命中旧键时返回浅拷贝（含清理后的 layout），否则原样返回入参。
+    v0.16 连同 0105 迁移窗口期一并移除。"""
+    workbench = prefs.get("workbench")
+    if not isinstance(workbench, dict):
+        return prefs
+    layout = workbench.get("layout")
+    if not isinstance(layout, dict) or not any(
+        key in layout for key in _REMOVED_WORKBENCH_LAYOUT_KEYS
+    ):
+        return prefs
+    clean_layout = {
+        key: value
+        for key, value in layout.items()
+        if key not in _REMOVED_WORKBENCH_LAYOUT_KEYS
+    }
+    return {**prefs, "workbench": {**workbench, "layout": clean_layout}}
+
+
 @router.patch("/preferences", response_model=UserPreferences)
 async def update_preferences(
     payload: dict,
@@ -166,9 +195,9 @@ async def update_preferences(
     AI 工具参数偏好可各自独立保存，互不覆盖。workbench 内部仍由前端提交全量子树；
     单独 PATCH layout 会覆盖旧 workbench 渲染字段。
 
-    入参收 raw dict：先过 legacy 平铺键提升器（v0.16 移除）再手动走 pydantic 校验，
-    校验失败按 FastAPI 原生 422 形态抛出。"""
-    promoted = _promote_legacy_workbench_keys(payload)
+    入参收 raw dict：先过 legacy 平铺键提升器 + 移除键剥离器（均 v0.16 移除）再手动走
+    pydantic 校验，校验失败按 FastAPI 原生 422 形态抛出。"""
+    promoted = _strip_removed_workbench_keys(_promote_legacy_workbench_keys(payload))
     try:
         validated = UserPreferences.model_validate(promoted)
     except ValidationError as exc:
@@ -186,7 +215,9 @@ async def update_preferences(
             ]
         ) from exc
     incoming = validated.model_dump(mode="json", exclude_unset=True, by_alias=True)
-    merged = {**(user.preferences or {}), **incoming}
+    # 顶层子树浅合并：本次未提交 workbench 时 merged.workbench 取存量值，可能仍残留已移除的
+    # layout 旧键 → strip 后再存回，使每次 PATCH 顺带自愈，下方 return 的 validate 也不 422。
+    merged = _strip_removed_workbench_keys({**(user.preferences or {}), **incoming})
     user.preferences = merged
     await db.commit()
     return UserPreferences.model_validate(merged)

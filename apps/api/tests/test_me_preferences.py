@@ -500,3 +500,154 @@ async def test_migration_0103_skips_rows_without_flat_keys(db_session, annotator
     assert res.rowcount == 0
     await db_session.refresh(user)
     assert user.preferences == {"workbench": {"layout": {"leftOpen": True}}}
+
+
+# ── 7. v0.16-pre · 运行期剥离已移除的 layout 像素键（leftWidth/rightWidth）─────
+#   边栏宽度迁到 common 百分比后，WorkbenchLayoutPreferences(extra="forbid") 删了这两个
+#   旧键；存量残留时 GET/PATCH 必须先剥离再校验，否则 422（0105 迁移未跑 / 灰度 / 回滚场景）。
+
+
+async def test_get_preferences_strips_removed_layout_px_keys(
+    httpx_client, annotator, db_session
+):
+    """存量行残留 layout.leftWidth/rightWidth 时 GET 不再 422，旧键剥离、合法键保留、pct 走默认。"""
+    user, token = annotator
+    user.preferences = {
+        "workbench": {"layout": {"leftWidth": 320, "rightWidth": 360, "leftOpen": True}}
+    }
+    await db_session.flush()
+
+    resp = await httpx_client.get(PREFS_URL, headers=_bearer(token))
+    assert resp.status_code == 200
+    wb = resp.json()["workbench"]
+    assert "leftWidth" not in wb["layout"]
+    assert "rightWidth" not in wb["layout"]
+    assert wb["layout"]["leftOpen"] is True  # 合法键不动
+    # strip 不补 pct，common 走 schema 默认 15。
+    assert wb["common"]["leftWidthPct"] == 15.0
+    assert wb["common"]["rightWidthPct"] == 15.0
+
+
+async def test_patch_non_workbench_subtree_heals_residual_layout_keys(
+    httpx_client, annotator, db_session
+):
+    """存量 workbench 残留旧键时，PATCH 非 workbench 子树（ui）不 422，且 merged 存回时旧键被剥离（自愈）。"""
+    user, token = annotator
+    user.preferences = {"workbench": {"layout": {"leftWidth": 320, "leftOpen": False}}}
+    await db_session.flush()
+
+    resp = await httpx_client.patch(
+        PREFS_URL, json={"ui": {"theme": "dark"}}, headers=_bearer(token)
+    )
+    assert resp.status_code == 200
+    layout = resp.json()["workbench"]["layout"]
+    assert "leftWidth" not in layout
+    assert layout["leftOpen"] is False
+
+
+async def test_patch_workbench_layout_with_removed_keys_not_422(
+    httpx_client, annotator
+):
+    """旧 tab 仍 PATCH layout.leftWidth 时，剥离器挡在 forbid 校验前 → 200，旧键不落库。"""
+    _, token = annotator
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"workbench": {"layout": {"leftWidth": 300, "rightOpen": True}}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    layout = resp.json()["workbench"]["layout"]
+    assert "leftWidth" not in layout
+    assert layout["rightOpen"] is True
+
+
+# ── 8. v0.16-pre · 0105 边栏像素↔百分比迁移（纯函数转换 + round-trip）─────────────
+
+
+def _load_migration_0105():
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "0105_workbench_sidebar_width_pct.py"
+    )
+    spec = importlib.util.spec_from_file_location("migration_0105", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_migration_0105_upgrade_px_to_pct_and_strip():
+    mod = _load_migration_0105()
+    out = mod._upgrade_prefs(
+        {
+            "workbench": {
+                "layout": {"leftWidth": 720, "rightWidth": 360, "leftOpen": True}
+            }
+        }
+    )
+    assert out is not None
+    # 720/1440*100=50 → clamp 上限 35；360/1440*100=25。
+    assert out["workbench"]["common"]["leftWidthPct"] == 35
+    assert out["workbench"]["common"]["rightWidthPct"] == 25
+    # 旧键剥离，layout 合法键保留。
+    assert "leftWidth" not in out["workbench"]["layout"]
+    assert "rightWidth" not in out["workbench"]["layout"]
+    assert out["workbench"]["layout"]["leftOpen"] is True
+    # 产物可过新 schema（forbid 不破）。
+    UserPreferences.model_validate(out)
+
+
+def test_migration_0105_upgrade_skips_rows_without_legacy_px():
+    mod = _load_migration_0105()
+    for prefs in (
+        {"workbench": {"common": {"leftWidthPct": 20}}},  # 已是新形态
+        {"workbench": {"layout": {"leftOpen": True}}},  # layout 无旧 px
+        {"ui": {"theme": "dark"}},  # 无 workbench
+        {"workbench": "nope"},  # workbench 非 dict
+        "not-a-dict",  # 行本身非 dict
+    ):
+        assert mod._upgrade_prefs(copy.deepcopy(prefs)) is None
+
+
+def test_migration_0105_downgrade_pct_to_px_and_strip():
+    mod = _load_migration_0105()
+    out = mod._downgrade_prefs(
+        {
+            "workbench": {
+                "common": {
+                    "leftWidthPct": 35,
+                    "rightWidthPct": 25,
+                    "longTaskSampleRate": 0.1,
+                }
+            }
+        }
+    )
+    assert out is not None
+    # 35/100*1440=504 → clamp(200,560)=504；25/100*1440=360。
+    assert out["workbench"]["layout"]["leftWidth"] == 504
+    assert out["workbench"]["layout"]["rightWidth"] == 360
+    # pct 剥离，其他 common 字段保留。
+    assert "leftWidthPct" not in out["workbench"]["common"]
+    assert "rightWidthPct" not in out["workbench"]["common"]
+    assert out["workbench"]["common"]["longTaskSampleRate"] == 0.1
+
+
+def test_migration_0105_roundtrip_lossy_at_clamp_bounds():
+    """up→down 非双射：pct 下限 10 + px 下限 200 把过小的宽度截断放大。"""
+    mod = _load_migration_0105()
+    up = mod._upgrade_prefs({"workbench": {"layout": {"leftWidth": 100}}})
+    # 100/1440*100=6.94 → round 7 → clamp 下限 10。
+    assert up["workbench"]["common"]["leftWidthPct"] == 10
+    down = mod._downgrade_prefs(up)
+    # 10/100*1440=144 → clamp 下限 200 ≠ 原始 100。
+    assert down["workbench"]["layout"]["leftWidth"] == 200
+
+
+def test_migration_0105_upgrade_idempotent():
+    """已剥离旧键的行再 up → None（不重复转换）。"""
+    mod = _load_migration_0105()
+    once = mod._upgrade_prefs({"workbench": {"layout": {"leftWidth": 300}}})
+    assert once is not None
+    assert "leftWidth" not in once["workbench"]["layout"]
+    assert mod._upgrade_prefs(once) is None
