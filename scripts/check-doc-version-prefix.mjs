@@ -30,9 +30,11 @@ const EXEMPT = [
   /^docs-site\/\.vitepress\/dist\//,
 ];
 
-// A SemVer-ish version used as a changelog-style prefix.
-const RE_HEADING = /^#{1,6}\s+v?\d+\.\d+(?:\.\d+)?\b/i; // "## v1.2.3", "### 0.8 ..."
-const RE_PREFIX = /^\s*(?:[-*+]\s+)?v?\d+\.\d+\.\d+\s*[:：\-–—]/i; // "v1.2.3: ...", "- v1.2.3 — ..."
+// A version used as a changelog-style prefix. The leading `v` is REQUIRED: it is what
+// distinguishes a changelog entry (`## v1.2.3`, `v1.2.3: ...`) from a numbered section
+// heading (`## 4.1 ...`, `### 7.4 ...`) or a section number, which must not be flagged.
+const RE_HEADING = /^#{1,6}\s+v\d+\.\d+(?:\.\d+)?\b/i; // "## v1.2.3", "## v0.8"
+const RE_PREFIX = /^\s*(?:[-*+]\s+)?v\d+\.\d+\.\d+\s*[:：\-–—]/i; // "v1.2.3: ...", "- v1.2.3 — ..."
 const RE_FENCE = /^\s*(?:```|~~~)/;
 
 function parseArgs(argv) {
