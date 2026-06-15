@@ -208,9 +208,10 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
   {
     name: "superadmin/failed-predictions/list",
     role: "admin",
-    route: () => "/ai-pre/jobs?status=failed",
+    // 不带 status query：客户端按 status 筛选会清空 mock 列表（同 workflows.ts 注释）。
+    // mock 全 failed job，列表本身即失败态 + 错误信息，已足够展示失败恢复场景。
+    route: () => "/ai-pre/jobs",
     prepare: async (page) => {
-      // mock 全 failed job，展示失败筛选列表（重试/放弃/显示已放弃 toggle）
       await page.route("**/api/v1/admin/preannotate-jobs*", async (route) => {
         const errors = ["model timeout", "backend connection refused", "CUDA out of memory"];
         const items = Array.from({ length: 5 }, (_, i) => ({
@@ -238,7 +239,7 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
           body: JSON.stringify({ items, next_cursor: null }),
         });
       });
-      await page.goto("/ai-pre/jobs?status=failed");
+      await page.goto("/ai-pre/jobs");
       await page.waitForLoadState("networkidle");
     },
     capture: { kind: "fullPage" },
@@ -268,10 +269,10 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
         await tab.click().catch(() => {});
         await page.waitForTimeout(400);
       }
-      // 点「注册」按钮打开表单
-      const reg = page.getByRole("button", { name: /注册\s*backend|注册\s*ML|^注册$|注册/ }).first();
+      // 点「+ 注册」按钮打开表单。exact:"注册" 避免匹配到「注册管理」tab（否则只是切回 tab，弹窗不开）
+      const reg = page.getByRole("button", { name: "注册", exact: true }).first();
       if (await reg.count()) {
-        await reg.click().catch(() => {});
+        await reg.click({ timeout: 3000 }).catch(() => {});
         await page.waitForTimeout(300);
       }
       await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});

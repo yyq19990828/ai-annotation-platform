@@ -75,7 +75,8 @@ export const PROJECT_SCENES: ScreenshotScene[] = [
   {
     name: "projects/batch-status-list",
     role: "admin",
-    route: (d) => `/projects/${d.project_id}/settings?section=batches`,
+    // seed peek 项目(COCO8)无批次会截出空态；P-0001 有 BT-260/261/262 多批次，能展示状态徽标
+    route: () => "/projects/3f999396-65da-4f2b-a32d-d1560bad74b0/settings?section=batches",
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
       await page.waitForTimeout(500); // 批次列表彩色状态徽标
