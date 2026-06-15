@@ -205,46 +205,10 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
     capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
     target: "docs-site/user-guide/images/superadmin/audit-logs/detail-modal.png",
   },
-  {
-    name: "superadmin/failed-predictions/list",
-    role: "admin",
-    // 不带 status query：客户端按 status 筛选会清空 mock 列表（同 workflows.ts 注释）。
-    // mock 全 failed job，列表本身即失败态 + 错误信息，已足够展示失败恢复场景。
-    route: () => "/ai-pre/jobs",
-    prepare: async (page) => {
-      await page.route("**/api/v1/admin/preannotate-jobs*", async (route) => {
-        const errors = ["model timeout", "backend connection refused", "CUDA out of memory"];
-        const items = Array.from({ length: 5 }, (_, i) => ({
-          id: `mock-fail-${i}-${"0".repeat(28)}`.slice(0, 36),
-          project_id: `mock-proj-${i}-${"0".repeat(26)}`.slice(0, 36),
-          project_name: `演示项目 ${i + 1}`,
-          project_display_id: `P-${100 + i}`,
-          batch_id: null,
-          ml_backend_id: null,
-          prompt: "person, car, truck",
-          output_mode: "manual",
-          status: "failed",
-          total_tasks: 80 + i * 20,
-          success_count: 80 + i * 20 - 3,
-          failed_count: 3,
-          started_at: new Date(Date.now() - i * 3600_000).toISOString(),
-          completed_at: new Date().toISOString(),
-          duration_ms: 60_000 + i * 12_000,
-          total_cost: null,
-          error_message: errors[i % errors.length],
-        }));
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ items, next_cursor: null }),
-        });
-      });
-      await page.goto("/ai-pre/jobs");
-      await page.waitForLoadState("networkidle");
-    },
-    capture: { kind: "fullPage" },
-    target: "docs-site/user-guide/images/superadmin/failed-predictions/list.png",
-  },
+  // NOTE: superadmin/failed-predictions/list 暂不自动化 —— 带 ?status=failed 时客户端 status
+  // 筛选会清空 mock 列表；不带 query 又会混入真实成功 job（绿色徽标），无法干净展示「失败筛选 +
+  // 重试/放弃」视图。需真实 failed-job 种子数据，归 Tier B。失败 job 列表本身已由
+  // workflows/failed-prediction-recovery-jobs-list 覆盖。
   {
     name: "superadmin/system-monitoring/workers-table",
     role: "admin",
@@ -260,16 +224,12 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
   {
     name: "superadmin/ml-backend/register-form",
     role: "admin",
-    route: () => "/model-market",
+    // tab 是 role="tab" 且由 URL ?tab= 驱动（ModelMarketPage.tsx），直接深链到注册管理 tab
+    route: () => "/model-market?tab=registry",
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
-      // 切「注册管理」tab
-      const tab = page.getByRole("button", { name: /注册管理/ }).first();
-      if (await tab.count()) {
-        await tab.click().catch(() => {});
-        await page.waitForTimeout(400);
-      }
-      // 点「+ 注册」按钮打开表单。exact:"注册" 避免匹配到「注册管理」tab（否则只是切回 tab，弹窗不开）
+      await page.waitForTimeout(400);
+      // 项目行「+ 注册」按钮（文案精确为「注册」）打开 MlBackendFormModal
       const reg = page.getByRole("button", { name: "注册", exact: true }).first();
       if (await reg.count()) {
         await reg.click({ timeout: 3000 }).catch(() => {});
