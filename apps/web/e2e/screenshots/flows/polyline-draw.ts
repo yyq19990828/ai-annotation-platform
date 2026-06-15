@@ -10,14 +10,14 @@
  * 画完的折线由 flows.spec 的 afterAll 经 psql 清理。
  */
 import type { Page } from "@playwright/test";
-import type { SeedData } from "../../fixtures/seed";
-import { hidePredictions } from "./_canvas";
+import { hidePredictions, openCoco8Annotate } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
-export async function runPolylineDraw(page: Page, data: SeedData): Promise<DrawWindow | null> {
-  const task = data.task_ids[0] ? `?task=${data.task_ids[0]}` : "";
-  await page.goto(`/projects/${data.project_id}/annotate${task}`);
-  await page.waitForLoadState("networkidle");
+export async function runPolylineDraw(page: Page, adminEmail: string): Promise<DrawWindow | null> {
+  if (!(await openCoco8Annotate(page, adminEmail))) {
+    console.warn("[polyline-draw] 无法解析 P-COCO8（seed_coco8 未跑?），跳过");
+    return null;
+  }
   await page.waitForTimeout(1400);
 
   // 准备（不进 GIF）：隐藏预测 → 选折线工具

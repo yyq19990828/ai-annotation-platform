@@ -11,18 +11,18 @@
  * 与结尾(落库等待)，GIF 只保留绘制过程。画完的标注由 flows.spec 的 afterAll 经 psql 清理。
  */
 import type { Page } from "@playwright/test";
-import type { SeedData } from "../../fixtures/seed";
-import { hidePredictions } from "./_canvas";
+import { hidePredictions, openCoco8Annotate } from "./_canvas";
 
 export interface DrawWindow {
   drawStartMs: number;
   drawEndMs: number;
 }
 
-export async function runRotatedBbox(page: Page, data: SeedData): Promise<DrawWindow | null> {
-  const task = data.task_ids[0] ? `?task=${data.task_ids[0]}` : "";
-  await page.goto(`/projects/${data.project_id}/annotate${task}`);
-  await page.waitForLoadState("networkidle");
+export async function runRotatedBbox(page: Page, adminEmail: string): Promise<DrawWindow | null> {
+  if (!(await openCoco8Annotate(page, adminEmail))) {
+    console.warn("[rotated-bbox] 无法解析 P-COCO8（seed_coco8 未跑?），跳过");
+    return null;
+  }
   await page.waitForTimeout(1400);
 
   // 准备（不进 GIF）：隐藏满屏预测框 → 选旋转框工具

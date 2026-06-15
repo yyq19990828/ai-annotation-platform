@@ -31,7 +31,6 @@ apps/web/e2e/screenshots/
 ├── scenes/                    # 场景声明（按功能分文件）
 │   ├── _types.ts              # ScreenshotScene 接口定义
 │   ├── auth.ts
-│   ├── workbench-bbox.ts
 │   ├── workbench-polygon.ts
 │   ├── workbench-sam.ts
 │   ├── projects.ts
@@ -162,9 +161,9 @@ maintainer 手动修改图片时，在 `manifest.json` 里把 `auto` 改为 `fal
 
 ```json
 {
-  "docs-site/user-guide/images/bbox/iou.png": {
+  "docs-site/user-guide/images/<page>/<figure>.png": {
     "auto": false,
-    "note": "IoU 重叠双框需真实标注数据，自动化无法复现"
+    "note": "示意图需人工合成，自动化无法复现"
   }
 }
 ```

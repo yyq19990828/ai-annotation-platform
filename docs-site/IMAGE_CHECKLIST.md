@@ -133,9 +133,7 @@
 - [x] `images/superadmin/system-monitoring/workers-table.png` — Workers 表（名称/Heartbeat/Pool/状态） `[auto]`
 
 ### 工作台
-- [x] `images/bbox/toolbar.png` — 工具栏 + 红框「矩形」按钮 [auto]
-- [x] `images/bbox/iou.png` — 双框 IoU 示意 [auto]
-- [x] `images/bbox/bulk-edit.png` — 多选 + 批量改类别 [auto]
+- [x] `images/bbox/draw-in-progress.gif` — 选矩形工具 → 画布拖出轴对齐矩形 `[auto-gif]`（flows/bbox-draw，P-COCO8）
 - [x] `images/polygon/vertex-edit.png` — 多边形选中态 + 边悬停 + 图标 [auto]
 - [x] `images/polygon/close-hint.png` — 三顶点后第四点贴近闭合提示 [auto]
 - [x] `images/keypoint/human-pose.png` — COCO 17 点人体姿态 + 骨架连线

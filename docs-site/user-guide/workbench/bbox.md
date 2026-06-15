@@ -3,15 +3,16 @@ audience: [annotator]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-06-15
 ---
 
 # Bbox 标注
 
-![工具栏](../images/bbox/toolbar.png)
-<!-- TODO(0.8.1) IMAGE_CHECKLIST: 工作台工具栏全图，红框标注「矩形」按钮 + 显示其 hotkey 提示。 -->
+矩形框（轴对齐 Bounding Box）是最常用的目标框，适合标注与图像坐标轴对齐的物体。
 
 ## 操作
+
+![矩形框绘制：选「矩形」工具后，在画布按下拖动松开生成一个轴对齐矩形](../images/bbox/draw-in-progress.gif)
 
 1. 按 `B` 切到矩形工具
 2. 在画布上按下鼠标 → 拖动 → 松开，即生成一个矩形
@@ -39,9 +40,3 @@ last_reviewed: 2026-06-10
 工作台内部使用 IoU（Intersection over Union）做 **AI 候选去重**：当一个 AI 候选框与已有的人工框重合度超过项目设置的去重阈值（默认 0.7）时，该候选框会在列表中标记为「已被覆盖」并半透显示，`全部采纳` 时自动跳过这些候选，防止重复落库。
 
 > 注意：IoU 在此是**去重/高亮**工具，不是审核评分。审核退回依据的是审核员的人工判断，不存在与「基准框」比对 IoU 的评分环节。
-
-![IoU 示意图](../images/bbox/iou.png)
-<!-- TODO(0.8.1) IMAGE_CHECKLIST: 一张图上叠两个 bbox（基准绿框 + 标注员蓝框），标注 IoU = 重叠面积 / 并集面积，含 0.5 / 0.7 / 0.9 三档对照。 -->
-
-![批量编辑](../images/bbox/bulk-edit.png)
-<!-- TODO(0.8.1) IMAGE_CHECKLIST: 多选 3-5 个 bbox（Shift+click）+ 右侧属性面板批量改类别的状态。 -->

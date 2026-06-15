@@ -12,8 +12,7 @@
  * 画完的 mask 由 flows.spec 的 afterAll 经 psql 清理。
  */
 import type { Page } from "@playwright/test";
-import type { SeedData } from "../../fixtures/seed";
-import { hidePredictions } from "./_canvas";
+import { hidePredictions, openCoco8Annotate } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 /** 沿水平线从 x0 涂到 x1（分步移动让录屏看到连续笔迹）。 */
@@ -29,10 +28,11 @@ async function stroke(page: Page, x0: number, x1: number, y: number) {
   await page.waitForTimeout(200);
 }
 
-export async function runMaskDraw(page: Page, data: SeedData): Promise<DrawWindow | null> {
-  const task = data.task_ids[0] ? `?task=${data.task_ids[0]}` : "";
-  await page.goto(`/projects/${data.project_id}/annotate${task}`);
-  await page.waitForLoadState("networkidle");
+export async function runMaskDraw(page: Page, adminEmail: string): Promise<DrawWindow | null> {
+  if (!(await openCoco8Annotate(page, adminEmail))) {
+    console.warn("[mask-draw] 无法解析 P-COCO8（seed_coco8 未跑?），跳过");
+    return null;
+  }
   await page.waitForTimeout(1400);
 
   // 准备（不进 GIF）：隐藏预测 → 选 Mask 笔刷

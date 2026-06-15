@@ -1,7 +1,6 @@
 export type { Role, MatrixAxis, ScreenshotScene } from "./_types";
 
 import { AUTH_SCENES } from "./auth";
-import { BBOX_SCENES } from "./workbench-bbox";
 import { POLYGON_SCENES } from "./workbench-polygon";
 import { SAM_SCENES } from "./workbench-sam";
 import { PROJECT_SCENES } from "./projects";
@@ -17,7 +16,6 @@ import { SUPERADMIN_SCENES } from "./superadmin";
 
 export const SCENES = [
   ...AUTH_SCENES,
-  ...BBOX_SCENES,
   ...POLYGON_SCENES,
   ...SAM_SCENES,
   ...PROJECT_SCENES,

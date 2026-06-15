@@ -16,6 +16,7 @@ import { runReviewReject } from "./review-reject";
 import { runBatchBulkActions } from "./batch-bulk-actions";
 import { runAiPreVariantSelector } from "./ai-pre-variant-selector";
 import { runRotatedBbox } from "./rotated-bbox";
+import { runBboxDraw } from "./bbox-draw";
 import { runPolylineDraw } from "./polyline-draw";
 import { runPolygonDraw } from "./polygon-draw";
 import { runMaskDraw } from "./mask-draw";
@@ -82,7 +83,7 @@ test.afterAll(() => {
       console.warn(`[flows] ${displayId} 演示标注清理失败（需 docker postgres 容器在运行）`);
     }
   };
-  del("P-COCO8", ["rotated_bbox", "polyline", "region", "polygon", "multi_polygon"]);
+  del("P-COCO8", ["bbox", "rotated_bbox", "polyline", "region", "polygon", "multi_polygon"]);
   del("P-VIDEO-DEV", ["video_bbox", "video_track_bbox"]);
 });
 
@@ -165,7 +166,7 @@ test.describe("flow recordings", () => {
     if (!cached) throw new Error("seed peek 未完成");
     const t0 = Date.now(); // 录屏起点参照（page 在测试体前创建，t0≈video t=0）
     await seed.injectToken(page, cached.admin_email);
-    const win = await runRotatedBbox(page, cached);
+    const win = await runRotatedBbox(page, cached.admin_email);
     await finalize(
       page,
       "rotated-bbox",
@@ -174,11 +175,24 @@ test.describe("flow recordings", () => {
     );
   });
 
+  test("bbox-draw — 矩形绘制", async ({ page, seed }) => {
+    if (!cached) throw new Error("seed peek 未完成");
+    const t0 = Date.now();
+    await seed.injectToken(page, cached.admin_email);
+    const win = await runBboxDraw(page, cached.admin_email);
+    await finalize(
+      page,
+      "bbox-draw",
+      path.join(DOCS_IMAGES, "bbox/draw-in-progress.gif"),
+      { fps: 8, maxWidth: 900, ...drawTrim(win, t0) },
+    );
+  });
+
   test("polyline-draw — 折线逐点绘制", async ({ page, seed }) => {
     if (!cached) throw new Error("seed peek 未完成");
     const t0 = Date.now();
     await seed.injectToken(page, cached.admin_email);
-    const win = await runPolylineDraw(page, cached);
+    const win = await runPolylineDraw(page, cached.admin_email);
     await finalize(
       page,
       "polyline-draw",
@@ -191,7 +205,7 @@ test.describe("flow recordings", () => {
     if (!cached) throw new Error("seed peek 未完成");
     const t0 = Date.now();
     await seed.injectToken(page, cached.admin_email);
-    const win = await runPolygonDraw(page, cached);
+    const win = await runPolygonDraw(page, cached.admin_email);
     await finalize(
       page,
       "polygon-draw",
@@ -204,7 +218,7 @@ test.describe("flow recordings", () => {
     if (!cached) throw new Error("seed peek 未完成");
     const t0 = Date.now();
     await seed.injectToken(page, cached.admin_email);
-    const win = await runMaskDraw(page, cached);
+    const win = await runMaskDraw(page, cached.admin_email);
     await finalize(
       page,
       "mask-draw",
@@ -222,8 +236,9 @@ test.describe("flow recordings", () => {
       page,
       "video-track",
       // 视频运动多、调色板帧间变化大，fps/宽度比画布 flow 再降一档以压到 5MB 内。
+      // 收起边栏后画布变宽、帧间变化更大，maxWidth 再降到 640 才稳压 5MB。
       path.join(DOCS_IMAGES, "workbench/video-track-overview.gif"),
-      { fps: 6, maxWidth: 720, ...drawTrim(win, t0) },
+      { fps: 6, maxWidth: 640, ...drawTrim(win, t0) },
     );
   });
 
