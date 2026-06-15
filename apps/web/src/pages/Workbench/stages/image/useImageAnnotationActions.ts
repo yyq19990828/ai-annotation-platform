@@ -589,7 +589,9 @@ export function useImageAnnotationActions({
               annotationId: "",
               geom: box.geometry as Geom,
               currentClass: box.cls,
-              accept: { predictionId: box.predictionId, shapeIndex: box.shapeIndex },
+              // B-57 · 带上预测自身的 tool_unit_id, 让 popover 列出该单位 (如 region) 的类别,
+              // 否则采纳多边形预测时只显示当前激活工具 (bbox) 的类, 选不到正确类别 → 反复 422。
+              accept: { predictionId: box.predictionId, shapeIndex: box.shapeIndex, toolUnitId: box.tool_unit_id ?? undefined },
             });
             pushToast({
               msg: "该类别不在项目标签集",
