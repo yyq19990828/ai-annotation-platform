@@ -19208,6 +19208,11 @@
         "additionalProperties": false,
         "description": "v0.15.5 · 视频模态偏好（播放 / 步进）。",
         "properties": {
+          "autoFitOnResize": {
+            "default": true,
+            "title": "Autofitonresize",
+            "type": "boolean"
+          },
           "defaultPlaybackRate": {
             "default": 1,
             "enum": [
