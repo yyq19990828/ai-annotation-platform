@@ -50,6 +50,33 @@ test.beforeAll(async ({ request }) => {
   };
 });
 
+// 画完删除：每条 flow 跑完后用 API 清掉它在演示任务上落下的标注，保持 DB 干净。
+// 用 API（而非画布 Ctrl+A/Delete）因后者受绘制态/焦点/防抖落库影响不可靠。
+test.afterEach(async ({ request }) => {
+  const taskId = cached?.task_ids[0];
+  if (!taskId || !cached) return;
+  const apiBase = process.env.PLAYWRIGHT_API_BASE ?? "http://localhost:8000";
+  try {
+    const login = await request.post(`${apiBase}/api/v1/__test/seed/login`, {
+      data: { email: cached.admin_email },
+    });
+    if (!login.ok()) return;
+    const token = (await login.json()).access_token as string;
+    const headers = { Authorization: `Bearer ${token}` };
+    const listRes = await request.get(`${apiBase}/api/v1/tasks/${taskId}/annotations`, { headers });
+    if (!listRes.ok()) return;
+    const body = await listRes.json();
+    const anns: Array<{ id: string }> = Array.isArray(body) ? body : (body.items ?? []);
+    for (const a of anns) {
+      await request
+        .delete(`${apiBase}/api/v1/tasks/${taskId}/annotations/${a.id}`, { headers })
+        .catch(() => {});
+    }
+  } catch {
+    // 清理失败不影响截图产出
+  }
+});
+
 async function finalize(
   page: Page,
   gifName: string,
