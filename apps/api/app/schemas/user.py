@@ -62,8 +62,6 @@ class WorkbenchLayoutPreferences(BaseModel):
 
     left_open: bool | None = Field(default=None, alias="leftOpen")
     right_open: bool | None = Field(default=None, alias="rightOpen")
-    left_width: int | None = Field(default=None, alias="leftWidth", ge=200, le=560)
-    right_width: int | None = Field(default=None, alias="rightWidth", ge=220, le=600)
     floating_task_queue: FloatingPanelState | None = Field(
         default=None,
         alias="floatingTaskQueue",
@@ -104,6 +102,9 @@ class WorkbenchCommonPreferences(BaseModel):
     # v0.15.17 · 邻帧框叠加范围:selected=仅选中对象 group(现状);all=不选对象也叠全部邻帧框。
     crossFrameOverlayScope: Literal["selected", "all"] = "selected"
     performanceTier: Literal["light", "standard", "aggressive"] = "standard"
+    # 边栏宽度按工作台宽度的百分比存（替代旧 layout.leftWidth/rightWidth 像素值）。
+    leftWidthPct: float = Field(default=15.0, ge=10, le=35)
+    rightWidthPct: float = Field(default=15.0, ge=10, le=35)
 
     @model_validator(mode="after")
     def _derive_legacy_overlay_enabled(self):
