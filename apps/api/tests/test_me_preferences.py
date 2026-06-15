@@ -405,7 +405,7 @@ LEGACY_FLAT_PREFS = {
         "controlPointsSize": 10,
         "snapToGrid": True,
         "longTaskSampleRate": 0.5,
-        "layout": {"leftOpen": False, "rightWidth": 420},
+        "layout": {"leftOpen": False, "rightOpen": True},
     },
     "ai": {"params_by_backend": {"sam": {"score_threshold": 0.7}}},
 }
@@ -431,7 +431,7 @@ async def test_migration_0103_up_down_and_idempotency(db_session, annotator):
         "snapToGrid": True,
     }
     assert wb["common"] == {"longTaskSampleRate": 0.5}
-    assert wb["layout"] == {"leftOpen": False, "rightWidth": 420}
+    assert wb["layout"] == {"leftOpen": False, "rightOpen": True}
     for flat_key in (
         "smoothImage",
         "cssImageFilter",

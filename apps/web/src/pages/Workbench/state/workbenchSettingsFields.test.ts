@@ -25,7 +25,7 @@ describe("workbenchSettingsFields 注册表", () => {
   });
 
   it("注册表默认值与现状一致", () => {
-    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(36);
+    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(38);
     const byKey = Object.fromEntries(
       WORKBENCH_SETTING_FIELDS.map((f) => [
         f.key,
@@ -33,6 +33,8 @@ describe("workbenchSettingsFields 注册表", () => {
       ]),
     );
     expect(byKey).toEqual({
+      "common.leftWidthPct": 15,
+      "common.rightWidthPct": 15,
       "common.longTaskSampleRate": 0.05,
       "common.confirmDelete": "never",
       "common.recentClassesLimit": 5,
