@@ -8,12 +8,16 @@
  */
 import type { Page } from "@playwright/test";
 import type { SeedData } from "../../fixtures/seed";
+import { hidePredictions } from "./_canvas";
 
 export async function runPolylineDraw(page: Page, data: SeedData): Promise<void> {
   const task = data.task_ids[0] ? `?task=${data.task_ids[0]}` : "";
   await page.goto(`/projects/${data.project_id}/annotate${task}`);
   await page.waitForLoadState("networkidle");
-  await page.waitForTimeout(1600);
+  await page.waitForTimeout(1400);
+
+  // 关掉预测来源可见性，画布干净后再逐点落折线（同 rotated-bbox）
+  await hidePredictions(page);
 
   // 选「折线」工具
   const btn = page.getByTestId("tool-btn-polyline");

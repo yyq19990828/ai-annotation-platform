@@ -9,12 +9,16 @@
  */
 import type { Page } from "@playwright/test";
 import type { SeedData } from "../../fixtures/seed";
+import { hidePredictions } from "./_canvas";
 
 export async function runRotatedBbox(page: Page, data: SeedData): Promise<void> {
   const task = data.task_ids[0] ? `?task=${data.task_ids[0]}` : "";
   await page.goto(`/projects/${data.project_id}/annotate${task}`);
   await page.waitForLoadState("networkidle");
-  await page.waitForTimeout(1600);
+  await page.waitForTimeout(1400);
+
+  // 关掉预测来源可见性：COCO8 满屏预测框会拦截画框手势触发采纳/驳回，先隐藏让画布干净
+  await hidePredictions(page);
 
   // 选「旋转框」工具
   const btn = page.getByTestId("tool-btn-rotated-box");

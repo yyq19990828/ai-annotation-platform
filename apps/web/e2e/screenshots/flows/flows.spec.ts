@@ -55,6 +55,8 @@ async function finalize(
   gifName: string,
   // 文档站目标 gif 绝对路径（不填则只产出到 outputs/flows/）
   docsTarget?: string,
+  // GIF 转码参数（不填默认 fps:10 / maxWidth:1280）；工作台画面细节多时调小避免超 5MB
+  gifOpts?: { fps?: number; maxWidth?: number },
 ) {
   const video = page.video();
   if (!video) {
@@ -70,7 +72,7 @@ async function finalize(
   await page.close();
   fs.mkdirSync(FLOWS_OUT, { recursive: true });
   await video.saveAs(outWebm);
-  await convertToGif(outWebm, outGif, { fps: 10, maxWidth: 1280 });
+  await convertToGif(outWebm, outGif, { fps: gifOpts?.fps ?? 10, maxWidth: gifOpts?.maxWidth ?? 1280 });
 
   // 同步 gif 到文档站
   const docsGif = docsTarget ?? (gifName === "e2e-quickstart" ? path.join(DOCS_GIF, "e2e.gif") : null);
@@ -121,13 +123,13 @@ test.describe("flow recordings", () => {
     if (!cached) throw new Error("seed peek 未完成");
     await seed.injectToken(page, cached.admin_email);
     await runRotatedBbox(page, cached);
-    await finalize(page, "rotated-bbox", path.join(DOCS_IMAGES, "workbench/rotated-bbox.gif"));
+    await finalize(page, "rotated-bbox", path.join(DOCS_IMAGES, "workbench/rotated-bbox.gif"), { fps: 8, maxWidth: 900 });
   });
 
   test("polyline-draw — 折线逐点绘制", async ({ page, seed }) => {
     if (!cached) throw new Error("seed peek 未完成");
     await seed.injectToken(page, cached.admin_email);
     await runPolylineDraw(page, cached);
-    await finalize(page, "polyline-draw", path.join(DOCS_IMAGES, "polyline/draw-in-progress.gif"));
+    await finalize(page, "polyline-draw", path.join(DOCS_IMAGES, "polyline/draw-in-progress.gif"), { fps: 8, maxWidth: 900 });
   });
 });
