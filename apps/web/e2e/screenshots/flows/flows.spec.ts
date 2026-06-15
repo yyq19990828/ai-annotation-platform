@@ -268,9 +268,10 @@ test.describe("flow recordings", () => {
     await finalize(
       page,
       "pointcloud-view",
-      // 3D 点云画面细节密、orbit 帧间变化大，沿用控件档 fps6/720 压到 5MB 内。
+      // 整片点云随 orbit 旋转、帧间变化比逐项切控件大得多，调色板更新猛，
+      // 比控件档再降一档到 fps5/620(同 video-draw)才稳压 5MB 内。
       path.join(DOCS_IMAGES, "workbench/pointcloud-view-orbit.gif"),
-      { fps: 6, maxWidth: 720, ...drawTrim(win, t0) },
+      { fps: 5, maxWidth: 620, ...drawTrim(win, t0) },
     );
   });
 
