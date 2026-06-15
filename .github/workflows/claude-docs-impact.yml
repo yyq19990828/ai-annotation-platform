@@ -69,7 +69,7 @@ jobs:
             - When the PR diff shows anything user-visible or contract-changing without a corresponding doc edit — new API endpoint, env var, worker task, permission, ML protocol field, role, UI surface, error code, etc. — propose either an `update` for the natural existing home or a `create` for a new doc.
             - Use `needs_update` whenever you find at least one credible gap. Use `probably_not_needed` only when the diff is purely internal (refactor / test-only / build config / dependency bump with no behavior change) and nothing user-facing or contractual was added. When in doubt, prefer `uncertain` over `probably_not_needed`.
           claude_args: >-
-            --model claude-haiku-4-5
+            --model claude-opus-4-8
             --json-schema
             '{"type":"object","properties":{"status":{"type":"string","enum":["needs_update","probably_not_needed","uncertain"]},"suggested_files":{"type":"array","maxItems":5,"items":{"type":"object","properties":{"path":{"type":"string"},"action":{"type":"string","enum":["update","create"]},"confidence":{"type":"string","enum":["high","medium","low"]},"reason":{"type":"string"}},"required":["path","action","confidence"],"additionalProperties":false}}},"required":["status","suggested_files"],"additionalProperties":false}'
 
