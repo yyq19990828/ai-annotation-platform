@@ -119,7 +119,7 @@ export function WorkbenchLayout({
   // --right-split-top-height → 高度回退到默认（B-56「展开收起后回到原位 / 第一次拖拽不跟手」）。
   // useElementStyle 用 state 持有元素，重挂载会重跑 effect 把变量重新写上。
   const splitTopStyleRef = useElementStyle<HTMLDivElement>(
-    useMemo<CSSProperties>(() => ({ "--right-split-top-height": `${splitTopHeight}px` }), [splitTopHeight]),
+    useMemo<CSSProperties>(() => ({ "--right-split-top-height": `${splitTopHeight}px` }) as CSSProperties, [splitTopHeight]),
   );
 
   return (
