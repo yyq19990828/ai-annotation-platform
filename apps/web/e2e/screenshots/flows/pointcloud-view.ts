@@ -37,7 +37,8 @@ async function dragOrbit(
   box: { x: number; y: number; width: number; height: number },
   from: { dx: number; dy: number },
   to: { dx: number; dy: number },
-  steps = 24,
+  // 点云每帧重渲染让单次 mouse.move 较慢, 步数不宜多, 否则单段拖拽就拖到数秒、GIF 过长。
+  steps = 14,
 ): Promise<void> {
   const sx = box.x + box.width * from.dx;
   const sy = box.y + box.height * from.dy;
@@ -48,10 +49,10 @@ async function dragOrbit(
   for (let i = 1; i <= steps; i++) {
     const t = i / steps;
     await page.mouse.move(sx + (ex - sx) * t, sy + (ey - sy) * t);
-    await page.waitForTimeout(28);
+    await page.waitForTimeout(18);
   }
   await page.mouse.up();
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(350);
 }
 
 export async function runPointcloudView(
@@ -93,11 +94,11 @@ export async function runPointcloudView(
 
   // ── 滚轮拉近一档(dolly), 展示缩放查看 ──
   await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 3; i++) {
     await page.mouse.wheel(0, -120);
-    await page.waitForTimeout(180);
+    await page.waitForTimeout(150);
   }
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(600);
 
   const drawEndMs = Date.now();
   return { drawStartMs, drawEndMs };
