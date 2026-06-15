@@ -42,6 +42,8 @@ jobs:
           prompt: |
             Analyze whether PR #${{ github.event.pull_request.number }} in ${{ github.repository }} likely needs documentation updates OR new documentation files. You are the primary judge — perform a full analysis of the PR diff regardless of any rule hits.
 
+            You have full read access to the checked-out repository. Do not judge from paths or rule hits alone: open and read whatever you need — the diff, the candidate docs themselves, and the related code — to reach a content-grounded verdict. Be thorough; read as many candidate docs as it takes to be confident — depth is preferred over speed.
+
             Inputs (in order of authority):
             1. The actual PR diff — **source of truth**. Always read it.
             2. `CLAUDE.md` and `docs-site/` — the project's documentation taxonomy (Diátaxis: user-guide / dev / ops / api; plus `docs/adr/` for architecture decisions and `CHANGELOG.md` for version notes). Use to decide where docs should live.
@@ -65,7 +67,8 @@ jobs:
             - Drive the analysis from the diff. The deterministic hints may miss things entirely or flag false positives — verify against the diff before trusting either signal.
             - Prefer repository docs paths over generic advice.
             - Mention ADR only when the change appears architectural or semantics-changing.
-            - Treat `docsTouched` as evidence that *some* doc moved, not that the right docs were covered. If a referenced doc still looks stale relative to the diff, surface it.
+            - Verify by reading, not by area-matching: for every `update` candidate, open the existing doc and confirm its current text is actually contradicted, outdated, or left incomplete by the diff. If the doc already covers the change, drop it. Ground each `reason` in the specific stale passage, and set `confidence` from how directly the diff invalidates that content.
+            - Treat `docsTouched` as evidence that *some* doc moved, not that the right docs were covered. If a referenced doc still reads stale after you open it, surface it.
             - When the PR diff shows anything user-visible or contract-changing without a corresponding doc edit — new API endpoint, env var, worker task, permission, ML protocol field, role, UI surface, error code, etc. — propose either an `update` for the natural existing home or a `create` for a new doc.
             - Use `needs_update` whenever you find at least one credible gap. Use `probably_not_needed` only when the diff is purely internal (refactor / test-only / build config / dependency bump with no behavior change) and nothing user-facing or contractual was added. When in doubt, prefer `uncertain` over `probably_not_needed`.
           claude_args: >-
