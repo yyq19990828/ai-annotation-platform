@@ -162,7 +162,7 @@ stateDiagram-v2
 
 ## 批量操作
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/batch-bulk-actions.png — 多选后批量操作工具栏（含批量通过/驳回）[manual] -->
+![批次多选批量操作：勾选后工具栏浮现批量通过 / 驳回等动作](../images/projects/batch-bulk-actions.gif)
 
 已实现的多选批量操作是：
 

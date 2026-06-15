@@ -14,7 +14,8 @@
     "check:adr": "node scripts/check-adr.mjs",
     "check:plans": "node scripts/check-plans-freshness.mjs",
     "check:changelog": "node scripts/check-changelog-version.mjs",
-    "check:all": "node scripts/check-doc-snippets.mjs && node scripts/check-adr.mjs && node scripts/check-plans-freshness.mjs && node scripts/check-changelog-version.mjs",
+    "check:orphan-images": "node scripts/check-orphan-images.mjs",
+    "check:all": "node scripts/check-doc-snippets.mjs && node scripts/check-adr.mjs && node scripts/check-plans-freshness.mjs && node scripts/check-changelog-version.mjs && node scripts/check-orphan-images.mjs",
     "mirror:adr": "node scripts/mirror-adr.mjs",
     "mirror:changelog": "node scripts/mirror-changelog.mjs"
   },
