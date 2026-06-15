@@ -111,6 +111,9 @@ import styles from "../shell/WorkbenchShell.module.css";
 
 const VARIANT_FIELD_SET = new Set<string>(VARIANT_FIELD_KEYS);
 
+const clamp = (v: number, lo: number, hi: number): number =>
+  Math.min(hi, Math.max(lo, v));
+
 function omitVariantFields(value: Record<string, unknown> | undefined): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (!value) return out;
@@ -1766,6 +1769,39 @@ export function useWorkbenchShellModel({
   const rightHasEmbeddedPanels = !inspectorDetached || !discussionDetached;
   const leftOpen = isNarrow || !leftHasEmbeddedPanels ? false : leftOpenState;
   const rightOpen = isNarrow || !rightHasEmbeddedPanels ? false : rightOpenState;
+  // v0.15.x · 左右边栏宽度落在 common 子树的真百分比;拖拽与设置面板共用 setFields(乐观+广播+防抖)。
+  const leftPct = s.workbenchConfig.common.leftWidthPct;
+  const rightPct = s.workbenchConfig.common.rightWidthPct;
+  const setWorkbenchFields = s.setWorkbenchFields;
+  const [winWidth, setWinWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1440,
+  );
+  useEffect(() => {
+    const onResize = () => setWinWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  // px 供 JS 消费者(AI 面板右偏移等);clamp 与下方栅格 CSS clamp(180px..600px) 对齐。
+  const leftPx = Math.round(clamp((leftPct / 100) * winWidth, 180, 600));
+  const rightPx = Math.round(clamp((rightPct / 100) * winWidth, 180, 600));
+  const onResizeLeft = useCallback(
+    (px: number) => {
+      const pct = clamp(Math.round((px / winWidth) * 100), 10, 35);
+      setWorkbenchFields({ common: { leftWidthPct: pct } });
+    },
+    [winWidth, setWorkbenchFields],
+  );
+  const onResizeRight = useCallback(
+    (px: number) => {
+      const pct = clamp(Math.round((px / winWidth) * 100), 10, 35);
+      setWorkbenchFields({ common: { rightWidthPct: pct } });
+    },
+    [winWidth, setWorkbenchFields],
+  );
+  // 拖拽/双击重置共用的 px 边界:10%..35% 换成像素,resetTo 为 15% 像素值(回换正好落 15%)。
+  const sidebarMinPx = Math.round(0.1 * winWidth);
+  const sidebarMaxPx = Math.round(0.35 * winWidth);
+  const sidebarResetPx = Math.round(0.15 * winWidth);
   const floatingTaskQueuePosition = useMemo(
     () => resolveFloatingTaskQueueRect(floatingTaskQueue),
     [floatingTaskQueue],
@@ -1967,7 +2003,7 @@ export function useWorkbenchShellModel({
     : null;
 
   const layout: ComponentProps<typeof WorkbenchLayout> = {
-    gridTemplateColumns: `${leftOpen ? `${s.leftWidth}px` : "0px"} 48px 1fr ${rightOpen ? `${s.rightWidth}px` : "0px"}`,
+    gridTemplateColumns: `${leftOpen ? `clamp(180px, ${leftPct}%, 600px)` : "0px"} 48px 1fr ${rightOpen ? `clamp(180px, ${rightPct}%, 600px)` : "0px"}`,
     taskQueue: {
       open: leftOpen, classes,
       // 3D 点云台用当前 3D 工具单位的 classesConfig;2D 仍用项目级。
@@ -1982,7 +2018,8 @@ export function useWorkbenchShellModel({
       isFetchingNextPage, onFetchNextPage: fetchNextPage,
       onSelectTask: selectTask, batches: activeBatches, selectedBatchId, onSelectBatch: handleSelectBatch,
       totalCount: tasksTotal, isOwner, onGoToBatchSettings: () => { if (projectId) navigate(`/projects/${projectId}/settings?section=batches`); },
-      width: s.leftWidth, onResize: s.setLeftWidth,
+      width: leftPx, onResize: onResizeLeft,
+      widthMin: sidebarMinPx, widthMax: sidebarMaxPx, widthResetTo: sidebarResetPx,
       onDetachQueue: detachTaskQueue,
       onDetachPalette: detachClassPalette,
       // v0.13.3-5 · 3D 点云台:左栏色板可点选 = 放置新框的类别(2D 仍只读图例)。
@@ -2086,7 +2123,7 @@ export function useWorkbenchShellModel({
         onCrossFramePropagateToTask: crossFramePropagateToTask,
         onCrossFrameInterpolate: crossFrameInterpolate,
         rightSidebarOpen: rightOpen,
-        rightSidebarWidth: rightOpen ? s.rightWidth : 0,
+        rightSidebarWidth: rightOpen ? rightPx : 0,
         workbenchLayout: s.workbenchLayout,
         onWorkbenchLayoutChange: s.setWorkbenchLayout,
         workbenchCommon: s.workbenchConfig.common,
@@ -2263,7 +2300,8 @@ export function useWorkbenchShellModel({
       diffMode: modeState.diffMode, onSetDiffMode: modeState.onSetDiffMode,
     },
     inspector: {
-      open: rightOpen, width: s.rightWidth, onResize: s.setRightWidth, readOnly: isLocked,
+      open: rightOpen, width: rightPx, onResize: onResizeRight, readOnly: isLocked,
+      widthMin: sidebarMinPx, widthMax: sidebarMaxPx, widthResetTo: sidebarResetPx,
       onDetach: detachInspector,
       capabilityWarnings,
       aiBoxes: modeState.diffMode !== "final" ? aiBoxes : [],
@@ -2402,7 +2440,7 @@ export function useWorkbenchShellModel({
     },
     aiPopover: {
       open: aiPopoverOpen && !isVideoTask,
-      rightOffset: rightOpen ? s.rightWidth + 44 : 44,
+      rightOffset: rightOpen ? rightPx + 44 : 44,
       position: aiPopoverPosition,
       onPositionChange: setAiPopoverPosition,
       size: aiPopoverSize,

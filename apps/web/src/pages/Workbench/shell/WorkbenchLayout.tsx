@@ -151,7 +151,14 @@ export function WorkbenchLayout({
               {/* v0.11.5+ · 列宽拖拽 handle 提到右栏全高层级（原在 AIInspectorPanel 内，
                   导致只在上段可拖；这里覆盖 AIInspectorPanel + DiscussionPanel 整列高度）。 */}
               {inspector.open && (
-                <ResizeHandle side="left" width={inspector.width} onResize={inspector.onResize} min={220} max={600} />
+                <ResizeHandle
+                  side="left"
+                  width={inspector.width}
+                  onResize={inspector.onResize}
+                  min={inspector.widthMin ?? 220}
+                  max={inspector.widthMax ?? 600}
+                  resetTo={inspector.widthResetTo}
+                />
               )}
               {!inspectorDetached && (
                 <div

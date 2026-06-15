@@ -40,6 +40,10 @@ interface TaskQueuePanelProps {
   /** 受控宽度（仅 open=true 生效）。 */
   width: number;
   onResize: (w: number) => void;
+  /** 拖拽 handle 的像素边界与双击重置值(随窗口宽度动态变化;不传按内置默认)。 */
+  widthMin?: number;
+  widthMax?: number;
+  widthResetTo?: number;
   detachedQueue?: boolean;
   detachedPalette?: boolean;
   onDetachQueue?: () => void;
@@ -185,6 +189,7 @@ export function TaskQueuePanel({
   batches, selectedBatchId, onSelectBatch,
   totalCount, isOwner, onGoToBatchSettings,
   width, onResize,
+  widthMin = 200, widthMax = 560, widthResetTo,
   detachedQueue = false,
   detachedPalette = false,
   onDetachQueue,
@@ -430,7 +435,16 @@ export function TaskQueuePanel({
         </div>
       )}
 
-      {!floating && <ResizeHandle side="right" width={width} onResize={onResize} min={200} max={560} />}
+      {!floating && (
+        <ResizeHandle
+          side="right"
+          width={width}
+          onResize={onResize}
+          min={widthMin}
+          max={widthMax}
+          resetTo={widthResetTo}
+        />
+      )}
     </div>
   );
 }

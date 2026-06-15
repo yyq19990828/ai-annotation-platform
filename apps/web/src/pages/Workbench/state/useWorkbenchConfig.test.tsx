@@ -49,7 +49,7 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
       id: "u1",
       preferences: {
         workbench: {
-          layout: { rightOpen: true, rightWidth: 360 },
+          layout: { rightOpen: true },
         },
       },
     };
@@ -59,7 +59,6 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
 
     expect(result.current.loaded).toBe(false);
     expect(result.current.layout.rightOpen).toBe(false);
-    expect(result.current.layout.rightWidth).toBe(360);
   });
 
   it("无项目覆盖时，config = DEFAULTS ∪ 用户偏好；lockedFields = []", async () => {
@@ -122,7 +121,7 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
 
   it("setLayout 立即更新本地状态与 localStorage，并 debounce 全量 workbench PATCH", async () => {
     mockGetPreferences.mockResolvedValue({
-      workbench: { image: { smoothImage: false }, layout: { rightWidth: 300 } },
+      workbench: { image: { smoothImage: false }, layout: { rightOpen: true } },
     });
     mockUpdatePreferences.mockImplementation(async (payload) => payload);
     const { result } = renderHook(() => useWorkbenchConfig(), { wrapper });
@@ -131,7 +130,7 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
     vi.useFakeTimers();
     act(() => {
       result.current.setLayout({
-        rightWidth: 420,
+        rightOpen: false,
         floatingDiscussion: {
           detached: true,
           x: 760,
@@ -149,10 +148,10 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
       });
     });
 
-    expect(result.current.layout.rightWidth).toBe(420);
+    expect(result.current.layout.rightOpen).toBe(false);
     expect(result.current.layout.floatingInspector.detached).toBe(true);
     expect(result.current.layout.floatingDiscussion.detached).toBe(true);
-    expect(window.localStorage.getItem("workbench.u1.rightWidth")).toBe("420");
+    expect(window.localStorage.getItem("workbench.u1.rightOpen")).toBe("0");
     expect(window.localStorage.getItem("workbench.u1.floatingDiscussion")).toContain("\"detached\":true");
     expect(mockUpdatePreferences).not.toHaveBeenCalled();
 
@@ -164,7 +163,7 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
       workbench: expect.objectContaining({
         image: expect.objectContaining({ smoothImage: false }),
         layout: expect.objectContaining({
-          rightWidth: 420,
+          rightOpen: false,
           floatingDiscussion: expect.objectContaining({
             detached: true,
             h: 560,

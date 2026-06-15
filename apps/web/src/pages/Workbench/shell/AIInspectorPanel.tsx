@@ -33,9 +33,13 @@ import styles from "./AIInspectorPanel.module.css";
 
 interface AIInspectorPanelProps {
   open: boolean;
-  /** 受控宽度（仅 open=true 生效）。 */
+  /** 受控宽度（仅 open=true 生效；列宽 handle 实际由 WorkbenchLayout 渲染）。 */
   width: number;
   onResize: (w: number) => void;
+  /** 列宽 handle 的像素边界与双击重置值(由 WorkbenchLayout 的 ResizeHandle 消费;随窗口宽度动态)。 */
+  widthMin?: number;
+  widthMax?: number;
+  widthResetTo?: number;
   aiBoxes: AiBox[];
   predictionSourceFilter?: PredictionSourceFilterState;
   userBoxes: Annotation[];
