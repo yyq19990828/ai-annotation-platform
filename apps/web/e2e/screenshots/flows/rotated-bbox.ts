@@ -12,7 +12,7 @@
  */
 import type { Page } from "@playwright/test";
 import type { SeedData } from "../../fixtures/seed";
-import { hidePredictions, deleteDrawn } from "./_canvas";
+import { hidePredictions } from "./_canvas";
 
 export interface DrawWindow {
   drawStartMs: number;
@@ -64,9 +64,6 @@ export async function runRotatedBbox(page: Page, data: SeedData): Promise<DrawWi
   // 故本 GIF 只演示「绘制」；旋转演示留待后续(需精确手柄坐标或 DOM 句柄)。
 
   const drawEndMs = Date.now();
-
-  // 清理（不进 GIF）：删掉刚画的旋转框
-  await deleteDrawn(page);
-
+  // 清理由 flows.spec.ts 的 afterEach 经 API 删除（画布键盘删除不可靠）。
   return { drawStartMs, drawEndMs };
 }
