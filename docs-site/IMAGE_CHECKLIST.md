@@ -27,7 +27,7 @@
 ### 数据集 · 导入
 
 - [x] `images/datasets/import-images-wizard.png` — 导入数据集向导基本信息步选「图像」+ 来源选「ZIP 上传」；红框：数据类型选择、文件拖放区 `[auto]`
-- [ ] `images/datasets/import-wizard-3d-type.png` — 导入向导基本信息步选「3D 点云」+ 勾「声明为时序数据集」；红框：数据类型、时序开关、axis_convention 选择器
+- [ ] `images/datasets/import-wizard-3d-type.png` — 导入向导基本信息步选「3D 点云」+ 勾「声明为时序数据集」；红框：数据类型、时序开关、axis_convention 选择器 **[Tier B]** 向导第 1 步须先上传文件「下一步」才可点，需文件上传 fixture 才能进到基本信息步
 - [ ] `images/datasets/pointcloud-dir-layout.png` — 单 scene vs 多 scene 目录树并排对比（建议矢量示意图而非真截图）
 
 ### 数据集 · 存储连接器
@@ -39,8 +39,8 @@
 
 ### 预测导入 / 导出
 
-- [ ] `images/projects/prediction-import-wizard.png` — 导入预测弹窗（AAP JSON / COCO / YOLO 格式选择 + 文件上传 + 替换开关）；红框：格式下拉、YOLO 变体下拉、替换开关
-- [ ] `images/projects/prediction-purge-modal.png` — 清理预测弹窗三种来源范围 + ML Backend 风险确认复选框
+- [x] `images/projects/prediction-import-wizard.png` — 导入预测弹窗（AAP JSON / COCO / YOLO 格式选择 + 文件上传 + 替换开关）；红框：格式下拉、YOLO 变体下拉、替换开关 `[auto]`
+- [x] `images/projects/prediction-purge-modal.png` — 清理预测弹窗三种来源范围 + ML Backend 风险确认复选框 `[auto]`
 
 ### 导出格式
 
@@ -48,7 +48,7 @@
 
 ### 项目 · 工具单位
 
-- [ ] `images/projects/tool-units-panel.png` — 项目设置「类别与属性」面板，按工具单位 tab 切换；红框：工具单位切换 tab、某工具下的类别列表、属性 schema 区
+- [x] `images/projects/tool-units-panel.png` — 项目设置「类别与属性」面板，按工具单位 tab 切换；红框：工具单位切换 tab、某工具下的类别列表、属性 schema 区 `[auto]`
 
 ## 综合截图清单（按区域维护）
 
@@ -58,7 +58,7 @@
 - [x] `images/getting-started/forgot-password.png` — 忘记密码页 + 成功 toast [auto]
 - [x] `images/getting-started/e2e.gif` — 30-60s 录屏：登录 → 打开项目 → 标 bbox → 提交
 - [x] `images/concepts/role-permission-matrix.png` — /users 权限矩阵 5 角色行，标注红框：viewer 行 [auto]
-- [ ] `images/getting-started/annotator-dashboard.png` — 标注员仪表盘全屏，标注红框：产能/质量分区 + 「打开」按钮
+- [ ] `images/getting-started/annotator-dashboard.png` — 标注员仪表盘全屏，标注红框：产能/质量分区 + 「打开」按钮 **[Tier B]** 截图 driver 把所有角色 token 收敛为 super_admin，role=annotator 仍渲染 AdminDashboard，需真实标注员 seed token
 - [x] `images/getting-started/role-dashboard-overview.png` — 四种角色 Dashboard 拼图 [auto]
 - [x] `images/getting-started/platform-nav-overview.png` — 平台主界面侧边栏各分区 [auto]
 
@@ -75,17 +75,17 @@
 - [x] `images/projects/ai-pre-stepper.png` — AI 预标注步骤条 [auto]
 - [x] `images/projects/ai-pre-history-search.png` — 预标注历史搜索 [auto]
 - [~] ~~`images/projects/ai-pre-empty-alias.png` — 预标注 alias 为空提示~~ — **已废弃**：PromptComposer（alias 警告所在）在 ai-pre 重构中删除，无对应 UI
-- [ ] `images/projects/ai-pre-config-panel.png` — 项目详情面板（批次列表 + 配置区 + 跑预标按钮 + 导入预测按钮）[manual]
+- [x] `images/projects/ai-pre-config-panel.png` — 项目详情面板（批次列表 + 配置区 + 跑预标按钮 + 导入预测按钮）`[auto]`
 - [ ] `images/projects/ai-pre-variant-selector.png` — VariantSelector 两轴选项 + 推荐 badge [manual]
-- [ ] `images/projects/batch-status-list.png` — 批次列表各状态彩色徽标 [manual]
+- [x] `images/projects/batch-status-list.png` — 批次列表各状态彩色徽标 `[auto]`（指向 P-0001，有 BT-260/261/262 多批次）
 - [ ] `images/projects/batch-bulk-actions.png` — 多选后批量操作工具栏（含批量通过/驳回）[manual]
 - [ ] `images/projects/batch-export-dialog.png` — 导出格式选择面板 [manual]
-- [ ] `images/projects/data-manager-overview.png` — 整体布局（视图列表 + 过滤条件栏 + 任务表格）[manual]
-- [ ] `images/projects/data-manager-filter-rules.png` — 过滤条件行编辑器字段选择器展开 [manual]
+- [x] `images/projects/data-manager-overview.png` — 整体布局（视图列表 + 过滤条件栏 + 任务表格）`[auto]`
+- [x] `images/projects/data-manager-filter-rules.png` — 过滤条件行编辑器字段选择器展开 `[auto]`
 - [ ] `images/projects/copy-config-banner.png` — 向导顶部预填 banner + 复制指引 checkbox [manual]
-- [ ] `images/projects/ml-backends/register-form.png` — 注册表单（URL 示例 + 最大并发 + 测试连接）[manual]
+- [x] `images/projects/ml-backends/register-form.png` — 注册表单（URL 示例 + 最大并发 + 测试连接）`[auto]`
 - [ ] `images/projects/ml-backends/limit-modal.png` — 多后端共存限制弹窗 [manual]
-- [ ] `images/projects/template-library-overview.png` — 模板库页（管理组入口 + 新建/导出按钮 + 四 tab）[manual]
+- [x] `images/projects/template-library-overview.png` — 模板库页（管理组入口 + 新建/导出按钮 + 四 tab）`[auto]`（本地无种子模板，呈空态）
 - [ ] `images/projects/template-apply-banner.png` — 从模板创建 Wizard 顶部 banner [manual]
 
 ### 参考
@@ -101,34 +101,34 @@
 ### 审核
 - [x] `images/review/workbench.png` — 审核三栏全图 + 操作面板 [auto]
 - [x] `images/review/reject-form.png` — 退回备注表单 [auto]
-- [ ] `images/review/review-list-page.png` — ReviewPage 左侧批次树 + 任务列表（缩略图 + 批量操作按钮）
+- [x] `images/review/review-list-page.png` — ReviewPage 左侧批次树 + 任务列表（缩略图 + 批量操作按钮）`[auto]`
 
 ### 平台管理
 - [x] `images/superadmin/bugs/list.png` — `/bugs` 列表全图，含状态/严重度筛选 + 重开徽标 `↻N`
 - [x] `images/superadmin/bugs/detail-panel.png` — 详情面板：元信息行、Markdown 描述、截图附件、状态切换按钮
-- [ ] `images/superadmin/bugs/status-transitions.png` — 状态切换按钮高亮 + 关闭后再重开的 reopen 徽标
+- [x] `images/superadmin/bugs/status-transitions.png` — 状态切换按钮高亮 + 关闭后再重开的 reopen 徽标 `[auto]`
 - [x] `images/superadmin/users/list.png` — `/users` 卡片列表 + 顶部 4 张统计卡 + 角色徽标颜色
 - [x] `images/superadmin/users/invite-modal.png` — 邀请用户对话框
-- [ ] `images/superadmin/users/edit-modal.png` — 编辑用户对话框（角色选择 + 停用按钮）
-- [ ] `images/superadmin/users/permission-matrix.png` — 权限矩阵预览（PERMISSION_GROUPS × ROLE_PERMISSIONS）
-- [ ] `images/superadmin/users/groups-tab.png` — 用户组 tab，演示组创建与成员添加
+- [x] `images/superadmin/users/edit-modal.png` — 编辑用户对话框（角色选择 + 停用按钮）`[auto]`
+- [x] `images/superadmin/users/permission-matrix.png` — 权限矩阵预览（PERMISSION_GROUPS × ROLE_PERMISSIONS）`[auto]`
+- [x] `images/superadmin/users/groups-tab.png` — 用户组 tab，演示组创建与成员添加 `[auto]`（数据组 tab，本地无组呈空态）
 - [ ] `images/superadmin/users/api-keys.png` — API Keys 对话框（明文一次显示）
 - [x] `images/superadmin/analytics/overview.png` — 分析页全屏（时间范围下拉 + 4 面板）
 - [x] `images/superadmin/analytics/heatmap.png` — 7×24 工时热力图网格
-- [ ] `images/superadmin/audit-logs/detail-modal.png` — 详情 Modal detail_json + 时间线追溯按钮 [manual]
+- [x] `images/superadmin/audit-logs/detail-modal.png` — 详情 Modal detail_json + 时间线追溯按钮 `[auto]`
 - [x] `images/superadmin/audit-logs/filter-bar.png` — 筛选栏（scope 切换 + detail 键名/键值输入框）
-- [ ] `images/superadmin/failed-predictions/list.png` — /ai-pre/jobs?status=failed 列表（状态筛选 + 重试/放弃/显示已放弃 toggle） [manual]
+- [ ] `images/superadmin/failed-predictions/list.png` — /ai-pre/jobs?status=failed 列表（状态筛选 + 重试/放弃/显示已放弃 toggle） **[Tier B]** 带 status 时客户端筛选清空 mock，不带又混入真实成功 job，需真实 failed 种子数据；失败列表已由 `images/workflows/failed-prediction-recovery-jobs-list.png` 覆盖
 - [ ] `images/superadmin/failed-predictions/dismiss-restore.png` — 显示已放弃后含「已放弃」badge + 恢复按钮 [manual]
-- [ ] `images/superadmin/ml-backend/register-form.png` — 注册表单全貌含 max_concurrency/extra_params [manual]
+- [x] `images/superadmin/ml-backend/register-form.png` — 注册表单全貌含 max_concurrency/extra_params `[auto]`（深链 `/model-market?tab=registry`）
 - [ ] `images/superadmin/ml-backend/health-card.png` — 实时 `/health` 卡片（GPU / video_pool meta）
 - [ ] `images/superadmin/ml-backend/health-state-badges.png` — connected/error/disconnected 三状态徽章对比 [manual]
 - [x] `images/superadmin/model-market/list.png` — 模型市场 3 个 tab 全图
 - [ ] `images/superadmin/model-market-runtime-card.png` — backend 卡片（GPU 显存 + 池状态 + 操作按钮） [manual]
 - [ ] `images/superadmin/model-market/video-pool.png` — `_video_pool` 视频模态独立池 UI
 - [ ] `images/superadmin/public-templates/scope-selector.png` — 可见范围下拉「公共」选项 disabled（非超管视角） [manual]
-- [ ] `images/superadmin/public-templates/templates-list.png` — 模板库四 tab + scope chip + usage_count [manual]
+- [x] `images/superadmin/public-templates/templates-list.png` — 模板库四 tab + scope chip + usage_count `[auto]`（本地无模板呈空态）
 - [x] `images/superadmin/system-monitoring/health-panel.png` — 4 组件卡 + Celery 队列表 + Workers 心跳表
-- [ ] `images/superadmin/system-monitoring/workers-table.png` — Workers 表（名称/Heartbeat/Pool/状态） [manual]
+- [x] `images/superadmin/system-monitoring/workers-table.png` — Workers 表（名称/Heartbeat/Pool/状态） `[auto]`
 
 ### 工作台
 - [x] `images/bbox/toolbar.png` — 工具栏 + 红框「矩形」按钮 [auto]
