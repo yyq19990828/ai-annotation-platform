@@ -22,6 +22,8 @@ mask 编辑器走的是「polygon 中转」：mask 在前端临时态编辑，�
 
 ![Mask 笔刷工具栏](../images/mask-brush/toolbar-overview.png)
 
+![Mask 笔刷涂抹：拖拽绘制笔迹，Enter 提交转 polygon 落库](../images/mask-brush/draw-in-progress.gif)
+
 1. **空白 mask（从零开始）**
    - 按 `M` 或工具栏点 Mask 图标 → 鼠标在画布上拖拽即开始画
    - 完成后按 `Enter` 提交，落一个 polygon annotation（label = 工具栏当前类别）

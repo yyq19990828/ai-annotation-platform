@@ -12,7 +12,7 @@ last_reviewed: 2026-06-11
 
 ## 视图导航
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench/pointcloud-controls-bar.png — 控件浮条全景（重置/俯视/点大小滑杆/上色/深度/邻帧框叠加） [manual] -->
+![点云控件演示：工作台设置抽屉切换相机上色（高度色→相机 RGB）/ 点大小 / 深度提示](../images/workbench/pointcloud-controls-bar.gif)
 
 - 主 3D 视图可旋转 / 平移 / 缩放查看点云。
 - 控件浮条「重置视角」回到默认斜视（跟随车头朝向）；「俯视」切到正上方鸟瞰（BEV），便于框选地面 footprint。两者随时切换。

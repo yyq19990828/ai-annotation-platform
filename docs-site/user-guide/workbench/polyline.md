@@ -18,7 +18,7 @@ last_reviewed: 2026-06-10
 
 ## 操作
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/polyline/draw-in-progress.png — 折线绘制中途（已落 3 顶点 + 预览线段） -->
+![折线逐点绘制：依次单击落点 + 预览线段，Enter 结束](../images/polyline/draw-in-progress.gif)
 
 1. 在**无选中**状态下按 `L` 切到折线工具（选中状态下 `L` 是锁定）。
 2. 沿目标依次单击落点，每点生成一个顶点（至少 2 点）。
