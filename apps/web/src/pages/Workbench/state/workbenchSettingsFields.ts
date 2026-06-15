@@ -280,6 +280,13 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     },
   },
   {
+    key: "video.autoFitOnResize",
+    category: "video",
+    label: "自动适应大小",
+    description: "展开、收起或拖宽边栏后自动让视频重新适应画布",
+    control: { type: "toggle", onText: "已开启", offText: "已关闭" },
+  },
+  {
     key: "pointcloud.pointSize",
     category: "pointcloud",
     label: "点大小",

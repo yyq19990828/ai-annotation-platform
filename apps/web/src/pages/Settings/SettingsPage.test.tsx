@@ -100,6 +100,7 @@ const mockWorkbenchConfig = {
   video: {
     defaultPlaybackRate: 1,
     largeFrameStep: 10,
+    autoFitOnResize: true,
   },
   pointcloud: {
     pointSize: 0.06,

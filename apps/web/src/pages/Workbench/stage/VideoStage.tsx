@@ -128,8 +128,6 @@ interface VideoStageProps {
   selectedIds?: string[];
   activeClass: string;
   frameIndex?: number;
-  /** 边栏开合时 +1, 触发重新适应窗口 (对齐图片工作台行为)。 */
-  fitTick?: number;
   reviewDisplayMode?: DiffMode;
   hiddenTrackIds?: Set<string>;
   lockedTrackIds?: Set<string>;
@@ -144,6 +142,8 @@ interface VideoStageProps {
   defaultPlaybackRate?: VideoPlaybackRate;
   /** v0.15.5 · 时间轴聚焦时 Shift+←/→ 的大步进策略。 */
   largeFrameStep?: VideoLargeFrameStep;
+  /** 边栏展开/收起/拖宽改变视口尺寸后是否自动重新适应窗口 (对齐 image.autoFitOnResize)。 */
+  autoFitOnResize?: boolean;
   performanceTier?: WorkbenchCommonPreferences["performanceTier"];
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onFrameIndexChange?: (frameIndex: number) => void;
@@ -202,7 +202,6 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   selectedIds = [],
   activeClass,
   frameIndex: controlledFrameIndex,
-  fitTick,
   reviewDisplayMode,
   hiddenTrackIds = EMPTY_TRACK_ID_SET,
   lockedTrackIds = EMPTY_TRACK_ID_SET,
@@ -214,6 +213,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   videoSampling = null,
   defaultPlaybackRate = DEFAULT_VIDEO_PLAYBACK_RATE,
   largeFrameStep = 10,
+  autoFitOnResize = true,
   performanceTier = "standard",
   onSelect,
   onFrameIndexChange,
@@ -962,22 +962,19 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     onSelectRef.current(null);
   }, [manifest?.task_id, maxFrame, setFrameIndex]);
 
+  // 视口尺寸变化 (ResizeObserver 驱动: 边栏展开/收起/拖宽都会改变容器宽度) → 重新适应窗口。
+  // 首次加载任务必定适应一次; 之后仅在 autoFitOnResize 开启时跟随尺寸变化重新适应, 避免覆盖用户手动缩放/平移。
+  // 直接监听 viewportSize 而非边栏开合的离散信号 (fitTick), 既覆盖拖宽边栏 (开合状态不变),
+  // 又消除与 ResizeObserver 异步更新的时序竞争 (B-55)。对齐 ImageStage 的 image.autoFitOnResize 行为。
   useEffect(() => {
     const taskId = manifest?.task_id ?? null;
-    if (!taskId || fittedTaskIdRef.current === taskId) return;
+    if (!taskId) return;
     if (!viewportSize.w || !viewportSize.h || !videoPixelWidth || !videoPixelHeight) return;
+    const firstFit = fittedTaskIdRef.current !== taskId;
+    if (!firstFit && !autoFitOnResize) return;
     fittedTaskIdRef.current = taskId;
     fitViewport();
-  }, [fitViewport, manifest?.task_id, videoPixelHeight, videoPixelWidth, viewportSize.h, viewportSize.w]);
-
-  // 边栏开合 → fitTick 变化 → 重新适应窗口 (对齐图片工作台; 用显式信号而非监听 resize, 避免覆盖用户手动缩放)。
-  const lastFitTickRef = useRef(fitTick);
-  useEffect(() => {
-    if (fitTick === lastFitTickRef.current) return;
-    lastFitTickRef.current = fitTick;
-    if (!viewportSize.w || !viewportSize.h || !videoPixelWidth || !videoPixelHeight) return;
-    fitViewport();
-  }, [fitTick, fitViewport, videoPixelHeight, videoPixelWidth, viewportSize.h, viewportSize.w]);
+  }, [autoFitOnResize, fitViewport, manifest?.task_id, videoPixelHeight, videoPixelWidth, viewportSize.h, viewportSize.w]);
 
   useEffect(() => {
     // 注意：不在此处捕获 containerRef.current。容器在 isLoading / 无 manifest 时不渲染

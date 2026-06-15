@@ -141,6 +141,7 @@ class WorkbenchVideoPreferences(BaseModel):
 
     defaultPlaybackRate: Literal[0.25, 0.5, 1, 2, 4] = 1
     largeFrameStep: Literal[5, 10, 30, "grid"] = 10
+    autoFitOnResize: bool = True
 
 
 class WorkbenchPointcloudPreferences(BaseModel):

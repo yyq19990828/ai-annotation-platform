@@ -390,7 +390,6 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
         ) : stageKind === "video" ? (
           <VideoWorkbench
             ref={ref}
-            fitTick={fitTick}
             manifest={videoManifest}
             frameTimetable={videoFrameTimetable}
             isLoading={videoManifestLoading}

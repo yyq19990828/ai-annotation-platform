@@ -29,8 +29,6 @@ export interface VideoWorkbenchProps {
   selectedId: string | null;
   activeClass: string;
   frameIndex: number;
-  /** 边栏开合时 +1, 触发 VideoStage 重新适应窗口。 */
-  fitTick?: number;
   selectedIds?: string[];
   reviewDisplayMode?: DiffMode;
   hiddenTrackIds: Set<string>;
@@ -77,7 +75,6 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     selectedId,
     activeClass,
     frameIndex,
-    fitTick,
     selectedIds = [],
     reviewDisplayMode,
     hiddenTrackIds,
@@ -120,7 +117,6 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         selectedId={selectedId}
         activeClass={activeClass}
         frameIndex={frameIndex}
-        fitTick={fitTick}
         selectedIds={selectedIds}
         reviewDisplayMode={reviewDisplayMode}
         hiddenTrackIds={hiddenTrackIds}
@@ -134,6 +130,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         performanceTier={performanceTier}
         defaultPlaybackRate={workbenchVideo.defaultPlaybackRate}
         largeFrameStep={workbenchVideo.largeFrameStep}
+        autoFitOnResize={workbenchVideo.autoFitOnResize}
         onSelect={onSelect}
         onFrameIndexChange={onFrameIndexChange}
         onCreate={onCreate}
