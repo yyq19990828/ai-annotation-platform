@@ -170,7 +170,7 @@
 - [ ] `images/video-playback/chapter-sidebar.png` — 章节侧栏含彩色色带 + 章节列表 [manual]
 - [ ] `images/video-propagate/ai-propagate-dialog.png` — AI 传播对话框（方向/范围/模型/尺寸下拉） [manual]
 - [ ] `images/video-propagate/tracker-job-badge.png` — 进度 badge + 取消按钮 [manual]
-- [ ] `images/workbench/video-track-overview.png` — 视频工作台整体（时间轴 + 工具栏 B/T/V + 轨迹面板） [manual]
+- [x] `images/workbench/video-track-overview.gif` — 视频工作台整体（时间轴 + 逐帧前进 + 播放）`[auto-gif]`（flows/video-track，开源 P-VIDEO-DEV，seed_video.py）
 - [ ] `images/workbench/video-track-timeline.png` — 视频轨道时间轴 + 关键帧 + 软网格 [auto]
 - [ ] `images/workbench/video-track-compose-dialog.png` — 跳连对话框两种 gap 模式 [manual]
 - [ ] `images/workbench/video-track-qc-warnings.png` — 画布左上角质量提示浮层 [manual]
