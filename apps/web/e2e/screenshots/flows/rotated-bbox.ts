@@ -58,20 +58,10 @@ export async function runRotatedBbox(page: Page, data: SeedData): Promise<DrawWi
     await page.waitForTimeout(55);
   }
   await page.mouse.up();
-  await page.waitForTimeout(1100);
+  await page.waitForTimeout(1400); // 停留展示画好的旋转框(angle=0)被选中态 + 手柄
 
-  // ── 抓顶边中点外侧的旋转手柄，左右拖动旋转 ~30° ──
-  const handleX = cx;
-  const handleY = cy - halfH - 26;
-  await page.mouse.move(handleX, handleY);
-  await page.waitForTimeout(400);
-  await page.mouse.down();
-  for (let i = 1; i <= 14; i++) {
-    await page.mouse.move(handleX + (95 * i) / 14, handleY + (40 * i) / 14);
-    await page.waitForTimeout(70);
-  }
-  await page.mouse.up();
-  await page.waitForTimeout(1200);
+  // 注：旋转手柄是 Konva 绘制无 DOM 句柄，盲拖坐标易在 rotated-box 工具下空拖出第二个框，
+  // 故本 GIF 只演示「绘制」；旋转演示留待后续(需精确手柄坐标或 DOM 句柄)。
 
   const drawEndMs = Date.now();
 

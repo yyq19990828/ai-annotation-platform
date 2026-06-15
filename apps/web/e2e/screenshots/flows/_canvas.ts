@@ -27,16 +27,18 @@ export async function hidePredictions(page: Page): Promise<void> {
  * 在录屏裁剪窗口之后调用，删除动作不会进 GIF。
  */
 export async function deleteDrawn(page: Page): Promise<void> {
-  // hidePredictions 点过 checkbox，焦点可能仍在 INPUT 上；workbench 热键在 target 为
-  // INPUT/TEXTAREA 时直接 return（useWorkbenchHotkeys），Konva 画布鼠标又不改 DOM 焦点，
-  // 故 Ctrl+A 会被忽略 → 先 blur 让 keydown target 落到 body。
+  // Esc 退出绘制态（否则键盘可能被绘制流程占用）；hidePredictions 点过 checkbox，
+  // 焦点可能仍在 INPUT 上，而 workbench 热键在 target 为 INPUT/TEXTAREA 时直接 return，
+  // 故先 blur 让 keydown target 落到 body。
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(250);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.waitForTimeout(150);
   await page.keyboard.press("Control+a"); // 全选当前帧 user 框
-  await page.waitForTimeout(350);
+  await page.waitForTimeout(400);
   await page.keyboard.press("Delete"); // 删除选中
-  // 等删除请求落库，避免 finalize 的 page.close() 取消在途请求导致 DB 残留
-  await page.waitForTimeout(700);
+  // 等删除请求落库，避免 finalize 的 page.close() 取消在途/防抖保存导致 DB 残留
+  await page.waitForTimeout(1500);
   await page.waitForLoadState("networkidle").catch(() => {});
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(800);
 }
