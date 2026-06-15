@@ -14,7 +14,7 @@
 
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
-- **[点云 + 图像联合标注（2026-06-14）](./ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)**：3D 旗舰独立 epic。读方向(3D 框投影到相机图)已落 v0.13.4；写方向(相机图 2D 框种 3D 框 frustum fit → 投影手柄微调 → 多相机一致性)Phase 1-3 待开工，首版计划 v0.15.24。配套 §C.8 拖影消除两版本(v0.15.22 剔除 / v0.15.23 逐目标补偿)构成「3D 前线深化」近期切片。
+- **[点云 + 图像联合标注（2026-06-14）](./ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)**：3D 旗舰独立 epic。读方向(3D 框投影到相机图)已落 v0.13.4；写方向(相机图 2D 框种 3D 框 frustum fit → 投影手柄微调 → 多相机一致性)Phase 1 已落 v0.15.24(视锥反算选点 + 3D 框初值拟合)，Phase 2-3(投影手柄微调 / 多相机一致性)待开工。配套 §C.8 拖影消除两版本(v0.15.22 剔除 / v0.15.23 逐目标补偿)构成「3D 前线深化」近期切片。
 - **[视频工作台总路线图（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：视频专项独立 epic。进度：Phase 1-4 主体已落（帧采样 / 轨迹工具 2.1–2.8 / `sam2_video` backend + 能力协商 / 视频导出 + 逐帧 YOLO），Phase 5-6 待开工（sam3_video 待续）。衍生 epic [ML Backend 能力协商 + AI 预标注模态化重设计](ROADMAP/[archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 三阶段已落地归档。
   - **延后项**：**2.9 多几何 track（polygon / polyline / mask）**（P1，体量大）——扩 `video_track.geometry.kind`，按周长/长度参数化插值；mask track 依赖 canvas/bitmap，DAVIS mask 导出（Phase 4.5）依赖此项。
 
@@ -47,7 +47,7 @@
 - **3D / 视频多模态工作台**（v0.10.17 项目"类型"已收敛到「image / video / lidar 数据载体 + 工具集多选」，详见 [ADR-0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md)）:
   - **lidar 3D 点云工作台已落地**（v0.13.2–v0.15.21，原 P0「`lidar_box_3d` 工具实现」已完成）：真实 Three.js `PointCloudScene` + `lidar_box_3d` 7-DoF 框标注 + 后端 `point-cloud/manifest` + KITTI/nuScenes 导出 + ego pose 跨帧插值/批量 propagate + 邻帧框/点云叠加 + PSR 面板 + 3D 右键菜单/帧选择器。`lidar` 数据类型入口已开放（`toolUnits.ts` `available:true`），仅 `PROJECT_DATA_TYPES` 的「本版占位」文案待改。剩余优化见 §C.8（拖影彻底消除）与下方 3D 延伸项。
   - `video-mm` / `mm` 多模态工作台未实现；视频侧能力详见 [视频工作台总 epic](ROADMAP/2026-05-21-video-workbench-roadmap.md)。
-  - **3D 延伸项**：① **点云 + 图像联合标注（2D⇄3D 互标）** → 抽为独立 epic [`ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md`](ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)：读方向(3D 框投影到相机图)已于 v0.13.4 完成，写方向(相机图画框种 3D 框 / 投影手柄微调)Phase 1-3 待开工，首版 v0.15.24；② 多 lidar 融合标注（按反馈触发）；③ `PROJECT_DATA_TYPES` lidar hint 文案去「占位」（顺手）。
+  - **3D 延伸项**：① **点云 + 图像联合标注（2D⇄3D 互标）** → 抽为独立 epic [`ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md`](ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)：读方向(3D 框投影到相机图)已于 v0.13.4 完成，写方向(相机图画框种 3D 框 / 投影手柄微调)Phase 1 已落 v0.15.24，Phase 2-3 待开工；② 多 lidar 融合标注（按反馈触发）；③ `PROJECT_DATA_TYPES` lidar hint 文案去「占位」（顺手）。
   - **跨 tool_unit 类别软关联 (`alias_to`)**（**P3**）：强隔离意味同名颜色 / alias 跨 unit 要重复输入。设计走 `ToolClassEntry.alias_to` 链（可选叠加，不破坏 ADR-0026 强隔离底线）。触发：客户反馈"想共享类别名字"。
   - **rename_class 跨 unit 重命名 UX**（**P3**）：`useRenameClass` 已带 `tool_unit_id` 参数，但 ClassesSection 仅传 active unit；"同时在所有 unit 内重命名"需扩 UI（批量勾选 unit）。触发：客户反馈"重命名要跑 N 次"。
 - **项目模板开放项**（按客户反馈触发）：
@@ -75,7 +75,7 @@
 
 ### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
-- **个人偏好**（部分实现）：通知偏好（v0.7.0，`NotificationPreference` 表 + SettingsPage 分区）与标注工作台偏好（v0.15.3 四分树：通用/图片/视频/点云/布局 50+ 字段 + 设置抽屉）均已落地；**仍缺**：主题（当前 `useTheme` 仅 localStorage，未服务端持久化）、语言（依赖 i18n 框架，见 §B）、时区。
+- **个人偏好**（部分实现）：通知偏好（v0.7.0，`NotificationPreference` 表 + SettingsPage 分区）与标注工作台偏好（v0.15.3 四分树：通用/图片/视频/点云/布局 50+ 字段 + 设置抽屉）均已落地；主题（v0.15.25 已从 localStorage 升级到服务端用户偏好 `preferences.ui.theme`，跨设备跟随账号）；**仍缺**：语言（依赖 i18n 框架，见 §B）、时区。
 
 ### TopBar / Dashboard 控件
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast；Organization 表已存在但前端无切换 UI。
