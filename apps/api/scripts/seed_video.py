@@ -24,7 +24,10 @@ import asyncio
 import uuid
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[3]  # apps/api/scripts/<this> → repo root
+# repo root。host 布局 apps/api/scripts/<this> 取 parents[3];浅布局(如容器把代码挂在
+# /app)parents[3] 会越界,退化为文件系统根 → 夹具 .exists()=False 时各 seed 优雅跳过不崩。
+_parents = Path(__file__).resolve().parents
+REPO = _parents[3] if len(_parents) > 3 else _parents[-1]
 # 开源素材:grounded-sam-2 vendor 自带的行车跟踪片段(Apache-2.0)。
 VIDEO = REPO / "apps/grounded-sam2-backend/vendor/grounded-sam-2/assets/tracking_car.mp4"
 
