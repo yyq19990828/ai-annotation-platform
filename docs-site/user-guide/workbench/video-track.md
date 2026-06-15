@@ -8,7 +8,7 @@ last_reviewed: 2026-06-10
 
 # 视频追踪标注
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench/video-track-overview.png — 视频工作台整体（时间轴 + 工具栏 B/T/V + 轨迹面板） [manual] -->
+![视频追踪工作台：时间轴 + 逐帧前进 + 播放](../images/workbench/video-track-overview.gif)
 
 视频任务在同一个工作台里打开，左侧队列、顶部提交、右侧属性与评论仍沿用图片工作台。画布区域会切换为视频播放器，时间轴悬浮在画布底部。本页讲**矩形框、轨迹与关键帧**的标注。相关页：
 
@@ -26,6 +26,8 @@ last_reviewed: 2026-06-10
 7. 标完后点击「提交质检」。
 
 ## 矩形框、轨迹与关键帧
+
+![轨迹关键帧插值：两帧画框，中间帧 bbox 线性插值平滑移动](../images/workbench/video-track-trajectory.gif)
 
 视频工作台明确区分两类对象：
 
