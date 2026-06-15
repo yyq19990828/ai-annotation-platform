@@ -154,9 +154,9 @@
 - [ ] `images/workbench-pointcloud-projection/overlay-wireframe.png` — 相机面板线框投影 overlay + 「正对」角标 [manual]
 - [ ] `images/workbench-pointcloud-projection/click-to-select-3d.png` — 点击投影框联动主视图高亮 [manual]
 - [ ] `images/workbench-pointcloud-projection/camera-panel-layout.png` — 6 相机环绕布局全景 [manual]
-- [ ] `images/workbench/pointcloud-controls-bar.png` — 控件浮条全景（重置/俯视/点大小滑杆/上色/深度/邻帧框叠加） [manual]
-- [ ] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比 [manual]
-- [ ] `images/workbench/pointcloud-depth-heatmap.png` — 深度热力图 + figcaption 深度读数 [manual]
+- [x] `images/workbench/pointcloud-controls-bar.gif` — 工作台设置抽屉点云控件演示（相机上色 / 点大小 / 深度提示逐项切换）`[auto-gif]`（flows/pointcloud-controls，nuScenes-mini）
+- [x] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比（同上 `pointcloud-controls-bar.gif` 内含青蓝高度色→相机 RGB 的切换）`[auto-gif]`
+- [ ] `images/workbench/pointcloud-depth-heatmap.png` — 深度热力图 + figcaption 深度读数（控件 GIF 已演示开关，相机视图悬停深度读数特写仍 [manual]） [manual]
 - [x] `images/polygon/draw-in-progress.gif` — 多边形逐点绘制全过程（落点 + 预览线，Enter 闭合提交）`[auto-gif]`（flows/polygon-draw，P-COCO8）
 - [ ] `images/polygon/vertex-insert-alt.png` — 按住 Alt 悬停边上光标变「+」的瞬间
 - [x] `images/polyline/draw-in-progress.gif` — 折线逐点绘制全过程（落点 + 预览线段，Enter 收尾）`[auto-gif]`（flows/polyline-draw，P-COCO8）
