@@ -18,6 +18,22 @@ import type { DrawWindow } from "./rotated-bbox";
 
 const API = process.env.PLAYWRIGHT_API_BASE ?? "http://localhost:8000";
 
+/**
+ * 收起工作台左右边栏（任务列表 / 标注详情），让录制聚焦视频画面。
+ * 两个切换钮在 Topbar，展开时 title 为「收起任务列表」/「收起标注详情」（收起后变「展开…」），
+ * 按 title 点击只在仍展开时命中，幂等。收起后 stage 容器变宽，等一拍让 video stage 重新适应。
+ */
+async function collapseSidebars(page: Page): Promise<void> {
+  for (const title of ["收起任务列表", "收起标注详情"]) {
+    const btn = page.getByTitle(title);
+    if (await btn.count()) {
+      await btn.first().click().catch(() => {});
+      await page.waitForTimeout(300);
+    }
+  }
+  await page.waitForTimeout(400);
+}
+
 /** 用 admin token 解析 P-VIDEO-DEV 的 project_id 与首个 task id。 */
 async function resolveVideoProject(
   page: Page,
@@ -60,6 +76,9 @@ export async function runVideoTrack(page: Page, adminEmail: string): Promise<Dra
   // 等时间轴就绪（manifest 加载完成的信号）+ 首帧画面解码。
   await page.getByTestId("video-timeline-shell").waitFor({ timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(2200);
+
+  // 收起左右边栏，画面聚焦视频本身（边栏默认展开，点 Topbar 切换钮收起；收起后 stage 会重新适应窗口）。
+  await collapseSidebars(page);
 
   // 选 hand(查看)工具：保证后续点击/按键不会误触发画框。
   const handBtn = page.getByTestId("video-tool-btn-hand");
