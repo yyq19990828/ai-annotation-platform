@@ -125,7 +125,7 @@ test.describe("flow recordings", () => {
     await finalize(page, "ai-pre-variant-selector", path.join(DOCS_IMAGES, "projects/ai-pre-variant-selector.gif"));
   });
 
-  test("rotated-bbox — 旋转框绘制+旋转", async ({ page, seed }) => {
+  test("rotated-bbox — 旋转框绘制", async ({ page, seed }) => {
     if (!cached) throw new Error("seed peek 未完成");
     const t0 = Date.now(); // 录屏起点参照（page 在测试体前创建，t0≈video t=0）
     await seed.injectToken(page, cached.admin_email);
