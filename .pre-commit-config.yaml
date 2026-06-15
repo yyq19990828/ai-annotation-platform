@@ -58,3 +58,15 @@ repos:
         language: system
         files: ^apps/web/src/(pages/Workbench/state/(hotkeys|workbenchSettingsFields)|api/auth)\.ts$
         pass_filenames: false
+
+      # 文档写法提醒(仅提醒, 不阻塞): 标记把代码改动写成 changelog 式版本前缀
+      # (如 `v1.2.3: ...` / `## v1.2.3`)的叙述性文档, 建议改为融入正文或放进 HTML 注释。
+      # verbose 让提醒在提交时始终显示; 脚本永远 exit 0, 不会拦截提交。
+      - id: doc-version-prefix
+        name: Check docs for version-prefixed style (advisory)
+        entry: node scripts/check-doc-version-prefix.mjs --staged
+        language: system
+        files: ^(docs-site/.*\.md|README\.md|DEV\.md)$
+        exclude: ^(CHANGELOG\.md|docs/adr/|docs-site/dev/adr/|.*\.generated\.md)$
+        pass_filenames: false
+        verbose: true

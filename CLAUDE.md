@@ -136,6 +136,22 @@ docker exec ai-annotation-platform-celery-worker-1 \
 
 **Common pitfall:** Celery workers silently run stale code after editing a task signature, because Celery has no `--reload` equivalent. Symptom is dispatch-time `TypeError` on new kwargs while source on disk looks correct. Always restart the worker container after editing files under `apps/api/app/workers/`.
 
+## 9. Documentation Writing Style (no changelog-style version prefixes)
+
+**Docs must read as the CURRENT state of the system — not as a changelog.** When you update a doc after a code change, weave the change into the prose so the page describes how things work *now*. Do NOT append version-prefixed entries to narrative docs:
+
+- ❌ `v1.2.3: added the foo flag`
+- ❌ `## v1.2.3` as a section heading in a guide/concept doc
+- ❌ `- v2.0.0 — behavior changed`
+
+If version provenance genuinely matters, record it in an **HTML comment**, which renders invisibly and keeps the prose clean:
+
+- ✅ `The foo flag controls X. <!-- since v1.2.3 -->`
+
+**Exempt** (version-prefixed content is correct there): `CHANGELOG.md`, `docs/adr/**`, `docs-site/dev/adr/**`, generated `*.generated.md`. Inline version references that aren't line-leading changelog prefixes are fine (e.g. "requires Node v18+", a `/v1/` route).
+
+**Advisory check (does not block):** `scripts/check-doc-version-prefix.mjs` scans changed docs (`docs-site/**`, `README.md`, `DEV.md`) for this pattern. It runs as a `pre-commit` hook (`--staged`, prints a reminder, never fails) and in the `Claude Docs Impact` PR workflow (emits `::warning::` annotations + a `style_warnings` line in the PR comment). Run standalone: `node scripts/check-doc-version-prefix.mjs --staged`.
+
 ## Parallel Subagent Worktree Rule
 - When dispatching any subagent (the `Agent` tool) that will **modify code**, always pass `isolation: "worktree"` so the agent works in its own git worktree (auto-cleaned if it makes no changes).
 - Read-only / search-only subagents (e.g. `Explore`, pure lookups) do **not** need a worktree.

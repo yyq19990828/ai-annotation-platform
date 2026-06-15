@@ -34,6 +34,16 @@ jobs:
             --write=.tmp/docs-impact.json \
             --write-markdown=.tmp/docs-impact.md
 
+      # Advisory scan: emits ::warning:: annotations for changelog-style version prefixes
+      # added to narrative docs (never fails the build), and writes a hint for the Claude step.
+      - name: Scan docs for version-prefixed style
+        run: |
+          node scripts/check-doc-version-prefix.mjs \
+            --base=${{ github.event.pull_request.base.sha }} \
+            --head=${{ github.event.pull_request.head.sha }} \
+            --format=github \
+            --write-markdown=.tmp/doc-version-prefix.md
+
       - name: Run Claude Docs Impact Review
         id: claude-docs-impact
         uses: anthropics/claude-code-action@v1
@@ -48,6 +58,7 @@ jobs:
             1. The actual PR diff — **source of truth**. Always read it.
             2. `CLAUDE.md` and `docs-site/` — the project's documentation taxonomy (Diátaxis: user-guide / dev / ops / api; plus `docs/adr/` for architecture decisions and `CHANGELOG.md` for version notes). Use to decide where docs should live.
             3. `.github/docs-impact-map.json` and `.tmp/docs-impact.json` / `.tmp/docs-impact.md` — **weak hints only**, generated from path patterns. Treat them as starting points, not as a whitelist. Missing matches do NOT imply "no docs needed"; matched rules do NOT imply the listed docs are the only relevant ones. Override freely when the diff tells a different story.
+            4. `.tmp/doc-version-prefix.md` — a deterministic pre-scan for the documentation style check below. **Hint only**; it may miss cases (prose phrasing) or over-flag (code samples). Confirm each against the diff.
 
             Output rules:
             - Return structured JSON only.
@@ -62,6 +73,7 @@ jobs:
             - Keep at most 5 suggested files total (update + create combined), deduplicated, sorted by priority.
             - Each entry should include a short `reason` (≤120 chars) explaining what to write/change and why.
             - Confidence must be one of: `high`, `medium`, `low`.
+            - `style_warnings` is a separate array for the documentation style check below; it is independent of `status`/`suggested_files` (a doc-complete PR can still have style warnings, and vice versa).
 
             Decision rules:
             - Drive the analysis from the diff. The deterministic hints may miss things entirely or flag false positives — verify against the diff before trusting either signal.
@@ -71,10 +83,16 @@ jobs:
             - Treat `docsTouched` as evidence that *some* doc moved, not that the right docs were covered. If a referenced doc still reads stale after you open it, surface it.
             - When the PR diff shows anything user-visible or contract-changing without a corresponding doc edit — new API endpoint, env var, worker task, permission, ML protocol field, role, UI surface, error code, etc. — propose either an `update` for the natural existing home or a `create` for a new doc.
             - Use `needs_update` whenever you find at least one credible gap. Use `probably_not_needed` only when the diff is purely internal (refactor / test-only / build config / dependency bump with no behavior change) and nothing user-facing or contractual was added. When in doubt, prefer `uncertain` over `probably_not_needed`.
+
+            Documentation style check (advisory):
+            - This project prefers docs to read as the CURRENT state of the system. When a doc is updated after a code change, the change should be woven into the prose — NOT appended as a changelog-style version-prefixed entry (e.g. `v1.2.3: ...`, `## v1.2.3`, `- v1.2.3 — ...`) in narrative docs. Version provenance, if it must be recorded, belongs in an HTML comment (`<!-- since v1.2.3 -->`), not in visible prose.
+            - For every added line in this PR's doc changes (under `docs-site/**`, plus `README.md` / `DEV.md`) that introduces such a version-prefixed changelog entry, add one entry to `style_warnings` with the file `path`, best-effort `line`, the offending `snippet`, and a concrete `suggestion` (integrate into prose, or move the version into an HTML comment).
+            - Exemptions — do NOT flag: `CHANGELOG.md`, `docs/adr/**`, `docs-site/dev/adr/**`, and generated `*.generated.md`; these legitimately carry version-prefixed content. Also ignore version tokens that are not line-leading changelog prefixes (e.g. "requires Node v18+", a `/v1/` route, a version inside a fenced code block).
+            - This check is advisory: it never changes `status`. Report findings in `style_warnings` only.
           claude_args: >-
             --model claude-opus-4-8
             --json-schema
-            '{"type":"object","properties":{"status":{"type":"string","enum":["needs_update","probably_not_needed","uncertain"]},"suggested_files":{"type":"array","maxItems":5,"items":{"type":"object","properties":{"path":{"type":"string"},"action":{"type":"string","enum":["update","create"]},"confidence":{"type":"string","enum":["high","medium","low"]},"reason":{"type":"string"}},"required":["path","action","confidence"],"additionalProperties":false}}},"required":["status","suggested_files"],"additionalProperties":false}'
+            '{"type":"object","properties":{"status":{"type":"string","enum":["needs_update","probably_not_needed","uncertain"]},"suggested_files":{"type":"array","maxItems":5,"items":{"type":"object","properties":{"path":{"type":"string"},"action":{"type":"string","enum":["update","create"]},"confidence":{"type":"string","enum":["high","medium","low"]},"reason":{"type":"string"}},"required":["path","action","confidence"],"additionalProperties":false}},"style_warnings":{"type":"array","maxItems":10,"items":{"type":"object","properties":{"path":{"type":"string"},"line":{"type":"integer"},"snippet":{"type":"string"},"suggestion":{"type":"string"}},"required":["path","suggestion"],"additionalProperties":false}}},"required":["status","suggested_files"],"additionalProperties":false}'
 
       - name: Render docs impact comment
         id: render-docs-impact-comment
@@ -126,6 +144,17 @@ jobs:
               lines.push("");
               lines.push("**建议新增：**");
               for (const item of creates) lines.push(fmt(item));
+            }
+          }
+
+          const warnings = Array.isArray(output.style_warnings) ? output.style_warnings : [];
+          if (warnings.length > 0) {
+            lines.push("");
+            lines.push("**文档写法提醒（建议改写，不阻塞合并）：**");
+            for (const w of warnings) {
+              const loc = w.line ? `:${w.line}` : "";
+              const sug = w.suggestion ? ` — ${w.suggestion}` : "";
+              lines.push(`- \`${w.path}${loc}\`${sug}`);
             }
           }
 
