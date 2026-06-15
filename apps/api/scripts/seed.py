@@ -15,8 +15,14 @@ from sqlalchemy import select
 # v0.13.11 · 点云夹具脚本与本文件同目录;PYTHONPATH 已含 apps/api,直接 import。
 sys.path.insert(0, str(__file__.rsplit("/", 1)[0]))  # 让 `scripts/` 入 sys.path
 from seed_pointcloud import seed_pointcloud, seed_nuscenes_scene  # noqa: E402
-from seed_coco8 import seed_coco8  # noqa: E402  (依赖 sys.path 先扩)
-from seed_video import seed_video  # noqa: E402  (开源视频 video-track 夹具)
+from seed_coco8 import (  # noqa: E402  (依赖 sys.path 先扩)
+    seed_coco8,
+    DATASET_DISPLAY_ID as COCO8_DATASET_ID,
+)
+from seed_video import (  # noqa: E402  (开源视频 video-track 夹具)
+    seed_video,
+    DATASET_DISPLAY_ID as VIDEO_DATASET_ID,
+)
 
 from app.config import settings
 from app.core.security import hash_password
@@ -188,6 +194,24 @@ async def seed() -> None:
             except Exception as e:  # noqa: BLE001 — 夹具/MinIO 不可用时不阻断 seed
                 await db.rollback()
                 print(f"  WARN  nuscenes 夹具跳过: {e}")
+
+    # 缩略图回填:seed 直接写 DatasetItem,绕过了上传路径的 enqueue_media_for_items,
+    # 故图片/视频的 thumbnail_path / blurhash 一直为 NULL(视频还缺 poster)。这里对
+    # seed 的图片(DS-COCO8)/视频(DS-VIDEO-DEV)数据集派发 backfill_media,由 media
+    # worker 异步生成。幂等(只补缺失的),且无条件执行 → 既补新建,也修复历史已存在
+    # 但缺缩略图的 seed 数据。依赖 media worker 在跑;数据集不存在则查询为空、静默跳过。
+    from app.db.models.dataset import Dataset
+    from app.workers.media import backfill_media
+
+    async with Session() as db:
+        ds_rows = await db.execute(
+            select(Dataset.id, Dataset.display_id).where(
+                Dataset.display_id.in_([COCO8_DATASET_ID, VIDEO_DATASET_ID])
+            )
+        )
+        for ds_id, disp in ds_rows.all():
+            backfill_media.delay(str(ds_id))
+            print(f"  media  enqueue 缩略图回填 → {disp}")
 
     await engine.dispose()
 
