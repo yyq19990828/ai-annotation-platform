@@ -18,6 +18,7 @@ import { runAiPreVariantSelector } from "./ai-pre-variant-selector";
 import { runRotatedBbox } from "./rotated-bbox";
 import { runPolylineDraw } from "./polyline-draw";
 import { convertToGif } from "../_helpers/recorder";
+import { execFileSync } from "child_process";
 import path from "path";
 import fs from "fs";
 
@@ -28,8 +29,6 @@ const DOCS_GIF  = path.join(REPO_ROOT, "docs-site/user-guide/images/getting-star
 const DOCS_IMAGES = path.join(REPO_ROOT, "docs-site/user-guide/images");
 
 let cached: SeedData | null = null;
-// 画布 flow 实际绘制所在的任务 id（workbench 未必开 ?task= 指定的任务）；afterEach 据此清理。
-let cleanupTaskId: string | null = null;
 
 test.beforeAll(async ({ request }) => {
   const res = await request.get(
@@ -52,31 +51,27 @@ test.beforeAll(async ({ request }) => {
   };
 });
 
-// 画完删除：每条 flow 跑完后用 API 清掉它在演示任务上落下的标注，保持 DB 干净。
-// 用 API（而非画布 Ctrl+A/Delete）因后者受绘制态/焦点/防抖落库影响不可靠。
-test.afterEach(async ({ request }) => {
-  const taskId = cleanupTaskId ?? cached?.task_ids[0];
-  cleanupTaskId = null; // 用后即清，避免串到下一条 flow
-  if (!taskId || !cached) return;
-  const apiBase = process.env.PLAYWRIGHT_API_BASE ?? "http://localhost:8000";
+// 画完删除：所有 flow 跑完后，清掉 canvas flow 在 P-COCO8 演示项目落下的标注（旋转框/折线/区域），
+// 保持 DB 干净。这些几何类型只可能来自本套录制脚本，删除安全。
+// 为何不用 API：workbench 不把实际打开的任务同步回 URL，且 GET /tasks/{id}/annotations 对
+// 未分配给当前用户的任务返回空，定位不到要删的标注；画布 Ctrl+A/Delete 又受绘制态/焦点影响不可靠。
+// 故直接经 docker postgres 容器 psql 删除（flows 本就依赖 docker 开发栈，容器名见 CLAUDE.md）。
+// 用 display_id='P-COCO8' 连 projects 表定位（项目 UUID 由 seed 随机生成，重 seed 即变，不可硬编码）。
+test.afterAll(() => {
   try {
-    const login = await request.post(`${apiBase}/api/v1/__test/seed/login`, {
-      data: { email: cached.admin_email },
-    });
-    if (!login.ok()) return;
-    const token = (await login.json()).access_token as string;
-    const headers = { Authorization: `Bearer ${token}` };
-    const listRes = await request.get(`${apiBase}/api/v1/tasks/${taskId}/annotations`, { headers });
-    if (!listRes.ok()) return;
-    const body = await listRes.json();
-    const anns: Array<{ id: string }> = Array.isArray(body) ? body : (body.items ?? []);
-    for (const a of anns) {
-      await request
-        .delete(`${apiBase}/api/v1/tasks/${taskId}/annotations/${a.id}`, { headers })
-        .catch(() => {});
-    }
+    execFileSync(
+      "docker",
+      [
+        "exec", "ai-annotation-platform-postgres-1",
+        "psql", "-U", "user", "-d", "annotation", "-c",
+        "DELETE FROM annotations a USING tasks t, projects p " +
+          "WHERE a.task_id=t.id AND t.project_id=p.id AND p.display_id='P-COCO8' " +
+          "AND a.geometry->>'type' IN ('rotated_bbox','polyline','region');",
+      ],
+      { stdio: "ignore" },
+    );
   } catch {
-    // 清理失败不影响截图产出
+    console.warn("[flows] 演示标注清理失败（需 docker postgres 容器在运行）");
   }
 });
 
@@ -160,7 +155,6 @@ test.describe("flow recordings", () => {
     const t0 = Date.now(); // 录屏起点参照（page 在测试体前创建，t0≈video t=0）
     await seed.injectToken(page, cached.admin_email);
     const win = await runRotatedBbox(page, cached);
-    cleanupTaskId = win?.taskId ?? null; // afterEach 据此清理实际绘制的任务
     await finalize(
       page,
       "rotated-bbox",
@@ -174,7 +168,6 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await seed.injectToken(page, cached.admin_email);
     const win = await runPolylineDraw(page, cached);
-    cleanupTaskId = win?.taskId ?? null;
     await finalize(
       page,
       "polyline-draw",
