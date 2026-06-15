@@ -15,6 +15,8 @@ import { runAiPreannotate } from "./ai-preannotate";
 import { runReviewReject } from "./review-reject";
 import { runBatchBulkActions } from "./batch-bulk-actions";
 import { runAiPreVariantSelector } from "./ai-pre-variant-selector";
+import { runRotatedBbox } from "./rotated-bbox";
+import { runPolylineDraw } from "./polyline-draw";
 import { convertToGif } from "../_helpers/recorder";
 import path from "path";
 import fs from "fs";
@@ -113,5 +115,19 @@ test.describe("flow recordings", () => {
     await seed.injectToken(page, cached.admin_email);
     await runAiPreVariantSelector(page);
     await finalize(page, "ai-pre-variant-selector", path.join(DOCS_IMAGES, "projects/ai-pre-variant-selector.gif"));
+  });
+
+  test("rotated-bbox — 旋转框绘制+旋转", async ({ page, seed }) => {
+    if (!cached) throw new Error("seed peek 未完成");
+    await seed.injectToken(page, cached.admin_email);
+    await runRotatedBbox(page, cached);
+    await finalize(page, "rotated-bbox", path.join(DOCS_IMAGES, "workbench/rotated-bbox.gif"));
+  });
+
+  test("polyline-draw — 折线逐点绘制", async ({ page, seed }) => {
+    if (!cached) throw new Error("seed peek 未完成");
+    await seed.injectToken(page, cached.admin_email);
+    await runPolylineDraw(page, cached);
+    await finalize(page, "polyline-draw", path.join(DOCS_IMAGES, "polyline/draw-in-progress.gif"));
   });
 });
