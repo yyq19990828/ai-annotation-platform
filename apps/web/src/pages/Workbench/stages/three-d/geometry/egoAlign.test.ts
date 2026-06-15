@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { alignPsrToFrame } from "./egoAlign";
+import * as THREE from "three";
+import { alignPsrToFrame, frameRelMatrix } from "./egoAlign";
 import type { FramePose } from "@/api/generated/types.gen";
 
 function pose(fi: number, x: number, yaw = 0): FramePose {
@@ -51,5 +52,31 @@ describe("alignPsrToFrame", () => {
     const psr = { center: [1, 2, 3] as [number, number, number], rotation: [0, 0, 0] as [number, number, number] };
     expect(alignPsrToFrame(psr, undefined, pose(1, 0))).toBeNull();
     expect(alignPsrToFrame(psr, pose(0, 0), undefined)).toBeNull();
+  });
+});
+
+describe("frameRelMatrix (v0.15.18 · 点云叠加复用)", () => {
+  it("纯平移: 邻帧静止世界点经 rel 变换后 x 减去 ego 前进量", () => {
+    // 邻帧 ego 在 x=0, 当前帧 ego 前进到 x=4;邻帧系里 (10,0,0) 的静止点
+    // 在当前帧系应为 (6,0,0)——与 alignPsrToFrame 同口径。
+    const rel = frameRelMatrix(pose(0, 0), pose(2, 4));
+    expect(rel).not.toBeNull();
+    const v = new THREE.Vector3(10, 0, 0).applyMatrix4(rel!);
+    expect(v.x).toBeCloseTo(6);
+    expect(v.y).toBeCloseTo(0);
+    expect(v.z).toBeCloseTo(0);
+  });
+
+  it("同帧 pose → 恒等矩阵(点不动)", () => {
+    const rel = frameRelMatrix(pose(1, 3, 0.5), pose(1, 3, 0.5));
+    const v = new THREE.Vector3(7, -2, 1).applyMatrix4(rel!);
+    expect(v.x).toBeCloseTo(7);
+    expect(v.y).toBeCloseTo(-2);
+    expect(v.z).toBeCloseTo(1);
+  });
+
+  it("任一帧缺 pose → null(调用方跳过该邻帧点云)", () => {
+    expect(frameRelMatrix(undefined, pose(1, 0))).toBeNull();
+    expect(frameRelMatrix(pose(0, 0), undefined)).toBeNull();
   });
 });

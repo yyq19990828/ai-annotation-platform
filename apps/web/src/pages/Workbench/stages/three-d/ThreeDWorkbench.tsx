@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
+import * as THREE from "three";
 
 import type {
   CameraPanelState,
@@ -25,8 +26,15 @@ import {
 import { useProject } from "@/hooks/useProjects";
 import { useFrameNeighbors } from "@/hooks/useFrameNeighbors";
 import { useNeighborAnnotations } from "@/hooks/useNeighborAnnotations";
+import { useNeighborPointClouds } from "@/hooks/useNeighborPointClouds";
 import { useSceneTrajectory } from "@/hooks/useSceneTrajectory";
-import { alignPsrToFrame } from "./geometry/egoAlign";
+import { alignPsrToFrame, frameRelMatrix } from "./geometry/egoAlign";
+import { cullPointsInBoxes } from "./geometry/cullDynamicPoints";
+import {
+  alignNeighborPointsPerObject,
+  type AlignNeighborBox,
+  type AlignPsr,
+} from "./geometry/perObjectAlign";
 import { useToastStore } from "@/components/ui/Toast";
 import { useAuthStore } from "@/stores/authStore";
 import { classColorForCanvas } from "@/pages/Workbench/stage/colors";
@@ -36,7 +44,7 @@ import type { Box3DGeometry, PointMaskGeometry, SensorCalibration } from "@/type
 
 import { AttributeForm } from "../../shell/AttributeForm";
 import { FloatingPanelShell, type FloatingPanelRect } from "../../shell/FloatingPanelShell";
-import type { FloatingPanelBounds } from "../../shell/useDragMove";
+import { useDragMove, type FloatingPanelBounds } from "../../shell/useDragMove";
 import { usePointCloudManifest } from "./usePointCloudManifest";
 import {
   PointCloudScene,
@@ -46,8 +54,12 @@ import {
   type SceneBox,
   type ReferenceBox,
 } from "./PointCloudScene";
-import { CrossFrameOverlayToggle } from "../../components/CrossFrameOverlayToggle";
-import { CrossFrameInterpolateBar } from "../../components/CrossFrameInterpolateBar";
+import { ContextMenu } from "@/components/ui/ContextMenu";
+import { Icon } from "@/components/ui/Icon";
+import { useCanvasContextMenu } from "../../stage/useCanvasContextMenu";
+import { ClassPickerPopover } from "../../shell/ClassPickerPopover";
+import { buildThreeDBoxContextMenuItems, buildThreeDEmptyContextMenuItems } from "./threeDContextMenu";
+import { FramePicker, type FramePickerMode } from "./FramePicker";
 import CameraProjectionView from "./CameraProjectionView";
 import FloatingCameraPanel from "./FloatingCameraPanel";
 import TriViewPanel from "./TriViewPanel";
@@ -72,6 +84,13 @@ import {
   psrFromPoints,
 } from "./geometry/autofit";
 import {
+  centralRay,
+  depthGate,
+  gatherPoints,
+  selectPointsInRect,
+  type SeedRect,
+} from "./geometry/frustum";
+import {
   applyConventionToPsr,
   applyConventionToExtrinsic,
   type LidarAxisConvention,
@@ -92,6 +111,9 @@ import {
   finishPointcloudLegacyMigration,
   isCrossFrameOverlayK,
   isPointMaskSelectMode,
+  readPsrPanelUiState,
+  writePsrPanelUiState,
+  type PsrPanelUiState,
 } from "./pointcloudPreferenceStorage";
 import { resolveWorkbenchPerformanceTier } from "../../state/performanceTier";
 import styles from "./ThreeDWorkbench.module.css";
@@ -135,10 +157,18 @@ interface ThreeDWorkbenchProps {
 
 // v0.13.3 · 新框默认尺寸(米,长宽高;约一辆轿车),放置后用面板/gizmo 精修。
 const DEFAULT_BOX_SIZE: [number, number, number] = [4.0, 1.8, 1.6];
+// v0.15.23 · align 模式下邻帧点已预变换到当前帧 ego 系,渲染走 identity(共享单例,免重复分配)。
+const IDENTITY_MATRIX = new THREE.Matrix4();
+// v0.15.24 · 种框空簇 fallback:沿中央射线的估计深度(米)。图上可见但无 lidar 返回时按此放默认框。
+const SEED_FALLBACK_RANGE_M = 12;
 const CAMERA_AUTO_COLLAPSE_WIDTH = 1366;
 const CAMERA_STACK_VISIBLE = 2;
 const TRI_FLOAT_DEFAULT_W = 240;
 const TRI_FLOAT_DEFAULT_H = 440;
+// 收起标签的近似尺寸,仅用于拖动时把标签 clamp 在视口内(略放大留余量)。
+const TRI_TAB_DRAG_SIZE = { w: 96, h: 34 };
+// 收起标签拖动判定阈值:位移超过此值才算"拖动"(否则按点击展开),px。
+const TRI_TAB_DRAG_THRESHOLD = 3;
 // v0.13.9 · 框选预览矩形位置/尺寸经 CSS custom property 注入(逐帧动态值)。
 type BoxSelectRectVars = CSSProperties & {
   "--rect-l": string;
@@ -385,15 +415,42 @@ export function ThreeDWorkbench({
   const pointMaskSelectMode = isPointMaskSelectMode(workbenchPointcloud.pointMaskSelectMode)
     ? workbenchPointcloud.pointMaskSelectMode
     : "rect";
-  const overlayK = isCrossFrameOverlayK(workbenchCommon.crossFrameOverlayK)
-    ? workbenchCommon.crossFrameOverlayK
-    : 0;
+  const overlayEnabled =
+    workbenchCommon.crossFrameOverlayEnabled ??
+    (workbenchCommon.crossFrameOverlayK > 0);
+  const overlayFrameK = isCrossFrameOverlayK(workbenchCommon.crossFrameOverlayK)
+    ? Math.max(workbenchCommon.crossFrameOverlayK, 1)
+    : 1;
+  const overlayK = overlayEnabled ? overlayFrameK : 0;
+  // v0.15.17 · 邻帧框叠加范围:selected=仅选中对象 group(现状);all=不选对象也叠全部邻帧框。
+  const overlayScope =
+    workbenchCommon.crossFrameOverlayScope === "all" ? "all" : "selected";
+  // v0.15.19 · 邻帧点云叠加开关 + 独立帧数(点云比框重,前后各 ≤3 帧)。
+  const pointOverlayOn = workbenchPointcloud.neighborPointOverlay;
+  const pointOverlayFrameK =
+    workbenchPointcloud.neighborPointOverlayK === 2 ||
+    workbenchPointcloud.neighborPointOverlayK === 3
+      ? workbenchPointcloud.neighborPointOverlayK
+      : 1;
+  const pointOverlayK = pointOverlayOn ? pointOverlayFrameK : 0;
+  // v0.15.22 · §C.8-B / v0.15.23 · §C.8-A 邻帧点云动态点处理:
+  // cull=剔除落在当前帧 box 内的邻帧点;align=逐目标把邻帧点搬到当前帧位置(无拖影)。
+  const neighborPointCull: "keep" | "cull" | "align" =
+    workbenchPointcloud.neighborPointCull === "cull"
+      ? "cull"
+      : workbenchPointcloud.neighborPointCull === "align"
+        ? "align"
+        : "keep";
+  const [neighborCulledCount, setNeighborCulledCount] = useState(0);
+  const [neighborMovedCount, setNeighborMovedCount] = useState(0);
   const [pointCloudViewMode, setPointCloudViewMode] = useState<"orbit" | "bev">("orbit");
   const [colorizing, setColorizing] = useState(false);
   const colorizedRawRef = useRef<Float32Array | null>(null);
   const adjustedColorBufferRef = useRef<Float32Array | null>(null);
   // v0.13.7 · 放大查看的相机 role(L3);null = 无放大。点⛶开,ESC/遮罩/关闭钮收。
   const [enlargedRole, setEnlargedRole] = useState<string | null>(null);
+  // v0.15.24 · 放大相机模态里的「种框」模式:拖 2D 框 → 视锥选点 → 拟合 box_3d。仅放大视图启用。
+  const [seedMode, setSeedMode] = useState(false);
   const [autoCollapseCameras, setAutoCollapseCameras] = useState(false);
   const [pointMaskPolygonPoints, setPointMaskPolygonPoints] = useState<ScreenPoint[]>([]);
   const [pointMaskCursor, setPointMaskCursor] = useState<ScreenPoint | null>(null);
@@ -477,6 +534,31 @@ export function ThreeDWorkbench({
     },
     [onWorkbenchLayoutChange, triViewFloat],
   );
+
+  // 收起的「三视图 ▸」标签也可整体拖动:与展开面板共享记忆坐标(triViewFloat.x/y),
+  // 拖动落库位置;位移不过阈值则视为点击 → 展开。moved 区分二者,避免拖完误触发展开。
+  const triTabStartRef = useRef<{ x: number; y: number } | null>(null);
+  const triTabMovedRef = useRef(false);
+  const triTabDrag = useDragMove({
+    position: triFloatPosition,
+    size: TRI_TAB_DRAG_SIZE,
+    bounds: triFloatBounds,
+    onStart: (pos) => {
+      triTabStartRef.current = pos;
+      triTabMovedRef.current = false;
+    },
+    onChange: (pos) => {
+      const start = triTabStartRef.current;
+      if (
+        start &&
+        (Math.abs(pos.x - start.x) > TRI_TAB_DRAG_THRESHOLD ||
+          Math.abs(pos.y - start.y) > TRI_TAB_DRAG_THRESHOLD)
+      ) {
+        triTabMovedRef.current = true;
+      }
+      updateTriViewFloat({ x: pos.x, y: pos.y });
+    },
+  });
 
   // v0.15.x · 相机面板位置/折叠态落库:多面板可连续拖动,故用 ref 取最新整份 Record,
   // 避免相邻回调读到 props 旧值互相覆盖。复位则删该 role 键。
@@ -761,6 +843,7 @@ export function ThreeDWorkbench({
       : null;
   // 单框锁定(列表 L 切换)→ 不可编辑(无 gizmo / 面板禁用 / 不可删),但仍可选中查看。
   const selectedLocked = !!selectedAnn?.is_locked;
+  const selectedHidden = !!selectedAnn?.is_hidden;
   // 可编辑 = 任务级非只读 且 该框未锁定。
   const selectedEditable = !readOnly && !selectedLocked;
   const selectedPsrEditable = selectedEditable && !multiBoxSelected;
@@ -1219,6 +1302,15 @@ export function ThreeDWorkbench({
     });
   }, [selectedId, selectedLocked, updateAnnotation]);
 
+  // v0.15.20 · 隐藏 / 显示选中框(与右栏列表同源 is_hidden;仅可见性,渲染侧读 a.is_hidden)。
+  const handleToggleHidden = useCallback(() => {
+    if (!selectedId) return;
+    updateAnnotation.mutate({
+      annotationId: selectedId,
+      payload: { is_hidden: !selectedHidden },
+    });
+  }, [selectedId, selectedHidden, updateAnnotation]);
+
   // 放置:点地面 → 默认尺寸框(落在地面上)→ 持久化 → 选中新框精修;单次放置后退出。
   const handlePlace = useCallback(
     (clientX: number, clientY: number) => {
@@ -1285,6 +1377,49 @@ export function ThreeDWorkbench({
       onSetThreeDTool("select"); // 单次画框后回到选择工具
     },
     [boxPlaceClass, axisConvention, createAnnotation, history, onSelectBox, onSetThreeDTool],
+  );
+
+  // v0.15.24 · §Phase1 相机图「2D 框种 3D 框」:在放大相机图上拖矩形 → 该相机标定反算视锥选点
+  // → depthGate 取最近簇 → psrFromPoints + fitYaw/fitBottom 拟合 → 落 box_3d 并选中微调。
+  // 空簇(图上可见但无 lidar 返回)→ 沿中央射线放默认尺寸框 + 提示微调。唯一产物是 box_3d(2D 不落库)。
+  const handleSeedBox = useCallback(
+    (rect: SeedRect, calibration: SensorCalibration) => {
+      const scene = sceneRef.current;
+      if (!scene || !boxPlaceClass) return;
+      const positions = scene.getPointPositions();
+      if (!positions) return;
+      const gated = depthGate(selectPointsInRect(positions, rect, calibration));
+      let psr: Psr;
+      if (gated.length >= 3) {
+        const cluster = gatherPoints(positions, gated);
+        psr = fitBottom(cluster, fitYaw(cluster, psrFromPoints(cluster)));
+      } else {
+        // 空簇 / 点太少:沿矩形中心射线按固定估计深度放默认尺寸框(用户再微调)。
+        const ray = centralRay(rect, calibration);
+        const center: [number, number, number] = [
+          ray.origin[0] + ray.direction[0] * SEED_FALLBACK_RANGE_M,
+          ray.origin[1] + ray.direction[1] * SEED_FALLBACK_RANGE_M,
+          ray.origin[2] + ray.direction[2] * SEED_FALLBACK_RANGE_M,
+        ];
+        psr = { center, size: defaultBoxSize, rotation: [0, 0, 0] };
+        pushToast({ msg: "视锥内无点云,已按默认尺寸放置,请微调", kind: "" });
+      }
+      const geometry = boxGeometryFromPsr(psr, axisConvention);
+      const payload: AnnotationPayload = {
+        annotation_type: "box_3d",
+        tool_unit_id: LIDAR_TOOL_UNIT,
+        class_name: boxPlaceClass,
+        geometry,
+      };
+      createAnnotation.mutate(payload, {
+        onSuccess: (created) => {
+          history.push({ kind: "create", annotationId: created.id, payload });
+          onSelectBox(created.id);
+        },
+      });
+      setSeedMode(false);
+    },
+    [boxPlaceClass, axisConvention, defaultBoxSize, createAnnotation, history, onSelectBox, pushToast],
   );
 
   const applyPointMaskSelection = useCallback(
@@ -1582,6 +1717,130 @@ export function ThreeDWorkbench({
     onSelectBox(sceneRef.current?.pickBox(e.clientX, e.clientY) ?? null, { shift: e.shiftKey });
   };
 
+  // ── v0.15.20 · 画布右键菜单(命中框/空白分流;右键拖动=相机 pan 则抑制)────────────
+  const contextMenu = useCanvasContextMenu();
+  const [ctxTargetId, setCtxTargetId] = useState<string | null>(null);
+  const [classPickerAnchor, setClassPickerAnchor] = useState<{ left: number; top: number } | null>(null);
+  const [framePicker, setFramePicker] = useState<{ mode: FramePickerMode; anchor: { left: number; top: number } } | null>(null);
+
+  // v0.15.21 · 选中框 PSR 面板:渐进展开 + 整体拖动,展开态与位置偏移按用户记忆(localStorage)。
+  const [psrPanel, setPsrPanel] = useState<PsrPanelUiState>({ expanded: false, dx: 0, dy: 0 });
+  const psrPanelRef = useRef(psrPanel);
+  psrPanelRef.current = psrPanel;
+  useEffect(() => {
+    if (!userId || typeof window === "undefined") return;
+    setPsrPanel(readPsrPanelUiState(userId, window.localStorage));
+  }, [userId]);
+  const persistPsrPanel = useCallback(
+    (next: PsrPanelUiState) => {
+      if (userId && typeof window !== "undefined") writePsrPanelUiState(userId, next, window.localStorage);
+    },
+    [userId],
+  );
+  const togglePsrExpanded = useCallback(() => {
+    setPsrPanel((p) => {
+      const next = { ...p, expanded: !p.expanded };
+      persistPsrPanel(next);
+      return next;
+    });
+  }, [persistPsrPanel]);
+  const psrDragRef = useRef<{ sx: number; sy: number; dx0: number; dy0: number } | null>(null);
+  const [psrDragging, setPsrDragging] = useState(false);
+  const onPsrHeaderPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
+      // 拖柄落在交互控件(类别下拉 / 锁 / 删 / 展开钮)上时不起拖,保持可点。
+      if ((e.target as HTMLElement).closest("button, select, input, a")) return;
+      psrDragRef.current = { sx: e.clientX, sy: e.clientY, dx0: psrPanelRef.current.dx, dy0: psrPanelRef.current.dy };
+      setPsrDragging(true);
+    },
+    [],
+  );
+  useEffect(() => {
+    if (!psrDragging) return;
+    const onMove = (e: PointerEvent) => {
+      const d = psrDragRef.current;
+      if (!d) return;
+      setPsrPanel((p) => ({ ...p, dx: d.dx0 + e.clientX - d.sx, dy: d.dy0 + e.clientY - d.sy }));
+    };
+    const onUp = () => {
+      psrDragRef.current = null;
+      setPsrDragging(false);
+      persistPsrPanel(psrPanelRef.current);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [psrDragging, persistPsrPanel]);
+
+  const closeContextMenu = () => {
+    contextMenu.close();
+    setCtxTargetId(null);
+  };
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    // 右键拖动 = OrbitControls 相机平移, 抑制菜单; 右键点击才弹(与 click 判定同阈值)。
+    const down = pointerDownRef.current;
+    pointerDownRef.current = null;
+    if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_CLICK_TOL) {
+      closeContextMenu();
+      return;
+    }
+    // 放置/框选进行中右键 = 取消这一笔(window 级 cancel 处理), 不弹菜单。
+    if (drawingSelection || isBoxSelecting) {
+      closeContextMenu();
+      return;
+    }
+    const hitId = sceneRef.current?.pickBox(e.clientX, e.clientY) ?? null;
+    setCtxTargetId(hitId);
+    if (hitId && !selectedIdSet.has(hitId)) onSelectBox(hitId);
+    contextMenu.openAt(e.clientX, e.clientY);
+  };
+  const contextMenuItems = useMemo(() => {
+    if (!contextMenu.open) return [];
+    const canPropagate = !!manifest?.scene_id;
+    const hasClipboard = clipboardRef.current != null;
+    if (ctxTargetId) {
+      const ann = (annotations ?? []).find((a) => a.id === ctxTargetId);
+      return buildThreeDBoxContextMenuItems({
+        readOnly,
+        locked: !!ann?.is_locked,
+        hidden: !!ann?.is_hidden,
+        hasClipboard,
+        canPropagate,
+        canInterpolate: ann?.group_id != null,
+        onPropagateNext: () => onCrossFramePropagate("next"),
+        onPropagatePrev: () => onCrossFramePropagate("prev"),
+        onPropagateToFrame: () =>
+          setFramePicker({ mode: "propagate", anchor: { left: contextMenu.x, top: contextMenu.y } }),
+        onInterpolate: () =>
+          setFramePicker({ mode: "interpolate", anchor: { left: contextMenu.x, top: contextMenu.y } }),
+        onChangeClass: () => setClassPickerAnchor({ left: contextMenu.x, top: contextMenu.y }),
+        onToggleLock: handleToggleLock,
+        onToggleHidden: handleToggleHidden,
+        onCopy: copySelected,
+        onPaste: pasteClipboard,
+        onDelete: handleDeleteSelected,
+      });
+    }
+    return buildThreeDEmptyContextMenuItems({
+      readOnly,
+      hasClipboard,
+      canPropagate,
+      onPropagateBatchNext: () => onCrossFramePropagateBatch("next"),
+      onPropagateBatchPrev: () => onCrossFramePropagateBatch("prev"),
+      onPaste: pasteClipboard,
+    });
+  }, [
+    contextMenu.open, contextMenu.x, contextMenu.y, ctxTargetId,
+    manifest?.scene_id, annotations, readOnly,
+    onCrossFramePropagate, onCrossFramePropagateBatch,
+    handleToggleLock, handleToggleHidden, copySelected, pasteClipboard, handleDeleteSelected,
+  ]);
+
   const handleResetView = useCallback(() => {
     sceneRef.current?.resetView();
     setPointCloudViewMode("orbit");
@@ -1652,12 +1911,14 @@ export function ThreeDWorkbench({
     const fwd = frontCameraForward(cameras);
     scene.setViewForward(fwd?.[0] ?? 0, fwd?.[1] ?? 1);
   }, [cameras]);
-  // v0.13.7 · 放大浮层:ESC 关闭。
+  // v0.13.7 · 放大浮层:ESC 关闭(v0.15.24:种框模式下 ESC 先退出种框,再次 ESC 才关浮层)。
   useEffect(() => {
     if (!enlargedRole) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setEnlargedRole(null);
-      else if (e.key === "ArrowLeft") {
+      if (e.key === "Escape") {
+        if (seedMode) setSeedMode(false);
+        else setEnlargedRole(null);
+      } else if (e.key === "ArrowLeft") {
         e.preventDefault();
         cycleEnlargedCamera(-1);
       } else if (e.key === "ArrowRight") {
@@ -1667,7 +1928,11 @@ export function ThreeDWorkbench({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cycleEnlargedCamera, enlargedRole]);
+  }, [cycleEnlargedCamera, enlargedRole, seedMode]);
+  // v0.15.24 · 关闭放大浮层时复位种框模式(种框仅在放大视图内有意义)。
+  useEffect(() => {
+    if (!enlargedRole) setSeedMode(false);
+  }, [enlargedRole]);
   // v0.13.6 · 点云坐标(载帧后稳定);供相机视图建深度栅格。stats 变化即点云换帧。
   const pointPositions = useMemo(
     () => (stats ? (sceneRef.current?.getPointPositions() ?? null) : null),
@@ -1748,30 +2013,36 @@ export function ThreeDWorkbench({
     return s;
   }, [selectedIds, selectedGroupId, annotations]);
 
-  const setOverlayKPersist = useCallback((k: number) => {
-    if (isCrossFrameOverlayK(k)) {
-      onWorkbenchConfigChange({ common: { crossFrameOverlayK: k } });
-    }
-  }, [onWorkbenchConfigChange]);
+  // v0.15.18 · 框叠加(overlayK)或点云叠加(pointOverlayK)任一开启都要邻帧 + 轨迹;
+  // 取两者最大帧数拉取,各自再按需切片(框用 overlayK,点云用 pointOverlayK),互不放大。
+  const neighborsActive = overlayK > 0 || pointOverlayK > 0;
+  const neighborsFetchK = Math.max(1, overlayK, pointOverlayK);
   const { data: neighborsData } = useFrameNeighbors(
-    overlayK > 0 ? taskId : null,
-    Math.max(1, overlayK),
+    neighborsActive ? taskId : null,
+    neighborsFetchK,
   );
   const neighborTaskIds = useMemo(() => {
     if (overlayK <= 0 || !neighborsData) return [];
     return [
-      ...(neighborsData.prev ?? []),
-      ...(neighborsData.next ?? []),
+      ...(neighborsData.prev ?? []).slice(0, overlayK),
+      ...(neighborsData.next ?? []).slice(0, overlayK),
     ].map((n) => n.task_id);
   }, [overlayK, neighborsData]);
+  // v0.15.17 · 批量端点拉邻帧标注。scope=selected 需选中对象(传 group_id 服务端过滤);
+  // scope=all 不依赖选中(group_id=null,回全部框)。
+  const boxAnnotationOverlayEnabled =
+    overlayK > 0 && (overlayScope === "all" || selectedGroupId != null);
+  const overlayGroupId = overlayScope === "all" ? null : selectedGroupId;
   const { byTask: neighborAnnsByTask } = useNeighborAnnotations(
-    neighborTaskIds,
-    overlayK > 0 ? selectedGroupId : null,
+    overlayK > 0 ? taskId : null,
+    overlayK,
+    overlayGroupId,
+    boxAnnotationOverlayEnabled,
   );
   // v0.15.1 · overlay ego 对齐: 邻帧框经 trajectory 变换到当前帧 ego 系再叠加,
   // 静止物参考框与当前帧重合。无轨迹 scene → poseByFrame=null,退回原样叠加。
   const { poseByFrame } = useSceneTrajectory(
-    overlayK > 0 ? (neighborsData?.scene_id ?? null) : null,
+    neighborsActive ? (neighborsData?.scene_id ?? null) : null,
   );
   const neighborFrameByTask = useMemo<Map<string, number>>(() => {
     if (!neighborsData) return new Map();
@@ -1783,7 +2054,9 @@ export function ThreeDWorkbench({
     );
   }, [neighborsData]);
   const referenceBoxes = useMemo<ReferenceBox[]>(() => {
-    if (overlayK <= 0 || selectedGroupId == null) return [];
+    if (overlayK <= 0) return [];
+    // scope=selected:必须选中对象;scope=all:不选也叠全部邻帧框。
+    if (overlayScope === "selected" && selectedGroupId == null) return [];
     const curFrame = neighborsData?.frame_index ?? null;
     const out: ReferenceBox[] = [];
     for (const tid of neighborTaskIds) {
@@ -1809,18 +2082,25 @@ export function ThreeDWorkbench({
             rotation = aligned.rotation;
           }
         }
+        // scope=all 且有选中对象:非选中 group 的邻帧框弱化(dim),突出当前对象轨迹。
+        const dim =
+          overlayScope === "all" &&
+          selectedGroupId != null &&
+          a.group_id !== selectedGroupId;
         out.push({
           id: `${tid}:${a.id}`,
           center,
           size: g.size.map((v) => Math.abs(v)) as [number, number, number],
           rotation,
           color: classColorForCanvas(a.class_name),
+          dim,
         });
       }
     }
     return out;
   }, [
     overlayK,
+    overlayScope,
     selectedGroupId,
     neighborTaskIds,
     neighborAnnsByTask,
@@ -1831,6 +2111,152 @@ export function ThreeDWorkbench({
   useEffect(() => {
     sceneRef.current?.setReferenceBoxes(referenceBoxes);
   }, [referenceBoxes]);
+
+  // v0.15.18 · 邻帧点云叠加。需 scene + ego 轨迹(无轨迹直接叠会乱,故 gate on poseByFrame)。
+  const pointOverlayActive =
+    pointOverlayK > 0 && !!neighborsData?.scene_id && !!poseByFrame;
+  const pointNeighbors = useMemo(() => {
+    if (!pointOverlayActive || !neighborsData) return [];
+    return [
+      ...(neighborsData.prev ?? []).slice(0, pointOverlayK),
+      ...(neighborsData.next ?? []).slice(0, pointOverlayK),
+    ].map((n) => ({ taskId: n.task_id, frameIndex: n.frame_index }));
+  }, [pointOverlayActive, neighborsData, pointOverlayK]);
+  // v0.15.23 · §C.8-A align 模式:把落在邻帧 box 内的点按目标位姿搬到当前帧位置(逐目标
+  // 补偿,真·消除拖影)。需邻帧「全部」框(按 group_id 与当前帧框配对),独立于框叠加
+  // (overlayK)且 scope 恒为 all;仅 align 时拉取,避免无谓请求。
+  const alignActive = pointOverlayActive && neighborPointCull === "align";
+  const { byTask: alignAnnsByTask } = useNeighborAnnotations(
+    alignActive ? taskId : null,
+    pointOverlayK,
+    null,
+    alignActive,
+  );
+  // 当前帧 box:group_id → PSR(逐目标搬运的配对目标)。
+  const currentBoxesByGroup = useMemo<Map<number, AlignPsr>>(() => {
+    const m = new Map<number, AlignPsr>();
+    if (!alignActive) return m;
+    for (const a of annotations ?? []) {
+      if (a.group_id == null) continue;
+      const g = a.geometry as {
+        type?: string;
+        center?: number[];
+        size?: number[];
+        rotation?: number[];
+      };
+      if (g?.type !== "box_3d" || !g.center || !g.size || !g.rotation) continue;
+      m.set(a.group_id, {
+        center: g.center as [number, number, number],
+        size: g.size.map((v) => Math.abs(v)) as [number, number, number],
+        rotation: g.rotation as [number, number, number],
+      });
+    }
+    return m;
+  }, [alignActive, annotations]);
+  // 邻帧 box(原始邻帧 ego 系 PSR + group_id),按 task 分组;不预对齐(搬运矩阵自带 ego 补偿)。
+  const neighborBoxesByTask = useMemo<Map<string, AlignNeighborBox[]>>(() => {
+    const m = new Map<string, AlignNeighborBox[]>();
+    if (!alignActive) return m;
+    for (const [tid, anns] of Object.entries(alignAnnsByTask)) {
+      const list: AlignNeighborBox[] = [];
+      for (const a of anns) {
+        if (a.group_id == null) continue;
+        const g = a.geometry as {
+          type?: string;
+          center?: number[];
+          size?: number[];
+          rotation?: number[];
+        };
+        if (g?.type !== "box_3d" || !g.center || !g.size || !g.rotation) continue;
+        list.push({
+          groupId: a.group_id,
+          center: g.center as [number, number, number],
+          size: g.size.map((v) => Math.abs(v)) as [number, number, number],
+          rotation: g.rotation as [number, number, number],
+        });
+      }
+      m.set(tid, list);
+    }
+    return m;
+  }, [alignActive, alignAnnsByTask]);
+  // 邻帧点云下采样目标:当前帧抽稀阈值的 1/8,上限 8 万(邻帧仅作参考,远低于当前帧)。
+  const neighborPointTarget = Math.min(
+    80_000,
+    Math.round(performanceConfig.pcdDecimate / 8),
+  );
+  const { items: neighborPcds } = useNeighborPointClouds(
+    pointNeighbors,
+    axisConvention,
+    neighborPointTarget,
+    pointOverlayActive,
+  );
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const curFrame = neighborsData?.frame_index ?? null;
+    if (!pointOverlayActive || !poseByFrame || curFrame == null) {
+      scene.setNeighborPoints([]);
+      setNeighborCulledCount(0);
+      setNeighborMovedCount(0);
+      return;
+    }
+    const toPose = poseByFrame.get(curFrame);
+    type NeighborFrame = {
+      positions: Float32Array;
+      matrix: NonNullable<ReturnType<typeof frameRelMatrix>>;
+      dir: "past" | "future";
+      distance: number;
+    };
+    // v0.15.22 · cull:把对齐到当前帧后落在 tracked box 内的邻帧点剔除,只叠静止背景。
+    // v0.15.23 · align:落在邻帧 box 内的点按目标位姿搬到当前帧位置(逐目标补偿,无拖影);
+    //   搬运后点已是当前帧 ego 系坐标,渲染走 identity 矩阵(其余背景点仍 ego 对齐)。
+    const cullOn = neighborPointCull === "cull" && boxes.length > 0;
+    const alignOn = neighborPointCull === "align" && currentBoxesByGroup.size > 0;
+    let culledTotal = 0;
+    let movedTotal = 0;
+    const frames = neighborPcds
+      .map((pcd): NeighborFrame | null => {
+        const matrix = frameRelMatrix(poseByFrame.get(pcd.frameIndex), toPose);
+        if (!matrix) return null;
+        let positions = pcd.positions;
+        let renderMatrix = matrix;
+        if (alignOn) {
+          const res = alignNeighborPointsPerObject(
+            positions,
+            matrix,
+            neighborBoxesByTask.get(pcd.taskId) ?? [],
+            currentBoxesByGroup,
+          );
+          positions = res.aligned;
+          movedTotal += res.movedCount;
+          renderMatrix = IDENTITY_MATRIX; // 点已预变换到当前帧 ego 系
+        } else if (cullOn) {
+          const res = cullPointsInBoxes(positions, matrix, boxes);
+          positions = res.kept;
+          culledTotal += res.culledCount;
+        }
+        // 前/后帧分色 + 按帧距淡出(视觉缓解动态拖影)。
+        return {
+          positions,
+          matrix: renderMatrix,
+          dir: pcd.frameIndex >= curFrame ? "future" : "past",
+          distance: Math.abs(pcd.frameIndex - curFrame),
+        };
+      })
+      .filter((f): f is NeighborFrame => f != null);
+    scene.setNeighborPoints(frames);
+    setNeighborCulledCount(cullOn ? culledTotal : 0);
+    setNeighborMovedCount(alignOn ? movedTotal : 0);
+  }, [
+    pointOverlayActive,
+    neighborPcds,
+    poseByFrame,
+    neighborsData,
+    neighborPointCull,
+    boxes,
+    currentBoxesByGroup,
+    neighborBoxesByTask,
+  ]);
 
   // v0.13.4 · 选中框被哪些相机看到(可见角点数 > 0),按可见角点数降序;首个 = 最正对。
   const selectedCameraVis = useMemo(() => {
@@ -1933,6 +2359,7 @@ export function ThreeDWorkbench({
           onMouseMove={handleViewportMouseMove}
           onClick={handleViewportClick}
           onDoubleClick={handleViewportDoubleClick}
+          onContextMenu={handleContextMenu}
         />
 
         {/* v0.13.9 · 框选预览矩形(地面 footprint), 仅拖拽期出现, 不拦事件。 */}
@@ -2021,24 +2448,49 @@ export function ThreeDWorkbench({
               </select>
             </label>
           )}
-          {manifest?.scene_id && (
-            <CrossFrameOverlayToggle value={overlayK} onChange={setOverlayKPersist} />
-          )}
-          {manifest?.scene_id && taskId && (
-            <CrossFrameInterpolateBar
-              taskId={taskId}
-              frameIndex={manifest.frame_index ?? null}
-              sceneTotalFrames={manifest.scene_total_frames ?? null}
-              selectedGroupId={selectedGroupId}
-              selectedIsBox3d={!!selectedBox}
-              readOnly={readOnly}
-              onPropagateBatch={onCrossFramePropagateBatch}
-              onPropagateToTask={onCrossFramePropagateToTask}
-              onInterpolate={onCrossFrameInterpolate}
-              pushToast={pushToast}
-            />
-          )}
         </div>
+
+        <ContextMenu
+          open={contextMenu.open && contextMenuItems.length > 0}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenuItems}
+          onClose={closeContextMenu}
+        />
+        {classPickerAnchor && (
+          <ClassPickerPopover
+            position="fixed"
+            anchor={classPickerAnchor}
+            classes={boxClasses}
+            recent={[]}
+            defaultClass={selectedClass ?? boxClasses[0] ?? ""}
+            title="改类别"
+            onPick={(cls) => {
+              handleChangeClass(cls);
+              setClassPickerAnchor(null);
+            }}
+            onCancel={() => setClassPickerAnchor(null)}
+          />
+        )}
+        {framePicker && taskId && (
+          <FramePicker
+            taskId={taskId}
+            frameIndex={manifest?.frame_index ?? null}
+            sceneTotalFrames={manifest?.scene_total_frames ?? null}
+            mode={framePicker.mode}
+            anchor={framePicker.anchor}
+            pushToast={pushToast}
+            onConfirm={({ targetTaskId, targetFrame }) => {
+              if (framePicker.mode === "propagate") {
+                onCrossFramePropagateToTask(targetTaskId, targetFrame);
+              } else if (selectedGroupId != null) {
+                onCrossFrameInterpolate(selectedGroupId, targetTaskId);
+              }
+              setFramePicker(null);
+            }}
+            onCancel={() => setFramePicker(null)}
+          />
+        )}
 
         {conventionMismatches.length > 0 && (
           <div className={styles.mismatchBanner}>
@@ -2068,6 +2520,12 @@ export function ThreeDWorkbench({
             </span>
           )}
           {boxes.length > 0 && <span>· {boxes.length} 框</span>}
+          {neighborCulledCount > 0 && (
+            <span>· 邻帧剔除 {neighborCulledCount.toLocaleString()} 动态点</span>
+          )}
+          {neighborMovedCount > 0 && (
+            <span>· 邻帧对齐 {neighborMovedCount.toLocaleString()} 动态点</span>
+          )}
           {pointMasks.length > 0 && <span>· {pointMasks.length} 分割</span>}
           {placing && (
             <span>· 拖框选 / 点击放置 {boxPlaceClass ?? ""} · V/Esc 取消</span>
@@ -2095,138 +2553,173 @@ export function ThreeDWorkbench({
           )}
         </div>
 
-        {/* 选中框 PSR 数值编辑面板(右上) */}
+        {/* 选中框 PSR 数值编辑面板(右上;头部可拖动 + 渐进展开) */}
         {selectedBox && form && (
-          <div className={styles.editPanel}>
-            <div className={styles.editTitle}>
-              {boxClasses.length > 0 ? (
-                <select
-                  className={styles.classSelect}
-                  value={selectedClass ?? ""}
-                  aria-label="框类别"
-                  disabled={!selectedEditable}
-                  onChange={(e) => handleChangeClass(e.target.value)}
-                >
-                  {/* 当前类别若不在配置集合内(历史数据)仍可见,不丢选中项 */}
-                  {selectedClass && !boxClasses.includes(selectedClass) && (
-                    <option value={selectedClass}>{selectedClass}</option>
-                  )}
-                  {boxClasses.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span>3D 框 · {selectedClass ?? ""}</span>
-              )}
-              {!readOnly && (
+          <div
+            className={[styles.editPanel, psrDragging ? styles.editPanelDragging : ""]
+              .filter(Boolean)
+              .join(" ")}
+            // eslint-disable-next-line no-restricted-syntax -- 面板拖动偏移是用户拖拽态, 经 CSS 变量注入。
+            style={
+              { "--psr-dx": `${psrPanel.dx}px`, "--psr-dy": `${psrPanel.dy}px` } as CSSProperties & {
+                "--psr-dx": string;
+                "--psr-dy": string;
+              }
+            }
+          >
+            <div className={styles.editHeader} onPointerDown={onPsrHeaderPointerDown}>
+              <div className={styles.editTitle}>
+                <Icon name="move" size={12} className={styles.dragHint} />
+                {boxClasses.length > 0 ? (
+                  <select
+                    className={styles.classSelect}
+                    value={selectedClass ?? ""}
+                    aria-label="框类别"
+                    disabled={!selectedEditable}
+                    onChange={(e) => handleChangeClass(e.target.value)}
+                  >
+                    {/* 当前类别若不在配置集合内(历史数据)仍可见,不丢选中项 */}
+                    {selectedClass && !boxClasses.includes(selectedClass) && (
+                      <option value={selectedClass}>{selectedClass}</option>
+                    )}
+                    {boxClasses.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span>3D 框 · {selectedClass ?? ""}</span>
+                )}
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className={selectedLocked ? `${styles.lockBtn} ${styles.lockBtnOn}` : styles.lockBtn}
+                    aria-pressed={selectedLocked}
+                    onClick={handleToggleLock}
+                  >
+                    {selectedLocked ? "已锁定" : "锁定"}
+                  </button>
+                )}
+                {!readOnly && selectedBoxIds.length > 0 && (
+                  <button
+                    type="button"
+                    className={styles.iconBtn}
+                    onClick={handleDeleteSelected}
+                    aria-label={multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"}
+                    title={multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"}
+                  >
+                    <Icon name="trash" size={14} />
+                  </button>
+                )}
                 <button
                   type="button"
-                  className={selectedLocked ? `${styles.lockBtn} ${styles.lockBtnOn}` : styles.lockBtn}
-                  aria-pressed={selectedLocked}
-                  onClick={handleToggleLock}
+                  className={styles.iconBtn}
+                  onClick={togglePsrExpanded}
+                  aria-expanded={psrPanel.expanded}
+                  aria-label={psrPanel.expanded ? "收起详情" : "展开详情"}
+                  title={psrPanel.expanded ? "收起" : "展开"}
                 >
-                  {selectedLocked ? "已锁定" : "锁定"}
-                </button>
-              )}
-            </div>
-            <div className={styles.editGroupLabel}>
-              {readOnly
-                ? "只读 · 锁定 / 审阅态"
-                : multiBoxSelected
-                  ? `${selectedBoxIds.length} 个框已选中 · 可批量改类 / 删除`
-                  : selectedLocked
-                  ? "已锁定 · 点「已锁定」解锁后可编辑"
-                  : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
-            </div>
-            {/* v0.13.8 · 选中框自动贴合:Q 默认连击(收尺寸+贴地);
-                Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发。 */}
-            {selectedPsrEditable && (
-              <div className={styles.fitGroup} role="group" aria-label="自动贴合">
-                <button
-                  type="button"
-                  className={styles.btn}
-                  onClick={handleFitDefault}
-                  title="贴合 (Q):收尺寸 + 贴地"
-                >
-                  贴合
-                </button>
-                <button
-                  type="button"
-                  className={styles.btn}
-                  onClick={handleFitSize}
-                  title="只收尺寸 (Shift+Q)"
-                >
-                  收尺寸
-                </button>
-                <button
-                  type="button"
-                  className={styles.btn}
-                  onClick={handleFitBottom}
-                  title="只贴地 (Alt+Q)"
-                >
-                  贴地
-                </button>
-                <button
-                  type="button"
-                  className={styles.btn}
-                  onClick={handleFitYaw}
-                  title="贴朝向(实验):点云稀疏时主轴可能反转 180°"
-                >
-                  朝向⚗
+                  <Icon name={psrPanel.expanded ? "chevUp" : "chevDown"} size={14} />
                 </button>
               </div>
-            )}
-            {PSR_GROUPS.map((g) => (
-              <div key={g.label}>
-                <div className={styles.editGroupLabelRow}>
-                  <span className={styles.editGroupLabel}>{g.label}</span>
-                  {g.reset && selectedPsrEditable && (
+              <div className={styles.editSummary}>
+                {multiBoxSelected
+                  ? `${selectedBoxIds.length} 个框已选中`
+                  : `尺寸 ${selectedBox.size.map((n) => n.toFixed(2)).join(" × ")} m`}
+              </div>
+            </div>
+            {psrPanel.expanded && (
+              <div className={styles.editBody}>
+                <div className={styles.editGroupLabel}>
+                  {readOnly
+                    ? "只读 · 锁定 / 审阅态"
+                    : multiBoxSelected
+                      ? `${selectedBoxIds.length} 个框已选中 · 可批量改类 / 删除`
+                      : selectedLocked
+                      ? "已锁定 · 点「已锁定」解锁后可编辑"
+                      : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
+                </div>
+                {/* v0.13.8 · 选中框自动贴合:Q 默认连击(收尺寸+贴地);
+                    Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发。 */}
+                {selectedPsrEditable && (
+                  <div className={styles.fitGroup} role="group" aria-label="自动贴合">
                     <button
                       type="button"
-                      className={styles.resetBtn}
-                      onClick={handleResetRotation}
-                      title="把偏航/俯仰/翻滚全部归零"
+                      className={styles.btn}
+                      onClick={handleFitDefault}
+                      title="贴合 (Q):收尺寸 + 贴地"
                     >
-                      归零
+                      贴合
                     </button>
-                  )}
-                </div>
-                <div className={styles.editRow}>
-                  {g.keys.map((k) => (
-                    <input
-                      key={k}
-                      type="number"
-                      step={g.step}
-                      min={g.min}
-                      value={form[k]}
-                      aria-label={k}
-                      disabled={!selectedPsrEditable}
-                      onChange={(e) => handleField(k, e.target.value)}
-                      onBlur={() => handleFieldBlur(k)}
-                    />
-                  ))}
-                </div>
+                    <button
+                      type="button"
+                      className={styles.btn}
+                      onClick={handleFitSize}
+                      title="只收尺寸 (Shift+Q)"
+                    >
+                      收尺寸
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.btn}
+                      onClick={handleFitBottom}
+                      title="只贴地 (Alt+Q)"
+                    >
+                      贴地
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.btn}
+                      onClick={handleFitYaw}
+                      title="贴朝向(实验):点云稀疏时主轴可能反转 180°"
+                    >
+                      朝向⚗
+                    </button>
+                  </div>
+                )}
+                {PSR_GROUPS.map((g) => (
+                  <div key={g.label}>
+                    <div className={styles.editGroupLabelRow}>
+                      <span className={styles.editGroupLabel}>{g.label}</span>
+                      {g.reset && selectedPsrEditable && (
+                        <button
+                          type="button"
+                          className={styles.resetBtn}
+                          onClick={handleResetRotation}
+                          title="把偏航/俯仰/翻滚全部归零"
+                        >
+                          归零
+                        </button>
+                      )}
+                    </div>
+                    <div className={styles.editRow}>
+                      {g.keys.map((k) => (
+                        <input
+                          key={k}
+                          type="number"
+                          step={g.step}
+                          min={g.min}
+                          value={form[k]}
+                          aria-label={k}
+                          disabled={!selectedPsrEditable}
+                          onChange={(e) => handleField(k, e.target.value)}
+                          onBlur={() => handleFieldBlur(k)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {!multiBoxSelected && (
+                  <AttributeForm
+                    schema={boxAttributeSchema}
+                    className={selectedClass ?? ""}
+                    attributes={selectedAnn?.attributes ?? {}}
+                    readOnly={!selectedEditable}
+                    onChange={handleChangeAttributes}
+                  />
+                )}
               </div>
-            ))}
-            {!multiBoxSelected && (
-              <AttributeForm
-                schema={boxAttributeSchema}
-                className={selectedClass ?? ""}
-                attributes={selectedAnn?.attributes ?? {}}
-                readOnly={!selectedEditable}
-                onChange={handleChangeAttributes}
-              />
-            )}
-            {!readOnly && selectedBoxIds.length > 0 && (
-              <button
-                type="button"
-                className={styles.deleteBtn}
-                onClick={handleDeleteSelected}
-              >
-                {multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"}
-              </button>
             )}
           </div>
         )}
@@ -2307,13 +2800,38 @@ export function ThreeDWorkbench({
           </FloatingPanelShell>
         )}
         {triSelected && triViewFloat.collapsed && (
-          <button
-            type="button"
-            className={styles.triFloatTab}
-            onClick={() => updateTriViewFloat({ collapsed: false })}
+          // 不能用 <button>/role=button:useDragMove 的 isInteractiveTarget 会拦掉其 pointerdown。
+          // 用 div + tabIndex 保留键盘可达;拖动经 handleProps,纯点击(未拖动)才展开。
+          <div
+            tabIndex={0}
+            data-floating-panel
+            aria-label="展开三视图精修(可拖动)"
+            className={[
+              styles.triFloatTab,
+              triTabDrag.isDragging ? styles.triFloatTabDragging : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            // eslint-disable-next-line no-restricted-syntax -- 收起标签沿用展开面板的记忆位置，经 CSS 变量注入。
+            style={
+              {
+                "--tri-tab-x": `${triFloatPosition.x}px`,
+                "--tri-tab-y": `${triFloatPosition.y}px`,
+              } as CSSProperties
+            }
+            {...triTabDrag.handleProps}
+            onClick={() => {
+              if (!triTabMovedRef.current) updateTriViewFloat({ collapsed: false });
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                updateTriViewFloat({ collapsed: false });
+              }
+            }}
           >
             三视图 ▸
-          </button>
+          </div>
         )}
 
         {/* v0.13.7 · 悬浮相机面板:按物理朝向贴主视图边缘,同朝向沿边堆叠。
@@ -2373,6 +2891,17 @@ export function ThreeDWorkbench({
               >
                 关闭 ✕
               </button>
+              {!readOnly && enlargedCam.calibration && boxPlaceClass && (
+                <button
+                  type="button"
+                  className={`${styles.camModalSeed} ${seedMode ? styles.camModalSeedActive : ""}`}
+                  onClick={() => setSeedMode((v) => !v)}
+                  aria-pressed={seedMode}
+                  title="在相机图上拖一个 2D 框,自动在 3D 里生成框(视锥选点拟合)"
+                >
+                  {seedMode ? "种框中 · 拖矩形" : "种框 ⊹"}
+                </button>
+              )}
               {cameras.length > 1 && (
                 <>
                   <button
@@ -2403,6 +2932,8 @@ export function ThreeDWorkbench({
                 bestForSelected={enlargedCam.role === bestCameraRole}
                 pointPositions={pointPositions}
                 showDepth={depthOn}
+                seedMode={seedMode}
+                onSeedBox={handleSeedBox}
               />
             </div>
           </div>

@@ -31,7 +31,7 @@ last_reviewed: 2026-06-10
 
 ## 工具说明
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/sam/ai-tool-drawer.png — AIToolDrawer 全图（后端下拉/极性切换/状态灯） [auto] -->
+![AI 工具抽屉](../images/sam/ai-tool-drawer.png)
 
 ### 智能点（Smart Point）— 单击让 SAM 找边缘
 
@@ -76,7 +76,7 @@ last_reviewed: 2026-06-10
 
 ### Exemplar 示例（仅 SAM 3）
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/sam/exemplar-output-mode.png — 输出形态三选一 TabRow [auto] -->
+![Exemplar 输出形态](../images/sam/exemplar-output-mode.png)
 
 拖框圈出图中**已有的一个示例实例**，SAM 3 PCS 一步返回**全图相似实例**。
 
@@ -103,7 +103,7 @@ AI 候选列表行右侧有「精修」按钮（仅 polygon 类型候选显示�
 
 ## 参数面板（悬浮 AI 面板）
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/sam/ai-inspector-panel.png — 悬浮 AI 面板（Prompt/阈值滑块/变体选择） [auto] -->
+![悬浮 AI 面板](../images/sam/ai-inspector-panel.png)
 
 点工具栏「AI」打开可拖动的悬浮面板，其中有一份**由所绑定后端 `/setup.params` 自动生成的参数表单**，每个字段下方带简短说明。常见字段及项目级默认值：
 

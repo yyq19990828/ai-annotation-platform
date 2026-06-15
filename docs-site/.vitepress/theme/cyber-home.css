@@ -1,0 +1,52 @@
+/**
+ * 赛博朋克首页的页面级覆盖样式(非 scoped)。
+ * 仅在 index.md 的 pageClass: cyber-home-page 下生效,让 CyberHome 组件全屏铺满,
+ * 并把该页的 VitePress 默认导航栏改为透明深色,贴合赛博风。
+ */
+
+/* 让首页内容容器突破默认 max-width / padding,全宽铺满 */
+.cyber-home-page .VPPage,
+.cyber-home-page .VPContent,
+.cyber-home-page .VPContent.is-home {
+  padding: 0 !important;
+  margin: 0 !important;
+  max-width: none !important;
+}
+.cyber-home-page .vp-doc,
+.cyber-home-page .vp-doc > div,
+.cyber-home-page .container {
+  max-width: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+.cyber-home-page .vp-doc {
+  /* 关掉文档正文默认排版,交给组件自身样式 */
+  font-size: initial;
+}
+
+/* 隐藏 page layout 自带的页脚(组件已有自己的 foot) */
+.cyber-home-page .VPFooter {
+  display: none;
+}
+
+/* 首页导航栏透明深色,悬浮在霓虹 Hero 上方 */
+.cyber-home-page .VPNav,
+.cyber-home-page .VPNavBar {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(0, 240, 255, 0.12) !important;
+}
+.cyber-home-page .VPNavBar.has-sidebar .content,
+.cyber-home-page .VPNavBar .wrapper {
+  background: transparent !important;
+}
+.cyber-home-page .VPNavBar .title {
+  color: #fff !important;
+  text-shadow: 0 0 12px rgba(0, 240, 255, 0.7);
+}
+.cyber-home-page .VPNavBarMenuLink,
+.cyber-home-page .VPNavBarMenuGroup .text {
+  color: #8186b8 !important;
+}
+.cyber-home-page .VPNavBarMenuLink:hover {
+  color: #00f0ff !important;
+}

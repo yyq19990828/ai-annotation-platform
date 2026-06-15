@@ -15,6 +15,7 @@ const mockUseLinkProject = vi.fn();
 const mockUseScanDatasetItems = vi.fn();
 const mockUseBackfillDimensions = vi.fn();
 const mockUseBackfillMedia = vi.fn();
+const mockUseUpdateDataset = vi.fn();
 const mockPushToast = vi.fn();
 
 vi.mock("@/hooks/useDatasets", () => ({
@@ -27,6 +28,7 @@ vi.mock("@/hooks/useDatasets", () => ({
   useScanDatasetItems: () => mockUseScanDatasetItems(),
   useBackfillDimensions: () => mockUseBackfillDimensions(),
   useBackfillMedia: () => mockUseBackfillMedia(),
+  useUpdateDataset: () => mockUseUpdateDataset(),
 }));
 
 vi.mock("@/hooks/useProjects", () => ({
@@ -87,6 +89,7 @@ describe("DatasetsPage", () => {
     mockUseScanDatasetItems.mockReturnValue(idleMutation);
     mockUseBackfillDimensions.mockReturnValue(idleMutation);
     mockUseBackfillMedia.mockReturnValue(idleMutation);
+    mockUseUpdateDataset.mockReturnValue(idleMutation);
   });
 
   it("isLoading=true → 显示加载中", () => {
@@ -112,6 +115,8 @@ describe("DatasetsPage", () => {
             name: "测试数据集",
             description: "描述",
             data_type: "image",
+            has_scenes: true,
+            is_temporal: true,
             file_count: 42,
             project_count: 2,
             created_at: "2026-01-01T00:00:00Z",
@@ -124,9 +129,39 @@ describe("DatasetsPage", () => {
     renderUI();
     expect(screen.getByText("测试数据集")).toBeInTheDocument();
     expect(screen.getByText(/D-1/)).toBeInTheDocument();
+    expect(screen.getByText("含 Scene")).toBeInTheDocument();
     // stat cards
     expect(screen.getByText("数据集总数")).toBeInTheDocument();
     expect(screen.getByText("文件总量")).toBeInTheDocument();
+  });
+
+  it("展开数据集 → 显示 scene 信息", () => {
+    mockUseDatasetItems.mockReturnValue({ data: { items: [], total: 0 }, isLoading: false });
+    mockUseDatasets.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: "ds1",
+            display_id: "D-1",
+            name: "scene 数据集",
+            description: "",
+            data_type: "point_cloud",
+            has_scenes: true,
+            is_temporal: true,
+            file_count: 0,
+            project_count: 0,
+            created_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+        total: 1,
+      },
+      isLoading: false,
+    });
+    renderUI();
+    fireEvent.click(screen.getByText("scene 数据集"));
+    expect(screen.getByText("Scene 信息")).toBeInTheDocument();
+    expect(screen.getByText("已识别")).toBeInTheDocument();
+    expect(screen.getByText("时序数据集")).toBeInTheDocument();
   });
 
   it("点击「新建数据集」按钮 → 弹出新建+上传向导", () => {

@@ -10,8 +10,18 @@ last_reviewed: 2026-06-10
 
 > 适用角色：项目管理员 / 超级管理员
 
+项目管理员和超级管理员从左侧 **项目总览** 进入项目管理页。这里可以查看全部项目、按状态筛选、进入项目设置，也可以从右上角创建新项目。
+
 ![创建项目入口](../images/projects/create-entry.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: ProjectsPage「新建项目」按钮高亮。 -->
+
+当当前筛选条件下没有项目时，列表会显示空状态。先确认筛选条件，再通过 **新建项目** 创建第一个项目，或先导入数据集后在向导中关联。
+
+![项目列表空状态](../images/projects/empty-state.png)
+
+如果项目列表加载失败，页面会保留项目管理框架并显示错误提示。刷新页面或稍后重试；如果错误持续出现，请联系管理员检查后端服务和接口日志。
+
+![项目列表错误状态](../images/projects/error-state.png)
 
 ## 步骤
 
@@ -42,6 +52,8 @@ last_reviewed: 2026-06-10
 
 ![向导步骤](../images/projects/wizard-steps.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 6 步 wizard 各步关键截图（类型 / 类别 / 属性 / AI 接入 / 数据 / 成员），可拼成一张长图。 -->
+
+![向导 ML Backend 配置](../images/projects/wizard-step4-backend.png)
 
 ## scene 模式项目
 

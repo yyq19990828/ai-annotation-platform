@@ -30,6 +30,159 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
+## [0.15.26] - 2026-06-15
+
+PR #40 代码评审 follow-up 收口:邻帧标注批量端点的可见性回归 + 3 处前端体验/一致性修正。
+
+### Fixed
+
+- **邻帧标注批量端点补回逐帧可见性过滤**(后端):`GET /tasks/{id}/neighbor-annotations`(v0.15.17 用一次批量请求替代前端逐邻帧 `getAnnotations`)此前只校验中心 task 可见性,邻帧内容按 scene 反查直接下发——annotator 凭中心 task 可见即可拿到分派给别人 / 状态不可见 batch 的邻帧框几何。新增 `_visible_task_ids`(`_assert_task_visible` 的批量非抛错版)逐邻帧复核 batch 可见性 / 分派状态,不可见邻帧返回 frame 占位但 `annotations=[]`,与被替代的旧逐 task 链路保持同一可见边界。+ 跨 batch 用例。
+- **相机图种框误点判定改用对角线距离**(前端):`CameraProjectionView` 原 `|dx|<5 || |dy|<5` 会吃掉细长矩形(行人 / 杆子 / 路灯侧影);改为 `hypot(dx,dy) < MIN_SEED_DRAG_PX`,与 `ThreeDWorkbench` 的 `DRAG_CLICK_TOL` 同口径。
+- **「插值填充」菜单文案与双向行为对齐**(前端):右键菜单原写「向后插值填充」,但 `FramePicker` 不强制目标帧大于当前帧、后端 `interpolate_range` 也接受双向;菜单改为「插值填充到指定帧…」,与对话框标题一致,不再误导方向。
+
+### Removed
+
+- 删除已无生产引用的 `CrossFrameOverlayToggle` 组件(+ module.css + 单测):本轮删掉 `CrossFrameInterpolateBar` 后该组件的唯一调用点(`ThreeDWorkbench` 工具栏)已移除,邻帧叠加开关现统一走 `WorkbenchSettingsDrawer`,留着只剩同名单测的死组件易误导。
+
+## [0.15.25] - 2026-06-15
+
+主题偏好持久化到服务端。深色 / 浅色 / 跟随系统主题原先只存浏览器 localStorage(仅本机),升级到用户服务端偏好(`preferences.ui.theme`)后,换设备 / 换浏览器登录同一账号即保持。复用 v0.15.3 偏好基建(`/auth/me/preferences` 顶层子树合并),顺手收尾。
+
+### Changed
+
+- **主题跟随账号跨设备**:`useTheme` 真值源分层——登录后以服务端 `preferences.ui.theme` 为准,登出 / 首屏 hydration 前回落 localStorage(本机缓存),都没有则 `system`。切换主题时本地即时生效 + 写本机缓存,登录态再乐观更新 authStore + `PATCH /auth/me/preferences {ui:{theme}}` 持久化。首屏仍由 localStorage bootstrap(`initThemeFromStorage`)避免闪烁,服务端值在登录后对齐(一般相同,故无闪)。
+
+### Added
+
+- 后端 `UserPreferences.ui` 子树(`theme: light|dark|system`,默认 `system`,`extra:forbid`);沿用既有顶层子树合并,PATCH `ui` 不动 `workbench`/`ai`。+ 端点测试(ui 持久化 / 与 workbench 隔离 / 默认 system / 非法枚举 422)+ `useTheme` 单测(登出只写本地 / 登录 PATCH 服务端 + 乐观写 store / 服务端主题采纳)。
+
+## [0.15.24] - 2026-06-15
+
+点云+图像联合标注 epic · Phase 1 首版:相机图「2D 框种 3D 框」。在放大的相机投影视图上拖一个 2D 矩形 → 该相机标定反算视锥 → 选出锥内点云 → 拟合一个 3D 框初值并选中微调。读方向(3D→2D 投影)v0.13.4 已完成,本版补写方向起点。计划见 `docs/plans/2026-06-14-v0.15.24-camera-2d-box-to-3d-frustum.md`,epic 见 `ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md`。纯前端几何,后端零改动。
+
+### Added
+
+- **相机图种框**(3D 点云工作台,放大相机视图):点「⛶」放大相机 → 左上「种框 ⊹」进模式 → 在目标上拖 2D 矩形 → 松手生成 box_3d 并选中微调。视锥内点按相机系深度取最近簇(默认 8m 带宽,避开背景墙),`psrFromPoints` 拟合 + `fitYaw`/`fitBottom` 精修朝向与贴地;视锥内无点(图上可见但无 lidar 返回)→ 沿中央射线按估计深度放默认尺寸框 + 提示微调。
+- 视锥几何核心 `geometry/frustum.ts`(`selectPointsInRect` 前向投影选锥内点 / `depthGate` 最近簇 / `gatherPoints` / `centralRay` 空簇射线)+ 纯函数单测(矩形内/外/相机后方、最近簇门控、中央射线方向,9 例)。
+- `projection.projectPoints` 结果新增 `depths`(相机系深度,向后兼容),供 `depthGate` 复用同一条投影链取深度。
+
+### Notes
+
+- **唯一产物是 box_3d**:拖出的 2D 矩形是瞬态种框手势,不落库、不产生 2D 标注(epic 决策 J1/J2);`Esc` 退出种框(再次 `Esc` 关放大视图)。
+- **MVP 范围**:种框仅在**放大相机视图**启用(大画布画得准、单相机无歧义);小浮动相机面板保持原行为(点击反选)。投影手柄拖拽微调留 Phase 2,多相机交叉编辑留 Phase 3。
+- **局限**:依赖相机标定准确度(无标定相机不开放种框);视锥前后重叠目标深度门控只能缓解,靠收紧矩形重试 + 微调;朝向可能差 180°(车头车尾),微调翻转。
+
+## [0.15.23] - 2026-06-14
+
+邻帧点云叠加 · 逐目标位姿补偿(§C.8-A)。把 v0.15.22 的「剔除动态点」升级为「**搬运**动态点」:落在已标注框内的邻帧点不再丢弃,而是按该目标在邻帧框与当前帧框之间的位姿变化搬到当前帧位置一起加密——静止背景照旧 ego 对齐,**动态目标也对齐加密、无拖影**,等于用已有 track 数据做轻量 scene flow。计划见 `docs/plans/2026-06-14-v0.15.23-neighbor-pointcloud-per-object-compensation.md`。纯前端几何,后端零改动。
+
+### Added
+
+- **邻帧点云逐目标对齐**(3D 点云工作台,设置项 `点云 › 邻帧动态点` 新增第三档「逐目标对齐」,默认仍「保留(拖影)」):选「逐目标对齐」后,落在某邻帧框内的点用 `T = M_当前框 · M_邻帧框⁻¹` 搬到当前帧该目标位置(逐目标补偿,自带 ego + 目标运动),框外背景点仍走 ego 刚体对齐——动态目标随当前帧点一并加密、无拖影。状态栏透出本次搬运点数。**仅对已标注且跨帧成链(`group_id` 配对)的目标有效**;命中邻帧框但当前帧无配对的点默认按剔除处理(不冒新拖影)。
+- 几何核心 `geometry/perObjectAlign.ts`(`alignNeighborPointsPerObject`:邻帧 ego 系内 point-in-OBB 路由,复用 `box3d`,命中可配对目标走 `T_obj` 搬运、未命中走 `relMatrix` 背景、命中但无配对走 fallback;输出已是当前帧 ego 系坐标)+ 纯函数单测(背景走 ego / 目标搬到当前位置 / 框内偏移保持 / 当前框旋转 / 未配对 cull+ego fallback / 同位姿恒等 / 混合计数,共 9 例)。
+- align 模式独立拉取邻帧「全部」框(`useNeighborAnnotations` scope=all,独立于框叠加 `overlayK`),按 `group_id` 与当前帧框配对;搬运后点已预变换到当前帧 ego 系,渲染走 identity 矩阵(其余路径不变)。
+
+### Notes
+
+- 搬运发生在邻帧叠加层重建时(切帧 / 改设置 / 框编辑提交),不在每渲染帧跑;比 cull 多一遍 CPU 逐点变换,邻帧点已下采样,主线程一次性开销可控。
+- 这是 §C.8-A:相比 §C.8-B(cull,动态目标完全不显示)更进一步——动态目标也对齐加密。两者共享 v0.15.22 的 point-in-box 路由。对齐质量依赖 v0.15.1 propagate/插值的邻帧框位姿准确度;track 不准则搬运后会错位。未标注 / 未成链的动态物仍留拖影,留给后续 §C.8-D 学习式动静分割。
+
+## [0.15.22] - 2026-06-14
+
+邻帧点云叠加 · 动态点剔除(§C.8-B)。给 v0.15.18 的邻帧点云叠加补一个开关:把对齐到当前帧后落在已标注框内的邻帧点剔除,只叠静止背景,消除动态目标拖影。计划见 `docs/plans/2026-06-14-v0.15.22-neighbor-pointcloud-dynamic-cull.md`。纯前端几何,后端零改动。
+
+### Added
+
+- **邻帧点云剔除动态点**(3D 点云工作台,设置项 `点云 › 邻帧动态点`,默认「保留(拖影)」):选「剔除动态点」后,邻帧点经 ego 补偿对齐到当前帧再做 point-in-OBB 判定,落在任一当前帧 tracked box 内的点直接剔除——动态目标(其它车 / 行人)的拖影点消失,远处静止背景仍重合加密。状态栏透出本次剔除点数。**仅对已标注目标有效**(未画框的动态物仍留拖影)。
+- 几何核心 `geometry/cullDynamicPoints.ts`(`cullPointsInBoxes`:投影法 OBB 测试,复用 `box3d.boxAxisWorldDir`,支持 `margin`,保留点返回原始 ISO ego 坐标使 GPU 渲染路径不变)+ 纯函数单测(框内剔除 / 框外守恒 / 旋转框判定 / margin / 先施加 relMatrix 再判定 / 多框)。
+
+### Notes
+
+- 剔除发生在邻帧叠加层重建时(切帧 / 改设置 / 框编辑提交),不在每渲染帧跑;gizmo 拖框只在松手提交时触发一次重算,性能可控。
+- 这是 §C.8-B「开关式简化版」:动态目标完全不显示。让动态目标也对齐加密(无拖影)的「逐目标位姿补偿」§C.8-A 见 v0.15.23 计划。
+
+## [0.15.21] - 2026-06-14
+
+3D 点云工作台浮动面板体系打磨。PSR 编辑面板改渐进式展开缓解对画布的遮挡、浮窗按用户记忆可拖动,修掉浮窗在挂载 / 窗口抖动时被反复归位导致的相机漂移,相机上色三滑块收为「相机上色」开关的子选项。纯前端 3D 工作台 UI,后端零改动。
+
+### Added
+
+- **PSR 面板渐进展开 + 可拖动 + 记忆**:选中框 PSR 编辑面板改为「折叠头(类别 + 尺寸摘要 + 锁 / 删图标 + 展开钮,常驻)→ 展开体(提示 + 自动贴合 + 中心 / 尺寸 / 朝向 + 属性表单)」两段式,缓解常驻面板对 3D 画布的遮挡。整体可按头部拖动(落在交互控件上不起拖),展开态与拖动偏移按 `userId` 记忆到 localStorage(`PsrPanelUiState`,复用 `pcd.*` 键约定),刷新 / 切换选中框不丢。删除按钮从底部整条移入头部图标钮。
+
+### Changed
+
+- **相机上色滑块改为子选项**:「上色对比度 / 亮度 / Gamma」三滑块经 `parentKey` 收为「相机上色」开关的子选项(复用与「邻帧点云叠加 + 帧数」同款 `fieldNested` / `fieldCluster` 父子机制):缩进归组、父开关关闭时子项自动禁用。工作台设置抽屉与 SettingsPage 表现一致。
+
+### Fixed
+
+- **浮动面板挂载 / 抖动自动归位导致相机漂移**:`useDragMove` 的 resize 副作用原在挂载及 bounds / position / size 变化时立即 clamp 回视口并写回 config;HMR 重挂时 `triFloatBounds` 经 null→viewport 显著变化(及亚像素重测抖动)→ 摆放过的相机面板被反复 clamp 微调落库 → 位置逐渐漂移。改为**只在真实窗口缩放(window resize)时归位**,删除挂载时的立即写回;用户主动拖动 / 缩放窗口归位不受影响,展开面板的 `clampPanel` 兜底不变。
+- **三视图收起标签跟随展开位置 + 可拖动(B-29)**:收起的「三视图 ▸」标签原 `position:absolute` + 固定右下角,与展开面板(`FloatingPanelShell`,`position:fixed`)脱节且不可拖。改用展开面板记忆坐标(`triFloatPosition`)定位使收起 ↔ 展开一致、整体可拖(`div` + `tabIndex` + `onKeyDown` 保留键盘可达,位移阈值区分点击展开 / 拖动)、`absolute`→`fixed` 统一视口坐标系消除拖动跳变、`z-index` 提到相机浮层之上。
+- **相机面板布局稳定化**:相机浮动面板的布局测量 / 贴边初始位计算稳定化,减少首次摆放时的跳动。
+
+## [0.15.20] - 2026-06-14
+
+3D 点云工作台新增上下文敏感右键菜单,并把跨帧延续的「目标帧」从裸数字输入升级为帧选择器。把批量延续 / 跨帧延续 / 插值从左上角视角浮条迁入画布就地右键,同时把对象操作(删除 / 改类别 / 锁定 / 隐藏 / 复制 / 粘贴)从右栏标注列表搬到右键菜单,省去「画布选中 → 右栏找行 → 点击」的往返。
+
+### Added
+
+- **3D 画布右键菜单**:命中框 / 空白两套上下文敏感菜单(对标 2D 的 `imageStageContextMenu`)。命中框含延续 / 插值 + 通用对象操作;空白含批量延续 + 粘贴。右键拖动(相机 pan)/ 放置 / 框选进行中不弹菜单。
+- **`FramePicker` 帧选择器**:替代裸数字输入。Layer 1 回显「当前第 X/N 帧」+ 语义步进(+5 / +10 / 到末帧)+ 数字兜底,目标帧经 neighbors(k=20)反查 task,超 ±20 帧提示不可达。Layer 2 相机图缩略图条(±5 邻帧,逐帧拉 manifest 取前向相机图),点缩略图即设目标帧;无相机图时整条隐藏,回落 Layer 1。
+
+### Changed
+
+- **跨帧延续 / 插值 / 批量延续入口**:从左上角视角浮条迁入画布右键菜单;「延续到指定帧…」「向后插值填充…」改为打开 `FramePicker`(插值填充仅在选中框已建跨帧链 `group_id != null` 时可用)。
+- **通用对象操作就地右键**:删除 / 改类别 / 锁定 / 隐藏 / 复制 / 粘贴复用画布内部既有回调(与右栏 `AIInspectorPanel` 同走 `is_locked` / `is_hidden` 字段 + 同一 mutation,行为一致)。
+
+### Removed
+
+- **`CrossFrameInterpolateBar` 旧浮条**:连同其 CSS 与单测一并移除,能力由右键菜单 + `FramePicker` 承接。
+
+### Notes
+
+- 后端零改动:延续 / 插值走既有 `propagate-to-task` / `propagate-batch` / `interpolate-range`;邻帧相机图走既有 `point-cloud/manifest`;邻帧位置走既有 `neighbors`。
+
+## [0.15.19] - 2026-06-13
+
+邻帧叠加设置拆分。把邻帧框叠加从“0=关闭的 K 档位”改为独立开关 + 帧数 + 对象范围;邻帧点云叠加也获得独立帧数设置,不再借用邻帧框叠加档位。
+
+### Changed
+
+- **邻帧框叠加设置**:新增 `workbench.common.crossFrameOverlayEnabled`;`crossFrameOverlayK` 仅表示前后帧数(1/3/5/7),`crossFrameOverlayScope` 继续表示对象 / 全部范围。历史 `crossFrameOverlayK=0` 兼容为关闭,历史 `K>0` 自动视为开启。
+- **邻帧点云叠加设置**:新增 `workbench.pointcloud.neighborPointOverlayK`(1/2/3),与邻帧框帧数解耦。点云叠加仍默认关闭,开启后默认前后各 1 帧。
+- **旧 localStorage 迁移**:`workbench.crossFrameOverlayK` 迁移时同步写入新开关;旧 `0` → 关闭 + 默认 1 帧,旧 `1/3/5/7` → 开启 + 对应帧数。
+
+## [0.15.18] - 2026-06-12
+
+邻帧点云叠加。把 v0.15.1 的「邻帧**框**叠加」延伸到「邻帧**点云**叠加」——用 ego 轨迹把前后帧点云对齐到当前帧车体系一起渲染,解决车端运动场景「背景相对车也在动」时如何有意义叠点云的问题。计划见 `docs/plans/2026-06-12-v0.15.18-neighbor-pointcloud-overlay.md`。纯前端渲染能力,后端零改动。
+
+### Added
+
+- **邻帧点云叠加**(3D 点云工作台,设置项 `点云 › 邻帧点云叠加`,默认关):开启后把前后各 ≤3 帧的点云用 ego 运动补偿(与叠框同一 `inv(T_当前)·T_邻帧` 刚体变换,作为点云对象矩阵在 GPU 端施加,无逐点 CPU 开销)对齐到当前帧车体系再渲染。**静止背景重合加密**(利于远处/稀疏处标注),**动态目标留沿运动方向的拖影**(时序运动可视化)。
+- **动态拖影视觉缓解**:邻帧点用**前/后帧分色**(过去冷蓝 / 未来暖橙)+ **按帧距时序淡出**(±1 帧最实、远帧更淡)+ 低透明 + 略小点 —— 拖影读起来是"运动方向"而非乱噪,且与当前帧的高度色带 / 相机上色强区分。
+- 邻帧点云强制下采样(目标 = 当前帧抽稀阈值的 1/8,上限 8 万点/帧),帧数取 `min(邻帧叠加档位, 3)`(框叠加关时默认 ±1),异步加载不阻塞当前帧;切帧 / 关开关时整层 geometry+material dispose,避免内存堆积。
+- 几何核心 `egoAlign.frameRelMatrix`(从 `alignPsrToFrame` 提取的相对位姿矩阵,框 / 点云共用)+ 纯函数单测(静止点守恒 / 同帧恒等 / 缺 pose 跳过)。
+
+### Notes
+
+- **需 ego 轨迹**:无 ego pose 的 scene(如 SUSTechPOINTS 示例数据)直接叠点云会错位乱影,故无轨迹时自动不叠(静默 no-op);与框叠加同开时共享工具栏「无 ego 轨迹」降级 badge。
+- 只做**可视化叠加**辅助观察,不改标注落点、不在合并点云上画框。动态拖影本版只做视觉缓解(分色 + 淡出),**彻底消除拖影**(按 box 轨迹逐目标补偿 / box 内动态点剔除)见 ROADMAP §C.8;不做 Kalman / 多 lidar。
+- worker 下采样 / 可调下采样比例为后续优化项:当前下采样在主线程随 PCD 解析后做(K≤3 + 激进下采样已是主要性能闸)。
+
+## [0.15.17] - 2026-06-12
+
+临帧框叠加产品化。v0.15.1 交付了「邻帧框 overlay + ego 对齐」,本版补四个落地缺口:叠加范围可配(对象级/场景级)、批量端点收敛请求、无轨迹降级常驻可见、scene 门控复核。计划见 `docs/plans/2026-06-12-v0.15.17-crossframe-box-overlay-productization.md`。
+
+### Added
+
+- **对象级↔场景级叠加范围**:新增 `workbench.common.crossFrameOverlayScope` 偏好(`selected`=仅叠选中对象的 group,现状默认;`all`=不选对象也叠邻帧全部框,整体时序感知)。3D 工具栏邻帧叠加控件旁加「对象/全部」切换;`all` 模式下选中某对象时,其 group 邻帧框正常显示、其余弱化(dim,更低透明度)。
+- **批量邻帧标注端点** `GET /tasks/{id}/neighbor-annotations?k=&group_id=`:一次返回 ±k 帧的邻帧标注,替代前端「对 2k 个邻帧 task 各发一条 `getAnnotations` + client 端按 group 过滤」。`group_id` 给定 → 服务端只回该 group(`selected`,payload 最小);省略 → 回区间全部(`all`)。非 scene task → 200 + `frames=[]`。新增 `AnnotationService.list_by_tasks`(单条 IN 查询)。
+- **无 ego 轨迹降级常驻可见**:overlay 开启但该 scene 无 ego pose 时,工具栏常驻 badge「无 ego 轨迹·未对齐」(warning 色),取代仅 propagate 路径的一次性 toast——overlay 显示态的可信度信号常显。
+
+### Notes
+
+- scene 门控复核:邻帧叠加仅 3D 点云工作台使用,gated on `manifest.scene_id`(数据属于 scene 才暴露),语义正确;`CrossFrameOverlayToggle` 无视频侧引用,不存在非 scene 场景误露出。`Project.scene_mode` 是项目调度声明而非 overlay 前提,不强加。
+- 前端 overlay 仍保留 `useFrameNeighbors`(取 scene_id / 中心帧 / 邻帧 frame_index 供 ego 对齐),邻帧标注改走批量端点;两者同源(`get_neighbors_for_task`),task 集一致。
+
 ## [0.15.16] - 2026-06-12
 
 `aap tui` 监控曲线与交互细节打磨:趋势 / 实时曲线从 `Sparkline` 升级为带横纵坐标的自绘折线图,Jobs 轮询不再把视图弹回顶部,弹窗按钮收敛到与全局一致的扁平风格。纯 TUI/UI 改动,零后端 / 零 `client.py` 改动。

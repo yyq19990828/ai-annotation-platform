@@ -74,23 +74,34 @@
 
 /* 折叠后的小标签(右下角)。 */
 .triFloatTab {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  z-index: 4;
+  /* fixed:与展开面板(FloatingPanelShell)/相机面板同坐标系(视口),否则 useDragMove
+     存的 clientX/Y 视口坐标被当成相对 offsetParent 的偏移,拖动时逐帧叠加容器偏移会跳变。 */
+  position: fixed;
+  left: var(--tri-tab-x);
+  top: var(--tri-tab-y);
+  /* 高于相机浮动面板(z-index:5),作为三视图入口须可见可点。 */
+  z-index: 6;
   padding: 6px 10px;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   background: var(--color-bg-elev);
   box-shadow: var(--shadow-sm);
   color: var(--color-fg);
-  cursor: pointer;
+  cursor: grab;
   font-size: 12px;
+  user-select: none;
+  touch-action: none;
 }
 
 .triFloatTab:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
+}
+
+.triFloatTabDragging {
+  cursor: grabbing;
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-md);
 }
 
 /* 浮层 / 标签上的小按钮(收起 / 关闭等)。 */
@@ -397,6 +408,7 @@
   top: 12px;
   right: 12px;
   width: 210px;
+  transform: translate(var(--psr-dx, 0px), var(--psr-dy, 0px));
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -407,6 +419,60 @@
   box-shadow: var(--shadow-sm);
   font-size: 12px;
   color: var(--color-fg);
+}
+
+/* v0.15.21 · 头部 = 拖柄(类别 + 尺寸摘要 + 锁 + 删 + 展开钮);渐进展开的常驻部分。 */
+.editHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: grab;
+}
+
+.editPanelDragging {
+  user-select: none;
+}
+
+.editPanelDragging .editHeader {
+  cursor: grabbing;
+}
+
+/* 拖动提示小图标(纯装饰,不参与交互)。 */
+.dragHint {
+  flex: 0 0 auto;
+  color: var(--color-fg-muted);
+}
+
+/* 头部图标按钮(删除 / 展开收起)。 */
+.iconBtn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-fg-muted);
+  cursor: pointer;
+}
+
+.iconBtn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* 尺寸摘要(折叠态也常驻可见)。 */
+.editSummary {
+  font-size: 11px;
+  color: var(--color-fg-muted);
+}
+
+/* 展开后的主体:贴合 / 三组数值 / 属性。 */
+.editBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .editTitle {
@@ -531,29 +597,33 @@
 
 .camAnchorTop {
   top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  justify-content: center;
   flex-direction: row;
 }
 
 .camAnchorBottom {
   bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  justify-content: center;
   flex-direction: row;
 }
 
 .camAnchorLeft {
   left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
+  top: var(--top-toolbar-height);
+  bottom: 12px;
+  justify-content: center;
   flex-direction: column;
 }
 
 .camAnchorRight {
   right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
+  top: var(--top-toolbar-height);
+  bottom: 12px;
+  justify-content: center;
   flex-direction: column;
 }
 
@@ -586,8 +656,9 @@
 
 .camAnchorOverflow {
   bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  justify-content: center;
   flex-direction: row;
 }
 
@@ -674,6 +745,33 @@
   color: var(--color-accent);
 }
 
+/* v0.15.24 · 放大相机模态「种框」toggle(左上,与右上关闭钮对称)。 */
+.camModalSeed {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 1;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.camModalSeed:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.camModalSeedActive,
+.camModalSeedActive:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
 .camModalSwitch {
   position: absolute;
   top: 50%;
@@ -745,6 +843,11 @@
   position: absolute;
   inset: 0;
   cursor: pointer;
+}
+
+/* v0.15.24 · 种框模式:相机图上拖矩形,光标 crosshair。 */
+.cameraCanvasSeed {
+  cursor: crosshair;
 }
 
 .cameraItem figcaption {

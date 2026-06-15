@@ -598,15 +598,34 @@ function WorkbenchPreferencesSection() {
             <div className={styles.groupLabel}>
               {WORKBENCH_SETTING_CATEGORY_LABELS[category]}
             </div>
-            {fields.map((field) => (
-              <SettingsFieldControl
-                key={field.key}
-                field={field}
-                value={getFieldValue(config, field)}
-                disabled={saving}
-                onCommit={(value) => commit(field, value)}
-              />
-            ))}
+            <div className={styles.settingsFieldList}>
+              {fields.filter((field) => !field.parentKey).map((field) => {
+                const fieldValue = getFieldValue(config, field);
+                const childFields = fields.filter(
+                  (child) => child.parentKey === field.key,
+                );
+                return (
+                  <div key={field.key} className={styles.settingsFieldCluster}>
+                    <SettingsFieldControl
+                      field={field}
+                      value={fieldValue}
+                      disabled={saving}
+                      onCommit={(value) => commit(field, value)}
+                    />
+                    {childFields.map((child) => (
+                      <SettingsFieldControl
+                        key={child.key}
+                        field={child}
+                        value={getFieldValue(config, child)}
+                        nested
+                        disabled={saving || !fieldValue}
+                        onCommit={(value) => commit(child, value)}
+                      />
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ))}
         {saving && <div className={styles.savingText}>保存中…</div>}

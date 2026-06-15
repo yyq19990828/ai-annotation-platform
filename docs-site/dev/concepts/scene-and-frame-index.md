@@ -1,6 +1,6 @@
 # Scene + frame_index(跨 task 帧序列地基)
 
-> v0.14.0 引入。把"一段录像被切成多个 task"型场景(3D 点云逐帧 / 2D 抽帧图像序列 / 多段 mp4 拼接长录像)统一到同一数据基地。本期**不**含跨帧 UX——`Shift+→` propagate、邻帧叠加等留 v0.14.1+。
+> v0.14.0 引入。把"一段录像被切成多个 task"型场景(3D 点云逐帧 / 2D 抽帧图像序列 / 多段 mp4 拼接长录像)统一到同一数据基地。本期**不**含跨帧 UX——`Shift+→` propagate、邻帧框叠加等留 v0.14.1+。
 
 ## 背景:为什么要 scene
 
@@ -9,7 +9,7 @@
 - **task 内的帧序列已有**:`VideoFrameIndex` 解决"单段 mp4 一个 task,内部跨帧"。
 - **task 之间缺失**:`DatasetItem` 没有 `scene_id` / `frame_index` 列;"哪些 task 是同一段录像的连续帧"靠 `file_name` 字符串排序的弱约定推断,跨多 scene 直接破。
 
-结果:跨帧 propagate / track / 邻帧叠加三类 UX 没有合法实现路径;一个 dataset 跨多 scene(典型 nuScenes 一 dataset 含 10 个 scene)时,`file_name` 排序会让 scene-A 末帧"邻居"是 scene-B 首帧,语义错。
+结果:跨帧 propagate / track / 邻帧框叠加三类 UX 没有合法实现路径;一个 dataset 跨多 scene(典型 nuScenes 一 dataset 含 10 个 scene)时,`file_name` 排序会让 scene-A 末帧"邻居"是 scene-B 首帧,语义错。
 
 ## 四种"时序录像"形态共用同一抽象
 
@@ -235,7 +235,7 @@ v0.14.1 在这套地基上落了用户可用的跨帧能力,消费路径:
 1. **`useFrameNeighbors(taskId, k)`**(`apps/web/src/hooks/`):薄包 `GET /tasks/{id}/neighbors?k=K`,纯透传 `NeighborsResponse`,不感知几何类型,3D / 2D 共用。`refresh()` 在 propagate 前强刷避免缓存陈旧。
 2. **propagate**:`POST /tasks/{task_id}/annotations/{annotation_id}/propagate-to-task` body `{ target_task_id }`。`services/annotation.py::propagate` 复制 geometry / class / attributes,共享 `group_id`(源无则从全局序列 `cross_frame_group_seq` 分配并写回源),`box_3d.convention_at_create` 取**目标** dataset 的 `axis_convention`。
    - **group_id 作用域**:per-task `tasks.next_group_seq` 产小整数;跨帧链用 `cross_frame_group_seq`(START 1e9)高位起始,两套命名空间共用 `group_id` 列但永不冲突——同 scene 跨帧 overlay 按 `group_id` 精确匹配不误命中无关分组。
-3. **邻帧叠加**:`useNeighborAnnotations(taskIds, groupId)` 用 `useQueries` 批量拉前后 K 帧 task 的标注(复用 `["annotations",taskId]` 缓存键),client 端按 `group_id` 过滤 → `PointCloudScene.setReferenceBoxes` 渲染只读参考框。`groupId=null` 时整 hook 短路不发请求。
+3. **邻帧框叠加**:`useNeighborAnnotations(taskIds, groupId)` 用 `useQueries` 批量拉前后 K 帧 task 的标注(复用 `["annotations",taskId]` 缓存键),client 端按 `group_id` 过滤 → `PointCloudScene.setReferenceBoxes` 渲染只读参考框。`groupId=null` 时整 hook 短路不发请求。
 4. **键位**:3D `Shift+→/←`(ThreeDWorkbench 本地 keydown,3D 无 arrow-nudge 冲突);2D `Alt+→/←`(中央 hotkey,2D 的 `Shift+方向` 已被 10px nudge 占用)。两者共用壳层 `useWorkbenchShellModel.crossFramePropagate`(几何无关)+ `resolveCrossFrameTarget` 纯函数判 scene 边界。
 
 ## scheduler scene 连续标注(`prefer_same_scene_continuation`,v0.14.1)

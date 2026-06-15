@@ -21,7 +21,7 @@ last_reviewed: 2026-06-10
 
 ## 主要视图
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/model-market-tabs.png — 能力目录/运行时观测/注册管理三 tab [manual] -->
+![模型市场列表](../images/superadmin/model-market/list.png)
 
 页面顶部有三段切换：**能力目录 / 运行时观测 / 注册管理**。当前视图写入 `?tab=catalog|runtime|registry`，可直接分享深链。
 

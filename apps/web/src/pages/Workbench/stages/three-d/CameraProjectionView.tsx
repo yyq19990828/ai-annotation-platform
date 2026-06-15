@@ -16,6 +16,7 @@ import type { SensorCalibration } from "@/types";
 
 import { psrToCorners } from "./geometry/box3d";
 import { BOX_EDGES, projectPoints } from "./geometry/projection";
+import { normalizeRect, type SeedRect } from "./geometry/frustum";
 import { buildDepthRaster, sampleDepth, type DepthRaster } from "./geometry/depthmap";
 import type { SceneBox } from "./PointCloudScene";
 import styles from "./ThreeDWorkbench.module.css";
@@ -36,10 +37,20 @@ interface CameraProjectionViewProps {
   pointPositions?: Float32Array | null;
   /** v0.13.6 · 深度提示开关:开 → 画深度热力图 + 图上 hover 读出最近点深度/3D。 */
   showDepth?: boolean;
+  /**
+   * v0.15.24 · 种框模式:在相机图上拖一个 2D 矩形 → mouseup 回调 onSeedBox(natural 像素系)。
+   * 上层据此选视锥内点拟合 box_3d。开则禁用反选点击、光标 crosshair。无标定时不生效。
+   */
+  seedMode?: boolean;
+  /** v0.15.24 · 种框完成回调:rect 为 natural 像素系,calibration 为本相机标定(必非空)。 */
+  onSeedBox?: (rect: SeedRect, calibration: SensorCalibration) => void;
 }
 
 // 一个框至少有这么多可见角点才参与命中测试(避免擦边框误选)。
 const MIN_VISIBLE_FOR_HIT = 3;
+
+// v0.15.24 · 种框拖拽最小位移(显示像素);低于此视为误点,不种框。
+const MIN_SEED_DRAG_PX = 5;
 
 export function CameraProjectionView({
   name,
@@ -51,9 +62,14 @@ export function CameraProjectionView({
   bestForSelected = false,
   pointPositions = null,
   showDepth = false,
+  seedMode = false,
+  onSeedBox,
 }: CameraProjectionViewProps) {
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // v0.15.24 · 种框拖拽:起点(显示坐标)+ 当前矩形(显示坐标),用 ref 即时重绘不进 state。
+  const seedStartRef = useRef<{ x: number; y: number } | null>(null);
+  const seedRectRef = useRef<SeedRect | null>(null);
   // 命中测试用:每框可见投影角点的显示坐标包围盒(id + 矩形 + 面积),draw 时同步。
   const hitBoxesRef = useRef<
     { id: string; x0: number; y0: number; x1: number; y1: number; area: number }[]
@@ -167,7 +183,28 @@ export function CameraProjectionView({
         });
       }
     }
-  }, [boxes, calibration, highlightedIds, showDepth, raster]);
+
+    // v0.15.24 · 种框橡皮筋矩形(显示坐标,虚线 + 淡填充)。从 tokens 取 accent 色,
+    // 读不到时退一个中性蓝(canvas strokeStyle 不在 check-css-tokens 扫描范围,JS 兜底可接受)。
+    const seed = seedRectRef.current;
+    if (seedMode && seed) {
+      // accent 是 oklch(见 tokens.css),不能走 hexToRgba;用 globalAlpha 做淡填充兼容任意色格式。
+      const accent =
+        getComputedStyle(canvas).getPropertyValue("--color-accent").trim() || "#3b82f6";
+      const w = seed.x1 - seed.x0;
+      const h = seed.y1 - seed.y0;
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = accent;
+      ctx.fillRect(seed.x0, seed.y0, w, h);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 3]);
+      ctx.strokeRect(seed.x0, seed.y0, w, h);
+      ctx.restore();
+    }
+  }, [boxes, calibration, highlightedIds, showDepth, raster, seedMode]);
 
   // 数据 / 标定变化重绘。
   useEffect(() => {
@@ -190,20 +227,81 @@ export function CameraProjectionView({
     draw();
   }, [draw]);
 
-  // v0.13.6 · 深度提示 hover:光标→原图像素→查栅格最近点深度/3D。setHover 不入 draw 依赖,故不触发重绘。
+  // 光标相对 canvas 的显示坐标。
+  const localXY = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }, []);
+
+  // v0.13.6 / v0.15.24 · mousemove:种框模式下更新橡皮筋矩形(ref + 直接重绘);否则深度 hover。
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (seedMode) {
+        if (!seedStartRef.current) return;
+        const { x, y } = localXY(e);
+        const s = seedStartRef.current;
+        seedRectRef.current = normalizeRect(s.x, s.y, x, y);
+        draw();
+        return;
+      }
       if (!showDepth || !raster) return;
       const rect = e.currentTarget.getBoundingClientRect();
       const u = ((e.clientX - rect.left) / rect.width) * raster.width;
       const v = ((e.clientY - rect.top) / rect.height) * raster.height;
       setHover(sampleDepth(raster, u, v));
     },
-    [showDepth, raster],
+    [seedMode, localXY, draw, showDepth, raster],
   );
+
+  // v0.15.24 · 种框:按下记起点(需有标定);松手换算回 natural 像素发 onSeedBox;微小位移视为误点。
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!seedMode || !calibration) return;
+      seedStartRef.current = localXY(e);
+      seedRectRef.current = null;
+    },
+    [seedMode, calibration, localXY],
+  );
+
+  const handleMouseUp = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      const start = seedStartRef.current;
+      seedStartRef.current = null;
+      seedRectRef.current = null;
+      if (!seedMode || !start || !calibration || !onSeedBox) {
+        draw();
+        return;
+      }
+      const { x, y } = localXY(e);
+      draw(); // 清掉橡皮筋
+      // 对角线位移小于阈值才算误点(与 ThreeDWorkbench 的 DRAG_CLICK_TOL 同口径);
+      // 用 hypot 而非「任一边 < 阈值」,避免吃掉细长矩形(行人/杆子/路灯侧影)。
+      if (Math.hypot(x - start.x, y - start.y) < MIN_SEED_DRAG_PX) {
+        return; // 误点,不种框
+      }
+      const img = imgRef.current;
+      if (!img?.naturalWidth || !img.clientWidth) return;
+      const sx = img.clientWidth / img.naturalWidth;
+      const sy = img.clientHeight / img.naturalHeight;
+      // 显示坐标 → natural 像素(与 projectPoints 的原图 intrinsic 对齐)。
+      const rect = normalizeRect(start.x / sx, start.y / sy, x / sx, y / sy);
+      onSeedBox(rect, calibration);
+    },
+    [seedMode, calibration, onSeedBox, localXY, draw],
+  );
+
+  const handleMouseLeave = useCallback(() => {
+    setHover(null);
+    if (seedStartRef.current || seedRectRef.current) {
+      seedStartRef.current = null;
+      seedRectRef.current = null;
+      draw(); // 拖出画布外 → 取消种框
+    }
+  }, [draw]);
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (seedMode) return; // 种框模式禁用反选
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
@@ -220,7 +318,7 @@ export function CameraProjectionView({
       }
       if (hitId) onSelectBox(hitId, { shift: e.shiftKey });
     },
-    [onSelectBox],
+    [seedMode, onSelectBox],
   );
 
   return (
@@ -229,17 +327,20 @@ export function CameraProjectionView({
         <img ref={imgRef} src={imageUrl} alt={name} loading="lazy" onLoad={handleImgLoad} />
         <canvas
           ref={canvasRef}
-          className={styles.cameraCanvas}
+          className={`${styles.cameraCanvas} ${seedMode ? styles.cameraCanvasSeed : ""}`}
           onClick={handleClick}
+          onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
-          onMouseLeave={() => setHover(null)}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseLeave}
         />
       </div>
       <figcaption>
         {name}
         {bestForSelected && " · 正对"}
         {calibration ? "" : " · 无标定"}
-        {showDepth && hover && ` · ${hover.depth.toFixed(1)}m`}
+        {seedMode && calibration && " · 拖框种 3D 框"}
+        {showDepth && !seedMode && hover && ` · ${hover.depth.toFixed(1)}m`}
       </figcaption>
     </figure>
   );

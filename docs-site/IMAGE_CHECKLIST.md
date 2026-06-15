@@ -20,108 +20,13 @@
 - **主题**：统一浅色主题
 - **保存路径**：`docs-site/user-guide/images/<page>/<name>.png`
 
-## 图片清单
-
-### Getting Started
-
-- [x] `images/getting-started/login.png` — 登录页全屏 `[auto]`
-- [x] `images/getting-started/forgot-password.png` — 忘记密码页 + 成功 toast `[auto]`
-- [x] `images/getting-started/e2e.gif` — 30-60s 录屏：登录 → 打开项目 → 标 bbox → 提交
-
-### Workbench / Bbox
-
-- [x] `images/bbox/toolbar.png` — 工具栏 + 红框「矩形」按钮 `[auto]`
-- [x] `images/bbox/iou.png` — 双框 IoU 示意 `[auto]`
-- [x] `images/bbox/bulk-edit.png` — 多选 + 批量改类别 `[auto]`
-
-### Workbench / Polygon
-
-- [x] `images/polygon/vertex-edit.png` — 多边形选中态 + 边悬停 + 图标 `[auto]`
-- [x] `images/polygon/close-hint.png` — 三顶点后第四点贴近闭合提示 `[auto]`
-
-### Workbench / Keypoint
-
-- [x] `images/keypoint/human-pose.png` — COCO 17 点人体姿态 + 骨架连线
-- [x] `images/keypoint/hand.png` — 21 点手部骨架
-
-### Workbench / SAM
-
-- [x] `images/sam/subtoolbar.png` — SAM 子工具栏 `[auto]`
-- [x] `images/sam/text-three-modes.png` — 文字提示三种模式 `[auto]`
-
-### Projects
-
-- [x] `images/projects/create-entry.png` — 「新建项目」按钮高亮 `[auto]`
-- [x] `images/projects/wizard-steps.png` — 6 步 wizard 关键截图 `[auto]`
-- [x] `images/projects/wizard-step4-backend.png` — wizard 第 4 步 ML Backend 配置 `[auto]`
-- [x] `images/projects/empty-state.png` — 项目列表空状态 `[auto]`
-- [x] `images/projects/error-state.png` — 项目列表错误状态 `[auto]`
-- [x] `images/projects/ai-pre-stepper.png` — AI 预标注步骤条 `[auto]`
-- [x] `images/projects/ai-pre-history-search.png` — 预标注历史搜索 `[auto]`
-- [x] `images/projects/ai-pre-empty-alias.png` — 预标注 alias 为空提示 `[auto]`
-
-### Review
-
-- [x] `images/review/workbench.png` — 审核三栏全图 + 操作面板 `[auto]`
-- [x] `images/review/reject-form.png` — 退回备注表单 `[auto]`
-
-### Export
-
-- [x] `images/export/format-select.png` — 导出对话框 + 格式选项 `[auto]`
-- [x] `images/export/progress.png` — 进度条 + 下载链接 toast `[auto]`
-
-### Superadmin / BUG 反馈管理（新增于 2026-05-29 审计）
-
-- [ ] `images/superadmin/bugs/list.png` — `/bugs` 列表全图，含状态/严重度筛选 + 重开徽标 `↻N`
-- [ ] `images/superadmin/bugs/detail-panel.png` — 详情面板：元信息行、Markdown 描述、截图附件、状态切换按钮
-- [ ] `images/superadmin/bugs/status-transitions.png` — 状态切换按钮高亮 + 关闭后再重开的 reopen 徽标
-
-### Superadmin / 用户与权限（新增于 2026-05-29）
-
-- [ ] `images/superadmin/users/list.png` — `/users` 卡片列表 + 顶部 4 张统计卡 + 角色徽标颜色
-- [ ] `images/superadmin/users/invite-modal.png` — 邀请用户对话框
-- [ ] `images/superadmin/users/edit-modal.png` — 编辑用户对话框（角色选择 + 停用按钮）
-- [ ] `images/superadmin/users/permission-matrix.png` — 权限矩阵预览（PERMISSION_GROUPS × ROLE_PERMISSIONS）
-- [ ] `images/superadmin/users/groups-tab.png` — 用户组 tab，演示组创建与成员添加
-- [ ] `images/superadmin/users/api-keys.png` — API Keys 对话框（明文一次显示）
-
-### Settings 页（新增于 2026-05-29）
-
-- [ ] `images/settings/profile.png` — 设置 / 个人资料 区
-- [ ] `images/settings/workbench-prefs.png` — 标注偏好（自动保存周期 + 颜色策略）
-- [ ] `images/settings/notification-prefs.png` — 通知偏好的 in-app / email 开关矩阵
-- [ ] `images/settings/system-smtp.png` — 系统设置 / SMTP 配置 + 发送测试邮件按钮（仅 super_admin）
-- [ ] `images/settings/my-feedback.png` — 我的反馈：用户视角看自己提交的 BUG 工单与状态
-
-### Workbench 截图（待补真实截图，目前部分仅 ASCII 图）
-
-- [ ] `images/workbench/layout-overview.png` — 工作台四区布局真实截图（顶栏 / 左工具栏 / 画布 / 右侧抽屉）
-- [ ] `images/workbench/video-track-timeline.png` — 视频轨道时间轴 + 关键帧 + 软网格 `[auto]`
-- [ ] `images/workbench/mask-brush-overlay.png` — Mask brush 工具半透明涂抹 + Tab 切换刷子/橡皮
-
-### ML Backend / Model Market（新增于 2026-05-29）
-
-- [ ] `images/superadmin/ml-backend/register-form.png` — 注册 ML Backend 表单（URL/auth/capability）
-- [ ] `images/superadmin/ml-backend/health-card.png` — 实时 `/health` 卡片（GPU / video_pool meta）
-- [ ] `images/superadmin/model-market/list.png` — 模型市场 3 个 tab 全图
-- [ ] `images/superadmin/model-market/video-pool.png` — `_video_pool` 视频模态独立池 UI
-
-### Dev / 协议图（新增于 2026-05-29 — 替换文字为时序图）
-
-> 这些是开发文档里的架构图候选，建议用 mermaid 而非真截图（直接写入对应 .md 文件）。
-
-- [x] `dev/reference/video-frame-service.md` § Chunk 状态机：补 ready/pending/failed 三态图，含 smart_copy / transcode 注释
-- [x] `dev/reference/video-frame-service.md` § Tracker job 事件序列：补 sequenceDiagram，含 FE / API / worker / ML / Redis Pub-Sub 五道
-- [x] `dev/reference/ws-protocol.md` § 6.2 事件序列：补 stateDiagram-v2 可视化 tracker 事件流
-- [x] `dev/concepts/state-machines.md` § Task 状态机：已含 rejected 转移（旧版即已补，本轮核验确认）
-
 ## Batch 1 · 数据集 / 导入导出（新增于 2026-06-10 · IA 重构）
 
 > 文档侧已在对应位置打 `<!-- TODO(v0.14.18) IMAGE_CHECKLIST: ... -->` 注释占位（未嵌 `![]()`，不破图）；下面是配套拍摄清单。新增图片目录 `images/datasets/`。
 
 ### 数据集 · 导入
 
-- [ ] `images/datasets/import-images-wizard.png` — 导入数据集向导基本信息步选「图像」+ 来源选「ZIP 上传」；红框：数据类型选择、文件拖放区 `[auto]`
+- [x] `images/datasets/import-images-wizard.png` — 导入数据集向导基本信息步选「图像」+ 来源选「ZIP 上传」；红框：数据类型选择、文件拖放区 `[auto]`
 - [ ] `images/datasets/import-wizard-3d-type.png` — 导入向导基本信息步选「3D 点云」+ 勾「声明为时序数据集」；红框：数据类型、时序开关、axis_convention 选择器
 - [ ] `images/datasets/pointcloud-dir-layout.png` — 单 scene vs 多 scene 目录树并排对比（建议矢量示意图而非真截图）
 
@@ -145,20 +50,31 @@
 
 - [ ] `images/projects/tool-units-panel.png` — 项目设置「类别与属性」面板，按工具单位 tab 切换；红框：工具单位切换 tab、某工具下的类别列表、属性 schema 区
 
-## Batch 3 · medium 修正 + 截图标记（新增于 2026-06-10）
+## 综合截图清单（按区域维护）
 
-> 文档侧已在对应小节打 `<!-- TODO(v0.14.18) IMAGE_CHECKLIST: ... -->` 注释占位（未嵌 `![]()`）。本批 69 张，按区域分组。
+> 新截图统一在这里按区域维护；已废弃截图保留删除原因，避免后续重复补拍。
 ### 入口
-- [ ] `images/concepts/role-permission-matrix.png` — /users 权限矩阵 5 角色行，标注红框：viewer 行 [auto]
+- [x] `images/getting-started/login.png` — 登录页全屏 [auto]
+- [x] `images/getting-started/forgot-password.png` — 忘记密码页 + 成功 toast [auto]
+- [x] `images/getting-started/e2e.gif` — 30-60s 录屏：登录 → 打开项目 → 标 bbox → 提交
+- [x] `images/concepts/role-permission-matrix.png` — /users 权限矩阵 5 角色行，标注红框：viewer 行 [auto]
 - [ ] `images/getting-started/annotator-dashboard.png` — 标注员仪表盘全屏，标注红框：产能/质量分区 + 「打开」按钮
-- [ ] `images/getting-started/role-dashboard-overview.png` — 四种角色 Dashboard 拼图 [auto]
-- [ ] `images/getting-started/platform-nav-overview.png` — 平台主界面侧边栏各分区 [auto]
+- [x] `images/getting-started/role-dashboard-overview.png` — 四种角色 Dashboard 拼图 [auto]
+- [x] `images/getting-started/platform-nav-overview.png` — 平台主界面侧边栏各分区 [auto]
 
 ### 数据集
 - [ ] `images/datasets/lidar-axis-wizard-step2.png` — 向导第 2 步选「3D 点云」后出现 AxisConventionPicker + 自动检测按钮 [manual]
 - [ ] `images/datasets/lidar-axis-mismatch-banner.png` — 3D 工作台顶部坐标系不一致 banner + 重投影按钮 [manual]
 
 ### 项目
+- [x] `images/projects/create-entry.png` — 「新建项目」按钮高亮 [auto]
+- [x] `images/projects/wizard-steps.png` — 6 步 wizard 关键截图 [auto]
+- [x] `images/projects/wizard-step4-backend.png` — wizard 第 4 步 ML Backend 配置 [auto]
+- [x] `images/projects/empty-state.png` — 项目列表空状态 [auto]
+- [x] `images/projects/error-state.png` — 项目列表错误状态 [auto]
+- [x] `images/projects/ai-pre-stepper.png` — AI 预标注步骤条 [auto]
+- [x] `images/projects/ai-pre-history-search.png` — 预标注历史搜索 [auto]
+- [~] ~~`images/projects/ai-pre-empty-alias.png` — 预标注 alias 为空提示~~ — **已废弃**：PromptComposer（alias 警告所在）在 ai-pre 重构中删除，无对应 UI
 - [ ] `images/projects/ai-pre-config-panel.png` — 项目详情面板（批次列表 + 配置区 + 跑预标按钮 + 导入预测按钮）[manual]
 - [ ] `images/projects/ai-pre-variant-selector.png` — VariantSelector 两轴选项 + 推荐 badge [manual]
 - [ ] `images/projects/batch-status-list.png` — 批次列表各状态彩色徽标 [manual]
@@ -173,42 +89,69 @@
 - [ ] `images/projects/template-apply-banner.png` — 从模板创建 Wizard 顶部 banner [manual]
 
 ### 参考
-- [ ] `images/notifications/panel-overview.png` — 通知面板展开态（筛选 tab + 分组 + 加载更多）
-- [ ] `images/settings/workbench-preferences.png` — 标注偏好四控件全景（CSS 滤镜输入框 + 控制点大小滑块）
-- [ ] `images/settings/system-settings.png` — super_admin 系统设置（开放注册 + 邀请有效期 + SMTP）
+- [x] `images/export/format-select.png` — 导出对话框 + 格式选项 [auto]
+- [~] ~~`images/export/progress.png` — 进度条 + 下载链接 toast~~ — **已废弃**：导出异步化，进度移至右上角任务铃 JobsBell，无独立进度条页（待补 JobsBell 截图）
+- [x] `images/notifications/panel-overview.png` — 通知面板展开态（筛选 tab + 分组 + 加载更多）
+- [x] `images/settings/profile.png` — 设置 / 个人资料 区
+- [x] `images/settings/workbench-prefs.png` — 标注偏好（自动保存周期 + 颜色策略）
+- [x] `images/settings/notification-prefs.png` — 通知偏好的 in-app / email 开关矩阵
+- [x] `images/settings/system-smtp.png` — 系统设置 / SMTP 配置 + 发送测试邮件按钮（仅 super_admin）
+- [x] `images/settings/my-feedback.png` — 我的反馈：用户视角看自己提交的 BUG 工单与状态
 
 ### 审核
+- [x] `images/review/workbench.png` — 审核三栏全图 + 操作面板 [auto]
+- [x] `images/review/reject-form.png` — 退回备注表单 [auto]
 - [ ] `images/review/review-list-page.png` — ReviewPage 左侧批次树 + 任务列表（缩略图 + 批量操作按钮）
 
 ### 平台管理
-- [ ] `images/superadmin/analytics/overview.png` — 分析页全屏（时间范围下拉 + 4 面板） [manual]
-- [ ] `images/superadmin/analytics/heatmap.png` — 7×24 工时热力图网格 [manual]
+- [x] `images/superadmin/bugs/list.png` — `/bugs` 列表全图，含状态/严重度筛选 + 重开徽标 `↻N`
+- [x] `images/superadmin/bugs/detail-panel.png` — 详情面板：元信息行、Markdown 描述、截图附件、状态切换按钮
+- [ ] `images/superadmin/bugs/status-transitions.png` — 状态切换按钮高亮 + 关闭后再重开的 reopen 徽标
+- [x] `images/superadmin/users/list.png` — `/users` 卡片列表 + 顶部 4 张统计卡 + 角色徽标颜色
+- [x] `images/superadmin/users/invite-modal.png` — 邀请用户对话框
+- [ ] `images/superadmin/users/edit-modal.png` — 编辑用户对话框（角色选择 + 停用按钮）
+- [ ] `images/superadmin/users/permission-matrix.png` — 权限矩阵预览（PERMISSION_GROUPS × ROLE_PERMISSIONS）
+- [ ] `images/superadmin/users/groups-tab.png` — 用户组 tab，演示组创建与成员添加
+- [ ] `images/superadmin/users/api-keys.png` — API Keys 对话框（明文一次显示）
+- [x] `images/superadmin/analytics/overview.png` — 分析页全屏（时间范围下拉 + 4 面板）
+- [x] `images/superadmin/analytics/heatmap.png` — 7×24 工时热力图网格
 - [ ] `images/superadmin/audit-logs/detail-modal.png` — 详情 Modal detail_json + 时间线追溯按钮 [manual]
-- [ ] `images/superadmin/audit-logs/filter-bar.png` — 筛选栏（scope 切换 + detail 键名/键值输入框） [manual]
+- [x] `images/superadmin/audit-logs/filter-bar.png` — 筛选栏（scope 切换 + detail 键名/键值输入框）
 - [ ] `images/superadmin/failed-predictions/list.png` — /ai-pre/jobs?status=failed 列表（状态筛选 + 重试/放弃/显示已放弃 toggle） [manual]
 - [ ] `images/superadmin/failed-predictions/dismiss-restore.png` — 显示已放弃后含「已放弃」badge + 恢复按钮 [manual]
 - [ ] `images/superadmin/ml-backend/register-form.png` — 注册表单全貌含 max_concurrency/extra_params [manual]
+- [ ] `images/superadmin/ml-backend/health-card.png` — 实时 `/health` 卡片（GPU / video_pool meta）
 - [ ] `images/superadmin/ml-backend/health-state-badges.png` — connected/error/disconnected 三状态徽章对比 [manual]
-- [ ] `images/superadmin/model-market-tabs.png` — 能力目录/运行时观测/注册管理三 tab [manual]
+- [x] `images/superadmin/model-market/list.png` — 模型市场 3 个 tab 全图
 - [ ] `images/superadmin/model-market-runtime-card.png` — backend 卡片（GPU 显存 + 池状态 + 操作按钮） [manual]
+- [ ] `images/superadmin/model-market/video-pool.png` — `_video_pool` 视频模态独立池 UI
 - [ ] `images/superadmin/public-templates/scope-selector.png` — 可见范围下拉「公共」选项 disabled（非超管视角） [manual]
 - [ ] `images/superadmin/public-templates/templates-list.png` — 模板库四 tab + scope chip + usage_count [manual]
-- [ ] `images/superadmin/system-monitoring/health-panel.png` — 4 组件卡 + Celery 队列表 + Workers 心跳表 [manual]
+- [x] `images/superadmin/system-monitoring/health-panel.png` — 4 组件卡 + Celery 队列表 + Workers 心跳表
 - [ ] `images/superadmin/system-monitoring/workers-table.png` — Workers 表（名称/Heartbeat/Pool/状态） [manual]
 
 ### 工作台
+- [x] `images/bbox/toolbar.png` — 工具栏 + 红框「矩形」按钮 [auto]
+- [x] `images/bbox/iou.png` — 双框 IoU 示意 [auto]
+- [x] `images/bbox/bulk-edit.png` — 多选 + 批量改类别 [auto]
+- [x] `images/polygon/vertex-edit.png` — 多边形选中态 + 边悬停 + 图标 [auto]
+- [x] `images/polygon/close-hint.png` — 三顶点后第四点贴近闭合提示 [auto]
+- [x] `images/keypoint/human-pose.png` — COCO 17 点人体姿态 + 骨架连线
+- [x] `images/keypoint/hand.png` — 21 点手部骨架
+- [x] `images/sam/subtoolbar.png` — SAM 子工具栏 [auto]
+- [x] `images/sam/text-three-modes.png` — 文字提示三种模式 [auto]
 - [ ] `images/3d-box/workbench-overview.png` — 3D 工作台全局（主视图 + 相机面板 + PSR 面板 + 自动贴合按钮组） [manual]
 - [ ] `images/3d-box/psr-panel.png` — PSR 面板近景，标注红框：l/w/h 尺寸字段 [manual]
 - [ ] `images/3d-box/autofit-buttons.png` — 贴合/收尺寸/贴地/朝向按钮组 [manual]
-- [ ] `images/workbench/layout-overview.png` — 四区布局全图（顶栏/左工具栏/画布/右抽屉） [auto]
+- [x] `images/workbench/layout-overview.png` — 四区布局全图（顶栏/左工具栏/画布/右抽屉） [auto]
 - [ ] `images/workbench/task-status-labels.png` — 六种状态标签竖列
-- [ ] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
+- [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
 - [ ] `images/pointcloud-crossframe/crossframe-propagate-toast.png` — 按 Alt+→ 跳帧自动选中新框 + toast [manual]
 - [ ] `images/pointcloud-crossframe/overlay-k3-triview.png` — K=3 时主视图 + 三视图半透明虚线参考框 [manual]
 - [ ] `images/workbench-pointcloud-projection/overlay-wireframe.png` — 相机面板线框投影 overlay + 「正对」角标 [manual]
 - [ ] `images/workbench-pointcloud-projection/click-to-select-3d.png` — 点击投影框联动主视图高亮 [manual]
 - [ ] `images/workbench-pointcloud-projection/camera-panel-layout.png` — 6 相机环绕布局全景 [manual]
-- [ ] `images/workbench/pointcloud-controls-bar.png` — 控件浮条全景（重置/俯视/点大小滑杆/上色/深度/邻帧叠加） [manual]
+- [ ] `images/workbench/pointcloud-controls-bar.png` — 控件浮条全景（重置/俯视/点大小滑杆/上色/深度/邻帧框叠加） [manual]
 - [ ] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比 [manual]
 - [ ] `images/workbench/pointcloud-depth-heatmap.png` — 深度热力图 + figcaption 深度读数 [manual]
 - [ ] `images/polygon/vertex-insert-alt.png` — 按住 Alt 悬停边上光标变「+」的瞬间
@@ -216,22 +159,32 @@
 - [ ] `images/polyline/vertex-edit.png` — 折线选中态 Alt 插入/Shift 删除提示
 - [ ] `images/workbench/rotated-bbox-draw.png` — 拖框生成旋转框，标注红框：旋转手柄 + 四角缩放手柄
 - [ ] `images/workbench/rotated-bbox-rotate.png` — 旋转约 30° 后状态 + 角度值
-- [ ] `images/sam/ai-tool-drawer.png` — AIToolDrawer 全图（后端下拉/极性切换/状态灯） [auto]
-- [ ] `images/sam/exemplar-output-mode.png` — 输出形态三选一 TabRow [auto]
-- [ ] `images/sam/ai-inspector-panel.png` — 悬浮 AI 面板（Prompt/阈值滑块/变体选择） [auto]
+- [x] `images/sam/ai-tool-drawer.png` — AIToolDrawer 全图（后端下拉/极性切换/状态灯） [auto]
+- [x] `images/sam/exemplar-output-mode.png` — 输出形态三选一 TabRow [auto]
+- [x] `images/sam/ai-inspector-panel.png` — 悬浮 AI 面板（Prompt/阈值滑块/变体选择） [auto]
 - [ ] `images/video-playback/sampling-config.png` — 项目设置帧采样配置区（mode/target_fps/frame_step） [manual]
 - [ ] `images/video-playback/chapter-sidebar.png` — 章节侧栏含彩色色带 + 章节列表 [manual]
 - [ ] `images/video-propagate/ai-propagate-dialog.png` — AI 传播对话框（方向/范围/模型/尺寸下拉） [manual]
 - [ ] `images/video-propagate/tracker-job-badge.png` — 进度 badge + 取消按钮 [manual]
 - [ ] `images/workbench/video-track-overview.png` — 视频工作台整体（时间轴 + 工具栏 B/T/V + 轨迹面板） [manual]
+- [ ] `images/workbench/video-track-timeline.png` — 视频轨道时间轴 + 关键帧 + 软网格 [auto]
 - [ ] `images/workbench/video-track-compose-dialog.png` — 跳连对话框两种 gap 模式 [manual]
 - [ ] `images/workbench/video-track-qc-warnings.png` — 画布左上角质量提示浮层 [manual]
 
 ### 工作流
-- [ ] `images/workflows/ai-pre-project-detail-panel.png` — ProjectDetailPanel（批次勾选 + predict_mode 三 tab + 跑预标按钮） [auto]
-- [ ] `images/workflows/failed-prediction-recovery-jobs-list.png` — /ai-pre/jobs?status=failed 列表 [auto]
-- [ ] `images/workflows/project-wizard-type-select.png` — 向导类型选择（7 种项目类型卡） [auto]
+- [x] `images/workflows/ai-pre-project-detail-panel.png` — ProjectDetailPanel（批次勾选 + predict_mode 三 tab + 跑预标按钮） [auto]
+- [x] `images/workflows/failed-prediction-recovery-jobs-list.png` — /ai-pre/jobs?status=failed 列表 [auto]
+- [x] `images/workflows/project-wizard-type-select.png` — 向导类型选择（7 种项目类型卡） [auto]
 - [ ] `images/workflows/batch-assign-dialog.png` — 批次分配对话框（标注员/审核员选择）
+
+### Dev / 协议图
+
+> 这些是开发文档里的架构图候选，建议用 mermaid 而非真截图（直接写入对应 .md 文件）。
+
+- [x] `dev/reference/video-frame-service.md` § Chunk 状态机：补 ready/pending/failed 三态图，含 smart_copy / transcode 注释
+- [x] `dev/reference/video-frame-service.md` § Tracker job 事件序列：补 sequenceDiagram，含 FE / API / worker / ML / Redis Pub-Sub 五道
+- [x] `dev/reference/ws-protocol.md` § 6.2 事件序列：补 stateDiagram-v2 可视化 tracker 事件流
+- [x] `dev/concepts/state-machines.md` § Task 状态机：已含 rejected 转移（旧版即已补，本轮核验确认）
 
 ## 新增图片时
 

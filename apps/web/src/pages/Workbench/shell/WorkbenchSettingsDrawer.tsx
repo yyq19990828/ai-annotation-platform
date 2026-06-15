@@ -113,25 +113,54 @@ export function WorkbenchSettingsDrawer({
                 <h3 className={styles.groupTitle}>
                   {WORKBENCH_SETTING_CATEGORY_LABELS[category]}
                 </h3>
-                {fields.map((field) => {
+                <div className={styles.fieldList}>
+                {fields.filter((field) => !field.parentKey).map((field) => {
                   const lockName = lockableFieldName(field);
+                  const fieldValue = getFieldValue(config, field);
+                  const childFields = fields.filter((child) => child.parentKey === field.key);
                   return (
-                    <SettingsFieldControl
-                      key={field.key}
-                      field={field}
-                      value={getFieldValue(config, field)}
-                      locked={lockName !== null && lockedFields.includes(lockName)}
-                      onCommit={(value) => {
-                        if (isLocalSettingField(field)) {
-                          field.write(value);
-                          refreshLocalFields();
-                          return;
-                        }
-                        setFields(buildFieldPatch(field, value));
-                      }}
-                    />
+                    <div key={field.key} className={styles.fieldCluster}>
+                      <SettingsFieldControl
+                        field={field}
+                        value={fieldValue}
+                        locked={lockName !== null && lockedFields.includes(lockName)}
+                        onCommit={(value) => {
+                          if (isLocalSettingField(field)) {
+                            field.write(value);
+                            refreshLocalFields();
+                            return;
+                          }
+                          setFields(buildFieldPatch(field, value));
+                        }}
+                      />
+                      {childFields.map((child) => {
+                        const childLockName = lockableFieldName(child);
+                        return (
+                          <SettingsFieldControl
+                            key={child.key}
+                            field={child}
+                            value={getFieldValue(config, child)}
+                            nested
+                            disabled={!fieldValue}
+                            locked={
+                              childLockName !== null &&
+                              lockedFields.includes(childLockName)
+                            }
+                            onCommit={(value) => {
+                              if (isLocalSettingField(child)) {
+                                child.write(value);
+                                refreshLocalFields();
+                                return;
+                              }
+                              setFields(buildFieldPatch(child, value));
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
                   );
                 })}
+                </div>
                 {category === "common" && onToggleHideOrphans && (
                   <div className={styles.orphanRow}>
                     <span className={styles.orphanLabel}>

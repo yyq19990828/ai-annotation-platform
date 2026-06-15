@@ -14,6 +14,8 @@ last_reviewed: 2026-06-10
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/review/review-list-page.png — ReviewPage 左侧批次树 + 任务列表（缩略图 + 批量操作按钮） -->
 
+![审核工作台](../images/review/workbench.png)
+
 平台提供两个独立的审核入口：
 
 - **ReviewPage**（`/review`）：批次树 + 任务列表入口。审核员在此浏览批次、选择待审任务，也可在列表侧直接通过 / 退回单条任务。

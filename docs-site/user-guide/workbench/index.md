@@ -10,7 +10,7 @@ last_reviewed: 2026-06-10
 
 工作台是日常标注的主要工作场所，由以下区域组成：
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench/layout-overview.png — 四区布局全图（顶栏/左工具栏/画布/右抽屉） [auto] -->
+![工作台布局概览](../images/workbench/layout-overview.png)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐

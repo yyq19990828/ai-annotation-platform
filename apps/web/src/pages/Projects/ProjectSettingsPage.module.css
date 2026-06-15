@@ -60,6 +60,10 @@
   gap: 20px;
 }
 
+.content {
+  min-width: 0;
+}
+
 .nav {
   display: flex;
   flex-direction: column;

@@ -93,6 +93,18 @@
   flex-direction: column;
 }
 
+.fieldList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fieldCluster {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
 .groupTitle {
   margin: 0;
   padding: 8px 10px 5px;
@@ -109,7 +121,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 7px 10px;
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 8px 10px;
   border-radius: var(--radius-sm);
   transition: background 150ms ease;
 }

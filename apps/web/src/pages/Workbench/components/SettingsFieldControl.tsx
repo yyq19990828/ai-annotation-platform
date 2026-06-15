@@ -14,6 +14,8 @@ const LOCKED_TITLE = "由项目统一配置";
 interface SettingsFieldControlProps {
   field: WorkbenchSettingField;
   value: WorkbenchSettingValue;
+  /** 父开关下的二级设置。 */
+  nested?: boolean;
   /** 保存中临时禁用(toggle/slider/select;text 仅锁定时禁用,与 SettingsPage 既有行为一致)。 */
   disabled?: boolean;
   /** 被项目级 rendering_config 锁定:禁用 + badge + hover 提示。 */
@@ -24,6 +26,7 @@ interface SettingsFieldControlProps {
 export function SettingsFieldControl({
   field,
   value,
+  nested = false,
   disabled = false,
   locked = false,
   onCommit,
@@ -37,8 +40,11 @@ export function SettingsFieldControl({
 
   return (
     <label
-      className={styles.field}
+      className={`${styles.field} ${nested ? styles.fieldNested : ""} ${
+        disabled && !locked ? styles.fieldDisabled : ""
+      }`}
       title={title}
+      aria-disabled={disabled || locked}
       data-testid={`setting-field-${field.key}`}
     >
       <div className={styles.label}>
@@ -101,7 +107,7 @@ export function SettingsFieldControl({
           value={String(value)}
           maxLength={control.maxLength}
           placeholder={control.placeholder}
-          disabled={locked}
+          disabled={disabled || locked}
           onCommit={onCommit}
         />
       )}

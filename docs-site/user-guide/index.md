@@ -6,7 +6,7 @@
 
 ## 按角色入口
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/getting-started/role-dashboard-overview.png — 四种角色 Dashboard 拼图 [auto] -->
+![角色 Dashboard 概览](./images/getting-started/role-dashboard-overview.png)
 
 ### 🖊️ 标注员
 
@@ -50,7 +50,7 @@
 
 ## 按任务入口
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/getting-started/platform-nav-overview.png — 平台主界面侧边栏各分区 [auto] -->
+![平台导航概览](./images/getting-started/platform-nav-overview.png)
 
 | 我想做的事 | 去哪里 |
 |---|---|

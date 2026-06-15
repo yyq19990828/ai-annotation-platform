@@ -14,7 +14,7 @@ last_reviewed: 2026-06-10
 
 ## 面板
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/analytics/overview.png — 分析页全屏（时间范围下拉 + 4 面板） [manual] -->
+![分析页概览](../images/superadmin/analytics/overview.png)
 
 | 面板 | 数据源 | 说明 |
 |---|---|---|
@@ -25,7 +25,7 @@ last_reviewed: 2026-06-10
 
 时间范围下拉支持 **近 7 / 30 / 90 天**。
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/analytics/heatmap.png — 7×24 工时热力图网格 [manual] -->
+![工时热力图](../images/superadmin/analytics/heatmap.png)
 
 ### reject_reason_type 枚举值
 

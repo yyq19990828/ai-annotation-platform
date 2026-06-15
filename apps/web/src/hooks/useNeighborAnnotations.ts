@@ -1,43 +1,41 @@
 /**
- * v0.14.1 · 邻帧框叠加: 批量拉 prev/next task 的同 group_id annotations。
+ * v0.14.1 · 邻帧框叠加: 拉 prev/next task 的邻帧 annotations。
+ * v0.15.17 · 改走批量端点 GET /tasks/{id}/neighbor-annotations(一条请求),
+ *   替代旧版「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 group 过滤」。
  *
- * - selectedGroupId=null → 整 hook 短路(不发请求), overlay 不渲染。
- * - 复用 ["annotations", taskId] 缓存键 → 与 useAnnotations 共享缓存, 切到邻帧
- *   task 时命中已拉数据, 不重复请求。
- * - 后端 GET /tasks/{id}/annotations 无 group_id 过滤参数, 故在 client 端按
- *   group_id 过滤(K≤5 → 最多 ±5 帧, ~10 个 task, 性能可接受)。
+ * - scope=selected(groupId 非 null)→ 服务端只回该 group;groupId 为 null 时调用方传
+ *   enabled=false 短路(不发请求)。
+ * - scope=all(groupId=null 但 enabled=true)→ 服务端回区间全部框。
  */
-import { useQueries } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { tasksApi } from "@/api/tasks";
 import type { AnnotationResponse } from "@/types";
 
 export interface NeighborAnnotationsResult {
-  /** taskId → 该 task 内 group_id === selectedGroupId 的 annotations。 */
+  /** taskId → 该邻帧 task 的 annotations(已按 scope 在服务端过滤)。 */
   byTask: Record<string, AnnotationResponse[]>;
   isLoading: boolean;
 }
 
 export function useNeighborAnnotations(
-  taskIds: string[],
-  selectedGroupId: number | null,
+  taskId: string | null,
+  k: number,
+  groupId: number | null,
+  enabled: boolean,
 ): NeighborAnnotationsResult {
-  const enabled = selectedGroupId != null && taskIds.length > 0;
-  const uniqueIds = enabled ? Array.from(new Set(taskIds)) : [];
-
-  const results = useQueries({
-    queries: uniqueIds.map((tid) => ({
-      queryKey: ["annotations", tid],
-      queryFn: () => tasksApi.getAnnotations(tid),
-      enabled,
-      staleTime: 60 * 1000,
-    })),
+  const active = enabled && taskId != null && k > 0;
+  const query = useQuery({
+    queryKey: ["neighbor-annotations", taskId, k, groupId],
+    queryFn: () =>
+      tasksApi.getNeighborAnnotations(taskId as string, k, groupId),
+    enabled: active,
+    staleTime: 60 * 1000,
   });
 
   const byTask: Record<string, AnnotationResponse[]> = {};
-  uniqueIds.forEach((tid, i) => {
-    const rows = results[i]?.data ?? [];
-    byTask[tid] = rows.filter((a) => a.group_id === selectedGroupId);
-  });
+  for (const f of query.data?.frames ?? []) {
+    byTask[f.task_id] = (f.annotations ?? []) as AnnotationResponse[];
+  }
 
-  return { byTask, isLoading: results.some((r) => r.isLoading) };
+  return { byTask, isLoading: active && query.isLoading };
 }

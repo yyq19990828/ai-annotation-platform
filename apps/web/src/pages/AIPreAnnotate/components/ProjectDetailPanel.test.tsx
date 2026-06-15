@@ -16,13 +16,19 @@ const mockQueueAPI = vi.fn();
 const mockAliasFreqAPI = vi.fn();
 const mockSetupAPI = vi.fn();
 const mockCapabilitiesAPI = vi.fn();
+const mockUpdateProjectMutate = vi.fn();
+const mockUpdateProjectMutateAsync = vi.fn();
 const mockUpdatePreferences = vi.fn();
 
 vi.mock("@/hooks/useProjects", () => ({
   useProject: (id: string) => mockUseProject(id),
   useProjects: () => ({ data: [], isLoading: false }),
   // v0.9.13 起 ProjectDetailPanel 调用 useUpdateProject 持久化 chips/threshold; mock 默认 noop
-  useUpdateProject: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false }),
+  useUpdateProject: () => ({
+    mutate: mockUpdateProjectMutate,
+    mutateAsync: mockUpdateProjectMutateAsync,
+    isPending: false,
+  }),
 }));
 // v0.9.13 起 useBatchEventsSocket 在 mount 时发起 ws upgrade, MSW 没装 ws handler 时
 // libuv stream assert → worker crash. 单测里直接 noop 即可 (WS 行为另有 useBatchEventsSocket 自己的 smoke 测试).
@@ -96,6 +102,9 @@ describe("ProjectDetailPanel v0.9.12", () => {
     mockTriggerMutate.mockReset();
     mockSetupAPI.mockReset();
     mockCapabilitiesAPI.mockReset();
+    mockUpdateProjectMutate.mockReset();
+    mockUpdateProjectMutateAsync.mockReset();
+    mockUpdateProjectMutateAsync.mockResolvedValue(undefined);
     // 默认能力目录无 ocr / doc_layout 条目 → 不出现任务类型选择 (保持原文本预标行为).
     mockCapabilitiesAPI.mockResolvedValue({ name: "grounded-sam2", models: [] });
     mockUpdatePreferences.mockReset();

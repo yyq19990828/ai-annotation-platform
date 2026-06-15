@@ -252,8 +252,15 @@ async def test_patch_pointcloud_subtree_fields(httpx_client, annotator):
                     "showDepthHint": True,
                     "pointMaskSelectMode": "lasso",
                     "showGrid": False,
+                    "neighborPointOverlay": True,
+                    "neighborPointOverlayK": 2,
+                    "neighborPointCull": "align",
                 },
-                "common": {"crossFrameOverlayK": 5, "performanceTier": "aggressive"},
+                "common": {
+                    "crossFrameOverlayEnabled": True,
+                    "crossFrameOverlayK": 5,
+                    "performanceTier": "aggressive",
+                },
             }
         },
         headers=_bearer(token),
@@ -269,9 +276,13 @@ async def test_patch_pointcloud_subtree_fields(httpx_client, annotator):
     assert wb["pointcloud"]["showDepthHint"] is True
     assert wb["pointcloud"]["pointMaskSelectMode"] == "lasso"
     assert wb["pointcloud"]["showGrid"] is False
+    assert wb["pointcloud"]["neighborPointOverlay"] is True
+    assert wb["pointcloud"]["neighborPointOverlayK"] == 2
+    assert wb["pointcloud"]["neighborPointCull"] == "align"
     # 未提交字段保持默认值（默认值 = 现状红线）
     assert wb["pointcloud"]["showAxisGizmo"] is True
     assert wb["pointcloud"]["cameraDamping"] == 0.1
+    assert wb["common"]["crossFrameOverlayEnabled"] is True
     assert wb["common"]["crossFrameOverlayK"] == 5
     assert wb["common"]["performanceTier"] == "aggressive"
 
@@ -303,6 +314,8 @@ async def test_patch_pointcloud_range_and_enum_violations_422(httpx_client, anno
         {"pointcloud": {"colorizeGamma": 4}},  # > 3
         {"pointcloud": {"cameraDamping": 0.01}},  # < 0.05
         {"pointcloud": {"pointMaskSelectMode": "circle"}},  # 非法枚举
+        {"pointcloud": {"neighborPointOverlayK": 4}},  # 点云最多前后 3 帧
+        {"pointcloud": {"neighborPointCull": "ghost"}},  # 只允许 keep/cull/align
         {"common": {"crossFrameOverlayK": 2}},  # 档位只允许 0/1/3/5/7
         {"common": {"performanceTier": "max"}},  # 只允许 light/standard/aggressive
     ):
@@ -312,6 +325,61 @@ async def test_patch_pointcloud_range_and_enum_violations_422(httpx_client, anno
             headers=_bearer(token),
         )
         assert resp.status_code == 422, bad_subtree
+
+
+# ── 5b. v0.15.25 UI 主题子树 ─────────────────────────────────────────
+
+
+async def test_patch_ui_theme_persists_and_isolated_from_workbench(
+    httpx_client, annotator
+):
+    _, token = annotator
+    # 先写一个 workbench 字段,确认随后 PATCH ui 不会清掉它(顶层子树合并)。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"workbench": {"image": {"controlPointsSize": 9}}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"ui": {"theme": "dark"}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ui"]["theme"] == "dark"
+    # workbench 子树不受影响。
+    assert body["workbench"]["image"]["controlPointsSize"] == 9
+
+    # GET 读回同形态。
+    resp = await httpx_client.get(PREFS_URL, headers=_bearer(token))
+    assert resp.status_code == 200
+    assert resp.json()["ui"]["theme"] == "dark"
+    assert resp.json()["workbench"]["image"]["controlPointsSize"] == 9
+
+
+async def test_patch_ui_theme_default_and_invalid(httpx_client, annotator):
+    _, token = annotator
+    # 默认主题为 system(未写过 ui 时)。
+    resp = await httpx_client.get(PREFS_URL, headers=_bearer(token))
+    assert resp.status_code == 200
+    assert resp.json()["ui"]["theme"] == "system"
+    # 非法枚举 422。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"ui": {"theme": "sepia"}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 422
+    # 子树内未知键仍 422(forbid)。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"ui": {"bogus": 1}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 422
 
 
 # ── 6. 0103 迁移 SQL ────────────────────────────────────────────────

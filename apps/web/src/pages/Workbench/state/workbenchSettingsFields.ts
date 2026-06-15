@@ -19,6 +19,8 @@ export type WorkbenchSettingControl =
 interface WorkbenchSettingFieldBase {
   /** "image.controlPointsSize" — 与 WorkbenchPreferences 子树路径一致(category.字段名)。 */
   key: `${WorkbenchSettingCategory}.${string}`;
+  /** 子设置挂到父开关下面;父开关关闭时子项禁用并置灰。 */
+  parentKey?: `${WorkbenchSettingCategory}.${string}`;
   category: WorkbenchSettingCategory;
   label: string;
   description?: string;
@@ -102,18 +104,39 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     control: { type: "slider", min: 3, max: 20, step: 1, format: (v) => `${v}` },
   },
   {
-    key: "common.crossFrameOverlayK",
+    key: "common.crossFrameOverlayEnabled",
     category: "common",
-    label: "邻帧叠加",
-    description: "前后各显示几帧参考框，0 为关闭",
+    label: "邻帧框叠加",
+    description: "开启后显示相邻帧参考框",
+    control: { type: "toggle" },
+  },
+  {
+    key: "common.crossFrameOverlayK",
+    parentKey: "common.crossFrameOverlayEnabled",
+    category: "common",
+    label: "邻帧框帧数",
+    description: "前后各显示几帧参考框",
     control: {
       type: "select",
       options: [
-        { value: 0, label: "关闭" },
         { value: 1, label: "前后 1 帧" },
         { value: 3, label: "前后 3 帧" },
         { value: 5, label: "前后 5 帧" },
         { value: 7, label: "前后 7 帧" },
+      ],
+    },
+  },
+  {
+    key: "common.crossFrameOverlayScope",
+    parentKey: "common.crossFrameOverlayEnabled",
+    category: "common",
+    label: "邻帧框叠加范围",
+    description: "选中对象=仅叠当前对象的邻帧框；全部=不选对象也叠邻帧所有框(渲染量更大)",
+    control: {
+      type: "select",
+      options: [
+        { value: "selected", label: "选中对象" },
+        { value: "all", label: "全部" },
       ],
     },
   },
@@ -279,6 +302,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.colorizeContrast",
+    parentKey: "pointcloud.colorizeWithCamera",
     category: "pointcloud",
     label: "上色对比度",
     description: "相机上色后的 RGB 对比度",
@@ -286,6 +310,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.colorizeBrightness",
+    parentKey: "pointcloud.colorizeWithCamera",
     category: "pointcloud",
     label: "上色亮度",
     description: "相机上色后的 RGB 亮度偏移",
@@ -293,6 +318,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.colorizeGamma",
+    parentKey: "pointcloud.colorizeWithCamera",
     category: "pointcloud",
     label: "上色 Gamma",
     description: "相机上色后的中间调曲线",
@@ -336,6 +362,44 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     label: "相机灵敏度",
     description: "值越小惯性越强",
     control: { type: "slider", min: 0.05, max: 0.3, step: 0.05, format: (v) => v.toFixed(2) },
+  },
+  {
+    key: "pointcloud.neighborPointOverlay",
+    category: "pointcloud",
+    label: "邻帧点云叠加",
+    description: "把前后帧点云按车体位姿对齐叠到当前帧:静止背景加密、动态目标留拖影。需 scene 有 ego 轨迹",
+    control: { type: "toggle" },
+  },
+  {
+    key: "pointcloud.neighborPointOverlayK",
+    parentKey: "pointcloud.neighborPointOverlay",
+    category: "pointcloud",
+    label: "邻帧点云帧数",
+    description: "前后各叠几帧点云;点云较重,最多 3 帧",
+    control: {
+      type: "select",
+      options: [
+        { value: 1, label: "前后 1 帧" },
+        { value: 2, label: "前后 2 帧" },
+        { value: 3, label: "前后 3 帧" },
+      ],
+    },
+  },
+  {
+    key: "pointcloud.neighborPointCull",
+    parentKey: "pointcloud.neighborPointOverlay",
+    category: "pointcloud",
+    label: "邻帧动态点",
+    description:
+      "对落在已标注框内的邻帧点:保留=留拖影 / 剔除=只叠静止背景 / 逐目标对齐=把点搬到当前帧位置一起加密(无拖影)。仅对已标注目标有效",
+    control: {
+      type: "select",
+      options: [
+        { value: "keep", label: "保留(拖影)" },
+        { value: "cull", label: "剔除动态点" },
+        { value: "align", label: "逐目标对齐" },
+      ],
+    },
   },
   {
     key: "experiment.webcodecs",

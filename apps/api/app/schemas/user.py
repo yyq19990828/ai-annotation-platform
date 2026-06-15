@@ -1,5 +1,5 @@
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from uuid import UUID
 from datetime import datetime
 
@@ -97,10 +97,23 @@ class WorkbenchCommonPreferences(BaseModel):
     longTaskSampleRate: float = Field(default=0.05, ge=0.0, le=1.0)
     confirmDelete: Literal["never", "multi_only", "always"] = "never"
     recentClassesLimit: int = Field(default=5, ge=3, le=20)
-    # v0.15.6 · 邻帧叠加 K（0=关）。当前 3D 点云消费（迁自旧全局 localStorage 键）；
-    # 放 common 供视频侧后续复用。档位与前端 CrossFrameOverlayToggle OPTIONS 一致。
-    crossFrameOverlayK: Literal[0, 1, 3, 5, 7] = 0
+    # v0.15.19 · 邻帧框叠加独立开关。历史偏好没有该字段时,由 crossFrameOverlayK>0 推导。
+    crossFrameOverlayEnabled: bool = False
+    # v0.15.6 · 邻帧框叠加帧数档位。0 仅兼容历史关闭值;新 UI 用独立开关表达关闭。
+    crossFrameOverlayK: Literal[0, 1, 3, 5, 7] = 1
+    # v0.15.17 · 邻帧框叠加范围:selected=仅选中对象 group(现状);all=不选对象也叠全部邻帧框。
+    crossFrameOverlayScope: Literal["selected", "all"] = "selected"
     performanceTier: Literal["light", "standard", "aggressive"] = "standard"
+
+    @model_validator(mode="after")
+    def _derive_legacy_overlay_enabled(self):
+        if (
+            "crossFrameOverlayEnabled" not in self.model_fields_set
+            and "crossFrameOverlayK" in self.model_fields_set
+            and self.crossFrameOverlayK > 0
+        ):
+            self.crossFrameOverlayEnabled = True
+        return self
 
 
 class WorkbenchImagePreferences(BaseModel):
@@ -147,6 +160,12 @@ class WorkbenchPointcloudPreferences(BaseModel):
     showAxisGizmo: bool = True
     # OrbitControls dampingFactor：值越小惯性越强（前端文案「相机灵敏度」）。
     cameraDamping: float = Field(default=0.1, ge=0.05, le=0.3)
+    # v0.15.18 · 邻帧点云叠加(ego 补偿对齐前后帧点云)。需 ego 轨迹;默认关。
+    neighborPointOverlay: bool = False
+    # v0.15.19 · 邻帧点云叠加帧数,独立于邻帧框叠加;点云较重,限制为 1-3。
+    neighborPointOverlayK: Literal[1, 2, 3] = 1
+    # v0.15.22/v0.15.23 · 邻帧点云动态目标处理:保留拖影 / 剔除 / 逐目标对齐。
+    neighborPointCull: Literal["keep", "cull", "align"] = "keep"
 
 
 class WorkbenchPreferences(BaseModel):
@@ -181,6 +200,17 @@ class AIToolPreferences(BaseModel):
     params_by_backend: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
+class UIPreferences(BaseModel):
+    """v0.15.25 · 全局 UI 偏好（工作台之外）。当前仅主题；跟随账号跨设备。
+
+    主题原先只存 localStorage（仅本机），升级到服务端偏好后换设备登录即保持。
+    'system' = 跟随操作系统 prefers-color-scheme。"""
+
+    model_config = {"extra": "forbid"}
+
+    theme: Literal["light", "dark", "system"] = "system"
+
+
 class UserPreferences(BaseModel):
     """User.preferences JSONB root. 仅声明已知子树；未来按 epic 追加。"""
 
@@ -188,6 +218,7 @@ class UserPreferences(BaseModel):
 
     workbench: WorkbenchPreferences = Field(default_factory=WorkbenchPreferences)
     ai: AIToolPreferences = Field(default_factory=AIToolPreferences)
+    ui: UIPreferences = Field(default_factory=UIPreferences)
 
 
 class UserCreate(BaseModel):

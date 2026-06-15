@@ -14,7 +14,7 @@ last_reviewed: 2026-06-10
 
 - 视角导航、相机面板与上色 / 深度 → [点云视图与上色](./pointcloud-view)
 - 3D↔2D 投影联动 → [点云跨模态联动](./pointcloud-projection)
-- 跨帧目标延续与邻帧叠加 → [点云跨帧标注](./pointcloud-crossframe)
+- 跨帧目标延续与邻帧框叠加 → [点云跨帧标注](./pointcloud-crossframe)
 
 ## 操作
 

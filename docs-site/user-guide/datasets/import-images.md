@@ -25,7 +25,7 @@ last_reviewed: 2026-06-10
 - **ZIP 包 (≤200MB)** — 上传一个 ZIP,后端解压并保留子目录结构。
 - **连接器导入** — 从已配好的 S3 / OSS / SFTP 连接器按路径 + 通配符批量拉取。
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/datasets/import-images-wizard.png — 导入数据集向导基本信息步选「图像」+ 来源选「ZIP 上传」;标注红框:数据类型选择、文件拖放区。 [auto] -->
+![图像数据集导入向导](../images/datasets/import-images-wizard.png)
 
 第四种是命令行的「扫描导入」(对已建好、对象存储里已有文件的数据集补建 item),见下文。
 

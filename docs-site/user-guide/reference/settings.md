@@ -23,6 +23,8 @@ last_reviewed: 2026-06-11
 
 ## 个人资料
 
+![个人资料设置](../images/settings/profile.png)
+
 - **显示名**：可修改；提交后立即生效
 - **邮箱**：只读，不可在设置页自助修改
 - **修改密码**：需要旧密码，新密码强度规则与注册一致（≥ 8 字符，需含大小写字母 + 数字，三项缺一不可）
@@ -35,7 +37,7 @@ last_reviewed: 2026-06-11
 
 ## 标注偏好（Workbench）
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/settings/workbench-preferences.png — 标注偏好四控件全景（CSS 滤镜输入框 + 控制点大小滑块） -->
+![标注偏好](../images/settings/workbench-prefs.png)
 
 驱动工作台的用户级配置（`useWorkbenchConfig`），存于后端用户偏好，跨浏览器同步。v0.15.3 起按 **通用 / 图片 / 视频 / 点云** 四分类组织（暂无字段的分类不显示），并新增工作台内的设置抽屉入口（齿轮菜单 →「工作台设置」，改动实时预览），详见 [工作台设置](../workbench/settings)：
 
@@ -43,7 +45,7 @@ last_reviewed: 2026-06-11
 |---|---|---|
 | 通用 | `longTaskSampleRate` | PerformanceObserver longtask 采样率（0–1），性能调试用；普通用户保持默认 |
 | 通用 | `confirmDelete` / `recentClassesLimit` | 删除确认策略和最近类别数量 |
-| 通用 | `crossFrameOverlayK` | 点云跨帧邻帧叠加 K，0 表示关闭 |
+| 通用 | `crossFrameOverlayEnabled` / `crossFrameOverlayK` / `crossFrameOverlayScope` | 邻帧框叠加开关、帧数与对象范围 |
 | 通用 | `performanceTier` | 视频缓存 / 预取窗口与点云抽稀上限档位（轻量 / 标准 / 激进） |
 | 图片 | `smoothImage` | 图像平滑开关；关闭后显示像素级 nearest-neighbor（适合医学影像 / 像素艺术） |
 | 图片 | `cssImageFilter` | 任意 CSS 滤镜字符串（如 `brightness(1.2) contrast(1.1)`）；失焦时保存；留空恢复原图 |
@@ -51,6 +53,7 @@ last_reviewed: 2026-06-11
 | 图片 | `autoFitOnResize` | 展开 / 收起边栏或画布容器尺寸变化后，自动让图片重新适应画布 |
 | 视频 | `defaultPlaybackRate` / `largeFrameStep` | 视频任务默认播放速率和大步进帧数 |
 | 点云 | `pointSize` / `pointMaskSelectMode` | 点云点径和点云分割工具的默认点选模式 |
+| 点云 | `neighborPointOverlay` / `neighborPointOverlayK` / `neighborPointCull` | 邻帧点云叠加开关、帧数与动态目标处理方式 |
 | 点云 | `persistCameraView` | 记住 3D 主视角的相机位置、目标点、up 向量和 orbit / BEV 模式 |
 | 点云 | `colorizeWithCamera` / `colorizeContrast` / `colorizeBrightness` / `colorizeGamma` | 相机 RGB 上色开关与色彩调整 |
 | 点云 | `showDepthHint` | 相机图深度热力与 hover 深度读数 |
@@ -75,6 +78,8 @@ key 的权限在路由层经 `require_scopes` 校验，缺少所需 scope 的请
 
 ## 我的反馈
 
+![我的反馈](../images/settings/my-feedback.png)
+
 罗列当前用户通过右下角浮动按钮提交过的 BUG 工单，按时间倒序。每条显示 `display_id` + 标题 + 严重度 + 状态。
 
 点击展开查看：
@@ -87,6 +92,8 @@ key 的权限在路由层经 `require_scopes` 校验，缺少所需 scope 的请
 
 ## 通知偏好
 
+![通知偏好](../images/settings/notification-prefs.png)
+
 逐 type 切换 **站内通知（in-app）** 开关。关闭后，新事件不进入站内通知中心；已存档通知不受影响。邮件 digest 当前尚未开放配置。所有已知 type 见 [通知中心](./notifications)。
 
 ::: tip 静音 = 全链路屏蔽
@@ -95,7 +102,7 @@ key 的权限在路由层经 `require_scopes` 校验，缺少所需 scope 的请
 
 ## 系统设置（super_admin 专属）
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/settings/system-settings.png — super_admin 系统设置（开放注册 + 邀请有效期 + SMTP） -->
+![系统 SMTP 设置](../images/settings/system-smtp.png)
 
 只对 super_admin 显示，对应 `app/services/system_settings_service.py`（`EDITABLE_KEYS` 白名单）。UI 可配条目：
 

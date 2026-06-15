@@ -38,6 +38,8 @@ last_reviewed: 2026-06-10
 
 ## 列表与筛选
 
+![用户列表](../images/superadmin/users/list.png)
+
 主区域是用户卡片列表：
 
 - 顶部 4 张统计卡：**团队成员**（活跃）/ **角色组** / **数据组** / **本周活跃**
@@ -46,6 +48,8 @@ last_reviewed: 2026-06-10
 - 卡片右上角角色徽标用不同颜色区分（super_admin 红色、project_admin 蓝色 …）
 
 ## 邀请新用户
+
+![邀请用户对话框](../images/superadmin/users/invite-modal.png)
 
 点击右上角 **邀请成员** 按钮打开 `InviteUserModal`：
 

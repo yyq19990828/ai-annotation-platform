@@ -493,119 +493,121 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
       }
       width={620}
     >
-      {step !== 7 && <Stepper current={stepperCurrent} />}
-      {/* v0.10.14 · E2 · 模板模式: 顶部横幅 + 加载态. */}
-      {templateId && !sourceProjectId && step !== 7 && (
-        <div className={styles.copyBanner}>
-          <Icon name="book" size={12} />
-          {prefilling
-            ? "正在从模板加载配置…"
-            : "已用模板字段预填表单, 提交后将复制到新项目 (模板的 annotation_guide 也会一并应用; guide_assets 不携带)"}
-        </div>
-      )}
-      {/* v0.10.11 · 复制模式: 顶部横幅 + 加载态. */}
-      {sourceProjectId && step !== 7 && (
-        <div className={styles.copyBanner}>
-          <Icon name="copy" size={12} />
-          {prefilling
-            ? "正在从源项目加载配置…"
-            : "已用源项目配置预填表单, 提交后将复制到新项目 (不复制数据集 / 任务 / 成员)"}
-          {!prefilling && (
-            <label className={styles.copyGuideToggle}>
-              <input
-                type="checkbox"
-                checked={form.copyAnnotationGuide}
-                onChange={(e) =>
-                  setForm((s) => ({ ...s, copyAnnotationGuide: e.target.checked }))
-                }
-              />
-              同时复制标注指引（图片资源与源项目共享存储）
-            </label>
-          )}
-        </div>
-      )}
+      <div data-testid="project-wizard">
+        {step !== 7 && <Stepper current={stepperCurrent} />}
+        {/* v0.10.14 · E2 · 模板模式: 顶部横幅 + 加载态. */}
+        {templateId && !sourceProjectId && step !== 7 && (
+          <div className={styles.copyBanner}>
+            <Icon name="book" size={12} />
+            {prefilling
+              ? "正在从模板加载配置…"
+              : "已用模板字段预填表单, 提交后将复制到新项目 (模板的 annotation_guide 也会一并应用; guide_assets 不携带)"}
+          </div>
+        )}
+        {/* v0.10.11 · 复制模式: 顶部横幅 + 加载态. */}
+        {sourceProjectId && step !== 7 && (
+          <div className={styles.copyBanner}>
+            <Icon name="copy" size={12} />
+            {prefilling
+              ? "正在从源项目加载配置…"
+              : "已用源项目配置预填表单, 提交后将复制到新项目 (不复制数据集 / 任务 / 成员)"}
+            {!prefilling && (
+              <label className={styles.copyGuideToggle}>
+                <input
+                  type="checkbox"
+                  checked={form.copyAnnotationGuide}
+                  onChange={(e) =>
+                    setForm((s) => ({ ...s, copyAnnotationGuide: e.target.checked }))
+                  }
+                />
+                同时复制标注指引（图片资源与源项目共享存储）
+              </label>
+            )}
+          </div>
+        )}
 
-      {step === 1 && (
-        <Step1DataTypeAndTools
-          form={form}
-          setForm={setForm}
-          nameValid={nameValid || trimmedName.length === 0}
-          dueValid={dueValid}
-        />
-      )}
+        {step === 1 && (
+          <Step1DataTypeAndTools
+            form={form}
+            setForm={setForm}
+            nameValid={nameValid || trimmedName.length === 0}
+            dueValid={dueValid}
+          />
+        )}
 
-      {step === 2 && <Step2ClassesPerUnit form={form} setForm={setForm} />}
+        {step === 2 && <Step2ClassesPerUnit form={form} setForm={setForm} />}
 
-      {step === 3 && (
-        <Step3AttributesPerUnit form={form} setForm={setForm} error={step3AttrError} />
-      )}
+        {step === 3 && (
+          <Step3AttributesPerUnit form={form} setForm={setForm} error={step3AttrError} />
+        )}
 
-      {step === 4 && (
-        <Step4Ai form={form} setForm={setForm} />
-      )}
+        {step === 4 && (
+          <Step4Ai form={form} setForm={setForm} />
+        )}
 
-      {step === 5 && created && (
-        <Step5Datasets
-          project={created}
-          form={form}
-          setForm={setForm}
-          onNext={(linked) => {
-            void linked;
-            setStep(6);
-          }}
-        />
-      )}
+        {step === 5 && created && (
+          <Step5Datasets
+            project={created}
+            form={form}
+            setForm={setForm}
+            onNext={(linked) => {
+              void linked;
+              setStep(6);
+            }}
+          />
+        )}
 
-      {step === 6 && created && (
-        <Step6Members
-          project={created}
-          form={form}
-          setForm={setForm}
-          onNext={(added) => {
-            finishWizard(form.datasetIds.length, added);
-          }}
-        />
-      )}
+        {step === 6 && created && (
+          <Step6Members
+            project={created}
+            form={form}
+            setForm={setForm}
+            onNext={(added) => {
+              finishWizard(form.datasetIds.length, added);
+            }}
+          />
+        )}
 
-      {step === 7 && created && (
-        <Step7Success
-          project={created}
-          summary={{
-            datasets: form.datasetIds.length,
-            members: form.members.length,
-          }}
-          onOpenProject={() => {
-            onClose();
-            navigate(`/projects/${created.id}/annotate`);
-          }}
-          onOpenSettings={() => {
-            onClose();
-            navigate(`/projects/${created.id}/settings`);
-          }}
-          onDone={onClose}
-        />
-      )}
+        {step === 7 && created && (
+          <Step7Success
+            project={created}
+            summary={{
+              datasets: form.datasetIds.length,
+              members: form.members.length,
+            }}
+            onOpenProject={() => {
+              onClose();
+              navigate(`/projects/${created.id}/annotate`);
+            }}
+            onOpenSettings={() => {
+              onClose();
+              navigate(`/projects/${created.id}/settings`);
+            }}
+            onDone={onClose}
+          />
+        )}
 
-      {(step === 1 || step === 2 || step === 3 || step === 4) && (
-        <Footer
-          step={step}
-          canNext={
-            (step === 1 && step1Valid) ||
-            step === 2 ||
-            (step === 3 && step3Valid) ||
-            step === 4
-          }
-          loading={createProject.isPending}
-          onCancel={onClose}
-          onPrev={() => setStep((s) => (s > 1 ? ((s - 1) as Step) : s))}
-          onNext={() => {
-            if (step === 1) setStep(2);
-            else if (step === 2) setStep(3);
-            else if (step === 3) setStep(4);
-            else submit();
-          }}
-        />
-      )}
+        {(step === 1 || step === 2 || step === 3 || step === 4) && (
+          <Footer
+            step={step}
+            canNext={
+              (step === 1 && step1Valid) ||
+              step === 2 ||
+              (step === 3 && step3Valid) ||
+              step === 4
+            }
+            loading={createProject.isPending}
+            onCancel={onClose}
+            onPrev={() => setStep((s) => (s > 1 ? ((s - 1) as Step) : s))}
+            onNext={() => {
+              if (step === 1) setStep(2);
+              else if (step === 2) setStep(3);
+              else if (step === 3) setStep(4);
+              else submit();
+            }}
+          />
+        )}
+      </div>
     </Modal>
   );
 }

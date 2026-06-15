@@ -185,7 +185,7 @@ export function ProjectSettingsPage() {
           })}
         </nav>
 
-        <div>
+        <div className={styles.content}>
           {section === "general" && <GeneralSection project={project} />}
           {section === "classes" && <ClassesSection project={project} />}
           {section === "members" && <MembersSection project={project} />}

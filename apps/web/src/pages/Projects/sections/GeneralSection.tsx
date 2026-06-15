@@ -150,6 +150,17 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
             {project.type_label} <span className={cn("mono", styles.typeKey)}>{project.type_key}</span>
           </div>
         </div>
+        <div>
+          <label className={styles.label}>Scene 模式</label>
+          <div className={styles.readonlyValue}>
+            {project.scene_mode ? "已开启" : "未开启"}
+            {project.scene_mode && (
+              <span className={styles.readonlyNote}>
+                按 scene 保持连续帧任务与批次边界
+              </span>
+            )}
+          </div>
+        </div>
         <ProgressOverview project={project} />
         {update.isPending && <div className={styles.savingHint} data-testid="saving-hint">保存中…</div>}
       </div>

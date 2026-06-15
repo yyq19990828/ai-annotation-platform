@@ -21,6 +21,15 @@ import { isPointInPolygon, type ScreenPoint } from "./geometry/pointInPolygon";
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
 const DEFAULT_DECIMATE_THRESHOLD = 500_000;
 
+// v0.15.18 · 邻帧点云叠加弱化色,与当前帧的高度色带 / 相机上色强区分。
+// 前/后帧分色(过去冷蓝 / 未来暖橙),让动态目标拖影读起来是"运动方向"而非乱噪。
+const NEIGHBOR_PAST_COLOR = 0x4a90d9; // 过去帧:冷蓝
+const NEIGHBOR_FUTURE_COLOR = 0xd98a4a; // 未来帧:暖橙
+// 时序淡出:帧距越远越淡(distance=1 最实),拖影随距离自然衰减。
+function neighborOpacity(distance: number): number {
+  return Math.max(0.15, 0.5 - (Math.max(1, distance) - 1) * 0.12);
+}
+
 // 选中框高亮色(线框)。未选中用类别色。
 const SELECTED_EDGE_COLOR = 0xffd54a;
 const TRANSFORM_SIZE_MIN = 0.35;
@@ -51,6 +60,8 @@ export interface ReferenceBox {
   size: [number, number, number];
   rotation: [number, number, number];
   color: string;
+  /** v0.15.17 · scope=all 下非选中 group 的框弱化显示(更低透明度)。 */
+  dim?: boolean;
 }
 
 /** v0.13.3 · TransformControls 拖拽结束时回传的 PSR(center/size/rotation)。 */
@@ -101,6 +112,11 @@ export class PointCloudScene {
   // pickBox 只遍历 boxGroups), 仅作时序连续性参考。切 selectedGroupId / overlay K 时整层重建。
   private referenceLayer = new THREE.Group();
   private referenceBoxes: THREE.LineSegments[] = [];
+
+  // v0.15.18 · 邻帧点云叠加图层:各邻帧点云经 ego 补偿(对象矩阵)对齐到当前帧 ego 系,
+  // 弱化单色 + 低透明,与当前帧点区分。切帧 / 关开关时整层重建并 dispose。
+  private neighborLayer = new THREE.Group();
+  private neighborPoints: THREE.Points[] = [];
 
   // v0.13.3 · 鲁棒取景中心/半径(mean ± 2.5σ,见 setRobustFrame)。
   private readonly viewCenter = new THREE.Vector3();
@@ -162,6 +178,7 @@ export class PointCloudScene {
 
     this.scene.add(this.boxLayer);
     this.scene.add(this.referenceLayer);
+    this.scene.add(this.neighborLayer);
     this.initAxisGizmo();
 
     // 变换 gizmo:在框 local 空间编辑(缩放/旋转沿框自身轴)。
@@ -755,7 +772,8 @@ export class PointCloudScene {
       const mat = new THREE.LineDashedMaterial({
         color: new THREE.Color(b.color).multiplyScalar(0.5),
         transparent: true,
-        opacity: 0.5,
+        // v0.15.17 · scope=all 非选中 group 的框更淡,突出当前对象。
+        opacity: b.dim ? 0.22 : 0.5,
         depthTest: false,
         dashSize: 0.3,
         gapSize: 0.15,
@@ -770,6 +788,47 @@ export class PointCloudScene {
       seg.scale.set(b.size[0], b.size[1], b.size[2]);
       this.referenceLayer.add(seg);
       this.referenceBoxes.push(seg);
+    }
+  }
+
+  /**
+   * v0.15.18 · 邻帧点云叠加。每个 frame 的 positions 是该邻帧 ISO ego 系点;matrix 是
+   * inv(T_cur)@T_nbr(frameRelMatrix),作为对象矩阵直接把整片点云对齐到当前帧 ego 系
+   * (刚体变换,GPU 端做,无逐点 CPU 开销)。静止背景重合加密,动态目标留拖影。
+   * v0.15.18 · 视觉缓解动态拖影:前/后帧分色(过去冷蓝 / 未来暖橙)+ 按帧距时序淡出,
+   * 拖影读起来是运动方向而非乱噪。整层重建,旧 geometry/material 全部 dispose。
+   */
+  setNeighborPoints(
+    frames: {
+      positions: Float32Array;
+      matrix: THREE.Matrix4;
+      dir: "past" | "future";
+      distance: number;
+    }[],
+  ) {
+    for (const p of this.neighborPoints) {
+      this.neighborLayer.remove(p);
+      p.geometry.dispose();
+      (p.material as THREE.Material).dispose();
+    }
+    this.neighborPoints = [];
+    for (const f of frames) {
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute("position", new THREE.BufferAttribute(f.positions, 3));
+      const mat = new THREE.PointsMaterial({
+        size: this.pointSize * 0.8,
+        color: f.dir === "future" ? NEIGHBOR_FUTURE_COLOR : NEIGHBOR_PAST_COLOR,
+        transparent: true,
+        opacity: neighborOpacity(f.distance),
+        sizeAttenuation: true,
+        depthWrite: false,
+      });
+      const pts = new THREE.Points(geom, mat);
+      pts.matrixAutoUpdate = false;
+      pts.matrix.copy(f.matrix);
+      pts.renderOrder = 0; // 在当前帧点(默认)与框之下
+      this.neighborLayer.add(pts);
+      this.neighborPoints.push(pts);
     }
   }
 
@@ -949,6 +1008,13 @@ export class PointCloudScene {
       (seg.material as THREE.Material).dispose();
     }
     this.referenceBoxes = [];
+    // v0.15.18 · 邻帧点云图层:各自持有 geometry + material,全部 dispose。
+    for (const p of this.neighborPoints) {
+      this.neighborLayer.remove(p);
+      p.geometry.dispose();
+      (p.material as THREE.Material).dispose();
+    }
+    this.neighborPoints = [];
     this.unitEdges.dispose();
     this.unitBox.dispose();
     this.transform.detach();

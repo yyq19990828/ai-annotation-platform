@@ -13,6 +13,31 @@ export type MockState = "happy" | "empty" | "error" | "loading" | "rate-limited"
 
 const API_PATTERN = "**/api/v1/**";
 
+const EMPTY_PROJECT_STATS = {
+  total_data: 0,
+  completed: 0,
+  ai_rate: 0,
+  pending_review: 0,
+  total_annotations: 0,
+  ai_derived_annotations: 0,
+  total_data_series: Array(14).fill(0),
+  completed_series: Array(14).fill(0),
+  ai_rate_series: Array(14).fill(0),
+  pending_review_series: Array(14).fill(0),
+};
+
+function apiPath(url: string): string {
+  return new URL(url).pathname;
+}
+
+function isProjectsListRequest(method: string, path: string): boolean {
+  return method === "GET" && path === "/api/v1/projects";
+}
+
+function isProjectStatsRequest(method: string, path: string): boolean {
+  return method === "GET" && path === "/api/v1/projects/stats";
+}
+
 /** 激活网络 mock；返回清除函数。 */
 export async function setupMockState(
   page: Page,
@@ -23,13 +48,20 @@ export async function setupMockState(
   switch (state) {
     case "empty": {
       await page.route(API_PATTERN, (route) => {
-        const url = route.request().url();
-        // 只对 GET 列表端点返回空
-        if (route.request().method() === "GET" && /\/(tasks|projects|batches|annotations)/.test(url)) {
+        const method = route.request().method();
+        const path = apiPath(route.request().url());
+        if (isProjectsListRequest(method, path)) {
           return route.fulfill({
             status: 200,
             contentType: "application/json",
-            body: JSON.stringify({ items: [], total: 0, page: 1, size: 20 }),
+            body: JSON.stringify([]),
+          });
+        }
+        if (isProjectStatsRequest(method, path)) {
+          return route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(EMPTY_PROJECT_STATS),
           });
         }
         return route.continue();
@@ -39,11 +71,23 @@ export async function setupMockState(
 
     case "error": {
       await page.route(API_PATTERN, (route) => {
-        return route.fulfill({
-          status: 500,
-          contentType: "application/json",
-          body: JSON.stringify({ detail: "Internal Server Error (mock)" }),
-        });
+        const method = route.request().method();
+        const path = apiPath(route.request().url());
+        if (isProjectsListRequest(method, path)) {
+          return route.fulfill({
+            status: 500,
+            contentType: "application/json",
+            body: JSON.stringify({ detail: "Internal Server Error (mock)" }),
+          });
+        }
+        if (isProjectStatsRequest(method, path)) {
+          return route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(EMPTY_PROJECT_STATS),
+          });
+        }
+        return route.continue();
       });
       break;
     }

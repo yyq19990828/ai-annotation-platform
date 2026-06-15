@@ -26,7 +26,7 @@ last_reviewed: 2026-06-10
 
 ## Step 1：创建项目
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workflows/project-wizard-type-select.png — 向导类型选择（7 种项目类型卡） [auto] -->
+![项目类型选择](../images/workflows/project-wizard-type-select.png)
 
 1. 左侧菜单 → **项目** → **新建项目**
 2. 填写基本信息（向导 6 步）：

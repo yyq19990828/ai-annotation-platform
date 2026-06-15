@@ -4,14 +4,17 @@
  */
 import DefaultTheme from "vitepress/theme";
 import AutoImage from "./components/AutoImage.vue";
+import CyberHome from "./components/CyberHome.vue";
 import { setupMermaidZoom } from "./mermaid-zoom";
 import "./mermaid-zoom.css";
+import "./cyber-home.css";
 import type { Theme } from "vitepress";
 
 export default {
   extends: DefaultTheme,
   enhanceApp({ app }) {
     app.component("AutoImage", AutoImage);
+    app.component("CyberHome", CyberHome);
     setupMermaidZoom();
   },
 } satisfies Theme;

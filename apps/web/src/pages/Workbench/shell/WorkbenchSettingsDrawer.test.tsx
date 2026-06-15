@@ -76,6 +76,21 @@ describe("WorkbenchSettingsDrawer", () => {
     expect(screen.queryByText(/图像平滑/)).toBeNull();
   });
 
+  it("父开关关闭时二级设置禁用", () => {
+    renderDrawer({ stageKind: "3d" });
+    const frameCount = screen.getByTestId("setting-field-common.crossFrameOverlayK");
+    expect(frameCount).toHaveAttribute("aria-disabled", "true");
+    expect(within(frameCount).getByRole("combobox")).toBeDisabled();
+
+    const overlaySwitch = within(
+      screen.getByTestId("setting-field-common.crossFrameOverlayEnabled"),
+    ).getByRole("switch");
+    fireEvent.click(overlaySwitch);
+    expect(mockSetFields).toHaveBeenCalledWith({
+      common: { crossFrameOverlayEnabled: true },
+    });
+  });
+
   it("改动控件 → setFields 收到子树级 patch", () => {
     renderDrawer();
     const label = screen.getByTestId("setting-field-image.smoothImage");

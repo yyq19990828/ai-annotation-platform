@@ -10,7 +10,7 @@ last_reviewed: 2026-06-10
 
 右上角铃铛是个人通知中心。通知会持久保存，浏览器离线或 WebSocket 断开后，重新打开面板仍能看到未读消息。面板按时间分组，并支持按类型筛选。
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/notifications/panel-overview.png — 通知面板展开态（筛选 tab + 分组 + 加载更多） -->
+![通知中心面板](../images/notifications/panel-overview.png)
 
 ## 通知类型完整列表
 
