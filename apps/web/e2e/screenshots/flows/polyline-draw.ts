@@ -5,25 +5,27 @@
  *
  * P-COCO8 已绑定 polyline 工具单位（seed_coco8.py）。选「折线」工具 → 在画布逐点单击落顶点，
  * 每段带预览线；Enter 结束（不闭合）。Konva canvas，用 page.mouse 坐标逐点点击。
+ *
+ * 返回 { drawStartMs, drawEndMs }：供 finalize 裁掉开头(隐藏预测/选工具)与结尾(删除清理)。
  */
 import type { Page } from "@playwright/test";
 import type { SeedData } from "../../fixtures/seed";
-import { hidePredictions } from "./_canvas";
+import { hidePredictions, deleteDrawn } from "./_canvas";
+import type { DrawWindow } from "./rotated-bbox";
 
-export async function runPolylineDraw(page: Page, data: SeedData): Promise<void> {
+export async function runPolylineDraw(page: Page, data: SeedData): Promise<DrawWindow | null> {
   const task = data.task_ids[0] ? `?task=${data.task_ids[0]}` : "";
   await page.goto(`/projects/${data.project_id}/annotate${task}`);
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(1400);
 
-  // 关掉预测来源可见性，画布干净后再逐点落折线（同 rotated-bbox）
+  // 准备（不进 GIF）：隐藏预测 → 选折线工具
   await hidePredictions(page);
 
-  // 选「折线」工具
   const btn = page.getByTestId("tool-btn-polyline");
   if (!(await btn.count())) {
     console.warn("[polyline-draw] 无 tool-btn-polyline（项目未绑定 polyline?），跳过");
-    return;
+    return null;
   }
   await btn.click();
   await page.waitForTimeout(900);
@@ -32,10 +34,12 @@ export async function runPolylineDraw(page: Page, data: SeedData): Promise<void>
   const box = await stage.boundingBox();
   if (!box) {
     console.warn("[polyline-draw] 无 workbench-stage 边界，跳过");
-    return;
+    return null;
   }
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
+
+  const drawStartMs = Date.now();
 
   // ── 逐点落顶点（折线状），每点之间停顿让录屏看到预览线 ──
   const pts: Array<[number, number]> = [
@@ -47,14 +51,21 @@ export async function runPolylineDraw(page: Page, data: SeedData): Promise<void>
   ];
   for (const [x, y] of pts) {
     await page.mouse.move(x, y);
-    await page.waitForTimeout(350);
+    await page.waitForTimeout(320);
     await page.mouse.click(x, y);
-    await page.waitForTimeout(550);
+    await page.waitForTimeout(520);
   }
   // 悬停展示最后一段预览线
   await page.mouse.move(cx + 240, cy - 30);
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(800);
   // Enter 结束折线（不闭合）
   await page.keyboard.press("Enter");
-  await page.waitForTimeout(1400);
+  await page.waitForTimeout(1100);
+
+  const drawEndMs = Date.now();
+
+  // 清理（不进 GIF）：删掉刚画的折线
+  await deleteDrawn(page);
+
+  return { drawStartMs, drawEndMs };
 }

@@ -24,6 +24,10 @@ export interface RecordOptions {
 export interface ConvertOptions {
   fps?: number;
   maxWidth?: number;
+  /** 裁剪起点（秒）：跳过录屏开头的准备动作（加载 / 隐藏预测 / 选工具）。 */
+  startSec?: number;
+  /** 裁剪时长（秒）：只保留这段（如绘制过程），裁掉结尾的清理动作。 */
+  durationSec?: number;
 }
 
 /** 检测 ffmpeg 是否可用；返回路径或 null。 */
@@ -75,11 +79,16 @@ export async function convertToGif(
   const maxWidth = opts.maxWidth ?? 1280;
   const palettePath = outputPath.replace(/\.gif$/, ".palette.png");
 
+  // 裁剪参数（-ss 起点 / -t 时长，放在 -i 前做快速 seek，两遍一致）
+  const trim: string[] = [];
+  if (opts.startSec && opts.startSec > 0) trim.push("-ss", String(opts.startSec));
+  if (opts.durationSec && opts.durationSec > 0) trim.push("-t", String(opts.durationSec));
+
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 
   // 第一遍：生成调色板
   const pass1 = spawnSync(ffmpeg, [
-    "-y", "-i", inputPath,
+    "-y", ...trim, "-i", inputPath,
     "-vf", `fps=${fps},scale=${maxWidth}:-1:flags=lanczos,palettegen`,
     palettePath,
   ], { encoding: "utf8" });
@@ -90,7 +99,7 @@ export async function convertToGif(
 
   // 第二遍：渲染 GIF
   const pass2 = spawnSync(ffmpeg, [
-    "-y", "-i", inputPath, "-i", palettePath,
+    "-y", ...trim, "-i", inputPath, "-i", palettePath,
     "-lavfi", `fps=${fps},scale=${maxWidth}:-1:flags=lanczos[x];[x][1:v]paletteuse`,
     outputPath,
   ], { encoding: "utf8" });
