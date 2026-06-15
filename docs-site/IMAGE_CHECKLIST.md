@@ -157,9 +157,9 @@
 - [ ] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比 [manual]
 - [ ] `images/workbench/pointcloud-depth-heatmap.png` — 深度热力图 + figcaption 深度读数 [manual]
 - [ ] `images/polygon/vertex-insert-alt.png` — 按住 Alt 悬停边上光标变「+」的瞬间
-- [ ] `images/polyline/draw-in-progress.png` — 折线绘制中途（已落 3 顶点 + 预览线段）
+- [x] `images/polyline/draw-in-progress.gif` — 折线逐点绘制全过程（落点 + 预览线段，Enter 收尾）`[auto-gif]`（flows/polyline-draw，P-COCO8）
 - [ ] `images/polyline/vertex-edit.png` — 折线选中态 Alt 插入/Shift 删除提示
-- [ ] `images/workbench/rotated-bbox-draw.png` — 拖框生成旋转框，标注红框：旋转手柄 + 四角缩放手柄
+- [x] `images/workbench/rotated-bbox.gif` — 拖框生成旋转框（angle=0）全过程 `[auto-gif]`（flows/rotated-bbox，P-COCO8；旋转手柄演示待补，盲拖坐标易空拖出第二框）
 - [ ] `images/workbench/rotated-bbox-rotate.png` — 旋转约 30° 后状态 + 角度值
 - [x] `images/sam/ai-tool-drawer.png` — AIToolDrawer 全图（后端下拉/极性切换/状态灯） [auto]
 - [x] `images/sam/exemplar-output-mode.png` — 输出形态三选一 TabRow [auto]
