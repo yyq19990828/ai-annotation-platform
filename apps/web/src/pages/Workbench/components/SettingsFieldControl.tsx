@@ -32,9 +32,14 @@ export function SettingsFieldControl({
   onCommit,
 }: SettingsFieldControlProps) {
   const { control } = field;
+  // 滑块拖动期间用实时值显示数字(commit 仍只在松手发生);value 提交后经 effect 回同步。
+  const [sliderLive, setSliderLive] = useState(Number(value));
+  useEffect(() => {
+    setSliderLive(Number(value));
+  }, [value]);
   const labelText =
     control.type === "slider"
-      ? `${field.label}：${control.format ? control.format(Number(value)) : String(value)}`
+      ? `${field.label}：${control.format ? control.format(sliderLive) : String(sliderLive)}`
       : field.label;
   const title = locked ? LOCKED_TITLE : field.description;
 
@@ -81,6 +86,7 @@ export function SettingsFieldControl({
             max={control.max}
             step={control.step}
             disabled={disabled || locked}
+            onLiveChange={setSliderLive}
             onCommit={onCommit}
           />
           {control.resetTo !== undefined && (
@@ -193,6 +199,7 @@ function SliderControl({
   max,
   step,
   disabled,
+  onLiveChange,
   onCommit,
 }: {
   value: number;
@@ -200,6 +207,8 @@ function SliderControl({
   max: number;
   step: number;
   disabled: boolean;
+  /** 拖动过程中每帧上报实时值(供父组件实时显示数字);不触发 commit。 */
+  onLiveChange: (value: number) => void;
   onCommit: (value: number) => void;
 }) {
   const [local, setLocal] = useState(value);
@@ -231,6 +240,7 @@ function SliderControl({
         const next = Number(e.target.value);
         localRef.current = next;
         setLocal(next);
+        onLiveChange(next);
       }}
       onPointerUp={commit}
       onBlur={commit}

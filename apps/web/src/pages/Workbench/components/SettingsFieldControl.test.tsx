@@ -85,6 +85,9 @@ describe("SettingsFieldControl", () => {
     expect(screen.getByLabelText("顶点拖拽手柄半径")).toBeTruthy();
     fireEvent.change(screen.getByRole("slider"), { target: { value: "12" } });
     expect(onCommit).not.toHaveBeenCalled();
+    // 拖动中(未松手)数字实时跟随,不冻结在旧值 6px。
+    expect(screen.getByText(/12px/)).toBeTruthy();
+    expect(screen.queryByText(/6px/)).toBeNull();
     fireEvent.pointerUp(screen.getByRole("slider"));
     expect(onCommit).toHaveBeenCalledWith(12);
   });
