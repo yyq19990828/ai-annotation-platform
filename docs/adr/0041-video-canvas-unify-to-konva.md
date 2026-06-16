@@ -1,6 +1,6 @@
 # 0041 — 视频渲染栈统一到 Konva（帧合成 / 坐标模型 / 测试基建）
 
-- **Status:** Proposed（v0.16.0 地基已落地；决策 A 的 A1/A2 终选待 spike 真实环境实测确认）
+- **Status:** Accepted（决策 A = A1，v0.16.0 spike 实测确认；坐标/测试决策 B/C 随地基落地）
 - **Date:** 2026-06-16
 - **Deciders:** core team
 - **Supersedes:** —
@@ -39,7 +39,13 @@
 
 **量化闸门(契约)**:在**分层前提下**,标注主力场景 **1080p@30 视频层单帧 batchDraw < ~8ms 且无明显掉帧 → A1 通过**;4K@60 仅作上限参考,可结合「暂停态走 bitmap 缓存、播放态才重绘」的实际使用模式放宽。**仅当分层后 A1 仍不达标才降级 A2**,届时把「双 transform 同步契约」写成本 ADR 里有测试守护的一等不变量(非临时补丁)。
 
-**实测状态**:v0.16.0 已交付隔离性能 spike(`apps/web/src/pages/Workbench/stage/_spikes/videoKonvaFrameSpike.tsx`,合成 canvas 帧源 + 分层/单层对照 + 单帧 batchDraw 耗时采样)与方法学文档([`docs/plans/_spike-results/2026-06-16-video-konva-frame-perf.md`](../plans/_spike-results/2026-06-16-video-konva-frame-perf.md))。**数据矩阵待在真实浏览器环境采集回填**,据此把本节 Status 由 Proposed 推进到 Accepted(A1)或触发 A2 降级。
+**实测结论(2026-06-16,Chromium · 已采集)**:**A1 通过,无需降级 A2。** 用隔离 spike(`apps/web/src/pages/Workbench/stage/_spikes/videoKonvaFrameSpike.tsx`,合成 canvas 帧源 + 分层/单层对照,同步 `layer.draw()` 计时)跑全 24 格矩阵({720p,1080p,4K}×{30,60}×{0,20框}×{分层,单层}):
+
+- **门槛格 1080p@30 分层**:单帧合成均值 0.13ms / p95 0.20ms / 掉帧 0%,**比 8ms 闸门快约 40×**。
+- **上限 4K@60+20框**:分层 p95 0.30ms / 单层 p95 0.40ms,仍远低于 8ms。
+- **全矩阵 p95 ≤ 0.40ms**;成本由**目标舞台像素**绑定、与源分辨率几乎无关(4K 解码归 `<video>`,A1/A2 共担、已比掉)。即 A1 相对 A2 的**增量**合成成本是亚毫秒级,「单栈」收益不被 perf 抵消。
+
+数据表、方法学与测量教训(必须用同步 `draw()` 而非异步 `batchDraw()` 度量)见 [`docs/plans/_spike-results/2026-06-16-video-konva-frame-perf.md`](../plans/_spike-results/2026-06-16-video-konva-frame-perf.md)。
 
 ### 决策 B — 坐标模型统一到「像素空间 + Konva transform」
 
@@ -94,4 +100,4 @@ VideoStage (Konva.Stage)
   - perf spike:`apps/web/src/pages/Workbench/stage/_spikes/videoKonvaFrameSpike.tsx`(v0.16.0,验收后可删)
   - 待迁视频栈:`VideoMediaLayer.tsx` / `VideoObjectsLayer.tsx` / `VideoTrackShape.tsx` / `VideoTextLayer.tsx` / `VideoInteractionLayer.tsx` / `VideoIssueLayer.tsx` / `videoStageCoordinates.ts`
 - 相关 ADR:[ADR-0004](0004-canvas-stack-konva.md)(图片 Konva,本 ADR 补视频帧合成 / Layer 结构)、[ADR-0017](0017-workbench-shell-mode-and-stage-adapters.md)(Shell + Stage Adapter 接缝不变)、[ADR-0031](0031-dual-canvas-konva-three.md)(视频从 SVG 归入 Konva 2D 栈)、[ADR-0040](0040-shared-annotation-visual-spec-not-stack-merge.md)(共享视觉规格,本 epic 是其双路径塌缩的终点)。
-- 后续触发条件:spike 数据回填后定 A1/A2,把本 ADR Status 推进到 Accepted;v0.16.5 删旧栈后回 ADR-0004 / 0031 扩写定稿。
+- 后续触发条件:决策 A 已实测定为 A1(2026-06-16);v0.16.5 删旧栈后回 ADR-0004 / 0031 扩写定稿。若后续在低端机 / 高 DPR / 更大舞台实测发现 A1 不达标,再依决策 A 的契约触发 A2 降级。

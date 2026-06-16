@@ -39,7 +39,7 @@
 
 - **公共 viewport 原语** `stage/shared/viewport/`:把散落在 ImageStage 与 useViewportTransform 各自内联的 fit-to-canvas(`fit.ts`)、围绕光标定点缩放与缩放上下限(`zoom.ts`,`SCALE_RANGE` 单一来源)、scale 抵消(`scaleCancel.ts`,等价 `px/scale`)收口成纯函数 + 单测,供图片现在、视频后续复用,消除「同段数学两份维护、悄悄漂移」的长期税。
 - **Konva 测试基建**:`react-konva` mock(`src/test/konvaMock.tsx`,把 Stage/Layer/Rect/… 渲染成带 `data-konva`/`data-testid` 的 DOM stand-in,事件 props 挂 DOM,让组件交互测试沿用 RTL `fireEvent`+`getByTestId` 风格)+ 图片侧样板组件测试(`ImageStageShapes.konva.test.tsx`)+ Playwright 图片画框冒烟与渲染基线(`e2e/tests/workbench-image-konva-smoke.spec.ts`)。三层测试分工(纯函数 / konva mock / Playwright)见 ADR-0041 决策 C。
-- **帧合成性能 spike**:隔离 demo(`stage/_spikes/videoKonvaFrameSpike.tsx`,合成 canvas 帧源 + 分层/单层对照 + 单帧 batchDraw 耗时采样)+ 方法学文档(`docs/plans/_spike-results/2026-06-16-video-konva-frame-perf.md`),量化「视频帧进 Konva 逐帧重绘」开销以闸门决策 A(A1 帧合成 vs A2 透明盖层),数据待真实环境采集回填。
+- **帧合成性能 spike**:隔离 demo(`stage/_spikes/videoKonvaFrameSpike.tsx`,合成 canvas 帧源 + 分层/单层对照 + 全矩阵批处理 + 同步 `draw()` 单帧合成耗时采样)+ 数据表/方法学文档(`docs/plans/_spike-results/2026-06-16-video-konva-frame-perf.md`)。实测(Chromium,24 格矩阵)**决策 A = A1 成立**:单帧合成全程 p95 ≤ 0.40ms(门槛格 1080p@30 分层 0.20ms),比 8ms 闸门快约 20–40×,成本由目标舞台像素绑定、与源分辨率几乎无关。
 
 ### Changed
 

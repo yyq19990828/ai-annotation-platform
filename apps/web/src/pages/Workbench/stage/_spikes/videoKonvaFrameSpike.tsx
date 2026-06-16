@@ -35,6 +35,28 @@ const RESOLUTIONS: Record<ResolutionKey, { w: number; h: number }> = {
   "4K": { w: 3840, h: 2160 },
 };
 
+interface MatrixConfig {
+  resolution: ResolutionKey;
+  fpsTarget: number;
+  boxCount: number;
+  layout: Layout;
+}
+
+/** 全矩阵:{720p,1080p,4K} × {30,60} × {0,20框} × {分层,单层} = 24 格。
+ *  「运行全矩阵」按钮自动顺序跑完,每格自动采样后冻结并把结果累积到 window.__spikeMatrix。 */
+const MATRIX_CONFIGS: MatrixConfig[] = (() => {
+  const out: MatrixConfig[] = [];
+  for (const resolution of ["720p", "1080p", "4K"] as ResolutionKey[])
+    for (const fpsTarget of [30, 60])
+      for (const boxCount of [0, 20])
+        for (const layout of ["layered", "single"] as Layout[])
+          out.push({ resolution, fpsTarget, boxCount, layout });
+  return out;
+})();
+
+/** 批处理每格自动采样秒数。 */
+const MATRIX_SECONDS = 5;
+
 /** 舞台显示尺寸(视频帧无论分辨率多大都缩放进这个视口绘制,贴合真实工作台)。 */
 const STAGE_W = 960;
 const STAGE_H = 540;
@@ -64,6 +86,8 @@ interface SpikeStats {
 
 declare global {
   var __spikeStats: SpikeStats | undefined;
+  var __spikeMatrix: SpikeStats[] | undefined;
+  var __spikeMatrixDone: boolean | undefined;
 }
 
 function percentile(sorted: number[], p: number): number {
@@ -140,6 +164,11 @@ export default function VideoKonvaFrameSpike() {
 
   const [stats, setStats] = useState<SpikeStats | null>(null);
 
+  /** 批处理:正在跑的矩阵格子下标,null = 未跑矩阵。ref 供 stop 闭包读取避免 stale。 */
+  const [matrixIdx, setMatrixIdx] = useState<number | null>(null);
+  const matrixIdxRef = useRef<number | null>(null);
+  matrixIdxRef.current = matrixIdx;
+
   const { w, h } = RESOLUTIONS[resolution];
   const { canvas, draw } = useSyntheticFrameSource(w, h);
   const boxes = useMemo(() => makeBoxes(boxCount), [boxCount]);
@@ -189,12 +218,39 @@ export default function VideoKonvaFrameSpike() {
       const s = computeStats(frozen);
       window.__spikeStats = s;
       setStats(s);
+      // 批处理:本格自动采样结束(frozen)→ 记录结果并推进到下一格;最后一格收尾置 done。
+      const mi = matrixIdxRef.current;
+      if (frozen && mi !== null) {
+        window.__spikeMatrix = [...(window.__spikeMatrix ?? []), s];
+        const next = mi + 1;
+        if (next < MATRIX_CONFIGS.length) {
+          setMatrixIdx(next);
+        } else {
+          setMatrixIdx(null);
+          window.__spikeMatrixDone = true;
+        }
+      }
     },
     [computeStats]
   );
 
-  // 动画循环。每帧:重画合成帧源 → 触发 Konva.Image 重读 source → batchDraw,
-  // 用 performance.now() 夹住 batchDraw 测单帧合成耗时。
+  // 批处理驱动:matrixIdx 变化 → 应用该格配置 + 开 5s 自动采样。配置 setState 先刷新
+  // (canvas 在 render 期按新分辨率同步重建),延一拍再开跑确保新源就绪。
+  useEffect(() => {
+    if (matrixIdx === null) return;
+    const cfg = MATRIX_CONFIGS[matrixIdx];
+    setResolution(cfg.resolution);
+    setFpsTarget(cfg.fpsTarget);
+    setBoxCount(cfg.boxCount);
+    setLayout(cfg.layout);
+    setAutoSeconds(MATRIX_SECONDS);
+    setStats(null);
+    const id = window.setTimeout(() => setRunning(true), 120);
+    return () => window.clearTimeout(id);
+  }, [matrixIdx]);
+
+  // 动画循环。每帧:重画合成帧源 → 触发 Konva.Image 重读 source → 同步 draw(),
+  // 用 performance.now() 夹住 draw() 测单帧整帧合成耗时(见下方 draw() 处说明)。
   useEffect(() => {
     if (!running) return;
     const minInterval = 1000 / fpsTarget;
@@ -224,7 +280,11 @@ export default function VideoKonvaFrameSpike() {
         const t0 = performance.now();
         // Konva.Image 的 image 已指向同一 canvas;重画 canvas 后需让 Konva 重读纹理。
         img.image(canvas);
-        layer.batchDraw();
+        // 用同步 draw() 而非 batchDraw():batchDraw 把实际光栅化合批到下一 rAF 且会
+        // 合并多次调用,同步计时只能量到调度调用(≈0ms),量不到真实整帧合成开销。
+        // draw() 立即执行 Konva.Image 的 drawImage(全帧纹理上传+缩放)+ 标注绘制,
+        // 正是决策 A 关心的「播放时每帧重绘视频层」的单帧成本。
+        layer.draw();
         const dt = performance.now() - t0;
         const buf = samplesRef.current;
         buf.push(dt);
@@ -315,9 +375,26 @@ export default function VideoKonvaFrameSpike() {
           </select>
         </label>
         {!running ? (
-          <button onClick={() => { setStats(null); setRunning(true); }}>开始</button>
+          <button onClick={() => { setStats(null); setRunning(true); }} disabled={matrixIdx !== null}>开始</button>
         ) : (
           <button onClick={() => stop(false)}>停止</button>
+        )}
+        <button
+          onClick={() => {
+            window.__spikeMatrix = [];
+            window.__spikeMatrixDone = false;
+            setMatrixIdx(0);
+          }}
+          disabled={running || matrixIdx !== null}
+        >
+          运行全矩阵({MATRIX_CONFIGS.length})
+        </button>
+        {matrixIdx !== null && (
+          <span style={{ fontWeight: 700 }}>
+            矩阵 {matrixIdx + 1}/{MATRIX_CONFIGS.length}:{MATRIX_CONFIGS[matrixIdx].resolution}@
+            {MATRIX_CONFIGS[matrixIdx].fpsTarget} · {MATRIX_CONFIGS[matrixIdx].boxCount}框 ·{" "}
+            {MATRIX_CONFIGS[matrixIdx].layout === "layered" ? "分层" : "单层"}…
+          </span>
         )}
       </div>
 
