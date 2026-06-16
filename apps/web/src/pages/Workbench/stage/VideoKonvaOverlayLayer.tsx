@@ -2,7 +2,7 @@ import { Layer, Rect, Label, Tag, Text } from "react-konva";
 import { classColor, colorToHex, hexToRgba } from "./colors";
 import { fillAlpha, strokeWidthFor, type AnnotationVisualConfig } from "./annotationVisual";
 import { screenToWorld } from "./shared/viewport/scaleCancel";
-import { BOX_LABEL_OFFSET_PX, BOX_LABEL_PAD_PX } from "./boxVisual";
+import { BOX_LABEL_FONT_FAMILY, BOX_LABEL_OFFSET_PX, BOX_LABEL_PAD_PX } from "./boxVisual";
 import type { VideoPixelSize } from "./videoKonvaCoordinates";
 import type { VideoLabelView } from "./videoFrameViews";
 import type { VideoStageGeom } from "./videoStageTypes";
@@ -21,7 +21,8 @@ interface VideoKonvaOverlayLayerProps {
  *
  * 渲染 pending draft(虚线框)+ 标签(Konva Label/Tag/Text,抄图片 KonvaBox 标签)。
  * 标签置于框顶上方(对齐图片栈统一范式),字号 `labelFontSize/scale` 屏幕恒定;
- * 字体走 CSS var(--font-sans)。标签门控/文本由 videoFrameViews 统一产出。
+ * 字体用字面字体栈 BOX_LABEL_FONT_FAMILY(canvas 无法解析 CSS var)。标签门控/文本
+ * 由 videoFrameViews 统一产出。
  */
 export function VideoKonvaOverlayLayer({
   pendingDraft,
@@ -69,7 +70,7 @@ export function VideoKonvaOverlayLayer({
               fill="white"
               fontSize={labelFontSize}
               padding={BOX_LABEL_PAD_PX / scale}
-              fontFamily="var(--font-sans, sans-serif)"
+              fontFamily={BOX_LABEL_FONT_FAMILY}
             />
           </Label>
         );

@@ -10,6 +10,7 @@ import type { Pt } from "./polygonGeom";
 import { simplifyPolygon } from "./shared/geometry/simplify";
 import {
   BOX_HANDLE_SCREEN_PX,
+  BOX_LABEL_FONT_FAMILY,
   BOX_LABEL_OFFSET_PX,
   BOX_LABEL_PAD_PX,
 } from "./boxVisual";
@@ -153,7 +154,7 @@ export function KonvaBox({
             fill="white"
             fontSize={labelFontSize}
             padding={BOX_LABEL_PAD_PX / scale}
-            fontFamily="var(--font-sans, sans-serif)"
+            fontFamily={BOX_LABEL_FONT_FAMILY}
           />
         </Label>
       )}
@@ -305,7 +306,7 @@ export function KonvaPolygon({
             fill="white"
             fontSize={labelFontSize}
             padding={BOX_LABEL_PAD_PX / scale}
-            fontFamily="var(--font-sans, sans-serif)"
+            fontFamily={BOX_LABEL_FONT_FAMILY}
           />
         </Label>
       )}
@@ -456,7 +457,7 @@ export function KonvaRotatedBox({
             fill="white"
             fontSize={labelFontSize}
             padding={BOX_LABEL_PAD_PX / scale}
-            fontFamily="var(--font-sans, sans-serif)"
+            fontFamily={BOX_LABEL_FONT_FAMILY}
           />
         </Label>
       )}
@@ -608,7 +609,7 @@ export function KonvaPolyline({
             fill="white"
             fontSize={labelFontSize}
             padding={BOX_LABEL_PAD_PX / scale}
-            fontFamily="var(--font-sans, sans-serif)"
+            fontFamily={BOX_LABEL_FONT_FAMILY}
           />
         </Label>
       )}
@@ -815,7 +816,7 @@ export function KonvaKeypoint({
             text={name}
             fill={keypointColorByIndex(i, schema)}
             fontSize={(visual.labelFontSize - 1) / scale}
-            fontFamily="var(--font-sans, sans-serif)"
+            fontFamily={BOX_LABEL_FONT_FAMILY}
             listening={false}
           />
         );
@@ -830,7 +831,7 @@ export function KonvaKeypoint({
             fill="white"
             fontSize={labelFontSize}
             padding={BOX_LABEL_PAD_PX / scale}
-            fontFamily="var(--font-sans, sans-serif)"
+            fontFamily={BOX_LABEL_FONT_FAMILY}
           />
         </Label>
       )}

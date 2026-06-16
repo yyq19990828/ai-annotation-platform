@@ -28,6 +28,7 @@ import {
 } from "./shared/geometry/snap";
 import { BlurhashLayer } from "./BlurhashLayer";
 import { KonvaBox, KonvaPolygon, KonvaRotatedBox, KonvaPolyline, KonvaKeypoint, keypointColorByIndex } from "./ImageStageShapes";
+import { BOX_LABEL_FONT_FAMILY } from "./boxVisual";
 import { resolveAnnotationVisual } from "./annotationVisual";
 import {
   buildImageContextMenuItems,
@@ -1406,7 +1407,7 @@ export function ImageStage({
                         fill="white"
                         fontSize={10.5 / vp.scale}
                         padding={4 / vp.scale}
-                        fontFamily="var(--font-sans, sans-serif)"
+                        fontFamily={BOX_LABEL_FONT_FAMILY}
                       />
                     </Label>
                   </>
@@ -1534,7 +1535,7 @@ export function ImageStage({
                   fill="white"
                   fontSize={10.5 / vp.scale}
                   padding={4 / vp.scale}
-                  fontFamily="var(--font-sans, sans-serif)"
+                  fontFamily={BOX_LABEL_FONT_FAMILY}
                 />
               </Label>
             </>
