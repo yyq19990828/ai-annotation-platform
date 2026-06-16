@@ -31,6 +31,23 @@
 
 <!-- 0.16.x 版本变更按版本段追加到本区；进入 0.17.x 后整体移到 docs/changelogs/0.16.x.md -->
 
+## [0.16.5] - 2026-06-16
+
+画布栈统一 epic 的**功能对等补全**:v0.16.4 切默认后发现 Konva 视频栈缺了一整套环绕画布的「视频 chrome」——时间轴/播放浮层、Minimap、QC 警告、关键帧快跳——以及大量热键驱动的导航命令(关键帧跳转/书签/循环区间/跳转历史/采样网格步进/jog 连播/轨迹状态切换),这些此前只存在于旧 SVG `VideoStage`。本版把这些非画布机制补齐到 Konva 栈,使其与旧栈**真·功能对等**,为后续删旧栈(原计划 v0.16.5,顺延为下一独立 release)扫清前置。旧 SVG 栈与 flag 仍全保留作逃生舱。
+
+### Added
+
+- **视频播放控制器** `useVideoPlaybackController`:从 `VideoStage` 抽出的栈无关 hook,封装播放/逐帧/jog 连播(含反向 rAF)/循环区间/书签/跳转历史(sessionStorage 持久化)/采样网格导航/关键帧跳转/暂停吸附,以及派生的时间轴密度、选中轨迹时间线、QC 质量警告、帧悬停预览。复用既有纯函数(`videoSamplingGrid`/`videoNavigationState`/`videoTrackTimeline`/`videoTrackOutside` 等),不重复造轮子。
+- **Konva 视频栈补齐 chrome**:`VideoKonvaStage` 现渲染 `VideoPlaybackOverlay`(时间轴:章节/书签/循环区间/全局密度/jog 速率)、`Minimap`、`VideoQcWarnings`、关键帧快跳浮层;`useImperativeHandle` 接控制器真实命令(此前 `seekToKeyframe`/`toggleBookmark`/`jumpHistory`/`clearLoopRegion`/`toggleSelectedTrack*`/`propagateSelectedTrack`/`deleteSelectedTrackKeyframe` 均为 no-op,现全部生效)。QC 警告用当前帧 `frameViews.entries`(`VideoEntryView` 新增 `className` 字段)计算,覆盖关键帧间隔/极小框/高重叠三类。
+
+### Changed
+
+- **`VideoStageControls` / `VideoPoint` 类型解耦**:从 `VideoStage.tsx` 抽到 `videoStageControls.ts` / `videoStageTypes.ts`,供两栈共用,为删旧栈断开类型耦合。
+
+### Notes
+
+- **WebCodecs 精确帧解码路径暂未迁到 Konva 栈**(`useVideoChunkDecoder` 等,flag-gated 实验特性,默认关):Konva 栈精确帧走 `useVideoBitmapCache`,与旧栈默认路径一致;WebCodecs 迁移留作后续。
+
 ## [0.16.4] - 2026-06-16
 
 画布栈统一 epic 第五步:**视频工作台默认切到 Konva 渲染栈(可逆,不删旧栈)**。`experiment.videoKonva` 未显式设置时默认开启,视频工作台默认走统一的 Konva 栈;**旧 SVG 栈与开关全部保留作逃生舱**——`?videoKonva=0` 或设置面板关闭即秒级回退,行为与切换前完全一致。删旧栈是下一个独立 release(v0.16.5,待观察期无回退后才做)。前置功能对等(画框/移动/缩放/平移/选中 + 右键菜单)已在 v0.16.3 与本版补齐。架构见 [ADR-0041](docs/adr/0041-video-canvas-unify-to-konva.md)。计划见 `docs/plans/2026-06-16-v0.16.4-cutover-default-on-and-observe.md`。

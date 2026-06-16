@@ -136,7 +136,6 @@ export function useVideoPlaybackController({
   videoSampling = null,
   defaultPlaybackRate = DEFAULT_VIDEO_PLAYBACK_RATE,
   annotations,
-  selectedId,
   selectedTrack,
   trackColorOverrides,
   hiddenTrackIds,
@@ -383,11 +382,6 @@ export function useVideoPlaybackController({
   const showPlaybackOverlay = useCallback(() => {
     if (overlayHideTimerRef.current) clearTimeout(overlayHideTimerRef.current);
     setPlaybackOverlayVisible(true);
-  }, []);
-
-  const schedulePlaybackOverlayHide = useCallback(() => {
-    if (overlayHideTimerRef.current) clearTimeout(overlayHideTimerRef.current);
-    overlayHideTimerRef.current = setTimeout(() => setPlaybackOverlayVisible(false), 2000);
   }, []);
 
   const flashPlaybackAction = useCallback((action: "prev" | "next" | "play") => {

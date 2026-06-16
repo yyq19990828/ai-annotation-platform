@@ -24,7 +24,7 @@ import { useVideoKonvaInteraction } from "./videoKonvaInteraction";
 import { videoIntrinsicSize, clientToVideoNorm } from "./videoKonvaCoordinates";
 import { deriveVideoFrameViews } from "./videoFrameViews";
 import { classColor, getTrackColor } from "./colors";
-import { isVideoBbox, isVideoTrack, normalizeGeom, sortedKeyframes } from "./videoStageGeometry";
+import { isVideoBbox, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
 import { isFrameOutside } from "./videoTrackOutside";
 import { pickTopVideoEntryAt } from "./videoStagePicking";
 import { useVideoTrackActions } from "./useVideoTrackActions";
@@ -233,7 +233,6 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     selectedTrackColor,
     selectedTrackKeyframes,
     globalTimelineDensity,
-    qualityWarnings,
     issueFrames,
     playbackOverlayVisible,
     highlightAction,
@@ -274,6 +273,39 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     }),
     [annotations, frameIndex, hiddenTrackIds, pendingDraft, reviewDisplayMode, selectedId, trackColorOverrides, visual],
   );
+
+  // QC 质量警告(关键帧间隔过大 / 当前帧极小框 / 同类高重叠)——与旧 SVG 栈 qualityWarnings 逐位一致。
+  // 用当前帧 frameViews.entries(带 geom+className),解决控制器内因 frameIndex→entries 循环依赖
+  // 而拿不到当前帧框的问题(此处 entries 已在 controller.frameIndex 之后派生)。
+  const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
+  const qualityWarnings = useMemo(() => {
+    const warnings: string[] = [];
+    const maxGap = Math.max(30, Math.round(timebase.fps * 2));
+    for (const ann of videoTracks) {
+      const keyframes = sortedKeyframes(ann.geometry);
+      for (let i = 1; i < keyframes.length; i++) {
+        const gap = keyframes[i].frame_index - keyframes[i - 1].frame_index;
+        if (gap > maxGap) {
+          warnings.push(`${ann.class_name} ${shortTrackId(ann.geometry.track_id)} 关键帧间隔 ${gap} 帧`);
+          break;
+        }
+      }
+    }
+    const entries = frameViews.entries;
+    for (const entry of entries) {
+      if (entry.geom.w < 0.003 || entry.geom.h < 0.003) warnings.push(`${entry.className} 当前帧存在极小框`);
+    }
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        const a = entries[i];
+        const b = entries[j];
+        if (a.className === b.className && shapeIou(a.geom, b.geom) > 0.9) {
+          warnings.push(`${a.className} 当前帧存在高度重叠框`);
+        }
+      }
+    }
+    return [...new Set(warnings)].slice(0, 3);
+  }, [frameViews.entries, timebase.fps, videoTracks]);
 
   const interaction = useVideoKonvaInteraction({
     containerRef,

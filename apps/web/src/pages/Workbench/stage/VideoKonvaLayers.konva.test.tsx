@@ -26,6 +26,7 @@ function entry(over: Partial<VideoEntryView> = {}): VideoEntryView {
     dashed: false,
     occluded: false,
     labelText: "car",
+    className: "car",
     ...over,
   };
 }
