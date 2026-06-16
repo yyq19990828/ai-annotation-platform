@@ -170,6 +170,8 @@ function MultiselectControl({
             key={opt.value}
             type="button"
             className={`${styles.chip} ${on ? styles.chipOn : ""}`}
+            // chips 嵌在字段 <label> 内,显式 aria-label 兜底可达名,避免名被父 label 文本污染。
+            aria-label={opt.label}
             aria-pressed={on}
             disabled={disabled || atFloor}
             onClick={(e) => {
