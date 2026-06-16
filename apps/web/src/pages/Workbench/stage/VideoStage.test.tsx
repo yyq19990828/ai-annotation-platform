@@ -371,6 +371,37 @@ describe("VideoStage", () => {
     await waitFor(() => expect(range).toHaveValue("10"));
   });
 
+  it("applies the configured large frame step on Shift+Arrow even when sampling is on", async () => {
+    const sampledManifest: TaskVideoManifestResponse = {
+      ...manifest,
+      metadata: {
+        ...manifest.metadata,
+        duration_ms: 2100,
+        frame_count: 21,
+      },
+    };
+    const { getByLabelText } = render(
+      <VideoStage
+        manifest={sampledManifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        videoSampling={{ mode: "step", frame_step: 5 }}
+        largeFrameStep={10}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+    const range = getByLabelText("视频帧时间轴");
+
+    // 回归: largeFrameStep=10 在采样开启时曾被 seekOverlayByFrames 的魔法数字
+    // 劫持成 ±1 微调帧 (默认值正好是 10)，使"大步进帧数"设置看似无效。
+    fireEvent.keyDown(range, { key: "ArrowRight", shiftKey: true });
+    await waitFor(() => expect(range).toHaveValue("10"));
+  });
+
   it("supports J/K/L style jog playback through ref controls", async () => {
     const ref = createRef<VideoStageControls>();
     const { container, getByTestId, queryByTestId } = render(
