@@ -3,6 +3,7 @@
 // 这里加一行 → 消费点读配置。
 import type { WorkbenchPreferences } from "@/api/auth";
 import { WEBCODECS_FLAG_STORAGE_KEY } from "../stage/useVideoChunkDecoder";
+import { VIDEO_KONVA_FLAG_STORAGE_KEY } from "../stage/videoKonvaFlag";
 import type { LockableField, WorkbenchConfigPatch } from "./useWorkbenchConfig";
 
 export type WorkbenchPreferenceSettingCategory = "common" | "image" | "video" | "pointcloud";
@@ -495,6 +496,16 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     control: { type: "toggle" },
     read: () => readLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY),
     write: (value) => writeLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY, value),
+  },
+  {
+    key: "experiment.videoKonva",
+    category: "experiment",
+    storage: "local",
+    label: "视频 Konva 渲染栈",
+    description: "实验性,仅底图/播放/缩放可用,标注尚缺,刷新后生效",
+    control: { type: "toggle" },
+    read: () => readLocalBoolean(VIDEO_KONVA_FLAG_STORAGE_KEY),
+    write: (value) => writeLocalBoolean(VIDEO_KONVA_FLAG_STORAGE_KEY, value),
   },
 ];
 

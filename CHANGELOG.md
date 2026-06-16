@@ -31,7 +31,18 @@
 
 <!-- 0.16.x 版本变更按版本段追加到本区；进入 0.17.x 后整体移到 docs/changelogs/0.16.x.md -->
 
-## [0.16.0] - 2026-06-16
+## [0.16.1] - 2026-06-16
+
+画布栈统一 epic 第二步:**视频底图层迁到 Konva(实验 flag 后,默认关)**。把视频「底图显示 + 视口」从「`<video>` 元素 + CSS transform」迁到 Konva——视频帧进 `Konva.Image`(决策 A1),pan/zoom 走 Konva Stage 原生 transform,坐标改像素空间(决策 B,存储仍归一化、数据零迁移)。**只迁底图与视口,标注/交互尚未迁**(v0.16.2/.3),新栈与旧 SVG 栈经 flag 并行,仅供开发态视觉对照,不作生产默认。架构取舍见 [ADR-0041](docs/adr/0041-video-canvas-unify-to-konva.md)。计划见 `docs/plans/2026-06-16-v0.16.1-video-media-layer-to-konva.md`。
+
+### Added
+
+- **视频 Konva 渲染栈(实验)**:新增 `experiment.videoKonva` 开关(设置面板「实验特性」分组 / URL `?videoKonva=1` / localStorage `video.experimental.konva`,粘性,刷新后生效,默认关)。开启后视频工作台走新栈 `VideoKonvaStage`:`Konva.Image` 以隐藏 `<video>` 为解码源,播放态 `Konva.Animation` 逐帧重绘媒体层、暂停态贴 `useVideoBitmapCache` 精确帧(A1);pan(右键拖)/zoom(ctrl+滚轮 / FloatingDock)/fit(双击)复用 v0.16.0 公共 viewport 原语;播放/逐帧复用与旧栈同一引擎(`useFrameClock` + bitmap 缓存),经转发的 `VideoStageControls` 让工作台热键直接驱动。
+- **视频像素空间坐标模型**(决策 B):`videoKonvaCoordinates.ts` 纯函数(归一化↔像素、client↔world,与图片 `toImg()` 同构),废弃旧栈 SVG CTM 路径;存储仍归一化,数据零迁移。
+
+### Changed
+
+- **关闭 flag 时零行为变化**:视频工作台默认仍走旧 `VideoStage`(SVG 栈),新栈完全在 flag 后并行,旧栈代码与测试不动。
 
 画布栈统一 epic 的**硬前置地基版**。本版**不动任何用户可见行为**——只为「把视频工作台从 SVG/DOM 渲染栈迁到 Konva(与图片同栈)」立测试基建、量化帧合成性能、抽公共 stage 原语、定架构决策。架构取舍见 [ADR-0041](docs/adr/0041-video-canvas-unify-to-konva.md)(视频渲染栈统一到 Konva)。Epic 计划见 `docs/plans/2026-06-16-v0.16.x-canvas-unification-epic.md`。
 

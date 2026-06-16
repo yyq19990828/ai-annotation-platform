@@ -98,6 +98,7 @@ VideoStage (Konva.Stage)
   - 公共 viewport 原语:`apps/web/src/pages/Workbench/stage/shared/viewport/{fit,zoom,scaleCancel}.ts`(v0.16.0)
   - react-konva mock:`apps/web/src/test/konvaMock.tsx`(v0.16.0)
   - perf spike:`apps/web/src/pages/Workbench/stage/_spikes/videoKonvaFrameSpike.tsx`(v0.16.0,验收后可删)
-  - 待迁视频栈:`VideoMediaLayer.tsx` / `VideoObjectsLayer.tsx` / `VideoTrackShape.tsx` / `VideoTextLayer.tsx` / `VideoInteractionLayer.tsx` / `VideoIssueLayer.tsx` / `videoStageCoordinates.ts`
+  - 视频 Konva 栈(v0.16.1,flag `experiment.videoKonva` 后,本版仅底图+视口):`VideoKonvaStage.tsx`(Stage 容器+视口+播放)/ `VideoKonvaMediaLayer.tsx`(决策 A1 媒体层)/ `videoKonvaCoordinates.ts`(决策 B 像素空间)/ `videoKonvaFlag.ts`(flag)
+  - 待迁视频栈(v0.16.2/.3):`VideoObjectsLayer.tsx` / `VideoTrackShape.tsx` / `VideoTextLayer.tsx` / `VideoInteractionLayer.tsx` / `VideoIssueLayer.tsx`;旧 `VideoMediaLayer.tsx` / `videoStageCoordinates.ts` 在 v0.16.5 删栈时移除
 - 相关 ADR:[ADR-0004](0004-canvas-stack-konva.md)(图片 Konva,本 ADR 补视频帧合成 / Layer 结构)、[ADR-0017](0017-workbench-shell-mode-and-stage-adapters.md)(Shell + Stage Adapter 接缝不变)、[ADR-0031](0031-dual-canvas-konva-three.md)(视频从 SVG 归入 Konva 2D 栈)、[ADR-0040](0040-shared-annotation-visual-spec-not-stack-merge.md)(共享视觉规格,本 epic 是其双路径塌缩的终点)。
 - 后续触发条件:决策 A 已实测定为 A1(2026-06-16);v0.16.5 删旧栈后回 ADR-0004 / 0031 扩写定稿。若后续在低端机 / 高 DPR / 更大舞台实测发现 A1 不达标,再依决策 A 的契约触发 A2 降级。

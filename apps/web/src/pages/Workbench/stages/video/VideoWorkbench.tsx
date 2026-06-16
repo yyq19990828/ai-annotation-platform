@@ -1,4 +1,4 @@
-import { forwardRef, useMemo } from "react";
+import { forwardRef, useMemo, useState } from "react";
 import type {
   AnnotationResponse,
   TaskVideoFrameTimetableResponse,
@@ -8,6 +8,8 @@ import type {
   VideoTrackGeometry,
 } from "@/types";
 import { VideoStage, type VideoStageControls } from "../../stage/VideoStage";
+import { VideoKonvaStage } from "../../stage/VideoKonvaStage";
+import { resolveVideoKonvaEnabledFromEnv } from "../../stage/videoKonvaFlag";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
 import type { VideoTimelineChapter } from "../../stage/VideoPlaybackOverlay";
@@ -112,6 +114,24 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
       () => resolveAnnotationVisual(workbenchConfig.common),
       [workbenchConfig.common],
     );
+    // v0.16.1 · 画布栈统一 epic:flag 开启时走实验性 Konva 视频栈(仅底图/播放/缩放,
+    // 标注尚缺,见 VideoKonvaStage)。flag 刷新后生效,挂载时解析一次保持稳定。
+    const [videoKonvaEnabled] = useState(resolveVideoKonvaEnabledFromEnv);
+    if (videoKonvaEnabled) {
+      return (
+        <VideoKonvaStage
+          ref={ref}
+          manifest={manifest}
+          frameTimetable={frameTimetable}
+          isLoading={isLoading}
+          error={error}
+          frameIndex={frameIndex}
+          autoFitOnResize={workbenchVideo.autoFitOnResize}
+          performanceTier={performanceTier}
+          onFrameIndexChange={onFrameIndexChange}
+        />
+      );
+    }
     return (
       <VideoStage
         ref={ref}
