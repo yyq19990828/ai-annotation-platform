@@ -1,4 +1,4 @@
-import { forwardRef, useMemo, useState } from "react";
+import { forwardRef, useEffect, useMemo, useState } from "react";
 import type {
   AnnotationResponse,
   TaskVideoFrameTimetableResponse,
@@ -117,6 +117,12 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     // v0.16.1–.3 · 画布栈统一 epic:flag 开启时走实验性 Konva 视频栈(底图/播放/缩放 +
     // 标注渲染 + 交互画框/移动/缩放/选中,见 VideoKonvaStage)。flag 刷新后生效,挂载时解析一次。
     const [videoKonvaEnabled] = useState(resolveVideoKonvaEnabledFromEnv);
+    // v0.16.4 · 切默认观察期面包屑:记录本次会话视频工作台实际走哪条渲染栈,
+    // 便于在 DevTools 控制台 grep `[video-stack]` 判断默认开后是否有人回退旧栈。
+    // (聚合遥测需客户端事件管线,仓库暂无,故先用控制台面包屑,见 v0.16.4 计划 §3.2。)
+    useEffect(() => {
+      console.info(`[video-stack] 渲染栈 = ${videoKonvaEnabled ? "konva" : "svg(回退)"}`);
+    }, [videoKonvaEnabled]);
     if (videoKonvaEnabled) {
       return (
         <VideoKonvaStage

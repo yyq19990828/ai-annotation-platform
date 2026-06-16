@@ -76,7 +76,7 @@ describe("workbenchSettingsFields 注册表", () => {
       "pointcloud.neighborPointOverlayK": 1,
       "pointcloud.neighborPointCull": "keep",
       "experiment.webcodecs": false,
-      "experiment.videoKonva": false,
+      "experiment.videoKonva": true, // v0.16.4 切默认:未显式设置 → 默认开
     });
   });
 

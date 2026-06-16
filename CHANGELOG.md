@@ -31,6 +31,19 @@
 
 <!-- 0.16.x 版本变更按版本段追加到本区；进入 0.17.x 后整体移到 docs/changelogs/0.16.x.md -->
 
+## [0.16.4] - 2026-06-16
+
+画布栈统一 epic 第五步:**视频工作台默认切到 Konva 渲染栈(可逆,不删旧栈)**。`experiment.videoKonva` 未显式设置时默认开启,视频工作台默认走统一的 Konva 栈;**旧 SVG 栈与开关全部保留作逃生舱**——`?videoKonva=0` 或设置面板关闭即秒级回退,行为与切换前完全一致。删旧栈是下一个独立 release(v0.16.5,待观察期无回退后才做)。前置功能对等(画框/移动/缩放/平移/选中 + 右键菜单)已在 v0.16.3 与本版补齐。架构见 [ADR-0041](docs/adr/0041-video-canvas-unify-to-konva.md)。计划见 `docs/plans/2026-06-16-v0.16.4-cutover-default-on-and-observe.md`。
+
+### Changed
+
+- **视频默认渲染栈 → Konva**:`isVideoKonvaEnabled` / `resolveVideoKonvaEnabledFromEnv` 默认值改为开(`VIDEO_KONVA_DEFAULT_ON`),设置面板「实验特性 · 视频 Konva 渲染栈」默认显示开启;显式 `?videoKonva=0` / 关闭开关 / localStorage `video.experimental.konva=0` 仍可回退旧 SVG 栈(逃生舱,优先级:URL > localStorage > 默认)。
+- **观察期面包屑**:视频工作台挂载时在控制台打 `[video-stack] 渲染栈 = konva|svg(回退)`,便于切默认后判断是否有人回退旧栈。聚合遥测需客户端事件管线(仓库暂无),按计划 §3.2 推迟到具备 sink 时再补。
+
+### Notes
+
+- 本版**不删任何代码**:旧 SVG 视频栈(`VideoStage` 等)及其测试原样保留,仅供回退;切默认与删栈硬性拆两个 release(expand/contract 迁移纪律,见 v0.16.4 计划 §1.1)。
+
 ## [0.16.3] - 2026-06-16
 
 画布栈统一 epic 第四步:**视频交互层迁到 Konva(实验 flag 后,默认关)**。在 v0.16.2 的渲染层之上,把画框、移动、缩放(8 向句柄)、平移、选中从 SVG 事件迁到 Konva 事件。命中复用纯函数 `pickTopVideoEntryAt`(同一 z 序 + padding),缩放计算复用 `applyResize`,提交语义复刻旧栈 `finishDrag`——坐标源从 SVG CTM 换成 Konva 像素空间,几何判定不变。新栈仍与旧 SVG 栈经 flag 并行,关 flag 零行为变化。架构见 [ADR-0041](docs/adr/0041-video-canvas-unify-to-konva.md)。计划见 `docs/plans/2026-06-16-v0.16.3-video-interaction-and-test-migration.md`。
