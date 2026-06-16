@@ -778,21 +778,16 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
 
   const seekOverlayByFrames = useCallback(
     (delta: number, options?: { recordHistory?: boolean }) => {
-      const step = samplingStepRef.current;
-      if (step > 1) {
-        const dir: -1 | 1 = delta < 0 ? -1 : 1;
-        if (Math.abs(delta) === 1) {
-          seekGrid(dir, options);
-          return;
-        }
-        if (Math.abs(delta) === 10) {
-          microStepBy(dir, options);
-          return;
-        }
+      // 采样开启时，无修饰键的 ←/→ (delta=±1) 按网格逐采样点跳。
+      // Shift+←/→ 的大步进 (delta=largeFrameStep) 不再被魔法数字劫持，
+      // 直接按配置的源帧步长跳；微调 ±1 帧仍由工作台级 videoMicroStep 快捷键负责。
+      if (samplingStepRef.current > 1 && Math.abs(delta) === 1) {
+        seekGrid(delta < 0 ? -1 : 1, options);
+        return;
       }
       seekByFrames(delta, options);
     },
-    [microStepBy, seekByFrames, seekGrid],
+    [seekByFrames, seekGrid],
   );
 
   const seekToFrame = useCallback(
