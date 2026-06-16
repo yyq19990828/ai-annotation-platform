@@ -11,8 +11,6 @@ def test_workbench_layout_preferences_accept_camelcase_and_dump_aliases():
                 "layout": {
                     "leftOpen": False,
                     "rightOpen": True,
-                    "leftWidth": 320,
-                    "rightWidth": 420,
                     "floatingTaskQueue": {
                         "detached": True,
                         "x": 24,
@@ -56,8 +54,6 @@ def test_workbench_layout_preferences_accept_camelcase_and_dump_aliases():
     layout = prefs.workbench.layout
     assert layout.left_open is False
     assert layout.right_open is True
-    assert layout.left_width == 320
-    assert layout.right_width == 420
     assert layout.floating_task_queue is not None
     assert layout.floating_task_queue.detached is True
     assert layout.floating_class_palette is not None
@@ -99,7 +95,7 @@ def test_preferences_top_level_merge_contract_keeps_other_subtrees():
         {
             "workbench": {
                 "image": {"smoothImage": False},
-                "layout": {"rightWidth": 420},
+                "common": {"rightWidthPct": 30},
             }
         }
     ).model_dump(mode="json", exclude_unset=True, by_alias=True)
@@ -108,21 +104,39 @@ def test_preferences_top_level_merge_contract_keeps_other_subtrees():
 
     assert merged["ai"] == existing["ai"]
     assert merged["workbench"]["image"]["smoothImage"] is False
-    assert merged["workbench"]["layout"]["rightWidth"] == 420
+    assert merged["workbench"]["common"]["rightWidthPct"] == 30
 
 
 def test_workbench_layout_preferences_reject_out_of_range_sizes():
     try:
         UserPreferences.model_validate(
-            {"workbench": {"layout": {"leftWidth": 120, "triViewFloat": {"w": 800}}}}
+            {
+                "workbench": {
+                    "common": {"leftWidthPct": 5, "rightWidthPct": 40},
+                    "layout": {"triViewFloat": {"w": 800}},
+                }
+            }
         )
     except ValidationError as exc:
         errors = {(tuple(err["loc"]), err["type"]) for err in exc.errors()}
     else:  # pragma: no cover
         raise AssertionError("expected validation error")
 
-    assert (("workbench", "layout", "leftWidth"), "greater_than_equal") in errors
+    assert (("workbench", "common", "leftWidthPct"), "greater_than_equal") in errors
+    assert (("workbench", "common", "rightWidthPct"), "less_than_equal") in errors
     assert (
         ("workbench", "layout", "triViewFloat", "w"),
         "less_than_equal",
     ) in errors
+
+
+def test_workbench_sidebar_width_pct_in_range_and_default():
+    prefs = UserPreferences.model_validate(
+        {"workbench": {"common": {"leftWidthPct": 12, "rightWidthPct": 30}}}
+    )
+    assert prefs.workbench.common.leftWidthPct == 12
+    assert prefs.workbench.common.rightWidthPct == 30
+
+    default = UserPreferences.model_validate({})
+    assert default.workbench.common.leftWidthPct == 15
+    assert default.workbench.common.rightWidthPct == 15

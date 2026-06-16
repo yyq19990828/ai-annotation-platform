@@ -71,7 +71,7 @@ export const PROJECT_DATA_TYPES: ReadonlyArray<ProjectDataTypeSpec> = [
   {
     id: "lidar",
     label: "3D 点云",
-    hint: "激光点云 (本版占位)",
+    hint: "激光点云 · 3D 框 / 点云分割标注",
     icon: "cube",
     legacyTypeKey: "lidar",
   },

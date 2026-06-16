@@ -30,13 +30,18 @@ v0.10.16 之前,项目的类别 (`classes` + `classes_config`) 与属性 schema 
 
 **工具单位枚举** (与后端 `app/schemas/_jsonb_types.ToolUnitId` Literal 严格对齐):
 
+> **更新 (2026-06):** 枚举随 polyline / rotated_bbox / keypoint / point_mask_3d 落地扩展到 8 个;`lidar_box_3d` 已于 v0.13.2 实装真实 Three.js 点云工作台。下表已对齐当前 Literal,不再有「占位/未实现」行。
+
 | tool_unit_id | 包含工具 (Workbench ToolId) | type 限制 |
 |---|---|---|
 | `bbox` | BboxTool | image, video |
-| `polyline` | (v0.10.17 占位, 未实现) | image, video |
+| `polyline` | PolylineTool | image |
 | `region` | PolygonTool + MaskTool **打包** | image |
 | `ai_interactive` | SmartPointTool + SmartBoxTool + TextPromptTool + ExemplarTool + MagicBoxTool **打包** | image |
-| `lidar_box_3d` | (v0.10.17 占位, 未实现) | lidar |
+| `lidar_box_3d` | Lidar3DBoxTool | lidar |
+| `rotated_bbox` | RotatedBboxTool | image |
+| `keypoint` | KeypointTool | image |
+| `point_mask_3d` | PointMask3DTool | lidar |
 
 **实施要点**
 

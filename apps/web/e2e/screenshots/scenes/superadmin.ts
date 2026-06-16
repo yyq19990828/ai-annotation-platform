@@ -134,4 +134,147 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
     capture: { kind: "locator", selector: '[class*="panelContent"]', padding: 0 },
     target: "docs-site/user-guide/images/notifications/panel-overview.png",
   },
+  // ── Tier A 扩展（v0.15.26）：用户 / 审计 / 失败预测 / 健康 / 模型注册 / 模板 / BUG ──
+  {
+    name: "superadmin/users/edit-modal",
+    role: "admin",
+    route: () => "/users",
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(300);
+      // 成员行编辑按钮（title="编辑成员"）
+      const editBtn = page.getByRole("button", { name: /编辑成员|编辑/ }).first();
+      if (await editBtn.count()) {
+        await editBtn.click().catch(() => {});
+        await page.waitForTimeout(300);
+      }
+      await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});
+    },
+    capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
+    target: "docs-site/user-guide/images/superadmin/users/edit-modal.png",
+  },
+  {
+    name: "superadmin/users/groups-tab",
+    role: "admin",
+    route: () => "/users",
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      // 切「数据组」tab（组创建 + 成员添加）
+      const tab = page.getByRole("button", { name: /数据组|用户组/ }).first();
+      if (await tab.count()) {
+        await tab.click().catch(() => {});
+        await page.waitForTimeout(400);
+      }
+      await page.waitForLoadState("networkidle");
+    },
+    capture: { kind: "fullPage" },
+    target: "docs-site/user-guide/images/superadmin/users/groups-tab.png",
+  },
+  {
+    name: "superadmin/users/permission-matrix",
+    role: "admin",
+    route: () => "/users",
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      // 切「角色」tab 展示权限矩阵预览
+      const tab = page.getByRole("button", { name: /角色/ }).first();
+      if (await tab.count()) {
+        await tab.click().catch(() => {});
+        await page.waitForTimeout(400);
+      }
+      await page.waitForLoadState("networkidle");
+    },
+    capture: { kind: "fullPage" },
+    target: "docs-site/user-guide/images/superadmin/users/permission-matrix.png",
+  },
+  {
+    name: "superadmin/audit-logs/detail-modal",
+    role: "admin",
+    route: () => "/audit",
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(500);
+      // 首行「详情」按钮 → detail_json Modal
+      const detailBtn = page.getByRole("button", { name: /详情/ }).first();
+      if (await detailBtn.count()) {
+        await detailBtn.click().catch(() => {});
+        await page.waitForTimeout(300);
+      }
+      await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});
+    },
+    capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
+    target: "docs-site/user-guide/images/superadmin/audit-logs/detail-modal.png",
+  },
+  // NOTE: superadmin/failed-predictions/list 暂不自动化 —— 带 ?status=failed 时客户端 status
+  // 筛选会清空 mock 列表；不带 query 又会混入真实成功 job（绿色徽标），无法干净展示「失败筛选 +
+  // 重试/放弃」视图。需真实 failed-job 种子数据，归 Tier B。失败 job 列表本身已由
+  // workflows/failed-prediction-recovery-jobs-list 覆盖。
+  {
+    name: "superadmin/system-monitoring/workers-table",
+    role: "admin",
+    route: () => "/admin/health",
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(600);
+    },
+    // 单独截 Workers 心跳表（含 Worker / Heartbeat / Pool / Status 表头）
+    capture: { kind: "locator", selector: 'table:has-text("Heartbeat")', padding: 8 },
+    target: "docs-site/user-guide/images/superadmin/system-monitoring/workers-table.png",
+  },
+  {
+    name: "superadmin/ml-backend/register-form",
+    role: "admin",
+    // tab 是 role="tab" 且由 URL ?tab= 驱动（ModelMarketPage.tsx），直接深链到注册管理 tab
+    route: () => "/model-market?tab=registry",
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(400);
+      // 项目行「+ 注册」按钮（文案精确为「注册」）打开 MlBackendFormModal
+      const reg = page.getByRole("button", { name: "注册", exact: true }).first();
+      if (await reg.count()) {
+        await reg.click({ timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(300);
+      }
+      await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});
+    },
+    capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
+    target: "docs-site/user-guide/images/superadmin/ml-backend/register-form.png",
+  },
+  {
+    name: "superadmin/public-templates/templates-list",
+    role: "admin",
+    route: () => "/project-templates",
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(400);
+      // 切「全部」tab 展示四 tab + scope chip + usage_count
+      const allTab = page.getByRole("button", { name: /^全部$|全部/ }).first();
+      if (await allTab.count()) {
+        await allTab.click().catch(() => {});
+        await page.waitForTimeout(300);
+      }
+      await page.waitForLoadState("networkidle");
+    },
+    capture: { kind: "fullPage" },
+    target: "docs-site/user-guide/images/superadmin/public-templates/templates-list.png",
+  },
+  {
+    name: "superadmin/bugs/status-transitions",
+    role: "admin",
+    route: () => "/bugs",
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      // 点首行打开详情面板（状态切换按钮组所在）
+      const firstRow = page.locator("tbody tr").first();
+      if (await firstRow.count()) {
+        await firstRow.click().catch(() => {});
+        await page.waitForTimeout(500);
+      }
+      await page.waitForLoadState("networkidle");
+    },
+    // 红框高亮状态切换按钮组（含关闭后重开徽标）
+    annotate: [{ selector: '[class*="statusActions"]', style: "rect-red", label: "状态切换" }],
+    capture: { kind: "fullPage" },
+    target: "docs-site/user-guide/images/superadmin/bugs/status-transitions.png",
+  },
 ];

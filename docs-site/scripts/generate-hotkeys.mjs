@@ -6,9 +6,10 @@
 // 使用 regex 解析 TS 源文件——无需 ts-node / tsc：HOTKEYS 是纯字面量数组。
 // 解析失败会报错退出，让漂移问题暴露在 CI 而不是文档站静默错乱。
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { emitGenerated } from "./_emit.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = resolve(here, "../../apps/web/src/pages/Workbench/state/hotkeys.ts");
@@ -61,7 +62,7 @@ if (groupMatch) {
 }
 
 // 4. 按 group 排序输出
-const groupOrder = ["draw", "view", "video", "ai", "nav", "system"];
+const groupOrder = ["draw", "view", "video", "ai", "nav", "threed", "system"];
 const byGroup = new Map();
 for (const it of items) {
   if (!byGroup.has(it.group)) byGroup.set(it.group, []);
@@ -91,6 +92,9 @@ for (const g of groupOrder) {
   lines.push("");
 }
 
-mkdirSync(dirname(dst), { recursive: true });
-writeFileSync(dst, lines.join("\n"));
-console.log(`[generate-hotkeys] wrote ${items.length} hotkeys → ${dst}`);
+emitGenerated({
+  dst,
+  content: lines.join("\n"),
+  label: "generate-hotkeys",
+  detail: `${items.length} hotkeys`,
+});

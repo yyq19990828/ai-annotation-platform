@@ -49,7 +49,9 @@ for (const mdPath of walkMd(DOCS_ROOT)) {
   let m;
   while ((m = imgRe.exec(content)) !== null) {
     const src = (m[1] || m[2] || "").trim();
-    if (!src.startsWith("http") && src.match(/\.(png|gif|jpg|jpeg|webp|svg)/i)) {
+    // GIF 由 flows 录制管线(screenshots:flows)产出, 不写 manifest.json(那是 PNG 截图矩阵的产物);
+    // GIF 的「产出↔引用」一致性改由 check-orphan-images.mjs 校验, 故此处跳过 .gif, 只管 PNG 等静态图。
+    if (!src.startsWith("http") && src.match(/\.(png|jpg|jpeg|webp|svg)/i)) {
       // 标准化到仓库根相对路径
       const mdDir = path.dirname(mdPath);
       const abs   = src.startsWith("/")

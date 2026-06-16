@@ -755,7 +755,16 @@ async def _backfill_media(dataset_id: str) -> None:
                     ),
                     and_(
                         DatasetItem.file_type == "video",
-                        DatasetItem.metadata_["video"]["frame_count"].astext.is_(None),
+                        or_(
+                            DatasetItem.metadata_["video"]["frame_count"].astext.is_(
+                                None
+                            ),
+                            # poster(缩略图)缺失也需回填:seed 同步填了 video metadata
+                            # (frame_count 非空)但从未生成 poster,thumbnail_path 仍为 NULL,
+                            # 仅按 frame_count 判定会漏掉这类视频。_generate_video_metadata
+                            # 幂等(重建 timetable + poster),重复回填安全。
+                            DatasetItem.thumbnail_path.is_(None),
+                        ),
                     ),
                 ),
             )

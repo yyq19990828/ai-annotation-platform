@@ -12,7 +12,7 @@ export type WorkbenchSettingValue = boolean | number | string;
 
 export type WorkbenchSettingControl =
   | { type: "toggle"; onText?: string; offText?: string }
-  | { type: "slider"; min: number; max: number; step: number; format?: (v: number) => string }
+  | { type: "slider"; min: number; max: number; step: number; format?: (v: number) => string; resetTo?: number }
   | { type: "select"; options: Array<{ value: WorkbenchSettingValue; label: string }> }
   | { type: "text"; maxLength: number; placeholder?: string };
 
@@ -78,6 +78,20 @@ function writeLocalBoolean(key: string, value: WorkbenchSettingValue): void {
 
 export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   {
+    key: "common.leftWidthPct",
+    category: "common",
+    label: "左栏宽度",
+    description: "占工作台宽度的百分比;也可直接拖拽边栏分隔条,双击或此处重置回 15%",
+    control: { type: "slider", min: 10, max: 35, step: 1, format: (v) => `${v}%`, resetTo: 15 },
+  },
+  {
+    key: "common.rightWidthPct",
+    category: "common",
+    label: "右栏宽度",
+    description: "占工作台宽度的百分比;也可直接拖拽边栏分隔条,双击或此处重置回 15%",
+    control: { type: "slider", min: 10, max: 35, step: 1, format: (v) => `${v}%`, resetTo: 15 },
+  },
+  {
     key: "common.longTaskSampleRate",
     category: "common",
     label: "性能采样率",
@@ -88,6 +102,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     key: "common.confirmDelete",
     category: "common",
     label: "删除确认",
+    description: "删除标注时是否二次确认：从不 / 仅多选删除 / 始终",
     control: {
       type: "select",
       options: [
@@ -101,6 +116,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     key: "common.recentClassesLimit",
     category: "common",
     label: "最近类别数量",
+    description: "类别面板顶部「最近使用」保留的条目数",
     control: { type: "slider", min: 3, max: 20, step: 1, format: (v) => `${v}` },
   },
   {
@@ -202,6 +218,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     key: "image.afterBoxCreate",
     category: "image",
     label: "画框后行为",
+    description: "画完一个框后：弹出类别选择 / 直接沿用当前激活类别",
     control: {
       type: "select",
       options: [
@@ -214,12 +231,14 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     key: "image.snapThresholdPx",
     category: "image",
     label: "吸附阈值",
+    description: "顶点/边吸附到邻近标注的触发距离，越大越容易吸附",
     control: { type: "slider", min: 4, max: 16, step: 1, format: (v) => `${v}px` },
   },
   {
     key: "image.zoomStepFactor",
     category: "image",
     label: "滚轮缩放步长",
+    description: "每次滚轮缩放画布的倍率",
     control: {
       type: "select",
       options: [
@@ -234,18 +253,21 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     key: "image.fadedOpacity",
     category: "image",
     label: "淡化透明度",
+    description: "未选中/被淡化对象的透明度，越低越淡",
     control: { type: "slider", min: 0.1, max: 0.8, step: 0.05, format: (v) => v.toFixed(2) },
   },
   {
     key: "image.showBoxLabels",
     category: "image",
     label: "显示框标签",
+    description: "在每个框旁显示类别名标签",
     control: { type: "toggle" },
   },
   {
     key: "image.maskOverlayOpacity",
     category: "image",
     label: "Mask 覆盖透明度",
+    description: "分割掩膜叠加在图像上的不透明度",
     control: { type: "slider", min: 0.2, max: 0.8, step: 0.05, format: (v) => v.toFixed(2) },
   },
   {
@@ -278,6 +300,13 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
         { value: "grid", label: "采样网格" },
       ],
     },
+  },
+  {
+    key: "video.autoFitOnResize",
+    category: "video",
+    label: "自动适应大小",
+    description: "展开、收起或拖宽边栏后自动让视频重新适应画布",
+    control: { type: "toggle", onText: "已开启", offText: "已关闭" },
   },
   {
     key: "pointcloud.pointSize",
@@ -335,6 +364,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     key: "pointcloud.pointMaskSelectMode",
     category: "pointcloud",
     label: "点选模式",
+    description: "框选点云时的圈选方式：矩形 / 套索 / 多边形",
     control: {
       type: "select",
       options: [
@@ -348,12 +378,14 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     key: "pointcloud.showGrid",
     category: "pointcloud",
     label: "显示地面网格",
+    description: "在 3D 场景显示地面参考网格",
     control: { type: "toggle" },
   },
   {
     key: "pointcloud.showAxisGizmo",
     category: "pointcloud",
     label: "显示坐标轴",
+    description: "在 3D 场景角落显示 XYZ 坐标轴指示器",
     control: { type: "toggle" },
   },
   {

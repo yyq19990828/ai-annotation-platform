@@ -67,6 +67,18 @@ export function useToolBindings(
   }, [project, toolUnitId, overrideUnit]);
 }
 
+/**
+ * B-57 · 纯函数: 取某 tool_unit 自身定义的类名 (按 order), 无 bbox/region 兜底。
+ * 镜像后端 lookup_classes_for_tool_unit (强隔离), 供采纳预测时按预测单位列出可选类别。
+ * 未启用 / 未配置类时返回空数组。
+ */
+export function classesForUnit(
+  tb: ToolBindings | null | undefined,
+  unit: ToolUnitId,
+): string[] {
+  return _materialize((tb ?? {}) as ToolBindings, unit).classes;
+}
+
 function _materialize(
   tb: ToolBindings,
   unit: ToolUnitId,

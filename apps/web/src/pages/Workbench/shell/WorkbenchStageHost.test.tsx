@@ -50,8 +50,6 @@ const baseProps = {
     workbenchLayout: {
       leftOpen: true,
       rightOpen: true,
-      leftWidth: 260,
-      rightWidth: 280,
       floatingTaskQueue: { detached: false, x: null, y: null, w: null, h: null },
       floatingClassPalette: { detached: false, x: null, y: null, w: null, h: null },
       floatingInspector: { detached: false, x: null, y: null, w: null, h: null },

@@ -18,7 +18,7 @@ last_reviewed: 2026-06-10
 
 ## 操作
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench/rotated-bbox-draw.png — 拖框生成旋转框，标注红框：旋转手柄 + 四角缩放手柄 -->
+![旋转框绘制：拖出轴对齐矩形（角度 0）后，拖顶部旋转手柄调整角度](../images/workbench/rotated-bbox.gif)
 
 1. 按 `W` 切到旋转框工具。
 2. 在画布上按下鼠标 → 拖动 → 松开，先生成一个**轴对齐**矩形（角度 0）。

@@ -74,14 +74,26 @@ export function SettingsFieldControl({
         </span>
       )}
       {control.type === "slider" && (
-        <SliderControl
-          value={Number(value)}
-          min={control.min}
-          max={control.max}
-          step={control.step}
-          disabled={disabled || locked}
-          onCommit={onCommit}
-        />
+        <span className={styles.sliderWrap}>
+          <SliderControl
+            value={Number(value)}
+            min={control.min}
+            max={control.max}
+            step={control.step}
+            disabled={disabled || locked}
+            onCommit={onCommit}
+          />
+          {control.resetTo !== undefined && (
+            <button
+              type="button"
+              className={styles.resetBtn}
+              disabled={disabled || locked}
+              onClick={() => onCommit(control.resetTo!)}
+            >
+              重置
+            </button>
+          )}
+        </span>
       )}
       {control.type === "select" && (
         <select

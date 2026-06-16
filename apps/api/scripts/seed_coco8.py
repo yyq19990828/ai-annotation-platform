@@ -25,7 +25,10 @@ import uuid
 import zipfile
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[3]  # apps/api/scripts/<this> → repo root
+# repo root。host 布局 apps/api/scripts/<this> 取 parents[3];浅布局(如容器把代码挂在
+# /app)parents[3] 会越界,退化为文件系统根 → 夹具 .exists()=False 时各 seed 优雅跳过不崩。
+_parents = Path(__file__).resolve().parents
+REPO = _parents[3] if len(_parents) > 3 else _parents[-1]
 FIXTURE = REPO / "third-party/coco8"
 
 PROJECT_DISPLAY_ID = "P-COCO8"
@@ -50,6 +53,36 @@ COCO_NAMES = (
     "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier",
     "toothbrush",
 )
+
+# 额外工具单位绑定:让 P-COCO8 这一个 image-det 项目同时支持 旋转框 / 折线 / 区域(多边形)
+# 工作台,供文档站截图与 GIF 流程录制使用(各单位至少一条类别,工具才可用)。
+# 单位 key 对齐 app/schemas/_jsonb_types.py 的 ToolUnitId;tool→unit 映射见
+# apps/web/.../stage/tools/toolUnits.ts(rotated-box→rotated_bbox / polygon→region / polyline→polyline)。
+EXTRA_TOOL_BINDINGS: dict = {
+    "rotated_bbox": {
+        "enabled": True,
+        "classes": [
+            {"name": "car", "order": 0},
+            {"name": "bus", "order": 1},
+            {"name": "truck", "order": 2},
+        ],
+    },
+    "polyline": {
+        "enabled": True,
+        "classes": [
+            {"name": "lane", "order": 0},
+            {"name": "curb", "order": 1},
+        ],
+    },
+    "region": {
+        "enabled": True,
+        "classes": [
+            {"name": "road", "order": 0},
+            {"name": "sky", "order": 1},
+            {"name": "building", "order": 2},
+        ],
+    },
+}
 
 
 async def _ensure_admin(db) -> uuid.UUID:
@@ -106,6 +139,15 @@ async def seed_coco8(db, *, owner_id: uuid.UUID) -> dict | None:
         select(Project).where(Project.display_id == PROJECT_DISPLAY_ID)
     )
     if existing:
+        # 幂等补绑定:旧 P-COCO8 只有 bbox,补齐 旋转框 / 折线 / 区域 工具单位(已存在的不覆盖)。
+        tb = dict(existing.tool_bindings or {})
+        added = [u for u in EXTRA_TOOL_BINDINGS if u not in tb]
+        if added:
+            for unit in added:
+                tb[unit] = EXTRA_TOOL_BINDINGS[unit]
+            existing.tool_bindings = tb  # 重新赋值以标记 JSONB 列为 dirty
+            db.add(existing)
+            return {"project": PROJECT_DISPLAY_ID, "added_tool_units": added}
         return None
 
     if not FIXTURE.exists():
@@ -126,7 +168,8 @@ async def seed_coco8(db, *, owner_id: uuid.UUID) -> dict | None:
                     {"name": name, "order": idx}
                     for idx, name in enumerate(COCO_NAMES)
                 ],
-            }
+            },
+            **EXTRA_TOOL_BINDINGS,
         },
     )
     db.add(project)
@@ -187,9 +230,25 @@ async def main() -> None:
         info = await seed_coco8(db, owner_id=owner_id)
         await db.commit()
 
+        # 缩略图回填:seed 直接写 DatasetItem,绕过了上传路径的 enqueue,thumbnail_path
+        # 一直为 NULL。提交后对本数据集派发 backfill_media(幂等,只补缺失的),由 media
+        # worker 异步生成。依赖 media worker 在跑。
+        from sqlalchemy import select
+
+        from app.db.models.dataset import Dataset
+        from app.workers.media import backfill_media
+
+        ds = await db.scalar(
+            select(Dataset).where(Dataset.display_id == DATASET_DISPLAY_ID)
+        )
+        if ds is not None:
+            backfill_media.delay(str(ds.id))
+
     print("=== coco8 图片标注 dev 数据 ===")
     if info is None:
-        print(f"项目 {PROJECT_DISPLAY_ID} 已存在,跳过")
+        print(f"项目 {PROJECT_DISPLAY_ID} 已存在,工具绑定无需更新,跳过")
+    elif "added_tool_units" in info:
+        print(f"项目 {PROJECT_DISPLAY_ID} 已存在,补齐工具单位: {info['added_tool_units']}")
     else:
         print(
             f"上传图片: {info['images']}  建任务: {info['tasks']}  "

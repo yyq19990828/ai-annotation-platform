@@ -19,4 +19,6 @@ export const DATASET_SCENES: ScreenshotScene[] = [
     capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
     target: "docs-site/user-guide/images/datasets/import-images-wizard.png",
   },
+  // NOTE: datasets/import-wizard-3d-type 暂不自动化 —— 向导第 1 步必须先上传文件
+  // 「下一步」才可点，无文件无法进到「基本信息」步选 3D 点云。需文件上传 fixture，归 Tier B。
 ];

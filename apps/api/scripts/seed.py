@@ -16,6 +16,7 @@ from sqlalchemy import select
 sys.path.insert(0, str(__file__.rsplit("/", 1)[0]))  # 让 `scripts/` 入 sys.path
 from seed_pointcloud import seed_pointcloud, seed_nuscenes_scene  # noqa: E402
 from seed_coco8 import seed_coco8  # noqa: E402  (依赖 sys.path 先扩)
+from seed_video import seed_video  # noqa: E402  (开源视频 video-track 夹具)
 
 from app.config import settings
 from app.core.security import hash_password
@@ -116,12 +117,20 @@ async def seed() -> None:
         owner = created_users.get("pm") or created_users.get("pm@test.com")
         await db.commit()
 
+        # 固化 owner/admin 主键为本地 uuid:下面任一夹具失败都会 await db.rollback(),而
+        # rollback 会 expire 掉 session 内所有 ORM 对象;之后再读 user.id 会触发同步
+        # lazy-load(_load_expired → 同步 session.execute),在 async 上下文即抛 greenlet_spawn,
+        # 连锁使其后的夹具全被误判“跳过”。提前取主键(commit 后仍有效)后全程传值规避。
+        admin_user = created_users.get("admin")
+        owner_id = owner.id if owner is not None else None
+        admin_id = admin_user.id if admin_user is not None else None
+
         # 图片标注项目:真实 coco8(8 张图)+ GT 框, owner=pm(无 pm 则兜底 admin)。
         # 依赖 MinIO + third-party/coco8 夹具, 缺失则跳过, 不阻断核心账号种子。
-        img_owner = owner or created_users.get("admin")
-        if img_owner is not None:
+        img_owner_id = owner_id or admin_id
+        if img_owner_id is not None:
             try:
-                info = await seed_coco8(db, owner_id=img_owner.id)
+                info = await seed_coco8(db, owner_id=img_owner_id)
                 await db.commit()
                 if info is None:
                     print("  skip  image P-COCO8 (已存在)")
@@ -135,12 +144,29 @@ async def seed() -> None:
                 await db.rollback()
                 print(f"  WARN  coco8 夹具跳过: {e}")
 
+            # 视频时序追踪项目:开源行车视频 tracking_car.mp4(grounded-sam-2 vendor)。
+            # 依赖 MinIO + 宿主 ffprobe, 缺失则跳过。幂等:P-VIDEO-DEV 已存在则跳过。
+            try:
+                info = await seed_video(db, owner_id=img_owner_id)
+                await db.commit()
+                if info is None:
+                    print("  skip  video P-VIDEO-DEV (已存在)")
+                else:
+                    m = info["video_meta"]
+                    print(
+                        f"  add   video {info['project']}  "
+                        f"{m['width']}x{m['height']} {m['fps']}fps "
+                        f"frames={m['frame_count']} tasks={info['tasks']}"
+                    )
+            except Exception as e:  # noqa: BLE001 — 夹具/MinIO/ffprobe 不可用时不阻断 seed
+                await db.rollback()
+                print(f"  WARN  video 夹具跳过: {e}")
+
         # 点云开发夹具(owner=admin):依赖 MinIO + SUSTechPOINTS 夹具,缺失则跳过,
         # 不影响核心账号/项目种子。幂等:P-PC-DEV 已存在则跳过。
-        admin = created_users.get("admin")
-        if admin is not None:
+        if admin_id is not None:
             try:
-                info = await seed_pointcloud(db, owner_id=admin.id)
+                info = await seed_pointcloud(db, owner_id=admin_id)
                 await db.commit()
                 if info is None:
                     print("  skip  point-cloud P-PC-DEV (已存在)")
@@ -156,7 +182,7 @@ async def seed() -> None:
             # scene 模式点云项目(owner=admin):nuScenes-mini 取 1 个 scene。依赖 MinIO +
             # third-party/nuscenes-mini 夹具(~5.1G), 缺失则跳过。幂等:同名 scene 跳过。
             try:
-                nu = await seed_nuscenes_scene(db, owner_id=admin.id)
+                nu = await seed_nuscenes_scene(db, owner_id=admin_id)
                 await db.commit()
                 scenes = ", ".join(
                     f"{s['name']}({s['frames']}帧{'·已存在' if s.get('skipped') else ''})"
@@ -169,6 +195,27 @@ async def seed() -> None:
             except Exception as e:  # noqa: BLE001 — 夹具/MinIO 不可用时不阻断 seed
                 await db.rollback()
                 print(f"  WARN  nuscenes 夹具跳过: {e}")
+
+    # 缩略图回填:seed 直接写 DatasetItem,绕过了上传路径的 enqueue_media_for_items,
+    # 故图片/视频的 thumbnail_path / blurhash 一直为 NULL(视频还缺 poster)。这里按
+    # data_type 选出全部图片/视频数据集派发 backfill_media,由 media worker 异步生成。
+    # 按 data_type 动态筛选而非硬编码 display_id 列表 → 后续新增图片/视频夹具自动纳入、
+    # 不会漏回填。点云数据集(data_type=point_cloud)虽含相机图(file_type=image)也不在
+    # 此列,保持原行为不回填其相机缩略图(backfill_media 内部本就只处理 image/video item)。
+    # 幂等(只补缺失的),且无条件执行 → 既补新建,也修复历史已存在但缺缩略图的 seed 数据。
+    # 依赖 media worker 在跑;无匹配数据集则查询为空、静默跳过。
+    from app.db.models.dataset import Dataset
+    from app.workers.media import backfill_media
+
+    async with Session() as db:
+        ds_rows = await db.execute(
+            select(Dataset.id, Dataset.display_id).where(
+                Dataset.data_type.in_(["image", "video"])
+            )
+        )
+        for ds_id, disp in ds_rows.all():
+            backfill_media.delay(str(ds_id))
+            print(f"  media  enqueue 缩略图回填 → {disp}")
 
     await engine.dispose()
 

@@ -80,7 +80,7 @@ docker logs ai-annotation-platform-api-1 2>&1 | jq 'select(.status>=500)'
 
 - 组件状态：PostgreSQL、Redis、MinIO、Celery，展示 `ok` / `degraded` / `down` 与 latency。
 - Celery 队列：显示各队列积压数量，`length ≥ 25` 标为降级（`degraded`），`length ≥ 100` 标为不可用（`down`）（`apps/api/app/api/v1/admin_system_health.py:60-65`）。
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/system-monitoring/workers-table.png — Workers 表（名称/Heartbeat/Pool/状态） [manual] -->
+![Workers 表（名称/Heartbeat/Pool/状态）](../images/superadmin/system-monitoring/workers-table.png)
 - Worker 心跳：显示 worker 名称、最近心跳距现在的秒数和 pool 并发上限；心跳 `≥ 120s` 标为降级，`≥ 300s` 标为不可用（`apps/api/app/api/v1/admin_system_health.py:68-75`）。
 
 ⚠️ FastAPI lifespan 阻塞会让 `/health` 30s 内不可用——曾在 CI 引发卡死，详见 [CI 服务依赖踩坑](../../dev/troubleshooting/ci-flaky-services)。

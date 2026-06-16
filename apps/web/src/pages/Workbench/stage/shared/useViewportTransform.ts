@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { MutableRefObject, Ref } from "react";
 
 export interface Viewport {
   scale: number;
@@ -53,20 +54,32 @@ export function useViewportTransform(initial: Viewport = { scale: 1, tx: 0, ty: 
   return { vp, vpRef, reset, zoomAt, pan, fit, setScale, setVp };
 }
 
-export function useElementSize<T extends HTMLElement>(ref: React.RefObject<T | null>) {
+function setRef<T>(ref: Ref<T> | undefined, value: T | null) {
+  if (!ref) return;
+  if (typeof ref === "function") {
+    ref(value);
+  } else {
+    (ref as MutableRefObject<T | null>).current = value;
+  }
+}
+
+export function useElementSize<T extends HTMLElement>(forwardedRef?: Ref<T>) {
   const [size, setSize] = useState({ w: 0, h: 0 });
-  // B-30 · 用 state 跟踪当前实际被 observe 的 element. 之前依赖 [ref] 让 effect 只跑一次,
-  // 当 VideoStage / ImageStage 从 loading/error 状态切回主渲染、或切换 task 导致
-  // ref.current 指向的 DOM 被 unmount → remount 时, ResizeObserver 还粘在旧节点上,
-  // viewport.size 永远不再更新, 表现为 "好了一会儿又不行了" (fit/zoom/Minimap 全失效).
+  // el 用 state 持有当前被 observe 的节点。用 callback ref：元素挂载 / 卸载 / 重挂载时 React
+  // 直接回调拿到真实节点并 setEl，触发下方 effect 切换 ResizeObserver 订阅。这天然覆盖了两个
+  // 故障场景：VideoStage / ImageStage 从 loading/error 切回主渲染、或切换 task 导致 DOM
+  // unmount → remount 时 ResizeObserver 粘在旧节点 (B-30)；容器在 isLoading / 无 manifest 时
+  // 不渲染、manifest 异步到达后才挂载真节点 (B-55) —— 都由 React 在挂载时回调保证拿到新节点，
+  // 无需"无依赖 effect 每次 render 轮询 ref.current"，少跑一次 effect。forwardedRef 把节点
+  // 回写给调用方自己的 ref，供其在事件 handler 中读取 .current。
   const [el, setEl] = useState<T | null>(null);
-  // 每次 render 后检测 ref.current 与上次 observed 节点的差异; 仅在变化时 setEl 触发
-  // 第二个 effect 重新 observe. ref.current 变化会伴随 remount render, el 变更后再完成订阅切换.
-  useEffect(() => {
-    if (ref.current !== el) {
-      setEl(ref.current);
-    }
-  }, [ref, el]);
+  const ref = useCallback(
+    (node: T | null) => {
+      setEl(node);
+      setRef(forwardedRef, node);
+    },
+    [forwardedRef],
+  );
   useEffect(() => {
     if (!el) return;
     if (typeof ResizeObserver === "undefined") {
@@ -93,5 +106,5 @@ export function useElementSize<T extends HTMLElement>(ref: React.RefObject<T | n
     ro.observe(el);
     return () => ro.disconnect();
   }, [el]);
-  return size;
+  return { ref, size };
 }

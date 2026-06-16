@@ -95,7 +95,9 @@ export type EditingClass = {
   anchor?: { left: number; top: number };
   // v0.14.17 · 采纳时选类: 非空时该弹窗不是"改已存标注的类", 而是"为采纳某预测选项目标签",
   // commit 时走 accept(override_class_name) 而非 update(class_name). 复用同一 ClassPickerPopover.
-  accept?: { predictionId: string; shapeIndex?: number };
+  // B-57 · toolUnitId: 预测自身的工具单位 (如 polygon→region), 让 popover 按它取类别集合,
+  // 而非当前激活工具 (bbox) 的集合 — 否则采纳多边形时只列出矩形框的类, 选不到正确类别。
+  accept?: { predictionId: string; shapeIndex?: number; toolUnitId?: string };
 } | null;
 
 export function useWorkbenchState() {
@@ -149,25 +151,17 @@ export function useWorkbenchState() {
   const layoutTouchedRef = useRef({
     leftOpen: false,
     rightOpen: false,
-    leftWidth: false,
-    rightWidth: false,
   });
   const [leftOpen, setLeftOpenRaw] = useState(workbenchLayout.leftOpen);
   const [rightOpen, setRightOpenRaw] = useState(workbenchLayout.rightOpen);
-  const [leftWidth, setLeftWidthRaw] = useState<number>(workbenchLayout.leftWidth);
-  const [rightWidth, setRightWidthRaw] = useState<number>(workbenchLayout.rightWidth);
 
   useEffect(() => {
     if (!workbenchConfigLoaded) return;
     if (!layoutTouchedRef.current.leftOpen) setLeftOpenRaw(workbenchLayout.leftOpen);
     if (!layoutTouchedRef.current.rightOpen) setRightOpenRaw(workbenchLayout.rightOpen);
-    if (!layoutTouchedRef.current.leftWidth) setLeftWidthRaw(workbenchLayout.leftWidth);
-    if (!layoutTouchedRef.current.rightWidth) setRightWidthRaw(workbenchLayout.rightWidth);
   }, [
     workbenchLayout.leftOpen,
     workbenchLayout.rightOpen,
-    workbenchLayout.leftWidth,
-    workbenchLayout.rightWidth,
     workbenchConfigLoaded,
   ]);
 
@@ -189,18 +183,6 @@ export function useWorkbenchState() {
     [setWorkbenchLayout],
   );
 
-  const setLeftWidth = useCallback((w: number) => {
-    const clamped = Math.max(200, Math.min(560, Math.round(w)));
-    layoutTouchedRef.current.leftWidth = true;
-    setLeftWidthRaw(clamped);
-    setWorkbenchLayout({ leftWidth: clamped });
-  }, [setWorkbenchLayout]);
-  const setRightWidth = useCallback((w: number) => {
-    const clamped = Math.max(220, Math.min(600, Math.round(w)));
-    layoutTouchedRef.current.rightWidth = true;
-    setRightWidthRaw(clamped);
-    setWorkbenchLayout({ rightWidth: clamped });
-  }, [setWorkbenchLayout]);
   const toggleHiddenVideoTrack = useCallback((trackId: string) => {
     setHiddenVideoTrackIds((prev) => {
       const next = new Set(prev);
@@ -351,8 +333,6 @@ export function useWorkbenchState() {
     confThreshold, setConfThreshold,
     leftOpen, setLeftOpen,
     rightOpen, setRightOpen,
-    leftWidth, setLeftWidth,
-    rightWidth, setRightWidth,
     workbenchConfig, workbenchConfigLoaded, updateWorkbenchConfig, setWorkbenchFields,
     workbenchLayout, setWorkbenchLayout,
     clipboard, setClipboard,

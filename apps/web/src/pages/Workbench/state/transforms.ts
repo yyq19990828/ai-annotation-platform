@@ -204,6 +204,9 @@ export function predictionSourceLabel(source: PredictionSourceValue | undefined)
 export type AiBox = Annotation & {
   predictionId: string;
   shapeIndex: number;
+  // B-57 · 预测自身的工具单位 (如 polygon→region); 采纳选类时据此取该单位的类别集合。
+  // Annotation 基类不含此字段 (仅 AnnotationResponse 有), 故在 AiBox 上显式补。
+  tool_unit_id?: string | null;
   predictionSource: PredictionSourceValue;
   // v0.14.9 · OCR / doc_layout 候选携带的属性 (如 OCR 的 {text, language?, orientation?}).
   // 后端 PredictionShape 协议外字段, 透传供 AIInspectorPanel 渲染文本摘要并在 accept 时带入新建标注.
@@ -251,6 +254,8 @@ export function predictionsToBoxes(
         id: `pred-${p.id}-${shapeIndex}`,
         annotation_type: shape.geometry.type,
         geometry: shape.geometry,
+        // B-57 · 采纳时让选类 popover 能按预测自身的工具单位 (而非当前激活工具) 取类别集合。
+        tool_unit_id: unit,
         predictionId: p.id,
         shapeIndex,
         ...s,

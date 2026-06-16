@@ -43,6 +43,7 @@ last_reviewed: 2026-06-11
 
 | 分类 | 字段 | 说明 |
 |---|---|---|
+| 通用 | `leftWidthPct` / `rightWidthPct` | 左 / 右边栏宽度，占工作台宽度的百分比（10%–35%，默认 15%）；也可直接拖拽边栏分隔条调整，与设置面板双向同步，双击分隔条或点「重置」回到 15% |
 | 通用 | `longTaskSampleRate` | PerformanceObserver longtask 采样率（0–1），性能调试用；普通用户保持默认 |
 | 通用 | `confirmDelete` / `recentClassesLimit` | 删除确认策略和最近类别数量 |
 | 通用 | `crossFrameOverlayEnabled` / `crossFrameOverlayK` / `crossFrameOverlayScope` | 邻帧框叠加开关、帧数与对象范围 |
@@ -52,6 +53,7 @@ last_reviewed: 2026-06-11
 | 图片 | `controlPointsSize` | 多边形 / 折线顶点控制点半径（像素，2–20），影响拖拽手柄大小 |
 | 图片 | `autoFitOnResize` | 展开 / 收起边栏或画布容器尺寸变化后，自动让图片重新适应画布 |
 | 视频 | `defaultPlaybackRate` / `largeFrameStep` | 视频任务默认播放速率和大步进帧数 |
+| 视频 | `autoFitOnResize` | 展开 / 收起或拖宽边栏后，自动让视频重新适应画布 |
 | 点云 | `pointSize` / `pointMaskSelectMode` | 点云点径和点云分割工具的默认点选模式 |
 | 点云 | `neighborPointOverlay` / `neighborPointOverlayK` / `neighborPointCull` | 邻帧点云叠加开关、帧数与动态目标处理方式 |
 | 点云 | `persistCameraView` | 记住 3D 主视角的相机位置、目标点、up 向量和 orbit / BEV 模式 |

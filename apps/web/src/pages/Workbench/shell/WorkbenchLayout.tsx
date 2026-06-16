@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type ComponentProps, type ComponentPropsWithoutRef, type Ref } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ComponentPropsWithoutRef, type CSSProperties, type Ref } from "react";
 import { ConflictModal } from "@/components/workbench/ConflictModal";
+import { useElementStyle } from "@/components/ui/useElementStyle";
 import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
 import type { VideoStageControls } from "../stage/VideoStage";
 import { AIInspectorPanel, AIPredictionPopover } from "./AIInspectorPanel";
@@ -93,7 +94,6 @@ export function WorkbenchLayout({
   floatingDiscussion,
 }: WorkbenchLayoutProps) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const splitTopRef = useRef<HTMLDivElement>(null);
   const [splitTopHeight, setSplitTopHeight] = useState(readRightSplitTop);
   const taskQueueDetached = Boolean(floatingTaskQueue?.detached);
   const classPaletteDetached = Boolean(floatingClassPalette?.detached);
@@ -103,9 +103,10 @@ export function WorkbenchLayout({
   const rightShouldRenderEmbeddedPanel = inspector.open && rightHasEmbeddedPanel;
 
   const onSplitResize = useCallback((next: number) => {
-    setSplitTopHeight(next);
+    const clamped = Math.round(next);
+    setSplitTopHeight(clamped);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(RIGHT_SPLIT_TOP_KEY, String(next));
+      window.localStorage.setItem(RIGHT_SPLIT_TOP_KEY, String(clamped));
     }
   }, []);
 
@@ -113,9 +114,13 @@ export function WorkbenchLayout({
     rootRef.current?.style.setProperty("--workbench-grid-template", gridTemplateColumns);
   }, [gridTemplateColumns]);
 
-  useEffect(() => {
-    splitTopRef.current?.style.setProperty("--right-split-top-height", `${splitTopHeight}px`);
-  }, [splitTopHeight]);
+  // 高度用 useElementStyle 注入 CSS 变量：该上段 div 是条件渲染，收起右栏再展开会重新挂载成
+  // 新 DOM；若仍用 useRef+useEffect([splitTopHeight])，依赖未变 effect 不重跑 → 新元素拿不到
+  // --right-split-top-height → 高度回退到默认（B-56「展开收起后回到原位 / 第一次拖拽不跟手」）。
+  // useElementStyle 用 state 持有元素，重挂载会重跑 effect 把变量重新写上。
+  const splitTopStyleRef = useElementStyle<HTMLDivElement>(
+    useMemo<CSSProperties>(() => ({ "--right-split-top-height": `${splitTopHeight}px` }) as CSSProperties, [splitTopHeight]),
+  );
 
   return (
     <div
@@ -146,11 +151,18 @@ export function WorkbenchLayout({
               {/* v0.11.5+ · 列宽拖拽 handle 提到右栏全高层级（原在 AIInspectorPanel 内，
                   导致只在上段可拖；这里覆盖 AIInspectorPanel + DiscussionPanel 整列高度）。 */}
               {inspector.open && (
-                <ResizeHandle side="left" width={inspector.width} onResize={inspector.onResize} min={220} max={600} />
+                <ResizeHandle
+                  side="left"
+                  width={inspector.width}
+                  onResize={inspector.onResize}
+                  min={inspector.widthMin ?? 220}
+                  max={inspector.widthMax ?? 600}
+                  resetTo={inspector.widthResetTo}
+                />
               )}
               {!inspectorDetached && (
                 <div
-                  ref={splitTopRef}
+                  ref={splitTopStyleRef}
                   className={discussionDetached ? `${styles.rightSplitTop} ${styles.rightSplitTopFull}` : styles.rightSplitTop}
                 >
                   <AIInspectorPanel {...inspector} />

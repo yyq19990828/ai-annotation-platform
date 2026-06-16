@@ -32,7 +32,7 @@ last_reviewed: 2026-06-10
 
 ## 推荐流程
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/public-templates/templates-list.png — 模板库四 tab + scope chip + usage_count [manual] -->
+![模板库四 tab + scope chip + usage_count](../images/superadmin/public-templates/templates-list.png)
 
 1. 项目管理员先在自己组织内打磨模板（`scope=private` → 灰度试用 → 推到 `scope=organization`）。
 2. 跑通后将模板 ID / 用例报给超管，超管 PATCH `scope=public`。

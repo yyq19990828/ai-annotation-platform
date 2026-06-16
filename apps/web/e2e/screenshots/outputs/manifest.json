@@ -88,5 +88,119 @@
     "scene": "notifications/panel-overview",
     "lastRun": "2026-06-12T10:28:02.559Z",
     "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/tool-units-panel.png": {
+    "auto": true,
+    "scene": "projects/tool-units-panel",
+    "lastRun": "2026-06-15T02:47:56.250Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/batch-status-list.png": {
+    "auto": true,
+    "scene": "projects/batch-status-list",
+    "lastRun": "2026-06-15T03:03:23.418Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/data-manager-overview.png": {
+    "auto": true,
+    "scene": "projects/data-manager-overview",
+    "lastRun": "2026-06-15T02:48:00.803Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/data-manager-filter-rules.png": {
+    "auto": true,
+    "scene": "projects/data-manager-filter-rules",
+    "lastRun": "2026-06-15T02:48:02.941Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/template-library-overview.png": {
+    "auto": true,
+    "scene": "projects/template-library-overview",
+    "lastRun": "2026-06-15T02:48:05.037Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/ml-backends/register-form.png": {
+    "auto": true,
+    "scene": "projects/ml-backends/register-form",
+    "lastRun": "2026-06-15T02:48:07.552Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/ai-pre-config-panel.png": {
+    "auto": true,
+    "scene": "projects/ai-pre-config-panel",
+    "lastRun": "2026-06-15T02:48:09.716Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/prediction-import-wizard.png": {
+    "auto": true,
+    "scene": "projects/prediction-import-wizard",
+    "lastRun": "2026-06-15T02:48:12.175Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/review/review-list-page.png": {
+    "auto": true,
+    "scene": "review/review-list-page",
+    "lastRun": "2026-06-15T02:48:45.850Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/users/edit-modal.png": {
+    "auto": true,
+    "scene": "superadmin/users/edit-modal",
+    "lastRun": "2026-06-15T02:49:19.338Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/users/groups-tab.png": {
+    "auto": true,
+    "scene": "superadmin/users/groups-tab",
+    "lastRun": "2026-06-15T02:49:21.428Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/users/permission-matrix.png": {
+    "auto": true,
+    "scene": "superadmin/users/permission-matrix",
+    "lastRun": "2026-06-15T02:49:23.571Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/audit-logs/detail-modal.png": {
+    "auto": true,
+    "scene": "superadmin/audit-logs/detail-modal",
+    "lastRun": "2026-06-15T02:49:26.126Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/failed-predictions/list.png": {
+    "auto": true,
+    "scene": "superadmin/failed-predictions/list",
+    "lastRun": "2026-06-15T03:03:25.462Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/system-monitoring/workers-table.png": {
+    "auto": true,
+    "scene": "superadmin/system-monitoring/workers-table",
+    "lastRun": "2026-06-15T02:49:31.052Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/ml-backend/register-form.png": {
+    "auto": true,
+    "scene": "superadmin/ml-backend/register-form",
+    "lastRun": "2026-06-15T03:06:20.273Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/public-templates/templates-list.png": {
+    "auto": true,
+    "scene": "superadmin/public-templates/templates-list",
+    "lastRun": "2026-06-15T02:49:39.074Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/superadmin/bugs/status-transitions.png": {
+    "auto": true,
+    "scene": "superadmin/bugs/status-transitions",
+    "lastRun": "2026-06-15T02:49:41.333Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/prediction-purge-modal.png": {
+    "auto": true,
+    "scene": "projects/prediction-purge-modal",
+    "lastRun": "2026-06-15T02:55:00.512Z",
+    "project": "desktop-light"
   }
 }

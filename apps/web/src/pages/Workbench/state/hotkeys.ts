@@ -1,7 +1,7 @@
 // Single source of truth for Workbench shortcuts.
 // useEffect 注册和 HotkeyCheatSheet 都从这里读，避免漂移。
 
-export type HotkeyGroup = "view" | "draw" | "ai" | "nav" | "video" | "system";
+export type HotkeyGroup = "view" | "draw" | "ai" | "nav" | "video" | "threed" | "system";
 
 export interface HotkeyDef {
   keys: string[];        // display labels e.g. ["Ctrl", "Z"]
@@ -101,11 +101,26 @@ export const HOTKEYS: HotkeyDef[] = [
 
   { keys: ["Ctrl", "→"], desc: "下一题", group: "nav", actionType: "navigateTask" },
   { keys: ["Ctrl", "←"], desc: "上一题", group: "nav", actionType: "navigateTask" },
-  { keys: ["Alt", "→ / ←"], desc: "跨帧延续选中框到同 scene 邻帧(3D 也可 Shift+→/←)", group: "nav", actionType: "crossFramePropagate" },
-  { keys: ["Ctrl", "Shift", "→ / ←"], desc: "批量延续当前帧全部 3D 框到邻帧(3D 工作台)", group: "nav" },
+  { keys: ["Alt", "→ / ←"], desc: "跨帧延续选中框到同 scene 邻帧", group: "nav", actionType: "crossFramePropagate" },
   { keys: ["N"], desc: "智能切题：下一未标注", group: "nav", actionType: "smartNext" },
   { keys: ["U"], desc: "智能切题：下一最不确定", group: "nav", actionType: "smartNext" },
   { keys: ["E"], desc: "提交质检", group: "nav", actionType: "submit" },
+
+  // 3D / 点云工作台专属键：在 ThreeDWorkbench 本地 addEventListener 注册，
+  // 不走 dispatchKey；此处仅为在 ? 面板展示（故无 actionType）。
+  { keys: ["W"], desc: "3D：选中框时切平移 gizmo", group: "threed" },
+  { keys: ["E"], desc: "3D：选中框时切旋转 gizmo", group: "threed" },
+  { keys: ["R"], desc: "3D：选中框时切缩放 gizmo", group: "threed" },
+  { keys: ["B"], desc: "3D：进 3D 框放置模式", group: "threed" },
+  { keys: ["P"], desc: "3D：进 point-mask 放置模式", group: "threed" },
+  { keys: ["V / Esc"], desc: "3D：回到选择工具", group: "threed" },
+  { keys: ["Enter"], desc: "3D：point-mask 多边形封闭落库", group: "threed" },
+  { keys: ["Q"], desc: "3D：选中框自动拟合（收尺寸 + 贴地）", group: "threed" },
+  { keys: ["Shift", "Q"], desc: "3D：选中框仅收尺寸", group: "threed" },
+  { keys: ["Alt", "Q"], desc: "3D：选中框仅贴地", group: "threed" },
+  { keys: ["Shift", "→ / ←"], desc: "3D：跨帧延续选中框到同 scene 邻帧", group: "threed" },
+  { keys: ["Ctrl", "Shift", "→ / ←"], desc: "3D：批量延续当前帧全部 3D 框到邻帧", group: "threed" },
+  { keys: ["← / →"], desc: "3D：相机放大浮层内切换相机（Esc 关闭）", group: "threed" },
 
   { keys: ["?"], desc: "打开本面板", group: "system", actionType: "showHotkeys" },
   { keys: ["Esc"], desc: "取消选择 / 关闭弹窗", group: "system", actionType: "cancel" },
@@ -117,6 +132,7 @@ export const GROUP_LABEL: Record<HotkeyGroup, string> = {
   ai: "AI",
   nav: "导航",
   video: "视频",
+  threed: "3D / 点云",
   system: "系统",
 };
 

@@ -48,3 +48,25 @@ repos:
         language: system
         files: ^apps/api/app/(api|schemas)/.*\.py$
         pass_filenames: false
+
+      # 改快捷键 / 工作台设置定义源时,自动重新生成对应的 .generated.md 并 git add,
+      # 把"忘了重新生成导致文档漂移"变成提交即修复(与 regen-openapi-snapshot 同思路)。
+      # CI 侧另有 docs-site `check:codegen`(--check)作为兜底闸门。
+      - id: regen-doc-codegen
+        name: Regenerate generated docs (hotkeys + workbench settings)
+        entry: bash -c 'node docs-site/scripts/generate-hotkeys.mjs && node docs-site/scripts/generate-settings.mjs && git add docs-site/user-guide/workbench/hotkeys.generated.md docs-site/user-guide/workbench/settings.generated.md 2>/dev/null || true'
+        language: system
+        files: ^apps/web/src/(pages/Workbench/state/(hotkeys|workbenchSettingsFields)|api/auth)\.ts$
+        pass_filenames: false
+
+      # 文档写法提醒(仅提醒, 不阻塞): 标记把代码改动写成 changelog 式版本前缀
+      # (如 `v1.2.3: ...` / `## v1.2.3`)的叙述性文档, 建议改为融入正文或放进 HTML 注释。
+      # verbose 让提醒在提交时始终显示; 脚本永远 exit 0, 不会拦截提交。
+      - id: doc-version-prefix
+        name: Check docs for version-prefixed style (advisory)
+        entry: node scripts/check-doc-version-prefix.mjs --staged
+        language: system
+        files: ^(docs-site/.*\.md|README\.md|DEV\.md)$
+        exclude: ^(CHANGELOG\.md|docs/adr/|docs-site/dev/adr/|.*\.generated\.md)$
+        pass_filenames: false
+        verbose: true

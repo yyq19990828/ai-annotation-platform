@@ -136,6 +136,23 @@ docker exec ai-annotation-platform-celery-worker-1 \
 
 **Common pitfall:** Celery workers silently run stale code after editing a task signature, because Celery has no `--reload` equivalent. Symptom is dispatch-time `TypeError` on new kwargs while source on disk looks correct. Always restart the worker container after editing files under `apps/api/app/workers/`.
 
+## 9. Documentation Writing Style (no user-visible version numbers)
+
+**Docs must read as the CURRENT state of the system — not as a changelog.** A reader should never see a `vX.Y.Z`-style version number in the rendered page. When you update a doc after a code change, weave the change into the prose so the page describes how things work *now*; do not leave version annotations behind — neither changelog-style prefixes nor inline provenance:
+
+- ❌ `v1.2.3: added the foo flag`
+- ❌ `## v1.2.3` as a section heading in a guide/concept doc
+- ❌ `端点 X（v0.14.11）` / `**邮箱验证（v0.12.0+）**` — inline "since version" provenance in prose, headings, or tables
+
+If version provenance genuinely matters, record it where readers don't see it — an **HTML comment** or YAML **frontmatter** (both invisible in the rendered page):
+
+- ✅ `The foo flag controls X. <!-- since v1.2.3 -->`
+- ✅ frontmatter `since: v1.2.3`
+
+**Exempt** (version content is fine there): `CHANGELOG.md`, `docs/adr/**`, `docs-site/dev/adr/**`, generated `*.generated.md`; HTML comments and frontmatter anywhere. Version tokens without a dot are not flagged (e.g. "requires Node v18+", a `/v1/` route, "the v2 protocol").
+
+**Advisory check (does not block):** `scripts/check-doc-version-prefix.mjs` scans changed docs (`docs-site/**`, `README.md`, `DEV.md`) for this pattern. It runs as a `pre-commit` hook (`--staged`, prints a reminder, never fails) and in the `Claude Docs Impact` PR workflow (emits `::warning::` annotations + a `style_warnings` line in the PR comment). Run standalone: `node scripts/check-doc-version-prefix.mjs --staged`.
+
 ## Parallel Subagent Worktree Rule
 - When dispatching any subagent (the `Agent` tool) that will **modify code**, always pass `isolation: "worktree"` so the agent works in its own git worktree (auto-cleaned if it makes no changes).
 - Read-only / search-only subagents (e.g. `Explore`, pure lookups) do **not** need a worktree.

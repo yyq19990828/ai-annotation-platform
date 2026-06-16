@@ -129,6 +129,9 @@ jobs:
       - name: Check image manifest
         run: node docs-site/scripts/check-image-manifest.mjs --strict
 
+      - name: Check orphan images
+        run: node docs-site/scripts/check-orphan-images.mjs --strict
+
       - name: Open issue on failure
         if: failure() && github.event_name == 'schedule'
         uses: actions/github-script@v7

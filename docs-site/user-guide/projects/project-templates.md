@@ -26,7 +26,7 @@ last_reviewed: 2026-06-10
 
 ## 入口
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/projects/template-library-overview.png — 模板库页（管理组入口 + 新建/导出按钮 + 四 tab）[manual] -->
+![模板库页（管理组入口 + 新建/导出按钮 + 四 tab）](../images/projects/template-library-overview.png)
 
 侧边栏 → **管理** → **「项目模板」**（`/project-templates`）。
 

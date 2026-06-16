@@ -215,7 +215,7 @@ def build_kitti_labels(
     img_w: int,
     img_h: int,
 ) -> str:
-    """KITTI tracking label：每行 18 列。
+    """KITTI tracking label：每行 17 列。
 
     ``frame track_id type truncated occluded alpha x1 y1 x2 y2 h w l x y z rotation_y``
     2D 版：truncated=0，occluded∈{0,1}，alpha/3D 字段占位 -1；frame=网格序号 0-based。

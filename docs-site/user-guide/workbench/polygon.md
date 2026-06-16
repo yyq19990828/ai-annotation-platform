@@ -15,6 +15,8 @@ last_reviewed: 2026-06-10
 3. 双击 / 按 `Enter` 闭合多边形
 4. 右侧属性面板选择类别
 
+![多边形逐点绘制：沿边界落点 + 预览线，Enter 闭合提交](../images/polygon/draw-in-progress.gif)
+
 ## 绘制快捷键
 
 | 操作 | 快捷键 |

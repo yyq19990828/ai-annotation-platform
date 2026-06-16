@@ -65,6 +65,16 @@ type StageKind = "image" | "video" | "3d";
 
 不要在 3D 接入前抽统一 geometry 或统一 editor 接口。图片 bbox / polygon 是平面 shape；视频 track 是 keyframe 派生的时间序列；3D 可能是 cuboid、点云选择、相机视锥或多视角联动。当前只统一 `StageKind`、`StageCapabilities` 和 `WorkbenchStageHost` 这一层边界。
 
+### 3D 快捷键不走集中式 dispatchKey
+
+工作台的集中式快捷键派发（`hotkeys.ts` 的 `dispatchKey`，由 `useWorkbenchHotkeys` 全局注册）是为 2D 画布 / 视频设计的：`HotkeyAction` 联合类型只有 `setTool` / `arrowNudge` / `acceptAi` / `video*` / `submit` 等平面语义，没有 gizmo 模式、3D 工具、点云几何或相机切换。3D 的工具与编辑键（W/E/R gizmo、B/P/V 工具切换、Q 系列框拟合、Shift+→/← 跨帧延续、放大浮层 ←/→ 切相机、Delete/Backspace 删框）因此**由 `ThreeDWorkbench` 组件内 `addEventListener` 本地接管**，原因有三：
+
+1. **键位与 2D 语义冲突**：如 `E` 在 dispatchKey 里是「提交质检」，3D 想用它切旋转 gizmo。`useWorkbenchShellModel` 用 `threeDOwnedKeys`（`w/e/r/b/p/v/Delete/Backspace`）在 `stageKind === "3d"` 时作为 `ignoredKeys` 传入，让 `useWorkbenchHotkeys` 对这批键提前 return，dispatchKey 不再消费它们。
+2. **操作对象在组件内**：W/E/R 直接调 `sceneRef.current?.setTransformMode()`（three.js TransformControls），Q 系列调点云专属的 autofit 几何算法——壳层的快捷键 hook 拿不到这些引用。
+3. **一键多变体**：如 Q / Shift+Q / Alt+Q 是三种不同拟合，←/→ 只在放大浮层状态下才是切相机，超出 dispatchKey「一键一 action」的表达力。
+
+代价：这些键不在 `HOTKEYS` 派发表里，只作为**纯展示条目**（无 `actionType`）登记进 `?` 帮助面板的「3D / 点云」分组——因此能在面板查到，但不计入「按使用频率排」的统计。
+
 ## Overlay 边界
 
 跨 Stage 的弹窗放在 `WorkbenchOverlays`：待选类别、改类、SAM 接受、批量改类。图片画布自己的浮动控件仍放在 `ImageWorkbench` 内部。
@@ -104,11 +114,12 @@ DiscussionPanel 是默认组件：旧 feature flag `DISCUSSION_PANEL_ENABLED` �
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `leftOpen` / `rightOpen` | `boolean` | 左 / 右侧栏开合 |
-| `leftWidth` / `rightWidth` | `number` | 侧栏列宽（clamp 200–560 / 220–600） |
 | `floatingTaskQueue` / `floatingClassPalette` / `floatingInspector` / `floatingDiscussion` | `FloatingPanelState` | 四个侧栏区块的浮窗态 |
 | `triViewFloat` | `TriViewFloatState` | 3D 三视图浮层态 |
 | `cameraPanels` | `Record<string, CameraPanelState>` | 3D 悬浮相机面板位置 + 折叠态，按相机 role 分桶 |
 | `pointcloudCamera` | `PointcloudCameraState｜null` | 点云主视图相机快照；仅当 `workbench.pointcloud.persistCameraView` 开启时写入和恢复 |
+
+> 边栏宽度不再属于 layout 子树：旧的 `leftWidth` / `rightWidth`（像素，clamp 200–560 / 220–600）已替换为通用偏好 `workbench.common.leftWidthPct` / `rightWidthPct`（占工作台宽度的百分比，clamp 10–35%，默认 15%），拖拽分隔条与设置面板双向同步。详见 [设置参考](../../user-guide/reference/settings)。
 
 `FloatingPanelState = { detached: boolean; x/y/w/h: number｜null }`；`TriViewFloatState` 把 `detached` 换成 `collapsed`（三视图常驻浮层，只折叠不分离）。`x/y/w/h` 为 `null` 表示尚未拖动过、用首次默认位置。`CameraPanelState = { x/y: number｜null; collapsed?: boolean }`（x/y 为 `null` = 未拖动、用默认贴边位）；某 role 无键 = 用默认位置 + 自动折叠态。早期版本用 `pcwb:cam-pos:*` / `pcwb:cam-collapsed:*` 两个 localStorage 键，v0.15.x 起迁移到此处由后端持久化，旧键首次加载时一次性迁移后清除。
 
