@@ -3,12 +3,20 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { Stage } from "react-konva";
 import type Konva from "konva";
 import { Icon } from "@/components/ui/Icon";
-import type { TaskVideoFrameTimetableResponse, TaskVideoManifestResponse } from "@/types";
+import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse } from "@/types";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
+import type { AnnotationFeedback } from "@/api/feedbacks";
 import { useElementSize, useViewportTransform } from "../state/useViewportTransform";
+import type { PendingDrawing } from "../state/useWorkbenchState";
+import type { DiffMode } from "../modes/types";
 import { FloatingDock } from "../shell/FloatingDock";
 import { VideoKonvaMediaLayer } from "./VideoKonvaMediaLayer";
+import { VideoKonvaTracksLayer } from "./VideoKonvaTracksLayer";
+import { VideoKonvaOverlayLayer } from "./VideoKonvaOverlayLayer";
+import { VideoKonvaIssueLayer } from "./VideoKonvaIssueLayer";
 import { videoIntrinsicSize } from "./videoKonvaCoordinates";
+import { deriveVideoFrameViews } from "./videoFrameViews";
+import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annotationVisual";
 import { clampScale } from "./shared/viewport/zoom";
 import { buildFrameTimebase } from "./frameTimebase";
 import { useFrameClock } from "./useFrameClock";
@@ -16,6 +24,8 @@ import { useVideoBitmapCache } from "./useVideoBitmapCache";
 import { resolveWorkbenchPerformanceTier } from "../state/performanceTier";
 import type { VideoStageControls } from "./VideoStage";
 import styles from "./VideoKonvaStage.module.css";
+
+const EMPTY_ANNOTATIONS: AnnotationResponse[] = [];
 
 interface VideoKonvaStageProps {
   manifest: TaskVideoManifestResponse | undefined;
@@ -26,6 +36,18 @@ interface VideoKonvaStageProps {
   autoFitOnResize?: boolean;
   performanceTier?: WorkbenchCommonPreferences["performanceTier"];
   onFrameIndexChange?: (frameIndex: number) => void;
+  // v0.16.2 · 标注层数据(render-only):用 deriveVideoFrameViews 派生当前帧框/轨迹/标签/ghost。
+  annotations?: AnnotationResponse[];
+  selectedId?: string | null;
+  hiddenTrackIds?: Set<string>;
+  reviewDisplayMode?: DiffMode;
+  trackColorOverrides?: Record<string, string>;
+  activeClass?: string;
+  pendingDrawing?: PendingDrawing;
+  issuePixelFeedbacks?: AnnotationFeedback[];
+  issueHighlightId?: string | null;
+  /** 共享视觉规格(线宽/填充/字号/标签);与图片同源。缺省回退默认值。 */
+  visual?: AnnotationVisualConfig;
 }
 
 const noop = () => {};
@@ -51,6 +73,16 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   autoFitOnResize = true,
   performanceTier = "standard",
   onFrameIndexChange,
+  annotations = EMPTY_ANNOTATIONS,
+  selectedId = null,
+  hiddenTrackIds,
+  reviewDisplayMode,
+  trackColorOverrides,
+  activeClass = "",
+  pendingDrawing = null,
+  issuePixelFeedbacks,
+  issueHighlightId,
+  visual = DEFAULT_ANNOTATION_VISUAL,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -94,6 +126,33 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   const size = useMemo(
     () => videoIntrinsicSize(manifest?.metadata.width, manifest?.metadata.height),
     [manifest?.metadata.height, manifest?.metadata.width],
+  );
+
+  // 当前帧的 pending draft(仅本帧的 video_bbox/video_track_bbox 草稿)。
+  const pendingDraft = useMemo(() => {
+    if (
+      !pendingDrawing
+      || (pendingDrawing.kind !== "video_bbox" && pendingDrawing.kind !== "video_track_bbox")
+      || pendingDrawing.frameIndex !== frameIndex
+    ) {
+      return null;
+    }
+    return { geom: pendingDrawing.geom, className: activeClass || "未分类" };
+  }, [activeClass, frameIndex, pendingDrawing]);
+
+  // v0.16.2 · 标注渲染派生(纯函数,与 VideoStage 现状对齐)。
+  const frameViews = useMemo(
+    () => deriveVideoFrameViews({
+      annotations,
+      frameIndex,
+      selectedId,
+      hiddenTrackIds,
+      reviewDisplayMode,
+      trackColorOverrides,
+      visual,
+      pendingDraft,
+    }),
+    [annotations, frameIndex, hiddenTrackIds, pendingDraft, reviewDisplayMode, selectedId, trackColorOverrides, visual],
   );
 
   const {
@@ -349,6 +408,32 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             size={size}
             isPlaybackActive={isPlaybackActive}
           />
+          <VideoKonvaTracksLayer
+            entries={frameViews.entries}
+            previews={frameViews.previews}
+            ghost={frameViews.ghost}
+            size={size}
+            scale={vp.scale}
+            visual={visual}
+          />
+          <VideoKonvaOverlayLayer
+            pendingDraft={pendingDraft}
+            labels={frameViews.labels}
+            size={size}
+            scale={vp.scale}
+            visual={visual}
+          />
+          {issuePixelFeedbacks && issuePixelFeedbacks.length > 0 && (
+            <VideoKonvaIssueLayer
+              pixelIssues={issuePixelFeedbacks.filter(
+                (f) => f.kind === "issue" && f.anchor_type === "pixel" && !!f.anchor_position,
+              )}
+              frameIndex={frameIndex}
+              size={size}
+              scale={vp.scale}
+              highlightId={issueHighlightId}
+            />
+          )}
         </Stage>
       </div>
       {playbackError && (

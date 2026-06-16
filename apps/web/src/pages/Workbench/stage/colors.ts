@@ -30,7 +30,7 @@ export function displayClassName(name: string): string {
 
 // Canvas(Konva) 用的颜色：通过浏览器 CSS 引擎把 oklch 转换成 hex，并缓存结果。
 const _canvasCache = new Map<string, string>();
-function colorToHex(cssColor: string): string {
+export function colorToHex(cssColor: string): string {
   if (_canvasCache.has(cssColor)) return _canvasCache.get(cssColor)!;
   try {
     const cvs = document.createElement("canvas");
@@ -49,6 +49,14 @@ function colorToHex(cssColor: string): string {
 
 export function classColorForCanvas(name: string, config?: ClassesConfig): string {
   return colorToHex(classColor(name, config));
+}
+
+/** 把 CSS 变量(如 --color-bg-elev)解析为当前主题下的 hex,供 Konva canvas fill 使用
+ *  (canvas fillStyle 不解析 var())。随主题变化在 render 时重新读取。 */
+export function cssVarToHex(varName: string): string {
+  if (typeof document === "undefined") return "#888888";
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  return raw ? colorToHex(raw) : "#888888";
 }
 
 export function hexToRgba(hex: string, alpha: number): string {

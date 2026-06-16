@@ -31,7 +31,18 @@
 
 <!-- 0.16.x 版本变更按版本段追加到本区；进入 0.17.x 后整体移到 docs/changelogs/0.16.x.md -->
 
-## [0.16.1] - 2026-06-16
+## [0.16.2] - 2026-06-16
+
+画布栈统一 epic 第三步:**视频标注可视层迁到 Konva(实验 flag 后,默认关)**。在 v0.16.1 的底图层之上,把 track 框、轨迹预览线、关键帧圆点、ghost 参考框、pending 草稿、标签、issue 图钉从 SVG/DOM 迁到 Konva 形状,抄图片 `ImageStageShapes` 范式。**本版只渲染、不接交互**(交互在 v0.16.3,Konva 形状 `listening=false`)。视觉设置(线宽/填充/字号/标签显隐+内容)复用 v0.15.27 的 `annotationVisual.ts` 纯函数,与图片同源。新栈仍与旧 SVG 栈经 flag 并行,关 flag 零行为变化。架构见 [ADR-0041](docs/adr/0041-video-canvas-unify-to-konva.md)。计划见 `docs/plans/2026-06-16-v0.16.2-video-annotation-layers-to-konva.md`。
+
+### Added
+
+- **视频标注 Konva 层**:`VideoKonvaTracksLayer`(track 框 + 轨迹预览线 + 选中态关键帧圆点 + ghost)、`VideoKonvaOverlayLayer`(pending 草稿 + Konva Label/Tag/Text 标签)、`VideoKonvaIssueLayer`(issue 图钉,按帧显隐)。线宽/虚线走 `/scale` 屏幕恒定(替代旧 SVG `non-scaling-stroke`),圆点/图钉半径世界单位随画布缩放,填充用类别/轨迹色(经 oklch→hex)+ `annotationVisual` 的 fill alpha;线宽/填充/标签文本全复用同一批共享纯函数,与图片栈同源。
+- **标注渲染派生纯函数** `videoFrameViews.ts`:从 `annotations + frameIndex` 派生当前帧应显示的框 / 轨迹预览 / ghost / 标签(关键帧/插值/遮挡判定、复审显示模式过滤、标签门控),栈无关、可单测,供新 Konva 栈消费(与 VideoStage 现状对齐,epic 接受的双 draw 路径中 Konva 那条)。
+
+### Changed
+
+- **VideoKonvaStage 挂载 tracks/overlay/issue 三层**(对齐图片 5 Layer 结构);`colors.ts` 导出 `colorToHex` + 新增 `cssVarToHex`(供 Konva canvas 解析 oklch token / CSS 变量为 hex)。关闭 flag 时视频工作台仍走旧 `VideoStage`(SVG 栈),旧栈不动。
 
 画布栈统一 epic 第二步:**视频底图层迁到 Konva(实验 flag 后,默认关)**。把视频「底图显示 + 视口」从「`<video>` 元素 + CSS transform」迁到 Konva——视频帧进 `Konva.Image`(决策 A1),pan/zoom 走 Konva Stage 原生 transform,坐标改像素空间(决策 B,存储仍归一化、数据零迁移)。**只迁底图与视口,标注/交互尚未迁**(v0.16.2/.3),新栈与旧 SVG 栈经 flag 并行,仅供开发态视觉对照,不作生产默认。架构取舍见 [ADR-0041](docs/adr/0041-video-canvas-unify-to-konva.md)。计划见 `docs/plans/2026-06-16-v0.16.1-video-media-layer-to-konva.md`。
 

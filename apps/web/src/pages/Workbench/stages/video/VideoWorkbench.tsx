@@ -129,6 +129,16 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
           autoFitOnResize={workbenchVideo.autoFitOnResize}
           performanceTier={performanceTier}
           onFrameIndexChange={onFrameIndexChange}
+          annotations={annotations}
+          selectedId={selectedId}
+          hiddenTrackIds={hiddenTrackIds}
+          reviewDisplayMode={reviewDisplayMode}
+          trackColorOverrides={trackColorOverrides}
+          activeClass={activeClass}
+          pendingDrawing={pendingDrawing}
+          issuePixelFeedbacks={issuePixelFeedbacks}
+          issueHighlightId={issueHighlightId}
+          visual={annotationVisual}
         />
       );
     }

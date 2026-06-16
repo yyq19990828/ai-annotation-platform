@@ -1,0 +1,146 @@
+/**
+ * v0.16.2 · 视频标注 Konva 层渲染测试(konva-mock)。
+ *
+ * 断言几何(像素空间 = 归一化 × size)、线宽 /scale 屏幕恒定、dash、选中/插值/遮挡态切换、
+ * 标签 Konva Label/Text、issue pin 按帧显隐。真实 canvas 渲染交给 Playwright(决策 C)。
+ */
+import { describe, expect, it } from "vitest";
+import { render } from "@testing-library/react";
+import { VideoKonvaTrackShape } from "./VideoKonvaTrackShape";
+import { VideoKonvaTracksLayer } from "./VideoKonvaTracksLayer";
+import { VideoKonvaOverlayLayer } from "./VideoKonvaOverlayLayer";
+import { VideoKonvaIssueLayer } from "./VideoKonvaIssueLayer";
+import { DEFAULT_ANNOTATION_VISUAL } from "./annotationVisual";
+import type { VideoEntryView, VideoTrackPreviewView } from "./videoFrameViews";
+import type { AnnotationFeedback } from "@/api/feedbacks";
+
+const size = { w: 1000, h: 500 };
+
+function entry(over: Partial<VideoEntryView> = {}): VideoEntryView {
+  return {
+    key: "e1",
+    id: "a1",
+    geom: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
+    color: "#ff0000",
+    selected: false,
+    dashed: false,
+    occluded: false,
+    labelText: "car",
+    ...over,
+  };
+}
+
+describe("VideoKonvaTrackShape", () => {
+  it("像素空间几何 + 线宽 /scale + 填充 rgba", () => {
+    render(<VideoKonvaTrackShape geom={{ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }} color="#ff0000" dashed={false} selected={false} size={size} scale={1} visual={DEFAULT_ANNOTATION_VISUAL} />);
+    const rect = document.querySelector('[data-konva="Rect"]')!;
+    expect(rect.getAttribute("data-x")).toBe("100"); // 0.1*1000
+    expect(rect.getAttribute("data-width")).toBe("300"); // 0.3*1000
+    expect(rect.getAttribute("data-y")).toBe("100"); // 0.2*500
+    expect(rect.getAttribute("data-height")).toBe("200"); // 0.4*500
+    expect(rect.getAttribute("data-strokewidth")).toBe("1.5"); // strokeWidthFor(false)=1.5 /scale 1
+    expect(rect.getAttribute("data-fill")).toMatch(/^rgba\(/);
+    expect(rect.hasAttribute("data-dash")).toBe(false); // 非虚线
+  });
+
+  it("选中加粗 + 缩放 /scale", () => {
+    render(<VideoKonvaTrackShape geom={{ x: 0, y: 0, w: 0.2, h: 0.2 }} color="#ff0000" dashed={false} selected size={size} scale={2} visual={DEFAULT_ANNOTATION_VISUAL} />);
+    // (1.5 + 0.5) / scale 2 = 1
+    expect(document.querySelector('[data-konva="Rect"]')!.getAttribute("data-strokewidth")).toBe("1");
+  });
+
+  it("dashed(插值/遮挡)→ dash 数组 /scale", () => {
+    render(<VideoKonvaTrackShape geom={{ x: 0, y: 0, w: 0.2, h: 0.2 }} color="#ff0000" dashed selected={false} size={size} scale={1} visual={DEFAULT_ANNOTATION_VISUAL} />);
+    expect(document.querySelector('[data-konva="Rect"]')!.getAttribute("data-dash")).toBe(JSON.stringify([6, 4]));
+  });
+});
+
+describe("VideoKonvaTracksLayer", () => {
+  const preview = (selected: boolean): VideoTrackPreviewView => ({
+    id: "trk1",
+    color: "#00ff00",
+    selected,
+    points: [
+      { frame: 0, x: 0.1, y: 0.1, occluded: false },
+      { frame: 10, x: 0.5, y: 0.5, occluded: false },
+    ],
+  });
+
+  it("未选中:画预览线、无关键帧圆点;选中:出圆点", () => {
+    const { rerender } = render(
+      <VideoKonvaTracksLayer entries={[entry()]} previews={[preview(false)]} ghost={null} size={size} scale={1} visual={DEFAULT_ANNOTATION_VISUAL} />,
+    );
+    expect(document.querySelector('[data-konva="Layer"]')!.getAttribute("data-testid")).toBe("tracks");
+    expect(document.querySelectorAll('[data-konva="Line"]').length).toBe(1); // 预览线
+    expect(document.querySelectorAll('[data-konva="Circle"]').length).toBe(0); // 未选中无圆点
+    expect(document.querySelectorAll('[data-konva="Rect"]').length).toBe(1); // track 框
+
+    rerender(
+      <VideoKonvaTracksLayer entries={[entry({ selected: true })]} previews={[preview(true)]} ghost={null} size={size} scale={1} visual={DEFAULT_ANNOTATION_VISUAL} />,
+    );
+    expect(document.querySelectorAll('[data-konva="Circle"]').length).toBe(2); // 2 关键帧圆点
+  });
+
+  it("预览线点 = 归一化中心 × size(展平)", () => {
+    render(<VideoKonvaTracksLayer entries={[]} previews={[preview(false)]} ghost={null} size={size} scale={1} visual={DEFAULT_ANNOTATION_VISUAL} />);
+    const line = document.querySelector('[data-konva="Line"]')!;
+    expect(line.getAttribute("data-points")).toBe(JSON.stringify([100, 50, 500, 250]));
+  });
+
+  it("ghost → 虚线参考框", () => {
+    render(<VideoKonvaTracksLayer entries={[]} previews={[]} ghost={{ id: "g", geom: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, color: "#0000ff", labelText: "x" }} size={size} scale={1} visual={DEFAULT_ANNOTATION_VISUAL} />);
+    const ghost = document.querySelector('[data-testid="video-track-ghost"]')!;
+    expect(ghost).not.toBeNull();
+    expect(ghost.getAttribute("data-dash")).toBe(JSON.stringify([6, 4]));
+  });
+});
+
+describe("VideoKonvaOverlayLayer", () => {
+  it("pending draft → 虚线框;标签 → Label + Text 文本", () => {
+    render(
+      <VideoKonvaOverlayLayer
+        pendingDraft={{ geom: { x: 0.2, y: 0.2, w: 0.1, h: 0.1 }, className: "person" }}
+        labels={[{ key: "l1", geom: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 }, color: "#ff0000", text: "car · 插值" }]}
+        size={size}
+        scale={1}
+        visual={DEFAULT_ANNOTATION_VISUAL}
+      />,
+    );
+    expect(document.querySelector('[data-konva="Layer"]')!.getAttribute("data-testid")).toBe("overlay");
+    const draft = document.querySelector('[data-testid="video-pending-draft"]')!;
+    expect(draft.getAttribute("data-dash")).toBe(JSON.stringify([6, 4]));
+    // 标签 Label + Text 文本透传(供 getByText)
+    expect(document.querySelector('[data-konva="Label"]')).not.toBeNull();
+    const text = document.querySelector('[data-konva="Text"]')!;
+    expect(text.getAttribute("data-text")).toBe("car · 插值");
+    // 字号 = labelFontSize / scale = 12
+    expect(text.getAttribute("data-fontsize")).toBe("12");
+  });
+
+  it("无 draft 无标签 → 空 overlay 层", () => {
+    render(<VideoKonvaOverlayLayer pendingDraft={null} labels={[]} size={size} scale={1} visual={DEFAULT_ANNOTATION_VISUAL} />);
+    expect(document.querySelector('[data-konva="Rect"]')).toBeNull();
+    expect(document.querySelector('[data-konva="Label"]')).toBeNull();
+  });
+});
+
+describe("VideoKonvaIssueLayer", () => {
+  const issue = (id: string, frame: number): AnnotationFeedback => ({
+    id,
+    kind: "issue",
+    anchor_type: "pixel",
+    status: "open",
+    anchor_position: { frame, x: 0.5, y: 0.5 },
+  } as unknown as AnnotationFeedback);
+
+  it("只渲染当前帧的图钉", () => {
+    render(<VideoKonvaIssueLayer pixelIssues={[issue("i1", 0), issue("i2", 5)]} frameIndex={0} size={size} scale={1} />);
+    expect(document.querySelector('[data-testid="video-issue-pin-i1"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="video-issue-pin-i2"]')).toBeNull();
+  });
+
+  it("无当前帧图钉 → 不渲染层", () => {
+    render(<VideoKonvaIssueLayer pixelIssues={[issue("i1", 9)]} frameIndex={0} size={size} scale={1} />);
+    expect(document.querySelector('[data-konva="Layer"]')).toBeNull();
+  });
+});
