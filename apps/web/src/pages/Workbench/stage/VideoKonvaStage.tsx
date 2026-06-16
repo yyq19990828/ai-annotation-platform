@@ -571,6 +571,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             videoEl={videoEl}
             bitmap={activeBitmap?.bitmap ?? null}
             size={size}
+            viewport={viewportSize}
             isPlaybackActive={isPlaybackActive}
           />
           <VideoKonvaTracksLayer

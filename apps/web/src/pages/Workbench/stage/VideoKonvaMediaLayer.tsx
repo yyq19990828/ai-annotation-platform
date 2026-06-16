@@ -10,6 +10,11 @@ interface VideoKonvaMediaLayerProps {
   bitmap: ImageBitmap | null;
   /** 视频固有像素尺寸 = Konva 世界尺寸(Stage scale 负责缩放)。 */
   size: VideoPixelSize;
+  /**
+   * Stage 像素尺寸(= viewport)。仅用于触发重绘:Stage canvas 尺寸变化会清空本层,
+   * 必须据此补画一次(见暂停态重绘 effect 注释)。不参与世界坐标绘制。
+   */
+  viewport: { w: number; h: number };
   /** 播放/jog 进行中:走 rAF 重绘 `<video>` 实时帧;否则贴 bitmap 静止帧。 */
   isPlaybackActive: boolean;
   /** 与图片栈 KonvaImage 对齐的像素插值开关。 */
@@ -48,6 +53,7 @@ export function VideoKonvaMediaLayer({
   videoEl,
   bitmap,
   size,
+  viewport,
   isPlaybackActive,
   smoothing = true,
 }: VideoKonvaMediaLayerProps) {
@@ -68,12 +74,19 @@ export function VideoKonvaMediaLayer({
     };
   }, [isPlaybackActive, videoEl]);
 
-  // 暂停态 / 源切换:画一次当前帧(bitmap 优先,回退 <video>)。
+  // 暂停态 / 源切换 / Stage 尺寸变化:画一次当前帧(bitmap 优先,回退 <video>)。
+  //
+  // viewport.w/h 必须在依赖里:Stage canvas 尺寸由 viewport 驱动,首次打开会经历
+  // 0→测量值 的 resize(window resize 同理),而 Konva 改 canvas 尺寸会**清空**该 canvas。
+  // 本层不接收 scale/vp,故 vp 变化时 react-konva 不会重渲染本层子树——若仅依赖
+  // bitmap/videoEl,那次"贴帧"绘制一旦发生在 resize 之前,resize 清空后就再无依赖变化
+  // 触发补画 → 首帧黑屏直到用户 scrub。把 viewport 纳入依赖,确保每次 canvas 尺寸落定后
+  // 都按当前 bitmap 重画一次(batchDraw 自带帧内合并,重复触发无害)。
   useEffect(() => {
     if (isPlaybackActive) return;
     const layer = layerRef.current;
     if (isDrawableLayer(layer)) layer.batchDraw();
-  }, [isPlaybackActive, bitmap, videoEl, size.w, size.h]);
+  }, [isPlaybackActive, bitmap, videoEl, size.w, size.h, viewport.w, viewport.h]);
 
   const imageSource = pickMediaImageSource(isPlaybackActive, videoEl, bitmap);
 
