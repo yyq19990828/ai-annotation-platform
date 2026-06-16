@@ -2,6 +2,7 @@ import { classColor, getTrackColor } from "./colors";
 import { VideoTrackShape } from "./VideoTrackShape";
 import type { VideoFrameEntry, VideoStageGeom, VideoTrackPreview } from "./videoStageTypes";
 import { isFrameOutside } from "./videoTrackOutside";
+import { fillAlpha, strokeWidthFor, type AnnotationVisualConfig } from "./annotationVisual";
 import styles from "./VideoObjectsLayer.module.css";
 
 const TRACK_KEYFRAME_DOT_RADIUS = 0.0038;
@@ -22,6 +23,8 @@ interface VideoObjectsLayerProps {
   trackPreviews: VideoTrackPreview[];
   trackColorOverrides?: Record<string, string>;
   pendingDraft?: { geom: VideoStageGeom; className: string } | null;
+  // v0.15.27 · 共享视觉规格(线宽/填充);视频侧 non-scaling-stroke,原样取最终值。
+  visual: AnnotationVisualConfig;
 }
 
 export function VideoObjectsLayer({
@@ -30,6 +33,7 @@ export function VideoObjectsLayer({
   trackPreviews,
   trackColorOverrides,
   pendingDraft,
+  visual,
 }: VideoObjectsLayerProps) {
   return (
     <svg
@@ -98,9 +102,10 @@ export function VideoObjectsLayer({
           <VideoTrackShape
             geom={geom}
             color={color}
-            selected={selected}
             dashed={dashed}
             viewBoxHeight={viewBoxHeight}
+            strokeWidth={strokeWidthFor(selected, visual)}
+            fillOpacity={fillAlpha(selected, visual)}
           />
         </g>
       ))}
@@ -111,9 +116,10 @@ export function VideoObjectsLayer({
             y={pendingDraft.geom.y * viewBoxHeight}
             width={pendingDraft.geom.w}
             height={pendingDraft.geom.h * viewBoxHeight}
-            fill="rgba(255,255,255,0.08)"
+            fill={classColor(pendingDraft.className)}
+            fillOpacity={fillAlpha(false, visual)}
             stroke={classColor(pendingDraft.className)}
-            strokeWidth={2}
+            strokeWidth={strokeWidthFor(false, visual)}
             strokeDasharray="6 4"
             vectorEffect="non-scaling-stroke"
           />

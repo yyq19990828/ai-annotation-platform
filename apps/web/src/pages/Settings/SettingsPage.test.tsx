@@ -83,6 +83,12 @@ const mockWorkbenchConfig = {
     crossFrameOverlayK: 1,
     crossFrameOverlayScope: "selected",
     performanceTier: "standard",
+    labelFontSize: 12,
+    labelVisibility: "always",
+    labelContent: ["class", "score"],
+    strokeWidth: 1.5,
+    fillOpacity: 0.07,
+    fillOpacitySelected: 0.12,
   },
   image: {
     smoothImage: true,
@@ -94,7 +100,6 @@ const mockWorkbenchConfig = {
     snapThresholdPx: 8,
     zoomStepFactor: 1.1,
     fadedOpacity: 0.35,
-    showBoxLabels: true,
     maskOverlayOpacity: 0.45,
   },
   video: {

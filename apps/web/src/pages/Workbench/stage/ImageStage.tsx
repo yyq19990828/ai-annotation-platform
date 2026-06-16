@@ -28,6 +28,7 @@ import {
 } from "./shared/geometry/snap";
 import { BlurhashLayer } from "./BlurhashLayer";
 import { KonvaBox, KonvaPolygon, KonvaRotatedBox, KonvaPolyline, KonvaKeypoint, keypointColorByIndex } from "./ImageStageShapes";
+import { resolveAnnotationVisual } from "./annotationVisual";
 import {
   buildImageContextMenuItems,
   findContextMenuAnnotationId,
@@ -298,6 +299,11 @@ export function ImageStage({
   // v0.10.10 · I17.3 · 合并项目级 rendering_config 覆盖（项目级 > 用户级 > 默认）。
   const { config: workbenchConfig } = useWorkbenchConfig(projectRenderingConfig);
   useWorkbenchPerf(workbenchConfig.common.longTaskSampleRate);
+  // v0.15.27 · 共享视觉规格(线宽/填充/字号/标签显隐+内容);图片与视频共用同一 common 子集。
+  const annotationVisual = useMemo(
+    () => resolveAnnotationVisual(workbenchConfig.common),
+    [workbenchConfig.common],
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const vpRef = useRef(vp);
@@ -986,7 +992,7 @@ export function ImageStage({
                 selected={selSet.has(b.id)}
                 faded={fadedAiIds?.has(b.id) ?? false}
                 fadedOpacity={workbenchConfig.image.fadedOpacity}
-                showLabel={workbenchConfig.image.showBoxLabels}
+                visual={annotationVisual}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
                 points={b.polyline as Pt[]}
                 onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
@@ -999,7 +1005,7 @@ export function ImageStage({
                 selected={selSet.has(b.id)}
                 faded={fadedAiIds?.has(b.id) ?? false}
                 fadedOpacity={workbenchConfig.image.fadedOpacity}
-                showLabel={workbenchConfig.image.showBoxLabels}
+                visual={annotationVisual}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
                 onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
               />
@@ -1011,7 +1017,7 @@ export function ImageStage({
                 selected={selSet.has(b.id)}
                 faded={fadedAiIds?.has(b.id) ?? false}
                 fadedOpacity={workbenchConfig.image.fadedOpacity}
-                showLabel={workbenchConfig.image.showBoxLabels}
+                visual={annotationVisual}
                 editable={!readOnly}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
                 onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
@@ -1046,7 +1052,7 @@ export function ImageStage({
                   editable={isPrimarySingleSelect}
                   faded={false}
                   fadedOpacity={workbenchConfig.image.fadedOpacity}
-                  showLabel={workbenchConfig.image.showBoxLabels}
+                  visual={annotationVisual}
                   occluded={!!b.occluded}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   onClick={(evt) => handleUserShapeClick(b.id, evt)}
@@ -1085,7 +1091,7 @@ export function ImageStage({
                   selected={selSet.has(b.id)}
                   faded={false}
                   fadedOpacity={workbenchConfig.image.fadedOpacity}
-                  showLabel={workbenchConfig.image.showBoxLabels}
+                  visual={annotationVisual}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   points={livePoints}
                   editable={isOnlySelected}
@@ -1135,7 +1141,7 @@ export function ImageStage({
                   selected={selSet.has(b.id)}
                   faded={false}
                   fadedOpacity={workbenchConfig.image.fadedOpacity}
-                  showLabel={workbenchConfig.image.showBoxLabels}
+                  visual={annotationVisual}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   schema={keypointSchema}
                   editable={isKpEditable}
@@ -1177,7 +1183,7 @@ export function ImageStage({
                   selected={selSet.has(b.id)}
                   faded={false}
                   fadedOpacity={workbenchConfig.image.fadedOpacity}
-                  showLabel={workbenchConfig.image.showBoxLabels}
+                  visual={annotationVisual}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   points={livePoints}
                   selfIntersect={intersects}
@@ -1227,7 +1233,7 @@ export function ImageStage({
                 selected={selSet.has(b.id)}
                 faded={false}
                 fadedOpacity={workbenchConfig.image.fadedOpacity}
-                showLabel={workbenchConfig.image.showBoxLabels}
+                visual={annotationVisual}
                 editable={!readOnly && !b.is_locked}
                 occluded={!!b.occluded}
                 imgW={imgW} imgH={imgH} scale={vp.scale}

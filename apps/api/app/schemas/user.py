@@ -1,5 +1,5 @@
 from typing import Any, Literal
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from uuid import UUID
 from datetime import datetime
 
@@ -105,6 +105,35 @@ class WorkbenchCommonPreferences(BaseModel):
     # 边栏宽度按工作台宽度的百分比存（替代旧 layout.leftWidth/rightWidth 像素值）。
     leftWidthPct: float = Field(default=15.0, ge=10, le=35)
     rightWidthPct: float = Field(default=15.0, ge=10, le=35)
+    # v0.15.27 · 标注视觉样式（图片 + 视频共享，单一来源 annotationVisual.ts 消费）。
+    # 标签字号（画布缩放跟随由前端按模态处理，这里只存基准 px）。
+    labelFontSize: int = Field(default=12, ge=8, le=24)
+    # 标签显隐：always=恒显 / selected=仅选中时 / none=不显示（取代旧 image.showBoxLabels）。
+    labelVisibility: Literal["always", "selected", "none"] = "always"
+    # 标签内容多选；class 必含（_ensure_class_label 兜底），其余 id/置信度/属性按勾选拼接。
+    labelContent: list[Literal["class", "id", "score", "attrs"]] = Field(
+        default_factory=lambda: ["class", "score"]
+    )
+    # 描边线宽（screen px 基准；选中态 = 基值 + 0.5）。
+    strokeWidth: float = Field(default=1.5, ge=1, le=5)
+    # 闭合形状填充透明度（非选中）。
+    fillOpacity: float = Field(default=0.07, ge=0, le=0.6)
+    # 选中对象填充加重透明度。
+    fillOpacitySelected: float = Field(default=0.12, ge=0, le=0.8)
+
+    @field_validator("labelContent")
+    @classmethod
+    def _ensure_class_label(cls, v: list[str]) -> list[str]:
+        # min:1 兜底：标签内容至少保留「类别名」，避免空标签；去重保序。
+        if not v:
+            return ["class"]
+        seen: list[str] = []
+        for item in v:
+            if item not in seen:
+                seen.append(item)
+        if "class" not in seen:
+            seen.insert(0, "class")
+        return seen
 
     @model_validator(mode="after")
     def _derive_legacy_overlay_enabled(self):
@@ -131,7 +160,7 @@ class WorkbenchImagePreferences(BaseModel):
     snapThresholdPx: int = Field(default=8, ge=4, le=16)
     zoomStepFactor: Literal[1.05, 1.1, 1.15, 1.2] = 1.1
     fadedOpacity: float = Field(default=0.35, ge=0.1, le=0.8)
-    showBoxLabels: bool = True
+    # v0.15.27 · showBoxLabels 迁移到 common.labelVisibility（三态枚举），此处删除。
     maskOverlayOpacity: float = Field(default=0.45, ge=0.2, le=0.8)
 
 

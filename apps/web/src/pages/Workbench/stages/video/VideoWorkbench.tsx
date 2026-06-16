@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import { forwardRef, useMemo } from "react";
 import type {
   AnnotationResponse,
   TaskVideoFrameTimetableResponse,
@@ -14,6 +14,7 @@ import type { VideoTimelineChapter } from "../../stage/VideoPlaybackOverlay";
 import type { VideoTrackAnnotation } from "../../stage/videoStageTypes";
 import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
 import { useWorkbenchConfig } from "../../state/useWorkbenchConfig";
+import { resolveAnnotationVisual } from "../../stage/annotationVisual";
 import type { DiffMode } from "../../modes/types";
 import type { VideoConvertOptions, VideoTrackCompositionOptions } from "./useVideoAnnotationActions";
 
@@ -106,6 +107,11 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
   }, ref) {
     const { config: workbenchConfig } = useWorkbenchConfig();
     const workbenchVideo = workbenchConfig.video;
+    // v0.15.27 · 共享标注视觉规格(线宽/填充/字号/标签显隐);与图片工作台共用 common 子集。
+    const annotationVisual = useMemo(
+      () => resolveAnnotationVisual(workbenchConfig.common),
+      [workbenchConfig.common],
+    );
     return (
       <VideoStage
         ref={ref}
@@ -131,6 +137,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         defaultPlaybackRate={workbenchVideo.defaultPlaybackRate}
         largeFrameStep={workbenchVideo.largeFrameStep}
         autoFitOnResize={workbenchVideo.autoFitOnResize}
+        visual={annotationVisual}
         onSelect={onSelect}
         onFrameIndexChange={onFrameIndexChange}
         onCreate={onCreate}

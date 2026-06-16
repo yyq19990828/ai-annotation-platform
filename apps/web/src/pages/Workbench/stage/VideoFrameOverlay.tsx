@@ -8,6 +8,7 @@ import { VideoInteractionLayer } from "./VideoInteractionLayer";
 import { VideoIssueLayer } from "./VideoIssueLayer";
 import { VideoObjectsLayer } from "./VideoObjectsLayer";
 import { VideoTextLayer, type VideoLabelEntry } from "./VideoTextLayer";
+import { shouldShowLabel, type AnnotationVisualConfig } from "./annotationVisual";
 import type {
   VideoDragState,
   VideoFrameEntry,
@@ -44,6 +45,8 @@ interface VideoFrameOverlayProps {
   isPlaying: boolean;
   videoTool: VideoTool;
   selectedTrackLocked: boolean;
+  // v0.15.27 · 共享视觉规格(线宽/填充/字号/标签显隐);图片与视频共用同一 common 子集。
+  visual: AnnotationVisualConfig;
   onBeginPan: (evt: ReactPointerEvent<SVGSVGElement>) => void;
   onBeginDraw: (evt: ReactPointerEvent<SVGSVGElement>) => void;
   onBeginMove: (evt: ReactPointerEvent<SVGElement>, entry: VideoFrameEntry | VideoTrackGhost) => void;
@@ -82,6 +85,7 @@ export function VideoFrameOverlay({
   isPlaying,
   videoTool,
   selectedTrackLocked,
+  visual,
   onBeginPan,
   onBeginDraw,
   onBeginMove,
@@ -123,17 +127,22 @@ export function VideoFrameOverlay({
     : "";
   const selectedTrackColor = entryViews.find((view) => view.entry.ann.id === selectedId)?.color
     ?? (ghostColor || classColor(selectedTrackClassName ?? activeClass));
+  // v0.15.27 · 标签显隐门控:always 恒显 / selected 仅选中对象 / none 全隐。
+  // 草稿与 ghost 是当前正在画 / 选中的对象,按 selected=true 门控(none 时也隐)。
+  const labelVisibility = visual.labelVisibility;
   const labelEntries: VideoLabelEntry[] = [
-    ...entryViews.map((view) => ({
-      key: `entry-${view.key}`,
-      geom: view.geom,
-      color: view.color,
-      text: view.labelText,
-    })),
-    ...(pendingDraft && !drag
+    ...entryViews
+      .filter((view) => shouldShowLabel(view.selected, labelVisibility))
+      .map((view) => ({
+        key: `entry-${view.key}`,
+        geom: view.geom,
+        color: view.color,
+        text: view.labelText,
+      })),
+    ...(pendingDraft && !drag && shouldShowLabel(true, labelVisibility)
       ? [{ key: "pending-draft", geom: pendingDraft.geom, color: pendingDraftColor, text: pendingDraft.className, opacity: 0.9 }]
       : []),
-    ...(selectedTrackGhost && !drag
+    ...(selectedTrackGhost && !drag && shouldShowLabel(true, labelVisibility)
       ? [{
         key: `ghost-${selectedTrackGhost.ann.id}`,
         geom: selectedTrackGhost.geom,
@@ -154,8 +163,9 @@ export function VideoFrameOverlay({
         trackPreviews={trackPreviews}
         trackColorOverrides={trackColorOverrides}
         pendingDraft={!drag ? pendingDraft : null}
+        visual={visual}
       />
-      <VideoTextLayer labels={labelEntries} />
+      <VideoTextLayer labels={labelEntries} fontSize={visual.labelFontSize} />
       <VideoInteractionLayer
         overlayRef={overlayRef}
         entries={entryViews}

@@ -14,6 +14,7 @@ import { useElementSize, useViewportTransform } from "../state/useViewportTransf
 import type { DiffMode } from "../modes/types";
 import { Minimap } from "./Minimap";
 import { VideoFrameOverlay } from "./VideoFrameOverlay";
+import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annotationVisual";
 import { VideoMediaLayer } from "./VideoMediaLayer";
 import { VideoPlaybackOverlay, type VideoLargeFrameStep, type VideoTimelineChapter } from "./VideoPlaybackOverlay";
 import { VideoQcWarnings } from "./VideoQcWarnings";
@@ -145,6 +146,9 @@ interface VideoStageProps {
   /** 边栏展开/收起/拖宽改变视口尺寸后是否自动重新适应窗口 (对齐 image.autoFitOnResize)。 */
   autoFitOnResize?: boolean;
   performanceTier?: WorkbenchCommonPreferences["performanceTier"];
+  /** v0.15.27 · 共享标注视觉规格(线宽/填充/字号/标签显隐);图片与视频共用。
+   *  缺省时回退默认值(测试 / 独立渲染);正常由 VideoWorkbench 透传用户偏好。 */
+  visual?: AnnotationVisualConfig;
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onFrameIndexChange?: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: VideoStageGeom) => void;
@@ -215,6 +219,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   largeFrameStep = 10,
   autoFitOnResize = true,
   performanceTier = "standard",
+  visual = DEFAULT_ANNOTATION_VISUAL,
   onSelect,
   onFrameIndexChange,
   onCreate,
@@ -1699,6 +1704,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               isPlaying={isPlaybackActive}
               videoTool={videoTool}
               selectedTrackLocked={selectedTrackLocked}
+              visual={visual}
               onBeginPan={beginPan}
               onBeginDraw={beginDraw}
               onBeginMove={beginMove}
