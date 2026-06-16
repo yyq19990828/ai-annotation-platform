@@ -3,19 +3,23 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { Stage } from "react-konva";
 import type Konva from "konva";
 import { Icon } from "@/components/ui/Icon";
-import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse } from "@/types";
+import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
 import { useElementSize, useViewportTransform } from "../state/useViewportTransform";
-import type { PendingDrawing } from "../state/useWorkbenchState";
+import type { PendingDrawing, VideoTool } from "../state/useWorkbenchState";
 import type { DiffMode } from "../modes/types";
 import { FloatingDock } from "../shell/FloatingDock";
 import { VideoKonvaMediaLayer } from "./VideoKonvaMediaLayer";
 import { VideoKonvaTracksLayer } from "./VideoKonvaTracksLayer";
 import { VideoKonvaOverlayLayer } from "./VideoKonvaOverlayLayer";
 import { VideoKonvaIssueLayer } from "./VideoKonvaIssueLayer";
+import { VideoKonvaInteractionLayer, type VideoHandleBox, type VideoPreviewBox } from "./VideoKonvaInteractionLayer";
+import { useVideoKonvaInteraction } from "./videoKonvaInteraction";
 import { videoIntrinsicSize } from "./videoKonvaCoordinates";
 import { deriveVideoFrameViews } from "./videoFrameViews";
+import { classColor, getTrackColor } from "./colors";
+import { isVideoTrack, normalizeGeom } from "./videoStageGeometry";
 import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annotationVisual";
 import { clampScale } from "./shared/viewport/zoom";
 import { buildFrameTimebase } from "./frameTimebase";
@@ -26,6 +30,7 @@ import type { VideoStageControls } from "./VideoStage";
 import styles from "./VideoKonvaStage.module.css";
 
 const EMPTY_ANNOTATIONS: AnnotationResponse[] = [];
+const EMPTY_LOCKED = new Set<string>();
 
 interface VideoKonvaStageProps {
   manifest: TaskVideoManifestResponse | undefined;
@@ -48,17 +53,32 @@ interface VideoKonvaStageProps {
   issueHighlightId?: string | null;
   /** 共享视觉规格(线宽/填充/字号/标签);与图片同源。缺省回退默认值。 */
   visual?: AnnotationVisualConfig;
+  // v0.16.3 · 交互层(画框/移动/缩放/平移/选中)。缺省 → 只读渲染(无交互)。
+  videoTool?: VideoTool;
+  readOnly?: boolean;
+  lockedTrackIds?: Set<string>;
+  onSelect?: (id: string | null, opts?: { shift?: boolean }) => void;
+  onCreate?: (frameIndex: number, geom: { x: number; y: number; w: number; h: number }) => void;
+  onPendingDraw?: (
+    kind: "video_bbox" | "video_track_bbox",
+    frameIndex: number,
+    geom: { x: number; y: number; w: number; h: number },
+    anchor: { left: number; top: number },
+  ) => void;
+  onUpdate?: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry) => void;
 }
 
 const noop = () => {};
 
 /**
- * v0.16.1 · 视频 Konva 渲染栈(实验,flag experiment.videoKonva 后)。
+ * v0.16.1–.3 · 视频 Konva 渲染栈(实验,flag experiment.videoKonva 后)。
  *
- * 本版只迁「底图显示 + 视口」:视频帧进 Konva.Image(决策 A1,见 VideoKonvaMediaLayer),
- * pan/zoom 走 Konva Stage 原生 transform + v0.16.0 公共 viewport 原语,坐标改像素空间
- * (决策 B,videoKonvaCoordinates)。**标注/交互/轨迹尚未迁**(v0.16.2/.3),故仅供开发态
- * 与旧 SVG 栈做底图/播放/缩放的像素级视觉对照,不作生产默认。
+ * 底图(v0.16.1):视频帧进 Konva.Image(决策 A1,见 VideoKonvaMediaLayer),pan/zoom 走
+ * Konva Stage 原生 transform + v0.16.0 公共 viewport 原语,坐标改像素空间(决策 B,
+ * videoKonvaCoordinates)。标注渲染(v0.16.2):tracks/overlay/issue 层。交互(v0.16.3):
+ * 画框/移动/缩放/平移/选中经 useVideoKonvaInteraction + VideoKonvaInteractionLayer,命中
+ * 复用 pickTopVideoEntryAt、缩放计算复用 applyResize(纯函数,与旧栈同语义)。新栈与旧
+ * SVG 栈经 flag 并行,关 flag 零行为变化,默认仍走旧栈。
  *
  * 播放/逐帧复用与旧栈同一套引擎(useFrameClock + useVideoBitmapCache),保证「暂停精确帧」
  * 与旧栈逐帧一致;经转发的 VideoStageControls 让工作台现有热键直接驱动本栈。轨迹类控制
@@ -83,6 +103,13 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   issuePixelFeedbacks,
   issueHighlightId,
   visual = DEFAULT_ANNOTATION_VISUAL,
+  videoTool = "box",
+  readOnly = false,
+  lockedTrackIds = EMPTY_LOCKED,
+  onSelect,
+  onCreate,
+  onPendingDraw,
+  onUpdate,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -154,6 +181,74 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     }),
     [annotations, frameIndex, hiddenTrackIds, pendingDraft, reviewDisplayMode, selectedId, trackColorOverrides, visual],
   );
+
+  // v0.16.3 · 交互:选中轨迹(供 track 工具画框落关键帧 + ghost 可编辑判定)。
+  const selectedTrack = useMemo(() => {
+    const a = annotations.find((x) => x.id === selectedId);
+    return a && isVideoTrack(a) ? a : null;
+  }, [annotations, selectedId]);
+
+  const noopSelect = useCallback(() => {}, []);
+  const noopCreate = useCallback(() => {}, []);
+  const noopUpdate = useCallback(() => {}, []);
+  const interaction = useVideoKonvaInteraction({
+    containerRef,
+    vpRef,
+    size,
+    annotations,
+    entries: frameViews.entries,
+    ghost: frameViews.ghost,
+    selectedTrack,
+    videoTool,
+    readOnly,
+    isPlaybackActive: isPlaying,
+    lockedTrackIds,
+    frameIndex,
+    onSelect: onSelect ?? noopSelect,
+    onCreate: onCreate ?? noopCreate,
+    onPendingDraw,
+    onUpdate: onUpdate ?? noopUpdate,
+  });
+  const { drag } = interaction;
+
+  // 可编辑选中框 → 画 8 向句柄(拖拽中跟随 live geom);live 预览框(画框/移动/缩放)。
+  const interactionEditable = !readOnly && !isPlaying;
+  const handleBox = useMemo<VideoHandleBox | null>(() => {
+    if (!interactionEditable || !selectedId) return null;
+    const liveGeom = drag && (drag.kind === "move" || drag.kind === "resize") && drag.id === selectedId
+      ? drag.current
+      : null;
+    const entry = frameViews.entries.find((e) => e.id === selectedId);
+    if (entry) {
+      const ann = annotations.find((a) => a.id === entry.id);
+      const trackId = ann && isVideoTrack(ann) ? ann.geometry.track_id : null;
+      if (trackId && lockedTrackIds.has(trackId)) return null;
+      return { id: entry.id, geom: liveGeom ?? entry.geom, color: entry.color };
+    }
+    const ghost = frameViews.ghost;
+    if (ghost && ghost.id === selectedId) {
+      if (selectedTrack && lockedTrackIds.has(selectedTrack.geometry.track_id)) return null;
+      return { id: ghost.id, geom: liveGeom ?? ghost.geom, color: ghost.color };
+    }
+    return null;
+  }, [annotations, drag, frameViews.entries, frameViews.ghost, interactionEditable, lockedTrackIds, selectedId, selectedTrack]);
+
+  const preview = useMemo<VideoPreviewBox | null>(() => {
+    if (!drag) return null;
+    if (drag.kind === "draw") {
+      const drawColor = videoTool === "track" && selectedTrack
+        ? getTrackColor(selectedTrack.geometry.track_id, selectedTrack.class_name, trackColorOverrides)
+        : classColor(activeClass);
+      return { geom: normalizeGeom(drag.start, drag.current), color: drawColor };
+    }
+    if (drag.kind === "move" || drag.kind === "resize") {
+      const c = frameViews.entries.find((e) => e.id === drag.id)?.color
+        ?? (frameViews.ghost?.id === drag.id ? frameViews.ghost.color : null)
+        ?? classColor(activeClass);
+      return { geom: drag.current, color: c };
+    }
+    return null;
+  }, [activeClass, drag, frameViews.entries, frameViews.ghost, selectedTrack, trackColorOverrides, videoTool]);
 
   const {
     activeBitmap,
@@ -334,13 +429,15 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   }), [pausePlayback, seekByFrames, seekToFrame, togglePlayback]);
 
   const beginPan = useCallback((evt: ReactPointerEvent<HTMLDivElement>) => {
-    if (evt.button !== 2) return;
+    // 右键拖 = 平移;hand 工具下左键也走平移(对齐旧栈 beginDraw→beginPan 分支)。
+    const isPan = evt.button === 2 || (evt.button === 0 && videoTool === "hand");
+    if (!isPan) return;
     evt.preventDefault();
     panRef.current = { x: evt.clientX, y: evt.clientY };
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     pausePlayback();
     setPanning(true);
-  }, [pausePlayback]);
+  }, [pausePlayback, videoTool]);
 
   const onPointerMove = useCallback((evt: ReactPointerEvent<HTMLDivElement>) => {
     const start = panRef.current;
@@ -400,7 +497,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           y={vp.ty}
           scaleX={vp.scale}
           scaleY={vp.scale}
-          onClick={togglePlayback}
+          onPointerDown={interaction.onStagePointerDown}
         >
           <VideoKonvaMediaLayer
             videoEl={videoEl}
@@ -434,6 +531,14 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               highlightId={issueHighlightId}
             />
           )}
+          <VideoKonvaInteractionLayer
+            size={size}
+            scale={vp.scale}
+            drag={drag}
+            handleBox={handleBox}
+            preview={preview}
+            onResizeHandlePointerDown={interaction.onResizeHandlePointerDown}
+          />
         </Stage>
       </div>
       {playbackError && (

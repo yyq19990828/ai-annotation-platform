@@ -31,6 +31,20 @@
 
 <!-- 0.16.x 版本变更按版本段追加到本区；进入 0.17.x 后整体移到 docs/changelogs/0.16.x.md -->
 
+## [0.16.3] - 2026-06-16
+
+画布栈统一 epic 第四步:**视频交互层迁到 Konva(实验 flag 后,默认关)**。在 v0.16.2 的渲染层之上,把画框、移动、缩放(8 向句柄)、平移、选中从 SVG 事件迁到 Konva 事件。命中复用纯函数 `pickTopVideoEntryAt`(同一 z 序 + padding),缩放计算复用 `applyResize`,提交语义复刻旧栈 `finishDrag`——坐标源从 SVG CTM 换成 Konva 像素空间,几何判定不变。新栈仍与旧 SVG 栈经 flag 并行,关 flag 零行为变化。架构见 [ADR-0041](docs/adr/0041-video-canvas-unify-to-konva.md)。计划见 `docs/plans/2026-06-16-v0.16.3-video-interaction-and-test-migration.md`。
+
+### Added
+
+- **视频交互 Konva 层**:`VideoKonvaInteractionLayer`(listening 层:选中框 8 向 resize 句柄 + 画框/移动/缩放实时虚线预览,句柄尺寸/线宽走 `/scale` 屏幕恒定)+ `videoKonvaInteraction`(`useVideoKonvaInteraction` hook + `advanceDrag`/`resolveDragCommit` 纯函数,Konva 事件 → draw/move/resize 状态机,松手按工具/选中态落到建框/关键帧/几何更新)。空白拖→画框、命中框→移动、句柄→缩放、右键/hand 工具→平移、点击空白→取消选中,与旧栈对等。
+- **交互纯函数 + konva-mock 测试**:`advanceDrag`/`resolveDragCommit` 单测(画框/移动/缩放推进与提交分支)、`VideoKonvaInteractionLayer` konva-mock 测试(句柄数量/方向回传/像素几何/虚线预览),与既有纯函数测试(`videoStagePicking`/`ResizeHandles`)共同守回归。
+
+### Changed
+
+- **`pickTopVideoEntryAt` 泛型约束放宽**到「带 `geom` 的对象」(命中只读 `.geom`):让 Konva 栈用轻量 `{ id, geom }` 视图复用同一套命中实现,不再造第二份(SVG 栈仍传完整对象,行为零变化)。
+- **VideoKonvaStage 接交互**:Stage `pointerdown` 接 `onStagePointerDown`、挂 `VideoKonvaInteractionLayer`、容器 `beginPan` 兼顾 hand 工具左键平移;移除 v0.16.1 占位的「点击 Stage 切播放」(对齐旧栈:画布点击用于画框/选中,播放走热键)。关闭 flag 时视频工作台仍走旧 `VideoStage`(SVG 栈),旧栈与其 RTL 测试不动。
+
 ## [0.16.2] - 2026-06-16
 
 画布栈统一 epic 第三步:**视频标注可视层迁到 Konva(实验 flag 后,默认关)**。在 v0.16.1 的底图层之上,把 track 框、轨迹预览线、关键帧圆点、ghost 参考框、pending 草稿、标签、issue 图钉从 SVG/DOM 迁到 Konva 形状,抄图片 `ImageStageShapes` 范式。**本版只渲染、不接交互**(交互在 v0.16.3,Konva 形状 `listening=false`)。视觉设置(线宽/填充/字号/标签显隐+内容)复用 v0.15.27 的 `annotationVisual.ts` 纯函数,与图片同源。新栈仍与旧 SVG 栈经 flag 并行,关 flag 零行为变化。架构见 [ADR-0041](docs/adr/0041-video-canvas-unify-to-konva.md)。计划见 `docs/plans/2026-06-16-v0.16.2-video-annotation-layers-to-konva.md`。

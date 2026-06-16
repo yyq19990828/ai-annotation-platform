@@ -114,8 +114,8 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
       () => resolveAnnotationVisual(workbenchConfig.common),
       [workbenchConfig.common],
     );
-    // v0.16.1 · 画布栈统一 epic:flag 开启时走实验性 Konva 视频栈(仅底图/播放/缩放,
-    // 标注尚缺,见 VideoKonvaStage)。flag 刷新后生效,挂载时解析一次保持稳定。
+    // v0.16.1–.3 · 画布栈统一 epic:flag 开启时走实验性 Konva 视频栈(底图/播放/缩放 +
+    // 标注渲染 + 交互画框/移动/缩放/选中,见 VideoKonvaStage)。flag 刷新后生效,挂载时解析一次。
     const [videoKonvaEnabled] = useState(resolveVideoKonvaEnabledFromEnv);
     if (videoKonvaEnabled) {
       return (
@@ -139,6 +139,13 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
           issuePixelFeedbacks={issuePixelFeedbacks}
           issueHighlightId={issueHighlightId}
           visual={annotationVisual}
+          videoTool={videoTool}
+          readOnly={readOnly}
+          lockedTrackIds={lockedTrackIds}
+          onSelect={onSelect}
+          onCreate={onCreate}
+          onPendingDraw={onPendingDraw}
+          onUpdate={onUpdate}
         />
       );
     }

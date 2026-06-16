@@ -1,0 +1,281 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import type Konva from "konva";
+import type { AnnotationResponse, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
+import type { Viewport } from "../state/useViewportTransform";
+import type { VideoTool } from "../state/useWorkbenchState";
+import { applyResize } from "./ResizeHandles";
+import {
+  clampGeom,
+  isVideoBbox,
+  isVideoTrack,
+  normalizeGeom,
+  upsertKeyframe,
+} from "./videoStageGeometry";
+import { pickTopVideoEntryAt } from "./videoStagePicking";
+import {
+  clientToVideoNorm,
+  videoNormToClient,
+  type VideoPixelSize,
+} from "./videoKonvaCoordinates";
+import type {
+  VideoDragState,
+  VideoResizeDirection,
+  VideoStageGeom,
+} from "./videoStageTypes";
+
+/**
+ * v0.16.3 · 视频 Konva 栈交互状态机(画框/移动/缩放/平移分流的 draw/move/resize 部分)。
+ *
+ * 镜像旧 SVG 栈 VideoStage 的 beginDraw/beginMove/beginResize/onPointerMove/finishDrag,
+ * 但坐标源从 SVG CTM 换成 Konva 像素空间(videoKonvaCoordinates.clientToVideoNorm)。
+ * **拖拽计算与提交语义复用既有纯函数**(applyResize/clampGeom/normalizeGeom/upsertKeyframe),
+ * 命中复用 pickTopVideoEntryAt(同一 z 序 + padding),避免行为漂移。
+ *
+ * 平移(右键 / hand 工具左键)仍由 VideoKonvaStage 容器层处理,不在本模块。
+ */
+
+/** 画框/缩放的最小有效尺寸(归一化);与旧栈 finishDrag 的 0.003 阈值一致。 */
+export const VIDEO_MIN_BOX = 0.003;
+
+type DragModifiers = { shiftKey?: boolean; altKey?: boolean };
+
+/** 拖拽过程推进:给定当前 drag + 新归一化点,返回下一 drag(纯函数,与 onPointerMove 对齐)。 */
+export function advanceDrag(
+  drag: VideoDragState,
+  pt: VideoStageGeom | { x: number; y: number },
+  modifiers: DragModifiers = {},
+): VideoDragState {
+  if (!drag || drag.kind === "pan") return drag;
+  if (drag.kind === "draw") return { ...drag, current: { x: pt.x, y: pt.y } };
+  const next = drag.kind === "resize"
+    ? applyResize(drag.origin, drag.start, pt, drag.dir, modifiers)
+    : clampGeom({
+      ...drag.origin,
+      x: drag.origin.x + (pt.x - drag.start.x),
+      y: drag.origin.y + (pt.y - drag.start.y),
+    });
+  return { ...drag, current: next };
+}
+
+/** 提交动作(纯描述,由 hook 落到回调);不含 DOM/anchor 计算,便于单测。 */
+export type VideoDragCommit =
+  | { type: "none" }
+  | { type: "draw"; kind: "video_bbox" | "video_track_bbox"; geom: VideoStageGeom }
+  | { type: "track"; ann: AnnotationResponse; geom: VideoStageGeom }
+  | { type: "bbox"; ann: AnnotationResponse; geom: VideoStageGeom };
+
+export interface ResolveDragCommitCtx {
+  annotations: readonly AnnotationResponse[];
+  videoTool: VideoTool;
+  selectedTrack: (AnnotationResponse & { geometry: VideoTrackGeometry }) | null;
+  lockedTrackIds: Set<string>;
+}
+
+/** 松手提交:复刻 finishDrag 分支(draw → 建框/落关键帧;move/resize → 更新 track/bbox)。 */
+export function resolveDragCommit(
+  drag: VideoDragState,
+  finalPt: { x: number; y: number },
+  ctx: ResolveDragCommitCtx,
+): VideoDragCommit {
+  if (!drag || drag.kind === "pan") return { type: "none" };
+  const { annotations, videoTool, selectedTrack, lockedTrackIds } = ctx;
+
+  if (drag.kind === "draw") {
+    const geom = normalizeGeom(drag.start, finalPt);
+    if (geom.w < VIDEO_MIN_BOX || geom.h < VIDEO_MIN_BOX) return { type: "none" };
+    // track 工具且选中轨迹未锁:画框落到该轨迹当前帧关键帧(而非建独立框)。
+    if (videoTool === "track" && selectedTrack && !lockedTrackIds.has(selectedTrack.geometry.track_id)) {
+      return { type: "track", ann: selectedTrack, geom };
+    }
+    const kind = videoTool === "track" ? "video_track_bbox" : "video_bbox";
+    return { type: "draw", kind, geom };
+  }
+
+  const ann = annotations.find((a) => a.id === drag.id);
+  if (!ann) return { type: "none" };
+  const geom = drag.current;
+  if (drag.kind === "resize" && (geom.w < VIDEO_MIN_BOX || geom.h < VIDEO_MIN_BOX)) return { type: "none" };
+  if (isVideoTrack(ann)) return { type: "track", ann, geom };
+  if (isVideoBbox(ann)) return { type: "bbox", ann, geom };
+  return { type: "none" };
+}
+
+/** 命中候选(轻量视图,仅命中所需的 id + geom)。 */
+export type VideoPickable = { id: string; geom: VideoStageGeom };
+
+export interface UseVideoKonvaInteractionParams {
+  containerRef: React.RefObject<HTMLElement | null>;
+  vpRef: React.MutableRefObject<Viewport>;
+  size: VideoPixelSize;
+  annotations: readonly AnnotationResponse[];
+  /** 当前帧可命中的框(含 track 解析帧 + legacy bbox),归一化 geom。 */
+  entries: VideoPickable[];
+  /** 选中轨迹当前帧无框时的参考 ghost(可拖出关键帧),归一化 geom。 */
+  ghost: VideoPickable | null;
+  selectedTrack: (AnnotationResponse & { geometry: VideoTrackGeometry }) | null;
+  videoTool: VideoTool;
+  readOnly: boolean;
+  isPlaybackActive: boolean;
+  lockedTrackIds: Set<string>;
+  frameIndex: number;
+  onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
+  onCreate: (frameIndex: number, geom: VideoStageGeom) => void;
+  onPendingDraw?: (
+    kind: "video_bbox" | "video_track_bbox",
+    frameIndex: number,
+    geom: VideoStageGeom,
+    anchor: { left: number; top: number },
+  ) => void;
+  onUpdate: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry) => void;
+}
+
+export interface VideoKonvaInteraction {
+  drag: VideoDragState;
+  /** 接到 Konva Stage 的 onPointerDown:空白拖→画框,命中→移动。 */
+  onStagePointerDown: (e: Konva.KonvaEventObject<PointerEvent>) => void;
+  /** 接到 resize 句柄的 onPointerDown(需 cancelBubble 防冒泡到 Stage)。 */
+  onResizeHandlePointerDown: (
+    dir: VideoResizeDirection,
+    entryId: string,
+    geom: VideoStageGeom,
+    e: Konva.KonvaEventObject<PointerEvent>,
+  ) => void;
+}
+
+/**
+ * 视频 Konva 交互 hook:持有 drag 状态,分流 pointerdown,拖拽过程/松手挂 window 跟踪。
+ * 易变输入用 ref 快照,使 window 监听只在「是否拖拽中」切换时装卸一次,避免逐帧重装。
+ */
+export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams): VideoKonvaInteraction {
+  const [drag, setDrag] = useState<VideoDragState>(null);
+  const dragRef = useRef<VideoDragState>(null);
+  dragRef.current = drag;
+
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const pointFromClient = useCallback((clientX: number, clientY: number) => {
+    const p = paramsRef.current;
+    const rect = p.containerRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    return clientToVideoNorm(clientX, clientY, rect, p.vpRef.current, p.size);
+  }, []);
+
+  const beginDraw = useCallback((native: PointerEvent) => {
+    const p = paramsRef.current;
+    if (p.readOnly || p.isPlaybackActive) return;
+    const trackLocked = p.selectedTrack ? p.lockedTrackIds.has(p.selectedTrack.geometry.track_id) : false;
+    if (p.videoTool === "track" && trackLocked) return;
+    const pt = pointFromClient(native.clientX, native.clientY);
+    if (!pt) return;
+    if (p.videoTool !== "track" || !p.selectedTrack) p.onSelect(null);
+    setDrag({ kind: "draw", start: pt, current: pt });
+  }, [pointFromClient]);
+
+  const beginMove = useCallback((hit: VideoPickable, native: PointerEvent) => {
+    const p = paramsRef.current;
+    const ann = p.annotations.find((a) => a.id === hit.id);
+    const trackId = ann && isVideoTrack(ann) ? ann.geometry.track_id : null;
+    const toggle = native.shiftKey || native.metaKey || native.ctrlKey;
+    if (toggle) {
+      p.onSelect(hit.id, { shift: true });
+      return;
+    }
+    p.onSelect(hit.id);
+    if (p.readOnly || p.isPlaybackActive || (trackId && p.lockedTrackIds.has(trackId))) return;
+    const pt = pointFromClient(native.clientX, native.clientY);
+    if (!pt) return;
+    setDrag({ kind: "move", id: hit.id, start: pt, origin: hit.geom, current: hit.geom });
+  }, [pointFromClient]);
+
+  const onResizeHandlePointerDown = useCallback((
+    dir: VideoResizeDirection,
+    entryId: string,
+    geom: VideoStageGeom,
+    e: Konva.KonvaEventObject<PointerEvent>,
+  ) => {
+    e.cancelBubble = true;
+    const native = e.evt;
+    const p = paramsRef.current;
+    const ann = p.annotations.find((a) => a.id === entryId);
+    const trackId = ann && isVideoTrack(ann) ? ann.geometry.track_id : null;
+    p.onSelect(entryId);
+    if (p.readOnly || p.isPlaybackActive || (trackId && p.lockedTrackIds.has(trackId))) return;
+    const pt = pointFromClient(native.clientX, native.clientY);
+    if (!pt) return;
+    setDrag({ kind: "resize", id: entryId, dir, start: pt, origin: geom, current: geom });
+  }, [pointFromClient]);
+
+  const onStagePointerDown = useCallback((e: Konva.KonvaEventObject<PointerEvent>) => {
+    const native = e.evt;
+    if (native.button !== 0) return; // 右键/中键平移由容器层处理
+    const p = paramsRef.current;
+    if (p.videoTool === "hand") return; // hand 工具左键平移由容器层处理
+    const pt = pointFromClient(native.clientX, native.clientY);
+    if (!pt) return;
+    const pickables: VideoPickable[] = p.ghost ? [...p.entries, p.ghost] : p.entries;
+    const hit = pickTopVideoEntryAt(pickables, pt);
+    if (hit) beginMove(hit, native);
+    else beginDraw(native);
+  }, [beginDraw, beginMove, pointFromClient]);
+
+  const commit = useCallback((finalDrag: VideoDragState, finalPt: { x: number; y: number }) => {
+    const p = paramsRef.current;
+    const action = resolveDragCommit(finalDrag, finalPt, {
+      annotations: p.annotations,
+      videoTool: p.videoTool,
+      selectedTrack: p.selectedTrack,
+      lockedTrackIds: p.lockedTrackIds,
+    });
+    if (action.type === "none") return;
+    if (action.type === "draw") {
+      const { kind, geom } = action;
+      if (p.onPendingDraw) {
+        const rect = p.containerRef.current?.getBoundingClientRect();
+        const anchorPt = rect
+          ? videoNormToClient({ x: geom.x, y: geom.y + geom.h }, rect, p.vpRef.current, p.size)
+          : { x: 0, y: 0 };
+        p.onPendingDraw(kind, p.frameIndex, geom, { left: anchorPt.x, top: anchorPt.y + 6 });
+      } else {
+        p.onCreate(p.frameIndex, geom);
+      }
+      return;
+    }
+    if (action.type === "track") {
+      p.onUpdate(action.ann, upsertKeyframe(action.ann.geometry as VideoTrackGeometry, p.frameIndex, action.geom));
+      return;
+    }
+    // bbox:替换该帧几何。
+    const bbox = action.ann.geometry as VideoBboxGeometry;
+    p.onUpdate(action.ann, { type: "video_bbox", frame_index: bbox.frame_index, ...action.geom });
+  }, []);
+
+  // 拖拽中(draw/move/resize)挂 window 跟踪;pan 不经此(容器层处理)。
+  const interacting = !!drag && drag.kind !== "pan";
+  useEffect(() => {
+    if (!interacting) return;
+    let lastPt: { x: number; y: number } | null = null;
+    const onMove = (ev: PointerEvent) => {
+      const pt = pointFromClient(ev.clientX, ev.clientY);
+      if (!pt) return;
+      lastPt = pt;
+      setDrag((cur) => advanceDrag(cur, pt, { shiftKey: ev.shiftKey, altKey: ev.altKey }));
+    };
+    const onUp = (ev: PointerEvent) => {
+      const pt = pointFromClient(ev.clientX, ev.clientY) ?? lastPt;
+      if (pt) commit(dragRef.current, pt);
+      setDrag(null);
+    };
+    const onCancel = () => setDrag(null);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+  }, [interacting, pointFromClient, commit]);
+
+  return { drag, onStagePointerDown, onResizeHandlePointerDown };
+}

@@ -1,0 +1,181 @@
+/**
+ * v0.16.3 · 视频 Konva 交互状态机纯函数测试。
+ *
+ * advanceDrag(拖拽推进)/ resolveDragCommit(松手提交)是栈无关纯函数,与旧 SVG 栈
+ * VideoStage 的 onPointerMove/finishDrag 语义对齐。真实 Konva 事件/命中由 konva-mock
+ * 与 Playwright 兜底(决策 C)。
+ */
+import { describe, expect, it } from "vitest";
+import type { AnnotationResponse, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
+import { advanceDrag, resolveDragCommit, type ResolveDragCommitCtx } from "./videoKonvaInteraction";
+import type { VideoDragState } from "./videoStageTypes";
+
+function bbox(id: string, frameIndex = 0): AnnotationResponse {
+  return {
+    id,
+    class_name: "car",
+    geometry: { type: "video_bbox", frame_index: frameIndex, x: 0.1, y: 0.1, w: 0.2, h: 0.2 } satisfies VideoBboxGeometry,
+  } as unknown as AnnotationResponse;
+}
+
+function track(id: string, trackId = "t1"): AnnotationResponse {
+  return {
+    id,
+    class_name: "car",
+    geometry: {
+      type: "video_track_bbox",
+      track_id: trackId,
+      keyframes: [{ frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual", occluded: false }],
+    } satisfies VideoTrackGeometry,
+  } as unknown as AnnotationResponse;
+}
+
+const baseCtx: ResolveDragCommitCtx = {
+  annotations: [],
+  videoTool: "box",
+  selectedTrack: null,
+  lockedTrackIds: new Set(),
+};
+
+describe("advanceDrag", () => {
+  it("draw → 更新 current 点", () => {
+    const drag: VideoDragState = { kind: "draw", start: { x: 0, y: 0 }, current: { x: 0, y: 0 } };
+    const next = advanceDrag(drag, { x: 0.5, y: 0.4 });
+    expect(next).toEqual({ kind: "draw", start: { x: 0, y: 0 }, current: { x: 0.5, y: 0.4 } });
+  });
+
+  it("move → 平移 origin 并 clamp 到 [0,1]", () => {
+    const drag: VideoDragState = {
+      kind: "move",
+      id: "a",
+      start: { x: 0.1, y: 0.1 },
+      origin: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      current: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+    };
+    const next = advanceDrag(drag, { x: 0.3, y: 0.25 });
+    expect(next?.kind).toBe("move");
+    if (next?.kind === "move") {
+      expect(next.current.x).toBeCloseTo(0.3, 5);
+      expect(next.current.y).toBeCloseTo(0.25, 5);
+      expect(next.current.w).toBeCloseTo(0.2, 5);
+    }
+  });
+
+  it("resize(se 角)→ 复用 applyResize 扩展宽高", () => {
+    const drag: VideoDragState = {
+      kind: "resize",
+      id: "a",
+      dir: "se",
+      start: { x: 0.3, y: 0.3 },
+      origin: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      current: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+    };
+    const next = advanceDrag(drag, { x: 0.5, y: 0.4 });
+    expect(next?.kind).toBe("resize");
+    if (next?.kind === "resize") {
+      expect(next.current.w).toBeCloseTo(0.4, 5);
+      expect(next.current.h).toBeCloseTo(0.3, 5);
+    }
+  });
+
+  it("pan / null → 原样返回", () => {
+    const pan: VideoDragState = { kind: "pan", sx: 1, sy: 2 };
+    expect(advanceDrag(pan, { x: 0.5, y: 0.5 })).toBe(pan);
+    expect(advanceDrag(null, { x: 0.5, y: 0.5 })).toBeNull();
+  });
+});
+
+describe("resolveDragCommit", () => {
+  const draw = (a: { x: number; y: number }, b: { x: number; y: number }): VideoDragState => ({
+    kind: "draw",
+    start: a,
+    current: b,
+  });
+
+  it("draw 太小 → none", () => {
+    const out = resolveDragCommit(draw({ x: 0.2, y: 0.2 }, { x: 0.201, y: 0.201 }), { x: 0.201, y: 0.201 }, baseCtx);
+    expect(out.type).toBe("none");
+  });
+
+  it("box 工具 draw → 新 video_bbox", () => {
+    const out = resolveDragCommit(draw({ x: 0.1, y: 0.1 }, { x: 0.4, y: 0.4 }), { x: 0.4, y: 0.4 }, baseCtx);
+    expect(out).toMatchObject({ type: "draw", kind: "video_bbox" });
+    if (out.type === "draw") {
+      expect(out.geom.x).toBeCloseTo(0.1, 5);
+      expect(out.geom.y).toBeCloseTo(0.1, 5);
+      expect(out.geom.w).toBeCloseTo(0.3, 5);
+      expect(out.geom.h).toBeCloseTo(0.3, 5);
+    }
+  });
+
+  it("track 工具 + 选中轨迹未锁 draw → 落该轨迹关键帧", () => {
+    const t = track("trk-1");
+    const out = resolveDragCommit(draw({ x: 0.1, y: 0.1 }, { x: 0.4, y: 0.4 }), { x: 0.4, y: 0.4 }, {
+      ...baseCtx,
+      videoTool: "track",
+      selectedTrack: t as AnnotationResponse & { geometry: VideoTrackGeometry },
+    });
+    expect(out).toMatchObject({ type: "track" });
+    if (out.type === "track") expect(out.ann.id).toBe("trk-1");
+  });
+
+  it("track 工具 + 选中轨迹已锁 draw → 退化为新 video_track_bbox", () => {
+    const t = track("trk-1", "t1");
+    const out = resolveDragCommit(draw({ x: 0.1, y: 0.1 }, { x: 0.4, y: 0.4 }), { x: 0.4, y: 0.4 }, {
+      ...baseCtx,
+      videoTool: "track",
+      selectedTrack: t as AnnotationResponse & { geometry: VideoTrackGeometry },
+      lockedTrackIds: new Set(["t1"]),
+    });
+    expect(out).toMatchObject({ type: "draw", kind: "video_track_bbox" });
+  });
+
+  it("move bbox → 更新该 bbox 几何", () => {
+    const ann = bbox("b1");
+    const drag: VideoDragState = {
+      kind: "move",
+      id: "b1",
+      start: { x: 0.1, y: 0.1 },
+      origin: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      current: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 },
+    };
+    const out = resolveDragCommit(drag, { x: 0.2, y: 0.2 }, { ...baseCtx, annotations: [ann] });
+    expect(out).toMatchObject({ type: "bbox" });
+    if (out.type === "bbox") expect(out.geom).toMatchObject({ x: 0.2, y: 0.2 });
+  });
+
+  it("move track → 走 track 提交", () => {
+    const ann = track("trk-2", "t2");
+    const drag: VideoDragState = {
+      kind: "move",
+      id: "trk-2",
+      start: { x: 0.1, y: 0.1 },
+      origin: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      current: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 },
+    };
+    const out = resolveDragCommit(drag, { x: 0.2, y: 0.2 }, { ...baseCtx, annotations: [ann] });
+    expect(out).toMatchObject({ type: "track" });
+  });
+
+  it("resize 太小 → none;找不到 ann → none", () => {
+    const ann = bbox("b1");
+    const tiny: VideoDragState = {
+      kind: "resize",
+      id: "b1",
+      dir: "se",
+      start: { x: 0.1, y: 0.1 },
+      origin: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      current: { x: 0.1, y: 0.1, w: 0.001, h: 0.001 },
+    };
+    expect(resolveDragCommit(tiny, { x: 0.1, y: 0.1 }, { ...baseCtx, annotations: [ann] }).type).toBe("none");
+
+    const missing: VideoDragState = {
+      kind: "move",
+      id: "ghost-x",
+      start: { x: 0.1, y: 0.1 },
+      origin: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      current: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 },
+    };
+    expect(resolveDragCommit(missing, { x: 0.2, y: 0.2 }, baseCtx).type).toBe("none");
+  });
+});
