@@ -1315,7 +1315,11 @@ describe("VideoStage", () => {
     const rect = container.querySelector('[data-testid="video-objects-layer"] rect');
     expect(svg?.getAttribute("viewBox")).toBe("0 0 1 0.5");
     expect(svg?.getAttribute("preserveAspectRatio")).toBe("xMidYMid meet");
-    expect(rect?.getAttribute("stroke-width")).toBe("2");
+    // v0.15.27 · 共享视觉规格默认值:非选中线宽 1.5(统一后基准,原视频 2)。
+    expect(rect?.getAttribute("stroke-width")).toBe("1.5");
+    // v0.15.27 · 填充由纯白改为类别色 + fillOpacity 0.07(与图片对齐)。
+    expect(rect?.getAttribute("fill-opacity")).toBe("0.07");
+    expect(rect?.getAttribute("fill")).not.toBe("rgba(255,255,255,0.03)");
     expect(rect?.getAttribute("vector-effect")).toBe("non-scaling-stroke");
     expect(rect?.getAttribute("y")).toBe("0.05");
   });
