@@ -76,3 +76,4 @@
 - [0038](0038-defer-ml-backend-base-class.md) — ML backend 基类抽象推迟到 N≥4
 - [0039](0039-protocol-field-name-unification.md) — Protocol field name unification with model_variants
 - [0040](0040-shared-annotation-visual-spec-not-stack-merge.md) — 标注视觉:统一参数规格(共享 annotationVisual.ts),不合并图片/视频渲染栈
+- [0041](0041-video-canvas-unify-to-konva.md) — 视频渲染栈统一到 Konva(帧合成 / 坐标模型 / 测试基建)
