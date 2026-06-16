@@ -10,6 +10,7 @@ from typing import Any, Literal
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -179,18 +180,33 @@ async def _ensure_chunk_rows(
         row = existing.get(chunk_id)
         if row is None:
             start, end = _chunk_bounds(chunk_id, ctx.metadata)
-            row = VideoChunk(
-                dataset_item_id=ctx.item.id,
-                chunk_id=chunk_id,
-                start_frame=start,
-                end_frame=end,
-                start_pts_ms=await pts_ms_for_frame(
-                    db, ctx.item.id, start, ctx.metadata
-                ),
-                end_pts_ms=await pts_ms_for_frame(db, ctx.item.id, end, ctx.metadata),
-                status="pending",
-            )
-            db.add(row)
+            start_pts = await pts_ms_for_frame(db, ctx.item.id, start, ctx.metadata)
+            end_pts = await pts_ms_for_frame(db, ctx.item.id, end, ctx.metadata)
+            # 并发安全: list_chunks 主请求 + warmup + 并发 scrub 可能同时为同一 chunk_id
+            # insert, 撞 uq_video_chunks_item_chunk。用 SAVEPOINT 包 INSERT, 冲突时只回滚该
+            # savepoint (不破坏本批已建的其它 chunk), 再 select 拿别的请求插入的行。
+            try:
+                async with db.begin_nested():
+                    row = VideoChunk(
+                        dataset_item_id=ctx.item.id,
+                        chunk_id=chunk_id,
+                        start_frame=start,
+                        end_frame=end,
+                        start_pts_ms=start_pts,
+                        end_pts_ms=end_pts,
+                        status="pending",
+                    )
+                    db.add(row)
+                    await db.flush()
+            except IntegrityError:
+                row = (
+                    await db.execute(
+                        select(VideoChunk).where(
+                            VideoChunk.dataset_item_id == ctx.item.id,
+                            VideoChunk.chunk_id == chunk_id,
+                        )
+                    )
+                ).scalar_one()
         rows.append(row)
     await db.flush()
     return rows
@@ -307,16 +323,13 @@ async def _ensure_frame_row(
     format_: FrameFormat,
 ) -> tuple[VideoFrameCache, bool, bool]:
     _safe_frame_range(ctx.metadata, frame_index, frame_index)
-    row = (
-        await db.execute(
-            select(VideoFrameCache).where(
-                VideoFrameCache.dataset_item_id == ctx.item.id,
-                VideoFrameCache.frame_index == frame_index,
-                VideoFrameCache.width == width,
-                VideoFrameCache.format == format_,
-            )
-        )
-    ).scalar_one_or_none()
+    stmt = select(VideoFrameCache).where(
+        VideoFrameCache.dataset_item_id == ctx.item.id,
+        VideoFrameCache.frame_index == frame_index,
+        VideoFrameCache.width == width,
+        VideoFrameCache.format == format_,
+    )
+    row = (await db.execute(stmt)).scalar_one_or_none()
     created = False
     now = _now()
     stale_pending = (
@@ -326,15 +339,24 @@ async def _ensure_frame_row(
         and now - row.updated_at > PENDING_FRAME_REQUEUE_AFTER
     )
     if row is None:
-        row = VideoFrameCache(
-            dataset_item_id=ctx.item.id,
-            frame_index=frame_index,
-            width=width,
-            format=format_,
-            status="pending",
-        )
-        db.add(row)
-        created = True
+        # 并发安全: timeline scrub 时单帧 GET 与 prefetch 窗口可能同时为同一
+        # (item, frame, width, format) 走到这里, select 都返回 None。用 SAVEPOINT 包住
+        # INSERT, 撞 uq_video_frame_cache_item_frame_width_format 时只回滚该 savepoint
+        # (不破坏 prefetch 批量里已 flush 的其它帧), 再 select 拿别的请求插入的行。
+        try:
+            async with db.begin_nested():
+                row = VideoFrameCache(
+                    dataset_item_id=ctx.item.id,
+                    frame_index=frame_index,
+                    width=width,
+                    format=format_,
+                    status="pending",
+                )
+                db.add(row)
+                await db.flush()
+            created = True
+        except IntegrityError:
+            row = (await db.execute(stmt)).scalar_one()
     row.last_accessed_at = now
     await db.flush()
     return row, created, stale_pending

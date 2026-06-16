@@ -852,3 +852,216 @@ async def test_video_tracker_job_requires_current_segment_lock(
     )
 
     assert resp.status_code == 409
+
+
+async def _make_committed_video_item(maker, *, frame_count: int = 90):
+    """并发回归测试脚手架: 用独立连接建 user→dataset→item 并真实 commit, 返回
+    (item_id, dataset_id, user_id)。共享的 db_session 是单连接 SAVEPOINT 隔离, 表达不了
+    真并发, 故并发用例必须自建数据并 commit, 末尾用 _cleanup_video_item 清理。"""
+    from app.core.security import hash_password
+    from app.db.models.user import User
+
+    async with maker() as s:
+        user = User(
+            id=uuid.uuid4(),
+            email=f"race-{uuid.uuid4().hex[:6]}@test.local",
+            name="Race",
+            password_hash=hash_password("Test1234"),
+            role="super_admin",
+            is_active=True,
+        )
+        s.add(user)
+        await s.flush()
+        dataset = Dataset(
+            display_id=f"D-RACE-{uuid.uuid4().hex[:6]}",
+            name="race",
+            data_type="video",
+            created_by=user.id,
+        )
+        s.add(dataset)
+        await s.flush()
+        item = DatasetItem(
+            dataset_id=dataset.id,
+            file_name="clip.mp4",
+            file_path="videos/clip.mp4",
+            file_type="video",
+            metadata_={
+                "video": {"fps": 30, "frame_count": frame_count, "duration_ms": 3000}
+            },
+        )
+        s.add(item)
+        await s.commit()
+        return item.id, dataset.id, user.id
+
+
+async def _cleanup_video_item(maker, item_id, dataset_id, user_id):
+    from sqlalchemy import delete
+
+    from app.db.models.user import User
+
+    async with maker() as s:
+        await s.execute(
+            delete(VideoSegment).where(VideoSegment.dataset_item_id == item_id)
+        )
+        await s.execute(delete(VideoChunk).where(VideoChunk.dataset_item_id == item_id))
+        await s.execute(
+            delete(VideoFrameCache).where(VideoFrameCache.dataset_item_id == item_id)
+        )
+        await s.execute(delete(DatasetItem).where(DatasetItem.id == item_id))
+        await s.execute(delete(Dataset).where(Dataset.id == dataset_id))
+        await s.execute(delete(User).where(User.id == user_id))
+        await s.commit()
+
+
+async def test_ensure_frame_row_concurrent_insert_does_not_raise(test_engine):
+    """回归: timeline scrub 时单帧 GET 与 prefetch 窗口会并发为同一
+    (item, frame, width, format) 走 _ensure_frame_row。旧实现 select-then-insert 在并发下
+    撞 uq_video_frame_cache_item_frame_width_format → 未捕获 IntegrityError → 500。修复用
+    SAVEPOINT 包 INSERT + 冲突 re-select: N 个并发请求恰好 1 个 created=True、其余 False,
+    都不抛错, DB 最终只有 1 行。
+    """
+    import asyncio
+
+    from sqlalchemy import select as sa_select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from app.services.video_frame_service import (
+        _ensure_frame_row,
+        build_context_from_dataset_item,
+    )
+
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    item_id, dataset_id, user_id = await _make_committed_video_item(maker)
+    try:
+        # Barrier: 4 个 worker 建好 ctx 后同步起跑, 保证 select 都在任何 insert 之前
+        # (都拿到 None), 确定性地逼出 select-then-insert 冲突, 覆盖 SAVEPOINT re-select 分支。
+        barrier = asyncio.Barrier(4)
+
+        async def worker():
+            async with maker() as s:
+                ctx = await build_context_from_dataset_item(s, item_id)
+                await barrier.wait()
+                _, created, _ = await _ensure_frame_row(s, ctx, 5, 320, "webp")
+                await s.commit()
+                return created
+
+        results = await asyncio.gather(*[worker() for _ in range(4)])
+
+        assert sum(1 for created in results if created) == 1
+        assert sum(1 for created in results if not created) == 3
+        async with maker() as s:
+            rows = (
+                (
+                    await s.execute(
+                        sa_select(VideoFrameCache).where(
+                            VideoFrameCache.dataset_item_id == item_id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(rows) == 1
+    finally:
+        await _cleanup_video_item(maker, item_id, dataset_id, user_id)
+
+
+async def test_ensure_chunk_rows_concurrent_insert_does_not_raise(test_engine):
+    """回归: 视频播放/拖进度条时 list_chunks 主请求 + warmup + 并发 scrub 会并发为同一
+    chunk_id 走 _ensure_chunk_rows。旧实现 select-then-insert 撞 uq_video_chunks_item_chunk
+    → 未捕获 IntegrityError → 500。修复用 SAVEPOINT 包每个 INSERT + 冲突 re-select: N 个
+    并发请求都不抛错、都拿到同一 chunk, DB 最终只有 1 行。
+    """
+    import asyncio
+
+    from sqlalchemy import select as sa_select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from app.services.video_frame_service import (
+        _ensure_chunk_rows,
+        build_context_from_dataset_item,
+    )
+
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    item_id, dataset_id, user_id = await _make_committed_video_item(maker)
+    try:
+        barrier = asyncio.Barrier(4)
+
+        async def worker():
+            async with maker() as s:
+                ctx = await build_context_from_dataset_item(s, item_id)
+                await barrier.wait()
+                rows = await _ensure_chunk_rows(s, ctx, [0])
+                await s.commit()
+                return rows[0].chunk_id
+
+        results = await asyncio.gather(*[worker() for _ in range(4)])
+
+        assert results == [0, 0, 0, 0]
+        async with maker() as s:
+            rows = (
+                (
+                    await s.execute(
+                        sa_select(VideoChunk).where(
+                            VideoChunk.dataset_item_id == item_id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(rows) == 1
+    finally:
+        await _cleanup_video_item(maker, item_id, dataset_id, user_id)
+
+
+async def test_ensure_segments_concurrent_insert_does_not_raise(test_engine, monkeypatch):
+    """回归: 多个请求同时打开同一视频的 segments 会并发走 ensure_segments 全量创建。旧实现
+    select-then-insert 撞 uq_video_segments_item_segment → 未捕获 IntegrityError → 500。修复
+    用一个 SAVEPOINT 包整批 INSERT + 冲突 re-select: N 个并发请求都不抛错、都拿到同一份全量
+    segments, DB 最终只有 segment_count 行。
+    """
+    import asyncio
+
+    from sqlalchemy import select as sa_select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from app.services.video_frame_service import build_context_from_dataset_item
+    from app.services.video_segment_service import ensure_segments
+
+    monkeypatch.setattr(
+        "app.services.video_segment_service.settings.video_segment_size_frames", 45
+    )
+
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    # frame_count=90 + segment_size=45 → 2 个 segment
+    item_id, dataset_id, user_id = await _make_committed_video_item(maker)
+    try:
+        barrier = asyncio.Barrier(4)
+
+        async def worker():
+            async with maker() as s:
+                ctx = await build_context_from_dataset_item(s, item_id)
+                await barrier.wait()
+                segs = await ensure_segments(s, ctx)
+                await s.commit()
+                return len(segs)
+
+        results = await asyncio.gather(*[worker() for _ in range(4)])
+
+        assert results == [2, 2, 2, 2]
+        async with maker() as s:
+            rows = (
+                (
+                    await s.execute(
+                        sa_select(VideoSegment).where(
+                            VideoSegment.dataset_item_id == item_id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(rows) == 2
+    finally:
+        await _cleanup_video_item(maker, item_id, dataset_id, user_id)

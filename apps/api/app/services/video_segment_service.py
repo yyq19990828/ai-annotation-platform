@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -68,20 +69,43 @@ async def ensure_segments(db: AsyncSession, ctx: VideoContext) -> list[VideoSegm
         await db.flush()
         return list(rows)
 
-    rows = []
-    for segment_index in range(_segment_count(ctx)):
-        start, end = _segment_bounds(ctx, segment_index)
-        row = VideoSegment(
-            dataset_item_id=ctx.item.id,
-            segment_index=segment_index,
-            start_frame=start,
-            end_frame=end,
-            status="open",
+    # 并发安全: 两个请求可能同时发现 segments 为空, 都批量 insert 0..N, 撞
+    # uq_video_segments_item_segment → IntegrityError。segment 是「要么全有要么全建」的
+    # 全量创建, 故用一个 SAVEPOINT 包住整批 INSERT; 冲突时回滚整批, 再 select 拿别的请求
+    # 建好的全量 segments (并按已存在分支的口径 normalize lock)。
+    try:
+        async with db.begin_nested():
+            created = []
+            for segment_index in range(_segment_count(ctx)):
+                start, end = _segment_bounds(ctx, segment_index)
+                row = VideoSegment(
+                    dataset_item_id=ctx.item.id,
+                    segment_index=segment_index,
+                    start_frame=start,
+                    end_frame=end,
+                    status="open",
+                )
+                db.add(row)
+                created.append(row)
+            await db.flush()
+        return created
+    except IntegrityError:
+        rows = (
+            (
+                await db.execute(
+                    select(VideoSegment)
+                    .where(VideoSegment.dataset_item_id == ctx.item.id)
+                    .order_by(VideoSegment.segment_index.asc())
+                )
+            )
+            .scalars()
+            .all()
         )
-        db.add(row)
-        rows.append(row)
-    await db.flush()
-    return rows
+        now = _now()
+        for row in rows:
+            _normalize_lock(row, now)
+        await db.flush()
+        return list(rows)
 
 
 def segment_out(row: VideoSegment) -> VideoSegmentOut:
