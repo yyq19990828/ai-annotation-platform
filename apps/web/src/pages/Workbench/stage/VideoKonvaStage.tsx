@@ -1,8 +1,10 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { Stage } from "react-konva";
 import type Konva from "konva";
 import { Icon } from "@/components/ui/Icon";
+import { ContextMenu } from "@/components/ui/ContextMenu";
+import type { DropdownItem } from "@/components/ui/DropdownMenu";
 import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
@@ -16,10 +18,15 @@ import { VideoKonvaOverlayLayer } from "./VideoKonvaOverlayLayer";
 import { VideoKonvaIssueLayer } from "./VideoKonvaIssueLayer";
 import { VideoKonvaInteractionLayer, type VideoHandleBox, type VideoPreviewBox } from "./VideoKonvaInteractionLayer";
 import { useVideoKonvaInteraction } from "./videoKonvaInteraction";
-import { videoIntrinsicSize } from "./videoKonvaCoordinates";
+import { videoIntrinsicSize, clientToVideoNorm } from "./videoKonvaCoordinates";
 import { deriveVideoFrameViews } from "./videoFrameViews";
 import { classColor, getTrackColor } from "./colors";
-import { isVideoTrack, normalizeGeom } from "./videoStageGeometry";
+import { isVideoBbox, isVideoTrack, normalizeGeom, sortedKeyframes } from "./videoStageGeometry";
+import { pickTopVideoEntryAt } from "./videoStagePicking";
+import { useVideoTrackActions } from "./useVideoTrackActions";
+import { buildVideoContextMenuItems } from "./videoContextMenuItems";
+import { useCanvasContextMenu } from "./useCanvasContextMenu";
+import type { VideoTrackAnnotation, VideoTrackCompositionOptions, VideoTrackConversionOptions } from "./videoStageTypes";
 import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annotationVisual";
 import { clampScale } from "./shared/viewport/zoom";
 import { buildFrameTimebase } from "./frameTimebase";
@@ -57,6 +64,7 @@ interface VideoKonvaStageProps {
   videoTool?: VideoTool;
   readOnly?: boolean;
   lockedTrackIds?: Set<string>;
+  selectedIds?: string[];
   onSelect?: (id: string | null, opts?: { shift?: boolean }) => void;
   onCreate?: (frameIndex: number, geom: { x: number; y: number; w: number; h: number }) => void;
   onPendingDraw?: (
@@ -66,7 +74,17 @@ interface VideoKonvaStageProps {
     anchor: { left: number; top: number },
   ) => void;
   onUpdate?: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry) => void;
+  // v0.16.4 · 右键上下文菜单回调(与旧栈同源 buildVideoContextMenuItems)。
+  onChangeUserBoxClass?: (id: string) => void;
+  onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
+  onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
+  onDelete?: (annotation: AnnotationResponse) => void;
+  onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
+  onToggleHiddenTrack?: (trackId: string) => void;
+  onToggleLockedTrack?: (trackId: string) => void;
 }
+
+const CONTEXT_MENU_DRAG_THRESHOLD_PX = 5;
 
 const noop = () => {};
 
@@ -106,10 +124,18 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   videoTool = "box",
   readOnly = false,
   lockedTrackIds = EMPTY_LOCKED,
+  selectedIds = [],
   onSelect,
   onCreate,
   onPendingDraw,
   onUpdate,
+  onChangeUserBoxClass,
+  onComposeTracks,
+  onConvertToBboxes,
+  onDelete,
+  onPropagateTrack,
+  onToggleHiddenTrack,
+  onToggleLockedTrack,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -249,6 +275,104 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     }
     return null;
   }, [activeClass, drag, frameViews.entries, frameViews.ghost, selectedTrack, trackColorOverrides, videoTool]);
+
+  // v0.16.4 · 右键上下文菜单(与旧 SVG 栈共用 buildVideoContextMenuItems / useVideoTrackActions)。
+  const contextMenu = useCanvasContextMenu();
+  const [contextMenuTargetId, setContextMenuTargetId] = useState<string | null>(null);
+  const rightDownRef = useRef<{ x: number; y: number } | null>(null);
+  const closeContextMenu = useCallback(() => {
+    contextMenu.close();
+    setContextMenuTargetId(null);
+  }, [contextMenu]);
+  const selectedAnnotation = useMemo(
+    () => annotations.find((ann) => ann.id === selectedId) ?? null,
+    [annotations, selectedId],
+  );
+  const contextMenuAnnotation = useMemo(
+    () => annotations.find((ann) => ann.id === contextMenuTargetId) ?? null,
+    [annotations, contextMenuTargetId],
+  );
+  const selectedVideoBboxes = useMemo(
+    () => annotations.filter((ann) => isVideoBbox(ann) && selectedIds.includes(ann.id)),
+    [annotations, selectedIds],
+  );
+  const trackActions = useVideoTrackActions({
+    selectedTrack,
+    frameIndex,
+    readOnly,
+    hiddenTrackIds: hiddenTrackIds ?? EMPTY_LOCKED,
+    lockedTrackIds,
+    onUpdate: onUpdate ?? noopUpdate,
+    onToggleHiddenTrack,
+    onToggleLockedTrack,
+    onPropagateTrack,
+  });
+  const selectedTrackCurrentKeyframe = useMemo(
+    () => selectedTrack?.geometry.keyframes.find((kf) => kf.frame_index === frameIndex) ?? null,
+    [frameIndex, selectedTrack],
+  );
+  const canDeleteSelectedTrackKeyframe = Boolean(
+    selectedTrack
+    && selectedTrackCurrentKeyframe
+    && !readOnly
+    && !trackActions.selectedTrackLocked
+    && selectedTrack.geometry.keyframes.length > 1,
+  );
+  const deleteSelectedTrackKeyframe = useCallback(() => {
+    if (!selectedTrack || !selectedTrackCurrentKeyframe || !canDeleteSelectedTrackKeyframe) return false;
+    (onUpdate ?? noopUpdate)(selectedTrack, {
+      ...selectedTrack.geometry,
+      keyframes: sortedKeyframes(selectedTrack.geometry).filter((kf) => kf.frame_index !== frameIndex),
+    });
+    return true;
+  }, [canDeleteSelectedTrackKeyframe, frameIndex, noopUpdate, onUpdate, selectedTrack, selectedTrackCurrentKeyframe]);
+
+  const contextMenuItems = useMemo<DropdownItem[]>(() => buildVideoContextMenuItems({
+    contextMenuAnnotation,
+    selectedAnnotation,
+    contextMenuTargetId,
+    selectedVideoBboxes,
+    readOnly,
+    frameIndex,
+    trackActions,
+    canDeleteSelectedTrackKeyframe,
+    deleteSelectedTrackKeyframe,
+    onChangeUserBoxClass,
+    onComposeTracks,
+    onConvertToBboxes,
+    onDelete,
+    onPropagateTrack,
+    onToggleHiddenTrack,
+    onToggleLockedTrack,
+  }), [
+    canDeleteSelectedTrackKeyframe, contextMenuAnnotation, contextMenuTargetId, deleteSelectedTrackKeyframe,
+    frameIndex, onChangeUserBoxClass, onComposeTracks, onConvertToBboxes, onDelete, onPropagateTrack,
+    onToggleHiddenTrack, onToggleLockedTrack, readOnly, selectedAnnotation, selectedVideoBboxes, trackActions,
+  ]);
+
+  const handleContextMenu = useCallback((evt: ReactMouseEvent<HTMLDivElement>) => {
+    evt.preventDefault();
+    const down = rightDownRef.current;
+    rightDownRef.current = null;
+    closeContextMenu();
+    if (down && Math.hypot(evt.clientX - down.x, evt.clientY - down.y) >= CONTEXT_MENU_DRAG_THRESHOLD_PX) return;
+    if (readOnly) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const point = clientToVideoNorm(evt.clientX, evt.clientY, rect, vpRef.current, size);
+    if (!point) return;
+    const pickables = frameViews.ghost ? [...frameViews.entries, frameViews.ghost] : frameViews.entries;
+    const hit = pickTopVideoEntryAt(pickables, point);
+    if (!hit) return;
+    setContextMenuTargetId(hit.id);
+    const hitAnn = annotations.find((a) => a.id === hit.id);
+    if (hitAnn && isVideoBbox(hitAnn) && selectedIds.includes(hit.id) && selectedVideoBboxes.length > 1) {
+      contextMenu.openAt(evt.clientX, evt.clientY);
+      return;
+    }
+    onSelect?.(hit.id);
+    contextMenu.openAt(evt.clientX, evt.clientY);
+  }, [annotations, closeContextMenu, contextMenu, frameViews.entries, frameViews.ghost, onSelect, readOnly, selectedIds, selectedVideoBboxes.length, size, vpRef]);
 
   const {
     activeBitmap,
@@ -431,6 +555,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   const beginPan = useCallback((evt: ReactPointerEvent<HTMLDivElement>) => {
     // 右键拖 = 平移;hand 工具下左键也走平移(对齐旧栈 beginDraw→beginPan 分支)。
     const isPan = evt.button === 2 || (evt.button === 0 && videoTool === "hand");
+    // 右键按下点:供 contextmenu 判定「按下到抬起是否拖动过」(拖动则视为 pan,不弹菜单)。
+    if (evt.button === 2) rightDownRef.current = { x: evt.clientX, y: evt.clientY };
     if (!isPan) return;
     evt.preventDefault();
     panRef.current = { x: evt.clientX, y: evt.clientY };
@@ -473,7 +599,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       ref={setContainerNode}
       data-testid="video-konva-stage"
       className={panning ? `${styles.root} ${styles.rootPanning}` : styles.root}
-      onContextMenu={(e) => e.preventDefault()}
+      onContextMenu={handleContextMenu}
       onPointerDown={beginPan}
       onPointerMove={onPointerMove}
       onPointerUp={endPan}
@@ -546,6 +672,13 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           视频无法播放:{playbackError}
         </div>
       )}
+      <ContextMenu
+        open={contextMenu.open && contextMenuItems.length > 0}
+        x={contextMenu.x}
+        y={contextMenu.y}
+        items={contextMenuItems}
+        onClose={closeContextMenu}
+      />
       <FloatingDock
         scale={vp.scale}
         canUndo={false}

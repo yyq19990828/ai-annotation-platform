@@ -142,10 +142,18 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
           videoTool={videoTool}
           readOnly={readOnly}
           lockedTrackIds={lockedTrackIds}
+          selectedIds={selectedIds}
           onSelect={onSelect}
           onCreate={onCreate}
           onPendingDraw={onPendingDraw}
           onUpdate={onUpdate}
+          onChangeUserBoxClass={onChangeUserBoxClass}
+          onComposeTracks={onComposeTracks}
+          onConvertToBboxes={onConvertToBboxes}
+          onDelete={(ann) => onDeleteUserBox(ann.id)}
+          onPropagateTrack={onPropagateTrack}
+          onToggleHiddenTrack={onToggleHiddenTrack}
+          onToggleLockedTrack={onToggleLockedTrack}
         />
       );
     }
