@@ -25,7 +25,7 @@ describe("workbenchSettingsFields 注册表", () => {
   });
 
   it("注册表默认值与现状一致", () => {
-    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(44);
+    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(43);
     const byKey = Object.fromEntries(
       WORKBENCH_SETTING_FIELDS.map((f) => [
         f.key,
@@ -76,7 +76,6 @@ describe("workbenchSettingsFields 注册表", () => {
       "pointcloud.neighborPointOverlayK": 1,
       "pointcloud.neighborPointCull": "keep",
       "experiment.webcodecs": false,
-      "experiment.videoKonva": true, // v0.16.4 切默认:未显式设置 → 默认开
     });
   });
 

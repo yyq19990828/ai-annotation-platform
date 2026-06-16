@@ -3,8 +3,8 @@ import type { Viewport } from "../state/useViewportTransform";
 /**
  * v0.16.1 · 视频 Konva 栈坐标模型(决策 B:像素空间 + Konva transform)。
  *
- * 旧 SVG 栈用「归一化 [0,1] + SVG CTM + viewBoxHeight=1/aspect」两套 client↔svg fallback
- * (见 videoStageCoordinates.ts)。新栈废弃 CTM 路径,改用图片侧同款范式:
+ * 历史 SVG 栈曾用「归一化 [0,1] + SVG CTM + viewBoxHeight=1/aspect」两套 client↔svg
+ * fallback(已随 SVG 栈删除)。本栈废弃 CTM 路径,改用图片侧同款范式:
  *   - 存储仍是归一化 [0,1]×[0,1](数据零迁移,epic 红线①);
  *   - 渲染/命中边界用视频固有宽高(等价图片 imgW/imgH)换算成像素「世界」坐标;
  *   - Konva Stage 负责 scale/pan,client↔world 用与图片 `toImg()` 同构的逆变换。
@@ -17,7 +17,7 @@ export type VideoPixelSize = { w: number; h: number };
 export type Point = { x: number; y: number };
 
 /** 视频元数据宽高 → 固有像素尺寸(等价图片 imgW/imgH)。缺省回退 1280×720(16:9)。
- *  与旧 VideoStage 的 videoPixelWidth/Height 推导逐位一致(向后兼容)。 */
+ *  与历史归一化推导逐位一致(向后兼容)。 */
 export function videoIntrinsicSize(
   width?: number | null,
   height?: number | null,

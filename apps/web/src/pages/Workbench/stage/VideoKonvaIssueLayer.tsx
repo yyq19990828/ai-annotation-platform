@@ -1,4 +1,5 @@
 import { Layer, Circle, Text } from "react-konva";
+import type Konva from "konva";
 import { cssVarToHex } from "./colors";
 import type { VideoPixelSize } from "./videoKonvaCoordinates";
 import type { AnnotationFeedback } from "@/api/feedbacks";
@@ -19,6 +20,8 @@ interface VideoKonvaIssueLayerProps {
   size: VideoPixelSize;
   scale: number;
   highlightId?: string | null;
+  /** 单击图钉 → onPinClick(id)(Shell 据此高亮 + 切到 DiscussionPanel issues tab)。 */
+  onPinClick?: (id: string) => void;
 }
 
 /**
@@ -26,7 +29,8 @@ interface VideoKonvaIssueLayerProps {
  *
  * 旧 VideoIssueLayer(SVG)的 Konva 对应物:只渲染 anchor_position.frame === 当前帧 的图钉,
  * 坐标像素空间(归一化 × size),status 配色复用 tokens(open/resolved/wont_fix)。
- * 本版 listening=false 不接点击(onPinClick 交互留 v0.16.3)。
+ * 提供 onPinClick 时图钉可点击(Layer/Circle listening);pointerdown 用 cancelBubble 阻止
+ * 冒泡到 Stage(避免误触发画框/取消选中),click 触发回调(对齐旧 SVG 栈 onPinClick)。
  */
 export function VideoKonvaIssueLayer({
   pixelIssues,
@@ -34,13 +38,19 @@ export function VideoKonvaIssueLayer({
   size,
   scale,
   highlightId,
+  onPinClick,
 }: VideoKonvaIssueLayerProps) {
   const onFrame = pixelIssues.filter((issue) => issue.anchor_position?.frame === frameIndex);
   if (onFrame.length === 0) return null;
   const ringColor = cssVarToHex("--color-bg-elev");
   const radius = ISSUE_PIN_RADIUS * size.w;
+  const clickable = !!onPinClick;
+  const setCursor = (e: Konva.KonvaEventObject<MouseEvent>, cursor: string) => {
+    const stage = e.target.getStage();
+    if (stage) stage.container().style.cursor = cursor;
+  };
   return (
-    <Layer name="issue" listening={false}>
+    <Layer name="issue" listening={clickable}>
       {onFrame.map((issue) => {
         const x = issue.anchor_position!.x * size.w;
         const y = issue.anchor_position!.y * size.h;
@@ -56,7 +66,11 @@ export function VideoKonvaIssueLayer({
             fill={fill}
             stroke={ringColor}
             strokeWidth={(isHighlight ? 3 : 1.5) / scale}
-            listening={false}
+            listening={clickable}
+            onPointerDown={(e) => { e.cancelBubble = true; }}
+            onClick={(e) => { e.cancelBubble = true; onPinClick?.(issue.id); }}
+            onMouseEnter={(e) => setCursor(e, "pointer")}
+            onMouseLeave={(e) => setCursor(e, "")}
           />
         );
       })}

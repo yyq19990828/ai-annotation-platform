@@ -9,9 +9,3 @@ export const BOX_HANDLE_SCREEN_PX = 8;
 // tokens.css 的 `--font` 对齐。
 export const BOX_LABEL_FONT_FAMILY =
   '-apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif';
-
-export const VIDEO_HANDLE_SIZE = 0.0065;
-export const VIDEO_HANDLE_HIT_SIZE = VIDEO_HANDLE_SIZE * 1.1;
-export const VIDEO_LABEL_WIDTH = 0.46;
-export const VIDEO_LABEL_HEIGHT = 0.07;
-export const VIDEO_LABEL_OFFSET = 0.043;

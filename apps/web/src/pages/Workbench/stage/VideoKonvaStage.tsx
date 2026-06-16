@@ -26,6 +26,7 @@ import { deriveVideoFrameViews } from "./videoFrameViews";
 import { classColor, getTrackColor } from "./colors";
 import { isVideoBbox, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
 import { isFrameOutside } from "./videoTrackOutside";
+import { firstAppearFrame, lastAppearFrame } from "./videoTrackTimeline";
 import { pickTopVideoEntryAt } from "./videoStagePicking";
 import { useVideoTrackActions } from "./useVideoTrackActions";
 import { buildVideoContextMenuItems } from "./videoContextMenuItems";
@@ -58,6 +59,8 @@ interface VideoKonvaStageProps {
   pendingDrawing?: PendingDrawing;
   issuePixelFeedbacks?: AnnotationFeedback[];
   issueHighlightId?: string | null;
+  /** 单击 issue 图钉(Shell 据此高亮 + 切到讨论面板 issues tab)。 */
+  onIssuePinClick?: (id: string) => void;
   /** 共享视觉规格(线宽/填充/字号/标签);与图片同源。缺省回退默认值。 */
   visual?: AnnotationVisualConfig;
   videoTool?: VideoTool;
@@ -65,6 +68,8 @@ interface VideoKonvaStageProps {
   lockedTrackIds?: Set<string>;
   selectedIds?: string[];
   onSelect?: (id: string | null, opts?: { shift?: boolean }) => void;
+  /** 光标归一化坐标上报(供状态栏坐标读出);离开画布时上报 null。 */
+  onCursorMove?: (pt: { x: number; y: number } | null) => void;
   onCreate?: (frameIndex: number, geom: { x: number; y: number; w: number; h: number }) => void;
   onPendingDraw?: (
     kind: "video_bbox" | "video_track_bbox",
@@ -126,12 +131,14 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   pendingDrawing = null,
   issuePixelFeedbacks,
   issueHighlightId,
+  onIssuePinClick,
   visual = DEFAULT_ANNOTATION_VISUAL,
   videoTool = "box",
   readOnly = false,
   lockedTrackIds = EMPTY_LOCKED,
   selectedIds = [],
   onSelect,
+  onCursorMove,
   onCreate,
   onPendingDraw,
   onUpdate,
@@ -461,6 +468,19 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     fit(viewportSize.w, viewportSize.h, size.w, size.h);
   }, [fit, size.h, size.w, viewportSize.h, viewportSize.w]);
 
+  // 实际尺寸(100% 缩放并居中,对齐旧 SVG 栈 setActualSize)。
+  const setActualSize = useCallback(() => {
+    if (!viewportSize.w || !viewportSize.h) {
+      setVp({ scale: 1, tx: 0, ty: 0 });
+      return;
+    }
+    setVp({
+      scale: 1,
+      tx: (viewportSize.w - size.w) / 2,
+      ty: (viewportSize.h - size.h) / 2,
+    });
+  }, [setVp, size.h, size.w, viewportSize.h, viewportSize.w]);
+
   // 首次加载任务必定 fit 一次;之后仅在 autoFitOnResize 开启时跟随尺寸变化(对齐旧栈)。
   const fittedTaskIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -488,6 +508,44 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     return () => window.removeEventListener("wheel", onWheel, { capture: true });
   }, [vpRef, zoomAt]);
 
+  // 本地视口/导航快捷键(对齐旧 SVG 栈 VideoStage 本地 keydown):
+  // F = fit、0 = 实际尺寸;Home/End = 选中轨迹首/末出现帧(,/. 跳关键帧由中央 hotkeys 分发器处理)。
+  useEffect(() => {
+    const isInputFocused = (el: EventTarget | null) =>
+      el instanceof HTMLElement && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isInputFocused(e.target)) return;
+      if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        fitViewport();
+        return;
+      }
+      if (e.key === "0" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        setActualSize();
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const track = selectedTrack;
+      if (!track) return;
+      if (e.key === "Home") {
+        const frame = firstAppearFrame(track.geometry);
+        if (frame === null) return;
+        e.preventDefault();
+        seekToFrame(frame, { recordHistory: true });
+        return;
+      }
+      if (e.key === "End") {
+        const frame = lastAppearFrame(track.geometry);
+        if (frame === null) return;
+        e.preventDefault();
+        seekToFrame(frame, { recordHistory: true });
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [fitViewport, seekToFrame, selectedTrack, setActualSize]);
+
   // useImperativeHandle 委托给 controller.controls,再覆盖 deleteSelectedTrackKeyframe。
   useImperativeHandle(ref, () => ({
     ...controls,
@@ -506,18 +564,28 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   }, [pausePlayback, videoTool]);
 
   const onPointerMove = useCallback((evt: ReactPointerEvent<HTMLDivElement>) => {
+    // 光标归一化坐标上报(状态栏读出),无论是否在平移;越界(letterbox 区)上报 null。
+    if (onCursorMove) {
+      const rect = containerRef.current?.getBoundingClientRect();
+      const pt = rect ? clientToVideoNorm(evt.clientX, evt.clientY, rect, vpRef.current, size) : null;
+      onCursorMove(pt && pt.x >= 0 && pt.x <= 1 && pt.y >= 0 && pt.y <= 1 ? pt : null);
+    }
     const start = panRef.current;
     if (!start) return;
     const dx = evt.clientX - start.x;
     const dy = evt.clientY - start.y;
     panRef.current = { x: evt.clientX, y: evt.clientY };
     setVp((cur) => ({ ...cur, tx: cur.tx + dx, ty: cur.ty + dy }));
-  }, [setVp]);
+  }, [onCursorMove, setVp, size, vpRef]);
 
   const endPan = useCallback(() => {
     panRef.current = null;
     setPanning(false);
   }, []);
+
+  const onPointerLeave = useCallback(() => {
+    onCursorMove?.(null);
+  }, [onCursorMove]);
 
   const videoMinimapVisible = viewportSize.w > 0 && viewportSize.h > 0;
 
@@ -546,6 +614,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       onPointerMove={onPointerMove}
       onPointerUp={endPan}
       onPointerCancel={endPan}
+      onPointerLeave={onPointerLeave}
       onDoubleClick={fitViewport}
     >
       <video
@@ -598,6 +667,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               size={size}
               scale={vp.scale}
               highlightId={issueHighlightId}
+              onPinClick={onIssuePinClick}
             />
           )}
           <VideoKonvaInteractionLayer

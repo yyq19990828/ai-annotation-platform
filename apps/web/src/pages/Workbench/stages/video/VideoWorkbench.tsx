@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useMemo, useState } from "react";
+import { forwardRef, useMemo } from "react";
 import type {
   AnnotationResponse,
   TaskVideoFrameTimetableResponse,
@@ -7,10 +7,8 @@ import type {
   VideoSamplingConfig,
   VideoTrackGeometry,
 } from "@/types";
-import { VideoStage } from "../../stage/VideoStage";
 import type { VideoStageControls } from "../../stage/videoStageControls";
 import { VideoKonvaStage } from "../../stage/VideoKonvaStage";
-import { resolveVideoKonvaEnabledFromEnv } from "../../stage/videoKonvaFlag";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
 import type { VideoTimelineChapter } from "../../stage/VideoPlaybackOverlay";
@@ -95,7 +93,6 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     onCreate,
     onPendingDraw,
     onUpdate,
-    onRename,
     onChangeUserBoxClass,
     onDeleteUserBox,
     onConvertToBboxes,
@@ -115,102 +112,49 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
       () => resolveAnnotationVisual(workbenchConfig.common),
       [workbenchConfig.common],
     );
-    // v0.16.1–.3 · 画布栈统一 epic:flag 开启时走实验性 Konva 视频栈(底图/播放/缩放 +
-    // 标注渲染 + 交互画框/移动/缩放/选中,见 VideoKonvaStage)。flag 刷新后生效,挂载时解析一次。
-    const [videoKonvaEnabled] = useState(resolveVideoKonvaEnabledFromEnv);
-    // v0.16.4 · 切默认观察期面包屑:记录本次会话视频工作台实际走哪条渲染栈,
-    // 便于在 DevTools 控制台 grep `[video-stack]` 判断默认开后是否有人回退旧栈。
-    // (聚合遥测需客户端事件管线,仓库暂无,故先用控制台面包屑,见 v0.16.4 计划 §3.2。)
-    useEffect(() => {
-      console.info(`[video-stack] 渲染栈 = ${videoKonvaEnabled ? "konva" : "svg(回退)"}`);
-    }, [videoKonvaEnabled]);
-    if (videoKonvaEnabled) {
-      return (
-        <VideoKonvaStage
-          ref={ref}
-          manifest={manifest}
-          frameTimetable={frameTimetable}
-          isLoading={isLoading}
-          error={error}
-          frameIndex={frameIndex}
-          autoFitOnResize={workbenchVideo.autoFitOnResize}
-          performanceTier={performanceTier}
-          onFrameIndexChange={onFrameIndexChange}
-          annotations={annotations}
-          selectedId={selectedId}
-          hiddenTrackIds={hiddenTrackIds}
-          reviewDisplayMode={reviewDisplayMode}
-          trackColorOverrides={trackColorOverrides}
-          activeClass={activeClass}
-          pendingDrawing={pendingDrawing}
-          issuePixelFeedbacks={issuePixelFeedbacks}
-          issueHighlightId={issueHighlightId}
-          visual={annotationVisual}
-          videoTool={videoTool}
-          readOnly={readOnly}
-          lockedTrackIds={lockedTrackIds}
-          selectedIds={selectedIds}
-          onSelect={onSelect}
-          onCreate={onCreate}
-          onPendingDraw={onPendingDraw}
-          onUpdate={onUpdate}
-          onChangeUserBoxClass={onChangeUserBoxClass}
-          onComposeTracks={onComposeTracks}
-          onConvertToBboxes={onConvertToBboxes}
-          onDelete={(ann) => onDeleteUserBox(ann.id)}
-          onPropagateTrack={onPropagateTrack}
-          onToggleHiddenTrack={onToggleHiddenTrack}
-          onToggleLockedTrack={onToggleLockedTrack}
-          chapters={chapters}
-          videoSampling={videoSampling}
-          defaultPlaybackRate={workbenchVideo.defaultPlaybackRate}
-          largeFrameStep={workbenchVideo.largeFrameStep}
-        />
-      );
-    }
+    // v0.16.5 · 视频渲染栈统一到 Konva(删旧 SVG 栈,见 ADR-0041):唯一实现,无 flag 分支。
     return (
-      <VideoStage
+      <VideoKonvaStage
         ref={ref}
         manifest={manifest}
         frameTimetable={frameTimetable}
         isLoading={isLoading}
         error={error}
+        frameIndex={frameIndex}
+        autoFitOnResize={workbenchVideo.autoFitOnResize}
+        performanceTier={performanceTier}
+        onFrameIndexChange={onFrameIndexChange}
         annotations={annotations}
         selectedId={selectedId}
-        activeClass={activeClass}
-        frameIndex={frameIndex}
-        selectedIds={selectedIds}
-        reviewDisplayMode={reviewDisplayMode}
         hiddenTrackIds={hiddenTrackIds}
-        lockedTrackIds={lockedTrackIds}
+        reviewDisplayMode={reviewDisplayMode}
         trackColorOverrides={trackColorOverrides}
-        readOnly={readOnly}
-        videoTool={videoTool}
+        activeClass={activeClass}
         pendingDrawing={pendingDrawing}
-        chapters={chapters}
-        videoSampling={videoSampling}
-        performanceTier={performanceTier}
-        defaultPlaybackRate={workbenchVideo.defaultPlaybackRate}
-        largeFrameStep={workbenchVideo.largeFrameStep}
-        autoFitOnResize={workbenchVideo.autoFitOnResize}
-        visual={annotationVisual}
-        onSelect={onSelect}
-        onFrameIndexChange={onFrameIndexChange}
-        onCreate={onCreate}
-        onPendingDraw={onPendingDraw}
-        onUpdate={onUpdate}
-        onRename={onRename}
-        onChangeUserBoxClass={onChangeUserBoxClass}
-        onDelete={(ann) => onDeleteUserBox(ann.id)}
-        onConvertToBboxes={onConvertToBboxes}
-        onComposeTracks={onComposeTracks}
-        onToggleHiddenTrack={onToggleHiddenTrack}
-        onToggleLockedTrack={onToggleLockedTrack}
-        onPropagateTrack={onPropagateTrack}
-        onCursorMove={onCursorMove}
         issuePixelFeedbacks={issuePixelFeedbacks}
         issueHighlightId={issueHighlightId}
         onIssuePinClick={onIssuePinClick}
+        visual={annotationVisual}
+        videoTool={videoTool}
+        readOnly={readOnly}
+        lockedTrackIds={lockedTrackIds}
+        selectedIds={selectedIds}
+        onSelect={onSelect}
+        onCursorMove={onCursorMove}
+        onCreate={onCreate}
+        onPendingDraw={onPendingDraw}
+        onUpdate={onUpdate}
+        onChangeUserBoxClass={onChangeUserBoxClass}
+        onComposeTracks={onComposeTracks}
+        onConvertToBboxes={onConvertToBboxes}
+        onDelete={(ann) => onDeleteUserBox(ann.id)}
+        onPropagateTrack={onPropagateTrack}
+        onToggleHiddenTrack={onToggleHiddenTrack}
+        onToggleLockedTrack={onToggleLockedTrack}
+        chapters={chapters}
+        videoSampling={videoSampling}
+        defaultPlaybackRate={workbenchVideo.defaultPlaybackRate}
+        largeFrameStep={workbenchVideo.largeFrameStep}
       />
     );
   },

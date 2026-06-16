@@ -31,6 +31,22 @@
 
 <!-- 0.16.x 版本变更按版本段追加到本区；进入 0.17.x 后整体移到 docs/changelogs/0.16.x.md -->
 
+## [0.16.6] - 2026-06-17
+
+画布栈统一 epic 收尾(ADR-0041):**删除视频 SVG/DOM 旧栈,Konva 成为视频工作台唯一渲染栈**。观察期无回退后兑现不可逆清理——双栈塌缩为单栈,视觉参数/坐标模型/scale 抵消/fit/zoom 全仓与图片同一套,双份维护税归零。删除前补齐切默认观察期遗留的对等缺口,确保删栈不丢功能。
+
+### Removed
+
+- 删除整套 SVG/DOM 视频渲染栈(16 个文件):`VideoStage` / `VideoFrameOverlay` / `VideoObjectsLayer` / `VideoTrackShape` / `VideoTextLayer` / `VideoInteractionLayer` / `VideoIssueLayer` / `VideoMediaLayer` / `VideoGridLayer` / `VideoAttachmentLayer` / `VideoBitmapLayer` / `VideoStageSurface` / `VideoSelectionActions` / `videoStageCoordinates`(SVG CTM 坐标路径)/ `useChunkSamples` / `videoChunkDemux`,及其旧测试与 `.module.css`。
+- 移除 `videoKonvaFlag`(URL query `?videoKonva=` / localStorage 逃生舱)与设置面板「视频 Konva 渲染栈」开关(`experiment.videoKonva`);`VideoWorkbench` 去掉 flag 分流,无条件渲染 `VideoKonvaStage`。
+- 清理 `boxVisual.ts` 中仅 SVG 用的归一化常量(`VIDEO_HANDLE_SIZE` / `VIDEO_LABEL_*` 等)。
+
+### Fixed
+
+- **删栈前对齐功能**:补齐 Konva 视频栈缺失的三处能力——① 光标坐标上报(`onCursorMove` → 状态栏像素坐标读出);② 本地视口/导航快捷键 `F`(fit)/`0`(实际尺寸)/`Home`·`End`(选中轨迹首/末出现帧);③ issue 图钉点击(可点击跳到讨论面板,pointerdown `cancelBubble` 防误触发画框)。
+- **标注标签「字号」设置失效**:Konva `Text` 的 `fontFamily` 误用 CSS `var(--font-sans, …)`,canvas 无法解析致整串非法、字号恒回退 10px;改用字面字体栈(图片 + 视频两栈)。
+- **工作台设置滑条数值不实时**:拖动时数字读出冻结到松手才更新;提升拖动期实时值用于显示,commit 仍仅在松手发生。
+
 ## [0.16.5] - 2026-06-16
 
 画布栈统一 epic 的**功能对等补全**:v0.16.4 切默认后发现 Konva 视频栈缺了一整套环绕画布的「视频 chrome」——时间轴/播放浮层、Minimap、QC 警告、关键帧快跳——以及大量热键驱动的导航命令(关键帧跳转/书签/循环区间/跳转历史/采样网格步进/jog 连播/轨迹状态切换),这些此前只存在于旧 SVG `VideoStage`。本版把这些非画布机制补齐到 Konva 栈,使其与旧栈**真·功能对等**,为后续删旧栈(原计划 v0.16.5,顺延为下一独立 release)扫清前置。旧 SVG 栈与 flag 仍全保留作逃生舱。
