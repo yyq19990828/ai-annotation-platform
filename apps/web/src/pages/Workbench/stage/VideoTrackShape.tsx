@@ -44,7 +44,6 @@ export const VideoTrackShape = memo(VideoTrackShapeComponent, (prev, next) => (
   prev.geom.w === next.geom.w &&
   prev.geom.h === next.geom.h &&
   prev.color === next.color &&
-  prev.selected === next.selected &&
   prev.dashed === next.dashed &&
   prev.viewBoxHeight === next.viewBoxHeight &&
   prev.strokeWidth === next.strokeWidth &&
