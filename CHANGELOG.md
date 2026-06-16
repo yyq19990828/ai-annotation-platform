@@ -30,7 +30,25 @@
 
 <!-- 0.15.x 版本变更按版本段追加到本区；进入 0.16.x 后整体移到 docs/changelogs/0.15.x.md -->
 
-## [0.15.26] - 2026-06-15
+## [0.15.27] - 2026-06-16
+
+把图片与视频工作台里各自硬编码、且默认值长期漂移的标注视觉常量(标签字号 / 线宽 / 闭合形状填充透明度)收敛成 `workbench.common.*` 共享设置,图片(Konva)与视频(SVG/DOM)消费同一规格;并把「显示框标签」从二态开关升级为三态显隐,新增标签内容多选与选中态独立填充透明度。架构取舍见 [ADR-0040](docs/adr/0040-shared-annotation-visual-spec-not-stack-merge.md)(统一参数、不合并渲染栈)。
+
+### Added
+
+- **共享视觉规格模块** `annotationVisual.ts`:默认值单一来源(`VISUAL_DEFAULTS`)+ 纯函数(`buildLabelText` / `fillAlpha` / `strokeWidthFor` / `shouldShowLabel`),图片与视频两条渲染栈共用,分歧只留在最后一步 draw call(图片 `/scale`、视频 non-scaling)。
+- **「通用」组新增 6 个标注视觉字段**(图片 + 视频共享,调一处两端实时同步):标签字号(8–24)、标签显隐(始终 / 仅选中时 / 不显示)、标签内容(类别名 / ID / 置信度 / 属性多选,类别名至少保留)、线宽(1–5,选中态自动加粗 0.5)、填充透明度(0–0.6)、选中填充透明度(0–0.8,修「选中看不清」缺口)。
+- 设置注册表新增 `multiselect` 控件类型(存 `string[]`,带 `min` 兜底),抽屉与设置页以 chips 渲染;`labelContent` 是首个非标量控件。
+
+### Changed
+
+- **视频默认观感统一(破坏性)**:为对齐图片,视频框线宽由 `2/3`(非选中/选中)改为 `1.5/2.0`、闭合填充由纯白 `rgba(255,255,255,…)` 改为**类别色** + 填充透明度。是有意为之的统一,默认值 = 统一后基准。
+- **图片选中态填充加重**:选中对象填充透明度由原 `0.07/0.08` 提升到独立的 `fillOpacitySelected`(默认 0.12),区分当前对象;非选中默认观感不变。
+- **视频标签补显隐门控**:视频标签原先恒显,现接入 `labelVisibility` 三态(含「仅选中时」),并跟随通用字号设置。
+
+### Migrated
+
+- **`image.showBoxLabels`(bool)→ `common.labelVisibility`(枚举)**:alembic `0106` 逐行迁移 `showBoxLabels===false → "none"`,否则取默认 `"always"`,并剥除旧键(`WorkbenchImagePreferences` 为 `extra:forbid`,残留会让 GET 偏好 422)。down 反向(`!="none" → true`,`selected→true` 非双射)并剥除本版新增的 6 个 common 键。
 
 PR #40 代码评审 follow-up 收口:邻帧标注批量端点的可见性回归 + 3 处前端体验/一致性修正。
 

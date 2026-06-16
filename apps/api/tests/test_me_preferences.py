@@ -45,11 +45,17 @@ async def test_patch_image_subtree_only_touches_submitted_field(
     assert wb["image"]["snapThresholdPx"] == 8
     assert wb["image"]["zoomStepFactor"] == 1.1
     assert wb["image"]["fadedOpacity"] == 0.35
-    assert wb["image"]["showBoxLabels"] is True
     assert wb["image"]["maskOverlayOpacity"] == 0.45
     assert wb["common"]["longTaskSampleRate"] == 0.05
     assert wb["common"]["confirmDelete"] == "never"
     assert wb["common"]["recentClassesLimit"] == 5
+    # v0.15.27 · 标注视觉默认值(= 统一后基准)
+    assert wb["common"]["labelFontSize"] == 12
+    assert wb["common"]["labelVisibility"] == "always"
+    assert wb["common"]["labelContent"] == ["class", "score"]
+    assert wb["common"]["strokeWidth"] == 1.5
+    assert wb["common"]["fillOpacity"] == 0.07
+    assert wb["common"]["fillOpacitySelected"] == 0.12
 
     # GET 读回同形态
     resp = await httpx_client.get(PREFS_URL, headers=_bearer(token))
@@ -133,13 +139,17 @@ async def test_patch_image_workbench_settings_fields(httpx_client, annotator):
                 "common": {
                     "confirmDelete": "multi_only",
                     "recentClassesLimit": 12,
+                    "labelVisibility": "selected",
+                    "labelFontSize": 16,
+                    "strokeWidth": 2.5,
+                    "fillOpacity": 0.2,
+                    "fillOpacitySelected": 0.4,
                 },
                 "image": {
                     "afterBoxCreate": "reuse_active",
                     "snapThresholdPx": 12,
                     "zoomStepFactor": 1.15,
                     "fadedOpacity": 0.5,
-                    "showBoxLabels": False,
                     "maskOverlayOpacity": 0.6,
                 },
             }
@@ -154,11 +164,17 @@ async def test_patch_image_workbench_settings_fields(httpx_client, annotator):
     assert wb["image"]["snapThresholdPx"] == 12
     assert wb["image"]["zoomStepFactor"] == 1.15
     assert wb["image"]["fadedOpacity"] == 0.5
-    assert wb["image"]["showBoxLabels"] is False
     assert wb["image"]["maskOverlayOpacity"] == 0.6
+    # v0.15.27 · 标注视觉字段(common 共享)
+    assert wb["common"]["labelVisibility"] == "selected"
+    assert wb["common"]["labelFontSize"] == 16
+    assert wb["common"]["strokeWidth"] == 2.5
+    assert wb["common"]["fillOpacity"] == 0.2
+    assert wb["common"]["fillOpacitySelected"] == 0.4
     # 未提交字段保持默认值。
     assert wb["image"]["smoothImage"] is True
     assert wb["common"]["longTaskSampleRate"] == 0.05
+    assert wb["common"]["labelContent"] == ["class", "score"]
 
 
 async def test_patch_image_workbench_range_and_enum_violations_422(
@@ -177,6 +193,16 @@ async def test_patch_image_workbench_range_and_enum_violations_422(
         {"image": {"fadedOpacity": 0.9}},
         {"image": {"maskOverlayOpacity": 0.1}},
         {"image": {"maskOverlayOpacity": 0.9}},
+        # v0.15.27 · 标注视觉字段范围 / 枚举越界
+        {"common": {"labelFontSize": 7}},
+        {"common": {"labelFontSize": 25}},
+        {"common": {"labelVisibility": "hover"}},
+        {"common": {"strokeWidth": 0.5}},
+        {"common": {"strokeWidth": 6}},
+        {"common": {"fillOpacity": -0.1}},
+        {"common": {"fillOpacity": 0.7}},
+        {"common": {"fillOpacitySelected": 0.9}},
+        {"common": {"labelContent": ["class", "unknown"]}},
     ):
         resp = await httpx_client.patch(
             PREFS_URL,
@@ -650,4 +676,122 @@ def test_migration_0105_upgrade_idempotent():
     once = mod._upgrade_prefs({"workbench": {"layout": {"leftWidth": 300}}})
     assert once is not None
     assert "leftWidth" not in once["workbench"]["layout"]
+    assert mod._upgrade_prefs(once) is None
+
+
+# ── 9. v0.15.27 · 标注视觉字段 + 0106 showBoxLabels→labelVisibility 迁移 ──────
+
+
+def test_label_content_validator_dedups_and_pins_class():
+    """labelContent min:1 兜底：空补 class、缺 class 补到首位、去重保序。"""
+    # 空 → ["class"]
+    assert (
+        UserPreferences.model_validate(
+            {"workbench": {"common": {"labelContent": []}}}
+        ).workbench.common.labelContent
+        == ["class"]
+    )
+    # 缺 class → class 补到首位
+    assert (
+        UserPreferences.model_validate(
+            {"workbench": {"common": {"labelContent": ["score", "id"]}}}
+        ).workbench.common.labelContent
+        == ["class", "score", "id"]
+    )
+    # 去重保序
+    assert (
+        UserPreferences.model_validate(
+            {"workbench": {"common": {"labelContent": ["class", "score", "class"]}}}
+        ).workbench.common.labelContent
+        == ["class", "score"]
+    )
+
+
+def _load_migration_0106():
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "0106_label_visual_settings.py"
+    )
+    spec = importlib.util.spec_from_file_location("migration_0106", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_migration_0106_upgrade_false_to_none_and_strip():
+    mod = _load_migration_0106()
+    out = mod._upgrade_prefs(
+        {"workbench": {"image": {"showBoxLabels": False, "fadedOpacity": 0.5}}}
+    )
+    assert out is not None
+    assert out["workbench"]["common"]["labelVisibility"] == "none"
+    # 旧键剥离，image 其他键保留。
+    assert "showBoxLabels" not in out["workbench"]["image"]
+    assert out["workbench"]["image"]["fadedOpacity"] == 0.5
+    UserPreferences.model_validate(out)
+
+
+def test_migration_0106_upgrade_true_strips_without_writing_visibility():
+    mod = _load_migration_0106()
+    out = mod._upgrade_prefs({"workbench": {"image": {"showBoxLabels": True}}})
+    assert out is not None
+    assert "showBoxLabels" not in out["workbench"]["image"]
+    # showBoxLabels=True → 不写 common（schema 默认 "always" 覆盖）。
+    assert "labelVisibility" not in out["workbench"].get("common", {})
+    UserPreferences.model_validate(out)
+
+
+def test_migration_0106_upgrade_skips_rows_without_key():
+    mod = _load_migration_0106()
+    for prefs in (
+        {"workbench": {"common": {"labelVisibility": "none"}}},  # 已是新形态
+        {"workbench": {"image": {"smoothImage": True}}},  # image 无 showBoxLabels
+        {"ui": {"theme": "dark"}},  # 无 workbench
+        {"workbench": "nope"},
+        "not-a-dict",
+    ):
+        assert mod._upgrade_prefs(copy.deepcopy(prefs)) is None
+
+
+def test_migration_0106_downgrade_visibility_to_bool_and_strip_new_keys():
+    mod = _load_migration_0106()
+    out = mod._downgrade_prefs(
+        {
+            "workbench": {
+                "common": {
+                    "labelVisibility": "none",
+                    "labelFontSize": 16,
+                    "strokeWidth": 2.5,
+                    "longTaskSampleRate": 0.1,
+                }
+            }
+        }
+    )
+    assert out is not None
+    # none → showBoxLabels False
+    assert out["workbench"]["image"]["showBoxLabels"] is False
+    # 本版新增 common 键全部剥离，旧字段保留。
+    assert "labelVisibility" not in out["workbench"]["common"]
+    assert "labelFontSize" not in out["workbench"]["common"]
+    assert "strokeWidth" not in out["workbench"]["common"]
+    assert out["workbench"]["common"]["longTaskSampleRate"] == 0.1
+
+
+def test_migration_0106_downgrade_selected_maps_to_true_lossy():
+    """down 非双射：selected 无 bool 等价 → showBoxLabels True。"""
+    mod = _load_migration_0106()
+    out = mod._downgrade_prefs(
+        {"workbench": {"common": {"labelVisibility": "selected"}}}
+    )
+    assert out is not None
+    assert out["workbench"]["image"]["showBoxLabels"] is True
+
+
+def test_migration_0106_upgrade_idempotent():
+    mod = _load_migration_0106()
+    once = mod._upgrade_prefs({"workbench": {"image": {"showBoxLabels": False}}})
+    assert once is not None
+    assert "showBoxLabels" not in once["workbench"]["image"]
     assert mod._upgrade_prefs(once) is None

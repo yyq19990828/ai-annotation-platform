@@ -8,12 +8,14 @@ import type { LockableField, WorkbenchConfigPatch } from "./useWorkbenchConfig";
 export type WorkbenchPreferenceSettingCategory = "common" | "image" | "video" | "pointcloud";
 export type WorkbenchSettingCategory = WorkbenchPreferenceSettingCategory | "experiment";
 
-export type WorkbenchSettingValue = boolean | number | string;
+export type WorkbenchSettingValue = boolean | number | string | string[];
 
 export type WorkbenchSettingControl =
   | { type: "toggle"; onText?: string; offText?: string }
   | { type: "slider"; min: number; max: number; step: number; format?: (v: number) => string; resetTo?: number }
   | { type: "select"; options: Array<{ value: WorkbenchSettingValue; label: string }> }
+  // v0.15.27 · 多选(存 string[]);min 兜底至少保留几项(labelContent 至少留「类别名」)。
+  | { type: "multiselect"; options: Array<{ value: string; label: string }>; min?: number }
   | { type: "text"; maxLength: number; placeholder?: string };
 
 interface WorkbenchSettingFieldBase {
@@ -171,6 +173,64 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     },
   },
   {
+    key: "common.labelFontSize",
+    category: "common",
+    label: "标签字号",
+    description: "标注标签文字大小;图片随画布缩放、视频固定像素。图片与视频共用",
+    control: { type: "slider", min: 8, max: 24, step: 1, format: (v) => `${v}px` },
+  },
+  {
+    key: "common.labelVisibility",
+    category: "common",
+    label: "标签显隐",
+    description: "标注标签何时显示:始终 / 仅选中对象时 / 从不。图片与视频共用",
+    control: {
+      type: "select",
+      options: [
+        { value: "always", label: "始终显示" },
+        { value: "selected", label: "仅选中时" },
+        { value: "none", label: "不显示" },
+      ],
+    },
+  },
+  {
+    key: "common.labelContent",
+    category: "common",
+    label: "标签内容",
+    description: "标签里显示哪些信息;类别名始终保留。置信度仅 AI 预标注框有",
+    control: {
+      type: "multiselect",
+      min: 1,
+      options: [
+        { value: "class", label: "类别名" },
+        { value: "id", label: "ID" },
+        { value: "score", label: "置信度" },
+        { value: "attrs", label: "属性" },
+      ],
+    },
+  },
+  {
+    key: "common.strokeWidth",
+    category: "common",
+    label: "线宽",
+    description: "标注描边粗细;选中对象自动加粗 0.5。图片与视频共用",
+    control: { type: "slider", min: 1, max: 5, step: 0.5, format: (v) => v.toFixed(1) },
+  },
+  {
+    key: "common.fillOpacity",
+    category: "common",
+    label: "填充透明度",
+    description: "可闭合标注(框/多边形/旋转框)内部填充透明度;折线和点无填充。图片与视频共用",
+    control: { type: "slider", min: 0, max: 0.6, step: 0.01, format: (v) => v.toFixed(2) },
+  },
+  {
+    key: "common.fillOpacitySelected",
+    category: "common",
+    label: "选中填充透明度",
+    description: "选中对象的内部填充加重程度,便于区分当前对象。图片与视频共用",
+    control: { type: "slider", min: 0, max: 0.8, step: 0.01, format: (v) => v.toFixed(2) },
+  },
+  {
     key: "image.smoothImage",
     category: "image",
     label: "图像平滑",
@@ -255,13 +315,6 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     label: "淡化透明度",
     description: "未选中/被淡化对象的透明度，越低越淡",
     control: { type: "slider", min: 0.1, max: 0.8, step: 0.05, format: (v) => v.toFixed(2) },
-  },
-  {
-    key: "image.showBoxLabels",
-    category: "image",
-    label: "显示框标签",
-    description: "在每个框旁显示类别名标签",
-    control: { type: "toggle" },
   },
   {
     key: "image.maskOverlayOpacity",

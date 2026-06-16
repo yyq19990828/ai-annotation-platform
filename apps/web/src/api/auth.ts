@@ -27,7 +27,23 @@ export interface WorkbenchCommonPreferences {
   /** 左右边栏宽度,占工作台宽度百分比;拖拽与设置面板双向同步,默认 15。 */
   leftWidthPct: number;
   rightWidthPct: number;
+  /** v0.15.27 · 标注视觉样式(图片 + 视频共享,annotationVisual.ts 消费)。 */
+  /** 标签字号基准 px(图片按画布缩放 /scale,视频固定 CSS px)。 */
+  labelFontSize: number;
+  /** 标签显隐:always 恒显 / selected 仅选中 / none 不显示(取代旧 image.showBoxLabels)。 */
+  labelVisibility: "always" | "selected" | "none";
+  /** 标签内容多选;class 必含(min:1 兜底),score 仅 AI 框有置信度时拼。 */
+  labelContent: LabelContentToken[];
+  /** 描边线宽基准(screen px;选中态 = 基值 + 0.5)。 */
+  strokeWidth: number;
+  /** 闭合形状填充透明度(非选中)。 */
+  fillOpacity: number;
+  /** 选中对象填充加重透明度。 */
+  fillOpacitySelected: number;
 }
+
+/** v0.15.27 · 标签内容 token;class 必含,其余按勾选拼接。 */
+export type LabelContentToken = "class" | "id" | "score" | "attrs";
 
 /** v0.15.3 · 图像工作台渲染偏好(原顶层平铺字段归位)。 */
 export interface WorkbenchImagePreferences {
@@ -40,7 +56,7 @@ export interface WorkbenchImagePreferences {
   snapThresholdPx: number;
   zoomStepFactor: 1.05 | 1.1 | 1.15 | 1.2;
   fadedOpacity: number;
-  showBoxLabels: boolean;
+  /** v0.15.27 · showBoxLabels 迁移到 common.labelVisibility(三态枚举)。 */
   maskOverlayOpacity: number;
 }
 
@@ -161,6 +177,12 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     performanceTier: "standard",
     leftWidthPct: 15,
     rightWidthPct: 15,
+    labelFontSize: 12,
+    labelVisibility: "always",
+    labelContent: ["class", "score"],
+    strokeWidth: 1.5,
+    fillOpacity: 0.07,
+    fillOpacitySelected: 0.12,
   },
   image: {
     smoothImage: true,
@@ -172,7 +194,6 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     snapThresholdPx: 8,
     zoomStepFactor: 1.1,
     fadedOpacity: 0.35,
-    showBoxLabels: true,
     maskOverlayOpacity: 0.45,
   },
   video: {

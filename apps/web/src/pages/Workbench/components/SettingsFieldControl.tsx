@@ -114,6 +114,15 @@ export function SettingsFieldControl({
           ))}
         </select>
       )}
+      {control.type === "multiselect" && (
+        <MultiselectControl
+          value={Array.isArray(value) ? value : []}
+          options={control.options}
+          min={control.min ?? 0}
+          disabled={disabled || locked}
+          onCommit={onCommit}
+        />
+      )}
       {control.type === "text" && (
         <TextControl
           value={String(value)}
@@ -124,6 +133,55 @@ export function SettingsFieldControl({
         />
       )}
     </label>
+  );
+}
+
+/** v0.15.27 · 多选 chips:点击切换;受 min 约束时已是最后一项的取消被拒绝(保序提交)。 */
+function MultiselectControl({
+  value,
+  options,
+  min,
+  disabled,
+  onCommit,
+}: {
+  value: string[];
+  options: Array<{ value: string; label: string }>;
+  min: number;
+  disabled: boolean;
+  onCommit: (value: string[]) => void;
+}) {
+  const selected = new Set(value);
+  const toggle = (optValue: string) => {
+    const isOn = selected.has(optValue);
+    if (isOn && value.length <= min) return; // min 兜底:不允许低于下限
+    // 按 options 顺序重建,保证提交值稳定有序。
+    const next = options
+      .map((o) => o.value)
+      .filter((v) => (v === optValue ? !isOn : selected.has(v)));
+    onCommit(next);
+  };
+  return (
+    <span className={styles.multiselectWrap} role="group">
+      {options.map((opt) => {
+        const on = selected.has(opt.value);
+        const atFloor = on && value.length <= min;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            className={`${styles.chip} ${on ? styles.chipOn : ""}`}
+            aria-pressed={on}
+            disabled={disabled || atFloor}
+            onClick={(e) => {
+              e.preventDefault();
+              toggle(opt.value);
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </span>
   );
 }
 

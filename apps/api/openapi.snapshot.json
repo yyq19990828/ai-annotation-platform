@@ -18845,6 +18845,50 @@
             "title": "Crossframeoverlayscope",
             "type": "string"
           },
+          "fillOpacity": {
+            "default": 0.07,
+            "maximum": 0.6,
+            "minimum": 0.0,
+            "title": "Fillopacity",
+            "type": "number"
+          },
+          "fillOpacitySelected": {
+            "default": 0.12,
+            "maximum": 0.8,
+            "minimum": 0.0,
+            "title": "Fillopacityselected",
+            "type": "number"
+          },
+          "labelContent": {
+            "items": {
+              "enum": [
+                "class",
+                "id",
+                "score",
+                "attrs"
+              ],
+              "type": "string"
+            },
+            "title": "Labelcontent",
+            "type": "array"
+          },
+          "labelFontSize": {
+            "default": 12,
+            "maximum": 24.0,
+            "minimum": 8.0,
+            "title": "Labelfontsize",
+            "type": "integer"
+          },
+          "labelVisibility": {
+            "default": "always",
+            "enum": [
+              "always",
+              "selected",
+              "none"
+            ],
+            "title": "Labelvisibility",
+            "type": "string"
+          },
           "leftWidthPct": {
             "default": 15.0,
             "maximum": 35.0,
@@ -18881,6 +18925,13 @@
             "maximum": 35.0,
             "minimum": 10.0,
             "title": "Rightwidthpct",
+            "type": "number"
+          },
+          "strokeWidth": {
+            "default": 1.5,
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Strokewidth",
             "type": "number"
           }
         },
@@ -18931,11 +18982,6 @@
             "minimum": 0.2,
             "title": "Maskoverlayopacity",
             "type": "number"
-          },
-          "showBoxLabels": {
-            "default": true,
-            "title": "Showboxlabels",
-            "type": "boolean"
           },
           "smoothImage": {
             "default": true,
