@@ -13,6 +13,7 @@ import {
   BOX_LABEL_OFFSET_PX,
   BOX_LABEL_PAD_PX,
 } from "./boxVisual";
+import { screenToWorld } from "./shared/viewport/scaleCancel";
 import {
   buildLabelText,
   fillAlpha,
@@ -106,8 +107,8 @@ export function KonvaBox({
   onResizeStart,
 }: KonvaBoxProps) {
   const color = classColorForCanvas(b.cls);
-  const sw = strokeWidthFor(selected, visual) / scale;
-  const handleSize = BOX_HANDLE_SCREEN_PX / scale;
+  const sw = screenToWorld(strokeWidthFor(selected, visual), scale);
+  const handleSize = screenToWorld(BOX_HANDLE_SCREEN_PX, scale);
   const labelFontSize = visual.labelFontSize / scale;
   const isUserSelected = selected && !isAi && editable;
   const labelText = shapeLabelText(b, isAi, visual.labelContent);
@@ -239,7 +240,7 @@ export function KonvaPolygon({
   viewportBBox,
 }: KonvaPolygonProps) {
   const color = classColorForCanvas(b.cls);
-  const sw = strokeWidthFor(selected, visual) / scale;
+  const sw = screenToWorld(strokeWidthFor(selected, visual), scale);
   const labelFontSize = visual.labelFontSize / scale;
   const labelText = shapeLabelText(b, isAi, visual.labelContent);
   const ps = useMemo<Pt[]>(
@@ -410,8 +411,8 @@ export function KonvaRotatedBox({
   onResizeStart,
 }: KonvaRotatedBoxProps) {
   const color = classColorForCanvas(b.cls);
-  const sw = strokeWidthFor(selected, visual) / scale;
-  const handleSize = BOX_HANDLE_SCREEN_PX / scale;
+  const sw = screenToWorld(strokeWidthFor(selected, visual), scale);
+  const handleSize = screenToWorld(BOX_HANDLE_SCREEN_PX, scale);
   const labelFontSize = visual.labelFontSize / scale;
   const isUserSelected = selected && !isAi && editable;
   const labelText = shapeLabelText(b, isAi, visual.labelContent);
@@ -561,7 +562,7 @@ export function KonvaPolyline({
   onBodyMouseDown,
 }: KonvaPolylineProps) {
   const color = classColorForCanvas(b.cls);
-  const sw = strokeWidthFor(selected, visual) / scale;
+  const sw = screenToWorld(strokeWidthFor(selected, visual), scale);
   const labelFontSize = visual.labelFontSize / scale;
   const labelText = shapeLabelText(b, isAi, visual.labelContent);
   const ps: Pt[] = points;
@@ -714,7 +715,7 @@ export function KonvaKeypoint({
   const color = classColorForCanvas(b.cls);
   const kps: Keypoint[] = b.keypoints ?? [];
   const r = (selected ? 5 : 4) / scale;
-  const sw = strokeWidthFor(selected, visual) / scale;
+  const sw = screenToWorld(strokeWidthFor(selected, visual), scale);
   const labelFontSize = visual.labelFontSize / scale;
   const labelText = shapeLabelText(b, isAi, visual.labelContent);
   const edges = schema?.edges ?? [];

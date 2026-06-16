@@ -19,7 +19,10 @@
  * 用法:不挂路由也能跑。挂载说明见
  *   docs/plans/_spike-results/2026-06-16-video-konva-frame-perf.md「如何挂载运行」。
  */
+/* eslint-disable no-restricted-syntax -- 一次性 dev-only perf spike:调试控制面板用内联
+   style 即可,无需为验收后即删的非生产组件建 CSS module。 */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { Stage, Layer, Image as KonvaImage, Rect } from "react-konva";
 import type Konva from "konva";
 
@@ -60,7 +63,6 @@ interface SpikeStats {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __spikeStats: SpikeStats | undefined;
 }
 
@@ -251,7 +253,6 @@ export default function VideoKonvaFrameSpike() {
         rafRef.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, fpsTarget, autoSeconds, draw, canvas, computeStats, stop]);
 
   const boxRects = boxes.map((b, i) => (
@@ -343,7 +344,7 @@ function StatsPanel({ stats }: { stats: SpikeStats | null }) {
     return <div style={{ fontSize: 13, opacity: 0.6 }}>未运行。点「开始」采样;数字会实时显示并挂到 window.__spikeStats。</div>;
   }
   const fmt = (n: number) => n.toFixed(2);
-  const cell: React.CSSProperties = { padding: "2px 12px 2px 0" };
+  const cell: CSSProperties = { padding: "2px 12px 2px 0" };
   return (
     <div style={{ fontSize: 13, border: "1px solid #1f2937", padding: 10, borderRadius: 6, background: "#111827", display: "inline-block" }}>
       <div style={{ marginBottom: 6, opacity: 0.8 }}>

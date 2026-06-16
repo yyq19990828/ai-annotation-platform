@@ -36,6 +36,8 @@ import {
   type ImageContextMenuClipboardActions,
 } from "./imageStageContextMenu";
 import { wheelZoomFactor } from "./imageStageSettings";
+import { fitToCanvas } from "./shared/viewport/fit";
+import { zoomAtPoint } from "./shared/viewport/zoom";
 import { IssueLayer } from "./image/IssueLayer";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 import { useWorkbenchPerf } from "./shared/useWorkbenchPerf";
@@ -416,9 +418,8 @@ export function ImageStage({
 
   // ── fit ──────────────────────────────────────────────────────────────────
   const fitNow = useCallback(() => {
-    if (!vpSize.w || !vpSize.h || !imgW || !imgH) return;
-    const s = Math.min(vpSize.w / imgW, vpSize.h / imgH);
-    setVp({ scale: s, tx: (vpSize.w - imgW * s) / 2, ty: (vpSize.h - imgH * s) / 2 });
+    const next = fitToCanvas(vpSize.w, vpSize.h, imgW, imgH);
+    if (next) setVp(next);
   }, [vpSize.w, vpSize.h, imgW, imgH, setVp]);
 
   // 修翻页首帧 jank: vp 跨 task 持久化, 换图瞬间标注会先用上一张的变换画一帧, 等新图 onload
@@ -479,10 +480,8 @@ export function ImageStage({
       const cx = e.clientX - rect.left;
       const cy = e.clientY - rect.top;
       const factor = wheelZoomFactor(e.deltaY, workbenchConfig.image.zoomStepFactor);
-      const nextScale = Math.min(8, Math.max(0.2, vpRef.current.scale * factor));
       const cur = vpRef.current;
-      const ratio = nextScale / cur.scale;
-      setVp({ scale: nextScale, tx: cx - (cx - cur.tx) * ratio, ty: cy - (cy - cur.ty) * ratio });
+      setVp(zoomAtPoint(cur, cx, cy, cur.scale * factor));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);

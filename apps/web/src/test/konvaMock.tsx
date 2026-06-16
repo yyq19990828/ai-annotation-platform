@@ -107,7 +107,10 @@ function makeKonvaStandIn(konvaType: string) {
       }
     }
 
-    return React.createElement("div", domProps, children);
+    // Konva Text/Label 的文字经 `text` prop 传入(无 children)。除透传 data-text 外,
+    // 同时渲染成 DOM 文本内容,使测试可用 RTL 习惯的 getByText 断言标签文字。
+    const textContent = typeof rest.text === "string" ? rest.text : null;
+    return React.createElement("div", domProps, children as React.ReactNode, textContent);
   });
   Component.displayName = `KonvaMock(${konvaType})`;
   return Component;
