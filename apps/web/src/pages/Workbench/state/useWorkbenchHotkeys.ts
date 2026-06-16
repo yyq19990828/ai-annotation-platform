@@ -27,7 +27,7 @@ import type { useAnnotationHistory } from "./useAnnotationHistory";
 import type { AnnotationResponse } from "@/types";
 import type { AttributeSchema } from "@/api/projects";
 import type { AiBox } from "./transforms";
-import type { VideoStageControls } from "../stage/VideoStage";
+import type { VideoStageControls } from "../stage/videoStageControls";
 
 type Geom = { x: number; y: number; w: number; h: number };
 

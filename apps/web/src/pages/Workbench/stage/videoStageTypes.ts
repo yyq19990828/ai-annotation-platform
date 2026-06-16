@@ -7,6 +7,8 @@ import type {
 } from "@/types";
 
 export type VideoStageGeom = { x: number; y: number; w: number; h: number };
+/** 归一化视频坐标点 [0,1]。命中/几何纯函数复用。 */
+export type VideoPoint = { x: number; y: number };
 export type VideoStageGeometry = VideoBboxGeometry | VideoTrackGeometry;
 export type VideoBboxAnnotation = AnnotationResponse & { geometry: VideoBboxGeometry };
 export type VideoTrackAnnotation = AnnotationResponse & { geometry: VideoTrackGeometry };

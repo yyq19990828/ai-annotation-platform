@@ -22,7 +22,7 @@ import type { WorkbenchConfigPatch, WorkbenchLayoutPatch } from "../state/useWor
 import type { Viewport } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
-import type { VideoStageControls } from "../stage/VideoStage";
+import type { VideoStageControls } from "../stage/videoStageControls";
 import type { VideoTimelineChapter } from "../stage/VideoPlaybackOverlay";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import { ImageWorkbench } from "../stages/image/ImageWorkbench";

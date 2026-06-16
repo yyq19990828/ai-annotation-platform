@@ -1,5 +1,4 @@
-import type { VideoFrameEntry, VideoStageGeom, VideoTrackGhost } from "./videoStageTypes";
-import type { VideoPoint } from "./videoStageCoordinates";
+import type { VideoFrameEntry, VideoPoint, VideoStageGeom, VideoTrackGhost } from "./videoStageTypes";
 
 export type PickableVideoEntry = VideoFrameEntry | VideoTrackGhost;
 

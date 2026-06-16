@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 import { act, render } from "@testing-library/react";
 import { VideoKonvaStage } from "./VideoKonvaStage";
-import type { VideoStageControls } from "./VideoStage";
+import type { VideoStageControls } from "./videoStageControls";
 import type { TaskVideoManifestResponse } from "@/types";
 
 const playMock = vi.fn();

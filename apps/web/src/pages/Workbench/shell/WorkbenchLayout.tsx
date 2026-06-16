@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps,
 import { ConflictModal } from "@/components/workbench/ConflictModal";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
-import type { VideoStageControls } from "../stage/VideoStage";
+import type { VideoStageControls } from "../stage/videoStageControls";
 import { AIInspectorPanel, AIPredictionPopover } from "./AIInspectorPanel";
 import { DeleteConfirmModal } from "./DeleteConfirmModal";
 import { DiscussionPanel } from "./DiscussionPanel";

@@ -1,0 +1,27 @@
+/**
+ * 视频舞台命令式控制句柄(forwardRef 暴露给工作台热键 / shell)。
+ *
+ * 与具体渲染实现解耦:由 VideoKonvaStage 实现,经 useImperativeHandle 暴露。
+ * (原定义在已删除的旧 SVG VideoStage.tsx,v0.16.5 统一到 Konva 后抽到本文件。)
+ */
+export interface VideoStageControls {
+  togglePlayback: () => void;
+  jogPlayback: (dir: -1 | 1) => void;
+  pausePlayback: () => void;
+  seekByFrames: (delta: number, options?: { recordHistory?: boolean }) => void;
+  /** 软网格跳:采样开启时 ←/→ 跳到严格大/小的最近网格点。 */
+  seekGrid: (dir: -1 | 1, options?: { recordHistory?: boolean }) => void;
+  /** 逃生口:±1 源帧微调 (off-grid)。 */
+  microStep: (dir: -1 | 1, options?: { recordHistory?: boolean }) => void;
+  seekToKeyframe: (dir: -1 | 1, options?: { recordHistory?: boolean }) => void;
+  seekToFrame: (frameIndex: number, options?: { recordHistory?: boolean }) => void;
+  toggleBookmark: () => void;
+  jumpHistory: (dir: -1 | 1) => void;
+  clearLoopRegion: () => void;
+  toggleSelectedTrackOutside: () => void;
+  toggleSelectedTrackOccluded: () => void;
+  toggleSelectedTrackHidden: () => void;
+  toggleSelectedTrackLocked: () => void;
+  propagateSelectedTrack: () => void;
+  deleteSelectedTrackKeyframe: () => boolean;
+}

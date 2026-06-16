@@ -67,7 +67,7 @@ import { applyVideoKeyframeToGeometry } from "./videoTrackCommands";
 import { useAnnotateMode } from "../modes/useAnnotateMode";
 import { useReviewMode } from "../modes/useReviewMode";
 import { setActiveClassesConfig, UNKNOWN_CLASS } from "../stage/colors";
-import type { VideoStageControls } from "../stage/VideoStage";
+import type { VideoStageControls } from "../stage/videoStageControls";
 import { deriveSamplingStep } from "../stage/videoSamplingGrid";
 import { VideoChapterSidebar, pickChapterTargetFrame } from "../stage/VideoChapterSidebar";
 import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";

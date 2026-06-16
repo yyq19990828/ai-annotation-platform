@@ -5,7 +5,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { createRef, forwardRef } from "react";
-import type { VideoStageControls } from "../stage/VideoStage";
+import type { VideoStageControls } from "../stage/videoStageControls";
 
 vi.mock("./TaskQueuePanel", () => ({
   TaskQueuePanel: ({ floatingSection }: { floatingSection?: "queue" | "palette" }) => (

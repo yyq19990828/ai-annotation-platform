@@ -7,7 +7,8 @@ import type {
   VideoSamplingConfig,
   VideoTrackGeometry,
 } from "@/types";
-import { VideoStage, type VideoStageControls } from "../../stage/VideoStage";
+import { VideoStage } from "../../stage/VideoStage";
+import type { VideoStageControls } from "../../stage/videoStageControls";
 import { VideoKonvaStage } from "../../stage/VideoKonvaStage";
 import { resolveVideoKonvaEnabledFromEnv } from "../../stage/videoKonvaFlag";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
@@ -160,6 +161,10 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
           onPropagateTrack={onPropagateTrack}
           onToggleHiddenTrack={onToggleHiddenTrack}
           onToggleLockedTrack={onToggleLockedTrack}
+          chapters={chapters}
+          videoSampling={videoSampling}
+          defaultPlaybackRate={workbenchVideo.defaultPlaybackRate}
+          largeFrameStep={workbenchVideo.largeFrameStep}
         />
       );
     }

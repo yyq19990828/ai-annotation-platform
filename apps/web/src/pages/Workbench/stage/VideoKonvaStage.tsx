@@ -5,23 +5,27 @@ import type Konva from "konva";
 import { Icon } from "@/components/ui/Icon";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { DropdownItem } from "@/components/ui/DropdownMenu";
-import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
+import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoSamplingConfig, VideoTrackGeometry, VideoTrackKeyframe } from "@/types";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
 import { useElementSize, useViewportTransform } from "../state/useViewportTransform";
 import type { PendingDrawing, VideoTool } from "../state/useWorkbenchState";
 import type { DiffMode } from "../modes/types";
 import { FloatingDock } from "../shell/FloatingDock";
+import { Minimap } from "./Minimap";
 import { VideoKonvaMediaLayer } from "./VideoKonvaMediaLayer";
 import { VideoKonvaTracksLayer } from "./VideoKonvaTracksLayer";
 import { VideoKonvaOverlayLayer } from "./VideoKonvaOverlayLayer";
 import { VideoKonvaIssueLayer } from "./VideoKonvaIssueLayer";
 import { VideoKonvaInteractionLayer, type VideoHandleBox, type VideoPreviewBox } from "./VideoKonvaInteractionLayer";
+import { VideoPlaybackOverlay, type VideoLargeFrameStep, type VideoTimelineChapter } from "./VideoPlaybackOverlay";
+import { VideoQcWarnings } from "./VideoQcWarnings";
 import { useVideoKonvaInteraction } from "./videoKonvaInteraction";
 import { videoIntrinsicSize, clientToVideoNorm } from "./videoKonvaCoordinates";
 import { deriveVideoFrameViews } from "./videoFrameViews";
 import { classColor, getTrackColor } from "./colors";
 import { isVideoBbox, isVideoTrack, normalizeGeom, sortedKeyframes } from "./videoStageGeometry";
+import { isFrameOutside } from "./videoTrackOutside";
 import { pickTopVideoEntryAt } from "./videoStagePicking";
 import { useVideoTrackActions } from "./useVideoTrackActions";
 import { buildVideoContextMenuItems } from "./videoContextMenuItems";
@@ -29,11 +33,8 @@ import { useCanvasContextMenu } from "./useCanvasContextMenu";
 import type { VideoTrackAnnotation, VideoTrackCompositionOptions, VideoTrackConversionOptions } from "./videoStageTypes";
 import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annotationVisual";
 import { clampScale } from "./shared/viewport/zoom";
-import { buildFrameTimebase } from "./frameTimebase";
-import { useFrameClock } from "./useFrameClock";
-import { useVideoBitmapCache } from "./useVideoBitmapCache";
-import { resolveWorkbenchPerformanceTier } from "../state/performanceTier";
-import type { VideoStageControls } from "./VideoStage";
+import { useVideoPlaybackController } from "./useVideoPlaybackController";
+import type { VideoStageControls } from "./videoStageControls";
 import styles from "./VideoKonvaStage.module.css";
 
 const EMPTY_ANNOTATIONS: AnnotationResponse[] = [];
@@ -48,7 +49,6 @@ interface VideoKonvaStageProps {
   autoFitOnResize?: boolean;
   performanceTier?: WorkbenchCommonPreferences["performanceTier"];
   onFrameIndexChange?: (frameIndex: number) => void;
-  // v0.16.2 · 标注层数据(render-only):用 deriveVideoFrameViews 派生当前帧框/轨迹/标签/ghost。
   annotations?: AnnotationResponse[];
   selectedId?: string | null;
   hiddenTrackIds?: Set<string>;
@@ -60,7 +60,6 @@ interface VideoKonvaStageProps {
   issueHighlightId?: string | null;
   /** 共享视觉规格(线宽/填充/字号/标签);与图片同源。缺省回退默认值。 */
   visual?: AnnotationVisualConfig;
-  // v0.16.3 · 交互层(画框/移动/缩放/平移/选中)。缺省 → 只读渲染(无交互)。
   videoTool?: VideoTool;
   readOnly?: boolean;
   lockedTrackIds?: Set<string>;
@@ -74,7 +73,6 @@ interface VideoKonvaStageProps {
     anchor: { left: number; top: number },
   ) => void;
   onUpdate?: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry) => void;
-  // v0.16.4 · 右键上下文菜单回调(与旧栈同源 buildVideoContextMenuItems)。
   onChangeUserBoxClass?: (id: string) => void;
   onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
@@ -82,25 +80,33 @@ interface VideoKonvaStageProps {
   onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
   onToggleHiddenTrack?: (trackId: string) => void;
   onToggleLockedTrack?: (trackId: string) => void;
+  /** 时间轴章节(从工作台 shell 透传)。 */
+  chapters?: VideoTimelineChapter[];
+  /** 采样配置(帧网格步进策略)。 */
+  videoSampling?: VideoSamplingConfig | null;
+  /** 默认播放速率。 */
+  defaultPlaybackRate?: number;
+  /** Shift+←/→ 大步进策略(默认 10)。 */
+  largeFrameStep?: VideoLargeFrameStep;
 }
 
 const CONTEXT_MENU_DRAG_THRESHOLD_PX = 5;
 
 const noop = () => {};
 
+function quickKeyframeStatus(keyframe: VideoTrackKeyframe, outside: boolean): string {
+  if (outside) return "消失";
+  if (keyframe.occluded) return "遮挡";
+  if (keyframe.source === "prediction") return "预测";
+  return "正常";
+}
+
 /**
- * v0.16.1–.3 · 视频 Konva 渲染栈(实验,flag experiment.videoKonva 后)。
+ * 视频 Konva 渲染栈容器(v0.16.1–v0.16.5)。
  *
- * 底图(v0.16.1):视频帧进 Konva.Image(决策 A1,见 VideoKonvaMediaLayer),pan/zoom 走
- * Konva Stage 原生 transform + v0.16.0 公共 viewport 原语,坐标改像素空间(决策 B,
- * videoKonvaCoordinates)。标注渲染(v0.16.2):tracks/overlay/issue 层。交互(v0.16.3):
- * 画框/移动/缩放/平移/选中经 useVideoKonvaInteraction + VideoKonvaInteractionLayer,命中
- * 复用 pickTopVideoEntryAt、缩放计算复用 applyResize(纯函数,与旧栈同语义)。新栈与旧
- * SVG 栈经 flag 并行,关 flag 零行为变化,默认仍走旧栈。
- *
- * 播放/逐帧复用与旧栈同一套引擎(useFrameClock + useVideoBitmapCache),保证「暂停精确帧」
- * 与旧栈逐帧一致;经转发的 VideoStageControls 让工作台现有热键直接驱动本栈。轨迹类控制
- * (本版无轨迹)以 no-op 占位。
+ * 底图/播放/标注/交互/右键菜单全栈进 Konva,并补齐旧 SVG 栈的 chrome 奇偶性:
+ * VideoPlaybackOverlay(时间轴)、Minimap、VideoQcWarnings、关键帧快跳浮层。
+ * 所有播放/逐帧/书签/循环区间逻辑委托给 useVideoPlaybackController。
  */
 export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStageProps>(function VideoKonvaStage({
   manifest,
@@ -136,6 +142,10 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   onPropagateTrack,
   onToggleHiddenTrack,
   onToggleLockedTrack,
+  chapters = [],
+  videoSampling = null,
+  defaultPlaybackRate,
+  largeFrameStep = 10,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -149,37 +159,94 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   const { ref: setContainerNode, size: viewportSize } = useElementSize(containerRef);
   const { vp, vpRef, setVp, fit, zoomAt } = useViewportTransform();
 
-  const [uncontrolledFrameIndex, setUncontrolledFrameIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [panning, setPanning] = useState(false);
   const panRef = useRef<{ x: number; y: number } | null>(null);
 
-  const frameIndex = controlledFrameIndex ?? uncontrolledFrameIndex;
-  const frameIndexRef = useRef(frameIndex);
-  frameIndexRef.current = frameIndex;
-  const isPlayingRef = useRef(isPlaying);
-  isPlayingRef.current = isPlaying;
+  // v0.16.3 · 交互:选中轨迹(供 track 工具画框落关键帧 + ghost 可编辑判定)。
+  const selectedTrack = useMemo(() => {
+    const a = annotations.find((x) => x.id === selectedId);
+    return a && isVideoTrack(a) ? a : null;
+  }, [annotations, selectedId]);
 
-  const setFrameIndex = useCallback((nextFrame: number) => {
-    frameIndexRef.current = nextFrame;
-    if (controlledFrameIndex === undefined) setUncontrolledFrameIndex(nextFrame);
-    onFrameIndexChange?.(nextFrame);
-  }, [controlledFrameIndex, onFrameIndexChange]);
+  const noopSelect = useCallback(() => {}, []);
+  const noopCreate = useCallback(() => {}, []);
+  const noopUpdate = useCallback(() => {}, []);
 
-  const performanceConfig = useMemo(
-    () => resolveWorkbenchPerformanceTier(performanceTier),
-    [performanceTier],
-  );
-  const timebase = useMemo(
-    () => buildFrameTimebase(manifest?.metadata, frameTimetable),
-    [frameTimetable, manifest?.metadata],
-  );
-  const maxFrame = Math.max(0, timebase.frameCount - 1);
   const size = useMemo(
     () => videoIntrinsicSize(manifest?.metadata.width, manifest?.metadata.height),
     [manifest?.metadata.height, manifest?.metadata.width],
   );
+
+  // 右键上下文菜单状态
+  const contextMenu = useCanvasContextMenu();
+  const [contextMenuTargetId, setContextMenuTargetId] = useState<string | null>(null);
+  const rightDownRef = useRef<{ x: number; y: number } | null>(null);
+  const closeContextMenu = useCallback(() => {
+    contextMenu.close();
+    setContextMenuTargetId(null);
+  }, [contextMenu]);
+
+  // ---- useVideoPlaybackController ----
+  // currentFrameEntries 供 QC 用,控制器内部用它做重叠率计算。
+  // 此处传空数组占位 — 重叠率 QC 会不计分,属于可接受的简化(旧栈的 currentFrameEntries 走的
+  // 是同一帧解析,与 frameViews.entries 语义等价;后续可回填)。
+  const controller = useVideoPlaybackController({
+    manifest,
+    frameTimetable,
+    videoRef,
+    controlledFrameIndex,
+    onFrameIndexChange,
+    onSelect: onSelect as ((id: string | null) => void) | undefined,
+    performanceTier,
+    videoSampling,
+    defaultPlaybackRate: defaultPlaybackRate as (1 | 0.25 | 0.5 | 2 | 4) | undefined,
+    annotations,
+    selectedId,
+    selectedTrack,
+    trackColorOverrides,
+    hiddenTrackIds: hiddenTrackIds ?? EMPTY_LOCKED,
+    lockedTrackIds,
+    readOnly,
+    drag: null,
+    currentFrameEntries: [],
+    issuePixelFeedbacks,
+    onUpdate: (onUpdate ?? noopUpdate) as Parameters<typeof useVideoPlaybackController>[0]["onUpdate"],
+    onToggleHiddenTrack,
+    onToggleLockedTrack,
+    onPropagateTrack,
+  });
+
+  const {
+    frameIndex,
+    isPlaybackActive,
+    isJogPlaying,
+    jogPlayback,
+    playbackError,
+    activeBitmap,
+    cachedRanges,
+    framePreview,
+    previewFrame,
+    samplingStep,
+    maxFrame,
+    timebase,
+    selectedTrackTimeline,
+    selectedTrackColor,
+    selectedTrackKeyframes,
+    globalTimelineDensity,
+    qualityWarnings,
+    issueFrames,
+    playbackOverlayVisible,
+    highlightAction,
+    bookmarks,
+    loopRegion,
+    showPlaybackOverlay,
+    setNormalizedLoopRegion,
+    clearLoopRegion,
+    seekToFrame,
+    seekOverlayByFrames,
+    pausePlayback,
+    controls,
+  } = controller;
 
   // 当前帧的 pending draft(仅本帧的 video_bbox/video_track_bbox 草稿)。
   const pendingDraft = useMemo(() => {
@@ -193,7 +260,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     return { geom: pendingDrawing.geom, className: activeClass || "未分类" };
   }, [activeClass, frameIndex, pendingDrawing]);
 
-  // v0.16.2 · 标注渲染派生(纯函数,与 VideoStage 现状对齐)。
+  // 标注渲染派生(纯函数,与 VideoStage 现状对齐)。
   const frameViews = useMemo(
     () => deriveVideoFrameViews({
       annotations,
@@ -208,15 +275,6 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     [annotations, frameIndex, hiddenTrackIds, pendingDraft, reviewDisplayMode, selectedId, trackColorOverrides, visual],
   );
 
-  // v0.16.3 · 交互:选中轨迹(供 track 工具画框落关键帧 + ghost 可编辑判定)。
-  const selectedTrack = useMemo(() => {
-    const a = annotations.find((x) => x.id === selectedId);
-    return a && isVideoTrack(a) ? a : null;
-  }, [annotations, selectedId]);
-
-  const noopSelect = useCallback(() => {}, []);
-  const noopCreate = useCallback(() => {}, []);
-  const noopUpdate = useCallback(() => {}, []);
   const interaction = useVideoKonvaInteraction({
     containerRef,
     vpRef,
@@ -227,7 +285,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     selectedTrack,
     videoTool,
     readOnly,
-    isPlaybackActive: isPlaying,
+    isPlaybackActive,
     lockedTrackIds,
     frameIndex,
     onSelect: onSelect ?? noopSelect,
@@ -238,7 +296,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   const { drag } = interaction;
 
   // 可编辑选中框 → 画 8 向句柄(拖拽中跟随 live geom);live 预览框(画框/移动/缩放)。
-  const interactionEditable = !readOnly && !isPlaying;
+  const interactionEditable = !readOnly && !isPlaybackActive;
   const handleBox = useMemo<VideoHandleBox | null>(() => {
     if (!interactionEditable || !selectedId) return null;
     const liveGeom = drag && (drag.kind === "move" || drag.kind === "resize") && drag.id === selectedId
@@ -276,14 +334,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     return null;
   }, [activeClass, drag, frameViews.entries, frameViews.ghost, selectedTrack, trackColorOverrides, videoTool]);
 
-  // v0.16.4 · 右键上下文菜单(与旧 SVG 栈共用 buildVideoContextMenuItems / useVideoTrackActions)。
-  const contextMenu = useCanvasContextMenu();
-  const [contextMenuTargetId, setContextMenuTargetId] = useState<string | null>(null);
-  const rightDownRef = useRef<{ x: number; y: number } | null>(null);
-  const closeContextMenu = useCallback(() => {
-    contextMenu.close();
-    setContextMenuTargetId(null);
-  }, [contextMenu]);
+  // v0.16.4 · 右键上下文菜单
   const selectedAnnotation = useMemo(
     () => annotations.find((ann) => ann.id === selectedId) ?? null,
     [annotations, selectedId],
@@ -374,74 +425,6 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     contextMenu.openAt(evt.clientX, evt.clientY);
   }, [annotations, closeContextMenu, contextMenu, frameViews.entries, frameViews.ghost, onSelect, readOnly, selectedIds, selectedVideoBboxes.length, size, vpRef]);
 
-  const {
-    activeBitmap,
-    capture: captureBitmapFrame,
-    showFrame: showCachedBitmapFrame,
-  } = useVideoBitmapCache({
-    taskId: manifest?.task_id,
-    maxItems: performanceConfig.videoBitmapCache,
-  });
-
-  const frameClock = useFrameClock({
-    videoRef,
-    frameIndex,
-    timebase,
-    isPlaying,
-    onFrameChange: setFrameIndex,
-  });
-
-  const isPlaybackActive = isPlaying;
-
-  const seekFrameAsync = useCallback(
-    async (nextFrame: number, options?: { recordHistory?: boolean }) => {
-      void options;
-      const targetFrame = Math.max(0, Math.min(maxFrame, Math.round(nextFrame)));
-      showCachedBitmapFrame(targetFrame);
-      const result = await frameClock.seekToAsync(targetFrame);
-      void captureBitmapFrame(videoRef.current, targetFrame);
-      return result;
-    },
-    [captureBitmapFrame, frameClock, maxFrame, showCachedBitmapFrame],
-  );
-  const seekFrameAsyncRef = useRef(seekFrameAsync);
-  useEffect(() => {
-    seekFrameAsyncRef.current = seekFrameAsync;
-  }, [seekFrameAsync]);
-
-  const pausePlayback = useCallback(() => {
-    videoRef.current?.pause();
-    setIsPlaying(false);
-  }, []);
-
-  const togglePlayback = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (!video.paused || isPlayingRef.current) {
-      pausePlayback();
-      return;
-    }
-    setPlaybackError(null);
-    setIsPlaying(true);
-    const result = video.play();
-    if (result && typeof result.catch === "function") {
-      void result.catch((err: unknown) => {
-        setIsPlaying(false);
-        setPlaybackError(err instanceof Error ? err.message : "视频无法播放");
-      });
-    }
-  }, [pausePlayback]);
-
-  const seekByFrames = useCallback((delta: number) => {
-    pausePlayback();
-    void seekFrameAsync(frameIndexRef.current + delta);
-  }, [pausePlayback, seekFrameAsync]);
-
-  const seekToFrame = useCallback((nextFrame: number) => {
-    pausePlayback();
-    void seekFrameAsync(nextFrame);
-  }, [pausePlayback, seekFrameAsync]);
-
   const fitViewport = useCallback(() => {
     fit(viewportSize.w, viewportSize.h, size.w, size.h);
   }, [fit, size.h, size.w, viewportSize.h, viewportSize.w]);
@@ -456,17 +439,6 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     fittedTaskIdRef.current = taskId;
     fitViewport();
   }, [autoFitOnResize, fitViewport, manifest?.task_id, size.h, size.w, viewportSize.h, viewportSize.w]);
-
-  // 切任务复位帧/播放态。
-  const lastResetTaskIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    const taskId = manifest?.task_id ?? null;
-    if (!taskId || lastResetTaskIdRef.current === taskId) return;
-    lastResetTaskIdRef.current = taskId;
-    setFrameIndex(0);
-    setIsPlaying(false);
-    setPlaybackError(null);
-  }, [manifest?.task_id, setFrameIndex]);
 
   // ctrl/⌘+滚轮围绕光标缩放(几何边界判断,对齐旧栈 onWheel)。
   useEffect(() => {
@@ -484,78 +456,14 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     return () => window.removeEventListener("wheel", onWheel, { capture: true });
   }, [vpRef, zoomAt]);
 
-  // 首帧预热 + 播放/暂停/seek 时抓位图(对齐旧栈)。
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
-    const onEnded = () => setIsPlaying(false);
-    const onError = () => {
-      setIsPlaying(false);
-      setPlaybackError(video.error?.message || "当前浏览器无法播放该视频源");
-    };
-    const onFrameReady = () => {
-      if (!isPlayingRef.current) void captureBitmapFrame(video, frameIndexRef.current);
-    };
-    video.addEventListener("play", onPlay);
-    video.addEventListener("pause", onPause);
-    video.addEventListener("ended", onEnded);
-    video.addEventListener("error", onError);
-    video.addEventListener("seeked", onFrameReady);
-    video.addEventListener("loadeddata", onFrameReady);
-    return () => {
-      video.removeEventListener("play", onPlay);
-      video.removeEventListener("pause", onPause);
-      video.removeEventListener("ended", onEnded);
-      video.removeEventListener("error", onError);
-      video.removeEventListener("seeked", onFrameReady);
-      video.removeEventListener("loadeddata", onFrameReady);
-    };
-  }, [captureBitmapFrame, videoEl]);
-
-  // 首次加载视频源主动 seek 当前帧,强制解码清晰首帧并抓成位图(对齐旧栈)。
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !manifest?.video_url) return;
-    let cancelled = false;
-    const prime = () => {
-      if (cancelled) return;
-      cancelled = true;
-      void seekFrameAsyncRef.current(frameIndexRef.current);
-    };
-    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) prime();
-    else video.addEventListener("loadedmetadata", prime, { once: true });
-    return () => {
-      cancelled = true;
-      video.removeEventListener("loadedmetadata", prime);
-    };
-  }, [manifest?.video_url, videoEl]);
-
+  // useImperativeHandle 委托给 controller.controls,再覆盖 deleteSelectedTrackKeyframe。
   useImperativeHandle(ref, () => ({
-    togglePlayback,
-    jogPlayback: (dir: -1 | 1) => seekByFrames(dir),
-    pausePlayback,
-    seekByFrames: (delta: number) => seekByFrames(delta),
-    seekGrid: (dir: -1 | 1) => seekByFrames(dir),
-    microStep: (dir: -1 | 1) => seekByFrames(dir),
-    seekToKeyframe: noop,
-    seekToFrame: (f: number) => seekToFrame(f),
-    toggleBookmark: noop,
-    jumpHistory: noop,
-    clearLoopRegion: noop,
-    toggleSelectedTrackOutside: noop,
-    toggleSelectedTrackOccluded: noop,
-    toggleSelectedTrackHidden: noop,
-    toggleSelectedTrackLocked: noop,
-    propagateSelectedTrack: noop,
-    deleteSelectedTrackKeyframe: () => false,
-  }), [pausePlayback, seekByFrames, seekToFrame, togglePlayback]);
+    ...controls,
+    deleteSelectedTrackKeyframe,
+  }), [controls, deleteSelectedTrackKeyframe]);
 
   const beginPan = useCallback((evt: ReactPointerEvent<HTMLDivElement>) => {
-    // 右键拖 = 平移;hand 工具下左键也走平移(对齐旧栈 beginDraw→beginPan 分支)。
     const isPan = evt.button === 2 || (evt.button === 0 && videoTool === "hand");
-    // 右键按下点:供 contextmenu 判定「按下到抬起是否拖动过」(拖动则视为 pan,不弹菜单)。
     if (evt.button === 2) rightDownRef.current = { x: evt.clientX, y: evt.clientY };
     if (!isPan) return;
     evt.preventDefault();
@@ -578,6 +486,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     panRef.current = null;
     setPanning(false);
   }, []);
+
+  const videoMinimapVisible = viewportSize.w > 0 && viewportSize.h > 0;
 
   if (isLoading) {
     return (
@@ -672,6 +582,83 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           视频无法播放:{playbackError}
         </div>
       )}
+      <VideoQcWarnings warnings={qualityWarnings} />
+      {selectedTrack && selectedTrackKeyframes.length > 0 && (
+        <details
+          className={styles.keyframeQuickJump}
+          data-testid="video-keyframe-quick-jump"
+        >
+          <summary
+            className={styles.keyframeQuickSummary}
+            data-testid="video-keyframe-quick-jump-summary"
+          >
+            <Icon name="key" size={14} />
+            <span className={styles.keyframeQuickTitle}>关键帧</span>
+            <span className={`mono ${styles.keyframeQuickCount}`}>
+              {selectedTrackKeyframes.length}
+            </span>
+            <Icon name="chevDown" size={14} className={styles.keyframeQuickChevron} />
+          </summary>
+          <div className={styles.keyframeQuickList}>
+            {selectedTrackKeyframes.map((keyframe) => {
+              const outside = isFrameOutside(selectedTrack.geometry, keyframe.frame_index);
+              const statusClassName = [
+                styles.keyframeQuickStatus,
+                outside ? styles.keyframeQuickStatusAbsent : "",
+                keyframe.source === "prediction" ? styles.keyframeQuickStatusPrediction : "",
+              ].filter(Boolean).join(" ");
+              return (
+                <button
+                  key={keyframe.frame_index}
+                  type="button"
+                  className={styles.keyframeQuickRow}
+                  title={`跳转到 F${keyframe.frame_index}`}
+                  onClick={() => seekToFrame(keyframe.frame_index, { recordHistory: true })}
+                >
+                  <span className={`mono ${styles.keyframeQuickFrame}`}>F{keyframe.frame_index}</span>
+                  <span className={statusClassName}>{quickKeyframeStatus(keyframe, outside)}</span>
+                  <span className={styles.keyframeQuickSource}>{keyframe.source}</span>
+                  <Icon name="arrowRight" size={13} />
+                </button>
+              );
+            })}
+          </div>
+        </details>
+      )}
+      <VideoPlaybackOverlay
+        frameIndex={frameIndex}
+        maxFrame={maxFrame}
+        samplingStep={samplingStep}
+        largeFrameStep={largeFrameStep}
+        timebase={timebase}
+        isPlaying={isPlaybackActive}
+        playbackRateLabel={isJogPlaying ? `${jogPlayback.direction < 0 ? "-" : ""}${jogPlayback.rate}x` : undefined}
+        selectedTrackTimeline={selectedTrackTimeline}
+        trackColor={selectedTrackColor}
+        globalTimelineDensity={globalTimelineDensity}
+        trackColorOverrides={trackColorOverrides}
+        loopRegion={loopRegion}
+        bookmarks={bookmarks}
+        chapters={chapters}
+        issueFrames={issueFrames}
+        hoverPreview={framePreview}
+        currentFrameEntryCount={frameViews.entries.length}
+        visible={playbackOverlayVisible && !drag}
+        interactive
+        highlightAction={highlightAction}
+        onSeek={(frame) => {
+          showPlaybackOverlay();
+          pausePlayback();
+          seekToFrame(frame, { recordHistory: true });
+        }}
+        onSeekByFrames={seekOverlayByFrames}
+        onTogglePlay={controls.togglePlayback}
+        onLoopRegionChange={setNormalizedLoopRegion}
+        onClearLoopRegion={clearLoopRegion}
+        onSeekBookmark={(targetFrame) => seekToFrame(targetFrame, { recordHistory: true })}
+        onSeekChapter={(_, frame) => seekToFrame(frame, { recordHistory: true })}
+        onHoverFrameChange={previewFrame}
+      />
       <ContextMenu
         open={contextMenu.open && contextMenuItems.length > 0}
         x={contextMenu.x}
@@ -690,6 +677,21 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         onFit={fitViewport}
         showHistory={false}
       />
+      {videoMinimapVisible && (
+        <Minimap
+          imgW={size.w}
+          imgH={size.h}
+          vpSize={viewportSize}
+          vp={vp}
+          setVp={setVp}
+          thumbnailUrl={manifest.poster_url ?? null}
+          fileUrl={manifest.video_url}
+          currentFrameIndex={frameIndex}
+          maxFrame={maxFrame}
+          cachedFrameRanges={cachedRanges}
+          bottom={64}
+        />
+      )}
     </div>
   );
 });

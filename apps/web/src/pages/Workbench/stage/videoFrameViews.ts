@@ -34,6 +34,8 @@ export type VideoEntryView = {
   dashed: boolean;
   occluded: boolean;
   labelText: string;
+  /** 类别名(供 QC 密度/重叠率计算消费)。 */
+  className: string;
 };
 
 export type VideoPreviewPoint = { frame: number; x: number; y: number; occluded: boolean };
@@ -210,5 +212,6 @@ function buildEntryView(
     dashed: source === "interpolated" || occluded,
     occluded,
     labelText: `${labelPrefix}${ann.class_name}${labelSuffix}`,
+    className: ann.class_name,
   };
 }
