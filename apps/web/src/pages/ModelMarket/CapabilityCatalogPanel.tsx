@@ -31,57 +31,14 @@ import {
 } from "@/api/mlCapabilities";
 import { ProtocolCapabilityCard, type MountedModel } from "./ProtocolCapabilityCard";
 import { EmptyCatalogBanner } from "./EmptyCatalogBanner";
+import {
+  taskLabel,
+  infraLabel,
+  modalityLabel,
+  taskVariant,
+  taskSuffix,
+} from "./capability/labels";
 import styles from "./CapabilityCatalogPanel.module.css";
-
-// 受控 task → 中文短标签 (协议 v2 边界枚举).
-const TASK_LABELS: Record<string, string> = {
-  detection: "检测",
-  obb: "旋转框",
-  segmentation: "分割",
-  keypoint: "关键点",
-  classification: "分类",
-  ocr: "OCR",
-  doc_layout: "版面分析",
-  tracker: "追踪",
-  interactive_seg: "交互分割",
-};
-
-// 受控 infra → 中文短标签.
-const INFRA_LABELS: Record<string, string> = {
-  pytorch: "PyTorch",
-  onnx: "ONNX",
-  paddle: "Paddle",
-  tensorrt: "TensorRT",
-  openvino: "OpenVINO",
-  other: "其它",
-  unknown: "未知",
-};
-
-const MODALITY_LABELS: Record<string, string> = {
-  image: "图像",
-  video: "视频",
-  text: "文本",
-  point_cloud: "点云",
-};
-
-function taskLabel(task: string) {
-  return TASK_LABELS[task] ?? task;
-}
-function infraLabel(infra: string) {
-  return INFRA_LABELS[infra] ?? infra;
-}
-function modalityLabel(m: string) {
-  return MODALITY_LABELS[m] ?? m;
-}
-
-// task → badge 配色 (复用既有 Badge variant, 不引入新 token).
-function taskVariant(task: string): "accent" | "ai" | "success" | "warning" | "outline" {
-  if (task === "detection" || task === "obb") return "accent";
-  if (task === "segmentation" || task === "interactive_seg") return "ai";
-  if (task === "keypoint" || task === "classification") return "success";
-  if (task === "ocr" || task === "doc_layout") return "warning";
-  return "outline";
-}
 
 // 一个展开后的 model 条目 (附带其来源 backend, 供分组/过滤/标题用).
 interface FlatModel {
@@ -795,20 +752,6 @@ function FilterToolbar(p: FilterToolbarProps) {
   );
 }
 
-// task → 行名后缀 (yolo 风格: 每 task 独立权重时拼到 variant 后, 例: YOLOv8-OBB).
-// 缺省/未识别 task 不加后缀。
-const TASK_SUFFIX: Record<string, string> = {
-  detection: "Det",
-  obb: "OBB",
-  segmentation: "Seg",
-  keypoint: "Pose",
-  interactive_seg: "ISeg",
-  tracker: "Track",
-  classification: "Cls",
-  ocr: "OCR",
-  doc_layout: "Layout",
-};
-
 // v0.14.12 · 列表行结构. 一行 = 一个物理权重 (一份 .pt 文件).
 // 两条渲染策略:
 //   ① variants_shared_across_tasks=true (gsam2): 同 backend 内多 task 共用同 axis_key 的权重,
@@ -835,11 +778,6 @@ function uniq<T>(arr: T[]): T[] {
   const out: T[] = [];
   for (const x of arr) if (!seen.has(x)) { seen.add(x); out.push(x); }
   return out;
-}
-
-function taskSuffix(task: string | undefined): string {
-  if (!task) return "";
-  return TASK_SUFFIX[task] ?? task;
 }
 
 function pickVariantOption<T extends { value: string; recommended?: boolean }>(
