@@ -93,6 +93,8 @@ interface VideoKonvaStageProps {
   defaultPlaybackRate?: number;
   /** Shift+←/→ 大步进策略(默认 10)。 */
   largeFrameStep?: VideoLargeFrameStep;
+  /** v0.16.8 · 选中浮动卡承载关键帧跳转时,隐藏右上冗余 <details> 快跳浮层。 */
+  hideKeyframeQuickJump?: boolean;
 }
 
 const CONTEXT_MENU_DRAG_THRESHOLD_PX = 5;
@@ -153,6 +155,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   videoSampling = null,
   defaultPlaybackRate,
   largeFrameStep = 10,
+  hideKeyframeQuickJump = false,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -686,7 +689,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         </div>
       )}
       <VideoQcWarnings warnings={qualityWarnings} />
-      {selectedTrack && selectedTrackKeyframes.length > 0 && (
+      {selectedTrack && selectedTrackKeyframes.length > 0 && !hideKeyframeQuickJump && (
         <details
           className={styles.keyframeQuickJump}
           data-testid="video-keyframe-quick-jump"

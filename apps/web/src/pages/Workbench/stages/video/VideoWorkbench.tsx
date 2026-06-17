@@ -60,6 +60,8 @@ export interface VideoWorkbenchProps {
   onToggleHiddenTrack?: (trackId: string) => void;
   onToggleLockedTrack?: (trackId: string) => void;
   onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
+  /** v0.16.8 · 选中浮动卡承载关键帧跳转时,隐藏画布右上冗余 <details> 快跳浮层。 */
+  hideKeyframeQuickJump?: boolean;
   onCursorMove: (pt: { x: number; y: number } | null) => void;
   // v0.11.7 · pixel-anchored issue 图钉 (按当前帧显隐 + 时间轴标记)。
   issuePixelFeedbacks?: AnnotationFeedback[];
@@ -100,6 +102,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     onToggleHiddenTrack,
     onToggleLockedTrack,
     onPropagateTrack,
+    hideKeyframeQuickJump,
     onCursorMove,
     issuePixelFeedbacks,
     issueHighlightId,
@@ -149,6 +152,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         onConvertToBboxes={onConvertToBboxes}
         onDelete={(ann) => onDeleteUserBox(ann.id)}
         onPropagateTrack={onPropagateTrack}
+        hideKeyframeQuickJump={hideKeyframeQuickJump}
         onToggleHiddenTrack={onToggleHiddenTrack}
         onToggleLockedTrack={onToggleLockedTrack}
         chapters={chapters}

@@ -71,6 +71,7 @@ import type { VideoStageControls } from "../stage/videoStageControls";
 import { deriveSamplingStep } from "../stage/videoSamplingGrid";
 import { VideoChapterSidebar, pickChapterTargetFrame } from "../stage/VideoChapterSidebar";
 import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";
+import type { TrackFilter } from "../stage/VideoTrackPanel";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
 import { isVideoBbox, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import type { AnnotationCommentAnchor } from "@/api/comments";
@@ -1980,9 +1981,60 @@ export function useWorkbenchShellModel({
     });
   }, [floatingSelection, setWorkbenchLayout]);
 
+  // v0.16.8 Phase 3 · 视频轨迹面板的共享构建器:右栏(VideoTrackSidebar + 章节)与选中浮动卡
+  // 复用同一份 props/回调,杜绝两套逻辑漂移。frameFilter 控制「全部 / 当前帧」轨迹过滤。
+  const renderVideoTrackSidebar = useCallback(
+    (frameFilter: TrackFilter) => (
+      <VideoTrackSidebar
+        annotations={visibleAnnotationsData}
+        selectedId={s.selectedId}
+        selectedIds={s.selectedIds}
+        frameIndex={s.videoFrameIndex}
+        userId={meUserId ?? null}
+        trackFilter={frameFilter}
+        readOnly={isLocked}
+        hiddenTrackIds={s.hiddenVideoTrackIds}
+        lockedTrackIds={s.lockedVideoTrackIds}
+        classes={classes}
+        onSelect={(id) => handleSelectBox(id)}
+        onToggleHiddenTrack={s.toggleHiddenVideoTrack}
+        onToggleLockedTrack={s.toggleLockedVideoTrack}
+        onSeekFrame={s.setVideoFrameIndex}
+        reviewDisplayMode={mode === "review" ? modeState.diffMode : undefined}
+        onChangeUserBoxClass={handleStartChangeClass}
+        onRenameTracks={handleVideoBatchRename}
+        onDeleteTracks={handleVideoBatchDelete}
+        onUpdate={handleVideoUpdate}
+        onConvertToBboxes={handleVideoConvertToBboxes}
+        onComposeTracks={handleVideoComposeTracks}
+        trackerJobsByAnnotation={trackerJobs.byAnnotation}
+        onPropagateTrack={openPropagateDialog}
+        onCancelTrackerJob={trackerJobs.cancel}
+        trackColorOverrides={s.trackColorOverrides}
+        onSetTrackColor={s.setVideoTrackColor}
+        attributeSchema={toolView.attributeSchema}
+        onUpdateTrackAttributes={handleUpdateTrackAttributes}
+        onUpdateKeyframeAttributes={handleUpdateKeyframeAttributes}
+        onPropagateKeyframe={handlePropagateKeyframe}
+        samplingStep={samplingStep}
+        propagateOverwrite={currentProject?.rendering_config?.propagateOverwrite ?? null}
+      />
+    ),
+    [
+      visibleAnnotationsData, s.selectedId, s.selectedIds, s.videoFrameIndex, meUserId, isLocked,
+      s.hiddenVideoTrackIds, s.lockedVideoTrackIds, classes, handleSelectBox,
+      s.toggleHiddenVideoTrack, s.toggleLockedVideoTrack, s.setVideoFrameIndex, mode, modeState.diffMode,
+      handleStartChangeClass, handleVideoBatchRename, handleVideoBatchDelete, handleVideoUpdate,
+      handleVideoConvertToBboxes, handleVideoComposeTracks, trackerJobs.byAnnotation, openPropagateDialog,
+      trackerJobs.cancel, s.trackColorOverrides, s.setVideoTrackColor, toolView.attributeSchema,
+      handleUpdateTrackAttributes, handleUpdateKeyframeAttributes, handlePropagateKeyframe, samplingStep,
+      currentProject?.rendering_config?.propagateOverwrite,
+    ],
+  );
+
   // 图片 / 视频选中即现(3D 用自有 PSR 面板,不显示)。单选 = 类别标题 + 内容;
   // 多选 = 「N 个已选中 · 批量」精简态;无选中 = null(隐藏)。
-  // 图片单选注入真实内容(改类 / 锁 / 隐藏 / 删除 / 几何 / 属性);视频单选 Phase 3 接入。
+  // 图片单选注入真实内容(改类 / 锁 / 隐藏 / 删除 / 几何 / 属性);视频单选搬入完整轨迹面板。
   const selectionCardEligible = stageKind === "image" || stageKind === "video";
   const selectionCount = s.selectedIds.length;
   const selectionCard = useMemo<SelectedAnnotationCardProps | null>(() => {
@@ -1995,6 +2047,13 @@ export function useWorkbenchShellModel({
     let children: ReactNode;
     if (multi) {
       children = <SelectionCardPlaceholder summary={`已选中 ${selectionCount} 个标注。`} />;
+    } else if (stageKind === "video") {
+      // 视频:把右栏完整轨迹面板搬进卡内(共享同一构建器/回调),含轨迹·当前帧·关键帧跳转·属性。
+      children = (
+        <div className={styles.videoSelectionCardBody}>
+          {renderVideoTrackSidebar("current")}
+        </div>
+      );
     } else if (ann && stageKind === "image") {
       children = (
         <ImageSelectionCardContent
@@ -2010,7 +2069,6 @@ export function useWorkbenchShellModel({
         />
       );
     } else {
-      // 视频单选(Phase 3 接入)/ 无对应标注:占位摘要。
       children = (
         <SelectionCardPlaceholder
           summary={ann ? `类别 ${ann.class_name} · ${ann.geometry.type}` : "已选中 1 个标注。"}
@@ -2039,6 +2097,7 @@ export function useWorkbenchShellModel({
     handlePatchShapeFlag,
     handleDeleteBox,
     handleUpdateAttributes,
+    renderVideoTrackSidebar,
     floatingSelectionPosition,
     onSelectionPositionChange,
     floatingSelection.collapsed,
@@ -2325,6 +2384,10 @@ export function useWorkbenchShellModel({
         onToggleHiddenVideoTrack: s.toggleHiddenVideoTrack,
         onToggleLockedVideoTrack: s.toggleLockedVideoTrack,
         onPropagateVideoTrack: openPropagateDialog,
+        // 选中浮动卡(展开态)已承载关键帧跳转,隐藏画布右上的冗余 <details> 快跳浮层;
+        // 卡折叠时仍保留该浮层作为快捷入口。
+        hideKeyframeQuickJump:
+          stageKind === "video" && selectionCount === 1 && !floatingSelection.collapsed,
       },
       image: {
         fileUrl,
@@ -2457,40 +2520,7 @@ export function useWorkbenchShellModel({
       onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
       videoTrackPanel: isVideoTask ? ((frameFilter) => (
         <div className={styles.videoTrackPanel}>
-          <VideoTrackSidebar
-            annotations={visibleAnnotationsData}
-            selectedId={s.selectedId}
-            selectedIds={s.selectedIds}
-            frameIndex={s.videoFrameIndex}
-            userId={meUserId ?? null}
-            trackFilter={frameFilter}
-            readOnly={isLocked}
-            hiddenTrackIds={s.hiddenVideoTrackIds}
-            lockedTrackIds={s.lockedVideoTrackIds}
-            classes={classes}
-            onSelect={(id) => handleSelectBox(id)}
-            onToggleHiddenTrack={s.toggleHiddenVideoTrack}
-            onToggleLockedTrack={s.toggleLockedVideoTrack}
-            onSeekFrame={s.setVideoFrameIndex}
-            reviewDisplayMode={mode === "review" ? modeState.diffMode : undefined}
-            onChangeUserBoxClass={handleStartChangeClass}
-            onRenameTracks={handleVideoBatchRename}
-            onDeleteTracks={handleVideoBatchDelete}
-            onUpdate={handleVideoUpdate}
-            onConvertToBboxes={handleVideoConvertToBboxes}
-            onComposeTracks={handleVideoComposeTracks}
-            trackerJobsByAnnotation={trackerJobs.byAnnotation}
-            onPropagateTrack={openPropagateDialog}
-            onCancelTrackerJob={trackerJobs.cancel}
-            trackColorOverrides={s.trackColorOverrides}
-            onSetTrackColor={s.setVideoTrackColor}
-            attributeSchema={toolView.attributeSchema}
-            onUpdateTrackAttributes={handleUpdateTrackAttributes}
-            onUpdateKeyframeAttributes={handleUpdateKeyframeAttributes}
-            onPropagateKeyframe={handlePropagateKeyframe}
-            samplingStep={samplingStep}
-            propagateOverwrite={currentProject?.rendering_config?.propagateOverwrite ?? null}
-          />
+          {renderVideoTrackSidebar(frameFilter)}
           <VideoChapterSidebar
             datasetItemId={videoDatasetItemId}
             frameIndex={s.videoFrameIndex}
