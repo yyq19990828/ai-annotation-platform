@@ -49,12 +49,24 @@ from app.workers.media_codec import (
     _hevc_codec_string as _hevc_codec_string,
     _webcodecs_codec_string as _webcodecs_codec_string,
 )
+
+# v0.16.x 拆分：分块/单帧 ffmpeg 抽取已抽到 media_chunks/media_frames,此处冗余别名
+# re-export,保持 `from app.workers.media import extract_video_chunk*/extract_video_frame_image
+# /FFMPEG_*_TIMEOUT_SECONDS` 旧入口与 monkeypatch target 不变(调用方 _store_* 仍在
+# 本模块以裸名调用,走 media 全局查找)。
+from app.workers.media_chunks import (
+    FFMPEG_CHUNK_TIMEOUT_SECONDS as FFMPEG_CHUNK_TIMEOUT_SECONDS,
+    extract_video_chunk as extract_video_chunk,
+    extract_video_chunk_smart_copy as extract_video_chunk_smart_copy,
+)
+from app.workers.media_frames import (
+    FFMPEG_FRAME_TIMEOUT_SECONDS as FFMPEG_FRAME_TIMEOUT_SECONDS,
+    extract_video_frame_image as extract_video_frame_image,
+)
 from app.config import settings
 
 FFMPEG_POSTER_TIMEOUT_SECONDS = 60
 FFMPEG_TRANSCODE_TIMEOUT_SECONDS = 600
-FFMPEG_CHUNK_TIMEOUT_SECONDS = 180
-FFMPEG_FRAME_TIMEOUT_SECONDS = 60
 BROWSER_PLAYABLE_VIDEO_CODECS = {"h264", "avc1"}
 SMART_COPY_VIDEO_CODECS = {"h264", "avc1", "hevc", "h265"}
 
@@ -112,113 +124,6 @@ def transcode_video_for_browser(
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "ffmpeg browser transcode failed")
-
-
-def extract_video_chunk(
-    input_path: str | Path,
-    output_path: str | Path,
-    start_ms: int,
-    frame_count: int,
-) -> None:
-    proc = subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-ss",
-            f"{max(0, start_ms) / 1000:.3f}",
-            "-i",
-            str(input_path),
-            "-frames:v",
-            str(max(1, frame_count)),
-            "-an",
-            "-c:v",
-            "libx264",
-            "-profile:v",
-            "baseline",
-            "-pix_fmt",
-            "yuv420p",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "23",
-            "-g",
-            "30",
-            "-keyint_min",
-            "30",
-            "-movflags",
-            "frag_keyframe+empty_moov+default_base_moof",
-            str(output_path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=FFMPEG_CHUNK_TIMEOUT_SECONDS,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "ffmpeg chunk extraction failed")
-
-
-def extract_video_chunk_smart_copy(
-    input_path: str | Path,
-    output_path: str | Path,
-    start_ms: int,
-    duration_ms: int,
-) -> None:
-    proc = subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-ss",
-            f"{max(0, start_ms) / 1000:.3f}",
-            "-i",
-            str(input_path),
-            "-t",
-            f"{max(1, duration_ms) / 1000:.3f}",
-            "-map",
-            "0:v:0",
-            "-an",
-            "-c:v",
-            "copy",
-            "-movflags",
-            "frag_keyframe+empty_moov+default_base_moof",
-            str(output_path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=FFMPEG_CHUNK_TIMEOUT_SECONDS,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "ffmpeg chunk smart-copy failed")
-
-
-def extract_video_frame_image(
-    input_path: str | Path,
-    output_path: str | Path,
-    pts_ms: int,
-    width: int,
-) -> None:
-    proc = subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-ss",
-            f"{max(0, pts_ms) / 1000:.3f}",
-            "-i",
-            str(input_path),
-            "-frames:v",
-            "1",
-            "-vf",
-            f"scale='min({max(1, width)},iw)':-2",
-            str(output_path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=FFMPEG_FRAME_TIMEOUT_SECONDS,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "ffmpeg frame extraction failed")
 
 
 async def _get_or_create_frame_cache_row(
