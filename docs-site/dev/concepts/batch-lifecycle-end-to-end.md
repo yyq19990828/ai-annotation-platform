@@ -286,7 +286,7 @@ owner 可把：
 
 1. `apps/api/app/services/batch.py`
 2. `apps/api/app/api/v1/batches.py`
-3. `apps/api/app/api/v1/tasks.py`
+3. `apps/api/app/api/v1/tasks/`
 4. `apps/api/app/services/annotation.py`
 5. `apps/api/app/services/scheduler.py`
 6. `apps/api/app/workers/tasks.py`

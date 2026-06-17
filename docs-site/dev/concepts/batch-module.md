@@ -31,7 +31,7 @@ graph TD
   Batch --> Scheduler["scheduler.get_next_task()"]
   Batch --> BatchAPI["api/v1/batches.py"]
   Batch --> BatchService["services/batch.py"]
-  Task --> TaskAPI["api/v1/tasks.py"]
+  Task --> TaskAPI["api/v1/tasks/"]
   TaskAPI --> AnnotationSvc["services/annotation.py"]
   AnnotationSvc --> BatchService
   Worker["workers/tasks.py / admin_preannotate"] --> Batch
@@ -57,7 +57,7 @@ graph TD
 | `apps/api/app/api/v1/batches.py` | HTTP 路由、权限、审计、通知编排 |
 | `apps/api/app/services/scheduler.py` | `/tasks/next` 派题时的 batch 过滤 |
 | `apps/api/app/services/annotation.py` | annotation 写入后触发 batch 自动迁移 |
-| `apps/api/app/api/v1/tasks.py` | withdraw / reopen / accept-rejection 等 task 事件对 batch 的回写 |
+| `apps/api/app/api/v1/tasks/lifecycle.py` | withdraw / reopen / accept-rejection 等 task 事件对 batch 的回写 |
 | `apps/web/src/api/batches.ts` | 前端 batch API wrapper |
 | `apps/web/src/pages/Projects/sections/BatchesSection.tsx` | 项目设置页的批次主 UI |
 | `apps/web/src/pages/Projects/sections/BatchesKanbanView.tsx` | 批次看板与前端迁移 dry-run |
@@ -203,7 +203,7 @@ stateDiagram-v2
 
 ### task 事件
 
-`apps/api/app/api/v1/tasks.py` 里这些端点也会影响 batch：
+`apps/api/app/api/v1/tasks/lifecycle.py` 里这些端点也会影响 batch：
 
 - `POST /tasks/{id}/withdraw`
 - `POST /tasks/{id}/reopen`

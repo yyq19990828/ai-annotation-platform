@@ -225,19 +225,19 @@
 |---|---|
 | GET | `/metrics-targets` |
 
-## `invitations.py`
-
-| Method | Path |
-|---|---|
-| GET | `/invitations/{token}` |
-| POST | `/register` |
-
 ## `invitations_admin.py`
 
 | Method | Path |
 |---|---|
 | DELETE | `/{invitation_id}` |
 | POST | `/{invitation_id}/resend` |
+
+## `invitations.py`
+
+| Method | Path |
+|---|---|
+| GET | `/invitations/{token}` |
+| POST | `/register` |
 
 ## `me.py`
 
@@ -337,15 +337,6 @@
 | GET | `/{scene_id}/trajectory` |
 | PATCH | `/{scene_id}` |
 
-## `storage.py`
-
-| Method | Path |
-|---|---|
-| GET | `/health` |
-| GET | `/buckets` |
-| GET | `/video-assets/failures` |
-| POST | `/video-assets/retry` |
-
 ## `storage_connections.py`
 
 | Method | Path |
@@ -356,6 +347,15 @@
 | PATCH | `/{conn_id}` |
 | DELETE | `/{conn_id}` |
 | POST | `/{conn_id}/test` |
+
+## `storage.py`
+
+| Method | Path |
+|---|---|
+| GET | `/health` |
+| GET | `/buckets` |
+| GET | `/video-assets/failures` |
+| POST | `/video-assets/retry` |
 
 ## `system_settings.py`
 
@@ -378,16 +378,70 @@
 | POST | `/projects/{project_id}/tasks/query` |
 | GET | `/projects/{project_id}/task-views/{view_id}/tasks` |
 
-## `tasks.py`
+## `tasks/annotations.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{task_id}/neighbor-annotations` |
+| GET | `/{task_id}/annotations` |
+| GET | `/{task_id}/annotations/page` |
+| POST | `/{task_id}/annotations` |
+| POST | `/{task_id}/annotations/{annotation_id}/propagate-to-task` |
+| POST | `/{task_id}/annotations/propagate-batch` |
+| POST | `/{task_id}/annotations/interpolate-range` |
+| PATCH | `/{task_id}/annotations/{annotation_id}` |
+| POST | `/{task_id}/annotations/video/track-compositions` |
+| POST | `/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes` |
+| DELETE | `/{task_id}/annotations/{annotation_id}` |
+
+## `tasks/lifecycle.py`
+
+| Method | Path |
+|---|---|
+| POST | `/{task_id}/submit` |
+| POST | `/{task_id}/skip` |
+| POST | `/{task_id}/withdraw` |
+| POST | `/{task_id}/reopen` |
+| POST | `/{task_id}/accept-rejection` |
+
+## `tasks/list.py`
 
 | Method | Path |
 |---|---|
 | GET | `/next` |
 | GET | `/{task_id}` |
+| GET | `/{task_id}/neighbors` |
+
+## `tasks/locks.py`
+
+| Method | Path |
+|---|---|
+| POST | `/{task_id}/lock` |
+| POST | `/{task_id}/lock/heartbeat` |
+| DELETE | `/{task_id}/lock` |
+
+## `tasks/predictions.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{task_id}/predictions` |
+| POST | `/{task_id}/predictions/{prediction_id}/accept` |
+| POST | `/{task_id}/predictions/{prediction_id}/reject` |
+
+## `tasks/review.py`
+
+| Method | Path |
+|---|---|
+| POST | `/{task_id}/review/claim` |
+| POST | `/{task_id}/review/approve` |
+| POST | `/{task_id}/review/reject` |
+
+## `tasks/video.py`
+
+| Method | Path |
+|---|---|
 | GET | `/{task_id}/video/manifest` |
 | GET | `/{task_id}/point-cloud/manifest` |
-| GET | `/{task_id}/neighbors` |
-| GET | `/{task_id}/neighbor-annotations` |
 | GET | `/{task_id}/video/frame-timetable` |
 | GET | `/{task_id}/video/manifest-v2` |
 | GET | `/{task_id}/video/segments` |
@@ -400,30 +454,6 @@
 | POST | `/{task_id}/video/frames:prefetch` |
 | POST | `/{task_id}/video/frames:retry` |
 | POST | `/{task_id}/video/tracks/{annotation_id}:propagate` |
-| GET | `/{task_id}/annotations` |
-| GET | `/{task_id}/annotations/page` |
-| POST | `/{task_id}/annotations` |
-| POST | `/{task_id}/annotations/{annotation_id}/propagate-to-task` |
-| POST | `/{task_id}/annotations/propagate-batch` |
-| POST | `/{task_id}/annotations/interpolate-range` |
-| PATCH | `/{task_id}/annotations/{annotation_id}` |
-| POST | `/{task_id}/annotations/video/track-compositions` |
-| POST | `/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes` |
-| GET | `/{task_id}/predictions` |
-| POST | `/{task_id}/predictions/{prediction_id}/accept` |
-| POST | `/{task_id}/predictions/{prediction_id}/reject` |
-| DELETE | `/{task_id}/annotations/{annotation_id}` |
-| POST | `/{task_id}/submit` |
-| POST | `/{task_id}/skip` |
-| POST | `/{task_id}/withdraw` |
-| POST | `/{task_id}/review/claim` |
-| POST | `/{task_id}/review/approve` |
-| POST | `/{task_id}/review/reject` |
-| POST | `/{task_id}/reopen` |
-| POST | `/{task_id}/accept-rejection` |
-| POST | `/{task_id}/lock` |
-| POST | `/{task_id}/lock/heartbeat` |
-| DELETE | `/{task_id}/lock` |
 
 ## `users.py`
 
@@ -465,4 +495,4 @@
 
 ---
 
-_共 41 模块 / 268 路由_
+_共 48 模块 / 268 路由_

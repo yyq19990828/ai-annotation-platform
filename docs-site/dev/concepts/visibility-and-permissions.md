@@ -14,7 +14,7 @@ last_reviewed: 2026-06-03
 
 - `apps/api/app/deps.py`
 - `apps/api/app/services/scheduler.py`
-- `apps/api/app/api/v1/tasks.py`
+- `apps/api/app/api/v1/tasks/_shared.py`
 - `apps/api/app/api/v1/batches.py`
 
 ## 三层边界
