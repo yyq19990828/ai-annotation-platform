@@ -1,5 +1,5 @@
-// v0.16.8 · Phase 2 · ImageSelectionCardContent 单测:
-// - 渲染 改类/隐藏/锁定/删除 操作 + 几何摘要(bbox 像素 / polygon 顶点)
+// v0.16.14 · ImageSelectionCardContent 单测:
+// - 渲染 改类/隐藏/锁定/删除 操作 + 结构化指标网格(bbox 像素 / polygon 顶点)
 // - 各操作回调透传正确的 annotationId / flag / value
 // - 有属性 schema 时渲染 AttributeForm,改值经 onUpdateAttributes 上抛
 
@@ -22,7 +22,7 @@ function makeAnnotation(overrides: Partial<AnnotationResponse> = {}): Annotation
 const noop = () => {};
 
 describe("ImageSelectionCardContent", () => {
-  it("渲染 bbox 像素几何摘要", () => {
+  it("渲染 bbox 像素指标(尺寸 + 占图)", () => {
     const { getByText } = render(
       <ImageSelectionCardContent
         annotation={makeAnnotation()}
@@ -37,10 +37,11 @@ describe("ImageSelectionCardContent", () => {
       />,
     );
     // 0.25*1920=480, 0.2*1080=216
-    expect(getByText("矩形框 · 480×216 px")).not.toBeNull();
+    expect(getByText("480×216 px")).not.toBeNull();
+    expect(getByText("5.0%")).not.toBeNull(); // 占图 0.25*0.2
   });
 
-  it("polygon 显示顶点数", () => {
+  it("polygon 指标网格显示顶点数", () => {
     const ann = makeAnnotation({
       geometry: { type: "polygon", points: [[0, 0], [1, 0], [1, 1], [0, 1]] },
     });
@@ -57,7 +58,8 @@ describe("ImageSelectionCardContent", () => {
         onUpdateAttributes={noop}
       />,
     );
-    expect(getByText("多边形 · 4 顶点")).not.toBeNull();
+    expect(getByText("顶点")).not.toBeNull();
+    expect(getByText("4")).not.toBeNull();
   });
 
   it("改类 / 锁定 / 删除 回调透传正确参数", () => {

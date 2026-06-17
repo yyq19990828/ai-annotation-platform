@@ -1,0 +1,24 @@
+/* v0.16.14 · 选中信息卡内容的共享布局,四种选中态共用以保证视觉统一。 */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+/* 编辑型分区(属性表单),与上方只读指标用细线分隔。 */
+.attrBlock {
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+}
+
+/* 底部动作组,与上方信息用细线分隔;按钮溢出时换行。 */
+.actionBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+}

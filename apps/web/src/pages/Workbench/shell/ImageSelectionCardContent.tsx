@@ -1,9 +1,14 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { AttributeSchema } from "@/api/projects";
-import type { AnnotationResponse, Geometry } from "@/types";
+import type { AnnotationResponse } from "@/types";
 import { AttributeForm } from "./AttributeForm";
-import styles from "./ImageSelectionCardContent.module.css";
+import { IdentityHeader, annotationSourceKind } from "./selectionCard/IdentityHeader";
+import { MetricGrid } from "./selectionCard/MetricGrid";
+import { MetaFooter } from "./selectionCard/MetaFooter";
+import { ActionBar } from "./selectionCard/ActionBar";
+import { geometryMetrics } from "./selectionCard/geometryMetrics";
+import cardStyles from "./selectionCard/cardLayout.module.css";
 
 export interface ImageSelectionCardContentProps {
   annotation: AnnotationResponse;
@@ -18,43 +23,11 @@ export interface ImageSelectionCardContentProps {
   onUpdateAttributes: (id: string, next: Record<string, unknown>) => void;
 }
 
-/** 几何只读摘要:类型 + 关键尺寸(bbox 像素 / polygon 顶点数 等)。 */
-function geometrySummary(
-  geometry: Geometry,
-  imgW: number | null,
-  imgH: number | null,
-): string {
-  switch (geometry.type) {
-    case "bbox": {
-      if (imgW && imgH) {
-        return `矩形框 · ${Math.round(geometry.w * imgW)}×${Math.round(geometry.h * imgH)} px`;
-      }
-      return "矩形框";
-    }
-    case "rotated_bbox": {
-      const dims = imgW && imgH
-        ? ` · ${Math.round(geometry.w * imgW)}×${Math.round(geometry.h * imgH)} px`
-        : "";
-      return `旋转框${dims} · ${Math.round(geometry.angle)}°`;
-    }
-    case "polygon":
-      return `多边形 · ${geometry.points.length} 顶点`;
-    case "multi_polygon": {
-      const verts = geometry.polygons.reduce((n, p) => n + p.points.length, 0);
-      return `多连通域 · ${geometry.polygons.length} 环 / ${verts} 顶点`;
-    }
-    case "polyline":
-      return `折线 · ${geometry.points.length} 点`;
-    case "keypoint":
-      return `关键点 · ${geometry.points.length} 个`;
-    default:
-      return geometry.type;
-  }
-}
-
 /**
- * v0.16.8 · Phase 2 · 选中标注浮动信息卡的图片端内容。
- * 复用模型既有回调(改类 / 锁定 / 隐藏 / 删除 / 属性),不重写逻辑;与右栏 attrDock 共享同一批回调。
+ * v0.16.14 · 选中标注浮动信息卡的图片端内容。
+ * 由设计系统积木组合:IdentityHeader(类别 + 来源 + 置信度)/ MetricGrid(结构化几何指标)/
+ * AttributeForm(属性)/ MetaFooter(折叠次要信息)/ ActionBar(改类 / 隐藏 / 锁定 / 删除)。
+ * 复用模型既有回调,不重写逻辑;与右栏 attrDock 共享同一批回调。
  */
 export function ImageSelectionCardContent({
   annotation,
@@ -69,10 +42,46 @@ export function ImageSelectionCardContent({
 }: ImageSelectionCardContentProps) {
   const locked = !!annotation.is_locked;
   const hidden = !!annotation.is_hidden;
+  const metrics = geometryMetrics(annotation.geometry, imageWidth, imageHeight);
+  const hasAttributes = !!attributeSchema && (attributeSchema.fields ?? []).length > 0;
+  const source = annotationSourceKind(annotation);
+  // 置信度仅对 AI 来源(采纳 / 导入)有意义;手动框即便后端落了 conf=1 也不展示 pill。
+  const confidence = source === "manual" ? null : annotation.confidence;
 
   return (
-    <div className={styles.body}>
-      <div className={styles.actions} data-floating-panel-no-drag>
+    <div className={cardStyles.body}>
+      <IdentityHeader
+        className={annotation.class_name}
+        source={source}
+        confidence={confidence}
+      />
+
+      <MetricGrid metrics={metrics} />
+
+      {hasAttributes && (
+        <div className={cardStyles.attrBlock} data-floating-panel-no-drag>
+          <AttributeForm
+            schema={attributeSchema}
+            className={annotation.class_name}
+            attributes={annotation.attributes ?? {}}
+            onChange={(next) => onUpdateAttributes(annotation.id, next)}
+            readOnly={readOnly || locked}
+            context="image"
+            hideHeading
+          />
+        </div>
+      )}
+
+      <MetaFooter
+        id={annotation.id}
+        source={annotation.source}
+        createdAt={annotation.created_at}
+        updatedAt={annotation.updated_at}
+        zOrder={annotation.z_order}
+        groupId={annotation.group_id}
+      />
+
+      <ActionBar label="标注操作">
         <Button
           variant="ghost"
           size="sm"
@@ -114,25 +123,7 @@ export function ImageSelectionCardContent({
         >
           <Icon name="trash" size={14} />
         </Button>
-      </div>
-
-      <div className={styles.geomSummary}>
-        {geometrySummary(annotation.geometry, imageWidth, imageHeight)}
-      </div>
-
-      {attributeSchema && (attributeSchema.fields ?? []).length > 0 && (
-        <div className={styles.attrBlock} data-floating-panel-no-drag>
-          <AttributeForm
-            schema={attributeSchema}
-            className={annotation.class_name}
-            attributes={annotation.attributes ?? {}}
-            onChange={(next) => onUpdateAttributes(annotation.id, next)}
-            readOnly={readOnly || locked}
-            context="image"
-            hideHeading
-          />
-        </div>
-      )}
+      </ActionBar>
     </div>
   );
 }
