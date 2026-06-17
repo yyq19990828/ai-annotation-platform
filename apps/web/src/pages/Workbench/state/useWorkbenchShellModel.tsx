@@ -82,6 +82,7 @@ import {
 } from "../shell/SelectedAnnotationCard";
 import { ImageSelectionCardContent } from "../shell/ImageSelectionCardContent";
 import { AIPredictionCardContent } from "../shell/selectionCard/AIPredictionCardContent";
+import { VideoFrameBoxCardContent } from "../shell/selectionCard/VideoFrameBoxCardContent";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
@@ -1684,12 +1685,30 @@ export function useWorkbenchShellModel({
         />
       );
     } else if (stageKind === "video") {
-      // 视频:把右栏完整轨迹面板搬进卡内(共享同一构建器/回调),含轨迹·当前帧·关键帧跳转·属性。
-      children = (
-        <div className={styles.videoSelectionCardBody}>
-          {renderVideoTrackSidebar("current")}
-        </div>
-      );
+      if (ann && ann.geometry.type === "video_bbox") {
+        // 视频单帧框:不属任何轨迹、会被轨迹面板过滤掉,改用专属单帧卡(帧定位 + 指标 + 属性)。
+        children = (
+          <VideoFrameBoxCardContent
+            annotation={ann}
+            imageWidth={imageWidth}
+            imageHeight={imageHeight}
+            fps={videoFps}
+            attributeSchema={toolView.attributeSchema}
+            readOnly={isLocked}
+            onSeekFrame={setVideoFrameIndex}
+            onChangeClass={handleStartChangeClass}
+            onDelete={handleDeleteBox}
+            onUpdateAttributes={handleUpdateAttributes}
+          />
+        );
+      } else {
+        // 视频轨迹:把右栏完整轨迹面板搬进卡内(共享同一构建器/回调),含轨迹·当前帧·关键帧跳转·属性。
+        children = (
+          <div className={styles.videoSelectionCardBody}>
+            {renderVideoTrackSidebar("current")}
+          </div>
+        );
+      }
     } else if (ann && stageKind === "image") {
       children = (
         <ImageSelectionCardContent
@@ -1728,6 +1747,8 @@ export function useWorkbenchShellModel({
     stageKind,
     imageWidth,
     imageHeight,
+    videoFps,
+    setVideoFrameIndex,
     toolView.attributeSchema,
     isLocked,
     handleStartChangeClass,
