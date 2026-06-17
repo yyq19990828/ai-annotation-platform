@@ -28,6 +28,7 @@ import {
 } from "./shared/geometry/snap";
 import { BlurhashLayer } from "./BlurhashLayer";
 import { KonvaBox, KonvaPolygon, KonvaRotatedBox, KonvaPolyline, KonvaKeypoint, keypointColorByIndex } from "./ImageStageShapes";
+import { normalizeImageCoordinate } from "./ImageStage.helpers";
 import { BOX_LABEL_FONT_FAMILY } from "./boxVisual";
 import { resolveAnnotationVisual } from "./annotationVisual";
 import {
@@ -378,11 +379,7 @@ export function ImageStage({
   const toImg = useCallback((clientX: number, clientY: number): { x: number; y: number } | null => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect || !imgW || !imgH) return null;
-    const cur = vpRef.current;
-    return {
-      x: (clientX - rect.left - cur.tx) / cur.scale / imgW,
-      y: (clientY - rect.top - cur.ty) / cur.scale / imgH,
-    };
+    return normalizeImageCoordinate(clientX, clientY, rect, vpRef.current, imgW, imgH);
   }, [imgW, imgH]);
 
   const findSnapMatch = useCallback((
