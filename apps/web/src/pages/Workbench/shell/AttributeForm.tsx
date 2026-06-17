@@ -84,6 +84,9 @@ export function AttributeForm({
   // v0.10.6：保留最新 draft 引用，blur flush 时取最新值上抛
   const draftRef = useRef(draft);
   useEffect(() => { draftRef.current = draft; }, [draft]);
+  // v0.16.8：保留最新 onChange，卸载补 flush（见底部 cleanup）时用最新回调，避免闭包捕获首渲染的旧 onChange
+  const onChangeRef = useRef(onChange);
+  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
 
   // 上游 attributes 变化（切选中标注 / 切类别）时同步本地 draft，避免输入残留。
   useEffect(() => {
@@ -122,7 +125,16 @@ export function AttributeForm({
     });
   };
 
-  useEffect(() => () => { if (debounceRef.current) window.clearTimeout(debounceRef.current); }, []);
+  // v0.16.8 修复「改属性看似改了实则没保存」：debounce 路径下，组件卸载前若仍有未到点的提交
+  // （如 ClassPickerPopover 内联属性编辑 <400ms 内关闭弹层），用最新 draft 补 flush 一次，
+  // 避免待提交的 onChange 被 clearTimeout 丢弃。debounceRef 为 null（已 flush / dirty 模式）时不触发，杜绝重复提交。
+  useEffect(() => () => {
+    if (debounceRef.current) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+      onChangeRef.current(draftRef.current);
+    }
+  }, []);
 
   const visible = useMemo(
     () => (schema?.fields ?? []).filter((f) => isVisible(f, className, draft)),

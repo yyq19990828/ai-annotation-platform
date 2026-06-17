@@ -97,6 +97,46 @@ describe("AttributeForm · dirtyTracker 首次消费", () => {
     expect(onChange.mock.calls[0][0]).toEqual({ color: "blue" });
     vi.useRealTimers();
   });
+
+  // v0.16.8 回归：debounce 未到点就卸载（弹层快速关闭）时，用最新 draft 补 flush，避免「改了没保存」
+  it("debounce 路径下卸载前若有未到点提交，用最新 draft 补 flush 一次", () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    const { getByDisplayValue, unmount } = render(
+      <AttributeForm
+        schema={schema}
+        className="car"
+        attributes={{ color: "red" }}
+        onChange={onChange}
+      />,
+    );
+    const input = getByDisplayValue("red") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "blue" } });
+    expect(onChange).not.toHaveBeenCalled();
+    // 不等 400ms 直接卸载（模拟 <400ms 内关闭弹层）
+    act(() => { unmount(); });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0]).toEqual({ color: "blue" });
+    // 卸载已 clearTimeout，定时器不应再触发第二次
+    act(() => { vi.advanceTimersByTime(450); });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  // v0.16.8：无 pending 提交时卸载不应触发任何 onChange（杜绝空 flush / 重复提交）
+  it("无未到点提交时卸载不触发 onChange", () => {
+    const onChange = vi.fn();
+    const { unmount } = render(
+      <AttributeForm
+        schema={schema}
+        className="car"
+        attributes={{ color: "red" }}
+        onChange={onChange}
+      />,
+    );
+    act(() => { unmount(); });
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
 
 describe("AttributeForm · v0.10.20 · I12 batch banner", () => {
