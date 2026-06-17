@@ -11,8 +11,8 @@ import { simplifyPolygon } from "./shared/geometry/simplify";
 import {
   BOX_HANDLE_SCREEN_PX,
   BOX_LABEL_FONT_FAMILY,
-  BOX_LABEL_OFFSET_PX,
   BOX_LABEL_PAD_PX,
+  labelOffsetWorld,
 } from "./boxVisual";
 import { screenToWorld } from "./shared/viewport/scaleCancel";
 import {
@@ -146,7 +146,7 @@ export function KonvaBox({
       />
 
       {shouldShowLabel(selected, visual.labelVisibility) &&!(isAi && faded) && (
-        <Label x={b.x * imgW} y={b.y * imgH - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+        <Label x={b.x * imgW} y={b.y * imgH - labelOffsetWorld(visual.labelFontSize, scale)} listening={false}>
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text
             text={labelText}
@@ -298,7 +298,7 @@ export function KonvaPolygon({
         }}
       />
       {shouldShowLabel(selected, visual.labelVisibility) &&flat.length >= 2 && !(isAi && faded) && (
-        <Label x={flat[0]} y={flat[1] - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+        <Label x={flat[0]} y={flat[1] - labelOffsetWorld(visual.labelFontSize, scale)} listening={false}>
           <Tag fill={strokeColor} cornerRadius={3 / scale} />
           <Text
             text={labelText + (selfIntersect ? " ⚠" : "")}
@@ -449,7 +449,7 @@ export function KonvaRotatedBox({
       />
 
       {shouldShowLabel(selected, visual.labelVisibility) &&!(isAi && faded) && (
-        <Label x={-hw} y={-hh - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+        <Label x={-hw} y={-hh - labelOffsetWorld(visual.labelFontSize, scale)} listening={false}>
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text
             text={labelText}
@@ -601,7 +601,7 @@ export function KonvaPolyline({
         }}
       />
       {shouldShowLabel(selected, visual.labelVisibility) &&flat.length >= 2 && !(isAi && faded) && (
-        <Label x={flat[0]} y={flat[1] - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+        <Label x={flat[0]} y={flat[1] - labelOffsetWorld(visual.labelFontSize, scale)} listening={false}>
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text
             text={labelText}
@@ -823,7 +823,7 @@ export function KonvaKeypoint({
 
       {/* 类别标签 */}
       {shouldShowLabel(selected, visual.labelVisibility) &&!(isAi && faded) && (
-        <Label x={anchorX} y={anchorY - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+        <Label x={anchorX} y={anchorY - labelOffsetWorld(visual.labelFontSize, scale)} listening={false}>
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text
             text={labelText}

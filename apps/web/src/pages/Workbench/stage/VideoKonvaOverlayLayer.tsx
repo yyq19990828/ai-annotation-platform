@@ -2,7 +2,7 @@ import { Layer, Rect, Label, Tag, Text } from "react-konva";
 import { classColor, colorToHex, hexToRgba } from "./colors";
 import { fillAlpha, strokeWidthFor, type AnnotationVisualConfig } from "./annotationVisual";
 import { screenToWorld } from "./shared/viewport/scaleCancel";
-import { BOX_LABEL_FONT_FAMILY, BOX_LABEL_OFFSET_PX, BOX_LABEL_PAD_PX } from "./boxVisual";
+import { BOX_LABEL_FONT_FAMILY, BOX_LABEL_PAD_PX, labelOffsetWorld } from "./boxVisual";
 import type { VideoPixelSize } from "./videoKonvaCoordinates";
 import type { VideoLabelView } from "./videoFrameViews";
 import type { VideoStageGeom } from "./videoStageTypes";
@@ -60,7 +60,7 @@ export function VideoKonvaOverlayLayer({
             key={label.key}
             name="video-label"
             x={label.geom.x * size.w}
-            y={label.geom.y * size.h - BOX_LABEL_OFFSET_PX / scale}
+            y={label.geom.y * size.h - labelOffsetWorld(visual.labelFontSize, scale)}
             opacity={label.opacity ?? 1}
             listening={false}
           >
