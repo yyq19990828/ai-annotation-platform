@@ -51,15 +51,11 @@ import { useMLCapabilities } from "./useMLCapabilities";
 import {
   useBackendRouting,
   INTERACTIVE_PROMPTS,
-  type InteractivePrompt,
 } from "./useBackendRouting";
 import { useCapabilityValidation } from "./useCapabilityValidation";
-import {
-  VARIANT_FIELD_KEYS,
-} from "../components/SchemaForm";
 import { AIToolDrawer } from "../shell/AIToolDrawer";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
-import { isAIToolId, TOOL_REGISTRY, type ToolId } from "../stage/tools";
+import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
 import { useActiveIssueStore } from "./useActiveIssueStore";
 import { annotationToBox, collectOccludedKeys } from "./transforms";
@@ -88,15 +84,8 @@ import {
 } from "../shell/SelectedAnnotationCard";
 import { ImageSelectionCardContent } from "../shell/ImageSelectionCardContent";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
-import {
-  FLOATING_SELECTION_MAX_SIZE,
-  FLOATING_SELECTION_MIN_SIZE,
-  SIDE_FLOATING_PANEL_MAX_SIZE,
-  SIDE_FLOATING_PANEL_MIN_SIZE,
-} from "../shell/floatingPanelSizing";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
-import type { FloatingPanelState, FloatingSelectionState } from "@/api/auth";
 import {
   getRememberedWorkbenchTask,
   rememberWorkbenchTask,
@@ -119,31 +108,16 @@ import {
   normalizeAttributeModeState,
 } from "./attributeMode";
 import styles from "../shell/WorkbenchShell.module.css";
-
-const VARIANT_FIELD_SET = new Set<string>(VARIANT_FIELD_KEYS);
-
-const clamp = (v: number, lo: number, hi: number): number =>
-  Math.min(hi, Math.max(lo, v));
-
-function omitVariantFields(value: Record<string, unknown> | undefined): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  if (!value) return out;
-  for (const [key, v] of Object.entries(value)) {
-    if (!VARIANT_FIELD_SET.has(key)) out[key] = v;
-  }
-  return out;
-}
-
-function buildPredictParams(
-  params: Record<string, unknown> | undefined,
-  modelVariants: Record<string, string>,
-): Record<string, unknown> | undefined {
-  const out = omitVariantFields(params);
-  if (Object.keys(modelVariants).length > 0) {
-    out.model_variants = modelVariants;
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
-}
+import {
+  buildPredictParams,
+  clamp,
+  promptOfTool,
+  resolveFloatingClassPaletteRect,
+  resolveFloatingDiscussionRect,
+  resolveFloatingInspectorRect,
+  resolveFloatingSelectionRect,
+  resolveFloatingTaskQueueRect,
+} from "./useWorkbenchShellModel.helpers";
 
 type WorkbenchShellMode = "annotate" | "review";
 
@@ -174,94 +148,6 @@ interface WorkbenchShellReadyModel {
   layout: ComponentProps<typeof WorkbenchLayout>;
   propagateDialog: ComponentProps<typeof VideoTrackerPropagateDialog>;
   issueSection?: WorkbenchShellIssueSection;
-}
-
-function resolveFloatingPanelRect(
-  state: FloatingPanelState,
-  defaults: {
-    w: number;
-    h: number;
-    x: (viewportW: number, w: number) => number;
-    y: (viewportH: number, h: number) => number;
-  },
-): FloatingPanelRect {
-  const w = Math.max(
-    SIDE_FLOATING_PANEL_MIN_SIZE.w,
-    Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.w, state.w ?? defaults.w),
-  );
-  const h = Math.max(
-    SIDE_FLOATING_PANEL_MIN_SIZE.h,
-    Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.h, state.h ?? defaults.h),
-  );
-  const viewportW = typeof window === "undefined" ? 1280 : window.innerWidth;
-  const viewportH = typeof window === "undefined" ? 800 : window.innerHeight;
-  return {
-    x: state.x ?? Math.max(24, defaults.x(viewportW, w)),
-    y: state.y ?? Math.max(24, defaults.y(viewportH, h)),
-    w,
-    h,
-  };
-}
-
-function resolveFloatingTaskQueueRect(state: FloatingPanelState): FloatingPanelRect {
-  return resolveFloatingPanelRect(state, {
-    w: 320,
-    h: 620,
-    x: () => 24,
-    y: () => 72,
-  });
-}
-
-function resolveFloatingClassPaletteRect(state: FloatingPanelState): FloatingPanelRect {
-  return resolveFloatingPanelRect(state, {
-    w: 320,
-    h: 420,
-    x: () => 24,
-    y: (viewportH, h) => viewportH - h - 40,
-  });
-}
-
-function resolveFloatingInspectorRect(state: FloatingPanelState): FloatingPanelRect {
-  return resolveFloatingPanelRect(state, {
-    w: 360,
-    h: 600,
-    x: (viewportW, w) => viewportW - w - 40,
-    y: (viewportH, h) => Math.min(80, viewportH - h - 24),
-  });
-}
-
-function resolveFloatingDiscussionRect(state: FloatingPanelState): FloatingPanelRect {
-  return resolveFloatingPanelRect(state, {
-    w: 420,
-    h: 560,
-    x: (viewportW, w) => viewportW - w - 40,
-    y: (viewportH, h) => Math.min(260, viewportH - h - 40),
-  });
-}
-
-// v0.16.8 · 选中标注浮动信息卡:默认贴画布右上(避开右栏);clamp 用选中卡专属尺寸界。
-function resolveFloatingSelectionRect(state: FloatingSelectionState): FloatingPanelRect {
-  const w = Math.max(
-    FLOATING_SELECTION_MIN_SIZE.w,
-    Math.min(FLOATING_SELECTION_MAX_SIZE.w, state.w ?? 340),
-  );
-  const h = Math.max(
-    FLOATING_SELECTION_MIN_SIZE.h,
-    Math.min(FLOATING_SELECTION_MAX_SIZE.h, state.h ?? 440),
-  );
-  const viewportW = typeof window === "undefined" ? 1280 : window.innerWidth;
-  return {
-    x: state.x ?? Math.max(24, viewportW - w - 40),
-    y: state.y ?? 88,
-    w,
-    h,
-  };
-}
-
-// v0.14.18 · 工具 → 交互 prompt (text 已归批量线, 映射为 null = 非交互)。供交互后端路由解析。
-function promptOfTool(tool: ToolId): InteractivePrompt | null {
-  const rp = TOOL_REGISTRY[tool]?.requiredPrompt;
-  return rp && rp !== "text" ? rp : null;
 }
 
 export type UseWorkbenchShellModelResult =
