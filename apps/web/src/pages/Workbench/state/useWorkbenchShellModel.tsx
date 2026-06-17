@@ -116,6 +116,7 @@ import {
   resolveFloatingInspectorRect,
   resolveFloatingSelectionRect,
   resolveFloatingTaskQueueRect,
+  resolvePinViewport,
 } from "./useWorkbenchShellModel.helpers";
 import { useWorkbenchSidebarSizing } from "./useWorkbenchSidebarSizing";
 import { useConflictResolution } from "./useConflictResolution";
@@ -764,11 +765,7 @@ export function useWorkbenchShellModel({
     }
     const { imgW, imgH, vpSize } = stageGeom;
     if (!imgW || !imgH || !vpSize.w || !vpSize.h) return;
-    setVp((cur) => ({
-      ...cur,
-      tx: vpSize.w / 2 - target.anchor_position!.x * imgW * cur.scale,
-      ty: vpSize.h / 2 - target.anchor_position!.y * imgH * cur.scale,
-    }));
+    setVp((cur) => resolvePinViewport(cur, target.anchor_position!, imgW, imgH, vpSize));
   }, [issueFocusTick, activeIssueHighlightId, issuesQuery.data, stageGeom, setVp, isVideoTask, setVideoFrameIndex]);
   const submitTaskMut = useSubmitTask();
   const triggerPreannotation = useTriggerPreannotation(projectId);

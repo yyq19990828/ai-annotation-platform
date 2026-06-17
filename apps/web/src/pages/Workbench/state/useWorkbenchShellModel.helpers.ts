@@ -11,6 +11,7 @@ import {
   SIDE_FLOATING_PANEL_MIN_SIZE,
 } from "../shell/floatingPanelSizing";
 import type { FloatingPanelState, FloatingSelectionState } from "@/api/auth";
+import type { Viewport } from "./useViewportTransform";
 
 export const VARIANT_FIELD_SET = new Set<string>(VARIANT_FIELD_KEYS);
 
@@ -123,4 +124,20 @@ export function resolveFloatingSelectionRect(state: FloatingSelectionState): Flo
 export function promptOfTool(tool: ToolId): InteractivePrompt | null {
   const rp = TOOL_REGISTRY[tool]?.requiredPrompt;
   return rp && rp !== "text" ? rp : null;
+}
+
+// v0.16.x 拆分(第 2 批)· 图钉聚焦视口平移:把 anchor(0-1 归一坐标)对应像素点平移到
+// 视口中心,保留当前 scale 及其它视口字段。从 useWorkbenchShellModel 的 issueFocus effect 逐式提炼。
+export function resolvePinViewport(
+  cur: Viewport,
+  anchor: { x: number; y: number },
+  imgW: number,
+  imgH: number,
+  vpSize: { w: number; h: number },
+): Viewport {
+  return {
+    ...cur,
+    tx: vpSize.w / 2 - anchor.x * imgW * cur.scale,
+    ty: vpSize.h / 2 - anchor.y * imgH * cur.scale,
+  };
 }
