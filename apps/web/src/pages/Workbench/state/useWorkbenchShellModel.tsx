@@ -17,7 +17,6 @@ import {
   useAnnotationUngroup,
   useAnnotationBulkUpdate,
 } from "@/hooks/useAnnotationGroup";
-import { useFeedbacks } from "@/hooks/useFeedbacks";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
@@ -36,6 +35,7 @@ import { useWorkbenchState } from "./useWorkbenchState";
 import { useToolBindings, classesForUnit } from "./useToolBindings";
 import type { ToolUnitId } from "@/constants/toolUnits";
 import { useViewportTransform } from "./useViewportTransform";
+import { useIssuePins } from "./useIssuePins";
 import { useAnnotationHistory } from "./useAnnotationHistory";
 import { useRecentClasses } from "./useRecentClasses";
 import { useSessionStats } from "./useSessionStats";
@@ -57,7 +57,6 @@ import { AIToolDrawer } from "../shell/AIToolDrawer";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
-import { useActiveIssueStore } from "./useActiveIssueStore";
 import { annotationToBox, collectOccludedKeys } from "./transforms";
 import { applyVideoKeyframeToGeometry } from "./videoTrackCommands";
 import { useAnnotateMode } from "../modes/useAnnotateMode";
@@ -116,7 +115,6 @@ import {
   resolveFloatingInspectorRect,
   resolveFloatingSelectionRect,
   resolveFloatingTaskQueueRect,
-  resolvePinViewport,
 } from "./useWorkbenchShellModel.helpers";
 import { useWorkbenchSidebarSizing } from "./useWorkbenchSidebarSizing";
 import { useConflictResolution } from "./useConflictResolution";
@@ -730,43 +728,20 @@ export function useWorkbenchShellModel({
   const ungroupAnnotationMut = useAnnotationUngroup(taskId ?? "");
   const bulkUpdateMut = useAnnotationBulkUpdate(taskId ?? "");
 
-  const [issueCreateOpen, setIssueCreateOpen] = useState(false);
-  const [issuePinDropArmed, setIssuePinDropArmed] = useState(false);
-  const [issuePinPrefill, setIssuePinPrefill] = useState<{ x: number; y: number } | null>(null);
-  const issueListParams = useMemo(
-    () => ({
-      project_id: projectId ?? "",
-      task_id: taskId,
-      kind: "issue" as const,
-    }),
-    [projectId, taskId],
-  );
-  const issuesQuery = useFeedbacks(issueListParams, !!projectId && !!taskId);
-  const openIssueCount = (issuesQuery.data?.items ?? []).filter((i) => i.status === "open").length;
-
-  // v0.11.4 · DiscussionPanel issues tab ↔ IssueLayer 双向联动 store。
-  // 列表单击 → focusTick++ → 定位到对应图钉并高亮。
-  //   image: 把视口平移到图钉 (复用现有 vp/setVp + stageGeom)。
-  //   video (v0.11.7): 先 seek 到 anchor_position.frame 命中的帧, 该帧的 VideoIssueLayer 图钉再显示。
-  const activeIssueHighlightId = useActiveIssueStore((st) => st.highlightId);
-  const highlightIssueFromPin = useActiveIssueStore((st) => st.highlightFromPin);
-  const requestIssuesTab = useActiveIssueStore((st) => st.requestIssuesTab);
-  const issueFocusTick = useActiveIssueStore((st) => st.focusTick);
-  const lastIssueFocusRef = useRef(issueFocusTick);
-  useEffect(() => {
-    if (issueFocusTick === lastIssueFocusRef.current) return;
-    lastIssueFocusRef.current = issueFocusTick;
-    const target = (issuesQuery.data?.items ?? []).find((i) => i.id === activeIssueHighlightId);
-    if (!target?.anchor_position) return;
-    if (isVideoTask) {
-      const frame = target.anchor_position.frame;
-      if (typeof frame === "number") setVideoFrameIndex(frame);
-      return;
-    }
-    const { imgW, imgH, vpSize } = stageGeom;
-    if (!imgW || !imgH || !vpSize.w || !vpSize.h) return;
-    setVp((cur) => resolvePinViewport(cur, target.anchor_position!, imgW, imgH, vpSize));
-  }, [issueFocusTick, activeIssueHighlightId, issuesQuery.data, stageGeom, setVp, isVideoTask, setVideoFrameIndex]);
+  const {
+    issueCreateOpen,
+    setIssueCreateOpen,
+    issuePinDropArmed,
+    setIssuePinDropArmed,
+    issuePinPrefill,
+    setIssuePinPrefill,
+    issueListParams,
+    issuesQuery,
+    openIssueCount,
+    activeIssueHighlightId,
+    highlightIssueFromPin,
+    requestIssuesTab,
+  } = useIssuePins({ projectId, taskId, stageGeom, setVp, setVideoFrameIndex, isVideoTask });
   const submitTaskMut = useSubmitTask();
   const triggerPreannotation = useTriggerPreannotation(projectId);
   const { progress: preannotationProgress, connection: preannotationConn, retries: preannotationRetries } =
