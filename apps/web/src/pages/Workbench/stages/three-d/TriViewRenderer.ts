@@ -176,6 +176,9 @@ export class TriViewRenderer {
     this.points = null;
     this.material.dispose();
     this.renderer.dispose();
+    // renderer.dispose() 不丢弃底层 WebGL context;dev 下 StrictMode 双调用 + HMR 反复
+    // 重建会让 context 堆积到浏览器上限。forceContextLoss() 主动释放,避免耗尽。
+    this.renderer.forceContextLoss();
     if (this.renderer.domElement.parentElement === this.container) {
       this.container.removeChild(this.renderer.domElement);
     }

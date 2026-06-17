@@ -1023,6 +1023,11 @@ export class PointCloudScene {
     this.disposeAxisGizmo();
     this.controls.dispose();
     this.renderer.dispose();
+    // renderer.dispose() 只释放渲染缓存/着色器,不丢弃底层 WebGL context(靠 GC 回收,
+    // 时机不定)。dev 下 StrictMode 双调用 + 反复 HMR 会让旧 context 堆积到浏览器上限
+    // (Chrome ~16),后续 new WebGLRenderer 报 "Error creating WebGL context"。
+    // forceContextLoss() 主动触发 context loss,让浏览器立即回收。
+    this.renderer.forceContextLoss();
     if (this.renderer.domElement.parentElement === this.container) {
       this.container.removeChild(this.renderer.domElement);
     }
