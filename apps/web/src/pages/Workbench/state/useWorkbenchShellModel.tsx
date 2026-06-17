@@ -118,6 +118,7 @@ import {
   resolveFloatingTaskQueueRect,
 } from "./useWorkbenchShellModel.helpers";
 import { useWorkbenchSidebarSizing } from "./useWorkbenchSidebarSizing";
+import { useConflictResolution } from "./useConflictResolution";
 
 type WorkbenchShellMode = "annotate" | "review";
 
@@ -1153,24 +1154,12 @@ export function useWorkbenchShellModel({
     if (isAIToolId(s.tool)) setAiDrawerOpen(true);
   }, [s.tool]);
 
-  const conflictIdRef = useRef<string>("");
-  const [conflictOpen, setConflictOpen] = useState(false);
-  const handleConflict = useCallback((annotationId: string, _currentVersion: number) => {
-    conflictIdRef.current = annotationId;
-    setConflictOpen(true);
-  }, []);
-  useEffect(() => {
-    conflictCbRef.current = handleConflict;
-  }, [handleConflict]);
-
-  const handleConflictReload = useCallback(() => {
-    setConflictOpen(false);
-    queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
-  }, [queryClient, taskId]);
-
-  const handleConflictOverwrite = useCallback(() => {
-    setConflictOpen(false);
-  }, []);
+  const {
+    conflictOpen,
+    setConflictOpen,
+    handleConflictReload,
+    handleConflictOverwrite,
+  } = useConflictResolution(conflictCbRef, queryClient, taskId);
 
   useEffect(() => {
     const idx = tasks.findIndex((t) => t.id === taskId);
