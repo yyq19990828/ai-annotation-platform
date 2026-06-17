@@ -7,6 +7,7 @@ import { AIInspectorPanel, AIPredictionPopover } from "./AIInspectorPanel";
 import { DeleteConfirmModal } from "./DeleteConfirmModal";
 import { DiscussionPanel } from "./DiscussionPanel";
 import { FloatingPanelShell, type FloatingPanelRect } from "./FloatingPanelShell";
+import { SelectedAnnotationCard, type SelectedAnnotationCardProps } from "./SelectedAnnotationCard";
 import { HotkeyCheatSheet } from "./HotkeyCheatSheet";
 import { OfflineQueueDrawer } from "./OfflineQueueDrawer";
 import { ResizeHandle } from "./ResizeHandle";
@@ -67,6 +68,8 @@ interface WorkbenchLayoutProps {
   floatingClassPalette?: FloatingWorkbenchPanel;
   floatingInspector?: FloatingWorkbenchPanel;
   floatingDiscussion?: FloatingWorkbenchPanel;
+  // v0.16.8 · 选中标注浮动信息卡(图片 / 视频);null = 当前无选中 / 该端不显示。
+  floatingSelection?: SelectedAnnotationCardProps | null;
 }
 
 export function WorkbenchLayout({
@@ -92,6 +95,7 @@ export function WorkbenchLayout({
   floatingClassPalette,
   floatingInspector,
   floatingDiscussion,
+  floatingSelection,
 }: WorkbenchLayoutProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [splitTopHeight, setSplitTopHeight] = useState(readRightSplitTop);
@@ -260,6 +264,8 @@ export function WorkbenchLayout({
           />
         </FloatingPanelShell>
       )}
+
+      {floatingSelection && <SelectedAnnotationCard {...floatingSelection} />}
 
       <AIPredictionPopover {...aiPopover} />
       <HotkeyCheatSheet {...hotkeys} />

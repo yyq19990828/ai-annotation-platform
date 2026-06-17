@@ -166,6 +166,18 @@ export interface FloatingPanelState {
 
 export type FloatingInspectorState = FloatingPanelState;
 
+/**
+ * v0.16.8 · 选中标注浮动信息卡的位置 / 尺寸 / 折叠态(跨设备)。
+ * 与边栏浮窗不同:无「合并回边栏」语义,故只有 collapsed(无 detached);显隐由选中状态驱动。
+ */
+export interface FloatingSelectionState {
+  collapsed: boolean;
+  x: number | null;
+  y: number | null;
+  w: number | null;
+  h: number | null;
+}
+
 export interface TriViewFloatState {
   collapsed: boolean;
   x: number | null;
@@ -195,6 +207,7 @@ export interface WorkbenchLayoutPreferences {
   floatingClassPalette: FloatingPanelState;
   floatingInspector: FloatingPanelState;
   floatingDiscussion: FloatingPanelState;
+  floatingSelection: FloatingSelectionState;
   triViewFloat: TriViewFloatState;
   cameraPanels: Record<string, CameraPanelState>;
   pointcloudCamera: PointcloudCameraState | null;
@@ -296,6 +309,13 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     },
     floatingDiscussion: {
       detached: false,
+      x: null,
+      y: null,
+      w: null,
+      h: null,
+    },
+    floatingSelection: {
+      collapsed: false,
       x: null,
       y: null,
       w: null,

@@ -5,6 +5,7 @@ import {
   migrateLabelContent,
   type CameraPanelState,
   type FloatingPanelState,
+  type FloatingSelectionState,
   type PointcloudCameraState,
   type TriViewFloatState,
   type WorkbenchCommonPreferences,
@@ -32,6 +33,7 @@ export type WorkbenchLayoutPatch = Omit<
   | "floatingClassPalette"
   | "floatingInspector"
   | "floatingDiscussion"
+  | "floatingSelection"
   | "triViewFloat"
   | "cameraPanels"
   | "pointcloudCamera"
@@ -40,6 +42,7 @@ export type WorkbenchLayoutPatch = Omit<
   floatingClassPalette?: Partial<FloatingPanelState> | null;
   floatingInspector?: Partial<FloatingPanelState> | null;
   floatingDiscussion?: Partial<FloatingPanelState> | null;
+  floatingSelection?: Partial<FloatingSelectionState> | null;
   triViewFloat?: Partial<TriViewFloatState> | null;
   // cameraPanels 是按 role 分桶的全量 Record(由调用方合并好整份传入),非逐字段 patch。
   cameraPanels?: Record<string, CameraPanelState>;
@@ -134,6 +137,7 @@ const LAYOUT_KEY_NAMES = [
   "floatingClassPalette",
   "floatingInspector",
   "floatingDiscussion",
+  "floatingSelection",
   "triViewFloat",
   "cameraPanels",
   "pointcloudCamera",
@@ -188,6 +192,9 @@ function readLocalLayout(
     floatingInspector: readJsonObject<FloatingPanelState>(K.floatingInspector),
     floatingDiscussion: readJsonObject<FloatingPanelState>(
       K.floatingDiscussion,
+    ),
+    floatingSelection: readJsonObject<FloatingSelectionState>(
+      K.floatingSelection,
     ),
     triViewFloat: readJsonObject<TriViewFloatState>(K.triViewFloat),
     // 整份 Record(非逐字段 patch):readJsonObject 泛型回 Partial,JSON 解析出的值实为
@@ -252,6 +259,10 @@ function writeLocalLayout(
       JSON.stringify(layout.floatingDiscussion),
     );
     window.localStorage.setItem(
+      K.floatingSelection,
+      JSON.stringify(layout.floatingSelection),
+    );
+    window.localStorage.setItem(
       K.triViewFloat,
       JSON.stringify(layout.triViewFloat),
     );
@@ -275,6 +286,21 @@ function mergeFloatingPanel(
   remote: Partial<FloatingPanelState> | null | undefined,
 ): FloatingPanelState {
   const m = { ...fallback, ...(remote ?? {}) };
+  return {
+    ...m,
+    w: m.w == null ? m.w : clampNum(m.w, 48, 720),
+    h: m.h == null ? m.h : clampNum(m.h, 120, 900),
+  };
+}
+
+// 选中卡:无 detached,有 collapsed;w/h 界与 FloatingPanelState 一致(48–720 / 120–900)。
+function mergeFloatingSelection(
+  remote: Partial<FloatingSelectionState> | null | undefined,
+): FloatingSelectionState {
+  const m = {
+    ...DEFAULT_WORKBENCH_PREFERENCES.layout.floatingSelection,
+    ...(remote ?? {}),
+  };
   return {
     ...m,
     w: m.w == null ? m.w : clampNum(m.w, 48, 720),
@@ -327,6 +353,11 @@ function mergeLayout(
     remote?.floatingDiscussion,
     preferLocal,
   );
+  const floatingSelection = mergeLayoutPatch(
+    local.floatingSelection,
+    remote?.floatingSelection,
+    preferLocal,
+  );
   const triViewFloat = mergeLayoutPatch(
     local.triViewFloat,
     remote?.triViewFloat,
@@ -358,6 +389,7 @@ function mergeLayout(
       DEFAULT_WORKBENCH_PREFERENCES.layout.floatingDiscussion,
       floatingDiscussion,
     ),
+    floatingSelection: mergeFloatingSelection(floatingSelection),
     triViewFloat: mergeTriViewFloat(triViewFloat),
     cameraPanels:
       cameraPanels ?? DEFAULT_WORKBENCH_PREFERENCES.layout.cameraPanels,
@@ -400,6 +432,13 @@ function applyLayoutPatch(
         : mergeFloatingPanel(DEFAULT_WORKBENCH_PREFERENCES.layout.floatingDiscussion, {
             ...current.floatingDiscussion,
             ...(patch.floatingDiscussion ?? {}),
+          }),
+    floatingSelection:
+      patch.floatingSelection === undefined
+        ? current.floatingSelection
+        : mergeFloatingSelection({
+            ...current.floatingSelection,
+            ...(patch.floatingSelection ?? {}),
           }),
     triViewFloat:
       patch.triViewFloat === undefined

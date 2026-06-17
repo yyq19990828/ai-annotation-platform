@@ -178,6 +178,46 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
     vi.useRealTimers();
   });
 
+  // v0.16.8 · 选中标注浮动信息卡:位置 + 折叠态走偏好通道(跨设备),即本地立即生效 +
+  // localStorage 缓存 + debounce 全量 PATCH 带上 floatingSelection。
+  it("setLayout 持久化 floatingSelection(位置 + 折叠态,跨设备)", async () => {
+    mockGetPreferences.mockResolvedValue({ workbench: {} });
+    mockUpdatePreferences.mockImplementation(async (payload) => payload);
+    const { result } = renderHook(() => useWorkbenchConfig(), { wrapper });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    vi.useFakeTimers();
+    act(() => {
+      result.current.setLayout({
+        floatingSelection: { collapsed: true, x: 900, y: 120, w: 340, h: 440 },
+      });
+    });
+
+    expect(result.current.layout.floatingSelection).toEqual({
+      collapsed: true,
+      x: 900,
+      y: 120,
+      w: 340,
+      h: 440,
+    });
+    expect(window.localStorage.getItem("workbench.u1.floatingSelection")).toContain(
+      "\"collapsed\":true",
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    expect(mockUpdatePreferences).toHaveBeenCalledWith({
+      workbench: expect.objectContaining({
+        layout: expect.objectContaining({
+          floatingSelection: expect.objectContaining({ collapsed: true, x: 900, h: 440 }),
+        }),
+      }),
+    });
+    vi.useRealTimers();
+  });
+
   it("setLayout 支持 3D 相机面板和主视角快照", async () => {
     mockGetPreferences.mockResolvedValue({ workbench: {} });
     mockUpdatePreferences.mockImplementation(async (payload) => payload);

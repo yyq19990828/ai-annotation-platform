@@ -81,11 +81,20 @@ import type { StageKind } from "../stages/types";
 import { WorkbenchOverlays } from "../shell/WorkbenchOverlays";
 import type { ClassPickerAttrEditing } from "../shell/ClassPickerPopover";
 import { WorkbenchLayout } from "../shell/WorkbenchLayout";
+import {
+  SelectionCardPlaceholder,
+  type SelectedAnnotationCardProps,
+} from "../shell/SelectedAnnotationCard";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
-import { SIDE_FLOATING_PANEL_MAX_SIZE, SIDE_FLOATING_PANEL_MIN_SIZE } from "../shell/floatingPanelSizing";
+import {
+  FLOATING_SELECTION_MAX_SIZE,
+  FLOATING_SELECTION_MIN_SIZE,
+  SIDE_FLOATING_PANEL_MAX_SIZE,
+  SIDE_FLOATING_PANEL_MIN_SIZE,
+} from "../shell/floatingPanelSizing";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
-import type { FloatingPanelState } from "@/api/auth";
+import type { FloatingPanelState, FloatingSelectionState } from "@/api/auth";
 import {
   getRememberedWorkbenchTask,
   rememberWorkbenchTask,
@@ -226,6 +235,25 @@ function resolveFloatingDiscussionRect(state: FloatingPanelState): FloatingPanel
     x: (viewportW, w) => viewportW - w - 40,
     y: (viewportH, h) => Math.min(260, viewportH - h - 40),
   });
+}
+
+// v0.16.8 · 选中标注浮动信息卡:默认贴画布右上(避开右栏);clamp 用选中卡专属尺寸界。
+function resolveFloatingSelectionRect(state: FloatingSelectionState): FloatingPanelRect {
+  const w = Math.max(
+    FLOATING_SELECTION_MIN_SIZE.w,
+    Math.min(FLOATING_SELECTION_MAX_SIZE.w, state.w ?? 340),
+  );
+  const h = Math.max(
+    FLOATING_SELECTION_MIN_SIZE.h,
+    Math.min(FLOATING_SELECTION_MAX_SIZE.h, state.h ?? 440),
+  );
+  const viewportW = typeof window === "undefined" ? 1280 : window.innerWidth;
+  return {
+    x: state.x ?? Math.max(24, viewportW - w - 40),
+    y: state.y ?? 88,
+    w,
+    h,
+  };
 }
 
 // v0.14.18 · 工具 → 交互 prompt (text 已归批量线, 映射为 null = 非交互)。供交互后端路由解析。
@@ -1926,6 +1954,68 @@ export function useWorkbenchShellModel({
     });
     setRightOpenState(false);
   }, [floatingDiscussion, setRightOpenState, setWorkbenchLayout]);
+  // v0.16.8 · 选中标注浮动信息卡:位置 / 折叠态走 layout 偏好(跨设备),显隐由选中状态驱动。
+  const floatingSelection = s.workbenchLayout.floatingSelection;
+  const floatingSelectionPosition = useMemo(
+    () => resolveFloatingSelectionRect(floatingSelection),
+    [floatingSelection],
+  );
+  const onSelectionPositionChange = useCallback(
+    (patch: Partial<FloatingPanelRect>) => {
+      setWorkbenchLayout({
+        floatingSelection: { ...floatingSelection, ...patch },
+      });
+    },
+    [floatingSelection, setWorkbenchLayout],
+  );
+  const collapseSelectionCard = useCallback(() => {
+    setWorkbenchLayout({
+      floatingSelection: { ...floatingSelection, collapsed: true },
+    });
+  }, [floatingSelection, setWorkbenchLayout]);
+  const expandSelectionCard = useCallback(() => {
+    setWorkbenchLayout({
+      floatingSelection: { ...floatingSelection, collapsed: false },
+    });
+  }, [floatingSelection, setWorkbenchLayout]);
+
+  // 图片 / 视频选中即现(3D 用自有 PSR 面板,不显示)。单选 = 类别标题 + 内容;
+  // 多选 = 「N 个已选中 · 批量」精简态;无选中 = null(隐藏)。
+  // Phase 1 内容为占位摘要,Phase 2(图片)/ Phase 3(视频)注入真实内容。
+  const selectionCardEligible = stageKind === "image" || stageKind === "video";
+  const selectionCount = s.selectedIds.length;
+  const selectionCard = useMemo<SelectedAnnotationCardProps | null>(() => {
+    if (!selectionCardEligible || selectionCount < 1) return null;
+    const multi = selectionCount > 1;
+    const ann = selectedAnnotationForPanel;
+    const title = multi
+      ? `${selectionCount} 个已选中 · 批量`
+      : ann?.class_name ?? "选中标注";
+    const summary = multi
+      ? `已选中 ${selectionCount} 个标注。`
+      : ann
+        ? `类别 ${ann.class_name} · ${ann.geometry.type}`
+        : "已选中 1 个标注。";
+    return {
+      title,
+      position: floatingSelectionPosition,
+      onPositionChange: onSelectionPositionChange,
+      collapsed: floatingSelection.collapsed,
+      onCollapse: collapseSelectionCard,
+      onExpand: expandSelectionCard,
+      children: <SelectionCardPlaceholder summary={summary} />,
+    };
+  }, [
+    selectionCardEligible,
+    selectionCount,
+    selectedAnnotationForPanel,
+    floatingSelectionPosition,
+    onSelectionPositionChange,
+    floatingSelection.collapsed,
+    collapseSelectionCard,
+    expandSelectionCard,
+  ]);
+
   const toggleLeftSidebar = useCallback(() => {
     if (!leftHasEmbeddedPanels) return;
     setLeftOpenState(!leftOpenState);
@@ -2438,6 +2528,7 @@ export function useWorkbenchShellModel({
       onMergeBack: mergeDiscussionBack,
       onClose: closeFloatingDiscussion,
     },
+    floatingSelection: selectionCard,
     aiPopover: {
       open: aiPopoverOpen && !isVideoTask,
       rightOffset: rightOpen ? rightPx + 44 : 44,

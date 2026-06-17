@@ -7087,6 +7087,67 @@
         "title": "FloatingPanelState",
         "type": "object"
       },
+      "FloatingSelectionState": {
+        "additionalProperties": false,
+        "description": "v0.16.8 · 选中标注浮动信息卡的位置、尺寸与折叠态(跨设备)。\n\n与边栏浮窗不同,选中卡无「合并回边栏」语义,故只有 collapsed(无 detached);\n显隐由选中状态驱动,这里只持久化几何与折叠。尺寸界与 FloatingPanelState 一致。",
+        "properties": {
+          "collapsed": {
+            "default": false,
+            "title": "Collapsed",
+            "type": "boolean"
+          },
+          "h": {
+            "anyOf": [
+              {
+                "maximum": 900.0,
+                "minimum": 120.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "H"
+          },
+          "w": {
+            "anyOf": [
+              {
+                "maximum": 720.0,
+                "minimum": 48.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "W"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          }
+        },
+        "title": "FloatingSelectionState",
+        "type": "object"
+      },
       "ForgotPasswordRequest": {
         "properties": {
           "captcha_token": {
@@ -19084,6 +19145,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/FloatingPanelState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "floatingSelection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FloatingSelectionState"
               },
               {
                 "type": "null"

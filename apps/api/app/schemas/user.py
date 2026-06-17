@@ -28,6 +28,22 @@ class TriViewFloatState(BaseModel):
     h: int | None = Field(default=None, ge=240, le=720)
 
 
+class FloatingSelectionState(BaseModel):
+    """v0.16.8 · 选中标注浮动信息卡的位置、尺寸与折叠态(跨设备)。
+
+    与边栏浮窗不同,选中卡无「合并回边栏」语义,故只有 collapsed(无 detached);
+    显隐由选中状态驱动,这里只持久化几何与折叠。尺寸界与 FloatingPanelState 一致。
+    """
+
+    model_config = {"extra": "forbid"}
+
+    collapsed: bool = False
+    x: int | None = None
+    y: int | None = None
+    w: int | None = Field(default=None, ge=48, le=720)
+    h: int | None = Field(default=None, ge=120, le=900)
+
+
 class CameraPanelState(BaseModel):
     """v0.15.x · 3D 悬浮相机面板的位置 + 折叠态。按相机 role 分桶存。
 
@@ -77,6 +93,10 @@ class WorkbenchLayoutPreferences(BaseModel):
     floating_discussion: FloatingPanelState | None = Field(
         default=None,
         alias="floatingDiscussion",
+    )
+    floating_selection: FloatingSelectionState | None = Field(
+        default=None,
+        alias="floatingSelection",
     )
     tri_view_float: TriViewFloatState | None = Field(default=None, alias="triViewFloat")
     camera_panels: dict[str, CameraPanelState] = Field(
