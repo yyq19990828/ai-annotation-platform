@@ -31,6 +31,31 @@
 
 <!-- 0.16.x 版本变更按版本段追加到本区；进入 0.17.x 后整体移到 docs/changelogs/0.16.x.md -->
 
+## [0.16.13] - 2026-06-18
+
+巨石文件拆分 Epic 收尾批次:对「缓拆」目标(因渲染时序 / 竞态 / 职责纠缠无法直接安全拆的大文件)改走「补测试再拆」—— 先补表征测试 / 纯函数单测锁定行为,再抽子模块;无法单测的 3D 簇则先建 Playwright 点云端到端基线作为拆分前的行为护栏。纯内部重构 + 测试基建,无用户可见行为变化。
+
+### Changed
+
+- **后端缓拆(补表征测试后抽)**:`batch_permissions.py`(任务批状态机权限守卫)、`annotation_propagation.py`(视频轨迹传播纯逻辑簇)、`media_chunks.py` / `media_frames.py`(分块 / 单帧 ffmpeg 抽取)从巨石中抽出,调用点经 re-export 保持零改动。
+- **前端工作台 hook / 纯函数拆分**:从 `useWorkbenchShellModel` 抽 `useIssuePins`(issue 图钉)、`usePredictionPropagation`(跨帧传播竞态簇)、`useAiPopoverFrame`(AI 浮层位置 / 尺寸);从 `ThreeDWorkbench` 抽 `usePsrFloatingPanel`(选中框 PSR 浮层)、`useCameraPanels`(相机面板布局)、`usePsrPatchPipeline`(PSR 数值防抖落库);`ImageStage` 提炼 `normalizeImageCoordinate` / `resolveSnapMatch` 纯几何函数。同名解构 / re-export 保证消费点零改动。
+- **诚实缓拆**:`usePsrEditor` / `usePointMask` / `usePointCloudSelection` 经核查因共享 scene + form + 合并键盘 handler 职责纠缠,不为「拆干净」引入行为变化,整簇缓拆,待端到端基线就位后再拆。
+
+### Added
+
+- **点云工作台 Playwright E2E 基线**:新增 `pointcloud` 测试 project(经 ANGLE / SwiftShader 在 headless 跑通 Three.js / WebGL)+ 后端 `seed/lidar` fixture(生成最小点云资产 + lidar 项目 + box_3d 标注)。冒烟(加载渲染零 console error)+ 交互断言(点选 → 改 PSR 数值 → 几何 PATCH 落库;B 键放置框 / Delete 删除)共 4 个 spec,作为将来拆 3D 整簇的行为护栏。
+- **拆分回归网单测**:批权限矩阵、视频轨迹传播纯函数、PSR 防抖落库管线(fake-timers)、图像几何函数等单测,锁定拆分前后行为等价。
+
+## [0.16.12] - 2026-06-17
+
+巨石文件拆分 Epic 主体批次(合并 0.16.9–0.16.12 各阶段):把超大 router / 组件 / hook 文件按职责拆成子模块,降低单文件复杂度、提升可测性与可维护性。纯内部重构,无用户可见行为变化。
+
+### Changed
+
+- **后端 router / service 拆分**:`tasks.py` 巨石 router 拆为 `tasks/` 子包;`dashboard.py` 按受众拆为 router 包 + 统计纯函数抽到 `services/dashboard_stats`;`workers/media.py` 的 ffprobe / codec 纯函数抽到 `media_probe` / `media_codec`。
+- **前端工作台 hook 拆分**:`useWorkbenchShellModel` 抽 `useWorkbenchSidebarSizing`(侧栏像素尺寸)、`useConflictResolution`(版本冲突弹层),模块级纯函数入 helpers;`ThreeDWorkbench` 模块级纯函数 / 常量入 helpers。
+- **模型市场能力目录拆分**:标签映射 / 纯逻辑 / 类型 / 子组件抽到 `capability/`(`labels`、`types`、`catalogModel`、`CapabilityCatalogPanel` 子组件)。
+
 ## [0.16.8] - 2026-06-17
 
 图片 / 视频工作台新增「选中标注浮动信息卡」:选中标注即在画布上浮出一张可拖动、可折叠、记住位置(跨设备)的信息卡,把该端"当前选中对象"的高频浏览与操作集中到画布旁,对齐 3D 工作台"选中即现"的体验。
