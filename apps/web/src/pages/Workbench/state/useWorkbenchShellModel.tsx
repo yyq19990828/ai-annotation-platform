@@ -81,6 +81,7 @@ import {
   type SelectedAnnotationCardProps,
 } from "../shell/SelectedAnnotationCard";
 import { ImageSelectionCardContent } from "../shell/ImageSelectionCardContent";
+import { AIPredictionCardContent } from "../shell/selectionCard/AIPredictionCardContent";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
@@ -1286,6 +1287,14 @@ export function useWorkbenchShellModel({
   const { topbarActions, bannerActions } = modeState;
   const isLocked = modeState.isLocked;
 
+  // v0.16.14 · 选中 AI 预测框反查:预测与普通框共用 s.selectedId,但预测 id 带 pred- 前缀且
+  // 只在 aiBoxes(非 visibleAnnotationsData)里,故 selectedAnnotationForPanel 必为 null。
+  // diff 模式 final 时无预测可选(aiBoxes 已被上游置空逻辑覆盖)→ 不命中 AI 分支。
+  const selectedAiBox = useMemo(() => {
+    if (!s.selectedId?.startsWith("pred-") || modeState.diffMode === "final") return null;
+    return aiBoxes.find((b) => b.id === s.selectedId) ?? null;
+  }, [s.selectedId, modeState.diffMode, aiBoxes]);
+
   // v0.11.28：改类悬浮框内联属性编辑——按当前正在改类的标注派生 schema/attributes/提交回调。
   const editingClassAnnotation = useMemo(
     () => (s.editingClass
@@ -1578,6 +1587,23 @@ export function useWorkbenchShellModel({
     });
   }, [floatingSelection, setWorkbenchLayout]);
 
+  // v0.16.14 · 卡内采纳 / 忽略后清掉选中:预测被消费后 pred- id 已失效,否则卡会回落到
+  // 「已选中 1 个标注」占位死角。仅在卡入口处理选中态,不动 handleAccept/Reject 业务逻辑。
+  const acceptPredictionFromCard = useCallback(
+    (box: Parameters<typeof handleAcceptPrediction>[0]) => {
+      handleAcceptPrediction(box);
+      s.setSelectedId(null);
+    },
+    [handleAcceptPrediction, s],
+  );
+  const rejectPredictionFromCard = useCallback(
+    (box: Parameters<typeof handleRejectPrediction>[0]) => {
+      handleRejectPrediction(box);
+      s.setSelectedId(null);
+    },
+    [handleRejectPrediction, s],
+  );
+
   // v0.16.8 Phase 3 · 视频轨迹面板的共享构建器:右栏(VideoTrackSidebar + 章节)与选中浮动卡
   // 复用同一份 props/回调,杜绝两套逻辑漂移。frameFilter 控制「全部 / 当前帧」轨迹过滤。
   const renderVideoTrackSidebar = useCallback(
@@ -1640,10 +1666,23 @@ export function useWorkbenchShellModel({
     const ann = selectedAnnotationForPanel;
     const title = multi
       ? `${selectionCount} 个已选中 · 批量`
-      : ann?.class_name ?? "选中标注";
+      : selectedAiBox?.cls ?? ann?.class_name ?? "选中标注";
     let children: ReactNode;
     if (multi) {
       children = <SelectionCardPlaceholder summary={`已选中 ${selectionCount} 个标注。`} />;
+    } else if (selectedAiBox) {
+      // AI 预测分支(图片端专属):置信度条 + 来源/候选序号 + 采纳/精修/忽略,直连模型既有 handler。
+      children = (
+        <AIPredictionCardContent
+          box={selectedAiBox}
+          imageWidth={imageWidth}
+          imageHeight={imageHeight}
+          readOnly={isLocked}
+          onAccept={acceptPredictionFromCard}
+          onReject={rejectPredictionFromCard}
+          onRefine={handleRefinePrediction}
+        />
+      );
     } else if (stageKind === "video") {
       // 视频:把右栏完整轨迹面板搬进卡内(共享同一构建器/回调),含轨迹·当前帧·关键帧跳转·属性。
       children = (
@@ -1685,6 +1724,7 @@ export function useWorkbenchShellModel({
     selectionCardEligible,
     selectionCount,
     selectedAnnotationForPanel,
+    selectedAiBox,
     stageKind,
     imageWidth,
     imageHeight,
@@ -1694,6 +1734,9 @@ export function useWorkbenchShellModel({
     handlePatchShapeFlag,
     handleDeleteBox,
     handleUpdateAttributes,
+    acceptPredictionFromCard,
+    rejectPredictionFromCard,
+    handleRefinePrediction,
     renderVideoTrackSidebar,
     floatingSelectionPosition,
     onSelectionPositionChange,
