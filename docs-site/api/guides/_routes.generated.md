@@ -155,21 +155,31 @@
 | POST | `/bug_reports/{report_id}/comments` |
 | POST | `/bug_reports/cluster` |
 
-## `dashboard.py`
+## `dashboard/admin.py`
 
 | Method | Path |
 |---|---|
 | GET | `/admin` |
-| GET | `/reviewer` |
-| GET | `/reviewer/today-mini` |
-| GET | `/me/recent-reviews` |
-| GET | `/annotator` |
-| GET | `/annotator/batches` |
-| GET | `/me/performance` |
 | GET | `/admin/people` |
 | GET | `/admin/people/export` |
 | GET | `/admin/people/{user_id}` |
 | GET | `/admin/prediction-cost-stats` |
+
+## `dashboard/annotator.py`
+
+| Method | Path |
+|---|---|
+| GET | `/annotator` |
+| GET | `/annotator/batches` |
+| GET | `/me/performance` |
+
+## `dashboard/reviewer.py`
+
+| Method | Path |
+|---|---|
+| GET | `/reviewer` |
+| GET | `/reviewer/today-mini` |
+| GET | `/me/recent-reviews` |
 
 ## `datasets.py`
 
@@ -495,4 +505,4 @@
 
 ---
 
-_共 48 模块 / 268 路由_
+_共 50 模块 / 268 路由_

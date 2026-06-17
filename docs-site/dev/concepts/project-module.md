@@ -49,7 +49,7 @@ graph TD
 | `apps/api/app/db/models/project_member.py` | 项目成员关系 |
 | `apps/api/app/schemas/project.py` | Project 请求 / 响应 schema |
 | `apps/api/app/api/v1/projects.py` | 项目 HTTP 路由 |
-| `apps/api/app/api/v1/dashboard.py` | 项目级统计与聚合 |
+| `apps/api/app/api/v1/dashboard/`(admin/reviewer/annotator 受众子 router) | 项目级统计与聚合 |
 | `apps/web/src/api/projects.ts` | 前端 project API wrapper |
 | `apps/web/src/pages/Projects/` | 项目设置与管理 UI |
 
@@ -258,7 +258,7 @@ Project 模型本身保留了多种聚合字段：
 | 改派题策略 | `db/models/project.py` + `services/scheduler.py` |
 | 改 scene 模式 / 连续派题（`scene_mode` / `prefer_same_scene_continuation` / `scene_continuation_window_min`） | `db/models/project.py` + `schemas/project.py` + `services/project_kind.py`（`scene_mode_allowed` 门禁）+ `services/scheduler.py` |
 | 改 AI 默认参数 | `schemas/project.py` + `projects.py` + 相关前端表单 |
-| 改项目统计 | `dashboard.py` + 相关 service / counter 回写 |
+| 改项目统计 | `dashboard/`(admin/reviewer/annotator)+ 相关 service / counter 回写 |
 
 ## 测试与联动点
 
