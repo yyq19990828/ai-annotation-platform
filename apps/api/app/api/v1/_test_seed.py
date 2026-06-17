@@ -366,12 +366,12 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
 
     from sqlalchemy import select
 
+    from app.db.models.annotation import Annotation
     from app.db.models.project import Project
     from app.db.models.project_member import ProjectMember
     from app.db.models.task import Task
     from app.db.models.task_batch import TaskBatch
     from app.db.models.user import User
-    from app.services.project import coalesce_legacy_into_tool_bindings
     from app.services.storage import storage_service
     from tests.factory import create_user
 
@@ -443,8 +443,15 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
     )
 
     # 建 lidar 项目(data_type 默认 image,必须显式 lidar;manifest 据此放行点云端点)。
-    kw: dict = {"classes": ["car"]}
-    coalesce_legacy_into_tool_bindings(kw, None, "lidar")
+    # tool_bindings 必须把类别落在 lidar_box_3d unit(前端 LIDAR_TOOL_UNIT 据此取 boxClasses /
+    # 校验 PATCH);coalesce 会误落 bbox unit,故此处显式构造。
+    tool_bindings = {
+        "lidar_box_3d": {
+            "classes": [{"name": "car", "order": 0}],
+            "enabled": True,
+            "attribute_schema": {"fields": []},
+        }
+    }
     project = Project(
         display_id=f"P-E2E-LIDAR-{suffix}",
         name="E2E Lidar Project",
@@ -452,7 +459,7 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
         type_key="lidar",
         data_type="lidar",
         owner_id=admin.id,
-        tool_bindings=kw["tool_bindings"],
+        tool_bindings=tool_bindings,
         ai_enabled=False,
     )
     db.add(project)
@@ -493,6 +500,29 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
         tasks.append(t)
     await db.flush()
     batch.total_tasks = len(tasks)
+
+    # 每帧注入 1 个 box_3d 标注(落在点阵范围内),供 P2 选中 / 改 PSR / gizmo 断言。
+    # 几何 = ISO 8855 系;center/size 单位 m,rotation 单位 rad(roll,pitch,yaw)。
+    for t in tasks:
+        db.add(
+            Annotation(
+                task_id=t.id,
+                project_id=project.id,
+                user_id=annotator.id,
+                source="manual",
+                annotation_type="box_3d",
+                tool_unit_id="lidar_box_3d",
+                class_name="car",
+                geometry={
+                    "type": "box_3d",
+                    "center": [1.0, 0.0, 1.0],
+                    "size": [4.0, 2.0, 1.5],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "convention_at_create": "iso_8855",
+                },
+            )
+        )
+    await db.flush()
     await db.commit()
 
     return SeedLidar(
