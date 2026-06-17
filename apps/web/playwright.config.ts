@@ -34,7 +34,29 @@ export default defineConfig({
   },
 
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+      // 3D 点云 spec 交给下方 pointcloud project(需 WebGL 软渲染参数),此处排除。
+      testIgnore: ["**/workbench-pointcloud*.spec.ts"],
+    },
+    // v0.16.x · 3D 点云 spec 单列:headless Chromium 默认无 GPU,Three.js/WebGL 跑不起来;
+    // 经 ANGLE 走 SwiftShader 软渲染(新版 Chromium 的 WebGL SwiftShader 需 unsafe 旗标显式放行)。
+    {
+      name: "pointcloud",
+      testMatch: ["**/workbench-pointcloud*.spec.ts"],
+      use: {
+        ...devices["Desktop Chrome"],
+        launchOptions: {
+          args: [
+            "--use-gl=angle",
+            "--use-angle=swiftshader",
+            "--enable-unsafe-swiftshader",
+            "--ignore-gpu-blocklist",
+          ],
+        },
+      },
+    },
     // 起步只跑 chromium；稳定后再加 firefox/webkit
   ],
 

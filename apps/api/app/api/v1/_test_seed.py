@@ -14,6 +14,8 @@ E2E（Playwright）通过 `POST /api/v1/__test/seed/reset` 在每个 spec 前重
 
 from __future__ import annotations
 
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -304,6 +306,198 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         project_id=str(project.id),
         task_ids=[str(t.id) for t in tasks],
         ml_backend_id=str(mock_backend.id),
+    )
+
+
+class SeedLidar(BaseModel):
+    """v0.16.x · 点云 E2E 基线 fixture（拆 3D 整簇前的 Playwright 守护网用)。
+
+    造 1 个 lidar 项目 + 2 帧(同一 .pcd)point_cloud task。最小版:走 manifest 的
+    task.file_path 回退路径(无 DatasetItem link / 无相机 / 无 scene),足够冒烟
+    (headless 加载点云 + 渲染 + 零 console error)与多数交互断言(选/改/gizmo/点掩膜)。
+    相机投影面板 + 跨帧 scene 待后续按 P2 需要补 link 图。
+    """
+
+    lidar_project_id: str
+    lidar_task_ids: list[str]
+
+
+def _make_test_pcd_bytes(n_side: int = 8) -> bytes:
+    """生成一个 n_side³ 的小立方体点阵 ASCII PCD(512 点,够 PCDLoader 加载 + 渲染)。"""
+    pts: list[tuple[float, float, float]] = []
+    span = max(n_side - 1, 1)
+    for i in range(n_side):
+        for j in range(n_side):
+            for k in range(n_side):
+                pts.append(
+                    (
+                        -2.0 + 4.0 * i / span,
+                        -2.0 + 4.0 * j / span,
+                        4.0 * k / span,
+                    )
+                )
+    n = len(pts)
+    header = (
+        "# .PCD v0.7 - Point Cloud Data file format\n"
+        "VERSION 0.7\n"
+        "FIELDS x y z\n"
+        "SIZE 4 4 4\n"
+        "TYPE F F F\n"
+        "COUNT 1 1 1\n"
+        f"WIDTH {n}\n"
+        "HEIGHT 1\n"
+        "VIEWPOINT 0 0 0 1 0 0 0\n"
+        f"POINTS {n}\n"
+        "DATA ascii\n"
+    )
+    body = "".join(f"{x:.4f} {y:.4f} {z:.4f}\n" for x, y, z in pts)
+    return (header + body).encode("utf-8")
+
+
+@router.post(
+    "/seed/lidar",
+    response_model=SeedLidar,
+    status_code=200,
+    include_in_schema=False,
+)
+async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
+    """造点云 E2E fixture(幂等)。需先调 /seed/reset(复用其 E2E 用户),缺则补建。"""
+    _ensure_non_production()
+
+    from sqlalchemy import select
+
+    from app.db.models.project import Project
+    from app.db.models.project_member import ProjectMember
+    from app.db.models.task import Task
+    from app.db.models.task_batch import TaskBatch
+    from app.db.models.user import User
+    from app.services.project import coalesce_legacy_into_tool_bindings
+    from app.services.storage import storage_service
+    from tests.factory import create_user
+
+    await db.execute(text("SET LOCAL \"app.allow_audit_update\" = 'true'"))
+
+    async def _try_delete(sql: str, params: dict | None = None) -> None:
+        async with db.begin_nested() as sp:
+            try:
+                await db.execute(text(sql), params or {})
+            except Exception:
+                await sp.rollback()
+
+    # 复用 reset 造的 E2E 用户;缺则补建(令 /seed/lidar 可独立调用)。
+    async def _user(role: str, email: str, name: str) -> User:
+        existing = (
+            await db.execute(select(User).where(User.email == email))
+        ).scalar_one_or_none()
+        return existing or await create_user(db, role, email, name)
+
+    admin = await _user("super_admin", "admin@e2e.test", "E2E Admin")
+    annotator = await _user("annotator", "anno@e2e.test", "E2E Annotator")
+
+    # 幂等:删旧 lidar fixture(name='E2E Lidar Project',含 task/annotation/锁/草稿链)。
+    old_pids = [
+        r[0]
+        for r in (
+            await db.execute(
+                text("SELECT id FROM projects WHERE name = 'E2E Lidar Project'")
+            )
+        ).fetchall()
+    ]
+    if old_pids:
+        old_tids = [
+            r[0]
+            for r in (
+                await db.execute(
+                    text("SELECT id FROM tasks WHERE project_id = ANY(:pids)"),
+                    {"pids": old_pids},
+                )
+            ).fetchall()
+        ]
+        await _try_delete(
+            "DELETE FROM annotations WHERE project_id = ANY(:pids)", {"pids": old_pids}
+        )
+        if old_tids:
+            await _try_delete(
+                "DELETE FROM task_locks WHERE task_id = ANY(:tids)", {"tids": old_tids}
+            )
+            await _try_delete(
+                "DELETE FROM annotation_drafts WHERE task_id = ANY(:tids)",
+                {"tids": old_tids},
+            )
+        await _try_delete(
+            "DELETE FROM tasks WHERE project_id = ANY(:pids)", {"pids": old_pids}
+        )
+        # 删 project 级联带走 task_batches / project_members。
+        await _try_delete(
+            "DELETE FROM projects WHERE id = ANY(:pids)", {"pids": old_pids}
+        )
+    await db.flush()
+
+    # 上传测试点云到 datasets_bucket(presign GET 才能 200,前端 loadPcd 才成功)。
+    suffix = secrets.token_hex(3)
+    pcd_key = f"e2e/lidar/{suffix}.pcd"
+    storage_service.client.put_object(
+        Bucket=storage_service.datasets_bucket,
+        Key=pcd_key,
+        Body=_make_test_pcd_bytes(),
+    )
+
+    # 建 lidar 项目(data_type 默认 image,必须显式 lidar;manifest 据此放行点云端点)。
+    kw: dict = {"classes": ["car"]}
+    coalesce_legacy_into_tool_bindings(kw, None, "lidar")
+    project = Project(
+        display_id=f"P-E2E-LIDAR-{suffix}",
+        name="E2E Lidar Project",
+        type_label="点云标注",
+        type_key="lidar",
+        data_type="lidar",
+        owner_id=admin.id,
+        tool_bindings=kw["tool_bindings"],
+        ai_enabled=False,
+    )
+    db.add(project)
+    await db.flush()
+
+    db.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=annotator.id,
+            role="annotator",
+            assigned_by=admin.id,
+        )
+    )
+    batch = TaskBatch(
+        project_id=project.id,
+        display_id=f"B-E2E-LIDAR-{suffix}",
+        name="E2E Lidar Batch",
+        status="annotating",
+        annotator_id=annotator.id,
+        assigned_user_ids=[str(annotator.id)],
+        created_by=admin.id,
+    )
+    db.add(batch)
+    await db.flush()
+
+    tasks = []
+    for idx in range(2):
+        t = Task(
+            display_id=f"T-E2E-LIDAR-{suffix}-{idx}",
+            project_id=project.id,
+            status="pending",
+            file_name=f"e2e-lidar-{suffix}-{idx}.pcd",
+            file_path=pcd_key,
+            file_type="point_cloud",
+            batch_id=batch.id,
+        )
+        db.add(t)
+        tasks.append(t)
+    await db.flush()
+    batch.total_tasks = len(tasks)
+    await db.commit()
+
+    return SeedLidar(
+        lidar_project_id=str(project.id),
+        lidar_task_ids=[str(t.id) for t in tasks],
     )
 
 

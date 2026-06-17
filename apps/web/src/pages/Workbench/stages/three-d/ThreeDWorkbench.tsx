@@ -2180,7 +2180,7 @@ export function ThreeDWorkbench({
           {error && <span className={styles.err}>manifest 加载失败</span>}
           {loadError && <span className={styles.err}>点云加载失败: {loadError}</span>}
           {stats && (
-            <span>
+            <span data-testid="pointcloud-stats">
               {stats.renderedPoints.toLocaleString()} 点
               {stats.decimated && `(已抽稀自 ${stats.totalPoints.toLocaleString()})`}
             </span>
