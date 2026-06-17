@@ -111,6 +111,7 @@ import {
   isPointMaskSelectMode,
 } from "./pointcloudPreferenceStorage";
 import { usePsrFloatingPanel } from "./usePsrFloatingPanel";
+import { usePsrPatchPipeline } from "./usePsrPatchPipeline";
 import { useCameraPanels } from "./useCameraPanels";
 import { resolveWorkbenchPerformanceTier } from "../../state/performanceTier";
 import styles from "./ThreeDWorkbench.module.css";
@@ -129,8 +130,6 @@ import {
   geometryConvention,
   isPsrFieldBad,
   loadCameraSample,
-  parsePsrForm,
-  psrFormToGeometry,
   psrToForm,
   resolveBox3dDefaultSize,
   resolveTriViewFloatRect,
@@ -520,7 +519,6 @@ export function ThreeDWorkbench({
   // 选中框的 PSR 编辑表单(字符串值,允许清空 / 中间态如 "-" / "1.";解析有效时才提交)。
   // PATCH 防抖 250ms;yaw 以度展示。
   const [form, setForm] = useState<Record<PsrField, string> | null>(null);
-  const patchTimer = useRef<number | null>(null);
 
   // v0.13.5 · 三视图拖拽中的本地草稿 PSR (覆盖选中框, 实时四方同步; 松手 PATCH 后清空)。
   const [draftPsr, setDraftPsr] = useState<{ id: string; psr: Psr } | null>(null);
@@ -816,39 +814,16 @@ export function ThreeDWorkbench({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  // 卸载时清防抖定时器。
-  useEffect(
-    () => () => {
-      if (patchTimer.current) window.clearTimeout(patchTimer.current);
-    },
-    [],
-  );
-
-  // 全部字段解析有效(尺寸>0)时防抖 PATCH;有空 / 非法字段则暂不提交(等用户输完)。
-  const schedulePatch = useCallback(
-    (f: Record<PsrField, string>) => {
-      if (!selectedId) return;
-      const { values: v, valid } = parsePsrForm(f);
-      if (!valid) return;
-      if (patchTimer.current) window.clearTimeout(patchTimer.current);
-      patchTimer.current = window.setTimeout(() => {
-        const geometry = psrFormToGeometry(
-          v,
-          geometryConvention(selectedAnn?.geometry, axisConvention),
-        );
-        updateAnnotation.mutate({ annotationId: selectedId, payload: { geometry } });
-        if (selectedAnn?.geometry?.type === "box_3d") {
-          history.push({
-            kind: "update",
-            annotationId: selectedId,
-            before: { geometry: selectedAnn.geometry },
-            after: { geometry },
-          });
-        }
-      }, 250);
-    },
-    [selectedId, updateAnnotation, selectedAnn?.geometry, axisConvention, history],
-  );
+  // v0.16.x 第 3 批 · PSR 数值字段防抖落库管线抽到 usePsrPatchPipeline(单一职责、
+  // 单消费者 handleField、不碰共享 form/setForm);完整 usePsrEditor 因 form 被多处共享
+  // 无法干净切分(见计划 §5/§7),此处仅"缩小范围"抽这条管线。
+  const { schedulePatch } = usePsrPatchPipeline({
+    selectedId,
+    selectedAnn,
+    axisConvention,
+    updateAnnotation,
+    history,
+  });
 
   const handleField = useCallback(
     (k: PsrField, value: string) => {
