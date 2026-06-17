@@ -153,6 +153,44 @@ export function psrToForm(b: {
   };
 }
 
+// v0.16.x 拆分(第 2 批)· PSR 数值面板纯逻辑,从 ThreeDWorkbench 的 schedulePatch / handleFieldBlur 提炼。
+
+// 单字段是否非法(空 / 非有限数 / 尺寸字段 ≤ 0)。失焦时据此从选中框当前值恢复。
+export function isPsrFieldBad(field: PsrField, value: string): boolean {
+  const n = Number(value);
+  return value.trim() === "" || !Number.isFinite(n) || (SIZE_FIELDS.has(field) && n <= 0);
+}
+
+// 解析整张表单为数值 + 是否全部有效(所有字段有限,且 l/w/h > 0)。防抖 PATCH 前校验。
+export function parsePsrForm(
+  form: Record<PsrField, string>,
+): { values: Record<PsrField, number>; valid: boolean } {
+  const values = {} as Record<PsrField, number>;
+  for (const k of PSR_FIELDS) values[k] = Number(form[k]);
+  const valid =
+    PSR_FIELDS.every((k) => form[k].trim() !== "" && Number.isFinite(values[k])) &&
+    values.l > 0 &&
+    values.w > 0 &&
+    values.h > 0;
+  return { values, valid };
+}
+
+// PSR 表单数值(朝向为°)→ box_3d geometry(朝向转弧度,rotation=[roll, pitch, yaw])。
+export function psrFormToGeometry(
+  values: Record<PsrField, number>,
+  convention: LidarAxisConvention,
+): Box3DGeometry {
+  const deg = Math.PI / 180;
+  return boxGeometryFromPsr(
+    {
+      center: [values.cx, values.cy, values.cz],
+      size: [values.l, values.w, values.h],
+      rotation: [values.roll * deg, values.pitch * deg, values.yaw * deg],
+    },
+    convention,
+  );
+}
+
 // v0.13.7 · 取 front 相机光轴的水平「前方」(归一化 [x,y]),供 resetView 跟随车头朝向。
 // front = anchor 推为 top 的相机;无标定 / 退化 → null(回退默认 +Y)。
 export function frontCameraForward(

@@ -122,16 +122,17 @@ import {
   IDENTITY_MATRIX,
   LIDAR_TOOL_UNIT,
   POINT_MASK_TOOL_UNIT,
-  PSR_FIELDS,
   PSR_GROUPS,
   SEED_FALLBACK_RANGE_M,
-  SIZE_FIELDS,
   TRI_TAB_DRAG_SIZE,
   TRI_TAB_DRAG_THRESHOLD,
   boxGeometryFromPsr,
   frontCameraForward,
   geometryConvention,
+  isPsrFieldBad,
   loadCameraSample,
+  parsePsrForm,
+  psrFormToGeometry,
   psrToForm,
   resolveBox3dDefaultSize,
   resolveTriViewFloatRect,
@@ -927,24 +928,12 @@ export function ThreeDWorkbench({
   const schedulePatch = useCallback(
     (f: Record<PsrField, string>) => {
       if (!selectedId) return;
-      const v = {} as Record<PsrField, number>;
-      for (const k of PSR_FIELDS) v[k] = Number(f[k]);
-      const valid =
-        PSR_FIELDS.every((k) => f[k].trim() !== "" && Number.isFinite(v[k])) &&
-        v.l > 0 &&
-        v.w > 0 &&
-        v.h > 0;
+      const { values: v, valid } = parsePsrForm(f);
       if (!valid) return;
       if (patchTimer.current) window.clearTimeout(patchTimer.current);
       patchTimer.current = window.setTimeout(() => {
-        const deg = Math.PI / 180;
-        const geometry = boxGeometryFromPsr(
-          {
-            center: [v.cx, v.cy, v.cz],
-            size: [v.l, v.w, v.h],
-            // rotation = [rx=roll, ry=pitch, rz=yaw] (弧度), 三轴齐全, 不再抹掉 pitch/roll。
-            rotation: [v.roll * deg, v.pitch * deg, v.yaw * deg],
-          },
+        const geometry = psrFormToGeometry(
+          v,
           geometryConvention(selectedAnn?.geometry, axisConvention),
         );
         updateAnnotation.mutate({ annotationId: selectedId, payload: { geometry } });
@@ -979,10 +968,7 @@ export function ThreeDWorkbench({
       if (!selectedBox) return;
       setForm((prev) => {
         if (!prev) return prev;
-        const n = Number(prev[k]);
-        const bad =
-          prev[k].trim() === "" || !Number.isFinite(n) || (SIZE_FIELDS.has(k) && n <= 0);
-        return bad ? { ...prev, [k]: psrToForm(selectedBox)[k] } : prev;
+        return isPsrFieldBad(k, prev[k]) ? { ...prev, [k]: psrToForm(selectedBox)[k] } : prev;
       });
     },
     [selectedBox],
