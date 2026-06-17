@@ -110,7 +110,6 @@ import {
 import styles from "../shell/WorkbenchShell.module.css";
 import {
   buildPredictParams,
-  clamp,
   promptOfTool,
   resolveFloatingClassPaletteRect,
   resolveFloatingDiscussionRect,
@@ -118,6 +117,7 @@ import {
   resolveFloatingSelectionRect,
   resolveFloatingTaskQueueRect,
 } from "./useWorkbenchShellModel.helpers";
+import { useWorkbenchSidebarSizing } from "./useWorkbenchSidebarSizing";
 
 type WorkbenchShellMode = "annotate" | "review";
 
@@ -1689,35 +1689,15 @@ export function useWorkbenchShellModel({
   const leftPct = s.workbenchConfig.common.leftWidthPct;
   const rightPct = s.workbenchConfig.common.rightWidthPct;
   const setWorkbenchFields = s.setWorkbenchFields;
-  const [winWidth, setWinWidth] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth : 1440,
-  );
-  useEffect(() => {
-    const onResize = () => setWinWidth(window.innerWidth);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-  // px 供 JS 消费者(AI 面板右偏移等);clamp 与下方栅格 CSS clamp(180px..600px) 对齐。
-  const leftPx = Math.round(clamp((leftPct / 100) * winWidth, 180, 600));
-  const rightPx = Math.round(clamp((rightPct / 100) * winWidth, 180, 600));
-  const onResizeLeft = useCallback(
-    (px: number) => {
-      const pct = clamp(Math.round((px / winWidth) * 100), 10, 35);
-      setWorkbenchFields({ common: { leftWidthPct: pct } });
-    },
-    [winWidth, setWorkbenchFields],
-  );
-  const onResizeRight = useCallback(
-    (px: number) => {
-      const pct = clamp(Math.round((px / winWidth) * 100), 10, 35);
-      setWorkbenchFields({ common: { rightWidthPct: pct } });
-    },
-    [winWidth, setWorkbenchFields],
-  );
-  // 拖拽/双击重置共用的 px 边界:10%..35% 换成像素,resetTo 为 15% 像素值(回换正好落 15%)。
-  const sidebarMinPx = Math.round(0.1 * winWidth);
-  const sidebarMaxPx = Math.round(0.35 * winWidth);
-  const sidebarResetPx = Math.round(0.15 * winWidth);
+  const {
+    leftPx,
+    rightPx,
+    onResizeLeft,
+    onResizeRight,
+    sidebarMinPx,
+    sidebarMaxPx,
+    sidebarResetPx,
+  } = useWorkbenchSidebarSizing(leftPct, rightPct, setWorkbenchFields);
   const floatingTaskQueuePosition = useMemo(
     () => resolveFloatingTaskQueueRect(floatingTaskQueue),
     [floatingTaskQueue],
