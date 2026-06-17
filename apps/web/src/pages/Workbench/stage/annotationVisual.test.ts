@@ -3,6 +3,7 @@ import {
   SELECTED_STROKE_BONUS,
   VISUAL_DEFAULTS,
   buildLabelText,
+  buildTrackLabelText,
   fillAlpha,
   shouldShowLabel,
   strokeWidthFor,
@@ -15,7 +16,7 @@ const CFG: AnnotationVisualConfig = {
   fillOpacity: VISUAL_DEFAULTS.fillOpacity,
   fillOpacitySelected: VISUAL_DEFAULTS.fillOpacitySelected,
   labelVisibility: "always",
-  labelContent: ["class", "score"],
+  labelContent: { single: [], track: ["id", "state"], ai: ["source", "score"] },
 };
 
 describe("strokeWidthFor", () => {
@@ -51,73 +52,112 @@ describe("shouldShowLabel", () => {
   });
 });
 
-describe("buildLabelText", () => {
-  it("默认 [class,score] · 人工框只显类别名(conf 不计,isAi 门控)", () => {
-    expect(
-      buildLabelText({ className: "person", confidence: 1, isAi: false }, ["class", "score"]),
-    ).toBe("person");
+describe("buildLabelText(图片:单帧 / AI 段)", () => {
+  it("单帧空段 · 只显类别名", () => {
+    expect(buildLabelText({ className: "person", confidence: 1 }, [])).toBe("person");
   });
 
-  it("默认 [class,score] · AI 框保持现状(前缀 + 类别 + 置信度)", () => {
+  it("AI 段 [source,score] · 前缀 + 类别 + 置信度", () => {
     expect(
       buildLabelText(
-        { className: "person", confidence: 0.95, isAi: true, aiPrefix: "✦ 模型 " },
-        ["class", "score"],
+        { className: "person", confidence: 0.95, sourcePrefix: "✦ 模型 " },
+        ["source", "score"],
       ),
     ).toBe("✦ 模型 person 95%");
   });
 
-  it("取消 score · AI 框去掉置信度,保留前缀 + 类别", () => {
+  it("关 score · AI 框去置信度,保留前缀 + 类别", () => {
     expect(
-      buildLabelText(
-        { className: "person", confidence: 0.95, isAi: true, aiPrefix: "✦ 模型 " },
-        ["class"],
-      ),
+      buildLabelText({ className: "person", confidence: 0.95, sourcePrefix: "✦ 模型 " }, ["source"]),
     ).toBe("✦ 模型 person");
   });
 
-  it("勾选 id · 显示 #id(类别名之后)", () => {
+  it("关 source · 前缀消失(source 受控,不再恒显)", () => {
     expect(
-      buildLabelText({ className: "car", instanceId: 7, isAi: false }, ["class", "id"]),
-    ).toBe("car #7");
+      buildLabelText({ className: "person", confidence: 0.95, sourcePrefix: "✦ 模型 " }, ["score"]),
+    ).toBe("person 95%");
+  });
+
+  it("score 不再受 isAi 门控 · 给了 score token 即显示", () => {
+    expect(buildLabelText({ className: "x", confidence: 0.5 }, ["score"])).toBe("x 50%");
+  });
+
+  it("勾 id · 显示 #id(类别名之后)", () => {
+    expect(buildLabelText({ className: "car", instanceId: 7 }, ["id"])).toBe("car #7");
   });
 
   it("id 为空时不显示 # token", () => {
-    expect(
-      buildLabelText({ className: "car", instanceId: null, isAi: false }, ["class", "id"]),
-    ).toBe("car");
+    expect(buildLabelText({ className: "car", instanceId: null }, ["id"])).toBe("car");
   });
 
-  it("勾选 attrs · bool 真值显键名、键值对显 k=v、空值跳过", () => {
+  it("勾 attrs · bool 真值显键名、键值对显 k=v、空值跳过", () => {
     expect(
       buildLabelText(
-        {
-          className: "sign",
-          isAi: false,
-          attributes: { truncated: true, hidden: false, text: "STOP", note: "" },
-        },
-        ["class", "attrs"],
+        { className: "sign", attributes: { truncated: true, hidden: false, text: "STOP", note: "" } },
+        ["attrs"],
       ),
     ).toBe("sign truncated text=STOP");
   });
 
-  it("min:1 兜底 · content 为空仍显示类别名", () => {
-    expect(buildLabelText({ className: "dog", isAi: false }, [])).toBe("dog");
+  it("空段兜底 · 只显示类别名", () => {
+    expect(buildLabelText({ className: "dog" }, [])).toBe("dog");
   });
 
-  it("全勾选 · class #id score attrs 顺序拼接", () => {
+  it("全勾 AI 段 · 前缀 类别 #id 置信度 属性 顺序拼接", () => {
     expect(
       buildLabelText(
         {
           className: "person",
           instanceId: 3,
           confidence: 0.8,
-          isAi: true,
-          aiPrefix: "✦ 模型 ",
+          sourcePrefix: "✦ 模型 ",
           attributes: { occluded: true },
         },
-        ["class", "id", "score", "attrs"],
+        ["source", "id", "score", "attrs"],
       ),
     ).toBe("✦ 模型 person #3 80% occluded");
+  });
+});
+
+describe("buildTrackLabelText(视频:轨迹段)", () => {
+  it("默认 [id,state] · #号 · 类别 · 状态(对齐旧硬编码观感)", () => {
+    expect(
+      buildTrackLabelText({ className: "car", trackNumber: 5, stateSuffix: "插值" }, ["id", "state"]),
+    ).toBe("#5 · car · 插值");
+  });
+
+  it("无状态后缀 · #号 · 类别", () => {
+    expect(buildTrackLabelText({ className: "car", trackNumber: 5 }, ["id", "state"])).toBe(
+      "#5 · car",
+    );
+  });
+
+  it("关 id · 去轨迹号", () => {
+    expect(
+      buildTrackLabelText({ className: "car", trackNumber: 5, stateSuffix: "遮挡" }, ["state"]),
+    ).toBe("car · 遮挡");
+  });
+
+  it("关 state · 去状态后缀", () => {
+    expect(
+      buildTrackLabelText({ className: "car", trackNumber: 5, stateSuffix: "插值" }, ["id"]),
+    ).toBe("#5 · car");
+  });
+
+  it("勾 attrs · 类别后接属性", () => {
+    expect(
+      buildTrackLabelText(
+        { className: "car", trackNumber: 5, attributes: { occluded: true } },
+        ["id", "attrs"],
+      ),
+    ).toBe("#5 · car · occluded");
+  });
+
+  it("空段 · 只类别名", () => {
+    expect(buildTrackLabelText({ className: "car", trackNumber: 5 }, [])).toBe("car");
+  });
+
+  it("无 trackNumber · 即使勾 id 也不显 #", () => {
+    expect(buildTrackLabelText({ className: "car" }, ["id", "state"])).toBe("car");
   });
 });

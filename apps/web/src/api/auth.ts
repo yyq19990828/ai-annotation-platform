@@ -32,8 +32,8 @@ export interface WorkbenchCommonPreferences {
   labelFontSize: number;
   /** 标签显隐:always 恒显 / selected 仅选中 / none 不显示(取代旧 image.showBoxLabels)。 */
   labelVisibility: "always" | "selected" | "none";
-  /** 标签内容多选;class 必含(min:1 兜底),score 仅 AI 框有置信度时拼。 */
-  labelContent: LabelContentToken[];
+  /** v0.16.7 · 标签内容按标注类型分段(single/track/ai);class 三段恒显。 */
+  labelContent: LabelContentByType;
   /** 描边线宽基准(screen px;选中态 = 基值 + 0.5)。 */
   strokeWidth: number;
   /** 闭合形状填充透明度(非选中)。 */
@@ -42,8 +42,61 @@ export interface WorkbenchCommonPreferences {
   fillOpacitySelected: number;
 }
 
-/** v0.15.27 · 标签内容 token;class 必含,其余按勾选拼接。 */
-export type LabelContentToken = "class" | "id" | "score" | "attrs";
+/** v0.16.7 · 标签字段 token 全集;class 三段恒显,不入表。 */
+export type LabelFieldToken = "id" | "score" | "attrs" | "source" | "state";
+
+/** v0.16.7 · 标签内容按标注类型分段;每段只含该类型有意义的字段。 */
+export interface LabelContentByType {
+  /** 单帧(图片手工框):分组号 #id / 属性。 */
+  single: Array<"id" | "attrs">;
+  /** 轨迹(视频 track 框):轨迹号 #num / 状态(插值·遮挡) / 属性。 */
+  track: Array<"id" | "state" | "attrs">;
+  /** AI(图片预测框):✦来源前缀 / 置信度 / 分组号 / 属性。 */
+  ai: Array<"source" | "score" | "id" | "attrs">;
+}
+
+/** v0.16.7 · per-type 默认值(对齐旧观感:单帧只类别名 / 轨迹 #号+状态 / AI 来源+置信度)。 */
+export const DEFAULT_LABEL_CONTENT: LabelContentByType = {
+  single: [],
+  track: ["id", "state"],
+  ai: ["source", "score"],
+};
+
+function uniqFilter<T extends string>(val: unknown, allowed: readonly T[]): T[] {
+  if (!Array.isArray(val)) return [];
+  const out: T[] = [];
+  for (const t of val) {
+    if (typeof t === "string" && (allowed as readonly string[]).includes(t) && !out.includes(t as T)) {
+      out.push(t as T);
+    }
+  }
+  return out;
+}
+
+/** v0.16.7 · 旧扁平 labelContent(string[]) / 部分对象 → 规范 LabelContentByType。 */
+export function migrateLabelContent(raw: unknown): LabelContentByType {
+  // 旧扁平 list 只作用过图片:single/ai 按老值分发(ai 补 source 保 ✦ 前缀),track 用默认。
+  if (Array.isArray(raw)) {
+    return {
+      single: uniqFilter(raw, ["id", "attrs"] as const),
+      track: [...DEFAULT_LABEL_CONTENT.track],
+      ai: uniqFilter(["source", ...raw], ["source", "score", "id", "attrs"] as const),
+    };
+  }
+  // 对象:逐段去重过滤;缺段 / 非数组补默认。
+  const obj = (raw ?? {}) as Record<string, unknown>;
+  return {
+    single: Array.isArray(obj.single)
+      ? uniqFilter(obj.single, ["id", "attrs"] as const)
+      : [...DEFAULT_LABEL_CONTENT.single],
+    track: Array.isArray(obj.track)
+      ? uniqFilter(obj.track, ["id", "state", "attrs"] as const)
+      : [...DEFAULT_LABEL_CONTENT.track],
+    ai: Array.isArray(obj.ai)
+      ? uniqFilter(obj.ai, ["source", "score", "id", "attrs"] as const)
+      : [...DEFAULT_LABEL_CONTENT.ai],
+  };
+}
 
 /** v0.15.3 · 图像工作台渲染偏好(原顶层平铺字段归位)。 */
 export interface WorkbenchImagePreferences {
@@ -179,7 +232,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     rightWidthPct: 15,
     labelFontSize: 12,
     labelVisibility: "always",
-    labelContent: ["class", "score"],
+    labelContent: { single: [], track: ["id", "state"], ai: ["source", "score"] },
     strokeWidth: 1.5,
     fillOpacity: 0.07,
     fillOpacitySelected: 0.12,

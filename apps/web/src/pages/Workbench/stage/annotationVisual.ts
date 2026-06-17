@@ -2,9 +2,9 @@
 // 纯函数,不依赖 settings store / React;接收已解析的 common 视觉配置 + 形状上下文,
 // 返回绘制原语(线宽 / 填充 alpha / 标签文本 / 标签门控)。机制差异(图片 /scale、视频
 // non-scaling)只体现在各调用点最后一步,逻辑 / 默认值 / 参数在此收口。
-import type { LabelContentToken } from "@/api/auth";
+import type { LabelContentByType, LabelFieldToken } from "@/api/auth";
 
-export type { LabelContentToken };
+export type { LabelContentByType, LabelFieldToken };
 
 export type LabelVisibility = "always" | "selected" | "none";
 
@@ -26,7 +26,7 @@ export interface AnnotationVisualConfig {
   fillOpacity: number;
   fillOpacitySelected: number;
   labelVisibility: LabelVisibility;
-  labelContent: LabelContentToken[];
+  labelContent: LabelContentByType;
 }
 
 /** 默认视觉配置(= VISUAL_DEFAULTS + 标签默认);用于无 common 上下文的回退(如测试 / 独立渲染)。 */
@@ -36,7 +36,7 @@ export const DEFAULT_ANNOTATION_VISUAL: AnnotationVisualConfig = {
   fillOpacity: VISUAL_DEFAULTS.fillOpacity,
   fillOpacitySelected: VISUAL_DEFAULTS.fillOpacitySelected,
   labelVisibility: "always",
-  labelContent: ["class", "score"],
+  labelContent: { single: [], track: ["id", "state"], ai: ["source", "score"] },
 };
 
 /** 从 common 偏好抽取视觉子集;窄化对象供 React.memo 稳定比较。 */
@@ -72,26 +72,25 @@ export function shouldShowLabel(selected: boolean, visibility: LabelVisibility):
 }
 
 export interface LabelTextInput {
-  /** 已 display 解析的类别名(始终显示,min:1 锚点)。 */
+  /** 已 display 解析的类别名(恒显,锚点)。 */
   className: string;
   /** 实例 / 分组 id;勾选 id 且非空时显示为 #id。 */
   instanceId?: string | number | null;
-  /** 置信度 0..1;勾选 score 且 isAi 时显示为百分比(人工框 conf 恒为 1 无意义,故 isAi 门控)。 */
+  /** 置信度 0..1;勾选 score 时显示为百分比。 */
   confidence?: number | null;
   /** 属性字典;勾选 attrs 时压缩为 k=v(bool 真值只显示键名)。 */
   attributes?: Record<string, unknown> | null;
-  isAi: boolean;
-  /** AI 固有前缀(如 "✦ 模型 "),始终拼在 AI 标签前,不受 labelContent 控制。 */
-  aiPrefix?: string;
+  /** 预测来源前缀(如 "✦ 模型 ");勾选 source 时拼在最前。 */
+  sourcePrefix?: string;
 }
 
-/** 按 labelContent 勾选项组装标签文本;类别名无条件保留(min:1 兜底)。 */
-export function buildLabelText(input: LabelTextInput, content: readonly LabelContentToken[]): string {
+/** 按某段(single/ai)字段集组装图片标签;类别名恒显。空格分隔,格式 `[✦来源] 类别 #id 95% attrs`。 */
+export function buildLabelText(input: LabelTextInput, content: readonly LabelFieldToken[]): string {
   const tokens: string[] = [input.className];
   if (content.includes("id") && input.instanceId != null && input.instanceId !== "") {
     tokens.push(`#${input.instanceId}`);
   }
-  if (content.includes("score") && input.isAi && typeof input.confidence === "number") {
+  if (content.includes("score") && typeof input.confidence === "number") {
     tokens.push(`${Math.round(input.confidence * 100)}%`);
   }
   if (content.includes("attrs")) {
@@ -99,7 +98,35 @@ export function buildLabelText(input: LabelTextInput, content: readonly LabelCon
     if (attrs) tokens.push(attrs);
   }
   const core = tokens.join(" ");
-  return input.isAi && input.aiPrefix ? `${input.aiPrefix}${core}` : core;
+  return content.includes("source") && input.sourcePrefix ? `${input.sourcePrefix}${core}` : core;
+}
+
+export interface TrackLabelInput {
+  /** 类别名(恒显)。 */
+  className: string;
+  /** 轨迹号;勾选 id 且存在时显示为前缀 #num。 */
+  trackNumber?: number;
+  /** 状态后缀(如 "插值" / "遮挡");勾选 state 且存在时拼在最后。 */
+  stateSuffix?: string;
+  /** 属性字典;勾选 attrs 时压缩。 */
+  attributes?: Record<string, unknown> | null;
+}
+
+/** 按 track 段字段集组装视频轨迹标签;类别名恒显。· 分隔,格式 `#num · 类别 · attrs · 状态`。 */
+export function buildTrackLabelText(input: TrackLabelInput, content: readonly LabelFieldToken[]): string {
+  const parts: string[] = [input.className];
+  if (content.includes("attrs")) {
+    const attrs = formatAttributes(input.attributes);
+    if (attrs) parts.push(attrs);
+  }
+  let text = parts.join(" · ");
+  if (content.includes("id") && input.trackNumber !== undefined) {
+    text = `#${input.trackNumber} · ${text}`;
+  }
+  if (content.includes("state") && input.stateSuffix) {
+    text = `${text} · ${input.stateSuffix}`;
+  }
+  return text;
 }
 
 /** 属性压缩:跳过空值;bool 真值只显示键名,假值跳过;其余渲染为 key=value。 */

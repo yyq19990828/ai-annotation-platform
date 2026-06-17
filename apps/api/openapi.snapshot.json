@@ -8392,6 +8392,50 @@
         "title": "KeypointSchema",
         "type": "object"
       },
+      "LabelContentByType": {
+        "additionalProperties": false,
+        "description": "v0.16.7 · 标签内容按标注类型分段；class 三段恒显，不入表。\n\nsingle=图片手工框 / track=视频轨迹框 / ai=图片预测框，各段只列该类型有意义的字段。\n旧扁平 list 由 WorkbenchCommonPreferences 的 before validator 迁移为本结构。",
+        "properties": {
+          "ai": {
+            "items": {
+              "enum": [
+                "source",
+                "score",
+                "id",
+                "attrs"
+              ],
+              "type": "string"
+            },
+            "title": "Ai",
+            "type": "array"
+          },
+          "single": {
+            "items": {
+              "enum": [
+                "id",
+                "attrs"
+              ],
+              "type": "string"
+            },
+            "title": "Single",
+            "type": "array"
+          },
+          "track": {
+            "items": {
+              "enum": [
+                "id",
+                "state",
+                "attrs"
+              ],
+              "type": "string"
+            },
+            "title": "Track",
+            "type": "array"
+          }
+        },
+        "title": "LabelContentByType",
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "captcha_token": {
@@ -18860,17 +18904,7 @@
             "type": "number"
           },
           "labelContent": {
-            "items": {
-              "enum": [
-                "class",
-                "id",
-                "score",
-                "attrs"
-              ],
-              "type": "string"
-            },
-            "title": "Labelcontent",
-            "type": "array"
+            "$ref": "#/components/schemas/LabelContentByType"
           },
           "labelFontSize": {
             "default": 12,

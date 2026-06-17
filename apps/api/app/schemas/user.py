@@ -87,6 +87,37 @@ class WorkbenchLayoutPreferences(BaseModel):
     )
 
 
+class LabelContentByType(BaseModel):
+    """v0.16.7 · 标签内容按标注类型分段；class 三段恒显，不入表。
+
+    single=图片手工框 / track=视频轨迹框 / ai=图片预测框，各段只列该类型有意义的字段。
+    旧扁平 list 由 WorkbenchCommonPreferences 的 before validator 迁移为本结构。
+    """
+
+    model_config = {"extra": "forbid"}
+
+    # 分组号 #id / 属性。
+    single: list[Literal["id", "attrs"]] = Field(default_factory=list)
+    # 轨迹号 #num / 状态(插值·遮挡) / 属性。
+    track: list[Literal["id", "state", "attrs"]] = Field(
+        default_factory=lambda: ["id", "state"]
+    )
+    # ✦来源前缀 / 置信度 / 分组号 / 属性。
+    ai: list[Literal["source", "score", "id", "attrs"]] = Field(
+        default_factory=lambda: ["source", "score"]
+    )
+
+    @field_validator("single", "track", "ai")
+    @classmethod
+    def _dedupe(cls, v: list[str]) -> list[str]:
+        # 去重保序，避免重复 token。
+        seen: list[str] = []
+        for item in v:
+            if item not in seen:
+                seen.append(item)
+        return seen
+
+
 class WorkbenchCommonPreferences(BaseModel):
     """v0.15.3 · 跨模态通用偏好（性能观测等）。"""
 
@@ -110,10 +141,8 @@ class WorkbenchCommonPreferences(BaseModel):
     labelFontSize: int = Field(default=12, ge=8, le=24)
     # 标签显隐：always=恒显 / selected=仅选中时 / none=不显示（取代旧 image.showBoxLabels）。
     labelVisibility: Literal["always", "selected", "none"] = "always"
-    # 标签内容多选；class 必含（_ensure_class_label 兜底），其余 id/置信度/属性按勾选拼接。
-    labelContent: list[Literal["class", "id", "score", "attrs"]] = Field(
-        default_factory=lambda: ["class", "score"]
-    )
+    # v0.16.7 · 标签内容按标注类型分段（single/track/ai）；旧扁平 list 由 before validator 迁移。
+    labelContent: LabelContentByType = Field(default_factory=LabelContentByType)
     # 描边线宽（screen px 基准；选中态 = 基值 + 0.5）。
     strokeWidth: float = Field(default=1.5, ge=1, le=5)
     # 闭合形状填充透明度（非选中）。
@@ -121,19 +150,18 @@ class WorkbenchCommonPreferences(BaseModel):
     # 选中对象填充加重透明度。
     fillOpacitySelected: float = Field(default=0.12, ge=0, le=0.8)
 
-    @field_validator("labelContent")
+    @field_validator("labelContent", mode="before")
     @classmethod
-    def _ensure_class_label(cls, v: list[str]) -> list[str]:
-        # min:1 兜底：标签内容至少保留「类别名」，避免空标签；去重保序。
-        if not v:
-            return ["class"]
-        seen: list[str] = []
-        for item in v:
-            if item not in seen:
-                seen.append(item)
-        if "class" not in seen:
-            seen.insert(0, "class")
-        return seen
+    def _migrate_label_content(cls, v: Any) -> Any:
+        # v0.16.7 · 旧扁平 list（["class","score"] 等）迁移为按类型分段对象。
+        # 旧值只作用过图片：single/ai 按老勾选分发（ai 补 source 保留 ✦ 前缀），
+        # track 用默认 ["id","state"]（= 旧视频硬编码观感）。class 恒显，丢弃。
+        if isinstance(v, list):
+            old = [t for t in v if isinstance(t, str)]
+            single = [t for t in ("id", "attrs") if t in old]
+            ai = ["source", *[t for t in ("score", "id", "attrs") if t in old]]
+            return {"single": single, "track": ["id", "state"], "ai": ai}
+        return v
 
     @model_validator(mode="after")
     def _derive_legacy_overlay_enabled(self):

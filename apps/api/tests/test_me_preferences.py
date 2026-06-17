@@ -52,7 +52,11 @@ async def test_patch_image_subtree_only_touches_submitted_field(
     # v0.15.27 · 标注视觉默认值(= 统一后基准)
     assert wb["common"]["labelFontSize"] == 12
     assert wb["common"]["labelVisibility"] == "always"
-    assert wb["common"]["labelContent"] == ["class", "score"]
+    assert wb["common"]["labelContent"] == {
+        "single": [],
+        "track": ["id", "state"],
+        "ai": ["source", "score"],
+    }
     assert wb["common"]["strokeWidth"] == 1.5
     assert wb["common"]["fillOpacity"] == 0.07
     assert wb["common"]["fillOpacitySelected"] == 0.12
@@ -174,7 +178,11 @@ async def test_patch_image_workbench_settings_fields(httpx_client, annotator):
     # 未提交字段保持默认值。
     assert wb["image"]["smoothImage"] is True
     assert wb["common"]["longTaskSampleRate"] == 0.05
-    assert wb["common"]["labelContent"] == ["class", "score"]
+    assert wb["common"]["labelContent"] == {
+        "single": [],
+        "track": ["id", "state"],
+        "ai": ["source", "score"],
+    }
 
 
 async def test_patch_image_workbench_range_and_enum_violations_422(
@@ -202,7 +210,7 @@ async def test_patch_image_workbench_range_and_enum_violations_422(
         {"common": {"fillOpacity": -0.1}},
         {"common": {"fillOpacity": 0.7}},
         {"common": {"fillOpacitySelected": 0.9}},
-        {"common": {"labelContent": ["class", "unknown"]}},
+        {"common": {"labelContent": {"ai": ["unknown"]}}},
     ):
         resp = await httpx_client.patch(
             PREFS_URL,
@@ -682,29 +690,43 @@ def test_migration_0105_upgrade_idempotent():
 # ── 9. v0.15.27 · 标注视觉字段 + 0106 showBoxLabels→labelVisibility 迁移 ──────
 
 
-def test_label_content_validator_dedups_and_pins_class():
-    """labelContent min:1 兜底：空补 class、缺 class 补到首位、去重保序。"""
-    # 空 → ["class"]
-    assert (
-        UserPreferences.model_validate(
-            {"workbench": {"common": {"labelContent": []}}}
+def test_label_content_migrates_legacy_flat_list():
+    """v0.16.7 · 旧扁平 labelContent list 迁移为按标注类型分段对象。"""
+
+    def parse(value):
+        return UserPreferences.model_validate(
+            {"workbench": {"common": {"labelContent": value}}}
         ).workbench.common.labelContent
-        == ["class"]
-    )
-    # 缺 class → class 补到首位
-    assert (
+
+    # 旧默认 ["class","score"] → 图片观感不变（ai 补 source 保前缀），track 用默认。
+    migrated = parse(["class", "score"])
+    assert migrated.single == []
+    assert migrated.track == ["id", "state"]
+    assert migrated.ai == ["source", "score"]
+
+    # 旧值带 id/attrs → single/ai 分发，class 丢弃，非法 token 过滤。
+    migrated2 = parse(["class", "id", "attrs", "bogus"])
+    assert migrated2.single == ["id", "attrs"]
+    assert migrated2.ai == ["source", "id", "attrs"]
+    assert migrated2.track == ["id", "state"]
+
+
+def test_label_content_object_dedups_and_rejects_unknown_token():
+    """v0.16.7 · 新对象格式：各段去重保序；缺省段补默认；非法 token 触发校验错误。"""
+    import pytest
+    from pydantic import ValidationError
+
+    parsed = UserPreferences.model_validate(
+        {"workbench": {"common": {"labelContent": {"ai": ["score", "score", "source"]}}}}
+    ).workbench.common.labelContent
+    assert parsed.ai == ["score", "source"]  # 去重保序
+    assert parsed.track == ["id", "state"]  # 缺省段补默认
+    assert parsed.single == []
+
+    with pytest.raises(ValidationError):
         UserPreferences.model_validate(
-            {"workbench": {"common": {"labelContent": ["score", "id"]}}}
-        ).workbench.common.labelContent
-        == ["class", "score", "id"]
-    )
-    # 去重保序
-    assert (
-        UserPreferences.model_validate(
-            {"workbench": {"common": {"labelContent": ["class", "score", "class"]}}}
-        ).workbench.common.labelContent
-        == ["class", "score"]
-    )
+            {"workbench": {"common": {"labelContent": {"single": ["bogus"]}}}}
+        )
 
 
 def _load_migration_0106():

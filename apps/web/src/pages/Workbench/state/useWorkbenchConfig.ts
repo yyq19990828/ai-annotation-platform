@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   authApi,
   DEFAULT_WORKBENCH_PREFERENCES,
+  migrateLabelContent,
   type CameraPanelState,
   type FloatingPanelState,
   type PointcloudCameraState,
@@ -88,6 +89,8 @@ function mergeUser(
     ...(remote?.common ?? {}),
   };
   const remoteCommon = remote?.common as Record<string, unknown> | undefined;
+  // v0.16.7 · labelContent 规范化：旧扁平 list / 缺段补全（与后端 before validator 同款，前端兜底）。
+  common.labelContent = migrateLabelContent(remoteCommon?.labelContent);
   if (
     remoteCommon &&
     !("crossFrameOverlayEnabled" in remoteCommon) &&

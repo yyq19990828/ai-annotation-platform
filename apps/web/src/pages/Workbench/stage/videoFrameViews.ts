@@ -9,7 +9,7 @@ import {
   resolveTrackAtFrame,
 } from "./videoStageGeometry";
 import { isFrameOutside } from "./videoTrackOutside";
-import { shouldShowLabel, type AnnotationVisualConfig } from "./annotationVisual";
+import { buildTrackLabelText, shouldShowLabel, type AnnotationVisualConfig } from "./annotationVisual";
 import type { VideoStageGeom } from "./videoStageTypes";
 
 /**
@@ -105,6 +105,7 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
 
   const videoTracks = annotations.filter(isVideoTrack);
   const trackNumbers = deriveTrackNumber(videoTracks);
+  const trackContent = visual.labelContent.track;
 
   // 当前帧应显示的 bbox(legacy bbox + track 解析帧)。
   const entries: VideoEntryView[] = [];
@@ -112,12 +113,12 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
   for (const ann of annotations) {
     if (isVideoBbox(ann) && ann.geometry.frame_index === frameIndex) {
       if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
-      entries.push(buildEntryView(ann, ann.geometry, "legacy", false, undefined, selectedId, trackNumbers, trackColorOverrides));
+      entries.push(buildEntryView(ann, ann.geometry, "legacy", false, undefined, selectedId, trackNumbers, trackColorOverrides, trackContent));
     } else if (isVideoTrack(ann) && !hiddenTrackIds.has(ann.geometry.track_id)) {
       const resolved = resolveTrackAtFrame(ann.geometry, frameIndex);
       if (!resolved || !visibleInReviewMode(resolved.source, reviewDisplayMode)) continue;
       currentFrameTrackIds.add(ann.geometry.track_id);
-      entries.push(buildEntryView(ann, resolved.geom, resolved.source, Boolean(resolved.occluded), ann.geometry.track_id, selectedId, trackNumbers, trackColorOverrides));
+      entries.push(buildEntryView(ann, resolved.geom, resolved.source, Boolean(resolved.occluded), ann.geometry.track_id, selectedId, trackNumbers, trackColorOverrides, trackContent));
     }
   }
 
@@ -195,14 +196,15 @@ function buildEntryView(
   trackId: string | undefined,
   selectedId: string | null,
   trackNumbers: ReadonlyMap<string, number>,
-  trackColorOverrides?: Record<string, string>,
+  trackColorOverrides: Record<string, string> | undefined,
+  trackContent: AnnotationVisualConfig["labelContent"]["track"],
 ): VideoEntryView {
   const color = trackId
     ? getTrackColor(trackId, ann.class_name, trackColorOverrides)
     : classColor(ann.class_name);
   const trackNumber = trackNumbers.get(ann.id);
-  const labelPrefix = trackNumber !== undefined ? `#${trackNumber} · ` : "";
-  const labelSuffix = source === "interpolated" ? " · 插值" : occluded ? " · 遮挡" : "";
+  // 状态后缀（· 由 buildTrackLabelText 拼）；插值 / 遮挡互斥。
+  const stateSuffix = source === "interpolated" ? "插值" : occluded ? "遮挡" : undefined;
   return {
     key: `${ann.id}-${trackId ?? "legacy"}`,
     id: ann.id,
@@ -211,7 +213,15 @@ function buildEntryView(
     selected: ann.id === selectedId,
     dashed: source === "interpolated" || occluded,
     occluded,
-    labelText: `${labelPrefix}${ann.class_name}${labelSuffix}`,
+    labelText: buildTrackLabelText(
+      {
+        className: ann.class_name,
+        trackNumber,
+        stateSuffix,
+        attributes: (ann as { attributes?: Record<string, unknown> | null }).attributes ?? null,
+      },
+      trackContent,
+    ),
     className: ann.class_name,
   };
 }

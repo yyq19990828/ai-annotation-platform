@@ -1,14 +1,19 @@
 // v0.15.3 · 工作台设置字段注册表(单一来源):工作台设置抽屉与 Settings 页「标注偏好」
 // 共用本数组渲染,杜绝两处 UI 漂移。新增字段流程:后端子树加字段 → auth.ts 类型同步 →
 // 这里加一行 → 消费点读配置。
-import type { WorkbenchPreferences } from "@/api/auth";
+import type { LabelContentByType, WorkbenchPreferences } from "@/api/auth";
 import { WEBCODECS_FLAG_STORAGE_KEY } from "../stage/useVideoChunkDecoder";
 import type { LockableField, WorkbenchConfigPatch } from "./useWorkbenchConfig";
 
 export type WorkbenchPreferenceSettingCategory = "common" | "image" | "video" | "pointcloud";
 export type WorkbenchSettingCategory = WorkbenchPreferenceSettingCategory | "experiment";
 
-export type WorkbenchSettingValue = boolean | number | string | string[];
+export type WorkbenchSettingValue =
+  | boolean
+  | number
+  | string
+  | string[]
+  | LabelContentByType;
 
 export type WorkbenchSettingControl =
   | { type: "toggle"; onText?: string; offText?: string }
@@ -16,7 +21,16 @@ export type WorkbenchSettingControl =
   | { type: "select"; options: Array<{ value: WorkbenchSettingValue; label: string }> }
   // v0.15.27 · 多选(存 string[]);min 兜底至少保留几项(labelContent 至少留「类别名」)。
   | { type: "multiselect"; options: Array<{ value: string; label: string }>; min?: number }
-  | { type: "text"; maxLength: number; placeholder?: string };
+  | { type: "text"; maxLength: number; placeholder?: string }
+  // v0.16.7 · 标签内容按标注类型分段：每段独立 toggle 列，提交整个 LabelContentByType 对象。
+  | {
+      type: "labelContentByType";
+      segments: Array<{
+        key: "single" | "track" | "ai";
+        label: string;
+        options: Array<{ value: string; label: string }>;
+      }>;
+    };
 
 interface WorkbenchSettingFieldBase {
   /** "image.controlPointsSize" — 与 WorkbenchPreferences 子树路径一致(category.字段名)。 */
@@ -197,15 +211,37 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     key: "common.labelContent",
     category: "common",
     label: "标签内容",
-    description: "标签里显示哪些信息;类别名始终保留。置信度仅 AI 预标注框有",
+    description: "按标注类型分段控制标签显示哪些信息;类别名三段恒显。单帧=图片手工框,轨迹=视频 track 框,AI=图片预测框",
     control: {
-      type: "multiselect",
-      min: 1,
-      options: [
-        { value: "class", label: "类别名" },
-        { value: "id", label: "ID" },
-        { value: "score", label: "置信度" },
-        { value: "attrs", label: "属性" },
+      type: "labelContentByType",
+      segments: [
+        {
+          key: "single",
+          label: "单帧",
+          options: [
+            { value: "id", label: "分组号" },
+            { value: "attrs", label: "属性" },
+          ],
+        },
+        {
+          key: "track",
+          label: "轨迹",
+          options: [
+            { value: "id", label: "轨迹号" },
+            { value: "state", label: "状态" },
+            { value: "attrs", label: "属性" },
+          ],
+        },
+        {
+          key: "ai",
+          label: "AI预测",
+          options: [
+            { value: "source", label: "来源" },
+            { value: "score", label: "置信度" },
+            { value: "id", label: "分组号" },
+            { value: "attrs", label: "属性" },
+          ],
+        },
       ],
     },
   },

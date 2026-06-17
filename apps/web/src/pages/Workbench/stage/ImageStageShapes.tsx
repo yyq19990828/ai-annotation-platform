@@ -38,10 +38,9 @@ function shapeLabelText(b: Annotation, isAi: boolean, content: AnnotationVisualC
       instanceId: b.group_id ?? null,
       confidence: b.conf,
       attributes: (b as { attributes?: Record<string, unknown> }).attributes ?? null,
-      isAi,
-      aiPrefix: isAi ? `✦ ${predictionSourceLabel(predictionSource)} ` : undefined,
+      sourcePrefix: isAi ? `✦ ${predictionSourceLabel(predictionSource)} ` : undefined,
     },
-    content,
+    isAi ? content.ai : content.single,
   );
 }
 

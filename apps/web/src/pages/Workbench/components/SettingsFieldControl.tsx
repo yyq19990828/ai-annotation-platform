@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Switch } from "@/components/ui/Switch";
+import type { LabelContentByType } from "@/api/auth";
 import type {
   WorkbenchSettingField,
   WorkbenchSettingValue,
@@ -42,10 +43,13 @@ export function SettingsFieldControl({
       ? `${field.label}：${control.format ? control.format(sliderLive) : String(sliderLive)}`
       : field.label;
   const title = locked ? LOCKED_TITLE : field.description;
+  // labelContentByType 是复杂分段控件,根用 div + 竖排(避免外层 label 包裹多个 input 误触)。
+  const isColumn = control.type === "labelContentByType";
+  const Root = isColumn ? "div" : "label";
 
   return (
-    <label
-      className={`${styles.field} ${nested ? styles.fieldNested : ""} ${
+    <Root
+      className={`${styles.field} ${isColumn ? styles.fieldColumn : ""} ${nested ? styles.fieldNested : ""} ${
         disabled && !locked ? styles.fieldDisabled : ""
       }`}
       title={title}
@@ -138,7 +142,85 @@ export function SettingsFieldControl({
           onCommit={onCommit}
         />
       )}
-    </label>
+      {control.type === "labelContentByType" && (
+        <LabelContentByTypeControl
+          value={
+            value && typeof value === "object" && !Array.isArray(value)
+              ? (value as LabelContentByType)
+              : { single: [], track: [], ai: [] }
+          }
+          segments={control.segments}
+          disabled={disabled || locked}
+          onCommit={onCommit}
+        />
+      )}
+    </Root>
+  );
+}
+
+/** v0.16.7 · 标签内容按类型分段:顶部段切换(单帧/轨迹/AI),下方该段字段 Switch 列;类别名恒显标必选。 */
+function LabelContentByTypeControl({
+  value,
+  segments,
+  disabled,
+  onCommit,
+}: {
+  value: LabelContentByType;
+  segments: Array<{
+    key: "single" | "track" | "ai";
+    label: string;
+    options: Array<{ value: string; label: string }>;
+  }>;
+  disabled: boolean;
+  onCommit: (value: LabelContentByType) => void;
+}) {
+  const [active, setActive] = useState<"single" | "track" | "ai">(
+    segments[0]?.key ?? "single",
+  );
+  const activeSeg = segments.find((s) => s.key === active) ?? segments[0];
+  const selected: string[] = value[active] ?? [];
+  const toggle = (optValue: string) => {
+    const has = selected.includes(optValue);
+    // 按 options 顺序重建当前段,其余段原样保留(提交整个对象)。
+    const next = activeSeg.options
+      .map((o) => o.value)
+      .filter((v) => (v === optValue ? !has : selected.includes(v)));
+    onCommit({ ...value, [active]: next } as LabelContentByType);
+  };
+  return (
+    <div className={styles.labelContentWrap}>
+      <div className={styles.segTabs} role="tablist">
+        {segments.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            role="tab"
+            aria-selected={s.key === active}
+            className={`${styles.segTab} ${s.key === active ? styles.segTabOn : ""}`}
+            disabled={disabled}
+            onClick={() => setActive(s.key)}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      <div className={styles.segFields}>
+        <div className={`${styles.segRow} ${styles.segRowLocked}`}>
+          <span>类别名</span>
+          <span className={styles.segRequired}>必选</span>
+        </div>
+        {activeSeg.options.map((opt) => (
+          <label key={opt.value} className={styles.segRow}>
+            <span>{opt.label}</span>
+            <Switch
+              checked={selected.includes(opt.value)}
+              disabled={disabled}
+              onChange={() => toggle(opt.value)}
+            />
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
 

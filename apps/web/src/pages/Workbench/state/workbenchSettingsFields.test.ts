@@ -44,7 +44,7 @@ describe("workbenchSettingsFields 注册表", () => {
       "common.performanceTier": "standard",
       "common.labelFontSize": 12,
       "common.labelVisibility": "always",
-      "common.labelContent": ["class", "score"],
+      "common.labelContent": { single: [], track: ["id", "state"], ai: ["source", "score"] },
       "common.strokeWidth": 1.5,
       "common.fillOpacity": 0.07,
       "common.fillOpacitySelected": 0.12,
