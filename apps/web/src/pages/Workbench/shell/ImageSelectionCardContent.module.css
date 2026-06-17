@@ -1,0 +1,25 @@
+/* v0.16.8 · 选中标注浮动信息卡 · 图片端内容布局。 */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.geomSummary {
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.attrBlock {
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+}

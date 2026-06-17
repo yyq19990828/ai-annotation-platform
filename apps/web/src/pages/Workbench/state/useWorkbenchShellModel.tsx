@@ -1,5 +1,5 @@
 import {
-  useCallback, useEffect, useMemo, useRef, useState, type ComponentProps,
+  useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode,
 } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -85,6 +85,7 @@ import {
   SelectionCardPlaceholder,
   type SelectedAnnotationCardProps,
 } from "../shell/SelectedAnnotationCard";
+import { ImageSelectionCardContent } from "../shell/ImageSelectionCardContent";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
 import {
   FLOATING_SELECTION_MAX_SIZE,
@@ -1981,7 +1982,7 @@ export function useWorkbenchShellModel({
 
   // 图片 / 视频选中即现(3D 用自有 PSR 面板,不显示)。单选 = 类别标题 + 内容;
   // 多选 = 「N 个已选中 · 批量」精简态;无选中 = null(隐藏)。
-  // Phase 1 内容为占位摘要,Phase 2(图片)/ Phase 3(视频)注入真实内容。
+  // 图片单选注入真实内容(改类 / 锁 / 隐藏 / 删除 / 几何 / 属性);视频单选 Phase 3 接入。
   const selectionCardEligible = stageKind === "image" || stageKind === "video";
   const selectionCount = s.selectedIds.length;
   const selectionCard = useMemo<SelectedAnnotationCardProps | null>(() => {
@@ -1991,11 +1992,31 @@ export function useWorkbenchShellModel({
     const title = multi
       ? `${selectionCount} 个已选中 · 批量`
       : ann?.class_name ?? "选中标注";
-    const summary = multi
-      ? `已选中 ${selectionCount} 个标注。`
-      : ann
-        ? `类别 ${ann.class_name} · ${ann.geometry.type}`
-        : "已选中 1 个标注。";
+    let children: ReactNode;
+    if (multi) {
+      children = <SelectionCardPlaceholder summary={`已选中 ${selectionCount} 个标注。`} />;
+    } else if (ann && stageKind === "image") {
+      children = (
+        <ImageSelectionCardContent
+          annotation={ann}
+          imageWidth={imageWidth}
+          imageHeight={imageHeight}
+          attributeSchema={toolView.attributeSchema}
+          readOnly={isLocked}
+          onChangeClass={handleStartChangeClass}
+          onToggleFlag={handlePatchShapeFlag}
+          onDelete={handleDeleteBox}
+          onUpdateAttributes={handleUpdateAttributes}
+        />
+      );
+    } else {
+      // 视频单选(Phase 3 接入)/ 无对应标注:占位摘要。
+      children = (
+        <SelectionCardPlaceholder
+          summary={ann ? `类别 ${ann.class_name} · ${ann.geometry.type}` : "已选中 1 个标注。"}
+        />
+      );
+    }
     return {
       title,
       position: floatingSelectionPosition,
@@ -2003,12 +2024,21 @@ export function useWorkbenchShellModel({
       collapsed: floatingSelection.collapsed,
       onCollapse: collapseSelectionCard,
       onExpand: expandSelectionCard,
-      children: <SelectionCardPlaceholder summary={summary} />,
+      children,
     };
   }, [
     selectionCardEligible,
     selectionCount,
     selectedAnnotationForPanel,
+    stageKind,
+    imageWidth,
+    imageHeight,
+    toolView.attributeSchema,
+    isLocked,
+    handleStartChangeClass,
+    handlePatchShapeFlag,
+    handleDeleteBox,
+    handleUpdateAttributes,
     floatingSelectionPosition,
     onSelectionPositionChange,
     floatingSelection.collapsed,
