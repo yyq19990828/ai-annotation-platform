@@ -1,6 +1,7 @@
 // v0.16.x 第 2 批 · ImageStage 纯几何函数测试守护(伴随从 toImg 提炼,锁定逆变换公式)。
 import { describe, it, expect } from "vitest";
-import { normalizeImageCoordinate } from "./ImageStage.helpers";
+import { normalizeImageCoordinate, resolveSnapMatch } from "./ImageStage.helpers";
+import type { Pt } from "./polygonGeom";
 
 describe("normalizeImageCoordinate", () => {
   it("逆 viewport 平移/缩放后归一为图坐标", () => {
@@ -26,5 +27,44 @@ describe("normalizeImageCoordinate", () => {
       50,
     );
     expect(out).toEqual({ x: 0.5, y: 0.5 });
+  });
+});
+
+const SNAP_T = { imgW: 100, imgH: 100, scale: 1 };
+const P = (x: number, y: number): Pt => [x, y];
+
+describe("resolveSnapMatch", () => {
+  it("点吸附与线段吸附都命中时取距离更近者", () => {
+    const m = resolveSnapMatch(
+      P(0.5, 0.5),
+      {
+        points: [{ point: P(0.51, 0.5) }], // 1px
+        segments: [{ a: P(0.5, 0.6), b: P(0.6, 0.6) }], // 10px
+      },
+      20,
+      SNAP_T,
+    );
+    expect(m?.kind).toBe("point");
+    expect(m?.distancePx).toBeCloseTo(1);
+  });
+
+  it("只有线段命中时返回 segment", () => {
+    const m = resolveSnapMatch(
+      P(0.5, 0.5),
+      { points: [], segments: [{ a: P(0.5, 0.6), b: P(0.6, 0.6) }] },
+      20,
+      SNAP_T,
+    );
+    expect(m?.kind).toBe("segment");
+  });
+
+  it("阈值内无候选时返回 null", () => {
+    const m = resolveSnapMatch(
+      P(0.5, 0.5),
+      { points: [{ point: P(0.9, 0.9) }], segments: [] },
+      5,
+      SNAP_T,
+    );
+    expect(m).toBeNull();
   });
 });

@@ -22,13 +22,11 @@ import { Icon } from "@/components/ui/Icon";
 import { isSelfIntersecting, isSelfIntersectingIncremental, moveVertex, type Pt } from "./polygonGeom";
 import {
   buildSnapIndex,
-  snapPointToCandidates,
-  snapPointToSegments,
   type SnapMatch,
 } from "./shared/geometry/snap";
 import { BlurhashLayer } from "./BlurhashLayer";
 import { KonvaBox, KonvaPolygon, KonvaRotatedBox, KonvaPolyline, KonvaKeypoint, keypointColorByIndex } from "./ImageStageShapes";
-import { normalizeImageCoordinate } from "./ImageStage.helpers";
+import { normalizeImageCoordinate, resolveSnapMatch } from "./ImageStage.helpers";
 import { BOX_LABEL_FONT_FAMILY } from "./boxVisual";
 import { resolveAnnotationVisual } from "./annotationVisual";
 import {
@@ -396,12 +394,7 @@ export function ImageStage({
     const segments = excludeAnnotationId
       ? snapIndex.segments.filter((candidate) => candidate.annotationId !== excludeAnnotationId)
       : snapIndex.segments;
-    const thresholdPx = workbenchConfig.image.snapThresholdPx;
-    const pointMatch = snapPointToCandidates(point, points, thresholdPx, transform);
-    const segmentMatch = snapPointToSegments(point, segments, thresholdPx, transform);
-    if (!pointMatch) return segmentMatch;
-    if (!segmentMatch) return pointMatch;
-    return pointMatch.distancePx <= segmentMatch.distancePx ? pointMatch : segmentMatch;
+    return resolveSnapMatch(point, { points, segments }, workbenchConfig.image.snapThresholdPx, transform);
   }, [imgW, imgH, snapIndex, workbenchConfig.image.snapThresholdPx]);
 
   const snapImagePoint = useCallback((
