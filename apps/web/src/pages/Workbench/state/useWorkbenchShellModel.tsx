@@ -20,10 +20,7 @@ import {
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
-import {
-  resolveCrossFrameNavigation,
-  resolveCrossFrameTarget,
-} from "./crossFrameTarget";
+import { resolveCrossFrameNavigation } from "./crossFrameTarget";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
@@ -36,6 +33,7 @@ import { useToolBindings, classesForUnit } from "./useToolBindings";
 import type { ToolUnitId } from "@/constants/toolUnits";
 import { useViewportTransform } from "./useViewportTransform";
 import { useIssuePins } from "./useIssuePins";
+import { usePredictionPropagation } from "./usePredictionPropagation";
 import { useAnnotationHistory } from "./useAnnotationHistory";
 import { useRecentClasses } from "./useRecentClasses";
 import { useSessionStats } from "./useSessionStats";
@@ -528,6 +526,9 @@ export function useWorkbenchShellModel({
     if (pend && pend.taskId !== taskId) {
       pendingCrossFrameSelectRef.current = null;
     }
+    // pendingCrossFrameSelectRef 是 usePredictionPropagation 返回的稳定 useRef(声明在
+    // 本 effect 下方,入依赖会 TDZ);ref 引用恒定不入依赖,行为与抽取前一致。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId, resetVideoStageUi]);
 
   useEffect(() => {
@@ -655,6 +656,8 @@ export function useWorkbenchShellModel({
       setSelectedId(pend.annotationId);
       pendingCrossFrameSelectRef.current = null;
     }
+    // 同上:pendingCrossFrameSelectRef 为稳定 useRef,不入依赖(入则 TDZ),行为不变。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [annotationsData, currentTaskId, setSelectedId]);
 
   useEffect(() => {
@@ -763,27 +766,8 @@ export function useWorkbenchShellModel({
   }, [preannotationProgress?.status, taskId, queryClient]);
 
   // v0.14.1+ · 跨帧目标延续 (Shift+→ / Shift+←): 把选中框 propagate 到同 scene
-  // 邻帧 task。目标若不在当前已加载队列里,退化为按 taskId 直开并补选中新框。
-  const pendingCrossFrameSelectRef = useRef<{
-    taskId: string;
-    annotationId: string;
-  } | null>(null);
-  // v0.14.1 · 并发/重复触发守卫: 按住 Alt+→ auto-repeat 或快速连按时, 防止并发
-  // 多个 propagate POST 在目标帧造出共享同一新 group_id 的重复 annotation。
-  const crossFrameInFlightRef = useRef(false);
-  // v0.15.1 · "scene 无 ego 轨迹,未做运动补偿" 每会话只轻提示一次,避免逐帧刷 toast。
-  const motionCompWarnedRef = useRef(false);
-  const warnNoMotionCompensation = useCallback(
-    (compensated: boolean) => {
-      if (compensated || motionCompWarnedRef.current) return;
-      motionCompWarnedRef.current = true;
-      pushToast({
-        msg: "该 scene 无 ego 轨迹,跨帧未做运动补偿(原样复制)",
-        kind: "warning",
-      });
-    },
-    [pushToast],
-  );
+  // 邻帧 task。导航胶水 navigateToCrossFrameTask 留此处(绑 tasks/selectTask/updateUrl),
+  // 竞态簇(3 ref + 4 回调)抽到 usePredictionPropagation,见本文件下方 hook 调用。
   // 跳到目标帧 task: 已加载队列内直接选中,否则按 taskId 直开。
   const navigateToCrossFrameTask = useCallback(
     (targetTaskId: string) => {
@@ -801,219 +785,21 @@ export function useWorkbenchShellModel({
     },
     [tasks, selectTask, setCurrentTaskId, setSelectedId, updateUrl, selectedBatchId],
   );
-  const crossFramePropagate = useCallback(
-    async (direction: "next" | "prev") => {
-      if (!taskId) return;
-      if (crossFrameInFlightRef.current) return;
-      crossFrameInFlightRef.current = true;
-      try {
-        const selId = s.selectedId;
-        if (!selId) {
-          pushToast({ msg: "请先选中一个目标框", kind: "" });
-          return;
-        }
-        // 按需直拉邻帧 (非缓存), propagate 才发请求, 避免给每个 task 都预取。
-        let neighbors;
-        try {
-          neighbors = await tasksApi.getNeighbors(taskId, 1);
-        } catch {
-          pushToast({ msg: "获取邻帧失败", kind: "error" });
-          return;
-        }
-        const resolution = resolveCrossFrameTarget(neighbors, direction);
-        if (resolution.kind === "no-scene") {
-          pushToast({ msg: "当前 task 不属于任何 scene, 无法跨帧延续", kind: "warning" });
-          return;
-        }
-        if (resolution.kind === "boundary") {
-          pushToast({
-            msg: direction === "next" ? "已是该 scene 最后一帧" : "已是该 scene 首帧",
-            kind: "",
-          });
-          return;
-        }
-        try {
-          const { annotation, motion_compensated } = await tasksApi.propagateToTask(
-            taskId,
-            selId,
-            resolution.taskId,
-          );
-          // 失效目标 task 标注缓存, 跳过去后重新拉到含新框的列表。
-          queryClient.invalidateQueries({
-            queryKey: ["annotations", resolution.taskId],
-          });
-          // 源 task 框可能刚被分配 group_id, 失效让本帧高亮同步。
-          queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
-          pendingCrossFrameSelectRef.current = {
-            taskId: resolution.taskId,
-            annotationId: annotation.id,
-          };
-          navigateToCrossFrameTask(resolution.taskId);
-          pushToast({
-            msg: `已延续到帧 ${resolution.frameIndex}`,
-            kind: "success",
-          });
-          warnNoMotionCompensation(motion_compensated);
-        } catch {
-          pushToast({ msg: "跨帧延续失败", kind: "error" });
-        }
-      } finally {
-        crossFrameInFlightRef.current = false;
-      }
-    },
-    [
-      taskId,
-      s.selectedId,
-      navigateToCrossFrameTask,
-      pushToast,
-      queryClient,
-      warnNoMotionCompensation,
-    ],
-  );
-
-  // v0.15.1 · 批量延续: 当前帧全部 box_3d 一次运动补偿 propagate 到邻帧。
-  const crossFramePropagateBatch = useCallback(
-    async (direction: "next" | "prev") => {
-      if (!taskId) return;
-      if (crossFrameInFlightRef.current) return;
-      crossFrameInFlightRef.current = true;
-      try {
-        let neighbors;
-        try {
-          neighbors = await tasksApi.getNeighbors(taskId, 1);
-        } catch {
-          pushToast({ msg: "获取邻帧失败", kind: "error" });
-          return;
-        }
-        const resolution = resolveCrossFrameTarget(neighbors, direction);
-        if (resolution.kind === "no-scene") {
-          pushToast({ msg: "当前 task 不属于任何 scene, 无法跨帧延续", kind: "warning" });
-          return;
-        }
-        if (resolution.kind === "boundary") {
-          pushToast({
-            msg: direction === "next" ? "已是该 scene 最后一帧" : "已是该 scene 首帧",
-            kind: "",
-          });
-          return;
-        }
-        try {
-          const { items, motion_compensated } = await tasksApi.propagateBatch(
-            taskId,
-            resolution.taskId,
-          );
-          queryClient.invalidateQueries({
-            queryKey: ["annotations", resolution.taskId],
-          });
-          queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
-          navigateToCrossFrameTask(resolution.taskId);
-          pushToast({
-            msg: `${items.length} 个目标已延续到帧 ${resolution.frameIndex}`,
-            kind: "success",
-          });
-          warnNoMotionCompensation(motion_compensated);
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : "";
-          pushToast({
-            msg: msg.includes("box_3d") ? "当前帧没有可延续的 3D 框" : "批量延续失败",
-            kind: "error",
-          });
-        }
-      } finally {
-        crossFrameInFlightRef.current = false;
-      }
-    },
-    [taskId, navigateToCrossFrameTask, pushToast, queryClient, warnNoMotionCompensation],
-  );
-
-  // v0.15.1 · 把选中框延续到 scene 内任意帧(插值工作流: 先把链建到区间终点)。
-  const crossFramePropagateToTask = useCallback(
-    async (targetTaskId: string, targetFrameIndex: number) => {
-      if (!taskId) return;
-      const selId = s.selectedId;
-      if (!selId) {
-        pushToast({ msg: "请先选中一个目标框", kind: "" });
-        return;
-      }
-      if (crossFrameInFlightRef.current) return;
-      crossFrameInFlightRef.current = true;
-      try {
-        const { annotation, motion_compensated } = await tasksApi.propagateToTask(
-          taskId,
-          selId,
-          targetTaskId,
-        );
-        queryClient.invalidateQueries({ queryKey: ["annotations", targetTaskId] });
-        queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
-        pendingCrossFrameSelectRef.current = {
-          taskId: targetTaskId,
-          annotationId: annotation.id,
-        };
-        navigateToCrossFrameTask(targetTaskId);
-        pushToast({ msg: `已延续到帧 ${targetFrameIndex}, 微调后可插值填充`, kind: "success" });
-        warnNoMotionCompensation(motion_compensated);
-      } catch {
-        pushToast({ msg: "跨帧延续失败", kind: "error" });
-      } finally {
-        crossFrameInFlightRef.current = false;
-      }
-    },
-    [
-      taskId,
-      s.selectedId,
-      navigateToCrossFrameTask,
-      pushToast,
-      queryClient,
-      warnNoMotionCompensation,
-    ],
-  );
-
-  // v0.15.1 · 区间插值: 当前 task(起点帧)与 toTask(终点帧)的同 group 框之间,
-  // 中间帧自动生成插值框;完成后跳首个插值帧预览。
-  const crossFrameInterpolate = useCallback(
-    async (groupId: number, toTaskId: string) => {
-      if (!taskId) return;
-      if (crossFrameInFlightRef.current) return;
-      crossFrameInFlightRef.current = true;
-      try {
-        const { annotations, motion_compensated, skipped_frames } =
-          await tasksApi.interpolateRange(taskId, groupId, toTaskId);
-        const affectedTasks = new Set(annotations.map((a) => a.task_id));
-        for (const tid of affectedTasks) {
-          queryClient.invalidateQueries({ queryKey: ["annotations", tid] });
-        }
-        if (annotations.length === 0) {
-          pushToast({
-            msg: `区间内中间帧均已有该目标的框(跳过 ${skipped_frames.length} 帧)`,
-            kind: "",
-          });
-          return;
-        }
-        const first = annotations[0];
-        pendingCrossFrameSelectRef.current = {
-          taskId: first.task_id,
-          annotationId: first.id,
-        };
-        navigateToCrossFrameTask(first.task_id);
-        pushToast({
-          msg:
-            `已插值填充 ${annotations.length} 帧` +
-            (skipped_frames.length > 0 ? `(跳过已有 ${skipped_frames.length} 帧)` : ""),
-          kind: "success",
-        });
-        warnNoMotionCompensation(motion_compensated);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "";
-        pushToast({
-          msg: msg ? `插值失败: ${msg}` : "插值失败",
-          kind: "error",
-        });
-      } finally {
-        crossFrameInFlightRef.current = false;
-      }
-    },
-    [taskId, navigateToCrossFrameTask, pushToast, queryClient, warnNoMotionCompensation],
-  );
+  // v0.16.x 第 3 批 · 跨帧传播竞态簇(3 ref + 4 回调)抽到 usePredictionPropagation;
+  // pendingCrossFrameSelectRef 返回供上方两处 effect(切 task 清理 522 / 导航后补选 651)读写。
+  const {
+    pendingCrossFrameSelectRef,
+    crossFramePropagate,
+    crossFramePropagateBatch,
+    crossFramePropagateToTask,
+    crossFrameInterpolate,
+  } = usePredictionPropagation({
+    taskId,
+    selectedId: s.selectedId,
+    navigateToCrossFrameTask,
+    pushToast,
+    queryClient,
+  });
 
   // v0.14.18 · 交互线能力路由: 对每个注册后端拉 /setup 建 capIndex, 按当前工具 prompt 解析交互后端。
   const routing = useBackendRouting({
