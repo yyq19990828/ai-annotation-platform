@@ -9,6 +9,8 @@
   border-radius: 8px;
   background: transparent;
   cursor: pointer;
+  /* Shift 多选时浏览器会把行内文字当成文本范围选区高亮,禁用文本选中以避免。 */
+  user-select: none;
 }
 
 .rowSelected {

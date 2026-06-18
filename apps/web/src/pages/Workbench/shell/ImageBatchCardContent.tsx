@@ -1,0 +1,111 @@
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { ActionBar } from "./selectionCard/ActionBar";
+import cardStyles from "./selectionCard/cardLayout.module.css";
+import styles from "./ImageBatchCardContent.module.css";
+
+export interface ImageBatchCardContentProps {
+  count: number;
+  /** 任务级锁定(review/completed)→ 改类 / 合并 / 锁定 / 删除 只读。 */
+  readOnly: boolean;
+  /** 选中全部已锁定 → 显示「解锁」语义。 */
+  allLocked: boolean;
+  /** 选中全部已隐藏 → 显示「显示」语义。 */
+  allHidden: boolean;
+  onChangeClass: () => void;
+  onJoin: () => void;
+  onToggleLock: () => void;
+  onToggleHidden: () => void;
+  onDelete: () => void;
+  onClear: () => void;
+}
+
+/**
+ * 选中信息卡的图片端多选(批量)内容。取代退役的贴框浮条 SelectionOverlay 批量分支,
+ * 把改类 / 合并 / 锁定 / 隐藏 / 删除 收进浮卡,与单选卡共用 ActionBar 设计系统积木。
+ * 逻辑复用模型既有批量 handler,不重写。
+ */
+export function ImageBatchCardContent({
+  count,
+  readOnly,
+  allLocked,
+  allHidden,
+  onChangeClass,
+  onJoin,
+  onToggleLock,
+  onToggleHidden,
+  onDelete,
+  onClear,
+}: ImageBatchCardContentProps) {
+  return (
+    <div className={cardStyles.body}>
+      <div className={styles.summary}>
+        已选 <b className={styles.count}>{count}</b> 个标注
+        <span className={styles.hint}>操作将应用到全部选中</span>
+      </div>
+
+      <ActionBar label="批量操作">
+        <Button
+          variant="ghost"
+          size="sm"
+          title="批量改类别"
+          aria-label="批量改类别"
+          disabled={readOnly}
+          onClick={onChangeClass}
+        >
+          <Icon name="tag" size={14} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          title="合并多边形"
+          aria-label="合并多边形"
+          disabled={readOnly}
+          onClick={onJoin}
+        >
+          <Icon name="layers" size={14} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          title={allHidden ? "批量显示" : "批量隐藏"}
+          aria-label={allHidden ? "批量显示" : "批量隐藏"}
+          aria-pressed={allHidden}
+          onClick={onToggleHidden}
+        >
+          <Icon name={allHidden ? "eyeOff" : "eye"} size={14} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          title={allLocked ? "批量解锁" : "批量锁定"}
+          aria-label={allLocked ? "批量解锁" : "批量锁定"}
+          aria-pressed={allLocked}
+          disabled={readOnly}
+          onClick={onToggleLock}
+        >
+          <Icon name={allLocked ? "lock" : "unlock"} size={14} />
+        </Button>
+        <Button
+          variant="danger"
+          size="sm"
+          title="批量删除"
+          aria-label="批量删除"
+          disabled={readOnly}
+          onClick={onDelete}
+        >
+          <Icon name="trash" size={14} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          title="取消选中"
+          aria-label="取消选中"
+          onClick={onClear}
+        >
+          <Icon name="x" size={14} />
+        </Button>
+      </ActionBar>
+    </div>
+  );
+}

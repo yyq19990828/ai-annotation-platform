@@ -9,7 +9,6 @@ import type { AiBox } from "../state/transforms";
 import { useElementSize, type Viewport } from "../state/useViewportTransform";
 import { applyResize, applyRotatedResize, type ResizeDirection } from "./ResizeHandles";
 import { classColorForCanvas, hexToRgba } from "./colors";
-import { ImageSelectionActions } from "./ImageSelectionActions";
 import { SelectionOverlay } from "./SelectionOverlay";
 import { TOOL_REGISTRY, type PolygonDraftHandle, type KeypointDraftHandle } from "./tools";
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
@@ -151,9 +150,7 @@ interface ImageStageProps {
   pendingDrawing?: { geom: Geom } | null;
   /** 临时几何 override（方向键 nudge 期间用于显示）。优先级：drag > nudgeMap > b。 */
   nudgeMap?: Map<string, Geom>;
-  /** 多选批量浮条按钮（selectedIds.length > 1 时由 Shell 处理）。 */
-  onBatchDelete?: () => void;
-  onBatchChangeClass?: () => void;
+  /** 多边形合并(右键菜单复用;批量改类 / 删除已迁出到浮动选中卡)。 */
   onJoinSelected?: () => void;
   onApplyAttributeMode?: (id: string) => boolean;
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
@@ -256,7 +253,7 @@ export function ImageStage({
   fileUrl, blurhash, imageWidth, imageHeight, tool, activeClass,
   selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
-  onBatchDelete, onBatchChangeClass, onJoinSelected, onApplyAttributeMode,
+  onJoinSelected, onApplyAttributeMode,
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass, onPatchShapeFlag, clipboardActions,
   onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
@@ -1584,40 +1581,23 @@ export function ImageStage({
         );
       })()}
 
-      {selectedBox && !readOnly && !pendingDrawing && tool !== "canvas" && (
-        // 单个用户框：编辑工具条移到画布右上角（对齐视频工作台）；AI 预测 / 批量仍用贴框浮条。
-        !isSelectedAi && selSet.size === 1 ? (
-          <ImageSelectionActions
-            onChangeClass={onChangeUserBoxClass
-              ? () => onChangeUserBoxClass(selectedBox.id)
-              : undefined}
-            onDelete={onDeleteUserBox
-              ? () => onDeleteUserBox(selectedBox.id)
-              : undefined}
-          />
-        ) : (
-          <SelectionOverlay
-            box={selectedBox}
-            isAi={isSelectedAi}
-            batchCount={selSet.size > 1 ? selSet.size : undefined}
-            imgW={imgW}
-            imgH={imgH}
-            vp={vp}
-            onAccept={isSelectedAi && onAcceptPrediction
-              ? () => onAcceptPrediction(selectedBox as AiBox)
-              : undefined}
-            onReject={isSelectedAi
-              ? () => {
-                  if (onRejectPrediction) onRejectPrediction(selectedBox as AiBox);
-                  onSelectBox(null);
-                }
-              : undefined}
-            onBatchDelete={selSet.size > 1 ? onBatchDelete : undefined}
-            onBatchChangeClass={selSet.size > 1 ? onBatchChangeClass : undefined}
-            onBatchJoin={selSet.size > 1 ? onJoinSelected : undefined}
-            onClearSelection={selSet.size > 1 ? () => onSelectBox(null) : undefined}
-          />
-        )
+      {selectedBox && !readOnly && !pendingDrawing && tool !== "canvas" && isSelectedAi && (
+        // AI 预测单选：贴框快捷采纳 / 驳回。用户框单选 / 多选(改类 / 合并 / 锁定 / 隐藏 / 删除)
+        // 已迁出到浮动选中卡。
+        <SelectionOverlay
+          box={selectedBox}
+          isAi
+          imgW={imgW}
+          imgH={imgH}
+          vp={vp}
+          onAccept={onAcceptPrediction
+            ? () => onAcceptPrediction(selectedBox as AiBox)
+            : undefined}
+          onReject={() => {
+            if (onRejectPrediction) onRejectPrediction(selectedBox as AiBox);
+            onSelectBox(null);
+          }}
+        />
       )}
 
       <ContextMenu

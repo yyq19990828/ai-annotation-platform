@@ -72,8 +72,6 @@ export interface ImageWorkbenchProps {
   onCommitKeypointGeometry?: (id: string, before: Keypoint[], after: Keypoint[]) => void;
   onCursorMove: (pt: { x: number; y: number } | null) => void;
   onChangeUserBoxClass: (id: string) => void;
-  onBatchDelete: () => void;
-  onBatchChangeClass: () => void;
   onJoinSelected: () => void;
   onApplyAttributeMode?: (id: string) => boolean;
   onStageGeometry: (g: StageGeometry) => void;
@@ -152,8 +150,6 @@ export function ImageWorkbench({
   onCommitKeypointGeometry,
   onCursorMove,
   onChangeUserBoxClass,
-  onBatchDelete,
-  onBatchChangeClass,
   onJoinSelected,
   onApplyAttributeMode,
   onStageGeometry,
@@ -226,8 +222,6 @@ export function ImageWorkbench({
       onCommitKeypointGeometry={onCommitKeypointGeometry}
       onCursorMove={onCursorMove}
       onChangeUserBoxClass={onChangeUserBoxClass}
-      onBatchDelete={onBatchDelete}
-      onBatchChangeClass={onBatchChangeClass}
       onJoinSelected={onJoinSelected}
       onApplyAttributeMode={onApplyAttributeMode}
       onStageGeometry={onStageGeometry}

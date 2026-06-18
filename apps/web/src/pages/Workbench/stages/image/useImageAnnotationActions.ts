@@ -423,6 +423,47 @@ export function useImageAnnotationActions({
     });
   }, [s, annotationsRef, mutations.delete, history, pushToast]);
 
+  // 批量切换 is_locked / is_hidden:聚合语义 = 选中全部已开 → 全部关,否则 → 全部开;
+  // 只对需要变更的标注发 PATCH,与 handleBatchDelete 一致走 mutation 循环 + history.pushBatch。
+  const handleBatchPatchFlag = useCallback((flag: "is_locked" | "is_hidden") => {
+    const targets = s.selectedIds
+      .map((id) => annotationsRef.current.find((a) => a.id === id))
+      .filter(Boolean) as AnnotationResponse[];
+    if (targets.length === 0) return;
+    const read = (a: AnnotationResponse) => !!(a as unknown as Record<string, unknown>)[flag];
+    const nextValue = !targets.every(read);
+    const pendingTargets = targets.filter((a) => read(a) !== nextValue);
+    if (pendingTargets.length === 0) return;
+    let pending = pendingTargets.length;
+    let succeeded = 0, failed = 0;
+    const cmds: { kind: "update"; annotationId: string; before: Record<string, boolean>; after: Record<string, boolean> }[] = [];
+    pendingTargets.forEach((ann) => {
+      const before = { [flag]: read(ann) };
+      const after = { [flag]: nextValue };
+      mutations.update.mutate(
+        { annotationId: ann.id, payload: after },
+        {
+          onSuccess: () => { succeeded++; cmds.push({ kind: "update", annotationId: ann.id, before, after }); },
+          onError: () => { failed++; },
+          onSettled: () => {
+            pending--;
+            if (pending === 0) {
+              if (cmds.length > 0) history.pushBatch(cmds);
+              const verb = flag === "is_locked"
+                ? (nextValue ? "锁定" : "解锁")
+                : (nextValue ? "隐藏" : "显示");
+              pushToast({
+                msg: `已${verb} ${succeeded}/${pendingTargets.length} 个标注`,
+                sub: failed ? `${failed} 项失败` : undefined,
+                kind: failed ? "error" : "success",
+              });
+            }
+          },
+        },
+      );
+    });
+  }, [s, annotationsRef, mutations.update, history, pushToast]);
+
   const handleJoinSelectedPolygons = useCallback(() => {
     if (isLocked) {
       pushToast({ msg: "任务已锁定", sub: "撤回提交或继续编辑后再操作", kind: "warning" });
@@ -953,6 +994,7 @@ export function useImageAnnotationActions({
     samPendingGeom,
     samDefaultClass,
     handleBatchDelete,
+    handleBatchPatchFlag,
     handleJoinSelectedPolygons,
     handleStartBatchChangeClass,
     handleCommitBatchChangeClass,

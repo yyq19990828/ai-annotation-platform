@@ -121,8 +121,6 @@ const baseProps = {
     onCommitMove: vi.fn(),
     onCommitResize: vi.fn(),
     onCommitPolygonGeometry: vi.fn(),
-    onBatchDelete: vi.fn(),
-    onBatchChangeClass: vi.fn(),
     onStageGeometry: vi.fn(),
   },
   ai: {

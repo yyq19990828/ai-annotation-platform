@@ -81,6 +81,7 @@ import {
   type SelectedAnnotationCardProps,
 } from "../shell/SelectedAnnotationCard";
 import { ImageSelectionCardContent } from "../shell/ImageSelectionCardContent";
+import { ImageBatchCardContent } from "../shell/ImageBatchCardContent";
 import { AIPredictionCardContent } from "../shell/selectionCard/AIPredictionCardContent";
 import { VideoFrameBoxCardContent } from "../shell/selectionCard/VideoFrameBoxCardContent";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
@@ -1029,6 +1030,7 @@ export function useWorkbenchShellModel({
     polylineHandle,
     keypointHandle,
     handleBatchDelete: handleBatchDeleteNow,
+    handleBatchPatchFlag,
     handleJoinSelectedPolygons,
     handleStartBatchChangeClass,
     handleCommitBatchChangeClass,
@@ -1664,7 +1666,8 @@ export function useWorkbenchShellModel({
   // 多选 = 「N 个已选中 · 批量」精简态;无选中 = null(隐藏)。
   // 图片单选注入真实内容(改类 / 锁 / 隐藏 / 删除 / 几何 / 属性);视频单选搬入完整轨迹面板。
   const selectionCardEligible = stageKind === "image" || stageKind === "video";
-  const selectionCount = s.selectedIds.length;
+  const selectedIds = s.selectedIds;
+  const selectionCount = selectedIds.length;
   const selectionCard = useMemo<SelectedAnnotationCardProps | null>(() => {
     if (!selectionCardEligible || selectionCount < 1) return null;
     const multi = selectionCount > 1;
@@ -1673,7 +1676,27 @@ export function useWorkbenchShellModel({
       ? `${selectionCount} 个已选中 · 批量`
       : selectedAiBox?.cls ?? ann?.class_name ?? "选中标注";
     let children: ReactNode;
-    if (multi) {
+    if (multi && stageKind === "image") {
+      // 图片多选:批量操作(改类 / 合并 / 锁定 / 隐藏 / 删除)收进浮卡,取代退役的贴框浮条。
+      const selectedAnns = userBoxes.filter((b) => selectedIds.includes(b.id));
+      const allLocked = selectedAnns.length > 0 && selectedAnns.every((a) => a.is_locked);
+      const allHidden = selectedAnns.length > 0 && selectedAnns.every((a) => a.is_hidden);
+      children = (
+        <ImageBatchCardContent
+          count={selectionCount}
+          readOnly={isLocked}
+          allLocked={allLocked}
+          allHidden={allHidden}
+          onChangeClass={handleStartBatchChangeClass}
+          onJoin={handleJoinSelectedPolygons}
+          onToggleLock={() => handleBatchPatchFlag("is_locked")}
+          onToggleHidden={() => handleBatchPatchFlag("is_hidden")}
+          onDelete={handleBatchDelete}
+          onClear={() => setSelectedId(null)}
+        />
+      );
+    } else if (multi) {
+      // 视频多选:轨迹清单与多选批量留在右栏 roster,浮卡保持精简占位。
       children = <SelectionCardPlaceholder summary={`已选中 ${selectionCount} 个标注。`} />;
     } else if (selectedAiBox) {
       // AI 预测分支(图片端专属):置信度条 + 来源/候选序号 + 采纳/精修/忽略,直连模型既有 handler。
@@ -1752,6 +1775,13 @@ export function useWorkbenchShellModel({
     setVideoFrameIndex,
     toolView.attributeSchema,
     isLocked,
+    userBoxes,
+    selectedIds,
+    setSelectedId,
+    handleStartBatchChangeClass,
+    handleJoinSelectedPolygons,
+    handleBatchPatchFlag,
+    handleBatchDelete,
     handleStartChangeClass,
     handlePatchShapeFlag,
     handleDeleteBox,
@@ -2084,8 +2114,6 @@ export function useWorkbenchShellModel({
         onCommitResize: handleCommitResize,
         onCommitPolygonGeometry: handleCommitPolygonGeometry,
         onCommitKeypointGeometry: handleCommitKeypointGeometry,
-        onBatchDelete: handleBatchDelete,
-        onBatchChangeClass: handleStartBatchChangeClass,
         onJoinSelected: handleJoinSelectedPolygons,
         onApplyAttributeMode: handleApplyAttributeMode,
         onStageGeometry: setStageGeom,
