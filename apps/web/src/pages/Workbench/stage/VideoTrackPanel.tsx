@@ -165,7 +165,13 @@ export function VideoTrackPanel({
         )}
       </div>
       <div className={cn(styles.section, selectedTrack && styles.trackListSection)}>
-        {batchCount > 1 && (
+        {/* 批量操作仅在「当前帧」tab 下可用:全局视图下多选极易误删整条跨帧轨迹。 */}
+        {batchCount > 1 && trackFilter !== "current" && (
+          <div data-testid="video-track-batch-hint" className={styles.batchHint}>
+            已选 {batchCount} 条轨迹 · 切换到「当前帧」可批量操作
+          </div>
+        )}
+        {batchCount > 1 && trackFilter === "current" && (
           <div
             data-testid="video-track-batch-toolbar"
             className={styles.batchToolbar}
@@ -189,31 +195,41 @@ export function VideoTrackPanel({
                 ))}
               </select>
             </div>
-            <div className={styles.buttonRow}>
-              <Button size="sm" className={styles.compactButton} disabled={!onShowSelectedTracks} onClick={onShowSelectedTracks}>显示</Button>
-              <Button size="sm" className={styles.compactButton} disabled={!onHideSelectedTracks} onClick={onHideSelectedTracks}>隐藏</Button>
-              <Button size="sm" className={styles.compactButton} disabled={batchSelectionDisabled || !onLockSelectedTracks} onClick={onLockSelectedTracks}>锁定</Button>
-              <Button size="sm" className={styles.compactButton} disabled={batchSelectionDisabled || !onUnlockSelectedTracks} onClick={onUnlockSelectedTracks}>解锁</Button>
+            <div className={styles.batchActions}>
+              <Button variant="ghost" size="sm" title="显示" aria-label="显示" disabled={!onShowSelectedTracks} onClick={onShowSelectedTracks}>
+                <Icon name="eye" size={14} />
+              </Button>
+              <Button variant="ghost" size="sm" title="隐藏" aria-label="隐藏" disabled={!onHideSelectedTracks} onClick={onHideSelectedTracks}>
+                <Icon name="eyeOff" size={14} />
+              </Button>
+              <Button variant="ghost" size="sm" title="锁定" aria-label="锁定" disabled={batchSelectionDisabled || !onLockSelectedTracks} onClick={onLockSelectedTracks}>
+                <Icon name="lock" size={14} />
+              </Button>
+              <Button variant="ghost" size="sm" title="解锁" aria-label="解锁" disabled={batchSelectionDisabled || !onUnlockSelectedTracks} onClick={onUnlockSelectedTracks}>
+                <Icon name="unlock" size={14} />
+              </Button>
               <Button
+                variant="ghost"
                 size="sm"
-                className={styles.compactButton}
-                disabled={batchMutationDisabled || !canMergeSelectedTracks || !onMergeSelectedTracks}
                 title={canMergeSelectedTracks ? "合并两条同类且不重叠的轨迹" : "只支持合并两条同类轨迹"}
+                aria-label="合并"
+                disabled={batchMutationDisabled || !canMergeSelectedTracks || !onMergeSelectedTracks}
                 onClick={onMergeSelectedTracks}
               >
-                合并
+                <Icon name="layers" size={14} />
               </Button>
               <Button
+                variant="ghost"
                 size="sm"
-                className={styles.compactButton}
-                disabled={batchMutationDisabled || !canJoinSelectedTracks || !onJoinSelectedTracks}
                 title={canJoinSelectedTracks ? "跳连两条同类且帧号不重叠的轨迹 (补 gap)" : "只支持跳连两条同类且帧号不重叠的轨迹"}
+                aria-label="跳连"
+                disabled={batchMutationDisabled || !canJoinSelectedTracks || !onJoinSelectedTracks}
                 onClick={() => setJoinOpen(true)}
               >
-                跳连
+                <Icon name="link" size={14} />
               </Button>
-              <Button size="sm" className={styles.compactButton} variant="danger" disabled={batchMutationDisabled || !onBatchDeleteTracks} onClick={onBatchDeleteTracks}>
-                删除
+              <Button variant="danger" size="sm" title="批量删除" aria-label="批量删除" disabled={batchMutationDisabled || !onBatchDeleteTracks} onClick={onBatchDeleteTracks}>
+                <Icon name="trash" size={14} />
               </Button>
             </div>
           </div>

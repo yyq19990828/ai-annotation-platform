@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { Stage } from "react-konva";
 import type Konva from "konva";
 import { Icon } from "@/components/ui/Icon";
@@ -671,6 +671,19 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             onResizeHandlePointerDown={interaction.onResizeHandlePointerDown}
           />
         </Stage>
+        {/* 跟踪当前帧屏幕矩形的不可见标记:改类/批量改类弹窗经 [data-video-overlay] 锚到画布上的框
+            (Konva 栈无旧 SVG overlay,此 div 复刻其矩形,随 vp 平移/缩放同步)。 */}
+        <div
+          data-video-overlay
+          className={styles.frameMarker}
+          // eslint-disable-next-line no-restricted-syntax -- 帧矩形随 vp 动态变化,经 CSS 变量注入。
+          style={{
+            "--frame-left": `${vp.tx}px`,
+            "--frame-top": `${vp.ty}px`,
+            "--frame-w": `${size.w * vp.scale}px`,
+            "--frame-h": `${size.h * vp.scale}px`,
+          } as CSSProperties}
+        />
       </div>
       {playbackError && (
         <div data-testid="video-konva-playback-error" className={styles.playbackError}>

@@ -40,7 +40,7 @@ type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: numbe
 
 /**
  * v0.11.28：视频改类时，把选中框在「当前帧」的归一化 bbox 转成屏幕坐标，
- * 让改类悬浮框锚到画布上的框（而非贴顶部）。overlay SVG 由 VideoStage 打上 `data-video-overlay`。
+ * 让改类悬浮框锚到画布上的框（而非贴顶部）。帧矩形标记由 VideoKonvaStage 打上 `data-video-overlay`。
  * 框在当前帧不可见（如 track 在该帧被标消失）时返回 undefined，由调用方回落到其它锚点。
  */
 function videoBoxScreenAnchor(
@@ -194,6 +194,8 @@ export function useImageAnnotationActions({
   const acceptPredictionMut = useAcceptPrediction(taskId ?? "");
   const rejectPredictionMut = useRejectPrediction(taskId ?? "");
   const [batchChanging, setBatchChanging] = useState(false);
+  // 视频几何无 image 定位,批量改类弹窗用固定屏幕锚点(锚到首个选中框,与单改类同源)。
+  const [batchChangeAnchor, setBatchChangeAnchor] = useState<{ left: number; top: number } | undefined>(undefined);
   const [samPendingAccept, setSamPendingAccept] = useState<{ idx: number } | null>(null);
   const [dismissedShapeKeys, setDismissedShapeKeys] = useState<Set<string>>(new Set());
   const [predictionSourceVisibility, setPredictionSourceVisibility] = useState(defaultPredictionSourceVisibility);
@@ -278,10 +280,10 @@ export function useImageAnnotationActions({
     return out;
   }, [userBoxes, aiBoxes, userIoUIndex, iouDedupThreshold]);
 
-  const batchChangeTarget = useMemo(
-    () => getBatchChangeTarget(s.selectedIds, userBoxes),
-    [s.selectedIds, userBoxes],
-  );
+  const batchChangeTarget = useMemo(() => {
+    const base = getBatchChangeTarget(s.selectedIds, userBoxes);
+    return base ? { ...base, anchor: batchChangeAnchor } : null;
+  }, [s.selectedIds, userBoxes, batchChangeAnchor]);
 
   const samPendingGeom = useMemo<Geom | null>(() => {
     if (!samPendingAccept) return null;
@@ -531,11 +533,17 @@ export function useImageAnnotationActions({
   const handleStartBatchChangeClass = useCallback(() => {
     const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
     if (ids.length === 0) return;
+    // 视频几何走固定屏幕锚点(锚到首个选中框);图片用 geom + vp 走 image 定位,anchor 留空。
+    const firstAnn = annotationsRef.current.find((a) => a.id === ids[0]);
+    const isVideoGeometry = firstAnn
+      && (firstAnn.geometry.type === "video_bbox" || firstAnn.geometry.type === "video_track_bbox");
+    setBatchChangeAnchor(isVideoGeometry ? videoBoxScreenAnchor(firstAnn, s.videoFrameIndex) : undefined);
     setBatchChanging(true);
-  }, [s.selectedIds, annotationsRef]);
+  }, [s.selectedIds, s.videoFrameIndex, annotationsRef]);
 
   const handleCommitBatchChangeClass = useCallback((cls: string) => {
     setBatchChanging(false);
+    setBatchChangeAnchor(undefined);
     if (!cls) return;
     const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
     if (ids.length === 0) return;
@@ -571,7 +579,10 @@ export function useImageAnnotationActions({
     if (pending === 0) setBatchChanging(false);
   }, [s, annotationsRef, mutations.update, history, pushToast, recordRecentClass]);
 
-  const handleCancelBatchChange = useCallback(() => setBatchChanging(false), []);
+  const handleCancelBatchChange = useCallback(() => {
+    setBatchChanging(false);
+    setBatchChangeAnchor(undefined);
+  }, []);
 
   const handleRejectPrediction = useCallback((box: AiBox) => {
     // 先本地隐藏，避免等待网络回包

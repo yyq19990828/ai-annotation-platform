@@ -82,6 +82,7 @@ import {
 } from "../shell/SelectedAnnotationCard";
 import { ImageSelectionCardContent } from "../shell/ImageSelectionCardContent";
 import { ImageBatchCardContent } from "../shell/ImageBatchCardContent";
+import { VideoBoxBatchCardContent } from "../shell/VideoBoxBatchCardContent";
 import { AIPredictionCardContent } from "../shell/selectionCard/AIPredictionCardContent";
 import { VideoFrameBoxCardContent } from "../shell/selectionCard/VideoFrameBoxCardContent";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
@@ -1695,8 +1696,36 @@ export function useWorkbenchShellModel({
           onClear={() => setSelectedId(null)}
         />
       );
+    } else if (multi && stageKind === "video") {
+      // 视频多选:单帧框(video_bbox)走 selectedIds,给批量卡(改类 / 锁 / 隐藏 / 删除 + 聚合为轨迹);
+      // 轨迹多选走右栏 roster 的 selectedTrackIds,不进 selectedIds,浮卡保持精简占位。
+      const selectedAnns = visibleAnnotationsData.filter((a) => selectedIds.includes(a.id));
+      const allVideoBbox = selectedAnns.length > 0 && selectedAnns.every((a) => a.geometry.type === "video_bbox");
+      if (allVideoBbox) {
+        const allLocked = selectedAnns.every((a) => a.is_locked);
+        const allHidden = selectedAnns.every((a) => a.is_hidden);
+        children = (
+          <VideoBoxBatchCardContent
+            count={selectionCount}
+            readOnly={isLocked}
+            allLocked={allLocked}
+            allHidden={allHidden}
+            onChangeClass={handleStartBatchChangeClass}
+            onToggleLock={() => handleBatchPatchFlag("is_locked")}
+            onToggleHidden={() => handleBatchPatchFlag("is_hidden")}
+            onDelete={handleBatchDelete}
+            onAggregate={() => handleVideoComposeTracks({
+              operation: "aggregate_bboxes",
+              annotationIds: selectedIds,
+              deleteSources: true,
+            })}
+            onClear={() => setSelectedId(null)}
+          />
+        );
+      } else {
+        children = <SelectionCardPlaceholder summary={`已选中 ${selectionCount} 个标注。`} />;
+      }
     } else if (multi) {
-      // 视频多选:轨迹清单与多选批量留在右栏 roster,浮卡保持精简占位。
       children = <SelectionCardPlaceholder summary={`已选中 ${selectionCount} 个标注。`} />;
     } else if (selectedAiBox) {
       // AI 预测分支(图片端专属):置信度条 + 来源/候选序号 + 采纳/精修/忽略,直连模型既有 handler。
@@ -1776,12 +1805,14 @@ export function useWorkbenchShellModel({
     toolView.attributeSchema,
     isLocked,
     userBoxes,
+    visibleAnnotationsData,
     selectedIds,
     setSelectedId,
     handleStartBatchChangeClass,
     handleJoinSelectedPolygons,
     handleBatchPatchFlag,
     handleBatchDelete,
+    handleVideoComposeTracks,
     handleStartChangeClass,
     handlePatchShapeFlag,
     handleDeleteBox,

@@ -26,6 +26,16 @@
   inset: 0;
 }
 
+/* 不可见帧矩形标记:仅供 [data-video-overlay] 锚定弹窗,不参与命中/绘制。 */
+.frameMarker {
+  position: absolute;
+  left: var(--frame-left);
+  top: var(--frame-top);
+  width: var(--frame-w);
+  height: var(--frame-h);
+  pointer-events: none;
+}
+
 .stateBase {
   position: absolute;
   inset: 0;

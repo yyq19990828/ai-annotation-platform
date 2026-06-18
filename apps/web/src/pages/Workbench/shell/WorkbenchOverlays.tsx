@@ -11,6 +11,8 @@ type BatchChangeTarget = {
   geom: Geom;
   className: string;
   count: number;
+  /** 视频几何用固定屏幕锚点(无 image 定位);图片留空走 geom + vp。 */
+  anchor?: { left: number; top: number };
 } | null;
 
 interface WorkbenchOverlaysProps {
@@ -157,7 +159,19 @@ export function WorkbenchOverlays({
           onCancel={onSamCancelClass}
         />
       )}
-      {batchChanging && batchChangeTarget && canUseImagePosition && !pendingDrawing && !editingClass && (
+      {batchChanging && batchChangeTarget && hasFixedAnchor(batchChangeTarget) && !pendingDrawing && !editingClass && (
+        <ClassPickerPopover
+          position="fixed"
+          anchor={batchChangeTarget.anchor}
+          classes={classes}
+          recent={recentClasses}
+          defaultClass={batchChangeTarget.className}
+          title={`批量改类别 (${batchChangeTarget.count} 个)`}
+          onPick={onCommitBatchChangeClass}
+          onCancel={onCancelBatchChange}
+        />
+      )}
+      {batchChanging && batchChangeTarget && !hasFixedAnchor(batchChangeTarget) && canUseImagePosition && !pendingDrawing && !editingClass && (
         <ClassPickerPopover
           geom={batchChangeTarget.geom}
           imgW={stageGeom.imgW}

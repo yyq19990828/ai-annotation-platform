@@ -140,16 +140,23 @@
   padding: 4px 6px;
 }
 
-.buttonRow {
+/* 图标动作行:与图片批量卡 ActionBar 一致的 ghost 图标按钮,居中换行。 */
+.batchActions {
   display: flex;
-  gap: 6px;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
-/* Temporary bridge until Button stops applying inline base styles. */
-.compactButton {
-  border-radius: 8px !important;
-  padding: 4px 8px !important;
+/* 多选但不在「当前帧」tab 时的提示条,引导切换后再批量操作。 */
+.batchHint {
+  padding: 6px 8px;
+  border: 1px dashed color-mix(in oklab, var(--color-accent) 30%, var(--color-border));
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--color-accent) 5%, var(--color-bg-elev));
+  color: var(--color-fg-muted);
+  font-size: 12px;
 }
 
 /* Temporary bridge until Button stops applying inline base styles. */

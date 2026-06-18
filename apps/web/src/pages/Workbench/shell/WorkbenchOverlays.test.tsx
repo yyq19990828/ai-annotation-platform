@@ -96,7 +96,7 @@ describe("WorkbenchOverlays", () => {
       />,
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
-    fireEvent.mouseDown(document.body);
+    fireEvent.pointerDown(document.body);
     expect(onOutsideCancel).toHaveBeenCalledWith("outside");
   });
 
