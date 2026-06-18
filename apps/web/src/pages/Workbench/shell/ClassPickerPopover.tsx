@@ -128,13 +128,14 @@ export function ClassPickerPopover({
     const onDown = (e: PointerEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onCancel("outside");
     };
-    // 用 pointerdown 而非 mousedown:视频 Konva 画布的 pointerdown 处理会 preventDefault,
-    // 抑制兼容性 mousedown,导致点画布关不掉弹窗;pointerdown 照常冒泡到 document。
-    // 延迟绑定，避免捕获到落框那次 down。
-    const t = setTimeout(() => document.addEventListener("pointerdown", onDown), 0);
+    // 用 pointerdown(而非 mousedown):视频 Konva 画布的 pointerdown 处理会 preventDefault,
+    // 抑制兼容性 mousedown。且用捕获阶段绑定:画布命中由 Konva/Stage 接管,冒泡阶段可能被
+    // cancelBubble/停止传播而收不到;捕获阶段从 document 向下最先触发,谁都拦不住。
+    // 延迟绑定,避免捕获到打开弹窗那次 down。
+    const t = setTimeout(() => document.addEventListener("pointerdown", onDown, true), 0);
     return () => {
       clearTimeout(t);
-      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("pointerdown", onDown, true);
     };
   }, [onCancel]);
 
