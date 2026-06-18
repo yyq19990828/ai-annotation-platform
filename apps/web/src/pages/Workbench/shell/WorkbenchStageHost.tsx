@@ -117,8 +117,6 @@ interface WorkbenchStageHostVideoProps {
   onToggleHiddenVideoTrack?: (trackId: string) => void;
   onToggleLockedVideoTrack?: (trackId: string) => void;
   onPropagateVideoTrack?: (annotation: VideoTrackAnnotation) => void;
-  /** v0.16.8 · 选中浮动卡承载关键帧跳转时,隐藏画布右上冗余 <details> 快跳浮层。 */
-  hideKeyframeQuickJump?: boolean;
 }
 
 interface WorkbenchStageHostImageProps {
@@ -289,7 +287,6 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onToggleHiddenVideoTrack,
       onToggleLockedVideoTrack,
       onPropagateVideoTrack,
-      hideKeyframeQuickJump,
     } = videoProps ?? ({} as WorkbenchStageHostVideoProps);
     const {
       fileUrl,
@@ -425,7 +422,6 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onToggleHiddenTrack={onToggleHiddenVideoTrack}
             onToggleLockedTrack={onToggleLockedVideoTrack}
             onPropagateTrack={onPropagateVideoTrack}
-            hideKeyframeQuickJump={hideKeyframeQuickJump}
             onCursorMove={onCursorMove}
             issuePixelFeedbacks={issuePixelFeedbacks}
             issueHighlightId={highlightIssueId}

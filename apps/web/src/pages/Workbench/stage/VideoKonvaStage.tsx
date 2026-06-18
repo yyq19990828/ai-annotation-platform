@@ -5,7 +5,7 @@ import type Konva from "konva";
 import { Icon } from "@/components/ui/Icon";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { DropdownItem } from "@/components/ui/DropdownMenu";
-import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoSamplingConfig, VideoTrackGeometry, VideoTrackKeyframe } from "@/types";
+import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoSamplingConfig, VideoTrackGeometry } from "@/types";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
 import { useElementSize, useViewportTransform } from "../state/useViewportTransform";
@@ -25,7 +25,6 @@ import { videoIntrinsicSize, clientToVideoNorm } from "./videoKonvaCoordinates";
 import { deriveVideoFrameViews } from "./videoFrameViews";
 import { classColor, getTrackColor } from "./colors";
 import { isVideoBbox, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
-import { isFrameOutside } from "./videoTrackOutside";
 import { firstAppearFrame, lastAppearFrame } from "./videoTrackTimeline";
 import { pickTopVideoEntryAt } from "./videoStagePicking";
 import { useVideoTrackActions } from "./useVideoTrackActions";
@@ -93,26 +92,18 @@ interface VideoKonvaStageProps {
   defaultPlaybackRate?: number;
   /** Shift+←/→ 大步进策略(默认 10)。 */
   largeFrameStep?: VideoLargeFrameStep;
-  /** v0.16.8 · 选中浮动卡承载关键帧跳转时,隐藏右上冗余 <details> 快跳浮层。 */
-  hideKeyframeQuickJump?: boolean;
 }
 
 const CONTEXT_MENU_DRAG_THRESHOLD_PX = 5;
 
 const noop = () => {};
 
-function quickKeyframeStatus(keyframe: VideoTrackKeyframe, outside: boolean): string {
-  if (outside) return "消失";
-  if (keyframe.occluded) return "遮挡";
-  if (keyframe.source === "prediction") return "预测";
-  return "正常";
-}
-
 /**
  * 视频 Konva 渲染栈容器(v0.16.1–v0.16.5)。
  *
  * 底图/播放/标注/交互/右键菜单全栈进 Konva,并补齐旧 SVG 栈的 chrome 奇偶性:
- * VideoPlaybackOverlay(时间轴)、Minimap、VideoQcWarnings、关键帧快跳浮层。
+ * VideoPlaybackOverlay(时间轴)、Minimap、VideoQcWarnings。关键帧跳转改由画布内
+ * 选中卡(VideoTrackCardContent)承载,旧右上 <details> 快跳浮层已退役。
  * 所有播放/逐帧/书签/循环区间逻辑委托给 useVideoPlaybackController。
  */
 export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStageProps>(function VideoKonvaStage({
@@ -155,7 +146,6 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   videoSampling = null,
   defaultPlaybackRate,
   largeFrameStep = 10,
-  hideKeyframeQuickJump = false,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -241,7 +231,6 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     timebase,
     selectedTrackTimeline,
     selectedTrackColor,
-    selectedTrackKeyframes,
     globalTimelineDensity,
     issueFrames,
     playbackOverlayVisible,
@@ -689,48 +678,6 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         </div>
       )}
       <VideoQcWarnings warnings={qualityWarnings} />
-      {selectedTrack && selectedTrackKeyframes.length > 0 && !hideKeyframeQuickJump && (
-        <details
-          className={styles.keyframeQuickJump}
-          data-testid="video-keyframe-quick-jump"
-        >
-          <summary
-            className={styles.keyframeQuickSummary}
-            data-testid="video-keyframe-quick-jump-summary"
-          >
-            <Icon name="key" size={14} />
-            <span className={styles.keyframeQuickTitle}>关键帧</span>
-            <span className={`mono ${styles.keyframeQuickCount}`}>
-              {selectedTrackKeyframes.length}
-            </span>
-            <Icon name="chevDown" size={14} className={styles.keyframeQuickChevron} />
-          </summary>
-          <div className={styles.keyframeQuickList}>
-            {selectedTrackKeyframes.map((keyframe) => {
-              const outside = isFrameOutside(selectedTrack.geometry, keyframe.frame_index);
-              const statusClassName = [
-                styles.keyframeQuickStatus,
-                outside ? styles.keyframeQuickStatusAbsent : "",
-                keyframe.source === "prediction" ? styles.keyframeQuickStatusPrediction : "",
-              ].filter(Boolean).join(" ");
-              return (
-                <button
-                  key={keyframe.frame_index}
-                  type="button"
-                  className={styles.keyframeQuickRow}
-                  title={`跳转到 F${keyframe.frame_index}`}
-                  onClick={() => seekToFrame(keyframe.frame_index, { recordHistory: true })}
-                >
-                  <span className={`mono ${styles.keyframeQuickFrame}`}>F{keyframe.frame_index}</span>
-                  <span className={statusClassName}>{quickKeyframeStatus(keyframe, outside)}</span>
-                  <span className={styles.keyframeQuickSource}>{keyframe.source}</span>
-                  <Icon name="arrowRight" size={13} />
-                </button>
-              );
-            })}
-          </div>
-        </details>
-      )}
       <VideoPlaybackOverlay
         frameIndex={frameIndex}
         maxFrame={maxFrame}

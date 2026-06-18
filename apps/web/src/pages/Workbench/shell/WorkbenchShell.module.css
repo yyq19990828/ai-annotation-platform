@@ -17,14 +17,6 @@
   gap: 12px;
 }
 
-/* v0.16.8 · 选中浮动卡内的视频轨迹面板:占满卡内容区并独立滚动。 */
-.videoSelectionCardBody {
-  width: 100%;
-  height: 100%;
-  overflow: auto;
-  padding: 8px;
-}
-
 /* I18 · 浮动按钮 (v0.10.19 简易入口, v0.10.20 并入 DiscussionPanel) */
 .issueFab {
   position: fixed;

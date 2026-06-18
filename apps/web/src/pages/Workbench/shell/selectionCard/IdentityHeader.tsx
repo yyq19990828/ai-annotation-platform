@@ -47,21 +47,23 @@ export interface IdentityHeaderProps {
   confidence?: number | null;
   /** 右侧附加位(如视频单帧的「F12 · 00:24」帧定位)。 */
   trailing?: ReactNode;
+  /** 色块覆盖色(如视频轨迹的 getTrackColor,含逐轨道覆盖);缺省回落到 classColor。 */
+  dotColor?: string;
 }
 
 /**
  * v0.16.14 · 选中信息卡通用身份头:类别色块 + 类名 + 来源徽章 +(可选)置信度 pill / 帧定位。
  * 四种选中态共用,色块走数据域类别色(与画布/列表同源),徽章/pill 走 tokens.css 语义色。
  */
-export function IdentityHeader({ className, source, confidence, trailing }: IdentityHeaderProps) {
+export function IdentityHeader({ className, source, confidence, trailing, dotColor }: IdentityHeaderProps) {
   const meta = SOURCE_META[source];
   const showConf = typeof confidence === "number";
   return (
     <div className={styles.header}>
       <span
         className={styles.dot}
-        // eslint-disable-next-line no-restricted-syntax -- 类别色为数据域颜色(同画布/列表),非主题 token。
-        style={{ background: classColor(className) }}
+        // eslint-disable-next-line no-restricted-syntax -- 色块为数据域颜色(同画布/列表),非主题 token;轨迹经 dotColor 传入逐轨道色。
+        style={{ background: dotColor ?? classColor(className) }}
         aria-hidden="true"
       />
       <span className={styles.name} title={displayClassName(className)}>

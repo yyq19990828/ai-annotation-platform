@@ -1608,7 +1608,7 @@ export function useWorkbenchShellModel({
   // v0.16.8 Phase 3 · 视频轨迹面板的共享构建器:右栏(VideoTrackSidebar + 章节)与选中浮动卡
   // 复用同一份 props/回调,杜绝两套逻辑漂移。frameFilter 控制「全部 / 当前帧」轨迹过滤。
   const renderVideoTrackSidebar = useCallback(
-    (frameFilter: TrackFilter) => (
+    (frameFilter: TrackFilter, view: "roster" | "card" = "roster") => (
       <VideoTrackSidebar
         annotations={visibleAnnotationsData}
         selectedId={s.selectedId}
@@ -1616,6 +1616,10 @@ export function useWorkbenchShellModel({
         frameIndex={s.videoFrameIndex}
         userId={meUserId ?? null}
         trackFilter={frameFilter}
+        view={view}
+        fps={videoFps}
+        imageWidth={imageWidth}
+        imageHeight={imageHeight}
         readOnly={isLocked}
         hiddenTrackIds={s.hiddenVideoTrackIds}
         lockedTrackIds={s.lockedVideoTrackIds}
@@ -1652,7 +1656,7 @@ export function useWorkbenchShellModel({
       handleVideoConvertToBboxes, handleVideoComposeTracks, trackerJobs.byAnnotation, openPropagateDialog,
       trackerJobs.cancel, s.trackColorOverrides, s.setVideoTrackColor, toolView.attributeSchema,
       handleUpdateTrackAttributes, handleUpdateKeyframeAttributes, handlePropagateKeyframe, samplingStep,
-      currentProject?.rendering_config?.propagateOverwrite,
+      currentProject?.rendering_config?.propagateOverwrite, videoFps, imageWidth, imageHeight,
     ],
   );
 
@@ -1702,12 +1706,9 @@ export function useWorkbenchShellModel({
           />
         );
       } else {
-        // 视频轨迹:把右栏完整轨迹面板搬进卡内(共享同一构建器/回调),含轨迹·当前帧·关键帧跳转·属性。
-        children = (
-          <div className={styles.videoSelectionCardBody}>
-            {renderVideoTrackSidebar("current")}
-          </div>
-        );
+        // 视频轨迹:单轨迹两层信息卡(轨迹整体 + 当前帧 + 关键帧表/导航 + 属性),
+        // 共享同一构建器/回调;轨迹清单与多选批量留在右栏 roster。
+        children = renderVideoTrackSidebar("current", "card");
       }
     } else if (ann && stageKind === "image") {
       children = (
@@ -2045,10 +2046,6 @@ export function useWorkbenchShellModel({
         onToggleHiddenVideoTrack: s.toggleHiddenVideoTrack,
         onToggleLockedVideoTrack: s.toggleLockedVideoTrack,
         onPropagateVideoTrack: openPropagateDialog,
-        // 选中浮动卡(展开态)已承载关键帧跳转,隐藏画布右上的冗余 <details> 快跳浮层;
-        // 卡折叠时仍保留该浮层作为快捷入口。
-        hideKeyframeQuickJump:
-          stageKind === "video" && selectionCount === 1 && !floatingSelection.collapsed,
       },
       image: {
         fileUrl,
