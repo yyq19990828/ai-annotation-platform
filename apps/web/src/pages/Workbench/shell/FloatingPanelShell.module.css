@@ -95,6 +95,8 @@
   position: absolute;
   right: 0;
   bottom: 0;
+  /* 高于内容区 sticky 动作栏(z-index:1),否则被其背景盖住、点不到。 */
+  z-index: 2;
   width: 18px;
   height: 18px;
   padding: 0;
