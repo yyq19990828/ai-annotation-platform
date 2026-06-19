@@ -33,7 +33,6 @@ import { VideoWorkbench } from "../stages/video/VideoWorkbench";
 import type { VideoConvertOptions, VideoTrackCompositionOptions } from "../stages/video/useVideoAnnotationActions";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 import type { ImageContextMenuClipboardActions } from "../stage/imageStageContextMenu";
-import styles from "./WorkbenchStageHost.module.css";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -353,9 +352,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onIssuePinDrop,
     } = editorProps ?? ({} as WorkbenchStageHostEditorProps);
     return (
-      <div className={styles.root} data-workbench-stage>
+      <div className="relative flex min-h-0 flex-1 flex-col" data-workbench-stage>
         {stageKind === "3d" ? (
-          <Suspense fallback={<div className={styles.lazyFallback}>加载点云查看器…</div>}>
+          <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">加载点云查看器…</div>}>
             <ThreeDWorkbench
               taskId={taskId}
               readOnly={readOnly}

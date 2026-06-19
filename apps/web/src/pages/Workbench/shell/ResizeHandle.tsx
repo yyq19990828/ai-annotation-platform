@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from "react";
-import styles from "./ResizeHandle.module.css";
 
 interface ResizeHandleProps {
   /** "right" = handle 贴在容器右沿，往右拖增大宽度（左侧栏用）。
@@ -54,16 +53,18 @@ export function ResizeHandle({ side, width, onResize, min = 200, max = 600, rese
   }, [width, side, vertical, onResize, min, max]);
 
   const active = hover || dragging;
-  const sideClass =
-    side === "right" ? styles.handleRight
-    : side === "left" ? styles.handleLeft
-    : side === "top" ? styles.handleTop
-    : styles.handleBottom;
-  const className = [
-    styles.handle,
-    sideClass,
-    active ? styles.handleActive : "",
-  ].filter(Boolean).join(" ");
+
+  // 容器贴边定位 + 命中区方向；grip 高亮条用子 span 呈现（原 ::after）。
+  const containerClass =
+    side === "right" ? "inset-y-0 right-0 w-3.5 cursor-col-resize"
+    : side === "left" ? "inset-y-0 left-0 w-3.5 cursor-col-resize"
+    : side === "top" ? "inset-x-0 top-0 h-3.5 cursor-row-resize"
+    : "inset-x-0 bottom-0 h-3.5 cursor-row-resize";
+  const barClass =
+    side === "right" ? "inset-y-0 right-0 w-0.5"
+    : side === "left" ? "inset-y-0 left-0 w-0.5"
+    : side === "top" ? "inset-x-0 top-0 h-0.5"
+    : "inset-x-0 bottom-0 h-0.5";
 
   return (
     <div
@@ -74,8 +75,13 @@ export function ResizeHandle({ side, width, onResize, min = 200, max = 600, rese
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       onDoubleClick={() => onResize(resetTo ?? (side === "right" ? 260 : 280))}
-      className={className}
+      className={`absolute z-20 bg-transparent ${containerClass}`}
       title="拖拽调整尺寸 · 双击恢复默认"
-    />
+    >
+      <span
+        aria-hidden
+        className={`absolute transition-colors ${barClass} ${active ? "bg-brand/55" : "bg-transparent"}`}
+      />
+    </div>
   );
 }

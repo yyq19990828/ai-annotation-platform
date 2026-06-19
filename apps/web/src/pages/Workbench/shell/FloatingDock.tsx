@@ -1,5 +1,4 @@
 import { Icon } from "@/components/ui/Icon";
-import styles from "./FloatingDock.module.css";
 
 interface FloatingDockProps {
   scale: number;
@@ -22,7 +21,7 @@ export function FloatingDock({
   scale, canUndo, canRedo, onUndo, onRedo, onZoomIn, onZoomOut, onFit, showHistory = true,
 }: FloatingDockProps) {
   return (
-    <div className={styles.root}>
+    <div className="absolute bottom-3 right-[76px] z-[14] flex select-none items-center gap-0.5 rounded-lg border border-border bg-card/90 p-[5px] shadow-lg backdrop-blur-sm">
       {showHistory && (
         <>
           <DockButton onClick={onUndo} disabled={!canUndo} title="撤销 (Ctrl+Z)">
@@ -37,9 +36,7 @@ export function FloatingDock({
       <DockButton onClick={onZoomOut} title="缩小">
         <Icon name="zoomOut" size={14} />
       </DockButton>
-      <span
-        className={`mono ${styles.scale}`}
-      >
+      <span className="mono min-w-[46px] text-center text-[12.5px] font-medium tracking-[0.2px] text-foreground">
         {Math.round(scale * 100)}%
       </span>
       <DockButton onClick={onZoomIn} title="放大">
@@ -68,9 +65,9 @@ function DockButton({ onClick, disabled, title, children, variant }: DockButtonP
       disabled={disabled}
       title={title}
       className={[
-        styles.button,
-        disabled ? styles.buttonDisabled : "",
-        variant === "fit" ? styles.buttonFit : "",
+        "inline-flex h-7 min-w-[28px] cursor-pointer appearance-none items-center justify-center rounded border-0 bg-transparent p-0 text-foreground transition-colors enabled:hover:bg-muted",
+        disabled ? "cursor-default text-muted-foreground/60" : "",
+        variant === "fit" ? "px-2.5 text-[11.5px] font-medium" : "",
       ].filter(Boolean).join(" ")}
     >
       {children}
@@ -79,5 +76,5 @@ function DockButton({ onClick, disabled, title, children, variant }: DockButtonP
 }
 
 function Sep() {
-  return <div className={styles.separator} />;
+  return <div className="mx-0.5 h-4 w-px bg-border" />;
 }
