@@ -39,7 +39,7 @@
 
 **量化闸门(契约)**:在**分层前提下**,标注主力场景 **1080p@30 视频层单帧 batchDraw < ~8ms 且无明显掉帧 → A1 通过**;4K@60 仅作上限参考,可结合「暂停态走 bitmap 缓存、播放态才重绘」的实际使用模式放宽。**仅当分层后 A1 仍不达标才降级 A2**,届时把「双 transform 同步契约」写成本 ADR 里有测试守护的一等不变量(非临时补丁)。
 
-**实测结论(2026-06-16,Chromium · 已采集)**:**A1 通过,无需降级 A2。** 用隔离 spike(`apps/web/src/pages/Workbench/stage/_spikes/videoKonvaFrameSpike.tsx`,合成 canvas 帧源 + 分层/单层对照,同步 `layer.draw()` 计时)跑全 24 格矩阵({720p,1080p,4K}×{30,60}×{0,20框}×{分层,单层}):
+**实测结论(2026-06-16,Chromium · 已采集)**:**A1 通过,无需降级 A2。** 用隔离 spike(`_spikes/videoKonvaFrameSpike.tsx`,合成 canvas 帧源 + 分层/单层对照,同步 `layer.draw()` 计时;验收后已删,方法学留档于 `docs/plans/_spike-results/2026-06-16-video-konva-frame-perf.md`)跑全 24 格矩阵({720p,1080p,4K}×{30,60}×{0,20框}×{分层,单层}):
 
 - **门槛格 1080p@30 分层**:单帧合成均值 0.13ms / p95 0.20ms / 掉帧 0%,**比 8ms 闸门快约 40×**。
 - **上限 4K@60+20框**:分层 p95 0.30ms / 单层 p95 0.40ms,仍远低于 8ms。
@@ -97,7 +97,7 @@ VideoStage (Konva.Stage)
 - 实现代码位置:
   - 公共 viewport 原语:`apps/web/src/pages/Workbench/stage/shared/viewport/{fit,zoom,scaleCancel}.ts`(v0.16.0)
   - react-konva mock:`apps/web/src/test/konvaMock.tsx`(v0.16.0)
-  - perf spike:`apps/web/src/pages/Workbench/stage/_spikes/videoKonvaFrameSpike.tsx`(v0.16.0,验收后可删)
+  - perf spike(v0.16.0 隔离 demo):已于决策 A 验收(A1)后删除;方法学与数据见 `docs/plans/_spike-results/2026-06-16-video-konva-frame-perf.md`
   - 视频 Konva 栈(v0.16.1 底图+视口):`VideoKonvaStage.tsx`(Stage 容器+视口+播放)/ `VideoKonvaMediaLayer.tsx`(决策 A1 媒体层)/ `videoKonvaCoordinates.ts`(决策 B 像素空间)/ `videoKonvaFlag.ts`(flag)
   - 视频 Konva 标注渲染(v0.16.2):`videoFrameViews.ts`(派生纯函数)/ `VideoKonvaTrackShape.tsx` / `VideoKonvaTracksLayer.tsx` / `VideoKonvaOverlayLayer.tsx` / `VideoKonvaIssueLayer.tsx`
   - 视频 Konva 交互(v0.16.3):`videoKonvaInteraction.ts`(`useVideoKonvaInteraction` + `advanceDrag`/`resolveDragCommit` 纯函数)/ `VideoKonvaInteractionLayer.tsx`(句柄 + live 预览);命中复用 `videoStagePicking.ts`(泛型约束放宽到 `{ geom }`)、缩放复用 `ResizeHandles.applyResize`。右键上下文菜单(v0.16.4 补齐):菜单条目构建抽成栈无关纯函数 `videoContextMenuItems.ts`(`buildVideoContextMenuItems`),SVG / Konva 两栈共用,Konva 栈自备 `useVideoTrackActions` + `useCanvasContextMenu`

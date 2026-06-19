@@ -8,7 +8,7 @@
 > - `docs/plans/2026-06-16-v0.16.0-konva-test-harness-and-stage-primitives.md` §3.2
 > - `docs/plans/2026-06-16-v0.16.x-canvas-unification-epic.md` §2 决策 A
 >
-> 关联 spike 组件:`apps/web/src/pages/Workbench/stage/_spikes/videoKonvaFrameSpike.tsx`(非生产,验收后可删)。
+> 关联 spike 组件:`apps/web/src/pages/Workbench/stage/_spikes/videoKonvaFrameSpike.tsx`(非生产隔离 demo,决策 A 验收 A1 后已删除;下方复现步骤为历史留档)。
 
 ## 1. 这个 spike 要回答什么
 
