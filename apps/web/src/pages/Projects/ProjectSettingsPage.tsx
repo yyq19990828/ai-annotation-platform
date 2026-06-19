@@ -19,7 +19,9 @@ import { VideoSamplingSection } from "./sections/VideoSamplingSection";
 import { AnnotationGuideSection } from "./sections/AnnotationGuideSection";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
-import styles from "./ProjectSettingsPage.module.css";
+
+const NAV_BUTTON_BASE =
+  "flex cursor-pointer appearance-none items-center gap-2 self-stretch rounded-sm border-0 bg-transparent px-2.5 py-2 text-left text-[13px] font-medium whitespace-nowrap max-md:flex-[0_0_auto]";
 
 type SectionKey =
   | "general"
@@ -91,7 +93,7 @@ export function ProjectSettingsPage() {
 
   if (isLoading) {
     return (
-      <div className={styles.loading}>加载中...</div>
+      <div className="tw-scope p-[60px] text-center text-muted-foreground">加载中...</div>
     );
   }
   if (error || !project) {
@@ -118,19 +120,19 @@ export function ProjectSettingsPage() {
   });
 
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
+    <div className="tw-scope mx-auto max-w-[1200px] px-7 pt-5 pb-10 text-foreground max-md:px-4">
+      <div className="mb-4">
         <button
           type="button"
           onClick={() => navigate("/dashboard")}
-          className={styles.backButton}
+          className="mb-2 inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs text-muted-foreground"
         >
           <Icon name="chevLeft" size={12} />返回项目总览
         </button>
-        <div className={styles.titleRow}>
+        <div className="flex items-center justify-between gap-4 max-md:flex-col max-md:items-start">
           <div>
-            <h1 className={styles.title}>{project.name}</h1>
-            <div className={styles.meta}>
+            <h1 className="mb-1 text-xl font-semibold">{project.name}</h1>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="mono">{project.display_id}</span>
               <span>·</span>
               <span>{project.type_label}</span>
@@ -143,7 +145,7 @@ export function ProjectSettingsPage() {
               </Badge>
             </div>
           </div>
-          <div className={styles.actions}>
+          <div className="flex gap-2">
             {role === "super_admin" && (
               <Button
                 onClick={() => navigate(`/audit?target_type=project&target_id=${project.id}`)}
@@ -166,8 +168,8 @@ export function ProjectSettingsPage() {
         </div>
       </div>
 
-      <div className={styles.layout}>
-        <nav className={styles.nav}>
+      <div className="grid grid-cols-[200px_1fr] gap-5 max-md:grid-cols-1">
+        <nav className="flex flex-col gap-0.5 self-start rounded-lg border border-border bg-card p-1.5 max-md:flex-row max-md:overflow-x-auto">
           {visibleSections.map((s) => {
             const active = section === s.key;
             return (
@@ -176,7 +178,11 @@ export function ProjectSettingsPage() {
                 type="button"
                 data-testid={`settings-tab-${s.key}`}
                 onClick={() => setSection(s.key)}
-                className={active ? `${styles.navButton} ${styles.navButtonActive}` : styles.navButton}
+                className={`${NAV_BUTTON_BASE} ${
+                  active
+                    ? "bg-muted font-semibold text-foreground"
+                    : "text-muted-foreground"
+                }`}
               >
                 <Icon name={s.icon} size={13} />
                 {s.label}
@@ -185,7 +191,7 @@ export function ProjectSettingsPage() {
           })}
         </nav>
 
-        <div className={styles.content}>
+        <div className="min-w-0">
           {section === "general" && <GeneralSection project={project} />}
           {section === "classes" && <ClassesSection project={project} />}
           {section === "members" && <MembersSection project={project} />}

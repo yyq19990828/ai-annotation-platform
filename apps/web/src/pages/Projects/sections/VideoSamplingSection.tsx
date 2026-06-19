@@ -12,7 +12,11 @@ import { Card } from "@/components/ui/Card";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
 import type { ProjectResponse, VideoSamplingConfig } from "@/api/projects";
-import styles from "./VideoSamplingSection.module.css";
+
+const LABEL_CLASS = "mb-1.5 block text-xs font-medium text-muted-foreground";
+const ROW_CLASS = "flex flex-col gap-1.5 py-2.5";
+const INPUT_CLASS =
+  "w-full appearance-none rounded-md border border-border bg-muted px-[11px] py-2 text-[13.5px] text-foreground outline-none";
 
 type SamplingMode = "none" | "fps" | "step";
 
@@ -95,16 +99,16 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
 
   return (
     <Card>
-      <div className={styles.body}>
-        <h3 className={styles.title}>视频帧采样（逻辑采样）</h3>
-        <p className={styles.description}>
+      <div className="p-4">
+        <h3 className="text-[15px] font-semibold">视频帧采样（逻辑采样）</h3>
+        <p className="mt-1.5 text-[12.5px] text-muted-foreground">
           采样只约束「逐帧导航 + 打点」的网格，不会物理重采样或取代原视频；连续播放仍走原始帧率与所有帧。
         </p>
 
-        <div className={styles.row}>
-          <span className={styles.label}>采样方式</span>
-          <div className={styles.modeChoices}>
-            <label className={styles.modeChoice}>
+        <div className={ROW_CLASS}>
+          <span className={LABEL_CLASS}>采样方式</span>
+          <div className="inline-flex flex-col gap-2 text-[13px]">
+            <label className="inline-flex cursor-pointer items-center gap-1.5">
               <input
                 type="radio"
                 name="video-sampling-mode"
@@ -113,7 +117,7 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
               />
               <span>不采样（所有帧）</span>
             </label>
-            <label className={styles.modeChoice}>
+            <label className="inline-flex cursor-pointer items-center gap-1.5">
               <input
                 type="radio"
                 name="video-sampling-mode"
@@ -122,7 +126,7 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
               />
               <span>按目标 fps</span>
             </label>
-            <label className={styles.modeChoice}>
+            <label className="inline-flex cursor-pointer items-center gap-1.5">
               <input
                 type="radio"
                 name="video-sampling-mode"
@@ -135,8 +139,8 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
         </div>
 
         {draft.mode === "fps" && (
-          <div className={styles.row}>
-            <label className={styles.label} htmlFor="video-target-fps">
+          <div className={ROW_CLASS}>
+            <label className={LABEL_CLASS} htmlFor="video-target-fps">
               目标 fps（&gt; 0）
             </label>
             <input
@@ -151,14 +155,14 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
               }
               onBlur={() => commit(draft)}
               placeholder="例：10"
-              className={styles.input}
+              className={INPUT_CLASS}
             />
           </div>
         )}
 
         {draft.mode === "step" && (
-          <div className={styles.row}>
-            <label className={styles.label} htmlFor="video-frame-step">
+          <div className={ROW_CLASS}>
+            <label className={LABEL_CLASS} htmlFor="video-frame-step">
               帧间隔（整数，&ge; 1）
             </label>
             <input
@@ -173,21 +177,21 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
               }
               onBlur={() => commit(draft)}
               placeholder="例：5"
-              className={styles.input}
+              className={INPUT_CLASS}
             />
           </div>
         )}
 
-        <div className={styles.preview} data-testid="video-sampling-preview">
+        <div className="mt-3 rounded-md border border-border bg-muted px-3 py-2.5 text-[12.5px] text-muted-foreground" data-testid="video-sampling-preview">
           {previewText(draft)}
         </div>
 
         {!valid && (
-          <p className={styles.error}>请填写合法的采样参数，填好后自动保存。</p>
+          <p className="text-xs text-rose-600 dark:text-rose-400">请填写合法的采样参数，填好后自动保存。</p>
         )}
 
         {update.isPending && (
-          <div className={styles.savingHint}>保存中…</div>
+          <div className="mt-3.5 text-xs text-muted-foreground">保存中…</div>
         )}
       </div>
     </Card>
