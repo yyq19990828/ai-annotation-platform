@@ -20,7 +20,8 @@ import { WorkbenchSettingsDrawer } from "./WorkbenchSettingsDrawer";
 import { WorkbenchStageHost } from "./WorkbenchStageHost";
 import { SIDE_FLOATING_PANEL_MAX_SIZE, SIDE_FLOATING_PANEL_MIN_SIZE } from "./floatingPanelSizing";
 import { GuidePanel } from "../sidebar/GuidePanel";
-import styles from "./WorkbenchLayout.module.css";
+
+const SIDE_SLOT_CLASS = "flex min-h-0 min-w-0 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1";
 
 // v0.11.1 · 右栏两段布局：上段（AIInspectorPanel）高度持久化。
 const RIGHT_SPLIT_TOP_KEY = "workbench.rightSplit.topHeight";
@@ -129,12 +130,12 @@ export function WorkbenchLayout({
   return (
     <div
       ref={rootRef}
-      className={styles.root}
+      className="tw-scope relative flex h-full flex-col overflow-hidden bg-muted"
     >
       <Topbar {...topbar} />
 
-      <div className={styles.bodyGrid}>
-        <div className={styles.sideSlot}>
+      <div className="grid min-h-0 flex-1 overflow-hidden [grid-template-columns:var(--workbench-grid-template)]">
+        <div className={SIDE_SLOT_CLASS}>
           <TaskQueuePanel
             {...taskQueue}
             detachedQueue={taskQueueDetached}
@@ -143,15 +144,15 @@ export function WorkbenchLayout({
         </div>
         <ToolDock {...toolDock} />
 
-        <div className={styles.centerColumn}>
+        <div className="flex min-w-0 flex-col overflow-hidden">
           <WorkbenchBanners {...banners} />
           <WorkbenchStageHost ref={videoControlsRef} {...stageHost} />
           <StatusBar {...statusBar} />
         </div>
 
         {rightShouldRenderEmbeddedPanel && (
-          <div className={styles.sideSlot}>
-            <div className={styles.rightSplit}>
+          <div className={SIDE_SLOT_CLASS}>
+            <div className="relative flex min-h-0 flex-col overflow-hidden">
               {/* v0.11.5+ · 列宽拖拽 handle 提到右栏全高层级（原在 AIInspectorPanel 内，
                   导致只在上段可拖；这里覆盖 AIInspectorPanel + DiscussionPanel 整列高度）。 */}
               {inspector.open && (
@@ -167,7 +168,11 @@ export function WorkbenchLayout({
               {!inspectorDetached && (
                 <div
                   ref={splitTopStyleRef}
-                  className={discussionDetached ? `${styles.rightSplitTop} ${styles.rightSplitTopFull}` : styles.rightSplitTop}
+                  className={
+                    discussionDetached
+                      ? "relative flex min-h-0 flex-1 flex-col [&>*]:min-h-0 [&>*]:flex-1"
+                      : "relative flex min-h-0 flex-none flex-col h-[var(--right-split-top-height)] [&>*]:min-h-0 [&>*]:flex-1"
+                  }
                 >
                   <AIInspectorPanel {...inspector} />
                   {!discussionDetached && (
@@ -183,7 +188,7 @@ export function WorkbenchLayout({
                 </div>
               )}
               {!discussionDetached && (
-                <div className={styles.rightSplitBottom}>
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                   <DiscussionPanel {...discussionPanel} />
                 </div>
               )}

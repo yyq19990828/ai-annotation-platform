@@ -2,7 +2,6 @@ import { Icon } from "@/components/ui/Icon";
 import type { ReconnectState } from "@/hooks/useReconnectingWebSocket";
 import type { TaskLockConflictDetail } from "@/types";
 import { formatDuration } from "../state/useSessionStats";
-import styles from "./StatusBar.module.css";
 
 interface PreannotationProgress {
   current: number;
@@ -73,57 +72,60 @@ export function StatusBar({
     ? `${formatDuration(avgLeadMs)}/题 · 剩 ${remainingTaskCount} · 约 ${formatDuration(avgLeadMs * remainingTaskCount)}`
     : avgLeadMs ? `${formatDuration(avgLeadMs)}/题` : "—";
 
-  const Sep = () => <span aria-hidden className={styles.separator} />;
+  const Sep = () => <span aria-hidden className="h-3 w-px flex-shrink-0 self-center bg-border" />;
+  const inlineItem = "inline-flex items-center gap-1";
+  const countValue = "mono text-[12.5px] font-semibold text-foreground";
   return (
-    <div className={styles.root}>
-      <div className={styles.group}>
+    <div className="flex justify-between border-t border-border bg-card px-4 py-[7px] text-[11.5px] text-muted-foreground">
+      <div className="flex items-center gap-3">
         {lockRemainingMs !== undefined && lockRemainingMs > 0 && !lockError && (
           <>
-            <span className={cn(styles.inlineItem, lockRemainingMs < 60_000 && styles.lockWarning)}>
-              <Icon name="lock" size={11} /> 锁剩余 <span className={cn("mono", styles.monoMedium)}>{formatLockTime(lockRemainingMs)}</span>
+            <span className={cn(inlineItem, lockRemainingMs < 60_000 && "text-amber-600 dark:text-amber-400")}>
+              <Icon name="lock" size={11} /> 锁剩余 <span className="mono font-medium">{formatLockTime(lockRemainingMs)}</span>
             </span>
             <Sep />
           </>
         )}
         {lockError && (
           <>
-            <span className={cn(styles.inlineItem, styles.lockError)}>
+            <span className={cn(inlineItem, "text-rose-600 dark:text-rose-400")}>
               <Icon name="warning" size={11} /> {lockStatusText(lockError, lockConflict)}
             </span>
             <Sep />
           </>
         )}
-        <span className={styles.inlineItem}>
-          <span className={cn("mono", styles.countValue)}>{userBoxesCount}</span>
+        <span className={inlineItem}>
+          <span className={countValue}>{userBoxesCount}</span>
           <span>已确认</span>
         </span>
         <Sep />
-        <span className={styles.inlineItem}>
-          <Icon name="circleDot" size={11} className={styles.aiIcon} />
-          <span className={cn("mono", styles.countValue, aiBoxesCount > 0 && styles.aiCountActive)}>{aiBoxesCount}</span>
+        <span className={inlineItem}>
+          <Icon name="circleDot" size={11} className="text-violet-600 dark:text-violet-400" />
+          <span className={cn(countValue, aiBoxesCount > 0 && "!text-violet-600 dark:!text-violet-400")}>{aiBoxesCount}</span>
           <span>AI 待审</span>
         </span>
         <Sep />
-        <span className={styles.inlineItem}>
+        <span className={inlineItem}>
           当前类别
-          <span className={styles.activeClass}>{activeClass}</span>
+          <span className="rounded bg-muted px-1.5 font-semibold text-foreground">{activeClass}</span>
         </span>
       </div>
-      <div className={styles.group}>
+      <div className="flex items-center gap-3">
         {diffMode !== undefined && onSetDiffMode && (
           <>
-            <div className={styles.diffGroup}>
+            <div className="flex gap-0.5">
               {(["final", "raw", "diff"] as const).map((m) => (
                 <button
                   key={m}
                   type="button"
                   onClick={() => onSetDiffMode(m)}
                   className={cn(
-                    styles.diffButton,
-                    m === "final" && styles.diffButtonFirst,
-                    m === "raw" && styles.diffButtonMiddle,
-                    m === "diff" && styles.diffButtonLast,
-                    diffMode === m && styles.diffButtonActive,
+                    "cursor-pointer appearance-none border border-border px-2 py-px text-[11px]",
+                    m === "final" && "rounded-l",
+                    m === "diff" && "rounded-r",
+                    diffMode === m
+                      ? "border-brand/30 bg-brand/10 text-brand"
+                      : "bg-card text-muted-foreground",
                   )}
                 >
                   {m === "final" ? "仅最终" : m === "raw" ? "仅 AI" : "叠加"}
@@ -139,42 +141,42 @@ export function StatusBar({
             onClick={onShowQueueDrawer}
             title={online === false ? "当前离线 · 点击查看离线队列详情" : "点击查看离线队列详情"}
             className={cn(
-              styles.offlineButton,
-              online === false ? styles.offlineButtonOffline : styles.offlineButtonOnline,
-              !onShowQueueDrawer && styles.offlineButtonIdle,
+              "inline-flex cursor-pointer appearance-none items-center gap-1 rounded border border-amber-500/60 px-2 py-px text-[11px] text-foreground",
+              online === false ? "bg-rose-500/20" : "bg-amber-500/20",
+              !onShowQueueDrawer && "cursor-default",
             )}
           >
-            <span className={styles.offlineLabel}>{online === false ? "离线" : "暂存"}</span>
+            <span className="font-semibold">{online === false ? "离线" : "暂存"}</span>
             <span className="mono">· {offlineQueueCount ?? 0} 操作待同步</span>
           </button>
         ) : null}
         <span title="本会话单题平均耗时与剩余 ETA（&lt; 10 题样本时显示 —）">
-          ETA <span className={cn("mono", styles.fgText, styles.monoMedium)}>{etaText}</span>
+          ETA <span className="mono font-medium text-foreground">{etaText}</span>
         </span>
         <Sep />
-        <span>分辨率 <span className={cn("mono", styles.fgText)}>{dimText}</span></span>
+        <span>分辨率 <span className="mono text-foreground">{dimText}</span></span>
         {cursorText && (
           <>
             <Sep />
-            <span>光标 <span className={cn("mono", styles.fgText)}>{cursorText}</span></span>
+            <span>光标 <span className="mono text-foreground">{cursorText}</span></span>
           </>
         )}
         {preannotationProgress && (
           <>
             <Sep />
-            <span className={styles.preannotation}>
+            <span className="font-medium text-violet-600 dark:text-violet-400">
               预标注 <span className="mono">{preannotationProgress.current}/{preannotationProgress.total}</span>
             </span>
           </>
         )}
         <Sep />
-        <span className={styles.connection}>
+        <span className="flex items-center gap-1">
           <span
             className={cn(
-              styles.connectionDot,
-              preannotationConn === "open" && styles.connectionOpen,
-              preannotationConn === "reconnecting" && styles.connectionReconnecting,
-              preannotationConn === "failed" && styles.connectionFailed,
+              "size-1.5 flex-shrink-0 rounded-full",
+              preannotationConn === "open" && "bg-emerald-500",
+              preannotationConn === "reconnecting" && "bg-amber-500",
+              preannotationConn === "failed" && "bg-muted-foreground",
             )}
           />
           {preannotationConn === "open" && "实时同步"}

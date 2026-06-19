@@ -6,7 +6,6 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { MASK_BRUSH_MIN_PX, MASK_BRUSH_MAX_PX, type MaskMode } from "../state/useMaskEditor";
-import styles from "./MaskToolbar.module.css";
 
 interface MaskToolbarProps {
   active: boolean;
@@ -28,28 +27,34 @@ export function MaskToolbar({
   return (
     <div
       data-testid="mask-toolbar"
-      className={styles.root}
+      className="absolute left-1/2 top-3 z-[5] flex -translate-x-1/2 items-center gap-2.5 rounded-md border border-border bg-card px-3 py-1.5 shadow-md"
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <span className={styles.title}>Mask 编辑</span>
-      <div className={styles.modeGroup}>
+      <span className="text-[11px] font-semibold text-foreground">Mask 编辑</span>
+      <div className="flex gap-1">
         <button
           type="button"
           onClick={() => onSetMode("brush")}
-          className={cn(styles.chip, mode === "brush" && styles.chipActive)}
+          className={cn(
+            "cursor-pointer appearance-none rounded border border-border bg-transparent px-2.5 py-[3px] text-[11px] text-foreground",
+            mode === "brush" && "border-brand/30 bg-brand/10 text-brand",
+          )}
           title="笔刷 (B)"
           data-testid="mask-mode-brush"
         >笔刷 B</button>
         <button
           type="button"
           onClick={() => onSetMode("erase")}
-          className={cn(styles.chip, mode === "erase" && styles.chipActive)}
+          className={cn(
+            "cursor-pointer appearance-none rounded border border-border bg-transparent px-2.5 py-[3px] text-[11px] text-foreground",
+            mode === "erase" && "border-brand/30 bg-brand/10 text-brand",
+          )}
           title="橡皮 (E)"
           data-testid="mask-mode-erase"
         >橡皮 E</button>
       </div>
-      <div className={styles.radiusGroup}>
-        <span className={styles.radiusLabel}>半径</span>
+      <div className="flex items-center gap-1.5">
+        <span className="text-[11px] text-muted-foreground">半径</span>
         <input
           type="range"
           min={MASK_BRUSH_MIN_PX}
@@ -57,17 +62,17 @@ export function MaskToolbar({
           step={1}
           value={radius}
           onChange={(e) => onSetRadius(parseInt(e.target.value, 10))}
-          className={styles.radiusSlider}
+          className="w-[100px]"
           data-testid="mask-radius-slider"
         />
-        <span className={cn("mono", styles.radiusValue)}>
+        <span className="mono min-w-[28px] text-right text-[11px] text-foreground">
           {radius}px
         </span>
       </div>
-      <span className={cn(styles.status, dirty && styles.statusDirty)}>
+      <span className={cn("text-[11px]", dirty ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")}>
         {dirty ? "未保存" : active ? "就绪" : "未激活"}
       </span>
-      <span className={styles.hint}>Shift+滚轮调半径</span>
+      <span className="text-[10px] text-muted-foreground">Shift+滚轮调半径</span>
       <Button size="sm" onClick={onCancel} title="取消 (Esc)">
         取消
       </Button>
