@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { StatCard } from "@/components/ui/StatCard";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useToastStore } from "@/components/ui/Toast";
 import { useAdminStats, usePredictionCostStats } from "@/hooks/useDashboard";
 import { useProjects } from "@/hooks/useProjects";
@@ -20,9 +21,17 @@ import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNa
 import type { ProjectResponse } from "@/api/projects";
 import type { UserRole } from "@/types";
 import type { RegistrationDayPoint } from "@/api/dashboard";
-import styles from "./AdminDashboard.module.css";
 
 const WORKBENCH_PROJECT_TYPES = new Set(["image-det", "video-track", "lidar"]);
+
+const CARD_HEADER_CLASS = "border-b border-border px-4 py-3.5";
+const CARD_HEADER_SPLIT_CLASS = `${CARD_HEADER_CLASS} flex items-center justify-between`;
+const CARD_TITLE_CLASS = "text-sm font-semibold";
+const CARD_BODY_CLASS = "p-4";
+const ENTRY_LINK_CLASS = "inline-flex items-center text-xs text-brand";
+const TABLE_HEAD_CELL_CLASS =
+  "border-b border-border bg-muted px-3 py-2.5 text-left text-xs font-medium whitespace-nowrap text-muted-foreground";
+const TABLE_CELL_CLASS = "border-b border-border px-3 py-3 align-middle";
 
 export function AdminDashboard() {
   const { data: stats, isLoading } = useAdminStats();
@@ -62,7 +71,7 @@ export function AdminDashboard() {
 
   if (isLoading || !stats) {
     return (
-      <div className={styles.loadingState}>
+      <div className="tw-scope px-7 py-[60px] text-center text-muted-foreground">
         加载中...
       </div>
     );
@@ -71,13 +80,13 @@ export function AdminDashboard() {
   const projectsTotal = stats.total_projects || 1;
 
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
+    <div className="tw-scope mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
+      <div className="mb-5 flex items-end justify-between gap-6">
         <div>
-          <h1 className={styles.pageTitle}>平台概览</h1>
-          <p className={styles.pageSubtitle}>全局平台运行状态与资源分布</p>
+          <h1 className="mb-1 text-xl font-semibold">平台概览</h1>
+          <p className="text-[13px] text-muted-foreground">全局平台运行状态与资源分布</p>
         </div>
-        <div className={styles.headerActions}>
+        <div className="flex gap-2">
           <Button onClick={() => setImportOpen(true)}>
             <Icon name="upload" size={13} />导入数据集
           </Button>
@@ -97,7 +106,7 @@ export function AdminDashboard() {
         </div>
       </div>
 
-      <div className={styles.statsGrid}>
+      <div className="mb-3 grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
         <StatCard icon="users" label="用户总数" value={stats.total_users} hint={`${stats.active_users} 在线`} />
         <StatCard icon="layers" label="项目总数" value={stats.total_projects} hint={`${stats.projects_in_progress} 进行中`} />
         <StatCard icon="target" label="任务总量" value={stats.total_tasks.toLocaleString()} />
@@ -105,49 +114,49 @@ export function AdminDashboard() {
       </div>
 
       {/* v0.8.4 · 成员绩效入口 */}
-      <div className={styles.entryCardShell}>
+      <div className="mb-5 cursor-pointer">
         <Card onClick={() => navigate("/admin/people")}>
-          <div className={styles.entryCardContent}>
-            <div className={styles.entryMain}>
+          <div className="flex items-center justify-between gap-3 px-4 py-3">
+            <div className="flex items-center gap-2.5">
               <Icon name="users" size={16} />
               <div>
-                <div className={styles.entryTitle}>成员绩效</div>
-                <div className={styles.entryDescription}>
+                <div className="text-[13px] font-semibold">成员绩效</div>
+                <div className="text-[11px] text-muted-foreground">
                   全员效率卡片网格 + 抽屉下钻
                 </div>
               </div>
             </div>
-            <span className={styles.entryLink}>
+            <span className={ENTRY_LINK_CLASS}>
               打开 <Icon name="chevRight" size={11} />
             </span>
           </div>
         </Card>
       </div>
 
-      <div className={styles.distributionGrid}>
+      <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-3">
         <Card>
-          <div className={styles.cardHeader}>
-            <h3 className={styles.cardTitle}>项目状态分布</h3>
+          <div className={CARD_HEADER_CLASS}>
+            <h3 className={CARD_TITLE_CLASS}>项目状态分布</h3>
           </div>
-          <div className={styles.cardBody}>
-            <StatusBar label="进行中" count={stats.projects_in_progress} total={projectsTotal} color="var(--color-accent)" />
-            <StatusBar label="已完成" count={stats.projects_completed} total={projectsTotal} color="var(--color-success)" />
-            <StatusBar label="待审核" count={stats.projects_pending_review} total={projectsTotal} color="var(--color-warning)" />
-            <StatusBar label="已归档" count={stats.projects_archived} total={projectsTotal} color="var(--color-fg-subtle)" />
+          <div className={CARD_BODY_CLASS}>
+            <StatusBar label="进行中" count={stats.projects_in_progress} total={projectsTotal} color="var(--sc-brand)" />
+            <StatusBar label="已完成" count={stats.projects_completed} total={projectsTotal} color="var(--sc-positive)" />
+            <StatusBar label="待审核" count={stats.projects_pending_review} total={projectsTotal} color="var(--sc-caution)" />
+            <StatusBar label="已归档" count={stats.projects_archived} total={projectsTotal} color="var(--sc-muted-foreground)" />
           </div>
         </Card>
 
         <Card>
-          <div className={styles.cardHeader}>
-            <h3 className={styles.cardTitle}>用户角色分布</h3>
+          <div className={CARD_HEADER_CLASS}>
+            <h3 className={CARD_TITLE_CLASS}>用户角色分布</h3>
           </div>
-          <div className={styles.cardBody}>
+          <div className={CARD_BODY_CLASS}>
             {Object.entries(stats.role_distribution).map(([role, count]) => (
-              <div key={role} className={styles.roleRow}>
-                <div className={styles.roleBadge}>
+              <div key={role} className="flex items-center justify-between py-1.5">
+                <div className="flex items-center gap-2">
                   <Badge variant="outline">{ROLE_LABELS[role as UserRole] ?? role}</Badge>
                 </div>
-                <span className={`mono ${styles.roleCount}`}>{count}</span>
+                <span className="mono text-[13px] font-medium">{count}</span>
               </div>
             ))}
           </div>
@@ -156,21 +165,21 @@ export function AdminDashboard() {
 
       {/* v0.9.5 · AI 预标注队列卡片（仅在有 pre_annotated 批次时显示） */}
       {(stats.pre_annotated_batches ?? 0) > 0 && (
-        <div className={styles.aiQueueShell}>
+        <div className="mb-3 cursor-pointer [&>*]:border [&>*]:border-border [&>*]:bg-violet-500/10">
           <Card onClick={() => navigate("/ai-pre")}>
-            <div className={styles.aiQueueCardContent}>
-              <div className={styles.entryMainLarge}>
-                <Icon name="wandSparkles" size={18} className={styles.aiIcon} />
+            <div className="flex items-center justify-between p-4">
+              <div className="flex items-center gap-3">
+                <Icon name="wandSparkles" size={18} className="text-violet-600 dark:text-violet-400" />
                 <div>
-                  <div className={styles.aiQueueTitle}>
+                  <div className="text-sm font-semibold">
                     AI 预标注队列 · {stats.pre_annotated_batches} 批待接管
                   </div>
-                  <div className={styles.aiQueueDescription}>
+                  <div className="text-xs text-muted-foreground">
                     文本批量预标已跑完，等待人工分派接管
                   </div>
                 </div>
               </div>
-              <span className={styles.aiQueueLink}>
+              <span className="inline-flex items-center text-xs text-violet-600 dark:text-violet-400">
                 进入 <Icon name="chevRight" size={11} />
               </span>
             </div>
@@ -186,19 +195,19 @@ export function AdminDashboard() {
       />
 
       {/* v0.8.6 F6 · 失败预测入口（super_admin / project_admin 可见）; v0.9.12 改指向 /ai-pre/jobs */}
-      <div className={styles.failedPredictionShell}>
+      <div className="mt-3 cursor-pointer">
         <Card onClick={() => navigate("/ai-pre/jobs?status=failed")}>
-          <div className={styles.entryCardContent}>
-            <div className={styles.entryMain}>
-              <Icon name="warning" size={16} className={styles.warningIcon} />
+          <div className="flex items-center justify-between gap-3 px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <Icon name="warning" size={16} className="text-amber-600 dark:text-amber-400" />
               <div>
-                <div className={styles.entryTitle}>失败预测管理</div>
-                <div className={styles.entryDescription}>
+                <div className="text-[13px] font-semibold">失败预测管理</div>
+                <div className="text-[11px] text-muted-foreground">
                   查看 ML Backend 调用失败的预测，并按需重试 (单条最多 3 次)
                 </div>
               </div>
             </div>
-            <span className={styles.entryLink}>
+            <span className={ENTRY_LINK_CLASS}>
               打开 <Icon name="chevRight" size={11} />
             </span>
           </div>
@@ -206,38 +215,38 @@ export function AdminDashboard() {
       </div>
 
 
-      <div className={styles.cardTop}>
+      <div className="mt-4">
         <Card>
-        <div className={styles.cardHeaderSplit}>
-          <h3 className={styles.cardTitle}>近期审计活动</h3>
+        <div className={CARD_HEADER_SPLIT_CLASS}>
+          <h3 className={CARD_TITLE_CLASS}>近期审计活动</h3>
           <Button size="sm" variant="ghost" onClick={() => navigate("/audit")}>
             查看全部<Icon name="chevRight" size={11} />
           </Button>
         </div>
         {recentActivity.length === 0 ? (
-          <div className={styles.emptyStateCompact}>
-            <Icon name="activity" size={26} className={styles.emptyIcon} />
+          <div className="px-4 py-6 text-center text-[13px] text-muted-foreground">
+            <Icon name="activity" size={26} className="mb-2 opacity-25" />
             <div>暂无业务事件</div>
           </div>
         ) : (
-          <ul className={styles.activityList}>
+          <ul className="m-0 list-none p-0">
             {recentActivity.map((it) => (
               <li
                 key={it.id}
-                className={styles.activityItem}
+                className="flex items-center gap-2.5 border-b border-border px-4 py-2.5 text-[12.5px]"
               >
                 <Avatar initial={(it.actor_email ?? "?").slice(0, 1).toUpperCase()} size="sm" />
-                <div className={styles.activityBody}>
-                  <div className={styles.activityLine}>
-                    <span className={styles.actorName}>{it.actor_email ?? "匿名"}</span>
-                    <span className={styles.compactBadge}>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium">{it.actor_email ?? "匿名"}</span>
+                    <span className="[&>*]:text-[10px]">
                       <Badge variant="accent">{auditActionLabel(it.action)}</Badge>
                     </span>
                     {it.target_type && (
-                      <span className={styles.targetMeta}>
+                      <span className="text-[11px] text-muted-foreground">
                         {it.target_type}
                         {it.target_id && (
-                          <span className={`mono ${styles.targetId}`}>
+                          <span className="mono ml-1">
                             {it.target_id.length > 24 ? it.target_id.slice(0, 8) + "…" : it.target_id}
                           </span>
                         )}
@@ -245,7 +254,7 @@ export function AdminDashboard() {
                     )}
                   </div>
                 </div>
-                <span className={styles.activityTime}>
+                <span className="whitespace-nowrap text-[11px] text-muted-foreground">
                   {relativeTime(it.created_at)}
                 </span>
               </li>
@@ -255,32 +264,32 @@ export function AdminDashboard() {
         </Card>
       </div>
 
-      <div className={styles.cardTop}>
+      <div className="mt-4">
         <Card>
-        <div className={styles.cardHeaderSplit}>
-          <h3 className={styles.cardTitle}>全平台项目</h3>
-          <span className={styles.cardCount}>共 {projects.length} 个</span>
+        <div className={CARD_HEADER_SPLIT_CLASS}>
+          <h3 className={CARD_TITLE_CLASS}>全平台项目</h3>
+          <span className="text-xs text-muted-foreground">共 {projects.length} 个</span>
         </div>
         {projectsLoading && (
-          <div className={styles.emptyState}>加载中...</div>
+          <div className="p-8 text-center text-[13px] text-muted-foreground">加载中...</div>
         )}
         {!projectsLoading && projects.length === 0 && (
-          <div className={styles.emptyState}>
+          <div className="p-8 text-center text-[13px] text-muted-foreground">
             暂无项目，点击右上角「新建项目」开始
           </div>
         )}
         {!projectsLoading && projects.length > 0 && (
-          <div className={styles.projectTableScroller}>
-            <table className={styles.projectTable}>
+          <div className="w-full overflow-x-auto [overscroll-behavior-x:contain]">
+            <table className="w-full min-w-[760px] border-separate border-spacing-0 text-[13px]">
               <thead>
                 <tr>
                   {["项目", "负责人", "成员", "状态", ""].map((h, i) => (
                     <th
                       key={i}
                       className={[
-                        styles.tableHeadCell,
-                        i === 0 ? styles.tableHeadCellFirst : "",
-                        i === 4 ? styles.tableHeadCellLast : "",
+                        TABLE_HEAD_CELL_CLASS,
+                        i === 0 ? "pl-4" : "",
+                        i === 4 ? "pr-4" : "",
                       ].filter(Boolean).join(" ")}
                     >
                       {h}
@@ -290,30 +299,30 @@ export function AdminDashboard() {
               </thead>
               <tbody>
                 {projects.map((p) => (
-                  <tr key={p.id} className={styles.projectRow} onClick={() => navigate(`/projects/${p.id}/settings`)}>
-                    <td className={`${styles.tableCell} ${styles.tableCellFirst}`}>
-                      <div className={styles.projectName}>{p.name}</div>
-                      <div className={styles.projectMeta}>
+                  <tr key={p.id} className="cursor-pointer" onClick={() => navigate(`/projects/${p.id}/settings`)}>
+                    <td className={`${TABLE_CELL_CLASS} py-2.5 pl-4`}>
+                      <div className="max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium">{p.name}</div>
+                      <div className="max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-muted-foreground">
                         <span className="mono">{p.display_id}</span> · {projectDisplayType(p)}
                       </div>
                     </td>
-                    <td className={styles.tableCell}>
-                      <div className={styles.ownerCell}>
+                    <td className={TABLE_CELL_CLASS}>
+                      <div className="flex min-w-0 items-center gap-2">
                         <Avatar initial={p.owner_name?.slice(0, 1) ?? "?"} size="sm" />
-                        <span className={styles.ownerName}>{p.owner_name ?? "—"}</span>
+                        <span className="max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap text-[12.5px]">{p.owner_name ?? "—"}</span>
                       </div>
                     </td>
-                    <td className={`${styles.tableCell} ${styles.mutedCell}`}>
+                    <td className={`${TABLE_CELL_CLASS} text-muted-foreground`}>
                       {p.member_count}
                     </td>
-                    <td className={styles.tableCell}>
+                    <td className={TABLE_CELL_CLASS}>
                       {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
                       {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
                       {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
                       {p.status === "archived" && <Badge variant="outline" dot>已归档</Badge>}
                     </td>
-                    <td className={`${styles.tableCell} ${styles.tableCellRight}`}>
-                      <div className={styles.rowActions}>
+                    <td className={`${TABLE_CELL_CLASS} py-2.5 pr-4 text-right whitespace-nowrap`}>
+                      <div className="inline-flex items-center gap-1 whitespace-nowrap">
                         {/* v0.10.11 · 「复制项目配置」入口 — 跳 Wizard 复制流, 用源项目配置预填. */}
                         <Button
                           size="sm"
@@ -362,10 +371,10 @@ function relativeTime(iso: string): string {
 function StatusBar({ label, count, total, color }: { label: string; count: number; total: number; color: string }) {
   const pct = Math.round((count / total) * 100);
   return (
-    <div className={styles.statusBar}>
-      <div className={styles.statusBarHeader}>
-        <span className={styles.statusLabel}>{label}</span>
-        <span className={`mono ${styles.statusCount}`}>{count} ({pct}%)</span>
+    <div className="mb-3">
+      <div className="mb-1 flex justify-between text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="mono font-medium">{count} ({pct}%)</span>
       </div>
       <ProgressBar value={pct} color={color} />
     </div>
@@ -379,37 +388,37 @@ function RegistrationSourceCard({ series }: { series: RegistrationDayPoint[] }) 
   const peak = Math.max(1, ...series.map((d) => d.invite_count + d.open_count));
 
   return (
-    <div className={styles.cardTop}>
+    <div className="mt-4">
       <Card>
-        <div className={styles.cardHeaderSplit}>
-          <h3 className={styles.cardTitle}>30 天注册来源</h3>
-          <div className={styles.registrationMeta}>
+        <div className={CARD_HEADER_SPLIT_CLASS}>
+          <h3 className={CARD_TITLE_CLASS}>30 天注册来源</h3>
+          <div className="text-xs text-muted-foreground">
             共 {total} 人 · 邀请 {totalInvite} · 开放 {totalOpen}
           </div>
         </div>
-        <div className={styles.cardBody}>
+        <div className={CARD_BODY_CLASS}>
           {total === 0 ? (
-            <div className={styles.registrationEmpty}>
+            <div className="py-5 text-center text-[13px] text-muted-foreground">
               过去 30 天暂无注册记录
             </div>
           ) : (
             <div>
-              <div className={styles.registrationChart}>
+              <div className="mb-2 flex h-20 items-end gap-[3px]">
                 {series.map((d) => (
                   <RegistrationSourceBar key={d.date} point={d} peak={peak} />
                 ))}
               </div>
-              <div className={styles.registrationAxis}>
+              <div className="flex justify-between text-[11px] text-muted-foreground">
                 <span>{series[0]?.date}</span>
                 <span>{series[series.length - 1]?.date}</span>
               </div>
-              <div className={styles.registrationLegend}>
-                <span className={styles.legendItem}>
-                  <span className={styles.inviteSwatch} />
+              <div className="mt-2.5 flex gap-4 text-xs">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-2.5 rounded-sm bg-brand" />
                   邀请注册
                 </span>
-                <span className={styles.legendItem}>
-                  <span className={styles.openSwatch} />
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-2.5 rounded-sm bg-emerald-500" />
                   开放注册
                 </span>
               </div>
@@ -422,26 +431,23 @@ function RegistrationSourceCard({ series }: { series: RegistrationDayPoint[] }) 
 }
 
 function RegistrationSourceBar({ point, peak }: { point: RegistrationDayPoint; peak: number }) {
-  const barRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const node = barRef.current;
-    if (!node) return;
-
-    node.style.setProperty("--registration-open-height", `${(point.open_count / peak) * 80}px`);
-    node.style.setProperty("--registration-invite-height", `${(point.invite_count / peak) * 80}px`);
-    node.style.setProperty("--registration-open-min-height", point.open_count ? "2px" : "0");
-    node.style.setProperty("--registration-invite-min-height", point.invite_count ? "2px" : "0");
-  }, [peak, point.invite_count, point.open_count]);
+  const barRef = useElementStyle<HTMLDivElement>({
+    "--registration-open-height": `${(point.open_count / peak) * 80}px`,
+    "--registration-invite-height": `${(point.invite_count / peak) * 80}px`,
+    "--registration-open-min-height": point.open_count ? "2px" : "0",
+    "--registration-invite-min-height": point.invite_count ? "2px" : "0",
+  } as CSSProperties);
 
   return (
     <div
       ref={barRef}
-      className={styles.registrationBar}
+      className="flex flex-1 flex-col justify-end gap-px"
       title={`${point.date}\n邀请 ${point.invite_count} · 开放 ${point.open_count}`}
     >
-      <div className={styles.openSegment} />
-      <div className={`${styles.inviteSegment} ${point.open_count ? styles.stackedInviteSegment : ""}`} />
+      <div className="h-[var(--registration-open-height)] min-h-[var(--registration-open-min-height)] rounded-t-sm bg-emerald-500" />
+      <div
+        className={`h-[var(--registration-invite-height)] min-h-[var(--registration-invite-min-height)] bg-brand ${point.open_count ? "rounded-none" : "rounded-t-sm"}`}
+      />
     </div>
   );
 }
@@ -466,14 +472,14 @@ function MLBackendsAndCostCard({
 
   return (
     <Card>
-      <div className={styles.mlCardHeader}>
-        <div className={styles.mlTitleGroup}>
-          <h3 className={styles.cardTitle}>ML 后端 · 预测成本</h3>
+      <div className={`${CARD_HEADER_CLASS} flex flex-wrap items-center justify-between gap-3`}>
+        <div className="flex items-center gap-2.5">
+          <h3 className={CARD_TITLE_CLASS}>ML 后端 · 预测成本</h3>
           <Badge variant={backendsConnected > 0 ? "success" : "outline"}>
             {backendsConnected} / {backendsTotal} 在线
           </Badge>
         </div>
-        <div className={styles.mlActions}>
+        <div className="flex items-center gap-1">
           <Button size="sm" variant="ghost" onClick={() => navigate("/model-market")}>
             集成总览<Icon name="chevRight" size={11} />
           </Button>
@@ -490,13 +496,13 @@ function MLBackendsAndCostCard({
         </div>
       </div>
       {backendsTotal === 0 ? (
-        <div className={styles.mlEmpty}>
-          <Icon name="bot" size={28} className={styles.emptyIcon} />
+        <div className="px-4 py-6 text-center text-[13px] text-muted-foreground">
+          <Icon name="bot" size={28} className="mb-2 opacity-25" />
           <div>暂无已注册的 ML 后端</div>
-          <div className={styles.emptyHint}>在项目设置中添加模型服务</div>
+          <div className="mt-1 text-[11.5px]">在项目设置中添加模型服务</div>
         </div>
       ) : (
-        <div className={styles.mlStatsGrid}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3 p-4">
           <StatCard
             icon="activity"
             label="本期调用数"

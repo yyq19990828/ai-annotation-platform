@@ -12,7 +12,6 @@ import { useProjects, useProjectStats } from "@/hooks/useProjects";
 import type { ProjectResponse } from "@/api/projects";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { projectDisplayType } from "@/utils/projectDisplay";
-import styles from "./ViewerDashboard.module.css";
 
 const FILTERS = ["全部", "进行中", "待审核", "已完成"] as const;
 const FILTER_STATUS_MAP: Record<string, string | undefined> = {
@@ -22,6 +21,12 @@ const FILTER_STATUS_MAP: Record<string, string | undefined> = {
   "已完成": "completed",
 };
 const WORKBENCH_PROJECT_TYPES = new Set(["image-det", "video-track", "lidar"]);
+
+const TABLE_HEAD_CELL_CLASS =
+  "border-b border-border bg-muted px-3 py-2.5 text-left text-xs font-medium whitespace-nowrap text-muted-foreground [&:first-child]:pl-4";
+const TABLE_CELL_CLASS =
+  "border-b border-border px-3 py-3 align-middle [&:first-child]:pl-4 [&:nth-child(3)]:whitespace-nowrap [&:nth-child(4)]:whitespace-nowrap";
+const EMPTY_CELL_CLASS = "p-10 text-center text-muted-foreground";
 
 export function ViewerDashboard() {
   const [filter, setFilter] = useState<string>("全部");
@@ -44,13 +49,13 @@ export function ViewerDashboard() {
   const { data: stats } = useProjectStats();
 
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>项目概览</h1>
-        <p className={styles.subtitle}>查看项目进度与数据质量</p>
+    <div className="tw-scope mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
+      <div className="mb-5">
+        <h1 className="mb-1 text-xl font-semibold">项目概览</h1>
+        <p className="text-[13px] text-muted-foreground">查看项目进度与数据质量</p>
       </div>
 
-      <div className={styles.statsGrid}>
+      <div className="mb-5 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
         <StatCard icon="layers" label="数据总量" value={(stats?.total_data ?? 0).toLocaleString()} />
         <StatCard icon="check" label="已完成标注" value={(stats?.completed ?? 0).toLocaleString()} />
         <StatCard icon="sparkles" label="AI 接管率" value={`${stats?.ai_rate ?? 0}%`} />
@@ -58,19 +63,19 @@ export function ViewerDashboard() {
       </div>
 
       <Card>
-        <div className={styles.cardHeader}>
-          <div className={styles.cardTitleGroup}>
-            <h3 className={styles.cardTitle}>项目列表</h3>
+        <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
+          <div className="flex items-center gap-3">
+            <h3 className="text-sm font-semibold">项目列表</h3>
             <TabRow tabs={[...FILTERS]} active={filter} onChange={setFilter} />
           </div>
           <SearchInput placeholder="搜索项目..." value={query} onChange={setQuery} width={220} />
         </div>
-        <div className={styles.tableScroller}>
-          <table className={styles.table}>
+        <div className="w-full overflow-x-auto [overscroll-behavior-x:contain]">
+          <table className="w-full min-w-[760px] border-separate border-spacing-0 text-[13px]">
             <thead>
               <tr>
                 {["项目", "进度", "AI 模型", "状态"].map((h, i) => (
-                  <th key={i}>
+                  <th key={i} className={TABLE_HEAD_CELL_CLASS}>
                     {h}
                   </th>
                 ))}
@@ -79,33 +84,33 @@ export function ViewerDashboard() {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={4} className={styles.emptyCell}>加载中...</td>
+                  <td colSpan={4} className={EMPTY_CELL_CLASS}>加载中...</td>
                 </tr>
               )}
               {!isLoading && projects.map((p) => {
                 const total = p.total_tasks || 1;
                 const pct = Math.round((p.completed_tasks / total) * 100);
                 return (
-                  <tr key={p.id} onClick={() => onOpenProject(p)} className={styles.clickableRow}>
-                    <td>
-                      <div className={styles.projectName}>{p.name}</div>
-                      <span className={`mono ${styles.projectId}`}>{p.display_id}</span>
+                  <tr key={p.id} onClick={() => onOpenProject(p)} className="cursor-pointer">
+                    <td className={TABLE_CELL_CLASS}>
+                      <div className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-[13.5px] font-medium">{p.name}</div>
+                      <span className="mono block max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-muted-foreground">{p.display_id}</span>
                     </td>
-                    <td className={styles.progressCell}>
+                    <td className={`${TABLE_CELL_CLASS} min-w-[180px]`}>
                       <ProgressBar value={pct} />
-                      <span className={`mono ${styles.progressPct}`}>{pct}%</span>
+                      <span className="mono text-[11px] text-muted-foreground">{pct}%</span>
                     </td>
-                    <td>
+                    <td className={TABLE_CELL_CLASS}>
                       {p.ai_enabled ? (
                         <Badge variant="ai">
                           <Icon name="sparkles" size={10} />
                           {p.ml_backend_id ? "已接入模型" : "未接入模型"}
                         </Badge>
                       ) : (
-                        <span className={styles.noneText}>—</span>
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </td>
-                    <td>
+                    <td className={TABLE_CELL_CLASS}>
                       {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
                       {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
                       {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
@@ -115,7 +120,7 @@ export function ViewerDashboard() {
               })}
               {!isLoading && projects.length === 0 && (
                 <tr>
-                  <td colSpan={4} className={styles.emptyCell}>没有匹配的项目</td>
+                  <td colSpan={4} className={EMPTY_CELL_CLASS}>没有匹配的项目</td>
                 </tr>
               )}
             </tbody>
