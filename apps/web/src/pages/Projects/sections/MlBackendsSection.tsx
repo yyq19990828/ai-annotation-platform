@@ -22,11 +22,17 @@ import {
 import { mlBackendsApi, type MLBackendCapability } from "@/api/ml-backends";
 import type { ProjectResponse } from "@/api/projects";
 import type { MLBackendResponse } from "@/types";
-import styles from "./MlBackendsSection.module.css";
 
 function cn(...xs: Array<string | false | null | undefined>): string {
   return xs.filter(Boolean).join(" ");
 }
+
+const LABEL_CLASS = "mb-1.5 block text-xs font-medium text-muted-foreground";
+const CONTROL_CLASS =
+  "box-border w-full appearance-none rounded-md border border-border bg-muted px-2.5 py-2 text-[13.5px] text-foreground outline-none [font-family:inherit]";
+const TABLE_HEAD_CELL =
+  "whitespace-nowrap border-b border-border bg-muted px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground";
+const TABLE_CELL = "border-b border-border px-3 py-2 align-middle";
 
 const STATE_VARIANT: Record<string, "success" | "warning" | "outline" | "danger"> = {
   connected: "success",
@@ -166,18 +172,18 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
 
   return (
     <Card>
-      <div className={styles.cardHeader}>
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5">
         <div>
-          <h3 className={styles.cardTitle}>
+          <h3 className="text-sm font-semibold">
             ML 模型
             <span
               data-testid="ml-backend-quota"
-              className={styles.quota}
+              className="ml-2 text-[11px] font-medium text-muted-foreground"
             >
               已用 {backends.length} / {limit > 0 ? limit : "∞"}
             </span>
           </h3>
-          <div className={styles.subtitle}>
+          <div className="mt-0.5 text-[11.5px] text-muted-foreground">
             管理本项目作用域的 ML backend，并配置 AI 预标注入口。
           </div>
         </div>
@@ -192,37 +198,37 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
         </Button>
       </div>
 
-      <div className={styles.aiSettings}>
-        <div className={styles.aiSettingsHeader}>
-          <label className={styles.aiToggleLabel}>
+      <div className="border-b border-border bg-background px-4 py-3.5">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-[13px] font-semibold">
             <input
               type="checkbox"
               checked={aiEnabled}
               onChange={(e) => setAiEnabled(e.target.checked)}
-              className={styles.aiCheckbox}
+              className="accent-violet-500"
             />
-            <Icon name="sparkles" size={14} className={styles.aiIcon} />
+            <Icon name="sparkles" size={14} className="text-violet-600 dark:text-violet-400" />
             启用 AI 预标注
           </label>
           {aiSettingsDirty && (
             <span
-              className={styles.unsavedIndicator}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400"
               data-testid="ai-settings-unsaved"
             >
-              <span className={styles.unsavedDot} />
+              <span className="size-1.5 rounded-full bg-amber-500" />
               有未保存的修改
             </span>
           )}
         </div>
 
-        <div className={styles.aiSettingsGrid}>
+        <div className="grid grid-cols-[minmax(260px,1.2fr)_minmax(220px,1fr)] gap-3.5 [&>:last-child]:col-span-full">
           <div>
-            <label className={styles.label}>默认 ML Backend</label>
+            <label className={LABEL_CLASS}>默认 ML Backend</label>
             <select
               value={mlBackendId ?? ""}
               onChange={(e) => setMlBackendId(e.target.value || null)}
               disabled={!aiEnabled}
-              className={cn(styles.control, styles.selectControl)}
+              className={cn(CONTROL_CLASS, "cursor-pointer")}
             >
               <option value="">未设默认（项目按肉眼标注运行，AI 待接入）</option>
               {backends.map((b) => (
@@ -233,10 +239,10 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                 </option>
               ))}
             </select>
-            <div className={styles.hint}>
+            <div className="mt-1 text-[11px] leading-normal text-muted-foreground">
               设为默认后，平台所有“模型名”展示均直接来自 backend.name；该后端作为工作台 / 批量页的默认选项，仍可在 AI 面板切换到其它已注册后端。后端专属推理参数在工作台 AI 面板按用户独立调整。
               {backends.length === 0 && (
-                <span className={styles.warningText}>
+                <span className="ml-1 text-amber-600 dark:text-amber-400">
                   暂无可用 backend；可先在本页注册。
                 </span>
               )}
@@ -244,10 +250,10 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
           </div>
 
           <div>
-            <label className={styles.label}>
-              AI 框去重阈值 <span className={styles.labelNote}>同类 AI 框与人工框 IoU 高于此值时淡化</span>
+            <label className={LABEL_CLASS}>
+              AI 框去重阈值 <span className="font-normal text-muted-foreground">同类 AI 框与人工框 IoU 高于此值时淡化</span>
             </label>
-            <div className={styles.sliderRow}>
+            <div className="flex min-h-9 items-center gap-3">
               <input
                 type="range"
                 min={0.3}
@@ -256,17 +262,17 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                 value={iouThreshold}
                 onChange={(e) => setIouThreshold(Number(e.target.value))}
                 disabled={!aiEnabled}
-                className={styles.rangeInput}
+                className="flex-1 accent-violet-500"
               />
-              <span className={cn("mono", styles.metricValue)}>
+              <span className={cn("mono", "min-w-[48px] text-right text-[13px] text-foreground")}>
                 {iouThreshold.toFixed(2)}
               </span>
             </div>
           </div>
 
           <div>
-            <label className={styles.label}>
-              SAM 文本预标默认输出 <span className={styles.labelNote}>工作台“找全图”的初始值</span>
+            <label className={LABEL_CLASS}>
+              SAM 文本预标默认输出 <span className="font-normal text-muted-foreground">工作台“找全图”的初始值</span>
             </label>
             <TextOutputDefaultSelect
               value={textOutputDefault as TextOutputDefault}
@@ -276,7 +282,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
           </div>
         </div>
 
-        <div className={styles.aiSettingsFooter}>
+        <div className="mt-3 flex justify-end">
           <Button
             variant="primary"
             disabled={!aiSettingsDirty || updateProject.isPending}
@@ -287,34 +293,34 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
         </div>
       </div>
 
-      <div className={styles.body}>
+      <div className="p-3">
         {isLoading && (
-          <div className={styles.placeholder}>
+          <div className="p-6 text-center text-[13px] text-muted-foreground">
             加载中…
           </div>
         )}
         {isError && (
-          <div className={cn(styles.placeholder, styles.errorText)}>
-            <Icon name="warning" size={14} className={styles.warningIcon} />
+          <div className="p-6 text-center text-[13px] text-rose-600 dark:text-rose-400">
+            <Icon name="warning" size={14} className="mr-1.5" />
             加载失败：{(error as Error)?.message ?? "未知错误"}
           </div>
         )}
         {!isLoading && !isError && backends.length === 0 && (
-          <div className={styles.emptyState}>
-            <Icon name="bot" size={28} className={styles.emptyIcon} />
+          <div className="rounded-md border border-dashed border-border p-8 text-center text-[13px] text-muted-foreground">
+            <Icon name="bot" size={28} className="mb-1.5 opacity-25" />
             <div>本项目暂未注册任何 ML backend</div>
-            <div className={styles.emptyHint}>点击右上角「注册 backend」开始接入</div>
+            <div className="mt-1 text-[11.5px]">点击右上角「注册 backend」开始接入</div>
           </div>
         )}
         {!isLoading && backends.length > 0 && (
-          <div className={styles.tableScroller}>
-            <table className={styles.table}>
+          <div className="w-full overflow-x-auto">
+            <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-[12.5px]">
               <thead>
                 <tr>
                   {["名称", "URL", "类型", "能力", "状态", "最近检查", "操作"].map((h) => (
                     <th
                       key={h}
-                      className={styles.tableHeadCell}
+                      className={TABLE_HEAD_CELL}
                     >
                       {h}
                     </th>
@@ -327,26 +333,26 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                   const cap = capQ?.data as MLBackendCapability | undefined;
                   return (
                     <tr key={b.id}>
-                      <td className={styles.tableCell}>
-                        <div className={styles.nameCell} title={b.name}>{b.name}</div>
+                      <td className={TABLE_CELL}>
+                        <div className="max-w-[180px] truncate" title={b.name}>{b.name}</div>
                       </td>
-                      <td className={cn(styles.tableCell, styles.urlCell)} title={b.url}>
+                      <td className={cn(TABLE_CELL, "mono max-w-[280px] truncate text-[11px] text-muted-foreground")} title={b.url}>
                         {b.url}
                       </td>
-                      <td className={cn(styles.tableCell, styles.nowrapCell)}>
+                      <td className={cn(TABLE_CELL, "whitespace-nowrap")}>
                         <Badge variant={b.is_interactive ? "ai" : "outline"}>
                           {b.is_interactive ? "交互式" : "批量"}
                         </Badge>
                       </td>
-                      <td className={styles.tableCell}>
+                      <td className={TABLE_CELL}>
                         {capQ?.isLoading && (
-                          <span className={styles.subtleText}>…</span>
+                          <span className="text-[11px] text-muted-foreground">…</span>
                         )}
                         {capQ?.isError && (
-                          <span className={styles.subtleText}>—</span>
+                          <span className="text-[11px] text-muted-foreground">—</span>
                         )}
                         {cap?.supported_prompts && (
-                          <div className={styles.capabilityList}>
+                          <div className="inline-flex flex-wrap gap-1">
                             {cap.supported_prompts.map((p) => (
                               <Badge key={p} variant="outline">
                                 {p}
@@ -362,16 +368,16 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                           </div>
                         )}
                       </td>
-                      <td className={cn(styles.tableCell, styles.nowrapCell)}>
+                      <td className={cn(TABLE_CELL, "whitespace-nowrap")}>
                         <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
                           {b.state}
                         </Badge>
                       </td>
-                      <td className={cn(styles.tableCell, styles.mutedCell)}>
+                      <td className={cn(TABLE_CELL, "whitespace-nowrap text-muted-foreground")}>
                         {formatDate(b.last_checked_at)}
                       </td>
-                      <td className={styles.tableCell}>
-                        <div className={styles.actions}>
+                      <td className={TABLE_CELL}>
+                        <div className="inline-flex gap-1.5 whitespace-nowrap">
                         {project.ml_backend_id !== b.id && (
                           <Button
                             size="sm"
@@ -384,7 +390,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                           </Button>
                         )}
                         {project.ml_backend_id === b.id && (
-                          <span className={styles.boundBadge}>
+                          <span className="self-center">
                             <Badge variant="ai">
                               默认
                             </Badge>

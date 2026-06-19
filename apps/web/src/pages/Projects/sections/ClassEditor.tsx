@@ -9,7 +9,10 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { classColor } from "@/pages/Workbench/stage/colors";
-import styles from "./ClassEditor.module.css";
+
+// UA-safe 表单基线 + token 化(无全局 preflight)。
+const CONTROL_CLASS =
+  "box-border appearance-none rounded-sm border border-border bg-muted px-2 py-[5px] text-[13px] text-foreground outline-none [font-family:inherit]";
 
 export interface ClassRow {
   name: string;
@@ -152,19 +155,22 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
   };
 
   return (
-    <div className={styles.root}>
+    <div className="flex flex-col gap-2.5">
       {value.length === 0 && (
-        <div className={styles.emptyState}>
+        <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
           {emptyHint}
         </div>
       )}
 
       {value.map((r, i) => (
-        <div key={r.name} className={styles.classRow}>
-          <span className={styles.rowIndex}>
+        <div
+          key={r.name}
+          className="grid grid-cols-[auto_24px_minmax(0,1.4fr)_minmax(0,1.2fr)_70px_auto] items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5"
+        >
+          <span className="w-5 text-right text-[11px] text-muted-foreground">
             {i + 1}
           </span>
-          <svg className={styles.colorSwatch} viewBox="0 0 18 18" aria-hidden="true">
+          <svg className="inline-block size-[18px] rounded border border-border" viewBox="0 0 18 18" aria-hidden="true">
             <rect width="18" height="18" rx="4" ry="4" fill={r.color} />
           </svg>
           {onRename ? (
@@ -213,10 +219,10 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
               disabled={renaming}
               maxLength={30}
               title="重命名 (回车提交 / Esc 取消) — 会同步迁移已有标注"
-              className={styles.control}
+              className={CONTROL_CLASS}
             />
           ) : (
-            <span className={styles.className}>{r.name}</span>
+            <span className="text-[13px] text-foreground">{r.name}</span>
           )}
           <input
             value={r.alias ?? ""}
@@ -225,15 +231,15 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
             placeholder="英文 alias（SAM 提示用，可空）"
             maxLength={50}
             title="供 SAM 文本预标 prompt 下拉填入；ASCII 字母/数字/空格/逗号/下划线/连字符；blur 自动规范化"
-            className={`${styles.control} ${styles.aliasInput}`}
+            className={`${CONTROL_CLASS} text-xs`}
           />
           <input
             type="color"
             value={r.color}
             onChange={(e) => setColor(i, e.target.value)}
-            className={styles.colorInput}
+            className="h-6 w-[60px] cursor-pointer rounded-[3px] border border-border bg-transparent p-0"
           />
-          <div className={styles.rowActions}>
+          <div className="flex gap-1">
             <Button size="sm" variant="ghost" onClick={() => move(i, -1)} disabled={i === 0} title="上移">
               <Icon name="chevUp" size={11} />
             </Button>
@@ -253,7 +259,7 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
         </div>
       ))}
 
-      <div className={styles.addRow}>
+      <div className="mt-1 flex gap-1.5">
         <input
           value={classInput}
           onChange={(e) => setClassInput(e.target.value)}
@@ -270,7 +276,7 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
           }
           maxLength={30}
           disabled={max > 0 && value.length >= max}
-          className={styles.addInput}
+          className={`${CONTROL_CLASS} flex-1`}
         />
         <Button onClick={add} disabled={!classInput.trim() || (max > 0 && value.length >= max)}>
           <Icon name="plus" size={12} />添加

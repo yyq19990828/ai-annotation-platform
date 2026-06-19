@@ -13,7 +13,12 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { KeypointSchema } from "@/types";
 import { keypointColorByIndex } from "@/pages/Workbench/stage/ImageStageShapes";
-import styles from "./KeypointSchemaEditor.module.css";
+
+// UA-safe 表单/按钮基线 + token 化(无全局 preflight)。
+const ICON_BTN_CLASS =
+  "inline-flex size-7 shrink-0 cursor-pointer appearance-none items-center justify-center rounded border border-border bg-transparent p-0 text-muted-foreground enabled:hover:bg-card enabled:hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40";
+const FIELD_CLASS =
+  "h-7 min-w-0 flex-1 appearance-none rounded border border-border bg-card px-2 text-[13px] text-foreground outline-none";
 
 const EMPTY: KeypointSchema = { nodes: [], edges: [] };
 
@@ -84,39 +89,39 @@ export function KeypointSchemaEditor({
   };
 
   return (
-    <div className={styles.root}>
+    <div className="mt-3 flex flex-col gap-5">
       {/* 节点列表 */}
-      <div className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <span className={styles.sectionTitle}>关键点节点 ({nodes.length})</span>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[13px] font-semibold text-foreground">关键点节点 ({nodes.length})</span>
           <Button variant="ghost" size="sm" onClick={addNode}>
             <Icon name="plus" size={14} /> 新增节点
           </Button>
         </div>
         {nodes.length === 0 ? (
-          <p className={styles.empty}>尚无节点。点击「新增节点」开始定义骨骼。</p>
+          <p className="m-0 text-xs text-muted-foreground">尚无节点。点击「新增节点」开始定义骨骼。</p>
         ) : (
-          <ul className={styles.nodeList}>
+          <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
             {nodes.map((n, i) => (
-              <li key={i} className={styles.nodeRow}>
-                <span className={styles.nodeIndex}>{i + 1}</span>
+              <li key={i} className="flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1.5">
+                <span className="w-5 shrink-0 text-center text-xs text-muted-foreground">{i + 1}</span>
                 <input
                   type="color"
                   value={n.color ?? keypointColorByIndex(i)}
                   onChange={(e) => recolorNode(i, e.target.value)}
-                  className={styles.colorInput}
+                  className="h-6 w-7 shrink-0 cursor-pointer rounded border border-border bg-card p-0"
                   aria-label={`节点 ${i + 1} 颜色`}
                 />
                 <input
                   type="text"
                   value={n.name}
                   onChange={(e) => renameNode(i, e.target.value)}
-                  className={styles.nameInput}
+                  className={FIELD_CLASS}
                   placeholder="节点名"
                 />
                 <button
                   type="button"
-                  className={styles.iconBtn}
+                  className={ICON_BTN_CLASS}
                   onClick={() => moveNode(i, -1)}
                   disabled={i === 0}
                   title="上移"
@@ -125,7 +130,7 @@ export function KeypointSchemaEditor({
                 </button>
                 <button
                   type="button"
-                  className={styles.iconBtn}
+                  className={ICON_BTN_CLASS}
                   onClick={() => moveNode(i, 1)}
                   disabled={i === nodes.length - 1}
                   title="下移"
@@ -134,7 +139,7 @@ export function KeypointSchemaEditor({
                 </button>
                 <button
                   type="button"
-                  className={styles.iconBtn}
+                  className={ICON_BTN_CLASS}
                   onClick={() => removeNode(i)}
                   title="删除节点"
                 >
@@ -147,18 +152,18 @@ export function KeypointSchemaEditor({
       </div>
 
       {/* 连线编辑 */}
-      <div className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <span className={styles.sectionTitle}>骨骼连线 ({edges.length})</span>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[13px] font-semibold text-foreground">骨骼连线 ({edges.length})</span>
         </div>
         {nodes.length < 2 ? (
-          <p className={styles.empty}>至少需要 2 个节点才能添加连线。</p>
+          <p className="m-0 text-xs text-muted-foreground">至少需要 2 个节点才能添加连线。</p>
         ) : (
-          <div className={styles.edgeAdd}>
+          <div className="flex items-center gap-2">
             <select
               value={edgeA}
               onChange={(e) => setEdgeA(Number(e.target.value))}
-              className={styles.select}
+              className={`${FIELD_CLASS} cursor-pointer`}
             >
               {nodes.map((n, i) => (
                 <option key={i} value={i}>{`${i + 1} · ${n.name}`}</option>
@@ -168,7 +173,7 @@ export function KeypointSchemaEditor({
             <select
               value={edgeB}
               onChange={(e) => setEdgeB(Number(e.target.value))}
-              className={styles.select}
+              className={`${FIELD_CLASS} cursor-pointer`}
             >
               {nodes.map((n, i) => (
                 <option key={i} value={i}>{`${i + 1} · ${n.name}`}</option>
@@ -180,15 +185,15 @@ export function KeypointSchemaEditor({
           </div>
         )}
         {edges.length > 0 && (
-          <ul className={styles.edgeList}>
+          <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
             {edges.map(([i, j], idx) => (
-              <li key={idx} className={styles.edgeRow}>
+              <li key={idx} className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-2 py-1.5 text-[13px] text-foreground">
                 <span>
                   {nodes[i]?.name ?? `#${i + 1}`} — {nodes[j]?.name ?? `#${j + 1}`}
                 </span>
                 <button
                   type="button"
-                  className={styles.iconBtn}
+                  className={ICON_BTN_CLASS}
                   onClick={() => removeEdge(idx)}
                   title="删除连线"
                 >
