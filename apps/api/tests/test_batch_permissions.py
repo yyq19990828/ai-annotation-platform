@@ -40,9 +40,7 @@ def _batch(status: str, annotator_id: uuid.UUID | None = None) -> TaskBatch:
 
 
 # 全部 (src, dst) 合法边,从 VALID_TRANSITIONS 展开,用于矩阵参数化。
-ALL_EDGES = [
-    (src, dst) for src, dsts in VALID_TRANSITIONS.items() for dst in dsts
-]
+ALL_EDGES = [(src, dst) for src, dsts in VALID_TRANSITIONS.items() for dst in dsts]
 
 
 # ── _is_owner ──────────────────────────────────────────────────────────────

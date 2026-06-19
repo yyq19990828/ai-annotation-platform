@@ -717,7 +717,11 @@ def test_label_content_object_dedups_and_rejects_unknown_token():
     from pydantic import ValidationError
 
     parsed = UserPreferences.model_validate(
-        {"workbench": {"common": {"labelContent": {"ai": ["score", "score", "source"]}}}}
+        {
+            "workbench": {
+                "common": {"labelContent": {"ai": ["score", "score", "source"]}}
+            }
+        }
     ).workbench.common.labelContent
     assert parsed.ai == ["score", "source"]  # 去重保序
     assert parsed.track == ["id", "state"]  # 缺省段补默认

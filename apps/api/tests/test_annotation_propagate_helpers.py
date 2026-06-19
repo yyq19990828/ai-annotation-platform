@@ -44,9 +44,12 @@ class TestCleanBboxGeometry:
         assert _clean_bbox_geometry({}) == {"x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0}
 
     def test_string_values_coerced(self):
-        assert _clean_bbox_geometry(
-            {"x": "1.5", "y": "2", "w": "0", "h": "3.25"}
-        ) == {"x": 1.5, "y": 2.0, "w": 0.0, "h": 3.25}
+        assert _clean_bbox_geometry({"x": "1.5", "y": "2", "w": "0", "h": "3.25"}) == {
+            "x": 1.5,
+            "y": 2.0,
+            "w": 0.0,
+            "h": 3.25,
+        }
 
     def test_extra_keys_dropped(self):
         out = _clean_bbox_geometry({"x": 1, "y": 1, "w": 1, "h": 1, "rotation": 9})
@@ -63,7 +66,9 @@ class TestCompositionKeyframe:
         }
 
     def test_prediction_source_preserved(self):
-        assert _composition_keyframe(0, {}, source="prediction")["source"] == "prediction"
+        assert (
+            _composition_keyframe(0, {}, source="prediction")["source"] == "prediction"
+        )
 
     def test_unknown_source_falls_back_to_manual(self):
         assert _composition_keyframe(0, {}, source="whatever")["source"] == "manual"

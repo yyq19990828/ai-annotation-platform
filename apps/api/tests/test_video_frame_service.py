@@ -1015,7 +1015,9 @@ async def test_ensure_chunk_rows_concurrent_insert_does_not_raise(test_engine):
         await _cleanup_video_item(maker, item_id, dataset_id, user_id)
 
 
-async def test_ensure_segments_concurrent_insert_does_not_raise(test_engine, monkeypatch):
+async def test_ensure_segments_concurrent_insert_does_not_raise(
+    test_engine, monkeypatch
+):
     """回归: 多个请求同时打开同一视频的 segments 会并发走 ensure_segments 全量创建。旧实现
     select-then-insert 撞 uq_video_segments_item_segment → 未捕获 IntegrityError → 500。修复
     用一个 SAVEPOINT 包整批 INSERT + 冲突 re-select: N 个并发请求都不抛错、都拿到同一份全量

@@ -34,7 +34,9 @@ def _patch_presign(monkeypatch):
     def _fake(key, expires_in=3600, bucket=None):
         return f"http://storage.local/{key}"
 
-    monkeypatch.setattr("app.api.v1.tasks.video.storage_service.generate_download_url", _fake)
+    monkeypatch.setattr(
+        "app.api.v1.tasks.video.storage_service.generate_download_url", _fake
+    )
 
 
 async def _seed_lidar_scene(db, owner_id):
