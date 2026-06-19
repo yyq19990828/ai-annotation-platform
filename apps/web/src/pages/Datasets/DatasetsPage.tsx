@@ -23,7 +23,6 @@ import type { DatasetResponse } from "@/api/datasets";
 import type { ProjectResponse } from "@/api/projects";
 import type { IconName } from "@/components/ui/Icon";
 import type { LidarAxisConvention } from "@/pages/Workbench/stages/three-d/geometry/axisConvention";
-import styles from "./DatasetsPage.module.css";
 
 const TYPE_LABELS: Record<string, string> = {
   image: "图像",
@@ -58,6 +57,16 @@ const FILTER_MAP: Record<string, string | undefined> = {
   "多模态": "multimodal",
 };
 
+// 主表头单元 / 文件子表头单元
+const TH_CLASS =
+  "border-b border-border bg-muted px-3 py-2.5 text-left text-xs font-medium text-muted-foreground whitespace-nowrap first:pl-4 last:pr-4";
+const ITEMS_TH_CLASS =
+  "border-b border-border bg-muted px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground whitespace-nowrap";
+const TD_CLASS = "border-b border-border p-3 align-middle whitespace-nowrap";
+const ITEM_TD_CLASS = "border-b border-border p-2 whitespace-nowrap";
+const DETAIL_TITLE_CLASS = "m-0 text-[13px] font-semibold text-foreground";
+const DETAIL_HEADER_CLASS = "mb-2.5 flex items-center justify-between";
+
 function getErrorMessage(err: unknown) {
   return err instanceof Error ? err.message : "未知错误";
 }
@@ -90,43 +99,47 @@ function formatMediaInfo(item: { file_type: string; width: number | null; height
 function DatasetRow({ ds, isExpanded, onToggle }: { ds: DatasetResponse; isExpanded: boolean; onToggle: () => void }) {
   const created = new Date(ds.created_at).toLocaleDateString("zh-CN");
   return (
-    <tr id={`dataset-row-${ds.id}`} className={`${styles.datasetRow} ${isExpanded ? styles.datasetRowExpanded : ""}`} onClick={onToggle}>
-      <td className={`${styles.datasetCell} ${styles.datasetNameCell}`}>
-        <div className={styles.datasetIdentity}>
-          <div className={styles.datasetIconBox}>
+    <tr
+      id={`dataset-row-${ds.id}`}
+      className={`cursor-pointer ${isExpanded ? "bg-muted" : ""}`}
+      onClick={onToggle}
+    >
+      <td className={`${TD_CLASS} pl-4`}>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground">
             <Icon name={TYPE_ICONS[ds.data_type] || "layers"} size={14} />
           </div>
-          <div>
-            <div className={styles.datasetName}>{ds.name}</div>
-            <div className={styles.datasetMeta}>
+          <div className="min-w-0">
+            <div className="truncate text-[13.5px] font-medium">{ds.name}</div>
+            <div className="mt-px truncate text-[11px] text-muted-foreground">
               {ds.display_id}
               {ds.description && <> · {ds.description.length > 30 ? ds.description.slice(0, 30) + "…" : ds.description}</>}
             </div>
           </div>
         </div>
       </td>
-      <td className={styles.datasetCell}>
+      <td className={TD_CLASS}>
         <Badge variant={TYPE_VARIANTS[ds.data_type] || "outline"}>
           <Icon name={TYPE_ICONS[ds.data_type] || "layers"} size={10} />
           {TYPE_LABELS[ds.data_type] || ds.data_type}
         </Badge>
       </td>
-      <td className={styles.datasetCell}>
+      <td className={TD_CLASS}>
         <Badge variant={ds.has_scenes ? "success" : "outline"}>
           <Icon name="layers" size={10} />
           {ds.has_scenes ? "含 Scene" : "无 Scene"}
         </Badge>
       </td>
-      <td className={styles.datasetCell}>
-        <span className={`mono ${styles.monoCell}`}>{ds.file_count.toLocaleString()}</span>
+      <td className={TD_CLASS}>
+        <span className="mono text-[13px]">{ds.file_count.toLocaleString()}</span>
       </td>
-      <td className={styles.datasetCell}>
-        <span className={`mono ${styles.monoCell}`}>{ds.project_count}</span>
+      <td className={TD_CLASS}>
+        <span className="mono text-[13px]">{ds.project_count}</span>
       </td>
-      <td className={styles.datasetCell}>
-        <span className={styles.createdCell}>{created}</span>
+      <td className={TD_CLASS}>
+        <span className="text-[12.5px]">{created}</span>
       </td>
-      <td className={`${styles.datasetCell} ${styles.datasetActionCell}`}>
+      <td className={`${TD_CLASS} pr-4 text-right`}>
         <Button size="sm">
           {isExpanded ? "收起" : "展开"} <Icon name={isExpanded ? "chevDown" : "chevRight"} size={11} />
         </Button>
@@ -187,16 +200,16 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
 
   return (
     <tr>
-      <td colSpan={7} className={styles.detailCell}>
-        <div className={styles.detailPanel}>
-          <div className={styles.detailLayout}>
+      <td colSpan={7} className="border-b border-border p-0 whitespace-normal">
+        <div className="bg-background px-5 py-4">
+          <div className="flex gap-4">
             {/* 文件列表 */}
-            <div className={styles.filesColumn}>
-              <div className={styles.detailHeader}>
-                <h4 className={styles.detailTitle}>
-                  文件列表 <span className={styles.detailCount}>({totalItems})</span>
+            <div className="min-w-0 flex-[2]">
+              <div className={DETAIL_HEADER_CLASS}>
+                <h4 className={DETAIL_TITLE_CLASS}>
+                  文件列表 <span className="font-normal text-muted-foreground">({totalItems})</span>
                 </h4>
-                <div className={styles.buttonGroup}>
+                <div className="flex gap-1.5">
                   <Button
                     size="sm"
                     onClick={() => {
@@ -274,59 +287,59 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
 
                 </div>
               </div>
-              <div className={styles.itemsTableScroller}>
-                <table className={styles.itemsTable}>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] border-separate border-spacing-0 text-[12.5px]">
                   <thead>
                     <tr>
                       {["文件名", "类型", "大小", "媒体信息", "上传时间"].map((h, i) => (
-                        <th key={i} className={styles.itemsHeaderCell}>{h}</th>
+                        <th key={i} className={ITEMS_TH_CLASS}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {itemsLoading && (
-                      <tr><td colSpan={5} className={styles.emptyCell}>加载中...</td></tr>
+                      <tr><td colSpan={5} className="p-5 text-center text-muted-foreground">加载中...</td></tr>
                     )}
                     {!itemsLoading && items.map((item) => (
                       <tr key={item.id}>
-                        <td className={styles.itemCell}>
-                          <div className={styles.itemNameWrap}>
+                        <td className={ITEM_TD_CLASS}>
+                          <div className="flex min-w-0 items-center gap-2">
                             <Thumbnail src={item.thumbnail_url} blurhash={item.blurhash} width={32} height={32} />
-                            <span className={styles.truncateFileName}>{item.file_name}</span>
+                            <span className="max-w-[240px] truncate">{item.file_name}</span>
                           </div>
                         </td>
-                        <td className={styles.itemCell}>
+                        <td className={ITEM_TD_CLASS}>
                           <Badge variant="outline">{item.file_type}</Badge>
                         </td>
-                        <td className={`${styles.itemCell} ${styles.mutedCell}`}>
+                        <td className={`${ITEM_TD_CLASS} text-muted-foreground`}>
                           {item.file_size ? `${(item.file_size / 1024).toFixed(1)} KB` : "—"}
                         </td>
                         <td
                           title={formatMediaInfo(item)}
-                          className={`${styles.itemCell} ${styles.mediaInfo} ${formatMediaInfo(item).includes("失败") ? styles.dangerText : ""}`}
+                          className={`${ITEM_TD_CLASS} max-w-[220px] truncate ${formatMediaInfo(item).includes("失败") ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"}`}
                         >
                           {formatMediaInfo(item)}
                         </td>
-                        <td className={`${styles.itemCell} ${styles.mutedCell}`}>
+                        <td className={`${ITEM_TD_CLASS} text-muted-foreground`}>
                           {new Date(item.created_at).toLocaleDateString("zh-CN")}
                         </td>
                       </tr>
                     ))}
                     {!itemsLoading && items.length === 0 && (
-                      <tr><td colSpan={5} className={styles.emptyCell}>暂无文件</td></tr>
+                      <tr><td colSpan={5} className="p-5 text-center text-muted-foreground">暂无文件</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
               {totalPages > 1 && (
-                <div className={styles.pagination}>
-                  <Button size="sm" onClick={() => setItemPage(Math.max(0, itemPage - 1))} className={itemPage > 0 ? undefined : styles.invisible}>
+                <div className="mt-2 flex justify-center gap-1">
+                  <Button size="sm" onClick={() => setItemPage(Math.max(0, itemPage - 1))} className={itemPage > 0 ? undefined : "invisible"}>
                     <Icon name="chevLeft" size={11} />
                   </Button>
-                  <span className={styles.pageIndicator}>
+                  <span className="px-2 py-1 text-[11px] text-muted-foreground">
                     {itemPage + 1} / {totalPages}
                   </span>
-                  <Button size="sm" onClick={() => setItemPage(Math.min(totalPages - 1, itemPage + 1))} className={itemPage < totalPages - 1 ? undefined : styles.invisible}>
+                  <Button size="sm" onClick={() => setItemPage(Math.min(totalPages - 1, itemPage + 1))} className={itemPage < totalPages - 1 ? undefined : "invisible"}>
                     <Icon name="chevRight" size={11} />
                   </Button>
                 </div>
@@ -334,20 +347,20 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
             </div>
 
             {/* 关联项目 */}
-            <div className={styles.projectsColumn}>
-              <div className={styles.settingsBlock}>
-                <div className={styles.detailHeader}>
-                  <h4 className={styles.detailTitle}>Scene 信息</h4>
+            <div className="min-w-[220px] flex-1 border-l border-border pl-4">
+              <div className="mb-3.5 border-b border-border pb-3.5">
+                <div className={DETAIL_HEADER_CLASS}>
+                  <h4 className={DETAIL_TITLE_CLASS}>Scene 信息</h4>
                 </div>
-                <div className={styles.infoStack}>
-                  <div className={styles.infoRow}>
-                    <span className={styles.infoLabel}>Scene</span>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-3 text-xs">
+                    <span className="text-muted-foreground">Scene</span>
                     <Badge variant={ds.has_scenes ? "success" : "outline"}>
                       {ds.has_scenes ? "已识别" : "未识别"}
                     </Badge>
                   </div>
-                  <div className={styles.infoRow}>
-                    <span className={styles.infoLabel}>时序声明</span>
+                  <div className="flex items-center justify-between gap-3 text-xs">
+                    <span className="text-muted-foreground">时序声明</span>
                     <Badge variant={ds.is_temporal ? "accent" : "outline"}>
                       {ds.is_temporal ? "时序数据集" : "普通数据集"}
                     </Badge>
@@ -355,9 +368,9 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                 </div>
               </div>
               {isPointCloudDataset && (
-                <div className={styles.settingsBlock}>
-                  <div className={styles.detailHeader}>
-                    <h4 className={styles.detailTitle}>点云坐标系</h4>
+                <div className="mb-3.5 border-b border-border pb-3.5">
+                  <div className={DETAIL_HEADER_CLASS}>
+                    <h4 className={DETAIL_TITLE_CLASS}>点云坐标系</h4>
                   </div>
                   <AxisConventionPicker
                     value={ds.axis_convention}
@@ -367,16 +380,16 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                   />
                 </div>
               )}
-              <div className={styles.detailHeader}>
-                <h4 className={styles.detailTitle}>
-                  关联项目 <span className={styles.detailCount}>({linkedProjects.length})</span>
+              <div className={DETAIL_HEADER_CLASS}>
+                <h4 className={DETAIL_TITLE_CLASS}>
+                  关联项目 <span className="font-normal text-muted-foreground">({linkedProjects.length})</span>
                 </h4>
               </div>
               {linkedProjects.map((p) => (
-                <div key={p.id} className={styles.projectRow}>
-                  <div>
-                    <div className={styles.projectName}>{p.name}</div>
-                    <div className={styles.projectMeta}>{p.display_id} · {p.type_label}</div>
+                <div key={p.id} className="flex items-center justify-between border-b border-border py-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-[12.5px] font-medium text-foreground">{p.name}</div>
+                    <div className="truncate text-[11px] text-muted-foreground">{p.display_id} · {p.type_label}</div>
                   </div>
                   <Button size="sm" variant="ghost" onClick={() => setConfirmUnlink(p)} title="取消关联">
                     <Icon name="x" size={11} />
@@ -384,7 +397,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                 </div>
               ))}
               {linkedProjects.length === 0 && (
-                <div className={styles.emptyProject}>未关联任何项目</div>
+                <div className="py-3 text-xs text-muted-foreground">未关联任何项目</div>
               )}
               {availableProjects.length > 0 && (
                 <select
@@ -402,7 +415,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                     }
                   }}
                   defaultValue=""
-                  className={styles.projectSelect}
+                  className="mt-2 w-full cursor-pointer appearance-none rounded-sm border border-border bg-card px-2 py-1.5 text-xs text-foreground"
                 >
                   <option value="" disabled>关联到项目...</option>
                   {availableProjects.map((p) => (
@@ -485,31 +498,31 @@ function UnlinkConfirmModal({
 
   return (
     <Modal open onClose={onClose} title="确认取消关联">
-      <div className={styles.confirmBody}>
-        <p className={styles.confirmParagraph}>
+      <div className="text-[13px] leading-relaxed">
+        <p className="mb-2">
           确认取消数据集 <strong>{datasetName}</strong> 与项目 <strong>{project.name}</strong> 的关联？
         </p>
-        <div className={styles.confirmPreview}>
+        <div className="mb-2 text-muted-foreground">
           {preview === null ? (
             "正在统计影响范围…"
           ) : preview.tasks === 0 ? (
             "项目中没有由该数据集创建的任务，可放心取消。"
           ) : (
             <>
-              <strong className={styles.dangerText}>将一并删除</strong>项目中由该数据集创建的 <strong>{preview.tasks}</strong> 个任务
+              <strong className="text-rose-600 dark:text-rose-400">将一并删除</strong>项目中由该数据集创建的 <strong>{preview.tasks}</strong> 个任务
               {preview.annotations > 0 && (
-                <>（含 <strong className={styles.dangerText}>{preview.annotations}</strong> 个已有标注）</>
+                <>（含 <strong className="text-rose-600 dark:text-rose-400">{preview.annotations}</strong> 个已有标注）</>
               )}
               {preview.batches > 0 && (
-                <>，并清理 <strong className={styles.dangerText}>{preview.batches}</strong> 个失去全部任务的空批次</>
+                <>，并清理 <strong className="text-rose-600 dark:text-rose-400">{preview.batches}</strong> 个失去全部任务的空批次</>
               )}
               。<br />此操作不可恢复。
             </>
           )}
         </div>
         {dangerous && (
-          <div className={styles.confirmInputGroup}>
-            <label className={styles.confirmLabel}>
+          <div className="my-2.5">
+            <label className="mb-1 block text-xs text-muted-foreground">
               请输入数据集名称 <strong>{datasetName}</strong> 以确认：
             </label>
             <input
@@ -518,11 +531,11 @@ function UnlinkConfirmModal({
               onChange={(e) => setConfirmText(e.target.value)}
               placeholder={datasetName}
               autoFocus
-              className={`${styles.confirmInput} ${canSubmit ? styles.confirmInputReady : ""}`}
+              className={`box-border w-full appearance-none rounded-md border bg-muted px-2.5 py-[7px] text-[13px] text-foreground [font:inherit] ${canSubmit ? "border-emerald-500" : "border-border"}`}
             />
           </div>
         )}
-        <div className={styles.modalActions}>
+        <div className="mt-4 flex justify-end gap-2">
           <Button onClick={onClose}>取消</Button>
           <Button
             onClick={onConfirm}
@@ -580,12 +593,12 @@ export function DatasetsPage() {
   const linkedCount = datasets.filter((ds) => (ds.project_count ?? 0) > 0).length;
 
   return (
-    <div className={styles.page}>
+    <div className="tw-scope mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
       {/* Header */}
-      <div className={styles.header}>
+      <div className="mb-5 flex items-end justify-between gap-6">
         <div>
-          <h1 className={styles.title}>数据集</h1>
-          <p className={styles.subtitle}>管理标注数据集，上传文件并关联到标注项目</p>
+          <h1 className="mb-1 text-xl font-semibold">数据集</h1>
+          <p className="text-[13px] text-muted-foreground">管理标注数据集，上传文件并关联到标注项目</p>
         </div>
         {activeTab === "数据集管理" && (
           <Button variant="primary" onClick={() => setShowCreate(true)}>
@@ -600,7 +613,7 @@ export function DatasetsPage() {
       </div>
 
       {/* Page tabs */}
-      <div className={styles.pageTabs}>
+      <div className="mb-5">
         <TabRow tabs={[...PAGE_TABS]} active={activeTab} onChange={setActiveTab} />
       </div>
 
@@ -625,7 +638,7 @@ export function DatasetsPage() {
       ) : (
         <>
           {/* Stats */}
-          <div className={styles.statsGrid}>
+          <div className="mb-5 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
             <StatCard icon="layers" label="数据集总数" value={total.toLocaleString()} />
             <StatCard icon="image" label="文件总量" value={totalFiles.toLocaleString()} />
             <StatCard icon="folder" label="已关联项目" value={String(linkedCount)} />
@@ -634,19 +647,19 @@ export function DatasetsPage() {
 
           {/* Main table */}
           <Card>
-            <div className={styles.tableToolbar}>
-              <div className={styles.toolbarLeft}>
-                <h3 className={styles.sectionTitle}>全部数据集</h3>
+            <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
+              <div className="flex items-center gap-3">
+                <h3 className="m-0 text-sm font-semibold">全部数据集</h3>
                 <TabRow tabs={[...TYPE_FILTERS]} active={filter} onChange={setFilter} />
               </div>
               <SearchInput placeholder="搜索数据集..." value={query} onChange={setQuery} width={220} />
             </div>
-            <div className={styles.tableScroller}>
-              <table className={styles.table}>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] border-separate border-spacing-0 text-[13px]">
                 <thead>
                   <tr>
                     {["数据集", "类型", "Scene", "文件数", "关联项目", "创建时间", ""].map((h, i) => (
-                      <th key={i} className={styles.headerCell}>
+                      <th key={i} className={TH_CLASS}>
                         {h}
                       </th>
                     ))}
@@ -654,7 +667,7 @@ export function DatasetsPage() {
                 </thead>
                 <tbody>
                   {isLoading && (
-                    <tr><td colSpan={7} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>加载中...</td></tr>
+                    <tr><td colSpan={7} className="p-10 text-center text-muted-foreground">加载中...</td></tr>
                   )}
                   {!isLoading && datasets.map((ds) => (
                     <Fragment key={ds.id}>
@@ -667,7 +680,7 @@ export function DatasetsPage() {
                     </Fragment>
                   ))}
                   {!isLoading && datasets.length === 0 && (
-                    <tr><td colSpan={7} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>
+                    <tr><td colSpan={7} className="p-10 text-center text-muted-foreground">
                       {query || filter !== "全部" ? "没有匹配的数据集" : '暂无数据集，点击「新建数据集」开始'}
                     </td></tr>
                   )}
