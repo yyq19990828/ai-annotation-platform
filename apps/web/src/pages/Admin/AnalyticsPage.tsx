@@ -6,6 +6,7 @@
  * 返回 503，前端展示「数据初始化中」提示。
  *
  * v0.12.7 · 吞吐 / reject 面板升级为 recharts；新增工时热力图（星期几 × 小时）。
+ * v0.17.3 · module.css → Tailwind(tw-scope);recharts/热力图取色改 --sc-*。
  */
 
 import { useMemo, useState, type CSSProperties } from "react";
@@ -25,9 +26,8 @@ import {
 import { adminAnalyticsApi } from "@/api/adminAnalytics";
 import { useTheme } from "@/hooks/useTheme";
 import { REJECT_REASON_TYPE_LABELS } from "@/pages/Review/rejectReasonTypes";
-import styles from "./AnalyticsPage.module.css";
 
-/** 读取 tokens.css 语义色（恪守 §6：组件不写死颜色，运行时取 token）。 */
+/** 运行时读取设计 token 语义色(组件不写死颜色;迁移后走 shadcn.css 的 --sc-*)。 */
 function cssVar(name: string): string {
   if (typeof window === "undefined") return "";
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -42,6 +42,11 @@ const RANGE_OPTIONS = [
 // DuckDB dayofweek() 约定 0=周日 .. 6=周六。下标对齐该约定。
 const WEEKDAY_LABELS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
+
+const CARD_CLASS = "rounded-md border border-border bg-card p-4";
+const TITLE_CLASS = "mb-2 text-[13px] font-semibold";
+const HINT_CLASS = "mb-3 text-[11px] text-muted-foreground";
+const EMPTY_CLASS = "py-2 text-xs text-muted-foreground";
 
 export function AnalyticsPage() {
   const [days, setDays] = useState(30);
@@ -68,11 +73,11 @@ export function AnalyticsPage() {
 
   const accent = useMemo(() => {
     void resolved;
-    return cssVar("--color-accent");
+    return cssVar("--sc-brand");
   }, [resolved]);
   const gridColor = useMemo(() => {
     void resolved;
-    return cssVar("--color-border");
+    return cssVar("--sc-border");
   }, [resolved]);
 
   const aggThroughput = useMemo(() => {
@@ -108,18 +113,18 @@ export function AnalyticsPage() {
   }, [heatmapQ.data]);
 
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
+    <div className="tw-scope flex flex-col gap-4 px-6 py-5 text-foreground max-md:p-4">
+      <div className="flex items-center justify-between max-md:flex-col max-md:items-start max-md:gap-2.5">
         <div>
-          <h1 className={styles.title}>离线分析（DuckDB）</h1>
-          <p className={styles.subtitle}>
+          <h1 className="text-xl font-semibold">离线分析（DuckDB）</h1>
+          <p className="mt-1 text-xs text-muted-foreground">
             数据由 Celery beat 每日 02:30 UTC 增量同步；面板查询为固定 SQL，禁用任意 SQL 输入。
           </p>
         </div>
-        <div className={styles.controls}>
-          <span className={styles.control}>时间范围：</span>
+        <div className="inline-flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">时间范围：</span>
           <select
-            className={styles.select}
+            className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
             data-testid="analytics-range-select"
@@ -133,17 +138,17 @@ export function AnalyticsPage() {
         </div>
       </div>
 
-      <div className={styles.grid}>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-4">
         {/* 团队日吞吐（按日聚合） */}
-        <div className={styles.card} data-testid="panel-throughput">
-          <div className={styles.cardTitle}>团队日吞吐（task_events.kind=annotate）</div>
-          <div className={styles.cardHint}>每点 = 1 天的全团队提交事件计数</div>
+        <div className={CARD_CLASS} data-testid="panel-throughput">
+          <div className={TITLE_CLASS}>团队日吞吐（task_events.kind=annotate）</div>
+          <div className={HINT_CLASS}>每点 = 1 天的全团队提交事件计数</div>
           {throughputQ.isError && <NotReady error={throughputQ.error} />}
           {!throughputQ.isError && aggThroughput.length === 0 && (
-            <div className={styles.empty}>所选范围内暂无数据</div>
+            <div className={EMPTY_CLASS}>所选范围内暂无数据</div>
           )}
           {aggThroughput.length > 0 && (
-            <div className={styles.chartWrap}>
+            <div className="w-full">
               <ResponsiveContainer width="100%" height={240}>
                 <LineChart
                   data={aggThroughput}
@@ -168,17 +173,17 @@ export function AnalyticsPage() {
         </div>
 
         {/* reject 率按类型分布 */}
-        <div className={styles.card} data-testid="panel-reject-rate">
-          <div className={styles.cardTitle}>Reject 原因分布</div>
-          <div className={styles.cardHint}>
+        <div className={CARD_CLASS} data-testid="panel-reject-rate">
+          <div className={TITLE_CLASS}>Reject 原因分布</div>
+          <div className={HINT_CLASS}>
             分母只算 reject_reason_type IS NOT NULL（v0.10.16 起标注）
           </div>
           {rejectQ.isError && <NotReady error={rejectQ.error} />}
           {!rejectQ.isError && rejectData.length === 0 && (
-            <div className={styles.empty}>所选范围内无 reject 记录</div>
+            <div className={EMPTY_CLASS}>所选范围内无 reject 记录</div>
           )}
           {rejectData.length > 0 && (
-            <div className={styles.chartWrap}>
+            <div className="w-full">
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart
                   layout="vertical"
@@ -206,40 +211,37 @@ export function AnalyticsPage() {
         </div>
 
         {/* 标注耗时分布 */}
-        <div className={styles.card} data-testid="panel-duration">
-          <div className={styles.cardTitle}>标注耗时分布</div>
-          <div className={styles.cardHint}>task_events claim → submit 间隔（ms）</div>
+        <div className={CARD_CLASS} data-testid="panel-duration">
+          <div className={TITLE_CLASS}>标注耗时分布</div>
+          <div className={HINT_CLASS}>task_events claim → submit 间隔（ms）</div>
           {durationQ.isError && <NotReady error={durationQ.error} />}
           {!durationQ.isError && durationQ.data && (
-            <div className={styles.kv}>
-              <span className={styles.kvLabel}>样本数</span>
-              <span className={styles.kvValue}>{durationQ.data.data.n}</span>
-              <span className={styles.kvLabel}>中位 (p50)</span>
-              <span className={styles.kvValue}>{(durationQ.data.data.p50 / 1000).toFixed(1)}s</span>
-              <span className={styles.kvLabel}>p95</span>
-              <span className={styles.kvValue}>{(durationQ.data.data.p95 / 1000).toFixed(1)}s</span>
-              <span className={styles.kvLabel}>均值</span>
-              <span className={styles.kvValue}>{(durationQ.data.data.mean / 1000).toFixed(1)}s</span>
+            <div className="grid grid-cols-[80px_1fr] gap-x-3 gap-y-1.5 text-[13px]">
+              <span className="text-muted-foreground">样本数</span>
+              <span className="font-semibold tabular-nums">{durationQ.data.data.n}</span>
+              <span className="text-muted-foreground">中位 (p50)</span>
+              <span className="font-semibold tabular-nums">{(durationQ.data.data.p50 / 1000).toFixed(1)}s</span>
+              <span className="text-muted-foreground">p95</span>
+              <span className="font-semibold tabular-nums">{(durationQ.data.data.p95 / 1000).toFixed(1)}s</span>
+              <span className="text-muted-foreground">均值</span>
+              <span className="font-semibold tabular-nums">{(durationQ.data.data.mean / 1000).toFixed(1)}s</span>
             </div>
           )}
         </div>
 
         {/* 工时热力图（星期几 × 小时） */}
-        <div
-          className={`${styles.card} ${styles.cardWide}`}
-          data-testid="panel-heatmap"
-        >
-          <div className={styles.cardTitle}>工时热力图（started_at · 星期 × 小时）</div>
-          <div className={styles.cardHint}>颜色深浅 = 该时段 annotate 事件计数占比</div>
+        <div className={`${CARD_CLASS} col-span-full`} data-testid="panel-heatmap">
+          <div className={TITLE_CLASS}>工时热力图（started_at · 星期 × 小时）</div>
+          <div className={HINT_CLASS}>颜色深浅 = 该时段 annotate 事件计数占比</div>
           {heatmapQ.isError && <NotReady error={heatmapQ.error} />}
           {!heatmapQ.isError && heatmap.max === 0 && (
-            <div className={styles.empty}>所选范围内暂无工时数据</div>
+            <div className={EMPTY_CLASS}>所选范围内暂无工时数据</div>
           )}
           {!heatmapQ.isError && heatmap.max > 0 && (
-            <div className={styles.heatmap}>
+            <div className="flex flex-col gap-[3px] overflow-x-auto">
               {WEEKDAY_LABELS.map((label, weekday) => (
-                <div key={weekday} className={styles.heatmapRow}>
-                  <span className={styles.heatmapRowLabel}>{label}</span>
+                <div key={weekday} className="grid grid-cols-[36px_repeat(24,1fr)] items-center gap-[3px]">
+                  <span className="whitespace-nowrap text-[11px] text-muted-foreground">{label}</span>
                   {HOURS.map((hour) => {
                     const count = heatmap.byKey.get(`${weekday}-${hour}`) ?? 0;
                     const intensity =
@@ -254,10 +256,10 @@ export function AnalyticsPage() {
                   })}
                 </div>
               ))}
-              <div className={styles.heatmapAxis}>
-                <span className={styles.heatmapRowLabel} />
+              <div className="mt-0.5 grid grid-cols-[36px_repeat(24,1fr)] gap-[3px]">
+                <span className="text-[11px] text-muted-foreground" />
                 {HOURS.map((hour) => (
-                  <span key={hour} className={styles.heatmapHourLabel}>
+                  <span key={hour} className="text-left text-[10px] text-muted-foreground">
                     {hour % 6 === 0 ? hour : ""}
                   </span>
                 ))}
@@ -270,12 +272,18 @@ export function AnalyticsPage() {
   );
 }
 
-// 热力图格子:强度走 CSS 变量(opacity),颜色来自 token --color-accent(§6 合规)。
+// 热力图格子:强度走 CSS 变量(opacity),底色取 token --sc-brand。
 function HeatCell({ intensity, title }: { intensity: number; title: string }) {
   const ref = useElementStyle<HTMLDivElement>({
     "--heat-opacity": String(intensity),
   } as CSSProperties);
-  return <div ref={ref} className={styles.heatmapCell} title={title} />;
+  return (
+    <div
+      ref={ref}
+      className="h-4 min-w-3 rounded-[2px] border border-border bg-brand opacity-[var(--heat-opacity)]"
+      title={title}
+    />
+  );
 }
 
 function NotReady({ error }: { error: unknown }) {
@@ -283,5 +291,5 @@ function NotReady({ error }: { error: unknown }) {
     error && typeof error === "object" && "message" in error
       ? String((error as { message: unknown }).message)
       : "数据初始化中（Celery beat 尚未首次同步）。";
-  return <div className={styles.notReady}>{msg}</div>;
+  return <div className="rounded-sm bg-muted p-3 text-xs text-muted-foreground">{msg}</div>;
 }
