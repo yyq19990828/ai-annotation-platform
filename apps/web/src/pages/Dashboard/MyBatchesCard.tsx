@@ -19,13 +19,12 @@ const STATUS_LABEL: Record<string, { label: string; variant: "accent" | "warning
   rejected: { label: "已驳回", variant: "danger" },
 };
 
-function ProgressFill({ pct, color }: { pct: number; color: string }) {
+function ProgressFill({ pct, barClass }: { pct: number; barClass: string }) {
   const ref = useElementStyle<HTMLDivElement>({
     "--progress-pct": `${Math.min(100, pct)}%`,
-    "--progress-color": color,
   } as CSSProperties);
 
-  return <div ref={ref} className="h-full w-[var(--progress-pct)] bg-[var(--progress-color)]" />;
+  return <div ref={ref} className={`h-full w-[var(--progress-pct)] ${barClass}`} />;
 }
 
 /** B-20：标注员视角的三段进度条 — 已动工 / 送审 / 通过。
@@ -48,9 +47,9 @@ function ProgressTriple({
   total: number;
 }) {
   const ROWS: { label: string; pct: number; count: number; bar: string }[] = [
-    { label: "标注中", pct: startedPct, count: startedCount, bar: "var(--sc-brand)" },
-    { label: "送审", pct: reviewPct, count: reviewCount, bar: "var(--sc-caution)" },
-    { label: "通过", pct: approvedPct, count: approvedCount, bar: "var(--sc-positive)" },
+    { label: "标注中", pct: startedPct, count: startedCount, bar: "bg-brand" },
+    { label: "送审", pct: reviewPct, count: reviewCount, bar: "bg-amber-500" },
+    { label: "通过", pct: approvedPct, count: approvedCount, bar: "bg-emerald-500" },
   ];
   return (
     <div className="mt-1.5 grid max-w-[420px] gap-[3px]">
@@ -58,7 +57,7 @@ function ProgressTriple({
         <div key={r.label} className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <span className="flex-[0_0_36px]">{r.label}</span>
           <div className="h-1 flex-1 overflow-hidden rounded-sm bg-muted">
-            <ProgressFill pct={r.pct} color={r.bar} />
+            <ProgressFill pct={r.pct} barClass={r.bar} />
           </div>
           <span className="mono flex-[0_0_80px] text-right text-muted-foreground">
             {r.count}/{total} · {r.pct}%
