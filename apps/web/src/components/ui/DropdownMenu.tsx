@@ -9,8 +9,16 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { createPortal } from "react-dom";
+
+import { cn } from "@/lib/utils";
+
 import { Icon, type IconName } from "./Icon";
-import styles from "./DropdownMenu.module.css";
+
+/**
+ * v0.17.2:module.css → Tailwind。逻辑/定位/键盘/a11y 一律不动(已等价 Radix);仅把 className
+ * 换成 Tailwind,面板位置/尺寸沿用 imperative CSS 变量(--dropdown-*),用 Tailwind 任意值消费。
+ * item 是 portal 内原生 <button>(非 .tw-scope),加 appearance-none 防 UA 默认样式漏出。
+ */
 
 export interface DropdownItem {
   /** 唯一 id，作为 React key */
@@ -311,7 +319,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
       aria-orientation={items ? "vertical" : undefined}
       tabIndex={-1}
       onKeyDown={onMenuKey}
-      className={styles.panel}
+      className="fixed left-[var(--dropdown-left)] top-[var(--dropdown-top)] z-[var(--dropdown-z-index)] min-w-[var(--dropdown-min-width)] rounded-md border border-border bg-popover p-[var(--dropdown-padding)] shadow-md outline-none"
     >
       {content
         ? content({ close })
@@ -321,7 +329,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
                 <div
                   key={it.id || `div-${i}`}
                   role="separator"
-                  className={styles.divider}
+                  className="my-1 h-px bg-border"
                 />
               );
             }
@@ -339,22 +347,22 @@ export function DropdownMenu(props: DropdownMenuProps) {
                   triggerRef.current?.focus();
                 }}
                 onMouseEnter={() => setFocusIdx(i)}
-                className={[
-                  styles.item,
-                  it.active && styles.itemActive,
-                  focused && styles.itemFocused,
-                  it.disabled && styles.itemDisabled,
-                ].filter(Boolean).join(" ")}
+                className={cn(
+                  "flex w-full appearance-none items-center gap-2 rounded-sm border-0 bg-transparent px-2.5 py-[7px] text-left text-[12.5px] font-normal text-muted-foreground",
+                  (it.active || focused) && "bg-accent",
+                  it.active && "font-semibold text-foreground",
+                  it.disabled && "cursor-not-allowed text-muted-foreground/60 opacity-60",
+                )}
               >
                 {it.icon && <Icon name={it.icon} size={13} />}
-                <span className={styles.itemLabel}>{it.label}</span>
+                <span className="flex-1">{it.label}</span>
                 {it.kbd && (
-                  <span className={`mono ${styles.kbd}`}>
+                  <span className="mono rounded border border-b-2 border-border bg-muted px-1.5 py-px text-[10.5px] text-muted-foreground">
                     {it.kbd}
                   </span>
                 )}
                 {it.active && !it.kbd && (
-                  <Icon name="check" size={12} className={styles.checkIcon} />
+                  <Icon name="check" size={12} className="text-brand" />
                 )}
               </button>
             );
@@ -364,7 +372,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
   ) : null;
 
   return (
-    <div ref={hostRef} className={styles.host}>
+    <div ref={hostRef} className="inline-flex">
       {trigger({
         open,
         toggle: () => setOpen((v) => !v),

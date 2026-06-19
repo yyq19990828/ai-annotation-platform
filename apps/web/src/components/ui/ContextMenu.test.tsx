@@ -3,7 +3,6 @@ import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ContextMenu } from "./ContextMenu";
 import type { DropdownItem } from "./DropdownMenu";
-import styles from "./ContextMenu.module.css";
 
 function renderMenu(items: DropdownItem[], props?: Partial<ComponentProps<typeof ContextMenu>>) {
   const onClose = props?.onClose ?? vi.fn();
@@ -79,8 +78,9 @@ describe("<ContextMenu />", () => {
     renderMenu([{ id: "mark", label: "Mark" }], { x: 190, y: 130 });
 
     await waitFor(() => {
-      expect(screen.getByRole("menu").className).toContain(styles.flipX);
-      expect(screen.getByRole("menu").className).toContain(styles.flipY);
+      // v0.17.2:module.css → Tailwind,翻转类改为 -translate-x/y-full
+      expect(screen.getByRole("menu").className).toContain("-translate-x-full");
+      expect(screen.getByRole("menu").className).toContain("-translate-y-full");
     });
   });
 });
