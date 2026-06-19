@@ -1,0 +1,186 @@
+/* ============================================================
+   Tailwind v4 + shadcn —— 与现有 CSS Modules / tokens.css 共存
+   ------------------------------------------------------------
+   设计基调：Geist 风(极简高对比黑白 + 克制蓝 #0070F3)。
+   仅供 UI-refactor 实验分支的垂直切片 PoC 使用(/dashboard-next)。
+
+   共存策略：
+   1) 刻意【不】引入 Tailwind 全局 preflight，避免重置 body/标题/边框等
+      影响现网 201 个 css module 页面 —— 旧页面保持像素一致。
+      shadcn 组件所需的 reset 通过 `.tw-scope` 局部作用域补齐。
+   2) 暗色由现有 `<html data-theme="dark">` 驱动(见 hooks/useTheme.ts)，
+      因此把 Tailwind 的 dark variant 重定向到 [data-theme="dark"]，
+      shadcn 组件零改动复用现有主题开关。
+   ============================================================ */
+
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+
+/* 暗色走 data-theme，而非 shadcn 默认的 .dark class */
+@custom-variant dark ([data-theme="dark"] &);
+
+/* shadcn token → Tailwind 工具类映射(@theme inline：保持运行时随主题切换) */
+@theme inline {
+  --color-background: var(--sc-background);
+  --color-foreground: var(--sc-foreground);
+  --color-card: var(--sc-card);
+  --color-card-foreground: var(--sc-card-foreground);
+  --color-popover: var(--sc-popover);
+  --color-popover-foreground: var(--sc-popover-foreground);
+  --color-primary: var(--sc-primary);
+  --color-primary-foreground: var(--sc-primary-foreground);
+  --color-secondary: var(--sc-secondary);
+  --color-secondary-foreground: var(--sc-secondary-foreground);
+  --color-muted: var(--sc-muted);
+  --color-muted-foreground: var(--sc-muted-foreground);
+  --color-accent: var(--sc-accent);
+  --color-accent-foreground: var(--sc-accent-foreground);
+  --color-destructive: var(--sc-destructive);
+  --color-destructive-foreground: var(--sc-destructive-foreground);
+  --color-border: var(--sc-border);
+  --color-input: var(--sc-input);
+  --color-ring: var(--sc-ring);
+
+  /* Geist 强调蓝 + 状态色(命名空间化，避免与 tokens.css 的 --color-success 等冲突) */
+  --color-brand: var(--sc-brand);
+  --color-brand-foreground: var(--sc-brand-foreground);
+  --color-positive: var(--sc-positive);
+  --color-caution: var(--sc-caution);
+
+  /* recharts / 图表取色 */
+  --color-chart-1: var(--sc-chart-1);
+  --color-chart-2: var(--sc-chart-2);
+  --color-chart-3: var(--sc-chart-3);
+  --color-chart-4: var(--sc-chart-4);
+
+  --radius-sm: calc(var(--sc-radius) - 2px);
+  --radius-md: var(--sc-radius);
+  --radius-lg: calc(var(--sc-radius) + 2px);
+  --radius-xl: calc(var(--sc-radius) + 6px);
+}
+
+/* —— Geist 调色板 · 浅色(纯白底 / 近黑字) —— */
+:root {
+  --sc-radius: 8px;
+
+  --sc-background: #ffffff;
+  --sc-foreground: #171717;
+  --sc-card: #ffffff;
+  --sc-card-foreground: #171717;
+  --sc-popover: #ffffff;
+  --sc-popover-foreground: #171717;
+
+  /* 主操作 = 实心黑(浅色态),与 Geist CTA 一致 */
+  --sc-primary: #171717;
+  --sc-primary-foreground: #ffffff;
+
+  --sc-secondary: #f5f5f5;
+  --sc-secondary-foreground: #171717;
+  --sc-muted: #f5f5f5;
+  --sc-muted-foreground: #737373;
+  --sc-accent: #f4f4f5;
+  --sc-accent-foreground: #171717;
+  --sc-destructive: #e5484d;
+  --sc-destructive-foreground: #ffffff;
+
+  --sc-border: #ebebeb;
+  --sc-input: #e4e4e7;
+  --sc-ring: #0070f3;
+
+  --sc-brand: #0070f3;
+  --sc-brand-foreground: #ffffff;
+  --sc-positive: #15803d;
+  --sc-caution: #b45309;
+
+  --sc-chart-1: #0070f3;
+  --sc-chart-2: #15803d;
+  --sc-chart-3: #b45309;
+  --sc-chart-4: #7c3aed;
+}
+
+/* —— Geist 调色板 · 深色(纯黑底 / 近白字,主场) —— */
+[data-theme="dark"] {
+  --sc-background: #000000;
+  --sc-foreground: #ededed;
+  --sc-card: #0a0a0a;
+  --sc-card-foreground: #ededed;
+  --sc-popover: #0a0a0a;
+  --sc-popover-foreground: #ededed;
+
+  /* 主操作 = 反白(白底黑字),即所选预览的观感 */
+  --sc-primary: #ededed;
+  --sc-primary-foreground: #0a0a0a;
+
+  --sc-secondary: #1a1a1a;
+  --sc-secondary-foreground: #ededed;
+  --sc-muted: #1a1a1a;
+  --sc-muted-foreground: #a1a1a1;
+  --sc-accent: #1f1f1f;
+  --sc-accent-foreground: #ededed;
+  --sc-destructive: #ff5a5f;
+  --sc-destructive-foreground: #0a0a0a;
+
+  --sc-border: #2a2a2a;
+  --sc-input: #2e2e2e;
+  --sc-ring: #0070f3;
+
+  --sc-brand: #3b82f6;
+  --sc-brand-foreground: #ffffff;
+  --sc-positive: #3fb950;
+  --sc-caution: #d29922;
+
+  --sc-chart-1: #3b82f6;
+  --sc-chart-2: #3fb950;
+  --sc-chart-3: #d29922;
+  --sc-chart-4: #a78bfa;
+}
+
+/* —— 局部 reset(只在 .tw-scope 子树生效，替代被跳过的全局 preflight) —— */
+@layer base {
+  .tw-scope,
+  .tw-scope *,
+  .tw-scope *::before,
+  .tw-scope *::after {
+    box-sizing: border-box;
+    border-width: 0;
+    border-style: solid;
+    border-color: var(--sc-border);
+  }
+  .tw-scope {
+    color: var(--sc-foreground);
+    font-family: inherit;
+    -webkit-font-smoothing: antialiased;
+  }
+  .tw-scope h1,
+  .tw-scope h2,
+  .tw-scope h3,
+  .tw-scope h4,
+  .tw-scope p,
+  .tw-scope figure {
+    margin: 0;
+  }
+  .tw-scope button,
+  .tw-scope input,
+  .tw-scope select,
+  .tw-scope textarea {
+    font: inherit;
+    color: inherit;
+    letter-spacing: inherit;
+  }
+  .tw-scope button {
+    background: none;
+    cursor: pointer;
+  }
+  .tw-scope :disabled {
+    cursor: default;
+  }
+  .tw-scope table {
+    border-collapse: collapse;
+    border-spacing: 0;
+  }
+  .tw-scope svg {
+    display: block;
+  }
+}
