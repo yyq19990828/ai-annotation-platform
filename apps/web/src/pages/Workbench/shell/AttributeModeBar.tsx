@@ -8,7 +8,9 @@ import {
   normalizeAttributeModeState,
   type AttributeModeState,
 } from "../state/attributeMode";
-import styles from "./AttributeModeBar.module.css";
+
+const SELECT_CLASS =
+  "h-7 min-w-[120px] max-w-[190px] cursor-pointer appearance-none rounded border border-border bg-card px-2 text-xs text-foreground";
 
 interface AttributeModeBarProps {
   schema: AttributeSchema | undefined;
@@ -57,8 +59,11 @@ export function AttributeModeBar({
   };
 
   return (
-    <div className={styles.root} data-testid="attribute-mode-bar">
-      <label className={styles.toggle}>
+    <div
+      className="tw-scope absolute left-1/2 top-3 z-[15] flex max-w-[min(620px,calc(100%-32px))] -translate-x-1/2 items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-foreground shadow-md"
+      data-testid="attribute-mode-bar"
+    >
+      <label className="inline-flex flex-[0_0_auto] items-center gap-1.5 text-xs text-foreground">
         <Switch
           checked={normalized.enabled}
           disabled={readOnly}
@@ -67,7 +72,7 @@ export function AttributeModeBar({
         <span>属性模式</span>
       </label>
       <select
-        className={styles.select}
+        className={SELECT_CLASS}
         value={field.key}
         disabled={readOnly}
         onChange={(event) => setField(event.target.value)}
@@ -87,7 +92,7 @@ export function AttributeModeBar({
         </Button>
       ) : (
         <select
-          className={styles.select}
+          className={SELECT_CLASS}
           value={field.type === "multiselect"
             ? (Array.isArray(normalized.currentValue) ? normalized.currentValue[0] ?? "" : "")
             : String(normalized.currentValue ?? "")}

@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClassesConfig } from "@/api/projects";
 import { classColor } from "../stage/colors";
-import styles from "./ClassPalette.module.css";
+
+const RECENT_BUTTON_CLASS =
+  "flex cursor-pointer appearance-none items-center gap-1 rounded-full border border-border bg-background px-[7px] py-[3px] text-[11.5px] text-foreground";
+const CLASS_ROW_BASE =
+  "flex cursor-pointer items-center gap-2 rounded-sm border border-transparent px-2 py-[5px] text-[12.5px]";
+const SHORTCUT_CLASS =
+  "inline-block rounded-[3px] border border-b-2 border-border bg-muted px-[5px] py-px font-mono text-[10.5px] leading-none text-muted-foreground";
 
 interface ClassPaletteProps {
   classes: string[];
@@ -62,7 +68,7 @@ export function ClassPalette({
   );
 
   return (
-    <div className={cn(styles.palette, dense && styles.paletteDense)}>
+    <div className={cn("flex flex-col", dense ? "gap-1.5" : "gap-2")}>
       {showSearch && (
         <input
           ref={inputRef}
@@ -70,25 +76,25 @@ export function ClassPalette({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索类别..."
-          className={styles.searchInput}
+          className="appearance-none rounded-sm border border-border bg-background px-2 py-[5px] text-xs text-foreground outline-none"
         />
       )}
 
       {visibleRecent.length > 0 && !query.trim() && (
         <div>
-          <div className={styles.recentTitle}>
+          <div className="mb-1 text-[10px] tracking-[0.5px] text-muted-foreground">
             最近使用
           </div>
-          <div className={styles.recentList}>
+          <div className="flex flex-wrap gap-1">
             {visibleRecent.map((c) => (
               <button
                 key={`recent-${c}`}
                 type="button"
                 onClick={readOnly ? undefined : () => handlePick(c)}
                 disabled={readOnly}
-                className={cn(styles.recentButton, readOnly && styles.readOnly)}
+                className={cn(RECENT_BUTTON_CLASS, readOnly && "cursor-default")}
               >
-                <svg className={styles.recentSwatch} viewBox="0 0 8 8" aria-hidden="true">
+                <svg className="size-2 flex-[0_0_auto]" viewBox="0 0 8 8" aria-hidden="true">
                   <rect width="8" height="8" rx="2" fill={classColor(c, classesConfig)} />
                 </svg>
                 {c}
@@ -98,7 +104,7 @@ export function ClassPalette({
         </div>
       )}
 
-      <div className={styles.classList}>
+      <div className="flex flex-col gap-px">
         {filtered.map((c) => {
           const idx = classes.indexOf(c);
           const sk = shortcutForIndex(idx);
@@ -109,25 +115,25 @@ export function ClassPalette({
               key={c}
               onClick={readOnly ? undefined : () => handlePick(c)}
               className={cn(
-                styles.classRow,
-                dense && styles.classRowDense,
-                readOnly && styles.classRowReadOnly,
-                !readOnly && isActive && styles.classRowActive,
-                isHighlighted && styles.classRowHighlighted,
+                CLASS_ROW_BASE,
+                dense && "gap-1.5 py-1",
+                readOnly && "cursor-default opacity-[0.92]",
+                !readOnly && isActive && "bg-muted",
+                isHighlighted && "border-brand/40 bg-brand/10",
               )}
             >
-              <svg className={styles.classSwatch} viewBox="0 0 10 10" aria-hidden="true">
+              <svg className="size-2.5 flex-[0_0_auto]" viewBox="0 0 10 10" aria-hidden="true">
                 <rect width="10" height="10" rx="2" fill={classColor(c, classesConfig)} />
               </svg>
-              <span className={styles.className}>{c}</span>
+              <span className="flex-1 truncate">{c}</span>
               {sk && (
-                <span className={styles.shortcut}>{sk}</span>
+                <span className={SHORTCUT_CLASS}>{sk}</span>
               )}
             </div>
           );
         })}
         {filtered.length === 0 && (
-          <div className={styles.emptyState}>
+          <div className="px-1 py-2 text-center text-[11.5px] text-muted-foreground">
             没有匹配的类别
           </div>
         )}

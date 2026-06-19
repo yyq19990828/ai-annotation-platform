@@ -29,7 +29,10 @@ import {
   SIDE_FLOATING_PANEL_MIN_SIZE,
   SIDE_FLOATING_PANEL_MAX_SIZE,
 } from "./floatingPanelSizing";
-import styles from "./AIInspectorPanel.module.css";
+
+// 卡片化分组头（AI 待审 / 人工 等列表分段头）与筛选卡共用的容器外观。
+const SECTION_CARD_CLASS =
+  "mb-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-foreground";
 
 interface AIInspectorPanelProps {
   open: boolean;
@@ -141,14 +144,19 @@ export function AIInspectorPanel({
   }
 
   return (
-    <div className={floating ? `${styles.panel} ${styles.panelFloating}` : styles.panel}>
-      <div className={styles.panelHeader}>
-        <div className={styles.panelHeaderRow}>
-          <b className={styles.panelTitle}>标注详情</b>
+    <div
+      className={cn(
+        "tw-scope relative flex flex-col overflow-hidden bg-card",
+        floating ? "border-l-0" : "border-l border-border",
+      )}
+    >
+      <div className="border-b border-border bg-card px-3.5 py-3">
+        <div className="flex items-center justify-between">
+          <b className="text-[13px]">标注详情</b>
           {onDetach && (
             <button
               type="button"
-              className={styles.detachButton}
+              className="inline-flex size-6 cursor-pointer appearance-none items-center justify-center rounded-sm border border-border bg-background p-0 text-muted-foreground hover:border-brand hover:text-brand"
               onClick={onDetach}
               aria-label="分离为浮窗"
               title="分离为浮窗"
@@ -160,9 +168,12 @@ export function AIInspectorPanel({
       </div>
 
       {capabilityWarnings && capabilityWarnings.length > 0 && (
-        <div className={styles.capabilityWarnings} data-testid="ai-inspector-capability-warnings">
+        <div
+          className="flex flex-col gap-1 border-b border-border bg-amber-500/10 px-3 py-2"
+          data-testid="ai-inspector-capability-warnings"
+        >
           {capabilityWarnings.map((w) => (
-            <div key={w.key} className={styles.capabilityWarningItem}>
+            <div key={w.key} className="flex items-start gap-1.5 text-[11px] leading-[1.4] text-amber-600 dark:text-amber-400">
               <Icon name="warning" size={11} />
               <span>{w.message}</span>
             </div>
@@ -171,9 +182,12 @@ export function AIInspectorPanel({
       )}
 
       {multiCount > 0 && (
-        <div className={styles.multiSelectionBar}>
+        <div className="flex items-center justify-between border-b border-border bg-brand/10 px-3.5 py-1.5 text-[11.5px] text-brand">
           <span>已选 <b>{multiCount}</b> 个 user 框</span>
-          <button onClick={onClearSelection} className={styles.clearSelectionButton}>清除</button>
+          <button
+            onClick={onClearSelection}
+            className="cursor-pointer appearance-none rounded-[3px] border border-border bg-transparent px-1.5 py-px text-[10.5px] text-muted-foreground"
+          >清除</button>
         </div>
       )}
 
@@ -205,10 +219,10 @@ export function AIInspectorPanel({
       />
       {/* 视频任务的属性由 VideoTrackPanel 内的两层 VideoAttributesEditor 承载，此处仅图片任务渲染。 */}
       {!videoTrackPanel && selectedAnnotation && attributeSchema && onUpdateAttributes && (
-        <div className={styles.attrDock}>
+        <div className="flex max-h-[45%] flex-[0_0_auto] flex-col border-t border-border bg-card">
           <button
             type="button"
-            className={styles.attrDockHeader}
+            className="flex w-full cursor-pointer appearance-none items-center gap-1.5 border-0 bg-transparent px-3.5 py-2 text-left text-xs font-semibold text-foreground hover:bg-muted"
             onClick={() => setAttrCollapsed((v) => !v)}
             aria-expanded={!attrCollapsed}
             title={attrCollapsed ? "展开属性" : "折叠属性"}
@@ -216,12 +230,12 @@ export function AIInspectorPanel({
             <Icon name={attrCollapsed ? "chevRight" : "chevDown"} size={13} />
             <span>属性</span>
             {attrMissing.length > 0 && (
-              <span className={styles.attrDockMissing}>· {attrMissing.length} 项必填未填</span>
+              <span className="text-[11px] font-normal text-amber-600 dark:text-amber-400">· {attrMissing.length} 项必填未填</span>
             )}
-            <span className={styles.attrDockClass}>{displayClassName(selectedAnnotation.class_name)}</span>
+            <span className="ml-auto text-[11px] font-normal text-muted-foreground">{displayClassName(selectedAnnotation.class_name)}</span>
           </button>
           {!attrCollapsed && (
-            <div className={styles.attrDockBody}>
+            <div className="overflow-y-auto pb-1">
               <AttributeForm
                 schema={attributeSchema}
                 className={selectedAnnotation.class_name}
@@ -408,42 +422,47 @@ export function AIPredictionPopover({
     <div
       ref={panelRef}
       data-testid="ai-prediction-popover"
-      className={cn(styles.aiPopover, position ? styles.aiPopoverPositioned : styles.aiPopoverDocked)}
+      className={cn(
+        "tw-scope fixed z-30 flex flex-col overflow-hidden rounded-lg border border-violet-500/35 bg-card shadow-xl",
+        "h-[var(--ai-inspector-popover-h,auto)] w-[var(--ai-inspector-popover-w,min(360px,calc(100vw-32px)))]",
+        "max-h-[calc(100vh-92px)] max-w-[calc(100vw-32px)]",
+        position
+          ? "top-[var(--ai-inspector-popover-top)] left-[var(--ai-inspector-popover-left)]"
+          : "top-[var(--ai-inspector-popover-top)] right-[var(--ai-inspector-popover-right)]",
+      )}
     >
       <div
         onPointerDown={handleDragStart}
         onPointerMove={handleDragMove}
         onPointerUp={handleDragEnd}
         onPointerCancel={handleDragEnd}
-        className={styles.aiPopoverHeader}
+        className="cursor-move touch-none border-b border-border bg-gradient-to-b from-violet-500/10 to-transparent px-3.5 py-3"
         title="拖动 AI 面板"
       >
-        <div className={styles.aiHeaderTopRow}>
-          <div className={styles.aiHeaderTitleGroup}>
-            <span className={styles.aiHeaderIcon}>
+        <div className="mb-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex size-6 items-center justify-center rounded-sm bg-violet-500/[0.18] text-violet-600 dark:text-violet-400">
               <Icon name="bot" size={14} />
             </span>
-            <b className={styles.panelTitle}>AI</b>
-            <Icon name="move" size={12} className={styles.subtleIcon} />
+            <b className="text-[13px]">AI</b>
+            <Icon name="move" size={12} className="text-muted-foreground" />
           </div>
-          <div className={styles.aiHeaderActions}>
-            <span className={styles.compactBadge}>
-              <Badge variant="ai" dot={!aiRunning}>
-                {aiRunning && <Icon name="loader2" size={10} className="spin" />}
-                {aiRunning ? "推理中" : "就绪"}
-              </Badge>
-            </span>
-            <Button variant="ghost" size="sm" onClick={onClose} title="关闭 AI" className={styles.compactIconButton}>
+          <div className="flex items-center gap-1.5">
+            <Badge variant="ai" dot={!aiRunning} className="gap-1 text-[10px]">
+              {aiRunning && <Icon name="loader2" size={10} className="spin" />}
+              {aiRunning ? "推理中" : "就绪"}
+            </Badge>
+            <Button variant="ghost" size="sm" onClick={onClose} title="关闭 AI" className="px-1.5 py-0.5">
               <Icon name="x" size={12} />
             </Button>
           </div>
         </div>
-        <div className={styles.aiModelRow}>
-          <span>模型: <span className={styles.emphasisText}>{aiModel}</span></span>
+        <div className="mb-2 flex justify-between gap-3 text-[11.5px] text-muted-foreground">
+          <span>模型: <span className="font-medium text-foreground">{aiModel}</span></span>
           <span className="mono">{aiBoxCount} 待审</span>
         </div>
-        <div className={styles.aiActionRow}>
-          <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning} className={styles.flexButton}>
+        <div className="mb-2.5 flex gap-1.5">
+          <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning} className="flex-1">
             {aiRunning
               ? <Icon name="loader2" size={11} className="spin" />
               : <Icon name="wandSparkles" size={11} />}
@@ -453,21 +472,21 @@ export function AIPredictionPopover({
                 : "推理中..."
               : "开始预标"}
           </Button>
-          <Button size="sm" onClick={onAcceptAll} disabled={aiBoxCount === 0} className={styles.flexButton}>
+          <Button size="sm" onClick={onAcceptAll} disabled={aiBoxCount === 0} className="flex-1">
             <Icon name="check" size={11} />全部采纳
           </Button>
         </div>
       </div>
 
       {/* v0.14.18 · header 以下整体可滚 (拖动头固定), 修面板内容超高时底部 (输出形态/效率) 被截断. */}
-      <div className={styles.aiPopoverBody}>
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {/* v0.14.18 · 置信度阈值移出拖动头 → body 顶部: 拖面板 (头部) 与拖滑块互不抢手势. */}
-        <div className={styles.thresholdSection}>
-          <div className={styles.thresholdHeader}>
-            <span className={styles.mutedText}>置信度阈值</span>
-            <span className={cn("mono", styles.thresholdValue)}>{(confThreshold * 100).toFixed(0)}%</span>
+        <div className="border-b border-border bg-muted px-3.5 py-2.5">
+          <div className="mb-1 flex items-baseline justify-between text-[11px]">
+            <span className="text-muted-foreground">置信度阈值</span>
+            <span className="mono rounded-sm bg-violet-500/[0.12] px-1.5 text-xs font-semibold text-violet-600 dark:text-violet-400">{(confThreshold * 100).toFixed(0)}%</span>
           </div>
-          <div className={styles.thresholdHint}>
+          <div className="mb-1.5 text-[10px] leading-[1.4] text-muted-foreground">
             过滤批量预标注结果：仅显示并采纳置信度 ≥ 此值的 AI 框，低于的隐藏且「全部采纳」也不纳入。拖动滑块调整，或用工具栏 <kbd>[</kbd> / <kbd>]</kbd>（滚轮 5%、Shift 10%）。
           </div>
           {/* 可拖动滑块 (step 1%); 仍支持滚轮 (5%/Shift 10%) 与工具栏 [ / ]. */}
@@ -484,7 +503,7 @@ export function AIPredictionPopover({
               const next = Math.min(1, Math.max(0, confThreshold + (e.deltaY < 0 ? step : -step)));
               onSetConfThreshold(Number(next.toFixed(2)));
             }}
-            className={styles.thresholdSlider}
+            className="my-0.5 w-full cursor-pointer accent-violet-500"
             aria-label="置信度阈值"
             data-testid="ai-threshold-display"
           />
@@ -492,7 +511,7 @@ export function AIPredictionPopover({
 
         {/* 共享配置区: 任务类型 / 模型任务 (检测/分割…) / 类别白名单 / variant / 后端参数 / prompt.
             与批量页 ProjectDetailPanel 同一组件 (单一事实源). */}
-        <div className={styles.variantSelector}>
+        <div className="border-b border-border bg-muted px-3.5 py-2.5">
           <PreannotateConfigForm
             cfg={cfg}
             backends={backends}
@@ -502,28 +521,28 @@ export function AIPredictionPopover({
           />
         </div>
 
-        <div className={styles.aiStats}>
-          <div className={styles.aiStatsLabel}>本次效率</div>
-          <div className={styles.aiStatsRow}>
+        <div className="border-t border-border bg-muted px-3.5 py-2.5">
+          <div className="mb-1.5 text-[11px] text-muted-foreground">本次效率</div>
+          <div className="mb-1 flex justify-between text-xs">
             <span>AI 接管率</span>
-            <span className={cn("mono", styles.aiRateValue)}>{aiTakeoverRate}%</span>
+            <span className="mono font-semibold text-violet-600 dark:text-violet-400">{aiTakeoverRate}%</span>
           </div>
-          <ProgressBar value={aiTakeoverRate} color="var(--color-ai)" />
+          <ProgressBar value={aiTakeoverRate} color="var(--sc-chart-4)" />
           {taskAiPredictionCount && taskAiPredictionCount > 0 && (
             <div
               data-testid="task-ai-cost"
-              className={styles.taskAiCost}
+              className="mt-1.5 flex justify-between gap-2.5 text-[11px] text-muted-foreground"
             >
               <span>本题</span>
-              <span className={cn("mono", styles.taskAiCostValue)}>
+              <span className="mono text-foreground">
                 {taskAiCost != null && taskAiCost > 0 ? `¥${taskAiCost.toFixed(4)}` : "¥0"}
                 {taskAiAvgMs != null && (
                   <>
-                    <span className={styles.inlineSeparator}>·</span>
+                    <span className="mx-1 text-muted-foreground">·</span>
                     {taskAiAvgMs}ms
                   </>
                 )}
-                <span className={styles.predictionCount}>
+                <span className="ml-1 text-muted-foreground">
                   ({taskAiPredictionCount} 次)
                 </span>
               </span>
@@ -535,14 +554,17 @@ export function AIPredictionPopover({
       {onSizeChange && (
         <button
           type="button"
-          className={styles.aiPopoverResizeHandle}
+          className="absolute bottom-0 right-0 z-[1] size-[18px] cursor-nwse-resize touch-none appearance-none border-0 bg-transparent p-0 text-muted-foreground hover:text-violet-600 dark:hover:text-violet-400"
           onPointerDown={handleResizeStart}
           onPointerMove={handleResizeMove}
           onPointerUp={handleResizeEnd}
           onPointerCancel={handleResizeEnd}
           aria-label="调整 AI 面板尺寸"
           title="拖拽调整尺寸"
-        />
+        >
+          <span className="pointer-events-none absolute bottom-1 right-1 h-px w-[9px] origin-right rotate-[-45deg] bg-current" />
+          <span className="pointer-events-none absolute bottom-2 right-1 h-px w-[5px] origin-right rotate-[-45deg] bg-current" />
+        </button>
       )}
     </div>
   );
@@ -561,13 +583,13 @@ function GroupCard({ groupId, memberCount, expanded, onToggle, onSelectGroup }: 
   const color = groupOutlineColor(groupId);
   return (
     <div
-      className={styles.groupCard}
+      className="my-0.5 flex items-center gap-1 rounded border border-border bg-muted px-1.5 py-1"
       data-testid={`box-list-group-card-${groupId}`}
     >
       <button
         type="button"
         onClick={onToggle}
-        className={styles.groupCardToggle}
+        className="inline-flex size-5 flex-[0_0_auto] cursor-pointer appearance-none items-center justify-center rounded-[3px] border border-border bg-muted p-0 text-foreground hover:bg-muted"
         title={expanded ? "折叠组" : "展开组"}
       >
         <Icon name={expanded ? "chevDown" : "chevRight"} size={14} />
@@ -576,15 +598,15 @@ function GroupCard({ groupId, memberCount, expanded, onToggle, onSelectGroup }: 
         type="button"
         onClick={onSelectGroup}
         disabled={!onSelectGroup}
-        className={styles.groupCardHeader}
+        className="flex flex-1 cursor-pointer appearance-none items-center gap-1.5 border-0 bg-transparent px-1 py-0.5 text-left text-xs text-foreground hover:enabled:bg-muted disabled:cursor-default"
         title="选中整组"
       >
         <span
-          className={styles.groupCardDot}
-          ref={(node) => node?.style.setProperty("--group-color", color)}
+          className="size-2 rounded-[2px]"
+          ref={(node) => { if (node) node.style.background = color; }}
         />
         <span>组 #{groupId}</span>
-        <span className={styles.groupCardCount}>· {memberCount} 个标注</span>
+        <span className="text-[11px] text-muted-foreground">· {memberCount} 个标注</span>
       </button>
     </div>
   );
@@ -651,7 +673,7 @@ function FrameFilterTabs({ value, onChange }: { value: FrameFilter; onChange: (f
   return (
     <div
       aria-label="帧过滤"
-      className={styles.frameFilterTabs}
+      className="grid grid-cols-2 overflow-hidden rounded-md border border-border bg-background"
     >
       {options.map((option) => {
         const active = option.value === value;
@@ -661,9 +683,9 @@ function FrameFilterTabs({ value, onChange }: { value: FrameFilter; onChange: (f
             type="button"
             onClick={() => onChange(option.value)}
             className={cn(
-              styles.frameFilterButton,
-              option.value === "current" && styles.frameFilterButtonWithDivider,
-              active && styles.frameFilterButtonActive,
+              "h-6 cursor-pointer appearance-none border-0 bg-transparent text-[11px] font-medium text-muted-foreground",
+              option.value === "current" && "border-l border-border",
+              active && "bg-brand/10 font-semibold text-brand",
             )}
           >
             {option.label}
@@ -676,22 +698,26 @@ function FrameFilterTabs({ value, onChange }: { value: FrameFilter; onChange: (f
 
 function PredictionSourceFilterCard({ filter }: { filter: PredictionSourceFilterState }) {
   return (
-    <div className={styles.sourceFilterCard} aria-label="预测来源筛选">
-      <span className={styles.sourceFilterLabel}>
+    <div
+      className="mb-1.5 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5"
+      aria-label="预测来源筛选"
+    >
+      <span className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
         <Icon name="filter" size={12} />来源
       </span>
-      <div className={styles.sourceFilterControls}>
+      <div className="flex min-w-0 items-center justify-end gap-1.5">
         {PREDICTION_SOURCE_FILTERS.map((source) => {
           const checked = filter.visibility[source];
           const count = filter.counts[source];
           const label = predictionSourceLabel(source);
+          const isImport = source === "external_import";
           return (
             <label
               key={source}
               className={cn(
-                styles.sourceFilterOption,
-                checked && styles.sourceFilterOptionActive,
-                source === "external_import" && styles.sourceFilterOptionImport,
+                "flex min-w-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-md border border-border bg-muted px-[7px] py-[3px] text-[11px] text-muted-foreground",
+                checked && !isImport && "border-violet-500/45 bg-violet-500/10 text-violet-600 dark:text-violet-400",
+                checked && isImport && "border-amber-500/45 bg-amber-500/10 text-amber-600 dark:text-amber-400",
               )}
             >
               <input
@@ -699,11 +725,11 @@ function PredictionSourceFilterCard({ filter }: { filter: PredictionSourceFilter
                 checked={checked}
                 disabled={count === 0}
                 onChange={(e) => filter.onToggle(source, e.currentTarget.checked)}
-                className={styles.sourceFilterCheckbox}
+                className="size-3 accent-brand"
               />
               <Icon name={source === "ml_backend" ? "sparkle" : "upload"} size={11} />
               <span>{label}</span>
-              <span className={cn("mono", styles.sourceFilterCount)}>{count}</span>
+              <span className="mono text-[10px] text-inherit">{count}</span>
             </label>
           );
         })}
@@ -887,9 +913,9 @@ function BoxesList({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, hasMore, isFetchingMore, aiBoxes.length]);
   return (
-    <div ref={parentRef} className={styles.boxesScroller}>
+    <div ref={parentRef} className="flex-1 overflow-y-auto px-2 py-1">
       <div
-        className={styles.virtualList}
+        className="relative h-[var(--ai-inspector-list-height)]"
         ref={(node) => {
           node?.style.setProperty("--ai-inspector-list-height", `${virtualizer.getTotalSize()}px`);
         }}
@@ -905,7 +931,7 @@ function BoxesList({
                 virtualizer.measureElement(node);
                 node?.style.setProperty("--ai-inspector-row-y", `${vItem.start}px`);
               }}
-              className={styles.virtualRow}
+              className="absolute left-0 top-0 w-full translate-y-[var(--ai-inspector-row-y)]"
             >
               {r.kind === "ai" && (
                 <BoxListItem
@@ -925,18 +951,18 @@ function BoxesList({
                 />
               )}
               {r.kind === "header" && (
-                <div className={styles.listHeaderCard}>
-                  <div className={styles.listHeaderRow}>
-                    <span className={styles.listHeaderLabel}>{r.label}</span>
-                    <span className={cn("mono", styles.listHeaderCount)}>
+                <div className={SECTION_CARD_CLASS}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[13px] font-semibold">{r.label}</span>
+                    <span className="mono text-[11px] font-medium text-muted-foreground">
                       {showFrameFilter && frameFilter === "current" ? `${r.count}/${r.totalCount}` : r.count}
                     </span>
                   </div>
                 </div>
               )}
               {r.kind === "frameFilter" && (
-                <div className={styles.frameFilterCard}>
-                  <span className={styles.frameFilterLabel}>显示范围</span>
+                <div className="mb-1.5 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5">
+                  <span className="text-[11px] font-semibold text-muted-foreground">显示范围</span>
                   <FrameFilterTabs value={r.filter} onChange={r.onFilterChange} />
                 </div>
               )}
@@ -977,11 +1003,11 @@ function BoxesList({
         })}
       </div>
       {(hasMore || isFetchingMore) && (
-        <div className={styles.loadMoreFooter}>
+        <div className="px-2 py-1.5 text-center text-[11px] text-muted-foreground">
           {isFetchingMore ? "加载更多预测..." : (
             <button
               onClick={onFetchMore}
-              className={styles.loadMoreButton}
+              className="cursor-pointer appearance-none rounded border border-border bg-transparent px-3 py-1 text-[11px] text-muted-foreground"
             >加载更多</button>
           )}
         </div>
