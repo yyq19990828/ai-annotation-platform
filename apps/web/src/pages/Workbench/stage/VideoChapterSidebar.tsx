@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { useElementStyle } from "@/components/ui/useElementStyle";
 import {
   useCreateVideoChapter,
   useDeleteVideoChapter,
@@ -10,7 +12,6 @@ import {
 } from "@/hooks/useVideoChapters";
 
 import type { FrameTimebase } from "./frameTimebase";
-import styles from "./VideoChapterSidebar.module.css";
 
 const CHAPTER_PALETTE = [
   "oklch(0.62 0.18 252)",
@@ -18,14 +19,6 @@ const CHAPTER_PALETTE = [
   "oklch(0.68 0.16 75)",
   "oklch(0.62 0.20 25)",
   "oklch(0.60 0.20 295)",
-];
-
-const PALETTE_CLASSES = [
-  styles.paletteBlue,
-  styles.paletteGreen,
-  styles.paletteAmber,
-  styles.paletteRed,
-  styles.palettePurple,
 ];
 
 interface VideoChapterSidebarProps {
@@ -62,6 +55,30 @@ interface ChapterFormState {
   startFrame: number;
   endFrame: number;
   color: string;
+}
+
+function ColorSwatch({
+  color,
+  selected,
+  onSelect,
+}: {
+  color: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const ref = useElementStyle<HTMLButtonElement>({ backgroundColor: color } as CSSProperties);
+  return (
+    <button
+      ref={ref}
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "w-5 h-5 border border-border rounded-full cursor-pointer p-0",
+        selected && "border-2 border-foreground",
+      )}
+      aria-label={`color ${color}`}
+    />
+  );
 }
 
 export function VideoChapterSidebar({
@@ -162,19 +179,19 @@ export function VideoChapterSidebar({
   return (
     <div
       data-testid="video-chapter-sidebar"
-      className={styles.sidebar}
+      className="grid gap-2 p-2.5 px-3 border border-border rounded-lg bg-card"
     >
-      <div className={styles.header}>
-        <div className={styles.headerTitleGroup}>
-          <b className={styles.title}>章节</b>
-          <span className={cn("mono", styles.count)}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <b className="text-[13px]">章节</b>
+          <span className="mono text-muted-foreground text-[11px]">
             {sortedChapters.length}
           </span>
         </div>
         {canEdit && (
           <Button
             size="sm"
-            className={styles.createButton}
+            className="!py-1 !px-2 !rounded-lg"
             disabled={Boolean(editing)}
             onClick={startCreate}
             title="新建章节"
@@ -185,16 +202,16 @@ export function VideoChapterSidebar({
       </div>
 
       {isLoading && sortedChapters.length === 0 && (
-        <div className={styles.stateMessage}>载入中…</div>
+        <div className="text-muted-foreground text-xs">载入中…</div>
       )}
 
       {sortedChapters.length === 0 && !isLoading && !editing && (
-        <div className={styles.emptyMessage}>
+        <div className="text-muted-foreground text-xs leading-relaxed">
           暂无章节。用 PageDown / PageUp 在章节之间跳转。
         </div>
       )}
 
-      <div className={styles.list}>
+      <div className="grid gap-1.5">
         {sortedChapters.map((chapter, idx) => {
           const isInside = frameIndex >= chapter.start_frame && frameIndex <= chapter.end_frame;
           const color = chapter.color ?? defaultChapterColor(idx);
@@ -203,34 +220,37 @@ export function VideoChapterSidebar({
               key={chapter.id}
               data-testid="video-chapter-row"
               aria-selected={isInside}
-              className={cn(styles.row, isInside && styles.rowActive)}
+              className={cn(
+                "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-2 items-center py-[7px] px-2.5 border border-border rounded-lg bg-background",
+                isInside && "!border-brand bg-brand/10",
+              )}
             >
-              <svg className={styles.colorDot} viewBox="0 0 10 10" aria-hidden="true">
+              <svg className="w-2.5 h-2.5 rounded-full" viewBox="0 0 10 10" aria-hidden="true">
                 <circle cx="5" cy="5" r="5" fill={color} />
               </svg>
               <button
                 type="button"
                 onClick={() => onSeekFrame?.(chapter.start_frame)}
-                className={styles.chapterButton}
+                className="grid gap-0.5 items-start min-w-0 p-0 border-0 bg-transparent text-foreground cursor-pointer text-left"
               >
-                <b className={styles.chapterTitle}>
+                <b className="overflow-hidden text-[13px] text-ellipsis whitespace-nowrap">
                   {idx + 1}. {chapter.title}
                   {chapter.source === "sampled" && (
-                    <span className={styles.sampledBadge} title="由采样网格派生">
+                    <span className="ml-1.5 px-1.5 py-px rounded-full bg-brand/10 text-brand text-[10px] font-medium align-middle" title="由采样网格派生">
                       采样
                     </span>
                   )}
                 </b>
-                <span className={cn("mono", styles.chapterMeta)}>
+                <span className="mono text-muted-foreground text-[11px]">
                   F{chapter.start_frame}–F{chapter.end_frame} · {formatChapterDuration(chapter.start_frame, chapter.end_frame, timebase)}
                   {chapter.frame_step != null && ` · 步长 ${chapter.frame_step}`}
                 </span>
               </button>
               {canEdit && (
-                <div className={styles.rowActions}>
+                <div className="flex gap-1">
                   <Button
                     size="sm"
-                    className={styles.iconButton}
+                    className="!justify-center !w-[26px] !h-[26px] !p-0 !rounded-lg"
                     title="编辑章节"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -241,7 +261,7 @@ export function VideoChapterSidebar({
                   </Button>
                   <Button
                     size="sm"
-                    className={cn(styles.iconButton, styles.deleteButton)}
+                    className="!justify-center !w-[26px] !h-[26px] !p-0 !rounded-lg !text-rose-600 dark:!text-rose-400"
                     title="删除章节"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -260,7 +280,7 @@ export function VideoChapterSidebar({
       {editing && (
         <div
           data-testid="video-chapter-form"
-          className={styles.form}
+          className="grid gap-1.5 p-2 px-2.5 border border-brand rounded-lg bg-brand/5"
         >
           <input
             type="text"
@@ -269,12 +289,12 @@ export function VideoChapterSidebar({
             onChange={(e) =>
               setEditing((prev) => (prev ? { ...prev, title: e.target.value } : prev))
             }
-            className={styles.textInput}
+            className="py-[5px] px-2 text-[13px] border border-border rounded-md bg-background text-foreground"
           />
-          <div className={styles.fieldsGrid}>
-            <label className={styles.field}>
+          <div className="grid grid-cols-2 gap-1.5 items-center">
+            <label className="grid gap-0.5 text-muted-foreground text-[11px]">
               起始帧
-              <div className={styles.fieldControl}>
+              <div className="flex gap-1">
                 <input
                   type="number"
                   min={0}
@@ -285,11 +305,11 @@ export function VideoChapterSidebar({
                       prev ? { ...prev, startFrame: Number(e.target.value) } : prev,
                     )
                   }
-                  className={styles.numberInput}
+                  className="flex-1 py-1 px-1.5 text-xs border border-border rounded-md bg-background text-foreground"
                 />
                 <Button
                   size="sm"
-                  className={styles.currentButton}
+                  className="!px-1.5 !rounded-md"
                   title="使用当前帧"
                   onClick={() =>
                     setEditing((prev) =>
@@ -301,9 +321,9 @@ export function VideoChapterSidebar({
                 </Button>
               </div>
             </label>
-            <label className={styles.field}>
+            <label className="grid gap-0.5 text-muted-foreground text-[11px]">
               结束帧
-              <div className={styles.fieldControl}>
+              <div className="flex gap-1">
                 <input
                   type="number"
                   min={0}
@@ -314,11 +334,11 @@ export function VideoChapterSidebar({
                       prev ? { ...prev, endFrame: Number(e.target.value) } : prev,
                     )
                   }
-                  className={styles.numberInput}
+                  className="flex-1 py-1 px-1.5 text-xs border border-border rounded-md bg-background text-foreground"
                 />
                 <Button
                   size="sm"
-                  className={styles.currentButton}
+                  className="!px-1.5 !rounded-md"
                   title="使用当前帧"
                   onClick={() =>
                     setEditing((prev) =>
@@ -331,34 +351,29 @@ export function VideoChapterSidebar({
               </div>
             </label>
           </div>
-          <label className={styles.field}>
+          <label className="grid gap-0.5 text-muted-foreground text-[11px]">
             颜色
-            <div className={styles.palette}>
-              {CHAPTER_PALETTE.map((c, idx) => (
-                <button
+            <div className="flex flex-wrap gap-1.5">
+              {CHAPTER_PALETTE.map((c) => (
+                <ColorSwatch
                   key={c}
-                  type="button"
-                  onClick={() => setEditing((prev) => (prev ? { ...prev, color: c } : prev))}
-                  className={cn(
-                    styles.colorSwatch,
-                    PALETTE_CLASSES[idx],
-                    editing.color === c && styles.colorSwatchSelected,
-                  )}
-                  aria-label={`color ${c}`}
+                  color={c}
+                  selected={editing.color === c}
+                  onSelect={() => setEditing((prev) => (prev ? { ...prev, color: c } : prev))}
                 />
               ))}
             </div>
           </label>
           {error && (
-            <div className={styles.error}>{error}</div>
+            <div className="text-rose-600 dark:text-rose-400 text-[11px]">{error}</div>
           )}
-          <div className={styles.formActions}>
-            <Button size="sm" className={styles.formButton} variant="ghost" onClick={cancelForm}>
+          <div className="flex gap-1.5 justify-end">
+            <Button size="sm" className="!rounded-md" variant="ghost" onClick={cancelForm}>
               取消
             </Button>
             <Button
               size="sm"
-              className={styles.formButton}
+              className="!rounded-md"
               onClick={submitForm}
               disabled={createMutation.isPending || updateMutation.isPending}
             >
