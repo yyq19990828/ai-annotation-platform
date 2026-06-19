@@ -145,7 +145,7 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
           <span className="text-xs text-muted-foreground">{task?.file_name}</span>
           {task?.skip_reason && (
             <span
-              className="ml-1 rounded-sm bg-violet-600 px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.4px] text-white"
+              className="ml-1 rounded-sm border border-violet-500/30 bg-violet-500/10 px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.4px] text-violet-600 dark:text-violet-400"
               data-testid="reviewer-skip-badge"
             >
               SKIP

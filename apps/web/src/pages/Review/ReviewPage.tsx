@@ -16,13 +16,12 @@ import { RejectReasonModal } from "./RejectReasonModal";
 import { ReviewSidebar } from "./ReviewSidebar";
 import type { CSSProperties } from "react";
 
-function ProgressFill({ pct, color }: { pct: number; color: string }) {
+function ProgressFill({ pct, barClass }: { pct: number; barClass: string }) {
   const ref = useElementStyle<HTMLDivElement>({
     "--progress-pct": `${Math.min(100, pct)}%`,
-    "--progress-color": color,
   } as CSSProperties);
 
-  return <div ref={ref} className="h-full w-[var(--progress-pct)] bg-[var(--progress-color)]" />;
+  return <div ref={ref} className={`h-full w-[var(--progress-pct)] ${barClass}`} />;
 }
 
 function AnnotationPreview({ taskId }: { taskId: string }) {
@@ -339,13 +338,13 @@ export function ReviewPage() {
               <Badge variant="warning" dot>审核中</Badge>
             </div>
             {[
-              { label: "待审", pct: reviewPct, count: pendingReview, bar: "var(--color-warning)" },
-              { label: "通过", pct: approvedPct, count: approvedDone, bar: "var(--color-success)" },
+              { label: "待审", pct: reviewPct, count: pendingReview, bar: "bg-amber-500" },
+              { label: "通过", pct: approvedPct, count: approvedDone, bar: "bg-emerald-500" },
             ].map((r) => (
               <div key={r.label} className="mt-1 flex items-center gap-2.5 text-[11px] text-muted-foreground">
                 <span className="flex-[0_0_48px]">{r.label}</span>
                 <div className="h-[5px] flex-1 overflow-hidden rounded-sm bg-muted">
-                  <ProgressFill pct={r.pct} color={r.bar} />
+                  <ProgressFill pct={r.pct} barClass={r.bar} />
                 </div>
                 <span className="mono flex-[0_0_100px] text-right text-muted-foreground">
                   {r.count}/{selectedBatch.total_tasks} · {r.pct}%
