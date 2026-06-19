@@ -7,14 +7,39 @@
  * - Layer 2:相机图缩略图条(±5 邻帧),点缩略图即设目标帧;无相机图的帧降级为占位,
  *   整条无图时不渲染(回落纯 Layer 1)。
  * 由 3D 画布右键菜单的「延续到指定帧 / 向后插值填充」触发,fixed 定位在鼠标点。
+ * v0.17.6 · module.css → Tailwind。
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFrameNeighbors } from "@/hooks/useFrameNeighbors";
 import { Button } from "@/components/ui/Button";
 import { useNeighborFrameThumbs } from "./useNeighborFrameThumbs";
-import styles from "./FramePicker.module.css";
 
 export type FramePickerMode = "propagate" | "interpolate";
+
+// v0.17.6 · Tailwind class constants (was FramePicker.module.css).
+const POPOVER =
+  "fixed left-[var(--frame-picker-left)] top-[var(--frame-picker-top)] z-[1000] w-[280px] max-w-[90vw] p-3 flex flex-col gap-2.5 bg-card border border-border rounded-lg shadow-lg text-[13px] text-foreground";
+const TITLE = "font-semibold text-[13px] text-foreground";
+const HINT = "text-xs text-muted-foreground";
+const FILMSTRIP = "flex gap-1.5 overflow-x-auto pb-1";
+const THUMB =
+  "shrink-0 flex flex-col items-center gap-0.5 p-0.5 bg-background border border-border rounded-md cursor-pointer hover:border-foreground/20 hover:bg-muted";
+const THUMB_ACTIVE = "!border-brand";
+const THUMB_CURRENT = "outline outline-2 outline-brand/10";
+const THUMB_IMG = "w-14 h-10 object-cover rounded block";
+const THUMB_PLACEHOLDER =
+  "w-14 h-10 flex items-center justify-center text-muted-foreground bg-muted rounded";
+const THUMB_NUM = "text-[11px] text-muted-foreground";
+const STEPS = "flex gap-1.5";
+const CHIP =
+  "flex-1 px-2 py-1 text-xs bg-background border border-border rounded-md text-foreground cursor-pointer appearance-none hover:border-foreground/20 hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed";
+const LABEL = "flex items-center gap-2 text-xs text-muted-foreground";
+const INPUT =
+  "flex-1 px-2 py-1 text-[13px] bg-background border border-border rounded-md text-foreground appearance-none focus:outline-none focus:border-brand";
+const FEEDBACK = "text-xs min-h-4";
+const OK = "text-emerald-600 dark:text-emerald-400";
+const WARN = "text-amber-600 dark:text-amber-400";
+const ACTIONS = "flex justify-end gap-2";
 
 interface FramePickerProps {
   taskId: string;
@@ -118,41 +143,41 @@ export function FramePicker({
   return (
     <div
       ref={ref}
-      className={styles.popover}
+      className={POPOVER}
       role="dialog"
       aria-label={mode === "propagate" ? "延续到指定帧" : "插值填充到指定帧"}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <div className={styles.title}>{mode === "propagate" ? "延续到指定帧" : "插值填充到指定帧"}</div>
-      <div className={styles.hint}>当前 第 {frameIndex ?? "?"} / {sceneTotalFrames ?? "?"} 帧</div>
+      <div className={TITLE}>{mode === "propagate" ? "延续到指定帧" : "插值填充到指定帧"}</div>
+      <div className={HINT}>当前 第 {frameIndex ?? "?"} / {sceneTotalFrames ?? "?"} 帧</div>
       {thumbs.some((t) => t.imageUrl) && (
-        <div className={styles.filmstrip}>
+        <div className={FILMSTRIP}>
           {thumbs.map((t) => (
             <button
               key={t.frameIndex}
               type="button"
               className={[
-                styles.thumb,
-                t.frameIndex === target ? styles.thumbActive : "",
-                t.isCurrent ? styles.thumbCurrent : "",
+                THUMB,
+                t.frameIndex === target ? THUMB_ACTIVE : "",
+                t.isCurrent ? THUMB_CURRENT : "",
               ].filter(Boolean).join(" ")}
               title={`第 ${t.frameIndex} 帧${t.isCurrent ? " · 当前" : ""}`}
               onClick={() => setRaw(String(t.frameIndex))}
             >
               {t.imageUrl ? (
-                <img src={t.imageUrl} alt={`第 ${t.frameIndex} 帧`} className={styles.thumbImg} loading="lazy" />
+                <img src={t.imageUrl} alt={`第 ${t.frameIndex} 帧`} className={THUMB_IMG} loading="lazy" />
               ) : (
-                <span className={styles.thumbPlaceholder}>—</span>
+                <span className={THUMB_PLACEHOLDER}>—</span>
               )}
-              <span className={styles.thumbNum}>{t.frameIndex}</span>
+              <span className={THUMB_NUM}>{t.frameIndex}</span>
             </button>
           ))}
         </div>
       )}
-      <div className={styles.steps}>
+      <div className={STEPS}>
         <button
           type="button"
-          className={styles.chip}
+          className={CHIP}
           disabled={frameIndex == null}
           onClick={() => frameIndex != null && stepTo(frameIndex + 5)}
         >
@@ -160,7 +185,7 @@ export function FramePicker({
         </button>
         <button
           type="button"
-          className={styles.chip}
+          className={CHIP}
           disabled={frameIndex == null}
           onClick={() => frameIndex != null && stepTo(frameIndex + 10)}
         >
@@ -168,18 +193,18 @@ export function FramePicker({
         </button>
         <button
           type="button"
-          className={styles.chip}
+          className={CHIP}
           disabled={maxFrame == null}
           onClick={() => maxFrame != null && stepTo(maxFrame)}
         >
           到末帧
         </button>
       </div>
-      <label className={styles.label}>
+      <label className={LABEL}>
         目标帧
         <input
           type="number"
-          className={styles.input}
+          className={INPUT}
           min={0}
           max={maxFrame ?? undefined}
           value={raw}
@@ -189,16 +214,16 @@ export function FramePicker({
           }}
         />
       </label>
-      <div className={styles.feedback}>
+      <div className={FEEDBACK}>
         {!targetValid ? (
-          <span className={styles.hint}>输入或步进选择目标帧</span>
+          <span className={HINT}>输入或步进选择目标帧</span>
         ) : reachable ? (
-          <span className={styles.ok}>→ 第 {target} / {sceneTotalFrames} 帧 · 可达</span>
+          <span className={OK}>→ 第 {target} / {sceneTotalFrames} 帧 · 可达</span>
         ) : (
-          <span className={styles.warn}>第 {target} 帧不可达(同帧或超 ±20 反查范围)</span>
+          <span className={WARN}>第 {target} 帧不可达(同帧或超 ±20 反查范围)</span>
         )}
       </div>
-      <div className={styles.actions}>
+      <div className={ACTIONS}>
         <Button variant="ghost" size="sm" onClick={onCancel}>
           取消
         </Button>
