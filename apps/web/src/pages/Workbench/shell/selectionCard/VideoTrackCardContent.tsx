@@ -34,8 +34,68 @@ import { MetricGrid } from "./MetricGrid";
 import { MetaFooter } from "./MetaFooter";
 import { ActionBar } from "./ActionBar";
 import { geometryMetrics, type Metric } from "./geometryMetrics";
-import cardStyles from "./cardLayout.module.css";
-import styles from "./VideoTrackCardContent.module.css";
+
+const BODY_CLASS =
+  "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
+
+/* ─── 帧定位 chip ─── */
+const FRAME_CHIP_BASE =
+  "inline-flex flex-none items-center gap-[3px] rounded-full px-1.5 py-px text-[10px] font-medium tabular-nums whitespace-nowrap";
+const FRAME_CHIP_DEFAULT_CLASS = `${FRAME_CHIP_BASE} bg-brand/10 text-brand`;
+const FRAME_CHIP_DANGER_CLASS = `${FRAME_CHIP_BASE} bg-rose-500/10 text-rose-600 dark:text-rose-400`;
+
+/* ─── 小节 ─── */
+const SECTION_CLASS = "grid gap-2";
+const SECTION_DIVIDED_CLASS = "border-t border-border pt-2.5";
+const SECTION_HEADER_CLASS = "flex items-center justify-between gap-2";
+const SECTION_TITLE_CLASS =
+  "text-[11px] font-semibold tracking-[0.02em] text-muted-foreground";
+const SECTION_COUNT_CLASS = "text-[11px] text-muted-foreground";
+
+/* ─── 操作网格 ─── */
+const ACTION_GRID_CLASS = "grid grid-cols-2 gap-1";
+const ACTION_BUTTON_CLASS =
+  "min-h-[30px]! justify-start! rounded-lg! px-2! py-[3px]! text-xs!";
+const ACTION_BUTTON_PRESSED_CLASS =
+  "border-brand/55! bg-brand/10! text-brand!";
+
+/* ─── 语义标签 ─── */
+const SEMANTIC_ROW_CLASS = "flex items-center gap-1.5";
+const SEMANTIC_LABEL_CLASS =
+  "flex-[0_0_52px] text-[10px] font-semibold leading-[1.3] text-muted-foreground whitespace-nowrap";
+const SEMANTIC_INPUT_CLASS =
+  "appearance-none flex-1 min-w-0 h-7 px-[7px] border border-border rounded-md bg-background text-foreground text-[11px]";
+
+/* ─── Tracker job ─── */
+const TRACKER_JOB_ROW_CLASS = "flex items-center gap-1.5";
+
+/* ─── 标题行图标按钮 ─── */
+const HEADER_ACTIONS_CLASS = "flex items-center gap-1";
+const ICON_BUTTON_CLASS = "size-7! p-0! justify-center! rounded-lg!";
+
+/* ─── 关键帧导航 ─── */
+const KF_NAV_CLASS = "grid grid-cols-2 gap-1";
+const KF_NAV_BUTTON_CLASS =
+  "min-h-7! justify-center! rounded-lg! px-[7px]! text-xs!";
+
+/* ─── 关键帧表 ─── */
+const KF_TABLE_CLASS =
+  "border border-border rounded-lg overflow-x-clip overflow-y-auto max-h-[232px] bg-background";
+const KF_HEADER_CLASS =
+  "sticky top-0 z-[1] grid grid-cols-[44px_max-content_1fr] gap-2 min-h-[30px] px-2 py-1.5 border-b border-border bg-background text-[10px] font-semibold text-muted-foreground [&_span:last-child]:text-right";
+const KF_ROW_CLASS =
+  "grid grid-cols-[44px_max-content_1fr] gap-2 items-center px-2 py-1.5 border-t border-border bg-card text-[11px] [&:nth-child(2)]:border-t-0";
+const KF_PREDICTION_ROW_CLASS = "bg-violet-500/5";
+const KF_FRAME_CLASS = "text-xs";
+const KF_STATUS_CLASS =
+  "flex min-w-0 items-center gap-[5px] text-foreground whitespace-nowrap";
+const KF_STATUS_ABSENT_CLASS = "text-rose-600 dark:text-rose-400";
+const KF_STATUS_DOT_CLASS = "size-[7px]";
+const KF_ACTION_ROW_CLASS = "flex min-w-0 flex-wrap justify-end gap-1";
+const KF_BUTTON_CLASS = "size-7! min-w-7! justify-center! rounded-lg! p-0!";
+const SUCCESS_BUTTON_CLASS = "text-emerald-600! dark:text-emerald-400!";
+const DANGER_BUTTON_CLASS = "text-rose-600! dark:text-rose-400!";
+const COMPACT_BADGE_CLASS = "[&_span]:text-[10px]! [&_span]:px-1.5!";
 
 export interface VideoTrackCardContentProps {
   selectedTrack: VideoTrackAnnotation;
@@ -216,7 +276,7 @@ export function VideoTrackCardContent({
   const timeLabel = fps ? formatTimecode(frameIndex / fps) : null;
   const frameChip = (
     <span
-      className={cn(styles.frameChip, currentFrameOutside && styles.frameChipDanger)}
+      className={currentFrameOutside ? FRAME_CHIP_DANGER_CLASS : FRAME_CHIP_DEFAULT_CLASS}
       title={`当前第 ${frameIndex} 帧`}
     >
       <Icon name="film" size={10} />F{frameIndex}
@@ -262,7 +322,7 @@ export function VideoTrackCardContent({
   const hasAttributes = Boolean(attributeSchema && (onUpdateTrackAttributes || onUpdateKeyframeAttributes));
 
   return (
-    <div className={cardStyles.body}>
+    <div className={BODY_CLASS}>
       <IdentityHeader
         className={selectedTrack.class_name}
         source={selectedTrack.source === "prediction_based" ? "accepted" : "manual"}
@@ -270,14 +330,14 @@ export function VideoTrackCardContent({
       />
 
       {/* —— 轨迹整体 —— */}
-      <div className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <span className={styles.sectionTitle}>轨迹整体</span>
-          <div className={styles.headerActions}>
-            <span className={cn("mono", styles.sectionCount)}>{shortTrackId(geom.track_id)}</span>
+      <div className={SECTION_CLASS}>
+        <div className={SECTION_HEADER_CLASS}>
+          <span className={SECTION_TITLE_CLASS}>轨迹整体</span>
+          <div className={HEADER_ACTIONS_CLASS}>
+            <span className={cn("mono", SECTION_COUNT_CLASS)}>{shortTrackId(geom.track_id)}</span>
             <Button
               size="sm"
-              className={styles.iconButton}
+              className={ICON_BUTTON_CLASS}
               title="复制轨迹 ID"
               aria-label="复制轨迹 ID"
               onClick={copyTrackId}
@@ -293,7 +353,7 @@ export function VideoTrackCardContent({
                   ref={ref}
                   type="button"
                   size="sm"
-                  className={styles.iconButton}
+                  className={ICON_BUTTON_CLASS}
                   disabled={readOnly || !onConvertToBboxes}
                   title="转换为独立框"
                   aria-label="转换为独立框"
@@ -310,12 +370,12 @@ export function VideoTrackCardContent({
         <MetricGrid metrics={trackMetrics} />
 
         {onUpdateSemanticLabel && (
-          <label className={styles.semanticRow}>
-            <span className={styles.semanticLabel}>语义标签</span>
+          <label className={SEMANTIC_ROW_CLASS}>
+            <span className={SEMANTIC_LABEL_CLASS}>语义标签</span>
             <input
               type="text"
               data-testid="video-track-semantic-label-input"
-              className={styles.semanticInput}
+              className={SEMANTIC_INPUT_CLASS}
               placeholder="如 car_3 (跨任务 Re-ID)"
               value={semanticValue}
               disabled={readOnly || selectedTrackLocked}
@@ -330,15 +390,15 @@ export function VideoTrackCardContent({
         )}
 
         {trackerJob && (
-          <div data-testid="video-tracker-job-row" className={styles.trackerJobRow}>
+          <div data-testid="video-tracker-job-row" className={TRACKER_JOB_ROW_CLASS}>
             <VideoTrackerJobBadge job={trackerJob} onCancel={onCancelTrackerJob} />
           </div>
         )}
 
-        <div className={styles.actionGrid}>
+        <div className={ACTION_GRID_CLASS}>
           <Button
             size="sm"
-            className={styles.actionButton}
+            className={ACTION_BUTTON_CLASS}
             disabled={readOnly || selectedTrackLocked || !onSplitSelectedTrack}
             title="在当前帧之后拆出后段轨迹"
             onClick={onSplitSelectedTrack}
@@ -347,7 +407,7 @@ export function VideoTrackCardContent({
           </Button>
           <Button
             size="sm"
-            className={styles.actionButton}
+            className={ACTION_BUTTON_CLASS}
             disabled={nextPrediction === null || !onSeekFrame}
             title="跳转到下一条 prediction 关键帧"
             onClick={() => {
@@ -358,7 +418,7 @@ export function VideoTrackCardContent({
           </Button>
           <Button
             size="sm"
-            className={styles.actionButton}
+            className={ACTION_BUTTON_CLASS}
             disabled={readOnly || selectedTrackLocked || !onPropagateTrack}
             title="发起 AI 传播 (Shift+T)"
             onClick={() => onPropagateTrack?.(selectedTrack)}
@@ -367,7 +427,7 @@ export function VideoTrackCardContent({
           </Button>
           <Button
             size="sm"
-            className={styles.actionButton}
+            className={ACTION_BUTTON_CLASS}
             disabled={!canPropagate}
             title="把当前帧的框复制到后续/向前 N 帧"
             onClick={() => setPropagateOpen(true)}
@@ -378,18 +438,18 @@ export function VideoTrackCardContent({
       </div>
 
       {/* —— 当前帧 —— */}
-      <div className={cn(styles.section, styles.sectionDivided)}>
-        <div className={styles.sectionHeader}>
-          <span className={styles.sectionTitle}>当前帧</span>
+      <div className={cn(SECTION_CLASS, SECTION_DIVIDED_CLASS)}>
+        <div className={SECTION_HEADER_CLASS}>
+          <span className={SECTION_TITLE_CLASS}>当前帧</span>
           {frameChip}
         </div>
 
         <MetricGrid metrics={currentMetrics} />
 
-        <div className={styles.actionGrid}>
+        <div className={ACTION_GRID_CLASS}>
           <Button
             size="sm"
-            className={styles.actionButton}
+            className={ACTION_BUTTON_CLASS}
             disabled={!selectedTrackGhost || readOnly || selectedTrackLocked}
             title="使用最近关键帧的框在当前帧创建关键帧"
             onClick={onCopySelectedTrackToCurrentFrame}
@@ -398,7 +458,7 @@ export function VideoTrackCardContent({
           </Button>
           <Button
             size="sm"
-            className={styles.actionButton}
+            className={ACTION_BUTTON_CLASS}
             disabled={!canCopyCurrentKeyframe}
             title="复制当前轨迹在当前帧的关键帧"
             onClick={onCopyCurrentKeyframe}
@@ -407,7 +467,7 @@ export function VideoTrackCardContent({
           </Button>
           <Button
             size="sm"
-            className={styles.actionButton}
+            className={ACTION_BUTTON_CLASS}
             disabled={!canPasteKeyframe}
             title={copiedKeyframeLabel ? `把已复制的 ${copiedKeyframeLabel} 粘贴到当前帧` : "把已复制的关键帧粘贴到当前帧"}
             onClick={onPasteKeyframeToCurrentFrame}
@@ -416,7 +476,7 @@ export function VideoTrackCardContent({
           </Button>
           <Button
             size="sm"
-            className={styles.actionButton}
+            className={cn(ACTION_BUTTON_CLASS, currentFrameOutside && ACTION_BUTTON_PRESSED_CLASS)}
             disabled={readOnly || selectedTrackLocked}
             aria-pressed={currentFrameOutside}
             title={currentFrameOutside ? "恢复当前帧为正常状态" : "标记当前帧消失"}
@@ -426,7 +486,7 @@ export function VideoTrackCardContent({
           </Button>
           <Button
             size="sm"
-            className={styles.actionButton}
+            className={cn(ACTION_BUTTON_CLASS, occluded && ACTION_BUTTON_PRESSED_CLASS)}
             disabled={readOnly || selectedTrackLocked}
             aria-pressed={occluded}
             title={occluded ? "恢复当前帧为正常状态" : "标记当前帧遮挡"}
@@ -438,15 +498,15 @@ export function VideoTrackCardContent({
       </div>
 
       {/* —— 关键帧(整合旧快跳浮层) —— */}
-      <div className={cn(styles.section, styles.sectionDivided)}>
-        <div className={styles.sectionHeader}>
-          <span className={styles.sectionTitle}>关键帧</span>
-          <span className={cn("mono", styles.sectionCount)}>{geom.keyframes.length}</span>
+      <div className={cn(SECTION_CLASS, SECTION_DIVIDED_CLASS)}>
+        <div className={SECTION_HEADER_CLASS}>
+          <span className={SECTION_TITLE_CLASS}>关键帧</span>
+          <span className={cn("mono", SECTION_COUNT_CLASS)}>{geom.keyframes.length}</span>
         </div>
-        <div className={styles.kfNav}>
+        <div className={KF_NAV_CLASS}>
           <Button
             size="sm"
-            className={styles.kfNavButton}
+            className={KF_NAV_BUTTON_CLASS}
             disabled={prevKf === null || !onSeekFrame}
             title="上一关键帧"
             onClick={() => prevKf !== null && onSeekFrame?.(prevKf)}
@@ -455,7 +515,7 @@ export function VideoTrackCardContent({
           </Button>
           <Button
             size="sm"
-            className={styles.kfNavButton}
+            className={KF_NAV_BUTTON_CLASS}
             disabled={nextKf === null || !onSeekFrame}
             title="下一关键帧"
             onClick={() => nextKf !== null && onSeekFrame?.(nextKf)}
@@ -463,8 +523,8 @@ export function VideoTrackCardContent({
             下一关键帧<Icon name="chevRight" size={14} />
           </Button>
         </div>
-        <div className={styles.keyframeTable}>
-          <div className={styles.keyframeHeader}>
+        <div className={KF_TABLE_CLASS}>
+          <div className={KF_HEADER_CLASS}>
             <span>帧</span>
             <span>状态</span>
             <span>操作</span>
@@ -475,29 +535,29 @@ export function VideoTrackCardContent({
               <div
                 key={kf.frame_index}
                 data-testid={kf.source === "prediction" ? "video-prediction-keyframe-row" : "video-track-keyframe-row"}
-                className={cn(styles.keyframeRow, kf.source === "prediction" && styles.keyframePredictionRow)}
+                className={cn(KF_ROW_CLASS, kf.source === "prediction" && KF_PREDICTION_ROW_CLASS)}
               >
-                <span className={cn("mono", styles.keyframeFrame)}>F{kf.frame_index}</span>
-                <span className={cn(styles.keyframeStatus, kfOutside && styles.keyframeStatusAbsent)}>
-                  <svg className={styles.keyframeStatusDot} aria-hidden="true" viewBox="0 0 7 7">
+                <span className={cn("mono", KF_FRAME_CLASS)}>F{kf.frame_index}</span>
+                <span className={cn(KF_STATUS_CLASS, kfOutside && KF_STATUS_ABSENT_CLASS)}>
+                  <svg className={KF_STATUS_DOT_CLASS} aria-hidden="true" viewBox="0 0 7 7">
                     <circle
                       cx="3.5"
                       cy="3.5"
                       r="3.5"
-                      fill={kfOutside ? "var(--color-danger)" : kf.source === "prediction" ? "oklch(0.78 0.14 78)" : "oklch(0.68 0.16 145)"}
+                      fill={kfOutside ? "var(--sc-destructive)" : kf.source === "prediction" ? "oklch(0.78 0.14 78)" : "oklch(0.68 0.16 145)"}
                     />
                   </svg>
                   {keyframeStatus(kf, kfOutside)}
                   {kf.source === "prediction" && (
-                    <span className={styles.compactBadge}>
+                    <span className={COMPACT_BADGE_CLASS}>
                       <Badge variant="default">预测</Badge>
                     </span>
                   )}
                 </span>
-                <span className={styles.keyframeActionRow}>
+                <span className={KF_ACTION_ROW_CLASS}>
                   <Button
                     size="sm"
-                    className={styles.keyframeButton}
+                    className={KF_BUTTON_CLASS}
                     disabled={!onSeekFrame}
                     title="跳转到关键帧"
                     aria-label="跳转到关键帧"
@@ -508,7 +568,7 @@ export function VideoTrackCardContent({
                   {kf.source === "prediction" && onAcceptPredictionKeyframe && (
                     <Button
                       size="sm"
-                      className={cn(styles.keyframeButton, styles.successButton)}
+                      className={cn(KF_BUTTON_CLASS, SUCCESS_BUTTON_CLASS)}
                       disabled={readOnly}
                       title="接受预测：source 改为 manual"
                       aria-label="接受预测"
@@ -520,7 +580,7 @@ export function VideoTrackCardContent({
                   {kf.source === "prediction" && onRejectPredictionKeyframe && (
                     <Button
                       size="sm"
-                      className={cn(styles.keyframeButton, styles.dangerButton)}
+                      className={cn(KF_BUTTON_CLASS, DANGER_BUTTON_CLASS)}
                       disabled={readOnly}
                       title="拒绝预测：把该帧并入 outside"
                       aria-label="拒绝预测"
@@ -531,7 +591,7 @@ export function VideoTrackCardContent({
                   )}
                   <Button
                     size="sm"
-                    className={styles.keyframeButton}
+                    className={KF_BUTTON_CLASS}
                     disabled={readOnly || kfOutside}
                     title="复制此关键帧为独立框"
                     aria-label="复制此关键帧为独立框"
@@ -541,7 +601,7 @@ export function VideoTrackCardContent({
                   </Button>
                   <Button
                     size="sm"
-                    className={styles.keyframeButton}
+                    className={KF_BUTTON_CLASS}
                     disabled={readOnly || kfOutside}
                     title="拆此关键帧为独立框"
                     aria-label="拆此关键帧为独立框"
@@ -551,7 +611,7 @@ export function VideoTrackCardContent({
                   </Button>
                   <Button
                     size="sm"
-                    className={cn(styles.keyframeButton, styles.dangerButton)}
+                    className={cn(KF_BUTTON_CLASS, DANGER_BUTTON_CLASS)}
                     disabled={readOnly || geom.keyframes.length <= 1}
                     title="删除关键帧"
                     aria-label="删除关键帧"
@@ -568,7 +628,7 @@ export function VideoTrackCardContent({
 
       {/* —— 属性(轨迹级 + 当前帧级) —— */}
       {hasAttributes && (
-        <div className={cn(styles.section, styles.sectionDivided)} data-floating-panel-no-drag>
+        <div className={cn(SECTION_CLASS, SECTION_DIVIDED_CLASS)} data-floating-panel-no-drag>
           <VideoAttributesEditor
             schema={attributeSchema}
             className={selectedTrack.class_name}

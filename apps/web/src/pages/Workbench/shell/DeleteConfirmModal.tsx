@@ -1,6 +1,5 @@
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import styles from "./DeleteConfirmModal.module.css";
 
 interface DeleteConfirmModalProps {
   open: boolean;
@@ -18,7 +17,7 @@ export function DeleteConfirmModal({
   return (
     <Modal open={open} onClose={onCancel} title="确认删除" width={420}>
       <p>确定删除 {count} 个标注？删除后仍可通过撤销恢复。</p>
-      <div className={styles.actions}>
+      <div className="flex justify-end gap-2">
         <Button onClick={onCancel}>取消</Button>
         <Button variant="danger" onClick={onConfirm} data-testid="delete-confirm-submit">
           删除

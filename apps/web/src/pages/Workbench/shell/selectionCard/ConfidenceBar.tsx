@@ -1,12 +1,18 @@
-import type { CSSProperties } from "react";
+import { type CSSProperties } from "react";
+import { useElementStyle } from "@/components/ui/useElementStyle";
 import { confidenceTone } from "./IdentityHeader";
-import styles from "./ConfidenceBar.module.css";
 
-const TONE_CLASS = {
-  high: styles.high,
-  mid: styles.mid,
-  low: styles.low,
-} as const;
+const TONE_TRACK_CLASS: Record<string, string> = {
+  high: "bg-emerald-500",
+  mid: "bg-amber-500",
+  low: "bg-brand",
+};
+
+const TONE_VALUE_CLASS: Record<string, string> = {
+  high: "text-emerald-600 dark:text-emerald-400",
+  mid: "text-amber-600 dark:text-amber-400",
+  low: "text-brand",
+};
 
 export interface ConfidenceBarProps {
   /** 0–1 置信度。 */
@@ -14,22 +20,26 @@ export interface ConfidenceBarProps {
 }
 
 /**
- * v0.16.14 · AI 置信度大条。按阈值着色(≥0.8 success / 0.5–0.8 warning / <0.5 danger),
- * 填充宽度与数值都读同一局部色变量,保证条 / 数字同色。track / fill 走 tokens.css 语义色。
+ * v0.16.14 · AI 置信度大条。按阈值着色(≥0.8 emerald / 0.5–0.8 amber / <0.5 brand),
+ * 填充宽度经 CSS 变量注入,保证条 / 数字同色。
  */
 export function ConfidenceBar({ value }: ConfidenceBarProps) {
   const pct = Math.round(value * 100);
+  const tone = confidenceTone(value);
+  const fillRef = useElementStyle<HTMLDivElement>({ "--cf-fill": `${pct}%` } as CSSProperties);
+
   return (
-    <div className={`${styles.wrap} ${TONE_CLASS[confidenceTone(value)]}`}>
-      <span className={styles.label}>置信度</span>
-      <div className={styles.track}>
+    <div className="flex items-center gap-2">
+      <span className="flex-none text-[11px] text-muted-foreground">置信度</span>
+      <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
         <div
-          className={styles.fill}
-          // eslint-disable-next-line no-restricted-syntax -- 填充宽度为动态数据值,经 CSS 变量注入。
-          style={{ "--cf-fill": `${pct}%` } as CSSProperties}
+          ref={fillRef}
+          className={`h-full w-[var(--cf-fill)] rounded-full transition-[width] duration-[250ms] ease-in-out motion-reduce:transition-none ${TONE_TRACK_CLASS[tone]}`}
         />
       </div>
-      <span className={styles.value}>{pct}%</span>
+      <span className={`flex-none text-xs font-semibold tabular-nums ${TONE_VALUE_CLASS[tone]}`}>
+        {pct}%
+      </span>
     </div>
   );
 }

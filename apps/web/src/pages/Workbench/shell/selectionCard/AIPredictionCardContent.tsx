@@ -6,8 +6,13 @@ import { ConfidenceBar } from "./ConfidenceBar";
 import { MetricGrid } from "./MetricGrid";
 import { ActionBar } from "./ActionBar";
 import { geometryMetrics } from "./geometryMetrics";
-import cardStyles from "./cardLayout.module.css";
-import styles from "./AIPredictionCardContent.module.css";
+
+const BODY_CLASS =
+  "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
+const SOURCE_ROW_CLASS =
+  "flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground [&_span]:whitespace-nowrap";
+const OCR_CLASS = "flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground";
+const OCR_TEXT_CLASS = "truncate";
 
 export interface AIPredictionCardContentProps {
   box: AiBox;
@@ -49,12 +54,12 @@ export function AIPredictionCardContent({
   const ocrText = ocrTextSummary(box);
 
   return (
-    <div className={cardStyles.body}>
+    <div className={BODY_CLASS}>
       <IdentityHeader className={box.cls} source="ai" />
 
       <ConfidenceBar value={box.conf} />
 
-      <div className={styles.sourceRow}>
+      <div className={SOURCE_ROW_CLASS}>
         <Icon name="bot" size={12} />
         <span>{predictionSourceLabel(box.predictionSource)}</span>
         <span aria-hidden="true">·</span>
@@ -68,9 +73,9 @@ export function AIPredictionCardContent({
       </div>
 
       {ocrText && (
-        <div className={styles.ocr} title={ocrText}>
+        <div className={OCR_CLASS} title={ocrText}>
           <Icon name="type" size={11} />
-          <span className={styles.ocrText}>{ocrText}</span>
+          <span className={OCR_TEXT_CLASS}>{ocrText}</span>
         </div>
       )}
 
