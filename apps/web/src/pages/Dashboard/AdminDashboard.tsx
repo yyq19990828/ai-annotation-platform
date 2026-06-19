@@ -83,7 +83,7 @@ export function AdminDashboard() {
     <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground max-[900px]:p-4">
       <div className="mb-5 flex items-end justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start">
         <div>
-          <h1 className="mb-1 text-xl font-semibold">平台概览</h1>
+          <h1 className="mb-1 text-xl font-semibold">Overview</h1>
           <p className="text-[13px] text-muted-foreground">全局平台运行状态与资源分布</p>
         </div>
         <div className="flex gap-2 max-[900px]:flex-wrap">

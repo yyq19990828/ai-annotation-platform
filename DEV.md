@@ -156,7 +156,7 @@ import { Button, Badge, Card, Avatar, StatCard, Icon } from "@/components/ui";
 
 当前使用 Zustand store 管理页面切换 (`useAppStore.page`)，已实现的页面：
 
-- `dashboard` — 项目总览
+- `dashboard` — 项目 Dashboard
 - `annotate` — 标注工作台
 - `users` — 用户与权限
 
@@ -377,7 +377,7 @@ peek 端点优先返回非 `@e2e.test` 邮箱的 super_admin）。
 
 | 账号 | 角色 | 密码 | 初始视图 |
 |------|------|------|---------|
-| `admin` | super_admin | 123456 | AdminDashboard |
+| `admin` | super_admin | 123456 | Dashboard |
 | `pm` | project_admin | 123456 | 项目总览 |
 | `qa` | reviewer | 123456 | ReviewerDashboard |
 | `anno` | annotator | 123456 | AnnotatorDashboard |

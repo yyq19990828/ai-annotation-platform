@@ -47,7 +47,7 @@ const baseStats = {
   registration_by_day: [],
 };
 
-function renderUI(initialPath = "/dashboard") {
+function renderUI(initialPath = "/overview") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <AdminDashboard />
@@ -162,7 +162,7 @@ describe("AdminDashboard", () => {
 
   it("初始 ?new=1 → wizard 立即 open", () => {
     mockUseAdminStats.mockReturnValue({ data: baseStats, isLoading: false });
-    renderUI("/dashboard?new=1");
+    renderUI("/overview?new=1");
     expect(screen.getByTestId("cp-wizard")).toBeInTheDocument();
   });
 

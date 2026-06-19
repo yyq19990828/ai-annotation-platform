@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from "react";
-import { Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { TopBar } from "@/components/shell/TopBar";
 import { PerfHud, usePerfHudStore } from "@/components/PerfHud";
 import { useNotificationSocket } from "@/hooks/useNotificationSocket";
@@ -101,7 +101,7 @@ function DashboardRouter() {
   const { role } = usePermissions();
   switch (role) {
     case "super_admin":
-      return <AdminDashboard />;
+      return <AdminProjectsDashboard />;
     case "project_admin":
       return <DashboardPage />;
     case "reviewer":
@@ -115,12 +115,17 @@ function DashboardRouter() {
   }
 }
 
-function AdminProjectsRoute() {
+function AdminOverviewRoute() {
   const { role } = usePermissions();
   if (role !== "super_admin") {
     return <Navigate to="/unauthorized" replace />;
   }
-  return <AdminProjectsDashboard />;
+  return <AdminDashboard />;
+}
+
+function RedirectWithSearch({ to }: { to: string }) {
+  const { search } = useLocation();
+  return <Navigate to={`${to}${search}`} replace />;
 }
 
 function AppShell() {
@@ -301,7 +306,8 @@ export function App() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardRouter />} />
-        <Route path="/projects" element={<AdminProjectsRoute />} />
+        <Route path="/overview" element={<AdminOverviewRoute />} />
+        <Route path="/projects" element={<RedirectWithSearch to="/dashboard" />} />
         <Route
           path="/admin/people"
           element={

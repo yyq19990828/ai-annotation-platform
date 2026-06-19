@@ -127,7 +127,7 @@ export function ProjectSettingsPage() {
           onClick={() => navigate("/dashboard")}
           className="mb-2 inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs text-muted-foreground"
         >
-          <Icon name="chevLeft" size={12} />返回项目总览
+          <Icon name="chevLeft" size={12} />返回 Dashboard
         </button>
         <div className="flex items-center justify-between gap-4 max-md:flex-col max-md:items-start">
           <div>

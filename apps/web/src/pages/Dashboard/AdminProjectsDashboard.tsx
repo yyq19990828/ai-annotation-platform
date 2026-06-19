@@ -234,7 +234,7 @@ export function AdminProjectsDashboard() {
     <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground max-[900px]:p-4">
       <div className="mb-5 flex items-end justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start">
         <div>
-          <h1 className="mb-1 text-xl font-semibold">项目管理</h1>
+          <h1 className="mb-1 text-xl font-semibold">Dashboard</h1>
           <p className="text-[13px] text-muted-foreground">管理平台全部项目、负责人、批次分派与导出入口</p>
         </div>
         <div className="flex gap-2">
