@@ -45,9 +45,9 @@ sequenceDiagram
 ```
 
 代码索引：
-- 取下一题：`apps/api/app/api/v1/tasks.py` (get_next_task / next_smart 端点)
+- 取下一题：`apps/api/app/api/v1/tasks/list.py` (get_next_task / next_smart 端点)
 - 任务锁：`apps/api/app/services/task_lock.py:acquire/heartbeat/release`
-- 提交：`apps/api/app/api/v1/tasks.py:submit_task`
+- 提交：`apps/api/app/api/v1/tasks/lifecycle.py:submit_task`
 - 审计：`apps/api/app/services/audit.py:AuditAction.TASK_SUBMIT`
 - 通知：`apps/api/app/services/notification.py:NotificationService.notify`
 - presigned URL：`apps/api/app/services/storage.py`

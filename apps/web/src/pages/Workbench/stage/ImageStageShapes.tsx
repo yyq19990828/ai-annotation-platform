@@ -10,10 +10,18 @@ import type { Pt } from "./polygonGeom";
 import { simplifyPolygon } from "./shared/geometry/simplify";
 import {
   BOX_HANDLE_SCREEN_PX,
-  BOX_LABEL_FONT_PX,
-  BOX_LABEL_OFFSET_PX,
+  BOX_LABEL_FONT_FAMILY,
   BOX_LABEL_PAD_PX,
+  labelOffsetWorld,
 } from "./boxVisual";
+import { screenToWorld } from "./shared/viewport/scaleCancel";
+import {
+  buildLabelText,
+  fillAlpha,
+  shouldShowLabel,
+  strokeWidthFor,
+  type AnnotationVisualConfig,
+} from "./annotationVisual";
 
 // v0.10.4 I2.1 · Douglas-Peucker LOD: 仅在 polygon 不可编辑 / 未选中时启用；
 // 简化阈值 ≈ 1 屏幕像素，避免视觉差异。
@@ -22,10 +30,18 @@ const LOD_VERTEX_THRESHOLD = 60; // ≤60 顶点不简化（O(n²) 渲染开销�
 const VERTEX_CULL_THRESHOLD = 60;
 const DEFAULT_FADED_OPACITY = 0.35;
 
-function shapeLabelText(b: Annotation, isAi: boolean): string {
-  if (!isAi) return displayClassName(b.cls);
+function shapeLabelText(b: Annotation, isAi: boolean, content: AnnotationVisualConfig["labelContent"]): string {
   const predictionSource = (b as Partial<AiBox>).predictionSource ?? null;
-  return `✦ ${predictionSourceLabel(predictionSource)} ${displayClassName(b.cls)} ${(b.conf * 100).toFixed(0)}%`;
+  return buildLabelText(
+    {
+      className: displayClassName(b.cls),
+      instanceId: b.group_id ?? null,
+      confidence: b.conf,
+      attributes: (b as { attributes?: Record<string, unknown> }).attributes ?? null,
+      sourcePrefix: isAi ? `✦ ${predictionSourceLabel(predictionSource)} ` : undefined,
+    },
+    isAi ? content.ai : content.single,
+  );
 }
 
 export interface ViewportBBox {
@@ -53,7 +69,8 @@ interface KonvaBoxProps {
   editable: boolean;
   faded: boolean;
   fadedOpacity?: number;
-  showLabel?: boolean;
+  /** v0.15.27 · 共享视觉规格(线宽/填充/字号/标签显隐+内容)。 */
+  visual: AnnotationVisualConfig;
   /** v0.10.5 M4-β · I15 occluded：渲染为虚线 + 半透。 */
   occluded?: boolean;
   imgW: number;
@@ -83,18 +100,18 @@ export function groupOutlineColor(groupId: number): string {
 export function KonvaBox({
   b, annotationId, isAi, selected, editable, faded, occluded = false,
   fadedOpacity = DEFAULT_FADED_OPACITY,
-  showLabel = true,
+  visual,
   imgW, imgH, scale,
   onClick,
   onMoveStart,
   onResizeStart,
 }: KonvaBoxProps) {
   const color = classColorForCanvas(b.cls);
-  const sw = (selected ? 2 : 1.5) / scale;
-  const handleSize = BOX_HANDLE_SCREEN_PX / scale;
-  const labelFontSize = BOX_LABEL_FONT_PX / scale;
+  const sw = screenToWorld(strokeWidthFor(selected, visual), scale);
+  const handleSize = screenToWorld(BOX_HANDLE_SCREEN_PX, scale);
+  const labelFontSize = visual.labelFontSize / scale;
   const isUserSelected = selected && !isAi && editable;
-  const labelText = shapeLabelText(b, isAi);
+  const labelText = shapeLabelText(b, isAi, visual.labelContent);
 
   return (
     <Group id={annotationId}>
@@ -106,7 +123,7 @@ export function KonvaBox({
         stroke={color}
         strokeWidth={sw}
         dash={isAi || occluded ? [4 / scale, 3 / scale] : undefined}
-        fill={hexToRgba(color, isAi ? 0.08 : 0.07)}
+        fill={hexToRgba(color, fillAlpha(selected, visual))}
         opacity={faded ? fadedOpacity : occluded ? 0.5 : 1}
         shadowEnabled={selected && !faded}
         shadowColor={color}
@@ -128,15 +145,15 @@ export function KonvaBox({
         }}
       />
 
-      {showLabel && !(isAi && faded) && (
-        <Label x={b.x * imgW} y={b.y * imgH - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+      {shouldShowLabel(selected, visual.labelVisibility) &&!(isAi && faded) && (
+        <Label x={b.x * imgW} y={b.y * imgH - labelOffsetWorld(visual.labelFontSize, scale)} listening={false}>
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text
             text={labelText}
             fill="white"
             fontSize={labelFontSize}
             padding={BOX_LABEL_PAD_PX / scale}
-            fontFamily="var(--font-sans, sans-serif)"
+            fontFamily={BOX_LABEL_FONT_FAMILY}
           />
         </Label>
       )}
@@ -192,7 +209,8 @@ interface KonvaPolygonProps {
   selected: boolean;
   faded: boolean;
   fadedOpacity?: number;
-  showLabel?: boolean;
+  /** v0.15.27 · 共享视觉规格(线宽/填充/字号/标签显隐+内容)。 */
+  visual: AnnotationVisualConfig;
   /** v0.10.5 M4-β · I15 occluded：渲染为虚线 + 半透（与 selfIntersect 红色互斥）。 */
   occluded?: boolean;
   imgW: number;
@@ -212,7 +230,7 @@ interface KonvaPolygonProps {
 export function KonvaPolygon({
   b, annotationId, isAi, selected, faded, occluded = false, imgW, imgH, scale, onClick,
   fadedOpacity = DEFAULT_FADED_OPACITY,
-  showLabel = true,
+  visual,
   points,
   selfIntersect,
   editable,
@@ -222,9 +240,9 @@ export function KonvaPolygon({
   viewportBBox,
 }: KonvaPolygonProps) {
   const color = classColorForCanvas(b.cls);
-  const sw = (selected ? 2 : 1.5) / scale;
-  const labelFontSize = BOX_LABEL_FONT_PX / scale;
-  const labelText = shapeLabelText(b, isAi);
+  const sw = screenToWorld(strokeWidthFor(selected, visual), scale);
+  const labelFontSize = visual.labelFontSize / scale;
+  const labelText = shapeLabelText(b, isAi, visual.labelContent);
   const ps = useMemo<Pt[]>(
     () => (points && points.length >= 3 ? points : (b.polygon ?? [])),
     [b.polygon, points],
@@ -258,7 +276,7 @@ export function KonvaPolygon({
         stroke={strokeColor}
         strokeWidth={sw}
         dash={isAi || selfIntersect || occluded ? [4 / scale, 3 / scale] : undefined}
-        fill={hexToRgba(color, isAi ? 0.08 : 0.07)}
+        fill={hexToRgba(color, fillAlpha(selected, visual))}
         opacity={faded ? fadedOpacity : occluded ? 0.5 : 1}
         shadowEnabled={selected && !faded}
         shadowColor={selfIntersect ? "oklch(0.55 0.22 25)" : color}
@@ -279,15 +297,15 @@ export function KonvaPolygon({
           if (stage) stage.container().style.cursor = "";
         }}
       />
-      {showLabel && flat.length >= 2 && !(isAi && faded) && (
-        <Label x={flat[0]} y={flat[1] - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+      {shouldShowLabel(selected, visual.labelVisibility) &&flat.length >= 2 && !(isAi && faded) && (
+        <Label x={flat[0]} y={flat[1] - labelOffsetWorld(visual.labelFontSize, scale)} listening={false}>
           <Tag fill={strokeColor} cornerRadius={3 / scale} />
           <Text
             text={labelText + (selfIntersect ? " ⚠" : "")}
             fill="white"
             fontSize={labelFontSize}
             padding={BOX_LABEL_PAD_PX / scale}
-            fontFamily="var(--font-sans, sans-serif)"
+            fontFamily={BOX_LABEL_FONT_FAMILY}
           />
         </Label>
       )}
@@ -372,7 +390,8 @@ interface KonvaRotatedBoxProps {
   editable: boolean;
   faded: boolean;
   fadedOpacity?: number;
-  showLabel?: boolean;
+  /** v0.15.27 · 共享视觉规格(线宽/填充/字号/标签显隐+内容)。 */
+  visual: AnnotationVisualConfig;
   occluded?: boolean;
   imgW: number;
   imgH: number;
@@ -385,18 +404,18 @@ interface KonvaRotatedBoxProps {
 export function KonvaRotatedBox({
   b, annotationId, geometry, angle, isAi, selected, editable, faded, occluded = false,
   fadedOpacity = DEFAULT_FADED_OPACITY,
-  showLabel = true,
+  visual,
   imgW, imgH, scale,
   onClick,
   onRotateStart,
   onResizeStart,
 }: KonvaRotatedBoxProps) {
   const color = classColorForCanvas(b.cls);
-  const sw = (selected ? 2 : 1.5) / scale;
-  const handleSize = BOX_HANDLE_SCREEN_PX / scale;
-  const labelFontSize = BOX_LABEL_FONT_PX / scale;
+  const sw = screenToWorld(strokeWidthFor(selected, visual), scale);
+  const handleSize = screenToWorld(BOX_HANDLE_SCREEN_PX, scale);
+  const labelFontSize = visual.labelFontSize / scale;
   const isUserSelected = selected && !isAi && editable;
-  const labelText = shapeLabelText(b, isAi);
+  const labelText = shapeLabelText(b, isAi, visual.labelContent);
 
   const cx = geometry.cx * imgW;
   const cy = geometry.cy * imgH;
@@ -420,7 +439,7 @@ export function KonvaRotatedBox({
         stroke={color}
         strokeWidth={sw}
         dash={isAi || occluded ? [4 / scale, 3 / scale] : undefined}
-        fill={hexToRgba(color, isAi ? 0.08 : 0.07)}
+        fill={hexToRgba(color, fillAlpha(selected, visual))}
         opacity={faded ? fadedOpacity : occluded ? 0.5 : 1}
         shadowEnabled={selected && !faded}
         shadowColor={color}
@@ -429,15 +448,15 @@ export function KonvaRotatedBox({
         onClick={(e) => { e.cancelBubble = true; onClick(e); }}
       />
 
-      {showLabel && !(isAi && faded) && (
-        <Label x={-hw} y={-hh - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+      {shouldShowLabel(selected, visual.labelVisibility) &&!(isAi && faded) && (
+        <Label x={-hw} y={-hh - labelOffsetWorld(visual.labelFontSize, scale)} listening={false}>
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text
             text={labelText}
             fill="white"
             fontSize={labelFontSize}
             padding={BOX_LABEL_PAD_PX / scale}
-            fontFamily="var(--font-sans, sans-serif)"
+            fontFamily={BOX_LABEL_FONT_FAMILY}
           />
         </Label>
       )}
@@ -512,7 +531,8 @@ interface KonvaPolylineProps {
   selected: boolean;
   faded: boolean;
   fadedOpacity?: number;
-  showLabel?: boolean;
+  /** v0.15.27 · 共享视觉规格(线宽/填充/字号/标签显隐+内容)。 */
+  visual: AnnotationVisualConfig;
   /** v0.10.5 M4-β · I15 occluded：渲染为虚线 + 半透。 */
   occluded?: boolean;
   imgW: number;
@@ -534,7 +554,7 @@ interface KonvaPolylineProps {
 export function KonvaPolyline({
   b, annotationId, isAi, selected, faded, occluded = false, imgW, imgH, scale, onClick,
   fadedOpacity = DEFAULT_FADED_OPACITY,
-  showLabel = true,
+  visual,
   points,
   editable,
   onVertexMouseDown,
@@ -542,9 +562,9 @@ export function KonvaPolyline({
   onBodyMouseDown,
 }: KonvaPolylineProps) {
   const color = classColorForCanvas(b.cls);
-  const sw = (selected ? 2 : 1.5) / scale;
-  const labelFontSize = BOX_LABEL_FONT_PX / scale;
-  const labelText = shapeLabelText(b, isAi);
+  const sw = screenToWorld(strokeWidthFor(selected, visual), scale);
+  const labelFontSize = visual.labelFontSize / scale;
+  const labelText = shapeLabelText(b, isAi, visual.labelContent);
   const ps: Pt[] = points;
   const flat: number[] = [];
   for (const [px, py] of ps) flat.push(px * imgW, py * imgH);
@@ -580,15 +600,15 @@ export function KonvaPolyline({
           if (stage) stage.container().style.cursor = "";
         }}
       />
-      {showLabel && flat.length >= 2 && !(isAi && faded) && (
-        <Label x={flat[0]} y={flat[1] - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+      {shouldShowLabel(selected, visual.labelVisibility) &&flat.length >= 2 && !(isAi && faded) && (
+        <Label x={flat[0]} y={flat[1] - labelOffsetWorld(visual.labelFontSize, scale)} listening={false}>
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text
             text={labelText}
             fill="white"
             fontSize={labelFontSize}
             padding={BOX_LABEL_PAD_PX / scale}
-            fontFamily="var(--font-sans, sans-serif)"
+            fontFamily={BOX_LABEL_FONT_FAMILY}
           />
         </Label>
       )}
@@ -666,7 +686,8 @@ interface KonvaKeypointProps {
   selected: boolean;
   faded: boolean;
   fadedOpacity?: number;
-  showLabel?: boolean;
+  /** v0.15.27 · 共享视觉规格(线宽/填充/字号/标签显隐+内容)。 */
+  visual: AnnotationVisualConfig;
   imgW: number;
   imgH: number;
   scale: number;
@@ -688,15 +709,15 @@ interface KonvaKeypointProps {
  */
 export function KonvaKeypoint({
   b, annotationId, isAi, selected, faded, fadedOpacity = DEFAULT_FADED_OPACITY,
-  showLabel = true, imgW, imgH, scale, schema,
+  visual, imgW, imgH, scale, schema,
   onClick, editable = false, onNodeMouseDown, onToggleVisibility,
 }: KonvaKeypointProps) {
   const color = classColorForCanvas(b.cls);
   const kps: Keypoint[] = b.keypoints ?? [];
   const r = (selected ? 5 : 4) / scale;
-  const sw = (selected ? 2 : 1.5) / scale;
-  const labelFontSize = BOX_LABEL_FONT_PX / scale;
-  const labelText = shapeLabelText(b, isAi);
+  const sw = screenToWorld(strokeWidthFor(selected, visual), scale);
+  const labelFontSize = visual.labelFontSize / scale;
+  const labelText = shapeLabelText(b, isAi, visual.labelContent);
   const edges = schema?.edges ?? [];
 
   // 类别标签锚点：第一个已标注点；都没有则用 bbox 左上。
@@ -793,23 +814,23 @@ export function KonvaKeypoint({
             y={p.y * imgH - labelFontSize / 2}
             text={name}
             fill={keypointColorByIndex(i, schema)}
-            fontSize={(BOX_LABEL_FONT_PX - 1) / scale}
-            fontFamily="var(--font-sans, sans-serif)"
+            fontSize={(visual.labelFontSize - 1) / scale}
+            fontFamily={BOX_LABEL_FONT_FAMILY}
             listening={false}
           />
         );
       })}
 
       {/* 类别标签 */}
-      {showLabel && !(isAi && faded) && (
-        <Label x={anchorX} y={anchorY - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+      {shouldShowLabel(selected, visual.labelVisibility) &&!(isAi && faded) && (
+        <Label x={anchorX} y={anchorY - labelOffsetWorld(visual.labelFontSize, scale)} listening={false}>
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text
             text={labelText}
             fill="white"
             fontSize={labelFontSize}
             padding={BOX_LABEL_PAD_PX / scale}
-            fontFamily="var(--font-sans, sans-serif)"
+            fontFamily={BOX_LABEL_FONT_FAMILY}
           />
         </Label>
       )}

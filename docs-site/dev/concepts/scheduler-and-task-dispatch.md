@@ -13,7 +13,7 @@ last_reviewed: 2026-06-06
 代码真值源：
 
 - `apps/api/app/services/scheduler.py`
-- `apps/api/app/api/v1/tasks.py`
+- `apps/api/app/api/v1/tasks/`
 - `apps/api/app/db/models/project.py`
 - `apps/api/app/services/task_lock.py`
 
@@ -183,9 +183,9 @@ flowchart TD
 | 你想改什么 | 先看哪里 |
 |---|---|
 | 派题顺序 | `services/scheduler.py` + `db/models/project.py` |
-| 角色可见性 | `scheduler.py` + `api/v1/tasks.py:_assert_task_visible` |
+| 角色可见性 | `scheduler.py` + `api/v1/tasks/_shared.py:_assert_task_visible` |
 | 锁题优先返回 | `scheduler.py` + `services/task_lock.py` |
-| `/tasks/next` 结果结构 | `api/v1/tasks.py` + `schemas/task.py` |
+| `/tasks/next` 结果结构 | `api/v1/tasks/list.py` + `schemas/task.py` |
 
 ## 相关文档
 

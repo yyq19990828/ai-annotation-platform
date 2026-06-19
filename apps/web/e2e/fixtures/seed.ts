@@ -25,6 +25,13 @@ export interface SeedData {
   ml_backend_id: string;
 }
 
+/** v0.16.x · 点云 E2E 基线 fixture：1 个 lidar 项目 + 2 帧(同一最小 .pcd)point_cloud task。
+ *  需先 reset()(复用其 E2E 用户),缺则后端补建。 */
+export interface SeedLidarData {
+  lidar_project_id: string;
+  lidar_task_ids: string[];
+}
+
 /** v0.8.7 F4 · 截图脚本只读窥探：返回首个 super_admin / 首个项目 / 首个任务。
  *  字段允许 null（对应数据不存在时），调用方自行兜底。 */
 export interface SeedPeekData {
@@ -44,6 +51,15 @@ class SeedAPI {
       throw new Error(`seed/reset failed: ${res.status()} ${await res.text()}`);
     }
     return (await res.json()) as SeedData;
+  }
+
+  /** v0.16.x · 造点云 E2E fixture(lidar 项目 + 2 帧 point_cloud task)。需先 reset()。 */
+  async seedLidar(): Promise<SeedLidarData> {
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/lidar`);
+    if (!res.ok()) {
+      throw new Error(`seed/lidar failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as SeedLidarData;
   }
 
   /** v0.8.7 F4 · 只读窥探现有数据；不破坏 dev 数据。 */

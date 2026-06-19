@@ -1,0 +1,36 @@
+from fastapi import APIRouter
+
+from app.api.v1.tasks import (
+    annotations,
+    lifecycle,
+    locks,
+    predictions,
+    review,
+    video,
+)
+from app.api.v1.tasks import list as task_list
+from app.api.v1.tasks._shared import (
+    _assert_task_visible,
+    _attach_dimensions_batch,
+    _task_with_url,
+)
+
+# 各子 router 在此聚合并统一加 /tasks 前缀(下放自原 router.py 的 include 前缀)。
+# 前缀必须在此层施加:list_tasks 的 `GET ""` 空路径若以空前缀做嵌套 include,
+# FastAPI 会报 "Prefix and path cannot be both empty";加上 /tasks 即合法,
+# 且对外路径与拆分前完全一致(/tasks 根列表端点)。
+router = APIRouter()
+router.include_router(task_list.router, prefix="/tasks")
+router.include_router(video.router, prefix="/tasks")
+router.include_router(annotations.router, prefix="/tasks")
+router.include_router(predictions.router, prefix="/tasks")
+router.include_router(lifecycle.router, prefix="/tasks")
+router.include_router(review.router, prefix="/tasks")
+router.include_router(locks.router, prefix="/tasks")
+
+__all__ = [
+    "router",
+    "_assert_task_visible",
+    "_attach_dimensions_batch",
+    "_task_with_url",
+]

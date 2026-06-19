@@ -1,0 +1,63 @@
+/* v0.16.8 · 选中标注浮动信息卡;展开壳沿用 FloatingPanelShell,折叠态为可拖小标签。 */
+
+.shell {
+  /* 选中卡略高于四个边栏浮窗,确保选中即覆盖在它们之上。 */
+  z-index: 55;
+}
+
+.tab {
+  /* fixed:与展开卡(FloatingPanelShell)同视口坐标系,否则 useDragMove 存的 clientX/Y
+     被当成相对偏移会跳变。 */
+  position: fixed;
+  left: var(--selection-tab-x);
+  top: var(--selection-tab-y);
+  z-index: 55;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-fg);
+  cursor: grab;
+  font-size: 12px;
+  user-select: none;
+  touch-action: none;
+}
+
+.tab:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.tabDragging {
+  cursor: grabbing;
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-md);
+}
+
+.tabTitle {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tabChevron {
+  flex: 0 0 auto;
+  color: var(--color-fg-muted);
+}
+
+.body {
+  padding: 10px 12px;
+}
+
+.summary {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}

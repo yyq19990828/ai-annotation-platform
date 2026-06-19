@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import { forwardRef, useMemo } from "react";
 import type {
   AnnotationResponse,
   TaskVideoFrameTimetableResponse,
@@ -7,13 +7,15 @@ import type {
   VideoSamplingConfig,
   VideoTrackGeometry,
 } from "@/types";
-import { VideoStage, type VideoStageControls } from "../../stage/VideoStage";
+import type { VideoStageControls } from "../../stage/videoStageControls";
+import { VideoKonvaStage } from "../../stage/VideoKonvaStage";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
 import type { VideoTimelineChapter } from "../../stage/VideoPlaybackOverlay";
 import type { VideoTrackAnnotation } from "../../stage/videoStageTypes";
 import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
 import { useWorkbenchConfig } from "../../state/useWorkbenchConfig";
+import { resolveAnnotationVisual } from "../../stage/annotationVisual";
 import type { DiffMode } from "../../modes/types";
 import type { VideoConvertOptions, VideoTrackCompositionOptions } from "./useVideoAnnotationActions";
 
@@ -91,7 +93,6 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     onCreate,
     onPendingDraw,
     onUpdate,
-    onRename,
     onChangeUserBoxClass,
     onDeleteUserBox,
     onConvertToBboxes,
@@ -106,48 +107,54 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
   }, ref) {
     const { config: workbenchConfig } = useWorkbenchConfig();
     const workbenchVideo = workbenchConfig.video;
+    // v0.15.27 · 共享标注视觉规格(线宽/填充/字号/标签显隐);与图片工作台共用 common 子集。
+    const annotationVisual = useMemo(
+      () => resolveAnnotationVisual(workbenchConfig.common),
+      [workbenchConfig.common],
+    );
+    // v0.16.5 · 视频渲染栈统一到 Konva(删旧 SVG 栈,见 ADR-0041):唯一实现,无 flag 分支。
     return (
-      <VideoStage
+      <VideoKonvaStage
         ref={ref}
         manifest={manifest}
         frameTimetable={frameTimetable}
         isLoading={isLoading}
         error={error}
+        frameIndex={frameIndex}
+        autoFitOnResize={workbenchVideo.autoFitOnResize}
+        performanceTier={performanceTier}
+        onFrameIndexChange={onFrameIndexChange}
         annotations={annotations}
         selectedId={selectedId}
-        activeClass={activeClass}
-        frameIndex={frameIndex}
-        selectedIds={selectedIds}
-        reviewDisplayMode={reviewDisplayMode}
         hiddenTrackIds={hiddenTrackIds}
-        lockedTrackIds={lockedTrackIds}
+        reviewDisplayMode={reviewDisplayMode}
         trackColorOverrides={trackColorOverrides}
-        readOnly={readOnly}
-        videoTool={videoTool}
+        activeClass={activeClass}
         pendingDrawing={pendingDrawing}
-        chapters={chapters}
-        videoSampling={videoSampling}
-        performanceTier={performanceTier}
-        defaultPlaybackRate={workbenchVideo.defaultPlaybackRate}
-        largeFrameStep={workbenchVideo.largeFrameStep}
-        autoFitOnResize={workbenchVideo.autoFitOnResize}
-        onSelect={onSelect}
-        onFrameIndexChange={onFrameIndexChange}
-        onCreate={onCreate}
-        onPendingDraw={onPendingDraw}
-        onUpdate={onUpdate}
-        onRename={onRename}
-        onChangeUserBoxClass={onChangeUserBoxClass}
-        onDelete={(ann) => onDeleteUserBox(ann.id)}
-        onConvertToBboxes={onConvertToBboxes}
-        onComposeTracks={onComposeTracks}
-        onToggleHiddenTrack={onToggleHiddenTrack}
-        onToggleLockedTrack={onToggleLockedTrack}
-        onPropagateTrack={onPropagateTrack}
-        onCursorMove={onCursorMove}
         issuePixelFeedbacks={issuePixelFeedbacks}
         issueHighlightId={issueHighlightId}
         onIssuePinClick={onIssuePinClick}
+        visual={annotationVisual}
+        videoTool={videoTool}
+        readOnly={readOnly}
+        lockedTrackIds={lockedTrackIds}
+        selectedIds={selectedIds}
+        onSelect={onSelect}
+        onCursorMove={onCursorMove}
+        onCreate={onCreate}
+        onPendingDraw={onPendingDraw}
+        onUpdate={onUpdate}
+        onChangeUserBoxClass={onChangeUserBoxClass}
+        onComposeTracks={onComposeTracks}
+        onConvertToBboxes={onConvertToBboxes}
+        onDelete={(ann) => onDeleteUserBox(ann.id)}
+        onPropagateTrack={onPropagateTrack}
+        onToggleHiddenTrack={onToggleHiddenTrack}
+        onToggleLockedTrack={onToggleLockedTrack}
+        chapters={chapters}
+        videoSampling={videoSampling}
+        defaultPlaybackRate={workbenchVideo.defaultPlaybackRate}
+        largeFrameStep={workbenchVideo.largeFrameStep}
       />
     );
   },

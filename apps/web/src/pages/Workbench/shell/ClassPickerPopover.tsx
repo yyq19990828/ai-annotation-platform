@@ -125,14 +125,17 @@ export function ClassPickerPopover({
 
   // click outside to cancel
   useEffect(() => {
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: PointerEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onCancel("outside");
     };
-    // 延迟绑定，避免捕获到落框那次 mouseup
-    const t = setTimeout(() => document.addEventListener("mousedown", onDown), 0);
+    // 用 pointerdown(而非 mousedown):视频 Konva 画布的 pointerdown 处理会 preventDefault,
+    // 抑制兼容性 mousedown。且用捕获阶段绑定:画布命中由 Konva/Stage 接管,冒泡阶段可能被
+    // cancelBubble/停止传播而收不到;捕获阶段从 document 向下最先触发,谁都拦不住。
+    // 延迟绑定,避免捕获到打开弹窗那次 down。
+    const t = setTimeout(() => document.addEventListener("pointerdown", onDown, true), 0);
     return () => {
       clearTimeout(t);
-      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("pointerdown", onDown, true);
     };
   }, [onCancel]);
 

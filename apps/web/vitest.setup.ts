@@ -1,6 +1,13 @@
 import "@testing-library/jest-dom/vitest";
-import { afterAll, afterEach, beforeAll } from "vitest";
+import { afterAll, afterEach, beforeAll, vi } from "vitest";
 import { server } from "./src/mocks/server";
+
+// v0.16.0 · react-konva → DOM stand-in mock(画布栈统一地基)。
+// 把 Konva 组件渲染成带 data-konva / data-testid 的 <div>,使现有 RTL 风格
+// (fireEvent + getByTestId + 回调断言)能对 Konva 组件生效。
+// 注意:vi.mock 提升到文件顶部;工厂返回 import(...) 的 Promise,vitest 会 await。
+// 局限:只验证交互 / props,不验证真实 canvas 渲染(渲染回归交给 Playwright)。
+vi.mock("react-konva", () => import("./src/test/konvaMock"));
 
 // v0.8.5 · jsdom 在 about:blank（opaque origin）下不提供 localStorage / sessionStorage，
 // 导致 zustand persist 在 setState 时炸 "storage.setItem is not a function"。统一 polyfill。

@@ -754,7 +754,9 @@ function BoxesList({
   videoTrackPanel,
 }: BoxesListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const [frameFilter, setFrameFilter] = useState<FrameFilter>("all");
+  // 视频默认聚焦「当前帧」,避免一上来在「全部」视图里跨帧误操作;图片端 frameFilter 不显示
+  // 且 filterBoxesByFrame 在 currentFrameIndex 为 undefined 时回落全部,故对图片无影响。
+  const [frameFilter, setFrameFilter] = useState<FrameFilter>("current");
   const showFrameFilter = typeof currentFrameIndex === "number";
   // v0.10.20 · I12 group 折叠态. v0.10.21 反转语义: 默认展开 (B-44 反馈 "不能展开"
   // 实为 chevron icon 名写错导致按钮看不到); 用 collapsedGroups 记 *显式收起* 的组,

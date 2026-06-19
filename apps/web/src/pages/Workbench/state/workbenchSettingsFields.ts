@@ -1,20 +1,37 @@
 // v0.15.3 · 工作台设置字段注册表(单一来源):工作台设置抽屉与 Settings 页「标注偏好」
 // 共用本数组渲染,杜绝两处 UI 漂移。新增字段流程:后端子树加字段 → auth.ts 类型同步 →
 // 这里加一行 → 消费点读配置。
-import type { WorkbenchPreferences } from "@/api/auth";
+import type { LabelContentByType, WorkbenchPreferences } from "@/api/auth";
 import { WEBCODECS_FLAG_STORAGE_KEY } from "../stage/useVideoChunkDecoder";
+import { readVideoReferencePredict, writeVideoReferencePredict } from "../stage/videoReferencePredict";
 import type { LockableField, WorkbenchConfigPatch } from "./useWorkbenchConfig";
 
 export type WorkbenchPreferenceSettingCategory = "common" | "image" | "video" | "pointcloud";
 export type WorkbenchSettingCategory = WorkbenchPreferenceSettingCategory | "experiment";
 
-export type WorkbenchSettingValue = boolean | number | string;
+export type WorkbenchSettingValue =
+  | boolean
+  | number
+  | string
+  | string[]
+  | LabelContentByType;
 
 export type WorkbenchSettingControl =
   | { type: "toggle"; onText?: string; offText?: string }
   | { type: "slider"; min: number; max: number; step: number; format?: (v: number) => string; resetTo?: number }
   | { type: "select"; options: Array<{ value: WorkbenchSettingValue; label: string }> }
-  | { type: "text"; maxLength: number; placeholder?: string };
+  // v0.15.27 · 多选(存 string[]);min 兜底至少保留几项(labelContent 至少留「类别名」)。
+  | { type: "multiselect"; options: Array<{ value: string; label: string }>; min?: number }
+  | { type: "text"; maxLength: number; placeholder?: string }
+  // v0.16.7 · 标签内容按标注类型分段：每段独立 toggle 列，提交整个 LabelContentByType 对象。
+  | {
+      type: "labelContentByType";
+      segments: Array<{
+        key: "single" | "track" | "ai";
+        label: string;
+        options: Array<{ value: string; label: string }>;
+      }>;
+    };
 
 interface WorkbenchSettingFieldBase {
   /** "image.controlPointsSize" — 与 WorkbenchPreferences 子树路径一致(category.字段名)。 */
@@ -171,6 +188,86 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     },
   },
   {
+    key: "common.labelFontSize",
+    category: "common",
+    label: "标签字号",
+    description: "标注标签文字大小;图片随画布缩放、视频固定像素。图片与视频共用",
+    control: { type: "slider", min: 8, max: 24, step: 1, format: (v) => `${v}px` },
+  },
+  {
+    key: "common.labelVisibility",
+    category: "common",
+    label: "标签显隐",
+    description: "标注标签何时显示:始终 / 仅选中对象时 / 从不。图片与视频共用",
+    control: {
+      type: "select",
+      options: [
+        { value: "always", label: "始终显示" },
+        { value: "selected", label: "仅选中时" },
+        { value: "none", label: "不显示" },
+      ],
+    },
+  },
+  {
+    key: "common.labelContent",
+    category: "common",
+    label: "标签内容",
+    description: "按标注类型分段控制标签显示哪些信息;类别名三段恒显。单帧=图片手工框,轨迹=视频 track 框,AI=图片预测框",
+    control: {
+      type: "labelContentByType",
+      segments: [
+        {
+          key: "single",
+          label: "单帧",
+          options: [
+            { value: "id", label: "分组号" },
+            { value: "attrs", label: "属性" },
+          ],
+        },
+        {
+          key: "track",
+          label: "轨迹",
+          options: [
+            { value: "id", label: "轨迹号" },
+            { value: "state", label: "状态" },
+            { value: "attrs", label: "属性" },
+          ],
+        },
+        {
+          key: "ai",
+          label: "AI预测",
+          options: [
+            { value: "source", label: "来源" },
+            { value: "score", label: "置信度" },
+            { value: "id", label: "分组号" },
+            { value: "attrs", label: "属性" },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    key: "common.strokeWidth",
+    category: "common",
+    label: "线宽",
+    description: "标注描边粗细;选中对象自动加粗 0.5。图片与视频共用",
+    control: { type: "slider", min: 1, max: 5, step: 0.5, format: (v) => v.toFixed(1) },
+  },
+  {
+    key: "common.fillOpacity",
+    category: "common",
+    label: "填充透明度",
+    description: "可闭合标注(框/多边形/旋转框)内部填充透明度;折线和点无填充。图片与视频共用",
+    control: { type: "slider", min: 0, max: 0.6, step: 0.01, format: (v) => v.toFixed(2) },
+  },
+  {
+    key: "common.fillOpacitySelected",
+    category: "common",
+    label: "选中填充透明度",
+    description: "选中对象的内部填充加重程度,便于区分当前对象。图片与视频共用",
+    control: { type: "slider", min: 0, max: 0.8, step: 0.01, format: (v) => v.toFixed(2) },
+  },
+  {
     key: "image.smoothImage",
     category: "image",
     label: "图像平滑",
@@ -255,13 +352,6 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     label: "淡化透明度",
     description: "未选中/被淡化对象的透明度，越低越淡",
     control: { type: "slider", min: 0.1, max: 0.8, step: 0.05, format: (v) => v.toFixed(2) },
-  },
-  {
-    key: "image.showBoxLabels",
-    category: "image",
-    label: "显示框标签",
-    description: "在每个框旁显示类别名标签",
-    control: { type: "toggle" },
   },
   {
     key: "image.maskOverlayOpacity",
@@ -442,6 +532,16 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     control: { type: "toggle" },
     read: () => readLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY),
     write: (value) => writeLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY, value),
+  },
+  {
+    key: "experiment.videoReferencePredict",
+    category: "experiment",
+    storage: "local",
+    label: "参考框运动预测",
+    description: "实验性,即时生效:视频参考框按前两个关键帧恒速外推到当前帧(默认取最近关键帧)",
+    control: { type: "toggle" },
+    read: () => readVideoReferencePredict(),
+    write: (value) => writeVideoReferencePredict(Boolean(value)),
   },
 ];
 

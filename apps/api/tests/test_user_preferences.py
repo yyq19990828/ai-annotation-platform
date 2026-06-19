@@ -39,6 +39,13 @@ def test_workbench_layout_preferences_accept_camelcase_and_dump_aliases():
                         "w": 420,
                         "h": 560,
                     },
+                    "floatingSelection": {
+                        "collapsed": True,
+                        "x": 900,
+                        "y": 120,
+                        "w": 340,
+                        "h": 440,
+                    },
                     "triViewFloat": {
                         "collapsed": True,
                         "x": 720,
@@ -62,6 +69,9 @@ def test_workbench_layout_preferences_accept_camelcase_and_dump_aliases():
     assert layout.floating_inspector.detached is True
     assert layout.floating_discussion is not None
     assert layout.floating_discussion.h == 560
+    assert layout.floating_selection is not None
+    assert layout.floating_selection.collapsed is True
+    assert layout.floating_selection.x == 900
     assert layout.tri_view_float is not None
     assert layout.tri_view_float.collapsed is True
 
@@ -72,6 +82,8 @@ def test_workbench_layout_preferences_accept_camelcase_and_dump_aliases():
     assert dumped["workbench"]["layout"]["floatingClassPalette"]["w"] == 300
     assert dumped["workbench"]["layout"]["floatingInspector"]["w"] == 360
     assert dumped["workbench"]["layout"]["floatingDiscussion"]["h"] == 560
+    assert dumped["workbench"]["layout"]["floatingSelection"]["collapsed"] is True
+    assert dumped["workbench"]["layout"]["floatingSelection"]["w"] == 340
     assert dumped["workbench"]["layout"]["triViewFloat"]["h"] == 500
 
 

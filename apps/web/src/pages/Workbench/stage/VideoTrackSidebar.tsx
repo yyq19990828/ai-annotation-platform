@@ -4,15 +4,17 @@ import type { DiffMode } from "../modes/types";
 import {
   isVideoBbox,
   isVideoTrack,
-  nearestTrackKeyframe,
+  trackReferenceAtFrame,
   resolveTrackAtFrame,
   shortTrackId,
   sortedKeyframes,
   upsertKeyframe,
 } from "./videoStageGeometry";
 import { addOutsideRange, isFrameOutside } from "./videoTrackOutside";
+import { useVideoReferencePredict } from "./videoReferencePredict";
 import type { AttributeSchema } from "@/api/projects";
 import { VideoTrackPanel, type TrackFilter } from "./VideoTrackPanel";
+import { VideoTrackCardContent } from "../shell/selectionCard/VideoTrackCardContent";
 import type { VideoTrackGapMode } from "./VideoTrackComposeDialog";
 import { useVideoTrackActions } from "./useVideoTrackActions";
 // VideoTrackerJobState type imported lazily via inline import in props
@@ -31,6 +33,12 @@ interface VideoTrackSidebarProps {
   frameIndex: number;
   userId?: string | null;
   trackFilter?: TrackFilter;
+  /** roster = 右栏纯轨迹清单(默认);card = 画布内选中卡的单轨迹两层信息。 */
+  view?: "roster" | "card";
+  /** 视频帧率 / 帧尺寸,仅 card 视图用于帧定位时间码 + 当前帧几何指标。 */
+  fps?: number | null;
+  imageWidth?: number | null;
+  imageHeight?: number | null;
   readOnly: boolean;
   hiddenTrackIds: Set<string>;
   lockedTrackIds: Set<string>;
@@ -113,6 +121,10 @@ export function VideoTrackSidebar({
   frameIndex,
   userId,
   trackFilter = "all",
+  view = "roster",
+  fps = null,
+  imageWidth = null,
+  imageHeight = null,
   readOnly,
   hiddenTrackIds,
   lockedTrackIds,
@@ -207,21 +219,24 @@ export function VideoTrackSidebar({
     return out;
   }, [annotations, frameIndex, hiddenTrackIds]);
 
+  const predictReference = useVideoReferencePredict();
   const selectedTrackGhost = useMemo<VideoTrackGhost | null>(() => {
     if (!selectedTrack || hiddenTrackIds.has(selectedTrack.geometry.track_id)) return null;
+    // 锁定轨迹视为已确认,不再提示参考框(与画布 ghost 一致)。
+    if (lockedTrackIds.has(selectedTrack.geometry.track_id)) return null;
     if (currentFrameEntries.some((entry) => entry.ann.id === selectedTrack.id)) return null;
-    const nearest = nearestTrackKeyframe(selectedTrack.geometry, frameIndex);
-    if (!nearest) return null;
+    const reference = trackReferenceAtFrame(selectedTrack.geometry, frameIndex, predictReference);
+    if (!reference) return null;
     return {
       id: `ghost-${selectedTrack.id}`,
       ann: selectedTrack,
-      geom: nearest.bbox,
+      geom: reference.bbox,
       className: selectedTrack.class_name,
       source: "manual",
       trackId: selectedTrack.geometry.track_id,
-      originFrame: nearest.frame_index,
+      originFrame: reference.originFrame,
     };
-  }, [currentFrameEntries, frameIndex, hiddenTrackIds, selectedTrack]);
+  }, [currentFrameEntries, frameIndex, hiddenTrackIds, lockedTrackIds, predictReference, selectedTrack]);
 
   const selectedTrackLocked = selectedTrack ? lockedTrackIds.has(selectedTrack.geometry.track_id) : false;
   const trackActions = useVideoTrackActions({
@@ -284,6 +299,13 @@ export function VideoTrackSidebar({
     onDeleteTracks(selectedTracks);
     setSelectedTrackIds(new Set());
   }, [onDeleteTracks, selectedTracks]);
+
+  // 单条轨迹删除:右栏每行 + 选中卡底部操作栏共用;删整条 = onDeleteTracks([ann])。
+  const deleteTrack = useCallback((ann: VideoTrackAnnotation) => {
+    if (readOnly || lockedTrackIds.has(ann.geometry.track_id) || !onDeleteTracks) return;
+    if (!window.confirm("确定删除这条轨迹？")) return;
+    onDeleteTracks([ann]);
+  }, [lockedTrackIds, onDeleteTracks, readOnly]);
 
   const aggregateSelectedBboxes = useCallback(() => {
     if (selectedBboxes.length <= 1 || readOnly || !onComposeTracks) return;
@@ -398,17 +420,60 @@ export function VideoTrackSidebar({
     [onUpdate, readOnly],
   );
 
+  if (view === "card") {
+    if (!selectedTrack) return null;
+    return (
+      <VideoTrackCardContent
+        selectedTrack={selectedTrack}
+        selectedTrackGhost={selectedTrackGhost}
+        selectedTrackLocked={selectedTrackLocked}
+        currentFrameOutside={trackActions.currentFrameOutside}
+        frameIndex={frameIndex}
+        fps={fps}
+        imageWidth={imageWidth}
+        imageHeight={imageHeight}
+        userId={userId}
+        readOnly={readOnly}
+        attributeSchema={attributeSchema}
+        trackColorOverrides={trackColorOverrides}
+        selectedTrackHidden={hiddenTrackIds.has(selectedTrack.geometry.track_id)}
+        copiedKeyframeLabel={copiedKeyframeLabel}
+        canCopyCurrentKeyframe={Boolean(selectedTrack && currentKeyframe)}
+        canPasteKeyframe={Boolean(copiedKeyframe && selectedTrack && !readOnly && !selectedTrackLocked)}
+        trackerJob={trackerJobsByAnnotation?.[selectedTrack.id]}
+        samplingStep={samplingStep}
+        propagateOverwrite={propagateOverwrite}
+        onSeekFrame={onSeekFrame}
+        onToggleHidden={() => onToggleHiddenTrack(selectedTrack.geometry.track_id)}
+        onToggleLock={() => onToggleLockedTrack(selectedTrack.geometry.track_id)}
+        onChangeClass={onChangeUserBoxClass ? (anchor) => onChangeUserBoxClass(selectedTrack.id, anchor) : undefined}
+        onDeleteTrack={onDeleteTracks ? () => deleteTrack(selectedTrack) : undefined}
+        onSplitSelectedTrack={onComposeTracks ? splitSelectedTrack : undefined}
+        onPropagateTrack={onPropagateTrack}
+        onMarkSelectedTrack={trackActions.markSelectedTrack}
+        onCopySelectedTrackToCurrentFrame={copySelectedTrackToCurrentFrame}
+        onCopyCurrentKeyframe={copyCurrentKeyframe}
+        onPasteKeyframeToCurrentFrame={pasteKeyframeToCurrentFrame}
+        onDeleteTrackKeyframe={deleteTrackKeyframe}
+        onConvertToBboxes={onConvertToBboxes}
+        onCancelTrackerJob={onCancelTrackerJob}
+        onAcceptPredictionKeyframe={acceptPredictionKeyframe}
+        onRejectPredictionKeyframe={rejectPredictionKeyframe}
+        onUpdateTrackAttributes={onUpdateTrackAttributes}
+        onUpdateKeyframeAttributes={onUpdateKeyframeAttributes}
+        onPropagateKeyframe={onPropagateKeyframe}
+        onUpdateSemanticLabel={onUpdateSemanticLabel ?? updateSemanticLabel}
+      />
+    );
+  }
+
   return (
     <VideoTrackPanel
       videoTracks={videoTracks}
       selectedId={selectedId}
       selectedTrackIds={selectedTrackIds}
       selectedTrack={selectedTrack}
-      selectedTrackGhost={selectedTrackGhost}
-      selectedTrackLocked={selectedTrackLocked}
-      currentFrameOutside={trackActions.currentFrameOutside}
       frameIndex={frameIndex}
-      userId={userId}
       trackFilter={trackFilter}
       readOnly={readOnly}
       selectedBboxCount={selectedBboxes.length}
@@ -421,10 +486,10 @@ export function VideoTrackSidebar({
       onSeekFrame={onSeekFrame}
       onStartNewTrack={startNewTrack}
       onChangeUserBoxClass={onChangeUserBoxClass}
+      onDeleteTrack={onDeleteTracks ? deleteTrack : undefined}
       onBatchRenameTracks={onRenameTracks ? renameSelectedTracks : undefined}
       onBatchDeleteTracks={onDeleteTracks ? deleteSelectedTracks : undefined}
       onAggregateSelectedBboxes={onComposeTracks ? aggregateSelectedBboxes : undefined}
-      onSplitSelectedTrack={onComposeTracks ? splitSelectedTrack : undefined}
       onMergeSelectedTracks={onComposeTracks ? mergeSelectedTracks : undefined}
       canMergeSelectedTracks={canMergeSelectedTracks}
       onJoinSelectedTracks={onComposeTracks ? joinSelectedTracks : undefined}
@@ -433,30 +498,9 @@ export function VideoTrackSidebar({
       onHideSelectedTracks={() => setSelectedTracksHidden(true)}
       onLockSelectedTracks={() => setSelectedTracksLocked(true)}
       onUnlockSelectedTracks={() => setSelectedTracksLocked(false)}
-      onMarkSelectedTrack={trackActions.markSelectedTrack}
-      onCopySelectedTrackToCurrentFrame={copySelectedTrackToCurrentFrame}
-      copiedKeyframeLabel={copiedKeyframeLabel}
-      canCopyCurrentKeyframe={Boolean(selectedTrack && currentKeyframe)}
-      canPasteKeyframe={Boolean(copiedKeyframe && selectedTrack && !readOnly && !selectedTrackLocked)}
-      onCopyCurrentKeyframe={copyCurrentKeyframe}
-      onPasteKeyframeToCurrentFrame={pasteKeyframeToCurrentFrame}
-      onDeleteTrackKeyframe={deleteTrackKeyframe}
-      onConvertToBboxes={onConvertToBboxes}
       reviewDisplayMode={reviewDisplayMode}
-      trackerJobsByAnnotation={trackerJobsByAnnotation}
-      onPropagateTrack={onPropagateTrack}
-      onCancelTrackerJob={onCancelTrackerJob}
-      onAcceptPredictionKeyframe={acceptPredictionKeyframe}
-      onRejectPredictionKeyframe={rejectPredictionKeyframe}
       trackColorOverrides={trackColorOverrides}
       onSetTrackColor={onSetTrackColor}
-      attributeSchema={attributeSchema}
-      onUpdateTrackAttributes={onUpdateTrackAttributes}
-      onUpdateKeyframeAttributes={onUpdateKeyframeAttributes}
-      onPropagateKeyframe={onPropagateKeyframe}
-      onUpdateSemanticLabel={onUpdateSemanticLabel ?? updateSemanticLabel}
-      samplingStep={samplingStep}
-      propagateOverwrite={propagateOverwrite}
     />
   );
 }

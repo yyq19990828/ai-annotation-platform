@@ -32,7 +32,7 @@ graph TD
   Task --> Prediction["Prediction / FailedPrediction"]
   Task --> Lock["TaskLock"]
   Scheduler["scheduler.get_next_task()"] --> Task
-  TaskAPI["api/v1/tasks.py"] --> Task
+  TaskAPI["api/v1/tasks/"] --> Task
   AnnotationSvc["services/annotation.py"] --> Task
 ```
 
@@ -49,7 +49,7 @@ graph TD
 | `apps/api/app/db/models/task.py` | Task 主模型 |
 | `apps/api/app/db/enums.py` | `TaskStatus` 枚举 |
 | `apps/api/app/schemas/task.py` | Task 响应模型与 lock 响应 |
-| `apps/api/app/api/v1/tasks.py` | task 路由、状态机、审核动作、lock 端点 |
+| `apps/api/app/api/v1/tasks/` | task 路由包(list / video / annotations / predictions / lifecycle / review / locks 子模块 + `_shared.py` 共享依赖):task 路由、状态机、审核动作、lock 端点 |
 | `apps/api/app/services/scheduler.py` | 下一题派发、batch 可见性过滤 |
 | `apps/api/app/services/task_lock.py` | task 锁服务 |
 | `apps/api/app/services/annotation.py` | annotation 写入对 task 的状态回写 |
@@ -190,7 +190,7 @@ stateDiagram-v2
 
 ## 审核流
 
-`apps/api/app/api/v1/tasks.py` 中和审核相关的主要动作：
+`apps/api/app/api/v1/tasks/`(`lifecycle.py` / `review.py`)中和审核相关的主要动作：
 
 - `POST /tasks/{id}/submit`
 - `POST /tasks/{id}/withdraw`

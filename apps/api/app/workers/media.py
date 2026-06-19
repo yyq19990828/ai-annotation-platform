@@ -1,8 +1,5 @@
 import asyncio
-import base64
 import io
-import json
-import math
 import subprocess
 import tempfile
 import time
@@ -33,237 +30,45 @@ from app.services.video_frame_service import (
     source_key_for_item,
 )
 from app.workers.celery_app import celery_app
+from app.workers.media_probe import (
+    FFPROBE_TIMEOUT_SECONDS as FFPROBE_TIMEOUT_SECONDS,
+    _parse_frame_time_ms as _parse_frame_time_ms,
+    _parse_int as _parse_int,
+    _parse_ratio as _parse_ratio,
+    parse_ffprobe_frame_timetable as parse_ffprobe_frame_timetable,
+    parse_ffprobe_packet_samples as parse_ffprobe_packet_samples,
+    parse_ffprobe_video_metadata as parse_ffprobe_video_metadata,
+    probe_chunk_samples as probe_chunk_samples,
+    probe_video_file as probe_video_file,
+    probe_video_frame_timetable as probe_video_frame_timetable,
+)
+from app.workers.media_codec import (
+    _avc_codec_string as _avc_codec_string,
+    _extract_decoder_config as _extract_decoder_config,
+    _find_mp4_box_payload as _find_mp4_box_payload,
+    _hevc_codec_string as _hevc_codec_string,
+    _webcodecs_codec_string as _webcodecs_codec_string,
+)
+
+# v0.16.x 拆分：分块/单帧 ffmpeg 抽取已抽到 media_chunks/media_frames,此处冗余别名
+# re-export,保持 `from app.workers.media import extract_video_chunk*/extract_video_frame_image
+# /FFMPEG_*_TIMEOUT_SECONDS` 旧入口与 monkeypatch target 不变(调用方 _store_* 仍在
+# 本模块以裸名调用,走 media 全局查找)。
+from app.workers.media_chunks import (
+    FFMPEG_CHUNK_TIMEOUT_SECONDS as FFMPEG_CHUNK_TIMEOUT_SECONDS,
+    extract_video_chunk as extract_video_chunk,
+    extract_video_chunk_smart_copy as extract_video_chunk_smart_copy,
+)
+from app.workers.media_frames import (
+    FFMPEG_FRAME_TIMEOUT_SECONDS as FFMPEG_FRAME_TIMEOUT_SECONDS,
+    extract_video_frame_image as extract_video_frame_image,
+)
 from app.config import settings
 
-FFPROBE_TIMEOUT_SECONDS = 30
 FFMPEG_POSTER_TIMEOUT_SECONDS = 60
 FFMPEG_TRANSCODE_TIMEOUT_SECONDS = 600
-FFMPEG_CHUNK_TIMEOUT_SECONDS = 180
-FFMPEG_FRAME_TIMEOUT_SECONDS = 60
 BROWSER_PLAYABLE_VIDEO_CODECS = {"h264", "avc1"}
 SMART_COPY_VIDEO_CODECS = {"h264", "avc1", "hevc", "h265"}
-
-
-def _parse_ratio(value: str | None) -> float | None:
-    if not value:
-        return None
-    if "/" in value:
-        num, den = value.split("/", 1)
-        try:
-            n = float(num)
-            d = float(den)
-            if d == 0:
-                return None
-            return n / d
-        except ValueError:
-            return None
-    try:
-        return float(value)
-    except ValueError:
-        return None
-
-
-def parse_ffprobe_video_metadata(payload: dict[str, Any]) -> dict[str, Any]:
-    streams = payload.get("streams") or []
-    video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
-    if not video_stream:
-        raise ValueError("ffprobe did not return a video stream")
-
-    fmt = payload.get("format") or {}
-    fps = _parse_ratio(video_stream.get("avg_frame_rate")) or _parse_ratio(
-        video_stream.get("r_frame_rate")
-    )
-    duration_s: float | None = None
-    for raw in (video_stream.get("duration"), fmt.get("duration")):
-        if raw is None:
-            continue
-        try:
-            duration_s = float(raw)
-            break
-        except (TypeError, ValueError):
-            continue
-
-    frame_count: int | None = None
-    raw_frames = video_stream.get("nb_frames")
-    if raw_frames not in (None, "N/A"):
-        try:
-            frame_count = int(raw_frames)
-        except (TypeError, ValueError):
-            frame_count = None
-    if frame_count is None and fps and duration_s:
-        frame_count = max(1, int(round(fps * duration_s)))
-
-    width = video_stream.get("width")
-    height = video_stream.get("height")
-    return {
-        "duration_ms": int(round(duration_s * 1000))
-        if duration_s is not None
-        else None,
-        "fps": round(float(fps), 3) if fps and math.isfinite(fps) else None,
-        "frame_count": frame_count,
-        "width": int(width) if width is not None else None,
-        "height": int(height) if height is not None else None,
-        "codec": video_stream.get("codec_name"),
-    }
-
-
-def _parse_frame_time_ms(frame: dict[str, Any]) -> int | None:
-    for key in (
-        "best_effort_timestamp_time",
-        "pkt_pts_time",
-        "pts_time",
-        "pkt_dts_time",
-    ):
-        raw = frame.get(key)
-        if raw in (None, "N/A"):
-            continue
-        try:
-            seconds = float(raw)
-        except (TypeError, ValueError):
-            continue
-        if math.isfinite(seconds):
-            return int(round(seconds * 1000))
-    return None
-
-
-def _parse_int(value: Any) -> int | None:
-    if value in (None, "N/A"):
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def parse_ffprobe_frame_timetable(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    frames = payload.get("frames") or []
-    out: list[dict[str, Any]] = []
-    for frame in frames:
-        if frame.get("media_type") not in (None, "video"):
-            continue
-        pts_ms = _parse_frame_time_ms(frame)
-        if pts_ms is None:
-            continue
-        out.append(
-            {
-                "frame_index": len(out),
-                "pts_ms": pts_ms,
-                "is_keyframe": bool(_parse_int(frame.get("key_frame")) or 0),
-                "pict_type": frame.get("pict_type"),
-                "byte_offset": _parse_int(frame.get("pkt_pos")),
-            }
-        )
-    return out
-
-
-def parse_ffprobe_packet_samples(
-    payload: dict[str, Any], start_frame: int
-) -> list[dict[str, Any]]:
-    packets = payload.get("packets") or []
-    valid: list[dict[str, Any]] = []
-    for pkt in packets:
-        pos = _parse_int(pkt.get("pos"))
-        pts_time = pkt.get("pts_time")
-        if pos is None or pts_time in (None, "N/A"):
-            continue
-        pts_ms = int(round(float(pts_time) * 1000))
-        dur = pkt.get("duration_time")
-        duration_ms = int(round(float(dur) * 1000)) if dur not in (None, "N/A") else 0
-        size_bytes = _parse_int(pkt.get("size")) or 0
-        flags = pkt.get("flags") or ""
-        is_keyframe = "K" in flags
-        valid.append(
-            {
-                "pts_ms": pts_ms,
-                "duration_ms": duration_ms,
-                "is_keyframe": is_keyframe,
-                "size_bytes": size_bytes,
-                "offset_in_chunk": pos,
-            }
-        )
-    if not valid:
-        return []
-    order = sorted(range(len(valid)), key=lambda i: valid[i]["pts_ms"])
-    rank = {idx: r for r, idx in enumerate(order)}
-    for i in range(len(valid)):
-        valid[i]["frame_index"] = start_frame + rank[i]
-    return valid
-
-
-def probe_video_file(path: str | Path) -> dict[str, Any]:
-    proc = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,nb_frames,duration",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "json",
-            str(path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=FFPROBE_TIMEOUT_SECONDS,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "ffprobe failed")
-    return parse_ffprobe_video_metadata(json.loads(proc.stdout or "{}"))
-
-
-def probe_video_frame_timetable(path: str | Path) -> list[dict[str, Any]]:
-    proc = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_frames",
-            "-show_entries",
-            "frame=media_type,key_frame,pict_type,best_effort_timestamp_time,pkt_pts_time,pts_time,pkt_dts_time,pkt_pos",
-            "-of",
-            "json",
-            str(path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=FFPROBE_TIMEOUT_SECONDS,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "ffprobe frame timetable failed")
-    return parse_ffprobe_frame_timetable(json.loads(proc.stdout or "{}"))
-
-
-def probe_chunk_samples(path: str | Path, start_frame: int) -> list[dict[str, Any]]:
-    proc = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_packets",
-            "-show_entries",
-            "packet=pts_time,dts_time,duration_time,size,pos,flags",
-            "-of",
-            "json",
-            str(path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=FFPROBE_TIMEOUT_SECONDS,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "ffprobe packet probe failed")
-    return parse_ffprobe_packet_samples(json.loads(proc.stdout or "{}"), start_frame)
 
 
 def extract_video_poster(input_path: str | Path, output_path: str | Path) -> None:
@@ -319,113 +124,6 @@ def transcode_video_for_browser(
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "ffmpeg browser transcode failed")
-
-
-def extract_video_chunk(
-    input_path: str | Path,
-    output_path: str | Path,
-    start_ms: int,
-    frame_count: int,
-) -> None:
-    proc = subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-ss",
-            f"{max(0, start_ms) / 1000:.3f}",
-            "-i",
-            str(input_path),
-            "-frames:v",
-            str(max(1, frame_count)),
-            "-an",
-            "-c:v",
-            "libx264",
-            "-profile:v",
-            "baseline",
-            "-pix_fmt",
-            "yuv420p",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "23",
-            "-g",
-            "30",
-            "-keyint_min",
-            "30",
-            "-movflags",
-            "frag_keyframe+empty_moov+default_base_moof",
-            str(output_path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=FFMPEG_CHUNK_TIMEOUT_SECONDS,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "ffmpeg chunk extraction failed")
-
-
-def extract_video_chunk_smart_copy(
-    input_path: str | Path,
-    output_path: str | Path,
-    start_ms: int,
-    duration_ms: int,
-) -> None:
-    proc = subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-ss",
-            f"{max(0, start_ms) / 1000:.3f}",
-            "-i",
-            str(input_path),
-            "-t",
-            f"{max(1, duration_ms) / 1000:.3f}",
-            "-map",
-            "0:v:0",
-            "-an",
-            "-c:v",
-            "copy",
-            "-movflags",
-            "frag_keyframe+empty_moov+default_base_moof",
-            str(output_path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=FFMPEG_CHUNK_TIMEOUT_SECONDS,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "ffmpeg chunk smart-copy failed")
-
-
-def extract_video_frame_image(
-    input_path: str | Path,
-    output_path: str | Path,
-    pts_ms: int,
-    width: int,
-) -> None:
-    proc = subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-ss",
-            f"{max(0, pts_ms) / 1000:.3f}",
-            "-i",
-            str(input_path),
-            "-frames:v",
-            "1",
-            "-vf",
-            f"scale='min({max(1, width)},iw)':-2",
-            str(output_path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=FFMPEG_FRAME_TIMEOUT_SECONDS,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "ffmpeg frame extraction failed")
 
 
 async def _get_or_create_frame_cache_row(
@@ -962,92 +660,6 @@ async def _chunk_diagnostics(
         "smart_copy_eligible": fallback_reason is None,
         "fallback_reason": fallback_reason,
     }
-
-
-def _webcodecs_codec_string(output_codec: str | None) -> str:
-    normalized = (output_codec or "").lower()
-    if "hevc" in normalized or "h265" in normalized:
-        return "hev1.1.6.L93.B0"
-    return "avc1.4d001e"
-
-
-def _find_mp4_box_payload(data: bytes, fourcc: bytes) -> bytes | None:
-    """在 mp4 字节里按 fourcc 定位 box, 返回 payload (8 字节 box 头之后的内容)。
-
-    box 结构: ``[uint32 size][4 字节 type][payload...]``, size 含 8 字节头。子串扫描 +
-    size 合法性校验, 避免把 payload 中偶然出现的 fourcc 误判成 box 头。找不到返回 None。
-    """
-    start = 0
-    while True:
-        i = data.find(fourcc, start)
-        if i == -1:
-            return None
-        if i < 4:
-            start = i + 4
-            continue
-        box_start = i - 4
-        size = int.from_bytes(data[box_start:i], "big")
-        end = box_start + size
-        if size > 8 and end <= len(data):
-            return data[i + 4 : end]
-        start = i + 4
-
-
-def _avc_codec_string(avcc: bytes) -> str | None:
-    """从 AVCDecoderConfigurationRecord 派生 RFC6381 codec string (avc1.PPCCLL)。
-
-    byte1/2/3 = profile_idc / profile_compatibility / level_idc, 直接 hex 即 codec 后缀。
-    """
-    if len(avcc) < 4:
-        return None
-    return "avc1." + avcc[1:4].hex()
-
-
-def _hevc_codec_string(hvcc: bytes) -> str | None:
-    """从 HEVCDecoderConfigurationRecord 派生 RFC6381 codec string (hvc1.…)。"""
-    if len(hvcc) < 13:
-        return None
-    b1 = hvcc[1]
-    profile_space = (b1 >> 6) & 0x03
-    tier_flag = (b1 >> 5) & 0x01
-    profile_idc = b1 & 0x1F
-    # general_profile_compatibility_flags: 32 位, codec string 用其逆序位的 hex。
-    compat = int.from_bytes(hvcc[2:6], "big")
-    rev = 0
-    for _ in range(32):
-        rev = (rev << 1) | (compat & 1)
-        compat >>= 1
-    space = {0: "", 1: "A", 2: "B", 3: "C"}.get(profile_space, "")
-    parts = [
-        "hvc1",
-        f"{space}{profile_idc}",
-        format(rev, "x").upper() or "0",
-        ("H" if tier_flag else "L") + str(hvcc[12]),
-    ]
-    # general_constraint_indicator_flags: 6 字节, 去尾部 0 后逐字节 hex。
-    for byte in hvcc[6:12].rstrip(b"\x00"):
-        parts.append(format(byte, "02X"))
-    return ".".join(parts)
-
-
-def _extract_decoder_config(chunk_path: Path) -> tuple[str | None, str | None]:
-    """从 chunk mp4 读取 avcC/hvcC, 返回 (codec_string, description_base64)。
-
-    description = WebCodecs ``VideoDecoderConfig.description`` 所需的 AVC/HEVCDecoderConfigurationRecord
-    (含 SPS/PPS)。样本是 AVCC 长度前缀格式, 缺 description 时浏览器按 Annex-B 解析必失败,
-    所以这里必须把 extradata 透出。读取失败返回 (None, None), 调用方退回旧启发式 codec_string。
-    """
-    try:
-        data = chunk_path.read_bytes()
-    except OSError:
-        return None, None
-    avcc = _find_mp4_box_payload(data, b"avcC")
-    if avcc is not None:
-        return _avc_codec_string(avcc), base64.b64encode(avcc).decode("ascii")
-    hvcc = _find_mp4_box_payload(data, b"hvcC")
-    if hvcc is not None:
-        return _hevc_codec_string(hvcc), base64.b64encode(hvcc).decode("ascii")
-    return None, None
 
 
 def _extract_chunk_samples(

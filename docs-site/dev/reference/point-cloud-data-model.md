@@ -125,7 +125,7 @@ GET /tasks/{id}/point-cloud/manifest   (project.data_type=="lidar"，否则 409)
       expires_in }
 ```
 
-实现:`api/v1/tasks.py` 用 `get_linked_items` 取 link → 主点云(无 primary_lidar link 时回退 `task.file_path`)+ 各相机 presign + `metadata_["calibration"]`(非法降级 None)。
+实现:`api/v1/tasks/video.py` 用 `get_linked_items` 取 link → 主点云(无 primary_lidar link 时回退 `task.file_path`)+ 各相机 presign + `metadata_["calibration"]`(非法降级 None)。
 
 前端(双画布架构,ADR-0031):`project.type_key === "lidar"` → `WorkbenchStageHost` 的 `3d` 分支 → lazy `ThreeDWorkbench`(独立 `vendor-three` chunk,不进主 bundle)。裸 Three.js 封装 `PointCloudScene`(`PCDLoader` + OrbitControls + 高度上色 + 大点云抽稀 + dispose 生命周期),相机图只读平铺。模块在 `apps/web/src/pages/Workbench/stages/three-d/`,与 Konva `stage/` 隔离。
 

@@ -46,7 +46,7 @@ graph TD
 
 | 位置 | 作用 |
 |---|---|
-| `apps/api/app/api/v1/tasks.py` | task 级 submit / withdraw / review / reopen / accept-rejection |
+| `apps/api/app/api/v1/tasks/lifecycle.py` · `review.py` | task 级 submit / withdraw / review / reopen / accept-rejection |
 | `apps/api/app/api/v1/batches.py` | batch 级 transition / reject / reset |
 | `apps/api/app/services/batch.py` | batch 状态校验、reject_batch、counter 回写 |
 | `apps/api/app/services/scheduler.py` | reviewer 可见性的 batch 过滤 |

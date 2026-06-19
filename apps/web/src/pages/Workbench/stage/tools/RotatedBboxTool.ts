@@ -7,7 +7,7 @@ export const RotatedBboxTool: CanvasTool = {
   id: "rotated-box",
   hotkey: "W",
   label: "旋转框",
-  icon: "rect",
+  icon: "diamond",
   cursor: "crosshair",
   onPointerDown: ({ pt, evt, spacePan, readOnly, pendingDrawing, onClearSelection }: ToolPointerContext): DragInit | null => {
     if (pendingDrawing) return null;

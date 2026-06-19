@@ -77,7 +77,9 @@ api_router.include_router(
 api_router.include_router(
     project_templates.router, prefix="/project-templates", tags=["project-templates"]
 )
-api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
+# /tasks 前缀已下放至 tasks 包内部聚合(见 app/api/v1/tasks/__init__.py);
+# 此处仅施加 tag,避免与包内前缀叠加成 /tasks/tasks。
+api_router.include_router(tasks.router, tags=["tasks"])
 api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
 api_router.include_router(
     video_tracker_jobs.router,

@@ -9,7 +9,7 @@ export const SmartBoxTool: CanvasTool = {
   id: "smart-box",
   hotkey: "S",
   label: "智能框",
-  icon: "rect",
+  icon: "scan",
   cursor: "crosshair",
   requiredPrompt: "bbox",
   onPointerDown: ({

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Button } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
+import { useElementStyle } from "@/components/ui/useElementStyle";
 import { Thumbnail } from "@/components/Thumbnail";
 import type { TaskResponse } from "@/types";
 import type { ClassesConfig } from "@/api/projects";
@@ -197,7 +198,6 @@ export function TaskQueuePanel({
   floatingSection,
   classPickable = false, onPickClass,
 }: TaskQueuePanelProps) {
-  const rootRef = useRef<HTMLDivElement>(null);
   const parentRef = useRef<HTMLDivElement>(null);
   const [paletteHeight, setPaletteHeight] = useState(readPaletteHeight);
   const floating = Boolean(floatingSection);
@@ -251,9 +251,12 @@ export function TaskQueuePanel({
     return () => window.cancelAnimationFrame(frame);
   }, [open, showQueue, activeTaskIndex, virtualizer]);
 
-  useEffect(() => {
-    rootRef.current?.style.setProperty("--left-palette-height", `${paletteHeight}px`);
-  }, [paletteHeight]);
+  // 高度用 useElementStyle 注入 CSS 变量:本面板在收起左栏后会条件卸载,再展开时挂成新 DOM;
+  // 若仍用 useRef+useEffect([paletteHeight]),依赖未变 effect 不重跑 → 新元素拿不到
+  // --left-palette-height → 高度回退到默认(同右栏 B-56「展开收起后回到原位 / 第一次拖拽不跟手」)。
+  const rootStyleRef = useElementStyle<HTMLDivElement>(
+    useMemo<CSSProperties>(() => ({ "--left-palette-height": `${paletteHeight}px` }) as CSSProperties, [paletteHeight]),
+  );
 
   if (!open || (!showQueue && !showPalette)) {
     return null;
@@ -261,7 +264,7 @@ export function TaskQueuePanel({
 
   return (
     <div
-      ref={rootRef}
+      ref={rootStyleRef}
       className={cn(
         styles.root,
         floating && styles.rootFloating,

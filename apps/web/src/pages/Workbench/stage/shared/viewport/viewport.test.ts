@@ -1,0 +1,82 @@
+import { describe, expect, it } from "vitest";
+import { fitToCanvas } from "./fit";
+import { SCALE_RANGE, clampScale, zoomAtPoint } from "./zoom";
+import { dashToWorld, screenToWorld } from "./scaleCancel";
+
+describe("fitToCanvas", () => {
+  it("内容比视口宽 → 取宽度比,水平贴边、垂直居中", () => {
+    // 视口 800×600,内容 1000×500:scale = min(800/1000, 600/500) = 0.8
+    const vp = fitToCanvas(800, 600, 1000, 500);
+    expect(vp).not.toBeNull();
+    expect(vp!.scale).toBeCloseTo(0.8);
+    expect(vp!.tx).toBeCloseTo(0); // 800 - 1000*0.8 = 0
+    expect(vp!.ty).toBeCloseTo(100); // (600 - 500*0.8)/2 = 100
+  });
+
+  it("内容比视口高 → 取高度比,垂直贴边、水平居中", () => {
+    // 视口 800×600,内容 400×1200:scale = min(800/400, 600/1200) = 0.5
+    const vp = fitToCanvas(800, 600, 400, 1200);
+    expect(vp!.scale).toBeCloseTo(0.5);
+    expect(vp!.tx).toBeCloseTo(300); // (800 - 400*0.5)/2 = 300
+    expect(vp!.ty).toBeCloseTo(0); // 600 - 1200*0.5 = 0
+  });
+
+  it("任一尺寸为 0(未就绪)→ 返回 null,调用方保留当前 vp", () => {
+    expect(fitToCanvas(0, 600, 1000, 500)).toBeNull();
+    expect(fitToCanvas(800, 0, 1000, 500)).toBeNull();
+    expect(fitToCanvas(800, 600, 0, 500)).toBeNull();
+    expect(fitToCanvas(800, 600, 1000, 0)).toBeNull();
+  });
+});
+
+describe("clampScale", () => {
+  it("夹到默认 [0.2, 8] 范围", () => {
+    expect(clampScale(0.05)).toBe(SCALE_RANGE.min);
+    expect(clampScale(20)).toBe(SCALE_RANGE.max);
+    expect(clampScale(1.5)).toBe(1.5);
+  });
+
+  it("支持自定义范围", () => {
+    expect(clampScale(5, { min: 1, max: 4 })).toBe(4);
+    expect(clampScale(0.5, { min: 1, max: 4 })).toBe(1);
+  });
+});
+
+describe("zoomAtPoint", () => {
+  it("围绕光标定点放大:该屏幕点的世界坐标不漂移", () => {
+    const vp = { scale: 1, tx: 0, ty: 0 };
+    const cx = 200;
+    const cy = 150;
+    // 缩放前光标 (200,150) 对应的世界点
+    const worldBefore = { x: (cx - vp.tx) / vp.scale, y: (cy - vp.ty) / vp.scale };
+    const next = zoomAtPoint(vp, cx, cy, 2);
+    expect(next.scale).toBe(2);
+    // 缩放后同一世界点应仍落在屏幕同一像素位置
+    const screenX = worldBefore.x * next.scale + next.tx;
+    const screenY = worldBefore.y * next.scale + next.ty;
+    expect(screenX).toBeCloseTo(cx);
+    expect(screenY).toBeCloseTo(cy);
+  });
+
+  it("目标 scale 超上限 → clamp,且仍围绕定点", () => {
+    const vp = { scale: 4, tx: 10, ty: 20 };
+    const next = zoomAtPoint(vp, 100, 100, 100);
+    expect(next.scale).toBe(SCALE_RANGE.max);
+  });
+
+  it("clamp 后 scale 未变 → 原样返回同一引用(不抖动)", () => {
+    const vp = { scale: SCALE_RANGE.max, tx: 10, ty: 20 };
+    expect(zoomAtPoint(vp, 100, 100, 999)).toBe(vp);
+  });
+});
+
+describe("screenToWorld / dashToWorld", () => {
+  it("屏幕像素量除以 scale 换算成世界量", () => {
+    expect(screenToWorld(2, 1)).toBe(2);
+    expect(screenToWorld(2, 4)).toBe(0.5);
+  });
+
+  it("dash 数组逐项抵消", () => {
+    expect(dashToWorld([4, 3], 2)).toEqual([2, 1.5]);
+  });
+});

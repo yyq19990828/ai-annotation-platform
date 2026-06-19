@@ -1,0 +1,85 @@
+/* v0.16.14 · 选中信息卡通用身份头。 */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.name {
+  overflow: hidden;
+  flex: 0 1 auto;
+  color: var(--color-fg);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 100px;
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.badgeManual {
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-muted);
+}
+
+.badgeAi {
+  background: var(--color-ai-soft);
+  color: var(--color-ai);
+}
+
+.badgeAccepted {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.badgeImport {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.confPill {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.confHigh {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.confMid {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.confLow {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}

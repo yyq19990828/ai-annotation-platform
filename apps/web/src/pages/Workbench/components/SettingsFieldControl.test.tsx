@@ -53,6 +53,21 @@ const textField: WorkbenchSettingField = {
   control: { type: "text", maxLength: 255, placeholder: "brightness(1.2)" },
 };
 
+const multiselectField: WorkbenchSettingField = {
+  key: "common.labelContent",
+  category: "common",
+  label: "标签内容",
+  control: {
+    type: "multiselect",
+    min: 1,
+    options: [
+      { value: "class", label: "类别名" },
+      { value: "id", label: "ID" },
+      { value: "score", label: "置信度" },
+    ],
+  },
+};
+
 describe("SettingsFieldControl", () => {
   it("toggle:渲染 switch,切换触发 onCommit(boolean)", () => {
     const onCommit = vi.fn();
@@ -70,6 +85,9 @@ describe("SettingsFieldControl", () => {
     expect(screen.getByLabelText("顶点拖拽手柄半径")).toBeTruthy();
     fireEvent.change(screen.getByRole("slider"), { target: { value: "12" } });
     expect(onCommit).not.toHaveBeenCalled();
+    // 拖动中(未松手)数字实时跟随,不冻结在旧值 6px。
+    expect(screen.getByText(/12px/)).toBeTruthy();
+    expect(screen.queryByText(/6px/)).toBeNull();
     fireEvent.pointerUp(screen.getByRole("slider"));
     expect(onCommit).toHaveBeenCalledWith(12);
   });
@@ -103,6 +121,34 @@ describe("SettingsFieldControl", () => {
     fireEvent.change(input, { target: { value: " invert(1) " } });
     fireEvent.blur(input);
     expect(onCommit).toHaveBeenCalledWith("invert(1)");
+  });
+
+  it("multiselect:勾选未选项追加、按 options 顺序提交 string[]", () => {
+    const onCommit = vi.fn();
+    render(
+      <SettingsFieldControl field={multiselectField} value={["class"]} onCommit={onCommit} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "置信度" }));
+    // 按 options 顺序重建:class 在 score 之前。
+    expect(onCommit).toHaveBeenCalledWith(["class", "score"]);
+  });
+
+  it("multiselect:取消已选项移除;min 兜底下最后一项禁用不可取消", () => {
+    const onCommit = vi.fn();
+    const { rerender } = render(
+      <SettingsFieldControl field={multiselectField} value={["class", "score"]} onCommit={onCommit} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "置信度" }));
+    expect(onCommit).toHaveBeenCalledWith(["class"]);
+    // 只剩 class 时,class chip 触底禁用(min:1),点击不提交。
+    onCommit.mockClear();
+    rerender(
+      <SettingsFieldControl field={multiselectField} value={["class"]} onCommit={onCommit} />,
+    );
+    const classChip = screen.getByRole("button", { name: "类别名" }) as HTMLButtonElement;
+    expect(classChip.disabled).toBe(true);
+    fireEvent.click(classChip);
+    expect(onCommit).not.toHaveBeenCalled();
   });
 
   it("locked:控件禁用 + 「项目锁定」badge", () => {

@@ -9,7 +9,6 @@ import type { AiBox } from "../state/transforms";
 import { useElementSize, type Viewport } from "../state/useViewportTransform";
 import { applyResize, applyRotatedResize, type ResizeDirection } from "./ResizeHandles";
 import { classColorForCanvas, hexToRgba } from "./colors";
-import { ImageSelectionActions } from "./ImageSelectionActions";
 import { SelectionOverlay } from "./SelectionOverlay";
 import { TOOL_REGISTRY, type PolygonDraftHandle, type KeypointDraftHandle } from "./tools";
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
@@ -22,12 +21,13 @@ import { Icon } from "@/components/ui/Icon";
 import { isSelfIntersecting, isSelfIntersectingIncremental, moveVertex, type Pt } from "./polygonGeom";
 import {
   buildSnapIndex,
-  snapPointToCandidates,
-  snapPointToSegments,
   type SnapMatch,
 } from "./shared/geometry/snap";
 import { BlurhashLayer } from "./BlurhashLayer";
 import { KonvaBox, KonvaPolygon, KonvaRotatedBox, KonvaPolyline, KonvaKeypoint, keypointColorByIndex } from "./ImageStageShapes";
+import { normalizeImageCoordinate, resolveSnapMatch } from "./ImageStage.helpers";
+import { BOX_LABEL_FONT_FAMILY } from "./boxVisual";
+import { resolveAnnotationVisual } from "./annotationVisual";
 import {
   buildImageContextMenuItems,
   findContextMenuAnnotationId,
@@ -35,6 +35,8 @@ import {
   type ImageContextMenuClipboardActions,
 } from "./imageStageContextMenu";
 import { wheelZoomFactor } from "./imageStageSettings";
+import { fitToCanvas } from "./shared/viewport/fit";
+import { zoomAtPoint } from "./shared/viewport/zoom";
 import { IssueLayer } from "./image/IssueLayer";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 import { useWorkbenchPerf } from "./shared/useWorkbenchPerf";
@@ -148,9 +150,7 @@ interface ImageStageProps {
   pendingDrawing?: { geom: Geom } | null;
   /** 临时几何 override（方向键 nudge 期间用于显示）。优先级：drag > nudgeMap > b。 */
   nudgeMap?: Map<string, Geom>;
-  /** 多选批量浮条按钮（selectedIds.length > 1 时由 Shell 处理）。 */
-  onBatchDelete?: () => void;
-  onBatchChangeClass?: () => void;
+  /** 多边形合并(右键菜单复用;批量改类 / 删除已迁出到浮动选中卡)。 */
   onJoinSelected?: () => void;
   onApplyAttributeMode?: (id: string) => boolean;
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
@@ -253,7 +253,7 @@ export function ImageStage({
   fileUrl, blurhash, imageWidth, imageHeight, tool, activeClass,
   selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
-  onBatchDelete, onBatchChangeClass, onJoinSelected, onApplyAttributeMode,
+  onJoinSelected, onApplyAttributeMode,
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass, onPatchShapeFlag, clipboardActions,
   onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
@@ -298,6 +298,11 @@ export function ImageStage({
   // v0.10.10 · I17.3 · 合并项目级 rendering_config 覆盖（项目级 > 用户级 > 默认）。
   const { config: workbenchConfig } = useWorkbenchConfig(projectRenderingConfig);
   useWorkbenchPerf(workbenchConfig.common.longTaskSampleRate);
+  // v0.15.27 · 共享视觉规格(线宽/填充/字号/标签显隐+内容);图片与视频共用同一 common 子集。
+  const annotationVisual = useMemo(
+    () => resolveAnnotationVisual(workbenchConfig.common),
+    [workbenchConfig.common],
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const vpRef = useRef(vp);
@@ -369,11 +374,7 @@ export function ImageStage({
   const toImg = useCallback((clientX: number, clientY: number): { x: number; y: number } | null => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect || !imgW || !imgH) return null;
-    const cur = vpRef.current;
-    return {
-      x: (clientX - rect.left - cur.tx) / cur.scale / imgW,
-      y: (clientY - rect.top - cur.ty) / cur.scale / imgH,
-    };
+    return normalizeImageCoordinate(clientX, clientY, rect, vpRef.current, imgW, imgH);
   }, [imgW, imgH]);
 
   const findSnapMatch = useCallback((
@@ -390,12 +391,7 @@ export function ImageStage({
     const segments = excludeAnnotationId
       ? snapIndex.segments.filter((candidate) => candidate.annotationId !== excludeAnnotationId)
       : snapIndex.segments;
-    const thresholdPx = workbenchConfig.image.snapThresholdPx;
-    const pointMatch = snapPointToCandidates(point, points, thresholdPx, transform);
-    const segmentMatch = snapPointToSegments(point, segments, thresholdPx, transform);
-    if (!pointMatch) return segmentMatch;
-    if (!segmentMatch) return pointMatch;
-    return pointMatch.distancePx <= segmentMatch.distancePx ? pointMatch : segmentMatch;
+    return resolveSnapMatch(point, { points, segments }, workbenchConfig.image.snapThresholdPx, transform);
   }, [imgW, imgH, snapIndex, workbenchConfig.image.snapThresholdPx]);
 
   const snapImagePoint = useCallback((
@@ -410,9 +406,8 @@ export function ImageStage({
 
   // ── fit ──────────────────────────────────────────────────────────────────
   const fitNow = useCallback(() => {
-    if (!vpSize.w || !vpSize.h || !imgW || !imgH) return;
-    const s = Math.min(vpSize.w / imgW, vpSize.h / imgH);
-    setVp({ scale: s, tx: (vpSize.w - imgW * s) / 2, ty: (vpSize.h - imgH * s) / 2 });
+    const next = fitToCanvas(vpSize.w, vpSize.h, imgW, imgH);
+    if (next) setVp(next);
   }, [vpSize.w, vpSize.h, imgW, imgH, setVp]);
 
   // 修翻页首帧 jank: vp 跨 task 持久化, 换图瞬间标注会先用上一张的变换画一帧, 等新图 onload
@@ -473,10 +468,8 @@ export function ImageStage({
       const cx = e.clientX - rect.left;
       const cy = e.clientY - rect.top;
       const factor = wheelZoomFactor(e.deltaY, workbenchConfig.image.zoomStepFactor);
-      const nextScale = Math.min(8, Math.max(0.2, vpRef.current.scale * factor));
       const cur = vpRef.current;
-      const ratio = nextScale / cur.scale;
-      setVp({ scale: nextScale, tx: cx - (cx - cur.tx) * ratio, ty: cy - (cy - cur.ty) * ratio });
+      setVp(zoomAtPoint(cur, cx, cy, cur.scale * factor));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -986,7 +979,7 @@ export function ImageStage({
                 selected={selSet.has(b.id)}
                 faded={fadedAiIds?.has(b.id) ?? false}
                 fadedOpacity={workbenchConfig.image.fadedOpacity}
-                showLabel={workbenchConfig.image.showBoxLabels}
+                visual={annotationVisual}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
                 points={b.polyline as Pt[]}
                 onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
@@ -999,7 +992,7 @@ export function ImageStage({
                 selected={selSet.has(b.id)}
                 faded={fadedAiIds?.has(b.id) ?? false}
                 fadedOpacity={workbenchConfig.image.fadedOpacity}
-                showLabel={workbenchConfig.image.showBoxLabels}
+                visual={annotationVisual}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
                 onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
               />
@@ -1011,7 +1004,7 @@ export function ImageStage({
                 selected={selSet.has(b.id)}
                 faded={fadedAiIds?.has(b.id) ?? false}
                 fadedOpacity={workbenchConfig.image.fadedOpacity}
-                showLabel={workbenchConfig.image.showBoxLabels}
+                visual={annotationVisual}
                 editable={!readOnly}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
                 onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
@@ -1046,7 +1039,7 @@ export function ImageStage({
                   editable={isPrimarySingleSelect}
                   faded={false}
                   fadedOpacity={workbenchConfig.image.fadedOpacity}
-                  showLabel={workbenchConfig.image.showBoxLabels}
+                  visual={annotationVisual}
                   occluded={!!b.occluded}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   onClick={(evt) => handleUserShapeClick(b.id, evt)}
@@ -1085,7 +1078,7 @@ export function ImageStage({
                   selected={selSet.has(b.id)}
                   faded={false}
                   fadedOpacity={workbenchConfig.image.fadedOpacity}
-                  showLabel={workbenchConfig.image.showBoxLabels}
+                  visual={annotationVisual}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   points={livePoints}
                   editable={isOnlySelected}
@@ -1135,7 +1128,7 @@ export function ImageStage({
                   selected={selSet.has(b.id)}
                   faded={false}
                   fadedOpacity={workbenchConfig.image.fadedOpacity}
-                  showLabel={workbenchConfig.image.showBoxLabels}
+                  visual={annotationVisual}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   schema={keypointSchema}
                   editable={isKpEditable}
@@ -1177,7 +1170,7 @@ export function ImageStage({
                   selected={selSet.has(b.id)}
                   faded={false}
                   fadedOpacity={workbenchConfig.image.fadedOpacity}
-                  showLabel={workbenchConfig.image.showBoxLabels}
+                  visual={annotationVisual}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   points={livePoints}
                   selfIntersect={intersects}
@@ -1227,7 +1220,7 @@ export function ImageStage({
                 selected={selSet.has(b.id)}
                 faded={false}
                 fadedOpacity={workbenchConfig.image.fadedOpacity}
-                showLabel={workbenchConfig.image.showBoxLabels}
+                visual={annotationVisual}
                 editable={!readOnly && !b.is_locked}
                 occluded={!!b.occluded}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
@@ -1401,7 +1394,7 @@ export function ImageStage({
                         fill="white"
                         fontSize={10.5 / vp.scale}
                         padding={4 / vp.scale}
-                        fontFamily="var(--font-sans, sans-serif)"
+                        fontFamily={BOX_LABEL_FONT_FAMILY}
                       />
                     </Label>
                   </>
@@ -1529,7 +1522,7 @@ export function ImageStage({
                   fill="white"
                   fontSize={10.5 / vp.scale}
                   padding={4 / vp.scale}
-                  fontFamily="var(--font-sans, sans-serif)"
+                  fontFamily={BOX_LABEL_FONT_FAMILY}
                 />
               </Label>
             </>
@@ -1588,40 +1581,23 @@ export function ImageStage({
         );
       })()}
 
-      {selectedBox && !readOnly && !pendingDrawing && tool !== "canvas" && (
-        // 单个用户框：编辑工具条移到画布右上角（对齐视频工作台）；AI 预测 / 批量仍用贴框浮条。
-        !isSelectedAi && selSet.size === 1 ? (
-          <ImageSelectionActions
-            onChangeClass={onChangeUserBoxClass
-              ? () => onChangeUserBoxClass(selectedBox.id)
-              : undefined}
-            onDelete={onDeleteUserBox
-              ? () => onDeleteUserBox(selectedBox.id)
-              : undefined}
-          />
-        ) : (
-          <SelectionOverlay
-            box={selectedBox}
-            isAi={isSelectedAi}
-            batchCount={selSet.size > 1 ? selSet.size : undefined}
-            imgW={imgW}
-            imgH={imgH}
-            vp={vp}
-            onAccept={isSelectedAi && onAcceptPrediction
-              ? () => onAcceptPrediction(selectedBox as AiBox)
-              : undefined}
-            onReject={isSelectedAi
-              ? () => {
-                  if (onRejectPrediction) onRejectPrediction(selectedBox as AiBox);
-                  onSelectBox(null);
-                }
-              : undefined}
-            onBatchDelete={selSet.size > 1 ? onBatchDelete : undefined}
-            onBatchChangeClass={selSet.size > 1 ? onBatchChangeClass : undefined}
-            onBatchJoin={selSet.size > 1 ? onJoinSelected : undefined}
-            onClearSelection={selSet.size > 1 ? () => onSelectBox(null) : undefined}
-          />
-        )
+      {selectedBox && !readOnly && !pendingDrawing && tool !== "canvas" && isSelectedAi && (
+        // AI 预测单选：贴框快捷采纳 / 驳回。用户框单选 / 多选(改类 / 合并 / 锁定 / 隐藏 / 删除)
+        // 已迁出到浮动选中卡。
+        <SelectionOverlay
+          box={selectedBox}
+          isAi
+          imgW={imgW}
+          imgH={imgH}
+          vp={vp}
+          onAccept={onAcceptPrediction
+            ? () => onAcceptPrediction(selectedBox as AiBox)
+            : undefined}
+          onReject={() => {
+            if (onRejectPrediction) onRejectPrediction(selectedBox as AiBox);
+            onSelectBox(null);
+          }}
+        />
       )}
 
       <ContextMenu

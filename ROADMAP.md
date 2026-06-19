@@ -17,6 +17,7 @@
 - **[点云 + 图像联合标注（2026-06-14）](./ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)**：3D 旗舰独立 epic。读方向(3D 框投影到相机图)已落 v0.13.4；写方向(相机图 2D 框种 3D 框 frustum fit → 投影手柄微调 → 多相机一致性)Phase 1 已落 v0.15.24(视锥反算选点 + 3D 框初值拟合)，Phase 2-3(投影手柄微调 / 多相机一致性)待开工。配套 §C.8 拖影消除两版本(v0.15.22 剔除 / v0.15.23 逐目标补偿)构成「3D 前线深化」近期切片。
 - **[视频工作台总路线图（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：视频专项独立 epic。进度：Phase 1-4 主体已落（帧采样 / 轨迹工具 2.1–2.8 / `sam2_video` backend + 能力协商 / 视频导出 + 逐帧 YOLO），Phase 5-6 待开工（sam3_video 待续）。衍生 epic [ML Backend 能力协商 + AI 预标注模态化重设计](ROADMAP/[archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 三阶段已落地归档。
   - **延后项**：**2.9 多几何 track（polygon / polyline / mask）**（P1，体量大）——扩 `video_track.geometry.kind`，按周长/长度参数化插值；mask track 依赖 canvas/bitmap，DAVIS mask 导出（Phase 4.5）依赖此项。
+  - **延后项**：**参考框完整卡尔曼滤波（P3）**——当前参考框运动预测（实验开关 `experiment.videoReferencePredict`，`trackReferenceAtFrame` in `videoStageGeometry.ts`）只做**恒速线性外推**（取前两个可见关键帧估速度外推到当前帧，即恒速卡尔曼的预测步，无平滑、无加速度、无不确定度）。完整版升级方向：① 对状态向量 `[cx, cy, w, h, vx, vy, vw, vh]` 建恒速卡尔曼滤波，遍历当前帧之前所有可见关键帧依次 predict→update 得到平滑后验，再 predict 到当前帧（缓解单段噪声/抖动放大）；② 暴露过程噪声 Q / 观测噪声 R 两个可调参数（或给 1-2 档预设「平稳/灵敏」），随实验开关一起放 `experiment.*`；③ 可选输出预测协方差，在画布上把参考框不确定度画成淡色误差椭圆/外扩边框，提示标注员「预测置信度」。触发：恒速外推在实际素材（变速/转向目标）上被反馈漂移明显，或客户要求更稳的预标注辅助。**底线**：默认仍为关（守「默认=现状」红线），且纯前端启发式，不引入后端依赖。
 
 
 ---
@@ -108,6 +109,10 @@
 - **前端单元测试 — 页面级覆盖**：vitest + MSW 基座（v0.7.4）。v0.10.48 起覆盖率口径已排除测试文件，当前真实源码 lines 47.68% / 阈值 45（branches 70）。下阶段目标 47→55：补 `BatchesSection`（~32%）/ `useWorkbenchShellModel` / `useImageAnnotationActions` 等复杂 hook；Konva 渲染层（`ImageStage` / `ImageStageShapes`）难测，留待。
 - **size-limit / scripts 脚本测试**：`apps/web/scripts/check-bundle-size.mjs` 已有基础单测覆盖 glob match / 单位解析 / 格式化输出；当前脚本数量少，暂不拆独立 vitest 项目。若后续 build-time 脚本增多，再为 `apps/web/scripts/` 建独立测试项目（不算主分母覆盖率）。
 - **vite proxy `/ws` 多并发偶发 CONNECTING 卡死（P3 dev experience）**：dev 直连 `localhost:8000` 绕法保留；根因待追，必要时给 vite 上游提 minimal repro[不影响生产环境]。
+- **巨石文件拆分 Epic — 已收口（2026-06-19 文档收尾）**（计划：[Epic](docs/plans/2026-06-17-v0.16.x-large-file-component-split-epic.md) / [缓拆·补测试再拆](docs/plans/2026-06-17-v0.16.x-deferred-split-test-backfill.md) / [点云 E2E 基线](docs/plans/2026-06-17-v0.16.x-pointcloud-e2e-baseline-for-3d-split.md)）：0.16.9–0.16.13 已落**全部安全可拆部分** —— 后端 `tasks.py`/`dashboard.py` 拆包 + service 抽取、Tier 2 三个 ⭐⭐⭐（`media.py`/`dashboard.py`/`CapabilityCatalogPanel.tsx`）、前端工作台 hook/纯函数拆分、「补测试再拆」第 1 批后端 3 刀 + 第 2 批前端 7 刀 + 第 3 批 B 类可守护者（`usePredictionPropagation`/`usePsrPatchPipeline`/`useAiPopoverFrame`）、点云 E2E 基线 P0/P1/P2 核心 4 spec。**残留三组按设计为「触发才做」**（非遗留欠债 —— 三条红线〔行为零变化 + 测试守护 + 人工值守〕已论证它们默认不做，与其它 P3 触发项同性质）：
+  - **3D 整簇深拆**（`usePsrEditor` / `usePointMask` / `usePointCloudSelection`）：共享 `sceneRef` + `form` + 合并键盘 handler 职责纠缠，假边界硬拆会改行为；jsdom 无 WebGL 单测守不住。**触发**：有人值守（连浏览器 + Docker 跑手动回归、确认鼠标键位口径）且补齐对应簇 E2E 基线后逐个拆（拆边缘不碰 `form`/`scene` 的小块如 `usePsrPatchPipeline` 已在第 3 批完成）。
+  - **点云 E2E 护栏剩余刀**（gizmo W/E/R canvas 拖拽落库 / point-mask polygon 绘制〔需补 `point_mask` tool binding〕/ 跨帧 Shift+→〔需补 scene/frame_index〕/ 相机面板拖动折叠〔需补 camera link + calibration〕，均需先扩 `seed/lidar`）：边际价值递减。**触发**：真正动手拆上面某簇时「用时再补对应 seed + spec」，不提前投机造护栏。**已绿基线**：headless WebGL 冒烟 + 点选/数值编辑落库 + B 放置/Delete 删除（4 spec，SwiftShader 软渲染，`--repeat-each=3` 稳定）。
+  - **`useStageViewport`**（ImageStage paint 时序，翻页首帧 jank 修法核心）：render-time setState + 双 `useLayoutEffect` 顺序 jsdom 测不到。**触发**：先立 Playwright 视觉回归基线（Epic §7 非目标，需另立项）再拆。
 
 ### i18n / 主题 / 无障碍
 - **i18n 框架**：当前所有用户可见文案中文硬编码；接入 react-intl / i18next，分文案与代码。
@@ -186,6 +191,7 @@
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志月度汇总物化视图 | partition + archive + 回源端点已落（v0.10.25）；剩 BI 月度汇总物化视图，等 10M+ 行触发 | [0007](docs/adr/0007-audit-log-partitioning.md) |
 | **P3** | 邻帧点云叠加动态拖影彻底消除（§C.8 D 学习式动静分割） | B 剔除(v0.15.22)+ A 逐目标对齐(v0.15.23)已落地,覆盖**已标注且跨帧成链**目标;剩 D=不依赖标注的学习式动静分割(能处理未标注动态物,重、性价比低),非必要不做 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
+| **P3** | 3D 工作台整簇拆分 + 点云 E2E 护栏剩余刀（§B 测试/开发体验） | 巨石拆分 Epic 已收口(2026-06-19,安全可拆部分全落);残留按设计触发才做 —— `usePsrEditor`/`usePointMask`/`usePointCloudSelection` 共享 scene/form/键盘 handler,需**有人值守 + 补 gizmo/point-mask/跨帧/相机 的 Playwright 护栏(需扩 seed)再拆**;`useStageViewport` 需视觉基线另立项 | — |
 
 ---
 

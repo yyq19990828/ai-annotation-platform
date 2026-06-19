@@ -13,7 +13,7 @@ export const PolylineTool: CanvasTool = {
   id: "polyline",
   hotkey: "L",
   label: "折线",
-  icon: "polygon",
+  icon: "spline",
   cursor: "crosshair",
   onPointerDown: ({ pt, evt, readOnly, pendingDrawing, polygonDraft }: ToolPointerContext): DragInit | null => {
     if (readOnly || pendingDrawing || !polygonDraft) return null;

@@ -169,6 +169,7 @@ export function BoxListItem({
   const layoutBadge = isAi ? docLayoutBadge(b) : null;
   return (
     <div
+      data-testid={`box-list-item-${b.id}`}
       onClick={(e) => onSelect({ shiftKey: e.shiftKey })}
       className={cn(styles.row, selected && styles.rowSelected, dimmed && styles.rowDimmed)}
     >

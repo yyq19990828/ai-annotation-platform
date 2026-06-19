@@ -1,0 +1,79 @@
+.root {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  /* 画布 letterbox 底色:与旧 VideoStage 同一字面值,保证新旧栈底图四周像素一致
+     (主题无关的画布背景,非 UI 表面;v0.16.5 双栈塌缩时再统一)。 */
+  background: #050507;
+}
+
+.rootPanning {
+  cursor: grabbing;
+}
+
+/* 工具模式光标反馈(对齐旧 SVG 栈):画框/轨迹→十字,hand→可抓。命中 resize 句柄时
+   由交互层覆盖 Konva 容器 cursor,未命中则继承此处。平移中由 .rootPanning 接管。 */
+.toolCrosshair {
+  cursor: crosshair;
+}
+
+.toolGrab {
+  cursor: grab;
+}
+
+.hiddenVideo {
+  /* A1:`<video>` 退居解码源,不再显示。保留在 DOM 内继续解码/播放,但不可见、不拦事件。 */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.konvaHost {
+  position: absolute;
+  inset: 0;
+}
+
+/* 不可见帧矩形标记:仅供 [data-video-overlay] 锚定弹窗,不参与命中/绘制。 */
+.frameMarker {
+  position: absolute;
+  left: var(--frame-left);
+  top: var(--frame-top);
+  width: var(--frame-w);
+  height: var(--frame-h);
+  pointer-events: none;
+}
+
+.stateBase {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.loadingState {
+  composes: stateBase;
+  color: var(--color-fg-muted);
+}
+
+.errorState {
+  composes: stateBase;
+  color: var(--color-danger);
+}
+
+.playbackError {
+  position: absolute;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+}

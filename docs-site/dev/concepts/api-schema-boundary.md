@@ -47,7 +47,7 @@ last_reviewed: 2026-05-27
 | 位置 | 职责 |
 |---|---|
 | `apps/api/app/services/prediction.py:to_internal_shape` | LabelStudio 标准 → 内部 shape (read path 单一适配点) |
-| `apps/api/app/api/v1/tasks.py:468-472` | list predictions 端点构建 PredictionOut 时调用 |
+| `apps/api/app/api/v1/tasks/predictions.py:get_predictions` | list predictions 端点构建 PredictionOut 时调用 |
 | `apps/api/app/services/annotation.py:61-64` | annotation 创建时取 prediction 候选转换 |
 
 写路径 (`PredictionService.create_from_ml_result`) **不动** — 直接存 ML backend 返回的 LabelStudio 原文, 维持 DB 标准。读路径单一吸收适配, 避免双向转换导致的环状依赖。
@@ -74,7 +74,7 @@ cd apps/web && pnpm codegen
 - ✅ `PredictionShape` / `PredictionResponse` **从 codegen 派生**
   - 后端: `apps/api/app/schemas/prediction.py` 加 `PredictionShape` Pydantic 模型 (geometry 复用 `_jsonb_types.{Bbox,Polygon}Geometry`); `PredictionOut.result: list[PredictionShape]`
   - 前端: `apps/web/src/types/index.ts` re-export generated 类型, 对 `geometry` 做轻度窄化 (剔除 dict fallback) 兼容 transforms.ts 强类型消费
-  - 数据流: DB 仍存 LabelStudio 标准 `{type, value, score}` (导出兼容); 读路径 `to_internal_shape()` 在 `apps/api/app/api/v1/tasks.py` 转换后构造 PredictionOut
+  - 数据流: DB 仍存 LabelStudio 标准 `{type, value, score}` (导出兼容); 读路径 `to_internal_shape()` 在 `apps/api/app/api/v1/tasks/predictions.py` 转换后构造 PredictionOut
 
 ## 兼容旧 schema 的最小不变量
 

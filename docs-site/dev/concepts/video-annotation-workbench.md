@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.16
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-17
 ---
 
 # 视频标注工作台
@@ -353,19 +353,17 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 
 ### 视频渲染层
 
-视频画布结构对齐 CVAT 的 canvas layer contract，但仍保留本项目的 React + SVG + HTML video 实现：
+视频画布与图片工作台**同栈**，统一用 Konva（`react-konva`）的多 Layer 结构（架构决策见 ADR-0041）。坐标走「归一化存储 + 像素空间渲染 + Konva transform」，scale 抵消 / fit-to-canvas / 滚轮缩放与图片复用同一组 viewport 纯函数（`stage/shared/viewport/`）：
 
 | 层 | 文件 | 职责 |
 |---|---|---|
-| Media | `VideoMediaLayer.tsx` | 承载 `<video>`，由 `useFrameClock` 驱动 |
-| Bitmap | `VideoBitmapLayer.tsx` | 绘制 `ImageBitmap` LRU 命中的缓存帧 |
-| Grid | `VideoGridLayer.tsx` | viewport 同步层，后续可接网格 / ruler |
-| Objects | `VideoObjectsLayer.tsx` | 渲染 committed bbox、track path preview 和 pending draft |
-| Text | `VideoTextLayer.tsx` | 独立渲染 label，避免文字吞掉 handle 命中 |
-| Interaction | `VideoInteractionLayer.tsx` | 统一 pointer 入口、picker、选中框、resize handle、draft、ghost |
-| Attachment | `VideoAttachmentLayer.tsx` | 后续 hover thumbnail、review issue、comment anchor 的 DOM 挂载点 |
+| media | `VideoKonvaMediaLayer.tsx` | `Konva.Image` 以隐藏 `<video>` 为 source；播放态逐帧重绘视频层，暂停态贴 `ImageBitmap` LRU 缓存帧 |
+| track | `VideoKonvaTracksLayer.tsx` / `VideoKonvaTrackShape.tsx` | committed bbox、track 轨迹预览线、关键帧圆点 |
+| overlay | `VideoKonvaOverlayLayer.tsx` | 标签（Konva `Label`/`Tag`/`Text`）与 pending draft 草稿 |
+| issue | `VideoKonvaIssueLayer.tsx` | pixel-anchored issue 图钉（按当前帧显隐，可点击跳到讨论面板） |
+| interaction | `VideoKonvaInteractionLayer.tsx` | 选中框 8 向 resize 句柄与画框/移动/缩放的 live 预览 |
 
-`VideoStageSurface` 负责统一尺寸、aspect ratio、层叠顺序和 viewport transform。对象层不再给每个 bbox 主体挂 `pointerdown`，Interaction 层通过 `videoStageCoordinates.ts` 把 client 坐标映射到视频归一化坐标，再用 `videoStagePicking.ts` 选择顶层框。
+`VideoKonvaStage` 负责 Stage 容器、视口 transform、播放，以及各 chrome 浮层（时间轴 `VideoPlaybackOverlay`、minimap、QC 警告、关键帧快跳）。命中由 `videoKonvaCoordinates.ts` 把 client 坐标映射到像素空间，再用 `videoStagePicking.ts` 选择顶层框；画框/移动/缩放/选中由 `videoKonvaInteraction.ts` 分流。当前帧应显示哪些框 / 轨迹预览 / ghost / 标签由纯函数 `videoFrameViews.ts` 派生。视觉规格（线宽 / 填充 / 字号 / 标签）经 `annotationVisual.ts` 与图片栈共用同一组纯函数。
 
 画布上下文菜单使用通用 `ContextMenu` + `useCanvasContextMenu` 原语：Stage 负责把命中对象转换成 `DropdownItem[]`，菜单组件只处理 fixed 坐标定位、视口翻转和关闭行为。这套外壳同时服务于视频 `video_track_bbox` / `video_bbox` 和图片 Stage 的 bbox、rotated bbox、polygon、polyline、keypoint 等人工标注；图片侧通过 Konva `getIntersection()` 在容器层统一命中 shape，再把 annotation action 映射成 `DropdownItem[]`。
 

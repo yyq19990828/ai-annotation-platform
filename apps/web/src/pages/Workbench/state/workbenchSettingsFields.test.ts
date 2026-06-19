@@ -25,7 +25,7 @@ describe("workbenchSettingsFields 注册表", () => {
   });
 
   it("注册表默认值与现状一致", () => {
-    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(38);
+    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(44);
     const byKey = Object.fromEntries(
       WORKBENCH_SETTING_FIELDS.map((f) => [
         f.key,
@@ -42,6 +42,12 @@ describe("workbenchSettingsFields 注册表", () => {
       "common.crossFrameOverlayK": 1,
       "common.crossFrameOverlayScope": "selected",
       "common.performanceTier": "standard",
+      "common.labelFontSize": 12,
+      "common.labelVisibility": "always",
+      "common.labelContent": { single: [], track: ["id", "state"], ai: ["source", "score"] },
+      "common.strokeWidth": 1.5,
+      "common.fillOpacity": 0.07,
+      "common.fillOpacitySelected": 0.12,
       "image.smoothImage": true,
       "image.cssImageFilter": "",
       "image.controlPointsSize": 6,
@@ -51,7 +57,6 @@ describe("workbenchSettingsFields 注册表", () => {
       "image.snapThresholdPx": 8,
       "image.zoomStepFactor": 1.1,
       "image.fadedOpacity": 0.35,
-      "image.showBoxLabels": true,
       "image.maskOverlayOpacity": 0.45,
       "video.defaultPlaybackRate": 1,
       "video.largeFrameStep": 10,
@@ -71,6 +76,7 @@ describe("workbenchSettingsFields 注册表", () => {
       "pointcloud.neighborPointOverlayK": 1,
       "pointcloud.neighborPointCull": "keep",
       "experiment.webcodecs": false,
+      "experiment.videoReferencePredict": false,
     });
   });
 

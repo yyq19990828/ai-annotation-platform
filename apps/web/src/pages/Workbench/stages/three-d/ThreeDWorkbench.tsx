@@ -6,7 +6,6 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import * as THREE from "three";
 
 import type {
   CameraPanelState,
@@ -40,7 +39,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { classColorForCanvas } from "@/pages/Workbench/stage/colors";
 import type { ThreeDTool } from "@/pages/Workbench/state/useWorkbenchState";
 import type { WorkbenchConfigPatch, WorkbenchLayoutPatch } from "@/pages/Workbench/state/useWorkbenchConfig";
-import type { Box3DGeometry, PointMaskGeometry, SensorCalibration } from "@/types";
+import type { PointMaskGeometry, SensorCalibration } from "@/types";
 
 import { AttributeForm } from "../../shell/AttributeForm";
 import { FloatingPanelShell, type FloatingPanelRect } from "../../shell/FloatingPanelShell";
@@ -98,7 +97,6 @@ import {
 } from "./geometry/axisConvention";
 import {
   box3dAttributeSchema,
-  LIDAR_BOX_3D_TOOL_UNIT,
 } from "./geometry/box3dAttributes";
 import {
   pasteOffsetPayload,
@@ -111,12 +109,34 @@ import {
   finishPointcloudLegacyMigration,
   isCrossFrameOverlayK,
   isPointMaskSelectMode,
-  readPsrPanelUiState,
-  writePsrPanelUiState,
-  type PsrPanelUiState,
 } from "./pointcloudPreferenceStorage";
+import { usePsrFloatingPanel } from "./usePsrFloatingPanel";
+import { usePsrPatchPipeline } from "./usePsrPatchPipeline";
+import { useCameraPanels } from "./useCameraPanels";
 import { resolveWorkbenchPerformanceTier } from "../../state/performanceTier";
 import styles from "./ThreeDWorkbench.module.css";
+import {
+  ANCHOR_CLASS,
+  CAMERA_STACK_VISIBLE,
+  IDENTITY_MATRIX,
+  LIDAR_TOOL_UNIT,
+  POINT_MASK_TOOL_UNIT,
+  PSR_GROUPS,
+  SEED_FALLBACK_RANGE_M,
+  TRI_TAB_DRAG_SIZE,
+  TRI_TAB_DRAG_THRESHOLD,
+  boxGeometryFromPsr,
+  frontCameraForward,
+  geometryConvention,
+  isPsrFieldBad,
+  loadCameraSample,
+  psrToForm,
+  resolveBox3dDefaultSize,
+  resolveTriViewFloatRect,
+  sortedIndices,
+  type BoxSelectRectVars,
+  type PsrField,
+} from "./ThreeDWorkbench.helpers";
 
 interface ThreeDWorkbenchProps {
   taskId: string | null;
@@ -155,173 +175,6 @@ interface ThreeDWorkbenchProps {
   box3dDefaultSize?: [number, number, number] | null;
 }
 
-// v0.13.3 · 新框默认尺寸(米,长宽高;约一辆轿车),放置后用面板/gizmo 精修。
-const DEFAULT_BOX_SIZE: [number, number, number] = [4.0, 1.8, 1.6];
-// v0.15.23 · align 模式下邻帧点已预变换到当前帧 ego 系,渲染走 identity(共享单例,免重复分配)。
-const IDENTITY_MATRIX = new THREE.Matrix4();
-// v0.15.24 · 种框空簇 fallback:沿中央射线的估计深度(米)。图上可见但无 lidar 返回时按此放默认框。
-const SEED_FALLBACK_RANGE_M = 12;
-const CAMERA_AUTO_COLLAPSE_WIDTH = 1366;
-const CAMERA_STACK_VISIBLE = 2;
-const TRI_FLOAT_DEFAULT_W = 240;
-const TRI_FLOAT_DEFAULT_H = 440;
-// 收起标签的近似尺寸,仅用于拖动时把标签 clamp 在视口内(略放大留余量)。
-const TRI_TAB_DRAG_SIZE = { w: 96, h: 34 };
-// 收起标签拖动判定阈值:位移超过此值才算"拖动"(否则按点击展开),px。
-const TRI_TAB_DRAG_THRESHOLD = 3;
-// v0.13.9 · 框选预览矩形位置/尺寸经 CSS custom property 注入(逐帧动态值)。
-type BoxSelectRectVars = CSSProperties & {
-  "--rect-l": string;
-  "--rect-t": string;
-  "--rect-w": string;
-  "--rect-h": string;
-};
-
-function sortedIndices(indices: Iterable<number>): number[] {
-  return [...indices].sort((a, b) => a - b);
-}
-
-function resolveTriViewFloatRect(
-  state: TriViewFloatState,
-  rightSidebarWidth: number,
-): FloatingPanelRect {
-  const w = state.w ?? TRI_FLOAT_DEFAULT_W;
-  const h = state.h ?? TRI_FLOAT_DEFAULT_H;
-  const viewportW = typeof window === "undefined" ? 1280 : window.innerWidth;
-  const viewportH = typeof window === "undefined" ? 800 : window.innerHeight;
-  return {
-    x: state.x ?? Math.max(24, viewportW - w - rightSidebarWidth - 12),
-    y: state.y ?? Math.max(24, viewportH - h - 12),
-    w,
-    h,
-  };
-}
-
-function resolveBox3dDefaultSize(value?: [number, number, number] | null): [number, number, number] {
-  if (
-    value &&
-    value.length === 3 &&
-    value.every((n) => Number.isFinite(n) && n > 0)
-  ) {
-    return [value[0], value[1], value[2]];
-  }
-  return DEFAULT_BOX_SIZE;
-}
-// 点云项目的 3D 框工具单位(类别 / 属性绑定都挂在它下面)。
-const LIDAR_TOOL_UNIT = LIDAR_BOX_3D_TOOL_UNIT;
-const POINT_MASK_TOOL_UNIT = "point_mask_3d";
-
-function boxGeometryFromPsr(psr: Psr, convention: LidarAxisConvention): Box3DGeometry {
-  return {
-    type: "box_3d",
-    center: [psr.center[0], psr.center[1], psr.center[2]],
-    size: [psr.size[0], psr.size[1], psr.size[2]],
-    rotation: [psr.rotation[0], psr.rotation[1], psr.rotation[2]],
-    convention_at_create: convention,
-  };
-}
-
-function geometryConvention(
-  geometry: unknown,
-  fallback: LidarAxisConvention,
-): LidarAxisConvention {
-  const g = geometry as { convention_at_create?: LidarAxisConvention | null } | null;
-  return g?.convention_at_create ?? fallback;
-}
-
-/**
- * v0.13.6 · 把相机图加载成 CameraSample(原图分辨率 RGBA buffer),供点云上色逐点采样。
- * crossOrigin="anonymous" 让 canvas 不被跨域污染(MinIO 已为点云 GET 放行 CORS);
- * 加载失败 / getImageData 仍被污染(SecurityError)→ 返回 null(该相机降级跳过,不阻断其余)。
- */
-function loadCameraSample(
-  imageUrl: string,
-  calib: SensorCalibration,
-): Promise<CameraSample | null> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return resolve(null);
-      ctx.drawImage(img, 0, 0);
-      try {
-        const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        resolve({ calib, width: canvas.width, height: canvas.height, data });
-      } catch {
-        resolve(null); // 跨域污染
-      }
-    };
-    img.onerror = () => resolve(null);
-    img.src = imageUrl;
-  });
-}
-
-// v0.13.3 · PSR 数值面板字段(中心 cx/cy/cz、尺寸 l/w/h、朝向 yaw/pitch/roll)。
-// v0.13.5 · 朝向补齐三轴: yaw=rotation[2](绕Z)、pitch=rotation[1](绕Y)、roll=rotation[0](绕X),
-//   与三视图方向线(Top/Side/Front)一致, 避免数值编辑抹掉 pitch/roll。
-type PsrField = "cx" | "cy" | "cz" | "l" | "w" | "h" | "yaw" | "pitch" | "roll";
-const PSR_FIELDS: PsrField[] = ["cx", "cy", "cz", "l", "w", "h", "yaw", "pitch", "roll"];
-const SIZE_FIELDS = new Set<PsrField>(["l", "w", "h"]);
-const PSR_GROUPS: {
-  label: string;
-  keys: PsrField[];
-  step: number;
-  min?: number;
-  reset?: boolean;
-}[] = [
-  { label: "中心 (m)", keys: ["cx", "cy", "cz"], step: 0.1 },
-  { label: "尺寸 长宽高 (m)", keys: ["l", "w", "h"], step: 0.1, min: 0.1 },
-  { label: "朝向 偏航/俯仰/翻滚 (°)", keys: ["yaw", "pitch", "roll"], step: 1, reset: true },
-];
-const fmtNum = (n: number) => String(+n.toFixed(3));
-function psrToForm(b: {
-  center: readonly number[];
-  size: readonly number[];
-  rotation: readonly number[];
-}): Record<PsrField, string> {
-  return {
-    cx: fmtNum(b.center[0]),
-    cy: fmtNum(b.center[1]),
-    cz: fmtNum(b.center[2]),
-    l: fmtNum(b.size[0]),
-    w: fmtNum(b.size[1]),
-    h: fmtNum(b.size[2]),
-    yaw: fmtNum((b.rotation[2] * 180) / Math.PI),
-    pitch: fmtNum((b.rotation[1] * 180) / Math.PI),
-    roll: fmtNum((b.rotation[0] * 180) / Math.PI),
-  };
-}
-
-// v0.13.7 · 取 front 相机光轴的水平「前方」(归一化 [x,y]),供 resetView 跟随车头朝向。
-// front = anchor 推为 top 的相机;无标定 / 退化 → null(回退默认 +Y)。
-function frontCameraForward(
-  cams: { calibration?: SensorCalibration | null; role: string; name: string }[],
-): [number, number] | null {
-  const front = cams.find((c) => cameraAnchor(c.calibration, c.role || c.name) === "top");
-  const e = front?.calibration?.extrinsic;
-  if (!e) return null;
-  const x = e[8];
-  const y = e[9];
-  const n = Math.hypot(x, y);
-  return n < 1e-3 ? null : [x / n, y / n];
-}
-
-// v0.13.7 · 朝向 → 悬浮定位容器 CSS 类(贴主视图对应边缘)。
-const ANCHOR_CLASS: Record<Anchor, string> = {
-  top: styles.camAnchorTop,
-  bottom: styles.camAnchorBottom,
-  left: styles.camAnchorLeft,
-  right: styles.camAnchorRight,
-  "top-left": styles.camAnchorTopLeft,
-  "top-right": styles.camAnchorTopRight,
-  "bottom-left": styles.camAnchorBottomLeft,
-  "bottom-right": styles.camAnchorBottomRight,
-  overflow: styles.camAnchorOverflow,
-};
 
 export function ThreeDWorkbench({
   taskId,
@@ -451,7 +304,6 @@ export function ThreeDWorkbench({
   const [enlargedRole, setEnlargedRole] = useState<string | null>(null);
   // v0.15.24 · 放大相机模态里的「种框」模式:拖 2D 框 → 视锥选点 → 拟合 box_3d。仅放大视图启用。
   const [seedMode, setSeedMode] = useState(false);
-  const [autoCollapseCameras, setAutoCollapseCameras] = useState(false);
   const [pointMaskPolygonPoints, setPointMaskPolygonPoints] = useState<ScreenPoint[]>([]);
   const [pointMaskCursor, setPointMaskCursor] = useState<ScreenPoint | null>(null);
   const finishPointMaskPolygonRef = useRef<(subtract: boolean) => void>(() => undefined);
@@ -560,48 +412,14 @@ export function ThreeDWorkbench({
     },
   });
 
-  // v0.15.x · 相机面板位置/折叠态落库:多面板可连续拖动,故用 ref 取最新整份 Record,
-  // 避免相邻回调读到 props 旧值互相覆盖。复位则删该 role 键。
-  const cameraPanelsRef = useRef(cameraPanels);
-  cameraPanelsRef.current = cameraPanels;
-  const handleCameraPanelPosition = useCallback(
-    (role: string, pos: { x: number; y: number } | null) => {
-      const next = { ...cameraPanelsRef.current };
-      const prev = next[role];
-      if (pos === null) {
-        // 归位:仅清位置;若仍有非默认折叠态则保留该 role 键,否则整键删除。
-        if (prev?.collapsed) {
-          next[role] = { x: null, y: null, collapsed: true };
-        } else {
-          delete next[role];
-        }
-      } else {
-        next[role] = { ...prev, x: pos.x, y: pos.y };
-      }
-      cameraPanelsRef.current = next;
-      onWorkbenchLayoutChange({ cameraPanels: next });
-    },
-    [onWorkbenchLayoutChange],
-  );
-  const handleCameraPanelCollapsed = useCallback(
-    (role: string, collapsed: boolean) => {
-      const prev = cameraPanelsRef.current[role];
-      const next = { ...cameraPanelsRef.current };
-      // 折叠态独立于位置;回到默认(展开)且无自定义位置时整键删除,保持 Record 干净。
-      if (!collapsed && prev?.x == null && prev?.y == null) {
-        delete next[role];
-      } else {
-        next[role] = { x: prev?.x ?? null, y: prev?.y ?? null, collapsed };
-      }
-      cameraPanelsRef.current = next;
-      onWorkbenchLayoutChange({ cameraPanels: next });
-    },
-    [onWorkbenchLayoutChange],
-  );
-  const handleResetCameraPanels = useCallback(() => {
-    cameraPanelsRef.current = {};
-    onWorkbenchLayoutChange({ cameraPanels: {} });
-  }, [onWorkbenchLayoutChange]);
+  // v0.16.x 第 2 批 · 相机面板位置/折叠落库 + 窄屏自动折叠 + 旧 localStorage 迁移,
+  // 整簇抽到 useCameraPanels;viewportWrapRef 由壳层共用故传入。
+  const {
+    autoCollapseCameras,
+    handleCameraPanelPosition,
+    handleCameraPanelCollapsed,
+    handleResetCameraPanels,
+  } = useCameraPanels({ cameraPanels, onWorkbenchLayoutChange, viewportWrapRef });
 
   const scheduleCameraViewSave = useCallback((view: PointCloudViewState) => {
     if (!persistCameraViewRef.current) return;
@@ -614,51 +432,6 @@ export function ThreeDWorkbench({
       if (!next || !persistCameraViewRef.current) return;
       onWorkbenchLayoutChangeRef.current({ pointcloudCamera: next });
     });
-  }, []);
-
-  // v0.15.x · 一次性迁移兜底:user config 的 cameraPanels 为空但本地仍有旧
-  // pcwb:cam-pos / pcwb:cam-collapsed 键时,读出灌入 config 后清掉旧键(避免双写)。
-  useEffect(() => {
-    if (Object.keys(cameraPanelsRef.current).length > 0) return;
-    let migrated: Record<string, CameraPanelState> | null = null;
-    const staleKeys: string[] = [];
-    try {
-      for (let i = 0; i < window.localStorage.length; i++) {
-        const key = window.localStorage.key(i);
-        if (!key) continue;
-        const posMatch = key.match(/^pcwb:cam-pos:(.+)$/);
-        const collMatch = key.match(/^pcwb:cam-collapsed:(.+)$/);
-        const role = posMatch?.[1] ?? collMatch?.[1];
-        if (!role) continue;
-        staleKeys.push(key);
-        migrated ??= {};
-        const entry = (migrated[role] ??= { x: null, y: null });
-        if (posMatch) {
-          const parsed = JSON.parse(window.localStorage.getItem(key) ?? "{}");
-          if (Number.isFinite(parsed?.x) && Number.isFinite(parsed?.y)) {
-            entry.x = Number(parsed.x);
-            entry.y = Number(parsed.y);
-          }
-        } else {
-          entry.collapsed = window.localStorage.getItem(key) === "1";
-        }
-      }
-    } catch {
-      /* 隐私模式 / 解析失败:放弃迁移,不影响功能 */
-    }
-    if (migrated && Object.keys(migrated).length > 0) {
-      cameraPanelsRef.current = migrated;
-      onWorkbenchLayoutChange({ cameraPanels: migrated });
-    }
-    for (const key of staleKeys) {
-      try {
-        window.localStorage.removeItem(key);
-      } catch {
-        /* ignore */
-      }
-    }
-    // 仅首挂载跑一次;onWorkbenchLayoutChange 稳定(useCallback),不进依赖避免重复迁移。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useLayoutEffect(() => {
@@ -713,24 +486,6 @@ export function ThreeDWorkbench({
     };
   }, []);
 
-  useLayoutEffect(() => {
-    const sync = () => {
-      const width = viewportWrapRef.current?.getBoundingClientRect().width ?? window.innerWidth;
-      setAutoCollapseCameras(width < CAMERA_AUTO_COLLAPSE_WIDTH);
-    };
-    sync();
-    window.addEventListener("resize", sync);
-    if (typeof ResizeObserver === "undefined" || !viewportWrapRef.current) {
-      return () => window.removeEventListener("resize", sync);
-    }
-    const observer = new ResizeObserver(sync);
-    observer.observe(viewportWrapRef.current);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", sync);
-    };
-  }, []);
-
   useEffect(() => {
     if (!workbenchConfigLoaded || !userId || typeof window === "undefined") return;
     let cancelled = false;
@@ -764,7 +519,6 @@ export function ThreeDWorkbench({
   // 选中框的 PSR 编辑表单(字符串值,允许清空 / 中间态如 "-" / "1.";解析有效时才提交)。
   // PATCH 防抖 250ms;yaw 以度展示。
   const [form, setForm] = useState<Record<PsrField, string> | null>(null);
-  const patchTimer = useRef<number | null>(null);
 
   // v0.13.5 · 三视图拖拽中的本地草稿 PSR (覆盖选中框, 实时四方同步; 松手 PATCH 后清空)。
   const [draftPsr, setDraftPsr] = useState<{ id: string; psr: Psr } | null>(null);
@@ -1060,51 +814,16 @@ export function ThreeDWorkbench({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  // 卸载时清防抖定时器。
-  useEffect(
-    () => () => {
-      if (patchTimer.current) window.clearTimeout(patchTimer.current);
-    },
-    [],
-  );
-
-  // 全部字段解析有效(尺寸>0)时防抖 PATCH;有空 / 非法字段则暂不提交(等用户输完)。
-  const schedulePatch = useCallback(
-    (f: Record<PsrField, string>) => {
-      if (!selectedId) return;
-      const v = {} as Record<PsrField, number>;
-      for (const k of PSR_FIELDS) v[k] = Number(f[k]);
-      const valid =
-        PSR_FIELDS.every((k) => f[k].trim() !== "" && Number.isFinite(v[k])) &&
-        v.l > 0 &&
-        v.w > 0 &&
-        v.h > 0;
-      if (!valid) return;
-      if (patchTimer.current) window.clearTimeout(patchTimer.current);
-      patchTimer.current = window.setTimeout(() => {
-        const deg = Math.PI / 180;
-        const geometry = boxGeometryFromPsr(
-          {
-            center: [v.cx, v.cy, v.cz],
-            size: [v.l, v.w, v.h],
-            // rotation = [rx=roll, ry=pitch, rz=yaw] (弧度), 三轴齐全, 不再抹掉 pitch/roll。
-            rotation: [v.roll * deg, v.pitch * deg, v.yaw * deg],
-          },
-          geometryConvention(selectedAnn?.geometry, axisConvention),
-        );
-        updateAnnotation.mutate({ annotationId: selectedId, payload: { geometry } });
-        if (selectedAnn?.geometry?.type === "box_3d") {
-          history.push({
-            kind: "update",
-            annotationId: selectedId,
-            before: { geometry: selectedAnn.geometry },
-            after: { geometry },
-          });
-        }
-      }, 250);
-    },
-    [selectedId, updateAnnotation, selectedAnn?.geometry, axisConvention, history],
-  );
+  // v0.16.x 第 3 批 · PSR 数值字段防抖落库管线抽到 usePsrPatchPipeline(单一职责、
+  // 单消费者 handleField、不碰共享 form/setForm);完整 usePsrEditor 因 form 被多处共享
+  // 无法干净切分(见计划 §5/§7),此处仅"缩小范围"抽这条管线。
+  const { schedulePatch } = usePsrPatchPipeline({
+    selectedId,
+    selectedAnn,
+    axisConvention,
+    updateAnnotation,
+    history,
+  });
 
   const handleField = useCallback(
     (k: PsrField, value: string) => {
@@ -1124,10 +843,7 @@ export function ThreeDWorkbench({
       if (!selectedBox) return;
       setForm((prev) => {
         if (!prev) return prev;
-        const n = Number(prev[k]);
-        const bad =
-          prev[k].trim() === "" || !Number.isFinite(n) || (SIZE_FIELDS.has(k) && n <= 0);
-        return bad ? { ...prev, [k]: psrToForm(selectedBox)[k] } : prev;
+        return isPsrFieldBad(k, prev[k]) ? { ...prev, [k]: psrToForm(selectedBox)[k] } : prev;
       });
     },
     [selectedBox],
@@ -1724,57 +1440,7 @@ export function ThreeDWorkbench({
   const [framePicker, setFramePicker] = useState<{ mode: FramePickerMode; anchor: { left: number; top: number } } | null>(null);
 
   // v0.15.21 · 选中框 PSR 面板:渐进展开 + 整体拖动,展开态与位置偏移按用户记忆(localStorage)。
-  const [psrPanel, setPsrPanel] = useState<PsrPanelUiState>({ expanded: false, dx: 0, dy: 0 });
-  const psrPanelRef = useRef(psrPanel);
-  psrPanelRef.current = psrPanel;
-  useEffect(() => {
-    if (!userId || typeof window === "undefined") return;
-    setPsrPanel(readPsrPanelUiState(userId, window.localStorage));
-  }, [userId]);
-  const persistPsrPanel = useCallback(
-    (next: PsrPanelUiState) => {
-      if (userId && typeof window !== "undefined") writePsrPanelUiState(userId, next, window.localStorage);
-    },
-    [userId],
-  );
-  const togglePsrExpanded = useCallback(() => {
-    setPsrPanel((p) => {
-      const next = { ...p, expanded: !p.expanded };
-      persistPsrPanel(next);
-      return next;
-    });
-  }, [persistPsrPanel]);
-  const psrDragRef = useRef<{ sx: number; sy: number; dx0: number; dy0: number } | null>(null);
-  const [psrDragging, setPsrDragging] = useState(false);
-  const onPsrHeaderPointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      if (e.button !== 0) return;
-      // 拖柄落在交互控件(类别下拉 / 锁 / 删 / 展开钮)上时不起拖,保持可点。
-      if ((e.target as HTMLElement).closest("button, select, input, a")) return;
-      psrDragRef.current = { sx: e.clientX, sy: e.clientY, dx0: psrPanelRef.current.dx, dy0: psrPanelRef.current.dy };
-      setPsrDragging(true);
-    },
-    [],
-  );
-  useEffect(() => {
-    if (!psrDragging) return;
-    const onMove = (e: PointerEvent) => {
-      const d = psrDragRef.current;
-      if (!d) return;
-      setPsrPanel((p) => ({ ...p, dx: d.dx0 + e.clientX - d.sx, dy: d.dy0 + e.clientY - d.sy }));
-    };
-    const onUp = () => {
-      psrDragRef.current = null;
-      setPsrDragging(false);
-      persistPsrPanel(psrPanelRef.current);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp, { once: true });
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-  }, [psrDragging, persistPsrPanel]);
+  const { psrPanel, psrDragging, onPsrHeaderPointerDown, togglePsrExpanded } = usePsrFloatingPanel(userId);
 
   const closeContextMenu = () => {
     contextMenu.close();
@@ -2514,7 +2180,7 @@ export function ThreeDWorkbench({
           {error && <span className={styles.err}>manifest 加载失败</span>}
           {loadError && <span className={styles.err}>点云加载失败: {loadError}</span>}
           {stats && (
-            <span>
+            <span data-testid="pointcloud-stats">
               {stats.renderedPoints.toLocaleString()} 点
               {stats.decimated && `(已抽稀自 ${stats.totalPoints.toLocaleString()})`}
             </span>

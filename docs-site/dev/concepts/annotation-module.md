@@ -30,7 +30,7 @@ graph TD
   Prediction["Prediction"] --> Annotation
   Annotation --> TaskStats["task.total_annotations / is_labeled"]
   TaskStats --> BatchAuto["BatchService.check_auto_transitions()"]
-  AnnotationAPI["api/v1/tasks.py"] --> AnnotationService["services/annotation.py"]
+  AnnotationAPI["api/v1/tasks/annotations.py"] --> AnnotationService["services/annotation.py"]
   AnnotationService --> Draft["AnnotationDraft"]
 ```
 
@@ -48,7 +48,7 @@ graph TD
 | `apps/api/app/db/models/task_lock.py` | `AnnotationDraft` 模型，当前与 `TaskLock` 同文件 |
 | `apps/api/app/schemas/annotation.py` | annotation 请求 / 响应 schema |
 | `apps/api/app/services/annotation.py` | create / update / delete / accept_prediction / draft |
-| `apps/api/app/api/v1/tasks.py` | annotation 与 prediction 相关 HTTP 入口 |
+| `apps/api/app/api/v1/tasks/annotations.py` · `predictions.py` | annotation 与 prediction 相关 HTTP 入口 |
 | `apps/api/app/services/batch.py` | annotation 写入后 batch 自动迁移 |
 | `apps/web/src/api/tasks.ts` | 前端 annotation API wrapper |
 | `apps/web/src/hooks/useTasks.ts` | React Query mutation 与 optimistic update |
@@ -212,7 +212,7 @@ graph TD
 
 ## 跨帧 propagate 与插值（3D 时序）
 
-v0.15.x 给点云 3D 时序标注加了「跨帧延续 + 区间插值」，把同一物体在 scene 多帧间的 `box_3d` 标注从「逐帧手搬框」升级为「ego 运动补偿延续 + 关键帧插值」。几何核心在 `apps/api/app/services/ego_transform.py`（`box_ego_to_world` / `box_world_to_ego` / `compensate_psr` / `interpolate_psr` 等纯函数，euler 约定与前端 three.js 锁步），业务编排在 `AnnotationService.propagate` / `propagate_batch` / `interpolate_range`，HTTP 入口都在 `api/v1/tasks.py`。
+点云 3D 时序标注支持「跨帧延续 + 区间插值」，把同一物体在 scene 多帧间的 `box_3d` 标注从「逐帧手搬框」升级为「ego 运动补偿延续 + 关键帧插值」。几何核心在 `apps/api/app/services/ego_transform.py`（`box_ego_to_world` / `box_world_to_ego` / `compensate_psr` / `interpolate_psr` 等纯函数，euler 约定与前端 three.js 锁步），业务编排在 `AnnotationService.propagate` / `propagate_batch` / `interpolate_range`，HTTP 入口都在 `api/v1/tasks/annotations.py`。
 
 ### group_id：跨帧链的键
 

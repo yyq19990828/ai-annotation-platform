@@ -1,0 +1,94 @@
+// 能力目录列表视图(从 CapabilityCatalogPanel.tsx 拆出,行为零变化)。
+// ModelListTable 渲染按物理权重展开的行;RuntimeCell 为内部子组件(池状态 + 预热)。
+
+import { Badge } from "@/components/ui/Badge";
+import type { FlatModel } from "./types";
+import {
+  buildListRows,
+  currentPoolSize,
+  effectiveInfra,
+  effectiveModalities,
+  isLoadedRuntimeKey,
+} from "./catalogModel";
+import { infraLabel, modalityLabel, taskLabel } from "./labels";
+import { WarmButton } from "./WarmButton";
+import styles from "../CapabilityCatalogPanel.module.css";
+
+export function ModelListTable({ items }: { items: FlatModel[] }) {
+  const rows = buildListRows(items);
+  return (
+    <div className={styles.tableScroller}>
+      <table className={styles.modelTable}>
+        <thead>
+          <tr>
+            {["模型", "task", "infra", "模态", "输出几何", "变体", "运行时", "来源", "注册状态", "状态"].map((head) => (
+              <th key={head}>{head}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const item = row.parent;
+            const m = item.model;
+            const infra = effectiveInfra(m, item.backendInfra);
+            const modalities = effectiveModalities(m, item.backendModalities);
+            return (
+              <tr key={row.rowKey}>
+                <td className={styles.modelCell}>
+                  <div className={styles.modelCellName}>{row.primaryLabel}</div>
+                  <div className={`mono ${styles.modelCellId}`}>{row.primaryId}</div>
+                </td>
+                <td className={styles.compactCell}>
+                  {row.tasks.length > 0 ? row.tasks.map(taskLabel).join(" / ") : "—"}
+                </td>
+                <td>{infra ? infraLabel(infra) : "—"}</td>
+                <td>{modalities.length ? modalities.map(modalityLabel).join(" / ") : "—"}</td>
+                <td className={styles.compactCell}>{row.geometries.join(" / ") || "—"}</td>
+                <td className={styles.compactCell} title={row.secondaryTitle}>{row.secondaryLabel}</td>
+                <td>
+                  <RuntimeCell item={item} variants={row.warmVariants} runtimeKey={row.runtimeKey} />
+                </td>
+                <td className={styles.sourceCell}>{item.backendName}</td>
+                <td className={styles.compactCell} title={
+                  item.source === "registered" && item.registeredProjects.length > 0
+                    ? `已注册至项目: ${item.registeredProjects.join(" / ")}`
+                    : undefined
+                }>
+                  {item.source === "env_only" ? (
+                    <Badge variant="outline">平台内置</Badge>
+                  ) : item.registeredProjects.length > 1 ? (
+                    <Badge variant="accent">
+                      {item.registeredProjects[0]} +{item.registeredProjects.length - 1}
+                    </Badge>
+                  ) : (
+                    <Badge variant="accent">{item.projectName}</Badge>
+                  )}
+                </td>
+                <td>{item.stale ? <Badge variant="warning">缓存</Badge> : <Badge variant="success">在线</Badge>}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RuntimeCell({
+  item,
+  variants,
+  runtimeKey,
+}: {
+  item: FlatModel;
+  variants: Record<string, string>;
+  runtimeKey?: string;
+}) {
+  const loaded = isLoadedRuntimeKey(item, variants, runtimeKey);
+  return (
+    <div className={styles.runtimeCell}>
+      <span className={styles.runtimeText}>池 {currentPoolSize(item)}</span>
+      <Badge variant={loaded ? "success" : "outline"}>{loaded ? "已加载" : "未加载"}</Badge>
+      <WarmButton item={item} variants={variants} compact />
+    </div>
+  );
+}

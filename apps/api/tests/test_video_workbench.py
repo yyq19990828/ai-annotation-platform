@@ -656,7 +656,7 @@ async def test_get_task_exposes_video_metadata(
     await db_session.flush()
 
     monkeypatch.setattr(
-        "app.api.v1.tasks.storage_service.generate_download_url",
+        "app.api.v1.tasks.video.storage_service.generate_download_url",
         lambda key, expires_in=3600, bucket=None: f"http://storage.local/{key}",
     )
 
@@ -730,7 +730,7 @@ async def test_video_manifest_returns_signed_urls(
         return f"http://storage.local/{key}"
 
     monkeypatch.setattr(
-        "app.api.v1.tasks.storage_service.generate_download_url",
+        "app.api.v1.tasks.video.storage_service.generate_download_url",
         fake_generate_download_url,
     )
 
@@ -934,7 +934,7 @@ async def test_video_manifest_returns_503_when_metadata_not_ready(
     await db_session.flush()
 
     monkeypatch.setattr(
-        "app.api.v1.tasks.storage_service.generate_download_url",
+        "app.api.v1.tasks.video.storage_service.generate_download_url",
         lambda key, expires_in=3600, bucket=None: f"http://storage.local/{key}",
     )
 

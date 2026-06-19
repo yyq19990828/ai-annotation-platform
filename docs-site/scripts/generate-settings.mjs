@@ -204,11 +204,18 @@ const norm = (raw) => {
   return unquote(raw);
 };
 
+// 本机 local 字段(不在 preferences 默认树)中默认「开启」的覆盖。
+// experiment.videoKonva 自 v0.16.4 切默认为开(逃生舱仍可关),见 videoKonvaFlag.ts。
+const LOCAL_TOGGLE_DEFAULT_ON = new Set(["experiment.videoKonva"]);
+
 // 默认值的人类可读呈现。
 function renderDefault(field) {
   const raw = defaults[field.category]?.[field.name];
-  // 实验特性等不在 preferences 默认树里:toggle 一律按本机默认「关闭」。
-  if (raw === undefined) return field.ctrlType === "toggle" ? "关闭" : "—";
+  // 实验特性等不在 preferences 默认树里:toggle 默认「关闭」,除非在 default-on 覆盖集。
+  if (raw === undefined) {
+    if (field.ctrlType !== "toggle") return "—";
+    return LOCAL_TOGGLE_DEFAULT_ON.has(`${field.category}.${field.name}`) ? "开启" : "关闭";
+  }
   const val = norm(raw);
   if (field.ctrlType === "toggle") return val ? "开启" : "关闭";
   if (field.ctrlType === "select") {

@@ -1,0 +1,86 @@
+import { Icon } from "@/components/ui/Icon";
+import styles from "./MetaFooter.module.css";
+
+export interface MetaFooterRow {
+  label: string;
+  value: string;
+  mono?: boolean;
+}
+
+export interface MetaFooterProps {
+  id: string;
+  /** 原始来源串(manual / prediction_based / import…),映射为中文。 */
+  source?: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  zOrder?: number;
+  groupId?: number | null;
+  /** 各端补充行(如模型名 / 候选序号)。 */
+  extra?: MetaFooterRow[];
+}
+
+function shortId(id: string): string {
+  return id.length > 12 ? id.slice(0, 8) : id;
+}
+
+function sourceText(source: string): string {
+  if (source === "manual") return "手动";
+  if (source.includes("prediction")) return "AI 采纳";
+  if (source.includes("import")) return "导入";
+  return source;
+}
+
+/** ISO → 本地「YYYY-MM-DD HH:mm」。解析失败原样返回。 */
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const p = (n: number) => `${n}`.padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/**
+ * v0.16.14 · 选中信息卡 · 可折叠次要信息(默认收起)。
+ * ID 短码 / 来源 / 创建·更新时间 / z-order / 分组,各端可经 extra 追加行。
+ * 用原生 details/summary,无 JS 状态、键盘可达;无任何行时不渲染。
+ */
+export function MetaFooter({
+  id,
+  source,
+  createdAt,
+  updatedAt,
+  zOrder,
+  groupId,
+  extra,
+}: MetaFooterProps) {
+  const rows: MetaFooterRow[] = [{ label: "ID", value: shortId(id), mono: true }];
+  if (source) rows.push({ label: "来源", value: sourceText(source) });
+  if (createdAt) rows.push({ label: "创建", value: formatTime(createdAt), mono: true });
+  if (updatedAt) rows.push({ label: "更新", value: formatTime(updatedAt), mono: true });
+  if (typeof zOrder === "number") rows.push({ label: "层级", value: `${zOrder}`, mono: true });
+  if (typeof groupId === "number") rows.push({ label: "分组", value: `#${groupId}`, mono: true });
+  if (extra?.length) rows.push(...extra);
+
+  return (
+    <details className={styles.footer}>
+      <summary className={styles.summary}>
+        <span className={styles.chev} aria-hidden="true">
+          <Icon name="chevRight" size={12} />
+        </span>
+        更多信息
+      </summary>
+      <dl className={styles.rows}>
+        {rows.map((r) => (
+          <div key={r.label} className={styles.row}>
+            <dt className={styles.rowLabel}>{r.label}</dt>
+            <dd
+              className={r.mono ? `${styles.rowValue} mono` : styles.rowValue}
+              title={r.label === "ID" ? id : undefined}
+            >
+              {r.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}

@@ -46,7 +46,7 @@ DB 里存的是 **LabelStudio 标准格式**（保导出/CVAT 兼容性）：
 
 不动 DB 写路径（保 LabelStudio 标准），在**读路径**加 `to_internal_shape` 适配器：
 
-- `apps/api/app/api/v1/tasks.py::get_predictions`
+- `apps/api/app/api/v1/tasks/predictions.py::get_predictions`
 - `apps/api/app/api/v1/annotation.py::accept_prediction`
 
 适配器三层 fallback（容忍历史数据）：

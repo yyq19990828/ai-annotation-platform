@@ -1,0 +1,742 @@
+import base64
+import uuid
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.deps import (
+    get_db,
+    get_current_user,
+    require_roles,
+    require_scopes,
+)
+from app.db.models.user import User
+from app.db.models.annotation import Annotation
+from app.schemas.annotation import (
+    AnnotationCreate,
+    AnnotationListPage,
+    AnnotationOut,
+    AnnotationUpdate,
+    InterpolateRangeRequest,
+    InterpolateRangeResponse,
+    NeighborAnnotationsResponse,
+    NeighborFrameAnnotations,
+    PropagateBatchItem,
+    PropagateBatchRequest,
+    PropagateBatchResponse,
+    PropagateRequest,
+    PropagateResponse,
+    VideoTrackCompositionRequest,
+    VideoTrackCompositionResponse,
+    VideoTrackConvertToBboxesRequest,
+    VideoTrackConvertToBboxesResponse,
+)
+from app.services.annotation import AnnotationService
+from app.services.audit import AuditAction, AuditService
+from app.services.task_lock import TaskLockService
+
+
+from app.api.v1.tasks._shared import (
+    _assert_task_editable,
+    _load_task_or_404,
+    _assert_task_visible,
+    _visible_task_ids,
+    _video_frame_count,
+    _ANNOTATORS,
+    _REVIEWERS,
+)
+
+router = APIRouter()
+
+
+@router.get(
+    "/{task_id}/neighbor-annotations",
+    response_model=NeighborAnnotationsResponse,
+    dependencies=[Depends(require_scopes("annotations:read"))],
+)
+async def get_neighbor_annotations(
+    task_id: uuid.UUID,
+    k: int = Query(1, ge=1, le=20),
+    group_id: int | None = Query(
+        None,
+        description="给定则服务端只回该 group(scope=selected);省略回全部(scope=all)",
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """v0.15.17 · 中心 task 前后 k 帧的邻帧标注,一次性返回。
+
+    替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 group_id 过滤」。
+    非 scene / 历史未 backfill 的 task → 200 + frames=[](与 neighbors 端点一致,不报错)。
+
+    v0.15.26 · 可见性:与被替代的旧链路一致,邻帧逐 task 复核 batch 可见性 / 分派状态
+    (`_visible_task_ids`)。对调用者不可见的邻帧(如分派给别人 / 状态非可见的 batch)
+    仍返回 frame 占位但 `annotations=[]`,不外泄他人 batch 的框几何。
+    """
+    from app.services.scene import (
+        SceneFrameIndexInconsistent,
+        get_neighbors_for_task,
+    )
+
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+
+    try:
+        neighbors = await get_neighbors_for_task(db, task_id=task_id, k=k)
+    except SceneFrameIndexInconsistent as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    if neighbors is None or neighbors.scene_id is None:
+        return NeighborAnnotationsResponse(scene_id=None, frame_index=None, frames=[])
+
+    frame_by_task = {
+        n.task_id: n.frame_index for n in (*neighbors.prev, *neighbors.next)
+    }
+    if not frame_by_task:
+        return NeighborAnnotationsResponse(
+            scene_id=neighbors.scene_id,
+            frame_index=neighbors.frame_index,
+            frames=[],
+        )
+
+    # v0.15.26 · 逐邻帧复核可见性,不可见的邻帧 task 不取其 annotation(下面 by_task 占位为空)。
+    from app.db.models.project import Project
+
+    project = await db.get(Project, task.project_id)
+    visible_ids = await _visible_task_ids(
+        db, project, current_user, list(frame_by_task.keys())
+    )
+
+    svc = AnnotationService(db)
+    anns = (
+        await svc.list_by_tasks(list(visible_ids), group_id=group_id)
+        if visible_ids
+        else []
+    )
+
+    by_task: dict[uuid.UUID, list[AnnotationOut]] = {tid: [] for tid in frame_by_task}
+    for a in anns:
+        by_task[a.task_id].append(AnnotationOut.model_validate(a))
+
+    # 按距中心帧远近排序(与 neighbors prev/next 顺序一致),便于前端就近渲染
+    ordered = [*neighbors.prev, *neighbors.next]
+    frames = [
+        NeighborFrameAnnotations(
+            task_id=n.task_id,
+            frame_index=n.frame_index,
+            annotations=by_task.get(n.task_id, []),
+        )
+        for n in ordered
+    ]
+    return NeighborAnnotationsResponse(
+        scene_id=neighbors.scene_id,
+        frame_index=neighbors.frame_index,
+        frames=frames,
+    )
+
+
+@router.get(
+    "/{task_id}/annotations",
+    response_model=list[AnnotationOut],
+    dependencies=[Depends(require_scopes("annotations:read"))],
+)
+async def get_annotations(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    svc = AnnotationService(db)
+    return await svc.list_by_task(task_id)
+
+
+@router.get(
+    "/{task_id}/annotations/page",
+    response_model=AnnotationListPage,
+    dependencies=[Depends(require_scopes("annotations:read"))],
+)
+async def get_annotations_paged(
+    task_id: uuid.UUID,
+    limit: int = 200,
+    cursor: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """v0.7.6 · keyset 分页变体。单 task 1000+ 框场景下避免一次性大列表阻塞。
+
+    cursor 编码：base64(`{ts_isoformat}|{annotation_id}`)，与 audit_logs 端点一致。
+    """
+    from uuid import UUID as _UUID
+
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    if limit < 1 or limit > 1000:
+        raise HTTPException(status_code=400, detail="limit must be in [1, 1000]")
+
+    decoded: tuple[datetime, uuid.UUID] | None = None
+    if cursor:
+        try:
+            payload = base64.urlsafe_b64decode(cursor.encode()).decode()
+            ts_str, id_str = payload.rsplit("|", 1)
+            decoded = (datetime.fromisoformat(ts_str), _UUID(id_str))
+        except Exception:
+            raise HTTPException(status_code=400, detail="invalid cursor")
+
+    svc = AnnotationService(db)
+    items, next_cursor_tuple = await svc.list_by_task_keyset(
+        task_id, limit=limit, cursor=decoded
+    )
+    next_cursor: str | None = None
+    if next_cursor_tuple is not None:
+        ts, aid = next_cursor_tuple
+        next_cursor = base64.urlsafe_b64encode(
+            f"{ts.isoformat()}|{aid}".encode()
+        ).decode()
+    return AnnotationListPage(
+        items=[AnnotationOut.model_validate(a) for a in items],
+        next_cursor=next_cursor,
+    )
+
+
+@router.post(
+    "/{task_id}/annotations",
+    response_model=AnnotationOut,
+    status_code=201,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
+async def create_annotation(
+    task_id: uuid.UUID,
+    data: AnnotationCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    _assert_task_editable(await _load_task_or_404(db, task_id))
+    svc = AnnotationService(db)
+    annotation = await svc.create(
+        task_id=task_id,
+        user_id=current_user.id,
+        annotation_type=data.annotation_type,
+        tool_unit_id=data.tool_unit_id,
+        class_name=data.class_name,
+        geometry=data.geometry.model_dump(),
+        confidence=data.confidence,
+        parent_prediction_id=data.parent_prediction_id,
+        lead_time=data.lead_time,
+        attributes=data.attributes,
+    )
+    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    # v0.7.2 · annotation 编辑历史可追溯
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_CREATE,
+        target_type="annotation",
+        target_id=str(annotation.id),
+        request=request,
+        status_code=201,
+        detail={
+            "task_id": str(task_id),
+            "class_name": annotation.class_name,
+            "annotation_type": annotation.annotation_type,
+            "source": annotation.source,
+        },
+    )
+    await db.commit()
+    await db.refresh(annotation)
+    return annotation
+
+
+@router.post(
+    "/{task_id}/annotations/{annotation_id}/propagate-to-task",
+    response_model=PropagateResponse,
+    status_code=201,
+)
+async def propagate_annotation_to_task(
+    task_id: uuid.UUID,
+    annotation_id: uuid.UUID,
+    data: PropagateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """v0.14.1 · 跨帧目标延续: 把源 annotation 复制到 target_task(同 project 同 scene)。
+
+    源 task 需对当前用户可见; 目标 task 需可见且可写(未进 review/completed 锁态)。
+    复制 geometry/class/attributes + 共享 group_id; box_3d 的 convention_at_create
+    取目标 dataset 的 axis_convention(详 service.propagate)。
+    """
+    source_task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, source_task, current_user)
+
+    # 归属校验: annotation 必须属于 URL 里的源 task, 否则越权(借可见 task_id
+    # 复制同 project 内不可见 batch 的他人草稿)。
+    src_annotation = await db.get(Annotation, annotation_id)
+    if src_annotation is None or src_annotation.task_id != task_id:
+        raise HTTPException(status_code=404, detail="source annotation not found")
+
+    target_task = await _load_task_or_404(db, data.target_task_id)
+    await _assert_task_visible(db, target_task, current_user)
+    _assert_task_editable(target_task, current_user)
+
+    svc = AnnotationService(db)
+    new_annotation, motion_compensated = await svc.propagate(
+        source_annotation_id=annotation_id,
+        target_task_id=data.target_task_id,
+        user_id=current_user.id,
+        override_psr=data.override_psr,
+    )
+    await TaskLockService(db).heartbeat(data.target_task_id, current_user.id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_CREATE,
+        target_type="annotation",
+        target_id=str(new_annotation.id),
+        request=request,
+        status_code=201,
+        detail={
+            "task_id": str(data.target_task_id),
+            "source_task_id": str(task_id),
+            "source_annotation_id": str(annotation_id),
+            "propagated": True,
+            "motion_compensated": motion_compensated,
+            "group_id": new_annotation.group_id,
+            "class_name": new_annotation.class_name,
+        },
+    )
+    await db.commit()
+    await db.refresh(new_annotation)
+    return PropagateResponse(
+        annotation=AnnotationOut.model_validate(new_annotation),
+        motion_compensated=motion_compensated,
+    )
+
+
+@router.post(
+    "/{task_id}/annotations/propagate-batch",
+    response_model=PropagateBatchResponse,
+    status_code=201,
+)
+async def propagate_annotations_batch(
+    task_id: uuid.UUID,
+    data: PropagateBatchRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """v0.15.1 · 多目标批量跨帧延续: 把源 task 的多个(或全部)box_3d 一次
+    运动补偿 propagate 到目标 task。整批一个事务,任一失败全部回滚。
+    """
+    source_task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, source_task, current_user)
+
+    target_task = await _load_task_or_404(db, data.target_task_id)
+    await _assert_task_visible(db, target_task, current_user)
+    _assert_task_editable(target_task, current_user)
+
+    svc = AnnotationService(db)
+    results, motion_compensated = await svc.propagate_batch(
+        source_task_id=task_id,
+        target_task_id=data.target_task_id,
+        annotation_ids=data.annotation_ids,
+        user_id=current_user.id,
+    )
+    await TaskLockService(db).heartbeat(data.target_task_id, current_user.id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_CREATE,
+        target_type="task",
+        target_id=str(data.target_task_id),
+        request=request,
+        status_code=201,
+        detail={
+            "source_task_id": str(task_id),
+            "propagated_batch": True,
+            "motion_compensated": motion_compensated,
+            "count": len(results),
+            "created_annotation_ids": [str(ann.id) for _, ann in results],
+        },
+    )
+    await db.commit()
+    for _, ann in results:
+        await db.refresh(ann)
+    return PropagateBatchResponse(
+        items=[
+            PropagateBatchItem(
+                source_annotation_id=src_id,
+                annotation=AnnotationOut.model_validate(ann),
+            )
+            for src_id, ann in results
+        ],
+        motion_compensated=motion_compensated,
+    )
+
+
+@router.post(
+    "/{task_id}/annotations/interpolate-range",
+    response_model=InterpolateRangeResponse,
+    status_code=201,
+)
+async def interpolate_annotations_range(
+    task_id: uuid.UUID,
+    data: InterpolateRangeRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """v0.15.1 · 关键帧区间插值: 路径 task = 区间起点帧,body.to_task_id =
+    终点帧;同 group_id 链两端各有一个 box_3d,中间帧自动生成插值框
+    (source="interpolated")。中间帧已有同 group 标注 → 幂等跳过。
+    """
+    from_task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, from_task, current_user)
+
+    to_task = await _load_task_or_404(db, data.to_task_id)
+    await _assert_task_visible(db, to_task, current_user)
+
+    svc = AnnotationService(db)
+    created, motion_compensated, skipped_frames = await svc.interpolate_range(
+        group_id=data.group_id,
+        from_task_id=task_id,
+        to_task_id=data.to_task_id,
+        user_id=current_user.id,
+        assert_task_editable=lambda t: _assert_task_editable(t, current_user),
+        assert_task_visible=lambda t: _assert_task_visible(db, t, current_user),
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_CREATE,
+        target_type="task",
+        target_id=str(task_id),
+        request=request,
+        status_code=201,
+        detail={
+            "interpolate_range": True,
+            "group_id": data.group_id,
+            "to_task_id": str(data.to_task_id),
+            "motion_compensated": motion_compensated,
+            "created": len(created),
+            "created_annotation_ids": [str(a.id) for a in created],
+            "skipped_frames": skipped_frames,
+        },
+    )
+    await db.commit()
+    for ann in created:
+        await db.refresh(ann)
+    return InterpolateRangeResponse(
+        annotations=[AnnotationOut.model_validate(a) for a in created],
+        motion_compensated=motion_compensated,
+        skipped_frames=skipped_frames,
+    )
+
+
+@router.patch(
+    "/{task_id}/annotations/{annotation_id}",
+    response_model=AnnotationOut,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
+async def update_annotation(
+    task_id: uuid.UUID,
+    annotation_id: uuid.UUID,
+    data: AnnotationUpdate,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    _task = await _load_task_or_404(db, task_id)
+    _assert_task_editable(_task, current_user)
+    svc = AnnotationService(db)
+    fields = data.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    # 早 load 一次：用于 If-Match 校验 + 字段级审计 diff（attributes 变更）
+    existing = await db.get(Annotation, annotation_id)
+    if existing is None or not existing.is_active:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+
+    before_attributes: dict | None = None
+    if "attributes" in fields:
+        before_attributes = dict(existing.attributes or {})
+
+    # 乐观并发控制：If-Match 头校验
+    if_match = request.headers.get("If-Match", "").strip()
+    if if_match:
+        expected_version = if_match.removeprefix('W/"').removesuffix('"')
+        try:
+            expected_v = int(expected_version)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid If-Match format")
+        if existing.version != expected_v:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "reason": "version_mismatch",
+                    "current_version": existing.version,
+                },
+            )
+
+    annotation = await svc.update(annotation_id, **fields)
+    if not annotation:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    if annotation.task_id != task_id:
+        raise HTTPException(
+            status_code=400, detail="Annotation does not belong to this task"
+        )
+    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    _audit_action = (
+        AuditAction.TASK_REVIEWER_EDIT
+        if _task.status == "review" and current_user.role in _REVIEWERS
+        else AuditAction.ANNOTATION_UPDATE
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=_audit_action,
+        target_type="annotation",
+        target_id=str(annotation.id),
+        request=request,
+        status_code=200,
+        detail={"task_id": str(task_id), "fields": list(fields.keys())},
+    )
+    # 字段级审计：每个变更的 attribute key 单独记一行，便于 GIN 索引按 field_key 过滤
+    # v0.6.3 Q-2：N 个属性变更 → 一次 add_all + 一次 flush（原本 N 次 flush）
+    if before_attributes is not None:
+        after_attributes = dict(annotation.attributes or {})
+        all_keys = set(before_attributes.keys()) | set(after_attributes.keys())
+        change_items: list[dict] = []
+        for key in sorted(all_keys):
+            before_v = before_attributes.get(key)
+            after_v = after_attributes.get(key)
+            if before_v == after_v:
+                continue
+            change_items.append(
+                {
+                    "target_id": str(annotation.id),
+                    "detail": {
+                        "task_id": str(task_id),
+                        "field_key": key,
+                        "before": before_v,
+                        "after": after_v,
+                    },
+                }
+            )
+        if change_items:
+            await AuditService.log_many(
+                db,
+                actor=current_user,
+                action=AuditAction.ANNOTATION_ATTRIBUTE_CHANGE,
+                target_type="annotation",
+                request=request,
+                status_code=200,
+                items=change_items,
+            )
+    await db.commit()
+    await db.refresh(annotation)
+    response.headers["ETag"] = f'W/"{annotation.version}"'
+    return annotation
+
+
+@router.post(
+    "/{task_id}/annotations/video/track-compositions",
+    response_model=VideoTrackCompositionResponse,
+)
+async def compose_video_tracks(
+    task_id: uuid.UUID,
+    data: VideoTrackCompositionRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
+    if not data.annotation_ids:
+        raise HTTPException(status_code=400, detail="annotation_ids is required")
+    if len(set(data.annotation_ids)) != len(data.annotation_ids):
+        raise HTTPException(status_code=400, detail="annotation_ids must be unique")
+
+    annotations: list[Annotation] = []
+    for annotation_id in data.annotation_ids:
+        ann = await db.get(Annotation, annotation_id)
+        if ann is None or not ann.is_active:
+            raise HTTPException(status_code=404, detail="Annotation not found")
+        if ann.task_id != task_id:
+            raise HTTPException(
+                status_code=400, detail="Annotation does not belong to this task"
+            )
+        annotations.append(ann)
+
+    svc = AnnotationService(db)
+    try:
+        updated, created, deleted_ids = await svc.compose_video_tracks(
+            task=task,
+            annotations=annotations,
+            user_id=current_user.id,
+            operation=data.operation,
+            frame_index=data.frame_index,
+            delete_sources=data.delete_sources,
+            gap_mode=data.gap_mode,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_UPDATE,
+        target_type="annotation",
+        request=request,
+        status_code=200,
+        detail={
+            "task_id": str(task_id),
+            "operation": f"video_track.{data.operation}",
+            "annotation_ids": [
+                str(annotation_id) for annotation_id in data.annotation_ids
+            ],
+            "frame_index": data.frame_index,
+            "created_count": len(created),
+            "updated_count": len(updated),
+            "deleted_count": len(deleted_ids),
+        },
+    )
+    await db.commit()
+    for ann in [*updated, *created]:
+        await db.refresh(ann)
+    return VideoTrackCompositionResponse(
+        operation=data.operation,
+        updated_annotations=[
+            AnnotationOut.model_validate(ann, from_attributes=True) for ann in updated
+        ],
+        created_annotations=[
+            AnnotationOut.model_validate(ann, from_attributes=True) for ann in created
+        ],
+        deleted_annotation_ids=deleted_ids,
+    )
+
+
+@router.post(
+    "/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes",
+    response_model=VideoTrackConvertToBboxesResponse,
+)
+async def convert_video_track_to_bboxes(
+    task_id: uuid.UUID,
+    annotation_id: uuid.UUID,
+    data: VideoTrackConvertToBboxesRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
+    annotation = await db.get(Annotation, annotation_id)
+    if annotation is None or not annotation.is_active:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    if annotation.task_id != task_id:
+        raise HTTPException(
+            status_code=400, detail="Annotation does not belong to this task"
+        )
+    if (annotation.geometry or {}).get("type") != "video_track_bbox":
+        raise HTTPException(
+            status_code=400, detail="Annotation is not a video_track_bbox"
+        )
+
+    svc = AnnotationService(db)
+    try:
+        (
+            source,
+            created,
+            deleted_source,
+            removed_frame_indexes,
+        ) = await svc.convert_video_track_to_bboxes(
+            task=task,
+            annotation=annotation,
+            user_id=current_user.id,
+            operation=data.operation,
+            scope=data.scope,
+            frame_index=data.frame_index,
+            frame_mode=data.frame_mode,
+            frame_count=await _video_frame_count(db, task),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_UPDATE,
+        target_type="annotation",
+        target_id=str(annotation_id),
+        request=request,
+        status_code=200,
+        detail={
+            "task_id": str(task_id),
+            "operation": "video_track.convert_to_bboxes",
+            "convert_operation": data.operation,
+            "scope": data.scope,
+            "frame_mode": data.frame_mode,
+            "frame_index": data.frame_index,
+            "created_count": len(created),
+            "deleted_source": deleted_source,
+        },
+    )
+    await db.commit()
+    for ann in created:
+        await db.refresh(ann)
+    if source is not None:
+        await db.refresh(source)
+    return VideoTrackConvertToBboxesResponse(
+        source_annotation=(
+            AnnotationOut.model_validate(source, from_attributes=True)
+            if source is not None
+            else None
+        ),
+        created_annotations=[
+            AnnotationOut.model_validate(ann, from_attributes=True) for ann in created
+        ],
+        deleted_source=deleted_source,
+        removed_frame_indexes=removed_frame_indexes,
+    )
+
+
+@router.delete(
+    "/{task_id}/annotations/{annotation_id}",
+    status_code=204,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
+async def delete_annotation(
+    task_id: uuid.UUID,
+    annotation_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    _assert_task_editable(await _load_task_or_404(db, task_id))
+    # 先取一份 detail 供 audit 用（soft delete 之后字段仍能读，但安全起见提前）
+    pre = await db.get(Annotation, annotation_id)
+    pre_class = pre.class_name if pre else None
+    svc = AnnotationService(db)
+    ok = await svc.delete(annotation_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    # v0.7.2 · annotation 编辑历史可追溯
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_DELETE,
+        target_type="annotation",
+        target_id=str(annotation_id),
+        request=request,
+        status_code=204,
+        detail={"task_id": str(task_id), "soft": True, "class_name": pre_class},
+    )
+    await db.commit()

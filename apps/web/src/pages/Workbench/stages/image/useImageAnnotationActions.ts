@@ -40,7 +40,7 @@ type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: numbe
 
 /**
  * v0.11.28：视频改类时，把选中框在「当前帧」的归一化 bbox 转成屏幕坐标，
- * 让改类悬浮框锚到画布上的框（而非贴顶部）。overlay SVG 由 VideoStage 打上 `data-video-overlay`。
+ * 让改类悬浮框锚到画布上的框（而非贴顶部）。帧矩形标记由 VideoKonvaStage 打上 `data-video-overlay`。
  * 框在当前帧不可见（如 track 在该帧被标消失）时返回 undefined，由调用方回落到其它锚点。
  */
 function videoBoxScreenAnchor(
@@ -194,6 +194,8 @@ export function useImageAnnotationActions({
   const acceptPredictionMut = useAcceptPrediction(taskId ?? "");
   const rejectPredictionMut = useRejectPrediction(taskId ?? "");
   const [batchChanging, setBatchChanging] = useState(false);
+  // 视频几何无 image 定位,批量改类弹窗用固定屏幕锚点(锚到首个选中框,与单改类同源)。
+  const [batchChangeAnchor, setBatchChangeAnchor] = useState<{ left: number; top: number } | undefined>(undefined);
   const [samPendingAccept, setSamPendingAccept] = useState<{ idx: number } | null>(null);
   const [dismissedShapeKeys, setDismissedShapeKeys] = useState<Set<string>>(new Set());
   const [predictionSourceVisibility, setPredictionSourceVisibility] = useState(defaultPredictionSourceVisibility);
@@ -278,10 +280,10 @@ export function useImageAnnotationActions({
     return out;
   }, [userBoxes, aiBoxes, userIoUIndex, iouDedupThreshold]);
 
-  const batchChangeTarget = useMemo(
-    () => getBatchChangeTarget(s.selectedIds, userBoxes),
-    [s.selectedIds, userBoxes],
-  );
+  const batchChangeTarget = useMemo(() => {
+    const base = getBatchChangeTarget(s.selectedIds, userBoxes);
+    return base ? { ...base, anchor: batchChangeAnchor } : null;
+  }, [s.selectedIds, userBoxes, batchChangeAnchor]);
 
   const samPendingGeom = useMemo<Geom | null>(() => {
     if (!samPendingAccept) return null;
@@ -423,6 +425,47 @@ export function useImageAnnotationActions({
     });
   }, [s, annotationsRef, mutations.delete, history, pushToast]);
 
+  // 批量切换 is_locked / is_hidden:聚合语义 = 选中全部已开 → 全部关,否则 → 全部开;
+  // 只对需要变更的标注发 PATCH,与 handleBatchDelete 一致走 mutation 循环 + history.pushBatch。
+  const handleBatchPatchFlag = useCallback((flag: "is_locked" | "is_hidden") => {
+    const targets = s.selectedIds
+      .map((id) => annotationsRef.current.find((a) => a.id === id))
+      .filter(Boolean) as AnnotationResponse[];
+    if (targets.length === 0) return;
+    const read = (a: AnnotationResponse) => !!(a as unknown as Record<string, unknown>)[flag];
+    const nextValue = !targets.every(read);
+    const pendingTargets = targets.filter((a) => read(a) !== nextValue);
+    if (pendingTargets.length === 0) return;
+    let pending = pendingTargets.length;
+    let succeeded = 0, failed = 0;
+    const cmds: { kind: "update"; annotationId: string; before: Record<string, boolean>; after: Record<string, boolean> }[] = [];
+    pendingTargets.forEach((ann) => {
+      const before = { [flag]: read(ann) };
+      const after = { [flag]: nextValue };
+      mutations.update.mutate(
+        { annotationId: ann.id, payload: after },
+        {
+          onSuccess: () => { succeeded++; cmds.push({ kind: "update", annotationId: ann.id, before, after }); },
+          onError: () => { failed++; },
+          onSettled: () => {
+            pending--;
+            if (pending === 0) {
+              if (cmds.length > 0) history.pushBatch(cmds);
+              const verb = flag === "is_locked"
+                ? (nextValue ? "锁定" : "解锁")
+                : (nextValue ? "隐藏" : "显示");
+              pushToast({
+                msg: `已${verb} ${succeeded}/${pendingTargets.length} 个标注`,
+                sub: failed ? `${failed} 项失败` : undefined,
+                kind: failed ? "error" : "success",
+              });
+            }
+          },
+        },
+      );
+    });
+  }, [s, annotationsRef, mutations.update, history, pushToast]);
+
   const handleJoinSelectedPolygons = useCallback(() => {
     if (isLocked) {
       pushToast({ msg: "任务已锁定", sub: "撤回提交或继续编辑后再操作", kind: "warning" });
@@ -490,11 +533,17 @@ export function useImageAnnotationActions({
   const handleStartBatchChangeClass = useCallback(() => {
     const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
     if (ids.length === 0) return;
+    // 视频几何走固定屏幕锚点(锚到首个选中框);图片用 geom + vp 走 image 定位,anchor 留空。
+    const firstAnn = annotationsRef.current.find((a) => a.id === ids[0]);
+    const isVideoGeometry = firstAnn
+      && (firstAnn.geometry.type === "video_bbox" || firstAnn.geometry.type === "video_track_bbox");
+    setBatchChangeAnchor(isVideoGeometry ? videoBoxScreenAnchor(firstAnn, s.videoFrameIndex) : undefined);
     setBatchChanging(true);
-  }, [s.selectedIds, annotationsRef]);
+  }, [s.selectedIds, s.videoFrameIndex, annotationsRef]);
 
   const handleCommitBatchChangeClass = useCallback((cls: string) => {
     setBatchChanging(false);
+    setBatchChangeAnchor(undefined);
     if (!cls) return;
     const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
     if (ids.length === 0) return;
@@ -530,7 +579,10 @@ export function useImageAnnotationActions({
     if (pending === 0) setBatchChanging(false);
   }, [s, annotationsRef, mutations.update, history, pushToast, recordRecentClass]);
 
-  const handleCancelBatchChange = useCallback(() => setBatchChanging(false), []);
+  const handleCancelBatchChange = useCallback(() => {
+    setBatchChanging(false);
+    setBatchChangeAnchor(undefined);
+  }, []);
 
   const handleRejectPrediction = useCallback((box: AiBox) => {
     // 先本地隐藏，避免等待网络回包
@@ -953,6 +1005,7 @@ export function useImageAnnotationActions({
     samPendingGeom,
     samDefaultClass,
     handleBatchDelete,
+    handleBatchPatchFlag,
     handleJoinSelectedPolygons,
     handleStartBatchChangeClass,
     handleCommitBatchChangeClass,

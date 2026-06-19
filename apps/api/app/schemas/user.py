@@ -1,5 +1,5 @@
 from typing import Any, Literal
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from uuid import UUID
 from datetime import datetime
 
@@ -26,6 +26,22 @@ class TriViewFloatState(BaseModel):
     y: int | None = None
     w: int | None = Field(default=None, ge=200, le=480)
     h: int | None = Field(default=None, ge=240, le=720)
+
+
+class FloatingSelectionState(BaseModel):
+    """v0.16.8 · 选中标注浮动信息卡的位置、尺寸与折叠态(跨设备)。
+
+    与边栏浮窗不同,选中卡无「合并回边栏」语义,故只有 collapsed(无 detached);
+    显隐由选中状态驱动,这里只持久化几何与折叠。尺寸界与 FloatingPanelState 一致。
+    """
+
+    model_config = {"extra": "forbid"}
+
+    collapsed: bool = False
+    x: int | None = None
+    y: int | None = None
+    w: int | None = Field(default=None, ge=48, le=720)
+    h: int | None = Field(default=None, ge=120, le=900)
 
 
 class CameraPanelState(BaseModel):
@@ -78,6 +94,10 @@ class WorkbenchLayoutPreferences(BaseModel):
         default=None,
         alias="floatingDiscussion",
     )
+    floating_selection: FloatingSelectionState | None = Field(
+        default=None,
+        alias="floatingSelection",
+    )
     tri_view_float: TriViewFloatState | None = Field(default=None, alias="triViewFloat")
     camera_panels: dict[str, CameraPanelState] = Field(
         default_factory=dict, alias="cameraPanels"
@@ -85,6 +105,37 @@ class WorkbenchLayoutPreferences(BaseModel):
     pointcloud_camera: PointcloudCameraState | None = Field(
         default=None, alias="pointcloudCamera"
     )
+
+
+class LabelContentByType(BaseModel):
+    """v0.16.7 · 标签内容按标注类型分段；class 三段恒显，不入表。
+
+    single=图片手工框 / track=视频轨迹框 / ai=图片预测框，各段只列该类型有意义的字段。
+    旧扁平 list 由 WorkbenchCommonPreferences 的 before validator 迁移为本结构。
+    """
+
+    model_config = {"extra": "forbid"}
+
+    # 分组号 #id / 属性。
+    single: list[Literal["id", "attrs"]] = Field(default_factory=list)
+    # 轨迹号 #num / 状态(插值·遮挡) / 属性。
+    track: list[Literal["id", "state", "attrs"]] = Field(
+        default_factory=lambda: ["id", "state"]
+    )
+    # ✦来源前缀 / 置信度 / 分组号 / 属性。
+    ai: list[Literal["source", "score", "id", "attrs"]] = Field(
+        default_factory=lambda: ["source", "score"]
+    )
+
+    @field_validator("single", "track", "ai")
+    @classmethod
+    def _dedupe(cls, v: list[str]) -> list[str]:
+        # 去重保序，避免重复 token。
+        seen: list[str] = []
+        for item in v:
+            if item not in seen:
+                seen.append(item)
+        return seen
 
 
 class WorkbenchCommonPreferences(BaseModel):
@@ -105,6 +156,32 @@ class WorkbenchCommonPreferences(BaseModel):
     # 边栏宽度按工作台宽度的百分比存（替代旧 layout.leftWidth/rightWidth 像素值）。
     leftWidthPct: float = Field(default=15.0, ge=10, le=35)
     rightWidthPct: float = Field(default=15.0, ge=10, le=35)
+    # v0.15.27 · 标注视觉样式（图片 + 视频共享，单一来源 annotationVisual.ts 消费）。
+    # 标签字号（画布缩放跟随由前端按模态处理，这里只存基准 px）。
+    labelFontSize: int = Field(default=12, ge=8, le=24)
+    # 标签显隐：always=恒显 / selected=仅选中时 / none=不显示（取代旧 image.showBoxLabels）。
+    labelVisibility: Literal["always", "selected", "none"] = "always"
+    # v0.16.7 · 标签内容按标注类型分段（single/track/ai）；旧扁平 list 由 before validator 迁移。
+    labelContent: LabelContentByType = Field(default_factory=LabelContentByType)
+    # 描边线宽（screen px 基准；选中态 = 基值 + 0.5）。
+    strokeWidth: float = Field(default=1.5, ge=1, le=5)
+    # 闭合形状填充透明度（非选中）。
+    fillOpacity: float = Field(default=0.07, ge=0, le=0.6)
+    # 选中对象填充加重透明度。
+    fillOpacitySelected: float = Field(default=0.12, ge=0, le=0.8)
+
+    @field_validator("labelContent", mode="before")
+    @classmethod
+    def _migrate_label_content(cls, v: Any) -> Any:
+        # v0.16.7 · 旧扁平 list（["class","score"] 等）迁移为按类型分段对象。
+        # 旧值只作用过图片：single/ai 按老勾选分发（ai 补 source 保留 ✦ 前缀），
+        # track 用默认 ["id","state"]（= 旧视频硬编码观感）。class 恒显，丢弃。
+        if isinstance(v, list):
+            old = [t for t in v if isinstance(t, str)]
+            single = [t for t in ("id", "attrs") if t in old]
+            ai = ["source", *[t for t in ("score", "id", "attrs") if t in old]]
+            return {"single": single, "track": ["id", "state"], "ai": ai}
+        return v
 
     @model_validator(mode="after")
     def _derive_legacy_overlay_enabled(self):
@@ -131,7 +208,7 @@ class WorkbenchImagePreferences(BaseModel):
     snapThresholdPx: int = Field(default=8, ge=4, le=16)
     zoomStepFactor: Literal[1.05, 1.1, 1.15, 1.2] = 1.1
     fadedOpacity: float = Field(default=0.35, ge=0.1, le=0.8)
-    showBoxLabels: bool = True
+    # v0.15.27 · showBoxLabels 迁移到 common.labelVisibility（三态枚举），此处删除。
     maskOverlayOpacity: float = Field(default=0.45, ge=0.2, le=0.8)
 
 

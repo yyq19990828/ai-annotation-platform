@@ -1,0 +1,38 @@
+/* v0.16.14 · 选中信息卡内容的共享布局,四种选中态共用以保证视觉统一。 */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* 底内边距交给 sticky 动作栏,避免内容滚动到动作栏下方的缝隙里透出来。 */
+  padding: 10px 12px 0;
+  /* 卡片高度有限(壳体 min-height:0),信息超出时内容区可滚动查看,横向不滚。 */
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* 编辑型分区(属性表单),与上方只读指标用细线分隔。 */
+.attrBlock {
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+}
+
+/* 底部动作组,与上方信息用细线分隔;按钮溢出时换行。 */
+/* 始终贴卡片底边:内容少时 margin-top:auto 把它压到底,内容多时 sticky 让它在滚动中
+   钉在底部不被滚走;背景遮住滚动到其下方的内容。负 margin 抵消 .body 的内边距,让
+   分隔线 / 背景铺满卡片整宽。 */
+.actionBar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: auto -12px 0;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-elev);
+}

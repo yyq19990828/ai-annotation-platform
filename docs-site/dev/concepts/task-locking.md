@@ -13,7 +13,7 @@ Task lock 是工作台里的并发编辑保护层，不是权限系统，也不�
 代码真值源：
 
 - `apps/api/app/services/task_lock.py`
-- `apps/api/app/api/v1/tasks.py`
+- `apps/api/app/api/v1/tasks/locks.py`
 - [ADR-0005](/dev/adr/0005-task-lock-and-review-matrix)
 
 ## 它解决什么问题
@@ -138,7 +138,7 @@ lock 不等于状态：
 | 调整 TTL | `services/task_lock.py` + `db/models/project.py` |
 | 调整 takeover 逻辑 | `services/task_lock.py` |
 | 改前端续期节奏 | `apps/web/src/hooks/useTaskLock.ts` |
-| 改提交/切题时释放锁 | `api/v1/tasks.py` |
+| 改提交/切题时释放锁 | `api/v1/tasks/lifecycle.py` |
 
 ## 相关文档
 

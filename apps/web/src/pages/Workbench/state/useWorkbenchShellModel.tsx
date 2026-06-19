@@ -1,5 +1,5 @@
 import {
-  useCallback, useEffect, useMemo, useRef, useState, type ComponentProps,
+  useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode,
 } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -17,14 +17,10 @@ import {
   useAnnotationUngroup,
   useAnnotationBulkUpdate,
 } from "@/hooks/useAnnotationGroup";
-import { useFeedbacks } from "@/hooks/useFeedbacks";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
-import {
-  resolveCrossFrameNavigation,
-  resolveCrossFrameTarget,
-} from "./crossFrameTarget";
+import { resolveCrossFrameNavigation } from "./crossFrameTarget";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
@@ -36,6 +32,9 @@ import { useWorkbenchState } from "./useWorkbenchState";
 import { useToolBindings, classesForUnit } from "./useToolBindings";
 import type { ToolUnitId } from "@/constants/toolUnits";
 import { useViewportTransform } from "./useViewportTransform";
+import { useIssuePins } from "./useIssuePins";
+import { usePredictionPropagation } from "./usePredictionPropagation";
+import { useAiPopoverFrame } from "./useAiPopoverFrame";
 import { useAnnotationHistory } from "./useAnnotationHistory";
 import { useRecentClasses } from "./useRecentClasses";
 import { useSessionStats } from "./useSessionStats";
@@ -51,26 +50,22 @@ import { useMLCapabilities } from "./useMLCapabilities";
 import {
   useBackendRouting,
   INTERACTIVE_PROMPTS,
-  type InteractivePrompt,
 } from "./useBackendRouting";
 import { useCapabilityValidation } from "./useCapabilityValidation";
-import {
-  VARIANT_FIELD_KEYS,
-} from "../components/SchemaForm";
 import { AIToolDrawer } from "../shell/AIToolDrawer";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
-import { isAIToolId, TOOL_REGISTRY, type ToolId } from "../stage/tools";
+import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
-import { useActiveIssueStore } from "./useActiveIssueStore";
 import { annotationToBox, collectOccludedKeys } from "./transforms";
 import { applyVideoKeyframeToGeometry } from "./videoTrackCommands";
 import { useAnnotateMode } from "../modes/useAnnotateMode";
 import { useReviewMode } from "../modes/useReviewMode";
 import { setActiveClassesConfig, UNKNOWN_CLASS } from "../stage/colors";
-import type { VideoStageControls } from "../stage/VideoStage";
+import type { VideoStageControls } from "../stage/videoStageControls";
 import { deriveSamplingStep } from "../stage/videoSamplingGrid";
 import { VideoChapterSidebar, pickChapterTargetFrame } from "../stage/VideoChapterSidebar";
 import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";
+import type { TrackFilter } from "../stage/VideoTrackPanel";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
 import { isVideoBbox, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import type { AnnotationCommentAnchor } from "@/api/comments";
@@ -81,11 +76,18 @@ import type { StageKind } from "../stages/types";
 import { WorkbenchOverlays } from "../shell/WorkbenchOverlays";
 import type { ClassPickerAttrEditing } from "../shell/ClassPickerPopover";
 import { WorkbenchLayout } from "../shell/WorkbenchLayout";
+import {
+  SelectionCardPlaceholder,
+  type SelectedAnnotationCardProps,
+} from "../shell/SelectedAnnotationCard";
+import { ImageSelectionCardContent } from "../shell/ImageSelectionCardContent";
+import { ImageBatchCardContent } from "../shell/ImageBatchCardContent";
+import { VideoBoxBatchCardContent } from "../shell/VideoBoxBatchCardContent";
+import { AIPredictionCardContent } from "../shell/selectionCard/AIPredictionCardContent";
+import { VideoFrameBoxCardContent } from "../shell/selectionCard/VideoFrameBoxCardContent";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
-import { SIDE_FLOATING_PANEL_MAX_SIZE, SIDE_FLOATING_PANEL_MIN_SIZE } from "../shell/floatingPanelSizing";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
-import type { FloatingPanelState } from "@/api/auth";
 import {
   getRememberedWorkbenchTask,
   rememberWorkbenchTask,
@@ -108,31 +110,17 @@ import {
   normalizeAttributeModeState,
 } from "./attributeMode";
 import styles from "../shell/WorkbenchShell.module.css";
-
-const VARIANT_FIELD_SET = new Set<string>(VARIANT_FIELD_KEYS);
-
-const clamp = (v: number, lo: number, hi: number): number =>
-  Math.min(hi, Math.max(lo, v));
-
-function omitVariantFields(value: Record<string, unknown> | undefined): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  if (!value) return out;
-  for (const [key, v] of Object.entries(value)) {
-    if (!VARIANT_FIELD_SET.has(key)) out[key] = v;
-  }
-  return out;
-}
-
-function buildPredictParams(
-  params: Record<string, unknown> | undefined,
-  modelVariants: Record<string, string>,
-): Record<string, unknown> | undefined {
-  const out = omitVariantFields(params);
-  if (Object.keys(modelVariants).length > 0) {
-    out.model_variants = modelVariants;
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
-}
+import {
+  buildPredictParams,
+  promptOfTool,
+  resolveFloatingClassPaletteRect,
+  resolveFloatingDiscussionRect,
+  resolveFloatingInspectorRect,
+  resolveFloatingSelectionRect,
+  resolveFloatingTaskQueueRect,
+} from "./useWorkbenchShellModel.helpers";
+import { useWorkbenchSidebarSizing } from "./useWorkbenchSidebarSizing";
+import { useConflictResolution } from "./useConflictResolution";
 
 type WorkbenchShellMode = "annotate" | "review";
 
@@ -163,75 +151,6 @@ interface WorkbenchShellReadyModel {
   layout: ComponentProps<typeof WorkbenchLayout>;
   propagateDialog: ComponentProps<typeof VideoTrackerPropagateDialog>;
   issueSection?: WorkbenchShellIssueSection;
-}
-
-function resolveFloatingPanelRect(
-  state: FloatingPanelState,
-  defaults: {
-    w: number;
-    h: number;
-    x: (viewportW: number, w: number) => number;
-    y: (viewportH: number, h: number) => number;
-  },
-): FloatingPanelRect {
-  const w = Math.max(
-    SIDE_FLOATING_PANEL_MIN_SIZE.w,
-    Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.w, state.w ?? defaults.w),
-  );
-  const h = Math.max(
-    SIDE_FLOATING_PANEL_MIN_SIZE.h,
-    Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.h, state.h ?? defaults.h),
-  );
-  const viewportW = typeof window === "undefined" ? 1280 : window.innerWidth;
-  const viewportH = typeof window === "undefined" ? 800 : window.innerHeight;
-  return {
-    x: state.x ?? Math.max(24, defaults.x(viewportW, w)),
-    y: state.y ?? Math.max(24, defaults.y(viewportH, h)),
-    w,
-    h,
-  };
-}
-
-function resolveFloatingTaskQueueRect(state: FloatingPanelState): FloatingPanelRect {
-  return resolveFloatingPanelRect(state, {
-    w: 320,
-    h: 620,
-    x: () => 24,
-    y: () => 72,
-  });
-}
-
-function resolveFloatingClassPaletteRect(state: FloatingPanelState): FloatingPanelRect {
-  return resolveFloatingPanelRect(state, {
-    w: 320,
-    h: 420,
-    x: () => 24,
-    y: (viewportH, h) => viewportH - h - 40,
-  });
-}
-
-function resolveFloatingInspectorRect(state: FloatingPanelState): FloatingPanelRect {
-  return resolveFloatingPanelRect(state, {
-    w: 360,
-    h: 600,
-    x: (viewportW, w) => viewportW - w - 40,
-    y: (viewportH, h) => Math.min(80, viewportH - h - 24),
-  });
-}
-
-function resolveFloatingDiscussionRect(state: FloatingPanelState): FloatingPanelRect {
-  return resolveFloatingPanelRect(state, {
-    w: 420,
-    h: 560,
-    x: (viewportW, w) => viewportW - w - 40,
-    y: (viewportH, h) => Math.min(260, viewportH - h - 40),
-  });
-}
-
-// v0.14.18 · 工具 → 交互 prompt (text 已归批量线, 映射为 null = 非交互)。供交互后端路由解析。
-function promptOfTool(tool: ToolId): InteractivePrompt | null {
-  const rp = TOOL_REGISTRY[tool]?.requiredPrompt;
-  return rp && rp !== "text" ? rp : null;
 }
 
 export type UseWorkbenchShellModelResult =
@@ -437,27 +356,10 @@ export function useWorkbenchShellModel({
   // v0.15.3 · 工作台设置抽屉(齿轮菜单入口)。
   const [workbenchSettingsOpen, setWorkbenchSettingsOpen] = useState(false);
   const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
-  const [aiPopoverPosition, setAiPopoverPosition] = useState<{ left: number; top: number } | null>(null);
-  // v0.14.18 · AI 面板可缩放 (与浮出边栏一致); null = 用 CSS 默认尺寸, 用户拖角后置显式 w/h.
-  // 持久化到 localStorage (全局 UI 偏好, 非按项目): 刷新后保留拖定的尺寸。
-  const aiPopoverSizeKey = "wb:ai-popover-size";
-  const [aiPopoverSize, setAiPopoverSize] = useState<{ w: number; h: number } | null>(() => {
-    try {
-      const raw = localStorage.getItem(aiPopoverSizeKey);
-      const v = raw ? JSON.parse(raw) : null;
-      return typeof v?.w === "number" && typeof v?.h === "number" ? { w: v.w, h: v.h } : null;
-    } catch {
-      return null;
-    }
-  });
-  useEffect(() => {
-    try {
-      if (aiPopoverSize) localStorage.setItem(aiPopoverSizeKey, JSON.stringify(aiPopoverSize));
-      else localStorage.removeItem(aiPopoverSizeKey);
-    } catch {
-      /* ignore quota / privacy mode */
-    }
-  }, [aiPopoverSize]);
+  // v0.16.x 第 3 批 · AI 浮层位置/尺寸(+localStorage 持久化)抽到 useAiPopoverFrame;
+  // 开关 aiPopoverOpen 因切 task 时被关闭(与任务流纠缠)留壳层。
+  const { aiPopoverPosition, setAiPopoverPosition, aiPopoverSize, setAiPopoverSize } =
+    useAiPopoverFrame();
   const [aiDrawerOpen, setAiDrawerOpen] = useState(true);
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
@@ -612,6 +514,9 @@ export function useWorkbenchShellModel({
     if (pend && pend.taskId !== taskId) {
       pendingCrossFrameSelectRef.current = null;
     }
+    // pendingCrossFrameSelectRef 是 usePredictionPropagation 返回的稳定 useRef(声明在
+    // 本 effect 下方,入依赖会 TDZ);ref 引用恒定不入依赖,行为与抽取前一致。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId, resetVideoStageUi]);
 
   useEffect(() => {
@@ -739,6 +644,8 @@ export function useWorkbenchShellModel({
       setSelectedId(pend.annotationId);
       pendingCrossFrameSelectRef.current = null;
     }
+    // 同上:pendingCrossFrameSelectRef 为稳定 useRef,不入依赖(入则 TDZ),行为不变。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [annotationsData, currentTaskId, setSelectedId]);
 
   useEffect(() => {
@@ -812,47 +719,20 @@ export function useWorkbenchShellModel({
   const ungroupAnnotationMut = useAnnotationUngroup(taskId ?? "");
   const bulkUpdateMut = useAnnotationBulkUpdate(taskId ?? "");
 
-  const [issueCreateOpen, setIssueCreateOpen] = useState(false);
-  const [issuePinDropArmed, setIssuePinDropArmed] = useState(false);
-  const [issuePinPrefill, setIssuePinPrefill] = useState<{ x: number; y: number } | null>(null);
-  const issueListParams = useMemo(
-    () => ({
-      project_id: projectId ?? "",
-      task_id: taskId,
-      kind: "issue" as const,
-    }),
-    [projectId, taskId],
-  );
-  const issuesQuery = useFeedbacks(issueListParams, !!projectId && !!taskId);
-  const openIssueCount = (issuesQuery.data?.items ?? []).filter((i) => i.status === "open").length;
-
-  // v0.11.4 · DiscussionPanel issues tab ↔ IssueLayer 双向联动 store。
-  // 列表单击 → focusTick++ → 定位到对应图钉并高亮。
-  //   image: 把视口平移到图钉 (复用现有 vp/setVp + stageGeom)。
-  //   video (v0.11.7): 先 seek 到 anchor_position.frame 命中的帧, 该帧的 VideoIssueLayer 图钉再显示。
-  const activeIssueHighlightId = useActiveIssueStore((st) => st.highlightId);
-  const highlightIssueFromPin = useActiveIssueStore((st) => st.highlightFromPin);
-  const requestIssuesTab = useActiveIssueStore((st) => st.requestIssuesTab);
-  const issueFocusTick = useActiveIssueStore((st) => st.focusTick);
-  const lastIssueFocusRef = useRef(issueFocusTick);
-  useEffect(() => {
-    if (issueFocusTick === lastIssueFocusRef.current) return;
-    lastIssueFocusRef.current = issueFocusTick;
-    const target = (issuesQuery.data?.items ?? []).find((i) => i.id === activeIssueHighlightId);
-    if (!target?.anchor_position) return;
-    if (isVideoTask) {
-      const frame = target.anchor_position.frame;
-      if (typeof frame === "number") setVideoFrameIndex(frame);
-      return;
-    }
-    const { imgW, imgH, vpSize } = stageGeom;
-    if (!imgW || !imgH || !vpSize.w || !vpSize.h) return;
-    setVp((cur) => ({
-      ...cur,
-      tx: vpSize.w / 2 - target.anchor_position!.x * imgW * cur.scale,
-      ty: vpSize.h / 2 - target.anchor_position!.y * imgH * cur.scale,
-    }));
-  }, [issueFocusTick, activeIssueHighlightId, issuesQuery.data, stageGeom, setVp, isVideoTask, setVideoFrameIndex]);
+  const {
+    issueCreateOpen,
+    setIssueCreateOpen,
+    issuePinDropArmed,
+    setIssuePinDropArmed,
+    issuePinPrefill,
+    setIssuePinPrefill,
+    issueListParams,
+    issuesQuery,
+    openIssueCount,
+    activeIssueHighlightId,
+    highlightIssueFromPin,
+    requestIssuesTab,
+  } = useIssuePins({ projectId, taskId, stageGeom, setVp, setVideoFrameIndex, isVideoTask });
   const submitTaskMut = useSubmitTask();
   const triggerPreannotation = useTriggerPreannotation(projectId);
   const { progress: preannotationProgress, connection: preannotationConn, retries: preannotationRetries } =
@@ -874,27 +754,8 @@ export function useWorkbenchShellModel({
   }, [preannotationProgress?.status, taskId, queryClient]);
 
   // v0.14.1+ · 跨帧目标延续 (Shift+→ / Shift+←): 把选中框 propagate 到同 scene
-  // 邻帧 task。目标若不在当前已加载队列里,退化为按 taskId 直开并补选中新框。
-  const pendingCrossFrameSelectRef = useRef<{
-    taskId: string;
-    annotationId: string;
-  } | null>(null);
-  // v0.14.1 · 并发/重复触发守卫: 按住 Alt+→ auto-repeat 或快速连按时, 防止并发
-  // 多个 propagate POST 在目标帧造出共享同一新 group_id 的重复 annotation。
-  const crossFrameInFlightRef = useRef(false);
-  // v0.15.1 · "scene 无 ego 轨迹,未做运动补偿" 每会话只轻提示一次,避免逐帧刷 toast。
-  const motionCompWarnedRef = useRef(false);
-  const warnNoMotionCompensation = useCallback(
-    (compensated: boolean) => {
-      if (compensated || motionCompWarnedRef.current) return;
-      motionCompWarnedRef.current = true;
-      pushToast({
-        msg: "该 scene 无 ego 轨迹,跨帧未做运动补偿(原样复制)",
-        kind: "warning",
-      });
-    },
-    [pushToast],
-  );
+  // 邻帧 task。导航胶水 navigateToCrossFrameTask 留此处(绑 tasks/selectTask/updateUrl),
+  // 竞态簇(3 ref + 4 回调)抽到 usePredictionPropagation,见本文件下方 hook 调用。
   // 跳到目标帧 task: 已加载队列内直接选中,否则按 taskId 直开。
   const navigateToCrossFrameTask = useCallback(
     (targetTaskId: string) => {
@@ -912,219 +773,21 @@ export function useWorkbenchShellModel({
     },
     [tasks, selectTask, setCurrentTaskId, setSelectedId, updateUrl, selectedBatchId],
   );
-  const crossFramePropagate = useCallback(
-    async (direction: "next" | "prev") => {
-      if (!taskId) return;
-      if (crossFrameInFlightRef.current) return;
-      crossFrameInFlightRef.current = true;
-      try {
-        const selId = s.selectedId;
-        if (!selId) {
-          pushToast({ msg: "请先选中一个目标框", kind: "" });
-          return;
-        }
-        // 按需直拉邻帧 (非缓存), propagate 才发请求, 避免给每个 task 都预取。
-        let neighbors;
-        try {
-          neighbors = await tasksApi.getNeighbors(taskId, 1);
-        } catch {
-          pushToast({ msg: "获取邻帧失败", kind: "error" });
-          return;
-        }
-        const resolution = resolveCrossFrameTarget(neighbors, direction);
-        if (resolution.kind === "no-scene") {
-          pushToast({ msg: "当前 task 不属于任何 scene, 无法跨帧延续", kind: "warning" });
-          return;
-        }
-        if (resolution.kind === "boundary") {
-          pushToast({
-            msg: direction === "next" ? "已是该 scene 最后一帧" : "已是该 scene 首帧",
-            kind: "",
-          });
-          return;
-        }
-        try {
-          const { annotation, motion_compensated } = await tasksApi.propagateToTask(
-            taskId,
-            selId,
-            resolution.taskId,
-          );
-          // 失效目标 task 标注缓存, 跳过去后重新拉到含新框的列表。
-          queryClient.invalidateQueries({
-            queryKey: ["annotations", resolution.taskId],
-          });
-          // 源 task 框可能刚被分配 group_id, 失效让本帧高亮同步。
-          queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
-          pendingCrossFrameSelectRef.current = {
-            taskId: resolution.taskId,
-            annotationId: annotation.id,
-          };
-          navigateToCrossFrameTask(resolution.taskId);
-          pushToast({
-            msg: `已延续到帧 ${resolution.frameIndex}`,
-            kind: "success",
-          });
-          warnNoMotionCompensation(motion_compensated);
-        } catch {
-          pushToast({ msg: "跨帧延续失败", kind: "error" });
-        }
-      } finally {
-        crossFrameInFlightRef.current = false;
-      }
-    },
-    [
-      taskId,
-      s.selectedId,
-      navigateToCrossFrameTask,
-      pushToast,
-      queryClient,
-      warnNoMotionCompensation,
-    ],
-  );
-
-  // v0.15.1 · 批量延续: 当前帧全部 box_3d 一次运动补偿 propagate 到邻帧。
-  const crossFramePropagateBatch = useCallback(
-    async (direction: "next" | "prev") => {
-      if (!taskId) return;
-      if (crossFrameInFlightRef.current) return;
-      crossFrameInFlightRef.current = true;
-      try {
-        let neighbors;
-        try {
-          neighbors = await tasksApi.getNeighbors(taskId, 1);
-        } catch {
-          pushToast({ msg: "获取邻帧失败", kind: "error" });
-          return;
-        }
-        const resolution = resolveCrossFrameTarget(neighbors, direction);
-        if (resolution.kind === "no-scene") {
-          pushToast({ msg: "当前 task 不属于任何 scene, 无法跨帧延续", kind: "warning" });
-          return;
-        }
-        if (resolution.kind === "boundary") {
-          pushToast({
-            msg: direction === "next" ? "已是该 scene 最后一帧" : "已是该 scene 首帧",
-            kind: "",
-          });
-          return;
-        }
-        try {
-          const { items, motion_compensated } = await tasksApi.propagateBatch(
-            taskId,
-            resolution.taskId,
-          );
-          queryClient.invalidateQueries({
-            queryKey: ["annotations", resolution.taskId],
-          });
-          queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
-          navigateToCrossFrameTask(resolution.taskId);
-          pushToast({
-            msg: `${items.length} 个目标已延续到帧 ${resolution.frameIndex}`,
-            kind: "success",
-          });
-          warnNoMotionCompensation(motion_compensated);
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : "";
-          pushToast({
-            msg: msg.includes("box_3d") ? "当前帧没有可延续的 3D 框" : "批量延续失败",
-            kind: "error",
-          });
-        }
-      } finally {
-        crossFrameInFlightRef.current = false;
-      }
-    },
-    [taskId, navigateToCrossFrameTask, pushToast, queryClient, warnNoMotionCompensation],
-  );
-
-  // v0.15.1 · 把选中框延续到 scene 内任意帧(插值工作流: 先把链建到区间终点)。
-  const crossFramePropagateToTask = useCallback(
-    async (targetTaskId: string, targetFrameIndex: number) => {
-      if (!taskId) return;
-      const selId = s.selectedId;
-      if (!selId) {
-        pushToast({ msg: "请先选中一个目标框", kind: "" });
-        return;
-      }
-      if (crossFrameInFlightRef.current) return;
-      crossFrameInFlightRef.current = true;
-      try {
-        const { annotation, motion_compensated } = await tasksApi.propagateToTask(
-          taskId,
-          selId,
-          targetTaskId,
-        );
-        queryClient.invalidateQueries({ queryKey: ["annotations", targetTaskId] });
-        queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
-        pendingCrossFrameSelectRef.current = {
-          taskId: targetTaskId,
-          annotationId: annotation.id,
-        };
-        navigateToCrossFrameTask(targetTaskId);
-        pushToast({ msg: `已延续到帧 ${targetFrameIndex}, 微调后可插值填充`, kind: "success" });
-        warnNoMotionCompensation(motion_compensated);
-      } catch {
-        pushToast({ msg: "跨帧延续失败", kind: "error" });
-      } finally {
-        crossFrameInFlightRef.current = false;
-      }
-    },
-    [
-      taskId,
-      s.selectedId,
-      navigateToCrossFrameTask,
-      pushToast,
-      queryClient,
-      warnNoMotionCompensation,
-    ],
-  );
-
-  // v0.15.1 · 区间插值: 当前 task(起点帧)与 toTask(终点帧)的同 group 框之间,
-  // 中间帧自动生成插值框;完成后跳首个插值帧预览。
-  const crossFrameInterpolate = useCallback(
-    async (groupId: number, toTaskId: string) => {
-      if (!taskId) return;
-      if (crossFrameInFlightRef.current) return;
-      crossFrameInFlightRef.current = true;
-      try {
-        const { annotations, motion_compensated, skipped_frames } =
-          await tasksApi.interpolateRange(taskId, groupId, toTaskId);
-        const affectedTasks = new Set(annotations.map((a) => a.task_id));
-        for (const tid of affectedTasks) {
-          queryClient.invalidateQueries({ queryKey: ["annotations", tid] });
-        }
-        if (annotations.length === 0) {
-          pushToast({
-            msg: `区间内中间帧均已有该目标的框(跳过 ${skipped_frames.length} 帧)`,
-            kind: "",
-          });
-          return;
-        }
-        const first = annotations[0];
-        pendingCrossFrameSelectRef.current = {
-          taskId: first.task_id,
-          annotationId: first.id,
-        };
-        navigateToCrossFrameTask(first.task_id);
-        pushToast({
-          msg:
-            `已插值填充 ${annotations.length} 帧` +
-            (skipped_frames.length > 0 ? `(跳过已有 ${skipped_frames.length} 帧)` : ""),
-          kind: "success",
-        });
-        warnNoMotionCompensation(motion_compensated);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "";
-        pushToast({
-          msg: msg ? `插值失败: ${msg}` : "插值失败",
-          kind: "error",
-        });
-      } finally {
-        crossFrameInFlightRef.current = false;
-      }
-    },
-    [taskId, navigateToCrossFrameTask, pushToast, queryClient, warnNoMotionCompensation],
-  );
+  // v0.16.x 第 3 批 · 跨帧传播竞态簇(3 ref + 4 回调)抽到 usePredictionPropagation;
+  // pendingCrossFrameSelectRef 返回供上方两处 effect(切 task 清理 522 / 导航后补选 651)读写。
+  const {
+    pendingCrossFrameSelectRef,
+    crossFramePropagate,
+    crossFramePropagateBatch,
+    crossFramePropagateToTask,
+    crossFrameInterpolate,
+  } = usePredictionPropagation({
+    taskId,
+    selectedId: s.selectedId,
+    navigateToCrossFrameTask,
+    pushToast,
+    queryClient,
+  });
 
   // v0.14.18 · 交互线能力路由: 对每个注册后端拉 /setup 建 capIndex, 按当前工具 prompt 解析交互后端。
   const routing = useBackendRouting({
@@ -1237,24 +900,12 @@ export function useWorkbenchShellModel({
     if (isAIToolId(s.tool)) setAiDrawerOpen(true);
   }, [s.tool]);
 
-  const conflictIdRef = useRef<string>("");
-  const [conflictOpen, setConflictOpen] = useState(false);
-  const handleConflict = useCallback((annotationId: string, _currentVersion: number) => {
-    conflictIdRef.current = annotationId;
-    setConflictOpen(true);
-  }, []);
-  useEffect(() => {
-    conflictCbRef.current = handleConflict;
-  }, [handleConflict]);
-
-  const handleConflictReload = useCallback(() => {
-    setConflictOpen(false);
-    queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
-  }, [queryClient, taskId]);
-
-  const handleConflictOverwrite = useCallback(() => {
-    setConflictOpen(false);
-  }, []);
+  const {
+    conflictOpen,
+    setConflictOpen,
+    handleConflictReload,
+    handleConflictOverwrite,
+  } = useConflictResolution(conflictCbRef, queryClient, taskId);
 
   useEffect(() => {
     const idx = tasks.findIndex((t) => t.id === taskId);
@@ -1380,6 +1031,7 @@ export function useWorkbenchShellModel({
     polylineHandle,
     keypointHandle,
     handleBatchDelete: handleBatchDeleteNow,
+    handleBatchPatchFlag,
     handleJoinSelectedPolygons,
     handleStartBatchChangeClass,
     handleCommitBatchChangeClass,
@@ -1639,6 +1291,14 @@ export function useWorkbenchShellModel({
   const { topbarActions, bannerActions } = modeState;
   const isLocked = modeState.isLocked;
 
+  // v0.16.14 · 选中 AI 预测框反查:预测与普通框共用 s.selectedId,但预测 id 带 pred- 前缀且
+  // 只在 aiBoxes(非 visibleAnnotationsData)里,故 selectedAnnotationForPanel 必为 null。
+  // diff 模式 final 时无预测可选(aiBoxes 已被上游置空逻辑覆盖)→ 不命中 AI 分支。
+  const selectedAiBox = useMemo(() => {
+    if (!s.selectedId?.startsWith("pred-") || modeState.diffMode === "final") return null;
+    return aiBoxes.find((b) => b.id === s.selectedId) ?? null;
+  }, [s.selectedId, modeState.diffMode, aiBoxes]);
+
   // v0.11.28：改类悬浮框内联属性编辑——按当前正在改类的标注派生 schema/attributes/提交回调。
   const editingClassAnnotation = useMemo(
     () => (s.editingClass
@@ -1773,35 +1433,15 @@ export function useWorkbenchShellModel({
   const leftPct = s.workbenchConfig.common.leftWidthPct;
   const rightPct = s.workbenchConfig.common.rightWidthPct;
   const setWorkbenchFields = s.setWorkbenchFields;
-  const [winWidth, setWinWidth] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth : 1440,
-  );
-  useEffect(() => {
-    const onResize = () => setWinWidth(window.innerWidth);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-  // px 供 JS 消费者(AI 面板右偏移等);clamp 与下方栅格 CSS clamp(180px..600px) 对齐。
-  const leftPx = Math.round(clamp((leftPct / 100) * winWidth, 180, 600));
-  const rightPx = Math.round(clamp((rightPct / 100) * winWidth, 180, 600));
-  const onResizeLeft = useCallback(
-    (px: number) => {
-      const pct = clamp(Math.round((px / winWidth) * 100), 10, 35);
-      setWorkbenchFields({ common: { leftWidthPct: pct } });
-    },
-    [winWidth, setWorkbenchFields],
-  );
-  const onResizeRight = useCallback(
-    (px: number) => {
-      const pct = clamp(Math.round((px / winWidth) * 100), 10, 35);
-      setWorkbenchFields({ common: { rightWidthPct: pct } });
-    },
-    [winWidth, setWorkbenchFields],
-  );
-  // 拖拽/双击重置共用的 px 边界:10%..35% 换成像素,resetTo 为 15% 像素值(回换正好落 15%)。
-  const sidebarMinPx = Math.round(0.1 * winWidth);
-  const sidebarMaxPx = Math.round(0.35 * winWidth);
-  const sidebarResetPx = Math.round(0.15 * winWidth);
+  const {
+    leftPx,
+    rightPx,
+    onResizeLeft,
+    onResizeRight,
+    sidebarMinPx,
+    sidebarMaxPx,
+    sidebarResetPx,
+  } = useWorkbenchSidebarSizing(leftPct, rightPct, setWorkbenchFields);
   const floatingTaskQueuePosition = useMemo(
     () => resolveFloatingTaskQueueRect(floatingTaskQueue),
     [floatingTaskQueue],
@@ -1926,6 +1566,268 @@ export function useWorkbenchShellModel({
     });
     setRightOpenState(false);
   }, [floatingDiscussion, setRightOpenState, setWorkbenchLayout]);
+  // v0.16.8 · 选中标注浮动信息卡:位置 / 折叠态走 layout 偏好(跨设备),显隐由选中状态驱动。
+  const floatingSelection = s.workbenchLayout.floatingSelection;
+  const floatingSelectionPosition = useMemo(
+    () => resolveFloatingSelectionRect(floatingSelection),
+    [floatingSelection],
+  );
+  const onSelectionPositionChange = useCallback(
+    (patch: Partial<FloatingPanelRect>) => {
+      setWorkbenchLayout({
+        floatingSelection: { ...floatingSelection, ...patch },
+      });
+    },
+    [floatingSelection, setWorkbenchLayout],
+  );
+  const collapseSelectionCard = useCallback(() => {
+    setWorkbenchLayout({
+      floatingSelection: { ...floatingSelection, collapsed: true },
+    });
+  }, [floatingSelection, setWorkbenchLayout]);
+  const expandSelectionCard = useCallback(() => {
+    setWorkbenchLayout({
+      floatingSelection: { ...floatingSelection, collapsed: false },
+    });
+  }, [floatingSelection, setWorkbenchLayout]);
+
+  // v0.16.14 · 卡内采纳 / 忽略后清掉选中:预测被消费后 pred- id 已失效,否则卡会回落到
+  // 「已选中 1 个标注」占位死角。仅在卡入口处理选中态,不动 handleAccept/Reject 业务逻辑。
+  const acceptPredictionFromCard = useCallback(
+    (box: Parameters<typeof handleAcceptPrediction>[0]) => {
+      handleAcceptPrediction(box);
+      s.setSelectedId(null);
+    },
+    [handleAcceptPrediction, s],
+  );
+  const rejectPredictionFromCard = useCallback(
+    (box: Parameters<typeof handleRejectPrediction>[0]) => {
+      handleRejectPrediction(box);
+      s.setSelectedId(null);
+    },
+    [handleRejectPrediction, s],
+  );
+
+  // v0.16.8 Phase 3 · 视频轨迹面板的共享构建器:右栏(VideoTrackSidebar + 章节)与选中浮动卡
+  // 复用同一份 props/回调,杜绝两套逻辑漂移。frameFilter 控制「全部 / 当前帧」轨迹过滤。
+  const renderVideoTrackSidebar = useCallback(
+    (frameFilter: TrackFilter, view: "roster" | "card" = "roster") => (
+      <VideoTrackSidebar
+        annotations={visibleAnnotationsData}
+        selectedId={s.selectedId}
+        selectedIds={s.selectedIds}
+        frameIndex={s.videoFrameIndex}
+        userId={meUserId ?? null}
+        trackFilter={frameFilter}
+        view={view}
+        fps={videoFps}
+        imageWidth={imageWidth}
+        imageHeight={imageHeight}
+        readOnly={isLocked}
+        hiddenTrackIds={s.hiddenVideoTrackIds}
+        lockedTrackIds={s.lockedVideoTrackIds}
+        classes={classes}
+        onSelect={(id) => handleSelectBox(id)}
+        onToggleHiddenTrack={s.toggleHiddenVideoTrack}
+        onToggleLockedTrack={s.toggleLockedVideoTrack}
+        onSeekFrame={s.setVideoFrameIndex}
+        reviewDisplayMode={mode === "review" ? modeState.diffMode : undefined}
+        onChangeUserBoxClass={handleStartChangeClass}
+        onRenameTracks={handleVideoBatchRename}
+        onDeleteTracks={handleVideoBatchDelete}
+        onUpdate={handleVideoUpdate}
+        onConvertToBboxes={handleVideoConvertToBboxes}
+        onComposeTracks={handleVideoComposeTracks}
+        trackerJobsByAnnotation={trackerJobs.byAnnotation}
+        onPropagateTrack={openPropagateDialog}
+        onCancelTrackerJob={trackerJobs.cancel}
+        trackColorOverrides={s.trackColorOverrides}
+        onSetTrackColor={s.setVideoTrackColor}
+        attributeSchema={toolView.attributeSchema}
+        onUpdateTrackAttributes={handleUpdateTrackAttributes}
+        onUpdateKeyframeAttributes={handleUpdateKeyframeAttributes}
+        onPropagateKeyframe={handlePropagateKeyframe}
+        samplingStep={samplingStep}
+        propagateOverwrite={currentProject?.rendering_config?.propagateOverwrite ?? null}
+      />
+    ),
+    [
+      visibleAnnotationsData, s.selectedId, s.selectedIds, s.videoFrameIndex, meUserId, isLocked,
+      s.hiddenVideoTrackIds, s.lockedVideoTrackIds, classes, handleSelectBox,
+      s.toggleHiddenVideoTrack, s.toggleLockedVideoTrack, s.setVideoFrameIndex, mode, modeState.diffMode,
+      handleStartChangeClass, handleVideoBatchRename, handleVideoBatchDelete, handleVideoUpdate,
+      handleVideoConvertToBboxes, handleVideoComposeTracks, trackerJobs.byAnnotation, openPropagateDialog,
+      trackerJobs.cancel, s.trackColorOverrides, s.setVideoTrackColor, toolView.attributeSchema,
+      handleUpdateTrackAttributes, handleUpdateKeyframeAttributes, handlePropagateKeyframe, samplingStep,
+      currentProject?.rendering_config?.propagateOverwrite, videoFps, imageWidth, imageHeight,
+    ],
+  );
+
+  // 图片 / 视频选中即现(3D 用自有 PSR 面板,不显示)。单选 = 类别标题 + 内容;
+  // 多选 = 「N 个已选中 · 批量」精简态;无选中 = null(隐藏)。
+  // 图片单选注入真实内容(改类 / 锁 / 隐藏 / 删除 / 几何 / 属性);视频单选搬入完整轨迹面板。
+  const selectionCardEligible = stageKind === "image" || stageKind === "video";
+  const selectedIds = s.selectedIds;
+  const selectionCount = selectedIds.length;
+  const selectionCard = useMemo<SelectedAnnotationCardProps | null>(() => {
+    if (!selectionCardEligible || selectionCount < 1) return null;
+    const multi = selectionCount > 1;
+    const ann = selectedAnnotationForPanel;
+    const title = multi
+      ? `${selectionCount} 个已选中 · 批量`
+      : selectedAiBox?.cls ?? ann?.class_name ?? "选中标注";
+    let children: ReactNode;
+    if (multi && stageKind === "image") {
+      // 图片多选:批量操作(改类 / 合并 / 锁定 / 隐藏 / 删除)收进浮卡,取代退役的贴框浮条。
+      const selectedAnns = userBoxes.filter((b) => selectedIds.includes(b.id));
+      const allLocked = selectedAnns.length > 0 && selectedAnns.every((a) => a.is_locked);
+      const allHidden = selectedAnns.length > 0 && selectedAnns.every((a) => a.is_hidden);
+      children = (
+        <ImageBatchCardContent
+          count={selectionCount}
+          readOnly={isLocked}
+          allLocked={allLocked}
+          allHidden={allHidden}
+          onChangeClass={handleStartBatchChangeClass}
+          onJoin={handleJoinSelectedPolygons}
+          onToggleLock={() => handleBatchPatchFlag("is_locked")}
+          onToggleHidden={() => handleBatchPatchFlag("is_hidden")}
+          onDelete={handleBatchDelete}
+          onClear={() => setSelectedId(null)}
+        />
+      );
+    } else if (multi && stageKind === "video") {
+      // 视频多选:单帧框(video_bbox)走 selectedIds,给批量卡(改类 / 锁 / 隐藏 / 删除 + 聚合为轨迹);
+      // 轨迹多选走右栏 roster 的 selectedTrackIds,不进 selectedIds,浮卡保持精简占位。
+      const selectedAnns = visibleAnnotationsData.filter((a) => selectedIds.includes(a.id));
+      const allVideoBbox = selectedAnns.length > 0 && selectedAnns.every((a) => a.geometry.type === "video_bbox");
+      if (allVideoBbox) {
+        const allLocked = selectedAnns.every((a) => a.is_locked);
+        const allHidden = selectedAnns.every((a) => a.is_hidden);
+        children = (
+          <VideoBoxBatchCardContent
+            count={selectionCount}
+            readOnly={isLocked}
+            allLocked={allLocked}
+            allHidden={allHidden}
+            onChangeClass={handleStartBatchChangeClass}
+            onToggleLock={() => handleBatchPatchFlag("is_locked")}
+            onToggleHidden={() => handleBatchPatchFlag("is_hidden")}
+            onDelete={handleBatchDelete}
+            onAggregate={() => handleVideoComposeTracks({
+              operation: "aggregate_bboxes",
+              annotationIds: selectedIds,
+              deleteSources: true,
+            })}
+            onClear={() => setSelectedId(null)}
+          />
+        );
+      } else {
+        children = <SelectionCardPlaceholder summary={`已选中 ${selectionCount} 个标注。`} />;
+      }
+    } else if (multi) {
+      children = <SelectionCardPlaceholder summary={`已选中 ${selectionCount} 个标注。`} />;
+    } else if (selectedAiBox) {
+      // AI 预测分支(图片端专属):置信度条 + 来源/候选序号 + 采纳/精修/忽略,直连模型既有 handler。
+      children = (
+        <AIPredictionCardContent
+          box={selectedAiBox}
+          imageWidth={imageWidth}
+          imageHeight={imageHeight}
+          readOnly={isLocked}
+          onAccept={acceptPredictionFromCard}
+          onReject={rejectPredictionFromCard}
+          onRefine={handleRefinePrediction}
+        />
+      );
+    } else if (stageKind === "video") {
+      if (ann && ann.geometry.type === "video_bbox") {
+        // 视频单帧框:不属任何轨迹、会被轨迹面板过滤掉,改用专属单帧卡(帧定位 + 指标 + 属性)。
+        children = (
+          <VideoFrameBoxCardContent
+            annotation={ann}
+            imageWidth={imageWidth}
+            imageHeight={imageHeight}
+            fps={videoFps}
+            attributeSchema={toolView.attributeSchema}
+            readOnly={isLocked}
+            onSeekFrame={setVideoFrameIndex}
+            onChangeClass={handleStartChangeClass}
+            onDelete={handleDeleteBox}
+            onUpdateAttributes={handleUpdateAttributes}
+          />
+        );
+      } else {
+        // 视频轨迹:单轨迹两层信息卡(轨迹整体 + 当前帧 + 关键帧表/导航 + 属性),
+        // 共享同一构建器/回调;轨迹清单与多选批量留在右栏 roster。
+        children = renderVideoTrackSidebar("current", "card");
+      }
+    } else if (ann && stageKind === "image") {
+      children = (
+        <ImageSelectionCardContent
+          annotation={ann}
+          imageWidth={imageWidth}
+          imageHeight={imageHeight}
+          attributeSchema={toolView.attributeSchema}
+          readOnly={isLocked}
+          onChangeClass={handleStartChangeClass}
+          onToggleFlag={handlePatchShapeFlag}
+          onDelete={handleDeleteBox}
+          onUpdateAttributes={handleUpdateAttributes}
+        />
+      );
+    } else {
+      children = (
+        <SelectionCardPlaceholder
+          summary={ann ? `类别 ${ann.class_name} · ${ann.geometry.type}` : "已选中 1 个标注。"}
+        />
+      );
+    }
+    return {
+      title,
+      position: floatingSelectionPosition,
+      onPositionChange: onSelectionPositionChange,
+      collapsed: floatingSelection.collapsed,
+      onCollapse: collapseSelectionCard,
+      onExpand: expandSelectionCard,
+      children,
+    };
+  }, [
+    selectionCardEligible,
+    selectionCount,
+    selectedAnnotationForPanel,
+    selectedAiBox,
+    stageKind,
+    imageWidth,
+    imageHeight,
+    videoFps,
+    setVideoFrameIndex,
+    toolView.attributeSchema,
+    isLocked,
+    userBoxes,
+    visibleAnnotationsData,
+    selectedIds,
+    setSelectedId,
+    handleStartBatchChangeClass,
+    handleJoinSelectedPolygons,
+    handleBatchPatchFlag,
+    handleBatchDelete,
+    handleVideoComposeTracks,
+    handleStartChangeClass,
+    handlePatchShapeFlag,
+    handleDeleteBox,
+    handleUpdateAttributes,
+    acceptPredictionFromCard,
+    rejectPredictionFromCard,
+    handleRefinePrediction,
+    renderVideoTrackSidebar,
+    floatingSelectionPosition,
+    onSelectionPositionChange,
+    floatingSelection.collapsed,
+    collapseSelectionCard,
+    expandSelectionCard,
+  ]);
+
   const toggleLeftSidebar = useCallback(() => {
     if (!leftHasEmbeddedPanels) return;
     setLeftOpenState(!leftOpenState);
@@ -2243,8 +2145,6 @@ export function useWorkbenchShellModel({
         onCommitResize: handleCommitResize,
         onCommitPolygonGeometry: handleCommitPolygonGeometry,
         onCommitKeypointGeometry: handleCommitKeypointGeometry,
-        onBatchDelete: handleBatchDelete,
-        onBatchChangeClass: handleStartBatchChangeClass,
         onJoinSelected: handleJoinSelectedPolygons,
         onApplyAttributeMode: handleApplyAttributeMode,
         onStageGeometry: setStageGeom,
@@ -2337,40 +2237,7 @@ export function useWorkbenchShellModel({
       onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
       videoTrackPanel: isVideoTask ? ((frameFilter) => (
         <div className={styles.videoTrackPanel}>
-          <VideoTrackSidebar
-            annotations={visibleAnnotationsData}
-            selectedId={s.selectedId}
-            selectedIds={s.selectedIds}
-            frameIndex={s.videoFrameIndex}
-            userId={meUserId ?? null}
-            trackFilter={frameFilter}
-            readOnly={isLocked}
-            hiddenTrackIds={s.hiddenVideoTrackIds}
-            lockedTrackIds={s.lockedVideoTrackIds}
-            classes={classes}
-            onSelect={(id) => handleSelectBox(id)}
-            onToggleHiddenTrack={s.toggleHiddenVideoTrack}
-            onToggleLockedTrack={s.toggleLockedVideoTrack}
-            onSeekFrame={s.setVideoFrameIndex}
-            reviewDisplayMode={mode === "review" ? modeState.diffMode : undefined}
-            onChangeUserBoxClass={handleStartChangeClass}
-            onRenameTracks={handleVideoBatchRename}
-            onDeleteTracks={handleVideoBatchDelete}
-            onUpdate={handleVideoUpdate}
-            onConvertToBboxes={handleVideoConvertToBboxes}
-            onComposeTracks={handleVideoComposeTracks}
-            trackerJobsByAnnotation={trackerJobs.byAnnotation}
-            onPropagateTrack={openPropagateDialog}
-            onCancelTrackerJob={trackerJobs.cancel}
-            trackColorOverrides={s.trackColorOverrides}
-            onSetTrackColor={s.setVideoTrackColor}
-            attributeSchema={toolView.attributeSchema}
-            onUpdateTrackAttributes={handleUpdateTrackAttributes}
-            onUpdateKeyframeAttributes={handleUpdateKeyframeAttributes}
-            onPropagateKeyframe={handlePropagateKeyframe}
-            samplingStep={samplingStep}
-            propagateOverwrite={currentProject?.rendering_config?.propagateOverwrite ?? null}
-          />
+          {renderVideoTrackSidebar(frameFilter)}
           <VideoChapterSidebar
             datasetItemId={videoDatasetItemId}
             frameIndex={s.videoFrameIndex}
@@ -2438,6 +2305,7 @@ export function useWorkbenchShellModel({
       onMergeBack: mergeDiscussionBack,
       onClose: closeFloatingDiscussion,
     },
+    floatingSelection: selectionCard,
     aiPopover: {
       open: aiPopoverOpen && !isVideoTask,
       rightOffset: rightOpen ? rightPx + 44 : 44,

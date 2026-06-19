@@ -22,7 +22,7 @@ import type { WorkbenchConfigPatch, WorkbenchLayoutPatch } from "../state/useWor
 import type { Viewport } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
-import type { VideoStageControls } from "../stage/VideoStage";
+import type { VideoStageControls } from "../stage/videoStageControls";
 import type { VideoTimelineChapter } from "../stage/VideoPlaybackOverlay";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import { ImageWorkbench } from "../stages/image/ImageWorkbench";
@@ -158,8 +158,6 @@ interface WorkbenchStageHostImageProps {
   onCommitPolygonGeometry: (id: string, before: [number, number][], after: [number, number][]) => void;
   // v0.10.28 · keypoint 节点几何/可见性变更。
   onCommitKeypointGeometry?: (id: string, before: import("@/types").Keypoint[], after: import("@/types").Keypoint[]) => void;
-  onBatchDelete: () => void;
-  onBatchChangeClass: () => void;
   onJoinSelected: () => void;
   onApplyAttributeMode?: (id: string) => boolean;
   onStageGeometry: (g: StageGeometry) => void;
@@ -315,8 +313,6 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onCommitResize,
       onCommitPolygonGeometry,
       onCommitKeypointGeometry,
-      onBatchDelete,
-      onBatchChangeClass,
       onJoinSelected,
       onApplyAttributeMode,
       onStageGeometry,
@@ -469,8 +465,6 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onCommitKeypointGeometry={onCommitKeypointGeometry}
             onCursorMove={onCursorMove}
             onChangeUserBoxClass={onChangeUserBoxClass}
-            onBatchDelete={onBatchDelete}
-            onBatchChangeClass={onBatchChangeClass}
             onJoinSelected={onJoinSelected}
             onApplyAttributeMode={onApplyAttributeMode}
             onStageGeometry={onStageGeometry}

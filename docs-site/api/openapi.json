@@ -7087,6 +7087,67 @@
         "title": "FloatingPanelState",
         "type": "object"
       },
+      "FloatingSelectionState": {
+        "additionalProperties": false,
+        "description": "v0.16.8 · 选中标注浮动信息卡的位置、尺寸与折叠态(跨设备)。\n\n与边栏浮窗不同,选中卡无「合并回边栏」语义,故只有 collapsed(无 detached);\n显隐由选中状态驱动,这里只持久化几何与折叠。尺寸界与 FloatingPanelState 一致。",
+        "properties": {
+          "collapsed": {
+            "default": false,
+            "title": "Collapsed",
+            "type": "boolean"
+          },
+          "h": {
+            "anyOf": [
+              {
+                "maximum": 900.0,
+                "minimum": 120.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "H"
+          },
+          "w": {
+            "anyOf": [
+              {
+                "maximum": 720.0,
+                "minimum": 48.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "W"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          }
+        },
+        "title": "FloatingSelectionState",
+        "type": "object"
+      },
       "ForgotPasswordRequest": {
         "properties": {
           "captcha_token": {
@@ -8390,6 +8451,50 @@
           }
         },
         "title": "KeypointSchema",
+        "type": "object"
+      },
+      "LabelContentByType": {
+        "additionalProperties": false,
+        "description": "v0.16.7 · 标签内容按标注类型分段；class 三段恒显，不入表。\n\nsingle=图片手工框 / track=视频轨迹框 / ai=图片预测框，各段只列该类型有意义的字段。\n旧扁平 list 由 WorkbenchCommonPreferences 的 before validator 迁移为本结构。",
+        "properties": {
+          "ai": {
+            "items": {
+              "enum": [
+                "source",
+                "score",
+                "id",
+                "attrs"
+              ],
+              "type": "string"
+            },
+            "title": "Ai",
+            "type": "array"
+          },
+          "single": {
+            "items": {
+              "enum": [
+                "id",
+                "attrs"
+              ],
+              "type": "string"
+            },
+            "title": "Single",
+            "type": "array"
+          },
+          "track": {
+            "items": {
+              "enum": [
+                "id",
+                "state",
+                "attrs"
+              ],
+              "type": "string"
+            },
+            "title": "Track",
+            "type": "array"
+          }
+        },
+        "title": "LabelContentByType",
         "type": "object"
       },
       "LoginRequest": {
@@ -18845,6 +18950,40 @@
             "title": "Crossframeoverlayscope",
             "type": "string"
           },
+          "fillOpacity": {
+            "default": 0.07,
+            "maximum": 0.6,
+            "minimum": 0.0,
+            "title": "Fillopacity",
+            "type": "number"
+          },
+          "fillOpacitySelected": {
+            "default": 0.12,
+            "maximum": 0.8,
+            "minimum": 0.0,
+            "title": "Fillopacityselected",
+            "type": "number"
+          },
+          "labelContent": {
+            "$ref": "#/components/schemas/LabelContentByType"
+          },
+          "labelFontSize": {
+            "default": 12,
+            "maximum": 24.0,
+            "minimum": 8.0,
+            "title": "Labelfontsize",
+            "type": "integer"
+          },
+          "labelVisibility": {
+            "default": "always",
+            "enum": [
+              "always",
+              "selected",
+              "none"
+            ],
+            "title": "Labelvisibility",
+            "type": "string"
+          },
           "leftWidthPct": {
             "default": 15.0,
             "maximum": 35.0,
@@ -18881,6 +19020,13 @@
             "maximum": 35.0,
             "minimum": 10.0,
             "title": "Rightwidthpct",
+            "type": "number"
+          },
+          "strokeWidth": {
+            "default": 1.5,
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Strokewidth",
             "type": "number"
           }
         },
@@ -18931,11 +19077,6 @@
             "minimum": 0.2,
             "title": "Maskoverlayopacity",
             "type": "number"
-          },
-          "showBoxLabels": {
-            "default": true,
-            "title": "Showboxlabels",
-            "type": "boolean"
           },
           "smoothImage": {
             "default": true,
@@ -19004,6 +19145,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/FloatingPanelState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "floatingSelection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FloatingSelectionState"
               },
               {
                 "type": "null"

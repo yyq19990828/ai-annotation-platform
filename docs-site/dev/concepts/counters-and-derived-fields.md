@@ -56,7 +56,7 @@ graph TD
 | `apps/api/app/services/batch.py` | `recalculate_counters()` 与 `_sync_project_counters()` |
 | `apps/api/app/services/dataset.py` | dataset link / unlink 后的 project / batch 重算 |
 | `apps/api/app/api/v1/projects.py` | orphan cleanup 后的 project / batch 重算 |
-| `apps/api/app/api/v1/dashboard.py` | 消费这些聚合字段形成总览 |
+| `apps/api/app/api/v1/dashboard/`(admin/reviewer/annotator) | 消费这些聚合字段形成总览 |
 
 ## Task 级派生字段
 
@@ -293,7 +293,7 @@ dashboard 和列表页有两种取数方式：
 | batch / project counters 重算 | `services/batch.py` |
 | dataset 删除 / unlink 后数字异常 | `services/dataset.py` |
 | orphan cleanup 后数字异常 | `api/v1/projects.py` |
-| dashboard 显示口径 / 绩效派生聚合 | `api/v1/dashboard.py` + 前端页面 |
+| dashboard 显示口径 / 绩效派生聚合 | `api/v1/dashboard/` + 前端页面 |
 
 ## 常见误解
 

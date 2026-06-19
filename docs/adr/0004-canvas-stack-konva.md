@@ -85,3 +85,6 @@ ImageStage (Konva.Stage)
   - **VideoStage**（react-konva 同栈，加 Konva.FastLayer 跑视频帧）
   - **LidarStage**（Three.js 单独栈，与 Konva 不复用——见 ROADMAP §C.4 Layer 2）
   - 这两条扩展不动 ImageStage 既有代码，分维度切渲染器是 v0.4.9 Step 1 已确立的方向。
+- **视频统一到 Konva（v0.16.x，见 [ADR-0041](0041-video-canvas-unify-to-konva.md)）**：上文「VideoStage 同栈」的预言早期未兑现——视频实际走了 `<video>` + SVG + DOM 双栈，v0.16.x epic 来收口。补两条本图片侧已成立、视频迁移须对齐的约束：
+  - **视频帧合成**：视频帧以 `Konva.Image`（隐藏 `<video>` 为 source）进栈，**视频单独一层**，播放时仅该层 rAF `batchDraw`、标注层静止；暂停态贴 bitmap 缓存不进重绘循环。是否扛得住高分辨率由性能 spike 闸门量化（ADR-0041 决策 A）。
+  - **视频 Layer 结构**：media（帧）/ track（框·轨迹·keyframe）/ overlay（draft·选中 controls）/ issue（pin），对齐本文 5 Layer 的「每层独立 batchDraw、顶层只画 react-shape」约束。
