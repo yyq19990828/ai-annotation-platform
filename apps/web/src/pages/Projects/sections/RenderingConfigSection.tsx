@@ -12,7 +12,6 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
 import type { ProjectResponse, ProjectRenderingConfig } from "@/api/projects";
 import { RenderingConfigEditor } from "./RenderingConfigEditor";
-import styles from "./RenderingConfigSection.module.css";
 
 export function RenderingConfigSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
@@ -33,9 +32,9 @@ export function RenderingConfigSection({ project }: { project: ProjectResponse }
 
   return (
     <Card>
-      <div className={styles.body}>
-        <h3 className={styles.title}>工作台规范（项目级覆盖）</h3>
-        <p className={styles.description}>
+      <div className="p-4">
+        <h3 className="m-0 text-[15px] font-semibold">工作台规范（项目级覆盖）</h3>
+        <p className="mt-1.5 text-[12.5px] text-muted-foreground">
           项目级覆盖优先于成员的个人「标注偏好」，也可锁定 3D 新框尺寸、关键帧复制策略和 AI 传播默认模型。
         </p>
         <RenderingConfigEditor
@@ -43,7 +42,7 @@ export function RenderingConfigSection({ project }: { project: ProjectResponse }
           onChange={onChange}
           disabled={update.isPending}
         />
-        {update.isPending && <div className={styles.savingHint}>保存中…</div>}
+        {update.isPending && <div className="mt-3 text-xs text-muted-foreground">保存中…</div>}
       </div>
     </Card>
   );

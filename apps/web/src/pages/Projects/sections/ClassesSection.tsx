@@ -25,7 +25,6 @@ import {
   type ProjectDataType,
   type ToolUnitId,
 } from "@/constants/toolUnits";
-import styles from "./ClassesSection.module.css";
 
 export function ClassesSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
@@ -238,27 +237,27 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
 
   return (
     <Card>
-      <div className={styles.cardHeader}>
-        <h3 className={styles.cardTitle}>类别与属性</h3>
-        <div className={styles.headerActions}>
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5">
+        <h3 className="text-sm font-semibold">类别与属性</h3>
+        <div className="flex gap-1.5 whitespace-nowrap">
           <Button size="sm" variant="ghost" onClick={onExportJson}>
             <Icon name="download" size={11} />导出属性 JSON
           </Button>
-          <label className={styles.importLabel}>
+          <label className="cursor-pointer">
             <input
               type="file"
               accept="application/json"
               onChange={onImportJson}
-              className={styles.fileInput}
+              className="hidden"
             />
-            <span className={styles.importButton}>
+            <span className="inline-flex items-center gap-1 rounded-sm border border-border px-2 py-[3px] text-[11.5px] text-foreground">
               <Icon name="plus" size={11} />导入属性
             </span>
           </label>
         </div>
       </div>
-      <div className={styles.body}>
-        <p className={styles.helpText}>
+      <div className="flex flex-col gap-2.5 p-4">
+        <p className="m-0 text-xs leading-normal text-muted-foreground">
           {dataType === "video"
             ? "视频工作台的单帧框和轨迹框共用这一套类别、颜色、排序和属性 schema。"
             : "点击工具单位后，直接维护该工具的类别、颜色、排序和属性 schema；同名类在不同工具单位下相互隔离。"}
@@ -271,7 +270,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
         />
         {activeBinding && (
           <>
-            <div className={styles.unitEnableRow}>
+            <div className="flex flex-wrap items-center gap-3">
               <Switch
                 checked={activeBinding.enabled}
                 onChange={(next) => onToggle(activeUnit, next)}
@@ -279,7 +278,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
                 data-testid="unit-enabled-switch"
               />
               {!activeBinding.enabled && (
-                <span className={styles.disabledNote}>
+                <span className="text-xs leading-normal text-muted-foreground">
                   {isVideoBbox
                     ? "禁用后单帧框和轨迹框都不可新增；配置仍会保留，需要修改请先启用。"
                     : "禁用后配置仍会保留，但工作台不会使用；需要修改请先启用。"}
@@ -291,8 +290,8 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
               const onlyBox = vm.box && !vm.track;
               const onlyTrack = !vm.box && vm.track;
               return (
-                <div className={styles.videoModesRow}>
-                  <span className={styles.videoModesTitle}>可用工具</span>
+                <div className="mt-2 flex flex-wrap items-center gap-4">
+                  <span className="text-[13px] text-muted-foreground">可用工具</span>
                   <Switch
                     checked={vm.box}
                     onChange={(next) => onToggleVideoMode("box", next)}
@@ -313,13 +312,13 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
               );
             })()}
             <fieldset
-              className={styles.editorFieldset}
+              className="m-0 min-w-0 border-0 p-0 disabled:pointer-events-none disabled:opacity-[0.55]"
               disabled={!activeBinding.enabled}
               aria-disabled={!activeBinding.enabled}
             >
-              <div className={styles.editorGrid}>
-                <section className={styles.editorPanel}>
-                  <h4 className={styles.sectionTitle}>类别</h4>
+              <div className="flex flex-col gap-3.5">
+                <section className="min-w-0">
+                  <h4 className="mb-2 mt-0 text-xs font-semibold text-muted-foreground">类别</h4>
                   <ClassEditor
                     value={activeBinding.classRows}
                     onChange={onChange}
@@ -329,16 +328,16 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
                   />
                 </section>
                 {activeUnit === "keypoint" && (
-                  <section className={styles.editorPanel}>
-                    <h4 className={styles.sectionTitle}>关键点骨骼</h4>
+                  <section className="min-w-0">
+                    <h4 className="mb-2 mt-0 text-xs font-semibold text-muted-foreground">关键点骨骼</h4>
                     <KeypointSchemaEditor
                       value={activeBinding.keypointSchema}
                       onChange={onKeypointSchemaChange}
                     />
                   </section>
                 )}
-                <section className={styles.editorPanel}>
-                  <h4 className={styles.sectionTitle}>属性 schema</h4>
+                <section className="min-w-0">
+                  <h4 className="mb-2 mt-0 text-xs font-semibold text-muted-foreground">属性 schema</h4>
                   <AttributeSchemaEditor
                     value={activeBinding.attributeFields}
                     onChange={onAttributeChange}
@@ -349,13 +348,13 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
             </fieldset>
           </>
         )}
-        <div className={styles.footer}>
+        <div className="flex items-center justify-end gap-3">
           {dirty && (
             <span
-              className={styles.unsavedIndicator}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400"
               data-testid="unsaved-indicator"
             >
-              <span className={styles.unsavedDot} />
+              <span className="size-1.5 rounded-full bg-amber-500" />
               有未保存的修改
             </span>
           )}
