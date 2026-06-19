@@ -1,8 +1,16 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
-import { createPortal } from "react-dom";
-import { Icon } from "@/components/ui/Icon";
-import styles from "./Modal.module.css";
+import type { ReactNode } from "react";
+import { Dialog as DialogPrimitive } from "radix-ui";
 
+import { Icon } from "@/components/ui/Icon";
+import { useElementStyle } from "./useElementStyle";
+
+/**
+ * Modal —— Radix Dialog 适配层(v0.17.2)。
+ * 保留 `{open,onClose,title?,width?,children}` API(43 处调用零改动);焦点陷阱 / Esc / 滚动锁 /
+ * aria-modal 由 Radix 兜底(去掉旧手写 useEffect)。沿用旧布局:可选 header(title + 关闭,带下边框)
+ * + 可滚动 body;无 title 则无 header/关闭按钮(与旧一致),补 sr-only Title 满足 Radix a11y。
+ * `width` 动态值经 useElementStyle 注入(绕 eslint inline-style)。
+ */
 interface ModalProps {
   open: boolean;
   onClose: () => void;
@@ -12,53 +20,40 @@ interface ModalProps {
 }
 
 export function Modal({ open, onClose, title, width = 560, children }: ModalProps) {
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const contentRef = useElementStyle<HTMLDivElement>({ width });
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open, onClose]);
-
-  useLayoutEffect(() => {
-    dialogRef.current?.style.setProperty("--modal-width", `${width}px`);
-  }, [open, width]);
-
-  if (!open) return null;
-
-  return createPortal(
-    <div onClick={onClose} className={styles.overlay}>
-      <div
-        ref={dialogRef}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        className={styles.dialog}
-      >
-        {title !== undefined && (
-          <div className={styles.header}>
-            <div className={styles.title}>{title}</div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="关闭"
-              className={styles.closeButton}
-            >
-              <Icon name="x" size={16} />
-            </button>
-          </div>
-        )}
-        <div className={styles.body}>{children}</div>
-      </div>
-    </div>,
-    document.body,
+  return (
+    <DialogPrimitive.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Content
+          ref={contentRef}
+          aria-describedby={undefined}
+          className="fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100vh-48px)] w-full max-w-[calc(100%-48px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-lg outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+        >
+          {title !== undefined ? (
+            <div className="flex items-center justify-between border-b border-border px-[18px] py-3.5">
+              <DialogPrimitive.Title className="text-sm font-semibold text-foreground">
+                {title}
+              </DialogPrimitive.Title>
+              <DialogPrimitive.Close
+                aria-label="关闭"
+                className="inline-flex appearance-none items-center rounded border-0 bg-transparent p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Icon name="x" size={16} />
+              </DialogPrimitive.Close>
+            </div>
+          ) : (
+            <DialogPrimitive.Title className="sr-only">对话框</DialogPrimitive.Title>
+          )}
+          <div className="overflow-y-auto px-[18px] py-4">{children}</div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }
