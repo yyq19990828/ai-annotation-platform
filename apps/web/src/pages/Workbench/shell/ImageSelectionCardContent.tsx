@@ -8,7 +8,10 @@ import { MetricGrid } from "./selectionCard/MetricGrid";
 import { MetaFooter } from "./selectionCard/MetaFooter";
 import { ActionBar } from "./selectionCard/ActionBar";
 import { geometryMetrics } from "./selectionCard/geometryMetrics";
-import cardStyles from "./selectionCard/cardLayout.module.css";
+
+const BODY_CLASS =
+  "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
+const ATTR_BLOCK_CLASS = "border-t border-border pt-2";
 
 export interface ImageSelectionCardContentProps {
   annotation: AnnotationResponse;
@@ -49,7 +52,7 @@ export function ImageSelectionCardContent({
   const confidence = source === "manual" ? null : annotation.confidence;
 
   return (
-    <div className={cardStyles.body}>
+    <div className={BODY_CLASS}>
       <IdentityHeader
         className={annotation.class_name}
         source={source}
@@ -59,7 +62,7 @@ export function ImageSelectionCardContent({
       <MetricGrid metrics={metrics} />
 
       {hasAttributes && (
-        <div className={cardStyles.attrBlock} data-floating-panel-no-drag>
+        <div className={ATTR_BLOCK_CLASS} data-floating-panel-no-drag>
           <AttributeForm
             schema={attributeSchema}
             className={annotation.class_name}

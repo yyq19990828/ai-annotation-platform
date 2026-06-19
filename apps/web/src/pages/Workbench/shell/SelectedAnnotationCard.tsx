@@ -5,10 +5,18 @@ import {
   FLOATING_SELECTION_MAX_SIZE,
   FLOATING_SELECTION_MIN_SIZE,
 } from "./floatingPanelSizing";
-import styles from "./SelectedAnnotationCard.module.css";
 
 const TAB_DRAG_SIZE = { w: 220, h: 40 } as const;
 const TAB_DRAG_THRESHOLD = 3;
+
+const SHELL_CLASS = "z-[55]";
+const TAB_CLASS =
+  "fixed left-[var(--selection-tab-x)] top-[var(--selection-tab-y)] z-[55] inline-flex max-w-[220px] cursor-grab touch-none select-none items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-foreground shadow-sm hover:border-brand hover:text-brand";
+const TAB_DRAGGING_CLASS = "cursor-grabbing border-brand shadow-md";
+const TAB_TITLE_CLASS = "overflow-hidden text-ellipsis whitespace-nowrap font-semibold";
+const TAB_CHEVRON_CLASS = "flex-none text-muted-foreground";
+const BODY_CLASS = "px-3 py-2.5";
+const SUMMARY_CLASS = "m-0 text-xs leading-[1.5] text-muted-foreground";
 
 export interface SelectedAnnotationCardProps {
   /** 卡头标题:随选中对象动态(类别 / ID 摘要 / N 个已选中)。 */
@@ -68,12 +76,7 @@ export function SelectedAnnotationCard({
         tabIndex={0}
         data-floating-panel
         aria-label="展开选中信息卡(可拖动)"
-        className={[
-          styles.tab,
-          tabDrag.isDragging ? styles.tabDragging : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
+        className={tabDrag.isDragging ? `${TAB_CLASS} ${TAB_DRAGGING_CLASS}` : TAB_CLASS}
         // eslint-disable-next-line no-restricted-syntax -- 收起标签沿用展开卡的记忆位置，经 CSS 变量注入。
         style={
           {
@@ -92,8 +95,8 @@ export function SelectedAnnotationCard({
           }
         }}
       >
-        <span className={styles.tabTitle}>{title}</span>
-        <span className={styles.tabChevron}>▸</span>
+        <span className={TAB_TITLE_CLASS}>{title}</span>
+        <span className={TAB_CHEVRON_CLASS}>▸</span>
       </div>
     );
   }
@@ -107,7 +110,7 @@ export function SelectedAnnotationCard({
       variant="no-merge"
       minSize={FLOATING_SELECTION_MIN_SIZE}
       maxSize={FLOATING_SELECTION_MAX_SIZE}
-      className={styles.shell}
+      className={SHELL_CLASS}
     >
       {children}
     </FloatingPanelShell>
@@ -120,8 +123,8 @@ export function SelectedAnnotationCard({
  */
 export function SelectionCardPlaceholder({ summary }: { summary: string }) {
   return (
-    <div className={styles.body}>
-      <p className={styles.summary}>{summary}</p>
+    <div className={BODY_CLASS}>
+      <p className={SUMMARY_CLASS}>{summary}</p>
     </div>
   );
 }

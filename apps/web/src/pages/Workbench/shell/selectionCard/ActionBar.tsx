@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
-import styles from "./cardLayout.module.css";
+
+const ACTION_BAR_CLASS =
+  "sticky bottom-0 z-[1] -mx-3 mt-auto flex flex-wrap items-center justify-center gap-1.5 border-t border-border bg-card px-3 pt-2 pb-2.5";
 
 export interface ActionBarProps {
   children: ReactNode;
@@ -14,7 +16,7 @@ export interface ActionBarProps {
  */
 export function ActionBar({ children, label }: ActionBarProps) {
   return (
-    <div className={styles.actionBar} role="group" aria-label={label} data-floating-panel-no-drag>
+    <div className={ACTION_BAR_CLASS} role="group" aria-label={label} data-floating-panel-no-drag>
       {children}
     </div>
   );
