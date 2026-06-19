@@ -10,8 +10,6 @@ import { cameraAnchor, type Anchor } from "./geometry/cameraAnchor";
 import type { CameraSample } from "./geometry/colorize";
 import type { LidarAxisConvention } from "./geometry/axisConvention";
 import { LIDAR_BOX_3D_TOOL_UNIT } from "./geometry/box3dAttributes";
-import styles from "./ThreeDWorkbench.module.css";
-
 // v0.13.3 · 新框默认尺寸(米,长宽高;约一辆轿车),放置后用面板/gizmo 精修。
 export const DEFAULT_BOX_SIZE: [number, number, number] = [4.0, 1.8, 1.6];
 // v0.15.23 · align 模式下邻帧点已预变换到当前帧 ego 系,渲染走 identity(共享单例,免重复分配)。
@@ -205,15 +203,15 @@ export function frontCameraForward(
   return n < 1e-3 ? null : [x / n, y / n];
 }
 
-// v0.13.7 · 朝向 → 悬浮定位容器 CSS 类(贴主视图对应边缘)。
+// v0.13.7 · 朝向 → 悬浮定位容器 Tailwind 类(贴主视图对应边缘)。V0.17.6: module.css → Tailwind。
 export const ANCHOR_CLASS: Record<Anchor, string> = {
-  top: styles.camAnchorTop,
-  bottom: styles.camAnchorBottom,
-  left: styles.camAnchorLeft,
-  right: styles.camAnchorRight,
-  "top-left": styles.camAnchorTopLeft,
-  "top-right": styles.camAnchorTopRight,
-  "bottom-left": styles.camAnchorBottomLeft,
-  "bottom-right": styles.camAnchorBottomRight,
-  overflow: styles.camAnchorOverflow,
+  top: "top-3 left-0 right-0 justify-center flex-row",
+  bottom: "bottom-3 left-0 right-0 justify-center flex-row",
+  left: "left-3 top-[var(--top-toolbar-height)] bottom-3 justify-center flex-col",
+  right: "right-3 top-[var(--top-toolbar-height)] bottom-3 justify-center flex-col",
+  "top-left": "top-[30%] left-3 flex-col",
+  "top-right": "top-[30%] right-3 flex-col",
+  "bottom-left": "bottom-[30%] left-3 flex-col",
+  "bottom-right": "bottom-[30%] right-3 flex-col",
+  overflow: "bottom-3 left-0 right-0 justify-center flex-row",
 };

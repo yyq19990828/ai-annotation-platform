@@ -19,7 +19,14 @@ import { BOX_EDGES, projectPoints } from "./geometry/projection";
 import { normalizeRect, type SeedRect } from "./geometry/frustum";
 import { buildDepthRaster, sampleDepth, type DepthRaster } from "./geometry/depthmap";
 import type { SceneBox } from "./PointCloudScene";
-import styles from "./ThreeDWorkbench.module.css";
+
+// v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
+const CAMERA_ITEM = "m-0 shrink-0";
+const CAMERA_VIEW = "relative inline-block leading-none";
+const CAMERA_CANVAS = "absolute inset-0 cursor-pointer";
+const CAMERA_CANVAS_SEED = "cursor-crosshair";
+const CAMERA_IMG = "block w-[190px] h-auto object-cover";
+const CAMERA_FIGCAPTION = "mt-1 text-xs text-muted-foreground text-center";
 
 interface CameraProjectionViewProps {
   name: string;
@@ -322,12 +329,12 @@ export function CameraProjectionView({
   );
 
   return (
-    <figure className={styles.cameraItem}>
-      <div className={styles.cameraView}>
-        <img ref={imgRef} src={imageUrl} alt={name} loading="lazy" onLoad={handleImgLoad} />
+    <figure className={CAMERA_ITEM}>
+      <div className={CAMERA_VIEW}>
+        <img ref={imgRef} src={imageUrl} alt={name} className={CAMERA_IMG} loading="lazy" onLoad={handleImgLoad} />
         <canvas
           ref={canvasRef}
-          className={`${styles.cameraCanvas} ${seedMode ? styles.cameraCanvasSeed : ""}`}
+          className={seedMode ? `${CAMERA_CANVAS} ${CAMERA_CANVAS_SEED}` : CAMERA_CANVAS}
           onClick={handleClick}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -335,7 +342,7 @@ export function CameraProjectionView({
           onMouseLeave={handleMouseLeave}
         />
       </div>
-      <figcaption>
+      <figcaption className={CAMERA_FIGCAPTION}>
         {name}
         {bestForSelected && " · 正对"}
         {calibration ? "" : " · 无标定"}
