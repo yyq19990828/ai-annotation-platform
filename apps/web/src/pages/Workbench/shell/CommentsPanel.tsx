@@ -14,7 +14,6 @@ import {
 import { useAnnotationAuditHistory, useTaskAuditHistory } from "@/hooks/useAnnotationAuditHistory";
 import { AnnotationHistoryTimeline } from "@/components/AnnotationHistoryTimeline";
 import { CommentInput, renderCommentBody } from "./CommentInput";
-import styles from "./CommentsPanel.module.css";
 import type {
   AnnotationCommentAnchor,
   CommentAttachment,
@@ -30,6 +29,15 @@ type Tab = "comments" | "history";
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
+
+// 顶部 tab 切换条:小写 chrome 风格的下划线 tab。
+const TAB_BUTTON =
+  "cursor-pointer appearance-none border-0 border-b-2 border-transparent bg-transparent px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground [font:inherit]";
+const TAB_BUTTON_ACTIVE = "border-brand text-foreground";
+
+// 评论卡片操作区的图标按钮(解决 / 删除)。
+const ICON_BUTTON =
+  "inline-flex h-5 w-5 cursor-pointer appearance-none items-center justify-center rounded-[3px] border-0 bg-transparent text-muted-foreground";
 
 interface Props {
   annotationId: string | null;
@@ -211,20 +219,20 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
   };
 
   return (
-    <div className={styles.panel}>
+    <div className="flex flex-col gap-2 border-t border-border px-3 py-2.5">
       {!hideTabs && (
-      <div className={styles.tabRow}>
+      <div className="flex items-center gap-1">
         <button
           type="button"
           onClick={() => setTab("comments")}
-          className={cn(styles.tabButton, tab === "comments" && styles.tabButtonActive)}
+          className={cn(TAB_BUTTON, tab === "comments" && TAB_BUTTON_ACTIVE)}
         >
           评论 {comments && comments.length > 0 && `(${comments.length})`}
         </button>
         <button
           type="button"
           onClick={() => setTab("history")}
-          className={cn(styles.tabButton, tab === "history" && styles.tabButtonActive)}
+          className={cn(TAB_BUTTON, tab === "history" && TAB_BUTTON_ACTIVE)}
         >
           历史 {history && history.entries.length > 0 && `(${history.entries.length})`}
         </button>
@@ -256,14 +264,17 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
         // 未选中标注时禁用评论框：先要求选中一个标注再评论。
         // 任务级评论 (POST /feedbacks · kind=comment / anchor_type=task) 的后端路径保留，
         // 待后续有更好的交互方案再开启（handleSubmit 的 task 分支仍在）。
-        <div className={styles.disabledComposer} data-testid="comment-input-disabled">
+        <div
+          className="cursor-not-allowed rounded border border-dashed border-border bg-card px-3 py-2.5 text-[11.5px] text-muted-foreground/70"
+          data-testid="comment-input-disabled"
+        >
           请先选中一个标注后再评论
         </div>
       ) : null}
 
-      <div className={styles.commentList}>
+      <div className="flex max-h-60 flex-col gap-1.5 overflow-y-auto">
         {comments.length === 0 && (
-          <div className={styles.emptyState}>{annotationId ? "暂无评论" : "该任务暂无任何评论"}</div>
+          <div className="text-[11.5px] text-muted-foreground/70">{annotationId ? "暂无评论" : "该任务暂无任何评论"}</div>
         )}
         {comments.map((c) => {
           const isMine = !!currentUserId && currentUserId === c.author_id;
@@ -282,20 +293,20 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                 togglePinnedComment(c.id, hoverShapes);
               }}
               className={cn(
-                styles.commentCard,
-                c.is_resolved && styles.commentCardResolved,
-                hoverShapes && styles.commentCardHoverable,
-                pinnedCommentId === c.id && styles.commentCardPinned,
+                "rounded border border-border bg-card p-2",
+                c.is_resolved && "bg-muted opacity-70",
+                hoverShapes && "cursor-crosshair",
+                pinnedCommentId === c.id && "border-brand shadow-[inset_2px_0_0_0_var(--sc-brand)]",
               )}
             >
-              <div className={styles.commentHeader}>
-                <span className={styles.authorName}>
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-[11.5px] font-medium text-foreground">
                   {c.author_name ?? "—"}
                   {c.is_resolved && (
-                    <span className={styles.resolvedLabel}>已解决</span>
+                    <span className="ml-1.5 text-[10px] text-emerald-600 dark:text-emerald-400">已解决</span>
                   )}
                 </span>
-                <div className={styles.commentActions}>
+                <div className="flex gap-1">
                   {/* v0.10.21 · D4 · 任务级 feedback 行走 PATCH/DELETE /feedbacks; annotation_comments 行走原路径. */}
                   {"__source" in c && c.__source === "feedback" ? (
                     <>
@@ -308,7 +319,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                             payload: { status: c.is_resolved ? "open" : "resolved" },
                           })
                         }
-                        className={styles.iconButton}
+                        className={ICON_BUTTON}
                       >
                         <Icon name="check" size={11} />
                       </button>
@@ -320,7 +331,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                             clearShapesPreviewFor(c.id);
                             deleteTaskFeedbackMut.mutate(c.id);
                           }}
-                          className={styles.iconButton}
+                          className={ICON_BUTTON}
                         >
                           <Icon name="trash" size={11} />
                         </button>
@@ -332,7 +343,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                         type="button"
                         title={c.is_resolved ? "标为未解决" : "标为已解决"}
                         onClick={() => patchMut.mutate({ id: c.id, payload: { is_resolved: !c.is_resolved } })}
-                        className={styles.iconButton}
+                        className={ICON_BUTTON}
                       >
                         <Icon name="check" size={11} />
                       </button>
@@ -344,7 +355,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                             clearShapesPreviewFor(c.id);
                             deleteMut.mutate(c.id);
                           }}
-                          className={styles.iconButton}
+                          className={ICON_BUTTON}
                         >
                           <Icon name="trash" size={11} />
                         </button>
@@ -358,16 +369,16 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                   type="button"
                   data-testid="comment-annotation-chip"
                   onClick={() => onSelectAnnotation(c.annotation_id!)}
-                  className={styles.annotationChip}
+                  className="mb-1 inline-flex max-w-full cursor-pointer appearance-none items-center gap-1 rounded border border-border bg-muted px-1.5 py-px text-[10.5px] text-muted-foreground [font:inherit] hover:border-brand hover:text-foreground"
                   title="跳转到该评论绑定的标注框"
                 >
                   <Icon name="crosshair" size={11} />
-                  <span className={styles.annotationChipLabel}>
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap">
                     {annotationClassById?.[c.annotation_id] ?? "标注框"}
                   </span>
                 </button>
               )}
-              <div className={styles.commentBody}>
+              <div className="whitespace-pre-wrap text-xs text-foreground">
                 {renderCommentBody(c.body, c.mentions ?? [], (uid) => navigate(`/audit?actor=${uid}`))}
               </div>
               {c.anchor?.kind === "video_frame" && (
@@ -375,7 +386,10 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                   type="button"
                   data-testid="comment-anchor-chip"
                   onClick={() => onSeekFrame?.(c.anchor!.frameIndex)}
-                  className={cn(styles.anchorChip, onSeekFrame && styles.anchorChipClickable)}
+                  className={cn(
+                    "mt-1.5 inline-flex appearance-none items-center gap-[5px] rounded border border-border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground [font:inherit]",
+                    onSeekFrame ? "cursor-pointer" : "cursor-default",
+                  )}
                   title="跳转到评论锚定的视频帧"
                 >
                   <Icon name="film" size={12} />
@@ -383,7 +397,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                 </button>
               )}
               {c.canvas_drawing && c.canvas_drawing.shapes && c.canvas_drawing.shapes.length > 0 && (
-                <div className={styles.canvasPreview}>
+                <div className="mt-1.5">
                   <CanvasDrawingPreview
                     drawing={c.canvas_drawing}
                     width={220}
@@ -394,25 +408,25 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                 </div>
               )}
               {(c.attachments ?? []).length > 0 && (
-                <div className={styles.attachmentList}>
+                <div className="mt-1.5 flex flex-wrap gap-1">
                   {(c.attachments ?? []).map((a) => (
                     <a
                       key={a.storageKey}
                       href={`/api/v1/annotations/${annotationId}/comment-attachments/download?key=${encodeURIComponent(a.storageKey)}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={styles.attachmentLink}
+                      className="inline-flex items-center gap-1 rounded-[3px] border border-border bg-muted px-1.5 py-0.5 text-[11px] text-foreground no-underline"
                       title={`${(a.size / 1024).toFixed(1)} KB`}
                     >
                       <Icon name="folder" size={11} />
-                      <span className={styles.attachmentName}>
+                      <span className="max-w-[140px] overflow-hidden text-ellipsis whitespace-nowrap">
                         {a.fileName}
                       </span>
                     </a>
                   ))}
                 </div>
               )}
-              <div className={styles.commentTimestamp}>
+              <div className="mt-1 text-[10px] text-muted-foreground/70">
                 {new Date(c.created_at).toLocaleString()}
               </div>
             </div>
@@ -425,7 +439,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
             onClick={() => commentsQuery.fetchNextPage()}
             disabled={commentsQuery.isFetchingNextPage}
             data-testid="comments-load-more"
-            className={styles.loadMoreButton}
+            className="mt-1 cursor-pointer appearance-none self-center rounded-[3px] border border-border bg-transparent px-2.5 py-1 text-[11px] text-muted-foreground"
           >
             {commentsQuery.isFetchingNextPage ? "加载中…" : "加载更早评论"}
           </button>

@@ -3,7 +3,11 @@ import { Icon } from "@/components/ui/Icon";
 import { CommentsPanel } from "./CommentsPanel";
 import { DiscussionIssuesTab } from "./DiscussionIssuesTab";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
-import styles from "./DiscussionPanel.module.css";
+
+// 顶部 tab 切换条:小写 chrome 风格的下划线 tab(与 CommentsPanel 同形)。
+const TAB_BUTTON =
+  "cursor-pointer appearance-none border-0 border-b-2 border-transparent bg-transparent px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground [font:inherit]";
+const TAB_BUTTON_ACTIVE = "border-brand text-foreground";
 
 /**
  * v0.11.2-4 · B 组 · 工作台右栏下段统一讨论面板。
@@ -63,16 +67,18 @@ export function DiscussionPanel({
   }, [tabRequestTick]);
 
   return (
-    <div className={floating ? `${styles.panel} ${styles.panelFloating}` : styles.panel}>
-      <div className={styles.headerRow}>
-        <div className={styles.tabRow} role="tablist" aria-label="讨论面板">
+    <div
+      className={`flex h-full min-h-0 flex-col bg-card ${floating ? "" : "border-t border-border"}`}
+    >
+      <div className="flex items-center justify-between gap-1 pl-3 pr-2 pt-1.5">
+        <div className="flex items-center gap-1" role="tablist" aria-label="讨论面板">
           {TABS.map((t) => (
             <button
               key={t.key}
               type="button"
               role="tab"
               aria-selected={tab === t.key}
-              className={`${styles.tabButton} ${tab === t.key ? styles.tabButtonActive : ""}`}
+              className={`${TAB_BUTTON} ${tab === t.key ? TAB_BUTTON_ACTIVE : ""}`}
               onClick={() => setTab(t.key)}
             >
               {t.label}
@@ -82,7 +88,7 @@ export function DiscussionPanel({
         {onDetach && (
           <button
             type="button"
-            className={styles.detachButton}
+            className="inline-flex h-6 w-6 cursor-pointer appearance-none items-center justify-center rounded border border-border bg-background p-0 text-muted-foreground hover:border-brand hover:text-brand"
             onClick={onDetach}
             title="分离讨论面板"
             aria-label="分离讨论面板"
@@ -91,7 +97,7 @@ export function DiscussionPanel({
           </button>
         )}
       </div>
-      <div className={styles.content} role="tabpanel">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" role="tabpanel">
         {tab === "issues" ? (
           projectId && taskId ? (
             <DiscussionIssuesTab projectId={projectId} taskId={taskId} />
