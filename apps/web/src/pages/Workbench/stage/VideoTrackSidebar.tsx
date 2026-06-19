@@ -4,13 +4,14 @@ import type { DiffMode } from "../modes/types";
 import {
   isVideoBbox,
   isVideoTrack,
-  nearestTrackKeyframe,
+  trackReferenceAtFrame,
   resolveTrackAtFrame,
   shortTrackId,
   sortedKeyframes,
   upsertKeyframe,
 } from "./videoStageGeometry";
 import { addOutsideRange, isFrameOutside } from "./videoTrackOutside";
+import { useVideoReferencePredict } from "./videoReferencePredict";
 import type { AttributeSchema } from "@/api/projects";
 import { VideoTrackPanel, type TrackFilter } from "./VideoTrackPanel";
 import { VideoTrackCardContent } from "../shell/selectionCard/VideoTrackCardContent";
@@ -218,21 +219,24 @@ export function VideoTrackSidebar({
     return out;
   }, [annotations, frameIndex, hiddenTrackIds]);
 
+  const predictReference = useVideoReferencePredict();
   const selectedTrackGhost = useMemo<VideoTrackGhost | null>(() => {
     if (!selectedTrack || hiddenTrackIds.has(selectedTrack.geometry.track_id)) return null;
+    // 锁定轨迹视为已确认,不再提示参考框(与画布 ghost 一致)。
+    if (lockedTrackIds.has(selectedTrack.geometry.track_id)) return null;
     if (currentFrameEntries.some((entry) => entry.ann.id === selectedTrack.id)) return null;
-    const nearest = nearestTrackKeyframe(selectedTrack.geometry, frameIndex);
-    if (!nearest) return null;
+    const reference = trackReferenceAtFrame(selectedTrack.geometry, frameIndex, predictReference);
+    if (!reference) return null;
     return {
       id: `ghost-${selectedTrack.id}`,
       ann: selectedTrack,
-      geom: nearest.bbox,
+      geom: reference.bbox,
       className: selectedTrack.class_name,
       source: "manual",
       trackId: selectedTrack.geometry.track_id,
-      originFrame: nearest.frame_index,
+      originFrame: reference.originFrame,
     };
-  }, [currentFrameEntries, frameIndex, hiddenTrackIds, selectedTrack]);
+  }, [currentFrameEntries, frameIndex, hiddenTrackIds, lockedTrackIds, predictReference, selectedTrack]);
 
   const selectedTrackLocked = selectedTrack ? lockedTrackIds.has(selectedTrack.geometry.track_id) : false;
   const trackActions = useVideoTrackActions({

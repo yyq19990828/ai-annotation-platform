@@ -5,8 +5,8 @@ import {
   deriveTrackNumber,
   isVideoBbox,
   isVideoTrack,
-  nearestTrackKeyframe,
   resolveTrackAtFrame,
+  trackReferenceAtFrame,
 } from "./videoStageGeometry";
 import { isFrameOutside } from "./videoTrackOutside";
 import { buildTrackLabelText, shouldShowLabel, type AnnotationVisualConfig } from "./annotationVisual";
@@ -75,9 +75,13 @@ export interface DeriveVideoFrameViewsInput {
   frameIndex: number;
   selectedId: string | null;
   hiddenTrackIds?: Set<string>;
+  /** 已锁定轨迹:锁定后不再显示参考框(视为已确认,不需逐帧提示)。 */
+  lockedTrackIds?: Set<string>;
   reviewDisplayMode?: DiffMode;
   trackColorOverrides?: Record<string, string>;
   visual: AnnotationVisualConfig;
+  /** 参考框运动预测开关(实验);开启时参考框恒速外推到当前帧而非取最近关键帧。 */
+  predictReference?: boolean;
   /** pending 草稿(画一半 / 待确认);仅当前帧透传。 */
   pendingDraft?: { geom: VideoStageGeom; className: string } | null;
 }
@@ -97,9 +101,11 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
     frameIndex,
     selectedId,
     hiddenTrackIds = EMPTY_SET,
+    lockedTrackIds = EMPTY_SET,
     reviewDisplayMode,
     trackColorOverrides,
     visual,
+    predictReference = false,
     pendingDraft,
   } = input;
 
@@ -149,23 +155,26 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
       };
     });
 
-  // ghost:选中轨迹当前帧无框时,画最近关键帧参考框(与 VideoStage.selectedTrackGhost 一致)。
+  // ghost:选中轨迹当前帧无框时,画参考框(与 VideoTrackSidebar.selectedTrackGhost 一致)。
+  // 锁定轨迹视为已确认,不再逐帧提示参考框。
   let ghost: VideoGhostView | null = null;
   const selectedTrack = videoTracks.find((ann) => ann.id === selectedId) ?? null;
   if (
     selectedTrack
     && !hiddenTrackIds.has(selectedTrack.geometry.track_id)
+    && !lockedTrackIds.has(selectedTrack.geometry.track_id)
     && visibleInReviewMode("manual", reviewDisplayMode)
     && !entries.some((e) => e.id === selectedTrack.id)
   ) {
-    const nearest = nearestTrackKeyframe(selectedTrack.geometry, frameIndex);
-    if (nearest) {
+    const reference = trackReferenceAtFrame(selectedTrack.geometry, frameIndex, predictReference);
+    if (reference) {
       const num = trackNumbers.get(selectedTrack.id);
+      const refLabel = reference.predicted ? `预测 F${reference.originFrame}↗` : `参考 F${reference.originFrame}`;
       ghost = {
         id: selectedTrack.id,
-        geom: nearest.bbox,
+        geom: reference.bbox,
         color: getTrackColor(selectedTrack.geometry.track_id, selectedTrack.class_name, trackColorOverrides),
-        labelText: `${num !== undefined ? `#${num} · ` : ""}${selectedTrack.class_name} · 参考 F${nearest.frame_index}`,
+        labelText: `${num !== undefined ? `#${num} · ` : ""}${selectedTrack.class_name} · ${refLabel}`,
       };
     }
   }

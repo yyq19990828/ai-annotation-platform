@@ -3,6 +3,7 @@
 // 这里加一行 → 消费点读配置。
 import type { LabelContentByType, WorkbenchPreferences } from "@/api/auth";
 import { WEBCODECS_FLAG_STORAGE_KEY } from "../stage/useVideoChunkDecoder";
+import { readVideoReferencePredict, writeVideoReferencePredict } from "../stage/videoReferencePredict";
 import type { LockableField, WorkbenchConfigPatch } from "./useWorkbenchConfig";
 
 export type WorkbenchPreferenceSettingCategory = "common" | "image" | "video" | "pointcloud";
@@ -531,6 +532,16 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     control: { type: "toggle" },
     read: () => readLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY),
     write: (value) => writeLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY, value),
+  },
+  {
+    key: "experiment.videoReferencePredict",
+    category: "experiment",
+    storage: "local",
+    label: "参考框运动预测",
+    description: "实验性,即时生效:视频参考框按前两个关键帧恒速外推到当前帧(默认取最近关键帧)",
+    control: { type: "toggle" },
+    read: () => readVideoReferencePredict(),
+    write: (value) => writeVideoReferencePredict(Boolean(value)),
   },
 ];
 

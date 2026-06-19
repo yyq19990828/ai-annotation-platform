@@ -193,6 +193,49 @@ export function nearestTrackKeyframe(track: VideoTrackGeometry, frameIndex: numb
   return Math.abs(before.frame_index - frameIndex) <= Math.abs(after.frame_index - frameIndex) ? before : after;
 }
 
+export interface TrackReferenceResult {
+  bbox: VideoStageGeom;
+  /** true = 恒速外推预测;false = 直接取最近关键帧(回退或未开启预测)。 */
+  predicted: boolean;
+  /** 参考来源帧:predicted 时为外推基准帧,否则为最近关键帧帧号。 */
+  originFrame: number;
+}
+
+/**
+ * 选中轨迹在当前帧无实框时的「参考框」几何。
+ *
+ * - `predict=false`(现状):直接取最近关键帧的 bbox。
+ * - `predict=true`:取当前帧**之前**最近两个可见关键帧,按恒速线性外推到当前帧
+ *   (恒速卡尔曼的预测步)。先行关键帧不足两个时回退到最近关键帧。
+ *   完整卡尔曼(带过程/观测噪声平滑)见 ROADMAP。
+ */
+export function trackReferenceAtFrame(
+  track: VideoTrackGeometry,
+  frameIndex: number,
+  predict: boolean,
+): TrackReferenceResult | null {
+  const nearest = nearestTrackKeyframe(track, frameIndex);
+  if (!nearest) return null;
+  if (!predict) return { bbox: nearest.bbox, predicted: false, originFrame: nearest.frame_index };
+
+  const keyframes = getTrackIndex(track).visibleKeyframes;
+  const priorIndex = lowerBound(keyframes, frameIndex, (kf) => kf.frame_index) - 1;
+  const k2 = keyframes[priorIndex];
+  const k1 = keyframes[priorIndex - 1];
+  if (!k2 || !k1) return { bbox: nearest.bbox, predicted: false, originFrame: nearest.frame_index };
+
+  const span = Math.max(1, k2.frame_index - k1.frame_index);
+  const dt = frameIndex - k2.frame_index;
+  const extrapolate = (a: number, b: number) => b + ((b - a) / span) * dt;
+  const bbox = clampGeom({
+    x: extrapolate(k1.bbox.x, k2.bbox.x),
+    y: extrapolate(k1.bbox.y, k2.bbox.y),
+    w: extrapolate(k1.bbox.w, k2.bbox.w),
+    h: extrapolate(k1.bbox.h, k2.bbox.h),
+  });
+  return { bbox, predicted: true, originFrame: k2.frame_index };
+}
+
 export function shapeIou(a: VideoStageGeom, b: VideoStageGeom) {
   const x1 = Math.max(a.x, b.x);
   const y1 = Math.max(a.y, b.y);

@@ -23,6 +23,7 @@ import { VideoQcWarnings } from "./VideoQcWarnings";
 import { useVideoKonvaInteraction } from "./videoKonvaInteraction";
 import { videoIntrinsicSize, clientToVideoNorm } from "./videoKonvaCoordinates";
 import { deriveVideoFrameViews } from "./videoFrameViews";
+import { useVideoReferencePredict } from "./videoReferencePredict";
 import { classColor, getTrackColor } from "./colors";
 import { isVideoBbox, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
 import { firstAppearFrame, lastAppearFrame } from "./videoTrackTimeline";
@@ -259,18 +260,21 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   }, [activeClass, frameIndex, pendingDrawing]);
 
   // 标注渲染派生(纯函数,与 VideoStage 现状对齐)。
+  const predictReference = useVideoReferencePredict();
   const frameViews = useMemo(
     () => deriveVideoFrameViews({
       annotations,
       frameIndex,
       selectedId,
       hiddenTrackIds,
+      lockedTrackIds,
       reviewDisplayMode,
       trackColorOverrides,
       visual,
+      predictReference,
       pendingDraft,
     }),
-    [annotations, frameIndex, hiddenTrackIds, pendingDraft, reviewDisplayMode, selectedId, trackColorOverrides, visual],
+    [annotations, frameIndex, hiddenTrackIds, lockedTrackIds, pendingDraft, predictReference, reviewDisplayMode, selectedId, trackColorOverrides, visual],
   );
 
   // QC 质量警告(关键帧间隔过大 / 当前帧极小框 / 同类高重叠)——与旧 SVG 栈 qualityWarnings 逐位一致。

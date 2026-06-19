@@ -84,6 +84,30 @@ describe("deriveVideoFrameViews", () => {
     expect(v.ghost!.labelText).toContain("参考 F20");
   });
 
+  it("锁定轨迹 → 不显示 ghost 参考框", () => {
+    const ann = trackAnn("t1", "trk1", [
+      { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
+      { frame_index: 20, bbox: { x: 0.6, y: 0.6, w: 0.2, h: 0.2 }, source: "manual" },
+    ]);
+    (ann.geometry as { outside?: unknown[] }).outside = [{ start_frame: 21, end_frame: 100 }];
+    const v = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 50, selectedId: "t1", lockedTrackIds: new Set(["trk1"]) });
+    expect(v.ghost).toBeNull();
+  });
+
+  it("predictReference → ghost 改用恒速外推 + 预测标签", () => {
+    const ann = trackAnn("t1", "trk1", [
+      { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
+      { frame_index: 10, bbox: { x: 0.4, y: 0.4, w: 0.2, h: 0.2 }, source: "manual" },
+      { frame_index: 20, bbox: { x: 0.6, y: 0.6, w: 0.2, h: 0.2 }, source: "manual" },
+    ]);
+    (ann.geometry as { outside?: unknown[] }).outside = [{ start_frame: 21, end_frame: 100 }];
+    // F10→F20 vx=0.02/帧;F25 = 0.6 + 0.02*5 = 0.7。
+    const v = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 25, selectedId: "t1", predictReference: true });
+    expect(v.ghost).not.toBeNull();
+    expect(v.ghost!.labelText).toContain("预测 F20");
+    expect(v.ghost!.geom.x).toBeCloseTo(0.7);
+  });
+
   it("标签门控:none 全隐,selected 仅选中", () => {
     const ann = trackAnn("t1", "trk1", [{ frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" }]);
     const none = deriveVideoFrameViews({ annotations: [ann], frameIndex: 0, selectedId: "t1", visual: { ...DEFAULT_ANNOTATION_VISUAL, labelVisibility: "none" } });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nearestTrackKeyframe, resolveTrackAtFrame, sortedKeyframes, upsertKeyframe } from "./videoStageGeometry";
+import { nearestTrackKeyframe, resolveTrackAtFrame, sortedKeyframes, trackReferenceAtFrame, upsertKeyframe } from "./videoStageGeometry";
 import type { VideoTrackGeometry } from "@/types";
 
 function track(keyframes: VideoTrackGeometry["keyframes"], patch?: Partial<VideoTrackGeometry>): VideoTrackGeometry {
@@ -52,6 +52,36 @@ describe("videoStageGeometry", () => {
 
     expect(resolveTrackAtFrame(geometry, 3)).toBeNull();
     expect(resolveTrackAtFrame(geometry, 5)).toBeNull();
+  });
+
+  describe("trackReferenceAtFrame", () => {
+    const geometry = track([
+      { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+      { frame_index: 10, bbox: { x: 0.3, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+    ]);
+
+    it("predict=false → 取最近关键帧 bbox", () => {
+      const ref = trackReferenceAtFrame(geometry, 15, false);
+      expect(ref?.predicted).toBe(false);
+      expect(ref?.originFrame).toBe(10);
+      expect(ref?.bbox.x).toBeCloseTo(0.3);
+    });
+
+    it("predict=true → 按前两关键帧恒速外推到当前帧", () => {
+      // vx = (0.3-0.1)/10 = 0.02/帧;F15 = 0.3 + 0.02*5 = 0.4。
+      const ref = trackReferenceAtFrame(geometry, 15, true);
+      expect(ref?.predicted).toBe(true);
+      expect(ref?.originFrame).toBe(10);
+      expect(ref?.bbox.x).toBeCloseTo(0.4);
+      expect(ref?.bbox.w).toBeCloseTo(0.2);
+    });
+
+    it("predict=true 但先行关键帧不足两个 → 回退最近关键帧", () => {
+      const single = track([{ frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" }]);
+      const ref = trackReferenceAtFrame(single, 8, true);
+      expect(ref?.predicted).toBe(false);
+      expect(ref?.bbox.x).toBeCloseTo(0.1);
+    });
   });
 
   it("clears explicit outside coverage when upserting a visible keyframe", () => {

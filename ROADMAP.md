@@ -17,6 +17,7 @@
 - **[点云 + 图像联合标注（2026-06-14）](./ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)**：3D 旗舰独立 epic。读方向(3D 框投影到相机图)已落 v0.13.4；写方向(相机图 2D 框种 3D 框 frustum fit → 投影手柄微调 → 多相机一致性)Phase 1 已落 v0.15.24(视锥反算选点 + 3D 框初值拟合)，Phase 2-3(投影手柄微调 / 多相机一致性)待开工。配套 §C.8 拖影消除两版本(v0.15.22 剔除 / v0.15.23 逐目标补偿)构成「3D 前线深化」近期切片。
 - **[视频工作台总路线图（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：视频专项独立 epic。进度：Phase 1-4 主体已落（帧采样 / 轨迹工具 2.1–2.8 / `sam2_video` backend + 能力协商 / 视频导出 + 逐帧 YOLO），Phase 5-6 待开工（sam3_video 待续）。衍生 epic [ML Backend 能力协商 + AI 预标注模态化重设计](ROADMAP/[archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 三阶段已落地归档。
   - **延后项**：**2.9 多几何 track（polygon / polyline / mask）**（P1，体量大）——扩 `video_track.geometry.kind`，按周长/长度参数化插值；mask track 依赖 canvas/bitmap，DAVIS mask 导出（Phase 4.5）依赖此项。
+  - **延后项**：**参考框完整卡尔曼滤波（P3）**——当前参考框运动预测（实验开关 `experiment.videoReferencePredict`，`trackReferenceAtFrame` in `videoStageGeometry.ts`）只做**恒速线性外推**（取前两个可见关键帧估速度外推到当前帧，即恒速卡尔曼的预测步，无平滑、无加速度、无不确定度）。完整版升级方向：① 对状态向量 `[cx, cy, w, h, vx, vy, vw, vh]` 建恒速卡尔曼滤波，遍历当前帧之前所有可见关键帧依次 predict→update 得到平滑后验，再 predict 到当前帧（缓解单段噪声/抖动放大）；② 暴露过程噪声 Q / 观测噪声 R 两个可调参数（或给 1-2 档预设「平稳/灵敏」），随实验开关一起放 `experiment.*`；③ 可选输出预测协方差，在画布上把参考框不确定度画成淡色误差椭圆/外扩边框，提示标注员「预测置信度」。触发：恒速外推在实际素材（变速/转向目标）上被反馈漂移明显，或客户要求更稳的预标注辅助。**底线**：默认仍为关（守「默认=现状」红线），且纯前端启发式，不引入后端依赖。
 
 
 ---
