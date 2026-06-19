@@ -14,7 +14,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { usePerfHudStore } from "@/components/PerfHud";
 
 const ICON_BTN_CLASS =
-  "inline-flex size-[30px] cursor-pointer appearance-none items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground";
+  "inline-flex size-[30px] cursor-pointer appearance-none items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition-[background-color,border-color,color,transform] duration-200 hover:-translate-y-px hover:bg-accent hover:text-foreground active:translate-y-0 active:scale-[0.96] focus-visible:ring-[3px] focus-visible:ring-ring/20";
 
 interface TopBarProps {
   workspace: string;
@@ -58,7 +58,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
 
   return (
     <>
-      <header className="z-10 col-[1/-1] flex items-center justify-between border-b border-border bg-card px-4">
+      <header className="surface-shadow-sm z-10 col-[1/-1] flex items-center justify-between border-b border-border bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/85">
         <div className="flex min-w-0 shrink-0 items-center gap-6">
           {showHamburger && (
             <button
@@ -72,8 +72,8 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
             </button>
           )}
           <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-[13px] font-semibold tracking-[0.01em]">
-            <div className="relative size-[22px] overflow-hidden rounded-md bg-gradient-to-br from-brand to-violet-500">
-              <div className="absolute inset-1 rounded-[3px] border-[1.5px] border-white/85" />
+            <div className="surface-shadow-sm relative size-[22px] overflow-hidden rounded-md border border-border bg-primary">
+              <div className="absolute inset-1 rounded-[3px] border-[1.5px] border-primary-foreground/85" />
             </div>
             <span>标注中心</span>
             <span className="ml-1 text-[11px] font-normal text-muted-foreground">v2.5</span>
@@ -81,11 +81,11 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           <div
             onClick={onWorkspaceChange}
             className={clsx(
-              "flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md bg-muted py-1 pl-2 pr-2.5 text-xs text-muted-foreground",
+              "flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-muted py-1 pl-2 pr-2.5 text-xs text-muted-foreground transition-[background-color,border-color,color,transform] duration-200 hover:-translate-y-px hover:bg-accent hover:text-foreground active:translate-y-0 active:scale-[0.98]",
               showHamburger && "hidden",
             )}
           >
-            <span className="size-1.5 rounded-full bg-emerald-500" />
+            <span className="size-1.5 rounded-full bg-positive" />
             <span>{workspace}</span>
             <Icon name="chevDown" size={12} />
           </div>
@@ -128,7 +128,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           </button>
 
           {/* v0.9.11 PerfHud · 性能监控浮窗 toggle (admin only, 快捷键 Ctrl+Shift+P 同步) */}
-          {(user?.role === "super_admin" || user?.role === "project_admin") ? (
+          {!showHamburger && (user?.role === "super_admin" || user?.role === "project_admin") ? (
             <button
               type="button"
               title="性能监控 (Ctrl+Shift+P)"
@@ -141,15 +141,15 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           ) : null}
 
           {/* v0.9.8 · 全局预标 job 徽章 (admin only, 0 个时隐身) */}
-          <PreannotateJobsBadge />
+          {!showHamburger && <PreannotateJobsBadge />}
 
           {/* v0.10.16 · 后台异步任务铃铛（all users, polling /async-jobs） */}
-          <JobsBell />
+          {!showHamburger && <JobsBell />}
 
           {/* 通知按钮（v0.7.6：组件自包含 trigger + popover，TopBar 不再管 open state） */}
           <NotificationsPopover />
 
-          <div className="flex cursor-pointer items-center gap-2 rounded-lg py-1 pl-1 pr-2.5">
+          <div className="flex cursor-pointer items-center gap-2 rounded-lg py-1 pl-1 pr-2.5 transition-[background-color,transform] duration-200 hover:-translate-y-px hover:bg-accent active:translate-y-0 active:scale-[0.98]">
             <Avatar initial={user?.name?.[0] ?? "?"} size="sm" />
             <div
               className={clsx(

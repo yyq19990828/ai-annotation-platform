@@ -8,9 +8,9 @@ import type { PageKey } from "@/types";
 import type { IconName } from "@/components/ui/Icon";
 
 const NAV_ITEM_CLASS =
-  "flex items-center gap-2.5 rounded-md border border-transparent bg-transparent px-2.5 py-1.5 text-[13px] font-normal text-muted-foreground no-underline cursor-pointer select-none";
+  "flex items-center gap-2.5 rounded-md border border-transparent bg-transparent px-2.5 py-1.5 text-[13px] font-normal text-muted-foreground no-underline cursor-pointer select-none transition-[background-color,border-color,color,box-shadow,transform] duration-200 hover:-translate-y-px hover:bg-accent hover:text-foreground active:translate-y-0 active:scale-[0.99] focus-visible:ring-[3px] focus-visible:ring-ring/20";
 const NAV_ITEM_ACTIVE_CLASS =
-  "border-border bg-card font-medium text-foreground shadow-sm";
+  "border-border bg-card font-medium text-foreground surface-shadow-sm";
 const BADGE_BASE =
   "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 text-[10px] font-medium";
 const BADGE_AI = "bg-violet-500/10 text-violet-600 dark:text-violet-400";
@@ -91,10 +91,10 @@ export function Sidebar({ reviewCount }: SidebarProps) {
     .filter((sec) => sec.items.length > 0);
 
   return (
-    <aside className="flex flex-col gap-0.5 overflow-y-auto border-r border-border bg-muted px-2 py-2.5">
+    <aside className="surface-shadow-sm flex flex-col gap-0.5 overflow-y-auto border-r border-border bg-card/80 px-2 py-2.5">
       {visibleSections.map((sec) => (
         <div key={sec.label}>
-          <div className="px-2.5 pb-1.5 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          <div className="px-2.5 pb-1.5 pt-3.5 text-[11px] font-medium tracking-[0.02em] text-muted-foreground">
             {sec.label}
           </div>
           {sec.items.map((item) => (

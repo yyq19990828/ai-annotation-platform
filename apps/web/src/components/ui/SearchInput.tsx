@@ -36,7 +36,8 @@ export function SearchInput({
       ref={rootRef}
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-[5px]",
+        "surface-shadow-sm inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-[5px] transition-[border-color,box-shadow,transform] duration-200 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20",
+        onClick && "hover:-translate-y-px hover:border-input hover:bg-accent/60",
         onClick && "cursor-pointer",
       )}
     >

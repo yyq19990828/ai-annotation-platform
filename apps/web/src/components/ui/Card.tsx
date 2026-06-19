@@ -22,7 +22,11 @@ export function Card({ children, style, className, onClick }: CardProps) {
   return (
     <div
       ref={styleRef}
-      className={cn("rounded-xl border border-border bg-card", className)}
+      className={cn(
+        "surface-shadow-sm rounded-lg border border-border bg-card transition-[border-color,box-shadow,transform] duration-200",
+        onClick && "surface-shadow-md-on-hover hover:-translate-y-px",
+        className,
+      )}
       onClick={onClick}
     >
       {children}

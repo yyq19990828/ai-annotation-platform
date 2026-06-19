@@ -54,6 +54,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         // preflight 后此基线变冗余但无害。
         "appearance-none border-0 border-border bg-transparent",
         buttonVariants({ variant: base, size: size === "sm" ? "sm" : "default" }),
+        "transition-[background-color,border-color,color,box-shadow,transform] duration-200 hover:-translate-y-px active:translate-y-0 active:scale-[0.98]",
         extra,
         className,
       )}

@@ -20,7 +20,7 @@ interface StatCardProps {
 
 export function StatCard({ icon, label, value, trend, sparkValues, sparkColor, hint }: StatCardProps) {
   return (
-    <div className="rounded-xl border border-border bg-card px-4 py-3.5">
+    <div className="surface-shadow-sm surface-shadow-md-on-hover rounded-lg border border-border bg-card px-4 py-3.5 transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-px">
       <div className="mb-2 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
         {icon && <Icon name={icon} size={13} className="shrink-0" />}
         <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>

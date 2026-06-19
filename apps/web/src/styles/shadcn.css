@@ -1,7 +1,7 @@
 /* ============================================================
    Tailwind v4 + shadcn —— global preflight
    ------------------------------------------------------------
-   设计基调：Geist 风(极简高对比黑白 + 克制蓝 #0070F3)。
+   设计基调：Geist 风(克制中性色 + 工具型蓝)。
 
    全量迁移完成,preflight 转全局,不再需要局部 reset。
    旧 token 文件退役(变量已全迁入 --sc-*),全站 Tailwind 化。
@@ -54,45 +54,45 @@
   --radius-xl: calc(var(--sc-radius) + 6px);
 }
 
-/* —— Geist 调色板 · 浅色(纯白底 / 近黑字) —— */
+/* —— Geist 调色板 · 浅色(雾白画布 / 近黑字) —— */
 :root {
   color-scheme: light;
 
   --sc-radius: 8px;
 
-  --sc-background: #ffffff;
-  --sc-foreground: #171717;
+  --sc-background: #fafafa;
+  --sc-foreground: #18181b;
   --sc-card: #ffffff;
-  --sc-card-foreground: #171717;
+  --sc-card-foreground: #18181b;
   --sc-popover: #ffffff;
-  --sc-popover-foreground: #171717;
+  --sc-popover-foreground: #18181b;
 
-  /* 主操作 = 实心黑(浅色态),与 Geist CTA 一致 */
-  --sc-primary: #171717;
+  /* 主操作 = 实心近黑(浅色态),与工具型 SaaS CTA 一致 */
+  --sc-primary: #18181b;
   --sc-primary-foreground: #ffffff;
 
-  --sc-secondary: #f5f5f5;
-  --sc-secondary-foreground: #171717;
-  --sc-muted: #f5f5f5;
-  --sc-muted-foreground: #737373;
-  --sc-accent: #f4f4f5;
-  --sc-accent-foreground: #171717;
-  --sc-destructive: #e5484d;
+  --sc-secondary: #f4f4f5;
+  --sc-secondary-foreground: #18181b;
+  --sc-muted: #f4f4f5;
+  --sc-muted-foreground: #71717a;
+  --sc-accent: #f1f5f9;
+  --sc-accent-foreground: #18181b;
+  --sc-destructive: #dc2626;
   --sc-destructive-foreground: #ffffff;
 
-  --sc-border: #ebebeb;
+  --sc-border: #e4e4e7;
   --sc-input: #e4e4e7;
-  --sc-ring: #0070f3;
+  --sc-ring: #2563eb;
 
-  --sc-brand: #0070f3;
+  --sc-brand: #2563eb;
   --sc-brand-foreground: #ffffff;
   --sc-positive: #15803d;
   --sc-caution: #b45309;
 
-  --sc-chart-1: #0070f3;
+  --sc-chart-1: #2563eb;
   --sc-chart-2: #15803d;
   --sc-chart-3: #b45309;
-  --sc-chart-4: #7c3aed;
+  --sc-chart-4: #6d5bd0;
 
   /* 画布棋盘格(画布叠加层专属,无 Tailwind 等价) */
   --sc-canvas-checker-a: #e9e9ec;
@@ -100,49 +100,51 @@
   --sc-code-bg: #ececef;
   --sc-code-fg: #18181b;
 
-  --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
-    "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-mono: "SF Mono", "JetBrains Mono", "Menlo", "Consolas", monospace;
+  --font: "Geist", "SF Pro Text", -apple-system, BlinkMacSystemFont,
+    "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial,
+    sans-serif;
+  --font-mono: "Geist Mono", "SF Mono", "JetBrains Mono", "Menlo", "Consolas",
+    monospace;
   --radius-pill: 9999px;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 2px rgba(24, 24, 27, 0.06);
+  --shadow-md: 0 2px 8px rgba(24, 24, 27, 0.08), 0 1px 2px rgba(24, 24, 27, 0.05);
+  --shadow-lg: 0 16px 40px rgba(24, 24, 27, 0.10), 0 2px 6px rgba(24, 24, 27, 0.06);
 }
 
-/* —— Geist 调色板 · 深色(纯黑底 / 近白字,主场) —— */
+/* —— Geist 调色板 · 深色(墨色画布 / 近白字,主场) —— */
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --sc-background: #000000;
+  --sc-background: #09090b;
   --sc-foreground: #ededed;
-  --sc-card: #0a0a0a;
+  --sc-card: #111113;
   --sc-card-foreground: #ededed;
-  --sc-popover: #0a0a0a;
+  --sc-popover: #111113;
   --sc-popover-foreground: #ededed;
 
   /* 主操作 = 反白(白底黑字),即所选预览的观感 */
   --sc-primary: #ededed;
   --sc-primary-foreground: #0a0a0a;
 
-  --sc-secondary: #1a1a1a;
+  --sc-secondary: #18181b;
   --sc-secondary-foreground: #ededed;
-  --sc-muted: #1a1a1a;
-  --sc-muted-foreground: #a1a1a1;
-  --sc-accent: #1f1f1f;
+  --sc-muted: #18181b;
+  --sc-muted-foreground: #a1a1aa;
+  --sc-accent: #202027;
   --sc-accent-foreground: #ededed;
   --sc-destructive: #ff5a5f;
   --sc-destructive-foreground: #0a0a0a;
 
-  --sc-border: #2a2a2a;
-  --sc-input: #2e2e2e;
-  --sc-ring: #0070f3;
+  --sc-border: #2f2f36;
+  --sc-input: #303038;
+  --sc-ring: #60a5fa;
 
-  --sc-brand: #3b82f6;
+  --sc-brand: #60a5fa;
   --sc-brand-foreground: #ffffff;
   --sc-positive: #3fb950;
   --sc-caution: #d29922;
 
-  --sc-chart-1: #3b82f6;
+  --sc-chart-1: #60a5fa;
   --sc-chart-2: #3fb950;
   --sc-chart-3: #d29922;
   --sc-chart-4: #a78bfa;
@@ -152,9 +154,9 @@
   --sc-canvas-checker-b: #2a2a30;
   --sc-code-bg: #2e2e33;
   --sc-code-fg: #f4f4f5;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.42);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.36), 0 1px 2px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.46), 0 2px 6px rgba(0, 0, 0, 0.32);
 }
 
 @layer base {
@@ -166,12 +168,14 @@
   body {
     margin: 0;
     padding: 0;
+    scroll-behavior: smooth;
   }
 
   body {
     min-width: 320px;
     font-family: var(--font);
     font-size: 13px;
+    font-variant-numeric: tabular-nums;
     color: var(--sc-foreground);
     background: var(--sc-background);
     -webkit-font-smoothing: antialiased;
@@ -179,7 +183,7 @@
   }
 
   #root {
-    min-height: 100vh;
+    min-height: 100dvh;
   }
 
   button,
@@ -187,5 +191,25 @@
   select,
   textarea {
     font: inherit;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  :where(a, button, input, select, textarea, [role="button"]):focus-visible {
+    outline: 2px solid var(--sc-ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .surface-shadow-sm {
+    box-shadow: var(--shadow-sm);
+  }
+
+  .surface-shadow-md-on-hover:hover {
+    box-shadow: var(--shadow-md);
   }
 }
