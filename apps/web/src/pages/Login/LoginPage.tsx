@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
-import { clsx } from "clsx";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { useLogin } from "@/hooks/useAuth";
 import { useRegistrationStatus, useResendVerification } from "@/hooks/useInvitation";
 import { useAuthStore } from "@/stores/authStore";
+import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { Input } from "@/components/shadcn/ui/input";
 import { Captcha } from "@/components/Captcha";
 import { ApiError } from "@/api/client";
-import styles from "./LoginPage.module.css";
 
 // v0.9.3 · 与后端 settings.login_captcha_threshold 同值；前端阈值仅做"何时渲染 Captcha"判断
 const CAPTCHA_THRESHOLD = 5;
@@ -68,79 +68,77 @@ export function LoginPage() {
   };
 
   return (
-    <div className={styles.page}>
-      <div className={styles.shell}>
+    <div className="tw-scope flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+      <div className="w-[min(380px,100%)]">
         {/* Logo */}
-        <div className={styles.brand}>
-          <div className={styles.brandIcon}>
-            <div className={styles.brandIconInner} />
+        <div className="mb-8 flex items-center justify-center gap-2.5">
+          <div className="relative size-8 shrink-0 overflow-hidden rounded-md bg-brand">
+            <div className="absolute inset-1.5 rounded-[4px] border-2 border-white/85" />
           </div>
           <div>
-            <div className={styles.brandTitle}>标注中心</div>
-            <div className={styles.brandSubtitle}>AI Annotation Platform</div>
+            <div className="text-base font-bold">标注中心</div>
+            <div className="text-[11px] text-muted-foreground">AI Annotation Platform</div>
           </div>
         </div>
 
         {/* Card */}
-        <div className={styles.card}>
-          <h1 className={styles.title}>登录</h1>
-          <p className={styles.subtitle}>
-            使用工作账号登录标注平台
-          </p>
+        <div className="rounded-2xl border border-border bg-card px-8 pb-8 pt-7 shadow-xl">
+          <h1 className="mb-1 text-lg font-semibold">登录</h1>
+          <p className="mb-6 text-[13px] text-muted-foreground">使用工作账号登录标注平台</p>
 
           {login.isError && (
-            <div className={styles.errorBanner}>
+            <div className="mb-4 flex items-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-[13px] text-rose-600 dark:text-rose-400">
               <Icon name="warning" size={14} />
               {(login.error as Error)?.message ?? "登录失败，请检查账号密码"}
             </div>
           )}
 
           {unverified && (
-            <div className={styles.errorBanner}>
+            <div className="mb-4 flex items-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-[13px] text-rose-600 dark:text-rose-400">
               {resendDone ? (
                 "验证邮件已重新发送，请查收邮箱"
               ) : (
-                <button type="button" onClick={handleResend} disabled={resend.isPending} className={styles.link}>
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  disabled={resend.isPending}
+                  className="appearance-none border-0 bg-transparent text-xs text-brand hover:underline"
+                >
                   {resend.isPending ? "发送中…" : "重新发送验证邮件"}
                 </button>
               )}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className={styles.form}>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
             <div>
-              <label className={styles.label}>
-                账号
-              </label>
-              <input
+              <label className="mb-1.5 block text-[12.5px] font-medium text-muted-foreground">账号</label>
+              <Input
                 type="text"
                 autoComplete="username"
                 placeholder="输入账号或邮箱"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className={styles.input}
               />
             </div>
 
             <div>
-              <label className={styles.label}>
-                密码
-              </label>
-              <div className={styles.passwordField}>
-                <input
+              <label className="mb-1.5 block text-[12.5px] font-medium text-muted-foreground">密码</label>
+              <div className="relative">
+                <Input
                   type={showPwd ? "text" : "password"}
                   autoComplete="current-password"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className={clsx(styles.input, styles.passwordInput)}
+                  className="pr-9"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPwd((v) => !v)}
-                  className={styles.eyeButton}
+                  className="absolute right-2.5 top-1/2 flex -translate-y-1/2 appearance-none items-center border-0 bg-transparent p-0.5 text-muted-foreground hover:text-foreground"
                 >
                   <Icon name={showPwd ? "eyeOff" : "eye"} size={14} />
                 </button>
@@ -148,52 +146,45 @@ export function LoginPage() {
             </div>
 
             {captchaRequired && (
-              <div className={styles.captchaBlock}>
-                <div className={styles.captchaHint}>
+              <div className="flex flex-col gap-1.5">
+                <div className="text-[11.5px] text-muted-foreground">
                   连续失败已达 {failedCount} 次，请完成验证后重试
                 </div>
                 <Captcha onChange={setCaptchaToken} />
               </div>
             )}
 
-            <button
+            <Button
               type="submit"
+              variant="primary"
               disabled={login.isPending || (captchaRequired && !captchaToken)}
-              className={clsx(
-                styles.primaryButton,
-                login.isPending && styles.primaryButtonPending,
-                captchaRequired && !captchaToken && styles.primaryButtonDisabledSoft,
-              )}
+              className="mt-1.5 w-full"
             >
               {login.isPending ? "登录中..." : "登录"}
-            </button>
+            </Button>
 
-            <div className={styles.linksRow}>
+            <div className="mt-2.5 flex items-center justify-between">
               {regStatus.data?.open_registration_enabled ? (
-                <Link
-                  to="/register"
-                  className={styles.link}
-                >
+                <Link to="/register" className="text-xs text-brand hover:underline">
                   没有账号？立即注册
                 </Link>
-              ) : <span />}
-              <Link
-                to="/forgot-password"
-                className={styles.link}
-              >
+              ) : (
+                <span />
+              )}
+              <Link to="/forgot-password" className="text-xs text-brand hover:underline">
                 忘记密码？
               </Link>
             </div>
           </form>
 
           {import.meta.env.MODE !== "production" && (
-            <div className={styles.devAccounts}>
-              <div className={styles.devAccountsTitle}>测试账号 (密码统一: 123456)</div>
+            <div className="mt-5 rounded-md bg-muted px-3.5 py-3 text-xs text-muted-foreground">
+              <div className="mb-1.5 font-medium text-muted-foreground">测试账号 (密码统一: 123456)</div>
               <div>超级管理员：<span className="mono">admin</span></div>
-              <div className={styles.devAccountLine}>项目管理员：<span className="mono">pm</span></div>
-              <div className={styles.devAccountLine}>质检员：<span className="mono">qa</span></div>
-              <div className={styles.devAccountLine}>标注员：<span className="mono">anno</span></div>
-              <div className={styles.devAccountLine}>观察者：<span className="mono">viewer</span></div>
+              <div className="mt-0.5">项目管理员：<span className="mono">pm</span></div>
+              <div className="mt-0.5">质检员：<span className="mono">qa</span></div>
+              <div className="mt-0.5">标注员：<span className="mono">anno</span></div>
+              <div className="mt-0.5">观察者：<span className="mono">viewer</span></div>
             </div>
           )}
         </div>
