@@ -1,6 +1,6 @@
 .loading {
   padding: 60px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 13px;
   text-align: center;
 }

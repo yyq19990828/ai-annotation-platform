@@ -19,7 +19,7 @@
 }
 
 .pageSubtitle {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 
@@ -29,7 +29,7 @@
   justify-content: space-between;
   gap: 10px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
   font-size: 13px;
   font-weight: 600;
 }
@@ -47,10 +47,10 @@
 .selectControl,
 .searchInput {
   padding: 4px 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
-  background: var(--color-bg-sunken);
-  color: var(--color-fg);
+  background: var(--sc-muted);
+  color: var(--sc-foreground);
   font-size: 11px;
   outline: none;
 }
@@ -73,7 +73,7 @@
 
 .message {
   padding: 16px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
   text-align: center;
 }
@@ -89,13 +89,13 @@
 }
 
 .headerRow {
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
 }
 
 .tableHeaderCell {
   padding: 6px 10px;
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-fg-muted);
+  border-bottom: 1px solid var(--sc-border);
+  color: var(--sc-muted-foreground);
   font-weight: 500;
   text-align: left;
   user-select: none;
@@ -104,7 +104,7 @@
 
 .tableCell {
   padding: 6px 10px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
 }
 
 .clickableRow {
@@ -112,26 +112,26 @@
 }
 
 .clickableRow:hover {
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
 }
 
 .projectDisplayId {
   margin-left: 6px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }
 
 .batchCell {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-family: var(--font-mono, ui-monospace);
   font-size: 11px;
 }
 
 .mutedCell {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .subtle {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }
 
 .numeric {
@@ -147,7 +147,7 @@
 }
 
 .progressText {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -161,7 +161,7 @@
 }
 
 .helperInline {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
@@ -171,12 +171,12 @@
   align-items: center;
   gap: 8px;
   padding: 32px 16px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   text-align: center;
 }
 
 .emptyTitle {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 
@@ -204,7 +204,7 @@
 
 .detailId {
   margin-top: 3px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-family: var(--font-mono);
   font-size: 11px;
 }
@@ -217,21 +217,21 @@
 
 .detailStat {
   padding: 10px;
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
 }
 
 .detailStat span,
 .detailTimeline {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
 .detailStat strong {
   display: block;
   margin-top: 5px;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-size: 15px;
   font-variant-numeric: tabular-nums;
 }
@@ -260,19 +260,19 @@
   margin: 0;
   padding: 10px;
   overflow: auto;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.45;
   white-space: pre-wrap;
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
 }
 
 .errorBlock {
-  color: var(--color-danger);
-  background: var(--color-danger-soft);
+  color: var(--sc-destructive);
+  background: color-mix(in srgb, var(--sc-destructive) 14%, transparent);
 }
 
 .retryPanel {
@@ -281,13 +281,13 @@
   justify-content: space-between;
   gap: 12px;
   padding: 12px;
-  background: var(--color-ai-soft);
-  border: 1px solid var(--color-ai);
+  background: color-mix(in srgb, var(--sc-chart-4) 14%, transparent);
+  border: 1px solid var(--sc-chart-4);
   border-radius: var(--radius-md);
 }
 
 .retryTitle {
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-size: 13px;
   font-weight: 600;
 }
@@ -295,10 +295,10 @@
 .retryHint,
 .retryError {
   margin-top: 3px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
 .retryError {
-  color: var(--color-danger);
+  color: var(--sc-destructive);
 }

@@ -74,21 +74,21 @@ When the following changes occur, you must check the corresponding docs:
 - Architecture change → check `docs-site/dev/concepts/`, add an ADR if needed (`docs/adr/`)
 - Environment variable change → update `.env.example`, run `pnpm docs:gen-env-vars`, check `DEV.md`
 
-## 6. Frontend Color Token Rules (prevent dark-mode breakage)
+## 6. Frontend Color Rules (prevent dark-mode breakage)
 
-**Single source of truth: `apps/web/src/styles/tokens.css`.**
+**Single source of truth: `apps/web/src/styles/shadcn.css`.**
 
-The shared root cause of past bugs B-32/B-36/B-38/B-39: component CSS used variable names that "felt right" but didn't exist (`var(--color-text, #1f2937)`, `var(--color-primary, ...)`); the browser couldn't find them and fell back to a hardcoded light color → unreadable in dark mode.
+The app now uses Tailwind CSS plus shadcn/ui tokens. Neutral surfaces, text, borders, radius, focus rings, and canvas-only theme values live under `--sc-*`. Tailwind semantic classes are mapped from those runtime tokens in `@theme inline`.
 
-Follow 3 hard rules when writing component CSS:
+Follow these rules when writing component UI:
 
-1. **No inventing names on the spot**: only use `--color-*` already defined in `tokens.css`. If you need a new semantic, first add both light + dark definitions in `tokens.css`, then use it.
-2. **No fallbacks**: never write `var(--color-foo, #xxx)` / `var(--color-foo, rgba(...))`; write `var(--color-foo)` directly. A fallback is a back door for invented names and silently reverts to light when a token is renamed.
-3. **No hardcoded colors**: don't write `#hex` / `rgb()` / `oklch()` in component CSS (shadow / overlay-specific rgba are exceptions). All colors come from tokens.
+1. **Use semantic classes first**: prefer `bg-card`, `text-foreground`, `text-muted-foreground`, `border-border`, `bg-primary`, `text-brand`, and the fixed semantic color palette documented in `docs-site/dev/reference/design-system.md`.
+2. **Use `--sc-*` in CSS modules**: remaining CSS modules may read `var(--sc-*)`; they must not read legacy `var(--color-*)` variables.
+3. **No arbitrary or bare colors in className**: do not write `bg-[#...]`, `text-[rgb(...)]`, `#hex`, `rgb(...)`, or `oklch(...)` in class names. Canvas/data-domain colors and shadow/overlay-specific rgba remain narrow exceptions.
+4. **Pair semantic light/dark text**: status text such as `text-rose-600` must include the matching `dark:text-rose-400` unless it is a non-text fill/dot.
+5. **Dark mode is data-theme driven**: use Tailwind `dark:` classes; do not introduce a `.dark` selector.
 
-**CI gate**: `pnpm lint` includes `node scripts/check-css-tokens.mjs`, which scans all `apps/web/src/**/*.css` and fails on violations of rule 1 or 2; run it standalone with `pnpm lint:css-tokens`.
-
-**Compatibility aliases**: the bottom of `tokens.css` maintains a set of legacy aliases (e.g. `--color-primary` → `--color-accent`), kept only for historical CSS compatibility. New code should use the canonical names on the right.
+**CI gate**: `pnpm lint` includes `node scripts/check-tw-tokens.mjs`. Run it standalone with `pnpm lint:css-tokens`.
 
 ## 7. Plan File Naming Convention (in /plan mode)
 

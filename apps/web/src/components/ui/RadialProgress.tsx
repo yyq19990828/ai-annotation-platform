@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils";
 
 /**
- * RadialProgress —— 圆环进度(v0.17.2,module.css → Tailwind)。SVG 单环,不引图表库。
- * 颜色走 SVG stroke;默认从 --color-* 改指 --sc-* 前瞻 tokens.css 退役。
+ * RadialProgress —— 圆环进度。SVG 单环,不引图表库。
+ * 颜色走 SVG stroke,默认读取 shadcn runtime token。
  */
 interface RadialProgressProps {
   value: number;

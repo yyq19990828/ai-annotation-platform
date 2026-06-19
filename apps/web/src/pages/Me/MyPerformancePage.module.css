@@ -23,7 +23,7 @@
 }
 
 .subtitle {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 13px;
   line-height: 1.6;
   margin: 6px 0 0;
@@ -36,8 +36,8 @@
 }
 
 .kpiCard {
-  --kpi-color: var(--color-fg-subtle);
-  --kpi-soft: var(--color-bg-sunken);
+  --kpi-color: var(--sc-muted-foreground);
+  --kpi-soft: var(--sc-muted);
 
   position: relative;
   min-width: 0;
@@ -45,10 +45,10 @@
   overflow: hidden;
   background: linear-gradient(
     180deg,
-    color-mix(in oklab, var(--kpi-color) 8%, var(--color-bg-elev)),
-    var(--color-bg-elev)
+    color-mix(in oklab, var(--kpi-color) 8%, var(--sc-card)),
+    var(--sc-card)
   );
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
 }
@@ -62,23 +62,23 @@
 }
 
 .kpiCard[data-tone="accent"] {
-  --kpi-color: var(--color-accent);
-  --kpi-soft: var(--color-accent-soft);
+  --kpi-color: var(--sc-brand);
+  --kpi-soft: color-mix(in srgb, var(--sc-brand) 12%, transparent);
 }
 
 .kpiCard[data-tone="success"] {
-  --kpi-color: var(--color-success);
-  --kpi-soft: var(--color-success-soft);
+  --kpi-color: var(--sc-positive);
+  --kpi-soft: color-mix(in srgb, var(--sc-positive) 14%, transparent);
 }
 
 .kpiCard[data-tone="warning"] {
-  --kpi-color: var(--color-warning);
-  --kpi-soft: var(--color-warning-soft);
+  --kpi-color: var(--sc-caution);
+  --kpi-soft: color-mix(in srgb, var(--sc-caution) 14%, transparent);
 }
 
 .kpiCard[data-tone="danger"] {
-  --kpi-color: var(--color-danger);
-  --kpi-soft: var(--color-danger-soft);
+  --kpi-color: var(--sc-destructive);
+  --kpi-soft: color-mix(in srgb, var(--sc-destructive) 14%, transparent);
 }
 
 .kpiTop {
@@ -104,7 +104,7 @@
 .kpiLabel {
   min-width: 0;
   font-size: 12px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -114,7 +114,7 @@
   display: flex;
   align-items: baseline;
   min-width: 0;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-size: 24px;
   font-weight: 600;
   line-height: 1.15;
@@ -123,23 +123,23 @@
 }
 
 .kpiValue[data-positive="true"] {
-  color: var(--color-success);
+  color: var(--sc-positive);
 }
 
 .kpiValue[data-positive="false"] {
-  color: var(--color-danger);
+  color: var(--sc-destructive);
 }
 
 .kpiSuffix {
   font-size: 12px;
   font-weight: 400;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   margin-left: 4px;
 }
 
 .kpiCaption {
   margin-top: 8px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
   line-height: 1.4;
   overflow: hidden;
@@ -157,8 +157,8 @@
   grid-column: span 2;
   min-width: 0;
   padding: 16px;
-  background: var(--color-bg-elev);
-  border: 1px solid var(--color-border);
+  background: var(--sc-card);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
 }
@@ -177,7 +177,7 @@
 
 .cardTitle {
   margin: 0;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0;
@@ -185,7 +185,7 @@
 
 .cardHint {
   margin: 5px 0 0;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -193,10 +193,10 @@
 .cardBadge {
   flex-shrink: 0;
   padding: 3px 8px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-pill);
-  background: var(--color-bg-sunken);
-  color: var(--color-fg-muted);
+  background: var(--sc-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -217,10 +217,10 @@
 
 .notReady {
   padding: 14px 16px;
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 
@@ -231,21 +231,21 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
   padding: 24px 12px;
   text-align: center;
-  background: color-mix(in oklab, var(--color-bg-sunken) 70%, transparent);
-  border: 1px dashed var(--color-border);
+  background: color-mix(in oklab, var(--sc-muted) 70%, transparent);
+  border: 1px dashed var(--sc-border);
   border-radius: var(--radius-md);
 }
 
 .emptyIcon {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }
 
 .cardFooter {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
   margin-top: 10px;
   text-align: right;

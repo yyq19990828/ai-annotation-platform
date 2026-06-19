@@ -17,13 +17,13 @@
 
 .main {
   overflow: auto;
-  background: var(--color-bg);
+  background: var(--sc-background);
 }
 
 .placeholder {
   padding: 60px 28px;
   text-align: center;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }
 
 .placeholderIcon {
@@ -33,7 +33,7 @@
 
 .placeholderTitle {
   margin: 0 0 8px;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-size: 18px;
   font-weight: 600;
 }

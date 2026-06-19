@@ -1,6 +1,6 @@
 .empty {
   padding: 24px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   text-align: center;
 }
 
@@ -17,17 +17,17 @@
   width: 100%;
   padding: 12px 14px;
   margin-bottom: 8px;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  background: var(--color-bg-elev);
-  border: 1px solid var(--color-border);
+  background: var(--sc-card);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
 }
 
 .folderIcon {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .projectInfo {
@@ -41,7 +41,7 @@
 }
 
 .projectMeta {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11.5px;
 }
 
@@ -50,5 +50,5 @@
 }
 
 .chevronIcon {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }

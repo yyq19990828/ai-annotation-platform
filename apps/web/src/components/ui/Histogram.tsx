@@ -1,6 +1,6 @@
 /**
  * Histogram —— 直方图(v0.17.2,module.css → Tailwind)。flex 容器 + 命令式动态高度/颜色。
- * 柱色走命令式 style.background;默认从 --color-accent 改指 --sc-brand 前瞻 tokens.css 退役。
+ * 柱色走命令式 style.background;默认使用 --sc-brand。
  */
 interface HistogramProps {
   values: number[];

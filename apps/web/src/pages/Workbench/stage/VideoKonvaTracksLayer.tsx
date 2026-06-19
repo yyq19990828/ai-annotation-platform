@@ -36,7 +36,7 @@ export function VideoKonvaTracksLayer({
   scale,
   visual,
 }: VideoKonvaTracksLayerProps) {
-  const occludedDotFill = cssVarToHex("--color-bg-elev");
+  const occludedDotFill = cssVarToHex("--sc-card");
   return (
     <Layer name="tracks" listening={false}>
       {previews.map((preview) => {

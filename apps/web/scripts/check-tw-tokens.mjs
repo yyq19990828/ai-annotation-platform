@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Tailwind className 颜色规范检查 (warning 模式) — Tailwind 时代的暗色护栏.
+ * Tailwind className 颜色规范检查 (blocking 模式) — Tailwind 时代的暗色护栏.
  *
- * 配套 check-css-tokens.mjs (护 CSS Modules 时代). 随 v0.17.x 全量迁移到 shadcn/Tailwind,
- * 颜色逐步从 *.module.css 移到 *.tsx 的 className. 本脚本扫 className, 对齐设计规范 §2.4 禁则:
+ * 随 UI 全量迁移到 shadcn/Tailwind,颜色逐步从 *.module.css 移到 *.tsx 的 className.
+ * 本脚本扫 className 和残留 CSS,对齐设计规范禁则:
  *   1. 裸色: className 里出现 #hex / rgb() / rgba() / hsl() / oklch() / oklab() / color()
  *   2. 任意色值: bg-[#...] / text-[rgb(...)] / border-[hsl(...)] 等 Tailwind arbitrary color value
  *   3. (建议级) 暗色配对: 语义色 text/bg/border-<hue>-600 应伴随 dark:...-<hue>-400 (设计规范 §2.2)
@@ -11,9 +11,9 @@
  * 中性色/表面/边框走 shadcn 的 --sc-* token (bg-background / text-foreground / border-border ...),
  * 语义彩色走固定调色板 (sky/emerald/violet/amber/rose) + 柔底 /10 + 暗色提亮. 不在 className 里写裸色.
  *
- * v0.17.7 全量迁移完成,转入 **blocking 模式**: 有发现时 exit 1,阻断 CI。
+ * 有发现时 exit 1,阻断 CI。
  *
- * 唯一可信来源: docs/plans/2026-06-19-v0.17.0-ui-design-system.md (晋升后 design-system.md).
+ * 唯一可信来源: docs-site/dev/reference/design-system.md.
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -31,15 +31,15 @@ const SEMANTIC_HUES = [
   "red", "green", "blue", "yellow", "orange", "purple", "indigo", "teal", "cyan",
 ];
 
-function walkTsxFiles(dir, out = []) {
+function walkSourceFiles(dir, predicate, out = []) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
     const s = statSync(p);
     if (s.isDirectory()) {
       if (name === "node_modules" || name === "dist" || name === "coverage")
         continue;
-      walkTsxFiles(p, out);
-    } else if (s.isFile() && name.endsWith(".tsx")) {
+      walkSourceFiles(p, predicate, out);
+    } else if (s.isFile() && predicate(name)) {
       out.push(p);
     }
   }
@@ -140,8 +140,32 @@ function checkChunk(value) {
   return issues;
 }
 
+function checkCssColorTokenRefs() {
+  const files = walkSourceFiles(SCAN_DIR, (name) => name.endsWith(".css"));
+  const usages = [];
+
+  for (const file of files) {
+    const raw = readFileSync(file, "utf8");
+    const text = stripComments(raw);
+    for (const match of text.matchAll(/var\(\s*(--color-[a-z0-9-]+)/g)) {
+      usages.push({
+        token: match[1],
+        file: relative(ROOT, file),
+        line: lineOf(text, match.index),
+      });
+    }
+  }
+
+  return usages.map((usage) => ({
+    kind: "legacy-css-token",
+    detail: `${usage.token} is a legacy CSS token; use --sc-* in CSS`,
+    file: usage.file,
+    line: usage.line,
+  }));
+}
+
 function main() {
-  const files = walkTsxFiles(SCAN_DIR);
+  const files = walkSourceFiles(SCAN_DIR, (name) => name.endsWith(".tsx"));
   const findings = [];
 
   for (const file of files) {
@@ -158,10 +182,11 @@ function main() {
       }
     }
   }
+  findings.push(...checkCssColorTokenRefs());
 
   if (findings.length === 0) {
     console.log(
-      "✓ check-tw-tokens: className 无裸色 / 任意色值, 语义色暗色配对完整.",
+      "✓ check-tw-tokens: className 无裸色 / 任意色值, 语义色暗色配对完整, CSS 无旧 --color-* 引用.",
     );
     process.exit(0);
   }
@@ -173,12 +198,13 @@ function main() {
     "bare-color": "裸色字面 (#hex / rgb / oklch) 写进 className",
     "arbitrary-color": "Tailwind 任意色值 util-[...] (绕过 token / 调色板)",
     "dark-pair": "语义色缺暗色配对 (设计规范 §2.2)",
+    "legacy-css-token": "CSS 引用了旧 --color-* token",
   };
 
   console.warn(
     `✗ check-tw-tokens (blocking): ${findings.length} 处违反颜色规范\n`,
   );
-  for (const kind of ["bare-color", "arbitrary-color", "dark-pair"]) {
+  for (const kind of ["bare-color", "arbitrary-color", "dark-pair", "legacy-css-token"]) {
     const list = byKind[kind];
     if (!list?.length) continue;
     console.warn(`▶ ${kind} (${list.length}): ${KIND_LABEL[kind]}`);

@@ -9,14 +9,14 @@
   align-items: center;
   gap: 4px;
   padding: 0 28px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-bg);
+  border-bottom: 1px solid var(--sc-border);
+  background: var(--sc-background);
 }
 
 .tab {
   padding: 8px 14px;
   border-bottom: 2px solid transparent;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 13px;
   font-weight: 500;
   text-decoration: none;
@@ -24,6 +24,6 @@
 }
 
 .tabActive {
-  border-bottom-color: var(--color-ai);
-  color: var(--color-ai);
+  border-bottom-color: var(--sc-chart-4);
+  color: var(--sc-chart-4);
 }

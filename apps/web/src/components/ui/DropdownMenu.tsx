@@ -17,7 +17,7 @@ import { Icon, type IconName } from "./Icon";
 /**
  * v0.17.2:module.css → Tailwind。逻辑/定位/键盘/a11y 一律不动(已等价 Radix);仅把 className
  * 换成 Tailwind,面板位置/尺寸沿用 imperative CSS 变量(--dropdown-*),用 Tailwind 任意值消费。
- * item 是 portal 内原生 <button>(非 .tw-scope),加 appearance-none 防 UA 默认样式漏出。
+ * item 是 portal 内原生 <button>,加 appearance-none 防 UA 默认样式漏出。
  */
 
 export interface DropdownItem {

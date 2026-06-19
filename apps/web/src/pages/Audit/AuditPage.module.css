@@ -20,7 +20,7 @@
 
 .description {
   margin: 0;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 13px;
 }
 
@@ -44,7 +44,7 @@
 .autoRefresh {
   align-items: center;
   gap: 6px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   cursor: pointer;
   font-size: 12.5px;
 }
@@ -58,15 +58,15 @@
   flex-wrap: wrap;
   gap: 8px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
 }
 
 .control {
   padding: 5px 8px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-elev);
-  color: var(--color-fg);
+  background: var(--sc-card);
+  color: var(--sc-foreground);
   font-size: 12.5px;
 }
 
@@ -98,7 +98,7 @@
 
 .totalText {
   margin-left: auto;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 
@@ -106,7 +106,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
   background: rgba(99, 102, 241, 0.08);
   font-size: 12.5px;
 }
@@ -118,11 +118,11 @@
 }
 
 .accentIcon {
-  color: var(--color-accent);
+  color: var(--sc-brand);
 }
 
 .mutedText {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .tableHeader,
@@ -132,9 +132,9 @@
 }
 
 .tableHeader {
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-bg-sunken);
-  color: var(--color-fg-muted);
+  border-bottom: 1px solid var(--sc-border);
+  background: var(--sc-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
   font-weight: 500;
 }
@@ -156,7 +156,7 @@
 
 .emptyState {
   padding: 32px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   text-align: center;
 }
 
@@ -169,13 +169,13 @@
   top: 0;
   right: 0;
   left: 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
   transform: translateY(var(--audit-row-y));
 }
 
 .auditRowChild {
   padding-left: 24px;
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
 }
 
 .expandCell {
@@ -191,7 +191,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--color-accent);
+  color: var(--sc-brand);
   cursor: pointer;
   font-size: 12.5px;
   text-align: left;
@@ -204,7 +204,7 @@
 }
 
 .timeCell {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -227,24 +227,24 @@
 }
 
 .anonymous {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
   font-style: italic;
 }
 
 .targetCell {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 
 .targetId {
   margin-left: 4px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
 .ipCell {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-family: var(--font-mono, monospace);
   font-size: 11.5px;
 }
@@ -257,7 +257,7 @@
   justify-content: flex-end;
   gap: 6px;
   padding: 12px;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--sc-border);
 }
 
 .detailStack {
@@ -275,7 +275,7 @@
 
 .detailJsonLabel {
   margin-bottom: 4px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11.5px;
 }
 
@@ -284,14 +284,14 @@
   margin: 0;
   padding: 12px;
   overflow: auto;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
   font-size: 12px;
 }
 
 .subtleText {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }
 
 .kvRow {
@@ -300,7 +300,7 @@
 
 .kvLabel {
   width: 80px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .kvValue {

@@ -6,7 +6,7 @@
  * 返回 503，前端展示「数据初始化中」提示。
  *
  * v0.12.7 · 吞吐 / reject 面板升级为 recharts；新增工时热力图（星期几 × 小时）。
- * v0.17.3 · module.css → Tailwind(tw-scope);recharts/热力图取色改 --sc-*。
+ * Recharts / heatmap colors read shadcn runtime tokens.
  */
 
 import { useMemo, useState, type CSSProperties } from "react";

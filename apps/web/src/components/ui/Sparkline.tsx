@@ -1,7 +1,6 @@
 /**
  * Sparkline —— 迷你折线(v0.17.2,module.css → Tailwind)。
- * 颜色走 SVG fill/stroke(非 className,不入 token 门禁);默认从 --color-accent 改指 --sc-brand
- * 以前瞻 tokens.css 退役(v0.17.7)。
+ * 颜色走 SVG fill/stroke(非 className,不入 token 门禁);默认使用 --sc-brand。
  */
 interface SparklineProps {
   values: number[];

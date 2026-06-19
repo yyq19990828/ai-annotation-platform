@@ -195,10 +195,10 @@ export function AnnotatorDashboard() {
           <div className="p-5 text-center">
             <div className="relative mx-auto mb-4 size-[120px]">
               <svg viewBox="0 0 120 120" width={120} height={120}>
-                <circle cx="60" cy="60" r="52" fill="none" stroke="var(--color-border)" strokeWidth="8" />
+                <circle cx="60" cy="60" r="52" fill="none" stroke="var(--sc-border)" strokeWidth="8" />
                 <circle
                   cx="60" cy="60" r="52" fill="none"
-                  stroke="var(--color-accent)" strokeWidth="8"
+                  stroke="var(--sc-brand)" strokeWidth="8"
                   strokeLinecap="round"
                   strokeDasharray={`${weeklyPct * 3.27} ${327 - weeklyPct * 3.27}`}
                   transform="rotate(-90 60 60)"

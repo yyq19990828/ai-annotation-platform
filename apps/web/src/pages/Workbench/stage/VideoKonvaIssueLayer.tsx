@@ -8,9 +8,9 @@ import type { AnnotationFeedback } from "@/api/feedbacks";
 const ISSUE_PIN_RADIUS = 0.012;
 
 const STATUS_VAR: Record<string, string> = {
-  open: "--color-warning",
-  resolved: "--color-success",
-  wont_fix: "--color-fg-muted",
+  open: "--sc-caution",
+  resolved: "--sc-positive",
+  wont_fix: "--sc-muted-foreground",
 };
 
 interface VideoKonvaIssueLayerProps {
@@ -28,7 +28,7 @@ interface VideoKonvaIssueLayerProps {
  * v0.16.2 · 视频 issue 图钉层(Konva Layer "issue",render-only)。
  *
  * 旧 VideoIssueLayer(SVG)的 Konva 对应物:只渲染 anchor_position.frame === 当前帧 的图钉,
- * 坐标像素空间(归一化 × size),status 配色复用 tokens(open/resolved/wont_fix)。
+ * 坐标像素空间(归一化 × size),status 配色复用 shadcn tokens(open/resolved/wont_fix)。
  * 提供 onPinClick 时图钉可点击(Layer/Circle listening);pointerdown 用 cancelBubble 阻止
  * 冒泡到 Stage(避免误触发画框/取消选中),click 触发回调(对齐旧 SVG 栈 onPinClick)。
  */
@@ -42,7 +42,7 @@ export function VideoKonvaIssueLayer({
 }: VideoKonvaIssueLayerProps) {
   const onFrame = pixelIssues.filter((issue) => issue.anchor_position?.frame === frameIndex);
   if (onFrame.length === 0) return null;
-  const ringColor = cssVarToHex("--color-bg-elev");
+  const ringColor = cssVarToHex("--sc-card");
   const radius = ISSUE_PIN_RADIUS * size.w;
   const clickable = !!onPinClick;
   const setCursor = (e: Konva.KonvaEventObject<MouseEvent>, cursor: string) => {

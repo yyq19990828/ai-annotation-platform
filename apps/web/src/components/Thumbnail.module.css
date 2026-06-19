@@ -6,11 +6,11 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
 }
 
 .placeholderIcon {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }
 
 .media,

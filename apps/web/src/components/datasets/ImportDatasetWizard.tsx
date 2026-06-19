@@ -965,10 +965,10 @@ function Step3({
                 progress={item?.progress ?? 0}
                 color={
                   item?.status === "error"
-                    ? "var(--color-danger)"
+                    ? "var(--sc-destructive)"
                     : item?.status === "done"
-                      ? "var(--color-success)"
-                      : "var(--color-accent)"
+                      ? "var(--sc-positive)"
+                      : "var(--sc-brand)"
                 }
               />
             </div>
@@ -1069,7 +1069,7 @@ function Step3Zip({
         <div className={styles.zipProgressTrack}>
           <ProgressFill
             progress={progress}
-            color={error ? "var(--color-danger)" : result ? "var(--color-success)" : "var(--color-accent)"}
+            color={error ? "var(--sc-destructive)" : result ? "var(--sc-positive)" : "var(--sc-brand)"}
           />
         </div>
       </div>
@@ -1186,10 +1186,10 @@ function Step3Connection({
           progress={progress}
           color={
             submitError || job?.status === "failed"
-              ? "var(--color-danger)"
+              ? "var(--sc-destructive)"
               : job?.status === "completed"
-                ? "var(--color-success)"
-                : "var(--color-accent)"
+                ? "var(--sc-positive)"
+                : "var(--sc-brand)"
           }
         />
       </div>

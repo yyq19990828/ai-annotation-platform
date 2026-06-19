@@ -1,6 +1,6 @@
 /**
  * v0.10.58 · super_admin system health panel.
- * v0.17.3 · module.css → Tailwind(tw-scope)。
+ * Tailwind/shadcn surface with semantic status colors.
  */
 
 import { useQuery } from "@tanstack/react-query";

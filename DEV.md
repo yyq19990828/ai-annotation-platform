@@ -132,19 +132,21 @@ API 文档：http://localhost:8000/docs
 
 ### 设计系统
 
-所有设计 Token 定义在 `apps/web/src/styles/tokens.css` 的 `:root` 中，精确移植自原型：
+前端设计系统基于 Tailwind CSS + shadcn/ui。运行时主题 Token 定义在 `apps/web/src/styles/shadcn.css`：
 
 ```css
---color-accent: oklch(0.58 0.18 252);   /* 蓝色强调 */
---color-ai: oklch(0.60 0.20 295);        /* 紫色 AI */
---color-success: oklch(0.62 0.16 152);   /* 绿色成功 */
---color-warning: oklch(0.72 0.15 75);    /* 黄色警告 */
---color-danger: oklch(0.62 0.20 25);     /* 红色危险 */
+--sc-background: #ffffff;
+--sc-foreground: #171717;
+--sc-card: #ffffff;
+--sc-border: #ebebeb;
+--sc-brand: #0070f3;
 ```
+
+组件样式优先使用 Tailwind 语义类（如 `bg-card`、`text-muted-foreground`、`border-border`）或直接读取 `--sc-*`。不要在 CSS 中继续使用旧 `--color-*` 变量。
 
 ### UI 组件
 
-所有基础组件在 `apps/web/src/components/ui/`，通过 `index.ts` barrel 导出：
+底层原语在 `apps/web/src/components/shadcn/ui/`。`apps/web/src/components/ui/` 保留应用兼容适配层，继续通过既有 import 使用：
 
 ```tsx
 import { Button, Badge, Card, Avatar, StatCard, Icon } from "@/components/ui";

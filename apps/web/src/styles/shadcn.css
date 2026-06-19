@@ -1,10 +1,10 @@
 /* ============================================================
-   Tailwind v4 + shadcn —— v0.17.7 preflight 全局
+   Tailwind v4 + shadcn —— global preflight
    ------------------------------------------------------------
    设计基调：Geist 风(极简高对比黑白 + 克制蓝 #0070F3)。
 
-   v0.17.7: 全量迁移完成,preflight 转全局,不再需要 .tw-scope 局部 reset。
-   tokens.css 退役(变量已全迁入 --sc-*),全站 Tailwind 化。
+   全量迁移完成,preflight 转全局,不再需要局部 reset。
+   旧 token 文件退役(变量已全迁入 --sc-*),全站 Tailwind 化。
    暗色由 `<html data-theme="dark">` 驱动,经由 `dark:` variant 重定向。
    ============================================================ */
 
@@ -36,7 +36,7 @@
   --color-input: var(--sc-input);
   --color-ring: var(--sc-ring);
 
-  /* Geist 强调蓝 + 状态色(命名空间化，避免与 tokens.css 的 --color-success 等冲突) */
+  /* Geist 强调蓝 + 状态色 */
   --color-brand: var(--sc-brand);
   --color-brand-foreground: var(--sc-brand-foreground);
   --color-positive: var(--sc-positive);
@@ -56,6 +56,8 @@
 
 /* —— Geist 调色板 · 浅色(纯白底 / 近黑字) —— */
 :root {
+  color-scheme: light;
+
   --sc-radius: 8px;
 
   --sc-background: #ffffff;
@@ -92,13 +94,25 @@
   --sc-chart-3: #b45309;
   --sc-chart-4: #7c3aed;
 
-  /* 画布棋盘格(从 tokens.css 折入;画布叠加层专属,无 Tailwind 等价) */
+  /* 画布棋盘格(画布叠加层专属,无 Tailwind 等价) */
   --sc-canvas-checker-a: #e9e9ec;
   --sc-canvas-checker-b: #f3f3f5;
+  --sc-code-bg: #ececef;
+  --sc-code-fg: #18181b;
+
+  --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+    "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Menlo", "Consolas", monospace;
+  --radius-pill: 9999px;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
 }
 
 /* —— Geist 调色板 · 深色(纯黑底 / 近白字,主场) —— */
 [data-theme="dark"] {
+  color-scheme: dark;
+
   --sc-background: #000000;
   --sc-foreground: #ededed;
   --sc-card: #0a0a0a;
@@ -136,4 +150,42 @@
   /* 画布棋盘格(深色) */
   --sc-canvas-checker-a: #1e1e23;
   --sc-canvas-checker-b: #2a2a30;
+  --sc-code-bg: #2e2e33;
+  --sc-code-fg: #f4f4f5;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    min-width: 320px;
+    font-family: var(--font);
+    font-size: 13px;
+    color: var(--sc-foreground);
+    background: var(--sc-background);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
 }

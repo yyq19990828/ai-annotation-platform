@@ -191,13 +191,11 @@ export function CameraProjectionView({
       }
     }
 
-    // v0.15.24 · 种框橡皮筋矩形(显示坐标,虚线 + 淡填充)。从 tokens 取 accent 色,
-    // 读不到时退一个中性蓝(canvas strokeStyle 不在 check-css-tokens 扫描范围,JS 兜底可接受)。
+    // v0.15.24 · 种框橡皮筋矩形(显示坐标,虚线 + 淡填充)。从 shadcn token 取品牌色。
     const seed = seedRectRef.current;
     if (seedMode && seed) {
-      // accent 是 oklch(见 tokens.css),不能走 hexToRgba;用 globalAlpha 做淡填充兼容任意色格式。
       const accent =
-        getComputedStyle(canvas).getPropertyValue("--color-accent").trim() || "#3b82f6";
+        getComputedStyle(canvas).getPropertyValue("--sc-brand").trim() || "#3b82f6";
       const w = seed.x1 - seed.x0;
       const h = seed.y1 - seed.y0;
       ctx.save();

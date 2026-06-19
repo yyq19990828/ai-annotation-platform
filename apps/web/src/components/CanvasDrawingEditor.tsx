@@ -56,7 +56,7 @@ export function CanvasDrawingEditor({ open, onClose, onSave, initial, background
     "--canvas-drawing-aspect-padding": `${aspectRatioPercent(imageWidth, imageHeight)}%`,
     "--canvas-drawing-bg": backgroundUrl
       ? `center/contain no-repeat url(${backgroundUrl})`
-      : "var(--color-bg-sunken)",
+      : "var(--sc-muted)",
   } as CSSProperties), [backgroundUrl, imageHeight, imageWidth]));
 
   // 重置 shapes（每次打开同步 initial）
@@ -222,7 +222,7 @@ export function CanvasDrawingPreview({ drawing, width = 220, backgroundUrl, imag
     "--canvas-drawing-preview-height": height,
     "--canvas-drawing-bg": backgroundUrl
       ? `center/contain no-repeat url(${backgroundUrl})`
-      : "var(--color-bg-sunken)",
+      : "var(--sc-muted)",
   } as CSSProperties), [backgroundUrl, height, width]));
 
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);

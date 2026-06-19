@@ -7,7 +7,7 @@
 .label {
   display: block;
   margin-bottom: 6px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
   font-weight: 500;
 }
@@ -16,11 +16,11 @@
   width: 100%;
   box-sizing: border-box;
   padding: 8px 11px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
   outline: none;
-  background: var(--color-bg-sunken);
-  color: var(--color-fg);
+  background: var(--sc-muted);
+  color: var(--sc-foreground);
   font-size: 13.5px;
   font-family: inherit;
 }
@@ -32,7 +32,7 @@
 
 .helpText {
   margin-top: 4px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
@@ -52,11 +52,11 @@
 }
 
 .probeResultOk {
-  color: var(--color-success);
+  color: var(--sc-positive);
 }
 
 .probeResultError {
-  color: var(--color-danger);
+  color: var(--sc-destructive);
 }
 
 .checkboxLabel {
@@ -68,17 +68,17 @@
 }
 
 .aiCheckbox {
-  accent-color: var(--color-ai);
+  accent-color: var(--sc-chart-4);
 }
 
 .aiIcon {
-  color: var(--color-ai);
+  color: var(--sc-chart-4);
 }
 
 .indentedHelp {
   margin-top: 4px;
   margin-left: 24px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
@@ -101,7 +101,7 @@
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   cursor: pointer;
   font-size: 12px;
   font-family: inherit;
@@ -119,10 +119,10 @@
   align-items: flex-start;
   gap: 6px;
   padding: 8px 11px;
-  border: 1px solid var(--color-danger);
+  border: 1px solid var(--sc-destructive);
   border-radius: var(--radius-md);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
+  background: color-mix(in srgb, var(--sc-destructive) 14%, transparent);
+  color: var(--sc-destructive);
   font-size: 12px;
 }
 

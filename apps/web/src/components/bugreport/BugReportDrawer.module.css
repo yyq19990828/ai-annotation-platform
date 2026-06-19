@@ -14,7 +14,7 @@
   flex-direction: column;
   width: min(400px, 100vw);
   height: 100vh;
-  background: var(--color-bg-elev);
+  background: var(--sc-card);
   box-shadow: -4px 0 20px rgba(0, 0, 0, 0.12);
 }
 
@@ -23,13 +23,13 @@
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
 }
 
 .title {
   font-size: 14px;
   font-weight: 600;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
 }
 
 .headerActions {
@@ -55,14 +55,14 @@
 .secondaryButton {
   padding: 3px 10px;
   font-size: 12px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   background: none;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
 }
 
 .closeButton {
   padding: 2px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   cursor: pointer;
   background: none;
   border: none;
@@ -76,13 +76,13 @@
   font-weight: 500;
   color: #fff;
   cursor: pointer;
-  background: var(--color-accent);
+  background: var(--sc-brand);
   border: none;
   border-radius: var(--radius-md);
 }
 
 .primaryButton:disabled {
-  background: var(--color-accent-muted);
+  background: var(--sc-brand);
 }
 
 .submitButton {
@@ -99,30 +99,30 @@
 .loadingState {
   padding: 20px;
   font-size: 12px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   text-align: center;
 }
 
 .reportRow {
   padding: 10px 8px;
   cursor: pointer;
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--sc-border);
 }
 
 .reportTitle {
   font-size: 12.5px;
   font-weight: 500;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
 }
 
 .reportMeta {
   margin-top: 3px;
   font-size: 11px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .severity {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-weight: 500;
 }
 
@@ -147,7 +147,7 @@
   margin-bottom: 4px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .strongLabel {
@@ -163,9 +163,9 @@
   padding: 7px 10px;
   margin-bottom: 10px;
   font-size: 13px;
-  color: var(--color-fg);
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
+  color: var(--sc-foreground);
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
 }
 
@@ -191,10 +191,10 @@
   align-items: center;
   padding: 6px 10px;
   font-size: 12px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   cursor: pointer;
   background: transparent;
-  border: 1px dashed var(--color-border);
+  border: 1px dashed var(--sc-border);
   border-radius: var(--radius-sm);
 }
 
@@ -204,7 +204,7 @@
 
 .hint {
   font-size: 11.5px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .attachmentList {
@@ -223,14 +223,14 @@
   gap: 8px;
   align-items: center;
   padding: 6px 8px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   text-decoration: none;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
 }
 
 .pendingAttachmentItem {
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
 }
 
 .truncate {
@@ -238,7 +238,7 @@
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -246,10 +246,10 @@
 .removeButton {
   padding: 2px 6px;
   font-size: 11px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   cursor: pointer;
   background: transparent;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: 3px;
 }
 
@@ -282,14 +282,14 @@
 
 .smallPrimaryButton {
   color: #fff;
-  background: var(--color-accent);
+  background: var(--sc-brand);
   border: none;
 }
 
 .smallGhostButton {
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   background: transparent;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
 }
 
 .detail {
@@ -305,7 +305,7 @@
 
 .detailTitle {
   font-weight: 600;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
 }
 
 .detailActions {
@@ -316,10 +316,10 @@
 .detailButton {
   padding: 3px 8px;
   font-size: 11px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   cursor: pointer;
   background: none;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
 }
 
@@ -339,7 +339,7 @@
 .badge {
   padding: 1px 6px;
   font-size: 11px;
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
   border-radius: 3px;
 }
 
@@ -350,12 +350,12 @@
 }
 
 .muted {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .routeLine {
   margin-bottom: 10px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .routeCode {
@@ -379,7 +379,7 @@
 .resolution {
   padding: 8px;
   margin-bottom: 14px;
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
   border-radius: var(--radius-md);
 }
 
@@ -393,37 +393,37 @@
 
 .comment {
   padding: 6px 0;
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--sc-border);
 }
 
 .commentMeta {
   margin-bottom: 2px;
   font-size: 11px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .commentAuthor {
   font-weight: 500;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
 }
 
 .roleBadge {
   padding: 0 5px;
   margin-left: 6px;
   font-size: 10px;
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
   border-radius: 3px;
 }
 
 .commentTime {
   margin-left: 6px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }
 
 .emptyComments {
   padding: 4px 0 8px;
   font-size: 11.5px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .commentComposer {
@@ -447,12 +447,12 @@
   font-weight: 500;
   color: #fff;
   cursor: pointer;
-  background: var(--color-accent);
+  background: var(--sc-brand);
   border: none;
   border-radius: var(--radius-md);
 }
 
 .sendButton:disabled {
   cursor: not-allowed;
-  background: var(--color-accent-muted);
+  background: var(--sc-brand);
 }

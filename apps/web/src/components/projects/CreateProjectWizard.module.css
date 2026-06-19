@@ -4,10 +4,10 @@
   gap: 8px;
   margin-bottom: 12px;
   padding: 8px 12px;
-  border: 1px solid var(--color-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--sc-brand) 12%, transparent);
   border-radius: var(--radius-md);
-  background: var(--color-accent-soft);
-  color: var(--color-fg-muted);
+  background: color-mix(in srgb, var(--sc-brand) 12%, transparent);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 
@@ -43,32 +43,32 @@
   flex-shrink: 0;
   width: 22px;
   height: 22px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: 50%;
-  background: var(--color-bg-sunken);
-  color: var(--color-fg-muted);
+  background: var(--sc-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
   font-weight: 600;
 }
 
 .stepperDotActive {
-  background: var(--color-accent);
+  background: var(--sc-brand);
   color: #fff;
 }
 
 .stepperDotCurrent {
-  border: 2px solid var(--color-accent-soft);
+  border: 2px solid color-mix(in srgb, var(--sc-brand) 12%, transparent);
 }
 
 .stepperLabel {
   margin-left: 6px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11.5px;
   font-weight: 500;
 }
 
 .stepperLabelActive {
-  color: var(--color-accent);
+  color: var(--sc-brand);
 }
 
 .stepperLabelCurrent {
@@ -79,11 +79,11 @@
   flex: 1;
   height: 1px;
   margin: 0 8px;
-  background: var(--color-border);
+  background: var(--sc-border);
 }
 
 .stepperLineDone {
-  background: var(--color-accent);
+  background: var(--sc-brand);
 }
 
 .formStack {
@@ -107,13 +107,13 @@
 .label {
   display: block;
   margin-bottom: 6px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
   font-weight: 500;
 }
 
 .labelNote {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-weight: 400;
 }
 
@@ -121,23 +121,23 @@
   width: 100%;
   box-sizing: border-box;
   padding: 8px 11px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
   outline: none;
-  background: var(--color-bg-sunken);
-  color: var(--color-fg);
+  background: var(--sc-muted);
+  color: var(--sc-foreground);
   font-size: 13.5px;
   font-family: inherit;
   transition: border-color 0.15s;
 }
 
 .inputInvalid {
-  border-color: var(--color-danger);
+  border-color: var(--sc-destructive);
 }
 
 .fieldError {
   margin-top: 4px;
-  color: var(--color-danger);
+  color: var(--sc-destructive);
   font-size: 11px;
 }
 
@@ -152,18 +152,18 @@
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-sunken);
-  color: var(--color-fg);
+  background: var(--sc-muted);
+  color: var(--sc-foreground);
   cursor: pointer;
   text-align: left;
   font-family: inherit;
 }
 
 .typeButtonActive {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
+  border-color: var(--sc-brand);
+  background: color-mix(in srgb, var(--sc-brand) 12%, transparent);
 }
 
 .typeIcon {
@@ -173,14 +173,14 @@
   flex-shrink: 0;
   width: 28px;
   height: 28px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: 6px;
-  background: var(--color-bg-elev);
-  color: var(--color-fg-muted);
+  background: var(--sc-card);
+  color: var(--sc-muted-foreground);
 }
 
 .typeIconActive {
-  background: var(--color-accent);
+  background: var(--sc-brand);
   color: #fff;
 }
 
@@ -197,23 +197,23 @@
 }
 
 .typeHint {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
 .sectionHint {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12.5px;
 }
 
 .sectionHintTall {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12.5px;
   line-height: 1.6;
 }
 
 .schemaError {
-  color: var(--color-danger);
+  color: var(--sc-destructive);
   font-size: 11.5px;
 }
 
@@ -222,23 +222,23 @@
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
   cursor: pointer;
 }
 
 .aiToggleEnabled {
-  background: var(--color-ai-soft);
+  background: color-mix(in srgb, var(--sc-chart-4) 14%, transparent);
 }
 
 .aiCheckbox {
   margin: 0;
-  accent-color: var(--color-ai);
+  accent-color: var(--sc-chart-4);
 }
 
 .aiIcon {
-  color: var(--color-ai);
+  color: var(--sc-chart-4);
 }
 
 .aiToggleText {
@@ -253,7 +253,7 @@
 }
 
 .aiToggleHint {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
@@ -263,34 +263,34 @@
 
 .aiHelpBox {
   padding: 8px 10px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
   line-height: 1.6;
 }
 
 .readonlyInput {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   cursor: default;
   font-size: 12px;
 }
 
 .helpText {
   margin-top: 4px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
 .inlineLoading {
   padding: 12px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 
 .emptyPanel {
   padding: 16px;
   border-radius: var(--radius-md);
-  background: var(--color-bg-sunken);
-  color: var(--color-fg-muted);
+  background: var(--sc-muted);
+  color: var(--sc-muted-foreground);
   text-align: center;
   font-size: 12.5px;
 }
@@ -299,9 +299,9 @@
 .memberList {
   overflow-y: auto;
   padding: 6px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
 }
 
 .datasetList {
@@ -322,15 +322,15 @@
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   cursor: pointer;
   text-align: left;
   font-family: inherit;
 }
 
 .choiceButtonChecked {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
+  border-color: var(--sc-brand);
+  background: color-mix(in srgb, var(--sc-brand) 12%, transparent);
 }
 
 .checkMark {
@@ -340,14 +340,14 @@
   flex-shrink: 0;
   width: 14px;
   height: 14px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: 3px;
-  background: var(--color-bg);
+  background: var(--sc-background);
   color: #fff;
 }
 
 .checkMarkChecked {
-  background: var(--color-accent);
+  background: var(--sc-brand);
 }
 
 .choiceBody {
@@ -361,15 +361,15 @@
 }
 
 .choiceMeta {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
 .splitPanel {
   padding: 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
 }
 
 .splitTitle {
@@ -404,7 +404,7 @@
   gap: 8px;
   margin-top: 8px;
   padding-top: 14px;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--sc-border);
 }
 
 /* v0.12.0 · 大 dataset 异步建 task 的进度条列表 */
@@ -430,8 +430,8 @@
   height: 56px;
   margin-bottom: 14px;
   border-radius: 50%;
-  background: var(--color-success-soft);
-  color: var(--color-success);
+  background: color-mix(in srgb, var(--sc-positive) 14%, transparent);
+  color: var(--sc-positive);
 }
 
 .successTitle {
@@ -442,21 +442,21 @@
 
 .successMeta {
   margin-bottom: 4px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 
 .successSummary {
   max-width: 400px;
   margin-bottom: 18px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   text-align: center;
   font-size: 12px;
 }
 
 .successWarning {
   margin-top: 4px;
-  color: var(--color-warning);
+  color: var(--sc-caution);
 }
 
 .successActions {
@@ -472,7 +472,7 @@
   gap: 8px;
   margin-top: 22px;
   padding-top: 14px;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--sc-border);
 }
 
 /* v0.10.17 · 工具集 chip + unit tab */
@@ -488,25 +488,25 @@
   align-items: flex-start;
   gap: 8px;
   padding: 10px 12px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: 8px;
   cursor: pointer;
-  background: var(--color-bg-elev);
+  background: var(--sc-card);
   transition: border-color 0.12s, background 0.12s;
 }
 
 .unitChip:hover {
-  border-color: var(--color-accent);
+  border-color: var(--sc-brand);
 }
 
 .unitChip input[type="checkbox"] {
   margin-top: 2px;
-  accent-color: var(--color-accent);
+  accent-color: var(--sc-brand);
 }
 
 .unitChipActive {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
+  border-color: var(--sc-brand);
+  background: color-mix(in srgb, var(--sc-brand) 12%, transparent);
 }
 
 .unitChipDisabled {
@@ -523,12 +523,12 @@
 .unitChipLabel {
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
 }
 
 .unitChipHint {
   font-size: 11px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   margin-top: 2px;
 }
 
@@ -538,7 +538,7 @@
   gap: 6px;
   margin-bottom: 12px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
 }
 
 .unitTab {
@@ -550,18 +550,18 @@
   border-radius: 6px;
   background: transparent;
   font-size: 12px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   cursor: pointer;
 }
 
 .unitTab:hover {
-  background: var(--color-bg-hover);
+  background: var(--sc-accent);
 }
 
 .unitTabActive {
-  background: var(--color-accent-soft);
-  border-color: var(--color-accent);
-  color: var(--color-accent-fg);
+  background: color-mix(in srgb, var(--sc-brand) 12%, transparent);
+  border-color: var(--sc-brand);
+  color: var(--sc-brand);
   font-weight: 500;
 }
 
@@ -573,6 +573,6 @@
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 4px;
-  background: var(--color-border);
-  color: var(--color-fg-muted);
+  background: var(--sc-border);
+  color: var(--sc-muted-foreground);
 }

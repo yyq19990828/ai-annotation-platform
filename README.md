@@ -276,7 +276,7 @@ ai-annotation-platform/
 ## 贡献前检查
 
 - 只改和当前目标直接相关的文件。
-- 前端 CSS 只使用 `apps/web/src/styles/tokens.css` 中存在的颜色 token。
+- 前端样式使用 `apps/web/src/styles/shadcn.css` 的 `--sc-*` 运行时 token 或 Tailwind 语义类，不再读取旧 `--color-*` 变量。
 - API、环境变量、用户可见行为变更时，同步更新相关 docs。
 - 提交前至少跑和改动范围匹配的 lint / test / OpenAPI / docs 校验。
 

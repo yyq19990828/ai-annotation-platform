@@ -16,25 +16,25 @@
 
 .filterButton {
   padding: 4px 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-elev);
-  color: var(--color-fg);
+  background: var(--sc-card);
+  color: var(--sc-foreground);
   cursor: pointer;
   font-size: 12px;
 }
 
 .filterButtonActive {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
+  border-color: var(--sc-brand);
+  background: color-mix(in srgb, var(--sc-brand) 12%, transparent);
+  color: var(--sc-brand);
 }
 
 .select {
   padding: 5px 8px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-elev);
+  background: var(--sc-card);
   font-size: 12.5px;
 }
 
@@ -54,9 +54,9 @@
 
 .th {
   padding: 8px 10px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-bg-sunken);
-  color: var(--color-fg-muted);
+  border-bottom: 1px solid var(--sc-border);
+  background: var(--sc-muted);
+  color: var(--sc-muted-foreground);
   text-align: left;
   font-size: 11.5px;
   font-weight: 500;
@@ -65,13 +65,13 @@
 
 .cell {
   padding: 10px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
   vertical-align: middle;
 }
 
 .emptyCell {
   padding: 24px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   text-align: center;
 }
 
@@ -95,11 +95,11 @@
 }
 
 .muted {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .dateCell {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
   white-space: nowrap;
 }
