@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import type { VideoPropagateDirection } from "../state/videoTrackCommands";
 import { readDialogMemory, writeDialogMemory } from "../state/videoDialogMemory";
-import styles from "./VideoKeyframesPropagateDialog.module.css";
 
 const COUNT_PRESETS = [1, 5, 10, 30] as const;
 
@@ -99,28 +98,33 @@ export function VideoKeyframesPropagateDialog({
       role="dialog"
       aria-label="复制到后续帧"
       data-testid="video-keyframes-propagate-dialog"
-      className={styles.backdrop}
+      className="tw-scope fixed inset-0 z-[1000] grid place-items-center bg-black/40"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}
     >
-      <div className={styles.dialog}>
-        <div className={styles.header}>
-          <b className={styles.title}>复制框到后续帧</b>
-          <button type="button" onClick={onCancel} className={styles.closeButton}>
+      <div className="grid gap-3 w-[340px] p-4 border border-border rounded-[10px] bg-card shadow-lg">
+        <div className="flex items-center justify-between">
+          <b className="text-sm">复制框到后续帧</b>
+          <button type="button" onClick={onCancel} className="border-0 bg-transparent text-muted-foreground cursor-pointer text-[13px]">
             ✕
           </button>
         </div>
 
-        <label className={styles.field}>
+        <label className="grid gap-1 text-muted-foreground text-xs">
           方向
-          <div className={styles.segmented}>
+          <div className="grid grid-flow-col auto-cols-fr gap-1">
             {(["forward", "backward"] as VideoPropagateDirection[]).map((d) => (
               <button
                 key={d}
                 type="button"
                 onClick={() => setDirection(d)}
-                className={cn(styles.optionButton, direction === d && styles.optionButtonSelected)}
+                className={cn(
+                  "py-[5px] border rounded-md bg-background text-foreground cursor-pointer text-xs",
+                  direction === d
+                    ? "border-brand bg-brand/10"
+                    : "border-border",
+                )}
               >
                 {d === "forward" ? "向后" : "向前"}
               </button>
@@ -128,15 +132,20 @@ export function VideoKeyframesPropagateDialog({
           </div>
         </label>
 
-        <label className={styles.field}>
+        <label className="grid gap-1 text-muted-foreground text-xs">
           {grid > 1 ? "格数" : "帧数"}
-          <div className={styles.segmented}>
+          <div className="grid grid-flow-col auto-cols-fr gap-1">
             {COUNT_PRESETS.map((preset) => (
               <button
                 key={preset}
                 type="button"
                 onClick={() => setCount(preset)}
-                className={cn(styles.optionButton, count === preset && styles.optionButtonSelected)}
+                className={cn(
+                  "py-[5px] border rounded-md bg-background text-foreground cursor-pointer text-xs",
+                  count === preset
+                    ? "border-brand bg-brand/10"
+                    : "border-border",
+                )}
               >
                 {preset}
               </button>
@@ -147,9 +156,9 @@ export function VideoKeyframesPropagateDialog({
             min={1}
             value={count}
             onChange={(e) => setCount(Math.max(1, Math.floor(Number(e.target.value) || 0)))}
-            className={styles.numberInput}
+            className="py-[5px] px-2 border border-border rounded-md bg-background text-foreground text-[13px]"
           />
-          <span className={cn("mono", styles.rangeHint)}>
+          <span className={cn("mono", "text-muted-foreground text-[11px]")}>
             {grid > 1 ? (
               <>
                 G{Math.round(frameIndex / grid)} → G{Math.round(target / grid)} (F
@@ -163,7 +172,7 @@ export function VideoKeyframesPropagateDialog({
           </span>
         </label>
 
-        <label className={styles.checkboxField}>
+        <label className="flex items-center gap-2 text-foreground text-xs cursor-pointer">
           <input
             type="checkbox"
             checked={effectiveOverwrite}
@@ -173,7 +182,7 @@ export function VideoKeyframesPropagateDialog({
           {overwriteLocked ? "覆盖目标帧已有关键帧（项目锁定）" : "覆盖目标帧已有关键帧"}
         </label>
 
-        <div className={styles.actions}>
+        <div className="flex gap-2 justify-end">
           <Button variant="ghost" size="sm" onClick={onCancel}>
             取消
           </Button>
