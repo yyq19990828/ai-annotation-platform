@@ -26,12 +26,26 @@ import {
   gsam2ImageVariantsAsCacheBucketKey,
   gsam2ImageVariantsAsLoadedKey,
 } from "./poolKeyParse";
-import styles from "./VariantPanel.module.css";
 
 interface EnumField {
   enum?: string[];
   default?: string;
 }
+
+const SECTION_CLASS = "flex flex-col gap-2";
+const SECTION_TITLE_CLASS =
+  "flex items-center gap-2 text-[11px] font-semibold text-muted-foreground";
+const CAP_CLASS = "text-[10.5px] font-normal text-muted-foreground";
+const NOTE_CLASS = "text-[11.5px] text-muted-foreground";
+const HINT_CLASS = "text-[10.5px] leading-normal text-muted-foreground";
+const FIELD_CLASS = "flex flex-col gap-[3px]";
+const FIELD_LABEL_CLASS = "text-[10.5px] text-muted-foreground";
+// UA-safe: 原生 select 显式 bg/border, 加 appearance-none 消浏览器默认箭头样式底色。
+const SELECT_CLASS =
+  "appearance-none rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground";
+const WARM_ROW_CLASS = "flex flex-wrap items-end gap-2.5";
+const TABLE_CLASS =
+  "w-full min-w-[520px] border-separate border-spacing-0 text-[11.5px] [&_td]:border-t [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-[10.5px] [&_th]:font-medium [&_th]:whitespace-nowrap [&_th]:text-muted-foreground";
 
 export interface VariantWarmTarget {
   task?: string;
@@ -123,8 +137,13 @@ export function VariantPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setup]);
 
-  if (isLoading) return <div className={styles.note}>加载变体能力…</div>;
-  if (isError) return <div className={styles.noteError}>无法获取 /setup（后端不可达或未实现）</div>;
+  if (isLoading) return <div className={NOTE_CLASS}>加载变体能力…</div>;
+  if (isError)
+    return (
+      <div className="text-[11.5px] text-rose-600 dark:text-rose-400">
+        无法获取 /setup（后端不可达或未实现）
+      </div>
+    );
 
   const isMultiModelBackend =
     !supportsVariants && genericVariantGroups.length === 0 && (setup?.models?.length ?? 0) > 0;
@@ -150,29 +169,29 @@ export function VariantPanel({
       {showImageGroup && (
         <>
           {genericVariantGroups.length > 0 && (
-            <div className={styles.section}>
-              <div className={styles.sectionTitle}>通用变体目录</div>
+            <div className={SECTION_CLASS}>
+              <div className={SECTION_TITLE_CLASS}>通用变体目录</div>
               <GenericVariantDirectory groups={genericVariantGroups} />
               {!supportsVariants && (
-                <div className={styles.hint}>该 backend 暂未实现通用 warm 接口，变体目录仅用于只读展示。</div>
+                <div className={HINT_CLASS}>该 backend 暂未实现通用 warm 接口，变体目录仅用于只读展示。</div>
               )}
             </div>
           )}
 
-          <div className={styles.section}>
-            <div className={styles.sectionTitle}>
+          <div className={SECTION_CLASS}>
+            <div className={SECTION_TITLE_CLASS}>
               图像推理变体 · 已加载
               {pool?.cap != null && (
-                <span className={styles.cap}>
+                <span className={CAP_CLASS}>
                   {loaded.length}/{pool.cap}
                 </span>
               )}
             </div>
             {loaded.length === 0 ? (
-              <div className={styles.note}>暂无变体常驻显存（idle 卸载或未预热）</div>
+              <div className={NOTE_CLASS}>暂无变体常驻显存（idle 卸载或未预热）</div>
             ) : (
-              <div className={styles.tableScroller}>
-                <table className={styles.variantTable}>
+              <div className="max-w-full overflow-x-auto">
+                <table className={TABLE_CLASS}>
                   <thead>
                     <tr>
                       {["变体", "cache 命中", "最近使用"].map((h) => (
@@ -194,15 +213,18 @@ export function VariantPanel({
                       const ts = lruTs[lruKey];
                       return (
                         <tr key={bucketKey}>
-                          <td className={styles.variantCell} title={bucketKey}>
+                          <td
+                            className="max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap"
+                            title={bucketKey}
+                          >
                             <span className="mono">{bucketKey}</span>
                           </td>
-                          <td className={styles.metricCell}>
+                          <td className="whitespace-nowrap">
                             {bucket?.hit_rate != null
                               ? `${(bucket.hit_rate * 100).toFixed(1)}% (${bucket.hits ?? 0}/${(bucket.hits ?? 0) + (bucket.misses ?? 0)})`
                               : "—"}
                           </td>
-                          <td className={styles.muted}>
+                          <td className="whitespace-nowrap text-muted-foreground">
                             {ts != null
                               ? (useRelativeAgo ? `t-${ts.toFixed(0)}s` : `t+${ts.toFixed(0)}s`)
                               : "—"}
@@ -216,13 +238,13 @@ export function VariantPanel({
             )}
           </div>
 
-          <div className={styles.section}>
-            <div className={styles.sectionTitle}>图像推理变体 · 预热</div>
-            <div className={styles.warmRow}>
+          <div className={SECTION_CLASS}>
+            <div className={SECTION_TITLE_CLASS}>图像推理变体 · 预热</div>
+            <div className={WARM_ROW_CLASS}>
               {samEnum.length > 0 && (
-                <label className={styles.field}>
-                  <span className={styles.label}>SAM</span>
-                  <select value={sam} onChange={(e) => setSam(e.target.value)} className={styles.select}>
+                <label className={FIELD_CLASS}>
+                  <span className={FIELD_LABEL_CLASS}>SAM</span>
+                  <select value={sam} onChange={(e) => setSam(e.target.value)} className={SELECT_CLASS}>
                     {samEnum.map((o) => (
                       <option key={o} value={o}>
                         {o}
@@ -232,9 +254,9 @@ export function VariantPanel({
                 </label>
               )}
               {dinoEnum.length > 0 && (
-                <label className={styles.field}>
-                  <span className={styles.label}>DINO</span>
-                  <select value={dino} onChange={(e) => setDino(e.target.value)} className={styles.select}>
+                <label className={FIELD_CLASS}>
+                  <span className={FIELD_LABEL_CLASS}>DINO</span>
+                  <select value={dino} onChange={(e) => setDino(e.target.value)} className={SELECT_CLASS}>
                     {dinoEnum.map((o) => (
                       <option key={o} value={o}>
                         {o}
@@ -259,7 +281,7 @@ export function VariantPanel({
               </Button>
               {isSelectedLoaded && <Badge variant="success">已在显存</Badge>}
             </div>
-            <div className={styles.hint}>
+            <div className={HINT_CLASS}>
               预热把所选变体载入 pool（受 cap 限制，超出按 LRU 驱逐）；预热后请「健康检查」刷新上表。
             </div>
           </div>
@@ -268,25 +290,25 @@ export function VariantPanel({
 
       {/* v0.10.36 · 视频追踪变体 (走独立 video tracker 池, 仅 SAM 无 DINO). */}
       {showVideoGroup && (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>
+        <div className={SECTION_CLASS}>
+          <div className={SECTION_TITLE_CLASS}>
             视频追踪变体 · 已加载（视频池）
             {videoPool?.cap != null && (
-              <span className={styles.cap}>
+              <span className={CAP_CLASS}>
                 {videoLoaded.length}/{videoPool.cap}
                 {videoPool.active_sessions != null && ` · ${videoPool.active_sessions} 会话`}
               </span>
             )}
           </div>
           {!hasVideoMeta ? (
-            <div className={styles.note}>该 backend 未上报 video 观测</div>
+            <div className={NOTE_CLASS}>该 backend 未上报 video 观测</div>
           ) : (
             <>
               {videoLoaded.length === 0 ? (
-                <div className={styles.note}>视频池暂无常驻变体（首次追踪自动冷启）</div>
+                <div className={NOTE_CLASS}>视频池暂无常驻变体（首次追踪自动冷启）</div>
               ) : (
-                <div className={styles.tableScroller}>
-                  <table className={styles.variantTable}>
+                <div className="max-w-full overflow-x-auto">
+                  <table className={TABLE_CLASS}>
                     <thead>
                       <tr>
                         <th>SAM 变体</th>
@@ -295,7 +317,10 @@ export function VariantPanel({
                     <tbody>
                       {videoLoaded.map((v) => (
                         <tr key={v}>
-                          <td className={styles.variantCell} title={v}>
+                          <td
+                            className="max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap"
+                            title={v}
+                          >
                             <span className="mono">{v}</span>
                           </td>
                         </tr>
@@ -304,13 +329,13 @@ export function VariantPanel({
                   </table>
                 </div>
               )}
-              <div className={styles.warmRow}>
-                <label className={styles.field}>
-                  <span className={styles.label}>SAM</span>
+              <div className={WARM_ROW_CLASS}>
+                <label className={FIELD_CLASS}>
+                  <span className={FIELD_LABEL_CLASS}>SAM</span>
                   <select
                     value={videoSam}
                     onChange={(e) => setVideoSam(e.target.value)}
-                    className={styles.select}
+                    className={SELECT_CLASS}
                   >
                     {videoSamEnum.map((o) => (
                       <option key={o} value={o}>
@@ -332,7 +357,7 @@ export function VariantPanel({
                 </Button>
                 {isVideoSelectedLoaded && <Badge variant="success">已在显存</Badge>}
               </div>
-              <div className={styles.hint}>
+              <div className={HINT_CLASS}>
                 视频追踪池首次请求自动冷启；预热可提前载入显存。tracker 不使用 DINO。
               </div>
             </>
@@ -343,18 +368,20 @@ export function VariantPanel({
   );
 
   return (
-    <div className={styles.panel}>
+    <div className="flex flex-col gap-3.5 border-t border-border bg-muted px-4 py-3">
       <button
         type="button"
-        className={styles.collapseHeader}
+        className="flex w-full cursor-pointer appearance-none items-center gap-2 border-0 bg-transparent p-0 text-left text-[11px] font-semibold text-muted-foreground hover:text-foreground"
         onClick={() => setCollapsed((c) => !c)}
         aria-expanded={!collapsed}
       >
         <Icon name={collapsed ? "chevRight" : "chevDown"} size={12} />
-        <span className={styles.collapseTitle}>模型预热 · 变体</span>
-        <span className={styles.collapseHint}>{collapsed ? "展开" : "收起"}</span>
+        <span className="tracking-[0.02em]">模型预热 · 变体</span>
+        <span className="ml-auto text-[10px] font-normal text-muted-foreground">
+          {collapsed ? "展开" : "收起"}
+        </span>
       </button>
-      {!collapsed && <div className={styles.collapseBody}>{body}</div>}
+      {!collapsed && <div className="flex flex-col gap-3.5">{body}</div>}
     </div>
   );
 }
@@ -384,25 +411,25 @@ function ModelVariantWarmSection({
 
   if (groups.length === 0) {
     return (
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>{model.display_name ?? model.id}</div>
-        <div className={styles.note}>该 model 无可选变体</div>
+      <div className={SECTION_CLASS}>
+        <div className={SECTION_TITLE_CLASS}>{model.display_name ?? model.id}</div>
+        <div className={NOTE_CLASS}>该 model 无可选变体</div>
       </div>
     );
   }
 
   return (
-    <div className={styles.section}>
-      <div className={styles.sectionTitle}>
+    <div className={SECTION_CLASS}>
+      <div className={SECTION_TITLE_CLASS}>
         {model.task ?? model.id}
-        <span className={styles.cap}>{model.display_name ?? model.id}</span>
+        <span className={CAP_CLASS}>{model.display_name ?? model.id}</span>
       </div>
-      <div className={styles.warmRow}>
+      <div className={WARM_ROW_CLASS}>
         {groups.map((group, idx) => {
           const options = filterModelOptions(model, groups, idx, variants);
           return (
-            <label key={group.key} className={styles.field}>
-              <span className={styles.label}>{group.title ?? group.key}</span>
+            <label key={group.key} className={FIELD_CLASS}>
+              <span className={FIELD_LABEL_CLASS}>{group.title ?? group.key}</span>
               <select
                 value={variants[group.key] ?? ""}
                 onChange={(event) =>
@@ -412,7 +439,7 @@ function ModelVariantWarmSection({
                     { ...current, [group.key]: event.target.value },
                   ))
                 }
-                className={styles.select}
+                className={SELECT_CLASS}
               >
                 {options.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -514,16 +541,23 @@ function selectedLoadedKey(task: string | undefined, variants: Record<string, st
 
 function GenericVariantDirectory({ groups }: { groups: MLBackendSupportedVariantGroup[] }) {
   return (
-    <div className={styles.genericGrid}>
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-2">
       {groups.map((group) => (
-        <div key={group.key} className={styles.genericGroup}>
-          <div className={styles.genericTitle}>{group.title ?? group.key}</div>
-          <div className={styles.genericOptions}>
+        <div key={group.key} className="flex flex-col gap-[5px]">
+          <div className="text-[10.5px] font-semibold text-muted-foreground">{group.title ?? group.key}</div>
+          <div className="flex flex-wrap gap-[5px]">
             {group.variants!.map((option) => (
-              <span key={option.value} className={option.recommended ? `${styles.genericPill} ${styles.genericPillOn}` : styles.genericPill}>
+              <span
+                key={option.value}
+                className={`inline-flex items-center rounded-full border px-2 py-px text-[10.5px] leading-relaxed ${
+                  option.recommended
+                    ? "border-brand bg-brand/10 text-brand"
+                    : "border-border bg-card text-muted-foreground"
+                }`}
+              >
                 <span className="mono">{option.label ?? option.value}</span>
-                {option.vram_gb != null && <span className={styles.genericMeta}> · {option.vram_gb}GB</span>}
-                {option.tier && <span className={styles.genericMeta}> · {option.tier}</span>}
+                {option.vram_gb != null && <span className="text-muted-foreground"> · {option.vram_gb}GB</span>}
+                {option.tier && <span className="text-muted-foreground"> · {option.tier}</span>}
               </span>
             ))}
           </div>
