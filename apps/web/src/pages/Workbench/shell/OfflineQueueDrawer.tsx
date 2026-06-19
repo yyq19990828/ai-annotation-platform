@@ -160,7 +160,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
       {/* 背景遮罩，仅供点击关闭，不阻塞画布交互 */}
       <div
         onClick={onClose}
-        className="fixed inset-0 z-60 bg-[oklch(0_0_0_/0.25)]"
+        className="fixed inset-0 z-60 bg-black/25"
       />
       <aside
         role="dialog"
