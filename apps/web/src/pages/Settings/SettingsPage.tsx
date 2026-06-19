@@ -26,9 +26,20 @@ import {
   type WorkbenchSettingValue,
 } from "@/pages/Workbench/state/workbenchSettingsFields";
 import type { UserRole } from "@/types";
-import styles from "./SettingsPage.module.css";
 
 type SectionKey = "profile" | "workbench" | "apikeys" | "feedback" | "notifications" | "system";
+
+// 共用类
+const FORM_CLASS = "flex flex-col gap-3.5 p-4";
+const LABEL_CLASS = "mb-[5px] text-xs font-medium text-muted-foreground";
+const GROUP_LABEL_CLASS = "mb-2 text-xs font-medium text-muted-foreground";
+const INPUT_CLASS =
+  "box-border w-full appearance-none rounded-md border border-border bg-card px-[11px] py-2 text-[13px] text-foreground outline-none";
+const INPUT_BUTTON_CLASS =
+  "w-auto cursor-pointer rounded-md border border-border bg-card px-3.5 py-2 text-[13px] text-foreground disabled:cursor-not-allowed";
+const ACTIONS_END_CLASS = "flex justify-end";
+const SECTION_HEADER_CLASS =
+  "flex items-center justify-between border-b border-border px-4 py-3";
 
 export function SettingsPage() {
   const { role } = usePermissions();
@@ -45,23 +56,26 @@ export function SettingsPage() {
   ];
 
   return (
-    <div className={styles.page}>
-      <header className={styles.pageHeader}>
-        <h1 className={styles.pageTitle}>设置</h1>
-        <p className={styles.pageDescription}>管理你的账号信息与平台配置</p>
+    <div className="tw-scope mx-auto max-w-[1100px] px-7 pb-10 pt-5 text-foreground max-[760px]:p-4">
+      <header className="mb-4">
+        <h1 className="mb-1 text-xl font-semibold">设置</h1>
+        <p className="text-[13px] text-muted-foreground">管理你的账号信息与平台配置</p>
       </header>
 
-      <div className={styles.layout}>
+      <div className="grid grid-cols-[200px_1fr] gap-4 max-[760px]:grid-cols-1">
         <nav>
           <Card>
-            <ul className={styles.navList}>
+            <ul className="m-0 list-none p-1.5">
               {sections.map((s) => {
                 const active = section === s.key;
                 return (
                   <li key={s.key}>
                     <button
                       onClick={() => setSection(s.key)}
-                      className={clsx(styles.navButton, active && styles.navButtonActive)}
+                      className={clsx(
+                        "flex w-full cursor-pointer appearance-none items-center gap-2 rounded-md border-0 bg-transparent px-3 py-2.5 text-left text-[13px] font-medium max-[760px]:whitespace-nowrap",
+                        active ? "bg-muted font-semibold text-foreground" : "text-muted-foreground",
+                      )}
                     >
                       <Icon name={s.icon} size={13} />{s.label}
                     </button>
@@ -72,7 +86,8 @@ export function SettingsPage() {
           </Card>
         </nav>
 
-        <div className={styles.content}>
+        {/* grid 1fr 列默认 min-width:auto，会被内部宽表格(API 密钥)撑超页宽；min-w-0 让超宽表格由内部 overflow-x 滚动 */}
+        <div className="min-w-0">
           {section === "profile" && <ProfileSection />}
           {section === "workbench" && <WorkbenchPreferencesSection />}
           {section === "apikeys" && <ApiKeysSection />}
@@ -124,10 +139,10 @@ function ProfileSection() {
   const passwordsMatch = !newPwd || !newPwd2 || newPwd === newPwd2;
 
   return (
-    <div className={styles.sectionStack}>
+    <div className="flex flex-col gap-4">
       <Card>
         <SectionHeader title="基本资料" />
-        <form onSubmit={submitName} className={styles.form}>
+        <form onSubmit={submitName} className={FORM_CLASS}>
           <ReadOnly label="邮箱" value={user.email} mono />
           <ReadOnly label="角色" value={ROLE_LABELS[user.role as UserRole] ?? user.role} />
           {user.group_name && <ReadOnly label="数据组" value={user.group_name} />}
@@ -137,13 +152,13 @@ function ProfileSection() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={100}
-              className={styles.input}
+              className={INPUT_CLASS}
             />
           </Field>
           {updateProfile.isError && (
             <ErrorBanner msg={(updateProfile.error as Error).message} />
           )}
-          <div className={styles.actionsEnd}>
+          <div className={ACTIONS_END_CLASS}>
             <button
               type="submit"
               disabled={!name.trim() || name === user.name || updateProfile.isPending}
@@ -157,14 +172,14 @@ function ProfileSection() {
 
       <Card>
         <SectionHeader title="修改密码" />
-        <form onSubmit={submitPwd} className={styles.form}>
+        <form onSubmit={submitPwd} className={FORM_CLASS}>
           <Field label="原密码">
             <input
               required
               type="password"
               value={oldPwd}
               onChange={(e) => setOldPwd(e.target.value)}
-              className={styles.input}
+              className={INPUT_CLASS}
             />
           </Field>
           <Field label="新密码（至少 8 位，需含大小写字母和数字）">
@@ -174,7 +189,7 @@ function ProfileSection() {
               value={newPwd}
               onChange={(e) => setNewPwd(e.target.value)}
               minLength={6}
-              className={styles.input}
+              className={INPUT_CLASS}
             />
           </Field>
           <Field label="再次输入新密码">
@@ -183,16 +198,16 @@ function ProfileSection() {
               type="password"
               value={newPwd2}
               onChange={(e) => setNewPwd2(e.target.value)}
-              className={clsx(styles.input, !passwordsMatch && styles.inputError)}
+              className={clsx(INPUT_CLASS, !passwordsMatch && "border-rose-500")}
             />
             {!passwordsMatch && (
-              <div className={styles.fieldError}>两次密码不一致</div>
+              <div className="mt-1 text-[11.5px] text-rose-600 dark:text-rose-400">两次密码不一致</div>
             )}
           </Field>
           {changePwd.isError && (
             <ErrorBanner msg={(changePwd.error as Error).message} />
           )}
-          <div className={styles.actionsEnd}>
+          <div className={ACTIONS_END_CLASS}>
             <button
               type="submit"
               disabled={!oldPwd || newPwd.length < 6 || !passwordsMatch || changePwd.isPending}
@@ -244,21 +259,21 @@ function DangerZoneCard() {
   };
 
   return (
-    <div className={styles.dangerCard}>
+    <div className="[&>*]:border [&>*]:border-rose-500">
       <Card>
-        <div className={styles.dangerHeader}>
-          <h3 className={styles.dangerTitle}>危险区</h3>
-          <Icon name="warning" size={14} className={styles.dangerIcon} />
+        <div className="flex items-center justify-between border-b border-rose-500 px-4 py-3">
+          <h3 className="m-0 text-sm font-semibold text-rose-600 dark:text-rose-400">危险区</h3>
+          <Icon name="warning" size={14} className="text-rose-600 dark:text-rose-400" />
         </div>
-        <div className={styles.dangerBody}>
+        <div className="flex flex-col gap-3 p-4">
           {isPending ? (
           <>
-            <div className={styles.bodyText}>
-              <div className={styles.pendingTitle}>注销申请已提交</div>
-              <div className={styles.mutedText}>
+            <div className="text-[13px] text-foreground">
+              <div className="mb-1 font-medium">注销申请已提交</div>
+              <div className="text-muted-foreground">
                 提交时间：{requestedAt ? new Date(requestedAt).toLocaleString("zh-CN") : "—"}
               </div>
-              <div className={styles.mutedText}>
+              <div className="text-muted-foreground">
                 生效时间：{new Date(scheduledAt!).toLocaleString("zh-CN")}（届时账号自动停用）
               </div>
             </div>
@@ -275,7 +290,7 @@ function DangerZoneCard() {
           </>
         ) : confirmOpen ? (
           <>
-            <div className={styles.bodyText}>
+            <div className="text-[13px] text-foreground">
               注销账号后，您将无法再登录此系统；标注历史与审计记录会保留以满足合规要求。
               <strong>提交后将进入 7 天冷静期，期间可随时撤销。</strong>
             </div>
@@ -286,21 +301,21 @@ function DangerZoneCard() {
                 onChange={(e) => setReason(e.target.value)}
                 maxLength={500}
                 placeholder="如：不再使用 / 切换账号 / 隐私顾虑..."
-                className={clsx(styles.input, styles.textarea)}
+                className={clsx(INPUT_CLASS, "resize-y [font:inherit]")}
               />
             </Field>
-            <label className={styles.checkLabelMuted}>
+            <label className="inline-flex cursor-pointer items-center gap-2 text-[12.5px] text-muted-foreground">
               <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} />
               我已知晓 7 天冷静期 + 历史数据保留
             </label>
             {requestMut.isError && (
               <ErrorBanner msg={(requestMut.error as Error).message} />
             )}
-            <div className={styles.actionsGapEnd}>
+            <div className="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => { setConfirmOpen(false); setAcknowledged(false); setReason(""); }}
-                className={styles.secondaryButton}
+                className="w-auto cursor-pointer rounded-md border border-border bg-card px-3.5 py-[7px] text-[13px] text-foreground"
               >
                 取消
               </button>
@@ -308,7 +323,13 @@ function DangerZoneCard() {
                 type="button"
                 disabled={!acknowledged || requestMut.isPending}
                 onClick={submit}
-                className={clsx(styles.dangerButton, !acknowledged && styles.dangerButtonDisabled)}
+                className={clsx(
+                  "cursor-pointer rounded-md border-0 px-[18px] py-[7px] text-[13px] font-medium",
+                  acknowledged
+                    ? "bg-rose-500 text-white"
+                    : "cursor-not-allowed bg-muted text-muted-foreground",
+                  "disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground",
+                )}
               >
                 {requestMut.isPending ? "提交中..." : "确认申请注销"}
               </button>
@@ -316,14 +337,14 @@ function DangerZoneCard() {
           </>
         ) : (
           <>
-            <div className={styles.mutedBodyText}>
+            <div className="text-[13px] text-muted-foreground">
               如不再需要本账号，可申请自助注销。提交后将进入 7 天冷静期，期间可撤销。
             </div>
             <div>
               <button
                 type="button"
                 onClick={() => setConfirmOpen(true)}
-                className={styles.dangerOutlineButton}
+                className="cursor-pointer rounded-md border border-rose-500 bg-transparent px-3.5 py-[7px] text-[13px] font-medium text-rose-600 dark:text-rose-400"
               >
                 申请注销账号
               </button>
@@ -370,7 +391,7 @@ function SystemSection() {
     return (
       <Card>
         <SectionHeader title="系统设置" />
-        <div className={styles.loadingBlockSubtle}>
+        <div className="p-4 text-[13px] text-muted-foreground">
           {isLoading ? "加载中..." : null}
           {error && <ErrorBanner msg={(error as Error).message} />}
         </div>
@@ -427,7 +448,7 @@ function SystemSection() {
   return (
     <Card>
       <SectionHeader title="系统设置" />
-      <form onSubmit={onSave} className={styles.form}>
+      <form onSubmit={onSave} className={FORM_CLASS}>
         <ReadOnly
           label="环境"
           value={data.environment}
@@ -441,7 +462,7 @@ function SystemSection() {
         />
 
         <Field label="开放注册（🟢 立即生效）">
-          <label className={styles.checkLabel}>
+          <label className="inline-flex cursor-pointer items-center gap-2 text-[13px]">
             <input
               type="checkbox"
               checked={allowOpen}
@@ -458,7 +479,7 @@ function SystemSection() {
             max={90}
             value={invTtl}
             onChange={(e) => setInvTtl(e.target.value)}
-            className={styles.input}
+            className={INPUT_CLASS}
           />
         </Field>
 
@@ -467,52 +488,52 @@ function SystemSection() {
             value={frontUrl}
             onChange={(e) => setFrontUrl(e.target.value)}
             placeholder="https://your-domain.com"
-            className={styles.input}
+            className={INPUT_CLASS}
           />
         </Field>
 
         <div>
-          <div className={styles.groupLabel}>
+          <div className={GROUP_LABEL_CLASS}>
             SMTP 邮件 ·{" "}
             <Badge variant={data.smtp.configured ? "success" : "outline"} dot>
               {data.smtp.configured ? "已配置" : "未配置"}
             </Badge>
           </div>
-          <div className={styles.twoColumnGrid}>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-2.5">
             <Field label="主机">
-              <input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} className={styles.input} placeholder="smtp.example.com" />
+              <input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} className={INPUT_CLASS} placeholder="smtp.example.com" />
             </Field>
             <Field label="端口">
               <input
                 type="number"
                 value={smtpPort}
                 onChange={(e) => setSmtpPort(e.target.value)}
-                className={styles.input}
+                className={INPUT_CLASS}
                 placeholder="587 / 465"
               />
             </Field>
             <Field label="账号">
-              <input value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} className={styles.input} />
+              <input value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} className={INPUT_CLASS} />
             </Field>
             <Field label="发件人">
-              <input value={smtpFrom} onChange={(e) => setSmtpFrom(e.target.value)} className={styles.input} placeholder="noreply@example.com" />
+              <input value={smtpFrom} onChange={(e) => setSmtpFrom(e.target.value)} className={INPUT_CLASS} placeholder="noreply@example.com" />
             </Field>
           </div>
-          <div className={styles.fieldGroup}>
-            <div className={styles.label}>密码 {data.smtp.password_set && !pwdEditing ? "（已设置）" : ""}</div>
+          <div className="mt-2.5">
+            <div className={LABEL_CLASS}>密码 {data.smtp.password_set && !pwdEditing ? "（已设置）" : ""}</div>
             {pwdEditing ? (
-              <div className={styles.inlineFields}>
+              <div className="flex gap-2">
                 <input
                   type="password"
                   value={smtpPwd}
                   onChange={(e) => setSmtpPwd(e.target.value)}
                   placeholder="留空保存视为清除"
-                  className={clsx(styles.input, styles.flexInput)}
+                  className={clsx(INPUT_CLASS, "flex-1")}
                 />
                 <button
                   type="button"
                   onClick={() => { setPwdEditing(false); setSmtpPwd(""); }}
-                  className={styles.inputButton}
+                  className={INPUT_BUTTON_CLASS}
                 >
                   取消
                 </button>
@@ -521,22 +542,22 @@ function SystemSection() {
               <button
                 type="button"
                 onClick={() => setPwdEditing(true)}
-                className={styles.inputButton}
+                className={INPUT_BUTTON_CLASS}
               >
                 {data.smtp.password_set ? "更换密码" : "设置密码"}
               </button>
             )}
           </div>
-          <div className={styles.fieldGroup}>
+          <div className="mt-2.5">
             <button
               type="button"
               onClick={onTestSmtp}
               disabled={testSmtpMut.isPending || !data.smtp.configured}
-              className={styles.inputButton}
+              className={INPUT_BUTTON_CLASS}
             >
               {testSmtpMut.isPending ? "发送中..." : "发送测试邮件到我"}
             </button>
-            <span className={styles.inlineHint}>
+            <span className="ml-2.5 text-[11px] text-muted-foreground">
               收件人：当前账号邮箱
             </span>
           </div>
@@ -545,7 +566,7 @@ function SystemSection() {
         {updateMut.isError && (
           <ErrorBanner msg={(updateMut.error as Error).message} />
         )}
-        <div className={styles.actionsEnd}>
+        <div className={ACTIONS_END_CLASS}>
           <button
             type="submit"
             disabled={!dirty || updateMut.isPending}
@@ -567,7 +588,7 @@ function WorkbenchPreferencesSection() {
     return (
       <Card>
         <SectionHeader title="标注偏好" />
-        <div className={styles.loadingBlock}>加载中…</div>
+        <div className="p-5 text-[13px] text-muted-foreground">加载中…</div>
       </Card>
     );
   }
@@ -592,20 +613,20 @@ function WorkbenchPreferencesSection() {
   return (
     <Card>
       <SectionHeader title="标注偏好" />
-      <div className={styles.form}>
+      <div className={FORM_CLASS}>
         {groups.map(({ category, fields }) => (
-          <div key={category} className={styles.fieldGroup}>
-            <div className={styles.groupLabel}>
+          <div key={category} className="mt-2.5">
+            <div className={GROUP_LABEL_CLASS}>
               {WORKBENCH_SETTING_CATEGORY_LABELS[category]}
             </div>
-            <div className={styles.settingsFieldList}>
+            <div className="flex flex-col gap-0.5">
               {fields.filter((field) => !field.parentKey).map((field) => {
                 const fieldValue = getFieldValue(config, field);
                 const childFields = fields.filter(
                   (child) => child.parentKey === field.key,
                 );
                 return (
-                  <div key={field.key} className={styles.settingsFieldCluster}>
+                  <div key={field.key} className="flex flex-col gap-px">
                     <SettingsFieldControl
                       field={field}
                       value={fieldValue}
@@ -628,7 +649,7 @@ function WorkbenchPreferencesSection() {
             </div>
           </div>
         ))}
-        {saving && <div className={styles.savingText}>保存中…</div>}
+        {saving && <div className="text-xs text-muted-foreground">保存中…</div>}
       </div>
     </Card>
   );
@@ -665,46 +686,48 @@ function MyFeedbackSection() {
     fixed: "已修复", wont_fix: "不修复", duplicate: "重复",
   };
   if (loading) {
-    return <Card><div className={styles.loadingBlock}>加载中...</div></Card>;
+    return <Card><div className="p-5 text-[13px] text-muted-foreground">加载中...</div></Card>;
   }
 
   if (reports.length === 0) {
     return (
       <Card>
-        <div className={styles.emptyBlock}>
+        <div className="p-5 text-center text-[13px] text-muted-foreground">
           暂无反馈记录。遇到问题？点击右下角的反馈按钮提交。
         </div>
       </Card>
     );
   }
 
+  const thClass = "px-3 py-2.5 text-left font-medium text-muted-foreground whitespace-nowrap";
+
   return (
     <Card>
-      <div className={styles.feedbackTableShell}>
-        <table className={styles.feedbackTable}>
+      <div className="max-w-full overflow-x-auto">
+        <table className="w-full min-w-[680px] border-collapse text-[12.5px]">
           <thead>
-            <tr className={styles.tableHeadRow}>
-              <th className={styles.tableHeaderCell}>ID</th>
-              <th className={styles.tableHeaderCell}>标题</th>
-              <th className={styles.tableHeaderCell}>严重度</th>
-              <th className={styles.tableHeaderCell}>状态</th>
-              <th className={styles.tableHeaderCell}>时间</th>
+            <tr className="border-b border-border">
+              <th className={thClass}>ID</th>
+              <th className={thClass}>标题</th>
+              <th className={thClass}>严重度</th>
+              <th className={thClass}>状态</th>
+              <th className={thClass}>时间</th>
             </tr>
           </thead>
           <tbody>
             {reports.map((r) => (
-              <tr key={r.id} className={styles.tableBodyRow}>
-                <td className={clsx(styles.tableCell, styles.monoCell)}>{r.display_id}</td>
-                <td className={clsx(styles.tableCell, styles.titleCell)} title={r.title}>{r.title}</td>
-                <td className={clsx(styles.tableCell, styles.nowrapCell)}>
-                  <span className={clsx(styles.severity, severityClassName(r.severity))}>{r.severity}</span>
+              <tr key={r.id} className="border-b border-border">
+                <td className="mono px-3 py-2 text-[11px]">{r.display_id}</td>
+                <td className="max-w-[320px] overflow-hidden text-ellipsis whitespace-nowrap px-3 py-2 text-foreground" title={r.title}>{r.title}</td>
+                <td className="whitespace-nowrap px-3 py-2">
+                  <span className={clsx("font-medium", severityClassName(r.severity))}>{r.severity}</span>
                 </td>
-                <td className={clsx(styles.tableCell, styles.nowrapCell)}>
-                  <span className={styles.statusPill}>
+                <td className="whitespace-nowrap px-3 py-2">
+                  <span className="rounded-[3px] bg-muted px-1.5 py-px text-[11px]">
                     {statusLabel[r.status] ?? r.status}
                   </span>
                 </td>
-                <td className={clsx(styles.tableCell, styles.dateCell)}>
+                <td className="whitespace-nowrap px-3 py-2 text-[11px] text-muted-foreground">
                   {new Date(r.created_at).toLocaleDateString("zh-CN")}
                 </td>
               </tr>
@@ -718,8 +741,8 @@ function MyFeedbackSection() {
 
 function SectionHeader({ title, right }: { title: string; right?: React.ReactNode }) {
   return (
-    <div className={styles.sectionHeader}>
-      <h3 className={styles.sectionTitle}>{title}</h3>
+    <div className={SECTION_HEADER_CLASS}>
+      <h3 className="m-0 text-sm font-semibold">{title}</h3>
       {right}
     </div>
   );
@@ -727,8 +750,8 @@ function SectionHeader({ title, right }: { title: string; right?: React.ReactNod
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className={styles.field}>
-      <div className={styles.label}>{label}</div>
+    <label className="block">
+      <div className={LABEL_CLASS}>{label}</div>
       {children}
     </label>
   );
@@ -737,10 +760,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function ReadOnly({ label, value, mono, hint }: { label: string; value: string; mono?: boolean; hint?: React.ReactNode }) {
   return (
     <div>
-      <div className={styles.label}>{label}</div>
-      <div className={styles.readOnlyRow}>
+      <div className={LABEL_CLASS}>{label}</div>
+      <div className="flex items-center gap-2">
         <div
-          className={clsx(styles.readOnlyValue, mono && "mono")}
+          className={clsx(
+            "flex-1 rounded-md border border-border bg-muted px-[11px] py-[7px] text-[13px] text-foreground",
+            mono && "mono",
+          )}
         >
           {value}
         </div>
@@ -752,27 +778,31 @@ function ReadOnly({ label, value, mono, hint }: { label: string; value: string; 
 
 function ErrorBanner({ msg }: { msg: string }) {
   return (
-    <div className={styles.errorBanner}>
+    <div className="flex items-center gap-2 rounded-md border border-rose-500 bg-rose-500/10 px-[11px] py-2 text-[12.5px] text-rose-600 dark:text-rose-400">
       <Icon name="warning" size={13} />{msg}
     </div>
   );
 }
 
 const primaryButtonClassName = (pending: boolean) =>
-  clsx(styles.primaryButton, pending && styles.primaryButtonPending);
+  clsx(
+    "cursor-pointer rounded-md border-0 bg-brand px-[18px] py-[7px] text-[13px] font-medium text-white",
+    "disabled:cursor-not-allowed disabled:bg-brand/60",
+    pending && "cursor-not-allowed bg-brand/60",
+  );
 
 function severityClassName(severity: string) {
   switch (severity) {
     case "low":
-      return styles.severityLow;
+      return "text-sky-600 dark:text-sky-400";
     case "medium":
-      return styles.severityMedium;
+      return "text-amber-600 dark:text-amber-400";
     case "high":
-      return styles.severityHigh;
+      return "text-orange-600 dark:text-orange-400";
     case "critical":
-      return styles.severityCritical;
+      return "text-rose-600 dark:text-rose-400";
     default:
-      return styles.severityUnknown;
+      return "text-muted-foreground";
   }
 }
 
@@ -841,33 +871,33 @@ function NotificationPreferencesSection() {
   return (
     <Card>
       <SectionHeader title="通知偏好" />
-      <div className={styles.notificationBody}>
-        <p className={styles.notificationDescription}>
+      <div className="px-[18px] pb-[18px] pt-3">
+        <p className="mb-2.5 text-xs text-muted-foreground">
           关闭某类通知后，新事件不会进入站内通知中心；已存档通知不受影响。邮件 digest 暂未开启。
         </p>
         {loading && (
-          <div className={styles.savingText}>加载中…</div>
+          <div className="text-xs text-muted-foreground">加载中…</div>
         )}
         {!loading &&
           items.map((it) => (
             <div
               key={it.type}
-              className={styles.notificationItem}
+              className="flex items-center justify-between border-b border-border py-2.5 text-[13px]"
             >
               <div>
-                <div className={styles.notificationTitle}>{NOTIF_TYPE_LABELS[it.type] ?? it.type}</div>
-                <div className={clsx("mono", styles.notificationType)}>
+                <div className="font-medium">{NOTIF_TYPE_LABELS[it.type] ?? it.type}</div>
+                <div className="mono text-[11px] text-muted-foreground">
                   {it.type}
                 </div>
               </div>
-              <label className={styles.notificationToggle}>
+              <label className="inline-flex cursor-pointer items-center gap-1.5">
                 <input
                   type="checkbox"
                   checked={it.in_app}
                   disabled={savingType === it.type}
                   onChange={(e) => toggle(it.type, e.target.checked)}
                 />
-                <span className={styles.toggleText}>
+                <span className="text-xs text-muted-foreground">
                   站内通知 {it.in_app ? "已开启" : "已静音"}
                 </span>
               </label>
