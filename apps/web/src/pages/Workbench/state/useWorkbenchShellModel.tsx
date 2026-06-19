@@ -109,7 +109,6 @@ import {
   canApplyAttributeModeToAnnotation,
   normalizeAttributeModeState,
 } from "./attributeMode";
-import styles from "../shell/WorkbenchShell.module.css";
 import {
   buildPredictParams,
   promptOfTool,
@@ -2236,7 +2235,7 @@ export function useWorkbenchShellModel({
       currentFrameIndex: isVideoTask ? s.videoFrameIndex : undefined,
       onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
       videoTrackPanel: isVideoTask ? ((frameFilter) => (
-        <div className={styles.videoTrackPanel}>
+        <div className="grid gap-3">
           {renderVideoTrackSidebar(frameFilter)}
           <VideoChapterSidebar
             datasetItemId={videoDatasetItemId}
