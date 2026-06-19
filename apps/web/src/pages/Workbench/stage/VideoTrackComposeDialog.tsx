@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
-import styles from "./VideoTrackComposeDialog.module.css";
 
 export type VideoTrackGapMode = "interpolate" | "outside";
 
@@ -51,26 +50,31 @@ export function VideoTrackComposeDialog({
       role="dialog"
       aria-label="跳连轨迹"
       data-testid="video-track-compose-dialog"
-      className={styles.backdrop}
+      className="tw-scope fixed inset-0 z-[1000] grid place-items-center bg-black/40"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}
     >
-      <div className={styles.dialog}>
-        <div className={styles.header}>
-          <b className={styles.title}>跳连两条轨迹</b>
-          <button type="button" onClick={onCancel} className={styles.closeButton}>
+      <div className="grid gap-3 w-[360px] p-4 border border-border rounded-[10px] bg-card shadow-lg">
+        <div className="flex items-center justify-between">
+          <b className="text-sm">跳连两条轨迹</b>
+          <button type="button" onClick={onCancel} className="border-0 bg-transparent text-muted-foreground cursor-pointer text-[13px]">
             ✕
           </button>
         </div>
 
-        <fieldset className={styles.field}>
-          <legend className={styles.legend}>gap 填充模式</legend>
-          <div className={styles.options}>
+        <fieldset className="m-0 p-0 border-0">
+          <legend className="p-0 mb-2 text-muted-foreground text-xs">gap 填充模式</legend>
+          <div className="grid gap-2">
             {GAP_MODE_OPTIONS.map((option) => (
               <label
                 key={option.value}
-                className={cn(styles.optionRow, gapMode === option.value && styles.optionRowSelected)}
+                className={cn(
+                  "flex items-start gap-2 py-2 px-2.5 border rounded-lg bg-background cursor-pointer",
+                  gapMode === option.value
+                    ? "border-emerald-600 dark:border-emerald-400 bg-emerald-500/10"
+                    : "border-border",
+                )}
               >
                 <input
                   type="radio"
@@ -79,16 +83,16 @@ export function VideoTrackComposeDialog({
                   checked={gapMode === option.value}
                   onChange={() => setGapMode(option.value)}
                 />
-                <span className={styles.optionText}>
-                  <b className={styles.optionLabel}>{option.label}</b>
-                  <span className={styles.optionHint}>{option.hint}</span>
+                <span className="grid gap-0.5">
+                  <b className="text-foreground text-[13px]">{option.label}</b>
+                  <span className="text-muted-foreground text-[11px] leading-[1.4]">{option.hint}</span>
                 </span>
               </label>
             ))}
           </div>
         </fieldset>
 
-        <div className={styles.actions}>
+        <div className="flex gap-2 justify-end">
           <Button variant="ghost" size="sm" onClick={onCancel}>
             取消
           </Button>

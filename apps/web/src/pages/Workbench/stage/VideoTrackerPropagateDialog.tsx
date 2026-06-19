@@ -6,7 +6,6 @@ import type {
   VideoTrackerPropagatePayload,
 } from "@/api/videoTracker";
 import { readDialogMemory, writeDialogMemory } from "../state/videoDialogMemory";
-import styles from "./VideoTrackerPropagateDialog.module.css";
 
 const SPAN_PRESETS = ["10", "30", "60"] as const;
 const RANGE_PRESETS = [
@@ -223,32 +222,37 @@ export function VideoTrackerPropagateDialog({
       role="dialog"
       aria-label="AI 传播"
       data-testid="video-tracker-propagate-dialog"
-      className={styles.backdrop}
+      className="tw-scope fixed inset-0 z-[1000] grid place-items-center bg-black/40"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}
     >
-      <div className={styles.dialog}>
-        <div className={styles.header}>
-          <b className={styles.title}>AI 传播 (Shift+T)</b>
+      <div className="grid gap-3 w-[360px] p-4 border border-border rounded-[10px] bg-card shadow-lg">
+        <div className="flex items-center justify-between">
+          <b className="text-sm">AI 传播 (Shift+T)</b>
           <button
             type="button"
             onClick={onCancel}
-            className={styles.closeButton}
+            className="border-0 bg-transparent text-muted-foreground cursor-pointer text-[13px]"
           >
             ✕
           </button>
         </div>
 
-        <label className={styles.field}>
+        <label className="grid gap-1 text-muted-foreground text-xs">
           方向
-          <div className={styles.segmented}>
+          <div className="grid grid-cols-3 gap-1">
             {(["forward", "backward", "bidirectional"] as VideoTrackerDirection[]).map((d) => (
               <button
                 key={d}
                 type="button"
                 onClick={() => setDirection(d)}
-                className={cn(styles.optionButton, direction === d && styles.optionButtonSelected)}
+                className={cn(
+                  "py-[5px] border rounded-md bg-background text-foreground cursor-pointer text-xs",
+                  direction === d
+                    ? "border-violet-600 dark:border-violet-400 bg-violet-500/10"
+                    : "border-border",
+                )}
               >
                 {d === "forward" ? "向后" : d === "backward" ? "向前" : "双向"}
               </button>
@@ -256,12 +260,12 @@ export function VideoTrackerPropagateDialog({
           </div>
         </label>
 
-        <label className={styles.field}>
+        <label className="grid gap-1 text-muted-foreground text-xs">
           范围
           <select
             value={rangePreset}
             onChange={(e) => setRangePreset(e.target.value as RangePresetValue)}
-            className={styles.select}
+            className="py-[5px] px-2 border border-border rounded-md bg-background text-foreground text-[13px] cursor-pointer"
           >
             {RANGE_PRESETS.map((preset) => (
               <option key={preset} value={preset}>
@@ -269,7 +273,7 @@ export function VideoTrackerPropagateDialog({
               </option>
             ))}
           </select>
-          <span className={cn("mono", styles.rangeHint)}>
+          <span className={cn("mono", "text-muted-foreground text-[11px]")}>
             {grid > 1 ? (
               <>
                 G{Math.round(range.from / grid)} → G{Math.round(range.to / grid)} (F
@@ -283,12 +287,12 @@ export function VideoTrackerPropagateDialog({
           </span>
         </label>
 
-        <label className={styles.field}>
+        <label className="grid gap-1 text-muted-foreground text-xs">
           模型
           <select
             value={modelKey}
             onChange={(e) => setModelKey(e.target.value)}
-            className={styles.select}
+            className="py-[5px] px-2 border border-border rounded-md bg-background text-foreground text-[13px] cursor-pointer"
           >
             {TRACKER_MODEL_OPTIONS.map((m) => (
               <option key={m.value} value={m.value}>
@@ -296,18 +300,18 @@ export function VideoTrackerPropagateDialog({
               </option>
             ))}
           </select>
-          <span className={styles.modelNote}>
+          <span className="text-muted-foreground text-[11px]">
             {TRACKER_MODEL_OPTIONS.find((m) => m.value === modelKey)?.note}
           </span>
         </label>
 
         {modelKey !== "mock_bbox" && (
-          <label className={styles.field}>
+          <label className="grid gap-1 text-muted-foreground text-xs">
             模型尺寸
             <select
               value={samVariant}
               onChange={(e) => setSamVariant(e.target.value)}
-              className={styles.select}
+              className="py-[5px] px-2 border border-border rounded-md bg-background text-foreground text-[13px] cursor-pointer"
             >
               {SAM_VARIANTS.map((v) => (
                 <option key={v.value} value={v.value}>
@@ -315,17 +319,17 @@ export function VideoTrackerPropagateDialog({
                 </option>
               ))}
             </select>
-            <span className={styles.modelNote}>
+            <span className="text-muted-foreground text-[11px]">
               更大尺寸更准但更慢/更吃显存; 默认 tiny。
             </span>
           </label>
         )}
 
         {error && (
-          <div className={styles.error}>{error}</div>
+          <div className="text-rose-600 dark:text-rose-400 text-xs">{error}</div>
         )}
 
-        <div className={styles.actions}>
+        <div className="flex gap-2 justify-end">
           <Button variant="ghost" size="sm" onClick={onCancel} disabled={submitting}>
             取消
           </Button>
