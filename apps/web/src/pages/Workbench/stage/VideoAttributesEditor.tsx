@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import type { AttributeSchema } from "@/api/projects";
 import { AttributeForm } from "../shell/AttributeForm";
-import styles from "./VideoAttributesEditor.module.css";
 
 export interface VideoAttributesEditorProps {
   /** 当前激活工具的属性 schema (由 WorkbenchShell 派生)。 */
@@ -52,13 +51,13 @@ export function VideoAttributesEditor({
   const overrideKeys = Object.keys(keyframeAttributes ?? {});
 
   return (
-    <div className={styles.editor} data-testid="video-attributes-editor">
-      <div className={styles.heading}>可变属性</div>
+    <div className="grid gap-2.5 p-2 px-2.5 border border-border rounded-lg bg-card" data-testid="video-attributes-editor">
+      <div className="text-[13px] font-semibold">可变属性</div>
 
-      <section className={styles.layer}>
-        <div className={styles.layerLabel}>
+      <section className="grid gap-1">
+        <div className="flex items-baseline justify-between gap-2 text-xs font-semibold text-foreground">
           轨迹默认值
-          <span className={styles.layerHint}>整条轨迹生效</span>
+          <span className="text-[11px] font-normal text-muted-foreground">整条轨迹生效</span>
         </div>
         <AttributeForm
           schema={mutableSchema}
@@ -70,10 +69,10 @@ export function VideoAttributesEditor({
         />
       </section>
 
-      <section className={styles.layer}>
-        <div className={styles.layerLabel}>
+      <section className="grid gap-1">
+        <div className="flex items-baseline justify-between gap-2 text-xs font-semibold text-foreground">
           当前帧覆盖
-          <span className={styles.layerHint}>仅 F{frameIndex} 生效</span>
+          <span className="text-[11px] font-normal text-muted-foreground">仅 F{frameIndex} 生效</span>
         </div>
         {canEditKeyframe ? (
           <>
@@ -85,14 +84,14 @@ export function VideoAttributesEditor({
               readOnly={readOnly}
               context="video"
             />
-            <div className={styles.overrideStatus}>
+            <div className="text-[11px] text-muted-foreground">
               {overrideKeys.length > 0
                 ? `已覆盖 ${overrideKeys.length} 项 · 留空回落到轨迹默认值`
                 : "未覆盖 · 当前帧沿用轨迹默认值"}
             </div>
           </>
         ) : (
-          <div className={styles.overrideStatus}>当前帧无关键帧, 无法设置逐帧覆盖</div>
+          <div className="text-[11px] text-muted-foreground">当前帧无关键帧, 无法设置逐帧覆盖</div>
         )}
       </section>
     </div>
