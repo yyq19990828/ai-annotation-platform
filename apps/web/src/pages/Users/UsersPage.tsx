@@ -133,7 +133,7 @@ export function UsersPage() {
   const activeLabel = tabLabels.find(([k]) => k === tab)?.[1] ?? tabLabels[0][1];
 
   return (
-    <div className="tw-scope mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
+    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
       <div className="mb-5 flex items-end justify-between gap-6">
         <div>
           <h1 className="mb-1 text-xl font-semibold">用户与权限</h1>

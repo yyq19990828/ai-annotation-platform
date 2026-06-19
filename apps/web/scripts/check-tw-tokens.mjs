@@ -11,8 +11,7 @@
  * 中性色/表面/边框走 shadcn 的 --sc-* token (bg-background / text-foreground / border-border ...),
  * 语义彩色走固定调色板 (sky/emerald/violet/amber/rose) + 柔底 /10 + 暗色提亮. 不在 className 里写裸色.
  *
- * 当前为 **warning 模式**: 永远 exit 0, 只打印 + 发 CI ::warning:: 注解, 不阻断.
- * v0.17.7 时代切换后转 blocking (见 epic §4.3).
+ * v0.17.7 全量迁移完成,转入 **blocking 模式**: 有发现时 exit 1,阻断 CI。
  *
  * 唯一可信来源: docs/plans/2026-06-19-v0.17.0-ui-design-system.md (晋升后 design-system.md).
  */
@@ -120,15 +119,16 @@ function checkChunk(value) {
     issues.push({ kind: "arbitrary-color", detail: hit[0].trim() });
   }
 
-  // 暗色配对: 对每个 (text|bg|border)-<hue>-600 检查同 className 是否有 dark:同前缀-<hue>-400.
+  // 暗色配对: 对每个 (text|bg|border)-<hue>-600 检查同 className 是否有 dark:(...)-<hue>-400.
+  // v0.17.7: 修正匹配 — 容许 `!` 修饰符 + 中间变体前缀(hover:/focus: 等).
   const hueRe = new RegExp(
-    `\\b(text|bg|border)-(${SEMANTIC_HUES.join("|")})-600\\b`,
+    `\\b(!)?(text|bg|border)-(${SEMANTIC_HUES.join("|")})-600\\b`,
     "g",
   );
   let hm;
   while ((hm = hueRe.exec(value)) !== null) {
-    const [, prefix, hue] = hm;
-    const darkRe = new RegExp(`dark:${prefix}-${hue}-400\\b`);
+    const [, , prefix, hue] = hm;
+    const darkRe = new RegExp(`dark:[a-z!:-]*${prefix}-${hue}-400\\b`);
     if (!darkRe.test(value)) {
       issues.push({
         kind: "dark-pair",
@@ -176,7 +176,7 @@ function main() {
   };
 
   console.warn(
-    `⚠ check-tw-tokens (warning 模式, 不阻断): ${findings.length} 处待对齐设计规范\n`,
+    `✗ check-tw-tokens (blocking): ${findings.length} 处违反颜色规范\n`,
   );
   for (const kind of ["bare-color", "arbitrary-color", "dark-pair"]) {
     const list = byKind[kind];
@@ -194,11 +194,9 @@ function main() {
 
   console.warn(
     "修复指引: 中性色走 --sc-* (bg-background/text-foreground/border-border), " +
-      "语义彩色走固定调色板 + 柔底 /10 + dark:提亮. 见设计规范 §2.2/§2.4. " +
-      "(warning 模式, v0.17.7 转 blocking)",
+      "语义彩色走固定调色板 + 柔底 /10 + dark:提亮. 见设计规范 §2.2/§2.4. ",
   );
-  // warning 模式: 永远成功退出.
-  process.exit(0);
+  process.exit(1);
 }
 
 main();

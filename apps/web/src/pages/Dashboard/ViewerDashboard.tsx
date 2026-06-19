@@ -49,7 +49,7 @@ export function ViewerDashboard() {
   const { data: stats } = useProjectStats();
 
   return (
-    <div className="tw-scope mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
+    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
       <div className="mb-5">
         <h1 className="mb-1 text-xl font-semibold">项目概览</h1>
         <p className="text-[13px] text-muted-foreground">查看项目进度与数据质量</p>

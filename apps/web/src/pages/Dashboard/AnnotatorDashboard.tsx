@@ -54,7 +54,7 @@ export function AnnotatorDashboard() {
 
   if (isLoading || !stats) {
     return (
-      <div className="tw-scope px-7 py-[60px] text-center text-muted-foreground">
+      <div className="px-7 py-[60px] text-center text-muted-foreground">
         加载中...
       </div>
     );
@@ -66,7 +66,7 @@ export function AnnotatorDashboard() {
   const trendPct = stats.weekly_compare_pct ?? undefined;
 
   return (
-    <div className="tw-scope mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
+    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
       <div className="mb-3 flex items-end justify-between">
         <div>
           <h1 className="mb-1 text-xl font-semibold">标注工作台</h1>

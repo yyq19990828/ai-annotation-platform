@@ -58,7 +58,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
 
   return (
     <>
-      <header className="tw-scope z-10 col-[1/-1] flex items-center justify-between border-b border-border bg-card px-4">
+      <header className="z-10 col-[1/-1] flex items-center justify-between border-b border-border bg-card px-4">
         <div className="flex min-w-0 shrink-0 items-center gap-6">
           {showHamburger && (
             <button

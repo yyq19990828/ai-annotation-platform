@@ -222,7 +222,7 @@ export function VideoTrackerPropagateDialog({
       role="dialog"
       aria-label="AI 传播"
       data-testid="video-tracker-propagate-dialog"
-      className="tw-scope fixed inset-0 z-[1000] grid place-items-center bg-black/40"
+      className="fixed inset-0 z-[1000] grid place-items-center bg-black/40"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}

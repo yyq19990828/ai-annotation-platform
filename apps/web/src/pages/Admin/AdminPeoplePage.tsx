@@ -111,7 +111,7 @@ export function AdminPeoplePage() {
   const items = data?.items ?? [];
 
   return (
-    <div className="tw-scope mx-auto max-w-[1680px] px-7 pb-10 pt-5 text-foreground">
+    <div className="mx-auto max-w-[1680px] px-7 pb-10 pt-5 text-foreground">
       <div className="mb-4 flex items-end justify-between">
         <div>
           <h1 className="mb-1 text-xl font-semibold">成员绩效</h1>

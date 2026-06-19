@@ -6,7 +6,6 @@ import * as Sentry from "@sentry/react";
 import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { initThemeFromStorage } from "./hooks/useTheme";
-import "./styles/tokens.css";
 import "./styles/shadcn.css";
 
 // v0.6.6 · Sentry：DSN 留空则完全不启用（dev 默认关闭）

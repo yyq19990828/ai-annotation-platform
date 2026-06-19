@@ -1,21 +1,14 @@
 /* ============================================================
-   Tailwind v4 + shadcn —— 与现有 CSS Modules / tokens.css 共存
+   Tailwind v4 + shadcn —— v0.17.7 preflight 全局
    ------------------------------------------------------------
    设计基调：Geist 风(极简高对比黑白 + 克制蓝 #0070F3)。
-   仅供 UI-refactor 实验分支的垂直切片 PoC 使用(/dashboard-next)。
 
-   共存策略：
-   1) 刻意【不】引入 Tailwind 全局 preflight，避免重置 body/标题/边框等
-      影响现网 201 个 css module 页面 —— 旧页面保持像素一致。
-      shadcn 组件所需的 reset 通过 `.tw-scope` 局部作用域补齐。
-   2) 暗色由现有 `<html data-theme="dark">` 驱动(见 hooks/useTheme.ts)，
-      因此把 Tailwind 的 dark variant 重定向到 [data-theme="dark"]，
-      shadcn 组件零改动复用现有主题开关。
+   v0.17.7: 全量迁移完成,preflight 转全局,不再需要 .tw-scope 局部 reset。
+   tokens.css 退役(变量已全迁入 --sc-*),全站 Tailwind 化。
+   暗色由 `<html data-theme="dark">` 驱动,经由 `dark:` variant 重定向。
    ============================================================ */
 
-@layer theme, base, components, utilities;
-@import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/utilities.css" layer(utilities);
+@import "tailwindcss";
 @import "tw-animate-css";
 
 /* 暗色走 data-theme，而非 shadcn 默认的 .dark class */
@@ -143,52 +136,4 @@
   /* 画布棋盘格(深色) */
   --sc-canvas-checker-a: #1e1e23;
   --sc-canvas-checker-b: #2a2a30;
-}
-
-/* —— 局部 reset(只在 .tw-scope 子树生效，替代被跳过的全局 preflight) —— */
-@layer base {
-  .tw-scope,
-  .tw-scope *,
-  .tw-scope *::before,
-  .tw-scope *::after {
-    box-sizing: border-box;
-    border-width: 0;
-    border-style: solid;
-    border-color: var(--sc-border);
-  }
-  .tw-scope {
-    color: var(--sc-foreground);
-    font-family: inherit;
-    -webkit-font-smoothing: antialiased;
-  }
-  .tw-scope h1,
-  .tw-scope h2,
-  .tw-scope h3,
-  .tw-scope h4,
-  .tw-scope p,
-  .tw-scope figure {
-    margin: 0;
-  }
-  .tw-scope button,
-  .tw-scope input,
-  .tw-scope select,
-  .tw-scope textarea {
-    font: inherit;
-    color: inherit;
-    letter-spacing: inherit;
-  }
-  .tw-scope button {
-    background: none;
-    cursor: pointer;
-  }
-  .tw-scope :disabled {
-    cursor: default;
-  }
-  .tw-scope table {
-    border-collapse: collapse;
-    border-spacing: 0;
-  }
-  .tw-scope svg {
-    display: block;
-  }
 }

@@ -68,7 +68,7 @@ export function LoginPage() {
   };
 
   return (
-    <div className="tw-scope flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+    <div className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
       <div className="w-[min(380px,100%)]">
         {/* Logo */}
         <div className="mb-8 flex items-center justify-center gap-2.5">

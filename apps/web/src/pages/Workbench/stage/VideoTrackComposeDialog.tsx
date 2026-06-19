@@ -50,7 +50,7 @@ export function VideoTrackComposeDialog({
       role="dialog"
       aria-label="跳连轨迹"
       data-testid="video-track-compose-dialog"
-      className="tw-scope fixed inset-0 z-[1000] grid place-items-center bg-black/40"
+      className="fixed inset-0 z-[1000] grid place-items-center bg-black/40"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}

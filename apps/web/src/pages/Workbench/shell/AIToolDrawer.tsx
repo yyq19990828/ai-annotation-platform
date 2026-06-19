@@ -143,7 +143,7 @@ export function AIToolDrawer({
     <div
       data-testid="ai-tool-drawer"
       data-ai-drawer-root
-      className="tw-scope flex w-60 flex-col gap-2 rounded-md border border-border bg-card p-2.5 px-3 shadow-md"
+      className="flex w-60 flex-col gap-2 rounded-md border border-border bg-card p-2.5 px-3 shadow-md"
     >
       {/* 标题 */}
       <div className="flex items-center gap-1.5">

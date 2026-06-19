@@ -130,7 +130,7 @@ export function WorkbenchLayout({
   return (
     <div
       ref={rootRef}
-      className="tw-scope relative flex h-full flex-col overflow-hidden bg-muted"
+      className="relative flex h-full flex-col overflow-hidden bg-muted"
     >
       <Topbar {...topbar} />
 

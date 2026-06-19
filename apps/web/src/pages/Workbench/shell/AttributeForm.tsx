@@ -315,7 +315,7 @@ function DescriptionPopover({ description }: { description: string }) {
         <div
           ref={pop.popoverRef as React.MutableRefObject<HTMLDivElement | null>}
           role="tooltip"
-          className="tw-scope absolute left-0 top-[calc(100%+4px)] z-[1000] min-w-[180px] max-w-[280px] rounded border border-border bg-card px-2.5 py-2 text-xs leading-normal text-foreground shadow-lg [pointer-events:auto]"
+          className="absolute left-0 top-[calc(100%+4px)] z-[1000] min-w-[180px] max-w-[280px] rounded border border-border bg-card px-2.5 py-2 text-xs leading-normal text-foreground shadow-lg [pointer-events:auto]"
         >
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}

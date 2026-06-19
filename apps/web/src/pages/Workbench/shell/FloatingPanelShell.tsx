@@ -162,7 +162,7 @@ export function FloatingPanelShell({
     <section
       data-floating-panel
       className={[
-        "tw-scope fixed left-[var(--floating-panel-x)] top-[var(--floating-panel-y)] z-50 flex h-[var(--floating-panel-h)] w-[var(--floating-panel-w)] min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border bg-card shadow-lg",
+        "fixed left-[var(--floating-panel-x)] top-[var(--floating-panel-y)] z-50 flex h-[var(--floating-panel-h)] w-[var(--floating-panel-w)] min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border bg-card shadow-lg",
         (drag.isDragging || isResizing) && "select-none",
         className,
       ].filter(Boolean).join(" ")}

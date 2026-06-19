@@ -29,7 +29,7 @@ export function VerifyEmailPage() {
   if (!token) return <Navigate to="/login" replace />;
 
   return (
-    <div className="tw-scope flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+    <div className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
       <div className="w-[min(380px,100%)]">
         <div className="mb-8 flex items-center justify-center gap-2.5">
           <div className="flex size-8 items-center justify-center rounded-md bg-brand text-white">

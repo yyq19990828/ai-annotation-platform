@@ -71,7 +71,7 @@ export function AdminDashboard() {
 
   if (isLoading || !stats) {
     return (
-      <div className="tw-scope px-7 py-[60px] text-center text-muted-foreground">
+      <div className="px-7 py-[60px] text-center text-muted-foreground">
         加载中...
       </div>
     );
@@ -80,7 +80,7 @@ export function AdminDashboard() {
   const projectsTotal = stats.total_projects || 1;
 
   return (
-    <div className="tw-scope mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
+    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
       <div className="mb-5 flex items-end justify-between gap-6">
         <div>
           <h1 className="mb-1 text-xl font-semibold">平台概览</h1>

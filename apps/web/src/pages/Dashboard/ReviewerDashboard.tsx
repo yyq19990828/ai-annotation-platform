@@ -62,14 +62,14 @@ export function ReviewerDashboard() {
 
   if (isLoading || !stats) {
     return (
-      <div className="tw-scope px-7 py-[60px] text-center text-muted-foreground">
+      <div className="px-7 py-[60px] text-center text-muted-foreground">
         加载中...
       </div>
     );
   }
 
   return (
-    <div className="tw-scope mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
+    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
       <div className="mb-5 flex items-end justify-between max-md:flex-col max-md:items-start max-md:gap-2.5">
         <div>
           <h1 className="mb-1 text-xl font-semibold">质检工作台</h1>

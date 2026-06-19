@@ -91,7 +91,7 @@ export function Sidebar({ reviewCount }: SidebarProps) {
     .filter((sec) => sec.items.length > 0);
 
   return (
-    <aside className="tw-scope flex flex-col gap-0.5 overflow-y-auto border-r border-border bg-muted px-2 py-2.5">
+    <aside className="flex flex-col gap-0.5 overflow-y-auto border-r border-border bg-muted px-2 py-2.5">
       {visibleSections.map((sec) => (
         <div key={sec.label}>
           <div className="px-2.5 pb-1.5 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">

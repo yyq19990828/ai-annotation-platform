@@ -196,7 +196,7 @@ export function ProjectDataManagerPage() {
         : canManageProject),
   );
 
-  if (projectLoading) return <div className="tw-scope p-[60px] text-center text-muted-foreground">加载中...</div>;
+  if (projectLoading) return <div className="p-[60px] text-center text-muted-foreground">加载中...</div>;
   if (error || !project) return <Navigate to="/unauthorized" replace />;
 
   const saveCurrent = async () => {
@@ -226,7 +226,7 @@ export function ProjectDataManagerPage() {
   const visibleColumnSet = new Set(columns);
 
   return (
-    <div className="tw-scope mx-auto max-w-[1680px] px-4 pt-4 pb-8 text-foreground md:px-7">
+    <div className="mx-auto max-w-[1680px] px-4 pt-4 pb-8 text-foreground md:px-7">
       <header className="mb-3.5">
         <button
           type="button"

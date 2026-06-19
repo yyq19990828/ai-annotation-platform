@@ -60,7 +60,7 @@ export function AttributeModeBar({
 
   return (
     <div
-      className="tw-scope absolute left-1/2 top-3 z-[15] flex max-w-[min(620px,calc(100%-32px))] -translate-x-1/2 items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-foreground shadow-md"
+      className="absolute left-1/2 top-3 z-[15] flex max-w-[min(620px,calc(100%-32px))] -translate-x-1/2 items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-foreground shadow-md"
       data-testid="attribute-mode-bar"
     >
       <label className="inline-flex flex-[0_0_auto] items-center gap-1.5 text-xs text-foreground">

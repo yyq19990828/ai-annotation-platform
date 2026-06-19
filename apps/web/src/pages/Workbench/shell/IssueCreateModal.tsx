@@ -98,7 +98,7 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
 
   return (
     <div
-      className="tw-scope fixed inset-0 z-[1000] flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40"
       onClick={onClose}
       role="dialog"
       aria-modal="true"

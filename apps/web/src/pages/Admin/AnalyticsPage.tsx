@@ -113,7 +113,7 @@ export function AnalyticsPage() {
   }, [heatmapQ.data]);
 
   return (
-    <div className="tw-scope flex flex-col gap-4 px-6 py-5 text-foreground max-md:p-4">
+    <div className="flex flex-col gap-4 px-6 py-5 text-foreground max-md:p-4">
       <div className="flex items-center justify-between max-md:flex-col max-md:items-start max-md:gap-2.5">
         <div>
           <h1 className="text-xl font-semibold">离线分析（DuckDB）</h1>

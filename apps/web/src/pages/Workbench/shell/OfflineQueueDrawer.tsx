@@ -167,7 +167,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
         aria-label="离线队列"
         aria-modal="false"
         onClick={(e) => e.stopPropagation()}
-        className="tw-scope fixed top-0 right-0 bottom-0 z-61 flex flex-col w-[min(420px,100vw)] border-l border-border bg-card shadow-lg"
+        className="fixed top-0 right-0 bottom-0 z-61 flex flex-col w-[min(420px,100vw)] border-l border-border bg-card shadow-lg"
       >
         <header className="flex items-center justify-between px-4 py-3.5 border-b border-border">
           <div className="flex items-center gap-2">

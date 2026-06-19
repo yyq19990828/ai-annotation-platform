@@ -47,8 +47,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={styleRef}
       className={cn(
-        // 迁移期未启用全局 Tailwind preflight(只在 .tw-scope 内重置),而本适配器渲染的原生
-        // <button> 被非 tw-scope 的老页面使用 → 否则浏览器 UA 默认按钮样式(灰底 + 2px outset 边)
+        // 迁移期未启用全局 Tailwind preflight(只在 .内重置),而本适配器渲染的原生
+        // <button> 被非 的老页面使用 → 否则浏览器 UA 默认按钮样式(灰底 + 2px outset 边)
         // 会透出来。这段基线等价于 preflight 的按钮重置:appearance-none + 透明底 + 0 宽发丝色边框;
         // 各 variant 用 twMerge 覆盖(outline 的 `border` 覆盖宽度、bg-* 覆盖底色)。v0.17.7 转全局
         // preflight 后此基线变冗余但无害。

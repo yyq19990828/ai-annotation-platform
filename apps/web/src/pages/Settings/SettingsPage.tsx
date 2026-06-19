@@ -56,7 +56,7 @@ export function SettingsPage() {
   ];
 
   return (
-    <div className="tw-scope mx-auto max-w-[1100px] px-7 pb-10 pt-5 text-foreground max-[760px]:p-4">
+    <div className="mx-auto max-w-[1100px] px-7 pb-10 pt-5 text-foreground max-[760px]:p-4">
       <header className="mb-4">
         <h1 className="mb-1 text-xl font-semibold">设置</h1>
         <p className="text-[13px] text-muted-foreground">管理你的账号信息与平台配置</p>

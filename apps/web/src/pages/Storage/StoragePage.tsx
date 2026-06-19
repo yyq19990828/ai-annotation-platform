@@ -316,7 +316,7 @@ export function StoragePage() {
     "border-b border-border bg-muted px-3 py-2 text-left text-[11px] font-medium text-muted-foreground";
 
   return (
-    <div className="tw-scope mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground max-[760px]:p-4">
+    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground max-[760px]:p-4">
       {/* Header */}
       <div className="mb-5 flex items-end justify-between gap-6 max-[760px]:flex-col max-[760px]:items-start">
         <div>

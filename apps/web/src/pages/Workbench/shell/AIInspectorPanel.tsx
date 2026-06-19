@@ -146,7 +146,7 @@ export function AIInspectorPanel({
   return (
     <div
       className={cn(
-        "tw-scope relative flex flex-col overflow-hidden bg-card",
+        "relative flex flex-col overflow-hidden bg-card",
         floating ? "border-l-0" : "border-l border-border",
       )}
     >
@@ -423,7 +423,7 @@ export function AIPredictionPopover({
       ref={panelRef}
       data-testid="ai-prediction-popover"
       className={cn(
-        "tw-scope fixed z-30 flex flex-col overflow-hidden rounded-lg border border-violet-500/35 bg-card shadow-xl",
+        "fixed z-30 flex flex-col overflow-hidden rounded-lg border border-violet-500/35 bg-card shadow-xl",
         "h-[var(--ai-inspector-popover-h,auto)] w-[var(--ai-inspector-popover-w,min(360px,calc(100vw-32px)))]",
         "max-h-[calc(100vh-92px)] max-w-[calc(100vw-32px)]",
         position

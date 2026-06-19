@@ -593,7 +593,7 @@ export function DatasetsPage() {
   const linkedCount = datasets.filter((ds) => (ds.project_count ?? 0) > 0).length;
 
   return (
-    <div className="tw-scope mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
+    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
       {/* Header */}
       <div className="mb-5 flex items-end justify-between gap-6">
         <div>

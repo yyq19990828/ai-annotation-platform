@@ -93,7 +93,7 @@ export function ProjectSettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="tw-scope p-[60px] text-center text-muted-foreground">加载中...</div>
+      <div className="p-[60px] text-center text-muted-foreground">加载中...</div>
     );
   }
   if (error || !project) {
@@ -120,7 +120,7 @@ export function ProjectSettingsPage() {
   });
 
   return (
-    <div className="tw-scope mx-auto max-w-[1200px] px-7 pt-5 pb-10 text-foreground max-md:px-4">
+    <div className="mx-auto max-w-[1200px] px-7 pt-5 pb-10 text-foreground max-md:px-4">
       <div className="mb-4">
         <button
           type="button"

@@ -6,7 +6,7 @@ function Block({ w, h, mb = 0 }: { w: number | string; h: number; mb?: 0 | 6 | 8
 
 export function WorkbenchSkeleton() {
   return (
-    <div className="tw-scope grid grid-cols-[260px_1fr_280px] h-full overflow-hidden bg-muted">
+    <div className="grid grid-cols-[260px_1fr_280px] h-full overflow-hidden bg-muted">
 
       {/* 左侧 task list */}
       <div className="p-3.5 border-r border-border bg-card">

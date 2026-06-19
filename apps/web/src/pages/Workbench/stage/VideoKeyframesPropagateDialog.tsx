@@ -98,7 +98,7 @@ export function VideoKeyframesPropagateDialog({
       role="dialog"
       aria-label="复制到后续帧"
       data-testid="video-keyframes-propagate-dialog"
-      className="tw-scope fixed inset-0 z-[1000] grid place-items-center bg-black/40"
+      className="fixed inset-0 z-[1000] grid place-items-center bg-black/40"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}

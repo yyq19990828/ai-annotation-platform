@@ -49,7 +49,7 @@ export function SystemHealthPage() {
   const data = healthQ.data;
 
   return (
-    <div className="tw-scope flex flex-col gap-4 px-6 py-5 text-foreground">
+    <div className="flex flex-col gap-4 px-6 py-5 text-foreground">
       <div className="flex items-center justify-between gap-4 max-md:flex-col max-md:items-start">
         <div>
           <h1 className="text-xl font-semibold">系统健康</h1>

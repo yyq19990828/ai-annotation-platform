@@ -87,7 +87,7 @@ export function WorkbenchSettingsDrawer({
         aria-label="工作台设置"
         aria-modal="false"
         onClick={(e) => e.stopPropagation()}
-        className="tw-scope fixed top-0 right-0 bottom-0 z-61 flex flex-col w-[min(340px,100vw)] border-l border-border bg-card shadow-lg animate-[slideInRight_180ms_ease-out]"
+        className="fixed top-0 right-0 bottom-0 z-61 flex flex-col w-[min(340px,100vw)] border-l border-border bg-card shadow-lg animate-[slideInRight_180ms_ease-out]"
         data-testid="workbench-settings-drawer"
       >
         <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">

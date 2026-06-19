@@ -72,7 +72,7 @@ export function ModelMarketPage() {
   };
 
   return (
-    <div className="tw-scope mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground max-md:px-4">
+    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground max-md:px-4">
       <div className="mb-4">
         <h1 className="mb-1 text-xl font-semibold">模型市场</h1>
         <p className="text-[13px] text-muted-foreground">

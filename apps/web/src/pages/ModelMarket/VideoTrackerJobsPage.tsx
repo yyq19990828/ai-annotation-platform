@@ -79,7 +79,7 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
   const hasNext = offset + PAGE_SIZE < total;
 
   return (
-    <div className="tw-scope flex flex-col gap-4 px-7 py-5 text-foreground">
+    <div className="flex flex-col gap-4 px-7 py-5 text-foreground">
       <Card>
         <div className="flex items-center justify-between gap-2.5 border-b border-border px-4 py-3 text-[13px] font-semibold">
           <span>任务列表 ({total})</span>
