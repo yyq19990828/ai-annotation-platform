@@ -3,7 +3,9 @@ import type { AttributeSchema } from "@/api/projects";
 import type { Viewport } from "../state/useViewportTransform";
 import { AttributeForm } from "./AttributeForm";
 import { ClassPalette, shortcutForIndex } from "./ClassPalette";
-import styles from "./ClassPickerPopover.module.css";
+
+const POPOVER_CLASS =
+  "tw-scope top-[var(--class-picker-top)] left-[var(--class-picker-left)] z-30 min-w-[220px] max-w-[280px] max-h-[70vh] overflow-y-auto rounded-md border border-border bg-card p-2.5 shadow-lg [pointer-events:auto]";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type FixedAnchor = { left: number; top: number };
@@ -143,13 +145,13 @@ export function ClassPickerPopover({
     <div
       ref={ref}
       data-testid="class-picker-popover"
-      className={isFixed ? styles.popoverFixed : styles.popover}
+      className={`${POPOVER_CLASS} ${isFixed ? "fixed" : "absolute"}`}
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <div className={styles.header}>
-        <div className={styles.title}>{title}</div>
-        <div className={styles.shortcutHint}>
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-[11.5px] font-semibold">{title}</div>
+        <div className="text-[10px] text-muted-foreground">
           Enter ↵ 默认 · Esc 取消
         </div>
       </div>
@@ -162,17 +164,17 @@ export function ClassPickerPopover({
         enableSearch={classes.length > 9}
       />
       {classes.length === 0 && (
-        <div className={styles.empty}>
+        <div className="p-2 text-center text-xs text-muted-foreground">
           该项目尚未配置类别
         </div>
       )}
       {classes.length > 0 && (
-        <div className={styles.footerHint}>
+        <div className="mt-2 text-center text-[10.5px] text-muted-foreground">
           快捷键: {shortcutForIndex(0)}…{shortcutForIndex(Math.min(classes.length - 1, 34))}
         </div>
       )}
       {attrEditing && (
-        <div className={styles.attrBlock}>
+        <div className="mt-1">
           <AttributeForm
             schema={attrEditing.schema}
             className={defaultClass}

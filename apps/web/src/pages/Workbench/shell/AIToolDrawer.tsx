@@ -11,7 +11,10 @@ import type { TextOutputMode } from "../state/useInteractiveAI";
 import type { CapabilityWarning } from "../state/useCapabilityValidation";
 import { TOOL_REGISTRY, type ToolId } from "../stage/tools";
 import { SamOutputModeTabs } from "./SamOutputModeTabs";
-import styles from "./AIToolDrawer.module.css";
+
+const FIELD_LABEL_CLASS = "text-[10.5px] text-muted-foreground";
+const SELECT_CLASS =
+  "appearance-none rounded-sm border border-border bg-muted px-1.5 py-[3px] text-[11.5px] text-foreground";
 
 export interface AIToolDrawerProps {
   tool: Tool;
@@ -140,23 +143,23 @@ export function AIToolDrawer({
     <div
       data-testid="ai-tool-drawer"
       data-ai-drawer-root
-      className={styles.drawer}
+      className="tw-scope flex w-60 flex-col gap-2 rounded-md border border-border bg-card p-2.5 px-3 shadow-md"
     >
       {/* 标题 */}
-      <div className={styles.titleRow}>
+      <div className="flex items-center gap-1.5">
         <Icon name={meta.icon} size={13} />
-        <b className={styles.title}>{meta.label}</b>
+        <b className="text-xs">{meta.label}</b>
       </div>
 
       {/* v0.14.18 · 交互后端选择器: ≥2 候选时可切 (只列支持当前工具的后端), 否则只读显示解析后端。 */}
-      <div className={styles.field}>
-        <span className={styles.label}>后端</span>
+      <div className="flex flex-col gap-[3px]">
+        <span className={FIELD_LABEL_CLASS}>后端</span>
         <select
           data-testid="ai-tool-backend-select"
           value={canSwitchBackend ? (selectedInteractiveId ?? "") : (backendName ?? "")}
           disabled={!canSwitchBackend}
           onChange={(e) => onSelectInteractive?.(e.target.value)}
-          className={styles.backendSelect}
+          className={`${SELECT_CLASS} opacity-[0.85]`}
         >
           {canSwitchBackend ? (
             backendCands.map((b) => (
@@ -174,13 +177,13 @@ export function AIToolDrawer({
 
       {/* v0.14.9 · 多模型选择器 (按 task 分组, 按当前工具 prompt 过滤后 > 1 时渲染)。 */}
       {showModelSelector && (
-        <div className={styles.field}>
-          <span className={styles.label}>模型</span>
+        <div className="flex flex-col gap-[3px]">
+          <span className={FIELD_LABEL_CLASS}>模型</span>
           <select
             data-testid="ai-tool-model-select"
             value={activeModelId ?? ""}
             onChange={(e) => onSetActiveModelId?.(e.target.value)}
-            className={styles.modelSelect}
+            className={`${SELECT_CLASS} cursor-pointer`}
           >
             {groupModelsByTask(filteredModels).map(([task, group]) => (
               <optgroup key={task} label={modelTaskLabel(task)}>
@@ -197,15 +200,15 @@ export function AIToolDrawer({
 
       {/* 工具特定控件 */}
       {tool === "smart-point" && (
-        <div className={styles.polarityRow}>
-          <span className={styles.label}>极性</span>
+        <div className="flex items-center gap-2">
+          <span className={FIELD_LABEL_CLASS}>极性</span>
           <button
             type="button"
             data-testid="ai-tool-polarity"
             onClick={() => onSetSamPolarity(samPolarity === "positive" ? "negative" : "positive")}
             className={cn(
-              styles.polarityButton,
-              samPolarity === "positive" ? styles.polarityPositive : styles.polarityNegative,
+              "flex size-6 cursor-pointer appearance-none items-center justify-center rounded-full border-0 p-0 text-[13px] font-bold leading-none text-white",
+              samPolarity === "positive" ? "bg-emerald-500" : "bg-amber-500",
             )}
             title={samPolarity === "positive" ? "正向 (+) — 按 - 切负向" : "负向 (−) — 按 + 切正向"}
           >
@@ -215,24 +218,27 @@ export function AIToolDrawer({
       )}
 
       {hint && (
-        <div className={styles.hint}>
+        <div className="rounded-sm bg-muted px-1.5 py-1 text-[10.5px] leading-[1.4] text-muted-foreground">
           {hint}
         </div>
       )}
 
       {/* exemplar 输出形态三选一 (box/mask/both), 对齐 text-prompt; 拖框时按此 mode 派发. */}
       {tool === "exemplar" && exemplarOutputMode && onSetExemplarOutputMode && (
-        <div className={styles.field} data-testid="exemplar-output-mode">
-          <span className={styles.label}>输出形态</span>
+        <div className="flex flex-col gap-[3px]" data-testid="exemplar-output-mode">
+          <span className={FIELD_LABEL_CLASS}>输出形态</span>
           <SamOutputModeTabs value={exemplarOutputMode} onChange={onSetExemplarOutputMode} />
         </div>
       )}
 
       {/* v0.14.9 · 兼容性警告 (非阻断): active model 输出与项目配置不匹配时提示。 */}
       {warnings.length > 0 && (
-        <div className={styles.warnings} data-testid="ai-tool-capability-warnings">
+        <div className="flex flex-col gap-1" data-testid="ai-tool-capability-warnings">
           {warnings.map((w) => (
-            <div key={w.key} className={styles.warningItem}>
+            <div
+              key={w.key}
+              className="flex items-start gap-1 rounded-sm bg-amber-500/10 px-1.5 py-1 text-[10.5px] leading-[1.4] text-amber-600 dark:text-amber-400"
+            >
               <Icon name="warning" size={11} />
               <span>{w.message}</span>
             </div>
@@ -241,18 +247,18 @@ export function AIToolDrawer({
       )}
 
       {/* 状态指示 */}
-      <div className={styles.statusRow}>
+      <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
         <span
           aria-hidden
           className={cn(
-            styles.statusDot,
+            "size-1.5 rounded-full",
             isError
-              ? styles.statusError
+              ? "bg-rose-500"
               : isLoading
-                ? styles.statusLoading
+                ? "bg-amber-500"
                 : capability
-                  ? styles.statusReady
-                  : styles.statusIdle,
+                  ? "bg-emerald-500"
+                  : "bg-muted-foreground",
           )}
         />
         <span>
