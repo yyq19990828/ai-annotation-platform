@@ -23,6 +23,7 @@
  */
 import { test } from "../fixtures/seed";
 import type { SeedData } from "../fixtures/seed";
+import type { Page } from "@playwright/test";
 import { SCENES } from "./scenes/index";
 import type { Role, MatrixAxis, ScreenshotScene } from "./scenes/index";
 import { injectAnnotations } from "./_helpers/annotate";
@@ -94,6 +95,29 @@ function resolveOutputPath(scene: ScreenshotScene, axis: MatrixAxis): string {
   ].filter(Boolean);
 
   return `${stem}.${parts.join(".")}${ext}`;
+}
+
+async function applyScreenshotTheme(page: Page, theme: "light" | "dark") {
+  await page.evaluate((nextTheme) => {
+    localStorage.setItem("anno.theme", nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+
+    const raw = localStorage.getItem("auth-storage");
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as {
+        state?: { user?: { preferences?: { ui?: Record<string, unknown> } | null } | null };
+      };
+      const user = parsed.state?.user;
+      if (!user) return;
+      const preferences = user.preferences ?? {};
+      const ui = preferences.ui ?? {};
+      user.preferences = { ...preferences, ui: { ...ui, theme: nextTheme } };
+      localStorage.setItem("auth-storage", JSON.stringify(parsed));
+    } catch {
+      // Corrupt persisted auth should not make screenshot generation fail.
+    }
+  }, theme);
 }
 
 test.describe("screenshots automation", () => {
@@ -171,8 +195,10 @@ test.describe("screenshots automation", () => {
       const cleanupMock = await setupMockState(page, scene.mockState);
 
       await seed.injectToken(page, roleEmail);
+      await applyScreenshotTheme(page, axis.theme);
       await page.goto(route);
       if (scene.prepare) await scene.prepare(page, data);
+      await applyScreenshotTheme(page, axis.theme);
 
       // 禁用动画，等待网络稳定
       await page.addStyleTag({

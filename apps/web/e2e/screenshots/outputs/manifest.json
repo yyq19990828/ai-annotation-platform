@@ -2,169 +2,169 @@
   "docs-site/user-guide/images/settings/profile.png": {
     "auto": true,
     "scene": "settings/profile",
-    "lastRun": "2026-06-12T10:27:31.902Z",
+    "lastRun": "2026-06-19T12:05:24.808Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/settings/workbench-prefs.png": {
     "auto": true,
     "scene": "settings/workbench-prefs",
-    "lastRun": "2026-06-12T10:27:33.907Z",
+    "lastRun": "2026-06-19T12:05:26.929Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/settings/notification-prefs.png": {
     "auto": true,
     "scene": "settings/notification-prefs",
-    "lastRun": "2026-06-12T10:27:35.919Z",
+    "lastRun": "2026-06-19T12:05:28.949Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/settings/system-smtp.png": {
     "auto": true,
     "scene": "settings/system-smtp",
-    "lastRun": "2026-06-12T10:27:37.897Z",
+    "lastRun": "2026-06-19T12:05:30.974Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/settings/my-feedback.png": {
     "auto": true,
     "scene": "settings/my-feedback",
-    "lastRun": "2026-06-12T10:27:39.889Z",
+    "lastRun": "2026-06-19T12:05:32.999Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/users/list.png": {
     "auto": true,
     "scene": "superadmin/users/list",
-    "lastRun": "2026-06-12T10:27:41.781Z",
+    "lastRun": "2026-06-19T12:05:34.928Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/users/invite-modal.png": {
     "auto": true,
     "scene": "superadmin/users/invite-modal",
-    "lastRun": "2026-06-12T10:27:43.804Z",
+    "lastRun": "2026-06-19T12:05:37.086Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/bugs/list.png": {
     "auto": true,
     "scene": "superadmin/bugs/list",
-    "lastRun": "2026-06-12T10:27:45.862Z",
+    "lastRun": "2026-06-19T12:05:39.200Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/bugs/detail-panel.png": {
     "auto": true,
     "scene": "superadmin/bugs/detail-panel",
-    "lastRun": "2026-06-12T10:27:48.047Z",
+    "lastRun": "2026-06-19T12:05:41.408Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/analytics/overview.png": {
     "auto": true,
     "scene": "superadmin/analytics/overview",
-    "lastRun": "2026-06-12T10:27:50.636Z",
+    "lastRun": "2026-06-19T12:05:43.951Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/analytics/heatmap.png": {
     "auto": true,
     "scene": "superadmin/analytics/heatmap",
-    "lastRun": "2026-06-12T10:27:52.792Z",
+    "lastRun": "2026-06-19T12:05:46.203Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/system-monitoring/health-panel.png": {
     "auto": true,
     "scene": "superadmin/system-monitoring/health-panel",
-    "lastRun": "2026-06-12T10:27:55.710Z",
+    "lastRun": "2026-06-19T12:05:49.190Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/model-market/list.png": {
     "auto": true,
     "scene": "superadmin/model-market/list",
-    "lastRun": "2026-06-12T10:27:58.341Z",
+    "lastRun": "2026-06-19T12:05:51.678Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/audit-logs/filter-bar.png": {
     "auto": true,
     "scene": "superadmin/audit-logs/filter-bar",
-    "lastRun": "2026-06-12T10:28:00.467Z",
+    "lastRun": "2026-06-19T12:05:53.822Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/notifications/panel-overview.png": {
     "auto": true,
     "scene": "notifications/panel-overview",
-    "lastRun": "2026-06-12T10:28:02.559Z",
+    "lastRun": "2026-06-19T12:05:58.932Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/projects/tool-units-panel.png": {
     "auto": true,
     "scene": "projects/tool-units-panel",
-    "lastRun": "2026-06-15T02:47:56.250Z",
+    "lastRun": "2026-06-19T12:04:12.619Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/projects/batch-status-list.png": {
     "auto": true,
     "scene": "projects/batch-status-list",
-    "lastRun": "2026-06-15T03:03:23.418Z",
+    "lastRun": "2026-06-19T12:04:14.865Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/projects/data-manager-overview.png": {
     "auto": true,
     "scene": "projects/data-manager-overview",
-    "lastRun": "2026-06-15T02:48:00.803Z",
+    "lastRun": "2026-06-19T12:04:17.111Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/projects/data-manager-filter-rules.png": {
     "auto": true,
     "scene": "projects/data-manager-filter-rules",
-    "lastRun": "2026-06-15T02:48:02.941Z",
+    "lastRun": "2026-06-19T12:04:19.161Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/projects/template-library-overview.png": {
     "auto": true,
     "scene": "projects/template-library-overview",
-    "lastRun": "2026-06-15T02:48:05.037Z",
+    "lastRun": "2026-06-19T12:04:21.241Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/projects/ml-backends/register-form.png": {
     "auto": true,
     "scene": "projects/ml-backends/register-form",
-    "lastRun": "2026-06-15T02:48:07.552Z",
+    "lastRun": "2026-06-19T12:04:23.773Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/projects/ai-pre-config-panel.png": {
     "auto": true,
     "scene": "projects/ai-pre-config-panel",
-    "lastRun": "2026-06-15T02:48:09.716Z",
+    "lastRun": "2026-06-19T12:04:26.058Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/projects/prediction-import-wizard.png": {
     "auto": true,
     "scene": "projects/prediction-import-wizard",
-    "lastRun": "2026-06-15T02:48:12.175Z",
+    "lastRun": "2026-06-19T12:04:28.837Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/review/review-list-page.png": {
     "auto": true,
     "scene": "review/review-list-page",
-    "lastRun": "2026-06-15T02:48:45.850Z",
+    "lastRun": "2026-06-19T12:04:42.862Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/users/edit-modal.png": {
     "auto": true,
     "scene": "superadmin/users/edit-modal",
-    "lastRun": "2026-06-15T02:49:19.338Z",
+    "lastRun": "2026-06-19T12:06:01.538Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/users/groups-tab.png": {
     "auto": true,
     "scene": "superadmin/users/groups-tab",
-    "lastRun": "2026-06-15T02:49:21.428Z",
+    "lastRun": "2026-06-19T12:06:03.652Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/users/permission-matrix.png": {
     "auto": true,
     "scene": "superadmin/users/permission-matrix",
-    "lastRun": "2026-06-15T02:49:23.571Z",
+    "lastRun": "2026-06-19T12:06:05.774Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/audit-logs/detail-modal.png": {
     "auto": true,
     "scene": "superadmin/audit-logs/detail-modal",
-    "lastRun": "2026-06-15T02:49:26.126Z",
+    "lastRun": "2026-06-19T12:06:08.381Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/failed-predictions/list.png": {
@@ -176,31 +176,211 @@
   "docs-site/user-guide/images/superadmin/system-monitoring/workers-table.png": {
     "auto": true,
     "scene": "superadmin/system-monitoring/workers-table",
-    "lastRun": "2026-06-15T02:49:31.052Z",
+    "lastRun": "2026-06-19T12:06:11.430Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/ml-backend/register-form.png": {
     "auto": true,
     "scene": "superadmin/ml-backend/register-form",
-    "lastRun": "2026-06-15T03:06:20.273Z",
+    "lastRun": "2026-06-19T12:06:14.075Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/public-templates/templates-list.png": {
     "auto": true,
     "scene": "superadmin/public-templates/templates-list",
-    "lastRun": "2026-06-15T02:49:39.074Z",
+    "lastRun": "2026-06-19T12:06:16.504Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/superadmin/bugs/status-transitions.png": {
     "auto": true,
     "scene": "superadmin/bugs/status-transitions",
-    "lastRun": "2026-06-15T02:49:41.333Z",
+    "lastRun": "2026-06-19T12:06:18.724Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/projects/prediction-purge-modal.png": {
     "auto": true,
     "scene": "projects/prediction-purge-modal",
-    "lastRun": "2026-06-15T02:55:00.512Z",
+    "lastRun": "2026-06-19T12:04:31.901Z",
     "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/getting-started/login.png": {
+    "auto": true,
+    "scene": "getting-started/login",
+    "lastRun": "2026-06-19T12:03:48.821Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/getting-started/forgot-password.png": {
+    "auto": true,
+    "scene": "getting-started/forgot-password",
+    "lastRun": "2026-06-19T12:03:50.486Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/polygon/vertex-edit.png": {
+    "auto": true,
+    "scene": "polygon/vertex-edit",
+    "lastRun": "2026-06-19T12:03:53.043Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/polygon/close-hint.png": {
+    "auto": true,
+    "scene": "polygon/close-hint",
+    "lastRun": "2026-06-19T12:03:55.766Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/create-entry.png": {
+    "auto": true,
+    "scene": "projects/create-entry",
+    "lastRun": "2026-06-19T12:04:04.479Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/wizard-steps.png": {
+    "auto": true,
+    "scene": "projects/wizard-steps",
+    "lastRun": "2026-06-19T12:04:06.105Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/empty-state.png": {
+    "auto": true,
+    "scene": "projects/empty-state",
+    "lastRun": "2026-06-19T12:04:07.878Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/error-state.png": {
+    "auto": true,
+    "scene": "projects/error-state",
+    "lastRun": "2026-06-19T12:04:10.378Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/review/workbench.png": {
+    "auto": true,
+    "scene": "review/workbench",
+    "lastRun": "2026-06-19T12:04:35.614Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/review/reject-form.png": {
+    "auto": true,
+    "scene": "review/reject-form",
+    "lastRun": "2026-06-19T12:04:39.954Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/export/format-select.png": {
+    "auto": true,
+    "scene": "export/format-select",
+    "lastRun": "2026-06-19T12:04:45.326Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/ai-pre-stepper.png": {
+    "auto": true,
+    "scene": "ai-pre/stepper",
+    "lastRun": "2026-06-19T12:04:47.075Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/ai-pre-history-search.png": {
+    "auto": true,
+    "scene": "ai-pre/history-search",
+    "lastRun": "2026-06-19T12:04:49.237Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/wizard-step4-backend.png": {
+    "auto": true,
+    "scene": "wizard/step4-backend",
+    "lastRun": "2026-06-19T12:04:52.956Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/getting-started/platform-nav-overview.png": {
+    "auto": true,
+    "scene": "platform/nav-overview",
+    "lastRun": "2026-06-19T12:04:54.791Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/getting-started/role-dashboard-overview.png": {
+    "auto": true,
+    "scene": "platform/role-dashboard-overview",
+    "lastRun": "2026-06-19T12:04:56.970Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/concepts/role-permission-matrix.png": {
+    "auto": true,
+    "scene": "platform/role-permission-matrix",
+    "lastRun": "2026-06-19T12:04:59.003Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/workflows/failed-prediction-recovery-jobs-list.png": {
+    "auto": true,
+    "scene": "workflows/failed-prediction-recovery-jobs-list",
+    "lastRun": "2026-06-19T12:05:01.107Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/workflows/project-wizard-type-select.png": {
+    "auto": true,
+    "scene": "workflows/project-wizard-type-select",
+    "lastRun": "2026-06-19T12:05:03.223Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/workflows/ai-pre-project-detail-panel.png": {
+    "auto": true,
+    "scene": "workflows/ai-pre-project-detail-panel",
+    "lastRun": "2026-06-19T12:05:05.445Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/workbench/layout-overview.png": {
+    "auto": true,
+    "scene": "workbench/layout-overview",
+    "lastRun": "2026-06-19T12:05:08.524Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/mask-brush/toolbar-overview.png": {
+    "auto": true,
+    "scene": "mask-brush/toolbar-overview",
+    "lastRun": "2026-06-19T12:05:11.571Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/sam/exemplar-output-mode.png": {
+    "auto": true,
+    "scene": "sam/exemplar-output-mode",
+    "lastRun": "2026-06-19T12:05:17.309Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/sam/ai-inspector-panel.png": {
+    "auto": true,
+    "scene": "sam/ai-inspector-panel",
+    "lastRun": "2026-06-19T12:05:20.584Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/datasets/import-images-wizard.png": {
+    "auto": true,
+    "scene": "datasets/import-images-wizard",
+    "lastRun": "2026-06-19T12:05:22.873Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/getting-started/login.dark.png": {
+    "auto": true,
+    "scene": "getting-started/login",
+    "lastRun": "2026-06-19T12:06:21.853Z",
+    "project": "desktop-dark"
+  },
+  "docs-site/user-guide/images/projects/create-entry.dark.png": {
+    "auto": true,
+    "scene": "projects/create-entry",
+    "lastRun": "2026-06-19T12:06:24.353Z",
+    "project": "desktop-dark"
+  },
+  "docs-site/user-guide/images/sam/subtoolbar.png": {
+    "auto": true,
+    "scene": "sam/subtoolbar",
+    "lastRun": "2026-06-19T12:04:02.808Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/sam/ai-tool-drawer.png": {
+    "auto": true,
+    "scene": "sam/ai-tool-drawer",
+    "lastRun": "2026-06-19T12:05:14.353Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/getting-started/login.mobile.png": {
+    "auto": true,
+    "scene": "getting-started/login",
+    "lastRun": "2026-06-19T12:07:30.426Z",
+    "project": "mobile"
   }
 }
