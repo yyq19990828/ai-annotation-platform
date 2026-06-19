@@ -7,7 +7,6 @@ import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { mlBackendsApi } from "@/api/ml-backends";
 import type { FlatModel } from "./types";
-import styles from "../CapabilityCatalogPanel.module.css";
 
 export function WarmButton({
   item,
@@ -50,7 +49,7 @@ export function WarmButton({
       onClick={onWarm}
       disabled={!canWarm || busy}
       title={canWarm ? "预热该模型默认变体" : "该 backend 未声明 warmup_endpoint 或未注册到项目"}
-      className={compact ? styles.compactWarmButton : undefined}
+      className={compact ? "w-7 min-w-7 px-0" : undefined}
     >
       <Icon name={busy ? "loader2" : "play"} size={11} className={busy ? "spin" : undefined} />
       {compact ? "" : "预热"}
