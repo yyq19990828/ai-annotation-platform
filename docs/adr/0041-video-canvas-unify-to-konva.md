@@ -45,7 +45,7 @@
 - **上限 4K@60+20框**:分层 p95 0.30ms / 单层 p95 0.40ms,仍远低于 8ms。
 - **全矩阵 p95 ≤ 0.40ms**;成本由**目标舞台像素**绑定、与源分辨率几乎无关(4K 解码归 `<video>`,A1/A2 共担、已比掉)。即 A1 相对 A2 的**增量**合成成本是亚毫秒级,「单栈」收益不被 perf 抵消。
 
-数据表、方法学与测量教训(必须用同步 `draw()` 而非异步 `batchDraw()` 度量)见 [`docs/plans/_spike-results/2026-06-16-video-konva-frame-perf.md`](../plans/_spike-results/2026-06-16-video-konva-frame-perf.md)。
+数据表、方法学与测量教训(必须用同步 `draw()` 而非异步 `batchDraw()` 度量)见 `docs/plans/_spike-results/2026-06-16-video-konva-frame-perf.md`。
 
 ### 决策 B — 坐标模型统一到「像素空间 + Konva transform」
 
