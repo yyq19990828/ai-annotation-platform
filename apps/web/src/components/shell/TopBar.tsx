@@ -12,7 +12,9 @@ import { PreannotateJobsBadge } from "./PreannotateJobsBadge";
 import { JobsBell } from "./JobsBell";
 import { CommandPalette } from "@/components/CommandPalette";
 import { usePerfHudStore } from "@/components/PerfHud";
-import styles from "./TopBar.module.css";
+
+const ICON_BTN_CLASS =
+  "inline-flex size-[30px] cursor-pointer appearance-none items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground";
 
 interface TopBarProps {
   workspace: string;
@@ -56,37 +58,40 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
 
   return (
     <>
-      <header className={styles.header}>
-        <div className={styles.left}>
+      <header className="tw-scope z-10 col-[1/-1] flex items-center justify-between border-b border-border bg-card px-4">
+        <div className="flex min-w-0 shrink-0 items-center gap-6">
           {showHamburger && (
             <button
               type="button"
               title="打开导航菜单"
               aria-label="打开导航菜单"
               onClick={onOpenDrawer}
-              className={styles.iconButton}
+              className={ICON_BTN_CLASS}
             >
               <Icon name="menu" size={16} />
             </button>
           )}
-          <div className={styles.brand}>
-            <div className={styles.brandMark}>
-              <div className={styles.brandMarkInner} />
+          <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-[13px] font-semibold tracking-[0.01em]">
+            <div className="relative size-[22px] overflow-hidden rounded-md bg-gradient-to-br from-brand to-violet-500">
+              <div className="absolute inset-1 rounded-[3px] border-[1.5px] border-white/85" />
             </div>
             <span>标注中心</span>
-            <span className={styles.version}>v2.5</span>
+            <span className="ml-1 text-[11px] font-normal text-muted-foreground">v2.5</span>
           </div>
           <div
             onClick={onWorkspaceChange}
-            className={clsx(styles.workspace, showHamburger && styles.hidden)}
+            className={clsx(
+              "flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md bg-muted py-1 pl-2 pr-2.5 text-xs text-muted-foreground",
+              showHamburger && "hidden",
+            )}
           >
-            <span className={styles.workspaceDot} />
+            <span className="size-1.5 rounded-full bg-emerald-500" />
             <span>{workspace}</span>
             <Icon name="chevDown" size={12} />
           </div>
         </div>
 
-        <div className={clsx(styles.searchWrap, showHamburger && styles.hidden)}>
+        <div className={clsx("flex min-w-0 flex-1 justify-center px-3", showHamburger && "hidden")}>
           <SearchInput
             placeholder="搜索项目、任务、数据集、成员..."
             width={360}
@@ -96,18 +101,18 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           />
         </div>
 
-        <div className={styles.actions}>
+        <div className="flex shrink-0 items-center gap-2">
           {/* 刷新按钮 */}
           <button
             type="button"
             title="刷新"
             onClick={handleRefresh}
-            className={styles.iconButton}
+            className={ICON_BTN_CLASS}
           >
             <Icon
               name="refresh"
               size={15}
-              className={isFetching > 0 ? styles.spin : undefined}
+              className={isFetching > 0 ? "animate-spin" : undefined}
             />
           </button>
 
@@ -117,7 +122,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
             title={themeTitle}
             aria-label={themeTitle}
             onClick={() => setTheme(nextTheme)}
-            className={clsx(styles.iconButton, styles.themeToggle)}
+            className={clsx(ICON_BTN_CLASS, "text-foreground")}
           >
             <Icon name={themeIcon} size={15} />
           </button>
@@ -129,7 +134,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
               title="性能监控 (Ctrl+Shift+P)"
               onClick={() => usePerfHudStore.getState().toggle()}
               aria-label="切换性能监控浮窗"
-              className={styles.iconButton}
+              className={ICON_BTN_CLASS}
             >
               <Icon name="activity" size={15} />
             </button>
@@ -144,22 +149,23 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           {/* 通知按钮（v0.7.6：组件自包含 trigger + popover，TopBar 不再管 open state） */}
           <NotificationsPopover />
 
-          <div
-            className={styles.user}
-          >
+          <div className="flex cursor-pointer items-center gap-2 rounded-lg py-1 pl-1 pr-2.5">
             <Avatar initial={user?.name?.[0] ?? "?"} size="sm" />
             <div
-              className={clsx(styles.userMeta, showHamburger && styles.hidden)}
+              className={clsx(
+                "flex flex-col items-start leading-[1.2] whitespace-nowrap",
+                showHamburger && "hidden",
+              )}
             >
-              <span className={styles.userName}>{user?.name ?? "—"}</span>
-              <span className={styles.userRole}>{user?.role ?? "—"}</span>
+              <span className="text-xs font-medium">{user?.name ?? "—"}</span>
+              <span className="text-[10.5px] text-muted-foreground">{user?.role ?? "—"}</span>
             </div>
           </div>
           <button
             type="button"
             title="退出登录"
             onClick={logout}
-            className={styles.iconButton}
+            className={ICON_BTN_CLASS}
           >
             <Icon name="logout" size={15} />
           </button>

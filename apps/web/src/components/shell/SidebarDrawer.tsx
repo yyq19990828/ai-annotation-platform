@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import { useLocation } from "react-router-dom";
 
 import { useElementStyle } from "../ui/useElementStyle";
-import styles from "./SidebarDrawer.module.css";
 
 interface SidebarDrawerProps {
   open: boolean;
@@ -58,7 +57,9 @@ export function SidebarDrawer({ open, onClose, children, width = 240 }: SidebarD
       <div
         onClick={onClose}
         aria-hidden="true"
-        className={`${styles.backdrop} ${open ? styles.backdropOpen : ""}`}
+        className={`fixed inset-0 z-[1099] bg-black/40 transition-opacity duration-[220ms] ease-out ${
+          open ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+        }`}
       />
       {/* 抽屉本体 */}
       <aside
@@ -66,7 +67,9 @@ export function SidebarDrawer({ open, onClose, children, width = 240 }: SidebarD
         role="dialog"
         aria-modal="true"
         aria-label="导航菜单"
-        className={`${styles.panel} ${open ? styles.panelOpen : ""}`}
+        className={`tw-scope fixed left-0 top-0 z-[1100] h-screen w-[var(--sidebar-drawer-width)] overflow-auto border-r border-border bg-card transition-[transform,box-shadow] duration-[220ms] ease-out ${
+          open ? "translate-x-0 shadow-xl" : "-translate-x-full"
+        }`}
       >
         {children}
       </aside>

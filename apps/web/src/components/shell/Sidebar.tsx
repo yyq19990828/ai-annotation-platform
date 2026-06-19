@@ -6,7 +6,15 @@ import { useFailedPredictions } from "@/hooks/useFailedPredictions";
 import { useAdminStats } from "@/hooks/useDashboard";
 import type { PageKey } from "@/types";
 import type { IconName } from "@/components/ui/Icon";
-import styles from "./Sidebar.module.css";
+
+const NAV_ITEM_CLASS =
+  "flex items-center gap-2.5 rounded-md border border-transparent bg-transparent px-2.5 py-1.5 text-[13px] font-normal text-muted-foreground no-underline cursor-pointer select-none";
+const NAV_ITEM_ACTIVE_CLASS =
+  "border-border bg-card font-medium text-foreground shadow-sm";
+const BADGE_BASE =
+  "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 text-[10px] font-medium";
+const BADGE_AI = "bg-violet-500/10 text-violet-600 dark:text-violet-400";
+const BADGE_DANGER = "bg-rose-500/10 text-rose-600 dark:text-rose-400";
 
 interface SidebarProps {
   reviewCount: number;
@@ -83,38 +91,38 @@ export function Sidebar({ reviewCount }: SidebarProps) {
     .filter((sec) => sec.items.length > 0);
 
   return (
-    <aside className={styles.sidebar}>
+    <aside className="tw-scope flex flex-col gap-0.5 overflow-y-auto border-r border-border bg-muted px-2 py-2.5">
       {visibleSections.map((sec) => (
         <div key={sec.label}>
-          <div className={styles.sectionLabel}>
+          <div className="px-2.5 pb-1.5 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
             {sec.label}
           </div>
           {sec.items.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
-              className={({ isActive }) => clsx(styles.navItem, isActive && styles.navItemActive)}
+              className={({ isActive }) => clsx(NAV_ITEM_CLASS, isActive && NAV_ITEM_ACTIVE_CLASS)}
             >
-              <Icon name={item.icon} size={16} className={styles.navIcon} />
+              <Icon name={item.icon} size={16} className="shrink-0 opacity-[0.85]" />
               <span>{item.label}</span>
               {item.key === "review" && reviewCount > 0 && (
-                <span className={styles.navCount}>
+                <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
                   {reviewCount}
                 </span>
               )}
               {item.badge && (
-                <span className={clsx(styles.badge, styles.badgeAi, styles.navBadge)}>
+                <span className={clsx(BADGE_BASE, BADGE_AI, "ml-auto")}>
                   {item.badge}
                 </span>
               )}
               {/* AI 预标注：待接管 + 失败预测两枚徽章同挂此项（失败预测已迁到 /ai-pre/jobs?status=failed，
                   此前误挂在「模型市场」上）。 */}
               {item.key === "ai-pre" && (preAnnotatedTotal > 0 || failedTotal > 0) && (
-                <span className={styles.navBadgeWrap}>
+                <span className="ml-auto inline-flex gap-1">
                   {preAnnotatedTotal > 0 && (
                     <span
                       title={`${preAnnotatedTotal} 批 AI 预标完成、待人工接管`}
-                      className={clsx(styles.badge, styles.badgeAi)}
+                      className={clsx(BADGE_BASE, BADGE_AI)}
                     >
                       {preAnnotatedTotal > 99 ? "99+" : preAnnotatedTotal} 待接管
                     </span>
@@ -122,7 +130,7 @@ export function Sidebar({ reviewCount }: SidebarProps) {
                   {failedTotal > 0 && (
                     <span
                       title={`${failedTotal} 条失败预测待处理`}
-                      className={clsx(styles.badge, styles.badgeDanger)}
+                      className={clsx(BADGE_BASE, BADGE_DANGER)}
                     >
                       {failedTotal > 99 ? "99+" : failedTotal} 失败
                     </span>
@@ -134,7 +142,7 @@ export function Sidebar({ reviewCount }: SidebarProps) {
         </div>
       ))}
 
-      <div className={styles.spacer} />
+      <div className="flex-1" />
     </aside>
   );
 }
