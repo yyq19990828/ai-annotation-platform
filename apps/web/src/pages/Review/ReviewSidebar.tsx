@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
 import type { ReviewingBatchItem } from "@/api/dashboard";
-import styles from "./ReviewSidebar.module.css";
 
 interface Props {
   batches: ReviewingBatchItem[];
@@ -57,19 +56,21 @@ export function ReviewSidebar({ batches, selectedBatchId, onSelect }: Props) {
 
   if (batches.length === 0) {
     return (
-      <div className={styles.emptyState}>
-        <Icon name="check" size={32} className={styles.emptyIcon} />
+      <div className="px-4 py-8 text-center text-xs text-muted-foreground">
+        <Icon name="check" size={32} className="mb-2 opacity-25" />
         <div>暂无可审核批次</div>
       </div>
     );
   }
 
   return (
-    <div className={styles.root}>
+    <div className="px-1 py-2">
       <button
         type="button"
         onClick={() => onSelect(null)}
-        className={`${styles.allButton} ${selectedBatchId === "" ? styles.allButtonActive : ""}`}
+        className={`mb-1.5 flex w-full cursor-pointer appearance-none items-center gap-1.5 rounded-md border border-border px-3 py-2 text-left text-[12.5px] text-foreground [font:inherit] ${
+          selectedBatchId === "" ? "bg-brand/10" : "bg-transparent"
+        }`}
       >
         <Icon name="layers" size={12} />
         <span>全部待审任务</span>
@@ -78,25 +79,23 @@ export function ReviewSidebar({ batches, selectedBatchId, onSelect }: Props) {
       {groups.map((g) => {
         const isCollapsed = collapsed.has(g.project_id) && g.project_id !== selectedProjectId;
         return (
-          <div key={g.project_id} className={styles.projectGroup}>
+          <div key={g.project_id} className="mb-1">
             <button
               type="button"
               onClick={() => toggle(g.project_id)}
-              className={styles.projectButton}
+              className="flex w-full cursor-pointer appearance-none items-center gap-1.5 border-0 bg-transparent px-2.5 py-1.5 text-left text-xs font-semibold text-muted-foreground [font:inherit]"
             >
               <Icon name={isCollapsed ? "chevRight" : "chevDown"} size={11} />
-              <span className={styles.ellipsis}>
+              <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                 {g.project_name}
               </span>
               {g.pending > 0 && (
-                <span className={styles.countBadge}>
-                  <Badge variant="warning">{g.pending}</Badge>
-                </span>
+                <Badge variant="warning">{g.pending}</Badge>
               )}
             </button>
 
             {!isCollapsed && (
-              <div className={styles.batchList}>
+              <div className="ml-3 border-l border-border">
                 {g.items.map((b) => {
                   const active = b.batch_id === selectedBatchId;
                   const remaining = Math.max(0, b.total_tasks - b.completed_tasks - b.review_tasks);
@@ -105,24 +104,24 @@ export function ReviewSidebar({ batches, selectedBatchId, onSelect }: Props) {
                       key={b.batch_id}
                       type="button"
                       onClick={() => onSelect(b)}
-                      className={`${styles.batchButton} ${active ? styles.batchButtonActive : ""}`}
+                      className={`my-0.5 w-full cursor-pointer appearance-none rounded-sm border-0 px-2.5 py-2 text-left text-[12.5px] text-foreground [font:inherit] ${
+                        active ? "bg-brand/10" : "bg-transparent"
+                      }`}
                     >
-                      <div className={styles.batchTitleRow}>
-                        <span className={`mono ${styles.batchId}`}>
+                      <div className="flex items-center gap-1.5">
+                        <span className="mono text-[11px] font-semibold text-brand">
                           {b.batch_display_id}
                         </span>
-                        <span className={styles.batchName}>
+                        <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                           {b.batch_name}
                         </span>
                         {b.review_tasks > 0 && (
-                          <span className={styles.statusBadge}>
-                            <Badge variant="warning">
-                              {b.review_tasks}
-                            </Badge>
-                          </span>
+                          <Badge variant="warning">
+                            {b.review_tasks}
+                          </Badge>
                         )}
                       </div>
-                      <div className={styles.batchMeta}>
+                      <div className="mt-0.5 text-[10.5px] text-muted-foreground">
                         共 {b.total_tasks} 任务 · 完成 {b.completed_tasks}
                         {remaining > 0 && ` · 未交 ${remaining}`}
                       </div>

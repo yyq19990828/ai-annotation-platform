@@ -14,7 +14,6 @@ import type { ReviewingBatchItem } from "@/api/dashboard";
 import { buildReviewWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { RejectReasonModal } from "./RejectReasonModal";
 import { ReviewSidebar } from "./ReviewSidebar";
-import styles from "./ReviewPage.module.css";
 import type { CSSProperties } from "react";
 
 function ProgressFill({ pct, color }: { pct: number; color: string }) {
@@ -23,25 +22,25 @@ function ProgressFill({ pct, color }: { pct: number; color: string }) {
     "--progress-color": color,
   } as CSSProperties);
 
-  return <div ref={ref} className={styles.progressFill} />;
+  return <div ref={ref} className="h-full w-[var(--progress-pct)] bg-[var(--progress-color)]" />;
 }
 
 function AnnotationPreview({ taskId }: { taskId: string }) {
   const { data: annotations } = useAnnotations(taskId);
   if (!annotations || annotations.length === 0) {
-    return <span className={styles.annotationEmpty}>无标注</span>;
+    return <span className="text-[11px] text-muted-foreground">无标注</span>;
   }
   return (
-    <div className={styles.annotationPreview}>
+    <div className="flex flex-wrap gap-1">
       {annotations.slice(0, 6).map((a) => (
-        <span key={a.id} className={styles.annotationBadge}>
+        <span key={a.id} className="[&_span]:px-[5px] [&_span]:py-px [&_span]:text-[10px]">
           <Badge variant={a.parent_prediction_id ? "ai" : "accent"}>
             {a.class_name} {a.confidence ? `${(a.confidence * 100).toFixed(0)}%` : ""}
           </Badge>
         </span>
       ))}
       {annotations.length > 6 && (
-        <span className={styles.annotationMore}>+{annotations.length - 6}</span>
+        <span className="text-[10px] text-muted-foreground">+{annotations.length - 6}</span>
       )}
     </div>
   );
@@ -56,33 +55,31 @@ function TaskRow({
   onOpen: () => void;
 }) {
   return (
-    <div className={styles.taskRow}>
-      <label className={styles.checkboxLabel}>
+    <div className="mb-2 grid grid-cols-[32px_48px_minmax(0,1fr)_140px_200px_96px] items-center gap-3 rounded-md border border-border bg-card px-3.5 py-2.5">
+      <label className="inline-flex cursor-pointer items-center">
         <input
           type="checkbox" checked={checked} onChange={onToggle}
           onClick={(e) => e.stopPropagation()}
-          className={styles.accentInput}
+          className="cursor-pointer accent-brand"
         />
       </label>
       <Thumbnail src={task.thumbnail_url} blurhash={task.blurhash} width={40} height={40} />
-      <div onClick={onOpen} className={styles.taskMain}>
-        <div className={styles.taskTitleRow}>
-          <span className={`mono ${styles.taskId}`}>{task.display_id}</span>
-          <span
-            className={styles.taskFileName}
-          >
+      <div onClick={onOpen} className="min-w-0 cursor-pointer">
+        <div className="flex items-center gap-2">
+          <span className="mono text-xs font-semibold">{task.display_id}</span>
+          <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[12.5px]">
             {task.file_name}
           </span>
         </div>
-        <div className={styles.taskMeta}>
+        <div className="mt-0.5 text-[11px] text-muted-foreground">
           {task.total_annotations} 个标注 · {task.total_predictions} 个预测
         </div>
       </div>
-      <div className={styles.taskStatus}>
+      <div className="text-xs text-muted-foreground">
         <Badge variant="warning" dot>待审核</Badge>
       </div>
       <AnnotationPreview taskId={task.id} />
-      <div className={styles.actionCell}>
+      <div className="text-right">
         <Button size="sm" variant="primary" onClick={onOpen}>
           <Icon name="target" size={11} />打开
         </Button>
@@ -264,11 +261,11 @@ export function ReviewPage() {
   const approvedPct = totalTasks ? Math.round((approvedDone / totalTasks) * 1000) / 10 : 0;
 
   return (
-    <div className={styles.page}>
-      <aside className={styles.sidebarShell}>
-        <div className={styles.sidebarHeader}>
-          <div className={styles.sidebarTitle}>项目 · 批次</div>
-          <div className={styles.sidebarSubtitle}>
+    <div className="tw-scope box-border grid h-full max-w-[1480px] grid-cols-[300px_1fr] gap-4 px-6 py-5 text-foreground max-[900px]:h-auto max-[900px]:grid-cols-1 max-[900px]:p-4">
+      <aside className="max-h-[calc(100vh-80px)] self-stretch overflow-auto rounded-md border border-border bg-card max-[900px]:max-h-none">
+        <div className="border-b border-border px-3.5 py-3">
+          <div className="text-[13px] font-semibold">项目 · 批次</div>
+          <div className="mt-0.5 text-[11px] text-muted-foreground">
             按项目分组的待审核批次
           </div>
         </div>
@@ -279,16 +276,16 @@ export function ReviewPage() {
         />
       </aside>
 
-      <section className={styles.content}>
-        <div className={styles.header}>
-          <div className={styles.headerText}>
-            <h1 className={styles.title}>
+      <section className="max-h-[calc(100vh-80px)] min-w-0 overflow-auto max-[900px]:max-h-none">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="m-0 text-xl font-bold">
               {selectedBatch ? selectedBatch.batch_name : "质检审核"}
             </h1>
-            <p className={styles.subtitle}>
+            <p className="mt-1 text-[13px] text-muted-foreground">
               {selectedBatch ? (
                 <>
-                  <span className={`mono ${styles.accentText}`}>{selectedBatch.batch_display_id}</span>
+                  <span className="mono text-brand">{selectedBatch.batch_display_id}</span>
                   <span> · {selectedBatch.project_name}</span>
                   <span> · 共 {selectedBatch.total_tasks} 任务 · {selectedBatch.review_tasks} 待审 · {selectedBatch.completed_tasks} 已通过</span>
                 </>
@@ -299,7 +296,7 @@ export function ReviewPage() {
             {assigneeFilter && (
               <button
                 type="button"
-                className={styles.filterChip}
+                className="mt-2 inline-flex cursor-pointer appearance-none items-center gap-1 rounded-full border border-brand/30 bg-brand/10 px-2.5 py-[3px] text-xs text-brand hover:bg-brand/20"
                 onClick={clearAssigneeFilter}
                 title="清除指派标注员过滤"
               >
@@ -309,7 +306,7 @@ export function ReviewPage() {
             )}
           </div>
           {selectedBatchId && (
-            <div className={styles.headerActions}>
+            <div className="flex shrink-0 gap-1.5">
               <Button size="sm" onClick={() => tasks[0] && openTask(tasks[0].id)} disabled={tasks.length === 0}>
                 <Icon name="target" size={11} />打开画布
               </Button>
@@ -336,27 +333,27 @@ export function ReviewPage() {
         </div>
 
         {selectedBatch && (
-          <div className={styles.progressCard}>
-            <div className={styles.progressHeader}>
-              <span className={styles.progressTitle}>批次进度</span>
+          <div className="mb-3 rounded-md border border-border bg-card px-3 py-2.5">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-[11px] text-muted-foreground">批次进度</span>
               <Badge variant="warning" dot>审核中</Badge>
             </div>
             {[
               { label: "待审", pct: reviewPct, count: pendingReview, bar: "var(--color-warning)" },
               { label: "通过", pct: approvedPct, count: approvedDone, bar: "var(--color-success)" },
             ].map((r) => (
-              <div key={r.label} className={styles.progressRow}>
-                <span className={styles.progressLabel}>{r.label}</span>
-                <div className={styles.progressTrack}>
+              <div key={r.label} className="mt-1 flex items-center gap-2.5 text-[11px] text-muted-foreground">
+                <span className="flex-[0_0_48px]">{r.label}</span>
+                <div className="h-[5px] flex-1 overflow-hidden rounded-sm bg-muted">
                   <ProgressFill pct={r.pct} color={r.bar} />
                 </div>
-                <span className={`mono ${styles.progressValue}`}>
+                <span className="mono flex-[0_0_100px] text-right text-muted-foreground">
                   {r.count}/{selectedBatch.total_tasks} · {r.pct}%
                 </span>
               </div>
             ))}
             {unsubmitted > 0 && (
-              <div className={styles.progressNote}>
+              <div className="mt-1.5 text-[11px] text-muted-foreground">
                 仍有 {unsubmitted} 个任务尚未提交质检
               </div>
             )}
@@ -364,30 +361,32 @@ export function ReviewPage() {
         )}
 
         {isLoading ? (
-          <div className={styles.loadingState}>加载中...</div>
+          <div className="p-10 text-center text-muted-foreground">加载中...</div>
         ) : tasks.length === 0 ? (
-          <div className={styles.emptyState}>
-            <Icon name="check" size={40} className={styles.emptyIcon} />
-            <div className={styles.emptyTitle}>
+          <div className="p-[60px] text-center text-muted-foreground">
+            <Icon name="check" size={40} className="mb-3 opacity-30" />
+            <div className="text-sm">
               {selectedBatchId ? "该批次暂无待审核任务" : "暂无待审核任务"}
             </div>
           </div>
         ) : (
           <>
             <div
-              className={`${styles.bulkBar} ${checkedIds.size > 0 ? styles.bulkBarActive : ""}`}
+              className={`mb-3 flex items-center justify-between rounded-md border border-border px-3 py-2 text-xs text-muted-foreground ${
+                checkedIds.size > 0 ? "bg-brand/10" : "bg-card"
+              }`}
             >
-              <label className={styles.bulkLabel}>
+              <label className="inline-flex cursor-pointer items-center gap-2">
                 <input
                   type="checkbox"
                   checked={checkedIds.size > 0 && checkedIds.size === tasks.length}
                   onChange={toggleAll}
-                  className={styles.accentInput}
+                  className="cursor-pointer accent-brand"
                 />
                 <span>{checkedIds.size > 0 ? `已选 ${checkedIds.size}/${tasks.length}` : `共 ${tasks.length} 个待审核任务`}</span>
               </label>
               {checkedIds.size > 0 && (
-                <div className={styles.bulkActions}>
+                <div className="flex gap-1.5">
                   <Button variant="primary" size="sm" onClick={runBatchApprove}>
                     <Icon name="check" size={11} />批量通过 ({checkedIds.size})
                   </Button>

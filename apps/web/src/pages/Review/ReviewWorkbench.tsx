@@ -13,7 +13,6 @@ import { CommentsPanel } from "@/pages/Workbench/shell/CommentsPanel";
 import { ReviewerMiniPanel } from "./ReviewerMiniPanel";
 import { useAuthStore } from "@/stores/authStore";
 import type { ReviewClaimResponse } from "@/types";
-import styles from "./ReviewWorkbench.module.css";
 
 type DiffMode = "final" | "raw" | "diff";
 
@@ -119,41 +118,41 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
   const renderAi = mode !== "final";
 
   return (
-    <div className={styles.root}>
-    <div className={styles.main}>
+    <div className="flex h-full flex-row overflow-hidden">
+    <div className="flex flex-1 flex-col overflow-hidden">
       <ReviewerMiniPanel />
       {claimInfo && !claimInfo.is_self && (
-        <div className={styles.claimBanner}>
+        <div className="flex items-center gap-1.5 border-b border-amber-500/30 bg-amber-500/10 px-3.5 py-1.5 text-xs text-amber-600 dark:text-amber-400">
           <Icon name="warning" size={13} />
           已被其他审核员认领（{new Date(claimInfo.reviewer_claimed_at).toLocaleString("zh-CN")}），仍可接力处理
         </div>
       )}
       {task?.skip_reason && (
         <div
-          className={styles.skipBanner}
+          className="flex items-center gap-1.5 border-b border-violet-500/30 bg-violet-500/10 px-3.5 py-1.5 text-xs text-violet-600 dark:text-violet-400"
           data-testid="reviewer-skip-banner"
         >
           <Icon name="warning" size={13} />
           标注员跳过此题：<strong>{skipReasonLabel(task.skip_reason)}</strong>
-          <span className={styles.skipHint}>
+          <span className="ml-2 text-violet-600/80 dark:text-violet-400/80">
             可通过（无目标即视为完成）或退回重派
           </span>
         </div>
       )}
-      <div className={styles.toolbar}>
-        <div className={styles.taskInfo}>
-          <span className={`mono ${styles.taskId}`}>{task?.display_id ?? "—"}</span>
-          <span className={styles.fileName}>{task?.file_name}</span>
+      <div className="flex items-center justify-between border-b border-border bg-card px-3.5 py-2">
+        <div className="flex items-center gap-1.5">
+          <span className="mono text-xs font-semibold">{task?.display_id ?? "—"}</span>
+          <span className="text-xs text-muted-foreground">{task?.file_name}</span>
           {task?.skip_reason && (
             <span
-              className={styles.skipBadge}
+              className="ml-1 rounded-sm bg-violet-600 px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.4px] text-white"
               data-testid="reviewer-skip-badge"
             >
               SKIP
             </span>
           )}
         </div>
-        <div className={styles.modeGroup}>
+        <div className="flex gap-1">
           {(["final", "raw", "diff"] as const).map((m) => (
             <Button
               key={m}
@@ -164,8 +163,8 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
             </Button>
           ))}
         </div>
-        <div className={styles.actions}>
-          <Button size="sm" onClick={() => setFitTick((n) => n + 1)} className={styles.fitButton}>适应</Button>
+        <div className="flex gap-1.5">
+          <Button size="sm" onClick={() => setFitTick((n) => n + 1)} className="text-[11px]">适应</Button>
           <Button
             size="sm"
             variant={commentsOpen ? "primary" : "ghost"}
@@ -213,13 +212,11 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
         onCursorMove={() => {}}
       />
 
-      <div
-        className={styles.statusBar}
-      >
-        <div className={styles.statusItems}>
+      <div className="flex justify-between border-t border-border bg-card px-3.5 py-1.5 text-[11.5px] text-muted-foreground">
+        <div className="flex gap-4">
           <span><span className="mono">{userBoxes.length}</span> 标注</span>
           <span>
-            <Icon name="sparkles" size={11} className={styles.aiIcon} />
+            <Icon name="sparkles" size={11} className="align-[-2px] text-violet-600 dark:text-violet-400" />
             {" "}<span className="mono">{allAi.length}</span> AI 预测（{acceptedPredIds.size} 已采纳）
           </span>
         </div>
@@ -231,7 +228,7 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
       </div>
     </div>
     {commentsOpen && selectedAnnotation && (
-      <aside className={styles.commentsPanel}>
+      <aside className="w-80 overflow-y-auto border-l border-border bg-card">
         <CommentsPanel
           annotationId={selectedAnnotation.id}
           projectId={selectedAnnotation.project_id}
