@@ -588,6 +588,14 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     schedulePlaybackOverlayHide();
   }, [onCursorMove, schedulePlaybackOverlayHide]);
 
+  // 工具模式光标反馈(对齐旧 SVG 栈):平移中 grabbing;否则 hand→可抓,画框/轨迹→十字。
+  // Konva 容器命中 resize 句柄时由交互层覆盖 stage.container() cursor,未命中则继承此处。
+  const cursorClass = panning
+    ? styles.rootPanning
+    : videoTool === "hand"
+      ? styles.toolGrab
+      : styles.toolCrosshair;
+
   const videoMinimapVisible = viewportSize.w > 0 && viewportSize.h > 0;
 
   if (isLoading) {
@@ -609,7 +617,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     <div
       ref={setContainerNode}
       data-testid="video-konva-stage"
-      className={panning ? `${styles.root} ${styles.rootPanning}` : styles.root}
+      className={`${styles.root} ${cursorClass}`}
       onContextMenu={handleContextMenu}
       onPointerDown={beginPan}
       onPointerMove={onPointerMove}

@@ -7,7 +7,7 @@
 //
 // 守护手段(诚实标注):jsdom 测不到 ref 竞态时序,靠人工冒烟 ——
 // 连按 Shift+→ 验证邻帧不重复建标注(同 group_id)、导航后自动补选新框。
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { tasksApi } from "@/api/tasks";
 import { useToastStore } from "@/components/ui/Toast";
@@ -39,6 +39,32 @@ export function usePredictionPropagation({
   const crossFrameInFlightRef = useRef(false);
   // v0.15.1 · "scene 无 ego 轨迹,未做运动补偿" 每会话只轻提示一次,避免逐帧刷 toast。
   const motionCompWarnedRef = useRef(false);
+  // 传播是异步的(getNeighbors + propagate),期间用户可能用任务列表/上下帧按钮手动切到
+  // 别的 task。latestTaskIdRef 跟踪最新挂载的 taskId,用于在 await 后判断「起始 task 是否
+  // 已被用户切走」——若是,则不再抢导航、不预约补选,避免把用户从当前 task 拽回传播目标。
+  const latestTaskIdRef = useRef(taskId);
+  useEffect(() => {
+    latestTaskIdRef.current = taskId;
+  }, [taskId]);
+
+  // 传播落库后统一收尾:仅当起始 task 仍是当前 task 时才导航 + 预约补选。
+  // 服务端框已建,失效缓存即可呈现;切走后只是不抢用户当前视图。
+  const settleCrossFrameTarget = useCallback(
+    (
+      startTaskId: string,
+      target: { taskId: string; annotationId?: string },
+    ) => {
+      if (latestTaskIdRef.current !== startTaskId) return;
+      if (target.annotationId) {
+        pendingCrossFrameSelectRef.current = {
+          taskId: target.taskId,
+          annotationId: target.annotationId,
+        };
+      }
+      navigateToCrossFrameTask(target.taskId);
+    },
+    [navigateToCrossFrameTask],
+  );
   const warnNoMotionCompensation = useCallback(
     (compensated: boolean) => {
       if (compensated || motionCompWarnedRef.current) return;
@@ -93,11 +119,10 @@ export function usePredictionPropagation({
           });
           // 源 task 框可能刚被分配 group_id, 失效让本帧高亮同步。
           queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
-          pendingCrossFrameSelectRef.current = {
+          settleCrossFrameTarget(taskId, {
             taskId: resolution.taskId,
             annotationId: annotation.id,
-          };
-          navigateToCrossFrameTask(resolution.taskId);
+          });
           pushToast({
             msg: `已延续到帧 ${resolution.frameIndex}`,
             kind: "success",
@@ -113,7 +138,7 @@ export function usePredictionPropagation({
     [
       taskId,
       selectedId,
-      navigateToCrossFrameTask,
+      settleCrossFrameTarget,
       pushToast,
       queryClient,
       warnNoMotionCompensation,
@@ -155,7 +180,7 @@ export function usePredictionPropagation({
             queryKey: ["annotations", resolution.taskId],
           });
           queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
-          navigateToCrossFrameTask(resolution.taskId);
+          settleCrossFrameTarget(taskId, { taskId: resolution.taskId });
           pushToast({
             msg: `${items.length} 个目标已延续到帧 ${resolution.frameIndex}`,
             kind: "success",
@@ -172,7 +197,7 @@ export function usePredictionPropagation({
         crossFrameInFlightRef.current = false;
       }
     },
-    [taskId, navigateToCrossFrameTask, pushToast, queryClient, warnNoMotionCompensation],
+    [taskId, settleCrossFrameTarget, pushToast, queryClient, warnNoMotionCompensation],
   );
 
   // v0.15.1 · 把选中框延续到 scene 内任意帧(插值工作流: 先把链建到区间终点)。
@@ -194,11 +219,10 @@ export function usePredictionPropagation({
         );
         queryClient.invalidateQueries({ queryKey: ["annotations", targetTaskId] });
         queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
-        pendingCrossFrameSelectRef.current = {
+        settleCrossFrameTarget(taskId, {
           taskId: targetTaskId,
           annotationId: annotation.id,
-        };
-        navigateToCrossFrameTask(targetTaskId);
+        });
         pushToast({ msg: `已延续到帧 ${targetFrameIndex}, 微调后可插值填充`, kind: "success" });
         warnNoMotionCompensation(motion_compensated);
       } catch {
@@ -210,7 +234,7 @@ export function usePredictionPropagation({
     [
       taskId,
       selectedId,
-      navigateToCrossFrameTask,
+      settleCrossFrameTarget,
       pushToast,
       queryClient,
       warnNoMotionCompensation,
@@ -239,11 +263,10 @@ export function usePredictionPropagation({
           return;
         }
         const first = annotations[0];
-        pendingCrossFrameSelectRef.current = {
+        settleCrossFrameTarget(taskId, {
           taskId: first.task_id,
           annotationId: first.id,
-        };
-        navigateToCrossFrameTask(first.task_id);
+        });
         pushToast({
           msg:
             `已插值填充 ${annotations.length} 帧` +
@@ -261,7 +284,7 @@ export function usePredictionPropagation({
         crossFrameInFlightRef.current = false;
       }
     },
-    [taskId, navigateToCrossFrameTask, pushToast, queryClient, warnNoMotionCompensation],
+    [taskId, settleCrossFrameTarget, pushToast, queryClient, warnNoMotionCompensation],
   );
 
   return {
