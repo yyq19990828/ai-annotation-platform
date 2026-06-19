@@ -5,19 +5,22 @@
  * 单击列表项 → useActiveIssueStore.focusIssue → model 把视口平移到对应图钉并高亮。
  * 反向 (图钉单击) 写 store.highlightId，本列表对应行加亮 + 滚动可见。
  *
- * status 配色 / 卡片样式复用 IssueListPanel.module.css，避免重复定义 tokens。
+ * status 配色 / 卡片样式:status open=琥珀 / resolved=翠绿 / wont_fix=中性;severity info=天蓝 / warn=琥珀 / blocker=玫红。
  */
 import { useMemo, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { useFeedbacks, usePatchFeedback, useDeleteFeedback } from "@/hooks/useFeedbacks";
-import type { FeedbackStatus, ListFeedbacksParams } from "@/api/feedbacks";
+import type { FeedbackSeverity, FeedbackStatus, ListFeedbacksParams } from "@/api/feedbacks";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
-import styles from "./IssueListPanel.module.css";
 
 interface Props {
   projectId: string;
   taskId: string;
+}
+
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
 }
 
 const STATUS_FILTERS: { key: FeedbackStatus | "all"; label: string }[] = [
@@ -26,6 +29,27 @@ const STATUS_FILTERS: { key: FeedbackStatus | "all"; label: string }[] = [
   { key: "resolved", label: "已解决" },
   { key: "wont_fix", label: "搁置" },
 ];
+
+// 卡片整体减淡(已解决 / 搁置)。
+const STATUS_CARD_DIM: Record<FeedbackStatus, string> = {
+  open: "",
+  resolved: "opacity-60",
+  wont_fix: "opacity-55",
+};
+
+// status chip:柔底 + 同色描边/文字。
+const STATUS_CHIP: Record<FeedbackStatus, string> = {
+  open: "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  resolved: "border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  wont_fix: "border-border bg-muted text-muted-foreground",
+};
+
+// severity chip:仅文字着色(沿用原设计,描边走默认 border)。
+const SEVERITY_CHIP: Record<FeedbackSeverity, string> = {
+  info: "text-sky-600 dark:text-sky-400",
+  warn: "text-amber-600 dark:text-amber-400",
+  blocker: "text-rose-600 dark:text-rose-400",
+};
 
 export function DiscussionIssuesTab({ projectId, taskId }: Props) {
   const [statusFilter, setStatusFilter] = useState<FeedbackStatus | "all">("all");
@@ -47,24 +71,27 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
   };
 
   return (
-    <div className={styles.list}>
-      <div className={styles.filterRow}>
+    <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-3 py-2.5">
+      <div className="flex flex-wrap gap-1">
         {STATUS_FILTERS.map((f) => (
           <button
             key={f.key}
             type="button"
             onClick={() => setStatusFilter(f.key)}
-            className={`${styles.filterChip} ${statusFilter === f.key ? styles.filterChipActive : ""}`}
+            className={cn(
+              "cursor-pointer appearance-none rounded-[10px] border border-border bg-transparent px-2 py-0.5 text-[10px] text-muted-foreground [font:inherit]",
+              statusFilter === f.key && "border-brand text-foreground",
+            )}
           >
             {f.label}
           </button>
         ))}
       </div>
 
-      {isLoading && <div className={styles.muted}>加载中…</div>}
-      {isError && <div className={styles.error}>加载失败</div>}
+      {isLoading && <div className="px-1 py-2 text-xs text-muted-foreground">加载中…</div>}
+      {isError && <div className="px-1 py-2 text-xs text-rose-600 dark:text-rose-400">加载失败</div>}
       {!isLoading && !isError && filtered.length === 0 && (
-        <div className={styles.muted}>当前任务暂无 issue。在画布工具栏「落点」可记录第一条。</div>
+        <div className="px-1 py-2 text-xs text-muted-foreground">当前任务暂无 issue。在画布工具栏「落点」可记录第一条。</div>
       )}
 
       {filtered.map((it) => {
@@ -76,35 +103,40 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
               if (highlightId === it.id && node) node.scrollIntoView({ block: "nearest" });
             }}
             onClick={() => { if (hasPin) focusIssue(it.id); }}
-            className={`${styles.card} ${styles[`statusCard_${it.status}`] ?? ""}${highlightId === it.id ? " " + (styles.cardHighlighted ?? "") : ""}${hasPin ? " " + (styles.cardClickable ?? "") : ""}`}
+            className={cn(
+              "flex flex-col gap-1 rounded-md border border-border bg-muted px-2.5 py-2",
+              STATUS_CARD_DIM[it.status],
+              highlightId === it.id && "border-amber-500 shadow-[0_0_0_1px_var(--sc-caution)]",
+              hasPin && "cursor-pointer hover:border-brand",
+            )}
             data-testid={`discussion-issue-card-${it.id}`}
           >
-            <div className={styles.cardHeader}>
-              <span className={`${styles.statusChip} ${styles[`status_${it.status}`] ?? ""}`}>
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+              <span className={cn("rounded-[10px] border px-2 py-px text-[10px]", STATUS_CHIP[it.status])}>
                 {it.status === "open" ? "未解决" : it.status === "resolved" ? "已解决" : "搁置"}
               </span>
               {it.severity && (
-                <span className={`${styles.sevChip} ${styles[`sev_${it.severity}`] ?? ""}`}>
+                <span className={cn("rounded-[10px] border border-border px-2 py-px text-[10px]", SEVERITY_CHIP[it.severity])}>
                   {it.severity === "blocker" ? "阻断" : it.severity === "warn" ? "警告" : "提示"}
                 </span>
               )}
               {hasPin && (
-                <span className={styles.anchorChip} title="像素锚点 · 单击定位">
+                <span className="text-[10px] text-muted-foreground" title="像素锚点 · 单击定位">
                   <Icon name="crosshair" size={11} /> ({it.anchor_position!.x.toFixed(2)}, {it.anchor_position!.y.toFixed(2)})
                 </span>
               )}
               {hasPin && typeof it.anchor_position!.frame === "number" && (
-                <span className={styles.anchorChip} title="所属帧 · 单击跳转">
+                <span className="text-[10px] text-muted-foreground" title="所属帧 · 单击跳转">
                   F{it.anchor_position!.frame}
                 </span>
               )}
-              <span className={styles.author}>
+              <span className="ml-auto text-[10px] text-muted-foreground">
                 {it.author_name ?? "—"} · {new Date(it.created_at).toLocaleString()}
               </span>
             </div>
-            {it.title && <div className={styles.cardTitle}>{it.title}</div>}
-            <div className={styles.cardBody}>{it.body}</div>
-            <div className={styles.cardActions} onClick={(e) => e.stopPropagation()}>
+            {it.title && <div className="text-xs font-semibold text-foreground">{it.title}</div>}
+            <div className="whitespace-pre-wrap text-xs text-foreground">{it.body}</div>
+            <div className="mt-1 flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
               {it.status !== "resolved" && (
                 <Button variant="ghost" size="sm" onClick={() => setStatus(it.id, "resolved")} title="标为已解决">
                   <Icon name="check" size={11} /> 解决
