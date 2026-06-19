@@ -5,21 +5,25 @@
  * (项目名 / 进度 / 跳转链接), 让 admin 跑完后切到别处也能看到。
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Icon } from "@/components/ui/Icon";
+import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useGlobalPreannotationJobs } from "@/hooks/useGlobalPreannotationJobs";
-import styles from "./PreannotateJobsBadge.module.css";
 
 function JobProgressFill({ pct }: { pct: number }) {
-  const ref = useRef<HTMLDivElement | null>(null);
+  const ref = useElementStyle<HTMLDivElement>({
+    "--preannotate-job-progress": `${pct}%`,
+  } as CSSProperties);
 
-  useEffect(() => {
-    ref.current?.style.setProperty("--preannotate-job-progress", `${pct}%`);
-  }, [pct]);
-
-  return <div ref={ref} className={styles.progressFill} />;
+  return (
+    <div
+      ref={ref}
+      className="h-full w-[var(--preannotate-job-progress)] bg-violet-500 transition-[width] duration-200 ease-out"
+    />
+  );
 }
 
 export function PreannotateJobsBadge() {
@@ -41,13 +45,13 @@ export function PreannotateJobsBadge() {
   };
 
   return (
-    <div className={styles.root}>
+    <div className="relative">
       <button
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         title={`${runningJobs.length} 个预标 job 进行中`}
-        className={styles.trigger}
+        className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-violet-500 bg-violet-500/[0.18] px-[9px] py-1 text-[11px] font-semibold leading-[1.2] text-violet-600 dark:text-violet-400"
       >
         <Icon name="sparkles" size={12} />
         <span>{runningJobs.length}</span>
@@ -57,14 +61,14 @@ export function PreannotateJobsBadge() {
         <>
           <div
             onClick={() => setOpen(false)}
-            className={styles.backdrop}
+            className="fixed inset-0 z-[200]"
           />
           <div
             role="dialog"
             aria-label="预标进行中"
-            className={styles.panel}
+            className="absolute right-0 top-[calc(100%+6px)] z-[201] flex w-[min(400px,calc(100vw-24px))] min-w-0 flex-col gap-1 rounded-md border border-border bg-popover p-2 shadow-lg"
           >
-            <div className={styles.panelTitle}>
+            <div className="border-b border-border px-2.5 pb-2 pt-1.5 text-[11px] font-semibold text-muted-foreground">
               预标进行中 ({runningJobs.length})
             </div>
             {sorted.map((j) => {
@@ -74,17 +78,17 @@ export function PreannotateJobsBadge() {
                   key={j.job_id}
                   type="button"
                   onClick={() => jumpToProject(j.project_id)}
-                  className={styles.jobButton}
+                  className="flex cursor-pointer appearance-none flex-col items-stretch gap-1 rounded-sm border-0 bg-transparent px-2.5 py-2 text-left text-foreground transition-colors duration-200 hover:bg-muted"
                 >
-                  <div className={styles.jobHeader}>
-                    <span className={styles.jobName}>
+                  <div className="flex justify-between gap-3 text-xs font-medium">
+                    <span className="overflow-hidden text-ellipsis whitespace-nowrap">
                       {j.project_name ?? j.project_id.slice(0, 8)}
                     </span>
-                    <span className={styles.jobProgressText}>
+                    <span className="tabular-nums text-muted-foreground">
                       {j.current}/{j.total} · {pct}%
                     </span>
                   </div>
-                  <div className={styles.progressTrack}>
+                  <div className="h-[3px] overflow-hidden rounded-[2px] bg-border">
                     <JobProgressFill pct={pct} />
                   </div>
                 </button>
