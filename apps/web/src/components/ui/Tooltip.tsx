@@ -36,13 +36,13 @@ export function Tooltip({ name, desc, hotkey, side = "right", delay = 200, child
         <TooltipTrigger asChild>{children}</TooltipTrigger>
         <TooltipContent side={side}>
           <div className="font-medium">{name}</div>
-          {desc && <div className="text-background/70">{desc}</div>}
+          {desc && <div className="text-muted-foreground">{desc}</div>}
           {hotkey && (
             <div className="mt-1 flex gap-1">
               {hotkey.split(/\s+/).map((k, i) => (
                 <kbd
                   key={i}
-                  className="rounded border border-background/30 px-1 text-[10px] leading-tight"
+                  className="rounded border border-border bg-muted px-1 text-[10px] leading-tight text-muted-foreground"
                 >
                   {k}
                 </kbd>
