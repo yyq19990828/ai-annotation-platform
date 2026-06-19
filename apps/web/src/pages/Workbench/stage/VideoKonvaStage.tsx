@@ -239,6 +239,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     bookmarks,
     loopRegion,
     showPlaybackOverlay,
+    schedulePlaybackOverlayHide,
     setNormalizedLoopRegion,
     clearLoopRegion,
     seekToFrame,
@@ -560,6 +561,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   }, [pausePlayback, videoTool]);
 
   const onPointerMove = useCallback((evt: ReactPointerEvent<HTMLDivElement>) => {
+    // 指针在画布上移动即唤出播放浮层(对齐旧 SVG 栈);离开后由 onPointerLeave 计时收起。
+    showPlaybackOverlay();
     // 光标归一化坐标上报(状态栏读出),无论是否在平移;越界(letterbox 区)上报 null。
     if (onCursorMove) {
       const rect = containerRef.current?.getBoundingClientRect();
@@ -572,7 +575,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const dy = evt.clientY - start.y;
     panRef.current = { x: evt.clientX, y: evt.clientY };
     setVp((cur) => ({ ...cur, tx: cur.tx + dx, ty: cur.ty + dy }));
-  }, [onCursorMove, setVp, size, vpRef]);
+  }, [onCursorMove, setVp, showPlaybackOverlay, size, vpRef]);
 
   const endPan = useCallback(() => {
     panRef.current = null;
@@ -581,7 +584,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
   const onPointerLeave = useCallback(() => {
     onCursorMove?.(null);
-  }, [onCursorMove]);
+    // 指针离开画布 2s 后收起播放浮层,避免其永久遮挡画布。
+    schedulePlaybackOverlayHide();
+  }, [onCursorMove, schedulePlaybackOverlayHide]);
 
   const videoMinimapVisible = viewportSize.w > 0 && viewportSize.h > 0;
 

@@ -89,4 +89,47 @@ describe("usePsrPatchPipeline", () => {
     expect(update.mutate).toHaveBeenCalledTimes(1);
     expect(history.push).not.toHaveBeenCalled();
   });
+
+  it("unmount 时 flush 未到 250ms 的防抖 PATCH(不丢编辑)", () => {
+    const { update, history } = mocks();
+    const { result, unmount } = renderHook(() =>
+      usePsrPatchPipeline({
+        selectedId: "a1",
+        selectedAnn: boxAnn(),
+        axisConvention: "iso_8855",
+        updateAnnotation: update,
+        history,
+      }),
+    );
+    act(() => result.current.schedulePatch(VALID));
+    expect(update.mutate).not.toHaveBeenCalled(); // 防抖未到
+    act(() => unmount()); // 250ms 内卸载
+    expect(update.mutate).toHaveBeenCalledTimes(1); // flush 一次,不丢
+    expect(history.push).toHaveBeenCalledTimes(1);
+  });
+
+  it("切 selectedId 时 flush 上一对象 pending 编辑后不重复提交", () => {
+    const { update, history } = mocks();
+    let selectedId: string | null = "a1";
+    const { result, rerender } = renderHook(() =>
+      usePsrPatchPipeline({
+        selectedId,
+        selectedAnn: boxAnn(),
+        axisConvention: "iso_8855",
+        updateAnnotation: update,
+        history,
+      }),
+    );
+    act(() => result.current.schedulePatch(VALID));
+    // 250ms 内切到另一对象 → 应同步 flush a1 一次。
+    selectedId = "a2";
+    act(() => rerender());
+    expect(update.mutate).toHaveBeenCalledTimes(1);
+    expect(update.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ annotationId: "a1" }),
+    );
+    // 定时器已被 flush 清掉,再推进时间不应二次提交。
+    act(() => vi.advanceTimersByTime(250));
+    expect(update.mutate).toHaveBeenCalledTimes(1);
+  });
 });

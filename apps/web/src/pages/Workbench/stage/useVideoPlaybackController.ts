@@ -116,6 +116,7 @@ export interface UseVideoPlaybackControllerResult {
   canDeleteSelectedTrackKeyframe: boolean;
   deleteSelectedTrackKeyframe: () => boolean;
   showPlaybackOverlay: () => void;
+  schedulePlaybackOverlayHide: () => void;
   setNormalizedLoopRegion: (region: VideoLoopRegion) => void;
   clearLoopRegion: () => void;
   toggleBookmark: () => void;
@@ -382,6 +383,12 @@ export function useVideoPlaybackController({
   const showPlaybackOverlay = useCallback(() => {
     if (overlayHideTimerRef.current) clearTimeout(overlayHideTimerRef.current);
     setPlaybackOverlayVisible(true);
+  }, []);
+
+  // 指针离开画布 2s 后隐藏播放浮层(对齐旧 SVG 栈);否则浮层默认 true 后永不收起、长期遮挡画布。
+  const schedulePlaybackOverlayHide = useCallback(() => {
+    if (overlayHideTimerRef.current) clearTimeout(overlayHideTimerRef.current);
+    overlayHideTimerRef.current = setTimeout(() => setPlaybackOverlayVisible(false), 2000);
   }, []);
 
   const flashPlaybackAction = useCallback((action: "prev" | "next" | "play") => {
@@ -855,6 +862,7 @@ export function useVideoPlaybackController({
     canDeleteSelectedTrackKeyframe,
     deleteSelectedTrackKeyframe,
     showPlaybackOverlay,
+    schedulePlaybackOverlayHide,
     setNormalizedLoopRegion,
     clearLoopRegion,
     toggleBookmark,

@@ -33,14 +33,23 @@ export function usePsrPatchPipeline({
   history,
 }: UsePsrPatchPipelineParams) {
   const patchTimer = useRef<number | null>(null);
+  // 已通过校验、尚未发出的防抖提交;flush 时同步执行,避免 unmount / 切 task 丢编辑。
+  const pendingCommitRef = useRef<(() => void) | null>(null);
 
-  // 卸载时清防抖定时器。
-  useEffect(
-    () => () => {
-      if (patchTimer.current) window.clearTimeout(patchTimer.current);
-    },
-    [],
-  );
+  // 有未发出的防抖 PATCH 就立即执行一次,再清定时器(幂等:执行后置空 ref)。
+  const flushPatch = useCallback(() => {
+    if (patchTimer.current) {
+      window.clearTimeout(patchTimer.current);
+      patchTimer.current = null;
+    }
+    const commit = pendingCommitRef.current;
+    pendingCommitRef.current = null;
+    commit?.();
+  }, []);
+
+  // 卸载或切换选中对象前 flush:防止 250ms 防抖窗口内切 task / 关锁,把 pending 的
+  // 几何 PATCH + history 一并丢弃(无任何提示的静默数据丢失)。
+  useEffect(() => flushPatch, [selectedId, flushPatch]);
 
   // 全部字段解析有效(尺寸>0)时防抖 PATCH;有空 / 非法字段则暂不提交(等用户输完)。
   const schedulePatch = useCallback(
@@ -48,8 +57,8 @@ export function usePsrPatchPipeline({
       if (!selectedId) return;
       const { values: v, valid } = parsePsrForm(f);
       if (!valid) return;
-      if (patchTimer.current) window.clearTimeout(patchTimer.current);
-      patchTimer.current = window.setTimeout(() => {
+      // 把提交逻辑存进 ref,使 250ms 定时器与 flush(unmount/切换)走同一条路径,不重复落库。
+      const commit = () => {
         const geometry = psrFormToGeometry(
           v,
           geometryConvention(selectedAnn?.geometry, axisConvention),
@@ -63,6 +72,13 @@ export function usePsrPatchPipeline({
             after: { geometry },
           });
         }
+      };
+      pendingCommitRef.current = commit;
+      if (patchTimer.current) window.clearTimeout(patchTimer.current);
+      patchTimer.current = window.setTimeout(() => {
+        patchTimer.current = null;
+        pendingCommitRef.current = null;
+        commit();
       }, 250);
     },
     [selectedId, updateAnnotation, selectedAnn?.geometry, axisConvention, history],
