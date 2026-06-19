@@ -50,7 +50,18 @@ import {
 import { FilterToolbar } from "./capability/FilterToolbar";
 import { ModelListTable } from "./capability/ModelListTable";
 import { ModelCard } from "./capability/ModelCard";
-import styles from "./CapabilityCatalogPanel.module.css";
+
+const NOTE_CLASS = "p-4 text-xs text-muted-foreground";
+const EMPTY_STATE_CLASS =
+  "flex flex-col items-center gap-1.5 p-8 text-center text-[13px] text-muted-foreground";
+const RETRY_BTN_CLASS =
+  "ml-1 cursor-pointer appearance-none rounded-md border border-border bg-card px-3 py-1 text-xs text-foreground";
+const SELECT_CLASS =
+  "appearance-none rounded-md border border-border bg-muted px-2 py-1 text-xs text-foreground";
+const VIEW_BTN_CLASS =
+  "inline-flex h-[26px] w-7 cursor-pointer appearance-none items-center justify-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground";
+const VIEW_BTN_ON_CLASS =
+  "inline-flex h-[26px] w-7 cursor-pointer appearance-none items-center justify-center rounded-sm border-0 bg-card text-foreground ring-1 ring-border";
 
 // 单个 backend 的 capability 拉取结果 (含失败态供降级提示).
 interface BackendResult {
@@ -404,13 +415,13 @@ export function CapabilityCatalogPanel() {
   const distinctBackendCount = backendRefs.length + envOnlyCount;
 
   return (
-    <div className={styles.wrap}>
+    <div className="mb-4">
       <Card>
-        <div className={styles.header}>
-          <div className={styles.headerTitle}>
-            <Icon name="layers" size={14} className={styles.mutedIcon} />
-            <h3 className={styles.title}>能力目录</h3>
-            <span className={styles.meta}>
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="flex items-center gap-2">
+            <Icon name="layers" size={14} className="text-muted-foreground" />
+            <h3 className="m-0 text-sm font-semibold">能力目录</h3>
+            <span className="text-[11px] text-muted-foreground">
               {flatModels.length} 个模型条目 · {distinctBackendCount} 个 backend
             </span>
           </div>
@@ -426,11 +437,11 @@ export function CapabilityCatalogPanel() {
         </div>
 
         {overviewLoading ? (
-          <div className={styles.note}>加载 backend 列表…</div>
+          <div className={NOTE_CLASS}>加载 backend 列表…</div>
         ) : overviewError ? (
-          <div className={styles.noteError}>
+          <div className="flex items-center gap-2 px-4 py-3 text-xs text-rose-600 dark:text-rose-400">
             加载失败：{(overviewErr as Error)?.message ?? "未知错误"}
-            <button className={styles.retryButton} onClick={() => refetchOverview()}>
+            <button className={RETRY_BTN_CLASS} onClick={() => refetchOverview()}>
               重试
             </button>
           </div>
@@ -439,10 +450,10 @@ export function CapabilityCatalogPanel() {
           groupBy !== "task" ? (
           // v0.14.11 · 0 backend + 非 task 分组: 沿用旧空态; task 分组下走协议卡视图。
           // v0.14.12 · 同时有 env-only instances 时, 这里不再显示空态。
-          <div className={styles.emptyState}>
-            <Icon name="layers" size={28} className={styles.emptyIcon} />
+          <div className={EMPTY_STATE_CLASS}>
+            <Icon name="layers" size={28} className="opacity-30" />
             <div>尚无项目注册 ML Backend</div>
-            <div className={styles.emptyHint}>
+            <div className="text-[11.5px]">
               切到「分组: task」可查看平台协议层支持的全部能力；
               或在项目设置注册 backend 后, 其能力目录会出现在这里。
             </div>
@@ -463,20 +474,20 @@ export function CapabilityCatalogPanel() {
               onClear={clearFilters}
             />
 
-            <div className={styles.catalogControls}>
-              <label className={styles.searchBox}>
+            <div className="flex flex-wrap items-center gap-2.5 border-b border-border px-4 py-3">
+              <label className="inline-flex min-w-[220px] flex-[1_1_280px] items-center gap-2 rounded-md border border-border bg-muted px-2.5 py-1.5 text-muted-foreground">
                 <Icon name="search" size={13} />
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="搜索模型、ID、模型族、任务或来源"
-                  className={styles.searchInput}
+                  className="w-full min-w-0 appearance-none border-0 bg-transparent text-xs text-foreground outline-none"
                 />
               </label>
-              <div className={styles.segmented}>
+              <div className="inline-flex gap-[3px] rounded-md border border-border bg-muted p-[3px]">
                 <button
                   type="button"
-                  className={viewMode === "cards" ? `${styles.viewBtn} ${styles.viewBtnOn}` : styles.viewBtn}
+                  className={viewMode === "cards" ? VIEW_BTN_ON_CLASS : VIEW_BTN_CLASS}
                   onClick={() => setViewMode("cards")}
                   aria-pressed={viewMode === "cards"}
                   title="卡片视图"
@@ -485,7 +496,7 @@ export function CapabilityCatalogPanel() {
                 </button>
                 <button
                   type="button"
-                  className={viewMode === "list" ? `${styles.viewBtn} ${styles.viewBtnOn}` : styles.viewBtn}
+                  className={viewMode === "list" ? VIEW_BTN_ON_CLASS : VIEW_BTN_CLASS}
                   onClick={() => setViewMode("list")}
                   aria-pressed={viewMode === "list"}
                   title="列表视图"
@@ -493,9 +504,9 @@ export function CapabilityCatalogPanel() {
                   <Icon name="list" size={13} />
                 </button>
               </div>
-              <label className={styles.selectLabel}>
+              <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
                 分组
-                <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as CatalogGroupBy)}>
+                <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as CatalogGroupBy)} className={SELECT_CLASS}>
                   <option value="task">协议能力 (默认)</option>
                   <option value="backend">backend</option>
                   <option value="infra">infra</option>
@@ -503,9 +514,9 @@ export function CapabilityCatalogPanel() {
                 </select>
               </label>
               {viewMode === "list" && (
-                <label className={styles.selectLabel}>
+                <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
                   排序
-                  <select value={sortBy} onChange={(e) => setSortBy(e.target.value as CatalogSort)}>
+                  <select value={sortBy} onChange={(e) => setSortBy(e.target.value as CatalogSort)} className={SELECT_CLASS}>
                     <option value="name">模型名</option>
                     <option value="task">任务</option>
                     <option value="infra">infra</option>
@@ -516,7 +527,7 @@ export function CapabilityCatalogPanel() {
 
             {/* 探测失败的 backend 降级提示 (能力目录可能缺条目). */}
             {results.some((r) => r.isError) && (
-              <div className={styles.degradeBanner}>
+              <div className="mx-4 mt-3 flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground">
                 <Icon name="warning" size={13} />
                 <span>
                   {results.filter((r) => r.isError).length} 个 backend 能力探测失败，其条目暂缺；点「刷新」可重探。
@@ -525,7 +536,7 @@ export function CapabilityCatalogPanel() {
             )}
 
             {anyCapLoading && flatModels.length === 0 && groupBy !== "task" ? (
-              <div className={styles.note}>探测各 backend 能力中…</div>
+              <div className={NOTE_CLASS}>探测各 backend 能力中…</div>
             ) : groupBy === "task" && protocolView ? (
               // v0.14.11 · 协议卡视图: 即使 sorted 为空也展示协议卡 (零接入引导)。
               <>
@@ -539,17 +550,17 @@ export function CapabilityCatalogPanel() {
                   />
                 )}
                 {protocolView.length === 0 ? (
-                  <div className={styles.emptyState}>
-                    <Icon name="filter" size={24} className={styles.emptyIcon} />
+                  <div className={EMPTY_STATE_CLASS}>
+                    <Icon name="filter" size={24} className="opacity-30" />
                     <div>当前过滤条件无匹配能力</div>
                     {hasActiveFilter && (
-                      <button className={styles.retryButton} onClick={clearFilters}>
+                      <button className={RETRY_BTN_CLASS} onClick={clearFilters}>
                         清除过滤
                       </button>
                     )}
                   </div>
                 ) : (
-                  <div className={styles.groupedCatalog}>
+                  <div className="flex flex-col gap-3 p-4">
                     {protocolView.map(({ task, mounted }) => (
                       <ProtocolCapabilityCard
                         key={task.id}
@@ -564,39 +575,39 @@ export function CapabilityCatalogPanel() {
                 )}
               </>
             ) : sorted.length === 0 ? (
-              <div className={styles.emptyState}>
-                <Icon name="filter" size={24} className={styles.emptyIcon} />
+              <div className={EMPTY_STATE_CLASS}>
+                <Icon name="filter" size={24} className="opacity-30" />
                 <div>{hasActiveFilter ? "当前过滤条件无匹配模型" : "暂无可用模型条目"}</div>
                 {hasActiveFilter && (
-                  <button className={styles.retryButton} onClick={clearFilters}>
+                  <button className={RETRY_BTN_CLASS} onClick={clearFilters}>
                     清除过滤
                   </button>
                 )}
               </div>
             ) : (
-              <div className={styles.groupedCatalog}>
+              <div className="flex flex-col gap-3 p-4">
                 {grouped.map((group) => {
                   const defaultCollapsed = flatModels.length > 30 && groupBy !== "none";
                   const collapsed =
                     groupBy !== "none" &&
                     (defaultCollapsed ? !expandedGroups.has(group.key) : collapsedGroups.has(group.key));
                   return (
-                    <section key={group.key} className={styles.catalogGroup}>
+                    <section key={group.key} className="min-w-0">
                       {groupBy !== "none" && (
                         <button
                           type="button"
-                          className={styles.groupHeader}
+                          className="mb-2 flex w-full cursor-pointer appearance-none items-center gap-1.5 rounded-md border border-border bg-muted px-2 py-1.5 text-xs font-semibold text-foreground"
                           onClick={() => toggleGroup(group.key)}
                           aria-expanded={!collapsed}
                         >
                           <Icon name={collapsed ? "chevRight" : "chevDown"} size={13} />
                           <span>{group.label}</span>
-                          <span className={styles.groupCount}>{group.items.length}</span>
+                          <span className="ml-auto text-[11px] text-muted-foreground">{group.items.length}</span>
                         </button>
                       )}
                       {!collapsed &&
                         (viewMode === "cards" ? (
-                          <div className={styles.grid}>
+                          <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
                             {group.items.map((f) => (
                               <ModelCard key={`${f.backendId}:${f.model.id}`} item={f} />
                             ))}
