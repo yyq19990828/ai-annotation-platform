@@ -1,3 +1,4 @@
+/* 画布叠加层:像素/z-index 编排保留 CSS,色彩走 --sc-*(门禁白名单) */
 /* v0.10.12 · CSP style-src 收紧续推 — ResizeHandles.tsx inline style 迁移. */
 
 .handle {
@@ -7,7 +8,7 @@
   width: 9px;
   height: 9px;
   background: white;
-  border: 1.5px solid var(--color-accent);
+  border: 1.5px solid var(--sc-brand);
   border-radius: 2px;
   cursor: var(--resize-handle-cursor);
   z-index: 10;

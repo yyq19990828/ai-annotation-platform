@@ -1,3 +1,4 @@
+/* 画布叠加层:像素/z-index 编排保留 CSS,色彩走 --sc-*(门禁白名单) */
 .root {
   position: absolute;
   left: var(--selection-overlay-left);
@@ -6,9 +7,9 @@
   display: flex;
   gap: 4px;
   padding: 2px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: 4px;
-  background: var(--color-bg-elev);
+  background: var(--sc-card);
   box-shadow: var(--shadow-md);
   pointer-events: auto;
   transform: translateX(-100%);

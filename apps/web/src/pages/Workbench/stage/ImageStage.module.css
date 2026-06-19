@@ -1,10 +1,11 @@
+/* 画布叠加层:像素/z-index 编排保留 CSS,色彩走 --sc-*(门禁白名单) */
 .root {
   flex: 1;
   position: relative;
   overflow: hidden;
   background: repeating-conic-gradient(
-    var(--color-canvas-checker-a) 0% 25%,
-    var(--color-canvas-checker-b) 0% 50%
+    var(--sc-canvas-checker-a) 0% 25%,
+    var(--sc-canvas-checker-b) 0% 50%
   ) 0 0 / 16px 16px;
   cursor: var(--image-stage-cursor, default);
   filter: var(--image-stage-filter, none);
@@ -18,8 +19,8 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: var(--color-fg-subtle);
-  background: var(--color-bg-sunken);
+  color: var(--sc-muted-foreground);
+  background: var(--sc-muted);
 }
 
 .emptyStateText {
@@ -45,10 +46,10 @@
   transform: translateX(-100%);
   padding: 3px 8px;
   font-size: 11.5px;
-  background: var(--color-bg-elev);
+  background: var(--sc-card);
   border: 1px solid #a855f7;
   border-radius: 4px;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   cursor: pointer;
   box-shadow: var(--shadow-md);
   font-family: inherit;

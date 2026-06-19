@@ -98,6 +98,10 @@
   --sc-chart-2: #15803d;
   --sc-chart-3: #b45309;
   --sc-chart-4: #7c3aed;
+
+  /* 画布棋盘格(从 tokens.css 折入;画布叠加层专属,无 Tailwind 等价) */
+  --sc-canvas-checker-a: #e9e9ec;
+  --sc-canvas-checker-b: #f3f3f5;
 }
 
 /* —— Geist 调色板 · 深色(纯黑底 / 近白字,主场) —— */
@@ -135,6 +139,10 @@
   --sc-chart-2: #3fb950;
   --sc-chart-3: #d29922;
   --sc-chart-4: #a78bfa;
+
+  /* 画布棋盘格(深色) */
+  --sc-canvas-checker-a: #1e1e23;
+  --sc-canvas-checker-b: #2a2a30;
 }
 
 /* —— 局部 reset(只在 .tw-scope 子树生效，替代被跳过的全局 preflight) —— */

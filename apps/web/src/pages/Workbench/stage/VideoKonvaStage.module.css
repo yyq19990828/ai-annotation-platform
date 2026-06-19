@@ -1,3 +1,4 @@
+/* 画布叠加层:像素/z-index 编排保留 CSS,色彩走 --sc-*(门禁白名单) */
 .root {
   flex: 1;
   min-height: 0;
@@ -58,12 +59,12 @@
 
 .loadingState {
   composes: stateBase;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .errorState {
   composes: stateBase;
-  color: var(--color-danger);
+  color: var(--sc-destructive);
 }
 
 .playbackError {
@@ -74,6 +75,6 @@
   padding: 6px 12px;
   border-radius: 6px;
   font-size: 12px;
-  color: var(--color-danger);
-  background: var(--color-danger-soft);
+  color: var(--sc-destructive);
+  background: color-mix(in srgb, var(--sc-destructive) 14%, transparent);
 }

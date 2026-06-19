@@ -1,3 +1,4 @@
+/* 画布叠加层:像素/z-index 编排保留 CSS,色彩走 --sc-*(门禁白名单) */
 /* v0.10.12 · CSP style-src 收紧续推 — ImageBackdrop.tsx inline style 迁移. */
 
 .image {
@@ -17,8 +18,8 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: var(--color-fg-subtle);
-  background: var(--color-bg-sunken);
+  color: var(--sc-muted-foreground);
+  background: var(--sc-muted);
 }
 
 .emptyText {
@@ -28,9 +29,9 @@
 .retryButton {
   font-size: 12px;
   padding: 4px 10px;
-  background: var(--color-bg-elev);
-  border: 1px solid var(--color-border);
+  background: var(--sc-card);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
