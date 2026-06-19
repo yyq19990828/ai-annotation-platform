@@ -7,7 +7,7 @@ import { SkipTaskModal, type SkipReason } from "./SkipTaskModal";
 import { BatchStatusBadge } from "@/components/badges/BatchStatusBadge";
 import { useTheme } from "@/hooks/useTheme";
 import type { TaskResponse } from "@/types";
-import styles from "./Topbar.module.css";
+
 
 interface TopbarProps {
   /** 项目名 + 展示 ID（如 P-0001）；显示在左侧 task id 前作为项目上下文。 */
@@ -112,12 +112,12 @@ export function Topbar({
   const themeTitle = `当前${resolved === "dark" ? "夜间" : "日间"}，${themeActionLabel}`;
 
   return (
-    <div className={styles.topbar}>
+    <div className="relative grid grid-cols-[1fr_auto_1fr] gap-3 items-center px-4 py-2.5 bg-card border-b border-border">
       {/* 左：标题段 — display_id 主、文件名次、索引徽章右贴 */}
-      <div className={styles.titleRow}>
-        <div className={styles.chromeControls}>
+      <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex shrink-0 items-center gap-0.5">
           {onBack && (
-            <Button variant="ghost" size="sm" onClick={onBack} className={styles.chromeButton}>
+            <Button variant="ghost" size="sm" onClick={onBack} className="px-[7px] py-[3px] text-muted-foreground">
               <Icon name="chevLeft" size={13} />返回
             </Button>
           )}
@@ -127,35 +127,35 @@ export function Topbar({
               size="sm"
               onClick={onToggleLeftSidebar}
               title={leftSidebarOpen ? "收起任务列表" : "展开任务列表"}
-              className={cn(styles.chromeIconButton, leftSidebarOpen && styles.chromeIconButtonActive)}
+              className={cn("justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground", leftSidebarOpen && "text-foreground bg-transparent shadow-none")}
             >
               <Icon name="panelLeft" size={14} />
             </Button>
           )}
         </div>
-        <span className={styles.chromeDivider} />
-        <span className={styles.projectName} title={projectName}>{projectName}</span>
+        <span className="shrink-0 w-px h-[18px] bg-border" />
+        <span className="flex-auto min-w-0 overflow-hidden text-[13px] font-semibold text-foreground truncate" title={projectName}>{projectName}</span>
       </div>
 
       {/* 中：任务标识 + 任务导航 + 状态相关主操作（整体居中） */}
-      <div className={styles.navRow}>
-        <div className={styles.identity}>
-          <span className={cn("mono", styles.projectId)}>{projectDisplayId}</span>
-          <span className={styles.divider} />
+      <div className="flex items-center gap-1.5 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="mono shrink-0 text-xs text-muted-foreground">{projectDisplayId}</span>
+          <span className="shrink-0 w-px h-4 bg-border" />
           <span
-            className={cn("mono", styles.taskId)}
+            className="mono shrink-0 text-[13px] font-semibold text-foreground"
           >
             {task?.display_id ?? "—"}
           </span>
           <span
-            className={styles.fileName}
+            className="min-w-0 max-w-[220px] overflow-hidden text-[12.5px] text-muted-foreground truncate"
             title={task?.file_name ?? undefined}
           >
             {task?.file_name ?? "—"}
           </span>
           {indexLabel && (
             <span
-              className={cn("mono", styles.indexBadge)}
+              className="mono shrink-0 px-2 py-0.5 text-[11px] font-medium text-muted-foreground tracking-[0.2px] bg-muted border border-border rounded-full"
             >
               {indexLabel}
             </span>
@@ -166,7 +166,7 @@ export function Topbar({
           )}
           {/* v0.7.2 · 责任人胶囊：标注员 / 审核员（list_tasks/get_task 已 populate） */}
           {(task?.assignee || task?.reviewer) && (
-            <span className={styles.divider} />
+            <span className="shrink-0 w-px h-4 bg-border" />
           )}
           {task?.assignee && (
             <AssigneeAvatarStack users={[task.assignee]} label="标注" max={1} />
@@ -175,7 +175,7 @@ export function Topbar({
             <AssigneeAvatarStack users={[task.reviewer]} label="审核" max={1} />
           )}
         </div>
-        <span className={styles.divider} />
+        <span className="shrink-0 w-px h-4 bg-border" />
         <Button size="sm" onClick={onPrev}><Icon name="chevLeft" size={13} />上一</Button>
         {mode === "review" ? (
           <>
@@ -256,7 +256,7 @@ export function Topbar({
                 size="sm"
                 onClick={toggle}
                 title="智能切题 (N / U)"
-                className={cn(styles.compactGhostButton, styles.smartNextButton, open && styles.compactGhostButtonOpen)}
+                className={cn("px-1 py-[3px] text-muted-foreground ml-0.5", open && "bg-muted")}
               >
                 <Icon name="wandSparkles" size={13} />
               </Button>
@@ -268,20 +268,20 @@ export function Topbar({
           size="sm"
           onClick={onShowHotkeys}
           title="快捷键 (?)"
-          className={cn("mono", styles.compactGhostButton)}
+          className="mono px-1 py-[3px] text-muted-foreground"
         >
           ?
         </Button>
       </div>
 
       {/* 右：AI 主操作（annotate）或 ReviewerMini chip（review）+ 溢出菜单 */}
-      <div className={styles.rightRow}>
+      <div className="relative flex items-center justify-end gap-1.5">
         {reviewInfoSlot}
         {showThr && confThreshold !== undefined && (
           <span
-            className={cn("mono", styles.thresholdToast)}
+            className="mono absolute top-[calc(100%+6px)] right-0 z-20 inline-flex items-center gap-1.5 px-2.5 py-1 text-[11.5px] font-medium text-violet-600 dark:text-violet-400 pointer-events-none bg-violet-500/10 border border-violet-500/30 rounded-full shadow-md"
           >
-            <span className={styles.thresholdDot} />
+            <span className="w-1.5 h-1.5 bg-violet-600 dark:bg-violet-400 rounded-full" />
             阈值 {(confThreshold * 100).toFixed(0)}%
           </span>
         )}
@@ -292,7 +292,7 @@ export function Topbar({
             onClick={onRunAi}
             disabled={aiDisabled}
             title={aiDisabled ? "视频任务暂不支持 AI" : "打开 AI 面板"}
-            className={styles.aiButton}
+            className="h-7 px-[11px]"
           >
             {aiRunning
               ? <Icon name="loader2" size={13} className="spin" />
@@ -306,7 +306,7 @@ export function Topbar({
           onClick={() => setTheme(nextTheme)}
           title={themeTitle}
           aria-label={themeTitle}
-          className={cn(styles.compactGhostButton, styles.toolbarIconButton)}
+          className="justify-center w-7 h-7 p-0 text-muted-foreground bg-transparent border-transparent rounded-[var(--radius-sm)] shadow-none hover:text-foreground hover:bg-muted"
         >
           <Icon name={themeIcon} size={14} />
         </Button>
@@ -318,7 +318,7 @@ export function Topbar({
             onClick={onOpenWorkbenchSettings}
             title="工作台设置"
             aria-label="工作台设置"
-            className={cn(styles.compactGhostButton, styles.toolbarIconButton)}
+            className="justify-center w-7 h-7 p-0 text-muted-foreground bg-transparent border-transparent rounded-[var(--radius-sm)] shadow-none hover:text-foreground hover:bg-muted"
           >
             <Icon name="settings" size={14} />
           </Button>
@@ -329,7 +329,7 @@ export function Topbar({
             size="sm"
             onClick={onToggleRightSidebar}
             title={rightSidebarOpen ? "收起标注详情" : "展开标注详情"}
-            className={cn(styles.chromeIconButton, rightSidebarOpen && styles.chromeIconButtonActive)}
+            className={cn("justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground", rightSidebarOpen && "text-foreground bg-transparent shadow-none")}
           >
             <Icon name="panelRight" size={14} />
           </Button>
