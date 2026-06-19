@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams, Navigate } from "react-router-dom";
 import { invitationsApi } from "@/api/invitations";
 import { Icon } from "@/components/ui/Icon";
-import styles from "./ResetPasswordPage.module.css";
 
 type Phase = "verifying" | "done" | "error";
 
@@ -30,36 +29,38 @@ export function VerifyEmailPage() {
   if (!token) return <Navigate to="/login" replace />;
 
   return (
-    <div className={styles.page}>
-      <div className={styles.shell}>
-        <div className={styles.brand}>
-          <div className={styles.iconBadge}>
-            <Icon name="lock" size={16} className={styles.iconBadgeSvg} />
+    <div className="tw-scope flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+      <div className="w-[min(380px,100%)]">
+        <div className="mb-8 flex items-center justify-center gap-2.5">
+          <div className="flex size-8 items-center justify-center rounded-md bg-brand text-white">
+            <Icon name="lock" size={16} />
           </div>
-          <span className={styles.brandTitle}>邮箱验证</span>
+          <span className="text-lg font-bold">邮箱验证</span>
         </div>
 
-        {phase === "verifying" && (
-          <div className={styles.successText}>正在验证邮箱…</div>
-        )}
+        <div className="rounded-2xl border border-border bg-card px-8 py-7 text-center shadow-xl">
+          {phase === "verifying" && <div className="text-sm text-muted-foreground">正在验证邮箱…</div>}
 
-        {phase === "done" && (
-          <div className={styles.success}>
-            <div className={styles.successText}>邮箱已验证，现在可以登录了。</div>
-            <Link to="/login" className={styles.successLink}>
-              前往登录
-            </Link>
-          </div>
-        )}
+          {phase === "done" && (
+            <>
+              <div className="mb-4 text-sm text-muted-foreground">邮箱已验证，现在可以登录了。</div>
+              <Link to="/login" className="text-[13px] text-brand hover:underline">
+                前往登录
+              </Link>
+            </>
+          )}
 
-        {phase === "error" && (
-          <div className={styles.success}>
-            <div className={styles.errorText}>{error || "验证链接无效或已过期"}</div>
-            <Link to="/login" className={styles.successLink}>
-              返回登录
-            </Link>
-          </div>
-        )}
+          {phase === "error" && (
+            <>
+              <div className="mb-4 text-[13px] text-rose-600 dark:text-rose-400">
+                {error || "验证链接无效或已过期"}
+              </div>
+              <Link to="/login" className="text-[13px] text-brand hover:underline">
+                返回登录
+              </Link>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
