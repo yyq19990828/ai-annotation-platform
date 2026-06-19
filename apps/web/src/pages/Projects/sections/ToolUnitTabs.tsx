@@ -11,7 +11,6 @@ import {
   type ToolUnitId,
 } from "@/constants/toolUnits";
 import type { UnitBindingMap } from "./useProjectToolBindings";
-import styles from "./ToolUnitTabs.module.css";
 
 interface Props {
   bindings: UnitBindingMap;
@@ -35,7 +34,7 @@ export function ToolUnitTabs({
     (g) => g.available && bindings[g.id] !== undefined,
   );
   return (
-    <div className={styles.tabs}>
+    <div className="mb-3 flex flex-wrap gap-1.5 border-b border-border pb-2">
       {visible.map((g) => {
         const ub = bindings[g.id];
         const active = activeUnit === g.id;
@@ -45,9 +44,9 @@ export function ToolUnitTabs({
           <div
             key={g.id}
             className={clsx(
-              styles.tab,
-              active && styles.tabActive,
-              !enabled && styles.tabDisabled,
+              "inline-flex items-center gap-1 rounded-md border border-transparent bg-transparent px-1 py-0.5",
+              active && "border-brand bg-brand/10",
+              !enabled && "[&_button]:opacity-50",
             )}
           >
             {allowToggle && onToggle && (
@@ -55,19 +54,22 @@ export function ToolUnitTabs({
                 type="checkbox"
                 checked={enabled}
                 onChange={(e) => onToggle(g.id, e.target.checked)}
-                className={styles.toggle}
+                className="mx-0.5 ml-1 cursor-pointer accent-brand"
                 title={enabled ? "点击禁用此工具单位" : "点击启用此工具单位"}
               />
             )}
             <button
               type="button"
               onClick={() => onSelect(g.id)}
-              className={styles.tabButton}
+              className={clsx(
+                "inline-flex cursor-pointer appearance-none items-center gap-1.5 rounded-sm border-0 bg-transparent px-2 py-1 text-xs text-foreground hover:bg-muted",
+                active && "font-medium text-brand",
+              )}
             >
               <Icon name={g.icon} size={12} />
               <span>{label}</span>
               {ub && ub.classRows.length > 0 && (
-                <span className={styles.badge}>{ub.classRows.length}</span>
+                <span className="rounded-sm bg-border px-[5px] py-px text-[10px] text-muted-foreground">{ub.classRows.length}</span>
               )}
             </button>
           </div>

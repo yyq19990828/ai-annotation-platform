@@ -9,11 +9,10 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useProjectMembers, useRemoveProjectMember } from "@/hooks/useProjects";
 import { AssignMemberModal } from "@/components/projects/AssignMemberModal";
 import type { ProjectResponse, ProjectMemberResponse } from "@/api/projects";
-import styles from "./MembersSection.module.css";
 
-function cn(...xs: Array<string | false | null | undefined>): string {
-  return xs.filter(Boolean).join(" ");
-}
+const PLACEHOLDER_CLASS = "p-8 text-center text-[13px] text-muted-foreground";
+const HEAD_CELL_BASE =
+  "border-b border-border bg-muted px-3 py-2.5 text-left text-xs font-medium whitespace-nowrap text-muted-foreground";
 
 export function MembersSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
@@ -35,9 +34,9 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
   return (
     <>
       <Card>
-        <div className={styles.cardHeader}>
-          <h3 className={styles.cardTitle}>项目成员</h3>
-          <div className={styles.headerActions}>
+        <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
+          <h3 className="text-sm font-semibold">项目成员</h3>
+          <div className="flex gap-2">
             <Button onClick={() => setAssignOpen(true)}>
               <Icon name="plus" size={12} />添加成员
             </Button>
@@ -45,28 +44,24 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
         </div>
 
         {isLoading && (
-          <div className={styles.placeholder}>
+          <div className={PLACEHOLDER_CLASS}>
             加载中...
           </div>
         )}
         {!isLoading && members.length === 0 && (
-          <div className={styles.placeholder}>
+          <div className={PLACEHOLDER_CLASS}>
             暂无成员，点击右上角按钮添加标注员或审核员
           </div>
         )}
         {!isLoading && members.length > 0 && (
-          <div className={styles.tableScroller}>
-            <table className={styles.table}>
+          <div className="w-full overflow-x-auto">
+            <table className="w-full min-w-[620px] border-separate border-spacing-0 text-[13px]">
               <thead>
                 <tr>
                   {["成员", "角色", "加入时间", ""].map((h, i) => (
                     <th
                       key={i}
-                      className={cn(
-                        styles.tableHeadCell,
-                        i === 0 && styles.tableHeadCellFirst,
-                        i === 3 && styles.tableHeadCellLast,
-                      )}
+                      className={`${HEAD_CELL_BASE}${i === 0 ? " pl-4" : ""}${i === 3 ? " pr-4" : ""}`}
                     >
                       {h}
                     </th>
@@ -76,26 +71,26 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
               <tbody>
                 {members.map((m) => (
                   <tr key={m.id}>
-                    <td className={styles.memberCell}>
-                      <div className={styles.memberIdentity}>
+                    <td className="w-[42%] border-b border-border py-2.5 pr-3 pl-4">
+                      <div className="flex min-w-0 items-center gap-2.5">
                         <Avatar initial={m.user_name.slice(0, 1)} size="sm" />
-                        <div className={styles.memberText}>
-                          <div className={styles.memberName} title={m.user_name}>{m.user_name}</div>
-                          <div className={styles.memberEmail} title={m.user_email}>{m.user_email}</div>
+                        <div className="min-w-0">
+                          <div className="truncate text-[13px] font-medium" title={m.user_name}>{m.user_name}</div>
+                          <div className="truncate text-[11px] text-muted-foreground" title={m.user_email}>{m.user_email}</div>
                         </div>
                       </div>
                     </td>
-                    <td className={styles.tableCell}>
+                    <td className="border-b border-border p-3 whitespace-nowrap">
                       {m.role === "annotator" ? (
                         <Badge variant="accent">标注员</Badge>
                       ) : (
                         <Badge variant="warning">审核员</Badge>
                       )}
                     </td>
-                    <td className={cn(styles.tableCell, styles.dateCell)}>
+                    <td className="border-b border-border p-3 whitespace-nowrap text-muted-foreground">
                       {new Date(m.assigned_at).toLocaleDateString("zh-CN")}
                     </td>
-                    <td className={styles.actionCell}>
+                    <td className="border-b border-border py-2.5 pr-4 pl-3 text-right whitespace-nowrap">
                       <Button size="sm" variant="ghost" onClick={() => setConfirmRemove(m)}>
                         <Icon name="x" size={11} />移除
                       </Button>
@@ -118,10 +113,10 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
       )}
 
       <Modal open={!!confirmRemove} onClose={() => setConfirmRemove(null)} title="移除成员" width={420}>
-        <div className={styles.removeBody}>
-          确认将 <strong className={styles.removeName}>{confirmRemove?.user_name}</strong> 从本项目移除？该用户将不再看到此项目，已完成的标注/审核记录保留。
+        <div className="mb-[18px] text-[13px] text-muted-foreground">
+          确认将 <strong className="text-foreground">{confirmRemove?.user_name}</strong> 从本项目移除？该用户将不再看到此项目，已完成的标注/审核记录保留。
         </div>
-        <div className={styles.modalActions}>
+        <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setConfirmRemove(null)}>取消</Button>
           <Button variant="danger" disabled={remove.isPending} onClick={() => confirmRemove && onRemove(confirmRemove)}>
             {remove.isPending ? "处理中..." : "确认移除"}
