@@ -92,7 +92,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import styles from "./Icon.module.css";
+import { cn } from "@/lib/utils";
+
 import { useElementStyle } from "./useElementStyle";
 
 /**
@@ -225,7 +226,7 @@ export const Icon = forwardRef<SVGSVGElement, IconProps>(function Icon(
       width={size}
       height={size}
       strokeWidth={stroke}
-      className={className ? `${styles.icon} ${className}` : styles.icon}
+      className={cn("shrink-0", className)}
       aria-hidden="true"
     />
   );
