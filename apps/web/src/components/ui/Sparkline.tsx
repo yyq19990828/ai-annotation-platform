@@ -1,5 +1,8 @@
-import styles from "./Sparkline.module.css";
-
+/**
+ * Sparkline —— 迷你折线(v0.17.2,module.css → Tailwind)。
+ * 颜色走 SVG fill/stroke(非 className,不入 token 门禁);默认从 --color-accent 改指 --sc-brand
+ * 以前瞻 tokens.css 退役(v0.17.7)。
+ */
 interface SparklineProps {
   values: number[];
   color?: string;
@@ -7,7 +10,7 @@ interface SparklineProps {
   height?: number;
 }
 
-export function Sparkline({ values, color = "var(--color-accent)", width = 120, height = 28 }: SparklineProps) {
+export function Sparkline({ values, color = "var(--sc-brand)", width = 120, height = 28 }: SparklineProps) {
   const max = Math.max(...values);
   const min = Math.min(...values);
   const range = max - min || 1;
@@ -17,7 +20,7 @@ export function Sparkline({ values, color = "var(--color-accent)", width = 120, 
     .join(" ");
   const area = `0,${height} ${points} ${width},${height}`;
   return (
-    <svg width={width} height={height} className={styles.root}>
+    <svg width={width} height={height} className="block">
       <polyline points={area} fill={color} opacity="0.08" stroke="none" />
       <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" />
     </svg>

@@ -1,35 +1,33 @@
-import styles from "./Histogram.module.css";
-
+/**
+ * Histogram —— 直方图(v0.17.2,module.css → Tailwind)。flex 容器 + 命令式动态高度/颜色。
+ * 柱色走命令式 style.background;默认从 --color-accent 改指 --sc-brand 前瞻 tokens.css 退役。
+ */
 interface HistogramProps {
   values: number[];
   height?: number;
   color?: string;
-  /** 可选：在某 index 处渲染竖向标注线（如 p50 / p95） */
+  /** 可选:在某 index 处渲染竖向标注线(如 p50 / p95) */
   markers?: Array<{ index: number; label: string }>;
-  /** 横轴标签（可选，长度需与 values 一致） */
+  /** 横轴标签(可选,长度需与 values 一致) */
   xLabels?: string[];
 }
 
-/**
- * v0.8.4 · 直方图（任务耗时分布、24-bar 专注时段等）。
- * 仿 RegistrationSourceCard 的 stacked-bar 风格，flex 容器 + 动态 % 高度。
- */
 export function Histogram({
   values,
   height = 80,
-  color = "var(--color-accent)",
+  color = "var(--sc-brand)",
   markers = [],
   xLabels,
 }: HistogramProps) {
   const peak = Math.max(1, ...values);
   return (
-    <div className={styles.root}>
+    <div className="min-w-0">
       <div
         ref={(element) => {
           if (!element) return;
           element.style.height = `${height}px`;
         }}
-        className={styles.bars}
+        className="relative flex items-end gap-0.5"
       >
         {values.map((v, i) => {
           const h = Math.max(1, (v / peak) * height);
@@ -41,10 +39,11 @@ export function Histogram({
                 if (!element) return;
                 element.style.height = `${h}px`;
                 element.style.background = color;
+                // borderRadius 命令式写在元素上(而非 Tailwind class):Histogram 单测靠
+                // style.borderRadius 识别 bar(区分 marker 竖线),保持该选择器可用。
                 element.style.borderRadius = "2px 2px 0 0";
-                element.style.minHeight = "1px";
               }}
-              className={styles.bar}
+              className="min-h-px flex-1"
             />
           );
         })}
@@ -57,9 +56,9 @@ export function Histogram({
                 if (!element) return;
                 element.style.left = left;
               }}
-              className={styles.marker}
+              className="pointer-events-none absolute inset-y-0 w-px bg-muted-foreground"
             >
-              <span className={styles.markerLabel}>
+              <span className="absolute -top-3.5 left-1 whitespace-nowrap text-[10px] text-muted-foreground">
                 {m.label}
               </span>
             </div>
@@ -67,7 +66,7 @@ export function Histogram({
         })}
       </div>
       {xLabels && (
-        <div className={styles.axis}>
+        <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
           <span>{xLabels[0]}</span>
           <span>{xLabels[xLabels.length - 1]}</span>
         </div>

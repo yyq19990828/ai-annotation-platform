@@ -1,5 +1,9 @@
-import styles from "./RadialProgress.module.css";
+import { cn } from "@/lib/utils";
 
+/**
+ * RadialProgress —— 圆环进度(v0.17.2,module.css → Tailwind)。SVG 单环,不引图表库。
+ * 颜色走 SVG stroke;默认从 --color-* 改指 --sc-* 前瞻 tokens.css 退役。
+ */
 interface RadialProgressProps {
   value: number;
   max?: number;
@@ -10,16 +14,13 @@ interface RadialProgressProps {
   label?: string;
 }
 
-/**
- * v0.8.4 · 圆环进度（综合分等）。SVG 单环，不引图表库。
- */
 export function RadialProgress({
   value,
   max = 100,
   size = 56,
   thickness = 6,
-  color = "var(--color-accent)",
-  trackColor = "var(--color-border)",
+  color = "var(--sc-brand)",
+  trackColor = "var(--sc-border)",
   label,
 }: RadialProgressProps) {
   const r = (size - thickness) / 2;
@@ -29,7 +30,7 @@ export function RadialProgress({
   const pct = Math.min(1, Math.max(0, value / max));
   const dashLen = c * pct;
   return (
-    <div className={styles.root}>
+    <div className="relative inline-block leading-[0]">
       <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke={trackColor} strokeWidth={thickness} />
         <circle
@@ -44,13 +45,14 @@ export function RadialProgress({
           transform={`rotate(-90 ${cx} ${cy})`}
         />
       </svg>
-      <div className={`${styles.center} ${size > 80 ? styles.centerLarge : styles.centerCompact}`}>
-        <span>{Math.round(value)}</span>
-        {label && (
-          <span className={styles.label}>
-            {label}
-          </span>
+      <div
+        className={cn(
+          "absolute inset-0 flex flex-col items-center justify-center font-semibold tabular-nums",
+          size > 80 ? "text-base" : "text-xs",
         )}
+      >
+        <span>{Math.round(value)}</span>
+        {label && <span className="mt-px text-[9px] font-normal text-muted-foreground">{label}</span>}
       </div>
     </div>
   );
