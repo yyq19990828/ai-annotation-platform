@@ -9,7 +9,6 @@ import type { ClassesConfig } from "@/api/projects";
 import type { BatchResponse } from "@/api/batches";
 import { ClassPalette } from "./ClassPalette";
 import { ResizeHandle } from "./ResizeHandle";
-import styles from "./TaskQueuePanel.module.css";
 
 const PALETTE_HEIGHT_KEY = "workbench.leftPalette.height";
 const PALETTE_HEIGHT_DEFAULT = 220;
@@ -70,12 +69,12 @@ function readPaletteHeight(): number {
 }
 
 function statusClassName(task: TaskResponse): string {
-  if (task.status === "completed") return styles.statusCompleted;
-  if (task.status === "review") return styles.statusReview;
-  if (task.status === "rejected") return styles.statusRejected;
-  if (task.total_annotations > 0) return styles.statusAnnotated;
-  if (task.total_predictions > 0) return styles.statusPredicted;
-  return styles.statusEmpty;
+  if (task.status === "completed") return "text-emerald-600 dark:text-emerald-400";
+  if (task.status === "review") return "text-amber-600 dark:text-amber-400";
+  if (task.status === "rejected") return "text-rose-600 dark:text-rose-400";
+  if (task.total_annotations > 0) return "text-brand";
+  if (task.total_predictions > 0) return "text-violet-600 dark:text-violet-400";
+  return "text-muted-foreground";
 }
 
 function TaskItem({
@@ -97,47 +96,51 @@ function TaskItem({
     : task.total_predictions > 0 ? "AI 已预标"
     : "未开始";
   const markerClassName = cn(
-    styles.taskMarker,
-    isActive ? styles.taskMarkerActive : isRejected && styles.taskMarkerRejected,
+    "absolute left-0.5 top-2 bottom-2 w-[3px] rounded-[2px]",
+    isActive ? "bg-brand" : isRejected && "bg-rose-600 dark:bg-rose-400",
   );
 
   return (
     <div
       onClick={onSelect}
       className={cn(
-        styles.taskItem,
-        isActive && styles.taskItemActive,
-        isRejected && styles.taskItemRejected,
+        "relative flex items-center gap-2.5 my-[3px] px-3 py-2.5 rounded-[var(--radius-md)] cursor-pointer transition-[background,border-color] duration-[0.12s]",
+        isActive
+          ? "border border-brand/30 bg-brand/10"
+          : isRejected
+            ? "border border-rose-500/25 bg-rose-500/6"
+            : "border border-transparent bg-transparent",
+        !isActive && "hover:bg-muted",
       )}
     >
       {(isActive || isRejected) && <span aria-hidden className={markerClassName} />}
       <Thumbnail src={task.thumbnail_url} blurhash={task.blurhash} width={40} height={40} />
-      <div className={styles.taskBody}>
-        <div className={styles.taskMainRow}>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-1">
           <span
-            className={cn("mono", styles.taskDisplayId, isActive && styles.taskDisplayIdActive)}
+            className={cn("mono text-xs font-semibold", isActive ? "text-brand" : "text-foreground")}
           >{task.display_id}</span>
-          <div className={styles.taskMetaActions}>
+          <div className="flex items-center gap-1">
             {isLocked && (
               <span
                 title={task.status === "review" ? "已提交质检 · 已锁定" : "已通过审核 · 已锁定"}
-                className={styles.lockIcon}
+                className="inline-flex text-muted-foreground"
               >
                 <Icon name="lock" size={11} />
               </span>
             )}
             {task.total_annotations > 0 && (
-              <span className={styles.annotationCountBadge}>{task.total_annotations}</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full bg-brand/10 text-brand text-[10px] font-medium whitespace-nowrap">{task.total_annotations}</span>
             )}
           </div>
         </div>
-        <div className={styles.fileName}>
+        <div className="mt-0.5 overflow-hidden text-muted-foreground text-[11px] truncate">
           {task.file_name}
         </div>
         <div
-          className={cn(styles.statusMeta, statusClassName(task))}
+          className={cn("inline-flex items-center gap-1 mt-[3px] text-[10.5px] font-medium", statusClassName(task))}
         >
-          <span className={styles.statusDot} />
+          <span className="w-[5px] h-[5px] rounded-full bg-current" />
           {statusLabel}
         </div>
       </div>
@@ -158,7 +161,7 @@ function VirtualInner({
     ref.current?.style.setProperty("height", `${height}px`);
   }, [height]);
 
-  return <div ref={ref} className={styles.virtualInner}>{children}</div>;
+  return <div ref={ref} className="relative">{children}</div>;
 }
 
 function VirtualRow({
@@ -179,7 +182,7 @@ function VirtualRow({
     measureElement?.(node);
   }, [measureElement, start]);
 
-  return <div ref={ref} data-index={dataIndex} className={styles.virtualRow}>{children}</div>;
+  return <div ref={ref} data-index={dataIndex} className="absolute top-0 left-0 w-full">{children}</div>;
 }
 
 export function TaskQueuePanel({
@@ -266,19 +269,19 @@ export function TaskQueuePanel({
     <div
       ref={rootStyleRef}
       className={cn(
-        styles.root,
-        floating && styles.rootFloating,
-        (showQueue !== showPalette) && styles.rootSingleSection,
+        "relative flex flex-col overflow-hidden border-r border-border bg-card",
+        floating && "h-full border-r-0",
+        (showQueue !== showPalette) && "[--left-palette-height:auto]",
       )}
     >
       {showQueue && (
         <>
           {batches && batches.length > 0 && onSelectBatch && (
-            <div className={styles.batchFilter}>
+            <div className="px-3.5 pt-1.5 pb-0">
               <select
                 value={selectedBatchId ?? ""}
                 onChange={(e) => onSelectBatch(e.target.value || null)}
-                className={styles.batchSelect}
+                className="w-full px-2 py-1 appearance-none border border-border rounded-[var(--radius-sm)] bg-background text-foreground text-xs"
               >
                 <option value="">全部批次（{batches.length}）</option>
                 {batches.map((b) => {
@@ -300,9 +303,9 @@ export function TaskQueuePanel({
 
           {/* v0.6.8 B-15：owner 视角且无任何批次时给出明确入口，避免误以为「100 条就是全部」 */}
           {isOwner && (!batches || batches.length === 0) && onGoToBatchSettings && (
-            <div className={cn(styles.batchHint, styles.ownerBatchHint)}>
+            <div className="flex items-center justify-between gap-2 mx-3.5 mt-1.5 px-2.5 py-2 border border-dashed border-border rounded-[var(--radius-sm)] bg-background text-muted-foreground text-[11px]">
               <span>未分批次 · 任务统一在「未归类」</span>
-              <Button variant="ghost" size="sm" onClick={onGoToBatchSettings} className={styles.batchSettingsButton}>
+              <Button variant="ghost" size="sm" onClick={onGoToBatchSettings} className="!px-1.5 !py-0.5 !text-[11px]">
                 前往分批
               </Button>
             </div>
@@ -310,32 +313,32 @@ export function TaskQueuePanel({
 
           {/* v0.7.1 B-15：非 owner 视角且未分到批次 → 显式提示，避免误以为「列表无尽，但只看见 100」 */}
           {!isOwner && (!batches || batches.length === 0) && (
-            <div className={styles.batchHint}>
+            <div className="mx-3.5 mt-1.5 px-2.5 py-2 border border-dashed border-border rounded-[var(--radius-sm)] bg-background text-muted-foreground text-[11px]">
               暂未被分派到批次 · 联系项目管理员分配
             </div>
           )}
 
-          <div className={styles.queueHeader}>
-            <div className={styles.queueTitle}>
+          <div className="flex items-center justify-between gap-2 px-3.5 pt-2.5 pb-1.5">
+            <div className="flex items-center gap-1.5 text-xs font-semibold">
               任务队列
               {selectedBatchId && batches && (
-                <span className={styles.queueSubtitle}>
+                <span className="text-muted-foreground text-[11px] font-normal">
                   · 当前批次
                 </span>
               )}
               {rejectedCount > 0 && (
                 <span
                   title={`${rejectedCount} 个任务被退回，需重做`}
-                  className={styles.rejectedBadge}
+                  className="inline-flex items-center gap-[3px] px-1.5 py-px border border-rose-500/30 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[10px] font-semibold"
                 >
                   <Icon name="warning" size={10} />
                   {rejectedCount} 待重做
                 </span>
               )}
             </div>
-            <div className={styles.queueActions}>
+            <div className="inline-flex items-center gap-1.5 shrink-0">
               <span
-                className={cn("mono", styles.queueCount)}
+                className="text-muted-foreground text-[11px] mono"
                 title={
                   hasNextPage
                     ? `已加载 ${tasks.length} / 共 ${totalCount ?? tasks.length}（滚动加载更多）`
@@ -344,13 +347,13 @@ export function TaskQueuePanel({
               >
                 {taskIdx + 1} / {tasks.length}
                 {totalCount != null && totalCount > tasks.length && (
-                  <span className={styles.totalCount}> · 共 {totalCount}</span>
+                  <span className="opacity-70"> · 共 {totalCount}</span>
                 )}
               </span>
               {onDetachQueue && !floating && (
                 <button
                   type="button"
-                  className={styles.detachButton}
+                  className="inline-flex items-center justify-center w-6 h-6 p-0 appearance-none border border-border rounded-[var(--radius-sm)] bg-background text-muted-foreground cursor-pointer hover:border-brand hover:text-brand"
                   onClick={onDetachQueue}
                   title="分离任务队列"
                   aria-label="分离任务队列"
@@ -361,7 +364,7 @@ export function TaskQueuePanel({
             </div>
           </div>
 
-          <div ref={parentRef} className={styles.scrollArea}>
+          <div ref={parentRef} className="flex-1 overflow-y-auto px-2 pb-2.5 pt-0">
             <VirtualInner height={virtualizer.getTotalSize()}>
               {virtualizer.getVirtualItems().map((vItem) => {
                 const t = sortedTasks[vItem.index];
@@ -383,7 +386,7 @@ export function TaskQueuePanel({
               })}
               {isFetchingNextPage && (
                 <VirtualRow start={virtualizer.getTotalSize()}>
-                  <div className={styles.loadingMore}>加载更多...</div>
+                  <div className="px-2.5 py-2 text-muted-foreground text-[11px] text-center">加载更多...</div>
                 </VirtualRow>
               )}
             </VirtualInner>
@@ -392,7 +395,10 @@ export function TaskQueuePanel({
       )}
 
       {showPalette && (
-        <div className={cn(styles.palettePanel, !showQueue && styles.palettePanelOnly)}>
+        <div className={cn(
+          "relative flex-[0_1_var(--left-palette-height)] min-h-[112px] max-h-[min(45%,420px)] overflow-y-auto px-3.5 py-4 pt-4 pb-2.5 border-t border-border",
+          !showQueue && "flex-1 max-h-none border-t-0",
+        )}>
           {!floating && showQueue && (
             <ResizeHandle
               side="top"
@@ -403,18 +409,18 @@ export function TaskQueuePanel({
               resetTo={PALETTE_HEIGHT_DEFAULT}
             />
           )}
-          <div className={styles.paletteTitleRow}>
-            <div className={styles.paletteTitle}>
-              <span className={styles.paletteTool}>
+          <div className="flex items-center justify-between gap-2 mb-0.5">
+            <div className="flex items-center gap-1 text-muted-foreground text-[11px]">
+              <span className="inline-flex items-center gap-1 text-foreground font-semibold">
                 <Icon name={toolIcon} size={12} />
                 {toolLabel}
               </span>
-              <span className={styles.paletteCount}>· {classes.length} 个类别</span>
+              <span className="text-muted-foreground">· {classes.length} 个类别</span>
             </div>
             {onDetachPalette && !floating && (
               <button
                 type="button"
-                className={styles.detachButton}
+                className="inline-flex items-center justify-center w-6 h-6 p-0 appearance-none border border-border rounded-[var(--radius-sm)] bg-background text-muted-foreground cursor-pointer hover:border-brand hover:text-brand"
                 onClick={onDetachPalette}
                 title="分离类别面板"
                 aria-label="分离类别面板"
@@ -423,7 +429,7 @@ export function TaskQueuePanel({
               </button>
             )}
           </div>
-          <div className={styles.paletteHint}>
+          <div className="mb-1.5 text-muted-foreground text-[11px]">
             {classPickable ? "点击选择放置类别" : "数字/字母键直接落框时使用"}
           </div>
           <ClassPalette

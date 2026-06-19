@@ -8,7 +8,7 @@ import type {
   WorkbenchSettingField,
   WorkbenchSettingValue,
 } from "../state/workbenchSettingsFields";
-import styles from "./SettingsFieldControl.module.css";
+
 
 const LOCKED_TITLE = "由项目统一配置";
 
@@ -49,41 +49,39 @@ export function SettingsFieldControl({
 
   return (
     <Root
-      className={`${styles.field} ${isColumn ? styles.fieldColumn : ""} ${nested ? styles.fieldNested : ""} ${
-        disabled && !locked ? styles.fieldDisabled : ""
-      }`}
+      className={`flex items-center justify-between gap-3 box-border min-h-[38px] px-2.5 py-2 rounded-[var(--radius-sm)] transition-[background] duration-150 hover:bg-muted ${isColumn ? "flex-col items-stretch gap-2" : ""} ${nested ? "ml-[18px] pl-3 border-l border-border rounded-[0_var(--radius-sm)_var(--radius-sm)_0]" : ""} ${disabled && !locked ? "opacity-[0.54] hover:bg-transparent" : ""}`}
       title={title}
       aria-disabled={disabled || locked}
       data-testid={`setting-field-${field.key}`}
     >
-      <div className={styles.label}>
+      <div className="flex flex-1 min-w-0 items-center gap-1.5 text-muted-foreground text-xs font-medium">
         {labelText}
         {field.description && !locked && (
-          <span className={styles.helpIcon} aria-label={field.description} title={field.description}>
+          <span className="inline-flex shrink-0 items-center text-muted-foreground" aria-label={field.description} title={field.description}>
             <Icon name="info" size={11} />
           </span>
         )}
         {locked && (
-          <span className={styles.lockBadge} title={LOCKED_TITLE}>
+          <span className="inline-flex shrink-0 items-center gap-[3px] px-1.5 py-px border border-border rounded-full bg-muted text-muted-foreground text-[10px] font-medium" title={LOCKED_TITLE}>
             <Icon name="lock" size={10} />
             项目锁定
           </span>
         )}
       </div>
       {control.type === "toggle" && (
-        <span className={styles.toggleWrap}>
+        <span className="inline-flex items-center gap-2 shrink-0">
           <Switch
             checked={Boolean(value)}
             disabled={disabled || locked}
             onChange={onCommit}
           />
           {(control.onText || control.offText) && (
-            <span className={styles.toggleLabel}>{value ? control.onText : control.offText}</span>
+            <span className="text-muted-foreground text-[11.5px] whitespace-nowrap">{value ? control.onText : control.offText}</span>
           )}
         </span>
       )}
       {control.type === "slider" && (
-        <span className={styles.sliderWrap}>
+        <span className="inline-flex items-center gap-2 shrink-0">
           <SliderControl
             value={Number(value)}
             min={control.min}
@@ -96,7 +94,7 @@ export function SettingsFieldControl({
           {control.resetTo !== undefined && (
             <button
               type="button"
-              className={styles.resetBtn}
+              className="shrink-0 px-2 py-[3px] appearance-none border border-border rounded-[var(--radius-sm)] bg-card text-muted-foreground text-[11.5px] cursor-pointer transition-[border-color,color] duration-150 hover:border-brand hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={disabled || locked}
               onClick={() => onCommit(control.resetTo!)}
             >
@@ -115,7 +113,7 @@ export function SettingsFieldControl({
             );
             if (selected) onCommit(selected.value);
           }}
-          className={styles.input}
+          className="appearance-none box-border w-full max-w-[130px] px-2 py-[5px] pr-6 border border-border rounded-[var(--radius-sm)] bg-card text-foreground text-xs outline-none cursor-pointer transition-[border-color,box-shadow] duration-150 focus:border-brand focus:shadow-[0_0_0_2px_var(--sc-brand-soft)] disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {control.options.map((opt) => (
             <option key={String(opt.value)} value={String(opt.value)}>
@@ -188,15 +186,15 @@ function LabelContentByTypeControl({
     onCommit({ ...value, [active]: next } as LabelContentByType);
   };
   return (
-    <div className={styles.labelContentWrap}>
-      <div className={styles.segTabs} role="tablist">
+    <div className="flex flex-col gap-2">
+      <div className="inline-flex gap-1 p-0.5 border border-border rounded-[var(--radius-sm)] bg-muted" role="tablist">
         {segments.map((s) => (
           <button
             key={s.key}
             type="button"
             role="tab"
             aria-selected={s.key === active}
-            className={`${styles.segTab} ${s.key === active ? styles.segTabOn : ""}`}
+            className={`flex-1 px-2 py-1 border-0 rounded bg-transparent text-muted-foreground text-[11.5px] cursor-pointer transition-[background,color] duration-150 hover:text-foreground disabled:cursor-not-allowed ${s.key === active ? "bg-card text-brand font-medium" : ""}`}
             disabled={disabled}
             onClick={() => setActive(s.key)}
           >
@@ -204,13 +202,13 @@ function LabelContentByTypeControl({
           </button>
         ))}
       </div>
-      <div className={styles.segFields}>
-        <div className={`${styles.segRow} ${styles.segRowLocked}`}>
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center justify-between gap-3 min-h-[30px] px-1 py-0.5 text-foreground text-xs cursor-default text-muted-foreground">
           <span>类别名</span>
-          <span className={styles.segRequired}>必选</span>
+          <span className="px-1.5 py-px rounded-full bg-muted text-muted-foreground text-[10px]">必选</span>
         </div>
         {activeSeg.options.map((opt) => (
-          <label key={opt.value} className={styles.segRow}>
+          <label key={opt.value} className="flex items-center justify-between gap-3 min-h-[30px] px-1 py-0.5 text-foreground text-xs cursor-pointer">
             <span>{opt.label}</span>
             <Switch
               checked={selected.includes(opt.value)}
@@ -249,7 +247,7 @@ function MultiselectControl({
     onCommit(next);
   };
   return (
-    <span className={styles.multiselectWrap} role="group">
+    <span className="inline-flex shrink-0 flex-wrap justify-end gap-1.5 max-w-[200px]" role="group">
       {options.map((opt) => {
         const on = selected.has(opt.value);
         const atFloor = on && value.length <= min;
@@ -257,7 +255,7 @@ function MultiselectControl({
           <button
             key={opt.value}
             type="button"
-            className={`${styles.chip} ${on ? styles.chipOn : ""}`}
+            className={`px-2.5 py-[3px] appearance-none border border-border rounded-full bg-card text-muted-foreground text-[11.5px] cursor-pointer transition-[border-color,background,color] duration-150 hover:border-brand hover:text-foreground disabled:cursor-not-allowed ${on ? "border-brand bg-brand/10 text-brand font-medium disabled:opacity-70" : ""}`}
             // chips 嵌在字段 <label> 内,显式 aria-label 兜底可达名,避免名被父 label 文本污染。
             aria-label={opt.label}
             aria-pressed={on}
@@ -331,7 +329,7 @@ function SliderControl({
           commit();
         }
       }}
-      className={styles.range}
+      className="w-[110px] h-1 appearance-none bg-border rounded-sm outline-none cursor-pointer accent-brand disabled:opacity-40 disabled:cursor-not-allowed"
     />
   );
 }
@@ -364,7 +362,7 @@ function TextControl({
         if (local !== value) onCommit(local.trim());
       }}
       placeholder={placeholder}
-      className={styles.input}
+      className="appearance-none box-border w-full max-w-[180px] px-2 py-[5px] border border-border rounded-[var(--radius-sm)] bg-card text-foreground text-xs outline-none transition-[border-color,box-shadow] duration-150 focus:border-brand focus:shadow-[0_0_0_2px_var(--sc-brand-soft)] disabled:opacity-50 disabled:cursor-not-allowed"
     />
   );
 }

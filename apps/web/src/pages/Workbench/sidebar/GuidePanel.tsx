@@ -9,7 +9,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { GuideMarkdownView } from "@/components/markdown/GuideMarkdownView";
 import { useGuideAssets } from "@/hooks/useGuideAssets";
-import styles from "./GuidePanel.module.css";
 
 interface GuidePanelProps {
   projectId: string;
@@ -58,13 +57,13 @@ export function GuidePanel({ projectId, content }: GuidePanelProps) {
 
   return (
     <div
-      className={`${styles.root} ${open ? "" : styles.collapsed}`}
+      className={`flex flex-col overflow-hidden absolute top-14 left-3 z-60 bg-card border border-border rounded-lg shadow-lg ${open ? "w-80 max-h-[70vh]" : "w-auto max-h-none"}`}
       role="region"
       aria-label="标注指引"
       data-testid="wb-guide-panel"
     >
       <div
-        className={styles.header}
+        className="flex items-center gap-1.5 px-3 py-2 border-b border-border bg-muted cursor-pointer select-none"
         onClick={handleToggle}
         role="button"
         tabIndex={0}
@@ -76,13 +75,13 @@ export function GuidePanel({ projectId, content }: GuidePanelProps) {
         }}
       >
         <Icon name="book" size={14} />
-        <span className={styles.title}>标注指引</span>
-        <button type="button" className={styles.collapseBtn} aria-label={open ? "折叠" : "展开"}>
+        <span className="text-[13px] font-semibold text-foreground">标注指引</span>
+        <button type="button" className="ml-auto bg-transparent border-0 text-muted-foreground cursor-pointer px-1.5 py-0.5 text-sm" aria-label={open ? "折叠" : "展开"}>
           {open ? "▾" : "▸"}
         </button>
       </div>
       {open && (
-        <div className={styles.body}>
+        <div className="px-3.5 py-3 overflow-auto flex-1 min-h-0">
           <GuideMarkdownView content={trimmed} resolveAssetUrl={resolver} />
         </div>
       )}
