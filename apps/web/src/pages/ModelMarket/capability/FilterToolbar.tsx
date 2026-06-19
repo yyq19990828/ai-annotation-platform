@@ -2,7 +2,11 @@
 
 import { Icon } from "@/components/ui/Icon";
 import { infraLabel, modalityLabel, taskLabel } from "./labels";
-import styles from "../CapabilityCatalogPanel.module.css";
+
+const CHIP_BASE =
+  "cursor-pointer appearance-none rounded-full border px-2.5 py-[3px] text-[11.5px] leading-[1.4]";
+const CHIP_OFF = `${CHIP_BASE} border-border bg-muted text-muted-foreground hover:bg-muted`;
+const CHIP_ON = `${CHIP_BASE} border-brand/30 bg-brand/10 text-brand`;
 
 interface FilterToolbarProps {
   facets: { tasks: string[]; families: string[]; infras: string[]; modalities: string[] };
@@ -36,20 +40,20 @@ export function FilterToolbar(p: FilterToolbarProps) {
   if (!anyFacet) return null;
 
   return (
-    <div className={styles.toolbar}>
+    <div className="flex flex-wrap items-center gap-3.5 border-b border-border px-4 py-3">
       {groups.map(
         (g) =>
           g.values.length > 0 && (
-            <div key={g.label} className={styles.filterGroup}>
-              <span className={styles.filterLabel}>{g.label}</span>
-              <div className={styles.chipRow}>
+            <div key={g.label} className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 text-[10.5px] font-semibold text-muted-foreground">{g.label}</span>
+              <div className="flex flex-wrap gap-1.5">
                 {g.values.map((v) => {
                   const on = g.active.has(v);
                   return (
                     <button
                       key={v}
                       type="button"
-                      className={on ? `${styles.chip} ${styles.chipOn}` : styles.chip}
+                      className={on ? CHIP_ON : CHIP_OFF}
                       onClick={() => g.toggle(v)}
                       aria-pressed={on}
                     >
@@ -62,7 +66,11 @@ export function FilterToolbar(p: FilterToolbarProps) {
           ),
       )}
       {p.hasActiveFilter && (
-        <button type="button" className={styles.clearBtn} onClick={p.onClear}>
+        <button
+          type="button"
+          className="ml-auto inline-flex cursor-pointer appearance-none items-center gap-1 rounded-full border border-border bg-card px-2.5 py-[3px] text-[11.5px] text-muted-foreground hover:bg-muted"
+          onClick={p.onClear}
+        >
           <Icon name="x" size={11} />
           清除
         </button>
