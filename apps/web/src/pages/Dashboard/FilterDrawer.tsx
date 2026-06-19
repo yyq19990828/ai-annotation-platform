@@ -6,7 +6,6 @@ import { Avatar } from "@/components/ui/Avatar";
 import { useUsers } from "@/hooks/useUsers";
 import { useAuthStore } from "@/stores/authStore";
 import { PROJECT_DATA_TYPES } from "@/constants/toolUnits";
-import styles from "./FilterDrawer.module.css";
 
 export interface DashboardFilters {
   status?: string;
@@ -38,6 +37,11 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "pending_review", label: "待审核" },
   { value: "completed", label: "已完成" },
 ];
+
+// UA-safe 胶囊按钮基线(无全局 preflight 期间,消浏览器默认样式)
+const CHIP_BASE =
+  "cursor-pointer appearance-none rounded-full border border-border bg-transparent px-2.5 py-1 text-xs text-foreground [font:inherit]";
+const CHIP_ACTIVE = "border-brand bg-brand/10 text-brand";
 
 function cn(...xs: Array<string | false | null | undefined>): string {
   return xs.filter(Boolean).join(" ");
@@ -75,9 +79,9 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
 
   return (
     <Modal open={open} onClose={onClose} title="高级筛选" width={520}>
-      <div className={styles.content}>
+      <div className="flex flex-col gap-[18px]">
         <Section title="状态">
-          <div className={styles.chipGroup}>
+          <div className="flex flex-wrap gap-1.5">
             {STATUS_OPTIONS.map((s) => {
               const active = (draft.status ?? "") === s.value;
               return (
@@ -85,7 +89,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
                   key={s.value}
                   type="button"
                   onClick={() => setDraft({ ...draft, status: s.value || undefined })}
-                  className={cn(styles.chip, active && styles.chipActive)}
+                  className={cn(CHIP_BASE, active && CHIP_ACTIVE)}
                 >
                   {s.label}
                 </button>
@@ -95,7 +99,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
         </Section>
 
         <Section title="数据类型">
-          <div className={styles.chipGroup}>
+          <div className="flex flex-wrap gap-1.5">
             {PROJECT_DATA_TYPES.map((t) => {
               const active = draft.data_type.includes(t.id);
               return (
@@ -103,7 +107,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
                   key={t.id}
                   type="button"
                   onClick={() => toggleType(t.id)}
-                  className={cn(styles.chip, active && styles.chipActive)}
+                  className={cn(CHIP_BASE, active && CHIP_ACTIVE)}
                   title={t.hint}
                 >
                   {t.label}
@@ -114,25 +118,25 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
         </Section>
 
         <Section title="成员">
-          <div className={styles.memberQuickFilters}>
+          <div className="mb-1.5 flex flex-wrap gap-1.5">
             <button
               type="button"
               onClick={() => setDraft({ ...draft, member_id: currentUser?.id })}
-              className={cn(styles.chip, draft.member_id === currentUser?.id && styles.chipActive)}
+              className={cn(CHIP_BASE, draft.member_id === currentUser?.id && CHIP_ACTIVE)}
             >
               我参与的
             </button>
             <button
               type="button"
               onClick={() => setDraft({ ...draft, member_id: undefined })}
-              className={cn(styles.chip, !draft.member_id && styles.chipActive)}
+              className={cn(CHIP_BASE, !draft.member_id && CHIP_ACTIVE)}
             >
               不限
             </button>
           </div>
-          <div className={styles.memberList}>
+          <div className="max-h-40 overflow-y-auto rounded-md border border-border bg-muted">
             {users.length === 0 && (
-              <div className={styles.emptyMembers}>
+              <div className="p-3 text-center text-xs text-muted-foreground">
                 暂无成员
               </div>
             )}
@@ -143,11 +147,14 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
                   key={u.id}
                   type="button"
                   onClick={() => setDraft({ ...draft, member_id: active ? undefined : u.id })}
-                  className={cn(styles.memberButton, active && styles.memberButtonActive)}
+                  className={cn(
+                    "flex w-full cursor-pointer appearance-none items-center gap-2 border-0 border-b border-border bg-transparent px-2 py-1.5 text-left text-foreground [font:inherit]",
+                    active && "bg-brand/10",
+                  )}
                 >
                   <Avatar size="sm" initial={(u.name || "?").slice(0, 1).toUpperCase()} />
-                  <span className={styles.memberName}>{u.name}</span>
-                  <span className={styles.memberRole}>
+                  <span className="text-[12.5px] font-medium">{u.name}</span>
+                  <span className="[&>span]:text-[10px]">
                     <Badge variant="outline">{u.role}</Badge>
                   </span>
                 </button>
@@ -157,26 +164,26 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
         </Section>
 
         <Section title="创建时间">
-          <div className={styles.dateRow}>
+          <div className="flex items-center gap-2">
             <input
               type="date"
               value={draft.created_from ?? ""}
               onChange={(e) => setDraft({ ...draft, created_from: e.target.value || undefined })}
-              className={styles.dateInput}
+              className="appearance-none rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground [font:inherit]"
             />
-            <span className={styles.dateSeparator}>至</span>
+            <span className="text-muted-foreground">至</span>
             <input
               type="date"
               value={draft.created_to ?? ""}
               onChange={(e) => setDraft({ ...draft, created_to: e.target.value || undefined })}
-              className={styles.dateInput}
+              className="appearance-none rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground [font:inherit]"
             />
           </div>
         </Section>
 
-        <div className={styles.footer}>
+        <div className="flex items-center justify-between border-t border-border pt-3">
           <Button onClick={clear} size="sm">清空</Button>
-          <div className={styles.footerActions}>
+          <div className="flex gap-2">
             <Button onClick={onClose} size="sm">取消</Button>
             <Button
               onClick={apply}
@@ -195,7 +202,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className={styles.sectionTitle}>
+      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-normal text-muted-foreground">
         {title}
       </div>
       {children}
