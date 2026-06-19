@@ -6,7 +6,6 @@ import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
 import { useProjectMembers } from "@/hooks/useProjects";
 import type { BulkBatchActionResponse } from "@/api/batches";
-import styles from "./BulkReassignModal.module.css";
 
 interface Props {
   projectId: string;
@@ -54,18 +53,18 @@ export function BulkReassignModal({ projectId, count, onClose, onSubmit, pending
 
   return (
     <Modal open onClose={onClose} title={`批量改派 · 已选 ${count} 个批次`} width={560}>
-      <div className={styles.description}>
+      <div className="mb-3 text-[13px] text-muted-foreground">
         留空或选择「保留不变」则该字段不会被修改；选择「清空指派」则该字段会被设为未分派。
       </div>
 
       {isLoading && (
-        <div className={styles.loadingState}>
+        <div className="p-4 text-center text-[13px] text-muted-foreground">
           加载成员…
         </div>
       )}
 
       {!isLoading && (
-        <div className={styles.columns}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
           <Column
             title="标注员"
             members={annotators}
@@ -83,12 +82,12 @@ export function BulkReassignModal({ projectId, count, onClose, onSubmit, pending
         </div>
       )}
 
-      <div className={styles.actions}>
+      <div className="mt-4 flex justify-end gap-2">
         <Button onClick={onClose}>取消</Button>
         <Button
+          variant="primary"
           onClick={handleSubmit}
           disabled={pending || !dirty}
-          className={styles.accentSubmitButton}
         >
           {pending ? "提交中…" : `确认改派 ${count} 个批次`}
         </Button>
@@ -123,16 +122,24 @@ function Column({
         key={key}
         type="button"
         onClick={() => onChange(value)}
-        className={cn(styles.optionRow, checked && styles.optionRowChecked)}
+        className={cn(
+          "mb-0.5 flex w-full cursor-pointer appearance-none items-center gap-2 rounded-sm border border-transparent bg-transparent px-2 py-1.5 text-left text-foreground [font:inherit]",
+          checked && "border-brand bg-brand/10",
+        )}
       >
-        <span className={cn(styles.radioMark, checked && styles.radioMarkChecked)}>
-          {checked && <span className={styles.radioDot} />}
+        <span
+          className={cn(
+            "relative size-3.5 flex-shrink-0 rounded-full border border-border bg-background",
+            checked && "bg-brand",
+          )}
+        >
+          {checked && <span className="absolute inset-[3px] rounded-full bg-white" />}
         </span>
         {icon}
-        <span className={styles.optionText}>
-          <span className={styles.optionLabel}>{label}</span>
+        <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+          <span className="text-[12.5px] font-medium">{label}</span>
           {sub && (
-            <span className={styles.optionSubtext}>{sub}</span>
+            <span className="ml-1.5 text-[11px] text-muted-foreground">{sub}</span>
           )}
         </span>
       </button>
@@ -140,15 +147,15 @@ function Column({
   };
 
   return (
-    <div className={styles.column}>
-      <div className={styles.columnHeader}>
+    <div className="max-h-[300px] overflow-y-auto rounded-md border border-border bg-muted p-2">
+      <div className="px-1.5 pb-2 pt-1">
         <Badge variant={roleColor} dot>{title}</Badge>
       </div>
       {renderRow("__keep__", "保留不变", "__keep__", "（不修改该字段）")}
       {renderRow("__clear__", "清空指派", "__clear__", "（设为未分派）", <Icon name="x" size={11} />)}
-      <div className={styles.separator} />
+      <div className="mx-1.5 my-1 h-px bg-border" />
       {members.length === 0 && (
-        <div className={styles.emptyState}>
+        <div className="p-4 text-center text-xs text-muted-foreground">
           暂无成员
         </div>
       )}
