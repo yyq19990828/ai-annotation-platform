@@ -9,7 +9,6 @@ import { SidebarDrawer } from "@/components/shell/SidebarDrawer";
 import { ToastRack, useToastStore } from "@/components/ui/Toast";
 // 仪表盘 / 登录 类首屏关键路径：保持同步加载（避免 Suspense 闪烁）
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
-import { DashboardPageNext } from "@/pages/Dashboard/DashboardPageNext";
 import { AdminDashboard } from "@/pages/Dashboard/AdminDashboard";
 import { AdminProjectsDashboard } from "@/pages/Dashboard/AdminProjectsDashboard";
 import { ReviewerDashboard } from "@/pages/Dashboard/ReviewerDashboard";
@@ -302,8 +301,6 @@ export function App() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardRouter />} />
-        {/* UI-refactor 实验分支 · shadcn 垂直切片 PoC,与旧 Dashboard 并行对比 */}
-        <Route path="/dashboard-next" element={<DashboardPageNext />} />
         <Route path="/projects" element={<AdminProjectsRoute />} />
         <Route
           path="/admin/people"
