@@ -16,7 +16,9 @@ import {
   type SmokeTestRequest,
 } from "@/api/adminMlIntegrations";
 import { loadedKeysAsGsam2ImageVariants } from "./poolKeyParse";
-import styles from "./ObserveBackendsPanel.module.css";
+
+const SELECT_CLASS =
+  "appearance-none rounded-md border border-border bg-muted px-2 py-1 text-xs text-foreground";
 
 export function ObserveBackendsPanel() {
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
@@ -29,13 +31,13 @@ export function ObserveBackendsPanel() {
   if (!isLoading && !isError && data && data.configured_count === 0) return null;
 
   return (
-    <div className={styles.wrap}>
+    <div className="mb-4">
     <Card>
-      <div className={styles.header}>
-        <div className={styles.headerTitle}>
-          <Icon name="bot" size={14} className={styles.mutedIcon} />
-          <h3 className={styles.title}>AI 后端容器（直连观测）</h3>
-          {data && <span className={styles.meta}>{data.configured_count} 个配置容器</span>}
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Icon name="bot" size={14} className="text-muted-foreground" />
+          <h3 className="m-0 text-sm font-semibold">AI 后端容器（直连观测）</h3>
+          {data && <span className="text-[11px] text-muted-foreground">{data.configured_count} 个配置容器</span>}
         </div>
         <Button size="sm" onClick={() => refetch()} disabled={isFetching} title="刷新探测">
           <Icon name="refresh" size={11} />
@@ -43,11 +45,11 @@ export function ObserveBackendsPanel() {
       </div>
 
       {isLoading ? (
-        <div className={styles.note}>探测中…</div>
+        <div className="p-4 text-xs text-muted-foreground">探测中…</div>
       ) : isError ? (
-        <div className={styles.noteError}>加载失败：{(error as Error)?.message ?? "未知错误"}</div>
+        <div className="py-1.5 text-xs text-rose-600 dark:text-rose-400">加载失败：{(error as Error)?.message ?? "未知错误"}</div>
       ) : (
-        <div className={styles.list}>
+        <div className="flex flex-col gap-2.5 p-3">
           {data?.targets.map((t) => (
             <TargetCard key={t.url} target={t} />
           ))}
@@ -103,13 +105,13 @@ function TargetCard({ target: t }: { target: ObserveTarget }) {
   };
 
   return (
-    <div className={styles.card}>
-      <div className={styles.cardTop}>
+    <div className="flex flex-col gap-2 rounded-md border border-border bg-card p-2.5 px-3">
+      <div className="flex flex-wrap items-center gap-2">
         <Badge variant={t.ok ? "success" : "danger"} dot>
           {t.ok ? "在线" : "离线"}
         </Badge>
-        <span className={`mono ${styles.url}`}>{t.url}</span>
-        <span className={styles.latency}>{t.latency_ms}ms</span>
+        <span className="mono text-xs text-foreground">{t.url}</span>
+        <span className="text-[11px] text-muted-foreground">{t.latency_ms}ms</span>
         {t.registered && (
           <span title="此 URL 已被项目注册占用">
             <Badge variant="outline">已注册：{t.registered_label}</Badge>
@@ -118,10 +120,10 @@ function TargetCard({ target: t }: { target: ObserveTarget }) {
       </div>
 
       {!t.ok ? (
-        <div className={styles.noteError}>{t.error ?? "不可达"}</div>
+        <div className="py-1.5 text-xs text-rose-600 dark:text-rose-400">{t.error ?? "不可达"}</div>
       ) : (
         <>
-          <div className={styles.metaRow}>
+          <div className="flex flex-wrap items-center gap-3.5 text-[11.5px] text-muted-foreground">
             {t.model_version && <span className="mono">{t.model_version}</span>}
             {t.gpu_info?.memory_used_mb != null && t.gpu_info?.memory_total_mb != null && (
               <span>
@@ -131,8 +133,8 @@ function TargetCard({ target: t }: { target: ObserveTarget }) {
           </div>
 
           {/* 图像推理: 图片池已加载变体 (行为不变). */}
-          <div className={styles.metaRow}>
-            <span className={styles.groupLabel}>图像推理</span>
+          <div className="flex flex-wrap items-center gap-3.5 text-[11.5px] text-muted-foreground">
+            <span className="text-[10.5px] font-semibold text-muted-foreground">图像推理</span>
             <span>
               已加载{" "}
               {loaded.length === 0
@@ -147,8 +149,8 @@ function TargetCard({ target: t }: { target: ObserveTarget }) {
           </div>
 
           {/* v0.10.36 · 视频追踪: 独立 video 池 + supported_trackers. */}
-          <div className={styles.metaRow}>
-            <span className={styles.groupLabel}>视频追踪</span>
+          <div className="flex flex-wrap items-center gap-3.5 text-[11.5px] text-muted-foreground">
+            <span className="text-[10.5px] font-semibold text-muted-foreground">视频追踪</span>
             {!supportsVideo ? (
               <span>不支持视频追踪</span>
             ) : !hasVideoMeta ? (
@@ -164,11 +166,11 @@ function TargetCard({ target: t }: { target: ObserveTarget }) {
           </div>
 
           {!t.supports_variants ? (
-            <div className={styles.note}>该容器不暴露变体目录（/setup 无变体 enum）</div>
+            <div className="p-4 text-xs text-muted-foreground">该容器不暴露变体目录（/setup 无变体 enum）</div>
           ) : (
-            <div className={styles.warmRow}>
+            <div className="flex flex-wrap items-center gap-2">
               {samEnum.length > 0 && (
-                <select value={sam} onChange={(e) => setSam(e.target.value)} className={styles.select}>
+                <select value={sam} onChange={(e) => setSam(e.target.value)} className={SELECT_CLASS}>
                   {samEnum.map((o) => (
                     <option key={o} value={o}>
                       sam:{o}
@@ -177,7 +179,7 @@ function TargetCard({ target: t }: { target: ObserveTarget }) {
                 </select>
               )}
               {dinoEnum.length > 0 && (
-                <select value={dino} onChange={(e) => setDino(e.target.value)} className={styles.select}>
+                <select value={dino} onChange={(e) => setDino(e.target.value)} className={SELECT_CLASS}>
                   {dinoEnum.map((o) => (
                     <option key={o} value={o}>
                       dino:{o}
@@ -191,7 +193,7 @@ function TargetCard({ target: t }: { target: ObserveTarget }) {
               </Button>
             </div>
           )}
-          <div className={styles.hint}>
+          <div className="text-[10.5px] leading-normal text-muted-foreground">
             「试启动」仅在容器空池时执行（warm→自动卸载还原）；已有变体常驻时只确认可加载性、不挤显存。
           </div>
         </>

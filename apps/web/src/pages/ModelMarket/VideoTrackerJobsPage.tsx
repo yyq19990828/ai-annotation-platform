@@ -20,7 +20,13 @@ import {
   type AsyncJob,
   type AsyncJobStatus,
 } from "@/api/asyncJobs";
-import styles from "./VideoTrackerJobsPage.module.css";
+
+const FIELD_CLASS =
+  "appearance-none rounded-sm border border-border bg-muted px-2.5 py-1 text-[11px] text-foreground outline-none";
+const TABLE_CLASS =
+  "w-full border-collapse text-xs [&_td]:border-b [&_td]:border-border [&_td]:px-2.5 [&_td]:py-1.5";
+const TH_CLASS =
+  "select-none border-b border-border px-2.5 py-1.5 text-left font-medium whitespace-nowrap text-muted-foreground";
 
 type StatusFilter = "" | AsyncJobStatus;
 
@@ -73,18 +79,18 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
   const hasNext = offset + PAGE_SIZE < total;
 
   return (
-    <div className={styles.page}>
+    <div className="tw-scope flex flex-col gap-4 px-7 py-5 text-foreground">
       <Card>
-        <div className={styles.cardHeader}>
+        <div className="flex items-center justify-between gap-2.5 border-b border-border px-4 py-3 text-[13px] font-semibold">
           <span>任务列表 ({total})</span>
-          <div className={styles.filterGroup}>
+          <div className="inline-flex gap-2">
             <select
               value={statusFilter}
               onChange={(e) => {
                 setStatusFilter(e.target.value as StatusFilter);
                 setPage(0);
               }}
-              className={styles.selectControl}
+              className={FIELD_CLASS}
             >
               <option value="">全部状态</option>
               {STATUS_ORDER.map((s) => (
@@ -101,26 +107,26 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
                 setPage(0);
               }}
               placeholder="按 model_key 过滤..."
-              className={styles.searchInput}
+              className={`${FIELD_CLASS} w-[200px]`}
             />
           </div>
         </div>
-        <div className={styles.cardBody}>
+        <div className="flex flex-col gap-3 p-4">
           {jobsQ.isLoading ? (
-            <div className={styles.message}>加载中…</div>
+            <div className="p-4 text-center text-[11px] text-muted-foreground">加载中…</div>
           ) : items.length === 0 ? (
             <EmptyState />
           ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
+            <div className="overflow-x-auto">
+              <table className={TABLE_CLASS}>
                 <thead>
-                  <tr className={styles.headerRow}>
-                    <th className={styles.tableHeaderCell}>项目</th>
-                    <th className={styles.tableHeaderCell}>状态</th>
-                    <th className={styles.tableHeaderCell}>模型</th>
-                    <th className={styles.tableHeaderCell}>帧范围</th>
-                    <th className={styles.tableHeaderCell}>方向</th>
-                    <th className={styles.tableHeaderCell}>开始</th>
+                  <tr className="bg-muted">
+                    <th className={TH_CLASS}>项目</th>
+                    <th className={TH_CLASS}>状态</th>
+                    <th className={TH_CLASS}>模型</th>
+                    <th className={TH_CLASS}>帧范围</th>
+                    <th className={TH_CLASS}>方向</th>
+                    <th className={TH_CLASS}>开始</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -133,11 +139,11 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
           )}
 
           {(page > 0 || hasNext) && (
-            <div className={styles.pagination}>
-              <span className={styles.helperInline}>
+            <div className="flex items-center justify-between pt-1.5">
+              <span className="text-[11px] text-muted-foreground">
                 第 {page + 1} 页 / 共 {total} 条
               </span>
-              <div className={styles.inlineActions}>
+              <div className="inline-flex gap-1.5">
                 <Button
                   size="sm"
                   variant="ghost"
@@ -172,38 +178,38 @@ function JobRow({ job }: { job: AsyncJob }) {
   return (
     <>
       <tr>
-        <td className={styles.tableCell}>
+        <td>
           {job.project_name ?? "(已删除)"}
           {job.project_display_id && (
-            <span className={styles.projectDisplayId}>
+            <span className="ml-1.5 text-muted-foreground">
               ({job.project_display_id})
             </span>
           )}
         </td>
-        <td className={styles.tableCell}>
+        <td>
           <StatusBadge status={job.status} />
         </td>
-        <td className={`${styles.tableCell} ${styles.mutedCell}`}>
-          {modelKey ?? <span className={styles.subtle}>—</span>}
+        <td className="text-muted-foreground">
+          {modelKey ?? <span className="text-muted-foreground">—</span>}
         </td>
-        <td className={`${styles.tableCell} ${styles.numeric}`}>
+        <td className="tabular-nums">
           {fromFrame != null && toFrame != null ? (
             `F${fromFrame}→F${toFrame}`
           ) : (
-            <span className={styles.subtle}>—</span>
+            <span className="text-muted-foreground">—</span>
           )}
         </td>
-        <td className={`${styles.tableCell} ${styles.mutedCell}`}>
-          {direction ?? <span className={styles.subtle}>—</span>}
+        <td className="text-muted-foreground">
+          {direction ?? <span className="text-muted-foreground">—</span>}
         </td>
-        <td className={`${styles.tableCell} ${styles.mutedCell}`}>
+        <td className="text-muted-foreground">
           {formatRelative(job.started_at)}
         </td>
       </tr>
       {job.status === "failed" && job.error_message && (
         <tr>
-          <td className={styles.tableCell} colSpan={6}>
-            <div className={styles.errorMessage}>{job.error_message}</div>
+          <td colSpan={6}>
+            <div className="break-words text-[11px] text-rose-600 dark:text-rose-400">{job.error_message}</div>
           </td>
         </tr>
       )}
@@ -224,10 +230,10 @@ function StatusBadge({ status }: { status: AsyncJobStatus }) {
 
 function EmptyState() {
   return (
-    <div className={styles.emptyState}>
+    <div className="flex flex-col items-center gap-2 p-8 px-4 text-center text-muted-foreground">
       <Icon name="sparkles" size={28} />
-      <div className={styles.emptyTitle}>暂无视频追踪任务</div>
-      <div className={styles.emptyHint}>
+      <div className="text-xs text-muted-foreground">暂无视频追踪任务</div>
+      <div className="text-[11px]">
         去视频工作台按 Shift+T 发起一次追踪，任务会出现在这里。
       </div>
     </div>

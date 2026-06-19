@@ -24,7 +24,18 @@ import {
   useMLBackendWarmup,
 } from "@/hooks/useMLBackends";
 import { VariantPanel, type VariantWarmTarget } from "./VariantPanel";
-import styles from "./RuntimeObservePanel.module.css";
+
+const CARD_CLASS =
+  "flex flex-col gap-2.5 rounded-md border border-border bg-card p-3";
+const CARD_TOP_CLASS = "flex flex-wrap items-center gap-2";
+const URL_CLASS =
+  "mono max-w-[520px] truncate text-[11.5px] text-muted-foreground";
+const LATENCY_CLASS = "text-[11px] text-muted-foreground";
+const NOTE_ERROR_CLASS = "text-xs text-rose-600 dark:text-rose-400";
+const METRICS_CLASS =
+  "flex flex-wrap items-center gap-3 text-[11.5px] text-muted-foreground";
+const SELECT_CLASS =
+  "max-w-[180px] appearance-none rounded-md border border-border bg-muted px-2 py-1 text-xs text-foreground";
 
 interface RegisteredRef {
   projectId: string;
@@ -83,17 +94,17 @@ export function RuntimeObservePanel() {
   const error = overviewQ.error ?? observeQ.error;
 
   return (
-    <div className={styles.wrap}>
+    <div className="mb-4">
       <Card>
-        <div className={styles.header}>
-          <div className={styles.headerTitle}>
-            <Icon name="activity" size={14} className={styles.mutedIcon} />
-            <h3 className={styles.title}>运行时观测</h3>
-            <span className={styles.meta}>
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 max-md:flex-col max-md:items-stretch">
+          <div className="flex items-center gap-2">
+            <Icon name="activity" size={14} className="text-muted-foreground" />
+            <h3 className="m-0 text-sm font-semibold">运行时观测</h3>
+            <span className="text-[11px] text-muted-foreground">
               {registered.length} 个注册 backend · {envOnlyTargets.length} 个未注册容器
             </span>
           </div>
-          <div className={styles.headerActions}>
+          <div className="flex items-center gap-2 max-md:w-full max-md:flex-col max-md:items-stretch">
             <Button size="sm" onClick={() => overviewQ.refetch()} disabled={overviewQ.isFetching}>
               <Icon name="refresh" size={11} />
               注册状态
@@ -106,14 +117,14 @@ export function RuntimeObservePanel() {
         </div>
 
         {loading ? (
-          <div className={styles.note}>加载运行时状态…</div>
+          <div className="py-3 text-xs text-muted-foreground">加载运行时状态…</div>
         ) : error ? (
-          <div className={styles.noteError}>加载失败：{(error as Error).message ?? "未知错误"}</div>
+          <div className={NOTE_ERROR_CLASS}>加载失败：{(error as Error).message ?? "未知错误"}</div>
         ) : (
-          <div className={styles.list}>
+          <div className="flex flex-col gap-3.5 p-3">
             {registered.length > 0 && (
-              <section className={styles.section}>
-                <div className={styles.sectionTitle}>已注册 backend</div>
+              <section className="flex flex-col gap-2.5">
+                <div className="text-[11px] font-semibold text-muted-foreground">已注册 backend</div>
                 {registered.map((ref) => (
                   <RegisteredRuntimeCard
                     key={`${ref.projectId}:${ref.backend.id}`}
@@ -127,8 +138,8 @@ export function RuntimeObservePanel() {
             )}
 
             {envOnlyTargets.length > 0 && (
-              <section className={styles.section}>
-                <div className={styles.sectionTitle}>未注册容器</div>
+              <section className="flex flex-col gap-2.5">
+                <div className="text-[11px] font-semibold text-muted-foreground">未注册容器</div>
                 {envOnlyTargets.map((target) => (
                   <EnvOnlyCard key={target.url} target={target} />
                 ))}
@@ -136,10 +147,10 @@ export function RuntimeObservePanel() {
             )}
 
             {registered.length === 0 && envOnlyTargets.length === 0 && (
-              <div className={styles.emptyState}>
-                <Icon name="activity" size={28} className={styles.emptyIcon} />
+              <div className="flex flex-col items-center gap-1.5 p-8 text-center text-[13px] text-muted-foreground">
+                <Icon name="activity" size={28} className="opacity-30" />
                 <div>暂无可观测 ML Backend</div>
-                <div className={styles.emptyHint}>注册 backend 或配置 ML_BACKEND_OBSERVE_URLS 后会出现在这里</div>
+                <div className="text-[11px]">注册 backend 或配置 ML_BACKEND_OBSERVE_URLS 后会出现在这里</div>
               </div>
             )}
           </div>
@@ -237,22 +248,22 @@ function RegisteredRuntimeCard({
   };
 
   return (
-    <div className={styles.card}>
-      <div className={styles.cardTop}>
+    <div className={CARD_CLASS}>
+      <div className={CARD_TOP_CLASS}>
         <Badge variant={ok ? "success" : "danger"} dot>
           {ok ? "在线" : "离线"}
         </Badge>
-        <span className={styles.backendName}>{backend.name}</span>
-        <span className={styles.projectName}>{projectName}</span>
-        <span className={`mono ${styles.url}`}>{backend.url}</span>
+        <span className="max-w-[220px] truncate text-[13px] font-semibold">{backend.name}</span>
+        <span className="text-[11px] text-muted-foreground">{projectName}</span>
+        <span className={URL_CLASS}>{backend.url}</span>
         {observe ? (
-          <span className={styles.latency}>{observe.latency_ms}ms</span>
+          <span className={LATENCY_CLASS}>{observe.latency_ms}ms</span>
         ) : (
           <Badge variant="outline">未配置直连观测</Badge>
         )}
       </div>
 
-      {observe && !observe.ok && <div className={styles.noteError}>{observe.error ?? "不可达"}</div>}
+      {observe && !observe.ok && <div className={NOTE_ERROR_CLASS}>{observe.error ?? "不可达"}</div>}
 
       <RuntimeMetrics
         modelVersion={modelVersion}
@@ -262,7 +273,7 @@ function RegisteredRuntimeCard({
         cacheHitRate={observe?.cache?.hit_rate ?? backend.health_meta?.cache?.hit_rate}
       />
 
-      <div className={styles.actionRow}>
+      <div className="flex items-center gap-2">
         <Button size="sm" onClick={onHealth} disabled={health.isPending} title="健康检查">
           <Icon name="refresh" size={11} />
           健康检查
@@ -376,17 +387,17 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
   };
 
   return (
-    <div className={styles.card}>
-      <div className={styles.cardTop}>
+    <div className={CARD_CLASS}>
+      <div className={CARD_TOP_CLASS}>
         <Badge variant={target.ok ? "success" : "danger"} dot>
           {target.ok ? "在线" : "离线"}
         </Badge>
-        <span className={`mono ${styles.url}`}>{target.url}</span>
-        <span className={styles.latency}>{target.latency_ms}ms</span>
+        <span className={URL_CLASS}>{target.url}</span>
+        <span className={LATENCY_CLASS}>{target.latency_ms}ms</span>
       </div>
 
       {!target.ok ? (
-        <div className={styles.noteError}>{target.error ?? "不可达"}</div>
+        <div className={NOTE_ERROR_CLASS}>{target.error ?? "不可达"}</div>
       ) : (
         <>
           <RuntimeMetrics
@@ -397,9 +408,9 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
             cacheHitRate={target.cache?.hit_rate}
           />
           {target.supports_variants ? (
-            <div className={styles.variantPicker}>
+            <div className="flex flex-wrap items-center gap-2">
               {showLegacyVariants && samEnum.length > 0 && (
-                <select value={sam} onChange={(e) => setSam(e.target.value)} className={styles.select}>
+                <select value={sam} onChange={(e) => setSam(e.target.value)} className={SELECT_CLASS}>
                   {samEnum.map((option) => (
                     <option key={option} value={option}>
                       sam:{option}
@@ -408,7 +419,7 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
                 </select>
               )}
               {showLegacyVariants && dinoEnum.length > 0 && (
-                <select value={dino} onChange={(e) => setDino(e.target.value)} className={styles.select}>
+                <select value={dino} onChange={(e) => setDino(e.target.value)} className={SELECT_CLASS}>
                   {dinoEnum.map((option) => (
                     <option key={option} value={option}>
                       dino:{option}
@@ -417,14 +428,14 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
                 </select>
               )}
               {genericGroups.map((group) => (
-                <label key={group.key} className={styles.field}>
-                  <span className={styles.label}>{group.title ?? group.key}</span>
+                <label key={group.key} className="flex items-center gap-1.5">
+                  <span className="text-[10.5px] font-semibold text-muted-foreground">{group.title ?? group.key}</span>
                   <select
                     value={genericVariant[group.key] ?? ""}
                     onChange={(e) =>
                       setGenericVariant((value) => ({ ...value, [group.key]: e.target.value }))
                     }
-                    className={styles.select}
+                    className={SELECT_CLASS}
                   >
                     {group.variants!.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -447,7 +458,7 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
               </Button>
             </div>
           ) : (
-            <div className={styles.note}>该容器不暴露变体目录</div>
+            <div className="py-3 text-xs text-muted-foreground">该容器不暴露变体目录</div>
           )}
         </>
       )}
@@ -497,7 +508,7 @@ function RuntimeMetrics({
     videoPool?.loaded_variants?.length ??
     0;
   return (
-    <div className={styles.metrics}>
+    <div className={METRICS_CLASS}>
       {modelVersion && <span className="mono">{modelVersion}</span>}
       {gpuInfo?.memory_used_mb != null && gpuInfo?.memory_total_mb != null && (
         <span title="卡号 · 整卡已用/总显存 · 本容器自用（torch 保留）">
