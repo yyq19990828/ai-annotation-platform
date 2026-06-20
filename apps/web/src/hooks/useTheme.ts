@@ -42,7 +42,7 @@ function applyTheme(resolved: Resolved) {
  *   每次变更同步写回,登录后服务端值到达再对齐(一般相同,故无闪烁)。
  * - `setTheme`：本地即时生效 + 写本机缓存;登录态再乐观更新 authStore + PATCH 服务端持久化。
  * - 'system' 模式跟随 prefers-color-scheme，并监听变更。
- * - 写 `<html data-theme="...">` 触发 tokens.css 暗色块覆盖。
+ * - 写 `<html data-theme="...">` 触发 shadcn.css 暗色块覆盖。
  */
 export function useTheme() {
   // 服务端偏好(登录后)= 真值源;响应式订阅,登录 / 用户刷新即同步。未登录 / 未设置为 undefined。

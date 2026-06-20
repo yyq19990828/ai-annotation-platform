@@ -3,7 +3,16 @@ import { projectsApi, type ExportTarget, type VideoFrameMode } from "@/api/proje
 import { Modal } from "@/components/ui/Modal";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
-import styles from "./ExportModal.module.css";
+
+// 多选选项卡 / 单选帧模式卡共用的基线（UA-safe：消原生 button 默认样式）。
+const OPTION_BUTTON_CLASS =
+  "flex min-w-0 cursor-pointer appearance-none flex-row items-start gap-2.5 rounded-md border border-border bg-muted px-3 py-2.5 text-left text-xs font-normal leading-snug text-foreground hover:border-border hover:bg-muted";
+const OPTION_BUTTON_ACTIVE_CLASS = "border-brand bg-brand/10 font-semibold text-brand";
+const OPTION_LABEL_CLASS = "font-semibold text-inherit";
+
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
+}
 
 interface TargetOption {
   value: ExportTarget;
@@ -51,10 +60,6 @@ const FRAME_MODES: { value: VideoFrameMode; label: string; description: string }
   { value: "all_frames", label: "所有帧", description: "按相邻有效关键帧线性插值展开。" },
 ];
 
-function cn(...xs: Array<string | false | null | undefined>): string {
-  return xs.filter(Boolean).join(" ");
-}
-
 /** 导出 Modal（v0.10.43 多目标多选）。受控开关，供独立触发器或 ⋮ 菜单复用。 */
 export function ExportModal({
   open,
@@ -94,14 +99,20 @@ function CheckCard({
       type="button"
       onClick={onToggle}
       aria-pressed={active}
-      className={cn(styles.optionButton, active && styles.optionButtonActive)}
+      className={cn(OPTION_BUTTON_CLASS, active && OPTION_BUTTON_ACTIVE_CLASS)}
     >
-      <span className={cn(styles.check, active && styles.checkOn)} aria-hidden>
+      <span
+        className={cn(
+          "mt-px flex size-4 flex-shrink-0 items-center justify-center rounded-sm border-[1.5px] border-border bg-card",
+          active && "border-brand bg-brand text-card",
+        )}
+        aria-hidden
+      >
         {active && <Icon name="check" size={12} />}
       </span>
-      <span className={styles.optionText}>
-        <span className={styles.optionLabel}>{option.label}</span>
-        <span className={styles.optionDescription}>{option.description}</span>
+      <span className="flex min-w-0 flex-col gap-1">
+        <span className={OPTION_LABEL_CLASS}>{option.label}</span>
+        <span className="text-xs font-normal text-muted-foreground">{option.description}</span>
       </span>
     </button>
   );
@@ -164,10 +175,10 @@ function ExportForm({
   };
 
   return (
-    <div className={styles.form}>
-      <div className={styles.field}>
-        <div className={styles.label}>导出目标（可多选）</div>
-        <div className={styles.optionList}>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <div className="text-xs font-semibold text-foreground">导出目标（可多选）</div>
+        <div className="flex flex-col gap-2">
           {isVideoProject || isLidarProject
             ? (isVideoProject ? VIDEO_OPTIONS : LIDAR_OPTIONS).map((o) => (
                 <CheckCard
@@ -186,27 +197,27 @@ function ExportForm({
                     onToggle={() => toggleTarget(o.value)}
                   />
                 ) : (
-                  <div key={o.label} className={styles.group}>
+                  <div key={o.label} className="overflow-hidden rounded-md border border-border bg-muted">
                     <button
                       type="button"
                       onClick={() => setYoloExpanded((v) => !v)}
                       aria-expanded={yoloExpanded}
-                      className={styles.groupHeader}
+                      className="flex w-full cursor-pointer appearance-none items-center gap-2 border-0 bg-transparent px-3 py-2.5 text-left text-xs text-foreground hover:bg-muted"
                     >
                       <Icon name={yoloExpanded ? "chevDown" : "chevRight"} size={14} />
-                      <span className={styles.optionLabel}>{o.label}</span>
+                      <span className={OPTION_LABEL_CLASS}>{o.label}</span>
                       {(() => {
                         const n = o.members.filter((m) => targets.includes(m.value)).length;
                         return n > 0 ? (
-                          <span className={styles.countBadge}>
+                          <span className="rounded-full bg-brand/10 px-1.5 py-px text-2xs font-semibold text-brand">
                             {n}/{o.members.length}
                           </span>
                         ) : null;
                       })()}
-                      <span className={styles.optionDescription}>{o.description}</span>
+                      <span className="text-xs font-normal text-muted-foreground">{o.description}</span>
                     </button>
                     {yoloExpanded && (
-                      <div className={styles.groupMembers}>
+                      <div className="flex flex-col gap-1.5 px-2.5 pb-2.5">
                         {o.members.map((m) => (
                           <CheckCard
                             key={m.value}
@@ -221,9 +232,9 @@ function ExportForm({
                 ),
               )}
         </div>
-        <div className={styles.summary}>
+        <div className="text-xs leading-snug text-muted-foreground">
           {targets.length === 0 ? (
-            <span className={styles.summaryWarn}>请至少选择一个导出目标</span>
+            <span className="text-status-caution">请至少选择一个导出目标</span>
           ) : targets.length === 1 ? (
             "将导出 1 个目标，产出单个压缩包。"
           ) : (
@@ -232,9 +243,9 @@ function ExportForm({
         </div>
       </div>
       {showFrameMode && (
-        <div className={styles.field}>
-          <div className={styles.label}>帧模式（单选）</div>
-          <div className={styles.radioRow} role="radiogroup">
+        <div className="flex flex-col gap-2">
+          <div className="text-xs font-semibold text-foreground">帧模式（单选）</div>
+          <div className="grid grid-cols-2 gap-2" role="radiogroup">
             {FRAME_MODES.map((item) => {
               const on = videoFrameMode === item.value;
               return (
@@ -244,12 +255,18 @@ function ExportForm({
                   role="radio"
                   aria-checked={on}
                   onClick={() => setVideoFrameMode(item.value)}
-                  className={cn(styles.radioButton, on && styles.radioButtonActive)}
+                  className={cn(OPTION_BUTTON_CLASS, on && OPTION_BUTTON_ACTIVE_CLASS)}
                 >
-                  <span className={cn(styles.radioDot, on && styles.radioDotOn)} aria-hidden />
-                  <span className={styles.optionText}>
-                    <span className={styles.optionLabel}>{item.label}</span>
-                    <span className={styles.optionDescription}>{item.description}</span>
+                  <span
+                    className={cn(
+                      "mt-px size-4 flex-shrink-0 rounded-full border-[1.5px] border-border bg-card",
+                      on && "border-[4px] border-brand",
+                    )}
+                    aria-hidden
+                  />
+                  <span className="flex min-w-0 flex-col gap-1">
+                    <span className={OPTION_LABEL_CLASS}>{item.label}</span>
+                    <span className="text-xs font-normal text-muted-foreground">{item.description}</span>
                   </span>
                 </button>
               );
@@ -257,30 +274,30 @@ function ExportForm({
           </div>
         </div>
       )}
-      <div className={styles.attributesPanel}>
-        <label className={styles.checkboxLabel}>
+      <div className="flex flex-col gap-1.5 rounded-md border border-border bg-muted px-3 py-2.5">
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs">
           <input
             type="checkbox"
             checked={includeAttributes}
             onChange={(e) => setIncludeAttributes(e.target.checked)}
-            className={styles.checkbox}
+            className="cursor-pointer"
           />
-          <span className={styles.checkboxText}>包含属性数据</span>
+          <span className="text-foreground">包含属性数据</span>
         </label>
-        <div className={styles.helpText}>
+        <div className="text-xs leading-snug text-muted-foreground">
           {includeAttributes
             ? "导出包将包含每个标注的 attributes 字段。"
             : "兼容旧版（v0.4.9 之前）格式，不含属性。"}
         </div>
-        <div className={styles.helpText}>
+        <div className="text-xs leading-snug text-muted-foreground">
           仅对 COCO / YOLO / Video JSON / LiDAR 标准格式生效；AAP JSON 始终包含，MOT 无此字段。
         </div>
       </div>
-      <div className={styles.footer}>
+      <div className="flex justify-end gap-2 pt-1">
         <button
           type="button"
           onClick={onCancel}
-          className={styles.cancelButton}
+          className="cursor-pointer appearance-none rounded-sm border border-border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           取消
         </button>
@@ -288,7 +305,7 @@ function ExportForm({
           type="button"
           disabled={busy || targets.length === 0}
           onClick={handleExport}
-          className={styles.submitButton}
+          className="cursor-pointer appearance-none rounded-sm border border-brand bg-brand px-3 py-2 text-xs font-semibold text-brand-foreground hover:bg-brand/90 disabled:cursor-wait disabled:opacity-60"
         >
           {busy ? "导出中…" : "开始导出"}
         </button>

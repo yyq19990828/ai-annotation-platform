@@ -8,10 +8,11 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
+import { useElementStyle } from "@/components/ui/useElementStyle";
 import { asyncJobsApi, type AsyncJob, type AsyncJobStatus } from "@/api/asyncJobs";
-import styles from "./JobsBell.module.css";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -96,21 +97,23 @@ const STATUS_LABEL: Record<AsyncJobStatus, string> = {
 };
 
 function ProgressBar({ pct, status }: { pct: number; status: AsyncJobStatus }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    ref.current?.style.setProperty("--async-job-progress", `${pct}%`);
-  }, [pct]);
-  const fillClass =
+  const ref = useElementStyle<HTMLDivElement>({
+    "--async-job-progress": `${pct}%`,
+  } as CSSProperties);
+  const fillColor =
     status === "completed"
-      ? styles.progressFillCompleted
+      ? "bg-emerald-500"
       : status === "failed"
-        ? styles.progressFillFailed
+        ? "bg-rose-500"
         : status === "cancelled"
-          ? styles.progressFillCancelled
-          : styles.progressFill;
+          ? "bg-muted-foreground"
+          : "bg-brand";
   return (
-    <div className={styles.progressTrack}>
-      <div ref={ref} className={`${styles.progressFill} ${fillClass}`} />
+    <div className="h-[3px] overflow-hidden rounded-[2px] bg-border">
+      <div
+        ref={ref}
+        className={`h-full w-[var(--async-job-progress)] transition-[width] duration-200 ease-out ${fillColor}`}
+      />
     </div>
   );
 }
@@ -118,16 +121,17 @@ function ProgressBar({ pct, status }: { pct: number; status: AsyncJobStatus }) {
 function StatusPill({ status }: { status: AsyncJobStatus }) {
   const cls =
     status === "running"
-      ? styles.statusRunning
+      ? "bg-brand/20 text-brand"
       : status === "completed"
-        ? styles.statusCompleted
+        ? "bg-emerald-500/[0.18] text-status-positive"
         : status === "failed"
-          ? styles.statusFailed
-          : status === "cancelled"
-            ? styles.statusCancelled
-            : styles.statusPending;
+          ? "bg-rose-500/[0.18] text-status-danger"
+          : "bg-muted text-muted-foreground";
   return (
-    <span className={`${styles.statusPill} ${cls}`} data-testid={`job-status-${status}`}>
+    <span
+      className={`rounded-full px-1.5 py-px text-2xs font-semibold uppercase ${cls}`}
+      data-testid={`job-status-${status}`}
+    >
       {STATUS_LABEL[status]}
     </span>
   );
@@ -151,19 +155,22 @@ function JobRow({
   // v0.11.17 · 仅终态任务可单条本地 dismiss；进行中永不可隐藏。
   const canDismiss = onDismiss && isTerminal(job.status);
   return (
-    <div className={styles.jobRow} data-testid={`job-row-${job.id}`}>
-      <div className={styles.jobHeader}>
+    <div
+      className="flex w-full flex-col gap-1 rounded-sm px-2.5 py-2 text-left"
+      data-testid={`job-row-${job.id}`}
+    >
+      <div className="flex justify-between gap-3 text-xs font-medium text-foreground">
         <span>
           {kindLabel}
-          {detail && <span className={styles.jobDetail}> · {detail}</span>}
+          {detail && <span className="font-normal text-muted-foreground"> · {detail}</span>}
         </span>
-        <div className={styles.jobHeaderRight}>
+        <div className="inline-flex flex-shrink-0 items-center gap-1">
           <StatusPill status={job.status} />
           {canDismiss && (
             <button
               type="button"
               onClick={() => onDismiss(job.id)}
-              className={styles.dismissBtn}
+              className="inline-flex h-[18px] w-[18px] cursor-pointer appearance-none items-center justify-center rounded-sm border-0 bg-transparent text-muted-foreground transition-colors duration-200 hover:bg-muted hover:text-foreground"
               title="从列表隐藏（不影响历史记录）"
               aria-label="隐藏此任务"
               data-testid={`job-dismiss-${job.id}`}
@@ -174,7 +181,7 @@ function JobRow({
         </div>
       </div>
       <ProgressBar pct={pct} status={job.status} />
-      <div className={styles.jobMeta}>
+      <div className="text-xs tabular-nums text-muted-foreground">
         {job.status === "running" || job.status === "pending"
           ? `${pct}%`
           : job.status === "failed"
@@ -185,7 +192,7 @@ function JobRow({
         <a
           href={downloadUrl}
           download
-          className={styles.downloadLink}
+          className="mt-0.5 inline-flex cursor-pointer items-center gap-1 self-start rounded-sm border border-border bg-muted px-2 py-1 text-xs font-semibold text-brand no-underline transition-colors duration-200 hover:border-brand hover:bg-popover"
           data-testid={`job-download-${job.id}`}
         >
           <Icon name="download" size={12} />
@@ -271,19 +278,26 @@ export function JobsBell() {
   };
 
   return (
-    <div className={styles.root}>
+    <div className="relative">
       <button
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="后台任务"
         aria-label="后台任务"
-        className={`${styles.trigger} ${open ? styles.triggerActive : ""}`}
+        className={`relative inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-sm border bg-transparent transition-colors duration-100 ${
+          open
+            ? "border-border bg-muted text-foreground"
+            : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
+        }`}
         data-testid="jobs-bell-trigger"
       >
         <Icon name="layers" size={15} />
         {runningCount > 0 && (
-          <span className={styles.badge} data-testid="jobs-bell-badge">
+          <span
+            className="absolute right-0.5 top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-center text-2xs font-semibold leading-4 text-white"
+            data-testid="jobs-bell-badge"
+          >
             {runningCount}
           </span>
         )}
@@ -291,23 +305,31 @@ export function JobsBell() {
 
       {open && (
         <>
-          <div onClick={() => setOpen(false)} className={styles.backdrop} />
-          <div role="dialog" aria-label="后台任务" className={styles.panel}>
-            <div className={styles.panelTitle}>
+          <div onClick={() => setOpen(false)} className="fixed inset-0 z-notification-backdrop" />
+          <div
+            role="dialog"
+            aria-label="后台任务"
+            className="absolute right-0 top-[calc(100%+6px)] z-notification flex max-h-[480px] w-[min(420px,calc(100vw-24px))] min-w-0 flex-col overflow-hidden rounded-md border border-border bg-popover shadow-lg"
+          >
+            <div className="flex items-center justify-between border-b border-border px-3 py-2.5 text-xs font-semibold text-muted-foreground">
               <span>后台任务 {runningCount > 0 ? `(${runningCount} 进行中)` : ""}</span>
             </div>
-            <div className={styles.toolbar}>
+            <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
               <div
                 role="tablist"
                 aria-label="任务筛选"
-                className={styles.segmented}
+                className="inline-flex rounded-sm bg-muted p-0.5"
               >
                 <button
                   type="button"
                   role="tab"
                   aria-selected={filter === "all"}
                   onClick={() => changeFilter("all")}
-                  className={`${styles.segItem} ${filter === "all" ? styles.segItemActive : ""}`}
+                  className={`cursor-pointer appearance-none rounded-sm border-0 bg-transparent px-2.5 py-1 text-xs font-semibold transition-colors duration-100 ${
+                    filter === "all"
+                      ? "bg-popover text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
                   data-testid="jobs-bell-filter-all"
                 >
                   全部
@@ -317,7 +339,11 @@ export function JobsBell() {
                   role="tab"
                   aria-selected={filter === "active"}
                   onClick={() => changeFilter("active")}
-                  className={`${styles.segItem} ${filter === "active" ? styles.segItemActive : ""}`}
+                  className={`cursor-pointer appearance-none rounded-sm border-0 bg-transparent px-2.5 py-1 text-xs font-semibold transition-colors duration-100 ${
+                    filter === "active"
+                      ? "bg-popover text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
                   data-testid="jobs-bell-filter-active"
                 >
                   进行中
@@ -327,16 +353,16 @@ export function JobsBell() {
                 <button
                   type="button"
                   onClick={dismissAllTerminal}
-                  className={styles.clearBtn}
+                  className="cursor-pointer appearance-none rounded-sm border border-border bg-transparent px-2 py-1 text-xs font-semibold text-muted-foreground transition-colors duration-100 hover:border-muted-foreground hover:bg-muted hover:text-foreground"
                   data-testid="jobs-bell-clear-terminal"
                 >
                   清空已结束
                 </button>
               )}
             </div>
-            <div className={styles.list}>
+            <div className="flex-1 overflow-y-auto p-1">
               {visibleJobs.length === 0 ? (
-                <div className={styles.empty}>
+                <div className="px-3 py-5 text-center text-xs text-muted-foreground">
                   {filter === "active" ? "暂无进行中任务" : "暂无后台任务"}
                 </div>
               ) : (

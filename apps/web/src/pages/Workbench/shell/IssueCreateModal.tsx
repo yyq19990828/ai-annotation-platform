@@ -16,7 +16,21 @@ import type {
   FeedbackSeverity,
   ListFeedbacksParams,
 } from "@/api/feedbacks";
-import styles from "./IssueCreateModal.module.css";
+
+// UA-safe 文本输入基线(无全局 preflight 期间)。
+const FIELD_BASE =
+  "appearance-none rounded border border-border bg-muted px-2 py-1.5 text-xs text-foreground outline-none [font:inherit] focus:border-brand";
+
+// 严重度语义色:提示=sky / 警告=amber / 阻断=rose。激活态用 brand 实心填充。
+const SEVERITY_TEXT: Record<FeedbackSeverity, string> = {
+  info: "text-status-info-alt",
+  warn: "text-status-caution",
+  blocker: "text-status-danger",
+};
+
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
+}
 
 interface Props {
   open: boolean;
@@ -83,17 +97,25 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
   };
 
   return (
-    <div className={styles.backdrop} onClick={onClose} role="dialog" aria-modal="true">
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.header}>
-          <b className={styles.title}><Icon name="flag" size={14} /> 标记问题 (Issue)</b>
+    <div
+      className="fixed inset-0 z-workbench-modal flex items-center justify-center bg-black/40"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="flex max-h-[88vh] w-[min(480px,92vw)] flex-col gap-3 overflow-auto rounded-lg border border-border bg-card p-4 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border pb-2">
+          <b className="inline-flex items-center gap-1.5 text-sm text-foreground"><Icon name="flag" size={14} /> 标记问题 (Issue)</b>
           <Button variant="ghost" size="sm" onClick={onClose} title="关闭"><Icon name="x" size={12} /></Button>
         </div>
 
-        <div className={styles.row}>
-          <label className={styles.label}>标题（可选）</label>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs text-muted-foreground">标题（可选）</label>
           <input
-            className={styles.input}
+            className={FIELD_BASE}
             value={title}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
             placeholder="一句话概括"
@@ -101,15 +123,20 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
           />
         </div>
 
-        <div className={styles.row}>
-          <label className={styles.label}>严重度</label>
-          <div className={styles.severityRow}>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs text-muted-foreground">严重度</label>
+          <div className="flex gap-1.5">
             {(["info", "warn", "blocker"] as const).map((s) => (
               <button
                 key={s}
                 type="button"
                 onClick={() => setSeverity(s)}
-                className={`${styles.severityChip} ${severity === s ? styles.severityChipActive : ""}`}
+                className={cn(
+                  "cursor-pointer appearance-none rounded-xl border px-2.5 py-1 text-xs [font:inherit]",
+                  severity === s
+                    ? "border-brand bg-brand text-brand-foreground"
+                    : cn("border-border bg-muted", SEVERITY_TEXT[s]),
+                )}
                 data-severity={s}
               >
                 {s === "info" ? "提示" : s === "warn" ? "警告" : "阻断"}
@@ -118,10 +145,10 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
           </div>
         </div>
 
-        <div className={styles.row}>
-          <label className={styles.label}>详情 <span className={styles.required}>*</span></label>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs text-muted-foreground">详情 <span className="text-status-danger">*</span></label>
           <textarea
-            className={styles.textarea}
+            className={cn(FIELD_BASE, "min-h-[60px] resize-y")}
             value={body}
             onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setBody(e.target.value)}
             placeholder="描述问题位置 / 现象 / 期望行为"
@@ -129,11 +156,11 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
           />
         </div>
 
-        <div className={styles.row}>
-          <label className={styles.label}>像素锚点（可选, 0-1 相对坐标）</label>
-          <div className={styles.pixelRow}>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs text-muted-foreground">像素锚点（可选, 0-1 相对坐标）</label>
+          <div className="flex gap-2">
             <input
-              className={styles.coordInput}
+              className={cn(FIELD_BASE, "min-w-0 flex-1")}
               value={x}
               onChange={(e) => setX(e.target.value)}
               placeholder="x (0-1)"
@@ -143,7 +170,7 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
               max="1"
             />
             <input
-              className={styles.coordInput}
+              className={cn(FIELD_BASE, "min-w-0 flex-1")}
               value={y}
               onChange={(e) => setY(e.target.value)}
               placeholder="y (0-1)"
@@ -154,11 +181,11 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
             />
           </div>
           {pixelInvalid && (
-            <span className={styles.hintError}>x/y 必须在 0-1 范围;留空则按任务级 issue 创建</span>
+            <span className="text-xs text-status-danger">x/y 必须在 0-1 范围;留空则按任务级 issue 创建</span>
           )}
         </div>
 
-        <div className={styles.footer}>
+        <div className="flex justify-end gap-2 border-t border-border pt-2.5">
           <Button variant="ghost" size="sm" onClick={onClose}>取消</Button>
           <Button size="sm" disabled={!canSubmit} onClick={handleSubmit}>
             {createMut.isPending ? "提交中…" : "提交"}

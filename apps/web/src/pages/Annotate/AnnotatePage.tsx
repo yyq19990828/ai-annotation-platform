@@ -249,9 +249,9 @@ export function AnnotatePage() {
               </Badge>
             </div>
             {[
-              { label: "标注中", pct: startedPct, count: startedDone, bar: "var(--color-accent)" },
-              { label: "送审", pct: reviewPct, count: reviewDone, bar: "var(--color-warning)" },
-              { label: "通过", pct: approvedPct, count: approvedDone, bar: "var(--color-success)" },
+              { label: "标注中", pct: startedPct, count: startedDone, bar: "var(--sc-brand)" },
+              { label: "送审", pct: reviewPct, count: reviewDone, bar: "var(--sc-caution)" },
+              { label: "通过", pct: approvedPct, count: approvedDone, bar: "var(--sc-positive)" },
             ].map((r) => (
               <div key={r.label} className={styles.progressRow}>
                 <span className={styles.progressLabel}>{r.label}</span>

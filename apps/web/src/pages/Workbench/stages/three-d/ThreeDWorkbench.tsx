@@ -114,7 +114,70 @@ import { usePsrFloatingPanel } from "./usePsrFloatingPanel";
 import { usePsrPatchPipeline } from "./usePsrPatchPipeline";
 import { useCameraPanels } from "./useCameraPanels";
 import { resolveWorkbenchPerformanceTier } from "../../state/performanceTier";
-import styles from "./ThreeDWorkbench.module.css";
+import { useElementStyle } from "@/components/ui/useElementStyle";
+
+// v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
+const ROOT = "flex flex-col size-full min-h-0 bg-background";
+const VIEWPORT_WRAP = "relative flex-1 min-h-0";
+const VIEWPORT = "absolute inset-0";
+const PLACING = "cursor-crosshair";
+const BOX_SELECT_RECT =
+  "absolute left-[var(--rect-l)] top-[var(--rect-t)] w-[var(--rect-w)] h-[var(--rect-h)] z-local-3 pointer-events-none border border-brand bg-brand/10 opacity-50";
+const POINT_MASK_PATH_PREVIEW = "absolute inset-0 z-local-3 size-full pointer-events-none";
+const CONTROLS =
+  "absolute top-3 left-3 z-local-4 flex flex-wrap items-center gap-3 max-w-[calc(100%-24px)] px-2.5 py-1.5 rounded-md bg-card border border-border shadow-sm";
+const BTN =
+  "appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-sm hover:border-brand hover:text-brand disabled:text-muted-foreground/65 disabled:cursor-not-allowed disabled:opacity-65";
+const BTN_ACTIVE = "!border-brand !bg-brand/10 !text-brand";
+const SIZE_CTL = "flex items-center gap-1.5 text-xs text-muted-foreground";
+const SELECT_CTL =
+  "appearance-none min-w-[84px] px-1.5 py-1 rounded-sm border border-border bg-background text-foreground text-xs";
+const FIT_GROUP = "grid grid-cols-2 items-center gap-1.5 py-1.5 border-y border-border [&_button]:w-full [&_button]:px-1.5 [&_button]:py-1 [&_button]:text-xs";
+const STATUS_BAR =
+  "absolute bottom-3 left-3.5 flex flex-wrap gap-2 max-w-[min(420px,calc(100%-28px))] px-2.5 py-1 rounded-sm bg-card border border-border text-xs text-muted-foreground";
+const ERR = "text-status-danger";
+const MISMATCH_BANNER =
+  "absolute top-[calc(var(--top-toolbar-height)+24px)] left-3 z-local-4 flex flex-wrap items-center gap-2 max-w-[min(640px,calc(100%-24px))] px-2.5 py-1.5 text-status-caution text-xs bg-card border border-amber-600 dark:border-amber-400 rounded-md shadow-sm";
+const EDIT_PANEL =
+  "absolute top-3 right-3 w-[210px] translate-x-[var(--psr-dx)] translate-y-[var(--psr-dy)] flex flex-col gap-1.5 p-2.5 rounded-md bg-card border border-border shadow-sm text-xs text-foreground";
+const EDIT_PANEL_DRAGGING = "select-none";
+const EDIT_HEADER = "flex flex-col gap-1 cursor-grab";
+const DRAG_HINT = "shrink-0 text-muted-foreground";
+const ICON_BTN =
+  "shrink-0 inline-flex items-center justify-center px-1 py-0.5 rounded-sm border border-border bg-background text-muted-foreground cursor-pointer hover:border-brand hover:text-brand";
+const EDIT_SUMMARY = "text-xs text-muted-foreground";
+const EDIT_BODY = "flex flex-col gap-1.5";
+const EDIT_TITLE = "flex items-center justify-between gap-1.5 text-sm font-semibold";
+const CLASS_SELECT =
+  "appearance-none flex-1 min-w-0 px-1.5 py-0.5 rounded-sm border border-border bg-background text-foreground text-xs";
+const LOCK_BTN =
+  "appearance-none shrink-0 px-2 py-0.5 rounded-sm border border-border bg-background text-muted-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
+const LOCK_BTN_ON = "!border-brand !text-brand";
+const EDIT_GROUP_LABEL = "mt-1 text-muted-foreground";
+const EDIT_GROUP_LABEL_ROW = "flex items-center justify-between gap-1.5";
+const RESET_BTN =
+  "appearance-none shrink-0 px-2 py-px rounded-sm border border-border bg-background text-muted-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
+const EDIT_ROW = "flex gap-1.5 [&_input]:flex-1 [&_input]:min-w-0 [&_input]:px-1.5 [&_input]:py-1 [&_input]:rounded-sm [&_input]:border [&_input]:border-border [&_input]:bg-background [&_input]:text-foreground [&_input]:text-xs";
+const DELETE_BTN =
+  "appearance-none mt-1.5 px-2.5 py-1 rounded-sm border border-rose-600 dark:border-rose-400 bg-transparent text-status-danger cursor-pointer text-xs hover:bg-rose-600 dark:hover:bg-rose-400 hover:text-white dark:hover:text-white";
+const TRI_FLOAT_TAB =
+  "fixed left-[var(--tri-tab-x)] top-[var(--tri-tab-y)] z-local-6 px-2.5 py-1.5 rounded-md border border-border bg-card shadow-sm text-foreground cursor-grab text-xs select-none touch-none hover:border-brand hover:text-brand";
+const TRI_FLOAT_TAB_DRAGGING = "!cursor-grabbing !border-brand shadow-md";
+const CAM_GROUP =
+  "absolute z-local-3 flex gap-2.5 max-h-[calc(100%-var(--top-toolbar-height)-48px)] overflow-visible pointer-events-none [&>*]:pointer-events-auto";
+const CAM_MODAL =
+  "absolute inset-0 z-base flex items-center justify-center bg-black/70";
+const CAM_MODAL_BODY =
+  "relative p-3 rounded-md border border-border bg-card shadow-sm [&_figure_img]:w-auto [&_figure_img]:h-[70vh] [&_figure_img]:max-w-[88vw]";
+const CAM_MODAL_CLOSE =
+  "absolute top-4 right-4 z-local-1 appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
+const CAM_MODAL_SEED =
+  "absolute top-4 left-4 z-local-1 appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
+const CAM_MODAL_SEED_ACTIVE = "!border-brand !bg-brand/10 !text-brand";
+const CAM_MODAL_SWITCH =
+  "absolute top-1/2 z-local-1 w-9 h-12 -translate-y-1/2 rounded-md border border-border bg-background text-foreground cursor-pointer text-control-xl leading-none hover:border-brand hover:text-brand";
+const CAM_MODAL_PREV = "left-4";
+const CAM_MODAL_NEXT = "right-4";
 import {
   ANCHOR_CLASS,
   CAMERA_STACK_VISIBLE,
@@ -134,7 +197,6 @@ import {
   resolveBox3dDefaultSize,
   resolveTriViewFloatRect,
   sortedIndices,
-  type BoxSelectRectVars,
   type PsrField,
 } from "./ThreeDWorkbench.helpers";
 
@@ -2014,12 +2076,32 @@ export function ThreeDWorkbench({
     updateAnnotationWithHistory,
   ]);
 
+  // v0.17.6 · useElementStyle for dynamic CSS custom properties (was style={} JSX attribute).
+  const boxSelectRectRef = useElementStyle<HTMLDivElement>(
+    previewRect
+      ? ({
+          "--rect-l": `${previewRect.l}px`,
+          "--rect-t": `${previewRect.t}px`,
+          "--rect-w": `${previewRect.w}px`,
+          "--rect-h": `${previewRect.h}px`,
+        } as CSSProperties)
+      : undefined,
+  );
+  const editPanelRef = useElementStyle<HTMLDivElement>({
+    "--psr-dx": `${psrPanel.dx}px`,
+    "--psr-dy": `${psrPanel.dy}px`,
+  } as CSSProperties);
+  const triFloatTabRef = useElementStyle<HTMLDivElement>({
+    "--tri-tab-x": `${triFloatPosition.x}px`,
+    "--tri-tab-y": `${triFloatPosition.y}px`,
+  } as CSSProperties);
+
   return (
-    <div className={styles.root}>
-      <div ref={viewportWrapRef} className={styles.viewportWrap}>
+    <div className={ROOT}>
+      <div ref={viewportWrapRef} className={VIEWPORT_WRAP}>
         <div
           ref={viewportRef}
-          className={drawingSelection ? `${styles.viewport} ${styles.placing}` : styles.viewport}
+          className={drawingSelection ? `${VIEWPORT} ${PLACING}` : VIEWPORT}
           data-testid="pc-viewport"
           onMouseDown={handleViewportMouseDown}
           onMouseMove={handleViewportMouseMove}
@@ -2030,18 +2112,7 @@ export function ThreeDWorkbench({
 
         {/* v0.13.9 · 框选预览矩形(地面 footprint), 仅拖拽期出现, 不拦事件。 */}
         {previewRect && (
-          <div
-            className={styles.boxSelectRect}
-            // eslint-disable-next-line no-restricted-syntax -- 框选预览矩形位置/尺寸是逐帧动态值, 经 CSS custom property 注入
-            style={
-              {
-                "--rect-l": `${previewRect.l}px`,
-                "--rect-t": `${previewRect.t}px`,
-                "--rect-w": `${previewRect.w}px`,
-                "--rect-h": `${previewRect.h}px`,
-              } as BoxSelectRectVars
-            }
-          />
+          <div ref={boxSelectRectRef} className={BOX_SELECT_RECT} />
         )}
         {(previewPath.length > 0 || pointMaskPolygonPoints.length > 0) && (() => {
           const r = viewportRef.current?.getBoundingClientRect();
@@ -2053,27 +2124,27 @@ export function ThreeDWorkbench({
             : [...draft, ...(pointMaskCursor ? [pointMaskCursor] : [])];
           const svgPoints = points.map((p) => `${p.x},${p.y}`).join(" ");
           return (
-            <svg className={styles.pointMaskPathPreview} aria-hidden="true">
-              <polyline points={svgPoints} />
+            <svg className={POINT_MASK_PATH_PREVIEW} aria-hidden="true">
+              <polyline className="[fill:none] [stroke:var(--sc-brand)] [stroke-width:2] [stroke-linejoin:round] [stroke-linecap:round]" points={svgPoints} />
               {draft.map((p, i) => (
-                <circle key={`${p.x}:${p.y}:${i}`} cx={p.x} cy={p.y} r="3" />
+                <circle className="[fill:var(--sc-card)] [stroke:var(--sc-brand)] [stroke-width:2]" key={`${p.x}:${p.y}:${i}`} cx={p.x} cy={p.y} r="3" />
               ))}
             </svg>
           );
         })()}
 
         {/* 控件浮条 */}
-        <div ref={controlsRef} className={styles.controls}>
+        <div ref={controlsRef} className={CONTROLS}>
           <button
             type="button"
-            className={styles.btn}
+            className={BTN}
             onClick={handleResetView}
           >
             重置视角
           </button>
           <button
             type="button"
-            className={`${styles.btn} ${pointCloudViewMode === "bev" ? styles.btnActive : ""}`}
+            className={pointCloudViewMode === "bev" ? `${BTN} ${BTN_ACTIVE}` : BTN}
             onClick={handleBevView}
             aria-pressed={pointCloudViewMode === "bev"}
           >
@@ -2081,22 +2152,22 @@ export function ThreeDWorkbench({
           </button>
           <button
             type="button"
-            className={styles.btn}
+            className={BTN}
             onClick={handleResetCameraPanels}
             title="恢复 2D 相机图默认贴边布局"
           >
             重置相机布局
           </button>
           {colorizing && (
-            <span className={styles.sizeCtl} title="相机上色处理中">
+            <span className={SIZE_CTL} title="相机上色处理中">
               相机上色…
             </span>
           )}
           {threeDTool === "point-mask" && (
-            <label className={styles.sizeCtl}>
+            <label className={SIZE_CTL}>
               选点
               <select
-                className={styles.selectCtl}
+                className={SELECT_CTL}
                 value={pointMaskSelectMode}
                 disabled={!canPlacePointMask}
                 onChange={(e) => {
@@ -2159,13 +2230,13 @@ export function ThreeDWorkbench({
         )}
 
         {conventionMismatches.length > 0 && (
-          <div className={styles.mismatchBanner}>
+          <div className={MISMATCH_BANNER}>
             <span>
               {conventionMismatches.length} 个 3D 标注创建时的坐标系与当前数据集不一致。
             </span>
             <button
               type="button"
-              className={styles.btn}
+              className={BTN}
               disabled={!selectedConventionMismatch || !selectedEditable}
               onClick={handleReprojectSelectedToCurrentConvention}
             >
@@ -2175,10 +2246,10 @@ export function ThreeDWorkbench({
         )}
 
         {/* 状态条 */}
-        <div className={styles.statusBar}>
+        <div className={STATUS_BAR}>
           {isLoading && <span>加载 manifest…</span>}
-          {error && <span className={styles.err}>manifest 加载失败</span>}
-          {loadError && <span className={styles.err}>点云加载失败: {loadError}</span>}
+          {error && <span className={ERR}>manifest 加载失败</span>}
+          {loadError && <span className={ERR}>点云加载失败: {loadError}</span>}
           {stats && (
             <span data-testid="pointcloud-stats">
               {stats.renderedPoints.toLocaleString()} 点
@@ -2204,7 +2275,7 @@ export function ThreeDWorkbench({
             </span>
           )}
           {threeDTool === "point-mask" && !canPlacePointMask && (
-            <span className={styles.err}>· 当前项目未启用 point_mask_3d 类别</span>
+            <span className={ERR}>· 当前项目未启用 point_mask_3d 类别</span>
           )}
           {selectedBox && (
             <span>
@@ -2222,23 +2293,20 @@ export function ThreeDWorkbench({
         {/* 选中框 PSR 数值编辑面板(右上;头部可拖动 + 渐进展开) */}
         {selectedBox && form && (
           <div
-            className={[styles.editPanel, psrDragging ? styles.editPanelDragging : ""]
+            ref={editPanelRef}
+            className={[EDIT_PANEL, psrDragging ? EDIT_PANEL_DRAGGING : ""]
               .filter(Boolean)
               .join(" ")}
-            // eslint-disable-next-line no-restricted-syntax -- 面板拖动偏移是用户拖拽态, 经 CSS 变量注入。
-            style={
-              { "--psr-dx": `${psrPanel.dx}px`, "--psr-dy": `${psrPanel.dy}px` } as CSSProperties & {
-                "--psr-dx": string;
-                "--psr-dy": string;
-              }
-            }
           >
-            <div className={styles.editHeader} onPointerDown={onPsrHeaderPointerDown}>
-              <div className={styles.editTitle}>
-                <Icon name="move" size={12} className={styles.dragHint} />
+            <div
+              className={psrDragging ? `${EDIT_HEADER} !cursor-grabbing` : EDIT_HEADER}
+              onPointerDown={onPsrHeaderPointerDown}
+            >
+              <div className={EDIT_TITLE}>
+                <Icon name="move" size={12} className={DRAG_HINT} />
                 {boxClasses.length > 0 ? (
                   <select
-                    className={styles.classSelect}
+                    className={CLASS_SELECT}
                     value={selectedClass ?? ""}
                     aria-label="框类别"
                     disabled={!selectedEditable}
@@ -2260,7 +2328,7 @@ export function ThreeDWorkbench({
                 {!readOnly && (
                   <button
                     type="button"
-                    className={selectedLocked ? `${styles.lockBtn} ${styles.lockBtnOn}` : styles.lockBtn}
+                    className={selectedLocked ? `${LOCK_BTN} ${LOCK_BTN_ON}` : LOCK_BTN}
                     aria-pressed={selectedLocked}
                     onClick={handleToggleLock}
                   >
@@ -2270,7 +2338,7 @@ export function ThreeDWorkbench({
                 {!readOnly && selectedBoxIds.length > 0 && (
                   <button
                     type="button"
-                    className={styles.iconBtn}
+                    className={ICON_BTN}
                     onClick={handleDeleteSelected}
                     aria-label={multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"}
                     title={multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"}
@@ -2280,7 +2348,7 @@ export function ThreeDWorkbench({
                 )}
                 <button
                   type="button"
-                  className={styles.iconBtn}
+                  className={ICON_BTN}
                   onClick={togglePsrExpanded}
                   aria-expanded={psrPanel.expanded}
                   aria-label={psrPanel.expanded ? "收起详情" : "展开详情"}
@@ -2289,15 +2357,15 @@ export function ThreeDWorkbench({
                   <Icon name={psrPanel.expanded ? "chevUp" : "chevDown"} size={14} />
                 </button>
               </div>
-              <div className={styles.editSummary}>
+              <div className={EDIT_SUMMARY}>
                 {multiBoxSelected
                   ? `${selectedBoxIds.length} 个框已选中`
                   : `尺寸 ${selectedBox.size.map((n) => n.toFixed(2)).join(" × ")} m`}
               </div>
             </div>
             {psrPanel.expanded && (
-              <div className={styles.editBody}>
-                <div className={styles.editGroupLabel}>
+              <div className={EDIT_BODY}>
+                <div className={EDIT_GROUP_LABEL}>
                   {readOnly
                     ? "只读 · 锁定 / 审阅态"
                     : multiBoxSelected
@@ -2309,10 +2377,10 @@ export function ThreeDWorkbench({
                 {/* v0.13.8 · 选中框自动贴合:Q 默认连击(收尺寸+贴地);
                     Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发。 */}
                 {selectedPsrEditable && (
-                  <div className={styles.fitGroup} role="group" aria-label="自动贴合">
+                  <div className={FIT_GROUP} role="group" aria-label="自动贴合">
                     <button
                       type="button"
-                      className={styles.btn}
+                      className={BTN}
                       onClick={handleFitDefault}
                       title="贴合 (Q):收尺寸 + 贴地"
                     >
@@ -2320,7 +2388,7 @@ export function ThreeDWorkbench({
                     </button>
                     <button
                       type="button"
-                      className={styles.btn}
+                      className={BTN}
                       onClick={handleFitSize}
                       title="只收尺寸 (Shift+Q)"
                     >
@@ -2328,7 +2396,7 @@ export function ThreeDWorkbench({
                     </button>
                     <button
                       type="button"
-                      className={styles.btn}
+                      className={BTN}
                       onClick={handleFitBottom}
                       title="只贴地 (Alt+Q)"
                     >
@@ -2336,7 +2404,7 @@ export function ThreeDWorkbench({
                     </button>
                     <button
                       type="button"
-                      className={styles.btn}
+                      className={BTN}
                       onClick={handleFitYaw}
                       title="贴朝向(实验):点云稀疏时主轴可能反转 180°"
                     >
@@ -2346,12 +2414,12 @@ export function ThreeDWorkbench({
                 )}
                 {PSR_GROUPS.map((g) => (
                   <div key={g.label}>
-                    <div className={styles.editGroupLabelRow}>
-                      <span className={styles.editGroupLabel}>{g.label}</span>
+                    <div className={EDIT_GROUP_LABEL_ROW}>
+                      <span className={EDIT_GROUP_LABEL}>{g.label}</span>
                       {g.reset && selectedPsrEditable && (
                         <button
                           type="button"
-                          className={styles.resetBtn}
+                          className={RESET_BTN}
                           onClick={handleResetRotation}
                           title="把偏航/俯仰/翻滚全部归零"
                         >
@@ -2359,7 +2427,7 @@ export function ThreeDWorkbench({
                         </button>
                       )}
                     </div>
-                    <div className={styles.editRow}>
+                    <div className={EDIT_ROW}>
                       {g.keys.map((k) => (
                         <input
                           key={k}
@@ -2391,11 +2459,11 @@ export function ThreeDWorkbench({
         )}
 
         {selectedPointMask && selectedAnn && (
-          <div className={styles.editPanel}>
-            <div className={styles.editTitle}>
+          <div className={EDIT_PANEL}>
+            <div className={EDIT_TITLE}>
               {pointMaskClasses.length > 0 ? (
                 <select
-                  className={styles.classSelect}
+                  className={CLASS_SELECT}
                   value={selectedClass ?? ""}
                   aria-label="分割类别"
                   disabled={!selectedPointMaskEditable}
@@ -2416,7 +2484,7 @@ export function ThreeDWorkbench({
               {!readOnly && (
                 <button
                   type="button"
-                  className={selectedLocked ? `${styles.lockBtn} ${styles.lockBtnOn}` : styles.lockBtn}
+                  className={selectedLocked ? `${LOCK_BTN} ${LOCK_BTN_ON}` : LOCK_BTN}
                   aria-pressed={selectedLocked}
                   onClick={handleToggleLock}
                 >
@@ -2424,13 +2492,13 @@ export function ThreeDWorkbench({
                 </button>
               )}
             </div>
-            <div className={styles.editGroupLabel}>
+            <div className={EDIT_GROUP_LABEL}>
               {selectedPointMask.point_indices.length.toLocaleString()} 点 · P 后圈选加点,Alt 圈选减点
             </div>
             {!readOnly && selectedPointMaskEditable && (
               <button
                 type="button"
-                className={styles.deleteBtn}
+                className={DELETE_BTN}
                 onClick={() => {
                   deleteAnnotation.mutate(selectedAnn.id);
                   history.pushBatch([{ kind: "delete", annotation: selectedAnn }]);
@@ -2469,22 +2537,16 @@ export function ThreeDWorkbench({
           // 不能用 <button>/role=button:useDragMove 的 isInteractiveTarget 会拦掉其 pointerdown。
           // 用 div + tabIndex 保留键盘可达;拖动经 handleProps,纯点击(未拖动)才展开。
           <div
+            ref={triFloatTabRef}
             tabIndex={0}
             data-floating-panel
             aria-label="展开三视图精修(可拖动)"
             className={[
-              styles.triFloatTab,
-              triTabDrag.isDragging ? styles.triFloatTabDragging : "",
+              TRI_FLOAT_TAB,
+              triTabDrag.isDragging ? TRI_FLOAT_TAB_DRAGGING : "",
             ]
               .filter(Boolean)
               .join(" ")}
-            // eslint-disable-next-line no-restricted-syntax -- 收起标签沿用展开面板的记忆位置，经 CSS 变量注入。
-            style={
-              {
-                "--tri-tab-x": `${triFloatPosition.x}px`,
-                "--tri-tab-y": `${triFloatPosition.y}px`,
-              } as CSSProperties
-            }
             {...triTabDrag.handleProps}
             onClick={() => {
               if (!triTabMovedRef.current) updateTriViewFloat({ collapsed: false });
@@ -2503,7 +2565,7 @@ export function ThreeDWorkbench({
         {/* v0.13.7 · 悬浮相机面板:按物理朝向贴主视图边缘,同朝向沿边堆叠。
             投影 overlay / 上色 / 深度命中沿用 CameraProjectionView,布局对其透明。 */}
         {cameraGroups.map(([anchor, cams]) => (
-          <div key={anchor} className={`${styles.camGroup} ${ANCHOR_CLASS[anchor]}`}>
+          <div key={anchor} className={`${CAM_GROUP} ${ANCHOR_CLASS[anchor]}`}>
             {cams.map((cam, index) => (
               <FloatingCameraPanel
                 key={cam.role}
@@ -2541,18 +2603,18 @@ export function ThreeDWorkbench({
             复用 CameraProjectionView(同 props,大尺寸),投影 / 上色 / 深度 overlay 一致。 */}
         {enlargedCam && (
           <div
-            className={styles.camModal}
+            className={CAM_MODAL}
             onClick={() => setEnlargedRole(null)}
             role="presentation"
           >
             <div
-              className={styles.camModalBody}
+              className={CAM_MODAL_BODY}
               onClick={(e) => e.stopPropagation()}
               role="presentation"
             >
               <button
                 type="button"
-                className={styles.camModalClose}
+                className={CAM_MODAL_CLOSE}
                 onClick={() => setEnlargedRole(null)}
               >
                 关闭 ✕
@@ -2560,7 +2622,7 @@ export function ThreeDWorkbench({
               {!readOnly && enlargedCam.calibration && boxPlaceClass && (
                 <button
                   type="button"
-                  className={`${styles.camModalSeed} ${seedMode ? styles.camModalSeedActive : ""}`}
+                  className={seedMode ? `${CAM_MODAL_SEED} ${CAM_MODAL_SEED_ACTIVE}` : CAM_MODAL_SEED}
                   onClick={() => setSeedMode((v) => !v)}
                   aria-pressed={seedMode}
                   title="在相机图上拖一个 2D 框,自动在 3D 里生成框(视锥选点拟合)"
@@ -2572,7 +2634,7 @@ export function ThreeDWorkbench({
                 <>
                   <button
                     type="button"
-                    className={`${styles.camModalSwitch} ${styles.camModalPrev}`}
+                    className={`${CAM_MODAL_SWITCH} ${CAM_MODAL_PREV}`}
                     onClick={() => cycleEnlargedCamera(-1)}
                     title="上一视角"
                   >
@@ -2580,7 +2642,7 @@ export function ThreeDWorkbench({
                   </button>
                   <button
                     type="button"
-                    className={`${styles.camModalSwitch} ${styles.camModalNext}`}
+                    className={`${CAM_MODAL_SWITCH} ${CAM_MODAL_NEXT}`}
                     onClick={() => cycleEnlargedCamera(1)}
                     title="下一视角"
                   >

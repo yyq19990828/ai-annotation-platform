@@ -1,48 +1,21 @@
-import styles from "./WorkbenchSkeleton.module.css";
-
-const blockSizeClassByKey = {
-  "120x16": styles.block120x16,
-  "80%x11": styles.block80p11,
-  "40x40": styles.block40x40,
-  "60%x11": styles.block60p11,
-  "80%x10": styles.block80p10,
-  "60x26": styles.block60x26,
-  "80x26": styles.block80x26,
-  "26x26": styles.block26x26,
-  "120x26": styles.block120x26,
-  "100%x32": styles.block100p32,
-  "100%x28": styles.block100p28,
-  "100%x42": styles.block100p42,
-  "50%x14": styles.block50p14,
-  "40%x11": styles.block40p11,
-} as const;
-
-const blockMarginClassByValue = {
-  6: styles.mb6,
-  8: styles.mb8,
-  10: styles.mb10,
-  20: styles.mb20,
-} as const;
-
 function Block({ w, h, mb = 0 }: { w: number | string; h: number; mb?: 0 | 6 | 8 | 10 | 20 }) {
-  const key = `${w}x${h}` as keyof typeof blockSizeClassByKey;
-  return (
-    <div className={`${styles.block} ${blockSizeClassByKey[key]} ${mb ? blockMarginClassByValue[mb] : ""}`} />
-  );
+  const mbClass = mb === 6 ? "mb-1.5" : mb === 8 ? "mb-2" : mb === 10 ? "mb-2.5" : mb === 20 ? "mb-5" : "";
+  const wClass = typeof w === "number" ? `w-[${w}px]` : w === "80%" ? "w-4/5" : w === "60%" ? "w-3/5" : w === "50%" ? "w-1/2" : w === "100%" ? "w-full" : w === "40%" ? "w-2/5" : "";
+  return <div className={`rounded animate-pulse bg-muted ${wClass} h-[${h}px] ${mbClass}`} />;
 }
 
 export function WorkbenchSkeleton() {
   return (
-    <div className={styles.skeleton}>
+    <div className="grid grid-cols-[260px_1fr_280px] h-full overflow-hidden bg-muted">
 
       {/* 左侧 task list */}
-      <div className={styles.leftPanel}>
+      <div className="p-3.5 border-r border-border bg-card">
         <Block w={120} h={16} mb={10} />
         <Block w="80%" h={11} mb={20} />
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className={styles.taskRow}>
+          <div key={i} className="flex gap-2 mb-2.5">
             <Block w={40} h={40} />
-            <div className={styles.taskMeta}>
+            <div className="flex-1">
               <Block w="60%" h={11} mb={6} />
               <Block w="80%" h={10} />
             </div>
@@ -51,26 +24,26 @@ export function WorkbenchSkeleton() {
       </div>
 
       {/* 中央 stage */}
-      <div className={styles.stageShell}>
-        <div className={styles.toolbar}>
+      <div className="flex flex-col">
+        <div className="flex gap-1.5 p-2.5 border-b border-border bg-card">
           <Block w={60} h={26} />
           <Block w={80} h={26} />
           <Block w={26} h={26} />
           <Block w={26} h={26} />
-          <div className={styles.toolbarSpacer} />
+          <div className="flex-1" />
           <Block w={120} h={26} />
           <Block w={80} h={26} />
         </div>
-        <div className={styles.stage}>
-          <div className={styles.stagePreview} />
+        <div className="relative flex-1 p-10">
+          <div className="absolute inset-10 rounded-md animate-pulse bg-muted" />
         </div>
-        <div className={styles.footer}>
+        <div className="p-2 border-t border-border bg-card">
           <Block w="40%" h={11} />
         </div>
       </div>
 
       {/* 右侧 AI panel */}
-      <div className={styles.rightPanel}>
+      <div className="p-3.5 border-l border-border bg-card">
         <Block w="50%" h={14} mb={10} />
         <Block w="100%" h={32} mb={10} />
         <Block w="100%" h={28} mb={20} />

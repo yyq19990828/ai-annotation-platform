@@ -1,9 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { CSSProperties } from "react";
+import { useElementStyle } from "@/components/ui/useElementStyle";
 import { TRACK_COLOR_PALETTE } from "./colors";
-import styles from "./VideoTrackColorPicker.module.css";
-
-type SwatchVars = CSSProperties & { "--swatch-color": string };
 
 interface VideoTrackColorPickerProps {
   /** 当前生效色（用于高亮选中的色块）。 */
@@ -13,6 +11,34 @@ interface VideoTrackColorPickerProps {
   onPick: (color: string) => void;
   onReset: () => void;
   onClose: () => void;
+}
+
+function SwatchButton({
+  color,
+  label,
+  active,
+  onPick,
+}: {
+  color: string;
+  label: string;
+  active: boolean;
+  onPick: (color: string) => void;
+}) {
+  const ref = useElementStyle<HTMLButtonElement>({ backgroundColor: color } as CSSProperties);
+  return (
+    <button
+      ref={ref}
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-pressed={active}
+      className={`w-[18px] h-[18px] p-0 border border-border rounded cursor-pointer hover:border-foreground/20 ${active ? "border-brand shadow-[0_0_0_1px_var(--sc-brand)]" : ""}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onPick(color);
+      }}
+    />
+  );
 }
 
 /** 轻量 track 取色器：从固定调色板选色，或恢复默认（按 track_id 派生色）。 */
@@ -41,29 +67,22 @@ export function VideoTrackColorPicker({
   }, [onClose]);
 
   return (
-    <div ref={rootRef} className={styles.picker} role="dialog" aria-label="选择轨迹颜色">
-      <div className={styles.swatches}>
+    <div ref={rootRef} className="flex flex-col gap-1.5 p-1.5 bg-card border border-border rounded-md shadow-lg" role="dialog" aria-label="选择轨迹颜色">
+      <div className="grid grid-cols-4 gap-1">
         {TRACK_COLOR_PALETTE.map((entry) => (
-          <button
+          <SwatchButton
             key={entry.value}
-            type="button"
-            title={entry.label}
-            aria-label={entry.label}
-            aria-pressed={entry.value === currentColor}
-            className={entry.value === currentColor ? `${styles.swatch} ${styles.swatchActive}` : styles.swatch}
-            // eslint-disable-next-line no-restricted-syntax -- 动态色块色值经 CSS custom property 注入
-            style={{ "--swatch-color": entry.value } as SwatchVars}
-            onClick={(e) => {
-              e.stopPropagation();
-              onPick(entry.value);
-            }}
+            color={entry.value}
+            label={entry.label}
+            active={entry.value === currentColor}
+            onPick={onPick}
           />
         ))}
       </div>
       {hasOverride ? (
         <button
           type="button"
-          className={styles.resetButton}
+          className="py-0.5 px-1.5 text-xs text-muted-foreground bg-transparent border border-border rounded cursor-pointer hover:text-foreground hover:bg-muted"
           onClick={(e) => {
             e.stopPropagation();
             onReset();

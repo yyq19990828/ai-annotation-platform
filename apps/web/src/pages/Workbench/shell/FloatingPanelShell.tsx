@@ -16,7 +16,9 @@ import {
   type FloatingPanelPoint,
   type FloatingPanelSize,
 } from "./useDragMove";
-import styles from "./FloatingPanelShell.module.css";
+
+const ICON_BUTTON_CLASS =
+  "inline-flex size-6 cursor-pointer appearance-none items-center justify-center rounded border border-border bg-card p-0 text-muted-foreground hover:border-brand hover:text-brand";
 
 export interface FloatingPanelRect extends FloatingPanelPoint, FloatingPanelSize {}
 
@@ -160,9 +162,8 @@ export function FloatingPanelShell({
     <section
       data-floating-panel
       className={[
-        styles.shell,
-        drag.isDragging && styles.dragging,
-        isResizing && styles.resizing,
+        "fixed left-[var(--floating-panel-x)] top-[var(--floating-panel-y)] z-floating flex h-[var(--floating-panel-h)] w-[var(--floating-panel-w)] min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border bg-card shadow-lg",
+        (drag.isDragging || isResizing) && "select-none",
         className,
       ].filter(Boolean).join(" ")}
       // eslint-disable-next-line no-restricted-syntax -- 浮窗位置/尺寸来自用户拖拽状态，经 CSS 变量注入。
@@ -175,20 +176,23 @@ export function FloatingPanelShell({
         } as FloatingPanelStyle
       }
     >
-      <div className={styles.header} {...drag.handleProps}>
-        <div className={styles.titleGroup}>
+      <div
+        className="flex min-h-[34px] flex-none cursor-move touch-none items-center justify-between gap-2 border-b border-border bg-card px-2 py-1.5 text-muted-foreground"
+        {...drag.handleProps}
+      >
+        <div className="inline-flex min-w-0 items-center gap-1.5">
           <Icon name="move" size={14} />
-          <span className={styles.title}>{title}</span>
+          <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs font-semibold text-foreground">{title}</span>
         </div>
         <div
-          className={styles.actions}
+          className="inline-flex items-center gap-1"
           data-floating-panel-no-drag
           onPointerDown={(event) => event.stopPropagation()}
         >
           {onCollapse && (
             <button
               type="button"
-              className={styles.iconButton}
+              className={ICON_BUTTON_CLASS}
               onClick={onCollapse}
               aria-label="收起浮窗"
               title="收起"
@@ -199,7 +203,7 @@ export function FloatingPanelShell({
           {onMergeBack && variant !== "no-merge" && (
             <button
               type="button"
-              className={styles.iconButton}
+              className={ICON_BUTTON_CLASS}
               onClick={onMergeBack}
               aria-label="合并回侧栏"
               title="合并回侧栏"
@@ -210,7 +214,7 @@ export function FloatingPanelShell({
           {onClose && (
             <button
               type="button"
-              className={styles.iconButton}
+              className={ICON_BUTTON_CLASS}
               onClick={onClose}
               aria-label="关闭浮窗"
               title="关闭"
@@ -220,13 +224,16 @@ export function FloatingPanelShell({
           )}
         </div>
       </div>
-      <div className={styles.content}>{children}</div>
+      <div className="flex min-h-0 flex-1 overflow-hidden bg-card [&>*]:min-h-0 [&>*]:flex-1">{children}</div>
       <button
         type="button"
-        className={styles.resizeHandle}
+        className="absolute bottom-0 right-0 z-local-2 size-[18px] cursor-nwse-resize appearance-none border-0 bg-transparent p-0 text-muted-foreground"
         onPointerDown={onResizePointerDown}
         aria-label="调整浮窗尺寸"
-      />
+      >
+        <span aria-hidden className="absolute bottom-1 right-1 h-px w-[9px] origin-right rotate-[-45deg] bg-current" />
+        <span aria-hidden className="absolute bottom-2 right-1 h-px w-[5px] origin-right rotate-[-45deg] bg-current" />
+      </button>
     </section>
   );
 }

@@ -21,34 +21,34 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
   font-weight: 600;
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
   border-radius: 50%;
 }
 
 .stepDotActive,
 .stepDotDone {
-  color: var(--color-bg-elev);
-  background: var(--color-accent);
+  color: var(--sc-card);
+  background: var(--sc-brand);
 }
 
 .stepDotActive {
-  border: 2px solid var(--color-accent-soft);
+  border: 2px solid color-mix(in srgb, var(--sc-brand) 12%, transparent);
 }
 
 .stepLabel {
   margin-left: 8px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
   font-weight: 500;
 }
 
 .stepLabelActive,
 .stepLabelDone {
-  color: var(--color-accent);
+  color: var(--sc-brand);
 }
 
 .stepLabelActive {
@@ -59,11 +59,11 @@
   flex: 1;
   height: 1px;
   margin: 0 12px;
-  background: var(--color-border);
+  background: var(--sc-border);
 }
 
 .stepLineDone {
-  background: var(--color-accent);
+  background: var(--sc-brand);
 }
 
 .stackLarge,
@@ -83,7 +83,7 @@
 .label {
   display: block;
   margin-bottom: 6px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
   font-weight: 500;
 }
@@ -93,7 +93,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 
@@ -106,17 +106,17 @@
   box-sizing: border-box;
   width: 100%;
   padding: 8px 11px;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-family: inherit;
   font-size: 13.5px;
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
   outline: none;
 }
 
 .inputInvalid {
-  border-color: var(--color-danger);
+  border-color: var(--sc-destructive);
 }
 
 .textarea {
@@ -137,10 +137,10 @@
 
 .segmentButton {
   padding: 6px 12px;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-size: 12.5px;
-  background: var(--color-bg-elev);
-  border: 1px solid var(--color-border);
+  background: var(--sc-card);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
   cursor: pointer;
 }
@@ -150,29 +150,29 @@
 }
 
 .segmentButtonActive {
-  color: var(--color-accent);
-  background: var(--color-accent-soft);
-  border-color: var(--color-accent);
+  color: var(--sc-brand);
+  background: color-mix(in srgb, var(--sc-brand) 12%, transparent);
+  border-color: var(--sc-brand);
 }
 
 .dropZone {
   padding: 28px 16px;
   text-align: center;
-  background: var(--color-bg-sunken);
-  border: 2px dashed var(--color-border);
+  background: var(--sc-muted);
+  border: 2px dashed var(--sc-border);
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
 
 .dropZoneHover {
-  background: var(--color-accent-soft);
-  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--sc-brand) 12%, transparent);
+  border-color: var(--sc-brand);
 }
 
 .uploadIcon,
 .mutedIcon {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .uploadIcon {
@@ -181,18 +181,18 @@
 
 .dropTitle {
   margin-bottom: 4px;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-size: 13.5px;
 }
 
 .accentText {
-  color: var(--color-accent);
+  color: var(--sc-brand);
 }
 
 .dropHint,
 .mutedSmall,
 .mutedMedium {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .dropHint {
@@ -220,7 +220,7 @@
   align-items: center;
   gap: 6px;
   min-height: 33px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 
@@ -232,8 +232,8 @@
 .filePanel,
 .progressPanel,
 .resultPanel {
-  background: var(--color-bg-elev);
-  border: 1px solid var(--color-border);
+  background: var(--sc-card);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
 }
 
@@ -246,9 +246,9 @@
   display: flex;
   justify-content: space-between;
   padding: 8px 12px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
 }
 
 .fileRow,
@@ -266,7 +266,7 @@
 
 .fileRow:not(:last-child),
 .progressItem:not(:last-child) {
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
 }
 
 .fileName {
@@ -285,7 +285,7 @@
 }
 
 .iconButton {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -296,8 +296,8 @@
 .zipSummary {
   padding: 10px 12px;
   font-size: 13px;
-  background: var(--color-bg-elev);
-  border: 1px solid var(--color-border);
+  background: var(--sc-card);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
 }
 
@@ -309,11 +309,11 @@
   display: flex;
   justify-content: space-between;
   font-size: 12.5px;
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
 }
 
 .runningText {
-  color: var(--color-accent);
+  color: var(--sc-brand);
 }
 
 .progressPanel {
@@ -328,18 +328,18 @@
 
 .successIcon,
 .successText {
-  color: var(--color-success);
+  color: var(--sc-positive);
 }
 
 .dangerIcon,
 .dangerText {
-  color: var(--color-danger);
+  color: var(--sc-destructive);
 }
 
 .progressTrack,
 .zipProgressTrack {
   overflow: hidden;
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
 }
 
 .progressTrack {
@@ -362,7 +362,7 @@
 
 .errorMessage {
   margin-top: 3px;
-  color: var(--color-danger);
+  color: var(--sc-destructive);
   font-size: 11px;
 }
 
@@ -394,7 +394,7 @@
   display: flex;
   justify-content: space-between;
   margin-bottom: 4px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 
@@ -403,7 +403,7 @@
 }
 
 .errorSummary {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
   cursor: pointer;
 }
@@ -417,29 +417,29 @@
 
 .errorRow {
   padding: 3px 0;
-  color: var(--color-danger);
+  color: var(--sc-destructive);
 }
 
 .omittedRow {
   padding: 3px 0;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .zipError {
   padding: 10px 12px;
-  color: var(--color-danger);
+  color: var(--sc-destructive);
   font-size: 12.5px;
-  background: var(--color-danger-soft);
-  border: 1px solid var(--color-danger);
+  background: color-mix(in srgb, var(--sc-destructive) 14%, transparent);
+  border: 1px solid var(--sc-destructive);
   border-radius: var(--radius-md);
 }
 
 .connectionJobHint {
   padding: 10px 12px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12.5px;
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
 }
 

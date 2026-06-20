@@ -35,7 +35,7 @@ export const labelStyle: CSSProperties = {
   fontSize: FS_SM,
   fontWeight: 600,
   marginBottom: 6,
-  color: "var(--color-fg)",
+  color: "var(--sc-foreground)",
 };
 
 export const selectStyle: CSSProperties = {
@@ -43,16 +43,16 @@ export const selectStyle: CSSProperties = {
   boxSizing: "border-box",
   padding: "6px 10px",
   fontSize: FS_MD,
-  background: "var(--color-bg-sunken)",
-  border: "1px solid var(--color-border)",
+  background: "var(--sc-muted)",
+  border: "1px solid var(--sc-border)",
   borderRadius: "var(--radius-sm)",
-  color: "var(--color-fg)",
+  color: "var(--sc-foreground)",
   fontFamily: "inherit",
 };
 
 export const cardHeaderStyle: CSSProperties = {
   padding: `${CARD_HEADER_PADDING_Y}px ${CARD_HEADER_PADDING_X}px`,
-  borderBottom: "1px solid var(--color-border)",
+  borderBottom: "1px solid var(--sc-border)",
   fontSize: FS_MD,
   fontWeight: 600,
   display: "flex",
@@ -70,17 +70,17 @@ export const cardBodyStyle: CSSProperties = {
 
 export const helperTextStyle: CSSProperties = {
   fontSize: FS_XS,
-  color: "var(--color-fg-subtle)",
+  color: "var(--sc-muted-foreground)",
   marginTop: 4,
 };
 
 export const aliasChipStyle: CSSProperties = {
   fontSize: FS_XS,
   padding: "3px 9px",
-  background: "var(--color-ai-soft)",
-  border: "1px solid var(--color-border)",
+  background: "color-mix(in srgb, var(--sc-chart-4) 14%, transparent)",
+  border: "1px solid var(--sc-border)",
   borderRadius: 999,
-  color: "var(--color-fg)",
+  color: "var(--sc-foreground)",
   cursor: "pointer",
   fontFamily: "inherit",
   display: "inline-flex",
@@ -91,17 +91,17 @@ export const aliasChipStyle: CSSProperties = {
 
 export const aliasChipActiveStyle: CSSProperties = {
   ...aliasChipStyle,
-  background: "color-mix(in oklab, var(--color-ai) 18%, transparent)",
-  borderColor: "var(--color-ai)",
-  boxShadow: "inset 2px 0 0 var(--color-ai)",
+  background: "color-mix(in oklab, var(--sc-chart-4) 18%, transparent)",
+  borderColor: "var(--sc-chart-4)",
+  boxShadow: "inset 2px 0 0 var(--sc-chart-4)",
 };
 
 export const tableHeaderCellStyle: CSSProperties = {
   padding: "6px 10px",
   textAlign: "left",
   fontWeight: 500,
-  color: "var(--color-fg-muted)",
-  borderBottom: "1px solid var(--color-border)",
+  color: "var(--sc-muted-foreground)",
+  borderBottom: "1px solid var(--sc-border)",
   cursor: "pointer",
   userSelect: "none",
   whiteSpace: "nowrap",
@@ -109,5 +109,5 @@ export const tableHeaderCellStyle: CSSProperties = {
 
 export const tableBodyCellStyle: CSSProperties = {
   padding: "6px 10px",
-  borderBottom: "1px solid var(--color-border)",
+  borderBottom: "1px solid var(--sc-border)",
 };

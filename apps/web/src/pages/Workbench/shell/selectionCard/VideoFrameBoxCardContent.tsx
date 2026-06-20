@@ -8,8 +8,13 @@ import { MetricGrid } from "./MetricGrid";
 import { MetaFooter } from "./MetaFooter";
 import { ActionBar } from "./ActionBar";
 import { geometryMetrics } from "./geometryMetrics";
-import cardStyles from "./cardLayout.module.css";
-import styles from "./VideoFrameBoxCardContent.module.css";
+
+const BODY_CLASS =
+  "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
+const ATTR_BLOCK_CLASS = "border-t border-border pt-2";
+const FRAME_CHIP_CLASS =
+  "inline-flex flex-none items-center gap-1 rounded-full px-1.5 py-px text-2xs font-medium tabular-nums whitespace-nowrap bg-brand/10 text-brand";
+const FRAME_TIME_CLASS = "text-brand/75";
 
 export interface VideoFrameBoxCardContentProps {
   /** geometry.type 必为 video_bbox(视频单帧框,不属任何轨迹)。 */
@@ -59,14 +64,14 @@ export function VideoFrameBoxCardContent({
 
   const frameChip =
     frameIndex !== null ? (
-      <span className={styles.frameChip} title={`第 ${frameIndex} 帧`}>
+      <span className={FRAME_CHIP_CLASS} title={`第 ${frameIndex} 帧`}>
         <Icon name="film" size={10} />F{frameIndex}
-        {timeLabel && <span className={styles.frameTime}>· {timeLabel}</span>}
+        {timeLabel && <span className={FRAME_TIME_CLASS}>· {timeLabel}</span>}
       </span>
     ) : undefined;
 
   return (
-    <div className={cardStyles.body}>
+    <div className={BODY_CLASS}>
       <IdentityHeader
         className={annotation.class_name}
         source={annotationSourceKind(annotation)}
@@ -76,7 +81,7 @@ export function VideoFrameBoxCardContent({
       <MetricGrid metrics={metrics} />
 
       {hasAttributes && (
-        <div className={cardStyles.attrBlock} data-floating-panel-no-drag>
+        <div className={ATTR_BLOCK_CLASS} data-floating-panel-no-drag>
           <AttributeForm
             schema={attributeSchema}
             className={annotation.class_name}

@@ -14,9 +14,13 @@ import {
 import type { DataManagerTask, ProjectTaskView, TaskFilterOp, TaskFilterRule, TaskSortItem } from "@/api/taskViews";
 import { useAuthStore } from "@/stores/authStore";
 import { usePermissions } from "@/hooks/usePermissions";
-import styles from "./ProjectDataManagerPage.module.css";
+import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
+
+// UA-safe 表单基线(无全局 preflight 期间,原生 select/input 需消浏览器默认样式)
+const FIELD_CLASS =
+  "h-8 w-full appearance-none rounded-sm border border-border bg-background px-2 py-1.5 text-foreground disabled:bg-muted disabled:text-muted-foreground";
 
 const FILTER_FIELDS = [
   { value: "task.status", label: "任务状态", type: "text" },
@@ -192,7 +196,7 @@ export function ProjectDataManagerPage() {
         : canManageProject),
   );
 
-  if (projectLoading) return <div className={styles.loading}>加载中...</div>;
+  if (projectLoading) return <div className="p-15 text-center text-muted-foreground">加载中...</div>;
   if (error || !project) return <Navigate to="/unauthorized" replace />;
 
   const saveCurrent = async () => {
@@ -222,21 +226,25 @@ export function ProjectDataManagerPage() {
   const visibleColumnSet = new Set(columns);
 
   return (
-    <div className={styles.page}>
-      <header className={styles.header}>
-        <button type="button" className={styles.backButton} onClick={() => navigate(`/projects/${id}/settings`)}>
+    <div className="mx-auto max-w-[1680px] px-4 pt-4 pb-8 text-foreground md:px-7">
+      <header className="mb-3.5">
+        <button
+          type="button"
+          className="mb-2 inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs text-muted-foreground"
+          onClick={() => navigate(`/projects/${id}/settings`)}
+        >
           <Icon name="chevLeft" size={12} />返回项目设置
         </button>
-        <div className={styles.titleRow}>
+        <div className="flex items-center justify-between gap-4 max-md:flex-col max-md:items-start">
           <div>
-            <h1 className={styles.title}>{project.name} · Data Manager</h1>
-            <div className={styles.meta}>
+            <h1 className="mb-1 text-xl font-semibold">{project.name} · Data Manager</h1>
+            <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
               <span className="mono">{project.display_id}</span>
               <span>{total.toLocaleString()} 任务</span>
               <span>{views.length.toLocaleString()} 视图</span>
             </div>
           </div>
-          <div className={styles.actions}>
+          <div className="flex items-center gap-2">
             <Button onClick={() => tasksQ.refetch()} disabled={tasksQ.isFetching}>
               <Icon name="refresh" size={12} />刷新
             </Button>
@@ -247,10 +255,10 @@ export function ProjectDataManagerPage() {
         </div>
       </header>
 
-      <div className={styles.layout}>
-        <aside className={styles.viewsPane}>
-          <div className={styles.paneTitle}>视图</div>
-          <div className={styles.viewList}>
+      <div className="grid grid-cols-[220px_minmax(0,1fr)] gap-3.5 max-md:grid-cols-1">
+        <aside className="self-start rounded-md border border-border bg-card p-2 max-md:static md:sticky md:top-4">
+          <div className="px-1 pb-2 text-xs font-semibold text-muted-foreground">视图</div>
+          <div className="mb-2 flex flex-col gap-0.5 max-md:grid max-md:grid-cols-2 max-sm:grid-cols-1">
             {views.map((view) => {
               const key = view.id ? `saved:${view.id}` : `builtin:${view.key}`;
               const active = key === selectedKey;
@@ -258,7 +266,10 @@ export function ProjectDataManagerPage() {
                 <button
                   key={key}
                   type="button"
-                  className={active ? `${styles.viewButton} ${styles.viewButtonActive}` : styles.viewButton}
+                  className={cn(
+                    "flex min-h-[34px] w-full cursor-pointer appearance-none items-center justify-between gap-2 rounded-sm border border-transparent bg-transparent px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground [&>span:first-child]:min-w-0 [&>span:first-child]:overflow-hidden [&>span:first-child]:text-ellipsis [&>span:first-child]:whitespace-nowrap",
+                    active && "border-border bg-muted text-foreground",
+                  )}
                   onClick={() => setSelectedKey(key)}
                 >
                   <span>{view.name}</span>
@@ -274,18 +285,18 @@ export function ProjectDataManagerPage() {
             size="sm"
             onClick={removeCurrent}
             disabled={!canEditSelected || deleteView.isPending}
-            className={styles.fullButton}
+            className="w-full justify-center"
           >
             <Icon name="trash" size={12} />删除
           </Button>
         </aside>
 
-        <main className={styles.main}>
-          <section className={styles.toolbar}>
-            <div className={styles.toolbarHeader}>
+        <main className="min-w-0">
+          <section className="mb-2.5 flex flex-col gap-2.5 rounded-md border border-border bg-card p-2.5">
+            <div className="flex items-center justify-between gap-3 px-0.5 pb-0.5">
               <div>
-                <div className={styles.toolbarTitle}>{selectedView?.name ?? "任务视图"}</div>
-                <div className={styles.toolbarMeta}>
+                <div className="text-sm font-semibold">{selectedView?.name ?? "任务视图"}</div>
+                <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                   {selectedView?.builtin ? "内置视图" : selectedView?.visibility === "project" ? "项目共享" : "私有视图"}
                   <span>·</span>
                   {total.toLocaleString()} 条匹配
@@ -295,10 +306,14 @@ export function ProjectDataManagerPage() {
                 {canEditSelected ? "可编辑" : "只读"}
               </Badge>
             </div>
-            <div className={styles.rules}>
+            <div className="flex flex-col gap-1.5">
               {rules.map((rule, index) => (
-                <div key={`${index}-${rule.field}`} className={styles.ruleRow}>
+                <div
+                  key={`${index}-${rule.field}`}
+                  className="grid grid-cols-[minmax(180px,1fr)_90px_minmax(220px,1.2fr)_32px] items-center gap-2 max-sm:grid-cols-1"
+                >
                   <select
+                    className={FIELD_CLASS}
                     value={rule.field}
                     onChange={(event) => {
                       const next = [...rules];
@@ -311,6 +326,7 @@ export function ProjectDataManagerPage() {
                     ))}
                   </select>
                   <select
+                    className={FIELD_CLASS}
                     value={rule.op}
                     onChange={(event) => {
                       const next = [...rules];
@@ -328,6 +344,7 @@ export function ProjectDataManagerPage() {
                     <option value="exists">exists</option>
                   </select>
                   <input
+                    className={FIELD_CLASS}
                     value={rule.value}
                     disabled={rule.op === "exists"}
                     onChange={(event) => {
@@ -338,7 +355,7 @@ export function ProjectDataManagerPage() {
                   />
                   <button
                     type="button"
-                    className={styles.iconButton}
+                    className="inline-flex h-8 w-8 cursor-pointer appearance-none items-center justify-center rounded-sm border border-border bg-transparent text-muted-foreground disabled:cursor-default disabled:bg-muted disabled:text-muted-foreground max-sm:w-full"
                     onClick={() => setRules(rules.filter((_, i) => i !== index))}
                     disabled={rules.length <= 1}
                     title="移除"
@@ -347,16 +364,20 @@ export function ProjectDataManagerPage() {
                   </button>
                 </div>
               ))}
-              <Button size="sm" className={styles.addRuleButton} onClick={() => setRules([...rules, { ...EMPTY_RULE }])}>
+              <Button size="sm" className="w-fit min-w-[112px] justify-start" onClick={() => setRules([...rules, { ...EMPTY_RULE }])}>
                 <Icon name="plus" size={12} />条件
               </Button>
             </div>
-            <div className={styles.columnPanel}>
-              <div className={styles.columnPanelTitle}>显示列</div>
+            <div className="flex flex-wrap items-center gap-1.5 border-t border-border pt-2">
+              <div className="mr-1 text-xs font-semibold text-muted-foreground">显示列</div>
               {COLUMN_OPTIONS.map((column) => (
-                <label key={column.key} className={styles.columnToggle}>
+                <label
+                  key={column.key}
+                  className="flex min-h-7 min-w-0 items-center gap-1.5 rounded-full border border-border bg-background px-2 py-1 text-xs whitespace-nowrap text-muted-foreground hover:border-border hover:text-foreground"
+                >
                   <input
                     type="checkbox"
+                    className="cursor-pointer"
                     checked={visibleColumnSet.has(column.key)}
                     onChange={(event) => {
                       if (event.target.checked) {
@@ -372,8 +393,8 @@ export function ProjectDataManagerPage() {
             </div>
           </section>
 
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
+          <div className="overflow-x-auto rounded-md border border-border bg-card shadow-sm">
+            <table className="w-full min-w-[980px] table-fixed border-collapse [&_td]:overflow-hidden [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2.5 [&_td]:text-left [&_td]:align-middle [&_td]:text-ellipsis [&_td]:whitespace-nowrap [&_th]:overflow-hidden [&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:align-middle [&_th]:text-xs [&_th]:font-semibold [&_th]:text-ellipsis [&_th]:whitespace-nowrap [&_th]:text-muted-foreground [&_td:first-child]:w-[140px] [&_th:first-child]:w-[140px] [&_tbody_tr:hover]:bg-muted [&_tr:last-child_td]:border-b-0">
               <thead>
                 <tr>
                   {columns.map((column) => (
@@ -391,21 +412,21 @@ export function ProjectDataManagerPage() {
                 ))}
                 {!tasksQ.isLoading && !tasksQ.data?.items.length && (
                   <tr>
-                    <td colSpan={Math.max(1, columns.length)} className={styles.empty}>无匹配任务</td>
+                    <td colSpan={Math.max(1, columns.length)} className="text-center text-muted-foreground">无匹配任务</td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
 
-          <footer className={styles.footer}>
+          <footer className="flex items-center justify-between gap-3 px-0.5 pt-2.5 text-xs text-muted-foreground max-sm:flex-col max-sm:items-start">
             <div>
               {rules
                 .filter((rule) => rule.value.trim() || rule.op === "exists")
                 .map((rule) => `${FIELD_LABEL.get(rule.field) ?? rule.field} ${rule.op}`)
                 .join(" / ") || "全部任务"}
             </div>
-            <div className={styles.pager}>
+            <div className="flex items-center gap-2 whitespace-nowrap">
               <Button size="sm" disabled={page <= 0} onClick={() => setPage(page - 1)}>
                 <Icon name="chevLeft" size={12} />上一页
               </Button>
@@ -425,7 +446,7 @@ function renderCell(task: DataManagerTask, column: string) {
   switch (column) {
     case "display_id":
       return (
-        <div className={styles.taskCell}>
+        <div className="flex min-w-0 flex-col gap-0.5 [&>span]:overflow-hidden [&>span]:text-ellipsis [&>span]:whitespace-nowrap [&>span:last-child]:text-xs [&>span:last-child]:text-muted-foreground">
           <span className="mono">{task.display_id}</span>
           <span>{task.file_name}</span>
         </div>

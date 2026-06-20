@@ -82,6 +82,36 @@ function broadcastConfig(config: WorkbenchPreferences, source: object): void {
   for (const listener of configListeners) listener(config, source);
 }
 
+// 浮窗面板坐标 x/y/w/h 在前端来自 getBoundingClientRect / 指针位移，可能带小数；
+// 后端 FloatingPanelState / FloatingSelectionState / TriViewFloatState 的这些字段是
+// 整数（Pydantic int），直接 PATCH 小数会被 int_from_float 拒（422）。持久化前对这些
+// 子树就地取整，保证契约一致。cameraPanels.x/y 与 pointcloudCamera 后端为 float，不动。
+function roundPanelRect<T>(panel: T): T {
+  if (!panel || typeof panel !== "object") return panel;
+  const r = { ...(panel as Record<string, unknown>) };
+  for (const k of ["x", "y", "w", "h"] as const) {
+    if (typeof r[k] === "number") r[k] = Math.round(r[k] as number);
+  }
+  return r as T;
+}
+
+/** 持久化前对 layout 浮窗坐标取整，避免小数像素触发后端 int 校验 422。 */
+export function sanitizeForPersist(wb: WorkbenchPreferences): WorkbenchPreferences {
+  const l = wb.layout;
+  return {
+    ...wb,
+    layout: {
+      ...l,
+      floatingTaskQueue: roundPanelRect(l.floatingTaskQueue),
+      floatingClassPalette: roundPanelRect(l.floatingClassPalette),
+      floatingInspector: roundPanelRect(l.floatingInspector),
+      floatingDiscussion: roundPanelRect(l.floatingDiscussion),
+      floatingSelection: roundPanelRect(l.floatingSelection),
+      triViewFloat: roundPanelRect(l.triViewFloat),
+    },
+  };
+}
+
 function mergeUser(
   remote: Partial<WorkbenchPreferences> | undefined | null,
   userId: string | null | undefined,
@@ -531,7 +561,7 @@ export function useWorkbenchConfig(
         // 卸载(路由切换)时若仍有未发出的防抖 PATCH，立即 flush，避免拖完 300ms 内
         // 离开页面丢失跨设备同步。timer 仅在已登录时设置，故无需再判 userId。
         void authApi
-          .updatePreferences({ workbench: userConfigRef.current })
+          .updatePreferences({ workbench: sanitizeForPersist(userConfigRef.current) })
           .catch(() => undefined);
       }
     },
@@ -575,7 +605,9 @@ export function useWorkbenchConfig(
       broadcastConfig(next, sourceRef.current);
       setSaving(true);
       try {
-        const res = await authApi.updatePreferences({ workbench: next });
+        const res = await authApi.updatePreferences({
+          workbench: sanitizeForPersist(next),
+        });
         const saved = mergeUser(res.workbench, userId);
         userConfigRef.current = saved;
         setUserConfig(saved);
@@ -605,7 +637,7 @@ export function useWorkbenchConfig(
       const payload = userConfigRef.current;
       setSaving(true);
       authApi
-        .updatePreferences({ workbench: payload })
+        .updatePreferences({ workbench: sanitizeForPersist(payload) })
         .then((res) => {
           const saved = mergeUser(res.workbench, userId);
           userConfigRef.current = saved;

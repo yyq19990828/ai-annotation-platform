@@ -12,7 +12,7 @@ last_reviewed: 2026-06-10
 
 ## 入口
 
-- 前端：`/dashboard?view=overview`（仅超管）
+- 前端：`/overview`（仅超管）
 - 系统健康面板：`/admin/health`（仅超管，12 秒自动刷新）
 - Prometheus 端点：
   - `apps/api`：`http://api:8000/metrics`

@@ -2,8 +2,41 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 240px;
-  color: var(--color-fg-subtle);
-  font-size: 12px;
-  opacity: 0.6;
+  min-height: 320px;
+  padding: 24px;
+}
+
+.panel {
+  display: grid;
+  width: min(560px, 100%);
+  gap: 14px;
+}
+
+.title {
+  width: 42%;
+  height: 22px;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.metric {
+  height: 72px;
+  border: 1px solid var(--sc-border);
+  border-radius: var(--sc-radius);
+}
+
+.table {
+  height: 150px;
+  border: 1px solid var(--sc-border);
+  border-radius: var(--sc-radius);
+}
+
+@media (max-width: 640px) {
+  .metrics {
+    grid-template-columns: 1fr;
+  }
 }

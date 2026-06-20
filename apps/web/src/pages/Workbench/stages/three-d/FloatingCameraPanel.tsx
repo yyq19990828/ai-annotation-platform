@@ -7,6 +7,7 @@
  *
  * v0.15.x · 位置 / 折叠态改为受控:由壳层从 user config(preferences.workbench.layout
  * .cameraPanels)按 role 传入并回写,后端 / 管理端可一键复位。本组件不再读写 localStorage。
+ * v0.17.6 · module.css → Tailwind。
  */
 import { useCallback, useMemo } from "react";
 import type { CSSProperties } from "react";
@@ -15,9 +16,21 @@ import type { SensorCalibration } from "@/types";
 
 import type { FloatingPanelBounds, FloatingPanelPoint } from "../../shell/useDragMove";
 import { useDragMove } from "../../shell/useDragMove";
+import { useElementStyle } from "@/components/ui/useElementStyle";
 import CameraProjectionView from "./CameraProjectionView";
 import type { SceneBox } from "./PointCloudScene";
-import styles from "./ThreeDWorkbench.module.css";
+
+// v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
+const CAM_PANEL =
+  "flex flex-col w-[210px] rounded-md border border-border bg-card shadow-sm overflow-hidden";
+const CAM_PANEL_FLOATING =
+  "fixed left-[var(--cam-panel-x)] top-[var(--cam-panel-y)] z-local-5 pointer-events-auto";
+const CAM_PANEL_DRAGGING = "select-none";
+const CAM_PANEL_BAR = "flex justify-end gap-1 px-1 py-0.5 border-b border-border cursor-grab";
+const FLOAT_TOGGLE_BTN =
+  "appearance-none px-2 py-0.5 rounded-sm border border-border bg-background text-muted-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
+const CAM_PANEL_TAB =
+  "appearance-none px-2.5 py-1.5 rounded-md border border-border bg-card shadow-sm text-foreground cursor-pointer text-xs whitespace-nowrap hover:border-brand hover:text-brand";
 
 interface FloatingCameraPanelProps {
   /** 相机 role(canonical),作 user config cameraPanels 的 key 与稳定标识。 */
@@ -91,20 +104,25 @@ export function FloatingCameraPanel({
   });
 
   const floatingPoint = position ?? (isDragging ? dragPosition : null);
-  const floatingStyle = floatingPoint
-    ? ({
-        "--cam-panel-x": `${floatingPoint.x}px`,
-        "--cam-panel-y": `${floatingPoint.y}px`,
-      } as CSSProperties)
-    : undefined;
+
+  // v0.17.6 · useElementStyle replaces style={floatingStyle} for dynamic CSS variables.
+  const panelRef = useElementStyle<HTMLDivElement>(
+    floatingPoint
+      ? ({ "--cam-panel-x": `${floatingPoint.x}px`, "--cam-panel-y": `${floatingPoint.y}px` } as CSSProperties)
+      : undefined,
+  );
+  const tabRef = useElementStyle<HTMLButtonElement>(
+    floatingPoint
+      ? ({ "--cam-panel-x": `${floatingPoint.x}px`, "--cam-panel-y": `${floatingPoint.y}px` } as CSSProperties)
+      : undefined,
+  );
 
   if (collapsed) {
     return (
       <button
+        ref={tabRef}
         type="button"
-        className={`${styles.camPanelTab} ${floatingPoint ? styles.camPanelFloating : ""}`}
-        // eslint-disable-next-line no-restricted-syntax -- 拖动位置是逐帧动态值, 经 CSS custom property 注入
-        style={floatingStyle}
+        className={`${CAM_PANEL_TAB} ${floatingPoint ? CAM_PANEL_FLOATING : ""}`}
         onClick={() => setCollapsed(false)}
         title="展开相机"
       >
@@ -115,15 +133,14 @@ export function FloatingCameraPanel({
 
   return (
     <div
-      className={`${styles.camPanel} ${floatingPoint ? styles.camPanelFloating : ""} ${
-        isDragging ? styles.camPanelDragging : ""
-      }`}
-      // eslint-disable-next-line no-restricted-syntax -- 拖动位置是逐帧动态值, 经 CSS custom property 注入
-      style={floatingStyle}
+      ref={panelRef}
+      className={[CAM_PANEL, floatingPoint ? CAM_PANEL_FLOATING : "", isDragging ? CAM_PANEL_DRAGGING : ""]
+        .filter(Boolean)
+        .join(" ")}
       data-floating-panel
     >
       <div
-        className={styles.camPanelBar}
+        className={isDragging ? `${CAM_PANEL_BAR} !cursor-grabbing` : CAM_PANEL_BAR}
         onDoubleClick={resetPosition}
         title="拖动相机面板，双击归位"
         {...handleProps}
@@ -131,7 +148,7 @@ export function FloatingCameraPanel({
         {onEnlarge && (
           <button
             type="button"
-            className={styles.floatToggleBtn}
+            className={FLOAT_TOGGLE_BTN}
             onClick={onEnlarge}
             title="放大相机"
           >
@@ -141,7 +158,7 @@ export function FloatingCameraPanel({
         {position && (
           <button
             type="button"
-            className={styles.floatToggleBtn}
+            className={FLOAT_TOGGLE_BTN}
             onClick={resetPosition}
             title="归位"
           >
@@ -150,7 +167,7 @@ export function FloatingCameraPanel({
         )}
         <button
           type="button"
-          className={styles.floatToggleBtn}
+          className={FLOAT_TOGGLE_BTN}
           onClick={() => setCollapsed(true)}
           title="收起相机"
         >

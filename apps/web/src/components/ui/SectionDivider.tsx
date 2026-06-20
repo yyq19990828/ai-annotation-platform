@@ -1,5 +1,6 @@
-import styles from "./SectionDivider.module.css";
-
+/**
+ * SectionDivider —— 分区标题分隔(v0.17.2,module.css → Tailwind)。
+ */
 interface SectionDividerProps {
   label: string;
   hint?: string;
@@ -7,14 +8,12 @@ interface SectionDividerProps {
 
 export function SectionDivider({ label, hint }: SectionDividerProps) {
   return (
-    <div className={styles.root}>
-      <span className={styles.label}>
+    <div className="mb-2 mt-5 flex items-center gap-2.5">
+      <span className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
         {label}
       </span>
-      {hint && (
-        <span className={styles.hint}>{hint}</span>
-      )}
-      <span className={styles.line} />
+      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+      <span className="h-px flex-1 bg-border" />
     </div>
   );
 }

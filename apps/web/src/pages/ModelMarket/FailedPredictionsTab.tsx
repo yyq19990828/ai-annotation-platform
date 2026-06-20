@@ -11,9 +11,11 @@ import {
   useDismissFailedPrediction,
   useRestoreFailedPrediction,
 } from "@/hooks/useFailedPredictions";
-import styles from "./FailedPredictionsTab.module.css";
 
 const MAX_RETRY = 3;
+
+const CELL_CLASS = "px-3 py-2.5 align-middle";
+const HEADER_CELL_CLASS = "px-3 py-2.5 text-left text-xs font-medium text-muted-foreground";
 
 export function FailedPredictionsTab() {
   const [page, setPage] = useState(1);
@@ -72,12 +74,12 @@ export function FailedPredictionsTab() {
 
   return (
     <>
-      <div className={styles.toolbar}>
-        <p className={styles.description}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-4">
+        <p className="m-0 text-sm text-muted-foreground">
           ML Backend 调用失败的预测记录；管理员可重试 (单条最多 {MAX_RETRY} 次) 或永久放弃。
         </p>
         <label
-          className={styles.toggle}
+          className="inline-flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground"
           data-testid="toggle-include-dismissed"
         >
           <input
@@ -94,27 +96,27 @@ export function FailedPredictionsTab() {
 
       <Card>
         {isLoading ? (
-          <div className={styles.loadingState}>
+          <div className="p-8 text-center text-muted-foreground">
             加载中...
           </div>
         ) : !data || data.items.length === 0 ? (
-          <div className={styles.emptyState}>
-            <Icon name="check" size={26} className={styles.emptyIcon} />
+          <div className="px-4 py-15 text-center text-sm text-muted-foreground">
+            <Icon name="check" size={26} className="mb-2 opacity-30" />
             <div>暂无失败预测</div>
           </div>
         ) : (
-          <div className={styles.tableScroller}>
-            <table className={styles.table}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className={styles.headerRow}>
-                  <th className={styles.headerCell}>项目</th>
-                  <th className={styles.headerCell}>任务</th>
-                  <th className={styles.headerCell}>Backend</th>
-                  <th className={styles.headerCell}>错误类型</th>
-                  <th className={styles.headerCell}>消息</th>
-                  <th className={styles.headerCell}>重试</th>
-                  <th className={styles.headerCell}>时间</th>
-                  <th className={styles.headerCell}>操作</th>
+                <tr className="border-b border-border">
+                  <th className={HEADER_CELL_CLASS}>项目</th>
+                  <th className={HEADER_CELL_CLASS}>任务</th>
+                  <th className={HEADER_CELL_CLASS}>Backend</th>
+                  <th className={HEADER_CELL_CLASS}>错误类型</th>
+                  <th className={HEADER_CELL_CLASS}>消息</th>
+                  <th className={HEADER_CELL_CLASS}>重试</th>
+                  <th className={HEADER_CELL_CLASS}>时间</th>
+                  <th className={HEADER_CELL_CLASS}>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -125,34 +127,37 @@ export function FailedPredictionsTab() {
                     <tr
                       key={it.id}
                       data-testid={`failed-prediction-row-${it.id}`}
-                      className={clsx(styles.row, dismissed && styles.dismissedRow)}
+                      className={clsx("border-b border-border", dismissed && "bg-muted opacity-70")}
                     >
-                      <td className={styles.cell}>{it.project_name ?? "—"}</td>
-                      <td className={clsx(styles.cell, styles.monoCell)}>
+                      <td className={CELL_CLASS}>{it.project_name ?? "—"}</td>
+                      <td className={clsx(CELL_CLASS, "mono")}>
                         {it.task_display_id ?? "—"}
                       </td>
-                      <td className={styles.cell}>{it.backend_name ?? "—"}</td>
-                      <td className={styles.cell}>
+                      <td className={CELL_CLASS}>{it.backend_name ?? "—"}</td>
+                      <td className={CELL_CLASS}>
                         <Badge variant="outline">{it.error_type}</Badge>
                         {dismissed && (
-                          <Badge variant="outline" className={styles.dismissedBadge}>
+                          <Badge variant="outline" className="ml-1.5">
                             已放弃
                           </Badge>
                         )}
                       </td>
                       <td
-                        className={clsx(styles.cell, styles.messageCell)}
+                        className={clsx(
+                          CELL_CLASS,
+                          "max-w-[280px] overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground",
+                        )}
                         title={it.message}
                       >
                         {it.message}
                       </td>
-                      <td className={styles.cell}>
+                      <td className={CELL_CLASS}>
                         <span className="mono">{it.retry_count}</span> / {MAX_RETRY}
                       </td>
-                      <td className={clsx(styles.cell, styles.timeCell)}>
+                      <td className={clsx(CELL_CLASS, "text-xs text-muted-foreground")}>
                         {new Date(it.created_at).toLocaleString()}
                       </td>
-                      <td className={clsx(styles.cell, styles.actionsCell)}>
+                      <td className={clsx(CELL_CLASS, "whitespace-nowrap")}>
                         {dismissed ? (
                           <Button
                             size="sm"
@@ -182,7 +187,7 @@ export function FailedPredictionsTab() {
                               disabled={dismiss.isPending}
                               onClick={() => onDismiss(it.id, it.task_display_id)}
                               data-testid={`dismiss-${it.id}`}
-                              className={styles.dismissButton}
+                              className="ml-1.5 text-status-danger"
                             >
                               放弃
                             </Button>
@@ -198,7 +203,7 @@ export function FailedPredictionsTab() {
         )}
 
         {totalPages > 1 && (
-          <div className={styles.pagination}>
+          <div className="flex justify-end gap-1.5 border-t border-border px-4 py-2.5">
             <Button
               size="sm"
               variant="ghost"
@@ -207,7 +212,7 @@ export function FailedPredictionsTab() {
             >
               上一页
             </Button>
-            <span className={styles.pageIndicator}>
+            <span className="self-center text-xs text-muted-foreground">
               {page} / {totalPages}
             </span>
             <Button

@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { ReviewClaimResponse, TaskLockConflictDetail, TaskResponse } from "@/types";
-import styles from "./WorkbenchBanners.module.css";
+
+const BANNER_BASE = "flex items-center gap-1.5 border-b border-border px-3.5 py-1.5 text-xs";
 
 interface WorkbenchBannersProps {
   mode: "annotate" | "review";
@@ -42,7 +43,7 @@ export function WorkbenchBanners({
     <>
       {lockError && (
         <div
-          className={`${styles.banner} ${styles.lockBanner}`}
+          className={`${BANNER_BASE} bg-status-danger-soft text-status-danger`}
         >
           <Icon name="warning" size={13} />
           {lockErrorText(lockError, lockConflict)}
@@ -51,7 +52,7 @@ export function WorkbenchBanners({
 
       {mode === "review" && claimInfo && !claimInfo.is_self && (
         <div
-          className={`${styles.banner} ${styles.claimBanner}`}
+          className={`${BANNER_BASE} border-amber-500/40 bg-status-caution-soft text-amber-700 dark:text-amber-300`}
         >
           <Icon name="warning" size={13} />
           已被其他审核员认领（{new Date(claimInfo.reviewer_claimed_at).toLocaleString("zh-CN")}），仍可接力处理
@@ -59,7 +60,7 @@ export function WorkbenchBanners({
       )}
       {mode === "review" && task?.skip_reason && (
         <div
-          className={`${styles.banner} ${styles.skipBanner}`}
+          className={`${BANNER_BASE} border-violet-500/40 bg-status-info-soft text-violet-700 dark:text-violet-300`}
         >
           <Icon name="warning" size={13} />
           标注员跳过此题 · 可通过（无目标即视为完成）或退回重派
@@ -68,12 +69,12 @@ export function WorkbenchBanners({
 
       {mode === "annotate" && task?.status === "review" && (
         <div
-          className={`${styles.banner} ${styles.actionBanner} ${styles.reviewBanner}`}
+          className={`${BANNER_BASE} gap-2.5 bg-brand/10 px-3.5 py-2 text-brand`}
         >
           <Icon name="check" size={13} />
-          <span className={styles.flexText}>
+          <span className="flex-1">
             已提交质检 · 等待审核
-            {task.reviewer_claimed_at && <span className={styles.mutedNote}>· 审核员已介入</span>}
+            {task.reviewer_claimed_at && <span className="ml-2 opacity-70">· 审核员已介入</span>}
           </span>
           <Button
             size="sm"
@@ -87,13 +88,13 @@ export function WorkbenchBanners({
       )}
       {mode === "annotate" && task?.status === "completed" && (
         <div
-          className={`${styles.banner} ${styles.actionBanner} ${styles.completedBanner}`}
+          className={`${BANNER_BASE} gap-2.5 bg-status-positive-soft px-3.5 py-2 text-status-positive`}
         >
           <Icon name="check" size={13} />
-          <span className={styles.flexText}>
+          <span className="flex-1">
             已通过审核 · 任务已锁定
             {task.reopened_count > 0 && (
-              <span className={styles.mutedNote}>· 历史重开 {task.reopened_count} 次</span>
+              <span className="ml-2 opacity-70">· 历史重开 {task.reopened_count} 次</span>
             )}
           </span>
           <Button
@@ -107,10 +108,10 @@ export function WorkbenchBanners({
       )}
       {mode === "annotate" && task?.status === "rejected" && (
         <div
-          className={`${styles.banner} ${styles.rejectedBanner}`}
+          className={`${BANNER_BASE} gap-2 bg-status-danger-soft px-3.5 py-2 text-status-danger`}
         >
-          <Icon name="warning" size={13} className={styles.shrinkIcon} />
-          <span className={styles.flexText}><b>审核员退回：</b>{task.reject_reason}</span>
+          <Icon name="warning" size={13} className="flex-shrink-0" />
+          <span className="flex-1"><b>审核员退回：</b>{task.reject_reason}</span>
           <Button
             size="sm"
             variant="danger"
@@ -123,9 +124,9 @@ export function WorkbenchBanners({
       )}
       {mode === "annotate" && task?.status === "in_progress" && task.reject_reason && (
         <div
-          className={`${styles.banner} ${styles.redoBanner}`}
+          className={`${BANNER_BASE} items-start gap-2 bg-status-caution-soft px-3.5 py-2 text-muted-foreground`}
         >
-          <Icon name="rotate-ccw" size={13} className={styles.redoIcon} />
+          <Icon name="rotate-ccw" size={13} className="mt-px flex-shrink-0" />
           <span>重做中 · <b>退回原因：</b>{task.reject_reason}</span>
         </div>
       )}

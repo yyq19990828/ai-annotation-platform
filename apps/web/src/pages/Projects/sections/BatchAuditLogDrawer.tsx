@@ -3,11 +3,6 @@ import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { useBatchAuditLogs } from "@/hooks/useBatches";
 import type { BatchResponse, BatchAuditLogEntry } from "@/api/batches";
-import styles from "./BatchAuditLogDrawer.module.css";
-
-function cn(...xs: Array<string | false | null | undefined>): string {
-  return xs.filter(Boolean).join(" ");
-}
 
 const ACTION_LABEL: Record<string, string> = {
   "batch.created": "创建",
@@ -51,17 +46,17 @@ export function BatchAuditLogDrawer({
   return (
     <Modal open onClose={onClose} title={`操作历史 · ${batch.display_id} ${batch.name}`} width={680}>
       {isLoading && (
-        <div className={styles.placeholder}>
+        <div className="p-6 text-center text-sm text-muted-foreground">
           加载中…
         </div>
       )}
       {!isLoading && logs.length === 0 && (
-        <div className={styles.placeholder}>
+        <div className="p-6 text-center text-sm text-muted-foreground">
           暂无操作记录
         </div>
       )}
       {!isLoading && logs.length > 0 && (
-        <div className={styles.logList}>
+        <div className="max-h-[60vh] overflow-y-auto pr-1">
           {logs.map((log) => (
             <Entry key={log.id} log={log} />
           ))}
@@ -85,21 +80,21 @@ function Entry({ log }: { log: BatchAuditLogEntry }) {
   const reason = (detail as { reason?: string }).reason;
 
   return (
-    <div className={styles.entry}>
-      <div className={styles.entryHeader}>
-        <span className={cn("mono", styles.time)}>{time}</span>
+    <div className="border-b border-border px-3 py-2.5 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mono text-xs text-muted-foreground">{time}</span>
         {role && (
           <Badge variant={ROLE_VARIANT[role] ?? "default"} dot>
             {ROLE_LABEL[role] ?? role}
           </Badge>
         )}
-        <span className={styles.actorEmail}>{log.actor_email ?? "—"}</span>
-        <span className={styles.actionLabel}>{actionLabel}</span>
+        <span className="text-muted-foreground">{log.actor_email ?? "—"}</span>
+        <span className="font-medium">{actionLabel}</span>
         {log.action === "batch.status_changed" && before && after && (
-          <span className={styles.statusChange}>
-            {before} → <strong className={styles.statusAfter}>{after}</strong>
+          <span className="text-muted-foreground">
+            {before} → <strong className="text-foreground">{after}</strong>
             {reverse && (
-              <span className={styles.reverseBadge}>
+              <span className="ml-1.5 rounded-full bg-status-caution-soft px-1.5 py-px text-2xs text-status-caution">
                 逆向
               </span>
             )}
@@ -108,18 +103,18 @@ function Entry({ log }: { log: BatchAuditLogEntry }) {
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className={styles.detailButton}
+          className="ml-auto cursor-pointer appearance-none border-0 bg-transparent text-xs text-brand [font:inherit]"
         >
           {open ? "收起" : "详情"}
         </button>
       </div>
       {reason && (
-        <div className={styles.reason}>
+        <div className="mt-1 border-l-2 border-amber-500 bg-amber-500/[0.08] px-2 py-1 text-xs text-muted-foreground">
           原因：{reason}
         </div>
       )}
       {open && (
-        <pre className={styles.detailPre}>
+        <pre className="mono mt-1.5 overflow-x-auto rounded-sm bg-muted p-2 text-xs text-muted-foreground">
           {JSON.stringify(detail, null, 2)}
         </pre>
       )}

@@ -4,7 +4,7 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: var(--color-bg);
+  background: var(--sc-background);
 }
 
 .shell {
@@ -26,7 +26,7 @@
   height: 32px;
   overflow: hidden;
   border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--color-accent), oklch(0.55 0.22 280));
+  background: linear-gradient(135deg, var(--sc-brand), oklch(0.55 0.22 280));
 }
 
 .brandIconInner {
@@ -43,13 +43,13 @@
 
 .brandSubtitle {
   font-size: 11px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }
 
 .card {
   padding: 26px 30px 30px;
-  background: var(--color-bg-elev);
-  border: 1px solid var(--color-border);
+  background: var(--sc-card);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-xl);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
 }
@@ -63,7 +63,7 @@
 .description {
   margin: 0 0 18px;
   font-size: 12.5px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .form {
@@ -80,7 +80,7 @@
   margin-bottom: 5px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .input {
@@ -88,15 +88,15 @@
   width: 100%;
   padding: 8px 11px;
   font-size: 13.5px;
-  color: var(--color-fg);
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
+  color: var(--sc-foreground);
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
   outline: none;
 }
 
 .input:focus {
-  border-color: var(--color-accent);
+  border-color: var(--sc-brand);
 }
 
 .inputInvalid,
@@ -119,7 +119,7 @@
   display: flex;
   align-items: center;
   padding: 2px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   cursor: pointer;
   background: none;
   border: none;
@@ -158,14 +158,14 @@
   font-weight: 600;
   color: #fff;
   cursor: pointer;
-  background: var(--color-accent);
+  background: var(--sc-brand);
   border: none;
   border-radius: var(--radius-md);
 }
 
 .primaryButtonPending {
   cursor: not-allowed;
-  background: var(--color-accent-muted);
+  background: var(--sc-brand);
 }
 
 .loginPrompt {
@@ -175,16 +175,16 @@
 }
 
 .mutedText {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .link {
-  color: var(--color-accent);
+  color: var(--sc-brand);
   text-decoration: none;
 }
 
 .inviteEmail {
-  color: var(--color-fg);
+  color: var(--sc-foreground);
 }
 
 .pillRow {
@@ -197,9 +197,9 @@
 .pill {
   padding: 3px 8px;
   font-size: 11px;
-  color: var(--color-fg-muted);
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
+  color: var(--sc-muted-foreground);
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
   border-radius: 999px;
 }
 
@@ -219,7 +219,7 @@
 .errorPanelHint {
   margin: 0 0 16px;
   font-size: 13px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .errorBanner {

@@ -1,6 +1,6 @@
 .loadingState {
   padding: 24px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
   text-align: center;
 }
@@ -16,9 +16,9 @@
   flex-direction: column;
   gap: 10px;
   padding: 14px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-elev);
+  background: var(--sc-card);
   font-family: inherit;
   text-align: left;
   cursor: pointer;
@@ -26,7 +26,7 @@
 }
 
 .projectCard:hover {
-  border-color: var(--color-accent);
+  border-color: var(--sc-brand);
 }
 
 .cardTopRow {
@@ -50,7 +50,7 @@
 
 .projectMeta {
   margin-top: 2px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
@@ -67,25 +67,25 @@
   gap: 4px;
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
   font-size: 11px;
 }
 
 .backendReady {
-  color: var(--color-success);
+  color: var(--sc-positive);
 }
 
 .backendMismatch {
-  color: var(--color-warning);
+  color: var(--sc-caution);
 }
 
 .backendDefault {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }
 
 .concurrencyText,
 .lastJobText {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
@@ -103,7 +103,7 @@
 
 .statLabel,
 .mutedStatValue {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }
 
 .mutedStatValue {
@@ -116,12 +116,12 @@
   align-items: center;
   gap: 8px;
   padding: 32px 16px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   text-align: center;
 }
 
 .emptyTitle {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 

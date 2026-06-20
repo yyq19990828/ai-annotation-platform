@@ -1,8 +1,12 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { ActionBar } from "./selectionCard/ActionBar";
-import cardStyles from "./selectionCard/cardLayout.module.css";
-import styles from "./ImageBatchCardContent.module.css";
+
+const BODY_CLASS =
+  "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
+const SUMMARY_CLASS = "flex flex-col gap-0.5 text-sm text-foreground";
+const COUNT_CLASS = "text-brand tabular-nums";
+const HINT_CLASS = "text-xs text-muted-foreground";
 
 export interface VideoBoxBatchCardContentProps {
   count: number;
@@ -39,10 +43,10 @@ export function VideoBoxBatchCardContent({
   onClear,
 }: VideoBoxBatchCardContentProps) {
   return (
-    <div className={cardStyles.body}>
-      <div className={styles.summary}>
-        已选 <b className={styles.count}>{count}</b> 个单帧框
-        <span className={styles.hint}>操作将应用到全部选中</span>
+    <div className={BODY_CLASS}>
+      <div className={SUMMARY_CLASS}>
+        已选 <b className={COUNT_CLASS}>{count}</b> 个单帧框
+        <span className={HINT_CLASS}>操作将应用到全部选中</span>
       </div>
 
       <ActionBar label="批量操作">

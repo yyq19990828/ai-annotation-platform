@@ -8,6 +8,7 @@
 
 | 版本组 | 文件 |
 |--------|------|
+| 0.16.x | [docs/changelogs/0.16.x.md](docs/changelogs/0.16.x.md) |
 | 0.15.x | [docs/changelogs/0.15.x.md](docs/changelogs/0.15.x.md) |
 | 0.14.x | [docs/changelogs/0.14.x.md](docs/changelogs/0.14.x.md) |
 | 0.13.x | [docs/changelogs/0.13.x.md](docs/changelogs/0.13.x.md) |
@@ -29,182 +30,182 @@
 
 ## 最新版本
 
-<!-- 0.16.x 版本变更按版本段追加到本区；进入 0.17.x 后整体移到 docs/changelogs/0.16.x.md -->
+<!-- 0.17.x 版本变更按版本段追加到本区；进入 0.18.x 后整体移到 docs/changelogs/0.17.x.md -->
 
-## [0.16.15] - 2026-06-19
+> **0.17.x 是一个 UI 迁移 Epic**:把 `apps/web` 自维护的 CSS Modules + `tokens.css` 视觉体系全量迁到 Tailwind v4 + shadcn/ui,直至旧 `*.module.css` 与 `tokens.css` 退役、CI 门禁完成时代切换。全程红线为「只换皮、行为零回退」(业务逻辑 / 数据流 / 路由 / 画布渲染逻辑均不动),逐阶段以 light/dark 双主题截图基线把关。Epic 与设计规范见 [`docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md`](docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md) 与 `docs-site/dev/reference/design-system.md`。
 
-视频工作台「下帧参考框」优化:参考框(选中轨迹在当前帧无实框时画的最近关键帧虚线提示)新增两项标注辅助。其一,锁定轨迹后不再逐帧弹参考框 —— 锁定即「已确认」,不需要继续提示。其二,新增可选的运动预测开关:开启后参考框不再照搬最近关键帧,而是按当前帧之前最近两个关键帧恒速外推到当前帧(恒速卡尔曼的预测步),让参考框落在目标的预测位置、当作下一帧的预标注辅助;「复制到当前帧」也随之落在预测位置。默认关,守「默认=现状」红线。完整卡尔曼(全历史平滑 + 噪声参数 + 不确定度可视化)记入 ROADMAP 待触发。
+## [0.17.12] - 2026-06-20
 
-### Added
-
-- **参考框运动预测开关**(实验特性,设置抽屉「实验特性 › 参考框运动预测」):本地 localStorage 开关 `experiment.videoReferencePredict`,用 `useSyncExternalStore` 做成响应式,切换即时生效无需刷新。开启时参考框 / 「复制到当前帧」改用恒速外推几何,标签由「参考 F{n}」变为「预测 F{n}↗」。
-- **`trackReferenceAtFrame`**(`videoStageGeometry.ts`):参考框几何派生纯函数。`predict=false` 取最近关键帧(现状);`predict=true` 取当前帧之前最近两个可见关键帧线性外推到当前帧,先行关键帧不足两个时回退现状。
+shadcn 迁移 Epic 收尾期的 admin 导航整顿与「换皮回退」修补：把超管两个看板入口的路由 / 文案理顺，并恢复被换皮误收的移动端工具入口。
 
 ### Changed
 
-- **锁定轨迹不再显示参考框**:画布 ghost(`deriveVideoFrameViews`)与侧栏选中卡 ghost(`VideoTrackSidebar.selectedTrackGhost`)均对已锁定轨迹返回空,二者行为一致。
-
-## [0.16.14] - 2026-06-18
-
-选中信息卡内容重设计:把「选中即现」的浮动卡从「右栏搬运容器」升级为「为此刻选中的对象量身定做」的结构化信息位。定义一套卡片设计系统(共享展示积木),四种选中态(图片框 / AI 预测 / 视频轨迹 / 视频单帧)按需组合,视觉统一、各有侧重;补齐此前被丢弃的 AI 置信度 / 模型来源 / 采纳决策与视频帧定位等信息。不动 v0.16.8 浮动卡基座。
-
-### Added
-
-- **卡片设计系统积木**(`shell/selectionCard/`):`IdentityHeader`(类别色块 + 类名 + 来源徽章「手动 / AI / 采纳 / 导入」+ 置信度 pill,按阈值着色)、`MetricGrid`(2 列结构化几何指标)、`MetaFooter`(可折叠次要信息:ID 短码 / 来源 / 创建·更新时间 / 层级 / 分组)、`ActionBar`(统一动作组容器);配 `geometryMetrics` 纯函数把几何展开为「尺寸 / 占图 / 位置 / 宽高比 / 面积(shoelace)/ 周长」等指标,无像素维度时降级为相对值。
-
-### Changed
-
-- **图片选中卡**:从单行几何摘要升级为结构化指标网格 + 身份头 + 折叠元信息 + 底部动作组(改类 / 隐藏 / 锁定 / 删除);置信度 pill 仅对 AI 来源展示,手动框即便后端落了 `confidence=1` 也不显示。
-- **AI 预测选中卡**:此前选中预测框只显示「已选中 1 个标注。」占位;现补齐为大置信度条(按阈值绿/琥珀/红)+ 来源/候选序号 + OCR 文本 + 几何指标 + 采纳/精修/忽略动作。预测与普通框共用 `selectedId`,按 `pred-` 前缀反查 `aiBoxes` 命中专属分支(图片端专属,diff-final 模式不触发);精修按钮仅 polygon 几何渲染;采纳/忽略复用既有 handler 后自动清选中,避免卡片回落占位死角。
-- **视频单帧选中卡**:视频「单帧框」(`video_bbox`)不属任何轨迹、此前被轨迹面板过滤掉而无信息;现改用专属单帧卡,身份头带「F{n} · 时间」帧定位 chip,配几何指标 + 属性 + 跳到该帧 / 改类 / 删除动作。视频轨迹框仍走原轨迹面板,按几何类型在卡内分流。
-- **视频轨迹卡**:把「选中轨迹时整个右栏轨迹面板(含全部轨迹清单)搬进卡」重构为聚焦单条轨迹的卡 —— 复用同一套设计积木,承载「轨迹整体」(关键帧数 / 范围 / 语义标签 / 轨迹属性 + 拆轨迹 / AI 传播 / 复制后续 / 转换)与「当前帧」(状态 / 来源 / 几何指标 / 逐帧属性 + 复制粘贴关键帧 / 标记消失·遮挡)两层语义,整合关键帧表 + 上 / 下关键帧导航,底部 sticky 操作栏(显隐 / 锁定 / 改类 / 删除)。右栏退化为纯轨迹清单(列表 + 多选批量 + 行内显隐 / 锁 / 改类 / 删除);画布右上角的关键帧快跳浮层退役,跳转并入卡内。轨迹色块改走 `getTrackColor`(含逐轨道覆盖),与画布 / 列表同源。
-
-## [0.16.13] - 2026-06-18
-
-巨石文件拆分 Epic 收尾批次:对「缓拆」目标(因渲染时序 / 竞态 / 职责纠缠无法直接安全拆的大文件)改走「补测试再拆」—— 先补表征测试 / 纯函数单测锁定行为,再抽子模块;无法单测的 3D 簇则先建 Playwright 点云端到端基线作为拆分前的行为护栏。纯内部重构 + 测试基建,无用户可见行为变化。
-
-### Changed
-
-- **后端缓拆(补表征测试后抽)**:`batch_permissions.py`(任务批状态机权限守卫)、`annotation_propagation.py`(视频轨迹传播纯逻辑簇)、`media_chunks.py` / `media_frames.py`(分块 / 单帧 ffmpeg 抽取)从巨石中抽出,调用点经 re-export 保持零改动。
-- **前端工作台 hook / 纯函数拆分**:从 `useWorkbenchShellModel` 抽 `useIssuePins`(issue 图钉)、`usePredictionPropagation`(跨帧传播竞态簇)、`useAiPopoverFrame`(AI 浮层位置 / 尺寸);从 `ThreeDWorkbench` 抽 `usePsrFloatingPanel`(选中框 PSR 浮层)、`useCameraPanels`(相机面板布局)、`usePsrPatchPipeline`(PSR 数值防抖落库);`ImageStage` 提炼 `normalizeImageCoordinate` / `resolveSnapMatch` 纯几何函数。同名解构 / re-export 保证消费点零改动。
-- **诚实缓拆**:`usePsrEditor` / `usePointMask` / `usePointCloudSelection` 经核查因共享 scene + form + 合并键盘 handler 职责纠缠,不为「拆干净」引入行为变化,整簇缓拆,待端到端基线就位后再拆。
-
-### Added
-
-- **点云工作台 Playwright E2E 基线**:新增 `pointcloud` 测试 project(经 ANGLE / SwiftShader 在 headless 跑通 Three.js / WebGL)+ 后端 `seed/lidar` fixture(生成最小点云资产 + lidar 项目 + box_3d 标注)。冒烟(加载渲染零 console error)+ 交互断言(点选 → 改 PSR 数值 → 几何 PATCH 落库;B 键放置框 / Delete 删除)共 4 个 spec,作为将来拆 3D 整簇的行为护栏。
-- **拆分回归网单测**:批权限矩阵、视频轨迹传播纯函数、PSR 防抖落库管线(fake-timers)、图像几何函数等单测,锁定拆分前后行为等价。
-
-## [0.16.12] - 2026-06-17
-
-巨石文件拆分 Epic 主体批次(合并 0.16.9–0.16.12 各阶段):把超大 router / 组件 / hook 文件按职责拆成子模块,降低单文件复杂度、提升可测性与可维护性。纯内部重构,无用户可见行为变化。
-
-### Changed
-
-- **后端 router / service 拆分**:`tasks.py` 巨石 router 拆为 `tasks/` 子包;`dashboard.py` 按受众拆为 router 包 + 统计纯函数抽到 `services/dashboard_stats`;`workers/media.py` 的 ffprobe / codec 纯函数抽到 `media_probe` / `media_codec`。
-- **前端工作台 hook 拆分**:`useWorkbenchShellModel` 抽 `useWorkbenchSidebarSizing`(侧栏像素尺寸)、`useConflictResolution`(版本冲突弹层),模块级纯函数入 helpers;`ThreeDWorkbench` 模块级纯函数 / 常量入 helpers。
-- **模型市场能力目录拆分**:标签映射 / 纯逻辑 / 类型 / 子组件抽到 `capability/`(`labels`、`types`、`catalogModel`、`CapabilityCatalogPanel` 子组件)。
-
-## [0.16.8] - 2026-06-17
-
-图片 / 视频工作台新增「选中标注浮动信息卡」:选中标注即在画布上浮出一张可拖动、可折叠、记住位置(跨设备)的信息卡,把该端"当前选中对象"的高频浏览与操作集中到画布旁,对齐 3D 工作台"选中即现"的体验。
-
-### Added
-
-- **选中标注浮动信息卡(图片)**:选中标注即浮出,卡内承载改类 / 锁定 / 隐藏 / 删除、几何摘要(矩形框像素尺寸 / 多边形顶点数 等)与属性编辑;展开态可拖动 / 缩放 / 折叠成小标签,位置与折叠态按用户记忆并跨设备同步。
-- **选中标注浮动信息卡(视频)**:选中轨迹即把完整轨迹面板搬进浮窗——轨迹操作(拆轨 / 下一预测 / AI 传播 / 复制后续)、当前帧操作、关键帧列表跳转、语义标签(跨任务 Re-ID)与属性,与右栏共享同一份状态和操作回调;卡展开时画布右上的关键帧快跳浮层自动隐藏,避免重复。右栏面板保留共存。
-
-## [0.16.7] - 2026-06-17
-
-「标签内容」设置从一维扁平多选重做为**按标注类型分段**(单帧 / 轨迹 / AI 预测),每段只列该类型有意义的字段;视频轨迹标签首次接入这套配置(此前为硬编码)。
-
-### Changed
-
-- **标签内容按类型分段**:工作台设置「标签内容」改为分段控件,顶部切换「单帧 / 轨迹 / AI预测」,下方按段勾选字段。`类别名` 三段恒显;单帧可选分组号 / 属性,轨迹可选轨迹号 / 状态(插值·遮挡)/ 属性,AI 预测可选来源前缀 / 置信度 / 分组号 / 属性。同时修掉旧控件右对齐换行 chip 的观感问题。
-- **AI 来源前缀可关**:AI 框 `✦ 模型 / 导入` 前缀由恒显改为 AI 段 `来源` 可选项(默认开)。
-- **视频轨迹标签接入设置**:视频 track 框标签此前硬编码 `#轨迹号 · 类别 · 状态`,现按轨迹段配置渲染,默认配置等于原观感。
-- **偏好数据结构**:`common.labelContent` 从 `string[]` 改为 `{ single, track, ai }` 分段对象;后端 `before` validator 与前端 sanitize 自动迁移旧扁平值(图片观感不变),旧用户无感。
-
-### Tests
-
-- 前端:`buildLabelText` / `buildTrackLabelText` 三段字段组合、`migrateLabelContent` 旧值迁移、分段控件渲染。
-- 后端:旧扁平 list 迁移、新对象去重 / 缺段补默认 / 非法 token 拒绝。
-
-### Docs
-
-- 用户指南「工作台设置」标签内容小节改写为按类型分段;`settings.generated.md` 重新生成。
-
-## [0.16.6] - 2026-06-17
-
-画布栈统一 epic 收尾(ADR-0041):**删除视频 SVG/DOM 旧栈,Konva 成为视频工作台唯一渲染栈**。观察期无回退后兑现不可逆清理——双栈塌缩为单栈,视觉参数/坐标模型/scale 抵消/fit/zoom 全仓与图片同一套,双份维护税归零。删除前补齐切默认观察期遗留的对等缺口,确保删栈不丢功能。
-
-### Removed
-
-- 删除整套 SVG/DOM 视频渲染栈(16 个文件):`VideoStage` / `VideoFrameOverlay` / `VideoObjectsLayer` / `VideoTrackShape` / `VideoTextLayer` / `VideoInteractionLayer` / `VideoIssueLayer` / `VideoMediaLayer` / `VideoGridLayer` / `VideoAttachmentLayer` / `VideoBitmapLayer` / `VideoStageSurface` / `VideoSelectionActions` / `videoStageCoordinates`(SVG CTM 坐标路径)/ `useChunkSamples` / `videoChunkDemux`,及其旧测试与 `.module.css`。
-- 移除 `videoKonvaFlag`(URL query `?videoKonva=` / localStorage 逃生舱)与设置面板「视频 Konva 渲染栈」开关(`experiment.videoKonva`);`VideoWorkbench` 去掉 flag 分流,无条件渲染 `VideoKonvaStage`。
-- 清理 `boxVisual.ts` 中仅 SVG 用的归一化常量(`VIDEO_HANDLE_SIZE` / `VIDEO_LABEL_*` 等)。
+- **超管看板路由理顺**：`/overview`=平台概览（运行状态 / 资源）、`/dashboard`=项目管理（全部项目）；旧 `/projects` 重定向到 `/dashboard`（保留 query），书签不破。侧栏两条入口本地化为中文「平台概览」/「项目管理」，与其余条目一致。
+- **超管默认主页保持「平台概览」**：登录后落到 `/overview`（换皮期一度被误改为项目管理，现修回）。
 
 ### Fixed
 
-- **删栈前对齐功能**:补齐 Konva 视频栈缺失的三处能力——① 光标坐标上报(`onCursorMove` → 状态栏像素坐标读出);② 本地视口/导航快捷键 `F`(fit)/`0`(实际尺寸)/`Home`·`End`(选中轨迹首/末出现帧);③ issue 图钉点击(可点击跳到讨论面板,pointerdown `cancelBubble` 防误触发画框)。
-- **标注标签「字号」设置失效**:Konva `Text` 的 `fontFamily` 误用 CSS `var(--font-sans, …)`,canvas 无法解析致整串非法、字号恒回退 10px;改用字面字体栈(图片 + 视频两栈)。
-- **工作台设置滑条数值不实时**:拖动时数字读出冻结到松手才更新;提升拖动期实时值用于显示,commit 仍仅在松手发生。
-
-## [0.16.5] - 2026-06-16
-
-画布栈统一 epic 的**功能对等补全**:v0.16.4 切默认后发现 Konva 视频栈缺了一整套环绕画布的「视频 chrome」——时间轴/播放浮层、Minimap、QC 警告、关键帧快跳——以及大量热键驱动的导航命令(关键帧跳转/书签/循环区间/跳转历史/采样网格步进/jog 连播/轨迹状态切换),这些此前只存在于旧 SVG `VideoStage`。本版把这些非画布机制补齐到 Konva 栈,使其与旧栈**真·功能对等**,为后续删旧栈(原计划 v0.16.5,顺延为下一独立 release)扫清前置。旧 SVG 栈与 flag 仍全保留作逃生舱。
-
-### Added
-
-- **视频播放控制器** `useVideoPlaybackController`:从 `VideoStage` 抽出的栈无关 hook,封装播放/逐帧/jog 连播(含反向 rAF)/循环区间/书签/跳转历史(sessionStorage 持久化)/采样网格导航/关键帧跳转/暂停吸附,以及派生的时间轴密度、选中轨迹时间线、QC 质量警告、帧悬停预览。复用既有纯函数(`videoSamplingGrid`/`videoNavigationState`/`videoTrackTimeline`/`videoTrackOutside` 等),不重复造轮子。
-- **Konva 视频栈补齐 chrome**:`VideoKonvaStage` 现渲染 `VideoPlaybackOverlay`(时间轴:章节/书签/循环区间/全局密度/jog 速率)、`Minimap`、`VideoQcWarnings`、关键帧快跳浮层;`useImperativeHandle` 接控制器真实命令(此前 `seekToKeyframe`/`toggleBookmark`/`jumpHistory`/`clearLoopRegion`/`toggleSelectedTrack*`/`propagateSelectedTrack`/`deleteSelectedTrackKeyframe` 均为 no-op,现全部生效)。QC 警告用当前帧 `frameViews.entries`(`VideoEntryView` 新增 `className` 字段)计算,覆盖关键帧间隔/极小框/高重叠三类。
-
-### Changed
-
-- **`VideoStageControls` / `VideoPoint` 类型解耦**:从 `VideoStage.tsx` 抽到 `videoStageControls.ts` / `videoStageTypes.ts`,供两栈共用,为删旧栈断开类型耦合。
+- **移动端顶栏工具入口回归**：窄屏（< 1024px）下被换皮误收的「后台任务铃铛」（全角色）、「预标 job 徽章」、「性能浮窗 toggle」恢复显示，与始终渲染的通知入口对齐。
 
 ### Notes
 
-- **WebCodecs 精确帧解码路径暂未迁到 Konva 栈**(`useVideoChunkDecoder` 等,flag-gated 实验特性,默认关):Konva 栈精确帧走 `useVideoBitmapCache`,与旧栈默认路径一致;WebCodecs 迁移留作后续。
+- Modal（Radix Dialog 适配层）补回「点击 overlay 关闭」smoke 用例；`useToastStore` 适配层补 JSDoc 说明 toast 列表已交 sonner 内部管理、外部不可观测。
 
-## [0.16.4] - 2026-06-16
+## [0.17.11] - 2026-06-20
 
-画布栈统一 epic 第五步:**视频工作台默认切到 Konva 渲染栈(可逆,不删旧栈)**。`experiment.videoKonva` 未显式设置时默认开启,视频工作台默认走统一的 Konva 栈;**旧 SVG 栈与开关全部保留作逃生舱**——`?videoKonva=0` 或设置面板关闭即秒级回退,行为与切换前完全一致。删旧栈是下一个独立 release(v0.16.5,待观察期无回退后才做)。前置功能对等(画框/移动/缩放/平移/选中 + 右键菜单)已在 v0.16.3 与本版补齐。架构见 [ADR-0041](docs/adr/0041-video-canvas-unify-to-konva.md)。计划见 `docs/plans/2026-06-16-v0.16.4-cutover-default-on-and-observe.md`。
+设计系统第二阶段收尾:只抽真正重复的局部表单原语,并降低视频 Konva 层每次渲染读取 CSS 变量的成本。
 
 ### Changed
 
-- **视频默认渲染栈 → Konva**:`isVideoKonvaEnabled` / `resolveVideoKonvaEnabledFromEnv` 默认值改为开(`VIDEO_KONVA_DEFAULT_ON`),设置面板「实验特性 · 视频 Konva 渲染栈」默认显示开启;显式 `?videoKonva=0` / 关闭开关 / localStorage `video.experimental.konva=0` 仍可回退旧 SVG 栈(逃生舱,优先级:URL > localStorage > 默认)。
-- **观察期面包屑**:视频工作台挂载时在控制台打 `[video-stack] 渲染栈 = konva|svg(回退)`,便于切默认后判断是否有人回退旧栈。聚合遥测需客户端事件管线(仓库暂无),按计划 §3.2 推迟到具备 sink 时再补。
+- **Projects sections 共享标签样式**:5 处完全相同的 `LABEL_CLASS` 抽到 `Projects/sections/formClasses.ts`;发散的 `CONTROL_CLASS` 保持本地,不扩大抽象。
+- **画布取色 memo**:`VideoKonvaTracksLayer` 与 `VideoKonvaIssueLayer` 将 `cssVarToHex(...)` 放入 `useTheme().resolved` 依赖的 `useMemo`,保留主题切换即时重取色。
+
+## [0.17.10] - 2026-06-20
+
+设计系统第二阶段继续收敛层级与 spacing:裸数字 z-index 改为语义 utilities,任意 padding 归并到 Tailwind spacing。
+
+### Changed
+
+- **语义 z 标尺**:新增 `--sc-z-*` 与 `.z-*` utilities,覆盖局部画布层、dropdown/popover/modal/drawer、notification、workbench modal 与 app drawer 的现有层级。
+- **spacing 收敛**:`apps/web/src` 内 `p?-[Npx]` 任意 padding 归并为 Tailwind spacing 类。
+- **z-index 门禁提示**:`check-tw-tokens.mjs` 对新增裸 `z-N` / `z-[N]` 输出 warning,提示改用语义 z utility。
+
+## [0.17.9] - 2026-06-20
+
+设计系统第二阶段继续收敛字号:全站任意像素字号改为紧凑命名 scale。
+
+### Changed
+
+- **紧凑字号 scale**:`shadcn.css` 定义 `text-2xs/text-xs/text-sm` 主档,并补少量低频命名档保留整数字号。
+- **任意字号收敛**:`apps/web/src` 内 `text-[Npx]` 全量替换为命名字号 utility;半像素档归入最近命名档。
+- **字号门禁提示**:`check-tw-tokens.mjs` 对新增 `text-[Npx]` 输出 warning,提示改用命名字号 token。
+
+## [0.17.8] - 2026-06-20
+
+设计系统第二阶段启动:把散落在组件 `className` 中的状态文字色与软底收敛到 `shadcn.css` 的语义工具类,减少暗色主题配对的人工维护。
+
+### Changed
+
+- **状态色语义化**:新增 `text-status-danger/caution/positive/info/info-alt` 与 `bg-status-*-soft`,等价替换 rose / amber / emerald / violet / sky 的状态文字和 `/10` 软底。
+- **状态色门禁提示**:`check-tw-tokens.mjs` 对新增裸 `text-<hue>-600` / `bg-<hue>-500/10` 状态类输出 warning,提示改用语义工具类。
+
+## [0.17.7] - 2026-06-19
+
+shadcn 迁移 Epic 收官:旧 `tokens.css` 彻底退役,暗色统一由 `shadcn.css` 的 `--sc-*` + `data-theme` 单点驱动;Tailwind preflight 从 `.tw-scope` 局部 reset 转为全局;CSS Modules 时代门禁退役、Tailwind 时代门禁转硬阻断。
+
+### Removed
+
+- **删除 `tokens.css`**(全仓零消费者):含底部兼容别名段;`main.tsx` 移除其 import。
+- **移除 `.tw-scope` 局部 reset**:全仓 45 处 className 去掉 `tw-scope`,preflight 转全局后不再需要局部隔离。
+- **旧门禁 `check-css-tokens.mjs` 退役**:`*.module.css` 收敛后无可扫,从 `pnpm lint` 摘除。
+
+### Changed
+
+- **preflight 转全局**:`shadcn.css` 改回 `@import "tailwindcss"`(含 preflight)。
+- **新门禁 `check-tw-tokens.mjs` 转 blocking**:修复 `!` / `hover:` 等前缀的匹配盲区后并入 `pnpm lint`,作为 Tailwind 时代的硬门禁(禁裸色 / 任意色值、暗色 token 化)。
 
 ### Notes
 
-- 本版**不删任何代码**:旧 SVG 视频栈(`VideoStage` 等)及其测试原样保留,仅供回退;切默认与删栈硬性拆两个 release(expand/contract 迁移纪律,见 v0.16.4 计划 §1.1)。
+- 全仓仅剩 **60 个 `*.module.css`**:10 个 Konva 画布叠加层(白名单 + 注释)+ 50 个未纳入本 Epic 范围的组件 / 页面。typecheck 干净、lint 0 发现、全量 1607 测试绿。
 
-## [0.16.3] - 2026-06-16
+## [0.17.6] - 2026-06-19
 
-画布栈统一 epic 第四步:**视频交互层迁到 Konva(实验 flag 后,默认关)**。在 v0.16.2 的渲染层之上,把画框、移动、缩放(8 向句柄)、平移、选中从 SVG 事件迁到 Konva 事件。命中复用纯函数 `pickTopVideoEntryAt`(同一 z 序 + padding),缩放计算复用 `applyResize`,提交语义复刻旧栈 `finishDrag`——坐标源从 SVG CTM 换成 Konva 像素空间,几何判定不变。新栈仍与旧 SVG 栈经 flag 并行,关 flag 零行为变化。架构见 [ADR-0041](docs/adr/0041-video-canvas-unify-to-konva.md)。计划见 `docs/plans/2026-06-16-v0.16.3-video-interaction-and-test-migration.md`。
-
-### Added
-
-- **视频交互 Konva 层**:`VideoKonvaInteractionLayer`(listening 层:选中框 8 向 resize 句柄 + 画框/移动/缩放实时虚线预览,句柄尺寸/线宽走 `/scale` 屏幕恒定)+ `videoKonvaInteraction`(`useVideoKonvaInteraction` hook + `advanceDrag`/`resolveDragCommit` 纯函数,Konva 事件 → draw/move/resize 状态机,松手按工具/选中态落到建框/关键帧/几何更新)。空白拖→画框、命中框→移动、句柄→缩放、右键/hand 工具→平移、点击空白→取消选中,与旧栈对等。
-- **交互纯函数 + konva-mock 测试**:`advanceDrag`/`resolveDragCommit` 单测(画框/移动/缩放推进与提交分支)、`VideoKonvaInteractionLayer` konva-mock 测试(句柄数量/方向回传/像素几何/虚线预览),与既有纯函数测试(`videoStagePicking`/`ResizeHandles`)共同守回归。
+工作台迁移(Epic 阶段 6,最大一阶段:65 个 module.css / 8536 行)。按「DOM 面板」与「真 Konva 叠加层」分桶:前者全迁 Tailwind 并删 CSS,后者保留 CSS 但切断对 `tokens.css` 的依赖。
 
 ### Changed
 
-- **`pickTopVideoEntryAt` 泛型约束放宽**到「带 `geom` 的对象」(命中只读 `.geom`):让 Konva 栈用轻量 `{ id, geom }` 视图复用同一套命中实现,不再造第二份(SVG 栈仍传完整对象,行为零变化)。
-- **VideoKonvaStage 接交互**:Stage `pointerdown` 接 `onStagePointerDown`、挂 `VideoKonvaInteractionLayer`、容器 `beginPan` 兼顾 hand 工具左键平移;移除 v0.16.1 占位的「点击 Stage 切播放」(对齐旧栈:画布点击用于画框/选中,播放走热键)。关闭 flag 时视频工作台仍走旧 `VideoStage`(SVG 栈),旧栈与其 RTL 测试不动。
+- **桶 A · 55 个 DOM 面板全迁 Tailwind**:`shell`(31)+ `selectionCard`(8)+ 挂在 `stage/` 下的对话框 / 侧栏 / 工具栏(`VideoTrackPanel` / `VideoChapterSidebar` / `VideoAttributesEditor` / `CanvasToolbar` / `BoxListItem` / 各 `*Dialog` / 3D `ThreeDWorkbench` + `FramePicker` 等),引用的通用语义 token 1:1 映射 `--sc-*`,删除对应 `.module.css`。
+- **桶 B · 10 个 Konva 画布叠加层改指 `--sc-*`**:像素定位 / z-index 编排的叠加层(`ImageStage` / `BoxRenderer` / `SelectionOverlay` / `VideoKonvaStage` / `VideoPlaybackOverlay` 等)保留为 CSS,但把内部 `var(--color-*)` 全部改指 `var(--sc-*)`,登记门禁白名单 + 注释。
+- **画布棋盘格变量内迁**:画布专属的 `--color-canvas-checker-a/b` 折进 `shadcn.css` 为 `--sc-canvas-checker-a/b`(不另建 `canvas.css`)。
 
-## [0.16.2] - 2026-06-16
+### Notes
 
-画布栈统一 epic 第三步:**视频标注可视层迁到 Konva(实验 flag 后,默认关)**。在 v0.16.1 的底图层之上,把 track 框、轨迹预览线、关键帧圆点、ghost 参考框、pending 草稿、标签、issue 图钉从 SVG/DOM 迁到 Konva 形状,抄图片 `ImageStageShapes` 范式。**本版只渲染、不接交互**(交互在 v0.16.3,Konva 形状 `listening=false`)。视觉设置(线宽/填充/字号/标签显隐+内容)复用 v0.15.27 的 `annotationVisual.ts` 纯函数,与图片同源。新栈仍与旧 SVG 栈经 flag 并行,关 flag 零行为变化。架构见 [ADR-0041](docs/adr/0041-video-canvas-unify-to-konva.md)。计划见 `docs/plans/2026-06-16-v0.16.2-video-annotation-layers-to-konva.md`。
+- 退役 55 个 module.css(工作台对 `tokens.css` 的依赖彻底切断);亮 / 暗双主题对图像 / 视频 / 3D 工作台肉眼回归,画布渲染无回归。
 
-### Added
+## [0.17.5] - 2026-06-19
 
-- **视频标注 Konva 层**:`VideoKonvaTracksLayer`(track 框 + 轨迹预览线 + 选中态关键帧圆点 + ghost)、`VideoKonvaOverlayLayer`(pending 草稿 + Konva Label/Tag/Text 标签)、`VideoKonvaIssueLayer`(issue 图钉,按帧显隐)。线宽/虚线走 `/scale` 屏幕恒定(替代旧 SVG `non-scaling-stroke`),圆点/图钉半径世界单位随画布缩放,填充用类别/轨迹色(经 oklch→hex)+ `annotationVisual` 的 fill alpha;线宽/填充/标签文本全复用同一批共享纯函数,与图片栈同源。
-- **标注渲染派生纯函数** `videoFrameViews.ts`:从 `annotations + frameIndex` 派生当前帧应显示的框 / 轨迹预览 / ghost / 标签(关键帧/插值/遮挡判定、复审显示模式过滤、标签门控),栈无关、可单测,供新 Konva 栈消费(与 VideoStage 现状对齐,epic 接受的双 draw 路径中 Konva 那条)。
-
-### Changed
-
-- **VideoKonvaStage 挂载 tracks/overlay/issue 三层**(对齐图片 5 Layer 结构);`colors.ts` 导出 `colorToHex` + 新增 `cssVarToHex`(供 Konva canvas 解析 oklch token / CSS 变量为 hex)。关闭 flag 时视频工作台仍走旧 `VideoStage`(SVG 栈),旧栈不动。
-
-画布栈统一 epic 第二步:**视频底图层迁到 Konva(实验 flag 后,默认关)**。把视频「底图显示 + 视口」从「`<video>` 元素 + CSS transform」迁到 Konva——视频帧进 `Konva.Image`(决策 A1),pan/zoom 走 Konva Stage 原生 transform,坐标改像素空间(决策 B,存储仍归一化、数据零迁移)。**只迁底图与视口,标注/交互尚未迁**(v0.16.2/.3),新栈与旧 SVG 栈经 flag 并行,仅供开发态视觉对照,不作生产默认。架构取舍见 [ADR-0041](docs/adr/0041-video-canvas-unify-to-konva.md)。计划见 `docs/plans/2026-06-16-v0.16.1-video-media-layer-to-konva.md`。
-
-### Added
-
-- **视频 Konva 渲染栈(实验)**:新增 `experiment.videoKonva` 开关(设置面板「实验特性」分组 / URL `?videoKonva=1` / localStorage `video.experimental.konva`,粘性,刷新后生效,默认关)。开启后视频工作台走新栈 `VideoKonvaStage`:`Konva.Image` 以隐藏 `<video>` 为解码源,播放态 `Konva.Animation` 逐帧重绘媒体层、暂停态贴 `useVideoBitmapCache` 精确帧(A1);pan(右键拖)/zoom(ctrl+滚轮 / FloatingDock)/fit(双击)复用 v0.16.0 公共 viewport 原语;播放/逐帧复用与旧栈同一引擎(`useFrameClock` + bitmap 缓存),经转发的 `VideoStageControls` 让工作台热键直接驱动。
-- **视频像素空间坐标模型**(决策 B):`videoKonvaCoordinates.ts` 纯函数(归一化↔像素、client↔world,与图片 `toImg()` 同构),废弃旧栈 SVG CTM 路径;存储仍归一化,数据零迁移。
+外壳 + 审核迁移(Epic 阶段 5):全站最显眼的 chrome 换新,完成度跃升。
 
 ### Changed
 
-- **关闭 flag 时零行为变化**:视频工作台默认仍走旧 `VideoStage`(SVG 栈),新栈完全在 flag 后并行,旧栈代码与测试不动。
+- **`components/shell`(6 件)**:Sidebar / TopBar / SidebarDrawer / JobsBell / NotificationsPopover / PreannotateJobsBadge。侧栏微沉 `bg-muted` + 激活项白底浮起(中性 elevated);顶栏品牌渐变 `from-brand to-violet-500`、workspace 点 emerald;SidebarDrawer portal 挂 `tw-scope`。
+- **`pages/Review`(5 件,非画布部分)**:ReviewPage / ReviewSidebar / ReviewWorkbench(仅 chrome,画布零改)/ ReviewerMiniPanel / RejectReasonModal。
+- **门禁收口**:进度条任意色 → 固定类、hover rose 单值、SKIP 徽标改柔底。
 
-画布栈统一 epic 的**硬前置地基版**。本版**不动任何用户可见行为**——只为「把视频工作台从 SVG/DOM 渲染栈迁到 Konva(与图片同栈)」立测试基建、量化帧合成性能、抽公共 stage 原语、定架构决策。架构取舍见 [ADR-0041](docs/adr/0041-video-canvas-unify-to-konva.md)(视频渲染栈统一到 Konva)。Epic 计划见 `docs/plans/2026-06-16-v0.16.x-canvas-unification-epic.md`。
+### Notes
 
-### Added
+- 退役 11 个 module.css;亮 / 暗双主题肉眼回归通过。
 
-- **公共 viewport 原语** `stage/shared/viewport/`:把散落在 ImageStage 与 useViewportTransform 各自内联的 fit-to-canvas(`fit.ts`)、围绕光标定点缩放与缩放上下限(`zoom.ts`,`SCALE_RANGE` 单一来源)、scale 抵消(`scaleCancel.ts`,等价 `px/scale`)收口成纯函数 + 单测,供图片现在、视频后续复用,消除「同段数学两份维护、悄悄漂移」的长期税。
-- **Konva 测试基建**:`react-konva` mock(`src/test/konvaMock.tsx`,把 Stage/Layer/Rect/… 渲染成带 `data-konva`/`data-testid` 的 DOM stand-in,事件 props 挂 DOM,让组件交互测试沿用 RTL `fireEvent`+`getByTestId` 风格)+ 图片侧样板组件测试(`ImageStageShapes.konva.test.tsx`)+ Playwright 图片画框冒烟与渲染基线(`e2e/tests/workbench-image-konva-smoke.spec.ts`)。三层测试分工(纯函数 / konva mock / Playwright)见 ADR-0041 决策 C。
-- **帧合成性能 spike**:隔离 demo(`stage/_spikes/videoKonvaFrameSpike.tsx`,合成 canvas 帧源 + 分层/单层对照 + 全矩阵批处理 + 同步 `draw()` 单帧合成耗时采样)+ 数据表/方法学文档(`docs/plans/_spike-results/2026-06-16-video-konva-frame-perf.md`)。实测(Chromium,24 格矩阵)**决策 A = A1 成立**:单帧合成全程 p95 ≤ 0.40ms(门槛格 1080p@30 分层 0.20ms),比 8ms 闸门快约 20–40×,成本由目标舞台像素绑定、与源分辨率几乎无关。
+## [0.17.4] - 2026-06-19
+
+数据密集页迁移(Epic 阶段 4):六区 40+ 个 module.css 退役。
 
 ### Changed
 
-- **ImageStage / useViewportTransform 改用公共 viewport 原语**:`fitNow`/`onWheel`/`fit`/`zoomAt`/`setScale` 与 ImageStageShapes 的 scale 抵消(`screenToWorld`)统一消费抽出的纯函数,图片作为第一个消费者验证等价——行为逐位不变(缩放/平移/fit/滚轮零回归)。
+- **迁移范围**:`pages/ModelMarket`(10 + capability 4 子件)、`pages/Projects`(26,含 DataManager / Settings / sections + RenderingConfigEditor)、`pages/Datasets`、`pages/Settings`、`pages/Storage`、`pages/Users`。
+- **破坏性操作按钮统一**:收敛到 `Button variant="danger"`(描边软底 rose),弃旧实心红底白字,跟随 v0.17.1 既定 variant 体系。
+- 删共享 `CapabilityCatalogPanel.module.css`(← capability 4 件)、`RenderingConfigSection.module.css`(← RenderingConfigEditor)。
+
+### Notes
+
+- 退役 42 个 module.css;worktree 子 agent 按波次并行迁移;亮 / 暗双主题肉眼回归通过。
+
+## [0.17.3] - 2026-06-19
+
+页面 wave 1(Epic 阶段 3):低风险、高可见的「门面」先行 —— Login + Dashboard 家族 + Admin。
+
+### Changed
+
+- **`pages/Login`(3)**:Login / Forgot / Reset(+ VerifyEmail 随 Reset 同迁)。
+- **`pages/Dashboard`(9)**:`DashboardPage` 原地重写为 Geist 范式并保留全部重交互(向导 / 权限 / FilterDrawer / grid-list / 批次链接);迁 AdminDashboard / Annotator / Reviewer / Viewer / ProjectGrid / MyBatchesCard / ExportModal / FilterDrawer。
+- **`pages/Admin`(3)**:People / Analytics / SystemHealth。
+
+### Removed
+
+- 退役实验性 `DashboardPageNext` 与 `/dashboard-next` 路由(其范式已固化进正式 `DashboardPage`)。
+
+### Notes
+
+- 退役 15 个 module.css;`Modal` Content 挂 `tw-scope` 让弹窗内表单获 box-sizing reset。
+
+## [0.17.2] - 2026-06-19
+
+原语替换 wave 2(Epic 阶段 2):交互原语委托 shadcn / Radix,`components/ui/` 全部 16 个 module.css 退役。
+
+### Changed
+
+- **`Modal` → Radix `Dialog`**(全屏 / 抽屉用 `sheet`);**`Toast` → `sonner`**(保留 `useToastStore` 薄适配,内部转 `toast()`,**调用点不改**)。
+- **`Switch` / `TabRow` / `SearchInput` / `Avatar` / `DropdownMenu` / `ContextMenu` / `Tooltip`** 委托对应 shadcn 组件;键盘 / 焦点 / a11y 走 Radix。
+- 7 个可视化组件 module.css → Tailwind;修 `TabRow` 语义。
+
+### Notes
+
+- 退役 16 个 module.css(`components/ui/` CSS 全退役);`ui/` 物理删目录 + 全站 import repoint 推迟到 v0.17.7 统一收口(适配器无 CSS 债,留作 shadcn 薄适配层)。
+
+## [0.17.1] - 2026-06-19
+
+原语替换 wave 1(Epic 阶段 1):最高杠杆、最机械的基础原语适配 shadcn / lucide。
+
+### Changed
+
+- **`Icon`(139 引用)→ `lucide-react`** 具名图标(`IconName → Lucide` 映射 + codemod 批量替换)。
+- **`Button`(105)/ `Badge`(55)/ `Card`(36)** API 对齐后 codemod 改 import + 必要 props 重命名;旧 `ui/*` 暂留作适配器(引用归零后于 v0.17.7 删除)。
+
+### Fixed
+
+- 适配过程中的 UA 默认样式漏样修复(`appearance` / `font-family: inherit` 等)。
+
+### Notes
+
+- 退役 4 个 module.css。
+
+## [0.17.0] - 2026-06-19
+
+地基(Epic 阶段 0):接入 Tailwind v4 + shadcn/ui,与既有 CSS Modules 共存,为后续逐页迁移立范式与门禁。本版不改任何用户可见行为。
+
+### Added
+
+- **Tailwind v4 + `@tailwindcss/vite` 接入**:与 CSS Modules 共存(跳过全局 preflight,`.tw-scope` 局部 reset);`shadcn.css` 落地 Geist + 彩色点缀 token,`dark` variant 重定向到 `[data-theme="dark"]`;`components.json` + `lib/utils.ts(cn)`。
+- **补齐 shadcn 原语全集**:`dialog / sheet / dropdown-menu / context-menu / tooltip / switch / select / checkbox / popover / label / textarea / scroll-area / alert-dialog`(纯 `radix-ui`,无新依赖)+ `sonner`(新增依赖,Toaster 适配本项目 `useTheme().resolved` / `--sc-*`),`components/shadcn/ui/` 共 25 个原语。
+- **新门禁 `check-tw-tokens.mjs`(warning 模式)**:扫 `*.tsx` 的 `className`(裸色 / Tailwind 任意色值 / 语义色暗色配对),并入 `pnpm lint`,先 `::warning::` 观测不阻断(v0.17.7 转 blocking)。
+- **设计规范文档** + **`/dashboard-next` 垂直切片**(`DashboardPageNext.tsx`,参考实现 + 验收基线,于 v0.17.3 退役)。

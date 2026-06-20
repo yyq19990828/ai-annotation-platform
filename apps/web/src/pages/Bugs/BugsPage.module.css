@@ -6,7 +6,7 @@
 
 .title {
   margin: 0 0 16px;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-size: 18px;
   font-weight: 700;
 }
@@ -31,15 +31,15 @@
 
 .select {
   padding: 5px 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-sunken);
-  color: var(--color-fg);
+  background: var(--sc-muted);
+  color: var(--sc-foreground);
   font-size: 12.5px;
 }
 
 .totalText {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11.5px;
 }
 
@@ -59,7 +59,7 @@
 
 .emptyState {
   padding: 20px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 13px;
   text-align: center;
 }
@@ -71,23 +71,23 @@
 }
 
 .headerRow {
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
 }
 
 .th {
   padding: 8px 6px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-weight: 500;
   text-align: left;
 }
 
 .itemRow {
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--sc-border);
   cursor: pointer;
 }
 
 .itemRowSelected {
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
 }
 
 .td,
@@ -103,16 +103,16 @@
 }
 
 .titleCell {
-  color: var(--color-fg);
+  color: var(--sc-foreground);
 }
 
 .dateCell {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
 .severity {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-weight: 500;
 }
 
@@ -156,7 +156,7 @@
   padding: 14px;
   overflow: auto;
   border-radius: var(--radius-md);
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
   font-size: 12.5px;
 }
 
@@ -168,7 +168,7 @@
 
 .detailTitle {
   margin: 0;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-size: 15px;
   font-weight: 600;
 }
@@ -176,7 +176,7 @@
 .closeButton {
   border: 0;
   background: none;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   cursor: pointer;
 }
 
@@ -188,7 +188,7 @@
 }
 
 .metaText {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .routeCode {
@@ -215,10 +215,10 @@
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
-  background: var(--color-bg-elev);
-  color: var(--color-fg-muted);
+  background: var(--sc-card);
+  color: var(--sc-muted-foreground);
   text-decoration: none;
 }
 
@@ -237,7 +237,7 @@
 .resolution {
   padding: 8px;
   border-radius: var(--radius-md);
-  background: var(--color-bg-elev);
+  background: var(--sc-card);
 }
 
 .mediumText,
@@ -253,16 +253,16 @@
 
 .statusButton {
   padding: 3px 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-elev);
-  color: var(--color-fg);
+  background: var(--sc-card);
+  color: var(--sc-foreground);
   cursor: pointer;
   font-size: 11.5px;
 }
 
 .statusButtonActive {
-  background: var(--color-accent);
+  background: var(--sc-brand);
   color: #fff;
   cursor: default;
 }
@@ -273,30 +273,30 @@
 
 .comment {
   padding: 6px 0;
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--sc-border);
 }
 
 .commentMeta {
   margin-bottom: 2px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
 .commentAuthor {
-  color: var(--color-fg);
+  color: var(--sc-foreground);
 }
 
 .rolePill {
   margin-left: 6px;
   padding: 0 5px;
   border-radius: 3px;
-  background: var(--color-bg-elev);
+  background: var(--sc-card);
   font-size: 10px;
 }
 
 .commentTime {
   margin-left: 6px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }
 
 .commentForm {
@@ -307,10 +307,10 @@
 .commentInput {
   flex: 1;
   padding: 6px 8px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-elev);
-  color: var(--color-fg);
+  background: var(--sc-card);
+  color: var(--sc-foreground);
   font-family: inherit;
   font-size: 12.5px;
   resize: vertical;
@@ -320,7 +320,7 @@
   padding: 6px 12px;
   border: 0;
   border-radius: var(--radius-md);
-  background: var(--color-accent);
+  background: var(--sc-brand);
   color: #fff;
   cursor: pointer;
   font-size: 12px;

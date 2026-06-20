@@ -17,7 +17,6 @@ import { REJECT_REASON_TYPE_LABELS } from "@/pages/Review/rejectReasonTypes";
 import { dashboardApi, type AdminPersonItem } from "@/api/dashboard";
 import { tasksApi } from "@/api/tasks";
 import { useToastStore } from "@/components/ui/Toast";
-import styles from "./AdminPeoplePage.module.css";
 
 const ROLE_OPTS = [
   { v: "", label: "全部" },
@@ -35,6 +34,14 @@ const SORT_OPTS = [
   { v: "activity", label: "活跃↓" },
   { v: "weekly_compare", label: "周环比↓" },
 ];
+
+// UA-safe 表单基线(无全局 preflight 期间,原生 select/input 需消浏览器默认样式)
+const FIELD_CLASS =
+  "appearance-none rounded-md border border-border bg-card px-2.5 py-1.5 text-sm text-foreground";
+const SECTION_TITLE_CLASS = "border-b border-border px-3.5 py-2.5 text-xs font-semibold";
+const SECTION_TITLE_META_CLASS = "ml-2 text-xs font-normal text-muted-foreground";
+const DISTRIBUTION_ROW_CLASS = "flex justify-between px-3.5 py-1.5 text-sm";
+const DISTRIBUTION_LINK_CLASS = `${DISTRIBUTION_ROW_CLASS} w-full cursor-pointer appearance-none rounded-md border-0 bg-transparent text-left [font:inherit] hover:bg-muted`;
 
 export function AdminPeoplePage() {
   const navigate = useNavigate();
@@ -104,17 +111,13 @@ export function AdminPeoplePage() {
   const items = data?.items ?? [];
 
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
+    <div className="mx-auto max-w-[1680px] px-7 pb-10 pt-5 text-foreground">
+      <div className="mb-4 flex items-end justify-between">
         <div>
-          <h1 className={styles.title}>
-            成员绩效
-          </h1>
-          <p className={styles.subtitle}>
-            全员效率卡片网格 · 点击卡片查看详情
-          </p>
+          <h1 className="mb-1 text-xl font-semibold">成员绩效</h1>
+          <p className="text-sm text-muted-foreground">全员效率卡片网格 · 点击卡片查看详情</p>
         </div>
-        <div className={styles.headerActions}>
+        <div className="flex gap-2">
           <Button variant="ghost" onClick={handleExport} disabled={exporting}>
             <Icon name="download" size={13} />
             {exporting ? "导出中…" : "导出 CSV"}
@@ -126,73 +129,69 @@ export function AdminPeoplePage() {
       </div>
 
       {/* sticky filter bar */}
-      <div className={styles.stickyCard}>
+      <div className="sticky top-16 z-local-5 mb-4">
         <Card>
-        <div className={styles.filterBar}>
-          <FilterGroup
-            label="角色"
-            opts={ROLE_OPTS}
-            value={role}
-            onChange={(v: string) => setQuery("role", v)}
-          />
-          <FilterGroup
-            label="时间"
-            opts={PERIOD_OPTS}
-            value={period}
-            onChange={(v: string) => setQuery("period", v)}
-          />
-          <FilterGroup
-            label="排序"
-            opts={SORT_OPTS}
-            value={sort}
-            onChange={(v: string) => setQuery("sort", v)}
-          />
-          {/* v0.12.6 (A3) · 项目级范围下拉 */}
-          <div className={styles.projectFilter}>
-            <span className={styles.projectFilterLabel}>项目</span>
-            <select
-              className={styles.projectSelect}
-              value={project}
-              onChange={(e) => setQuery("project", e.target.value)}
-              aria-label="项目范围"
-            >
-              {!isProjectAdmin && <option value="">全部项目（全局）</option>}
-              {projectOpts.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-wrap items-center gap-2 p-3">
+            <FilterGroup
+              label="角色"
+              opts={ROLE_OPTS}
+              value={role}
+              onChange={(v: string) => setQuery("role", v)}
+            />
+            <FilterGroup
+              label="时间"
+              opts={PERIOD_OPTS}
+              value={period}
+              onChange={(v: string) => setQuery("period", v)}
+            />
+            <FilterGroup
+              label="排序"
+              opts={SORT_OPTS}
+              value={sort}
+              onChange={(v: string) => setQuery("sort", v)}
+            />
+            {/* v0.12.6 (A3) · 项目级范围下拉 */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">项目</span>
+              <select
+                className={`${FIELD_CLASS} max-w-[200px]`}
+                value={project}
+                onChange={(e) => setQuery("project", e.target.value)}
+                aria-label="项目范围"
+              >
+                {!isProjectAdmin && <option value="">全部项目（全局）</option>}
+                {projectOpts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <input
+              type="search"
+              placeholder="姓名 / 邮箱"
+              defaultValue={q}
+              onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+                if (e.key === "Enter") setQuery("q", e.currentTarget.value);
+              }}
+              className={`${FIELD_CLASS} ml-auto min-w-[200px]`}
+            />
           </div>
-          <input
-            type="search"
-            placeholder="姓名 / 邮箱"
-            defaultValue={q}
-            onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
-              if (e.key === "Enter") setQuery("q", e.currentTarget.value);
-            }}
-            className={styles.searchInput}
-          />
-        </div>
         </Card>
       </div>
 
       {isLoading ? (
-        <div className={styles.loading}>
-          加载中...
-        </div>
+        <div className="p-15 text-center text-muted-foreground">加载中...</div>
       ) : items.length === 0 ? (
         <Card>
-          <div className={styles.emptyCard}>
-            <Icon name="users" size={36} className={styles.emptyIcon} />
-            <div className={styles.emptyTitle}>暂无成员数据</div>
-            <div className={styles.emptyText}>
-              调整筛选条件重试
-            </div>
+          <div className="px-4 py-12 text-center text-muted-foreground">
+            <Icon name="users" size={36} className="mb-2.5 opacity-25" />
+            <div className="mb-1 text-sm">暂无成员数据</div>
+            <div className="text-xs text-muted-foreground">调整筛选条件重试</div>
           </div>
         </Card>
       ) : (
-        <div className={styles.grid}>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
           {items.map((it) => (
             <PersonCard
               key={it.user_id}
@@ -226,15 +225,19 @@ function FilterGroup({
   onChange: (v: string) => void;
 }) {
   return (
-    <div className={styles.filterGroup}>
-      <span className={styles.filterLabel}>{label}</span>
-      <div className={styles.filterOptions}>
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="flex gap-0.5">
         {opts.map((o) => (
           <button
             key={o.v}
             type="button"
             onClick={() => onChange(o.v)}
-            className={`${styles.filterButton} ${value === o.v ? styles.filterButtonActive : ""}`}
+            className={`cursor-pointer appearance-none rounded-sm border border-border px-2.5 py-1 text-xs ${
+              value === o.v
+                ? "bg-brand/10 font-semibold text-brand"
+                : "bg-card font-normal text-foreground"
+            }`}
           >
             {o.label}
           </button>
@@ -247,79 +250,71 @@ function FilterGroup({
 function PersonCard({ item, onClick }: { item: AdminPersonItem; onClick: () => void }) {
   const trend = item.weekly_compare_pct;
   return (
-    <Card onClick={onClick}>
-      <div className={styles.personCardInner}>
-      <div className={styles.personTop}>
-        <Avatar initial={item.name?.charAt(0) || "?"} size="md" />
-        <div className={styles.personBody}>
-          <div className={styles.personTitle}>
-            <span className={styles.truncate}>
-              {item.name}
-            </span>
-            <span className={`${styles.statusDot} ${item.status === "online" ? styles.statusDotOnline : ""}`} />
+    <Card onClick={onClick} className="cursor-pointer">
+      <div className="flex flex-col gap-2.5 p-3.5">
+        <div className="flex items-center gap-2.5">
+          <Avatar initial={item.name?.charAt(0) || "?"} size="md" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 text-sm font-semibold">
+              <span className="truncate">{item.name}</span>
+              <span
+                className={`size-1.5 rounded-full ${
+                  item.status === "online" ? "bg-emerald-500" : "bg-muted-foreground"
+                }`}
+              />
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Badge variant={item.role === "annotator" ? "accent" : "ai"}>{item.role}</Badge>
+              {item.project_count} 项目
+            </div>
           </div>
-          <div className={styles.projectMeta}>
-            <Badge
-              variant={
-                item.role === "annotator" ? "accent" : "ai"
-              }
-            >
-              {item.role}
-            </Badge>
-            {item.project_count} 项目
-          </div>
+          <RadialProgress
+            value={Math.round(
+              (item.throughput_score + item.quality_score + item.activity_score) / 3,
+            )}
+            size={36}
+            thickness={4}
+          />
         </div>
-        <RadialProgress
-          value={Math.round(
-            (item.throughput_score + item.quality_score + item.activity_score) / 3,
-          )}
-          size={36}
-          thickness={4}
+
+        <div>
+          <div className="text-2xl font-semibold tabular-nums">
+            {item.main_metric.toLocaleString()}
+            {trend != null && (
+              <span
+                className={`ml-1.5 text-xs font-medium ${
+                  trend >= 0
+                    ? "text-status-positive"
+                    : "text-status-danger"
+                }`}
+              >
+                {trend >= 0 ? "↑" : "↓"} {Math.abs(trend)}%
+              </span>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground">{item.main_metric_label}</div>
+        </div>
+
+        <PercentBars
+          rows={[
+            { label: "产能", value: item.throughput_score },
+            { label: "质量", value: item.quality_score },
+            { label: "活跃", value: item.activity_score },
+          ]}
         />
-      </div>
 
-      <div>
-        <div
-          className={styles.metric}
-        >
-          {item.main_metric.toLocaleString()}
-          {trend != null && (
-            <span
-              className={`${styles.trend} ${trend >= 0 ? styles.trendUp : styles.trendDown}`}
-            >
-              {trend >= 0 ? "↑" : "↓"} {Math.abs(trend)}%
-            </span>
-          )}
-        </div>
-        <div className={styles.metricLabel}>
-          {item.main_metric_label}
-        </div>
-      </div>
+        <Sparkline values={item.sparkline_7d} color="var(--sc-brand)" width={252} height={24} />
 
-      <PercentBars
-        rows={[
-          { label: "产能", value: item.throughput_score },
-          { label: "质量", value: item.quality_score },
-          { label: "活跃", value: item.activity_score },
-        ]}
-      />
-
-      <Sparkline values={item.sparkline_7d} color="var(--color-accent)" width={252} height={24} />
-
-      {item.alerts.length > 0 && (
-        <div className={styles.alerts}>
-          {item.alerts.includes("high_rejected") && (
-            <Badge variant="danger">
-              退回率 {item.rejected_rate}% &gt; 15%
-            </Badge>
-          )}
-          {item.alerts.includes("drop_30") && (
-            <Badge variant="warning">
-              周环比降幅 &gt; 30%
-            </Badge>
-          )}
-        </div>
-      )}
+        {item.alerts.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {item.alerts.includes("high_rejected") && (
+              <Badge variant="danger">退回率 {item.rejected_rate}% &gt; 15%</Badge>
+            )}
+            {item.alerts.includes("drop_30") && (
+              <Badge variant="warning">周环比降幅 &gt; 30%</Badge>
+            )}
+          </div>
+        )}
       </div>
     </Card>
   );
@@ -327,14 +322,14 @@ function PersonCard({ item, onClick }: { item: AdminPersonItem; onClick: () => v
 
 function PercentBars({ rows }: { rows: Array<{ label: string; value: number }> }) {
   return (
-    <div className={styles.bars}>
+    <div className="flex flex-col gap-1">
       {rows.map((r) => (
-        <div key={r.label} className={styles.barRow}>
-          <span className={styles.barLabel}>{r.label}</span>
-          <div className={styles.barTrack}>
+        <div key={r.label} className="flex items-center gap-2 text-xs">
+          <span className="w-7 text-xs text-muted-foreground">{r.label}</span>
+          <div className="h-1 flex-1 overflow-hidden rounded-sm bg-border">
             <PercentBarFill value={r.value} />
           </div>
-          <span className={styles.barValue}>
+          <span className="w-6 text-right text-xs tabular-nums text-muted-foreground">
             {Math.round(r.value)}
           </span>
         </div>
@@ -346,7 +341,7 @@ function PercentBars({ rows }: { rows: Array<{ label: string; value: number }> }
 function PercentBarFill({ value }: { value: number }) {
   const width = Math.min(100, Math.max(0, value));
   const ref = useElementStyle<HTMLDivElement>({ "--bar-width": `${width}%` } as CSSProperties);
-  return <div ref={ref} className={styles.barFill} />;
+  return <div ref={ref} className="h-full w-[var(--bar-width)] bg-brand" />;
 }
 
 function PersonDrawer({
@@ -384,36 +379,29 @@ function PersonDrawer({
   );
 
   return (
-    <div
-      onClick={onClose}
-      className={styles.drawerBackdrop}
-    >
+    <div onClick={onClose} className="fixed inset-0 z-modal flex justify-end bg-black/40">
       <div
         onClick={(e: MouseEvent<HTMLDivElement>) => e.stopPropagation()}
-        className={styles.drawerPanel}
+        className="flex w-[min(540px,100%)] flex-col border-l border-border bg-card"
       >
-        <div className={styles.drawerHeader}>
-          <div className={styles.drawerTitle}>
-            {data?.name ?? "成员详情"}
-          </div>
+        <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
+          <div className="text-sm font-semibold">{data?.name ?? "成员详情"}</div>
           <button
             type="button"
             onClick={onClose}
             aria-label="关闭"
-            className={styles.closeButton}
+            className="cursor-pointer appearance-none border-0 bg-transparent text-muted-foreground"
           >
             <Icon name="x" size={16} />
           </button>
         </div>
 
-        <div className={styles.drawerBody}>
+        <div className="flex-1 overflow-y-auto p-4">
           {isLoading || !data ? (
-            <div className={styles.drawerLoading}>
-              加载中...
-            </div>
+            <div className="p-8 text-center text-muted-foreground">加载中...</div>
           ) : (
-            <div className={styles.drawerStack}>
-              <div className={styles.kpiGrid}>
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2">
                 <KpiCell label="产能" value={data.throughput} />
                 <KpiCell label="质量" value={`${data.quality_score}%`} />
                 <KpiCell
@@ -432,28 +420,26 @@ function PersonDrawer({
               </div>
 
               <Card>
-                <div className={styles.sectionTitle}>
-                  4 周趋势
-                </div>
-                <div className={styles.sectionBody}>
-                  <div className={styles.chartLabel}>产能</div>
-                  <Sparkline values={data.trend_throughput} width={480} height={48} color="var(--color-accent)" />
-                  <div className={`${styles.chartLabel} ${styles.chartLabelSpaced}`}>质量分</div>
-                  <Sparkline values={data.trend_quality} width={480} height={48} color="var(--color-success)" />
+                <div className={SECTION_TITLE_CLASS}>4 周趋势</div>
+                <div className="p-3.5">
+                  <div className="mb-1.5 text-xs text-muted-foreground">产能</div>
+                  <Sparkline values={data.trend_throughput} width={480} height={48} color="var(--sc-brand)" />
+                  <div className="mb-1.5 mt-3 text-xs text-muted-foreground">质量分</div>
+                  <Sparkline values={data.trend_quality} width={480} height={48} color="var(--sc-positive)" />
                 </div>
               </Card>
 
               {data.duration_histogram.length > 0 && (
                 <Card>
-                  <div className={styles.sectionTitle}>
+                  <div className={SECTION_TITLE_CLASS}>
                     任务耗时分布
                     {data.p50_duration_ms != null && (
-                      <span className={styles.sectionTitleMeta}>
+                      <span className={SECTION_TITLE_META_CLASS}>
                         p50 {Math.round(data.p50_duration_ms / 1000)}s · p95 {Math.round((data.p95_duration_ms ?? 0) / 1000)}s
                       </span>
                     )}
                   </div>
-                  <div className={styles.sectionBody}>
+                  <div className="p-3.5">
                     <Histogram values={histogramValues} xLabels={xLabels} />
                   </div>
                 </Card>
@@ -461,23 +447,21 @@ function PersonDrawer({
 
               {data.project_distribution.length > 0 && (
                 <Card>
-                  <div className={styles.sectionTitle}>
+                  <div className={SECTION_TITLE_CLASS}>
                     项目分布
-                    <span className={styles.sectionTitleMeta}>点击进入该项目审核队列</span>
+                    <span className={SECTION_TITLE_META_CLASS}>点击进入该项目审核队列</span>
                   </div>
-                  <div className={styles.distribution}>
+                  <div className="py-2">
                     {data.project_distribution.map((p) => (
                       <button
                         type="button"
                         key={p.project_id}
-                        className={`${styles.distributionRow} ${styles.distributionLink}`}
+                        className={DISTRIBUTION_LINK_CLASS}
                         onClick={() => drillToProject(p.project_id)}
                         title="进入该项目审核队列(已按本人过滤)"
                       >
                         <span>{p.project_name}</span>
-                        <span className={styles.distributionCount}>
-                          {p.count}
-                        </span>
+                        <span className="tabular-nums text-muted-foreground">{p.count}</span>
                       </button>
                     ))}
                   </div>
@@ -486,13 +470,11 @@ function PersonDrawer({
 
               {data.reject_reason_breakdown.length > 0 && (
                 <Card>
-                  <div className={styles.sectionTitle}>
+                  <div className={SECTION_TITLE_CLASS}>
                     Reject 原因分布
-                    {project && (
-                      <span className={styles.sectionTitleMeta}>点击下钻该项目任务</span>
-                    )}
+                    {project && <span className={SECTION_TITLE_META_CLASS}>点击下钻该项目任务</span>}
                   </div>
-                  <div className={styles.distribution}>
+                  <div className="py-2">
                     {data.reject_reason_breakdown.map((r) => {
                       const label =
                         REJECT_REASON_TYPE_LABELS[
@@ -503,7 +485,7 @@ function PersonDrawer({
                       const rowBody = (
                         <>
                           <span>{label}</span>
-                          <span className={styles.distributionCount}>
+                          <span className="tabular-nums text-muted-foreground">
                             {r.count} · {r.pct}%
                           </span>
                         </>
@@ -512,7 +494,7 @@ function PersonDrawer({
                         <div key={r.reason_type}>
                           <button
                             type="button"
-                            className={`${styles.distributionRow} ${styles.distributionLink}`}
+                            className={DISTRIBUTION_LINK_CLASS}
                             onClick={() => toggleDrill("reject", r.reason_type)}
                           >
                             {rowBody}
@@ -526,7 +508,7 @@ function PersonDrawer({
                           )}
                         </div>
                       ) : (
-                        <div key={r.reason_type} className={styles.distributionRow}>
+                        <div key={r.reason_type} className={DISTRIBUTION_ROW_CLASS}>
                           {rowBody}
                         </div>
                       );
@@ -537,20 +519,18 @@ function PersonDrawer({
 
               {data.class_distribution.length > 0 && (
                 <Card>
-                  <div className={styles.sectionTitle}>
+                  <div className={SECTION_TITLE_CLASS}>
                     类别覆盖(top {data.class_distribution.length})
-                    {project && (
-                      <span className={styles.sectionTitleMeta}>点击下钻该项目任务</span>
-                    )}
+                    {project && <span className={SECTION_TITLE_META_CLASS}>点击下钻该项目任务</span>}
                   </div>
-                  <div className={styles.distribution}>
+                  <div className="py-2">
                     {data.class_distribution.map((c) => {
                       const active =
                         drill?.type === "class" && drill.value === c.class_name;
                       const rowBody = (
                         <>
                           <span>{c.class_name}</span>
-                          <span className={styles.distributionCount}>
+                          <span className="tabular-nums text-muted-foreground">
                             {c.count} · {c.pct}%
                           </span>
                         </>
@@ -559,7 +539,7 @@ function PersonDrawer({
                         <div key={c.class_name}>
                           <button
                             type="button"
-                            className={`${styles.distributionRow} ${styles.distributionLink}`}
+                            className={DISTRIBUTION_LINK_CLASS}
                             onClick={() => toggleDrill("class", c.class_name)}
                           >
                             {rowBody}
@@ -573,21 +553,18 @@ function PersonDrawer({
                           )}
                         </div>
                       ) : (
-                        <div key={c.class_name} className={styles.distributionRow}>
+                        <div key={c.class_name} className={DISTRIBUTION_ROW_CLASS}>
                           {rowBody}
                         </div>
                       );
                     })}
                     {(() => {
-                      const sum = data.class_distribution.reduce(
-                        (s, c) => s + c.pct,
-                        0,
-                      );
+                      const sum = data.class_distribution.reduce((s, c) => s + c.pct, 0);
                       const other = Math.max(0, 100 - sum);
                       return other > 0 ? (
-                        <div className={styles.distributionRow}>
+                        <div className={DISTRIBUTION_ROW_CLASS}>
                           <span>其他</span>
-                          <span className={styles.distributionCount}>{other}%</span>
+                          <span className="tabular-nums text-muted-foreground">{other}%</span>
                         </div>
                       ) : null;
                     })()}
@@ -597,22 +574,18 @@ function PersonDrawer({
 
               {data.timeline.length > 0 && (
                 <Card>
-                  <div className={styles.sectionTitle}>
-                    最近 timeline ({data.timeline.length})
-                  </div>
-                  <div className={styles.timeline}>
+                  <div className={SECTION_TITLE_CLASS}>最近 timeline ({data.timeline.length})</div>
+                  <div className="max-h-80 overflow-y-auto">
                     {data.timeline.map((t, i) => (
                       <div
                         key={i}
-                        className={styles.timelineRow}
+                        className="flex items-center gap-2 border-t border-border px-3.5 py-2 text-xs [&:first-child]:border-t-0"
                       >
                         <Badge variant="outline">{t.action}</Badge>
                         {t.task_display_id && (
-                          <span className={`mono ${styles.timelineTask}`}>
-                            {t.task_display_id}
-                          </span>
+                          <span className="mono text-xs text-brand">{t.task_display_id}</span>
                         )}
-                        <span className={styles.timelineAt}>
+                        <span className="ml-auto text-xs text-muted-foreground">
                           {t.at ? new Date(t.at).toLocaleString("zh-CN") : "—"}
                         </span>
                       </div>
@@ -652,16 +625,19 @@ function DrillTaskList({
   });
   const tasks = data?.items ?? [];
   return (
-    <div className={styles.drillList}>
+    <div className="flex flex-col gap-1 px-3.5 pb-2 pt-1">
       {isLoading ? (
-        <div className={styles.drillEmpty}>加载中...</div>
+        <div className="py-1 text-xs text-muted-foreground">加载中...</div>
       ) : tasks.length === 0 ? (
-        <div className={styles.drillEmpty}>该项目内无匹配任务</div>
+        <div className="py-1 text-xs text-muted-foreground">该项目内无匹配任务</div>
       ) : (
         tasks.map((t) => (
-          <div key={t.id} className={styles.drillItem}>
+          <div
+            key={t.id}
+            className="flex items-center justify-between rounded-md bg-muted px-2 py-1 text-xs"
+          >
             <span className="mono">{t.display_id}</span>
-            <span className={styles.drillStatus}>{t.status}</span>
+            <span className="text-muted-foreground">{t.status}</span>
           </div>
         ))
       )}
@@ -671,11 +647,9 @@ function DrillTaskList({
 
 function KpiCell({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className={styles.kpiCell}>
-      <div className={styles.kpiLabel}>{label}</div>
-      <div className={styles.kpiValue}>
-        {value}
-      </div>
+    <div className="rounded-md border border-border bg-muted px-3 py-2.5">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-lg font-semibold tabular-nums">{value}</div>
     </div>
   );
 }

@@ -4,7 +4,7 @@
   justify-content: space-between;
   gap: 10px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
   font-size: 13px;
   font-weight: 600;
 }
@@ -12,10 +12,10 @@
 .searchInput {
   width: 200px;
   padding: 4px 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
-  background: var(--color-bg-sunken);
-  color: var(--color-fg);
+  background: var(--sc-muted);
+  color: var(--sc-foreground);
   font-size: 11px;
   outline: none;
 }
@@ -29,7 +29,7 @@
 
 .message {
   padding: 16px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
   text-align: center;
 }
@@ -45,14 +45,14 @@
 }
 
 .headerRow {
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
 }
 
 .tableHeaderCell,
 .sortableHeaderCell {
   padding: 6px 10px;
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-fg-muted);
+  border-bottom: 1px solid var(--sc-border);
+  color: var(--sc-muted-foreground);
   font-weight: 500;
   text-align: left;
   user-select: none;
@@ -69,18 +69,18 @@
 
 .sortIndicator {
   margin-left: 4px;
-  color: var(--color-ai);
+  color: var(--sc-chart-4);
 }
 
 .tableCell {
   padding: 6px 10px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
 }
 
 .groupRow {
   cursor: pointer;
-  border-top: 1px solid var(--color-border);
-  background: var(--color-bg-elev);
+  border-top: 1px solid var(--sc-border);
+  background: var(--sc-card);
 }
 
 .groupCell {
@@ -121,26 +121,26 @@
 .fieldLabel,
 .mutedSummary,
 .resultListMuted {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .subtle,
 .helperInline {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }
 
 .failedCount {
   margin-left: 6px;
-  color: var(--color-danger);
+  color: var(--sc-destructive);
 }
 
 .selectedRow {
-  background: color-mix(in oklch, var(--color-accent) 8%, transparent);
+  background: color-mix(in oklch, var(--sc-brand) 8%, transparent);
 }
 
 .childMarkerCell {
   padding-left: 28px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }
 
 .numeric {
@@ -167,9 +167,9 @@
   gap: 12px;
   margin-top: 12px;
   padding: 10px 14px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-elev);
+  background: var(--sc-card);
   box-shadow: var(--shadow-md);
 }
 
@@ -198,15 +198,15 @@
 .dangerSummary,
 .resultListDanger,
 .errorText {
-  color: var(--color-danger);
+  color: var(--sc-destructive);
 }
 
 .aiText {
-  color: var(--color-ai);
+  color: var(--sc-chart-4);
 }
 
 .warningText {
-  color: var(--color-warning);
+  color: var(--sc-caution);
 }
 
 .field {
@@ -224,10 +224,10 @@
 
 .textarea {
   padding: 8px 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
-  background: var(--color-bg-sunken);
-  color: var(--color-fg);
+  background: var(--sc-muted);
+  color: var(--sc-foreground);
   font-family: inherit;
   font-size: 12px;
   resize: vertical;
@@ -256,12 +256,12 @@
   align-items: center;
   gap: 8px;
   padding: 32px 16px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   text-align: center;
 }
 
 .emptyTitle {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 

@@ -14,7 +14,17 @@ import type { ProjectResponse } from "@/api/projects";
 import { MyBatchesCard } from "./MyBatchesCard";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { projectDisplayType } from "@/utils/projectDisplay";
-import styles from "./AnnotatorDashboard.module.css";
+
+const STATS_GRID_FOUR = "grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3";
+const STATS_GRID_THREE = "grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3";
+const CARD_TITLE = "m-0 text-sm font-semibold";
+const CARD_HEADER_PLAIN = "border-b border-border px-4 py-3.5";
+const TABLE_CLASS =
+  "w-full min-w-[760px] border-separate border-spacing-0 text-sm " +
+  "[&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:whitespace-nowrap [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground " +
+  "[&_th:first-child]:pl-4 [&_th:last-child]:pr-4 " +
+  "[&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-3 [&_td]:align-middle " +
+  "[&_td:first-child]:py-2.5 [&_td:first-child]:pl-4 [&_td:last-child]:py-2.5 [&_td:last-child]:pr-4";
 
 function formatMs(ms: number | null | undefined): string {
   if (ms == null) return "—";
@@ -44,7 +54,7 @@ export function AnnotatorDashboard() {
 
   if (isLoading || !stats) {
     return (
-      <div className={styles.loading}>
+      <div className="px-7 py-15 text-center text-muted-foreground">
         加载中...
       </div>
     );
@@ -56,11 +66,11 @@ export function AnnotatorDashboard() {
   const trendPct = stats.weekly_compare_pct ?? undefined;
 
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
+    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
+      <div className="mb-3 flex items-end justify-between">
         <div>
-          <h1 className={styles.title}>标注工作台</h1>
-          <p className={styles.subtitle}>查看任务进度，高效完成标注工作</p>
+          <h1 className="mb-1 text-xl font-semibold">标注工作台</h1>
+          <p className="m-0 text-sm text-muted-foreground">查看任务进度，高效完成标注工作</p>
         </div>
         <Button variant="primary" onClick={() => navigate("/annotate")}>
           <Icon name="target" size={13} />进入标注页面
@@ -69,13 +79,13 @@ export function AnnotatorDashboard() {
 
       {/* M1 · 退回待重做提示 */}
       {(stats.rejected_tasks_count ?? 0) > 0 && (
-        <div className={styles.rejectedAlert}>
-          <Icon name="warning" size={16} className={styles.rejectedIcon} />
-          <div className={styles.rejectedContent}>
-            <span className={styles.rejectedTitle}>
+        <div className="mb-4 flex items-center gap-3 rounded-md border border-rose-500/30 bg-status-danger-soft px-4 py-3">
+          <Icon name="warning" size={16} className="shrink-0 text-status-danger" />
+          <div className="flex-1">
+            <span className="text-sm font-semibold text-status-danger">
               {stats.rejected_tasks_count} 个任务被退回，需重做
             </span>
-            <span className={styles.rejectedText}>
+            <span className="ml-2 text-xs text-muted-foreground">
               请进入工作台查看退回原因并重新提交
             </span>
           </div>
@@ -87,7 +97,7 @@ export function AnnotatorDashboard() {
 
       {/* 产能 */}
       <SectionDivider label="产能" hint="完成数 / 单题耗时" />
-      <div className={styles.statsGridFour}>
+      <div className={STATS_GRID_FOUR}>
         <StatCard icon="flag" label="待标任务" value={stats.assigned_tasks} />
         <StatCard icon="check" label="今日完成" value={stats.today_completed} />
         <StatCard
@@ -108,7 +118,7 @@ export function AnnotatorDashboard() {
 
       {/* 质量 */}
       <SectionDivider label="质量" hint="原创比例 / 退回率 / 重审次数" />
-      <div className={styles.statsGridThree}>
+      <div className={STATS_GRID_THREE}>
         <StatCard icon="sparkles" label="原创比例" value={`${stats.personal_accuracy}%`} />
         <StatCard
           icon="alert-triangle"
@@ -126,7 +136,7 @@ export function AnnotatorDashboard() {
 
       {/* 投入（依赖心跳；本期占位） */}
       <SectionDivider label="投入" hint="活跃时长 / 连续天数（待心跳上线）" />
-      <div className={styles.statsGridThree}>
+      <div className={STATS_GRID_THREE}>
         <StatCard
           icon="clock"
           label="今日活跃时长"
@@ -143,15 +153,15 @@ export function AnnotatorDashboard() {
       </div>
 
       {/* v0.8.5 · 24-bar 当日专注时段分布 */}
-      <div className={styles.cardStack}>
+      <div className="mt-4">
         <Card>
-        <div className={styles.cardHeaderPlain}>
-          <h3 className={styles.cardTitle}>今日专注时段分布</h3>
-          <p className={styles.cardHint}>
+        <div className={CARD_HEADER_PLAIN}>
+          <h3 className={CARD_TITLE}>今日专注时段分布</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
             按小时聚合的标注分钟数（0-23 时）
           </p>
         </div>
-        <div className={styles.cardBody}>
+        <div className="px-4 py-5">
           <Histogram
             values={stats.hour_buckets ?? Array(24).fill(0)}
             height={80}
@@ -161,17 +171,17 @@ export function AnnotatorDashboard() {
         </Card>
       </div>
 
-      <div className={styles.gap} />
+      <div className="h-4" />
       <MyBatchesCard />
 
-      <div className={styles.analyticsGrid}>
+      <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-3">
         <Card>
-          <div className={styles.cardHeaderPlain}>
-            <h3 className={styles.cardTitle}>近 7 天标注趋势</h3>
+          <div className={CARD_HEADER_PLAIN}>
+            <h3 className={CARD_TITLE}>近 7 天标注趋势</h3>
           </div>
-          <div className={styles.cardBody}>
-            <Sparkline values={stats.daily_counts} color="var(--color-accent)" width={480} height={80} />
-            <div className={styles.sparklineLabels}>
+          <div className="px-4 py-5">
+            <Sparkline values={stats.daily_counts} color="var(--sc-brand)" width={480} height={80} />
+            <div className="mt-2 flex justify-between text-xs text-muted-foreground">
               <span>7 天前</span>
               <span>今天</span>
             </div>
@@ -179,48 +189,48 @@ export function AnnotatorDashboard() {
         </Card>
 
         <Card>
-          <div className={styles.cardHeaderPlain}>
-            <h3 className={styles.cardTitle}>本周目标进度</h3>
+          <div className={CARD_HEADER_PLAIN}>
+            <h3 className={CARD_TITLE}>本周目标进度</h3>
           </div>
-          <div className={styles.goalBody}>
-            <div className={styles.goalChart}>
+          <div className="p-5 text-center">
+            <div className="relative mx-auto mb-4 size-[120px]">
               <svg viewBox="0 0 120 120" width={120} height={120}>
-                <circle cx="60" cy="60" r="52" fill="none" stroke="var(--color-border)" strokeWidth="8" />
+                <circle cx="60" cy="60" r="52" fill="none" stroke="var(--sc-border)" strokeWidth="8" />
                 <circle
                   cx="60" cy="60" r="52" fill="none"
-                  stroke="var(--color-accent)" strokeWidth="8"
+                  stroke="var(--sc-brand)" strokeWidth="8"
                   strokeLinecap="round"
                   strokeDasharray={`${weeklyPct * 3.27} ${327 - weeklyPct * 3.27}`}
                   transform="rotate(-90 60 60)"
                 />
               </svg>
-              <div className={styles.goalCenter}>
-                <span className={styles.goalPct}>{weeklyPct}%</span>
-                <span className={styles.goalLabel}>完成率</span>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-stat font-semibold">{weeklyPct}%</span>
+                <span className="text-xs text-muted-foreground">完成率</span>
               </div>
             </div>
-            <div className={styles.goalMeta}>
+            <div className="text-sm text-muted-foreground">
               {stats.weekly_completed} / {weeklyTarget} 个标注
             </div>
           </div>
         </Card>
       </div>
 
-      <div className={styles.cardStack}>
+      <div className="mt-4">
         <Card>
-        <div className={styles.cardHeaderSplit}>
-          <h3 className={styles.cardTitle}>我的项目</h3>
-          <span className={styles.cardCount}>共 {sortedProjects.length} 个</span>
+        <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
+          <h3 className={CARD_TITLE}>我的项目</h3>
+          <span className="text-xs text-muted-foreground">共 {sortedProjects.length} 个</span>
         </div>
         {noProjects ? (
-          <div className={styles.emptyState}>
-            <Icon name="folder" size={28} className={styles.emptyIcon} />
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            <Icon name="folder" size={28} className="mb-2 opacity-25" />
             <div>暂无分配项目</div>
-            <div className={styles.emptyHint}>请联系项目管理员将你加入项目成员</div>
+            <div className="mt-1 text-xs">请联系项目管理员将你加入项目成员</div>
           </div>
         ) : (
-          <div className={styles.tableScroller}>
-            <table className={styles.table}>
+          <div className="w-full overflow-x-auto [overscroll-behavior-x:contain]">
+            <table className={TABLE_CLASS}>
               <thead>
                 <tr>
                   {["项目", "类型", "进度", "待标", ""].map((h, i) => (
@@ -235,27 +245,27 @@ export function AnnotatorDashboard() {
                   return (
                     <tr
                       key={p.id}
-                      className={styles.clickableRow}
+                      className="cursor-pointer"
                       onClick={() => openWorkbench(p.id)}
                     >
                       <td>
-                        <div className={styles.projectName}>{p.name}</div>
-                        <div className={styles.projectId}>
+                        <div className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium">{p.name}</div>
+                        <div className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
                           <span className="mono">{p.display_id}</span>
                         </div>
                       </td>
-                      <td className={styles.mutedCell}>
+                      <td className="whitespace-nowrap text-xs text-muted-foreground">
                         {projectDisplayType(p)}
                       </td>
-                      <td className={styles.mutedCell}>
+                      <td className="whitespace-nowrap text-xs text-muted-foreground">
                         {p.completed_tasks ?? 0} / {p.total_tasks ?? 0} <span className="mono">({pct}%)</span>
                       </td>
                       <td>
-                        <span className={styles.smallBadge}>
+                        <span className="[&_span]:text-xs">
                           <Badge variant={remaining > 0 ? "accent" : "outline"}>{remaining}</Badge>
                         </span>
                       </td>
-                      <td className={styles.actionCell}>
+                      <td className="whitespace-nowrap text-right">
                         <Button
                           size="sm"
                           variant="primary"

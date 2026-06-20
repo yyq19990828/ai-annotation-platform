@@ -1,6 +1,11 @@
-import { clsx } from "clsx";
-import styles from "./Switch.module.css";
+import { Switch as ShadcnSwitch } from "@/components/shadcn/ui/switch";
+import { cn } from "@/lib/utils";
 
+/**
+ * Switch —— shadcn(Radix)适配层(v0.17.2)。
+ * 保留原有 `{checked,onChange,disabled,label,title,data-testid}` API(调用点零改动),
+ * 开关本体与键盘/role 由 Radix 兜底。
+ */
 interface SwitchProps {
   checked: boolean;
   onChange: (next: boolean) => void;
@@ -11,11 +16,6 @@ interface SwitchProps {
   "data-testid"?: string;
 }
 
-/**
- * 苹果风格开关。视觉沿用 Topbar / AttributeForm 的 switchTrack / switchKnob
- * 规范（accent 轨道 + bg-elev 滑块，明暗同源）。保留真实 checkbox 以保证
- * label 关联与键盘可达。
- */
 export function Switch({
   checked,
   onChange,
@@ -25,27 +25,24 @@ export function Switch({
   "data-testid": testId,
 }: SwitchProps) {
   const control = (
-    <span className={styles.switch}>
-      <input
-        type="checkbox"
-        role="switch"
-        className={styles.switchInput}
-        checked={checked}
-        disabled={disabled}
-        title={title}
-        onChange={(e) => onChange(e.target.checked)}
-        data-testid={testId}
-      />
-      <span className={clsx(styles.switchTrack, checked && styles.switchTrackOn)}>
-        <span className={styles.switchKnob} />
-      </span>
-    </span>
+    <ShadcnSwitch
+      checked={checked}
+      onCheckedChange={onChange}
+      disabled={disabled}
+      title={title}
+      data-testid={testId}
+    />
   );
   if (label === undefined) return control;
   return (
-    <label className={clsx(styles.wrap, disabled && styles.wrapDisabled)}>
+    <label
+      className={cn(
+        "inline-flex select-none items-center gap-2",
+        disabled && "cursor-not-allowed opacity-50",
+      )}
+    >
       {control}
-      <span className={styles.label}>{label}</span>
+      <span className="text-sm text-foreground">{label}</span>
     </label>
   );
 }

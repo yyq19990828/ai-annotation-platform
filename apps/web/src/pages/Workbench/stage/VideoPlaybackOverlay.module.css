@@ -1,3 +1,4 @@
+/* 画布叠加层:像素/z-index 编排保留 CSS,色彩走 --sc-*(门禁白名单) */
 .overlay {
   position: absolute;
   left: 50%;
@@ -178,7 +179,7 @@
   width: 0;
   height: 0;
   padding: 0;
-  border-bottom: 8px solid var(--color-warning);
+  border-bottom: 8px solid var(--sc-caution);
   border-right: 5px solid transparent;
   border-left: 5px solid transparent;
   background: transparent;
@@ -205,7 +206,7 @@
   width: 1px;
   height: 6px;
   border-radius: var(--radius-pill);
-  background: var(--color-fg-subtle);
+  background: var(--sc-muted-foreground);
   opacity: 0.55;
   transform: translateX(-50%);
 }
@@ -217,7 +218,7 @@
   width: 2px;
   height: 10px;
   border-radius: var(--radius-pill);
-  background: var(--color-accent);
+  background: var(--sc-brand);
   transform: translateX(-50%);
 }
 
@@ -235,7 +236,7 @@
   border-radius: 2px;
   /* v0.11.26 · 每个 bin 按各轨迹关键帧占比, 自底向上堆叠成彩色渐变 (--density-gradient, 由 JS 注入),
      无轨迹归属 (legacy bbox) 的差额用 accent 兜底。半透明保持密度条不过抢眼。 */
-  background: var(--density-gradient, color-mix(in oklch, var(--color-accent) 68%, transparent));
+  background: var(--density-gradient, color-mix(in oklch, var(--sc-brand) 68%, transparent));
 }
 
 .trackTimeline {
@@ -247,7 +248,7 @@
    位于 lane 顶部 ~3px; 线加粗到 3px 并跟随轨迹色, 与圆点同处一条悬浮线。 */
 .interpolatedSegment {
   top: 3px;
-  border-top: 3px dashed color-mix(in oklch, var(--track-keyframe-color, var(--color-accent)) 80%, transparent);
+  border-top: 3px dashed color-mix(in oklch, var(--track-keyframe-color, var(--sc-brand)) 80%, transparent);
 }
 
 .predictedSegment {
@@ -276,9 +277,9 @@
   height: 7px;
   border: 1px solid rgba(255, 255, 255, 0.85);
   border-radius: 999px;
-  background: var(--track-keyframe-color, var(--color-accent));
+  background: var(--track-keyframe-color, var(--sc-brand));
   box-shadow:
-    0 0 6px color-mix(in oklch, var(--track-keyframe-color, var(--color-accent)) 70%, transparent),
+    0 0 6px color-mix(in oklch, var(--track-keyframe-color, var(--sc-brand)) 70%, transparent),
     0 0 0 1px rgba(0, 0, 0, 0.35);
   transform: translateX(-50%);
 }

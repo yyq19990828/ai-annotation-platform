@@ -8,7 +8,6 @@ import { mlBackendsApi } from "@/api/ml-backends";
 import { RegisteredBackendsTab } from "./RegisteredBackendsTab";
 import { RuntimeObservePanel } from "./RuntimeObservePanel";
 import { CapabilityCatalogPanel } from "./CapabilityCatalogPanel";
-import styles from "./ModelMarketPage.module.css";
 
 // v0.9.12 BUG B-14 · 删 failed tab; 失败预测已迁到 /ai-pre/jobs?status=failed.
 // FailedPredictionsTab.tsx 文件保留 (AIPreAnnotatePage 仍 import 此组件; 等 Phase 5 IA 重构一并清理).
@@ -73,16 +72,16 @@ export function ModelMarketPage() {
   };
 
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>模型市场</h1>
-        <p className={styles.subtitle}>
+    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground max-md:px-4">
+      <div className="mb-4">
+        <h1 className="mb-1 text-xl font-semibold">模型市场</h1>
+        <p className="text-sm text-muted-foreground">
           全局总览：env 配置的 AI 后端容器（直连观测）+ 所有项目已注册的 ML Backend 及其能力目录。
           {/* v0.10.38 · 视频追踪任务监控已迁至 /ai-pre/jobs 视频 tab (epic 阶段 3) */}
         </p>
       </div>
 
-      <div className={styles.statsGrid}>
+      <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
         <StatCard
           icon="bot"
           label="ML Backend"
@@ -105,15 +104,23 @@ export function ModelMarketPage() {
         />
       </div>
 
-      <div className={styles.segmented} role="tablist" aria-label="模型市场视图">
+      <div
+        className="mb-4 inline-flex gap-1 rounded-md border border-border bg-muted p-1 max-md:grid max-md:w-full max-md:grid-cols-3"
+        role="tablist"
+        aria-label="模型市场视图"
+      >
         {TABS.map((tab) => (
           <button
             key={tab.key}
             type="button"
             role="tab"
             aria-selected={activeTab === tab.key}
-            className={activeTab === tab.key ? `${styles.tab} ${styles.tabActive}` : styles.tab}
             onClick={() => setTab(tab.key)}
+            className={`inline-flex min-h-[30px] cursor-pointer appearance-none items-center gap-1.5 rounded-sm border-0 bg-transparent px-3 py-1.5 text-xs max-md:justify-center ${
+              activeTab === tab.key
+                ? "bg-card text-foreground ring-1 ring-border"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
           >
             <Icon name={tab.icon} size={13} />
             {tab.label}

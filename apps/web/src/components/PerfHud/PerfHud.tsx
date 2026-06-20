@@ -18,10 +18,10 @@ import styles from "./PerfHud.module.css";
  */
 
 function colorFor(pct: number | null | undefined): string {
-  if (pct == null) return "var(--color-fg-muted)";
-  if (pct >= 90) return "var(--color-danger)";
-  if (pct >= 70) return "var(--color-warning)";
-  return "var(--color-success)";
+  if (pct == null) return "var(--sc-muted-foreground)";
+  if (pct >= 90) return "var(--sc-destructive)";
+  if (pct >= 70) return "var(--sc-caution)";
+  return "var(--sc-positive)";
 }
 
 function MetricBar({
@@ -147,10 +147,10 @@ function BackendPanel({
       />
       {expanded && hist ? (
         <div className={styles.sparkGrid}>
-          <SparkRow label="GPU" values={hist.gpuUtil} color="var(--color-success)" />
-          <SparkRow label="VRAM" values={hist.vramPercent} color="var(--color-accent)" />
-          <SparkRow label="CPU" values={hist.cpu} color="var(--color-warning)" />
-          <SparkRow label="RAM" values={hist.mem} color="var(--color-danger)" />
+          <SparkRow label="GPU" values={hist.gpuUtil} color="var(--sc-positive)" />
+          <SparkRow label="VRAM" values={hist.vramPercent} color="var(--sc-brand)" />
+          <SparkRow label="CPU" values={hist.cpu} color="var(--sc-caution)" />
+          <SparkRow label="RAM" values={hist.mem} color="var(--sc-destructive)" />
         </div>
       ) : null}
       <div className={styles.backendMeta}>

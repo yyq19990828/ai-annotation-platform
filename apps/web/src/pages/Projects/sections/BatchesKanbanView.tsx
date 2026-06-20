@@ -13,11 +13,7 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
 import { useToastStore } from "@/components/ui/Toast";
 import type { BatchResponse } from "@/api/batches";
-import styles from "./BatchesKanbanView.module.css";
-
-function cn(...xs: Array<string | false | null | undefined>): string {
-  return xs.filter(Boolean).join(" ");
-}
+import { cn } from "@/lib/utils";
 
 const COLUMNS: { id: string; label: string; variant: "default" | "accent" | "warning" | "success" | "danger" | "ai" }[] = [
   { id: "draft", label: "草稿", variant: "default" },
@@ -87,7 +83,7 @@ export function BatchesKanbanView({ batches, isOwner, onTransition }: Props) {
   };
 
   return (
-    <div className={styles.board}>
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] items-start gap-2 p-2">
       {COLUMNS.map((col) => {
         const items = grouped[col.id] ?? [];
         const canDrop =
@@ -111,19 +107,19 @@ export function BatchesKanbanView({ batches, isOwner, onTransition }: Props) {
               handleDrop(col.id);
             }}
             className={cn(
-              styles.column,
-              canDrop && styles.columnDropAllowed,
-              hoverColumn === col.id && canDrop && styles.columnDropHover,
+              "flex max-h-[calc(100vh-280px)] min-w-0 flex-col gap-1.5 overflow-y-auto rounded-md border border-border bg-muted p-2",
+              canDrop && "border-dashed border-brand",
+              hoverColumn === col.id && canDrop && "bg-brand/10",
             )}
           >
-            <div className={styles.columnHeader}>
+            <div className="flex min-w-0 items-center justify-between gap-1.5 overflow-hidden border-b border-border px-1 pt-0.5 pb-1.5">
               <Badge variant={col.variant} dot>
                 {col.label}
               </Badge>
-              <span className={styles.columnCount}>{items.length}</span>
+              <span className="text-xs text-muted-foreground">{items.length}</span>
             </div>
             {items.length === 0 && (
-              <div className={styles.emptyColumn}>
+              <div className="py-4 text-center text-xs text-muted-foreground">
                 —
               </div>
             )}
@@ -168,22 +164,26 @@ function KanbanCard({
       draggable={isOwner}
       onDragStart={() => onDragStart()}
       onDragEnd={() => onDragEnd()}
-      className={cn(styles.card, isOwner && styles.cardDraggable, isDragging && styles.cardDragging)}
+      className={cn(
+        "flex cursor-default flex-col gap-1.5 rounded-sm border border-border bg-card px-2.5 py-2",
+        isOwner && "cursor-grab",
+        isDragging && "opacity-50",
+      )}
     >
-      <div className={styles.cardHeader}>
-        <span className={cn("mono", styles.cardId)}>
+      <div className="flex items-center justify-between gap-1.5">
+        <span className="mono text-xs text-muted-foreground">
           {batch.display_id}
         </span>
         <AssigneeAvatarStack users={stackUsers} size="sm" max={2} />
       </div>
       <div
-        className={styles.cardName}
+        className="overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap"
         title={batch.name}
       >
         {batch.name}
       </div>
       <ProgressBar value={batch.progress_pct ?? 0} />
-      <div className={styles.cardMeta}>
+      <div className="text-2xs text-muted-foreground">
         {batch.completed_tasks}/{batch.total_tasks} task
       </div>
     </div>

@@ -1,4 +1,15 @@
 import type { ScreenshotScene } from "./_types";
+import { openCoco8Annotate } from "../flows/_canvas";
+
+async function openCoco8OrThrow(
+  page: Parameters<NonNullable<ScreenshotScene["prepare"]>>[0],
+  data: Parameters<NonNullable<ScreenshotScene["prepare"]>>[1],
+  sceneName: string,
+) {
+  if (!(await openCoco8Annotate(page, data.admin_email))) {
+    throw new Error(`${sceneName} screenshot requires seeded image project P-COCO8`);
+  }
+}
 
 // AI 工具只在绑定了 ML backend 的项目里可激活（否则工具按钮置灰，drawer 打不开）。
 // dev 环境里 P-0001「2D图片标注测试」注册了 gsam2 backend，故 AI 工具 scene 固定指向它。
@@ -13,10 +24,10 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
   {
     name: "workbench/layout-overview",
     role: "annotator",
-    route: (d) => `/projects/${d.project_id}/annotate`,
-    prepare: async (page) => {
-      await page.waitForLoadState("networkidle");
-      await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 }).catch(() => {});
+    route: () => "/",
+    prepare: async (page, data) => {
+      await openCoco8OrThrow(page, data, "workbench/layout-overview");
+      await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 });
       await page.waitForTimeout(500);
     },
     // 四区全貌用视口截图（不设 capture）
@@ -25,10 +36,10 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
   {
     name: "mask-brush/toolbar-overview",
     role: "annotator",
-    route: (d) => `/projects/${d.project_id}/annotate`,
-    prepare: async (page) => {
-      await page.waitForLoadState("networkidle");
-      await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 }).catch(() => {});
+    route: () => "/",
+    prepare: async (page, data) => {
+      await openCoco8OrThrow(page, data, "mask-brush/toolbar-overview");
+      await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 });
       // 激活 mask 工具（hotkey M / tool-btn-mask）
       const maskBtn = page.locator('[data-testid="tool-btn-mask"]');
       if (await maskBtn.count()) {
@@ -36,7 +47,7 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
       } else {
         await page.keyboard.press("m");
       }
-      await page.waitForSelector('[data-testid="mask-toolbar"]', { timeout: 3000 }).catch(() => {});
+      await page.waitForSelector('[data-testid="mask-toolbar"]', { timeout: 3000 });
       await page.waitForTimeout(200);
     },
     capture: { kind: "locator", selector: '[data-testid="mask-toolbar"]', padding: 12 },
@@ -67,14 +78,14 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
     name: "sam/exemplar-output-mode",
     role: "annotator",
     // P-COCO8（= seed peek 默认项目）注册了 sam3，支持 exemplar prompt
-    route: (d) => `/projects/${d.project_id}/annotate`,
-    prepare: async (page) => {
-      await page.waitForLoadState("networkidle");
-      await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 }).catch(() => {});
+    route: () => "/",
+    prepare: async (page, data) => {
+      await openCoco8OrThrow(page, data, "sam/exemplar-output-mode");
+      await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 });
       // 激活 exemplar 工具，AIToolDrawer 内出现「输出形态」TabRow
       const btn = page.locator('[data-testid="tool-btn-exemplar"]');
       if (await btn.count()) await btn.click({ timeout: 4000 }).catch(() => {});
-      await page.waitForSelector('[data-testid="exemplar-output-mode"]', { timeout: 3000 }).catch(() => {});
+      await page.waitForSelector('[data-testid="exemplar-output-mode"]', { timeout: 3000 });
       await page.waitForTimeout(200);
     },
     capture: { kind: "locator", selector: '[data-testid="ai-tool-drawer"]', padding: 8 },
@@ -87,14 +98,14 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
     name: "sam/ai-inspector-panel",
     role: "annotator",
     // Topbar「打开 AI 面板」→ AIPredictionPopover（悬浮 AI 面板：置信度阈值滑块 + 单图预标）
-    route: (d) => `/projects/${d.project_id}/annotate`,
-    prepare: async (page) => {
-      await page.waitForLoadState("networkidle");
-      await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 }).catch(() => {});
+    route: () => "/",
+    prepare: async (page, data) => {
+      await openCoco8OrThrow(page, data, "sam/ai-inspector-panel");
+      await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 });
       await page.waitForTimeout(300);
       const aiBtn = page.getByTitle("打开 AI 面板");
       if (await aiBtn.count()) await aiBtn.first().click({ timeout: 4000 }).catch(() => {});
-      await page.waitForSelector('[data-testid="ai-prediction-popover"]', { timeout: 3000 }).catch(() => {});
+      await page.waitForSelector('[data-testid="ai-prediction-popover"]', { timeout: 3000 });
       await page.waitForTimeout(300);
     },
     capture: { kind: "locator", selector: '[data-testid="ai-prediction-popover"]', padding: 8 },

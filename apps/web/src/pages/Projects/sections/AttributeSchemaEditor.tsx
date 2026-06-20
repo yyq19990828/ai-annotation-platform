@@ -9,7 +9,11 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { AttributeField, AttributeFieldType } from "@/api/projects";
-import styles from "./AttributeSchemaEditor.module.css";
+import { LABEL_CLASS } from "./formClasses";
+
+// UA-safe 表单基线 + token 化(无全局 preflight)。
+const CONTROL_CLASS =
+  "box-border w-full appearance-none rounded-sm border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground outline-none [font-family:inherit]";
 
 const FIELD_TYPES: { value: AttributeFieldType; label: string }[] = [
   { value: "text", label: "文本" },
@@ -62,26 +66,26 @@ export function AttributeSchemaEditor({
   const addField = () => onChange([...value, newAttributeField()]);
 
   return (
-    <div className={styles.root}>
+    <div className="flex flex-col gap-2.5">
       {value.length === 0 && (
-        <div className={styles.emptyState}>
+        <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
           {emptyHint}
         </div>
       )}
 
       {value.map((f, i) => (
-        <div key={i} className={styles.fieldCard}>
-          <div className={styles.fieldGrid}>
+        <div key={i} className="flex flex-col gap-2 rounded-md border border-border bg-card p-3">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
             <div>
-              <label className={styles.label}>key</label>
-              <input value={f.key} onChange={(e) => setField(i, { key: e.target.value })} className={styles.control} placeholder="occluded" />
+              <label className={LABEL_CLASS}>key</label>
+              <input value={f.key} onChange={(e) => setField(i, { key: e.target.value })} className={CONTROL_CLASS} placeholder="occluded" />
             </div>
             <div>
-              <label className={styles.label}>显示名</label>
-              <input value={f.label} onChange={(e) => setField(i, { label: e.target.value })} className={styles.control} placeholder="是否遮挡" />
+              <label className={LABEL_CLASS}>显示名</label>
+              <input value={f.label} onChange={(e) => setField(i, { label: e.target.value })} className={CONTROL_CLASS} placeholder="是否遮挡" />
             </div>
             <div>
-              <label className={styles.label}>类型</label>
+              <label className={LABEL_CLASS}>类型</label>
               <select
                 value={f.type}
                 onChange={(e) => {
@@ -90,12 +94,12 @@ export function AttributeSchemaEditor({
                   // 否则字段会保留 style_occluded:true 且 UI 入口消失 → 提交时被后端校验拒绝。
                   setField(i, next !== "boolean" ? { type: next, style_occluded: undefined } : { type: next });
                 }}
-                className={`${styles.control} ${styles.selectControl}`}
+                className={`${CONTROL_CLASS} cursor-pointer`}
               >
                 {FIELD_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
-            <div className={styles.rowActions}>
+            <div className="flex items-center gap-1 md:items-end">
               <Button size="sm" variant="ghost" onClick={() => moveField(i, -1)} disabled={i === 0} title="上移">
                 <Icon name="chevUp" size={11} />
               </Button>
@@ -108,13 +112,13 @@ export function AttributeSchemaEditor({
             </div>
           </div>
 
-          <label className={styles.checkboxLabel}>
+          <label className="flex items-center gap-1.5 text-xs">
             <input type="checkbox" checked={!!f.required} onChange={(e) => setField(i, { required: e.target.checked })} />
             必填（提交质检前必须填写）
           </label>
 
           {f.type === "boolean" && (
-            <label className={styles.checkboxLabel}>
+            <label className="flex items-center gap-1.5 text-xs">
               <input type="checkbox" checked={!!f.style_occluded} onChange={(e) => setField(i, { style_occluded: e.target.checked })} />
               遮挡样式（该属性为真时，画布框渲染为虚线+半透）
             </label>
@@ -122,7 +126,7 @@ export function AttributeSchemaEditor({
 
           {(f.type === "select" || f.type === "multiselect") && (
             <div>
-              <label className={styles.label}>选项（逗号分隔，格式 value:label）</label>
+              <label className={LABEL_CLASS}>选项（逗号分隔，格式 value:label）</label>
               <input
                 value={(f.options ?? []).map((o) => `${o.value}:${o.label}`).join(", ")}
                 onChange={(e) => {
@@ -134,26 +138,26 @@ export function AttributeSchemaEditor({
                   setField(i, { options: opts });
                 }}
                 placeholder="yes:是, no:否"
-                className={styles.control}
+                className={CONTROL_CLASS}
               />
             </div>
           )}
 
           {(f.type === "number" || f.type === "range") && (
-            <div className={styles.twoColumnGrid}>
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-2">
               <div>
-                <label className={styles.label}>min</label>
-                <input type="number" value={f.min ?? ""} onChange={(e) => setField(i, { min: e.target.value === "" ? undefined : Number(e.target.value) })} className={styles.control} />
+                <label className={LABEL_CLASS}>min</label>
+                <input type="number" value={f.min ?? ""} onChange={(e) => setField(i, { min: e.target.value === "" ? undefined : Number(e.target.value) })} className={CONTROL_CLASS} />
               </div>
               <div>
-                <label className={styles.label}>max</label>
-                <input type="number" value={f.max ?? ""} onChange={(e) => setField(i, { max: e.target.value === "" ? undefined : Number(e.target.value) })} className={styles.control} />
+                <label className={LABEL_CLASS}>max</label>
+                <input type="number" value={f.max ?? ""} onChange={(e) => setField(i, { max: e.target.value === "" ? undefined : Number(e.target.value) })} className={CONTROL_CLASS} />
               </div>
             </div>
           )}
 
           <div>
-            <label className={styles.label}>仅对类别（applies_to）</label>
+            <label className={LABEL_CLASS}>仅对类别（applies_to）</label>
             <input
               value={Array.isArray(f.applies_to) ? f.applies_to.join(", ") : ""}
               onChange={(e) => {
@@ -162,13 +166,13 @@ export function AttributeSchemaEditor({
                 else setField(i, { applies_to: v.split(",").map((s) => s.trim()).filter(Boolean) });
               }}
               placeholder="留空 = 全局；如 car, truck"
-              className={styles.control}
+              className={CONTROL_CLASS}
             />
           </div>
         </div>
       ))}
 
-      <div className={styles.footer}>
+      <div className="flex justify-start">
         <Button variant="ghost" onClick={addField}>
           <Icon name="plus" size={12} />新增属性
         </Button>

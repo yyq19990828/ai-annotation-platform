@@ -12,9 +12,9 @@
   width: 64px;
   height: 64px;
   margin: 0 auto 20px;
-  color: var(--color-fg-muted);
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
+  color: var(--sc-muted-foreground);
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
   border-radius: 16px;
 }
 
@@ -22,12 +22,12 @@
   margin: 0 0 8px;
   font-size: 18px;
   font-weight: 600;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
 }
 
 .description {
   margin: 0 0 16px;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }

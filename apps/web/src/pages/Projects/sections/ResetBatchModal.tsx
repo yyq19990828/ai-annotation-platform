@@ -10,14 +10,12 @@ import { Button } from "@/components/ui/Button";
 import { useToastStore } from "@/components/ui/Toast";
 import { useResetBatch } from "@/hooks/useBatches";
 import type { BatchResponse } from "@/api/batches";
-import styles from "./ResetBatchModal.module.css";
 
 const REASON_MIN = 10;
 const REASON_MAX = 500;
 
-function cn(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
-}
+const TEXTAREA_BASE =
+  "min-h-[80px] resize-y appearance-none rounded-sm border border-border bg-background px-2.5 py-2 text-sm text-foreground [font:inherit]";
 
 export function ResetBatchModal({
   projectId,
@@ -53,17 +51,17 @@ export function ResetBatchModal({
 
   return (
     <Modal open title={`重置到草稿 · ${batch.display_id}`} onClose={onClose}>
-      <div className={styles.body}>
-        <div className={styles.warningBox}>
+      <div className="flex flex-col gap-3 text-sm">
+        <div className="border-l-[3px] border-amber-500 bg-status-caution-soft p-2.5 text-sm leading-[1.55] text-foreground">
           <strong>这是 owner 兜底操作。</strong>批次将从 <code>{batch.status}</code> 强制回到 <code>draft</code>：
-          <ul className={styles.warningList}>
+          <ul className="mt-1.5 mb-0 ml-4 p-0 text-xs text-muted-foreground">
             <li>批次内 <strong>{batch.total_tasks}</strong> 个 task 全部回 pending</li>
             <li>已有标注记录 <strong>保留</strong>（不删 annotation，不改 is_active）</li>
             <li>会 <strong>释放</strong> 所有标注员锁，原审核反馈 / 审核人会被清空</li>
           </ul>
         </div>
-        <label className={styles.field}>
-          <span className={styles.labelText}>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">
             重置原因（必填 · 至少 {REASON_MIN} 字 · {trimmed.length}/{REASON_MAX}） · 会写入审计日志
           </span>
           <textarea
@@ -71,26 +69,26 @@ export function ResetBatchModal({
             onChange={(e) => setReason(e.target.value)}
             placeholder="说明为什么要把批次回退到草稿（迁移错误数据 / 整体重做 / …）"
             rows={4}
-            className={cn(styles.textarea, (tooLong || tooShort) && styles.textareaInvalid)}
+            className={`${TEXTAREA_BASE} ${tooLong || tooShort ? "border-rose-500" : ""}`}
             autoFocus
           />
           {tooShort && (
-            <span className={styles.errorText}>
+            <span className="text-xs text-status-danger">
               至少 {REASON_MIN} 字
             </span>
           )}
           {tooLong && (
-            <span className={styles.errorText}>
+            <span className="text-xs text-status-danger">
               超出 {REASON_MAX} 字上限
             </span>
           )}
         </label>
-        <div className={styles.actions}>
+        <div className="flex justify-end gap-2">
           <Button onClick={onClose}>取消</Button>
           <Button
+            variant="danger"
             onClick={handleSubmit}
             disabled={!canSubmit}
-            className={canSubmit ? styles.warningSubmitButton : undefined}
           >
             {reset.isPending ? "重置中…" : "确认重置"}
           </Button>

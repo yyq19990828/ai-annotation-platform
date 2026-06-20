@@ -32,7 +32,7 @@ const PERIOD = "4w";
 const WEEK_LABELS = ["前 3 周", "前 2 周", "上周", "本周"];
 type KpiTone = "accent" | "success" | "warning" | "danger" | "neutral";
 
-/** 读取 tokens.css 语义色（恪守 §6：组件不写死颜色，运行时取 token）。 */
+/** 读取 shadcn 运行时 token，避免图表在主题切换后滞留旧色。 */
 function cssVar(name: string): string {
   if (typeof window === "undefined") return "";
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -46,28 +46,28 @@ export function MyPerformancePage() {
 
   // 订阅主题变化，切换时 re-render 后重读 token，避免 recharts 颜色滞留。
   useTheme();
-  const accent = cssVar("--color-accent");
-  const muted = cssVar("--color-fg-subtle");
-  const danger = cssVar("--color-danger");
-  const gridColor = cssVar("--color-border");
+  const accent = cssVar("--sc-brand");
+  const muted = cssVar("--sc-muted-foreground");
+  const danger = cssVar("--sc-destructive");
+  const gridColor = cssVar("--sc-border");
   const axisTick = useMemo(() => ({ fontSize: 11, fill: muted }), [muted]);
   const axisLine = useMemo(() => ({ stroke: gridColor }), [gridColor]);
   const tooltipContentStyle = useMemo<CSSProperties>(
     () => ({
-      background: "var(--color-bg-elev)",
-      border: "1px solid var(--color-border)",
+      background: "var(--sc-card)",
+      border: "1px solid var(--sc-border)",
       borderRadius: "var(--radius-md)",
       boxShadow: "var(--shadow-md)",
-      color: "var(--color-fg)",
+      color: "var(--sc-foreground)",
     }),
     [],
   );
   const tooltipLabelStyle = useMemo<CSSProperties>(
-    () => ({ color: "var(--color-fg)", fontWeight: 600 }),
+    () => ({ color: "var(--sc-foreground)", fontWeight: 600 }),
     [],
   );
   const tooltipItemStyle = useMemo<CSSProperties>(
-    () => ({ color: "var(--color-fg-muted)" }),
+    () => ({ color: "var(--sc-muted-foreground)" }),
     [],
   );
 
@@ -278,7 +278,7 @@ export function MyPerformancePage() {
                       dataKey="我的产出"
                       stroke={accent}
                       strokeWidth={2}
-                      dot={{ r: 3, strokeWidth: 2, fill: "var(--color-bg-elev)" }}
+                      dot={{ r: 3, strokeWidth: 2, fill: "var(--sc-card)" }}
                       activeDot={{ r: 5 }}
                     />
                     <Line
@@ -287,7 +287,7 @@ export function MyPerformancePage() {
                       stroke={muted}
                       strokeWidth={2}
                       strokeDasharray="5 4"
-                      dot={{ r: 2, strokeWidth: 2, fill: "var(--color-bg-elev)" }}
+                      dot={{ r: 2, strokeWidth: 2, fill: "var(--sc-card)" }}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -330,7 +330,7 @@ export function MyPerformancePage() {
                         contentStyle={tooltipContentStyle}
                         labelStyle={tooltipLabelStyle}
                         itemStyle={tooltipItemStyle}
-                        cursor={{ fill: "var(--color-bg-sunken)" }}
+                        cursor={{ fill: "var(--sc-muted)" }}
                       />
                       <Bar
                         dataKey="count"
@@ -382,7 +382,7 @@ export function MyPerformancePage() {
                         contentStyle={tooltipContentStyle}
                         labelStyle={tooltipLabelStyle}
                         itemStyle={tooltipItemStyle}
-                        cursor={{ fill: "var(--color-bg-sunken)" }}
+                        cursor={{ fill: "var(--sc-muted)" }}
                       />
                       <Bar
                         dataKey="value"
@@ -441,7 +441,7 @@ export function MyPerformancePage() {
                         contentStyle={tooltipContentStyle}
                         labelStyle={tooltipLabelStyle}
                         itemStyle={tooltipItemStyle}
-                        cursor={{ fill: "var(--color-bg-sunken)" }}
+                        cursor={{ fill: "var(--sc-muted)" }}
                       />
                       <Bar
                         dataKey="value"

@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import { Layer, Line, Circle, Rect } from "react-konva";
+import { useTheme } from "@/hooks/useTheme";
 import { colorToHex, cssVarToHex, hexToRgba } from "./colors";
 import { strokeWidthFor, type AnnotationVisualConfig } from "./annotationVisual";
 import { screenToWorld } from "./shared/viewport/scaleCancel";
@@ -36,7 +38,9 @@ export function VideoKonvaTracksLayer({
   scale,
   visual,
 }: VideoKonvaTracksLayerProps) {
-  const occludedDotFill = cssVarToHex("--color-bg-elev");
+  const { resolved: theme } = useTheme();
+  const occludedDotFill = useMemo(() => cssVarToHex("--sc-card", theme), [theme]);
+
   return (
     <Layer name="tracks" listening={false}>
       {previews.map((preview) => {

@@ -10,6 +10,7 @@
  *
  * 方向线沿 box-local +u 轴 (= 朝向: Top 朝 X、Side 朝 X、Front 朝 Y), 末端一个旋转柄;
  * 拖它按指针绕框心的角度增量 Δθ 旋转。每视图绕其法线轴, 屏幕 CCW→+Δθ 的手性按视图定 (ROT_SIGN)。
+ * v0.17.6 · module.css → Tailwind。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
@@ -24,7 +25,6 @@ import {
   type Handle,
   type Psr,
 } from "./geometry/triview";
-import styles from "./ThreeDWorkbench.module.css";
 
 /** overlay 需要的选中框信息 (size 决定矩形, color 描边)。 */
 export interface TriSelected {
@@ -33,6 +33,14 @@ export interface TriSelected {
   rotation: [number, number, number];
   color: string;
 }
+
+// v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
+const TRI_OVERLAY = "absolute inset-0 z-local-1 pointer-events-none";
+const TRI_OVERLAY_EDITABLE = "pointer-events-auto";
+const TRI_ANGLE_HUD =
+  "absolute left-1/2 top-1/2 z-local-3 min-w-[104px] flex items-baseline justify-center gap-[7px] px-2.5 py-1.5 -translate-x-1/2 -translate-y-1/2 border border-brand rounded-sm bg-black/56 shadow-[0_0_14px_var(--sc-brand)]/20 text-brand font-mono pointer-events-none before:absolute before:left-2 before:right-2 before:h-px before:top-1 before:bg-brand/45 before:content-[''] after:absolute after:left-2 after:right-2 after:h-px after:bottom-[3px] after:bg-brand/45 after:content-['']";
+const TRI_ANGLE_LABEL = "text-2xs text-muted-foreground";
+const TRI_ANGLE_VALUE = "text-ui font-bold text-brand";
 
 interface TriOrthoViewProps {
   view: TriView;
@@ -343,12 +351,12 @@ export function TriOrthoView({
     <>
       <canvas
         ref={canvasRef}
-        className={editable ? `${styles.triOverlay} ${styles.triOverlayEditable}` : styles.triOverlay}
+        className={editable ? `${TRI_OVERLAY} ${TRI_OVERLAY_EDITABLE}` : TRI_OVERLAY}
       />
       {angleHud && (
-        <div className={styles.triAngleHud} aria-hidden="true">
-          <span className={styles.triAngleLabel}>Δ{angleHud.label}</span>
-          <span className={styles.triAngleValue}>{angleHud.value}</span>
+        <div className={TRI_ANGLE_HUD} aria-hidden="true">
+          <span className={TRI_ANGLE_LABEL}>Δ{angleHud.label}</span>
+          <span className={TRI_ANGLE_VALUE}>{angleHud.value}</span>
         </div>
       )}
     </>

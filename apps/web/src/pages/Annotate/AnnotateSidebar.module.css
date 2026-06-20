@@ -1,7 +1,7 @@
 .emptyState {
   padding: 32px 16px;
   text-align: center;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 
@@ -31,7 +31,7 @@
   font-family: inherit;
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -53,7 +53,7 @@
 
 .batchList {
   margin-left: 12px;
-  border-left: 1px solid var(--color-border-subtle, var(--color-border));
+  border-left: 1px solid var(--sc-border);
 }
 
 .batchButton {
@@ -63,7 +63,7 @@
   border-radius: var(--radius-sm);
   border: none;
   background: transparent;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-family: inherit;
   font-size: 12.5px;
   text-align: left;
@@ -71,7 +71,7 @@
 }
 
 .batchButtonActive {
-  background: var(--color-accent-soft);
+  background: color-mix(in srgb, var(--sc-brand) 12%, transparent);
 }
 
 .batchTitleRow {
@@ -82,7 +82,7 @@
 
 .batchId {
   font-size: 11px;
-  color: var(--color-accent);
+  color: var(--sc-brand);
   font-weight: 600;
 }
 
@@ -101,6 +101,6 @@
 
 .batchMeta {
   font-size: 10.5px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   margin-top: 2px;
 }

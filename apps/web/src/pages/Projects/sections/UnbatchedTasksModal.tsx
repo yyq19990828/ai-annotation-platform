@@ -1,20 +1,17 @@
 // v0.12.0 · P2 · 浏览未归类任务池（batch_id IS NULL）。
 // cursor 无限滚动 + @tanstack/react-virtual，显示 display_id / file_name / 缩略图。
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Modal } from "@/components/ui/Modal";
 import { Thumbnail } from "@/components/Thumbnail";
+import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useTaskList } from "@/hooks/useTasks";
-import styles from "./UnbatchedTasksModal.module.css";
 
 function VirtualInner({ height, children }: { height: number; children: ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    ref.current?.style.setProperty("height", `${height}px`);
-  }, [height]);
+  const ref = useElementStyle<HTMLDivElement>({ "--virtual-height": `${height}px` } as CSSProperties);
   return (
-    <div ref={ref} className={styles.virtualInner}>
+    <div ref={ref} className="relative w-full h-[var(--virtual-height)]">
       {children}
     </div>
   );
@@ -27,14 +24,12 @@ function VirtualRow({
   start: number;
   children: ReactNode;
 }) {
-  const ref = useCallback(
-    (node: HTMLDivElement | null) => {
-      if (node) node.style.setProperty("transform", `translateY(${start}px)`);
-    },
-    [start],
-  );
+  const ref = useElementStyle<HTMLDivElement>({ "--virtual-start": `${start}px` } as CSSProperties);
   return (
-    <div ref={ref} className={styles.virtualRow}>
+    <div
+      ref={ref}
+      className="absolute left-0 top-0 flex h-14 w-full translate-y-[var(--virtual-start)] items-center gap-2.5 border-b border-border px-1"
+    >
       {children}
     </div>
   );
@@ -83,13 +78,15 @@ export function UnbatchedTasksModal({
 
   return (
     <Modal open onClose={onClose} title={`未归类任务（${count}）`} width={560}>
-      <div className={styles.body}>
-        {isLoading && <div className={styles.placeholder}>加载中…</div>}
+      <div className="flex min-h-[120px] flex-col">
+        {isLoading && (
+          <div className="py-8 text-center text-sm text-muted-foreground">加载中…</div>
+        )}
         {!isLoading && tasks.length === 0 && (
-          <div className={styles.placeholder}>没有未归类任务。</div>
+          <div className="py-8 text-center text-sm text-muted-foreground">没有未归类任务。</div>
         )}
         {!isLoading && tasks.length > 0 && (
-          <div ref={parentRef} className={styles.scrollArea}>
+          <div ref={parentRef} className="relative max-h-[60vh] overflow-y-auto">
             <VirtualInner height={virtualizer.getTotalSize()}>
               {virtualizer.getVirtualItems().map((vItem) => {
                 const task = tasks[vItem.index];
@@ -102,18 +99,23 @@ export function UnbatchedTasksModal({
                       width={40}
                       height={40}
                     />
-                    <div className={styles.rowText}>
-                      <div className={styles.fileName} title={task.file_name}>
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      <div
+                        className="overflow-hidden text-ellipsis whitespace-nowrap text-sm text-foreground"
+                        title={task.file_name}
+                      >
                         {task.file_name}
                       </div>
-                      <div className={styles.displayId}>{task.display_id}</div>
+                      <div className="text-xs tabular-nums text-muted-foreground">
+                        {task.display_id}
+                      </div>
                     </div>
                   </VirtualRow>
                 );
               })}
             </VirtualInner>
             {isFetchingNextPage && (
-              <div className={styles.loadingMore}>加载更多…</div>
+              <div className="py-2.5 text-center text-xs text-muted-foreground">加载更多…</div>
             )}
           </div>
         )}

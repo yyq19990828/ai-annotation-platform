@@ -19,7 +19,6 @@ import {
   type WorkbenchSettingCategory,
 } from "../state/workbenchSettingsFields";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
-import styles from "./WorkbenchSettingsDrawer.module.css";
 
 /** stageKind → 注册表模态分类("3d" 对应 pointcloud 子树)。 */
 const STAGE_CATEGORY: Record<StageKind, WorkbenchSettingCategory> = {
@@ -79,47 +78,48 @@ export function WorkbenchSettingsDrawer({
 
   return createPortal(
     <>
+      <style>{`@keyframes slideInRight{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}`}</style>
       {/* 透明点击层:仅供点击关闭。刻意不加暗化遮罩 —— 抽屉的核心价值是所见即所得,
           调滤镜/平滑时画布必须保持原始观感。 */}
-      <div onClick={onClose} className={styles.backdrop} />
+      <div onClick={onClose} className="fixed inset-0 z-drawer-backdrop bg-transparent" />
       <aside
         role="dialog"
         aria-label="工作台设置"
         aria-modal="false"
         onClick={(e) => e.stopPropagation()}
-        className={styles.drawer}
+        className="fixed top-0 right-0 bottom-0 z-drawer flex flex-col w-[min(340px,100vw)] border-l border-border bg-card shadow-lg animate-[slideInRight_180ms_ease-out]"
         data-testid="workbench-settings-drawer"
       >
-        <header className={styles.header}>
-          <div className={styles.headerContent}>
+        <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">
+          <div className="flex items-center gap-2 text-foreground">
             <Icon name="settings" size={14} />
-            <span className={styles.title}>工作台设置</span>
+            <span className="text-foreground text-sm font-semibold">工作台设置</span>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className={styles.iconButton}
+            className="inline-flex items-center p-1 appearance-none border-0 rounded-[var(--radius-sm)] bg-transparent text-muted-foreground cursor-pointer hover:text-foreground hover:bg-muted"
             aria-label="关闭"
           >
             <Icon name="x" size={14} />
           </button>
         </header>
 
-        <div className={styles.body}>
-          {!loaded && <div className={styles.loading}>加载中…</div>}
+        <div className="flex-1 overflow-y-auto flex flex-col gap-1.5 px-3.5 py-2.5">
+          {!loaded && <div className="text-muted-foreground text-xs py-3.5 text-center">加载中…</div>}
           {loaded &&
             groups.map(({ category, fields }) => (
-              <section key={category} className={styles.group}>
-                <h3 className={styles.groupTitle}>
+              <section key={category} className="flex flex-col">
+                <h3 className="m-0 px-2.5 pt-2 pb-1.5 text-muted-foreground text-2xs font-semibold tracking-[0.06em] uppercase">
                   {WORKBENCH_SETTING_CATEGORY_LABELS[category]}
                 </h3>
-                <div className={styles.fieldList}>
+                <div className="flex flex-col gap-0.5">
                 {fields.filter((field) => !field.parentKey).map((field) => {
                   const lockName = lockableFieldName(field);
                   const fieldValue = getFieldValue(config, field);
                   const childFields = fields.filter((child) => child.parentKey === field.key);
                   return (
-                    <div key={field.key} className={styles.fieldCluster}>
+                    <div key={field.key} className="flex flex-col gap-px">
                       <SettingsFieldControl
                         field={field}
                         value={fieldValue}
@@ -162,10 +162,10 @@ export function WorkbenchSettingsDrawer({
                 })}
                 </div>
                 {category === "common" && onToggleHideOrphans && (
-                  <div className={styles.orphanRow}>
-                    <span className={styles.orphanLabel}>
-                      <span>隐藏孤儿标注</span>
-                      <span className={styles.orphanHint}>筛掉无匹配预测的人工框</span>
+                  <div className="flex items-center justify-between gap-3 box-border min-h-[38px] px-2.5 py-2 rounded-[var(--radius-sm)] transition-[background] duration-150 hover:bg-muted">
+                    <span className="flex flex-1 min-w-0 flex-col gap-px">
+                      <span className="text-muted-foreground text-xs font-medium">隐藏孤儿标注</span>
+                      <span className="text-muted-foreground text-2xs">筛掉无匹配预测的人工框</span>
                     </span>
                     <Switch
                       checked={hideOrphanAnnotations ?? false}
@@ -178,8 +178,8 @@ export function WorkbenchSettingsDrawer({
             ))}
         </div>
 
-        <footer className={styles.footer}>
-          <Link to="/settings" className={styles.settingsLink} onClick={onClose}>
+        <footer className="px-4 py-2.5 border-t border-border bg-card">
+          <Link to="/settings" className="inline-flex items-center gap-1 text-muted-foreground text-xs no-underline transition-[color] duration-150 hover:text-brand hover:underline" onClick={onClose}>
             全部设置（含其他模态）→ 个人设置页
           </Link>
         </footer>

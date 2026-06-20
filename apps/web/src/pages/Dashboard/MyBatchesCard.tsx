@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
@@ -7,10 +7,10 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { useToastStore } from "@/components/ui/Toast";
 import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
+import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useMyBatches } from "@/hooks/useDashboard";
 import { batchesApi, type BatchResponse } from "@/api/batches";
 import type { MyBatchItem } from "@/api/dashboard";
-import styles from "./MyBatchesCard.module.css";
 
 const STATUS_LABEL: Record<string, { label: string; variant: "accent" | "warning" | "danger" | "outline" }> = {
   active: { label: "未开始", variant: "outline" },
@@ -19,17 +19,12 @@ const STATUS_LABEL: Record<string, { label: string; variant: "accent" | "warning
   rejected: { label: "已驳回", variant: "danger" },
 };
 
-function ProgressFill({ pct, color }: { pct: number; color: string }) {
-  const ref = useRef<HTMLDivElement>(null);
+function ProgressFill({ pct, barClass }: { pct: number; barClass: string }) {
+  const ref = useElementStyle<HTMLDivElement>({
+    "--progress-pct": `${Math.min(100, pct)}%`,
+  } as CSSProperties);
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.setProperty("--progress-pct", `${Math.min(100, pct)}%`);
-    el.style.setProperty("--progress-color", color);
-  }, [color, pct]);
-
-  return <div ref={ref} className={styles.progressFill} />;
+  return <div ref={ref} className={`h-full w-[var(--progress-pct)] ${barClass}`} />;
 }
 
 /** B-20：标注员视角的三段进度条 — 已动工 / 送审 / 通过。
@@ -52,19 +47,19 @@ function ProgressTriple({
   total: number;
 }) {
   const ROWS: { label: string; pct: number; count: number; bar: string }[] = [
-    { label: "标注中", pct: startedPct, count: startedCount, bar: "var(--color-accent)" },
-    { label: "送审", pct: reviewPct, count: reviewCount, bar: "var(--color-warning)" },
-    { label: "通过", pct: approvedPct, count: approvedCount, bar: "var(--color-success)" },
+    { label: "标注中", pct: startedPct, count: startedCount, bar: "bg-brand" },
+    { label: "送审", pct: reviewPct, count: reviewCount, bar: "bg-amber-500" },
+    { label: "通过", pct: approvedPct, count: approvedCount, bar: "bg-emerald-500" },
   ];
   return (
-    <div className={styles.progressTriple}>
+    <div className="mt-1.5 grid max-w-[420px] gap-1">
       {ROWS.map((r) => (
-        <div key={r.label} className={styles.progressRow}>
-          <span className={styles.progressLabel}>{r.label}</span>
-          <div className={styles.progressTrack}>
-            <ProgressFill pct={r.pct} color={r.bar} />
+        <div key={r.label} className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="flex-[0_0_36px]">{r.label}</span>
+          <div className="h-1 flex-1 overflow-hidden rounded-sm bg-muted">
+            <ProgressFill pct={r.pct} barClass={r.bar} />
           </div>
-          <span className={`mono ${styles.progressCount}`}>
+          <span className="mono flex-[0_0_80px] text-right text-muted-foreground">
             {r.count}/{total} · {r.pct}%
           </span>
         </div>
@@ -113,12 +108,12 @@ export function MyBatchesCard() {
 
   if (isLoading) {
     return (
-      <div className={styles.cardStack}>
+      <div className="mt-4">
         <Card>
-        <div className={styles.cardHeaderPlain}>
-          <h3 className={styles.cardTitle}>我的批次</h3>
+        <div className="border-b border-border px-4 py-3.5">
+          <h3 className="m-0 text-sm font-semibold">我的批次</h3>
         </div>
-        <div className={styles.emptyState}>
+        <div className="px-4 py-8 text-center text-sm text-muted-foreground">
           加载中...
         </div>
         </Card>
@@ -178,18 +173,18 @@ export function MyBatchesCard() {
   };
 
   return (
-    <div className={styles.cardStack}>
+    <div className="mt-4">
       <Card>
-      <div className={styles.cardHeaderSplit}>
-        <h3 className={styles.cardTitle}>
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5">
+        <h3 className="m-0 text-sm font-semibold">
           我的批次
-          <span className={styles.titleBadge}>
+          <span className="ml-2 text-xs">
             <Badge variant="accent">{batches.length}</Badge>
           </span>
         </h3>
         {submittable.length > 0 && (
-          <div className={styles.bulkActions}>
-            <span className={styles.bulkText}>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">
               已选 {selectedSubmittable.length} / {submittable.length} 可提交
             </span>
             <Button
@@ -204,7 +199,7 @@ export function MyBatchesCard() {
           </div>
         )}
       </div>
-      <div className={styles.listBody}>
+      <div className="py-2">
         {sorted.map((b) => {
           const meta = STATUS_LABEL[b.status] ?? { label: b.status, variant: "outline" as const };
           // B-20：分三档进度，每档独立条 — "标注中"(已动工含 in_progress) / "送审" / "审核通过"。
@@ -226,7 +221,7 @@ export function MyBatchesCard() {
               key={b.batch_id}
               type="button"
               onClick={() => navigate(annotateUrl)}
-              className={styles.batchRow}
+              className="flex w-full cursor-pointer appearance-none items-center justify-between gap-3 border-0 border-t border-border bg-transparent px-4 py-2.5 text-left text-inherit [font-family:inherit] first:border-t-0"
             >
               {canSelect && (
                 <input
@@ -235,15 +230,15 @@ export function MyBatchesCard() {
                   onClick={(e) => e.stopPropagation()}
                   onChange={() => toggleSelected(b.batch_id)}
                   title="选中以批量提交质检"
-                  className={styles.batchCheckbox}
+                  className="m-0 flex-[0_0_auto] cursor-pointer"
                 />
               )}
-              <div className={styles.rowMain}>
-                <div className={styles.rowTitleLine}>
-                  <span className={styles.batchName}>{b.batch_name}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{b.batch_name}</span>
                   <Badge variant={meta.variant} dot>{meta.label}</Badge>
                 </div>
-                <div className={styles.rowMeta}>
+                <div className="mt-0.5 text-xs text-muted-foreground">
                   <span className="mono">{b.batch_display_id}</span>
                   <span> · {b.project_name}</span>
                   <span> · 共 {b.total_tasks} 任务</span>
@@ -262,7 +257,7 @@ export function MyBatchesCard() {
                   total={b.total_tasks}
                 />
                 {b.reviewer && (
-                  <div className={styles.avatarStackWrap}>
+                  <div className="mt-1.5">
                     <AssigneeAvatarStack
                       users={[b.reviewer]}
                       label="审核员"
@@ -272,16 +267,16 @@ export function MyBatchesCard() {
                 )}
                 {b.status === "rejected" && b.review_feedback && (
                   <div
-                    className={styles.reviewFeedback}
+                    className="mt-1.5 max-w-[600px] border-l-2 border-rose-500 bg-status-danger-soft px-2 py-1 text-xs text-muted-foreground"
                     title={b.review_feedback}
                   >
-                    <strong className={styles.reviewFeedbackLabel}>驳回原因：</strong>
+                    <strong className="text-status-danger">驳回原因：</strong>
                     {b.review_feedback.length > 100 ? b.review_feedback.slice(0, 100) + "..." : b.review_feedback}
                   </div>
                 )}
               </div>
 
-              <div className={styles.rowActions}>
+              <div className="flex flex-[0_0_auto] items-center gap-2">
                 {b.status === "annotating" && (
                   <Button
                     variant="primary"

@@ -31,7 +31,7 @@ vi.mock("./ExportModal", () => ({
 
 vi.mock("@/utils/workbenchNavigation", () => ({
   buildWorkbenchUrl: (id: string) => mockBuildWorkbenchUrl(id),
-  currentWorkbenchReturnTo: () => "/projects",
+  currentWorkbenchReturnTo: () => "/dashboard",
 }));
 
 vi.mock("@/components/ui/Toast", async () => {
@@ -47,7 +47,7 @@ vi.mock("@/components/ui/Toast", async () => {
 
 import { AdminProjectsDashboard } from "./AdminProjectsDashboard";
 
-function renderUI(initialPath = "/projects") {
+function renderUI(initialPath = "/dashboard") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <AdminProjectsDashboard />
@@ -67,7 +67,7 @@ describe("AdminProjectsDashboard", () => {
 
   it("renders a super-admin project management surface", () => {
     renderUI();
-    expect(screen.getByRole("heading", { name: "项目管理" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "全部项目" })).toBeInTheDocument();
     expect(screen.queryByText("我的项目")).not.toBeInTheDocument();
   });

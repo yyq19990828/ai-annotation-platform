@@ -10,7 +10,7 @@
 
 .fieldLabel {
   margin-bottom: 5px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
   font-weight: 500;
 }
@@ -19,11 +19,11 @@
   box-sizing: border-box;
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
   outline: none;
-  background: var(--color-bg-sunken);
-  color: var(--color-fg);
+  background: var(--sc-muted);
+  color: var(--sc-foreground);
   font-size: 13px;
 }
 
@@ -70,17 +70,17 @@
 
 .successIcon {
   margin-top: 2px;
-  color: var(--color-success);
+  color: var(--sc-positive);
 }
 
 .successTitle {
-  color: var(--color-success);
+  color: var(--sc-positive);
   font-weight: 500;
 }
 
 .successText {
   margin-top: 4px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .linkRow {
@@ -91,7 +91,7 @@
 .metaRow {
   display: flex;
   gap: 6px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 

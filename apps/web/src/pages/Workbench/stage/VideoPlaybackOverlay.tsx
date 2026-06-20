@@ -104,7 +104,7 @@ export function densityBinGradient(
     stops.push(`${tint} ${pct(start)}`, `${tint} ${pct(acc)}`);
   }
   if (acc < total) {
-    const tint = densityTint("var(--color-accent)");
+    const tint = densityTint("var(--sc-brand)");
     stops.push(`${tint} ${pct(acc)}`, `${tint} 100%`);
   }
   return `linear-gradient(to top, ${stops.join(", ")})`;

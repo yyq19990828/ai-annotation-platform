@@ -1,6 +1,5 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
-import styles from "./VideoTrackerJobBadge.module.css";
 
 import type { VideoTrackerJobState } from "@/hooks/useVideoTrackerJobs";
 
@@ -8,11 +7,31 @@ const STATUS_STYLE: Record<
   VideoTrackerJobState["status"],
   { label: string; className: string; cancelClassName: string }
 > = {
-  queued: { label: "排队中", className: styles.statusQueued, cancelClassName: styles.cancelMuted },
-  running: { label: "运行中", className: styles.statusRunning, cancelClassName: styles.cancelAccent },
-  completed: { label: "完成", className: styles.statusCompleted, cancelClassName: styles.cancelSuccess },
-  failed: { label: "失败", className: styles.statusFailed, cancelClassName: styles.cancelDanger },
-  cancelled: { label: "已取消", className: styles.statusCancelled, cancelClassName: styles.cancelMuted },
+  queued: {
+    label: "排队中",
+    className: "text-muted-foreground bg-muted-foreground/15",
+    cancelClassName: "!text-muted-foreground",
+  },
+  running: {
+    label: "运行中",
+    className: "text-brand bg-brand/15",
+    cancelClassName: "!text-brand",
+  },
+  completed: {
+    label: "完成",
+    className: "text-status-positive bg-status-positive-soft",
+    cancelClassName: "!text-status-positive",
+  },
+  failed: {
+    label: "失败",
+    className: "text-status-danger bg-status-danger-soft",
+    cancelClassName: "!text-status-danger",
+  },
+  cancelled: {
+    label: "已取消",
+    className: "text-muted-foreground bg-card",
+    cancelClassName: "!text-muted-foreground",
+  },
 };
 
 interface VideoTrackerJobBadgeProps {
@@ -31,12 +50,12 @@ export function VideoTrackerJobBadge({ job, onCancel }: VideoTrackerJobBadgeProp
     <div
       data-testid="video-tracker-job-badge"
       title={job.errorMessage ?? `${job.modelKey} · F${job.fromFrame}-F${job.toFrame}`}
-      className={[styles.badge, statusMeta.className].join(" ")}
+      className={`inline-flex items-center gap-1.5 border border-border rounded-full px-2 py-0.5 text-xs leading-[1.4] ${statusMeta.className}`}
     >
       <Icon name="bot" size={12} />
       <span>{statusMeta.label}</span>
       {progressLabel && (
-        <span className={`mono ${styles.progress}`}>
+        <span className="mono text-muted-foreground">
           {progressLabel}
         </span>
       )}
@@ -44,7 +63,7 @@ export function VideoTrackerJobBadge({ job, onCancel }: VideoTrackerJobBadgeProp
         <Button
           size="sm"
           variant="ghost"
-          className={[styles.cancelButton, statusMeta.cancelClassName].join(" ")}
+          className={`!px-1 !min-w-0 !h-[18px] ${statusMeta.cancelClassName}`}
           onClick={(e) => {
             e.stopPropagation();
             onCancel(job.jobId);

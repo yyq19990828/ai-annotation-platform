@@ -8,8 +8,6 @@ import { type ProjectResponse } from "@/api/projects";
 import { ProjectActionsMenu } from "./ProjectActionsMenu";
 import { projectDisplayType } from "@/utils/projectDisplay";
 
-import styles from "./ProjectGrid.module.css";
-
 // v0.10.28 · 卡片图标改读媒体维度 data_type (image / video / lidar).
 const DATA_TYPE_ICONS: Record<string, IconName> = {
   image: "image",
@@ -30,14 +28,14 @@ interface Props {
 export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) {
   if (projects.length === 0) {
     return (
-      <div className={styles.empty}>
+      <div className="px-4 py-10 text-center text-muted-foreground">
         没有匹配的项目
       </div>
     );
   }
 
   return (
-    <div className={styles.grid}>
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3 p-4">
       {projects.map((p) => {
         const total = p.total_tasks || 1;
         const pct = Math.round((p.completed_tasks / total) * 100);
@@ -55,20 +53,20 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
             key={p.id}
             onClick={() => onOpen(p)}
           >
-            <div className={styles.projectCard}>
-              <div className={styles.projectHeader}>
-                <div className={styles.typeIcon}>
+            <div className="flex min-h-full cursor-pointer flex-col gap-2.5 p-3.5">
+              <div className="flex items-start gap-2.5">
+                <div className="flex h-8 w-8 flex-[0_0_32px] items-center justify-center rounded-md border border-border bg-muted text-muted-foreground">
                   <Icon name={DATA_TYPE_ICONS[p.data_type ?? "image"] || "image"} size={15} />
                 </div>
-                <div className={styles.projectInfo}>
-                  <div className={styles.projectName}>
+                <div className="min-w-0 flex-1">
+                  <div className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold">
                     {p.name}
                   </div>
-                  <div className={styles.projectMeta}>
-                    <span className={`mono ${styles.projectId}`}>
+                  <div className="mt-0.5 flex items-baseline gap-1.5">
+                    <span className="mono text-xs leading-[15px] text-muted-foreground">
                       {p.display_id}
                     </span>
-                    <span className={styles.projectType}>{projectDisplayType(p)}</span>
+                    <span className="text-xs leading-[15px] text-muted-foreground">{projectDisplayType(p)}</span>
                   </div>
                 </div>
                 {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
@@ -78,28 +76,28 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
 
               <div>
                 <ProgressBar value={pct} aiValue={aiPct} inProgressValue={startedPct} />
-                <div className={styles.progressMeta}>
+                <div className="mt-1 flex justify-between text-xs text-muted-foreground">
                   <span className="mono">
                     {p.completed_tasks.toLocaleString()} / {p.total_tasks.toLocaleString()}
                   </span>
-                  <span className={styles.progressPct}>{pct}%</span>
+                  <span className="font-medium text-foreground">{pct}%</span>
                 </div>
               </div>
 
-              <div className={styles.cardFooterMeta}>
-                <div className={styles.ownerMeta}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-1.5">
                   <Avatar size="sm" initial={ownerInitial} />
-                  <span className={styles.ownerName}>
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
                     {p.owner_name ?? "—"}
                   </span>
-                  <span className={styles.memberCount}>
+                  <span className="text-xs text-muted-foreground">
                     · {p.member_count ?? 0} 成员
                   </span>
                 </div>
-                <span className={styles.dueDate}>截止 {due}</span>
+                <span className="flex-[0_0_auto] text-xs text-muted-foreground">截止 {due}</span>
               </div>
 
-              <div className={styles.cardActions} onClick={(e) => e.stopPropagation()}>
+              <div className="mt-auto flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
                 {canManage(p) && (
                   <Button
                     size="sm"

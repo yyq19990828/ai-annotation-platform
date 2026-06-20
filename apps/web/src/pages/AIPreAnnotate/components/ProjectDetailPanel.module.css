@@ -18,13 +18,13 @@
 }
 
 .displayId {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 
 .backendLimit,
 .mutedInline {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
@@ -33,7 +33,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
 }
 
 .sectionTitle {
@@ -58,7 +58,7 @@
 }
 
 .mutedText {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }
 
@@ -82,7 +82,7 @@
 }
 
 .batchItemSelected {
-  background: color-mix(in oklch, var(--color-accent) 8%, transparent);
+  background: color-mix(in oklch, var(--sc-brand) 8%, transparent);
 }
 
 .batchName {
@@ -91,11 +91,11 @@
 }
 
 .subtleText {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }
 
 .taskCount {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -115,12 +115,12 @@
 }
 
 .fieldLabel {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
 .fieldHint {
-  color: var(--color-warning);
+  color: var(--sc-caution);
 }
 
 .docHint {
@@ -128,11 +128,11 @@
   align-items: flex-start;
   gap: 6px;
   padding: 8px 10px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
   line-height: 1.5;
-  background: var(--color-ai-soft);
-  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--sc-chart-4) 14%, transparent);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
 }
 
@@ -156,12 +156,12 @@
   align-items: center;
   gap: 4px;
   padding: 3px 9px;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-family: inherit;
   font-size: 11px;
   cursor: pointer;
-  background: var(--color-ai-soft);
-  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--sc-chart-4) 14%, transparent);
+  border: 1px solid var(--sc-border);
   border-radius: 999px;
   transition:
     background 120ms ease,
@@ -169,40 +169,40 @@
 }
 
 .aliasChipActive {
-  background: color-mix(in oklab, var(--color-ai) 18%, transparent);
-  border-color: var(--color-ai);
-  box-shadow: inset 2px 0 0 var(--color-ai);
+  background: color-mix(in oklab, var(--sc-chart-4) 18%, transparent);
+  border-color: var(--sc-chart-4);
+  box-shadow: inset 2px 0 0 var(--sc-chart-4);
 }
 
 .aliasName {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 10px;
 }
 
 .aliasCount {
-  color: var(--color-ai);
+  color: var(--sc-chart-4);
   font-size: 9px;
   font-variant-numeric: tabular-nums;
 }
 
 .refillButton {
   padding: 1px 6px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 10px;
   cursor: pointer;
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
 }
 
 .promptInput {
   padding: 8px 10px;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-family: inherit;
   font-size: 12px;
   resize: vertical;
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
 }
 
@@ -219,7 +219,7 @@
 
 .savingText {
   margin-left: 6px;
-  color: var(--color-ai);
+  color: var(--sc-chart-4);
 }
 
 .thresholdFields {
@@ -238,7 +238,7 @@
 
 .thresholdName {
   min-width: 86px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .thresholdInput {
@@ -252,11 +252,11 @@
 
 .saveThresholdButton {
   padding: 2px 10px;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-size: 11px;
   cursor: pointer;
-  background: var(--color-ai-soft);
-  border: 1px solid var(--color-ai);
+  background: color-mix(in srgb, var(--sc-chart-4) 14%, transparent);
+  border: 1px solid var(--sc-chart-4);
   border-radius: var(--radius-sm);
 }
 
@@ -275,48 +275,48 @@
 .presetSelect {
   min-width: 150px;
   padding: 4px 8px;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-family: inherit;
   font-size: 11px;
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
 }
 
 .presetNameInput {
   width: 140px;
   padding: 4px 8px;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-family: inherit;
   font-size: 11px;
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
 }
 
 .presetButton {
   padding: 3px 10px;
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-size: 11px;
   cursor: pointer;
-  background: var(--color-ai-soft);
-  border: 1px solid var(--color-ai);
+  background: color-mix(in srgb, var(--sc-chart-4) 14%, transparent);
+  border: 1px solid var(--sc-chart-4);
   border-radius: var(--radius-sm);
 }
 
 .presetButton:disabled {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   cursor: not-allowed;
-  background: var(--color-bg-sunken);
-  border-color: var(--color-border);
+  background: var(--sc-muted);
+  border-color: var(--sc-border);
 }
 
 .presetGhostButton {
   padding: 3px 8px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
   cursor: pointer;
   background: transparent;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-sm);
 }

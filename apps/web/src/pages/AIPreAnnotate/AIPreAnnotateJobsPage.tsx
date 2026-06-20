@@ -407,12 +407,12 @@ function JobRow({
 function JobProgress({ job }: { job: AsyncJob }) {
   const color =
     job.status === "failed"
-      ? "var(--color-danger)"
+      ? "var(--sc-destructive)"
       : job.status === "completed"
-      ? "var(--color-success)"
+      ? "var(--sc-positive)"
       : job.status === "cancelled"
-      ? "var(--color-fg-muted)"
-      : "var(--color-ai)";
+      ? "var(--sc-muted-foreground)"
+      : "var(--sc-chart-4)";
   return (
     <div className={styles.progressCell}>
       <ProgressBar value={job.progress_pct} color={color} />

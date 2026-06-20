@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
-import styles from "./RejectReasonModal.module.css";
 import {
   REJECT_REASON_TYPE_LABELS,
   REJECT_REASON_TYPE_ORDER,
@@ -52,11 +51,11 @@ export function RejectReasonModal({
       title={`退回原因（${count} 个任务）`}
       width={460}
     >
-      <div className={styles.body}>
+      <div className="flex flex-col gap-2.5">
         {skipReasonHint && (
           <div
             data-testid="reject-skip-hint"
-            className={styles.skipHint}
+            className="rounded-md border border-violet-500/30 bg-status-info-soft px-2.5 py-2 text-xs text-status-info"
           >
             此任务被标注员跳过：<strong>{skipReasonHint}</strong>。退回后会重新派给其他标注员；
             如果该任务确实无可标注目标，建议改为「通过」。
@@ -65,7 +64,11 @@ export function RejectReasonModal({
         {REJECT_REASON_TYPE_ORDER.map((t) => (
           <label
             key={t}
-            className={`${styles.option} ${reasonType === t ? styles.optionSelected : ""}`}
+            className={`flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-sm ${
+              reasonType === t
+                ? "border-rose-500/40 bg-status-danger-soft"
+                : "border-border bg-transparent"
+            }`}
             data-testid={`reject-type-${t}`}
           >
             <input
@@ -74,7 +77,7 @@ export function RejectReasonModal({
               value={t}
               checked={reasonType === t}
               onChange={() => setReasonType(t)}
-              className={styles.accentInput}
+              className="cursor-pointer accent-rose-500"
             />
             <span>{REJECT_REASON_TYPE_LABELS[t]}</span>
           </label>
@@ -84,10 +87,10 @@ export function RejectReasonModal({
           onChange={(e) => setComment(e.target.value)}
           placeholder="（可选）补充说明，例如具体目标 / 帧号 …"
           rows={3}
-          className={styles.textarea}
+          className="w-full resize-y appearance-none rounded-md border border-border bg-card p-2 text-sm text-foreground [font:inherit]"
           data-testid="reject-comment"
         />
-        <div className={styles.actions}>
+        <div className="mt-1.5 flex justify-end gap-2">
           <Button onClick={onClose}>取消</Button>
           <Button
             variant="danger"

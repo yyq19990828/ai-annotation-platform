@@ -1,6 +1,9 @@
 import { Avatar } from "@/components/ui/Avatar";
-import styles from "./AssigneeAvatarStack.module.css";
 
+/**
+ * AssigneeAvatarStack —— 责任人头像组(v0.17.2,module.css → Tailwind)。
+ * 复用迁好的 Avatar;头像叠放用负 margin + 同色描边环。
+ */
 export interface AssigneeBrief {
   id: string;
   name: string;
@@ -13,18 +16,13 @@ interface Props {
   users: AssigneeBrief[];
   max?: number;
   size?: "sm" | "md";
-  /** 标签前缀，例如「标注员」「审核员」；不传不渲染 */
+  /** 标签前缀,例如「标注员」「审核员」;不传不渲染 */
   label?: string;
   /** 0 用户时是否显示「未分派」灰条 */
   emptyHint?: string;
   title?: string;
 }
 
-/**
- * v0.7.2 · 责任人头像组（最多 N 个 + 计数）。
- * 抽自 BatchesSection inline 实现，供 ProjectsPage / Annotator·Reviewer Dashboard
- * / Workbench Topbar 等多处复用。
- */
 export function AssigneeAvatarStack({
   users,
   max = 3,
@@ -35,8 +33,9 @@ export function AssigneeAvatarStack({
 }: Props) {
   if (users.length === 0) {
     return (
-      <span className={styles.empty}>
-        {label ? `${label}：` : ""}{emptyHint}
+      <span className="text-xs italic text-muted-foreground">
+        {label ? `${label}:` : ""}
+        {emptyHint}
       </span>
     );
   }
@@ -46,36 +45,22 @@ export function AssigneeAvatarStack({
   const tooltip = title ?? users.map((u) => u.name).join("、");
 
   return (
-    <span
-      title={tooltip}
-      className={styles.root}
-    >
-      {label && (
-        <span className={styles.label}>
-          {label}
-        </span>
-      )}
-      <span className={styles.avatars}>
+    <span title={tooltip} className="inline-flex shrink-0 items-center gap-1.5">
+      {label && <span className="whitespace-nowrap text-xs text-muted-foreground">{label}</span>}
+      <span className="inline-flex">
         {visible.map((u) => (
           <span
             key={u.id}
-            className={styles.avatarFrame}
+            className="rounded-full border-[1.5px] border-card bg-card [&:not(:first-child)]:-ml-1.5"
           >
             <Avatar
-              initial={
-                (u.avatar_initial ||
-                  (u.name || u.email || "?").slice(0, 1).toUpperCase())
-              }
+              initial={u.avatar_initial || (u.name || u.email || "?").slice(0, 1).toUpperCase()}
               size={size}
             />
           </span>
         ))}
       </span>
-      {overflow > 0 && (
-        <span className={styles.overflow}>
-          +{overflow}
-        </span>
-      )}
+      {overflow > 0 && <span className="ml-0.5 text-xs text-muted-foreground">+{overflow}</span>}
     </span>
   );
 }

@@ -11,7 +11,6 @@ import {
   VideoTrackComposeDialog,
   type VideoTrackGapMode,
 } from "./VideoTrackComposeDialog";
-import styles from "./VideoTrackPanel.module.css";
 import type { VideoFrameEntry, VideoTrackAnnotation } from "./videoStageTypes";
 import { firstVisibleTrackFrame, frameRange, sourceChipText, statusChipText } from "./videoTrackFormat";
 
@@ -60,9 +59,9 @@ function cn(...classes: Array<string | false | null | undefined>): string {
 }
 
 function sourceChipClass(source: VideoFrameEntry["source"] | null): string | null {
-  if (source === "prediction") return styles.sourcePrediction;
-  if (source === "interpolated") return styles.sourceInterpolated;
-  if (source === "manual" || source === "legacy") return styles.sourceManual;
+  if (source === "prediction") return "text-status-info border-violet-500/40";
+  if (source === "interpolated") return "text-status-caution border-amber-500/45";
+  if (source === "manual" || source === "legacy") return "text-status-positive border-emerald-500/40";
   return null;
 }
 
@@ -132,14 +131,14 @@ export function VideoTrackPanel({
   const trackNumbers = useMemo(() => deriveTrackNumber(videoTracks), [videoTracks]);
 
   return (
-    <div className={styles.panelRoot}>
-      <div className={styles.filterCard}>
-        <div className={styles.rowBetween}>
-          <div className={styles.headingActionGroup}>
-            <b className={styles.heading}>轨迹</b>
+    <div className="grid gap-3 py-0.5 pb-2">
+      <div className="border border-border rounded-lg bg-card px-2.5 py-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <b className="text-sm">轨迹</b>
             <Button
               size="sm"
-              className={styles.iconButton}
+              className="!w-7 !h-7 !p-0 !justify-center !rounded-lg"
               disabled={readOnly || !onStartNewTrack}
               title="清除当前轨迹选择，下一次画框会新建轨迹"
               aria-label="新建轨迹"
@@ -148,14 +147,14 @@ export function VideoTrackPanel({
               <Icon name="plus" size={14} />
             </Button>
           </div>
-          <span className={cn("mono", styles.mutedMono)}>
+          <span className={cn("mono", "text-xs text-muted-foreground")}>
             {trackFilter === "current" ? `${filteredVideoTracks.length}/${videoTracks.length}` : videoTracks.length}
           </span>
         </div>
         {selectedBboxCount > 1 && (
           <Button
             size="sm"
-            className={styles.aggregateButton}
+            className="!w-full !justify-center !mt-2 !rounded-lg !py-1 !px-2"
             disabled={!canAggregateBboxes}
             title="把已多选的单帧 video_bbox 聚合为一条 video_track"
             onClick={onAggregateSelectedBboxes}
@@ -164,20 +163,20 @@ export function VideoTrackPanel({
           </Button>
         )}
       </div>
-      <div className={cn(styles.section, selectedTrack && styles.trackListSection)}>
+      <div className={cn("grid gap-2", selectedTrack && "order-2")}>
         {/* 批量操作仅在「当前帧」tab 下可用:全局视图下多选极易误删整条跨帧轨迹。 */}
         {batchCount > 1 && trackFilter !== "current" && (
-          <div data-testid="video-track-batch-hint" className={styles.batchHint}>
+          <div data-testid="video-track-batch-hint" className="px-2 py-1.5 border border-dashed border-brand/30 rounded-lg bg-brand/5 text-muted-foreground text-xs">
             已选 {batchCount} 条轨迹 · 切换到「当前帧」可批量操作
           </div>
         )}
         {batchCount > 1 && trackFilter === "current" && (
           <div
             data-testid="video-track-batch-toolbar"
-            className={styles.batchToolbar}
+            className="grid gap-2 px-2 py-1.5 border border-brand/30 rounded-lg bg-brand/5"
           >
-            <div className={styles.rowBetween}>
-              <b className={styles.subheading}>已选 {batchCount} 条轨迹</b>
+            <div className="flex items-center justify-between gap-2">
+              <b className="text-xs">已选 {batchCount} 条轨迹</b>
               <select
                 aria-label="批量改类"
                 value=""
@@ -187,7 +186,7 @@ export function VideoTrackPanel({
                   onBatchRenameTracks?.(e.target.value);
                   e.target.value = "";
                 }}
-                className={styles.batchSelect}
+                className="appearance-none min-w-24 border border-border rounded-md bg-background text-foreground text-xs py-1 px-1.5"
               >
                 <option value="">改类</option>
                 {(classes ?? []).map((cls) => (
@@ -195,7 +194,7 @@ export function VideoTrackPanel({
                 ))}
               </select>
             </div>
-            <div className={styles.batchActions}>
+            <div className="flex flex-wrap items-center justify-center gap-1.5">
               <Button variant="ghost" size="sm" title="显示" aria-label="显示" disabled={!onShowSelectedTracks} onClick={onShowSelectedTracks}>
                 <Icon name="eye" size={14} />
               </Button>
@@ -234,7 +233,7 @@ export function VideoTrackPanel({
             </div>
           </div>
         )}
-      <div className={styles.section}>
+      <div className="grid gap-2">
         {filteredVideoTracks.map((ann) => {
           const track = ann.geometry;
           const color = getTrackColor(track.track_id, ann.class_name, trackColorOverrides);
@@ -262,16 +261,16 @@ export function VideoTrackPanel({
                 onSelect(ann.id, { toggle });
               }}
               className={cn(
-                styles.trackRow,
-                selected && styles.trackRowSelected,
-                primarySelected && batchCount > 1 && styles.trackRowPrimarySelected,
+                "grid gap-[7px] p-2 px-2.5 border border-border rounded-lg bg-transparent cursor-pointer",
+                selected && "!border-brand bg-brand/10",
+                primarySelected && batchCount > 1 && "shadow-[inset_3px_0_0_var(--sc-brand)]",
               )}
             >
-              <div className={styles.trackRowTop}>
-                <div className={styles.trackMeta}>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-start">
+                <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-1 gap-x-2 items-center min-w-0">
                   <button
                     type="button"
-                    className={styles.colorDotButton}
+                    className="row-span-2 relative inline-flex items-center p-0 border-0 bg-transparent cursor-pointer disabled:cursor-default"
                     data-testid="video-track-color-dot"
                     title={canEditColor ? "修改轨迹颜色" : undefined}
                     disabled={!canEditColor}
@@ -280,11 +279,11 @@ export function VideoTrackPanel({
                       setColorPickerTrackId((prev) => (prev === track.track_id ? null : track.track_id));
                     }}
                   >
-                    <svg className={styles.trackColorDot} aria-hidden="true" viewBox="0 0 10 10">
+                    <svg className="row-span-2 w-2.5 h-2.5 overflow-visible" aria-hidden="true" viewBox="0 0 10 10">
                       <circle cx="5" cy="5" r="5" fill={color} />
                     </svg>
                     {colorPickerTrackId === track.track_id && (
-                      <div className={styles.colorPickerPopover} onClick={(e) => e.stopPropagation()}>
+                      <div className="absolute top-full left-0 z-local-overlay mt-1" onClick={(e) => e.stopPropagation()}>
                         <VideoTrackColorPicker
                           currentColor={color}
                           hasOverride={hasColorOverride}
@@ -301,28 +300,28 @@ export function VideoTrackPanel({
                       </div>
                     )}
                   </button>
-                  <div className={styles.trackTitleRow}>
-                    <span className={cn("mono", styles.trackNumberBadge)}>
+                  <div className="flex items-center gap-[7px] min-w-0">
+                    <span className={cn("mono", "shrink-0 inline-flex items-center text-xs font-semibold px-1.5 py-px rounded text-brand bg-brand/10")}>
                       #{trackNumbers.get(ann.id) ?? "?"}
                     </span>
-                    <b className={styles.truncateTitle}>
+                    <b className="text-sm overflow-hidden text-ellipsis whitespace-nowrap">
                       {displayClassName(ann.class_name)}
                     </b>
-                    <span className={styles.compactBadge}>
+                    <span className="[&>span]:text-2xs [&>span]:px-1.5 [&>span]:py-px">
                       <Badge variant={ann.source === "prediction_based" ? "default" : "accent"}>
                         {sourceLabel}
                       </Badge>
                     </span>
-                    <span className={cn("mono", styles.mutedMono)}>{shortTrackId(track.track_id)}</span>
+                    <span className={cn("mono", "text-xs text-muted-foreground")}>{shortTrackId(track.track_id)}</span>
                   </div>
-                  <div className={cn("mono", styles.trackMetaText)}>
+                  <div className={cn("mono", "text-xs text-muted-foreground min-w-0 overflow-hidden text-ellipsis whitespace-nowrap")}>
                     {track.keyframes.length} 关键帧 · {frameRange(frames)}
                   </div>
                 </div>
-                <div className={styles.trackRowActions}>
+                <div className="flex gap-1.5 items-center">
                   <Button
                     size="sm"
-                    className={cn(styles.iconButton, styles.iconButtonLarge)}
+                    className="!w-[30px] !h-[30px] !p-0 !justify-center !rounded-lg"
                     title={hidden ? "显示轨迹" : "隐藏轨迹"}
                     onClick={(e) => { e.stopPropagation(); onToggleHiddenTrack(track.track_id); }}
                   >
@@ -330,7 +329,7 @@ export function VideoTrackPanel({
                   </Button>
                   <Button
                     size="sm"
-                    className={cn(styles.iconButton, styles.iconButtonLarge)}
+                    className="!w-[30px] !h-[30px] !p-0 !justify-center !rounded-lg"
                     title={locked ? "解锁轨迹" : "锁定轨迹"}
                     onClick={(e) => { e.stopPropagation(); onToggleLockedTrack(track.track_id); }}
                   >
@@ -338,7 +337,7 @@ export function VideoTrackPanel({
                   </Button>
                   <Button
                     size="sm"
-                    className={cn(styles.iconButton, styles.iconButtonLarge)}
+                    className="!w-[30px] !h-[30px] !p-0 !justify-center !rounded-lg"
                     title="重命名轨迹类别"
                     disabled={readOnly || !onChangeUserBoxClass}
                     onClick={(e) => {
@@ -352,7 +351,7 @@ export function VideoTrackPanel({
                   <Button
                     size="sm"
                     variant="danger"
-                    className={cn(styles.iconButton, styles.iconButtonLarge)}
+                    className="!w-[30px] !h-[30px] !p-0 !justify-center !rounded-lg"
                     title="删除整条轨迹"
                     aria-label="删除整条轨迹"
                     disabled={readOnly || locked || !onDeleteTrack}
@@ -362,15 +361,21 @@ export function VideoTrackPanel({
                   </Button>
                 </div>
               </div>
-              <div className={styles.trackSignals}>
+              <div className="flex gap-1.5 flex-wrap pl-4">
                 <span
-                  className={cn(styles.statusChip, outside && styles.statusChipDanger)}
+                  className={cn(
+                    "border border-border rounded-lg px-2 py-1 text-xs leading-[1.35] text-muted-foreground bg-card",
+                    outside && "text-status-danger",
+                  )}
                 >
                   {statusChipText(exact, outside)}
                 </span>
                 <span
                   data-testid="video-track-current-source"
-                  className={cn(styles.sourceChip, sourceChipClass(currentSource))}
+                  className={cn(
+                    "border border-border rounded-lg px-2 py-1 text-xs leading-[1.35] text-muted-foreground bg-card",
+                    sourceChipClass(currentSource),
+                  )}
                 >
                   {sourceChipText(currentSource)}
                 </span>
@@ -379,12 +384,12 @@ export function VideoTrackPanel({
           );
         })}
         {videoTracks.length === 0 && (
-          <div className={styles.emptyText}>
+          <div className="text-muted-foreground text-xs leading-relaxed">
             暂无轨迹。暂停后画框会创建第一条轨迹。
           </div>
         )}
         {videoTracks.length > 0 && filteredVideoTracks.length === 0 && (
-          <div className={styles.emptyText}>
+          <div className="text-muted-foreground text-xs leading-relaxed">
             当前帧暂无轨迹。
           </div>
         )}

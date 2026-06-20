@@ -44,15 +44,16 @@ Workbench 的细分边界见 [工作台 Shell 架构](./workbench-shell)。
 
 ## 组件分层
 
-- `components/ui/` — 设计系统（Button / Card / Badge ...）只允许接收 props，不调 API
+- `components/ui/` — 应用兼容适配层（Button / Card / Badge ...）只允许接收 props，不调 API
+- `components/shadcn/ui/` — shadcn/ui 原语和底层交互组件
 - `components/shell/` — 应用框架（TopBar / Sidebar）
 - 页面内的局部组件 — 放在 `pages/<Page>/components/`
 
 ## 样式
 
-- CSS 变量定义在 `src/styles/tokens.css`
-- 组件级 CSS Module（`Button.module.css`）
-- 不引入 Tailwind / styled-components
+- 主题变量定义在 `src/styles/shadcn.css`，当前 CSS 只读 `--sc-*`
+- 页面和组件优先使用 Tailwind 语义类与 shadcn/ui
+- 残留 CSS Module 只保留局部布局或画布叠加层样式，不再读取旧颜色变量
 
 ## OpenAPI 自动生成
 

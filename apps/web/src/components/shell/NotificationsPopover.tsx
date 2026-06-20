@@ -24,16 +24,15 @@ import {
   groupNotificationItems,
   type NotificationFilter,
 } from "./NotificationsPopover.helpers";
-import styles from "./NotificationsPopover.module.css";
 
 type NotificationTone = "default" | "danger" | "success" | "ai" | "accent";
 
 const TONE_CLASS: Record<NotificationTone, string> = {
-  default: styles.toneDefault,
-  danger: styles.toneDanger,
-  success: styles.toneSuccess,
-  ai: styles.toneAi,
-  accent: styles.toneAccent,
+  default: "bg-muted text-muted-foreground",
+  danger: "bg-status-danger-soft text-status-danger",
+  success: "bg-status-positive-soft text-status-positive",
+  ai: "bg-status-info-soft text-status-info",
+  accent: "bg-brand/10 text-brand",
 };
 
 function relativeTime(iso: string): string {
@@ -230,46 +229,51 @@ function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
   return (
     <div
       onClick={onClick}
-      className={clsx(styles.row, isUnread && styles.rowUnread)}
+      className={clsx(
+        "group flex cursor-pointer items-start gap-2.5 border-b border-border px-3.5 py-2.5",
+        isUnread && "bg-brand/10",
+      )}
     >
       <div
         className={clsx(
-          styles.typeIcon,
+          "relative mt-px inline-flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-md border",
           TONE_CLASS[visual.tone],
-          isUnread && styles.typeIconUnread,
+          isUnread ? "border-brand" : "border-border",
         )}
       >
         <Icon name={visual.icon} size={14} />
-        {isUnread && <span className={styles.unreadMarker} />}
+        {isUnread && (
+          <span className="absolute -right-0.5 -top-0.5 h-[7px] w-[7px] rounded-full border border-popover bg-brand" />
+        )}
       </div>
-      <div className={styles.rowBody}>
-        <div className={styles.rowSummary}>
-          <span className={styles.actorName}>{actorName}</span>{" "}
-          <span className={styles.muted}>{verb}</span>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm">
+          <span className="font-medium">{actorName}</span>{" "}
+          <span className="text-muted-foreground">{verb}</span>
           {displayId && (
             <>
               {" "}
-              <span className={styles.muted}>· {displayId}</span>
+              <span className="text-muted-foreground">· {displayId}</span>
             </>
           )}
         </div>
         {title && (
-          <div className={styles.title}>
+          <div className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-foreground">
             {title}
           </div>
         )}
         {snippet && (
-          <div className={styles.snippet}>
+          <div className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
             "{snippet}"
           </div>
         )}
-        <div className={styles.time}>
+        <div className="mt-0.5 text-xs text-muted-foreground">
           {relativeTime(item.created_at)}
         </div>
       </div>
       <button
         type="button"
-        className={styles.deleteButton}
+        className="-mt-0.5 inline-flex h-[22px] w-[22px] flex-shrink-0 cursor-pointer appearance-none items-center justify-center rounded-sm border border-transparent bg-transparent text-muted-foreground opacity-0 hover:bg-status-danger-soft hover:text-rose-500 focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
         title="删除通知"
         aria-label="删除通知"
         disabled={deletePending}
@@ -311,10 +315,15 @@ export function NotificationsPopover() {
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={toggle}
-          className={clsx(styles.trigger, open && styles.triggerOpen)}
+          className={clsx(
+            "relative inline-flex h-[30px] w-[30px] cursor-pointer appearance-none items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground",
+            open && "bg-muted",
+          )}
         >
           <Icon name="bell" size={15} />
-          {unread > 0 && <span className={styles.unreadDot} />}
+          {unread > 0 && (
+            <span className="absolute right-[5px] top-1.5 h-[7px] w-[7px] rounded-full border-[1.5px] border-card bg-rose-500" />
+          )}
         </button>
       )}
       content={({ close }) => (
@@ -401,18 +410,18 @@ function NotificationsPanel({
   };
 
   return (
-    <div className={styles.panelContent}>
-      <div className={styles.panelHeader}>
-        <span className={styles.panelTitle}>
+    <div className="w-full overflow-hidden rounded-md">
+      <div className="flex items-center justify-between border-b border-border px-3.5 pb-2.5 pt-3">
+        <span className="text-sm font-semibold">
           通知{unread > 0 ? ` · ${unread} 未读` : ""}
         </span>
-        <div className={styles.headerActions}>
+        <div className="flex items-center gap-2.5">
           {hasRead && (
             <button
               type="button"
               onClick={() => clearRead.mutate()}
               disabled={clearRead.isPending}
-              className={styles.markAllButton}
+              className="cursor-pointer appearance-none border-0 bg-transparent p-0 text-xs text-brand disabled:cursor-not-allowed"
             >
               清空已读
             </button>
@@ -422,7 +431,7 @@ function NotificationsPanel({
               type="button"
               onClick={() => markAllRead.mutate()}
               disabled={markAllRead.isPending}
-              className={styles.markAllButton}
+              className="cursor-pointer appearance-none border-0 bg-transparent p-0 text-xs text-brand disabled:cursor-not-allowed"
             >
               全部已读
             </button>
@@ -430,7 +439,11 @@ function NotificationsPanel({
         </div>
       </div>
 
-      <div className={styles.filterTabs} role="tablist" aria-label="通知类型筛选">
+      <div
+        className="grid grid-cols-[repeat(auto-fit,minmax(62px,1fr))] gap-1.5 border-b border-border px-3.5 py-2.5"
+        role="tablist"
+        aria-label="通知类型筛选"
+      >
         {FILTERS.map((filter) => (
           <button
             key={filter.key}
@@ -438,8 +451,10 @@ function NotificationsPanel({
             role="tab"
             aria-selected={activeFilter === filter.key}
             className={clsx(
-              styles.filterTab,
-              activeFilter === filter.key && styles.filterTabActive,
+              "min-h-[30px] cursor-pointer appearance-none rounded-sm border px-2 py-1.5 text-center text-xs leading-[1.2]",
+              activeFilter === filter.key
+                ? "border-brand bg-brand/10 text-brand"
+                : "border-transparent bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
             onClick={() => setActiveFilter(filter.key)}
           >
@@ -448,10 +463,10 @@ function NotificationsPanel({
         ))}
       </div>
 
-      <div className={styles.list}>
+      <div className="max-h-[min(560px,62vh)] min-h-[260px] overflow-y-auto">
         {isEmpty || isFilteredEmpty ? (
-          <div className={styles.empty}>
-            <Icon name="bell" size={22} className={styles.emptyIcon} />
+          <div className="flex min-h-[260px] flex-col items-center justify-center px-3.5 py-6 text-center text-sm text-muted-foreground">
+            <Icon name="bell" size={22} className="mb-1.5 opacity-25" />
             <div>{isFilteredEmpty ? "暂无此类型通知" : "暂无通知"}</div>
           </div>
         ) : (
@@ -459,8 +474,8 @@ function NotificationsPanel({
             const groupItems = groupedItems[groupKey];
             if (groupItems.length === 0) return null;
             return (
-              <section key={groupKey} className={styles.group}>
-                <div className={styles.groupTitle}>
+              <section key={groupKey} className="border-b border-border last:border-b-0">
+                <div className="sticky top-0 z-local-1 border-b border-border bg-popover px-3.5 py-1.5 text-2xs font-semibold text-muted-foreground">
                   {GROUP_LABELS[groupKey]}
                 </div>
                 {groupItems.map((item) => (
@@ -478,10 +493,10 @@ function NotificationsPanel({
         )}
       </div>
       {notificationsQ.hasNextPage && (
-        <div className={styles.loadMoreWrap}>
+        <div className="border-t border-border px-3.5 py-2.5">
           <button
             type="button"
-            className={styles.loadMoreButton}
+            className="w-full cursor-pointer appearance-none rounded-sm border border-border bg-muted px-2.5 py-2 text-xs text-brand disabled:cursor-not-allowed disabled:text-muted-foreground"
             disabled={notificationsQ.isFetchingNextPage}
             onClick={() => notificationsQ.fetchNextPage()}
           >

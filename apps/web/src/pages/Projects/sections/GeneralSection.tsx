@@ -5,7 +5,7 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import type { ProjectResponse } from "@/api/projects";
-import styles from "./GeneralSection.module.css";
+import { LABEL_CLASS } from "./formClasses";
 
 const STATUS_OPTIONS = [
   { value: "in_progress", label: "进行中" },
@@ -14,9 +14,12 @@ const STATUS_OPTIONS = [
   { value: "archived", label: "已归档" },
 ];
 
-function cn(...xs: Array<string | false | null | undefined>): string {
-  return xs.filter(Boolean).join(" ");
-}
+const READONLY_VALUE_CLASS =
+  "rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground";
+const CONTROL_CLASS =
+  "w-full appearance-none rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none";
+const PROGRESS_CHIP_CLASS =
+  "rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground";
 
 /** 项目进度概览（只读）。计数口径与 Dashboard 项目行一致，复用同一 ProgressBar。 */
 function ProgressOverview({ project }: { project: ProjectResponse }) {
@@ -35,25 +38,27 @@ function ProgressOverview({ project }: { project: ProjectResponse }) {
 
   return (
     <div>
-      <label className={styles.label}>进度概览</label>
+      <label className={LABEL_CLASS}>进度概览</label>
       {totalTasks === 0 ? (
-        <div className={styles.readonlyValue}>暂无任务</div>
+        <div className={READONLY_VALUE_CLASS}>暂无任务</div>
       ) : (
-        <div className={styles.progressBox}>
+        <div className="flex flex-col gap-2">
           <ProgressBar value={pct} aiValue={aiPct} inProgressValue={startedPct} />
-          <div className={styles.progressMeta}>
+          <div className="flex items-baseline justify-between text-xs text-muted-foreground">
             <span className="mono">
               {project.completed_tasks.toLocaleString()} / {totalTasks.toLocaleString()} 已完成
             </span>
-            <span className={styles.progressPct}>{pct}%</span>
+            <span className="font-semibold text-foreground">{pct}%</span>
           </div>
-          <div className={styles.progressChips}>
-            <span className={styles.progressChip}>{inProgress} 进行中</span>
-            <span className={styles.progressChip}>{review} 待审</span>
+          <div className="flex flex-wrap gap-1.5">
+            <span className={PROGRESS_CHIP_CLASS}>{inProgress} 进行中</span>
+            <span className={PROGRESS_CHIP_CLASS}>{review} 待审</span>
             {project.ai_enabled && (
-              <span className={cn(styles.progressChip, styles.progressChipAi)}>{aiCompleted} AI 完成</span>
+              <span className="rounded-full border border-violet-500 bg-muted px-2 py-0.5 text-xs text-status-info">
+                {aiCompleted} AI 完成
+              </span>
             )}
-            <span className={styles.progressChip}>{batch?.total ?? 0} 个批次</span>
+            <span className={PROGRESS_CHIP_CLASS}>{batch?.total ?? 0} 个批次</span>
           </div>
         </div>
       )}
@@ -116,53 +121,53 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
 
   return (
     <Card>
-      <div className={styles.cardHeader}>
-        <h3 className={styles.cardTitle}>基本信息</h3>
+      <div className="border-b border-border px-4 py-3.5">
+        <h3 className="text-sm font-semibold">基本信息</h3>
       </div>
-      <div className={styles.body}>
+      <div className="flex flex-col gap-4 p-4">
         <div>
-          <label className={styles.label}>项目名称</label>
+          <label className={LABEL_CLASS}>项目名称</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             onBlur={commitName}
             maxLength={60}
-            className={styles.control}
+            className={CONTROL_CLASS}
           />
         </div>
-        <div className={styles.gridTwo}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
           <div>
-            <label className={styles.label}>状态</label>
-            <select value={status} onChange={(e) => onStatusChange(e.target.value)} className={cn(styles.control, styles.selectControl)}>
+            <label className={LABEL_CLASS}>状态</label>
+            <select value={status} onChange={(e) => onStatusChange(e.target.value)} className={`${CONTROL_CLASS} cursor-pointer`}>
               {STATUS_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
           </div>
           <div>
-            <label className={styles.label}>截止日期</label>
-            <input type="date" value={dueDate} onChange={(e) => onDueDateChange(e.target.value)} className={styles.control} />
+            <label className={LABEL_CLASS}>截止日期</label>
+            <input type="date" value={dueDate} onChange={(e) => onDueDateChange(e.target.value)} className={CONTROL_CLASS} />
           </div>
         </div>
         <div>
-          <label className={styles.label}>类型</label>
-          <div className={styles.readonlyValue}>
-            {project.type_label} <span className={cn("mono", styles.typeKey)}>{project.type_key}</span>
+          <label className={LABEL_CLASS}>类型</label>
+          <div className={READONLY_VALUE_CLASS}>
+            {project.type_label} <span className="mono ml-2 text-xs text-muted-foreground">{project.type_key}</span>
           </div>
         </div>
         <div>
-          <label className={styles.label}>Scene 模式</label>
-          <div className={styles.readonlyValue}>
+          <label className={LABEL_CLASS}>Scene 模式</label>
+          <div className={READONLY_VALUE_CLASS}>
             {project.scene_mode ? "已开启" : "未开启"}
             {project.scene_mode && (
-              <span className={styles.readonlyNote}>
+              <span className="ml-2 text-muted-foreground">
                 按 scene 保持连续帧任务与批次边界
               </span>
             )}
           </div>
         </div>
         <ProgressOverview project={project} />
-        {update.isPending && <div className={styles.savingHint} data-testid="saving-hint">保存中…</div>}
+        {update.isPending && <div className="text-xs text-muted-foreground" data-testid="saving-hint">保存中…</div>}
       </div>
     </Card>
   );

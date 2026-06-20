@@ -13,6 +13,6 @@
 
 .subtitle {
   margin-top: 4px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 12px;
 }

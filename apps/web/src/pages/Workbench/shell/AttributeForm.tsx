@@ -5,7 +5,9 @@ import type { AttributeField, AttributeSchema } from "@/api/projects";
 import { Switch } from "@/components/ui/Switch";
 import { usePopover } from "@/hooks/usePopover";
 import type { DirtyTracker } from "../state/useDirtyTracker";
-import styles from "./AttributeForm.module.css";
+
+const INPUT_CLASS =
+  "appearance-none rounded-[3px] border border-border bg-card px-1.5 py-1 text-xs text-foreground";
 
 export interface AttributeFormProps {
   schema: AttributeSchema | undefined;
@@ -147,12 +149,12 @@ export function AttributeForm({
 
   return (
     <div
-      className={styles.form}
+      className="flex flex-col gap-1.5 border-t border-border px-3 pb-2.5 pt-2"
       onBlur={handleFormBlur}
     >
       {batchCount && batchCount > 1 && (
         <div
-          className={styles.batchBanner}
+          className="rounded border border-amber-500 bg-status-caution-soft px-2.5 py-1.5 text-xs text-status-caution"
           data-testid="attribute-form-batch-banner"
           role="status"
         >
@@ -160,8 +162,8 @@ export function AttributeForm({
         </div>
       )}
       {!hideHeading && (
-        <div className={styles.heading}>
-          属性 {missing.length > 0 && <span className={styles.missingSummary}>· {missing.length} 项必填未填</span>}
+        <div className="text-xs font-semibold uppercase tracking-[0.4px] text-muted-foreground">
+          属性 {missing.length > 0 && <span className="text-status-danger">· {missing.length} 项必填未填</span>}
         </div>
       )}
       {visible.map((f) => {
@@ -171,17 +173,21 @@ export function AttributeForm({
         return (
           <label
             key={f.key}
-            className={cn(styles.field, f.type === "boolean" && styles.fieldInline, isMissing && styles.fieldMissing)}
+            className={cn(
+              "flex flex-col gap-1 rounded border border-transparent px-1.5 py-1",
+              f.type === "boolean" && "flex-row items-center justify-between gap-2",
+              isMissing && "border-rose-400/60 bg-status-danger-soft",
+            )}
           >
-            <span className={styles.labelRow}>
+            <span className="inline-flex items-center gap-1.5 text-xs text-foreground">
               {f.label}
-              {f.required && <span className={styles.requiredMarker}>*</span>}
+              {f.required && <span className="ml-1 text-status-danger">*</span>}
               {/* v0.10.6 M4-γ · I13.2：视频任务下 mutable 字段标记徽标，提示「逐 keyframe 可变」语义。 */}
               {context === "video" && f.mutable === true && (
                 <span
                   title="逐 keyframe 可变（mutable）"
                   data-testid={`attr-mutable-badge-${f.key}`}
-                  className={styles.mutableBadge}
+                  className="rounded-[3px] border border-amber-500/40 bg-status-caution-soft px-1.5 py-px text-2xs font-semibold uppercase leading-[1.2] tracking-[0.3px] text-status-caution"
                 >
                   逐帧
                 </span>
@@ -189,7 +195,7 @@ export function AttributeForm({
               {f.description && <DescriptionPopover description={f.description} />}
               {f.hotkey && (f.type === "boolean" || f.type === "select") && (
                 <span
-                  className={cn("mono", styles.hotkeyBadge)}
+                  className="mono rounded-[3px] border border-b-2 border-brand/30 bg-brand/10 px-1.5 py-px text-2xs font-semibold text-brand"
                   title={`选中标注后按 ${f.hotkey} 切换该属性`}
                 >
                   ⌨ {f.hotkey}
@@ -202,7 +208,7 @@ export function AttributeForm({
                 value={(v as string) ?? ""}
                 disabled={readOnly}
                 onChange={(e) => setValue(e.target.value)}
-                className={styles.input}
+                className={INPUT_CLASS}
               />
             )}
             {f.type === "number" && (
@@ -216,7 +222,7 @@ export function AttributeForm({
                   const n = e.target.value === "" ? undefined : Number(e.target.value);
                   setValue(n);
                 }}
-                className={styles.input}
+                className={INPUT_CLASS}
               />
             )}
             {f.type === "boolean" && (
@@ -231,7 +237,7 @@ export function AttributeForm({
                 value={(v as string) ?? ""}
                 disabled={readOnly}
                 onChange={(e) => setValue(e.target.value || undefined)}
-                className={styles.input}
+                className={`${INPUT_CLASS} cursor-pointer`}
               >
                 <option value="">—</option>
                 {f.options?.map((o) => (
@@ -248,7 +254,7 @@ export function AttributeForm({
                   const arr = Array.from(e.target.selectedOptions).map((o) => o.value);
                   setValue(arr);
                 }}
-                className={cn(styles.input, styles.multiSelect)}
+                className={`${INPUT_CLASS} h-20`}
               >
                 {f.options?.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -256,7 +262,7 @@ export function AttributeForm({
               </select>
             )}
             {f.type === "range" && (
-              <div className={styles.rangeRow}>
+              <div className="flex items-center gap-2">
                 <input
                   type="range"
                   min={f.min ?? 0}
@@ -264,9 +270,9 @@ export function AttributeForm({
                   value={typeof v === "number" ? v : f.min ?? 0}
                   disabled={readOnly}
                   onChange={(e) => setValue(Number(e.target.value))}
-                  className={styles.range}
+                  className="flex-1 accent-brand"
                 />
-                <span className={cn("mono", styles.rangeValue)}>
+                <span className="mono min-w-[2.5ch] text-right text-xs text-muted-foreground">
                   {typeof v === "number" ? v : f.min ?? 0}
                 </span>
               </div>
@@ -295,13 +301,13 @@ function DescriptionPopover({ description }: { description: string }) {
       }}
       onMouseEnter={() => pop.setOpen(true)}
       onMouseLeave={() => pop.close()}
-      className={styles.descriptionContainer}
+      className="relative inline-flex"
     >
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); pop.toggle(); }}
         aria-label={`查看说明：${description.slice(0, 50)}`}
-        className={styles.descriptionButton}
+        className="inline-flex size-3.5 cursor-help appearance-none items-center justify-center rounded-full border border-border bg-muted p-0 text-micro font-semibold text-muted-foreground"
       >
         i
       </button>
@@ -309,33 +315,31 @@ function DescriptionPopover({ description }: { description: string }) {
         <div
           ref={pop.popoverRef as React.MutableRefObject<HTMLDivElement | null>}
           role="tooltip"
-          className={styles.descriptionPopover}
+          className="absolute left-0 top-[calc(100%+4px)] z-workbench-modal min-w-[180px] max-w-[280px] rounded border border-border bg-card px-2.5 py-2 text-xs leading-normal text-foreground shadow-lg [pointer-events:auto]"
         >
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
               a: ({ href, children }) => (
-                <a href={href} target="_blank" rel="noopener noreferrer" className={styles.markdownLink}>
+                <a href={href} target="_blank" rel="noopener noreferrer" className="text-brand">
                   {children}
                 </a>
               ),
-              p: ({ children }) => <p className={styles.markdownParagraph}>{children}</p>,
-              ul: ({ children }) => <ul className={styles.markdownList}>{children}</ul>,
-              ol: ({ children }) => <ol className={styles.markdownList}>{children}</ol>,
+              p: ({ children }) => <p className="mb-1.5">{children}</p>,
+              ul: ({ children }) => <ul className="mb-1.5 pl-4">{children}</ul>,
+              ol: ({ children }) => <ol className="mb-1.5 pl-4">{children}</ol>,
               code: ({ children }) => (
-                <code
-                  className={styles.markdownCode}
-                >
+                <code className="rounded-[3px] border border-border bg-muted px-1 py-px font-mono text-xs text-muted-foreground">
                   {children}
                 </code>
               ),
               strong: ({ children }) => (
-                <strong className={styles.markdownStrong}>{children}</strong>
+                <strong className="font-semibold text-foreground">{children}</strong>
               ),
               em: ({ children }) => (
-                <em className={styles.markdownEm}>{children}</em>
+                <em className="text-muted-foreground">{children}</em>
               ),
-              li: ({ children }) => <li className={styles.markdownListItem}>{children}</li>,
+              li: ({ children }) => <li className="mb-0.5">{children}</li>,
             }}
           >
             {description}

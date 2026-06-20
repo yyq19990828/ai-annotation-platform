@@ -51,9 +51,9 @@ export function classColorForCanvas(name: string, config?: ClassesConfig): strin
   return colorToHex(classColor(name, config));
 }
 
-/** 把 CSS 变量(如 --color-bg-elev)解析为当前主题下的 hex,供 Konva canvas fill 使用
- *  (canvas fillStyle 不解析 var())。随主题变化在 render 时重新读取。 */
-export function cssVarToHex(varName: string): string {
+/** 把 CSS 变量(如 --sc-card)解析为当前主题下的 hex,供 Konva canvas fill 使用
+ *  (canvas fillStyle 不解析 var())。themeKey 仅用于调用方 memo 失效。 */
+export function cssVarToHex(varName: string, _themeKey?: string): string {
   if (typeof document === "undefined") return "#888888";
   const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
   return raw ? colorToHex(raw) : "#888888";
@@ -97,7 +97,7 @@ export function classColor(name: string, config?: ClassesConfig): string {
 
 /**
  * Track 选色调色板（会话级覆盖用）。沿用 CLASS_COLORS 的 oklch 表达，
- * 与画布/类别色同源；这些是数据域颜色而非组件 CSS，不走 tokens.css 规则。
+ * 与画布/类别色同源；这些是数据域颜色而非组件 CSS。
  */
 export const TRACK_COLOR_PALETTE: { label: string; value: string }[] = [
   { label: "蓝", value: "oklch(0.62 0.18 252)" },

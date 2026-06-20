@@ -11,7 +11,11 @@ import {
   type CommentCanvasDrawing,
   type CommentMention,
 } from "@/api/comments";
-import styles from "./CommentInput.module.css";
+
+// mention chip(@提及):brand 语义色 + 柔底,亮暗主题统一走 token。
+// 经 raw DOM(insertMentionChip)与 React(renderCommentBody)两条路径共用,故抽成静态串。
+const MENTION_CHIP =
+  "mx-px rounded-[3px] bg-brand/15 px-1.5 py-px font-medium text-brand";
 
 interface CommentInputProps {
   annotationId: string;
@@ -126,7 +130,7 @@ function insertMentionChip(triggerRange: { node: Node; offset: number }, opt: Us
   chip.contentEditable = "false";
   chip.setAttribute("data-mention-uid", opt.id);
   chip.setAttribute("data-mention-name", opt.name);
-  chip.className = styles.mentionChip;
+  chip.className = MENTION_CHIP;
   chip.textContent = `@${opt.name}`;
 
   r.insertNode(chip);
@@ -273,7 +277,7 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
   const submitDisabled = busy || uploading;
 
   return (
-    <div className={styles.root}>
+    <div className="flex flex-col gap-1.5">
       <div
         ref={editorRef}
         contentEditable={!busy}
@@ -287,12 +291,12 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
           }
         }}
         data-placeholder="留言（@ 提及成员，可附图）..."
-        className={styles.editor}
+        className="max-h-40 min-h-[56px] overflow-y-auto whitespace-pre-wrap rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none [font:inherit] empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)]"
       />
       {anchor?.kind === "video_frame" && (
         <div
           data-testid="comment-anchor-preview"
-          className={styles.anchorPreview}
+          className="inline-flex select-none items-center gap-1.5 self-start rounded border border-border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
         >
           <Icon name="film" size={12} />
           <span className="mono">F{anchor.frameIndex}</span>
@@ -301,21 +305,21 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
         </div>
       )}
       {attachments.length > 0 && (
-        <div className={styles.attachmentList}>
+        <div className="flex flex-wrap gap-1">
           {attachments.map((a, i) => (
             <div
               key={a.storageKey}
-              className={styles.attachmentPill}
+              className="inline-flex items-center gap-1 rounded-[3px] border border-border bg-muted px-1.5 py-0.5 text-xs text-foreground"
               title={`${(a.size / 1024).toFixed(1)} KB`}
             >
               <Icon name="folder" size={11} />
-              <span className={styles.attachmentName}>
+              <span className="max-w-[140px] overflow-hidden text-ellipsis whitespace-nowrap">
                 {a.fileName}
               </span>
               <button
                 type="button"
                 onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-                className={styles.removeAttachmentButton}
+                className="inline-flex cursor-pointer appearance-none items-center border-0 bg-transparent p-0 text-muted-foreground"
                 aria-label="移除附件"
               >
                 <Icon name="x" size={10} />
@@ -324,10 +328,13 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
           ))}
         </div>
       )}
-      <div className={styles.actionsRow}>
-        <div className={styles.leftActions}>
+      <div className="flex items-center justify-between gap-1.5">
+        <div className="flex items-center gap-2">
           <label
-            className={cn(styles.uploadLabel, uploading && styles.uploadLabelUploading)}
+            className={cn(
+              "inline-flex items-center gap-1 text-xs text-muted-foreground",
+              uploading ? "cursor-wait" : "cursor-pointer",
+            )}
           >
             <Icon name="upload" size={12} />
             {uploading ? "上传中…" : "附件"}
@@ -336,7 +343,7 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
               multiple
               disabled={uploading || busy}
               onChange={(e) => handleFileUpload(e.target.files)}
-              className={styles.hiddenInput}
+              className="hidden"
             />
           </label>
           {enableCanvasDrawing && (
@@ -345,9 +352,9 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
               onClick={() => setCanvasOpen(true)}
               disabled={!backgroundUrl}
               className={cn(
-                styles.toolbarButton,
-                canvasDrawing && styles.toolbarButtonActive,
-                !backgroundUrl && styles.toolbarButtonDisabled,
+                "inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs font-normal text-muted-foreground",
+                canvasDrawing && "font-semibold text-brand",
+                !backgroundUrl && "cursor-default text-muted-foreground/60",
               )}
               title={backgroundUrl ? "弹窗内绘制（与原图比例对齐）" : "题图未加载，无法在空白画布上批注"}
             >
@@ -360,7 +367,10 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
               type="button"
               onClick={() => liveCanvas.onStart(canvasDrawing)}
               disabled={liveCanvas.active}
-              className={cn(styles.toolbarButton, styles.liveCanvasButton, liveCanvas.active && styles.toolbarButtonDisabled)}
+              className={cn(
+                "inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs font-normal text-brand",
+                liveCanvas.active && "cursor-default text-muted-foreground/60",
+              )}
               title="直接在题图上绘制 — 缩放/平移自动跟随"
             >
               <Icon name="target" size={12} />
@@ -414,7 +424,7 @@ export function renderCommentBody(body: string, mentions: CommentMention[], onMe
       <span
         key={i}
         onClick={() => onMentionClick?.(m.userId)}
-        className={cn(styles.mentionChip, onMentionClick && styles.mentionChipClickable)}
+        className={cn(MENTION_CHIP, onMentionClick ? "cursor-pointer" : "cursor-default")}
       >
         @{m.displayName}
       </span>,

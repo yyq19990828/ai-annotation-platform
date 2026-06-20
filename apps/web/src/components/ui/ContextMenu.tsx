@@ -1,8 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
+
+import { cn } from "@/lib/utils";
+
 import { Icon } from "./Icon";
 import type { DropdownItem } from "./DropdownMenu";
-import styles from "./ContextMenu.module.css";
+
+/**
+ * v0.17.2:module.css → Tailwind。坐标定位/翻转/键盘/a11y 逻辑不动;坐标锚点沿用 --context-menu-x/y
+ * CSS 变量(经 Tailwind 任意值消费)。item 是 portal 内原生 <button>,加 appearance-none 防 UA 漏样。
+ */
 
 interface ContextMenuProps {
   open: boolean;
@@ -51,12 +58,12 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
       role="menu"
       aria-orientation="vertical"
       tabIndex={-1}
-      className={[
-        styles.panel,
-        flip.x && styles.flipX,
-        flip.y && styles.flipY,
-      ].filter(Boolean).join(" ")}
-      // eslint-disable-next-line no-restricted-syntax -- 坐标锚点是一次性动态值，经 CSS custom property 交给 CSS module 使用
+      className={cn(
+        "fixed left-[var(--context-menu-x)] top-[var(--context-menu-y)] z-overlay-high min-w-[190px] rounded-md border border-border bg-popover p-1 shadow-md outline-none",
+        flip.x && "-translate-x-full",
+        flip.y && "-translate-y-full",
+      )}
+      // eslint-disable-next-line no-restricted-syntax -- 坐标锚点是一次性动态值，经 CSS custom property 注入
       style={{
         "--context-menu-x": `${x}px`,
         "--context-menu-y": `${y}px`,
@@ -68,7 +75,7 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
             <div
               key={item.id || `div-${index}`}
               role="separator"
-              className={styles.divider}
+              className="my-1 h-px bg-border"
             />
           );
         }
@@ -83,21 +90,22 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
               item.onSelect?.();
               onClose();
             }}
-            className={[
-              styles.item,
-              item.active && styles.itemActive,
-              item.disabled && styles.itemDisabled,
-            ].filter(Boolean).join(" ")}
+            className={cn(
+              "flex w-full appearance-none items-center gap-2 whitespace-nowrap rounded-sm border-0 bg-transparent px-2.5 py-2 text-left text-sm font-normal text-muted-foreground",
+              item.active ? "font-semibold text-foreground" : "hover:bg-accent",
+              item.active && "bg-accent",
+              item.disabled && "cursor-not-allowed text-muted-foreground/60 opacity-60 hover:bg-transparent",
+            )}
           >
             {item.icon && <Icon name={item.icon} size={13} />}
-            <span className={styles.itemLabel}>{item.label}</span>
+            <span className="flex-1">{item.label}</span>
             {item.kbd && (
-              <span className={`mono ${styles.kbd}`}>
+              <span className="mono rounded border border-b-2 border-border bg-muted px-1.5 py-px text-2xs text-muted-foreground">
                 {item.kbd}
               </span>
             )}
             {item.active && !item.kbd && (
-              <Icon name="check" size={12} className={styles.checkIcon} />
+              <Icon name="check" size={12} className="text-brand" />
             )}
           </button>
         );

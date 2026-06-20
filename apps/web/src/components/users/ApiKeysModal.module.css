@@ -11,11 +11,11 @@
 }
 
 .muted {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
 }
 
 .subtle {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
 }
 
 .createForm {
@@ -23,9 +23,9 @@
   flex-direction: column;
   gap: 10px;
   padding: 12px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
 }
 
 /* 列表头部: intro 文案占主, 新建按钮靠右同行(避免文案独占一行后留怪空档) */
@@ -59,7 +59,7 @@
 }
 
 .fieldLabel {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
   font-weight: 500;
 }
@@ -67,9 +67,9 @@
 .input {
   width: 100%;
   padding: 7px 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-elev);
+  background: var(--sc-card);
   font-size: 13px;
 }
 
@@ -95,7 +95,7 @@
 .fullAccessOption {
   padding-bottom: 8px;
   margin-bottom: 4px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
   font-weight: 500;
 }
 
@@ -117,12 +117,12 @@
 }
 
 .note {
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   font-size: 11px;
 }
 
 .errorText {
-  color: var(--color-danger);
+  color: var(--sc-destructive);
   font-size: 12px;
 }
 
@@ -140,7 +140,7 @@
 .tableShell {
   max-width: 100%;
   overflow-x: auto;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sc-border);
   border-radius: var(--radius-md);
 }
 
@@ -154,9 +154,9 @@
 
 .th {
   padding: 8px 10px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-bg-sunken);
-  color: var(--color-fg-muted);
+  border-bottom: 1px solid var(--sc-border);
+  background: var(--sc-muted);
+  color: var(--sc-muted-foreground);
   text-align: left;
   font-size: 11px;
   font-weight: 500;
@@ -165,7 +165,7 @@
 
 .cell {
   padding: 8px 10px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--sc-border);
 }
 
 .nameCell {
@@ -177,7 +177,7 @@
 
 .emptyCell {
   padding: 24px;
-  color: var(--color-fg-subtle);
+  color: var(--sc-muted-foreground);
   text-align: center;
 }
 
@@ -197,8 +197,8 @@
 
 /* 列表里权限列的紧凑摘要: 一行「N 项权限」, 完整 scope 走 hover 居中浮层, 避免撑宽行 */
 .scopeSummary {
-  color: var(--color-fg-muted);
-  border-bottom: 1px dotted var(--color-border-strong);
+  color: var(--sc-muted-foreground);
+  border-bottom: 1px dotted var(--sc-border);
   cursor: help;
   white-space: nowrap;
 }
@@ -211,7 +211,7 @@
 }
 
 .dateCell {
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   white-space: nowrap;
 }
 
@@ -221,14 +221,14 @@
 }
 
 .dangerIcon {
-  color: var(--color-danger);
+  color: var(--sc-destructive);
 }
 
 .secretBox {
   padding: 12px;
-  border: 1px dashed var(--color-warning);
+  border: 1px dashed var(--sc-caution);
   border-radius: var(--radius-md);
-  background: var(--color-bg-sunken);
+  background: var(--sc-muted);
   font-family: var(--font-mono, monospace);
   font-size: 13px;
   font-weight: 500;

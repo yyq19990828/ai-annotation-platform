@@ -19,7 +19,14 @@ import { BOX_EDGES, projectPoints } from "./geometry/projection";
 import { normalizeRect, type SeedRect } from "./geometry/frustum";
 import { buildDepthRaster, sampleDepth, type DepthRaster } from "./geometry/depthmap";
 import type { SceneBox } from "./PointCloudScene";
-import styles from "./ThreeDWorkbench.module.css";
+
+// v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
+const CAMERA_ITEM = "m-0 shrink-0";
+const CAMERA_VIEW = "relative inline-block leading-none";
+const CAMERA_CANVAS = "absolute inset-0 cursor-pointer";
+const CAMERA_CANVAS_SEED = "cursor-crosshair";
+const CAMERA_IMG = "block w-[190px] h-auto object-cover";
+const CAMERA_FIGCAPTION = "mt-1 text-xs text-muted-foreground text-center";
 
 interface CameraProjectionViewProps {
   name: string;
@@ -184,13 +191,11 @@ export function CameraProjectionView({
       }
     }
 
-    // v0.15.24 · 种框橡皮筋矩形(显示坐标,虚线 + 淡填充)。从 tokens 取 accent 色,
-    // 读不到时退一个中性蓝(canvas strokeStyle 不在 check-css-tokens 扫描范围,JS 兜底可接受)。
+    // v0.15.24 · 种框橡皮筋矩形(显示坐标,虚线 + 淡填充)。从 shadcn token 取品牌色。
     const seed = seedRectRef.current;
     if (seedMode && seed) {
-      // accent 是 oklch(见 tokens.css),不能走 hexToRgba;用 globalAlpha 做淡填充兼容任意色格式。
       const accent =
-        getComputedStyle(canvas).getPropertyValue("--color-accent").trim() || "#3b82f6";
+        getComputedStyle(canvas).getPropertyValue("--sc-brand").trim() || "#3b82f6";
       const w = seed.x1 - seed.x0;
       const h = seed.y1 - seed.y0;
       ctx.save();
@@ -322,12 +327,12 @@ export function CameraProjectionView({
   );
 
   return (
-    <figure className={styles.cameraItem}>
-      <div className={styles.cameraView}>
-        <img ref={imgRef} src={imageUrl} alt={name} loading="lazy" onLoad={handleImgLoad} />
+    <figure className={CAMERA_ITEM}>
+      <div className={CAMERA_VIEW}>
+        <img ref={imgRef} src={imageUrl} alt={name} className={CAMERA_IMG} loading="lazy" onLoad={handleImgLoad} />
         <canvas
           ref={canvasRef}
-          className={`${styles.cameraCanvas} ${seedMode ? styles.cameraCanvasSeed : ""}`}
+          className={seedMode ? `${CAMERA_CANVAS} ${CAMERA_CANVAS_SEED}` : CAMERA_CANVAS}
           onClick={handleClick}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -335,7 +340,7 @@ export function CameraProjectionView({
           onMouseLeave={handleMouseLeave}
         />
       </div>
-      <figcaption>
+      <figcaption className={CAMERA_FIGCAPTION}>
         {name}
         {bestForSelected && " · 正对"}
         {calibration ? "" : " · 无标定"}

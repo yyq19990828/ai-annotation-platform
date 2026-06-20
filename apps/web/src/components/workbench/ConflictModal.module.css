@@ -12,7 +12,7 @@
   min-width: 360px;
   max-width: 420px;
   padding: 24px 28px;
-  background: var(--color-bg-elev);
+  background: var(--sc-card);
   border-radius: var(--radius-lg);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
 }
@@ -29,14 +29,14 @@
 }
 
 .title {
-  color: var(--color-fg);
+  color: var(--sc-foreground);
   font-size: 15px;
   font-weight: 600;
 }
 
 .description {
   margin: 0 0 20px;
-  color: var(--color-fg-muted);
+  color: var(--sc-muted-foreground);
   font-size: 13px;
   line-height: 1.55;
 }
@@ -56,9 +56,9 @@
 }
 
 .cancelButton {
-  color: var(--color-fg);
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
+  color: var(--sc-foreground);
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
 }
 
 .overwriteButton {
@@ -70,6 +70,6 @@
 .reloadButton {
   color: #fff;
   font-weight: 600;
-  background: var(--color-accent);
+  background: var(--sc-brand);
   border: none;
 }

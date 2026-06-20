@@ -1,0 +1,431 @@
+/* ============================================================
+   Tailwind v4 + shadcn —— global preflight
+   ------------------------------------------------------------
+   设计基调：Geist 风(克制中性色 + 工具型蓝)。
+
+   全量迁移完成,preflight 转全局,不再需要局部 reset。
+   旧 token 文件退役(变量已全迁入 --sc-*),全站 Tailwind 化。
+   暗色由 `<html data-theme="dark">` 驱动,经由 `dark:` variant 重定向。
+   ============================================================ */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* 暗色走 data-theme，而非 shadcn 默认的 .dark class */
+@custom-variant dark ([data-theme="dark"] &);
+
+/* shadcn token → Tailwind 工具类映射(@theme inline：保持运行时随主题切换) */
+@theme inline {
+  --color-background: var(--sc-background);
+  --color-foreground: var(--sc-foreground);
+  --color-card: var(--sc-card);
+  --color-card-foreground: var(--sc-card-foreground);
+  --color-popover: var(--sc-popover);
+  --color-popover-foreground: var(--sc-popover-foreground);
+  --color-primary: var(--sc-primary);
+  --color-primary-foreground: var(--sc-primary-foreground);
+  --color-secondary: var(--sc-secondary);
+  --color-secondary-foreground: var(--sc-secondary-foreground);
+  --color-muted: var(--sc-muted);
+  --color-muted-foreground: var(--sc-muted-foreground);
+  --color-accent: var(--sc-accent);
+  --color-accent-foreground: var(--sc-accent-foreground);
+  --color-destructive: var(--sc-destructive);
+  --color-destructive-foreground: var(--sc-destructive-foreground);
+  --color-border: var(--sc-border);
+  --color-input: var(--sc-input);
+  --color-ring: var(--sc-ring);
+
+  /* Geist 强调蓝 + 状态色 */
+  --color-brand: var(--sc-brand);
+  --color-brand-foreground: var(--sc-brand-foreground);
+  --color-positive: var(--sc-positive);
+  --color-caution: var(--sc-caution);
+  --color-status-danger: var(--sc-status-danger);
+  --color-status-danger-soft: var(--sc-status-danger-soft);
+  --color-status-caution: var(--sc-status-caution);
+  --color-status-caution-soft: var(--sc-status-caution-soft);
+  --color-status-positive: var(--sc-status-positive);
+  --color-status-positive-soft: var(--sc-status-positive-soft);
+  --color-status-info: var(--sc-status-info);
+  --color-status-info-soft: var(--sc-status-info-soft);
+  --color-status-info-alt: var(--sc-status-info-alt);
+  --color-status-info-alt-soft: var(--sc-status-info-alt-soft);
+
+  /* recharts / 图表取色 */
+  --color-chart-1: var(--sc-chart-1);
+  --color-chart-2: var(--sc-chart-2);
+  --color-chart-3: var(--sc-chart-3);
+  --color-chart-4: var(--sc-chart-4);
+
+  /* 紧凑字号标尺:等价替换原散落 text-[Npx] 档位 */
+  --text-3xs: 8px;
+  --text-3xs--line-height: inherit;
+  --text-micro: 9px;
+  --text-micro--line-height: inherit;
+  --text-2xs: 10px;
+  --text-2xs--line-height: inherit;
+  --text-xs: 11px;
+  --text-xs--line-height: inherit;
+  --text-sm: 13px;
+  --text-sm--line-height: inherit;
+  --text-ui: 14px;
+  --text-ui--line-height: inherit;
+  --text-md: 15px;
+  --text-md--line-height: inherit;
+  --text-stat: 22px;
+  --text-stat--line-height: inherit;
+  --text-control-xl: 28px;
+  --text-control-xl--line-height: inherit;
+
+  --radius-sm: calc(var(--sc-radius) - 2px);
+  --radius-md: var(--sc-radius);
+  --radius-lg: calc(var(--sc-radius) + 2px);
+  --radius-xl: calc(var(--sc-radius) + 6px);
+}
+
+/* —— Geist 调色板 · 浅色(雾白画布 / 近黑字) —— */
+:root {
+  color-scheme: light;
+
+  --sc-radius: 8px;
+
+  --sc-background: #fafafa;
+  --sc-foreground: #18181b;
+  --sc-card: #ffffff;
+  --sc-card-foreground: #18181b;
+  --sc-popover: #ffffff;
+  --sc-popover-foreground: #18181b;
+
+  /* 主操作 = 实心近黑(浅色态),与工具型 SaaS CTA 一致 */
+  --sc-primary: #18181b;
+  --sc-primary-foreground: #ffffff;
+
+  --sc-secondary: #f4f4f5;
+  --sc-secondary-foreground: #18181b;
+  --sc-muted: #f4f4f5;
+  --sc-muted-foreground: #71717a;
+  --sc-accent: #f1f5f9;
+  --sc-accent-foreground: #18181b;
+  --sc-destructive: #dc2626;
+  --sc-destructive-foreground: #ffffff;
+
+  --sc-border: #e4e4e7;
+  --sc-input: #e4e4e7;
+  --sc-ring: #2563eb;
+
+  --sc-brand: #2563eb;
+  --sc-brand-foreground: #ffffff;
+  --sc-positive: #15803d;
+  --sc-caution: #b45309;
+  --sc-status-danger: var(--color-rose-600);
+  --sc-status-danger-soft: color-mix(in oklab, var(--color-rose-500) 10%, transparent);
+  --sc-status-caution: var(--color-amber-600);
+  --sc-status-caution-soft: color-mix(in oklab, var(--color-amber-500) 10%, transparent);
+  --sc-status-positive: var(--color-emerald-600);
+  --sc-status-positive-soft: color-mix(in oklab, var(--color-emerald-500) 10%, transparent);
+  --sc-status-info: var(--color-violet-600);
+  --sc-status-info-soft: color-mix(in oklab, var(--color-violet-500) 10%, transparent);
+  --sc-status-info-alt: var(--color-sky-600);
+  --sc-status-info-alt-soft: color-mix(in oklab, var(--color-sky-500) 10%, transparent);
+
+  --sc-z-local-1: 1;
+  --sc-z-local-2: 2;
+  --sc-z-local-3: 3;
+  --sc-z-local-4: 4;
+  --sc-z-local-5: 5;
+  --sc-z-local-6: 6;
+  --sc-z-base: 10;
+  --sc-z-dock: 14;
+  --sc-z-dock-control: 15;
+  --sc-z-local-overlay: 20;
+  --sc-z-popover: 30;
+  --sc-z-dropdown: 50;
+  --sc-z-modal: 50;
+  --sc-z-floating: 50;
+  --sc-z-tooltip: 50;
+  --sc-z-popover-elevated: 55;
+  --sc-z-overlay-high: 60;
+  --sc-z-drawer-backdrop: 60;
+  --sc-z-drawer: 61;
+  --sc-z-workbench-top: 90;
+  --sc-z-notification-backdrop: 200;
+  --sc-z-notification: 201;
+  --sc-z-workbench-modal: 1000;
+  --sc-z-app-drawer-backdrop: 1099;
+  --sc-z-app-drawer: 1100;
+
+  --sc-chart-1: #2563eb;
+  --sc-chart-2: #15803d;
+  --sc-chart-3: #b45309;
+  --sc-chart-4: #6d5bd0;
+
+  /* 画布棋盘格(画布叠加层专属,无 Tailwind 等价) */
+  --sc-canvas-checker-a: #e9e9ec;
+  --sc-canvas-checker-b: #f3f3f5;
+  --sc-code-bg: #ececef;
+  --sc-code-fg: #18181b;
+
+  --font: "Geist", "SF Pro Text", -apple-system, BlinkMacSystemFont,
+    "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial,
+    sans-serif;
+  --font-mono: "Geist Mono", "SF Mono", "JetBrains Mono", "Menlo", "Consolas",
+    monospace;
+  --radius-pill: 9999px;
+  --shadow-sm: 0 1px 2px rgba(24, 24, 27, 0.06);
+  --shadow-md: 0 2px 8px rgba(24, 24, 27, 0.08), 0 1px 2px rgba(24, 24, 27, 0.05);
+  --shadow-lg: 0 16px 40px rgba(24, 24, 27, 0.10), 0 2px 6px rgba(24, 24, 27, 0.06);
+}
+
+/* —— Geist 调色板 · 深色(墨色画布 / 近白字,主场) —— */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --sc-background: #09090b;
+  --sc-foreground: #ededed;
+  --sc-card: #111113;
+  --sc-card-foreground: #ededed;
+  --sc-popover: #111113;
+  --sc-popover-foreground: #ededed;
+
+  /* 主操作 = 反白(白底黑字),即所选预览的观感 */
+  --sc-primary: #ededed;
+  --sc-primary-foreground: #0a0a0a;
+
+  --sc-secondary: #18181b;
+  --sc-secondary-foreground: #ededed;
+  --sc-muted: #18181b;
+  --sc-muted-foreground: #a1a1aa;
+  --sc-accent: #202027;
+  --sc-accent-foreground: #ededed;
+  --sc-destructive: #ff5a5f;
+  --sc-destructive-foreground: #0a0a0a;
+
+  --sc-border: #2f2f36;
+  --sc-input: #303038;
+  --sc-ring: #60a5fa;
+
+  --sc-brand: #60a5fa;
+  --sc-brand-foreground: #ffffff;
+  --sc-positive: #3fb950;
+  --sc-caution: #d29922;
+  --sc-status-danger: var(--color-rose-400);
+  --sc-status-danger-soft: color-mix(in oklab, var(--color-rose-500) 10%, transparent);
+  --sc-status-caution: var(--color-amber-400);
+  --sc-status-caution-soft: color-mix(in oklab, var(--color-amber-500) 10%, transparent);
+  --sc-status-positive: var(--color-emerald-400);
+  --sc-status-positive-soft: color-mix(in oklab, var(--color-emerald-500) 10%, transparent);
+  --sc-status-info: var(--color-violet-400);
+  --sc-status-info-soft: color-mix(in oklab, var(--color-violet-500) 10%, transparent);
+  --sc-status-info-alt: var(--color-sky-400);
+  --sc-status-info-alt-soft: color-mix(in oklab, var(--color-sky-500) 10%, transparent);
+
+  --sc-chart-1: #60a5fa;
+  --sc-chart-2: #3fb950;
+  --sc-chart-3: #d29922;
+  --sc-chart-4: #a78bfa;
+
+  /* 画布棋盘格(深色) */
+  --sc-canvas-checker-a: #1e1e23;
+  --sc-canvas-checker-b: #2a2a30;
+  --sc-code-bg: #2e2e33;
+  --sc-code-fg: #f4f4f5;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.42);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.36), 0 1px 2px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.46), 0 2px 6px rgba(0, 0, 0, 0.32);
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-width: 320px;
+    font-family: var(--font);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: var(--sc-foreground);
+    background: var(--sc-background);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  #root {
+    min-height: 100dvh;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  :where(a, button, input, select, textarea, [role="button"]):focus-visible {
+    outline: 2px solid var(--sc-ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .text-status-danger {
+    color: var(--sc-status-danger);
+  }
+
+  .text-status-caution {
+    color: var(--sc-status-caution);
+  }
+
+  .text-status-positive {
+    color: var(--sc-status-positive);
+  }
+
+  .text-status-info {
+    color: var(--sc-status-info);
+  }
+
+  .text-status-info-alt {
+    color: var(--sc-status-info-alt);
+  }
+
+  .bg-status-danger-soft {
+    background-color: var(--sc-status-danger-soft);
+  }
+
+  .bg-status-caution-soft {
+    background-color: var(--sc-status-caution-soft);
+  }
+
+  .bg-status-positive-soft {
+    background-color: var(--sc-status-positive-soft);
+  }
+
+  .bg-status-info-soft {
+    background-color: var(--sc-status-info-soft);
+  }
+
+  .bg-status-info-alt-soft {
+    background-color: var(--sc-status-info-alt-soft);
+  }
+
+  .z-local-1 {
+    z-index: var(--sc-z-local-1);
+  }
+
+  .z-local-2 {
+    z-index: var(--sc-z-local-2);
+  }
+
+  .z-local-3 {
+    z-index: var(--sc-z-local-3);
+  }
+
+  .z-local-4 {
+    z-index: var(--sc-z-local-4);
+  }
+
+  .z-local-5 {
+    z-index: var(--sc-z-local-5);
+  }
+
+  .z-local-6 {
+    z-index: var(--sc-z-local-6);
+  }
+
+  .z-base {
+    z-index: var(--sc-z-base);
+  }
+
+  .z-dock {
+    z-index: var(--sc-z-dock);
+  }
+
+  .z-dock-control {
+    z-index: var(--sc-z-dock-control);
+  }
+
+  .z-local-overlay {
+    z-index: var(--sc-z-local-overlay);
+  }
+
+  .z-popover {
+    z-index: var(--sc-z-popover);
+  }
+
+  .z-dropdown {
+    z-index: var(--sc-z-dropdown);
+  }
+
+  .z-modal {
+    z-index: var(--sc-z-modal);
+  }
+
+  .z-floating {
+    z-index: var(--sc-z-floating);
+  }
+
+  .z-tooltip {
+    z-index: var(--sc-z-tooltip);
+  }
+
+  .z-popover-elevated {
+    z-index: var(--sc-z-popover-elevated);
+  }
+
+  .z-overlay-high {
+    z-index: var(--sc-z-overlay-high);
+  }
+
+  .z-drawer-backdrop {
+    z-index: var(--sc-z-drawer-backdrop);
+  }
+
+  .z-drawer {
+    z-index: var(--sc-z-drawer);
+  }
+
+  .z-workbench-top {
+    z-index: var(--sc-z-workbench-top);
+  }
+
+  .z-notification-backdrop {
+    z-index: var(--sc-z-notification-backdrop);
+  }
+
+  .z-notification {
+    z-index: var(--sc-z-notification);
+  }
+
+  .z-workbench-modal {
+    z-index: var(--sc-z-workbench-modal);
+  }
+
+  .z-app-drawer-backdrop {
+    z-index: var(--sc-z-app-drawer-backdrop);
+  }
+
+  .z-app-drawer {
+    z-index: var(--sc-z-app-drawer);
+  }
+
+  .surface-shadow-sm {
+    box-shadow: var(--shadow-sm);
+  }
+
+  .surface-shadow-md-on-hover:hover {
+    box-shadow: var(--shadow-md);
+  }
+}

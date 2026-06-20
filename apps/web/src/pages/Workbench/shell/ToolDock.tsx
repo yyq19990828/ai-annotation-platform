@@ -4,7 +4,17 @@ import { Tooltip } from "@/components/ui/Tooltip";
 import { ALL_TOOLS, type CanvasTool, type ToolId } from "../stage/tools";
 import { toolUnitForTool } from "../stage/tools/toolUnits";
 import type { ThreeDTool, VideoTool } from "../state/useWorkbenchState";
-import styles from "./ToolDock.module.css";
+
+const ROOT_CLASS = "relative flex flex-col items-center gap-1.5 border-r border-border bg-card px-1 py-2.5";
+const TOOL_BTN_CLASS =
+  "relative flex size-[38px] cursor-pointer appearance-none items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition-colors";
+const TOOL_BTN_HOVER = "hover:bg-muted hover:text-foreground";
+const TOOL_BTN_ACTIVE = "border-brand/30 bg-brand/10 text-brand";
+const TOOL_BTN_DISABLED = "cursor-not-allowed opacity-40";
+const HOTKEY_BADGE_CLASS =
+  "pointer-events-none absolute bottom-px right-[3px] text-3xs font-bold leading-none text-muted-foreground/60";
+const HOTKEY_BADGE_ACTIVE = "text-brand";
+const DIVIDER_CLASS = "my-1.5 h-px w-[26px] bg-border";
 
 interface ToolDockProps {
   tool: ToolId;
@@ -125,7 +135,7 @@ export function ToolDock({
       return enabledToolUnits.has(unit);
     });
     return (
-      <div className={styles.root} data-workbench-tool-dock>
+      <div className={ROOT_CLASS} data-workbench-tool-dock>
         {visibleThreeDTools.map((t) => {
           const active = threeDTool === t.id;
           return (
@@ -136,10 +146,10 @@ export function ToolDock({
                 aria-label={t.label}
                 aria-pressed={active}
                 data-testid={`three-d-tool-btn-${t.id}`}
-                className={cn(styles.toolButton, active && styles.toolButtonActive)}
+                className={cn(TOOL_BTN_CLASS, active ? TOOL_BTN_ACTIVE : TOOL_BTN_HOVER)}
               >
                 <Icon name={t.icon} size={17} />
-                <span aria-hidden className={cn(styles.hotkeyBadge, active && styles.hotkeyBadgeActive)}>
+                <span aria-hidden className={cn(HOTKEY_BADGE_CLASS, active && HOTKEY_BADGE_ACTIVE)}>
                   {t.hotkey}
                 </span>
               </button>
@@ -159,14 +169,14 @@ export function ToolDock({
       return true;
     });
     return (
-      <div className={styles.root} data-workbench-tool-dock>
+      <div className={ROOT_CLASS} data-workbench-tool-dock>
         {visibleVideoTools.map((t, idx) => {
           const active = videoTool === t.id;
           const prevGroup = idx > 0 ? visibleVideoTools[idx - 1].group : null;
           const showDivider = prevGroup !== null && prevGroup !== t.group;
           return (
             <Fragment key={t.id}>
-              {showDivider && <div aria-hidden className={styles.divider} />}
+              {showDivider && <div aria-hidden className={DIVIDER_CLASS} />}
               <Tooltip
                 name={t.label}
                 desc={`${t.desc} · 备用 Alt+${t.altDigit}`}
@@ -180,10 +190,10 @@ export function ToolDock({
                   aria-label={t.label}
                   aria-pressed={active}
                   data-testid={`video-tool-btn-${t.id}`}
-                  className={cn(styles.toolButton, active && styles.toolButtonActive)}
+                  className={cn(TOOL_BTN_CLASS, active ? TOOL_BTN_ACTIVE : TOOL_BTN_HOVER)}
                 >
                   <Icon name={t.icon} size={17} />
-                  <span aria-hidden className={cn(styles.hotkeyBadge, active && styles.hotkeyBadgeActive)}>
+                  <span aria-hidden className={cn(HOTKEY_BADGE_CLASS, active && HOTKEY_BADGE_ACTIVE)}>
                     {t.hotkey}
                   </span>
                 </button>
@@ -211,7 +221,7 @@ export function ToolDock({
     t.id === "hand" ? "view" : isAITool(t) ? "ai" : "draw";
 
   return (
-    <div className={styles.root} data-workbench-tool-dock>
+    <div className={ROOT_CLASS} data-workbench-tool-dock>
       {visibleTools.map((t, idx) => {
         const active = tool === t.id;
         const prevGroup = idx > 0 ? groupOf(visibleTools[idx - 1]) : null;
@@ -236,9 +246,9 @@ export function ToolDock({
         return (
           <Fragment key={t.id}>
             {showDivider && (
-              <div aria-hidden className={styles.divider} />
+              <div aria-hidden className={DIVIDER_CLASS} />
             )}
-            <div className={styles.toolWrap}>
+            <div className="relative flex">
               <Tooltip
                 name={t.label}
                 desc={disabledHint ?? tooltipDesc}
@@ -258,15 +268,15 @@ export function ToolDock({
                   data-testid={`tool-btn-${t.id}`}
                   disabled={disabled}
                   className={cn(
-                    styles.toolButton,
-                    active && styles.toolButtonActive,
-                    disabled && styles.toolButtonDisabled,
+                    TOOL_BTN_CLASS,
+                    active ? TOOL_BTN_ACTIVE : !disabled && TOOL_BTN_HOVER,
+                    disabled && TOOL_BTN_DISABLED,
                   )}
                 >
                   <Icon name={t.icon as IconName} size={17} />
                   <span
                     aria-hidden
-                    className={cn(styles.hotkeyBadge, active && styles.hotkeyBadgeActive)}
+                    className={cn(HOTKEY_BADGE_CLASS, active && HOTKEY_BADGE_ACTIVE)}
                   >
                     {t.hotkey.toUpperCase()}
                   </span>
@@ -274,7 +284,7 @@ export function ToolDock({
               </Tooltip>
               {/* AIToolDrawer 在 AI 工具激活时挂在该按钮右侧 */}
               {active && isAITool(t) && aiToolDrawer && (
-                <div className={styles.aiDrawerSlot}>
+                <div className="absolute left-full top-[-6px] z-local-5 ml-2">
                   {aiToolDrawer}
                 </div>
               )}

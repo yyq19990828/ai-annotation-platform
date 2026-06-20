@@ -10,7 +10,7 @@
   height: 44px;
   color: #fff;
   cursor: pointer;
-  background: var(--color-accent);
+  background: var(--sc-brand);
   border: none;
   border-radius: 50%;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);

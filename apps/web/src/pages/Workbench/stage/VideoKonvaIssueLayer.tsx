@@ -1,5 +1,7 @@
+import { useMemo } from "react";
 import { Layer, Circle, Text } from "react-konva";
 import type Konva from "konva";
+import { useTheme } from "@/hooks/useTheme";
 import { cssVarToHex } from "./colors";
 import type { VideoPixelSize } from "./videoKonvaCoordinates";
 import type { AnnotationFeedback } from "@/api/feedbacks";
@@ -8,9 +10,9 @@ import type { AnnotationFeedback } from "@/api/feedbacks";
 const ISSUE_PIN_RADIUS = 0.012;
 
 const STATUS_VAR: Record<string, string> = {
-  open: "--color-warning",
-  resolved: "--color-success",
-  wont_fix: "--color-fg-muted",
+  open: "--sc-caution",
+  resolved: "--sc-positive",
+  wont_fix: "--sc-muted-foreground",
 };
 
 interface VideoKonvaIssueLayerProps {
@@ -28,7 +30,7 @@ interface VideoKonvaIssueLayerProps {
  * v0.16.2 · 视频 issue 图钉层(Konva Layer "issue",render-only)。
  *
  * 旧 VideoIssueLayer(SVG)的 Konva 对应物:只渲染 anchor_position.frame === 当前帧 的图钉,
- * 坐标像素空间(归一化 × size),status 配色复用 tokens(open/resolved/wont_fix)。
+ * 坐标像素空间(归一化 × size),status 配色复用 shadcn tokens(open/resolved/wont_fix)。
  * 提供 onPinClick 时图钉可点击(Layer/Circle listening);pointerdown 用 cancelBubble 阻止
  * 冒泡到 Stage(避免误触发画框/取消选中),click 触发回调(对齐旧 SVG 栈 onPinClick)。
  */
@@ -40,9 +42,17 @@ export function VideoKonvaIssueLayer({
   highlightId,
   onPinClick,
 }: VideoKonvaIssueLayerProps) {
+  const { resolved: theme } = useTheme();
+  const ringColor = useMemo(() => cssVarToHex("--sc-card", theme), [theme]);
+  const statusFillByStatus = useMemo(() => {
+    const fills: Record<string, string> = {};
+    for (const [status, varName] of Object.entries(STATUS_VAR)) {
+      fills[status] = cssVarToHex(varName, theme);
+    }
+    return fills;
+  }, [theme]);
   const onFrame = pixelIssues.filter((issue) => issue.anchor_position?.frame === frameIndex);
   if (onFrame.length === 0) return null;
-  const ringColor = cssVarToHex("--color-bg-elev");
   const radius = ISSUE_PIN_RADIUS * size.w;
   const clickable = !!onPinClick;
   const setCursor = (e: Konva.KonvaEventObject<MouseEvent>, cursor: string) => {
@@ -54,7 +64,7 @@ export function VideoKonvaIssueLayer({
       {onFrame.map((issue) => {
         const x = issue.anchor_position!.x * size.w;
         const y = issue.anchor_position!.y * size.h;
-        const fill = cssVarToHex(STATUS_VAR[issue.status] ?? STATUS_VAR.open);
+        const fill = statusFillByStatus[issue.status] ?? statusFillByStatus.open;
         const isHighlight = highlightId === issue.id;
         return (
           <Circle

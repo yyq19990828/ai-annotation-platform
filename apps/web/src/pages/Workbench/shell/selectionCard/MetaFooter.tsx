@@ -1,5 +1,4 @@
 import { Icon } from "@/components/ui/Icon";
-import styles from "./MetaFooter.module.css";
 
 export interface MetaFooterRow {
   label: string;
@@ -38,6 +37,16 @@ function formatTime(iso: string): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+const FOOTER_CLASS = "group border-t border-border pt-1.5";
+const SUMMARY_CLASS =
+  "flex cursor-pointer select-none list-none items-center gap-1 text-xs text-muted-foreground [&::-webkit-details-marker]:hidden hover:text-foreground";
+const CHEV_CLASS =
+  "inline-flex text-muted-foreground transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none";
+const ROWS_CLASS = "mt-1.5 grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-[3px]";
+const ROW_CLASS = "contents";
+const ROW_LABEL_CLASS = "text-xs text-muted-foreground";
+const ROW_VALUE_CLASS = "truncate text-xs text-muted-foreground";
+
 /**
  * v0.16.14 · 选中信息卡 · 可折叠次要信息(默认收起)。
  * ID 短码 / 来源 / 创建·更新时间 / z-order / 分组,各端可经 extra 追加行。
@@ -61,19 +70,19 @@ export function MetaFooter({
   if (extra?.length) rows.push(...extra);
 
   return (
-    <details className={styles.footer}>
-      <summary className={styles.summary}>
-        <span className={styles.chev} aria-hidden="true">
+    <details className={FOOTER_CLASS}>
+      <summary className={SUMMARY_CLASS}>
+        <span className={CHEV_CLASS} aria-hidden="true">
           <Icon name="chevRight" size={12} />
         </span>
         更多信息
       </summary>
-      <dl className={styles.rows}>
+      <dl className={ROWS_CLASS}>
         {rows.map((r) => (
-          <div key={r.label} className={styles.row}>
-            <dt className={styles.rowLabel}>{r.label}</dt>
+          <div key={r.label} className={ROW_CLASS}>
+            <dt className={ROW_LABEL_CLASS}>{r.label}</dt>
             <dd
-              className={r.mono ? `${styles.rowValue} mono` : styles.rowValue}
+              className={r.mono ? `${ROW_VALUE_CLASS} mono` : ROW_VALUE_CLASS}
               title={r.label === "ID" ? id : undefined}
             >
               {r.value}

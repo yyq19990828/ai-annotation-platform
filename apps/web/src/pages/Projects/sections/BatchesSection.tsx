@@ -38,7 +38,11 @@ import { BatchAuditLogDrawer } from "./BatchAuditLogDrawer";
 import { UnbatchedTasksModal } from "./UnbatchedTasksModal";
 import type { ProjectResponse } from "@/api/projects";
 import type { BatchResponse, BulkBatchActionResponse } from "@/api/batches";
-import styles from "./BatchesSection.module.css";
+import { cn } from "@/lib/utils";
+
+// success-colored Button 覆盖类(Button 无 success variant) — 对齐 Button danger/ai variant 风格
+const SUCCESS_BTN =
+  "border-emerald-500/30 bg-status-positive-soft text-status-positive hover:bg-emerald-500/15";
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "草稿",
@@ -75,11 +79,6 @@ const BULK_LABEL: Record<BulkActionKind, string> = {
   approve: "通过",
   reject: "驳回",
 };
-
-// v0.10.11 · 拼接非空 class 名 (类似 clsx 但不引依赖, 单文件足够).
-function cn(...xs: Array<string | false | null | undefined>): string {
-  return xs.filter(Boolean).join(" ");
-}
 
 export function BatchesSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
@@ -284,10 +283,10 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         ? "含进行中成果/已预标，未删除（可单独强制删除）"
         : item.reason;
     return (
-      <li key={item.batch_id} className={styles.bulkResultRow}>
+      <li key={item.batch_id} className="text-xs text-muted-foreground">
         <span className="mono">{b?.display_id ?? item.batch_id.slice(0, 8)}</span>
-        {b ? <span className={styles.bulkResultRowName}>· {b.name}</span> : null}
-        <span className={styles.bulkResultRowReason}>— {reason}</span>
+        {b ? <span className="ml-1.5">· {b.name}</span> : null}
+        <span className="ml-1.5 text-muted-foreground">— {reason}</span>
       </li>
     );
   };
@@ -383,11 +382,15 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   return (
     <>
       <Card>
-        <div className={styles.toolbar}>
-          <h3 className={styles.toolbarTitle}>批次管理</h3>
-          <div className={styles.toolbarActions}>
+        <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
+          <h3 className="m-0 text-sm font-semibold">批次管理</h3>
+          <div className="flex items-center gap-2">
             {/* v0.7.6 · view toggle */}
-            <div role="tablist" aria-label="批次视图" className={styles.viewToggle}>
+            <div
+              role="tablist"
+              aria-label="批次视图"
+              className="inline-flex overflow-hidden rounded-md border border-border bg-muted"
+            >
               {(["list", "kanban"] as const).map((v) => (
                 <button
                   key={v}
@@ -395,9 +398,9 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                   aria-selected={view === v}
                   onClick={() => setView(v)}
                   className={cn(
-                    styles.viewToggleButton,
-                    view === v && styles.viewToggleButtonActive,
-                    v === "list" && styles.viewToggleButtonList,
+                    "inline-flex cursor-pointer items-center gap-1 appearance-none border-0 bg-transparent px-2.5 py-1 text-xs text-muted-foreground",
+                    view === v && "bg-card text-foreground",
+                    v === "list" && "border-r border-border",
                   )}
                   title={v === "list" ? "列表视图" : "看板视图（按状态分列）"}
                 >
@@ -423,15 +426,15 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           </div>
         </div>
 
-        {isLoading && <div className={styles.placeholder}>加载中...</div>}
+        {isLoading && <div className="p-8 text-center text-sm text-muted-foreground">加载中...</div>}
 
         {!isLoading && batches.length === 0 && (
-          <div className={styles.placeholder}>暂无批次</div>
+          <div className="p-8 text-center text-sm text-muted-foreground">暂无批次</div>
         )}
 
         {/* v0.7.3 · 未归类任务横带（关联数据集后但还没切分到 batch 的 task） */}
         {unclassifiedCount > 0 && (
-          <div className={cn(styles.banner, styles.bannerWarn)}>
+          <div className="flex items-center gap-3 border-b border-border bg-status-caution-soft px-4 py-2 text-sm">
             <Icon name="info" size={14} />
             <span>
               本项目有 <strong>{unclassifiedCount}</strong> 个 <strong>未归类任务</strong>（数据集已关联但尚未划分到批次）。
@@ -443,7 +446,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                 <Button
                   onClick={handleCreateByScene}
                   disabled={splitBatches.isPending}
-                  className={styles.bannerListGoSplit}
+                  className="ml-auto"
                   title="按 scene 把未归类任务分包，每个 scene 一个批次"
                 >
                   <Icon name="layers" size={12} /> 按 scene 建包
@@ -453,14 +456,14 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                   <Button
                     onClick={handleCreateAll}
                     disabled={splitBatches.isPending}
-                    className={styles.bannerListGoSplit}
+                    className="ml-auto"
                     title="把全部未归类任务一次性注入 1 个批次，立即进入工作流"
                   >
                     <Icon name="flame" size={12} /> 一键全量建包
                   </Button>
                   <Button
                     onClick={() => setShowCreate(true)}
-                    className={styles.bannerListGoSplit}
+                    className="ml-auto"
                     title="按随机切分把未归类任务拆成 N 个批次"
                   >
                     <Icon name="layers" size={12} /> 去分包
@@ -470,7 +473,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
             )}
             <Button
               onClick={() => setBrowseUnbatched(true)}
-              className={styles.bannerListGoSplit}
+              className="ml-auto"
               title="浏览未归类任务列表"
             >
               <Icon name="list" size={12} /> 浏览未归类
@@ -480,22 +483,22 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
         {/* v0.7.3 · 多选浮层操作条（仅 owner 可见） */}
         {isOwner && selectedCount > 0 && (
-          <div className={cn(styles.banner, styles.bannerAccent)}>
+          <div className="flex items-center gap-3 border-b border-border bg-brand/10 px-4 py-2 text-sm">
             <span>已选 <strong>{selectedCount}</strong> 个批次</span>
-            <div className={styles.bannerActionsRight}>
+            <div className="ml-auto flex gap-1.5">
               <Button onClick={() => setConfirmBulk("activate")} title="对选中的 draft 批次批量激活">
                 <Icon name="play" size={12} /> 激活
               </Button>
               <Button
                 onClick={() => setConfirmBulk("approve")}
-                className={styles.btnSuccess}
+                className={SUCCESS_BTN}
                 title="批量通过审核（仅审核中的批次生效）"
               >
                 <Icon name="check" size={12} /> 通过
               </Button>
               <Button
+                variant="danger"
                 onClick={() => setConfirmBulk("reject")}
-                className={styles.btnDanger}
                 title="批量驳回（仅审核中的批次生效，需填写驳回原因）"
               >
                 <Icon name="x" size={12} /> 驳回
@@ -507,8 +510,8 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                 <Icon name="inbox" size={12} /> 归档
               </Button>
               <Button
+                variant="danger"
                 onClick={() => setConfirmBulk("delete")}
-                className={styles.btnDanger}
                 title="批量删除"
               >
                 <Icon name="trash" size={12} /> 删除
@@ -522,18 +525,18 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
         {/* v0.7.3 · 上次批量操作结果（partial-success） */}
         {bulkResult && (
-          <div className={cn(styles.banner, styles.bannerSunken)}>
-            <div className={styles.bannerInline}>
+          <div className="block border-b border-border bg-muted px-4 py-2 text-xs">
+            <div className="flex items-center gap-2">
               <span>
                 上次批量{BULK_LABEL[bulkResult.kind]}：
-                <strong className={styles.bulkOk}> 成功 {bulkResult.data.succeeded.length}</strong>
+                <strong className="text-status-positive"> 成功 {bulkResult.data.succeeded.length}</strong>
                 {bulkResult.data.skipped.length > 0 && (
-                  <strong className={styles.bulkWarn}>
+                  <strong className="ml-2 text-status-caution">
                     跳过 {bulkResult.data.skipped.length}
                   </strong>
                 )}
                 {bulkResult.data.failed.length > 0 && (
-                  <strong className={styles.bulkFail}>
+                  <strong className="ml-2 text-status-danger">
                     失败 {bulkResult.data.failed.length}
                   </strong>
                 )}
@@ -542,7 +545,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                 <button
                   type="button"
                   onClick={() => setResultExpanded((v) => !v)}
-                  className={styles.linkButton}
+                  className="cursor-pointer appearance-none border-0 bg-transparent text-xs text-brand"
                 >
                   {resultExpanded ? "收起" : "查看详情"}
                 </button>
@@ -550,14 +553,14 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
               <button
                 type="button"
                 onClick={() => setBulkResult(null)}
-                className={styles.iconButton}
+                className="ml-auto cursor-pointer appearance-none border-0 bg-transparent text-muted-foreground"
                 title="关闭"
               >
                 <Icon name="x" size={12} />
               </button>
             </div>
             {resultExpanded && (
-              <ul className={styles.bulkResultDetail}>
+              <ul className="mt-2 ml-4 list-disc p-0">
                 {bulkResult.data.skipped.map(renderBulkResultRow)}
                 {bulkResult.data.failed.map(renderBulkResultRow)}
               </ul>
@@ -574,23 +577,23 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         )}
 
         {!isLoading && batches.length > 0 && view === "list" && (
-          <div className={styles.tableScroller}>
-            <table className={styles.table}>
+          <div className="w-full overflow-x-auto">
+            <table className="w-full min-w-[1080px] border-collapse text-sm [&_td:last-child]:min-w-[360px] [&_th:last-child]:min-w-[360px]">
               <thead>
-                <tr className={styles.tableHeadRow}>
+                <tr className="border-b border-border">
                   {isOwner && (
-                    <th className={styles.thCheckbox}>
+                    <th className="w-7 py-2 pr-0 pl-3">
                       <input
                         type="checkbox"
                         checked={allSelected}
                         onChange={toggleAll}
                         title={allSelected ? "取消全选" : "全选"}
-                        className={styles.checkbox}
+                        className="cursor-pointer"
                       />
                     </th>
                   )}
                   {["批次", "状态", "分派", "优先级", "截止日期", "进度", "操作"].map((h) => (
-                    <th key={h} className={styles.thLabel}>
+                    <th key={h} className="px-3 py-2 text-left text-xs font-medium whitespace-nowrap text-muted-foreground">
                       {h}
                     </th>
                   ))}
@@ -598,27 +601,27 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
               </thead>
               <tbody>
                 {batches.map((b) => (
-                  <tr key={b.id} className={styles.tableBodyRow}>
+                  <tr key={b.id} className="border-b border-border">
                     {isOwner && (
-                      <td className={styles.tdCheckbox}>
+                      <td className="w-7 py-2.5 pr-0 pl-3">
                         {b.display_id !== "B-DEFAULT" ? (
                           <input
                             type="checkbox"
                             checked={selectedIds.has(b.id)}
                             onChange={() => toggleOne(b.id)}
-                            className={styles.checkbox}
+                            className="cursor-pointer"
                           />
                         ) : null}
                       </td>
                     )}
-                    <td className={styles.td}>
-                      <div className={styles.cellTitle} title={b.name}>{b.name}</div>
-                      <div className={cn("mono", styles.cellSubId)}>
+                    <td className="px-3 py-2.5 align-middle">
+                      <div className="max-w-[220px] overflow-hidden font-medium text-ellipsis whitespace-nowrap" title={b.name}>{b.name}</div>
+                      <div className="mono text-xs whitespace-nowrap text-muted-foreground">
                         {b.display_id}
                       </div>
                     </td>
-                    <td className={styles.td}>
-                      <div className={styles.cellStatusRow}>
+                    <td className="px-3 py-2.5 align-middle">
+                      <div className="flex flex-nowrap items-center gap-1">
                         <Badge variant={STATUS_VARIANTS[b.status] ?? "default"} dot>
                           {STATUS_LABELS[b.status] ?? b.status}
                         </Badge>
@@ -631,7 +634,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                         )}
                       </div>
                     </td>
-                    <td className={styles.td}>
+                    <td className="px-3 py-2.5 align-middle">
                       {(() => {
                         const unassigned = !b.annotator_id && !b.reviewer_id;
                         const assignees = [b.annotator, b.reviewer].filter(Boolean) as NonNullable<typeof b.annotator>[];
@@ -641,8 +644,8 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                             onClick={() => setAssignTarget(b)}
                             title={unassigned ? "未分派 · 点击设置" : "点击修改分派"}
                             className={cn(
-                              styles.assignChip,
-                              unassigned && styles.assignChipUnassigned,
+                              "inline-flex cursor-pointer items-center gap-1 rounded-full border border-dashed border-border bg-transparent px-1.5 py-0.5 text-xs whitespace-nowrap text-muted-foreground",
+                              unassigned && "border-amber-500 text-status-caution",
                             )}
                           >
                             {unassigned ? (
@@ -656,20 +659,20 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                         );
                       })()}
                     </td>
-                    <td className={styles.td}>{b.priority}</td>
-                    <td className={styles.tdMuted}>
+                    <td className="px-3 py-2.5 align-middle">{b.priority}</td>
+                    <td className="px-3 py-2.5 align-middle whitespace-nowrap text-muted-foreground">
                       {b.deadline ?? "—"}
                     </td>
-                    <td className={styles.tdProgress}>
+                    <td className="min-w-[140px] px-3 py-2.5 align-middle">
                       <ProgressBar value={b.progress_pct} />
-                      <div className={styles.progressSublabel}>
+                      <div className="mt-0.5 text-xs whitespace-nowrap text-muted-foreground">
                         <span className="mono">
                           {b.completed_tasks} / {b.total_tasks}
                         </span>
                       </div>
                     </td>
-                    <td className={styles.td}>
-                      <div className={styles.actionRow}>
+                    <td className="px-3 py-2.5 align-middle">
+                      <div className="flex flex-nowrap gap-1 whitespace-nowrap">
                       {b.status === "draft" && (
                         <Button
                           onClick={() => handleTransition(b, "active")}
@@ -698,14 +701,14 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                           <Button
                             onClick={() => handleTransition(b, "approved")}
                             title="批次通过审核（reviewer / owner）"
-                            className={styles.btnSuccess}
+                            className={SUCCESS_BTN}
                           >
                             <Icon name="check" size={12} /> 通过
                           </Button>
                           <Button
+                            variant="danger"
                             onClick={() => setRejectTarget(b)}
                             title="批次驳回（reviewer / owner）"
-                            className={styles.btnDanger}
                           >
                             <Icon name="x" size={12} /> 驳回
                           </Button>
@@ -769,7 +772,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                         <Button
                           onClick={() => setLockTarget(b)}
                           title="锁定批次（冻结自动推进，阻止新派单）"
-                          className={styles.btnLockWarn}
+                          className="text-status-caution"
                         >
                           <Icon name="lock" size={12} />
                         </Button>
@@ -778,7 +781,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                         <Button
                           onClick={() => handleAdminUnlock(b)}
                           title="解锁批次"
-                          className={styles.btnUnlockSuccess}
+                          className="text-status-positive"
                         >
                           <Icon name="unlock" size={12} />
                         </Button>
@@ -786,10 +789,10 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                       </div>
                       {b.status === "rejected" && b.review_feedback && (
                         <div
-                          className={styles.rejectFeedback}
+                          className="mt-1.5 max-w-[300px] border-l-2 border-rose-500 bg-status-danger-soft px-2 py-1.5 text-xs text-muted-foreground"
                           title={b.review_feedback}
                         >
-                          <strong className={styles.rejectFeedbackLabel}>驳回原因：</strong>
+                          <strong className="text-status-danger">驳回原因：</strong>
                           {b.review_feedback.length > 80
                             ? b.review_feedback.slice(0, 80) + "…"
                             : b.review_feedback}
@@ -806,8 +809,8 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
       {/* 创建批次 Modal */}
       <Modal open={showCreate} title="创建批次" onClose={() => setShowCreate(false)}>
-          <div className={styles.modalForm}>
-            <label className={styles.formLabel}>
+          <div className="flex flex-col gap-4 px-1">
+            <label className="flex flex-col gap-1 text-sm">
               批次数量
               <input
                 type="number"
@@ -815,39 +818,39 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                 max={100}
                 value={nBatches}
                 onChange={(e) => setNBatches(Number(e.target.value))}
-                className={cn(styles.formInput, styles.formInputNarrow)}
+                className="w-20 appearance-none rounded-sm border border-border bg-background px-2.5 py-1.5 text-sm text-foreground"
               />
             </label>
             {nBatches === 1 && (
-              <p className={styles.formHint}>把全部未归类任务注入一个新批次。</p>
+              <p className="m-0 text-xs text-muted-foreground">把全部未归类任务注入一个新批次。</p>
             )}
-            <label className={styles.formLabel}>
+            <label className="flex flex-col gap-1 text-sm">
               {nBatches === 1 ? "批次名称" : "名称前缀"}
               <input
                 value={namePrefix}
                 onChange={(e) => setNamePrefix(e.target.value)}
-                className={styles.formInput}
+                className="appearance-none rounded-sm border border-border bg-background px-2.5 py-1.5 text-sm text-foreground"
                 placeholder={nBatches === 1 ? "例如：第 1 批" : "Batch"}
               />
             </label>
-            <div className={styles.modeToggleRow}>
+            <div className="flex gap-2">
               <Button
+                variant={!shuffle ? "primary" : "default"}
                 onClick={() => setShuffle(false)}
-                className={cn(!shuffle && styles.modeToggleActive)}
                 title="按任务导入顺序切分（不打乱）"
               >
                 顺序切分
               </Button>
               <Button
+                variant={shuffle ? "primary" : "default"}
                 onClick={() => setShuffle(true)}
-                className={cn(shuffle && styles.modeToggleActive)}
                 title="随机打乱后切分"
               >
                 打乱切分
               </Button>
             </div>
 
-            <label className={styles.formLabel}>
+            <label className="flex flex-col gap-1 text-sm">
               优先级: {priority}
               <input
                 type="range"
@@ -855,16 +858,16 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                 max={100}
                 value={priority}
                 onChange={(e) => setPriority(Number(e.target.value))}
-                className={styles.formRange}
+                className="w-full"
               />
             </label>
 
-            <div className={styles.formActions}>
+            <div className="flex justify-end gap-2">
               <Button onClick={() => setShowCreate(false)}>取消</Button>
               <Button
+                variant="primary"
                 onClick={handleCreate}
                 disabled={!namePrefix.trim()}
-                className={styles.btnAccent}
               >
                 {nBatches === 1 ? "注入 1 个批次" : `切分为 ${nBatches} 个批次`}
               </Button>
@@ -874,16 +877,16 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
       {/* 删除确认 */}
       <Modal open={!!confirmDelete} title="确认删除" onClose={() => setConfirmDelete(null)}>
-          <div className={styles.confirmBody}>
+          <div className="text-sm">
             <p>
               确定删除批次 <strong>{confirmDelete?.name}</strong>？
               其中的 {confirmDelete?.total_tasks ?? 0} 个任务将变为未归类（可重新分包）。
             </p>
-            <div className={styles.confirmActions}>
+            <div className="mt-4 flex justify-end gap-2">
               <Button onClick={() => setConfirmDelete(null)}>取消</Button>
               <Button
+                variant="danger"
                 onClick={() => confirmDelete && handleDelete(confirmDelete)}
-                className={styles.btnDanger}
               >
                 删除
               </Button>
@@ -897,7 +900,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         title="该批次有进行中的成果"
         onClose={() => setForceDelete(null)}
       >
-          <div className={styles.confirmBody}>
+          <div className="text-sm">
             <p>
               批次 <strong>{forceDelete?.batch.name}</strong> 将影响{" "}
               <strong>{forceDelete?.affected ?? 0}</strong> 个任务
@@ -909,14 +912,14 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
               ) : null}
               。强制删除会把这些任务<strong>重置为待标注</strong>并<strong>清除 AI 预标</strong>（人工标注保留）。
             </p>
-            <p className={styles.confirmHint}>
+            <p className="text-xs text-muted-foreground">
               若只想暂停而不丢进度，建议改用「归档」。
             </p>
-            <div className={styles.confirmActions}>
+            <div className="mt-4 flex justify-end gap-2">
               <Button onClick={() => setForceDelete(null)}>取消</Button>
               <Button
+                variant="danger"
                 onClick={() => forceDelete && handleDelete(forceDelete.batch, true)}
-                className={styles.btnDanger}
               >
                 强制删除
               </Button>
@@ -956,12 +959,12 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         title={`批量${confirmBulk ? BULK_LABEL[confirmBulk] : ""}`}
         onClose={() => setConfirmBulk(null)}
       >
-        <div className={styles.confirmBody}>
+        <div className="text-sm">
           {confirmBulk === "archive" && (
             <p>将把已选 <strong>{selectedCount}</strong> 个批次归档。归档后批次进入终态，可由 owner 通过「撤销归档」恢复。</p>
           )}
           {confirmBulk === "delete" && (
-            <p className={styles.dangerText}>
+            <p className="text-status-danger">
               将永久删除已选 <strong>{selectedCount}</strong> 个批次。批次内的任务会回归默认批次（无默认批次时变为未归类）。此操作不可撤销。
             </p>
           )}
@@ -971,9 +974,10 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           {confirmBulk === "approve" && (
             <p>将把已选 <strong>{selectedCount}</strong> 个批次中的「审核中」批次全部通过。非审核中状态的批次会自动跳过。</p>
           )}
-          <div className={styles.confirmActions}>
+          <div className="mt-4 flex justify-end gap-2">
             <Button onClick={() => setConfirmBulk(null)}>取消</Button>
             <Button
+              variant={confirmBulk === "delete" ? "danger" : "primary"}
               onClick={() => {
                 if (confirmBulk === "archive") runBulkArchive();
                 else if (confirmBulk === "delete") runBulkDelete();
@@ -981,11 +985,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                 else if (confirmBulk === "approve") runBulkApprove();
               }}
               disabled={bulkArchive.isPending || bulkDelete.isPending || bulkActivate.isPending || bulkApprove.isPending}
-              className={cn(
-                styles.bulkConfirmPrimary,
-                confirmBulk === "delete" && styles.bulkConfirmDanger,
-                confirmBulk === "approve" && styles.bulkConfirmSuccess,
-              )}
+              className={cn(confirmBulk === "approve" && SUCCESS_BTN)}
             >
               确认{confirmBulk ? BULK_LABEL[confirmBulk] : ""}
             </Button>

@@ -263,7 +263,7 @@ describe("densityBinGradient", () => {
     // 没有任何 track 段, 只有 accent 兜底覆盖 0%~100%
     const stops = gradient.match(/color-mix\([^)]+\)/g) ?? [];
     expect(stops).toHaveLength(2);
-    expect(stops[0]).toContain("var(--color-accent)");
+    expect(stops[0]).toContain("var(--sc-brand)");
     expect(gradient).toContain("0.00%");
     expect(gradient).toContain("100%");
   });
@@ -273,7 +273,7 @@ describe("densityBinGradient", () => {
     const gradient = densityBinGradient(bin(4, [{ trackId: "t1", count: 2 }]));
 
     expect(gradient).toContain(densityHelpers.color("t1"));
-    expect(gradient).toContain("var(--color-accent)");
+    expect(gradient).toContain("var(--sc-brand)");
     // t1 占 0%~50%, accent 占 50%~100%
     expect(gradient).toContain("0.00%");
     expect(gradient).toContain("50.00%");
@@ -286,7 +286,7 @@ describe("densityBinGradient", () => {
 
     expect(gradient).toContain("oklch(0.7 0.2 200)");
     // 完全覆盖时不应出现 accent 兜底
-    expect(gradient).not.toContain("var(--color-accent)");
+    expect(gradient).not.toContain("var(--sc-brand)");
   });
 
   it("stacks tracks in iteration order (stable for same-count tracks)", () => {

@@ -13,7 +13,12 @@ import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import { useGuideAssets } from "@/hooks/useGuideAssets";
 import { GuideMarkdownView } from "@/components/markdown/GuideMarkdownView";
 import type { GuideAssetEntry, ProjectResponse } from "@/api/projects";
-import styles from "./AnnotationGuideSection.module.css";
+
+const DESCRIPTION_CLASS = "m-0 text-xs leading-relaxed text-muted-foreground";
+const TAB_BTN_BASE =
+  "-mb-px cursor-pointer appearance-none border-0 border-b-2 border-b-transparent bg-transparent px-3 py-1.5 text-sm text-muted-foreground";
+const PREVIEW_PLACEHOLDER_CLASS =
+  "rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground";
 
 const MarkdownEditor = lazy(() =>
   import("@/components/markdown/MarkdownEditor").then((m) => ({ default: m.MarkdownEditor })),
@@ -92,19 +97,19 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
 
   return (
     <Card>
-      <div className={styles.body}>
-        <h3 className={styles.title}>标注指引（CVAT-style Markdown）</h3>
-        <p className={styles.description}>
+      <div className="flex flex-col gap-3 px-4 py-4">
+        <h3 className="m-0 text-md font-semibold">标注指引（CVAT-style Markdown）</h3>
+        <p className={DESCRIPTION_CLASS}>
           支持 Markdown 与 GFM 表格；拖拽 / 粘贴图片自动上传为项目资源。
           工作台首次进入会自动展开「📖 指引」浮层让标注员阅读一次。
         </p>
 
-        <div className={styles.tabs} role="tablist">
+        <div className="flex gap-1 border-b border-border" role="tablist">
           <button
             role="tab"
             type="button"
             aria-selected={mode === "edit"}
-            className={`${styles.tabBtn} ${mode === "edit" ? styles.tabBtnActive : ""}`}
+            className={`${TAB_BTN_BASE} ${mode === "edit" ? "border-b-brand text-foreground" : ""}`}
             onClick={() => setMode("edit")}
             data-testid="guide-tab-edit"
           >
@@ -114,7 +119,7 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
             role="tab"
             type="button"
             aria-selected={mode === "preview"}
-            className={`${styles.tabBtn} ${mode === "preview" ? styles.tabBtnActive : ""}`}
+            className={`${TAB_BTN_BASE} ${mode === "preview" ? "border-b-brand text-foreground" : ""}`}
             onClick={() => setMode("preview")}
             data-testid="guide-tab-preview"
           >
@@ -123,7 +128,7 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
         </div>
 
         {mode === "edit" ? (
-          <Suspense fallback={<div className={styles.previewPlaceholder}>编辑器加载中…</div>}>
+          <Suspense fallback={<div className={PREVIEW_PLACEHOLDER_CLASS}>编辑器加载中…</div>}>
             <MarkdownEditor
               value={draft}
               onChange={setDraft}
@@ -135,20 +140,24 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
         ) : draft.trim() ? (
           <GuideMarkdownView content={draft} resolveAssetUrl={resolver} />
         ) : (
-          <div className={styles.previewPlaceholder}>暂无内容</div>
+          <div className={PREVIEW_PLACEHOLDER_CLASS}>暂无内容</div>
         )}
 
         {assets.length > 0 && (
           <>
-            <p className={styles.description}>已上传图片资源</p>
-            <ul className={styles.assetList} data-testid="guide-asset-list">
+            <p className={DESCRIPTION_CLASS}>已上传图片资源</p>
+            <ul className="m-0 max-h-[200px] list-none overflow-auto rounded-md border border-border p-0" data-testid="guide-asset-list">
               {assets.map((a) => (
-                <li className={styles.assetItem} key={a.key}>
+                <li className="flex items-center gap-2 border-b border-border px-2.5 py-1.5 text-xs last:border-b-0" key={a.key}>
                   <span title={a.key}>{a.original_name}</span>
-                  <span className={styles.assetSize}>
+                  <span className="text-muted-foreground">
                     {(a.size / 1024).toFixed(1)} KB
                   </span>
-                  <button type="button" onClick={() => void handleDeleteAsset(a.key)}>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteAsset(a.key)}
+                    className="ml-auto cursor-pointer appearance-none rounded-sm border border-border bg-transparent px-2 py-0.5 text-xs text-status-danger"
+                  >
                     删除
                   </button>
                 </li>
@@ -157,8 +166,8 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
           </>
         )}
 
-        <div className={styles.actions}>
-          {update.isPending && <span className={styles.savingHint}>保存中…</span>}
+        <div className="flex justify-end gap-2">
+          {update.isPending && <span className="text-xs text-muted-foreground">保存中…</span>}
         </div>
       </div>
     </Card>
