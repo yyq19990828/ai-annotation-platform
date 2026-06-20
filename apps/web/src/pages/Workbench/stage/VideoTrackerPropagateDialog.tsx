@@ -250,7 +250,7 @@ export function VideoTrackerPropagateDialog({
                 className={cn(
                   "py-[5px] border rounded-md bg-background text-foreground cursor-pointer text-xs",
                   direction === d
-                    ? "border-violet-600 dark:border-violet-400 bg-violet-500/10"
+                    ? "border-violet-600 dark:border-violet-400 bg-status-info-soft"
                     : "border-border",
                 )}
               >
@@ -326,7 +326,7 @@ export function VideoTrackerPropagateDialog({
         )}
 
         {error && (
-          <div className="text-rose-600 dark:text-rose-400 text-xs">{error}</div>
+          <div className="text-status-danger text-xs">{error}</div>
         )}
 
         <div className="flex gap-2 justify-end">

@@ -41,6 +41,16 @@
   --color-brand-foreground: var(--sc-brand-foreground);
   --color-positive: var(--sc-positive);
   --color-caution: var(--sc-caution);
+  --color-status-danger: var(--sc-status-danger);
+  --color-status-danger-soft: var(--sc-status-danger-soft);
+  --color-status-caution: var(--sc-status-caution);
+  --color-status-caution-soft: var(--sc-status-caution-soft);
+  --color-status-positive: var(--sc-status-positive);
+  --color-status-positive-soft: var(--sc-status-positive-soft);
+  --color-status-info: var(--sc-status-info);
+  --color-status-info-soft: var(--sc-status-info-soft);
+  --color-status-info-alt: var(--sc-status-info-alt);
+  --color-status-info-alt-soft: var(--sc-status-info-alt-soft);
 
   /* recharts / 图表取色 */
   --color-chart-1: var(--sc-chart-1);
@@ -88,6 +98,16 @@
   --sc-brand-foreground: #ffffff;
   --sc-positive: #15803d;
   --sc-caution: #b45309;
+  --sc-status-danger: var(--color-rose-600);
+  --sc-status-danger-soft: color-mix(in oklab, var(--color-rose-500) 10%, transparent);
+  --sc-status-caution: var(--color-amber-600);
+  --sc-status-caution-soft: color-mix(in oklab, var(--color-amber-500) 10%, transparent);
+  --sc-status-positive: var(--color-emerald-600);
+  --sc-status-positive-soft: color-mix(in oklab, var(--color-emerald-500) 10%, transparent);
+  --sc-status-info: var(--color-violet-600);
+  --sc-status-info-soft: color-mix(in oklab, var(--color-violet-500) 10%, transparent);
+  --sc-status-info-alt: var(--color-sky-600);
+  --sc-status-info-alt-soft: color-mix(in oklab, var(--color-sky-500) 10%, transparent);
 
   --sc-chart-1: #2563eb;
   --sc-chart-2: #15803d;
@@ -143,6 +163,16 @@
   --sc-brand-foreground: #ffffff;
   --sc-positive: #3fb950;
   --sc-caution: #d29922;
+  --sc-status-danger: var(--color-rose-400);
+  --sc-status-danger-soft: color-mix(in oklab, var(--color-rose-500) 10%, transparent);
+  --sc-status-caution: var(--color-amber-400);
+  --sc-status-caution-soft: color-mix(in oklab, var(--color-amber-500) 10%, transparent);
+  --sc-status-positive: var(--color-emerald-400);
+  --sc-status-positive-soft: color-mix(in oklab, var(--color-emerald-500) 10%, transparent);
+  --sc-status-info: var(--color-violet-400);
+  --sc-status-info-soft: color-mix(in oklab, var(--color-violet-500) 10%, transparent);
+  --sc-status-info-alt: var(--color-sky-400);
+  --sc-status-info-alt-soft: color-mix(in oklab, var(--color-sky-500) 10%, transparent);
 
   --sc-chart-1: #60a5fa;
   --sc-chart-2: #3fb950;
@@ -205,6 +235,46 @@
 }
 
 @layer utilities {
+  .text-status-danger {
+    color: var(--sc-status-danger);
+  }
+
+  .text-status-caution {
+    color: var(--sc-status-caution);
+  }
+
+  .text-status-positive {
+    color: var(--sc-status-positive);
+  }
+
+  .text-status-info {
+    color: var(--sc-status-info);
+  }
+
+  .text-status-info-alt {
+    color: var(--sc-status-info-alt);
+  }
+
+  .bg-status-danger-soft {
+    background-color: var(--sc-status-danger-soft);
+  }
+
+  .bg-status-caution-soft {
+    background-color: var(--sc-status-caution-soft);
+  }
+
+  .bg-status-positive-soft {
+    background-color: var(--sc-status-positive-soft);
+  }
+
+  .bg-status-info-soft {
+    background-color: var(--sc-status-info-soft);
+  }
+
+  .bg-status-info-alt-soft {
+    background-color: var(--sc-status-info-alt-soft);
+  }
+
   .surface-shadow-sm {
     box-shadow: var(--shadow-sm);
   }

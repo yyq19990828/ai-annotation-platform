@@ -72,7 +72,7 @@ export function VideoTrackComposeDialog({
                 className={cn(
                   "flex items-start gap-2 py-2 px-2.5 border rounded-lg bg-background cursor-pointer",
                   gapMode === option.value
-                    ? "border-emerald-600 dark:border-emerald-400 bg-emerald-500/10"
+                    ? "border-emerald-600 dark:border-emerald-400 bg-status-positive-soft"
                     : "border-border",
                 )}
               >

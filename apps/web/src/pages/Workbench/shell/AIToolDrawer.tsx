@@ -237,7 +237,7 @@ export function AIToolDrawer({
           {warnings.map((w) => (
             <div
               key={w.key}
-              className="flex items-start gap-1 rounded-sm bg-amber-500/10 px-1.5 py-1 text-[10.5px] leading-[1.4] text-amber-600 dark:text-amber-400"
+              className="flex items-start gap-1 rounded-sm bg-status-caution-soft px-1.5 py-1 text-[10.5px] leading-[1.4] text-status-caution"
             >
               <Icon name="warning" size={11} />
               <span>{w.message}</span>

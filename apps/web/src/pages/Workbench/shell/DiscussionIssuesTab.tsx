@@ -39,16 +39,16 @@ const STATUS_CARD_DIM: Record<FeedbackStatus, string> = {
 
 // status chip:柔底 + 同色描边/文字。
 const STATUS_CHIP: Record<FeedbackStatus, string> = {
-  open: "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  resolved: "border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  open: "border-amber-500/60 bg-status-caution-soft text-status-caution",
+  resolved: "border-emerald-500/60 bg-status-positive-soft text-status-positive",
   wont_fix: "border-border bg-muted text-muted-foreground",
 };
 
 // severity chip:仅文字着色(沿用原设计,描边走默认 border)。
 const SEVERITY_CHIP: Record<FeedbackSeverity, string> = {
-  info: "text-sky-600 dark:text-sky-400",
-  warn: "text-amber-600 dark:text-amber-400",
-  blocker: "text-rose-600 dark:text-rose-400",
+  info: "text-status-info-alt",
+  warn: "text-status-caution",
+  blocker: "text-status-danger",
 };
 
 export function DiscussionIssuesTab({ projectId, taskId }: Props) {
@@ -89,7 +89,7 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
       </div>
 
       {isLoading && <div className="px-1 py-2 text-xs text-muted-foreground">加载中…</div>}
-      {isError && <div className="px-1 py-2 text-xs text-rose-600 dark:text-rose-400">加载失败</div>}
+      {isError && <div className="px-1 py-2 text-xs text-status-danger">加载失败</div>}
       {!isLoading && !isError && filtered.length === 0 && (
         <div className="px-1 py-2 text-xs text-muted-foreground">当前任务暂无 issue。在画布工具栏「落点」可记录第一条。</div>
       )}

@@ -261,7 +261,7 @@ export function VideoChapterSidebar({
                   </Button>
                   <Button
                     size="sm"
-                    className="!justify-center !w-[26px] !h-[26px] !p-0 !rounded-lg !text-rose-600 dark:!text-rose-400"
+                    className="!justify-center !w-[26px] !h-[26px] !p-0 !rounded-lg !text-status-danger"
                     title="删除章节"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -365,7 +365,7 @@ export function VideoChapterSidebar({
             </div>
           </label>
           {error && (
-            <div className="text-rose-600 dark:text-rose-400 text-[11px]">{error}</div>
+            <div className="text-status-danger text-[11px]">{error}</div>
           )}
           <div className="flex gap-1.5 justify-end">
             <Button size="sm" className="!rounded-md" variant="ghost" onClick={cancelForm}>

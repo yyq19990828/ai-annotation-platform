@@ -69,7 +69,7 @@ export function ForgotPasswordPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
-              {error && <div className="mt-2 text-[13px] text-rose-600 dark:text-rose-400">{error}</div>}
+              {error && <div className="mt-2 text-[13px] text-status-danger">{error}</div>}
               <div className="mt-3.5">
                 <Captcha onChange={setCaptchaToken} />
               </div>

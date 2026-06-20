@@ -52,7 +52,7 @@ export function VerifyEmailPage() {
 
           {phase === "error" && (
             <>
-              <div className="mb-4 text-[13px] text-rose-600 dark:text-rose-400">
+              <div className="mb-4 text-[13px] text-status-danger">
                 {error || "验证链接无效或已过期"}
               </div>
               <Link to="/login" className="text-[13px] text-brand hover:underline">

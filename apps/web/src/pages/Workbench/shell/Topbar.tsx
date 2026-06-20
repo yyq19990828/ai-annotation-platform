@@ -279,7 +279,7 @@ export function Topbar({
         {reviewInfoSlot}
         {showThr && confThreshold !== undefined && (
           <span
-            className="mono absolute top-[calc(100%+6px)] right-0 z-20 inline-flex items-center gap-1.5 px-2.5 py-1 text-[11.5px] font-medium text-violet-600 dark:text-violet-400 pointer-events-none bg-violet-500/10 border border-violet-500/30 rounded-full shadow-md"
+            className="mono absolute top-[calc(100%+6px)] right-0 z-20 inline-flex items-center gap-1.5 px-2.5 py-1 text-[11.5px] font-medium text-status-info pointer-events-none bg-status-info-soft border border-violet-500/30 rounded-full shadow-md"
           >
             <span className="w-1.5 h-1.5 bg-violet-600 dark:bg-violet-400 rounded-full" />
             阈值 {(confThreshold * 100).toFixed(0)}%

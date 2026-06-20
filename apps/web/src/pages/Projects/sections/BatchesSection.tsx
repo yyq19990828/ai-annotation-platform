@@ -42,7 +42,7 @@ import { cn } from "@/lib/utils";
 
 // success-colored Button 覆盖类(Button 无 success variant) — 对齐 Button danger/ai variant 风格
 const SUCCESS_BTN =
-  "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15 dark:text-emerald-400";
+  "border-emerald-500/30 bg-status-positive-soft text-status-positive hover:bg-emerald-500/15";
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "草稿",
@@ -434,7 +434,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
         {/* v0.7.3 · 未归类任务横带（关联数据集后但还没切分到 batch 的 task） */}
         {unclassifiedCount > 0 && (
-          <div className="flex items-center gap-3 border-b border-border bg-amber-500/10 px-4 py-2 text-[13px]">
+          <div className="flex items-center gap-3 border-b border-border bg-status-caution-soft px-4 py-2 text-[13px]">
             <Icon name="info" size={14} />
             <span>
               本项目有 <strong>{unclassifiedCount}</strong> 个 <strong>未归类任务</strong>（数据集已关联但尚未划分到批次）。
@@ -529,14 +529,14 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
             <div className="flex items-center gap-2">
               <span>
                 上次批量{BULK_LABEL[bulkResult.kind]}：
-                <strong className="text-emerald-600 dark:text-emerald-400"> 成功 {bulkResult.data.succeeded.length}</strong>
+                <strong className="text-status-positive"> 成功 {bulkResult.data.succeeded.length}</strong>
                 {bulkResult.data.skipped.length > 0 && (
-                  <strong className="ml-2 text-amber-600 dark:text-amber-400">
+                  <strong className="ml-2 text-status-caution">
                     跳过 {bulkResult.data.skipped.length}
                   </strong>
                 )}
                 {bulkResult.data.failed.length > 0 && (
-                  <strong className="ml-2 text-rose-600 dark:text-rose-400">
+                  <strong className="ml-2 text-status-danger">
                     失败 {bulkResult.data.failed.length}
                   </strong>
                 )}
@@ -645,7 +645,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                             title={unassigned ? "未分派 · 点击设置" : "点击修改分派"}
                             className={cn(
                               "inline-flex cursor-pointer items-center gap-1 rounded-full border border-dashed border-border bg-transparent px-1.5 py-0.5 text-[11px] whitespace-nowrap text-muted-foreground",
-                              unassigned && "border-amber-500 text-amber-600 dark:text-amber-400",
+                              unassigned && "border-amber-500 text-status-caution",
                             )}
                           >
                             {unassigned ? (
@@ -772,7 +772,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                         <Button
                           onClick={() => setLockTarget(b)}
                           title="锁定批次（冻结自动推进，阻止新派单）"
-                          className="text-amber-600 dark:text-amber-400"
+                          className="text-status-caution"
                         >
                           <Icon name="lock" size={12} />
                         </Button>
@@ -781,7 +781,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                         <Button
                           onClick={() => handleAdminUnlock(b)}
                           title="解锁批次"
-                          className="text-emerald-600 dark:text-emerald-400"
+                          className="text-status-positive"
                         >
                           <Icon name="unlock" size={12} />
                         </Button>
@@ -789,10 +789,10 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                       </div>
                       {b.status === "rejected" && b.review_feedback && (
                         <div
-                          className="mt-1.5 max-w-[300px] border-l-2 border-rose-500 bg-rose-500/10 px-2 py-1.5 text-[11px] text-muted-foreground"
+                          className="mt-1.5 max-w-[300px] border-l-2 border-rose-500 bg-status-danger-soft px-2 py-1.5 text-[11px] text-muted-foreground"
                           title={b.review_feedback}
                         >
-                          <strong className="text-rose-600 dark:text-rose-400">驳回原因：</strong>
+                          <strong className="text-status-danger">驳回原因：</strong>
                           {b.review_feedback.length > 80
                             ? b.review_feedback.slice(0, 80) + "…"
                             : b.review_feedback}
@@ -964,7 +964,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
             <p>将把已选 <strong>{selectedCount}</strong> 个批次归档。归档后批次进入终态，可由 owner 通过「撤销归档」恢复。</p>
           )}
           {confirmBulk === "delete" && (
-            <p className="text-rose-600 dark:text-rose-400">
+            <p className="text-status-danger">
               将永久删除已选 <strong>{selectedCount}</strong> 个批次。批次内的任务会回归默认批次（无默认批次时变为未归类）。此操作不可撤销。
             </p>
           )}

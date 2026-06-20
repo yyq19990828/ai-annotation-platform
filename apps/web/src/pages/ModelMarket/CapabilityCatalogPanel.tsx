@@ -439,7 +439,7 @@ export function CapabilityCatalogPanel() {
         {overviewLoading ? (
           <div className={NOTE_CLASS}>加载 backend 列表…</div>
         ) : overviewError ? (
-          <div className="flex items-center gap-2 px-4 py-3 text-xs text-rose-600 dark:text-rose-400">
+          <div className="flex items-center gap-2 px-4 py-3 text-xs text-status-danger">
             加载失败：{(overviewErr as Error)?.message ?? "未知错误"}
             <button className={RETRY_BTN_CLASS} onClick={() => refetchOverview()}>
               重试
@@ -527,7 +527,7 @@ export function CapabilityCatalogPanel() {
 
             {/* 探测失败的 backend 降级提示 (能力目录可能缺条目). */}
             {results.some((r) => r.isError) && (
-              <div className="mx-4 mt-3 flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground">
+              <div className="mx-4 mt-3 flex items-center gap-2 rounded-md border border-amber-500/30 bg-status-caution-soft px-3 py-2 text-xs text-foreground">
                 <Icon name="warning" size={13} />
                 <span>
                   {results.filter((r) => r.isError).length} 个 backend 能力探测失败，其条目暂缺；点「刷新」可重探。

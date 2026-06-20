@@ -36,15 +36,15 @@ const SOURCE_META: Record<
   { label: string; icon: "tag" | "sparkle" | "check" | "upload"; badgeClass: string }
 > = {
   manual: { label: "手动", icon: "tag", badgeClass: "bg-muted text-muted-foreground" },
-  ai: { label: "AI 预测", icon: "sparkle", badgeClass: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
-  accepted: { label: "AI 采纳", icon: "check", badgeClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  import: { label: "导入", icon: "upload", badgeClass: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+  ai: { label: "AI 预测", icon: "sparkle", badgeClass: "bg-status-info-soft text-status-info" },
+  accepted: { label: "AI 采纳", icon: "check", badgeClass: "bg-status-positive-soft text-status-positive" },
+  import: { label: "导入", icon: "upload", badgeClass: "bg-status-caution-soft text-status-caution" },
 };
 
 const TONE_CLASS: Record<ConfidenceTone, string> = {
-  high: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  mid: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  low: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  high: "bg-status-positive-soft text-status-positive",
+  mid: "bg-status-caution-soft text-status-caution",
+  low: "bg-status-danger-soft text-status-danger",
 };
 
 export interface IdentityHeaderProps {

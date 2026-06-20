@@ -79,10 +79,10 @@ export function AnnotatorDashboard() {
 
       {/* M1 · 退回待重做提示 */}
       {(stats.rejected_tasks_count ?? 0) > 0 && (
-        <div className="mb-4 flex items-center gap-3 rounded-md border border-rose-500/30 bg-rose-500/10 px-4 py-3">
-          <Icon name="warning" size={16} className="shrink-0 text-rose-600 dark:text-rose-400" />
+        <div className="mb-4 flex items-center gap-3 rounded-md border border-rose-500/30 bg-status-danger-soft px-4 py-3">
+          <Icon name="warning" size={16} className="shrink-0 text-status-danger" />
           <div className="flex-1">
-            <span className="text-[13px] font-semibold text-rose-600 dark:text-rose-400">
+            <span className="text-[13px] font-semibold text-status-danger">
               {stats.rejected_tasks_count} 个任务被退回，需重做
             </span>
             <span className="ml-2 text-xs text-muted-foreground">

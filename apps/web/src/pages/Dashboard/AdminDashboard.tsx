@@ -165,11 +165,11 @@ export function AdminDashboard() {
 
       {/* v0.9.5 · AI 预标注队列卡片（仅在有 pre_annotated 批次时显示） */}
       {(stats.pre_annotated_batches ?? 0) > 0 && (
-        <div className="mb-3 cursor-pointer [&>*]:border [&>*]:border-border [&>*]:bg-violet-500/10">
+        <div className="mb-3 cursor-pointer [&>*]:border [&>*]:border-border [&>*]:bg-status-info-soft">
           <Card onClick={() => navigate("/ai-pre")}>
             <div className="flex items-center justify-between p-4">
               <div className="flex items-center gap-3">
-                <Icon name="wandSparkles" size={18} className="text-violet-600 dark:text-violet-400" />
+                <Icon name="wandSparkles" size={18} className="text-status-info" />
                 <div>
                   <div className="text-sm font-semibold">
                     AI 预标注队列 · {stats.pre_annotated_batches} 批待接管
@@ -179,7 +179,7 @@ export function AdminDashboard() {
                   </div>
                 </div>
               </div>
-              <span className="inline-flex items-center text-xs text-violet-600 dark:text-violet-400">
+              <span className="inline-flex items-center text-xs text-status-info">
                 进入 <Icon name="chevRight" size={11} />
               </span>
             </div>
@@ -199,7 +199,7 @@ export function AdminDashboard() {
         <Card onClick={() => navigate("/ai-pre/jobs?status=failed")}>
           <div className="flex items-center justify-between gap-3 px-4 py-3">
             <div className="flex items-center gap-2.5">
-              <Icon name="warning" size={16} className="text-amber-600 dark:text-amber-400" />
+              <Icon name="warning" size={16} className="text-status-caution" />
               <div>
                 <div className="text-[13px] font-semibold">失败预测管理</div>
                 <div className="text-[11px] text-muted-foreground">

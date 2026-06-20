@@ -136,7 +136,7 @@ export function ModelCard({ item }: { item: FlatModel }) {
                         <span className="text-muted-foreground"> · {metaBits.join(" · ")}</span>
                       )}
                       {v.recommended && (
-                        <span className="text-amber-600 dark:text-amber-400"> ★</span>
+                        <span className="text-status-caution"> ★</span>
                       )}
                     </span>
                   );

@@ -209,7 +209,7 @@ function JobRow({ job }: { job: AsyncJob }) {
       {job.status === "failed" && job.error_message && (
         <tr>
           <td colSpan={6}>
-            <div className="break-words text-[11px] text-rose-600 dark:text-rose-400">{job.error_message}</div>
+            <div className="break-words text-[11px] text-status-danger">{job.error_message}</div>
           </td>
         </tr>
       )}

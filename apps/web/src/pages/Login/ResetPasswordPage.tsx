@@ -77,8 +77,8 @@ export function ResetPasswordPage() {
                 onChange={(e) => setConfirm(e.target.value)}
                 required
               />
-              {mismatch && <div className="mt-2 text-[13px] text-rose-600 dark:text-rose-400">两次密码不一致</div>}
-              {error && <div className="mt-2 text-[13px] text-rose-600 dark:text-rose-400">{error}</div>}
+              {mismatch && <div className="mt-2 text-[13px] text-status-danger">两次密码不一致</div>}
+              {error && <div className="mt-2 text-[13px] text-status-danger">{error}</div>}
               <Button
                 type="submit"
                 variant="primary"

@@ -34,7 +34,7 @@ export function StatCard({ icon, label, value, trend, sparkValues, sparkColor, h
           <span
             className={cn(
               "ml-1.5 text-[11px] font-medium tabular-nums",
-              trend >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400",
+              trend >= 0 ? "text-status-positive" : "text-status-danger",
             )}
           >
             {trend >= 0 ? "↑" : "↓"} {Math.abs(trend)}%

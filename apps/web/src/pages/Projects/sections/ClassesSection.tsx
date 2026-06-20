@@ -351,7 +351,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
         <div className="flex items-center justify-end gap-3">
           {dirty && (
             <span
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-status-caution"
               data-testid="unsaved-indicator"
             >
               <span className="size-1.5 rounded-full bg-amber-500" />

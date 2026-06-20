@@ -13,8 +13,8 @@ const NAV_ITEM_ACTIVE_CLASS =
   "border-border bg-card font-medium text-foreground surface-shadow-sm";
 const BADGE_BASE =
   "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 text-[10px] font-medium";
-const BADGE_AI = "bg-violet-500/10 text-violet-600 dark:text-violet-400";
-const BADGE_DANGER = "bg-rose-500/10 text-rose-600 dark:text-rose-400";
+const BADGE_AI = "bg-status-info-soft text-status-info";
+const BADGE_DANGER = "bg-status-danger-soft text-status-danger";
 
 interface SidebarProps {
   reviewCount: number;

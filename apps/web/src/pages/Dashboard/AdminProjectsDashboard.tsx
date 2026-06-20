@@ -117,7 +117,7 @@ function AdminProjectRow({
               <> · {p.batch_summary?.assigned} 已分派</>
             )}
             {(p.batch_summary?.in_review ?? 0) > 0 && (
-              <> · <span className="text-amber-600 dark:text-amber-400">{p.batch_summary?.in_review} 审核中</span></>
+              <> · <span className="text-status-caution">{p.batch_summary?.in_review} 审核中</span></>
             )}
           </div>
         )}

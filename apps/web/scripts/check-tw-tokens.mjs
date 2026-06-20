@@ -7,6 +7,7 @@
  *   1. 裸色: className 里出现 #hex / rgb() / rgba() / hsl() / oklch() / oklab() / color()
  *   2. 任意色值: bg-[#...] / text-[rgb(...)] / border-[hsl(...)] 等 Tailwind arbitrary color value
  *   3. (建议级) 暗色配对: 语义色 text/bg/border-<hue>-600 应伴随 dark:...-<hue>-400 (设计规范 §2.2)
+ *   4. (warning) 状态色应走 text-status-* / bg-status-*-soft,不再手写状态 hue + dark: 对.
  *
  * 中性色/表面/边框走 shadcn 的 --sc-* token (bg-background / text-foreground / border-border ...),
  * 语义彩色走固定调色板 (sky/emerald/violet/amber/rose) + 柔底 /10 + 暗色提亮. 不在 className 里写裸色.
@@ -106,6 +107,24 @@ const BARE_COLOR_RE =
 // Tailwind 任意色值: <util>-[<color>]  (color = #hex / rgb()/hsl()/oklch() / var(--...))
 const ARBITRARY_COLOR_RE =
   /\b(?:bg|text|border|ring|ring-offset|fill|stroke|from|via|to|outline|shadow|decoration|caret|accent|divide)-\[\s*(#[0-9a-fA-F]{3,8}|(?:rgba?|hsla?|oklch|oklab|color)\s*\(|var\(--)/;
+const STATUS_CLASS_BY_HUE = {
+  rose: "danger",
+  amber: "caution",
+  emerald: "positive",
+  violet: "info",
+  sky: "info-alt",
+};
+const STATUS_TEXT_RE = new RegExp(
+  `\\b(?:[a-z-]+:)*!?text-(${Object.keys(STATUS_CLASS_BY_HUE).join("|")})-600(?:/[0-9]+)?!?\\b`,
+  "g",
+);
+const STATUS_SOFT_BG_RE = new RegExp(
+  `\\b(?:[a-z-]+:)*!?bg-(${Object.keys(STATUS_CLASS_BY_HUE).join("|")})-500/10!?\\b`,
+  "g",
+);
+const SHADCN_CSS = "src/styles/shadcn.css";
+const ALLOWED_SHADCN_TAILWIND_PALETTE_RE =
+  /^--color-(rose|amber|emerald|violet|sky)-(400|500|600)$/;
 
 function checkChunk(value) {
   const issues = [];
@@ -140,6 +159,27 @@ function checkChunk(value) {
   return issues;
 }
 
+function checkStatusSemanticHints(value) {
+  const hints = [];
+
+  for (const match of value.matchAll(STATUS_TEXT_RE)) {
+    const hue = match[1];
+    hints.push({
+      kind: "status-color",
+      detail: `${match[0]} 可替换为 text-status-${STATUS_CLASS_BY_HUE[hue]}`,
+    });
+  }
+  for (const match of value.matchAll(STATUS_SOFT_BG_RE)) {
+    const hue = match[1];
+    hints.push({
+      kind: "status-color",
+      detail: `${match[0]} 可替换为 bg-status-${STATUS_CLASS_BY_HUE[hue]}-soft`,
+    });
+  }
+
+  return hints;
+}
+
 function checkCssColorTokenRefs() {
   const files = walkSourceFiles(SCAN_DIR, (name) => name.endsWith(".css"));
   const usages = [];
@@ -148,9 +188,16 @@ function checkCssColorTokenRefs() {
     const raw = readFileSync(file, "utf8");
     const text = stripComments(raw);
     for (const match of text.matchAll(/var\(\s*(--color-[a-z0-9-]+)/g)) {
+      const filePath = relative(ROOT, file);
+      if (
+        filePath === SHADCN_CSS &&
+        ALLOWED_SHADCN_TAILWIND_PALETTE_RE.test(match[1])
+      ) {
+        continue;
+      }
       usages.push({
         token: match[1],
-        file: relative(ROOT, file),
+        file: filePath,
         line: lineOf(text, match.index),
       });
     }
@@ -167,6 +214,7 @@ function checkCssColorTokenRefs() {
 function main() {
   const files = walkSourceFiles(SCAN_DIR, (name) => name.endsWith(".tsx"));
   const findings = [];
+  const warnings = [];
 
   for (const file of files) {
     const raw = readFileSync(file, "utf8");
@@ -180,11 +228,19 @@ function main() {
           ...issue,
         });
       }
+      for (const warning of checkStatusSemanticHints(value)) {
+        warnings.push({
+          file: relative(ROOT, file),
+          line: lineOf(text, index),
+          ...warning,
+        });
+      }
     }
   }
   findings.push(...checkCssColorTokenRefs());
 
   if (findings.length === 0) {
+    printWarnings(warnings);
     console.log(
       "✓ check-tw-tokens: className 无裸色 / 任意色值, 语义色暗色配对完整, CSS 无旧 --color-* 引用.",
     );
@@ -201,6 +257,7 @@ function main() {
     "legacy-css-token": "CSS 引用了旧 --color-* token",
   };
 
+  printWarnings(warnings);
   console.warn(
     `✗ check-tw-tokens (blocking): ${findings.length} 处违反颜色规范\n`,
   );
@@ -223,6 +280,22 @@ function main() {
       "语义彩色走固定调色板 + 柔底 /10 + dark:提亮. 见设计规范 §2.2/§2.4. ",
   );
   process.exit(1);
+}
+
+function printWarnings(warnings) {
+  if (warnings.length === 0) return;
+
+  console.warn(
+    `⚠ check-tw-tokens (warning): ${warnings.length} 处状态色仍可语义化\n`,
+  );
+  for (const f of warnings) {
+    console.warn(`  ${f.file}:${f.line}  ${f.detail}`);
+    if (CI) {
+      const msg = `[check-tw-tokens] 状态色应走 text-status-* / bg-status-*-soft: ${f.detail}`;
+      console.log(`::warning file=apps/web/${f.file},line=${f.line}::${msg}`);
+    }
+  }
+  console.warn("");
 }
 
 main();

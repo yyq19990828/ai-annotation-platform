@@ -80,7 +80,7 @@ export function StatusBar({
       <div className="flex items-center gap-3">
         {lockRemainingMs !== undefined && lockRemainingMs > 0 && !lockError && (
           <>
-            <span className={cn(inlineItem, lockRemainingMs < 60_000 && "text-amber-600 dark:text-amber-400")}>
+            <span className={cn(inlineItem, lockRemainingMs < 60_000 && "text-status-caution")}>
               <Icon name="lock" size={11} /> 锁剩余 <span className="mono font-medium">{formatLockTime(lockRemainingMs)}</span>
             </span>
             <Sep />
@@ -88,7 +88,7 @@ export function StatusBar({
         )}
         {lockError && (
           <>
-            <span className={cn(inlineItem, "text-rose-600 dark:text-rose-400")}>
+            <span className={cn(inlineItem, "text-status-danger")}>
               <Icon name="warning" size={11} /> {lockStatusText(lockError, lockConflict)}
             </span>
             <Sep />
@@ -100,8 +100,8 @@ export function StatusBar({
         </span>
         <Sep />
         <span className={inlineItem}>
-          <Icon name="circleDot" size={11} className="text-violet-600 dark:text-violet-400" />
-          <span className={cn(countValue, aiBoxesCount > 0 && "!text-violet-600 dark:!text-violet-400")}>{aiBoxesCount}</span>
+          <Icon name="circleDot" size={11} className="text-status-info" />
+          <span className={cn(countValue, aiBoxesCount > 0 && "!text-status-info")}>{aiBoxesCount}</span>
           <span>AI 待审</span>
         </span>
         <Sep />
@@ -164,7 +164,7 @@ export function StatusBar({
         {preannotationProgress && (
           <>
             <Sep />
-            <span className="font-medium text-violet-600 dark:text-violet-400">
+            <span className="font-medium text-status-info">
               预标注 <span className="mono">{preannotationProgress.current}/{preannotationProgress.total}</span>
             </span>
           </>

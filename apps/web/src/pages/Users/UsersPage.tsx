@@ -282,7 +282,7 @@ export function UsersPage() {
                                   onClick={() => setDeleting(u)}
                                   title="删除账号"
                                 >
-                                  <Icon name="trash" size={11} className="text-rose-600 dark:text-rose-400" />
+                                  <Icon name="trash" size={11} className="text-status-danger" />
                                 </Button>
                               )}
                             </>
@@ -510,7 +510,7 @@ export function UsersPage() {
 
             {transferStage && (
               <>
-                <div className="flex flex-col gap-1 rounded-md border border-amber-500 bg-amber-500/10 px-3 py-2.5 text-[12.5px]">
+                <div className="flex flex-col gap-1 rounded-md border border-amber-500 bg-status-caution-soft px-3 py-2.5 text-[12.5px]">
                   <div>
                     <Icon name="warning" size={12} /> 未完成任务 <strong>{transferStage.pending}</strong> 个
                     {transferStage.locked > 0 && <> · 锁定任务 <strong>{transferStage.locked}</strong> 个</>}
@@ -548,7 +548,7 @@ export function UsersPage() {
             )}
 
             {deleteUser.error && (
-              <div className="flex items-center gap-2 rounded-md border border-rose-500 bg-rose-500/10 px-3 py-2 text-[12.5px] text-rose-600 dark:text-rose-400">
+              <div className="flex items-center gap-2 rounded-md border border-rose-500 bg-status-danger-soft px-3 py-2 text-[12.5px] text-status-danger">
                 <Icon name="warning" size={12} /> {(deleteUser.error as Error)?.message ?? "删除失败"}
               </div>
             )}

@@ -87,14 +87,14 @@ export function LoginPage() {
           <p className="mb-6 text-[13px] text-muted-foreground">使用工作账号登录标注平台</p>
 
           {login.isError && (
-            <div className="mb-4 flex items-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-[13px] text-rose-600 dark:text-rose-400">
+            <div className="mb-4 flex items-center gap-2 rounded-md border border-rose-500/30 bg-status-danger-soft px-3 py-2.5 text-[13px] text-status-danger">
               <Icon name="warning" size={14} />
               {(login.error as Error)?.message ?? "登录失败，请检查账号密码"}
             </div>
           )}
 
           {unverified && (
-            <div className="mb-4 flex items-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-[13px] text-rose-600 dark:text-rose-400">
+            <div className="mb-4 flex items-center gap-2 rounded-md border border-rose-500/30 bg-status-danger-soft px-3 py-2.5 text-[13px] text-status-danger">
               {resendDone ? (
                 "验证邮件已重新发送，请查收邮箱"
               ) : (

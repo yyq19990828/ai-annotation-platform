@@ -186,7 +186,7 @@ export function BoxListItem({
             <span
               className={cn(
                 "inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] font-medium whitespace-nowrap",
-                predictionSource === "external_import" ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" : "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+                predictionSource === "external_import" ? "bg-status-caution-soft text-status-caution" : "bg-status-info-soft text-status-info",
               )}
             >
               <Icon name={predictionSource === "external_import" ? "upload" : "sparkle"} size={8} />
@@ -213,7 +213,7 @@ export function BoxListItem({
           )}
           {orphan && !isAi && (
             <span
-              className="inline-flex items-center gap-[3px] px-1.5 py-px border border-amber-500 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] whitespace-nowrap"
+              className="inline-flex items-center gap-[3px] px-1.5 py-px border border-amber-500 rounded-md bg-status-caution-soft text-status-caution text-[10px] whitespace-nowrap"
               title="当前项目类别配置中已不存在该类别"
             >
               <Icon name="warning" size={9} />

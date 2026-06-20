@@ -69,7 +69,7 @@ export function MaskToolbar({
           {radius}px
         </span>
       </div>
-      <span className={cn("text-[11px]", dirty ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")}>
+      <span className={cn("text-[11px]", dirty ? "text-status-caution" : "text-muted-foreground")}>
         {dirty ? "未保存" : active ? "就绪" : "未激活"}
       </span>
       <span className="text-[10px] text-muted-foreground">Shift+滚轮调半径</span>

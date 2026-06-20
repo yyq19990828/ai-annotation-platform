@@ -19,11 +19,11 @@ interface BadgeProps {
 
 const variantClassNames: Record<NonNullable<BadgeProps["variant"]>, string> = {
   default: "bg-muted text-muted-foreground",
-  success: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  warning: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  danger: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
-  accent: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
-  ai: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  success: "bg-status-positive-soft text-status-positive",
+  warning: "bg-status-caution-soft text-status-caution",
+  danger: "bg-status-danger-soft text-status-danger",
+  accent: "bg-status-info-alt-soft text-status-info-alt",
+  ai: "bg-status-info-soft text-status-info",
   outline: "border border-border text-foreground",
 };
 

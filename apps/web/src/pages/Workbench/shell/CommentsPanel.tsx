@@ -303,7 +303,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                 <span className="text-[11.5px] font-medium text-foreground">
                   {c.author_name ?? "—"}
                   {c.is_resolved && (
-                    <span className="ml-1.5 text-[10px] text-emerald-600 dark:text-emerald-400">已解决</span>
+                    <span className="ml-1.5 text-[10px] text-status-positive">已解决</span>
                   )}
                 </span>
                 <div className="flex gap-1">

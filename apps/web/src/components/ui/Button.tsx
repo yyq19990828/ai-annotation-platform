@@ -28,12 +28,12 @@ const VARIANT_MAP: Record<
   ai: {
     base: "outline",
     extra:
-      "border-violet-500/30 bg-violet-500/10 text-violet-600 hover:bg-violet-500/15 dark:text-violet-400",
+      "border-violet-500/30 bg-status-info-soft text-status-info hover:bg-violet-500/15",
   },
   danger: {
     base: "outline",
     extra:
-      "border-rose-500/30 text-rose-600 hover:bg-rose-500/10 dark:text-rose-400",
+      "border-rose-500/30 text-status-danger hover:bg-status-danger-soft",
   },
 };
 

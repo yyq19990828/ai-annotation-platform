@@ -94,7 +94,7 @@ function Entry({ log }: { log: BatchAuditLogEntry }) {
           <span className="text-muted-foreground">
             {before} → <strong className="text-foreground">{after}</strong>
             {reverse && (
-              <span className="ml-1.5 rounded-full bg-amber-500/10 px-1.5 py-px text-[10px] text-amber-600 dark:text-amber-400">
+              <span className="ml-1.5 rounded-full bg-status-caution-soft px-1.5 py-px text-[10px] text-status-caution">
                 逆向
               </span>
             )}

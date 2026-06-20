@@ -43,9 +43,9 @@ function Stat({
 }) {
   const accentClass =
     accent === "success"
-      ? "text-emerald-600 dark:text-emerald-400"
+      ? "text-status-positive"
       : accent === "danger"
-        ? "text-rose-600 dark:text-rose-400"
+        ? "text-status-danger"
         : "text-muted-foreground";
   return (
     <div className="flex flex-col gap-0.5">

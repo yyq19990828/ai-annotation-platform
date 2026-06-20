@@ -29,9 +29,9 @@ type NotificationTone = "default" | "danger" | "success" | "ai" | "accent";
 
 const TONE_CLASS: Record<NotificationTone, string> = {
   default: "bg-muted text-muted-foreground",
-  danger: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
-  success: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  ai: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  danger: "bg-status-danger-soft text-status-danger",
+  success: "bg-status-positive-soft text-status-positive",
+  ai: "bg-status-info-soft text-status-info",
   accent: "bg-brand/10 text-brand",
 };
 
@@ -273,7 +273,7 @@ function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
       </div>
       <button
         type="button"
-        className="-mt-0.5 inline-flex h-[22px] w-[22px] flex-shrink-0 cursor-pointer appearance-none items-center justify-center rounded-sm border border-transparent bg-transparent text-muted-foreground opacity-0 hover:bg-rose-500/10 hover:text-rose-500 focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+        className="-mt-0.5 inline-flex h-[22px] w-[22px] flex-shrink-0 cursor-pointer appearance-none items-center justify-center rounded-sm border border-transparent bg-transparent text-muted-foreground opacity-0 hover:bg-status-danger-soft hover:text-rose-500 focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
         title="删除通知"
         aria-label="删除通知"
         disabled={deletePending}

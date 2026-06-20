@@ -156,7 +156,7 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
                   <button
                     type="button"
                     onClick={() => void handleDeleteAsset(a.key)}
-                    className="ml-auto cursor-pointer appearance-none rounded-sm border border-border bg-transparent px-2 py-0.5 text-[11px] text-rose-600 dark:text-rose-400"
+                    className="ml-auto cursor-pointer appearance-none rounded-sm border border-border bg-transparent px-2 py-0.5 text-[11px] text-status-danger"
                   >
                     删除
                   </button>

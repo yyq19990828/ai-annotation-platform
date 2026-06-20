@@ -15,9 +15,9 @@ const STATUS_LABEL: Record<SystemHealthStatus, string> = {
 
 // 状态色 → 设计 §2.3:ok=emerald / degraded=amber / down=rose(柔底 + 边 + 暗色提亮)
 const STATUS_CLASS: Record<SystemHealthStatus, string> = {
-  ok: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  degraded: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  down: "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  ok: "border-emerald-500/30 bg-status-positive-soft text-status-positive",
+  degraded: "border-amber-500/30 bg-status-caution-soft text-status-caution",
+  down: "border-rose-500/30 bg-status-danger-soft text-status-danger",
 };
 
 const PILL_BASE =
@@ -91,7 +91,7 @@ export function SystemHealthPage() {
                   {formatLatency(component.latency_ms)}
                 </div>
                 {component.detail && (
-                  <div className="mt-2 text-[11px] leading-[1.4] text-rose-600 dark:text-rose-400">
+                  <div className="mt-2 text-[11px] leading-[1.4] text-status-danger">
                     {component.detail}
                   </div>
                 )}

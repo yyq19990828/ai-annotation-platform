@@ -123,9 +123,9 @@ function StatusPill({ status }: { status: AsyncJobStatus }) {
     status === "running"
       ? "bg-brand/20 text-brand"
       : status === "completed"
-        ? "bg-emerald-500/[0.18] text-emerald-600 dark:text-emerald-400"
+        ? "bg-emerald-500/[0.18] text-status-positive"
         : status === "failed"
-          ? "bg-rose-500/[0.18] text-rose-600 dark:text-rose-400"
+          ? "bg-rose-500/[0.18] text-status-danger"
           : "bg-muted text-muted-foreground";
   return (
     <span

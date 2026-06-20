@@ -54,7 +54,7 @@ function ProgressOverview({ project }: { project: ProjectResponse }) {
             <span className={PROGRESS_CHIP_CLASS}>{inProgress} 进行中</span>
             <span className={PROGRESS_CHIP_CLASS}>{review} 待审</span>
             {project.ai_enabled && (
-              <span className="rounded-full border border-violet-500 bg-muted px-2 py-0.5 text-[11px] text-violet-600 dark:text-violet-400">
+              <span className="rounded-full border border-violet-500 bg-muted px-2 py-0.5 text-[11px] text-status-info">
                 {aiCompleted} AI 完成
               </span>
             )}

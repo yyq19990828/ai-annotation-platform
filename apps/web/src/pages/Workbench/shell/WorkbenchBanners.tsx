@@ -43,7 +43,7 @@ export function WorkbenchBanners({
     <>
       {lockError && (
         <div
-          className={`${BANNER_BASE} bg-rose-500/10 text-rose-600 dark:text-rose-400`}
+          className={`${BANNER_BASE} bg-status-danger-soft text-status-danger`}
         >
           <Icon name="warning" size={13} />
           {lockErrorText(lockError, lockConflict)}
@@ -52,7 +52,7 @@ export function WorkbenchBanners({
 
       {mode === "review" && claimInfo && !claimInfo.is_self && (
         <div
-          className={`${BANNER_BASE} border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300`}
+          className={`${BANNER_BASE} border-amber-500/40 bg-status-caution-soft text-amber-700 dark:text-amber-300`}
         >
           <Icon name="warning" size={13} />
           已被其他审核员认领（{new Date(claimInfo.reviewer_claimed_at).toLocaleString("zh-CN")}），仍可接力处理
@@ -60,7 +60,7 @@ export function WorkbenchBanners({
       )}
       {mode === "review" && task?.skip_reason && (
         <div
-          className={`${BANNER_BASE} border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300`}
+          className={`${BANNER_BASE} border-violet-500/40 bg-status-info-soft text-violet-700 dark:text-violet-300`}
         >
           <Icon name="warning" size={13} />
           标注员跳过此题 · 可通过（无目标即视为完成）或退回重派
@@ -88,7 +88,7 @@ export function WorkbenchBanners({
       )}
       {mode === "annotate" && task?.status === "completed" && (
         <div
-          className={`${BANNER_BASE} gap-2.5 bg-emerald-500/10 px-3.5 py-2 text-emerald-600 dark:text-emerald-400`}
+          className={`${BANNER_BASE} gap-2.5 bg-status-positive-soft px-3.5 py-2 text-status-positive`}
         >
           <Icon name="check" size={13} />
           <span className="flex-1">
@@ -108,7 +108,7 @@ export function WorkbenchBanners({
       )}
       {mode === "annotate" && task?.status === "rejected" && (
         <div
-          className={`${BANNER_BASE} gap-2 bg-rose-500/10 px-3.5 py-2 text-rose-600 dark:text-rose-400`}
+          className={`${BANNER_BASE} gap-2 bg-status-danger-soft px-3.5 py-2 text-status-danger`}
         >
           <Icon name="warning" size={13} className="flex-shrink-0" />
           <span className="flex-1"><b>审核员退回：</b>{task.reject_reason}</span>
@@ -124,7 +124,7 @@ export function WorkbenchBanners({
       )}
       {mode === "annotate" && task?.status === "in_progress" && task.reject_reason && (
         <div
-          className={`${BANNER_BASE} items-start gap-2 bg-amber-500/10 px-3.5 py-2 text-muted-foreground`}
+          className={`${BANNER_BASE} items-start gap-2 bg-status-caution-soft px-3.5 py-2 text-muted-foreground`}
         >
           <Icon name="rotate-ccw" size={13} className="mt-px flex-shrink-0" />
           <span>重做中 · <b>退回原因：</b>{task.reject_reason}</span>

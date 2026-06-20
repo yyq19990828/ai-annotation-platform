@@ -9,8 +9,8 @@ const TONE_TRACK_CLASS: Record<string, string> = {
 };
 
 const TONE_VALUE_CLASS: Record<string, string> = {
-  high: "text-emerald-600 dark:text-emerald-400",
-  mid: "text-amber-600 dark:text-amber-400",
+  high: "text-status-positive",
+  mid: "text-status-caution",
   low: "text-brand",
 };
 

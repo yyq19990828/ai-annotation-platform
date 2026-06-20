@@ -38,9 +38,9 @@ function cn(...classes: Array<string | false | null | undefined>): string {
 }
 
 function kindClassName(kind: OfflineOp["kind"]): string {
-  if (kind === "create") return "text-emerald-600 dark:text-emerald-400";
-  if (kind === "update") return "text-amber-600 dark:text-amber-400";
-  return "text-rose-600 dark:text-rose-400";
+  if (kind === "create") return "text-status-positive";
+  if (kind === "update") return "text-status-caution";
+  return "text-status-danger";
 }
 
 /** v0.6.4：retry_count 颜色阈值。0 灰，1-2 黄（已有失败但不严重），≥3 红。*/
@@ -213,7 +213,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
         <div className="flex-1 overflow-y-auto py-2 px-0">
           {filtered.length === 0 ? (
             <div className="px-4 py-8 text-muted-foreground text-xs text-center leading-[1.6]">
-              <Icon name="check" size={18} className="mb-2 text-emerald-600 dark:text-emerald-400" />
+              <Icon name="check" size={18} className="mb-2 text-status-positive" />
               <div>{items.length === 0 ? "暂无离线操作" : "当前筛选无匹配项"}</div>
               <div className="mt-1 text-[11px]">
                 {items.length === 0 ? "所有标注操作已同步至服务器。" : "调整上方筛选 chip 查看其他项。"}
@@ -297,7 +297,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
                             type="button"
                             disabled={isBusy}
                             onClick={() => handleDelete(op)}
-                            className="px-2.5 py-[3px] appearance-none border border-border rounded-[var(--radius-sm)] bg-transparent text-rose-600 dark:text-rose-400 cursor-pointer text-[11px] disabled:cursor-wait"
+                            className="px-2.5 py-[3px] appearance-none border border-border rounded-[var(--radius-sm)] bg-transparent text-status-danger cursor-pointer text-[11px] disabled:cursor-wait"
                           >
                             丢弃
                           </button>
@@ -316,7 +316,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
             type="button"
             disabled={items.length === 0}
             onClick={handleClearAll}
-            className="px-3 py-1.5 appearance-none border border-border rounded-[var(--radius-sm)] bg-transparent text-rose-600 dark:text-rose-400 cursor-pointer text-xs disabled:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            className="px-3 py-1.5 appearance-none border border-border rounded-[var(--radius-sm)] bg-transparent text-status-danger cursor-pointer text-xs disabled:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             全部丢弃
           </button>

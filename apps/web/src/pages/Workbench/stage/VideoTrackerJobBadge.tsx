@@ -19,13 +19,13 @@ const STATUS_STYLE: Record<
   },
   completed: {
     label: "完成",
-    className: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10",
-    cancelClassName: "!text-emerald-600 dark:!text-emerald-400",
+    className: "text-status-positive bg-status-positive-soft",
+    cancelClassName: "!text-status-positive",
   },
   failed: {
     label: "失败",
-    className: "text-rose-600 dark:text-rose-400 bg-rose-500/10",
-    cancelClassName: "!text-rose-600 dark:!text-rose-400",
+    className: "text-status-danger bg-status-danger-soft",
+    cancelClassName: "!text-status-danger",
   },
   cancelled: {
     label: "已取消",

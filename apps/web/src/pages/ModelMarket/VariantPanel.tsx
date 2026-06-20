@@ -140,7 +140,7 @@ export function VariantPanel({
   if (isLoading) return <div className={NOTE_CLASS}>加载变体能力…</div>;
   if (isError)
     return (
-      <div className="text-[11.5px] text-rose-600 dark:text-rose-400">
+      <div className="text-[11.5px] text-status-danger">
         无法获取 /setup（后端不可达或未实现）
       </div>
     );

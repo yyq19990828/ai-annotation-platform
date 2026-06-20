@@ -122,19 +122,19 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
     <div className="flex flex-1 flex-col overflow-hidden">
       <ReviewerMiniPanel />
       {claimInfo && !claimInfo.is_self && (
-        <div className="flex items-center gap-1.5 border-b border-amber-500/30 bg-amber-500/10 px-3.5 py-1.5 text-xs text-amber-600 dark:text-amber-400">
+        <div className="flex items-center gap-1.5 border-b border-amber-500/30 bg-status-caution-soft px-3.5 py-1.5 text-xs text-status-caution">
           <Icon name="warning" size={13} />
           已被其他审核员认领（{new Date(claimInfo.reviewer_claimed_at).toLocaleString("zh-CN")}），仍可接力处理
         </div>
       )}
       {task?.skip_reason && (
         <div
-          className="flex items-center gap-1.5 border-b border-violet-500/30 bg-violet-500/10 px-3.5 py-1.5 text-xs text-violet-600 dark:text-violet-400"
+          className="flex items-center gap-1.5 border-b border-violet-500/30 bg-status-info-soft px-3.5 py-1.5 text-xs text-status-info"
           data-testid="reviewer-skip-banner"
         >
           <Icon name="warning" size={13} />
           标注员跳过此题：<strong>{skipReasonLabel(task.skip_reason)}</strong>
-          <span className="ml-2 text-violet-600/80 dark:text-violet-400/80">
+          <span className="ml-2 text-status-info/80">
             可通过（无目标即视为完成）或退回重派
           </span>
         </div>
@@ -145,7 +145,7 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
           <span className="text-xs text-muted-foreground">{task?.file_name}</span>
           {task?.skip_reason && (
             <span
-              className="ml-1 rounded-sm border border-violet-500/30 bg-violet-500/10 px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.4px] text-violet-600 dark:text-violet-400"
+              className="ml-1 rounded-sm border border-violet-500/30 bg-status-info-soft px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.4px] text-status-info"
               data-testid="reviewer-skip-badge"
             >
               SKIP
@@ -216,7 +216,7 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
         <div className="flex gap-4">
           <span><span className="mono">{userBoxes.length}</span> 标注</span>
           <span>
-            <Icon name="sparkles" size={11} className="align-[-2px] text-violet-600 dark:text-violet-400" />
+            <Icon name="sparkles" size={11} className="align-[-2px] text-status-info" />
             {" "}<span className="mono">{allAi.length}</span> AI 预测（{acceptedPredIds.size} 已采纳）
           </span>
         </div>

@@ -47,7 +47,7 @@ export function ObserveBackendsPanel() {
       {isLoading ? (
         <div className="p-4 text-xs text-muted-foreground">探测中…</div>
       ) : isError ? (
-        <div className="py-1.5 text-xs text-rose-600 dark:text-rose-400">加载失败：{(error as Error)?.message ?? "未知错误"}</div>
+        <div className="py-1.5 text-xs text-status-danger">加载失败：{(error as Error)?.message ?? "未知错误"}</div>
       ) : (
         <div className="flex flex-col gap-2.5 p-3">
           {data?.targets.map((t) => (
@@ -120,7 +120,7 @@ function TargetCard({ target: t }: { target: ObserveTarget }) {
       </div>
 
       {!t.ok ? (
-        <div className="py-1.5 text-xs text-rose-600 dark:text-rose-400">{t.error ?? "不可达"}</div>
+        <div className="py-1.5 text-xs text-status-danger">{t.error ?? "不可达"}</div>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-3.5 text-[11.5px] text-muted-foreground">

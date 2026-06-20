@@ -42,7 +42,7 @@ const BODY_CLASS =
 const FRAME_CHIP_BASE =
   "inline-flex flex-none items-center gap-[3px] rounded-full px-1.5 py-px text-[10px] font-medium tabular-nums whitespace-nowrap";
 const FRAME_CHIP_DEFAULT_CLASS = `${FRAME_CHIP_BASE} bg-brand/10 text-brand`;
-const FRAME_CHIP_DANGER_CLASS = `${FRAME_CHIP_BASE} bg-rose-500/10 text-rose-600 dark:text-rose-400`;
+const FRAME_CHIP_DANGER_CLASS = `${FRAME_CHIP_BASE} bg-status-danger-soft text-status-danger`;
 
 /* ─── 小节 ─── */
 const SECTION_CLASS = "grid gap-2";
@@ -89,12 +89,12 @@ const KF_PREDICTION_ROW_CLASS = "bg-violet-500/5";
 const KF_FRAME_CLASS = "text-xs";
 const KF_STATUS_CLASS =
   "flex min-w-0 items-center gap-[5px] text-foreground whitespace-nowrap";
-const KF_STATUS_ABSENT_CLASS = "text-rose-600 dark:text-rose-400";
+const KF_STATUS_ABSENT_CLASS = "text-status-danger";
 const KF_STATUS_DOT_CLASS = "size-[7px]";
 const KF_ACTION_ROW_CLASS = "flex min-w-0 flex-wrap justify-end gap-1";
 const KF_BUTTON_CLASS = "size-7! min-w-7! justify-center! rounded-lg! p-0!";
-const SUCCESS_BUTTON_CLASS = "text-emerald-600! dark:text-emerald-400!";
-const DANGER_BUTTON_CLASS = "text-rose-600! dark:text-rose-400!";
+const SUCCESS_BUTTON_CLASS = "text-status-positive!";
+const DANGER_BUTTON_CLASS = "text-status-danger!";
 const COMPACT_BADGE_CLASS = "[&_span]:text-[10px]! [&_span]:px-1.5!";
 
 export interface VideoTrackCardContentProps {

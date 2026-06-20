@@ -59,9 +59,9 @@ function cn(...classes: Array<string | false | null | undefined>): string {
 }
 
 function sourceChipClass(source: VideoFrameEntry["source"] | null): string | null {
-  if (source === "prediction") return "text-violet-600 dark:text-violet-400 border-violet-500/40";
-  if (source === "interpolated") return "text-amber-600 dark:text-amber-400 border-amber-500/45";
-  if (source === "manual" || source === "legacy") return "text-emerald-600 dark:text-emerald-400 border-emerald-500/40";
+  if (source === "prediction") return "text-status-info border-violet-500/40";
+  if (source === "interpolated") return "text-status-caution border-amber-500/45";
+  if (source === "manual" || source === "legacy") return "text-status-positive border-emerald-500/40";
   return null;
 }
 
@@ -365,7 +365,7 @@ export function VideoTrackPanel({
                 <span
                   className={cn(
                     "border border-border rounded-lg px-[7px] py-[3px] text-[11px] leading-[1.35] text-muted-foreground bg-card",
-                    outside && "text-rose-600 dark:text-rose-400",
+                    outside && "text-status-danger",
                   )}
                 >
                   {statusChipText(exact, outside)}

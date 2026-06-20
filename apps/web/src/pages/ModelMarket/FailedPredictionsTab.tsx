@@ -187,7 +187,7 @@ export function FailedPredictionsTab() {
                               disabled={dismiss.isPending}
                               onClick={() => onDismiss(it.id, it.task_display_id)}
                               data-testid={`dismiss-${it.id}`}
-                              className="ml-1.5 text-rose-600 dark:text-rose-400"
+                              className="ml-1.5 text-status-danger"
                             >
                               放弃
                             </Button>

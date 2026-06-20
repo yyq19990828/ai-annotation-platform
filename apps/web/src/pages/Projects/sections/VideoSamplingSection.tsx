@@ -187,7 +187,7 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
         </div>
 
         {!valid && (
-          <p className="text-xs text-rose-600 dark:text-rose-400">请填写合法的采样参数，填好后自动保存。</p>
+          <p className="text-xs text-status-danger">请填写合法的采样参数，填好后自动保存。</p>
         )}
 
         {update.isPending && (

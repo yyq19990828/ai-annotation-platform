@@ -234,7 +234,7 @@ function ExportForm({
         </div>
         <div className="text-[11px] leading-snug text-muted-foreground">
           {targets.length === 0 ? (
-            <span className="text-amber-600 dark:text-amber-400">请至少选择一个导出目标</span>
+            <span className="text-status-caution">请至少选择一个导出目标</span>
           ) : targets.length === 1 ? (
             "将导出 1 个目标，产出单个压缩包。"
           ) : (

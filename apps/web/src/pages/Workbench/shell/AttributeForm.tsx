@@ -154,7 +154,7 @@ export function AttributeForm({
     >
       {batchCount && batchCount > 1 && (
         <div
-          className="rounded border border-amber-500 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-600 dark:text-amber-400"
+          className="rounded border border-amber-500 bg-status-caution-soft px-2.5 py-1.5 text-xs text-status-caution"
           data-testid="attribute-form-batch-banner"
           role="status"
         >
@@ -163,7 +163,7 @@ export function AttributeForm({
       )}
       {!hideHeading && (
         <div className="text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground">
-          属性 {missing.length > 0 && <span className="text-rose-600 dark:text-rose-400">· {missing.length} 项必填未填</span>}
+          属性 {missing.length > 0 && <span className="text-status-danger">· {missing.length} 项必填未填</span>}
         </div>
       )}
       {visible.map((f) => {
@@ -176,18 +176,18 @@ export function AttributeForm({
             className={cn(
               "flex flex-col gap-1 rounded border border-transparent px-1.5 py-[3px]",
               f.type === "boolean" && "flex-row items-center justify-between gap-2",
-              isMissing && "border-rose-400/60 bg-rose-500/10",
+              isMissing && "border-rose-400/60 bg-status-danger-soft",
             )}
           >
             <span className="inline-flex items-center gap-1.5 text-[11.5px] text-foreground">
               {f.label}
-              {f.required && <span className="ml-1 text-rose-600 dark:text-rose-400">*</span>}
+              {f.required && <span className="ml-1 text-status-danger">*</span>}
               {/* v0.10.6 M4-γ · I13.2：视频任务下 mutable 字段标记徽标，提示「逐 keyframe 可变」语义。 */}
               {context === "video" && f.mutable === true && (
                 <span
                   title="逐 keyframe 可变（mutable）"
                   data-testid={`attr-mutable-badge-${f.key}`}
-                  className="rounded-[3px] border border-amber-500/40 bg-amber-500/10 px-[5px] py-px text-[9.5px] font-semibold uppercase leading-[1.2] tracking-[0.3px] text-amber-600 dark:text-amber-400"
+                  className="rounded-[3px] border border-amber-500/40 bg-status-caution-soft px-[5px] py-px text-[9.5px] font-semibold uppercase leading-[1.2] tracking-[0.3px] text-status-caution"
                 >
                   逐帧
                 </span>

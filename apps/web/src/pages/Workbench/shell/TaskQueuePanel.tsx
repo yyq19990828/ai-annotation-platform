@@ -69,11 +69,11 @@ function readPaletteHeight(): number {
 }
 
 function statusClassName(task: TaskResponse): string {
-  if (task.status === "completed") return "text-emerald-600 dark:text-emerald-400";
-  if (task.status === "review") return "text-amber-600 dark:text-amber-400";
-  if (task.status === "rejected") return "text-rose-600 dark:text-rose-400";
+  if (task.status === "completed") return "text-status-positive";
+  if (task.status === "review") return "text-status-caution";
+  if (task.status === "rejected") return "text-status-danger";
   if (task.total_annotations > 0) return "text-brand";
-  if (task.total_predictions > 0) return "text-violet-600 dark:text-violet-400";
+  if (task.total_predictions > 0) return "text-status-info";
   return "text-muted-foreground";
 }
 
@@ -329,7 +329,7 @@ export function TaskQueuePanel({
               {rejectedCount > 0 && (
                 <span
                   title={`${rejectedCount} 个任务被退回，需重做`}
-                  className="inline-flex items-center gap-[3px] px-1.5 py-px border border-rose-500/30 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[10px] font-semibold"
+                  className="inline-flex items-center gap-[3px] px-1.5 py-px border border-rose-500/30 rounded-full bg-status-danger-soft text-status-danger text-[10px] font-semibold"
                 >
                   <Icon name="warning" size={10} />
                   {rejectedCount} 待重做

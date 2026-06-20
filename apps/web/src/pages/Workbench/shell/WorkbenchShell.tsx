@@ -51,7 +51,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
               aria-label={model.issueSection.issuePinDropArmed ? "取消像素 issue 落点模式" : "进入像素 issue 落点模式"}
               title={model.issueSection.issuePinDropArmed ? "再次点击取消" : "单击图像落点创建像素 issue"}
               onClick={model.issueSection.onToggleIssuePinDrop}
-              className={`${ISSUE_FAB_CLASS} bottom-32${model.issueSection.issuePinDropArmed ? " !border-amber-500 text-amber-600 dark:text-amber-400" : ""}`}
+              className={`${ISSUE_FAB_CLASS} bottom-32${model.issueSection.issuePinDropArmed ? " !border-amber-500 text-status-caution" : ""}`}
               data-testid="issue-pin-fab"
               data-armed={model.issueSection.issuePinDropArmed ? "true" : "false"}
             >

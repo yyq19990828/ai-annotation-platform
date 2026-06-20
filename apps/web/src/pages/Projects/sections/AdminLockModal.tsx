@@ -43,7 +43,7 @@ export function AdminLockModal({
             autoFocus
           />
           {tooLong && (
-            <span className="text-[11px] text-rose-600 dark:text-rose-400">
+            <span className="text-[11px] text-status-danger">
               超出 {REASON_MAX} 字上限
             </span>
           )}

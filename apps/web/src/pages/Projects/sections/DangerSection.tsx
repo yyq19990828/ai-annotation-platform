@@ -27,7 +27,7 @@ export function DangerSection({ project }: { project: ProjectResponse }) {
     <>
       <div className="rounded-lg border border-rose-500 bg-card">
         <div className="border-b border-border px-4 py-3.5">
-          <h3 className="text-sm font-semibold text-rose-600 dark:text-rose-400">危险操作</h3>
+          <h3 className="text-sm font-semibold text-status-danger">危险操作</h3>
         </div>
         <div className="flex flex-col gap-3 p-4">
           <div className="text-[13px] leading-relaxed text-muted-foreground">

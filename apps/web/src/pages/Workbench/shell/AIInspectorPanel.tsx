@@ -169,11 +169,11 @@ export function AIInspectorPanel({
 
       {capabilityWarnings && capabilityWarnings.length > 0 && (
         <div
-          className="flex flex-col gap-1 border-b border-border bg-amber-500/10 px-3 py-2"
+          className="flex flex-col gap-1 border-b border-border bg-status-caution-soft px-3 py-2"
           data-testid="ai-inspector-capability-warnings"
         >
           {capabilityWarnings.map((w) => (
-            <div key={w.key} className="flex items-start gap-1.5 text-[11px] leading-[1.4] text-amber-600 dark:text-amber-400">
+            <div key={w.key} className="flex items-start gap-1.5 text-[11px] leading-[1.4] text-status-caution">
               <Icon name="warning" size={11} />
               <span>{w.message}</span>
             </div>
@@ -230,7 +230,7 @@ export function AIInspectorPanel({
             <Icon name={attrCollapsed ? "chevRight" : "chevDown"} size={13} />
             <span>属性</span>
             {attrMissing.length > 0 && (
-              <span className="text-[11px] font-normal text-amber-600 dark:text-amber-400">· {attrMissing.length} 项必填未填</span>
+              <span className="text-[11px] font-normal text-status-caution">· {attrMissing.length} 项必填未填</span>
             )}
             <span className="ml-auto text-[11px] font-normal text-muted-foreground">{displayClassName(selectedAnnotation.class_name)}</span>
           </button>
@@ -441,7 +441,7 @@ export function AIPredictionPopover({
       >
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="inline-flex size-6 items-center justify-center rounded-sm bg-violet-500/[0.18] text-violet-600 dark:text-violet-400">
+            <span className="inline-flex size-6 items-center justify-center rounded-sm bg-violet-500/[0.18] text-status-info">
               <Icon name="bot" size={14} />
             </span>
             <b className="text-[13px]">AI</b>
@@ -484,7 +484,7 @@ export function AIPredictionPopover({
         <div className="border-b border-border bg-muted px-3.5 py-2.5">
           <div className="mb-1 flex items-baseline justify-between text-[11px]">
             <span className="text-muted-foreground">置信度阈值</span>
-            <span className="mono rounded-sm bg-violet-500/[0.12] px-1.5 text-xs font-semibold text-violet-600 dark:text-violet-400">{(confThreshold * 100).toFixed(0)}%</span>
+            <span className="mono rounded-sm bg-violet-500/[0.12] px-1.5 text-xs font-semibold text-status-info">{(confThreshold * 100).toFixed(0)}%</span>
           </div>
           <div className="mb-1.5 text-[10px] leading-[1.4] text-muted-foreground">
             过滤批量预标注结果：仅显示并采纳置信度 ≥ 此值的 AI 框，低于的隐藏且「全部采纳」也不纳入。拖动滑块调整，或用工具栏 <kbd>[</kbd> / <kbd>]</kbd>（滚轮 5%、Shift 10%）。
@@ -525,7 +525,7 @@ export function AIPredictionPopover({
           <div className="mb-1.5 text-[11px] text-muted-foreground">本次效率</div>
           <div className="mb-1 flex justify-between text-xs">
             <span>AI 接管率</span>
-            <span className="mono font-semibold text-violet-600 dark:text-violet-400">{aiTakeoverRate}%</span>
+            <span className="mono font-semibold text-status-info">{aiTakeoverRate}%</span>
           </div>
           <ProgressBar value={aiTakeoverRate} color="var(--sc-chart-4)" />
           {taskAiPredictionCount && taskAiPredictionCount > 0 && (
@@ -554,7 +554,7 @@ export function AIPredictionPopover({
       {onSizeChange && (
         <button
           type="button"
-          className="absolute bottom-0 right-0 z-[1] size-[18px] cursor-nwse-resize touch-none appearance-none border-0 bg-transparent p-0 text-muted-foreground hover:text-violet-600 dark:hover:text-violet-400"
+          className="absolute bottom-0 right-0 z-[1] size-[18px] cursor-nwse-resize touch-none appearance-none border-0 bg-transparent p-0 text-muted-foreground hover:text-status-info"
           onPointerDown={handleResizeStart}
           onPointerMove={handleResizeMove}
           onPointerUp={handleResizeEnd}
@@ -716,8 +716,8 @@ function PredictionSourceFilterCard({ filter }: { filter: PredictionSourceFilter
               key={source}
               className={cn(
                 "flex min-w-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-md border border-border bg-muted px-[7px] py-[3px] text-[11px] text-muted-foreground",
-                checked && !isImport && "border-violet-500/45 bg-violet-500/10 text-violet-600 dark:text-violet-400",
-                checked && isImport && "border-amber-500/45 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                checked && !isImport && "border-violet-500/45 bg-status-info-soft text-status-info",
+                checked && isImport && "border-amber-500/45 bg-status-caution-soft text-status-caution",
               )}
             >
               <input

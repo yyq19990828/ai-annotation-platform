@@ -267,10 +267,10 @@ export function MyBatchesCard() {
                 )}
                 {b.status === "rejected" && b.review_feedback && (
                   <div
-                    className="mt-1.5 max-w-[600px] border-l-2 border-rose-500 bg-rose-500/10 px-2 py-1 text-[11px] text-muted-foreground"
+                    className="mt-1.5 max-w-[600px] border-l-2 border-rose-500 bg-status-danger-soft px-2 py-1 text-[11px] text-muted-foreground"
                     title={b.review_feedback}
                   >
-                    <strong className="text-rose-600 dark:text-rose-400">驳回原因：</strong>
+                    <strong className="text-status-danger">驳回原因：</strong>
                     {b.review_feedback.length > 100 ? b.review_feedback.slice(0, 100) + "..." : b.review_feedback}
                   </div>
                 )}

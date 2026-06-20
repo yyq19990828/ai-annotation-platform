@@ -55,7 +55,7 @@ export function RejectReasonModal({
         {skipReasonHint && (
           <div
             data-testid="reject-skip-hint"
-            className="rounded-md border border-violet-500/30 bg-violet-500/10 px-2.5 py-2 text-xs text-violet-600 dark:text-violet-400"
+            className="rounded-md border border-violet-500/30 bg-status-info-soft px-2.5 py-2 text-xs text-status-info"
           >
             此任务被标注员跳过：<strong>{skipReasonHint}</strong>。退回后会重新派给其他标注员；
             如果该任务确实无可标注目标，建议改为「通过」。
@@ -66,7 +66,7 @@ export function RejectReasonModal({
             key={t}
             className={`flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-[13px] ${
               reasonType === t
-                ? "border-rose-500/40 bg-rose-500/10"
+                ? "border-rose-500/40 bg-status-danger-soft"
                 : "border-border bg-transparent"
             }`}
             data-testid={`reject-type-${t}`}

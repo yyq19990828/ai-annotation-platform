@@ -63,13 +63,13 @@ function BucketCard({ bucket }: { bucket: BucketSummary }) {
     <div className="mb-2.5 flex items-center gap-3 rounded-lg border border-border bg-card p-3.5">
       <div
         className={`flex size-[38px] shrink-0 items-center justify-center rounded-lg ${
-          isError ? "bg-rose-500/10" : "bg-emerald-500/10"
+          isError ? "bg-status-danger-soft" : "bg-status-positive-soft"
         }`}
       >
         <Icon
           name="db"
           size={18}
-          className={isError ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}
+          className={isError ? "text-status-danger" : "text-status-positive"}
         />
       </div>
       <div className="min-w-0 flex-1">
@@ -203,7 +203,7 @@ function VideoAssetFailuresPanel() {
       {isLoading ? (
         <div className="px-4 py-[34px] text-center text-[13px] text-muted-foreground">加载中...</div>
       ) : isError ? (
-        <div className="px-4 py-[34px] text-center text-[13px] text-rose-600 dark:text-rose-400">无法加载视频资产状态</div>
+        <div className="px-4 py-[34px] text-center text-[13px] text-status-danger">无法加载视频资产状态</div>
       ) : items.length === 0 ? (
         <div className="px-4 py-[34px] text-center text-[13px] text-muted-foreground">
           <Icon name="check" size={26} className="mb-2 opacity-[0.28]" />
@@ -348,7 +348,7 @@ export function StoragePage() {
           </div>
           <div className="p-4">
             {bucketsError && buckets.length === 0 ? (
-              <div className="py-5 text-center text-[13px] text-rose-600 dark:text-rose-400">
+              <div className="py-5 text-center text-[13px] text-status-danger">
                 <Icon name="db" size={24} className="mb-1.5 opacity-40" />
                 <div>无法连接存储后端</div>
               </div>

@@ -201,7 +201,7 @@ function ProfileSection() {
               className={clsx(INPUT_CLASS, !passwordsMatch && "border-rose-500")}
             />
             {!passwordsMatch && (
-              <div className="mt-1 text-[11.5px] text-rose-600 dark:text-rose-400">两次密码不一致</div>
+              <div className="mt-1 text-[11.5px] text-status-danger">两次密码不一致</div>
             )}
           </Field>
           {changePwd.isError && (
@@ -262,8 +262,8 @@ function DangerZoneCard() {
     <div className="[&>*]:border [&>*]:border-rose-500">
       <Card>
         <div className="flex items-center justify-between border-b border-rose-500 px-4 py-3">
-          <h3 className="m-0 text-sm font-semibold text-rose-600 dark:text-rose-400">危险区</h3>
-          <Icon name="warning" size={14} className="text-rose-600 dark:text-rose-400" />
+          <h3 className="m-0 text-sm font-semibold text-status-danger">危险区</h3>
+          <Icon name="warning" size={14} className="text-status-danger" />
         </div>
         <div className="flex flex-col gap-3 p-4">
           {isPending ? (
@@ -344,7 +344,7 @@ function DangerZoneCard() {
               <button
                 type="button"
                 onClick={() => setConfirmOpen(true)}
-                className="cursor-pointer rounded-md border border-rose-500 bg-transparent px-3.5 py-[7px] text-[13px] font-medium text-rose-600 dark:text-rose-400"
+                className="cursor-pointer rounded-md border border-rose-500 bg-transparent px-3.5 py-[7px] text-[13px] font-medium text-status-danger"
               >
                 申请注销账号
               </button>
@@ -778,7 +778,7 @@ function ReadOnly({ label, value, mono, hint }: { label: string; value: string; 
 
 function ErrorBanner({ msg }: { msg: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-md border border-rose-500 bg-rose-500/10 px-[11px] py-2 text-[12.5px] text-rose-600 dark:text-rose-400">
+    <div className="flex items-center gap-2 rounded-md border border-rose-500 bg-status-danger-soft px-[11px] py-2 text-[12.5px] text-status-danger">
       <Icon name="warning" size={13} />{msg}
     </div>
   );
@@ -794,13 +794,13 @@ const primaryButtonClassName = (pending: boolean) =>
 function severityClassName(severity: string) {
   switch (severity) {
     case "low":
-      return "text-sky-600 dark:text-sky-400";
+      return "text-status-info-alt";
     case "medium":
-      return "text-amber-600 dark:text-amber-400";
+      return "text-status-caution";
     case "high":
       return "text-orange-600 dark:text-orange-400";
     case "critical":
-      return "text-rose-600 dark:text-rose-400";
+      return "text-status-danger";
     default:
       return "text-muted-foreground";
   }

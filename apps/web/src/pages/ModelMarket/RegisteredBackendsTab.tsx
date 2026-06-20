@@ -64,7 +64,7 @@ export function RegisteredBackendsTab() {
   if (isError) {
     return (
       <Card>
-        <div className="p-6 text-center text-rose-600 dark:text-rose-400">
+        <div className="p-6 text-center text-status-danger">
           <Icon name="warning" size={20} className="mb-1.5" />
           <div>加载失败：{(error as Error)?.message ?? "未知错误"}</div>
           <button className={RETRY_BTN_CLASS} onClick={() => refetch()}>
@@ -205,7 +205,7 @@ function ProjectGroup({
                       {b.state}
                     </Badge>
                     {b.error_message && (
-                      <div className="mt-1 max-w-[220px] truncate text-[10.5px] text-rose-600 dark:text-rose-400">
+                      <div className="mt-1 max-w-[220px] truncate text-[10.5px] text-status-danger">
                         {b.error_message}
                       </div>
                     )}

@@ -284,8 +284,8 @@ function PersonCard({ item, onClick }: { item: AdminPersonItem; onClick: () => v
               <span
                 className={`ml-1.5 text-[11px] font-medium ${
                   trend >= 0
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-rose-600 dark:text-rose-400"
+                    ? "text-status-positive"
+                    : "text-status-danger"
                 }`}
               >
                 {trend >= 0 ? "↑" : "↓"} {Math.abs(trend)}%

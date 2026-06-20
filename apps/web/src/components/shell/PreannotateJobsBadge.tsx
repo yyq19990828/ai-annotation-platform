@@ -51,7 +51,7 @@ export function PreannotateJobsBadge() {
         type="button"
         onClick={() => setOpen((o) => !o)}
         title={`${runningJobs.length} 个预标 job 进行中`}
-        className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-violet-500 bg-violet-500/[0.18] px-[9px] py-1 text-[11px] font-semibold leading-[1.2] text-violet-600 dark:text-violet-400"
+        className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-violet-500 bg-violet-500/[0.18] px-[9px] py-1 text-[11px] font-semibold leading-[1.2] text-status-info"
       >
         <Icon name="sparkles" size={12} />
         <span>{runningJobs.length}</span>

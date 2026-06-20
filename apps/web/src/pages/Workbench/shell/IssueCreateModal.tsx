@@ -23,9 +23,9 @@ const FIELD_BASE =
 
 // 严重度语义色:提示=sky / 警告=amber / 阻断=rose。激活态用 brand 实心填充。
 const SEVERITY_TEXT: Record<FeedbackSeverity, string> = {
-  info: "text-sky-600 dark:text-sky-400",
-  warn: "text-amber-600 dark:text-amber-400",
-  blocker: "text-rose-600 dark:text-rose-400",
+  info: "text-status-info-alt",
+  warn: "text-status-caution",
+  blocker: "text-status-danger",
 };
 
 function cn(...xs: Array<string | false | null | undefined>): string {
@@ -146,7 +146,7 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs text-muted-foreground">详情 <span className="text-rose-600 dark:text-rose-400">*</span></label>
+          <label className="text-xs text-muted-foreground">详情 <span className="text-status-danger">*</span></label>
           <textarea
             className={cn(FIELD_BASE, "min-h-[60px] resize-y")}
             value={body}
@@ -181,7 +181,7 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
             />
           </div>
           {pixelInvalid && (
-            <span className="text-[11px] text-rose-600 dark:text-rose-400">x/y 必须在 0-1 范围;留空则按任务级 issue 创建</span>
+            <span className="text-[11px] text-status-danger">x/y 必须在 0-1 范围;留空则按任务级 issue 创建</span>
           )}
         </div>
 

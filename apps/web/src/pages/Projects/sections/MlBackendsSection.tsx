@@ -207,12 +207,12 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
               onChange={(e) => setAiEnabled(e.target.checked)}
               className="accent-violet-500"
             />
-            <Icon name="sparkles" size={14} className="text-violet-600 dark:text-violet-400" />
+            <Icon name="sparkles" size={14} className="text-status-info" />
             启用 AI 预标注
           </label>
           {aiSettingsDirty && (
             <span
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-status-caution"
               data-testid="ai-settings-unsaved"
             >
               <span className="size-1.5 rounded-full bg-amber-500" />
@@ -242,7 +242,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
             <div className="mt-1 text-[11px] leading-normal text-muted-foreground">
               设为默认后，平台所有“模型名”展示均直接来自 backend.name；该后端作为工作台 / 批量页的默认选项，仍可在 AI 面板切换到其它已注册后端。后端专属推理参数在工作台 AI 面板按用户独立调整。
               {backends.length === 0 && (
-                <span className="ml-1 text-amber-600 dark:text-amber-400">
+                <span className="ml-1 text-status-caution">
                   暂无可用 backend；可先在本页注册。
                 </span>
               )}
@@ -300,7 +300,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
           </div>
         )}
         {isError && (
-          <div className="p-6 text-center text-[13px] text-rose-600 dark:text-rose-400">
+          <div className="p-6 text-center text-[13px] text-status-danger">
             <Icon name="warning" size={14} className="mr-1.5" />
             加载失败：{(error as Error)?.message ?? "未知错误"}
           </div>

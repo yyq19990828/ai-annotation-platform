@@ -314,16 +314,16 @@ function UnlinkConfirmModal({
             "项目中没有由该数据集创建的任务，可放心取消。"
           ) : (
             <>
-              <strong className="text-rose-600 dark:text-rose-400">将一并删除</strong>项目中由该数据集创建的{" "}
+              <strong className="text-status-danger">将一并删除</strong>项目中由该数据集创建的{" "}
               <strong>{preview.tasks}</strong> 个任务
               {preview.annotations > 0 && (
                 <>
-                  （含 <strong className="text-rose-600 dark:text-rose-400">{preview.annotations}</strong> 个已有标注）
+                  （含 <strong className="text-status-danger">{preview.annotations}</strong> 个已有标注）
                 </>
               )}
               {preview.batches > 0 && (
                 <>
-                  ，并清理 <strong className="text-rose-600 dark:text-rose-400">{preview.batches}</strong> 个失去全部任务的空批次
+                  ，并清理 <strong className="text-status-danger">{preview.batches}</strong> 个失去全部任务的空批次
                 </>
               )}
               。<br />

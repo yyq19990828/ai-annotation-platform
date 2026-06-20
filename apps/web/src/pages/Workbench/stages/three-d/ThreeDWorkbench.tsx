@@ -135,9 +135,9 @@ const SELECT_CTL =
 const FIT_GROUP = "grid grid-cols-2 items-center gap-1.5 py-1.5 border-y border-border [&_button]:w-full [&_button]:px-1.5 [&_button]:py-[3px] [&_button]:text-xs";
 const STATUS_BAR =
   "absolute bottom-3 left-3.5 flex flex-wrap gap-2 max-w-[min(420px,calc(100%-28px))] px-2.5 py-1 rounded-sm bg-card border border-border text-xs text-muted-foreground";
-const ERR = "text-rose-600 dark:text-rose-400";
+const ERR = "text-status-danger";
 const MISMATCH_BANNER =
-  "absolute top-[calc(var(--top-toolbar-height)+24px)] left-3 z-[4] flex flex-wrap items-center gap-2 max-w-[min(640px,calc(100%-24px))] px-2.5 py-1.5 text-amber-600 dark:text-amber-400 text-xs bg-card border border-amber-600 dark:border-amber-400 rounded-md shadow-sm";
+  "absolute top-[calc(var(--top-toolbar-height)+24px)] left-3 z-[4] flex flex-wrap items-center gap-2 max-w-[min(640px,calc(100%-24px))] px-2.5 py-1.5 text-status-caution text-xs bg-card border border-amber-600 dark:border-amber-400 rounded-md shadow-sm";
 const EDIT_PANEL =
   "absolute top-3 right-3 w-[210px] translate-x-[var(--psr-dx)] translate-y-[var(--psr-dy)] flex flex-col gap-1.5 p-2.5 rounded-md bg-card border border-border shadow-sm text-xs text-foreground";
 const EDIT_PANEL_DRAGGING = "select-none";
@@ -159,7 +159,7 @@ const RESET_BTN =
   "appearance-none shrink-0 px-2 py-px rounded-sm border border-border bg-background text-muted-foreground cursor-pointer text-[11px] hover:border-brand hover:text-brand";
 const EDIT_ROW = "flex gap-1.5 [&_input]:flex-1 [&_input]:min-w-0 [&_input]:px-1.5 [&_input]:py-[3px] [&_input]:rounded-sm [&_input]:border [&_input]:border-border [&_input]:bg-background [&_input]:text-foreground [&_input]:text-xs";
 const DELETE_BTN =
-  "appearance-none mt-1.5 px-2.5 py-1 rounded-sm border border-rose-600 dark:border-rose-400 bg-transparent text-rose-600 dark:text-rose-400 cursor-pointer text-xs hover:bg-rose-600 dark:hover:bg-rose-400 hover:text-white dark:hover:text-white";
+  "appearance-none mt-1.5 px-2.5 py-1 rounded-sm border border-rose-600 dark:border-rose-400 bg-transparent text-status-danger cursor-pointer text-xs hover:bg-rose-600 dark:hover:bg-rose-400 hover:text-white dark:hover:text-white";
 const TRI_FLOAT_TAB =
   "fixed left-[var(--tri-tab-x)] top-[var(--tri-tab-y)] z-[6] px-2.5 py-1.5 rounded-md border border-border bg-card shadow-sm text-foreground cursor-grab text-xs select-none touch-none hover:border-brand hover:text-brand";
 const TRI_FLOAT_TAB_DRAGGING = "!cursor-grabbing !border-brand shadow-md";

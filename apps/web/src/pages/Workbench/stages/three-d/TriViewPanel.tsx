@@ -29,8 +29,8 @@ const TRI_AXIS_PATH =
   "[fill:none] [stroke:currentColor] [stroke-width:2] [stroke-linecap:round] [stroke-linejoin:round] [vector-effect:non-scaling-stroke]";
 const TRI_AXIS_TEXT = "[fill:currentColor] font-mono text-xs font-bold";
 const TRI_AXIS_ORIGIN = "[fill:var(--sc-foreground)] [stroke:var(--sc-card)] [stroke-width:1]";
-const AXIS_X = "text-rose-600 dark:text-rose-400";
-const AXIS_Y = "text-emerald-600 dark:text-emerald-400";
+const AXIS_X = "text-status-danger";
+const AXIS_Y = "text-status-positive";
 const AXIS_Z = "text-brand";
 const TRI_EMPTY =
   "absolute inset-0 z-[3] flex items-center justify-center text-center p-3 bg-card text-xs text-muted-foreground leading-relaxed";

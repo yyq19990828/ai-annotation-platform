@@ -31,7 +31,7 @@ const CARD_TOP_CLASS = "flex flex-wrap items-center gap-2";
 const URL_CLASS =
   "mono max-w-[520px] truncate text-[11.5px] text-muted-foreground";
 const LATENCY_CLASS = "text-[11px] text-muted-foreground";
-const NOTE_ERROR_CLASS = "text-xs text-rose-600 dark:text-rose-400";
+const NOTE_ERROR_CLASS = "text-xs text-status-danger";
 const METRICS_CLASS =
   "flex flex-wrap items-center gap-3 text-[11.5px] text-muted-foreground";
 const SELECT_CLASS =

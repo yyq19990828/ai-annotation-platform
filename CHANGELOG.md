@@ -34,6 +34,15 @@
 
 > **0.17.x 是一个 UI 迁移 Epic**:把 `apps/web` 自维护的 CSS Modules + `tokens.css` 视觉体系全量迁到 Tailwind v4 + shadcn/ui,直至旧 `*.module.css` 与 `tokens.css` 退役、CI 门禁完成时代切换。全程红线为「只换皮、行为零回退」(业务逻辑 / 数据流 / 路由 / 画布渲染逻辑均不动),逐阶段以 light/dark 双主题截图基线把关。Epic 与设计规范见 [`docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md`](docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md) 与 `docs-site/dev/reference/design-system.md`。
 
+## [0.17.8] - 2026-06-20
+
+设计系统第二阶段启动:把散落在组件 `className` 中的状态文字色与软底收敛到 `shadcn.css` 的语义工具类,减少暗色主题配对的人工维护。
+
+### Changed
+
+- **状态色语义化**:新增 `text-status-danger/caution/positive/info/info-alt` 与 `bg-status-*-soft`,等价替换 rose / amber / emerald / violet / sky 的状态文字和 `/10` 软底。
+- **状态色门禁提示**:`check-tw-tokens.mjs` 对新增裸 `text-<hue>-600` / `bg-<hue>-500/10` 状态类输出 warning,提示改用语义工具类。
+
 ## [0.17.7] - 2026-06-19
 
 shadcn 迁移 Epic 收官:旧 `tokens.css` 彻底退役,暗色统一由 `shadcn.css` 的 `--sc-*` + `data-theme` 单点驱动;Tailwind preflight 从 `.tw-scope` 局部 reset 转为全局;CSS Modules 时代门禁退役、Tailwind 时代门禁转硬阻断。
