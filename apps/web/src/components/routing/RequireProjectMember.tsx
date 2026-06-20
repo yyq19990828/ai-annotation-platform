@@ -31,7 +31,7 @@ export function RequireProjectMember({ children }: Props) {
     }
   }, [denied, error, pushToast]);
 
-  if (!projectId) return <Navigate to="/projects" replace />;
+  if (!projectId) return <Navigate to="/dashboard" replace />;
   if (isLoading) {
     return (
       <div className={styles.loading}>

@@ -8,7 +8,7 @@ last_reviewed: 2026-06-10
 
 # 系统监控
 
-平台用 Prometheus + 结构化日志做可观测，超管可从前端「Overview」看核心指标。侧边栏「管理 → 系统健康」提供 DB / Redis / MinIO / Celery 的实时健康面板；深度排查继续走 Grafana / 直接 PromQL。
+平台用 Prometheus + 结构化日志做可观测，超管可从前端「平台概览」看核心指标。侧边栏「管理 → 系统健康」提供 DB / Redis / MinIO / Celery 的实时健康面板；深度排查继续走 Grafana / 直接 PromQL。
 
 ## 入口
 

@@ -128,6 +128,12 @@ function RedirectWithSearch({ to }: { to: string }) {
   return <Navigate to={`${to}${search}`} replace />;
 }
 
+// super_admin 默认主页是「平台概览」(/overview);其余角色进 /dashboard。
+function DefaultLandingRedirect() {
+  const { role } = usePermissions();
+  return <Navigate to={role === "super_admin" ? "/overview" : "/dashboard"} replace />;
+}
+
 function AppShell() {
   const workspace = useAppStore((s) => s.workspace);
   const pushToast = useToastStore((s) => s.push);
@@ -304,7 +310,7 @@ export function App() {
           </RequireAuth>
         }
       >
-        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route index element={<DefaultLandingRedirect />} />
         <Route path="/dashboard" element={<DashboardRouter />} />
         <Route path="/overview" element={<AdminOverviewRoute />} />
         <Route path="/projects" element={<RedirectWithSearch to="/dashboard" />} />

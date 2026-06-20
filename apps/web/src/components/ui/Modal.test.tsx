@@ -56,6 +56,21 @@ describe("<Modal />", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("点击 overlay 触发 onClose(Radix 默认外部点击关闭 smoke)", async () => {
+    const onClose = vi.fn();
+    render(
+      <Modal open onClose={onClose}>
+        <p>x</p>
+      </Modal>,
+    );
+    // 守护 Radix DismissableLayer 默认「点击 Content 外关闭」行为,
+    // 防止未来误传 onPointerDownOutside / onInteractOutside 把它关掉而无人察觉。
+    // Radix 的 document pointerdown 监听经 setTimeout(0) 挂载,先放过一个宏任务再点。
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.pointerDown(screen.getByTestId("modal-overlay"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("点击右上角关闭按钮触发 onClose", () => {
     const onClose = vi.fn();
     render(

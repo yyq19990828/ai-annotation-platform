@@ -34,6 +34,23 @@
 
 > **0.17.x 是一个 UI 迁移 Epic**:把 `apps/web` 自维护的 CSS Modules + `tokens.css` 视觉体系全量迁到 Tailwind v4 + shadcn/ui,直至旧 `*.module.css` 与 `tokens.css` 退役、CI 门禁完成时代切换。全程红线为「只换皮、行为零回退」(业务逻辑 / 数据流 / 路由 / 画布渲染逻辑均不动),逐阶段以 light/dark 双主题截图基线把关。Epic 与设计规范见 [`docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md`](docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md) 与 `docs-site/dev/reference/design-system.md`。
 
+## [0.17.12] - 2026-06-20
+
+shadcn 迁移 Epic 收尾期的 admin 导航整顿与「换皮回退」修补：把超管两个看板入口的路由 / 文案理顺，并恢复被换皮误收的移动端工具入口。
+
+### Changed
+
+- **超管看板路由理顺**：`/overview`=平台概览（运行状态 / 资源）、`/dashboard`=项目管理（全部项目）；旧 `/projects` 重定向到 `/dashboard`（保留 query），书签不破。侧栏两条入口本地化为中文「平台概览」/「项目管理」，与其余条目一致。
+- **超管默认主页保持「平台概览」**：登录后落到 `/overview`（换皮期一度被误改为项目管理，现修回）。
+
+### Fixed
+
+- **移动端顶栏工具入口回归**：窄屏（< 1024px）下被换皮误收的「后台任务铃铛」（全角色）、「预标 job 徽章」、「性能浮窗 toggle」恢复显示，与始终渲染的通知入口对齐。
+
+### Notes
+
+- Modal（Radix Dialog 适配层）补回「点击 overlay 关闭」smoke 用例；`useToastStore` 适配层补 JSDoc 说明 toast 列表已交 sonner 内部管理、外部不可观测。
+
 ## [0.17.11] - 2026-06-20
 
 设计系统第二阶段收尾:只抽真正重复的局部表单原语,并降低视频 Konva 层每次渲染读取 CSS 变量的成本。

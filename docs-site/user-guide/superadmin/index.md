@@ -12,7 +12,7 @@ last_reviewed: 2026-06-10
 
 ## 入口
 
-- Sidebar 顶部出现两条独立入口：**Overview** + **Dashboard**
+- Sidebar 顶部出现两条独立入口：**平台概览** + **项目管理**
 - `/overview` — 查看全局平台运行状态与资源分布
 - `/dashboard` — 管理平台全部项目、负责人、批次分派与导出入口
 - `/model-market` — ML 模型市场，集中管理 ML Backend 与失败预测
@@ -40,6 +40,6 @@ last_reviewed: 2026-06-10
 | 删除 ML Backend | ✅（项目内） | ✅（任意） |
 | 模型市场页面 | ✅（可访问） | ✅ |
 | 全局 ML 观测 / Smoke Test | ❌ | ✅ |
-| Overview | ❌ | ✅ |
+| 平台概览 dashboard | ❌ | ✅ |
 | 审计日志查看（前端入口） | ❌ | ✅ |
 | BUG 反馈列表（`/bugs`） | ✅ | ✅ |

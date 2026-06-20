@@ -128,7 +128,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           </button>
 
           {/* v0.9.11 PerfHud · 性能监控浮窗 toggle (admin only, 快捷键 Ctrl+Shift+P 同步) */}
-          {!showHamburger && (user?.role === "super_admin" || user?.role === "project_admin") ? (
+          {user?.role === "super_admin" || user?.role === "project_admin" ? (
             <button
               type="button"
               title="性能监控 (Ctrl+Shift+P)"
@@ -141,10 +141,10 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           ) : null}
 
           {/* v0.9.8 · 全局预标 job 徽章 (admin only, 0 个时隐身) */}
-          {!showHamburger && <PreannotateJobsBadge />}
+          <PreannotateJobsBadge />
 
           {/* v0.10.16 · 后台异步任务铃铛（all users, polling /async-jobs） */}
-          {!showHamburger && <JobsBell />}
+          <JobsBell />
 
           {/* 通知按钮（v0.7.6：组件自包含 trigger + popover，TopBar 不再管 open state） */}
           <NotificationsPopover />

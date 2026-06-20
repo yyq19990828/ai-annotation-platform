@@ -34,8 +34,8 @@ const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem
     items: [
       ...(isSuperAdmin
         ? [
-            { key: "dashboard" as PageKey, path: "/overview", icon: "dashboard" as IconName, label: "Overview" },
-            { key: "dashboard" as PageKey, path: "/dashboard", icon: "layers" as IconName, label: "Dashboard" },
+            { key: "dashboard" as PageKey, path: "/overview", icon: "dashboard" as IconName, label: "平台概览" },
+            { key: "dashboard" as PageKey, path: "/dashboard", icon: "layers" as IconName, label: "项目管理" },
           ]
         : [{ key: "dashboard" as PageKey, path: "/dashboard", icon: "dashboard" as IconName, label: "项目总览" }]),
       { key: "annotate", path: "/annotate", icon: "target", label: "标注工作" },
