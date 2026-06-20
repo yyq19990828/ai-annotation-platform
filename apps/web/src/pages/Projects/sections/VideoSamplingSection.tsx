@@ -12,11 +12,11 @@ import { Card } from "@/components/ui/Card";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
 import type { ProjectResponse, VideoSamplingConfig } from "@/api/projects";
+import { LABEL_CLASS } from "./formClasses";
 
-const LABEL_CLASS = "mb-1.5 block text-xs font-medium text-muted-foreground";
 const ROW_CLASS = "flex flex-col gap-1.5 py-2.5";
 const INPUT_CLASS =
-  "w-full appearance-none rounded-md border border-border bg-muted px-[11px] py-2 text-[13.5px] text-foreground outline-none";
+  "w-full appearance-none rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none";
 
 type SamplingMode = "none" | "fps" | "step";
 
@@ -100,14 +100,14 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
   return (
     <Card>
       <div className="p-4">
-        <h3 className="text-[15px] font-semibold">视频帧采样（逻辑采样）</h3>
-        <p className="mt-1.5 text-[12.5px] text-muted-foreground">
+        <h3 className="text-md font-semibold">视频帧采样（逻辑采样）</h3>
+        <p className="mt-1.5 text-sm text-muted-foreground">
           采样只约束「逐帧导航 + 打点」的网格，不会物理重采样或取代原视频；连续播放仍走原始帧率与所有帧。
         </p>
 
         <div className={ROW_CLASS}>
           <span className={LABEL_CLASS}>采样方式</span>
-          <div className="inline-flex flex-col gap-2 text-[13px]">
+          <div className="inline-flex flex-col gap-2 text-sm">
             <label className="inline-flex cursor-pointer items-center gap-1.5">
               <input
                 type="radio"
@@ -182,7 +182,7 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
           </div>
         )}
 
-        <div className="mt-3 rounded-md border border-border bg-muted px-3 py-2.5 text-[12.5px] text-muted-foreground" data-testid="video-sampling-preview">
+        <div className="mt-3 rounded-md border border-border bg-muted px-3 py-2.5 text-sm text-muted-foreground" data-testid="video-sampling-preview">
           {previewText(draft)}
         </div>
 

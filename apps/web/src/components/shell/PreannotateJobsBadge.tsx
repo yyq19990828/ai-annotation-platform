@@ -51,7 +51,7 @@ export function PreannotateJobsBadge() {
         type="button"
         onClick={() => setOpen((o) => !o)}
         title={`${runningJobs.length} 个预标 job 进行中`}
-        className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-violet-500 bg-violet-500/[0.18] px-[9px] py-1 text-[11px] font-semibold leading-[1.2] text-status-info"
+        className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-violet-500 bg-violet-500/[0.18] px-2 py-1 text-xs font-semibold leading-[1.2] text-status-info"
       >
         <Icon name="sparkles" size={12} />
         <span>{runningJobs.length}</span>
@@ -61,14 +61,14 @@ export function PreannotateJobsBadge() {
         <>
           <div
             onClick={() => setOpen(false)}
-            className="fixed inset-0 z-[200]"
+            className="fixed inset-0 z-notification-backdrop"
           />
           <div
             role="dialog"
             aria-label="预标进行中"
-            className="absolute right-0 top-[calc(100%+6px)] z-[201] flex w-[min(400px,calc(100vw-24px))] min-w-0 flex-col gap-1 rounded-md border border-border bg-popover p-2 shadow-lg"
+            className="absolute right-0 top-[calc(100%+6px)] z-notification flex w-[min(400px,calc(100vw-24px))] min-w-0 flex-col gap-1 rounded-md border border-border bg-popover p-2 shadow-lg"
           >
-            <div className="border-b border-border px-2.5 pb-2 pt-1.5 text-[11px] font-semibold text-muted-foreground">
+            <div className="border-b border-border px-2.5 pb-2 pt-1.5 text-xs font-semibold text-muted-foreground">
               预标进行中 ({runningJobs.length})
             </div>
             {sorted.map((j) => {

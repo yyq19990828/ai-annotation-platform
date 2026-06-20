@@ -69,7 +69,7 @@ export function ToolUnitTabs({
               <Icon name={g.icon} size={12} />
               <span>{label}</span>
               {ub && ub.classRows.length > 0 && (
-                <span className="rounded-sm bg-border px-[5px] py-px text-[10px] text-muted-foreground">{ub.classRows.length}</span>
+                <span className="rounded-sm bg-border px-1.5 py-px text-2xs text-muted-foreground">{ub.classRows.length}</span>
               )}
             </button>
           </div>

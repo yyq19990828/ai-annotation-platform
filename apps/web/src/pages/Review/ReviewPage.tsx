@@ -27,19 +27,19 @@ function ProgressFill({ pct, barClass }: { pct: number; barClass: string }) {
 function AnnotationPreview({ taskId }: { taskId: string }) {
   const { data: annotations } = useAnnotations(taskId);
   if (!annotations || annotations.length === 0) {
-    return <span className="text-[11px] text-muted-foreground">无标注</span>;
+    return <span className="text-xs text-muted-foreground">无标注</span>;
   }
   return (
     <div className="flex flex-wrap gap-1">
       {annotations.slice(0, 6).map((a) => (
-        <span key={a.id} className="[&_span]:px-[5px] [&_span]:py-px [&_span]:text-[10px]">
+        <span key={a.id} className="[&_span]:px-1.5 [&_span]:py-px [&_span]:text-2xs">
           <Badge variant={a.parent_prediction_id ? "ai" : "accent"}>
             {a.class_name} {a.confidence ? `${(a.confidence * 100).toFixed(0)}%` : ""}
           </Badge>
         </span>
       ))}
       {annotations.length > 6 && (
-        <span className="text-[10px] text-muted-foreground">+{annotations.length - 6}</span>
+        <span className="text-2xs text-muted-foreground">+{annotations.length - 6}</span>
       )}
     </div>
   );
@@ -66,11 +66,11 @@ function TaskRow({
       <div onClick={onOpen} className="min-w-0 cursor-pointer">
         <div className="flex items-center gap-2">
           <span className="mono text-xs font-semibold">{task.display_id}</span>
-          <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[12.5px]">
+          <span className="overflow-hidden text-ellipsis whitespace-nowrap text-sm">
             {task.file_name}
           </span>
         </div>
-        <div className="mt-0.5 text-[11px] text-muted-foreground">
+        <div className="mt-0.5 text-xs text-muted-foreground">
           {task.total_annotations} 个标注 · {task.total_predictions} 个预测
         </div>
       </div>
@@ -263,8 +263,8 @@ export function ReviewPage() {
     <div className="box-border grid h-full max-w-[1480px] grid-cols-[300px_1fr] gap-4 px-6 py-5 text-foreground max-[900px]:h-auto max-[900px]:grid-cols-1 max-[900px]:p-4">
       <aside className="max-h-[calc(100vh-80px)] self-stretch overflow-auto rounded-md border border-border bg-card max-[900px]:max-h-none">
         <div className="border-b border-border px-3.5 py-3">
-          <div className="text-[13px] font-semibold">项目 · 批次</div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">
+          <div className="text-sm font-semibold">项目 · 批次</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">
             按项目分组的待审核批次
           </div>
         </div>
@@ -281,7 +281,7 @@ export function ReviewPage() {
             <h1 className="m-0 text-xl font-bold">
               {selectedBatch ? selectedBatch.batch_name : "质检审核"}
             </h1>
-            <p className="mt-1 text-[13px] text-muted-foreground">
+            <p className="mt-1 text-sm text-muted-foreground">
               {selectedBatch ? (
                 <>
                   <span className="mono text-brand">{selectedBatch.batch_display_id}</span>
@@ -295,7 +295,7 @@ export function ReviewPage() {
             {assigneeFilter && (
               <button
                 type="button"
-                className="mt-2 inline-flex cursor-pointer appearance-none items-center gap-1 rounded-full border border-brand/30 bg-brand/10 px-2.5 py-[3px] text-xs text-brand hover:bg-brand/20"
+                className="mt-2 inline-flex cursor-pointer appearance-none items-center gap-1 rounded-full border border-brand/30 bg-brand/10 px-2.5 py-1 text-xs text-brand hover:bg-brand/20"
                 onClick={clearAssigneeFilter}
                 title="清除指派标注员过滤"
               >
@@ -334,14 +334,14 @@ export function ReviewPage() {
         {selectedBatch && (
           <div className="mb-3 rounded-md border border-border bg-card px-3 py-2.5">
             <div className="mb-1.5 flex items-center justify-between">
-              <span className="text-[11px] text-muted-foreground">批次进度</span>
+              <span className="text-xs text-muted-foreground">批次进度</span>
               <Badge variant="warning" dot>审核中</Badge>
             </div>
             {[
               { label: "待审", pct: reviewPct, count: pendingReview, bar: "bg-amber-500" },
               { label: "通过", pct: approvedPct, count: approvedDone, bar: "bg-emerald-500" },
             ].map((r) => (
-              <div key={r.label} className="mt-1 flex items-center gap-2.5 text-[11px] text-muted-foreground">
+              <div key={r.label} className="mt-1 flex items-center gap-2.5 text-xs text-muted-foreground">
                 <span className="flex-[0_0_48px]">{r.label}</span>
                 <div className="h-[5px] flex-1 overflow-hidden rounded-sm bg-muted">
                   <ProgressFill pct={r.pct} barClass={r.bar} />
@@ -352,7 +352,7 @@ export function ReviewPage() {
               </div>
             ))}
             {unsubmitted > 0 && (
-              <div className="mt-1.5 text-[11px] text-muted-foreground">
+              <div className="mt-1.5 text-xs text-muted-foreground">
                 仍有 {unsubmitted} 个任务尚未提交质检
               </div>
             )}
@@ -362,7 +362,7 @@ export function ReviewPage() {
         {isLoading ? (
           <div className="p-10 text-center text-muted-foreground">加载中...</div>
         ) : tasks.length === 0 ? (
-          <div className="p-[60px] text-center text-muted-foreground">
+          <div className="p-15 text-center text-muted-foreground">
             <Icon name="check" size={40} className="mb-3 opacity-30" />
             <div className="text-sm">
               {selectedBatchId ? "该批次暂无待审核任务" : "暂无待审核任务"}

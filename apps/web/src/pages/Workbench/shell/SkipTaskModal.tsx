@@ -43,14 +43,14 @@ export function SkipTaskModal({
   return (
     <Modal open={open} onClose={onClose} title="跳过任务" width={420}>
       <div className="flex flex-col gap-2.5">
-        <p className="m-0 text-[12.5px] text-muted-foreground">
+        <p className="m-0 text-sm text-muted-foreground">
           被跳过的任务会自动转给审核员复核；请选择主要原因。
         </p>
         {(Object.keys(REASON_LABELS) as SkipReason[]).map((r) => (
           <label
             key={r}
             className={cn(
-              "flex cursor-pointer items-center gap-2 rounded-md border border-border bg-transparent px-2.5 py-2 text-[13px] text-foreground",
+              "flex cursor-pointer items-center gap-2 rounded-md border border-border bg-transparent px-2.5 py-2 text-sm text-foreground",
               reason === r && "border-foreground/30 bg-muted",
             )}
             data-testid={`skip-reason-${r}`}
@@ -72,7 +72,7 @@ export function SkipTaskModal({
             onChange={(e) => setNote(e.target.value)}
             placeholder="补充说明…"
             rows={3}
-            className="w-full resize-y appearance-none rounded-md border border-border bg-card p-2 text-[13px] text-foreground [font:inherit]"
+            className="w-full resize-y appearance-none rounded-md border border-border bg-card p-2 text-sm text-foreground [font:inherit]"
             data-testid="skip-reason-note"
           />
         )}

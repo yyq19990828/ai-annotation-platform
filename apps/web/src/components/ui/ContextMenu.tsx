@@ -59,7 +59,7 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
       aria-orientation="vertical"
       tabIndex={-1}
       className={cn(
-        "fixed left-[var(--context-menu-x)] top-[var(--context-menu-y)] z-[60] min-w-[190px] rounded-md border border-border bg-popover p-1 shadow-md outline-none",
+        "fixed left-[var(--context-menu-x)] top-[var(--context-menu-y)] z-overlay-high min-w-[190px] rounded-md border border-border bg-popover p-1 shadow-md outline-none",
         flip.x && "-translate-x-full",
         flip.y && "-translate-y-full",
       )}
@@ -91,7 +91,7 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
               onClose();
             }}
             className={cn(
-              "flex w-full appearance-none items-center gap-2 whitespace-nowrap rounded-sm border-0 bg-transparent px-2.5 py-[7px] text-left text-[12.5px] font-normal text-muted-foreground",
+              "flex w-full appearance-none items-center gap-2 whitespace-nowrap rounded-sm border-0 bg-transparent px-2.5 py-2 text-left text-sm font-normal text-muted-foreground",
               item.active ? "font-semibold text-foreground" : "hover:bg-accent",
               item.active && "bg-accent",
               item.disabled && "cursor-not-allowed text-muted-foreground/60 opacity-60 hover:bg-transparent",
@@ -100,7 +100,7 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
             {item.icon && <Icon name={item.icon} size={13} />}
             <span className="flex-1">{item.label}</span>
             {item.kbd && (
-              <span className="mono rounded border border-b-2 border-border bg-muted px-1.5 py-px text-[10.5px] text-muted-foreground">
+              <span className="mono rounded border border-b-2 border-border bg-muted px-1.5 py-px text-2xs text-muted-foreground">
                 {item.kbd}
               </span>
             )}

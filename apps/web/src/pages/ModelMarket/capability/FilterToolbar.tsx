@@ -4,7 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { infraLabel, modalityLabel, taskLabel } from "./labels";
 
 const CHIP_BASE =
-  "cursor-pointer appearance-none rounded-full border px-2.5 py-[3px] text-[11.5px] leading-[1.4]";
+  "cursor-pointer appearance-none rounded-full border px-2.5 py-1 text-xs leading-[1.4]";
 const CHIP_OFF = `${CHIP_BASE} border-border bg-muted text-muted-foreground hover:bg-muted`;
 const CHIP_ON = `${CHIP_BASE} border-brand/30 bg-brand/10 text-brand`;
 
@@ -45,7 +45,7 @@ export function FilterToolbar(p: FilterToolbarProps) {
         (g) =>
           g.values.length > 0 && (
             <div key={g.label} className="flex min-w-0 items-center gap-2">
-              <span className="shrink-0 text-[10.5px] font-semibold text-muted-foreground">{g.label}</span>
+              <span className="shrink-0 text-2xs font-semibold text-muted-foreground">{g.label}</span>
               <div className="flex flex-wrap gap-1.5">
                 {g.values.map((v) => {
                   const on = g.active.has(v);
@@ -68,7 +68,7 @@ export function FilterToolbar(p: FilterToolbarProps) {
       {p.hasActiveFilter && (
         <button
           type="button"
-          className="ml-auto inline-flex cursor-pointer appearance-none items-center gap-1 rounded-full border border-border bg-card px-2.5 py-[3px] text-[11.5px] text-muted-foreground hover:bg-muted"
+          className="ml-auto inline-flex cursor-pointer appearance-none items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
           onClick={p.onClear}
         >
           <Icon name="x" size={11} />

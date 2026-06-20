@@ -30,7 +30,7 @@ export function DangerSection({ project }: { project: ProjectResponse }) {
           <h3 className="text-sm font-semibold text-status-danger">危险操作</h3>
         </div>
         <div className="flex flex-col gap-3 p-4">
-          <div className="text-[13px] leading-relaxed text-muted-foreground">
+          <div className="text-sm leading-relaxed text-muted-foreground">
             删除项目将级联清除该项目下的全部任务、标注、AI 预测与成员关系。此操作不可撤销。
           </div>
           <div>
@@ -50,14 +50,14 @@ export function DangerSection({ project }: { project: ProjectResponse }) {
         title="确认删除项目"
         width={460}
       >
-        <div className="mb-3.5 text-[13px] leading-relaxed text-muted-foreground">
+        <div className="mb-3.5 text-sm leading-relaxed text-muted-foreground">
           请输入项目名称 <strong className="text-foreground">{project.name}</strong> 以确认删除。
         </div>
         <input
           value={confirmText}
           onChange={(e) => setConfirmText(e.target.value)}
           placeholder={project.name}
-          className="mb-4 w-full appearance-none rounded-md border border-border bg-muted px-[11px] py-2 text-[13.5px] text-foreground outline-none"
+          className="mb-4 w-full appearance-none rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none"
         />
         <div className="flex justify-end gap-2">
           <Button

@@ -348,7 +348,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
                 }}
                 onMouseEnter={() => setFocusIdx(i)}
                 className={cn(
-                  "flex w-full appearance-none items-center gap-2 rounded-sm border-0 bg-transparent px-2.5 py-[7px] text-left text-[12.5px] font-normal text-muted-foreground",
+                  "flex w-full appearance-none items-center gap-2 rounded-sm border-0 bg-transparent px-2.5 py-2 text-left text-sm font-normal text-muted-foreground",
                   (it.active || focused) && "bg-accent",
                   it.active && "font-semibold text-foreground",
                   it.disabled && "cursor-not-allowed text-muted-foreground/60 opacity-60",
@@ -357,7 +357,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
                 {it.icon && <Icon name={it.icon} size={13} />}
                 <span className="flex-1">{it.label}</span>
                 {it.kbd && (
-                  <span className="mono rounded border border-b-2 border-border bg-muted px-1.5 py-px text-[10.5px] text-muted-foreground">
+                  <span className="mono rounded border border-b-2 border-border bg-muted px-1.5 py-px text-2xs text-muted-foreground">
                     {it.kbd}
                   </span>
                 )}

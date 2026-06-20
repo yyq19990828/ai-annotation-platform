@@ -222,7 +222,7 @@ export function VideoTrackerPropagateDialog({
       role="dialog"
       aria-label="AI 传播"
       data-testid="video-tracker-propagate-dialog"
-      className="fixed inset-0 z-[1000] grid place-items-center bg-black/40"
+      className="fixed inset-0 z-workbench-modal grid place-items-center bg-black/40"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}
@@ -233,7 +233,7 @@ export function VideoTrackerPropagateDialog({
           <button
             type="button"
             onClick={onCancel}
-            className="border-0 bg-transparent text-muted-foreground cursor-pointer text-[13px]"
+            className="border-0 bg-transparent text-muted-foreground cursor-pointer text-sm"
           >
             ✕
           </button>
@@ -248,7 +248,7 @@ export function VideoTrackerPropagateDialog({
                 type="button"
                 onClick={() => setDirection(d)}
                 className={cn(
-                  "py-[5px] border rounded-md bg-background text-foreground cursor-pointer text-xs",
+                  "py-1.5 border rounded-md bg-background text-foreground cursor-pointer text-xs",
                   direction === d
                     ? "border-violet-600 dark:border-violet-400 bg-status-info-soft"
                     : "border-border",
@@ -265,7 +265,7 @@ export function VideoTrackerPropagateDialog({
           <select
             value={rangePreset}
             onChange={(e) => setRangePreset(e.target.value as RangePresetValue)}
-            className="py-[5px] px-2 border border-border rounded-md bg-background text-foreground text-[13px] cursor-pointer"
+            className="py-1.5 px-2 border border-border rounded-md bg-background text-foreground text-sm cursor-pointer"
           >
             {RANGE_PRESETS.map((preset) => (
               <option key={preset} value={preset}>
@@ -273,7 +273,7 @@ export function VideoTrackerPropagateDialog({
               </option>
             ))}
           </select>
-          <span className={cn("mono", "text-muted-foreground text-[11px]")}>
+          <span className={cn("mono", "text-muted-foreground text-xs")}>
             {grid > 1 ? (
               <>
                 G{Math.round(range.from / grid)} → G{Math.round(range.to / grid)} (F
@@ -292,7 +292,7 @@ export function VideoTrackerPropagateDialog({
           <select
             value={modelKey}
             onChange={(e) => setModelKey(e.target.value)}
-            className="py-[5px] px-2 border border-border rounded-md bg-background text-foreground text-[13px] cursor-pointer"
+            className="py-1.5 px-2 border border-border rounded-md bg-background text-foreground text-sm cursor-pointer"
           >
             {TRACKER_MODEL_OPTIONS.map((m) => (
               <option key={m.value} value={m.value}>
@@ -300,7 +300,7 @@ export function VideoTrackerPropagateDialog({
               </option>
             ))}
           </select>
-          <span className="text-muted-foreground text-[11px]">
+          <span className="text-muted-foreground text-xs">
             {TRACKER_MODEL_OPTIONS.find((m) => m.value === modelKey)?.note}
           </span>
         </label>
@@ -311,7 +311,7 @@ export function VideoTrackerPropagateDialog({
             <select
               value={samVariant}
               onChange={(e) => setSamVariant(e.target.value)}
-              className="py-[5px] px-2 border border-border rounded-md bg-background text-foreground text-[13px] cursor-pointer"
+              className="py-1.5 px-2 border border-border rounded-md bg-background text-foreground text-sm cursor-pointer"
             >
               {SAM_VARIANTS.map((v) => (
                 <option key={v.value} value={v.value}>
@@ -319,7 +319,7 @@ export function VideoTrackerPropagateDialog({
                 </option>
               ))}
             </select>
-            <span className="text-muted-foreground text-[11px]">
+            <span className="text-muted-foreground text-xs">
               更大尺寸更准但更慢/更吃显存; 默认 tiny。
             </span>
           </label>

@@ -79,7 +79,7 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
             type="button"
             onClick={() => setStatusFilter(f.key)}
             className={cn(
-              "cursor-pointer appearance-none rounded-[10px] border border-border bg-transparent px-2 py-0.5 text-[10px] text-muted-foreground [font:inherit]",
+              "cursor-pointer appearance-none rounded-[10px] border border-border bg-transparent px-2 py-0.5 text-2xs text-muted-foreground [font:inherit]",
               statusFilter === f.key && "border-brand text-foreground",
             )}
           >
@@ -111,26 +111,26 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
             )}
             data-testid={`discussion-issue-card-${it.id}`}
           >
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-              <span className={cn("rounded-[10px] border px-2 py-px text-[10px]", STATUS_CHIP[it.status])}>
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className={cn("rounded-[10px] border px-2 py-px text-2xs", STATUS_CHIP[it.status])}>
                 {it.status === "open" ? "未解决" : it.status === "resolved" ? "已解决" : "搁置"}
               </span>
               {it.severity && (
-                <span className={cn("rounded-[10px] border border-border px-2 py-px text-[10px]", SEVERITY_CHIP[it.severity])}>
+                <span className={cn("rounded-[10px] border border-border px-2 py-px text-2xs", SEVERITY_CHIP[it.severity])}>
                   {it.severity === "blocker" ? "阻断" : it.severity === "warn" ? "警告" : "提示"}
                 </span>
               )}
               {hasPin && (
-                <span className="text-[10px] text-muted-foreground" title="像素锚点 · 单击定位">
+                <span className="text-2xs text-muted-foreground" title="像素锚点 · 单击定位">
                   <Icon name="crosshair" size={11} /> ({it.anchor_position!.x.toFixed(2)}, {it.anchor_position!.y.toFixed(2)})
                 </span>
               )}
               {hasPin && typeof it.anchor_position!.frame === "number" && (
-                <span className="text-[10px] text-muted-foreground" title="所属帧 · 单击跳转">
+                <span className="text-2xs text-muted-foreground" title="所属帧 · 单击跳转">
                   F{it.anchor_position!.frame}
                 </span>
               )}
-              <span className="ml-auto text-[10px] text-muted-foreground">
+              <span className="ml-auto text-2xs text-muted-foreground">
                 {it.author_name ?? "—"} · {new Date(it.created_at).toLocaleString()}
               </span>
             </div>

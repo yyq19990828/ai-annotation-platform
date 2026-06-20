@@ -162,7 +162,7 @@ export function FloatingPanelShell({
     <section
       data-floating-panel
       className={[
-        "fixed left-[var(--floating-panel-x)] top-[var(--floating-panel-y)] z-50 flex h-[var(--floating-panel-h)] w-[var(--floating-panel-w)] min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border bg-card shadow-lg",
+        "fixed left-[var(--floating-panel-x)] top-[var(--floating-panel-y)] z-floating flex h-[var(--floating-panel-h)] w-[var(--floating-panel-w)] min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border bg-card shadow-lg",
         (drag.isDragging || isResizing) && "select-none",
         className,
       ].filter(Boolean).join(" ")}
@@ -227,7 +227,7 @@ export function FloatingPanelShell({
       <div className="flex min-h-0 flex-1 overflow-hidden bg-card [&>*]:min-h-0 [&>*]:flex-1">{children}</div>
       <button
         type="button"
-        className="absolute bottom-0 right-0 z-[2] size-[18px] cursor-nwse-resize appearance-none border-0 bg-transparent p-0 text-muted-foreground"
+        className="absolute bottom-0 right-0 z-local-2 size-[18px] cursor-nwse-resize appearance-none border-0 bg-transparent p-0 text-muted-foreground"
         onPointerDown={onResizePointerDown}
         aria-label="调整浮窗尺寸"
       >

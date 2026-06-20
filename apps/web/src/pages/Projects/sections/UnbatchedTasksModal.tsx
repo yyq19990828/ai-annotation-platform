@@ -80,10 +80,10 @@ export function UnbatchedTasksModal({
     <Modal open onClose={onClose} title={`未归类任务（${count}）`} width={560}>
       <div className="flex min-h-[120px] flex-col">
         {isLoading && (
-          <div className="py-8 text-center text-[13px] text-muted-foreground">加载中…</div>
+          <div className="py-8 text-center text-sm text-muted-foreground">加载中…</div>
         )}
         {!isLoading && tasks.length === 0 && (
-          <div className="py-8 text-center text-[13px] text-muted-foreground">没有未归类任务。</div>
+          <div className="py-8 text-center text-sm text-muted-foreground">没有未归类任务。</div>
         )}
         {!isLoading && tasks.length > 0 && (
           <div ref={parentRef} className="relative max-h-[60vh] overflow-y-auto">
@@ -101,12 +101,12 @@ export function UnbatchedTasksModal({
                     />
                     <div className="flex min-w-0 flex-col gap-0.5">
                       <div
-                        className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-foreground"
+                        className="overflow-hidden text-ellipsis whitespace-nowrap text-sm text-foreground"
                         title={task.file_name}
                       >
                         {task.file_name}
                       </div>
-                      <div className="text-[11px] tabular-nums text-muted-foreground">
+                      <div className="text-xs tabular-nums text-muted-foreground">
                         {task.display_id}
                       </div>
                     </div>

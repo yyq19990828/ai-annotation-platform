@@ -22,9 +22,9 @@ import type { TriView, Psr } from "./geometry/triview";
 const TRI_PANEL = "relative flex-1 flex flex-col gap-1.5 p-1.5 bg-card min-h-0";
 const TRI_ROW = "relative flex-1 min-h-0 border border-border rounded-sm overflow-hidden";
 const TRI_CAPTION =
-  "absolute top-1 left-1/2 z-[2] -translate-x-1/2 px-1.5 py-px rounded-sm bg-card border border-border text-[11px] text-muted-foreground whitespace-nowrap pointer-events-none";
+  "absolute top-1 left-1/2 z-local-2 -translate-x-1/2 px-1.5 py-px rounded-sm bg-card border border-border text-xs text-muted-foreground whitespace-nowrap pointer-events-none";
 const TRI_AXIS_GLYPH =
-  "absolute left-1.5 bottom-1 z-[2] w-[42px] h-[42px] pointer-events-none [filter:drop-shadow(0_0_5px_var(--sc-muted))]";
+  "absolute left-1.5 bottom-1 z-local-2 w-[42px] h-[42px] pointer-events-none [filter:drop-shadow(0_0_5px_var(--sc-muted))]";
 const TRI_AXIS_PATH =
   "[fill:none] [stroke:currentColor] [stroke-width:2] [stroke-linecap:round] [stroke-linejoin:round] [vector-effect:non-scaling-stroke]";
 const TRI_AXIS_TEXT = "[fill:currentColor] font-mono text-xs font-bold";
@@ -33,7 +33,7 @@ const AXIS_X = "text-status-danger";
 const AXIS_Y = "text-status-positive";
 const AXIS_Z = "text-brand";
 const TRI_EMPTY =
-  "absolute inset-0 z-[3] flex items-center justify-center text-center p-3 bg-card text-xs text-muted-foreground leading-relaxed";
+  "absolute inset-0 z-local-3 flex items-center justify-center text-center p-3 bg-card text-xs text-muted-foreground leading-relaxed";
 
 const VIEWS: TriView[] = ["top", "side", "front"];
 const TRI_LABEL: Record<TriView, string> = {

@@ -132,10 +132,10 @@ export function VideoTrackPanel({
 
   return (
     <div className="grid gap-3 py-0.5 pb-2">
-      <div className="border border-border rounded-lg bg-card px-2.5 py-[7px]">
+      <div className="border border-border rounded-lg bg-card px-2.5 py-2">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
-            <b className="text-[13px]">轨迹</b>
+            <b className="text-sm">轨迹</b>
             <Button
               size="sm"
               className="!w-7 !h-7 !p-0 !justify-center !rounded-lg"
@@ -147,7 +147,7 @@ export function VideoTrackPanel({
               <Icon name="plus" size={14} />
             </Button>
           </div>
-          <span className={cn("mono", "text-[11px] text-muted-foreground")}>
+          <span className={cn("mono", "text-xs text-muted-foreground")}>
             {trackFilter === "current" ? `${filteredVideoTracks.length}/${videoTracks.length}` : videoTracks.length}
           </span>
         </div>
@@ -283,7 +283,7 @@ export function VideoTrackPanel({
                       <circle cx="5" cy="5" r="5" fill={color} />
                     </svg>
                     {colorPickerTrackId === track.track_id && (
-                      <div className="absolute top-full left-0 z-20 mt-1" onClick={(e) => e.stopPropagation()}>
+                      <div className="absolute top-full left-0 z-local-overlay mt-1" onClick={(e) => e.stopPropagation()}>
                         <VideoTrackColorPicker
                           currentColor={color}
                           hasOverride={hasColorOverride}
@@ -301,20 +301,20 @@ export function VideoTrackPanel({
                     )}
                   </button>
                   <div className="flex items-center gap-[7px] min-w-0">
-                    <span className={cn("mono", "shrink-0 inline-flex items-center text-[11px] font-semibold px-1.5 py-px rounded text-brand bg-brand/10")}>
+                    <span className={cn("mono", "shrink-0 inline-flex items-center text-xs font-semibold px-1.5 py-px rounded text-brand bg-brand/10")}>
                       #{trackNumbers.get(ann.id) ?? "?"}
                     </span>
-                    <b className="text-[13px] overflow-hidden text-ellipsis whitespace-nowrap">
+                    <b className="text-sm overflow-hidden text-ellipsis whitespace-nowrap">
                       {displayClassName(ann.class_name)}
                     </b>
-                    <span className="[&>span]:text-[10px] [&>span]:px-1.5 [&>span]:py-px">
+                    <span className="[&>span]:text-2xs [&>span]:px-1.5 [&>span]:py-px">
                       <Badge variant={ann.source === "prediction_based" ? "default" : "accent"}>
                         {sourceLabel}
                       </Badge>
                     </span>
-                    <span className={cn("mono", "text-[11px] text-muted-foreground")}>{shortTrackId(track.track_id)}</span>
+                    <span className={cn("mono", "text-xs text-muted-foreground")}>{shortTrackId(track.track_id)}</span>
                   </div>
-                  <div className={cn("mono", "text-[11px] text-muted-foreground min-w-0 overflow-hidden text-ellipsis whitespace-nowrap")}>
+                  <div className={cn("mono", "text-xs text-muted-foreground min-w-0 overflow-hidden text-ellipsis whitespace-nowrap")}>
                     {track.keyframes.length} 关键帧 · {frameRange(frames)}
                   </div>
                 </div>
@@ -361,10 +361,10 @@ export function VideoTrackPanel({
                   </Button>
                 </div>
               </div>
-              <div className="flex gap-1.5 flex-wrap pl-[18px]">
+              <div className="flex gap-1.5 flex-wrap pl-4">
                 <span
                   className={cn(
-                    "border border-border rounded-lg px-[7px] py-[3px] text-[11px] leading-[1.35] text-muted-foreground bg-card",
+                    "border border-border rounded-lg px-2 py-1 text-xs leading-[1.35] text-muted-foreground bg-card",
                     outside && "text-status-danger",
                   )}
                 >
@@ -373,7 +373,7 @@ export function VideoTrackPanel({
                 <span
                   data-testid="video-track-current-source"
                   className={cn(
-                    "border border-border rounded-lg px-[7px] py-[3px] text-[11px] leading-[1.35] text-muted-foreground bg-card",
+                    "border border-border rounded-lg px-2 py-1 text-xs leading-[1.35] text-muted-foreground bg-card",
                     sourceChipClass(currentSource),
                   )}
                 >

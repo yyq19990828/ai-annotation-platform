@@ -8,7 +8,7 @@ import type { BatchResponse } from "@/api/batches";
 const REASON_MAX = 500;
 
 const TEXTAREA_BASE =
-  "min-h-[80px] resize-y appearance-none rounded-sm border border-border bg-background px-2.5 py-2 text-[13px] text-foreground [font:inherit]";
+  "min-h-[80px] resize-y appearance-none rounded-sm border border-border bg-background px-2.5 py-2 text-sm text-foreground [font:inherit]";
 
 export type ReverseKind = "unarchive" | "reopen_from_approved" | "reopen_from_rejected";
 
@@ -75,7 +75,7 @@ export function ReverseTransitionModal({
 
   return (
     <Modal open title={copy.title(batch)} onClose={onClose}>
-      <div className="flex flex-col gap-3 text-[13px]">
+      <div className="flex flex-col gap-3 text-sm">
         <p className="m-0 text-muted-foreground">{copy.description}</p>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">
@@ -90,7 +90,7 @@ export function ReverseTransitionModal({
             autoFocus
           />
           {tooLong && (
-            <span className="text-[11px] text-status-danger">
+            <span className="text-xs text-status-danger">
               超出 {REASON_MAX} 字上限
             </span>
           )}

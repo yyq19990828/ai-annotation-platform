@@ -46,12 +46,12 @@ export function BatchAuditLogDrawer({
   return (
     <Modal open onClose={onClose} title={`操作历史 · ${batch.display_id} ${batch.name}`} width={680}>
       {isLoading && (
-        <div className="p-6 text-center text-[13px] text-muted-foreground">
+        <div className="p-6 text-center text-sm text-muted-foreground">
           加载中…
         </div>
       )}
       {!isLoading && logs.length === 0 && (
-        <div className="p-6 text-center text-[13px] text-muted-foreground">
+        <div className="p-6 text-center text-sm text-muted-foreground">
           暂无操作记录
         </div>
       )}
@@ -80,9 +80,9 @@ function Entry({ log }: { log: BatchAuditLogEntry }) {
   const reason = (detail as { reason?: string }).reason;
 
   return (
-    <div className="border-b border-border px-3 py-2.5 text-[12.5px]">
+    <div className="border-b border-border px-3 py-2.5 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="mono text-[11px] text-muted-foreground">{time}</span>
+        <span className="mono text-xs text-muted-foreground">{time}</span>
         {role && (
           <Badge variant={ROLE_VARIANT[role] ?? "default"} dot>
             {ROLE_LABEL[role] ?? role}
@@ -94,7 +94,7 @@ function Entry({ log }: { log: BatchAuditLogEntry }) {
           <span className="text-muted-foreground">
             {before} → <strong className="text-foreground">{after}</strong>
             {reverse && (
-              <span className="ml-1.5 rounded-full bg-status-caution-soft px-1.5 py-px text-[10px] text-status-caution">
+              <span className="ml-1.5 rounded-full bg-status-caution-soft px-1.5 py-px text-2xs text-status-caution">
                 逆向
               </span>
             )}
@@ -114,7 +114,7 @@ function Entry({ log }: { log: BatchAuditLogEntry }) {
         </div>
       )}
       {open && (
-        <pre className="mono mt-1.5 overflow-x-auto rounded-sm bg-muted p-2 text-[11px] text-muted-foreground">
+        <pre className="mono mt-1.5 overflow-x-auto rounded-sm bg-muted p-2 text-xs text-muted-foreground">
           {JSON.stringify(detail, null, 2)}
         </pre>
       )}

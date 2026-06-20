@@ -20,7 +20,7 @@ const STATS_GRID_THREE = "grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] ga
 const CARD_TITLE = "m-0 text-sm font-semibold";
 const CARD_HEADER_PLAIN = "border-b border-border px-4 py-3.5";
 const TABLE_CLASS =
-  "w-full min-w-[760px] border-separate border-spacing-0 text-[13px] " +
+  "w-full min-w-[760px] border-separate border-spacing-0 text-sm " +
   "[&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:whitespace-nowrap [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground " +
   "[&_th:first-child]:pl-4 [&_th:last-child]:pr-4 " +
   "[&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-3 [&_td]:align-middle " +
@@ -54,7 +54,7 @@ export function AnnotatorDashboard() {
 
   if (isLoading || !stats) {
     return (
-      <div className="px-7 py-[60px] text-center text-muted-foreground">
+      <div className="px-7 py-15 text-center text-muted-foreground">
         加载中...
       </div>
     );
@@ -70,7 +70,7 @@ export function AnnotatorDashboard() {
       <div className="mb-3 flex items-end justify-between">
         <div>
           <h1 className="mb-1 text-xl font-semibold">标注工作台</h1>
-          <p className="m-0 text-[13px] text-muted-foreground">查看任务进度，高效完成标注工作</p>
+          <p className="m-0 text-sm text-muted-foreground">查看任务进度，高效完成标注工作</p>
         </div>
         <Button variant="primary" onClick={() => navigate("/annotate")}>
           <Icon name="target" size={13} />进入标注页面
@@ -82,7 +82,7 @@ export function AnnotatorDashboard() {
         <div className="mb-4 flex items-center gap-3 rounded-md border border-rose-500/30 bg-status-danger-soft px-4 py-3">
           <Icon name="warning" size={16} className="shrink-0 text-status-danger" />
           <div className="flex-1">
-            <span className="text-[13px] font-semibold text-status-danger">
+            <span className="text-sm font-semibold text-status-danger">
               {stats.rejected_tasks_count} 个任务被退回，需重做
             </span>
             <span className="ml-2 text-xs text-muted-foreground">
@@ -157,7 +157,7 @@ export function AnnotatorDashboard() {
         <Card>
         <div className={CARD_HEADER_PLAIN}>
           <h3 className={CARD_TITLE}>今日专注时段分布</h3>
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <p className="mt-1 text-xs text-muted-foreground">
             按小时聚合的标注分钟数（0-23 时）
           </p>
         </div>
@@ -181,7 +181,7 @@ export function AnnotatorDashboard() {
           </div>
           <div className="px-4 py-5">
             <Sparkline values={stats.daily_counts} color="var(--sc-brand)" width={480} height={80} />
-            <div className="mt-2 flex justify-between text-[11px] text-muted-foreground">
+            <div className="mt-2 flex justify-between text-xs text-muted-foreground">
               <span>7 天前</span>
               <span>今天</span>
             </div>
@@ -205,11 +205,11 @@ export function AnnotatorDashboard() {
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-[22px] font-semibold">{weeklyPct}%</span>
-                <span className="text-[11px] text-muted-foreground">完成率</span>
+                <span className="text-stat font-semibold">{weeklyPct}%</span>
+                <span className="text-xs text-muted-foreground">完成率</span>
               </div>
             </div>
-            <div className="text-[13px] text-muted-foreground">
+            <div className="text-sm text-muted-foreground">
               {stats.weekly_completed} / {weeklyTarget} 个标注
             </div>
           </div>
@@ -223,10 +223,10 @@ export function AnnotatorDashboard() {
           <span className="text-xs text-muted-foreground">共 {sortedProjects.length} 个</span>
         </div>
         {noProjects ? (
-          <div className="px-4 py-8 text-center text-[13px] text-muted-foreground">
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             <Icon name="folder" size={28} className="mb-2 opacity-25" />
             <div>暂无分配项目</div>
-            <div className="mt-1 text-[11.5px]">请联系项目管理员将你加入项目成员</div>
+            <div className="mt-1 text-xs">请联系项目管理员将你加入项目成员</div>
           </div>
         ) : (
           <div className="w-full overflow-x-auto [overscroll-behavior-x:contain]">
@@ -249,8 +249,8 @@ export function AnnotatorDashboard() {
                       onClick={() => openWorkbench(p.id)}
                     >
                       <td>
-                        <div className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium">{p.name}</div>
-                        <div className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-muted-foreground">
+                        <div className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium">{p.name}</div>
+                        <div className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
                           <span className="mono">{p.display_id}</span>
                         </div>
                       </td>
@@ -261,7 +261,7 @@ export function AnnotatorDashboard() {
                         {p.completed_tasks ?? 0} / {p.total_tasks ?? 0} <span className="mono">({pct}%)</span>
                       </td>
                       <td>
-                        <span className="[&_span]:text-[11px]">
+                        <span className="[&_span]:text-xs">
                           <Badge variant={remaining > 0 ? "accent" : "outline"}>{remaining}</Badge>
                         </span>
                       </td>

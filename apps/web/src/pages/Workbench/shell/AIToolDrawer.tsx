@@ -12,9 +12,9 @@ import type { CapabilityWarning } from "../state/useCapabilityValidation";
 import { TOOL_REGISTRY, type ToolId } from "../stage/tools";
 import { SamOutputModeTabs } from "./SamOutputModeTabs";
 
-const FIELD_LABEL_CLASS = "text-[10.5px] text-muted-foreground";
+const FIELD_LABEL_CLASS = "text-2xs text-muted-foreground";
 const SELECT_CLASS =
-  "appearance-none rounded-sm border border-border bg-muted px-1.5 py-[3px] text-[11.5px] text-foreground";
+  "appearance-none rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground";
 
 export interface AIToolDrawerProps {
   tool: Tool;
@@ -152,7 +152,7 @@ export function AIToolDrawer({
       </div>
 
       {/* v0.14.18 · 交互后端选择器: ≥2 候选时可切 (只列支持当前工具的后端), 否则只读显示解析后端。 */}
-      <div className="flex flex-col gap-[3px]">
+      <div className="flex flex-col gap-1">
         <span className={FIELD_LABEL_CLASS}>后端</span>
         <select
           data-testid="ai-tool-backend-select"
@@ -177,7 +177,7 @@ export function AIToolDrawer({
 
       {/* v0.14.9 · 多模型选择器 (按 task 分组, 按当前工具 prompt 过滤后 > 1 时渲染)。 */}
       {showModelSelector && (
-        <div className="flex flex-col gap-[3px]">
+        <div className="flex flex-col gap-1">
           <span className={FIELD_LABEL_CLASS}>模型</span>
           <select
             data-testid="ai-tool-model-select"
@@ -207,7 +207,7 @@ export function AIToolDrawer({
             data-testid="ai-tool-polarity"
             onClick={() => onSetSamPolarity(samPolarity === "positive" ? "negative" : "positive")}
             className={cn(
-              "flex size-6 cursor-pointer appearance-none items-center justify-center rounded-full border-0 p-0 text-[13px] font-bold leading-none text-white",
+              "flex size-6 cursor-pointer appearance-none items-center justify-center rounded-full border-0 p-0 text-sm font-bold leading-none text-white",
               samPolarity === "positive" ? "bg-emerald-500" : "bg-amber-500",
             )}
             title={samPolarity === "positive" ? "正向 (+) — 按 - 切负向" : "负向 (−) — 按 + 切正向"}
@@ -218,14 +218,14 @@ export function AIToolDrawer({
       )}
 
       {hint && (
-        <div className="rounded-sm bg-muted px-1.5 py-1 text-[10.5px] leading-[1.4] text-muted-foreground">
+        <div className="rounded-sm bg-muted px-1.5 py-1 text-2xs leading-[1.4] text-muted-foreground">
           {hint}
         </div>
       )}
 
       {/* exemplar 输出形态三选一 (box/mask/both), 对齐 text-prompt; 拖框时按此 mode 派发. */}
       {tool === "exemplar" && exemplarOutputMode && onSetExemplarOutputMode && (
-        <div className="flex flex-col gap-[3px]" data-testid="exemplar-output-mode">
+        <div className="flex flex-col gap-1" data-testid="exemplar-output-mode">
           <span className={FIELD_LABEL_CLASS}>输出形态</span>
           <SamOutputModeTabs value={exemplarOutputMode} onChange={onSetExemplarOutputMode} />
         </div>
@@ -237,7 +237,7 @@ export function AIToolDrawer({
           {warnings.map((w) => (
             <div
               key={w.key}
-              className="flex items-start gap-1 rounded-sm bg-status-caution-soft px-1.5 py-1 text-[10.5px] leading-[1.4] text-status-caution"
+              className="flex items-start gap-1 rounded-sm bg-status-caution-soft px-1.5 py-1 text-2xs leading-[1.4] text-status-caution"
             >
               <Icon name="warning" size={11} />
               <span>{w.message}</span>
@@ -247,7 +247,7 @@ export function AIToolDrawer({
       )}
 
       {/* 状态指示 */}
-      <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+      <div className="mt-0.5 flex items-center gap-1 text-2xs text-muted-foreground">
         <span
           aria-hidden
           className={cn(

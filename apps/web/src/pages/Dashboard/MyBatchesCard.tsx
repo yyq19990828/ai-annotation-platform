@@ -52,9 +52,9 @@ function ProgressTriple({
     { label: "通过", pct: approvedPct, count: approvedCount, bar: "bg-emerald-500" },
   ];
   return (
-    <div className="mt-1.5 grid max-w-[420px] gap-[3px]">
+    <div className="mt-1.5 grid max-w-[420px] gap-1">
       {ROWS.map((r) => (
-        <div key={r.label} className="flex items-center gap-2 text-[11px] text-muted-foreground">
+        <div key={r.label} className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="flex-[0_0_36px]">{r.label}</span>
           <div className="h-1 flex-1 overflow-hidden rounded-sm bg-muted">
             <ProgressFill pct={r.pct} barClass={r.bar} />
@@ -113,7 +113,7 @@ export function MyBatchesCard() {
         <div className="border-b border-border px-4 py-3.5">
           <h3 className="m-0 text-sm font-semibold">我的批次</h3>
         </div>
-        <div className="px-4 py-8 text-center text-[13px] text-muted-foreground">
+        <div className="px-4 py-8 text-center text-sm text-muted-foreground">
           加载中...
         </div>
         </Card>
@@ -178,13 +178,13 @@ export function MyBatchesCard() {
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5">
         <h3 className="m-0 text-sm font-semibold">
           我的批次
-          <span className="ml-2 text-[11px]">
+          <span className="ml-2 text-xs">
             <Badge variant="accent">{batches.length}</Badge>
           </span>
         </h3>
         {submittable.length > 0 && (
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               已选 {selectedSubmittable.length} / {submittable.length} 可提交
             </span>
             <Button
@@ -235,10 +235,10 @@ export function MyBatchesCard() {
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-[13px] font-medium">{b.batch_name}</span>
+                  <span className="text-sm font-medium">{b.batch_name}</span>
                   <Badge variant={meta.variant} dot>{meta.label}</Badge>
                 </div>
-                <div className="mt-0.5 text-[11px] text-muted-foreground">
+                <div className="mt-0.5 text-xs text-muted-foreground">
                   <span className="mono">{b.batch_display_id}</span>
                   <span> · {b.project_name}</span>
                   <span> · 共 {b.total_tasks} 任务</span>
@@ -267,7 +267,7 @@ export function MyBatchesCard() {
                 )}
                 {b.status === "rejected" && b.review_feedback && (
                   <div
-                    className="mt-1.5 max-w-[600px] border-l-2 border-rose-500 bg-status-danger-soft px-2 py-1 text-[11px] text-muted-foreground"
+                    className="mt-1.5 max-w-[600px] border-l-2 border-rose-500 bg-status-danger-soft px-2 py-1 text-xs text-muted-foreground"
                     title={b.review_feedback}
                   >
                     <strong className="text-status-danger">驳回原因：</strong>

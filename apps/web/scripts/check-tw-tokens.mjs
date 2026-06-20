@@ -8,6 +8,8 @@
  *   2. 任意色值: bg-[#...] / text-[rgb(...)] / border-[hsl(...)] 等 Tailwind arbitrary color value
  *   3. (建议级) 暗色配对: 语义色 text/bg/border-<hue>-600 应伴随 dark:...-<hue>-400 (设计规范 §2.2)
  *   4. (warning) 状态色应走 text-status-* / bg-status-*-soft,不再手写状态 hue + dark: 对.
+ *   5. (warning) 任意字号 text-[Npx] 应走紧凑字号 scale.
+ *   6. (warning) 裸数字 z-index 应走语义 z-* utility.
  *
  * 中性色/表面/边框走 shadcn 的 --sc-* token (bg-background / text-foreground / border-border ...),
  * 语义彩色走固定调色板 (sky/emerald/violet/amber/rose) + 柔底 /10 + 暗色提亮. 不在 className 里写裸色.
@@ -122,6 +124,10 @@ const STATUS_SOFT_BG_RE = new RegExp(
   `\\b(?:[a-z-]+:)*!?bg-(${Object.keys(STATUS_CLASS_BY_HUE).join("|")})-500/10!?\\b`,
   "g",
 );
+const ARBITRARY_TEXT_SIZE_RE =
+  /(?:^|[\s"'`])((?:[^\s"'`]+:)*!?text-\[[0-9.]+px\]!?)(?=$|[\s"'`])/g;
+const RAW_Z_INDEX_RE =
+  /(?:^|[\s"'`])((?:[^\s"'`]+:)*!?z-(?:\[[0-9]+\]|[1-9][0-9]*)!?)(?=$|[\s"'`])/g;
 const SHADCN_CSS = "src/styles/shadcn.css";
 const ALLOWED_SHADCN_TAILWIND_PALETTE_RE =
   /^--color-(rose|amber|emerald|violet|sky)-(400|500|600)$/;
@@ -174,6 +180,25 @@ function checkStatusSemanticHints(value) {
     hints.push({
       kind: "status-color",
       detail: `${match[0]} 可替换为 bg-status-${STATUS_CLASS_BY_HUE[hue]}-soft`,
+    });
+  }
+
+  return hints;
+}
+
+function checkScaleSemanticHints(value) {
+  const hints = [];
+
+  for (const match of value.matchAll(ARBITRARY_TEXT_SIZE_RE)) {
+    hints.push({
+      kind: "font-scale",
+      detail: `${match[1]} 可替换为 text-2xs/text-xs/text-sm 或命名字号 token`,
+    });
+  }
+  for (const match of value.matchAll(RAW_Z_INDEX_RE)) {
+    hints.push({
+      kind: "z-scale",
+      detail: `${match[1]} 可替换为语义 z-* utility`,
     });
   }
 
@@ -235,6 +260,13 @@ function main() {
           ...warning,
         });
       }
+      for (const warning of checkScaleSemanticHints(value)) {
+        warnings.push({
+          file: relative(ROOT, file),
+          line: lineOf(text, index),
+          ...warning,
+        });
+      }
     }
   }
   findings.push(...checkCssColorTokenRefs());
@@ -285,13 +317,19 @@ function main() {
 function printWarnings(warnings) {
   if (warnings.length === 0) return;
 
+  const WARNING_KIND_LABEL = {
+    "status-color": "状态色应走 text-status-* / bg-status-*-soft",
+    "font-scale": "任意字号应走紧凑字号 scale",
+    "z-scale": "z-index 应走语义 z-* utility",
+  };
+
   console.warn(
-    `⚠ check-tw-tokens (warning): ${warnings.length} 处状态色仍可语义化\n`,
+    `⚠ check-tw-tokens (warning): ${warnings.length} 处样式可继续语义化\n`,
   );
   for (const f of warnings) {
     console.warn(`  ${f.file}:${f.line}  ${f.detail}`);
     if (CI) {
-      const msg = `[check-tw-tokens] 状态色应走 text-status-* / bg-status-*-soft: ${f.detail}`;
+      const msg = `[check-tw-tokens] ${WARNING_KIND_LABEL[f.kind] ?? "样式可语义化"}: ${f.detail}`;
       console.log(`::warning file=apps/web/${f.file},line=${f.line}::${msg}`);
     }
   }

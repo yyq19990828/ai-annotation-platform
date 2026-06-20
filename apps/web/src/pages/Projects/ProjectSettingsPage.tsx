@@ -21,7 +21,7 @@ import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNa
 import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
 
 const NAV_BUTTON_BASE =
-  "flex cursor-pointer appearance-none items-center gap-2 self-stretch rounded-sm border-0 bg-transparent px-2.5 py-2 text-left text-[13px] font-medium whitespace-nowrap max-md:flex-[0_0_auto]";
+  "flex cursor-pointer appearance-none items-center gap-2 self-stretch rounded-sm border-0 bg-transparent px-2.5 py-2 text-left text-sm font-medium whitespace-nowrap max-md:flex-[0_0_auto]";
 
 type SectionKey =
   | "general"
@@ -93,7 +93,7 @@ export function ProjectSettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="p-[60px] text-center text-muted-foreground">加载中...</div>
+      <div className="p-15 text-center text-muted-foreground">加载中...</div>
     );
   }
   if (error || !project) {

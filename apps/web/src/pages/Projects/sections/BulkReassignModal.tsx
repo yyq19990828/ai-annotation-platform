@@ -53,12 +53,12 @@ export function BulkReassignModal({ projectId, count, onClose, onSubmit, pending
 
   return (
     <Modal open onClose={onClose} title={`批量改派 · 已选 ${count} 个批次`} width={560}>
-      <div className="mb-3 text-[13px] text-muted-foreground">
+      <div className="mb-3 text-sm text-muted-foreground">
         留空或选择「保留不变」则该字段不会被修改；选择「清空指派」则该字段会被设为未分派。
       </div>
 
       {isLoading && (
-        <div className="p-4 text-center text-[13px] text-muted-foreground">
+        <div className="p-4 text-center text-sm text-muted-foreground">
           加载成员…
         </div>
       )}
@@ -137,9 +137,9 @@ function Column({
         </span>
         {icon}
         <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-          <span className="text-[12.5px] font-medium">{label}</span>
+          <span className="text-sm font-medium">{label}</span>
           {sub && (
-            <span className="ml-1.5 text-[11px] text-muted-foreground">{sub}</span>
+            <span className="ml-1.5 text-xs text-muted-foreground">{sub}</span>
           )}
         </span>
       </button>

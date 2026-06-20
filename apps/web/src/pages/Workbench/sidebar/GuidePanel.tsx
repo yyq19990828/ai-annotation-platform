@@ -57,7 +57,7 @@ export function GuidePanel({ projectId, content }: GuidePanelProps) {
 
   return (
     <div
-      className={`flex flex-col overflow-hidden absolute top-14 left-3 z-60 bg-card border border-border rounded-lg shadow-lg ${open ? "w-80 max-h-[70vh]" : "w-auto max-h-none"}`}
+      className={`flex flex-col overflow-hidden absolute top-14 left-3 z-drawer-backdrop bg-card border border-border rounded-lg shadow-lg ${open ? "w-80 max-h-[70vh]" : "w-auto max-h-none"}`}
       role="region"
       aria-label="标注指引"
       data-testid="wb-guide-panel"
@@ -75,7 +75,7 @@ export function GuidePanel({ projectId, content }: GuidePanelProps) {
         }}
       >
         <Icon name="book" size={14} />
-        <span className="text-[13px] font-semibold text-foreground">标注指引</span>
+        <span className="text-sm font-semibold text-foreground">标注指引</span>
         <button type="button" className="ml-auto bg-transparent border-0 text-muted-foreground cursor-pointer px-1.5 py-0.5 text-sm" aria-label={open ? "折叠" : "展开"}>
           {open ? "▾" : "▸"}
         </button>

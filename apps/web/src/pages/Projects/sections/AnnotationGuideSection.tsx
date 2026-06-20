@@ -16,9 +16,9 @@ import type { GuideAssetEntry, ProjectResponse } from "@/api/projects";
 
 const DESCRIPTION_CLASS = "m-0 text-xs leading-relaxed text-muted-foreground";
 const TAB_BTN_BASE =
-  "-mb-px cursor-pointer appearance-none border-0 border-b-2 border-b-transparent bg-transparent px-3 py-1.5 text-[13px] text-muted-foreground";
+  "-mb-px cursor-pointer appearance-none border-0 border-b-2 border-b-transparent bg-transparent px-3 py-1.5 text-sm text-muted-foreground";
 const PREVIEW_PLACEHOLDER_CLASS =
-  "rounded-md border border-dashed border-border p-6 text-center text-[13px] text-muted-foreground";
+  "rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground";
 
 const MarkdownEditor = lazy(() =>
   import("@/components/markdown/MarkdownEditor").then((m) => ({ default: m.MarkdownEditor })),
@@ -97,8 +97,8 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
 
   return (
     <Card>
-      <div className="flex flex-col gap-3 px-[18px] py-4">
-        <h3 className="m-0 text-[15px] font-semibold">标注指引（CVAT-style Markdown）</h3>
+      <div className="flex flex-col gap-3 px-4 py-4">
+        <h3 className="m-0 text-md font-semibold">标注指引（CVAT-style Markdown）</h3>
         <p className={DESCRIPTION_CLASS}>
           支持 Markdown 与 GFM 表格；拖拽 / 粘贴图片自动上传为项目资源。
           工作台首次进入会自动展开「📖 指引」浮层让标注员阅读一次。
@@ -156,7 +156,7 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
                   <button
                     type="button"
                     onClick={() => void handleDeleteAsset(a.key)}
-                    className="ml-auto cursor-pointer appearance-none rounded-sm border border-border bg-transparent px-2 py-0.5 text-[11px] text-status-danger"
+                    className="ml-auto cursor-pointer appearance-none rounded-sm border border-border bg-transparent px-2 py-0.5 text-xs text-status-danger"
                   >
                     删除
                   </button>

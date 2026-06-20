@@ -34,6 +34,35 @@
 
 > **0.17.x 是一个 UI 迁移 Epic**:把 `apps/web` 自维护的 CSS Modules + `tokens.css` 视觉体系全量迁到 Tailwind v4 + shadcn/ui,直至旧 `*.module.css` 与 `tokens.css` 退役、CI 门禁完成时代切换。全程红线为「只换皮、行为零回退」(业务逻辑 / 数据流 / 路由 / 画布渲染逻辑均不动),逐阶段以 light/dark 双主题截图基线把关。Epic 与设计规范见 [`docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md`](docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md) 与 `docs-site/dev/reference/design-system.md`。
 
+## [0.17.11] - 2026-06-20
+
+设计系统第二阶段收尾:只抽真正重复的局部表单原语,并降低视频 Konva 层每次渲染读取 CSS 变量的成本。
+
+### Changed
+
+- **Projects sections 共享标签样式**:5 处完全相同的 `LABEL_CLASS` 抽到 `Projects/sections/formClasses.ts`;发散的 `CONTROL_CLASS` 保持本地,不扩大抽象。
+- **画布取色 memo**:`VideoKonvaTracksLayer` 与 `VideoKonvaIssueLayer` 将 `cssVarToHex(...)` 放入 `useTheme().resolved` 依赖的 `useMemo`,保留主题切换即时重取色。
+
+## [0.17.10] - 2026-06-20
+
+设计系统第二阶段继续收敛层级与 spacing:裸数字 z-index 改为语义 utilities,任意 padding 归并到 Tailwind spacing。
+
+### Changed
+
+- **语义 z 标尺**:新增 `--sc-z-*` 与 `.z-*` utilities,覆盖局部画布层、dropdown/popover/modal/drawer、notification、workbench modal 与 app drawer 的现有层级。
+- **spacing 收敛**:`apps/web/src` 内 `p?-[Npx]` 任意 padding 归并为 Tailwind spacing 类。
+- **z-index 门禁提示**:`check-tw-tokens.mjs` 对新增裸 `z-N` / `z-[N]` 输出 warning,提示改用语义 z utility。
+
+## [0.17.9] - 2026-06-20
+
+设计系统第二阶段继续收敛字号:全站任意像素字号改为紧凑命名 scale。
+
+### Changed
+
+- **紧凑字号 scale**:`shadcn.css` 定义 `text-2xs/text-xs/text-sm` 主档,并补少量低频命名档保留整数字号。
+- **任意字号收敛**:`apps/web/src` 内 `text-[Npx]` 全量替换为命名字号 utility;半像素档归入最近命名档。
+- **字号门禁提示**:`check-tw-tokens.mjs` 对新增 `text-[Npx]` 输出 warning,提示改用命名字号 token。
+
 ## [0.17.8] - 2026-06-20
 
 设计系统第二阶段启动:把散落在组件 `className` 中的状态文字色与软底收敛到 `shadcn.css` 的语义工具类,减少暗色主题配对的人工维护。

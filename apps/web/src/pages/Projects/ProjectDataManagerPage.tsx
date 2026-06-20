@@ -196,7 +196,7 @@ export function ProjectDataManagerPage() {
         : canManageProject),
   );
 
-  if (projectLoading) return <div className="p-[60px] text-center text-muted-foreground">加载中...</div>;
+  if (projectLoading) return <div className="p-15 text-center text-muted-foreground">加载中...</div>;
   if (error || !project) return <Navigate to="/unauthorized" replace />;
 
   const saveCurrent = async () => {
@@ -267,7 +267,7 @@ export function ProjectDataManagerPage() {
                   key={key}
                   type="button"
                   className={cn(
-                    "flex min-h-[34px] w-full cursor-pointer appearance-none items-center justify-between gap-2 rounded-sm border border-transparent bg-transparent px-2 py-1.5 text-left text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground [&>span:first-child]:min-w-0 [&>span:first-child]:overflow-hidden [&>span:first-child]:text-ellipsis [&>span:first-child]:whitespace-nowrap",
+                    "flex min-h-[34px] w-full cursor-pointer appearance-none items-center justify-between gap-2 rounded-sm border border-transparent bg-transparent px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground [&>span:first-child]:min-w-0 [&>span:first-child]:overflow-hidden [&>span:first-child]:text-ellipsis [&>span:first-child]:whitespace-nowrap",
                     active && "border-border bg-muted text-foreground",
                   )}
                   onClick={() => setSelectedKey(key)}
@@ -295,7 +295,7 @@ export function ProjectDataManagerPage() {
           <section className="mb-2.5 flex flex-col gap-2.5 rounded-md border border-border bg-card p-2.5">
             <div className="flex items-center justify-between gap-3 px-0.5 pb-0.5">
               <div>
-                <div className="text-[13px] font-semibold">{selectedView?.name ?? "任务视图"}</div>
+                <div className="text-sm font-semibold">{selectedView?.name ?? "任务视图"}</div>
                 <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                   {selectedView?.builtin ? "内置视图" : selectedView?.visibility === "project" ? "项目共享" : "私有视图"}
                   <span>·</span>

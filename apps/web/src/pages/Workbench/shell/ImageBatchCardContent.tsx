@@ -4,7 +4,7 @@ import { ActionBar } from "./selectionCard/ActionBar";
 
 const BODY_CLASS =
   "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
-const SUMMARY_CLASS = "flex flex-col gap-0.5 text-[13px] text-foreground";
+const SUMMARY_CLASS = "flex flex-col gap-0.5 text-sm text-foreground";
 const COUNT_CLASS = "text-brand tabular-nums";
 const HINT_CLASS = "text-xs text-muted-foreground";
 

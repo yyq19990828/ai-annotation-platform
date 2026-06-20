@@ -30,14 +30,14 @@ export function Modal({ open, onClose, title, width = 560, children }: ModalProp
       }}
     >
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-modal bg-black/40 backdrop-blur-[2px] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content
           ref={contentRef}
           aria-describedby={undefined}
-          className="fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100vh-48px)] w-full max-w-[calc(100%-48px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-lg outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+          className="fixed left-1/2 top-1/2 z-modal flex max-h-[calc(100vh-48px)] w-full max-w-[calc(100%-48px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-lg outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
         >
           {title !== undefined ? (
-            <div className="flex items-center justify-between border-b border-border px-[18px] py-3.5">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
               <DialogPrimitive.Title className="text-sm font-semibold text-foreground">
                 {title}
               </DialogPrimitive.Title>
@@ -51,7 +51,7 @@ export function Modal({ open, onClose, title, width = 560, children }: ModalProp
           ) : (
             <DialogPrimitive.Title className="sr-only">对话框</DialogPrimitive.Title>
           )}
-          <div className="overflow-y-auto px-[18px] py-4">{children}</div>
+          <div className="overflow-y-auto px-4 py-4">{children}</div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

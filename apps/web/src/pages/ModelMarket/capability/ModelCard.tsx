@@ -19,9 +19,9 @@ import { infraLabel, modalityLabel, taskLabel, taskVariant } from "./labels";
 import { WarmButton } from "./WarmButton";
 
 const TAG_CLASS =
-  "mono rounded-sm bg-muted px-[7px] py-px text-[10.5px] leading-[1.5] text-muted-foreground";
+  "mono rounded-sm bg-muted px-2 py-px text-2xs leading-[1.5] text-muted-foreground";
 const VARIANT_PILL_BASE =
-  "inline-flex items-center rounded-full border px-2 py-px text-[10.5px] leading-[1.6]";
+  "inline-flex items-center rounded-full border px-2 py-px text-2xs leading-[1.6]";
 
 export function ModelCard({ item }: { item: FlatModel }) {
   const { model: m } = item;
@@ -43,7 +43,7 @@ export function ModelCard({ item }: { item: FlatModel }) {
     <div className="flex flex-col gap-2 rounded-md border border-border bg-card px-3.5 py-3">
       <div className="flex items-center justify-between gap-2">
         <span
-          className="overflow-hidden text-ellipsis whitespace-nowrap text-[13.5px] font-semibold"
+          className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold"
           title={m.display_name ?? m.id}
         >
           {m.display_name ?? m.id}
@@ -55,7 +55,7 @@ export function ModelCard({ item }: { item: FlatModel }) {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-[5px]">
+      <div className="flex flex-wrap items-center gap-1.5">
         {m.task && <Badge variant={taskVariant(m.task)}>{taskLabel(m.task)}</Badge>}
         {infra && <Badge variant="outline">{infraLabel(infra)}</Badge>}
         {modalities.map((mod) => (
@@ -66,7 +66,7 @@ export function ModelCard({ item }: { item: FlatModel }) {
         {m.is_interactive && <Badge variant="ai">交互式</Badge>}
         {m.model_family && (
           <span
-            className="mono rounded-full border border-border px-[7px] py-px text-[10.5px] text-muted-foreground"
+            className="mono rounded-full border border-border px-2 py-px text-2xs text-muted-foreground"
             title="模型族"
           >
             {m.model_family}
@@ -75,7 +75,7 @@ export function ModelCard({ item }: { item: FlatModel }) {
       </div>
 
       <div
-        className="flex min-w-0 items-center gap-[5px] text-[11px] text-muted-foreground"
+        className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
         title={`${item.projectName} · ${item.backendName}`}
       >
         <Icon name="bot" size={11} className="text-muted-foreground" />
@@ -114,8 +114,8 @@ export function ModelCard({ item }: { item: FlatModel }) {
         <div className="flex flex-col gap-1.5 border-t border-dashed border-border pt-1">
           {variantGroups.map((g) => (
             <div key={g.key} className="flex flex-col gap-1">
-              <span className="text-[10.5px] font-semibold text-muted-foreground">{g.title ?? g.key}</span>
-              <div className="flex flex-wrap gap-[5px]">
+              <span className="text-2xs font-semibold text-muted-foreground">{g.title ?? g.key}</span>
+              <div className="flex flex-wrap gap-1.5">
                 {g.variants!.map((v) => {
                   const metaBits = [
                     v.vram_gb != null ? `${v.vram_gb}GB` : null,
@@ -158,7 +158,7 @@ export function ModelCard({ item }: { item: FlatModel }) {
       )}
 
       {evict && (
-        <div className="flex items-center gap-[5px] border-t border-dashed border-border pt-[7px] text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-1.5 border-t border-dashed border-border pt-2 text-xs text-muted-foreground">
           <Icon name="history" size={11} />
           <span>{formatEvict(evict)}</span>
         </div>
@@ -170,8 +170,8 @@ export function ModelCard({ item }: { item: FlatModel }) {
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-baseline gap-2">
-      <span className="w-14 shrink-0 text-[10.5px] font-semibold text-muted-foreground">{label}</span>
-      <div className="flex flex-wrap gap-[5px]">{children}</div>
+      <span className="w-14 shrink-0 text-2xs font-semibold text-muted-foreground">{label}</span>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
     </div>
   );
 }

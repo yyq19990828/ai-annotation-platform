@@ -59,14 +59,14 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
                   <Icon name={DATA_TYPE_ICONS[p.data_type ?? "image"] || "image"} size={15} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[13.5px] font-semibold">
+                  <div className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold">
                     {p.name}
                   </div>
                   <div className="mt-0.5 flex items-baseline gap-1.5">
-                    <span className="mono text-[11px] leading-[15px] text-muted-foreground">
+                    <span className="mono text-xs leading-[15px] text-muted-foreground">
                       {p.display_id}
                     </span>
-                    <span className="text-[11px] leading-[15px] text-muted-foreground">{projectDisplayType(p)}</span>
+                    <span className="text-xs leading-[15px] text-muted-foreground">{projectDisplayType(p)}</span>
                   </div>
                 </div>
                 {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
@@ -76,7 +76,7 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
 
               <div>
                 <ProgressBar value={pct} aiValue={aiPct} inProgressValue={startedPct} />
-                <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
+                <div className="mt-1 flex justify-between text-xs text-muted-foreground">
                   <span className="mono">
                     {p.completed_tasks.toLocaleString()} / {p.total_tasks.toLocaleString()}
                   </span>
@@ -87,14 +87,14 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-1.5">
                   <Avatar size="sm" initial={ownerInitial} />
-                  <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[11.5px] text-muted-foreground">
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
                     {p.owner_name ?? "—"}
                   </span>
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     · {p.member_count ?? 0} 成员
                   </span>
                 </div>
-                <span className="flex-[0_0_auto] text-[11px] text-muted-foreground">截止 {due}</span>
+                <span className="flex-[0_0_auto] text-xs text-muted-foreground">截止 {due}</span>
               </div>
 
               <div className="mt-auto flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>

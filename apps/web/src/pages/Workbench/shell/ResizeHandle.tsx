@@ -75,7 +75,7 @@ export function ResizeHandle({ side, width, onResize, min = 200, max = 600, rese
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       onDoubleClick={() => onResize(resetTo ?? (side === "right" ? 260 : 280))}
-      className={`absolute z-20 bg-transparent ${containerClass}`}
+      className={`absolute z-local-overlay bg-transparent ${containerClass}`}
       title="拖拽调整尺寸 · 双击恢复默认"
     >
       <span

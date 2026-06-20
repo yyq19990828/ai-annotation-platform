@@ -75,7 +75,7 @@ export function ModelMarketPage() {
     <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground max-md:px-4">
       <div className="mb-4">
         <h1 className="mb-1 text-xl font-semibold">模型市场</h1>
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           全局总览：env 配置的 AI 后端容器（直连观测）+ 所有项目已注册的 ML Backend 及其能力目录。
           {/* v0.10.38 · 视频追踪任务监控已迁至 /ai-pre/jobs 视频 tab (epic 阶段 3) */}
         </p>
@@ -116,7 +116,7 @@ export function ModelMarketPage() {
             role="tab"
             aria-selected={activeTab === tab.key}
             onClick={() => setTab(tab.key)}
-            className={`inline-flex min-h-[30px] cursor-pointer appearance-none items-center gap-1.5 rounded-sm border-0 bg-transparent px-3 py-[5px] text-xs max-md:justify-center ${
+            className={`inline-flex min-h-[30px] cursor-pointer appearance-none items-center gap-1.5 rounded-sm border-0 bg-transparent px-3 py-1.5 text-xs max-md:justify-center ${
               activeTab === tab.key
                 ? "bg-card text-foreground ring-1 ring-border"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"

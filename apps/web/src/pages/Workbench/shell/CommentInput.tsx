@@ -296,7 +296,7 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
       {anchor?.kind === "video_frame" && (
         <div
           data-testid="comment-anchor-preview"
-          className="inline-flex select-none items-center gap-1.5 self-start rounded border border-border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
+          className="inline-flex select-none items-center gap-1.5 self-start rounded border border-border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
         >
           <Icon name="film" size={12} />
           <span className="mono">F{anchor.frameIndex}</span>
@@ -309,7 +309,7 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
           {attachments.map((a, i) => (
             <div
               key={a.storageKey}
-              className="inline-flex items-center gap-1 rounded-[3px] border border-border bg-muted px-1.5 py-0.5 text-[11px] text-foreground"
+              className="inline-flex items-center gap-1 rounded-[3px] border border-border bg-muted px-1.5 py-0.5 text-xs text-foreground"
               title={`${(a.size / 1024).toFixed(1)} KB`}
             >
               <Icon name="folder" size={11} />
@@ -332,7 +332,7 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
         <div className="flex items-center gap-2">
           <label
             className={cn(
-              "inline-flex items-center gap-1 text-[11px] text-muted-foreground",
+              "inline-flex items-center gap-1 text-xs text-muted-foreground",
               uploading ? "cursor-wait" : "cursor-pointer",
             )}
           >
@@ -352,7 +352,7 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
               onClick={() => setCanvasOpen(true)}
               disabled={!backgroundUrl}
               className={cn(
-                "inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-[11px] font-normal text-muted-foreground",
+                "inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs font-normal text-muted-foreground",
                 canvasDrawing && "font-semibold text-brand",
                 !backgroundUrl && "cursor-default text-muted-foreground/60",
               )}
@@ -368,7 +368,7 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
               onClick={() => liveCanvas.onStart(canvasDrawing)}
               disabled={liveCanvas.active}
               className={cn(
-                "inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-[11px] font-normal text-brand",
+                "inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs font-normal text-brand",
                 liveCanvas.active && "cursor-default text-muted-foreground/60",
               )}
               title="直接在题图上绘制 — 缩放/平移自动跟随"

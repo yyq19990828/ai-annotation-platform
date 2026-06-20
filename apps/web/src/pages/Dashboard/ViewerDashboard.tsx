@@ -52,7 +52,7 @@ export function ViewerDashboard() {
     <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
       <div className="mb-5">
         <h1 className="mb-1 text-xl font-semibold">项目概览</h1>
-        <p className="text-[13px] text-muted-foreground">查看项目进度与数据质量</p>
+        <p className="text-sm text-muted-foreground">查看项目进度与数据质量</p>
       </div>
 
       <div className="mb-5 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
@@ -71,7 +71,7 @@ export function ViewerDashboard() {
           <SearchInput placeholder="搜索项目..." value={query} onChange={setQuery} width={220} />
         </div>
         <div className="w-full overflow-x-auto [overscroll-behavior-x:contain]">
-          <table className="w-full min-w-[760px] border-separate border-spacing-0 text-[13px]">
+          <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
             <thead>
               <tr>
                 {["项目", "进度", "AI 模型", "状态"].map((h, i) => (
@@ -93,12 +93,12 @@ export function ViewerDashboard() {
                 return (
                   <tr key={p.id} onClick={() => onOpenProject(p)} className="cursor-pointer">
                     <td className={TABLE_CELL_CLASS}>
-                      <div className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-[13.5px] font-medium">{p.name}</div>
-                      <span className="mono block max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-muted-foreground">{p.display_id}</span>
+                      <div className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium">{p.name}</div>
+                      <span className="mono block max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">{p.display_id}</span>
                     </td>
                     <td className={`${TABLE_CELL_CLASS} min-w-[180px]`}>
                       <ProgressBar value={pct} />
-                      <span className="mono text-[11px] text-muted-foreground">{pct}%</span>
+                      <span className="mono text-xs text-muted-foreground">{pct}%</span>
                     </td>
                     <td className={TABLE_CELL_CLASS}>
                       {p.ai_enabled ? (

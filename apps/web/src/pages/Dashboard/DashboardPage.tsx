@@ -38,7 +38,7 @@ const TD_CLASS = "border-b border-border p-3 align-middle";
 const TH_CLASS =
   "border-b border-border bg-muted px-3 py-2.5 text-left text-xs font-medium text-muted-foreground whitespace-nowrap first:pl-4 last:pr-4";
 const BATCH_LINK_CLASS =
-  "mt-1 cursor-pointer appearance-none border-0 bg-transparent p-0 text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 [font:inherit]";
+  "mt-1 cursor-pointer appearance-none border-0 bg-transparent p-0 text-xs text-muted-foreground underline decoration-dotted underline-offset-2 [font:inherit]";
 
 function ProjectRow({
   p,
@@ -73,11 +73,11 @@ function ProjectRow({
             <Icon name={DATA_TYPE_ICONS[p.data_type ?? "image"] || "image"} size={14} />
           </div>
           <div className="min-w-0">
-            <div className="max-w-[220px] truncate text-[13.5px] font-medium">{p.name}</div>
+            <div className="max-w-[220px] truncate text-sm font-medium">{p.name}</div>
             <div className="mt-0.5 flex min-w-0 items-baseline gap-2">
-              <span className="mono text-[11.5px] leading-4 text-muted-foreground">{p.display_id}</span>
+              <span className="mono text-xs leading-4 text-muted-foreground">{p.display_id}</span>
               <span className="leading-4 text-muted-foreground">·</span>
-              <span className="truncate text-[11.5px] leading-4 text-muted-foreground">
+              <span className="truncate text-xs leading-4 text-muted-foreground">
                 {projectDisplayType(p)}
               </span>
             </div>
@@ -88,8 +88,8 @@ function ProjectRow({
         <div className="flex items-center gap-2">
           <Avatar initial={ownerInitial} size="sm" />
           <div>
-            <div className="whitespace-nowrap text-[12.5px]">{p.owner_name ?? "—"}</div>
-            <div className="text-[11px] text-muted-foreground">
+            <div className="whitespace-nowrap text-sm">{p.owner_name ?? "—"}</div>
+            <div className="text-xs text-muted-foreground">
               {(p.member_count ?? 0) > 0 ? `${p.member_count} 名成员` : "暂无成员"}
             </div>
           </div>
@@ -97,11 +97,11 @@ function ProjectRow({
       </td>
       <td className={`${TD_CLASS} min-w-[220px]`}>
         <ProgressBar value={pct} aiValue={aiPct} inProgressValue={startedPct} />
-        <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
+        <div className="mt-1 flex justify-between text-xs text-muted-foreground">
           <span className="mono">
             {p.completed_tasks.toLocaleString()} / {p.total_tasks.toLocaleString()}
             {(p.in_progress_tasks ?? 0) + p.review_tasks > 0 && (
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-xs text-muted-foreground">
                 {" · "}
                 {(p.in_progress_tasks ?? 0) > 0 && <>{p.in_progress_tasks} 进行中</>}
                 {(p.in_progress_tasks ?? 0) > 0 && p.review_tasks > 0 && " · "}
@@ -114,7 +114,7 @@ function ProjectRow({
         {canManage && (
           <>
             {(p.batch_summary?.total ?? 0) > 0 && (
-              <div className="mt-[3px] text-[11px] text-muted-foreground">
+              <div className="mt-[3px] text-xs text-muted-foreground">
                 {p.batch_summary?.total} 个批次
                 {(p.batch_summary?.assigned ?? 0) > 0 && (
                   <> · {p.batch_summary?.assigned} 已分派</>
@@ -152,7 +152,7 @@ function ProjectRow({
       </td>
       <td className={TD_CLASS}>
         <div className="whitespace-nowrap text-xs">{due}</div>
-        <div className="text-[11px] text-muted-foreground">更新 {updated}</div>
+        <div className="text-xs text-muted-foreground">更新 {updated}</div>
       </td>
       <td
         className={`${TD_CLASS} whitespace-nowrap pr-4 text-right`}
@@ -264,7 +264,7 @@ export function DashboardPage() {
       <div className="mb-5 flex items-end justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start">
         <div>
           <h1 className="mb-1 text-xl font-semibold">项目总览</h1>
-          <p className="text-[13px] text-muted-foreground">管理你的标注项目,跟踪进度与 AI 辅助效率</p>
+          <p className="text-sm text-muted-foreground">管理你的标注项目,跟踪进度与 AI 辅助效率</p>
         </div>
         <div className="flex gap-2">
           <Can permission="dataset.create">
@@ -336,7 +336,7 @@ export function DashboardPage() {
             <Button onClick={() => setFilterOpen(true)}>
               <Icon name="filter" size={13} />筛选
               {advancedActiveCount > 0 && (
-                <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-brand/30 bg-brand/10 px-[5px] text-[10px] leading-none text-brand">
+                <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-brand/30 bg-brand/10 px-1.5 text-2xs leading-none text-brand">
                   {advancedActiveCount}
                 </span>
               )}
@@ -363,7 +363,7 @@ export function DashboardPage() {
           )
         ) : (
           <div className="w-full overflow-x-auto [overscroll-behavior-x:contain]">
-            <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-[13px]">
+            <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
                   {["项目", "负责人", "进度", "AI 模型", "状态", "截止 / 更新", ""].map((h, i) => (
@@ -415,10 +415,10 @@ export function DashboardPage() {
           <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
             <h3 className="text-sm font-semibold">AI 预标注队列</h3>
           </div>
-          <div className="px-4 py-8 text-center text-[13px] text-muted-foreground">
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             <Icon name="sparkles" size={28} className="mb-2 opacity-25" />
             <div>暂无运行中的预标注任务</div>
-            <div className="mt-1 text-[11.5px]">在标注工作台中点击"AI 一键预标"启动</div>
+            <div className="mt-1 text-xs">在标注工作台中点击"AI 一键预标"启动</div>
           </div>
         </Card>
 
@@ -427,7 +427,7 @@ export function DashboardPage() {
             <h3 className="text-sm font-semibold">近期活动</h3>
           </div>
           {recentActivity.length === 0 ? (
-            <div className="px-4 py-6 text-center text-[13px] text-muted-foreground">
+            <div className="px-4 py-6 text-center text-sm text-muted-foreground">
               <Icon name="activity" size={26} className="mb-2 opacity-25" />
               <div>暂无业务事件</div>
             </div>
@@ -436,7 +436,7 @@ export function DashboardPage() {
               {recentActivity.map((it) => (
                 <li
                   key={it.id}
-                  className="flex items-center gap-2.5 border-b border-border px-4 py-2.5 text-[12.5px]"
+                  className="flex items-center gap-2.5 border-b border-border px-4 py-2.5 text-sm"
                 >
                   <Avatar initial={(it.actor_email ?? "?").slice(0, 1).toUpperCase()} size="sm" />
                   <div className="min-w-0 flex-1">
@@ -444,7 +444,7 @@ export function DashboardPage() {
                       <span className="font-medium">{it.actor_email ?? "匿名"}</span>
                       <Badge variant="accent">{auditActionLabel(it.action)}</Badge>
                       {it.target_type && (
-                        <span className="text-[11px] text-muted-foreground">
+                        <span className="text-xs text-muted-foreground">
                           {it.target_type}
                           {it.target_id && (
                             <span className="mono ml-1">
@@ -455,7 +455,7 @@ export function DashboardPage() {
                       )}
                     </div>
                   </div>
-                  <span className="whitespace-nowrap text-[11px] text-muted-foreground">
+                  <span className="whitespace-nowrap text-xs text-muted-foreground">
                     {relativeTime(it.created_at)}
                   </span>
                 </li>

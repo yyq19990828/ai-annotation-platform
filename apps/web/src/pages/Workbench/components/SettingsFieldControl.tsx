@@ -62,7 +62,7 @@ export function SettingsFieldControl({
           </span>
         )}
         {locked && (
-          <span className="inline-flex shrink-0 items-center gap-[3px] px-1.5 py-px border border-border rounded-full bg-muted text-muted-foreground text-[10px] font-medium" title={LOCKED_TITLE}>
+          <span className="inline-flex shrink-0 items-center gap-1 px-1.5 py-px border border-border rounded-full bg-muted text-muted-foreground text-2xs font-medium" title={LOCKED_TITLE}>
             <Icon name="lock" size={10} />
             项目锁定
           </span>
@@ -76,7 +76,7 @@ export function SettingsFieldControl({
             onChange={onCommit}
           />
           {(control.onText || control.offText) && (
-            <span className="text-muted-foreground text-[11.5px] whitespace-nowrap">{value ? control.onText : control.offText}</span>
+            <span className="text-muted-foreground text-xs whitespace-nowrap">{value ? control.onText : control.offText}</span>
           )}
         </span>
       )}
@@ -94,7 +94,7 @@ export function SettingsFieldControl({
           {control.resetTo !== undefined && (
             <button
               type="button"
-              className="shrink-0 px-2 py-[3px] appearance-none border border-border rounded-[var(--radius-sm)] bg-card text-muted-foreground text-[11.5px] cursor-pointer transition-[border-color,color] duration-150 hover:border-brand hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+              className="shrink-0 px-2 py-1 appearance-none border border-border rounded-[var(--radius-sm)] bg-card text-muted-foreground text-xs cursor-pointer transition-[border-color,color] duration-150 hover:border-brand hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={disabled || locked}
               onClick={() => onCommit(control.resetTo!)}
             >
@@ -113,7 +113,7 @@ export function SettingsFieldControl({
             );
             if (selected) onCommit(selected.value);
           }}
-          className="appearance-none box-border w-full max-w-[130px] px-2 py-[5px] pr-6 border border-border rounded-[var(--radius-sm)] bg-card text-foreground text-xs outline-none cursor-pointer transition-[border-color,box-shadow] duration-150 focus:border-brand focus:shadow-[0_0_0_2px_var(--sc-brand-soft)] disabled:opacity-50 disabled:cursor-not-allowed"
+          className="appearance-none box-border w-full max-w-[130px] px-2 py-1.5 pr-6 border border-border rounded-[var(--radius-sm)] bg-card text-foreground text-xs outline-none cursor-pointer transition-[border-color,box-shadow] duration-150 focus:border-brand focus:shadow-[0_0_0_2px_var(--sc-brand-soft)] disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {control.options.map((opt) => (
             <option key={String(opt.value)} value={String(opt.value)}>
@@ -194,7 +194,7 @@ function LabelContentByTypeControl({
             type="button"
             role="tab"
             aria-selected={s.key === active}
-            className={`flex-1 px-2 py-1 border-0 rounded bg-transparent text-muted-foreground text-[11.5px] cursor-pointer transition-[background,color] duration-150 hover:text-foreground disabled:cursor-not-allowed ${s.key === active ? "bg-card text-brand font-medium" : ""}`}
+            className={`flex-1 px-2 py-1 border-0 rounded bg-transparent text-muted-foreground text-xs cursor-pointer transition-[background,color] duration-150 hover:text-foreground disabled:cursor-not-allowed ${s.key === active ? "bg-card text-brand font-medium" : ""}`}
             disabled={disabled}
             onClick={() => setActive(s.key)}
           >
@@ -205,7 +205,7 @@ function LabelContentByTypeControl({
       <div className="flex flex-col gap-0.5">
         <div className="flex items-center justify-between gap-3 min-h-[30px] px-1 py-0.5 text-foreground text-xs cursor-default text-muted-foreground">
           <span>类别名</span>
-          <span className="px-1.5 py-px rounded-full bg-muted text-muted-foreground text-[10px]">必选</span>
+          <span className="px-1.5 py-px rounded-full bg-muted text-muted-foreground text-2xs">必选</span>
         </div>
         {activeSeg.options.map((opt) => (
           <label key={opt.value} className="flex items-center justify-between gap-3 min-h-[30px] px-1 py-0.5 text-foreground text-xs cursor-pointer">
@@ -255,7 +255,7 @@ function MultiselectControl({
           <button
             key={opt.value}
             type="button"
-            className={`px-2.5 py-[3px] appearance-none border border-border rounded-full bg-card text-muted-foreground text-[11.5px] cursor-pointer transition-[border-color,background,color] duration-150 hover:border-brand hover:text-foreground disabled:cursor-not-allowed ${on ? "border-brand bg-brand/10 text-brand font-medium disabled:opacity-70" : ""}`}
+            className={`px-2.5 py-1 appearance-none border border-border rounded-full bg-card text-muted-foreground text-xs cursor-pointer transition-[border-color,background,color] duration-150 hover:border-brand hover:text-foreground disabled:cursor-not-allowed ${on ? "border-brand bg-brand/10 text-brand font-medium disabled:opacity-70" : ""}`}
             // chips 嵌在字段 <label> 内,显式 aria-label 兜底可达名,避免名被父 label 文本污染。
             aria-label={opt.label}
             aria-pressed={on}
@@ -362,7 +362,7 @@ function TextControl({
         if (local !== value) onCommit(local.trim());
       }}
       placeholder={placeholder}
-      className="appearance-none box-border w-full max-w-[180px] px-2 py-[5px] border border-border rounded-[var(--radius-sm)] bg-card text-foreground text-xs outline-none transition-[border-color,box-shadow] duration-150 focus:border-brand focus:shadow-[0_0_0_2px_var(--sc-brand-soft)] disabled:opacity-50 disabled:cursor-not-allowed"
+      className="appearance-none box-border w-full max-w-[180px] px-2 py-1.5 border border-border rounded-[var(--radius-sm)] bg-card text-foreground text-xs outline-none transition-[border-color,box-shadow] duration-150 focus:border-brand focus:shadow-[0_0_0_2px_var(--sc-brand-soft)] disabled:opacity-50 disabled:cursor-not-allowed"
     />
   );
 }

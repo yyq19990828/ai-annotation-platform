@@ -247,7 +247,7 @@ function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-[12.5px]">
+        <div className="text-sm">
           <span className="font-medium">{actorName}</span>{" "}
           <span className="text-muted-foreground">{verb}</span>
           {displayId && (
@@ -263,11 +263,11 @@ function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
           </div>
         )}
         {snippet && (
-          <div className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-muted-foreground">
+          <div className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
             "{snippet}"
           </div>
         )}
-        <div className="mt-0.5 text-[11px] text-muted-foreground">
+        <div className="mt-0.5 text-xs text-muted-foreground">
           {relativeTime(item.created_at)}
         </div>
       </div>
@@ -322,7 +322,7 @@ export function NotificationsPopover() {
         >
           <Icon name="bell" size={15} />
           {unread > 0 && (
-            <span className="absolute right-[5px] top-[5px] h-[7px] w-[7px] rounded-full border-[1.5px] border-card bg-rose-500" />
+            <span className="absolute right-[5px] top-1.5 h-[7px] w-[7px] rounded-full border-[1.5px] border-card bg-rose-500" />
           )}
         </button>
       )}
@@ -412,7 +412,7 @@ function NotificationsPanel({
   return (
     <div className="w-full overflow-hidden rounded-md">
       <div className="flex items-center justify-between border-b border-border px-3.5 pb-2.5 pt-3">
-        <span className="text-[13px] font-semibold">
+        <span className="text-sm font-semibold">
           通知{unread > 0 ? ` · ${unread} 未读` : ""}
         </span>
         <div className="flex items-center gap-2.5">
@@ -421,7 +421,7 @@ function NotificationsPanel({
               type="button"
               onClick={() => clearRead.mutate()}
               disabled={clearRead.isPending}
-              className="cursor-pointer appearance-none border-0 bg-transparent p-0 text-[11px] text-brand disabled:cursor-not-allowed"
+              className="cursor-pointer appearance-none border-0 bg-transparent p-0 text-xs text-brand disabled:cursor-not-allowed"
             >
               清空已读
             </button>
@@ -431,7 +431,7 @@ function NotificationsPanel({
               type="button"
               onClick={() => markAllRead.mutate()}
               disabled={markAllRead.isPending}
-              className="cursor-pointer appearance-none border-0 bg-transparent p-0 text-[11px] text-brand disabled:cursor-not-allowed"
+              className="cursor-pointer appearance-none border-0 bg-transparent p-0 text-xs text-brand disabled:cursor-not-allowed"
             >
               全部已读
             </button>
@@ -451,7 +451,7 @@ function NotificationsPanel({
             role="tab"
             aria-selected={activeFilter === filter.key}
             className={clsx(
-              "min-h-[30px] cursor-pointer appearance-none rounded-sm border px-2 py-[5px] text-center text-[11px] leading-[1.2]",
+              "min-h-[30px] cursor-pointer appearance-none rounded-sm border px-2 py-1.5 text-center text-xs leading-[1.2]",
               activeFilter === filter.key
                 ? "border-brand bg-brand/10 text-brand"
                 : "border-transparent bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -465,7 +465,7 @@ function NotificationsPanel({
 
       <div className="max-h-[min(560px,62vh)] min-h-[260px] overflow-y-auto">
         {isEmpty || isFilteredEmpty ? (
-          <div className="flex min-h-[260px] flex-col items-center justify-center px-3.5 py-6 text-center text-[13px] text-muted-foreground">
+          <div className="flex min-h-[260px] flex-col items-center justify-center px-3.5 py-6 text-center text-sm text-muted-foreground">
             <Icon name="bell" size={22} className="mb-1.5 opacity-25" />
             <div>{isFilteredEmpty ? "暂无此类型通知" : "暂无通知"}</div>
           </div>
@@ -475,7 +475,7 @@ function NotificationsPanel({
             if (groupItems.length === 0) return null;
             return (
               <section key={groupKey} className="border-b border-border last:border-b-0">
-                <div className="sticky top-0 z-[1] border-b border-border bg-popover px-3.5 py-1.5 text-[10.5px] font-semibold text-muted-foreground">
+                <div className="sticky top-0 z-local-1 border-b border-border bg-popover px-3.5 py-1.5 text-2xs font-semibold text-muted-foreground">
                   {GROUP_LABELS[groupKey]}
                 </div>
                 {groupItems.map((item) => (
@@ -496,7 +496,7 @@ function NotificationsPanel({
         <div className="border-t border-border px-3.5 py-2.5">
           <button
             type="button"
-            className="w-full cursor-pointer appearance-none rounded-sm border border-border bg-muted px-2.5 py-[7px] text-xs text-brand disabled:cursor-not-allowed disabled:text-muted-foreground"
+            className="w-full cursor-pointer appearance-none rounded-sm border border-border bg-muted px-2.5 py-2 text-xs text-brand disabled:cursor-not-allowed disabled:text-muted-foreground"
             disabled={notificationsQ.isFetchingNextPage}
             onClick={() => notificationsQ.fetchNextPage()}
           >

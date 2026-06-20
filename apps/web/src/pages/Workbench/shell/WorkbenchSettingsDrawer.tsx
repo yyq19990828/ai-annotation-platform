@@ -81,13 +81,13 @@ export function WorkbenchSettingsDrawer({
       <style>{`@keyframes slideInRight{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}`}</style>
       {/* 透明点击层:仅供点击关闭。刻意不加暗化遮罩 —— 抽屉的核心价值是所见即所得,
           调滤镜/平滑时画布必须保持原始观感。 */}
-      <div onClick={onClose} className="fixed inset-0 z-60 bg-transparent" />
+      <div onClick={onClose} className="fixed inset-0 z-drawer-backdrop bg-transparent" />
       <aside
         role="dialog"
         aria-label="工作台设置"
         aria-modal="false"
         onClick={(e) => e.stopPropagation()}
-        className="fixed top-0 right-0 bottom-0 z-61 flex flex-col w-[min(340px,100vw)] border-l border-border bg-card shadow-lg animate-[slideInRight_180ms_ease-out]"
+        className="fixed top-0 right-0 bottom-0 z-drawer flex flex-col w-[min(340px,100vw)] border-l border-border bg-card shadow-lg animate-[slideInRight_180ms_ease-out]"
         data-testid="workbench-settings-drawer"
       >
         <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">
@@ -110,7 +110,7 @@ export function WorkbenchSettingsDrawer({
           {loaded &&
             groups.map(({ category, fields }) => (
               <section key={category} className="flex flex-col">
-                <h3 className="m-0 px-2.5 pt-2 pb-[5px] text-muted-foreground text-[10.5px] font-semibold tracking-[0.06em] uppercase">
+                <h3 className="m-0 px-2.5 pt-2 pb-1.5 text-muted-foreground text-2xs font-semibold tracking-[0.06em] uppercase">
                   {WORKBENCH_SETTING_CATEGORY_LABELS[category]}
                 </h3>
                 <div className="flex flex-col gap-0.5">
@@ -165,7 +165,7 @@ export function WorkbenchSettingsDrawer({
                   <div className="flex items-center justify-between gap-3 box-border min-h-[38px] px-2.5 py-2 rounded-[var(--radius-sm)] transition-[background] duration-150 hover:bg-muted">
                     <span className="flex flex-1 min-w-0 flex-col gap-px">
                       <span className="text-muted-foreground text-xs font-medium">隐藏孤儿标注</span>
-                      <span className="text-muted-foreground text-[10.5px]">筛掉无匹配预测的人工框</span>
+                      <span className="text-muted-foreground text-2xs">筛掉无匹配预测的人工框</span>
                     </span>
                     <Switch
                       checked={hideOrphanAnnotations ?? false}
@@ -179,7 +179,7 @@ export function WorkbenchSettingsDrawer({
         </div>
 
         <footer className="px-4 py-2.5 border-t border-border bg-card">
-          <Link to="/settings" className="inline-flex items-center gap-1 text-muted-foreground text-[11.5px] no-underline transition-[color] duration-150 hover:text-brand hover:underline" onClick={onClose}>
+          <Link to="/settings" className="inline-flex items-center gap-1 text-muted-foreground text-xs no-underline transition-[color] duration-150 hover:text-brand hover:underline" onClick={onClose}>
             全部设置（含其他模态）→ 个人设置页
           </Link>
         </footer>

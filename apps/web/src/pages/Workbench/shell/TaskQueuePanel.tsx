@@ -130,15 +130,15 @@ function TaskItem({
               </span>
             )}
             {task.total_annotations > 0 && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full bg-brand/10 text-brand text-[10px] font-medium whitespace-nowrap">{task.total_annotations}</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full bg-brand/10 text-brand text-2xs font-medium whitespace-nowrap">{task.total_annotations}</span>
             )}
           </div>
         </div>
-        <div className="mt-0.5 overflow-hidden text-muted-foreground text-[11px] truncate">
+        <div className="mt-0.5 overflow-hidden text-muted-foreground text-xs truncate">
           {task.file_name}
         </div>
         <div
-          className={cn("inline-flex items-center gap-1 mt-[3px] text-[10.5px] font-medium", statusClassName(task))}
+          className={cn("inline-flex items-center gap-1 mt-[3px] text-2xs font-medium", statusClassName(task))}
         >
           <span className="w-[5px] h-[5px] rounded-full bg-current" />
           {statusLabel}
@@ -303,9 +303,9 @@ export function TaskQueuePanel({
 
           {/* v0.6.8 B-15：owner 视角且无任何批次时给出明确入口，避免误以为「100 条就是全部」 */}
           {isOwner && (!batches || batches.length === 0) && onGoToBatchSettings && (
-            <div className="flex items-center justify-between gap-2 mx-3.5 mt-1.5 px-2.5 py-2 border border-dashed border-border rounded-[var(--radius-sm)] bg-background text-muted-foreground text-[11px]">
+            <div className="flex items-center justify-between gap-2 mx-3.5 mt-1.5 px-2.5 py-2 border border-dashed border-border rounded-[var(--radius-sm)] bg-background text-muted-foreground text-xs">
               <span>未分批次 · 任务统一在「未归类」</span>
-              <Button variant="ghost" size="sm" onClick={onGoToBatchSettings} className="!px-1.5 !py-0.5 !text-[11px]">
+              <Button variant="ghost" size="sm" onClick={onGoToBatchSettings} className="!px-1.5 !py-0.5 !text-xs">
                 前往分批
               </Button>
             </div>
@@ -313,7 +313,7 @@ export function TaskQueuePanel({
 
           {/* v0.7.1 B-15：非 owner 视角且未分到批次 → 显式提示，避免误以为「列表无尽，但只看见 100」 */}
           {!isOwner && (!batches || batches.length === 0) && (
-            <div className="mx-3.5 mt-1.5 px-2.5 py-2 border border-dashed border-border rounded-[var(--radius-sm)] bg-background text-muted-foreground text-[11px]">
+            <div className="mx-3.5 mt-1.5 px-2.5 py-2 border border-dashed border-border rounded-[var(--radius-sm)] bg-background text-muted-foreground text-xs">
               暂未被分派到批次 · 联系项目管理员分配
             </div>
           )}
@@ -322,14 +322,14 @@ export function TaskQueuePanel({
             <div className="flex items-center gap-1.5 text-xs font-semibold">
               任务队列
               {selectedBatchId && batches && (
-                <span className="text-muted-foreground text-[11px] font-normal">
+                <span className="text-muted-foreground text-xs font-normal">
                   · 当前批次
                 </span>
               )}
               {rejectedCount > 0 && (
                 <span
                   title={`${rejectedCount} 个任务被退回，需重做`}
-                  className="inline-flex items-center gap-[3px] px-1.5 py-px border border-rose-500/30 rounded-full bg-status-danger-soft text-status-danger text-[10px] font-semibold"
+                  className="inline-flex items-center gap-1 px-1.5 py-px border border-rose-500/30 rounded-full bg-status-danger-soft text-status-danger text-2xs font-semibold"
                 >
                   <Icon name="warning" size={10} />
                   {rejectedCount} 待重做
@@ -338,7 +338,7 @@ export function TaskQueuePanel({
             </div>
             <div className="inline-flex items-center gap-1.5 shrink-0">
               <span
-                className="text-muted-foreground text-[11px] mono"
+                className="text-muted-foreground text-xs mono"
                 title={
                   hasNextPage
                     ? `已加载 ${tasks.length} / 共 ${totalCount ?? tasks.length}（滚动加载更多）`
@@ -386,7 +386,7 @@ export function TaskQueuePanel({
               })}
               {isFetchingNextPage && (
                 <VirtualRow start={virtualizer.getTotalSize()}>
-                  <div className="px-2.5 py-2 text-muted-foreground text-[11px] text-center">加载更多...</div>
+                  <div className="px-2.5 py-2 text-muted-foreground text-xs text-center">加载更多...</div>
                 </VirtualRow>
               )}
             </VirtualInner>
@@ -410,7 +410,7 @@ export function TaskQueuePanel({
             />
           )}
           <div className="flex items-center justify-between gap-2 mb-0.5">
-            <div className="flex items-center gap-1 text-muted-foreground text-[11px]">
+            <div className="flex items-center gap-1 text-muted-foreground text-xs">
               <span className="inline-flex items-center gap-1 text-foreground font-semibold">
                 <Icon name={toolIcon} size={12} />
                 {toolLabel}
@@ -429,7 +429,7 @@ export function TaskQueuePanel({
               </button>
             )}
           </div>
-          <div className="mb-1.5 text-muted-foreground text-[11px]">
+          <div className="mb-1.5 text-muted-foreground text-xs">
             {classPickable ? "点击选择放置类别" : "数字/字母键直接落框时使用"}
           </div>
           <ClassPalette

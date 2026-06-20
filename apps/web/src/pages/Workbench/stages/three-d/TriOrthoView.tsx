@@ -35,12 +35,12 @@ export interface TriSelected {
 }
 
 // v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
-const TRI_OVERLAY = "absolute inset-0 z-[1] pointer-events-none";
+const TRI_OVERLAY = "absolute inset-0 z-local-1 pointer-events-none";
 const TRI_OVERLAY_EDITABLE = "pointer-events-auto";
 const TRI_ANGLE_HUD =
-  "absolute left-1/2 top-1/2 z-[3] min-w-[104px] flex items-baseline justify-center gap-[7px] px-2.5 py-1.5 -translate-x-1/2 -translate-y-1/2 border border-brand rounded-sm bg-black/56 shadow-[0_0_14px_var(--sc-brand)]/20 text-brand font-mono pointer-events-none before:absolute before:left-2 before:right-2 before:h-px before:top-[3px] before:bg-brand/45 before:content-[''] after:absolute after:left-2 after:right-2 after:h-px after:bottom-[3px] after:bg-brand/45 after:content-['']";
-const TRI_ANGLE_LABEL = "text-[10px] text-muted-foreground";
-const TRI_ANGLE_VALUE = "text-[14px] font-bold text-brand";
+  "absolute left-1/2 top-1/2 z-local-3 min-w-[104px] flex items-baseline justify-center gap-[7px] px-2.5 py-1.5 -translate-x-1/2 -translate-y-1/2 border border-brand rounded-sm bg-black/56 shadow-[0_0_14px_var(--sc-brand)]/20 text-brand font-mono pointer-events-none before:absolute before:left-2 before:right-2 before:h-px before:top-1 before:bg-brand/45 before:content-[''] after:absolute after:left-2 after:right-2 after:h-px after:bottom-[3px] after:bg-brand/45 after:content-['']";
+const TRI_ANGLE_LABEL = "text-2xs text-muted-foreground";
+const TRI_ANGLE_VALUE = "text-ui font-bold text-brand";
 
 interface TriOrthoViewProps {
   view: TriView;

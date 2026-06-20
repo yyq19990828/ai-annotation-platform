@@ -71,7 +71,7 @@ export function AdminDashboard() {
 
   if (isLoading || !stats) {
     return (
-      <div className="px-7 py-[60px] text-center text-muted-foreground">
+      <div className="px-7 py-15 text-center text-muted-foreground">
         加载中...
       </div>
     );
@@ -84,7 +84,7 @@ export function AdminDashboard() {
       <div className="mb-5 flex items-end justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start">
         <div>
           <h1 className="mb-1 text-xl font-semibold">Overview</h1>
-          <p className="text-[13px] text-muted-foreground">全局平台运行状态与资源分布</p>
+          <p className="text-sm text-muted-foreground">全局平台运行状态与资源分布</p>
         </div>
         <div className="flex gap-2 max-[900px]:flex-wrap">
           <Button onClick={() => setImportOpen(true)}>
@@ -120,8 +120,8 @@ export function AdminDashboard() {
             <div className="flex items-center gap-2.5">
               <Icon name="users" size={16} />
               <div>
-                <div className="text-[13px] font-semibold">成员绩效</div>
-                <div className="text-[11px] text-muted-foreground">
+                <div className="text-sm font-semibold">成员绩效</div>
+                <div className="text-xs text-muted-foreground">
                   全员效率卡片网格 + 抽屉下钻
                 </div>
               </div>
@@ -156,7 +156,7 @@ export function AdminDashboard() {
                 <div className="flex items-center gap-2">
                   <Badge variant="outline">{ROLE_LABELS[role as UserRole] ?? role}</Badge>
                 </div>
-                <span className="mono text-[13px] font-medium">{count}</span>
+                <span className="mono text-sm font-medium">{count}</span>
               </div>
             ))}
           </div>
@@ -201,8 +201,8 @@ export function AdminDashboard() {
             <div className="flex items-center gap-2.5">
               <Icon name="warning" size={16} className="text-status-caution" />
               <div>
-                <div className="text-[13px] font-semibold">失败预测管理</div>
-                <div className="text-[11px] text-muted-foreground">
+                <div className="text-sm font-semibold">失败预测管理</div>
+                <div className="text-xs text-muted-foreground">
                   查看 ML Backend 调用失败的预测，并按需重试 (单条最多 3 次)
                 </div>
               </div>
@@ -224,7 +224,7 @@ export function AdminDashboard() {
           </Button>
         </div>
         {recentActivity.length === 0 ? (
-          <div className="px-4 py-6 text-center text-[13px] text-muted-foreground">
+          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
             <Icon name="activity" size={26} className="mb-2 opacity-25" />
             <div>暂无业务事件</div>
           </div>
@@ -233,17 +233,17 @@ export function AdminDashboard() {
             {recentActivity.map((it) => (
               <li
                 key={it.id}
-                className="flex items-center gap-2.5 border-b border-border px-4 py-2.5 text-[12.5px]"
+                className="flex items-center gap-2.5 border-b border-border px-4 py-2.5 text-sm"
               >
                 <Avatar initial={(it.actor_email ?? "?").slice(0, 1).toUpperCase()} size="sm" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className="font-medium">{it.actor_email ?? "匿名"}</span>
-                    <span className="[&>*]:text-[10px]">
+                    <span className="[&>*]:text-2xs">
                       <Badge variant="accent">{auditActionLabel(it.action)}</Badge>
                     </span>
                     {it.target_type && (
-                      <span className="text-[11px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         {it.target_type}
                         {it.target_id && (
                           <span className="mono ml-1">
@@ -254,7 +254,7 @@ export function AdminDashboard() {
                     )}
                   </div>
                 </div>
-                <span className="whitespace-nowrap text-[11px] text-muted-foreground">
+                <span className="whitespace-nowrap text-xs text-muted-foreground">
                   {relativeTime(it.created_at)}
                 </span>
               </li>
@@ -271,16 +271,16 @@ export function AdminDashboard() {
           <span className="text-xs text-muted-foreground">共 {projects.length} 个</span>
         </div>
         {projectsLoading && (
-          <div className="p-8 text-center text-[13px] text-muted-foreground">加载中...</div>
+          <div className="p-8 text-center text-sm text-muted-foreground">加载中...</div>
         )}
         {!projectsLoading && projects.length === 0 && (
-          <div className="p-8 text-center text-[13px] text-muted-foreground">
+          <div className="p-8 text-center text-sm text-muted-foreground">
             暂无项目，点击右上角「新建项目」开始
           </div>
         )}
         {!projectsLoading && projects.length > 0 && (
           <div className="w-full overflow-x-auto [overscroll-behavior-x:contain]">
-            <table className="w-full min-w-[760px] border-separate border-spacing-0 text-[13px]">
+            <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
                   {["项目", "负责人", "成员", "状态", ""].map((h, i) => (
@@ -301,15 +301,15 @@ export function AdminDashboard() {
                 {projects.map((p) => (
                   <tr key={p.id} className="cursor-pointer" onClick={() => navigate(`/projects/${p.id}/settings`)}>
                     <td className={`${TABLE_CELL_CLASS} py-2.5 pl-4`}>
-                      <div className="max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium">{p.name}</div>
-                      <div className="max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-muted-foreground">
+                      <div className="max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium">{p.name}</div>
+                      <div className="max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
                         <span className="mono">{p.display_id}</span> · {projectDisplayType(p)}
                       </div>
                     </td>
                     <td className={TABLE_CELL_CLASS}>
                       <div className="flex min-w-0 items-center gap-2">
                         <Avatar initial={p.owner_name?.slice(0, 1) ?? "?"} size="sm" />
-                        <span className="max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap text-[12.5px]">{p.owner_name ?? "—"}</span>
+                        <span className="max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap text-sm">{p.owner_name ?? "—"}</span>
                       </div>
                     </td>
                     <td className={`${TABLE_CELL_CLASS} text-muted-foreground`}>
@@ -398,17 +398,17 @@ function RegistrationSourceCard({ series }: { series: RegistrationDayPoint[] }) 
         </div>
         <div className={CARD_BODY_CLASS}>
           {total === 0 ? (
-            <div className="py-5 text-center text-[13px] text-muted-foreground">
+            <div className="py-5 text-center text-sm text-muted-foreground">
               过去 30 天暂无注册记录
             </div>
           ) : (
             <div>
-              <div className="mb-2 flex h-20 items-end gap-[3px]">
+              <div className="mb-2 flex h-20 items-end gap-1">
                 {series.map((d) => (
                   <RegistrationSourceBar key={d.date} point={d} peak={peak} />
                 ))}
               </div>
-              <div className="flex justify-between text-[11px] text-muted-foreground">
+              <div className="flex justify-between text-xs text-muted-foreground">
                 <span>{series[0]?.date}</span>
                 <span>{series[series.length - 1]?.date}</span>
               </div>
@@ -496,10 +496,10 @@ function MLBackendsAndCostCard({
         </div>
       </div>
       {backendsTotal === 0 ? (
-        <div className="px-4 py-6 text-center text-[13px] text-muted-foreground">
+        <div className="px-4 py-6 text-center text-sm text-muted-foreground">
           <Icon name="bot" size={28} className="mb-2 opacity-25" />
           <div>暂无已注册的 ML 后端</div>
-          <div className="mt-1 text-[11.5px]">在项目设置中添加模型服务</div>
+          <div className="mt-1 text-xs">在项目设置中添加模型服务</div>
         </div>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3 p-4">

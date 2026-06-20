@@ -61,10 +61,10 @@ const FILTER_MAP: Record<string, string | undefined> = {
 const TH_CLASS =
   "border-b border-border bg-muted px-3 py-2.5 text-left text-xs font-medium text-muted-foreground whitespace-nowrap first:pl-4 last:pr-4";
 const ITEMS_TH_CLASS =
-  "border-b border-border bg-muted px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground whitespace-nowrap";
+  "border-b border-border bg-muted px-2 py-1.5 text-left text-xs font-medium text-muted-foreground whitespace-nowrap";
 const TD_CLASS = "border-b border-border p-3 align-middle whitespace-nowrap";
 const ITEM_TD_CLASS = "border-b border-border p-2 whitespace-nowrap";
-const DETAIL_TITLE_CLASS = "m-0 text-[13px] font-semibold text-foreground";
+const DETAIL_TITLE_CLASS = "m-0 text-sm font-semibold text-foreground";
 const DETAIL_HEADER_CLASS = "mb-2.5 flex items-center justify-between";
 
 function getErrorMessage(err: unknown) {
@@ -110,8 +110,8 @@ function DatasetRow({ ds, isExpanded, onToggle }: { ds: DatasetResponse; isExpan
             <Icon name={TYPE_ICONS[ds.data_type] || "layers"} size={14} />
           </div>
           <div className="min-w-0">
-            <div className="truncate text-[13.5px] font-medium">{ds.name}</div>
-            <div className="mt-px truncate text-[11px] text-muted-foreground">
+            <div className="truncate text-sm font-medium">{ds.name}</div>
+            <div className="mt-px truncate text-xs text-muted-foreground">
               {ds.display_id}
               {ds.description && <> · {ds.description.length > 30 ? ds.description.slice(0, 30) + "…" : ds.description}</>}
             </div>
@@ -131,13 +131,13 @@ function DatasetRow({ ds, isExpanded, onToggle }: { ds: DatasetResponse; isExpan
         </Badge>
       </td>
       <td className={TD_CLASS}>
-        <span className="mono text-[13px]">{ds.file_count.toLocaleString()}</span>
+        <span className="mono text-sm">{ds.file_count.toLocaleString()}</span>
       </td>
       <td className={TD_CLASS}>
-        <span className="mono text-[13px]">{ds.project_count}</span>
+        <span className="mono text-sm">{ds.project_count}</span>
       </td>
       <td className={TD_CLASS}>
-        <span className="text-[12.5px]">{created}</span>
+        <span className="text-sm">{created}</span>
       </td>
       <td className={`${TD_CLASS} pr-4 text-right`}>
         <Button size="sm">
@@ -288,7 +288,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                 </div>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] border-separate border-spacing-0 text-[12.5px]">
+                <table className="w-full min-w-[720px] border-separate border-spacing-0 text-sm">
                   <thead>
                     <tr>
                       {["文件名", "类型", "大小", "媒体信息", "上传时间"].map((h, i) => (
@@ -336,7 +336,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                   <Button size="sm" onClick={() => setItemPage(Math.max(0, itemPage - 1))} className={itemPage > 0 ? undefined : "invisible"}>
                     <Icon name="chevLeft" size={11} />
                   </Button>
-                  <span className="px-2 py-1 text-[11px] text-muted-foreground">
+                  <span className="px-2 py-1 text-xs text-muted-foreground">
                     {itemPage + 1} / {totalPages}
                   </span>
                   <Button size="sm" onClick={() => setItemPage(Math.min(totalPages - 1, itemPage + 1))} className={itemPage < totalPages - 1 ? undefined : "invisible"}>
@@ -388,8 +388,8 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
               {linkedProjects.map((p) => (
                 <div key={p.id} className="flex items-center justify-between border-b border-border py-2">
                   <div className="min-w-0">
-                    <div className="truncate text-[12.5px] font-medium text-foreground">{p.name}</div>
-                    <div className="truncate text-[11px] text-muted-foreground">{p.display_id} · {p.type_label}</div>
+                    <div className="truncate text-sm font-medium text-foreground">{p.name}</div>
+                    <div className="truncate text-xs text-muted-foreground">{p.display_id} · {p.type_label}</div>
                   </div>
                   <Button size="sm" variant="ghost" onClick={() => setConfirmUnlink(p)} title="取消关联">
                     <Icon name="x" size={11} />
@@ -498,7 +498,7 @@ function UnlinkConfirmModal({
 
   return (
     <Modal open onClose={onClose} title="确认取消关联">
-      <div className="text-[13px] leading-relaxed">
+      <div className="text-sm leading-relaxed">
         <p className="mb-2">
           确认取消数据集 <strong>{datasetName}</strong> 与项目 <strong>{project.name}</strong> 的关联？
         </p>
@@ -531,7 +531,7 @@ function UnlinkConfirmModal({
               onChange={(e) => setConfirmText(e.target.value)}
               placeholder={datasetName}
               autoFocus
-              className={`box-border w-full appearance-none rounded-md border bg-muted px-2.5 py-[7px] text-[13px] text-foreground [font:inherit] ${canSubmit ? "border-emerald-500" : "border-border"}`}
+              className={`box-border w-full appearance-none rounded-md border bg-muted px-2.5 py-2 text-sm text-foreground [font:inherit] ${canSubmit ? "border-emerald-500" : "border-border"}`}
             />
           </div>
         )}
@@ -598,7 +598,7 @@ export function DatasetsPage() {
       <div className="mb-5 flex items-end justify-between gap-6">
         <div>
           <h1 className="mb-1 text-xl font-semibold">数据集</h1>
-          <p className="text-[13px] text-muted-foreground">管理标注数据集，上传文件并关联到标注项目</p>
+          <p className="text-sm text-muted-foreground">管理标注数据集，上传文件并关联到标注项目</p>
         </div>
         {activeTab === "数据集管理" && (
           <Button variant="primary" onClick={() => setShowCreate(true)}>
@@ -655,7 +655,7 @@ export function DatasetsPage() {
               <SearchInput placeholder="搜索数据集..." value={query} onChange={setQuery} width={220} />
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] border-separate border-spacing-0 text-[13px]">
+              <table className="w-full min-w-[900px] border-separate border-spacing-0 text-sm">
                 <thead>
                   <tr>
                     {["数据集", "类型", "Scene", "文件数", "关联项目", "创建时间", ""].map((h, i) => (

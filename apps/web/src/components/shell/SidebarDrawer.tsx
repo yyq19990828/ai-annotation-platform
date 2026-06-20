@@ -57,7 +57,7 @@ export function SidebarDrawer({ open, onClose, children, width = 240 }: SidebarD
       <div
         onClick={onClose}
         aria-hidden="true"
-        className={`fixed inset-0 z-[1099] bg-black/40 transition-opacity duration-[220ms] ease-out ${
+        className={`fixed inset-0 z-app-drawer-backdrop bg-black/40 transition-opacity duration-[220ms] ease-out ${
           open ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
@@ -67,7 +67,7 @@ export function SidebarDrawer({ open, onClose, children, width = 240 }: SidebarD
         role="dialog"
         aria-modal="true"
         aria-label="导航菜单"
-        className={`fixed left-0 top-0 z-[1100] h-screen w-[var(--sidebar-drawer-width)] overflow-auto border-r border-border bg-card transition-[transform,box-shadow] duration-[220ms] ease-out ${
+        className={`fixed left-0 top-0 z-app-drawer h-screen w-[var(--sidebar-drawer-width)] overflow-auto border-r border-border bg-card transition-[transform,box-shadow] duration-[220ms] ease-out ${
           open ? "translate-x-0 shadow-xl" : "-translate-x-full"
         }`}
       >

@@ -1,5 +1,7 @@
+import { useMemo } from "react";
 import { Layer, Circle, Text } from "react-konva";
 import type Konva from "konva";
+import { useTheme } from "@/hooks/useTheme";
 import { cssVarToHex } from "./colors";
 import type { VideoPixelSize } from "./videoKonvaCoordinates";
 import type { AnnotationFeedback } from "@/api/feedbacks";
@@ -40,9 +42,17 @@ export function VideoKonvaIssueLayer({
   highlightId,
   onPinClick,
 }: VideoKonvaIssueLayerProps) {
+  const { resolved: theme } = useTheme();
+  const ringColor = useMemo(() => cssVarToHex("--sc-card", theme), [theme]);
+  const statusFillByStatus = useMemo(() => {
+    const fills: Record<string, string> = {};
+    for (const [status, varName] of Object.entries(STATUS_VAR)) {
+      fills[status] = cssVarToHex(varName, theme);
+    }
+    return fills;
+  }, [theme]);
   const onFrame = pixelIssues.filter((issue) => issue.anchor_position?.frame === frameIndex);
   if (onFrame.length === 0) return null;
-  const ringColor = cssVarToHex("--sc-card");
   const radius = ISSUE_PIN_RADIUS * size.w;
   const clickable = !!onPinClick;
   const setCursor = (e: Konva.KonvaEventObject<MouseEvent>, cursor: string) => {
@@ -54,7 +64,7 @@ export function VideoKonvaIssueLayer({
       {onFrame.map((issue) => {
         const x = issue.anchor_position!.x * size.w;
         const y = issue.anchor_position!.y * size.h;
-        const fill = cssVarToHex(STATUS_VAR[issue.status] ?? STATUS_VAR.open);
+        const fill = statusFillByStatus[issue.status] ?? statusFillByStatus.open;
         const isHighlight = highlightId === issue.id;
         return (
           <Circle

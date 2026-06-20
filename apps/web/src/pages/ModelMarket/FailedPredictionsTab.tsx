@@ -75,11 +75,11 @@ export function FailedPredictionsTab() {
   return (
     <>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-4">
-        <p className="m-0 text-[12.5px] text-muted-foreground">
+        <p className="m-0 text-sm text-muted-foreground">
           ML Backend 调用失败的预测记录；管理员可重试 (单条最多 {MAX_RETRY} 次) 或永久放弃。
         </p>
         <label
-          className="inline-flex cursor-pointer items-center gap-1.5 text-[12.5px] text-muted-foreground"
+          className="inline-flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground"
           data-testid="toggle-include-dismissed"
         >
           <input
@@ -100,13 +100,13 @@ export function FailedPredictionsTab() {
             加载中...
           </div>
         ) : !data || data.items.length === 0 ? (
-          <div className="px-4 py-[60px] text-center text-[13px] text-muted-foreground">
+          <div className="px-4 py-15 text-center text-sm text-muted-foreground">
             <Icon name="check" size={26} className="mb-2 opacity-30" />
             <div>暂无失败预测</div>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[13px]">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className={HEADER_CELL_CLASS}>项目</th>

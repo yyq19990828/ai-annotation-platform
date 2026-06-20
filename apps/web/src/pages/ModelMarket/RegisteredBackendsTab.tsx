@@ -21,9 +21,9 @@ const STATE_VARIANT: Record<string, "success" | "warning" | "outline" | "danger"
 };
 
 const TABLE_CLASS =
-  "w-full min-w-[760px] border-separate border-spacing-0 text-[12.5px] [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2";
+  "w-full min-w-[760px] border-separate border-spacing-0 text-sm [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2";
 const TH_CLASS =
-  "border-b border-border bg-muted px-3 py-1.5 text-left text-[11px] font-medium whitespace-nowrap text-muted-foreground";
+  "border-b border-border bg-muted px-3 py-1.5 text-left text-xs font-medium whitespace-nowrap text-muted-foreground";
 const RETRY_BTN_CLASS =
   "mt-2 cursor-pointer appearance-none rounded-md border border-border bg-card px-3 py-1 text-xs text-foreground";
 const NOWRAP = "whitespace-nowrap";
@@ -82,16 +82,16 @@ export function RegisteredBackendsTab() {
       <Card>
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h3 className="m-0 text-sm font-semibold">注册管理</h3>
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             共 {data.projects.length} 个 AI 项目 · {data.total_backends} 个 backend
           </span>
         </div>
 
         {data.projects.length === 0 ? (
-          <div className="p-8 text-center text-[13px] text-muted-foreground">
+          <div className="p-8 text-center text-sm text-muted-foreground">
             <Icon name="bot" size={28} className="mb-1.5 opacity-25" />
             <div>尚无项目启用 AI 或注册 ML Backend</div>
-            <div className="mt-1 text-[11.5px]">新建项目启用 AI 后会出现在这里</div>
+            <div className="mt-1 text-xs">新建项目启用 AI 后会出现在这里</div>
           </div>
         ) : (
           <div className="flex flex-col gap-3 p-3">
@@ -142,7 +142,7 @@ function ProjectGroup({
       <div className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
           <Icon name="folder" size={14} className="text-muted-foreground" />
-          <span className="truncate text-[13px] font-medium">{group.project_name}</span>
+          <span className="truncate text-sm font-medium">{group.project_name}</span>
           {group.backends.length === 0 && (
             <Badge variant="warning">AI 已启用 · 未注册 backend</Badge>
           )}
@@ -154,7 +154,7 @@ function ProjectGroup({
           </Button>
           <a
             href={`/projects/${group.project_id}/settings?section=ml-backends`}
-            className="whitespace-nowrap text-[11.5px] text-brand no-underline"
+            className="whitespace-nowrap text-xs text-brand no-underline"
           >
             打开项目设置 →
           </a>
@@ -184,7 +184,7 @@ function ProjectGroup({
               {group.backends.map((b) => (
                 <tr key={b.id}>
                   <td className="max-w-[180px] truncate" title={b.name}>{b.name}</td>
-                  <td className="mono max-w-[280px] truncate text-[11px] text-muted-foreground" title={b.url}>
+                  <td className="mono max-w-[280px] truncate text-xs text-muted-foreground" title={b.url}>
                     {b.url}
                   </td>
                   <td>
@@ -205,7 +205,7 @@ function ProjectGroup({
                       {b.state}
                     </Badge>
                     {b.error_message && (
-                      <div className="mt-1 max-w-[220px] truncate text-[10.5px] text-status-danger">
+                      <div className="mt-1 max-w-[220px] truncate text-2xs text-status-danger">
                         {b.error_message}
                       </div>
                     )}

@@ -42,7 +42,7 @@ export function Tooltip({ name, desc, hotkey, side = "right", delay = 200, child
               {hotkey.split(/\s+/).map((k, i) => (
                 <kbd
                   key={i}
-                  className="rounded border border-border bg-muted px-1 text-[10px] leading-tight text-muted-foreground"
+                  className="rounded border border-border bg-muted px-1 text-2xs leading-tight text-muted-foreground"
                 >
                   {k}
                 </kbd>

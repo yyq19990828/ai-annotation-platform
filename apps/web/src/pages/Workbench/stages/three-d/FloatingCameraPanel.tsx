@@ -24,11 +24,11 @@ import type { SceneBox } from "./PointCloudScene";
 const CAM_PANEL =
   "flex flex-col w-[210px] rounded-md border border-border bg-card shadow-sm overflow-hidden";
 const CAM_PANEL_FLOATING =
-  "fixed left-[var(--cam-panel-x)] top-[var(--cam-panel-y)] z-[5] pointer-events-auto";
+  "fixed left-[var(--cam-panel-x)] top-[var(--cam-panel-y)] z-local-5 pointer-events-auto";
 const CAM_PANEL_DRAGGING = "select-none";
 const CAM_PANEL_BAR = "flex justify-end gap-1 px-1 py-0.5 border-b border-border cursor-grab";
 const FLOAT_TOGGLE_BTN =
-  "appearance-none px-2 py-0.5 rounded-sm border border-border bg-background text-muted-foreground cursor-pointer text-[11px] hover:border-brand hover:text-brand";
+  "appearance-none px-2 py-0.5 rounded-sm border border-border bg-background text-muted-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
 const CAM_PANEL_TAB =
   "appearance-none px-2.5 py-1.5 rounded-md border border-border bg-card shadow-sm text-foreground cursor-pointer text-xs whitespace-nowrap hover:border-brand hover:text-brand";
 

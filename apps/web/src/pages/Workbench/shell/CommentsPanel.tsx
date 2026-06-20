@@ -32,7 +32,7 @@ function cn(...parts: Array<string | false | null | undefined>) {
 
 // 顶部 tab 切换条:小写 chrome 风格的下划线 tab。
 const TAB_BUTTON =
-  "cursor-pointer appearance-none border-0 border-b-2 border-transparent bg-transparent px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground [font:inherit]";
+  "cursor-pointer appearance-none border-0 border-b-2 border-transparent bg-transparent px-2 py-1 text-xs font-semibold uppercase tracking-[0.4px] text-muted-foreground [font:inherit]";
 const TAB_BUTTON_ACTIVE = "border-brand text-foreground";
 
 // 评论卡片操作区的图标按钮(解决 / 删除)。
@@ -265,7 +265,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
         // 任务级评论 (POST /feedbacks · kind=comment / anchor_type=task) 的后端路径保留，
         // 待后续有更好的交互方案再开启（handleSubmit 的 task 分支仍在）。
         <div
-          className="cursor-not-allowed rounded border border-dashed border-border bg-card px-3 py-2.5 text-[11.5px] text-muted-foreground/70"
+          className="cursor-not-allowed rounded border border-dashed border-border bg-card px-3 py-2.5 text-xs text-muted-foreground/70"
           data-testid="comment-input-disabled"
         >
           请先选中一个标注后再评论
@@ -274,7 +274,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
 
       <div className="flex max-h-60 flex-col gap-1.5 overflow-y-auto">
         {comments.length === 0 && (
-          <div className="text-[11.5px] text-muted-foreground/70">{annotationId ? "暂无评论" : "该任务暂无任何评论"}</div>
+          <div className="text-xs text-muted-foreground/70">{annotationId ? "暂无评论" : "该任务暂无任何评论"}</div>
         )}
         {comments.map((c) => {
           const isMine = !!currentUserId && currentUserId === c.author_id;
@@ -300,10 +300,10 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
               )}
             >
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-[11.5px] font-medium text-foreground">
+                <span className="text-xs font-medium text-foreground">
                   {c.author_name ?? "—"}
                   {c.is_resolved && (
-                    <span className="ml-1.5 text-[10px] text-status-positive">已解决</span>
+                    <span className="ml-1.5 text-2xs text-status-positive">已解决</span>
                   )}
                 </span>
                 <div className="flex gap-1">
@@ -369,7 +369,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                   type="button"
                   data-testid="comment-annotation-chip"
                   onClick={() => onSelectAnnotation(c.annotation_id!)}
-                  className="mb-1 inline-flex max-w-full cursor-pointer appearance-none items-center gap-1 rounded border border-border bg-muted px-1.5 py-px text-[10.5px] text-muted-foreground [font:inherit] hover:border-brand hover:text-foreground"
+                  className="mb-1 inline-flex max-w-full cursor-pointer appearance-none items-center gap-1 rounded border border-border bg-muted px-1.5 py-px text-2xs text-muted-foreground [font:inherit] hover:border-brand hover:text-foreground"
                   title="跳转到该评论绑定的标注框"
                 >
                   <Icon name="crosshair" size={11} />
@@ -387,7 +387,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                   data-testid="comment-anchor-chip"
                   onClick={() => onSeekFrame?.(c.anchor!.frameIndex)}
                   className={cn(
-                    "mt-1.5 inline-flex appearance-none items-center gap-[5px] rounded border border-border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground [font:inherit]",
+                    "mt-1.5 inline-flex appearance-none items-center gap-1.5 rounded border border-border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground [font:inherit]",
                     onSeekFrame ? "cursor-pointer" : "cursor-default",
                   )}
                   title="跳转到评论锚定的视频帧"
@@ -415,7 +415,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                       href={`/api/v1/annotations/${annotationId}/comment-attachments/download?key=${encodeURIComponent(a.storageKey)}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-[3px] border border-border bg-muted px-1.5 py-0.5 text-[11px] text-foreground no-underline"
+                      className="inline-flex items-center gap-1 rounded-[3px] border border-border bg-muted px-1.5 py-0.5 text-xs text-foreground no-underline"
                       title={`${(a.size / 1024).toFixed(1)} KB`}
                     >
                       <Icon name="folder" size={11} />
@@ -426,7 +426,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                   ))}
                 </div>
               )}
-              <div className="mt-1 text-[10px] text-muted-foreground/70">
+              <div className="mt-1 text-2xs text-muted-foreground/70">
                 {new Date(c.created_at).toLocaleString()}
               </div>
             </div>
@@ -439,7 +439,7 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
             onClick={() => commentsQuery.fetchNextPage()}
             disabled={commentsQuery.isFetchingNextPage}
             data-testid="comments-load-more"
-            className="mt-1 cursor-pointer appearance-none self-center rounded-[3px] border border-border bg-transparent px-2.5 py-1 text-[11px] text-muted-foreground"
+            className="mt-1 cursor-pointer appearance-none self-center rounded-[3px] border border-border bg-transparent px-2.5 py-1 text-xs text-muted-foreground"
           >
             {commentsQuery.isFetchingNextPage ? "加载中…" : "加载更早评论"}
           </button>

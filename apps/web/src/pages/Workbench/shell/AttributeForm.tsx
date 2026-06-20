@@ -162,7 +162,7 @@ export function AttributeForm({
         </div>
       )}
       {!hideHeading && (
-        <div className="text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground">
+        <div className="text-xs font-semibold uppercase tracking-[0.4px] text-muted-foreground">
           属性 {missing.length > 0 && <span className="text-status-danger">· {missing.length} 项必填未填</span>}
         </div>
       )}
@@ -174,12 +174,12 @@ export function AttributeForm({
           <label
             key={f.key}
             className={cn(
-              "flex flex-col gap-1 rounded border border-transparent px-1.5 py-[3px]",
+              "flex flex-col gap-1 rounded border border-transparent px-1.5 py-1",
               f.type === "boolean" && "flex-row items-center justify-between gap-2",
               isMissing && "border-rose-400/60 bg-status-danger-soft",
             )}
           >
-            <span className="inline-flex items-center gap-1.5 text-[11.5px] text-foreground">
+            <span className="inline-flex items-center gap-1.5 text-xs text-foreground">
               {f.label}
               {f.required && <span className="ml-1 text-status-danger">*</span>}
               {/* v0.10.6 M4-γ · I13.2：视频任务下 mutable 字段标记徽标，提示「逐 keyframe 可变」语义。 */}
@@ -187,7 +187,7 @@ export function AttributeForm({
                 <span
                   title="逐 keyframe 可变（mutable）"
                   data-testid={`attr-mutable-badge-${f.key}`}
-                  className="rounded-[3px] border border-amber-500/40 bg-status-caution-soft px-[5px] py-px text-[9.5px] font-semibold uppercase leading-[1.2] tracking-[0.3px] text-status-caution"
+                  className="rounded-[3px] border border-amber-500/40 bg-status-caution-soft px-1.5 py-px text-2xs font-semibold uppercase leading-[1.2] tracking-[0.3px] text-status-caution"
                 >
                   逐帧
                 </span>
@@ -195,7 +195,7 @@ export function AttributeForm({
               {f.description && <DescriptionPopover description={f.description} />}
               {f.hotkey && (f.type === "boolean" || f.type === "select") && (
                 <span
-                  className="mono rounded-[3px] border border-b-2 border-brand/30 bg-brand/10 px-1.5 py-px text-[10.5px] font-semibold text-brand"
+                  className="mono rounded-[3px] border border-b-2 border-brand/30 bg-brand/10 px-1.5 py-px text-2xs font-semibold text-brand"
                   title={`选中标注后按 ${f.hotkey} 切换该属性`}
                 >
                   ⌨ {f.hotkey}
@@ -272,7 +272,7 @@ export function AttributeForm({
                   onChange={(e) => setValue(Number(e.target.value))}
                   className="flex-1 accent-brand"
                 />
-                <span className="mono min-w-[2.5ch] text-right text-[11.5px] text-muted-foreground">
+                <span className="mono min-w-[2.5ch] text-right text-xs text-muted-foreground">
                   {typeof v === "number" ? v : f.min ?? 0}
                 </span>
               </div>
@@ -307,7 +307,7 @@ function DescriptionPopover({ description }: { description: string }) {
         type="button"
         onClick={(e) => { e.stopPropagation(); pop.toggle(); }}
         aria-label={`查看说明：${description.slice(0, 50)}`}
-        className="inline-flex size-3.5 cursor-help appearance-none items-center justify-center rounded-full border border-border bg-muted p-0 text-[9px] font-semibold text-muted-foreground"
+        className="inline-flex size-3.5 cursor-help appearance-none items-center justify-center rounded-full border border-border bg-muted p-0 text-micro font-semibold text-muted-foreground"
       >
         i
       </button>
@@ -315,7 +315,7 @@ function DescriptionPopover({ description }: { description: string }) {
         <div
           ref={pop.popoverRef as React.MutableRefObject<HTMLDivElement | null>}
           role="tooltip"
-          className="absolute left-0 top-[calc(100%+4px)] z-[1000] min-w-[180px] max-w-[280px] rounded border border-border bg-card px-2.5 py-2 text-xs leading-normal text-foreground shadow-lg [pointer-events:auto]"
+          className="absolute left-0 top-[calc(100%+4px)] z-workbench-modal min-w-[180px] max-w-[280px] rounded border border-border bg-card px-2.5 py-2 text-xs leading-normal text-foreground shadow-lg [pointer-events:auto]"
         >
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
@@ -329,7 +329,7 @@ function DescriptionPopover({ description }: { description: string }) {
               ul: ({ children }) => <ul className="mb-1.5 pl-4">{children}</ul>,
               ol: ({ children }) => <ol className="mb-1.5 pl-4">{children}</ol>,
               code: ({ children }) => (
-                <code className="rounded-[3px] border border-border bg-muted px-1 py-px font-mono text-[11px] text-muted-foreground">
+                <code className="rounded-[3px] border border-border bg-muted px-1 py-px font-mono text-xs text-muted-foreground">
                   {children}
                 </code>
               ),

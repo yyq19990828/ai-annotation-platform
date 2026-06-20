@@ -160,20 +160,20 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
       {/* 背景遮罩，仅供点击关闭，不阻塞画布交互 */}
       <div
         onClick={onClose}
-        className="fixed inset-0 z-60 bg-black/25"
+        className="fixed inset-0 z-drawer-backdrop bg-black/25"
       />
       <aside
         role="dialog"
         aria-label="离线队列"
         aria-modal="false"
         onClick={(e) => e.stopPropagation()}
-        className="fixed top-0 right-0 bottom-0 z-61 flex flex-col w-[min(420px,100vw)] border-l border-border bg-card shadow-lg"
+        className="fixed top-0 right-0 bottom-0 z-drawer flex flex-col w-[min(420px,100vw)] border-l border-border bg-card shadow-lg"
       >
         <header className="flex items-center justify-between px-4 py-3.5 border-b border-border">
           <div className="flex items-center gap-2">
             <Icon name="inbox" size={14} />
             <div className="text-foreground text-sm font-semibold">离线队列</div>
-            <div className="text-muted-foreground text-[11px]">
+            <div className="text-muted-foreground text-xs">
               {items.length === 0
                 ? "暂无操作"
                 : `${items.length} 条 · 跨 ${taskCount} 题${currentTaskId ? ` · 当前题 ${currentTaskItemCount}` : ""}`}
@@ -191,7 +191,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
 
         {/* v0.6.4：筛选 chip */}
         {items.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 px-4 py-2 border-b border-border text-muted-foreground text-[11px]">
+          <div className="flex flex-wrap gap-1.5 px-4 py-2 border-b border-border text-muted-foreground text-xs">
             <span className="mr-1">范围：</span>
             <FilterChip label="全部" active={taskFilter === "all"} onClick={() => setTaskFilter("all")} />
             <FilterChip
@@ -215,7 +215,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
             <div className="px-4 py-8 text-muted-foreground text-xs text-center leading-[1.6]">
               <Icon name="check" size={18} className="mb-2 text-status-positive" />
               <div>{items.length === 0 ? "暂无离线操作" : "当前筛选无匹配项"}</div>
-              <div className="mt-1 text-[11px]">
+              <div className="mt-1 text-xs">
                 {items.length === 0 ? "所有标注操作已同步至服务器。" : "调整上方筛选 chip 查看其他项。"}
               </div>
             </div>
@@ -230,13 +230,13 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
                     type="button"
                     onClick={() => setCollapsed((c) => ({ ...c, [tid]: !isCollapsed }))}
                     className={cn(
-                      "flex items-center w-full gap-2 px-4 py-2 appearance-none border-0 border-b border-border text-foreground cursor-pointer text-[11.5px] font-semibold text-left",
+                      "flex items-center w-full gap-2 px-4 py-2 appearance-none border-0 border-b border-border text-foreground cursor-pointer text-xs font-semibold text-left",
                       isCurrent ? "bg-muted" : "bg-transparent",
                     )}
                   >
                     <Icon name={isCollapsed ? "chevRight" : "chevDown"} size={11} />
                     <span className="mono">任务 {tid.slice(0, 8)}…</span>
-                    {isCurrent && <span className="text-brand text-[10px]">当前</span>}
+                    {isCurrent && <span className="text-brand text-2xs">当前</span>}
                     <span className="ml-auto text-muted-foreground font-normal">
                       {opsInTask.length} 条
                     </span>
@@ -255,16 +255,16 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
                       >
                         <div className="flex items-center gap-2">
                           <span
-                            className={cn("px-1.5 py-px rounded-[3px] bg-muted text-[11px] font-semibold", kindClassName(op.kind))}
+                            className={cn("px-1.5 py-px rounded-[3px] bg-muted text-xs font-semibold", kindClassName(op.kind))}
                           >
                             {KIND_LABEL[op.kind]}
                           </span>
-                          <span className="text-muted-foreground text-[11px] mono">
+                          <span className="text-muted-foreground text-xs mono">
                             {formatTs(op.ts)}
                           </span>
                           {rc > 0 && (
                             <span
-                              className={cn("px-[5px] py-px rounded-[3px] text-[10px] font-semibold", retryBadgeClassName(rc))}
+                              className={cn("px-1.5 py-px rounded-[3px] text-2xs font-semibold", retryBadgeClassName(rc))}
                               title={`累计同步失败 ${rc} 次`}
                             >
                               失败 ×{rc}
@@ -272,7 +272,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
                           )}
                           {op.kind === "create" && op.tmpId && (
                             <span
-                              className="text-muted-foreground text-[10px] mono"
+                              className="text-muted-foreground text-2xs mono"
                               title={op.tmpId}
                             >
                               {op.tmpId.slice(0, 12)}…
@@ -280,7 +280,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
                           )}
                         </div>
                         {op.kind !== "create" && (
-                          <div className="text-muted-foreground text-[11px] mono">
+                          <div className="text-muted-foreground text-xs mono">
                             标注 {op.annotationId.slice(0, 8)}…
                           </div>
                         )}
@@ -289,7 +289,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
                             type="button"
                             disabled={isBusy}
                             onClick={() => handleRetry(op)}
-                            className="px-2.5 py-[3px] appearance-none border border-border rounded-[var(--radius-sm)] bg-card text-foreground cursor-pointer text-[11px] disabled:cursor-wait"
+                            className="px-2.5 py-1 appearance-none border border-border rounded-[var(--radius-sm)] bg-card text-foreground cursor-pointer text-xs disabled:cursor-wait"
                           >
                             重试
                           </button>
@@ -297,7 +297,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
                             type="button"
                             disabled={isBusy}
                             onClick={() => handleDelete(op)}
-                            className="px-2.5 py-[3px] appearance-none border border-border rounded-[var(--radius-sm)] bg-transparent text-status-danger cursor-pointer text-[11px] disabled:cursor-wait"
+                            className="px-2.5 py-1 appearance-none border border-border rounded-[var(--radius-sm)] bg-transparent text-status-danger cursor-pointer text-xs disabled:cursor-wait"
                           >
                             丢弃
                           </button>
@@ -349,7 +349,7 @@ function FilterChip({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "px-2 py-0.5 appearance-none rounded-[12px] cursor-pointer text-[11px] disabled:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+        "px-2 py-0.5 appearance-none rounded-[12px] cursor-pointer text-xs disabled:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
         active ? "border border-brand bg-brand text-white" : "border border-border bg-transparent text-foreground",
       )}
     >

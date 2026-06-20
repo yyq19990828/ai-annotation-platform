@@ -22,7 +22,7 @@ import {
 } from "@/api/asyncJobs";
 
 const FIELD_CLASS =
-  "appearance-none rounded-sm border border-border bg-muted px-2.5 py-1 text-[11px] text-foreground outline-none";
+  "appearance-none rounded-sm border border-border bg-muted px-2.5 py-1 text-xs text-foreground outline-none";
 const TABLE_CLASS =
   "w-full border-collapse text-xs [&_td]:border-b [&_td]:border-border [&_td]:px-2.5 [&_td]:py-1.5";
 const TH_CLASS =
@@ -81,7 +81,7 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
   return (
     <div className="flex flex-col gap-4 px-7 py-5 text-foreground">
       <Card>
-        <div className="flex items-center justify-between gap-2.5 border-b border-border px-4 py-3 text-[13px] font-semibold">
+        <div className="flex items-center justify-between gap-2.5 border-b border-border px-4 py-3 text-sm font-semibold">
           <span>任务列表 ({total})</span>
           <div className="inline-flex gap-2">
             <select
@@ -113,7 +113,7 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
         </div>
         <div className="flex flex-col gap-3 p-4">
           {jobsQ.isLoading ? (
-            <div className="p-4 text-center text-[11px] text-muted-foreground">加载中…</div>
+            <div className="p-4 text-center text-xs text-muted-foreground">加载中…</div>
           ) : items.length === 0 ? (
             <EmptyState />
           ) : (
@@ -140,7 +140,7 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
 
           {(page > 0 || hasNext) && (
             <div className="flex items-center justify-between pt-1.5">
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-xs text-muted-foreground">
                 第 {page + 1} 页 / 共 {total} 条
               </span>
               <div className="inline-flex gap-1.5">
@@ -209,7 +209,7 @@ function JobRow({ job }: { job: AsyncJob }) {
       {job.status === "failed" && job.error_message && (
         <tr>
           <td colSpan={6}>
-            <div className="break-words text-[11px] text-status-danger">{job.error_message}</div>
+            <div className="break-words text-xs text-status-danger">{job.error_message}</div>
           </td>
         </tr>
       )}
@@ -233,7 +233,7 @@ function EmptyState() {
     <div className="flex flex-col items-center gap-2 p-8 px-4 text-center text-muted-foreground">
       <Icon name="sparkles" size={28} />
       <div className="text-xs text-muted-foreground">暂无视频追踪任务</div>
-      <div className="text-[11px]">
+      <div className="text-xs">
         去视频工作台按 Shift+T 发起一次追踪，任务会出现在这里。
       </div>
     </div>

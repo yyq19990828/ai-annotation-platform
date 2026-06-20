@@ -426,15 +426,15 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           </div>
         </div>
 
-        {isLoading && <div className="p-8 text-center text-[13px] text-muted-foreground">加载中...</div>}
+        {isLoading && <div className="p-8 text-center text-sm text-muted-foreground">加载中...</div>}
 
         {!isLoading && batches.length === 0 && (
-          <div className="p-8 text-center text-[13px] text-muted-foreground">暂无批次</div>
+          <div className="p-8 text-center text-sm text-muted-foreground">暂无批次</div>
         )}
 
         {/* v0.7.3 · 未归类任务横带（关联数据集后但还没切分到 batch 的 task） */}
         {unclassifiedCount > 0 && (
-          <div className="flex items-center gap-3 border-b border-border bg-status-caution-soft px-4 py-2 text-[13px]">
+          <div className="flex items-center gap-3 border-b border-border bg-status-caution-soft px-4 py-2 text-sm">
             <Icon name="info" size={14} />
             <span>
               本项目有 <strong>{unclassifiedCount}</strong> 个 <strong>未归类任务</strong>（数据集已关联但尚未划分到批次）。
@@ -483,7 +483,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
         {/* v0.7.3 · 多选浮层操作条（仅 owner 可见） */}
         {isOwner && selectedCount > 0 && (
-          <div className="flex items-center gap-3 border-b border-border bg-brand/10 px-4 py-2 text-[13px]">
+          <div className="flex items-center gap-3 border-b border-border bg-brand/10 px-4 py-2 text-sm">
             <span>已选 <strong>{selectedCount}</strong> 个批次</span>
             <div className="ml-auto flex gap-1.5">
               <Button onClick={() => setConfirmBulk("activate")} title="对选中的 draft 批次批量激活">
@@ -578,7 +578,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
         {!isLoading && batches.length > 0 && view === "list" && (
           <div className="w-full overflow-x-auto">
-            <table className="w-full min-w-[1080px] border-collapse text-[13px] [&_td:last-child]:min-w-[360px] [&_th:last-child]:min-w-[360px]">
+            <table className="w-full min-w-[1080px] border-collapse text-sm [&_td:last-child]:min-w-[360px] [&_th:last-child]:min-w-[360px]">
               <thead>
                 <tr className="border-b border-border">
                   {isOwner && (
@@ -616,7 +616,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                     )}
                     <td className="px-3 py-2.5 align-middle">
                       <div className="max-w-[220px] overflow-hidden font-medium text-ellipsis whitespace-nowrap" title={b.name}>{b.name}</div>
-                      <div className="mono text-[11px] whitespace-nowrap text-muted-foreground">
+                      <div className="mono text-xs whitespace-nowrap text-muted-foreground">
                         {b.display_id}
                       </div>
                     </td>
@@ -644,7 +644,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                             onClick={() => setAssignTarget(b)}
                             title={unassigned ? "未分派 · 点击设置" : "点击修改分派"}
                             className={cn(
-                              "inline-flex cursor-pointer items-center gap-1 rounded-full border border-dashed border-border bg-transparent px-1.5 py-0.5 text-[11px] whitespace-nowrap text-muted-foreground",
+                              "inline-flex cursor-pointer items-center gap-1 rounded-full border border-dashed border-border bg-transparent px-1.5 py-0.5 text-xs whitespace-nowrap text-muted-foreground",
                               unassigned && "border-amber-500 text-status-caution",
                             )}
                           >
@@ -665,7 +665,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                     </td>
                     <td className="min-w-[140px] px-3 py-2.5 align-middle">
                       <ProgressBar value={b.progress_pct} />
-                      <div className="mt-0.5 text-[11px] whitespace-nowrap text-muted-foreground">
+                      <div className="mt-0.5 text-xs whitespace-nowrap text-muted-foreground">
                         <span className="mono">
                           {b.completed_tasks} / {b.total_tasks}
                         </span>
@@ -789,7 +789,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                       </div>
                       {b.status === "rejected" && b.review_feedback && (
                         <div
-                          className="mt-1.5 max-w-[300px] border-l-2 border-rose-500 bg-status-danger-soft px-2 py-1.5 text-[11px] text-muted-foreground"
+                          className="mt-1.5 max-w-[300px] border-l-2 border-rose-500 bg-status-danger-soft px-2 py-1.5 text-xs text-muted-foreground"
                           title={b.review_feedback}
                         >
                           <strong className="text-status-danger">驳回原因：</strong>
@@ -810,7 +810,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
       {/* 创建批次 Modal */}
       <Modal open={showCreate} title="创建批次" onClose={() => setShowCreate(false)}>
           <div className="flex flex-col gap-4 px-1">
-            <label className="flex flex-col gap-1 text-[13px]">
+            <label className="flex flex-col gap-1 text-sm">
               批次数量
               <input
                 type="number"
@@ -818,18 +818,18 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                 max={100}
                 value={nBatches}
                 onChange={(e) => setNBatches(Number(e.target.value))}
-                className="w-20 appearance-none rounded-sm border border-border bg-background px-2.5 py-1.5 text-[13px] text-foreground"
+                className="w-20 appearance-none rounded-sm border border-border bg-background px-2.5 py-1.5 text-sm text-foreground"
               />
             </label>
             {nBatches === 1 && (
               <p className="m-0 text-xs text-muted-foreground">把全部未归类任务注入一个新批次。</p>
             )}
-            <label className="flex flex-col gap-1 text-[13px]">
+            <label className="flex flex-col gap-1 text-sm">
               {nBatches === 1 ? "批次名称" : "名称前缀"}
               <input
                 value={namePrefix}
                 onChange={(e) => setNamePrefix(e.target.value)}
-                className="appearance-none rounded-sm border border-border bg-background px-2.5 py-1.5 text-[13px] text-foreground"
+                className="appearance-none rounded-sm border border-border bg-background px-2.5 py-1.5 text-sm text-foreground"
                 placeholder={nBatches === 1 ? "例如：第 1 批" : "Batch"}
               />
             </label>
@@ -850,7 +850,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
               </Button>
             </div>
 
-            <label className="flex flex-col gap-1 text-[13px]">
+            <label className="flex flex-col gap-1 text-sm">
               优先级: {priority}
               <input
                 type="range"
@@ -877,7 +877,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
       {/* 删除确认 */}
       <Modal open={!!confirmDelete} title="确认删除" onClose={() => setConfirmDelete(null)}>
-          <div className="text-[13px]">
+          <div className="text-sm">
             <p>
               确定删除批次 <strong>{confirmDelete?.name}</strong>？
               其中的 {confirmDelete?.total_tasks ?? 0} 个任务将变为未归类（可重新分包）。
@@ -900,7 +900,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         title="该批次有进行中的成果"
         onClose={() => setForceDelete(null)}
       >
-          <div className="text-[13px]">
+          <div className="text-sm">
             <p>
               批次 <strong>{forceDelete?.batch.name}</strong> 将影响{" "}
               <strong>{forceDelete?.affected ?? 0}</strong> 个任务
@@ -959,7 +959,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         title={`批量${confirmBulk ? BULK_LABEL[confirmBulk] : ""}`}
         onClose={() => setConfirmBulk(null)}
       >
-        <div className="text-[13px]">
+        <div className="text-sm">
           {confirmBulk === "archive" && (
             <p>将把已选 <strong>{selectedCount}</strong> 个批次归档。归档后批次进入终态，可由 owner 通过「撤销归档」恢复。</p>
           )}

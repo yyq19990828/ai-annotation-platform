@@ -13,7 +13,7 @@ const BODY_CLASS =
   "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
 const ATTR_BLOCK_CLASS = "border-t border-border pt-2";
 const FRAME_CHIP_CLASS =
-  "inline-flex flex-none items-center gap-[3px] rounded-full px-1.5 py-px text-[10px] font-medium tabular-nums whitespace-nowrap bg-brand/10 text-brand";
+  "inline-flex flex-none items-center gap-1 rounded-full px-1.5 py-px text-2xs font-medium tabular-nums whitespace-nowrap bg-brand/10 text-brand";
 const FRAME_TIME_CLASS = "text-brand/75";
 
 export interface VideoFrameBoxCardContentProps {

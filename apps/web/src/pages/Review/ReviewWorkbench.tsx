@@ -145,7 +145,7 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
           <span className="text-xs text-muted-foreground">{task?.file_name}</span>
           {task?.skip_reason && (
             <span
-              className="ml-1 rounded-sm border border-violet-500/30 bg-status-info-soft px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.4px] text-status-info"
+              className="ml-1 rounded-sm border border-violet-500/30 bg-status-info-soft px-1.5 py-px text-2xs font-semibold uppercase tracking-[0.4px] text-status-info"
               data-testid="reviewer-skip-badge"
             >
               SKIP
@@ -164,7 +164,7 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
           ))}
         </div>
         <div className="flex gap-1.5">
-          <Button size="sm" onClick={() => setFitTick((n) => n + 1)} className="text-[11px]">适应</Button>
+          <Button size="sm" onClick={() => setFitTick((n) => n + 1)} className="text-xs">适应</Button>
           <Button
             size="sm"
             variant={commentsOpen ? "primary" : "ghost"}
@@ -212,7 +212,7 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
         onCursorMove={() => {}}
       />
 
-      <div className="flex justify-between border-t border-border bg-card px-3.5 py-1.5 text-[11.5px] text-muted-foreground">
+      <div className="flex justify-between border-t border-border bg-card px-3.5 py-1.5 text-xs text-muted-foreground">
         <div className="flex gap-4">
           <span><span className="mono">{userBoxes.length}</span> 标注</span>
           <span>

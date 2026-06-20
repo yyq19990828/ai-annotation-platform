@@ -94,7 +94,7 @@ export function SchemaForm({ schema, value, onChange, disabled = false }: Schema
     return (
       <div
         data-testid="schema-form-empty"
-        className="text-muted-foreground text-[11px] py-1.5"
+        className="text-muted-foreground text-xs py-1.5"
       >
         当前后端无可配置参数
       </div>
@@ -132,7 +132,7 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
   // 只读字段 (model_variant / embedding_cache_size 等): 禁用控件, 仅作信息展示。
   const ro = disabled || field.readOnly === true;
   const desc = field.description ? (
-    <span className="text-muted-foreground text-[10px] leading-[1.4]">{field.description}</span>
+    <span className="text-muted-foreground text-2xs leading-[1.4]">{field.description}</span>
   ) : null;
 
   if (field.type === "boolean") {
@@ -146,7 +146,7 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
             disabled={ro}
             onChange={(e) => onChange(e.target.checked)}
           />
-          <span className="text-muted-foreground text-[11px]">{title}</span>
+          <span className="text-muted-foreground text-xs">{title}</span>
         </label>
         {desc}
       </div>
@@ -157,7 +157,7 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
     const v = typeof value === "string" ? value : String(field.default ?? field.enum[0]);
     return (
       <div data-testid={`schema-field-${name}`} className="flex flex-col gap-1">
-        <span className="text-muted-foreground text-[11px]">{title}</span>
+        <span className="text-muted-foreground text-xs">{title}</span>
         <select
           value={v}
           disabled={ro}
@@ -184,8 +184,8 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
     return (
       <div data-testid={`schema-field-${name}`} className="flex flex-col gap-1">
         <div className="flex items-baseline justify-between">
-          <span className="text-muted-foreground text-[11px]">{title}</span>
-          <span className="mono text-foreground text-[11px]">
+          <span className="text-muted-foreground text-xs">{title}</span>
+          <span className="mono text-foreground text-xs">
             {isInt ? v : Number(v).toFixed(2)}
           </span>
         </div>
@@ -222,7 +222,7 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
   const v = typeof value === "string" ? value : String(field.default ?? "");
   return (
     <div data-testid={`schema-field-${name}`} className="flex flex-col gap-1">
-      <span className="text-muted-foreground text-[11px]">{title}</span>
+      <span className="text-muted-foreground text-xs">{title}</span>
       <input
         type="text"
         value={v}

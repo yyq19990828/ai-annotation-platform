@@ -68,7 +68,7 @@ export function ReviewSidebar({ batches, selectedBatchId, onSelect }: Props) {
       <button
         type="button"
         onClick={() => onSelect(null)}
-        className={`mb-1.5 flex w-full cursor-pointer appearance-none items-center gap-1.5 rounded-md border border-border px-3 py-2 text-left text-[12.5px] text-foreground [font:inherit] ${
+        className={`mb-1.5 flex w-full cursor-pointer appearance-none items-center gap-1.5 rounded-md border border-border px-3 py-2 text-left text-sm text-foreground [font:inherit] ${
           selectedBatchId === "" ? "bg-brand/10" : "bg-transparent"
         }`}
       >
@@ -104,12 +104,12 @@ export function ReviewSidebar({ batches, selectedBatchId, onSelect }: Props) {
                       key={b.batch_id}
                       type="button"
                       onClick={() => onSelect(b)}
-                      className={`my-0.5 w-full cursor-pointer appearance-none rounded-sm border-0 px-2.5 py-2 text-left text-[12.5px] text-foreground [font:inherit] ${
+                      className={`my-0.5 w-full cursor-pointer appearance-none rounded-sm border-0 px-2.5 py-2 text-left text-sm text-foreground [font:inherit] ${
                         active ? "bg-brand/10" : "bg-transparent"
                       }`}
                     >
                       <div className="flex items-center gap-1.5">
-                        <span className="mono text-[11px] font-semibold text-brand">
+                        <span className="mono text-xs font-semibold text-brand">
                           {b.batch_display_id}
                         </span>
                         <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -121,7 +121,7 @@ export function ReviewSidebar({ batches, selectedBatchId, onSelect }: Props) {
                           </Badge>
                         )}
                       </div>
-                      <div className="mt-0.5 text-[10.5px] text-muted-foreground">
+                      <div className="mt-0.5 text-2xs text-muted-foreground">
                         共 {b.total_tasks} 任务 · 完成 {b.completed_tasks}
                         {remaining > 0 && ` · 未交 ${remaining}`}
                       </div>

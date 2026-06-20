@@ -15,9 +15,9 @@ import { WarmButton } from "./WarmButton";
 
 const TABLE_CLASS =
   "w-full min-w-[920px] border-separate border-spacing-0 text-xs " +
-  "[&_td]:border-b [&_td]:border-border [&_td]:px-2.5 [&_td]:py-[7px] [&_td]:text-left [&_td]:align-top " +
-  "[&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:px-2.5 [&_th]:py-[7px] [&_th]:text-left [&_th]:align-top " +
-  "[&_th]:whitespace-nowrap [&_th]:text-[11px] [&_th]:font-semibold [&_th]:text-muted-foreground";
+  "[&_td]:border-b [&_td]:border-border [&_td]:px-2.5 [&_td]:py-2 [&_td]:text-left [&_td]:align-top " +
+  "[&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:px-2.5 [&_th]:py-2 [&_th]:text-left [&_th]:align-top " +
+  "[&_th]:whitespace-nowrap [&_th]:text-xs [&_th]:font-semibold [&_th]:text-muted-foreground";
 
 export function ModelListTable({ items }: { items: FlatModel[] }) {
   const rows = buildListRows(items);
@@ -41,7 +41,7 @@ export function ModelListTable({ items }: { items: FlatModel[] }) {
               <tr key={row.rowKey}>
                 <td className="min-w-[180px]">
                   <div className="font-semibold">{row.primaryLabel}</div>
-                  <div className="mono mt-0.5 text-[10.5px] text-muted-foreground">{row.primaryId}</div>
+                  <div className="mono mt-0.5 text-2xs text-muted-foreground">{row.primaryId}</div>
                 </td>
                 <td className="max-w-[220px] text-muted-foreground">
                   {row.tasks.length > 0 ? row.tasks.map(taskLabel).join(" / ") : "—"}
@@ -91,7 +91,7 @@ function RuntimeCell({
   const loaded = isLoadedRuntimeKey(item, variants, runtimeKey);
   return (
     <div className="inline-flex min-w-[150px] items-center gap-1.5">
-      <span className="whitespace-nowrap text-[11px] text-muted-foreground">池 {currentPoolSize(item)}</span>
+      <span className="whitespace-nowrap text-xs text-muted-foreground">池 {currentPoolSize(item)}</span>
       <Badge variant={loaded ? "success" : "outline"}>{loaded ? "已加载" : "未加载"}</Badge>
       <WarmButton item={item} variants={variants} compact />
     </div>

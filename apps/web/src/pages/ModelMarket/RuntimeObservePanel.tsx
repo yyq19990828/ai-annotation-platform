@@ -29,11 +29,11 @@ const CARD_CLASS =
   "flex flex-col gap-2.5 rounded-md border border-border bg-card p-3";
 const CARD_TOP_CLASS = "flex flex-wrap items-center gap-2";
 const URL_CLASS =
-  "mono max-w-[520px] truncate text-[11.5px] text-muted-foreground";
-const LATENCY_CLASS = "text-[11px] text-muted-foreground";
+  "mono max-w-[520px] truncate text-xs text-muted-foreground";
+const LATENCY_CLASS = "text-xs text-muted-foreground";
 const NOTE_ERROR_CLASS = "text-xs text-status-danger";
 const METRICS_CLASS =
-  "flex flex-wrap items-center gap-3 text-[11.5px] text-muted-foreground";
+  "flex flex-wrap items-center gap-3 text-xs text-muted-foreground";
 const SELECT_CLASS =
   "max-w-[180px] appearance-none rounded-md border border-border bg-muted px-2 py-1 text-xs text-foreground";
 
@@ -100,7 +100,7 @@ export function RuntimeObservePanel() {
           <div className="flex items-center gap-2">
             <Icon name="activity" size={14} className="text-muted-foreground" />
             <h3 className="m-0 text-sm font-semibold">运行时观测</h3>
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {registered.length} 个注册 backend · {envOnlyTargets.length} 个未注册容器
             </span>
           </div>
@@ -124,7 +124,7 @@ export function RuntimeObservePanel() {
           <div className="flex flex-col gap-3.5 p-3">
             {registered.length > 0 && (
               <section className="flex flex-col gap-2.5">
-                <div className="text-[11px] font-semibold text-muted-foreground">已注册 backend</div>
+                <div className="text-xs font-semibold text-muted-foreground">已注册 backend</div>
                 {registered.map((ref) => (
                   <RegisteredRuntimeCard
                     key={`${ref.projectId}:${ref.backend.id}`}
@@ -139,7 +139,7 @@ export function RuntimeObservePanel() {
 
             {envOnlyTargets.length > 0 && (
               <section className="flex flex-col gap-2.5">
-                <div className="text-[11px] font-semibold text-muted-foreground">未注册容器</div>
+                <div className="text-xs font-semibold text-muted-foreground">未注册容器</div>
                 {envOnlyTargets.map((target) => (
                   <EnvOnlyCard key={target.url} target={target} />
                 ))}
@@ -147,10 +147,10 @@ export function RuntimeObservePanel() {
             )}
 
             {registered.length === 0 && envOnlyTargets.length === 0 && (
-              <div className="flex flex-col items-center gap-1.5 p-8 text-center text-[13px] text-muted-foreground">
+              <div className="flex flex-col items-center gap-1.5 p-8 text-center text-sm text-muted-foreground">
                 <Icon name="activity" size={28} className="opacity-30" />
                 <div>暂无可观测 ML Backend</div>
-                <div className="text-[11px]">注册 backend 或配置 ML_BACKEND_OBSERVE_URLS 后会出现在这里</div>
+                <div className="text-xs">注册 backend 或配置 ML_BACKEND_OBSERVE_URLS 后会出现在这里</div>
               </div>
             )}
           </div>
@@ -253,8 +253,8 @@ function RegisteredRuntimeCard({
         <Badge variant={ok ? "success" : "danger"} dot>
           {ok ? "在线" : "离线"}
         </Badge>
-        <span className="max-w-[220px] truncate text-[13px] font-semibold">{backend.name}</span>
-        <span className="text-[11px] text-muted-foreground">{projectName}</span>
+        <span className="max-w-[220px] truncate text-sm font-semibold">{backend.name}</span>
+        <span className="text-xs text-muted-foreground">{projectName}</span>
         <span className={URL_CLASS}>{backend.url}</span>
         {observe ? (
           <span className={LATENCY_CLASS}>{observe.latency_ms}ms</span>
@@ -429,7 +429,7 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
               )}
               {genericGroups.map((group) => (
                 <label key={group.key} className="flex items-center gap-1.5">
-                  <span className="text-[10.5px] font-semibold text-muted-foreground">{group.title ?? group.key}</span>
+                  <span className="text-2xs font-semibold text-muted-foreground">{group.title ?? group.key}</span>
                   <select
                     value={genericVariant[group.key] ?? ""}
                     onChange={(e) =>

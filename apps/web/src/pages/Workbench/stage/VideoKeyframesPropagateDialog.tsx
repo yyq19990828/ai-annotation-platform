@@ -98,7 +98,7 @@ export function VideoKeyframesPropagateDialog({
       role="dialog"
       aria-label="复制到后续帧"
       data-testid="video-keyframes-propagate-dialog"
-      className="fixed inset-0 z-[1000] grid place-items-center bg-black/40"
+      className="fixed inset-0 z-workbench-modal grid place-items-center bg-black/40"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}
@@ -106,7 +106,7 @@ export function VideoKeyframesPropagateDialog({
       <div className="grid gap-3 w-[340px] p-4 border border-border rounded-[10px] bg-card shadow-lg">
         <div className="flex items-center justify-between">
           <b className="text-sm">复制框到后续帧</b>
-          <button type="button" onClick={onCancel} className="border-0 bg-transparent text-muted-foreground cursor-pointer text-[13px]">
+          <button type="button" onClick={onCancel} className="border-0 bg-transparent text-muted-foreground cursor-pointer text-sm">
             ✕
           </button>
         </div>
@@ -120,7 +120,7 @@ export function VideoKeyframesPropagateDialog({
                 type="button"
                 onClick={() => setDirection(d)}
                 className={cn(
-                  "py-[5px] border rounded-md bg-background text-foreground cursor-pointer text-xs",
+                  "py-1.5 border rounded-md bg-background text-foreground cursor-pointer text-xs",
                   direction === d
                     ? "border-brand bg-brand/10"
                     : "border-border",
@@ -141,7 +141,7 @@ export function VideoKeyframesPropagateDialog({
                 type="button"
                 onClick={() => setCount(preset)}
                 className={cn(
-                  "py-[5px] border rounded-md bg-background text-foreground cursor-pointer text-xs",
+                  "py-1.5 border rounded-md bg-background text-foreground cursor-pointer text-xs",
                   count === preset
                     ? "border-brand bg-brand/10"
                     : "border-border",
@@ -156,9 +156,9 @@ export function VideoKeyframesPropagateDialog({
             min={1}
             value={count}
             onChange={(e) => setCount(Math.max(1, Math.floor(Number(e.target.value) || 0)))}
-            className="py-[5px] px-2 border border-border rounded-md bg-background text-foreground text-[13px]"
+            className="py-1.5 px-2 border border-border rounded-md bg-background text-foreground text-sm"
           />
-          <span className={cn("mono", "text-muted-foreground text-[11px]")}>
+          <span className={cn("mono", "text-muted-foreground text-xs")}>
             {grid > 1 ? (
               <>
                 G{Math.round(frameIndex / grid)} → G{Math.round(target / grid)} (F

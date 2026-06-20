@@ -137,7 +137,7 @@ export function UsersPage() {
       <div className="mb-5 flex items-end justify-between gap-6">
         <div>
           <h1 className="mb-1 text-xl font-semibold">用户与权限</h1>
-          <p className="text-[13px] text-muted-foreground">管理团队成员、角色权限与数据组分配</p>
+          <p className="text-sm text-muted-foreground">管理团队成员、角色权限与数据组分配</p>
         </div>
         <div className="flex gap-2">
           <Can permission="user.export">
@@ -182,7 +182,7 @@ export function UsersPage() {
               <select
                 value={selectedRole}
                 onChange={(e) => setSelectedRole(e.target.value)}
-                className={`${SELECT_BASE} px-2 py-[5px] text-[12.5px]`}
+                className={`${SELECT_BASE} px-2 py-1.5 text-sm`}
               >
                 <option>全部</option>
                 {roleKeys.map((r) => <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>)}
@@ -201,7 +201,7 @@ export function UsersPage() {
 
         {tab === "members" && (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-[13px]">
+            <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
                   {["成员", "角色", "数据组", "状态", "近期标注量", "准确率", "加入时间", ""].map((h, i) => (
@@ -225,8 +225,8 @@ export function UsersPage() {
                         <div className="flex items-center gap-2.5">
                           <Avatar initial={u.name[0]} size="md" />
                           <div className="min-w-0">
-                            <div className="max-w-[240px] truncate text-[13.5px] font-medium">{u.name}</div>
-                            <div className="mono max-w-[240px] truncate text-[11px] text-muted-foreground">{u.email}</div>
+                            <div className="max-w-[240px] truncate text-sm font-medium">{u.name}</div>
+                            <div className="mono max-w-[240px] truncate text-xs text-muted-foreground">{u.email}</div>
                           </div>
                         </div>
                       </td>
@@ -313,9 +313,9 @@ export function UsersPage() {
                     <Badge variant={ROLE_COLORS[rk] || "outline"}>
                       {ROLE_LABELS[rk] ?? rk}
                     </Badge>
-                    <span className="mono text-[11px] text-muted-foreground">{memberCount} 人</span>
+                    <span className="mono text-xs text-muted-foreground">{memberCount} 人</span>
                   </div>
-                  <div className="mb-2.5 text-[12.5px] text-muted-foreground">{ROLE_DESC[rk]}</div>
+                  <div className="mb-2.5 text-sm text-muted-foreground">{ROLE_DESC[rk]}</div>
                   <div className="flex flex-col gap-2">
                     {PERMISSION_GROUPS.map((group) => {
                       const granted = group.perms.filter((p) => permsSet.has(p));
@@ -323,10 +323,10 @@ export function UsersPage() {
                       if (granted.length === 0 && denied.length === 0) return null;
                       return (
                         <div key={group.key}>
-                          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.5px] text-muted-foreground">
+                          <div className="mb-1 text-2xs font-semibold uppercase tracking-[0.5px] text-muted-foreground">
                             {group.title}
                           </div>
-                          <div className="flex flex-wrap gap-[3px]">
+                          <div className="flex flex-wrap gap-1">
                             {granted.map((p) => (
                               <Badge key={p} variant="success">
                                 <Icon name="check" size={9} />{PERMISSION_LABELS[p]}
@@ -351,7 +351,7 @@ export function UsersPage() {
         {tab === "groups" && (
           <div className="p-4">
             {groupsData.length === 0 && (
-              <div className="p-[30px] text-center text-[13px] text-muted-foreground">
+              <div className="p-7.5 text-center text-sm text-muted-foreground">
                 暂无数据组。<Can permission="group.manage"><a onClick={() => setManageGroupsOpen(true)} className="cursor-pointer text-brand">新建一个</a></Can>
               </div>
             )}
@@ -362,8 +362,8 @@ export function UsersPage() {
                   <div className="flex items-center gap-3">
                     <Icon name="folder" size={18} className="text-muted-foreground" />
                     <div>
-                      <div className="text-[13.5px] font-medium">{g.name}</div>
-                      <div className="text-[11.5px] text-muted-foreground">{members.length} 名成员{g.description ? ` · ${g.description}` : ""}</div>
+                      <div className="text-sm font-medium">{g.name}</div>
+                      <div className="text-xs text-muted-foreground">{members.length} 名成员{g.description ? ` · ${g.description}` : ""}</div>
                     </div>
                   </div>
                   <div className="flex [&>div+div]:-ml-1.5 [&>div]:border-2 [&>div]:border-card">
@@ -397,7 +397,7 @@ export function UsersPage() {
         width={460}
       >
         {resettingPwd && (
-          <div className="flex flex-col gap-3.5 text-[13px]">
+          <div className="flex flex-col gap-3.5 text-sm">
             <div className="text-muted-foreground">
               将为以下用户生成一次性临时密码。请通过安全渠道（IM / 当面）告知用户，
               并提醒首次登录后立即修改密码。
@@ -405,8 +405,8 @@ export function UsersPage() {
             <div className={SUMMARY_CARD_CLASS}>
               <Avatar initial={resettingPwd.name[0]} size="md" />
               <div>
-                <div className="text-[13.5px] font-medium">{resettingPwd.name}</div>
-                <div className="mono text-[11.5px] text-muted-foreground">{resettingPwd.email}</div>
+                <div className="text-sm font-medium">{resettingPwd.name}</div>
+                <div className="mono text-xs text-muted-foreground">{resettingPwd.email}</div>
               </div>
               <span className="ml-auto">
                 <Badge variant={ROLE_COLORS[resettingPwd.role] || "outline"}>
@@ -447,7 +447,7 @@ export function UsersPage() {
         width={460}
       >
         {tempPwdResult && (
-          <div className="flex flex-col gap-3.5 text-[13px]">
+          <div className="flex flex-col gap-3.5 text-sm">
             <div className="text-muted-foreground">
               请立即复制并通过安全渠道告知 <b>{tempPwdResult.user.email}</b>。
               关闭此窗口后无法再次查看；用户首次登录后系统会强制要求修改密码。
@@ -489,7 +489,7 @@ export function UsersPage() {
         width={520}
       >
         {deleting && (
-          <div className="flex flex-col gap-3.5 text-[13px]">
+          <div className="flex flex-col gap-3.5 text-sm">
             <div className="text-muted-foreground">
               {transferStage
                 ? "该用户当前持有未完成任务或锁定任务；删除前请选择一名接收者，所有任务将被转交。"
@@ -498,8 +498,8 @@ export function UsersPage() {
             <div className={SUMMARY_CARD_CLASS}>
               <Avatar initial={deleting.name[0]} size="md" />
               <div>
-                <div className="text-[13.5px] font-medium">{deleting.name}</div>
-                <div className="mono text-[11.5px] text-muted-foreground">{deleting.email}</div>
+                <div className="text-sm font-medium">{deleting.name}</div>
+                <div className="mono text-xs text-muted-foreground">{deleting.email}</div>
               </div>
               <span className="ml-auto">
                 <Badge variant={ROLE_COLORS[deleting.role] || "outline"}>
@@ -510,13 +510,13 @@ export function UsersPage() {
 
             {transferStage && (
               <>
-                <div className="flex flex-col gap-1 rounded-md border border-amber-500 bg-status-caution-soft px-3 py-2.5 text-[12.5px]">
+                <div className="flex flex-col gap-1 rounded-md border border-amber-500 bg-status-caution-soft px-3 py-2.5 text-sm">
                   <div>
                     <Icon name="warning" size={12} /> 未完成任务 <strong>{transferStage.pending}</strong> 个
                     {transferStage.locked > 0 && <> · 锁定任务 <strong>{transferStage.locked}</strong> 个</>}
                   </div>
                   {transferStage.sample.length > 0 && (
-                    <div className="mono text-[11px] text-muted-foreground">
+                    <div className="mono text-xs text-muted-foreground">
                       示例：{transferStage.sample.slice(0, 3).join(", ")}
                       {transferStage.sample.length > 3 && " ..."}
                     </div>
@@ -529,7 +529,7 @@ export function UsersPage() {
                   <select
                     value={transferToId}
                     onChange={(e) => setTransferToId(e.target.value)}
-                    className={`${SELECT_BASE} w-full cursor-pointer px-2.5 py-2 text-[13px]`}
+                    className={`${SELECT_BASE} w-full cursor-pointer px-2.5 py-2 text-sm`}
                   >
                     <option value="">— 选择接收用户 —</option>
                     {allUsers
@@ -548,7 +548,7 @@ export function UsersPage() {
             )}
 
             {deleteUser.error && (
-              <div className="flex items-center gap-2 rounded-md border border-rose-500 bg-status-danger-soft px-3 py-2 text-[12.5px] text-status-danger">
+              <div className="flex items-center gap-2 rounded-md border border-rose-500 bg-status-danger-soft px-3 py-2 text-sm text-status-danger">
                 <Icon name="warning" size={12} /> {(deleteUser.error as Error)?.message ?? "删除失败"}
               </div>
             )}

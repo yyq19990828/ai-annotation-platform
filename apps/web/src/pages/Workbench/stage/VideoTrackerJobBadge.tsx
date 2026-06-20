@@ -50,7 +50,7 @@ export function VideoTrackerJobBadge({ job, onCancel }: VideoTrackerJobBadgeProp
     <div
       data-testid="video-tracker-job-badge"
       title={job.errorMessage ?? `${job.modelKey} · F${job.fromFrame}-F${job.toFrame}`}
-      className={`inline-flex items-center gap-1.5 border border-border rounded-full px-2 py-0.5 text-[11px] leading-[1.4] ${statusMeta.className}`}
+      className={`inline-flex items-center gap-1.5 border border-border rounded-full px-2 py-0.5 text-xs leading-[1.4] ${statusMeta.className}`}
     >
       <Icon name="bot" size={12} />
       <span>{statusMeta.label}</span>

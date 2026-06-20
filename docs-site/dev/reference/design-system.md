@@ -43,11 +43,47 @@ Neutral UI should stay neutral. Use color only for meaning:
 
 Status chips should use the semantic soft background, the matching status text utility, and a small `bg-current` dot when a quick scan cue helps. Do not write paired hue classes such as `text-rose-600 dark:text-rose-400`; the status utilities read theme tokens from `shadcn.css`.
 
+## Type Scale
+
+The app uses a compact type scale. Prefer named text utilities instead of arbitrary pixel classes:
+
+| Class | Size | Use |
+|---|---:|---|
+| `text-2xs` | 10px | dense badges and compact metadata |
+| `text-xs` | 11px | small labels, table headers, secondary metadata |
+| `text-sm` | 13px | default app copy, form controls, panel headings |
+| `text-md` | 15px | compact section headings |
+| `text-stat` | 22px | dashboard metrics |
+
+Rare exact-size utilities (`text-3xs`, `text-micro`, `text-ui`, `text-control-xl`) exist for migrated control details. Do not add `text-[Npx]` in component class names; add or reuse a named token in `shadcn.css` when a new size is genuinely required.
+
+## Z-Index Scale
+
+Use semantic z utilities instead of raw numeric z-index classes:
+
+| Class | Value | Use |
+|---|---:|---|
+| `z-local-1` ... `z-local-6` | 1 ... 6 | tightly scoped canvas or 3D local stacking |
+| `z-base` | 10 | page-local elevated elements |
+| `z-dock` / `z-dock-control` | 14 / 15 | workbench docks and dock controls |
+| `z-local-overlay` | 20 | local menus and resize handles |
+| `z-popover` / `z-popover-elevated` | 30 / 55 | popovers that must sit above local panels |
+| `z-dropdown` | 50 | dropdown and select content |
+| `z-modal` | 50 | modal overlay/content using current Radix stacking |
+| `z-floating` | 50 | floating workbench panels |
+| `z-tooltip` | 50 | tooltip content and arrow |
+| `z-drawer-backdrop` / `z-drawer` | 60 / 61 | custom drawer backdrop and content |
+| `z-notification-backdrop` / `z-notification` | 200 / 201 | notification popovers and badges |
+| `z-workbench-modal` | 1000 | workbench-local blocking dialogs |
+| `z-app-drawer-backdrop` / `z-app-drawer` | 1099 / 1100 | app shell drawer overlay and content |
+
 ## Rules
 
 - Do not use bare color values in component class names: no `#hex`, `rgb(...)`, `oklch(...)`, or Tailwind arbitrary color utilities.
 - Do not read legacy `var(--color-*)` tokens in CSS. CSS modules that remain should use `--sc-*`.
 - Do not add one-off color meanings in a page. Reuse the semantic status utilities above.
+- Do not add arbitrary pixel text sizes. Use the compact type scale, or define a named token in `shadcn.css`.
+- Do not add raw numeric `z-N` / `z-[N]` classes. Use the semantic z utilities above.
 - Use shadcn/ui primitives from `apps/web/src/components/shadcn/ui/` for low-level behavior where possible.
 - Keep existing `@/components/ui/*` adapters only when they preserve the current app API; they should delegate to shadcn/Radix behavior or Tailwind classes internally.
 
@@ -60,4 +96,4 @@ rtk pnpm --filter @anno/web lint:css-tokens
 rtk pnpm --filter @anno/web lint
 ```
 
-The token gate checks Tailwind class names for bare colors and dark-mode pairing, warns when status colors are not using semantic utilities, and fails if CSS reads old `--color-*` variables.
+The token gate checks Tailwind class names for bare colors and dark-mode pairing, warns when status colors, arbitrary text sizes, or raw z-index classes are not using semantic utilities, and fails if CSS reads old `--color-*` variables.

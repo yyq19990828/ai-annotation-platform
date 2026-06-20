@@ -47,7 +47,7 @@ export function OwnerSection({ project }: { project: ProjectResponse }) {
             <Avatar initial={project.owner_name?.slice(0, 1) ?? "?"} size="md" />
             <div>
               <div className="text-sm font-medium">{project.owner_name ?? "—"}</div>
-              <div className="mt-0.5 text-[11px] text-muted-foreground">
+              <div className="mt-0.5 text-xs text-muted-foreground">
                 当前负责人 · 拥有此项目的全部管理权
               </div>
             </div>
@@ -68,7 +68,7 @@ export function OwnerSection({ project }: { project: ProjectResponse }) {
           <div className="text-xs text-muted-foreground">选择新的项目负责人（仅 project_admin 可作为目标）</div>
           <div className="max-h-80 overflow-y-auto rounded-md border border-border">
             {candidates.length === 0 && (
-              <div className="p-6 text-center text-[13px] text-muted-foreground">
+              <div className="p-6 text-center text-sm text-muted-foreground">
                 暂无可选 project_admin
               </div>
             )}
@@ -85,8 +85,8 @@ export function OwnerSection({ project }: { project: ProjectResponse }) {
                 >
                   <Avatar initial={u.name.slice(0, 1)} size="sm" />
                   <div className="min-w-0 flex-1">
-                    <div className="text-[13px] font-medium">{u.name}</div>
-                    <div className="text-[11px] text-muted-foreground">
+                    <div className="text-sm font-medium">{u.name}</div>
+                    <div className="text-xs text-muted-foreground">
                       {u.email}
                       {isCurrent ? " · 当前负责人" : ""}
                     </div>

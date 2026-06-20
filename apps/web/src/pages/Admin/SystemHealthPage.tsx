@@ -21,7 +21,7 @@ const STATUS_CLASS: Record<SystemHealthStatus, string> = {
 };
 
 const PILL_BASE =
-  "inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold";
+  "inline-flex items-center rounded-sm border px-1.5 py-0.5 text-xs font-semibold";
 
 const TABLE_CLASS =
   "w-full border-collapse text-xs [&_td]:border-b [&_td]:border-border [&_td]:px-2.5 [&_td]:py-2 [&_td]:text-left [&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:px-2.5 [&_th]:py-2 [&_th]:text-left [&_th]:font-medium [&_th]:text-muted-foreground [&_tr:last-child_td]:border-b-0";
@@ -68,9 +68,9 @@ export function SystemHealthPage() {
         )}
       </div>
 
-      {healthQ.isLoading && <div className="p-[18px] text-center text-xs text-muted-foreground">加载中…</div>}
+      {healthQ.isLoading && <div className="p-5 text-center text-xs text-muted-foreground">加载中…</div>}
       {healthQ.isError && (
-        <div className="p-[18px] text-center text-xs text-muted-foreground">系统健康数据加载失败</div>
+        <div className="p-5 text-center text-xs text-muted-foreground">系统健康数据加载失败</div>
       )}
 
       {data && (
@@ -82,16 +82,16 @@ export function SystemHealthPage() {
                 className="min-h-[112px] rounded-md border border-border bg-card p-3.5"
               >
                 <div className="flex items-center justify-between gap-2.5">
-                  <span className="text-[13px] font-semibold">{component.label}</span>
+                  <span className="text-sm font-semibold">{component.label}</span>
                   <span className={`${PILL_BASE} ${STATUS_CLASS[component.status]}`}>
                     {STATUS_LABEL[component.status]}
                   </span>
                 </div>
-                <div className="mt-[18px] text-[22px] font-semibold tabular-nums">
+                <div className="mt-[18px] text-stat font-semibold tabular-nums">
                   {formatLatency(component.latency_ms)}
                 </div>
                 {component.detail && (
-                  <div className="mt-2 text-[11px] leading-[1.4] text-status-danger">
+                  <div className="mt-2 text-xs leading-[1.4] text-status-danger">
                     {component.detail}
                   </div>
                 )}
@@ -102,11 +102,11 @@ export function SystemHealthPage() {
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-4 max-md:grid-cols-1">
             <section className="overflow-hidden rounded-md border border-border bg-card">
               <div className="flex items-center justify-between gap-2.5 border-b border-border px-3.5 py-3">
-                <h2 className="text-[13px] font-semibold">Celery 队列</h2>
-                <span className="text-[11px] text-muted-foreground">{data.celery.queues.length} 个队列</span>
+                <h2 className="text-sm font-semibold">Celery 队列</h2>
+                <span className="text-xs text-muted-foreground">{data.celery.queues.length} 个队列</span>
               </div>
               {data.celery.queues.length === 0 ? (
-                <div className="p-[18px] text-center text-xs text-muted-foreground">暂无积压任务</div>
+                <div className="p-5 text-center text-xs text-muted-foreground">暂无积压任务</div>
               ) : (
                 <table className={TABLE_CLASS}>
                   <thead>
@@ -135,11 +135,11 @@ export function SystemHealthPage() {
 
             <section className="overflow-hidden rounded-md border border-border bg-card">
               <div className="flex items-center justify-between gap-2.5 border-b border-border px-3.5 py-3">
-                <h2 className="text-[13px] font-semibold">Celery Workers</h2>
-                <span className="text-[11px] text-muted-foreground">active {data.celery.active_count}</span>
+                <h2 className="text-sm font-semibold">Celery Workers</h2>
+                <span className="text-xs text-muted-foreground">active {data.celery.active_count}</span>
               </div>
               {data.celery.workers.length === 0 ? (
-                <div className="p-[18px] text-center text-xs text-muted-foreground">没有 worker 响应</div>
+                <div className="p-5 text-center text-xs text-muted-foreground">没有 worker 响应</div>
               ) : (
                 <table className={TABLE_CLASS}>
                   <thead>

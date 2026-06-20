@@ -56,7 +56,7 @@ export function ProtocolCapabilityCard({
       <div className="flex flex-wrap items-center gap-2.5">
         <div className="flex min-w-0 flex-auto items-baseline gap-2">
           <h3 className="m-0 text-sm font-semibold text-foreground">{task.label}</h3>
-          <span className="mono text-[11px] text-muted-foreground">{task.id}</span>
+          <span className="mono text-xs text-muted-foreground">{task.id}</span>
         </div>
         <div className="flex flex-wrap gap-1.5">
           <Badge variant={taskVariant(task.id)}>{task.label}</Badge>
@@ -93,7 +93,7 @@ export function ProtocolCapabilityCard({
               >
                 {m.display_name}
               </div>
-              <div className="flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
+              <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
                 {m.infra && <span>{infraLabel(m.infra)}</span>}
                 {m.is_interactive && <span>· 交互式</span>}
                 {m.source === "env_only" ? (
@@ -103,7 +103,7 @@ export function ProtocolCapabilityCard({
                 )}
               </div>
               <div
-                className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-muted-foreground"
+                className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground"
                 title={m.backendName}
               >
                 <Icon name="bot" size={10} /> {m.backendName}
@@ -115,7 +115,7 @@ export function ProtocolCapabilityCard({
 
       {empty && (
         <div className="flex flex-col gap-2 border-t border-dashed border-border pt-2.5">
-          <div className="text-[11px] text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             <strong>典型模型：</strong>
             {task.typical_models.join(" / ")}
           </div>
@@ -136,7 +136,7 @@ export function ProtocolCapabilityCard({
                       href={s.repo_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-[11px] text-brand no-underline hover:underline"
+                      className="text-xs text-brand no-underline hover:underline"
                       title="在新标签页打开仓库"
                     >
                       GitHub ↗

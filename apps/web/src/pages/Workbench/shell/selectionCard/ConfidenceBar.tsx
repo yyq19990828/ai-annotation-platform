@@ -30,7 +30,7 @@ export function ConfidenceBar({ value }: ConfidenceBarProps) {
 
   return (
     <div className="flex items-center gap-2">
-      <span className="flex-none text-[11px] text-muted-foreground">置信度</span>
+      <span className="flex-none text-xs text-muted-foreground">置信度</span>
       <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
         <div
           ref={fillRef}

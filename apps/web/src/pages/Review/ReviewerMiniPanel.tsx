@@ -23,7 +23,7 @@ export function ReviewerMiniPanel() {
   return (
     <div
       data-testid="reviewer-mini-panel"
-      className="grid grid-cols-3 gap-2 border-b border-border bg-card px-3 py-2.5 text-[11px]"
+      className="grid grid-cols-3 gap-2 border-b border-border bg-card px-3 py-2.5 text-xs"
     >
       <Stat label="今日通过" value={isLoading ? "…" : approved.toString()} accent="success" />
       <Stat label="今日退回" value={isLoading ? "…" : rejected.toString()} accent="danger" />
@@ -49,7 +49,7 @@ function Stat({
         : "text-muted-foreground";
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] text-muted-foreground">{label}</span>
+      <span className="text-2xs text-muted-foreground">{label}</span>
       <span className={`mono text-base font-semibold ${accentClass}`}>
         {value}
       </span>

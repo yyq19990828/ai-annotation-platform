@@ -14,7 +14,7 @@ export function EmptyCatalogBanner({ taskCount, onGoToRegistry }: Props) {
         <Icon name="layers" size={24} />
       </div>
       <div className="flex flex-auto flex-col gap-0.5">
-        <div className="text-[13px] font-semibold text-foreground">
+        <div className="text-sm font-semibold text-foreground">
           平台支持 {taskCount} 类 AI 标注能力，当前还没有 backend 接入。
         </div>
         <div className="text-xs leading-normal text-muted-foreground">

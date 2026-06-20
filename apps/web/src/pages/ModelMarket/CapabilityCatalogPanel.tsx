@@ -53,7 +53,7 @@ import { ModelCard } from "./capability/ModelCard";
 
 const NOTE_CLASS = "p-4 text-xs text-muted-foreground";
 const EMPTY_STATE_CLASS =
-  "flex flex-col items-center gap-1.5 p-8 text-center text-[13px] text-muted-foreground";
+  "flex flex-col items-center gap-1.5 p-8 text-center text-sm text-muted-foreground";
 const RETRY_BTN_CLASS =
   "ml-1 cursor-pointer appearance-none rounded-md border border-border bg-card px-3 py-1 text-xs text-foreground";
 const SELECT_CLASS =
@@ -421,7 +421,7 @@ export function CapabilityCatalogPanel() {
           <div className="flex items-center gap-2">
             <Icon name="layers" size={14} className="text-muted-foreground" />
             <h3 className="m-0 text-sm font-semibold">能力目录</h3>
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {flatModels.length} 个模型条目 · {distinctBackendCount} 个 backend
             </span>
           </div>
@@ -453,7 +453,7 @@ export function CapabilityCatalogPanel() {
           <div className={EMPTY_STATE_CLASS}>
             <Icon name="layers" size={28} className="opacity-30" />
             <div>尚无项目注册 ML Backend</div>
-            <div className="text-[11.5px]">
+            <div className="text-xs">
               切到「分组: task」可查看平台协议层支持的全部能力；
               或在项目设置注册 backend 后, 其能力目录会出现在这里。
             </div>
@@ -484,7 +484,7 @@ export function CapabilityCatalogPanel() {
                   className="w-full min-w-0 appearance-none border-0 bg-transparent text-xs text-foreground outline-none"
                 />
               </label>
-              <div className="inline-flex gap-[3px] rounded-md border border-border bg-muted p-[3px]">
+              <div className="inline-flex gap-1 rounded-md border border-border bg-muted p-1">
                 <button
                   type="button"
                   className={viewMode === "cards" ? VIEW_BTN_ON_CLASS : VIEW_BTN_CLASS}
@@ -504,7 +504,7 @@ export function CapabilityCatalogPanel() {
                   <Icon name="list" size={13} />
                 </button>
               </div>
-              <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+              <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
                 分组
                 <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as CatalogGroupBy)} className={SELECT_CLASS}>
                   <option value="task">协议能力 (默认)</option>
@@ -514,7 +514,7 @@ export function CapabilityCatalogPanel() {
                 </select>
               </label>
               {viewMode === "list" && (
-                <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
                   排序
                   <select value={sortBy} onChange={(e) => setSortBy(e.target.value as CatalogSort)} className={SELECT_CLASS}>
                     <option value="name">模型名</option>
@@ -602,7 +602,7 @@ export function CapabilityCatalogPanel() {
                         >
                           <Icon name={collapsed ? "chevRight" : "chevDown"} size={13} />
                           <span>{group.label}</span>
-                          <span className="ml-auto text-[11px] text-muted-foreground">{group.items.length}</span>
+                          <span className="ml-auto text-xs text-muted-foreground">{group.items.length}</span>
                         </button>
                       )}
                       {!collapsed &&

@@ -73,15 +73,15 @@ function BucketCard({ bucket }: { bucket: BucketSummary }) {
         />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-semibold">{bucket.name}</div>
-        <div className="mt-px text-[11.5px] text-muted-foreground">
+        <div className="text-sm font-semibold">{bucket.name}</div>
+        <div className="mt-px text-xs text-muted-foreground">
           {ROLE_LABELS[bucket.role] ?? bucket.role}
           {isError && bucket.error && ` · ${bucket.error}`}
         </div>
       </div>
       <div className="shrink-0 text-right">
-        <div className="text-[13px] font-semibold">{formatBytes(bucket.total_size_bytes)}</div>
-        <div className="mt-px text-[11px] text-muted-foreground">
+        <div className="text-sm font-semibold">{formatBytes(bucket.total_size_bytes)}</div>
+        <div className="mt-px text-xs text-muted-foreground">
           {bucket.object_count.toLocaleString()} 个对象
         </div>
       </div>
@@ -97,8 +97,8 @@ function BucketCard({ bucket }: { bucket: BucketSummary }) {
 function InfoItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md bg-muted px-3 py-2.5">
-      <div className="mb-0.5 text-[11px] text-muted-foreground">{label}</div>
-      <div className="text-[13px] font-medium">{value}</div>
+      <div className="mb-0.5 text-xs text-muted-foreground">{label}</div>
+      <div className="text-sm font-medium">{value}</div>
     </div>
   );
 }
@@ -111,8 +111,8 @@ function DatasetStorageRow({ ds }: { ds: DatasetResponse & { total_size?: number
         <div className="flex items-center gap-2">
           <Icon name={TYPE_ICONS[ds.data_type] || "layers"} size={14} className="text-muted-foreground" />
           <div>
-            <div className="text-[13px] font-medium">{ds.name}</div>
-            <div className="text-[11px] text-muted-foreground">{ds.display_id}</div>
+            <div className="text-sm font-medium">{ds.name}</div>
+            <div className="text-xs text-muted-foreground">{ds.display_id}</div>
           </div>
         </div>
       </td>
@@ -120,15 +120,15 @@ function DatasetStorageRow({ ds }: { ds: DatasetResponse & { total_size?: number
         <Badge variant="outline">{TYPE_LABELS[ds.data_type] || ds.data_type}</Badge>
       </td>
       <td className={cellClass}>
-        <span className="mono text-[13px]">{ds.file_count.toLocaleString()}</span>
+        <span className="mono text-sm">{ds.file_count.toLocaleString()}</span>
       </td>
       <td className={cellClass}>
-        <span className="mono text-[13px]">
+        <span className="mono text-sm">
           {ds.total_size !== undefined ? formatBytes(ds.total_size) : "—"}
         </span>
       </td>
       <td className={cellClass}>
-        <span className="mono text-[13px]">{ds.project_count}</span>
+        <span className="mono text-sm">{ds.project_count}</span>
       </td>
     </tr>
   );
@@ -201,18 +201,18 @@ function VideoAssetFailuresPanel() {
         </span>
       </div>
       {isLoading ? (
-        <div className="px-4 py-[34px] text-center text-[13px] text-muted-foreground">加载中...</div>
+        <div className="px-4 py-8.5 text-center text-sm text-muted-foreground">加载中...</div>
       ) : isError ? (
-        <div className="px-4 py-[34px] text-center text-[13px] text-status-danger">无法加载视频资产状态</div>
+        <div className="px-4 py-8.5 text-center text-sm text-status-danger">无法加载视频资产状态</div>
       ) : items.length === 0 ? (
-        <div className="px-4 py-[34px] text-center text-[13px] text-muted-foreground">
+        <div className="px-4 py-8.5 text-center text-sm text-muted-foreground">
           <Icon name="check" size={26} className="mb-2 opacity-[0.28]" />
           <div>暂无视频资产失败</div>
         </div>
       ) : (
         <div>
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[13px]">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className={thClass}>类型</th>
@@ -231,13 +231,13 @@ function VideoAssetFailuresPanel() {
                     </td>
                     <td className={tdClass}>
                       <div className="font-medium">{asset.file_name}</div>
-                      <div className="mt-0.5 text-[11.5px] text-muted-foreground">
+                      <div className="mt-0.5 text-xs text-muted-foreground">
                         {assetDetail(asset)}
                       </div>
                     </td>
                     <td className={tdClass}>
                       <div>{asset.project_name ?? "—"}</div>
-                      <div className="mono mt-0.5 text-[11.5px] text-muted-foreground">
+                      <div className="mono mt-0.5 text-xs text-muted-foreground">
                         {asset.task_display_id ?? "—"}
                       </div>
                     </td>
@@ -267,7 +267,7 @@ function VideoAssetFailuresPanel() {
           </div>
           {(page > 0 || hasNext) && (
             <div className="flex items-center justify-between gap-3 px-3 pb-3 pt-2.5">
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-xs text-muted-foreground">
                 第 {page + 1} 页 · {pageStart}-{pageEnd} / 共 {total} 条
               </span>
               <div className="inline-flex items-center gap-2">
@@ -313,7 +313,7 @@ export function StoragePage() {
   };
 
   const datasetThClass =
-    "border-b border-border bg-muted px-3 py-2 text-left text-[11px] font-medium text-muted-foreground";
+    "border-b border-border bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground";
 
   return (
     <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground max-[760px]:p-4">
@@ -321,7 +321,7 @@ export function StoragePage() {
       <div className="mb-5 flex items-end justify-between gap-6 max-[760px]:flex-col max-[760px]:items-start">
         <div>
           <h1 className="mb-1 text-xl font-semibold">存储管理</h1>
-          <p className="text-[13px] text-muted-foreground">查看存储后端状态与数据集分布</p>
+          <p className="text-sm text-muted-foreground">查看存储后端状态与数据集分布</p>
         </div>
         <Button onClick={handleRefresh}>
           <Icon name="refresh" size={13} /> 刷新状态
@@ -348,7 +348,7 @@ export function StoragePage() {
           </div>
           <div className="p-4">
             {bucketsError && buckets.length === 0 ? (
-              <div className="py-5 text-center text-[13px] text-status-danger">
+              <div className="py-5 text-center text-sm text-status-danger">
                 <Icon name="db" size={24} className="mb-1.5 opacity-40" />
                 <div>无法连接存储后端</div>
               </div>
@@ -376,7 +376,7 @@ export function StoragePage() {
             <h3 className={CARD_TITLE_CLASS}>数据集存储概览</h3>
           </div>
           {datasets.length > 0 ? (
-            <table className="w-full border-separate border-spacing-0 text-[13px]">
+            <table className="w-full border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
                   {["数据集", "类型", "文件数", "容量", "关联项目"].map((h, i) => (
@@ -391,7 +391,7 @@ export function StoragePage() {
               </tbody>
             </table>
           ) : (
-            <div className="px-4 py-8 text-center text-[13px] text-muted-foreground">
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
               <Icon name="layers" size={28} className="mb-2 opacity-[0.28]" />
               <div>暂无数据集</div>
             </div>

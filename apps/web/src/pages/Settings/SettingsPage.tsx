@@ -34,9 +34,9 @@ const FORM_CLASS = "flex flex-col gap-3.5 p-4";
 const LABEL_CLASS = "mb-[5px] text-xs font-medium text-muted-foreground";
 const GROUP_LABEL_CLASS = "mb-2 text-xs font-medium text-muted-foreground";
 const INPUT_CLASS =
-  "box-border w-full appearance-none rounded-md border border-border bg-card px-[11px] py-2 text-[13px] text-foreground outline-none";
+  "box-border w-full appearance-none rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground outline-none";
 const INPUT_BUTTON_CLASS =
-  "w-auto cursor-pointer rounded-md border border-border bg-card px-3.5 py-2 text-[13px] text-foreground disabled:cursor-not-allowed";
+  "w-auto cursor-pointer rounded-md border border-border bg-card px-3.5 py-2 text-sm text-foreground disabled:cursor-not-allowed";
 const ACTIONS_END_CLASS = "flex justify-end";
 const SECTION_HEADER_CLASS =
   "flex items-center justify-between border-b border-border px-4 py-3";
@@ -59,7 +59,7 @@ export function SettingsPage() {
     <div className="mx-auto max-w-[1100px] px-7 pb-10 pt-5 text-foreground max-[760px]:p-4">
       <header className="mb-4">
         <h1 className="mb-1 text-xl font-semibold">设置</h1>
-        <p className="text-[13px] text-muted-foreground">管理你的账号信息与平台配置</p>
+        <p className="text-sm text-muted-foreground">管理你的账号信息与平台配置</p>
       </header>
 
       <div className="grid grid-cols-[200px_1fr] gap-4 max-[760px]:grid-cols-1">
@@ -73,7 +73,7 @@ export function SettingsPage() {
                     <button
                       onClick={() => setSection(s.key)}
                       className={clsx(
-                        "flex w-full cursor-pointer appearance-none items-center gap-2 rounded-md border-0 bg-transparent px-3 py-2.5 text-left text-[13px] font-medium max-[760px]:whitespace-nowrap",
+                        "flex w-full cursor-pointer appearance-none items-center gap-2 rounded-md border-0 bg-transparent px-3 py-2.5 text-left text-sm font-medium max-[760px]:whitespace-nowrap",
                         active ? "bg-muted font-semibold text-foreground" : "text-muted-foreground",
                       )}
                     >
@@ -201,7 +201,7 @@ function ProfileSection() {
               className={clsx(INPUT_CLASS, !passwordsMatch && "border-rose-500")}
             />
             {!passwordsMatch && (
-              <div className="mt-1 text-[11.5px] text-status-danger">两次密码不一致</div>
+              <div className="mt-1 text-xs text-status-danger">两次密码不一致</div>
             )}
           </Field>
           {changePwd.isError && (
@@ -268,7 +268,7 @@ function DangerZoneCard() {
         <div className="flex flex-col gap-3 p-4">
           {isPending ? (
           <>
-            <div className="text-[13px] text-foreground">
+            <div className="text-sm text-foreground">
               <div className="mb-1 font-medium">注销申请已提交</div>
               <div className="text-muted-foreground">
                 提交时间：{requestedAt ? new Date(requestedAt).toLocaleString("zh-CN") : "—"}
@@ -290,7 +290,7 @@ function DangerZoneCard() {
           </>
         ) : confirmOpen ? (
           <>
-            <div className="text-[13px] text-foreground">
+            <div className="text-sm text-foreground">
               注销账号后，您将无法再登录此系统；标注历史与审计记录会保留以满足合规要求。
               <strong>提交后将进入 7 天冷静期，期间可随时撤销。</strong>
             </div>
@@ -304,7 +304,7 @@ function DangerZoneCard() {
                 className={clsx(INPUT_CLASS, "resize-y [font:inherit]")}
               />
             </Field>
-            <label className="inline-flex cursor-pointer items-center gap-2 text-[12.5px] text-muted-foreground">
+            <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
               <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} />
               我已知晓 7 天冷静期 + 历史数据保留
             </label>
@@ -315,7 +315,7 @@ function DangerZoneCard() {
               <button
                 type="button"
                 onClick={() => { setConfirmOpen(false); setAcknowledged(false); setReason(""); }}
-                className="w-auto cursor-pointer rounded-md border border-border bg-card px-3.5 py-[7px] text-[13px] text-foreground"
+                className="w-auto cursor-pointer rounded-md border border-border bg-card px-3.5 py-2 text-sm text-foreground"
               >
                 取消
               </button>
@@ -324,7 +324,7 @@ function DangerZoneCard() {
                 disabled={!acknowledged || requestMut.isPending}
                 onClick={submit}
                 className={clsx(
-                  "cursor-pointer rounded-md border-0 px-[18px] py-[7px] text-[13px] font-medium",
+                  "cursor-pointer rounded-md border-0 px-4 py-2 text-sm font-medium",
                   acknowledged
                     ? "bg-rose-500 text-white"
                     : "cursor-not-allowed bg-muted text-muted-foreground",
@@ -337,14 +337,14 @@ function DangerZoneCard() {
           </>
         ) : (
           <>
-            <div className="text-[13px] text-muted-foreground">
+            <div className="text-sm text-muted-foreground">
               如不再需要本账号，可申请自助注销。提交后将进入 7 天冷静期，期间可撤销。
             </div>
             <div>
               <button
                 type="button"
                 onClick={() => setConfirmOpen(true)}
-                className="cursor-pointer rounded-md border border-rose-500 bg-transparent px-3.5 py-[7px] text-[13px] font-medium text-status-danger"
+                className="cursor-pointer rounded-md border border-rose-500 bg-transparent px-3.5 py-2 text-sm font-medium text-status-danger"
               >
                 申请注销账号
               </button>
@@ -391,7 +391,7 @@ function SystemSection() {
     return (
       <Card>
         <SectionHeader title="系统设置" />
-        <div className="p-4 text-[13px] text-muted-foreground">
+        <div className="p-4 text-sm text-muted-foreground">
           {isLoading ? "加载中..." : null}
           {error && <ErrorBanner msg={(error as Error).message} />}
         </div>
@@ -462,7 +462,7 @@ function SystemSection() {
         />
 
         <Field label="开放注册（🟢 立即生效）">
-          <label className="inline-flex cursor-pointer items-center gap-2 text-[13px]">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
             <input
               type="checkbox"
               checked={allowOpen}
@@ -557,7 +557,7 @@ function SystemSection() {
             >
               {testSmtpMut.isPending ? "发送中..." : "发送测试邮件到我"}
             </button>
-            <span className="ml-2.5 text-[11px] text-muted-foreground">
+            <span className="ml-2.5 text-xs text-muted-foreground">
               收件人：当前账号邮箱
             </span>
           </div>
@@ -588,7 +588,7 @@ function WorkbenchPreferencesSection() {
     return (
       <Card>
         <SectionHeader title="标注偏好" />
-        <div className="p-5 text-[13px] text-muted-foreground">加载中…</div>
+        <div className="p-5 text-sm text-muted-foreground">加载中…</div>
       </Card>
     );
   }
@@ -686,13 +686,13 @@ function MyFeedbackSection() {
     fixed: "已修复", wont_fix: "不修复", duplicate: "重复",
   };
   if (loading) {
-    return <Card><div className="p-5 text-[13px] text-muted-foreground">加载中...</div></Card>;
+    return <Card><div className="p-5 text-sm text-muted-foreground">加载中...</div></Card>;
   }
 
   if (reports.length === 0) {
     return (
       <Card>
-        <div className="p-5 text-center text-[13px] text-muted-foreground">
+        <div className="p-5 text-center text-sm text-muted-foreground">
           暂无反馈记录。遇到问题？点击右下角的反馈按钮提交。
         </div>
       </Card>
@@ -704,7 +704,7 @@ function MyFeedbackSection() {
   return (
     <Card>
       <div className="max-w-full overflow-x-auto">
-        <table className="w-full min-w-[680px] border-collapse text-[12.5px]">
+        <table className="w-full min-w-[680px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-border">
               <th className={thClass}>ID</th>
@@ -717,17 +717,17 @@ function MyFeedbackSection() {
           <tbody>
             {reports.map((r) => (
               <tr key={r.id} className="border-b border-border">
-                <td className="mono px-3 py-2 text-[11px]">{r.display_id}</td>
+                <td className="mono px-3 py-2 text-xs">{r.display_id}</td>
                 <td className="max-w-[320px] overflow-hidden text-ellipsis whitespace-nowrap px-3 py-2 text-foreground" title={r.title}>{r.title}</td>
                 <td className="whitespace-nowrap px-3 py-2">
                   <span className={clsx("font-medium", severityClassName(r.severity))}>{r.severity}</span>
                 </td>
                 <td className="whitespace-nowrap px-3 py-2">
-                  <span className="rounded-[3px] bg-muted px-1.5 py-px text-[11px]">
+                  <span className="rounded-[3px] bg-muted px-1.5 py-px text-xs">
                     {statusLabel[r.status] ?? r.status}
                   </span>
                 </td>
-                <td className="whitespace-nowrap px-3 py-2 text-[11px] text-muted-foreground">
+                <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
                   {new Date(r.created_at).toLocaleDateString("zh-CN")}
                 </td>
               </tr>
@@ -764,7 +764,7 @@ function ReadOnly({ label, value, mono, hint }: { label: string; value: string; 
       <div className="flex items-center gap-2">
         <div
           className={clsx(
-            "flex-1 rounded-md border border-border bg-muted px-[11px] py-[7px] text-[13px] text-foreground",
+            "flex-1 rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground",
             mono && "mono",
           )}
         >
@@ -778,7 +778,7 @@ function ReadOnly({ label, value, mono, hint }: { label: string; value: string; 
 
 function ErrorBanner({ msg }: { msg: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-md border border-rose-500 bg-status-danger-soft px-[11px] py-2 text-[12.5px] text-status-danger">
+    <div className="flex items-center gap-2 rounded-md border border-rose-500 bg-status-danger-soft px-3 py-2 text-sm text-status-danger">
       <Icon name="warning" size={13} />{msg}
     </div>
   );
@@ -786,7 +786,7 @@ function ErrorBanner({ msg }: { msg: string }) {
 
 const primaryButtonClassName = (pending: boolean) =>
   clsx(
-    "cursor-pointer rounded-md border-0 bg-brand px-[18px] py-[7px] text-[13px] font-medium text-white",
+    "cursor-pointer rounded-md border-0 bg-brand px-4 py-2 text-sm font-medium text-white",
     "disabled:cursor-not-allowed disabled:bg-brand/60",
     pending && "cursor-not-allowed bg-brand/60",
   );
@@ -871,7 +871,7 @@ function NotificationPreferencesSection() {
   return (
     <Card>
       <SectionHeader title="通知偏好" />
-      <div className="px-[18px] pb-[18px] pt-3">
+      <div className="px-4 pb-4 pt-3">
         <p className="mb-2.5 text-xs text-muted-foreground">
           关闭某类通知后，新事件不会进入站内通知中心；已存档通知不受影响。邮件 digest 暂未开启。
         </p>
@@ -882,11 +882,11 @@ function NotificationPreferencesSection() {
           items.map((it) => (
             <div
               key={it.type}
-              className="flex items-center justify-between border-b border-border py-2.5 text-[13px]"
+              className="flex items-center justify-between border-b border-border py-2.5 text-sm"
             >
               <div>
                 <div className="font-medium">{NOTIF_TYPE_LABELS[it.type] ?? it.type}</div>
-                <div className="mono text-[11px] text-muted-foreground">
+                <div className="mono text-xs text-muted-foreground">
                   {it.type}
                 </div>
               </div>

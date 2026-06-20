@@ -5,6 +5,7 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import type { ProjectResponse } from "@/api/projects";
+import { LABEL_CLASS } from "./formClasses";
 
 const STATUS_OPTIONS = [
   { value: "in_progress", label: "进行中" },
@@ -13,13 +14,12 @@ const STATUS_OPTIONS = [
   { value: "archived", label: "已归档" },
 ];
 
-const LABEL_CLASS = "mb-1.5 block text-xs font-medium text-muted-foreground";
 const READONLY_VALUE_CLASS =
-  "rounded-md border border-border bg-muted px-[11px] py-2 text-[13px] text-muted-foreground";
+  "rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground";
 const CONTROL_CLASS =
-  "w-full appearance-none rounded-md border border-border bg-muted px-[11px] py-2 text-[13.5px] text-foreground outline-none";
+  "w-full appearance-none rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none";
 const PROGRESS_CHIP_CLASS =
-  "rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground";
+  "rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground";
 
 /** 项目进度概览（只读）。计数口径与 Dashboard 项目行一致，复用同一 ProgressBar。 */
 function ProgressOverview({ project }: { project: ProjectResponse }) {
@@ -54,7 +54,7 @@ function ProgressOverview({ project }: { project: ProjectResponse }) {
             <span className={PROGRESS_CHIP_CLASS}>{inProgress} 进行中</span>
             <span className={PROGRESS_CHIP_CLASS}>{review} 待审</span>
             {project.ai_enabled && (
-              <span className="rounded-full border border-violet-500 bg-muted px-2 py-0.5 text-[11px] text-status-info">
+              <span className="rounded-full border border-violet-500 bg-muted px-2 py-0.5 text-xs text-status-info">
                 {aiCompleted} AI 完成
               </span>
             )}
@@ -152,7 +152,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
         <div>
           <label className={LABEL_CLASS}>类型</label>
           <div className={READONLY_VALUE_CLASS}>
-            {project.type_label} <span className="mono ml-2 text-[11px] text-muted-foreground">{project.type_key}</span>
+            {project.type_label} <span className="mono ml-2 text-xs text-muted-foreground">{project.type_key}</span>
           </div>
         </div>
         <div>

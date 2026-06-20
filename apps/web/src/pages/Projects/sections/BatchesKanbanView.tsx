@@ -116,10 +116,10 @@ export function BatchesKanbanView({ batches, isOwner, onTransition }: Props) {
               <Badge variant={col.variant} dot>
                 {col.label}
               </Badge>
-              <span className="text-[11px] text-muted-foreground">{items.length}</span>
+              <span className="text-xs text-muted-foreground">{items.length}</span>
             </div>
             {items.length === 0 && (
-              <div className="py-4 text-center text-[11px] text-muted-foreground">
+              <div className="py-4 text-center text-xs text-muted-foreground">
                 —
               </div>
             )}
@@ -171,19 +171,19 @@ function KanbanCard({
       )}
     >
       <div className="flex items-center justify-between gap-1.5">
-        <span className="mono text-[11px] text-muted-foreground">
+        <span className="mono text-xs text-muted-foreground">
           {batch.display_id}
         </span>
         <AssigneeAvatarStack users={stackUsers} size="sm" max={2} />
       </div>
       <div
-        className="overflow-hidden text-[12.5px] font-medium text-ellipsis whitespace-nowrap"
+        className="overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap"
         title={batch.name}
       >
         {batch.name}
       </div>
       <ProgressBar value={batch.progress_pct ?? 0} />
-      <div className="text-[10.5px] text-muted-foreground">
+      <div className="text-2xs text-muted-foreground">
         {batch.completed_tasks}/{batch.total_tasks} task
       </div>
     </div>

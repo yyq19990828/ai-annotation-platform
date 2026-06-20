@@ -39,13 +39,13 @@ function formatTime(iso: string): string {
 
 const FOOTER_CLASS = "group border-t border-border pt-1.5";
 const SUMMARY_CLASS =
-  "flex cursor-pointer select-none list-none items-center gap-1 text-[11px] text-muted-foreground [&::-webkit-details-marker]:hidden hover:text-foreground";
+  "flex cursor-pointer select-none list-none items-center gap-1 text-xs text-muted-foreground [&::-webkit-details-marker]:hidden hover:text-foreground";
 const CHEV_CLASS =
   "inline-flex text-muted-foreground transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none";
 const ROWS_CLASS = "mt-1.5 grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-[3px]";
 const ROW_CLASS = "contents";
-const ROW_LABEL_CLASS = "text-[11px] text-muted-foreground";
-const ROW_VALUE_CLASS = "truncate text-[11px] text-muted-foreground";
+const ROW_LABEL_CLASS = "text-xs text-muted-foreground";
+const ROW_VALUE_CLASS = "truncate text-xs text-muted-foreground";
 
 /**
  * v0.16.14 · 选中信息卡 · 可折叠次要信息(默认收起)。

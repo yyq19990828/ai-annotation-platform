@@ -7,11 +7,11 @@ import { getHotkeyUsage } from "../state/hotkeyUsage";
 const GROUPS: HotkeyGroup[] = ["draw", "video", "view", "ai", "nav", "threed", "system"];
 
 const KBD_CLASS =
-  "whitespace-nowrap rounded-[3px] border border-b-2 border-border bg-muted px-1.5 py-px font-mono text-[11px] leading-normal text-foreground";
-const HOTKEY_ROW_CLASS = "flex items-center justify-between gap-3 border-b border-border py-[5px] text-[12.5px]";
+  "whitespace-nowrap rounded-[3px] border border-b-2 border-border bg-muted px-1.5 py-px font-mono text-xs leading-normal text-foreground";
+const HOTKEY_ROW_CLASS = "flex items-center justify-between gap-3 border-b border-border py-1.5 text-sm";
 const PRIMARY_TEXT_CLASS = "min-w-0 max-w-[34ch] leading-[1.35] text-foreground [overflow-wrap:anywhere]";
 const SECTION_TITLE_CLASS =
-  "sticky top-0 z-[1] mb-2 flex items-center gap-[7px] border-b border-border bg-card px-0 pb-[7px] pt-1.5 text-xs font-bold uppercase tracking-[0.04em] text-foreground";
+  "sticky top-0 z-local-1 mb-2 flex items-center gap-[7px] border-b border-border bg-card px-0 pb-2 pt-1.5 text-xs font-bold uppercase tracking-[0.04em] text-foreground";
 const SECTION_BLOCK_CLASS =
   "min-w-0 max-h-[min(360px,calc(100vh-260px))] overflow-y-auto pr-1.5 [scrollbar-gutter:stable]";
 const SectionBar = () => <span className="h-3.5 w-[3px] flex-none rounded-full bg-brand" />;
@@ -30,7 +30,7 @@ function HotkeyRow({ h, count }: { h: HotkeyDef; count?: number }) {
         {h.desc}
         {count !== undefined && count > 0 && (
           <span
-            className="mono ml-1.5 text-[10.5px] text-muted-foreground"
+            className="mono ml-1.5 text-2xs text-muted-foreground"
             title="近期使用次数"
           >
             ×{count}
@@ -91,7 +91,7 @@ export function HotkeyCheatSheet({ open, onClose, attributeSchema }: HotkeyCheat
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索：动作描述 / 按键…"
           autoFocus
-          className="flex-1 appearance-none rounded-md border border-border bg-muted px-2.5 py-1.5 text-[12.5px] text-foreground"
+          className="flex-1 appearance-none rounded-md border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground"
         />
         <label
           className="flex cursor-pointer select-none items-center gap-1 text-xs text-muted-foreground"
@@ -142,7 +142,7 @@ export function HotkeyCheatSheet({ open, onClose, attributeSchema }: HotkeyCheat
                 <SectionBar />
                 属性快捷键
               </div>
-              <div className="mb-1.5 text-[11px] text-muted-foreground">
+              <div className="mb-1.5 text-xs text-muted-foreground">
                 选中标注后按下数字键切换 / 循环属性值（项目级 schema 配置）
               </div>
               <div className="grid gap-x-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))]">

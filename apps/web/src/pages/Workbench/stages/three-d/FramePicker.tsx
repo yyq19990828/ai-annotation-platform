@@ -18,8 +18,8 @@ export type FramePickerMode = "propagate" | "interpolate";
 
 // v0.17.6 · Tailwind class constants (was FramePicker.module.css).
 const POPOVER =
-  "fixed left-[var(--frame-picker-left)] top-[var(--frame-picker-top)] z-[1000] w-[280px] max-w-[90vw] p-3 flex flex-col gap-2.5 bg-card border border-border rounded-lg shadow-lg text-[13px] text-foreground";
-const TITLE = "font-semibold text-[13px] text-foreground";
+  "fixed left-[var(--frame-picker-left)] top-[var(--frame-picker-top)] z-workbench-modal w-[280px] max-w-[90vw] p-3 flex flex-col gap-2.5 bg-card border border-border rounded-lg shadow-lg text-sm text-foreground";
+const TITLE = "font-semibold text-sm text-foreground";
 const HINT = "text-xs text-muted-foreground";
 const FILMSTRIP = "flex gap-1.5 overflow-x-auto pb-1";
 const THUMB =
@@ -29,13 +29,13 @@ const THUMB_CURRENT = "outline outline-2 outline-brand/10";
 const THUMB_IMG = "w-14 h-10 object-cover rounded block";
 const THUMB_PLACEHOLDER =
   "w-14 h-10 flex items-center justify-center text-muted-foreground bg-muted rounded";
-const THUMB_NUM = "text-[11px] text-muted-foreground";
+const THUMB_NUM = "text-xs text-muted-foreground";
 const STEPS = "flex gap-1.5";
 const CHIP =
   "flex-1 px-2 py-1 text-xs bg-background border border-border rounded-md text-foreground cursor-pointer appearance-none hover:border-foreground/20 hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed";
 const LABEL = "flex items-center gap-2 text-xs text-muted-foreground";
 const INPUT =
-  "flex-1 px-2 py-1 text-[13px] bg-background border border-border rounded-md text-foreground appearance-none focus:outline-none focus:border-brand";
+  "flex-1 px-2 py-1 text-sm bg-background border border-border rounded-md text-foreground appearance-none focus:outline-none focus:border-brand";
 const FEEDBACK = "text-xs min-h-4";
 const OK = "text-status-positive";
 const WARN = "text-status-caution";

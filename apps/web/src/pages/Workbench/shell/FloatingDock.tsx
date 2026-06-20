@@ -21,7 +21,7 @@ export function FloatingDock({
   scale, canUndo, canRedo, onUndo, onRedo, onZoomIn, onZoomOut, onFit, showHistory = true,
 }: FloatingDockProps) {
   return (
-    <div className="absolute bottom-3 right-[76px] z-[14] flex select-none items-center gap-0.5 rounded-lg border border-border bg-card/90 p-[5px] shadow-lg backdrop-blur-sm">
+    <div className="absolute bottom-3 right-[76px] z-dock flex select-none items-center gap-0.5 rounded-lg border border-border bg-card/90 p-1.5 shadow-lg backdrop-blur-sm">
       {showHistory && (
         <>
           <DockButton onClick={onUndo} disabled={!canUndo} title="撤销 (Ctrl+Z)">
@@ -36,7 +36,7 @@ export function FloatingDock({
       <DockButton onClick={onZoomOut} title="缩小">
         <Icon name="zoomOut" size={14} />
       </DockButton>
-      <span className="mono min-w-[46px] text-center text-[12.5px] font-medium tracking-[0.2px] text-foreground">
+      <span className="mono min-w-[46px] text-center text-sm font-medium tracking-[0.2px] text-foreground">
         {Math.round(scale * 100)}%
       </span>
       <DockButton onClick={onZoomIn} title="放大">
@@ -67,7 +67,7 @@ function DockButton({ onClick, disabled, title, children, variant }: DockButtonP
       className={[
         "inline-flex h-7 min-w-[28px] cursor-pointer appearance-none items-center justify-center rounded border-0 bg-transparent p-0 text-foreground transition-colors enabled:hover:bg-muted",
         disabled ? "cursor-default text-muted-foreground/60" : "",
-        variant === "fit" ? "px-2.5 text-[11.5px] font-medium" : "",
+        variant === "fit" ? "px-2.5 text-xs font-medium" : "",
       ].filter(Boolean).join(" ")}
     >
       {children}

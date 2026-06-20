@@ -58,7 +58,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
 
   return (
     <>
-      <header className="surface-shadow-sm z-10 col-[1/-1] flex items-center justify-between border-b border-border bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/85">
+      <header className="surface-shadow-sm z-base col-[1/-1] flex items-center justify-between border-b border-border bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/85">
         <div className="flex min-w-0 shrink-0 items-center gap-6">
           {showHamburger && (
             <button
@@ -71,12 +71,12 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
               <Icon name="menu" size={16} />
             </button>
           )}
-          <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-[13px] font-semibold tracking-[0.01em]">
+          <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-sm font-semibold tracking-[0.01em]">
             <div className="surface-shadow-sm relative size-[22px] overflow-hidden rounded-md border border-border bg-primary">
               <div className="absolute inset-1 rounded-[3px] border-[1.5px] border-primary-foreground/85" />
             </div>
             <span>标注中心</span>
-            <span className="ml-1 text-[11px] font-normal text-muted-foreground">v2.5</span>
+            <span className="ml-1 text-xs font-normal text-muted-foreground">v2.5</span>
           </div>
           <div
             onClick={onWorkspaceChange}
@@ -158,7 +158,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
               )}
             >
               <span className="text-xs font-medium">{user?.name ?? "—"}</span>
-              <span className="text-[10.5px] text-muted-foreground">{user?.role ?? "—"}</span>
+              <span className="text-2xs text-muted-foreground">{user?.role ?? "—"}</span>
             </div>
           </div>
           <button

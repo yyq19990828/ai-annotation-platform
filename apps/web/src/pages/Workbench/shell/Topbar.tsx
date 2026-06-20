@@ -117,7 +117,7 @@ export function Topbar({
       <div className="flex items-center gap-2.5 min-w-0">
         <div className="flex shrink-0 items-center gap-0.5">
           {onBack && (
-            <Button variant="ghost" size="sm" onClick={onBack} className="px-[7px] py-[3px] text-muted-foreground">
+            <Button variant="ghost" size="sm" onClick={onBack} className="px-2 py-1 text-muted-foreground">
               <Icon name="chevLeft" size={13} />返回
             </Button>
           )}
@@ -134,7 +134,7 @@ export function Topbar({
           )}
         </div>
         <span className="shrink-0 w-px h-[18px] bg-border" />
-        <span className="flex-auto min-w-0 overflow-hidden text-[13px] font-semibold text-foreground truncate" title={projectName}>{projectName}</span>
+        <span className="flex-auto min-w-0 overflow-hidden text-sm font-semibold text-foreground truncate" title={projectName}>{projectName}</span>
       </div>
 
       {/* 中：任务标识 + 任务导航 + 状态相关主操作（整体居中） */}
@@ -143,19 +143,19 @@ export function Topbar({
           <span className="mono shrink-0 text-xs text-muted-foreground">{projectDisplayId}</span>
           <span className="shrink-0 w-px h-4 bg-border" />
           <span
-            className="mono shrink-0 text-[13px] font-semibold text-foreground"
+            className="mono shrink-0 text-sm font-semibold text-foreground"
           >
             {task?.display_id ?? "—"}
           </span>
           <span
-            className="min-w-0 max-w-[220px] overflow-hidden text-[12.5px] text-muted-foreground truncate"
+            className="min-w-0 max-w-[220px] overflow-hidden text-sm text-muted-foreground truncate"
             title={task?.file_name ?? undefined}
           >
             {task?.file_name ?? "—"}
           </span>
           {indexLabel && (
             <span
-              className="mono shrink-0 px-2 py-0.5 text-[11px] font-medium text-muted-foreground tracking-[0.2px] bg-muted border border-border rounded-full"
+              className="mono shrink-0 px-2 py-0.5 text-xs font-medium text-muted-foreground tracking-[0.2px] bg-muted border border-border rounded-full"
             >
               {indexLabel}
             </span>
@@ -256,7 +256,7 @@ export function Topbar({
                 size="sm"
                 onClick={toggle}
                 title="智能切题 (N / U)"
-                className={cn("px-1 py-[3px] text-muted-foreground ml-0.5", open && "bg-muted")}
+                className={cn("px-1 py-1 text-muted-foreground ml-0.5", open && "bg-muted")}
               >
                 <Icon name="wandSparkles" size={13} />
               </Button>
@@ -268,7 +268,7 @@ export function Topbar({
           size="sm"
           onClick={onShowHotkeys}
           title="快捷键 (?)"
-          className="mono px-1 py-[3px] text-muted-foreground"
+          className="mono px-1 py-1 text-muted-foreground"
         >
           ?
         </Button>
@@ -279,7 +279,7 @@ export function Topbar({
         {reviewInfoSlot}
         {showThr && confThreshold !== undefined && (
           <span
-            className="mono absolute top-[calc(100%+6px)] right-0 z-20 inline-flex items-center gap-1.5 px-2.5 py-1 text-[11.5px] font-medium text-status-info pointer-events-none bg-status-info-soft border border-violet-500/30 rounded-full shadow-md"
+            className="mono absolute top-[calc(100%+6px)] right-0 z-local-overlay inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-status-info pointer-events-none bg-status-info-soft border border-violet-500/30 rounded-full shadow-md"
           >
             <span className="w-1.5 h-1.5 bg-violet-600 dark:bg-violet-400 rounded-full" />
             阈值 {(confThreshold * 100).toFixed(0)}%
@@ -292,7 +292,7 @@ export function Topbar({
             onClick={onRunAi}
             disabled={aiDisabled}
             title={aiDisabled ? "视频任务暂不支持 AI" : "打开 AI 面板"}
-            className="h-7 px-[11px]"
+            className="h-7 px-3"
           >
             {aiRunning
               ? <Icon name="loader2" size={13} className="spin" />

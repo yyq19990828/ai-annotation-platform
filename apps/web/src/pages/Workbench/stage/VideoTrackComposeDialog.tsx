@@ -50,7 +50,7 @@ export function VideoTrackComposeDialog({
       role="dialog"
       aria-label="跳连轨迹"
       data-testid="video-track-compose-dialog"
-      className="fixed inset-0 z-[1000] grid place-items-center bg-black/40"
+      className="fixed inset-0 z-workbench-modal grid place-items-center bg-black/40"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}
@@ -58,7 +58,7 @@ export function VideoTrackComposeDialog({
       <div className="grid gap-3 w-[360px] p-4 border border-border rounded-[10px] bg-card shadow-lg">
         <div className="flex items-center justify-between">
           <b className="text-sm">跳连两条轨迹</b>
-          <button type="button" onClick={onCancel} className="border-0 bg-transparent text-muted-foreground cursor-pointer text-[13px]">
+          <button type="button" onClick={onCancel} className="border-0 bg-transparent text-muted-foreground cursor-pointer text-sm">
             ✕
           </button>
         </div>
@@ -84,8 +84,8 @@ export function VideoTrackComposeDialog({
                   onChange={() => setGapMode(option.value)}
                 />
                 <span className="grid gap-0.5">
-                  <b className="text-foreground text-[13px]">{option.label}</b>
-                  <span className="text-muted-foreground text-[11px] leading-[1.4]">{option.hint}</span>
+                  <b className="text-foreground text-sm">{option.label}</b>
+                  <span className="text-muted-foreground text-xs leading-[1.4]">{option.hint}</span>
                 </span>
               </label>
             ))}

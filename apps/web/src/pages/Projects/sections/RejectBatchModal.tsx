@@ -8,7 +8,7 @@ import type { BatchResponse } from "@/api/batches";
 const FEEDBACK_MAX = 500;
 
 const TEXTAREA_BASE =
-  "min-h-[100px] resize-y appearance-none rounded-sm border border-border bg-background px-2.5 py-2 text-[13px] text-foreground [font:inherit]";
+  "min-h-[100px] resize-y appearance-none rounded-sm border border-border bg-background px-2.5 py-2 text-sm text-foreground [font:inherit]";
 
 export function RejectBatchModal({
   projectId,
@@ -43,7 +43,7 @@ export function RejectBatchModal({
 
   return (
     <Modal open title={`驳回批次 ${batch.display_id}`} onClose={onClose}>
-      <div className="flex flex-col gap-3 text-[13px]">
+      <div className="flex flex-col gap-3 text-sm">
         <p className="m-0 text-muted-foreground">
           驳回后批次状态变为「已退回」，被分派的标注员会收到通知。已提交质检 / 已通过的任务回退到待标注，**已有标注内容会保留**，标注员可在 reviewer 留言指引下继续修改。
         </p>
@@ -60,7 +60,7 @@ export function RejectBatchModal({
             autoFocus
           />
           {tooLong && (
-            <span className="text-[11px] text-status-danger">
+            <span className="text-xs text-status-danger">
               超出 {FEEDBACK_MAX} 字上限
             </span>
           )}

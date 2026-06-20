@@ -183,8 +183,8 @@ export function VideoChapterSidebar({
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <b className="text-[13px]">章节</b>
-          <span className="mono text-muted-foreground text-[11px]">
+          <b className="text-sm">章节</b>
+          <span className="mono text-muted-foreground text-xs">
             {sortedChapters.length}
           </span>
         </div>
@@ -221,7 +221,7 @@ export function VideoChapterSidebar({
               data-testid="video-chapter-row"
               aria-selected={isInside}
               className={cn(
-                "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-2 items-center py-[7px] px-2.5 border border-border rounded-lg bg-background",
+                "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-2 items-center py-2 px-2.5 border border-border rounded-lg bg-background",
                 isInside && "!border-brand bg-brand/10",
               )}
             >
@@ -233,15 +233,15 @@ export function VideoChapterSidebar({
                 onClick={() => onSeekFrame?.(chapter.start_frame)}
                 className="grid gap-0.5 items-start min-w-0 p-0 border-0 bg-transparent text-foreground cursor-pointer text-left"
               >
-                <b className="overflow-hidden text-[13px] text-ellipsis whitespace-nowrap">
+                <b className="overflow-hidden text-sm text-ellipsis whitespace-nowrap">
                   {idx + 1}. {chapter.title}
                   {chapter.source === "sampled" && (
-                    <span className="ml-1.5 px-1.5 py-px rounded-full bg-brand/10 text-brand text-[10px] font-medium align-middle" title="由采样网格派生">
+                    <span className="ml-1.5 px-1.5 py-px rounded-full bg-brand/10 text-brand text-2xs font-medium align-middle" title="由采样网格派生">
                       采样
                     </span>
                   )}
                 </b>
-                <span className="mono text-muted-foreground text-[11px]">
+                <span className="mono text-muted-foreground text-xs">
                   F{chapter.start_frame}–F{chapter.end_frame} · {formatChapterDuration(chapter.start_frame, chapter.end_frame, timebase)}
                   {chapter.frame_step != null && ` · 步长 ${chapter.frame_step}`}
                 </span>
@@ -289,10 +289,10 @@ export function VideoChapterSidebar({
             onChange={(e) =>
               setEditing((prev) => (prev ? { ...prev, title: e.target.value } : prev))
             }
-            className="py-[5px] px-2 text-[13px] border border-border rounded-md bg-background text-foreground"
+            className="py-1.5 px-2 text-sm border border-border rounded-md bg-background text-foreground"
           />
           <div className="grid grid-cols-2 gap-1.5 items-center">
-            <label className="grid gap-0.5 text-muted-foreground text-[11px]">
+            <label className="grid gap-0.5 text-muted-foreground text-xs">
               起始帧
               <div className="flex gap-1">
                 <input
@@ -321,7 +321,7 @@ export function VideoChapterSidebar({
                 </Button>
               </div>
             </label>
-            <label className="grid gap-0.5 text-muted-foreground text-[11px]">
+            <label className="grid gap-0.5 text-muted-foreground text-xs">
               结束帧
               <div className="flex gap-1">
                 <input
@@ -351,7 +351,7 @@ export function VideoChapterSidebar({
               </div>
             </label>
           </div>
-          <label className="grid gap-0.5 text-muted-foreground text-[11px]">
+          <label className="grid gap-0.5 text-muted-foreground text-xs">
             颜色
             <div className="flex flex-wrap gap-1.5">
               {CHAPTER_PALETTE.map((c) => (
@@ -365,7 +365,7 @@ export function VideoChapterSidebar({
             </div>
           </label>
           {error && (
-            <div className="text-status-danger text-[11px]">{error}</div>
+            <div className="text-status-danger text-xs">{error}</div>
           )}
           <div className="flex gap-1.5 justify-end">
             <Button size="sm" className="!rounded-md" variant="ghost" onClick={cancelForm}>

@@ -9,9 +9,9 @@ import {
 const TAB_DRAG_SIZE = { w: 220, h: 40 } as const;
 const TAB_DRAG_THRESHOLD = 3;
 
-const SHELL_CLASS = "z-[55]";
+const SHELL_CLASS = "z-popover-elevated";
 const TAB_CLASS =
-  "fixed left-[var(--selection-tab-x)] top-[var(--selection-tab-y)] z-[55] inline-flex max-w-[220px] cursor-grab touch-none select-none items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-foreground shadow-sm hover:border-brand hover:text-brand";
+  "fixed left-[var(--selection-tab-x)] top-[var(--selection-tab-y)] z-popover-elevated inline-flex max-w-[220px] cursor-grab touch-none select-none items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-foreground shadow-sm hover:border-brand hover:text-brand";
 const TAB_DRAGGING_CLASS = "cursor-grabbing border-brand shadow-md";
 const TAB_TITLE_CLASS = "overflow-hidden text-ellipsis whitespace-nowrap font-semibold";
 const TAB_CHEVRON_CLASS = "flex-none text-muted-foreground";

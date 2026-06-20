@@ -58,6 +58,26 @@
   --color-chart-3: var(--sc-chart-3);
   --color-chart-4: var(--sc-chart-4);
 
+  /* 紧凑字号标尺:等价替换原散落 text-[Npx] 档位 */
+  --text-3xs: 8px;
+  --text-3xs--line-height: inherit;
+  --text-micro: 9px;
+  --text-micro--line-height: inherit;
+  --text-2xs: 10px;
+  --text-2xs--line-height: inherit;
+  --text-xs: 11px;
+  --text-xs--line-height: inherit;
+  --text-sm: 13px;
+  --text-sm--line-height: inherit;
+  --text-ui: 14px;
+  --text-ui--line-height: inherit;
+  --text-md: 15px;
+  --text-md--line-height: inherit;
+  --text-stat: 22px;
+  --text-stat--line-height: inherit;
+  --text-control-xl: 28px;
+  --text-control-xl--line-height: inherit;
+
   --radius-sm: calc(var(--sc-radius) - 2px);
   --radius-md: var(--sc-radius);
   --radius-lg: calc(var(--sc-radius) + 2px);
@@ -108,6 +128,32 @@
   --sc-status-info-soft: color-mix(in oklab, var(--color-violet-500) 10%, transparent);
   --sc-status-info-alt: var(--color-sky-600);
   --sc-status-info-alt-soft: color-mix(in oklab, var(--color-sky-500) 10%, transparent);
+
+  --sc-z-local-1: 1;
+  --sc-z-local-2: 2;
+  --sc-z-local-3: 3;
+  --sc-z-local-4: 4;
+  --sc-z-local-5: 5;
+  --sc-z-local-6: 6;
+  --sc-z-base: 10;
+  --sc-z-dock: 14;
+  --sc-z-dock-control: 15;
+  --sc-z-local-overlay: 20;
+  --sc-z-popover: 30;
+  --sc-z-dropdown: 50;
+  --sc-z-modal: 50;
+  --sc-z-floating: 50;
+  --sc-z-tooltip: 50;
+  --sc-z-popover-elevated: 55;
+  --sc-z-overlay-high: 60;
+  --sc-z-drawer-backdrop: 60;
+  --sc-z-drawer: 61;
+  --sc-z-workbench-top: 90;
+  --sc-z-notification-backdrop: 200;
+  --sc-z-notification: 201;
+  --sc-z-workbench-modal: 1000;
+  --sc-z-app-drawer-backdrop: 1099;
+  --sc-z-app-drawer: 1100;
 
   --sc-chart-1: #2563eb;
   --sc-chart-2: #15803d;
@@ -273,6 +319,106 @@
 
   .bg-status-info-alt-soft {
     background-color: var(--sc-status-info-alt-soft);
+  }
+
+  .z-local-1 {
+    z-index: var(--sc-z-local-1);
+  }
+
+  .z-local-2 {
+    z-index: var(--sc-z-local-2);
+  }
+
+  .z-local-3 {
+    z-index: var(--sc-z-local-3);
+  }
+
+  .z-local-4 {
+    z-index: var(--sc-z-local-4);
+  }
+
+  .z-local-5 {
+    z-index: var(--sc-z-local-5);
+  }
+
+  .z-local-6 {
+    z-index: var(--sc-z-local-6);
+  }
+
+  .z-base {
+    z-index: var(--sc-z-base);
+  }
+
+  .z-dock {
+    z-index: var(--sc-z-dock);
+  }
+
+  .z-dock-control {
+    z-index: var(--sc-z-dock-control);
+  }
+
+  .z-local-overlay {
+    z-index: var(--sc-z-local-overlay);
+  }
+
+  .z-popover {
+    z-index: var(--sc-z-popover);
+  }
+
+  .z-dropdown {
+    z-index: var(--sc-z-dropdown);
+  }
+
+  .z-modal {
+    z-index: var(--sc-z-modal);
+  }
+
+  .z-floating {
+    z-index: var(--sc-z-floating);
+  }
+
+  .z-tooltip {
+    z-index: var(--sc-z-tooltip);
+  }
+
+  .z-popover-elevated {
+    z-index: var(--sc-z-popover-elevated);
+  }
+
+  .z-overlay-high {
+    z-index: var(--sc-z-overlay-high);
+  }
+
+  .z-drawer-backdrop {
+    z-index: var(--sc-z-drawer-backdrop);
+  }
+
+  .z-drawer {
+    z-index: var(--sc-z-drawer);
+  }
+
+  .z-workbench-top {
+    z-index: var(--sc-z-workbench-top);
+  }
+
+  .z-notification-backdrop {
+    z-index: var(--sc-z-notification-backdrop);
+  }
+
+  .z-notification {
+    z-index: var(--sc-z-notification);
+  }
+
+  .z-workbench-modal {
+    z-index: var(--sc-z-workbench-modal);
+  }
+
+  .z-app-drawer-backdrop {
+    z-index: var(--sc-z-app-drawer-backdrop);
+  }
+
+  .z-app-drawer {
+    z-index: var(--sc-z-app-drawer);
   }
 
   .surface-shadow-sm {

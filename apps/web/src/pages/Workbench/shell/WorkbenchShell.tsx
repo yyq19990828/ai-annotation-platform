@@ -7,7 +7,7 @@ import { WorkbenchLayout } from "./WorkbenchLayout";
 import { WorkbenchSkeleton } from "./WorkbenchSkeleton";
 
 const ISSUE_FAB_CLASS =
-  "fixed right-6 z-[90] inline-flex size-10 cursor-pointer appearance-none items-center justify-center rounded-full border border-border bg-card text-foreground shadow-lg hover:bg-muted";
+  "fixed right-6 z-workbench-top inline-flex size-10 cursor-pointer appearance-none items-center justify-center rounded-full border border-border bg-card text-foreground shadow-lg hover:bg-muted";
 
 export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "review" }) {
   const model = useWorkbenchShellModel({ mode });
@@ -20,7 +20,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
         <Icon name={model.emptyState.icon} size={40} />
-        <div className="text-[15px]">{model.emptyState.message}</div>
+        <div className="text-md">{model.emptyState.message}</div>
         <Button onClick={model.emptyState.onBack}><Icon name="chevLeft" size={12} />返回</Button>
       </div>
     );
@@ -42,7 +42,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
           >
             <Icon name="flag" size={14} />
             {model.issueSection.openIssueCount > 0 && (
-              <span className="absolute -right-1 -top-1 min-w-4 rounded-[10px] bg-amber-500 px-1.5 py-px text-center text-[10px] text-white">{model.issueSection.openIssueCount}</span>
+              <span className="absolute -right-1 -top-1 min-w-4 rounded-[10px] bg-amber-500 px-1.5 py-px text-center text-2xs text-white">{model.issueSection.openIssueCount}</span>
             )}
           </button>
           {model.issueSection.stageKind === "image" && (

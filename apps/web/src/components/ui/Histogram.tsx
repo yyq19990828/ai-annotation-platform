@@ -58,7 +58,7 @@ export function Histogram({
               }}
               className="pointer-events-none absolute inset-y-0 w-px bg-muted-foreground"
             >
-              <span className="absolute -top-3.5 left-1 whitespace-nowrap text-[10px] text-muted-foreground">
+              <span className="absolute -top-3.5 left-1 whitespace-nowrap text-2xs text-muted-foreground">
                 {m.label}
               </span>
             </div>
@@ -66,7 +66,7 @@ export function Histogram({
         })}
       </div>
       {xLabels && (
-        <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+        <div className="mt-1 flex justify-between text-2xs text-muted-foreground">
           <span>{xLabels[0]}</span>
           <span>{xLabels[xLabels.length - 1]}</span>
         </div>

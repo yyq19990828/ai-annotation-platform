@@ -112,7 +112,7 @@ function CheckCard({
       </span>
       <span className="flex min-w-0 flex-col gap-1">
         <span className={OPTION_LABEL_CLASS}>{option.label}</span>
-        <span className="text-[11px] font-normal text-muted-foreground">{option.description}</span>
+        <span className="text-xs font-normal text-muted-foreground">{option.description}</span>
       </span>
     </button>
   );
@@ -209,12 +209,12 @@ function ExportForm({
                       {(() => {
                         const n = o.members.filter((m) => targets.includes(m.value)).length;
                         return n > 0 ? (
-                          <span className="rounded-full bg-brand/10 px-1.5 py-px text-[10px] font-semibold text-brand">
+                          <span className="rounded-full bg-brand/10 px-1.5 py-px text-2xs font-semibold text-brand">
                             {n}/{o.members.length}
                           </span>
                         ) : null;
                       })()}
-                      <span className="text-[11px] font-normal text-muted-foreground">{o.description}</span>
+                      <span className="text-xs font-normal text-muted-foreground">{o.description}</span>
                     </button>
                     {yoloExpanded && (
                       <div className="flex flex-col gap-1.5 px-2.5 pb-2.5">
@@ -232,7 +232,7 @@ function ExportForm({
                 ),
               )}
         </div>
-        <div className="text-[11px] leading-snug text-muted-foreground">
+        <div className="text-xs leading-snug text-muted-foreground">
           {targets.length === 0 ? (
             <span className="text-status-caution">请至少选择一个导出目标</span>
           ) : targets.length === 1 ? (
@@ -266,7 +266,7 @@ function ExportForm({
                   />
                   <span className="flex min-w-0 flex-col gap-1">
                     <span className={OPTION_LABEL_CLASS}>{item.label}</span>
-                    <span className="text-[11px] font-normal text-muted-foreground">{item.description}</span>
+                    <span className="text-xs font-normal text-muted-foreground">{item.description}</span>
                   </span>
                 </button>
               );
@@ -284,12 +284,12 @@ function ExportForm({
           />
           <span className="text-foreground">包含属性数据</span>
         </label>
-        <div className="text-[11px] leading-snug text-muted-foreground">
+        <div className="text-xs leading-snug text-muted-foreground">
           {includeAttributes
             ? "导出包将包含每个标注的 attributes 字段。"
             : "兼容旧版（v0.4.9 之前）格式，不含属性。"}
         </div>
-        <div className="text-[11px] leading-snug text-muted-foreground">
+        <div className="text-xs leading-snug text-muted-foreground">
           仅对 COCO / YOLO / Video JSON / LiDAR 标准格式生效；AAP JSON 始终包含，MOT 无此字段。
         </div>
       </div>

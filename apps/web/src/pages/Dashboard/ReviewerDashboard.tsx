@@ -17,12 +17,12 @@ import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
 
 const CARD_TITLE = "m-0 text-sm font-semibold";
 const CARD_HEADER_PLAIN = "border-b border-border px-4 py-3.5";
-const TITLE_BADGE = "ml-2 [&_span]:text-[11px]";
-const ROW_META = "mt-0.5 text-[11px] text-muted-foreground";
+const TITLE_BADGE = "ml-2 [&_span]:text-xs";
+const ROW_META = "mt-0.5 text-xs text-muted-foreground";
 const ROW_TITLE_LINE = "flex items-center gap-2";
 const TASK_ID = "text-xs font-semibold text-brand";
-const FILE_NAME = "text-[12.5px]";
-const ROW_DATE = "text-[11.5px] text-muted-foreground max-md:hidden";
+const FILE_NAME = "text-sm";
+const ROW_DATE = "text-xs text-muted-foreground max-md:hidden";
 
 export function ReviewerDashboard() {
   const { data: stats, isLoading } = useReviewerStats();
@@ -62,7 +62,7 @@ export function ReviewerDashboard() {
 
   if (isLoading || !stats) {
     return (
-      <div className="px-7 py-[60px] text-center text-muted-foreground">
+      <div className="px-7 py-15 text-center text-muted-foreground">
         加载中...
       </div>
     );
@@ -73,7 +73,7 @@ export function ReviewerDashboard() {
       <div className="mb-5 flex items-end justify-between max-md:flex-col max-md:items-start max-md:gap-2.5">
         <div>
           <h1 className="mb-1 text-xl font-semibold">质检工作台</h1>
-          <p className="m-0 text-[13px] text-muted-foreground">审核标注质量，确保数据准确性</p>
+          <p className="m-0 text-sm text-muted-foreground">审核标注质量，确保数据准确性</p>
         </div>
         <Button variant="primary" onClick={() => navigate("/review")}>
           <Icon name="check" size={13} />进入审核页面
@@ -182,7 +182,7 @@ export function ReviewerDashboard() {
                   className="flex w-full cursor-pointer appearance-none items-center justify-between gap-3 border-0 border-t border-border bg-transparent px-4 py-2.5 text-left [font:inherit] text-inherit"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="text-[13px] font-medium">{b.batch_name}</div>
+                    <div className="text-sm font-medium">{b.batch_name}</div>
                     <div className={ROW_META}>
                       <span className="mono">{b.batch_display_id}</span>
                       <span> · {b.project_name}</span>
@@ -223,7 +223,7 @@ export function ReviewerDashboard() {
           </h3>
         </div>
         {recentReviews.length === 0 ? (
-          <div className="px-4 py-8 text-center text-[13px] text-muted-foreground">
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             暂无审核记录
           </div>
         ) : (
@@ -274,7 +274,7 @@ function RecentReviewRow({ item, onClick }: { item: RecentReviewItem; onClick: (
           <span className={FILE_NAME}>{item.file_name}</span>
         </div>
         <div className={ROW_META}>
-          <span className="[&_span]:px-[5px] [&_span]:text-[10px]">
+          <span className="[&_span]:px-1.5 [&_span]:text-2xs">
             <Badge variant="outline">{item.project_name}</Badge>
           </span>
         </div>
@@ -305,7 +305,7 @@ function ReviewTaskRow({ task, onApprove, onReject }: {
           <span className={FILE_NAME}>{task.file_name}</span>
         </div>
         <div className={ROW_META}>
-          <span className="mr-1.5 [&_span]:px-[5px] [&_span]:text-[10px]">
+          <span className="mr-1.5 [&_span]:px-1.5 [&_span]:text-2xs">
             <Badge variant="outline">{task.project_name}</Badge>
           </span>
           {task.total_annotations} 个标注 · {task.total_predictions} 个预测

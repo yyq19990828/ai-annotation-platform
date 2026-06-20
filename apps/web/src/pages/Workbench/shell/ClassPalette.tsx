@@ -3,11 +3,11 @@ import type { ClassesConfig } from "@/api/projects";
 import { classColor } from "../stage/colors";
 
 const RECENT_BUTTON_CLASS =
-  "flex cursor-pointer appearance-none items-center gap-1 rounded-full border border-border bg-background px-[7px] py-[3px] text-[11.5px] text-foreground";
+  "flex cursor-pointer appearance-none items-center gap-1 rounded-full border border-border bg-background px-2 py-1 text-xs text-foreground";
 const CLASS_ROW_BASE =
-  "flex cursor-pointer items-center gap-2 rounded-sm border border-transparent px-2 py-[5px] text-[12.5px]";
+  "flex cursor-pointer items-center gap-2 rounded-sm border border-transparent px-2 py-1.5 text-sm";
 const SHORTCUT_CLASS =
-  "inline-block rounded-[3px] border border-b-2 border-border bg-muted px-[5px] py-px font-mono text-[10.5px] leading-none text-muted-foreground";
+  "inline-block rounded-[3px] border border-b-2 border-border bg-muted px-1.5 py-px font-mono text-2xs leading-none text-muted-foreground";
 
 interface ClassPaletteProps {
   classes: string[];
@@ -76,13 +76,13 @@ export function ClassPalette({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索类别..."
-          className="appearance-none rounded-sm border border-border bg-background px-2 py-[5px] text-xs text-foreground outline-none"
+          className="appearance-none rounded-sm border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none"
         />
       )}
 
       {visibleRecent.length > 0 && !query.trim() && (
         <div>
-          <div className="mb-1 text-[10px] tracking-[0.5px] text-muted-foreground">
+          <div className="mb-1 text-2xs tracking-[0.5px] text-muted-foreground">
             最近使用
           </div>
           <div className="flex flex-wrap gap-1">
@@ -133,7 +133,7 @@ export function ClassPalette({
           );
         })}
         {filtered.length === 0 && (
-          <div className="px-1 py-2 text-center text-[11.5px] text-muted-foreground">
+          <div className="px-1 py-2 text-center text-xs text-muted-foreground">
             没有匹配的类别
           </div>
         )}

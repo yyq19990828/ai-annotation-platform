@@ -9,11 +9,11 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { AttributeField, AttributeFieldType } from "@/api/projects";
+import { LABEL_CLASS } from "./formClasses";
 
 // UA-safe 表单基线 + token 化(无全局 preflight)。
-const LABEL_CLASS = "mb-1.5 block text-xs font-medium text-muted-foreground";
 const CONTROL_CLASS =
-  "box-border w-full appearance-none rounded-sm border border-border bg-muted px-2.5 py-1.5 text-[13px] text-foreground outline-none [font-family:inherit]";
+  "box-border w-full appearance-none rounded-sm border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground outline-none [font-family:inherit]";
 
 const FIELD_TYPES: { value: AttributeFieldType; label: string }[] = [
   { value: "text", label: "文本" },

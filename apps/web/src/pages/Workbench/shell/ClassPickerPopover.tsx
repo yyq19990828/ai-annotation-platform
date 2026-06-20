@@ -5,7 +5,7 @@ import { AttributeForm } from "./AttributeForm";
 import { ClassPalette, shortcutForIndex } from "./ClassPalette";
 
 const POPOVER_CLASS =
-  "top-[var(--class-picker-top)] left-[var(--class-picker-left)] z-30 min-w-[220px] max-w-[280px] max-h-[70vh] overflow-y-auto rounded-md border border-border bg-card p-2.5 shadow-lg [pointer-events:auto]";
+  "top-[var(--class-picker-top)] left-[var(--class-picker-left)] z-popover min-w-[220px] max-w-[280px] max-h-[70vh] overflow-y-auto rounded-md border border-border bg-card p-2.5 shadow-lg [pointer-events:auto]";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type FixedAnchor = { left: number; top: number };
@@ -150,8 +150,8 @@ export function ClassPickerPopover({
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="mb-2 flex items-center justify-between">
-        <div className="text-[11.5px] font-semibold">{title}</div>
-        <div className="text-[10px] text-muted-foreground">
+        <div className="text-xs font-semibold">{title}</div>
+        <div className="text-2xs text-muted-foreground">
           Enter ↵ 默认 · Esc 取消
         </div>
       </div>
@@ -169,7 +169,7 @@ export function ClassPickerPopover({
         </div>
       )}
       {classes.length > 0 && (
-        <div className="mt-2 text-center text-[10.5px] text-muted-foreground">
+        <div className="mt-2 text-center text-2xs text-muted-foreground">
           快捷键: {shortcutForIndex(0)}…{shortcutForIndex(Math.min(classes.length - 1, 34))}
         </div>
       )}

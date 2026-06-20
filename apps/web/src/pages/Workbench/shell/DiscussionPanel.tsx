@@ -6,7 +6,7 @@ import { useActiveIssueStore } from "../state/useActiveIssueStore";
 
 // 顶部 tab 切换条:小写 chrome 风格的下划线 tab(与 CommentsPanel 同形)。
 const TAB_BUTTON =
-  "cursor-pointer appearance-none border-0 border-b-2 border-transparent bg-transparent px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground [font:inherit]";
+  "cursor-pointer appearance-none border-0 border-b-2 border-transparent bg-transparent px-2 py-1 text-xs font-semibold uppercase tracking-[0.4px] text-muted-foreground [font:inherit]";
 const TAB_BUTTON_ACTIVE = "border-brand text-foreground";
 
 /**

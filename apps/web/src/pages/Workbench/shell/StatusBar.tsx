@@ -74,9 +74,9 @@ export function StatusBar({
 
   const Sep = () => <span aria-hidden className="h-3 w-px flex-shrink-0 self-center bg-border" />;
   const inlineItem = "inline-flex items-center gap-1";
-  const countValue = "mono text-[12.5px] font-semibold text-foreground";
+  const countValue = "mono text-sm font-semibold text-foreground";
   return (
-    <div className="flex justify-between border-t border-border bg-card px-4 py-[7px] text-[11.5px] text-muted-foreground">
+    <div className="flex justify-between border-t border-border bg-card px-4 py-2 text-xs text-muted-foreground">
       <div className="flex items-center gap-3">
         {lockRemainingMs !== undefined && lockRemainingMs > 0 && !lockError && (
           <>
@@ -120,7 +120,7 @@ export function StatusBar({
                   type="button"
                   onClick={() => onSetDiffMode(m)}
                   className={cn(
-                    "cursor-pointer appearance-none border border-border px-2 py-px text-[11px]",
+                    "cursor-pointer appearance-none border border-border px-2 py-px text-xs",
                     m === "final" && "rounded-l",
                     m === "diff" && "rounded-r",
                     diffMode === m
@@ -141,7 +141,7 @@ export function StatusBar({
             onClick={onShowQueueDrawer}
             title={online === false ? "当前离线 · 点击查看离线队列详情" : "点击查看离线队列详情"}
             className={cn(
-              "inline-flex cursor-pointer appearance-none items-center gap-1 rounded border border-amber-500/60 px-2 py-px text-[11px] text-foreground",
+              "inline-flex cursor-pointer appearance-none items-center gap-1 rounded border border-amber-500/60 px-2 py-px text-xs text-foreground",
               online === false ? "bg-rose-500/20" : "bg-amber-500/20",
               !onShowQueueDrawer && "cursor-default",
             )}

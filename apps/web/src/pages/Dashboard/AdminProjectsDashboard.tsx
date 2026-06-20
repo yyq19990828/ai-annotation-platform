@@ -41,7 +41,7 @@ const TD_CLASS = "border-b border-border p-3 align-middle";
 const TH_CLASS =
   "border-b border-border bg-muted px-3 py-2.5 text-left text-xs font-medium text-muted-foreground whitespace-nowrap first:pl-4 last:pr-4";
 const BATCH_LINK_CLASS =
-  "mt-1 cursor-pointer appearance-none border-0 bg-transparent p-0 text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 [font:inherit]";
+  "mt-1 cursor-pointer appearance-none border-0 bg-transparent p-0 text-xs text-muted-foreground underline decoration-dotted underline-offset-2 [font:inherit]";
 
 function AdminProjectRow({
   p,
@@ -72,11 +72,11 @@ function AdminProjectRow({
             <Icon name={DATA_TYPE_ICONS[p.data_type ?? "image"] || "image"} size={14} />
           </div>
           <div className="min-w-0">
-            <div className="max-w-[220px] truncate text-[13.5px] font-medium">{p.name}</div>
+            <div className="max-w-[220px] truncate text-sm font-medium">{p.name}</div>
             <div className="mt-0.5 flex min-w-0 items-baseline gap-2">
-              <span className="mono text-[11.5px] leading-4 text-muted-foreground">{p.display_id}</span>
+              <span className="mono text-xs leading-4 text-muted-foreground">{p.display_id}</span>
               <span className="leading-4 text-muted-foreground">·</span>
-              <span className="truncate text-[11.5px] leading-4 text-muted-foreground">
+              <span className="truncate text-xs leading-4 text-muted-foreground">
                 {projectDisplayType(p)}
               </span>
             </div>
@@ -87,8 +87,8 @@ function AdminProjectRow({
         <div className="flex items-center gap-2">
           <Avatar initial={ownerInitial} size="sm" />
           <div>
-            <div className="whitespace-nowrap text-[12.5px]">{p.owner_name ?? "—"}</div>
-            <div className="text-[11px] text-muted-foreground">
+            <div className="whitespace-nowrap text-sm">{p.owner_name ?? "—"}</div>
+            <div className="text-xs text-muted-foreground">
               {(p.member_count ?? 0) > 0 ? `${p.member_count} 名成员` : "暂无成员"}
             </div>
           </div>
@@ -96,11 +96,11 @@ function AdminProjectRow({
       </td>
       <td className={`${TD_CLASS} min-w-[220px]`}>
         <ProgressBar value={pct} aiValue={aiPct} inProgressValue={startedPct} />
-        <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
+        <div className="mt-1 flex justify-between text-xs text-muted-foreground">
           <span className="mono">
             {p.completed_tasks.toLocaleString()} / {p.total_tasks.toLocaleString()}
             {(p.in_progress_tasks ?? 0) + p.review_tasks > 0 && (
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-xs text-muted-foreground">
                 {" · "}
                 {(p.in_progress_tasks ?? 0) > 0 && <>{p.in_progress_tasks} 进行中</>}
                 {(p.in_progress_tasks ?? 0) > 0 && p.review_tasks > 0 && " · "}
@@ -111,7 +111,7 @@ function AdminProjectRow({
           <span className="font-medium text-foreground">{pct}%</span>
         </div>
         {(p.batch_summary?.total ?? 0) > 0 && (
-          <div className="mt-[3px] text-[11px] text-muted-foreground">
+          <div className="mt-[3px] text-xs text-muted-foreground">
             {p.batch_summary?.total} 个批次
             {(p.batch_summary?.assigned ?? 0) > 0 && (
               <> · {p.batch_summary?.assigned} 已分派</>
@@ -147,7 +147,7 @@ function AdminProjectRow({
       </td>
       <td className={TD_CLASS}>
         <div className="whitespace-nowrap text-xs">{due}</div>
-        <div className="text-[11px] text-muted-foreground">更新 {updated}</div>
+        <div className="text-xs text-muted-foreground">更新 {updated}</div>
       </td>
       <td className={`${TD_CLASS} whitespace-nowrap pr-4 text-right`} onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-end gap-1">
@@ -235,7 +235,7 @@ export function AdminProjectsDashboard() {
       <div className="mb-5 flex items-end justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start">
         <div>
           <h1 className="mb-1 text-xl font-semibold">Dashboard</h1>
-          <p className="text-[13px] text-muted-foreground">管理平台全部项目、负责人、批次分派与导出入口</p>
+          <p className="text-sm text-muted-foreground">管理平台全部项目、负责人、批次分派与导出入口</p>
         </div>
         <div className="flex gap-2">
           <Button onClick={() => setImportOpen(true)}>
@@ -307,7 +307,7 @@ export function AdminProjectsDashboard() {
             <Button onClick={() => setFilterOpen(true)}>
               <Icon name="filter" size={13} />筛选
               {advancedActiveCount > 0 && (
-                <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-brand/30 bg-brand/10 px-[5px] text-[10px] leading-none text-brand">
+                <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-brand/30 bg-brand/10 px-1.5 text-2xs leading-none text-brand">
                   {advancedActiveCount}
                 </span>
               )}
@@ -334,7 +334,7 @@ export function AdminProjectsDashboard() {
           )
         ) : (
           <div className="w-full overflow-x-auto [overscroll-behavior-x:contain]">
-            <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-[13px]">
+            <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
                   {["项目", "负责人", "进度", "AI 模型", "状态", "截止 / 更新", ""].map((h, i) => (

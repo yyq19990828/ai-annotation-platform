@@ -10,8 +10,8 @@ import { geometryMetrics } from "./geometryMetrics";
 const BODY_CLASS =
   "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
 const SOURCE_ROW_CLASS =
-  "flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground [&_span]:whitespace-nowrap";
-const OCR_CLASS = "flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground";
+  "flex min-w-0 items-center gap-1 text-xs text-muted-foreground [&_span]:whitespace-nowrap";
+const OCR_CLASS = "flex min-w-0 items-center gap-1 text-xs text-muted-foreground";
 const OCR_TEXT_CLASS = "truncate";
 
 export interface AIPredictionCardContentProps {

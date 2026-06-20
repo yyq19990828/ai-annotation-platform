@@ -52,8 +52,8 @@ export function classColorForCanvas(name: string, config?: ClassesConfig): strin
 }
 
 /** 把 CSS 变量(如 --sc-card)解析为当前主题下的 hex,供 Konva canvas fill 使用
- *  (canvas fillStyle 不解析 var())。随主题变化在 render 时重新读取。 */
-export function cssVarToHex(varName: string): string {
+ *  (canvas fillStyle 不解析 var())。themeKey 仅用于调用方 memo 失效。 */
+export function cssVarToHex(varName: string, _themeKey?: string): string {
   if (typeof document === "undefined") return "#888888";
   const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
   return raw ? colorToHex(raw) : "#888888";

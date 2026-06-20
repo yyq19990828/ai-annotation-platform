@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import type { ProjectRenderingConfig } from "@/api/projects";
+import { LABEL_CLASS } from "./formClasses";
 
 function cn(...xs: Array<string | false | null | undefined>): string {
   return xs.filter(Boolean).join(" ");
@@ -17,16 +18,15 @@ function cn(...xs: Array<string | false | null | undefined>): string {
 
 // UA-safe 表单基线(无全局 preflight 期间,原生 input 需消浏览器默认样式)。
 const ROW_CLASS = "flex flex-col gap-1.5 border-b border-border py-2.5";
-const LABEL_CLASS = "mb-1.5 block text-xs font-medium text-muted-foreground";
 const OVERRIDE_TOGGLE_CLASS =
   "inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground";
-const INLINE_CHOICE_CLASS = "inline-flex gap-2 text-[13px]";
+const INLINE_CHOICE_CLASS = "inline-flex gap-2 text-sm";
 const FOLLOWS_HINT_CLASS = "text-xs italic text-muted-foreground";
 const CHECKBOX_CLASS = "cursor-pointer accent-brand";
 const TEXT_INPUT_CLASS =
-  "w-full appearance-none rounded-md border border-border bg-muted px-[11px] py-2 text-[13.5px] text-foreground outline-none [font:inherit]";
+  "w-full appearance-none rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none [font:inherit]";
 const NUMBER_INPUT_CLASS =
-  "w-full appearance-none rounded-md border border-border bg-muted px-[9px] py-[7px] text-[13px] text-foreground outline-none";
+  "w-full appearance-none rounded-md border border-border bg-muted px-2 py-2 text-sm text-foreground outline-none";
 
 const DEFAULTS: Required<{
   [K in keyof ProjectRenderingConfig]: NonNullable<ProjectRenderingConfig[K]>;

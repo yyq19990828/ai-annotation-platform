@@ -129,7 +129,7 @@ function StatusPill({ status }: { status: AsyncJobStatus }) {
           : "bg-muted text-muted-foreground";
   return (
     <span
-      className={`rounded-full px-1.5 py-px text-[10px] font-semibold uppercase ${cls}`}
+      className={`rounded-full px-1.5 py-px text-2xs font-semibold uppercase ${cls}`}
       data-testid={`job-status-${status}`}
     >
       {STATUS_LABEL[status]}
@@ -181,7 +181,7 @@ function JobRow({
         </div>
       </div>
       <ProgressBar pct={pct} status={job.status} />
-      <div className="text-[11px] tabular-nums text-muted-foreground">
+      <div className="text-xs tabular-nums text-muted-foreground">
         {job.status === "running" || job.status === "pending"
           ? `${pct}%`
           : job.status === "failed"
@@ -192,7 +192,7 @@ function JobRow({
         <a
           href={downloadUrl}
           download
-          className="mt-0.5 inline-flex cursor-pointer items-center gap-1 self-start rounded-sm border border-border bg-muted px-2 py-[3px] text-[11px] font-semibold text-brand no-underline transition-colors duration-200 hover:border-brand hover:bg-popover"
+          className="mt-0.5 inline-flex cursor-pointer items-center gap-1 self-start rounded-sm border border-border bg-muted px-2 py-1 text-xs font-semibold text-brand no-underline transition-colors duration-200 hover:border-brand hover:bg-popover"
           data-testid={`job-download-${job.id}`}
         >
           <Icon name="download" size={12} />
@@ -295,7 +295,7 @@ export function JobsBell() {
         <Icon name="layers" size={15} />
         {runningCount > 0 && (
           <span
-            className="absolute right-0.5 top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-center text-[10px] font-semibold leading-4 text-white"
+            className="absolute right-0.5 top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-center text-2xs font-semibold leading-4 text-white"
             data-testid="jobs-bell-badge"
           >
             {runningCount}
@@ -305,13 +305,13 @@ export function JobsBell() {
 
       {open && (
         <>
-          <div onClick={() => setOpen(false)} className="fixed inset-0 z-[200]" />
+          <div onClick={() => setOpen(false)} className="fixed inset-0 z-notification-backdrop" />
           <div
             role="dialog"
             aria-label="后台任务"
-            className="absolute right-0 top-[calc(100%+6px)] z-[201] flex max-h-[480px] w-[min(420px,calc(100vw-24px))] min-w-0 flex-col overflow-hidden rounded-md border border-border bg-popover shadow-lg"
+            className="absolute right-0 top-[calc(100%+6px)] z-notification flex max-h-[480px] w-[min(420px,calc(100vw-24px))] min-w-0 flex-col overflow-hidden rounded-md border border-border bg-popover shadow-lg"
           >
-            <div className="flex items-center justify-between border-b border-border px-3 py-2.5 text-[11px] font-semibold text-muted-foreground">
+            <div className="flex items-center justify-between border-b border-border px-3 py-2.5 text-xs font-semibold text-muted-foreground">
               <span>后台任务 {runningCount > 0 ? `(${runningCount} 进行中)` : ""}</span>
             </div>
             <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
@@ -325,7 +325,7 @@ export function JobsBell() {
                   role="tab"
                   aria-selected={filter === "all"}
                   onClick={() => changeFilter("all")}
-                  className={`cursor-pointer appearance-none rounded-sm border-0 bg-transparent px-2.5 py-[3px] text-[11px] font-semibold transition-colors duration-100 ${
+                  className={`cursor-pointer appearance-none rounded-sm border-0 bg-transparent px-2.5 py-1 text-xs font-semibold transition-colors duration-100 ${
                     filter === "all"
                       ? "bg-popover text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
@@ -339,7 +339,7 @@ export function JobsBell() {
                   role="tab"
                   aria-selected={filter === "active"}
                   onClick={() => changeFilter("active")}
-                  className={`cursor-pointer appearance-none rounded-sm border-0 bg-transparent px-2.5 py-[3px] text-[11px] font-semibold transition-colors duration-100 ${
+                  className={`cursor-pointer appearance-none rounded-sm border-0 bg-transparent px-2.5 py-1 text-xs font-semibold transition-colors duration-100 ${
                     filter === "active"
                       ? "bg-popover text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
@@ -353,7 +353,7 @@ export function JobsBell() {
                 <button
                   type="button"
                   onClick={dismissAllTerminal}
-                  className="cursor-pointer appearance-none rounded-sm border border-border bg-transparent px-2 py-[3px] text-[11px] font-semibold text-muted-foreground transition-colors duration-100 hover:border-muted-foreground hover:bg-muted hover:text-foreground"
+                  className="cursor-pointer appearance-none rounded-sm border border-border bg-transparent px-2 py-1 text-xs font-semibold text-muted-foreground transition-colors duration-100 hover:border-muted-foreground hover:bg-muted hover:text-foreground"
                   data-testid="jobs-bell-clear-terminal"
                 >
                   清空已结束

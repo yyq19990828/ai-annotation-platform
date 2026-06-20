@@ -98,7 +98,7 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
 
   return (
     <div
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-workbench-modal flex items-center justify-center bg-black/40"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -108,7 +108,7 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border pb-2">
-          <b className="inline-flex items-center gap-1.5 text-[13px] text-foreground"><Icon name="flag" size={14} /> 标记问题 (Issue)</b>
+          <b className="inline-flex items-center gap-1.5 text-sm text-foreground"><Icon name="flag" size={14} /> 标记问题 (Issue)</b>
           <Button variant="ghost" size="sm" onClick={onClose} title="关闭"><Icon name="x" size={12} /></Button>
         </div>
 
@@ -132,7 +132,7 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
                 type="button"
                 onClick={() => setSeverity(s)}
                 className={cn(
-                  "cursor-pointer appearance-none rounded-xl border px-2.5 py-1 text-[11px] [font:inherit]",
+                  "cursor-pointer appearance-none rounded-xl border px-2.5 py-1 text-xs [font:inherit]",
                   severity === s
                     ? "border-brand bg-brand text-brand-foreground"
                     : cn("border-border bg-muted", SEVERITY_TEXT[s]),
@@ -181,7 +181,7 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
             />
           </div>
           {pixelInvalid && (
-            <span className="text-[11px] text-status-danger">x/y 必须在 0-1 范围;留空则按任务级 issue 创建</span>
+            <span className="text-xs text-status-danger">x/y 必须在 0-1 范围;留空则按任务级 issue 创建</span>
           )}
         </div>
 

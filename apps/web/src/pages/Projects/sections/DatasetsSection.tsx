@@ -48,20 +48,20 @@ export function DatasetsSection({ project }: { project: ProjectResponse }) {
         </div>
 
         {isLoading && (
-          <div className="p-8 text-center text-[13px] text-muted-foreground">
+          <div className="p-8 text-center text-sm text-muted-foreground">
             加载中...
           </div>
         )}
 
         {!isLoading && linked.length === 0 && (
-          <div className="p-8 text-center text-[13px] text-muted-foreground">
+          <div className="p-8 text-center text-sm text-muted-foreground">
             尚未关联任何数据集。点击右上角「关联数据集」开始。
           </div>
         )}
 
         {!isLoading && linked.length > 0 && (
           <div className="w-full overflow-x-auto">
-            <table className="w-full min-w-[840px] border-collapse text-[13px]">
+            <table className="w-full min-w-[840px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border">
                   {["数据集", "类型", "原数据集条目", "本项目任务", "关联时间", "操作"].map((h) => (
@@ -79,7 +79,7 @@ export function DatasetsSection({ project }: { project: ProjectResponse }) {
                   <tr key={d.id} className="border-b border-border">
                     <td className={TABLE_CELL}>
                       <div className="max-w-[240px] truncate font-medium" title={d.name}>{d.name}</div>
-                      <div className={cn("mono", "whitespace-nowrap text-[11px] text-muted-foreground")}>
+                      <div className={cn("mono", "whitespace-nowrap text-xs text-muted-foreground")}>
                         {d.display_id}
                       </div>
                     </td>
@@ -166,12 +166,12 @@ function LinkDatasetModal({
 
   return (
     <Modal open onClose={onClose} title="关联数据集" width={520}>
-      <div className="mb-3 text-[13px] text-muted-foreground">
+      <div className="mb-3 text-sm text-muted-foreground">
         选择一个尚未关联到本项目的数据集。关联后该数据集的全部条目会作为「未归类任务」加入项目，
         在批次管理顶部点击「去分包」即可划分到批次。
       </div>
       {candidates.length === 0 && (
-        <div className="p-4 text-center text-[13px] text-muted-foreground">
+        <div className="p-4 text-center text-sm text-muted-foreground">
           暂无可关联的数据集 · 请先在「数据集」页面创建
         </div>
       )}
@@ -200,11 +200,11 @@ function LinkDatasetModal({
                   )}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="text-[13px] font-medium">{d.name}</span>
-                  <span className={cn("mono", "ml-1.5 text-[11px] text-muted-foreground")}>
+                  <span className="text-sm font-medium">{d.name}</span>
+                  <span className={cn("mono", "ml-1.5 text-xs text-muted-foreground")}>
                     {d.display_id}
                   </span>
-                  <span className="ml-1.5 rounded-full border border-border px-1.5 py-px text-[11px] text-muted-foreground">
+                  <span className="ml-1.5 rounded-full border border-border px-1.5 py-px text-xs text-muted-foreground">
                     {d.data_type}
                   </span>
                 </span>
@@ -303,7 +303,7 @@ function UnlinkConfirmModal({
 
   return (
     <Modal open onClose={onClose} title="确认取消关联">
-      <div className="text-[13px] leading-relaxed">
+      <div className="text-sm leading-relaxed">
         <p className="mb-2 mt-0">
           确认取消数据集 <strong>{datasetName}</strong> 与本项目的关联？
         </p>
@@ -343,7 +343,7 @@ function UnlinkConfirmModal({
               placeholder={datasetName}
               autoFocus
               className={cn(
-                "box-border w-full appearance-none rounded-md border border-border bg-muted px-2.5 py-[7px] text-[13px] text-foreground [font-family:inherit]",
+                "box-border w-full appearance-none rounded-md border border-border bg-muted px-2.5 py-2 text-sm text-foreground [font-family:inherit]",
                 canSubmit && "border-emerald-500",
               )}
             />

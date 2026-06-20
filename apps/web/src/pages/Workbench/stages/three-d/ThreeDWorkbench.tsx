@@ -122,22 +122,22 @@ const VIEWPORT_WRAP = "relative flex-1 min-h-0";
 const VIEWPORT = "absolute inset-0";
 const PLACING = "cursor-crosshair";
 const BOX_SELECT_RECT =
-  "absolute left-[var(--rect-l)] top-[var(--rect-t)] w-[var(--rect-w)] h-[var(--rect-h)] z-[3] pointer-events-none border border-brand bg-brand/10 opacity-50";
-const POINT_MASK_PATH_PREVIEW = "absolute inset-0 z-[3] size-full pointer-events-none";
+  "absolute left-[var(--rect-l)] top-[var(--rect-t)] w-[var(--rect-w)] h-[var(--rect-h)] z-local-3 pointer-events-none border border-brand bg-brand/10 opacity-50";
+const POINT_MASK_PATH_PREVIEW = "absolute inset-0 z-local-3 size-full pointer-events-none";
 const CONTROLS =
-  "absolute top-3 left-3 z-[4] flex flex-wrap items-center gap-3 max-w-[calc(100%-24px)] px-2.5 py-1.5 rounded-md bg-card border border-border shadow-sm";
+  "absolute top-3 left-3 z-local-4 flex flex-wrap items-center gap-3 max-w-[calc(100%-24px)] px-2.5 py-1.5 rounded-md bg-card border border-border shadow-sm";
 const BTN =
-  "appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-[13px] hover:border-brand hover:text-brand disabled:text-muted-foreground/65 disabled:cursor-not-allowed disabled:opacity-65";
+  "appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-sm hover:border-brand hover:text-brand disabled:text-muted-foreground/65 disabled:cursor-not-allowed disabled:opacity-65";
 const BTN_ACTIVE = "!border-brand !bg-brand/10 !text-brand";
 const SIZE_CTL = "flex items-center gap-1.5 text-xs text-muted-foreground";
 const SELECT_CTL =
-  "appearance-none min-w-[84px] px-1.5 py-[3px] rounded-sm border border-border bg-background text-foreground text-xs";
-const FIT_GROUP = "grid grid-cols-2 items-center gap-1.5 py-1.5 border-y border-border [&_button]:w-full [&_button]:px-1.5 [&_button]:py-[3px] [&_button]:text-xs";
+  "appearance-none min-w-[84px] px-1.5 py-1 rounded-sm border border-border bg-background text-foreground text-xs";
+const FIT_GROUP = "grid grid-cols-2 items-center gap-1.5 py-1.5 border-y border-border [&_button]:w-full [&_button]:px-1.5 [&_button]:py-1 [&_button]:text-xs";
 const STATUS_BAR =
   "absolute bottom-3 left-3.5 flex flex-wrap gap-2 max-w-[min(420px,calc(100%-28px))] px-2.5 py-1 rounded-sm bg-card border border-border text-xs text-muted-foreground";
 const ERR = "text-status-danger";
 const MISMATCH_BANNER =
-  "absolute top-[calc(var(--top-toolbar-height)+24px)] left-3 z-[4] flex flex-wrap items-center gap-2 max-w-[min(640px,calc(100%-24px))] px-2.5 py-1.5 text-status-caution text-xs bg-card border border-amber-600 dark:border-amber-400 rounded-md shadow-sm";
+  "absolute top-[calc(var(--top-toolbar-height)+24px)] left-3 z-local-4 flex flex-wrap items-center gap-2 max-w-[min(640px,calc(100%-24px))] px-2.5 py-1.5 text-status-caution text-xs bg-card border border-amber-600 dark:border-amber-400 rounded-md shadow-sm";
 const EDIT_PANEL =
   "absolute top-3 right-3 w-[210px] translate-x-[var(--psr-dx)] translate-y-[var(--psr-dy)] flex flex-col gap-1.5 p-2.5 rounded-md bg-card border border-border shadow-sm text-xs text-foreground";
 const EDIT_PANEL_DRAGGING = "select-none";
@@ -145,37 +145,37 @@ const EDIT_HEADER = "flex flex-col gap-1 cursor-grab";
 const DRAG_HINT = "shrink-0 text-muted-foreground";
 const ICON_BTN =
   "shrink-0 inline-flex items-center justify-center px-1 py-0.5 rounded-sm border border-border bg-background text-muted-foreground cursor-pointer hover:border-brand hover:text-brand";
-const EDIT_SUMMARY = "text-[11px] text-muted-foreground";
+const EDIT_SUMMARY = "text-xs text-muted-foreground";
 const EDIT_BODY = "flex flex-col gap-1.5";
-const EDIT_TITLE = "flex items-center justify-between gap-1.5 text-[13px] font-semibold";
+const EDIT_TITLE = "flex items-center justify-between gap-1.5 text-sm font-semibold";
 const CLASS_SELECT =
   "appearance-none flex-1 min-w-0 px-1.5 py-0.5 rounded-sm border border-border bg-background text-foreground text-xs";
 const LOCK_BTN =
-  "appearance-none shrink-0 px-2 py-0.5 rounded-sm border border-border bg-background text-muted-foreground cursor-pointer text-[11px] hover:border-brand hover:text-brand";
+  "appearance-none shrink-0 px-2 py-0.5 rounded-sm border border-border bg-background text-muted-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
 const LOCK_BTN_ON = "!border-brand !text-brand";
 const EDIT_GROUP_LABEL = "mt-1 text-muted-foreground";
 const EDIT_GROUP_LABEL_ROW = "flex items-center justify-between gap-1.5";
 const RESET_BTN =
-  "appearance-none shrink-0 px-2 py-px rounded-sm border border-border bg-background text-muted-foreground cursor-pointer text-[11px] hover:border-brand hover:text-brand";
-const EDIT_ROW = "flex gap-1.5 [&_input]:flex-1 [&_input]:min-w-0 [&_input]:px-1.5 [&_input]:py-[3px] [&_input]:rounded-sm [&_input]:border [&_input]:border-border [&_input]:bg-background [&_input]:text-foreground [&_input]:text-xs";
+  "appearance-none shrink-0 px-2 py-px rounded-sm border border-border bg-background text-muted-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
+const EDIT_ROW = "flex gap-1.5 [&_input]:flex-1 [&_input]:min-w-0 [&_input]:px-1.5 [&_input]:py-1 [&_input]:rounded-sm [&_input]:border [&_input]:border-border [&_input]:bg-background [&_input]:text-foreground [&_input]:text-xs";
 const DELETE_BTN =
   "appearance-none mt-1.5 px-2.5 py-1 rounded-sm border border-rose-600 dark:border-rose-400 bg-transparent text-status-danger cursor-pointer text-xs hover:bg-rose-600 dark:hover:bg-rose-400 hover:text-white dark:hover:text-white";
 const TRI_FLOAT_TAB =
-  "fixed left-[var(--tri-tab-x)] top-[var(--tri-tab-y)] z-[6] px-2.5 py-1.5 rounded-md border border-border bg-card shadow-sm text-foreground cursor-grab text-xs select-none touch-none hover:border-brand hover:text-brand";
+  "fixed left-[var(--tri-tab-x)] top-[var(--tri-tab-y)] z-local-6 px-2.5 py-1.5 rounded-md border border-border bg-card shadow-sm text-foreground cursor-grab text-xs select-none touch-none hover:border-brand hover:text-brand";
 const TRI_FLOAT_TAB_DRAGGING = "!cursor-grabbing !border-brand shadow-md";
 const CAM_GROUP =
-  "absolute z-[3] flex gap-2.5 max-h-[calc(100%-var(--top-toolbar-height)-48px)] overflow-visible pointer-events-none [&>*]:pointer-events-auto";
+  "absolute z-local-3 flex gap-2.5 max-h-[calc(100%-var(--top-toolbar-height)-48px)] overflow-visible pointer-events-none [&>*]:pointer-events-auto";
 const CAM_MODAL =
-  "absolute inset-0 z-10 flex items-center justify-center bg-black/70";
+  "absolute inset-0 z-base flex items-center justify-center bg-black/70";
 const CAM_MODAL_BODY =
   "relative p-3 rounded-md border border-border bg-card shadow-sm [&_figure_img]:w-auto [&_figure_img]:h-[70vh] [&_figure_img]:max-w-[88vw]";
 const CAM_MODAL_CLOSE =
-  "absolute top-4 right-4 z-[1] appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
+  "absolute top-4 right-4 z-local-1 appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
 const CAM_MODAL_SEED =
-  "absolute top-4 left-4 z-[1] appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
+  "absolute top-4 left-4 z-local-1 appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
 const CAM_MODAL_SEED_ACTIVE = "!border-brand !bg-brand/10 !text-brand";
 const CAM_MODAL_SWITCH =
-  "absolute top-1/2 z-[1] w-9 h-12 -translate-y-1/2 rounded-md border border-border bg-background text-foreground cursor-pointer text-[28px] leading-none hover:border-brand hover:text-brand";
+  "absolute top-1/2 z-local-1 w-9 h-12 -translate-y-1/2 rounded-md border border-border bg-background text-foreground cursor-pointer text-control-xl leading-none hover:border-brand hover:text-brand";
 const CAM_MODAL_PREV = "left-4";
 const CAM_MODAL_NEXT = "right-4";
 import {

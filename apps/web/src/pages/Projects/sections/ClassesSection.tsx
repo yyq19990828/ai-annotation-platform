@@ -250,7 +250,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
               onChange={onImportJson}
               className="hidden"
             />
-            <span className="inline-flex items-center gap-1 rounded-sm border border-border px-2 py-[3px] text-[11.5px] text-foreground">
+            <span className="inline-flex items-center gap-1 rounded-sm border border-border px-2 py-1 text-xs text-foreground">
               <Icon name="plus" size={11} />导入属性
             </span>
           </label>
@@ -291,7 +291,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
               const onlyTrack = !vm.box && vm.track;
               return (
                 <div className="mt-2 flex flex-wrap items-center gap-4">
-                  <span className="text-[13px] text-muted-foreground">可用工具</span>
+                  <span className="text-sm text-muted-foreground">可用工具</span>
                   <Switch
                     checked={vm.box}
                     onChange={(next) => onToggleVideoMode("box", next)}

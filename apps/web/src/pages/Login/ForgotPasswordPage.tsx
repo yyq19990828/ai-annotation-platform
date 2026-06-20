@@ -52,13 +52,13 @@ export function ForgotPasswordPage() {
               <div className="mb-4 text-sm text-muted-foreground">
                 如果该邮箱已注册，您将收到一封包含重置链接的邮件。
               </div>
-              <Link to="/login" className="text-[13px] text-brand hover:underline">
+              <Link to="/login" className="text-sm text-brand hover:underline">
                 返回登录
               </Link>
             </div>
           ) : (
             <form onSubmit={handleSubmit}>
-              <label className="mb-1.5 block text-[12.5px] font-medium text-muted-foreground">
+              <label className="mb-1.5 block text-sm font-medium text-muted-foreground">
                 邮箱地址
               </label>
               <Input
@@ -69,7 +69,7 @@ export function ForgotPasswordPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
-              {error && <div className="mt-2 text-[13px] text-status-danger">{error}</div>}
+              {error && <div className="mt-2 text-sm text-status-danger">{error}</div>}
               <div className="mt-3.5">
                 <Captcha onChange={setCaptchaToken} />
               </div>

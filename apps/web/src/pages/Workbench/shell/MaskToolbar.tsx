@@ -27,16 +27,16 @@ export function MaskToolbar({
   return (
     <div
       data-testid="mask-toolbar"
-      className="absolute left-1/2 top-3 z-[5] flex -translate-x-1/2 items-center gap-2.5 rounded-md border border-border bg-card px-3 py-1.5 shadow-md"
+      className="absolute left-1/2 top-3 z-local-5 flex -translate-x-1/2 items-center gap-2.5 rounded-md border border-border bg-card px-3 py-1.5 shadow-md"
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <span className="text-[11px] font-semibold text-foreground">Mask 编辑</span>
+      <span className="text-xs font-semibold text-foreground">Mask 编辑</span>
       <div className="flex gap-1">
         <button
           type="button"
           onClick={() => onSetMode("brush")}
           className={cn(
-            "cursor-pointer appearance-none rounded border border-border bg-transparent px-2.5 py-[3px] text-[11px] text-foreground",
+            "cursor-pointer appearance-none rounded border border-border bg-transparent px-2.5 py-1 text-xs text-foreground",
             mode === "brush" && "border-brand/30 bg-brand/10 text-brand",
           )}
           title="笔刷 (B)"
@@ -46,7 +46,7 @@ export function MaskToolbar({
           type="button"
           onClick={() => onSetMode("erase")}
           className={cn(
-            "cursor-pointer appearance-none rounded border border-border bg-transparent px-2.5 py-[3px] text-[11px] text-foreground",
+            "cursor-pointer appearance-none rounded border border-border bg-transparent px-2.5 py-1 text-xs text-foreground",
             mode === "erase" && "border-brand/30 bg-brand/10 text-brand",
           )}
           title="橡皮 (E)"
@@ -54,7 +54,7 @@ export function MaskToolbar({
         >橡皮 E</button>
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="text-[11px] text-muted-foreground">半径</span>
+        <span className="text-xs text-muted-foreground">半径</span>
         <input
           type="range"
           min={MASK_BRUSH_MIN_PX}
@@ -65,14 +65,14 @@ export function MaskToolbar({
           className="w-[100px]"
           data-testid="mask-radius-slider"
         />
-        <span className="mono min-w-[28px] text-right text-[11px] text-foreground">
+        <span className="mono min-w-[28px] text-right text-xs text-foreground">
           {radius}px
         </span>
       </div>
-      <span className={cn("text-[11px]", dirty ? "text-status-caution" : "text-muted-foreground")}>
+      <span className={cn("text-xs", dirty ? "text-status-caution" : "text-muted-foreground")}>
         {dirty ? "未保存" : active ? "就绪" : "未激活"}
       </span>
-      <span className="text-[10px] text-muted-foreground">Shift+滚轮调半径</span>
+      <span className="text-2xs text-muted-foreground">Shift+滚轮调半径</span>
       <Button size="sm" onClick={onCancel} title="取消 (Esc)">
         取消
       </Button>

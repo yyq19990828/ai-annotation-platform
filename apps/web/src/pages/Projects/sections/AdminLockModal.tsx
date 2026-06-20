@@ -6,7 +6,7 @@ import type { BatchResponse } from "@/api/batches";
 const REASON_MAX = 500;
 
 const TEXTAREA_BASE =
-  "min-h-[88px] resize-y appearance-none rounded-sm border border-border bg-background px-2.5 py-2 text-[13px] text-foreground [font:inherit]";
+  "min-h-[88px] resize-y appearance-none rounded-sm border border-border bg-background px-2.5 py-2 text-sm text-foreground [font:inherit]";
 
 export function AdminLockModal({
   batch,
@@ -26,7 +26,7 @@ export function AdminLockModal({
 
   return (
     <Modal open title={`锁定批次 ${batch.display_id}`} onClose={onClose}>
-      <div className="flex flex-col gap-3 text-[13px]">
+      <div className="flex flex-col gap-3 text-sm">
         <p className="m-0 text-muted-foreground">
           锁定后，自动状态推进将被冻结，不再向该批次派发新任务。锁定原因将记录在审计日志中，并通知被分派的标注员 / 审核员。
         </p>
@@ -43,7 +43,7 @@ export function AdminLockModal({
             autoFocus
           />
           {tooLong && (
-            <span className="text-[11px] text-status-danger">
+            <span className="text-xs text-status-danger">
               超出 {REASON_MAX} 字上限
             </span>
           )}

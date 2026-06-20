@@ -10,7 +10,7 @@ import { useProjectMembers, useRemoveProjectMember } from "@/hooks/useProjects";
 import { AssignMemberModal } from "@/components/projects/AssignMemberModal";
 import type { ProjectResponse, ProjectMemberResponse } from "@/api/projects";
 
-const PLACEHOLDER_CLASS = "p-8 text-center text-[13px] text-muted-foreground";
+const PLACEHOLDER_CLASS = "p-8 text-center text-sm text-muted-foreground";
 const HEAD_CELL_BASE =
   "border-b border-border bg-muted px-3 py-2.5 text-left text-xs font-medium whitespace-nowrap text-muted-foreground";
 
@@ -55,7 +55,7 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
         )}
         {!isLoading && members.length > 0 && (
           <div className="w-full overflow-x-auto">
-            <table className="w-full min-w-[620px] border-separate border-spacing-0 text-[13px]">
+            <table className="w-full min-w-[620px] border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
                   {["成员", "角色", "加入时间", ""].map((h, i) => (
@@ -75,8 +75,8 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
                       <div className="flex min-w-0 items-center gap-2.5">
                         <Avatar initial={m.user_name.slice(0, 1)} size="sm" />
                         <div className="min-w-0">
-                          <div className="truncate text-[13px] font-medium" title={m.user_name}>{m.user_name}</div>
-                          <div className="truncate text-[11px] text-muted-foreground" title={m.user_email}>{m.user_email}</div>
+                          <div className="truncate text-sm font-medium" title={m.user_name}>{m.user_name}</div>
+                          <div className="truncate text-xs text-muted-foreground" title={m.user_email}>{m.user_email}</div>
                         </div>
                       </div>
                     </td>
@@ -113,7 +113,7 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
       )}
 
       <Modal open={!!confirmRemove} onClose={() => setConfirmRemove(null)} title="移除成员" width={420}>
-        <div className="mb-[18px] text-[13px] text-muted-foreground">
+        <div className="mb-[18px] text-sm text-muted-foreground">
           确认将 <strong className="text-foreground">{confirmRemove?.user_name}</strong> 从本项目移除？该用户将不再看到此项目，已完成的标注/审核记录保留。
         </div>
         <div className="flex justify-end gap-2">

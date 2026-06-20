@@ -64,7 +64,7 @@ export function RejectReasonModal({
         {REJECT_REASON_TYPE_ORDER.map((t) => (
           <label
             key={t}
-            className={`flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-[13px] ${
+            className={`flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-sm ${
               reasonType === t
                 ? "border-rose-500/40 bg-status-danger-soft"
                 : "border-border bg-transparent"
@@ -87,7 +87,7 @@ export function RejectReasonModal({
           onChange={(e) => setComment(e.target.value)}
           placeholder="（可选）补充说明，例如具体目标 / 帧号 …"
           rows={3}
-          className="w-full resize-y appearance-none rounded-md border border-border bg-card p-2 text-[13px] text-foreground [font:inherit]"
+          className="w-full resize-y appearance-none rounded-md border border-border bg-card p-2 text-sm text-foreground [font:inherit]"
           data-testid="reject-comment"
         />
         <div className="mt-1.5 flex justify-end gap-2">

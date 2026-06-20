@@ -12,7 +12,7 @@ const TOOL_BTN_HOVER = "hover:bg-muted hover:text-foreground";
 const TOOL_BTN_ACTIVE = "border-brand/30 bg-brand/10 text-brand";
 const TOOL_BTN_DISABLED = "cursor-not-allowed opacity-40";
 const HOTKEY_BADGE_CLASS =
-  "pointer-events-none absolute bottom-px right-[3px] text-[8px] font-bold leading-none text-muted-foreground/60";
+  "pointer-events-none absolute bottom-px right-[3px] text-3xs font-bold leading-none text-muted-foreground/60";
 const HOTKEY_BADGE_ACTIVE = "text-brand";
 const DIVIDER_CLASS = "my-1.5 h-px w-[26px] bg-border";
 
@@ -284,7 +284,7 @@ export function ToolDock({
               </Tooltip>
               {/* AIToolDrawer 在 AI 工具激活时挂在该按钮右侧 */}
               {active && isAITool(t) && aiToolDrawer && (
-                <div className="absolute left-full top-[-6px] z-[5] ml-2">
+                <div className="absolute left-full top-[-6px] z-local-5 ml-2">
                   {aiToolDrawer}
                 </div>
               )}

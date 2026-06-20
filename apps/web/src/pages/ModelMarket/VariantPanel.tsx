@@ -34,18 +34,18 @@ interface EnumField {
 
 const SECTION_CLASS = "flex flex-col gap-2";
 const SECTION_TITLE_CLASS =
-  "flex items-center gap-2 text-[11px] font-semibold text-muted-foreground";
-const CAP_CLASS = "text-[10.5px] font-normal text-muted-foreground";
-const NOTE_CLASS = "text-[11.5px] text-muted-foreground";
-const HINT_CLASS = "text-[10.5px] leading-normal text-muted-foreground";
-const FIELD_CLASS = "flex flex-col gap-[3px]";
-const FIELD_LABEL_CLASS = "text-[10.5px] text-muted-foreground";
+  "flex items-center gap-2 text-xs font-semibold text-muted-foreground";
+const CAP_CLASS = "text-2xs font-normal text-muted-foreground";
+const NOTE_CLASS = "text-xs text-muted-foreground";
+const HINT_CLASS = "text-2xs leading-normal text-muted-foreground";
+const FIELD_CLASS = "flex flex-col gap-1";
+const FIELD_LABEL_CLASS = "text-2xs text-muted-foreground";
 // UA-safe: 原生 select 显式 bg/border, 加 appearance-none 消浏览器默认箭头样式底色。
 const SELECT_CLASS =
   "appearance-none rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground";
 const WARM_ROW_CLASS = "flex flex-wrap items-end gap-2.5";
 const TABLE_CLASS =
-  "w-full min-w-[520px] border-separate border-spacing-0 text-[11.5px] [&_td]:border-t [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-[10.5px] [&_th]:font-medium [&_th]:whitespace-nowrap [&_th]:text-muted-foreground";
+  "w-full min-w-[520px] border-separate border-spacing-0 text-xs [&_td]:border-t [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-2xs [&_th]:font-medium [&_th]:whitespace-nowrap [&_th]:text-muted-foreground";
 
 export interface VariantWarmTarget {
   task?: string;
@@ -140,7 +140,7 @@ export function VariantPanel({
   if (isLoading) return <div className={NOTE_CLASS}>加载变体能力…</div>;
   if (isError)
     return (
-      <div className="text-[11.5px] text-status-danger">
+      <div className="text-xs text-status-danger">
         无法获取 /setup（后端不可达或未实现）
       </div>
     );
@@ -371,13 +371,13 @@ export function VariantPanel({
     <div className="flex flex-col gap-3.5 border-t border-border bg-muted px-4 py-3">
       <button
         type="button"
-        className="flex w-full cursor-pointer appearance-none items-center gap-2 border-0 bg-transparent p-0 text-left text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+        className="flex w-full cursor-pointer appearance-none items-center gap-2 border-0 bg-transparent p-0 text-left text-xs font-semibold text-muted-foreground hover:text-foreground"
         onClick={() => setCollapsed((c) => !c)}
         aria-expanded={!collapsed}
       >
         <Icon name={collapsed ? "chevRight" : "chevDown"} size={12} />
         <span className="tracking-[0.02em]">模型预热 · 变体</span>
-        <span className="ml-auto text-[10px] font-normal text-muted-foreground">
+        <span className="ml-auto text-2xs font-normal text-muted-foreground">
           {collapsed ? "展开" : "收起"}
         </span>
       </button>
@@ -543,13 +543,13 @@ function GenericVariantDirectory({ groups }: { groups: MLBackendSupportedVariant
   return (
     <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-2">
       {groups.map((group) => (
-        <div key={group.key} className="flex flex-col gap-[5px]">
-          <div className="text-[10.5px] font-semibold text-muted-foreground">{group.title ?? group.key}</div>
-          <div className="flex flex-wrap gap-[5px]">
+        <div key={group.key} className="flex flex-col gap-1.5">
+          <div className="text-2xs font-semibold text-muted-foreground">{group.title ?? group.key}</div>
+          <div className="flex flex-wrap gap-1.5">
             {group.variants!.map((option) => (
               <span
                 key={option.value}
-                className={`inline-flex items-center rounded-full border px-2 py-px text-[10.5px] leading-relaxed ${
+                className={`inline-flex items-center rounded-full border px-2 py-px text-2xs leading-relaxed ${
                   option.recommended
                     ? "border-brand bg-brand/10 text-brand"
                     : "border-border bg-card text-muted-foreground"

@@ -48,13 +48,13 @@ export function ResetPasswordPage() {
           {done ? (
             <div className="text-center">
               <div className="mb-4 text-sm text-muted-foreground">密码已重置，请使用新密码登录。</div>
-              <Link to="/login" className="text-[13px] text-brand hover:underline">
+              <Link to="/login" className="text-sm text-brand hover:underline">
                 前往登录
               </Link>
             </div>
           ) : (
             <form onSubmit={handleSubmit}>
-              <label className="mb-1.5 block text-[12.5px] font-medium text-muted-foreground">
+              <label className="mb-1.5 block text-sm font-medium text-muted-foreground">
                 新密码（至少 8 位，需含大小写字母和数字）
               </label>
               <Input
@@ -66,7 +66,7 @@ export function ResetPasswordPage() {
                 required
               />
 
-              <label className="mb-1.5 mt-3.5 block text-[12.5px] font-medium text-muted-foreground">
+              <label className="mb-1.5 mt-3.5 block text-sm font-medium text-muted-foreground">
                 确认密码
               </label>
               <Input
@@ -77,8 +77,8 @@ export function ResetPasswordPage() {
                 onChange={(e) => setConfirm(e.target.value)}
                 required
               />
-              {mismatch && <div className="mt-2 text-[13px] text-status-danger">两次密码不一致</div>}
-              {error && <div className="mt-2 text-[13px] text-status-danger">{error}</div>}
+              {mismatch && <div className="mt-2 text-sm text-status-danger">两次密码不一致</div>}
+              {error && <div className="mt-2 text-sm text-status-danger">{error}</div>}
               <Button
                 type="submit"
                 variant="primary"

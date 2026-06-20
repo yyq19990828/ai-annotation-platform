@@ -44,8 +44,8 @@ const WEEKDAY_LABELS = ["周日", "周一", "周二", "周三", "周四", "周�
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 
 const CARD_CLASS = "rounded-md border border-border bg-card p-4";
-const TITLE_CLASS = "mb-2 text-[13px] font-semibold";
-const HINT_CLASS = "mb-3 text-[11px] text-muted-foreground";
+const TITLE_CLASS = "mb-2 text-sm font-semibold";
+const HINT_CLASS = "mb-3 text-xs text-muted-foreground";
 const EMPTY_CLASS = "py-2 text-xs text-muted-foreground";
 
 export function AnalyticsPage() {
@@ -216,7 +216,7 @@ export function AnalyticsPage() {
           <div className={HINT_CLASS}>task_events claim → submit 间隔（ms）</div>
           {durationQ.isError && <NotReady error={durationQ.error} />}
           {!durationQ.isError && durationQ.data && (
-            <div className="grid grid-cols-[80px_1fr] gap-x-3 gap-y-1.5 text-[13px]">
+            <div className="grid grid-cols-[80px_1fr] gap-x-3 gap-y-1.5 text-sm">
               <span className="text-muted-foreground">样本数</span>
               <span className="font-semibold tabular-nums">{durationQ.data.data.n}</span>
               <span className="text-muted-foreground">中位 (p50)</span>
@@ -238,10 +238,10 @@ export function AnalyticsPage() {
             <div className={EMPTY_CLASS}>所选范围内暂无工时数据</div>
           )}
           {!heatmapQ.isError && heatmap.max > 0 && (
-            <div className="flex flex-col gap-[3px] overflow-x-auto">
+            <div className="flex flex-col gap-1 overflow-x-auto">
               {WEEKDAY_LABELS.map((label, weekday) => (
-                <div key={weekday} className="grid grid-cols-[36px_repeat(24,1fr)] items-center gap-[3px]">
-                  <span className="whitespace-nowrap text-[11px] text-muted-foreground">{label}</span>
+                <div key={weekday} className="grid grid-cols-[36px_repeat(24,1fr)] items-center gap-1">
+                  <span className="whitespace-nowrap text-xs text-muted-foreground">{label}</span>
                   {HOURS.map((hour) => {
                     const count = heatmap.byKey.get(`${weekday}-${hour}`) ?? 0;
                     const intensity =
@@ -256,10 +256,10 @@ export function AnalyticsPage() {
                   })}
                 </div>
               ))}
-              <div className="mt-0.5 grid grid-cols-[36px_repeat(24,1fr)] gap-[3px]">
-                <span className="text-[11px] text-muted-foreground" />
+              <div className="mt-0.5 grid grid-cols-[36px_repeat(24,1fr)] gap-1">
+                <span className="text-xs text-muted-foreground" />
                 {HOURS.map((hour) => (
-                  <span key={hour} className="text-left text-[10px] text-muted-foreground">
+                  <span key={hour} className="text-left text-2xs text-muted-foreground">
                     {hour % 6 === 0 ? hour : ""}
                   </span>
                 ))}

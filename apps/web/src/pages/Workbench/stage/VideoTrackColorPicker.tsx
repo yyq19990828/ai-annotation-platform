@@ -82,7 +82,7 @@ export function VideoTrackColorPicker({
       {hasOverride ? (
         <button
           type="button"
-          className="py-0.5 px-1.5 text-[11px] text-muted-foreground bg-transparent border border-border rounded cursor-pointer hover:text-foreground hover:bg-muted"
+          className="py-0.5 px-1.5 text-xs text-muted-foreground bg-transparent border border-border rounded cursor-pointer hover:text-foreground hover:bg-muted"
           onClick={(e) => {
             e.stopPropagation();
             onReset();

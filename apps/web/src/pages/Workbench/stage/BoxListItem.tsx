@@ -181,11 +181,11 @@ export function BoxListItem({
           <circle cx="5" cy="5" r="5" fill={color} />
         </svg>
         <div className="flex items-center gap-[7px] min-w-0">
-          <b className="overflow-hidden text-[13px] text-ellipsis whitespace-nowrap">{displayClassName(b.cls)}</b>
+          <b className="overflow-hidden text-sm text-ellipsis whitespace-nowrap">{displayClassName(b.cls)}</b>
           {isAi ? (
             <span
               className={cn(
-                "inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] font-medium whitespace-nowrap",
+                "inline-flex items-center gap-1 px-1.5 py-px rounded-full text-2xs font-medium whitespace-nowrap",
                 predictionSource === "external_import" ? "bg-status-caution-soft text-status-caution" : "bg-status-info-soft text-status-info",
               )}
             >
@@ -194,26 +194,26 @@ export function BoxListItem({
             </span>
           ) : (
             <span className={cn(
-              "inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] font-medium whitespace-nowrap",
+              "inline-flex items-center gap-1 px-1.5 py-px rounded-full text-2xs font-medium whitespace-nowrap",
               b.source === "prediction_based" ? "bg-muted text-muted-foreground" : "bg-brand/10 text-brand",
             )}>
               {b.source === "prediction_based" ? "AI 采纳" : "手动"}
             </span>
           )}
           {layoutBadge && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] font-medium whitespace-nowrap border border-border bg-background text-muted-foreground" title="版面类别">
+            <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-2xs font-medium whitespace-nowrap border border-border bg-background text-muted-foreground" title="版面类别">
               {layoutBadge}
             </span>
           )}
           {dimmed && (
             <span
-              className="px-1.5 py-px border border-border rounded-md bg-muted text-muted-foreground text-[10px]"
+              className="px-1.5 py-px border border-border rounded-md bg-muted text-muted-foreground text-2xs"
               title="已被同类用户框（IoU > 0.7）覆盖"
             >已被覆盖</span>
           )}
           {orphan && !isAi && (
             <span
-              className="inline-flex items-center gap-[3px] px-1.5 py-px border border-amber-500 rounded-md bg-status-caution-soft text-status-caution text-[10px] whitespace-nowrap"
+              className="inline-flex items-center gap-1 px-1.5 py-px border border-amber-500 rounded-md bg-status-caution-soft text-status-caution text-2xs whitespace-nowrap"
               title="当前项目类别配置中已不存在该类别"
             >
               <Icon name="warning" size={9} />
@@ -221,8 +221,8 @@ export function BoxListItem({
             </span>
           )}
         </div>
-        <div className="flex gap-1.5 items-center min-w-0 text-muted-foreground text-[11px]">
-          <span className="shrink-0 px-[5px] py-px border border-border rounded bg-muted text-muted-foreground font-[inherit]">
+        <div className="flex gap-1.5 items-center min-w-0 text-muted-foreground text-xs">
+          <span className="shrink-0 px-1.5 py-px border border-border rounded bg-muted text-muted-foreground font-[inherit]">
             {toolMeta.label}
           </span>
           <span className="overflow-hidden text-ellipsis whitespace-nowrap">
@@ -230,7 +230,7 @@ export function BoxListItem({
           </span>
         </div>
         {ocrText && (
-          <div className="col-start-2 flex items-center gap-1 min-w-0 mt-0.5 text-muted-foreground text-[11px]" title={ocrText}>
+          <div className="col-start-2 flex items-center gap-1 min-w-0 mt-0.5 text-muted-foreground text-xs" title={ocrText}>
             <Icon name="type" size={11} />
             <span className="overflow-hidden text-ellipsis whitespace-nowrap">{ocrText}</span>
           </div>

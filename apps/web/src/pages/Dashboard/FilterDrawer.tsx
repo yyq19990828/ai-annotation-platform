@@ -79,7 +79,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
 
   return (
     <Modal open={open} onClose={onClose} title="高级筛选" width={520}>
-      <div className="flex flex-col gap-[18px]">
+      <div className="flex flex-col gap-5">
         <Section title="状态">
           <div className="flex flex-wrap gap-1.5">
             {STATUS_OPTIONS.map((s) => {
@@ -153,8 +153,8 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
                   )}
                 >
                   <Avatar size="sm" initial={(u.name || "?").slice(0, 1).toUpperCase()} />
-                  <span className="text-[12.5px] font-medium">{u.name}</span>
-                  <span className="[&>span]:text-[10px]">
+                  <span className="text-sm font-medium">{u.name}</span>
+                  <span className="[&>span]:text-2xs">
                     <Badge variant="outline">{u.role}</Badge>
                   </span>
                 </button>
@@ -202,7 +202,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-normal text-muted-foreground">
+      <div className="mb-1.5 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
         {title}
       </div>
       {children}

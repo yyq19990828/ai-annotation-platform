@@ -27,9 +27,9 @@ const HEADER_CLASS = "flex min-w-0 items-center gap-1.5";
 const DOT_CLASS = "flex-none size-2.5 rounded-full";
 const NAME_CLASS = "truncate text-sm font-semibold text-foreground";
 const BADGE_CLASS =
-  "inline-flex flex-none items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium whitespace-nowrap";
+  "inline-flex flex-none items-center gap-1 rounded-full px-1.5 py-px text-2xs font-medium whitespace-nowrap";
 const CONF_PILL_CLASS =
-  "flex-none rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums";
+  "flex-none rounded-full px-1.5 py-px text-xs font-semibold tabular-nums";
 
 const SOURCE_META: Record<
   SourceKind,

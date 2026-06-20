@@ -77,24 +77,24 @@ export function LoginPage() {
           </div>
           <div>
             <div className="text-base font-bold">标注中心</div>
-            <div className="text-[11px] text-muted-foreground">AI Annotation Platform</div>
+            <div className="text-xs text-muted-foreground">AI Annotation Platform</div>
           </div>
         </div>
 
         {/* Card */}
         <div className="rounded-2xl border border-border bg-card px-8 pb-8 pt-7 shadow-xl">
           <h1 className="mb-1 text-lg font-semibold">登录</h1>
-          <p className="mb-6 text-[13px] text-muted-foreground">使用工作账号登录标注平台</p>
+          <p className="mb-6 text-sm text-muted-foreground">使用工作账号登录标注平台</p>
 
           {login.isError && (
-            <div className="mb-4 flex items-center gap-2 rounded-md border border-rose-500/30 bg-status-danger-soft px-3 py-2.5 text-[13px] text-status-danger">
+            <div className="mb-4 flex items-center gap-2 rounded-md border border-rose-500/30 bg-status-danger-soft px-3 py-2.5 text-sm text-status-danger">
               <Icon name="warning" size={14} />
               {(login.error as Error)?.message ?? "登录失败，请检查账号密码"}
             </div>
           )}
 
           {unverified && (
-            <div className="mb-4 flex items-center gap-2 rounded-md border border-rose-500/30 bg-status-danger-soft px-3 py-2.5 text-[13px] text-status-danger">
+            <div className="mb-4 flex items-center gap-2 rounded-md border border-rose-500/30 bg-status-danger-soft px-3 py-2.5 text-sm text-status-danger">
               {resendDone ? (
                 "验证邮件已重新发送，请查收邮箱"
               ) : (
@@ -112,7 +112,7 @@ export function LoginPage() {
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
             <div>
-              <label className="mb-1.5 block text-[12.5px] font-medium text-muted-foreground">账号</label>
+              <label className="mb-1.5 block text-sm font-medium text-muted-foreground">账号</label>
               <Input
                 type="text"
                 autoComplete="username"
@@ -124,7 +124,7 @@ export function LoginPage() {
             </div>
 
             <div>
-              <label className="mb-1.5 block text-[12.5px] font-medium text-muted-foreground">密码</label>
+              <label className="mb-1.5 block text-sm font-medium text-muted-foreground">密码</label>
               <div className="relative">
                 <Input
                   type={showPwd ? "text" : "password"}
@@ -147,7 +147,7 @@ export function LoginPage() {
 
             {captchaRequired && (
               <div className="flex flex-col gap-1.5">
-                <div className="text-[11.5px] text-muted-foreground">
+                <div className="text-xs text-muted-foreground">
                   连续失败已达 {failedCount} 次，请完成验证后重试
                 </div>
                 <Captcha onChange={setCaptchaToken} />

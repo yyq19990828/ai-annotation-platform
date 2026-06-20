@@ -40,7 +40,7 @@ const BODY_CLASS =
 
 /* ─── 帧定位 chip ─── */
 const FRAME_CHIP_BASE =
-  "inline-flex flex-none items-center gap-[3px] rounded-full px-1.5 py-px text-[10px] font-medium tabular-nums whitespace-nowrap";
+  "inline-flex flex-none items-center gap-1 rounded-full px-1.5 py-px text-2xs font-medium tabular-nums whitespace-nowrap";
 const FRAME_CHIP_DEFAULT_CLASS = `${FRAME_CHIP_BASE} bg-brand/10 text-brand`;
 const FRAME_CHIP_DANGER_CLASS = `${FRAME_CHIP_BASE} bg-status-danger-soft text-status-danger`;
 
@@ -49,22 +49,22 @@ const SECTION_CLASS = "grid gap-2";
 const SECTION_DIVIDED_CLASS = "border-t border-border pt-2.5";
 const SECTION_HEADER_CLASS = "flex items-center justify-between gap-2";
 const SECTION_TITLE_CLASS =
-  "text-[11px] font-semibold tracking-[0.02em] text-muted-foreground";
-const SECTION_COUNT_CLASS = "text-[11px] text-muted-foreground";
+  "text-xs font-semibold tracking-[0.02em] text-muted-foreground";
+const SECTION_COUNT_CLASS = "text-xs text-muted-foreground";
 
 /* ─── 操作网格 ─── */
 const ACTION_GRID_CLASS = "grid grid-cols-2 gap-1";
 const ACTION_BUTTON_CLASS =
-  "min-h-[30px]! justify-start! rounded-lg! px-2! py-[3px]! text-xs!";
+  "min-h-[30px]! justify-start! rounded-lg! px-2! py-1! text-xs!";
 const ACTION_BUTTON_PRESSED_CLASS =
   "border-brand/55! bg-brand/10! text-brand!";
 
 /* ─── 语义标签 ─── */
 const SEMANTIC_ROW_CLASS = "flex items-center gap-1.5";
 const SEMANTIC_LABEL_CLASS =
-  "flex-[0_0_52px] text-[10px] font-semibold leading-[1.3] text-muted-foreground whitespace-nowrap";
+  "flex-[0_0_52px] text-2xs font-semibold leading-[1.3] text-muted-foreground whitespace-nowrap";
 const SEMANTIC_INPUT_CLASS =
-  "appearance-none flex-1 min-w-0 h-7 px-[7px] border border-border rounded-md bg-background text-foreground text-[11px]";
+  "appearance-none flex-1 min-w-0 h-7 px-2 border border-border rounded-md bg-background text-foreground text-xs";
 
 /* ─── Tracker job ─── */
 const TRACKER_JOB_ROW_CLASS = "flex items-center gap-1.5";
@@ -76,26 +76,26 @@ const ICON_BUTTON_CLASS = "size-7! p-0! justify-center! rounded-lg!";
 /* ─── 关键帧导航 ─── */
 const KF_NAV_CLASS = "grid grid-cols-2 gap-1";
 const KF_NAV_BUTTON_CLASS =
-  "min-h-7! justify-center! rounded-lg! px-[7px]! text-xs!";
+  "min-h-7! justify-center! rounded-lg! px-2! text-xs!";
 
 /* ─── 关键帧表 ─── */
 const KF_TABLE_CLASS =
   "border border-border rounded-lg overflow-x-clip overflow-y-auto max-h-[232px] bg-background";
 const KF_HEADER_CLASS =
-  "sticky top-0 z-[1] grid grid-cols-[44px_max-content_1fr] gap-2 min-h-[30px] px-2 py-1.5 border-b border-border bg-background text-[10px] font-semibold text-muted-foreground [&_span:last-child]:text-right";
+  "sticky top-0 z-local-1 grid grid-cols-[44px_max-content_1fr] gap-2 min-h-[30px] px-2 py-1.5 border-b border-border bg-background text-2xs font-semibold text-muted-foreground [&_span:last-child]:text-right";
 const KF_ROW_CLASS =
-  "grid grid-cols-[44px_max-content_1fr] gap-2 items-center px-2 py-1.5 border-t border-border bg-card text-[11px] [&:nth-child(2)]:border-t-0";
+  "grid grid-cols-[44px_max-content_1fr] gap-2 items-center px-2 py-1.5 border-t border-border bg-card text-xs [&:nth-child(2)]:border-t-0";
 const KF_PREDICTION_ROW_CLASS = "bg-violet-500/5";
 const KF_FRAME_CLASS = "text-xs";
 const KF_STATUS_CLASS =
-  "flex min-w-0 items-center gap-[5px] text-foreground whitespace-nowrap";
+  "flex min-w-0 items-center gap-1.5 text-foreground whitespace-nowrap";
 const KF_STATUS_ABSENT_CLASS = "text-status-danger";
 const KF_STATUS_DOT_CLASS = "size-[7px]";
 const KF_ACTION_ROW_CLASS = "flex min-w-0 flex-wrap justify-end gap-1";
 const KF_BUTTON_CLASS = "size-7! min-w-7! justify-center! rounded-lg! p-0!";
 const SUCCESS_BUTTON_CLASS = "text-status-positive!";
 const DANGER_BUTTON_CLASS = "text-status-danger!";
-const COMPACT_BADGE_CLASS = "[&_span]:text-[10px]! [&_span]:px-1.5!";
+const COMPACT_BADGE_CLASS = "[&_span]:text-2xs! [&_span]:px-1.5!";
 
 export interface VideoTrackCardContentProps {
   selectedTrack: VideoTrackAnnotation;

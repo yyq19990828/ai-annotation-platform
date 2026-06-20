@@ -36,7 +36,7 @@ export function SearchInput({
       ref={rootRef}
       onClick={onClick}
       className={cn(
-        "surface-shadow-sm inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-[5px] transition-[border-color,box-shadow,transform] duration-200 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20",
+        "surface-shadow-sm inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 transition-[border-color,box-shadow,transform] duration-200 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20",
         onClick && "hover:-translate-y-px hover:border-input hover:bg-accent/60",
         onClick && "cursor-pointer",
       )}
@@ -48,12 +48,12 @@ export function SearchInput({
         onChange={(e) => onChange?.(e.target.value)}
         readOnly={readOnly}
         className={cn(
-          "min-w-0 flex-1 border-0 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground",
+          "min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground",
           onClick && "cursor-pointer",
         )}
       />
       {kbd && (
-        <span className="rounded border border-b-2 border-border bg-muted px-1.5 py-px font-mono text-[10.5px] leading-none text-muted-foreground">
+        <span className="rounded border border-b-2 border-border bg-muted px-1.5 py-px font-mono text-2xs leading-none text-muted-foreground">
           {kbd}
         </span>
       )}

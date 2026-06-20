@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 const FEEDBACK_MAX = 500;
 
 const TEXTAREA_BASE =
-  "min-h-[100px] resize-y appearance-none rounded-sm border border-border bg-background px-2.5 py-2 text-[13px] text-foreground [font:inherit]";
+  "min-h-[100px] resize-y appearance-none rounded-sm border border-border bg-background px-2.5 py-2 text-sm text-foreground [font:inherit]";
 
 export function BulkRejectModal({
   count,
@@ -25,7 +25,7 @@ export function BulkRejectModal({
 
   return (
     <Modal open title={`批量驳回 ${count} 个批次`} onClose={onClose}>
-      <div className="flex flex-col gap-3 text-[13px]">
+      <div className="flex flex-col gap-3 text-sm">
         <p className="m-0 text-muted-foreground">
           所选「审核中」批次将全部变为「已退回」，已提交质检 / 已通过的任务回退到待标注，标注内容保留。同一条反馈留言将发送给各批次的被分派标注员。
         </p>
@@ -42,7 +42,7 @@ export function BulkRejectModal({
             autoFocus
           />
           {tooLong && (
-            <span className="text-[11px] text-status-danger">
+            <span className="text-xs text-status-danger">
               超出 {FEEDBACK_MAX} 字上限
             </span>
           )}

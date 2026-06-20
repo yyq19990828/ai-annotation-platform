@@ -12,7 +12,7 @@ import { classColor } from "@/pages/Workbench/stage/colors";
 
 // UA-safe 表单基线 + token 化(无全局 preflight)。
 const CONTROL_CLASS =
-  "box-border appearance-none rounded-sm border border-border bg-muted px-2 py-[5px] text-[13px] text-foreground outline-none [font-family:inherit]";
+  "box-border appearance-none rounded-sm border border-border bg-muted px-2 py-1.5 text-sm text-foreground outline-none [font-family:inherit]";
 
 export interface ClassRow {
   name: string;
@@ -167,7 +167,7 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
           key={r.name}
           className="grid grid-cols-[auto_24px_minmax(0,1.4fr)_minmax(0,1.2fr)_70px_auto] items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5"
         >
-          <span className="w-5 text-right text-[11px] text-muted-foreground">
+          <span className="w-5 text-right text-xs text-muted-foreground">
             {i + 1}
           </span>
           <svg className="inline-block size-[18px] rounded border border-border" viewBox="0 0 18 18" aria-hidden="true">
@@ -222,7 +222,7 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
               className={CONTROL_CLASS}
             />
           ) : (
-            <span className="text-[13px] text-foreground">{r.name}</span>
+            <span className="text-sm text-foreground">{r.name}</span>
           )}
           <input
             value={r.alias ?? ""}

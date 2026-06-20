@@ -29,10 +29,10 @@ function cn(...classes: Array<string | false | null | undefined>): string {
 export function CanvasToolbar({ stroke, onSetStroke, shapeCount, onUndo, onClear, onCancel, onDone }: Props) {
   return (
     <div
-      className="absolute top-3 right-3 flex items-center gap-2 px-2.5 py-1.5 bg-card border border-border rounded-md shadow-md z-5"
+      className="absolute top-3 right-3 flex items-center gap-2 px-2.5 py-1.5 bg-card border border-border rounded-md shadow-md z-local-5"
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <span className="text-[11px] text-muted-foreground">颜色</span>
+      <span className="text-xs text-muted-foreground">颜色</span>
       {SWATCHES.map((c) => (
         <button
           key={c.value}
@@ -46,7 +46,7 @@ export function CanvasToolbar({ stroke, onSetStroke, shapeCount, onUndo, onClear
           )}
         />
       ))}
-      <span className="text-[11px] text-muted-foreground ml-1">{shapeCount} 条</span>
+      <span className="text-xs text-muted-foreground ml-1">{shapeCount} 条</span>
       <Button size="sm" onClick={onUndo} disabled={shapeCount === 0}>
         <Icon name="trash" size={11} /> 撤销
       </Button>

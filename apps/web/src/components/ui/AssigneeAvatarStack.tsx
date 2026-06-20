@@ -33,7 +33,7 @@ export function AssigneeAvatarStack({
 }: Props) {
   if (users.length === 0) {
     return (
-      <span className="text-[11px] italic text-muted-foreground">
+      <span className="text-xs italic text-muted-foreground">
         {label ? `${label}:` : ""}
         {emptyHint}
       </span>
@@ -46,7 +46,7 @@ export function AssigneeAvatarStack({
 
   return (
     <span title={tooltip} className="inline-flex shrink-0 items-center gap-1.5">
-      {label && <span className="whitespace-nowrap text-[11px] text-muted-foreground">{label}</span>}
+      {label && <span className="whitespace-nowrap text-xs text-muted-foreground">{label}</span>}
       <span className="inline-flex">
         {visible.map((u) => (
           <span
@@ -60,7 +60,7 @@ export function AssigneeAvatarStack({
           </span>
         ))}
       </span>
-      {overflow > 0 && <span className="ml-0.5 text-[11px] text-muted-foreground">+{overflow}</span>}
+      {overflow > 0 && <span className="ml-0.5 text-xs text-muted-foreground">+{overflow}</span>}
     </span>
   );
 }

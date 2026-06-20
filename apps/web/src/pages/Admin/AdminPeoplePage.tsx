@@ -37,10 +37,10 @@ const SORT_OPTS = [
 
 // UA-safe 表单基线(无全局 preflight 期间,原生 select/input 需消浏览器默认样式)
 const FIELD_CLASS =
-  "appearance-none rounded-md border border-border bg-card px-2.5 py-1.5 text-[12.5px] text-foreground";
+  "appearance-none rounded-md border border-border bg-card px-2.5 py-1.5 text-sm text-foreground";
 const SECTION_TITLE_CLASS = "border-b border-border px-3.5 py-2.5 text-xs font-semibold";
-const SECTION_TITLE_META_CLASS = "ml-2 text-[11px] font-normal text-muted-foreground";
-const DISTRIBUTION_ROW_CLASS = "flex justify-between px-3.5 py-1.5 text-[12.5px]";
+const SECTION_TITLE_META_CLASS = "ml-2 text-xs font-normal text-muted-foreground";
+const DISTRIBUTION_ROW_CLASS = "flex justify-between px-3.5 py-1.5 text-sm";
 const DISTRIBUTION_LINK_CLASS = `${DISTRIBUTION_ROW_CLASS} w-full cursor-pointer appearance-none rounded-md border-0 bg-transparent text-left [font:inherit] hover:bg-muted`;
 
 export function AdminPeoplePage() {
@@ -115,7 +115,7 @@ export function AdminPeoplePage() {
       <div className="mb-4 flex items-end justify-between">
         <div>
           <h1 className="mb-1 text-xl font-semibold">成员绩效</h1>
-          <p className="text-[13px] text-muted-foreground">全员效率卡片网格 · 点击卡片查看详情</p>
+          <p className="text-sm text-muted-foreground">全员效率卡片网格 · 点击卡片查看详情</p>
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" onClick={handleExport} disabled={exporting}>
@@ -129,7 +129,7 @@ export function AdminPeoplePage() {
       </div>
 
       {/* sticky filter bar */}
-      <div className="sticky top-16 z-[5] mb-4">
+      <div className="sticky top-16 z-local-5 mb-4">
         <Card>
           <div className="flex flex-wrap items-center gap-2 p-3">
             <FilterGroup
@@ -152,7 +152,7 @@ export function AdminPeoplePage() {
             />
             {/* v0.12.6 (A3) · 项目级范围下拉 */}
             <div className="flex items-center gap-1.5">
-              <span className="text-[11.5px] text-muted-foreground">项目</span>
+              <span className="text-xs text-muted-foreground">项目</span>
               <select
                 className={`${FIELD_CLASS} max-w-[200px]`}
                 value={project}
@@ -181,7 +181,7 @@ export function AdminPeoplePage() {
       </div>
 
       {isLoading ? (
-        <div className="p-[60px] text-center text-muted-foreground">加载中...</div>
+        <div className="p-15 text-center text-muted-foreground">加载中...</div>
       ) : items.length === 0 ? (
         <Card>
           <div className="px-4 py-12 text-center text-muted-foreground">
@@ -226,7 +226,7 @@ function FilterGroup({
 }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="text-[11.5px] text-muted-foreground">{label}</span>
+      <span className="text-xs text-muted-foreground">{label}</span>
       <div className="flex gap-0.5">
         {opts.map((o) => (
           <button
@@ -255,7 +255,7 @@ function PersonCard({ item, onClick }: { item: AdminPersonItem; onClick: () => v
         <div className="flex items-center gap-2.5">
           <Avatar initial={item.name?.charAt(0) || "?"} size="md" />
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 text-[13px] font-semibold">
+            <div className="flex items-center gap-1.5 text-sm font-semibold">
               <span className="truncate">{item.name}</span>
               <span
                 className={`size-1.5 rounded-full ${
@@ -263,7 +263,7 @@ function PersonCard({ item, onClick }: { item: AdminPersonItem; onClick: () => v
                 }`}
               />
             </div>
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Badge variant={item.role === "annotator" ? "accent" : "ai"}>{item.role}</Badge>
               {item.project_count} 项目
             </div>
@@ -282,7 +282,7 @@ function PersonCard({ item, onClick }: { item: AdminPersonItem; onClick: () => v
             {item.main_metric.toLocaleString()}
             {trend != null && (
               <span
-                className={`ml-1.5 text-[11px] font-medium ${
+                className={`ml-1.5 text-xs font-medium ${
                   trend >= 0
                     ? "text-status-positive"
                     : "text-status-danger"
@@ -292,7 +292,7 @@ function PersonCard({ item, onClick }: { item: AdminPersonItem; onClick: () => v
               </span>
             )}
           </div>
-          <div className="text-[11px] text-muted-foreground">{item.main_metric_label}</div>
+          <div className="text-xs text-muted-foreground">{item.main_metric_label}</div>
         </div>
 
         <PercentBars
@@ -324,12 +324,12 @@ function PercentBars({ rows }: { rows: Array<{ label: string; value: number }> }
   return (
     <div className="flex flex-col gap-1">
       {rows.map((r) => (
-        <div key={r.label} className="flex items-center gap-2 text-[11px]">
-          <span className="w-7 text-[11px] text-muted-foreground">{r.label}</span>
+        <div key={r.label} className="flex items-center gap-2 text-xs">
+          <span className="w-7 text-xs text-muted-foreground">{r.label}</span>
           <div className="h-1 flex-1 overflow-hidden rounded-sm bg-border">
             <PercentBarFill value={r.value} />
           </div>
-          <span className="w-6 text-right text-[11px] tabular-nums text-muted-foreground">
+          <span className="w-6 text-right text-xs tabular-nums text-muted-foreground">
             {Math.round(r.value)}
           </span>
         </div>
@@ -379,12 +379,12 @@ function PersonDrawer({
   );
 
   return (
-    <div onClick={onClose} className="fixed inset-0 z-50 flex justify-end bg-black/40">
+    <div onClick={onClose} className="fixed inset-0 z-modal flex justify-end bg-black/40">
       <div
         onClick={(e: MouseEvent<HTMLDivElement>) => e.stopPropagation()}
         className="flex w-[min(540px,100%)] flex-col border-l border-border bg-card"
       >
-        <div className="flex items-center justify-between border-b border-border px-[18px] py-3.5">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
           <div className="text-sm font-semibold">{data?.name ?? "成员详情"}</div>
           <button
             type="button"
@@ -422,9 +422,9 @@ function PersonDrawer({
               <Card>
                 <div className={SECTION_TITLE_CLASS}>4 周趋势</div>
                 <div className="p-3.5">
-                  <div className="mb-1.5 text-[11px] text-muted-foreground">产能</div>
+                  <div className="mb-1.5 text-xs text-muted-foreground">产能</div>
                   <Sparkline values={data.trend_throughput} width={480} height={48} color="var(--sc-brand)" />
-                  <div className="mb-1.5 mt-3 text-[11px] text-muted-foreground">质量分</div>
+                  <div className="mb-1.5 mt-3 text-xs text-muted-foreground">质量分</div>
                   <Sparkline values={data.trend_quality} width={480} height={48} color="var(--sc-positive)" />
                 </div>
               </Card>
@@ -583,9 +583,9 @@ function PersonDrawer({
                       >
                         <Badge variant="outline">{t.action}</Badge>
                         {t.task_display_id && (
-                          <span className="mono text-[11px] text-brand">{t.task_display_id}</span>
+                          <span className="mono text-xs text-brand">{t.task_display_id}</span>
                         )}
-                        <span className="ml-auto text-[11px] text-muted-foreground">
+                        <span className="ml-auto text-xs text-muted-foreground">
                           {t.at ? new Date(t.at).toLocaleString("zh-CN") : "—"}
                         </span>
                       </div>
@@ -634,7 +634,7 @@ function DrillTaskList({
         tasks.map((t) => (
           <div
             key={t.id}
-            className="flex items-center justify-between rounded-md bg-muted px-2 py-[3px] text-xs"
+            className="flex items-center justify-between rounded-md bg-muted px-2 py-1 text-xs"
           >
             <span className="mono">{t.display_id}</span>
             <span className="text-muted-foreground">{t.status}</span>
@@ -648,7 +648,7 @@ function DrillTaskList({
 function KpiCell({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-md border border-border bg-muted px-3 py-2.5">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
       <div className="text-lg font-semibold tabular-nums">{value}</div>
     </div>
   );

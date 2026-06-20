@@ -18,7 +18,7 @@ import { keypointColorByIndex } from "@/pages/Workbench/stage/ImageStageShapes";
 const ICON_BTN_CLASS =
   "inline-flex size-7 shrink-0 cursor-pointer appearance-none items-center justify-center rounded border border-border bg-transparent p-0 text-muted-foreground enabled:hover:bg-card enabled:hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40";
 const FIELD_CLASS =
-  "h-7 min-w-0 flex-1 appearance-none rounded border border-border bg-card px-2 text-[13px] text-foreground outline-none";
+  "h-7 min-w-0 flex-1 appearance-none rounded border border-border bg-card px-2 text-sm text-foreground outline-none";
 
 const EMPTY: KeypointSchema = { nodes: [], edges: [] };
 
@@ -93,7 +93,7 @@ export function KeypointSchemaEditor({
       {/* 节点列表 */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <span className="text-[13px] font-semibold text-foreground">关键点节点 ({nodes.length})</span>
+          <span className="text-sm font-semibold text-foreground">关键点节点 ({nodes.length})</span>
           <Button variant="ghost" size="sm" onClick={addNode}>
             <Icon name="plus" size={14} /> 新增节点
           </Button>
@@ -154,7 +154,7 @@ export function KeypointSchemaEditor({
       {/* 连线编辑 */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <span className="text-[13px] font-semibold text-foreground">骨骼连线 ({edges.length})</span>
+          <span className="text-sm font-semibold text-foreground">骨骼连线 ({edges.length})</span>
         </div>
         {nodes.length < 2 ? (
           <p className="m-0 text-xs text-muted-foreground">至少需要 2 个节点才能添加连线。</p>
@@ -187,7 +187,7 @@ export function KeypointSchemaEditor({
         {edges.length > 0 && (
           <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
             {edges.map(([i, j], idx) => (
-              <li key={idx} className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-2 py-1.5 text-[13px] text-foreground">
+              <li key={idx} className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-2 py-1.5 text-sm text-foreground">
                 <span>
                   {nodes[i]?.name ?? `#${i + 1}`} — {nodes[j]?.name ?? `#${j + 1}`}
                 </span>
