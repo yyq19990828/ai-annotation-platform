@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { classColor } from "@/pages/Workbench/stage/colors";
+import type { ClassRefLite } from "./resolveClassVisual";
 
 // UA-safe 表单基线 + token 化(无全局 preflight)。
 const CONTROL_CLASS =
@@ -19,6 +20,8 @@ export interface ClassRow {
   color: string;
   /** v0.9.5 · 英文 alias，供 SAM 文本预标 prompt 下拉直填。ASCII-only / max 50 字符。 */
   alias?: string;
+  /** v0.17.15 · alias_to 软关联: 链接到另一工具单位的类，继承其 color/alias。null/缺省 = 不继承。 */
+  aliasTo?: ClassRefLite | null;
 }
 
 const ALIAS_PATTERN = /^[a-zA-Z0-9 ,_-]*$/;
@@ -71,9 +74,15 @@ interface Props {
   renaming?: boolean;
   /** 删除前确认；返回 false 时取消删除。 */
   onConfirmDelete?: (row: ClassRow) => boolean | Promise<boolean>;
+  /** v0.17.15 · 可链接的跨工具单位类目标 (按 unit 分组)；为空 / 省略则不显示 alias_to 链接 UI。 */
+  linkTargets?: { unitId: string; unitLabel: string; classNames: string[] }[];
+  /** 解析某 aliasTo 引用的继承 color/alias (供链接行只读预览)。 */
+  resolveLinked?: (ref: ClassRefLite) => { color?: string; alias?: string };
+  /** 设置 / 清除某行链接；ref=null 清除。 */
+  onLink?: (rowName: string, ref: ClassRefLite | null) => void;
 }
 
-export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配置任何类别", onRename, renaming = false, onConfirmDelete }: Props) {
+export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配置任何类别", onRename, renaming = false, onConfirmDelete, linkTargets, resolveLinked, onLink }: Props) {
   const [classInput, setClassInput] = useState("");
   // B-13 · 行内重命名: 记录每行的草稿名 (key 用稳定的 row.name 作 baseline; 提交时与原名比对决定是否调 onRename).
   const [renameDrafts, setRenameDrafts] = useState<Record<string, string>>({});
@@ -162,7 +171,17 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
         </div>
       )}
 
-      {value.map((r, i) => (
+      {value.length > 0 && (
+      // B-59 · 类别行过多时纵向滚动, 最多约 20 行可见(单行 ≈ 48px + gap 10px)；
+      // 「新增类别」输入框留在滚动容器外, 始终可见。
+      <div className="flex max-h-[1150px] flex-col gap-2.5 overflow-y-auto pr-0.5">
+      {value.map((r, i) => {
+        const linked = !!r.aliasTo;
+        const linkedVisual = linked && resolveLinked ? resolveLinked(r.aliasTo!) : undefined;
+        const swatchColor = linked
+          ? (linkedVisual?.color ?? defaultColorFor(r.name))
+          : r.color;
+        return (
         <div
           key={r.name}
           className="grid grid-cols-[auto_24px_minmax(0,1.4fr)_minmax(0,1.2fr)_70px_auto] items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5"
@@ -171,7 +190,7 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
             {i + 1}
           </span>
           <svg className="inline-block size-[18px] rounded border border-border" viewBox="0 0 18 18" aria-hidden="true">
-            <rect width="18" height="18" rx="4" ry="4" fill={r.color} />
+            <rect width="18" height="18" rx="4" ry="4" fill={swatchColor} />
           </svg>
           {onRename ? (
             <input
@@ -224,22 +243,68 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
           ) : (
             <span className="text-sm text-foreground">{r.name}</span>
           )}
-          <input
-            value={r.alias ?? ""}
-            onChange={(e) => setAlias(i, e.target.value)}
-            onBlur={() => normalizeAliasOnBlur(i)}
-            placeholder="英文 alias（SAM 提示用，可空）"
-            maxLength={50}
-            title="供 SAM 文本预标 prompt 下拉填入；ASCII 字母/数字/空格/逗号/下划线/连字符；blur 自动规范化"
-            className={`${CONTROL_CLASS} text-xs`}
-          />
-          <input
-            type="color"
-            value={r.color}
-            onChange={(e) => setColor(i, e.target.value)}
-            className="h-6 w-[60px] cursor-pointer rounded-[3px] border border-border bg-transparent p-0"
-          />
-          <div className="flex gap-1">
+          {linked ? (
+            <input
+              value={linkedVisual?.alias ?? ""}
+              disabled
+              placeholder="继承自链接"
+              title="alias 继承自链接的工具单位类；清除链接后可单独编辑"
+              className={`${CONTROL_CLASS} text-xs opacity-[0.6]`}
+            />
+          ) : (
+            <input
+              value={r.alias ?? ""}
+              onChange={(e) => setAlias(i, e.target.value)}
+              onBlur={() => normalizeAliasOnBlur(i)}
+              placeholder="英文 alias（SAM 提示用，可空）"
+              maxLength={50}
+              title="供 SAM 文本预标 prompt 下拉填入；ASCII 字母/数字/空格/逗号/下划线/连字符；blur 自动规范化"
+              className={`${CONTROL_CLASS} text-xs`}
+            />
+          )}
+          {linked ? (
+            <span
+              className="inline-flex h-6 w-[60px] items-center justify-center rounded-[3px] border border-dashed border-border text-2xs text-muted-foreground"
+              title="颜色继承自链接的工具单位类"
+            >
+              继承
+            </span>
+          ) : (
+            <input
+              type="color"
+              value={r.color}
+              onChange={(e) => setColor(i, e.target.value)}
+              className="h-6 w-[60px] cursor-pointer rounded-[3px] border border-border bg-transparent p-0"
+            />
+          )}
+          <div className="flex items-center gap-1">
+            {linkTargets && linkTargets.length > 0 && onLink && (
+              <select
+                value={r.aliasTo ? `${r.aliasTo.tool_unit_id}␟${r.aliasTo.class_name}` : ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) {
+                    onLink(r.name, null);
+                    return;
+                  }
+                  const [tool_unit_id, class_name] = v.split("␟");
+                  onLink(r.name, { tool_unit_id, class_name });
+                }}
+                title="继承另一工具单位同类的颜色 / alias（alias_to 软关联）"
+                className={`${CONTROL_CLASS} max-w-[120px] text-xs`}
+              >
+                <option value="">不继承</option>
+                {linkTargets.map((t) => (
+                  <optgroup key={t.unitId} label={t.unitLabel}>
+                    {t.classNames.map((cn) => (
+                      <option key={cn} value={`${t.unitId}␟${cn}`}>
+                        {cn}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            )}
             <Button size="sm" variant="ghost" onClick={() => move(i, -1)} disabled={i === 0} title="上移">
               <Icon name="chevUp" size={11} />
             </Button>
@@ -257,7 +322,10 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
             </Button>
           </div>
         </div>
-      ))}
+        );
+      })}
+      </div>
+      )}
 
       <div className="mt-1 flex gap-1.5">
         <input

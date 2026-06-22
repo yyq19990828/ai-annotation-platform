@@ -5719,6 +5719,30 @@
         "title": "ClassConfigEntry",
         "type": "object"
       },
+      "ClassRef": {
+        "additionalProperties": false,
+        "description": "v0.17.15 · 跨工具单位的类别引用 (alias_to 软关联链用).\n\ntool_unit_id 必须是合法 ToolUnitId; class_name 是目标 unit 内的类名.\n目标存在性不在此校验 (siblings 不可见), 由读时派生层解析时降级处理 (悬空 → 用自身值).",
+        "properties": {
+          "class_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Class Name",
+            "type": "string"
+          },
+          "tool_unit_id": {
+            "maxLength": 30,
+            "minLength": 1,
+            "title": "Tool Unit Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool_unit_id",
+          "class_name"
+        ],
+        "title": "ClassRef",
+        "type": "object"
+      },
       "ClassRenameRequest": {
         "properties": {
           "new_name": {
@@ -8402,7 +8426,7 @@
       },
       "KeypointNode": {
         "additionalProperties": false,
-        "description": "关键点骨骼的一个节点（有序）。color 为可选 #RRGGBB。",
+        "description": "关键点骨骼的一个节点（有序）。color 为可选 #RRGGBB。\n\nsublabel：可选第二层命名（label + sublabel 仅 2 层，禁止任意嵌套）。\nx / y：可选骨骼模板坐标（归一化 0–1），由 SVG 配置器拖点定义，仅作配置可视化\n与标注参考，不进实例几何。",
         "properties": {
           "color": {
             "anyOf": [
@@ -8420,6 +8444,43 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "sublabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sublabel"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
           }
         },
         "required": [
@@ -9078,6 +9139,17 @@
             "title": "Completed Tasks",
             "type": "integer"
           },
+          "cover_blurhash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Blurhash"
+          },
           "in_progress_tasks": {
             "default": 0,
             "title": "In Progress Tasks",
@@ -9138,6 +9210,17 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
           },
           "total_tasks": {
             "title": "Total Tasks",
@@ -13968,6 +14051,17 @@
             "title": "Completed Tasks",
             "type": "integer"
           },
+          "cover_blurhash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Blurhash"
+          },
           "project_id": {
             "title": "Project Id",
             "type": "string"
@@ -13979,6 +14073,17 @@
           "review_tasks": {
             "title": "Review Tasks",
             "type": "integer"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
           },
           "total_tasks": {
             "title": "Total Tasks",
@@ -15961,6 +16066,16 @@
               }
             ],
             "title": "Alias"
+          },
+          "alias_to": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClassRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "color": {
             "anyOf": [
@@ -19387,7 +19502,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.17.12"
+    "version": "0.17.17"
   },
   "openapi": "3.1.0",
   "paths": {

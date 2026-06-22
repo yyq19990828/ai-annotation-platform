@@ -73,6 +73,7 @@ export interface ImageWorkbenchProps {
   onCursorMove: (pt: { x: number; y: number } | null) => void;
   onChangeUserBoxClass: (id: string) => void;
   onJoinSelected: () => void;
+  onCropSelected: (baseId: string) => void;
   onApplyAttributeMode?: (id: string) => boolean;
   onStageGeometry: (g: StageGeometry) => void;
   polygonDraft?: PolygonDraftHandle;
@@ -151,6 +152,7 @@ export function ImageWorkbench({
   onCursorMove,
   onChangeUserBoxClass,
   onJoinSelected,
+  onCropSelected,
   onApplyAttributeMode,
   onStageGeometry,
   polygonDraft,
@@ -223,6 +225,7 @@ export function ImageWorkbench({
       onCursorMove={onCursorMove}
       onChangeUserBoxClass={onChangeUserBoxClass}
       onJoinSelected={onJoinSelected}
+      onCropSelected={onCropSelected}
       onApplyAttributeMode={onApplyAttributeMode}
       onStageGeometry={onStageGeometry}
       polygonDraft={polygonDraft}

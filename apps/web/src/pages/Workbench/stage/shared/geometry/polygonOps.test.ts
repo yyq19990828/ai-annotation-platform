@@ -3,6 +3,7 @@ import type { AnnotationResponse, Geometry } from "@/types";
 import {
   buildPolygonJoinPayload,
   canJoinPolygonAnnotation,
+  cropPolygonGeometry,
   joinPolygonGeometries,
 } from "./polygonOps";
 
@@ -105,5 +106,46 @@ describe("polygon join helpers", () => {
   it("blocks locked annotations from join eligibility", () => {
     expect(canJoinPolygonAnnotation(ann("a", left))).toBe(true);
     expect(canJoinPolygonAnnotation(ann("a", left, { is_locked: true }))).toBe(false);
+  });
+});
+
+const fullSquare: Geometry = {
+  type: "polygon",
+  points: [[0, 0], [1, 0], [1, 1], [0, 1]],
+};
+
+describe("polygon crop helpers", () => {
+  it("punches a hole when the cutter sits fully inside the base", () => {
+    const inner: Geometry = {
+      type: "polygon",
+      points: [[0.3, 0.3], [0.6, 0.3], [0.6, 0.6], [0.3, 0.6]],
+    };
+    const out = cropPolygonGeometry(fullSquare, [inner]);
+
+    expect(out?.type).toBe("polygon");
+    expect(out && out.type === "polygon" ? out.holes?.length : 0).toBe(1);
+  });
+
+  it("clips an overlapping edge into a smaller polygon", () => {
+    const out = cropPolygonGeometry(fullSquare, [right]);
+
+    expect(out?.type).toBe("polygon");
+    // 右半被减掉,剩左半区域。
+    const xs = out && out.type === "polygon" ? out.points.map(([x]) => x) : [];
+    expect(Math.max(...xs)).toBeCloseTo(0.5, 5);
+  });
+
+  it("subtracts multiple cutters at once", () => {
+    const out = cropPolygonGeometry(fullSquare, [left, right]);
+    expect(out).toBeNull(); // 左+右覆盖整块,基准被完全扣除。
+  });
+
+  it("returns null when the cutter fully covers the base", () => {
+    expect(cropPolygonGeometry(left, [fullSquare])).toBeNull();
+  });
+
+  it("returns null when there is no valid cutter", () => {
+    expect(cropPolygonGeometry(fullSquare, [])).toBeNull();
+    expect(cropPolygonGeometry(fullSquare, [{ type: "bbox", x: 0, y: 0, w: 0.1, h: 0.1 }])).toBeNull();
   });
 });

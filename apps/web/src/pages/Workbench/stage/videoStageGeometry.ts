@@ -5,6 +5,8 @@ import type {
   VideoTrackKeyframe,
 } from "@/types";
 import type { VideoFrameEntry, VideoStageGeom } from "./videoStageTypes";
+import { runReferenceKalman } from "./videoReferenceKalman";
+import type { VideoReferenceMode, VideoReferencePreset } from "./videoReferencePredict";
 import {
   effectiveOutsideRanges,
   isFrameInOutsideRanges,
@@ -195,34 +197,71 @@ export function nearestTrackKeyframe(track: VideoTrackGeometry, frameIndex: numb
 
 export interface TrackReferenceResult {
   bbox: VideoStageGeom;
-  /** true = 恒速外推预测;false = 直接取最近关键帧(回退或未开启预测)。 */
+  /** true = 运动预测(linear / kalman);false = 直接取最近关键帧(回退或 mode=off)。 */
   predicted: boolean;
-  /** 参考来源帧:predicted 时为外推基准帧,否则为最近关键帧帧号。 */
+  /** 预测算法:`predicted` 为 true 时区分恒速外推 / 完整卡尔曼。 */
+  predictedKind?: "linear" | "kalman";
+  /** 参考来源帧:predicted 时为外推/滤波基准帧,否则为最近关键帧帧号。 */
   originFrame: number;
+  /** kalman 模式输出的位置后验标准差(归一化坐标),用于画预测不确定度误差椭圆;其它模式 undefined。 */
+  uncertainty?: { sx: number; sy: number; sw: number; sh: number };
 }
 
 /**
  * 选中轨迹在当前帧无实框时的「参考框」几何。
  *
- * - `predict=false`(现状):直接取最近关键帧的 bbox。
- * - `predict=true`:取当前帧**之前**最近两个可见关键帧,按恒速线性外推到当前帧
- *   (恒速卡尔曼的预测步)。先行关键帧不足两个时回退到最近关键帧。
- *   完整卡尔曼(带过程/观测噪声平滑)见 ROADMAP。
+ * - `mode="off"`(现状):直接取最近关键帧的 bbox。
+ * - `mode="linear"`:取当前帧**之前**最近两个可见关键帧,按恒速线性外推到当前帧
+ *   (恒速卡尔曼的预测步)。
+ * - `mode="kalman"`:遍历当前帧之前**所有**可见关键帧前向滤波(predict→update)得到
+ *   平滑后验,再外推到当前帧;`preset` 选噪声档位(平稳 / 灵敏)。见 `videoReferenceKalman.ts`。
+ *
+ * 先行可见关键帧不足两个时,linear / kalman 均回退到最近关键帧(`predicted=false`)。
  */
 export function trackReferenceAtFrame(
   track: VideoTrackGeometry,
   frameIndex: number,
-  predict: boolean,
+  mode: VideoReferenceMode,
+  preset: VideoReferencePreset = "stable",
 ): TrackReferenceResult | null {
   const nearest = nearestTrackKeyframe(track, frameIndex);
   if (!nearest) return null;
-  if (!predict) return { bbox: nearest.bbox, predicted: false, originFrame: nearest.frame_index };
+  if (mode === "off") return { bbox: nearest.bbox, predicted: false, originFrame: nearest.frame_index };
 
   const keyframes = getTrackIndex(track).visibleKeyframes;
   const priorIndex = lowerBound(keyframes, frameIndex, (kf) => kf.frame_index) - 1;
   const k2 = keyframes[priorIndex];
   const k1 = keyframes[priorIndex - 1];
   if (!k2 || !k1) return { bbox: nearest.bbox, predicted: false, originFrame: nearest.frame_index };
+
+  if (mode === "kalman") {
+    // 当前帧之前的所有可见关键帧(升序、长度 ≥ 2,priorIndex+1 == k2 之后的切片端点)。
+    const prior = keyframes.slice(0, priorIndex + 1);
+    const result = runReferenceKalman(
+      prior.map((kf) => ({
+        frame: kf.frame_index,
+        cx: kf.bbox.x + kf.bbox.w / 2,
+        cy: kf.bbox.y + kf.bbox.h / 2,
+        w: kf.bbox.w,
+        h: kf.bbox.h,
+      })),
+      frameIndex,
+      preset,
+    );
+    const bbox = clampGeom({
+      x: result.cx - result.w / 2,
+      y: result.cy - result.h / 2,
+      w: result.w,
+      h: result.h,
+    });
+    return {
+      bbox,
+      predicted: true,
+      predictedKind: "kalman",
+      originFrame: k2.frame_index,
+      uncertainty: { sx: result.sx, sy: result.sy, sw: result.sw, sh: result.sh },
+    };
+  }
 
   const span = Math.max(1, k2.frame_index - k1.frame_index);
   const dt = frameIndex - k2.frame_index;
@@ -233,7 +272,7 @@ export function trackReferenceAtFrame(
     w: extrapolate(k1.bbox.w, k2.bbox.w),
     h: extrapolate(k1.bbox.h, k2.bbox.h),
   });
-  return { bbox, predicted: true, originFrame: k2.frame_index };
+  return { bbox, predicted: true, predictedKind: "linear", originFrame: k2.frame_index };
 }
 
 export function shapeIou(a: VideoStageGeom, b: VideoStageGeom) {

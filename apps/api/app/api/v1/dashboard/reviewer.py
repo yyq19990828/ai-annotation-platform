@@ -9,8 +9,10 @@ from app.deps import (
 from app.db.models.user import User
 from app.db.models.project import Project
 from app.db.models.task import Task
+from app.db.models.dataset import DatasetItem
 from app.db.models.audit_log import AuditLog
 from app.db.models.task_batch import TaskBatch
+from app.services.storage import storage_service
 from app.db.enums import UserRole, TaskStatus
 from app.schemas.dashboard import (
     ReviewerDashboardStats,
@@ -123,10 +125,42 @@ async def reviewer_dashboard(
     for pid, uids in project_user_map.items():
         briefs_by_project[pid] = await resolve_briefs_with_project_role(db, pid, uids)
 
+    # 批次封面缩略图：每个 batch 取最早一张「有缩略图」的任务作封面（DISTINCT ON）。
+    # 缩略图口径与 tasks/_shared.py 一致：dataset 导入的任务缩略图存在 DatasetItem 上，
+    # Task.thumbnail_path 为空，故需 LEFT JOIN + COALESCE。
+    cover_map: dict = {}
+    cover_batch_ids = [b.id for b, _ in batch_rows]
+    if cover_batch_ids:
+        eff_thumb = func.coalesce(DatasetItem.thumbnail_path, Task.thumbnail_path)
+        eff_blur = func.coalesce(DatasetItem.blurhash, Task.blurhash)
+        cover_rows = await db.execute(
+            select(Task.batch_id, eff_thumb, eff_blur)
+            .outerjoin(DatasetItem, DatasetItem.id == Task.dataset_item_id)
+            .where(
+                Task.batch_id.in_(cover_batch_ids),
+                eff_thumb.is_not(None),
+            )
+            .order_by(Task.batch_id, Task.created_at.asc())
+            .distinct(Task.batch_id)
+        )
+        cover_map = {row[0]: (row[1], row[2]) for row in cover_rows.all()}
+
     reviewing_batches = []
     for b, pname in batch_rows:
         per_proj = briefs_by_project.get(b.project_id, {})
         annotator = per_proj.get(str(b.annotator_id)) if b.annotator_id else None
+        cover_path, cover_blurhash = cover_map.get(b.id, (None, None))
+        thumbnail_url: str | None = None
+        if cover_path:
+            thumb_bucket = storage_service.bucket_for_cache_key(
+                cover_path, default=storage_service.bucket
+            )
+            try:
+                thumbnail_url = storage_service.generate_download_url(
+                    cover_path, bucket=thumb_bucket
+                )
+            except Exception:
+                thumbnail_url = None
         reviewing_batches.append(
             ReviewingBatchItem(
                 batch_id=str(b.id),
@@ -137,6 +171,8 @@ async def reviewer_dashboard(
                 total_tasks=b.total_tasks,
                 review_tasks=b.review_tasks,
                 completed_tasks=b.completed_tasks,
+                thumbnail_url=thumbnail_url,
+                cover_blurhash=cover_blurhash,
                 annotator=annotator,
             )
         )

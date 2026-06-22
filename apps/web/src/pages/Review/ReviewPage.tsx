@@ -14,6 +14,7 @@ import type { ReviewingBatchItem } from "@/api/dashboard";
 import { buildReviewWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { RejectReasonModal } from "./RejectReasonModal";
 import { ReviewSidebar } from "./ReviewSidebar";
+import { ReviewBatchCardGrid } from "./ReviewBatchCardGrid";
 import type { CSSProperties } from "react";
 
 function ProgressFill({ pct, barClass }: { pct: number; barClass: string }) {
@@ -160,6 +161,18 @@ export function ReviewPage() {
     setSearchParams(next);
   };
 
+  // 返回卡片网格概览：清掉 batch / project / assignee 三类选择。
+  const backToOverview = () => {
+    setSelectedBatchId("");
+    setSelectedProjectId("");
+    const next = new URLSearchParams(searchParams);
+    next.delete("project");
+    next.delete("batch");
+    next.delete("assignee");
+    setSearchParams(next);
+    setCheckedIds(new Set());
+  };
+
   const openTaskId = searchParams.get("taskId");
   // ESC 关 drawer
   useEffect(() => {
@@ -259,6 +272,10 @@ export function ReviewPage() {
   const reviewPct = totalTasks ? Math.round((pendingReview / totalTasks) * 1000) / 10 : 0;
   const approvedPct = totalTasks ? Math.round((approvedDone / totalTasks) * 1000) / 10 : 0;
 
+  // 纯落地态（无 batch / project / assignee 选择）展示批次卡片网格；其余维持任务列表。
+  const showOverview =
+    !selectedBatchId && !selectedProjectId && !assigneeFilter && sidebarBatches.length > 0;
+
   return (
     <div className="box-border grid h-full max-w-[1480px] grid-cols-[300px_1fr] gap-4 px-6 py-5 text-foreground max-[900px]:h-auto max-[900px]:grid-cols-1 max-[900px]:p-4">
       <aside className="max-h-[calc(100vh-80px)] self-stretch overflow-auto rounded-md border border-border bg-card max-[900px]:max-h-none">
@@ -278,6 +295,15 @@ export function ReviewPage() {
       <section className="max-h-[calc(100vh-80px)] min-w-0 overflow-auto max-[900px]:max-h-none">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div className="min-w-0">
+            {!showOverview && (
+              <button
+                type="button"
+                className="mb-1.5 inline-flex cursor-pointer appearance-none items-center gap-1 border-none bg-transparent p-0 text-xs text-muted-foreground hover:text-brand"
+                onClick={backToOverview}
+              >
+                <Icon name="chevLeft" size={12} />返回全部批次
+              </button>
+            )}
             <h1 className="m-0 text-xl font-bold">
               {selectedBatch ? selectedBatch.batch_name : "质检审核"}
             </h1>
@@ -289,7 +315,7 @@ export function ReviewPage() {
                   <span> · 共 {selectedBatch.total_tasks} 任务 · {selectedBatch.review_tasks} 待审 · {selectedBatch.completed_tasks} 已通过</span>
                 </>
               ) : (
-                <>左侧选择批次开始审核；点击行可在右侧画布预览，多选支持批量通过 / 退回</>
+                <>选择一个批次开始审核；点击行可在右侧画布预览，多选支持批量通过 / 退回</>
               )}
             </p>
             {assigneeFilter && (
@@ -359,11 +385,13 @@ export function ReviewPage() {
           </div>
         )}
 
-        {isLoading ? (
+        {showOverview ? (
+          <ReviewBatchCardGrid batches={sidebarBatches} onSelect={handleSelectBatch} />
+        ) : isLoading ? (
           <div className="p-10 text-center text-muted-foreground">加载中...</div>
         ) : tasks.length === 0 ? (
           <div className="p-15 text-center text-muted-foreground">
-            <Icon name="check" size={40} className="mb-3 opacity-30" />
+            <Icon name="check" size={40} className="mx-auto mb-3 opacity-30" />
             <div className="text-sm">
               {selectedBatchId ? "该批次暂无待审核任务" : "暂无待审核任务"}
             </div>

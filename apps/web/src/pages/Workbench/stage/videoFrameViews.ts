@@ -11,6 +11,9 @@ import {
 import { isFrameOutside } from "./videoTrackOutside";
 import { buildTrackLabelText, shouldShowLabel, type AnnotationVisualConfig } from "./annotationVisual";
 import type { VideoStageGeom } from "./videoStageTypes";
+import type { VideoReferenceConfig } from "./videoReferencePredict";
+
+const DEFAULT_REFERENCE_CONFIG: VideoReferenceConfig = { mode: "off", preset: "stable" };
 
 /**
  * v0.16.2 · 视频标注层的渲染派生(纯函数,栈无关)。
@@ -53,6 +56,8 @@ export type VideoGhostView = {
   geom: VideoStageGeom;
   color: string;
   labelText: string;
+  /** kalman 预测的位置不确定度(归一化标准差);存在时画淡色误差椭圆。其它模式 undefined。 */
+  uncertainty?: { sx: number; sy: number; sw: number; sh: number };
 };
 
 export type VideoLabelView = {
@@ -80,8 +85,8 @@ export interface DeriveVideoFrameViewsInput {
   reviewDisplayMode?: DiffMode;
   trackColorOverrides?: Record<string, string>;
   visual: AnnotationVisualConfig;
-  /** 参考框运动预测开关(实验);开启时参考框恒速外推到当前帧而非取最近关键帧。 */
-  predictReference?: boolean;
+  /** 参考框运动预测配置(实验);off=最近关键帧,linear=恒速外推,kalman=完整卡尔曼。 */
+  referenceConfig?: VideoReferenceConfig;
   /** pending 草稿(画一半 / 待确认);仅当前帧透传。 */
   pendingDraft?: { geom: VideoStageGeom; className: string } | null;
 }
@@ -105,7 +110,7 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
     reviewDisplayMode,
     trackColorOverrides,
     visual,
-    predictReference = false,
+    referenceConfig = DEFAULT_REFERENCE_CONFIG,
     pendingDraft,
   } = input;
 
@@ -166,15 +171,18 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
     && visibleInReviewMode("manual", reviewDisplayMode)
     && !entries.some((e) => e.id === selectedTrack.id)
   ) {
-    const reference = trackReferenceAtFrame(selectedTrack.geometry, frameIndex, predictReference);
+    const reference = trackReferenceAtFrame(selectedTrack.geometry, frameIndex, referenceConfig.mode, referenceConfig.preset);
     if (reference) {
       const num = trackNumbers.get(selectedTrack.id);
-      const refLabel = reference.predicted ? `预测 F${reference.originFrame}↗` : `参考 F${reference.originFrame}`;
+      const refLabel = reference.predicted
+        ? `${reference.predictedKind === "kalman" ? "卡尔曼" : "预测"} F${reference.originFrame}↗`
+        : `参考 F${reference.originFrame}`;
       ghost = {
         id: selectedTrack.id,
         geom: reference.bbox,
         color: getTrackColor(selectedTrack.geometry.track_id, selectedTrack.class_name, trackColorOverrides),
         labelText: `${num !== undefined ? `#${num} · ` : ""}${selectedTrack.class_name} · ${refLabel}`,
+        uncertainty: reference.uncertainty,
       };
     }
   }

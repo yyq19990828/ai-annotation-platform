@@ -20,10 +20,10 @@ last_reviewed: 2026-06-10
 
 每个启用了关键点工具的类别都带一份 schema：
 
-- **节点（nodes）**：有序的命名点列表（如 `nose` / `left_eye` / `right_eye` …），顺序即关键点 index。
+- **节点（nodes）**：有序的命名点列表（如 `nose` / `left_eye` / `right_eye` …），顺序即关键点 index。每个节点可附**子标签（sublabel）**作第二层命名（如 `shoulder` + `left`），仅支持「名称 + 子标签」两层，不支持任意嵌套。
 - **连线（edges）**：节点之间的骨骼连接，仅用于画布可视化，不影响数据。
 
-模板由项目管理员配置，见 [项目管理员 · 类别与工具配置](../projects/)。
+模板由项目管理员在**骨骼画布**里配置：拖动节点定义骨架布局、点击两个节点连一条线、点击连线删除。布局坐标会随模板保存，作为标注时的参考形状。详见 [项目管理员 · 类别与工具配置](../projects/)。
 
 ## 操作
 
@@ -57,11 +57,11 @@ last_reviewed: 2026-06-10
 ```json
 {
   "nodes": [
-    { "name": "nose" },
-    { "name": "left_eye",  "color": "#e11d48" },
-    { "name": "right_eye", "color": "#e11d48" },
-    { "name": "left_ear" },
-    { "name": "right_ear" }
+    { "name": "nose", "x": 0.5, "y": 0.1 },
+    { "name": "eye", "sublabel": "left",  "color": "#e11d48", "x": 0.42, "y": 0.18 },
+    { "name": "eye", "sublabel": "right", "color": "#e11d48", "x": 0.58, "y": 0.18 },
+    { "name": "ear", "sublabel": "left" },
+    { "name": "ear", "sublabel": "right" }
   ],
   "edges": [
     [0, 1], [0, 2], [1, 3], [2, 4]
@@ -69,7 +69,10 @@ last_reviewed: 2026-06-10
 }
 ```
 
-- `nodes`：有序命名节点列表，标注时按此顺序落点，`color` 为可选十六进制颜色。
+- `nodes`：有序命名节点列表，标注时按此顺序落点。
+  - `color`（可选）：十六进制颜色。
+  - `sublabel`（可选）：第二层命名；画布上节点标签显示为 `名称·子标签`，COCO 导出名拼成 `名称_子标签`。
+  - `x` / `y`（可选）：骨骼模板坐标（归一化 0–1），由骨骼画布拖点生成，仅作配置可视化与标注参考，不进实例几何。
 - `edges`：骨骼连线，每项为 `[节点 index A, 节点 index B]`，仅用于画布可视化，不影响导出数据。
 
 ## COCO 导出格式（关键点）

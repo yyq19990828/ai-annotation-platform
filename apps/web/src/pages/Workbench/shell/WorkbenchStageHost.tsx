@@ -158,6 +158,7 @@ interface WorkbenchStageHostImageProps {
   // v0.10.28 · keypoint 节点几何/可见性变更。
   onCommitKeypointGeometry?: (id: string, before: import("@/types").Keypoint[], after: import("@/types").Keypoint[]) => void;
   onJoinSelected: () => void;
+  onCropSelected: (baseId: string) => void;
   onApplyAttributeMode?: (id: string) => boolean;
   onStageGeometry: (g: StageGeometry) => void;
 }
@@ -313,6 +314,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onCommitPolygonGeometry,
       onCommitKeypointGeometry,
       onJoinSelected,
+      onCropSelected,
       onApplyAttributeMode,
       onStageGeometry,
     } = imageProps ?? ({} as WorkbenchStageHostImageProps);
@@ -465,6 +467,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onCursorMove={onCursorMove}
             onChangeUserBoxClass={onChangeUserBoxClass}
             onJoinSelected={onJoinSelected}
+            onCropSelected={onCropSelected}
             onApplyAttributeMode={onApplyAttributeMode}
             onStageGeometry={onStageGeometry}
             polygonDraft={polygonDraft}

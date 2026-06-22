@@ -104,4 +104,51 @@ describe("unitBindingsToPayload", () => {
     expect(out.bbox).toBeDefined();
     expect(out.region).toBeUndefined();
   });
+
+  // v0.17.15 · alias_to 软关联往返
+  it("链接的类序列化时省略自身 color/alias, 只带 alias_to", () => {
+    const ref = { tool_unit_id: "bbox", class_name: "person" };
+    const out = unitBindingsToPayload({
+      bbox: {
+        enabled: true,
+        classRows: [{ name: "person", color: "#ff0000", alias: "person" }],
+        attributeFields: [],
+      },
+      region: {
+        enabled: true,
+        classRows: [{ name: "pedestrian", color: "#999999", aliasTo: ref }],
+        attributeFields: [],
+      },
+    });
+    expect(out.region?.classes).toEqual([
+      { name: "pedestrian", order: 0, alias_to: ref },
+    ]);
+    // 未链接的类照旧带 color/alias。
+    expect(out.bbox?.classes).toEqual([
+      { name: "person", color: "#ff0000", order: 0, alias: "person" },
+    ]);
+  });
+});
+
+describe("buildUnitBindings · alias_to", () => {
+  it("从 tool_bindings 读出 aliasTo", () => {
+    const ref = { tool_unit_id: "bbox", class_name: "person" };
+    const bindings = buildUnitBindings({
+      data_type: "image",
+      type_key: "image-det",
+      tool_bindings: {
+        bbox: {
+          enabled: true,
+          classes: [{ name: "person", color: "#ff0000", order: 0 }],
+          attribute_schema: { fields: [] },
+        },
+        region: {
+          enabled: true,
+          classes: [{ name: "pedestrian", order: 0, alias_to: ref }],
+          attribute_schema: { fields: [] },
+        },
+      },
+    });
+    expect(bindings.region?.classRows[0].aliasTo).toEqual(ref);
+  });
 });

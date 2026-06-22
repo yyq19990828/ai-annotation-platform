@@ -85,11 +85,16 @@ class StorageService:
                 "Failed to set bucket lifecycle on %s: %s", self.bug_reports_bucket, exc
             )
 
+        # 只过期「可按需重新抽取」的帧图 / 分块缓存(videos/<id>/frames|chunks)。
+        # playback/(非 h264 视频的浏览器播放代理) 与 thumbnails/(海报) 是 DB 元数据
+        # 持久引用、入库时一次性生成、不会惰性重建,必须随原视频同寿命——绝不能进过期规则。
+        # 历史教训:旧规则 Prefix="" 把整桶都按 30 天过期,playback 代理 30 天后被删而
+        # DB 仍指向它,<video> 取预签名 URL 命中 404 → 浏览器报 MEDIA_ELEMENT_ERROR: Format error。
         media_cache_rules = [
             {
-                "ID": "media-cache-30d",
+                "ID": "media-cache-frames-chunks-30d",
                 "Status": "Enabled",
-                "Filter": {"Prefix": ""},
+                "Filter": {"Prefix": "videos/"},
                 "Expiration": {"Days": 30},
             },
         ]

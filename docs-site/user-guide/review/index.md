@@ -12,13 +12,14 @@ last_reviewed: 2026-06-10
 
 ## 审核工作台
 
-![ReviewPage 左侧批次树 + 任务列表（缩略图 + 批量操作按钮）](../images/review/review-list-page.png)
+![ReviewPage：未选批次时的批次卡片网格；选中批次后为任务列表（缩略图 + 批量操作按钮）](../images/review/review-list-page.png)
+<!-- TODO IMAGE_CHECKLIST: review-list-page.png 需重拍 — landing 已从批次树升级为批次卡片网格 -->
 
 ![审核工作台](../images/review/workbench.png)
 
 平台提供两个独立的审核入口：
 
-- **ReviewPage**（`/review`）：批次树 + 任务列表入口。审核员在此浏览批次、选择待审任务，也可在列表侧直接通过 / 退回单条任务。
+- **ReviewPage**（`/review`）：未选批次时显示按项目分组的**批次卡片网格**（封面缩略图、待审 / 通过进度条，卡片上还标出该批次的标注员姓名），点卡进入该批次的任务列表；左侧栏顶部「全部待审任务」可跨批次平铺全部待审任务，进入批次后标题区「返回全部批次」回到卡片概览。选中批次后在任务列表浏览、选择待审任务，也可在列表侧直接通过 / 退回单条任务。
 - **WorkbenchShell review 模式**（`/projects/:id/review`）：全屏审核工作台，进入后显示完整标注画布（图片任务）或时间轴（视频任务）以及 diff 视图，在顶部操作区执行通过 / 退回动作。
 
 审核工作台与标注工作台共用同一个 `WorkbenchShell` 外壳，仅 `mode` 参数不同。审核模式只替换顶部操作、横幅、任务锁、通过 / 退回流程和 diff 视图，不复制一套独立页面。因此图片、视频和未来 Stage 的查看方式会同步进入审核入口。

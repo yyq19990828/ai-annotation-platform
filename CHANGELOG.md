@@ -34,6 +34,63 @@
 
 > **0.17.x 是一个 UI 迁移 Epic**:把 `apps/web` 自维护的 CSS Modules + `tokens.css` 视觉体系全量迁到 Tailwind v4 + shadcn/ui,直至旧 `*.module.css` 与 `tokens.css` 退役、CI 门禁完成时代切换。全程红线为「只换皮、行为零回退」(业务逻辑 / 数据流 / 路由 / 画布渲染逻辑均不动),逐阶段以 light/dark 双主题截图基线把关。Epic 与设计规范见 [`docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md`](docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md) 与 `docs-site/dev/reference/design-system.md`。
 
+## [0.17.17] - 2026-06-22
+
+关键点骨骼模板配置升级（I10 Skeleton 进阶收尾）：
+
+- **SVG 骨骼画布配置器**：项目设置「类别与工具配置」里的 keypoint schema 编辑器从下拉框选索引连边，升级为可视化画布——拖动节点定义骨架布局、点击两个节点连线、点击连线删除。布局坐标（`KeypointNode.x/y`，归一化）随模板持久化，作为标注参考形状。
+- **节点子标签（sublabel）**：节点支持「名称 + 子标签」两层命名（如 `shoulder` + `left`），仅 2 层、禁止任意嵌套。画布节点标签显示 `名称·子标签`；COCO 导出的 `keypoints` 名拼成 `名称_子标签` 以消歧重名。
+
+## [0.17.16] - 2026-06-22
+
+标注 / 质检工作台「未选批次」着陆态从单行占位升级为**批次卡片网格**:项目分组、封面缩略图、批次进度条、点卡直接进入。
+
+### Added
+
+- **批次卡片网格**:标注工作台与质检审核在未选批次时,右侧改为按项目分组的批次卡片。每张卡含批次封面缩略图(左侧拉满卡片高度)、状态、进度条与「共/完成/待标」计数,点卡即选中批次进入任务列表。标注侧进度为三档(标注中 / 送审 / 通过),质检侧为两档(待审 / 通过)。
+- **「全部待标任务」入口**:标注工作台左侧栏顶部新增「全部待标任务」按钮,与质检审核「全部待审任务」对位;两页标题区新增「返回全部批次」回到卡片网格概览。
+- **质检卡片显示标注员**:质检批次卡片展示该批的标注员姓名,审核员一眼看清「这批是谁标的」(数据复用 `ReviewingBatchItem.annotator`)。
+- **批次封面缩略图字段**:`MyBatchItem` / `ReviewingBatchItem` 新增 `thumbnail_url` + `cover_blurhash`。后端取每批最早一张「有缩略图」的任务作封面,缩略图口径与 `tasks/_shared.py` 一致(`COALESCE(DatasetItem, Task)` + presigned URL),并按 `bucket_for_cache_key` 路由 media-cache 桶。
+
+## [0.17.15] - 2026-06-22
+
+跨工具单位类别共享两项体验改进:同名类批量重命名 + `alias_to` 颜色/alias 软关联。强隔离底线不变 ([ADR-0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) 附录)。
+
+### Added
+
+- **同名类跨工具单位批量重命名**:项目设置「类别」区在多个启用工具单位存在同名类时,出现「重命名时同步所有工具单位的同名类」开关。开启后重命名走后端跨 unit 批量路径 (不传 `tool_unit_id`),一次改全;默认关 (仅当前工具单位,守强隔离默认)。后端能力早已就位,本次补前端入口。
+- **`alias_to` 类别软关联**:`ToolClassEntry` 新增可选 `alias_to: {tool_unit_id, class_name}` 指针。某工具单位的类可链接到另一单位的类,**继承其颜色 / alias**,免重复输入。仅显示层继承——读时派生层 (`resolve_class_visual`) 解析后填入扁平 `classes_config` 供画布取色,带环 / 悬空 / 超深保护;**不改 tool_bindings 存储、不改标注归属、不进导出** (COCO/YOLO category 仍按各 unit 独立类、`supercategory=tool_unit_id`)。编辑器在「类别」区每行提供链接下拉,链接后该行颜色 / alias 显示为继承 (只读)。v1 链接即完全继承,override 入口暂未开放。
+
+## [0.17.14] - 2026-06-22
+
+视频参考框运动预测从「两点恒速外推」升级为完整恒速卡尔曼滤波(实验,默认关)。选中轨迹当前帧无框时的参考框,可选遍历先行所有可见关键帧前向滤波得到平滑预测,缓解变速/转向目标上的外推漂移。
+
+### Added
+
+- **参考框完整卡尔曼滤波**:设置抽屉「实验 › 参考框运动预测」由开关改为四档选择——`关(最近关键帧)` / `恒速外推(前两关键帧)` / `卡尔曼 · 平稳` / `卡尔曼 · 灵敏`。卡尔曼档遍历当前帧之前**所有**可见关键帧做 predict→update 前向滤波,再外推到当前帧;平稳档信模型(顺滑抗噪)、灵敏档信观测(紧跟最新关键帧)。参考框标签相应显示「卡尔曼 F{帧}↗」。
+- **预测不确定度误差椭圆**:卡尔曼档在参考框外画一圈淡色虚线椭圆,半轴 = 框半宽高 + 2σ(位置后验标准差,≈95% 置信)。σ 随外推距离 / 关键帧稀疏度增长,椭圆越大表示「预测越不确定」,提示标注员预测置信度。
+
+### Fixed
+
+- **非 h264 视频播放报 `MEDIA_ELEMENT_ERROR: Format error`**:`media-cache` 桶旧生命周期规则 `Prefix=""` 把整桶按 30 天过期,把非 h264 视频入库时一次性转码的浏览器播放代理 `playback/{item_id}.mp4` 也删了,而 DB 元数据 `playback_path` 仍指向它 → `<video>` 取预签名 URL 命中 404 → 浏览器报 Format error。把过期规则收窄到只 `videos/` 前缀(帧/chunk 可按需重生),`playback/`、`thumbnails/` 作为 DB 持久引用的耐久资产不再过期。已被删的历史代理需重跑 `generate_video_metadata` 补回。
+
+### Notes
+
+- 纯前端启发式,零后端依赖:状态向量 `[cx,cy,w,h,vx,vy,vw,vh]` 在恒速模型下四维解耦,实现为 4 个独立 1D 恒速卡尔曼(`videoReferenceKalman.ts`,标量观测无需矩阵求逆),不引矩阵库;误差椭圆取末段预测后各维后验方差 √P00。默认仍为「关 = 最近关键帧」(守「默认=现状」红线)。本地实验开关(localStorage),不进服务端偏好;旧布尔开关值自动读为「恒速外推」。
+- 设计与计划见 [`docs/plans/2026-06-22-v0.17.14-video-reference-kalman.md`](docs/plans/2026-06-22-v0.17.14-video-reference-kalman.md)。
+
+## [0.17.13] - 2026-06-22
+
+图片工作台多边形布尔运算补齐 difference（I14 Polygon Crop）：在已有「合并多边形」（union）之外新增「裁切重叠区」，用于遮挡场景下让背景多边形不再覆盖前景。
+
+### Added
+
+- **多边形裁切重叠区**：多选 ≥ 2 个 polygon / multi_polygon 后，在右键的那个多边形上点右键菜单「裁切重叠区」，从它身上减去其余选中多边形的重叠区域（布尔差集，复用已依赖的 `polygon-clipping`）。基准框作被减数、几何就地更新（可裁出孔洞或拆成 multi_polygon），其余框原样保留；不要求同类别（遮挡场景常跨类）。整次操作走一次 update、可一键撤销；重叠区覆盖整个基准时裁切失败并提示。
+
+### Notes
+
+- 纯前端实现：`polygonOps.ts` 新增 `cropPolygonGeometry`，与现有 union 对称；裁切只发 `geometry` 字段更新，沿用既有 mask-refine 的 PATCH 先例（`geometry.type` 是渲染 / 导出真值），无后端改动。
+
 ## [0.17.12] - 2026-06-20
 
 shadcn 迁移 Epic 收尾期的 admin 导航整顿与「换皮回退」修补：把超管两个看板入口的路由 / 文案理顺，并恢复被换皮误收的移动端工具入口。

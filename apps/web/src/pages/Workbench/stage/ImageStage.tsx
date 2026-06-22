@@ -152,6 +152,8 @@ interface ImageStageProps {
   nudgeMap?: Map<string, Geom>;
   /** 多边形合并(右键菜单复用;批量改类 / 删除已迁出到浮动选中卡)。 */
   onJoinSelected?: () => void;
+  /** 裁切重叠区(右键菜单):以右键框为基准,减去其余选中多边形的重叠区。 */
+  onCropSelected?: (baseId: string) => void;
   onApplyAttributeMode?: (id: string) => boolean;
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
   onAcceptPrediction?: (b: AiBox) => void;
@@ -253,7 +255,7 @@ export function ImageStage({
   fileUrl, blurhash, imageWidth, imageHeight, tool, activeClass,
   selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
-  onJoinSelected, onApplyAttributeMode,
+  onJoinSelected, onCropSelected, onApplyAttributeMode,
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass, onPatchShapeFlag, clipboardActions,
   onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
@@ -849,6 +851,7 @@ export function ImageStage({
       selectedAnnotations: contextMenuSelectedAnnotations,
       onChangeClass: onChangeUserBoxClass,
       onJoinSelected,
+      onCropSelected,
       onDelete: onDeleteUserBox,
       onPatchFlag: onPatchShapeFlag,
     });
@@ -858,6 +861,7 @@ export function ImageStage({
     contextMenuSelectedAnnotations,
     onChangeUserBoxClass,
     onJoinSelected,
+    onCropSelected,
     onDeleteUserBox,
     onPatchShapeFlag,
     readOnly,
@@ -1345,7 +1349,12 @@ export function ImageStage({
             const placed = keypointDraft.points;
             const nextIdx = placed.length;
             const done = nextIdx >= keypointDraft.nodeCount;
-            const nextName = keypointSchema?.nodes[nextIdx]?.name ?? `#${nextIdx + 1}`;
+            const nextNode = keypointSchema?.nodes[nextIdx];
+            const nextName = nextNode
+              ? nextNode.sublabel
+                ? `${nextNode.name}·${nextNode.sublabel}`
+                : nextNode.name
+              : `#${nextIdx + 1}`;
             return (
               <>
                 {placed.map((p, i) => {

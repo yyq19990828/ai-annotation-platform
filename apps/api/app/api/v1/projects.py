@@ -699,6 +699,7 @@ async def delete_project(
     p = {"pid": pid}
 
     await db.execute(text("DELETE FROM annotation_comments WHERE project_id = :pid"), p)
+    await db.execute(text("DELETE FROM annotation_feedbacks WHERE project_id = :pid"), p)
     await db.execute(
         text(
             "DELETE FROM annotation_drafts WHERE task_id IN "
@@ -734,9 +735,16 @@ async def delete_project(
     )
     await db.execute(text("DELETE FROM ml_backends WHERE project_id = :pid"), p)
     await db.execute(
+        text("UPDATE bug_reports SET project_id = NULL WHERE project_id = :pid"),
+        p,
+    )
+    # task_id 须按"任务属于本项目"清空: bug_report 可能 project_id 为空 / 指向他项,
+    # 但 task_id 仍指向本项目任务 (例如历史上 project_id 已被置空), 否则删 tasks 时
+    # 会撞 bug_reports_task_id_fkey.
+    await db.execute(
         text(
-            "UPDATE bug_reports SET project_id = NULL, task_id = NULL "
-            "WHERE project_id = :pid"
+            "UPDATE bug_reports SET task_id = NULL WHERE task_id IN "
+            "(SELECT id FROM tasks WHERE project_id = :pid)"
         ),
         p,
     )

@@ -76,7 +76,7 @@ describe("workbenchSettingsFields 注册表", () => {
       "pointcloud.neighborPointOverlayK": 1,
       "pointcloud.neighborPointCull": "keep",
       "experiment.webcodecs": false,
-      "experiment.videoReferencePredict": false,
+      "experiment.videoReferencePredict": "off",
     });
   });
 
