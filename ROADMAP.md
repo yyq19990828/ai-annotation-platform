@@ -48,8 +48,6 @@
   - **lidar 3D 点云工作台已落地**（v0.13.2–v0.15.21，原 P0「`lidar_box_3d` 工具实现」已完成）：真实 Three.js `PointCloudScene` + `lidar_box_3d` 7-DoF 框标注 + 后端 `point-cloud/manifest` + KITTI/nuScenes 导出 + ego pose 跨帧插值/批量 propagate + 邻帧框/点云叠加 + PSR 面板 + 3D 右键菜单/帧选择器。`lidar` 数据类型入口已开放（`toolUnits.ts` `available:true`）。剩余优化见 §C.8（拖影彻底消除）与下方 3D 延伸项。
   - `video-mm` / `mm` 多模态工作台未实现；视频侧能力详见 [视频工作台总 epic](ROADMAP/2026-05-21-video-workbench-roadmap.md)。
   - **3D 延伸项**：① **点云 + 图像联合标注（2D⇄3D 互标）** → 抽为独立 epic [`ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md`](ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)：读方向(3D 框投影到相机图)已于 v0.13.4 完成，写方向(相机图画框种 3D 框 / 投影手柄微调)Phase 1 已落 v0.15.24，Phase 2-3 待开工；② 多 lidar 融合标注（按反馈触发）。
-  - **跨 tool_unit 类别软关联 (`alias_to`)**（**P3**）：强隔离意味同名颜色 / alias 跨 unit 要重复输入。设计走 `ToolClassEntry.alias_to` 链（可选叠加，不破坏 ADR-0026 强隔离底线）。触发：客户反馈"想共享类别名字"。
-  - **rename_class 跨 unit 重命名 UX**（**P3**）：`useRenameClass` 已带 `tool_unit_id` 参数，但 ClassesSection 仅传 active unit；"同时在所有 unit 内重命名"需扩 UI（批量勾选 unit）。触发：客户反馈"重命名要跑 N 次"。
 - **项目模板开放项**（按客户反馈触发）：
   - **模板版本号 / changelog**（**P3**）：PATCH 直接覆盖无审计轨迹，走 `project_templates_versions` 快照表 + 比较版本 UI。触发：误改投诉 ≥ 2 次或组织模板 > 20。
   - **organization admin 提交 public 模板审核流**（**P3**）：当前仅 super_admin 可建 public，走 `template_publish_requests` 队列。触发：跨组织 SaaS / 公共模板 ≥ 10。
@@ -180,7 +178,6 @@
 | **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
 | **P3** | C.3 SAM 后续延伸: 类别确认 hint | Magic Box 已 v0.10.17 落地; 剩类别确认 hint(画完一框 SAM 跑分类弹建议) | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
-| **P3** | 跨 tool_unit 类别软关联 (`alias_to`) | 强隔离默认底线;客户反馈"想共享类别名字"再做。设计走 `ToolClassEntry.alias_to` 链, 不破坏 ADR-0026 决策 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | I4/I18 epic 续作余（I12 已落 / I18 图片 pin 已落） | 剩 ADR-0027 第三段切单源 (legacy-table-retirement) + IssueLayer **视频帧** pin；详见 §C.7 | [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | 新几何 ML 预测协议按客户 backend 输出补齐 | 平台读路径 (`to_internal_shape`) + 协议文档 + 导入(AAP/YOLO)/导出/测试均已支持 rotated_bbox/polyline/keypoint；等真实客户 backend 产出这些几何时按实际输出对账 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |

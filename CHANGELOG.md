@@ -34,6 +34,15 @@
 
 > **0.17.x 是一个 UI 迁移 Epic**:把 `apps/web` 自维护的 CSS Modules + `tokens.css` 视觉体系全量迁到 Tailwind v4 + shadcn/ui,直至旧 `*.module.css` 与 `tokens.css` 退役、CI 门禁完成时代切换。全程红线为「只换皮、行为零回退」(业务逻辑 / 数据流 / 路由 / 画布渲染逻辑均不动),逐阶段以 light/dark 双主题截图基线把关。Epic 与设计规范见 [`docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md`](docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md) 与 `docs-site/dev/reference/design-system.md`。
 
+## [0.17.15] - 2026-06-22
+
+跨工具单位类别共享两项体验改进:同名类批量重命名 + `alias_to` 颜色/alias 软关联。强隔离底线不变 ([ADR-0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) 附录)。
+
+### Added
+
+- **同名类跨工具单位批量重命名**:项目设置「类别」区在多个启用工具单位存在同名类时,出现「重命名时同步所有工具单位的同名类」开关。开启后重命名走后端跨 unit 批量路径 (不传 `tool_unit_id`),一次改全;默认关 (仅当前工具单位,守强隔离默认)。后端能力早已就位,本次补前端入口。
+- **`alias_to` 类别软关联**:`ToolClassEntry` 新增可选 `alias_to: {tool_unit_id, class_name}` 指针。某工具单位的类可链接到另一单位的类,**继承其颜色 / alias**,免重复输入。仅显示层继承——读时派生层 (`resolve_class_visual`) 解析后填入扁平 `classes_config` 供画布取色,带环 / 悬空 / 超深保护;**不改 tool_bindings 存储、不改标注归属、不进导出** (COCO/YOLO category 仍按各 unit 独立类、`supercategory=tool_unit_id`)。编辑器在「类别」区每行提供链接下拉,链接后该行颜色 / alias 显示为继承 (只读)。v1 链接即完全继承,override 入口暂未开放。
+
 ## [0.17.14] - 2026-06-22
 
 视频参考框运动预测从「两点恒速外推」升级为完整恒速卡尔曼滤波(实验,默认关)。选中轨迹当前帧无框时的参考框,可选遍历先行所有可见关键帧前向滤波得到平滑预测,缓解变速/转向目标上的外推漂移。

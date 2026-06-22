@@ -16,6 +16,7 @@ import { AttributeSchemaEditor, validateAttributeFields } from "./AttributeSchem
 import { ClassEditor, type ClassRow } from "./ClassEditor";
 import { KeypointSchemaEditor } from "./KeypointSchemaEditor";
 import { ToolUnitTabs } from "./ToolUnitTabs";
+import { resolveClassVisual, type ClassRefLite } from "./resolveClassVisual";
 import type { KeypointSchema } from "@/types";
 import {
   unitBindingsToPayload,
@@ -23,6 +24,7 @@ import {
 } from "./useProjectToolBindings";
 import {
   dataTypeFromLegacy,
+  getToolUnitGroup,
   type ProjectDataType,
   type ToolUnitId,
 } from "@/constants/toolUnits";
@@ -84,6 +86,42 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
   };
 
   const activeBinding = bindings[activeUnit];
+
+  // v0.17.15 · alias_to 链接目标: 其它启用工具单位 (≠ 当前) 且有类的 unit。
+  const linkTargets = useMemo(
+    () =>
+      (Object.keys(bindings) as ToolUnitId[])
+        .filter(
+          (u) =>
+            u !== activeUnit &&
+            bindings[u]?.enabled &&
+            (bindings[u]?.classRows.length ?? 0) > 0,
+        )
+        .map((u) => ({
+          unitId: u,
+          unitLabel: getToolUnitGroup(u)?.label ?? u,
+          classNames: bindings[u]!.classRows.map((r) => r.name),
+        })),
+    [bindings, activeUnit],
+  );
+
+  const resolveLinked = (ref: ClassRefLite) =>
+    resolveClassVisual(bindings, { aliasTo: ref });
+
+  const onLink = (rowName: string, ref: ClassRefLite | null) => {
+    setBindings((b) => ({
+      ...b,
+      [activeUnit]: {
+        enabled: b[activeUnit]?.enabled ?? true,
+        classRows: (b[activeUnit]?.classRows ?? []).map((r) =>
+          r.name === rowName ? { ...r, aliasTo: ref ?? undefined } : r,
+        ),
+        attributeFields: b[activeUnit]?.attributeFields ?? [],
+        keypointSchema: b[activeUnit]?.keypointSchema ?? null,
+        videoModes: b[activeUnit]?.videoModes ?? null,
+      },
+    }));
+  };
 
   const onChange = (next: ClassRow[]) => {
     setBindings((b) => ({
@@ -361,6 +399,9 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
                     onRename={handleRename}
                     renaming={rename.isPending}
                     onConfirmDelete={confirmClassDelete}
+                    linkTargets={linkTargets}
+                    resolveLinked={resolveLinked}
+                    onLink={onLink}
                   />
                 </section>
                 {activeUnit === "keypoint" && (

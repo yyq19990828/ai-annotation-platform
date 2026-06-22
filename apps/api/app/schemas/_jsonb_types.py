@@ -206,6 +206,26 @@ TOOL_UNIT_IDS: tuple[str, ...] = (
 )
 
 
+class ClassRef(BaseModel):
+    """v0.17.15 · 跨工具单位的类别引用 (alias_to 软关联链用).
+
+    tool_unit_id 必须是合法 ToolUnitId; class_name 是目标 unit 内的类名.
+    目标存在性不在此校验 (siblings 不可见), 由读时派生层解析时降级处理 (悬空 → 用自身值).
+    """
+
+    tool_unit_id: str = Field(min_length=1, max_length=30)
+    class_name: str = Field(min_length=1, max_length=100)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("tool_unit_id")
+    @classmethod
+    def _check_unit(cls, v: str) -> str:
+        if v not in TOOL_UNIT_IDS:
+            raise ValueError(f"alias_to.tool_unit_id 非法: {v!r}")
+        return v
+
+
 class ToolClassEntry(BaseModel):
     """工具单位下的一条类别. name 必填且工具内唯一; color / alias 语义同 ClassConfigEntry."""
 
@@ -217,6 +237,10 @@ class ToolClassEntry(BaseModel):
         max_length=50,
         pattern=r"^[a-zA-Z0-9 ,_\-]+$",
     )
+    # v0.17.15 · 跨工具单位颜色/alias 软关联 (ADR-0026 附录). 指向另一 unit 的类;
+    # 本类 color/alias 为空时, 读时派生层 (services.project.resolve_class_visual)
+    # 沿此链继承目标值. 仅显示层继承 —— 不改存储 / 不改标注归属 / 不进导出, 强隔离不变.
+    alias_to: ClassRef | None = None
 
     model_config = ConfigDict(extra="forbid")
 

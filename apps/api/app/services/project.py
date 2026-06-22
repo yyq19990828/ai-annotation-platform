@@ -11,6 +11,59 @@ from __future__ import annotations
 from typing import Any
 
 
+# v0.17.15 · alias_to 软关联解析最大跳数 (环 / 超深 backstop).
+_ALIAS_RESOLVE_MAX_DEPTH = 4
+
+
+def _find_class(
+    tool_bindings: dict[str, Any], unit_id: Any, name: Any
+) -> dict | None:
+    """在指定 unit 内按 name 找类条目; 不存在返回 None."""
+    binding = tool_bindings.get(unit_id) if isinstance(unit_id, str) else None
+    if not isinstance(binding, dict):
+        return None
+    for c in binding.get("classes") or []:
+        if isinstance(c, dict) and c.get("name") == name:
+            return c
+    return None
+
+
+def resolve_class_visual(
+    tool_bindings: dict[str, Any],
+    cls: dict,
+    *,
+    _visited: set[tuple] | None = None,
+    _depth: int = 0,
+) -> tuple[str | None, str | None]:
+    """v0.17.15 · 沿 alias_to 链解析一条类的有效 (color, alias).
+
+    本类显式 color/alias 优先 (可选叠加); 缺失的那项沿链继承目标值.
+    环 (visited) / 悬空 (目标不存在) / 超深 (>_ALIAS_RESOLVE_MAX_DEPTH) → 停在当前已知值降级.
+    纯读时派生, 不改 tool_bindings.
+    """
+    color = cls.get("color")
+    alias = cls.get("alias")
+    if color and alias:
+        return color, alias
+    ref = cls.get("alias_to")
+    if not isinstance(ref, dict) or _depth >= _ALIAS_RESOLVE_MAX_DEPTH:
+        return color, alias
+    key = (ref.get("tool_unit_id"), ref.get("class_name"))
+    if None in key:
+        return color, alias
+    visited = _visited if _visited is not None else set()
+    if key in visited:  # 环: 降级
+        return color, alias
+    visited.add(key)
+    target = _find_class(tool_bindings, key[0], key[1])
+    if target is None:  # 悬空: 降级用自身值
+        return color, alias
+    t_color, t_alias = resolve_class_visual(
+        tool_bindings, target, _visited=visited, _depth=_depth + 1
+    )
+    return (color or t_color), (alias or t_alias)
+
+
 def derive_classes_config(
     tool_bindings: dict[str, Any] | None,
 ) -> dict[str, dict]:
@@ -20,6 +73,7 @@ def derive_classes_config(
 
     跨工具单位同名类按"最先出现的 enabled binding"为准 (强隔离下其它工具同名
     类不会被读到, 这是有意的: 扁平投影不区分工具, 仅作合并展示视图).
+    color/alias 经 alias_to 软关联链解析后填入 (v0.17.15, 见 resolve_class_visual).
     """
     if not tool_bindings:
         return {}
@@ -34,13 +88,14 @@ def derive_classes_config(
             name = cls.get("name")
             if not name or name in out:
                 continue
+            color, alias = resolve_class_visual(tool_bindings, cls)
             entry: dict = {}
-            if cls.get("color"):
-                entry["color"] = cls["color"]
+            if color:
+                entry["color"] = color
             if cls.get("order") is not None:
                 entry["order"] = cls["order"]
-            if cls.get("alias"):
-                entry["alias"] = cls["alias"]
+            if alias:
+                entry["alias"] = alias
             out[name] = entry
     return out
 

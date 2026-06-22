@@ -64,6 +64,7 @@ export function buildUnitBindings(project: {
           name: c.name,
           color: c.color ?? defaultColorFor(c.name),
           ...(c.alias ? { alias: c.alias } : {}),
+          ...(c.alias_to ? { aliasTo: c.alias_to } : {}),
         }));
       out[k] = {
         enabled: !!b.enabled,
@@ -146,12 +147,18 @@ export function unitBindingsToPayload(bindings: UnitBindingMap): ToolBindings {
     if (!ub.enabled && isUnitEmpty(ub)) continue;
     out[k] = {
       enabled: ub.enabled,
-      classes: ub.classRows.map((r, i) => ({
-        name: r.name,
-        color: r.color,
-        order: i,
-        ...(r.alias ? { alias: r.alias } : {}),
-      })),
+      // v0.17.15 · 链接(aliasTo)的类完全继承目标 color/alias, 故 payload 省略自身
+      // color/alias 走后端 resolve_class_visual 继承; 未链接的类照旧带显式 color/alias。
+      classes: ub.classRows.map((r, i) =>
+        r.aliasTo
+          ? { name: r.name, order: i, alias_to: r.aliasTo }
+          : {
+              name: r.name,
+              color: r.color,
+              order: i,
+              ...(r.alias ? { alias: r.alias } : {}),
+            },
+      ),
       attribute_schema:
         ub.attributeFields.length > 0
           ? { fields: ub.attributeFields }

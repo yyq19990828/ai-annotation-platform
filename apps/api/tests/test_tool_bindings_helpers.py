@@ -23,6 +23,7 @@ from app.services.project import (
     derive_classes_list,
     derive_tool_unit_for_type_key,
     lookup_classes_for_tool_unit,
+    resolve_class_visual,
 )
 
 
@@ -147,6 +148,124 @@ def test_derive_classes_config_drops_empty_fields():
     assert "alias" not in out["x"]
     assert out["x"]["order"] == 0
     assert out["y"] == {"color": "#fff"}
+
+
+# ── resolve_class_visual / alias_to 软关联 (v0.17.15) ──────────────────
+
+
+def _alias_tb():
+    """bbox.person 显式红 + alias; region.pedestrian 空值 alias_to bbox.person."""
+    return {
+        "bbox": {
+            "enabled": True,
+            "classes": [{"name": "person", "color": "#ff0000", "alias": "person"}],
+        },
+        "region": {
+            "enabled": True,
+            "classes": [
+                {
+                    "name": "pedestrian",
+                    "alias_to": {"tool_unit_id": "bbox", "class_name": "person"},
+                }
+            ],
+        },
+    }
+
+
+def test_resolve_inherits_color_and_alias_from_target():
+    tb = _alias_tb()
+    cls = tb["region"]["classes"][0]
+    color, alias = resolve_class_visual(tb, cls)
+    assert color == "#ff0000"
+    assert alias == "person"
+
+
+def test_resolve_explicit_value_overrides_inheritance():
+    tb = _alias_tb()
+    # 本类显式蓝色 → 覆盖继承; alias 仍空 → 继承.
+    tb["region"]["classes"][0]["color"] = "#0000ff"
+    color, alias = resolve_class_visual(tb, tb["region"]["classes"][0])
+    assert color == "#0000ff"
+    assert alias == "person"
+
+
+def test_resolve_dangling_target_falls_back_to_own():
+    tb = _alias_tb()
+    # 目标类不存在 → 降级用自身值 (此处自身 color 空).
+    tb["region"]["classes"][0]["alias_to"] = {
+        "tool_unit_id": "bbox",
+        "class_name": "ghost",
+    }
+    tb["region"]["classes"][0]["color"] = "#123456"
+    color, alias = resolve_class_visual(tb, tb["region"]["classes"][0])
+    assert color == "#123456"
+    assert alias is None
+
+
+def test_resolve_cycle_terminates():
+    # A→B→A 环: 不死循环, 各自降级到自身已知值.
+    tb = {
+        "bbox": {
+            "enabled": True,
+            "classes": [
+                {
+                    "name": "a",
+                    "color": "#aaaaaa",
+                    "alias_to": {"tool_unit_id": "region", "class_name": "b"},
+                }
+            ],
+        },
+        "region": {
+            "enabled": True,
+            "classes": [
+                {
+                    "name": "b",
+                    "alias_to": {"tool_unit_id": "bbox", "class_name": "a"},
+                }
+            ],
+        },
+    }
+    color, alias = resolve_class_visual(tb, tb["region"]["classes"][0])
+    assert color == "#aaaaaa"  # b 继承 a 的显式色; a 回指 b 时遇环停住
+    assert alias is None
+
+
+def test_resolve_multi_hop_chain():
+    # c → b → a, a 有显式色; c 应跨两跳继承.
+    tb = {
+        "bbox": {
+            "enabled": True,
+            "classes": [{"name": "a", "color": "#0a0a0a"}],
+        },
+        "region": {
+            "enabled": True,
+            "classes": [
+                {
+                    "name": "b",
+                    "alias_to": {"tool_unit_id": "bbox", "class_name": "a"},
+                }
+            ],
+        },
+        "polyline": {
+            "enabled": True,
+            "classes": [
+                {
+                    "name": "c",
+                    "alias_to": {"tool_unit_id": "region", "class_name": "b"},
+                }
+            ],
+        },
+    }
+    color, _ = resolve_class_visual(tb, tb["polyline"]["classes"][0])
+    assert color == "#0a0a0a"
+
+
+def test_derive_classes_config_resolves_alias_to():
+    # 扁平视图里, 不同名继承类应带上继承后的 color/alias.
+    out = derive_classes_config(_alias_tb())
+    assert out["person"]["color"] == "#ff0000"
+    assert out["pedestrian"]["color"] == "#ff0000"
+    assert out["pedestrian"]["alias"] == "person"
 
 
 # ── derive_classes_list ─────────────────────────────────────────────

@@ -5719,6 +5719,30 @@
         "title": "ClassConfigEntry",
         "type": "object"
       },
+      "ClassRef": {
+        "additionalProperties": false,
+        "description": "v0.17.15 · 跨工具单位的类别引用 (alias_to 软关联链用).\n\ntool_unit_id 必须是合法 ToolUnitId; class_name 是目标 unit 内的类名.\n目标存在性不在此校验 (siblings 不可见), 由读时派生层解析时降级处理 (悬空 → 用自身值).",
+        "properties": {
+          "class_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Class Name",
+            "type": "string"
+          },
+          "tool_unit_id": {
+            "maxLength": 30,
+            "minLength": 1,
+            "title": "Tool Unit Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool_unit_id",
+          "class_name"
+        ],
+        "title": "ClassRef",
+        "type": "object"
+      },
       "ClassRenameRequest": {
         "properties": {
           "new_name": {
@@ -15962,6 +15986,16 @@
             ],
             "title": "Alias"
           },
+          "alias_to": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClassRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "color": {
             "anyOf": [
               {
@@ -19387,7 +19421,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.17.13"
+    "version": "0.17.15"
   },
   "openapi": "3.1.0",
   "paths": {

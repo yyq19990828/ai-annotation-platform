@@ -68,10 +68,22 @@ v0.10.16 之前,项目的类别 (`classes` + `classes_config`) 与属性 schema 
 
 负向
 
-- 跨工具复用同名类需重复输入 (bbox 加「人」 / region 加「人」是两次操作);若客户后续反馈"想共享类别名字 / 颜色",再加可选 `alias_to: (tool_unit, class_name)` 链(本版**不做**)。
+- 跨工具复用同名类需重复输入 (bbox 加「人」 / region 加「人」是两次操作);可选 `alias_to: (tool_unit, class_name)` 软关联链已于 v0.17.15 落地,见下方「附录 · alias_to 软关联」——它是**显示层继承**,不推翻强隔离。
 - 老项目数据迁移:alembic 0072 默认把所有 image-det / video-track 等项目类塞到 `bbox` unit;若客户实际混用 polygon 工具,需事后到 ProjectSettings 把类**复制**到 `region` unit(强隔离,不能共享)。这条已在 CHANGELOG / docs-site/user-guide 标注。
 - API 增加一层概念:annotation 创建必须带 `tool_unit_id`,旧 SDK / 第三方调用者需升级 (本版默认 `bbox` 保兼容,但服务层 422 校验严格)。
 - v0.10.17 期间 legacy 字段双写,有短暂"数据冗余",约 v0.10.18 删除派生字段后回归单源。
+
+## 附录 · alias_to 软关联 (v0.17.15)
+
+强隔离的代价是同名类跨工具单位要重复填颜色 / alias。`alias_to` 在**不破坏强隔离底线**的前提下补这块体验:
+
+- **存储仍强隔离**:每个 tool_unit 的类仍是独立 `ToolClassEntry` 记录;标注校验 `class_name ∈ 本 unit.classes` 不变;`alias_to` 只是该记录上一个可选指针 `{tool_unit_id, class_name}`,指向另一 unit 的类。
+- **仅显示层继承**:本类 `color` / `alias` 为空时,读时派生层 (`services/project.resolve_class_visual`) 沿 `alias_to` 链继承目标值,填进扁平 `classes_config` 供画布取色。**不改 tool_bindings 原始存储、不改标注归属、不进导出** (COCO/YOLO category 仍按各 unit 独立类输出,`supercategory` 仍是 tool_unit_id)。
+- **解析保护**:环 (visited 去重) / 悬空 (目标不存在 → 降级用自身值) / 超深 (>4 跳 backstop),纯读时,无副作用。
+- **rename / delete 不级联**:改名 / 删类只动 `name` 与 annotations,不触碰指向它的 `alias_to`;悬空由解析降级兜底 (保持改动 surgical)。
+- **编辑器 v1 限制**:前端 ClassesSection 链接后该类**完全继承**目标 color/alias (payload 省略自身值);后端 resolver 已支持"自身显式值覆盖继承 (可选叠加)",但编辑器 v1 暂不暴露 override 入口。客户需要"继承基础上再微调"时再开放。
+
+底线不变 (PR review 红线):不要因 `alias_to` 回退到"项目级共享类别池";它是**叠加在强隔离之上的显示便利层**,不是合并存储。
 
 ## Alternatives Considered（详）
 
