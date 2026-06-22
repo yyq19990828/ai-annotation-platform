@@ -33,6 +33,7 @@ import type { useWorkbenchState } from "../../state/useWorkbenchState";
 import {
   buildPolygonJoinPayload,
   canJoinPolygonAnnotation,
+  cropPolygonGeometry,
 } from "../../stage/shared/geometry/polygonOps";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -530,6 +531,46 @@ export function useImageAnnotationActions({
       });
   }, [annotationsRef, createAnnotationAsync, history, isLocked, mutations.delete, pushToast, s]);
 
+  const handleCropSelectedPolygons = useCallback((baseId: string) => {
+    if (isLocked) {
+      pushToast({ msg: "任务已锁定", sub: "撤回提交或继续编辑后再操作", kind: "warning" });
+      return;
+    }
+    const base = annotationsRef.current.find((ann) => ann.id === baseId);
+    if (!base || !canJoinPolygonAnnotation(base)) {
+      pushToast({ msg: "基准需为未锁定多边形", kind: "warning" });
+      return;
+    }
+    // 基准框作被减数,其余选中多边形作裁刀(原样保留,不删除)。
+    const cutters = s.selectedIds
+      .filter((id) => id !== baseId)
+      .map((id) => annotationsRef.current.find((ann) => ann.id === id))
+      .filter((ann): ann is AnnotationResponse => !!ann && canJoinPolygonAnnotation(ann));
+    if (cutters.length === 0) {
+      pushToast({ msg: "请再选至少 1 个多边形作裁刀", kind: "warning" });
+      return;
+    }
+    const geometry = cropPolygonGeometry(base.geometry, cutters.map((ann) => ann.geometry));
+    if (!geometry) {
+      pushToast({ msg: "裁切失败", sub: "重叠区可能覆盖整个基准,或几何自相交", kind: "error" });
+      return;
+    }
+    const before = { geometry: base.geometry };
+    const after = { geometry };
+    mutations.update.mutate(
+      { annotationId: base.id, payload: after },
+      {
+        onSuccess: () => {
+          history.push({ kind: "update", annotationId: base.id, before, after });
+          pushToast({ msg: `已裁切重叠区`, sub: `扣除 ${cutters.length} 个多边形`, kind: "success" });
+        },
+        onError: (err) => {
+          pushToast({ msg: "裁切失败", sub: String(err), kind: "error" });
+        },
+      },
+    );
+  }, [annotationsRef, history, isLocked, mutations.update, pushToast, s]);
+
   const handleStartBatchChangeClass = useCallback(() => {
     const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
     if (ids.length === 0) return;
@@ -1007,6 +1048,7 @@ export function useImageAnnotationActions({
     handleBatchDelete,
     handleBatchPatchFlag,
     handleJoinSelectedPolygons,
+    handleCropSelectedPolygons,
     handleStartBatchChangeClass,
     handleCommitBatchChangeClass,
     handleCancelBatchChange,

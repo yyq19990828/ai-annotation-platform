@@ -24,6 +24,7 @@ interface BuildImageContextMenuItemsArgs {
   selectedAnnotations?: Annotation[];
   onChangeClass?: (id: string) => void;
   onJoinSelected?: () => void;
+  onCropSelected?: (baseId: string) => void;
   onDelete?: (id: string) => void;
   onPatchFlag?: (
     id: string,
@@ -72,6 +73,7 @@ export function buildImageContextMenuItems({
   selectedAnnotations = [annotation],
   onChangeClass,
   onJoinSelected,
+  onCropSelected,
   onDelete,
   onPatchFlag,
 }: BuildImageContextMenuItemsArgs): DropdownItem[] {
@@ -90,6 +92,11 @@ export function buildImageContextMenuItems({
     || !onJoinSelected
     || joinableSelected.length < 2
     || new Set(joinableSelected.map((item) => item.cls)).size > 1
+    || !joinableSelected.some((item) => item.id === annotation.id);
+  // 裁切:基准框(右键的那个)减去其余选中多边形,不要求同类别(常用于遮挡:前景压背景)。
+  const cropDisabled = readOnly
+    || !onCropSelected
+    || joinableSelected.length < 2
     || !joinableSelected.some((item) => item.id === annotation.id);
 
   const items: DropdownItem[] = [
@@ -122,6 +129,13 @@ export function buildImageContextMenuItems({
       icon: "layers",
       disabled: joinDisabled,
       onSelect: () => onJoinSelected?.(),
+    },
+    {
+      id: "crop",
+      label: "裁切重叠区",
+      icon: "scissors",
+      disabled: cropDisabled,
+      onSelect: () => onCropSelected?.(annotation.id),
     },
   ];
 

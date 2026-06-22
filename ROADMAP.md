@@ -46,9 +46,9 @@
 
 ### 项目模块
 - **3D / 视频多模态工作台**（v0.10.17 项目"类型"已收敛到「image / video / lidar 数据载体 + 工具集多选」，详见 [ADR-0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md)）:
-  - **lidar 3D 点云工作台已落地**（v0.13.2–v0.15.21，原 P0「`lidar_box_3d` 工具实现」已完成）：真实 Three.js `PointCloudScene` + `lidar_box_3d` 7-DoF 框标注 + 后端 `point-cloud/manifest` + KITTI/nuScenes 导出 + ego pose 跨帧插值/批量 propagate + 邻帧框/点云叠加 + PSR 面板 + 3D 右键菜单/帧选择器。`lidar` 数据类型入口已开放（`toolUnits.ts` `available:true`），仅 `PROJECT_DATA_TYPES` 的「本版占位」文案待改。剩余优化见 §C.8（拖影彻底消除）与下方 3D 延伸项。
+  - **lidar 3D 点云工作台已落地**（v0.13.2–v0.15.21，原 P0「`lidar_box_3d` 工具实现」已完成）：真实 Three.js `PointCloudScene` + `lidar_box_3d` 7-DoF 框标注 + 后端 `point-cloud/manifest` + KITTI/nuScenes 导出 + ego pose 跨帧插值/批量 propagate + 邻帧框/点云叠加 + PSR 面板 + 3D 右键菜单/帧选择器。`lidar` 数据类型入口已开放（`toolUnits.ts` `available:true`）。剩余优化见 §C.8（拖影彻底消除）与下方 3D 延伸项。
   - `video-mm` / `mm` 多模态工作台未实现；视频侧能力详见 [视频工作台总 epic](ROADMAP/2026-05-21-video-workbench-roadmap.md)。
-  - **3D 延伸项**：① **点云 + 图像联合标注（2D⇄3D 互标）** → 抽为独立 epic [`ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md`](ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)：读方向(3D 框投影到相机图)已于 v0.13.4 完成，写方向(相机图画框种 3D 框 / 投影手柄微调)Phase 1 已落 v0.15.24，Phase 2-3 待开工；② 多 lidar 融合标注（按反馈触发）；③ `PROJECT_DATA_TYPES` lidar hint 文案去「占位」（顺手）。
+  - **3D 延伸项**：① **点云 + 图像联合标注（2D⇄3D 互标）** → 抽为独立 epic [`ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md`](ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)：读方向(3D 框投影到相机图)已于 v0.13.4 完成，写方向(相机图画框种 3D 框 / 投影手柄微调)Phase 1 已落 v0.15.24，Phase 2-3 待开工；② 多 lidar 融合标注（按反馈触发）。
   - **跨 tool_unit 类别软关联 (`alias_to`)**（**P3**）：强隔离意味同名颜色 / alias 跨 unit 要重复输入。设计走 `ToolClassEntry.alias_to` 链（可选叠加，不破坏 ADR-0026 强隔离底线）。触发：客户反馈"想共享类别名字"。
   - **rename_class 跨 unit 重命名 UX**（**P3**）：`useRenameClass` 已带 `tool_unit_id` 参数，但 ClassesSection 仅传 active unit；"同时在所有 unit 内重命名"需扩 UI（批量勾选 unit）。触发：客户反馈"重命名要跑 N 次"。
 - **项目模板开放项**（按客户反馈触发）：
@@ -121,10 +121,7 @@
 ### 文档
 
 - **首次登录引导（onboarding）**：用户手册有文档但工作台无 UI walkthrough；新用户进 `/projects/:id/annotate` 时左下浮出一条「画框：拖鼠标；提交：E」级别的 3 步 tooltip + 右上 ✕ 关闭一次性写 localStorage `wb:onboarded:v1`。优先级 P3，等首次客户上线反馈触发。
-- **文档 ↔ 源码漂移修订（PR #37 用户手册审计顺带发现，均 P3）**：
-  - **ADR-0026 与源码对齐**：`ToolUnitId` 现为 8 个（新增 `rotated_bbox` / `keypoint` / `point_mask_3d`），ADR-0026 正文仍写 5 个；legacy 双写 `apply_tool_bindings_legacy_sync` 已于 v0.10.22 删除、`tool_bindings` 为唯一存储真值。更新 ADR 正文与枚举列表。
-  - **`export_video.py` KITTI Tracking 列数注释纠错**：docstring 写「每行 18 列」，实际 header 名单与 format string 均为 17 列（`frame track_id type truncated occluded alpha x1 y1 x2 y2 h w l x y z rotation_y`）。仅需修源码注释。
-  - **连接器主机白名单管理 UI**：当前仅有超管 API `GET/PUT /storage-connections/allowlist`，前端无对应管理界面；用户手册 `datasets/storage-connections.md` 暂按「经接口维护」措辞、截图标记 `connector-allowlist.png` 注明「待 UI 就绪再拍」。补超管侧白名单增删界面后即可落图。
+- **连接器主机白名单管理 UI（P3）**：当前仅有超管 API `GET/PUT /storage-connections/allowlist`，前端无对应管理界面；用户手册 `datasets/storage-connections.md` 暂按「经接口维护」措辞、截图标记 `connector-allowlist.png` 注明「待 UI 就绪再拍」。补超管侧白名单增删界面后即可落图。
 
 ---
 
@@ -148,7 +145,6 @@
 
 - **I1 大图 tile**（v0.11.0 独立 epic，**必做**）：>4K 图后端 Celery 切 IIIF / 自定义 tile 金字塔（zoom 0/1/2 ... 每级 512×512 PNG/WebP），元数据 `ImageTilePyramid(image_id, max_level, tile_size, format)`；前端 `useTileSource` hook + LRU 缓存 ImageBitmap；Konva 背景 bg 层改 `<Group>` + 多张 `<Image>` tile；保留 BlurhashLayer 兜底。衡量：8K×8K 图、4x 缩放局部、内存 <300MB、FPS ≥30。后端切片服务可与视频 chunk service 共用基础设施。
 - **I10 Skeleton 进阶**（基础 COCO 关键点已落 v0.10.28）：① 配置器升级为 SVG 拖点 + 连线可视化；② 2 层子标签命名（禁止任意嵌套，见决策底线「Skeleton 嵌套」）；③ keypoint 导出 / 导入 / ML 预测协议（见 §A）。
-- **I14 Polygon Crop**（M，纯前端）：新建多边形重叠时提供「裁切重叠区」（布尔差集，基于已依赖的 `polygon-clipping@0.15.7`；当前 `polygonOps.ts` 仅实现 union，缺 difference）。
 - **I18 续作（仅余视频帧 pin）**：图片 `IssueLayer.tsx` Konva pin 层 + 单击建 pin 入口已落（v0.15.x）；剩**视频帧 pin**（按 `frame_index` 锚定）+ ADR-0027 第三段切单源（legacy-table-retirement）。
 - **I21 用户级快捷键自定义**（M，纯前端；v0.15.3 偏好注册表地基已就位，成本降低）：`User.preferences.keymap` + 冲突校验；SettingsPage 录制框 UI；`?` 弹快捷键参考卡按 keymap 渲染（取代硬编码 KeyboardHintOverlay）。
 
@@ -177,7 +173,7 @@
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
 | **P0/P1** | 视频工作台总 epic（导入帧采样 / 轨迹工具对齐 CVAT / 视频导出 / 长视频协同 / 质量评估） | 已抽离为独立 epic，前后端 Phase 1-6 详见 [`ROADMAP/2026-05-21-video-workbench-roadmap.md`](ROADMAP/2026-05-21-video-workbench-roadmap.md) | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
-| **P2** | 图片工作台能力扩展剩余（I1 / I10 / I14 / I21） | 大图 tile / Skeleton / Polygon Crop / 快捷键自定义；详见 §C.7（I12 Object Group + I18 图片 pin 已落） | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
+| **P2** | 图片工作台能力扩展剩余（I1 / I10 / I21） | 大图 tile / Skeleton / 快捷键自定义；详见 §C.7（I12 Object Group + I18 图片 pin + I14 Polygon Crop 已落） | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |

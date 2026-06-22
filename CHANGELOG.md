@@ -34,6 +34,18 @@
 
 > **0.17.x 是一个 UI 迁移 Epic**:把 `apps/web` 自维护的 CSS Modules + `tokens.css` 视觉体系全量迁到 Tailwind v4 + shadcn/ui,直至旧 `*.module.css` 与 `tokens.css` 退役、CI 门禁完成时代切换。全程红线为「只换皮、行为零回退」(业务逻辑 / 数据流 / 路由 / 画布渲染逻辑均不动),逐阶段以 light/dark 双主题截图基线把关。Epic 与设计规范见 [`docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md`](docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md) 与 `docs-site/dev/reference/design-system.md`。
 
+## [0.17.13] - 2026-06-22
+
+图片工作台多边形布尔运算补齐 difference（I14 Polygon Crop）：在已有「合并多边形」（union）之外新增「裁切重叠区」，用于遮挡场景下让背景多边形不再覆盖前景。
+
+### Added
+
+- **多边形裁切重叠区**：多选 ≥ 2 个 polygon / multi_polygon 后，在右键的那个多边形上点右键菜单「裁切重叠区」，从它身上减去其余选中多边形的重叠区域（布尔差集，复用已依赖的 `polygon-clipping`）。基准框作被减数、几何就地更新（可裁出孔洞或拆成 multi_polygon），其余框原样保留；不要求同类别（遮挡场景常跨类）。整次操作走一次 update、可一键撤销；重叠区覆盖整个基准时裁切失败并提示。
+
+### Notes
+
+- 纯前端实现：`polygonOps.ts` 新增 `cropPolygonGeometry`，与现有 union 对称；裁切只发 `geometry` 字段更新，沿用既有 mask-refine 的 PATCH 先例（`geometry.type` 是渲染 / 导出真值），无后端改动。
+
 ## [0.17.12] - 2026-06-20
 
 shadcn 迁移 Epic 收尾期的 admin 导航整顿与「换皮回退」修补：把超管两个看板入口的路由 / 文案理顺，并恢复被换皮误收的移动端工具入口。

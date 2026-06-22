@@ -125,6 +125,45 @@ describe("imageStageContextMenu", () => {
     expect(mixedClass?.disabled).toBe(true);
   });
 
+  it("enables crop for the right-clicked polygon plus a cutter, ignoring class match", () => {
+    const onCropSelected = vi.fn();
+    const base = annotation({
+      geometry: { type: "polygon", points: [[0, 0], [0.1, 0], [0.1, 0.1]] },
+    });
+    const cutter = annotation({
+      id: "ann-2",
+      cls: "person", // 不同类别也允许裁切(遮挡场景)
+      geometry: { type: "polygon", points: [[0.05, 0], [0.2, 0], [0.2, 0.1]] },
+    });
+
+    const enabled = buildImageContextMenuItems({
+      annotation: base,
+      selectedAnnotations: [base, cutter],
+      readOnly: false,
+      minZOrder: 0,
+      maxZOrder: 0,
+      clipboard: null,
+      onCropSelected,
+    }).find((item) => item.id === "crop");
+
+    expect(enabled?.disabled).toBe(false);
+    enabled?.onSelect?.();
+    expect(onCropSelected).toHaveBeenCalledWith(base.id);
+
+    // 只选中基准框一个 → 无裁刀 → 禁用。
+    const noCutter = buildImageContextMenuItems({
+      annotation: base,
+      selectedAnnotations: [base],
+      readOnly: false,
+      minZOrder: 0,
+      maxZOrder: 0,
+      clipboard: null,
+      onCropSelected,
+    }).find((item) => item.id === "crop");
+
+    expect(noCutter?.disabled).toBe(true);
+  });
+
   it("disables mutations on locked shapes except unlock", () => {
     const items = buildImageContextMenuItems({
       annotation: annotation({
