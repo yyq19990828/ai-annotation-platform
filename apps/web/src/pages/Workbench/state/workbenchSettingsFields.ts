@@ -3,7 +3,11 @@
 // 这里加一行 → 消费点读配置。
 import type { LabelContentByType, WorkbenchPreferences } from "@/api/auth";
 import { WEBCODECS_FLAG_STORAGE_KEY } from "../stage/useVideoChunkDecoder";
-import { readVideoReferencePredict, writeVideoReferencePredict } from "../stage/videoReferencePredict";
+import {
+  readVideoReferenceSetting,
+  writeVideoReferenceSetting,
+  type VideoReferenceSetting,
+} from "../stage/videoReferencePredict";
 import type { LockableField, WorkbenchConfigPatch } from "./useWorkbenchConfig";
 
 export type WorkbenchPreferenceSettingCategory = "common" | "image" | "video" | "pointcloud";
@@ -538,10 +542,18 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     category: "experiment",
     storage: "local",
     label: "参考框运动预测",
-    description: "实验性,即时生效:视频参考框按前两个关键帧恒速外推到当前帧(默认取最近关键帧)",
-    control: { type: "toggle" },
-    read: () => readVideoReferencePredict(),
-    write: (value) => writeVideoReferencePredict(Boolean(value)),
+    description: "实验性,即时生效:选中轨迹当前帧无框时的参考框如何预测(默认取最近关键帧)",
+    control: {
+      type: "select",
+      options: [
+        { value: "off", label: "关(最近关键帧)" },
+        { value: "linear", label: "恒速外推(前两关键帧)" },
+        { value: "kalman-stable", label: "卡尔曼 · 平稳" },
+        { value: "kalman-agile", label: "卡尔曼 · 灵敏" },
+      ],
+    },
+    read: () => readVideoReferenceSetting(),
+    write: (value) => writeVideoReferenceSetting(value as VideoReferenceSetting),
   },
 ];
 

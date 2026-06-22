@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Layer, Line, Circle, Rect } from "react-konva";
+import { Layer, Line, Circle, Rect, Ellipse } from "react-konva";
 import { useTheme } from "@/hooks/useTheme";
 import { colorToHex, cssVarToHex, hexToRgba } from "./colors";
 import { strokeWidthFor, type AnnotationVisualConfig } from "./annotationVisual";
@@ -97,20 +97,42 @@ export function VideoKonvaTracksLayer({
       ))}
       {ghost && (() => {
         const hex = colorToHex(ghost.color);
-        return (
-          <Rect
-            name="video-track-ghost"
-            x={ghost.geom.x * size.w}
-            y={ghost.geom.y * size.h}
-            width={ghost.geom.w * size.w}
-            height={ghost.geom.h * size.h}
+        const stroke = screenToWorld(strokeWidthFor(false, visual), scale);
+        // kalman 模式:在参考框外画一圈淡色误差椭圆——半轴 = 框半宽高 + 2σ(≈95% 置信),
+        // σ 随外推距离/关键帧稀疏度增长,膨胀的椭圆即「预测越不确定、椭圆越大」的视觉提示。
+        const cx = (ghost.geom.x + ghost.geom.w / 2) * size.w;
+        const cy = (ghost.geom.y + ghost.geom.h / 2) * size.h;
+        const ellipse = ghost.uncertainty ? (
+          <Ellipse
+            name="video-track-ghost-uncertainty"
+            x={cx}
+            y={cy}
+            radiusX={(ghost.geom.w / 2) * size.w + 2 * ghost.uncertainty.sx * size.w}
+            radiusY={(ghost.geom.h / 2) * size.h + 2 * ghost.uncertainty.sy * size.h}
             stroke={hex}
-            strokeWidth={screenToWorld(strokeWidthFor(false, visual), scale)}
-            dash={[6 / scale, 4 / scale]}
-            fill={hexToRgba(hex, 0.05)}
-            opacity={0.6}
+            strokeWidth={stroke}
+            dash={[3 / scale, 5 / scale]}
+            opacity={0.3}
             listening={false}
           />
+        ) : null;
+        return (
+          <>
+            {ellipse}
+            <Rect
+              name="video-track-ghost"
+              x={ghost.geom.x * size.w}
+              y={ghost.geom.y * size.h}
+              width={ghost.geom.w * size.w}
+              height={ghost.geom.h * size.h}
+              stroke={hex}
+              strokeWidth={stroke}
+              dash={[6 / scale, 4 / scale]}
+              fill={hexToRgba(hex, 0.05)}
+              opacity={0.6}
+              listening={false}
+            />
+          </>
         );
       })()}
     </Layer>

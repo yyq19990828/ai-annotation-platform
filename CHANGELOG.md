@@ -34,6 +34,24 @@
 
 > **0.17.x 是一个 UI 迁移 Epic**:把 `apps/web` 自维护的 CSS Modules + `tokens.css` 视觉体系全量迁到 Tailwind v4 + shadcn/ui,直至旧 `*.module.css` 与 `tokens.css` 退役、CI 门禁完成时代切换。全程红线为「只换皮、行为零回退」(业务逻辑 / 数据流 / 路由 / 画布渲染逻辑均不动),逐阶段以 light/dark 双主题截图基线把关。Epic 与设计规范见 [`docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md`](docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md) 与 `docs-site/dev/reference/design-system.md`。
 
+## [0.17.14] - 2026-06-22
+
+视频参考框运动预测从「两点恒速外推」升级为完整恒速卡尔曼滤波(实验,默认关)。选中轨迹当前帧无框时的参考框,可选遍历先行所有可见关键帧前向滤波得到平滑预测,缓解变速/转向目标上的外推漂移。
+
+### Added
+
+- **参考框完整卡尔曼滤波**:设置抽屉「实验 › 参考框运动预测」由开关改为四档选择——`关(最近关键帧)` / `恒速外推(前两关键帧)` / `卡尔曼 · 平稳` / `卡尔曼 · 灵敏`。卡尔曼档遍历当前帧之前**所有**可见关键帧做 predict→update 前向滤波,再外推到当前帧;平稳档信模型(顺滑抗噪)、灵敏档信观测(紧跟最新关键帧)。参考框标签相应显示「卡尔曼 F{帧}↗」。
+- **预测不确定度误差椭圆**:卡尔曼档在参考框外画一圈淡色虚线椭圆,半轴 = 框半宽高 + 2σ(位置后验标准差,≈95% 置信)。σ 随外推距离 / 关键帧稀疏度增长,椭圆越大表示「预测越不确定」,提示标注员预测置信度。
+
+### Fixed
+
+- **非 h264 视频播放报 `MEDIA_ELEMENT_ERROR: Format error`**:`media-cache` 桶旧生命周期规则 `Prefix=""` 把整桶按 30 天过期,把非 h264 视频入库时一次性转码的浏览器播放代理 `playback/{item_id}.mp4` 也删了,而 DB 元数据 `playback_path` 仍指向它 → `<video>` 取预签名 URL 命中 404 → 浏览器报 Format error。把过期规则收窄到只 `videos/` 前缀(帧/chunk 可按需重生),`playback/`、`thumbnails/` 作为 DB 持久引用的耐久资产不再过期。已被删的历史代理需重跑 `generate_video_metadata` 补回。
+
+### Notes
+
+- 纯前端启发式,零后端依赖:状态向量 `[cx,cy,w,h,vx,vy,vw,vh]` 在恒速模型下四维解耦,实现为 4 个独立 1D 恒速卡尔曼(`videoReferenceKalman.ts`,标量观测无需矩阵求逆),不引矩阵库;误差椭圆取末段预测后各维后验方差 √P00。默认仍为「关 = 最近关键帧」(守「默认=现状」红线)。本地实验开关(localStorage),不进服务端偏好;旧布尔开关值自动读为「恒速外推」。
+- 设计与计划见 [`docs/plans/2026-06-22-v0.17.14-video-reference-kalman.md`](docs/plans/2026-06-22-v0.17.14-video-reference-kalman.md)。
+
 ## [0.17.13] - 2026-06-22
 
 图片工作台多边形布尔运算补齐 difference（I14 Polygon Crop）：在已有「合并多边形」（union）之外新增「裁切重叠区」，用于遮挡场景下让背景多边形不再覆盖前景。
