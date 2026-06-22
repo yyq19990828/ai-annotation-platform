@@ -1,0 +1,145 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.projectSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.projectHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sc-muted-foreground);
+}
+
+.projectName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remainingBadge > :global(span) {
+  font-size: 10px;
+  padding: 0 6px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--sc-border);
+  border-radius: var(--radius-md);
+  background: var(--sc-card);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.12s ease;
+}
+
+.card:hover {
+  border-color: var(--sc-brand);
+  background: color-mix(in srgb, var(--sc-brand) 6%, var(--sc-card));
+  transform: translateY(-1px);
+}
+
+.cover {
+  width: 88px;
+  flex-shrink: 0;
+}
+
+/* Thumbnail 组件只暴露 width/height 数值 prop（内联宽高），无 className；
+   用 !important 覆盖其内联尺寸，让封面拉满卡片全高（卡片 align-items 默认 stretch）。 */
+.cover > div {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cardId {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sc-brand);
+}
+
+.cardStatus {
+  margin-left: auto;
+}
+
+.cardStatus > :global(span) {
+  font-size: 10px;
+  padding: 0 6px;
+}
+
+.cardName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sc-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 2px;
+}
+
+.progressRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--sc-muted-foreground);
+}
+
+.progressLabel {
+  flex: 0 0 36px;
+}
+
+.track {
+  flex: 1;
+  height: 5px;
+  background: var(--sc-muted);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.fill {
+  width: var(--progress-pct);
+  height: 100%;
+  background: var(--progress-color);
+}
+
+.progressValue {
+  flex: 0 0 48px;
+  text-align: right;
+}

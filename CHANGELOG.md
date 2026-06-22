@@ -34,6 +34,17 @@
 
 > **0.17.x 是一个 UI 迁移 Epic**:把 `apps/web` 自维护的 CSS Modules + `tokens.css` 视觉体系全量迁到 Tailwind v4 + shadcn/ui,直至旧 `*.module.css` 与 `tokens.css` 退役、CI 门禁完成时代切换。全程红线为「只换皮、行为零回退」(业务逻辑 / 数据流 / 路由 / 画布渲染逻辑均不动),逐阶段以 light/dark 双主题截图基线把关。Epic 与设计规范见 [`docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md`](docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md) 与 `docs-site/dev/reference/design-system.md`。
 
+## [0.17.16] - 2026-06-22
+
+标注 / 质检工作台「未选批次」着陆态从单行占位升级为**批次卡片网格**:项目分组、封面缩略图、批次进度条、点卡直接进入。
+
+### Added
+
+- **批次卡片网格**:标注工作台与质检审核在未选批次时,右侧改为按项目分组的批次卡片。每张卡含批次封面缩略图(左侧拉满卡片高度)、状态、进度条与「共/完成/待标」计数,点卡即选中批次进入任务列表。标注侧进度为三档(标注中 / 送审 / 通过),质检侧为两档(待审 / 通过)。
+- **「全部待标任务」入口**:标注工作台左侧栏顶部新增「全部待标任务」按钮,与质检审核「全部待审任务」对位;两页标题区新增「返回全部批次」回到卡片网格概览。
+- **质检卡片显示标注员**:质检批次卡片展示该批的标注员姓名,审核员一眼看清「这批是谁标的」(数据复用 `ReviewingBatchItem.annotator`)。
+- **批次封面缩略图字段**:`MyBatchItem` / `ReviewingBatchItem` 新增 `thumbnail_url` + `cover_blurhash`。后端取每批最早一张「有缩略图」的任务作封面,缩略图口径与 `tasks/_shared.py` 一致(`COALESCE(DatasetItem, Task)` + presigned URL),并按 `bucket_for_cache_key` 路由 media-cache 桶。
+
 ## [0.17.15] - 2026-06-22
 
 跨工具单位类别共享两项体验改进:同名类批量重命名 + `alias_to` 颜色/alias 软关联。强隔离底线不变 ([ADR-0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) 附录)。

@@ -56,6 +56,9 @@ class ReviewingBatchItem(BaseModel):
     total_tasks: int
     review_tasks: int
     completed_tasks: int
+    # 批次封面：该批第一张有缩略图的任务，用于卡片网格。presigned URL + blurhash 占位。
+    thumbnail_url: str | None = None
+    cover_blurhash: str | None = None
     # v0.7.2 · 责任人可视化：审核员看到这批是谁标的（单值）
     annotator: UserBrief | None = None
 
@@ -224,6 +227,9 @@ class MyBatchItem(BaseModel):
     progress_pct: float
     review_feedback: str | None = None
     reviewed_at: str | None = None
+    # 批次封面：该批第一张有缩略图的任务，用于卡片网格。presigned URL + blurhash 占位。
+    thumbnail_url: str | None = None
+    cover_blurhash: str | None = None
     # v0.7.2 · 责任人可视化：标注员看到这批的审核员是谁（单值）
     reviewer: UserBrief | None = None
 

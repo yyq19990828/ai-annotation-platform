@@ -10,6 +10,7 @@ from app.deps import (
 from app.db.models.user import User
 from app.db.models.project import Project
 from app.db.models.task import Task
+from app.db.models.dataset import DatasetItem
 from app.db.models.annotation import Annotation
 from app.db.models.task_batch import TaskBatch
 from app.db.models.task_event import TaskEvent
@@ -19,6 +20,7 @@ from app.schemas.dashboard import (
     MyBatchItem,
     MyPerformance,
 )
+from app.services.storage import storage_service
 from app.services.user_brief import resolve_briefs_with_project_role
 from app.services.dashboard_stats import (
     _class_distribution,
@@ -325,6 +327,25 @@ async def my_batches(
         )
         in_progress_map = {row[0]: row[1] for row in ip_rows.all()}
 
+    # 批次封面缩略图：每个 batch 取最早一张「有缩略图」的任务作封面（DISTINCT ON）。
+    # 缩略图口径与 tasks/_shared.py 一致：dataset 导入的任务缩略图存在 DatasetItem 上，
+    # Task.thumbnail_path 为空，故需 LEFT JOIN + COALESCE，否则数据集任务永远拿不到封面。
+    cover_map: dict = {}
+    if batch_ids:
+        eff_thumb = func.coalesce(DatasetItem.thumbnail_path, Task.thumbnail_path)
+        eff_blur = func.coalesce(DatasetItem.blurhash, Task.blurhash)
+        cover_rows = await db.execute(
+            select(Task.batch_id, eff_thumb, eff_blur)
+            .outerjoin(DatasetItem, DatasetItem.id == Task.dataset_item_id)
+            .where(
+                Task.batch_id.in_(batch_ids),
+                eff_thumb.is_not(None),
+            )
+            .order_by(Task.batch_id, Task.created_at.asc())
+            .distinct(Task.batch_id)
+        )
+        cover_map = {row[0]: (row[1], row[2]) for row in cover_rows.all()}
+
     # v0.7.2 · 单值语义 — 一 batch 一审核员
     project_user_map: dict = {}
     for b, _, _ in rows:
@@ -339,6 +360,18 @@ async def my_batches(
         per_proj = briefs_by_project.get(b.project_id, {})
         reviewer = per_proj.get(str(b.reviewer_id)) if b.reviewer_id else None
         in_progress_tasks = in_progress_map.get(b.id, 0)
+        cover_path, cover_blurhash = cover_map.get(b.id, (None, None))
+        thumbnail_url: str | None = None
+        if cover_path:
+            thumb_bucket = storage_service.bucket_for_cache_key(
+                cover_path, default=storage_service.bucket
+            )
+            try:
+                thumbnail_url = storage_service.generate_download_url(
+                    cover_path, bucket=thumb_bucket
+                )
+            except Exception:
+                thumbnail_url = None
         items.append(
             MyBatchItem(
                 batch_id=str(b.id),
@@ -359,6 +392,8 @@ async def my_batches(
                 ),
                 review_feedback=b.review_feedback,
                 reviewed_at=b.reviewed_at.isoformat() if b.reviewed_at else None,
+                thumbnail_url=thumbnail_url,
+                cover_blurhash=cover_blurhash,
                 reviewer=reviewer,
             )
         )

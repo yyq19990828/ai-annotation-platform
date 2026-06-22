@@ -45,6 +45,9 @@ export interface ReviewingBatchItem {
   total_tasks: number;
   review_tasks: number;
   completed_tasks: number;
+  /** 批次封面缩略图（presigned URL）+ blurhash 占位，用于卡片网格。 */
+  thumbnail_url?: string | null;
+  cover_blurhash?: string | null;
   /** v0.7.2 · 这批的标注员（单值；让 reviewer 知道是谁标的） */
   annotator: UserBrief | null;
 }
@@ -185,6 +188,9 @@ export interface MyBatchItem {
   approved_tasks: number;
   rejected_tasks: number;
   progress_pct: number;
+  /** 批次封面缩略图（presigned URL）+ blurhash 占位，用于卡片网格。 */
+  thumbnail_url?: string | null;
+  cover_blurhash?: string | null;
   review_feedback: string | null;
   reviewed_at: string | null;
   /** v0.7.2 · 这批的审核员（单值；让标注员知道谁会审） */

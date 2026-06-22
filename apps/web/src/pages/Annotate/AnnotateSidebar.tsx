@@ -88,6 +88,15 @@ export function AnnotateSidebar({ batches, selectedBatchId, onSelect }: Props) {
 
   return (
     <div className={styles.root}>
+      <button
+        type="button"
+        onClick={() => onSelect(null)}
+        className={`${styles.allButton} ${selectedBatchId === "" ? styles.allButtonActive : ""}`}
+      >
+        <Icon name="layers" size={12} />
+        <span>全部待标任务</span>
+      </button>
+
       {groups.map((g) => {
         const isCollapsed = collapsed.has(g.project_id) && g.project_id !== selectedProjectId;
         return (

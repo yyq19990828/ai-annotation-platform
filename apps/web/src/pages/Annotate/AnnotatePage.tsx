@@ -13,6 +13,7 @@ import { batchesApi, type BatchResponse } from "@/api/batches";
 import type { MyBatchItem } from "@/api/dashboard";
 import type { TaskResponse } from "@/types";
 import { AnnotateSidebar } from "./AnnotateSidebar";
+import { BatchCardGrid } from "./BatchCardGrid";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import styles from "./AnnotatePage.module.css";
 import type { CSSProperties } from "react";
@@ -188,6 +189,15 @@ export function AnnotatePage() {
       <section className={styles.content}>
         <div className={styles.header}>
           <div className={styles.headerText}>
+            {selectedBatch && (
+              <button
+                type="button"
+                className={styles.backLink}
+                onClick={() => handleSelectBatch(null)}
+              >
+                <Icon name="chevLeft" size={12} />返回全部批次
+              </button>
+            )}
             <h1 className={styles.title}>
               {selectedBatch ? selectedBatch.batch_name : "标注工作台"}
             </h1>
@@ -203,7 +213,7 @@ export function AnnotatePage() {
                   {selectedBatch.completed_tasks > 0 && <span> · 已通过 {selectedBatch.completed_tasks}</span>}
                 </>
               ) : (
-                <>左侧选择批次开始标注；任务进度在画布内自动同步</>
+                <>选择一个批次开始标注；任务进度在画布内自动同步</>
               )}
             </p>
           </div>
@@ -267,10 +277,16 @@ export function AnnotatePage() {
         )}
 
         {!selectedBatch ? (
-          <div className={styles.emptyState}>
-            <Icon name="target" size={40} className={styles.emptyIcon} />
-            <div className={styles.emptyTitle}>请从左侧选择一个批次</div>
-          </div>
+          batchesLoading ? (
+            <div className={styles.loadingState}>加载中...</div>
+          ) : batches.length === 0 ? (
+            <div className={styles.emptyState}>
+              <Icon name="inbox" size={40} className={styles.emptyIcon} />
+              <div className={styles.emptyTitle}>暂无分派批次</div>
+            </div>
+          ) : (
+            <BatchCardGrid batches={batches} onSelect={handleSelectBatch} />
+          )
         ) : tasksLoading ? (
           <div className={styles.loadingState}>加载中...</div>
         ) : tasks.length === 0 ? (

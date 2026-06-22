@@ -9102,6 +9102,17 @@
             "title": "Completed Tasks",
             "type": "integer"
           },
+          "cover_blurhash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Blurhash"
+          },
           "in_progress_tasks": {
             "default": 0,
             "title": "In Progress Tasks",
@@ -9162,6 +9173,17 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
           },
           "total_tasks": {
             "title": "Total Tasks",
@@ -13992,6 +14014,17 @@
             "title": "Completed Tasks",
             "type": "integer"
           },
+          "cover_blurhash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Blurhash"
+          },
           "project_id": {
             "title": "Project Id",
             "type": "string"
@@ -14003,6 +14036,17 @@
           "review_tasks": {
             "title": "Review Tasks",
             "type": "integer"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
           },
           "total_tasks": {
             "title": "Total Tasks",
@@ -19421,7 +19465,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.17.15"
+    "version": "0.17.16"
   },
   "openapi": "3.1.0",
   "paths": {
