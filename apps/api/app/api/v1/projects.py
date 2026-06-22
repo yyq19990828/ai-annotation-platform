@@ -699,6 +699,7 @@ async def delete_project(
     p = {"pid": pid}
 
     await db.execute(text("DELETE FROM annotation_comments WHERE project_id = :pid"), p)
+    await db.execute(text("DELETE FROM annotation_feedbacks WHERE project_id = :pid"), p)
     await db.execute(
         text(
             "DELETE FROM annotation_drafts WHERE task_id IN "
