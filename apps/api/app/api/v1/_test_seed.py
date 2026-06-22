@@ -450,7 +450,14 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
             "classes": [{"name": "car", "order": 0}],
             "enabled": True,
             "attribute_schema": {"fields": []},
-        }
+        },
+        # point_mask_3d unit 带类别 → 前端 pointMaskPlaceClass 非空,point-mask 工具可用
+        # (供 usePointMask 拆分的 polygon 护栏 spec)。
+        "point_mask_3d": {
+            "classes": [{"name": "ground", "order": 0}],
+            "enabled": True,
+            "attribute_schema": {"fields": []},
+        },
     }
     project = Project(
         display_id=f"P-E2E-LIDAR-{suffix}",

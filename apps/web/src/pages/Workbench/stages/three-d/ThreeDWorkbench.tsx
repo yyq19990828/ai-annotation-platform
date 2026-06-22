@@ -2168,6 +2168,7 @@ export function ThreeDWorkbench({
               选点
               <select
                 className={SELECT_CTL}
+                data-testid="pointmask-mode-select"
                 value={pointMaskSelectMode}
                 disabled={!canPlacePointMask}
                 onChange={(e) => {

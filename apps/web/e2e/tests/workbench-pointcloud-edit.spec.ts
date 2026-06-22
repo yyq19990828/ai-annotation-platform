@@ -62,4 +62,90 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     );
     expect(fatal, `console errors:\n${fatal.join("\n")}`).toEqual([]);
   });
+
+  // 一键贴合(Q 键):applyFit 写 setForm + 立即(非防抖)PATCH 落库 —— 守护 usePsrEditor
+  // 另一类 setForm 写点(一键操作,区别于数值面板的防抖路径)。Q 键 effect 本身也是
+  // 3D 合并键盘 handler 的一员,重构若动 Q 分支/applyFit↔form 接线,这条立刻报警。
+  // (复位旋转 handleResetRotation 结构同型:setForm + updateAnnotationWithHistory,同受守护。)
+  test("选中框 → Q 一键贴合 → 即时 PATCH 落库", async ({ page, seed }) => {
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+
+    const card = page.locator('[data-testid^="box-list-item-"]').first();
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.click({ position: { x: 12, y: 16 } }); // 选中,焦点落卡片(非 input)
+
+    // Q(无修饰)→ handleFitDefault → applyFit(fitSizeAndBottom)→ setForm + 即时 PATCH。
+    const patchPromise = page.waitForRequest(
+      (req) => req.method() === "PATCH" && /\/annotations\/[0-9a-f-]+/.test(req.url()),
+      { timeout: 10_000 },
+    );
+    await page.keyboard.press("q");
+    const patch = await patchPromise;
+
+    // 断 geometry 落库(box_3d 几何存在;不较真具体数值 —— 取决于点云分布)。
+    const body = patch.postDataJSON() as { geometry?: { type?: string; center?: number[] } };
+    expect(body.geometry?.type).toBe("box_3d");
+    expect(Array.isArray(body.geometry?.center)).toBe(true);
+  });
+
+  // gizmo 拖拽(W 平移模式):TransformControls 松手 → scene.setTransformHandler → setForm +
+  // boxGeometryFromPsr + PATCH(ThreeDWorkbench:682)。这是 usePsrEditor 最热、最耦合的写点
+  // (在 scene-init effect 里共享 sceneRef + setForm + updateMutateRef)。拆 usePsrEditor 时
+  // setTransformHandler 回调若不再接 setForm/PATCH,这条立刻报警。
+  // 注:gizmo→psr 的几何数学在 PointCloudScene(重构不碰、另有 geometry 单测);此处只钉
+  // 「拖 gizmo 落 PATCH」的回调接线。BEV 俯视固定相机 → 框投影画布中心、轴屏对齐 → 近中心
+  // 网格扫起点拖拽,命中 gizmo 即落 PATCH(抗投影抖动)。
+  test("选中框 → W gizmo 拖拽 → setTransformHandler PATCH 落库", async ({ page, seed }) => {
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+
+    const card = page.locator('[data-testid^="box-list-item-"]').first();
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.click({ position: { x: 12, y: 16 } }); // 选中 → gizmo 挂到框
+
+    await page.getByRole("button", { name: "俯视" }).click(); // BEV:固定相机、轴屏对齐
+    await page.waitForTimeout(400);
+    await page.keyboard.press("w"); // 平移模式
+
+    const patches: Array<{ geometry?: { type?: string; center?: number[] } }> = [];
+    page.on("request", (r) => {
+      if (r.method() === "PATCH" && /\/annotations\/[0-9a-f-]+/.test(r.url())) {
+        patches.push(r.postDataJSON() as { geometry?: { type?: string; center?: number[] } });
+      }
+    });
+
+    const canvas = page.locator("canvas").first();
+    const cbox = await canvas.boundingBox();
+    if (!cbox) throw new Error("canvas boundingBox 不可用");
+    const cx = cbox.x + cbox.width * 0.5;
+    const cy = cbox.y + cbox.height * 0.5;
+
+    // 框中心附近多起点试拖(任一命中 gizmo 轴/面即落 PATCH);命中即停。
+    for (const [dx, dy] of [[0, 0], [30, 0], [0, 30], [-30, 0], [0, -30], [20, 20]]) {
+      await page.mouse.move(cx + dx, cy + dy);
+      await page.mouse.down();
+      await page.mouse.move(cx + dx + 50, cy + dy, { steps: 8 });
+      await page.mouse.move(cx + dx + 70, cy + dy, { steps: 4 });
+      await page.mouse.up();
+      await page.waitForTimeout(300);
+      if (patches.length > 0) break;
+    }
+
+    expect(patches.length, "拖 gizmo 应触发至少一次几何 PATCH").toBeGreaterThan(0);
+    expect(patches[0].geometry?.type).toBe("box_3d");
+    expect(Array.isArray(patches[0].geometry?.center)).toBe(true);
+  });
 });
