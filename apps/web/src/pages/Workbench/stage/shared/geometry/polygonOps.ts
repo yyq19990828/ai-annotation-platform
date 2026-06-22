@@ -143,7 +143,10 @@ export function cropPolygonGeometry(
   try {
     const result = polygonClipping.difference(baseMp, ...cutterMps);
     return multiPolygonToGeometry(result);
-  } catch {
+  } catch (err) {
+    // polygon-clipping 对自相交 / 退化环 / 数值噪声会抛错；warn 一次便于
+    // 从 BUG 反馈区分「几何病态」与「裁切意图本身不可行」，对外仍返回 null。
+    console.warn("[cropPolygonGeometry] polygon-clipping difference 失败:", err);
     return null;
   }
 }
