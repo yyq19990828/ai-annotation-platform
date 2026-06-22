@@ -46,13 +46,13 @@ import { FloatingPanelShell, type FloatingPanelRect } from "../../shell/Floating
 import { useDragMove, type FloatingPanelBounds } from "../../shell/useDragMove";
 import { usePointCloudManifest } from "./usePointCloudManifest";
 import {
-  PointCloudScene,
-  type PointCloudViewState,
-  type PointCloudStats,
+  type BoxPsr,
+  type PointCloudScene,
   type PointMaskSelection,
   type SceneBox,
   type ReferenceBox,
 } from "./PointCloudScene";
+import { usePointCloudScene } from "./usePointCloudScene";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import { Icon } from "@/components/ui/Icon";
 import { useCanvasContextMenu } from "../../stage/useCanvasContextMenu";
@@ -292,6 +292,7 @@ export function ThreeDWorkbench({
   const viewportWrapRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
+  // 场景实例 ref —— 壳层各交互 handler 共用;生命周期由 usePointCloudScene 管理。
   const sceneRef = useRef<PointCloudScene | null>(null);
   const performanceConfig = useMemo(
     () => resolveWorkbenchPerformanceTier(workbenchCommon.performanceTier),
@@ -301,17 +302,7 @@ export function ThreeDWorkbench({
     () => resolveBox3dDefaultSize(box3dDefaultSize),
     [box3dDefaultSize],
   );
-  const persistCameraViewRef = useRef(workbenchPointcloud.persistCameraView);
-  persistCameraViewRef.current = workbenchPointcloud.persistCameraView;
-  const pointcloudCameraRef = useRef(pointcloudCamera);
-  pointcloudCameraRef.current = pointcloudCamera;
-  const onWorkbenchLayoutChangeRef = useRef(onWorkbenchLayoutChange);
-  onWorkbenchLayoutChangeRef.current = onWorkbenchLayoutChange;
-  const cameraSaveRafRef = useRef<number | null>(null);
-  const pendingCameraViewRef = useRef<PointCloudViewState | null>(null);
   const [triFloatBounds, setTriFloatBounds] = useState<FloatingPanelBounds | null>(null);
-  const [stats, setStats] = useState<PointCloudStats | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const pointSize = workbenchPointcloud.pointSize;
   const colorizeOn = workbenchPointcloud.colorizeWithCamera;
   const colorAdjust: ColorAdjust = useMemo(
@@ -483,19 +474,6 @@ export function ThreeDWorkbench({
     handleResetCameraPanels,
   } = useCameraPanels({ cameraPanels, onWorkbenchLayoutChange, viewportWrapRef });
 
-  const scheduleCameraViewSave = useCallback((view: PointCloudViewState) => {
-    if (!persistCameraViewRef.current) return;
-    pendingCameraViewRef.current = view;
-    if (cameraSaveRafRef.current !== null) return;
-    cameraSaveRafRef.current = window.requestAnimationFrame(() => {
-      cameraSaveRafRef.current = null;
-      const next = pendingCameraViewRef.current;
-      pendingCameraViewRef.current = null;
-      if (!next || !persistCameraViewRef.current) return;
-      onWorkbenchLayoutChangeRef.current({ pointcloudCamera: next });
-    });
-  }, []);
-
   useLayoutEffect(() => {
     const controls = controlsRef.current;
     const viewport = viewportWrapRef.current;
@@ -665,133 +643,46 @@ export function ThreeDWorkbench({
   const selectedPsrEditable = selectedEditable && !multiBoxSelected;
   const selectedPointMaskEditable = selectedEditable && !!selectedPointMask && !multiBoxSelected;
 
-  // 实例化 / 销毁 Scene(随容器挂载一次)。
-  useEffect(() => {
-    if (!viewportRef.current) return;
-    const scene = new PointCloudScene(viewportRef.current, {
-      decimateThreshold: performanceConfig.pcdDecimate,
-    });
-    sceneRef.current = scene;
-    scene.setPointSize(pointSize);
-    scene.setGridVisible(workbenchPointcloud.showGrid);
-    scene.setAxisGizmoVisible(workbenchPointcloud.showAxisGizmo);
-    scene.setCameraDamping(workbenchPointcloud.cameraDamping);
-    scene.setViewChangeHandler(scheduleCameraViewSave);
-    // 拖拽结束:回写表单 + PATCH 持久化(与数值面板共用持久化管线)。
-    scene.setTransformHandler((id, psr) => {
-      setForm(psrToForm(psr));
-      const ann = annotationsRef.current?.find((a) => a.id === id);
-      const geometry = boxGeometryFromPsr(
-        psr,
-        geometryConvention(ann?.geometry, axisConventionRef.current),
-      );
-      updateMutateRef.current({
+  // gizmo 拖拽结束:回写 PSR 表单 + 几何 PATCH 持久化(与数值面板共用持久化管线)。
+  // 作为回调注入 usePointCloudScene —— form / mutate / history 仍由本壳组件持有,边界干净。
+  const handleTransformCommit = useCallback((id: string, psr: BoxPsr) => {
+    setForm(psrToForm(psr));
+    const ann = annotationsRef.current?.find((a) => a.id === id);
+    const geometry = boxGeometryFromPsr(
+      psr,
+      geometryConvention(ann?.geometry, axisConventionRef.current),
+    );
+    updateMutateRef.current({ annotationId: id, payload: { geometry } });
+    if (ann?.geometry?.type === "box_3d") {
+      historyPushRef.current({
+        kind: "update",
         annotationId: id,
-        payload: {
-          geometry,
-        },
+        before: { geometry: ann.geometry },
+        after: { geometry },
       });
-      if (ann?.geometry?.type === "box_3d") {
-        historyPushRef.current({
-          kind: "update",
-          annotationId: id,
-          before: { geometry: ann.geometry },
-          after: { geometry },
-        });
-      }
-    });
-    const ro = new ResizeObserver(() => scene.resize());
-    ro.observe(viewportRef.current);
-    return () => {
-      if (cameraSaveRafRef.current !== null) {
-        window.cancelAnimationFrame(cameraSaveRafRef.current);
-        cameraSaveRafRef.current = null;
-      }
-      ro.disconnect();
-      scene.dispose();
-      sceneRef.current = null;
-    };
-    // 场景生命周期只跟 DOM 容器绑定；偏好变化由下方独立 effects 同步。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }
+    // 依赖全为稳定 ref / setState / 纯函数 import,故空依赖。
   }, []);
 
-  useEffect(() => {
-    sceneRef.current?.setPointSize(pointSize);
-  }, [pointSize, stats]);
-
-  useEffect(() => {
-    sceneRef.current?.setGridVisible(workbenchPointcloud.showGrid);
-  }, [workbenchPointcloud.showGrid]);
-
-  useEffect(() => {
-    sceneRef.current?.setAxisGizmoVisible(workbenchPointcloud.showAxisGizmo);
-  }, [workbenchPointcloud.showAxisGizmo]);
-
-  useEffect(() => {
-    sceneRef.current?.setCameraDamping(workbenchPointcloud.cameraDamping);
-  }, [workbenchPointcloud.cameraDamping]);
-
-  useEffect(() => {
-    sceneRef.current?.setDecimateThreshold(performanceConfig.pcdDecimate);
-  }, [performanceConfig.pcdDecimate]);
-
-  // manifest 到位后加载点云。
-  // v0.13.11 · 传入 axisConvention,scene 内部加载完 PCD 立即把 positions 旋到 ISO 系。
-  useEffect(() => {
-    const scene = sceneRef.current;
-    const url = manifest?.point_cloud_url;
-    if (!scene || !url) return;
-    let cancelled = false;
-    setLoadError(null);
-    scene
-      .loadPcd(url, axisConvention)
-      .then((s) => {
-        if (cancelled) return;
-        if (persistCameraViewRef.current) {
-          scene.applyViewState(pointcloudCameraRef.current);
-        }
-        setStats(s);
-      })
-      .catch((e) => {
-        if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [manifest?.point_cloud_url, axisConvention]);
-
-  // 同步 3D 框图层(标注 / 选中变化)。scene 在挂载 effect 里先建,本 effect 后跑。
-  useEffect(() => {
-    sceneRef.current?.setBoxes(boxes);
-  }, [boxes]);
-
-  // 选中框时挂变换 gizmo,取消选中时脱离(依赖 boxes 以确保 setBoxes 已建好该组);只读/锁定不挂。
-  useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene) return;
-    if (selectedId && selectedPsrEditable) scene.attachTransform(selectedId);
-    else scene.detachTransform();
-  }, [selectedId, boxes, selectedPsrEditable]);
-
-  // W/E/R 切 gizmo 模式(仅选中且可编辑时;焦点在输入框时不拦截)。
-  useEffect(() => {
-    if (!selectedId || !selectedPsrEditable) return;
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
-      const mode =
-        e.key === "w" || e.key === "W"
-          ? "translate"
-          : e.key === "e" || e.key === "E"
-            ? "rotate"
-            : e.key === "r" || e.key === "R"
-              ? "scale"
-              : null;
-      if (mode) sceneRef.current?.setTransformMode(mode);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, selectedPsrEditable]);
+  // Three.js 场景生命周期(实例化/销毁 · 偏好同步 · 点云加载 · 框图层 · gizmo 挂载 · W-E-R)。
+  const { stats, loadError } = usePointCloudScene({
+    viewportRef,
+    sceneRef,
+    pcdDecimate: performanceConfig.pcdDecimate,
+    pointSize,
+    showGrid: workbenchPointcloud.showGrid,
+    showAxisGizmo: workbenchPointcloud.showAxisGizmo,
+    cameraDamping: workbenchPointcloud.cameraDamping,
+    persistCameraView: workbenchPointcloud.persistCameraView,
+    pointCloudUrl: manifest?.point_cloud_url,
+    axisConvention,
+    boxes,
+    selectedId,
+    selectedPsrEditable,
+    pointcloudCamera,
+    onWorkbenchLayoutChange,
+    onTransformCommit: handleTransformCommit,
+  });
 
   // v0.14.1 · Shift+→ / Shift+← 跨帧目标延续: 选中 box_3d 时 propagate 到同 scene
   // 邻帧并跳过去自动选中(orchestration 在壳层 onCrossFramePropagate)。
