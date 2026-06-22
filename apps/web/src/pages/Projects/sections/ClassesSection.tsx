@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
@@ -34,18 +35,42 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
     useProjectToolBindings(project);
   const dataType = projectDataType(project);
   const isVideoBbox = dataType === "video" && activeUnit === "bbox";
+  // v0.17.15 · 同名类跨工具单位批量重命名意图: 开启后重命名不传 tool_unit_id,
+  // 后端在所有 enabled unit 内一起改同名类 (强隔离默认仍为单 unit, 默认=现状)。
+  const [renameAllUnits, setRenameAllUnits] = useState(false);
 
   useUnsavedWarning(dirty);
 
+  // 仅当 ≥2 个启用工具单位存在同名类时, 批量开关才有意义 (否则与单 unit 等价)。
+  const hasSharedClass = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const ub of Object.values(bindings)) {
+      if (!ub?.enabled) continue;
+      for (const name of new Set(ub.classRows.map((r) => r.name))) {
+        counts.set(name, (counts.get(name) ?? 0) + 1);
+      }
+    }
+    for (const c of counts.values()) if (c >= 2) return true;
+    return false;
+  }, [bindings]);
+
   const handleRename = (oldName: string, newName: string) => {
     // v0.10.17 · 重命名走后端原子 endpoint, 限定 tool_unit_id 仅改本 unit 内的同名类.
+    // v0.17.15 · 勾选「同步所有工具单位」时不传 tool_unit_id, 走后端跨 unit 批量路径。
+    const allUnits = renameAllUnits && hasSharedClass;
     rename.mutate(
-      { old_name: oldName, new_name: newName, tool_unit_id: activeUnit },
+      {
+        old_name: oldName,
+        new_name: newName,
+        tool_unit_id: allUnits ? undefined : activeUnit,
+      },
       {
         onSuccess: () =>
           pushToast({
             msg: `已重命名「${oldName}」→「${newName}」`,
-            sub: `已同步迁移 ${activeUnit} 工具单位历史标注`,
+            sub: allUnits
+              ? "已在所有启用工具单位内同步同名类与历史标注"
+              : `已同步迁移 ${activeUnit} 工具单位历史标注`,
             kind: "success",
           }),
         onError: (err) =>
@@ -318,7 +343,18 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
             >
               <div className="flex flex-col gap-3.5">
                 <section className="min-w-0">
-                  <h4 className="mb-2 mt-0 text-xs font-semibold text-muted-foreground">类别</h4>
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="m-0 text-xs font-semibold text-muted-foreground">类别</h4>
+                    {hasSharedClass && (
+                      <Switch
+                        checked={renameAllUnits}
+                        onChange={setRenameAllUnits}
+                        label="重命名时同步所有工具单位的同名类"
+                        title="开启后重命名会改动所有启用工具单位中的同名类；关闭则仅改当前工具单位（强隔离默认）。"
+                        data-testid="rename-all-units-switch"
+                      />
+                    )}
+                  </div>
                   <ClassEditor
                     value={activeBinding.classRows}
                     onChange={onChange}
