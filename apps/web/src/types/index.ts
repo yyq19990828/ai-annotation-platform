@@ -359,9 +359,17 @@ export interface AIBox {
  * v0.10.28 · 单元级骨骼模板 (COCO 范式). 与后端 KeypointSchema (KeypointNode + edges) 对齐;
  * 后端 ToolBinding.keypoint_schema 就位前, 前端先用此类型贯通配置 UI 与画布渲染.
  *   nodes: 命名节点列表 (顺序即 keypoint index); color 可选 (缺省按 index 取预设色).
+ *   sublabel: 可选第二层命名 (label + sublabel 仅 2 层, 禁止任意嵌套).
+ *   x / y: 可选骨骼模板坐标 (归一化 0–1), SVG 配置器拖点定义, 仅作配置可视化与标注参考.
  *   edges: 骨骼连线, 每条是 nodes 的两个 index [i, j].
  */
-export type KeypointNode = { name: string; color?: string | null };
+export type KeypointNode = {
+  name: string;
+  color?: string | null;
+  sublabel?: string | null;
+  x?: number | null;
+  y?: number | null;
+};
 export type KeypointSchema = { nodes: KeypointNode[]; edges: [number, number][] };
 
 export interface Annotation extends AIBox {

@@ -705,7 +705,7 @@ interface KonvaKeypointProps {
  * v0.10.28 · 关键点渲染：
  *   - 按 schema.edges 在对应两点间画骨骼连线 (两端 v>0 时才连)；
  *   - 每个节点画圆点：v=2 实心 / v=1 空心 / v=0 淡显小点；颜色取 schema.nodes[i].color；
- *   - 节点标签 = schema.nodes[i].name；选中态加阴影 + 类别标签。
+ *   - 节点标签 = schema.nodes[i].name（有 sublabel 时显示 name·sublabel）；选中态加阴影 + 类别标签。
  */
 export function KonvaKeypoint({
   b, annotationId, isAi, selected, faded, fadedOpacity = DEFAULT_FADED_OPACITY,
@@ -805,14 +805,16 @@ export function KonvaKeypoint({
       {/* 节点名标签 (选中或编辑态时显示, 避免拥挤) */}
       {(selected || editable) && schema?.nodes && kps.map((p, i) => {
         if (p.v === 0) return null;
-        const name = schema.nodes[i]?.name;
+        const node = schema.nodes[i];
+        const name = node?.name;
         if (!name) return null;
+        const nodeLabel = node?.sublabel ? `${name}·${node.sublabel}` : name;
         return (
           <Text
             key={`kp-label-${i}`}
             x={p.x * imgW + r + 2 / scale}
             y={p.y * imgH - labelFontSize / 2}
-            text={name}
+            text={nodeLabel}
             fill={keypointColorByIndex(i, schema)}
             fontSize={(visual.labelFontSize - 1) / scale}
             fontFamily={BOX_LABEL_FONT_FAMILY}

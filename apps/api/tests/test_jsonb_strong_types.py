@@ -140,6 +140,23 @@ def test_keypoint_schema_invalid_edge():
         KeypointNode(name="a", color="red")
 
 
+def test_keypoint_node_sublabel_and_template_coords():
+    # sublabel + 模板坐标 (归一化) 均合法且默认 None
+    n0 = KeypointNode(name="shoulder")
+    assert n0.sublabel is None and n0.x is None and n0.y is None
+    n = KeypointNode(name="shoulder", sublabel="left", x=0.25, y=0.75)
+    assert n.sublabel == "left"
+    assert n.x == 0.25 and n.y == 0.75
+
+
+def test_keypoint_node_template_coords_out_of_range():
+    # x / y 必须在 [0, 1]
+    with pytest.raises(ValidationError):
+        KeypointNode(name="a", x=1.5)
+    with pytest.raises(ValidationError):
+        KeypointNode(name="a", y=-0.1)
+
+
 def test_tool_binding_keypoint_schema_optional():
     # 默认 None
     b = ToolBinding()

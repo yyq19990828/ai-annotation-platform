@@ -259,10 +259,18 @@ class ToolClassEntry(BaseModel):
 
 
 class KeypointNode(BaseModel):
-    """关键点骨骼的一个节点（有序）。color 为可选 #RRGGBB。"""
+    """关键点骨骼的一个节点（有序）。color 为可选 #RRGGBB。
+
+    sublabel：可选第二层命名（label + sublabel 仅 2 层，禁止任意嵌套）。
+    x / y：可选骨骼模板坐标（归一化 0–1），由 SVG 配置器拖点定义，仅作配置可视化
+    与标注参考，不进实例几何。
+    """
 
     name: str = Field(min_length=1)
     color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    sublabel: str | None = Field(default=None)
+    x: float | None = Field(default=None, ge=0, le=1)
+    y: float | None = Field(default=None, ge=0, le=1)
 
     model_config = ConfigDict(extra="forbid")
 

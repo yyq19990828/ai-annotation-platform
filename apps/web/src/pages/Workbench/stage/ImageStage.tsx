@@ -1349,7 +1349,12 @@ export function ImageStage({
             const placed = keypointDraft.points;
             const nextIdx = placed.length;
             const done = nextIdx >= keypointDraft.nodeCount;
-            const nextName = keypointSchema?.nodes[nextIdx]?.name ?? `#${nextIdx + 1}`;
+            const nextNode = keypointSchema?.nodes[nextIdx];
+            const nextName = nextNode
+              ? nextNode.sublabel
+                ? `${nextNode.name}·${nextNode.sublabel}`
+                : nextNode.name
+              : `#${nextIdx + 1}`;
             return (
               <>
                 {placed.map((p, i) => {

@@ -34,6 +34,13 @@
 
 > **0.17.x 是一个 UI 迁移 Epic**:把 `apps/web` 自维护的 CSS Modules + `tokens.css` 视觉体系全量迁到 Tailwind v4 + shadcn/ui,直至旧 `*.module.css` 与 `tokens.css` 退役、CI 门禁完成时代切换。全程红线为「只换皮、行为零回退」(业务逻辑 / 数据流 / 路由 / 画布渲染逻辑均不动),逐阶段以 light/dark 双主题截图基线把关。Epic 与设计规范见 [`docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md`](docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md) 与 `docs-site/dev/reference/design-system.md`。
 
+## [0.17.17] - 2026-06-22
+
+关键点骨骼模板配置升级（I10 Skeleton 进阶收尾）：
+
+- **SVG 骨骼画布配置器**：项目设置「类别与工具配置」里的 keypoint schema 编辑器从下拉框选索引连边，升级为可视化画布——拖动节点定义骨架布局、点击两个节点连线、点击连线删除。布局坐标（`KeypointNode.x/y`，归一化）随模板持久化，作为标注参考形状。
+- **节点子标签（sublabel）**：节点支持「名称 + 子标签」两层命名（如 `shoulder` + `left`），仅 2 层、禁止任意嵌套。画布节点标签显示 `名称·子标签`；COCO 导出的 `keypoints` 名拼成 `名称_子标签` 以消歧重名。
+
 ## [0.17.16] - 2026-06-22
 
 标注 / 质检工作台「未选批次」着陆态从单行占位升级为**批次卡片网格**:项目分组、封面缩略图、批次进度条、点卡直接进入。

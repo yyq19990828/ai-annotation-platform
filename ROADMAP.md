@@ -137,7 +137,6 @@
 > Wave α / β / γ / δ 已收尾（I2 / I3 / I6 / I7 / I8 / I11 / I13 / I15 / I16 / I17 / I20 Interactor 类型均落地）。以下是 Wave γ 末段 + Wave ε 剩余。
 
 - **I1 大图 tile**（v0.11.0 独立 epic，**必做**）：>4K 图后端 Celery 切 IIIF / 自定义 tile 金字塔（zoom 0/1/2 ... 每级 512×512 PNG/WebP），元数据 `ImageTilePyramid(image_id, max_level, tile_size, format)`；前端 `useTileSource` hook + LRU 缓存 ImageBitmap；Konva 背景 bg 层改 `<Group>` + 多张 `<Image>` tile；保留 BlurhashLayer 兜底。衡量：8K×8K 图、4x 缩放局部、内存 <300MB、FPS ≥30。后端切片服务可与视频 chunk service 共用基础设施。
-- **I10 Skeleton 进阶**（基础 COCO 关键点已落 v0.10.28）：① 配置器升级为 SVG 拖点 + 连线可视化；② 2 层子标签命名（禁止任意嵌套，见决策底线「Skeleton 嵌套」）；③ keypoint 导出 / 导入 / ML 预测协议（见 §A）。
 - **I18 续作（仅余视频帧 pin）**：图片 `IssueLayer.tsx` Konva pin 层 + 单击建 pin 入口已落（v0.15.x）；剩**视频帧 pin**（按 `frame_index` 锚定）+ ADR-0027 第三段切单源（legacy-table-retirement）。
 - **I21 用户级快捷键自定义**（M，纯前端；v0.15.3 偏好注册表地基已就位，成本降低）：`User.preferences.keymap` + 冲突校验；SettingsPage 录制框 UI；`?` 弹快捷键参考卡按 keymap 渲染（取代硬编码 KeyboardHintOverlay）。
 
@@ -162,7 +161,7 @@
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
 | **P0/P1** | 视频工作台总 epic（导入帧采样 / 轨迹工具对齐 CVAT / 视频导出 / 长视频协同 / 质量评估） | 已抽离为独立 epic，前后端 Phase 1-6 详见 [`ROADMAP/2026-05-21-video-workbench-roadmap.md`](ROADMAP/2026-05-21-video-workbench-roadmap.md) | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
-| **P2** | 图片工作台能力扩展剩余（I1 / I10 / I21） | 大图 tile / Skeleton / 快捷键自定义；详见 §C.7（I12 Object Group + I18 图片 pin + I14 Polygon Crop 已落） | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
+| **P2** | 图片工作台能力扩展剩余（I1 / I21） | 大图 tile / 快捷键自定义；详见 §C.7（I10 Skeleton 进阶 + I12 Object Group + I18 图片 pin + I14 Polygon Crop 已落） | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |
