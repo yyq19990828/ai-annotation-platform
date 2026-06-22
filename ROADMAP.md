@@ -64,7 +64,6 @@
 ### AI / 模型
 - **模型市场扩展 — 二期剩余 defer 项**：加权 AB 路由（按 task 自动分流打标，需路由配置 + 结果打标协议）、同输入双变体并排对比（工作台级独立 epic）、带 token 的观测容器（当前 observe URL 假定免鉴权）。触发条件按客户驱动。
 - **Predictions Import / AAP JSON 后续延伸**（按客户反馈触发）：
-  - **`POST /annotations/import` 端点**（**P3**）：AAP JSON `annotations[]` 仅导出可用，导入端只警告不入库。要点：入库需回写 `user_id` / `source` / `was_cancelled` 等元数据；需 `batch_match` 字段；是否走 audit 需 ADR。触发：客户反馈"另一实例无法完整重建标注"。
   - **Task 表加 `external_id` 字段**（**P3**）：当前 display_id + file_path 两元组匹配够用。走 `tasks.external_id UNIQUE(project_id, external_id)`，[`AAPTaskMatch`](apps/api/app/schemas/aap_json.py) 已留 forward compat。触发：跨实例迁移改 display_id / 路径。
   - **AAP JSON video_track 导入支持**（**P3**）：`internal_geometry_to_ls_shape` 仅覆盖 bbox / polygon / multi_polygon。**已并入视频 epic Phase 4.2**。
   - **`predictions_import` 审计 detail 专项**（**P3**）：在 `app/services/audit.py` 加 `predictions_import_detail()` helper（补 task / model_version / hash 取证字段）。触发：审计期反馈 detail 不足。
