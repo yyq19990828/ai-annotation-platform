@@ -148,4 +148,36 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     expect(patches[0].geometry?.type).toBe("box_3d");
     expect(Array.isArray(patches[0].geometry?.center)).toBe(true);
   });
+
+  // 三视图(TriOrthoView)overlay 可交互守护:editable 时 overlay canvas 的 computed
+  // pointer-events 必须为 "auto"(否则拖边/角精修完全失效)。守护 v0.17.6 module.css→Tailwind
+  // 迁移引入的 `pointer-events-none` + `pointer-events-auto` 同挂、none 胜出的回归。
+  test("选中框 → 三视图 overlay 可接收事件(pointer-events: auto)", async ({ page, seed }) => {
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+
+    const card = page.locator('[data-testid^="box-list-item-"]').first();
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.click({ position: { x: 12, y: 16 } }); // 选中 → 三视图面板出现
+
+    // 三视图 overlay canvas(className 含 inset-0,叠在 WebGL 渲染层之上);editable 时须能收事件。
+    const overlayPE = await page.evaluate(() => {
+      const c = Array.from(document.querySelectorAll("canvas")).find((el) =>
+        el.className.includes("inset-0"),
+      );
+      if (!c) return { found: false, pe: "", isTop: false };
+      const r = c.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { found: true, pe: getComputedStyle(c).pointerEvents, isTop: top === c };
+    });
+    expect(overlayPE.found, "三视图 overlay canvas 应存在").toBe(true);
+    expect(overlayPE.pe, "overlay 必须 pointer-events:auto 才能拖框精修").toBe("auto");
+    expect(overlayPE.isTop, "overlay 应为命中点最上层元素(未被遮挡)").toBe(true);
+  });
 });
