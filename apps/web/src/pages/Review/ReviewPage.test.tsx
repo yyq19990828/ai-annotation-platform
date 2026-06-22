@@ -111,7 +111,7 @@ describe("ReviewPage", () => {
     renderUI();
     expect(screen.getByTestId("review-sidebar")).toBeInTheDocument();
     expect(screen.getByText("质检审核")).toBeInTheDocument();
-    expect(screen.getByText(/左侧选择批次开始审核/)).toBeInTheDocument();
+    expect(screen.getByText(/选择一个批次开始审核/)).toBeInTheDocument();
   });
 
   it("isLoading=true → 显示「加载中...」", () => {
