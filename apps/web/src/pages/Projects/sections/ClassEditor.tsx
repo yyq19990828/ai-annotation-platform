@@ -171,6 +171,10 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
         </div>
       )}
 
+      {value.length > 0 && (
+      // B-59 · 类别行过多时纵向滚动, 最多约 20 行可见(单行 ≈ 48px + gap 10px)；
+      // 「新增类别」输入框留在滚动容器外, 始终可见。
+      <div className="flex max-h-[1150px] flex-col gap-2.5 overflow-y-auto pr-0.5">
       {value.map((r, i) => {
         const linked = !!r.aliasTo;
         const linkedVisual = linked && resolveLinked ? resolveLinked(r.aliasTo!) : undefined;
@@ -320,6 +324,8 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
         </div>
         );
       })}
+      </div>
+      )}
 
       <div className="mt-1 flex gap-1.5">
         <input
