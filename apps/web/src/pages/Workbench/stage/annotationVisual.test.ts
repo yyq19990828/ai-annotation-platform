@@ -63,7 +63,7 @@ describe("buildLabelText(图片:单帧 / AI 段)", () => {
         { className: "person", confidence: 0.95, sourcePrefix: "✦ 模型 " },
         ["source", "score"],
       ),
-    ).toBe("✦ 模型 person 95%");
+    ).toBe("✦ 模型 person · 95%");
   });
 
   it("关 score · AI 框去置信度,保留前缀 + 类别", () => {
@@ -75,15 +75,15 @@ describe("buildLabelText(图片:单帧 / AI 段)", () => {
   it("关 source · 前缀消失(source 受控,不再恒显)", () => {
     expect(
       buildLabelText({ className: "person", confidence: 0.95, sourcePrefix: "✦ 模型 " }, ["score"]),
-    ).toBe("person 95%");
+    ).toBe("person · 95%");
   });
 
   it("score 不再受 isAi 门控 · 给了 score token 即显示", () => {
-    expect(buildLabelText({ className: "x", confidence: 0.5 }, ["score"])).toBe("x 50%");
+    expect(buildLabelText({ className: "x", confidence: 0.5 }, ["score"])).toBe("x · 50%");
   });
 
   it("勾 id · 显示 #id(类别名之后)", () => {
-    expect(buildLabelText({ className: "car", instanceId: 7 }, ["id"])).toBe("car #7");
+    expect(buildLabelText({ className: "car", instanceId: 7 }, ["id"])).toBe("car · #7");
   });
 
   it("id 为空时不显示 # token", () => {
@@ -96,7 +96,7 @@ describe("buildLabelText(图片:单帧 / AI 段)", () => {
         { className: "sign", attributes: { truncated: true, hidden: false, text: "STOP", note: "" } },
         ["attrs"],
       ),
-    ).toBe("sign truncated STOP");
+    ).toBe("sign · truncated · STOP");
   });
 
   it("空段兜底 · 只显示类别名", () => {
@@ -115,7 +115,7 @@ describe("buildLabelText(图片:单帧 / AI 段)", () => {
         },
         ["source", "id", "score", "attrs"],
       ),
-    ).toBe("✦ 模型 person #3 80% occluded");
+    ).toBe("✦ 模型 person · #3 · 80% · occluded");
   });
 });
 

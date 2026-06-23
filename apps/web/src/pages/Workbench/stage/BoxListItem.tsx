@@ -135,7 +135,7 @@ function attributesSummary(b: Annotation | AiBox): string[] {
   if (!("attributes" in b) || !b.attributes) return [];
   const out: string[] = [];
   for (const [key, val] of Object.entries(b.attributes)) {
-    if (key === "text") continue;
+    if (key === "text" || key.startsWith("_")) continue;
     if (val == null || val === "" || typeof val === "object") continue;
     out.push(String(val));
   }

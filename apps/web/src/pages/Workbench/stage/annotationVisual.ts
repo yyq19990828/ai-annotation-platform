@@ -97,7 +97,8 @@ export function buildLabelText(input: LabelTextInput, content: readonly LabelFie
     const attrs = formatAttributes(input.attributes);
     if (attrs) tokens.push(attrs);
   }
-  const core = tokens.join(" ");
+  // 类别名(锚点)与各可开关 token 之间用 ` · ` 分隔,便于区分。
+  const core = tokens.join(" · ");
   return content.includes("source") && input.sourcePrefix ? `${input.sourcePrefix}${core}` : core;
 }
 
@@ -129,11 +130,13 @@ export function buildTrackLabelText(input: TrackLabelInput, content: readonly La
   return text;
 }
 
-/** 属性压缩:跳过空值;bool 真值只显示键名,假值跳过;其余只显示值(不带 key=)。 */
+/** 属性压缩:跳过 `_` 前缀内部键(如 _shape_index)与空值;bool 真值只显键名、假值跳过;
+ *  其余只显值(不带 key=)。以 ` · ` 分隔。 */
 function formatAttributes(attrs?: Record<string, unknown> | null): string {
   if (!attrs) return "";
   const parts: string[] = [];
   for (const [k, v] of Object.entries(attrs)) {
+    if (k.startsWith("_")) continue;
     if (v == null || v === "") continue;
     if (typeof v === "boolean") {
       if (v) parts.push(k);
@@ -141,5 +144,5 @@ function formatAttributes(attrs?: Record<string, unknown> | null): string {
     }
     parts.push(String(v));
   }
-  return parts.join(" ");
+  return parts.join(" · ");
 }
