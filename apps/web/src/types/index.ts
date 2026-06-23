@@ -385,6 +385,9 @@ export interface Annotation extends AIBox {
   occluded?: boolean;
   // I12 · Object Group; 同 task 内 group_id 相同的多框为一组 (Ctrl+G 形成).
   group_id?: number | null;
+  // v0.18.0 · 落库标注的属性字典(透传供画布标签「标签内容·属性」渲染)。
+  // 不带则单帧标签的「属性」开关无内容可显 —— AI 候选侧由 AiBox.attributes 承载。
+  attributes?: Record<string, unknown> | null;
 }
 
 export interface AnnotationResponse {

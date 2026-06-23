@@ -173,6 +173,9 @@ export function annotationToBox(a: AnnotationResponse, occludedKeys?: Set<string
       : false,
     // I12 · Object Group; null/undefined 表示未分组.
     group_id: a.group_id ?? null,
+    // v0.18.0 · 透传属性,供画布标签「标签内容·属性(单帧段)」渲染 (此前漏拷,
+    // 导致单帧标签的属性开关无内容可显; AI 候选侧由 predictionsToBoxes 已拷)。
+    attributes: a.attributes ?? null,
   };
 }
 
@@ -210,7 +213,7 @@ export type AiBox = Annotation & {
   predictionSource: PredictionSourceValue;
   // v0.14.9 · OCR / doc_layout 候选携带的属性 (如 OCR 的 {text, language?, orientation?}).
   // 后端 PredictionShape 协议外字段, 透传供 AIInspectorPanel 渲染文本摘要并在 accept 时带入新建标注.
-  attributes?: Record<string, unknown>;
+  attributes?: Record<string, unknown> | null;
 };
 
 /**

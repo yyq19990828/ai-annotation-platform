@@ -663,7 +663,7 @@ export function useImageAnnotationActions({
           // v0.14.9 · OCR / doc_layout 候选的 attributes (text/language/orientation 等) 后端
           // accept_prediction 仅写 _shape_index, 不带 OCR 文本; 这里 accept 成功后把候选 attributes
           // 合并 PATCH 进新建标注 (保留服务端写的 _shape_index), 避免识别文本丢失。
-          const carry = pickCarryAttributes(box.attributes);
+          const carry = pickCarryAttributes(box.attributes ?? undefined);
           if (carry && created.length > 0) {
             for (const ann of created) {
               const merged = { ...(ann.attributes ?? {}), ...carry };
