@@ -505,6 +505,17 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               </div>
             )}
 
+            {/* v0.18.8 · 流水线连接线: 源 (检测) → 对每个检测框裁 ROI → 下游并行分类扇出。 */}
+            {downstreamIds.length > 0 && (
+              <div className={styles.pipelineConnector}>
+                <Icon name="arrowRight" size={11} className={styles.pipelineConnectorIcon} />
+                对每个检测框裁 ROI 喂下游分类
+                {downstreamIds.length > 1 && (
+                  <span className={styles.pipelineParallelTag}>并行 ×{downstreamIds.length}</span>
+                )}
+              </div>
+            )}
+
             {/* v0.18.2 · 多阶段预标注 (路径 B M2): 下游阶段卡 (并行兄弟, 单层扇出)。
                 每张卡对源阶段检测框按类别裁 ROI 喂下游分类, 结果合并进框属性; 多卡 = 同类/不同类
                 各喂不同分类器 (声明式类别路由)。v0.18.6: 各卡自显运行态徽标 + 实时计数。 */}
@@ -557,6 +568,12 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               </div>
             ) : (
               <div className={styles.field}>
+                {/* v0.18.8 · 空态引导: 未加任何下游阶段时给一句示意 (检测 → 分类)。 */}
+                {downstreamIds.length === 0 && (
+                  <span className={styles.stageEmptyHint}>
+                    可串接「检测 → 分类」流水线：源阶段检出框后，下游分类器对每个框补属性。
+                  </span>
+                )}
                 <Button size="sm" variant="ghost" onClick={addStage}>
                   <Icon name="plus" size={11} />
                   {downstreamIds.length === 0

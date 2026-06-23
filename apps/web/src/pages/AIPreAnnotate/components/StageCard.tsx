@@ -15,6 +15,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { Badge } from "@/components/ui/Badge";
+import { Card } from "@/components/ui/Card";
+import { ProgressBar } from "@/components/ui/ProgressBar";
 import { usePreannotateConfig, type PreannotateArgs } from "./usePreannotateConfig";
 import { PreannotateConfigForm } from "./PreannotateConfigForm";
 import type {
@@ -23,10 +26,15 @@ import type {
 } from "@/hooks/usePreannotation";
 import styles from "./ProjectDetailPanel.module.css";
 
-const RUN_STATE_LABEL: Record<string, string> = {
-  pending: "待运行",
-  running: "运行中",
-  done: "已完成",
+// v0.18.8 · 运行态 → Badge 原语 (语义色 + 暗色配对走设计系统, 不裸色)。
+const RUN_STATE_BADGE: Record<
+  string,
+  { variant: "outline" | "ai" | "success" | "danger"; label: string; dot?: boolean }
+> = {
+  pending: { variant: "outline", label: "待运行" },
+  running: { variant: "ai", label: "运行中", dot: true },
+  done: { variant: "success", label: "已完成" },
+  failed: { variant: "danger", label: "失败" },
 };
 
 function cx(...names: Array<string | false | null | undefined>) {
@@ -213,36 +221,54 @@ export function StageCard({
     return () => onChangeRef.current(id, null);
   }, [id]);
 
+  const badge = RUN_STATE_BADGE[runState] ?? RUN_STATE_BADGE.pending;
+  const targeted = stat?.targeted ?? 0;
+  const okPct = targeted > 0 ? ((stat?.ok ?? 0) / targeted) * 100 : 0;
+
   return (
-    <div className={styles.stageTwoBlock}>
-      <div className={styles.cardHeader}>
-        <strong className={styles.sectionTitle}>
-          阶段 {displayIndex} · 分类（对父框 ROI）
-        </strong>
-        <span className={cx(styles.stageBadge, styles[`stageBadge_${runState}`])}>
-          {RUN_STATE_LABEL[runState]}
+    <Card className={styles.stageCard}>
+      <div className={styles.stageCardHeader}>
+        <span className={styles.stageRole}>
+          <Icon name="brain" size={13} />
+          <Badge variant="accent">分类</Badge>
+          <strong className={styles.sectionTitle}>阶段 {displayIndex}</strong>
         </span>
-        <Button size="sm" variant="ghost" onClick={() => onRemove(id)} title="移除该阶段">
-          <Icon name="trash" size={11} /> 移除
-        </Button>
+        <span className={styles.stageHeaderRight}>
+          <Badge variant={badge.variant} dot={badge.dot}>
+            {badge.label}
+          </Badge>
+          <Button size="sm" variant="ghost" onClick={() => onRemove(id)} title="移除该阶段">
+            <Icon name="trash" size={11} />
+          </Button>
+        </span>
       </div>
 
-      {/* v0.18.6 · 运行态计数 (实时/终态): 目标·成功·失败·几何跳过。 */}
+      {/* v0.18.8 · 运行态: 进度条 (成功/目标) + 计数块 (StatCard 风格), 替换纯文本行。 */}
       {stat && (
-        <div className={styles.stageStatRow}>
-          目标 {stat.targeted ?? 0}，成功{" "}
-          <span className="text-status-positive">{stat.ok ?? 0}</span>
-          {(stat.failed ?? 0) > 0 && (
-            <>
-              ，失败 <span className="text-status-caution">{stat.failed}</span>
-            </>
-          )}
-          {(stat.skipped_geometry ?? 0) > 0 && (
-            <span className={styles.mutedText}>
-              {" "}
-              · {stat.skipped_geometry} 框因几何不支持跳过
+        <div className={styles.stageRun}>
+          <ProgressBar value={okPct} />
+          <div className={styles.stageCounts}>
+            <span className={styles.stageCount}>
+              <span className={styles.stageCountLabel}>目标</span>
+              <span className={styles.stageCountValue}>{targeted}</span>
             </span>
-          )}
+            <span className={styles.stageCount}>
+              <span className={styles.stageCountLabel}>成功</span>
+              <span className="text-status-positive">{stat.ok ?? 0}</span>
+            </span>
+            {(stat.failed ?? 0) > 0 && (
+              <span className={styles.stageCount}>
+                <span className={styles.stageCountLabel}>失败</span>
+                <span className="text-status-caution">{stat.failed}</span>
+              </span>
+            )}
+            {(stat.skipped_geometry ?? 0) > 0 && (
+              <span className={cx(styles.stageCount, styles.mutedText)}>
+                <span className={styles.stageCountLabel}>几何跳过</span>
+                <span>{stat.skipped_geometry}</span>
+              </span>
+            )}
+          </div>
         </div>
       )}
 
@@ -306,6 +332,6 @@ export function StageCard({
           emptyHint="下游 backend 未自报属性 schema，且项目无属性字段；留空=接收全部键"
         />
       </div>
-    </div>
+    </Card>
   );
 }

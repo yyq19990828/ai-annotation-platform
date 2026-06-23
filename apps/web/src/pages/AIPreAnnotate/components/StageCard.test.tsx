@@ -87,9 +87,11 @@ describe("StageCard v0.18.5/6", () => {
       stat: { stage: 1, targeted: 5, ok: 3, failed: 1, skipped_geometry: 1 },
     });
     expect(screen.getByText("运行中")).toBeInTheDocument();
-    expect(screen.getByText(/目标 5/)).toBeInTheDocument();
-    expect(screen.getByText("3")).toBeInTheDocument(); // 成功
-    expect(screen.getByText(/几何不支持跳过/)).toBeInTheDocument();
+    // 计数块: 标签 + 值分列 (StatCard 风格)
+    expect(screen.getByText("目标")).toBeInTheDocument();
+    expect(screen.getByText("5")).toBeInTheDocument(); // 目标值
+    expect(screen.getByText("3")).toBeInTheDocument(); // 成功值
+    expect(screen.getByText("几何跳过")).toBeInTheDocument();
   });
 
   it("未跑时徽标为「待运行」, 无计数行", () => {
