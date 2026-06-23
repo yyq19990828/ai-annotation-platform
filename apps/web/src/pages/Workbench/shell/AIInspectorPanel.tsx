@@ -139,6 +139,16 @@ export function AIInspectorPanel({
   const attrMissing = selectedAnnotation && attributeSchema
     ? getMissingRequired(attributeSchema, selectedAnnotation.class_name, selectedAnnotation.attributes ?? {})
     : [];
+  // v0.18.0 · 采纳前预览: 选中单个 AI 候选 (未落库, selectedAnnotation 为空) 且其携带属性时,
+  // 在底部用只读 AttributeForm 展示二阶段 backend 写入的 attributes (经 schema options 解析为中文)。
+  const selectedAiBox =
+    !selectedAnnotation && selSet.size === 1
+      ? aiBoxes.find((b) => selSet.has(b.id)) ?? null
+      : null;
+  const aiBoxAttrs =
+    selectedAiBox?.attributes && Object.keys(selectedAiBox.attributes).length > 0
+      ? selectedAiBox.attributes
+      : null;
   if (!open) {
     return null;
   }
@@ -252,6 +262,39 @@ export function AIInspectorPanel({
                 readOnly={readOnly}
                 hideHeading
               />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* v0.18.0 · 候选属性预览 (只读): 选中未落库的 AI 候选且其携带二阶段属性时展示。 */}
+      {!videoTrackPanel && aiBoxAttrs && selectedAiBox && attributeSchema && (
+        <div className="flex max-h-[45%] flex-[0_0_auto] flex-col border-t border-border bg-card">
+          <button
+            type="button"
+            className="flex w-full cursor-pointer appearance-none items-center gap-1.5 border-0 bg-transparent px-3.5 py-2 text-left text-xs font-semibold text-foreground hover:bg-muted"
+            onClick={() => setAttrCollapsed((v) => !v)}
+            aria-expanded={!attrCollapsed}
+            title={attrCollapsed ? "展开属性预览" : "折叠属性预览"}
+          >
+            <Icon name={attrCollapsed ? "chevRight" : "chevDown"} size={13} />
+            <span>属性预览</span>
+            <span className="text-xs font-normal text-status-info">· 候选</span>
+            <span className="ml-auto text-xs font-normal text-muted-foreground">{displayClassName(selectedAiBox.cls)}</span>
+          </button>
+          {!attrCollapsed && (
+            <div className="overflow-y-auto pb-1">
+              <AttributeForm
+                schema={attributeSchema}
+                className={selectedAiBox.cls}
+                attributes={aiBoxAttrs}
+                onChange={() => {}}
+                readOnly
+                hideHeading
+              />
+              <p className="m-0 px-3.5 pb-2 text-2xs leading-normal text-muted-foreground">
+                采纳后这些属性将写入新建标注，可在采纳后编辑。
+              </p>
             </div>
           )}
         </div>

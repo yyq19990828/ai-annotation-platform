@@ -128,6 +128,20 @@ function ocrTextSummary(b: Annotation | AiBox): string | null {
   return trimmed.length > 48 ? `${trimmed.slice(0, 48)}…` : trimmed;
 }
 
+// v0.18.0 · 二阶段候选属性摘要 (车型 / 颜色等 select). 排除 text(OCR 摘要已单列) 与
+// 非原子值. 此处无项目 schema, 只能展示原始存储值 (英文枚举); 中文标签由侧栏属性预览
+// (AttributeForm + options) 负责. 仅 AI 候选行展示, 给采纳前一眼可辨的信号.
+function attributesSummary(b: Annotation | AiBox): string[] {
+  if (!("attributes" in b) || !b.attributes) return [];
+  const out: string[] = [];
+  for (const [key, val] of Object.entries(b.attributes)) {
+    if (key === "text") continue;
+    if (val == null || val === "" || typeof val === "object") continue;
+    out.push(String(val));
+  }
+  return out;
+}
+
 // v0.14.9 · 命中 doc_layout 版面类别时返回中文 badge 文案, 否则 null.
 function docLayoutBadge(b: Annotation | AiBox): string | null {
   const key = b.cls?.toLowerCase?.();
@@ -166,6 +180,7 @@ export function BoxListItem({
   // v0.14.9 · OCR / doc_layout 候选: 文本摘要 + 版面 type badge (仅 AI 行展示).
   const ocrText = isAi ? ocrTextSummary(b) : null;
   const layoutBadge = isAi ? docLayoutBadge(b) : null;
+  const attrSummary = isAi ? attributesSummary(b) : [];
   return (
     <div
       data-testid={`box-list-item-${b.id}`}
@@ -233,6 +248,18 @@ export function BoxListItem({
           <div className="col-start-2 flex items-center gap-1 min-w-0 mt-0.5 text-muted-foreground text-xs" title={ocrText}>
             <Icon name="type" size={11} />
             <span className="overflow-hidden text-ellipsis whitespace-nowrap">{ocrText}</span>
+          </div>
+        )}
+        {attrSummary.length > 0 && (
+          <div className="col-start-2 flex flex-wrap gap-1 min-w-0 mt-0.5">
+            {attrSummary.map((value, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center px-1.5 py-px border border-border rounded bg-muted text-muted-foreground text-2xs whitespace-nowrap"
+              >
+                {value}
+              </span>
+            ))}
           </div>
         )}
       </div>
