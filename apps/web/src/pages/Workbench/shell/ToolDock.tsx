@@ -6,14 +6,19 @@ import { toolUnitForTool } from "../stage/tools/toolUnits";
 import type { ThreeDTool, VideoTool } from "../state/useWorkbenchState";
 
 const ROOT_CLASS = "relative flex flex-col items-center gap-1.5 border-r border-border bg-card px-1 py-2.5";
+// 仅布局 / 边框宽度，不含颜色 utility —— 颜色按 active / idle 互斥下发，
+// 否则朴素 cn() (非 tailwind-merge) 下基础色类会因 CSS 源顺序覆盖激活色类，导致高亮失效。
 const TOOL_BTN_CLASS =
-  "relative flex size-[38px] cursor-pointer appearance-none items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition-colors";
+  "relative flex size-[38px] cursor-pointer appearance-none items-center justify-center rounded-md border transition-colors";
+// 非激活态中性配色 (边框 / 底 / 图标)。
+const TOOL_BTN_IDLE = "border-transparent bg-transparent text-muted-foreground";
 const TOOL_BTN_HOVER = "hover:bg-muted hover:text-foreground";
-const TOOL_BTN_ACTIVE = "border-brand/30 bg-brand/10 text-brand";
+// 激活态：实心品牌底 + 白色图标 + 投影，醒目可辨。
+const TOOL_BTN_ACTIVE = "border-brand bg-brand text-brand-foreground shadow-sm";
 const TOOL_BTN_DISABLED = "cursor-not-allowed opacity-40";
 const HOTKEY_BADGE_CLASS =
   "pointer-events-none absolute bottom-px right-[3px] text-3xs font-bold leading-none text-muted-foreground/60";
-const HOTKEY_BADGE_ACTIVE = "text-brand";
+const HOTKEY_BADGE_ACTIVE = "text-brand-foreground/80";
 const DIVIDER_CLASS = "my-1.5 h-px w-[26px] bg-border";
 
 interface ToolDockProps {
@@ -58,6 +63,7 @@ interface ToolDescriptor {
 
 /** v0.10.2 · Tooltip + Alt+digit 副 hotkey. */
 const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor> = {
+  select: { desc: "点选 / 移动已有标注与预标注 · ESC 回退到它", altDigit: 4 },
   box: { desc: "拖鼠标画矩形框", altDigit: 1 },
   "rotated-box": { desc: "拖框 → 顶部手柄旋转 (OBB)" },
   polygon: { desc: "逐点画多边形 (Enter 闭合)", altDigit: 2 },
@@ -146,7 +152,7 @@ export function ToolDock({
                 aria-label={t.label}
                 aria-pressed={active}
                 data-testid={`three-d-tool-btn-${t.id}`}
-                className={cn(TOOL_BTN_CLASS, active ? TOOL_BTN_ACTIVE : TOOL_BTN_HOVER)}
+                className={cn(TOOL_BTN_CLASS, active ? TOOL_BTN_ACTIVE : cn(TOOL_BTN_IDLE, TOOL_BTN_HOVER))}
               >
                 <Icon name={t.icon} size={17} />
                 <span aria-hidden className={cn(HOTKEY_BADGE_CLASS, active && HOTKEY_BADGE_ACTIVE)}>
@@ -190,7 +196,7 @@ export function ToolDock({
                   aria-label={t.label}
                   aria-pressed={active}
                   data-testid={`video-tool-btn-${t.id}`}
-                  className={cn(TOOL_BTN_CLASS, active ? TOOL_BTN_ACTIVE : TOOL_BTN_HOVER)}
+                  className={cn(TOOL_BTN_CLASS, active ? TOOL_BTN_ACTIVE : cn(TOOL_BTN_IDLE, TOOL_BTN_HOVER))}
                 >
                   <Icon name={t.icon} size={17} />
                   <span aria-hidden className={cn(HOTKEY_BADGE_CLASS, active && HOTKEY_BADGE_ACTIVE)}>
@@ -206,10 +212,10 @@ export function ToolDock({
   }
 
   const visibleTools = reviewMode
-    ? ALL_TOOLS.filter((t) => t.id === "hand")
+    ? ALL_TOOLS.filter((t) => t.id === "select")
     : ALL_TOOLS.filter((t) => {
-        // hand (视图) 与 AI 工具 (requiredPrompt, 按后端能力置灰) 不受 tool_bindings 过滤。
-        if (t.id === "hand" || t.requiredPrompt) return true;
+        // select (选择) 与 AI 工具 (requiredPrompt, 按后端能力置灰) 不受 tool_bindings 过滤。
+        if (t.id === "select" || t.requiredPrompt) return true;
         // 老项目无 tool_bindings → enabledToolUnits 为 null → 全显示 (向后兼容)。
         if (!enabledToolUnits) return true;
         return enabledToolUnits.has(toolUnitForTool(t.id));
@@ -217,8 +223,8 @@ export function ToolDock({
 
   // 分组分隔: 普通绘制 → AI 工具 → 视图工具
   const isAITool = (t: CanvasTool) => !!t.requiredPrompt;
-  const groupOf = (t: CanvasTool): "draw" | "ai" | "view" =>
-    t.id === "hand" ? "view" : isAITool(t) ? "ai" : "draw";
+  const groupOf = (t: CanvasTool): "select" | "draw" | "ai" | "view" =>
+    t.id === "select" ? "select" : t.id === "hand" ? "view" : isAITool(t) ? "ai" : "draw";
 
   return (
     <div className={ROOT_CLASS} data-workbench-tool-dock>
@@ -269,7 +275,7 @@ export function ToolDock({
                   disabled={disabled}
                   className={cn(
                     TOOL_BTN_CLASS,
-                    active ? TOOL_BTN_ACTIVE : !disabled && TOOL_BTN_HOVER,
+                    active ? TOOL_BTN_ACTIVE : cn(TOOL_BTN_IDLE, !disabled && TOOL_BTN_HOVER),
                     disabled && TOOL_BTN_DISABLED,
                   )}
                 >

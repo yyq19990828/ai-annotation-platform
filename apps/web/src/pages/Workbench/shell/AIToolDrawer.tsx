@@ -77,6 +77,7 @@ function groupModelsByTask(
 }
 
 const TOOL_HINT: Record<ToolId, string | null> = {
+  select: null,
   box: null,
   "rotated-box": null,
   hand: null,

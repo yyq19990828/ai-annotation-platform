@@ -8,6 +8,8 @@ import { useWorkbenchConfig } from "./useWorkbenchConfig";
 // text-prompt / exemplar), 每个绑定一个 prompt 范式. 状态层仅保留 polarity (smart-point
 // 用) 和 aiToolParams (AIToolDrawer 用); samSubTool 由 tool 派生, 不再独立持有.
 export type Tool =
+  // 选择工具：点选 / 移动已有标注与预标注；默认工具，ESC 回退到它。
+  | "select"
   | "box"
   // v0.10.28 · 旋转框 (OBB): 先拖轴对齐矩形, 提交后用旋转手柄调角度.
   | "rotated-box"
@@ -109,7 +111,7 @@ export function useWorkbenchState() {
     setLayout: setWorkbenchLayout,
   } = useWorkbenchConfig();
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
-  const [tool, setTool] = useState<Tool>("box");
+  const [tool, setTool] = useState<Tool>("select");
   const [videoTool, setVideoTool] = useState<VideoTool>("box");
   const [threeDTool, setThreeDTool] = useState<ThreeDTool>("select");
   const [videoFrameIndex, setVideoFrameIndex] = useState(0);

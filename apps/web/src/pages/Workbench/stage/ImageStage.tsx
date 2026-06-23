@@ -294,7 +294,9 @@ export function ImageStage({
   }, [selectedIds, selectedId]);
   // user 层在 HandTool / 只读时关闭 listening，省 hit-test 开销。
   // ai 层只要不在只读模式都开（支持点击采纳），HandTool 下也可点选 AI 候选。
-  const userLayerListening = tool !== "hand" && !readOnly;
+  // 严格分离：仅「选择工具」下可点选 / 移动已有标注与预标注；绘制工具下画布层只画不选。
+  const selectActive = tool === "select";
+  const userLayerListening = selectActive && !readOnly;
   // v0.9.41 · 标注偏好（I17）：smoothImage / cssImageFilter / longTaskSampleRate。
   // v0.10.10 · I17.3 · 合并项目级 rendering_config 覆盖（项目级 > 用户级 > 默认）。
   const { config: workbenchConfig } = useWorkbenchConfig(projectRenderingConfig);
@@ -764,6 +766,8 @@ export function ImageStage({
     ? "grabbing"
     : (tool === "hand" || spacePan)
     ? "grab"
+    // 选择工具：箭头光标（点选 / 移动已有标注）。
+    : tool === "select" ? "default"
     : tool === "canvas" ? "crosshair"
     // v0.10.9 · Mask 工具用自绘 overlay 圆圈替代系统光标，让笔刷大小与图像同比例可视。
     : tool === "mask" ? "none"
@@ -969,9 +973,9 @@ export function ImageStage({
           )}
         </Layer>
 
-        {/* ai 层：AI 预测框（虚线 + 浅填充）。listening 保持开以支持点击采纳；
-            但与 user 层分离后，user 框的 move/resize 重绘不再连带触发 AI 层重绘。 */}
-        <Layer name="ai">
+        {/* ai 层：AI 预测框（虚线 + 浅填充）。严格分离：仅「选择工具」下可点选采纳，
+            与 user 层一致；绘制工具下不响应 hit-test，避免预标注被任意工具误选。 */}
+        <Layer name="ai" listening={selectActive}>
           {aiBoxes.map((b) => (
             b.polyline && b.polyline.length >= 2 ? (
               <KonvaPolyline
@@ -1588,8 +1592,8 @@ export function ImageStage({
         );
       })()}
 
-      {selectedBox && !readOnly && !pendingDrawing && tool !== "canvas" && isSelectedAi && (
-        // AI 预测单选：贴框快捷采纳 / 驳回。用户框单选 / 多选(改类 / 合并 / 锁定 / 隐藏 / 删除)
+      {selectedBox && !readOnly && !pendingDrawing && selectActive && isSelectedAi && (
+        // AI 预测单选：贴框快捷采纳 / 驳回 (仅选择工具下展示)。用户框单选 / 多选(改类 / 合并 / 锁定 / 隐藏 / 删除)
         // 已迁出到浮动选中卡。
         <SelectionOverlay
           box={selectedBox}

@@ -480,9 +480,10 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           if (s.pendingDrawing) { s.setPendingDrawing(null); return; }
           if (s.editingClass) { s.setEditingClass(null); return; }
           if (s.selectedId) { s.setSelectedId(null); return; }
-          // v0.11.29 · 视频模式：仅当无草稿 / 无选中可取消时，ESC 才回归 hand 中立态，
-          // 避免用户只想取消选中却顺手把当前 track 工具一并丢掉。
+          // 无草稿 / 无选中可取消时，ESC 回归中立态：视频回 hand，图片回选择工具。
+          // 避免用户只想取消选中却顺手把当前工具一并丢掉。
           if (videoMode) s.setVideoTool("hand");
+          else s.setTool("select");
           return;
 
         case "thresholdAdjust":

@@ -1,6 +1,7 @@
 import type { Viewport } from "../../state/useViewportTransform";
 import type { SamPolarity } from "../../state/useWorkbenchState";
 import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
+import { SelectTool } from "./SelectTool";
 import { BboxTool } from "./BboxTool";
 import { RotatedBboxTool } from "./RotatedBboxTool";
 import { HandTool } from "./HandTool";
@@ -21,6 +22,8 @@ import type { Keypoint } from "@/types";
 //   SAM 单工具拆为 4 个独立工具, 每个声明 requiredPrompt (point/bbox/text/exemplar) 由
 //   useMLCapabilities 决定可用性. 旧 "sam" id 移除.
 export type ToolId =
+  // 选择工具：点选 / 移动已有标注与预标注；默认工具，ESC 回退到它。
+  | "select"
   | "box"
   // v0.10.28 · 旋转框 (OBB).
   | "rotated-box"
@@ -139,6 +142,7 @@ export interface CanvasTool extends ToolMeta {
 }
 
 export const TOOL_REGISTRY: Record<ToolId, CanvasTool> = {
+  select: SelectTool,
   box: BboxTool,
   "rotated-box": RotatedBboxTool,
   hand: HandTool,
@@ -155,12 +159,14 @@ export const TOOL_REGISTRY: Record<ToolId, CanvasTool> = {
 };
 
 /** v0.10.2 · ToolDock 渲染顺序:
- *   普通绘制 → 分隔 → AI 工具组 (按 prompt 范式排) → 分隔 → 视图工具.
- *   ToolDock 在 polygon/exemplar 后插入分组分隔; canvas 仅评论批注, 不入栏.
+ *   选择工具 → 分隔 → 普通绘制 → 分隔 → AI 工具组 (按 prompt 范式排).
+ *   ToolDock 在分组切换处插入分隔; canvas 仅评论批注, 不入栏;
+ *   hand 仅供 spacePan / 右键拖拽内部复用 (TOOL_REGISTRY.hand), 不在工具栏展示.
  * v0.14.18 · text-prompt 文本召回本质属批量能力, 从工具栏 AI 工具组摘除 (只留批量 AI 面板);
  *   TextPromptTool / TOOL_REGISTRY 的 "text-prompt" 条目保留 (类型与历史兼容), 仅不再出现在工具栏。
  */
 export const ALL_TOOLS: CanvasTool[] = [
+  SelectTool,
   BboxTool,
   RotatedBboxTool,
   PolygonTool,
@@ -171,7 +177,6 @@ export const ALL_TOOLS: CanvasTool[] = [
   SmartBoxTool,
   ExemplarTool,
   MagicBoxTool,
-  HandTool,
 ];
 
 /** v0.10.2 · 仅 AI 工具子集 (requiredPrompt 非空), 供 hotkey 循环和 AIToolDrawer 判定. */
@@ -183,6 +188,7 @@ export function isAIToolId(id: ToolId): boolean {
 }
 
 export {
+  SelectTool,
   BboxTool,
   RotatedBboxTool,
   HandTool,

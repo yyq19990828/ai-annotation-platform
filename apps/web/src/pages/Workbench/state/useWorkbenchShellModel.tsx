@@ -840,10 +840,10 @@ export function useWorkbenchShellModel({
     if (!isAIToolId(s.tool)) return;
     const requiredPrompt = promptOfTool(s.tool);
     if (requiredPrompt && !routing.isPromptSupported(requiredPrompt)) {
-      s.setTool("hand");
+      s.setTool("select");
       pushToast({
         msg: "当前后端不支持此 AI 工具",
-        sub: "已切回手型；请到项目设置注册支持该交互的后端",
+        sub: "已切回选择工具；请到项目设置注册支持该交互的后端",
         kind: "warning",
       });
     }
@@ -851,7 +851,7 @@ export function useWorkbenchShellModel({
   }, [routingSig, routing.isLoading, s.tool]);
   useEffect(() => {
     if (!isVideoTask) return;
-    if (tool !== "box" && tool !== "hand") setTool("box");
+    if (tool !== "box" && tool !== "select") setTool("box");
   }, [isVideoTask, tool, setTool]);
 
   useEffect(() => {
