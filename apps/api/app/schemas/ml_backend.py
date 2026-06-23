@@ -98,6 +98,8 @@ class ModelCapability(BaseModel):
     supported_prompts: list[str] = []
     supported_geometric_outputs: list[str] = []
     output_attribute_types: list[str] = []
+    # 协议③ · 属性 schema 自描述 ([{key,label,type,options}]), 供平台导入项目 attribute_schema.
+    output_attribute_schema: list[dict] = []
     supported_text_outputs: list[str] = []
     supported_trackers: list[str] = []
     supported_variants: list[dict] = []

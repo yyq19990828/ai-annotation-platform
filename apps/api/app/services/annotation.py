@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import uuid
 from datetime import datetime
 from sqlalchemy import select, func, text
@@ -28,6 +29,8 @@ from app.services.annotation_propagation import (
     _new_track_id as _new_track_id,
     _track_visible_keyframes as _track_visible_keyframes,
 )
+
+logger = logging.getLogger("app.services.annotation")
 
 VIDEO_BBOX_CONVERSION_LIMIT = 5000
 
@@ -157,6 +160,8 @@ class AnnotationService:
         project = await self.db.get(Project, prediction.project_id)
         prediction_unit = getattr(prediction, "tool_unit_id", None) or "bbox"
         alias_to_name: dict[str, str] = {}
+        # v0.18.0 · select/multiselect 属性的合法取值集合, 采纳时软校验 (不阻断, 仅 warning).
+        attr_select_options: dict[str, set[str]] = {}
         if project is not None:
             binding = (project.tool_bindings or {}).get(prediction_unit) or {}
             for cls in binding.get("classes") or []:
@@ -166,6 +171,13 @@ class AnnotationService:
                 cname = cls.get("name")
                 if isinstance(alias, str) and alias.strip() and isinstance(cname, str):
                     alias_to_name[alias.strip().lower()] = cname
+            for field in (binding.get("attribute_schema") or {}).get("fields") or []:
+                if not isinstance(field, dict) or field.get("type") not in ("select", "multiselect"):
+                    continue
+                fkey = field.get("key")
+                opts = {o.get("value") for o in (field.get("options") or []) if isinstance(o, dict)}
+                if isinstance(fkey, str) and opts:
+                    attr_select_options[fkey] = opts
 
         raw_shapes = list(prediction.result or [])
         if shape_index is not None:
@@ -203,6 +215,18 @@ class AnnotationService:
             # 权威 _shape_index 放在最后, 防止 backend 在 shape attributes 里同名覆盖
             # 导致前端按 (predictionId, shapeIndex) 双键命中错位。
             attributes["_shape_index"] = idx
+            # v0.18.0 · 软校验 select/multiselect 属性值: 不在 options 内仍保留入库, 仅记 warning
+            # (避免模型抖动产出越界值时整框采纳失败; 硬校验留给人工提交). _shape_index 等内部键跳过.
+            for _akey, _aval in attributes.items():
+                _allowed = attr_select_options.get(_akey)
+                if _allowed is None:
+                    continue
+                _bad = [v for v in (_aval if isinstance(_aval, list) else [_aval]) if v not in _allowed]
+                if _bad:
+                    logger.warning(
+                        "accept_prediction %s shape %s: 属性 %s=%s 不在 select options 内 (保留入库)",
+                        prediction_id, idx, _akey, _bad,
+                    )
             annotation = Annotation(
                 id=uuid.uuid4(),
                 task_id=prediction.task_id,

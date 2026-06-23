@@ -7920,6 +7920,23 @@
             ],
             "title": "Model Family"
           },
+          "output_attribute_schema": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Output Attribute Schema",
+            "type": "array"
+          },
+          "output_attribute_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Output Attribute Types",
+            "type": "array"
+          },
           "supported_geometric_outputs": {
             "default": [],
             "items": {
@@ -9001,6 +9018,15 @@
               }
             ],
             "title": "Model Family"
+          },
+          "output_attribute_schema": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Output Attribute Schema",
+            "type": "array"
           },
           "output_attribute_types": {
             "default": [],

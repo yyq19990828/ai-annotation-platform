@@ -87,6 +87,8 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         "supported_prompts": list(model.get("supported_prompts") or []),
         "supported_geometric_outputs": geo,
         "output_attribute_types": list(model.get("output_attribute_types") or []),
+        # 协议③ · backend 自报的属性 schema (含 select options), 供平台一键导入项目 attribute_schema.
+        "output_attribute_schema": list(model.get("output_attribute_schema") or []),
         "supported_text_outputs": list(model.get("supported_text_outputs") or []),
         "supported_trackers": list(model.get("supported_trackers") or []),
         "supported_variants": model.get("supported_variants") or [],

@@ -12,6 +12,29 @@ def test_extract_none_returns_none():
     assert extract_capabilities({}) is None
 
 
+def test_extract_passes_through_output_attribute_schema():
+    """协议③ · model 的 output_attribute_schema (含 select options) 透传到能力快照."""
+    setup = {
+        "name": "onnxtools-backend",
+        "infra": "onnx",
+        "models": [
+            {
+                "id": "vehicle-attr",
+                "task": "detection",
+                "supported_geometric_outputs": ["bbox"],
+                "output_attribute_types": ["class"],
+                "output_attribute_schema": [
+                    {"key": "vehicle_type", "type": "select", "options": [{"value": "car", "label": "小车"}]},
+                    {"key": "color", "type": "select", "options": [{"value": "blue", "label": "蓝色"}]},
+                ],
+            }
+        ],
+    }
+    model = extract_capabilities(setup)["models"][0]
+    assert [f["key"] for f in model["output_attribute_schema"]] == ["vehicle_type", "color"]
+    assert model["output_attribute_schema"][0]["options"][0]["value"] == "car"
+
+
 # ── 多模型 backend (YOLO 官仓: 按任务分条目) ──
 
 
