@@ -34,6 +34,22 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.9] - 2026-06-24
+
+多阶段预标注（路径 B）下游分类原子化：把 onnxtools-backend 从「只暴露一条完整检测+分类 pipeline」拆出独立的纯分类 model，并让平台多阶段编排的下游阶段自动用它。这样「检测（如 grounded-sam2）→ 裁 ROI → 分类（onnxtools）」是真正的跨 backend 原子编排，下游不再在已裁好的单车 ROI 上重复跑检测器（冗余 + 紧 crop 域偏移漏检）。
+
+### Added
+
+- **onnxtools-backend 暴露纯分类 model（0.1.0 → 0.2.0）**：`/setup` 在原 `vehicle-attr`（完整 rtdetr 检测 + va 分类）之外新增 `vehicle-attr-classify`（`task=classification`，复用同一常驻 pipeline 内的 `VehicleAttributeORT`，跳过 rtdetr，把整张输入 ROI 当一辆车直接出车型/颜色属性）。`/predict` 按 `context.model_id` 路由两条路径，两 model 共用同一份 `output_attribute_schema`。
+
+### Changed
+
+- **下游阶段优先纯分类 model**：`StageCard` 在所选 backend 暴露 `task=classification` 的 model 时，stage payload 自动改用该 model（覆盖 `buildArgs` 默认取的 `models[0]`，常为检测 model），并显式提示「下游模型：…（纯分类，跳过检测）」。无分类 model 时回落原行为。修复了「下游分类阶段会误用检测 model」的实际缺口。
+
+### Notes
+
+- 端到端实测（P-8 苏州图片，grounded-sam2 检测 + onnxtools 纯分类）：阶段 0 检出 32 框 → 阶段 1 目标 27 / 成功 27 / 几何跳过 5，属性 `{vehicle_type, color}` 正确写回各检测框，crop 经 presigned URL 投递（复用 v0.18.4 通用投递）。
+
 ## [0.18.8] - 2026-06-23
 
 多阶段预标注（路径 B）编排 UI 美化：把功能优先搭起来的多阶段界面提到与全站 shadcn 设计体系一致的水准。纯前端视觉 / 交互层，不改编排语义、校验、请求体。方案见 [`docs/plans/2026-06-23-v0.18.8-staged-preannotate-ui-polish.md`](docs/plans/2026-06-23-v0.18.8-staged-preannotate-ui-polish.md)。

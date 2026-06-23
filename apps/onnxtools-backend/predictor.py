@@ -63,6 +63,42 @@ def load_image_bgr(file_path: str, *, http_timeout: float = 10.0) -> np.ndarray:
     return img
 
 
+def classification_to_result(
+    vehicle_type: str,
+    color: str,
+    *,
+    vehicle_type_conf: float = 0.0,
+    color_conf: float = 0.0,
+) -> dict[str, Any]:
+    """把纯分类结果(整张输入图 = 一辆车)映射为单条协议 v2 result。
+
+    用于「检测→分类」多阶段编排的下游分类阶段:上游已裁好单车 ROI,本 backend 只跑
+    VehicleAttributeORT,跳过 rtdetr 检测。几何取整图框 ——下游阶段的几何会被平台 merge
+    丢弃,只取 ``attributes``;``rectanglelabels`` 填车型,便于单 backend 直接调用时仍可读。
+
+    Args:
+        vehicle_type: 车型类别 (VEHICLE_TYPE_MAP 的 value)。
+        color: 颜色类别 (VEHICLE_COLOR_MAP 的 value)。
+        vehicle_type_conf: 车型分类置信度。
+        color_conf: 颜色分类置信度。
+
+    Returns:
+        单条协议 result (type=rectanglelabels, 整图框 + attributes)。
+    """
+    return {
+        "type": "rectanglelabels",
+        "value": {
+            "x": 0.0,
+            "y": 0.0,
+            "width": 100.0,
+            "height": 100.0,
+            "rectanglelabels": [vehicle_type],
+        },
+        "score": float(min(vehicle_type_conf, color_conf)),
+        "attributes": {"vehicle_type": vehicle_type, "color": color},
+    }
+
+
 def detections_to_results(output: list[dict[str, Any]], img_w: int, img_h: int) -> list[dict[str, Any]]:
     """把 VehicleAttributePipeline 输出映射为协议 v2 result 数组。
 
@@ -117,3 +153,28 @@ class VehicleAttributePredictor:
         output = self._pipeline(img)
         infer_ms = int((time.time() - t0) * 1000)
         return detections_to_results(output, img_w, img_h), infer_ms
+
+    def classify_one(self, file_path: str) -> tuple[list[dict[str, Any]], int]:
+        """对单张已裁好的车辆 ROI 只做属性分类(跳过 rtdetr 检测)。
+
+        复用 pipeline 已常驻的 ``va_classifier`` (VehicleAttributeORT),把整张输入图
+        当作一辆车直接分类。用于多阶段编排的下游分类阶段——上游检测器(如 gsam2)
+        已框出并裁好 ROI,这里不再重复检测。
+
+        Args:
+            file_path: 图像来源(见 :func:`load_image_bgr`)。
+
+        Returns:
+            (单元素协议 result 数组, 推理耗时毫秒)。
+        """
+        img = load_image_bgr(file_path)
+        t0 = time.time()
+        va = self._pipeline.va_classifier(img)
+        infer_ms = int((time.time() - t0) * 1000)
+        item = classification_to_result(
+            va.labels[0],
+            va.labels[1],
+            vehicle_type_conf=float(va.confidences[0]),
+            color_conf=float(va.confidences[1]),
+        )
+        return [item], infer_ms

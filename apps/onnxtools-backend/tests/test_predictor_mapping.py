@@ -4,7 +4,7 @@
 依赖 cv2（predictor 顶部导入）+ numpy —— 用带 opencv 的环境（如 onnxtools 的 .venv）跑。
 """
 
-from predictor import detections_to_results
+from predictor import classification_to_result, detections_to_results
 
 
 class TestDetectionsToResults:
@@ -48,3 +48,33 @@ class TestDetectionsToResults:
         output = [{"type": "plate", "box2d": [1.0, 2.0, 3.0, 4.0]}]
         items = detections_to_results(output, img_w=10, img_h=10)
         assert items[0]["score"] == 0.0
+
+
+class TestClassificationToResult:
+    """Tests for classification_to_result — 纯分类(下游阶段)→ 单条协议 result."""
+
+    def test_classify_maps_to_whole_image_box_with_attributes(self):
+        """纯分类 → 整图框 rectanglelabels + attributes{vehicle_type,color}, 车型作标签."""
+        item = classification_to_result(
+            "school_bus", "blue", vehicle_type_conf=0.93, color_conf=0.88
+        )
+        assert item["type"] == "rectanglelabels"
+        # 整图框: 几何占位, 平台 merge 丢弃只取 attributes
+        assert item["value"]["x"] == 0.0
+        assert item["value"]["y"] == 0.0
+        assert item["value"]["width"] == 100.0
+        assert item["value"]["height"] == 100.0
+        assert item["value"]["rectanglelabels"] == ["school_bus"]
+        assert item["attributes"] == {"vehicle_type": "school_bus", "color": "blue"}
+
+    def test_score_is_min_of_branch_confs(self):
+        """score 取车型/颜色置信度较小者(弱环节)."""
+        item = classification_to_result(
+            "car", "red", vehicle_type_conf=0.9, color_conf=0.6
+        )
+        assert item["score"] == 0.6
+
+    def test_conf_defaults_zero(self):
+        """缺置信度 → score 0.0."""
+        item = classification_to_result("truck", "white")
+        assert item["score"] == 0.0

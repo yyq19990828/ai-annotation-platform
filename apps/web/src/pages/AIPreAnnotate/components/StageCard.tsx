@@ -187,6 +187,14 @@ export function StageCard({
     ? cfg.buildArgs("skip_predicted")
     : null;
 
+  // 下游阶段优先用 backend 的纯分类 model (task=classification): 上游已裁好单车 ROI,
+  // 用检测 model 会在 ROI 上重复检测 (冗余 + 紧 crop 域偏移漏检)。buildArgs 默认取 models[0]
+  // (常是检测 model), 这里据 capabilities 覆盖成分类 model; 无分类 model 时回落默认。
+  const classifyModel = useMemo(() => {
+    const models = cfg.capabilitiesQ.data?.models ?? [];
+    return models.find((m) => m.task === "classification") ?? null;
+  }, [cfg.capabilitiesQ.data]);
+
   // 派生 stage payload (不含 stage 序号 / parent_stage, 由容器补)。
   const payload = useMemo<Omit<PipelineStagePayload, "stage" | "parent_stage"> | null>(() => {
     if (!stageArgs) return null;
@@ -194,8 +202,8 @@ export function StageCard({
     const keyArr = Array.from(writeKeys);
     return {
       ml_backend_id: stageArgs.ml_backend_id,
-      model_id: stageArgs.model_id,
-      task_type: stageArgs.task_type,
+      model_id: classifyModel?.id ?? stageArgs.model_id,
+      task_type: classifyModel?.task ?? stageArgs.task_type,
       model_variants: stageArgs.model_variants,
       params: stageArgs.params,
       class_filter: stageArgs.class_filter,
@@ -208,7 +216,7 @@ export function StageCard({
     };
     // stageArgs 是每次渲染新对象, 用 JSON 串作稳定依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(stageArgs), classFilter, pad, writeKeys]);
+  }, [JSON.stringify(stageArgs), classifyModel?.id, classFilter, pad, writeKeys]);
 
   // 用 ref 固定 onChange, 避免容器每次渲染触发本 effect。
   const onChangeRef = useRef(onChange);
@@ -279,6 +287,12 @@ export function StageCard({
         onSelectBackend={setBackendId}
         projectMlBackendId={projectMlBackendId}
       />
+
+      {classifyModel && (
+        <span className={styles.mutedText}>
+          下游模型：{classifyModel.display_name || classifyModel.id}（纯分类，跳过检测）
+        </span>
+      )}
 
       {showNoAttrWarning && (
         <div className={styles.stageWarn}>

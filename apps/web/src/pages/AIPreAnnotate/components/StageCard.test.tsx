@@ -100,6 +100,34 @@ describe("StageCard v0.18.5/6", () => {
     expect(screen.queryByText(/目标/)).toBeNull();
   });
 
+  it("backend 有纯分类 model 时, 下游 payload 用分类 model_id + 显示提示", () => {
+    mockCfg.capabilitiesQ = {
+      isLoading: false,
+      data: {
+        models: [
+          { id: "vehicle-attr", task: "detection", display_name: "检测+分类" },
+          {
+            id: "vehicle-attr-classify",
+            task: "classification",
+            display_name: "纯分类·吃 ROI",
+            output_attribute_schema: [
+              { key: "color", label: "颜色", type: "select" },
+            ],
+          },
+        ],
+      },
+    };
+    const onChange = vi.fn();
+    renderCard({ onChange });
+    // 可见提示: 走纯分类 model
+    expect(screen.getByText(/纯分类，跳过检测/)).toBeInTheDocument();
+    // 上抛的 payload 用分类 model 而非 buildArgs 默认 (检测 model)
+    const calls = onChange.mock.calls;
+    const lastPayload = calls[calls.length - 1]?.[1];
+    expect(lastPayload?.model_id).toBe("vehicle-attr-classify");
+    expect(lastPayload?.task_type).toBe("classification");
+  });
+
   it("点类别 chip 选中后再点清空", () => {
     renderCard();
     const carChip = screen.getByRole("button", { name: "car" });
