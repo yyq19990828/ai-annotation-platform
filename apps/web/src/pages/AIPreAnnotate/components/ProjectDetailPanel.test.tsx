@@ -345,6 +345,37 @@ describe("ProjectDetailPanel v0.9.12", () => {
     expect(onBack).toHaveBeenCalled();
   });
 
+  // v0.18.5 · 多阶段配置硬化: 单 backend 兜底 + 加阶段门控。
+  describe("多阶段下游 backend 门控 (v0.18.5)", () => {
+    it("单 backend 项目: 提示需绑第二个 backend, 不出现加阶段按钮", () => {
+      // 默认 mockUseMLBackends 只有 bk1 (单 backend)。
+      renderUI();
+      expect(
+        screen.getByText(/需在项目设置绑定第二个 ML backend/),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /加第二阶段/ }),
+      ).toBeNull();
+    });
+
+    it("双 backend 项目: 出现加阶段按钮, 无单 backend 提示", () => {
+      mockUseMLBackends.mockReturnValue({
+        data: [
+          { id: "bk1", name: "grounded-sam2" },
+          { id: "bk2", name: "onnxtools" },
+        ],
+        isLoading: false,
+      });
+      renderUI();
+      expect(
+        screen.getByRole("button", { name: /加第二阶段/ }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/需在项目设置绑定第二个 ML backend/),
+      ).toBeNull();
+    });
+  });
+
   // v0.14.9 · 能力声明协议 v2: backend models[] 含 ocr / doc_layout 时的任务类型分流.
   describe("OCR / 文档版面任务类型", () => {
     function withOcrCapabilities() {

@@ -63,6 +63,9 @@ export interface TriggerPreannotationPayload {
   /** v0.18.1 · 多阶段预标注 (路径 B): 有序阶段列表. 非空时走 detect→ROI→classify 编排;
    *  缺省=单阶段, 与现状逐字等价. 源阶段 (parent_stage=null) 的 ml_backend_id 须等于顶层. */
   pipeline_stages?: PipelineStagePayload[];
+  /** v0.18.2 · 并行兄弟写同一属性键时的策略: reject (默认, 后端校验期 422) | last_wins (末位覆盖)。
+   *  仅多阶段 (pipeline_stages 非空) 生效。 */
+  on_key_conflict?: "reject" | "last_wins";
 }
 
 /** v0.18.1 · 单个预标阶段声明; 字段对应后端 PipelineStage. */

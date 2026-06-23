@@ -114,6 +114,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
         data_type?: string | null;
         ml_backend_id?: string | null;
         classes_config?: Record<string, { alias?: string | null }>;
+        // v0.18.5 · 项目属性 schema, 多阶段下游卡「写回属性键」多选的回落选项。
+        attribute_schema?: { fields?: Array<{ key: string; label?: string }> };
         box_threshold?: number | null;
         text_threshold?: number | null;
         // v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶), 详见 ProjectOut.default_variants.
@@ -197,6 +199,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     setDownstreamIds([]);
     stagePayloadsRef.current = {};
     setLastPipelineJobId(null);
+    setKeyConflictLastWins(false);
   }, [projectId]);
 
   const trigger = useTriggerPreannotation(projectId);
@@ -232,12 +235,39 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   );
   const allDownstreamReady = downstreamPayloads.every((p) => p != null);
 
-  // 配置层就绪 (源 cfg.configReady) && 下游卡 (若有) 全就绪 && 选了批次 && 不在跑。
+  // v0.18.5 · 选择器化数据源: 项目类别 (类名) + 项目属性 schema 字段键, 传给 StageCard 多选。
+  const projectClasses = useMemo(
+    () => Object.keys(project?.classes_config ?? {}),
+    [project?.classes_config],
+  );
+  const projectAttributeKeys = useMemo(
+    () => (project?.attribute_schema?.fields ?? []).map((f) => f.key),
+    [project?.attribute_schema],
+  );
+
+  // v0.18.5 · 键冲突配置期预警: 多张并行卡 write.keys 写同一键 → 该键即冲突。
+  // 算出冲突键集 (出现在 ≥2 张卡的键), 下发给卡片标红 + 顶部提示。
+  const conflictKeys = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of downstreamPayloads) {
+      for (const k of p?.write?.keys ?? []) {
+        counts.set(k, (counts.get(k) ?? 0) + 1);
+      }
+    }
+    return new Set(Array.from(counts).filter(([, n]) => n >= 2).map(([k]) => k));
+  }, [downstreamPayloads]);
+  const hasKeyConflict = conflictKeys.size > 0;
+  // 键冲突策略: reject (默认, 后端校验期拦) | last_wins (末位覆盖, 用户显式允许)。
+  const [keyConflictLastWins, setKeyConflictLastWins] = useState(false);
+
+  // 配置层就绪 (源 cfg.configReady) && 下游卡 (若有) 全就绪 && 选了批次 && 不在跑 &&
+  // (无键冲突 || 已选末位覆盖)。
   const canRun =
     cfg.configReady &&
     (downstreamIds.length === 0 || allDownstreamReady) &&
     selectedBatchIds.size > 0 &&
-    !running;
+    !running &&
+    (!hasKeyConflict || keyConflictLastWins);
 
   const onRun = async () => {
     const baseArgs = cfg.buildArgs(predictMode);
@@ -268,7 +298,12 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
           const resp = await trigger.mutateAsync({
             ...baseArgs,
             batch_id: bid,
-            ...(pipelineStages ? { pipeline_stages: pipelineStages } : {}),
+            ...(pipelineStages
+              ? {
+                  pipeline_stages: pipelineStages,
+                  on_key_conflict: keyConflictLastWins ? "last_wins" : "reject",
+                }
+              : {}),
           });
           if (resp?.job_id) firedJobIds.push(resp.job_id);
           okCount += 1;
@@ -460,19 +495,52 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                 backends={backends}
                 projectMlBackendId={project?.ml_backend_id}
                 sourceBackendId={selectedBackendId}
+                projectClasses={projectClasses}
+                projectAttributeKeys={projectAttributeKeys}
+                conflictKeys={conflictKeys}
                 onChange={onStageChange}
                 onRemove={removeStage}
               />
             ))}
 
-            <div className={styles.field}>
-              <Button size="sm" variant="ghost" onClick={addStage}>
-                <Icon name="plus" size={11} />
-                {downstreamIds.length === 0
-                  ? "加第二阶段（对每个检测框跑分类 → 写回属性）"
-                  : "并行加同级阶段（同源、各写不同属性）"}
-              </Button>
-            </div>
+            {/* v0.18.5 · 键冲突配置期预警: 多张并行卡写同一属性键 → 红字提示 + 末位覆盖开关。 */}
+            {hasKeyConflict && (
+              <div className={styles.stageWarn}>
+                <Icon name="warning" size={12} />
+                <div className={styles.field}>
+                  <span>
+                    多个并行阶段写同一属性键：
+                    {Array.from(conflictKeys).join("、")}。默认拦截，无法运行。
+                  </span>
+                  <label className={styles.inlineCheckbox}>
+                    <input
+                      type="checkbox"
+                      checked={keyConflictLastWins}
+                      onChange={(e) => setKeyConflictLastWins(e.target.checked)}
+                    />
+                    允许末位覆盖（last_wins）
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* v0.18.5 · 单 backend 兜底: 项目只绑 1 个 backend 时无法加下游分类阶段。 */}
+            {backends.length < 2 ? (
+              <div className={styles.field}>
+                <span className={styles.mutedText}>
+                  需在项目设置绑定第二个 ML backend，才能加分类阶段（下游须用不同于检测的后端）。
+                </span>
+              </div>
+            ) : (
+              <div className={styles.field}>
+                <Button size="sm" variant="ghost" onClick={addStage}>
+                  <Icon name="plus" size={11} />
+                  {downstreamIds.length === 0
+                    ? "加第二阶段（对每个检测框跑分类 → 写回属性）"
+                    : "并行加同级阶段（同源、各写不同属性）"}
+                </Button>
+              </div>
+            )}
 
             <div className={styles.field}>
               <span className={styles.fieldLabel}>
@@ -526,7 +594,9 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                 title={
                   selectedBatchIds.size === 0
                     ? "请先选择至少一个批次"
-                    : undefined
+                    : hasKeyConflict && !keyConflictLastWins
+                      ? "存在属性键冲突，请勾选「允许末位覆盖」或调整各阶段写回键"
+                      : undefined
                 }
               >
                 <Icon name="bot" size={12} />

@@ -1,5 +1,6 @@
 import { apiClient } from "./client";
 import type { MLBackendResponse } from "@/types";
+import type { OutputAttributeSchemaItem } from "./mlCapabilities";
 
 export interface MLBackendCreatePayload {
   name: string;
@@ -48,6 +49,10 @@ export interface MLModelCapability {
   supported_prompts?: string[];
   supported_geometric_outputs?: string[];
   output_attribute_types?: string[];
+  // v0.18.0 · backend 自报输出属性 schema (含 select options); 二阶段 backend (onnxtools
+  // 车辆属性) 声明 /predict 会写哪些 attributes。`/capabilities` 经 ModelCapability 透传。
+  // 多阶段预标 StageCard 的「写回属性键」多选据此列选项。老 backend 缺字段 = 无属性输出。
+  output_attribute_schema?: OutputAttributeSchemaItem[];
   supported_text_outputs?: string[];
   supported_trackers?: string[];
   supported_variants?: MLBackendSupportedVariantGroup[];

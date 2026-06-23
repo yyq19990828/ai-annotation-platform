@@ -33,6 +33,20 @@
 
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 
+## [0.18.5] - 2026-06-23
+
+多阶段预标注（路径 B）配置硬化：把下游阶段卡里最容易让人「配了没反应」的自由文本框升级为选择器，并把键冲突校验从「跑完才 422」前移到配置期。纯前端。方案见 [`docs/plans/2026-06-23-v0.18.5-staged-preannotate-config-hardening.md`](docs/plans/2026-06-23-v0.18.5-staged-preannotate-config-hardening.md)。
+
+### Changed
+
+- **父框类别 / 写回属性键选择器化**：阶段卡的 `parent_class_filter` 与 `write.keys` 从逗号分隔文本框改为 chip 多选——类别取项目类别，属性键优先取下游 backend 自报的 `output_attribute_schema`（回落项目 `attribute_schema`）。非工程师管理员全程点选、不再手敲，杜绝拼写误配静默过滤。
+
+### Added
+
+- **键冲突配置期预警**：多张并行阶段卡写同一属性键时，配置期即红字提示 + 涉事 chip 标红；默认拦截运行（对应后端 `on_key_conflict=reject`），勾选「允许末位覆盖」后放行（`last_wins`），不再跑完才 422。
+- **下游 backend 能力门控**：阶段卡选中的下游 backend 若不自报输出属性（纯检测器），给 ⚠ 警示「作下游只会重新检测、属性恒空」。
+- **单 backend 兜底**：项目只绑 1 个 backend 时，加分类阶段处提示「需先绑定第二个 ML backend」，不再静默不可用。
+
 ## [0.18.4] - 2026-06-23
 
 多阶段预标注（路径 B）后端补强：修一处实质兼容缺口——下游 crop 此前用 `data:` base64 内联投递，只有支持 `data:` 的后端（onnxtools/yolo）能作下游，而走 `httpx.get` 的 gsam2/sam3 收到 data URI 直接失败。本期把 crop 投递改成对所有后端通用，并补健壮性/可观测/测试。方案见 [`docs/plans/2026-06-23-v0.18.4-staged-preannotate-backend-hardening.md`](docs/plans/2026-06-23-v0.18.4-staged-preannotate-backend-hardening.md)。
