@@ -1,6 +1,8 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import type { AttributeSchema } from "@/api/projects";
 import { predictionSourceLabel, type AiBox } from "../../state/transforms";
+import { AttributeForm } from "../AttributeForm";
 import { IdentityHeader } from "./IdentityHeader";
 import { ConfidenceBar } from "./ConfidenceBar";
 import { MetricGrid } from "./MetricGrid";
@@ -13,11 +15,14 @@ const SOURCE_ROW_CLASS =
   "flex min-w-0 items-center gap-1 text-xs text-muted-foreground [&_span]:whitespace-nowrap";
 const OCR_CLASS = "flex min-w-0 items-center gap-1 text-xs text-muted-foreground";
 const OCR_TEXT_CLASS = "truncate";
+const ATTR_BLOCK_CLASS = "border-t border-border pt-2";
 
 export interface AIPredictionCardContentProps {
   box: AiBox;
   imageWidth: number | null;
   imageHeight: number | null;
+  /** 项目属性 schema:候选携带 attributes 时只读预览(采纳前可见车型/颜色等)。 */
+  attributeSchema?: AttributeSchema;
   /** 任务级锁定(review/completed)→ 采纳 / 精修 / 忽略禁用。 */
   readOnly: boolean;
   onAccept: (b: AiBox) => void;
@@ -34,6 +39,15 @@ function ocrTextSummary(box: AiBox): string | null {
   return trimmed.length > 48 ? `${trimmed.slice(0, 48)}…` : trimmed;
 }
 
+/** v0.18.0 · 候选除 text(OCR 已单列)外是否还带可预览的二阶段属性(车型 / 颜色等)。 */
+function hasPreviewableAttrs(box: AiBox): boolean {
+  const attrs = box.attributes;
+  if (!attrs) return false;
+  return Object.entries(attrs).some(
+    ([k, v]) => k !== "text" && v != null && v !== "" && typeof v !== "object",
+  );
+}
+
 /**
  * v0.16.14 · 选中 AI 预测框的浮动卡内容(图片端专属)。
  * 补齐此前掉进 placeholder 而丢失的信息:大置信度条 + 来源 / 候选序号 + OCR 文本,
@@ -44,6 +58,7 @@ export function AIPredictionCardContent({
   box,
   imageWidth,
   imageHeight,
+  attributeSchema,
   readOnly,
   onAccept,
   onReject,
@@ -52,6 +67,9 @@ export function AIPredictionCardContent({
   const metrics = box.geometry ? geometryMetrics(box.geometry, imageWidth, imageHeight) : [];
   const isPolygon = box.geometry?.type === "polygon";
   const ocrText = ocrTextSummary(box);
+  // 采纳前预览二阶段属性:项目已配 schema 且候选带 attributes 时, 只读展示(经 options 解析中文)。
+  const schemaFields = attributeSchema?.fields ?? [];
+  const showAttrPreview = schemaFields.length > 0 && hasPreviewableAttrs(box);
 
   return (
     <div className={BODY_CLASS}>
@@ -80,6 +98,20 @@ export function AIPredictionCardContent({
       )}
 
       <MetricGrid metrics={metrics} />
+
+      {showAttrPreview && (
+        <div className={ATTR_BLOCK_CLASS} data-floating-panel-no-drag>
+          <AttributeForm
+            schema={attributeSchema}
+            className={box.cls}
+            attributes={box.attributes ?? {}}
+            onChange={() => {}}
+            readOnly
+            context="image"
+            hideHeading
+          />
+        </div>
+      )}
 
       <ActionBar label="预测操作">
         <Button

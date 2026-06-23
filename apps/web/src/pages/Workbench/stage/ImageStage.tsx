@@ -154,7 +154,6 @@ interface ImageStageProps {
   onJoinSelected?: () => void;
   /** 裁切重叠区(右键菜单):以右键框为基准,减去其余选中多边形的重叠区。 */
   onCropSelected?: (baseId: string) => void;
-  onApplyAttributeMode?: (id: string) => boolean;
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
   onAcceptPrediction?: (b: AiBox) => void;
   /** B-11 · 驳回 AI 预测 (将 prediction 从画布隐去, 不调后端). */
@@ -255,7 +254,7 @@ export function ImageStage({
   fileUrl, blurhash, imageWidth, imageHeight, tool, activeClass,
   selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
-  onJoinSelected, onCropSelected, onApplyAttributeMode,
+  onJoinSelected, onCropSelected,
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass, onPatchShapeFlag, clipboardActions,
   onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
@@ -819,9 +818,8 @@ export function ImageStage({
 
   const handleUserShapeClick = useCallback((id: string, evt?: Konva.KonvaEventObject<MouseEvent>) => {
     const shift = !!evt?.evt?.shiftKey;
-    if (!shift && onApplyAttributeMode?.(id)) return;
     onSelectBox(id, { shift });
-  }, [onApplyAttributeMode, onSelectBox]);
+  }, [onSelectBox]);
 
   const selectedBox = useMemo(() => {
     if (!selectedId) return null;

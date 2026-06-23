@@ -103,12 +103,6 @@ import { useImageAnnotationActions } from "../stages/image/useImageAnnotationAct
 import { useMaskEditor } from "./useMaskEditor";
 import { MaskToolbar } from "../shell/MaskToolbar";
 import { useVideoAnnotationActions } from "../stages/video/useVideoAnnotationActions";
-import { AttributeModeBar } from "../shell/AttributeModeBar";
-import {
-  applyAttributeModeValue,
-  canApplyAttributeModeToAnnotation,
-  normalizeAttributeModeState,
-} from "./attributeMode";
 import {
   buildPredictParams,
   promptOfTool,
@@ -1228,30 +1222,6 @@ export function useWorkbenchShellModel({
     });
   }, [updateAnnotationMut, history]);
 
-  const normalizedAttributeMode = useMemo(
-    () => normalizeAttributeModeState(s.attributeMode, toolView.attributeSchema),
-    [s.attributeMode, toolView.attributeSchema],
-  );
-  const handleApplyAttributeMode = useCallback((annotationId: string): boolean => {
-    if (!normalizedAttributeMode.enabled || !normalizedAttributeMode.fieldKey) return false;
-    const ann = annotationsRef.current.find((a) => a.id === annotationId);
-    const field = toolView.attributeSchema.fields?.find((item) => item.key === normalizedAttributeMode.fieldKey);
-    if (!ann || !field || !canApplyAttributeModeToAnnotation(ann, field)) {
-      pushToast({ msg: "该标注不适用当前属性字段", kind: "warning" });
-      return false;
-    }
-    const next = applyAttributeModeValue(ann.attributes, field, normalizedAttributeMode.currentValue);
-    handleUpdateAttributes(annotationId, next);
-    s.setSelectedId(annotationId);
-    return true;
-  }, [
-    annotationsRef,
-    handleUpdateAttributes,
-    normalizedAttributeMode,
-    pushToast,
-    s,
-    toolView.attributeSchema,
-  ]);
 
   const hoveredCommentShapes = useHoveredCommentStore(selectEffectiveShapes);
 
@@ -1395,7 +1365,6 @@ export function useWorkbenchShellModel({
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes,
     handleVideoSetSelectedClass,
-    attributeModeSchema: toolView.attributeSchema,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
@@ -1734,6 +1703,7 @@ export function useWorkbenchShellModel({
           box={selectedAiBox}
           imageWidth={imageWidth}
           imageHeight={imageHeight}
+          attributeSchema={toolView.attributeSchema}
           readOnly={isLocked}
           onAccept={acceptPredictionFromCard}
           onReject={rejectPredictionFromCard}
@@ -2048,14 +2018,6 @@ export function useWorkbenchShellModel({
                 onCancel={cancelMaskEdit}
               />
             )}
-            {stageKind === "image" && (
-              <AttributeModeBar
-                schema={toolView.attributeSchema}
-                value={s.attributeMode}
-                onChange={s.setAttributeMode}
-                readOnly={isLocked}
-              />
-            )}
             <WorkbenchOverlays
               pendingDrawing={s.pendingDrawing}
               editingClass={s.editingClass}
@@ -2147,7 +2109,6 @@ export function useWorkbenchShellModel({
         onCommitKeypointGeometry: handleCommitKeypointGeometry,
         onJoinSelected: handleJoinSelectedPolygons,
         onCropSelected: handleCropSelectedPolygons,
-        onApplyAttributeMode: handleApplyAttributeMode,
         onStageGeometry: setStageGeom,
       },
       ai: {

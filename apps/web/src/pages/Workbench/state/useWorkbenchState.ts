@@ -3,7 +3,6 @@ import type { Annotation } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import type { TextOutputMode } from "./useInteractiveAI";
 import { useWorkbenchConfig } from "./useWorkbenchConfig";
-import { DEFAULT_ATTRIBUTE_MODE, type AttributeModeState } from "./attributeMode";
 
 // v0.10.2 · Tool union 扩展: 旧 "sam" 拆为 4 个独立 AI 工具 (smart-point / smart-box /
 // text-prompt / exemplar), 每个绑定一个 prompt 范式. 状态层仅保留 polarity (smart-point
@@ -135,7 +134,6 @@ export function useWorkbenchState() {
   const [activeClass, setActiveClass] = useState("");
   const [pendingDrawing, setPendingDrawing] = useState<PendingDrawing>(null);
   const [editingClass, setEditingClass] = useState<EditingClass>(null);
-  const [attributeMode, setAttributeMode] = useState<AttributeModeState>(DEFAULT_ATTRIBUTE_MODE);
   /**
    * 多选语义：
    * - selectedId：primary（用于 SelectionOverlay 浮按钮锚点 / 单体快捷键）
@@ -327,7 +325,6 @@ export function useWorkbenchState() {
     activeClass, setActiveClass,
     pendingDrawing, setPendingDrawing,
     editingClass, setEditingClass,
-    attributeMode, setAttributeMode,
     selectedId, setSelectedId,
     selectedIds, toggleSelected, replaceSelected,
     confThreshold, setConfThreshold,
