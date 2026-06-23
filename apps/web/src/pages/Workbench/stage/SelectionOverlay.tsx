@@ -42,12 +42,12 @@ export function SelectionOverlay({
       onPointerDown={(e) => e.stopPropagation()}
     >
       {isAi && onAccept && (
-        <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); onAccept(); }}>
+        <Button variant="primary" size="xs" onClick={(e) => { e.stopPropagation(); onAccept(); }}>
           <Icon name="check" size={12} />采纳
         </Button>
       )}
       {isAi && onReject && (
-        <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onReject(); }}>
+        <Button variant="danger" size="xs" onClick={(e) => { e.stopPropagation(); onReject(); }}>
           <Icon name="x" size={12} />忽略
         </Button>
       )}

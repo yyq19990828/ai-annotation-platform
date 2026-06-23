@@ -13,7 +13,10 @@ import { useElementStyle } from "./useElementStyle";
  */
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "default" | "primary" | "ghost" | "ai" | "danger";
-  size?: "sm" | "md";
+  // v0.18.0 · 补 xs (shadcn 既有档): h-6 + text-xs + svg 12px, 比 sm 更紧凑。
+  // 注意 shadcn 基类用 `[&_svg]:size-4` 以 CSS 锁定按钮内图标 16px, 会覆盖 <Icon size>,
+  // 故按钮想要更小图标须经 size 档 (xs→size-3), 改 Icon size 属性无效。
+  size?: "xs" | "sm" | "md";
   children: ReactNode;
 }
 
@@ -53,7 +56,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         // 各 variant 用 twMerge 覆盖(outline 的 `border` 覆盖宽度、bg-* 覆盖底色)。v0.17.7 转全局
         // preflight 后此基线变冗余但无害。
         "appearance-none border-0 border-border bg-transparent",
-        buttonVariants({ variant: base, size: size === "sm" ? "sm" : "default" }),
+        buttonVariants({ variant: base, size: size === "xs" ? "xs" : size === "sm" ? "sm" : "default" }),
         "transition-[background-color,border-color,color,box-shadow,transform] duration-200 hover:-translate-y-px active:translate-y-0 active:scale-[0.98]",
         extra,
         className,

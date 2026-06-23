@@ -116,7 +116,7 @@ export function AIPredictionCardContent({
       <ActionBar label="预测操作">
         <Button
           variant="primary"
-          size="sm"
+          size="xs"
           title="采纳预测"
           disabled={readOnly}
           onClick={() => onAccept(box)}
@@ -127,7 +127,7 @@ export function AIPredictionCardContent({
         {isPolygon && (
           <Button
             variant="ghost"
-            size="sm"
+            size="xs"
             title="精修(Mask 笔刷)"
             disabled={readOnly}
             onClick={() => onRefine(box)}
@@ -138,7 +138,7 @@ export function AIPredictionCardContent({
         )}
         <Button
           variant="danger"
-          size="sm"
+          size="xs"
           title="忽略预测"
           disabled={readOnly}
           onClick={() => onReject(box)}
