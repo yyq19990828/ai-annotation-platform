@@ -121,7 +121,7 @@ export function AIPredictionCardContent({
           disabled={readOnly}
           onClick={() => onAccept(box)}
         >
-          <Icon name="check" size={14} />
+          <Icon name="check" size={12} />
           采纳
         </Button>
         {isPolygon && (
@@ -132,18 +132,18 @@ export function AIPredictionCardContent({
             disabled={readOnly}
             onClick={() => onRefine(box)}
           >
-            <Icon name="edit" size={14} />
+            <Icon name="edit" size={12} />
             精修
           </Button>
         )}
         <Button
-          variant="ghost"
+          variant="danger"
           size="sm"
           title="忽略预测"
           disabled={readOnly}
           onClick={() => onReject(box)}
         >
-          <Icon name="x" size={14} />
+          <Icon name="x" size={12} />
           忽略
         </Button>
       </ActionBar>

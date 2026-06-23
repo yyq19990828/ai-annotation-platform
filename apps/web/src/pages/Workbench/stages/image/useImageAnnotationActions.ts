@@ -646,7 +646,7 @@ export function useImageAnnotationActions({
             next.delete(box.id);
             return next;
           });
-          pushToast({ msg: "驳回失败", sub: "请稍后重试", kind: "error" });
+          pushToast({ msg: "忽略失败", sub: "请稍后重试", kind: "error" });
         },
       },
     );

@@ -282,8 +282,8 @@ export function BoxListItem({
               <Button
                 variant="danger"
                 size="sm"
-                title="驳回预测"
-                aria-label="驳回预测"
+                title="忽略预测"
+                aria-label="忽略预测"
                 onClick={(e) => { e.stopPropagation(); onReject(); }}
                 className="!w-[30px] !h-[30px] !justify-center !p-0 !rounded-lg"
               >

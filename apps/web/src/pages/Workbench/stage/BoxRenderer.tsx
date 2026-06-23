@@ -75,10 +75,10 @@ export function BoxRenderer({
       {isAi && selected && editable && (
         <div onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} className={styles.actionBar}>
           <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); onAccept?.(); }}>
-            <Icon name="check" size={10} />采纳
+            <Icon name="check" size={12} />采纳
           </Button>
           <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onReject?.(); }}>
-            <Icon name="x" size={10} />驳回
+            <Icon name="x" size={12} />忽略
           </Button>
         </div>
       )}

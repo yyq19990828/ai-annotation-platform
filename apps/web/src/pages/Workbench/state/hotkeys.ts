@@ -90,7 +90,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["1 — 9"], desc: "切换视频类别（有选中则改选中对象）", group: "video", actionType: "setClassByDigit" },
 
   { keys: ["A"], desc: "采纳选中 AI 框", group: "ai", actionType: "acceptAi" },
-  { keys: ["D"], desc: "驳回选中 AI 框", group: "ai", actionType: "rejectAi" },
+  { keys: ["D"], desc: "忽略选中 AI 框", group: "ai", actionType: "rejectAi" },
   { keys: ["["], desc: "选中态：z_order -1；否则降置信度阈值", group: "ai", actionType: "thresholdAdjust" },
   { keys: ["]"], desc: "选中态：z_order +1；否则升置信度阈值", group: "ai", actionType: "thresholdAdjust" },
   { keys: ["L"], desc: "切换选中 shape 锁定状态", group: "draw", actionType: "toggleShapeFlag" },
