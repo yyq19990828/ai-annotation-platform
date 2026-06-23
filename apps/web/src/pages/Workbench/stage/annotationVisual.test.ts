@@ -90,13 +90,13 @@ describe("buildLabelText(图片:单帧 / AI 段)", () => {
     expect(buildLabelText({ className: "car", instanceId: null }, ["id"])).toBe("car");
   });
 
-  it("勾 attrs · bool 真值显键名、键值对显 k=v、空值跳过", () => {
+  it("勾 attrs · bool 真值显键名、其余只显值、空值跳过", () => {
     expect(
       buildLabelText(
         { className: "sign", attributes: { truncated: true, hidden: false, text: "STOP", note: "" } },
         ["attrs"],
       ),
-    ).toBe("sign truncated text=STOP");
+    ).toBe("sign truncated STOP");
   });
 
   it("空段兜底 · 只显示类别名", () => {

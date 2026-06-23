@@ -170,8 +170,11 @@ export function AttributeForm({
         const v = draft[f.key];
         const isMissing = f.required && missing.includes(f.key);
         const setValue = (newV: unknown) => scheduleCommit({ ...draft, [f.key]: newV });
+        // boolean 用 Radix Switch(button)。若外层是 <label>, 点击开关会被 label 再转发一次 click,
+        // 双触发抵消 → 开关失效。故 boolean 用 <div> 包裹;其余原生控件保留 <label> 的点击聚焦。
+        const Wrapper = f.type === "boolean" ? "div" : "label";
         return (
-          <label
+          <Wrapper
             key={f.key}
             className={cn(
               "flex flex-col gap-1 rounded border border-transparent px-1.5 py-1",
@@ -277,7 +280,7 @@ export function AttributeForm({
                 </span>
               </div>
             )}
-          </label>
+          </Wrapper>
         );
       })}
     </div>

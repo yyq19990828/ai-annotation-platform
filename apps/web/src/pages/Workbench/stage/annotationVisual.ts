@@ -129,7 +129,7 @@ export function buildTrackLabelText(input: TrackLabelInput, content: readonly La
   return text;
 }
 
-/** 属性压缩:跳过空值;bool 真值只显示键名,假值跳过;其余渲染为 key=value。 */
+/** 属性压缩:跳过空值;bool 真值只显示键名,假值跳过;其余只显示值(不带 key=)。 */
 function formatAttributes(attrs?: Record<string, unknown> | null): string {
   if (!attrs) return "";
   const parts: string[] = [];
@@ -139,7 +139,7 @@ function formatAttributes(attrs?: Record<string, unknown> | null): string {
       if (v) parts.push(k);
       continue;
     }
-    parts.push(`${k}=${String(v)}`);
+    parts.push(String(v));
   }
   return parts.join(" ");
 }
