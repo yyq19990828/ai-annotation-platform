@@ -58,10 +58,11 @@ async def test_single_stage_passthrough():
     client = _FakeClient(responses=[[_Result(task.id, boxes)]])
     stages = [{"stage": 0, "parent_stage": None, "roi": None, "write": None}]
 
-    results, extra = await worker_tasks._run_task_pipeline(
+    results, extra, stats = await worker_tasks._run_task_pipeline(
         task, stages, [client], [None], resolve_url=lambda t: "http://x/img.jpg"
     )
     assert extra is None
+    assert stats is None
     assert results[0].result is boxes
     # 单阶段不应触碰下游, 只调一次
     assert len(client.calls) == 1
@@ -96,7 +97,7 @@ async def test_two_stage_enriches_attributes(monkeypatch):
             "write": {"target": "attributes", "keys": ["color", "vehicle_type"]},
         },
     ]
-    results, extra = await worker_tasks._run_task_pipeline(
+    results, extra, stats = await worker_tasks._run_task_pipeline(
         task,
         stages,
         [detect_client, classify_client],
@@ -104,6 +105,8 @@ async def test_two_stage_enriches_attributes(monkeypatch):
         resolve_url=lambda t: "http://x/img.jpg",
     )
 
+    assert stats[0]["detected"] == 2
+    assert stats[1]["ok"] == 2 and stats[1]["failed"] == 0
     enriched = results[0].result
     assert enriched[0]["attributes"] == {"color": "blue", "vehicle_type": "bus"}
     assert enriched[1]["attributes"] == {"color": "red", "vehicle_type": "car"}
@@ -111,3 +114,69 @@ async def test_two_stage_enriches_attributes(monkeypatch):
     assert len(classify_client.calls[0]) == 2
     assert extra["pipeline"]["stage_count"] == 2
     assert extra["pipeline"]["enriched_attr_keys"] == ["color", "vehicle_type"]
+
+
+@pytest.mark.asyncio
+async def test_parent_class_filter_routes_by_class(monkeypatch):
+    task = _Task()
+    # 源产 car + person 各一; 下游只对 car 跑
+    boxes = [_bbox(10, 10, 20, 20, cls="car"), _bbox(50, 50, 10, 10, cls="person")]
+    detect_client = _FakeClient(responses=[[_Result(task.id, boxes)]])
+    classify_client = _FakeClient(
+        responses=[[_Result("0", [{"score": 0.9, "attributes": {"color": "blue"}}])]]
+    )
+    monkeypatch.setattr(
+        worker_tasks, "_load_task_image", lambda t: Image.new("RGB", (200, 200), (1, 2, 3))
+    )
+    stages = [
+        {"stage": 0, "parent_stage": None},
+        {"stage": 1, "parent_stage": 0, "parent_class_filter": ["car"]},
+    ]
+    results, _extra, stats = await worker_tasks._run_task_pipeline(
+        task, stages, [detect_client, classify_client], [None, None],
+        resolve_url=lambda t: "http://x/img.jpg",
+    )
+    # 只对 car (idx0) 裁 crop; person 保持纯检测框 (无 attributes)
+    assert len(classify_client.calls[0]) == 1
+    assert classify_client.calls[0][0]["id"] == "0"
+    assert results[0].result[0].get("attributes") == {"color": "blue"}
+    assert "attributes" not in results[0].result[1] or not results[0].result[1].get("attributes")
+    assert stats[1]["targeted"] == 1 and stats[1]["ok"] == 1
+
+
+@pytest.mark.asyncio
+async def test_on_failure_keep_parent_vs_drop_box(monkeypatch):
+    monkeypatch.setattr(
+        worker_tasks, "_load_task_image", lambda t: Image.new("RGB", (200, 200), (1, 2, 3))
+    )
+
+    class _BoomClient:
+        async def predict(self, inputs, context=None):
+            raise RuntimeError("backend down")
+
+    # keep_parent: 下游炸 → 保留父框 (属性空), task 不整体失败
+    task = _Task()
+    boxes = [_bbox(10, 10, 20, 20)]
+    detect = _FakeClient(responses=[[_Result(task.id, boxes)]])
+    stages_keep = [
+        {"stage": 0, "parent_stage": None},
+        {"stage": 1, "parent_stage": 0, "on_failure": "keep_parent"},
+    ]
+    results, _e, stats = await worker_tasks._run_task_pipeline(
+        task, stages_keep, [detect, _BoomClient()], [None, None],
+        resolve_url=lambda t: "http://x/img.jpg",
+    )
+    assert len(results[0].result) == 1  # 框保留
+    assert stats[1]["failed"] == 1
+
+    # drop_box: 下游炸 → 丢父框
+    detect2 = _FakeClient(responses=[[_Result(task.id, [_bbox(10, 10, 20, 20)])]])
+    stages_drop = [
+        {"stage": 0, "parent_stage": None},
+        {"stage": 1, "parent_stage": 0, "on_failure": "drop_box"},
+    ]
+    results2, _e2, _s2 = await worker_tasks._run_task_pipeline(
+        task, stages_drop, [detect2, _BoomClient()], [None, None],
+        resolve_url=lambda t: "http://x/img.jpg",
+    )
+    assert results2[0].result == []  # 框被丢弃

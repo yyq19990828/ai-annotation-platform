@@ -135,11 +135,14 @@ def _load_task_image(task):
 
 
 async def _run_task_pipeline(task, stages, stage_clients, stage_contexts, *, resolve_url):
-    """v0.18.1 · 对单个 task 顺序跑各阶段, 返回 (要落库的 pred_results, pipeline_extra)。
+    """v0.18.1 / v0.18.2 · 对单个 task 顺序跑各阶段, 返回 (pred_results, pipeline_extra, stage_stats)。
 
-    - 单阶段 (len==1): 等价于原 ``client.predict``, extra=None (逐字回归路径)。
-    - 多阶段: 源阶段产框 → 加载原图 → 对每个下游阶段裁父框 ROI 喂下游 → 合并 attributes 进父框
-      (原地改 pred_result.result)。本期顺序跑 (含并行兄弟也顺序, ROADMAP §7.1)。
+    - 单阶段 (len==1): 等价于原 ``client.predict``, extra=None, stats=None (逐字回归路径)。
+    - 多阶段: 源阶段产框 → 加载原图 → 对每个下游阶段按 parent_class_filter 裁父框 ROI 喂下游
+      → 合并 attributes 进父框 (原地改 pred_result.result)。顺序跑 (含并行兄弟, ROADMAP §7.1)。
+    - v0.18.2: 类别路由 (parent_class_filter)、阶段级失败策略 (on_failure)、逐阶段统计。
+
+    stage_stats: ``{stage_idx: {...}}`` —— 源阶段 {detected}; 下游 {targeted, ok, failed}。
     """
     from app.workers.roi import crop_inputs_from_boxes, merge_classify_attributes
 
@@ -148,36 +151,63 @@ async def _run_task_pipeline(task, stages, stage_clients, stage_contexts, *, res
         [{"id": str(task.id), "file_path": url}], context=stage_contexts[0]
     )
     if len(stages) == 1:
-        return results, None
+        return results, None, None
 
     image = _load_task_image(task)
     enriched_keys: set[str] = set()
+    stats: dict[int, dict] = {0: {"detected": 0}}
+    for si in range(1, len(stages)):
+        stats[si] = {"targeted": 0, "ok": 0, "failed": 0}
+
     for pred_result in results:
         boxes = pred_result.result
         if not isinstance(boxes, list) or not boxes:
             continue
+        stats[0]["detected"] += len(boxes)
+        dropped: set[int] = set()
         for si in range(1, len(stages)):
             stage = stages[si]
             roi = stage.get("roi") or {}
             pad = float(roi.get("pad", 0.05))
             write = stage.get("write") or {}
             write_keys = write.get("keys") or None
-            crop_inputs = crop_inputs_from_boxes(image, boxes, pad=pad)
-            if not crop_inputs:
-                continue
-            cls_results = await stage_clients[si].predict(
-                crop_inputs, context=stage_contexts[si]
+            pcf = stage.get("parent_class_filter") or None
+            crop_inputs = crop_inputs_from_boxes(
+                image, boxes, pad=pad, parent_class_filter=pcf
             )
-            merge_classify_attributes(boxes, cls_results, write_keys=write_keys)
-            if write_keys:
-                enriched_keys.update(write_keys)
+            if not crop_inputs:
+                continue  # 无符合类别的父框 → 本阶段对本图降级跳过
+            targeted = {int(ci["id"]) for ci in crop_inputs}
+            stats[si]["targeted"] += len(targeted)
+            try:
+                cls_results = await stage_clients[si].predict(
+                    crop_inputs, context=stage_contexts[si]
+                )
+                merged = merge_classify_attributes(
+                    boxes, cls_results, write_keys=write_keys
+                )
+                stats[si]["ok"] += merged
+                stats[si]["failed"] += len(targeted) - merged
+                if write_keys:
+                    enriched_keys.update(write_keys)
+            except Exception as exc:  # noqa: BLE001
+                # 阶段级失败: keep_parent=保留上游框属性留空; drop_box=丢这些父框。
+                stats[si]["failed"] += len(targeted)
+                if stage.get("on_failure") == "drop_box":
+                    dropped |= targeted
+                print(
+                    f"[ai-pre] stage {si} 下游分类失败 (on_failure="
+                    f"{stage.get('on_failure', 'keep_parent')}): {type(exc).__name__}: {exc}"
+                )
+        if dropped:
+            pred_result.result = [b for i, b in enumerate(boxes) if i not in dropped]
     extra = {
         "pipeline": {
             "stage_count": len(stages),
             "enriched_attr_keys": sorted(enriched_keys) or None,
         }
     }
-    return results, extra
+    return results, extra, stats
 
 
 async def _run_batch(
@@ -489,6 +519,17 @@ async def _run_batch(
                     )
                 )
 
+        # v0.18.2 · 逐阶段统计累加器 (跨 task 汇总): {stage_idx: {detected/targeted/ok/failed}}。
+        pipeline_stage_totals: dict[int, dict] = {}
+
+        def _accumulate_stage_stats(per_task: dict | None) -> None:
+            if not per_task:
+                return
+            for sidx, s in per_task.items():
+                bucket = pipeline_stage_totals.setdefault(sidx, {})
+                for k, v in s.items():
+                    bucket[k] = bucket.get(k, 0) + v
+
         for i, task in enumerate(tasks):
             if await _cancel_requested():
                 await _finish_cancelled(cancelled_at_index=i)
@@ -496,13 +537,14 @@ async def _run_batch(
                 return
 
             try:
-                results, pipeline_extra = await _run_task_pipeline(
+                results, pipeline_extra, stage_stats = await _run_task_pipeline(
                     task,
                     stages,
                     stage_clients,
                     stage_contexts,
                     resolve_url=_resolve_task_url,
                 )
+                _accumulate_stage_stats(stage_stats)
                 for pred_result in results:
                     await pred_svc.create_from_ml_result(
                         task_id=task.id,
@@ -572,6 +614,12 @@ async def _run_batch(
             # v0.9.11 · total_cost 接通 PredictionMeta.total_cost 累加
             "total_cost": f"{running_total_cost:.4f}",
         }
+        # v0.18.2 · 多阶段预标: 逐阶段统计 (检出框数 / 各下游富集成功失败), 供前端逐阶段徽标。
+        if pipeline_stage_totals:
+            result_stats["pipeline_stages"] = [
+                {"stage": sidx, **pipeline_stage_totals[sidx]}
+                for sidx in sorted(pipeline_stage_totals)
+            ]
         if all_failed:
             await async_job_svc.mark_failed(
                 db,

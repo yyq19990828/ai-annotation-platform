@@ -134,13 +134,79 @@ async def test_pipeline_stages_forwarded(
 
 
 @pytest.mark.asyncio
-async def test_reject_more_than_two_stages(
+async def test_accept_parallel_fanout_three_stages(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # v0.18.2 · 三阶段单层扇出 (两个下游共享 parent_stage=0) 现在合法。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = _stages(detect.id, classify.id)
+    stages[1]["write"] = {"target": "attributes", "keys": ["color"]}
+    stages.append({
+        "stage": 2, "ml_backend_id": str(classify.id), "parent_stage": 0,
+        "write": {"target": "attributes", "keys": ["vehicle_type"]},
+    })
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={"ml_backend_id": str(detect.id), "batch_id": str(batch.id), "pipeline_stages": stages},
+    )
+    assert resp.status_code == 200, resp.text
+    assert len(_mock_celery["kwargs"]["pipeline_stages"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_reject_depth_three(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # v0.18.2 · 子阶段再扇出 (parent_stage 指向下游而非源) → 拒绝 (本期仅单层)。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = _stages(detect.id, classify.id)
+    stages.append({"stage": 2, "ml_backend_id": str(classify.id), "parent_stage": 1})
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={"ml_backend_id": str(detect.id), "batch_id": str(batch.id), "pipeline_stages": stages},
+    )
+    assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.asyncio
+async def test_reject_key_conflict_default(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # v0.18.2 · 两个并行兄弟写同一键 → 默认 reject (422); last_wins 时放行。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = _stages(detect.id, classify.id)
+    stages[1]["write"] = {"target": "attributes", "keys": ["color"]}
+    stages.append({
+        "stage": 2, "ml_backend_id": str(classify.id), "parent_stage": 0,
+        "write": {"target": "attributes", "keys": ["color"]},
+    })
+    body = {"ml_backend_id": str(detect.id), "batch_id": str(batch.id), "pipeline_stages": stages}
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate", headers=_bearer(token), json=body
+    )
+    assert resp.status_code == 422, resp.text
+    # last_wins 放行
+    resp2 = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={**body, "on_key_conflict": "last_wins"},
+    )
+    assert resp2.status_code == 200, resp2.text
+
+
+@pytest.mark.asyncio
+async def test_reject_bad_roi_pad(
     httpx_client_bound, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, detect, classify, batch = await _seed(db_session, owner.id)
     stages = _stages(detect.id, classify.id)
-    stages.append({"stage": 2, "ml_backend_id": str(classify.id), "parent_stage": 0})
+    stages[1]["roi"] = {"mode": "crop", "pad": 0.9}  # 超出 [0,0.5]
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),

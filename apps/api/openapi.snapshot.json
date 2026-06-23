@@ -9921,7 +9921,7 @@
         "type": "object"
       },
       "PipelineStage": {
-        "description": "v0.18.1 · 多阶段预标注的单个阶段声明 (路径 B M1).\n\nstage 0 (parent_stage=None) 是源检测阶段, 吃整图产框; 下游阶段 (parent_stage 指向更前阶段)\n平台按父框 bbox 裁 ROI crop 喂入, 把返回的 attributes 合并进父框 (write.target=attributes)。\nM1 只支持「单源 → 单下游」顺序链; 类别路由 / 并行扇出 / new_shape 留 M2/M3。",
+        "description": "v0.18.1 · 多阶段预标注的单个阶段声明 (路径 B).\n\nstage 0 (parent_stage=None) 是源检测阶段, 吃整图产框; 下游阶段 (parent_stage 指向源阶段)\n平台按父框 bbox 裁 ROI crop 喂入, 把返回的 attributes 合并进父框 (write.target=attributes)。\nv0.18.2 (M2): 支持单层并行扇出 (多个下游共享同一 parent_stage)、按类别路由\n(parent_class_filter)、阶段级失败策略 (on_failure)。深度≥3 / new_shape 留 M3。",
         "properties": {
           "class_filter": {
             "anyOf": [
@@ -9967,6 +9967,15 @@
             ],
             "title": "Model Variants"
           },
+          "on_failure": {
+            "default": "keep_parent",
+            "enum": [
+              "keep_parent",
+              "drop_box"
+            ],
+            "title": "On Failure",
+            "type": "string"
+          },
           "params": {
             "anyOf": [
               {
@@ -9978,6 +9987,20 @@
               }
             ],
             "title": "Params"
+          },
+          "parent_class_filter": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Class Filter"
           },
           "parent_stage": {
             "anyOf": [
@@ -10558,6 +10581,15 @@
               }
             ],
             "title": "Model Variants"
+          },
+          "on_key_conflict": {
+            "default": "reject",
+            "enum": [
+              "reject",
+              "last_wins"
+            ],
+            "title": "On Key Conflict",
+            "type": "string"
           },
           "output_mode": {
             "default": "mask",
@@ -19659,7 +19691,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.18.1"
+    "version": "0.18.2"
   },
   "openapi": "3.1.0",
   "paths": {

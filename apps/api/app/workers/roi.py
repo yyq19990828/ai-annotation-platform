@@ -16,6 +16,18 @@ import io
 from PIL import Image
 
 
+def box_class_name(box: dict) -> str | None:
+    """从 LS 标准 shape 提取 class_name (value.rectanglelabels[0] / value.labels[0])。
+
+    v0.18.2 · parent_class_filter 类别路由用。取不到返回 None。
+    """
+    value = box.get("value") or {}
+    labels = value.get("rectanglelabels") or value.get("labels")
+    if isinstance(labels, list) and labels:
+        return labels[0]
+    return None
+
+
 def _bbox_pixels_from_ls_value(
     value: dict, img_w: int, img_h: int
 ) -> tuple[float, float, float, float] | None:
@@ -45,6 +57,7 @@ def crop_inputs_from_boxes(
     *,
     pad: float = 0.05,
     jpeg_quality: int = 90,
+    parent_class_filter: list[str] | None = None,
 ) -> list[dict]:
     """对 boxes 里的 bbox 框逐个裁 ROI crop, 返回喂下游 /predict 的 inputs。
 
@@ -53,16 +66,21 @@ def crop_inputs_from_boxes(
         boxes: 上游 stage 返回的 LS 标准 result 列表 (每项 ``{type, value, ...}``)。
         pad: 按框宽高比例外扩的边界 padding (0.05 = 各边外扩 5%)。
         jpeg_quality: crop 重编码 JPEG 质量。
+        parent_class_filter: v0.18.2 · 只对 class_name 在此集合的父框裁 crop (空/None=全部)。
+            类别路由: 不同下游阶段设不相交类别集 = 不同类走不同模型。
 
     Returns:
         inputs 列表, 每项 ``{"id": "<box_idx>", "file_path": "data:image/jpeg;base64,..."}``。
-        ``id`` 即 boxes 中的下标 (字符串), 供下游结果按 id 回写到对应父框。
-        非 bbox / 旋转框 / 退化框 (宽高 ≤0) 被跳过, 不进 inputs。
+        ``id`` 即 boxes 中的下标 (字符串, **保留原下标**即使被类别过滤), 供下游结果回写到对应父框。
+        非 bbox / 旋转框 / 退化框 / 类别不匹配 的父框被跳过, 不进 inputs。
     """
     img_w, img_h = image.size
+    filter_set = set(parent_class_filter) if parent_class_filter else None
     inputs: list[dict] = []
     for idx, box in enumerate(boxes):
         if not isinstance(box, dict) or box.get("type") != "rectanglelabels":
+            continue
+        if filter_set is not None and box_class_name(box) not in filter_set:
             continue
         px = _bbox_pixels_from_ls_value(box.get("value") or {}, img_w, img_h)
         if px is None:

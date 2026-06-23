@@ -114,13 +114,28 @@
   gap: 4px;
 }
 
-/* v0.18.1 · 第二阶段配置块: 左侧描边 + 缩进, 视觉上从属于源阶段。 */
+/* v0.18.1 · 下游阶段配置块: 左侧描边 + 缩进, 视觉上从属于源阶段。 */
 .stageTwoBlock {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding-left: 12px;
   border-left: 2px solid var(--sc-border);
+}
+
+/* v0.18.2 · 阶段级字段的文本/数字输入 (类别过滤 / pad / 写回键)。 */
+.textInput {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--sc-foreground);
+  background: var(--sc-background);
+  border: 1px solid var(--sc-border);
+  border-radius: var(--sc-radius);
+}
+.textInput:focus {
+  outline: none;
+  border-color: var(--sc-ring);
 }
 
 .fieldLabel {

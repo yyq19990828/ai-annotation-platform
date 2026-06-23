@@ -1198,11 +1198,12 @@ async def export_project(
 
 
 class PipelineStage(BaseModel):
-    """v0.18.1 · 多阶段预标注的单个阶段声明 (路径 B M1).
+    """v0.18.1 · 多阶段预标注的单个阶段声明 (路径 B).
 
-    stage 0 (parent_stage=None) 是源检测阶段, 吃整图产框; 下游阶段 (parent_stage 指向更前阶段)
+    stage 0 (parent_stage=None) 是源检测阶段, 吃整图产框; 下游阶段 (parent_stage 指向源阶段)
     平台按父框 bbox 裁 ROI crop 喂入, 把返回的 attributes 合并进父框 (write.target=attributes)。
-    M1 只支持「单源 → 单下游」顺序链; 类别路由 / 并行扇出 / new_shape 留 M2/M3。
+    v0.18.2 (M2): 支持单层并行扇出 (多个下游共享同一 parent_stage)、按类别路由
+    (parent_class_filter)、阶段级失败策略 (on_failure)。深度≥3 / new_shape 留 M3。
     """
 
     stage: int
@@ -1214,10 +1215,15 @@ class PipelineStage(BaseModel):
     class_filter: list[int] | None = None
     # 依赖的父阶段 index; None=源阶段 (吃整图)。
     parent_stage: int | None = None
-    # ROI 构造; M1 只认 {"mode":"crop"}, pad 固定 (可配留 M2)。
+    # v0.18.2 · 按类别路由: 本阶段只对这些 class_name 的父框启动 (空/缺=全部父框)。
+    # 不相交类别集=不同类走不同下游模型; 重叠=同类喂多模型 (并行扇出)。声明式过滤, 非分支节点。
+    parent_class_filter: list[str] | None = None
+    # ROI 构造; 认 {"mode":"crop","pad":0.05}, pad∈[0,0.5]。
     roi: dict | None = None
-    # 结果写回; M1 只认 {"target":"attributes","keys":[...]}。
+    # 结果写回; 认 {"target":"attributes","keys":[...]}。keys 用于并行兄弟键冲突检测。
     write: dict | None = None
+    # v0.18.2 · 阶段级失败策略: keep_parent (默认, 下游失败保留上游框、属性留空) | drop_box (丢父框)。
+    on_failure: Literal["keep_parent", "drop_box"] = "keep_parent"
 
 
 class PreannotateRequest(BaseModel):
@@ -1247,17 +1253,17 @@ class PreannotateRequest(BaseModel):
     # 平台不做类→项目标签映射 (NG6), 仅透传给 yolo /predict context.classes 做推理层过滤。
     class_filter: list[int] | None = None
     # v0.18.1 · 多阶段预标注 (路径 B): 有序阶段列表。非空时走阶段化编排 (detect→ROI→classify),
-    # 缺省时由上面的平铺字段合成单阶段, 与现状逐字等价 (向后兼容)。M1 限 ≤2 个阶段、单链。
+    # 缺省时由上面的平铺字段合成单阶段, 与现状逐字等价 (向后兼容)。
+    # v0.18.2 · 支持单层并行扇出 (源 + N 个共享 parent_stage 的下游)。
     pipeline_stages: list[PipelineStage] | None = None
+    # v0.18.2 · 并行兄弟写同一属性键时的策略: reject (默认, 校验期 422) | last_wins (末位覆盖)。
+    on_key_conflict: Literal["reject", "last_wins"] = "reject"
 
     @model_validator(mode="after")
     def _validate_pipeline_stages(self) -> "PreannotateRequest":
         stages = self.pipeline_stages
         if not stages:
             return self
-        # M1: 仅支持 1~2 个阶段的单链 (源 + 至多一个下游)。
-        if len(stages) > 2:
-            raise ValueError("pipeline_stages 本期最多支持 2 个阶段")
         indices = {s.stage for s in stages}
         if len(indices) != len(stages):
             raise ValueError("pipeline_stages 的 stage 序号不可重复")
@@ -1266,13 +1272,38 @@ class PreannotateRequest(BaseModel):
         roots = [s for s in stages if s.parent_stage is None]
         if len(roots) != 1:
             raise ValueError("pipeline_stages 须恰有一个源阶段 (parent_stage=None)")
-        if roots[0].ml_backend_id != self.ml_backend_id:
+        root = roots[0]
+        if root.ml_backend_id != self.ml_backend_id:
             raise ValueError("源阶段 ml_backend_id 须与顶层 ml_backend_id 一致")
         for s in stages:
-            if s.parent_stage is not None and s.parent_stage not in indices:
-                raise ValueError(f"stage {s.stage} 的 parent_stage={s.parent_stage} 不存在")
+            if s.parent_stage is None:
+                continue
+            # M2: 单层扇出 (深度 2) —— 下游 parent_stage 只能指向源阶段, 不支持子阶段再扇出。
+            if s.parent_stage != root.stage:
+                raise ValueError(
+                    f"stage {s.stage} 的 parent_stage 只能指向源阶段 {root.stage} (本期仅单层扇出)"
+                )
             if s.write is not None and s.write.get("target", "attributes") != "attributes":
-                raise ValueError("M1 仅支持 write.target=attributes")
+                raise ValueError("本期仅支持 write.target=attributes")
+            if s.roi is not None:
+                mode = s.roi.get("mode", "crop")
+                if mode != "crop":
+                    raise ValueError(f"本期仅支持 roi.mode=crop, 收到 {mode!r}")
+                pad = s.roi.get("pad")
+                if pad is not None and not (0.0 <= float(pad) <= 0.5):
+                    raise ValueError("roi.pad 须在 [0, 0.5] 区间")
+        # 并行兄弟键冲突: 多个下游阶段声明 write.keys 写同一键 → reject 时 422。
+        if self.on_key_conflict == "reject":
+            seen_keys: set[str] = set()
+            for s in stages:
+                if s.parent_stage is None or not s.write:
+                    continue
+                for k in s.write.get("keys") or []:
+                    if k in seen_keys:
+                        raise ValueError(
+                            f"多个阶段写同一属性键 {k!r}; 设 on_key_conflict=last_wins 以允许末位覆盖"
+                        )
+                    seen_keys.add(k)
         return self
 
 
@@ -1315,8 +1346,12 @@ async def trigger_preannotation(
                     "params": st.params,
                     "class_filter": st.class_filter,
                     "parent_stage": st.parent_stage,
+                    "parent_class_filter": st.parent_class_filter,
                     "roi": st.roi,
                     "write": st.write,
+                    "on_failure": st.on_failure,
+                    # v0.18.2 · 键冲突策略下放到每个下游阶段, worker 末位覆盖时据此合并。
+                    "on_key_conflict": body.on_key_conflict,
                 }
             )
         pipeline_stages_payload = norm

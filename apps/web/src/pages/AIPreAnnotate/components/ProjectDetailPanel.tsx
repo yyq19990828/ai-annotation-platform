@@ -4,7 +4,7 @@
  * 进入条件: ProjectCardGrid 点击某项目卡片;此面板替代主视图渲染.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -30,6 +30,7 @@ import { VideoPreannotateGuide } from "./VideoPreannotateGuide";
 import { PredictionImportWizard } from "@/components/predictions/PredictionImportWizard";
 import { usePreannotateConfig } from "./usePreannotateConfig";
 import { PreannotateConfigForm } from "./PreannotateConfigForm";
+import { StageCard } from "./StageCard";
 import styles from "./ProjectDetailPanel.module.css";
 
 // v0.11.24 · 预标幂等模式
@@ -128,11 +129,24 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // 输出形态 / buildArgs); 详见 usePreannotateConfig. 工作台 AI 面板复用同一 hook + PreannotateConfigForm.
   const cfg = usePreannotateConfig({ projectId, backendId: selectedBackendId });
 
-  // v0.18.1 · 多阶段预标注 (路径 B M1): 可选「加第二阶段」(detect→classify)。容器持第二份
-  // usePreannotateConfig + PreannotateConfigForm 实例 —— 共享 hook/组件本身不感知阶段编排 (红线)。
-  const [secondStageEnabled, setSecondStageEnabled] = useState(false);
-  const [selectedBackendId2, setSelectedBackendId2] = useState<string | null>(null);
-  const cfg2 = usePreannotateConfig({ projectId, backendId: selectedBackendId2 });
+  // v0.18.2 · 多阶段预标注 (路径 B M2): 下游阶段卡列表 (并行兄弟, 单层扇出)。每张卡 (StageCard)
+  // 自持一份 usePreannotateConfig + PreannotateConfigForm 实例 —— 共享 hook/组件本身不感知阶段
+  // 编排 (红线)。卡片把派生 stage payload 上抛, 容器在运行时组装成 pipeline_stages。
+  const [downstreamIds, setDownstreamIds] = useState<string[]>([]);
+  const stagePayloadsRef = useRef<Record<string, PipelineStagePayload | null>>({});
+  const [stageTick, setStageTick] = useState(0); // 卡片回报 payload → bump 触发 canRun 重算
+  const onStageChange = useCallback(
+    (sid: string, payload: PipelineStagePayload | null) => {
+      stagePayloadsRef.current[sid] = payload;
+      setStageTick((n) => n + 1);
+    },
+    [],
+  );
+  const seqRef = useRef(0);
+  const addStage = () =>
+    setDownstreamIds((ids) => [...ids, `stage-${(seqRef.current += 1)}`]);
+  const removeStage = (sid: string) =>
+    setDownstreamIds((ids) => ids.filter((x) => x !== sid));
 
   const batchesQ = useBatches(projectId, "active");
   const batches = (batchesQ.data ?? []) as unknown as Array<{
@@ -161,9 +175,11 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // v0.10.15 · 外部预测导入向导 (COCO / AAP JSON)
   const [importOpen, setImportOpen] = useState(false);
 
-  // 项目切换时重置批次选择 (prompt / outputMode 的重置在 usePreannotateConfig 内).
+  // 项目切换时重置批次选择 + 下游阶段卡 (prompt / outputMode 的重置在 usePreannotateConfig 内).
   useEffect(() => {
     setSelectedBatchIds(new Set());
+    setDownstreamIds([]);
+    stagePayloadsRef.current = {};
   }, [projectId]);
 
   const trigger = useTriggerPreannotation(projectId);
@@ -190,30 +206,37 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     });
   };
 
-  // 配置层就绪 (backend + 模式/prompt, 见 cfg.configReady) && 选了批次 && 不在跑;
-  // 启用第二阶段时第二份配置也须就绪。
+  // 下游卡的派生 payload (stageTick 变化时重算); 全部就绪才允许跑。
+  const downstreamPayloads = useMemo(
+    () => downstreamIds.map((sid) => stagePayloadsRef.current[sid] ?? null),
+    // stagePayloadsRef 是 ref, 卡片回报后靠 stageTick 触发重算 (eslint 看不到这层)。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [downstreamIds, stageTick],
+  );
+  const allDownstreamReady = downstreamPayloads.every((p) => p != null);
+
+  // 配置层就绪 (源 cfg.configReady) && 下游卡 (若有) 全就绪 && 选了批次 && 不在跑。
   const canRun =
     cfg.configReady &&
-    (!secondStageEnabled || cfg2.configReady) &&
+    (downstreamIds.length === 0 || allDownstreamReady) &&
     selectedBatchIds.size > 0 &&
     !running;
 
   const onRun = async () => {
     const baseArgs = cfg.buildArgs(predictMode);
     if (!baseArgs || selectedBatchIds.size === 0) return;
-    // v0.18.1 · 启用第二阶段且就绪 → 组装 pipeline_stages (源 + 下游 classify)。
+    // v0.18.2 · 有下游阶段卡且全就绪 → 组装 pipeline_stages (源 + N 个并行兄弟 classify)。
     // 源阶段 ml_backend_id 须等于顶层 (baseArgs.ml_backend_id), 后端据此复用既有 backend 校验。
     let pipelineStages: PipelineStagePayload[] | undefined;
-    if (secondStageEnabled) {
-      const stage1Args = cfg2.buildArgs(predictMode);
-      if (!stage1Args) return;
+    if (downstreamIds.length > 0) {
+      if (!allDownstreamReady) return;
       pipelineStages = [
         argsToStage(baseArgs, 0),
-        argsToStage(stage1Args, 1, {
+        ...downstreamPayloads.map((p, i) => ({
+          ...(p as PipelineStagePayload),
+          stage: i + 1,
           parent_stage: 0,
-          roi: { mode: "crop", pad: 0.05 },
-          write: { target: "attributes" },
-        }),
+        })),
       ];
     }
     const ids = Array.from(selectedBatchIds);
@@ -402,39 +425,31 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               projectMlBackendId={project?.ml_backend_id}
             />
 
-            {/* v0.18.1 · 多阶段预标注 (路径 B M1): 加第二阶段 = detect→classify。
-                启用后对源阶段每个检测框裁 ROI 喂下游分类, 结果合并进框属性。 */}
-            <div className={styles.field}>
-              <label className={styles.inlineCheckbox}>
-                <input
-                  type="checkbox"
-                  checked={secondStageEnabled}
-                  onChange={(e) => {
-                    const on = e.target.checked;
-                    setSecondStageEnabled(on);
-                    // 首次启用时默认选一个与源阶段不同的 backend (没有则留空待选)。
-                    if (on && !selectedBackendId2) {
-                      const other = backends.find((b) => b.id !== selectedBackendId);
-                      setSelectedBackendId2(other?.id ?? null);
-                    }
-                  }}
-                />
-                加第二阶段（对每个检测框跑分类 → 写回属性）
-              </label>
-            </div>
+            {/* v0.18.2 · 多阶段预标注 (路径 B M2): 下游阶段卡 (并行兄弟, 单层扇出)。
+                每张卡对源阶段检测框按类别裁 ROI 喂下游分类, 结果合并进框属性; 多卡 = 同类/不同类
+                各喂不同分类器 (声明式类别路由)。 */}
+            {downstreamIds.map((sid, i) => (
+              <StageCard
+                key={sid}
+                id={sid}
+                displayIndex={i + 2}
+                projectId={projectId}
+                backends={backends}
+                projectMlBackendId={project?.ml_backend_id}
+                sourceBackendId={selectedBackendId}
+                onChange={onStageChange}
+                onRemove={removeStage}
+              />
+            ))}
 
-            {secondStageEnabled && (
-              <div className={styles.stageTwoBlock}>
-                <strong className={styles.sectionTitle}>阶段 2 · 分类（对父框 ROI）</strong>
-                <PreannotateConfigForm
-                  cfg={cfg2}
-                  backends={backends}
-                  selectedBackendId={selectedBackendId2}
-                  onSelectBackend={setSelectedBackendId2}
-                  projectMlBackendId={project?.ml_backend_id}
-                />
-              </div>
-            )}
+            <div className={styles.field}>
+              <Button size="sm" variant="ghost" onClick={addStage}>
+                <Icon name="plus" size={11} />
+                {downstreamIds.length === 0
+                  ? "加第二阶段（对每个检测框跑分类 → 写回属性）"
+                  : "并行加同级阶段（同源、各写不同属性）"}
+              </Button>
+            </div>
 
             <div className={styles.field}>
               <span className={styles.fieldLabel}>

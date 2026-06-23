@@ -69,6 +69,15 @@ def test_crop_skips_non_bbox_and_rotated():
     assert inputs[0]["id"] == "2"  # id 保留原下标, 供回写
 
 
+def test_crop_parent_class_filter_preserves_original_index():
+    img = _img(200, 200)
+    boxes = [_bbox(10, 10, 20, 20, cls="car"), _bbox(50, 50, 10, 10, cls="person")]
+    inputs = crop_inputs_from_boxes(img, boxes, pad=0.0, parent_class_filter=["person"])
+    # 只裁 person (idx1), id 保留原下标 "1"
+    assert len(inputs) == 1
+    assert inputs[0]["id"] == "1"
+
+
 @dataclass
 class _FakeResult:
     task_id: str
