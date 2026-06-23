@@ -127,6 +127,7 @@ export interface UseWorkbenchHotkeysArgs {
 
 export interface UseWorkbenchHotkeysReturn {
   spacePan: boolean;
+  markSpacePanDrag: () => void;
   nudgeMap: Map<string, Geom>;
   flushNudges: () => void;
 }
@@ -155,8 +156,14 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
   } = args;
 
   const [spacePan, setSpacePan] = useState(false);
+  const videoSpaceDownRef = useRef(false);
+  const videoSpaceDraggedRef = useRef(false);
   const [nudgeMap, setNudgeMap] = useState<Map<string, Geom>>(new Map());
   const nudgeOrigRef = useRef<Map<string, Geom>>(new Map());
+
+  const markSpacePanDrag = useCallback(() => {
+    if (videoSpaceDownRef.current) videoSpaceDraggedRef.current = true;
+  }, []);
 
   // 切题清空 nudge
   useEffect(() => {
@@ -335,6 +342,14 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           e.preventDefault();
           videoControlsRef?.current?.togglePlayback();
           return;
+        case "videoSpaceDown":
+          e.preventDefault();
+          if (!e.repeat) {
+            videoSpaceDownRef.current = true;
+            videoSpaceDraggedRef.current = false;
+          }
+          setSpacePan(true);
+          return;
         case "videoJogPlayback":
           e.preventDefault();
           videoControlsRef?.current?.jogPlayback(action.dir);
@@ -480,9 +495,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           if (s.pendingDrawing) { s.setPendingDrawing(null); return; }
           if (s.editingClass) { s.setEditingClass(null); return; }
           if (s.selectedId) { s.setSelectedId(null); return; }
-          // 无草稿 / 无选中可取消时，ESC 回归中立态：视频回 hand，图片回选择工具。
-          // 避免用户只想取消选中却顺手把当前工具一并丢掉。
-          if (videoMode) s.setVideoTool("hand");
+          // 无草稿 / 无选中可取消时回选择工具；视频只退到 select, 不再回 hidden hand。
+          if (videoMode) s.setVideoTool("select");
           else s.setTool("select");
           return;
 
@@ -646,7 +660,14 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === " ") setSpacePan(false);
+      if (e.key === " ") {
+        setSpacePan(false);
+        if (videoMode && videoSpaceDownRef.current) {
+          if (!videoSpaceDraggedRef.current) videoControlsRef?.current?.togglePlayback();
+          videoSpaceDownRef.current = false;
+          videoSpaceDraggedRef.current = false;
+        }
+      }
       if (ARROW_KEY_SET.has(e.key)) flushNudges();
     };
 
@@ -672,5 +693,5 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     flushNudges,
   ]);
 
-  return { spacePan, nudgeMap, flushNudges };
+  return { spacePan, markSpacePanDrag, nudgeMap, flushNudges };
 }

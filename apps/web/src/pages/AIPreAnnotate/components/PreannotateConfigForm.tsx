@@ -56,6 +56,7 @@ interface Props {
   selectedBackendId?: string | null;
   onSelectBackend?: (id: string | null) => void;
   projectMlBackendId?: string | null;
+  backendSelectorLabel?: string;
 }
 
 export function PreannotateConfigForm({
@@ -64,13 +65,14 @@ export function PreannotateConfigForm({
   selectedBackendId,
   onSelectBackend,
   projectMlBackendId,
+  backendSelectorLabel = "ML Backend",
 }: Props) {
   return (
     <>
       {/* v0.14.18 · 多 backend 选择 (批量页) — 置于面板最上方, 先选后端再配置其余字段. */}
       {backends && backends.length > 1 && onSelectBackend && (
         <label className={styles.field}>
-          <span className={styles.fieldLabel}>ML Backend</span>
+          <span className={styles.fieldLabel}>{backendSelectorLabel}</span>
           <select
             value={selectedBackendId ?? ""}
             onChange={(e) => onSelectBackend(e.target.value || null)}
@@ -79,7 +81,7 @@ export function PreannotateConfigForm({
             {backends.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
-                {b.id === projectMlBackendId ? "（默认）" : ""}
+                {b.id === projectMlBackendId ? "（项目主后端）" : ""}
               </option>
             ))}
           </select>

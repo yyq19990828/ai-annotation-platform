@@ -41,13 +41,13 @@ interface ToolDockProps {
   videoMode?: boolean;
   /**
    * 项目已启用的 tool_unit 集合 (来自 project.tool_bindings[unit].enabled)。
-   * 仅过滤普通绘制工具: 未启用的隐藏。AI 工具按后端能力置灰、hand 视图工具恒显示, 均不受此过滤。
+   * 仅过滤普通绘制工具: 未启用的隐藏。AI 工具按后端能力置灰。
    * null = 老项目无 tool_bindings 配置 → 视为全部启用, 不隐藏任何工具 (向后兼容)。
    */
   enabledToolUnits?: Set<string> | null;
   /**
-   * v0.11.29 · 视频 bbox 单位的「单帧框 / 轨迹框」子开关 (来自 tool_bindings["bbox"].video_modes)。
-   * null / undefined = 两者均显示 (向后兼容老项目)。hand (视图) 工具不受此过滤, 恒显示。
+   * 视频 bbox 单位的「单帧框 / 轨迹框」子开关 (来自 tool_bindings["bbox"].video_modes)。
+   * null / undefined = 两者均显示 (向后兼容老项目)。
    */
   videoModes?: { box: boolean; track: boolean } | null;
   /** v0.13.3-5 · 点云 3D 台:渲染 select / box 两个 3D 工具(双栈隔离,不走 2D ToolId)。 */
@@ -83,12 +83,10 @@ const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor> = {
   canvas: { desc: "评论批注 (内部, 不展示)" },
 };
 
-// v0.11.29 · group: 单帧 (static) / 轨迹 (track) / 视图 (view), 用于 divider 分组与 video_modes 过滤。
-//            为未来 polygon / track-polygon 预留扩展位 (同组追加即可)。
-const VIDEO_TOOLS: Array<{ id: VideoTool; hotkey: string; label: string; icon: IconName; desc: string; altDigit: number; group: "static" | "track" | "view" }> = [
+const VIDEO_TOOLS: Array<{ id: VideoTool; hotkey: string; label: string; icon: IconName; desc: string; altDigit: number; group: "select" | "static" | "track" }> = [
+  { id: "select", hotkey: "V", label: "选择", icon: "cursor", desc: "点选 / 移动已有视频标注", altDigit: 3, group: "select" },
   { id: "box", hotkey: "B", label: "矩形框", icon: "rect", desc: "当前帧独立矩形框", altDigit: 1, group: "static" },
   { id: "track", hotkey: "T", label: "轨迹", icon: "target", desc: "跨帧对象轨迹", altDigit: 2, group: "track" },
-  { id: "hand", hotkey: "V", label: "平移", icon: "move", desc: "拖拽平移画布", altDigit: 3, group: "view" },
 ];
 
 // v0.13.3-5 · 点云 3D 工具:select 拾取选中 / box 点地面放置 / point-mask 框选分割。
@@ -121,7 +119,7 @@ const cn = (...parts: Array<string | false | null | undefined>) => parts.filter(
 export function ToolDock({
   tool,
   onSetTool,
-  videoTool = "box",
+  videoTool = "select",
   onSetVideoTool,
   isPromptSupported,
   capabilitiesLoading = false,
@@ -166,9 +164,9 @@ export function ToolDock({
     );
   }
   if (videoMode) {
-    // hand (view) 恒显示; box/track 按 video_modes 过滤 (null = 兼容老项目, 全显示)。
+    // 视频显示选择 + 创建工具；平移走右键/Space 手势, 不占工具按钮。
     const visibleVideoTools = VIDEO_TOOLS.filter((t) => {
-      if (t.group === "view") return true;
+      if (t.id === "select") return true;
       if (!videoModes) return true;
       if (t.id === "box") return videoModes.box;
       if (t.id === "track") return videoModes.track;

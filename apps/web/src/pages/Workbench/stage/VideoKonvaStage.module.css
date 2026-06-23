@@ -13,7 +13,7 @@
   cursor: grabbing;
 }
 
-/* 工具模式光标反馈(对齐旧 SVG 栈):画框/轨迹→十字,hand→可抓。命中 resize 句柄时
+/* 工具模式光标反馈:画框/轨迹→十字,Space 平移→可抓。命中 resize 句柄时
    由交互层覆盖 Konva 容器 cursor,未命中则继承此处。平移中由 .rootPanning 接管。 */
 .toolCrosshair {
   cursor: crosshair;

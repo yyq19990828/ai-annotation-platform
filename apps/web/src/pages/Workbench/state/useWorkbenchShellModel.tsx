@@ -196,7 +196,7 @@ export function useWorkbenchShellModel({
   const firstBackendId = backends[0]?.id ?? null;
   const [batchBackendId, setBatchBackendId] = useState<string | null>(null);
   // 工作台是常驻 session: 用户在 AI 面板手动选过批量 backend 后, 不能因项目默认后端被外部改动
-  // (如另一 Tab "设为默认") 或后端列表顺序变化 (firstBackendId 变) 而被静默重置。
+  // (如另一 Tab "设为主后端") 或后端列表顺序变化 (firstBackendId 变) 而被静默重置。
   // 仅切项目时重置手动标记并按默认重新初始化; 同项目内只在用户未手动选过时跟随默认变化补齐。
   const batchManuallyPickedRef = useRef(false);
   const batchProjectRef = useRef<string | null | undefined>(undefined);
@@ -422,11 +422,11 @@ export function useWorkbenchShellModel({
       })),
     [videoChaptersData],
   );
-  // v0.11.29 · 当前 videoTool 被 video_modes 过滤掉时, 切到可用工具 (否则默认按钮指向隐藏项)。hand 始终可用。
+  // 当前创建工具被 video_modes 过滤掉时, 回到选择工具；平移不再是 fallback 工具。
   useEffect(() => {
     if (!isVideoTask || !videoModes) return;
-    if (videoTool === "box" && !videoModes.box) setVideoTool(videoModes.track ? "track" : "hand");
-    else if (videoTool === "track" && !videoModes.track) setVideoTool(videoModes.box ? "box" : "hand");
+    if (videoTool === "box" && !videoModes.box) setVideoTool("select");
+    else if (videoTool === "track" && !videoModes.track) setVideoTool("select");
   }, [isVideoTask, videoModes, videoTool, setVideoTool]);
   useEffect(() => {
     if (!isVideoTask) return;
@@ -811,7 +811,7 @@ export function useWorkbenchShellModel({
   });
   // AI"配置区"共享状态 (任务类型 / 模型任务 / 类别白名单 / variant / 参数 / 输出形态 / buildArgs);
   // 与批量页 ProjectDetailPanel 同一 hook + PreannotateConfigForm (单一事实源). 驱动批量 AI 面板
-  // (开始预标) — 批量线, 用 batchBackendId.
+  // (运行当前题 AI) — 批量线, 用 batchBackendId.
   const preCfg = usePreannotateConfig({
     projectId: projectId ?? "",
     backendId: batchBackendId,
@@ -1356,7 +1356,7 @@ export function useWorkbenchShellModel({
     [],
   );
 
-  const { spacePan, nudgeMap } = useWorkbenchHotkeys({
+  const { spacePan, markSpacePanDrag, nudgeMap } = useWorkbenchHotkeys({
     s, history, classes, currentProject, annotationsRef,
     batchChanging, setBatchChanging, showHotkeys,
     navigateTask, smartNext, setFitTick,
@@ -2054,6 +2054,9 @@ export function useWorkbenchShellModel({
         videoSampling,
         videoManifestError: videoManifest.error,
         videoTool: s.videoTool,
+        videoModes,
+        spacePan,
+        onSpacePanDragStart: markSpacePanDrag,
         videoFrameIndex: s.videoFrameIndex,
         videoReviewDisplayMode: mode === "review" ? modeState.diffMode : undefined,
         hiddenVideoTrackIds: s.hiddenVideoTrackIds,

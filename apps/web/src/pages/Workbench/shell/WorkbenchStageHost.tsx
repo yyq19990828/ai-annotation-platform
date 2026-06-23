@@ -96,6 +96,9 @@ interface WorkbenchStageHostVideoProps {
   /** v0.10.29 · 项目级采样配置 → VideoStage 软网格导航。 */
   videoSampling?: VideoSamplingConfig | null;
   videoTool: VideoTool;
+  videoModes?: { box: boolean; track: boolean } | null;
+  spacePan: boolean;
+  onSpacePanDragStart: () => void;
   videoFrameIndex: number;
   videoReviewDisplayMode?: DiffMode;
   hiddenVideoTrackIds: Set<string>;
@@ -269,6 +272,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       videoChapters,
       videoSampling,
       videoTool,
+      videoModes,
+      spacePan: videoSpacePan,
+      onSpacePanDragStart: onVideoSpacePanDragStart,
       videoFrameIndex,
       videoReviewDisplayMode,
       hiddenVideoTrackIds,
@@ -400,6 +406,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             selectedIds={selectedIds}
             readOnly={readOnly}
             videoTool={videoTool}
+            videoModes={videoModes}
+            spacePan={videoSpacePan}
+            onSpacePanDragStart={onVideoSpacePanDragStart}
             pendingDrawing={pendingDrawing}
             chapters={videoChapters}
             videoSampling={videoSampling}

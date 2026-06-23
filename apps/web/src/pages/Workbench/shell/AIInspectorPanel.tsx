@@ -510,7 +510,7 @@ export function AIPredictionPopover({
             <span className="inline-flex size-6 items-center justify-center rounded-sm bg-violet-500/[0.18] text-status-info">
               <Icon name="bot" size={14} />
             </span>
-            <b className="text-sm">AI</b>
+            <b className="text-sm">当前题 AI</b>
             <Icon name="move" size={12} className="text-muted-foreground" />
           </div>
           <div className="flex items-center gap-1.5">
@@ -518,13 +518,13 @@ export function AIPredictionPopover({
               {aiRunning && <Icon name="loader2" size={10} className="spin" />}
               {aiRunning ? "推理中" : "就绪"}
             </Badge>
-            <Button variant="ghost" size="sm" onClick={onClose} title="关闭 AI" className="px-1.5 py-0.5">
+            <Button variant="ghost" size="sm" onClick={onClose} title="关闭当前题 AI" className="px-1.5 py-0.5">
               <Icon name="x" size={12} />
             </Button>
           </div>
         </div>
         <div className="mb-2 flex justify-between gap-3 text-xs text-muted-foreground">
-          <span>模型: <span className="font-medium text-foreground">{aiModel}</span></span>
+          <span>本次模型: <span className="font-medium text-foreground">{aiModel}</span></span>
           <span className="mono">{aiBoxCount} 待审</span>
         </div>
         <div className="mb-2.5 flex gap-1.5">
@@ -536,10 +536,10 @@ export function AIPredictionPopover({
               ? isVariantWarmProp === false
                 ? `加载中… 已等 ${coldElapsedSec}s（首次约 5-15s）`
                 : "推理中..."
-              : "开始预标"}
+              : "运行当前题"}
           </Button>
-          <Button size="sm" onClick={onAcceptAll} disabled={aiBoxCount === 0} className="flex-1">
-            <Icon name="check" size={11} />全部采纳
+          <Button size="sm" onClick={onAcceptAll} disabled={aiBoxCount === 0} className="flex-1" title="采纳当前题可见候选">
+            <Icon name="check" size={11} />采纳当前候选
           </Button>
         </div>
       </div>
@@ -548,12 +548,13 @@ export function AIPredictionPopover({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* v0.14.18 · 置信度阈值移出拖动头 → body 顶部: 拖面板 (头部) 与拖滑块互不抢手势. */}
         <div className="border-b border-border bg-muted px-3.5 py-2.5">
+          <div className="mb-1.5 text-xs font-semibold text-foreground">候选筛选</div>
           <div className="mb-1 flex items-baseline justify-between text-xs">
             <span className="text-muted-foreground">置信度阈值</span>
             <span className="mono rounded-sm bg-violet-500/[0.12] px-1.5 text-xs font-semibold text-status-info">{(confThreshold * 100).toFixed(0)}%</span>
           </div>
           <div className="mb-1.5 text-2xs leading-[1.4] text-muted-foreground">
-            过滤批量预标注结果：仅显示并采纳置信度 ≥ 此值的 AI 框，低于的隐藏且「全部采纳」也不纳入。拖动滑块调整，或用工具栏 <kbd>[</kbd> / <kbd>]</kbd>（滚轮 5%、Shift 10%）。
+            仅显示并采纳当前题中置信度 ≥ 此值的 AI 候选；低于阈值的候选会隐藏，且不纳入一键采纳。可拖动滑块调整，或用工具栏 <kbd>[</kbd> / <kbd>]</kbd>（滚轮 5%、Shift 10%）。
           </div>
           {/* 可拖动滑块 (step 1%); 仍支持滚轮 (5%/Shift 10%) 与工具栏 [ / ]. */}
           <input
@@ -578,12 +579,14 @@ export function AIPredictionPopover({
         {/* 共享配置区: 任务类型 / 模型任务 (检测/分割…) / 类别白名单 / variant / 后端参数 / prompt.
             与批量页 ProjectDetailPanel 同一组件 (单一事实源). */}
         <div className="border-b border-border bg-muted px-3.5 py-2.5">
+          <div className="mb-2 text-xs font-semibold text-foreground">本次运行</div>
           <PreannotateConfigForm
             cfg={cfg}
             backends={backends}
             selectedBackendId={selectedBackendId}
             onSelectBackend={onSelectBackend}
             projectMlBackendId={projectMlBackendId}
+            backendSelectorLabel="本次 backend"
           />
         </div>
 

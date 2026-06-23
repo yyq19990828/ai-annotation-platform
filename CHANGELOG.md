@@ -34,6 +34,21 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.10] - 2026-06-24
+
+0.18.x 跨 ML Backend 编排开放后的工作台语义收口：工作台 AI 悬浮面板明确为「当前题 AI 执行 + 候选审阅」，项目级 backend 从「默认 ML Backend」改称「项目主后端」，视频工作台保留显式选择工具并退役独立平移工具。方案见 [`docs/plans/2026-06-24-v0.18.10-workbench-ai-default-backend-video-tools.md`](docs/plans/2026-06-24-v0.18.10-workbench-ai-default-backend-video-tools.md)。
+
+### Changed
+
+- **工作台 AI 面板语义收口**：AI 浮层标题、运行按钮、候选筛选和 backend selector 文案改为当前题语义；候选筛选只描述当前题可见候选，不再暗示批量 pipeline 或全局编排。
+- **项目主后端命名**：项目 ML 模型页、预标配置 selector、文档和快捷操作统一改为「项目主后端 / 主后端」，保留 `ml_backend_id` 作为初始选择 / fallback，不改变 API 或 DB schema。
+- **视频工具栏退役 hand/pan**：视频 ToolDock 展示选择 `V`、矩形框 `B` 与轨迹 `T`；`V` / `Alt+3` 切选择工具，不再切换视频平移工具，`Esc` 不再回落到 hidden hand 状态。
+- **视频默认画布交互补齐**：已有标注的选择、移动、resize 继续优先于空白创建；右键拖拽与 `Space`+拖拽可平移视频视图，`Space` 单按仍用于播放 / 暂停。
+
+### Notes
+
+- GSAM2 / grounded-sam2 这类 backend 内部复合 pipeline 的长期拆分或原子化不在本版处理，后续单独开 plan。
+
 ## [0.18.9] - 2026-06-24
 
 多阶段预标注（路径 B）下游分类原子化：把 onnxtools-backend 从「只暴露一条完整检测+分类 pipeline」拆出独立的纯分类 model，并让平台多阶段编排的下游阶段自动用它。这样「检测（如 grounded-sam2）→ 裁 ROI → 分类（onnxtools）」是真正的跨 backend 原子编排，下游不再在已裁好的单车 ROI 上重复跑检测器（冗余 + 紧 crop 域偏移漏检）。

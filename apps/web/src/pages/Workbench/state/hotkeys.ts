@@ -64,8 +64,9 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Space", "+ drag"], desc: "平移画布", group: "view", actionType: "spacePanOn" },
   { keys: ["双击空白"], desc: "适应视口", group: "view" },
 
-  { keys: ["Space"], desc: "视频播放 / 暂停", group: "video", actionType: "videoTogglePlayback" },
+  { keys: ["Space"], desc: "视频播放 / 暂停；按住拖拽平移画布", group: "video", actionType: "videoSpaceDown" },
   { keys: ["J / K / L"], desc: "视频反向 / 暂停 / 正向多速率播放", group: "video", actionType: "videoJogPlayback" },
+  { keys: ["V"], desc: "视频选择工具", group: "video", actionType: "setVideoTool" },
   { keys: ["B"], desc: "视频矩形框工具", group: "video", actionType: "setVideoTool" },
   { keys: ["T"], desc: "视频轨迹工具", group: "video", actionType: "setVideoTool" },
   { keys: ["← / →"], desc: "上一帧 / 下一帧（采样开启时按网格跳）", group: "video", actionType: "videoSeek" },
@@ -156,7 +157,7 @@ export type HotkeyAction =
   | { type: "smartNext"; mode: "open" | "uncertain" }
   | { type: "changeClass" }
   | { type: "setTool"; tool: "select" | "box" | "rotated-box" | "hand" | "polygon" | "polyline" | "keypoint" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box" | "ai-cycle" }
-  | { type: "setVideoTool"; tool: "box" | "track" | "hand" }
+  | { type: "setVideoTool"; tool: "select" | "box" | "track" }
   | { type: "setClassByDigit"; idx: number }
   | { type: "setClassByLetter"; letter: string }
   | { type: "setAttribute"; key: string; value: unknown }
@@ -169,6 +170,7 @@ export type HotkeyAction =
   | { type: "rejectAi" }
   | { type: "samPolarity"; polarity: "positive" | "negative" }
   | { type: "videoTogglePlayback" }
+  | { type: "videoSpaceDown" }
   | { type: "videoJogPlayback"; dir: -1 | 1 }
   | { type: "videoPausePlayback" }
   | { type: "videoSeek"; delta: number }
@@ -266,10 +268,11 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
       if (e.key === "1") return { type: "setVideoTool", tool: "box" };
       if (e.key === "2") return { type: "setVideoTool", tool: "track" };
-      if (e.key === "3") return { type: "setVideoTool", tool: "hand" };
+      if (e.key === "3") return { type: "setVideoTool", tool: "select" };
       if (e.key === "l" || e.key === "L") return { type: "videoClearLoopRegion" };
+      return null;
     }
-    if (e.key === " ") return { type: "videoTogglePlayback" };
+    if (e.key === " ") return { type: "videoSpaceDown" };
     if (e.key === "j" || e.key === "J") return { type: "videoJogPlayback", dir: -1 };
     if (e.key === "k" || e.key === "K") return { type: "videoPausePlayback" };
     if (ctx.hasSelectedVideoTrack) {
@@ -279,10 +282,9 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
       if (e.key === "l" || e.key === "L") return { type: "videoToggleLockedTrack" };
     }
     if (e.key === "l" || e.key === "L") return { type: "videoJogPlayback", dir: 1 };
+    if (e.key === "v" || e.key === "V") return { type: "setVideoTool", tool: "select" };
     if (e.key === "b" || e.key === "B") return { type: "setVideoTool", tool: "box" };
     if (e.key === "t" || e.key === "T") return { type: "setVideoTool", tool: "track" };
-    // v0.11.29 · V = 视图/平移工具（hand），与图片工作台一致；H 已被「隐藏轨迹」占用。
-    if (e.key === "v" || e.key === "V") return { type: "setVideoTool", tool: "hand" };
     // 视频导航只保留两类心智模型：箭头负责帧导航，,/. 负责选中轨迹的关键帧导航。
     if (ctx.samplingActive) {
       if (e.key === "ArrowRight") {

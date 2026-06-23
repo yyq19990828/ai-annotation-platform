@@ -38,6 +38,9 @@ export interface VideoWorkbenchProps {
   trackColorOverrides?: Record<string, string>;
   readOnly: boolean;
   videoTool: VideoTool;
+  videoModes?: { box: boolean; track: boolean } | null;
+  spacePan?: boolean;
+  onSpacePanDragStart?: () => void;
   pendingDrawing: PendingDrawing;
   chapters?: VideoTimelineChapter[];
   videoSampling?: VideoSamplingConfig | null;
@@ -84,6 +87,9 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     trackColorOverrides,
     readOnly,
     videoTool,
+    videoModes,
+    spacePan = false,
+    onSpacePanDragStart,
     pendingDrawing,
     chapters,
     videoSampling,
@@ -136,6 +142,9 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         onIssuePinClick={onIssuePinClick}
         visual={annotationVisual}
         videoTool={videoTool}
+        videoModes={videoModes}
+        spacePan={spacePan}
+        onSpacePanDragStart={onSpacePanDragStart}
         readOnly={readOnly}
         lockedTrackIds={lockedTrackIds}
         selectedIds={selectedIds}

@@ -331,9 +331,9 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 
 `VideoStage` 暴露 `VideoStageControls` ref，由 `useWorkbenchHotkeys` 在 `videoMode` 下统一分发快捷键。视频模式快捷键：
 
-- `Space` 播放 / 暂停
+- `Space` 播放 / 暂停；按住并拖拽画布时平移视图
 - `J` / `K` / `L` 反向播放或减速 / 暂停 / 正向播放或加速
-- `B` / `T` / `V` 切换视频矩形框 / 轨迹 / 平移工具
+- `V` / `B` / `T` 切换视频选择 / 矩形框 / 轨迹工具
 - `←` / `→` 上一帧 / 下一帧；采样开启时按网格跳
 - `Shift + ←/→` 采样开启时源帧 ±1 微调
 - `,` / `.` 选中 `video_track_bbox` 时跳上 / 下可见关键帧
@@ -367,7 +367,7 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 
 画布上下文菜单使用通用 `ContextMenu` + `useCanvasContextMenu` 原语：Stage 负责把命中对象转换成 `DropdownItem[]`，菜单组件只处理 fixed 坐标定位、视口翻转和关闭行为。这套外壳同时服务于视频 `video_track_bbox` / `video_bbox` 和图片 Stage 的 bbox、rotated bbox、polygon、polyline、keypoint 等人工标注；图片侧通过 Konva `getIntersection()` 在容器层统一命中 shape，再把 annotation action 映射成 `DropdownItem[]`。
 
-视频工作台的 viewport 与图片工作台复用同一套 `useViewportTransform` 行为：`F` 适应视口、`0` 回到 1:1、Ctrl/Meta+滚轮以光标为锚点缩放、右键拖拽平移。缩放和平移只影响显示层，保存到 annotation 的 bbox / keyframe 仍是 `[0,1]` 归一化视频坐标。
+视频工作台的 viewport 与图片工作台复用同一套 `useViewportTransform` 行为：`F` 适应视口、`0` 回到 1:1、Ctrl/Meta+滚轮以光标为锚点缩放、右键拖拽或 `Space`+拖拽平移。缩放和平移只影响显示层，保存到 annotation 的 bbox / keyframe 仍是 `[0,1]` 归一化视频坐标。
 
 R5.2 的 bitmap cache 只优化前端体感，不替代 `<video>` 播放源。`useVideoBitmapCache` 在浏览器支持 `createImageBitmap(video)` 时按 `taskId + frameIndex` 保存 LRU；seek / scrub 命中时 `VideoBitmapLayer` 先绘制缓存帧，`<video>` 异步追赶。浏览器不支持或抓帧失败时，bitmap 层保持隐藏并在诊断里标记 unsupported / errors。
 

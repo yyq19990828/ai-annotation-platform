@@ -108,6 +108,14 @@ describe("resolveDragCommit", () => {
     }
   });
 
+  it("select 工具 draw → none", () => {
+    const out = resolveDragCommit(draw({ x: 0.1, y: 0.1 }, { x: 0.4, y: 0.4 }), { x: 0.4, y: 0.4 }, {
+      ...baseCtx,
+      videoTool: "select",
+    });
+    expect(out.type).toBe("none");
+  });
+
   it("track 工具 + 选中轨迹未锁 draw → 落该轨迹关键帧", () => {
     const t = track("trk-1");
     const out = resolveDragCommit(draw({ x: 0.1, y: 0.1 }, { x: 0.4, y: 0.4 }), { x: 0.4, y: 0.4 }, {

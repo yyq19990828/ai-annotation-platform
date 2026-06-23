@@ -27,8 +27,8 @@ export type Tool =
   | "magic-box"
   // v0.10.28 · 关键点 (COCO 范式).
   | "keypoint";
-// v0.11.29 · hand = 视图/平移中立态（左键拖拽平移画布，不绘制）；ESC 回归到它。
-export type VideoTool = "box" | "track" | "hand";
+// 视频工具栏保留选择与创建工具；平移不再作为 VideoTool 模式。
+export type VideoTool = "select" | "box" | "track";
 // v0.13.3-5 · 点云 3D 工作台工具态(双栈隔离,不复用 2D ToolId)。
 export type ThreeDTool = "select" | "box" | "point-mask";
 
@@ -112,7 +112,7 @@ export function useWorkbenchState() {
   } = useWorkbenchConfig();
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("select");
-  const [videoTool, setVideoTool] = useState<VideoTool>("box");
+  const [videoTool, setVideoTool] = useState<VideoTool>("select");
   const [threeDTool, setThreeDTool] = useState<ThreeDTool>("select");
   const [videoFrameIndex, setVideoFrameIndex] = useState(0);
   const [hiddenVideoTrackIds, setHiddenVideoTrackIds] = useState<Set<string>>(() => new Set());

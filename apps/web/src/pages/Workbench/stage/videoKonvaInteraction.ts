@@ -31,7 +31,7 @@ import type {
  * **拖拽计算与提交语义复用既有纯函数**(applyResize/clampGeom/normalizeGeom/upsertKeyframe),
  * 命中复用 pickTopVideoEntryAt(同一 z 序 + padding),避免行为漂移。
  *
- * 平移(右键 / hand 工具左键)仍由 VideoKonvaStage 容器层处理,不在本模块。
+ * 平移(右键 / Space+左键)仍由 VideoKonvaStage 容器层处理,不在本模块。
  */
 
 /** 画框/缩放的最小有效尺寸(归一化);与旧栈 finishDrag 的 0.003 阈值一致。 */
@@ -81,6 +81,7 @@ export function resolveDragCommit(
   const { annotations, videoTool, selectedTrack, lockedTrackIds } = ctx;
 
   if (drag.kind === "draw") {
+    if (videoTool === "select") return { type: "none" };
     const geom = normalizeGeom(drag.start, finalPt);
     if (geom.w < VIDEO_MIN_BOX || geom.h < VIDEO_MIN_BOX) return { type: "none" };
     // track 工具且选中轨迹未锁:画框落到该轨迹当前帧关键帧(而非建独立框)。
@@ -117,6 +118,7 @@ export interface UseVideoKonvaInteractionParams {
   readOnly: boolean;
   isPlaybackActive: boolean;
   lockedTrackIds: Set<string>;
+  creationEnabled: boolean;
   frameIndex: number;
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onCreate: (frameIndex: number, geom: VideoStageGeom) => void;
@@ -164,6 +166,7 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
   const beginDraw = useCallback((native: PointerEvent) => {
     const p = paramsRef.current;
     if (p.readOnly || p.isPlaybackActive) return;
+    if (!p.creationEnabled) return;
     const trackLocked = p.selectedTrack ? p.lockedTrackIds.has(p.selectedTrack.geometry.track_id) : false;
     if (p.videoTool === "track" && trackLocked) return;
     const pt = pointFromClient(native.clientX, native.clientY);
@@ -210,7 +213,6 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
     const native = e.evt;
     if (native.button !== 0) return; // 右键/中键平移由容器层处理
     const p = paramsRef.current;
-    if (p.videoTool === "hand") return; // hand 工具左键平移由容器层处理
     const pt = pointFromClient(native.clientX, native.clientY);
     if (!pt) return;
     const pickables: VideoPickable[] = p.ghost ? [...p.entries, p.ghost] : p.entries;
