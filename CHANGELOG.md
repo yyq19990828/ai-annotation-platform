@@ -8,6 +8,7 @@
 
 | 版本组 | 文件 |
 |--------|------|
+| 0.17.x | [docs/changelogs/0.17.x.md](docs/changelogs/0.17.x.md) |
 | 0.16.x | [docs/changelogs/0.16.x.md](docs/changelogs/0.16.x.md) |
 | 0.15.x | [docs/changelogs/0.15.x.md](docs/changelogs/0.15.x.md) |
 | 0.14.x | [docs/changelogs/0.14.x.md](docs/changelogs/0.14.x.md) |
@@ -30,239 +31,21 @@
 
 ## 最新版本
 
-<!-- 0.17.x 版本变更按版本段追加到本区；进入 0.18.x 后整体移到 docs/changelogs/0.17.x.md -->
+<!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 
-> **0.17.x 是一个 UI 迁移 Epic**:把 `apps/web` 自维护的 CSS Modules + `tokens.css` 视觉体系全量迁到 Tailwind v4 + shadcn/ui,直至旧 `*.module.css` 与 `tokens.css` 退役、CI 门禁完成时代切换。全程红线为「只换皮、行为零回退」(业务逻辑 / 数据流 / 路由 / 画布渲染逻辑均不动),逐阶段以 light/dark 双主题截图基线把关。Epic 与设计规范见 [`docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md`](docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md) 与 `docs-site/dev/reference/design-system.md`。
+## [0.18.0] - 2026-06-23
 
-## [0.17.17] - 2026-06-22
-
-关键点骨骼模板配置升级（I10 Skeleton 进阶收尾）：
-
-- **SVG 骨骼画布配置器**：项目设置「类别与工具配置」里的 keypoint schema 编辑器从下拉框选索引连边，升级为可视化画布——拖动节点定义骨架布局、点击两个节点连线、点击连线删除。布局坐标（`KeypointNode.x/y`，归一化）随模板持久化，作为标注参考形状。
-- **节点子标签（sublabel）**：节点支持「名称 + 子标签」两层命名（如 `shoulder` + `left`），仅 2 层、禁止任意嵌套。画布节点标签显示 `名称·子标签`；COCO 导出的 `keypoints` 名拼成 `名称_子标签` 以消歧重名。
-
-## [0.17.16] - 2026-06-22
-
-标注 / 质检工作台「未选批次」着陆态从单行占位升级为**批次卡片网格**:项目分组、封面缩略图、批次进度条、点卡直接进入。
+二阶段预标注落地：新增**自维护的第四个 ML backend `onnxtools-backend`**——「检测 → 拿到框 → 对机动车做车型/颜色分类 → 写入框属性」一条流水线打通，并扩展协议让 backend 自报输出属性 schema、前端一键导入。Path B（平台层跨 backend 可视化编排）作为后续 Epic 单列 [`ROADMAP`](ROADMAP/2026-06-23-staged-preannotation-pipeline-roadmap.md)。本版方案见 [`docs/plans/2026-06-23-v0.18.0-onnxtools-vehicle-attribute-backend.md`](docs/plans/2026-06-23-v0.18.0-onnxtools-vehicle-attribute-backend.md)。
 
 ### Added
 
-- **批次卡片网格**:标注工作台与质检审核在未选批次时,右侧改为按项目分组的批次卡片。每张卡含批次封面缩略图(左侧拉满卡片高度)、状态、进度条与「共/完成/待标」计数,点卡即选中批次进入任务列表。标注侧进度为三档(标注中 / 送审 / 通过),质检侧为两档(待审 / 通过)。
-- **「全部待标任务」入口**:标注工作台左侧栏顶部新增「全部待标任务」按钮,与质检审核「全部待审任务」对位;两页标题区新增「返回全部批次」回到卡片网格概览。
-- **质检卡片显示标注员**:质检批次卡片展示该批的标注员姓名,审核员一眼看清「这批是谁标的」(数据复用 `ReviewingBatchItem.annotator`)。
-- **批次封面缩略图字段**:`MyBatchItem` / `ReviewingBatchItem` 新增 `thumbnail_url` + `cover_blurhash`。后端取每批最早一张「有缩略图」的任务作封面,缩略图口径与 `tasks/_shared.py` 一致(`COALESCE(DatasetItem, Task)` + presigned URL),并按 `bucket_for_cache_key` 路由 media-cache 桶。
-
-## [0.17.15] - 2026-06-22
-
-跨工具单位类别共享两项体验改进:同名类批量重命名 + `alias_to` 颜色/alias 软关联。强隔离底线不变 ([ADR-0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) 附录)。
-
-### Added
-
-- **同名类跨工具单位批量重命名**:项目设置「类别」区在多个启用工具单位存在同名类时,出现「重命名时同步所有工具单位的同名类」开关。开启后重命名走后端跨 unit 批量路径 (不传 `tool_unit_id`),一次改全;默认关 (仅当前工具单位,守强隔离默认)。后端能力早已就位,本次补前端入口。
-- **`alias_to` 类别软关联**:`ToolClassEntry` 新增可选 `alias_to: {tool_unit_id, class_name}` 指针。某工具单位的类可链接到另一单位的类,**继承其颜色 / alias**,免重复输入。仅显示层继承——读时派生层 (`resolve_class_visual`) 解析后填入扁平 `classes_config` 供画布取色,带环 / 悬空 / 超深保护;**不改 tool_bindings 存储、不改标注归属、不进导出** (COCO/YOLO category 仍按各 unit 独立类、`supercategory=tool_unit_id`)。编辑器在「类别」区每行提供链接下拉,链接后该行颜色 / alias 显示为继承 (只读)。v1 链接即完全继承,override 入口暂未开放。
-
-## [0.17.14] - 2026-06-22
-
-视频参考框运动预测从「两点恒速外推」升级为完整恒速卡尔曼滤波(实验,默认关)。选中轨迹当前帧无框时的参考框,可选遍历先行所有可见关键帧前向滤波得到平滑预测,缓解变速/转向目标上的外推漂移。
-
-### Added
-
-- **参考框完整卡尔曼滤波**:设置抽屉「实验 › 参考框运动预测」由开关改为四档选择——`关(最近关键帧)` / `恒速外推(前两关键帧)` / `卡尔曼 · 平稳` / `卡尔曼 · 灵敏`。卡尔曼档遍历当前帧之前**所有**可见关键帧做 predict→update 前向滤波,再外推到当前帧;平稳档信模型(顺滑抗噪)、灵敏档信观测(紧跟最新关键帧)。参考框标签相应显示「卡尔曼 F{帧}↗」。
-- **预测不确定度误差椭圆**:卡尔曼档在参考框外画一圈淡色虚线椭圆,半轴 = 框半宽高 + 2σ(位置后验标准差,≈95% 置信)。σ 随外推距离 / 关键帧稀疏度增长,椭圆越大表示「预测越不确定」,提示标注员预测置信度。
-
-### Fixed
-
-- **非 h264 视频播放报 `MEDIA_ELEMENT_ERROR: Format error`**:`media-cache` 桶旧生命周期规则 `Prefix=""` 把整桶按 30 天过期,把非 h264 视频入库时一次性转码的浏览器播放代理 `playback/{item_id}.mp4` 也删了,而 DB 元数据 `playback_path` 仍指向它 → `<video>` 取预签名 URL 命中 404 → 浏览器报 Format error。把过期规则收窄到只 `videos/` 前缀(帧/chunk 可按需重生),`playback/`、`thumbnails/` 作为 DB 持久引用的耐久资产不再过期。已被删的历史代理需重跑 `generate_video_metadata` 补回。
+- **onnxtools 第四 backend（二阶段车辆属性）**：独立 FastAPI 微服务（端口 8004、compose profile `gpu-onnxtools`），与 gsam2 / sam3 / yolo 同构（HTTP 协议 v2.1）但单一固定 pipeline。基于 onnxtools 的 `VehicleAttributePipeline`：rtdetr 检测 → 对机动车框裁 ROI → va 模型出**车型（13 类）+ 颜色（11 类）**→ 写入框 `attributes`。`class_name` 为 rtdetr 粗检测类，`attributes.vehicle_type` / `attributes.color` 为细分类（value 与 onnxtools 枚举严格对齐）；车牌作独立检测类，本轮不做父子。
+- **协议扩展 · backend 自报输出属性 schema**：`/setup` 的 model 目录新增 `output_attribute_schema`（含每个 select 字段的 `options`，value+中文 label）与 `output_attribute_types`，沿 `ml_capabilities`（protocol → capability_instances）透传到前端。
+- **「从 ML Backend 导入属性」**：项目设置「类别与属性」区新增按钮，列出所有自报输出属性的在线 backend / model，预览并勾选字段后一键合并进当前工具单位的 `attribute_schema`（同 key 覆盖、新 key 追加），免去手抄选项 + key 对齐。
+- **采纳前候选属性预览**：工作台选中尚未落库的 AI 候选时，标注详情底部以只读 `AttributeForm` 预览其 `attributes`（经项目 schema 的 options 解析为中文）；候选列表行补属性摘要 chip。
 
 ### Notes
 
-- 纯前端启发式,零后端依赖:状态向量 `[cx,cy,w,h,vx,vy,vw,vh]` 在恒速模型下四维解耦,实现为 4 个独立 1D 恒速卡尔曼(`videoReferenceKalman.ts`,标量观测无需矩阵求逆),不引矩阵库;误差椭圆取末段预测后各维后验方差 √P00。默认仍为「关 = 最近关键帧」(守「默认=现状」红线)。本地实验开关(localStorage),不进服务端偏好;旧布尔开关值自动读为「恒速外推」。
-- 设计与计划见 [`docs/plans/2026-06-22-v0.17.14-video-reference-kalman.md`](docs/plans/2026-06-22-v0.17.14-video-reference-kalman.md)。
-
-## [0.17.13] - 2026-06-22
-
-图片工作台多边形布尔运算补齐 difference（I14 Polygon Crop）：在已有「合并多边形」（union）之外新增「裁切重叠区」，用于遮挡场景下让背景多边形不再覆盖前景。
-
-### Added
-
-- **多边形裁切重叠区**：多选 ≥ 2 个 polygon / multi_polygon 后，在右键的那个多边形上点右键菜单「裁切重叠区」，从它身上减去其余选中多边形的重叠区域（布尔差集，复用已依赖的 `polygon-clipping`）。基准框作被减数、几何就地更新（可裁出孔洞或拆成 multi_polygon），其余框原样保留；不要求同类别（遮挡场景常跨类）。整次操作走一次 update、可一键撤销；重叠区覆盖整个基准时裁切失败并提示。
-
-### Notes
-
-- 纯前端实现：`polygonOps.ts` 新增 `cropPolygonGeometry`，与现有 union 对称；裁切只发 `geometry` 字段更新，沿用既有 mask-refine 的 PATCH 先例（`geometry.type` 是渲染 / 导出真值），无后端改动。
-
-## [0.17.12] - 2026-06-20
-
-shadcn 迁移 Epic 收尾期的 admin 导航整顿与「换皮回退」修补：把超管两个看板入口的路由 / 文案理顺，并恢复被换皮误收的移动端工具入口。
-
-### Changed
-
-- **超管看板路由理顺**：`/overview`=平台概览（运行状态 / 资源）、`/dashboard`=项目管理（全部项目）；旧 `/projects` 重定向到 `/dashboard`（保留 query），书签不破。侧栏两条入口本地化为中文「平台概览」/「项目管理」，与其余条目一致。
-- **超管默认主页保持「平台概览」**：登录后落到 `/overview`（换皮期一度被误改为项目管理，现修回）。
-
-### Fixed
-
-- **移动端顶栏工具入口回归**：窄屏（< 1024px）下被换皮误收的「后台任务铃铛」（全角色）、「预标 job 徽章」、「性能浮窗 toggle」恢复显示，与始终渲染的通知入口对齐。
-
-### Notes
-
-- Modal（Radix Dialog 适配层）补回「点击 overlay 关闭」smoke 用例；`useToastStore` 适配层补 JSDoc 说明 toast 列表已交 sonner 内部管理、外部不可观测。
-
-## [0.17.11] - 2026-06-20
-
-设计系统第二阶段收尾:只抽真正重复的局部表单原语,并降低视频 Konva 层每次渲染读取 CSS 变量的成本。
-
-### Changed
-
-- **Projects sections 共享标签样式**:5 处完全相同的 `LABEL_CLASS` 抽到 `Projects/sections/formClasses.ts`;发散的 `CONTROL_CLASS` 保持本地,不扩大抽象。
-- **画布取色 memo**:`VideoKonvaTracksLayer` 与 `VideoKonvaIssueLayer` 将 `cssVarToHex(...)` 放入 `useTheme().resolved` 依赖的 `useMemo`,保留主题切换即时重取色。
-
-## [0.17.10] - 2026-06-20
-
-设计系统第二阶段继续收敛层级与 spacing:裸数字 z-index 改为语义 utilities,任意 padding 归并到 Tailwind spacing。
-
-### Changed
-
-- **语义 z 标尺**:新增 `--sc-z-*` 与 `.z-*` utilities,覆盖局部画布层、dropdown/popover/modal/drawer、notification、workbench modal 与 app drawer 的现有层级。
-- **spacing 收敛**:`apps/web/src` 内 `p?-[Npx]` 任意 padding 归并为 Tailwind spacing 类。
-- **z-index 门禁提示**:`check-tw-tokens.mjs` 对新增裸 `z-N` / `z-[N]` 输出 warning,提示改用语义 z utility。
-
-## [0.17.9] - 2026-06-20
-
-设计系统第二阶段继续收敛字号:全站任意像素字号改为紧凑命名 scale。
-
-### Changed
-
-- **紧凑字号 scale**:`shadcn.css` 定义 `text-2xs/text-xs/text-sm` 主档,并补少量低频命名档保留整数字号。
-- **任意字号收敛**:`apps/web/src` 内 `text-[Npx]` 全量替换为命名字号 utility;半像素档归入最近命名档。
-- **字号门禁提示**:`check-tw-tokens.mjs` 对新增 `text-[Npx]` 输出 warning,提示改用命名字号 token。
-
-## [0.17.8] - 2026-06-20
-
-设计系统第二阶段启动:把散落在组件 `className` 中的状态文字色与软底收敛到 `shadcn.css` 的语义工具类,减少暗色主题配对的人工维护。
-
-### Changed
-
-- **状态色语义化**:新增 `text-status-danger/caution/positive/info/info-alt` 与 `bg-status-*-soft`,等价替换 rose / amber / emerald / violet / sky 的状态文字和 `/10` 软底。
-- **状态色门禁提示**:`check-tw-tokens.mjs` 对新增裸 `text-<hue>-600` / `bg-<hue>-500/10` 状态类输出 warning,提示改用语义工具类。
-
-## [0.17.7] - 2026-06-19
-
-shadcn 迁移 Epic 收官:旧 `tokens.css` 彻底退役,暗色统一由 `shadcn.css` 的 `--sc-*` + `data-theme` 单点驱动;Tailwind preflight 从 `.tw-scope` 局部 reset 转为全局;CSS Modules 时代门禁退役、Tailwind 时代门禁转硬阻断。
-
-### Removed
-
-- **删除 `tokens.css`**(全仓零消费者):含底部兼容别名段;`main.tsx` 移除其 import。
-- **移除 `.tw-scope` 局部 reset**:全仓 45 处 className 去掉 `tw-scope`,preflight 转全局后不再需要局部隔离。
-- **旧门禁 `check-css-tokens.mjs` 退役**:`*.module.css` 收敛后无可扫,从 `pnpm lint` 摘除。
-
-### Changed
-
-- **preflight 转全局**:`shadcn.css` 改回 `@import "tailwindcss"`(含 preflight)。
-- **新门禁 `check-tw-tokens.mjs` 转 blocking**:修复 `!` / `hover:` 等前缀的匹配盲区后并入 `pnpm lint`,作为 Tailwind 时代的硬门禁(禁裸色 / 任意色值、暗色 token 化)。
-
-### Notes
-
-- 全仓仅剩 **60 个 `*.module.css`**:10 个 Konva 画布叠加层(白名单 + 注释)+ 50 个未纳入本 Epic 范围的组件 / 页面。typecheck 干净、lint 0 发现、全量 1607 测试绿。
-
-## [0.17.6] - 2026-06-19
-
-工作台迁移(Epic 阶段 6,最大一阶段:65 个 module.css / 8536 行)。按「DOM 面板」与「真 Konva 叠加层」分桶:前者全迁 Tailwind 并删 CSS,后者保留 CSS 但切断对 `tokens.css` 的依赖。
-
-### Changed
-
-- **桶 A · 55 个 DOM 面板全迁 Tailwind**:`shell`(31)+ `selectionCard`(8)+ 挂在 `stage/` 下的对话框 / 侧栏 / 工具栏(`VideoTrackPanel` / `VideoChapterSidebar` / `VideoAttributesEditor` / `CanvasToolbar` / `BoxListItem` / 各 `*Dialog` / 3D `ThreeDWorkbench` + `FramePicker` 等),引用的通用语义 token 1:1 映射 `--sc-*`,删除对应 `.module.css`。
-- **桶 B · 10 个 Konva 画布叠加层改指 `--sc-*`**:像素定位 / z-index 编排的叠加层(`ImageStage` / `BoxRenderer` / `SelectionOverlay` / `VideoKonvaStage` / `VideoPlaybackOverlay` 等)保留为 CSS,但把内部 `var(--color-*)` 全部改指 `var(--sc-*)`,登记门禁白名单 + 注释。
-- **画布棋盘格变量内迁**:画布专属的 `--color-canvas-checker-a/b` 折进 `shadcn.css` 为 `--sc-canvas-checker-a/b`(不另建 `canvas.css`)。
-
-### Notes
-
-- 退役 55 个 module.css(工作台对 `tokens.css` 的依赖彻底切断);亮 / 暗双主题对图像 / 视频 / 3D 工作台肉眼回归,画布渲染无回归。
-
-## [0.17.5] - 2026-06-19
-
-外壳 + 审核迁移(Epic 阶段 5):全站最显眼的 chrome 换新,完成度跃升。
-
-### Changed
-
-- **`components/shell`(6 件)**:Sidebar / TopBar / SidebarDrawer / JobsBell / NotificationsPopover / PreannotateJobsBadge。侧栏微沉 `bg-muted` + 激活项白底浮起(中性 elevated);顶栏品牌渐变 `from-brand to-violet-500`、workspace 点 emerald;SidebarDrawer portal 挂 `tw-scope`。
-- **`pages/Review`(5 件,非画布部分)**:ReviewPage / ReviewSidebar / ReviewWorkbench(仅 chrome,画布零改)/ ReviewerMiniPanel / RejectReasonModal。
-- **门禁收口**:进度条任意色 → 固定类、hover rose 单值、SKIP 徽标改柔底。
-
-### Notes
-
-- 退役 11 个 module.css;亮 / 暗双主题肉眼回归通过。
-
-## [0.17.4] - 2026-06-19
-
-数据密集页迁移(Epic 阶段 4):六区 40+ 个 module.css 退役。
-
-### Changed
-
-- **迁移范围**:`pages/ModelMarket`(10 + capability 4 子件)、`pages/Projects`(26,含 DataManager / Settings / sections + RenderingConfigEditor)、`pages/Datasets`、`pages/Settings`、`pages/Storage`、`pages/Users`。
-- **破坏性操作按钮统一**:收敛到 `Button variant="danger"`(描边软底 rose),弃旧实心红底白字,跟随 v0.17.1 既定 variant 体系。
-- 删共享 `CapabilityCatalogPanel.module.css`(← capability 4 件)、`RenderingConfigSection.module.css`(← RenderingConfigEditor)。
-
-### Notes
-
-- 退役 42 个 module.css;worktree 子 agent 按波次并行迁移;亮 / 暗双主题肉眼回归通过。
-
-## [0.17.3] - 2026-06-19
-
-页面 wave 1(Epic 阶段 3):低风险、高可见的「门面」先行 —— Login + Dashboard 家族 + Admin。
-
-### Changed
-
-- **`pages/Login`(3)**:Login / Forgot / Reset(+ VerifyEmail 随 Reset 同迁)。
-- **`pages/Dashboard`(9)**:`DashboardPage` 原地重写为 Geist 范式并保留全部重交互(向导 / 权限 / FilterDrawer / grid-list / 批次链接);迁 AdminDashboard / Annotator / Reviewer / Viewer / ProjectGrid / MyBatchesCard / ExportModal / FilterDrawer。
-- **`pages/Admin`(3)**:People / Analytics / SystemHealth。
-
-### Removed
-
-- 退役实验性 `DashboardPageNext` 与 `/dashboard-next` 路由(其范式已固化进正式 `DashboardPage`)。
-
-### Notes
-
-- 退役 15 个 module.css;`Modal` Content 挂 `tw-scope` 让弹窗内表单获 box-sizing reset。
-
-## [0.17.2] - 2026-06-19
-
-原语替换 wave 2(Epic 阶段 2):交互原语委托 shadcn / Radix,`components/ui/` 全部 16 个 module.css 退役。
-
-### Changed
-
-- **`Modal` → Radix `Dialog`**(全屏 / 抽屉用 `sheet`);**`Toast` → `sonner`**(保留 `useToastStore` 薄适配,内部转 `toast()`,**调用点不改**)。
-- **`Switch` / `TabRow` / `SearchInput` / `Avatar` / `DropdownMenu` / `ContextMenu` / `Tooltip`** 委托对应 shadcn 组件;键盘 / 焦点 / a11y 走 Radix。
-- 7 个可视化组件 module.css → Tailwind;修 `TabRow` 语义。
-
-### Notes
-
-- 退役 16 个 module.css(`components/ui/` CSS 全退役);`ui/` 物理删目录 + 全站 import repoint 推迟到 v0.17.7 统一收口(适配器无 CSS 债,留作 shadcn 薄适配层)。
-
-## [0.17.1] - 2026-06-19
-
-原语替换 wave 1(Epic 阶段 1):最高杠杆、最机械的基础原语适配 shadcn / lucide。
-
-### Changed
-
-- **`Icon`(139 引用)→ `lucide-react`** 具名图标(`IconName → Lucide` 映射 + codemod 批量替换)。
-- **`Button`(105)/ `Badge`(55)/ `Card`(36)** API 对齐后 codemod 改 import + 必要 props 重命名;旧 `ui/*` 暂留作适配器(引用归零后于 v0.17.7 删除)。
-
-### Fixed
-
-- 适配过程中的 UA 默认样式漏样修复(`appearance` / `font-family: inherit` 等)。
-
-### Notes
-
-- 退役 4 个 module.css。
-
-## [0.17.0] - 2026-06-19
-
-地基(Epic 阶段 0):接入 Tailwind v4 + shadcn/ui,与既有 CSS Modules 共存,为后续逐页迁移立范式与门禁。本版不改任何用户可见行为。
-
-### Added
-
-- **Tailwind v4 + `@tailwindcss/vite` 接入**:与 CSS Modules 共存(跳过全局 preflight,`.tw-scope` 局部 reset);`shadcn.css` 落地 Geist + 彩色点缀 token,`dark` variant 重定向到 `[data-theme="dark"]`;`components.json` + `lib/utils.ts(cn)`。
-- **补齐 shadcn 原语全集**:`dialog / sheet / dropdown-menu / context-menu / tooltip / switch / select / checkbox / popover / label / textarea / scroll-area / alert-dialog`(纯 `radix-ui`,无新依赖)+ `sonner`(新增依赖,Toaster 适配本项目 `useTheme().resolved` / `--sc-*`),`components/shadcn/ui/` 共 25 个原语。
-- **新门禁 `check-tw-tokens.mjs`(warning 模式)**:扫 `*.tsx` 的 `className`(裸色 / Tailwind 任意色值 / 语义色暗色配对),并入 `pnpm lint`,先 `::warning::` 观测不阻断(v0.17.7 转 blocking)。
-- **设计规范文档** + **`/dashboard-next` 垂直切片**(`DashboardPageNext.tsx`,参考实现 + 验收基线,于 v0.17.3 退役)。
+- onnxtools 经 `git+https://github.com/yyq19990828/onnxtools.git@main` 安装（`VehicleAttributePipeline` 已合入 main）；两个 onnx 模型经 volume 挂载注入、不打进镜像。镜像复用本机已缓存的 `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel`（cuda12.8 + cudnn9 满足 onnxruntime-gpu 1.22）。
+- entrypoint 把 torch 自带的 `nvidia/*/lib` 加进 `LD_LIBRARY_PATH`，否则 onnxruntime CUDAExecutionProvider 找不到 cudnn 静默退回 CPU；实测 GPU ~35ms/图 vs CPU ~940ms。缺 GPU 时自动 fallback CPU，功能不受影响。
+- `accept_prediction` 复制候选 attributes 时对项目 select 字段做软校验：值不在 options 内只告警、不阻断（保留原值），避免 backend 枚举与项目配置漂移时丢数据。
