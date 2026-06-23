@@ -286,6 +286,7 @@ class PredictionService:
         inference_time_ms: int | None = None,
         token_meta: dict | None = None,
         source: str = "ml_backend",
+        pipeline_extra: dict | None = None,
     ) -> Prediction:
         prediction = Prediction(
             id=uuid.uuid4(),
@@ -315,6 +316,9 @@ class PredictionService:
             prompt_cost=meta_data.get("prompt_cost"),
             completion_cost=meta_data.get("completion_cost"),
             total_cost=meta_data.get("total_cost"),
+            # v0.18.1 · 多阶段预标注阶段元信息 (stage_count / enriched_attr_keys),
+            # 追溯「哪个属性来自哪个阶段」; MVP 暂存 extra JSONB 不改表。
+            extra=pipeline_extra or {},
         )
         self.db.add(meta)
 

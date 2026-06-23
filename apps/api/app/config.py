@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # v0.10.24 · 版本号单源真值。FastAPI title version 与 /health version 都读它，
     # 发版只改这一处（+ pyproject.toml / package.json）。运维 scrape /health 拿到的
     # 版本号此前长期 stale（曾硬编码 0.7.6），故收口到 settings。
-    app_version: str = "0.18.0"
+    app_version: str = "0.18.1"
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
 
@@ -150,9 +150,10 @@ class Settings(BaseSettings):
     metrics_sd_token: str = ""
 
     # v0.10.1 · 单项目最多可绑定的 ML backend 数量上限。schema/UI 已按 1:N 一步到位设计,
-    # 运行时通过此 env 锁定为 1, 防止测试环境同时常驻 grounded-sam2 (~2GB) + sam3 (~7GB)
-    # 显存爆炸。生产可调大, prompt-routing / fallback 在 v0.11+ 落地。
-    max_ml_backends_per_project: int = 1
+    # 防止测试环境同时常驻 grounded-sam2 (~2GB) + sam3 (~7GB) 显存爆炸。
+    # v0.18.1 · 多阶段预标注 (路径 B) 天然需 ≥2 backend (detect + classify), 默认放开到 3;
+    # 仍保留上限挡入口, 生产按显存预算调整。
+    max_ml_backends_per_project: int = 3
     celery_broker_url: str = ""
 
     # v0.9.25 · 视频后端帧服务 Wave B。Chunk 与单帧缓存都落在 datasets bucket。

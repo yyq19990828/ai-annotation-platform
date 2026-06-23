@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-08
+last_reviewed: 2026-06-23
 ---
 
 # 环境变量参考
@@ -73,11 +73,11 @@ last_reviewed: 2026-06-08
 | `YOLO_STRICT_OFFLINE` | `0` | — |
 | `YOLO_LOG_LEVEL` | `INFO` | — |
 
-## 单项目最多可绑定的 ML backend 数量上限. DB / API / UI 均按 1:N 设计,
+## 单项目最多可绑定的 ML backend 数量上限. DB / API / UI 均按 1:N 设计.
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `MAX_ML_BACKENDS_PER_PROJECT` | `1` | 运行时通过此值锁定. 默认 1 防止测试环境同时常驻 grounded-sam2 (~2GB) + sam3 (~7GB) 显存爆炸. 生产可调大; prompt-routing / fallback 按路线图推进. |
+| `MAX_ML_BACKENDS_PER_PROJECT` | `3` | 多阶段预标注 (路径 B) 需 ≥2 backend (detect + classify), 默认放开到 3; 仍保留上限挡入口防显存爆炸, 生产按显存预算调整. |
 
 ## Prometheus http_sd 服务发现端点 /api/v1/internal/metrics-targets 的可选 bearer token。
 

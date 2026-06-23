@@ -60,6 +60,26 @@ export interface TriggerPreannotationPayload {
   model_variants?: Record<string, string>;
   /** v0.14.17 · 类别白名单 (模型原生类别 index 子集); 空/缺=全部类别. 仅几何 backend (YOLO) 用. */
   class_filter?: number[];
+  /** v0.18.1 · 多阶段预标注 (路径 B): 有序阶段列表. 非空时走 detect→ROI→classify 编排;
+   *  缺省=单阶段, 与现状逐字等价. 源阶段 (parent_stage=null) 的 ml_backend_id 须等于顶层. */
+  pipeline_stages?: PipelineStagePayload[];
+}
+
+/** v0.18.1 · 单个预标阶段声明; 字段对应后端 PipelineStage. */
+export interface PipelineStagePayload {
+  stage: number;
+  ml_backend_id: string;
+  model_id?: string;
+  task_type?: string;
+  model_variants?: Record<string, string>;
+  params?: Record<string, unknown>;
+  class_filter?: number[];
+  /** 依赖的父阶段 index; null/缺=源阶段 (吃整图). */
+  parent_stage?: number | null;
+  /** ROI 构造; M1 用 {mode:"crop", pad:0.05}. */
+  roi?: { mode: string; pad?: number };
+  /** 结果写回; M1 用 {target:"attributes", keys?:[...]}. */
+  write?: { target: string; keys?: string[] };
 }
 
 export interface TriggerPreannotationResponse {

@@ -18,7 +18,12 @@ import { useProject } from "@/hooks/useProjects";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useMLBackends } from "@/hooks/useMLBackends";
-import { useTriggerPreannotation, type PredictMode } from "@/hooks/usePreannotation";
+import {
+  useTriggerPreannotation,
+  type PredictMode,
+  type PipelineStagePayload,
+} from "@/hooks/usePreannotation";
+import type { PreannotateArgs } from "./usePreannotateConfig";
 import { adminPreannotateApi } from "@/api/adminPreannotate";
 import { HistoryTable } from "./HistoryTable";
 import { VideoPreannotateGuide } from "./VideoPreannotateGuide";
@@ -44,6 +49,28 @@ type ConcurrencyMode = "serial" | "parallel";
 
 function cx(...classNames: Array<string | false | null | undefined>) {
   return classNames.filter(Boolean).join(" ");
+}
+
+/**
+ * v0.18.1 · 把单节点配置 (PreannotateArgs) 投影成一个 pipeline stage。
+ * batch 级字段 (prompt / output_mode / predict_mode) 不进 stage —— 源阶段的 prompt 由顶层请求
+ * 承载, 下游阶段吃 crop 不需要 prompt。
+ */
+function argsToStage(
+  args: PreannotateArgs,
+  stage: number,
+  extra: Partial<PipelineStagePayload> = {},
+): PipelineStagePayload {
+  return {
+    stage,
+    ml_backend_id: args.ml_backend_id,
+    model_id: args.model_id,
+    task_type: args.task_type,
+    model_variants: args.model_variants,
+    params: args.params,
+    class_filter: args.class_filter,
+    ...extra,
+  };
 }
 
 interface Props {
@@ -101,6 +128,12 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // 输出形态 / buildArgs); 详见 usePreannotateConfig. 工作台 AI 面板复用同一 hook + PreannotateConfigForm.
   const cfg = usePreannotateConfig({ projectId, backendId: selectedBackendId });
 
+  // v0.18.1 · 多阶段预标注 (路径 B M1): 可选「加第二阶段」(detect→classify)。容器持第二份
+  // usePreannotateConfig + PreannotateConfigForm 实例 —— 共享 hook/组件本身不感知阶段编排 (红线)。
+  const [secondStageEnabled, setSecondStageEnabled] = useState(false);
+  const [selectedBackendId2, setSelectedBackendId2] = useState<string | null>(null);
+  const cfg2 = usePreannotateConfig({ projectId, backendId: selectedBackendId2 });
+
   const batchesQ = useBatches(projectId, "active");
   const batches = (batchesQ.data ?? []) as unknown as Array<{
     id: string;
@@ -157,12 +190,32 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     });
   };
 
-  // 配置层就绪 (backend + 模式/prompt, 见 cfg.configReady) && 选了批次 && 不在跑.
-  const canRun = cfg.configReady && selectedBatchIds.size > 0 && !running;
+  // 配置层就绪 (backend + 模式/prompt, 见 cfg.configReady) && 选了批次 && 不在跑;
+  // 启用第二阶段时第二份配置也须就绪。
+  const canRun =
+    cfg.configReady &&
+    (!secondStageEnabled || cfg2.configReady) &&
+    selectedBatchIds.size > 0 &&
+    !running;
 
   const onRun = async () => {
     const baseArgs = cfg.buildArgs(predictMode);
     if (!baseArgs || selectedBatchIds.size === 0) return;
+    // v0.18.1 · 启用第二阶段且就绪 → 组装 pipeline_stages (源 + 下游 classify)。
+    // 源阶段 ml_backend_id 须等于顶层 (baseArgs.ml_backend_id), 后端据此复用既有 backend 校验。
+    let pipelineStages: PipelineStagePayload[] | undefined;
+    if (secondStageEnabled) {
+      const stage1Args = cfg2.buildArgs(predictMode);
+      if (!stage1Args) return;
+      pipelineStages = [
+        argsToStage(baseArgs, 0),
+        argsToStage(stage1Args, 1, {
+          parent_stage: 0,
+          roi: { mode: "crop", pad: 0.05 },
+          write: { target: "attributes" },
+        }),
+      ];
+    }
     const ids = Array.from(selectedBatchIds);
     setRunning(true);
     try {
@@ -171,7 +224,11 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       const errors: string[] = [];
       const fireOne = async (bid: string) => {
         try {
-          await trigger.mutateAsync({ ...baseArgs, batch_id: bid });
+          await trigger.mutateAsync({
+            ...baseArgs,
+            batch_id: bid,
+            ...(pipelineStages ? { pipeline_stages: pipelineStages } : {}),
+          });
           okCount += 1;
         } catch (err) {
           failCount += 1;
@@ -344,6 +401,40 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               onSelectBackend={setSelectedBackendId}
               projectMlBackendId={project?.ml_backend_id}
             />
+
+            {/* v0.18.1 · 多阶段预标注 (路径 B M1): 加第二阶段 = detect→classify。
+                启用后对源阶段每个检测框裁 ROI 喂下游分类, 结果合并进框属性。 */}
+            <div className={styles.field}>
+              <label className={styles.inlineCheckbox}>
+                <input
+                  type="checkbox"
+                  checked={secondStageEnabled}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setSecondStageEnabled(on);
+                    // 首次启用时默认选一个与源阶段不同的 backend (没有则留空待选)。
+                    if (on && !selectedBackendId2) {
+                      const other = backends.find((b) => b.id !== selectedBackendId);
+                      setSelectedBackendId2(other?.id ?? null);
+                    }
+                  }}
+                />
+                加第二阶段（对每个检测框跑分类 → 写回属性）
+              </label>
+            </div>
+
+            {secondStageEnabled && (
+              <div className={styles.stageTwoBlock}>
+                <strong className={styles.sectionTitle}>阶段 2 · 分类（对父框 ROI）</strong>
+                <PreannotateConfigForm
+                  cfg={cfg2}
+                  backends={backends}
+                  selectedBackendId={selectedBackendId2}
+                  onSelectBackend={setSelectedBackendId2}
+                  projectMlBackendId={project?.ml_backend_id}
+                />
+              </div>
+            )}
 
             <div className={styles.field}>
               <span className={styles.fieldLabel}>

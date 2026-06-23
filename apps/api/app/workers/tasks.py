@@ -115,6 +115,71 @@ def _model_label(model_variants: dict | None) -> str | None:
     return "".join(vals) or None
 
 
+def _load_task_image(task):
+    """v0.18.1 · 从对象存储读 task 原图为 PIL Image (RGB), 供平台裁 ROI crop。
+
+    直接走 StorageService boto3 client (内网 endpoint), 不经 presigned URL / host 重写,
+    避免 worker 容器无法解析 ml_backend_storage_host 的问题。
+    """
+    import io
+
+    from PIL import Image
+
+    from app.services.storage import StorageService
+
+    storage = StorageService()
+    bucket = storage.datasets_bucket if task.dataset_item_id else storage.bucket
+    obj = storage.client.get_object(Bucket=bucket, Key=task.file_path)
+    raw = obj["Body"].read()
+    return Image.open(io.BytesIO(raw)).convert("RGB")
+
+
+async def _run_task_pipeline(task, stages, stage_clients, stage_contexts, *, resolve_url):
+    """v0.18.1 · 对单个 task 顺序跑各阶段, 返回 (要落库的 pred_results, pipeline_extra)。
+
+    - 单阶段 (len==1): 等价于原 ``client.predict``, extra=None (逐字回归路径)。
+    - 多阶段: 源阶段产框 → 加载原图 → 对每个下游阶段裁父框 ROI 喂下游 → 合并 attributes 进父框
+      (原地改 pred_result.result)。本期顺序跑 (含并行兄弟也顺序, ROADMAP §7.1)。
+    """
+    from app.workers.roi import crop_inputs_from_boxes, merge_classify_attributes
+
+    url = resolve_url(task)
+    results = await stage_clients[0].predict(
+        [{"id": str(task.id), "file_path": url}], context=stage_contexts[0]
+    )
+    if len(stages) == 1:
+        return results, None
+
+    image = _load_task_image(task)
+    enriched_keys: set[str] = set()
+    for pred_result in results:
+        boxes = pred_result.result
+        if not isinstance(boxes, list) or not boxes:
+            continue
+        for si in range(1, len(stages)):
+            stage = stages[si]
+            roi = stage.get("roi") or {}
+            pad = float(roi.get("pad", 0.05))
+            write = stage.get("write") or {}
+            write_keys = write.get("keys") or None
+            crop_inputs = crop_inputs_from_boxes(image, boxes, pad=pad)
+            if not crop_inputs:
+                continue
+            cls_results = await stage_clients[si].predict(
+                crop_inputs, context=stage_contexts[si]
+            )
+            merge_classify_attributes(boxes, cls_results, write_keys=write_keys)
+            if write_keys:
+                enriched_keys.update(write_keys)
+    extra = {
+        "pipeline": {
+            "stage_count": len(stages),
+            "enriched_attr_keys": sorted(enriched_keys) or None,
+        }
+    }
+    return results, extra
+
+
 async def _run_batch(
     project_id: str,
     ml_backend_id: str,
@@ -130,6 +195,7 @@ async def _run_batch(
     task_type: str | None = None,
     model_variants: dict | None = None,
     class_filter: list[int] | None = None,
+    pipeline_stages: list[dict] | None = None,
 ):
     """v0.9.5 · 批量预标 worker.
 
@@ -374,10 +440,54 @@ async def _run_batch(
             await engine.dispose()
             return
 
-        client = MLBackendClient(backend)
         pred_svc = PredictionService(db)
 
         from app.api.v1.ml_backends import _resolve_task_url
+
+        # v0.18.1 · 阶段化: 归一化 stages (缺省=单阶段, 由平铺参数合成, 与现状逐字等价)。
+        # 为每个阶段构造 client + context: 源阶段 (parent_stage=None) 复用上面的 context;
+        # 下游阶段不带 prompt (吃 crop 跑分类), 各用本阶段的 model/variant/params。
+        if pipeline_stages:
+            stages = sorted(pipeline_stages, key=lambda s: s["stage"])
+        else:
+            stages = [
+                {
+                    "stage": 0,
+                    "ml_backend_id": ml_backend_id,
+                    "model_id": model_id,
+                    "task_type": task_type,
+                    "model_variants": model_variants,
+                    "params": params,
+                    "class_filter": class_filter,
+                    "parent_stage": None,
+                    "roi": None,
+                    "write": None,
+                }
+            ]
+        box_thr = float(project.box_threshold) if project is not None else None
+        text_thr = float(project.text_threshold) if project is not None else None
+        stage_clients: list[MLBackendClient] = []
+        stage_contexts: list[dict | None] = []
+        for s in stages:
+            if s["parent_stage"] is None:
+                stage_clients.append(MLBackendClient(backend))
+                stage_contexts.append(context)
+            else:
+                s_backend = await db.get(MLBackend, uuid.UUID(s["ml_backend_id"]))
+                stage_clients.append(MLBackendClient(s_backend))
+                stage_contexts.append(
+                    _build_predict_context(
+                        prompt=None,
+                        output_mode=output_mode,
+                        params=s.get("params"),
+                        model_id=s.get("model_id"),
+                        task_type=s.get("task_type"),
+                        model_variants=s.get("model_variants"),
+                        class_filter=s.get("class_filter"),
+                        box_threshold=box_thr,
+                        text_threshold=text_thr,
+                    )
+                )
 
         for i, task in enumerate(tasks):
             if await _cancel_requested():
@@ -386,9 +496,12 @@ async def _run_batch(
                 return
 
             try:
-                results = await client.predict(
-                    [{"id": str(task.id), "file_path": _resolve_task_url(task)}],
-                    context=context,
+                results, pipeline_extra = await _run_task_pipeline(
+                    task,
+                    stages,
+                    stage_clients,
+                    stage_contexts,
+                    resolve_url=_resolve_task_url,
                 )
                 for pred_result in results:
                     await pred_svc.create_from_ml_result(
@@ -400,6 +513,7 @@ async def _run_batch(
                         model_version=pred_result.model_version,
                         inference_time_ms=pred_result.inference_time_ms,
                         token_meta=pred_result.meta,
+                        pipeline_extra=pipeline_extra,
                     )
                     # v0.9.11 · 单条 cost 累加到 job 级总费用
                     if pred_result.meta:
@@ -567,6 +681,7 @@ def batch_predict(
     task_type: str | None = None,
     model_variants: dict | None = None,
     class_filter: list[int] | None = None,
+    pipeline_stages: list[dict] | None = None,
 ):
     asyncio.run(
         _run_batch(
@@ -584,5 +699,6 @@ def batch_predict(
             task_type=task_type,
             model_variants=model_variants,
             class_filter=class_filter,
+            pipeline_stages=pipeline_stages,
         )
     )

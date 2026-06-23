@@ -9920,6 +9920,123 @@
         "title": "PasswordChange",
         "type": "object"
       },
+      "PipelineStage": {
+        "description": "v0.18.1 · 多阶段预标注的单个阶段声明 (路径 B M1).\n\nstage 0 (parent_stage=None) 是源检测阶段, 吃整图产框; 下游阶段 (parent_stage 指向更前阶段)\n平台按父框 bbox 裁 ROI crop 喂入, 把返回的 attributes 合并进父框 (write.target=attributes)。\nM1 只支持「单源 → 单下游」顺序链; 类别路由 / 并行扇出 / new_shape 留 M2/M3。",
+        "properties": {
+          "class_filter": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Filter"
+          },
+          "ml_backend_id": {
+            "format": "uuid",
+            "title": "Ml Backend Id",
+            "type": "string"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "model_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Variants"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Params"
+          },
+          "parent_stage": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Stage"
+          },
+          "roi": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roi"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "integer"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type"
+          },
+          "write": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Write"
+          }
+        },
+        "required": [
+          "stage",
+          "ml_backend_id"
+        ],
+        "title": "PipelineStage",
+        "type": "object"
+      },
       "PointCloudCameraOut": {
         "properties": {
           "calibration": {
@@ -10463,6 +10580,20 @@
               }
             ],
             "title": "Params"
+          },
+          "pipeline_stages": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PipelineStage"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipeline Stages"
           },
           "predict_mode": {
             "default": "skip_predicted",
@@ -19528,7 +19659,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.18.0"
+    "version": "0.18.1"
   },
   "openapi": "3.1.0",
   "paths": {

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text, or_, and_
 from app.deps import (
@@ -1197,6 +1197,29 @@ async def export_project(
     return {"job_id": str(job.id)}
 
 
+class PipelineStage(BaseModel):
+    """v0.18.1 · 多阶段预标注的单个阶段声明 (路径 B M1).
+
+    stage 0 (parent_stage=None) 是源检测阶段, 吃整图产框; 下游阶段 (parent_stage 指向更前阶段)
+    平台按父框 bbox 裁 ROI crop 喂入, 把返回的 attributes 合并进父框 (write.target=attributes)。
+    M1 只支持「单源 → 单下游」顺序链; 类别路由 / 并行扇出 / new_shape 留 M2/M3。
+    """
+
+    stage: int
+    ml_backend_id: uuid.UUID
+    model_id: str | None = None
+    task_type: str | None = None
+    model_variants: dict[str, str] | None = None
+    params: dict | None = None
+    class_filter: list[int] | None = None
+    # 依赖的父阶段 index; None=源阶段 (吃整图)。
+    parent_stage: int | None = None
+    # ROI 构造; M1 只认 {"mode":"crop"}, pad 固定 (可配留 M2)。
+    roi: dict | None = None
+    # 结果写回; M1 只认 {"target":"attributes","keys":[...]}。
+    write: dict | None = None
+
+
 class PreannotateRequest(BaseModel):
     ml_backend_id: uuid.UUID
     task_ids: list[uuid.UUID] | None = None
@@ -1223,6 +1246,34 @@ class PreannotateRequest(BaseModel):
     # v0.14.17 · 类别白名单 (模型原生类别 index 子集): 非空时 backend 只检出这些类。
     # 平台不做类→项目标签映射 (NG6), 仅透传给 yolo /predict context.classes 做推理层过滤。
     class_filter: list[int] | None = None
+    # v0.18.1 · 多阶段预标注 (路径 B): 有序阶段列表。非空时走阶段化编排 (detect→ROI→classify),
+    # 缺省时由上面的平铺字段合成单阶段, 与现状逐字等价 (向后兼容)。M1 限 ≤2 个阶段、单链。
+    pipeline_stages: list[PipelineStage] | None = None
+
+    @model_validator(mode="after")
+    def _validate_pipeline_stages(self) -> "PreannotateRequest":
+        stages = self.pipeline_stages
+        if not stages:
+            return self
+        # M1: 仅支持 1~2 个阶段的单链 (源 + 至多一个下游)。
+        if len(stages) > 2:
+            raise ValueError("pipeline_stages 本期最多支持 2 个阶段")
+        indices = {s.stage for s in stages}
+        if len(indices) != len(stages):
+            raise ValueError("pipeline_stages 的 stage 序号不可重复")
+        # 源阶段: 恰一个 parent_stage=None, 且其 ml_backend_id 须等于顶层 ml_backend_id
+        # (顶层字段仍是源 backend, 复用既有 backend 存在性/健康检查路径)。
+        roots = [s for s in stages if s.parent_stage is None]
+        if len(roots) != 1:
+            raise ValueError("pipeline_stages 须恰有一个源阶段 (parent_stage=None)")
+        if roots[0].ml_backend_id != self.ml_backend_id:
+            raise ValueError("源阶段 ml_backend_id 须与顶层 ml_backend_id 一致")
+        for s in stages:
+            if s.parent_stage is not None and s.parent_stage not in indices:
+                raise ValueError(f"stage {s.stage} 的 parent_stage={s.parent_stage} 不存在")
+            if s.write is not None and s.write.get("target", "attributes") != "attributes":
+                raise ValueError("M1 仅支持 write.target=attributes")
+        return self
 
 
 @router.post("/{project_id}/preannotate")
@@ -1240,6 +1291,35 @@ async def trigger_preannotation(
     backend = await svc.get(body.ml_backend_id)
     if not backend:
         raise HTTPException(status_code=404, detail="ML Backend not found")
+
+    # v0.18.1 · 多阶段编排: 校验每个下游阶段的 backend 存在且归属本项目, 归一化成 worker
+    # 可消费的 stage dict 列表 (uuid → str)。源阶段 backend 已由上面的 body.ml_backend_id 校验。
+    pipeline_stages_payload: list[dict] | None = None
+    if body.pipeline_stages:
+        norm: list[dict] = []
+        for st in body.pipeline_stages:
+            if st.parent_stage is not None:
+                st_backend = await svc.get(st.ml_backend_id)
+                if not st_backend or st_backend.project_id != project.id:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"stage {st.stage} 的 ML Backend 不存在或不属于本项目",
+                    )
+            norm.append(
+                {
+                    "stage": st.stage,
+                    "ml_backend_id": str(st.ml_backend_id),
+                    "model_id": st.model_id,
+                    "task_type": st.task_type,
+                    "model_variants": st.model_variants,
+                    "params": st.params,
+                    "class_filter": st.class_filter,
+                    "parent_stage": st.parent_stage,
+                    "roi": st.roi,
+                    "write": st.write,
+                }
+            )
+        pipeline_stages_payload = norm
 
     # v0.9.5 · 指定 batch 时校验归属本项目 + 状态在 active
     total_tasks_hint: int | None = None
@@ -1285,6 +1365,8 @@ async def trigger_preannotation(
         # v0.14.17 · 协议 v2 结构化 variant 路径 (YOLO) + 类别白名单
         model_variants=body.model_variants,
         class_filter=body.class_filter,
+        # v0.18.1 · 多阶段预标注: 非空时 worker 走阶段化编排 (detect→ROI→classify)
+        pipeline_stages=pipeline_stages_payload,
     )
     # B-5 · AI 预标注触发审计 — 让超管在 /audit 看到 谁/何时/对哪个 batch 跑了 AI
     await AuditService.log(
