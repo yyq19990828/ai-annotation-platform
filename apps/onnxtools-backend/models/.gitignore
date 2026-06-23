@@ -1,0 +1,3 @@
+# 模型由 volume 挂载注入, 不入 git (rtdetr ~169MB). 见 ../README.md.
+*.onnx
+*.engine
