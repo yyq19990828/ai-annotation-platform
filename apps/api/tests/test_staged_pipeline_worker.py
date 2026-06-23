@@ -182,6 +182,19 @@ async def test_on_failure_keep_parent_vs_drop_box(monkeypatch):
     assert results2[0].result == []  # 框被丢弃
 
 
+def test_stage_totals_snapshot_shape():
+    """v0.18.6 · 逐阶段累加器 → 升序拍平 list, 与终态 result.pipeline_stages 同形态。"""
+    totals = {
+        1: {"targeted": 5, "ok": 3, "failed": 1, "skipped_geometry": 1},
+        0: {"detected": 7},
+    }
+    snap = worker_tasks._stage_totals_snapshot(totals)
+    assert snap == [
+        {"stage": 0, "detected": 7},
+        {"stage": 1, "targeted": 5, "ok": 3, "failed": 1, "skipped_geometry": 1},
+    ]
+
+
 @pytest.mark.asyncio
 async def test_presigned_delivery_wires_upload_crop(monkeypatch):
     """v0.18.4 · upload_crop 非 None → crop 走 presigned URL 投递 (非 data URI)。"""

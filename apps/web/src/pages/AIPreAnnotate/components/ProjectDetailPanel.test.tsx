@@ -46,6 +46,13 @@ vi.mock("@/hooks/usePreannotation", async () => {
   return {
     ...actual,
     useTriggerPreannotation: () => mockUseTrigger(),
+    // v0.18.6 起 ProjectDetailPanel 订阅预标进度 WS; 单测 noop 避免 ws upgrade 崩 worker
+    // (同 useBatchEventsSocket)。逐阶段实时徽标的快照消费另由更聚焦的测试覆盖。
+    usePreannotationProgress: () => ({
+      progress: null,
+      connection: "idle",
+      retries: 0,
+    }),
   };
 });
 vi.mock("@/api/adminPreannotate", async () => {

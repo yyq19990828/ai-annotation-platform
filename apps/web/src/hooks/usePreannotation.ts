@@ -4,11 +4,23 @@ import { apiClient } from "@/api/client";
 import { useReconnectingWebSocket, type ReconnectState } from "@/hooks/useReconnectingWebSocket";
 import { buildWsUrl } from "@/lib/wsHost";
 
+/** v0.18.6 · 逐阶段实时统计项 (worker _stage_totals_snapshot 的形态)。源阶段=detected; 下游=targeted/ok/failed/skipped_geometry。 */
+export interface PipelineStageStat {
+  stage: number;
+  detected?: number;
+  targeted?: number;
+  ok?: number;
+  failed?: number;
+  skipped_geometry?: number;
+}
+
 interface PreannotationProgress {
   current: number;
   total: number;
   status: "running" | "completed" | "error";
   error: string | null;
+  /** v0.18.6 · 多阶段预标运行中的逐阶段累加快照 (worker 按 5% 步长推; 仅多阶段有)。 */
+  pipeline_stages?: PipelineStageStat[];
 }
 
 export function usePreannotationProgress(projectId: string | undefined): {
@@ -24,7 +36,12 @@ export function usePreannotationProgress(projectId: string | undefined): {
 
   const onMessage = useCallback((e: MessageEvent) => {
     try {
-      setProgress(JSON.parse(e.data));
+      const msg = JSON.parse(e.data) as PreannotationProgress;
+      // pipeline_stages 仅在 5% 步长帧带, 中间帧缺省 → 保留上一帧快照, 避免徽标闪空。
+      setProgress((prev) => ({
+        ...msg,
+        pipeline_stages: msg.pipeline_stages ?? prev?.pipeline_stages,
+      }));
     } catch {
       // ignore parse errors
     }

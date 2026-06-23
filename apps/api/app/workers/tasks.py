@@ -12,6 +12,14 @@ from app.workers.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
+def _stage_totals_snapshot(totals: dict[int, dict]) -> list[dict]:
+    """v0.18.6 · 把逐阶段累加器拍平成 ``[{stage, detected/targeted/ok/failed/...}]`` (按 stage 升序)。
+
+    实时推送 (运行中快照) 与终态写库 (result.pipeline_stages) 共用同一形态, 前端可无缝切换。
+    """
+    return [{"stage": sidx, **totals[sidx]} for sidx in sorted(totals)]
+
+
 def _publish_progress(
     project_id: str,
     current: int,
@@ -19,16 +27,22 @@ def _publish_progress(
     status: str = "running",
     error: str | None = None,
     job_meta: dict | None = None,
+    pipeline_stages: list[dict] | None = None,
 ):
     """v0.9.5: 单项目预标进度. v0.9.8: 同时发到全局 channel `global:prediction-jobs`,
     让 Topbar 徽章 / 切项目 toast 可跨项目订阅. job_meta 仅在开始/结束/失败 3 时点发,
-    避免高频中间帧塞爆全局通道."""
+    避免高频中间帧塞爆全局通道.
+
+    v0.18.6: pipeline_stages (运行中逐阶段累加快照) 随项目通道发, 让前端跑批过程中实时更新
+    卡上徽标 (不再等 job 终态); 阶段数少 (单层扇出), 仍按 5% 步长节流由调用方控制。"""
     payload = {
         "current": current,
         "total": total,
         "status": status,
         "error": error,
     }
+    if pipeline_stages is not None:
+        payload["pipeline_stages"] = pipeline_stages
     r = redis.from_url(settings.redis_url)
     try:
         r.publish(f"project:{project_id}:preannotate", json.dumps(payload))
@@ -649,12 +663,24 @@ async def _run_batch(
                 await db.commit()
                 failed_count += 1
 
-            _publish_progress(project_id, i + 1, total)
+            # v0.18.6 · 逐阶段累加快照随进度推送 (多阶段才有), 让前端运行中实时更新卡上徽标。
+            # 按 5% 步长 (或末条) 节流, 避免每条都塞快照; 阶段数少, payload 增量可忽略。
+            pct = int(((i + 1) / total) * 100) if total > 0 else 0
+            stage_step = pct % 5 == 0 or (i + 1) == total
+            _publish_progress(
+                project_id,
+                i + 1,
+                total,
+                pipeline_stages=(
+                    _stage_totals_snapshot(pipeline_stage_totals)
+                    if pipeline_stage_totals and stage_step
+                    else None
+                ),
+            )
 
             # v0.10.16 · async_jobs 进度（每 5% 步长写一次，避免每条都 DB write）
             if total > 0:
-                pct = int(((i + 1) / total) * 100)
-                if pct % 5 == 0 or (i + 1) == total:
+                if stage_step:
                     try:
                         await async_job_svc.update_progress(db, async_job_id, pct)
                         await db.commit()
@@ -688,11 +714,11 @@ async def _run_batch(
             "total_cost": f"{running_total_cost:.4f}",
         }
         # v0.18.2 · 多阶段预标: 逐阶段统计 (检出框数 / 各下游富集成功失败), 供前端逐阶段徽标。
+        # v0.18.6 · 与运行中实时快照共用 _stage_totals_snapshot, 终态为最终真值。
         if pipeline_stage_totals:
-            result_stats["pipeline_stages"] = [
-                {"stage": sidx, **pipeline_stage_totals[sidx]}
-                for sidx in sorted(pipeline_stage_totals)
-            ]
+            result_stats["pipeline_stages"] = _stage_totals_snapshot(
+                pipeline_stage_totals
+            )
         if all_failed:
             await async_job_svc.mark_failed(
                 db,

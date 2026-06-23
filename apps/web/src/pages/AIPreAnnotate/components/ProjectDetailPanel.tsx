@@ -20,20 +20,13 @@ import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useMLBackends } from "@/hooks/useMLBackends";
 import {
   useTriggerPreannotation,
+  usePreannotationProgress,
   type PredictMode,
   type PipelineStagePayload,
+  type PipelineStageStat,
 } from "@/hooks/usePreannotation";
 import { useAsyncJob } from "@/hooks/useAsyncJob";
 import type { PreannotateArgs } from "./usePreannotateConfig";
-
-/** v0.18.3 · async_job.result.pipeline_stages 逐阶段统计项。 */
-interface PipelineStageStat {
-  stage: number;
-  detected?: number;
-  targeted?: number;
-  ok?: number;
-  failed?: number;
-}
 import { adminPreannotateApi } from "@/api/adminPreannotate";
 import { HistoryTable } from "./HistoryTable";
 import { VideoPreannotateGuide } from "./VideoPreannotateGuide";
@@ -160,11 +153,14 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   const removeStage = (sid: string) =>
     setDownstreamIds((ids) => ids.filter((x) => x !== sid));
 
-  // v0.18.3 · 运行态可视化: 跑批后轮询最后一个多阶段 job 的 result.pipeline_stages, 渲染逐阶段统计。
+  // v0.18.3 · 运行态可视化: 跑批后轮询最后一个多阶段 job 的 result.pipeline_stages (终态真值)。
   const [lastPipelineJobId, setLastPipelineJobId] = useState<string | null>(null);
   const pipelineJobQ = useAsyncJob(lastPipelineJobId, true);
-  const pipelineStageStats =
+  const terminalStageStats =
     (pipelineJobQ.data?.result?.pipeline_stages as PipelineStageStat[] | undefined) ?? null;
+
+  // v0.18.6 · 运行态实时化: 订阅项目预标 WS, 拿 worker 跑批中途推的逐阶段累加快照。
+  const { progress: liveProgress } = usePreannotationProgress(projectId);
 
   const batchesQ = useBatches(projectId, "active");
   const batches = (batchesQ.data ?? []) as unknown as Array<{
@@ -192,6 +188,24 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   const [running, setRunning] = useState(false);
   // v0.10.15 · 外部预测导入向导 (COCO / AAP JSON)
   const [importOpen, setImportOpen] = useState(false);
+
+  // v0.18.6 · 逐阶段统计: 运行中用 WS 实时快照, 终态/重连回落 job result (终态真值, 不丢)。
+  const liveStageStats = liveProgress?.pipeline_stages ?? null;
+  const stagesRunning = running || pipelineJobQ.data?.status === "running";
+  const stageStats = liveStageStats ?? terminalStageStats;
+  // stage 序号 → 统计, 供各卡按自身 stage 取数。stage 0=源检测; i+1=第 i 张下游卡。
+  const stageStatByIndex = useMemo(() => {
+    const m = new Map<number, PipelineStageStat>();
+    for (const s of stageStats ?? []) m.set(s.stage, s);
+    return m;
+  }, [stageStats]);
+  const sourceDetected = stageStatByIndex.get(0)?.detected;
+  // 单卡运行态: 未跑=pending; 跑批中=running; 已出统计且非运行中=done。
+  const stageRunState = (si: number): "pending" | "running" | "done" => {
+    if (stagesRunning) return "running";
+    if (stageStatByIndex.has(si)) return "done";
+    return "pending";
+  };
 
   // 项目切换时重置批次选择 + 下游阶段卡 (prompt / outputMode 的重置在 usePreannotateConfig 内).
   useEffect(() => {
@@ -483,9 +497,17 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               projectMlBackendId={project?.ml_backend_id}
             />
 
+            {/* v0.18.6 · 源阶段 (检测) 运行态: 多阶段批跑时显实时检出框数。 */}
+            {downstreamIds.length > 0 && sourceDetected != null && (
+              <div className={styles.stageStatRow}>
+                <b>阶段 1 · 检测</b>：检出 {sourceDetected} 框
+                {stagesRunning && " · 运行中…"}
+              </div>
+            )}
+
             {/* v0.18.2 · 多阶段预标注 (路径 B M2): 下游阶段卡 (并行兄弟, 单层扇出)。
                 每张卡对源阶段检测框按类别裁 ROI 喂下游分类, 结果合并进框属性; 多卡 = 同类/不同类
-                各喂不同分类器 (声明式类别路由)。 */}
+                各喂不同分类器 (声明式类别路由)。v0.18.6: 各卡自显运行态徽标 + 实时计数。 */}
             {downstreamIds.map((sid, i) => (
               <StageCard
                 key={sid}
@@ -498,6 +520,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                 projectClasses={projectClasses}
                 projectAttributeKeys={projectAttributeKeys}
                 conflictKeys={conflictKeys}
+                stat={stageStatByIndex.get(i + 1)}
+                runState={stageRunState(i + 1)}
                 onChange={onStageChange}
                 onRemove={removeStage}
               />
@@ -609,35 +633,6 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                     : `跑预标（${selectedBatchIds.size} 批）`}
               </Button>
             </div>
-
-            {/* v0.18.3 · 运行态可视化: 多阶段批跑完后, 逐阶段统计 (检出框数 / 各下游富集成功·失败)。 */}
-            {lastPipelineJobId && pipelineStageStats && pipelineStageStats.length > 0 && (
-              <div className={styles.stageStats}>
-                <span className={styles.fieldLabel}>
-                  逐阶段统计
-                  {pipelineJobQ.data?.status === "running" && " · 运行中…"}
-                </span>
-                {pipelineStageStats.map((st) => (
-                  <div key={st.stage} className={styles.stageStatRow}>
-                    {st.stage === 0 ? (
-                      <span>
-                        <b>阶段 1 · 检测</b>：检出 {st.detected ?? 0} 框
-                      </span>
-                    ) : (
-                      <span>
-                        <b>阶段 {st.stage + 1} · 分类</b>：目标 {st.targeted ?? 0}，成功{" "}
-                        <span className="text-status-positive">{st.ok ?? 0}</span>
-                        {(st.failed ?? 0) > 0 && (
-                          <>
-                            ，失败 <span className="text-status-caution">{st.failed}</span>
-                          </>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
       </Card>
 

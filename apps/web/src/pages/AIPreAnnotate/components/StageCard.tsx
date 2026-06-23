@@ -17,8 +17,17 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { usePreannotateConfig, type PreannotateArgs } from "./usePreannotateConfig";
 import { PreannotateConfigForm } from "./PreannotateConfigForm";
-import type { PipelineStagePayload } from "@/hooks/usePreannotation";
+import type {
+  PipelineStagePayload,
+  PipelineStageStat,
+} from "@/hooks/usePreannotation";
 import styles from "./ProjectDetailPanel.module.css";
+
+const RUN_STATE_LABEL: Record<string, string> = {
+  pending: "待运行",
+  running: "运行中",
+  done: "已完成",
+};
 
 function cx(...names: Array<string | false | null | undefined>) {
   return names.filter(Boolean).join(" ");
@@ -100,6 +109,10 @@ interface Props {
   projectAttributeKeys: string[];
   /** v0.18.5 · 本卡 write.keys 中与其它并行阶段冲突的键 (容器算好下发), 命中 chip 标红。 */
   conflictKeys?: Set<string>;
+  /** v0.18.6 · 本阶段运行态统计 (容器从实时/终态下发); 无=未跑。 */
+  stat?: PipelineStageStat;
+  /** v0.18.6 · 本阶段运行态 (徽标用): pending/running/done。 */
+  runState?: "pending" | "running" | "done";
   /** 派生出的 stage payload (未就绪=null) 上抛给容器; 容器据此组装 pipeline_stages。 */
   onChange: (id: string, payload: PipelineStagePayload | null) => void;
   onRemove: (id: string) => void;
@@ -115,6 +128,8 @@ export function StageCard({
   projectClasses,
   projectAttributeKeys,
   conflictKeys,
+  stat,
+  runState = "pending",
   onChange,
   onRemove,
 }: Props) {
@@ -204,10 +219,32 @@ export function StageCard({
         <strong className={styles.sectionTitle}>
           阶段 {displayIndex} · 分类（对父框 ROI）
         </strong>
+        <span className={cx(styles.stageBadge, styles[`stageBadge_${runState}`])}>
+          {RUN_STATE_LABEL[runState]}
+        </span>
         <Button size="sm" variant="ghost" onClick={() => onRemove(id)} title="移除该阶段">
           <Icon name="trash" size={11} /> 移除
         </Button>
       </div>
+
+      {/* v0.18.6 · 运行态计数 (实时/终态): 目标·成功·失败·几何跳过。 */}
+      {stat && (
+        <div className={styles.stageStatRow}>
+          目标 {stat.targeted ?? 0}，成功{" "}
+          <span className="text-status-positive">{stat.ok ?? 0}</span>
+          {(stat.failed ?? 0) > 0 && (
+            <>
+              ，失败 <span className="text-status-caution">{stat.failed}</span>
+            </>
+          )}
+          {(stat.skipped_geometry ?? 0) > 0 && (
+            <span className={styles.mutedText}>
+              {" "}
+              · {stat.skipped_geometry} 框因几何不支持跳过
+            </span>
+          )}
+        </div>
+      )}
 
       <PreannotateConfigForm
         cfg={cfg}
