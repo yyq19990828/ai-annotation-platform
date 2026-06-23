@@ -36,14 +36,15 @@ def test_crop_basic_pixel_mapping_and_pad():
     img = _img(1000, 500)
     # 框居中: 占图 20%x20%, 即 200x100 px, 左上 (400,200)
     boxes = [_bbox(40, 40, 20, 20)]
-    inputs = crop_inputs_from_boxes(img, boxes, pad=0.0)
-    assert len(inputs) == 1
-    assert inputs[0]["id"] == "0"
-    crop = _decode(inputs[0]["file_path"])
+    batch = crop_inputs_from_boxes(img, boxes, pad=0.0)
+    assert len(batch.inputs) == 1
+    assert batch.skipped_geometry == 0
+    assert batch.inputs[0]["id"] == "0"
+    crop = _decode(batch.inputs[0]["file_path"])
     assert crop.size == (200, 100)
     # pad 5% → 各边外扩 framaw*0.05=10px / frah*0.05=5px → 220x110
-    inputs_pad = crop_inputs_from_boxes(img, boxes, pad=0.05)
-    crop_pad = _decode(inputs_pad[0]["file_path"])
+    batch_pad = crop_inputs_from_boxes(img, boxes, pad=0.05)
+    crop_pad = _decode(batch_pad.inputs[0]["file_path"])
     assert crop_pad.size == (220, 110)
 
 
@@ -51,8 +52,8 @@ def test_crop_clamps_to_image_bounds():
     img = _img(100, 100)
     # 贴左上角的框, pad 会越界 → clamp 到 0
     boxes = [_bbox(0, 0, 50, 50)]
-    inputs = crop_inputs_from_boxes(img, boxes, pad=0.2)
-    crop = _decode(inputs[0]["file_path"])
+    batch = crop_inputs_from_boxes(img, boxes, pad=0.2)
+    crop = _decode(batch.inputs[0]["file_path"])
     # 左/上 clamp 到 0, 右/下 外扩 50*0.2=10 → 60
     assert crop.size == (60, 60)
 
@@ -64,18 +65,71 @@ def test_crop_skips_non_bbox_and_rotated():
         {"type": "rectanglelabels", "value": {"x": 10, "y": 10, "width": 20, "height": 20, "rotation": 30}},
         _bbox(10, 10, 20, 20),  # idx 2: 唯一有效
     ]
-    inputs = crop_inputs_from_boxes(img, boxes, pad=0.0)
-    assert len(inputs) == 1
-    assert inputs[0]["id"] == "2"  # id 保留原下标, 供回写
+    batch = crop_inputs_from_boxes(img, boxes, pad=0.0)
+    assert len(batch.inputs) == 1
+    assert batch.inputs[0]["id"] == "2"  # id 保留原下标, 供回写
+    # 多边形 + 旋转框 → 几何不支持, 计入 skipped_geometry
+    assert batch.skipped_geometry == 2
 
 
 def test_crop_parent_class_filter_preserves_original_index():
     img = _img(200, 200)
     boxes = [_bbox(10, 10, 20, 20, cls="car"), _bbox(50, 50, 10, 10, cls="person")]
-    inputs = crop_inputs_from_boxes(img, boxes, pad=0.0, parent_class_filter=["person"])
+    batch = crop_inputs_from_boxes(img, boxes, pad=0.0, parent_class_filter=["person"])
     # 只裁 person (idx1), id 保留原下标 "1"
-    assert len(inputs) == 1
-    assert inputs[0]["id"] == "1"
+    assert len(batch.inputs) == 1
+    assert batch.inputs[0]["id"] == "1"
+    # car 被类别路由跳过 (非几何), 不计入 skipped_geometry
+    assert batch.skipped_geometry == 0
+
+
+def test_crop_presigned_delivery_uses_upload_fn():
+    img = _img(200, 200)
+    boxes = [_bbox(10, 10, 20, 20), _bbox(50, 50, 10, 10)]
+    calls: list[int] = []
+
+    def fake_upload(box_idx: int, jpeg_bytes: bytes) -> str:
+        calls.append(box_idx)
+        assert jpeg_bytes[:2] == b"\xff\xd8"  # JPEG SOI
+        return f"http://store/crop-{box_idx}.jpg"
+
+    batch = crop_inputs_from_boxes(
+        img, boxes, pad=0.0, delivery="presigned", upload_fn=fake_upload
+    )
+    assert calls == [0, 1]
+    assert batch.inputs[0]["file_path"] == "http://store/crop-0.jpg"
+    assert batch.inputs[1]["file_path"] == "http://store/crop-1.jpg"
+
+
+def test_crop_cache_reuses_across_sibling_stages():
+    img = _img(200, 200)
+    boxes = [_bbox(10, 10, 20, 20), _bbox(50, 50, 10, 10)]
+    calls: list[int] = []
+
+    def fake_upload(box_idx: int, jpeg_bytes: bytes) -> str:
+        calls.append(box_idx)
+        return f"http://store/crop-{box_idx}.jpg"
+
+    cache: dict = {}
+    # 两个并行兄弟阶段 target 同一批父框 (同 pad) → 第二次全部命中缓存, 不重复上传/编码。
+    crop_inputs_from_boxes(
+        img, boxes, pad=0.0, delivery="presigned", upload_fn=fake_upload, cache=cache
+    )
+    batch2 = crop_inputs_from_boxes(
+        img, boxes, pad=0.0, delivery="presigned", upload_fn=fake_upload, cache=cache
+    )
+    # 上传/编码只发生一次 (2 个框各一次), 第二次零上传
+    assert calls == [0, 1]
+    assert batch2.inputs[0]["file_path"] == "http://store/crop-0.jpg"
+
+
+def test_crop_presigned_without_upload_fn_raises():
+    import pytest
+
+    img = _img(100, 100)
+    boxes = [_bbox(10, 10, 20, 20)]
+    with pytest.raises(ValueError):
+        crop_inputs_from_boxes(img, boxes, delivery="presigned")
 
 
 @dataclass

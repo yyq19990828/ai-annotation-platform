@@ -33,6 +33,25 @@
 
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 
+## [0.18.4] - 2026-06-23
+
+多阶段预标注（路径 B）后端补强：修一处实质兼容缺口——下游 crop 此前用 `data:` base64 内联投递，只有支持 `data:` 的后端（onnxtools/yolo）能作下游，而走 `httpx.get` 的 gsam2/sam3 收到 data URI 直接失败。本期把 crop 投递改成对所有后端通用，并补健壮性/可观测/测试。方案见 [`docs/plans/2026-06-23-v0.18.4-staged-preannotate-backend-hardening.md`](docs/plans/2026-06-23-v0.18.4-staged-preannotate-backend-hardening.md)。
+
+### Changed
+
+- **crop 投递通用化**：平台裁好的 ROI crop 改为上传对象存储（import 桶，挂 7 天 lifecycle 自动清）→ presigned URL 投递，所有走 `httpx.get` 的下游后端零改造可作分类阶段（此前 data URI 仅部分后端兼容）。crop URL 与 task URL 共用同一 host 解析逻辑（抽成 `StorageService.rewrite_host_for_ml_backend`）。`data:` 内联保留为纯函数快路径（单测/已知支持的后端）。
+
+### Added
+
+- **crop 编码复用**：并行兄弟阶段 target 同一批父框时，按 `(box_idx, pad)` 复用已裁/已上传 crop，不重复裁剪 + 重编码 + 重上传。
+- **pipeline 拓扑落库**：`PredictionMeta.extra.pipeline.stages` 记每阶段 `{stage, ml_backend_id, model_id, parent_class_filter, write_keys}`，让「这框的某属性来自哪个 backend/model」可追溯。
+- **几何跳过统计**：命中阶段路由但因几何不支持（旋转框/多边形/退化框）无法裁 crop 的父框数，计入逐阶段统计 `skipped_geometry`，不再静默跳过。
+
+### Notes
+
+- 下游分类失败由 `print()` 改 `logger.warning()`，对齐 worker 模块日志约定。
+- crop 临时对象依赖 import 桶 lifecycle 清理；高频大批量下堆积量需观测，必要时 job 终态主动删前缀。
+
 ## [0.18.3] - 2026-06-23
 
 多阶段预标注（路径 B）收尾：补审阅侧与运行态，把整条「检测→分类→写属性→人审」闭环跑通。方案见 [`docs/plans/2026-06-23-v0.18.3-staged-preannotate-ui-productization.md`](docs/plans/2026-06-23-v0.18.3-staged-preannotate-ui-productization.md)。

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import time
 import uuid
 
@@ -7,6 +8,8 @@ import redis
 
 from app.config import settings
 from app.workers.celery_app import celery_app
+
+logger = logging.getLogger(__name__)
 
 
 def _publish_progress(
@@ -134,15 +137,56 @@ def _load_task_image(task):
     return Image.open(io.BytesIO(raw)).convert("RGB")
 
 
-async def _run_task_pipeline(task, stages, stage_clients, stage_contexts, *, resolve_url):
-    """v0.18.1 / v0.18.2 · 对单个 task 顺序跑各阶段, 返回 (pred_results, pipeline_extra, stage_stats)。
+def _make_crop_uploader(storage, job_id: str):
+    """v0.18.4 · 返回 ``upload_crop(task, box_idx, jpeg_bytes) -> presigned URL``。
+
+    crop 上传 import 桶 (7 天 lifecycle 自动清), key=``roi-crops/{job_id}/{task_id}/{box_idx}.jpg``,
+    经 ml_backend host 重写返回容器可拉取 URL——对所有走 ``httpx.get`` 的下游后端通用
+    (gsam2/sam3 不支持 ``data:`` URI)。
+    """
+
+    def upload_crop(task, box_idx: int, jpeg_bytes: bytes) -> str:
+        key = f"roi-crops/{job_id}/{task.id}/{box_idx}.jpg"
+        return storage.upload_crop_bytes(jpeg_bytes, key)
+
+    return upload_crop
+
+
+def _pipeline_topology(stages: list[dict]) -> list[dict]:
+    """v0.18.4 · 从 stages 配置派生可审计的 pipeline 拓扑, 落 PredictionMeta.extra。
+
+    每项 ``{stage, ml_backend_id, model_id, parent_class_filter, write_keys}``, 让「这框的某属性
+    来自哪个 backend/model」可追溯。纯派生 (跨 task 不变), 由 _run_task_pipeline 落每条预测。
+    """
+    topo: list[dict] = []
+    for s in stages:
+        write = s.get("write") or {}
+        topo.append(
+            {
+                "stage": s.get("stage"),
+                "ml_backend_id": s.get("ml_backend_id"),
+                "model_id": s.get("model_id"),
+                "parent_class_filter": s.get("parent_class_filter") or None,
+                "write_keys": write.get("keys") or None,
+            }
+        )
+    return topo
+
+
+async def _run_task_pipeline(
+    task, stages, stage_clients, stage_contexts, *, resolve_url, upload_crop=None
+):
+    """v0.18.1 / v0.18.2 / v0.18.4 · 对单个 task 顺序跑各阶段, 返回 (pred_results, pipeline_extra, stage_stats)。
 
     - 单阶段 (len==1): 等价于原 ``client.predict``, extra=None, stats=None (逐字回归路径)。
     - 多阶段: 源阶段产框 → 加载原图 → 对每个下游阶段按 parent_class_filter 裁父框 ROI 喂下游
       → 合并 attributes 进父框 (原地改 pred_result.result)。顺序跑 (含并行兄弟, ROADMAP §7.1)。
     - v0.18.2: 类别路由 (parent_class_filter)、阶段级失败策略 (on_failure)、逐阶段统计。
+    - v0.18.4: crop 经 upload_crop presigned 投递 (对所有下游后端通用); 并行兄弟同框 crop 复用;
+      extra 落 pipeline 拓扑; 几何跳过 (旋转框/多边形) 计入 stats; 下游失败走 logger。
 
-    stage_stats: ``{stage_idx: {...}}`` —— 源阶段 {detected}; 下游 {targeted, ok, failed}。
+    upload_crop: ``(task, box_idx, jpeg_bytes) -> url``; 非 None → presigned 投递, None → data URI。
+    stage_stats: ``{stage_idx: {...}}`` —— 源阶段 {detected}; 下游 {targeted, ok, failed, skipped_geometry}。
     """
     from app.workers.roi import crop_inputs_from_boxes, merge_classify_attributes
 
@@ -154,16 +198,24 @@ async def _run_task_pipeline(task, stages, stage_clients, stage_contexts, *, res
         return results, None, None
 
     image = _load_task_image(task)
+    delivery = "presigned" if upload_crop is not None else "data_uri"
     enriched_keys: set[str] = set()
     stats: dict[int, dict] = {0: {"detected": 0}}
     for si in range(1, len(stages)):
-        stats[si] = {"targeted": 0, "ok": 0, "failed": 0}
+        stats[si] = {"targeted": 0, "ok": 0, "failed": 0, "skipped_geometry": 0}
 
     for pred_result in results:
         boxes = pred_result.result
         if not isinstance(boxes, list) or not boxes:
             continue
         stats[0]["detected"] += len(boxes)
+        # v0.18.4 · 并行兄弟阶段 target 同一批父框时按 (box_idx, pad) 复用已裁/已上传 crop。
+        crop_cache: dict = {}
+        upload_fn = (
+            (lambda idx, buf: upload_crop(task, idx, buf))
+            if upload_crop is not None
+            else None
+        )
         dropped: set[int] = set()
         for si in range(1, len(stages)):
             stage = stages[si]
@@ -172,9 +224,17 @@ async def _run_task_pipeline(task, stages, stage_clients, stage_contexts, *, res
             write = stage.get("write") or {}
             write_keys = write.get("keys") or None
             pcf = stage.get("parent_class_filter") or None
-            crop_inputs = crop_inputs_from_boxes(
-                image, boxes, pad=pad, parent_class_filter=pcf
+            batch = crop_inputs_from_boxes(
+                image,
+                boxes,
+                pad=pad,
+                parent_class_filter=pcf,
+                delivery=delivery,
+                upload_fn=upload_fn,
+                cache=crop_cache,
             )
+            stats[si]["skipped_geometry"] += batch.skipped_geometry
+            crop_inputs = batch.inputs
             if not crop_inputs:
                 continue  # 无符合类别的父框 → 本阶段对本图降级跳过
             targeted = {int(ci["id"]) for ci in crop_inputs}
@@ -195,9 +255,12 @@ async def _run_task_pipeline(task, stages, stage_clients, stage_contexts, *, res
                 stats[si]["failed"] += len(targeted)
                 if stage.get("on_failure") == "drop_box":
                     dropped |= targeted
-                print(
-                    f"[ai-pre] stage {si} 下游分类失败 (on_failure="
-                    f"{stage.get('on_failure', 'keep_parent')}): {type(exc).__name__}: {exc}"
+                logger.warning(
+                    "[ai-pre] stage %s 下游分类失败 (on_failure=%s): %s: %s",
+                    si,
+                    stage.get("on_failure", "keep_parent"),
+                    type(exc).__name__,
+                    exc,
                 )
         if dropped:
             pred_result.result = [b for i, b in enumerate(boxes) if i not in dropped]
@@ -205,6 +268,7 @@ async def _run_task_pipeline(task, stages, stage_clients, stage_contexts, *, res
         "pipeline": {
             "stage_count": len(stages),
             "enriched_attr_keys": sorted(enriched_keys) or None,
+            "stages": _pipeline_topology(stages),
         }
     }
     return results, extra, stats
@@ -519,6 +583,14 @@ async def _run_batch(
                     )
                 )
 
+        # v0.18.4 · 多阶段时构造 crop 上传器 (presigned 投递, 对所有下游后端通用)。
+        # 单阶段无下游 crop, 不建 (省去对象存储往返)。
+        crop_uploader = None
+        if len(stages) > 1:
+            from app.services.storage import StorageService
+
+            crop_uploader = _make_crop_uploader(StorageService(), str(async_job_id))
+
         # v0.18.2 · 逐阶段统计累加器 (跨 task 汇总): {stage_idx: {detected/targeted/ok/failed}}。
         pipeline_stage_totals: dict[int, dict] = {}
 
@@ -543,6 +615,7 @@ async def _run_batch(
                     stage_clients,
                     stage_contexts,
                     resolve_url=_resolve_task_url,
+                    upload_crop=crop_uploader,
                 )
                 _accumulate_stage_stats(stage_stats)
                 for pred_result in results:

@@ -12,8 +12,22 @@ from __future__ import annotations
 
 import base64
 import io
+from collections.abc import Callable
+from dataclasses import dataclass, field
 
 from PIL import Image
+
+
+@dataclass
+class CropBatch:
+    """v0.18.4 · crop_inputs_from_boxes 的返回: 喂下游的 inputs + 几何跳过统计。
+
+    skipped_geometry: 命中本阶段路由 (类别匹配) 但因几何不支持 (非 bbox / 旋转框 / 退化框)
+    无法裁 crop 而被跳过的父框数。供逐阶段统计暴露「N 框因几何不支持未富集」, 不再静默。
+    """
+
+    inputs: list[dict] = field(default_factory=list)
+    skipped_geometry: int = 0
 
 
 def box_class_name(box: dict) -> str | None:
@@ -58,8 +72,11 @@ def crop_inputs_from_boxes(
     pad: float = 0.05,
     jpeg_quality: int = 90,
     parent_class_filter: list[str] | None = None,
-) -> list[dict]:
-    """对 boxes 里的 bbox 框逐个裁 ROI crop, 返回喂下游 /predict 的 inputs。
+    delivery: str = "data_uri",
+    upload_fn: Callable[[int, bytes], str] | None = None,
+    cache: dict | None = None,
+) -> CropBatch:
+    """对 boxes 里的 bbox 框逐个裁 ROI crop, 返回喂下游 /predict 的 inputs + 几何跳过统计。
 
     Args:
         image: 任务原图 (PIL Image)。
@@ -68,27 +85,45 @@ def crop_inputs_from_boxes(
         jpeg_quality: crop 重编码 JPEG 质量。
         parent_class_filter: v0.18.2 · 只对 class_name 在此集合的父框裁 crop (空/None=全部)。
             类别路由: 不同下游阶段设不相交类别集 = 不同类走不同模型。
+        delivery: v0.18.4 · crop 投递方式。``"data_uri"`` (默认, 纯函数自足, 单测/已知支持
+            ``data:`` 的后端) 内联 base64; ``"presigned"`` (worker 生产默认) 经 ``upload_fn``
+            上传对象存储回 URL——对所有走 ``httpx.get`` 的下游后端 (gsam2/sam3) 通用。
+        upload_fn: v0.18.4 · ``delivery="presigned"`` 时必传, ``(box_idx, jpeg_bytes) -> url``。
+        cache: v0.18.4 · 可选 ``{(box_idx, pad_rounded): input}``。并行兄弟阶段 target 同一批父框
+            时按 ``(box_idx, pad)`` 复用已裁/已上传 crop, 不重复裁剪 + 重编码 + 重上传。
 
     Returns:
-        inputs 列表, 每项 ``{"id": "<box_idx>", "file_path": "data:image/jpeg;base64,..."}``。
-        ``id`` 即 boxes 中的下标 (字符串, **保留原下标**即使被类别过滤), 供下游结果回写到对应父框。
-        非 bbox / 旋转框 / 退化框 / 类别不匹配 的父框被跳过, 不进 inputs。
+        :class:`CropBatch` —— ``inputs`` 每项 ``{"id": "<box_idx>", "file_path": <data uri | url>}``,
+        ``id`` 即 boxes 中的下标 (字符串, **保留原下标**即使被类别过滤), 供下游结果回写到对应父框;
+        ``skipped_geometry`` 为命中路由但几何不支持被跳过的父框数。类别不匹配的父框是路由跳过, 不计入。
     """
     img_w, img_h = image.size
     filter_set = set(parent_class_filter) if parent_class_filter else None
     inputs: list[dict] = []
+    skipped_geometry = 0
     for idx, box in enumerate(boxes):
-        if not isinstance(box, dict) or box.get("type") != "rectanglelabels":
+        if not isinstance(box, dict):
             continue
+        # 类别路由: 不匹配目标类的父框是路由跳过 (非几何), 不计入 skipped_geometry。
         if filter_set is not None and box_class_name(box) not in filter_set:
+            continue
+        cache_key = (idx, round(pad, 4))
+        if cache is not None and cache_key in cache:
+            inputs.append(cache[cache_key])
+            continue
+        # 几何门控: 非 bbox / 旋转框 / 退化框 → 本阶段无法裁 crop, 计入 skipped_geometry。
+        if box.get("type") != "rectanglelabels":
+            skipped_geometry += 1
             continue
         px = _bbox_pixels_from_ls_value(box.get("value") or {}, img_w, img_h)
         if px is None:
+            skipped_geometry += 1
             continue
         left, top, right, bottom = px
         bw = right - left
         bh = bottom - top
         if bw <= 0 or bh <= 0:
+            skipped_geometry += 1
             continue
         left = max(0.0, left - bw * pad)
         top = max(0.0, top - bh * pad)
@@ -96,14 +131,24 @@ def crop_inputs_from_boxes(
         bottom = min(float(img_h), bottom + bh * pad)
         crop = image.crop((int(left), int(top), int(round(right)), int(round(bottom))))
         if crop.width <= 0 or crop.height <= 0:
+            skipped_geometry += 1
             continue
         buf = io.BytesIO()
         crop.convert("RGB").save(buf, format="JPEG", quality=jpeg_quality)
-        data_uri = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode(
-            "ascii"
-        )
-        inputs.append({"id": str(idx), "file_path": data_uri})
-    return inputs
+        jpeg_bytes = buf.getvalue()
+        if delivery == "presigned":
+            if upload_fn is None:
+                raise ValueError("delivery='presigned' 需要 upload_fn")
+            file_path = upload_fn(idx, jpeg_bytes)
+        else:
+            file_path = "data:image/jpeg;base64," + base64.b64encode(
+                jpeg_bytes
+            ).decode("ascii")
+        inp = {"id": str(idx), "file_path": file_path}
+        if cache is not None:
+            cache[cache_key] = inp
+        inputs.append(inp)
+    return CropBatch(inputs=inputs, skipped_geometry=skipped_geometry)
 
 
 def merge_classify_attributes(

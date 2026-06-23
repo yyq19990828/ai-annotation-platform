@@ -1,4 +1,3 @@
-import re
 import time
 import uuid
 
@@ -48,11 +47,7 @@ def _resolve_task_url(task: Task) -> str:
     storage = StorageService()
     bucket = storage.datasets_bucket if task.dataset_item_id else storage.bucket
     url = storage.generate_download_url(task.file_path, bucket=bucket)
-    if settings.ml_backend_storage_host:
-        url = re.sub(
-            r"://[^/]+", f"://{settings.ml_backend_storage_host}", url, count=1
-        )
-    return url
+    return storage.rewrite_host_for_ml_backend(url)
 
 
 @router.post("", response_model=MLBackendOut, status_code=201)
