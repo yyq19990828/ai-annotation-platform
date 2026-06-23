@@ -134,7 +134,7 @@ interface WorkbenchStageHostImageProps {
   vp: Viewport;
   setVp: React.Dispatch<React.SetStateAction<Viewport>>;
   setFitTick: React.Dispatch<React.SetStateAction<number>>;
-  onAcceptPrediction: (b: AiBox) => void;
+  onAcceptPrediction: (b: AiBox, attributeOverrides?: Record<string, unknown>) => void;
   onRejectPrediction: (b: AiBox) => void;
   onPatchShapeFlag?: (
     id: string,

@@ -233,6 +233,34 @@ describe("AIInspectorPanel", () => {
     expect(onAcceptPrediction).toHaveBeenCalledWith(aiBox);
   });
 
+  it("v0.18.3 · 选中带属性的候选 → 属性审阅区采纳按钮调用 onAcceptPrediction(box, undefined)", () => {
+    const onAcceptPrediction = vi.fn();
+    const aiBox = { ...makeAiBox("ai-attr", "car"), attributes: { color: "blue" } };
+    const attributeSchema = {
+      fields: [
+        {
+          key: "color",
+          label: "颜色",
+          type: "select" as const,
+          options: [
+            { value: "blue", label: "蓝色" },
+            { value: "white", label: "白色" },
+          ],
+        },
+      ],
+    };
+    renderUI({
+      aiBoxes: [aiBox],
+      selectedId: "ai-attr",
+      attributeSchema,
+      onAcceptPrediction,
+    });
+    // 属性审阅区出现 + 采纳按钮 (未改动 → 文案不含「含改动」)
+    expect(screen.getByText("属性审阅")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("accept-candidate-attrs"));
+    expect(onAcceptPrediction).toHaveBeenCalledWith(aiBox, undefined);
+  });
+
   it("点击驳回按钮 → 调用 onRejectPrediction + onClearSelection", () => {
     const onRejectPrediction = vi.fn();
     const onClearSelection = vi.fn();

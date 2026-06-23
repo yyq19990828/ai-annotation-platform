@@ -133,6 +133,7 @@ class AnnotationService:
         user_id: uuid.UUID,
         shape_index: int | None = None,
         override_class_name: str | None = None,
+        attribute_overrides: dict | None = None,
     ) -> Annotation | None:
         """采纳预测 → 转 annotation.
 
@@ -212,6 +213,12 @@ class AnnotationService:
             shape_attributes = shape.get("attributes")
             if isinstance(shape_attributes, dict):
                 attributes.update(shape_attributes)
+            # v0.18.3 · 采纳前在工作台审阅候选属性时改过的值按键覆盖 (edit-before-accept 原子落库)。
+            # 内部键 (_shape_index 等) 不允许被 override 干扰, 下面权威重写。
+            if isinstance(attribute_overrides, dict):
+                attributes.update(
+                    {k: v for k, v in attribute_overrides.items() if not k.startswith("_")}
+                )
             # 权威 _shape_index 放在最后, 防止 backend 在 shape attributes 里同名覆盖
             # 导致前端按 (predictionId, shapeIndex) 双键命中错位。
             attributes["_shape_index"] = idx

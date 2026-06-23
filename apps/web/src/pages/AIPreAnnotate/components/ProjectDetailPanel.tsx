@@ -23,7 +23,17 @@ import {
   type PredictMode,
   type PipelineStagePayload,
 } from "@/hooks/usePreannotation";
+import { useAsyncJob } from "@/hooks/useAsyncJob";
 import type { PreannotateArgs } from "./usePreannotateConfig";
+
+/** v0.18.3 · async_job.result.pipeline_stages 逐阶段统计项。 */
+interface PipelineStageStat {
+  stage: number;
+  detected?: number;
+  targeted?: number;
+  ok?: number;
+  failed?: number;
+}
 import { adminPreannotateApi } from "@/api/adminPreannotate";
 import { HistoryTable } from "./HistoryTable";
 import { VideoPreannotateGuide } from "./VideoPreannotateGuide";
@@ -148,6 +158,12 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   const removeStage = (sid: string) =>
     setDownstreamIds((ids) => ids.filter((x) => x !== sid));
 
+  // v0.18.3 · 运行态可视化: 跑批后轮询最后一个多阶段 job 的 result.pipeline_stages, 渲染逐阶段统计。
+  const [lastPipelineJobId, setLastPipelineJobId] = useState<string | null>(null);
+  const pipelineJobQ = useAsyncJob(lastPipelineJobId, true);
+  const pipelineStageStats =
+    (pipelineJobQ.data?.result?.pipeline_stages as PipelineStageStat[] | undefined) ?? null;
+
   const batchesQ = useBatches(projectId, "active");
   const batches = (batchesQ.data ?? []) as unknown as Array<{
     id: string;
@@ -180,6 +196,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     setSelectedBatchIds(new Set());
     setDownstreamIds([]);
     stagePayloadsRef.current = {};
+    setLastPipelineJobId(null);
   }, [projectId]);
 
   const trigger = useTriggerPreannotation(projectId);
@@ -245,13 +262,15 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       let okCount = 0;
       let failCount = 0;
       const errors: string[] = [];
+      const firedJobIds: string[] = [];
       const fireOne = async (bid: string) => {
         try {
-          await trigger.mutateAsync({
+          const resp = await trigger.mutateAsync({
             ...baseArgs,
             batch_id: bid,
             ...(pipelineStages ? { pipeline_stages: pipelineStages } : {}),
           });
+          if (resp?.job_id) firedJobIds.push(resp.job_id);
           okCount += 1;
         } catch (err) {
           failCount += 1;
@@ -277,6 +296,10 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
         setSelectedBatchIds(new Set());
         // v0.14.13 · 至少一批成功 → 记 variant 已热 (异步 trigger 拿不到 cache_hit, 走兜底).
         cfg.markHot();
+        // v0.18.3 · 多阶段时盯最后一个 job 的逐阶段统计 (单阶段无 pipeline_stages, 不显示)。
+        if (pipelineStages && firedJobIds.length > 0) {
+          setLastPipelineJobId(firedJobIds[firedJobIds.length - 1]);
+        }
       }
     } finally {
       setRunning(false);
@@ -516,6 +539,35 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                     : `跑预标（${selectedBatchIds.size} 批）`}
               </Button>
             </div>
+
+            {/* v0.18.3 · 运行态可视化: 多阶段批跑完后, 逐阶段统计 (检出框数 / 各下游富集成功·失败)。 */}
+            {lastPipelineJobId && pipelineStageStats && pipelineStageStats.length > 0 && (
+              <div className={styles.stageStats}>
+                <span className={styles.fieldLabel}>
+                  逐阶段统计
+                  {pipelineJobQ.data?.status === "running" && " · 运行中…"}
+                </span>
+                {pipelineStageStats.map((st) => (
+                  <div key={st.stage} className={styles.stageStatRow}>
+                    {st.stage === 0 ? (
+                      <span>
+                        <b>阶段 1 · 检测</b>：检出 {st.detected ?? 0} 框
+                      </span>
+                    ) : (
+                      <span>
+                        <b>阶段 {st.stage + 1} · 分类</b>：目标 {st.targeted ?? 0}，成功{" "}
+                        <span className="text-status-positive">{st.ok ?? 0}</span>
+                        {(st.failed ?? 0) > 0 && (
+                          <>
+                            ，失败 <span className="text-status-caution">{st.failed}</span>
+                          </>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
       </Card>
 

@@ -123,6 +123,21 @@
   border-left: 2px solid var(--sc-border);
 }
 
+/* v0.18.3 · 运行态逐阶段统计条。 */
+.stageStats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  margin-top: 8px;
+  background: var(--sc-muted);
+  border-radius: var(--sc-radius);
+}
+.stageStatRow {
+  font-size: 12px;
+  color: var(--sc-foreground);
+}
+
 /* v0.18.2 · 阶段级字段的文本/数字输入 (类别过滤 / pad / 写回键)。 */
 .textInput {
   height: 28px;

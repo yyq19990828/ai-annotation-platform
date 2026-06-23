@@ -4026,6 +4026,25 @@
         "title": "BboxGeometry",
         "type": "object"
       },
+      "Body_accept_prediction_api_v1_tasks__task_id__predictions__prediction_id__accept_post": {
+        "properties": {
+          "attribute_overrides": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "可选 (v0.18.3): 采纳前在工作台审阅候选属性时改过的值, 按属性键覆盖 shape 自带的 attributes 原子落库 (多阶段预标的 select/multiselect 属性审阅 + 分步采纳)。",
+            "title": "Attribute Overrides"
+          }
+        },
+        "title": "Body_accept_prediction_api_v1_tasks__task_id__predictions__prediction_id__accept_post",
+        "type": "object"
+      },
       "Body_import_annotations_api_v1_projects__project_id__annotations_import_post": {
         "properties": {
           "file": {
@@ -19691,7 +19710,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.18.2"
+    "version": "0.18.3"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -33211,6 +33230,15 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_accept_prediction_api_v1_tasks__task_id__predictions__prediction_id__accept_post"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

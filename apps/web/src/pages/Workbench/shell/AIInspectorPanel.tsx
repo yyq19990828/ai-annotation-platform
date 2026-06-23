@@ -76,7 +76,7 @@ interface AIInspectorPanelProps {
   onSeekFrame?: (frameIndex: number) => void;
   /** Shift+click 进入多选；普通 click 单选。 */
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
-  onAcceptPrediction: (b: AiBox) => void;
+  onAcceptPrediction: (b: AiBox, attributeOverrides?: Record<string, unknown>) => void;
   onRejectPrediction?: (b: AiBox) => void;
   /** v0.10.8 · I11 · polygon 候选行展示「精修」按钮 → 启动 Mask 编辑器。 */
   onRefinePrediction?: (b: AiBox) => void;
@@ -140,14 +140,23 @@ export function AIInspectorPanel({
     ? getMissingRequired(attributeSchema, selectedAnnotation.class_name, selectedAnnotation.attributes ?? {})
     : [];
   // v0.18.0 · 采纳前预览: 选中单个 AI 候选 (未落库, selectedAnnotation 为空) 且其携带属性时,
-  // 在底部用只读 AttributeForm 展示二阶段 backend 写入的 attributes (经 schema options 解析为中文)。
+  // 在底部用 AttributeForm 展示二阶段 backend 写入的 attributes (经 schema options 解析为中文)。
   const selectedAiBox =
     !selectedAnnotation && selSet.size === 1
       ? aiBoxes.find((b) => selSet.has(b.id)) ?? null
       : null;
+  // v0.18.3 · 候选属性审阅 + 分步采纳: 预览改为可编辑, 改动存本地 state (按 box id 重置),
+  // 采纳时经 onAcceptPrediction 的 attributeOverrides 把改后值原子落库 (而非一步全采纳原值)。
+  const [editedAiBoxAttrs, setEditedAiBoxAttrs] = useState<Record<string, unknown> | null>(null);
+  const editedBoxIdRef = useRef<string | null>(null);
+  if (selectedAiBox?.id !== editedBoxIdRef.current) {
+    editedBoxIdRef.current = selectedAiBox?.id ?? null;
+    // 选中的候选框变化 → 丢弃上一个的草稿改动 (渲染期同步重置, 无需 effect)。
+    if (editedAiBoxAttrs !== null) setEditedAiBoxAttrs(null);
+  }
   const aiBoxAttrs =
     selectedAiBox?.attributes && Object.keys(selectedAiBox.attributes).length > 0
-      ? selectedAiBox.attributes
+      ? { ...selectedAiBox.attributes, ...(editedAiBoxAttrs ?? {}) }
       : null;
   if (!open) {
     return null;
@@ -267,7 +276,7 @@ export function AIInspectorPanel({
         </div>
       )}
 
-      {/* v0.18.0 · 候选属性预览 (只读): 选中未落库的 AI 候选且其携带二阶段属性时展示。 */}
+      {/* v0.18.0 · 候选属性预览; v0.18.3 · 可编辑 + 分步采纳: 审阅多阶段预标产出的属性, 改后再采纳。 */}
       {!videoTrackPanel && aiBoxAttrs && selectedAiBox && attributeSchema && (
         <div className="flex max-h-[45%] flex-[0_0_auto] flex-col border-t border-border bg-card">
           <button
@@ -275,11 +284,14 @@ export function AIInspectorPanel({
             className="flex w-full cursor-pointer appearance-none items-center gap-1.5 border-0 bg-transparent px-3.5 py-2 text-left text-xs font-semibold text-foreground hover:bg-muted"
             onClick={() => setAttrCollapsed((v) => !v)}
             aria-expanded={!attrCollapsed}
-            title={attrCollapsed ? "展开属性预览" : "折叠属性预览"}
+            title={attrCollapsed ? "展开属性审阅" : "折叠属性审阅"}
           >
             <Icon name={attrCollapsed ? "chevRight" : "chevDown"} size={13} />
-            <span>属性预览</span>
+            <span>属性审阅</span>
             <span className="text-xs font-normal text-status-info">· 候选</span>
+            {editedAiBoxAttrs && Object.keys(editedAiBoxAttrs).length > 0 && (
+              <span className="text-xs font-normal text-status-caution">· 已改动</span>
+            )}
             <span className="ml-auto text-xs font-normal text-muted-foreground">{displayClassName(selectedAiBox.cls)}</span>
           </button>
           {!attrCollapsed && (
@@ -288,13 +300,24 @@ export function AIInspectorPanel({
                 schema={attributeSchema}
                 className={selectedAiBox.cls}
                 attributes={aiBoxAttrs}
-                onChange={() => {}}
-                readOnly
+                onChange={(next) => setEditedAiBoxAttrs(next)}
+                readOnly={readOnly}
                 hideHeading
               />
-              <p className="m-0 px-3.5 pb-2 text-2xs leading-normal text-muted-foreground">
-                采纳后这些属性将写入新建标注，可在采纳后编辑。
-              </p>
+              {!readOnly && (
+                <div className="flex items-center gap-2 px-3.5 pb-2">
+                  <Button
+                    size="sm"
+                    data-testid="accept-candidate-attrs"
+                    onClick={() => onAcceptPrediction(selectedAiBox, editedAiBoxAttrs ?? undefined)}
+                  >
+                    采纳{editedAiBoxAttrs && Object.keys(editedAiBoxAttrs).length > 0 ? "（含改动）" : ""}
+                  </Button>
+                  <span className="text-2xs leading-normal text-muted-foreground">
+                    可先改属性再采纳，改动随采纳一并落库。
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -795,7 +818,7 @@ interface BoxesListProps {
   onFetchMore?: () => void;
   currentFrameIndex?: number;
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
-  onAcceptPrediction: (b: AiBox) => void;
+  onAcceptPrediction: (b: AiBox, attributeOverrides?: Record<string, unknown>) => void;
   onRejectPrediction?: (b: AiBox) => void;
   /** v0.10.8 · I11 · 仅 polygon 候选会展示「精修」按钮，由 WorkbenchShell 注入 handleRefinePrediction。 */
   onRefinePrediction?: (b: AiBox) => void;
