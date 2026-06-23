@@ -45,9 +45,8 @@ cp /home/tyjt/Desktop/onnxtools/models/va_260612.onnx        apps/onnxtools-back
 
 ## 起栈（端口 8004，profile `gpu-onnxtools`）
 
-> 前置：`onnxtools` 的 `feat/vehicle-attribute-pipeline` 分支需先推到 GitHub origin
-> （Dockerfile 用 `git+https://...@feat/vehicle-attribute-pipeline` 安装）。迭代 onnxtools
-> 后改 Dockerfile 的 `@<ref>` 并重新 build。
+> `VehicleAttributePipeline` 已合入 onnxtools `main`（GitHub 公开仓库），Dockerfile 用
+> `git+https://github.com/yyq19990828/onnxtools.git@main` 安装。迭代 onnxtools 后重新 build。
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-onnxtools build onnxtools-backend
