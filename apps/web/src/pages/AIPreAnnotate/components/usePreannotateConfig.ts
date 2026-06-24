@@ -138,16 +138,14 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
 
   const primaryModel = useMemo<MLModelCapability | undefined>(() => {
     if (isDocMode) return activeDocModel;
-    // 过滤内部能力(检测原子): 不作对外预标默认/可选.
-    const models = (capabilitiesQ.data?.models ?? []).filter((m) => m.visibility !== "internal");
+    // 单阶段不过滤 composite: 一锅端 (vehicle-attr) 可作开箱即用默认。
+    const models = capabilitiesQ.data?.models ?? [];
     return models.find((m) => m.task !== "ocr" && m.task !== "doc_layout") ?? models[0];
   }, [isDocMode, activeDocModel, capabilitiesQ.data]);
 
   const geometricModels = useMemo<MLModelCapability[]>(
     () =>
-      (capabilitiesQ.data?.models ?? []).filter(
-        (m) => m.visibility !== "internal" && GEOMETRIC_TASKS.includes(m.task ?? ""),
-      ),
+      (capabilitiesQ.data?.models ?? []).filter((m) => GEOMETRIC_TASKS.includes(m.task ?? "")),
     [capabilitiesQ.data],
   );
   const isGeometricBackend =
@@ -172,7 +170,6 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     () =>
       (capabilitiesQ.data?.models ?? []).filter(
         (m) =>
-          m.visibility !== "internal" &&
           !m.is_interactive &&
           (m.supported_prompts ?? []).includes("text") &&
           GEOMETRIC_TASKS.includes(m.task ?? ""),

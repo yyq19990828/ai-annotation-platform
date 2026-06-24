@@ -10,7 +10,7 @@ import {
   effectiveModalities,
   isLoadedRuntimeKey,
 } from "./catalogModel";
-import { infraLabel, modalityLabel, taskLabel } from "./labels";
+import { COMPOSITION_BADGE, infraLabel, modalityLabel, taskLabel } from "./labels";
 import { WarmButton } from "./WarmButton";
 
 const TABLE_CLASS =
@@ -32,16 +32,6 @@ const COLUMN_CLASSES = [
   "w-[7%]",
 ];
 const TRUNCATE_CLASS = "block max-w-full overflow-hidden text-ellipsis whitespace-nowrap";
-
-// v0.18.12 · 原子 vs 内部编排徽标 (读 model.composition, 协议 v2.2)。
-// atom=单次推理原子; composite=一个 model 内部串多原子的内置流程。老 backend 缺字段 → 不渲染。
-const COMPOSITION_BADGE: Record<
-  string,
-  { variant: "outline" | "ai"; label: string; title: string }
-> = {
-  atom: { variant: "outline", label: "原子", title: "单次推理原子，可作编排单元" },
-  composite: { variant: "ai", label: "内置流程", title: "一个 model 内部串联多个原子（内置编排）" },
-};
 
 export function ModelListTable({ items }: { items: FlatModel[] }) {
   const rows = buildListRows(items);

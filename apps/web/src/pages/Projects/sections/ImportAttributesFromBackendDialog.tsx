@@ -63,7 +63,8 @@ function collectEntries(instances: CapabilityInstance[]): ModelEntry[] {
   const out: ModelEntry[] = [];
   for (const inst of instances) {
     for (const model of inst.models) {
-      if (model.visibility === "internal") continue; // 内部能力(检测原子)不作导入源
+      // 一锅端 composite 与纯分类 atom 声明同一份属性 schema; 跳过 composite 避免重复导入源。
+      if (model.composition === "composite") continue;
       const schema = model.output_attribute_schema ?? [];
       if (schema.length > 0) {
         out.push({ backendName: inst.name, model, schema });

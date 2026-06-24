@@ -96,8 +96,9 @@ class InstanceModelItem(BaseModel):
     # 前端 VariantSelector 在用户未选时取此作初值; 优先级链:
     # 项目级 project.default_variants[backend_id] > 本字段 > backend 启动 env 默认.
     default_variants: dict[str, str] = {}
-    # 能力可见性：public=对外开放；internal=目录可见但不对外选用。缺省 public 向后兼容。
-    visibility: str = "public"
+    # 协议 v2.2 · 原子 vs 内部编排维度：atom=单次推理原子；composite=内部编排多原子。
+    # 缺省 atom 向后兼容。编排下游 stage 据此过滤（只组合 atom）。
+    composition: str = "atom"
 
 
 class CapabilityInstanceItem(BaseModel):

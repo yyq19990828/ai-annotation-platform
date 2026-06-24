@@ -15,7 +15,7 @@ import {
   runtimeKeyFor,
   tierLabel,
 } from "./catalogModel";
-import { infraLabel, modalityLabel, taskLabel, taskVariant } from "./labels";
+import { COMPOSITION_BADGE, infraLabel, modalityLabel, taskLabel, taskVariant } from "./labels";
 import { WarmButton } from "./WarmButton";
 
 const TAG_CLASS =
@@ -57,7 +57,13 @@ export function ModelCard({ item }: { item: FlatModel }) {
 
       <div className="flex flex-wrap items-center gap-1.5">
         {m.task && <Badge variant={taskVariant(m.task)}>{taskLabel(m.task)}</Badge>}
-        {m.visibility === "internal" && <Badge variant="outline">内部</Badge>}
+        {m.composition && COMPOSITION_BADGE[m.composition] && (
+          <span title={COMPOSITION_BADGE[m.composition].title}>
+            <Badge variant={COMPOSITION_BADGE[m.composition].variant}>
+              {COMPOSITION_BADGE[m.composition].label}
+            </Badge>
+          </span>
+        )}
         {infra && <Badge variant="outline">{infraLabel(infra)}</Badge>}
         {modalities.map((mod) => (
           <Badge key={mod} variant="default">

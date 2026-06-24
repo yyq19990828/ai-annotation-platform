@@ -448,10 +448,10 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 **`composition`（原子 vs 内部编排，可选）** <!-- since 协议 v2.2 --> —— `atom`（单次推理 / 单原子） / `composite`（一个 model 内部编排多个原子、一次 `/predict` 一气呵成）：
 
-- **动机**：model 目录把「原子」与「内部编排」平铺为平级条目，`task` 只描述输出形态、与「原子/复合」正交。在此之前唯一信号是 `visibility=internal`，但它语义被重载（本意「编排不可选」被当成「内部复合」用）且跨 backend 不一致 —— 「是原子还是内部编排」只能靠读 `display_name` + 经验，非机器可读。
-- **与 `visibility` 解耦**：两轴独立。`composition` 是**描述性**（这个 model 内部是不是串了多原子）；`visibility` 是**行为性**（编排下游选择器里能不能选它）。可任意组合：grounded-sam2 `segmentation` = `composite` + `public`（复合但单步仍可选）；onnxtools 一锅端 = `composite` + `internal`（复合且编排不可选）。
+- **动机**：model 目录把「原子」与「内部编排」平铺为平级条目，`task` 只描述输出形态、与「原子/复合」正交。`composition` 把「是原子还是内部编排」做成机器可读字段，取代早期靠读 `display_name` + 经验判断的做法。
+- **唯一的可见性/过滤轴**：`composition` 是平台过滤选用入口的唯一依据。**编排下游 stage 选择器只收 `atom`**（编排只组合原子，不把一锅端复合体当 stage）；单阶段 / 工作台多模型选择器不过滤，`composite` 可直接选用（开箱即用）。例：grounded-sam2 `segmentation` = `composite`（单步可选、但不作编排下游）；onnxtools 一锅端 `vehicle-attr` = `composite`（单阶段默认、不作编排下游）；`vehicle-detect` / `vehicle-attr-classify` = `atom`（可作编排上/下游）。
 - **缺省**：`atom`（绝大多数 model 是单次推理；老 backend 不报字段即按原子）。平台 `extract_capabilities` 透传，缺省回落 `atom`。
-- **边界**：纯元数据 —— 不改 `/predict` 协议、不参与兼容性校验。当前消费方仅模型市场据此给卡片打「原子 / 内置流程」徽标；下游选择器的过滤仍只看 `visibility`。
+- **边界**：不改 `/predict` 协议、不参与兼容性校验。消费方：模型市场据此给卡片打「原子 / 内置流程」徽标；编排下游选择器 + 属性导入源据此过滤（只取 `atom`）。
 
 ### 4.1.4 平台派生形态（health_meta）
 

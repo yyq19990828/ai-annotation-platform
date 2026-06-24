@@ -187,14 +187,14 @@ export function StageCard({
     ? cfg.buildArgs("skip_predicted")
     : null;
 
-  // v0.18.2 / v0.18.12 · 下游可选 model: 非交互、非 internal 的批量原子 ——
+  // v0.18.2 / v0.18.13 · 下游可选 model: 非交互、原子 (composition!=composite) 的批量单元 ——
   //   classification (上游裁 ROI 跑分类, crop 投递) 或 box-seg (segmentation + bbox prompt,
-  //   消费上游框出 mask, geometry 投递)。internal/交互式/复合文本 model 不作下游。
+  //   消费上游框出 mask, geometry 投递)。编排只组合 atom: 一锅端 composite / 交互式不作下游。
   const downstreamModels = useMemo(() => {
     const models = cfg.capabilitiesQ.data?.models ?? [];
     return models.filter(
       (m) =>
-        m.visibility !== "internal" &&
+        m.composition !== "composite" &&
         !m.is_interactive &&
         (m.task === "classification" ||
           (m.task === "segmentation" && (m.supported_prompts ?? []).includes("bbox"))),

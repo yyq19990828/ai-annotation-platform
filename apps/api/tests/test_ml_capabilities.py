@@ -36,20 +36,19 @@ def test_extract_passes_through_output_attribute_schema():
 
 
 def test_composition_passthrough_and_default():
-    """协议 v2.2 · composition 透传; 缺省 atom; 与 visibility 解耦。"""
+    """协议 v2.2 · composition 透传; 缺省 atom（visibility 字段已删,仅留 composition 一根轴）。"""
     setup = {
         "name": "onnxtools-backend",
         "infra": "onnx",
         "models": [
-            # 显式 composite + internal（一锅端：复合且编排不可选）。
+            # 显式 composite（一锅端：内部编排复合）。
             {
                 "id": "vehicle-attr",
                 "task": "detection",
                 "composition": "composite",
-                "visibility": "internal",
                 "supported_geometric_outputs": ["bbox"],
             },
-            # 显式 atom + public（纯检测原子）。
+            # 显式 atom（纯检测原子）。
             {
                 "id": "vehicle-detect",
                 "task": "detection",
@@ -66,11 +65,11 @@ def test_composition_passthrough_and_default():
     }
     models = {m["id"]: m for m in extract_capabilities(setup)["models"]}
     assert models["vehicle-attr"]["composition"] == "composite"
-    assert models["vehicle-attr"]["visibility"] == "internal"
     assert models["vehicle-detect"]["composition"] == "atom"
-    assert models["vehicle-detect"]["visibility"] == "public"
     # 缺省回落 atom。
     assert models["vehicle-attr-classify"]["composition"] == "atom"
+    # visibility 字段已删:不应再透传。
+    assert "visibility" not in models["vehicle-attr"]
 
 
 def test_legacy_backend_composition_defaults_atom():

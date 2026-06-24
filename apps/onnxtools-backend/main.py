@@ -1,22 +1,26 @@
-"""onnxtools-backend FastAPI 入口 —— 二阶段车辆属性预标注（ml-backend 协议 v2.1）。
+"""onnxtools-backend FastAPI 入口 —— 二阶段车辆属性预标注（ml-backend 协议 v2.2）。
 
 端点：
     GET  /health    健康检查
-    GET  /setup     协议 v2.1 model 目录（三个 model，自报 output_attribute_schema）
+    GET  /setup     协议 v2.2 model 目录（三个 model，自报 output_attribute_schema）
     GET  /versions  版本
     POST /predict   批量预测（按 context.model_id 路由一锅端 / 纯检测 / 纯分类）
+    POST /unload    手动释放显存（运维侧用，ModelMarket 卸载按钮）
 
-启动时加载一次 VehicleAttributePipeline 常驻（rtdetr 检测 + va 分类），暴露三个 model：
-``vehicle-attr`` 跑完整一锅端 pipeline（internal，不对外选用）；``vehicle-detect`` 复用同一
-常驻 pipeline 内的 ``detector`` 只做检测、跳过 va（多阶段编排上游）；``vehicle-attr-classify``
-复用 ``va_classifier`` 只做分类、跳过 rtdetr（多阶段下游）。无 variant / pool / warmup。
+三个 model 分别架在各自单模型推理类上、按需懒加载：``vehicle-detect`` 直跑独立
+``RtdetrORT`` 只做检测（多阶段编排上游，composition=atom）；``vehicle-attr-classify``
+直跑独立 ``VehicleAttributeORT`` 只做分类（多阶段下游，atom）；``vehicle-attr`` 跑完整
+``VehicleAttributePipeline``（一锅端检测+属性，composition=composite，过渡保留）。
+detect-only 部署只加载检测器、classify-only 只加载分类器。无 variant / pool / warmup。
 `/setup.supported_prompts=["none"]`：纯批量，平台只走「批量预标」入口。
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -38,7 +42,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 
-BACKEND_VERSION = "0.3.0"
+BACKEND_VERSION = "0.4.0"
 MODEL_VERSION = "onnxtools-rtdetr+va"
 # 纯分类(跳过 rtdetr)的 model_version,与完整 pipeline 区分,便于历史 job 溯源。
 VA_MODEL_VERSION = "onnxtools-va"
@@ -55,23 +59,89 @@ DET_MODEL = os.environ.get("ONNXTOOLS_DET_MODEL", "rtdetr-2024080100.onnx")
 VA_MODEL = os.environ.get("ONNXTOOLS_VA_MODEL", "va_260612.onnx")
 CONF_THRES = float(os.environ.get("ONNXTOOLS_CONF_THRES", "0.5"))
 
+# idle-unload: 末次推理后空闲超 IDLE_UNLOAD_SECONDS 自动卸载(<=0 关闭)。与 yolo 对齐。
+IDLE_UNLOAD_SECONDS = float(os.environ.get("ONNXTOOLS_IDLE_UNLOAD_SECONDS", "600"))
+IDLE_CHECK_INTERVAL = float(os.environ.get("ONNXTOOLS_IDLE_CHECK_INTERVAL", "60"))
+
 _predictor: VehicleAttributePredictor | None = None
+_idle_task: asyncio.Task | None = None
+_last_used: float | None = None
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global _predictor
-    from onnxtools.pipeline import VehicleAttributePipeline  # 延迟到启动，避免 import 阻塞
+def _make_detector() -> Any:
+    """构造独立 rtdetr 检测器(RtdetrORT),只给检测权重。"""
+    from onnxtools import create_detector
 
-    pipeline = VehicleAttributePipeline(
+    return create_detector(
+        model_type="rtdetr",
+        onnx_path=os.path.join(MODEL_DIR, DET_MODEL),
+        conf_thres=CONF_THRES,
+    )
+
+
+def _make_va_classifier() -> Any:
+    """构造独立车辆属性分类器(VehicleAttributeORT),只给分类权重(type/color map 用包内默认)。"""
+    from onnxtools import VehicleAttributeORT
+
+    return VehicleAttributeORT(os.path.join(MODEL_DIR, VA_MODEL), conf_thres=CONF_THRES)
+
+
+def _make_pipeline() -> Any:
+    """构造一锅端 composite(VehicleAttributePipeline,内部自建 detector + va)。"""
+    from onnxtools.pipeline import VehicleAttributePipeline
+
+    return VehicleAttributePipeline(
         model_type="rtdetr",
         model_path=os.path.join(MODEL_DIR, DET_MODEL),
         va_model_path=os.path.join(MODEL_DIR, VA_MODEL),
         conf_thres=CONF_THRES,
     )
-    _predictor = VehicleAttributePredictor(pipeline)
-    logger.info("onnxtools-backend ready: model_dir=%s det=%s va=%s conf=%.2f", MODEL_DIR, DET_MODEL, VA_MODEL, CONF_THRES)
-    yield
+
+
+async def _idle_watcher() -> None:
+    """周期检查:末次推理后空闲超 IDLE_UNLOAD_SECONDS 则卸载全部句柄。"""
+    while True:
+        try:
+            await asyncio.sleep(IDLE_CHECK_INTERVAL)
+            if IDLE_UNLOAD_SECONDS <= 0 or _predictor is None or _last_used is None:
+                continue
+            if _predictor.loaded_count() == 0:
+                continue
+            idle = time.time() - _last_used
+            if idle >= IDLE_UNLOAD_SECONDS:
+                n = _predictor.unload()
+                logger.info("idle unloaded %d handles (idle=%.0fs)", n, idle)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("idle_watcher error: %s", exc)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _predictor, _idle_task
+    # 懒加载:不在启动时加载模型,首次 predict 按 model_id 构造对应句柄。
+    _predictor = VehicleAttributePredictor(
+        detector_factory=_make_detector,
+        va_factory=_make_va_classifier,
+        pipeline_factory=_make_pipeline,
+    )
+    _idle_task = asyncio.create_task(_idle_watcher())
+    logger.info(
+        "onnxtools-backend ready (lazy): model_dir=%s det=%s va=%s conf=%.2f idle_unload=%.0fs",
+        MODEL_DIR, DET_MODEL, VA_MODEL, CONF_THRES, IDLE_UNLOAD_SECONDS,
+    )
+    try:
+        yield
+    finally:
+        if _idle_task is not None:
+            _idle_task.cancel()
+            try:
+                await _idle_task
+            except (asyncio.CancelledError, BaseException):
+                pass
+        if _predictor is not None:
+            _predictor.unload()
 
 
 app = FastAPI(title="onnxtools-backend", version=BACKEND_VERSION, lifespan=lifespan)
@@ -85,6 +155,7 @@ def health() -> dict[str, Any]:
         "version": BACKEND_VERSION,
         "model_version": MODEL_VERSION,
         "ready": _predictor is not None,
+        "loaded_handles": _predictor.loaded_count() if _predictor is not None else 0,
     }
 
 
@@ -93,8 +164,8 @@ def _detect_model_entry() -> dict[str, Any]:
 
     单 backend「一锅端」场景:既出检测框又写车型/颜色属性。
 
-    visibility=internal:在能力目录可见(供运维/调试查看),但不对外开放给项目编排
-    选用——多阶段编排已拆成纯检测原子(上游)+ 纯分类原子(下游),这个一体管线保留备查。
+    composition=composite:一个 model 内部串 rtdetr(检测)+ va(属性分类),内部编排复合。
+    平台据此把它挡在「编排下游 stage」选择器外(编排只组合 atom),但单阶段可直接选用(开箱即用)。
     """
     return {
         "id": DETECT_MODEL_ID,
@@ -102,8 +173,6 @@ def _detect_model_entry() -> dict[str, Any]:
         "task": "detection",
         "model_family": "rtdetr-v1",
         "infra": "onnx",
-        # 能力目录可见但不可对外选用(平台/前端据此过滤选用入口、标「内部」徽标)。
-        "visibility": "internal",
         # 一个 model 内部串 rtdetr(检测)+ va(属性分类),内部编排复合。
         "composition": "composite",
         "is_interactive": False,
@@ -129,9 +198,7 @@ def _detect_only_model_entry() -> dict[str, Any]:
         "task": "detection",
         "model_family": "rtdetr-v1",
         "infra": "onnx",
-        # 对外开放的原子:多阶段编排上游检测阶段直接选用。
-        "visibility": "public",
-        # 单跑 rtdetr 检测,原子。
+        # 单跑 rtdetr 检测,原子。多阶段编排上游检测阶段直接选用。
         "composition": "atom",
         "is_interactive": False,
         "supported_prompts": ["none"],
@@ -154,9 +221,7 @@ def _classify_model_entry() -> dict[str, Any]:
         "task": "classification",
         "model_family": "PP-lcnet",
         "infra": "onnx",
-        # 对外开放的原子:多阶段编排下游分类阶段直接选用。
-        "visibility": "public",
-        # 单跑 va 属性分类,原子。
+        # 单跑 va 属性分类,原子。多阶段编排下游分类阶段直接选用。
         "composition": "atom",
         "is_interactive": False,
         "supported_prompts": ["none"],
@@ -171,8 +236,8 @@ def _classify_model_entry() -> dict[str, Any]:
 
 @app.get("/setup")
 def setup() -> dict[str, Any]:
-    """协议 v2.1 模型目录:广播三个 model —— 一锅端检测+属性(visibility=internal,目录
-    可见但不对外选用)+ 纯检测原子(public,多阶段上游)+ 纯分类原子(public,多阶段下游)。"""
+    """协议 v2.2 模型目录:广播三个 model —— 一锅端检测+属性(composite,单阶段可选)
+    + 纯检测原子(atom,多阶段上游)+ 纯分类原子(atom,多阶段下游)。predict 对三者路由均支持。"""
     return {
         "protocol_version": PROTOCOL_VERSION,
         "compat_protocol_versions": COMPAT_PROTOCOL_VERSIONS,
@@ -183,8 +248,6 @@ def setup() -> dict[str, Any]:
         "supported_prompts": ["none"],
         "supported_geometric_outputs": ["bbox"],
         "infra": "onnx",
-        # 一锅端(检测+属性)visibility=internal:目录可见但平台/前端从对外选用入口过滤掉;
-        # 纯检测 + 纯分类原子 visibility=public 对外开放。predict 对三者路由均支持。
         "models": [_detect_model_entry(), _detect_only_model_entry(), _classify_model_entry()],
     }
 
@@ -194,10 +257,21 @@ def versions() -> dict[str, Any]:
     return {"versions": [MODEL_VERSION], "backend_version": BACKEND_VERSION}
 
 
+@app.post("/unload")
+def unload() -> dict[str, Any]:
+    """手动卸载全部已加载句柄,释放显存(ModelMarket 卸载按钮 / 运维侧)。"""
+    if _predictor is None:
+        return {"ok": True, "unloaded": 0}
+    n = _predictor.unload()
+    return {"ok": True, "unloaded": n}
+
+
 @app.post("/predict", response_model=BatchPredictResponse)
 def predict(req: BatchPredictRequest) -> BatchPredictResponse:
+    global _last_used
     if _predictor is None:
         raise HTTPException(status_code=503, detail="backend not ready")
+    _last_used = time.time()
 
     # 协议 v2 多模型路由(按 context.model_id):纯分类 → 只跑 va;纯检测 → 只跑 rtdetr;
     # 否则(一锅端 vehicle-attr)走完整 pipeline。

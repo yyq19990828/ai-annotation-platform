@@ -153,6 +153,16 @@
   color: var(--sc-caution);
 }
 
+/* 单一可选 model 时「当前模型」只读展示(无下拉),与 select 同高对齐。 */
+.readonlyValue {
+  padding: 4px 8px;
+  color: var(--sc-foreground);
+  font-size: 11px;
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
+  border-radius: var(--radius-sm);
+}
+
 .docHint {
   flex-direction: row;
   align-items: flex-start;

@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import time
 from base64 import b64decode
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 from urllib.parse import urlparse
 
@@ -23,6 +24,20 @@ import cv2
 import numpy as np
 
 logger = logging.getLogger("onnxtools-backend.predictor")
+
+
+def _class_name_of(names: Any, cls: int) -> str:
+    """从检测器 ``class_names`` 取下标 ``cls`` 的类名，兼容 dict / list 两种载体。
+
+    ``BaseORT.class_names`` 读自 ONNX metadata，是 ``{int: str}`` dict；早先经 pipeline
+    ``_resolve_class_names`` 转成 list。原子层直接读 ``detector.class_names``（dict），但保留
+    list 兼容以防注入端形态不同。
+    """
+    if isinstance(names, Mapping):
+        return names.get(cls) or names.get(str(cls)) or "unknown"
+    if isinstance(names, Sequence) and not isinstance(names, (str, bytes)):
+        return names[cls] if 0 <= cls < len(names) else "unknown"
+    return "unknown"
 
 
 def load_image_bgr(file_path: str, *, http_timeout: float = 10.0) -> np.ndarray:
@@ -132,14 +147,67 @@ def detections_to_results(output: list[dict[str, Any]], img_w: int, img_h: int) 
 
 
 class VehicleAttributePredictor:
-    """围绕 VehicleAttributePipeline 的薄封装：加载图像 → 推理 → 映射协议 result。"""
+    """三句柄推理器:detect 原子(RtdetrORT)、classify 原子(VehicleAttributeORT)、
+    composite 一锅端(VehicleAttributePipeline),按需懒加载。
 
-    def __init__(self, pipeline: Any) -> None:
-        """Args: pipeline: onnxtools.pipeline.VehicleAttributePipeline 实例。"""
-        self._pipeline = pipeline
+    原子层直架单模型推理类(经注入的工厂构造),不再「伸手」借 pipeline 子模型——
+    detect-only 部署只加载检测器、classify-only 只加载分类器。composite 路径仍跑
+    ``VehicleAttributePipeline``(过渡保留,迟早由平台层编排两原子取代)。
+
+    本类不 import onnxtools:三个句柄由 ``*_factory`` 零参工厂(在 main.py 内 import
+    onnxtools 后注入)首调时构造并缓存,故纯映射 + 懒加载逻辑可用 fake 工厂隔离单测。
+    """
+
+    def __init__(
+        self,
+        *,
+        detector_factory: Callable[[], Any],
+        va_factory: Callable[[], Any],
+        pipeline_factory: Callable[[], Any],
+    ) -> None:
+        """Args: 三个零参工厂,分别构造 RtdetrORT / VehicleAttributeORT / VehicleAttributePipeline。"""
+        self._detector_factory = detector_factory
+        self._va_factory = va_factory
+        self._pipeline_factory = pipeline_factory
+        self._detector: Any = None
+        self._va_classifier: Any = None
+        self._pipeline: Any = None
+
+    @property
+    def detector(self) -> Any:
+        if self._detector is None:
+            logger.info("lazy-loading detector (RtdetrORT)")
+            self._detector = self._detector_factory()
+        return self._detector
+
+    @property
+    def va_classifier(self) -> Any:
+        if self._va_classifier is None:
+            logger.info("lazy-loading va_classifier (VehicleAttributeORT)")
+            self._va_classifier = self._va_factory()
+        return self._va_classifier
+
+    @property
+    def pipeline(self) -> Any:
+        if self._pipeline is None:
+            logger.info("lazy-loading pipeline (VehicleAttributePipeline)")
+            self._pipeline = self._pipeline_factory()
+        return self._pipeline
+
+    def loaded_count(self) -> int:
+        """当前已加载(非 None)的句柄数,供 /health 与 idle 判定。"""
+        return sum(h is not None for h in (self._detector, self._va_classifier, self._pipeline))
+
+    def unload(self) -> int:
+        """释放全部已加载句柄,返回释放数(供 /unload 与 idle-unload)。"""
+        n = self.loaded_count()
+        self._detector = None
+        self._va_classifier = None
+        self._pipeline = None
+        return n
 
     def predict_one(self, file_path: str) -> tuple[list[dict[str, Any]], int]:
-        """对单张图像推理。
+        """一锅端:整跑 composite pipeline(检测→ROI→属性分类)。
 
         Args:
             file_path: 图像来源（见 :func:`load_image_bgr`）。
@@ -150,15 +218,15 @@ class VehicleAttributePredictor:
         img = load_image_bgr(file_path)
         img_h, img_w = img.shape[:2]
         t0 = time.time()
-        output = self._pipeline(img)
+        output = self.pipeline(img)
         infer_ms = int((time.time() - t0) * 1000)
         return detections_to_results(output, img_w, img_h), infer_ms
 
     def detect_one(self, file_path: str) -> tuple[list[dict[str, Any]], int]:
-        """对单张图像只做 rtdetr 检测(跳过 va 属性分类)。
+        """纯检测原子:直跑独立 ``RtdetrORT``,只产检测框,不写 vehicle_type / color 属性。
 
-        复用 pipeline 已常驻的 ``detector``,只产检测框,不写 vehicle_type / color 属性。
-        用于多阶段编排的上游检测阶段——出框后交给下游纯分类原子补属性。
+        用于多阶段编排的上游检测阶段——出框后交给下游纯分类原子补属性。类名取自
+        ``detector.class_names``(ONNX metadata),不绕 pipeline。
 
         Args:
             file_path: 图像来源(见 :func:`load_image_bgr`)。
@@ -168,24 +236,25 @@ class VehicleAttributePredictor:
         """
         img = load_image_bgr(file_path)
         img_h, img_w = img.shape[:2]
+        detector = self.detector
         t0 = time.time()
-        result = self._pipeline.detector(img)
+        result = detector(img)
         infer_ms = int((time.time() - t0) * 1000)
-        names = self._pipeline.class_names
+        names = detector.class_names
         output: list[dict[str, Any]] = []
         for i in range(len(result)):
             xyxy = [float(c) for c in result.boxes[i]]
             cls = int(result.class_ids[i])
-            class_name = names[cls] if cls < len(names) else "unknown"
-            output.append({"type": class_name, "box2d": xyxy, "score": float(result.scores[i])})
+            output.append(
+                {"type": _class_name_of(names, cls), "box2d": xyxy, "score": float(result.scores[i])}
+            )
         return detections_to_results(output, img_w, img_h), infer_ms
 
     def classify_one(self, file_path: str) -> tuple[list[dict[str, Any]], int]:
-        """对单张已裁好的车辆 ROI 只做属性分类(跳过 rtdetr 检测)。
+        """纯分类原子:直跑独立 ``VehicleAttributeORT``,把整张输入图当作一辆车分类。
 
-        复用 pipeline 已常驻的 ``va_classifier`` (VehicleAttributeORT),把整张输入图
-        当作一辆车直接分类。用于多阶段编排的下游分类阶段——上游检测器(如 gsam2)
-        已框出并裁好 ROI,这里不再重复检测。
+        用于多阶段编排的下游分类阶段——上游检测器(如 gsam2)已框出并裁好 ROI,
+        这里不再重复检测。
 
         Args:
             file_path: 图像来源(见 :func:`load_image_bgr`)。
@@ -195,7 +264,7 @@ class VehicleAttributePredictor:
         """
         img = load_image_bgr(file_path)
         t0 = time.time()
-        va = self._pipeline.va_classifier(img)
+        va = self.va_classifier(img)
         infer_ms = int((time.time() - t0) * 1000)
         item = classification_to_result(
             va.labels[0],

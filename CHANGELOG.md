@@ -34,6 +34,20 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.13] - 2026-06-24
+
+onnxtools 原子层直架单模型推理类 + 删 `visibility` 字段改用 `composition` 单轴过滤 + 单阶段配置修复。修了 v0.18.9 拆原子时把单后端「检测+属性一把梭」从单阶段路径弄丢的回归（用户无感）：onnxtools 三个 model 各架在自己的单模型类上（`vehicle-detect`→独立 `RtdetrORT`、`vehicle-attr-classify`→独立 `VehicleAttributeORT`、`vehicle-attr` 一锅端→`VehicleAttributePipeline`），按 model_id 懒加载——detect-only 部署只加载检测器、classify-only 只加载分类器。同时把 v0.18.11 引入的 `visibility` 字段整体删除（全平台仅 onnxtools 一处用、且与 `composition` 语义重载），过滤统一收敛到 `composition` 一根轴：编排下游 stage 只组合 `atom`，单阶段/工作台不过滤、一锅端 `vehicle-attr` 可作开箱即用默认。
+
+### Added
+
+- **onnxtools `/unload` + idle-unload**：新增 `POST /unload`（ModelMarket 卸载按钮直接生效，UI 零改动）+ 空闲计时器（`ONNXTOOLS_IDLE_UNLOAD_SECONDS` 默认 600s），按 model 句柄粒度释放显存。与 yolo/gsam2 体验对齐。
+- **单阶段「当前模型」只读展示**：预标配置面板在单一可选 model 时不再「什么都不显示」，改出只读「当前模型」行（模型市场卡片标题），任何 backend 单阶段都能看到将跑哪个 model。模型市场卡片视图（ModelCard）补「原子 / 内置流程」徽标，与列表视图一致。
+
+### Changed
+
+- **onnxtools 原子层解耦**：`VehicleAttributePredictor` 改为持有 detector / va_classifier / pipeline 三句柄（经注入工厂懒加载），`detect_one`/`classify_one` 走各自独立单模型实例、不再「伸手」借 pipeline 子模型；类名取自 `detector.class_names`（ONNX metadata），不绕 pipeline。
+- **删 `visibility` 字段，过滤改 `composition` 轴**：协议 schema（`ModelCapability` / `InstanceModelItem`）、service 透传、前端类型与 5 个过滤点统一去 `visibility`。编排下游 stage 选择器 + 属性导入源改按 `composition`（只收 / 只留 `atom`）；单阶段默认模型/几何模型列表、工作台多模型选择器取消过滤（含 composite，可手动选）。`vehicle-attr` 由 `internal` 改为 `composite`（单阶段可选）。
+
 ## [0.18.12] - 2026-06-24
 
 多阶段预标注（路径 B）下游几何原子化 + 配置 UX 彻底 model-first 统一：gsam2 暴露独立的「框→掩膜」纯几何原子（开放/非交互/原子），使「检测（出框）→ 几何分割（吃框出掩膜）」可端到端跑通；协议升 v2.2（纯加法）引入 `composition`（atom/composite）维度与几何 prompt 批量入参。同时把预标配置面板的三条配置路径（doc / 几何 / 文本）统一收敛为「选 model（= 模型市场卡片）」的 model-first 范式——所有 ml 后端统一走 `model_id + task_type + model_variants` 这一套 wire，文本路径（gsam2/sam3）不再是输出形态开关的特例。

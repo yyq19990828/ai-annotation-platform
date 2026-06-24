@@ -138,8 +138,8 @@ export function PreannotateConfigForm({
 
       {/* v0.14.17 / v0.18.12 · 统一「模型任务」下拉: 几何 (YOLO, 闭集) 与文本 (gsam2/sam3, 开集)
           共用 —— 选项 = 模型市场卡片 model, value 直接是 model_id (真值键), 文案 = 卡片标题 (display_name)。
-          统一 wire 发 model_id。多于 1 个可选 model 才显示。 */}
-      {taskModels.length > 1 && (
+          统一 wire 发 model_id。多于 1 个可选 model 出下拉。 */}
+      {taskModels.length > 1 ? (
         <label className={styles.field}>
           <span className={styles.fieldLabel}>模型任务</span>
           <select
@@ -154,7 +154,14 @@ export function PreannotateConfigForm({
             ))}
           </select>
         </label>
-      )}
+      ) : taskModel ? (
+        // v0.18.13 · 单一可选 model 不出下拉, 仍只读展示「当前模型」(模型市场卡片标题),
+        //   任何 backend 单阶段都能看到将跑哪个 model, 不再「什么都不显示」。
+        <div className={styles.field}>
+          <span className={styles.fieldLabel}>当前模型</span>
+          <span className={styles.readonlyValue}>{taskModelLabel(taskModel)}</span>
+        </div>
+      ) : null}
 
       {/* v0.14.17 · YOLO 类别白名单勾选 ([index]类名). 留空=全部. */}
       {cfg.isGeometricBackend && (

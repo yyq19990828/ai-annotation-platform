@@ -67,3 +67,13 @@ export function taskSuffix(task: string | undefined): string {
   if (!task) return "";
   return TASK_SUFFIX[task] ?? task;
 }
+
+// composition → badge (协议 v2.2 · 原子 vs 内部编排)。atom=单次推理原子; composite=一个 model
+// 内部串多原子的内置流程。老 backend 缺字段 → 不渲染。ModelCard / ModelListTable 共用。
+export const COMPOSITION_BADGE: Record<
+  string,
+  { variant: "outline" | "ai"; label: string; title: string }
+> = {
+  atom: { variant: "outline", label: "原子", title: "单次推理原子，可作编排单元" },
+  composite: { variant: "ai", label: "内置流程", title: "一个 model 内部串联多个原子（内置编排）" },
+};

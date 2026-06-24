@@ -7885,6 +7885,11 @@
       "InstanceModelItem": {
         "description": "实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 resource_profile /\nparams 等运维信息; v0.14.12 起补 supported_variants + variant_combinations 让\n前端能按主轴展开「具体模型」行).",
         "properties": {
+          "composition": {
+            "default": "atom",
+            "title": "Composition",
+            "type": "string"
+          },
           "default_variants": {
             "additionalProperties": {
               "type": "string"
@@ -8008,11 +8013,6 @@
             "default": false,
             "title": "Variants Shared Across Tasks",
             "type": "boolean"
-          },
-          "visibility": {
-            "default": "public",
-            "title": "Visibility",
-            "type": "string"
           }
         },
         "required": [
@@ -8982,6 +8982,11 @@
             "title": "Classes",
             "type": "array"
           },
+          "composition": {
+            "default": "atom",
+            "title": "Composition",
+            "type": "string"
+          },
           "default_thresholds": {
             "additionalProperties": true,
             "default": {},
@@ -9133,11 +9138,6 @@
             "default": false,
             "title": "Variants Shared Across Tasks",
             "type": "boolean"
-          },
-          "visibility": {
-            "default": "public",
-            "title": "Visibility",
-            "type": "string"
           }
         },
         "required": [
@@ -19720,7 +19720,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.18.11"
+    "version": "0.18.13"
   },
   "openapi": "3.1.0",
   "paths": {

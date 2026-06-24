@@ -76,8 +76,8 @@ export interface CapabilityInstanceModel {
   display_name: string;
   task: string;
   model_family?: string | null;
-  // 能力可见性: internal=目录可见但不对外选用; public/缺省=对外开放.
-  visibility?: "internal" | "public";
+  // 原子 vs 内部编排 (协议 v2.2): atom=单次推理原子; composite=内部编排多原子. 缺省 atom.
+  composition?: "atom" | "composite";
   infra: string | null;
   is_interactive: boolean;
   supported_prompts: string[];
