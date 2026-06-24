@@ -38,18 +38,17 @@ import type {
   FlatModel,
   CatalogViewMode,
   CatalogGroupBy,
-  CatalogSort,
 } from "./capability/types";
 import {
   effectiveInfra,
   effectiveModalities,
-  compareModel,
   groupModels,
   toggle,
 } from "./capability/catalogModel";
 import { FilterToolbar } from "./capability/FilterToolbar";
 import { ModelListTable } from "./capability/ModelListTable";
 import { ModelCard } from "./capability/ModelCard";
+import { ProtocolCapabilityListTable } from "./ProtocolCapabilityListTable";
 
 const NOTE_CLASS = "p-4 text-xs text-muted-foreground";
 const EMPTY_STATE_CLASS =
@@ -81,7 +80,6 @@ export function CapabilityCatalogPanel() {
   const [viewMode, setViewMode] = useState<CatalogViewMode>("cards");
   // v0.14.11 · 默认按协议能力 (task) 分组, 即使无 backend 注册也展示 9 张协议卡。
   const [groupBy, setGroupBy] = useState<CatalogGroupBy>("task");
-  const [sortBy, setSortBy] = useState<CatalogSort>("name");
   const [search, setSearch] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -315,11 +313,7 @@ export function CapabilityCatalogPanel() {
     });
   }, [flatModels, taskFilter, familyFilter, infraFilter, modalityFilter, search]);
 
-  const sorted = useMemo(() => {
-    return [...filtered].sort((a, b) => compareModel(a, b, sortBy));
-  }, [filtered, sortBy]);
-
-  const grouped = useMemo(() => groupModels(sorted, groupBy), [groupBy, sorted]);
+  const grouped = useMemo(() => groupModels(filtered, groupBy), [filtered, groupBy]);
 
   // v0.14.11 · 协议卡视图: 遍历 protocol.tasks 渲染 9 张卡 (零接入也显示);
   // 数据源是 instances 端点 (env-only + 注册合并, 与 admin overview 完全解耦),
@@ -513,16 +507,6 @@ export function CapabilityCatalogPanel() {
                   <option value="none">不分组</option>
                 </select>
               </label>
-              {viewMode === "list" && (
-                <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-                  排序
-                  <select value={sortBy} onChange={(e) => setSortBy(e.target.value as CatalogSort)} className={SELECT_CLASS}>
-                    <option value="name">模型名</option>
-                    <option value="task">任务</option>
-                    <option value="infra">infra</option>
-                  </select>
-                </label>
-              )}
             </div>
 
             {/* 探测失败的 backend 降级提示 (能力目录可能缺条目). */}
@@ -538,7 +522,7 @@ export function CapabilityCatalogPanel() {
             {anyCapLoading && flatModels.length === 0 && groupBy !== "task" ? (
               <div className={NOTE_CLASS}>探测各 backend 能力中…</div>
             ) : groupBy === "task" && protocolView ? (
-              // v0.14.11 · 协议卡视图: 即使 sorted 为空也展示协议卡 (零接入引导)。
+              // v0.14.11 · 协议卡视图: 即使模型清单为空也展示协议卡 (零接入引导)。
               <>
                 {/* v0.14.11 · 横幅触发改为「所有协议卡都没有 model 挂载」(覆盖
                     env-only + 注册两条路径), 而非只看注册数。这样 docker-compose
@@ -559,7 +543,7 @@ export function CapabilityCatalogPanel() {
                       </button>
                     )}
                   </div>
-                ) : (
+                ) : viewMode === "cards" ? (
                   <div className="flex flex-col gap-3 p-4">
                     {protocolView.map(({ task, mounted }) => (
                       <ProtocolCapabilityCard
@@ -572,9 +556,18 @@ export function CapabilityCatalogPanel() {
                       />
                     ))}
                   </div>
+                ) : (
+                  <div className="p-4">
+                    <ProtocolCapabilityListTable
+                      rows={protocolView}
+                      infraLabel={infraLabel}
+                      modalityLabel={modalityLabel}
+                      onGoToRegistry={goToRegistry}
+                    />
+                  </div>
                 )}
               </>
-            ) : sorted.length === 0 ? (
+            ) : filtered.length === 0 ? (
               <div className={EMPTY_STATE_CLASS}>
                 <Icon name="filter" size={24} className="opacity-30" />
                 <div>{hasActiveFilter ? "当前过滤条件无匹配模型" : "暂无可用模型条目"}</div>

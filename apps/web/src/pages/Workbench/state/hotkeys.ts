@@ -32,8 +32,8 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["E"], desc: "Mask 工具激活时: 切橡皮模式", group: "draw" },
   { keys: ["Enter"], desc: "Mask 工具激活时: 提交 mask → polygon 落库", group: "draw" },
   { keys: ["Alt", "3"], desc: "多边形工具（备用）", group: "draw", actionType: "setTool" },
-  { keys: ["V"], desc: "平移工具", group: "draw", actionType: "setTool" },
-  { keys: ["Alt", "4"], desc: "平移工具（备用）", group: "draw", actionType: "setTool" },
+  { keys: ["V"], desc: "选择工具：点选 / 移动已有标注与预标注", group: "draw", actionType: "setTool" },
+  { keys: ["Alt", "4"], desc: "选择工具（备用）", group: "draw", actionType: "setTool" },
   { keys: ["Enter"], desc: "闭合多边形（≥3 顶点）", group: "draw" },
   { keys: ["Backspace"], desc: "删除多边形最后一点 / 删除选中框", group: "draw", actionType: "deleteSelected" },
   { keys: ["拖动顶点"], desc: "多边形顶点拖动（选中时）", group: "draw" },
@@ -54,9 +54,6 @@ export const HOTKEYS: HotkeyDef[] = [
   // I12 · Object Group + 批量编辑
   { keys: ["Ctrl", "G"], desc: "把选中的 ≥2 个标注合并为一个组（同色虚线外框）", group: "draw", actionType: "annotationGroup" },
   { keys: ["Ctrl", "Shift", "G"], desc: "把选中的标注从组里拆出（剩 1 个成员的组自动解散）", group: "draw", actionType: "annotationUngroup" },
-  { keys: ["[ / ]"], desc: "属性模式开启时：切换属性字段", group: "draw", actionType: "attributeModeField" },
-  { keys: ["1 — 9"], desc: "属性模式开启时：选择当前属性值", group: "draw", actionType: "attributeModeValue" },
-  { keys: ["N"], desc: "属性模式开启时：跳到下一个未填写当前属性的对象", group: "draw", actionType: "attributeModeNextMissing" },
 
   { keys: ["Ctrl", "Z"], desc: "撤销", group: "draw", actionType: "undo" },
   { keys: ["Ctrl", "Shift", "Z"], desc: "重做", group: "draw", actionType: "redo" },
@@ -67,8 +64,9 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Space", "+ drag"], desc: "平移画布", group: "view", actionType: "spacePanOn" },
   { keys: ["双击空白"], desc: "适应视口", group: "view" },
 
-  { keys: ["Space"], desc: "视频播放 / 暂停", group: "video", actionType: "videoTogglePlayback" },
+  { keys: ["Space"], desc: "视频播放 / 暂停；按住拖拽平移画布", group: "video", actionType: "videoSpaceDown" },
   { keys: ["J / K / L"], desc: "视频反向 / 暂停 / 正向多速率播放", group: "video", actionType: "videoJogPlayback" },
+  { keys: ["V"], desc: "视频选择工具", group: "video", actionType: "setVideoTool" },
   { keys: ["B"], desc: "视频矩形框工具", group: "video", actionType: "setVideoTool" },
   { keys: ["T"], desc: "视频轨迹工具", group: "video", actionType: "setVideoTool" },
   { keys: ["← / →"], desc: "上一帧 / 下一帧（采样开启时按网格跳）", group: "video", actionType: "videoSeek" },
@@ -93,7 +91,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["1 — 9"], desc: "切换视频类别（有选中则改选中对象）", group: "video", actionType: "setClassByDigit" },
 
   { keys: ["A"], desc: "采纳选中 AI 框", group: "ai", actionType: "acceptAi" },
-  { keys: ["D"], desc: "驳回选中 AI 框", group: "ai", actionType: "rejectAi" },
+  { keys: ["D"], desc: "忽略选中 AI 框", group: "ai", actionType: "rejectAi" },
   { keys: ["["], desc: "选中态：z_order -1；否则降置信度阈值", group: "ai", actionType: "thresholdAdjust" },
   { keys: ["]"], desc: "选中态：z_order +1；否则升置信度阈值", group: "ai", actionType: "thresholdAdjust" },
   { keys: ["L"], desc: "切换选中 shape 锁定状态", group: "draw", actionType: "toggleShapeFlag" },
@@ -123,7 +121,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["← / →"], desc: "3D：相机放大浮层内切换相机（Esc 关闭）", group: "threed" },
 
   { keys: ["?"], desc: "打开本面板", group: "system", actionType: "showHotkeys" },
-  { keys: ["Esc"], desc: "取消选择 / 关闭弹窗", group: "system", actionType: "cancel" },
+  { keys: ["Esc"], desc: "取消草稿 / 选择 / 关闭弹窗；都没有时回到选择工具", group: "system", actionType: "cancel" },
 ];
 
 export const GROUP_LABEL: Record<HotkeyGroup, string> = {
@@ -158,8 +156,8 @@ export type HotkeyAction =
   | { type: "cycleUser"; dir: 1 | -1; loop: boolean }
   | { type: "smartNext"; mode: "open" | "uncertain" }
   | { type: "changeClass" }
-  | { type: "setTool"; tool: "box" | "rotated-box" | "hand" | "polygon" | "polyline" | "keypoint" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box" | "ai-cycle" }
-  | { type: "setVideoTool"; tool: "box" | "track" | "hand" }
+  | { type: "setTool"; tool: "select" | "box" | "rotated-box" | "hand" | "polygon" | "polyline" | "keypoint" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box" | "ai-cycle" }
+  | { type: "setVideoTool"; tool: "select" | "box" | "track" }
   | { type: "setClassByDigit"; idx: number }
   | { type: "setClassByLetter"; letter: string }
   | { type: "setAttribute"; key: string; value: unknown }
@@ -172,6 +170,7 @@ export type HotkeyAction =
   | { type: "rejectAi" }
   | { type: "samPolarity"; polarity: "positive" | "negative" }
   | { type: "videoTogglePlayback" }
+  | { type: "videoSpaceDown" }
   | { type: "videoJogPlayback"; dir: -1 | 1 }
   | { type: "videoPausePlayback" }
   | { type: "videoSeek"; delta: number }
@@ -269,10 +268,11 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
       if (e.key === "1") return { type: "setVideoTool", tool: "box" };
       if (e.key === "2") return { type: "setVideoTool", tool: "track" };
-      if (e.key === "3") return { type: "setVideoTool", tool: "hand" };
+      if (e.key === "3") return { type: "setVideoTool", tool: "select" };
       if (e.key === "l" || e.key === "L") return { type: "videoClearLoopRegion" };
+      return null;
     }
-    if (e.key === " ") return { type: "videoTogglePlayback" };
+    if (e.key === " ") return { type: "videoSpaceDown" };
     if (e.key === "j" || e.key === "J") return { type: "videoJogPlayback", dir: -1 };
     if (e.key === "k" || e.key === "K") return { type: "videoPausePlayback" };
     if (ctx.hasSelectedVideoTrack) {
@@ -282,10 +282,9 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
       if (e.key === "l" || e.key === "L") return { type: "videoToggleLockedTrack" };
     }
     if (e.key === "l" || e.key === "L") return { type: "videoJogPlayback", dir: 1 };
+    if (e.key === "v" || e.key === "V") return { type: "setVideoTool", tool: "select" };
     if (e.key === "b" || e.key === "B") return { type: "setVideoTool", tool: "box" };
     if (e.key === "t" || e.key === "T") return { type: "setVideoTool", tool: "track" };
-    // v0.11.29 · V = 视图/平移工具（hand），与图片工作台一致；H 已被「隐藏轨迹」占用。
-    if (e.key === "v" || e.key === "V") return { type: "setVideoTool", tool: "hand" };
     // 视频导航只保留两类心智模型：箭头负责帧导航，,/. 负责选中轨迹的关键帧导航。
     if (ctx.samplingActive) {
       if (e.key === "ArrowRight") {
@@ -341,7 +340,7 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.key === "2") return { type: "setTool", tool: "polygon" };
     // v0.10.2 · Alt+3 进入 AI 工具组 (循环). 单按 S 同样进入循环.
     if (e.key === "3") return { type: "setTool", tool: "ai-cycle" };
-    if (e.key === "4") return { type: "setTool", tool: "hand" };
+    if (e.key === "4") return { type: "setTool", tool: "select" };
   }
 
   // v0.14.1 · Alt+→ / Alt+← 跨帧目标延续(2D / 3D 统一键; 2D 的 Shift+← / → 已被
@@ -406,7 +405,7 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   // C 键（无修饰）：选中态走改类别；否则不消费。a/d 同理（接 AI accept/reject）。
   if ((e.key === "c" || e.key === "C") && ctx.hasSelection) return { type: "changeClass" };
 
-  if (e.key === "v" || e.key === "V") return { type: "setTool", tool: "hand" };
+  if (e.key === "v" || e.key === "V") return { type: "setTool", tool: "select" };
   if (e.key === "b" || e.key === "B") return { type: "setTool", tool: "box" };
   // v0.10.28 · W 单键直达旋转框 (OBB) 工具 (O 已被视频 outside 占用，且为保留键)。
   if (e.key === "w" || e.key === "W") return { type: "setTool", tool: "rotated-box" };

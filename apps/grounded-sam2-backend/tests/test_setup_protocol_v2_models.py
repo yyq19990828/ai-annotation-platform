@@ -15,16 +15,40 @@ def test_setup_top_level_infra_is_pytorch():
     assert data["infra"] == "pytorch"
 
 
-def test_setup_protocol_version_v21():
+def test_setup_protocol_version_v22():
     data = setup()
-    assert data["protocol_version"] == "2.1"
-    assert data["compat_protocol_versions"] == ["2.0"]
+    assert data["protocol_version"] == "2.2"
+    assert data["compat_protocol_versions"] == ["2.1", "2.0"]
 
 
-def test_setup_exposes_four_models():
+def test_setup_exposes_five_models():
+    """v0.18.12 起新增 box-seg 原子, 共 5 个 model。"""
     data = setup()
     assert isinstance(data["models"], list)
-    assert len(data["models"]) == 4
+    assert len(data["models"]) == 5
+
+
+def test_box_seg_model_is_public_non_interactive_atom():
+    """v0.18.12 · 框→mask 批量分割原子: public(无 visibility)、非交互、composition=atom、bbox→polygon。"""
+    data = setup()
+    box_seg = next(m for m in data["models"] if m["id"] == "grounded-sam2-box-seg")
+    assert box_seg["task"] == "segmentation"
+    assert box_seg["is_interactive"] is False
+    assert box_seg["supported_prompts"] == ["bbox"]
+    assert box_seg["supported_geometric_outputs"] == ["polygon"]
+    assert box_seg["composition"] == "atom"
+    # public: 不声明 visibility(平台缺省 public), 与 internal 区分。
+    assert box_seg.get("visibility") in (None, "public")
+
+
+def test_composition_annotations():
+    """v0.18.12 · 各 model 显式标 composition(原子 vs 内部编排)。"""
+    by_id = {m["id"]: m for m in setup()["models"]}
+    assert by_id["grounded-sam2-detection"]["composition"] == "atom"
+    assert by_id["grounded-sam2-segmentation"]["composition"] == "composite"
+    assert by_id["grounded-sam2-interactive-seg"]["composition"] == "atom"
+    assert by_id["grounded-sam2-tracker"]["composition"] == "composite"
+    assert by_id["grounded-sam2-box-seg"]["composition"] == "atom"
 
 
 def test_setup_models_cover_protocol_tasks():

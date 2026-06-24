@@ -20,6 +20,12 @@ interface MaskToolbarProps {
 
 const cn = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 
+// 模式切换按钮：颜色 utility 按 active/idle 互斥下发。朴素 cn() 不做 tailwind-merge，
+// 若把中性色塞进无条件基础类，会与激活色类同挂、由 CSS 源顺序静默裁决导致高亮失效。
+const MODE_BTN_BASE = "cursor-pointer appearance-none rounded border px-2.5 py-1 text-xs";
+const MODE_BTN_IDLE = "border-border bg-transparent text-foreground";
+const MODE_BTN_ACTIVE = "border-brand/30 bg-brand/10 text-brand";
+
 export function MaskToolbar({
   active, mode, radius, dirty,
   onSetMode, onSetRadius, onCommit, onCancel,
@@ -35,20 +41,14 @@ export function MaskToolbar({
         <button
           type="button"
           onClick={() => onSetMode("brush")}
-          className={cn(
-            "cursor-pointer appearance-none rounded border border-border bg-transparent px-2.5 py-1 text-xs text-foreground",
-            mode === "brush" && "border-brand/30 bg-brand/10 text-brand",
-          )}
+          className={cn(MODE_BTN_BASE, mode === "brush" ? MODE_BTN_ACTIVE : MODE_BTN_IDLE)}
           title="笔刷 (B)"
           data-testid="mask-mode-brush"
         >笔刷 B</button>
         <button
           type="button"
           onClick={() => onSetMode("erase")}
-          className={cn(
-            "cursor-pointer appearance-none rounded border border-border bg-transparent px-2.5 py-1 text-xs text-foreground",
-            mode === "erase" && "border-brand/30 bg-brand/10 text-brand",
-          )}
+          className={cn(MODE_BTN_BASE, mode === "erase" ? MODE_BTN_ACTIVE : MODE_BTN_IDLE)}
           title="橡皮 (E)"
           data-testid="mask-mode-erase"
         >橡皮 E</button>

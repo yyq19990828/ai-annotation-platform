@@ -1,5 +1,6 @@
 import { apiClient } from "./client";
 import type { MLBackendResponse } from "@/types";
+import type { OutputAttributeSchemaItem } from "./mlCapabilities";
 
 export interface MLBackendCreatePayload {
   name: string;
@@ -43,11 +44,18 @@ export interface MLModelCapability {
   display_name?: string;
   task?: string;
   model_family?: string;
+  // 原子 vs 内部编排 (协议 v2.2): atom=单次推理原子; composite=一个 model 内部串多原子.
+  // 缺省/老 backend = atom. 模型市场据此打「原子/内置流程」徽标; 编排下游 stage 只收 atom.
+  composition?: "atom" | "composite";
   infra?: string;
   is_interactive?: boolean;
   supported_prompts?: string[];
   supported_geometric_outputs?: string[];
   output_attribute_types?: string[];
+  // v0.18.0 · backend 自报输出属性 schema (含 select options); 二阶段 backend (onnxtools
+  // 车辆属性) 声明 /predict 会写哪些 attributes。`/capabilities` 经 ModelCapability 透传。
+  // 多阶段预标 StageCard 的「写回属性键」多选据此列选项。老 backend 缺字段 = 无属性输出。
+  output_attribute_schema?: OutputAttributeSchemaItem[];
   supported_text_outputs?: string[];
   supported_trackers?: string[];
   supported_variants?: MLBackendSupportedVariantGroup[];

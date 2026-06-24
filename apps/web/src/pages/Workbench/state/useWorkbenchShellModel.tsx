@@ -103,12 +103,6 @@ import { useImageAnnotationActions } from "../stages/image/useImageAnnotationAct
 import { useMaskEditor } from "./useMaskEditor";
 import { MaskToolbar } from "../shell/MaskToolbar";
 import { useVideoAnnotationActions } from "../stages/video/useVideoAnnotationActions";
-import { AttributeModeBar } from "../shell/AttributeModeBar";
-import {
-  applyAttributeModeValue,
-  canApplyAttributeModeToAnnotation,
-  normalizeAttributeModeState,
-} from "./attributeMode";
 import {
   buildPredictParams,
   promptOfTool,
@@ -202,7 +196,7 @@ export function useWorkbenchShellModel({
   const firstBackendId = backends[0]?.id ?? null;
   const [batchBackendId, setBatchBackendId] = useState<string | null>(null);
   // 工作台是常驻 session: 用户在 AI 面板手动选过批量 backend 后, 不能因项目默认后端被外部改动
-  // (如另一 Tab "设为默认") 或后端列表顺序变化 (firstBackendId 变) 而被静默重置。
+  // (如另一 Tab "设为主后端") 或后端列表顺序变化 (firstBackendId 变) 而被静默重置。
   // 仅切项目时重置手动标记并按默认重新初始化; 同项目内只在用户未手动选过时跟随默认变化补齐。
   const batchManuallyPickedRef = useRef(false);
   const batchProjectRef = useRef<string | null | undefined>(undefined);
@@ -428,11 +422,11 @@ export function useWorkbenchShellModel({
       })),
     [videoChaptersData],
   );
-  // v0.11.29 · 当前 videoTool 被 video_modes 过滤掉时, 切到可用工具 (否则默认按钮指向隐藏项)。hand 始终可用。
+  // 当前创建工具被 video_modes 过滤掉时, 回到选择工具；平移不再是 fallback 工具。
   useEffect(() => {
     if (!isVideoTask || !videoModes) return;
-    if (videoTool === "box" && !videoModes.box) setVideoTool(videoModes.track ? "track" : "hand");
-    else if (videoTool === "track" && !videoModes.track) setVideoTool(videoModes.box ? "box" : "hand");
+    if (videoTool === "box" && !videoModes.box) setVideoTool("select");
+    else if (videoTool === "track" && !videoModes.track) setVideoTool("select");
   }, [isVideoTask, videoModes, videoTool, setVideoTool]);
   useEffect(() => {
     if (!isVideoTask) return;
@@ -817,7 +811,7 @@ export function useWorkbenchShellModel({
   });
   // AI"配置区"共享状态 (任务类型 / 模型任务 / 类别白名单 / variant / 参数 / 输出形态 / buildArgs);
   // 与批量页 ProjectDetailPanel 同一 hook + PreannotateConfigForm (单一事实源). 驱动批量 AI 面板
-  // (开始预标) — 批量线, 用 batchBackendId.
+  // (运行当前题 AI) — 批量线, 用 batchBackendId.
   const preCfg = usePreannotateConfig({
     projectId: projectId ?? "",
     backendId: batchBackendId,
@@ -846,10 +840,10 @@ export function useWorkbenchShellModel({
     if (!isAIToolId(s.tool)) return;
     const requiredPrompt = promptOfTool(s.tool);
     if (requiredPrompt && !routing.isPromptSupported(requiredPrompt)) {
-      s.setTool("hand");
+      s.setTool("select");
       pushToast({
         msg: "当前后端不支持此 AI 工具",
-        sub: "已切回手型；请到项目设置注册支持该交互的后端",
+        sub: "已切回选择工具；请到项目设置注册支持该交互的后端",
         kind: "warning",
       });
     }
@@ -857,7 +851,7 @@ export function useWorkbenchShellModel({
   }, [routingSig, routing.isLoading, s.tool]);
   useEffect(() => {
     if (!isVideoTask) return;
-    if (tool !== "box" && tool !== "hand") setTool("box");
+    if (tool !== "box" && tool !== "select") setTool("box");
   }, [isVideoTask, tool, setTool]);
 
   useEffect(() => {
@@ -1228,30 +1222,6 @@ export function useWorkbenchShellModel({
     });
   }, [updateAnnotationMut, history]);
 
-  const normalizedAttributeMode = useMemo(
-    () => normalizeAttributeModeState(s.attributeMode, toolView.attributeSchema),
-    [s.attributeMode, toolView.attributeSchema],
-  );
-  const handleApplyAttributeMode = useCallback((annotationId: string): boolean => {
-    if (!normalizedAttributeMode.enabled || !normalizedAttributeMode.fieldKey) return false;
-    const ann = annotationsRef.current.find((a) => a.id === annotationId);
-    const field = toolView.attributeSchema.fields?.find((item) => item.key === normalizedAttributeMode.fieldKey);
-    if (!ann || !field || !canApplyAttributeModeToAnnotation(ann, field)) {
-      pushToast({ msg: "该标注不适用当前属性字段", kind: "warning" });
-      return false;
-    }
-    const next = applyAttributeModeValue(ann.attributes, field, normalizedAttributeMode.currentValue);
-    handleUpdateAttributes(annotationId, next);
-    s.setSelectedId(annotationId);
-    return true;
-  }, [
-    annotationsRef,
-    handleUpdateAttributes,
-    normalizedAttributeMode,
-    pushToast,
-    s,
-    toolView.attributeSchema,
-  ]);
 
   const hoveredCommentShapes = useHoveredCommentStore(selectEffectiveShapes);
 
@@ -1386,7 +1356,7 @@ export function useWorkbenchShellModel({
     [],
   );
 
-  const { spacePan, nudgeMap } = useWorkbenchHotkeys({
+  const { spacePan, markSpacePanDrag, nudgeMap } = useWorkbenchHotkeys({
     s, history, classes, currentProject, annotationsRef,
     batchChanging, setBatchChanging, showHotkeys,
     navigateTask, smartNext, setFitTick,
@@ -1395,7 +1365,6 @@ export function useWorkbenchShellModel({
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes,
     handleVideoSetSelectedClass,
-    attributeModeSchema: toolView.attributeSchema,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
@@ -1734,6 +1703,7 @@ export function useWorkbenchShellModel({
           box={selectedAiBox}
           imageWidth={imageWidth}
           imageHeight={imageHeight}
+          attributeSchema={toolView.attributeSchema}
           readOnly={isLocked}
           onAccept={acceptPredictionFromCard}
           onReject={rejectPredictionFromCard}
@@ -2048,14 +2018,6 @@ export function useWorkbenchShellModel({
                 onCancel={cancelMaskEdit}
               />
             )}
-            {stageKind === "image" && (
-              <AttributeModeBar
-                schema={toolView.attributeSchema}
-                value={s.attributeMode}
-                onChange={s.setAttributeMode}
-                readOnly={isLocked}
-              />
-            )}
             <WorkbenchOverlays
               pendingDrawing={s.pendingDrawing}
               editingClass={s.editingClass}
@@ -2092,6 +2054,9 @@ export function useWorkbenchShellModel({
         videoSampling,
         videoManifestError: videoManifest.error,
         videoTool: s.videoTool,
+        videoModes,
+        spacePan,
+        onSpacePanDragStart: markSpacePanDrag,
         videoFrameIndex: s.videoFrameIndex,
         videoReviewDisplayMode: mode === "review" ? modeState.diffMode : undefined,
         hiddenVideoTrackIds: s.hiddenVideoTrackIds,
@@ -2147,7 +2112,6 @@ export function useWorkbenchShellModel({
         onCommitKeypointGeometry: handleCommitKeypointGeometry,
         onJoinSelected: handleJoinSelectedPolygons,
         onCropSelected: handleCropSelectedPolygons,
-        onApplyAttributeMode: handleApplyAttributeMode,
         onStageGeometry: setStageGeom,
       },
       ai: {

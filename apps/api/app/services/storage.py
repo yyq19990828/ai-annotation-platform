@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 
 import boto3
 from botocore.exceptions import ClientError
@@ -140,6 +141,39 @@ class StorageService:
             internal = f"{scheme}://{settings.minio_endpoint}"
             url = url.replace(internal, settings.minio_public_url.rstrip("/"), 1)
         return url
+
+    def rewrite_host_for_ml_backend(self, url: str) -> str:
+        """把 presigned URL 的 host 重写为 ``ml_backend_storage_host`` (容器可达地址)。
+
+        平台 api 跑在 host 进程而 ML backend 在 docker 网内时, presigned URL 里的 host
+        (宿主可达) 在 backend 容器内解析不到; 重写成容器可达地址。v0.18.4 从
+        ``ml_backends._resolve_task_url`` 抽出共用 (task URL 与 ROI crop URL 共享), 行为逐字一致。
+        """
+        if settings.ml_backend_storage_host:
+            return re.sub(
+                r"://[^/]+", f"://{settings.ml_backend_storage_host}", url, count=1
+            )
+        return url
+
+    def upload_crop_bytes(
+        self, jpeg_bytes: bytes, key: str, *, expires_in: int = 3600
+    ) -> str:
+        """v0.18.4 · 上传 ROI crop JPEG 字节到 import 桶, 返回下游 backend 可拉取的 presigned URL。
+
+        import 桶挂 7 天 lifecycle 自动清理临时 crop。返回 URL 经 ml_backend host 重写,
+        与 task URL 投递路径一致——对所有走 ``httpx.get`` 的下游 backend (gsam2/sam3 不支持
+        ``data:`` URI) 通用。
+        """
+        self.client.put_object(
+            Bucket=self.import_bucket,
+            Key=key,
+            Body=jpeg_bytes,
+            ContentType="image/jpeg",
+        )
+        url = self.generate_download_url(
+            key, expires_in=expires_in, bucket=self.import_bucket
+        )
+        return self.rewrite_host_for_ml_backend(url)
 
     def generate_upload_url(
         self,

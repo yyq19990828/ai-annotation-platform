@@ -64,6 +64,9 @@ interface VideoKonvaStageProps {
   /** 共享视觉规格(线宽/填充/字号/标签);与图片同源。缺省回退默认值。 */
   visual?: AnnotationVisualConfig;
   videoTool?: VideoTool;
+  videoModes?: { box: boolean; track: boolean } | null;
+  spacePan?: boolean;
+  onSpacePanDragStart?: () => void;
   readOnly?: boolean;
   lockedTrackIds?: Set<string>;
   selectedIds?: string[];
@@ -127,7 +130,10 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   issueHighlightId,
   onIssuePinClick,
   visual = DEFAULT_ANNOTATION_VISUAL,
-  videoTool = "box",
+  videoTool = "select",
+  videoModes = null,
+  spacePan = false,
+  onSpacePanDragStart,
   readOnly = false,
   lockedTrackIds = EMPTY_LOCKED,
   selectedIds = [],
@@ -320,6 +326,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     ghost: frameViews.ghost,
     selectedTrack,
     videoTool,
+    creationEnabled: videoTool !== "select" && (!videoModes || (videoTool === "box" ? videoModes.box : videoModes.track)),
     readOnly,
     isPlaybackActive,
     lockedTrackIds,
@@ -550,15 +557,17 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   }), [controls, deleteSelectedTrackKeyframe]);
 
   const beginPan = useCallback((evt: ReactPointerEvent<HTMLDivElement>) => {
-    const isPan = evt.button === 2 || (evt.button === 0 && videoTool === "hand");
+    const isSpacePan = evt.button === 0 && spacePan;
+    const isPan = evt.button === 2 || isSpacePan;
     if (evt.button === 2) rightDownRef.current = { x: evt.clientX, y: evt.clientY };
     if (!isPan) return;
     evt.preventDefault();
+    if (isSpacePan) onSpacePanDragStart?.();
     panRef.current = { x: evt.clientX, y: evt.clientY };
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     pausePlayback();
     setPanning(true);
-  }, [pausePlayback, videoTool]);
+  }, [onSpacePanDragStart, pausePlayback, spacePan]);
 
   const onPointerMove = useCallback((evt: ReactPointerEvent<HTMLDivElement>) => {
     // 指针在画布上移动即唤出播放浮层(对齐旧 SVG 栈);离开后由 onPointerLeave 计时收起。
@@ -588,13 +597,16 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     schedulePlaybackOverlayHide();
   }, [onCursorMove, schedulePlaybackOverlayHide]);
 
-  // 工具模式光标反馈(对齐旧 SVG 栈):平移中 grabbing;否则 hand→可抓,画框/轨迹→十字。
+  // 工具模式光标反馈:平移中 grabbing;按住 Space 可抓;创建工具十字,选择工具普通光标。
   // Konva 容器命中 resize 句柄时由交互层覆盖 stage.container() cursor,未命中则继承此处。
+  const creationEnabled = videoTool !== "select" && (!videoModes || (videoTool === "box" ? videoModes.box : videoModes.track));
   const cursorClass = panning
     ? styles.rootPanning
-    : videoTool === "hand"
+    : spacePan
       ? styles.toolGrab
-      : styles.toolCrosshair;
+      : creationEnabled
+        ? styles.toolCrosshair
+        : "";
 
   const videoMinimapVisible = viewportSize.w > 0 && viewportSize.h > 0;
 

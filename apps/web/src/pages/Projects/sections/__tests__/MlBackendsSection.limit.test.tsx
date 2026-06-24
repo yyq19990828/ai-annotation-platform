@@ -106,12 +106,12 @@ describe("MlBackendsSection 上限态", () => {
     expect(screen.getByRole("button", { name: /注册 backend/ })).not.toBeDisabled();
   });
 
-  it("AI 设置保存时设默认 backend", () => {
+  it("AI 设置保存时设项目主后端", () => {
     mockUseMLBackends.mockReturnValue({ data: [SAMPLE_BACKEND], isLoading: false, isError: false });
     renderSection({ id: "p1", ml_backend_id: null, ml_backend_limit: 0 });
 
     fireEvent.click(screen.getByRole("checkbox", { name: /启用 AI 预标注/ }));
-    fireEvent.change(screen.getByDisplayValue(/未设默认/), {
+    fireEvent.change(screen.getByDisplayValue(/未设项目主后端/), {
       target: { value: "b1" },
     });
     fireEvent.click(screen.getByRole("button", { name: /保存 AI 设置/ }));

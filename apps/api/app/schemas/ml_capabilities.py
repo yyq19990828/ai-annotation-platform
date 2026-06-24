@@ -81,6 +81,9 @@ class InstanceModelItem(BaseModel):
     supported_prompts: list[str] = []
     supported_geometric_outputs: list[str] = []
     supported_trackers: list[str] = []
+    # 协议③ · 属性输出类型 + schema 自描述 (含 select options), 供「从 backend 导入属性」.
+    output_attribute_types: list[str] = []
+    output_attribute_schema: list[dict] = []
     modality: str | None = None
     supported_variants: list[InstanceVariantGroup] = []
     variant_combinations: list[list[str]] = []
@@ -93,6 +96,9 @@ class InstanceModelItem(BaseModel):
     # 前端 VariantSelector 在用户未选时取此作初值; 优先级链:
     # 项目级 project.default_variants[backend_id] > 本字段 > backend 启动 env 默认.
     default_variants: dict[str, str] = {}
+    # 协议 v2.2 · 原子 vs 内部编排维度：atom=单次推理原子；composite=内部编排多原子。
+    # 缺省 atom 向后兼容。编排下游 stage 据此过滤（只组合 atom）。
+    composition: str = "atom"
 
 
 class CapabilityInstanceItem(BaseModel):

@@ -15,17 +15,9 @@ import { dispatchKey, ARROW_KEY_SET } from "./hotkeys";
 import type { UseMaskEditorReturn } from "./useMaskEditor";
 import { recordHotkeyUsage } from "./hotkeyUsage";
 import { bboxGeom } from "./transforms";
-import {
-  attributeModeValueForDigit,
-  attributeModeFields,
-  findNextUnfilledAttributeModeAnnotation,
-  nextAttributeModeState,
-  normalizeAttributeModeState,
-} from "./attributeMode";
 import type { useWorkbenchState } from "./useWorkbenchState";
 import type { useAnnotationHistory } from "./useAnnotationHistory";
 import type { AnnotationResponse } from "@/types";
-import type { AttributeSchema } from "@/api/projects";
 import type { AiBox } from "./transforms";
 import type { VideoStageControls } from "../stage/videoStageControls";
 
@@ -86,7 +78,6 @@ export interface UseWorkbenchHotkeysArgs {
   handleRejectPrediction?: (b: AiBox) => void;
   handleUpdateAttributes: (id: string, attrs: Record<string, unknown>) => void;
   handleVideoSetSelectedClass?: (className: string) => boolean;
-  attributeModeSchema?: AttributeSchema;
 
   // ai
   aiBoxes: AiBox[];
@@ -136,6 +127,7 @@ export interface UseWorkbenchHotkeysArgs {
 
 export interface UseWorkbenchHotkeysReturn {
   spacePan: boolean;
+  markSpacePanDrag: () => void;
   nudgeMap: Map<string, Geom>;
   flushNudges: () => void;
 }
@@ -155,7 +147,6 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     recordRecentClass, handleDeleteBox, handleBatchDelete, handlePatchShapeFlag,
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
-    attributeModeSchema,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
     updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, samplingActive = false, videoControlsRef,
@@ -165,8 +156,14 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
   } = args;
 
   const [spacePan, setSpacePan] = useState(false);
+  const videoSpaceDownRef = useRef(false);
+  const videoSpaceDraggedRef = useRef(false);
   const [nudgeMap, setNudgeMap] = useState<Map<string, Geom>>(new Map());
   const nudgeOrigRef = useRef<Map<string, Geom>>(new Map());
+
+  const markSpacePanDrag = useCallback(() => {
+    if (videoSpaceDownRef.current) videoSpaceDraggedRef.current = true;
+  }, []);
 
   // 切题清空 nudge
   useEffect(() => {
@@ -263,68 +260,6 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     return () => window.removeEventListener("keydown", onKey, true);
   }, [disabled, s.tool, s.pendingDrawing, s.editingClass, maskEditor, commitMaskAsPolygon, cancelMaskEdit]);
 
-  useEffect(() => {
-    if (disabled || videoMode) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (!s.attributeMode.enabled) return;
-      if (isWorkbenchInputFocused(e.target)) return;
-      if (s.pendingDrawing || s.editingClass || batchChanging) return;
-      const normalized = normalizeAttributeModeState(s.attributeMode, attributeModeSchema);
-      if (!normalized.enabled || !normalized.fieldKey) return;
-      const fields = attributeModeFields(attributeModeSchema);
-      const field = fields.find((item) => item.key === normalized.fieldKey);
-      if (!field) return;
-
-      if (e.key === "[" || e.key === "]") {
-        e.preventDefault();
-        e.stopPropagation();
-        recordHotkeyUsage("attributeModeField");
-        s.setAttributeMode(nextAttributeModeState(normalized, attributeModeSchema, e.key === "]" ? 1 : -1));
-        return;
-      }
-
-      if (e.key >= "1" && e.key <= "9") {
-        const value = attributeModeValueForDigit(field, Number(e.key));
-        if (value === undefined) return;
-        e.preventDefault();
-        e.stopPropagation();
-        recordHotkeyUsage("attributeModeValue");
-        s.setAttributeMode({ ...normalized, currentValue: value });
-        return;
-      }
-
-      if (e.key === "n" || e.key === "N") {
-        e.preventDefault();
-        e.stopPropagation();
-        recordHotkeyUsage("attributeModeNextMissing");
-        const next = findNextUnfilledAttributeModeAnnotation(
-          annotationsRef.current,
-          s.selectedId,
-          field,
-        );
-        if (next) {
-          s.setSelectedId(next.id);
-        } else {
-          pushToast({ msg: "没有未填写该属性的标注", kind: "warning" });
-        }
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [
-    annotationsRef,
-    attributeModeSchema,
-    batchChanging,
-    disabled,
-    pushToast,
-    s,
-    s.attributeMode,
-    s.editingClass,
-    s.pendingDrawing,
-    s.selectedId,
-    videoMode,
-  ]);
-
   // 主 keydown / keyup
   useEffect(() => {
     if (disabled) return;
@@ -406,6 +341,14 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         case "videoTogglePlayback":
           e.preventDefault();
           videoControlsRef?.current?.togglePlayback();
+          return;
+        case "videoSpaceDown":
+          e.preventDefault();
+          if (!e.repeat) {
+            videoSpaceDownRef.current = true;
+            videoSpaceDraggedRef.current = false;
+          }
+          setSpacePan(true);
           return;
         case "videoJogPlayback":
           e.preventDefault();
@@ -552,9 +495,9 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           if (s.pendingDrawing) { s.setPendingDrawing(null); return; }
           if (s.editingClass) { s.setEditingClass(null); return; }
           if (s.selectedId) { s.setSelectedId(null); return; }
-          // v0.11.29 · 视频模式：仅当无草稿 / 无选中可取消时，ESC 才回归 hand 中立态，
-          // 避免用户只想取消选中却顺手把当前 track 工具一并丢掉。
-          if (videoMode) s.setVideoTool("hand");
+          // 无草稿 / 无选中可取消时回选择工具；视频只退到 select, 不再回 hidden hand。
+          if (videoMode) s.setVideoTool("select");
+          else s.setTool("select");
           return;
 
         case "thresholdAdjust":
@@ -717,7 +660,14 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === " ") setSpacePan(false);
+      if (e.key === " ") {
+        setSpacePan(false);
+        if (videoMode && videoSpaceDownRef.current) {
+          if (!videoSpaceDraggedRef.current) videoControlsRef?.current?.togglePlayback();
+          videoSpaceDownRef.current = false;
+          videoSpaceDraggedRef.current = false;
+        }
+      }
       if (ARROW_KEY_SET.has(e.key)) flushNudges();
     };
 
@@ -743,5 +693,5 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     flushNudges,
   ]);
 
-  return { spacePan, nudgeMap, flushNudges };
+  return { spacePan, markSpacePanDrag, nudgeMap, flushNudges };
 }

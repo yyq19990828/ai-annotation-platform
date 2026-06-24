@@ -62,14 +62,21 @@ export const predictionsApi = {
     predictionId: string,
     shapeIndex?: number,
     overrideClassName?: string,
+    attributeOverrides?: Record<string, unknown>,
   ) => {
     const qp = new URLSearchParams();
     if (shapeIndex !== undefined) qp.set("shape_index", String(shapeIndex));
     // v0.14.17 · 采纳时选类: 预测类名不在项目标签集 (会 422) 时, 带上人选的项目标签重试.
     if (overrideClassName) qp.set("override_class_name", overrideClassName);
     const qs = qp.toString();
+    // v0.18.3 · 采纳前在工作台审阅候选属性时改过的值, 经 body.attribute_overrides 原子落库.
+    const body =
+      attributeOverrides && Object.keys(attributeOverrides).length > 0
+        ? { attribute_overrides: attributeOverrides }
+        : undefined;
     return apiClient.post<AnnotationResponse[]>(
       `/tasks/${taskId}/predictions/${predictionId}/accept${qs ? `?${qs}` : ""}`,
+      body,
     );
   },
 

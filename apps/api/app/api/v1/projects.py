@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text, or_, and_
 from app.deps import (
@@ -699,7 +699,9 @@ async def delete_project(
     p = {"pid": pid}
 
     await db.execute(text("DELETE FROM annotation_comments WHERE project_id = :pid"), p)
-    await db.execute(text("DELETE FROM annotation_feedbacks WHERE project_id = :pid"), p)
+    await db.execute(
+        text("DELETE FROM annotation_feedbacks WHERE project_id = :pid"), p
+    )
     await db.execute(
         text(
             "DELETE FROM annotation_drafts WHERE task_id IN "
@@ -1197,6 +1199,35 @@ async def export_project(
     return {"job_id": str(job.id)}
 
 
+class PipelineStage(BaseModel):
+    """v0.18.1 · 多阶段预标注的单个阶段声明 (路径 B).
+
+    stage 0 (parent_stage=None) 是源检测阶段, 吃整图产框; 下游阶段 (parent_stage 指向源阶段)
+    平台按父框 bbox 裁 ROI crop 喂入, 把返回的 attributes 合并进父框 (write.target=attributes)。
+    v0.18.2 (M2): 支持单层并行扇出 (多个下游共享同一 parent_stage)、按类别路由
+    (parent_class_filter)、阶段级失败策略 (on_failure)。深度≥3 / new_shape 留 M3。
+    """
+
+    stage: int
+    ml_backend_id: uuid.UUID
+    model_id: str | None = None
+    task_type: str | None = None
+    model_variants: dict[str, str] | None = None
+    params: dict | None = None
+    class_filter: list[int] | None = None
+    # 依赖的父阶段 index; None=源阶段 (吃整图)。
+    parent_stage: int | None = None
+    # v0.18.2 · 按类别路由: 本阶段只对这些 class_name 的父框启动 (空/缺=全部父框)。
+    # 不相交类别集=不同类走不同下游模型; 重叠=同类喂多模型 (并行扇出)。声明式过滤, 非分支节点。
+    parent_class_filter: list[str] | None = None
+    # ROI 构造; 认 {"mode":"crop","pad":0.05}, pad∈[0,0.5]。
+    roi: dict | None = None
+    # 结果写回; 认 {"target":"attributes","keys":[...]}。keys 用于并行兄弟键冲突检测。
+    write: dict | None = None
+    # v0.18.2 · 阶段级失败策略: keep_parent (默认, 下游失败保留上游框、属性留空) | drop_box (丢父框)。
+    on_failure: Literal["keep_parent", "drop_box"] = "keep_parent"
+
+
 class PreannotateRequest(BaseModel):
     ml_backend_id: uuid.UUID
     task_ids: list[uuid.UUID] | None = None
@@ -1223,6 +1254,71 @@ class PreannotateRequest(BaseModel):
     # v0.14.17 · 类别白名单 (模型原生类别 index 子集): 非空时 backend 只检出这些类。
     # 平台不做类→项目标签映射 (NG6), 仅透传给 yolo /predict context.classes 做推理层过滤。
     class_filter: list[int] | None = None
+    # v0.18.1 · 多阶段预标注 (路径 B): 有序阶段列表。非空时走阶段化编排 (detect→ROI→classify),
+    # 缺省时由上面的平铺字段合成单阶段, 与现状逐字等价 (向后兼容)。
+    # v0.18.2 · 支持单层并行扇出 (源 + N 个共享 parent_stage 的下游)。
+    pipeline_stages: list[PipelineStage] | None = None
+    # v0.18.2 · 并行兄弟写同一属性键时的策略: reject (默认, 校验期 422) | last_wins (末位覆盖)。
+    on_key_conflict: Literal["reject", "last_wins"] = "reject"
+
+    @model_validator(mode="after")
+    def _validate_pipeline_stages(self) -> "PreannotateRequest":
+        stages = self.pipeline_stages
+        if not stages:
+            return self
+        indices = {s.stage for s in stages}
+        if len(indices) != len(stages):
+            raise ValueError("pipeline_stages 的 stage 序号不可重复")
+        # 源阶段: 恰一个 parent_stage=None, 且其 ml_backend_id 须等于顶层 ml_backend_id
+        # (顶层字段仍是源 backend, 复用既有 backend 存在性/健康检查路径)。
+        roots = [s for s in stages if s.parent_stage is None]
+        if len(roots) != 1:
+            raise ValueError("pipeline_stages 须恰有一个源阶段 (parent_stage=None)")
+        root = roots[0]
+        if root.ml_backend_id != self.ml_backend_id:
+            raise ValueError("源阶段 ml_backend_id 须与顶层 ml_backend_id 一致")
+        for s in stages:
+            if s.parent_stage is None:
+                continue
+            # M2: 单层扇出 (深度 2) —— 下游 parent_stage 只能指向源阶段, 不支持子阶段再扇出。
+            if s.parent_stage != root.stage:
+                raise ValueError(
+                    f"stage {s.stage} 的 parent_stage 只能指向源阶段 {root.stage} (本期仅单层扇出)"
+                )
+            if s.write is not None:
+                target = s.write.get("target", "attributes")
+                # geometry: gsam2 box-seg 等下游产独立 polygon 追加为 new shape (无 attribute keys)。
+                # attributes: 纯分类下游写回父框 attributes。
+                if target not in {"attributes", "geometry"}:
+                    raise ValueError(
+                        f"write.target 须为 'attributes' 或 'geometry', 收到 {target!r}"
+                    )
+            if s.roi is not None:
+                mode = s.roi.get("mode", "crop")
+                # crop: 平台裁父框 ROI 喂下游分类。geometry: 全图 + 父框列表喂 box-seg。
+                if mode not in {"crop", "geometry"}:
+                    raise ValueError(
+                        f"roi.mode 须为 'crop' 或 'geometry', 收到 {mode!r}"
+                    )
+                pad = s.roi.get("pad")
+                if pad is not None and not (0.0 <= float(pad) <= 0.5):
+                    raise ValueError("roi.pad 须在 [0, 0.5] 区间")
+        # 并行兄弟键冲突: 多个下游 attributes-target 阶段声明 write.keys 写同一键 → reject 时 422。
+        # geometry-target 不写 attributes (产独立 polygon shape), 不参与 keys 冲突检测。
+        if self.on_key_conflict == "reject":
+            seen_keys: set[str] = set()
+            for s in stages:
+                if s.parent_stage is None or not s.write:
+                    continue
+                if s.write.get("target", "attributes") != "attributes":
+                    continue
+                for k in s.write.get("keys") or []:
+                    if k in seen_keys:
+                        raise ValueError(
+                            f"多个阶段写同一属性键 {k!r}; 设 on_key_conflict=last_wins 以允许末位覆盖"
+                        )
+                    seen_keys.add(k)
+        return self
 
 
 @router.post("/{project_id}/preannotate")
@@ -1238,8 +1334,43 @@ async def trigger_preannotation(
 
     svc = MLBackendService(db)
     backend = await svc.get(body.ml_backend_id)
-    if not backend:
+    # 校验 backend 存在且归属当前项目: 与下面下游阶段校验对称, 防止 owner 手动 POST
+    # 别项目 backend id 触发跨项目预标。404 (不可枚举) 与下游分支一致。
+    if not backend or backend.project_id != project.id:
         raise HTTPException(status_code=404, detail="ML Backend not found")
+
+    # v0.18.1 · 多阶段编排: 校验每个下游阶段的 backend 存在且归属本项目, 归一化成 worker
+    # 可消费的 stage dict 列表 (uuid → str)。源阶段 backend 归属已在上面校验。
+    pipeline_stages_payload: list[dict] | None = None
+    if body.pipeline_stages:
+        norm: list[dict] = []
+        for st in body.pipeline_stages:
+            if st.parent_stage is not None:
+                st_backend = await svc.get(st.ml_backend_id)
+                if not st_backend or st_backend.project_id != project.id:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"stage {st.stage} 的 ML Backend 不存在或不属于本项目",
+                    )
+            norm.append(
+                {
+                    "stage": st.stage,
+                    "ml_backend_id": str(st.ml_backend_id),
+                    "model_id": st.model_id,
+                    "task_type": st.task_type,
+                    "model_variants": st.model_variants,
+                    "params": st.params,
+                    "class_filter": st.class_filter,
+                    "parent_stage": st.parent_stage,
+                    "parent_class_filter": st.parent_class_filter,
+                    "roi": st.roi,
+                    "write": st.write,
+                    "on_failure": st.on_failure,
+                    # v0.18.2 · 键冲突策略下放到每个下游阶段, worker 末位覆盖时据此合并。
+                    "on_key_conflict": body.on_key_conflict,
+                }
+            )
+        pipeline_stages_payload = norm
 
     # v0.9.5 · 指定 batch 时校验归属本项目 + 状态在 active
     total_tasks_hint: int | None = None
@@ -1285,6 +1416,8 @@ async def trigger_preannotation(
         # v0.14.17 · 协议 v2 结构化 variant 路径 (YOLO) + 类别白名单
         model_variants=body.model_variants,
         class_filter=body.class_filter,
+        # v0.18.1 · 多阶段预标注: 非空时 worker 走阶段化编排 (detect→ROI→classify)
+        pipeline_stages=pipeline_stages_payload,
     )
     # B-5 · AI 预标注触发审计 — 让超管在 /audit 看到 谁/何时/对哪个 batch 跑了 AI
     await AuditService.log(

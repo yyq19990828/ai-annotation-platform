@@ -646,16 +646,16 @@ export function useImageAnnotationActions({
             next.delete(box.id);
             return next;
           });
-          pushToast({ msg: "驳回失败", sub: "请稍后重试", kind: "error" });
+          pushToast({ msg: "忽略失败", sub: "请稍后重试", kind: "error" });
         },
       },
     );
   }, [rejectPredictionMut, pushToast]);
 
-  const handleAcceptPrediction = useCallback((box: AiBox) => {
+  const handleAcceptPrediction = useCallback((box: AiBox, attributeOverrides?: Record<string, unknown>) => {
     if (!box.predictionId) return;
     acceptPredictionMut.mutate(
-      { predictionId: box.predictionId, shapeIndex: box.shapeIndex },
+      { predictionId: box.predictionId, shapeIndex: box.shapeIndex, attributeOverrides },
       {
         onSuccess: (created) => {
           const ids = created.map((a) => a.id);
@@ -663,8 +663,9 @@ export function useImageAnnotationActions({
           // v0.14.9 · OCR / doc_layout 候选的 attributes (text/language/orientation 等) 后端
           // accept_prediction 仅写 _shape_index, 不带 OCR 文本; 这里 accept 成功后把候选 attributes
           // 合并 PATCH 进新建标注 (保留服务端写的 _shape_index), 避免识别文本丢失。
-          const carry = pickCarryAttributes(box.attributes);
-          if (carry && created.length > 0) {
+          // v0.18.3 · 审阅改过的值优先 (attribute_overrides 已原子落库, 这里 carry 也用改后值保持一致)。
+          const carry = { ...(pickCarryAttributes(box.attributes ?? undefined) ?? {}), ...(attributeOverrides ?? {}) };
+          if (Object.keys(carry).length > 0 && created.length > 0) {
             for (const ann of created) {
               const merged = { ...(ann.attributes ?? {}), ...carry };
               mutations.update.mutate({ annotationId: ann.id, payload: { attributes: merged } });

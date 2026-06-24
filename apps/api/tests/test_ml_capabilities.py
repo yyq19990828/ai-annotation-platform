@@ -12,6 +12,88 @@ def test_extract_none_returns_none():
     assert extract_capabilities({}) is None
 
 
+def test_extract_passes_through_output_attribute_schema():
+    """协议③ · model 的 output_attribute_schema (含 select options) 透传到能力快照."""
+    setup = {
+        "name": "onnxtools-backend",
+        "infra": "onnx",
+        "models": [
+            {
+                "id": "vehicle-attr",
+                "task": "detection",
+                "supported_geometric_outputs": ["bbox"],
+                "output_attribute_types": ["class"],
+                "output_attribute_schema": [
+                    {
+                        "key": "vehicle_type",
+                        "type": "select",
+                        "options": [{"value": "car", "label": "小车"}],
+                    },
+                    {
+                        "key": "color",
+                        "type": "select",
+                        "options": [{"value": "blue", "label": "蓝色"}],
+                    },
+                ],
+            }
+        ],
+    }
+    model = extract_capabilities(setup)["models"][0]
+    assert [f["key"] for f in model["output_attribute_schema"]] == [
+        "vehicle_type",
+        "color",
+    ]
+    assert model["output_attribute_schema"][0]["options"][0]["value"] == "car"
+
+
+def test_composition_passthrough_and_default():
+    """协议 v2.2 · composition 透传; 缺省 atom（visibility 字段已删,仅留 composition 一根轴）。"""
+    setup = {
+        "name": "onnxtools-backend",
+        "infra": "onnx",
+        "models": [
+            # 显式 composite（一锅端：内部编排复合）。
+            {
+                "id": "vehicle-attr",
+                "task": "detection",
+                "composition": "composite",
+                "supported_geometric_outputs": ["bbox"],
+            },
+            # 显式 atom（纯检测原子）。
+            {
+                "id": "vehicle-detect",
+                "task": "detection",
+                "composition": "atom",
+                "supported_geometric_outputs": ["bbox"],
+            },
+            # 不声明 composition → 缺省 atom。
+            {
+                "id": "vehicle-attr-classify",
+                "task": "classification",
+                "supported_geometric_outputs": ["none"],
+            },
+        ],
+    }
+    models = {m["id"]: m for m in extract_capabilities(setup)["models"]}
+    assert models["vehicle-attr"]["composition"] == "composite"
+    assert models["vehicle-detect"]["composition"] == "atom"
+    # 缺省回落 atom。
+    assert models["vehicle-attr-classify"]["composition"] == "atom"
+    # visibility 字段已删:不应再透传。
+    assert "visibility" not in models["vehicle-attr"]
+
+
+def test_legacy_backend_composition_defaults_atom():
+    """老 backend（无 models[]）合成的隐式单 model 也带 composition=atom。"""
+    setup = {
+        "name": "grounded-sam2-backend",
+        "is_interactive": True,
+        "supported_prompts": ["point", "bbox", "text"],
+    }
+    model = extract_capabilities(setup)["models"][0]
+    assert model["composition"] == "atom"
+
+
 # ── 多模型 backend (YOLO 官仓: 按任务分条目) ──
 
 

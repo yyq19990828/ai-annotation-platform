@@ -8,6 +8,7 @@
 
 | 版本组 | 文件 |
 |--------|------|
+| 0.17.x | [docs/changelogs/0.17.x.md](docs/changelogs/0.17.x.md) |
 | 0.16.x | [docs/changelogs/0.16.x.md](docs/changelogs/0.16.x.md) |
 | 0.15.x | [docs/changelogs/0.15.x.md](docs/changelogs/0.15.x.md) |
 | 0.14.x | [docs/changelogs/0.14.x.md](docs/changelogs/0.14.x.md) |
@@ -30,239 +31,202 @@
 
 ## 最新版本
 
-<!-- 0.17.x 版本变更按版本段追加到本区；进入 0.18.x 后整体移到 docs/changelogs/0.17.x.md -->
+<!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
+<!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
-> **0.17.x 是一个 UI 迁移 Epic**:把 `apps/web` 自维护的 CSS Modules + `tokens.css` 视觉体系全量迁到 Tailwind v4 + shadcn/ui,直至旧 `*.module.css` 与 `tokens.css` 退役、CI 门禁完成时代切换。全程红线为「只换皮、行为零回退」(业务逻辑 / 数据流 / 路由 / 画布渲染逻辑均不动),逐阶段以 light/dark 双主题截图基线把关。Epic 与设计规范见 [`docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md`](docs/plans/2026-06-19-v0.17.x-ui-shadcn-migration-epic.md) 与 `docs-site/dev/reference/design-system.md`。
+## [0.18.13] - 2026-06-24
 
-## [0.17.17] - 2026-06-22
-
-关键点骨骼模板配置升级（I10 Skeleton 进阶收尾）：
-
-- **SVG 骨骼画布配置器**：项目设置「类别与工具配置」里的 keypoint schema 编辑器从下拉框选索引连边，升级为可视化画布——拖动节点定义骨架布局、点击两个节点连线、点击连线删除。布局坐标（`KeypointNode.x/y`，归一化）随模板持久化，作为标注参考形状。
-- **节点子标签（sublabel）**：节点支持「名称 + 子标签」两层命名（如 `shoulder` + `left`），仅 2 层、禁止任意嵌套。画布节点标签显示 `名称·子标签`；COCO 导出的 `keypoints` 名拼成 `名称_子标签` 以消歧重名。
-
-## [0.17.16] - 2026-06-22
-
-标注 / 质检工作台「未选批次」着陆态从单行占位升级为**批次卡片网格**:项目分组、封面缩略图、批次进度条、点卡直接进入。
+onnxtools 原子层直架单模型推理类 + 删 `visibility` 字段改用 `composition` 单轴过滤 + 单阶段配置修复。修了 v0.18.9 拆原子时把单后端「检测+属性一把梭」从单阶段路径弄丢的回归（用户无感）：onnxtools 三个 model 各架在自己的单模型类上（`vehicle-detect`→独立 `RtdetrORT`、`vehicle-attr-classify`→独立 `VehicleAttributeORT`、`vehicle-attr` 一锅端→`VehicleAttributePipeline`），按 model_id 懒加载——detect-only 部署只加载检测器、classify-only 只加载分类器。同时把 v0.18.11 引入的 `visibility` 字段整体删除（全平台仅 onnxtools 一处用、且与 `composition` 语义重载），过滤统一收敛到 `composition` 一根轴：编排下游 stage 只组合 `atom`，单阶段/工作台不过滤、一锅端 `vehicle-attr` 可作开箱即用默认。
 
 ### Added
 
-- **批次卡片网格**:标注工作台与质检审核在未选批次时,右侧改为按项目分组的批次卡片。每张卡含批次封面缩略图(左侧拉满卡片高度)、状态、进度条与「共/完成/待标」计数,点卡即选中批次进入任务列表。标注侧进度为三档(标注中 / 送审 / 通过),质检侧为两档(待审 / 通过)。
-- **「全部待标任务」入口**:标注工作台左侧栏顶部新增「全部待标任务」按钮,与质检审核「全部待审任务」对位;两页标题区新增「返回全部批次」回到卡片网格概览。
-- **质检卡片显示标注员**:质检批次卡片展示该批的标注员姓名,审核员一眼看清「这批是谁标的」(数据复用 `ReviewingBatchItem.annotator`)。
-- **批次封面缩略图字段**:`MyBatchItem` / `ReviewingBatchItem` 新增 `thumbnail_url` + `cover_blurhash`。后端取每批最早一张「有缩略图」的任务作封面,缩略图口径与 `tasks/_shared.py` 一致(`COALESCE(DatasetItem, Task)` + presigned URL),并按 `bucket_for_cache_key` 路由 media-cache 桶。
+- **onnxtools `/unload` + idle-unload**：新增 `POST /unload`（ModelMarket 卸载按钮直接生效，UI 零改动）+ 空闲计时器（`ONNXTOOLS_IDLE_UNLOAD_SECONDS` 默认 600s），按 model 句柄粒度释放显存。与 yolo/gsam2 体验对齐。
+- **单阶段「当前模型」只读展示**：预标配置面板在单一可选 model 时不再「什么都不显示」，改出只读「当前模型」行（模型市场卡片标题），任何 backend 单阶段都能看到将跑哪个 model。模型市场卡片视图（ModelCard）补「原子 / 内置流程」徽标，与列表视图一致。
 
-## [0.17.15] - 2026-06-22
+### Changed
 
-跨工具单位类别共享两项体验改进:同名类批量重命名 + `alias_to` 颜色/alias 软关联。强隔离底线不变 ([ADR-0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) 附录)。
+- **onnxtools 原子层解耦**：`VehicleAttributePredictor` 改为持有 detector / va_classifier / pipeline 三句柄（经注入工厂懒加载），`detect_one`/`classify_one` 走各自独立单模型实例、不再「伸手」借 pipeline 子模型；类名取自 `detector.class_names`（ONNX metadata），不绕 pipeline。
+- **删 `visibility` 字段，过滤改 `composition` 轴**：协议 schema（`ModelCapability` / `InstanceModelItem`）、service 透传、前端类型与 5 个过滤点统一去 `visibility`。编排下游 stage 选择器 + 属性导入源改按 `composition`（只收 / 只留 `atom`）；单阶段默认模型/几何模型列表、工作台多模型选择器取消过滤（含 composite，可手动选）。`vehicle-attr` 由 `internal` 改为 `composite`（单阶段可选）。
 
-### Added
+## [0.18.12] - 2026-06-24
 
-- **同名类跨工具单位批量重命名**:项目设置「类别」区在多个启用工具单位存在同名类时,出现「重命名时同步所有工具单位的同名类」开关。开启后重命名走后端跨 unit 批量路径 (不传 `tool_unit_id`),一次改全;默认关 (仅当前工具单位,守强隔离默认)。后端能力早已就位,本次补前端入口。
-- **`alias_to` 类别软关联**:`ToolClassEntry` 新增可选 `alias_to: {tool_unit_id, class_name}` 指针。某工具单位的类可链接到另一单位的类,**继承其颜色 / alias**,免重复输入。仅显示层继承——读时派生层 (`resolve_class_visual`) 解析后填入扁平 `classes_config` 供画布取色,带环 / 悬空 / 超深保护;**不改 tool_bindings 存储、不改标注归属、不进导出** (COCO/YOLO category 仍按各 unit 独立类、`supercategory=tool_unit_id`)。编辑器在「类别」区每行提供链接下拉,链接后该行颜色 / alias 显示为继承 (只读)。v1 链接即完全继承,override 入口暂未开放。
-
-## [0.17.14] - 2026-06-22
-
-视频参考框运动预测从「两点恒速外推」升级为完整恒速卡尔曼滤波(实验,默认关)。选中轨迹当前帧无框时的参考框,可选遍历先行所有可见关键帧前向滤波得到平滑预测,缓解变速/转向目标上的外推漂移。
+多阶段预标注（路径 B）下游几何原子化 + 配置 UX 彻底 model-first 统一：gsam2 暴露独立的「框→掩膜」纯几何原子（开放/非交互/原子），使「检测（出框）→ 几何分割（吃框出掩膜）」可端到端跑通；协议升 v2.2（纯加法）引入 `composition`（atom/composite）维度与几何 prompt 批量入参。同时把预标配置面板的三条配置路径（doc / 几何 / 文本）统一收敛为「选 model（= 模型市场卡片）」的 model-first 范式——所有 ml 后端统一走 `model_id + task_type + model_variants` 这一套 wire，文本路径（gsam2/sam3）不再是输出形态开关的特例。
 
 ### Added
 
-- **参考框完整卡尔曼滤波**:设置抽屉「实验 › 参考框运动预测」由开关改为四档选择——`关(最近关键帧)` / `恒速外推(前两关键帧)` / `卡尔曼 · 平稳` / `卡尔曼 · 灵敏`。卡尔曼档遍历当前帧之前**所有**可见关键帧做 predict→update 前向滤波,再外推到当前帧;平稳档信模型(顺滑抗噪)、灵敏档信观测(紧跟最新关键帧)。参考框标签相应显示「卡尔曼 F{帧}↗」。
-- **预测不确定度误差椭圆**:卡尔曼档在参考框外画一圈淡色虚线椭圆,半轴 = 框半宽高 + 2σ(位置后验标准差,≈95% 置信)。σ 随外推距离 / 关键帧稀疏度增长,椭圆越大表示「预测越不确定」,提示标注员预测置信度。
+- **gsam2 暴露「框→掩膜」几何原子 model**：新增 `grounded-sam2-box-seg`（`task=segmentation`，`supported_prompts=["bbox"]`，开放/非交互/`composition=atom`），`set_image` 一次、N 个父框共享 embedding 批量出多边形，每个结果回带 `parent_box_idx` 以便与上游框对齐合并。
+- **协议 v2.2 `composition` 维度（纯加法）**：model 条目可声明 `composition: "atom" | "composite"`（缺省 `atom`），与 `visibility` 解耦，标识该能力是原子单元还是内置多步流程。平台 schema / service 全链路透传；模型市场目录加「原子 / 内置流程」徽标。
+- **几何 prompt 批量入参（路径 B 下游链路）**：下游几何分割阶段接收整图 URL + N 个父框（归一化坐标）的批量入参（`tasks[].prompts[]`），worker 端 `_stage_input_mode` 依据下游 model 的 `supported_prompts` 自动判定 `geometry` / `crop` 投递模式。
 
-### Fixed
+### Changed
 
-- **非 h264 视频播放报 `MEDIA_ELEMENT_ERROR: Format error`**:`media-cache` 桶旧生命周期规则 `Prefix=""` 把整桶按 30 天过期,把非 h264 视频入库时一次性转码的浏览器播放代理 `playback/{item_id}.mp4` 也删了,而 DB 元数据 `playback_path` 仍指向它 → `<video>` 取预签名 URL 命中 404 → 浏览器报 Format error。把过期规则收窄到只 `videos/` 前缀(帧/chunk 可按需重生),`playback/`、`thumbnails/` 作为 DB 持久引用的耐久资产不再过期。已被删的历史代理需重跑 `generate_video_metadata` 补回。
+- **预标配置面板彻底 model-first 统一**：原文本路径（gsam2/sam3）以「输出形态开关」驱动、不带 model_id 的特例已取消。「模型任务」改为单一下拉选择器（`value` 直接绑 `model_id`，文案 = 模型市场卡片标题 `display_name`），doc / 几何 / 文本三路径共用同一套「选 model」交互与 `model_id + task_type + model_variants` wire。
+- **gsam2 / sam3 批量按 model_id 路由**：detection model_id → 出框、segmentation model_id → `output||mask`，无 model_id 时回落 `ctx.output`（向后兼容）。onnxtools-backend 在纯分类原子（v0.18.9）之外再拆出独立的纯检测 model，使「检测 → 分类」可全部由 onnxtools 自身的两个原子组成；同时引入协议级 `visibility` 字段，把原「检测+分类一锅端」pipeline 标为内部能力——目录可见但不进任何对外选用入口。
+
+### Added
+
+- **onnxtools-backend 暴露纯检测 model（0.2.0 → 0.3.0）**：`/setup` 在一锅端 `vehicle-attr` 与纯分类 `vehicle-attr-classify` 之外新增 `vehicle-detect`（`[专用]车辆检测`，`task=detection`，复用常驻 pipeline 内的 `detector` 只跑 rtdetr、跳过 va 属性分类，纯出 bbox 不写 `attributes`，故不声明 `output_attribute_schema`）。`/predict` 按 `context.model_id` 增加纯检测路由（`model_version=onnxtools-rtdetr`）。至此 backend 暴露三 model：一锅端检测+属性、纯检测、纯分类。
+- **能力可见性 `visibility` 字段（协议 v2.1）**：model 条目可声明 `visibility: "internal" | "public"`（缺省 `public`，老 backend 无字段即按对外开放处理）。`internal` 表示在能力目录可见但不对外开放选用。平台 schema / service 全链路透传（`ModelCapability` / `InstanceModelItem` 增字段，`_normalize_model` / `_shape_models` 透传）。
+
+### Changed
+
+- **一锅端 pipeline 转为内部能力**：`vehicle-attr`（rtdetr 检测 + va 分类一体）display_name 改为「[专用]车辆检测+属性」并标 `visibility=internal`。多阶段编排改用「纯检测（上游）+ 纯分类（下游）」两原子组合，一体管线保留备查。
+- **对外选用入口过滤内部能力**：预标配置（默认模型 + 几何模型列表）、工作台多模型选择器、ML Backend 属性导入三处统一过滤 `visibility=internal`；模型市场目录仍展示该 model 并加「内部」徽标。
+
+## [0.18.10] - 2026-06-24
+
+0.18.x 跨 ML Backend 编排开放后的工作台语义收口：工作台 AI 悬浮面板明确为「当前题 AI 执行 + 候选审阅」，项目级 backend 从「默认 ML Backend」改称「项目主后端」，视频工作台保留显式选择工具并退役独立平移工具。方案见 [`docs/plans/2026-06-24-v0.18.10-workbench-ai-default-backend-video-tools.md`](docs/plans/2026-06-24-v0.18.10-workbench-ai-default-backend-video-tools.md)。
+
+### Changed
+
+- **工作台 AI 面板语义收口**：AI 浮层标题、运行按钮、候选筛选和 backend selector 文案改为当前题语义；候选筛选只描述当前题可见候选，不再暗示批量 pipeline 或全局编排。
+- **项目主后端命名**：项目 ML 模型页、预标配置 selector、文档和快捷操作统一改为「项目主后端 / 主后端」，保留 `ml_backend_id` 作为初始选择 / fallback，不改变 API 或 DB schema。
+- **视频工具栏退役 hand/pan**：视频 ToolDock 展示选择 `V`、矩形框 `B` 与轨迹 `T`；`V` / `Alt+3` 切选择工具，不再切换视频平移工具，`Esc` 不再回落到 hidden hand 状态。
+- **视频默认画布交互补齐**：已有标注的选择、移动、resize 继续优先于空白创建；右键拖拽与 `Space`+拖拽可平移视频视图，`Space` 单按仍用于播放 / 暂停。
 
 ### Notes
 
-- 纯前端启发式,零后端依赖:状态向量 `[cx,cy,w,h,vx,vy,vw,vh]` 在恒速模型下四维解耦,实现为 4 个独立 1D 恒速卡尔曼(`videoReferenceKalman.ts`,标量观测无需矩阵求逆),不引矩阵库;误差椭圆取末段预测后各维后验方差 √P00。默认仍为「关 = 最近关键帧」(守「默认=现状」红线)。本地实验开关(localStorage),不进服务端偏好;旧布尔开关值自动读为「恒速外推」。
-- 设计与计划见 [`docs/plans/2026-06-22-v0.17.14-video-reference-kalman.md`](docs/plans/2026-06-22-v0.17.14-video-reference-kalman.md)。
+- GSAM2 / grounded-sam2 这类 backend 内部复合 pipeline 的长期拆分或原子化不在本版处理，后续单独开 plan。
 
-## [0.17.13] - 2026-06-22
+## [0.18.9] - 2026-06-24
 
-图片工作台多边形布尔运算补齐 difference（I14 Polygon Crop）：在已有「合并多边形」（union）之外新增「裁切重叠区」，用于遮挡场景下让背景多边形不再覆盖前景。
+多阶段预标注（路径 B）下游分类原子化：把 onnxtools-backend 从「只暴露一条完整检测+分类 pipeline」拆出独立的纯分类 model，并让平台多阶段编排的下游阶段自动用它。这样「检测（如 grounded-sam2）→ 裁 ROI → 分类（onnxtools）」是真正的跨 backend 原子编排，下游不再在已裁好的单车 ROI 上重复跑检测器（冗余 + 紧 crop 域偏移漏检）。
 
 ### Added
 
-- **多边形裁切重叠区**：多选 ≥ 2 个 polygon / multi_polygon 后，在右键的那个多边形上点右键菜单「裁切重叠区」，从它身上减去其余选中多边形的重叠区域（布尔差集，复用已依赖的 `polygon-clipping`）。基准框作被减数、几何就地更新（可裁出孔洞或拆成 multi_polygon），其余框原样保留；不要求同类别（遮挡场景常跨类）。整次操作走一次 update、可一键撤销；重叠区覆盖整个基准时裁切失败并提示。
+- **onnxtools-backend 暴露纯分类 model（0.1.0 → 0.2.0）**：`/setup` 在原 `vehicle-attr`（完整 rtdetr 检测 + va 分类）之外新增 `vehicle-attr-classify`（`task=classification`，复用同一常驻 pipeline 内的 `VehicleAttributeORT`，跳过 rtdetr，把整张输入 ROI 当一辆车直接出车型/颜色属性）。`/predict` 按 `context.model_id` 路由两条路径，两 model 共用同一份 `output_attribute_schema`。
+
+### Changed
+
+- **下游阶段优先纯分类 model**：`StageCard` 在所选 backend 暴露 `task=classification` 的 model 时，stage payload 自动改用该 model（覆盖 `buildArgs` 默认取的 `models[0]`，常为检测 model），并显式提示「下游模型：…（纯分类，跳过检测）」。无分类 model 时回落原行为。修复了「下游分类阶段会误用检测 model」的实际缺口。
 
 ### Notes
 
-- 纯前端实现：`polygonOps.ts` 新增 `cropPolygonGeometry`，与现有 union 对称；裁切只发 `geometry` 字段更新，沿用既有 mask-refine 的 PATCH 先例（`geometry.type` 是渲染 / 导出真值），无后端改动。
+- 端到端实测（P-8 苏州图片，grounded-sam2 检测 + onnxtools 纯分类）：阶段 0 检出 32 框 → 阶段 1 目标 27 / 成功 27 / 几何跳过 5，属性 `{vehicle_type, color}` 正确写回各检测框，crop 经 presigned URL 投递（复用 v0.18.4 通用投递）。
 
-## [0.17.12] - 2026-06-20
+## [0.18.8] - 2026-06-23
 
-shadcn 迁移 Epic 收尾期的 admin 导航整顿与「换皮回退」修补：把超管两个看板入口的路由 / 文案理顺，并恢复被换皮误收的移动端工具入口。
+多阶段预标注（路径 B）编排 UI 美化：把功能优先搭起来的多阶段界面提到与全站 shadcn 设计体系一致的水准。纯前端视觉 / 交互层，不改编排语义、校验、请求体。方案见 [`docs/plans/2026-06-23-v0.18.8-staged-preannotate-ui-polish.md`](docs/plans/2026-06-23-v0.18.8-staged-preannotate-ui-polish.md)。
 
 ### Changed
 
-- **超管看板路由理顺**：`/overview`=平台概览（运行状态 / 资源）、`/dashboard`=项目管理（全部项目）；旧 `/projects` 重定向到 `/dashboard`（保留 query），书签不破。侧栏两条入口本地化为中文「平台概览」/「项目管理」，与其余条目一致。
-- **超管默认主页保持「平台概览」**：登录后落到 `/overview`（换皮期一度被误改为项目管理，现修回）。
-
-### Fixed
-
-- **移动端顶栏工具入口回归**：窄屏（< 1024px）下被换皮误收的「后台任务铃铛」（全角色）、「预标 job 徽章」、「性能浮窗 toggle」恢复显示，与始终渲染的通知入口对齐。
+- **StageCard 卡面升级**：裸描边块换成 `Card` 卡面 + 左侧角色轨，卡头为角色图标 + 角色 `Badge`（分类）+「阶段 N」+ 运行态 `Badge`（待运行 / 运行中 / 已完成 / 失败，语义色 + 暗色配对）。
+- **运行态可视化升级**：逐阶段统计从纯文本行升为 `ProgressBar`（成功 / 目标比例）+ StatCard 风格计数块（目标 · 成功 · 失败 · 几何跳过），替换 v0.18.6 的自定义文本徽标。
+- **流水线视觉隐喻**：源（检测）与下游分类卡之间加「↓ 对每个检测框裁 ROI 喂下游分类」连接线，多个并行兄弟显「并行 ×N」标，直观呈现单层扇出（仍非节点图）。
+- **空态引导**：未加下游阶段时给一句「检测 → 分类」流水线示意文案。
 
 ### Notes
 
-- Modal（Radix Dialog 适配层）补回「点击 overlay 关闭」smoke 用例；`useToastStore` 适配层补 JSDoc 说明 toast 列表已交 sonner 内部管理、外部不可观测。
+- 折叠/展开卡、加删卡过渡动效、候选属性审阅区（AIInspectorPanel）打磨为后续可分离的细化项，本期未含。
+- 全量走语义 token + 暗色配对，过 `check-tw-tokens`。
 
-## [0.17.11] - 2026-06-20
+## [0.18.6] - 2026-06-23
 
-设计系统第二阶段收尾:只抽真正重复的局部表单原语,并降低视频 Konva 层每次渲染读取 CSS 变量的成本。
-
-### Changed
-
-- **Projects sections 共享标签样式**:5 处完全相同的 `LABEL_CLASS` 抽到 `Projects/sections/formClasses.ts`;发散的 `CONTROL_CLASS` 保持本地,不扩大抽象。
-- **画布取色 memo**:`VideoKonvaTracksLayer` 与 `VideoKonvaIssueLayer` 将 `cssVarToHex(...)` 放入 `useTheme().resolved` 依赖的 `useMemo`,保留主题切换即时重取色。
-
-## [0.17.10] - 2026-06-20
-
-设计系统第二阶段继续收敛层级与 spacing:裸数字 z-index 改为语义 utilities,任意 padding 归并到 Tailwind spacing。
+多阶段预标注（路径 B）运行态实时化：把逐阶段统计从「跑完才在底部出一条扁平文本」改成「跑批过程中实时下放到各阶段卡」。方案见 [`docs/plans/2026-06-23-v0.18.6-staged-preannotate-live-runstate.md`](docs/plans/2026-06-23-v0.18.6-staged-preannotate-live-runstate.md)。
 
 ### Changed
 
-- **语义 z 标尺**:新增 `--sc-z-*` 与 `.z-*` utilities,覆盖局部画布层、dropdown/popover/modal/drawer、notification、workbench modal 与 app drawer 的现有层级。
-- **spacing 收敛**:`apps/web/src` 内 `p?-[Npx]` 任意 padding 归并为 Tailwind spacing 类。
-- **z-index 门禁提示**:`check-tw-tokens.mjs` 对新增裸 `z-N` / `z-[N]` 输出 warning,提示改用语义 z utility。
+- **逐阶段统计实时化 + 下放到卡**：worker 跑批过程中按 5% 步长把逐阶段累加快照随进度推上 WS（复用现有项目预标通道，不新增通道）；前端实时消费，统计从底部脱节的扁平条移到各阶段卡上——源阶段显「检出 N 框」，每张下游卡显运行态徽标（待运行 / 运行中 / 已完成）+「目标·成功·失败·几何跳过」计数，并行兄弟各一条。运行中用实时快照，job 终态 / 重连回落 `result.pipeline_stages`（终态真值，不丢）。
 
-## [0.17.9] - 2026-06-20
+### Notes
 
-设计系统第二阶段继续收敛字号:全站任意像素字号改为紧凑命名 scale。
+- 仍为同步顺序执行，只是把已有累加器中途也推一份；无新并发模型（chord 并行留后续版本）。
+- crop 预览（展开看实际投递给下游的 ROI 缩略图）为可选诊断项，本期未实装，留待后续。
 
-### Changed
+## [0.18.5] - 2026-06-23
 
-- **紧凑字号 scale**:`shadcn.css` 定义 `text-2xs/text-xs/text-sm` 主档,并补少量低频命名档保留整数字号。
-- **任意字号收敛**:`apps/web/src` 内 `text-[Npx]` 全量替换为命名字号 utility;半像素档归入最近命名档。
-- **字号门禁提示**:`check-tw-tokens.mjs` 对新增 `text-[Npx]` 输出 warning,提示改用命名字号 token。
-
-## [0.17.8] - 2026-06-20
-
-设计系统第二阶段启动:把散落在组件 `className` 中的状态文字色与软底收敛到 `shadcn.css` 的语义工具类,减少暗色主题配对的人工维护。
+多阶段预标注（路径 B）配置硬化：把下游阶段卡里最容易让人「配了没反应」的自由文本框升级为选择器，并把键冲突校验从「跑完才 422」前移到配置期。纯前端。方案见 [`docs/plans/2026-06-23-v0.18.5-staged-preannotate-config-hardening.md`](docs/plans/2026-06-23-v0.18.5-staged-preannotate-config-hardening.md)。
 
 ### Changed
 
-- **状态色语义化**:新增 `text-status-danger/caution/positive/info/info-alt` 与 `bg-status-*-soft`,等价替换 rose / amber / emerald / violet / sky 的状态文字和 `/10` 软底。
-- **状态色门禁提示**:`check-tw-tokens.mjs` 对新增裸 `text-<hue>-600` / `bg-<hue>-500/10` 状态类输出 warning,提示改用语义工具类。
+- **父框类别 / 写回属性键选择器化**：阶段卡的 `parent_class_filter` 与 `write.keys` 从逗号分隔文本框改为 chip 多选——类别取项目类别，属性键优先取下游 backend 自报的 `output_attribute_schema`（回落项目 `attribute_schema`）。非工程师管理员全程点选、不再手敲，杜绝拼写误配静默过滤。
 
-## [0.17.7] - 2026-06-19
+### Added
 
-shadcn 迁移 Epic 收官:旧 `tokens.css` 彻底退役,暗色统一由 `shadcn.css` 的 `--sc-*` + `data-theme` 单点驱动;Tailwind preflight 从 `.tw-scope` 局部 reset 转为全局;CSS Modules 时代门禁退役、Tailwind 时代门禁转硬阻断。
+- **键冲突配置期预警**：多张并行阶段卡写同一属性键时，配置期即红字提示 + 涉事 chip 标红；默认拦截运行（对应后端 `on_key_conflict=reject`），勾选「允许末位覆盖」后放行（`last_wins`），不再跑完才 422。
+- **下游 backend 能力门控**：阶段卡选中的下游 backend 若不自报输出属性（纯检测器），给 ⚠ 警示「作下游只会重新检测、属性恒空」。
+- **单 backend 兜底**：项目只绑 1 个 backend 时，加分类阶段处提示「需先绑定第二个 ML backend」，不再静默不可用。
+
+## [0.18.4] - 2026-06-23
+
+多阶段预标注（路径 B）后端补强：修一处实质兼容缺口——下游 crop 此前用 `data:` base64 内联投递，只有支持 `data:` 的后端（onnxtools/yolo）能作下游，而走 `httpx.get` 的 gsam2/sam3 收到 data URI 直接失败。本期把 crop 投递改成对所有后端通用，并补健壮性/可观测/测试。方案见 [`docs/plans/2026-06-23-v0.18.4-staged-preannotate-backend-hardening.md`](docs/plans/2026-06-23-v0.18.4-staged-preannotate-backend-hardening.md)。
+
+### Changed
+
+- **crop 投递通用化**：平台裁好的 ROI crop 改为上传对象存储（import 桶，挂 7 天 lifecycle 自动清）→ presigned URL 投递，所有走 `httpx.get` 的下游后端零改造可作分类阶段（此前 data URI 仅部分后端兼容）。crop URL 与 task URL 共用同一 host 解析逻辑（抽成 `StorageService.rewrite_host_for_ml_backend`）。`data:` 内联保留为纯函数快路径（单测/已知支持的后端）。
+
+### Added
+
+- **crop 编码复用**：并行兄弟阶段 target 同一批父框时，按 `(box_idx, pad)` 复用已裁/已上传 crop，不重复裁剪 + 重编码 + 重上传。
+- **pipeline 拓扑落库**：`PredictionMeta.extra.pipeline.stages` 记每阶段 `{stage, ml_backend_id, model_id, parent_class_filter, write_keys}`，让「这框的某属性来自哪个 backend/model」可追溯。
+- **几何跳过统计**：命中阶段路由但因几何不支持（旋转框/多边形/退化框）无法裁 crop 的父框数，计入逐阶段统计 `skipped_geometry`，不再静默跳过。
+
+### Notes
+
+- 下游分类失败由 `print()` 改 `logger.warning()`，对齐 worker 模块日志约定。
+- crop 临时对象依赖 import 桶 lifecycle 清理；高频大批量下堆积量需观测，必要时 job 终态主动删前缀。
+
+## [0.18.3] - 2026-06-23
+
+多阶段预标注（路径 B）收尾：补审阅侧与运行态，把整条「检测→分类→写属性→人审」闭环跑通。方案见 [`docs/plans/2026-06-23-v0.18.3-staged-preannotate-ui-productization.md`](docs/plans/2026-06-23-v0.18.3-staged-preannotate-ui-productization.md)。
+
+### Added
+
+- **候选属性审阅 + 分步采纳**：工作台选中未落库的 AI 候选时，底部「属性审阅」区从只读升为**可编辑**——先看多阶段预标产出的 select/multiselect 属性、改后再采纳；改动经采纳端点的 `attribute_overrides` 原子落库（而非一步全采纳原值再改）。
+- **运行态逐阶段统计**：`/ai-pre` 多阶段批跑完后，展示逐阶段统计（阶段 1 检出框数 / 各下游分类阶段「目标·成功·失败」计数），轮询 async_job 结果实时刷新。
+- **采纳端点 `attribute_overrides`**：`POST /tasks/{id}/predictions/{pid}/accept` 新增可选 body `attribute_overrides`，按属性键覆盖 shape 自带 attributes 落库（内部键 `_shape_index` 等不受影响）。
+
+### Notes
+
+- 编排界面维持**线性阶段卡**形态，未引入节点图（路径 B 决议：无深度≥3 扇出 / 运行时动态分支 / 循环 / 用户自助任意拓扑，节点图即过度设计）。
+- 下列项按「实测未出现驱动」暂不实装、留待真实需求：下游产独立几何 `write=new_shape`、`stage_index`/`parent_prediction_id` 正式表列、并行兄弟 Celery `chord` 并行、「一键采纳整条 pipeline」。
+
+## [0.18.2] - 2026-06-23
+
+多阶段预标注（路径 B）第二块：把 0.18.1 的「单 detect→单 classify 顺序链」升级为**可控编排**——按类别路由、并行扇出、降级策略、逐阶段统计。方案见 [`docs/plans/2026-06-23-v0.18.2-staged-preannotate-roi-routing.md`](docs/plans/2026-06-23-v0.18.2-staged-preannotate-roi-routing.md)。
+
+### Added
+
+- **单层并行扇出**：一个源检测阶段下可挂多个共享 `parent_stage` 的下游分类阶段（如车辆框 → 颜色 + 车型 + 车牌 OCR 各写不同属性键，结果 union 合并进同一框）。`/ai-pre` 支持「并行加同级阶段」，每张阶段卡自持配置实例。
+- **按类别路由 `parent_class_filter`**：每个下游阶段声明只对哪些父框 `class_name` 启动——不相交类别集 = 不同类走不同模型，重叠 = 同类喂多模型；命中零阶段的框保持纯检测（降级）。声明式过滤，非条件分支节点。
+- **ROI 可配**：`roi.pad`（0–0.5）按请求可调，`roi.mode` 校验（本期仅 `crop`）。
+- **阶段级失败策略 `on_failure`**：`keep_parent`（默认，下游失败保留上游框、属性留空 + 软告警）/ `drop_box`（丢弃该父框）。下游失败不再整 task 失败。
+- **并行兄弟键冲突检测**：多个阶段声明写同一属性键时，默认 `on_key_conflict=reject`（422）；`last_wins` 时按阶段顺序末位覆盖。
+- **逐阶段统计**：多阶段预标的检出框数 / 各下游富集成功失败数写入 async_job 结果（`pipeline_stages`），供后续逐阶段可视化。
+
+### Changed
+
+- 阶段卡 UI 补「父框类别 / ROI pad / 写回属性键」字段；下游阶段从「单一第二阶段」泛化为「可增删的并行兄弟列表」。
+
+多阶段预标注（路径 B）第一块落地：把「检测 → 拿框 → 对每个框跑分类 → 写回属性」的级联从单 backend 内部（0.18.0 路径 A）泛化为**平台层跨 backend 编排**。任意检测器 × 任意分类器自由组合，复用现有任意 backend、零改造。本版聚焦顺序 2 阶段 MVP，方案见 [`docs/plans/2026-06-23-v0.18.1-staged-preannotate-mvp.md`](docs/plans/2026-06-23-v0.18.1-staged-preannotate-mvp.md)。
+
+### Added
+
+- **多阶段预标注编排（顺序 detect→classify）**：`POST /projects/{id}/preannotate` 新增可选 `pipeline_stages`（有序阶段列表）。源阶段产框后，平台按每个检测框的 bbox 裁 ROI crop（`pad` 默认 5%、`data:` base64 内存传递，下游 backend 无感），喂下游分类 backend，把返回的 `attributes` 合并（union）进对应框——维持「一个框 + 一串属性」模型，前端采纳/编辑零改动。缺省（无 `pipeline_stages`）与现有单模型预标逐字等价，完全向后兼容。
+- **`/ai-pre` 加第二阶段**：项目详情面板预标配置区可勾选「加第二阶段」，容器持第二份配置表单实例（复用 `PreannotateConfigForm`），选下游 backend/model 即组成 detect→classify 级联。
+- **阶段元信息追溯**：多阶段预标的 `stage_count` / `enriched_attr_keys` 暂存 `PredictionMeta.extra`，可追溯「哪个属性来自哪个阶段」（MVP 不改表）。
+
+### Changed
+
+- **`MAX_ML_BACKENDS_PER_PROJECT` 默认 1 → 3**：多阶段编排天然需 ≥2 backend（detect + classify）；仍保留上限挡入口防显存爆炸，生产按显存预算调整。
+
+## [0.18.0] - 2026-06-23
+
+二阶段预标注落地：新增**自维护的第四个 ML backend `onnxtools-backend`**——「检测 → 拿到框 → 对机动车做车型/颜色分类 → 写入框属性」一条流水线打通，并扩展协议让 backend 自报输出属性 schema、前端一键导入。Path B（平台层跨 backend 可视化编排）作为后续 Epic 单列 [`ROADMAP`](ROADMAP/2026-06-23-staged-preannotation-pipeline-roadmap.md)。本版方案见 [`docs/plans/2026-06-23-v0.18.0-onnxtools-vehicle-attribute-backend.md`](docs/plans/2026-06-23-v0.18.0-onnxtools-vehicle-attribute-backend.md)。
+
+### Added
+
+- **onnxtools 第四 backend（二阶段车辆属性）**：独立 FastAPI 微服务（端口 8004、compose profile `gpu-onnxtools`），与 gsam2 / sam3 / yolo 同构（HTTP 协议 v2.1）但单一固定 pipeline。基于 onnxtools 的 `VehicleAttributePipeline`：rtdetr 检测 → 对机动车框裁 ROI → va 模型出**车型（13 类）+ 颜色（11 类）**→ 写入框 `attributes`。`class_name` 为 rtdetr 粗检测类，`attributes.vehicle_type` / `attributes.color` 为细分类（value 与 onnxtools 枚举严格对齐）；车牌作独立检测类，本轮不做父子。
+- **协议扩展 · backend 自报输出属性 schema**：`/setup` 的 model 目录新增 `output_attribute_schema`（含每个 select 字段的 `options`，value+中文 label）与 `output_attribute_types`，沿 `ml_capabilities`（protocol → capability_instances）透传到前端。
+- **「从 ML Backend 导入属性」**：项目设置「类别与属性」区新增按钮，列出所有自报输出属性的在线 backend / model，预览并勾选字段后一键合并进当前工具单位的 `attribute_schema`（同 key 覆盖、新 key 追加），免去手抄选项 + key 对齐。
+- **采纳前候选属性预览**：工作台选中尚未落库的 AI 候选时，画布选中卡与右侧标注详情都以只读 `AttributeForm` 预览其 `attributes`（经项目 schema 的 options 解析为中文）；候选列表行补属性摘要 chip。无需先采纳即可核对车型 / 颜色。
 
 ### Removed
 
-- **删除 `tokens.css`**(全仓零消费者):含底部兼容别名段;`main.tsx` 移除其 import。
-- **移除 `.tw-scope` 局部 reset**:全仓 45 处 className 去掉 `tw-scope`,preflight 转全局后不再需要局部隔离。
-- **旧门禁 `check-css-tokens.mjs` 退役**:`*.module.css` 收敛后无可扫,从 `pnpm lint` 摘除。
-
-### Changed
-
-- **preflight 转全局**:`shadcn.css` 改回 `@import "tailwindcss"`(含 preflight)。
-- **新门禁 `check-tw-tokens.mjs` 转 blocking**:修复 `!` / `hover:` 等前缀的匹配盲区后并入 `pnpm lint`,作为 Tailwind 时代的硬门禁(禁裸色 / 任意色值、暗色 token 化)。
+- **画布「属性模式」浮条**：移除 v0.14.10 引入的属性快速赋值模式（顶部浮条 + `[` / `]` / `1`-`9` / `N` 快捷键 + `attributeMode` 状态）。属性改在选中卡 / 右栏属性表单中按对象编辑。
 
 ### Notes
 
-- 全仓仅剩 **60 个 `*.module.css`**:10 个 Konva 画布叠加层(白名单 + 注释)+ 50 个未纳入本 Epic 范围的组件 / 页面。typecheck 干净、lint 0 发现、全量 1607 测试绿。
-
-## [0.17.6] - 2026-06-19
-
-工作台迁移(Epic 阶段 6,最大一阶段:65 个 module.css / 8536 行)。按「DOM 面板」与「真 Konva 叠加层」分桶:前者全迁 Tailwind 并删 CSS,后者保留 CSS 但切断对 `tokens.css` 的依赖。
-
-### Changed
-
-- **桶 A · 55 个 DOM 面板全迁 Tailwind**:`shell`(31)+ `selectionCard`(8)+ 挂在 `stage/` 下的对话框 / 侧栏 / 工具栏(`VideoTrackPanel` / `VideoChapterSidebar` / `VideoAttributesEditor` / `CanvasToolbar` / `BoxListItem` / 各 `*Dialog` / 3D `ThreeDWorkbench` + `FramePicker` 等),引用的通用语义 token 1:1 映射 `--sc-*`,删除对应 `.module.css`。
-- **桶 B · 10 个 Konva 画布叠加层改指 `--sc-*`**:像素定位 / z-index 编排的叠加层(`ImageStage` / `BoxRenderer` / `SelectionOverlay` / `VideoKonvaStage` / `VideoPlaybackOverlay` 等)保留为 CSS,但把内部 `var(--color-*)` 全部改指 `var(--sc-*)`,登记门禁白名单 + 注释。
-- **画布棋盘格变量内迁**:画布专属的 `--color-canvas-checker-a/b` 折进 `shadcn.css` 为 `--sc-canvas-checker-a/b`(不另建 `canvas.css`)。
-
-### Notes
-
-- 退役 55 个 module.css(工作台对 `tokens.css` 的依赖彻底切断);亮 / 暗双主题对图像 / 视频 / 3D 工作台肉眼回归,画布渲染无回归。
-
-## [0.17.5] - 2026-06-19
-
-外壳 + 审核迁移(Epic 阶段 5):全站最显眼的 chrome 换新,完成度跃升。
-
-### Changed
-
-- **`components/shell`(6 件)**:Sidebar / TopBar / SidebarDrawer / JobsBell / NotificationsPopover / PreannotateJobsBadge。侧栏微沉 `bg-muted` + 激活项白底浮起(中性 elevated);顶栏品牌渐变 `from-brand to-violet-500`、workspace 点 emerald;SidebarDrawer portal 挂 `tw-scope`。
-- **`pages/Review`(5 件,非画布部分)**:ReviewPage / ReviewSidebar / ReviewWorkbench(仅 chrome,画布零改)/ ReviewerMiniPanel / RejectReasonModal。
-- **门禁收口**:进度条任意色 → 固定类、hover rose 单值、SKIP 徽标改柔底。
-
-### Notes
-
-- 退役 11 个 module.css;亮 / 暗双主题肉眼回归通过。
-
-## [0.17.4] - 2026-06-19
-
-数据密集页迁移(Epic 阶段 4):六区 40+ 个 module.css 退役。
-
-### Changed
-
-- **迁移范围**:`pages/ModelMarket`(10 + capability 4 子件)、`pages/Projects`(26,含 DataManager / Settings / sections + RenderingConfigEditor)、`pages/Datasets`、`pages/Settings`、`pages/Storage`、`pages/Users`。
-- **破坏性操作按钮统一**:收敛到 `Button variant="danger"`(描边软底 rose),弃旧实心红底白字,跟随 v0.17.1 既定 variant 体系。
-- 删共享 `CapabilityCatalogPanel.module.css`(← capability 4 件)、`RenderingConfigSection.module.css`(← RenderingConfigEditor)。
-
-### Notes
-
-- 退役 42 个 module.css;worktree 子 agent 按波次并行迁移;亮 / 暗双主题肉眼回归通过。
-
-## [0.17.3] - 2026-06-19
-
-页面 wave 1(Epic 阶段 3):低风险、高可见的「门面」先行 —— Login + Dashboard 家族 + Admin。
-
-### Changed
-
-- **`pages/Login`(3)**:Login / Forgot / Reset(+ VerifyEmail 随 Reset 同迁)。
-- **`pages/Dashboard`(9)**:`DashboardPage` 原地重写为 Geist 范式并保留全部重交互(向导 / 权限 / FilterDrawer / grid-list / 批次链接);迁 AdminDashboard / Annotator / Reviewer / Viewer / ProjectGrid / MyBatchesCard / ExportModal / FilterDrawer。
-- **`pages/Admin`(3)**:People / Analytics / SystemHealth。
-
-### Removed
-
-- 退役实验性 `DashboardPageNext` 与 `/dashboard-next` 路由(其范式已固化进正式 `DashboardPage`)。
-
-### Notes
-
-- 退役 15 个 module.css;`Modal` Content 挂 `tw-scope` 让弹窗内表单获 box-sizing reset。
-
-## [0.17.2] - 2026-06-19
-
-原语替换 wave 2(Epic 阶段 2):交互原语委托 shadcn / Radix,`components/ui/` 全部 16 个 module.css 退役。
-
-### Changed
-
-- **`Modal` → Radix `Dialog`**(全屏 / 抽屉用 `sheet`);**`Toast` → `sonner`**(保留 `useToastStore` 薄适配,内部转 `toast()`,**调用点不改**)。
-- **`Switch` / `TabRow` / `SearchInput` / `Avatar` / `DropdownMenu` / `ContextMenu` / `Tooltip`** 委托对应 shadcn 组件;键盘 / 焦点 / a11y 走 Radix。
-- 7 个可视化组件 module.css → Tailwind;修 `TabRow` 语义。
-
-### Notes
-
-- 退役 16 个 module.css(`components/ui/` CSS 全退役);`ui/` 物理删目录 + 全站 import repoint 推迟到 v0.17.7 统一收口(适配器无 CSS 债,留作 shadcn 薄适配层)。
-
-## [0.17.1] - 2026-06-19
-
-原语替换 wave 1(Epic 阶段 1):最高杠杆、最机械的基础原语适配 shadcn / lucide。
-
-### Changed
-
-- **`Icon`(139 引用)→ `lucide-react`** 具名图标(`IconName → Lucide` 映射 + codemod 批量替换)。
-- **`Button`(105)/ `Badge`(55)/ `Card`(36)** API 对齐后 codemod 改 import + 必要 props 重命名;旧 `ui/*` 暂留作适配器(引用归零后于 v0.17.7 删除)。
-
-### Fixed
-
-- 适配过程中的 UA 默认样式漏样修复(`appearance` / `font-family: inherit` 等)。
-
-### Notes
-
-- 退役 4 个 module.css。
-
-## [0.17.0] - 2026-06-19
-
-地基(Epic 阶段 0):接入 Tailwind v4 + shadcn/ui,与既有 CSS Modules 共存,为后续逐页迁移立范式与门禁。本版不改任何用户可见行为。
-
-### Added
-
-- **Tailwind v4 + `@tailwindcss/vite` 接入**:与 CSS Modules 共存(跳过全局 preflight,`.tw-scope` 局部 reset);`shadcn.css` 落地 Geist + 彩色点缀 token,`dark` variant 重定向到 `[data-theme="dark"]`;`components.json` + `lib/utils.ts(cn)`。
-- **补齐 shadcn 原语全集**:`dialog / sheet / dropdown-menu / context-menu / tooltip / switch / select / checkbox / popover / label / textarea / scroll-area / alert-dialog`(纯 `radix-ui`,无新依赖)+ `sonner`(新增依赖,Toaster 适配本项目 `useTheme().resolved` / `--sc-*`),`components/shadcn/ui/` 共 25 个原语。
-- **新门禁 `check-tw-tokens.mjs`(warning 模式)**:扫 `*.tsx` 的 `className`(裸色 / Tailwind 任意色值 / 语义色暗色配对),并入 `pnpm lint`,先 `::warning::` 观测不阻断(v0.17.7 转 blocking)。
-- **设计规范文档** + **`/dashboard-next` 垂直切片**(`DashboardPageNext.tsx`,参考实现 + 验收基线,于 v0.17.3 退役)。
+- onnxtools 经 `git+https://github.com/yyq19990828/onnxtools.git@main` 安装（`VehicleAttributePipeline` 已合入 main）；两个 onnx 模型经 volume 挂载注入、不打进镜像。镜像复用本机已缓存的 `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel`（cuda12.8 + cudnn9 满足 onnxruntime-gpu 1.22）。
+- entrypoint 把 torch 自带的 `nvidia/*/lib` 加进 `LD_LIBRARY_PATH`，否则 onnxruntime CUDAExecutionProvider 找不到 cudnn 静默退回 CPU；实测 GPU ~35ms/图 vs CPU ~940ms。缺 GPU 时自动 fallback CPU，功能不受影响。
+- `accept_prediction` 复制候选 attributes 时对项目 select 字段做软校验：值不在 options 内只告警、不阻断（保留原值），避免 backend 枚举与项目配置漂移时丢数据。

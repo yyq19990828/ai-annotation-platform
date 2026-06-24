@@ -76,6 +76,8 @@ export interface CapabilityInstanceModel {
   display_name: string;
   task: string;
   model_family?: string | null;
+  // 原子 vs 内部编排 (协议 v2.2): atom=单次推理原子; composite=内部编排多原子. 缺省 atom.
+  composition?: "atom" | "composite";
   infra: string | null;
   is_interactive: boolean;
   supported_prompts: string[];
@@ -93,6 +95,19 @@ export interface CapabilityInstanceModel {
   // 前端 VariantSelector 在用户未选时取此作初值; 优先级:
   // 项目级 project.default_variants[backend_id] > 本字段 > backend 启动 env 默认.
   default_variants?: Record<string, string>;
+  // v0.18.0 · backend 自报的输出属性 schema (协议 §3.x). 二阶段 backend (如 onnxtools
+  // 车辆属性) 通过此字段声明 /predict 会写入哪些 attributes (vehicle_type / color 等),
+  // 含 select options. 前端「从 ML Backend 导入属性」据此一键导入项目 attribute_schema,
+  // 免去手抄选项 + key 对齐。老 backend 缺字段 = 无属性输出。
+  output_attribute_schema?: OutputAttributeSchemaItem[];
+}
+
+// v0.18.0 · backend 自报的单个输出属性字段 (与项目 AttributeField 同构子集).
+export interface OutputAttributeSchemaItem {
+  key: string;
+  label: string;
+  type: string; // text/number/boolean/select/multiselect/range
+  options?: { value: string; label: string }[];
 }
 
 export interface CapabilityInstance {

@@ -98,6 +98,8 @@ class ModelCapability(BaseModel):
     supported_prompts: list[str] = []
     supported_geometric_outputs: list[str] = []
     output_attribute_types: list[str] = []
+    # 协议③ · 属性 schema 自描述 ([{key,label,type,options}]), 供平台导入项目 attribute_schema.
+    output_attribute_schema: list[dict] = []
     supported_text_outputs: list[str] = []
     supported_trackers: list[str] = []
     supported_variants: list[dict] = []
@@ -109,6 +111,9 @@ class ModelCapability(BaseModel):
     default_variants: dict[str, str] = {}
     default_thresholds: dict = {}
     resource_profile: dict = {}
+    # 协议 v2.2 · 原子 vs 内部编排维度：atom=单次推理原子；composite=一个 model 内部编排多原子。
+    # 缺省 atom（老 backend 无字段即按原子处理）。编排下游 stage 据此过滤（只组合 atom）。
+    composition: str = "atom"
     params: dict = {}
     modality: str | None = None
     # v0.14.17 · 闭集检测器原生类别表 ([{index,name}], 读自权重 model.names). 供前端类别白名单;

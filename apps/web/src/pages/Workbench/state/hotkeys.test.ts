@@ -47,7 +47,7 @@ describe("dispatchKey · 修饰键", () => {
 describe("dispatchKey · 单键", () => {
   it("B / V / P / S → setTool", () => {
     expect(dispatch({ key: "b" })).toEqual({ type: "setTool", tool: "box" });
-    expect(dispatch({ key: "v" })).toEqual({ type: "setTool", tool: "hand" });
+    expect(dispatch({ key: "v" })).toEqual({ type: "setTool", tool: "select" });
     expect(dispatch({ key: "p" })).toEqual({ type: "setTool", tool: "polygon" });
     // v0.10.2 · S → "ai-cycle" (具体进入哪个 AI 工具由消费层据 capabilities 决定).
     expect(dispatch({ key: "s" })).toEqual({ type: "setTool", tool: "ai-cycle" });
@@ -67,7 +67,7 @@ describe("dispatchKey · 单键", () => {
     expect(dispatch({ key: "1", altKey: true })).toEqual({ type: "setTool", tool: "box" });
     expect(dispatch({ key: "2", altKey: true })).toEqual({ type: "setTool", tool: "polygon" });
     expect(dispatch({ key: "3", altKey: true })).toEqual({ type: "setTool", tool: "ai-cycle" });
-    expect(dispatch({ key: "4", altKey: true })).toEqual({ type: "setTool", tool: "hand" });
+    expect(dispatch({ key: "4", altKey: true })).toEqual({ type: "setTool", tool: "select" });
   });
   it("Alt+5..9 不映射 (5-9 留给数字切类别 fallback)", () => {
     expect(dispatch({ key: "5", altKey: true })).toEqual({ type: "setClassByDigit", idx: 4 });
@@ -164,8 +164,8 @@ describe("dispatchKey · 上下文相关", () => {
 describe("dispatchKey · video mode", () => {
   const videoCtx: Partial<DispatchCtx> = { videoMode: true };
 
-  it("Space → videoTogglePlayback", () => {
-    expect(dispatch({ key: " " }, videoCtx)).toEqual({ type: "videoTogglePlayback" });
+  it("Space → videoSpaceDown", () => {
+    expect(dispatch({ key: " " }, videoCtx)).toEqual({ type: "videoSpaceDown" });
   });
 
   it("J / K / L → video jog playback controls", () => {
@@ -183,13 +183,12 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "l" }, selectedTrackCtx)).toEqual({ type: "videoToggleLockedTrack" });
   });
 
-  it("B / T / V → switch box / track / hand video tools", () => {
+  it("V / B / T → switch video select / box / track tools", () => {
+    expect(dispatch({ key: "v" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "select" });
+    expect(dispatch({ key: "V" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "select" });
     expect(dispatch({ key: "b" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "box" });
     expect(dispatch({ key: "T" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "track" });
-    expect(dispatch({ key: "v" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "hand" });
-    expect(dispatch({ key: "V" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "hand" });
-    // Alt+1/2/3 副键
-    expect(dispatch({ key: "3", altKey: true }, videoCtx)).toEqual({ type: "setVideoTool", tool: "hand" });
+    expect(dispatch({ key: "3", altKey: true }, videoCtx)).toEqual({ type: "setVideoTool", tool: "select" });
   });
 
   it("Ctrl+B opens selected video track propagation only in video mode", () => {
@@ -258,8 +257,9 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "Escape" }, videoCtx)).toEqual({ type: "cancel" });
   });
 
-  it("1-9 → setClassByDigit and video B/T switch video tools", () => {
+  it("1-9 → setClassByDigit and video V/B/T switch video tools", () => {
     expect(dispatch({ key: "4" }, videoCtx)).toEqual({ type: "setClassByDigit", idx: 3 });
+    expect(dispatch({ key: "v" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "select" });
     expect(dispatch({ key: "b" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "box" });
     expect(dispatch({ key: "T" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "track" });
     expect(dispatch({ key: "2", altKey: true }, videoCtx)).toEqual({ type: "setVideoTool", tool: "track" });

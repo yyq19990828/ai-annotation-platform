@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-24
 ---
 
 # 预标注流水线（Prediction Pipeline）
@@ -169,12 +169,110 @@ if params:
 - `skip_predicted` 模式下，进度条分母（`projects.py` 触发处）也排除已预标 task，避免"跳过的 task"虚增分母让进度显示卡住。
 - `overwrite` 只清 AI 预标产物（复用 [`clean_task_predictions`](./batch-module#clean-task-predictions)），手工标注 `source="manual"` 不受影响，task 状态不回退；与删批次/`reset_to_draft` 的级联清理是同一套清理逻辑。
 
+## 多阶段预标注（pipeline_stages，路径 B）
+
+`PreannotateRequest.pipeline_stages` 把单阶段批量预标泛化为**平台层跨 backend 编排**：源阶段（如 detect）产框 → 下游阶段（如 classify / box-seg）对每个父框按各自路由方式投递 → 结果合并回同一框。缺省（无 `pipeline_stages`）与单阶段 `batch_predict` 逐字等价，完全向后兼容。决策与边界见 [ADR 0043 — 多阶段预标注编排](../adr/0043-staged-preannotation-pipeline)。
+
+### 请求形态
+
+```jsonc
+// POST /api/v1/projects/{id}/preannotate 请求体节选
+{
+  "ml_backend_id": "<source-backend-uuid>",     // 源阶段 backend（兼容字段，等价 stages[0].ml_backend_id）
+  "model_id": "vehicle-detect",                  // 源阶段 model
+  "pipeline_stages": [
+    {
+      "stage": 1,                                // 1-based 阶段序号
+      "ml_backend_id": "<source-backend-uuid>",
+      "model_id": "vehicle-detect"
+    },
+    {
+      "stage": 2,
+      "parent_stage": 1,                         // 父阶段（声明并行兄弟时同 parent_stage 即可挂多个 stage=2）
+      "ml_backend_id": "<onnxtools-uuid>",
+      "model_id": "vehicle-attr-classify",
+      "parent_class_filter": ["car", "truck"],   // 只对父框 class_name 命中时启动；其余降级保留纯检测
+      "roi": { "pad": 0.05, "mode": "crop" },    // 仅 crop 模式有效，pad ∈ [0, 0.5]
+      "on_failure": "keep_parent",               // keep_parent（默认）/ drop_box
+      "on_key_conflict": "reject",               // reject（默认 422）/ last_wins（并行兄弟写同 key 时）
+      "write": { "keys": ["vehicle_type", "color"] }  // 限定写回的属性 key 白名单（chip 多选）
+    }
+  ]
+}
+```
+
+### 下游投递路由（`_stage_input_mode`）
+
+worker 按下游 model 的 `supported_prompts` 自动选投递方式([apps/api/app/workers/tasks.py:171](../../../apps/api/app/workers/tasks.py)):
+
+| 下游 model 能力 | 投递模式 | 投递内容 | 典型场景 |
+|---|---|---|---|
+| `supported_prompts` 不含 `bbox`（纯分类） | `crop` | 平台按 `parent_class_filter` 裁父框 ROI（`pad` 默认 5%） | yolo/onnxtools 纯分类 |
+| `supported_prompts` 含 `bbox` 且非交互 | `geometry` | 全图 URL + 父框归一化坐标列表（`tasks[].prompts[]`） | gsam2 `box-seg`：`set_image` 一次、N 框共享 embedding 出 polygon |
+| 取不到 model | `crop` | 同上 | 向后兼容回落 |
+
+### crop 投递通用化
+
+crop 模式默认走 **presigned URL** 而非 `data:` base64：平台把裁好的 ROI 上传 import 桶（key=`roi-crops/{job_id}/{task_id}/{box_idx}.jpg`），挂 7 天 lifecycle 自动清，URL 经 [`StorageService.rewrite_host_for_ml_backend`](../../../apps/api/app/services/storage.py) 重写到 backend 可拉取的 host。所有走 `httpx.get` 的下游 backend（gsam2 / sam3）零改造可作分类阶段。`data:` 内联保留为纯函数快路径（单测 / 已知支持 `data:` 的 backend：onnxtools / yolo），由 `_make_crop_uploader` 是否注入 `upload_crop` 选择路径。
+
+### 单层并行兄弟（声明式，非 Celery chord）
+
+同一 `parent_stage` 可挂多个下游阶段（车辆框 → 颜色 + 车型 + 车牌 OCR 各写不同属性键），结果按 `write.keys` union 合并进同一框。当前实现为 **worker 内顺序串跑各兄弟阶段**，不是 Celery chord — chord 真并行作单列计划被搁置（详 `docs/plans/` 下 chord-parallelism plan，无实测 wall-clock 压力前不实施）。声明形态本身是「并行」语义（互不依赖），实施层是「顺序」——后续切 chord 不破协议。
+
+并行兄弟写同一属性键时：
+
+- `on_key_conflict=reject`（默认）→ worker 校验失败抛 422；前端阶段卡在**配置期**就用红字 + 红 chip 预警，不再跑完才 422。
+- `on_key_conflict=last_wins` → 按阶段顺序末位覆盖。
+
+### ROI 模块（`roi.py`）
+
+`apps/api/app/workers/roi.py` 集中所有 ROI 路由纯函数：
+
+| 函数 | 作用 |
+|---|---|
+| `crop_inputs_from_boxes` | 按父框裁 ROI crop（`pad` 加边、`parent_class_filter` 过滤），返回 `CropBatch(inputs, skipped_geometry)` |
+| `geometry_prompts_from_boxes` | 父框 → 归一化 prompts 列表（带 `parent_box_idx`），供 box-seg 出多边形与父框对齐 |
+| `collect_geometry_shapes` | 把 box-seg 返回的 polygon 按 `parent_box_idx` 还原到原图坐标，追加进父框预测 |
+| `merge_classify_attributes` | 把下游分类结果按 `write.keys` 白名单 union 进父框 `attributes` |
+| `box_class_name` | 从 LS shape 提取 `class_name`（`value.rectanglelabels[0]` / `value.labels[0]`），供 `parent_class_filter` 命中判定 |
+
+旋转框 / 多边形 / 退化框命中阶段路由但几何不支持时计入 `stats[si].skipped_geometry`，不再静默——见下文逐阶段统计。
+
+### 逐阶段统计：实时快照 + 终态真值
+
+worker 累加各阶段 stats（源阶段 `{detected}`、下游 `{targeted, ok, failed, skipped_geometry}`），有两条通道:
+
+- **运行中实时快照**：按 5% 步长把当前累加 `pipeline_stages` 随进度推上 WS `project:{id}:preannotate`（复用现有通道，不新增）。前端阶段卡实时下放，显「待运行 / 运行中 / 已完成」徽标 + 计数 +`ProgressBar`。
+- **终态真值**：`async_jobs.result.pipeline_stages` 落库（job 终态写一次）。WS 重连或运行后回看一律走终态字段，不丢。
+
+### 拓扑落库与可追溯
+
+`_pipeline_topology` 把 stages 配置派生为可审计拓扑落 `PredictionMeta.extra.pipeline`：
+
+```json
+{
+  "stage_count": 2,
+  "enriched_attr_keys": ["color", "vehicle_type"],
+  "stages": [
+    { "stage": 1, "ml_backend_id": "...", "model_id": "vehicle-detect", "parent_class_filter": null, "write_keys": null },
+    { "stage": 2, "ml_backend_id": "...", "model_id": "vehicle-attr-classify", "parent_class_filter": ["car"], "write_keys": ["color", "vehicle_type"] }
+  ]
+}
+```
+
+这框的某属性来自哪个 backend / model 可逐条追溯——不改表（仍在 `PredictionMeta.extra` JSONB 内），`stage_count` / `enriched_attr_keys` 收口进同一 namespace。
+
+### 配置上限
+
+`MAX_ML_BACKENDS_PER_PROJECT` 默认 `3`（跨 backend 编排天然需 detect + classify ≥ 2，留一档余量）；仍保留上限挡入口防显存爆炸，生产按显存预算调整。
+
 ## 代码索引
 
 - 模型：`apps/api/app/db/models/async_job.py`、`apps/api/app/db/models/prediction.py`
-- Worker：`apps/api/app/workers/tasks.py::batch_predict`
+- Worker：`apps/api/app/workers/tasks.py::batch_predict` / `_run_batch` / `_run_task_pipeline` / `_stage_input_mode`
+- ROI 路由：`apps/api/app/workers/roi.py`（`crop_inputs_from_boxes` / `geometry_prompts_from_boxes` / `merge_classify_attributes`）
 - async job service：`apps/api/app/services/async_job.py`
-- 端点：`apps/api/app/api/v1/predictions.py`（结果查询）、`apps/api/app/api/v1/projects.py::trigger_preannotation`（触发）
-- 能力协商：`apps/api/app/services/ml_capabilities.py`（`extract_capabilities` / `derive_modalities`）
-- 前端：`apps/web/src/pages/AIPreAnnotate/`、`hooks/useGlobalPreannotationJobs.ts`
+- 端点：`apps/api/app/api/v1/predictions.py`（结果查询 + `POST /tasks/{id}/predictions/{pid}/accept` `attribute_overrides`）、`apps/api/app/api/v1/projects.py::trigger_preannotation`（触发）
+- 能力协商：`apps/api/app/services/ml_capabilities.py`（`extract_capabilities` / `derive_modalities`，含 `output_attribute_schema` / `composition` 字段）
+- 前端：`apps/web/src/pages/AIPreAnnotate/`、`hooks/useGlobalPreannotationJobs.ts`、`pages/AIPreAnnotate/components/StageCard.tsx`（多阶段编排 UI）
 - 迁移：`apps/api/alembic/versions/0085_drop_prediction_jobs.py`

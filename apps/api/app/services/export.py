@@ -604,7 +604,9 @@ class ExportService:
                     nodes = kp_schema.get("nodes") or []
                     # 有 sublabel 时拼成 name_sublabel，保证 COCO keypoints 名唯一可辨。
                     names = [
-                        f"{n['name']}_{n['sublabel']}" if n.get("sublabel") else n["name"]
+                        f"{n['name']}_{n['sublabel']}"
+                        if n.get("sublabel")
+                        else n["name"]
                         for n in nodes
                         if isinstance(n, dict) and n.get("name")
                     ]

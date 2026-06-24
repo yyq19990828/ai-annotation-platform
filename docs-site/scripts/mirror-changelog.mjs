@@ -91,7 +91,7 @@ function rewriteLinks(text) {
     // ROADMAP.md → /roadmap/
     .replace(new RegExp(`\\]\\(${REL}ROADMAP\\.md${HASH}\\)`, "g"), "](/roadmap/$1)")
     // ADR → /dev/adr/<id>
-    .replace(new RegExp(`\\]\\(${REL}docs\\/adr\\/([^)#\\s]+?)\\.md${HASH}\\)`, "g"), "](/dev/adr/$1$2)")
+    .replace(new RegExp(`\\]\\(${REL}(?:docs\\/)?adr\\/([^)#\\s]+?)\\.md${HASH}\\)`, "g"), "](/dev/adr/$1$2)")
     // plans / research 不进站点：指向 GitHub blob URL（保留 hash）
     .replace(new RegExp(`\\]\\(${REL}docs\\/(plans|research)\\/([^)#\\s]+?\\.md)${HASH}\\)`, "g"),
       `](${GITHUB_BLOB}/docs/$1/$2$3)`)

@@ -60,6 +60,7 @@ export function useMLCapabilities(
 
   const capability = query.data;
   const models = useMemo<MLModelCapability[]>(
+    // 工作台多模型选择器: 不过滤 (含 composite, 用户可手动选一锅端)。
     () => (Array.isArray(capability?.models) ? capability!.models : []),
     [capability],
   );

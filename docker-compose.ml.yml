@@ -14,7 +14,7 @@
 # 之后 `docker compose --profile gpu up -d grounded-sam2-backend` 即可（profile-gated 不影响默认 `up`）。
 #
 # 三个 backend 完全独立的 profile（gpu / gpu-sam3 / gpu-yolo），用户按显存预算自由组合启动。
-# 端口: grounded-sam2 → 8001 · sam3 → 8002 · yolo → 8003。
+# 端口: grounded-sam2 → 8001 · sam3 → 8002 · yolo → 8003 · onnxtools → 8004。
 
 services:
   # v0.9.0+ Grounded-SAM-2 ML Backend (GroundingDINO + SAM 2.1).
@@ -149,6 +149,41 @@ services:
               capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # v0.18.0 · onnxtools-backend (rtdetr 检测 + va 车辆属性, 二阶段预标).
+  #   docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-onnxtools up onnxtools-backend
+  # 单一固定 pipeline (无 variant/pool); 纯批量预标 (supported_prompts=['none']).
+  # 模型由 bind mount 注入 (不打进镜像), 起栈前先复制 (见 apps/onnxtools-backend/README.md):
+  #   cp /home/tyjt/Desktop/onnxtools/models/{rtdetr-2024080100,va_260612}.onnx apps/onnxtools-backend/models/
+  # onnxruntime-gpu 缺 GPU/cuDNN 时自动 fallback CPU, 功能仍可用 (仅变慢).
+  onnxtools-backend:
+    build:
+      context: ./apps
+      dockerfile: onnxtools-backend/Dockerfile
+    profiles: ["gpu-onnxtools"]
+    ports:
+      - "8004:8004"
+    environment:
+      ONNXTOOLS_MODEL_DIR: /app/models
+      ONNXTOOLS_DET_MODEL: ${ONNXTOOLS_DET_MODEL:-rtdetr-2024080100.onnx}
+      ONNXTOOLS_VA_MODEL: ${ONNXTOOLS_VA_MODEL:-va_260612.onnx}
+      ONNXTOOLS_CONF_THRES: ${ONNXTOOLS_CONF_THRES:-0.5}
+      LOG_LEVEL: ${ONNXTOOLS_LOG_LEVEL:-INFO}
+    volumes:
+      - ./apps/onnxtools-backend/models:/app/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
       interval: 30s
       timeout: 10s
       retries: 3

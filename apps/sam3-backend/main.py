@@ -441,6 +441,8 @@ def setup() -> dict:
             "model_family": "sam3",
             "infra": "pytorch",
             "is_interactive": False,
+            # v0.18.12 · 纯文本检测, 原子单元。
+            "composition": "atom",
             "supported_prompts": ["text"],
             "supported_geometric_outputs": ["bbox"],
             "supported_text_outputs": ["box"],
@@ -456,6 +458,8 @@ def setup() -> dict:
             "model_family": "sam3",
             "infra": "pytorch",
             "is_interactive": False,
+            # v0.18.12 · 文本→检测→分割一体的内置流程, 非原子。
+            "composition": "composite",
             "supported_prompts": ["text"],
             "supported_geometric_outputs": ["polygon"],
             "supported_text_outputs": ["mask", "both"],
@@ -471,6 +475,8 @@ def setup() -> dict:
             "model_family": "sam3",
             "infra": "pytorch",
             "is_interactive": True,
+            # v0.18.12 · 单步交互分割 (exemplar→mask), 原子单元。
+            "composition": "atom",
             "supported_prompts": ["exemplar"],
             "supported_geometric_outputs": ["polygon"],
             "supported_variants": base["supported_variants"],
@@ -701,6 +707,13 @@ async def predict(request: Request):
         ctx = _normalize_predict_context(
             body.get("context") or {"type": "text", "text": body.get("text", "")}
         )
+        # v0.18.12 · 文本批量按 model_id 路由输出形态 (统一 wire): detection→box, segmentation→
+        # ctx.output||mask。无 model_id 回落 ctx.output (老 wire 兼容)。type 强制 text 走文本分支。
+        _mid = ctx.get("model_id")
+        if _mid == "sam3-detection":
+            ctx = {**ctx, "type": "text", "output": "box"}
+        elif _mid == "sam3-segmentation":
+            ctx = {**ctx, "type": "text", "output": ctx.get("output", "mask")}
         p, pool_cache_hit, model_load_ms = await _ensure_predictor_loaded()
         results = []
         for t in tasks:

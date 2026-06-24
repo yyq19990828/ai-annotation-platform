@@ -53,7 +53,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
   const { data: backends = [], isLoading, isError, error } = useMLBackends(project.id);
   const del = useDeleteMLBackend(project.id);
   const health = useMLBackendHealth(project.id);
-  // v0.9.5 · 行内「设为默认」快捷设置项目默认后端，免回基本信息 tab 手选
+  // 行内「设为主后端」快捷设置项目主后端，免回基本信息 tab 手选。
   const updateProject = useUpdateProject(project.id);
   const [aiEnabled, setAiEnabled] = useState(project.ai_enabled);
   const [mlBackendId, setMlBackendId] = useState<string | null>(
@@ -104,7 +104,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
       } as Parameters<typeof updateProject.mutate>[0],
       {
         onSuccess: () =>
-          pushToast({ msg: `已设为默认后端「${b.name}」`, kind: "success" }),
+          pushToast({ msg: `已设为项目主后端「${b.name}」`, kind: "success" }),
         onError: (e) => pushToast({ msg: "设置失败", sub: (e as Error).message }),
       },
     );
@@ -223,14 +223,14 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
 
         <div className="grid grid-cols-[minmax(260px,1.2fr)_minmax(220px,1fr)] gap-3.5 [&>:last-child]:col-span-full">
           <div>
-            <label className={LABEL_CLASS}>默认 ML Backend</label>
+            <label className={LABEL_CLASS}>项目主后端</label>
             <select
               value={mlBackendId ?? ""}
               onChange={(e) => setMlBackendId(e.target.value || null)}
               disabled={!aiEnabled}
               className={cn(CONTROL_CLASS, "cursor-pointer")}
             >
-              <option value="">未设默认（项目按肉眼标注运行，AI 待接入）</option>
+              <option value="">未设项目主后端（项目按肉眼标注运行，AI 待接入）</option>
               {backends.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
@@ -240,7 +240,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
               ))}
             </select>
             <div className="mt-1 text-xs leading-normal text-muted-foreground">
-              设为默认后，平台所有“模型名”展示均直接来自 backend.name；该后端作为工作台 / 批量页的默认选项，仍可在 AI 面板切换到其它已注册后端。后端专属推理参数在工作台 AI 面板按用户独立调整。
+              项目主后端用于工作台 AI 与新建预标配置的初始选择 / fallback；多阶段预标注中，每个阶段显式选择的 backend/model 仍然独立生效。平台所有“模型名”展示均直接来自 backend.name。
               {backends.length === 0 && (
                 <span className="ml-1 text-status-caution">
                   暂无可用 backend；可先在本页注册。
@@ -384,15 +384,15 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                             variant="ai"
                             onClick={() => onBind(b)}
                             disabled={!canManage || updateProject.isPending}
-                            title={canManage ? "设为本项目默认后端（同时启用 AI）" : "需要 PROJECT_ADMIN 权限"}
+                            title={canManage ? "设为本项目主后端（同时启用 AI）" : "需要 PROJECT_ADMIN 权限"}
                           >
-                            设为默认
+                            设为主后端
                           </Button>
                         )}
                         {project.ml_backend_id === b.id && (
                           <span className="self-center">
                             <Badge variant="ai">
-                              默认
+                              主后端
                             </Badge>
                           </span>
                         )}

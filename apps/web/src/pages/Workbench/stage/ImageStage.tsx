@@ -154,7 +154,6 @@ interface ImageStageProps {
   onJoinSelected?: () => void;
   /** 裁切重叠区(右键菜单):以右键框为基准,减去其余选中多边形的重叠区。 */
   onCropSelected?: (baseId: string) => void;
-  onApplyAttributeMode?: (id: string) => boolean;
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
   onAcceptPrediction?: (b: AiBox) => void;
   /** B-11 · 驳回 AI 预测 (将 prediction 从画布隐去, 不调后端). */
@@ -255,7 +254,7 @@ export function ImageStage({
   fileUrl, blurhash, imageWidth, imageHeight, tool, activeClass,
   selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
-  onJoinSelected, onCropSelected, onApplyAttributeMode,
+  onJoinSelected, onCropSelected,
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass, onPatchShapeFlag, clipboardActions,
   onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
@@ -295,7 +294,16 @@ export function ImageStage({
   }, [selectedIds, selectedId]);
   // user 层在 HandTool / 只读时关闭 listening，省 hit-test 开销。
   // ai 层只要不在只读模式都开（支持点击采纳），HandTool 下也可点选 AI 候选。
-  const userLayerListening = tool !== "hand" && !readOnly;
+  // 严格分离：仅「选择工具」下可点选 / 移动已有标注与预标注；绘制工具下画布层只画不选。
+  // 例外 (B-61)：绘制工具下若已有「单选中且可编辑」的人工标注，也让 user 层 listening，
+  // 使其 resize/move 手柄可直接交互——否则画完框（画框后行为=选择类别，框已选中）想调大小
+  // 必须先切回选择工具，过于严格。此时点中空白仍落到 Stage 触发画框（绘制穿透保留）。
+  const selectActive = tool === "select";
+  const primarySelectedBox = selectedId != null && selSet.size === 1
+    ? userBoxes.find((b) => b.id === selectedId)
+    : undefined;
+  const hasEditablePrimarySelection = !!primarySelectedBox && !primarySelectedBox.is_locked;
+  const userLayerListening = (selectActive || hasEditablePrimarySelection) && !readOnly;
   // v0.9.41 · 标注偏好（I17）：smoothImage / cssImageFilter / longTaskSampleRate。
   // v0.10.10 · I17.3 · 合并项目级 rendering_config 覆盖（项目级 > 用户级 > 默认）。
   const { config: workbenchConfig } = useWorkbenchConfig(projectRenderingConfig);
@@ -424,10 +432,25 @@ export function ImageStage({
     prevFileUrlRef.current = fileUrl;
     setFitted(false);
   }
+  // autoFitOnResize 只应在视口尺寸真正变化（窗口 / 边栏致容器 resize）时重新适应。原条件
+  // `!fitted || autoFitOnResize` 在开关开启时恒真 → 每次该 effect 重跑都 fitNow()；而画框落框 /
+  // 删除标注引发的重渲染会让 imgW/imgH 派生重算、fitNow 身份变化触发本 effect 重跑，于是把用户
+  // 的缩放强行拉回适应大小 (B-60)。记录上次 fit 时的视口尺寸，仅当尺寸确有变化才跟随开关重适应。
+  const fittedVpRef = useRef({ w: 0, h: 0 });
   useLayoutEffect(() => {
-    if (vpSize.w && vpSize.h && dimsReady && (!fitted || workbenchConfig.image.autoFitOnResize)) {
+    if (!(vpSize.w && vpSize.h && dimsReady)) return;
+    if (!fitted) {
       fitNow();
-      if (!fitted) setFitted(true);
+      setFitted(true);
+      fittedVpRef.current = { w: vpSize.w, h: vpSize.h };
+      return;
+    }
+    if (
+      workbenchConfig.image.autoFitOnResize &&
+      (fittedVpRef.current.w !== vpSize.w || fittedVpRef.current.h !== vpSize.h)
+    ) {
+      fitNow();
+      fittedVpRef.current = { w: vpSize.w, h: vpSize.h };
     }
   }, [fitted, vpSize.w, vpSize.h, dimsReady, fitNow, workbenchConfig.image.autoFitOnResize]);
 
@@ -765,6 +788,8 @@ export function ImageStage({
     ? "grabbing"
     : (tool === "hand" || spacePan)
     ? "grab"
+    // 选择工具：箭头光标（点选 / 移动已有标注）。
+    : tool === "select" ? "default"
     : tool === "canvas" ? "crosshair"
     // v0.10.9 · Mask 工具用自绘 overlay 圆圈替代系统光标，让笔刷大小与图像同比例可视。
     : tool === "mask" ? "none"
@@ -819,9 +844,8 @@ export function ImageStage({
 
   const handleUserShapeClick = useCallback((id: string, evt?: Konva.KonvaEventObject<MouseEvent>) => {
     const shift = !!evt?.evt?.shiftKey;
-    if (!shift && onApplyAttributeMode?.(id)) return;
     onSelectBox(id, { shift });
-  }, [onApplyAttributeMode, onSelectBox]);
+  }, [onSelectBox]);
 
   const selectedBox = useMemo(() => {
     if (!selectedId) return null;
@@ -971,9 +995,9 @@ export function ImageStage({
           )}
         </Layer>
 
-        {/* ai 层：AI 预测框（虚线 + 浅填充）。listening 保持开以支持点击采纳；
-            但与 user 层分离后，user 框的 move/resize 重绘不再连带触发 AI 层重绘。 */}
-        <Layer name="ai">
+        {/* ai 层：AI 预测框（虚线 + 浅填充）。严格分离：仅「选择工具」下可点选采纳，
+            与 user 层一致；绘制工具下不响应 hit-test，避免预标注被任意工具误选。 */}
+        <Layer name="ai" listening={selectActive}>
           {aiBoxes.map((b) => (
             b.polyline && b.polyline.length >= 2 ? (
               <KonvaPolyline
@@ -1590,8 +1614,8 @@ export function ImageStage({
         );
       })()}
 
-      {selectedBox && !readOnly && !pendingDrawing && tool !== "canvas" && isSelectedAi && (
-        // AI 预测单选：贴框快捷采纳 / 驳回。用户框单选 / 多选(改类 / 合并 / 锁定 / 隐藏 / 删除)
+      {selectedBox && !readOnly && !pendingDrawing && selectActive && isSelectedAi && (
+        // AI 预测单选：贴框快捷采纳 / 驳回 (仅选择工具下展示)。用户框单选 / 多选(改类 / 合并 / 锁定 / 隐藏 / 删除)
         // 已迁出到浮动选中卡。
         <SelectionOverlay
           box={selectedBox}

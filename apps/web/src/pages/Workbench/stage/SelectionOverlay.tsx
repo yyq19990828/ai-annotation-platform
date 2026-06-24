@@ -15,7 +15,7 @@ interface OverlayProps {
 }
 
 /**
- * AI 预测单选时的贴框快捷条:采纳 / 驳回,锚定选中框右下角。
+ * AI 预测单选时的贴框快捷条:采纳 / 忽略,锚定选中框右下角。
  * 用户框单选 / 多选(改类 / 合并 / 锁定 / 隐藏 / 删除)已迁出到浮动选中卡,此处不再承载。
  */
 export function SelectionOverlay({
@@ -42,13 +42,13 @@ export function SelectionOverlay({
       onPointerDown={(e) => e.stopPropagation()}
     >
       {isAi && onAccept && (
-        <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); onAccept(); }}>
-          <Icon name="check" size={10} />采纳
+        <Button variant="primary" size="xs" onClick={(e) => { e.stopPropagation(); onAccept(); }}>
+          <Icon name="check" size={12} />采纳
         </Button>
       )}
       {isAi && onReject && (
-        <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onReject(); }}>
-          <Icon name="x" size={10} />驳回
+        <Button variant="danger" size="xs" onClick={(e) => { e.stopPropagation(); onReject(); }}>
+          <Icon name="x" size={12} />忽略
         </Button>
       )}
     </div>

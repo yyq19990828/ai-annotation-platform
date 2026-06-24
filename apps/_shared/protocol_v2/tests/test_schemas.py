@@ -138,8 +138,8 @@ def test_warmup_response_with_evicted() -> None:
 
 
 def test_protocol_version_constants() -> None:
-    assert PROTOCOL_VERSION == "2.1"
-    assert COMPAT_PROTOCOL_VERSIONS == ["2.0"]
+    assert PROTOCOL_VERSION == "2.2"
+    assert COMPAT_PROTOCOL_VERSIONS == ["2.1", "2.0"]
 
 
 def test_normalize_context_model_variants_keeps_new_field() -> None:

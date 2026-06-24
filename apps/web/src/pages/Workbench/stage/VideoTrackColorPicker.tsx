@@ -32,7 +32,7 @@ function SwatchButton({
       title={label}
       aria-label={label}
       aria-pressed={active}
-      className={`w-[18px] h-[18px] p-0 border border-border rounded cursor-pointer hover:border-foreground/20 ${active ? "border-brand shadow-[0_0_0_1px_var(--sc-brand)]" : ""}`}
+      className={`w-[18px] h-[18px] p-0 border rounded cursor-pointer hover:border-foreground/20 ${active ? "border-brand shadow-[0_0_0_1px_var(--sc-brand)]" : "border-border"}`}
       onClick={(e) => {
         e.stopPropagation();
         onPick(color);

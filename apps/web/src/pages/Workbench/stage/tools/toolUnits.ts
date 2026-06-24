@@ -24,7 +24,8 @@ export const TOOL_TO_UNIT: Record<ToolId, ToolUnitId> = {
   "magic-box": "ai_interactive",
   // v0.10.28 · 关键点工具归 keypoint 单位.
   keypoint: "keypoint",
-  // hand / canvas 是视图 / 批注工具, 不归任何 unit; 给个占位 (兜底 bbox)
+  // select / hand / canvas 是选择 / 视图 / 批注工具, 不归任何 unit; 给个占位 (兜底 bbox)
+  select: "bbox",
   hand: "bbox",
   canvas: "bbox",
 };

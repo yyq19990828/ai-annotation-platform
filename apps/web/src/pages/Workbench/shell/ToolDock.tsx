@@ -6,14 +6,19 @@ import { toolUnitForTool } from "../stage/tools/toolUnits";
 import type { ThreeDTool, VideoTool } from "../state/useWorkbenchState";
 
 const ROOT_CLASS = "relative flex flex-col items-center gap-1.5 border-r border-border bg-card px-1 py-2.5";
+// 仅布局 / 边框宽度，不含颜色 utility —— 颜色按 active / idle 互斥下发，
+// 否则朴素 cn() (非 tailwind-merge) 下基础色类会因 CSS 源顺序覆盖激活色类，导致高亮失效。
 const TOOL_BTN_CLASS =
-  "relative flex size-[38px] cursor-pointer appearance-none items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition-colors";
+  "relative flex size-[38px] cursor-pointer appearance-none items-center justify-center rounded-md border transition-colors";
+// 非激活态中性配色 (边框 / 底 / 图标)。
+const TOOL_BTN_IDLE = "border-transparent bg-transparent text-muted-foreground";
 const TOOL_BTN_HOVER = "hover:bg-muted hover:text-foreground";
-const TOOL_BTN_ACTIVE = "border-brand/30 bg-brand/10 text-brand";
+// 激活态：实心品牌底 + 白色图标 + 投影，醒目可辨。
+const TOOL_BTN_ACTIVE = "border-brand bg-brand text-brand-foreground shadow-sm";
 const TOOL_BTN_DISABLED = "cursor-not-allowed opacity-40";
 const HOTKEY_BADGE_CLASS =
   "pointer-events-none absolute bottom-px right-[3px] text-3xs font-bold leading-none text-muted-foreground/60";
-const HOTKEY_BADGE_ACTIVE = "text-brand";
+const HOTKEY_BADGE_ACTIVE = "text-brand-foreground/80";
 const DIVIDER_CLASS = "my-1.5 h-px w-[26px] bg-border";
 
 interface ToolDockProps {
@@ -36,13 +41,13 @@ interface ToolDockProps {
   videoMode?: boolean;
   /**
    * 项目已启用的 tool_unit 集合 (来自 project.tool_bindings[unit].enabled)。
-   * 仅过滤普通绘制工具: 未启用的隐藏。AI 工具按后端能力置灰、hand 视图工具恒显示, 均不受此过滤。
+   * 仅过滤普通绘制工具: 未启用的隐藏。AI 工具按后端能力置灰。
    * null = 老项目无 tool_bindings 配置 → 视为全部启用, 不隐藏任何工具 (向后兼容)。
    */
   enabledToolUnits?: Set<string> | null;
   /**
-   * v0.11.29 · 视频 bbox 单位的「单帧框 / 轨迹框」子开关 (来自 tool_bindings["bbox"].video_modes)。
-   * null / undefined = 两者均显示 (向后兼容老项目)。hand (视图) 工具不受此过滤, 恒显示。
+   * 视频 bbox 单位的「单帧框 / 轨迹框」子开关 (来自 tool_bindings["bbox"].video_modes)。
+   * null / undefined = 两者均显示 (向后兼容老项目)。
    */
   videoModes?: { box: boolean; track: boolean } | null;
   /** v0.13.3-5 · 点云 3D 台:渲染 select / box 两个 3D 工具(双栈隔离,不走 2D ToolId)。 */
@@ -58,6 +63,7 @@ interface ToolDescriptor {
 
 /** v0.10.2 · Tooltip + Alt+digit 副 hotkey. */
 const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor> = {
+  select: { desc: "点选 / 移动已有标注与预标注 · ESC 回退到它", altDigit: 4 },
   box: { desc: "拖鼠标画矩形框", altDigit: 1 },
   "rotated-box": { desc: "拖框 → 顶部手柄旋转 (OBB)" },
   polygon: { desc: "逐点画多边形 (Enter 闭合)", altDigit: 2 },
@@ -77,12 +83,10 @@ const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor> = {
   canvas: { desc: "评论批注 (内部, 不展示)" },
 };
 
-// v0.11.29 · group: 单帧 (static) / 轨迹 (track) / 视图 (view), 用于 divider 分组与 video_modes 过滤。
-//            为未来 polygon / track-polygon 预留扩展位 (同组追加即可)。
-const VIDEO_TOOLS: Array<{ id: VideoTool; hotkey: string; label: string; icon: IconName; desc: string; altDigit: number; group: "static" | "track" | "view" }> = [
+const VIDEO_TOOLS: Array<{ id: VideoTool; hotkey: string; label: string; icon: IconName; desc: string; altDigit: number; group: "select" | "static" | "track" }> = [
+  { id: "select", hotkey: "V", label: "选择", icon: "cursor", desc: "点选 / 移动已有视频标注", altDigit: 3, group: "select" },
   { id: "box", hotkey: "B", label: "矩形框", icon: "rect", desc: "当前帧独立矩形框", altDigit: 1, group: "static" },
   { id: "track", hotkey: "T", label: "轨迹", icon: "target", desc: "跨帧对象轨迹", altDigit: 2, group: "track" },
-  { id: "hand", hotkey: "V", label: "平移", icon: "move", desc: "拖拽平移画布", altDigit: 3, group: "view" },
 ];
 
 // v0.13.3-5 · 点云 3D 工具:select 拾取选中 / box 点地面放置 / point-mask 框选分割。
@@ -115,7 +119,7 @@ const cn = (...parts: Array<string | false | null | undefined>) => parts.filter(
 export function ToolDock({
   tool,
   onSetTool,
-  videoTool = "box",
+  videoTool = "select",
   onSetVideoTool,
   isPromptSupported,
   capabilitiesLoading = false,
@@ -146,7 +150,7 @@ export function ToolDock({
                 aria-label={t.label}
                 aria-pressed={active}
                 data-testid={`three-d-tool-btn-${t.id}`}
-                className={cn(TOOL_BTN_CLASS, active ? TOOL_BTN_ACTIVE : TOOL_BTN_HOVER)}
+                className={cn(TOOL_BTN_CLASS, active ? TOOL_BTN_ACTIVE : cn(TOOL_BTN_IDLE, TOOL_BTN_HOVER))}
               >
                 <Icon name={t.icon} size={17} />
                 <span aria-hidden className={cn(HOTKEY_BADGE_CLASS, active && HOTKEY_BADGE_ACTIVE)}>
@@ -160,9 +164,9 @@ export function ToolDock({
     );
   }
   if (videoMode) {
-    // hand (view) 恒显示; box/track 按 video_modes 过滤 (null = 兼容老项目, 全显示)。
+    // 视频显示选择 + 创建工具；平移走右键/Space 手势, 不占工具按钮。
     const visibleVideoTools = VIDEO_TOOLS.filter((t) => {
-      if (t.group === "view") return true;
+      if (t.id === "select") return true;
       if (!videoModes) return true;
       if (t.id === "box") return videoModes.box;
       if (t.id === "track") return videoModes.track;
@@ -190,7 +194,7 @@ export function ToolDock({
                   aria-label={t.label}
                   aria-pressed={active}
                   data-testid={`video-tool-btn-${t.id}`}
-                  className={cn(TOOL_BTN_CLASS, active ? TOOL_BTN_ACTIVE : TOOL_BTN_HOVER)}
+                  className={cn(TOOL_BTN_CLASS, active ? TOOL_BTN_ACTIVE : cn(TOOL_BTN_IDLE, TOOL_BTN_HOVER))}
                 >
                   <Icon name={t.icon} size={17} />
                   <span aria-hidden className={cn(HOTKEY_BADGE_CLASS, active && HOTKEY_BADGE_ACTIVE)}>
@@ -206,10 +210,10 @@ export function ToolDock({
   }
 
   const visibleTools = reviewMode
-    ? ALL_TOOLS.filter((t) => t.id === "hand")
+    ? ALL_TOOLS.filter((t) => t.id === "select")
     : ALL_TOOLS.filter((t) => {
-        // hand (视图) 与 AI 工具 (requiredPrompt, 按后端能力置灰) 不受 tool_bindings 过滤。
-        if (t.id === "hand" || t.requiredPrompt) return true;
+        // select (选择) 与 AI 工具 (requiredPrompt, 按后端能力置灰) 不受 tool_bindings 过滤。
+        if (t.id === "select" || t.requiredPrompt) return true;
         // 老项目无 tool_bindings → enabledToolUnits 为 null → 全显示 (向后兼容)。
         if (!enabledToolUnits) return true;
         return enabledToolUnits.has(toolUnitForTool(t.id));
@@ -217,8 +221,8 @@ export function ToolDock({
 
   // 分组分隔: 普通绘制 → AI 工具 → 视图工具
   const isAITool = (t: CanvasTool) => !!t.requiredPrompt;
-  const groupOf = (t: CanvasTool): "draw" | "ai" | "view" =>
-    t.id === "hand" ? "view" : isAITool(t) ? "ai" : "draw";
+  const groupOf = (t: CanvasTool): "select" | "draw" | "ai" | "view" =>
+    t.id === "select" ? "select" : t.id === "hand" ? "view" : isAITool(t) ? "ai" : "draw";
 
   return (
     <div className={ROOT_CLASS} data-workbench-tool-dock>
@@ -269,7 +273,7 @@ export function ToolDock({
                   disabled={disabled}
                   className={cn(
                     TOOL_BTN_CLASS,
-                    active ? TOOL_BTN_ACTIVE : !disabled && TOOL_BTN_HOVER,
+                    active ? TOOL_BTN_ACTIVE : cn(TOOL_BTN_IDLE, !disabled && TOOL_BTN_HOVER),
                     disabled && TOOL_BTN_DISABLED,
                   )}
                 >

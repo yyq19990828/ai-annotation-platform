@@ -25,7 +25,6 @@ export interface FlatModel {
 
 export type CatalogViewMode = "cards" | "list";
 export type CatalogGroupBy = "none" | "backend" | "task" | "infra";
-export type CatalogSort = "name" | "task" | "infra";
 
 // v0.14.12 · 列表行结构. 一行 = 一个物理权重 (一份 .pt 文件).
 // 两条渲染策略:

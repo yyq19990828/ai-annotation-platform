@@ -87,6 +87,8 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         "supported_prompts": list(model.get("supported_prompts") or []),
         "supported_geometric_outputs": geo,
         "output_attribute_types": list(model.get("output_attribute_types") or []),
+        # 协议③ · backend 自报的属性 schema (含 select options), 供平台一键导入项目 attribute_schema.
+        "output_attribute_schema": list(model.get("output_attribute_schema") or []),
         "supported_text_outputs": list(model.get("supported_text_outputs") or []),
         "supported_trackers": list(model.get("supported_trackers") or []),
         "supported_variants": model.get("supported_variants") or [],
@@ -99,6 +101,9 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         "default_variants": dict(model.get("default_variants") or {}),
         "default_thresholds": model.get("default_thresholds") or {},
         "resource_profile": model.get("resource_profile") or {},
+        # 协议 v2.2 · 原子 vs 内部编排维度。缺省 atom（绝大多数 model 是单次推理；
+        # 现存复合都在自管 backend 显式标）。编排下游 stage 据此过滤（只组合 atom）。
+        "composition": model.get("composition") or "atom",
         "params": model.get("params") or {},
         # v0.14.17 · 闭集检测器的原生类别表 (yolo model.names, [{index,name}]); 供前端类别白名单.
         # 仅在该 task 模型已加载过 (warmup/predict) 时 backend /setup 才带, 否则为空。
@@ -140,6 +145,8 @@ def _synthesize_single_model(setup: dict, backend_infra: str) -> dict:
         "supported_text_outputs": list(setup.get("supported_text_outputs") or []),
         "supported_trackers": trackers,
         "supported_variants": setup.get("supported_variants") or [],
+        # 老 backend 均为单次推理原子（协议 v2.2）。
+        "composition": "atom",
         "default_thresholds": {},
         "resource_profile": {},
         "params": setup.get("params") or {},

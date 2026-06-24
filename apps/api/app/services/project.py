@@ -15,9 +15,7 @@ from typing import Any
 _ALIAS_RESOLVE_MAX_DEPTH = 4
 
 
-def _find_class(
-    tool_bindings: dict[str, Any], unit_id: Any, name: Any
-) -> dict | None:
+def _find_class(tool_bindings: dict[str, Any], unit_id: Any, name: Any) -> dict | None:
     """在指定 unit 内按 name 找类条目; 不存在返回 None."""
     binding = tool_bindings.get(unit_id) if isinstance(unit_id, str) else None
     if not isinstance(binding, dict):

@@ -1,6 +1,6 @@
 import uuid
 from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -149,6 +149,14 @@ async def accept_prediction(
             "又无 alias 命中时, 由人当场选项目类别再采纳, 避免 422 拒死。"
         ),
     ),
+    attribute_overrides: dict | None = Body(
+        None,
+        embed=True,
+        description=(
+            "可选 (v0.18.3): 采纳前在工作台审阅候选属性时改过的值, 按属性键覆盖 shape 自带的 "
+            "attributes 原子落库 (多阶段预标的 select/multiselect 属性审阅 + 分步采纳)。"
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
@@ -159,6 +167,7 @@ async def accept_prediction(
         current_user.id,
         shape_index=shape_index,
         override_class_name=override_class_name,
+        attribute_overrides=attribute_overrides,
     )
     await TaskLockService(db).heartbeat(task_id, current_user.id)
     await db.commit()

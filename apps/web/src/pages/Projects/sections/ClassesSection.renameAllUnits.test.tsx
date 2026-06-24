@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const mockRenameMutate = vi.fn();
 const mockUpdateMutate = vi.fn();
@@ -71,10 +72,18 @@ const sharedBindings = {
 };
 
 function renderUI(project: ProjectResponse) {
+  // 包 QueryClientProvider: ClassesSection 内挂的 ImportAttributesFromBackendDialog
+  // 调 useCapabilityInstances(useQuery), 即使 dialog 关闭 hook 也无条件挂载。生产
+  // 环境整个 App 在 QueryClient 包装下, 测试须对齐。
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
-    <MemoryRouter>
-      <ClassesSection project={project} />
-    </MemoryRouter>,
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <ClassesSection project={project} />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 

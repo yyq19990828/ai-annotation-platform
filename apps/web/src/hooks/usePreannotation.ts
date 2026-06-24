@@ -4,11 +4,23 @@ import { apiClient } from "@/api/client";
 import { useReconnectingWebSocket, type ReconnectState } from "@/hooks/useReconnectingWebSocket";
 import { buildWsUrl } from "@/lib/wsHost";
 
+/** v0.18.6 · 逐阶段实时统计项 (worker _stage_totals_snapshot 的形态)。源阶段=detected; 下游=targeted/ok/failed/skipped_geometry。 */
+export interface PipelineStageStat {
+  stage: number;
+  detected?: number;
+  targeted?: number;
+  ok?: number;
+  failed?: number;
+  skipped_geometry?: number;
+}
+
 interface PreannotationProgress {
   current: number;
   total: number;
   status: "running" | "completed" | "error";
   error: string | null;
+  /** v0.18.6 · 多阶段预标运行中的逐阶段累加快照 (worker 按 5% 步长推; 仅多阶段有)。 */
+  pipeline_stages?: PipelineStageStat[];
 }
 
 export function usePreannotationProgress(projectId: string | undefined): {
@@ -24,7 +36,12 @@ export function usePreannotationProgress(projectId: string | undefined): {
 
   const onMessage = useCallback((e: MessageEvent) => {
     try {
-      setProgress(JSON.parse(e.data));
+      const msg = JSON.parse(e.data) as PreannotationProgress;
+      // pipeline_stages 仅在 5% 步长帧带, 中间帧缺省 → 保留上一帧快照, 避免徽标闪空。
+      setProgress((prev) => ({
+        ...msg,
+        pipeline_stages: msg.pipeline_stages ?? prev?.pipeline_stages,
+      }));
     } catch {
       // ignore parse errors
     }
@@ -60,6 +77,33 @@ export interface TriggerPreannotationPayload {
   model_variants?: Record<string, string>;
   /** v0.14.17 · 类别白名单 (模型原生类别 index 子集); 空/缺=全部类别. 仅几何 backend (YOLO) 用. */
   class_filter?: number[];
+  /** v0.18.1 · 多阶段预标注 (路径 B): 有序阶段列表. 非空时走 detect→ROI→classify 编排;
+   *  缺省=单阶段, 与现状逐字等价. 源阶段 (parent_stage=null) 的 ml_backend_id 须等于顶层. */
+  pipeline_stages?: PipelineStagePayload[];
+  /** v0.18.2 · 并行兄弟写同一属性键时的策略: reject (默认, 后端校验期 422) | last_wins (末位覆盖)。
+   *  仅多阶段 (pipeline_stages 非空) 生效。 */
+  on_key_conflict?: "reject" | "last_wins";
+}
+
+/** v0.18.1 · 单个预标阶段声明; 字段对应后端 PipelineStage. */
+export interface PipelineStagePayload {
+  stage: number;
+  ml_backend_id: string;
+  model_id?: string;
+  task_type?: string;
+  model_variants?: Record<string, string>;
+  params?: Record<string, unknown>;
+  class_filter?: number[];
+  /** 依赖的父阶段 index; null/缺=源阶段 (吃整图). */
+  parent_stage?: number | null;
+  /** v0.18.2 · 父框类别白名单: 只对父框 class_name 命中时启动本阶段; 其余降级保留纯检测。 */
+  parent_class_filter?: string[];
+  /** ROI 构造: crop=裁父框喂纯分类; geometry=全图+父框列表喂 box-seg (v0.18.12)。 */
+  roi?: { mode: "crop" | "geometry"; pad?: number };
+  /** 结果写回: attributes=写父框 attributes; geometry=产独立 polygon shape (v0.18.12)。 */
+  write?: { target: "attributes" | "geometry"; keys?: string[] };
+  /** v0.18.2 · 阶段级失败策略: keep_parent (默认, 上游框保留属性留空) | drop_box (丢父框)。 */
+  on_failure?: "keep_parent" | "drop_box";
 }
 
 export interface TriggerPreannotationResponse {

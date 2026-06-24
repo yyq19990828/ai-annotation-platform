@@ -568,6 +568,8 @@ def setup() -> dict:
             "model_family": "grounded-sam2",
             "infra": "pytorch",
             "is_interactive": False,
+            # 纯 DINO 文本检测,单次推理原子。
+            "composition": "atom",
             "supported_prompts": ["text"],
             "supported_geometric_outputs": ["bbox"],
             "supported_text_outputs": ["box"],
@@ -583,6 +585,8 @@ def setup() -> dict:
             "model_family": "grounded-sam2",
             "infra": "pytorch",
             "is_interactive": False,
+            # 一个 model 内部串 DINO(文本→框) + SAM(框→mask),内部编排复合。
+            "composition": "composite",
             "supported_prompts": ["text"],
             "supported_geometric_outputs": ["polygon"],
             "supported_text_outputs": ["mask", "both"],
@@ -598,6 +602,8 @@ def setup() -> dict:
             "model_family": "grounded-sam2",
             "infra": "pytorch",
             "is_interactive": True,
+            # 单次 SAM 推理(prompt→mask),原子。
+            "composition": "atom",
             "supported_prompts": ["point", "bbox"],
             "supported_geometric_outputs": ["polygon"],
             "supported_variants": [_sam_variant_axis()],
@@ -612,9 +618,30 @@ def setup() -> dict:
             "model_family": "grounded-sam2",
             "infra": "pytorch",
             "is_interactive": True,
+            # 跨帧 memory bank 的有状态视频追踪,内部编排复合。
+            "composition": "composite",
             "supported_prompts": ["bbox"],
             "supported_geometric_outputs": ["bbox"],
             "supported_trackers": ["sam2_video"],
+            "supported_variants": [_sam_variant_axis()],
+            "variants_shared_across_tasks": True,
+            "default_variants": {"sam_variant": SAM_VARIANT},
+            "params": base["params"],
+        },
+        {
+            # v0.18.12 · 框→mask 批量分割原子: public、非交互、下游可编排。
+            # 与 interactive-seg 共享底层 SAM(predict_bbox / predict_boxes),
+            # 但作为独立 model 暴露——非交互, 供多阶段编排消费上游检测框(geometry-prompt 批量)。
+            "id": "grounded-sam2-box-seg",
+            "display_name": "Grounded-SAM 2 · 框→分割 (SAM)",
+            "task": "segmentation",
+            "model_family": "grounded-sam2",
+            "infra": "pytorch",
+            "is_interactive": False,
+            # 单次 SAM 推理(框→mask),原子;DINO 不参与, 故只声明 sam 轴。
+            "composition": "atom",
+            "supported_prompts": ["bbox"],
+            "supported_geometric_outputs": ["polygon"],
             "supported_variants": [_sam_variant_axis()],
             "variants_shared_across_tasks": True,
             "default_variants": {"sam_variant": SAM_VARIANT},
@@ -848,6 +875,54 @@ async def _run_prompt(
     raise HTTPException(status_code=422, detail=f"unsupported context.type: {ptype}")
 
 
+def _parse_box_prompts(raw: object) -> list[tuple[list[float], int]]:
+    """校验并解析 geometry-prompt 批量入参 ``tasks[].prompts[]``。
+
+    每项 ``{box:[x1,y1,x2,y2], parent_box_idx:int}``; parent_box_idx 缺省按出现序。
+    """
+    if not isinstance(raw, list) or not raw:
+        raise HTTPException(status_code=422, detail="tasks[].prompts must be a non-empty list")
+    out: list[tuple[list[float], int]] = []
+    for i, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=422, detail="prompts[] item must be an object")
+        box = item.get("box")
+        if not isinstance(box, list) or len(box) != 4:
+            raise HTTPException(status_code=422, detail="prompts[].box=[x1,y1,x2,y2] required")
+        parent_idx = item.get("parent_box_idx", i)
+        out.append(([float(c) for c in box], int(parent_idx)))
+    return out
+
+
+async def _run_box_seg(
+    file_path: str, prompts: list[tuple[list[float], int]], ctx: dict
+) -> tuple[list[dict], bool, str, str, bool, int | None]:
+    """v0.18.12 · 框→mask 批量分割: 全图 set_image 一次, N 框共享 embedding。
+
+    返回签名与 :func:`_run_prompt` 对齐(results 各带 parent_box_idx)。
+    """
+    sv, dv = _resolve_variant(ctx)
+    p, pool_cache_hit, model_load_ms = await _get_predictor(sv, dv)
+    cache = _pool.cache_for(sv, dv)
+    cache_key = compute_cache_key(file_path, sv)
+    simplify_tol = ctx.get("simplify_tolerance")
+    if simplify_tol is not None:
+        try:
+            simplify_tol = float(simplify_tol)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=422,
+                detail=f"context.simplify_tolerance must be float, got {simplify_tol!r}",
+            )
+        if simplify_tol < 0:
+            raise HTTPException(status_code=422, detail="context.simplify_tolerance must be >= 0")
+    image = None if cache.peek(cache_key) else _fetch_image(file_path)
+    results, hit = p.predict_boxes(
+        image, prompts, cache_key=cache_key, simplify_tolerance=simplify_tol
+    )
+    return results, hit, sv, dv, pool_cache_hit, model_load_ms
+
+
 def _observe(prompt_type: str, hit: bool, started: float) -> int:
     elapsed = time.perf_counter() - started
     cache_status = "hit" if hit else "miss"
@@ -1031,22 +1106,40 @@ async def predict(request: Request):
     if isinstance(body, dict) and "tasks" in body:
         tasks = body["tasks"]
         ctx = body.get("context") or {"type": "text", "text": body.get("text", "")}
+        # v0.18.12 · 文本批量按 model_id 路由输出形态 (统一 wire): detection→box(纯 DINO),
+        # segmentation→ctx.output||mask(DINO+SAM)。无 model_id 回落 ctx.output (老 wire 兼容)。
+        # type 强制 text 以走 _run_prompt 文本分支 (前端可能发 type=task)。box-seg 走 per-task prompts。
+        _mid = ctx.get("model_id")
+        if _mid == "grounded-sam2-detection":
+            ctx = {**ctx, "type": "text", "output": "box"}
+        elif _mid == "grounded-sam2-segmentation":
+            ctx = {**ctx, "type": "text", "output": ctx.get("output", "mask")}
         results = []
         for t in tasks:
             t_started = time.perf_counter()
             sv, dv = SAM_VARIANT, DINO_VARIANT
             pool_cache_hit: bool | None = None
             model_load_ms: int | None = None
+            # v0.18.12 · geometry-prompt 批量(下游 box-seg stage): task 携带 prompts[] 框列表,
+            # 走全图 set_image 一次、N 框共享 embedding 的路径; 否则走文本/context 批量。
+            box_prompts = t.get("prompts")
+            obs_type = "box_seg" if box_prompts else (ctx.get("type") or "unknown")
             try:
-                result, hit, sv, dv, pool_cache_hit, model_load_ms = await _run_prompt(
-                    t["file_path"], ctx
-                )
+                if box_prompts:
+                    prompts = _parse_box_prompts(box_prompts)
+                    result, hit, sv, dv, pool_cache_hit, model_load_ms = await _run_box_seg(
+                        t["file_path"], prompts, ctx
+                    )
+                else:
+                    result, hit, sv, dv, pool_cache_hit, model_load_ms = await _run_prompt(
+                        t["file_path"], ctx
+                    )
             except HTTPException:
                 raise
             except Exception as exc:  # noqa: BLE001 — 单图失败降级，不中断整批
                 logger.exception("predict failed for task=%s: %s", t.get("id"), exc)
                 result, hit = [], False
-            elapsed_ms = _observe(ctx.get("type") or "unknown", hit, t_started)
+            elapsed_ms = _observe(obs_type, hit, t_started)
             results.append(
                 PredictionResult(
                     task=t.get("id"),

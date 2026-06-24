@@ -117,6 +117,52 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 **超时**：服务端配置 `ml_predict_timeout`（默认 100s，`config.py:54`）。超时由 worker 捕获，写一行 `failed_predictions` 并继续下一 batch（不阻断）。
 
+### 2.1.1 几何 prompt 批量（下游编排 stage） <!-- since 协议 v2.2 -->
+
+适用：多阶段预标注的**下游 stage** —— 上游检测器（YOLO / onnxtools-detect / grounded-sam2-detection）已产出 bbox，下游一个**非交互、批量**的 model（如 grounded-sam2 `box-seg`）消费这些框、对每框出 mask/polygon。
+
+**载荷形态（form 1a：全图 + 原图坐标框列表）**：下游 stage 收**全图 presigned URL**（复用上游 stage 的同一 URL）+ 该图的 **N 个父框（原图归一化坐标）列表**，而非逐 crop 裁图。这样 backend 对一张图只 `set_image` 一次（SAM2 encoder 成本由 `set_image` 次数决定，与裁多小无关），N 个框共享同一份 image embedding，跑轻量 decoder：
+
+```json
+{
+  "tasks": [
+    {
+      "id": "<task_uuid>",
+      "file_path": "<presigned_url>",          // 全图，与上游 stage 同一 URL
+      "prompts": [                              // 单图多框：上游框列表
+        { "box": [x1, y1, x2, y2], "parent_box_idx": 0 },   // 原图归一化坐标 [0,1]
+        { "box": [x1, y1, x2, y2], "parent_box_idx": 1 }
+      ]
+    }
+  ]
+}
+```
+
+**响应**：与 §2.1 同构，但下游每框输出按 `parent_box_idx` 标回，平台据此 merge 回对应父框（polygon 已是原图坐标，**无需坐标回映**）：
+
+```json
+{
+  "results": [
+    {
+      "task": "<task_uuid>",
+      "result": [
+        { "type": "polygonlabels", "value": { "points": [...], "polygonlabels": ["object"] },
+          "parent_box_idx": 0 },
+        { "type": "polygonlabels", "value": { "points": [...], "polygonlabels": ["object"] },
+          "parent_box_idx": 1 }
+      ]
+    }
+  ]
+}
+```
+
+**判别器**：平台用下游 model 的 `supported_prompts` 决定投递方式，**不新增字段**：
+
+- `["none"]` → **crop 模式**（现状：平台逐父框裁 crop 图上传，下游收单张 ROI，如 onnxtools 纯分类）。
+- 含 `bbox` 且 `is_interactive=false` → **geometry 模式**（本节：全图 + 框列表，box-seg 原子）。
+
+老 backend（均为 `none`/crop）行为不变；本约定纯加法，随 `protocol_version` 升 **2.2**。
+
 ### 2.2 交互式预测
 
 适用：标注员在工作台内点「AI 助手」工具发起的单次推理。
@@ -335,6 +381,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 ```
 
 - `protocol_version="2.1"` ⇒ backend 支持 `context.model_variants`、`x-platform-role` 与标准 422/503 错误模型。`compat_protocol_versions` 用于声明仍接受的旧 minor 版本；v0.14.15 backend 填 `["2.0"]`。
+- `protocol_version="2.2"` ⇒ 在 2.1 基础上额外支持 model 条目 `composition`（§4.1.3）与几何 prompt 批量入参 `tasks[].prompts[]`（§2.1.1）。两者均纯加法，2.2 backend 应填 `compat_protocol_versions: ["2.1", "2.0"]`；平台对缺这两项的 2.1/2.0 backend 完全兼容（composition 回落 atom、下游走 crop 模式）。
 - `models[]` 存在 ⇒ 平台按多模型目录解析，**忽略顶层能力字段**（顶层仅留 name/version/protocol_version/infra/warmup_endpoint 等 backend 级元数据）。
 - `models[]` 缺省 ⇒ 平台用顶层字段合成一个隐式 model（老 backend 路径，§4.1.5）。
 
@@ -348,6 +395,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   "model_family": "yolo",               // 可选. 家族标签(yolo/sam/paddleocr…),UI 二级分组用
   "infra": "pytorch",                   // 可选. 缺省继承 backend.infra
   "is_interactive": false,              // 该 model 是否支持交互式 /predict
+  "composition": "atom",                // 可选. atom=单次推理原子; composite=内部编排多原子. 缺省 atom
 
   "supported_prompts": ["none"],        // 受控. none = 纯批量,无交互 prompt
   "supported_geometric_outputs": ["bbox"],   // 受控,复用现有字段名
@@ -397,6 +445,13 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 - **边界**：`infra` 是纯元数据 —— 不改 `/predict` 协议、不影响 result schema、不参与项目兼容性的硬校验（仅展示 badge + 排障溯源）。
 
 **`supported_prompts`（沿用 v1，新增 `none`）** —— `none`（纯批量，无交互） / `point` / `bbox` / `text` / `exemplar` / `sketch` / `scribble`。YOLO / OCR / layout 是 `["none"]`（批量自动）；SAM 类仍是 point/bbox/text/exemplar。
+
+**`composition`（原子 vs 内部编排，可选）** <!-- since 协议 v2.2 --> —— `atom`（单次推理 / 单原子） / `composite`（一个 model 内部编排多个原子、一次 `/predict` 一气呵成）：
+
+- **动机**：model 目录把「原子」与「内部编排」平铺为平级条目，`task` 只描述输出形态、与「原子/复合」正交。`composition` 把「是原子还是内部编排」做成机器可读字段，取代早期靠读 `display_name` + 经验判断的做法。
+- **唯一的可见性/过滤轴**：`composition` 是平台过滤选用入口的唯一依据。**编排下游 stage 选择器只收 `atom`**（编排只组合原子，不把一锅端复合体当 stage）；单阶段 / 工作台多模型选择器不过滤，`composite` 可直接选用（开箱即用）。例：grounded-sam2 `segmentation` = `composite`（单步可选、但不作编排下游）；onnxtools 一锅端 `vehicle-attr` = `composite`（单阶段默认、不作编排下游）；`vehicle-detect` / `vehicle-attr-classify` = `atom`（可作编排上/下游）。
+- **缺省**：`atom`（绝大多数 model 是单次推理；老 backend 不报字段即按原子）。平台 `extract_capabilities` 透传，缺省回落 `atom`。
+- **边界**：不改 `/predict` 协议、不参与兼容性校验。消费方：模型市场据此给卡片打「原子 / 内置流程」徽标；编排下游选择器 + 属性导入源据此过滤（只取 `atom`）。
 
 ### 4.1.4 平台派生形态（health_meta）
 

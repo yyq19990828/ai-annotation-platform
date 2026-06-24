@@ -13,6 +13,7 @@ import {
   type AttributeSchema,
 } from "@/api/projects";
 import { AttributeSchemaEditor, validateAttributeFields } from "./AttributeSchemaEditor";
+import { ImportAttributesFromBackendDialog } from "./ImportAttributesFromBackendDialog";
 import { ClassEditor, type ClassRow } from "./ClassEditor";
 import { KeypointSchemaEditor } from "./KeypointSchemaEditor";
 import { ToolUnitTabs } from "./ToolUnitTabs";
@@ -40,6 +41,8 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
   // v0.17.15 · 同名类跨工具单位批量重命名意图: 开启后重命名不传 tool_unit_id,
   // 后端在所有 enabled unit 内一起改同名类 (强隔离默认仍为单 unit, 默认=现状)。
   const [renameAllUnits, setRenameAllUnits] = useState(false);
+  // v0.18.0 · 从 ML Backend 导入属性对话框开关。
+  const [importBackendOpen, setImportBackendOpen] = useState(false);
 
   useUnsavedWarning(dirty);
 
@@ -298,11 +301,37 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
     e.target.value = "";
   };
 
+  // v0.18.0 · 从 ML Backend 导入的字段合并进当前工具单位: 同 key 覆盖、新 key 追加 (保留位置)。
+  const onImportFromBackend = (imported: AttributeField[]) => {
+    const cur = activeBinding?.attributeFields ?? [];
+    const importedByKey = new Map(
+      imported.filter((f) => f.key).map((f) => [f.key, f]),
+    );
+    const merged = cur.map((f) =>
+      f.key && importedByKey.has(f.key) ? importedByKey.get(f.key)! : f,
+    );
+    const existingKeys = new Set(cur.filter((f) => f.key).map((f) => f.key));
+    const additions = imported.filter((f) => !existingKeys.has(f.key));
+    onAttributeChange([...merged, ...additions]);
+    pushToast({
+      msg: `已导入 ${imported.length} 个属性到 ${activeUnit} 工具单位`,
+      sub: "记得点「保存」落库",
+      kind: "success",
+    });
+  };
+
   return (
     <Card>
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5">
         <h3 className="text-sm font-semibold">类别与属性</h3>
         <div className="flex gap-1.5 whitespace-nowrap">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setImportBackendOpen(true)}
+          >
+            <Icon name="sparkles" size={11} />从 ML Backend 导入
+          </Button>
           <Button size="sm" variant="ghost" onClick={onExportJson}>
             <Icon name="download" size={11} />导出属性 JSON
           </Button>
@@ -440,6 +469,12 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
           </Button>
         </div>
       </div>
+      <ImportAttributesFromBackendDialog
+        open={importBackendOpen}
+        onClose={() => setImportBackendOpen(false)}
+        onImport={onImportFromBackend}
+        targetUnitLabel={getToolUnitGroup(activeUnit)?.label ?? activeUnit}
+      />
     </Card>
   );
 }

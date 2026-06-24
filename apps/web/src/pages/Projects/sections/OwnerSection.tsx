@@ -9,8 +9,10 @@ import { useTransferProject } from "@/hooks/useProjects";
 import { usersApi } from "@/api/users";
 import type { ProjectResponse } from "@/api/projects";
 
+// 底色按 active/idle 互斥下发：基础类不带 bg-*，否则模板字符串无 tailwind-merge，
+// 无条件 bg-transparent 会盖掉 active 的 bg-brand/10 (源顺序裁决)。
 const CANDIDATE_ITEM_BASE =
-  "flex w-full cursor-pointer appearance-none items-center gap-2.5 border-0 border-b border-border bg-transparent px-3 py-2.5 text-left text-foreground disabled:cursor-not-allowed disabled:opacity-50";
+  "flex w-full cursor-pointer appearance-none items-center gap-2.5 border-0 border-b border-border px-3 py-2.5 text-left text-foreground disabled:cursor-not-allowed disabled:opacity-50";
 
 export function OwnerSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
@@ -81,7 +83,7 @@ export function OwnerSection({ project }: { project: ProjectResponse }) {
                   type="button"
                   disabled={isCurrent}
                   onClick={() => setSelected(u.id)}
-                  className={`${CANDIDATE_ITEM_BASE} ${active ? "bg-brand/10" : ""}`}
+                  className={`${CANDIDATE_ITEM_BASE} ${active ? "bg-brand/10" : "bg-transparent"}`}
                 >
                   <Avatar initial={u.name.slice(0, 1)} size="sm" />
                   <div className="min-w-0 flex-1">

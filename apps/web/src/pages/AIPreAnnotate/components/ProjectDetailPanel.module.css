@@ -114,6 +114,36 @@
   gap: 4px;
 }
 
+/* v0.18.3 · 运行态逐阶段统计条。 */
+.stageStats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  margin-top: 8px;
+  background: var(--sc-muted);
+  border-radius: var(--sc-radius);
+}
+.stageStatRow {
+  font-size: 12px;
+  color: var(--sc-foreground);
+}
+
+/* v0.18.2 · 阶段级字段的文本/数字输入 (类别过滤 / pad / 写回键)。 */
+.textInput {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--sc-foreground);
+  background: var(--sc-background);
+  border: 1px solid var(--sc-border);
+  border-radius: var(--sc-radius);
+}
+.textInput:focus {
+  outline: none;
+  border-color: var(--sc-ring);
+}
+
 .fieldLabel {
   color: var(--sc-muted-foreground);
   font-size: 11px;
@@ -121,6 +151,16 @@
 
 .fieldHint {
   color: var(--sc-caution);
+}
+
+/* 单一可选 model 时「当前模型」只读展示(无下拉),与 select 同高对齐。 */
+.readonlyValue {
+  padding: 4px 8px;
+  color: var(--sc-foreground);
+  font-size: 11px;
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
+  border-radius: var(--radius-sm);
 }
 
 .docHint {
@@ -177,6 +217,106 @@
 .aliasName {
   color: var(--sc-muted-foreground);
   font-size: 10px;
+}
+
+/* v0.18.5 · 写回属性键与其它并行阶段冲突的 chip: 红描边警示。 */
+.aliasChipConflict {
+  border-color: var(--sc-destructive);
+  box-shadow: inset 2px 0 0 var(--sc-destructive);
+}
+
+/* v0.18.8 · 流水线连接线 (源 → 下游扇出): 内置「裁 ROI」语义, 非节点图。 */
+.pipelineConnector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
+  color: var(--sc-muted-foreground);
+  font-size: 11px;
+}
+.pipelineConnectorIcon {
+  transform: rotate(90deg);
+  color: var(--sc-brand);
+}
+.pipelineParallelTag {
+  padding: 0 7px;
+  color: var(--sc-brand);
+  font-size: 10px;
+  border: 1px solid var(--sc-brand);
+  border-radius: 999px;
+}
+
+/* v0.18.8 · 空态引导文案。 */
+.stageEmptyHint {
+  color: var(--sc-muted-foreground);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* v0.18.8 · 阶段卡 (Card 卡面): 内边距 + 组间距 + 左侧角色轨。 */
+.stageCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--sc-brand);
+}
+.stageCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.stageRole {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sc-foreground);
+}
+.stageHeaderRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* v0.18.8 · 运行态: 进度条 + 计数块 (StatCard 风格小块)。 */
+.stageRun {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stageCounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+}
+.stageCount {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.stageCountLabel {
+  color: var(--sc-muted-foreground);
+  font-size: 10px;
+}
+.stageCountValue {
+  color: var(--sc-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* v0.18.5 · 阶段卡警示条 (下游不产属性 / 键冲突)。 */
+.stageWarn {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  color: var(--sc-destructive);
+  font-size: 11px;
+  line-height: 1.5;
+  background: color-mix(in srgb, var(--sc-destructive) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sc-destructive) 40%, transparent);
+  border-radius: var(--radius-sm);
 }
 
 .aliasCount {
@@ -295,6 +435,9 @@
 }
 
 .presetButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 3px 10px;
   color: var(--sc-foreground);
   font-size: 11px;
@@ -312,6 +455,9 @@
 }
 
 .presetGhostButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 3px 8px;
   color: var(--sc-muted-foreground);
   font-size: 11px;

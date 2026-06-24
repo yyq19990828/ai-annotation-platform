@@ -96,6 +96,9 @@ interface WorkbenchStageHostVideoProps {
   /** v0.10.29 · 项目级采样配置 → VideoStage 软网格导航。 */
   videoSampling?: VideoSamplingConfig | null;
   videoTool: VideoTool;
+  videoModes?: { box: boolean; track: boolean } | null;
+  spacePan: boolean;
+  onSpacePanDragStart: () => void;
   videoFrameIndex: number;
   videoReviewDisplayMode?: DiffMode;
   hiddenVideoTrackIds: Set<string>;
@@ -134,7 +137,7 @@ interface WorkbenchStageHostImageProps {
   vp: Viewport;
   setVp: React.Dispatch<React.SetStateAction<Viewport>>;
   setFitTick: React.Dispatch<React.SetStateAction<number>>;
-  onAcceptPrediction: (b: AiBox) => void;
+  onAcceptPrediction: (b: AiBox, attributeOverrides?: Record<string, unknown>) => void;
   onRejectPrediction: (b: AiBox) => void;
   onPatchShapeFlag?: (
     id: string,
@@ -159,7 +162,6 @@ interface WorkbenchStageHostImageProps {
   onCommitKeypointGeometry?: (id: string, before: import("@/types").Keypoint[], after: import("@/types").Keypoint[]) => void;
   onJoinSelected: () => void;
   onCropSelected: (baseId: string) => void;
-  onApplyAttributeMode?: (id: string) => boolean;
   onStageGeometry: (g: StageGeometry) => void;
 }
 
@@ -270,6 +272,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       videoChapters,
       videoSampling,
       videoTool,
+      videoModes,
+      spacePan: videoSpacePan,
+      onSpacePanDragStart: onVideoSpacePanDragStart,
       videoFrameIndex,
       videoReviewDisplayMode,
       hiddenVideoTrackIds,
@@ -315,7 +320,6 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onCommitKeypointGeometry,
       onJoinSelected,
       onCropSelected,
-      onApplyAttributeMode,
       onStageGeometry,
     } = imageProps ?? ({} as WorkbenchStageHostImageProps);
     const {
@@ -402,6 +406,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             selectedIds={selectedIds}
             readOnly={readOnly}
             videoTool={videoTool}
+            videoModes={videoModes}
+            spacePan={videoSpacePan}
+            onSpacePanDragStart={onVideoSpacePanDragStart}
             pendingDrawing={pendingDrawing}
             chapters={videoChapters}
             videoSampling={videoSampling}
@@ -468,7 +475,6 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onChangeUserBoxClass={onChangeUserBoxClass}
             onJoinSelected={onJoinSelected}
             onCropSelected={onCropSelected}
-            onApplyAttributeMode={onApplyAttributeMode}
             onStageGeometry={onStageGeometry}
             polygonDraft={polygonDraft}
             keypointDraft={keypointDraft}

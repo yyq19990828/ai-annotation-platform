@@ -4026,6 +4026,25 @@
         "title": "BboxGeometry",
         "type": "object"
       },
+      "Body_accept_prediction_api_v1_tasks__task_id__predictions__prediction_id__accept_post": {
+        "properties": {
+          "attribute_overrides": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "可选 (v0.18.3): 采纳前在工作台审阅候选属性时改过的值, 按属性键覆盖 shape 自带的 attributes 原子落库 (多阶段预标的 select/multiselect 属性审阅 + 分步采纳)。",
+            "title": "Attribute Overrides"
+          }
+        },
+        "title": "Body_accept_prediction_api_v1_tasks__task_id__predictions__prediction_id__accept_post",
+        "type": "object"
+      },
       "Body_import_annotations_api_v1_projects__project_id__annotations_import_post": {
         "properties": {
           "file": {
@@ -7866,6 +7885,11 @@
       "InstanceModelItem": {
         "description": "实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 resource_profile /\nparams 等运维信息; v0.14.12 起补 supported_variants + variant_combinations 让\n前端能按主轴展开「具体模型」行).",
         "properties": {
+          "composition": {
+            "default": "atom",
+            "title": "Composition",
+            "type": "string"
+          },
           "default_variants": {
             "additionalProperties": {
               "type": "string"
@@ -7919,6 +7943,23 @@
               }
             ],
             "title": "Model Family"
+          },
+          "output_attribute_schema": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Output Attribute Schema",
+            "type": "array"
+          },
+          "output_attribute_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Output Attribute Types",
+            "type": "array"
           },
           "supported_geometric_outputs": {
             "default": [],
@@ -8941,6 +8982,11 @@
             "title": "Classes",
             "type": "array"
           },
+          "composition": {
+            "default": "atom",
+            "title": "Composition",
+            "type": "string"
+          },
           "default_thresholds": {
             "additionalProperties": true,
             "default": {},
@@ -9001,6 +9047,15 @@
               }
             ],
             "title": "Model Family"
+          },
+          "output_attribute_schema": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Output Attribute Schema",
+            "type": "array"
           },
           "output_attribute_types": {
             "default": [],
@@ -9894,6 +9949,146 @@
         "title": "PasswordChange",
         "type": "object"
       },
+      "PipelineStage": {
+        "description": "v0.18.1 · 多阶段预标注的单个阶段声明 (路径 B).\n\nstage 0 (parent_stage=None) 是源检测阶段, 吃整图产框; 下游阶段 (parent_stage 指向源阶段)\n平台按父框 bbox 裁 ROI crop 喂入, 把返回的 attributes 合并进父框 (write.target=attributes)。\nv0.18.2 (M2): 支持单层并行扇出 (多个下游共享同一 parent_stage)、按类别路由\n(parent_class_filter)、阶段级失败策略 (on_failure)。深度≥3 / new_shape 留 M3。",
+        "properties": {
+          "class_filter": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Filter"
+          },
+          "ml_backend_id": {
+            "format": "uuid",
+            "title": "Ml Backend Id",
+            "type": "string"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "model_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Variants"
+          },
+          "on_failure": {
+            "default": "keep_parent",
+            "enum": [
+              "keep_parent",
+              "drop_box"
+            ],
+            "title": "On Failure",
+            "type": "string"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Params"
+          },
+          "parent_class_filter": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Class Filter"
+          },
+          "parent_stage": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Stage"
+          },
+          "roi": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roi"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "integer"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type"
+          },
+          "write": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Write"
+          }
+        },
+        "required": [
+          "stage",
+          "ml_backend_id"
+        ],
+        "title": "PipelineStage",
+        "type": "object"
+      },
       "PointCloudCameraOut": {
         "properties": {
           "calibration": {
@@ -10416,6 +10611,15 @@
             ],
             "title": "Model Variants"
           },
+          "on_key_conflict": {
+            "default": "reject",
+            "enum": [
+              "reject",
+              "last_wins"
+            ],
+            "title": "On Key Conflict",
+            "type": "string"
+          },
           "output_mode": {
             "default": "mask",
             "enum": [
@@ -10437,6 +10641,20 @@
               }
             ],
             "title": "Params"
+          },
+          "pipeline_stages": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PipelineStage"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipeline Stages"
           },
           "predict_mode": {
             "default": "skip_predicted",
@@ -19502,7 +19720,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.17.17"
+    "version": "0.18.13"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -33022,6 +33240,15 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_accept_prediction_api_v1_tasks__task_id__predictions__prediction_id__accept_post"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

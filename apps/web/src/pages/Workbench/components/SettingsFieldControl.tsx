@@ -194,7 +194,7 @@ function LabelContentByTypeControl({
             type="button"
             role="tab"
             aria-selected={s.key === active}
-            className={`flex-1 px-2 py-1 border-0 rounded bg-transparent text-muted-foreground text-xs cursor-pointer transition-[background,color] duration-150 hover:text-foreground disabled:cursor-not-allowed ${s.key === active ? "bg-card text-brand font-medium" : ""}`}
+            className={`flex-1 px-2 py-1 border-0 rounded text-xs cursor-pointer transition-[background,color] duration-150 hover:text-foreground disabled:cursor-not-allowed ${s.key === active ? "bg-card text-brand font-medium" : "bg-transparent text-muted-foreground"}`}
             disabled={disabled}
             onClick={() => setActive(s.key)}
           >
@@ -255,7 +255,7 @@ function MultiselectControl({
           <button
             key={opt.value}
             type="button"
-            className={`px-2.5 py-1 appearance-none border border-border rounded-full bg-card text-muted-foreground text-xs cursor-pointer transition-[border-color,background,color] duration-150 hover:border-brand hover:text-foreground disabled:cursor-not-allowed ${on ? "border-brand bg-brand/10 text-brand font-medium disabled:opacity-70" : ""}`}
+            className={`px-2.5 py-1 appearance-none border rounded-full text-xs cursor-pointer transition-[border-color,background,color] duration-150 hover:border-brand hover:text-foreground disabled:cursor-not-allowed ${on ? "border-brand bg-brand/10 text-brand font-medium disabled:opacity-70" : "border-border bg-card text-muted-foreground"}`}
             // chips 嵌在字段 <label> 内,显式 aria-label 兜底可达名,避免名被父 label 文本污染。
             aria-label={opt.label}
             aria-pressed={on}

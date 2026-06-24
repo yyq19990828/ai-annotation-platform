@@ -1,11 +1,11 @@
 // 能力目录的纯计算逻辑(从 CapabilityCatalogPanel.tsx 拆出,行为零变化)。
-// 有效 infra/modality 派生、排序/分组/多选 toggle、列表行构建(legacy / shared 两策略)与池状态读取。
+// 有效 infra/modality 派生、分组/多选 toggle、列表行构建(legacy / shared 两策略)与池状态读取。
 // 不含 JSX —— 主面板与各子组件共享导入。
 
 import type { PoolEvictRecord } from "@/api/adminMlIntegrations";
 import type { MLModelCapability } from "@/api/ml-backends";
 import { infraLabel, taskLabel, taskSuffix } from "./labels";
-import type { CatalogGroupBy, CatalogSort, FlatModel, ListRow } from "./types";
+import type { CatalogGroupBy, FlatModel, ListRow } from "./types";
 
 // model 的有效 infra: 优先 model.infra, 回落 backend.infra.
 export function effectiveInfra(m: MLModelCapability, backendInfra?: string): string | undefined {
@@ -16,20 +16,6 @@ export function effectiveInfra(m: MLModelCapability, backendInfra?: string): str
 export function effectiveModalities(m: MLModelCapability, backendModalities?: string[]): string[] {
   if (m.modality) return [m.modality];
   return backendModalities ?? [];
-}
-
-export function compareModel(a: FlatModel, b: FlatModel, sortBy: CatalogSort): number {
-  if (sortBy === "task") {
-    return (a.model.task ?? "").localeCompare(b.model.task ?? "") || compareModel(a, b, "name");
-  }
-  if (sortBy === "infra") {
-    return (
-      (effectiveInfra(a.model, a.backendInfra) ?? "").localeCompare(
-        effectiveInfra(b.model, b.backendInfra) ?? "",
-      ) || compareModel(a, b, "name")
-    );
-  }
-  return (a.model.display_name ?? a.model.id).localeCompare(b.model.display_name ?? b.model.id);
 }
 
 export function groupModels(items: FlatModel[], groupBy: CatalogGroupBy) {

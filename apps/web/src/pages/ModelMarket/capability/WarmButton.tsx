@@ -12,10 +12,12 @@ export function WarmButton({
   item,
   variants,
   compact = false,
+  size = "sm",
 }: {
   item: FlatModel;
   variants: Record<string, string>;
   compact?: boolean;
+  size?: "xs" | "sm" | "md";
 }) {
   const qc = useQueryClient();
   const pushToast = useToastStore((s) => s.push);
@@ -45,11 +47,11 @@ export function WarmButton({
   };
   return (
     <Button
-      size="sm"
+      size={size}
       onClick={onWarm}
       disabled={!canWarm || busy}
       title={canWarm ? "预热该模型默认变体" : "该 backend 未声明 warmup_endpoint 或未注册到项目"}
-      className={compact ? "w-7 min-w-7 px-0" : undefined}
+      className={compact ? (size === "xs" ? "size-6 min-w-6 px-0" : "size-8 min-w-8 px-0") : undefined}
     >
       <Icon name={busy ? "loader2" : "play"} size={11} className={busy ? "spin" : undefined} />
       {compact ? "" : "预热"}

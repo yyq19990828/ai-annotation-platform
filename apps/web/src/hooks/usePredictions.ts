@@ -36,7 +36,12 @@ export function useAcceptPrediction(taskId: string) {
   return useMutation({
     mutationFn: (
       vars:
-        | { predictionId: string; shapeIndex?: number; overrideClassName?: string }
+        | {
+            predictionId: string;
+            shapeIndex?: number;
+            overrideClassName?: string;
+            attributeOverrides?: Record<string, unknown>;
+          }
         | string,
     ) => {
       // 兼容旧调用 (传 string predictionId 直接采纳整条).
@@ -47,6 +52,8 @@ export function useAcceptPrediction(taskId: string) {
         vars.shapeIndex,
         // v0.14.17 · 采纳时选类: 预测类名不在项目标签集 (会 422) 时带人选的项目标签.
         vars.overrideClassName,
+        // v0.18.3 · 采纳前审阅改过的候选属性值.
+        vars.attributeOverrides,
       );
     },
     onSuccess: () => {

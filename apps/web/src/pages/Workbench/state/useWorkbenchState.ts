@@ -3,12 +3,13 @@ import type { Annotation } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import type { TextOutputMode } from "./useInteractiveAI";
 import { useWorkbenchConfig } from "./useWorkbenchConfig";
-import { DEFAULT_ATTRIBUTE_MODE, type AttributeModeState } from "./attributeMode";
 
 // v0.10.2 · Tool union 扩展: 旧 "sam" 拆为 4 个独立 AI 工具 (smart-point / smart-box /
 // text-prompt / exemplar), 每个绑定一个 prompt 范式. 状态层仅保留 polarity (smart-point
 // 用) 和 aiToolParams (AIToolDrawer 用); samSubTool 由 tool 派生, 不再独立持有.
 export type Tool =
+  // 选择工具：点选 / 移动已有标注与预标注；默认工具，ESC 回退到它。
+  | "select"
   | "box"
   // v0.10.28 · 旋转框 (OBB): 先拖轴对齐矩形, 提交后用旋转手柄调角度.
   | "rotated-box"
@@ -26,8 +27,8 @@ export type Tool =
   | "magic-box"
   // v0.10.28 · 关键点 (COCO 范式).
   | "keypoint";
-// v0.11.29 · hand = 视图/平移中立态（左键拖拽平移画布，不绘制）；ESC 回归到它。
-export type VideoTool = "box" | "track" | "hand";
+// 视频工具栏保留选择与创建工具；平移不再作为 VideoTool 模式。
+export type VideoTool = "select" | "box" | "track";
 // v0.13.3-5 · 点云 3D 工作台工具态(双栈隔离,不复用 2D ToolId)。
 export type ThreeDTool = "select" | "box" | "point-mask";
 
@@ -110,8 +111,8 @@ export function useWorkbenchState() {
     setLayout: setWorkbenchLayout,
   } = useWorkbenchConfig();
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
-  const [tool, setTool] = useState<Tool>("box");
-  const [videoTool, setVideoTool] = useState<VideoTool>("box");
+  const [tool, setTool] = useState<Tool>("select");
+  const [videoTool, setVideoTool] = useState<VideoTool>("select");
   const [threeDTool, setThreeDTool] = useState<ThreeDTool>("select");
   const [videoFrameIndex, setVideoFrameIndex] = useState(0);
   const [hiddenVideoTrackIds, setHiddenVideoTrackIds] = useState<Set<string>>(() => new Set());
@@ -135,7 +136,6 @@ export function useWorkbenchState() {
   const [activeClass, setActiveClass] = useState("");
   const [pendingDrawing, setPendingDrawing] = useState<PendingDrawing>(null);
   const [editingClass, setEditingClass] = useState<EditingClass>(null);
-  const [attributeMode, setAttributeMode] = useState<AttributeModeState>(DEFAULT_ATTRIBUTE_MODE);
   /**
    * 多选语义：
    * - selectedId：primary（用于 SelectionOverlay 浮按钮锚点 / 单体快捷键）
@@ -327,7 +327,6 @@ export function useWorkbenchState() {
     activeClass, setActiveClass,
     pendingDrawing, setPendingDrawing,
     editingClass, setEditingClass,
-    attributeMode, setAttributeMode,
     selectedId, setSelectedId,
     selectedIds, toggleSelected, replaceSelected,
     confThreshold, setConfThreshold,
