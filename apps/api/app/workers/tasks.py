@@ -90,7 +90,11 @@ def _build_predict_context(
         _reserved = {"type", "text", "output", "model_id", "model_variants"}
         if params:
             context.update(
-                {k: v for k, v in params.items() if v is not None and k not in _reserved}
+                {
+                    k: v
+                    for k, v in params.items()
+                    if v is not None and k not in _reserved
+                }
             )
         return context
 
@@ -175,7 +179,11 @@ def _stage_input_mode(backend, model_id: str | None) -> str:
     否则 → ``"crop"`` (现状: 逐父框裁 crop 喂下游分类)。能力读 backend 缓存的
     health_meta.capabilities.models; 取不到 model 时回落 crop (向后兼容)。
     """
-    caps = (getattr(backend, "health_meta", None) or {}).get("capabilities") if backend else None
+    caps = (
+        (getattr(backend, "health_meta", None) or {}).get("capabilities")
+        if backend
+        else None
+    )
     models = (caps or {}).get("models") or []
     m = next((x for x in models if x.get("id") == model_id), None)
     if not m:
@@ -208,7 +216,14 @@ def _pipeline_topology(stages: list[dict]) -> list[dict]:
 
 
 async def _run_task_pipeline(
-    task, stages, stage_clients, stage_contexts, *, resolve_url, upload_crop=None, stage_modes=None
+    task,
+    stages,
+    stage_clients,
+    stage_contexts,
+    *,
+    resolve_url,
+    upload_crop=None,
+    stage_modes=None,
 ):
     """v0.18.1 / v0.18.2 / v0.18.4 / v0.18.12 · 对单个 task 顺序跑各阶段, 返回 (pred_results, pipeline_extra, stage_stats)。
 
@@ -277,7 +292,13 @@ async def _run_task_pipeline(
                 stats[si]["targeted"] += len(geo.prompts)
                 try:
                     seg_results = await stage_clients[si].predict(
-                        [{"id": str(task.id), "file_path": url, "prompts": geo.prompts}],
+                        [
+                            {
+                                "id": str(task.id),
+                                "file_path": url,
+                                "prompts": geo.prompts,
+                            }
+                        ],
                         context=stage_contexts[si],
                     )
                     shapes = collect_geometry_shapes(seg_results, boxes)

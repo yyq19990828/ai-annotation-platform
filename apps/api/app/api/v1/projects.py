@@ -699,7 +699,9 @@ async def delete_project(
     p = {"pid": pid}
 
     await db.execute(text("DELETE FROM annotation_comments WHERE project_id = :pid"), p)
-    await db.execute(text("DELETE FROM annotation_feedbacks WHERE project_id = :pid"), p)
+    await db.execute(
+        text("DELETE FROM annotation_feedbacks WHERE project_id = :pid"), p
+    )
     await db.execute(
         text(
             "DELETE FROM annotation_drafts WHERE task_id IN "
@@ -1283,7 +1285,10 @@ class PreannotateRequest(BaseModel):
                 raise ValueError(
                     f"stage {s.stage} 的 parent_stage 只能指向源阶段 {root.stage} (本期仅单层扇出)"
                 )
-            if s.write is not None and s.write.get("target", "attributes") != "attributes":
+            if (
+                s.write is not None
+                and s.write.get("target", "attributes") != "attributes"
+            ):
                 raise ValueError("本期仅支持 write.target=attributes")
             if s.roi is not None:
                 mode = s.roi.get("mode", "crop")

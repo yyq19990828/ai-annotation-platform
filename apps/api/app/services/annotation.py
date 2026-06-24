@@ -173,10 +173,17 @@ class AnnotationService:
                 if isinstance(alias, str) and alias.strip() and isinstance(cname, str):
                     alias_to_name[alias.strip().lower()] = cname
             for field in (binding.get("attribute_schema") or {}).get("fields") or []:
-                if not isinstance(field, dict) or field.get("type") not in ("select", "multiselect"):
+                if not isinstance(field, dict) or field.get("type") not in (
+                    "select",
+                    "multiselect",
+                ):
                     continue
                 fkey = field.get("key")
-                opts = {o.get("value") for o in (field.get("options") or []) if isinstance(o, dict)}
+                opts = {
+                    o.get("value")
+                    for o in (field.get("options") or [])
+                    if isinstance(o, dict)
+                }
                 if isinstance(fkey, str) and opts:
                     attr_select_options[fkey] = opts
 
@@ -217,7 +224,11 @@ class AnnotationService:
             # 内部键 (_shape_index 等) 不允许被 override 干扰, 下面权威重写。
             if isinstance(attribute_overrides, dict):
                 attributes.update(
-                    {k: v for k, v in attribute_overrides.items() if not k.startswith("_")}
+                    {
+                        k: v
+                        for k, v in attribute_overrides.items()
+                        if not k.startswith("_")
+                    }
                 )
             # 权威 _shape_index 放在最后, 防止 backend 在 shape attributes 里同名覆盖
             # 导致前端按 (predictionId, shapeIndex) 双键命中错位。
@@ -228,11 +239,18 @@ class AnnotationService:
                 _allowed = attr_select_options.get(_akey)
                 if _allowed is None:
                     continue
-                _bad = [v for v in (_aval if isinstance(_aval, list) else [_aval]) if v not in _allowed]
+                _bad = [
+                    v
+                    for v in (_aval if isinstance(_aval, list) else [_aval])
+                    if v not in _allowed
+                ]
                 if _bad:
                     logger.warning(
                         "accept_prediction %s shape %s: 属性 %s=%s 不在 select options 内 (保留入库)",
-                        prediction_id, idx, _akey, _bad,
+                        prediction_id,
+                        idx,
+                        _akey,
+                        _bad,
                     )
             annotation = Annotation(
                 id=uuid.uuid4(),

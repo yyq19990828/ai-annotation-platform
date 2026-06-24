@@ -33,21 +33,37 @@ async def _seed_prediction(db, owner_id):
     db.add(project)
     await db.flush()
     task = Task(
-        id=uuid.uuid4(), project_id=project.id,
-        display_id=f"T-{uuid.uuid4().hex[:8]}", file_name="s.jpg",
-        file_path="/tmp/s.jpg", file_type="image", status="pending",
+        id=uuid.uuid4(),
+        project_id=project.id,
+        display_id=f"T-{uuid.uuid4().hex[:8]}",
+        file_name="s.jpg",
+        file_path="/tmp/s.jpg",
+        file_type="image",
+        status="pending",
     )
     db.add(task)
     await db.flush()
     pred = Prediction(
-        id=uuid.uuid4(), task_id=task.id, project_id=project.id, ml_backend_id=None,
-        model_version="test", score=0.9,
-        result=[{
-            "type": "rectanglelabels",
-            "value": {"x": 0, "y": 0, "width": 10, "height": 10, "rectanglelabels": ["car"]},
-            "score": 0.9,
-            "attributes": {"color": "blue", "vehicle_type": "bus"},
-        }],
+        id=uuid.uuid4(),
+        task_id=task.id,
+        project_id=project.id,
+        ml_backend_id=None,
+        model_version="test",
+        score=0.9,
+        result=[
+            {
+                "type": "rectanglelabels",
+                "value": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 10,
+                    "height": 10,
+                    "rectanglelabels": ["car"],
+                },
+                "score": 0.9,
+                "attributes": {"color": "blue", "vehicle_type": "bus"},
+            }
+        ],
     )
     db.add(pred)
     await db.commit()

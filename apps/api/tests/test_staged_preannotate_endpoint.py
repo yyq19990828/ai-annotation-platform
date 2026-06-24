@@ -38,12 +38,20 @@ async def _seed(db: AsyncSession, owner_id: uuid.UUID):
     await db.flush()
 
     detect = MLBackend(
-        id=uuid.uuid4(), project_id=proj.id, name="detect", url="http://detect/",
-        is_interactive=False, state="connected",
+        id=uuid.uuid4(),
+        project_id=proj.id,
+        name="detect",
+        url="http://detect/",
+        is_interactive=False,
+        state="connected",
     )
     classify = MLBackend(
-        id=uuid.uuid4(), project_id=proj.id, name="classify", url="http://classify/",
-        is_interactive=False, state="connected",
+        id=uuid.uuid4(),
+        project_id=proj.id,
+        name="classify",
+        url="http://classify/",
+        is_interactive=False,
+        state="connected",
     )
     db.add(detect)
     db.add(classify)
@@ -51,15 +59,23 @@ async def _seed(db: AsyncSession, owner_id: uuid.UUID):
     proj.ml_backend_id = detect.id
 
     batch = TaskBatch(
-        id=uuid.uuid4(), project_id=proj.id, display_id=f"B-{suffix}", name="b1",
+        id=uuid.uuid4(),
+        project_id=proj.id,
+        display_id=f"B-{suffix}",
+        name="b1",
         status=BatchStatus.ACTIVE,
     )
     db.add(batch)
     await db.flush()
     t = Task(
-        id=uuid.uuid4(), project_id=proj.id, batch_id=batch.id,
-        display_id=f"T-{suffix}-0", file_name="img.jpg", file_path=f"items/{suffix}.jpg",
-        file_type="image", status="pending",
+        id=uuid.uuid4(),
+        project_id=proj.id,
+        batch_id=batch.id,
+        display_id=f"T-{suffix}-0",
+        file_name="img.jpg",
+        file_path=f"items/{suffix}.jpg",
+        file_type="image",
+        status="pending",
     )
     db.add(t)
     await db.commit()
@@ -88,8 +104,11 @@ def _stages(detect_id, classify_id):
     return [
         {"stage": 0, "ml_backend_id": str(detect_id), "model_id": "detect"},
         {
-            "stage": 1, "ml_backend_id": str(classify_id), "model_id": "va",
-            "task_type": "classification", "parent_stage": 0,
+            "stage": 1,
+            "ml_backend_id": str(classify_id),
+            "model_id": "va",
+            "task_type": "classification",
+            "parent_stage": 0,
             "roi": {"mode": "crop", "pad": 0.05},
             "write": {"target": "attributes", "keys": ["color"]},
         },
@@ -142,14 +161,22 @@ async def test_accept_parallel_fanout_three_stages(
     proj, detect, classify, batch = await _seed(db_session, owner.id)
     stages = _stages(detect.id, classify.id)
     stages[1]["write"] = {"target": "attributes", "keys": ["color"]}
-    stages.append({
-        "stage": 2, "ml_backend_id": str(classify.id), "parent_stage": 0,
-        "write": {"target": "attributes", "keys": ["vehicle_type"]},
-    })
+    stages.append(
+        {
+            "stage": 2,
+            "ml_backend_id": str(classify.id),
+            "parent_stage": 0,
+            "write": {"target": "attributes", "keys": ["vehicle_type"]},
+        }
+    )
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
-        json={"ml_backend_id": str(detect.id), "batch_id": str(batch.id), "pipeline_stages": stages},
+        json={
+            "ml_backend_id": str(detect.id),
+            "batch_id": str(batch.id),
+            "pipeline_stages": stages,
+        },
     )
     assert resp.status_code == 200, resp.text
     assert len(_mock_celery["kwargs"]["pipeline_stages"]) == 3
@@ -167,7 +194,11 @@ async def test_reject_depth_three(
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
-        json={"ml_backend_id": str(detect.id), "batch_id": str(batch.id), "pipeline_stages": stages},
+        json={
+            "ml_backend_id": str(detect.id),
+            "batch_id": str(batch.id),
+            "pipeline_stages": stages,
+        },
     )
     assert resp.status_code == 422, resp.text
 
@@ -181,11 +212,19 @@ async def test_reject_key_conflict_default(
     proj, detect, classify, batch = await _seed(db_session, owner.id)
     stages = _stages(detect.id, classify.id)
     stages[1]["write"] = {"target": "attributes", "keys": ["color"]}
-    stages.append({
-        "stage": 2, "ml_backend_id": str(classify.id), "parent_stage": 0,
-        "write": {"target": "attributes", "keys": ["color"]},
-    })
-    body = {"ml_backend_id": str(detect.id), "batch_id": str(batch.id), "pipeline_stages": stages}
+    stages.append(
+        {
+            "stage": 2,
+            "ml_backend_id": str(classify.id),
+            "parent_stage": 0,
+            "write": {"target": "attributes", "keys": ["color"]},
+        }
+    )
+    body = {
+        "ml_backend_id": str(detect.id),
+        "batch_id": str(batch.id),
+        "pipeline_stages": stages,
+    }
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/preannotate", headers=_bearer(token), json=body
     )
@@ -210,7 +249,11 @@ async def test_reject_bad_roi_pad(
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
-        json={"ml_backend_id": str(detect.id), "batch_id": str(batch.id), "pipeline_stages": stages},
+        json={
+            "ml_backend_id": str(detect.id),
+            "batch_id": str(batch.id),
+            "pipeline_stages": stages,
+        },
     )
     assert resp.status_code == 422, resp.text
 
@@ -226,7 +269,11 @@ async def test_reject_source_backend_mismatch(
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
-        json={"ml_backend_id": str(detect.id), "batch_id": str(batch.id), "pipeline_stages": stages},
+        json={
+            "ml_backend_id": str(detect.id),
+            "batch_id": str(batch.id),
+            "pipeline_stages": stages,
+        },
     )
     assert resp.status_code == 422, resp.text
 
@@ -241,6 +288,10 @@ async def test_reject_unknown_downstream_backend(
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
-        json={"ml_backend_id": str(detect.id), "batch_id": str(batch.id), "pipeline_stages": stages},
+        json={
+            "ml_backend_id": str(detect.id),
+            "batch_id": str(batch.id),
+            "pipeline_stages": stages,
+        },
     )
     assert resp.status_code == 404, resp.text

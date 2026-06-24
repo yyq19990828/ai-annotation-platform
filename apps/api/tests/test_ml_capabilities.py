@@ -24,14 +24,25 @@ def test_extract_passes_through_output_attribute_schema():
                 "supported_geometric_outputs": ["bbox"],
                 "output_attribute_types": ["class"],
                 "output_attribute_schema": [
-                    {"key": "vehicle_type", "type": "select", "options": [{"value": "car", "label": "小车"}]},
-                    {"key": "color", "type": "select", "options": [{"value": "blue", "label": "蓝色"}]},
+                    {
+                        "key": "vehicle_type",
+                        "type": "select",
+                        "options": [{"value": "car", "label": "小车"}],
+                    },
+                    {
+                        "key": "color",
+                        "type": "select",
+                        "options": [{"value": "blue", "label": "蓝色"}],
+                    },
                 ],
             }
         ],
     }
     model = extract_capabilities(setup)["models"][0]
-    assert [f["key"] for f in model["output_attribute_schema"]] == ["vehicle_type", "color"]
+    assert [f["key"] for f in model["output_attribute_schema"]] == [
+        "vehicle_type",
+        "color",
+    ]
     assert model["output_attribute_schema"][0]["options"][0]["value"] == "car"
 
 

@@ -141,9 +141,9 @@ def crop_inputs_from_boxes(
                 raise ValueError("delivery='presigned' 需要 upload_fn")
             file_path = upload_fn(idx, jpeg_bytes)
         else:
-            file_path = "data:image/jpeg;base64," + base64.b64encode(
-                jpeg_bytes
-            ).decode("ascii")
+            file_path = "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes).decode(
+                "ascii"
+            )
         inp = {"id": str(idx), "file_path": file_path}
         if cache is not None:
             cache[cache_key] = inp
@@ -290,6 +290,10 @@ def merge_classify_attributes(
                 continue
         box = boxes[box_idx]
         existing = box.get("attributes")
-        box["attributes"] = {**existing, **best_attrs} if isinstance(existing, dict) else dict(best_attrs)
+        box["attributes"] = (
+            {**existing, **best_attrs}
+            if isinstance(existing, dict)
+            else dict(best_attrs)
+        )
         merged += 1
     return merged

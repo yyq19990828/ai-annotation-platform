@@ -68,7 +68,10 @@ def test_crop_skips_non_bbox_and_rotated():
     img = _img(200, 200)
     boxes = [
         {"type": "polygonlabels", "value": {"points": [[0, 0], [1, 1]]}},
-        {"type": "rectanglelabels", "value": {"x": 10, "y": 10, "width": 20, "height": 20, "rotation": 30}},
+        {
+            "type": "rectanglelabels",
+            "value": {"x": 10, "y": 10, "width": 20, "height": 20, "rotation": 30},
+        },
         _bbox(10, 10, 20, 20),  # idx 2: 唯一有效
     ]
     batch = crop_inputs_from_boxes(img, boxes, pad=0.0)
@@ -148,8 +151,26 @@ def test_merge_attributes_union_by_id():
     boxes = [_bbox(0, 0, 10, 10), _bbox(20, 20, 10, 10)]
     # 下游对 box0 返回 color, box1 返回 color+vehicle_type
     classify = [
-        _FakeResult("0", [{"type": "rectanglelabels", "score": 0.9, "attributes": {"color": "blue"}}]),
-        _FakeResult("1", [{"type": "rectanglelabels", "score": 0.8, "attributes": {"color": "red", "vehicle_type": "bus"}}]),
+        _FakeResult(
+            "0",
+            [
+                {
+                    "type": "rectanglelabels",
+                    "score": 0.9,
+                    "attributes": {"color": "blue"},
+                }
+            ],
+        ),
+        _FakeResult(
+            "1",
+            [
+                {
+                    "type": "rectanglelabels",
+                    "score": 0.8,
+                    "attributes": {"color": "red", "vehicle_type": "bus"},
+                }
+            ],
+        ),
     ]
     n = merge_classify_attributes(boxes, classify)
     assert n == 2
@@ -164,7 +185,10 @@ def test_merge_picks_highest_score_and_respects_write_keys():
             "0",
             [
                 {"score": 0.3, "attributes": {"color": "black", "vehicle_type": "car"}},
-                {"score": 0.95, "attributes": {"color": "white", "vehicle_type": "truck"}},
+                {
+                    "score": 0.95,
+                    "attributes": {"color": "white", "vehicle_type": "truck"},
+                },
             ],
         )
     ]
@@ -174,7 +198,13 @@ def test_merge_picks_highest_score_and_respects_write_keys():
 
 
 def test_merge_preserves_existing_attributes():
-    boxes = [{"type": "rectanglelabels", "value": {"x": 0, "y": 0, "width": 10, "height": 10}, "attributes": {"existing": "keep"}}]
+    boxes = [
+        {
+            "type": "rectanglelabels",
+            "value": {"x": 0, "y": 0, "width": 10, "height": 10},
+            "attributes": {"existing": "keep"},
+        }
+    ]
     classify = [_FakeResult("0", [{"score": 0.9, "attributes": {"color": "blue"}}])]
     merge_classify_attributes(boxes, classify)
     assert boxes[0]["attributes"] == {"existing": "keep", "color": "blue"}
@@ -219,8 +249,10 @@ def test_geometry_prompts_class_filter_keeps_original_index():
 def test_geometry_prompts_skips_rotated_and_degenerate():
     """旋转框 / 退化框计入 skipped_geometry, 不产 prompt。"""
     boxes = [
-        {"type": "rectanglelabels",
-         "value": {"x": 10, "y": 10, "width": 10, "height": 10, "rotation": 30}},
+        {
+            "type": "rectanglelabels",
+            "value": {"x": 10, "y": 10, "width": 10, "height": 10, "rotation": 30},
+        },
         _bbox(0, 0, 0, 10),  # 退化 (w=0)
         _bbox(30, 30, 20, 20),  # 有效
     ]
@@ -234,11 +266,25 @@ def test_collect_geometry_shapes_filters_bad_parent_idx():
     """收集下游 polygon: 保留合法 parent_box_idx, 丢越界项。"""
     boxes = [_bbox(0, 0, 10, 10)]
     seg = [
-        _FakeResult("task-1", [
-            {"type": "polygonlabels", "value": {"points": [[1, 1]]}, "parent_box_idx": 0},
-            {"type": "polygonlabels", "value": {"points": [[2, 2]]}, "parent_box_idx": 9},  # 越界
-            {"type": "polygonlabels", "value": {"points": [[3, 3]]}},  # 无 parent_box_idx → 保留
-        ]),
+        _FakeResult(
+            "task-1",
+            [
+                {
+                    "type": "polygonlabels",
+                    "value": {"points": [[1, 1]]},
+                    "parent_box_idx": 0,
+                },
+                {
+                    "type": "polygonlabels",
+                    "value": {"points": [[2, 2]]},
+                    "parent_box_idx": 9,
+                },  # 越界
+                {
+                    "type": "polygonlabels",
+                    "value": {"points": [[3, 3]]},
+                },  # 无 parent_box_idx → 保留
+            ],
+        ),
     ]
     shapes = collect_geometry_shapes(seg, boxes)
     assert len(shapes) == 2
