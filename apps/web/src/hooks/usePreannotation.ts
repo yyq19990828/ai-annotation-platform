@@ -96,10 +96,14 @@ export interface PipelineStagePayload {
   class_filter?: number[];
   /** 依赖的父阶段 index; null/缺=源阶段 (吃整图). */
   parent_stage?: number | null;
-  /** ROI 构造; M1 用 {mode:"crop", pad:0.05}. */
-  roi?: { mode: string; pad?: number };
-  /** 结果写回; M1 用 {target:"attributes", keys?:[...]}. */
-  write?: { target: string; keys?: string[] };
+  /** v0.18.2 · 父框类别白名单: 只对父框 class_name 命中时启动本阶段; 其余降级保留纯检测。 */
+  parent_class_filter?: string[];
+  /** ROI 构造: crop=裁父框喂纯分类; geometry=全图+父框列表喂 box-seg (v0.18.12)。 */
+  roi?: { mode: "crop" | "geometry"; pad?: number };
+  /** 结果写回: attributes=写父框 attributes; geometry=产独立 polygon shape (v0.18.12)。 */
+  write?: { target: "attributes" | "geometry"; keys?: string[] };
+  /** v0.18.2 · 阶段级失败策略: keep_parent (默认, 上游框保留属性留空) | drop_box (丢父框)。 */
+  on_failure?: "keep_parent" | "drop_box";
 }
 
 export interface TriggerPreannotationResponse {

@@ -1285,23 +1285,32 @@ class PreannotateRequest(BaseModel):
                 raise ValueError(
                     f"stage {s.stage} 的 parent_stage 只能指向源阶段 {root.stage} (本期仅单层扇出)"
                 )
-            if (
-                s.write is not None
-                and s.write.get("target", "attributes") != "attributes"
-            ):
-                raise ValueError("本期仅支持 write.target=attributes")
+            if s.write is not None:
+                target = s.write.get("target", "attributes")
+                # geometry: gsam2 box-seg 等下游产独立 polygon 追加为 new shape (无 attribute keys)。
+                # attributes: 纯分类下游写回父框 attributes。
+                if target not in {"attributes", "geometry"}:
+                    raise ValueError(
+                        f"write.target 须为 'attributes' 或 'geometry', 收到 {target!r}"
+                    )
             if s.roi is not None:
                 mode = s.roi.get("mode", "crop")
-                if mode != "crop":
-                    raise ValueError(f"本期仅支持 roi.mode=crop, 收到 {mode!r}")
+                # crop: 平台裁父框 ROI 喂下游分类。geometry: 全图 + 父框列表喂 box-seg。
+                if mode not in {"crop", "geometry"}:
+                    raise ValueError(
+                        f"roi.mode 须为 'crop' 或 'geometry', 收到 {mode!r}"
+                    )
                 pad = s.roi.get("pad")
                 if pad is not None and not (0.0 <= float(pad) <= 0.5):
                     raise ValueError("roi.pad 须在 [0, 0.5] 区间")
-        # 并行兄弟键冲突: 多个下游阶段声明 write.keys 写同一键 → reject 时 422。
+        # 并行兄弟键冲突: 多个下游 attributes-target 阶段声明 write.keys 写同一键 → reject 时 422。
+        # geometry-target 不写 attributes (产独立 polygon shape), 不参与 keys 冲突检测。
         if self.on_key_conflict == "reject":
             seen_keys: set[str] = set()
             for s in stages:
                 if s.parent_stage is None or not s.write:
+                    continue
+                if s.write.get("target", "attributes") != "attributes":
                     continue
                 for k in s.write.get("keys") or []:
                     if k in seen_keys:

@@ -259,6 +259,119 @@ async def test_reject_bad_roi_pad(
 
 
 @pytest.mark.asyncio
+async def test_accept_geometry_downstream(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # v0.18.12 · gsam2 box-seg 下游 (roi.mode=geometry + write.target=geometry) 应被放行。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = [
+        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "vehicle-detect"},
+        {
+            "stage": 1,
+            "ml_backend_id": str(classify.id),
+            "model_id": "grounded-sam2-box-seg",
+            "task_type": "segmentation",
+            "parent_stage": 0,
+            "roi": {"mode": "geometry", "pad": 0.05},
+            "write": {"target": "geometry"},
+        },
+    ]
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(detect.id),
+            "batch_id": str(batch.id),
+            "pipeline_stages": stages,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    fwd = _mock_celery["kwargs"]["pipeline_stages"]
+    assert fwd[1]["roi"] == {"mode": "geometry", "pad": 0.05}
+    assert fwd[1]["write"] == {"target": "geometry"}
+
+
+@pytest.mark.asyncio
+async def test_reject_invalid_roi_mode(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = _stages(detect.id, classify.id)
+    stages[1]["roi"] = {"mode": "polygon", "pad": 0.05}  # 非 crop / geometry
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(detect.id),
+            "batch_id": str(batch.id),
+            "pipeline_stages": stages,
+        },
+    )
+    assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.asyncio
+async def test_reject_invalid_write_target(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = _stages(detect.id, classify.id)
+    stages[1]["write"] = {"target": "new_shape", "keys": ["color"]}  # 非 attributes / geometry
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(detect.id),
+            "batch_id": str(batch.id),
+            "pipeline_stages": stages,
+        },
+    )
+    assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.asyncio
+async def test_geometry_target_skips_key_conflict(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # v0.18.12 · geometry target 不写 attributes, 不应卷进键冲突检测。
+    # 一个 attributes 阶段 + 一个 geometry 阶段, 即使前者写了 keys=["color"], geometry 阶段
+    # 没 keys 也不该 422。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = [
+        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect"},
+        {
+            "stage": 1,
+            "ml_backend_id": str(classify.id),
+            "model_id": "va-classify",
+            "parent_stage": 0,
+            "write": {"target": "attributes", "keys": ["color"]},
+        },
+        {
+            "stage": 2,
+            "ml_backend_id": str(classify.id),
+            "model_id": "box-seg",
+            "parent_stage": 0,
+            "roi": {"mode": "geometry"},
+            "write": {"target": "geometry"},
+        },
+    ]
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(detect.id),
+            "batch_id": str(batch.id),
+            "pipeline_stages": stages,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
 async def test_reject_source_backend_mismatch(
     httpx_client_bound, super_admin, db_session, _mock_celery
 ):

@@ -112,7 +112,7 @@ def _build_predict_context(
             ctx["classes"] = class_filter
         return ctx
 
-    # ── 老扁平 (OCR / doc_layout: model_id + task_type, 无 prompt 无 variants)。 ──
+    # ── 老扁平 (OCR / doc_layout / 纯分类下游: model_id + task_type, 无 prompt 无 variants)。 ──
     context2: dict | None = None
     if task_type or model_id:
         context2 = {}
@@ -120,6 +120,17 @@ def _build_predict_context(
             context2["type"] = task_type
         if model_id:
             context2["model_id"] = model_id
+        # 透传 params: 多阶段下游 (如 onnxtools 纯分类) 经 StageCard 带 params, 早期 flat 路径
+        # 漏了透传; 顶层保留键 (type/model_id) 不被 params 覆盖, 与文本路径一致。
+        if params:
+            _reserved2 = {"type", "model_id"}
+            context2.update(
+                {
+                    k: v
+                    for k, v in params.items()
+                    if v is not None and k not in _reserved2
+                }
+            )
     return context2
 
 

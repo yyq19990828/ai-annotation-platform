@@ -140,6 +140,25 @@ def test_flat_task_type_override_for_ocr():
     assert ctx["model_id"] == "ocr-model"
 
 
+def test_flat_path_passes_through_params():
+    """flat 路径 (纯分类下游 / OCR / doc_layout) 应透传 params: StageCard 始终带 params,
+    早期 flat 路径漏了透传; 顶层保留键 (type/model_id) 不被 params 覆盖。"""
+    ctx = _ctx(
+        task_type="classification",
+        model_id="vehicle-attr-classify",
+        params={"conf": 0.5, "type": "should-be-ignored"},  # type 是保留键, 不被覆盖
+    )
+    assert ctx["type"] == "classification"  # 保留键未被 params.type 覆盖
+    assert ctx["model_id"] == "vehicle-attr-classify"
+    assert ctx["conf"] == 0.5  # 非保留键透传
+
+
+def test_flat_path_none_params_is_noop():
+    """flat 路径 params=None 时不应引发错误, 与既有行为等价。"""
+    ctx = _ctx(task_type="ocr", model_id="ocr-model", params=None)
+    assert ctx == {"type": "ocr", "model_id": "ocr-model"}
+
+
 def test_no_prompt_no_task_returns_none():
     assert _ctx() is None
 
