@@ -123,6 +123,16 @@ describe("CapabilityCatalogPanel · 协议双层视图", () => {
     expect(screen.getAllByText("暂无接入").length).toBe(9);
   });
 
+  it("默认协议能力分组切到列表视图 → 渲染协议能力列表", async () => {
+    renderUI();
+    await screen.findByText(/支持 9 类 AI 标注能力/);
+    fireEvent.click(screen.getByTitle("列表视图"));
+    expect(screen.getByRole("columnheader", { name: "协议能力" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "接入状态" })).toBeInTheDocument();
+    expect(screen.getAllByRole("row")).toHaveLength(10);
+    expect(screen.getAllByText("暂无接入")).toHaveLength(9);
+  });
+
   it("切换 groupBy=backend → 退回 v0.14.10 行为 (旧空态, 不渲染协议卡)", async () => {
     renderUI();
     await screen.findByText(/支持 9 类 AI 标注能力/);

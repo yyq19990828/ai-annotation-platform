@@ -27,7 +27,7 @@ last_reviewed: 2026-06-10
 
 ### 1. 能力目录
 
-> v0.14.11 起「能力目录」与 backend 注册解耦：默认按**协议能力 (task)** 分组渲染 9 张协议卡，无 backend 注册时仍完整展示协议层支持的全部能力 + 推荐 backend；详见 [ADR-0037](../../dev/adr/0037-protocol-capability-catalog-decoupling)。
+> 「能力目录」与 backend 注册解耦：默认按**协议能力 (task)** 分组渲染协议卡，无 backend 注册时仍完整展示协议层支持的全部能力 + 推荐 backend；详见 [ADR-0037](../../dev/adr/0037-protocol-capability-catalog-decoupling)。
 
 能力目录默认按**协议能力 (task)** 分组：
 
@@ -36,14 +36,13 @@ last_reviewed: 2026-06-10
 - 未挂任何 model 的协议卡显示「暂无接入」徽标，并列出**典型模型**与**推荐 backend**（含 GitHub 链接），CTA「去注册 backend」可一键跳到 `?tab=registry`。
 - 零接入时顶部加 onboarding 横幅，强调「平台支持 9 类 AI 标注能力，当前还没有 backend 接入」。
 
-切换到「分组：backend / infra / 不分组」时退回 v0.14.10 的 model-centric 视图（按 model 条目展开，零接入时显示原空态）。
+切换到「分组：backend / infra / 不分组」时进入 model-centric 视图（按 model 条目展开，零接入时显示空态）。
 
 通用筛选：
 
-- 卡片 / 紧凑列表切换。
+- 卡片 / 列表切换；协议能力分组下列表按协议能力逐行展示，backend / infra / 不分组下列表按 model 条目展开。
 - 搜索模型名、model id、模型族、task 中文标签和来源 backend；协议能力分组下，搜索同时过滤协议卡（命中 task label / summary / typical_models 的卡保留）。
 - 与 task / model_family / infra / modality chips 过滤叠加。
-- 列表态按模型名、task、infra 轻量排序。
 
 ### 2. 运行时观测
 
