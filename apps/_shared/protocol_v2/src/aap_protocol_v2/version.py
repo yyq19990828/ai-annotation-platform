@@ -2,5 +2,5 @@
 
 from __future__ import annotations
 
-PROTOCOL_VERSION = "2.1"
-COMPAT_PROTOCOL_VERSIONS = ["2.0"]
+PROTOCOL_VERSION = "2.2"
+COMPAT_PROTOCOL_VERSIONS = ["2.1", "2.0"]

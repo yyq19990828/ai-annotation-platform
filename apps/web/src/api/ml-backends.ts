@@ -46,6 +46,9 @@ export interface MLModelCapability {
   model_family?: string;
   // 能力可见性: internal=目录可见但不对外开放选用(平台/前端过滤掉); public/缺省=对外开放.
   visibility?: "internal" | "public";
+  // v0.18.12 · 原子 vs 内部编排 (协议 v2.2): atom=单次推理; composite=一个 model 内部串多原子.
+  // 与 visibility 解耦 (描述性 vs 行为性); 缺省/老 backend = atom. 模型市场据此打「原子/内置流程」徽标.
+  composition?: "atom" | "composite";
   infra?: string;
   is_interactive?: boolean;
   supported_prompts?: string[];

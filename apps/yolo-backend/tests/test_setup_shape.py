@@ -26,9 +26,14 @@ def setup_dict() -> dict:
     return main.setup()
 
 
-def test_setup_protocol_version_v21(setup_dict: dict) -> None:
-    assert setup_dict["protocol_version"] == "2.1"
-    assert setup_dict["compat_protocol_versions"] == ["2.0"]
+def test_setup_protocol_version_v22(setup_dict: dict) -> None:
+    assert setup_dict["protocol_version"] == "2.2"
+    assert setup_dict["compat_protocol_versions"] == ["2.1", "2.0"]
+
+
+def test_setup_models_are_atoms(setup_dict: dict) -> None:
+    """v0.18.12 · YOLO 各 task model 均标 composition=atom。"""
+    assert all(m["composition"] == "atom" for m in setup_dict["models"])
 
 
 def test_setup_infra_pytorch(setup_dict: dict) -> None:

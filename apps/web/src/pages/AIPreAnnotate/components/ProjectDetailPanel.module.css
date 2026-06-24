@@ -425,6 +425,9 @@
 }
 
 .presetButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 3px 10px;
   color: var(--sc-foreground);
   font-size: 11px;
@@ -442,6 +445,9 @@
 }
 
 .presetGhostButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 3px 8px;
   color: var(--sc-muted-foreground);
   font-size: 11px;

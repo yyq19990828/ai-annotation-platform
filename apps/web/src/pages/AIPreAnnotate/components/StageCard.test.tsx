@@ -46,6 +46,8 @@ function renderCard(props: Partial<Record<string, unknown>> = {}) {
 describe("StageCard v0.18.5/6", () => {
   beforeEach(() => {
     mockCfg.capabilitiesQ = { isLoading: false, data: { models: [] } };
+    mockCfg.configReady = true;
+    mockCfg.currentVariantSlice = {};
   });
 
   it("父框类别 chip 来自项目类别, 可点选", () => {
@@ -126,6 +128,41 @@ describe("StageCard v0.18.5/6", () => {
     const lastPayload = calls[calls.length - 1]?.[1];
     expect(lastPayload?.model_id).toBe("vehicle-attr-classify");
     expect(lastPayload?.task_type).toBe("classification");
+  });
+
+  it("backend 暴露 box-seg 时, 走 geometry 下游: payload 直构 (无需 prompt) + 隐藏属性字段", () => {
+    mockCfg.configReady = false; // box-seg 不依赖 prompt; 仍应产 payload
+    mockCfg.currentVariantSlice = { sam_variant: "tiny", dino_variant: "T" };
+    mockCfg.capabilitiesQ = {
+      isLoading: false,
+      data: {
+        models: [
+          {
+            id: "grounded-sam2-box-seg",
+            task: "segmentation",
+            display_name: "框→分割",
+            is_interactive: false,
+            supported_prompts: ["bbox"],
+            supported_variants: [{ key: "sam_variant", variants: [{ value: "tiny" }] }],
+          },
+        ],
+      },
+    };
+    const onChange = vi.fn();
+    renderCard({ onChange });
+    // 可见提示: 框→分割
+    expect(screen.getByText(/框→分割：消费上游检测框/)).toBeInTheDocument();
+    // 属性写回字段不渲染 (geometry 产 polygon, 不写属性)
+    expect(screen.queryByText(/写回属性键/)).toBeNull();
+    expect(screen.queryByText(/ROI 扩展 pad/)).toBeNull();
+    // 上抛 geometry payload: model_id + segmentation + roi.mode=geometry + 仅 sam 变体轴
+    const calls = onChange.mock.calls;
+    const lastPayload = calls[calls.length - 1]?.[1];
+    expect(lastPayload?.model_id).toBe("grounded-sam2-box-seg");
+    expect(lastPayload?.task_type).toBe("segmentation");
+    expect(lastPayload?.roi?.mode).toBe("geometry");
+    expect(lastPayload?.write?.target).toBe("geometry");
+    expect(lastPayload?.model_variants).toEqual({ sam_variant: "tiny" }); // dino 被过滤
   });
 
   it("点类别 chip 选中后再点清空", () => {

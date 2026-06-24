@@ -174,6 +174,42 @@ class GroundedSAM2Predictor:
         )
         return self._masks_to_results(masks, scores, w, h, simplify_tolerance), hit
 
+    def predict_boxes(
+        self,
+        image: Image.Image | None,
+        boxes: list[tuple[list[float], int]],
+        *,
+        cache_key: str | None = None,
+        simplify_tolerance: float | None = None,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """v0.18.12 · 框→mask 批量分割原子: 一图一次 set_image, N 框共享 image embedding。
+
+        用于多阶段编排的下游 box-seg 阶段——上游检测器已产出 bbox, 这里对每框跑轻量
+        SAM decoder 出 polygon。encoder(set_image)成本只付一次, 远优于逐 crop N 次编码。
+
+        Args:
+            image: 全图 PIL.Image; cache 命中时可为 None(走 restore_sam)。
+            boxes: ``[(bbox, parent_box_idx), ...]``; bbox 为原图归一化 [x1,y1,x2,y2]。
+            cache_key: image embedding 缓存键(同图同变体复用)。
+            simplify_tolerance: shapely 简化容差(单请求级覆盖)。
+
+        Returns:
+            (协议 result 数组, embedding 命中标志)。每条 result 带 ``parent_box_idx``,
+            供平台 merge 回对应父框。
+        """
+        w, h, hit = self._prime_sam(image, cache_key)
+        out: list[dict[str, Any]] = []
+        for bbox, parent_idx in boxes:
+            x1, y1, x2, y2 = bbox
+            box_px = np.array([x1 * w, y1 * h, x2 * w, y2 * h], dtype=np.float32)
+            masks, scores, _ = self._sam_predictor.predict(
+                point_coords=None, point_labels=None, box=box_px[None, :], multimask_output=False
+            )
+            for entry in self._masks_to_results(masks, scores, w, h, simplify_tolerance):
+                entry["parent_box_idx"] = parent_idx
+                out.append(entry)
+        return out, hit
+
     def _prime_sam(
         self, image: Image.Image | None, cache_key: str | None
     ) -> tuple[int, int, bool]:

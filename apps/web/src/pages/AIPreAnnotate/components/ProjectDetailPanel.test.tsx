@@ -325,13 +325,14 @@ describe("ProjectDetailPanel v0.9.12", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /跑预标.*1 批/ }));
 
+    // v0.18.12 统一 wire: 变体走 model_variants (独立字段), params 只留非变体阈值。
     await waitFor(() => {
       expect(mockTriggerMutate).toHaveBeenCalledWith(expect.objectContaining({
-        params: expect.objectContaining({
-          box_threshold: 0.35,
+        model_variants: expect.objectContaining({
           sam_variant: "large",
           dino_variant: "B",
         }),
+        params: expect.objectContaining({ box_threshold: 0.35 }),
       }));
     });
   });

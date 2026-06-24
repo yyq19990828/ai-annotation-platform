@@ -33,6 +33,16 @@ const COLUMN_CLASSES = [
 ];
 const TRUNCATE_CLASS = "block max-w-full overflow-hidden text-ellipsis whitespace-nowrap";
 
+// v0.18.12 · 原子 vs 内部编排徽标 (读 model.composition, 协议 v2.2)。
+// atom=单次推理原子; composite=一个 model 内部串多原子的内置流程。老 backend 缺字段 → 不渲染。
+const COMPOSITION_BADGE: Record<
+  string,
+  { variant: "outline" | "ai"; label: string; title: string }
+> = {
+  atom: { variant: "outline", label: "原子", title: "单次推理原子，可作编排单元" },
+  composite: { variant: "ai", label: "内置流程", title: "一个 model 内部串联多个原子（内置编排）" },
+};
+
 export function ModelListTable({ items }: { items: FlatModel[] }) {
   const rows = buildListRows(items);
   return (
@@ -59,8 +69,17 @@ export function ModelListTable({ items }: { items: FlatModel[] }) {
             return (
               <tr key={row.rowKey}>
                 <td className="min-w-[180px]">
-                  <div className={`${TRUNCATE_CLASS} font-semibold`} title={row.primaryLabel}>
-                    {row.primaryLabel}
+                  <div className="flex items-center gap-1.5">
+                    <span className={`${TRUNCATE_CLASS} font-semibold`} title={row.primaryLabel}>
+                      {row.primaryLabel}
+                    </span>
+                    {m.composition && COMPOSITION_BADGE[m.composition] && (
+                      <span title={COMPOSITION_BADGE[m.composition].title}>
+                        <Badge variant={COMPOSITION_BADGE[m.composition].variant}>
+                          {COMPOSITION_BADGE[m.composition].label}
+                        </Badge>
+                      </span>
+                    )}
                   </div>
                   <div className={`${TRUNCATE_CLASS} mono mt-0.5 text-2xs text-muted-foreground`} title={row.primaryId}>
                     {row.primaryId}

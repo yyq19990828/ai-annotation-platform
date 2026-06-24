@@ -165,9 +165,36 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
   const geometricModel =
     geometricModels.find((m) => m.id === geometricTaskId) ?? geometricModels[0];
 
-  // v0.14.18 · 当前路径的 variant 来源 (修 #3 回归): doc → 文档 model; 几何 → 选中 task model;
-  //   文本 prompt 批量 (gsam2) → **顶层** supported_variants (两组 sam+dino), 不绑单 model
-  //   (primaryModel=detection 只表达 dino, 表达不全; 文本批量是后端级编排能力)。
+  // v0.18.12 · 文本路径 (gsam2 / sam3 开集) 也 model-first: 列出该 backend 的「文本 task」model
+  //   (含 text prompt、非交互、public 的 detection / segmentation), 作 task 选择器。
+  //   统一 wire: 选中 model → 发 model_id + model_variants (替代旧的「一个 backend + output 开关」)。
+  const textModels = useMemo<MLModelCapability[]>(
+    () =>
+      (capabilitiesQ.data?.models ?? []).filter(
+        (m) =>
+          m.visibility !== "internal" &&
+          !m.is_interactive &&
+          (m.supported_prompts ?? []).includes("text") &&
+          GEOMETRIC_TASKS.includes(m.task ?? ""),
+      ),
+    [capabilitiesQ.data],
+  );
+  const [textTaskId, setTextTaskId] = useState<string | null>(null);
+  useEffect(() => {
+    // 默认任务: image-det 项目偏检测 (出框), 其余偏分割 (出掩膜); 回退第一个。
+    const preferSeg = project?.type_key !== "image-det";
+    setTextTaskId((prev) => {
+      if (prev && textModels.some((m) => m.id === prev)) return prev;
+      const seg = textModels.find((m) => m.task === "segmentation");
+      const det = textModels.find((m) => m.task === "detection");
+      return (preferSeg ? seg ?? det : det ?? seg)?.id ?? textModels[0]?.id ?? null;
+    });
+  }, [backendId, textModels, project?.type_key]);
+  const textModel = textModels.find((m) => m.id === textTaskId) ?? textModels[0];
+
+  // v0.14.18 / v0.18.12 · 当前路径的 variant 来源: doc → 文档 model; 几何 → 选中 task model;
+  //   文本 (gsam2 / sam3) → **选中文本 task model** 的逐 model 变体 (检测=dino; 分割=sam+dino),
+  //   取代旧顶层 union (选检测时不再白显 SAM)。textModel 缺位回落顶层 (能力未就位兜底)。
   const isTextPath = !isDocMode && !isGeometricBackend;
   const variantSource = useMemo<VariantSource>(
     () =>
@@ -176,21 +203,30 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
         isGeometricBackend,
         activeDocModel,
         geometricModel,
+        textModel,
         topSupportedVariants:
           setupQ.data?.supported_variants ?? capabilitiesQ.data?.supported_variants,
       }),
-    [isDocMode, isGeometricBackend, activeDocModel, geometricModel, setupQ.data, capabilitiesQ.data],
+    [isDocMode, isGeometricBackend, activeDocModel, geometricModel, textModel, setupQ.data, capabilitiesQ.data],
   );
 
-  // 输出形态: 文本路径走顶层 supported_text_outputs (box/mask/both); 其余仍按选中 model 几何输出。
+  // 输出形态: 文本路径按**选中文本 model** 的 supported_text_outputs 派生 (检测→仅 box 强制隐藏;
+  //   分割→{mask,both} 子开关, 见 textOutputOptions); 其余仍按选中 model 几何输出。
   const panelShape = useMemo(() => {
     if (isTextPath) {
-      return deriveTextPanelShape(
-        setupQ.data?.supported_text_outputs ?? capabilitiesQ.data?.supported_text_outputs,
-      );
+      return deriveTextPanelShape(textModel?.supported_text_outputs);
     }
     return derivePanelShape(primaryModel, isDocMode);
-  }, [isTextPath, isDocMode, primaryModel, setupQ.data, capabilitiesQ.data]);
+  }, [isTextPath, isDocMode, primaryModel, textModel]);
+
+  // v0.18.12 · 文本路径输出子选项 (task-first 去重): 选中分割 model → {掩膜, 全部} 二选 (删「框」,
+  //   因「分割@框」与「检测」等价冗余); 选中检测 model → 无子选项 (强制 box, 结构即隐藏 SAM)。
+  //   值取分割 model 的 supported_text_outputs 中的 mask/both (排除 box)。
+  const textOutputOptions = useMemo<TextOutputMode[]>(() => {
+    if (!isTextPath || textModel?.task !== "segmentation") return [];
+    const outs = new Set(textModel?.supported_text_outputs ?? ["mask", "both"]);
+    return (["mask", "both"] as TextOutputMode[]).filter((o) => outs.has(o));
+  }, [isTextPath, textModel]);
 
   // v0.14.17 · 类别白名单: 选中的模型原生类别 index 子集 (空集=全部). 随 task 切换重置.
   const [selectedClassIdx, setSelectedClassIdx] = useState<Set<number>>(new Set());
@@ -342,6 +378,14 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     defaultPromptAppliedRef.current = "";
   }, [projectId, project?.type_key]);
 
+  // v0.18.12 · 文本 task 切到分割且 outputMode 残留 box (检测态) → 回落 mask;
+  //   子开关只 {掩膜, 全部}, 不留无匹配项的 box。检测态由 buildArgs 强制 box, 无需在此处理。
+  useEffect(() => {
+    if (isTextPath && textModel?.task === "segmentation" && outputMode === "box") {
+      setOutputMode("mask");
+    }
+  }, [isTextPath, textModel, outputMode]);
+
   // v0.9.12 · aliases 就绪且 prompt 仍空时, 默认勾选所有 alias 拼成逗号分隔 (按频率降序).
   const defaultPromptAppliedRef = useRef<string>("");
   useEffect(() => {
@@ -426,11 +470,17 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
         predict_mode: predictMode,
       };
     }
+    // 文本路径 (gsam2 / sam3): v0.18.12 统一 wire 发 model_id + task_type + model_variants。
+    //   输出形态: 检测 model 恒 box; 分割 model 取子开关 outputMode (mask/both)。
+    //   variantSlice 已只含选中文本 model 的轴 (variantSource 按 textModel 派生); 阈值走 nonVariantParams。
     return {
       ml_backend_id: backendId,
+      model_id: textModel?.id,
+      task_type: textModel?.task,
+      model_variants: variantSlice,
       prompt: prompt.trim(),
-      output_mode: effectiveOutputMode,
-      params: paramsValue,
+      output_mode: textModel?.task === "detection" ? "box" : effectiveOutputMode,
+      params: nonVariantParams,
       predict_mode: predictMode,
     };
   };
@@ -462,6 +512,13 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     geometricModel,
     geometricTaskId,
     setGeometricTaskId,
+    // v0.18.12 · 文本 task (gsam2 / sam3 model-first): 检测 / 分割 model 选择 + 分割输出子选项。
+    isTextPath,
+    textModels,
+    textModel,
+    textTaskId,
+    setTextTaskId,
+    textOutputOptions,
     // 类别白名单
     selectedClassIdx,
     setSelectedClassIdx,

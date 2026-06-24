@@ -138,17 +138,34 @@ describe("deriveVariantSource — 文本走顶层 / 几何走选中 model (#3 �
     variants: [{ value: "n" }, { value: "x" }],
   };
 
-  it("文本路径: 走顶层 supported_variants (SAM2 + DINO 两组), 不绑单 model", () => {
+  it("文本路径 (v0.18.12 model-first): 走选中文本 model 的逐 model 变体 (检测=仅 dino)", () => {
     const src = deriveVariantSource({
       isDocMode: false,
       isGeometricBackend: false,
-      // detection model 只有 dino 一组, 若误用会丢 SAM2 组 (正是 #3 回归)
       activeDocModel: undefined,
-      geometricModel: model({ task: "detection", supported_variants: [DINO_GROUP] }),
+      geometricModel: undefined,
+      // 选中「检测」文本 model → 只表达 dino 一组 (选检测时不再白显 SAM2 组)。
+      textModel: model({
+        task: "detection",
+        supported_variants: [DINO_GROUP],
+        default_variants: { dino_variant: "swint" },
+      }),
+      topSupportedVariants: [SAM_GROUP, DINO_GROUP], // 顶层在场也不该被用 (textModel 优先)
+    });
+    expect(src.groups).toEqual([DINO_GROUP]);
+    expect(src.defaults).toEqual({ dino_variant: "swint" });
+  });
+
+  it("文本路径 textModel 缺位 → 回落顶层 union (能力未就位兜底)", () => {
+    const src = deriveVariantSource({
+      isDocMode: false,
+      isGeometricBackend: false,
+      activeDocModel: undefined,
+      geometricModel: undefined,
+      textModel: undefined,
       topSupportedVariants: [SAM_GROUP, DINO_GROUP],
     });
     expect(src.groups).toEqual([SAM_GROUP, DINO_GROUP]);
-    // 顶层无逐 model 概念
     expect(src.combinations).toBeUndefined();
     expect(src.defaults).toBeUndefined();
   });

@@ -151,6 +151,95 @@ def crop_inputs_from_boxes(
     return CropBatch(inputs=inputs, skipped_geometry=skipped_geometry)
 
 
+@dataclass
+class GeometryPromptBatch:
+    """v0.18.12 · geometry-prompt 投递 (下游 box-seg stage) 的返回。
+
+    prompts: 喂下游 ``tasks[].prompts[]`` 的框列表, 每项 ``{box:[x1,y1,x2,y2], parent_box_idx}``,
+        box 为原图归一化坐标 [0,1]。skipped_geometry: 命中类别路由但几何不支持被跳过的父框数。
+    """
+
+    prompts: list[dict] = field(default_factory=list)
+    skipped_geometry: int = 0
+
+
+def geometry_prompts_from_boxes(
+    boxes: list[dict],
+    *,
+    parent_class_filter: list[str] | None = None,
+) -> GeometryPromptBatch:
+    """把上游父框转成 geometry-prompt 列表 (全图 + 归一化框), 喂下游 box-seg 原子。
+
+    与 :func:`crop_inputs_from_boxes` 的区别: **不裁图、不上传**——下游收全图 URL + 框列表,
+    backend 对一张图只 set_image 一次、N 框共享 embedding (协议 §2.1.1)。坐标纯由 LS
+    百分比换算, 无需加载原图。几何门控与 crop 路径一致 (仅轴对齐 bbox; 旋转/退化框跳过)。
+
+    Args:
+        boxes: 上游 stage 的 LS 标准 result 列表。
+        parent_class_filter: 只对 class_name 在此集合的父框生成 prompt (空/None=全部)。
+
+    Returns:
+        :class:`GeometryPromptBatch` —— ``prompts`` 每项 ``{"box": [x1,y1,x2,y2], "parent_box_idx": idx}``,
+        ``parent_box_idx`` 即 boxes 下标 (保留原下标), 供下游结果回写到对应父框。
+    """
+    filter_set = set(parent_class_filter) if parent_class_filter else None
+    prompts: list[dict] = []
+    skipped_geometry = 0
+    for idx, box in enumerate(boxes):
+        if not isinstance(box, dict):
+            continue
+        if filter_set is not None and box_class_name(box) not in filter_set:
+            continue
+        value = box.get("value") or {}
+        if box.get("type") != "rectanglelabels" or value.get("rotation"):
+            skipped_geometry += 1
+            continue
+        raw = (value.get("x"), value.get("y"), value.get("width"), value.get("height"))
+        if any(v is None for v in raw):
+            skipped_geometry += 1
+            continue
+        try:
+            x, y, w, h = (float(v) for v in raw)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            skipped_geometry += 1
+            continue
+        if w <= 0 or h <= 0:
+            skipped_geometry += 1
+            continue
+        # LS 百分比 0-100 → 归一化 [0,1]; 钳制到边界 (下游按图宽高还原像素)。
+        x1 = min(max(x / 100.0, 0.0), 1.0)
+        y1 = min(max(y / 100.0, 0.0), 1.0)
+        x2 = min(max((x + w) / 100.0, 0.0), 1.0)
+        y2 = min(max((y + h) / 100.0, 0.0), 1.0)
+        prompts.append({"box": [x1, y1, x2, y2], "parent_box_idx": idx})
+    return GeometryPromptBatch(prompts=prompts, skipped_geometry=skipped_geometry)
+
+
+def collect_geometry_shapes(seg_results: list, boxes: list[dict]) -> list[dict]:
+    """把下游 box-seg 返回的 polygon shapes 收集成可追加到预测的 LS result 列表。
+
+    下游单图返回一条 PredictionResult, 其 ``result`` 列表里每个 polygon 带 ``parent_box_idx``
+    (原图坐标, 无需回映)。只保留 parent_box_idx 落在父框范围内的有效 shape。
+
+    Args:
+        seg_results: 下游 ``client.predict`` 返回的 PredictionResult 列表。
+        boxes: 父框列表 (仅用于校验 parent_box_idx 合法范围)。
+
+    Returns:
+        待追加到 ``pred_result.result`` 的新 shape 列表 (保留 parent_box_idx 供溯源)。
+    """
+    out: list[dict] = []
+    for cr in seg_results:
+        for s in cr.result or []:
+            if not isinstance(s, dict):
+                continue
+            pidx = s.get("parent_box_idx")
+            if pidx is not None and not (0 <= int(pidx) < len(boxes)):
+                continue
+            out.append(s)
+    return out
+
+
 def merge_classify_attributes(
     boxes: list[dict],
     classify_results: list,

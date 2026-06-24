@@ -182,6 +182,95 @@ async def test_on_failure_keep_parent_vs_drop_box(monkeypatch):
     assert results2[0].result == []  # 框被丢弃
 
 
+@pytest.mark.asyncio
+async def test_geometry_stage_appends_polygons(monkeypatch):
+    """v0.18.12 · geometry 模式: 下游收全图 URL + 父框列表, 出 polygon 追加进预测 (不裁图)。"""
+    # geometry 模式纯坐标换算, 不应加载原图。
+    def _boom(_t):
+        raise AssertionError("geometry 模式不应加载原图")
+
+    monkeypatch.setattr(worker_tasks, "_load_task_image", _boom)
+    task = _Task()
+    boxes = [_bbox(10, 10, 20, 20, cls="car"), _bbox(50, 50, 10, 10, cls="car")]
+    detect = _FakeClient(responses=[[_Result(task.id, boxes)]])
+    # box-seg 单图返回一条 result, result[] 里每 polygon 带 parent_box_idx。
+    box_seg = _FakeClient(
+        responses=[
+            [
+                _Result(
+                    task.id,
+                    [
+                        {"type": "polygonlabels",
+                         "value": {"points": [[1, 1], [2, 2], [3, 1]], "polygonlabels": ["object"]},
+                         "parent_box_idx": 0},
+                        {"type": "polygonlabels",
+                         "value": {"points": [[5, 5], [6, 6], [7, 5]], "polygonlabels": ["object"]},
+                         "parent_box_idx": 1},
+                    ],
+                )
+            ]
+        ]
+    )
+    stages = [
+        {"stage": 0, "parent_stage": None},
+        {"stage": 1, "parent_stage": 0, "roi": {"mode": "geometry"}},
+    ]
+    results, extra, stats = await worker_tasks._run_task_pipeline(
+        task, stages, [detect, box_seg], [None, None],
+        resolve_url=lambda t: "http://x/img.jpg",
+        stage_modes=["crop", "geometry"],
+    )
+    # 下游收全图 URL + prompts (非逐 crop)。
+    sent = box_seg.calls[0]
+    assert len(sent) == 1
+    assert sent[0]["file_path"] == "http://x/img.jpg"
+    assert [p["parent_box_idx"] for p in sent[0]["prompts"]] == [0, 1]
+    # 框坐标归一化: x=10%→0.1, x2=(10+20)%→0.3。
+    assert sent[0]["prompts"][0]["box"] == pytest.approx([0.1, 0.1, 0.3, 0.3])
+    # 2 个 polygon 追加到原 2 框之后 (原框保留)。
+    out = results[0].result
+    assert len(out) == 4
+    assert out[0]["type"] == "rectanglelabels" and out[1]["type"] == "rectanglelabels"
+    assert out[2]["type"] == "polygonlabels" and out[3]["type"] == "polygonlabels"
+    assert stats[1]["targeted"] == 2 and stats[1]["ok"] == 2 and stats[1]["failed"] == 0
+    assert extra["pipeline"]["stage_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_geometry_stage_class_filter_and_failure(monkeypatch):
+    """v0.18.12 · geometry 模式遵守 parent_class_filter; 下游炸 → 不追加 polygon, 计 failed。"""
+    monkeypatch.setattr(
+        worker_tasks, "_load_task_image", lambda t: (_ for _ in ()).throw(AssertionError())
+    )
+    task = _Task()
+    boxes = [_bbox(10, 10, 20, 20, cls="car"), _bbox(50, 50, 10, 10, cls="person")]
+    detect = _FakeClient(responses=[[_Result(task.id, boxes)]])
+
+    class _BoomClient:
+        calls: list = []
+
+        async def predict(self, inputs, context=None):
+            type(self).calls.append(inputs)
+            raise RuntimeError("box-seg down")
+
+    boom = _BoomClient()
+    stages = [
+        {"stage": 0, "parent_stage": None},
+        {"stage": 1, "parent_stage": 0, "parent_class_filter": ["car"]},
+    ]
+    results, _extra, stats = await worker_tasks._run_task_pipeline(
+        task, stages, [detect, boom], [None, None],
+        resolve_url=lambda t: "http://x/img.jpg",
+        stage_modes=["crop", "geometry"],
+    )
+    # 只对 car 发 1 个 prompt。
+    assert len(boom.calls[0][0]["prompts"]) == 1
+    assert boom.calls[0][0]["prompts"][0]["parent_box_idx"] == 0
+    # 下游炸 → 原 2 框保留、无 polygon 追加。
+    assert len(results[0].result) == 2
+    assert stats[1]["targeted"] == 1 and stats[1]["failed"] == 1
+
+
 def test_stage_totals_snapshot_shape():
     """v0.18.6 · 逐阶段累加器 → 升序拍平 list, 与终态 result.pipeline_stages 同形态。"""
     totals = {

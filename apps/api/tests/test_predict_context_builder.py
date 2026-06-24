@@ -49,17 +49,6 @@ def test_v2_defaults_type_when_task_type_missing():
     assert ctx["params"] == {}
 
 
-def test_v2_carries_prompt_as_text_for_future_whitelist():
-    ctx = _ctx(
-        task_type="segmentation",
-        model_variants={"series": "yolo11", "size": "s"},
-        prompt="car, person",
-    )
-    # YOLO 当前忽略 text, 但通道保留给 v0.14.17 后续类别白名单过滤.
-    assert ctx["text"] == "car, person"
-    assert ctx["type"] == "segmentation"
-
-
 def test_v2_class_filter_passthrough():
     ctx = _ctx(
         task_type="detection",
@@ -94,17 +83,35 @@ def test_v2_empty_model_variants_still_passes_class_filter():
     assert ctx["type"] == "detection"
 
 
-def test_v2_takes_precedence_over_flat_path():
-    """model_variants 非空 → 走 v2, 不退回扁平 text 路径 (即便 prompt 存在)."""
+def test_prompt_takes_precedence_text_path():
+    """v0.18.12 统一 wire · prompt 非空 → 走文本扁平路径 (即便带 model_variants)。
+
+    gsam2/sam3 现同时发 prompt + model_id + model_variants(sam/dino); 必须落文本路径
+    (顶层 params/output/阈值), 而非 v2 嵌套路径 (后端按顶层读 box_threshold)。几何 backend
+    不发 prompt, 故不会误入此路径。"""
     ctx = _ctx(
-        task_type="obb",
-        model_variants={"series": "yolo11", "size": "s"},
-        prompt="ship",
+        task_type="segmentation",
+        model_id="grounded-sam2-segmentation",
+        model_variants={"sam_variant": "tiny", "dino_variant": "T"},
+        prompt="car",
+        output_mode="both",
         box_threshold=0.3,
         text_threshold=0.25,
     )
-    assert "model_variants" in ctx
-    assert "box_threshold" not in ctx  # 扁平阈值不掺进 v2 context
+    assert ctx["type"] == "text"  # 文本路径, 非几何 task type
+    assert ctx["text"] == "car"
+    assert ctx["output"] == "both"
+    assert ctx["model_id"] == "grounded-sam2-segmentation"
+    assert ctx["model_variants"] == {"sam_variant": "tiny", "dino_variant": "T"}
+    assert ctx["box_threshold"] == 0.3  # 顶层阈值 (后端按顶层读)
+
+
+def test_text_path_without_model_id_back_compat():
+    """老 wire 兼容: 文本路径无 model_id/model_variants 时不应出现这两个键。"""
+    ctx = _ctx(prompt="car", output_mode="mask")
+    assert ctx["type"] == "text"
+    assert "model_id" not in ctx
+    assert "model_variants" not in ctx
 
 
 # ── 既有扁平路径 (gsam2 文本 / OCR), 防回归 ─────────────────────────────────

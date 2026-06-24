@@ -187,23 +187,70 @@ export function StageCard({
     ? cfg.buildArgs("skip_predicted")
     : null;
 
-  // 下游阶段优先用 backend 的纯分类 model (task=classification): 上游已裁好单车 ROI,
-  // 用检测 model 会在 ROI 上重复检测 (冗余 + 紧 crop 域偏移漏检)。buildArgs 默认取 models[0]
-  // (常是检测 model), 这里据 capabilities 覆盖成分类 model; 无分类 model 时回落默认。
-  const classifyModel = useMemo(() => {
+  // v0.18.2 / v0.18.12 · 下游可选 model: 非交互、非 internal 的批量原子 ——
+  //   classification (上游裁 ROI 跑分类, crop 投递) 或 box-seg (segmentation + bbox prompt,
+  //   消费上游框出 mask, geometry 投递)。internal/交互式/复合文本 model 不作下游。
+  const downstreamModels = useMemo(() => {
     const models = cfg.capabilitiesQ.data?.models ?? [];
-    return models.find((m) => m.task === "classification") ?? null;
+    return models.filter(
+      (m) =>
+        m.visibility !== "internal" &&
+        !m.is_interactive &&
+        (m.task === "classification" ||
+          (m.task === "segmentation" && (m.supported_prompts ?? []).includes("bbox"))),
+    );
   }, [cfg.capabilitiesQ.data]);
 
+  // 默认优先分类 (保持既有行为: 上游已裁 ROI, 分类比重复检测更准); 无分类则取第一个 (常是 box-seg)。
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  useEffect(() => {
+    setSelectedModelId((prev) => {
+      if (prev && downstreamModels.some((m) => m.id === prev)) return prev;
+      const classify = downstreamModels.find((m) => m.task === "classification");
+      return classify?.id ?? downstreamModels[0]?.id ?? null;
+    });
+  }, [backendId, downstreamModels]);
+  const selectedModel = downstreamModels.find((m) => m.id === selectedModelId) ?? null;
+
+  // box-seg geometry 下游: 消费上游框出 polygon (走平台 geometry 投递, 无需 prompt / 不裁 crop)。
+  const isGeometryDownstream =
+    selectedModel?.task === "segmentation" &&
+    (selectedModel?.supported_prompts ?? []).includes("bbox") &&
+    !selectedModel?.is_interactive;
+
   // 派生 stage payload (不含 stage 序号 / parent_stage, 由容器补)。
+  // stageArgs / currentVariantSlice 每次渲染新对象, 用 JSON 串作 useMemo 稳定依赖 (抽出供静态检查)。
+  const stageArgsKey = JSON.stringify(stageArgs);
+  const variantSliceKey = JSON.stringify(cfg.currentVariantSlice);
   const payload = useMemo<Omit<PipelineStagePayload, "stage" | "parent_stage"> | null>(() => {
-    if (!stageArgs) return null;
     const classArr = Array.from(classFilter);
+    // v0.18.12 · box-seg geometry 下游: 直接由 backend+model 构造, 不依赖 prompt/configReady。
+    // 变体取选中 model 自己声明的轴 (box-seg 只有 sam_variant), 从共享 variant 选择器值过滤。
+    if (isGeometryDownstream && backendId && selectedModel) {
+      const axisKeys = new Set((selectedModel.supported_variants ?? []).map((g) => g.key));
+      const variantSlice: Record<string, string> = {};
+      for (const [k, v] of Object.entries(cfg.currentVariantSlice)) {
+        if (axisKeys.has(k)) variantSlice[k] = v;
+      }
+      return {
+        ml_backend_id: backendId,
+        model_id: selectedModel.id,
+        task_type: "segmentation",
+        model_variants: variantSlice,
+        params: {},
+        parent_class_filter: classArr.length > 0 ? classArr : undefined,
+        // 平台按下游 supported_prompts 自动判 geometry 投递; roi.mode 仅作记录。
+        roi: { mode: "geometry", pad },
+        write: { target: "geometry" },
+      };
+    }
+    // classify 下游 (现状): 走 buildArgs + 选中分类 model 覆盖。
+    if (!stageArgs) return null;
     const keyArr = Array.from(writeKeys);
     return {
       ml_backend_id: stageArgs.ml_backend_id,
-      model_id: classifyModel?.id ?? stageArgs.model_id,
-      task_type: classifyModel?.task ?? stageArgs.task_type,
+      model_id: selectedModel?.id ?? stageArgs.model_id,
+      task_type: selectedModel?.task ?? stageArgs.task_type,
       model_variants: stageArgs.model_variants,
       params: stageArgs.params,
       class_filter: stageArgs.class_filter,
@@ -214,9 +261,17 @@ export function StageCard({
         ...(keyArr.length > 0 ? { keys: keyArr } : {}),
       },
     };
-    // stageArgs 是每次渲染新对象, 用 JSON 串作稳定依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(stageArgs), classifyModel?.id, classFilter, pad, writeKeys]);
+  }, [
+    stageArgsKey,
+    isGeometryDownstream,
+    backendId,
+    selectedModel?.id,
+    variantSliceKey,
+    classFilter,
+    pad,
+    writeKeys,
+  ]);
 
   // 用 ref 固定 onChange, 避免容器每次渲染触发本 effect。
   const onChangeRef = useRef(onChange);
@@ -238,7 +293,7 @@ export function StageCard({
       <div className={styles.stageCardHeader}>
         <span className={styles.stageRole}>
           <Icon name="brain" size={13} />
-          <Badge variant="accent">分类</Badge>
+          <Badge variant="accent">{isGeometryDownstream ? "分割" : "分类"}</Badge>
           <strong className={styles.sectionTitle}>阶段 {displayIndex}</strong>
         </span>
         <span className={styles.stageHeaderRight}>
@@ -288,13 +343,39 @@ export function StageCard({
         projectMlBackendId={projectMlBackendId}
       />
 
-      {classifyModel && (
-        <span className={styles.mutedText}>
-          下游模型：{classifyModel.display_name || classifyModel.id}（纯分类，跳过检测）
-        </span>
+      {/* v0.18.12 · 下游模型选择: 同一 backend 暴露多个可作下游的批量原子时显式选 (分类 / 框→分割)。 */}
+      {downstreamModels.length > 1 && (
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>下游模型</span>
+          <select
+            className={styles.promptInput}
+            value={selectedModelId ?? ""}
+            onChange={(e) => setSelectedModelId(e.target.value || null)}
+          >
+            {downstreamModels.map((m) => (
+              <option key={m.id} value={m.id}>
+                {(m.display_name || m.id) +
+                  (m.task === "segmentation" ? "（框→分割）" : "（分类）")}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
 
-      {showNoAttrWarning && (
+      {isGeometryDownstream ? (
+        <span className={styles.mutedText}>
+          下游模型：{selectedModel?.display_name || selectedModel?.id}（框→分割：消费上游检测框出
+          mask，无需 prompt；上方 prompt/输出形态对本阶段不生效，仅 SAM 变体有效）
+        </span>
+      ) : (
+        selectedModel && (
+          <span className={styles.mutedText}>
+            下游模型：{selectedModel.display_name || selectedModel.id}（纯分类，跳过检测）
+          </span>
+        )
+      )}
+
+      {!isGeometryDownstream && showNoAttrWarning && (
         <div className={styles.stageWarn}>
           <Icon name="warning" size={12} />
           <span>
@@ -315,37 +396,43 @@ export function StageCard({
         />
       </div>
 
-      <div className={styles.field}>
-        <span className={styles.fieldLabel}>ROI 扩展 pad（0–0.5）</span>
-        <input
-          className={styles.textInput}
-          type="number"
-          min={0}
-          max={0.5}
-          step={0.01}
-          value={pad}
-          onChange={(e) => {
-            const v = parseFloat(e.target.value);
-            if (!Number.isNaN(v)) setPad(Math.min(0.5, Math.max(0, v)));
-          }}
-        />
-      </div>
+      {/* ROI pad 仅 crop 投递有意义; geometry 投递传整图 + 框列表, 不裁 crop。 */}
+      {!isGeometryDownstream && (
+        <div className={styles.field}>
+          <span className={styles.fieldLabel}>ROI 扩展 pad（0–0.5）</span>
+          <input
+            className={styles.textInput}
+            type="number"
+            min={0}
+            max={0.5}
+            step={0.01}
+            value={pad}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              if (!Number.isNaN(v)) setPad(Math.min(0.5, Math.max(0, v)));
+            }}
+          />
+        </div>
+      )}
 
-      <div className={styles.field}>
-        <span className={styles.fieldLabel}>
-          写回属性键（留空=接收下游返回的全部键）
-          {backendAttrOptions.length === 0 && attrKeyOptions.length > 0 && (
-            <span className={styles.fieldHint}> · 选项来自项目属性 schema</span>
-          )}
-        </span>
-        <ChipMultiSelect
-          options={attrKeyOptions}
-          selected={writeKeys}
-          onChange={setWriteKeys}
-          conflictKeys={conflictKeys}
-          emptyHint="下游 backend 未自报属性 schema，且项目无属性字段；留空=接收全部键"
-        />
-      </div>
+      {/* 写回属性键仅分类下游有意义; box-seg geometry 下游产 polygon (追加预测), 不写属性。 */}
+      {!isGeometryDownstream && (
+        <div className={styles.field}>
+          <span className={styles.fieldLabel}>
+            写回属性键（留空=接收下游返回的全部键）
+            {backendAttrOptions.length === 0 && attrKeyOptions.length > 0 && (
+              <span className={styles.fieldHint}> · 选项来自项目属性 schema</span>
+            )}
+          </span>
+          <ChipMultiSelect
+            options={attrKeyOptions}
+            selected={writeKeys}
+            onChange={setWriteKeys}
+            conflictKeys={conflictKeys}
+            emptyHint="下游 backend 未自报属性 schema，且项目无属性字段；留空=接收全部键"
+          />
+        </div>
+      )}
     </Card>
   );
 }

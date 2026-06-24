@@ -67,14 +67,34 @@ def _build_predict_context(
 ) -> dict | None:
     """构造发往 backend /predict 的 context (纯函数, 便于单测).
 
-    两条互斥路径:
-    - **协议 v2 结构化** (model_variants 非 None, 由面板几何 backend 触发): backend (yolo) 要
-      `model_variants` dict + nested `params` + `type=<几何 task>`。修通 YOLO 批量预标
-      (此前 worker 发扁平 series/size + type="text" 被 YOLO 422)。判定用 `is not None` 而非真值:
-      前端几何 backend 恒发 `model_variants` 字段, variant 轴未就位时为空 dict `{}`——此时仍须走
-      v2 路径才能透传 class_filter (类别白名单), 否则空 dict 落入扁平路径会静默丢弃 classes。
-    - **既有扁平路径** (gsam2 文本 prompt / OCR / doc_layout): 不发 model_variants (→ None), 维持原样防回归。
+    三条互斥路径 (按优先序):
+    - **文本 prompt 扁平路径** (gsam2 / sam3 开放词表): 顶层 `text` / `output` / 阈值 / params,
+      v0.18.12 起**统一 wire**额外带 `model_id` + `model_variants`——后端据 model_id 路由
+      (detection→box / segmentation→output)。prompt 非空即此路径 (优先于 v2): 几何 backend 不发
+      prompt, 故不会误入。老 wire (无 model_id) 仍兼容。
+    - **协议 v2 结构化** (model_variants 非 None 且无 prompt, 几何 backend yolo/onnxtools): backend 要
+      `model_variants` dict + nested `params` + `type=<几何 task>` + `classes` 白名单。判定用
+      `is not None` 而非真值: variant 轴未就位时为空 dict `{}` 仍须走 v2 才能透传 class_filter。
+    - **老扁平路径** (OCR / doc_layout: 仅 model_id + task_type, 无 prompt 无 variants)。
     """
+    # ── 文本 prompt 扁平路径 (gsam2 / sam3): 顶层 params + model_id + model_variants 统一 wire。 ──
+    if prompt:
+        context: dict = {"type": "text", "text": prompt, "output": output_mode}
+        if box_threshold is not None:
+            context["box_threshold"] = box_threshold
+            context["text_threshold"] = text_threshold
+        if model_id:
+            context["model_id"] = model_id
+        if model_variants:
+            context["model_variants"] = model_variants
+        _reserved = {"type", "text", "output", "model_id", "model_variants"}
+        if params:
+            context.update(
+                {k: v for k, v in params.items() if v is not None and k not in _reserved}
+            )
+        return context
+
+    # ── 协议 v2 结构化 (几何 backend, 无 prompt)。 ──
     if model_variants is not None:
         ctx: dict = {
             "type": task_type or "detection",
@@ -86,35 +106,17 @@ def _build_predict_context(
         if class_filter:
             # v0.14.17 · 类别白名单 (模型原生类别 index 子集); yolo /predict 用 model.predict(classes=) 过滤.
             ctx["classes"] = class_filter
-        if prompt:
-            # YOLO 当前忽略 text (类别筛选走 classes 字段); 保留通道.
-            ctx["text"] = prompt
         return ctx
 
-    # ── 既有扁平路径 (gsam2 / OCR / doc_layout), 与 v0.14.9 行为逐字等价 ──
-    context: dict | None = None
-    if prompt:
-        context = {"type": "text", "text": prompt, "output": output_mode}
-        if box_threshold is not None:
-            context["box_threshold"] = box_threshold
-            context["text_threshold"] = text_threshold
-        _reserved = {"type", "text", "output"}
-        if params:
-            context.update(
-                {
-                    k: v
-                    for k, v in params.items()
-                    if v is not None and k not in _reserved
-                }
-            )
+    # ── 老扁平 (OCR / doc_layout: model_id + task_type, 无 prompt 无 variants)。 ──
+    context2: dict | None = None
     if task_type or model_id:
-        if context is None:
-            context = {}
+        context2 = {}
         if task_type:
-            context["type"] = task_type
+            context2["type"] = task_type
         if model_id:
-            context["model_id"] = model_id
-    return context
+            context2["model_id"] = model_id
+    return context2
 
 
 def _model_label(model_variants: dict | None) -> str | None:
@@ -166,6 +168,24 @@ def _make_crop_uploader(storage, job_id: str):
     return upload_crop
 
 
+def _stage_input_mode(backend, model_id: str | None) -> str:
+    """v0.18.12 · 按下游 model 的 supported_prompts 判别下游投递方式。
+
+    含 ``bbox`` 且非交互 → ``"geometry"`` (全图 + 框列表, box-seg 原子, 协议 §2.1.1);
+    否则 → ``"crop"`` (现状: 逐父框裁 crop 喂下游分类)。能力读 backend 缓存的
+    health_meta.capabilities.models; 取不到 model 时回落 crop (向后兼容)。
+    """
+    caps = (getattr(backend, "health_meta", None) or {}).get("capabilities") if backend else None
+    models = (caps or {}).get("models") or []
+    m = next((x for x in models if x.get("id") == model_id), None)
+    if not m:
+        return "crop"
+    prompts = m.get("supported_prompts") or []
+    if "bbox" in prompts and not m.get("is_interactive"):
+        return "geometry"
+    return "crop"
+
+
 def _pipeline_topology(stages: list[dict]) -> list[dict]:
     """v0.18.4 · 从 stages 配置派生可审计的 pipeline 拓扑, 落 PredictionMeta.extra。
 
@@ -188,21 +208,29 @@ def _pipeline_topology(stages: list[dict]) -> list[dict]:
 
 
 async def _run_task_pipeline(
-    task, stages, stage_clients, stage_contexts, *, resolve_url, upload_crop=None
+    task, stages, stage_clients, stage_contexts, *, resolve_url, upload_crop=None, stage_modes=None
 ):
-    """v0.18.1 / v0.18.2 / v0.18.4 · 对单个 task 顺序跑各阶段, 返回 (pred_results, pipeline_extra, stage_stats)。
+    """v0.18.1 / v0.18.2 / v0.18.4 / v0.18.12 · 对单个 task 顺序跑各阶段, 返回 (pred_results, pipeline_extra, stage_stats)。
 
     - 单阶段 (len==1): 等价于原 ``client.predict``, extra=None, stats=None (逐字回归路径)。
-    - 多阶段: 源阶段产框 → 加载原图 → 对每个下游阶段按 parent_class_filter 裁父框 ROI 喂下游
-      → 合并 attributes 进父框 (原地改 pred_result.result)。顺序跑 (含并行兄弟, ROADMAP §7.1)。
+    - 多阶段: 源阶段产框 → 对每个下游阶段按投递模式分流:
+      - **crop 模式** (下游 supported_prompts=none): 加载原图, 按 parent_class_filter 裁父框 ROI
+        喂下游分类 → 合并 attributes 进父框 (原地改)。
+      - **geometry 模式** (v0.18.12, 下游含 bbox 且非交互, 如 gsam2 box-seg): 全图 URL + 父框
+        归一化列表喂下游 → 下游出 polygon (带 parent_box_idx, 原图坐标) → 追加进 pred_result.result。
     - v0.18.2: 类别路由 (parent_class_filter)、阶段级失败策略 (on_failure)、逐阶段统计。
-    - v0.18.4: crop 经 upload_crop presigned 投递 (对所有下游后端通用); 并行兄弟同框 crop 复用;
-      extra 落 pipeline 拓扑; 几何跳过 (旋转框/多边形) 计入 stats; 下游失败走 logger。
+    - v0.18.4: crop 经 upload_crop presigned 投递; 并行兄弟同框 crop 复用; extra 落 pipeline 拓扑。
 
     upload_crop: ``(task, box_idx, jpeg_bytes) -> url``; 非 None → presigned 投递, None → data URI。
+    stage_modes: ``list[str]`` 与 stages 等长, 每项 ``"crop"|"geometry"``; None → 全 crop (向后兼容)。
     stage_stats: ``{stage_idx: {...}}`` —— 源阶段 {detected}; 下游 {targeted, ok, failed, skipped_geometry}。
     """
-    from app.workers.roi import crop_inputs_from_boxes, merge_classify_attributes
+    from app.workers.roi import (
+        collect_geometry_shapes,
+        crop_inputs_from_boxes,
+        geometry_prompts_from_boxes,
+        merge_classify_attributes,
+    )
 
     url = resolve_url(task)
     results = await stage_clients[0].predict(
@@ -211,7 +239,10 @@ async def _run_task_pipeline(
     if len(stages) == 1:
         return results, None, None
 
-    image = _load_task_image(task)
+    modes = stage_modes or ["crop"] * len(stages)
+    # geometry 模式纯坐标换算无需原图; 仅当存在 crop 下游阶段时才加载 (省去无谓全图拉取)。
+    needs_image = any(modes[si] == "crop" for si in range(1, len(stages)))
+    image = _load_task_image(task) if needs_image else None
     delivery = "presigned" if upload_crop is not None else "data_uri"
     enriched_keys: set[str] = set()
     stats: dict[int, dict] = {0: {"detected": 0}}
@@ -231,13 +262,41 @@ async def _run_task_pipeline(
             else None
         )
         dropped: set[int] = set()
+        new_shapes: list[dict] = []  # geometry 阶段产出的 polygon, 阶段循环后追加进预测
         for si in range(1, len(stages)):
             stage = stages[si]
-            roi = stage.get("roi") or {}
-            pad = float(roi.get("pad", 0.05))
             write = stage.get("write") or {}
             write_keys = write.get("keys") or None
             pcf = stage.get("parent_class_filter") or None
+            if modes[si] == "geometry":
+                # v0.18.12 · geometry 投递: 全图 URL + 父框归一化列表, 下游 box-seg 出 polygon。
+                geo = geometry_prompts_from_boxes(boxes, parent_class_filter=pcf)
+                stats[si]["skipped_geometry"] += geo.skipped_geometry
+                if not geo.prompts:
+                    continue
+                stats[si]["targeted"] += len(geo.prompts)
+                try:
+                    seg_results = await stage_clients[si].predict(
+                        [{"id": str(task.id), "file_path": url, "prompts": geo.prompts}],
+                        context=stage_contexts[si],
+                    )
+                    shapes = collect_geometry_shapes(seg_results, boxes)
+                    new_shapes.extend(shapes)
+                    stats[si]["ok"] += len(shapes)
+                except Exception as exc:  # noqa: BLE001
+                    stats[si]["failed"] += len(geo.prompts)
+                    logger.warning(
+                        "[ai-pre] stage %s 下游 box-seg 失败: %s: %s",
+                        si,
+                        type(exc).__name__,
+                        exc,
+                    )
+                continue
+            # ── crop 模式 (现状: 逐父框裁 ROI 喂下游分类) ──
+            if image is None:  # crop 阶段必有原图 (needs_image 已保证); 防御性跳过。
+                continue
+            roi = stage.get("roi") or {}
+            pad = float(roi.get("pad", 0.05))
             batch = crop_inputs_from_boxes(
                 image,
                 boxes,
@@ -277,7 +336,9 @@ async def _run_task_pipeline(
                     exc,
                 )
         if dropped:
-            pred_result.result = [b for i, b in enumerate(boxes) if i not in dropped]
+            boxes[:] = [b for i, b in enumerate(boxes) if i not in dropped]
+        if new_shapes:
+            boxes.extend(new_shapes)
     extra = {
         "pipeline": {
             "stage_count": len(stages),
@@ -576,13 +637,18 @@ async def _run_batch(
         text_thr = float(project.text_threshold) if project is not None else None
         stage_clients: list[MLBackendClient] = []
         stage_contexts: list[dict | None] = []
+        # v0.18.12 · 每阶段投递模式 (crop|geometry), 按下游 model supported_prompts 判别。
+        # 源阶段 (stage 0) 模式无意义, 占位 "crop"。
+        stage_modes: list[str] = []
         for s in stages:
             if s["parent_stage"] is None:
                 stage_clients.append(MLBackendClient(backend))
                 stage_contexts.append(context)
+                stage_modes.append("crop")
             else:
                 s_backend = await db.get(MLBackend, uuid.UUID(s["ml_backend_id"]))
                 stage_clients.append(MLBackendClient(s_backend))
+                stage_modes.append(_stage_input_mode(s_backend, s.get("model_id")))
                 stage_contexts.append(
                     _build_predict_context(
                         prompt=None,
@@ -630,6 +696,7 @@ async def _run_batch(
                     stage_contexts,
                     resolve_url=_resolve_task_url,
                     upload_crop=crop_uploader,
+                    stage_modes=stage_modes,
                 )
                 _accumulate_stage_stats(stage_stats)
                 for pred_result in results:

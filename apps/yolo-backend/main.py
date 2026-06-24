@@ -356,6 +356,8 @@ def _build_model_entry(
         "model_family": "yolo",
         "infra": "pytorch",
         "is_interactive": False,
+        # YOLO 各 task 均单次推理,原子(协议 v2.2)。
+        "composition": "atom",
         "supported_prompts": ["none"],
         "supported_geometric_outputs": geometric_outputs,
         "output_attribute_types": ["class", "score"],

@@ -104,6 +104,8 @@ def _detect_model_entry() -> dict[str, Any]:
         "infra": "onnx",
         # 能力目录可见但不可对外选用(平台/前端据此过滤选用入口、标「内部」徽标)。
         "visibility": "internal",
+        # 一个 model 内部串 rtdetr(检测)+ va(属性分类),内部编排复合。
+        "composition": "composite",
         "is_interactive": False,
         "supported_prompts": ["none"],
         "supported_geometric_outputs": ["bbox"],
@@ -129,6 +131,8 @@ def _detect_only_model_entry() -> dict[str, Any]:
         "infra": "onnx",
         # 对外开放的原子:多阶段编排上游检测阶段直接选用。
         "visibility": "public",
+        # 单跑 rtdetr 检测,原子。
+        "composition": "atom",
         "is_interactive": False,
         "supported_prompts": ["none"],
         "supported_geometric_outputs": ["bbox"],
@@ -152,6 +156,8 @@ def _classify_model_entry() -> dict[str, Any]:
         "infra": "onnx",
         # 对外开放的原子:多阶段编排下游分类阶段直接选用。
         "visibility": "public",
+        # 单跑 va 属性分类,原子。
+        "composition": "atom",
         "is_interactive": False,
         "supported_prompts": ["none"],
         # 纯分类不产几何(整图框仅占位,平台 merge 丢弃),不声明几何输出能力。

@@ -30,10 +30,10 @@ def test_setup_top_level_infra_is_pytorch(setup_fn):
     assert data["infra"] == "pytorch"
 
 
-def test_setup_protocol_version_v21(setup_fn):
+def test_setup_protocol_version_v22(setup_fn):
     data = setup_fn()
-    assert data["protocol_version"] == "2.1"
-    assert data["compat_protocol_versions"] == ["2.0"]
+    assert data["protocol_version"] == "2.2"
+    assert data["compat_protocol_versions"] == ["2.1", "2.0"]
 
 
 def test_setup_exposes_three_models(setup_fn):
@@ -77,6 +77,15 @@ def test_interactive_seg_model_exemplar(setup_fn):
     assert inter["supported_prompts"] == ["exemplar"]
     assert inter["supported_geometric_outputs"] == ["polygon"]
     assert inter["is_interactive"] is True
+
+
+def test_models_carry_composition_dimension(setup_fn):
+    """v0.18.12 · composition 维度: 检测/交互分割=atom, 文本分割(内置 检测→分割)=composite."""
+    data = setup_fn()
+    comp = {m["task"]: m.get("composition") for m in data["models"]}
+    assert comp["detection"] == "atom"
+    assert comp["segmentation"] == "composite"
+    assert comp["interactive_seg"] == "atom"
 
 
 def test_top_level_back_compat_fields_unchanged(setup_fn):

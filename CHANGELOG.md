@@ -34,9 +34,20 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
-## [0.18.11] - 2026-06-24
+## [0.18.12] - 2026-06-24
 
-多阶段预标注（路径 B）上游原子化 + 能力可见性机制：onnxtools-backend 在纯分类原子（v0.18.9）之外再拆出独立的纯检测 model，使「检测 → 分类」可全部由 onnxtools 自身的两个原子组成；同时引入协议级 `visibility` 字段，把原「检测+分类一锅端」pipeline 标为内部能力——目录可见但不进任何对外选用入口。
+多阶段预标注（路径 B）下游几何原子化 + 配置 UX 彻底 model-first 统一：gsam2 暴露独立的「框→掩膜」纯几何原子（开放/非交互/原子），使「检测（出框）→ 几何分割（吃框出掩膜）」可端到端跑通；协议升 v2.2（纯加法）引入 `composition`（atom/composite）维度与几何 prompt 批量入参。同时把预标配置面板的三条配置路径（doc / 几何 / 文本）统一收敛为「选 model（= 模型市场卡片）」的 model-first 范式——所有 ml 后端统一走 `model_id + task_type + model_variants` 这一套 wire，文本路径（gsam2/sam3）不再是输出形态开关的特例。
+
+### Added
+
+- **gsam2 暴露「框→掩膜」几何原子 model**：新增 `grounded-sam2-box-seg`（`task=segmentation`，`supported_prompts=["bbox"]`，开放/非交互/`composition=atom`），`set_image` 一次、N 个父框共享 embedding 批量出多边形，每个结果回带 `parent_box_idx` 以便与上游框对齐合并。
+- **协议 v2.2 `composition` 维度（纯加法）**：model 条目可声明 `composition: "atom" | "composite"`（缺省 `atom`），与 `visibility` 解耦，标识该能力是原子单元还是内置多步流程。平台 schema / service 全链路透传；模型市场目录加「原子 / 内置流程」徽标。
+- **几何 prompt 批量入参（路径 B 下游链路）**：下游几何分割阶段接收整图 URL + N 个父框（归一化坐标）的批量入参（`tasks[].prompts[]`），worker 端 `_stage_input_mode` 依据下游 model 的 `supported_prompts` 自动判定 `geometry` / `crop` 投递模式。
+
+### Changed
+
+- **预标配置面板彻底 model-first 统一**：原文本路径（gsam2/sam3）以「输出形态开关」驱动、不带 model_id 的特例已取消。「模型任务」改为单一下拉选择器（`value` 直接绑 `model_id`，文案 = 模型市场卡片标题 `display_name`），doc / 几何 / 文本三路径共用同一套「选 model」交互与 `model_id + task_type + model_variants` wire。
+- **gsam2 / sam3 批量按 model_id 路由**：detection model_id → 出框、segmentation model_id → `output||mask`，无 model_id 时回落 `ctx.output`（向后兼容）。onnxtools-backend 在纯分类原子（v0.18.9）之外再拆出独立的纯检测 model，使「检测 → 分类」可全部由 onnxtools 自身的两个原子组成；同时引入协议级 `visibility` 字段，把原「检测+分类一锅端」pipeline 标为内部能力——目录可见但不进任何对外选用入口。
 
 ### Added
 

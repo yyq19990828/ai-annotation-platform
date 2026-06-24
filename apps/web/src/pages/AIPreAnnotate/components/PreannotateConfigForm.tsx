@@ -67,6 +67,23 @@ export function PreannotateConfigForm({
   projectMlBackendId,
   backendSelectorLabel = "ML Backend",
 }: Props) {
+  // v0.18.12 · 统一「模型任务」选择器: 几何 (yolo) 与文本 (gsam2/sam3) 共用一套 model-first 选择,
+  //   只差 prompt vs 类别白名单。doc 走上方「任务类型」, 不在此。
+  const taskModels = cfg.isGeometricBackend
+    ? cfg.geometricModels
+    : cfg.isTextPath
+      ? cfg.textModels
+      : [];
+  const taskModel = cfg.isGeometricBackend
+    ? cfg.geometricModel
+    : cfg.isTextPath
+      ? cfg.textModel
+      : undefined;
+  const setTaskModelId = cfg.isGeometricBackend ? cfg.setGeometricTaskId : cfg.setTextTaskId;
+  // 选择器的**真值键是 model_id**; 展示**直接用模型市场卡片标题 (display_name)**, 与卡片视图一致 ——
+  // 用户在配置面板选的就是市场里那张卡 (同名同 id)。缺 display_name 才回落 task 标签 / id。
+  const taskModelLabel = (m: { id: string; task?: string; display_name?: string }) =>
+    m.display_name || GEOMETRIC_TASK_LABELS[m.task ?? ""] || m.task || m.id;
   return (
     <>
       {/* v0.14.18 · 多 backend 选择 (批量页) — 置于面板最上方, 先选后端再配置其余字段. */}
@@ -119,30 +136,24 @@ export function PreannotateConfigForm({
         </div>
       )}
 
-      {/* v0.14.17 · 闭集多 task 几何 backend (YOLO): 显式选 task → 决定输出几何 + v2 结构化请求. */}
-      {cfg.isGeometricBackend && cfg.geometricModels.length > 1 && (
-        <div className={styles.field}>
+      {/* v0.14.17 / v0.18.12 · 统一「模型任务」下拉: 几何 (YOLO, 闭集) 与文本 (gsam2/sam3, 开集)
+          共用 —— 选项 = 模型市场卡片 model, value 直接是 model_id (真值键), 文案 = 卡片标题 (display_name)。
+          统一 wire 发 model_id。多于 1 个可选 model 才显示。 */}
+      {taskModels.length > 1 && (
+        <label className={styles.field}>
           <span className={styles.fieldLabel}>模型任务</span>
-          <TabRow
-            tabs={cfg.geometricModels.map(
-              (m) => GEOMETRIC_TASK_LABELS[m.task ?? ""] ?? m.task ?? m.id,
-            )}
-            active={
-              cfg.geometricModel
-                ? GEOMETRIC_TASK_LABELS[cfg.geometricModel.task ?? ""] ??
-                  cfg.geometricModel.task ??
-                  cfg.geometricModel.id
-                : ""
-            }
-            onChange={(label) => {
-              const m = cfg.geometricModels.find(
-                (x) =>
-                  (GEOMETRIC_TASK_LABELS[x.task ?? ""] ?? x.task ?? x.id) === label,
-              );
-              if (m) cfg.setGeometricTaskId(m.id);
-            }}
-          />
-        </div>
+          <select
+            value={taskModel?.id ?? ""}
+            onChange={(e) => setTaskModelId(e.target.value)}
+            className={styles.promptInput}
+          >
+            {taskModels.map((m) => (
+              <option key={m.id} value={m.id}>
+                {taskModelLabel(m)}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
 
       {/* v0.14.17 · YOLO 类别白名单勾选 ([index]类名). 留空=全部. */}
@@ -253,20 +264,36 @@ export function PreannotateConfigForm({
         onRemove={cfg.removePreset}
       />
 
-      {/* v0.14.16 · 输出形态: 仅 model 同时支持框与掩膜时显示. */}
-      {cfg.panelShape.showOutputMode && (
-        <div className={styles.field}>
-          <span className={styles.fieldLabel}>输出形态</span>
-          <TabRow
-            tabs={OUTPUT_MODE_TABS}
-            active={OUTPUT_MODE_LABELS[cfg.outputMode]}
-            onChange={(label) => {
-              const m = OUTPUT_MODE_BY_LABEL[label];
-              if (m) cfg.setOutputMode(m);
-            }}
-          />
-        </div>
-      )}
+      {/* 输出形态. v0.18.12 · 文本路径 task-first 去重: 分割 model 出 {掩膜, 全部} 二选 (删「框」——
+          「分割@框」与「检测」task 等价冗余); 检测 model 无此 (强制 box, 结构即隐藏 SAM)。
+          几何/doc 仍按 model 几何输出三选 (panelShape)。 */}
+      {cfg.isTextPath
+        ? cfg.textOutputOptions.length > 1 && (
+            <div className={styles.field}>
+              <span className={styles.fieldLabel}>输出形态</span>
+              <TabRow
+                tabs={cfg.textOutputOptions.map((o) => OUTPUT_MODE_LABELS[o])}
+                active={OUTPUT_MODE_LABELS[cfg.outputMode]}
+                onChange={(label) => {
+                  const m = OUTPUT_MODE_BY_LABEL[label];
+                  if (m) cfg.setOutputMode(m);
+                }}
+              />
+            </div>
+          )
+        : cfg.panelShape.showOutputMode && (
+            <div className={styles.field}>
+              <span className={styles.fieldLabel}>输出形态</span>
+              <TabRow
+                tabs={OUTPUT_MODE_TABS}
+                active={OUTPUT_MODE_LABELS[cfg.outputMode]}
+                onChange={(label) => {
+                  const m = OUTPUT_MODE_BY_LABEL[label];
+                  if (m) cfg.setOutputMode(m);
+                }}
+              />
+            </div>
+          )}
         </>
       )}
     </>

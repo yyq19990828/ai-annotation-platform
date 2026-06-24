@@ -103,6 +103,9 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         "resource_profile": model.get("resource_profile") or {},
         # 能力可见性透传：缺省 public（老 backend 无字段即对外开放）。
         "visibility": model.get("visibility") or "public",
+        # 协议 v2.2 · 原子 vs 内部编排维度，与 visibility 解耦（描述性 vs 行为性）。
+        # 缺省 atom（绝大多数 model 是单次推理；现存复合都在自管 backend 显式标）。
+        "composition": model.get("composition") or "atom",
         "params": model.get("params") or {},
         # v0.14.17 · 闭集检测器的原生类别表 (yolo model.names, [{index,name}]); 供前端类别白名单.
         # 仅在该 task 模型已加载过 (warmup/predict) 时 backend /setup 才带, 否则为空。
@@ -144,6 +147,8 @@ def _synthesize_single_model(setup: dict, backend_infra: str) -> dict:
         "supported_text_outputs": list(setup.get("supported_text_outputs") or []),
         "supported_trackers": trackers,
         "supported_variants": setup.get("supported_variants") or [],
+        # 老 backend 均为单次推理原子（协议 v2.2）。
+        "composition": "atom",
         "default_thresholds": {},
         "resource_profile": {},
         "params": setup.get("params") or {},

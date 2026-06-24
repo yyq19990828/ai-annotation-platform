@@ -40,22 +40,27 @@ def test_setup_default_variants_per_task_axes():
     - detection (DINO 路径)         → 仅 dino_variant
     - interactive_seg / tracker     → 仅 sam_variant
     - segmentation (DINO + SAM2)    → sam_variant + dino_variant
+    - box-seg (SAM 框→mask 原子)    → 仅 sam_variant
     """
     data = setup()
-    by_task = {m["task"]: m for m in data["models"]}
+    # task 不再唯一(segmentation 下有 composite + box-seg 两条), 按 id 取以消歧。
+    by_id = {m["id"]: m for m in data["models"]}
 
-    detection = by_task["detection"]["default_variants"]
+    detection = by_id["grounded-sam2-detection"]["default_variants"]
     assert set(detection.keys()) == {"dino_variant"}
     assert detection["dino_variant"] in {"T", "B"}
 
-    seg = by_task["segmentation"]["default_variants"]
+    seg = by_id["grounded-sam2-segmentation"]["default_variants"]
     assert set(seg.keys()) == {"sam_variant", "dino_variant"}
 
-    iseg = by_task["interactive_seg"]["default_variants"]
+    iseg = by_id["grounded-sam2-interactive-seg"]["default_variants"]
     assert set(iseg.keys()) == {"sam_variant"}
 
-    tracker = by_task["tracker"]["default_variants"]
+    tracker = by_id["grounded-sam2-tracker"]["default_variants"]
     assert set(tracker.keys()) == {"sam_variant"}
+
+    box_seg = by_id["grounded-sam2-box-seg"]["default_variants"]
+    assert set(box_seg.keys()) == {"sam_variant"}
 
 
 def test_setup_default_variants_match_env_defaults():
@@ -63,12 +68,14 @@ def test_setup_default_variants_match_env_defaults():
     from main import DINO_VARIANT, SAM_VARIANT
 
     data = setup()
-    by_task = {m["task"]: m for m in data["models"]}
+    # task 不再唯一(segmentation 下有 composite + box-seg), 按 id 取以消歧。
+    by_id = {m["id"]: m for m in data["models"]}
 
-    assert by_task["detection"]["default_variants"]["dino_variant"] == DINO_VARIANT
-    assert by_task["interactive_seg"]["default_variants"]["sam_variant"] == SAM_VARIANT
-    assert by_task["tracker"]["default_variants"]["sam_variant"] == SAM_VARIANT
-    seg = by_task["segmentation"]["default_variants"]
+    assert by_id["grounded-sam2-detection"]["default_variants"]["dino_variant"] == DINO_VARIANT
+    assert by_id["grounded-sam2-interactive-seg"]["default_variants"]["sam_variant"] == SAM_VARIANT
+    assert by_id["grounded-sam2-tracker"]["default_variants"]["sam_variant"] == SAM_VARIANT
+    assert by_id["grounded-sam2-box-seg"]["default_variants"]["sam_variant"] == SAM_VARIANT
+    seg = by_id["grounded-sam2-segmentation"]["default_variants"]
     assert seg["sam_variant"] == SAM_VARIANT
     assert seg["dino_variant"] == DINO_VARIANT
 

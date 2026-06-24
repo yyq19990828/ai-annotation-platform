@@ -10,9 +10,15 @@ import base64
 import io
 from dataclasses import dataclass
 
+import pytest
 from PIL import Image
 
-from app.workers.roi import crop_inputs_from_boxes, merge_classify_attributes
+from app.workers.roi import (
+    collect_geometry_shapes,
+    crop_inputs_from_boxes,
+    geometry_prompts_from_boxes,
+    merge_classify_attributes,
+)
 
 
 def _img(w: int, h: int) -> Image.Image:
@@ -183,3 +189,57 @@ def test_merge_ignores_out_of_range_or_empty():
     n = merge_classify_attributes(boxes, classify)
     assert n == 0
     assert "attributes" not in boxes[0] or not boxes[0].get("attributes")
+
+
+# ── v0.18.12 · geometry-prompt 投递 (box-seg 下游) ──
+
+
+def test_geometry_prompts_normalize_and_index():
+    """LS 百分比 → 归一化 [0,1] [x1,y1,x2,y2]; parent_box_idx = 原下标。"""
+    boxes = [_bbox(10, 20, 30, 40), _bbox(50, 50, 10, 10)]
+    batch = geometry_prompts_from_boxes(boxes)
+    assert batch.skipped_geometry == 0
+    assert batch.prompts[0]["parent_box_idx"] == 0
+    assert batch.prompts[0]["box"][0] == pytest.approx(0.1)
+    assert batch.prompts[0]["box"][1] == pytest.approx(0.2)
+    assert batch.prompts[0]["box"][2] == pytest.approx(0.4)  # (10+30)/100
+    assert batch.prompts[0]["box"][3] == pytest.approx(0.6)  # (20+40)/100
+    assert batch.prompts[1]["parent_box_idx"] == 1
+
+
+def test_geometry_prompts_class_filter_keeps_original_index():
+    """parent_class_filter 只对目标类生成 prompt, 但 parent_box_idx 保留原下标。"""
+    boxes = [_bbox(0, 0, 10, 10, cls="person"), _bbox(20, 20, 10, 10, cls="car")]
+    batch = geometry_prompts_from_boxes(boxes, parent_class_filter=["car"])
+    assert len(batch.prompts) == 1
+    assert batch.prompts[0]["parent_box_idx"] == 1  # car 在原下标 1
+    assert batch.skipped_geometry == 0  # person 是路由跳过, 非几何跳过
+
+
+def test_geometry_prompts_skips_rotated_and_degenerate():
+    """旋转框 / 退化框计入 skipped_geometry, 不产 prompt。"""
+    boxes = [
+        {"type": "rectanglelabels",
+         "value": {"x": 10, "y": 10, "width": 10, "height": 10, "rotation": 30}},
+        _bbox(0, 0, 0, 10),  # 退化 (w=0)
+        _bbox(30, 30, 20, 20),  # 有效
+    ]
+    batch = geometry_prompts_from_boxes(boxes)
+    assert batch.skipped_geometry == 2
+    assert len(batch.prompts) == 1
+    assert batch.prompts[0]["parent_box_idx"] == 2
+
+
+def test_collect_geometry_shapes_filters_bad_parent_idx():
+    """收集下游 polygon: 保留合法 parent_box_idx, 丢越界项。"""
+    boxes = [_bbox(0, 0, 10, 10)]
+    seg = [
+        _FakeResult("task-1", [
+            {"type": "polygonlabels", "value": {"points": [[1, 1]]}, "parent_box_idx": 0},
+            {"type": "polygonlabels", "value": {"points": [[2, 2]]}, "parent_box_idx": 9},  # 越界
+            {"type": "polygonlabels", "value": {"points": [[3, 3]]}},  # 无 parent_box_idx → 保留
+        ]),
+    ]
+    shapes = collect_geometry_shapes(seg, boxes)
+    assert len(shapes) == 2
+    assert shapes[0]["parent_box_idx"] == 0

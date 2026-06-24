@@ -113,19 +113,26 @@ export interface VariantSource {
  *
  * - doc (OCR/版面) → 选中文档 model 的逐 model 变体;
  * - 几何闭集 (yolo 等) → 选中 task model 的逐 model 变体;
- * - 文本 prompt 批量 (gsam2「找全图」) → **顶层** supported_variants (SAM2 + DINO 两组)。
- *   文本批量是后端级编排能力, primaryModel=detection 只表达 dino 一组, 表达不全 → 必须走顶层。
- *   顶层无 variant_combinations / default_variants (那是逐 model 概念)。
+ * - 文本 prompt 批量 (gsam2 / sam3) → v0.18.12 起 model-first: **选中文本 task model 的逐 model 变体**
+ *   (检测 model 只 dino; 分割 model sam+dino)。取代旧的「顶层 union」兜底 (选检测时不再白显 SAM)。
+ *   textModel 缺位时回落顶层 topSupportedVariants (能力未就位的安全兜底)。
  */
 export function deriveVariantSource(input: {
   isDocMode: boolean;
   isGeometricBackend: boolean;
   activeDocModel: MLModelCapability | undefined;
   geometricModel: MLModelCapability | undefined;
+  textModel?: MLModelCapability | undefined;
   topSupportedVariants: MLBackendSupportedVariantGroup[] | undefined;
 }): VariantSource {
-  const { isDocMode, isGeometricBackend, activeDocModel, geometricModel, topSupportedVariants } =
-    input;
+  const {
+    isDocMode,
+    isGeometricBackend,
+    activeDocModel,
+    geometricModel,
+    textModel,
+    topSupportedVariants,
+  } = input;
   if (isDocMode) {
     return {
       groups: activeDocModel?.supported_variants,
@@ -138,6 +145,14 @@ export function deriveVariantSource(input: {
       groups: geometricModel?.supported_variants,
       combinations: geometricModel?.variant_combinations,
       defaults: geometricModel?.default_variants,
+    };
+  }
+  // 文本路径: 优先选中文本 model 的逐 model 变体; 缺位回落顶层 union。
+  if (textModel) {
+    return {
+      groups: textModel.supported_variants,
+      combinations: textModel.variant_combinations,
+      defaults: textModel.default_variants,
     };
   }
   return { groups: topSupportedVariants, combinations: undefined, defaults: undefined };
