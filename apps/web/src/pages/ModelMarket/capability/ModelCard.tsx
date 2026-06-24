@@ -86,9 +86,9 @@ export function ModelCard({ item }: { item: FlatModel }) {
       </div>
 
       <Row label="运行时">
-        <span className={TAG_CLASS}>池 {currentPoolSize(item)}</span>
+        <Badge variant="default">池 {currentPoolSize(item)}</Badge>
         <Badge variant={loaded ? "success" : "outline"}>{loaded ? "已加载" : "未加载"}</Badge>
-        <WarmButton item={item} variants={defaultVariants} />
+        <WarmButton item={item} variants={defaultVariants} size="xs" />
       </Row>
 
       {geom.length > 0 && (
