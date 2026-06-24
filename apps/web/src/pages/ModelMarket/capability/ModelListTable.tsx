@@ -10,7 +10,7 @@ import {
   effectiveModalities,
   isLoadedRuntimeKey,
 } from "./catalogModel";
-import { COMPOSITION_BADGE, infraLabel, modalityLabel, taskLabel } from "./labels";
+import { infraLabel, modalityLabel, taskLabel } from "./labels";
 import { WarmButton } from "./WarmButton";
 
 const TABLE_CLASS =
@@ -59,18 +59,9 @@ export function ModelListTable({ items }: { items: FlatModel[] }) {
             return (
               <tr key={row.rowKey}>
                 <td className="min-w-[180px]">
-                  <div className="flex items-center gap-1.5">
-                    <span className={`${TRUNCATE_CLASS} font-semibold`} title={row.primaryLabel}>
-                      {row.primaryLabel}
-                    </span>
-                    {m.composition && COMPOSITION_BADGE[m.composition] && (
-                      <span title={COMPOSITION_BADGE[m.composition].title}>
-                        <Badge variant={COMPOSITION_BADGE[m.composition].variant}>
-                          {COMPOSITION_BADGE[m.composition].label}
-                        </Badge>
-                      </span>
-                    )}
-                  </div>
+                  <span className={`${TRUNCATE_CLASS} font-semibold`} title={row.primaryLabel}>
+                    {row.primaryLabel}
+                  </span>
                   <div className={`${TRUNCATE_CLASS} mono mt-0.5 text-2xs text-muted-foreground`} title={row.primaryId}>
                     {row.primaryId}
                   </div>

@@ -295,8 +295,15 @@ export function ImageStage({
   // user 层在 HandTool / 只读时关闭 listening，省 hit-test 开销。
   // ai 层只要不在只读模式都开（支持点击采纳），HandTool 下也可点选 AI 候选。
   // 严格分离：仅「选择工具」下可点选 / 移动已有标注与预标注；绘制工具下画布层只画不选。
+  // 例外 (B-61)：绘制工具下若已有「单选中且可编辑」的人工标注，也让 user 层 listening，
+  // 使其 resize/move 手柄可直接交互——否则画完框（画框后行为=选择类别，框已选中）想调大小
+  // 必须先切回选择工具，过于严格。此时点中空白仍落到 Stage 触发画框（绘制穿透保留）。
   const selectActive = tool === "select";
-  const userLayerListening = selectActive && !readOnly;
+  const primarySelectedBox = selectedId != null && selSet.size === 1
+    ? userBoxes.find((b) => b.id === selectedId)
+    : undefined;
+  const hasEditablePrimarySelection = !!primarySelectedBox && !primarySelectedBox.is_locked;
+  const userLayerListening = (selectActive || hasEditablePrimarySelection) && !readOnly;
   // v0.9.41 · 标注偏好（I17）：smoothImage / cssImageFilter / longTaskSampleRate。
   // v0.10.10 · I17.3 · 合并项目级 rendering_config 覆盖（项目级 > 用户级 > 默认）。
   const { config: workbenchConfig } = useWorkbenchConfig(projectRenderingConfig);
@@ -425,10 +432,25 @@ export function ImageStage({
     prevFileUrlRef.current = fileUrl;
     setFitted(false);
   }
+  // autoFitOnResize 只应在视口尺寸真正变化（窗口 / 边栏致容器 resize）时重新适应。原条件
+  // `!fitted || autoFitOnResize` 在开关开启时恒真 → 每次该 effect 重跑都 fitNow()；而画框落框 /
+  // 删除标注引发的重渲染会让 imgW/imgH 派生重算、fitNow 身份变化触发本 effect 重跑，于是把用户
+  // 的缩放强行拉回适应大小 (B-60)。记录上次 fit 时的视口尺寸，仅当尺寸确有变化才跟随开关重适应。
+  const fittedVpRef = useRef({ w: 0, h: 0 });
   useLayoutEffect(() => {
-    if (vpSize.w && vpSize.h && dimsReady && (!fitted || workbenchConfig.image.autoFitOnResize)) {
+    if (!(vpSize.w && vpSize.h && dimsReady)) return;
+    if (!fitted) {
       fitNow();
-      if (!fitted) setFitted(true);
+      setFitted(true);
+      fittedVpRef.current = { w: vpSize.w, h: vpSize.h };
+      return;
+    }
+    if (
+      workbenchConfig.image.autoFitOnResize &&
+      (fittedVpRef.current.w !== vpSize.w || fittedVpRef.current.h !== vpSize.h)
+    ) {
+      fitNow();
+      fittedVpRef.current = { w: vpSize.w, h: vpSize.h };
     }
   }, [fitted, vpSize.w, vpSize.h, dimsReady, fitNow, workbenchConfig.image.autoFitOnResize]);
 
