@@ -319,7 +319,10 @@ async def test_reject_invalid_write_target(
     owner, token = super_admin
     proj, detect, classify, batch = await _seed(db_session, owner.id)
     stages = _stages(detect.id, classify.id)
-    stages[1]["write"] = {"target": "new_shape", "keys": ["color"]}  # 非 attributes / geometry
+    stages[1]["write"] = {
+        "target": "new_shape",
+        "keys": ["color"],
+    }  # 非 attributes / geometry
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
