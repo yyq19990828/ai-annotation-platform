@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-24
 ---
 
 # AI 预标注接管
@@ -81,12 +81,13 @@ flowchart TD
 
 请求体核心字段：
 
-- `ml_backend_id`
+- `ml_backend_id` —— 源阶段 backend；多阶段编排时等价 `pipeline_stages[0].ml_backend_id`
 - `task_ids`
 - `prompt`
 - `output_mode`
 - `batch_id`
 - `params` —— 选中 backend 的 `/setup.params` 值；worker 合并进 `/predict` context，覆盖项目级阈值兜底；无此字段时行为不变
+- `pipeline_stages` —— **多阶段编排**，声明源 + 下游 stage 列表，把单 backend 调用扩展为「检测 → 分类 / 几何分割 → 写回属性」跨 backend 流水线；缺省时与原单阶段批量预标逐字等价，完全向后兼容。形态、ROI 路由、并行兄弟语义详见 [prediction-pipeline §多阶段预标注](./prediction-pipeline#多阶段预标注pipeline_stages路径-b) 与 [ADR 0043](../adr/0043-staged-preannotation-pipeline)
 
 ### 当前约束
 
@@ -122,8 +123,8 @@ worker 会按三种模式选任务：
 
 成功时写：
 
-- `Prediction`
-- `PredictionMeta`
+- `Prediction`（多阶段下:下游 attributes union 后整体写一条父框预测,几何分割阶段产出的 polygon 作 new_shape 追加进同一 `result` 数组）
+- `PredictionMeta`(多阶段额外写 `extra.pipeline = { stage_count, enriched_attr_keys, stages: [...] }` 追溯每个属性来自哪个 backend / model)
 - `task.total_predictions` 聚合
 
 失败时写：
@@ -132,7 +133,7 @@ worker 会按三种模式选任务：
 
 整批运行级别还会写：
 
-- `AsyncJob(kind=batch_predict)`
+- `AsyncJob(kind=batch_predict)`,多阶段下额外写 `result.pipeline_stages`(终态逐阶段统计 `{detected, targeted, ok, failed, skipped_geometry}`,WS 重连/运行后回看都走它,不丢)
 
 其中 `AsyncJob` 会记录：
 
@@ -193,6 +194,17 @@ annotator 可选择：
 2. 在 prediction 基础上继续改
 3. 完全忽略 prediction，手工新建 annotation
 4. **Magic Box**: 拖一个粗框 → SAM bbox prompt → 返回 polygon → 自动取紧凑外接矩形 → **直接**落 bbox(不经候选层 UI 确认)。归 `ai_interactive` 工具单位, 详见 [ADR-0026](../adr/0026-tool-unit-class-and-attribute-binding)
+
+### 采纳前候选属性预览 + 分步采纳
+
+工作台选中**尚未采纳**的 AI 候选时,画布选中卡 + 右栏标注详情都以**只读** `AttributeForm` 预览候选 `attributes`(项目 schema 的 select options 解析为中文 label),候选列表行也补属性摘要 chip。免去先采纳再核对车型 / 颜色等多阶段产出属性。
+
+进入「分步采纳」时,属性审阅区从只读升为**可编辑**——先看多阶段预标产出的 select / multiselect 属性、改后再采纳。改动经端点的可选 body 原子落库:
+
+- `POST /api/v1/tasks/{task_id}/predictions/{prediction_id}/accept`
+  - `body.attribute_overrides: dict | None` —— 按属性键覆盖 shape 自带 attributes 落库(内部键 `_shape_index` 等不受影响);为 `None` 时沿用候选原值
+
+实现:[apps/api/app/api/v1/tasks/predictions.py:135](../../../apps/api/app/api/v1/tasks/predictions.py)、`AnnotationService.accept_prediction` 内对 select 字段做软校验(值不在 options 内只告警、不阻断,避免 backend 枚举与项目配置漂移时丢数据)。
 
 只要出现有效 annotation，`AnnotationService._update_task_stats()` 就会把：
 
@@ -302,11 +314,15 @@ ML backend 对某题失败时，不会中断整批；worker 会写：
 |---|---|
 | `apps/web/src/pages/AIPreAnnotate/AIPreAnnotatePage.tsx` | 批量预标主入口；按项目 `data_type` 路由到对应面板 |
 | `apps/web/src/pages/AIPreAnnotate/components/ProjectDetailPanel.tsx` | 图像项目详情面板（含 backend 选择器、SchemaForm 参数面板、RunPanel、HistoryTable） |
+| `apps/web/src/pages/AIPreAnnotate/components/PreannotateConfigForm.tsx` | 阶段卡基底——model-first 单一下拉(`value=model_id`、文案 = 模型市场 `display_name`);doc / 几何 / 文本三路径共用同一交互 |
+| `apps/web/src/pages/AIPreAnnotate/components/StageCard.tsx` | 多阶段编排阶段卡;`parent_class_filter` / `write.keys` chip 多选 + 键冲突配置期预警 + 运行态徽标 + `ProgressBar` 实时统计 |
 | `apps/web/src/pages/AIPreAnnotate/components/VideoPreannotateGuide.tsx` | 视频项目引导卡片（提示在工作台逐轨迹 Shift+T 发起，提供跳工作台 + `/ai-pre/jobs?tab=video` 深链） |
 | `apps/web/src/pages/AIPreAnnotate/components/RunPanel.tsx` | 运行触发与进度提示 |
 | `apps/web/src/pages/AIPreAnnotate/components/HistoryTable.tsx` | `pre_annotated` 历史列表与 bulk clear |
 | `apps/web/src/pages/AIPreAnnotate/AIPreAnnotateJobsPage.tsx` | AI 任务历史；含「图像」(`async_jobs: batch_predict / prediction_retry`) 和「视频」(`async_jobs: video_tracker`) 两个模态 tab，`?tab=video` 深链 |
-| `apps/web/src/hooks/usePredictions.ts` | prediction 查询与采纳 |
+| `apps/web/src/pages/Projects/sections/ClassesSection.tsx` | 项目类别与属性区;入口「导入属性」按钮挂 `ImportAttributesFromBackendDialog` |
+| `apps/web/src/pages/Projects/sections/ImportAttributesFromBackendDialog.tsx` | 「从 ML Backend 导入属性」对话框——列出自报 `output_attribute_schema` 的所有在线 backend / model,预览勾选字段后一键合并进当前工具单位的 `attribute_schema`(同 key 覆盖、新 key 追加) |
+| `apps/web/src/hooks/usePredictions.ts` | prediction 查询与采纳(含 `attribute_overrides`) |
 | `apps/web/src/pages/Workbench/shell/Topbar.tsx` | 当前 task 所属批次的 `pre_annotated` 提示 |
 | `apps/web/src/components/badges/BatchStatusBadge.tsx` | `pre_annotated` 徽章 |
 

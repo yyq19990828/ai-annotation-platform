@@ -3,14 +3,29 @@ audience: [dev]
 type: explanation
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-06-24
 ---
 
-# AI 模型集成（grounded-sam2-backend / sam3-backend）
+# AI 模型集成
 
 协议契约见 [`ml-backend-protocol.md`](../reference/ml-backend-protocol)。本页说明当前模型服务的部署拓扑、显存预算、缓存、并发控制和能力协商。
 
 <!-- history: the original v0.9/v0.10 release-slice notes are folded into the current model integration guide. -->
+
+---
+
+## 0. Backend 名录
+
+平台当前自维护 **4 个 ML backend**(各为独立 FastAPI 微服务、独立 docker-compose profile,按显存预算自由组合启动)。所有 backend 走同一套[能力声明协议](../reference/ml-backend-protocol),由平台经 `/setup` 探能力 + `/predict` 调推理。
+
+| Backend | 端口 | profile | 模型族 | 主用途 | composition |
+|---|---|---|---|---|---|
+| `grounded-sam2-backend` | 8001 | `gpu` | GroundingDINO + SAM 2.1 | 文本/点/框交互式实例分割;暴露 `box-seg` 几何原子(多阶段下游) | `composite` + `atom` |
+| `sam3-backend` | 8002 | `gpu-sam3` | SAM 3 | 交互式分割(下一代 SAM) | `composite` |
+| `yolo-backend` | 8003 | `gpu-yolo` | ultralytics(v8/v11/v12 × det/seg/pose/obb/cls) | 纯批量预标(`supported_prompts=["none"]`),不挤占交互式工具栏 | `composite` |
+| `onnxtools-backend` | 8004 | `gpu-onnxtools` | rtdetr + va | 二阶段车辆属性预标注;多阶段编排原子组合(上游纯检测 + 下游纯分类) | `atom` × 2 + `composite` × 1 |
+
+SAM 系列特化(image embedding 缓存、prompt 路由)集中在 §1–§5。`yolo-backend` / `onnxtools-backend` 的差异化说明放在 §6。
 
 ---
 
@@ -250,6 +265,38 @@ histogram_quantile(0.95,
 ## 5. 协议契约引用
 
 请求与响应字段以 [`ml-backend-protocol.md`](../reference/ml-backend-protocol) §2 为准。`/cache/stats` / `/metrics` **不进协议契约**——它们是 backend 内部端点，平台 API 不会消费。
+
+---
+
+## 6. YOLO / ONNX 通用推理 backend
+
+`grounded-sam2-backend` / `sam3-backend` 之外平台还自维护两个**通用推理 backend**——`yolo-backend` 与 `onnxtools-backend`。两者共性:不交互式(`supported_prompts=["none"]` 或仅 `bbox`),走纯批量预标;镜像与权重均按 backend 自治(`docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile <profile> up`),不影响 SAM 系列。
+
+### 6.1 yolo-backend(8003 / `gpu-yolo`)
+
+ultralytics 多任务多系列(`detection` / `segmentation` / `pose` / `obb` / `classification`)。协议 v2 多模型目录(详 [ADR-0036](../adr/0036-ml-backend-capability-protocol-v2-multi-model))暴露所有上百权重,前端模型市场按 `task` × `series` × `size` 分组渲染。权重经 `yolo_checkpoints` 卷持久化。
+
+### 6.2 onnxtools-backend(8004 / `gpu-onnxtools`)
+
+**二阶段车辆属性预标注**:rtdetr 检测出框 → 对机动车框跑 va 分类出**车型(13 类)+ 颜色(11 类)**→ 写入框 `attributes`。基于 [onnxtools `VehicleAttributePipeline`](https://github.com/yyq19990828/onnxtools) 封装。
+
+**镜像基础**:`pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel`(cuda12.8 + cudnn9 满足 onnxruntime-gpu 1.22;cudnn8 base 会静默退 CPU)。Dockerfile entrypoint 把 torch 自带的 `nvidia/*/lib` 加进 `LD_LIBRARY_PATH`,否则 CUDAExecutionProvider 找不到 cudnn 静默退 CPU(实测 GPU ~35ms/图 vs CPU ~940ms)。缺 GPU 时自动 fallback CPU,功能仍可用。
+
+**模型注入**:不打进镜像,经 bind mount(`./apps/onnxtools-backend/models:/app/models:ro`)。起栈前需手动复制(rtdetr-2024080100 + va_260612)到该目录。
+
+**三 model 暴露(原子化范式)**:`/setup` 广播三个 model,各架在自己的单模型推理类上、按需懒加载——detect-only 部署只加载 `RtdetrORT`、classify-only 只加载 `VehicleAttributeORT`。
+
+| `model_id` | `task` | `composition` | 推理类 | 编排定位 |
+|---|---|---|---|---|
+| `vehicle-detect` | `detection` | `atom` | 独立 `RtdetrORT` | 多阶段编排**上游**(只出 bbox,属性留空交下游) |
+| `vehicle-attr-classify` | `classification` | `atom` | 独立 `VehicleAttributeORT` | 多阶段编排**下游**(整图当一辆车,跳过 rtdetr,写车型 / 颜色) |
+| `vehicle-attr` | `detection` | `composite` | `VehicleAttributePipeline`(内部串 detect + classify) | 单阶段一锅端(开箱即用,内部编排复合) |
+
+`composition` 由能力声明协议(详 [ADR 0043 — 多阶段预标注编排](../adr/0043-staged-preannotation-pipeline))引入:`atom` 才能进**编排下游 stage** 选择器(只组合 atom,避免重复编排);`composite` 在单阶段配置可直接选用。模型市场目录 ModelCard / 列表视图均补「原子 / 内置流程」徽标。
+
+**`/unload` + idle-unload**:`POST /unload` 释放全部已加载句柄(模型市场卸载按钮直接生效,UI 零改动);末次推理后空闲 `ONNXTOOLS_IDLE_UNLOAD_SECONDS`(默认 600s)自动卸载。按 model 句柄粒度释放显存——原子化让 detect-only 工作流不再背 va 分类器显存。与 yolo 体验对齐。
+
+**协议 `output_attribute_schema`**:`vehicle-attr` / `vehicle-attr-classify` 在 `/setup` 自报输出属性 schema(含每个 select 字段的 `options`,value + 中文 label),沿 `ml_capabilities` 透传到前端,供「从 ML Backend 导入属性」一键合并进项目工具单位的 `attribute_schema`。`vehicle-detect` 纯检测不写 `attributes`,不声明 `output_attribute_schema`。
 
 ---
 
