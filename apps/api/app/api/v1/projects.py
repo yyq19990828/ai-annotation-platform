@@ -1334,11 +1334,13 @@ async def trigger_preannotation(
 
     svc = MLBackendService(db)
     backend = await svc.get(body.ml_backend_id)
-    if not backend:
+    # 校验 backend 存在且归属当前项目: 与下面下游阶段校验对称, 防止 owner 手动 POST
+    # 别项目 backend id 触发跨项目预标。404 (不可枚举) 与下游分支一致。
+    if not backend or backend.project_id != project.id:
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
     # v0.18.1 · 多阶段编排: 校验每个下游阶段的 backend 存在且归属本项目, 归一化成 worker
-    # 可消费的 stage dict 列表 (uuid → str)。源阶段 backend 已由上面的 body.ml_backend_id 校验。
+    # 可消费的 stage dict 列表 (uuid → str)。源阶段 backend 归属已在上面校验。
     pipeline_stages_payload: list[dict] | None = None
     if body.pipeline_stages:
         norm: list[dict] = []

@@ -411,3 +411,24 @@ async def test_reject_unknown_downstream_backend(
         },
     )
     assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_reject_source_backend_other_project(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # 顶层 ml_backend_id 指向别项目的 backend → 应 404 (与下游 backend 校验对称, 不可枚举)。
+    # 此前源 backend 只校验存在性, 不校验归属, 与下游分支不对称。
+    owner, token = super_admin
+    proj_a, _, _, batch_a = await _seed(db_session, owner.id)
+    _proj_b, detect_b, _, _ = await _seed(db_session, owner.id)
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj_a.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(detect_b.id),  # 别项目的 backend
+            "batch_id": str(batch_a.id),
+        },
+    )
+    assert resp.status_code == 404, resp.text
+    assert "ML Backend not found" in resp.text
