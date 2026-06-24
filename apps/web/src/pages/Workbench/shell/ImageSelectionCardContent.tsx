@@ -92,8 +92,9 @@ export function ImageSelectionCardContent({
           aria-label="修改类别"
           disabled={readOnly}
           onClick={() => onChangeClass(annotation.id)}
+          className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
         >
-          <Icon name="tag" size={14} />
+          <Icon name="tag" size={12} />
         </Button>
         <Button
           variant="ghost"
@@ -102,8 +103,9 @@ export function ImageSelectionCardContent({
           aria-label={hidden ? "显示" : "隐藏"}
           aria-pressed={hidden}
           onClick={() => onToggleFlag(annotation.id, "is_hidden", !hidden)}
+          className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
         >
-          <Icon name={hidden ? "eyeOff" : "eye"} size={14} />
+          <Icon name={hidden ? "eyeOff" : "eye"} size={12} />
         </Button>
         <Button
           variant="ghost"
@@ -113,8 +115,9 @@ export function ImageSelectionCardContent({
           aria-pressed={locked}
           disabled={readOnly}
           onClick={() => onToggleFlag(annotation.id, "is_locked", !locked)}
+          className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
         >
-          <Icon name={locked ? "lock" : "unlock"} size={14} />
+          <Icon name={locked ? "lock" : "unlock"} size={12} />
         </Button>
         <Button
           variant="danger"
@@ -123,8 +126,9 @@ export function ImageSelectionCardContent({
           aria-label="删除标注"
           disabled={readOnly}
           onClick={() => onDelete(annotation.id)}
+          className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
         >
-          <Icon name="trash" size={14} />
+          <Icon name="trash" size={12} />
         </Button>
       </ActionBar>
     </div>

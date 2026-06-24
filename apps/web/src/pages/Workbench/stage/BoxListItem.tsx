@@ -263,115 +263,135 @@ export function BoxListItem({
           </div>
         )}
       </div>
+      {/* 操作区统一：默认只留一个常驻 ⋮ 触发按钮在最右；hover 时其余操作向左浮出成工具条（AI 行 / 人工行一致） */}
       <div className="flex gap-1.5 items-center">
-        {isAi ? (
-          <>
-            {onAccept && (
-              <Button
-                variant="primary"
-                size="sm"
-                title="采纳预测"
-                aria-label="采纳预测"
-                onClick={(e) => { e.stopPropagation(); onAccept(); }}
-                className="!w-[30px] !h-[30px] !justify-center !p-0 !rounded-lg"
-              >
-                <Icon name="check" size={14} />
-              </Button>
+        <div className="relative flex items-center justify-end group/act">
+          <div
+            className={cn(
+              "absolute right-full top-1/2 z-10 flex -translate-y-1/2 items-center gap-1 rounded-lg border border-border bg-card py-0.5 pl-1.5 pr-1 shadow-md",
+              "pointer-events-none translate-x-1.5 opacity-0 transition-all duration-200 ease-out",
+              "group-hover/act:pointer-events-auto group-hover/act:translate-x-0 group-hover/act:opacity-100",
             )}
-            {onReject && (
-              <Button
-                variant="danger"
-                size="sm"
-                title="忽略预测"
-                aria-label="忽略预测"
-                onClick={(e) => { e.stopPropagation(); onReject(); }}
-                className="!w-[30px] !h-[30px] !justify-center !p-0 !rounded-lg"
-              >
-                <Icon name="x" size={14} />
-              </Button>
-            )}
-            {onRefine && (
-              <Button
-                size="sm"
-                title="精修 (Mask 笔刷)"
-                aria-label="精修"
-                onClick={(e) => { e.stopPropagation(); onRefine(); }}
-                className="!w-[30px] !h-[30px] !justify-center !p-0 !rounded-lg"
-                data-testid={`ai-refine-${b.id}`}
-              >
-                <Icon name="edit" size={14} />
-              </Button>
-            )}
-          </>
-        ) : (
-          <>
-            {onToggleFlag && (
+          >
+            {isAi ? (
               <>
-                <Button
-                  size="sm"
-                  title={b.is_hidden ? "显示 (H)" : "隐藏 (H)"}
-                  aria-label={b.is_hidden ? "显示" : "隐藏"}
-                  aria-pressed={!!b.is_hidden}
-                  onClick={(e) => { e.stopPropagation(); onToggleFlag("is_hidden"); }}
-                  className={cn(
-                    "!w-[30px] !h-[30px] !justify-center !p-0 !rounded-lg",
-                    !b.is_hidden && "!opacity-55",
-                  )}
-                >
-                  <Icon name={b.is_hidden ? "eyeOff" : "eye"} size={14} />
-                </Button>
-                <Button
-                  size="sm"
-                  title={b.is_locked ? "解锁 (L)" : "锁定 (L)"}
-                  aria-label={b.is_locked ? "解锁" : "锁定"}
-                  aria-pressed={!!b.is_locked}
-                  onClick={(e) => { e.stopPropagation(); onToggleFlag("is_locked"); }}
-                  className={cn(
-                    "!w-[30px] !h-[30px] !justify-center !p-0 !rounded-lg",
-                    !b.is_locked && "!opacity-55",
-                  )}
-                >
-                  <Icon name={b.is_locked ? "lock" : "unlock"} size={14} />
-                </Button>
+                {onAccept && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    title="采纳预测"
+                    aria-label="采纳预测"
+                    onClick={(e) => { e.stopPropagation(); onAccept(); }}
+                    className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
+                  >
+                    <Icon name="check" size={12} />
+                  </Button>
+                )}
+                {onReject && (
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    title="忽略预测"
+                    aria-label="忽略预测"
+                    onClick={(e) => { e.stopPropagation(); onReject(); }}
+                    className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
+                  >
+                    <Icon name="x" size={12} />
+                  </Button>
+                )}
+                {onRefine && (
+                  <Button
+                    size="sm"
+                    title="精修 (Mask 笔刷)"
+                    aria-label="精修"
+                    onClick={(e) => { e.stopPropagation(); onRefine(); }}
+                    className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
+                    data-testid={`ai-refine-${b.id}`}
+                  >
+                    <Icon name="edit" size={12} />
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
+                {onToggleFlag && (
+                  <>
+                    <Button
+                      size="sm"
+                      title={b.is_hidden ? "显示 (H)" : "隐藏 (H)"}
+                      aria-label={b.is_hidden ? "显示" : "隐藏"}
+                      aria-pressed={!!b.is_hidden}
+                      onClick={(e) => { e.stopPropagation(); onToggleFlag("is_hidden"); }}
+                      className={cn(
+                        "!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3",
+                        !b.is_hidden && "!opacity-55",
+                      )}
+                    >
+                      <Icon name={b.is_hidden ? "eyeOff" : "eye"} size={12} />
+                    </Button>
+                    <Button
+                      size="sm"
+                      title={b.is_locked ? "解锁 (L)" : "锁定 (L)"}
+                      aria-label={b.is_locked ? "解锁" : "锁定"}
+                      aria-pressed={!!b.is_locked}
+                      onClick={(e) => { e.stopPropagation(); onToggleFlag("is_locked"); }}
+                      className={cn(
+                        "!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3",
+                        !b.is_locked && "!opacity-55",
+                      )}
+                    >
+                      <Icon name={b.is_locked ? "lock" : "unlock"} size={12} />
+                    </Button>
+                  </>
+                )}
+                {onChangeClass && (
+                  <Button
+                    size="sm"
+                    title="修改类别"
+                    aria-label="修改类别"
+                    onClick={(e) => { e.stopPropagation(); onChangeClass(); }}
+                    className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
+                  >
+                    <Icon name="tag" size={12} />
+                  </Button>
+                )}
+                {onRefine && (
+                  <Button
+                    size="sm"
+                    title="Mask 笔刷精修"
+                    aria-label="精修"
+                    onClick={(e) => { e.stopPropagation(); onRefine(); }}
+                    className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
+                    data-testid={`user-refine-${b.id}`}
+                  >
+                    <Icon name="edit" size={12} />
+                  </Button>
+                )}
+                {onDelete && (
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    title="删除标注"
+                    aria-label="删除标注"
+                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                    className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
+                  >
+                    <Icon name="trash" size={12} />
+                  </Button>
+                )}
               </>
             )}
-            {onChangeClass && (
-              <Button
-                size="sm"
-                title="修改类别"
-                aria-label="修改类别"
-                onClick={(e) => { e.stopPropagation(); onChangeClass(); }}
-                className="!w-[30px] !h-[30px] !justify-center !p-0 !rounded-lg"
-              >
-                <Icon name="tag" size={14} />
-              </Button>
-            )}
-            {onRefine && (
-              <Button
-                size="sm"
-                title="Mask 笔刷精修"
-                aria-label="精修"
-                onClick={(e) => { e.stopPropagation(); onRefine(); }}
-                className="!w-[30px] !h-[30px] !justify-center !p-0 !rounded-lg"
-                data-testid={`user-refine-${b.id}`}
-              >
-                <Icon name="edit" size={14} />
-              </Button>
-            )}
-            {onDelete && (
-              <Button
-                variant="danger"
-                size="sm"
-                title="删除标注"
-                aria-label="删除标注"
-                onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                className="!w-[30px] !h-[30px] !justify-center !p-0 !rounded-lg"
-              >
-                <Icon name="trash" size={14} />
-              </Button>
-            )}
-          </>
-        )}
+          </div>
+          <Button
+            size="sm"
+            title="更多操作"
+            aria-label="更多操作"
+            onClick={(e) => e.stopPropagation()}
+            className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3 text-muted-foreground"
+          >
+            <Icon name="more" size={13} />
+          </Button>
+        </div>
       </div>
     </div>
   );
