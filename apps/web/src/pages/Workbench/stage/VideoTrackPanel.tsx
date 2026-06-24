@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { DiffMode } from "../modes/types";
@@ -261,13 +260,12 @@ export function VideoTrackPanel({
                 onSelect(ann.id, { toggle });
               }}
               className={cn(
-                "grid gap-[7px] p-2 px-2.5 border border-border rounded-lg bg-transparent cursor-pointer",
+                "grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-center p-2 px-2.5 border border-border rounded-lg bg-transparent cursor-pointer",
                 selected && "!border-brand bg-brand/10",
                 primarySelected && batchCount > 1 && "shadow-[inset_3px_0_0_var(--sc-brand)]",
               )}
             >
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-start">
-                <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-1 gap-x-2 items-center min-w-0">
+              <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-1 gap-x-2 items-center min-w-0">
                   <button
                     type="button"
                     className="row-span-2 relative inline-flex items-center p-0 border-0 bg-transparent cursor-pointer disabled:cursor-default"
@@ -307,79 +305,114 @@ export function VideoTrackPanel({
                     <b className="text-sm overflow-hidden text-ellipsis whitespace-nowrap">
                       {displayClassName(ann.class_name)}
                     </b>
-                    <span className="[&>span]:text-2xs [&>span]:px-1.5 [&>span]:py-px">
-                      <Badge variant={ann.source === "prediction_based" ? "default" : "accent"}>
-                        {sourceLabel}
-                      </Badge>
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 px-1.5 py-px rounded-full text-2xs font-medium whitespace-nowrap",
+                        ann.source === "prediction_based"
+                          ? "bg-muted text-muted-foreground"
+                          : "bg-brand/10 text-brand",
+                      )}
+                    >
+                      {sourceLabel}
                     </span>
                     <span className={cn("mono", "text-xs text-muted-foreground")}>{shortTrackId(track.track_id)}</span>
                   </div>
                   <div className={cn("mono", "text-xs text-muted-foreground min-w-0 overflow-hidden text-ellipsis whitespace-nowrap")}>
                     {track.keyframes.length} 关键帧 · {frameRange(frames)}
                   </div>
+                  <div className="col-start-2 flex flex-wrap gap-1 min-w-0 mt-0.5">
+                    <span
+                      className={cn(
+                        "inline-flex items-center px-1.5 py-px border border-border rounded bg-muted text-muted-foreground text-2xs whitespace-nowrap",
+                        outside && "text-status-danger",
+                      )}
+                    >
+                      {statusChipText(exact, outside)}
+                    </span>
+                    <span
+                      data-testid="video-track-current-source"
+                      className={cn(
+                        "inline-flex items-center px-1.5 py-px border border-border rounded bg-muted text-muted-foreground text-2xs whitespace-nowrap",
+                        sourceChipClass(currentSource),
+                      )}
+                    >
+                      {sourceChipText(currentSource)}
+                    </span>
+                  </div>
                 </div>
+                {/* 操作区与单帧标注 AI 待审一致:默认只留一个常驻 ⋮ 在最右,hover 时其余操作向左浮出工具条。 */}
                 <div className="flex gap-1.5 items-center">
-                  <Button
-                    size="sm"
-                    className="!w-[30px] !h-[30px] !p-0 !justify-center !rounded-lg"
-                    title={hidden ? "显示轨迹" : "隐藏轨迹"}
-                    onClick={(e) => { e.stopPropagation(); onToggleHiddenTrack(track.track_id); }}
-                  >
-                    <Icon name={hidden ? "eyeOff" : "eye"} size={14} />
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="!w-[30px] !h-[30px] !p-0 !justify-center !rounded-lg"
-                    title={locked ? "解锁轨迹" : "锁定轨迹"}
-                    onClick={(e) => { e.stopPropagation(); onToggleLockedTrack(track.track_id); }}
-                  >
-                    <Icon name={locked ? "lock" : "unlock"} size={14} />
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="!w-[30px] !h-[30px] !p-0 !justify-center !rounded-lg"
-                    title="重命名轨迹类别"
-                    disabled={readOnly || !onChangeUserBoxClass}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      onChangeUserBoxClass?.(ann.id, { left: rect.left, top: rect.bottom + 6 });
-                    }}
-                  >
-                    <Icon name="edit" size={14} />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    className="!w-[30px] !h-[30px] !p-0 !justify-center !rounded-lg"
-                    title="删除整条轨迹"
-                    aria-label="删除整条轨迹"
-                    disabled={readOnly || locked || !onDeleteTrack}
-                    onClick={(e) => { e.stopPropagation(); onDeleteTrack?.(ann); }}
-                  >
-                    <Icon name="trash" size={14} />
-                  </Button>
+                  <div className="relative flex items-center justify-end group/act">
+                    <div
+                      className={cn(
+                        "absolute right-full top-1/2 z-10 flex -translate-y-1/2 items-center gap-1 rounded-lg border border-border bg-card py-0.5 pl-1.5 pr-1 shadow-md",
+                        "pointer-events-none translate-x-1.5 opacity-0 transition-all duration-200 ease-out",
+                        "group-hover/act:pointer-events-auto group-hover/act:translate-x-0 group-hover/act:opacity-100",
+                      )}
+                    >
+                      <Button
+                        size="sm"
+                        title={hidden ? "显示轨迹 (H)" : "隐藏轨迹 (H)"}
+                        aria-label={hidden ? "显示轨迹" : "隐藏轨迹"}
+                        aria-pressed={hidden}
+                        onClick={(e) => { e.stopPropagation(); onToggleHiddenTrack(track.track_id); }}
+                        className={cn(
+                          "!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3",
+                          !hidden && "!opacity-55",
+                        )}
+                      >
+                        <Icon name={hidden ? "eyeOff" : "eye"} size={12} />
+                      </Button>
+                      <Button
+                        size="sm"
+                        title={locked ? "解锁轨迹 (L)" : "锁定轨迹 (L)"}
+                        aria-label={locked ? "解锁轨迹" : "锁定轨迹"}
+                        aria-pressed={locked}
+                        onClick={(e) => { e.stopPropagation(); onToggleLockedTrack(track.track_id); }}
+                        className={cn(
+                          "!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3",
+                          !locked && "!opacity-55",
+                        )}
+                      >
+                        <Icon name={locked ? "lock" : "unlock"} size={12} />
+                      </Button>
+                      <Button
+                        size="sm"
+                        title="重命名轨迹类别"
+                        aria-label="修改类别"
+                        disabled={readOnly || !onChangeUserBoxClass}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          onChangeUserBoxClass?.(ann.id, { left: rect.left, top: rect.bottom + 6 });
+                        }}
+                        className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
+                      >
+                        <Icon name="tag" size={12} />
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        title="删除整条轨迹"
+                        aria-label="删除整条轨迹"
+                        disabled={readOnly || locked || !onDeleteTrack}
+                        onClick={(e) => { e.stopPropagation(); onDeleteTrack?.(ann); }}
+                        className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
+                      >
+                        <Icon name="trash" size={12} />
+                      </Button>
+                    </div>
+                    <Button
+                      size="sm"
+                      title="更多操作"
+                      aria-label="更多操作"
+                      onClick={(e) => e.stopPropagation()}
+                      className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3 text-muted-foreground"
+                    >
+                      <Icon name="more" size={13} />
+                    </Button>
+                  </div>
                 </div>
-              </div>
-              <div className="flex gap-1.5 flex-wrap pl-4">
-                <span
-                  className={cn(
-                    "border border-border rounded-lg px-2 py-1 text-xs leading-[1.35] text-muted-foreground bg-card",
-                    outside && "text-status-danger",
-                  )}
-                >
-                  {statusChipText(exact, outside)}
-                </span>
-                <span
-                  data-testid="video-track-current-source"
-                  className={cn(
-                    "border border-border rounded-lg px-2 py-1 text-xs leading-[1.35] text-muted-foreground bg-card",
-                    sourceChipClass(currentSource),
-                  )}
-                >
-                  {sourceChipText(currentSource)}
-                </span>
-              </div>
             </div>
           );
         })}
