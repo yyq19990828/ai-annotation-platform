@@ -138,14 +138,15 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
 
   const primaryModel = useMemo<MLModelCapability | undefined>(() => {
     if (isDocMode) return activeDocModel;
-    const models = capabilitiesQ.data?.models ?? [];
+    // 过滤内部能力(检测原子): 不作对外预标默认/可选.
+    const models = (capabilitiesQ.data?.models ?? []).filter((m) => m.visibility !== "internal");
     return models.find((m) => m.task !== "ocr" && m.task !== "doc_layout") ?? models[0];
   }, [isDocMode, activeDocModel, capabilitiesQ.data]);
 
   const geometricModels = useMemo<MLModelCapability[]>(
     () =>
-      (capabilitiesQ.data?.models ?? []).filter((m) =>
-        GEOMETRIC_TASKS.includes(m.task ?? ""),
+      (capabilitiesQ.data?.models ?? []).filter(
+        (m) => m.visibility !== "internal" && GEOMETRIC_TASKS.includes(m.task ?? ""),
       ),
     [capabilitiesQ.data],
   );

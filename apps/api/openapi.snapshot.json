@@ -8008,6 +8008,11 @@
             "default": false,
             "title": "Variants Shared Across Tasks",
             "type": "boolean"
+          },
+          "visibility": {
+            "default": "public",
+            "title": "Visibility",
+            "type": "string"
           }
         },
         "required": [
@@ -9128,6 +9133,11 @@
             "default": false,
             "title": "Variants Shared Across Tasks",
             "type": "boolean"
+          },
+          "visibility": {
+            "default": "public",
+            "title": "Visibility",
+            "type": "string"
           }
         },
         "required": [
@@ -19710,7 +19720,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.18.10"
+    "version": "0.18.11"
   },
   "openapi": "3.1.0",
   "paths": {

@@ -154,6 +154,32 @@ class VehicleAttributePredictor:
         infer_ms = int((time.time() - t0) * 1000)
         return detections_to_results(output, img_w, img_h), infer_ms
 
+    def detect_one(self, file_path: str) -> tuple[list[dict[str, Any]], int]:
+        """对单张图像只做 rtdetr 检测(跳过 va 属性分类)。
+
+        复用 pipeline 已常驻的 ``detector``,只产检测框,不写 vehicle_type / color 属性。
+        用于多阶段编排的上游检测阶段——出框后交给下游纯分类原子补属性。
+
+        Args:
+            file_path: 图像来源(见 :func:`load_image_bgr`)。
+
+        Returns:
+            (协议 result 数组(纯 bbox, 无 attributes), 推理耗时毫秒)。
+        """
+        img = load_image_bgr(file_path)
+        img_h, img_w = img.shape[:2]
+        t0 = time.time()
+        result = self._pipeline.detector(img)
+        infer_ms = int((time.time() - t0) * 1000)
+        names = self._pipeline.class_names
+        output: list[dict[str, Any]] = []
+        for i in range(len(result)):
+            xyxy = [float(c) for c in result.boxes[i]]
+            cls = int(result.class_ids[i])
+            class_name = names[cls] if cls < len(names) else "unknown"
+            output.append({"type": class_name, "box2d": xyxy, "score": float(result.scores[i])})
+        return detections_to_results(output, img_w, img_h), infer_ms
+
     def classify_one(self, file_path: str) -> tuple[list[dict[str, Any]], int]:
         """对单张已裁好的车辆 ROI 只做属性分类(跳过 rtdetr 检测)。
 

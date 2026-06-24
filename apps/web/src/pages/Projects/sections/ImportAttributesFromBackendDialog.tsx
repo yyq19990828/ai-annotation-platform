@@ -63,6 +63,7 @@ function collectEntries(instances: CapabilityInstance[]): ModelEntry[] {
   const out: ModelEntry[] = [];
   for (const inst of instances) {
     for (const model of inst.models) {
+      if (model.visibility === "internal") continue; // 内部能力(检测原子)不作导入源
       const schema = model.output_attribute_schema ?? [];
       if (schema.length > 0) {
         out.push({ backendName: inst.name, model, schema });

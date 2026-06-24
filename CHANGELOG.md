@@ -34,6 +34,20 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.11] - 2026-06-24
+
+多阶段预标注（路径 B）上游原子化 + 能力可见性机制：onnxtools-backend 在纯分类原子（v0.18.9）之外再拆出独立的纯检测 model，使「检测 → 分类」可全部由 onnxtools 自身的两个原子组成；同时引入协议级 `visibility` 字段，把原「检测+分类一锅端」pipeline 标为内部能力——目录可见但不进任何对外选用入口。
+
+### Added
+
+- **onnxtools-backend 暴露纯检测 model（0.2.0 → 0.3.0）**：`/setup` 在一锅端 `vehicle-attr` 与纯分类 `vehicle-attr-classify` 之外新增 `vehicle-detect`（`[专用]车辆检测`，`task=detection`，复用常驻 pipeline 内的 `detector` 只跑 rtdetr、跳过 va 属性分类，纯出 bbox 不写 `attributes`，故不声明 `output_attribute_schema`）。`/predict` 按 `context.model_id` 增加纯检测路由（`model_version=onnxtools-rtdetr`）。至此 backend 暴露三 model：一锅端检测+属性、纯检测、纯分类。
+- **能力可见性 `visibility` 字段（协议 v2.1）**：model 条目可声明 `visibility: "internal" | "public"`（缺省 `public`，老 backend 无字段即按对外开放处理）。`internal` 表示在能力目录可见但不对外开放选用。平台 schema / service 全链路透传（`ModelCapability` / `InstanceModelItem` 增字段，`_normalize_model` / `_shape_models` 透传）。
+
+### Changed
+
+- **一锅端 pipeline 转为内部能力**：`vehicle-attr`（rtdetr 检测 + va 分类一体）display_name 改为「[专用]车辆检测+属性」并标 `visibility=internal`。多阶段编排改用「纯检测（上游）+ 纯分类（下游）」两原子组合，一体管线保留备查。
+- **对外选用入口过滤内部能力**：预标配置（默认模型 + 几何模型列表）、工作台多模型选择器、ML Backend 属性导入三处统一过滤 `visibility=internal`；模型市场目录仍展示该 model 并加「内部」徽标。
+
 ## [0.18.10] - 2026-06-24
 
 0.18.x 跨 ML Backend 编排开放后的工作台语义收口：工作台 AI 悬浮面板明确为「当前题 AI 执行 + 候选审阅」，项目级 backend 从「默认 ML Backend」改称「项目主后端」，视频工作台保留显式选择工具并退役独立平移工具。方案见 [`docs/plans/2026-06-24-v0.18.10-workbench-ai-default-backend-video-tools.md`](docs/plans/2026-06-24-v0.18.10-workbench-ai-default-backend-video-tools.md)。

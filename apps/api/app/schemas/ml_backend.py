@@ -111,6 +111,9 @@ class ModelCapability(BaseModel):
     default_variants: dict[str, str] = {}
     default_thresholds: dict = {}
     resource_profile: dict = {}
+    # 能力可见性：public=对外开放选用；internal=目录可见但不对外开放（平台/前端从选用入口过滤）。
+    # 缺省 public，老 backend 无此字段即按对外开放处理。
+    visibility: str = "public"
     params: dict = {}
     modality: str | None = None
     # v0.14.17 · 闭集检测器原生类别表 ([{index,name}], 读自权重 model.names). 供前端类别白名单;

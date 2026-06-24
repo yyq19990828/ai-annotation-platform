@@ -57,6 +57,7 @@ export function ModelCard({ item }: { item: FlatModel }) {
 
       <div className="flex flex-wrap items-center gap-1.5">
         {m.task && <Badge variant={taskVariant(m.task)}>{taskLabel(m.task)}</Badge>}
+        {m.visibility === "internal" && <Badge variant="outline">内部</Badge>}
         {infra && <Badge variant="outline">{infraLabel(infra)}</Badge>}
         {modalities.map((mod) => (
           <Badge key={mod} variant="default">

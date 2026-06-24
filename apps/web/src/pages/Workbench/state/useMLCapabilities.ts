@@ -60,7 +60,11 @@ export function useMLCapabilities(
 
   const capability = query.data;
   const models = useMemo<MLModelCapability[]>(
-    () => (Array.isArray(capability?.models) ? capability!.models : []),
+    // 过滤内部能力(检测原子): 不进 workbench 多模型选择器.
+    () =>
+      (Array.isArray(capability?.models) ? capability!.models : []).filter(
+        (m) => m.visibility !== "internal",
+      ),
     [capability],
   );
 

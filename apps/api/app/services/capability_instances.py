@@ -93,6 +93,8 @@ def _shape_models(caps: dict | None) -> list[dict]:
                 ),
                 # v0.14.13 · backend 自报的默认 variant 组合, 供前端 VariantSelector 取初值.
                 "default_variants": dict(m.get("default_variants") or {}),
+                # 能力可见性透传：缺省 public（老 backend 无字段即对外开放）。
+                "visibility": m.get("visibility") or "public",
             }
         )
     return out

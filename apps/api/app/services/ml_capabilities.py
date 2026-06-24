@@ -101,6 +101,8 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         "default_variants": dict(model.get("default_variants") or {}),
         "default_thresholds": model.get("default_thresholds") or {},
         "resource_profile": model.get("resource_profile") or {},
+        # 能力可见性透传：缺省 public（老 backend 无字段即对外开放）。
+        "visibility": model.get("visibility") or "public",
         "params": model.get("params") or {},
         # v0.14.17 · 闭集检测器的原生类别表 (yolo model.names, [{index,name}]); 供前端类别白名单.
         # 仅在该 task 模型已加载过 (warmup/predict) 时 backend /setup 才带, 否则为空。

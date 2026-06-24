@@ -1,6 +1,6 @@
 [project]
 name = "onnxtools-backend"
-version = "0.1.0"
+version = "0.3.0"
 description = "onnxtools (rtdetr + vehicle-attribute) ML backend — two-stage vehicle attribute pre-annotation for ai-annotation-platform"
 requires-python = ">=3.10"
 

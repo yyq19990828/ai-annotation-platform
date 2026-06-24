@@ -44,6 +44,8 @@ export interface MLModelCapability {
   display_name?: string;
   task?: string;
   model_family?: string;
+  // 能力可见性: internal=目录可见但不对外开放选用(平台/前端过滤掉); public/缺省=对外开放.
+  visibility?: "internal" | "public";
   infra?: string;
   is_interactive?: boolean;
   supported_prompts?: string[];
