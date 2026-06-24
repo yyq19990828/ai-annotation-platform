@@ -92,10 +92,12 @@ test.describe("mask editor (I11)", () => {
     // 右侧 AI 行的精修按钮（data-testid 由 BoxListItem 渲染：ai-refine-{annotation 行 id}）。
     // 候选 id 不可预知，用 role / 文本兜底。
     // 操作区改为 ⋮ 常驻 + hover 浮出后, refine 按钮默认 pointer-events-none, 须先 hover
-    // 对应 BoxListItem 行触发 group/act 的浮出 (group-hover/act:pointer-events-auto)。
+    // group/act 容器触发浮出。tailwind named group-hover/act 只对 group/act 后代触发,
+    // hover 整个 box-list-item 行不够 (group/act 是内层 div); 须 hover group/act 本身或
+    // 其有 pointer events 的后代——即 ⋮ 常驻按钮 (aria-label="更多操作")。
     const aiRow = page.locator('[data-testid^="box-list-item-"]').first();
     await expect(aiRow).toBeVisible({ timeout: 10_000 });
-    await aiRow.hover();
+    await aiRow.getByRole("button", { name: "更多操作" }).hover();
     const refineBtn = page
       .locator('[data-testid^="ai-refine-"]')
       .first();
