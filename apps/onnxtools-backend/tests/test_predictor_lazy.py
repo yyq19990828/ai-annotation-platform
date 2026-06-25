@@ -131,6 +131,33 @@ def test_unload_releases_all_and_counts(fake_image):
     assert dc["n"] == 2
 
 
+def test_warm_default_loads_pipeline():
+    """v0.18.20 · warm(None) 默认预热一锅端 pipeline; 首次 cache_hit=False。"""
+    p, dc, vc, pc = _make()
+    assert p.warm(None) is False  # 首次新增 → 非命中
+    assert (dc["n"], vc["n"], pc["n"]) == (0, 0, 1)
+    assert p.warm(None) is True  # 再次 → 已加载, 命中
+    assert pc["n"] == 1  # 工厂不重复调
+
+
+def test_warm_by_model_id_selects_handle():
+    """v0.18.20 · warm(model_id) 选择性预热对应句柄。"""
+    p, dc, vc, pc = _make()
+    p.warm("vehicle-detect")
+    assert (dc["n"], vc["n"], pc["n"]) == (1, 0, 0)
+    p.warm("vehicle-attr-classify")
+    assert (dc["n"], vc["n"], pc["n"]) == (1, 1, 0)
+
+
+def test_loaded_handles_names(fake_image):
+    """v0.18.20 · loaded_handles 报已加载句柄名 (供 /health.pool.loaded_keys)。"""
+    p, *_ = _make()
+    assert p.loaded_handles() == []
+    p.detect_one("x")
+    p.classify_one("x")
+    assert set(p.loaded_handles()) == {"detector", "va"}
+
+
 def test_class_name_of_fallbacks():
     assert pred._class_name_of({0: "a"}, 0) == "a"
     assert pred._class_name_of({0: "a"}, 9) == "unknown"

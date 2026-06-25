@@ -1,17 +1,19 @@
 """onnxtools-backend FastAPI 入口 —— 二阶段车辆属性预标注（ml-backend 协议 v2.2）。
 
 端点：
-    GET  /health    健康检查
+    GET  /health    健康检查 + 句柄池状态 (pool)
     GET  /setup     协议 v2.2 model 目录（三个 model，自报 output_attribute_schema）
     GET  /versions  版本
     POST /predict   批量预测（按 context.model_id 路由一锅端 / 纯检测 / 纯分类）
+    POST /warmup    预加载句柄到显存（ModelMarket 预热按钮，协议 §4.4）
     POST /unload    手动释放显存（运维侧用，ModelMarket 卸载按钮）
 
 三个 model 分别架在各自单模型推理类上、按需懒加载：``vehicle-detect`` 直跑独立
 ``RtdetrORT`` 只做检测（多阶段编排上游，composition=atom）；``vehicle-attr-classify``
 直跑独立 ``VehicleAttributeORT`` 只做分类（多阶段下游，atom）；``vehicle-attr`` 跑完整
 ``VehicleAttributePipeline``（一锅端检测+属性，composition=composite，过渡保留）。
-detect-only 部署只加载检测器、classify-only 只加载分类器。无 variant / pool / warmup。
+detect-only 部署只加载检测器、classify-only 只加载分类器。无 variant 多轴；句柄池由
+VehicleAttributePredictor 内部管理，支持 /warmup 预热 + /unload + idle-unload。
 `/setup.supported_prompts=["none"]`：纯批量，平台只走「批量预标」入口。
 """
 
@@ -22,6 +24,7 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any
 
 from aap_protocol_v2 import (
@@ -29,8 +32,11 @@ from aap_protocol_v2 import (
     PROTOCOL_VERSION,
     BatchPredictResponse,
     PredictionResult,
+    WarmupResponse,
 )
 from fastapi import FastAPI, HTTPException
+
+UTC = timezone.utc
 
 from attribute_schema import OUTPUT_ATTRIBUTE_SCHEMA
 from predictor import VehicleAttributePredictor
@@ -147,6 +153,29 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="onnxtools-backend", version=BACKEND_VERSION, lifespan=lifespan)
 
 
+def _pool_status() -> dict[str, Any]:
+    """协议 §4.3 PoolStatus: 句柄池状态, 供模型市场展示已加载 / 预热状态。
+
+    onnxtools 无显存 LRU, 句柄按需懒加载 (≤3: pipeline/detector/va); cap=3,
+    current_size=已加载句柄数, loaded_keys 列出各句柄名 (last_used 取末次推理时间)。
+    """
+    handles = _predictor.loaded_handles() if _predictor is not None else []
+    last_used_iso = (
+        datetime.fromtimestamp(_last_used, UTC).isoformat() if _last_used is not None else None
+    )
+    loaded_keys = [
+        {"key": f"onnxtools/{name}", "loaded_at": last_used_iso,
+         "last_used_at": last_used_iso, "hit_count": 0}
+        for name in handles
+    ]
+    return {
+        "cap": 3,
+        "current_size": len(handles),
+        "loaded_keys": loaded_keys,
+        "last_evict": None,
+    }
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     return {
@@ -156,6 +185,8 @@ def health() -> dict[str, Any]:
         "model_version": MODEL_VERSION,
         "ready": _predictor is not None,
         "loaded_handles": _predictor.loaded_count() if _predictor is not None else 0,
+        # v0.18.20 · 句柄池状态, 供模型市场「已加载 / 预热」展示 (此前缺 pool 字段)。
+        "pool": _pool_status(),
     }
 
 
@@ -254,6 +285,8 @@ def setup() -> dict[str, Any]:
         "supported_prompts": ["none"],
         "supported_geometric_outputs": ["bbox"],
         "infra": "onnx",
+        # v0.18.20 · 声明支持 POST /warmup (协议 §4.4), 让模型市场「预热默认」按钮可用。
+        "warmup_endpoint": True,
         "models": [_detect_model_entry(), _detect_only_model_entry(), _classify_model_entry()],
     }
 
@@ -261,6 +294,24 @@ def setup() -> dict[str, Any]:
 @app.get("/versions")
 def versions() -> dict[str, Any]:
     return {"versions": [MODEL_VERSION], "backend_version": BACKEND_VERSION}
+
+
+@app.post("/warmup", response_model=WarmupResponse)
+def warmup(body: dict[str, Any] | None = None) -> WarmupResponse:
+    """协议 §4.4 · 预加载句柄到显存,不跑 forward(模型市场「预热默认」按钮)。
+
+    body 可空(预热一锅端 pipeline)或带 ``model_id`` 选择性预热某句柄。重复预热返回
+    cache_hit=true。onnxtools 无 LRU 淘汰,evicted 恒 null。
+    """
+    global _last_used
+    if _predictor is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    model_id = (body or {}).get("model_id")
+    t0 = time.monotonic()
+    cache_hit = _predictor.warm(model_id)
+    load_ms = int((time.monotonic() - t0) * 1000)
+    _last_used = time.time()
+    return WarmupResponse(ok=True, model_load_ms=load_ms, cache_hit=cache_hit, evicted=None)
 
 
 @app.post("/unload")
