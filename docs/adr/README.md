@@ -78,3 +78,5 @@
 - [0040](0040-shared-annotation-visual-spec-not-stack-merge.md) — 标注视觉:统一参数规格(共享 annotationVisual.ts),不合并图片/视频渲染栈
 - [0041](0041-video-canvas-unify-to-konva.md) — 视频渲染栈统一到 Konva(帧合成 / 坐标模型 / 测试基建)
 - [0042](0042-tailwind-shadcn-design-system.md) — 前端样式体系迁移到 Tailwind v4 + shadcn/ui
+- [0043](0043-staged-preannotation-pipeline.md) — 多阶段预标注编排（路径 B：平台层跨 backend pipeline）
+- [0044](0044-global-ml-backend-registry-and-project-enablement.md) — ML Backend 全局注册表 + 项目级启用（解耦能力声明与项目绑定）
