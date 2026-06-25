@@ -47,7 +47,7 @@ yolo-backend 开集 epic 收官 (第 3/3 版): YOLOE **visual prompt exemplar** 
 
 ### Changed
 
-- **yolo-backend `/predict` 兼容交互单数 wire**：`BatchPredictRequest` 接受平台交互调用的单数 `{task, context}`（归一成 `tasks=[task]`），使同一端点同时收批量（`tasks`）与交互（`task`）两种形态。
+- **yolo-backend `/predict` 双形态 wire（请求 + 响应）**：交互调用发单数 `{task, context}`、批量发 `{tasks, context}`；端点按 wire 形态返回对应响应——单数回 `PredictionResult`（顶层 `result`），复数回 `BatchPredictResponse`（`results[]`），与 gsam2/sam3 契约一致。修复此前只归一了请求、却恒返回批量 `{results:[...]}` 的缺陷：平台 `predict_interactive` 读顶层 `data["result"]` 拿不到结果，导致 YOLOE exemplar（及任何 yolo 交互）候选在平台侧静默丢空。
 
 ## [0.18.22] - 2026-06-26
 

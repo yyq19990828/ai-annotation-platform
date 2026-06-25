@@ -32,7 +32,7 @@ from aap_protocol_v2 import (
     PredictionResult,
     VariantNotSupportedError,
 )
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
@@ -606,16 +606,13 @@ def versions() -> dict[str, Any]:
     }
 
 
-@app.post("/predict", response_model=BatchPredictResponse)
-async def predict(req: BatchPredictRequest) -> BatchPredictResponse:
+async def _run_predict(req: BatchPredictRequest) -> list[PredictionResult]:
+    """核心: 校验组合 + 逐 task 推理, 产出 PredictionResult 列表。响应形态由调用方按 wire 决定。"""
     if _predictor is None or _model_pool is None:
         raise HTTPException(status_code=503, detail="backend not ready")
-
-    # 校验 (task, series, size) 组合.
     ctx: Context = req.context
     if not _is_supported_combo(ctx):
         raise _unsupported_combo_error(ctx.type, ctx.variants.series, ctx.variants.size)
-
     results: list[PredictionResult] = []
     for t in req.tasks:
         try:
@@ -644,15 +641,33 @@ async def predict(req: BatchPredictRequest) -> BatchPredictResponse:
         except Exception as exc:  # noqa: BLE001
             logger.exception("predict failed for task %s", t.id)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return results
 
-    return BatchPredictResponse(results=results)
+
+@app.post("/predict")
+async def predict(request: Request) -> dict[str, Any]:
+    """批量 (复数 tasks[]) 与交互 (单数 task) 共用端点, 按 wire 形态回不同响应:
+
+    - 单数 ``{task, context}`` (平台 predict_interactive 的 exemplar / 交互调用) → **单数**
+      ``PredictionResult`` (顶层 ``result``); 平台交互客户端读 ``data["result"]``, 必须单数。
+    - 复数 ``{tasks, context}`` (批量预标) → ``BatchPredictResponse`` (``results[]``)。
+
+    与 gsam2/sam3 的 /predict 双形态契约一致。
+    """
+    body = await request.json()
+    is_single = isinstance(body, dict) and "task" in body and "tasks" not in body
+    req = BatchPredictRequest.model_validate(body)
+    results = await _run_predict(req)
+    if is_single:
+        return results[0].model_dump(exclude_none=True)
+    return BatchPredictResponse(results=results).model_dump(exclude_none=True)
 
 
-@app.post("/predict/interactive", response_model=BatchPredictResponse)
-async def predict_interactive(req: InteractiveRequest) -> BatchPredictResponse:
-    """yolo 无真实交互式语义, 接到此路由也走批量 predictor (兼容平台旧路由)."""
-    batch_req = BatchPredictRequest(tasks=[req.task], context=req.context)
-    return await predict(batch_req)
+@app.post("/predict/interactive")
+async def predict_interactive(req: InteractiveRequest) -> dict[str, Any]:
+    """交互式单 task 路由 (兼容旧路径): 返回单数 PredictionResult, 与 /predict 单数 wire 一致。"""
+    results = await _run_predict(BatchPredictRequest(tasks=[req.task], context=req.context))
+    return results[0].model_dump(exclude_none=True)
 
 
 def _is_supported_combo(ctx: Context) -> bool:
