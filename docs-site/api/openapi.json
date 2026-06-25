@@ -9966,6 +9966,29 @@
             ],
             "title": "Class Filter"
           },
+          "input": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
           "ml_backend_id": {
             "format": "uuid",
             "title": "Ml Backend Id",
@@ -19720,7 +19743,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.18.13"
+    "version": "0.18.14"
   },
   "openapi": "3.1.0",
   "paths": {

@@ -1226,6 +1226,12 @@ class PipelineStage(BaseModel):
     write: dict | None = None
     # v0.18.2 · 阶段级失败策略: keep_parent (默认, 下游失败保留上游框、属性留空) | drop_box (丢父框)。
     on_failure: Literal["keep_parent", "drop_box"] = "keep_parent"
+    # v0.18.14 · 卡片显示名 + 写回属性键前缀。设了 label, 写回键加 f"{label}_" 前缀 (子物体
+    # 命名空间, 如 hat_color / shoe_color); 缺省写原始键 (双阶段零退化)。
+    label: str | None = None
+    # v0.18.14 · 显式输入模式覆盖 {"mode": "full_image"|"crop"|"geometry"}; 缺省由 worker 按
+    # write.target 推断 (attributes→crop, geometry/intermediate→geometry-prompt)。
+    input: dict | None = None
 
 
 class PreannotateRequest(BaseModel):
@@ -1277,22 +1283,47 @@ class PreannotateRequest(BaseModel):
         root = roots[0]
         if root.ml_backend_id != self.ml_backend_id:
             raise ValueError("源阶段 ml_backend_id 须与顶层 ml_backend_id 一致")
-        for s in stages:
+        # v0.18.14 · 受限树形校验 (max depth 3): 替换原单层扇出约束。
+        # parent_stage 须指向已定义且更早的阶段 (序号严格小于, 自然无环); 父须产可消费几何
+        # (write.target ∈ {geometry, intermediate}); 任一链路深度 ≤ 3。
+        # parent_stage=0 的旧双阶段 payload 在此等价通过 (root depth=1, 子 depth=2)。
+        known_depth: dict[int, int] = {root.stage: 1}
+        known_target: dict[int, str] = {
+            root.stage: (root.write or {}).get("target", "geometry")
+        }
+        for s in sorted(stages, key=lambda x: x.stage):
             if s.parent_stage is None:
                 continue
-            # M2: 单层扇出 (深度 2) —— 下游 parent_stage 只能指向源阶段, 不支持子阶段再扇出。
-            if s.parent_stage != root.stage:
+            if s.parent_stage not in known_depth:
                 raise ValueError(
-                    f"stage {s.stage} 的 parent_stage 只能指向源阶段 {root.stage} (本期仅单层扇出)"
+                    f"stage {s.stage} 的 parent_stage={s.parent_stage} 未在前面定义; "
+                    "受限树形要求父阶段序号严格小于子阶段"
                 )
-            if s.write is not None:
-                target = s.write.get("target", "attributes")
-                # geometry: gsam2 box-seg 等下游产独立 polygon 追加为 new shape (无 attribute keys)。
-                # attributes: 纯分类下游写回父框 attributes。
-                if target not in {"attributes", "geometry"}:
-                    raise ValueError(
-                        f"write.target 须为 'attributes' 或 'geometry', 收到 {target!r}"
-                    )
+            parent_depth = known_depth[s.parent_stage]
+            if parent_depth >= 3:
+                raise ValueError(
+                    f"stage {s.stage} 超过最大深度 3 (父深度={parent_depth})"
+                )
+            parent_target = known_target[s.parent_stage]
+            if parent_target not in {"geometry", "intermediate"}:
+                raise ValueError(
+                    f"stage {s.stage} 的父阶段 {s.parent_stage} write.target={parent_target!r}, "
+                    "不产几何, 无法作为父阶段"
+                )
+            target = (s.write or {}).get("target", "attributes")
+            # geometry: 下游产独立 polygon 追加为 new shape。intermediate: 只产几何给下游消费,
+            # 不落库为候选。attributes: 纯分类下游写回父框 attributes。
+            if target not in {"attributes", "geometry", "intermediate"}:
+                raise ValueError(
+                    "write.target 须为 'attributes' / 'geometry' / 'intermediate', "
+                    f"收到 {target!r}"
+                )
+            # 未来祖先选择扩展点; 本版仅接受 'root' (缺省也按 root 处理)。
+            ts = (s.write or {}).get("target_stage")
+            if ts not in (None, "root"):
+                raise ValueError(
+                    f"stage {s.stage} 的 write.target_stage={ts!r} 暂不支持, 本版仅接受 'root'"
+                )
             if s.roi is not None:
                 mode = s.roi.get("mode", "crop")
                 # crop: 平台裁父框 ROI 喂下游分类。geometry: 全图 + 父框列表喂 box-seg。
@@ -1303,21 +1334,34 @@ class PreannotateRequest(BaseModel):
                 pad = s.roi.get("pad")
                 if pad is not None and not (0.0 <= float(pad) <= 0.5):
                     raise ValueError("roi.pad 须在 [0, 0.5] 区间")
-        # 并行兄弟键冲突: 多个下游 attributes-target 阶段声明 write.keys 写同一键 → reject 时 422。
-        # geometry-target 不写 attributes (产独立 polygon shape), 不参与 keys 冲突检测。
+            if s.input is not None:
+                imode = s.input.get("mode")
+                if imode is not None and imode not in {"full_image", "crop", "geometry"}:
+                    raise ValueError(
+                        "input.mode 须为 'full_image' / 'crop' / 'geometry', "
+                        f"收到 {imode!r}"
+                    )
+            known_depth[s.stage] = parent_depth + 1
+            known_target[s.stage] = target
+        # 属性键冲突: 按"加完 label 前缀的最终键"维度 (写回 root)。无 label 时用原始键 (= 旧双阶段
+        # 行为, 零退化); 设了 label 才加 f"{label}_" 前缀 (子物体命名空间, 与 worker 写回一致)。
+        # geometry/intermediate 不写 attributes, 不参与冲突检测。
         if self.on_key_conflict == "reject":
-            seen_keys: set[str] = set()
+            final_keys: dict[str, int] = {}
             for s in stages:
                 if s.parent_stage is None or not s.write:
                     continue
                 if s.write.get("target", "attributes") != "attributes":
                     continue
+                prefix = f"{s.label}_" if s.label else ""
                 for k in s.write.get("keys") or []:
-                    if k in seen_keys:
+                    final = f"{prefix}{k}"
+                    if final in final_keys:
                         raise ValueError(
-                            f"多个阶段写同一属性键 {k!r}; 设 on_key_conflict=last_wins 以允许末位覆盖"
+                            f"attribute key 冲突: stage {s.stage} 与 stage {final_keys[final]} "
+                            f"都写 {final!r} 到 root; 设 on_key_conflict=last_wins 以允许末位覆盖"
                         )
-                    seen_keys.add(k)
+                    final_keys[final] = s.stage
         return self
 
 

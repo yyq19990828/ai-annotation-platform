@@ -183,33 +183,48 @@ def _make_crop_uploader(storage, job_id: str):
     return upload_crop
 
 
-def _stage_input_mode(backend, model_id: str | None) -> str:
-    """v0.18.12 · 按下游 model 的 supported_prompts 判别下游投递方式。
+_PAD_BY_DEPTH: dict[int, float] = {1: 0.05, 2: 0.08, 3: 0.12}
 
-    含 ``bbox`` 且非交互 → ``"geometry"`` (全图 + 框列表, box-seg 原子, 协议 §2.1.1);
-    否则 → ``"crop"`` (现状: 逐父框裁 crop 喂下游分类)。能力读 backend 缓存的
-    health_meta.capabilities.models; 取不到 model 时回落 crop (向后兼容)。
+
+def _resolve_input_mode(stage: dict) -> str:
+    """v0.18.14 · 下游阶段投递模式: 显式 input.mode 覆盖, 否则按 write.target 推断。
+
+    crop 钉死在「只产属性」(下游回 attributes、无坐标), geometry-prompt 服务产几何的下游
+    (整图 + 父框归一化列表, 下游回原图坐标几何)。替换旧 _stage_input_mode 的 supported_prompts
+    反推: 语义更稳——crop 不会被误用于产几何的子, 与端点校验 (projects.py 受限树形) 一致。
     """
-    caps = (
-        (getattr(backend, "health_meta", None) or {}).get("capabilities")
-        if backend
-        else None
-    )
-    models = (caps or {}).get("models") or []
-    m = next((x for x in models if x.get("id") == model_id), None)
-    if not m:
-        return "crop"
-    prompts = m.get("supported_prompts") or []
-    if "bbox" in prompts and not m.get("is_interactive"):
+    explicit = (stage.get("input") or {}).get("mode")
+    if explicit in {"crop", "geometry"}:
+        return explicit
+    target = (stage.get("write") or {}).get("target", "attributes")
+    if target in {"geometry", "intermediate"}:
         return "geometry"
     return "crop"
 
 
-def _pipeline_topology(stages: list[dict]) -> list[dict]:
-    """v0.18.4 · 从 stages 配置派生可审计的 pipeline 拓扑, 落 PredictionMeta.extra。
+def _resolve_pad(stage: dict, depth: int) -> float:
+    """v0.18.14 · crop pad: 显式 roi.pad 优先, 缺省按深度取默认 (越深裁得越松, 抗画质衰减)。"""
+    pad = (stage.get("roi") or {}).get("pad")
+    if pad is not None:
+        return float(pad)
+    return _PAD_BY_DEPTH.get(depth, 0.05)
 
-    每项 ``{stage, ml_backend_id, model_id, parent_class_filter, write_keys}``, 让「这框的某属性
-    来自哪个 backend/model」可追溯。纯派生 (跨 task 不变), 由 _run_task_pipeline 落每条预测。
+
+def _compute_stage_depths(stages: list[dict]) -> dict[int, int]:
+    """v0.18.14 · 按 parent_stage 链派生每阶段深度 (root=1)。受限树形保证 parent 序号更小。"""
+    depth: dict[int, int] = {}
+    for s in sorted(stages, key=lambda x: x["stage"]):
+        p = s.get("parent_stage")
+        depth[s["stage"]] = 1 if p is None else depth.get(p, 1) + 1
+    return depth
+
+
+def _pipeline_topology(stages: list[dict], depths: dict[int, int]) -> list[dict]:
+    """v0.18.4 / v0.18.14 · 从 stages 配置派生可审计的 pipeline 拓扑, 落 PredictionMeta.extra。
+
+    每项 ``{stage, parent_stage, depth, label, ml_backend_id, model_id, parent_class_filter,
+    write_keys, write_target, target_stage}``, 让「这框的某属性来自哪个 backend/model/阶段」
+    及流水线树形结构可追溯。纯派生 (跨 task 不变), 由 _run_task_pipeline 落每条预测。
     """
     topo: list[dict] = []
     for s in stages:
@@ -217,10 +232,15 @@ def _pipeline_topology(stages: list[dict]) -> list[dict]:
         topo.append(
             {
                 "stage": s.get("stage"),
+                "parent_stage": s.get("parent_stage"),
+                "depth": depths.get(s.get("stage")),
+                "label": s.get("label"),
                 "ml_backend_id": s.get("ml_backend_id"),
                 "model_id": s.get("model_id"),
                 "parent_class_filter": s.get("parent_class_filter") or None,
                 "write_keys": write.get("keys") or None,
+                "write_target": write.get("target"),
+                "target_stage": write.get("target_stage", "root"),
             }
         )
     return topo
@@ -236,20 +256,25 @@ async def _run_task_pipeline(
     upload_crop=None,
     stage_modes=None,
 ):
-    """v0.18.1 / v0.18.2 / v0.18.4 / v0.18.12 · 对单个 task 顺序跑各阶段, 返回 (pred_results, pipeline_extra, stage_stats)。
+    """v0.18.1 ~ v0.18.14 · 对单个 task 按受限树形拓扑跑各阶段, 返回 (pred_results, pipeline_extra, stage_stats)。
 
     - 单阶段 (len==1): 等价于原 ``client.predict``, extra=None, stats=None (逐字回归路径)。
-    - 多阶段: 源阶段产框 → 对每个下游阶段按投递模式分流:
-      - **crop 模式** (下游 supported_prompts=none): 加载原图, 按 parent_class_filter 裁父框 ROI
-        喂下游分类 → 合并 attributes 进父框 (原地改)。
-      - **geometry 模式** (v0.18.12, 下游含 bbox 且非交互, 如 gsam2 box-seg): 全图 URL + 父框
-        归一化列表喂下游 → 下游出 polygon (带 parent_box_idx, 原图坐标) → 追加进 pred_result.result。
+    - 多阶段 (v0.18.14 受限树形, max depth 3): root 产框 → 按 ``stage`` 号建 ``stage_outputs`` map,
+      每个下游阶段从 ``parent_stage`` 取上游输出 (不再恒为 root), 按投递模式分流:
+      - **crop 模式** (write.target=attributes): 加载原图, 按 parent_class_filter + 按深度 pad 裁父框
+        ROI 喂下游分类 → label 前缀合并 attributes 进父框 (原地改); 该阶段对孙子暴露 (已富集的) 父框几何。
+      - **geometry 模式** (write.target ∈ {geometry, intermediate}): 全图 URL + 父框归一化列表喂下游
+        box-seg → 出 polygon (带 parent_box_idx, 原图坐标)。geometry → 追加进预测; intermediate → 仅
+        供下游消费不落库。该阶段对下游暴露新几何。
     - v0.18.2: 类别路由 (parent_class_filter)、阶段级失败策略 (on_failure)、逐阶段统计。
-    - v0.18.4: crop 经 upload_crop presigned 投递; 并行兄弟同框 crop 复用; extra 落 pipeline 拓扑。
+    - v0.18.4: crop 经 upload_crop presigned 投递; 并行兄弟同框 crop 复用。
+    - v0.18.14: crop min_crop_side_px=32 守卫 (短边过小跳过); extra 落 depth/label/max_depth/target_stage。
+
+    注: 真正的几何 depth-3 (crop 内检测新子物体 + 坐标回映) 不在本版, 见 0.18.15 计划。
 
     upload_crop: ``(task, box_idx, jpeg_bytes) -> url``; 非 None → presigned 投递, None → data URI。
-    stage_modes: ``list[str]`` 与 stages 等长, 每项 ``"crop"|"geometry"``; None → 全 crop (向后兼容)。
-    stage_stats: ``{stage_idx: {...}}`` —— 源阶段 {detected}; 下游 {targeted, ok, failed, skipped_geometry}。
+    stage_modes: ``list[str]`` 与 stages 等长 (按列表位置), 每项 ``"crop"|"geometry"``; None → 全 crop。
+    stage_stats: ``{stage号: {...}}`` —— 源阶段 {detected}; 下游 {targeted, ok, failed, skipped_geometry}。
     """
     from app.workers.roi import (
         collect_geometry_shapes,
@@ -266,20 +291,30 @@ async def _run_task_pipeline(
         return results, None, None
 
     modes = stage_modes or ["crop"] * len(stages)
+    depths = _compute_stage_depths(stages)
     # geometry 模式纯坐标换算无需原图; 仅当存在 crop 下游阶段时才加载 (省去无谓全图拉取)。
     needs_image = any(modes[si] == "crop" for si in range(1, len(stages)))
     image = _load_task_image(task) if needs_image else None
     delivery = "presigned" if upload_crop is not None else "data_uri"
     enriched_keys: set[str] = set()
-    stats: dict[int, dict] = {0: {"detected": 0}}
+    root_stage = stages[0]["stage"]
+    # stats / stage_outputs 均按真实 stage 号键入 (与 meta 对齐, 支持前端按 depth 缩进)。
+    stats: dict[int, dict] = {root_stage: {"detected": 0}}
     for si in range(1, len(stages)):
-        stats[si] = {"targeted": 0, "ok": 0, "failed": 0, "skipped_geometry": 0}
+        stats[stages[si]["stage"]] = {
+            "targeted": 0,
+            "ok": 0,
+            "failed": 0,
+            "skipped_geometry": 0,
+        }
 
     for pred_result in results:
-        boxes = pred_result.result
-        if not isinstance(boxes, list) or not boxes:
+        root_boxes = pred_result.result
+        if not isinstance(root_boxes, list) or not root_boxes:
             continue
-        stats[0]["detected"] += len(boxes)
+        stats[root_stage]["detected"] += len(root_boxes)
+        # 每阶段对下游暴露的几何 (按 stage 号): root 暴露检测框, 下游按 parent_stage 取上游输出。
+        stage_outputs: dict[int, list] = {root_stage: root_boxes}
         # v0.18.4 · 并行兄弟阶段 target 同一批父框时按 (box_idx, pad) 复用已裁/已上传 crop。
         crop_cache: dict = {}
         upload_fn = (
@@ -288,19 +323,26 @@ async def _run_task_pipeline(
             else None
         )
         dropped: set[int] = set()
-        new_shapes: list[dict] = []  # geometry 阶段产出的 polygon, 阶段循环后追加进预测
+        new_shapes: list[dict] = []  # geometry-target 阶段产出的 shape, 阶段循环后追加进预测
         for si in range(1, len(stages)):
             stage = stages[si]
+            snum = stage["stage"]
+            parent_boxes = stage_outputs.get(stage.get("parent_stage"))
+            if parent_boxes is None:
+                continue  # 父阶段未产出 (上游跳过/失败) → 本阶段无输入, 跳过
             write = stage.get("write") or {}
+            target = write.get("target", "attributes")
             write_keys = write.get("keys") or None
+            label = stage.get("label")
             pcf = stage.get("parent_class_filter") or None
             if modes[si] == "geometry":
-                # v0.18.12 · geometry 投递: 全图 URL + 父框归一化列表, 下游 box-seg 出 polygon。
-                geo = geometry_prompts_from_boxes(boxes, parent_class_filter=pcf)
-                stats[si]["skipped_geometry"] += geo.skipped_geometry
+                # geometry 投递: 全图 URL + 父框归一化列表, 下游 box-seg 出 polygon。
+                geo = geometry_prompts_from_boxes(parent_boxes, parent_class_filter=pcf)
+                stats[snum]["skipped_geometry"] += geo.skipped_geometry
                 if not geo.prompts:
+                    stage_outputs[snum] = []
                     continue
-                stats[si]["targeted"] += len(geo.prompts)
+                stats[snum]["targeted"] += len(geo.prompts)
                 try:
                     seg_results = await stage_clients[si].predict(
                         [
@@ -312,70 +354,79 @@ async def _run_task_pipeline(
                         ],
                         context=stage_contexts[si],
                     )
-                    shapes = collect_geometry_shapes(seg_results, boxes)
-                    new_shapes.extend(shapes)
-                    stats[si]["ok"] += len(shapes)
+                    shapes = collect_geometry_shapes(seg_results, parent_boxes)
+                    stats[snum]["ok"] += len(shapes)
+                    stage_outputs[snum] = shapes
+                    # geometry → 落库为候选 shape; intermediate → 仅内部供下游消费, 不落库。
+                    if target == "geometry":
+                        new_shapes.extend(shapes)
                 except Exception as exc:  # noqa: BLE001
-                    stats[si]["failed"] += len(geo.prompts)
+                    stats[snum]["failed"] += len(geo.prompts)
+                    stage_outputs[snum] = []
                     logger.warning(
                         "[ai-pre] stage %s 下游 box-seg 失败: %s: %s",
-                        si,
+                        snum,
                         type(exc).__name__,
                         exc,
                     )
                 continue
-            # ── crop 模式 (现状: 逐父框裁 ROI 喂下游分类) ──
+            # ── crop 模式 (钉死 attributes-only: 逐父框裁 ROI 喂下游分类) ──
             if image is None:  # crop 阶段必有原图 (needs_image 已保证); 防御性跳过。
+                stage_outputs[snum] = parent_boxes
                 continue
-            roi = stage.get("roi") or {}
-            pad = float(roi.get("pad", 0.05))
+            pad = _resolve_pad(stage, depths.get(snum, 2))
             batch = crop_inputs_from_boxes(
                 image,
-                boxes,
+                parent_boxes,
                 pad=pad,
                 parent_class_filter=pcf,
                 delivery=delivery,
                 upload_fn=upload_fn,
                 cache=crop_cache,
+                min_crop_side_px=32,
             )
-            stats[si]["skipped_geometry"] += batch.skipped_geometry
+            stats[snum]["skipped_geometry"] += batch.skipped_geometry
             crop_inputs = batch.inputs
+            # crop 阶段对下游暴露 (可能已富集属性的) 父框几何, 供孙子阶段消费。
+            stage_outputs[snum] = parent_boxes
             if not crop_inputs:
-                continue  # 无符合类别的父框 → 本阶段对本图降级跳过
+                continue  # 无符合类别/几何的父框 → 本阶段对本图降级跳过
             targeted = {int(ci["id"]) for ci in crop_inputs}
-            stats[si]["targeted"] += len(targeted)
+            stats[snum]["targeted"] += len(targeted)
             try:
                 cls_results = await stage_clients[si].predict(
                     crop_inputs, context=stage_contexts[si]
                 )
                 merged = merge_classify_attributes(
-                    boxes, cls_results, write_keys=write_keys
+                    parent_boxes, cls_results, write_keys=write_keys, label=label
                 )
-                stats[si]["ok"] += merged
-                stats[si]["failed"] += len(targeted) - merged
+                stats[snum]["ok"] += merged
+                stats[snum]["failed"] += len(targeted) - merged
                 if write_keys:
-                    enriched_keys.update(write_keys)
+                    prefix = f"{label}_" if label else ""
+                    enriched_keys.update(f"{prefix}{k}" for k in write_keys)
             except Exception as exc:  # noqa: BLE001
                 # 阶段级失败: keep_parent=保留上游框属性留空; drop_box=丢这些父框。
-                stats[si]["failed"] += len(targeted)
+                stats[snum]["failed"] += len(targeted)
                 if stage.get("on_failure") == "drop_box":
                     dropped |= targeted
                 logger.warning(
                     "[ai-pre] stage %s 下游分类失败 (on_failure=%s): %s: %s",
-                    si,
+                    snum,
                     stage.get("on_failure", "keep_parent"),
                     type(exc).__name__,
                     exc,
                 )
         if dropped:
-            boxes[:] = [b for i, b in enumerate(boxes) if i not in dropped]
+            root_boxes[:] = [b for i, b in enumerate(root_boxes) if i not in dropped]
         if new_shapes:
-            boxes.extend(new_shapes)
+            root_boxes.extend(new_shapes)
     extra = {
         "pipeline": {
             "stage_count": len(stages),
+            "max_depth": max(depths.values()) if depths else 1,
             "enriched_attr_keys": sorted(enriched_keys) or None,
-            "stages": _pipeline_topology(stages),
+            "stages": _pipeline_topology(stages, depths),
         }
     }
     return results, extra, stats
@@ -669,7 +720,7 @@ async def _run_batch(
         text_thr = float(project.text_threshold) if project is not None else None
         stage_clients: list[MLBackendClient] = []
         stage_contexts: list[dict | None] = []
-        # v0.18.12 · 每阶段投递模式 (crop|geometry), 按下游 model supported_prompts 判别。
+        # v0.18.14 · 每阶段投递模式 (crop|geometry), 按 write.target 推断 (input.mode 可覆盖)。
         # 源阶段 (stage 0) 模式无意义, 占位 "crop"。
         stage_modes: list[str] = []
         for s in stages:
@@ -680,7 +731,7 @@ async def _run_batch(
             else:
                 s_backend = await db.get(MLBackend, uuid.UUID(s["ml_backend_id"]))
                 stage_clients.append(MLBackendClient(s_backend))
-                stage_modes.append(_stage_input_mode(s_backend, s.get("model_id")))
+                stage_modes.append(_resolve_input_mode(s))
                 stage_contexts.append(
                     _build_predict_context(
                         prompt=None,

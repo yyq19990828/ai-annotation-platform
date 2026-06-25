@@ -182,16 +182,8 @@ async def test_accept_parallel_fanout_three_stages(
     assert len(_mock_celery["kwargs"]["pipeline_stages"]) == 3
 
 
-@pytest.mark.asyncio
-async def test_reject_depth_three(
-    httpx_client_bound, super_admin, db_session, _mock_celery
-):
-    # v0.18.2 · 子阶段再扇出 (parent_stage 指向下游而非源) → 拒绝 (本期仅单层)。
-    owner, token = super_admin
-    proj, detect, classify, batch = await _seed(db_session, owner.id)
-    stages = _stages(detect.id, classify.id)
-    stages.append({"stage": 2, "ml_backend_id": str(classify.id), "parent_stage": 1})
-    resp = await httpx_client_bound.post(
+async def _post_stages(client, token, proj, detect, batch, stages):
+    return await client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -200,7 +192,106 @@ async def test_reject_depth_three(
             "pipeline_stages": stages,
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_accept_depth_three_geometry_chain(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # v0.18.14 · 受限树形: depth-3 链路 (root 产几何 → 中间 intermediate → 叶子 attributes)
+    # 现在结构上被接受 (深度=3, 父均产几何)。中间阶段的能力可达性由 worker 路由期再校验。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = [
+        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
+         "write": {"target": "geometry"}},
+        {"stage": 1, "ml_backend_id": str(classify.id), "model_id": "box-seg",
+         "parent_stage": 0, "roi": {"mode": "geometry"},
+         "write": {"target": "intermediate"}},
+        {"stage": 2, "ml_backend_id": str(classify.id), "model_id": "color-clf",
+         "parent_stage": 1, "label": "hat",
+         "roi": {"mode": "crop", "pad": 0.1},
+         "write": {"target": "attributes", "target_stage": "root", "keys": ["color"]}},
+    ]
+    resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
+    assert resp.status_code == 200, resp.text
+    assert len(_mock_celery["kwargs"]["pipeline_stages"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_reject_forward_parent_stage(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # 前向 parent_stage (指向更晚的阶段) → 受限树形要求父序号严格更小。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = [
+        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
+         "write": {"target": "geometry"}},
+        {"stage": 1, "ml_backend_id": str(classify.id), "parent_stage": 2,
+         "write": {"target": "attributes", "keys": ["a"]}},
+        {"stage": 2, "ml_backend_id": str(classify.id), "parent_stage": 0,
+         "roi": {"mode": "geometry"}, "write": {"target": "intermediate"}},
+    ]
+    resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
     assert resp.status_code == 422, resp.text
+    assert "未在前面定义" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_reject_depth_four(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # 0→1→2→3 链路深度 4 → 超过最大深度 3。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = [
+        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
+         "write": {"target": "geometry"}},
+        {"stage": 1, "ml_backend_id": str(classify.id), "parent_stage": 0,
+         "roi": {"mode": "geometry"}, "write": {"target": "intermediate"}},
+        {"stage": 2, "ml_backend_id": str(classify.id), "parent_stage": 1,
+         "roi": {"mode": "geometry"}, "write": {"target": "intermediate"}},
+        {"stage": 3, "ml_backend_id": str(classify.id), "parent_stage": 2,
+         "write": {"target": "attributes", "keys": ["color"]}},
+    ]
+    resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
+    assert resp.status_code == 422, resp.text
+    assert "超过最大深度 3" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_reject_parent_not_geometry(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # 父阶段 write.target=attributes (不产几何) 被当作父引用 → 拒绝。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = [
+        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
+         "write": {"target": "geometry"}},
+        {"stage": 1, "ml_backend_id": str(classify.id), "parent_stage": 0,
+         "write": {"target": "attributes", "keys": ["color"]}},
+        {"stage": 2, "ml_backend_id": str(classify.id), "parent_stage": 1,
+         "write": {"target": "attributes", "keys": ["shade"]}},
+    ]
+    resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
+    assert resp.status_code == 422, resp.text
+    assert "不产几何" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_reject_unsupported_target_stage(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # write.target_stage 非 'root' (本版仅接受 root) → 拒绝。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = _stages(detect.id, classify.id)
+    stages[1]["write"] = {"target": "attributes", "target_stage": "parent", "keys": ["color"]}
+    resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
+    assert resp.status_code == 422, resp.text
+    assert "暂不支持" in resp.text
 
 
 @pytest.mark.asyncio

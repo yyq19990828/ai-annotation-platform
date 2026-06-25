@@ -77,3 +77,12 @@ export const COMPOSITION_BADGE: Record<
   atom: { variant: "outline", label: "原子", title: "单次推理原子，可作编排单元" },
   composite: { variant: "ai", label: "内置流程", title: "一个 model 内部串联多个原子（内置编排）" },
 };
+
+// supported_prompts → 中文短标签 (模型可接受的输入声明)。
+const PROMPT_LABELS: Record<string, string> = {
+  point: "点", bbox: "框", text: "文本", exemplar: "样例",
+  scribble: "涂抹", sketch: "草图", mask: "掩膜",
+};
+export function promptLabel(p: string) {
+  return PROMPT_LABELS[p] ?? p;
+}

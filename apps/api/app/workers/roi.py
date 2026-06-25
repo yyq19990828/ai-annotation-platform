@@ -75,6 +75,7 @@ def crop_inputs_from_boxes(
     delivery: str = "data_uri",
     upload_fn: Callable[[int, bytes], str] | None = None,
     cache: dict | None = None,
+    min_crop_side_px: int = 0,
 ) -> CropBatch:
     """对 boxes 里的 bbox 框逐个裁 ROI crop, 返回喂下游 /predict 的 inputs + 几何跳过统计。
 
@@ -131,6 +132,13 @@ def crop_inputs_from_boxes(
         bottom = min(float(img_h), bottom + bh * pad)
         crop = image.crop((int(left), int(top), int(round(right)), int(round(bottom))))
         if crop.width <= 0 or crop.height <= 0:
+            skipped_geometry += 1
+            continue
+        # v0.18.14 · 嵌套裁剪越深裁得越小, 短边过小的 crop 上采样后画质崩坏; 低于阈值跳过
+        # (计 skipped_geometry), 父框靠 on_failure=keep_parent 保留。0=不守卫 (向后兼容)。
+        if min_crop_side_px and (
+            crop.width < min_crop_side_px or crop.height < min_crop_side_px
+        ):
             skipped_geometry += 1
             continue
         buf = io.BytesIO()
@@ -245,6 +253,7 @@ def merge_classify_attributes(
     classify_results: list,
     *,
     write_keys: list[str] | None = None,
+    label: str | None = None,
 ) -> int:
     """把下游分类结果的 attributes 合并 (union) 进对应父框的 attributes。
 
@@ -255,7 +264,9 @@ def merge_classify_attributes(
     Args:
         boxes: 父框 LS result 列表 (原地修改, 写入 box["attributes"])。
         classify_results: 下游 ``client.predict`` 返回的 PredictionResult 列表。
-        write_keys: 本阶段声明写哪些属性键; None=全取下游返回的键。
+        write_keys: 本阶段声明写哪些属性键 (原始键); None=全取下游返回的键。
+        label: v0.18.14 · 设了则写回键加 f"{label}_" 前缀 (子物体命名空间, 如 hat_color);
+            缺省写原始键 (双阶段零退化)。前缀在 write_keys 过滤之后施加。
 
     Returns:
         成功合并属性的父框数量 (供统计)。
@@ -288,6 +299,8 @@ def merge_classify_attributes(
             best_attrs = {k: v for k, v in best_attrs.items() if k in write_keys}
             if not best_attrs:
                 continue
+        if label:
+            best_attrs = {f"{label}_{k}": v for k, v in best_attrs.items()}
         box = boxes[box_idx]
         existing = box.get("attributes")
         box["attributes"] = (

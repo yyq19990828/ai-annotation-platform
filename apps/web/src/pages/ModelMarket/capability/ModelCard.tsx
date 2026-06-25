@@ -15,7 +15,7 @@ import {
   runtimeKeyFor,
   tierLabel,
 } from "./catalogModel";
-import { COMPOSITION_BADGE, infraLabel, modalityLabel, taskLabel, taskVariant } from "./labels";
+import { COMPOSITION_BADGE, infraLabel, modalityLabel, promptLabel, taskLabel, taskVariant } from "./labels";
 import { WarmButton } from "./WarmButton";
 
 const TAG_CLASS =
@@ -38,6 +38,7 @@ export function ModelCard({ item }: { item: FlatModel }) {
   const cardRuntimeKey = runtimeKeyFor(m.task, defaultVariants);
   const loaded = isLoadedRuntimeKey(item, defaultVariants, cardRuntimeKey);
   const evict = lastEvict(item);
+  const comp = COMPOSITION_BADGE[m.composition ?? "atom"];
 
   return (
     <div className="flex flex-col gap-2 rounded-md border border-border bg-card px-3.5 py-3">
@@ -57,11 +58,9 @@ export function ModelCard({ item }: { item: FlatModel }) {
 
       <div className="flex flex-wrap items-center gap-1.5">
         {m.task && <Badge variant={taskVariant(m.task)}>{taskLabel(m.task)}</Badge>}
-        {m.composition && COMPOSITION_BADGE[m.composition] && (
-          <span title={COMPOSITION_BADGE[m.composition].title}>
-            <Badge variant={COMPOSITION_BADGE[m.composition].variant}>
-              {COMPOSITION_BADGE[m.composition].label}
-            </Badge>
+        {comp && (
+          <span title={comp.title}>
+            <Badge variant={comp.variant}>{comp.label}</Badge>
           </span>
         )}
         {infra && <Badge variant="outline">{infraLabel(infra)}</Badge>}
@@ -97,25 +96,53 @@ export function ModelCard({ item }: { item: FlatModel }) {
         <WarmButton item={item} variants={defaultVariants} size="xs" />
       </Row>
 
-      {geom.length > 0 && (
-        <Row label="输出几何">
-          {geom.map((g) => (
+      <Row label="可接受输入">
+        {(m.supported_prompts?.length ?? 0) > 0 ? (
+          m.supported_prompts!.map((p) => (
+            <span key={p} className={TAG_CLASS}>
+              {promptLabel(p)}
+            </span>
+          ))
+        ) : (
+          <span className={TAG_CLASS}>整图</span>
+        )}
+      </Row>
+
+      <Row label="输出几何">
+        {geom.length > 0 ? (
+          geom.map((g) => (
             <span key={g} className={TAG_CLASS}>
               {g}
             </span>
-          ))}
-        </Row>
-      )}
+          ))
+        ) : (
+          <span className={TAG_CLASS}>—</span>
+        )}
+      </Row>
 
-      {attrs.length > 0 && (
-        <Row label="输出属性">
-          {attrs.map((a) => (
+      <Row label="输出属性">
+        {attrs.length > 0 ? (
+          attrs.map((a) => (
             <span key={a} className={TAG_CLASS}>
               {a}
             </span>
-          ))}
-        </Row>
-      )}
+          ))
+        ) : (
+          <span className={TAG_CLASS}>—</span>
+        )}
+      </Row>
+
+      <Row label="资源">
+        {resourceEntries.length > 0 ? (
+          resourceEntries.map(([k, v]) => (
+            <span key={k} className={TAG_CLASS}>
+              {k}: {String(v)}
+            </span>
+          ))
+        ) : (
+          <span className={TAG_CLASS}>—</span>
+        )}
+      </Row>
 
       {variantGroups.length > 0 && (
         <div className="flex flex-col gap-1.5 border-t border-dashed border-border pt-1">
@@ -152,16 +179,6 @@ export function ModelCard({ item }: { item: FlatModel }) {
             </div>
           ))}
         </div>
-      )}
-
-      {resourceEntries.length > 0 && (
-        <Row label="资源">
-          {resourceEntries.map(([k, v]) => (
-            <span key={k} className={TAG_CLASS}>
-              {k}: {String(v)}
-            </span>
-          ))}
-        </Row>
       )}
 
       {evict && (

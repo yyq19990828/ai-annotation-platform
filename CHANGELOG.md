@@ -34,6 +34,24 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.14] - 2026-06-25
+
+阶段化预标注 `/ai-pre` 从「单源 + 一层扇出」扩展为**受限树形流水线**（最大深度 3）：一个下游阶段可以消费另一个下游阶段的输出。后端 schema / 校验 / worker 执行 / provenance meta 全部到位；前端模型市场卡片同步补齐字段展示。**本版交付结构骨架**——depth-3 的 attribute 链（`detect → classify A → classify B`，属性累加到 root）可跑；真正的几何 depth-3（`person → 检测 hat → color`，需要 crop 内检测 + 坐标回映）所需的 ROI 原语不在本版，见 0.18.15 计划。规划详见 [`docs/plans/2026-06-25-v0.18.14-staged-preannotate-tree-dag-draft.md`](docs/plans/2026-06-25-v0.18.14-staged-preannotate-tree-dag-draft.md)。
+
+### Added
+
+- **受限树形流水线（max depth 3）**：`PipelineStage` 新增 `label`（写回属性键前缀，子物体命名空间如 `hat_color`）、`input.mode`（显式投递模式覆盖）、`write.target_stage`（祖先选择扩展位，本版仅接受 `root`）；`write.target` 增 `intermediate`（只产几何给下游消费、不落库为候选）。校验从「单层扇出」替换为受限树形校验器：`parent_stage` 须指向更早且产几何的阶段、链路深度 ≤ 3、属性键按「加完 label 前缀的最终键」去重。
+- **模型市场卡片字段统一**：`ModelCard` 的「原子 / 内置流程」徽标恒显（缺省回落 `atom`）；「输出几何 / 输出属性 / 资源」三行改为恒渲染、空值占位 `—`，不再整行消失；新增「可接受输入」行（读 `supported_prompts`，无 prompt 接口的纯分类器显示「整图」）。
+
+### Changed
+
+- **Worker 拓扑执行**：`_run_task_pipeline` 引入按 `stage` 号索引的 `stage_outputs` map，下游阶段从 `parent_stage` 取上游输出（不再恒为 root）。投递模式判据从下游 `supported_prompts` 反推改为按子 `write.target` 正推（`attributes → crop`、`geometry/intermediate → geometry-prompt`），crop 钉死在「只产属性」；crop pad 缺省按深度取默认（`{1:0.05, 2:0.08, 3:0.12}`）、新增 `min_crop_side_px=32` 守卫（短边过小的嵌套裁剪跳过、计 `skipped_geometry`、父框靠 `keep_parent` 保留）；属性写回支持 `label` 前缀（设了才加、缺省写原始键保双阶段零退化）。
+- **provenance meta**：`PredictionMeta.extra.pipeline` 增 `max_depth` 及每阶段 `depth / parent_stage / label / write_target / target_stage`（JSONB additive，旧记录读取兼容）。
+
+### Compatibility
+
+- v0.18.13 的 `pipeline_stages` payload（`parent_stage=0` 的双阶段树）不改字节即通过新校验、跑通新 worker；新字段全部可选并带向后兼容默认。API 路由不变（`POST /projects/{id}/preannotate`），无 DB migration，无新增环境变量。
+
 ## [0.18.13] - 2026-06-24
 
 onnxtools 原子层直架单模型推理类 + 删 `visibility` 字段改用 `composition` 单轴过滤 + 单阶段配置修复。修了 v0.18.9 拆原子时把单后端「检测+属性一把梭」从单阶段路径弄丢的回归（用户无感）：onnxtools 三个 model 各架在自己的单模型类上（`vehicle-detect`→独立 `RtdetrORT`、`vehicle-attr-classify`→独立 `VehicleAttributeORT`、`vehicle-attr` 一锅端→`VehicleAttributePipeline`），按 model_id 懒加载——detect-only 部署只加载检测器、classify-only 只加载分类器。同时把 v0.18.11 引入的 `visibility` 字段整体删除（全平台仅 onnxtools 一处用、且与 `composition` 语义重载），过滤统一收敛到 `composition` 一根轴：编排下游 stage 只组合 `atom`，单阶段/工作台不过滤、一锅端 `vehicle-attr` 可作开箱即用默认。
