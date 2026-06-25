@@ -64,10 +64,10 @@ def test_setup_models_declare_supported_inputs(setup_fn):
 
 
 def test_setup_models_declare_output_attribute_types(setup_fn):
-    """v0.18.16 · 检测/分割自报 class+score; 交互分割不自产属性 (留空)。"""
+    """v0.18.16 · 检测/分割自报类别; 交互分割不自产属性 (留空)。score 不入属性。"""
     by_id = {m["id"]: m for m in setup_fn()["models"]}
-    assert by_id["sam3-detection"]["output_attribute_types"] == ["class", "score"]
-    assert by_id["sam3-segmentation"]["output_attribute_types"] == ["class", "score"]
+    assert by_id["sam3-detection"]["output_attribute_types"] == ["class"]
+    assert by_id["sam3-segmentation"]["output_attribute_types"] == ["class"]
     assert "output_attribute_types" not in by_id["sam3-interactive-seg"]
 
 

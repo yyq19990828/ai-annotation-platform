@@ -59,9 +59,9 @@ def test_setup_models_declare_supported_inputs(setup_dict: dict) -> None:
 
 
 def test_setup_models_declare_output_attribute_types(setup_dict: dict) -> None:
-    """v0.18.16 · 各 task 自报输出属性 (检测/分割均产 class + score)。"""
+    """v0.18.16 · 各 task 自报输出属性 (仅类别; score 是 prediction 一等字段不入属性)。"""
     for m in setup_dict["models"]:
-        assert m["output_attribute_types"] == ["class", "score"]
+        assert m["output_attribute_types"] == ["class"]
 
 
 def test_setup_models_declare_resource_profile(setup_dict: dict) -> None:

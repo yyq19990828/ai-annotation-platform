@@ -72,10 +72,10 @@ def test_setup_models_declare_supported_inputs():
 
 
 def test_setup_models_declare_output_attribute_types():
-    """v0.18.16 · 文本检测/分割自报 class+score; 交互/追踪/框→mask 不自产属性 (留空)。"""
+    """v0.18.16 · 文本检测/分割自报类别; 交互/追踪/框→mask 不自产属性 (留空)。score 不入属性。"""
     by_id = {m["id"]: m for m in setup()["models"]}
-    assert by_id["grounded-sam2-detection"]["output_attribute_types"] == ["class", "score"]
-    assert by_id["grounded-sam2-segmentation"]["output_attribute_types"] == ["class", "score"]
+    assert by_id["grounded-sam2-detection"]["output_attribute_types"] == ["class"]
+    assert by_id["grounded-sam2-segmentation"]["output_attribute_types"] == ["class"]
     # 交互分割 / 视频追踪 / 框→mask 细化: 透传或无类别产出, 不声明。
     assert "output_attribute_types" not in by_id["grounded-sam2-interactive-seg"]
     assert "output_attribute_types" not in by_id["grounded-sam2-tracker"]

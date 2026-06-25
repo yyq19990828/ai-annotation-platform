@@ -579,7 +579,7 @@ def setup() -> dict:
             # 文本检测器: 可跑整图, 也可在父框 crop 上检子物体 (crop-detect 下游)。
             "supported_inputs": ["full_image", "crop"],
             "supported_geometric_outputs": ["bbox"],
-            "output_attribute_types": ["class", "score"],
+            "output_attribute_types": ["class"],
             "resource_profile": {"device": "gpu", "batchable": True},
             "supported_text_outputs": ["box"],
             "supported_variants": [_dino_variant_axis()],
@@ -600,7 +600,7 @@ def setup() -> dict:
             # 文本→分割: 整图 / 父框 crop 上跑 (文本驱动, 复合内部 DINO+SAM)。
             "supported_inputs": ["full_image", "crop"],
             "supported_geometric_outputs": ["polygon"],
-            "output_attribute_types": ["class", "score"],
+            "output_attribute_types": ["class"],
             "resource_profile": {"device": "gpu", "batchable": True},
             "supported_text_outputs": ["mask", "both"],
             "supported_variants": base["supported_variants"],
@@ -812,13 +812,14 @@ def _fetch_image(file_path: str) -> Image.Image:
 
 async def _run_prompt(
     file_path: str, ctx: dict
-) -> tuple[list[dict], bool, str, str, bool, int | None]:
+) -> tuple[list[dict], bool, str, str, bool, int | None, str | None]:
     """v0.14.14 返回 (results, embedding_hit, sam_variant, dino_variant,
-    pool_cache_hit, model_load_ms).
+    pool_cache_hit, model_load_ms, mask_input_next).
 
     - embedding_hit: 图像 embedding 缓存命中 (image fetch / set_image 跳过)
     - pool_cache_hit: model pool 命中 (权重已加载, 不需冷启)
     - model_load_ms: 本次 pool miss 的 build 耗时, 命中时 None
+    - mask_input_next: v0.18.18 · point 精修单 mask 阶段的 low-res logits 回灌, 其余恒 None
     """
     sv, dv = _resolve_variant(ctx)
     p, pool_cache_hit, model_load_ms = await _get_predictor(sv, dv)
@@ -846,20 +847,15 @@ async def _run_prompt(
             raise HTTPException(status_code=422, detail="context.points required for type=point")
         # v0.18.17 · 正/负点累加由前端重发全量点; multimask 单点歧义出候选.
         multimask = bool(ctx.get("multimask_output", False))
-        if not cache.peek(cache_key):
-            # miss: 拉图 + 让 predictor 内部 set_image + put
-            image = _fetch_image(file_path)
-            results, hit = p.predict_point(
-                image, points, labels, multimask_output=multimask,
-                cache_key=cache_key, simplify_tolerance=simplify_tol,
-            )
-        else:
-            # hit: 不拉图; predictor 走 restore_sam 路径
-            results, hit = p.predict_point(
-                None, points, labels, multimask_output=multimask,
-                cache_key=cache_key, simplify_tolerance=simplify_tol,
-            )
-        return results, hit, sv, dv, pool_cache_hit, model_load_ms
+        # v0.18.18 · 上一轮 low-res logits 回灌 (多点精修阶段; 首点 multimask 候选阶段前端不回传).
+        mask_input = ctx.get("mask_input")
+        # miss: 拉图 + 让 predictor 内部 set_image + put; hit: 不拉图, 走 restore_sam.
+        image = None if cache.peek(cache_key) else _fetch_image(file_path)
+        results, hit, mask_input_next = p.predict_point(
+            image, points, labels, multimask_output=multimask,
+            mask_input=mask_input, cache_key=cache_key, simplify_tolerance=simplify_tol,
+        )
+        return results, hit, sv, dv, pool_cache_hit, model_load_ms, mask_input_next
 
     if ptype == "interactive_box":
         # v0.18.17 · 单框单 mask (旧 type=bbox 改名; bbox 已退出交互 prompt 命名空间).
@@ -870,18 +866,13 @@ async def _run_prompt(
                 detail="context.bbox=[x1,y1,x2,y2] required for type=interactive_box",
             )
         multimask = bool(ctx.get("multimask_output", False))
-        if not cache.peek(cache_key):
-            image = _fetch_image(file_path)
-            results, hit = p.predict_bbox(
-                image, bbox, multimask_output=multimask,
-                cache_key=cache_key, simplify_tolerance=simplify_tol,
-            )
-        else:
-            results, hit = p.predict_bbox(
-                None, bbox, multimask_output=multimask,
-                cache_key=cache_key, simplify_tolerance=simplify_tol,
-            )
-        return results, hit, sv, dv, pool_cache_hit, model_load_ms
+        image = None if cache.peek(cache_key) else _fetch_image(file_path)
+        # 框单发不回灌 → predict_bbox 第 3 项恒 None.
+        results, hit, _ = p.predict_bbox(
+            image, bbox, multimask_output=multimask,
+            cache_key=cache_key, simplify_tolerance=simplify_tol,
+        )
+        return results, hit, sv, dv, pool_cache_hit, model_load_ms, None
 
     if ptype == "text":
         text = (ctx.get("text") or "").strip()
@@ -908,7 +899,7 @@ async def _run_prompt(
             text_threshold=text_th,
             simplify_tolerance=simplify_tol,
         )
-        return results, hit, sv, dv, pool_cache_hit, model_load_ms
+        return results, hit, sv, dv, pool_cache_hit, model_load_ms, None
 
     raise HTTPException(status_code=422, detail=f"unsupported context.type: {ptype}")
 
@@ -934,10 +925,10 @@ def _parse_box_prompts(raw: object) -> list[tuple[list[float], int]]:
 
 async def _run_box_seg(
     file_path: str, prompts: list[tuple[list[float], int]], ctx: dict
-) -> tuple[list[dict], bool, str, str, bool, int | None]:
+) -> tuple[list[dict], bool, str, str, bool, int | None, str | None]:
     """v0.18.12 · 框→mask 批量分割: 全图 set_image 一次, N 框共享 embedding。
 
-    返回签名与 :func:`_run_prompt` 对齐(results 各带 parent_box_idx)。
+    返回签名与 :func:`_run_prompt` 对齐(results 各带 parent_box_idx); 末位 mask_input_next 恒 None。
     """
     sv, dv = _resolve_variant(ctx)
     p, pool_cache_hit, model_load_ms = await _get_predictor(sv, dv)
@@ -958,7 +949,7 @@ async def _run_box_seg(
     results, hit = p.predict_boxes(
         image, prompts, cache_key=cache_key, simplify_tolerance=simplify_tol
     )
-    return results, hit, sv, dv, pool_cache_hit, model_load_ms
+    return results, hit, sv, dv, pool_cache_hit, model_load_ms, None
 
 
 def _observe(prompt_type: str, hit: bool, started: float) -> int:
@@ -1127,7 +1118,7 @@ async def predict(request: Request):
                 inference_time_ms=elapsed_ms,
             ).model_dump(exclude_none=True)
         # _run_prompt 内部经 pool 取请求级变体 predictor (miss 触发冷启).
-        result, hit, sv, dv, pool_cache_hit, model_load_ms = await _run_prompt(
+        result, hit, sv, dv, pool_cache_hit, model_load_ms, mask_input_next = await _run_prompt(
             task["file_path"], ctx
         )
         elapsed_ms = _observe(ctx.get("type") or "unknown", hit, started)
@@ -1138,6 +1129,7 @@ async def predict(request: Request):
             inference_time_ms=elapsed_ms,
             cache_hit=pool_cache_hit,
             model_load_ms=model_load_ms,
+            mask_input_next=mask_input_next,
         ).model_dump(exclude_none=True)
 
     # 批量: tasks 数组（M0 仅支持顶层 context.text 时整批同 prompt）
@@ -1163,13 +1155,14 @@ async def predict(request: Request):
             box_prompts = t.get("prompts")
             obs_type = "box_seg" if box_prompts else (ctx.get("type") or "unknown")
             try:
+                # 批量路径不回灌 mask_input → 丢弃末位 mask_input_next.
                 if box_prompts:
                     prompts = _parse_box_prompts(box_prompts)
-                    result, hit, sv, dv, pool_cache_hit, model_load_ms = await _run_box_seg(
+                    result, hit, sv, dv, pool_cache_hit, model_load_ms, _ = await _run_box_seg(
                         t["file_path"], prompts, ctx
                     )
                 else:
-                    result, hit, sv, dv, pool_cache_hit, model_load_ms = await _run_prompt(
+                    result, hit, sv, dv, pool_cache_hit, model_load_ms, _ = await _run_prompt(
                         t["file_path"], ctx
                     )
             except HTTPException:

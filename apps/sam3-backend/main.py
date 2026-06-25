@@ -441,7 +441,7 @@ def setup() -> dict:
             # 文本检测器: 整图 / 父框 crop 上检子物体 (crop-detect 下游)。
             "supported_inputs": ["full_image", "crop"],
             "supported_geometric_outputs": ["bbox"],
-            "output_attribute_types": ["class", "score"],
+            "output_attribute_types": ["class"],
             "resource_profile": {"device": "gpu", "batchable": True},
             "supported_text_outputs": ["box"],
             "supported_variants": base["supported_variants"],
@@ -462,7 +462,7 @@ def setup() -> dict:
             # 文本→分割: 整图 / 父框 crop 上跑 (文本驱动, 内置流程)。
             "supported_inputs": ["full_image", "crop"],
             "supported_geometric_outputs": ["polygon"],
-            "output_attribute_types": ["class", "score"],
+            "output_attribute_types": ["class"],
             "resource_profile": {"device": "gpu", "batchable": True},
             "supported_text_outputs": ["mask", "both"],
             "supported_variants": base["supported_variants"],
@@ -592,8 +592,11 @@ def _coerce_output(ctx: dict) -> str:
     return mode
 
 
-def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict], bool]:
-    """返回 (results, cache_hit). 命中时 point/bbox/exemplar 跳过 image fetch."""
+def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict], bool, str | None]:
+    """返回 (results, cache_hit, mask_input_next). 命中时 point/bbox/exemplar 跳过 image fetch.
+
+    mask_input_next (v0.18.18) 仅 point 精修单 mask 阶段非空, 其余 prompt 恒 None。
+    """
     ptype = ctx.get("type")
     cache_key = compute_cache_key(file_path, MODEL_VERSION)
     simplify_tol = _coerce_simplify_tolerance(ctx)
@@ -609,6 +612,7 @@ def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict]
         image = None if _cache.peek(cache_key) else _fetch_image(file_path)
         return p.predict_interactive(
             image, points=points, labels=labels, multimask_output=multimask,
+            mask_input=ctx.get("mask_input"),
             cache_key=cache_key, simplify_tolerance=simplify_tol,
         )
 
@@ -632,25 +636,17 @@ def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict]
             raise HTTPException(status_code=422, detail="context.text required for type=text")
         output_mode = _coerce_output(ctx)
         # SAM 3 PCS text 走 image predictor + 缓存; 与 grounded-sam2 (DINO 原图必拉) 不同,
-        # 缓存命中时可省 _fetch_image.
-        if not _cache.peek(cache_key):
-            image = _fetch_image(file_path)
-            return p.predict_text(
-                image,
-                text,
-                output=output_mode,
-                cache_key=cache_key,
-                simplify_tolerance=simplify_tol,
-                score_threshold=score_th,
-            )
-        return p.predict_text(
-            None,
+        # 缓存命中时可省 _fetch_image. text/exemplar 不回灌 mask_input → 第 3 项恒 None.
+        image = None if _cache.peek(cache_key) else _fetch_image(file_path)
+        results, hit = p.predict_text(
+            image,
             text,
             output=output_mode,
             cache_key=cache_key,
             simplify_tolerance=simplify_tol,
             score_threshold=score_th,
         )
+        return results, hit, None
 
     if ptype == "exemplar":
         exemplar_bbox = ctx.get("bbox")
@@ -660,24 +656,16 @@ def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict]
                 detail="context.bbox=[x1,y1,x2,y2] required for type=exemplar",
             )
         output_mode = _coerce_output(ctx)
-        if not _cache.peek(cache_key):
-            image = _fetch_image(file_path)
-            return p.predict_exemplar(
-                image,
-                exemplar_bbox,
-                output=output_mode,
-                cache_key=cache_key,
-                simplify_tolerance=simplify_tol,
-                score_threshold=score_th,
-            )
-        return p.predict_exemplar(
-            None,
+        image = None if _cache.peek(cache_key) else _fetch_image(file_path)
+        results, hit = p.predict_exemplar(
+            image,
             exemplar_bbox,
             output=output_mode,
             cache_key=cache_key,
             simplify_tolerance=simplify_tol,
             score_threshold=score_th,
         )
+        return results, hit, None
 
     raise HTTPException(status_code=422, detail=f"unsupported context.type: {ptype}")
 
@@ -701,7 +689,7 @@ async def predict(request: Request):
         ctx = _normalize_predict_context(body.get("context") or {})
         # 懒加载: 若已被 idle / 手动卸载, 此处 await 触发后台 executor 重建模型.
         p, pool_cache_hit, model_load_ms = await _ensure_predictor_loaded()
-        result, hit = _run_prompt(p, task["file_path"], ctx)
+        result, hit, mask_input_next = _run_prompt(p, task["file_path"], ctx)
         elapsed_ms = _observe(ctx.get("type") or "unknown", hit, started)
         return PredictionResult(
             result=result,
@@ -710,6 +698,7 @@ async def predict(request: Request):
             inference_time_ms=elapsed_ms,
             cache_hit=pool_cache_hit,
             model_load_ms=model_load_ms,
+            mask_input_next=mask_input_next,
         ).model_dump(exclude_none=True)
 
     if isinstance(body, dict) and "tasks" in body:
@@ -729,7 +718,8 @@ async def predict(request: Request):
         for t in tasks:
             t_started = time.perf_counter()
             try:
-                result, hit = _run_prompt(p, t["file_path"], ctx)
+                # 文本批量不回灌 mask_input → 丢弃 mask_input_next.
+                result, hit, _ = _run_prompt(p, t["file_path"], ctx)
             except HTTPException:
                 raise
             except Exception as exc:  # noqa: BLE001

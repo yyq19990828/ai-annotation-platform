@@ -362,7 +362,7 @@ def _build_model_entry(
         # 纯批量检测/分割: 整图, 也可在父框 crop 上跑 (crop-detect 下游)。
         "supported_inputs": ["full_image", "crop"],
         "supported_geometric_outputs": geometric_outputs,
-        "output_attribute_types": ["class", "score"],
+        "output_attribute_types": ["class"],
         # YOLO 各 task 均 GPU 批量推理。
         "resource_profile": {"device": "gpu", "batchable": True},
         "supported_variants": _supported_variants_for(task),
