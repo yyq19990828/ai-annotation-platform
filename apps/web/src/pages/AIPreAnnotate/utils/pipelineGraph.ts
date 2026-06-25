@@ -53,6 +53,62 @@ export function detailOf(payload: PipelineStagePayload | null | undefined): stri
   return keys.length > 0 ? keys.map((k) => prefix + k).join(", ") : "全部属性";
 }
 
+/** 父框类别过滤摘要: "仅 person, car" / "全部框"。 */
+export function classFilterText(payload: PipelineStagePayload | null | undefined): string {
+  const cf = payload?.parent_class_filter;
+  return cf && cf.length > 0 ? `仅 ${cf.join(", ")}` : "全部框";
+}
+
+/** ROI / 投递摘要: "裁剪 · pad 0.08" / "整图框提示" / ""。 */
+export function roiText(payload: PipelineStagePayload | null | undefined): string {
+  const roi = payload?.roi;
+  if (!roi) return "";
+  return roi.mode === "crop"
+    ? `裁剪${roi.pad != null ? ` · pad ${roi.pad}` : ""}`
+    : "整图框提示";
+}
+
+/** 变体摘要: "sam_variant=large, ..." / ""。 */
+export function variantText(payload: PipelineStagePayload | null | undefined): string {
+  const v = payload?.model_variants;
+  if (!v) return "";
+  return Object.entries(v)
+    .map(([k, val]) => `${k}=${val}`)
+    .join(", ");
+}
+
+/** 阶段模型能力旗标 (StageCard 自报, 供画布作可达性 / 产属性警示)。 */
+export interface StageCaps {
+  /** capabilities 查询已就绪 (否则不判, 免误报)。 */
+  hasCapabilities: boolean;
+  /** 选中 model 自报了 supported_inputs (老 backend 缺省时为 false, 跳过可达性判)。 */
+  knownInputs: boolean;
+  acceptsCrop: boolean;
+  acceptsBboxPrompt: boolean;
+  producesAttributes: boolean;
+}
+
+/**
+ * 节点警示文案 (标红, 不硬拦运行 —— 与端点 422 同判据, 仅前移到画布)。
+ * - 产几何的子既不接 crop 也不接 bbox_prompt → 不可达 (端点会 422)。
+ * - 分类子但后端不产属性 → 属性恒空。
+ * 返回 null = 无警示。
+ */
+export function stageWarning(
+  payload: PipelineStagePayload | null | undefined,
+  caps: StageCaps | null | undefined,
+): string | null {
+  if (!payload || !caps || !caps.hasCapabilities) return null;
+  if (producesGeometry(payload)) {
+    if (caps.knownInputs && !caps.acceptsCrop && !caps.acceptsBboxPrompt)
+      return "该模型不接受裁剪图 / 框提示，无法作几何下游（运行将被端点拒绝）";
+    return null;
+  }
+  if (!caps.producesAttributes)
+    return "该后端不自报输出属性，作下游分类只会重新检测、属性恒空";
+  return null;
+}
+
 /**
  * 每 sid 深度 (root=1, 子=父+1)。
  * 顺父链递归求值, **与数组顺序无关** —— 改父后子可能排在新父之前, 不能假设父先于子出现
@@ -170,6 +226,20 @@ export interface GraphNodeModel {
   producesGeometry: boolean;
   canAddChild: boolean;
   conflict: boolean;
+  // ── v0.18.16 §13 信息增强 ──
+  /** backend 名 (副标题); 看不出用哪个后端是主要痛点。 */
+  backendName?: string;
+  /** 已配置就绪 (payload != null); 否则节点显「待配置」虚线。 */
+  ready: boolean;
+  /** 警示文案 (标红 + tooltip), null=无。 */
+  warning?: string | null;
+  /** 父框过滤摘要 (节点芯片): "仅 person" / "全部框"。 */
+  classFilter?: string;
+  // 以下仅 hover 浮层显示:
+  modelId?: string;
+  taskType?: string;
+  roiInfo?: string;
+  variantInfo?: string;
 }
 
 export interface StageNodeData extends GraphNodeModel {

@@ -51,6 +51,82 @@
 .nodeConflict {
   border-color: var(--sc-destructive);
 }
+/* 未配置就绪: 虚线描边。 */
+.nodeUnconfigured {
+  border-style: dashed;
+}
+/* 拖拽改父时: 合法落点高亮 / 非法变淡。 */
+.nodeDropOk {
+  border-color: var(--sc-chart-2);
+  box-shadow: 0 0 0 2px var(--sc-chart-2);
+}
+.nodeDropBad {
+  opacity: 0.45;
+}
+
+/* 副标题: backend 名 + 待配置徽标。 */
+.nodeSubtitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.nodeBackend {
+  color: var(--sc-muted-foreground);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* 父框过滤芯片。 */
+.nodeChip {
+  width: fit-content;
+  max-width: 100%;
+  padding: 1px 7px;
+  color: var(--sc-muted-foreground);
+  font-size: 10px;
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
+  border-radius: 999px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* 警示标。 */
+.nodeWarn {
+  color: var(--sc-destructive);
+}
+
+/* hover 浮层正文 (全量信息) + 警示行。 */
+.tipBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tipWarn {
+  margin-top: 2px;
+  color: var(--sc-destructive);
+}
+
+/* 空态 ghost CTA (画布中央)。 */
+.ghostCta {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  color: var(--sc-muted-foreground);
+  font-size: 12px;
+  cursor: pointer;
+  background: var(--sc-card);
+  border: 1px dashed var(--sc-border);
+  border-radius: 8px;
+}
+.ghostCta:hover {
+  color: var(--sc-foreground);
+  border-color: var(--sc-ring);
+}
 
 .nodeHeader {
   display: flex;

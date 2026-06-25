@@ -39,12 +39,18 @@ import {
   ROOT_SID,
   canAddChild as pureCanAddChild,
   canReparent,
+  classFilterText,
   depthBySid,
+  descendantsOf,
   detailOf,
   producesGeometry,
   reparent,
+  roiText,
   roleOf,
+  stageWarning,
+  variantText,
   type GraphNodeModel,
+  type StageCaps,
   type StageEntry,
 } from "../utils/pipelineGraph";
 import styles from "./ProjectDetailPanel.module.css";
@@ -159,7 +165,9 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // v0.18.16 · DAG 画布选中节点 (右列检查器据此显参数); 默认选源 (ROOT_SID), 始终有一张可编辑。
   const [selectedSid, setSelectedSid] = useState<string>(ROOT_SID);
   const stagePayloadsRef = useRef<Record<string, PipelineStagePayload | null>>({});
-  const [stageTick, setStageTick] = useState(0); // 卡片回报 payload → bump 触发 canRun 重算
+  // v0.18.16 §13 · 各卡上抛的能力旗标 (可达性 / 产属性警示)。
+  const stageCapsRef = useRef<Record<string, StageCaps | null>>({});
+  const [stageTick, setStageTick] = useState(0); // 卡片回报 payload/caps → bump 触发重算
   const onStageChange = useCallback(
     (sid: string, payload: PipelineStagePayload | null) => {
       stagePayloadsRef.current[sid] = payload;
@@ -167,6 +175,10 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     },
     [],
   );
+  const onStageCaps = useCallback((sid: string, caps: StageCaps | null) => {
+    stageCapsRef.current[sid] = caps;
+    setStageTick((n) => n + 1);
+  }, []);
   const seqRef = useRef(0);
   const addStage = useCallback(
     (parentSid: string) => {
@@ -183,6 +195,11 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   );
   const removeStage = useCallback((sid: string) => {
     if (sid === ROOT_SID) return; // 源不可删 (会级联清空整棵树)。
+    // 删带后代的节点 → 提示连带删除数 (现状静默级联)。
+    const kids = descendantsOf(stagesGraph, sid);
+    if (kids.size > 0) {
+      pushToast({ msg: "已删除阶段", sub: `连带移除 ${kids.size} 个子阶段` });
+    }
     setStagesGraph((g) => {
       // 级联移除该阶段及其全部后代 (父被删, 子无依附)。
       const dead = new Set([sid]);
@@ -199,7 +216,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       setSelectedSid((cur) => (dead.has(cur) ? ROOT_SID : cur));
       return g.filter((e) => !dead.has(e.sid));
     });
-  }, []);
+  }, [stagesGraph, pushToast]);
 
   // v0.18.3 · 运行态可视化: 跑批后轮询最后一个多阶段 job 的 result.pipeline_stages (终态真值)。
   const [lastPipelineJobId, setLastPipelineJobId] = useState<string | null>(null);
@@ -355,6 +372,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // 下游须用不同于检测的 backend → 加子额外要求 backends>=2 (与原 canHaveChild 一致)。
   const canAddBackend = backends.length >= 2;
   const graphNodes = useMemo<GraphNodeModel[]>(() => {
+    const nameOf = (id?: string | null) =>
+      id ? (backends.find((b) => b.id === id)?.name ?? undefined) : undefined;
     const source: GraphNodeModel = {
       sid: ROOT_SID,
       parentSid: null,
@@ -366,6 +385,9 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       producesGeometry: true,
       canAddChild: canAddBackend && pureCanAddChild(stagesGraph, payloadBySid, ROOT_SID),
       conflict: false,
+      ready: cfg.configReady,
+      backendName: selectedBackend?.name,
+      warning: null,
     };
     const stages = stagesGraph.map<GraphNodeModel>((e, i) => {
       const p = downstreamPayloads[i];
@@ -382,10 +404,18 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
         producesGeometry: producesGeometry(p),
         canAddChild: canAddBackend && pureCanAddChild(stagesGraph, payloadBySid, e.sid),
         conflict: (conflictInfo.perCard[e.sid]?.size ?? 0) > 0,
+        ready: p != null,
+        backendName: nameOf(p?.ml_backend_id),
+        warning: stageWarning(p, stageCapsRef.current[e.sid]),
+        classFilter: classFilterText(p),
+        modelId: p?.model_id,
+        taskType: p?.task_type,
+        roiInfo: roiText(p),
+        variantInfo: variantText(p),
       };
     });
     return [source, ...stages];
-    // stageRunState 每渲染重建 (依赖 stagesRunning/统计); 以其底层 deps 触发重算。
+    // stageRunState 每渲染重建 (依赖 stagesRunning/统计); stageCapsRef 是 ref, 靠 stageTick 触发重算。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     stagesGraph,
@@ -397,6 +427,9 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     selectedBackend?.name,
     canAddBackend,
     conflictInfo,
+    cfg.configReady,
+    backends,
+    stageTick,
   ]);
 
   // v0.18.16 · 改父校验 (连线 source=新父, target=子) + 提交。受限规则全在 canReparent 纯函数。
@@ -694,6 +727,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                     runState={stageRunState(i + 1)}
                     hidden={selectedSid !== e.sid}
                     onChange={onStageChange}
+                    onCaps={onStageCaps}
                     onRemove={removeStage}
                   />
                 ))}

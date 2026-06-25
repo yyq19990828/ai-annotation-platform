@@ -24,6 +24,7 @@ import type {
   PipelineStagePayload,
   PipelineStageStat,
 } from "@/hooks/usePreannotation";
+import type { StageCaps } from "../utils/pipelineGraph";
 import styles from "./ProjectDetailPanel.module.css";
 
 // v0.18.8 · 运行态 → Badge 原语 (语义色 + 暗色配对走设计系统, 不裸色)。
@@ -125,6 +126,8 @@ interface Props {
   hidden?: boolean;
   /** 派生出的 stage payload (未就绪=null) 上抛给容器; 容器据此组装 pipeline_stages。 */
   onChange: (id: string, payload: PipelineStagePayload | null) => void;
+  /** v0.18.16 §13 · 上抛能力旗标, 供画布作可达性 / 产属性警示 (标红不硬拦)。 */
+  onCaps?: (id: string, caps: StageCaps | null) => void;
   onRemove: (id: string) => void;
 }
 
@@ -142,6 +145,7 @@ export function StageCard({
   runState = "pending",
   hidden = false,
   onChange,
+  onCaps,
   onRemove,
 }: Props) {
   const [backendId, setBackendId] = useState<string | null>(() => {
@@ -304,6 +308,30 @@ export function StageCard({
   // 卸载时清掉本卡的贡献。
   useEffect(() => {
     return () => onChangeRef.current(id, null);
+  }, [id]);
+
+  // v0.18.16 §13 · 能力旗标上抛 (供画布可达性 / 产属性警示)。
+  const supportedInputs = selectedModel?.supported_inputs ?? [];
+  const supportedInputsKey = supportedInputs.join(",");
+  const caps = useMemo<StageCaps>(
+    () => ({
+      hasCapabilities: capabilitiesReady,
+      knownInputs: supportedInputs.length > 0,
+      acceptsCrop: supportedInputs.includes("crop"),
+      acceptsBboxPrompt: supportedInputs.includes("bbox_prompt"),
+      producesAttributes,
+    }),
+    // supportedInputsKey 串化 supportedInputs 作稳定依赖。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [supportedInputsKey, capabilitiesReady, producesAttributes],
+  );
+  const onCapsRef = useRef(onCaps);
+  onCapsRef.current = onCaps;
+  useEffect(() => {
+    onCapsRef.current?.(id, caps);
+  }, [id, caps]);
+  useEffect(() => {
+    return () => onCapsRef.current?.(id, null);
   }, [id]);
 
   const badge = RUN_STATE_BADGE[runState] ?? RUN_STATE_BADGE.pending;

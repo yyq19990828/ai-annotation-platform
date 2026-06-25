@@ -8,14 +8,19 @@ import {
   buildFlow,
   canAddChild,
   canReparent,
+  classFilterText,
   depthBySid,
   descendantsOf,
   detailOf,
   producesGeometry,
   reparent,
+  roiText,
   roleOf,
+  stageWarning,
   subtreeHeight,
+  variantText,
   type GraphNodeModel,
+  type StageCaps,
   type StageEntry,
 } from "./pipelineGraph";
 import type { PipelineStagePayload } from "@/hooks/usePreannotation";
@@ -162,11 +167,56 @@ describe("改父校验 canReparent", () => {
   });
 });
 
+describe("§13 信息 helper", () => {
+  const p = (o: Partial<PipelineStagePayload>): PipelineStagePayload =>
+    ({ stage: 0, ml_backend_id: "bk", ...o }) as PipelineStagePayload;
+
+  it("classFilterText: 有过滤=仅..., 无=全部框", () => {
+    expect(classFilterText(p({ parent_class_filter: ["person", "car"] }))).toBe("仅 person, car");
+    expect(classFilterText(attr())).toBe("全部框");
+  });
+  it("roiText: crop 带 pad / geometry 整图 / 无 roi 空", () => {
+    expect(roiText(p({ roi: { mode: "crop", pad: 0.08 } }))).toBe("裁剪 · pad 0.08");
+    expect(roiText(p({ roi: { mode: "geometry" } }))).toBe("整图框提示");
+    expect(roiText(attr())).toBe("");
+  });
+  it("variantText: k=v 串接 / 无空", () => {
+    expect(variantText(p({ model_variants: { sam_variant: "large" } }))).toBe("sam_variant=large");
+    expect(variantText(attr())).toBe("");
+  });
+
+  describe("stageWarning (标红判据, 与端点 422 对齐)", () => {
+    const caps = (o: Partial<StageCaps>): StageCaps => ({
+      hasCapabilities: true,
+      knownInputs: true,
+      acceptsCrop: false,
+      acceptsBboxPrompt: false,
+      producesAttributes: true,
+      ...o,
+    });
+    it("能力未就绪 → null", () => {
+      expect(stageWarning(attr(), caps({ hasCapabilities: false }))).toBeNull();
+    });
+    it("产几何但既不接 crop 也不接 bbox → 警示", () => {
+      expect(stageWarning(geom(), caps({}))).toMatch(/裁剪|框提示/);
+    });
+    it("产几何接 crop → null", () => {
+      expect(stageWarning(geom(), caps({ acceptsCrop: true }))).toBeNull();
+    });
+    it("inputs 未知 (老 backend) → 不误报", () => {
+      expect(stageWarning(geom(), caps({ knownInputs: false }))).toBeNull();
+    });
+    it("分类但后端不产属性 → 警示", () => {
+      expect(stageWarning(attr(), caps({ producesAttributes: false }))).toMatch(/属性/);
+    });
+  });
+});
+
 describe("buildFlow 派生 + 分层布局", () => {
   const models: GraphNodeModel[] = [
-    { sid: ROOT_SID, parentSid: null, kind: "source", role: roleOf(geom()), detail: "src", runState: "pending", producesGeometry: true, canAddChild: true, conflict: false },
-    { sid: "a", parentSid: ROOT_SID, kind: "stage", role: roleOf(geom()), detail: "a", runState: "pending", producesGeometry: true, canAddChild: true, conflict: false },
-    { sid: "b", parentSid: "a", kind: "stage", role: roleOf(attr()), detail: "b", runState: "pending", producesGeometry: false, canAddChild: false, conflict: false },
+    { sid: ROOT_SID, parentSid: null, kind: "source", role: roleOf(geom()), detail: "src", runState: "pending", producesGeometry: true, canAddChild: true, conflict: false, ready: true },
+    { sid: "a", parentSid: ROOT_SID, kind: "stage", role: roleOf(geom()), detail: "a", runState: "pending", producesGeometry: true, canAddChild: true, conflict: false, ready: true },
+    { sid: "b", parentSid: "a", kind: "stage", role: roleOf(attr()), detail: "b", runState: "pending", producesGeometry: false, canAddChild: false, conflict: false, ready: true },
   ];
 
   it("节点数 = 模型数; 边连 parent→child", () => {

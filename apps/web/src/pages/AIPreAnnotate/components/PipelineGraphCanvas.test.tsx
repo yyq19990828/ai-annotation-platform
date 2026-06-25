@@ -29,12 +29,14 @@ const models: GraphNodeModel[] = [
     parentSid: null,
     kind: "source",
     role: { label: "检测", variant: "accent", icon: "box" },
-    detail: "grounded-sam2",
+    detail: "源检测",
     runState: "pending",
     ok: 5,
     producesGeometry: true,
     canAddChild: true,
     conflict: false,
+    ready: true,
+    backendName: "grounded-sam2",
   },
   {
     sid: "a",
@@ -46,6 +48,9 @@ const models: GraphNodeModel[] = [
     producesGeometry: false,
     canAddChild: false,
     conflict: false,
+    ready: true,
+    backendName: "onnxtools",
+    classFilter: "全部框",
   },
 ];
 
