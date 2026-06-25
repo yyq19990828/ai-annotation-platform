@@ -511,4 +511,6 @@ async def interactive_annotating(
         "inference_time_ms": result.inference_time_ms,
         "cache_hit": result.cache_hit,
         "model_load_ms": result.model_load_ms,
+        # v0.18.18 · 交互精修 low-res logits 回灌 (前端原样存储、下次点击经 context.mask_input 回传)
+        "mask_input_next": result.mask_input_next,
     }

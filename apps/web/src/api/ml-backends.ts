@@ -188,6 +188,9 @@ export const mlBackendsApi = {
       inference_time_ms: number | null;
       cache_hit?: boolean | null;
       model_load_ms?: number | null;
+      // v0.18.18 · 交互精修 low-res logits 回灌 (base64, 不透明); 前端原样存储、
+      // 下次点击经 context.mask_input 回传。仅 multimask=False 的单 mask 精修阶段非空。
+      mask_input_next?: string | null;
     }>(
       `/projects/${projectId}/ml-backends/${backendId}/interactive-annotating`,
       payload,

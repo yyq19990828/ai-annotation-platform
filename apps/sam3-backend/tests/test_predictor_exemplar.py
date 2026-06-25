@@ -350,13 +350,15 @@ def test_interactive_point_returns_polygon(predictor_with_mocks, fake_image):
     inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
     inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(1))
 
-    results, hit = inst.predict_interactive(
+    results, hit, mask_next = inst.predict_interactive(
         fake_image, points=[[0.5, 0.5]], labels=[1], cache_key="ip1"
     )
     assert hit is False
     assert len(results) == 1
     assert results[0]["type"] == "polygonlabels"
     assert results[0]["value"]["polygonlabels"] == ["object"]
+    # v0.18.18 · 单点单 mask (multimask=False) 回灌 low-res logits.
+    assert isinstance(mask_next, str) and mask_next
 
 
 def test_interactive_point_pixel_scaling(predictor_with_mocks, fake_image):
@@ -385,19 +387,38 @@ def test_interactive_box_pixel_scaling(predictor_with_mocks, fake_image):
     assert kw["box"].tolist() == [64.0, 96.0, 320.0, 288.0]
 
 
+def test_interactive_mask_input_decoded_and_passed(predictor_with_mocks, fake_image):
+    """v0.18.18 · context.mask_input (base64) 解码成 (1,256,256) 喂给 predict_inst."""
+    from aap_protocol_v2 import encode_low_res_mask
+
+    inst = predictor_with_mocks
+    inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
+    inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(1))
+
+    encoded = encode_low_res_mask(np.zeros((256, 256), dtype=np.float32))
+    inst.predict_interactive(
+        fake_image, points=[[0.5, 0.5], [0.6, 0.6]], labels=[1, 1],
+        mask_input=encoded, cache_key="imi1",
+    )
+    kw = inst._model.predict_inst.call_args.kwargs
+    assert kw["mask_input"].shape == (1, 256, 256)
+
+
 def test_interactive_multimask_sorted_by_iou(predictor_with_mocks, fake_image):
     """multimask 3 候选按 iou 降序; 首条 score 最高 (0.95)."""
     inst = predictor_with_mocks
     inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
     inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(3))
 
-    results, _ = inst.predict_interactive(
+    results, _, mask_next = inst.predict_interactive(
         fake_image, points=[[0.5, 0.5]], labels=[1], multimask_output=True, cache_key="im1"
     )
     assert len(results) == 3
     scores = [r["score"] for r in results]
     assert scores == sorted(scores, reverse=True)
     assert scores[0] == pytest.approx(0.95)
+    # v0.18.18 · 多候选阶段 index 歧义 → 不回灌 mask_input_next.
+    assert mask_next is None
 
 
 def test_interactive_empty_when_no_mask(predictor_with_mocks, fake_image):
@@ -410,7 +431,7 @@ def test_interactive_empty_when_no_mask(predictor_with_mocks, fake_image):
     )
     inst._model.predict_inst = MagicMock(return_value=empty)
 
-    results, _ = inst.predict_interactive(
+    results, _, _ = inst.predict_interactive(
         fake_image, points=[[0.5, 0.5]], labels=[1], cache_key="ie1"
     )
     assert results == []

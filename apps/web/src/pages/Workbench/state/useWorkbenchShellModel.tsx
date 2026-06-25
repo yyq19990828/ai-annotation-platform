@@ -2117,6 +2117,7 @@ export function useWorkbenchShellModel({
       ai: {
         samCandidates: sam.candidates,
         samActiveIdx: sam.activeIdx,
+        samSessionPoints: sam.sessionPoints,
         samSubTool: s.samSubTool,
         samPolarity: s.samPolarity,
         onRefineSamCandidate: handleRefineSamCandidate,

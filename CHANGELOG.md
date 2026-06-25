@@ -34,6 +34,23 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.18] - 2026-06-25
+
+交互分割多点精修质量优化：`mask_input` 回灌增量 + 会话点位可视化。SAM2/SAM3 的 `predict()` 接收上一轮 256×256 low-res logits 回灌，多点精修时稳住 mask 边界、修复「过度点击反而崩坏」。为保持 backend 无状态，logits 由前端携带往返（响应 `mask_input_next` → 下次点击 `context.mask_input`，前端只搬运不解析）；仅 `multimask_output=false` 的单 mask 精修阶段启用，规避多候选 index 歧义。同时补齐多点精修的可用性短板：画布渲染会话已落的正/负点（正绿圆 / 负红叉）。规划与量化详见 [`docs/plans/2026-06-25-v0.18.18-interactive-seg-mask-input-refeed.md`](docs/plans/2026-06-25-v0.18.18-interactive-seg-mask-input-refeed.md)。
+
+### Added
+
+- **`mask_input` 回灌（迭代精修增量）**：两 backend 解码 `context.mask_input` 透传上游 `predict(mask_input=...)`，单 mask 阶段把本轮 `low_res_masks` 编码回 `mask_input_next`；前端存储并在 ≥2 点精修时回传。编解码（`float16 + zlib + base64`）集中在共享包 `aap_protocol_v2.mask_codec`，对前端是不透明 token。GPU 实测（gsam2 large / coco8-seg）5-click IoU 中位 +1.86%、均值 +7.16%，并消除 OFF 在末次点击的退化；真实往返体积 <1KB（zlib 压饱和 logits）。
+- **会话点位可视化**：`smart-point` 多点精修时画布 overlay 渲染已落的正点（绿色实心圆）/ 负点（红色叉），跟随视口缩放平移；提交 / `Esc` / 切 prompt·task·backend 时随会话清除。
+
+### Changed
+
+- **交互单实例响应携带 `mask_input_next`**：`PredictionResult` 新增可选字段（协议 §2.2 编码约定同步）；平台层透传，仅交互单实例路径非空。坏 / 过期 `mask_input` 串 backend 静默忽略，不让单次精修整体失败。
+
+### Compatibility
+
+- 纯增量、向后兼容：新增字段均可选，老前端 / 老 backend 缺字段时行为不变。无 DB migration，无新增环境变量。
+
 ## [0.18.17] - 2026-06-25
 
 双 backend SAM-style 单实例交互对齐 + 协议统一。sam3-backend 开启 `enable_inst_interactivity` 解锁 SAM-style `point` / `interactive_box` 交互（走 `model.predict_inst`，与 PCS 共用同一 `backbone_out` 缓存）；grounded-sam2-backend 复用已加载权重透传 `multimask_output`。两 backend 点交互升级为正/负点累加（前端重发全量点、后端无状态），单点歧义出 `multimask_output` 三候选。同时统一交互 prompt 命名：单框单 mask 走 `interactive_box`、PCS 找全图相似走 `exemplar`，`bbox` 退出交互命名空间。规划详见 [`docs/plans/2026-06-25-v0.18.17-interactive-seg-dual-backend-sam-iterative.md`](docs/plans/2026-06-25-v0.18.17-interactive-seg-dual-backend-sam-iterative.md)。

@@ -208,12 +208,12 @@ export function AIToolDrawer({
             data-testid="ai-tool-polarity"
             onClick={() => onSetSamPolarity(samPolarity === "positive" ? "negative" : "positive")}
             className={cn(
-              "flex size-6 cursor-pointer appearance-none items-center justify-center rounded-full border-0 p-0 text-sm font-bold leading-none text-white",
+              "flex size-6 cursor-pointer appearance-none items-center justify-center rounded-full border-0 p-0 text-white",
               samPolarity === "positive" ? "bg-emerald-500" : "bg-amber-500",
             )}
             title={samPolarity === "positive" ? "正向 (+) — 按 - 切负向" : "负向 (−) — 按 + 切正向"}
           >
-            {samPolarity === "positive" ? "+" : "−"}
+            <Icon name={samPolarity === "positive" ? "plus" : "minus"} size={14} />
           </button>
         </div>
       )}

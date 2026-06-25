@@ -128,6 +128,48 @@ describe("useInteractiveAI", () => {
     expect(ctx.multimask_output).toBe(true);
   });
 
+  it("§5.4 mask_input 回灌: 首点不回灌, ≥2 点回传上一轮 low-res logits", async () => {
+    // 首点 multimask → 后端 mask_input_next=null; 第 2 点起单 mask → 返回 token 供下次回传。
+    interactiveAnnotateMock
+      .mockResolvedValueOnce({ ...POLY_RESPONSE, mask_input_next: null })
+      .mockResolvedValueOnce({ ...POLY_RESPONSE, mask_input_next: "TOKEN_A" })
+      .mockResolvedValueOnce({ ...POLY_RESPONSE, mask_input_next: "TOKEN_B" });
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+
+    act(() => result.current.runPoint([0.1, 0.1], 1));
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
+    await act(async () => { await Promise.resolve(); });
+    // 首点候选阶段 (multimask=true) 不回灌。
+    expect(interactiveAnnotateMock.mock.calls[0][2].context.mask_input).toBeUndefined();
+
+    act(() => result.current.runPoint([0.2, 0.2], 1));
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(2));
+    await act(async () => { await Promise.resolve(); });
+    // 第 2 点: 上一轮 (首点) 返回 null → maskInputRef 仍空, 不回灌。
+    expect(interactiveAnnotateMock.mock.calls[1][2].context.mask_input).toBeUndefined();
+
+    act(() => result.current.runPoint([0.3, 0.3], 1));
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(3));
+    // 第 3 点: 回传第 2 点返回的 TOKEN_A。
+    expect(interactiveAnnotateMock.mock.calls[2][2].context.mask_input).toBe("TOKEN_A");
+  });
+
+  it("§5.5 sessionPoints 累加并随 cancel 清空", async () => {
+    interactiveAnnotateMock.mockResolvedValue({ ...POLY_RESPONSE, mask_input_next: null });
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+
+    act(() => result.current.runPoint([0.1, 0.1], 1));
+    await waitFor(() => expect(result.current.sessionPoints).toHaveLength(1));
+    act(() => result.current.runPoint([0.2, 0.2], 0));
+    await waitFor(() => expect(result.current.sessionPoints).toHaveLength(2));
+    expect(result.current.sessionPoints).toEqual([
+      { pt: [0.1, 0.1], polarity: 1 },
+      { pt: [0.2, 0.2], polarity: 0 },
+    ]);
+    act(() => result.current.cancel());
+    expect(result.current.sessionPoints).toHaveLength(0);
+  });
+
   it("Alt+点击 (polarity=0) 透传 negative label", async () => {
     interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
     const { result } = renderHook(() => useInteractiveAI(ARGS));

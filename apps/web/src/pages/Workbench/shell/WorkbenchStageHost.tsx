@@ -173,6 +173,8 @@ interface WorkbenchStageHostAiProps {
     bbox?: { x: number; y: number; width: number; height: number };
   }[];
   samActiveIdx: number;
+  /** v0.18.18 · §5.5 当前点会话已落的正/负点, 透传到画布 overlay 渲染。 */
+  samSessionPoints: { pt: [number, number]; polarity: 1 | 0 }[];
   samSubTool: SamSubTool | null;
   samPolarity: SamPolarity;
   /** v0.10.9 · SAM 候选「精修」入口（画布浮按钮 + R 键）。 */
@@ -325,6 +327,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     const {
       samCandidates,
       samActiveIdx,
+      samSessionPoints,
       samSubTool,
       samPolarity,
       onRefineSamCandidate,
@@ -465,6 +468,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onSamPrompt={onSamPrompt}
             samCandidates={samCandidates}
             samActiveIdx={samActiveIdx}
+            samSessionPoints={samSessionPoints}
             samSubTool={samSubTool}
             samPolarity={samPolarity}
             onCommitMove={onCommitMove}

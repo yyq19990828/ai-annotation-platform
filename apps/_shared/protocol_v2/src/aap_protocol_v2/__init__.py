@@ -1,6 +1,7 @@
 """ML backend 协议 v2 共享 schema + 受控词表常量。"""
 
 from aap_protocol_v2.errors import ModelUnavailableError, VariantNotSupportedError
+from aap_protocol_v2.mask_codec import decode_low_res_mask, encode_low_res_mask
 from aap_protocol_v2.predict import (
     LEGACY_CONTEXT_VARIANT_FIELDS,
     log_deprecated_model_variant_fields,
@@ -29,6 +30,8 @@ __all__ = [
     "BatchPredictResponse",
     "COMPAT_PROTOCOL_VERSIONS",
     "EvictRecord",
+    "decode_low_res_mask",
+    "encode_low_res_mask",
     "GEOMETRY_VALUES",
     "INFRA_VALUES",
     "LEGACY_CONTEXT_VARIANT_FIELDS",

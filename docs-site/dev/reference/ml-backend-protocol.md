@@ -180,6 +180,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
     "bbox": [x1, y1, x2, y2],               // type=interactive_box 时 (单框 prompt) 或 type=exemplar 时 (视觉示例框)
     "labels": [1, 0, ...],                  // 可选；point 类型，1=positive 0=negative
     "multimask_output": false,              // 可选; point/interactive_box 单点歧义出 3 候选 (按 iou 降序), 默认单 mask
+    "mask_input": "<base64>",               // 可选; 上一轮 256×256 low-res logits 回灌 (多点精修, 见下), 不透明字符串
     "text": "ripe apples",                  // type=text 时（Grounded-SAM-2 / SAM 3 PCS 文本入口）
     "output": "box" | "mask" | "both",      // 仅 type=text 生效, 默认 "mask" 老前端兼容
     "box_threshold": 0.35,                  // 可选; type=text 时 backend 的 DINO 阈值 override (grounded-sam2 专属)
@@ -197,6 +198,12 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 `context` 是个开放 dict——平台和 backend 协商具体字段，平台不做 schema 校验（`ml_client.py:64-82`）。
 
 > **`type=point` / `type=interactive_box`**：SAM-style 单实例交互分割，两个 backend 同名同义（grounded-sam2 走 SAM 2.1 image predictor，SAM 3 走 inst predictor `model.predict_inst`）。`point` 支持正/负点累加——前端把同一对象的全部点每次重发（无状态后端），1=positive 0=negative；`interactive_box` 是单框单 mask。`multimask_output=true` 时单点歧义返回 3 个候选 mask（`result[]` 按 iou 降序，前端默认取 top-1 + 切换）。返回 `polygonlabels: ["object"]`（前端按 active label 改写）。`bbox` 作为交互 prompt 已退役（仅保留为几何形状）；旧 `type=bbox` 请求返回 422。
+
+> **`mask_input` 回灌（多点精修增量）**：SAM2/SAM3 的 `predict()` 接收上一轮 256×256 low-res logits 回灌，多次点击精修同一对象时显著提升 mask 稳定性与边界质量。为保持 backend 无状态，这些 logits 由前端携带往返：backend 在 `multimask_output=false` 的单 mask 路径把本轮 `low_res_masks` 编码成响应字段 `mask_input_next`，前端**原样存储、不解析**，下一次点击经 `context.mask_input` 回传；backend 解码后喂回 `predict(mask_input=...)`。
+>
+> - **编码格式**（不透明字符串，仅 backend 编解码，前端只搬运）：`float16(256×256)` → `tobytes` → `zlib(level=6)` → 前缀 magic `m1` → `base64(ascii)`。每轮往返 ~128KB（float16）/ ~175KB（base64 上界），zlib 对 clamp 到 `[-32,32]` 的饱和 logits 进一步压缩。实现见 `apps/_shared/protocol_v2/.../mask_codec.py`（两 backend 共用）。
+> - **仅多点精修阶段启用**：`mask_input_next` 只在 `multimask_output=false`（≥2 点的单 mask 精修）的 `point` 路径返回；`multimask_output=true`（首点 3 候选）会有 index 歧义，恒返回 `null`。`interactive_box` / `text` / `exemplar` 单发 prompt 不链式精修，恒 `null`。回灌因此自然从第 3 次点击起生效（首点候选阶段不回灌、第 2 点尚无上一轮单 mask logits）。
+> - **失效**：前端在提交候选 / 取消（Esc）/ 切 prompt 模式 / 切 task·backend 时丢弃所存 logits。坏 / 过期的 `mask_input` 串 backend 静默忽略（记 warning），不让单次精修整体失败。
 
 > **`type=text`**：Grounded-SAM-2 走 GroundingDINO 文本 → boxes → SAM mask 复合链路；SAM 3 走 PCS 单模型一步出 mask。两者返回 `result[]` 字面一致（多 polygon / 多 rect / 配对）。`box_threshold` / `text_threshold` 仅 grounded-sam2 消费；`score_threshold` 仅 SAM 3 消费。
 
@@ -239,7 +246,8 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   "result": [<annotation>, ...],
   "score": 0.85,
   "model_version": "sam-vit-h",
-  "inference_time_ms": 180
+  "inference_time_ms": 180,
+  "mask_input_next": "<base64>"            // 可选; 仅 point 单 mask 精修阶段非空, 前端原样回带 (见上 mask_input)
 }
 ```
 

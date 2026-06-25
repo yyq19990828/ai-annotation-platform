@@ -58,7 +58,7 @@ def test_point_multimask_passthrough_and_sorted(predictor):
     scores = np.array([0.5, 0.91, 0.7], dtype=np.float32)
     predictor._sam_predictor.predict = MagicMock(return_value=(masks, scores, None))
 
-    results, _ = predictor.predict_point(
+    results, _, mask_next = predictor.predict_point(
         _img(), [[0.5, 0.5]], [1], multimask_output=True, cache_key=None, simplify_tolerance=1.0
     )
 
@@ -68,18 +68,40 @@ def test_point_multimask_passthrough_and_sorted(predictor):
     out_scores = [r["score"] for r in results]
     assert out_scores == sorted(out_scores, reverse=True)
     assert out_scores[0] == pytest.approx(0.91)
+    # v0.18.18 · 多候选阶段 index 歧义 → 不回灌 low-res.
+    assert mask_next is None
 
 
 def test_point_single_mask_default(predictor):
-    """缺省 multimask=False → 单 mask, 透传 False。"""
+    """缺省 multimask=False → 单 mask, 透传 False; 单 mask 阶段回灌 low-res logits。"""
+    low_res = np.zeros((1, 256, 256), dtype=np.float32)
     predictor._sam_predictor.predict = MagicMock(
-        return_value=(_circle()[None, ...], np.array([0.8]), None)
+        return_value=(_circle()[None, ...], np.array([0.8]), low_res)
     )
-    results, _ = predictor.predict_point(
+    results, _, mask_next = predictor.predict_point(
         _img(), [[0.5, 0.5]], [1], cache_key=None, simplify_tolerance=1.0
     )
     assert predictor._sam_predictor.predict.call_args.kwargs["multimask_output"] is False
     assert len(results) == 1
+    # v0.18.18 · multimask=False 单 mask → 编码 low-res 回 mask_input_next.
+    assert isinstance(mask_next, str) and mask_next
+
+
+def test_point_mask_input_decoded_and_passed(predictor):
+    """v0.18.18 · context.mask_input 解码成 (1,256,256) 透传 _sam_predictor.predict。"""
+    from aap_protocol_v2 import encode_low_res_mask
+
+    low_res = np.zeros((1, 256, 256), dtype=np.float32)
+    predictor._sam_predictor.predict = MagicMock(
+        return_value=(_circle()[None, ...], np.array([0.8]), low_res)
+    )
+    encoded = encode_low_res_mask(np.zeros((256, 256), dtype=np.float32))
+    predictor.predict_point(
+        _img(), [[0.5, 0.5], [0.6, 0.6]], [1, 1],
+        mask_input=encoded, cache_key=None, simplify_tolerance=1.0,
+    )
+    kw = predictor._sam_predictor.predict.call_args.kwargs
+    assert kw["mask_input"].shape == (1, 256, 256)
 
 
 def test_interactive_box_multimask_sorted(predictor):
@@ -88,10 +110,12 @@ def test_interactive_box_multimask_sorted(predictor):
     scores = np.array([0.6, 0.95], dtype=np.float32)
     predictor._sam_predictor.predict = MagicMock(return_value=(masks, scores, None))
 
-    results, _ = predictor.predict_bbox(
+    results, _, mask_next = predictor.predict_bbox(
         _img(), [0.1, 0.1, 0.4, 0.4], multimask_output=True, cache_key=None, simplify_tolerance=1.0
     )
     assert predictor._sam_predictor.predict.call_args.kwargs["multimask_output"] is True
     out_scores = [r["score"] for r in results]
     assert out_scores == sorted(out_scores, reverse=True)
     assert out_scores[0] == pytest.approx(0.95)
+    # 框单发不回灌.
+    assert mask_next is None

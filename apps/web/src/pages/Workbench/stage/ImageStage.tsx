@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { Stage, Layer, Image as KonvaImage, Rect, Line, Circle, Label, Tag, Text } from "react-konva";
+import { Stage, Layer, Image as KonvaImage, Rect, Line, Circle, Group, Label, Tag, Text } from "react-konva";
 import type Konva from "konva";
 import useImage from "use-image";
 import type { Annotation, Geometry, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
@@ -192,6 +192,11 @@ interface ImageStageProps {
     bbox?: { x: number; y: number; width: number; height: number };
   }[];
   samActiveIdx?: number;
+  /**
+   * v0.18.18 · §5.5 当前点交互会话已落的正/负点 (归一化 + 极性)。仅 smart-point 工具激活且
+   * 会话非空时, 在 overlay 层渲染正点绿色实心圆 / 负点红色叉, 跟随视口缩放平移。
+   */
+  samSessionPoints?: { pt: [number, number]; polarity: 1 | 0 }[];
   onCommitMove?: (id: string, before: Geom, after: Geom) => void;
   onCommitResize?: (id: string, before: Geom, after: Geom) => void;
   /** polygon 顶点几何变更（拖动 / Alt 新增 / Shift 删除）；before/after 为完整 points 列表。 */
@@ -256,9 +261,9 @@ export function ImageStage({
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
   onJoinSelected, onCropSelected,
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass, onPatchShapeFlag, clipboardActions,
-  onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0,
+  onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0, samSessionPoints,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
-  onStageGeometry, overlay, polygonDraft, keypointDraft, keypointSchema, onCommitKeypointGeometry, samPolarity,
+  onStageGeometry, overlay, polygonDraft, keypointDraft, keypointSchema, onCommitKeypointGeometry, samSubTool, samPolarity,
   canvasShapes, canvasEditable = false, canvasStroke = "#ef4444", onCanvasStrokeCommit,
   historicalShapes,
   maskEditor,
@@ -1527,6 +1532,48 @@ export function ImageStage({
               />
             );
           })}
+
+          {/* v0.18.18 · §5.5 会话点位: smart-point 多点精修时显示已落的正/负点
+              (正=绿色实心圆, 负=红色叉), 让用户看到点过哪、哪些正/负, 跟随视口缩放。 */}
+          {samSubTool === "point" && samSessionPoints && samSessionPoints.length > 0 &&
+            samSessionPoints.map((sp, idx) => {
+              const cx = sp.pt[0] * imgW;
+              const cy = sp.pt[1] * imgH;
+              const r = 5 / vp.scale;
+              if (sp.polarity === 1) {
+                return (
+                  <Circle
+                    key={`sam-pt-${idx}`}
+                    x={cx}
+                    y={cy}
+                    radius={r}
+                    fill="#22c55e"
+                    stroke="#ffffff"
+                    strokeWidth={1.5 / vp.scale}
+                    listening={false}
+                  />
+                );
+              }
+              const arm = r;
+              return (
+                <Group key={`sam-pt-${idx}`} listening={false}>
+                  <Line
+                    points={[cx - arm, cy - arm, cx + arm, cy + arm]}
+                    stroke="#ef4444"
+                    strokeWidth={2 / vp.scale}
+                    lineCap="round"
+                    listening={false}
+                  />
+                  <Line
+                    points={[cx - arm, cy + arm, cx + arm, cy - arm]}
+                    stroke="#ef4444"
+                    strokeWidth={2 / vp.scale}
+                    lineCap="round"
+                    listening={false}
+                  />
+                </Group>
+              );
+            })}
 
           {pendingDrawing && (
             <>

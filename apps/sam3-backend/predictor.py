@@ -47,6 +47,7 @@ import numpy as np
 import torch
 from PIL import Image
 
+from aap_protocol_v2 import decode_low_res_mask, encode_low_res_mask
 from embedding_cache import CacheEntry, EmbeddingCache
 from mask_utils import MultiPolygonRing, mask_to_multi_polygon
 
@@ -55,6 +56,28 @@ logger = logging.getLogger(__name__)
 # 与 grounded-sam2-backend 一致的默认 simplify tolerance (像素).
 DEFAULT_SIMPLIFY_TOLERANCE = 1.0
 VERTEX_COUNT_WARN_THRESHOLD = 200
+
+
+def _safe_decode_mask_input(mask_input: str) -> np.ndarray | None:
+    """v0.18.18 · 解码前端回传的 low-res logits; 坏串静默忽略 (不让一次精修整体失败)。"""
+    try:
+        return decode_low_res_mask(mask_input)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ignoring invalid mask_input: %s", exc)
+        return None
+
+
+def _maybe_encode_low_res(
+    low_res: np.ndarray | None, points: list[list[float]] | None, multimask_output: bool
+) -> str | None:
+    """v0.18.18 · 仅点精修单 mask 阶段回灌 low-res logits (多候选 index 歧义 / 框单发不回灌)。"""
+    if not points or multimask_output or low_res is None or len(low_res) < 1:
+        return None
+    try:
+        return encode_low_res_mask(low_res[0])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("failed to encode mask_input_next: %s", exc)
+        return None
 
 CHECKPOINT_DIR = os.getenv("CHECKPOINT_DIR", "/app/checkpoints")
 # 图像模型变体名: 当前加载 sam3.pt (facebook/sam3, 3.0) —— 官方 image+inst 路径所用权重。
@@ -252,9 +275,10 @@ class SAM3Predictor:
         labels: list[int] | None = None,
         box: list[float] | None = None,
         multimask_output: bool = False,
+        mask_input: str | None = None,
         cache_key: str | None = None,
         simplify_tolerance: float | None = None,
-    ) -> tuple[list[dict[str, Any]], bool]:
+    ) -> tuple[list[dict[str, Any]], bool, str | None]:
         """v0.18.17 · SAM-style 单实例点/框交互 (与 grounded-sam2 对齐).
 
         走 inst_interactive_predictor (model.predict_inst), 复用同一 backbone_out 缓存
@@ -264,8 +288,12 @@ class SAM3Predictor:
         - points: 归一化 [[x,y],...]; labels: 1=正点 / 0=负点 (累加由前端重发全量点).
         - box:    归一化 [x1,y1,x2,y2] 单框单 mask.
         - multimask_output=True: 单点歧义时返回 3 候选 (按 iou 降序), 前端 top-1 + 切换.
+        - mask_input: v0.18.18 · 上一轮 256×256 low-res logits (base64) 回灌, 多点精修提升
+          边界稳定性。返回三元组第 3 项 mask_input_next 携带本轮 low-res 供下一次回传,
+          仅 points 精修且 multimask_output=False 时返回 (多候选 index 歧义 / 框单发不回灌)。
 
-        返回 polygonlabels; geometric 无自然 label, 用 "object" 占位, workbench 按 active label 重写.
+        返回 (polygonlabels, cache_hit, mask_input_next); geometric 无自然 label, 用
+        "object" 占位, workbench 按 active label 重写.
         """
         with torch.autocast(self.device, dtype=torch.bfloat16, enabled=(self.device == "cuda")):
             state, w, h, hit = self._prime_state(image, cache_key)
@@ -279,14 +307,19 @@ class SAM3Predictor:
             if box is not None:
                 x1, y1, x2, y2 = box
                 kwargs["box"] = np.array([x1 * w, y1 * h, x2 * w, y2 * h], dtype=np.float32)
+            if mask_input:
+                arr = _safe_decode_mask_input(mask_input)
+                if arr is not None:
+                    kwargs["mask_input"] = arr
 
             # predict_inst 复用 state["backbone_out"]["sam2_backbone_out"], 不重跑 backbone.
             # 返回 (masks CxHxW, iou C, low_res Cx256x256); masks 已 threshold 成 0/1 float.
-            masks, ious, _low_res = self._model.predict_inst(state, **kwargs)
+            masks, ious, low_res = self._model.predict_inst(state, **kwargs)
 
-        return self._build_interactive_results(
+        results = self._build_interactive_results(
             masks, ious, w, h, simplify_tolerance=simplify_tolerance,
-        ), hit
+        )
+        return results, hit, _maybe_encode_low_res(low_res, points, multimask_output)
 
     def _build_interactive_results(
         self,

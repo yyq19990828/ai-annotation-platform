@@ -56,6 +56,11 @@ export interface UseInteractiveAIReturn {
   candidates: PendingCandidate[];
   activeIdx: number;
   isRunning: boolean;
+  /**
+   * v0.18.18 · §5.5 当前点交互会话已落的正/负点 (归一化坐标 + 极性), 供画布 overlay 渲染。
+   * 提交 / 取消 / 切 prompt / 切 task·backend 时清空。空数组 = 无进行中的多点精修会话。
+   */
+  sessionPoints: { pt: [number, number]; polarity: 1 | 0 }[];
   /** v0.10.2 · 各 run* 接受可选 extraParams; 由 AIToolDrawer 注入 (box_threshold 等). */
   runPoint: (pt: [number, number], polarity: 1 | 0, extraParams?: Record<string, unknown>) => void;
   runBbox: (bbox: [number, number, number, number], extraParams?: Record<string, unknown>) => void;
@@ -96,8 +101,18 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   // multimask 出候选; ≥2 点转单 mask 精修. 会话在 提交(consume point 候选) / Esc(cancel) /
   // 切 task·backend / 切 prompt 模式(bbox/text/exemplar) 时重置。
   const pointSessionRef = useRef<{ pt: [number, number]; polarity: 1 | 0 }[]>([]);
+  // v0.18.18 · §5.5 会话点位可视化: pointSessionRef 是同步真源 (runPoint 立即读它拼全量点),
+  // 这里镜像出可订阅 state 驱动画布 overlay 渲染已落的正/负点。
+  const [sessionPoints, setSessionPoints] = useState<{ pt: [number, number]; polarity: 1 | 0 }[]>(
+    [],
+  );
+  // v0.18.18 · §5.4 mask_input 回灌: 存上一轮单 mask 的 256×256 low-res logits (不透明 base64);
+  // ≥2 点精修阶段经 context.mask_input 回传, 首点候选阶段 / 切 prompt / 提交 / 取消时失效。
+  const maskInputRef = useRef<string | null>(null);
   const resetPointSession = useCallback(() => {
     pointSessionRef.current = [];
+    maskInputRef.current = null;
+    setSessionPoints([]);
   }, []);
 
   // v0.10.23 · 会话级模型变体切换反馈。变体切换是惰性的：用户在 AI 面板下拉选了新变体后,
@@ -140,7 +155,10 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       const normalized = normalizePredictContext(context);
       const requestContext = normalized.context;
       const ctxKind = (requestContext.type as string | undefined) ?? source;
-      const cacheKey = makeSamCacheKey({ taskId, mlBackendId, ctxKind, ctx: requestContext });
+      // v0.18.18 · mask_input 是上一轮 logits 的不透明回灌, 不进缓存键 (同一点序的 mask_input
+      // 是确定的, 排除它避免巨串塞键 / 误判 miss)。
+      const { mask_input: _maskInput, ...ctxForKey } = requestContext;
+      const cacheKey = makeSamCacheKey({ taskId, mlBackendId, ctxKind, ctx: ctxForKey });
       // 命中前端缓存：直接复用候选，跳过 HTTP。
       const cached = cache.get(cacheKey);
       if (cached) {
@@ -164,6 +182,9 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         });
         // 只接受最新一次请求的结果（防止防抖窗口外的旧请求覆盖新候选）
         if (myInflight !== inflightRef.current) return;
+        // v0.18.18 · 存本轮回灌 token: 单 mask 精修阶段非空, 多候选 / 框 / text / exemplar 为 null
+        // (后端按 multimask 自动决定), 下次 ≥2 点点击经 context.mask_input 回传。
+        maskInputRef.current = resp.mask_input_next ?? null;
         if (isVariantSwitch) {
           lastAppliedVariantRef.current = variantSig;
           pushToast({ msg: `已切换到 ${variantLabel(requestContext)}`, kind: "success" });
@@ -211,14 +232,27 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       // v0.18.17 · 累加到当前点会话, 每次重发全量点 (正/负点精修同一对象).
       pointSessionRef.current = [...pointSessionRef.current, { pt, polarity }];
       const session = pointSessionRef.current;
+      // v0.18.18 · §5.5 镜像到可订阅 state, 驱动画布会话点 overlay。
+      setSessionPoints(session);
       const points = session.map((s) => s.pt);
       const labels = session.map((s) => s.polarity);
       // 单点首击 multimask 出 3 候选 (top-1 + Tab 切换); 累加 ≥2 点转单 mask 精修.
       const multimask = session.length === 1;
+      // v0.18.18 · §5.4 仅多点精修阶段 (≥2 点) 回灌上一轮 low-res logits; 首点候选阶段不回灌
+      // (多候选 index 歧义)。首个非候选点 (第 2 点) 时 maskInputRef 通常还空 (首点是 multimask),
+      // 回灌自然从第 3 点起生效, 与协议约定一致。
+      const refeed = !multimask && maskInputRef.current ? maskInputRef.current : undefined;
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         dispatch(
-          { ...(extraParams ?? {}), type: "point", points, labels, multimask_output: multimask },
+          {
+            ...(extraParams ?? {}),
+            type: "point",
+            points,
+            labels,
+            multimask_output: multimask,
+            ...(refeed ? { mask_input: refeed } : {}),
+          },
           "point",
         );
       }, DEBOUNCE_MS);
@@ -334,16 +368,17 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       });
   }, [projectId, taskId, mlBackendId, cache]);
 
-  // 切 task / backend → 重置预热记忆 + 点会话
+  // 切 task / backend → 重置预热记忆 + 点会话 (含 mask_input 回灌 + 可视化点)
   useEffect(() => {
     warmedRef.current = null;
-    pointSessionRef.current = [];
-  }, [taskId, mlBackendId]);
+    resetPointSession();
+  }, [taskId, mlBackendId, resetPointSession]);
 
   return {
     candidates,
     activeIdx,
     isRunning,
+    sessionPoints,
     runPoint,
     runBbox,
     runText,
