@@ -579,6 +579,8 @@ def setup() -> dict:
             # 文本检测器: 可跑整图, 也可在父框 crop 上检子物体 (crop-detect 下游)。
             "supported_inputs": ["full_image", "crop"],
             "supported_geometric_outputs": ["bbox"],
+            "output_attribute_types": ["class", "score"],
+            "resource_profile": {"device": "gpu", "batchable": True},
             "supported_text_outputs": ["box"],
             "supported_variants": [_dino_variant_axis()],
             "variants_shared_across_tasks": True,
@@ -598,6 +600,8 @@ def setup() -> dict:
             # 文本→分割: 整图 / 父框 crop 上跑 (文本驱动, 复合内部 DINO+SAM)。
             "supported_inputs": ["full_image", "crop"],
             "supported_geometric_outputs": ["polygon"],
+            "output_attribute_types": ["class", "score"],
+            "resource_profile": {"device": "gpu", "batchable": True},
             "supported_text_outputs": ["mask", "both"],
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,
@@ -618,6 +622,8 @@ def setup() -> dict:
             # 交互分割: 消费点 / 框提示 (不作批量 crop 下游)。
             "supported_inputs": ["bbox_prompt", "point_prompt", "full_image"],
             "supported_geometric_outputs": ["polygon"],
+            # 单实例交互推理, 不作批量。output_attribute_types 留空 (无类别/置信度产出)。
+            "resource_profile": {"device": "gpu", "batchable": False},
             "supported_variants": [_sam_variant_axis()],
             "variants_shared_across_tasks": True,
             "default_variants": {"sam_variant": SAM_VARIANT},
@@ -636,6 +642,8 @@ def setup() -> dict:
             # 视频追踪: 以框提示初始化 (有状态视频, 非批量 crop 下游)。
             "supported_inputs": ["bbox_prompt", "full_image"],
             "supported_geometric_outputs": ["bbox"],
+            # 有状态视频追踪, 跨帧串行不可批量。output_attribute_types 留空。
+            "resource_profile": {"device": "gpu", "batchable": False},
             "supported_trackers": ["sam2_video"],
             "supported_variants": [_sam_variant_axis()],
             "variants_shared_across_tasks": True,
@@ -658,6 +666,9 @@ def setup() -> dict:
             # 框→分割: 消费上游检测框 (geometry-prompt 批量下游)。
             "supported_inputs": ["bbox_prompt", "full_image"],
             "supported_geometric_outputs": ["polygon"],
+            # 框→mask 批量细化: 消费上游检测框, 透传其类别, 自身不分类。
+            # 故批量可跑但 output_attribute_types 留空 (不自产 class/score)。
+            "resource_profile": {"device": "gpu", "batchable": True},
             "supported_variants": [_sam_variant_axis()],
             "variants_shared_across_tasks": True,
             "default_variants": {"sam_variant": SAM_VARIANT},

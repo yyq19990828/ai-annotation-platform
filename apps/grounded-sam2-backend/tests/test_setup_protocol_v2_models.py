@@ -71,6 +71,27 @@ def test_setup_models_declare_supported_inputs():
     assert by_id["grounded-sam2-box-seg"]["supported_inputs"] == ["bbox_prompt", "full_image"]
 
 
+def test_setup_models_declare_output_attribute_types():
+    """v0.18.16 · 文本检测/分割自报 class+score; 交互/追踪/框→mask 不自产属性 (留空)。"""
+    by_id = {m["id"]: m for m in setup()["models"]}
+    assert by_id["grounded-sam2-detection"]["output_attribute_types"] == ["class", "score"]
+    assert by_id["grounded-sam2-segmentation"]["output_attribute_types"] == ["class", "score"]
+    # 交互分割 / 视频追踪 / 框→mask 细化: 透传或无类别产出, 不声明。
+    assert "output_attribute_types" not in by_id["grounded-sam2-interactive-seg"]
+    assert "output_attribute_types" not in by_id["grounded-sam2-tracker"]
+    assert "output_attribute_types" not in by_id["grounded-sam2-box-seg"]
+
+
+def test_setup_models_declare_resource_profile():
+    """v0.18.16 · 资源画像: 批量模型 batchable=True, 交互/视频追踪逐次 batchable=False (不填 vram)。"""
+    by_id = {m["id"]: m for m in setup()["models"]}
+    assert by_id["grounded-sam2-detection"]["resource_profile"] == {"device": "gpu", "batchable": True}
+    assert by_id["grounded-sam2-segmentation"]["resource_profile"] == {"device": "gpu", "batchable": True}
+    assert by_id["grounded-sam2-box-seg"]["resource_profile"] == {"device": "gpu", "batchable": True}
+    assert by_id["grounded-sam2-interactive-seg"]["resource_profile"] == {"device": "gpu", "batchable": False}
+    assert by_id["grounded-sam2-tracker"]["resource_profile"] == {"device": "gpu", "batchable": False}
+
+
 def test_setup_each_model_carries_infra_pytorch():
     data = setup()
     for m in data["models"]:

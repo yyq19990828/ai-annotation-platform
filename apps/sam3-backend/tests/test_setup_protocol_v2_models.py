@@ -63,6 +63,22 @@ def test_setup_models_declare_supported_inputs(setup_fn):
     assert by_id["sam3-interactive-seg"]["supported_inputs"] == ["full_image"]
 
 
+def test_setup_models_declare_output_attribute_types(setup_fn):
+    """v0.18.16 · 检测/分割自报 class+score; 交互分割不自产属性 (留空)。"""
+    by_id = {m["id"]: m for m in setup_fn()["models"]}
+    assert by_id["sam3-detection"]["output_attribute_types"] == ["class", "score"]
+    assert by_id["sam3-segmentation"]["output_attribute_types"] == ["class", "score"]
+    assert "output_attribute_types" not in by_id["sam3-interactive-seg"]
+
+
+def test_setup_models_declare_resource_profile(setup_fn):
+    """v0.18.16 · 资源画像: 批量模型 batchable=True, 交互分割逐次 batchable=False (不填 vram)。"""
+    by_id = {m["id"]: m for m in setup_fn()["models"]}
+    assert by_id["sam3-detection"]["resource_profile"] == {"device": "gpu", "batchable": True}
+    assert by_id["sam3-segmentation"]["resource_profile"] == {"device": "gpu", "batchable": True}
+    assert by_id["sam3-interactive-seg"]["resource_profile"] == {"device": "gpu", "batchable": False}
+
+
 def test_detection_model_text_to_bbox(setup_fn):
     data = setup_fn()
     det = next(m for m in data["models"] if m["task"] == "detection")

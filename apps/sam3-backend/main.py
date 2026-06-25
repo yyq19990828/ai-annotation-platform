@@ -441,6 +441,8 @@ def setup() -> dict:
             # 文本检测器: 整图 / 父框 crop 上检子物体 (crop-detect 下游)。
             "supported_inputs": ["full_image", "crop"],
             "supported_geometric_outputs": ["bbox"],
+            "output_attribute_types": ["class", "score"],
+            "resource_profile": {"device": "gpu", "batchable": True},
             "supported_text_outputs": ["box"],
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,
@@ -460,6 +462,8 @@ def setup() -> dict:
             # 文本→分割: 整图 / 父框 crop 上跑 (文本驱动, 内置流程)。
             "supported_inputs": ["full_image", "crop"],
             "supported_geometric_outputs": ["polygon"],
+            "output_attribute_types": ["class", "score"],
+            "resource_profile": {"device": "gpu", "batchable": True},
             "supported_text_outputs": ["mask", "both"],
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,
@@ -481,6 +485,8 @@ def setup() -> dict:
             # 交互分割: 点/框/exemplar 提示驱动, 整图 (不作批量 crop/框下游)。
             "supported_inputs": ["full_image"],
             "supported_geometric_outputs": ["polygon"],
+            # 交互分割: 单实例逐次推理, 不作批量。output_attribute_types 留空 (无类别/置信度产出)。
+            "resource_profile": {"device": "gpu", "batchable": False},
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,
             "default_variants": _default_variants,

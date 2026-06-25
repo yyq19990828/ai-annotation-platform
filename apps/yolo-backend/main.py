@@ -363,6 +363,8 @@ def _build_model_entry(
         "supported_inputs": ["full_image", "crop"],
         "supported_geometric_outputs": geometric_outputs,
         "output_attribute_types": ["class", "score"],
+        # YOLO 各 task 均 GPU 批量推理。
+        "resource_profile": {"device": "gpu", "batchable": True},
         "supported_variants": _supported_variants_for(task),
         "variant_combinations": _variant_combinations_for(task),
         "default_variants": _default_variants_for(task),

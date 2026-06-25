@@ -58,6 +58,18 @@ def test_setup_models_declare_supported_inputs(setup_dict: dict) -> None:
         assert m["supported_inputs"] == ["full_image", "crop"]
 
 
+def test_setup_models_declare_output_attribute_types(setup_dict: dict) -> None:
+    """v0.18.16 · 各 task 自报输出属性 (检测/分割均产 class + score)。"""
+    for m in setup_dict["models"]:
+        assert m["output_attribute_types"] == ["class", "score"]
+
+
+def test_setup_models_declare_resource_profile(setup_dict: dict) -> None:
+    """v0.18.16 · 各 task 自报资源画像 (GPU 批量, 不填 vram)。"""
+    for m in setup_dict["models"]:
+        assert m["resource_profile"] == {"device": "gpu", "batchable": True}
+
+
 def test_setup_models_carry_protocol_task(setup_dict: dict) -> None:
     tasks = {m["task"] for m in setup_dict["models"]}
     assert tasks == {"detection", "segmentation", "keypoint", "obb"}
