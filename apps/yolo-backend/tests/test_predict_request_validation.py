@@ -147,6 +147,18 @@ def test_context_exemplar_path() -> None:
     assert ctx.variants.series == "yoloe-11"
 
 
+def test_exemplar_defaults_variant_when_absent() -> None:
+    """v0.18.23 · 工作台 exemplar 拖框可能不带 model_variants (无变体选择器);
+    缺省回落 yoloe 默认档 (yoloe-11/s), 避免 variants 必填校验 422/502。"""
+    ctx = Context.model_validate({
+        "type": "exemplar",
+        "exemplars": [{"bbox": [0.1, 0.2, 0.3, 0.4], "label": True}],
+        "output": "box",
+    })
+    assert ctx.variants.series == "yoloe-11"
+    assert ctx.variants.size == "s"
+
+
 def test_exemplar_bbox_length_validated() -> None:
     with pytest.raises(ValidationError):
         Context.model_validate({

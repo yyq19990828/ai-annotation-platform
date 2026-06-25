@@ -41,7 +41,7 @@ yolo-backend 开集 epic 收官 (第 3/3 版): YOLOE **visual prompt exemplar** 
 ### Added
 
 - **YOLOE 视觉提示交互模型 (yolo-backend)**：`/setup` 新增 `exemplar-yoloe`（`is_interactive=true`、`supported_prompts=["exemplar"]`、`task=interactive_seg`、几何输出 `bbox`+`polygon`、仅 yoloe series），令 yolo-backend 整体成为交互 backend——工作台 ExemplarTool 在选定 yolo-backend 时自动启用。声明 `exemplar_capabilities`（`multi_box`、`negative_box=false`、`text_combination=false`、`threshold_refilter`）供前端按能力渲染控件。
-- **visual prompt 推理分支**：`type=exemplar` 走 `_predict_visual_prompt`——仅取正框样例（YOLOE 无负框）、归一化 bbox→像素、`visual_prompts={bboxes, cls=0}`（MVP 单类）、`refer_image=源图自身`（同图）、统一用 `YOLOEVPSegPredictor`（`-seg` 权重一次产出框+mask，按 `output` 取 box/mask/both）；`score_threshold` 映射 conf。独立 pool key（与文本句柄隔离，避免 VP 改写模型状态污染文本嵌入缓存）。
+- **visual prompt 推理分支**：`type=exemplar` 走 `_predict_visual_prompt`——仅取正框样例（YOLOE 无负框）、归一化 bbox→像素、`visual_prompts={bboxes, cls=0}`（MVP 单类）、`refer_image=源图自身`（同图）、统一用 `YOLOEVPSegPredictor`（`-seg` 权重一次产出框+mask，按 `output` 取 box/mask/both）；`score_threshold` 映射 conf。独立 pool key（与文本句柄隔离，避免 VP 改写模型状态污染文本嵌入缓存）。工作台 exemplar 工具暂无变体选择器、拖框不带 `model_variants` 时，`Context` 回落 yoloe 默认档（yoloe-11/s），与 gsam2 交互变体 env 兜底同理（避免 variants 必填校验 502）。
 
 - **exemplar 能力门控 (平台 + 前端)**：平台 `ml_capabilities` 透传各模型的 `exemplar_capabilities`（此前被规范化丢弃）；工作台 AI 抽屉据此按能力渲染 exemplar 控件——YOLOE（`negative_box=false`/`text_combination=false`）隐藏负极性按钮与叠加文本输入，并强制正极性（防 smart-point 残留负极性误发被剔除的负框）；sam3（全支持）行为不变。输出形态三选（box/mask/both）恒显示。
 

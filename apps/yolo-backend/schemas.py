@@ -109,6 +109,13 @@ class Context(BaseModel):
         log_deprecated_model_variant_fields(logger, deprecated)
         if "variants" not in normalized and "model_variants" in normalized:
             normalized["variants"] = normalized["model_variants"]
+        # v0.18.23 · exemplar 交互路径前端可能不带 model_variants (exemplar 工具暂无变体选择器);
+        # exemplar 恒 yoloe, 缺省回落默认档 (与 gsam2 交互变体 env 兜底同理, 避免 422/502)。
+        if "variants" not in normalized and normalized.get("type") == "exemplar":
+            from model_registry import OPENVOCAB_DEFAULT_YOLOE  # noqa: PLC0415
+
+            _series, _size = OPENVOCAB_DEFAULT_YOLOE
+            normalized["variants"] = {"series": _series, "size": _size}
         # 文本路径 conf/iou/max_det 扁平在顶层 → 收拢成 params (闭集路径已嵌套, 跳过).
         if "params" not in normalized:
             flat = {
