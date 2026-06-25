@@ -34,6 +34,20 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.21] - 2026-06-25
+
+yolo-backend 从「纯闭集批量」扩出**开集文本检测**：在批量文本面板用自然语言类名（如 `person, bus`）让 YOLO-World / YOLOE 出框，与 grounded-sam2 的文本能力同列。零新仓（ultralytics 8.4.x 原生内置 `YOLOWorld`/`YOLOE`），权重按 release v8.4.0 实测核对可下载。yolo 开集 epic 第 1/3 版（后续 v0.18.22 文本分割、v0.18.23 visual prompt exemplar 交互）。规划见 [`docs/plans/2026-06-25-v0.18.21-yolo-openvocab-text-detection.md`](docs/plans/2026-06-25-v0.18.21-yolo-openvocab-text-detection.md)。
+
+### Added
+
+- **开集文本检测模型（yolo-backend）**：`/setup` 新增 `detect-world`（YOLO-World，series `yolo-worldv2`/`yolo-world` × s/m/l/x）与 `detect-yoloe`（YOLOE，series `yoloe-v8`/`yoloe-11`/`yoloe-26`），`supported_prompts=["text"]`、`task=detection`、`is_interactive=false`（文本=批量，进批量面板不进交互工具栏）。开集 series 独立命名空间，不混入闭集 `MODEL_MATRIX`；YOLOE 复用 `-seg` 权重取 box（同权重供后续分割/视觉提示共用）。
+- **文本提示推理链路**：`Context` 支持平台文本扁平 wire（`type=text` + `text` + `model_id` + `model_variants` + 顶层 conf/iou/max_det 收拢）；按 series 派生 family（world→`YOLOWorld`/yoloe→`YOLOE`），文本经 CLIP（World）/ MobileCLIP（YOLOE）编码后检测，结果映射 `rectanglelabels`。
+- **文本嵌入缓存**：同一组类名（含顺序）跨图复用不重复编码；YOLOE 另存 PE 字典，切换 prompt 再切回仍命中（实测新类名编码 ~350ms，缓存命中 ~17ms）。
+
+### Changed
+
+- **yolo-backend 镜像**：Dockerfile 加 `git` + 烤入 ultralytics CLIP fork（修复此前文本提示因无 git 致运行时 AutoUpdate 安装 CLIP 失败的硬阻塞）；文本编码器权重（CLIP ViT-B/32 ~338MB + `mobileclip_blt.ts` ~572MB）经 `/app/weights` 软链落 checkpoints 持久卷，首下后跨重启复用，不烤进镜像层。
+
 ## [0.18.19] - 2026-06-25
 
 SAM 3 PCS exemplar 从「一发定生死」升级为**无状态迭代 refine 会话**，解决「全图相似不好用」：可累加多正负框（正框扩召回 / 负框排误检）、叠加 text 概念、拖阈值实时增减结果。源码证实 PCS 原生支持多 exemplar 累加（`append_boxes` concat 非覆盖）、负框（`add_geometric_prompt(label=False)`）、text+几何组合与阈值重过滤，此前 backend 每请求只发单正框、阈值写死，把官方交互循环整组丢弃。规划详见 [`docs/plans/2026-06-25-v0.18.19-sam3-pcs-iterative-refinement.md`](docs/plans/2026-06-25-v0.18.19-sam3-pcs-iterative-refinement.md)。

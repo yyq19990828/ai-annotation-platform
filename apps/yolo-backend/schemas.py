@@ -37,10 +37,16 @@ logger = logging.getLogger("yolo-backend.schemas")
 
 
 class Variants(BaseModel):
-    """协议 v2 多轴 variants. yolo 用 series × size 两轴."""
+    """协议 v2 多轴 variants. yolo 用 series × size 两轴.
+
+    series 含闭集 (yolov8…rtdetr) 与开集 (yolo-world(v2) / yoloe-*) 两个命名空间;
+    开集 series 由 type=text 文本路径使用, 闭集由四 task 批量路径使用.
+    """
 
     series: Literal[
-        "yolov8", "yolov9", "yolov10", "yolo11", "yolo12", "yolo26", "rtdetr"
+        "yolov8", "yolov9", "yolov10", "yolo11", "yolo12", "yolo26", "rtdetr",
+        # v0.18.21 · 开集文本检测 series.
+        "yolo-worldv2", "yolo-world", "yoloe-v8", "yoloe-11", "yoloe-26",
     ]
     size: Literal["n", "t", "s", "m", "b", "c", "l", "e", "x"]
 
@@ -54,15 +60,24 @@ class PredictParams(BaseModel):
 
 
 class Context(BaseModel):
-    """yolo 的 prompt = none (纯批量). `type` 决定走哪条 task 分支."""
+    """yolo context. `type` 决定走哪条分支:
 
-    type: Literal["detection", "segmentation", "keypoint", "obb"]
+    - 闭集批量: type ∈ {detection,segmentation,keypoint,obb}, 嵌套 params + 闭集 variants.
+    - 开集文本 (v0.18.21): type="text", 顶层 `text` 开放词表 + 开集 variants(series=world/yoloe);
+      平台文本路径把 conf/iou/max_det 扁平在顶层 (非嵌套 params), 由 before-validator 收拢.
+    """
+
+    type: Literal["detection", "segmentation", "keypoint", "obb", "text"]
     model_variants: dict[str, str] | None = None
     variants: Variants
     params: PredictParams = Field(default_factory=PredictParams)
     # v0.14.17 · 类别白名单 (模型原生类别 index 子集). 非空时只检出这些类; 空/缺=全部类别.
     # 平台不做类→项目标签映射 (NG6), 仅在推理层用 ultralytics model.predict(classes=) 过滤.
     classes: list[int] | None = None
+    # v0.18.21 · 开集文本路径字段 (type=text 时生效).
+    text: str | None = None  # 开放词表, 逗号/换行分隔多类名.
+    model_id: str | None = None  # 平台路由记录用 (后端按 series 派生 family, 不强依赖).
+    output: Literal["box", "mask", "both"] = "box"  # v0.18.21 仅 box; mask 留 v0.18.22.
 
     @model_validator(mode="before")
     @classmethod
@@ -73,6 +88,15 @@ class Context(BaseModel):
         log_deprecated_model_variant_fields(logger, deprecated)
         if "variants" not in normalized and "model_variants" in normalized:
             normalized["variants"] = normalized["model_variants"]
+        # 文本路径 conf/iou/max_det 扁平在顶层 → 收拢成 params (闭集路径已嵌套, 跳过).
+        if "params" not in normalized:
+            flat = {
+                k: normalized[k]
+                for k in ("conf", "iou", "max_det")
+                if k in normalized and normalized[k] is not None
+            }
+            if flat:
+                normalized["params"] = flat
         return normalized
 
     @model_validator(mode="after")

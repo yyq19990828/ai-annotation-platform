@@ -21,13 +21,49 @@ from base64 import b64decode
 from typing import Any
 from urllib.parse import urlparse
 
+import re
+
 import httpx
 from PIL import Image
 
+from model_registry import POOL_TASK_OPENVOCAB, openvocab_family
 from observability import record_inference
 from schemas import Context, Variants
 
 logger = logging.getLogger("yolo-backend.predictor")
+
+
+def _parse_open_classes(text: str | None) -> list[str]:
+    """开放词表文本 → 类名列表. 逗号/换行/分号分隔, 去空白. 顺序保留 (= cls index 映射)."""
+    if not text:
+        return []
+    out: list[str] = []
+    for part in re.split(r"[,\n;]+", text):
+        name = part.strip()
+        if name:
+            out.append(name)
+    return out
+
+
+def _ensure_open_classes(model: Any, classes: list[str], family: str) -> None:
+    """把开放词表写入模型. 同一组类名 (含顺序) 已设过则跳过, 省去 CLIP/MobileCLIP 重复编码.
+
+    批量同一 prompt 跑 N 图时只编码一次; YOLOE 另存 PE 字典, 切换 prompt 再切回也命中.
+    """
+    key = tuple(classes)
+    if getattr(model, "_aap_classes", None) == key:
+        return
+    if family == "yoloe":
+        cache: dict[tuple[str, ...], Any] = getattr(model, "_aap_pe_cache", None) or {}
+        pe = cache.get(key)
+        if pe is None:
+            pe = model.get_text_pe(list(classes))
+            cache[key] = pe
+            model._aap_pe_cache = cache
+        model.set_classes(list(classes), pe)
+    else:  # world: set_classes 无 embeddings 形参, 内部自做 CLIP 编码.
+        model.set_classes(list(classes))
+    model._aap_classes = key
 
 # COCO 17 keypoints (与 ultralytics pose 模型默认顺序一致). 用作 keypointlabels
 # value.keypointlabels 的节点名 / value.points 的 v(可见性)填充顺序参考.
@@ -162,6 +198,10 @@ class YoloPredictor:
         task = ctx.type
         params = ctx.params
 
+        # v0.18.21 · 开集文本路径: type=text, series=world/yoloe, 文本 → 类名 → set_classes.
+        if task == "text":
+            return await self._predict_open_text(file_path, ctx)
+
         model, cache_hit, load_ms = await self._pool.get(task, variants.series, variants.size)
         img = _load_image(file_path)
         img_w, img_h = img.size
@@ -197,6 +237,51 @@ class YoloPredictor:
             items = _emit_obb(r0, names, img_w, img_h)
         else:
             raise ValueError(f"unsupported task: {task}")
+        return items, cache_hit, load_ms, inference_ms
+
+    async def _predict_open_text(
+        self, file_path: str, ctx: Context
+    ) -> tuple[list[dict[str, Any]], bool, int | None, int]:
+        """开集文本检测 (v0.18.21). series 决定 family (world/yoloe), 文本 → 类名 → 检测框.
+
+        pool key 用 (POOL_TASK_OPENVOCAB, series, size): yoloe 的 det/seg 同权重共用一份.
+        v0.18.21 仅 output=box → 检测 (rectanglelabels); mask 留 v0.18.22.
+        """
+        variants: Variants = ctx.variants
+        series, size = variants.series, variants.size
+        family = openvocab_family(series)
+        classes = _parse_open_classes(ctx.text)
+
+        model, cache_hit, load_ms = await self._pool.get(
+            POOL_TASK_OPENVOCAB, series, size
+        )
+        img = _load_image(file_path)
+        img_w, img_h = img.size
+
+        if not classes:
+            # 无类名: 不推理, 返回空 (前端文本框为空时的退化, 不报错).
+            return [], cache_hit, load_ms, 0
+
+        _ensure_open_classes(model, classes, family)
+        params = ctx.params
+        t0 = time.time()
+        results = model.predict(
+            img,
+            conf=params.conf,
+            iou=params.iou,
+            max_det=params.max_det,
+            verbose=False,
+        )
+        elapsed = time.time() - t0
+        record_inference(POOL_TASK_OPENVOCAB, series, size, elapsed)
+        inference_ms = int(elapsed * 1000)
+
+        if not results:
+            return [], cache_hit, load_ms, inference_ms
+        r0 = results[0]
+        # set_classes 后 model.names = 设入的类名, cls index 映射回类名.
+        names: dict[int, str] = getattr(r0, "names", {}) or getattr(model, "names", {})
+        items = _emit_detection(r0, names, img_w, img_h)
         return items, cache_hit, load_ms, inference_ms
 
 

@@ -57,3 +57,52 @@ def test_batch_predict_request_round_trip() -> None:
     assert req.context.type == "segmentation"
     assert req.context.variants.series == "yolo26"
     assert req.context.params.conf == 0.4
+
+
+# ── v0.18.21 · 开集文本路径 (平台扁平 wire: type=text + model_variants + 顶层 conf) ──
+
+
+def test_context_text_path_flat_wire() -> None:
+    """平台文本路径: type=text, model_variants→variants, 顶层 conf/iou/max_det 收拢成 params."""
+    ctx = Context.model_validate({
+        "type": "text",
+        "text": "person, bus",
+        "output": "box",
+        "model_id": "detect-world",
+        "model_variants": {"series": "yolo-worldv2", "size": "s"},
+        "conf": 0.1,
+        "iou": 0.5,
+        "max_det": 100,
+    })
+    assert ctx.type == "text"
+    assert ctx.text == "person, bus"
+    assert ctx.output == "box"
+    assert ctx.model_id == "detect-world"
+    assert ctx.variants.series == "yolo-worldv2"
+    assert ctx.variants.size == "s"
+    # 顶层扁平参数被收拢.
+    assert ctx.params.conf == 0.1
+    assert ctx.params.iou == 0.5
+    assert ctx.params.max_det == 100
+
+
+def test_context_text_accepts_yoloe_series() -> None:
+    ctx = Context.model_validate({
+        "type": "text",
+        "text": "cat",
+        "model_variants": {"series": "yoloe-11", "size": "s"},
+    })
+    assert ctx.variants.series == "yoloe-11"
+    # 无顶层 conf → 走默认.
+    assert ctx.params.conf == 0.25
+
+
+def test_context_closed_set_nested_params_unaffected() -> None:
+    """闭集嵌套 params 路径不被文本路径的扁平收拢影响."""
+    ctx = Context.model_validate({
+        "type": "detection",
+        "model_variants": {"series": "yolo11", "size": "s"},
+        "params": {"conf": 0.4},
+    })
+    assert ctx.type == "detection"
+    assert ctx.params.conf == 0.4

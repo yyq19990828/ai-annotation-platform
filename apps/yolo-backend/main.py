@@ -39,11 +39,21 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from model_pool import ModelPool
 from model_registry import (
     MODEL_MATRIX,
+    OPENVOCAB_DEFAULT_WORLD,
+    OPENVOCAB_DEFAULT_YOLOE,
+    OPENVOCAB_SERIES_LABEL,
+    OPENVOCAB_WORLD_SERIES,
+    OPENVOCAB_YOLOE_SERIES,
+    POOL_TASK_OPENVOCAB,
     RECOMMENDED_SERIES,
     RECOMMENDED_SIZE,
     SERIES_LABEL,
     SIZE_META,
     UnsupportedVariantError,
+    is_openvocab_series,
+    is_openvocab_supported,
+    openvocab_family,
+    resolve_openvocab_weight_filename,
     resolve_weight_filename,
 )
 from observability import (
@@ -85,10 +95,23 @@ def _free_gpu_memory() -> None:
 
 
 def _build_model(task: str, series: str, size: str):
-    """同步构建 ultralytics YOLO 实例. 走 run_in_executor."""
+    """同步构建 ultralytics 模型实例. 走 run_in_executor.
+
+    开集 series (world/yoloe) 用 YOLOWorld/YOLOE 类加载; 闭集用 YOLO. 文件名按各自规则解析.
+    """
     from ultralytics import YOLO  # noqa: PLC0415, 延迟到首次 build 避免 import 阻塞启动
 
-    filename = resolve_weight_filename(task, series, size)
+    if is_openvocab_series(series):
+        filename = resolve_openvocab_weight_filename(series, size)
+        if openvocab_family(series) == "world":
+            from ultralytics import YOLOWorld  # noqa: PLC0415
+            model_cls = YOLOWorld
+        else:
+            from ultralytics import YOLOE  # noqa: PLC0415
+            model_cls = YOLOE
+    else:
+        filename = resolve_weight_filename(task, series, size)
+        model_cls = YOLO
     weight_path = CHECKPOINTS_DIR / filename
     if not weight_path.exists():
         if STRICT_OFFLINE:
@@ -100,11 +123,11 @@ def _build_model(task: str, series: str, size: str):
         cwd = os.getcwd()
         try:
             os.chdir(CHECKPOINTS_DIR)
-            model = YOLO(filename)
+            model = model_cls(filename)
         finally:
             os.chdir(cwd)
     else:
-        model = YOLO(str(weight_path))
+        model = model_cls(str(weight_path))
 
     if torch.cuda.is_available():
         try:
@@ -146,6 +169,10 @@ async def _idle_watcher() -> None:
 async def lifespan(app: FastAPI):
     global _model_pool, _predictor, _idle_task
     CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
+    # v0.18.21 · 创建文本编码器权重目录 (Dockerfile 软链 /app/weights → 此处持久卷子目录).
+    # ultralytics WEIGHTS_DIR 相对 "weights" 落 /app/weights → 经软链入卷; 目录须先存在,
+    # 否则首个开集文本 /predict 时 clip.load(download_root="weights/clip") makedirs 失败.
+    (CHECKPOINTS_DIR / "weights").mkdir(parents=True, exist_ok=True)
     init_perfhud_collectors()
     _model_pool = ModelPool(
         cap=MODEL_POOL_CAP,
@@ -380,6 +407,72 @@ def _build_model_entry(
     return entry
 
 
+def _build_openvocab_variants(
+    series_matrix: dict[str, tuple[str, ...]], default: tuple[str, str],
+) -> list[dict[str, Any]]:
+    """开集 model 的 series × size 两轴 (series 来自该条目自身的 series 子集)."""
+    default_series, default_size = default
+    series_variants: list[dict[str, Any]] = []
+    for series in series_matrix:
+        item: dict[str, Any] = {
+            "value": series,
+            "label": OPENVOCAB_SERIES_LABEL.get(series, series),
+        }
+        if series == default_series:
+            item["recommended"] = True
+        series_variants.append(item)
+    used_sizes: set[str] = set()
+    for sizes in series_matrix.values():
+        used_sizes.update(sizes)
+    size_variants: list[dict[str, Any]] = []
+    for sz in ("n", "t", "s", "m", "b", "c", "l", "e", "x"):
+        if sz not in used_sizes:
+            continue
+        meta = SIZE_META.get(sz, {})
+        item = {"value": sz, "label": meta.get("label", sz)}
+        if "tier" in meta:
+            item["tier"] = meta["tier"]
+        if sz == default_size:
+            item["recommended"] = True
+        size_variants.append(item)
+    return [
+        {"key": "series", "title": "版本系列", "variants": series_variants},
+        {"key": "size", "title": "尺寸 / 精度档", "variants": size_variants},
+    ]
+
+
+def _openvocab_variant_combinations(
+    series_matrix: dict[str, tuple[str, ...]],
+) -> list[list[str]]:
+    return [[series, size] for series, sizes in series_matrix.items() for size in sizes]
+
+
+def _build_openvocab_model_entry(
+    model_id: str, display_name: str,
+    series_matrix: dict[str, tuple[str, ...]], default: tuple[str, str],
+) -> dict[str, Any]:
+    """开集文本检测 model 条目 (v0.18.21). 与闭集结构一致, 但 supported_prompts=['text']."""
+    default_series, default_size = default
+    return {
+        "id": model_id,
+        "display_name": display_name,
+        "task": "detection",
+        "model_family": "yolo",
+        "infra": "pytorch",
+        "is_interactive": False,  # 文本=批量, 不进交互工具栏.
+        "composition": "atom",
+        "supported_prompts": ["text"],
+        "supported_inputs": ["full_image", "crop"],
+        "supported_geometric_outputs": ["bbox"],
+        "output_attribute_types": ["class"],
+        "resource_profile": {"device": "gpu", "batchable": True},
+        "supported_variants": _build_openvocab_variants(series_matrix, default),
+        "variant_combinations": _openvocab_variant_combinations(series_matrix),
+        "default_variants": {"series": default_series, "size": default_size},
+        "params": _PARAMS_SCHEMA,
+    }
+
+
 @app.get("/setup")
 def setup() -> dict[str, Any]:
     """协议 v2 多模型目录. 详见 docs-site/dev/reference/ml-backend-protocol.md §4.1.6."""
@@ -392,7 +485,9 @@ def setup() -> dict[str, Any]:
         "labels": [],  # 顶层 hint 留空; v0.14.17 起类别表逐 model 暴露 (models[].classes) 供前端
         #               类别白名单 UI. 平台仍不做"模型类→项目标签"映射 (NG6 保留, 由 alias 配置 + 采纳时人选承担).
         "is_interactive": False,
-        "supported_prompts": ["none"],
+        # v0.18.21 · 闭集四 task 纯批量(none) + 开集文本检测(text). 顶层为各 model 并集 hint;
+        # 平台按 models[].supported_prompts 逐 model 路由 (text → 批量文本面板).
+        "supported_prompts": ["none", "text"],
         "supported_geometric_outputs": ["bbox", "polygon", "keypoint", "rotated_bbox"],
         "supported_variants": [],  # 顶层留空, 由 models[].supported_variants 各自声明.
         "infra": "pytorch",
@@ -414,6 +509,15 @@ def setup() -> dict[str, Any]:
             _build_model_entry(
                 "obb", "YOLO 朝向框",
                 "obb", ["rotated_bbox"],
+            ),
+            # v0.18.21 · 开集文本检测 (批量文本面板, 与 gsam2 text 同列).
+            _build_openvocab_model_entry(
+                "detect-world", "YOLO-World 开集文本检测",
+                OPENVOCAB_WORLD_SERIES, OPENVOCAB_DEFAULT_WORLD,
+            ),
+            _build_openvocab_model_entry(
+                "detect-yoloe", "YOLOE 开集文本检测",
+                OPENVOCAB_YOLOE_SERIES, OPENVOCAB_DEFAULT_YOLOE,
             ),
         ],
     }
@@ -482,13 +586,17 @@ async def predict_interactive(req: InteractiveRequest) -> BatchPredictResponse:
 
 
 def _is_supported_combo(ctx: Context) -> bool:
-    task = ctx.type
     series = ctx.variants.series
     size = ctx.variants.size
-    return size in MODEL_MATRIX.get(task, {}).get(series, ())
+    if ctx.type == "text" or is_openvocab_series(series):
+        return is_openvocab_supported(series, size)
+    return size in MODEL_MATRIX.get(ctx.type, {}).get(series, ())
 
 
 def _unsupported_combo_error(task: str, series: str, size: str) -> VariantNotSupportedError:
+    if is_openvocab_series(series) or task == "text":
+        from model_registry import openvocab_sizes  # noqa: PLC0415
+        return VariantNotSupportedError("size", size, openvocab_sizes(series))
     task_matrix = MODEL_MATRIX.get(task, {})
     if series not in task_matrix:
         return VariantNotSupportedError("series", series, tuple(task_matrix))
@@ -517,12 +625,19 @@ async def warmup(req: WarmupRequest) -> WarmupResponse:
     if _model_pool is None:
         raise HTTPException(status_code=503, detail="backend not ready")
     series, size = req.variants.series, req.variants.size
-    if size not in MODEL_MATRIX.get(req.task, {}).get(series, ()):
-        raise _unsupported_combo_error(req.task, series, size)
+    # 开集 series: 校验 + 预热走 openvocab pool task (与 /predict 文本路径同 key).
+    if is_openvocab_series(series):
+        if not is_openvocab_supported(series, size):
+            raise _unsupported_combo_error(req.task, series, size)
+        pool_task = POOL_TASK_OPENVOCAB
+    else:
+        if size not in MODEL_MATRIX.get(req.task, {}).get(series, ()):
+            raise _unsupported_combo_error(req.task, series, size)
+        pool_task = req.task
     try:
-        cache_hit, load_ms, evicted = await _model_pool.warmup(req.task, series, size)
+        cache_hit, load_ms, evicted = await _model_pool.warmup(pool_task, series, size)
     except FileNotFoundError as exc:
-        raise ModelUnavailableError(_pool_key(req.task, series, size), str(exc)) from exc
+        raise ModelUnavailableError(_pool_key(pool_task, series, size), str(exc)) from exc
     return WarmupResponse(
         ok=True,
         model_load_ms=load_ms,

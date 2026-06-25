@@ -140,3 +140,79 @@ def series_options_for_task(task: str) -> list[str]:
 def sizes_for(task: str, series: str) -> list[str]:
     """该 (task, series) 下有预训练的全部 size."""
     return list(MODEL_MATRIX.get(task, {}).get(series, ()))
+
+
+# ── 开集 (open-vocabulary) 文本提示模型 (v0.18.21) ─────────────────────────
+# 与闭集 MODEL_MATRIX 并列, 独立 series 命名空间. 权重名按 ultralytics assets
+# release v8.4.0 核对 (2026-06-25, 容器内 get_github_assets 实测可下载).
+#   - YOLO-World (YOLOWorld 类): 仅检测, 文本 prompt 经 CLIP 文本编码.
+#   - YOLOE (YOLOE 类): -seg 权重, 检测取 box / 分割取 mask (分割留 v0.18.22),
+#     文本 prompt 经 MobileCLIP. -seg-pf (prompt-free 内置词表) 非目标, 不纳入.
+# pool key 的 task 分量统一用 POOL_TASK_OPENVOCAB: yoloe 的 det/seg 同权重共用一份.
+
+POOL_TASK_OPENVOCAB: Final[str] = "openvocab"
+
+# /setup model 条目 → 该条目暴露的 series → sizes.
+OPENVOCAB_WORLD_SERIES: Final[dict[str, tuple[str, ...]]] = {
+    "yolo-worldv2": ("s", "m", "l", "x"),
+    "yolo-world":   ("s", "m", "l", "x"),
+}
+OPENVOCAB_YOLOE_SERIES: Final[dict[str, tuple[str, ...]]] = {
+    "yoloe-v8": ("s", "m", "l"),
+    "yoloe-11": ("s", "m", "l"),
+    "yoloe-26": ("n", "s", "m", "l", "x"),
+}
+
+OPENVOCAB_FAMILY: Final[dict[str, str]] = {
+    **{s: "world" for s in OPENVOCAB_WORLD_SERIES},
+    **{s: "yoloe" for s in OPENVOCAB_YOLOE_SERIES},
+}
+OPENVOCAB_SERIES: Final[frozenset[str]] = frozenset(OPENVOCAB_FAMILY)
+
+OPENVOCAB_SERIES_LABEL: Final[dict[str, str]] = {
+    "yolo-worldv2": "YOLO-World v2",
+    "yolo-world":   "YOLO-World",
+    "yoloe-v8":     "YOLOE · v8",
+    "yoloe-11":     "YOLOE · 11",
+    "yoloe-26":     "YOLOE · 26",
+}
+
+# 各 model 条目的默认 (series, size). world 用 v2/s, yoloe 用 11/s (现代档 + 显存友好).
+OPENVOCAB_DEFAULT_WORLD: Final[tuple[str, str]] = ("yolo-worldv2", "s")
+OPENVOCAB_DEFAULT_YOLOE: Final[tuple[str, str]] = ("yoloe-11", "s")
+
+
+def is_openvocab_series(series: str) -> bool:
+    return series in OPENVOCAB_SERIES
+
+
+def openvocab_family(series: str) -> str:
+    """world | yoloe. 决定加载用 YOLOWorld 还是 YOLOE 类."""
+    return OPENVOCAB_FAMILY[series]
+
+
+def openvocab_sizes(series: str) -> tuple[str, ...]:
+    return OPENVOCAB_WORLD_SERIES.get(series) or OPENVOCAB_YOLOE_SERIES.get(series) or ()
+
+
+def is_openvocab_supported(series: str, size: str) -> bool:
+    return size in openvocab_sizes(series)
+
+
+def resolve_openvocab_weight_filename(series: str, size: str) -> str:
+    """开集 series/size → ultralytics 权重文件名 (release v8.4.0 实有)."""
+    if not is_openvocab_supported(series, size):
+        raise UnsupportedVariantError(
+            f"openvocab series={series} size={size} not available"
+        )
+    if series == "yolo-worldv2":
+        return f"yolov8{size}-worldv2.pt"
+    if series == "yolo-world":
+        return f"yolov8{size}-world.pt"
+    if series == "yoloe-v8":
+        return f"yoloe-v8{size}-seg.pt"
+    if series == "yoloe-11":
+        return f"yoloe-11{size}-seg.pt"
+    if series == "yoloe-26":
+        return f"yoloe-26{size}-seg.pt"
+    raise UnsupportedVariantError(f"unknown openvocab series {series}")
