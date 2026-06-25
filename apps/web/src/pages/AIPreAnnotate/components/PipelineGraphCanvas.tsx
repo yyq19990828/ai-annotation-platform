@@ -7,7 +7,7 @@
  * 回调下沉到纯函数层 (pipelineGraph.ts)。经 React.lazy 加载, react-flow chunk 不进主包。
  */
 
-import { createContext, memo, useContext, useMemo, useCallback } from "react";
+import { createContext, memo, useContext, useEffect, useMemo, useCallback } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -15,6 +15,10 @@ import {
   Controls,
   Handle,
   Position,
+  useNodesState,
+  useEdgesState,
+  useReactFlow,
+  useNodesInitialized,
   type Connection,
   type Edge,
   type Node,
@@ -156,7 +160,22 @@ function Flow({
   onReparent,
   canReparentConn,
 }: Props) {
-  const { nodes, edges } = useMemo(() => buildFlow(models, selectedSid), [models, selectedSid]);
+  // 派生 nodes/edges 由 stagesGraph (经 models) 单向决定; 但 react-flow 需用 stateful 节点 +
+  // onNodesChange 回填测量尺寸 (否则节点 width/height 恒 0, fitView 坍缩 → 节点全部不可见)。
+  // 故: useNodesState 持内部态, graph 结构变 (flow.nodes 标识变) 时整体重置, 重置后由 react-flow
+  // 重新测量; 测量完成 (nodesInitialized) 或节点数变化时重新 fitView。
+  const flow = useMemo(() => buildFlow(models, selectedSid), [models, selectedSid]);
+  const [nodes, setNodes, onNodesChange] = useNodesState(flow.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(flow.edges);
+  useEffect(() => setNodes(flow.nodes), [flow.nodes, setNodes]);
+  useEffect(() => setEdges(flow.edges), [flow.edges, setEdges]);
+
+  const rf = useReactFlow();
+  const nodesInitialized = useNodesInitialized();
+  const nodeCount = flow.nodes.length;
+  useEffect(() => {
+    if (nodesInitialized) rf.fitView({ padding: 0.2, maxZoom: 1 });
+  }, [nodesInitialized, nodeCount, rf]);
 
   // 连线: source=拖出的父出 handle, target=落到的子入 handle → child 改挂到 source。
   const onConnect = useCallback(
@@ -191,6 +210,8 @@ function Flow({
         <ReactFlow
           nodes={nodes}
           edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           nodesDraggable={false}
           nodesConnectable
