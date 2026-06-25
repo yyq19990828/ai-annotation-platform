@@ -238,18 +238,63 @@
   margin-left: 20px;
 }
 
-/* v0.18.15 · 受限树形流水线 ASCII 摘要条。 */
-.stageGraphSummary {
-  margin: 0;
-  padding: 8px 10px;
+/* v0.18.15 · 受限树形流水线可视化结构摘要。 */
+.stageTree {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
   background: var(--sc-muted);
   border: 1px solid var(--sc-border);
-  border-radius: 6px;
-  color: var(--sc-muted-foreground);
-  font-size: 11px;
-  line-height: 1.6;
-  white-space: pre;
+  border-radius: 8px;
   overflow-x: auto;
+}
+
+/* 子层: 左侧竖引导线 + 与父节点的纵向间距。 */
+.stageTreeChildren {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  margin-left: 9px;
+  padding-left: 16px;
+  border-left: 1px solid var(--sc-border);
+}
+
+/* 单个分支: 用肘形伪元素把竖引导线接到本节点 chip。 */
+.stageTreeBranch {
+  position: relative;
+}
+.stageTreeBranch::before {
+  content: "";
+  position: absolute;
+  left: -16px;
+  top: 14px;
+  width: 13px;
+  height: 1px;
+  background: var(--sc-border);
+}
+
+/* 节点 chip: 图标 + 角色徽标 + 详情, 卡面 + 圆角描边。 */
+.stageNode {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  padding: 4px 10px;
+  background: var(--sc-card);
+  border: 1px solid var(--sc-border);
+  border-radius: 8px;
+  font-size: 11px;
+}
+.stageNodeIcon {
+  color: var(--sc-muted-foreground);
+}
+.stageNodeName {
+  font-weight: 600;
+}
+.stageNodeDetail {
+  color: var(--sc-muted-foreground);
 }
 
 /* v0.18.8 · 阶段卡 (Card 卡面): 内边距 + 组间距 + 左侧角色轨。 */
