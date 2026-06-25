@@ -379,7 +379,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       parentSid: null,
       kind: "source",
       role: { label: "检测", variant: "accent", icon: "box" },
-      detail: selectedBackend?.name ?? "源检测",
+      // 源「产物」= 检测框 (不是后端名; 后端已在副标题)。
+      detail: "检测框",
       runState: stageRunState(0),
       ok: sourceDetected ?? undefined,
       producesGeometry: true,
@@ -387,6 +388,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       conflict: false,
       ready: cfg.configReady,
       backendName: selectedBackend?.name,
+      modelId: cfg.primaryModel?.id,
+      taskType: cfg.primaryModel?.task,
       warning: null,
     };
     const stages = stagesGraph.map<GraphNodeModel>((e, i) => {
@@ -428,6 +431,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     canAddBackend,
     conflictInfo,
     cfg.configReady,
+    cfg.primaryModel?.id,
+    cfg.primaryModel?.task,
     backends,
     stageTick,
   ]);
