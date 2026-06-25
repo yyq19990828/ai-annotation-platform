@@ -485,6 +485,48 @@ def _build_openvocab_model_entry(
     return entry
 
 
+def _build_exemplar_model_entry() -> dict[str, Any]:
+    """v0.18.23 · YOLOE visual prompt exemplar 交互模型条目.
+
+    is_interactive=True + supported_prompts=["exemplar"] → 平台 useBackendRouting 据此把
+    yolo-backend 视为交互 backend, 工作台 ExemplarTool 启用 (与 sam3 exemplar 同列, 路由由
+    用户选定的当前交互 backend 决定)。框样例找全图同类, 输出 box/mask/both。仅 yoloe series。
+    """
+    default_series, default_size = OPENVOCAB_DEFAULT_YOLOE
+    return {
+        "id": "exemplar-yoloe",
+        "display_name": "YOLOE 视觉提示 (框样例找同类)",
+        "task": "interactive_seg",
+        "model_family": "yolo",
+        "infra": "pytorch",
+        "is_interactive": True,
+        "composition": "atom",
+        "supported_prompts": ["exemplar"],
+        # v0.18.23 · exemplar 能力声明 (字段与 sam3 对齐, 供前端按能力渲染控件):
+        # YOLOE 支持多正框 + per-request 阈值, 但**无负框** (negative_box=False) /
+        # MVP 不叠 text (text_combination=False) → 前端据此隐藏负极性按钮与 text 输入。
+        "exemplar_capabilities": {
+            "multi_box": True,
+            "negative_box": False,
+            "text_combination": False,
+            "threshold_refilter": True,
+        },
+        # 交互: 框样例驱动整图相似 (不作批量 crop 下游)。
+        "supported_inputs": ["full_image"],
+        # VPSeg 同时产出 box + mask → 三档输出皆可。
+        "supported_geometric_outputs": ["bbox", "polygon"],
+        "output_attribute_types": ["class"],
+        # 单次交互推理, 不作批量。
+        "resource_profile": {"device": "gpu", "batchable": False},
+        "supported_variants": _build_openvocab_variants(
+            OPENVOCAB_YOLOE_SERIES, OPENVOCAB_DEFAULT_YOLOE
+        ),
+        "variant_combinations": _openvocab_variant_combinations(OPENVOCAB_YOLOE_SERIES),
+        "default_variants": {"series": default_series, "size": default_size},
+        "params": _PARAMS_SCHEMA,
+    }
+
+
 @app.get("/setup")
 def setup() -> dict[str, Any]:
     """协议 v2 多模型目录. 详见 docs-site/dev/reference/ml-backend-protocol.md §4.1.6."""
@@ -496,10 +538,13 @@ def setup() -> dict[str, Any]:
         "model_version": MODEL_VERSION,
         "labels": [],  # 顶层 hint 留空; v0.14.17 起类别表逐 model 暴露 (models[].classes) 供前端
         #               类别白名单 UI. 平台仍不做"模型类→项目标签"映射 (NG6 保留, 由 alias 配置 + 采纳时人选承担).
+        # v0.18.23 · 顶层 hint; 平台实际按 models[] 并集派生 (is_interactive=any(model)),
+        # exemplar 模型令本 backend 整体成为交互 backend。顶层仍报 false 仅为兼容旧消费方。
         "is_interactive": False,
-        # v0.18.21 · 闭集四 task 纯批量(none) + 开集文本检测(text). 顶层为各 model 并集 hint;
-        # 平台按 models[].supported_prompts 逐 model 路由 (text → 批量文本面板).
-        "supported_prompts": ["none", "text"],
+        # v0.18.21/23 · 闭集四 task 纯批量(none) + 开集文本检测/分割(text) + 视觉提示(exemplar).
+        # 顶层为各 model 并集 hint; 平台按 models[].supported_prompts 逐 model 路由
+        # (text → 批量文本面板; exemplar → 工作台交互工具)。
+        "supported_prompts": ["none", "text", "exemplar"],
         "supported_geometric_outputs": ["bbox", "polygon", "keypoint", "rotated_bbox"],
         "supported_variants": [],  # 顶层留空, 由 models[].supported_variants 各自声明.
         "infra": "pytorch",
@@ -542,6 +587,8 @@ def setup() -> dict[str, Any]:
                 task="segmentation", geometric_outputs=["polygon"],
                 supported_text_outputs=["mask", "both"],
             ),
+            # v0.18.23 · YOLOE visual prompt exemplar (交互工具, is_interactive=true).
+            _build_exemplar_model_entry(),
         ],
     }
 

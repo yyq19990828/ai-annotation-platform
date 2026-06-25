@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import sys
+import types
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -15,6 +16,14 @@ import pytest
 sys.modules.setdefault(
     "torch", MagicMock(cuda=MagicMock(is_available=MagicMock(return_value=False)))
 )
+
+# v0.18.23 · stub ultralytics yoloe VP predictor 叶子模块 (测试环境无 ultralytics);
+# predictor._predict_visual_prompt 内部 lazy `from ...yoloe.predict import YOLOEVPSegPredictor`。
+# 仅注册叶子模块: 叶子在 sys.modules 时 import 机制短路, 不触发父包导入, 故不覆盖其他测试
+# 对 "ultralytics" 根 (MagicMock) 的桩, 避免跨测试污染。
+_vp_mod = types.ModuleType("ultralytics.models.yolo.yoloe.predict")
+_vp_mod.YOLOEVPSegPredictor = type("YOLOEVPSegPredictor", (), {})
+sys.modules.setdefault("ultralytics.models.yolo.yoloe.predict", _vp_mod)
 
 import predictor as pred  # noqa: E402
 from predictor import YoloPredictor  # noqa: E402
@@ -44,11 +53,15 @@ class _FakeResult:
 
 
 class _FakeYoloe:
-    """假 YOLOE: set_classes 后 names 映射到文本类名; predict 出一框 + (可选)一 mask."""
+    """假 YOLOE: set_classes 后 names 映射到文本类名; predict 出一框 + (可选)一 mask.
+
+    记录最近一次 predict 的 kwargs (visual_prompts / refer_image), 供 VP 测试断言。
+    """
 
     def __init__(self, with_mask: bool = True) -> None:
         self._with_mask = with_mask
         self.names = {0: "cat"}
+        self.last_predict_kw: dict = {}
 
     def get_text_pe(self, classes: list[str]):
         return "PE"
@@ -57,6 +70,8 @@ class _FakeYoloe:
         self.names = {i: c for i, c in enumerate(classes)}
 
     def predict(self, img, **kw):
+        self.last_predict_kw = kw
+        self.last_predict_img = img
         return [_FakeResult(self._with_mask)]
 
 
@@ -123,3 +138,69 @@ async def test_empty_text_returns_empty() -> None:
     items, _hit, _load, infer_ms = await p.predict_one("x", ctx)
     assert items == []
     assert infer_ms == 0
+
+
+# ── v0.18.23 · visual prompt exemplar 路径 ──
+
+
+def _ex_ctx(output: str, exemplars: list[dict], score_threshold=None):
+    body = {
+        "type": "exemplar",
+        "exemplars": exemplars,
+        "output": output,
+        "model_variants": {"series": "yoloe-11", "size": "s"},
+    }
+    if score_threshold is not None:
+        body["score_threshold"] = score_threshold
+    return Context.model_validate(body)
+
+
+async def test_exemplar_mask_emits_polygons_and_passes_refer() -> None:
+    model = _FakeYoloe()
+    p = YoloPredictor(_FakePool(model))
+    ctx = _ex_ctx("mask", [{"bbox": [0.1, 0.2, 0.3, 0.4], "label": True}])
+    items, *_ = await p.predict_one("x", ctx)
+    assert [i["type"] for i in items] == ["polygonlabels"]
+    # refer_image 必须显式传 (= source 自身); visual_prompts 带 bboxes + cls.
+    assert "refer_image" in model.last_predict_kw
+    assert model.last_predict_kw["refer_image"] is model.last_predict_img
+    vp = model.last_predict_kw["visual_prompts"]
+    # 归一化 [0.1,0.2,0.3,0.4] × (W=200,H=240) → 像素 [20,48,60,96].
+    assert vp["bboxes"].tolist() == [[20.0, 48.0, 60.0, 96.0]]
+    assert vp["cls"].tolist() == [0]  # MVP 单类
+
+
+async def test_exemplar_both_emits_box_and_polygon() -> None:
+    p = YoloPredictor(_FakePool(_FakeYoloe()))
+    items, *_ = await p.predict_one("x", _ex_ctx("both", [{"bbox": [0, 0, 0.5, 0.5]}]))
+    assert {i["type"] for i in items} == {"rectanglelabels", "polygonlabels"}
+
+
+async def test_exemplar_filters_negative_boxes() -> None:
+    """YOLOE 无负框: label=False 的样例被剔除, 只有负框时不推理返回空。"""
+    model = _FakeYoloe()
+    p = YoloPredictor(_FakePool(model))
+    # 一正一负 → 只保留正框.
+    await p.predict_one("x", _ex_ctx("box", [
+        {"bbox": [0, 0, 0.2, 0.2], "label": True},
+        {"bbox": [0.5, 0.5, 0.9, 0.9], "label": False},
+    ]))
+    assert len(model.last_predict_kw["visual_prompts"]["bboxes"]) == 1
+
+
+async def test_exemplar_only_negative_returns_empty() -> None:
+    model = _FakeYoloe()
+    p = YoloPredictor(_FakePool(model))
+    items, _hit, _load, infer_ms = await p.predict_one(
+        "x", _ex_ctx("mask", [{"bbox": [0, 0, 0.2, 0.2], "label": False}])
+    )
+    assert items == []
+    assert infer_ms == 0
+    assert model.last_predict_kw == {}  # 未触发 predict
+
+
+async def test_exemplar_score_threshold_maps_to_conf() -> None:
+    model = _FakeYoloe()
+    p = YoloPredictor(_FakePool(model))
+    await p.predict_one("x", _ex_ctx("box", [{"bbox": [0, 0, 0.2, 0.2]}], score_threshold=0.4))
+    assert model.last_predict_kw["conf"] == 0.4

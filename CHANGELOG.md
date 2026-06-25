@@ -34,6 +34,19 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.23] - 2026-06-26
+
+yolo-backend 开集 epic 收官 (第 3/3 版): YOLOE **visual prompt exemplar** 接成交互工具——工作台拖框圈一个样例, YOLOE 在全图找出同类目标 (框 / mask), 与 sam3 的 exemplar「找全图相似」同列。本版只落**后端**, 前端在其后跟进。规划见 [`docs/plans/2026-06-25-v0.18.23-yoloe-visual-prompt-exemplar.md`](docs/plans/2026-06-25-v0.18.23-yoloe-visual-prompt-exemplar.md)。
+
+### Added
+
+- **YOLOE 视觉提示交互模型 (yolo-backend)**：`/setup` 新增 `exemplar-yoloe`（`is_interactive=true`、`supported_prompts=["exemplar"]`、`task=interactive_seg`、几何输出 `bbox`+`polygon`、仅 yoloe series），令 yolo-backend 整体成为交互 backend——工作台 ExemplarTool 在选定 yolo-backend 时自动启用。声明 `exemplar_capabilities`（`multi_box`、`negative_box=false`、`text_combination=false`、`threshold_refilter`）供前端按能力渲染控件。
+- **visual prompt 推理分支**：`type=exemplar` 走 `_predict_visual_prompt`——仅取正框样例（YOLOE 无负框）、归一化 bbox→像素、`visual_prompts={bboxes, cls=0}`（MVP 单类）、`refer_image=源图自身`（同图）、统一用 `YOLOEVPSegPredictor`（`-seg` 权重一次产出框+mask，按 `output` 取 box/mask/both）；`score_threshold` 映射 conf。独立 pool key（与文本句柄隔离，避免 VP 改写模型状态污染文本嵌入缓存）。
+
+### Changed
+
+- **yolo-backend `/predict` 兼容交互单数 wire**：`BatchPredictRequest` 接受平台交互调用的单数 `{task, context}`（归一成 `tasks=[task]`），使同一端点同时收批量（`tasks`）与交互（`task`）两种形态。
+
 ## [0.18.22] - 2026-06-26
 
 yolo-backend 开集文本能力补齐**实例分割**：批量文本面板用自然语言类名让 YOLOE 出多边形 mask（与 grounded-sam2 文本分割同形）。复用 v0.18.21 的文本推理链路与 PE 缓存，同一 `-seg` 权重检测/分割共用一份句柄——`detect-yoloe` 与 `segment-yoloe` 走同一 pool key，仅按 `output`（box/mask/both）取框 / mask / 两者。YOLO-World 无分割头，本版仅涉及 YOLOE。yolo 开集 epic 第 2/3 版。规划见 [`docs/plans/2026-06-25-v0.18.22-yoloe-openvocab-text-segmentation.md`](docs/plans/2026-06-25-v0.18.22-yoloe-openvocab-text-segmentation.md)。

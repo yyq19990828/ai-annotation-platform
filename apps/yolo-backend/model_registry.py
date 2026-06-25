@@ -151,6 +151,10 @@ def sizes_for(task: str, series: str) -> list[str]:
 # pool key 的 task 分量统一用 POOL_TASK_OPENVOCAB: yoloe 的 det/seg 同权重共用一份.
 
 POOL_TASK_OPENVOCAB: Final[str] = "openvocab"
+# v0.18.23 · YOLOE visual prompt exemplar 用独立 pool key (与文本句柄隔离):
+# VP 推理经 YOLOEVPSegPredictor 改写 model.names / 嵌入状态, 若与文本路径共用同一句柄会
+# 污染 _aap_classes 文本 PE 缓存 (set_classes 被误判已设而跳过) → 单独一份 YOLOE 实例。
+POOL_TASK_OPENVOCAB_VP: Final[str] = "openvocab_vp"
 
 # /setup model 条目 → 该条目暴露的 series → sizes.
 OPENVOCAB_WORLD_SERIES: Final[dict[str, tuple[str, ...]]] = {

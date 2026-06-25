@@ -24,9 +24,14 @@ from urllib.parse import urlparse
 import re
 
 import httpx
+import numpy as np
 from PIL import Image
 
-from model_registry import POOL_TASK_OPENVOCAB, openvocab_family
+from model_registry import (
+    POOL_TASK_OPENVOCAB,
+    POOL_TASK_OPENVOCAB_VP,
+    openvocab_family,
+)
 from observability import record_inference
 from schemas import Context, Variants
 
@@ -202,6 +207,10 @@ class YoloPredictor:
         if task == "text":
             return await self._predict_open_text(file_path, ctx)
 
+        # v0.18.23 · YOLOE visual prompt exemplar: type=exemplar, 框样例 → 找全图同类.
+        if task == "exemplar":
+            return await self._predict_visual_prompt(file_path, ctx)
+
         model, cache_hit, load_ms = await self._pool.get(task, variants.series, variants.size)
         img = _load_image(file_path)
         img_w, img_h = img.size
@@ -290,6 +299,78 @@ class YoloPredictor:
 
         # mask 仅 yoloe -seg 权重有; world 即便请求 mask 也无分割头 → 退回检测框.
         want_mask = ctx.output in ("mask", "both") and family == "yoloe"
+        want_box = ctx.output == "box" or ctx.output == "both" or not want_mask
+        items: list[dict[str, Any]] = []
+        if want_box:
+            items += _emit_detection(r0, names, img_w, img_h)
+        if want_mask:
+            items += _emit_segmentation(r0, names, img_w, img_h)
+        return items, cache_hit, load_ms, inference_ms
+
+    async def _predict_visual_prompt(
+        self, file_path: str, ctx: Context
+    ) -> tuple[list[dict[str, Any]], bool, int | None, int]:
+        """YOLOE visual prompt exemplar (v0.18.23): 框样例 → 找全图同类 → box / mask.
+
+        统一用 ``YOLOEVPSegPredictor`` (在 ``-seg`` 权重上同时产出 box + masks; 若强用
+        ``YOLOEVPDetectPredictor`` 会在 NMS 收到 seg 头的 tuple 输出而崩)。**同图样例**:
+        ``refer_image`` 必须显式传 (= source 自身), 缺省 None 会得 0 结果。
+
+        独立 pool key (POOL_TASK_OPENVOCAB_VP): 与文本句柄隔离, 避免 VP 改写模型状态污染
+        文本 PE 缓存。MVP 单类 (cls 全 0), 仅取正框 (label=True), 无负框 / 跨图。
+        """
+        from ultralytics.models.yolo.yoloe.predict import (  # noqa: PLC0415
+            YOLOEVPSegPredictor,
+        )
+
+        variants: Variants = ctx.variants
+        series, size = variants.series, variants.size
+
+        model, cache_hit, load_ms = await self._pool.get(
+            POOL_TASK_OPENVOCAB_VP, series, size
+        )
+        img = _load_image(file_path)
+        img_w, img_h = img.size
+
+        # 仅取正框 (YOLOE 无负框), 归一化 xyxy → 像素.
+        exemplars = ctx.exemplars or []
+        pos_boxes = [
+            [e.bbox[0] * img_w, e.bbox[1] * img_h, e.bbox[2] * img_w, e.bbox[3] * img_h]
+            for e in exemplars
+            if e.label and len(e.bbox) == 4
+        ]
+        if not pos_boxes:
+            # 无正框样例: 不推理, 返回空 (会话首拖前 / 仅负框的退化, 不报错).
+            return [], cache_hit, load_ms, 0
+
+        visual_prompts = {
+            "bboxes": np.array(pos_boxes, dtype=float),
+            "cls": np.zeros(len(pos_boxes), dtype=int),  # MVP 单类 object.
+        }
+        conf = ctx.score_threshold if ctx.score_threshold is not None else ctx.params.conf
+
+        t0 = time.time()
+        results = model.predict(
+            img,
+            visual_prompts=visual_prompts,
+            refer_image=img,  # 同图: refer 必须显式 = source, 否则 0 结果.
+            predictor=YOLOEVPSegPredictor,
+            conf=conf,
+            iou=ctx.params.iou,
+            max_det=ctx.params.max_det,
+            verbose=False,
+        )
+        elapsed = time.time() - t0
+        record_inference(POOL_TASK_OPENVOCAB_VP, series, size, elapsed)
+        inference_ms = int(elapsed * 1000)
+
+        if not results:
+            return [], cache_hit, load_ms, inference_ms
+        r0 = results[0]
+        names: dict[int, str] = getattr(r0, "names", {}) or getattr(model, "names", {})
+
+        # exemplar 输出形态 box/mask/both (VPSeg 同时产出, 按 output 取用).
+        want_mask = ctx.output in ("mask", "both")
         want_box = ctx.output == "box" or ctx.output == "both" or not want_mask
         items: list[dict[str, Any]] = []
         if want_box:

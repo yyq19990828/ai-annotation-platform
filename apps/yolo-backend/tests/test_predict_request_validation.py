@@ -123,6 +123,63 @@ def test_context_text_output_rejects_unknown() -> None:
         })
 
 
+# ── v0.18.23 · exemplar 视觉提示路径 (平台交互 wire: 单数 task + type=exemplar) ──
+
+
+def test_context_exemplar_path() -> None:
+    """type=exemplar: exemplars[] (归一化 bbox + label) + output + score_threshold."""
+    ctx = Context.model_validate({
+        "type": "exemplar",
+        "exemplars": [
+            {"bbox": [0.1, 0.2, 0.3, 0.4], "label": True},
+            {"bbox": [0.5, 0.5, 0.6, 0.7], "label": False},
+        ],
+        "output": "both",
+        "score_threshold": 0.3,
+        "model_variants": {"series": "yoloe-11", "size": "s"},
+    })
+    assert ctx.type == "exemplar"
+    assert len(ctx.exemplars) == 2
+    assert ctx.exemplars[0].label is True
+    assert ctx.exemplars[1].label is False
+    assert ctx.output == "both"
+    assert ctx.score_threshold == 0.3
+    assert ctx.variants.series == "yoloe-11"
+
+
+def test_exemplar_bbox_length_validated() -> None:
+    with pytest.raises(ValidationError):
+        Context.model_validate({
+            "type": "exemplar",
+            "exemplars": [{"bbox": [0.1, 0.2, 0.3]}],  # 长度须 4
+            "model_variants": {"series": "yoloe-11", "size": "s"},
+        })
+
+
+def test_batch_request_accepts_singular_task_wire() -> None:
+    """平台 predict_interactive 向 /predict 发单数 task → 归一成 tasks=[task]."""
+    req = BatchPredictRequest.model_validate({
+        "task": {"id": "t1", "file_path": "https://a/b.jpg"},
+        "context": {
+            "type": "exemplar",
+            "exemplars": [{"bbox": [0.1, 0.2, 0.3, 0.4]}],
+            "output": "mask",
+            "model_variants": {"series": "yoloe-11", "size": "s"},
+        },
+    })
+    assert len(req.tasks) == 1
+    assert req.tasks[0].id == "t1"
+    assert req.context.type == "exemplar"
+
+
+def test_batch_request_still_accepts_plural_tasks() -> None:
+    req = BatchPredictRequest.model_validate({
+        "tasks": [{"id": "t1", "file_path": "https://a/b.jpg"}],
+        "context": {"type": "detection", "model_variants": {"series": "yolo11", "size": "s"}},
+    })
+    assert len(req.tasks) == 1
+
+
 def test_context_closed_set_nested_params_unaffected() -> None:
     """闭集嵌套 params 路径不被文本路径的扁平收拢影响."""
     ctx = Context.model_validate({

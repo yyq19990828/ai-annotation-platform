@@ -40,30 +40,32 @@ def test_setup_infra_pytorch(setup_dict: dict) -> None:
     assert setup_dict["infra"] == "pytorch"
 
 
-# v0.18.21 起闭集四 task + 开集文本检测 2 条; v0.18.22 加开集文本分割 1 条.
+# v0.18.21 起闭集四 task + 开集文本检测 2 条; v0.18.22 加开集文本分割 1 条;
+# v0.18.23 加 YOLOE visual prompt exemplar 1 条 (交互, is_interactive=true).
 CLOSED_IDS = {"detect", "segment", "pose", "obb"}
 OPENVOCAB_DETECT_IDS = {"detect-world", "detect-yoloe"}
 OPENVOCAB_SEGMENT_IDS = {"segment-yoloe"}
-OPENVOCAB_IDS = OPENVOCAB_DETECT_IDS | OPENVOCAB_SEGMENT_IDS
+EXEMPLAR_IDS = {"exemplar-yoloe"}
+# 全部走开集 yoloe/world 权重矩阵 (变体合法性校验共用 is_openvocab_supported).
+OPENVOCAB_IDS = OPENVOCAB_DETECT_IDS | OPENVOCAB_SEGMENT_IDS | EXEMPLAR_IDS
 
 
-def test_setup_supported_prompts_none_and_text(setup_dict: dict) -> None:
-    """v0.18.21 · 闭集 none + 开集 text 的顶层并集 hint."""
-    assert setup_dict["supported_prompts"] == ["none", "text"]
+def test_setup_supported_prompts_none_text_exemplar(setup_dict: dict) -> None:
+    """v0.18.23 · 闭集 none + 开集 text + 视觉提示 exemplar 的顶层并集 hint."""
+    assert setup_dict["supported_prompts"] == ["none", "text", "exemplar"]
 
 
-def test_setup_has_seven_models(setup_dict: dict) -> None:
-    """v0.18.22 · 闭集 4 + 开集文本检测 2 + 开集文本分割 1 = 7."""
+def test_setup_has_eight_models(setup_dict: dict) -> None:
+    """v0.18.23 · 闭集 4 + 开集文本检测 2 + 文本分割 1 + 视觉提示 exemplar 1 = 8."""
     models = setup_dict["models"]
-    assert len(models) == 7
+    assert len(models) == 8
     ids = {m["id"] for m in models}
     assert ids == CLOSED_IDS | OPENVOCAB_IDS
 
 
 def test_setup_openvocab_models_declare_text_prompt(setup_dict: dict) -> None:
-    """开集模型 supported_prompts=['text'] 且非交互; 闭集为 ['none'].
-
-    检测条目几何=bbox, 分割条目几何=polygon。
+    """开集模型 supported_prompts 与 task: 文本检测=bbox/text, 文本分割=polygon/text,
+    exemplar=interactive/exemplar; 闭集为 ['none'].
     """
     for m in setup_dict["models"]:
         if m["id"] in OPENVOCAB_DETECT_IDS:
@@ -76,8 +78,24 @@ def test_setup_openvocab_models_declare_text_prompt(setup_dict: dict) -> None:
             assert m["task"] == "segmentation"
             assert m["supported_geometric_outputs"] == ["polygon"]
             assert m["is_interactive"] is False
+        elif m["id"] in EXEMPLAR_IDS:
+            assert m["supported_prompts"] == ["exemplar"]
+            assert m["task"] == "interactive_seg"
+            assert m["is_interactive"] is True
         else:
             assert m["supported_prompts"] == ["none"]
+
+
+def test_setup_exemplar_model_shape(setup_dict: dict) -> None:
+    """v0.18.23 · exemplar-yoloe: 交互 / 非批量 / box+polygon 双输出 / 仅 yoloe series."""
+    ex = next(m for m in setup_dict["models"] if m["id"] == "exemplar-yoloe")
+    assert ex["is_interactive"] is True
+    assert ex["resource_profile"] == {"device": "gpu", "batchable": False}
+    assert ex["supported_inputs"] == ["full_image"]
+    assert ex["supported_geometric_outputs"] == ["bbox", "polygon"]
+    series = {v["value"] for a in ex["supported_variants"] if a["key"] == "series" for v in a["variants"]}
+    assert series == {"yoloe-v8", "yoloe-11", "yoloe-26"}
+    assert ex["default_variants"] == {"series": "yoloe-11", "size": "s"}
 
 
 def test_setup_openvocab_text_outputs(setup_dict: dict) -> None:
@@ -107,9 +125,13 @@ def test_setup_openvocab_series_namespaces(setup_dict: dict) -> None:
 
 
 def test_setup_models_declare_supported_inputs(setup_dict: dict) -> None:
-    """v0.18.16 · 各 task 显式声明 supported_inputs (整图 + crop, 可作 crop-detect 下游)。"""
+    """v0.18.16 · 批量 task 声明 supported_inputs (整图 + crop, 可作 crop-detect 下游);
+    交互 exemplar 仅整图。"""
     for m in setup_dict["models"]:
-        assert m["supported_inputs"] == ["full_image", "crop"]
+        if m["id"] in EXEMPLAR_IDS:
+            assert m["supported_inputs"] == ["full_image"]
+        else:
+            assert m["supported_inputs"] == ["full_image", "crop"]
 
 
 def test_setup_models_declare_output_attribute_types(setup_dict: dict) -> None:
@@ -119,14 +141,17 @@ def test_setup_models_declare_output_attribute_types(setup_dict: dict) -> None:
 
 
 def test_setup_models_declare_resource_profile(setup_dict: dict) -> None:
-    """v0.18.16 · 各 task 自报资源画像 (GPU 批量, 不填 vram)。"""
+    """v0.18.16 · 批量 task GPU 可批量; 交互 exemplar GPU 单次不可批量。"""
     for m in setup_dict["models"]:
-        assert m["resource_profile"] == {"device": "gpu", "batchable": True}
+        if m["id"] in EXEMPLAR_IDS:
+            assert m["resource_profile"] == {"device": "gpu", "batchable": False}
+        else:
+            assert m["resource_profile"] == {"device": "gpu", "batchable": True}
 
 
 def test_setup_models_carry_protocol_task(setup_dict: dict) -> None:
     tasks = {m["task"] for m in setup_dict["models"]}
-    assert tasks == {"detection", "segmentation", "keypoint", "obb"}
+    assert tasks == {"detection", "segmentation", "keypoint", "obb", "interactive_seg"}
 
 
 def test_setup_models_all_family_yolo(setup_dict: dict) -> None:

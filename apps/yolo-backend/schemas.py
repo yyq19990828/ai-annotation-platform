@@ -24,6 +24,7 @@ __all__ = [
     "BatchPredictRequest",
     "BatchPredictResponse",
     "Context",
+    "Exemplar",
     "InteractiveRequest",
     "PredictParams",
     "PredictionResult",
@@ -59,6 +60,23 @@ class PredictParams(BaseModel):
     max_det: int = Field(default=300, ge=1, le=1000)
 
 
+class Exemplar(BaseModel):
+    """v0.18.23 · YOLOE visual prompt 单框样例 (字段名与 sam3 对齐, 平台 exemplar wire 直通).
+
+    bbox: 归一化 xyxy [x1,y1,x2,y2] (∈[0,1]); label: True=正框 / False=负框。
+    YOLOE 无负框语义 → predictor 仅取正框 (label=True), 负框静默忽略。
+    """
+
+    bbox: list[float]
+    label: bool = True
+
+    @model_validator(mode="after")
+    def _validate_bbox(self) -> "Exemplar":
+        if len(self.bbox) != 4:
+            raise ValueError("exemplar.bbox=[x1,y1,x2,y2] required (length 4)")
+        return self
+
+
 class Context(BaseModel):
     """yolo context. `type` 决定走哪条分支:
 
@@ -67,7 +85,7 @@ class Context(BaseModel):
       平台文本路径把 conf/iou/max_det 扁平在顶层 (非嵌套 params), 由 before-validator 收拢.
     """
 
-    type: Literal["detection", "segmentation", "keypoint", "obb", "text"]
+    type: Literal["detection", "segmentation", "keypoint", "obb", "text", "exemplar"]
     model_variants: dict[str, str] | None = None
     variants: Variants
     params: PredictParams = Field(default_factory=PredictParams)
@@ -77,7 +95,10 @@ class Context(BaseModel):
     # v0.18.21 · 开集文本路径字段 (type=text 时生效).
     text: str | None = None  # 开放词表, 逗号/换行分隔多类名.
     model_id: str | None = None  # 平台路由记录用 (后端按 series 派生 family, 不强依赖).
-    output: Literal["box", "mask", "both"] = "box"  # v0.18.21 仅 box; mask 留 v0.18.22.
+    output: Literal["box", "mask", "both"] = "box"  # text 默认 box; exemplar 默认 mask 由平台下发.
+    # v0.18.23 · YOLOE visual prompt exemplar 路径 (type=exemplar 时生效).
+    exemplars: list[Exemplar] | None = None  # 多框样例 (归一化 xyxy); 仅正框入 YOLOE。
+    score_threshold: float | None = None  # exemplar per-req 阈值 → 映射 yoloe conf; null=用 params.conf。
 
     @model_validator(mode="before")
     @classmethod
@@ -118,6 +139,18 @@ class InteractiveRequest(BaseModel):
 class BatchPredictRequest(BaseModel):
     tasks: list[TaskItem]
     context: Context
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_singular_task(cls, data):
+        """v0.18.23 · 平台交互调用 (predict_interactive) 向 /predict 发单数 `task` wire
+        (`{task, context}`); 批量发 `tasks`。这里把单数归一成 `tasks=[task]`, 使 yolo 成为
+        交互 backend (exemplar) 后, 同一 /predict 端点同时收批量与交互两种形态。"""
+        if isinstance(data, dict) and "tasks" not in data and "task" in data:
+            normalized = dict(data)
+            normalized["tasks"] = [normalized.pop("task")]
+            return normalized
+        return data
 
 
 class WarmupRequest(BaseModel):
