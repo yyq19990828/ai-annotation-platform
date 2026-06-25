@@ -4,7 +4,7 @@
  * 进入条件: ProjectCardGrid 点击某项目卡片;此面板替代主视图渲染.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -34,8 +34,21 @@ import { PredictionImportWizard } from "@/components/predictions/PredictionImpor
 import { usePreannotateConfig } from "./usePreannotateConfig";
 import { PreannotateConfigForm } from "./PreannotateConfigForm";
 import { StageCard } from "./StageCard";
-import { StageGraphSummary } from "./StageGraphSummary";
+import {
+  ROOT_SID,
+  canAddChild as pureCanAddChild,
+  canReparent,
+  detailOf,
+  producesGeometry,
+  reparent,
+  roleOf,
+  type GraphNodeModel,
+  type StageEntry,
+} from "../utils/pipelineGraph";
 import styles from "./ProjectDetailPanel.module.css";
+
+// react-flow 经 lazy 隔离: chunk 不进主包, 仅 /ai-pre 详情面板按需加载 (同 App.tsx 惯例)。
+const PipelineGraphCanvas = lazy(() => import("./PipelineGraphCanvas"));
 
 // v0.11.24 · 预标幂等模式
 const PREDICT_MODE_TABS = ["跳过已预标", "覆盖", "追加"];
@@ -140,7 +153,9 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // 编排 (红线)。卡片把派生 stage payload 上抛, 容器在运行时组装成 pipeline_stages。
   // v0.18.15 · 受限树形 (max depth 3): 下游阶段为 {sid, parentSid} 列表, parentSid="root"=源阶段。
   // 数组顺序即添加顺序 (子总在父之后追加 → 运行期分配的 stage 号天然满足「父序号 < 子序号」)。
-  const [stagesGraph, setStagesGraph] = useState<Array<{ sid: string; parentSid: string }>>([]);
+  const [stagesGraph, setStagesGraph] = useState<StageEntry[]>([]);
+  // v0.18.16 · DAG 画布选中节点 (右列检查器据此显参数); 默认选源 (ROOT_SID), 始终有一张可编辑。
+  const [selectedSid, setSelectedSid] = useState<string>(ROOT_SID);
   const stagePayloadsRef = useRef<Record<string, PipelineStagePayload | null>>({});
   const [stageTick, setStageTick] = useState(0); // 卡片回报 payload → bump 触发 canRun 重算
   const onStageChange = useCallback(
@@ -151,9 +166,12 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     [],
   );
   const seqRef = useRef(0);
-  const addStage = (parentSid: string) =>
-    setStagesGraph((g) => [...g, { sid: `stage-${(seqRef.current += 1)}`, parentSid }]);
-  const removeStage = (sid: string) =>
+  const addStage = useCallback((parentSid: string) => {
+    const sid = `stage-${(seqRef.current += 1)}`;
+    setStagesGraph((g) => [...g, { sid, parentSid }]);
+    setSelectedSid(sid); // 新建即选中 → 右列直接进该阶段参数。
+  }, []);
+  const removeStage = useCallback((sid: string) => {
     setStagesGraph((g) => {
       // 级联移除该阶段及其全部后代 (父被删, 子无依附)。
       const dead = new Set([sid]);
@@ -166,8 +184,11 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
           }
         }
       }
+      // 选中节点被删 → 回落到源。
+      setSelectedSid((cur) => (dead.has(cur) ? ROOT_SID : cur));
       return g.filter((e) => !dead.has(e.sid));
     });
+  }, []);
 
   // v0.18.3 · 运行态可视化: 跑批后轮询最后一个多阶段 job 的 result.pipeline_stages (终态真值)。
   const [lastPipelineJobId, setLastPipelineJobId] = useState<string | null>(null);
@@ -227,6 +248,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   useEffect(() => {
     setSelectedBatchIds(new Set());
     setStagesGraph([]);
+    setSelectedSid(ROOT_SID);
     stagePayloadsRef.current = {};
     setLastPipelineJobId(null);
     setKeyConflictLastWins(false);
@@ -265,12 +287,14 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   );
   const allDownstreamReady = downstreamPayloads.every((p) => p != null);
 
-  // v0.18.15 · 每阶段深度 (root=1); 子=父+1。用于 depth<3 的「加子阶段」门控。
-  const depthBySid = useMemo(() => {
-    const d: Record<string, number> = { root: 1 };
-    for (const e of stagesGraph) d[e.sid] = (d[e.parentSid] ?? 1) + 1;
-    return d;
-  }, [stagesGraph]);
+  // v0.18.16 · sid → 派生 payload (供 DAG 图节点角色 / 改父校验)。
+  const payloadBySid = useMemo(() => {
+    const m: Record<string, PipelineStagePayload | null> = {};
+    stagesGraph.forEach((e, i) => {
+      m[e.sid] = downstreamPayloads[i] ?? null;
+    });
+    return m;
+  }, [stagesGraph, downstreamPayloads]);
 
   // v0.18.5 · 选择器化数据源: 项目类别 (类名) + 项目属性 schema 字段键, 传给 StageCard 多选。
   const projectClasses = useMemo(
@@ -315,6 +339,73 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   const hasKeyConflict = conflictInfo.conflictFinals.size > 0;
   // 键冲突策略: reject (默认, 后端校验期拦) | last_wins (末位覆盖, 用户显式允许)。
   const [keyConflictLastWins, setKeyConflictLastWins] = useState(false);
+
+  // v0.18.16 · DAG 图节点模型 (源 + 各下游): 角色徽标 / 运行态 / 迷你计数 / 可加子 / 键冲突。
+  // 下游须用不同于检测的 backend → 加子额外要求 backends>=2 (与原 canHaveChild 一致)。
+  const canAddBackend = backends.length >= 2;
+  const graphNodes = useMemo<GraphNodeModel[]>(() => {
+    const source: GraphNodeModel = {
+      sid: ROOT_SID,
+      parentSid: null,
+      kind: "source",
+      role: { label: "检测", variant: "accent", icon: "box" },
+      detail: selectedBackend?.name ?? "源检测",
+      runState: stageRunState(0),
+      ok: sourceDetected ?? undefined,
+      producesGeometry: true,
+      canAddChild: canAddBackend && pureCanAddChild(stagesGraph, payloadBySid, ROOT_SID),
+      conflict: false,
+    };
+    const stages = stagesGraph.map<GraphNodeModel>((e, i) => {
+      const p = downstreamPayloads[i];
+      const stat = stageStatByIndex.get(i + 1);
+      return {
+        sid: e.sid,
+        parentSid: e.parentSid,
+        kind: "stage",
+        role: roleOf(p),
+        detail: detailOf(p),
+        runState: stageRunState(i + 1),
+        targeted: stat?.targeted,
+        ok: stat?.ok,
+        producesGeometry: producesGeometry(p),
+        canAddChild: canAddBackend && pureCanAddChild(stagesGraph, payloadBySid, e.sid),
+        conflict: (conflictInfo.perCard[e.sid]?.size ?? 0) > 0,
+      };
+    });
+    return [source, ...stages];
+    // stageRunState 每渲染重建 (依赖 stagesRunning/统计); 以其底层 deps 触发重算。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    stagesGraph,
+    downstreamPayloads,
+    payloadBySid,
+    stageStatByIndex,
+    stagesRunning,
+    sourceDetected,
+    selectedBackend?.name,
+    canAddBackend,
+    conflictInfo,
+  ]);
+
+  // v0.18.16 · 改父校验 (连线 source=新父, target=子) + 提交。受限规则全在 canReparent 纯函数。
+  const canReparentConn = useCallback(
+    (childSid: string, newParentSid: string) =>
+      canReparent(stagesGraph, payloadBySid, childSid, newParentSid).ok,
+    [stagesGraph, payloadBySid],
+  );
+  const onReparent = useCallback(
+    (childSid: string, newParentSid: string) => {
+      const chk = canReparent(stagesGraph, payloadBySid, childSid, newParentSid);
+      if (!chk.ok) {
+        if (chk.reason) pushToast({ msg: "无法改父", sub: chk.reason, kind: "warning" });
+        return;
+      }
+      setStagesGraph((g) => reparent(g, childSid, newParentSid));
+      setSelectedSid(childSid);
+    },
+    [stagesGraph, payloadBySid, pushToast],
+  );
 
   // 配置层就绪 (源 cfg.configReady) && 下游卡 (若有) 全就绪 && 选了批次 && 不在跑 &&
   // (无键冲突 || 已选末位覆盖)。
@@ -534,40 +625,51 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               : "批跑预标设置"}
           </strong>
 
-            {/* 共享配置区 (任务类型 / 模型任务 / 类别白名单 / prompt / backend 多选 /
-                params+variant / 预设 / 输出形态); 工作台 AI 面板复用同一组件. */}
-            <PreannotateConfigForm
-              cfg={cfg}
-              backends={backends}
-              selectedBackendId={selectedBackendId}
-              onSelectBackend={setSelectedBackendId}
-              projectMlBackendId={project?.ml_backend_id}
-            />
-
-            {/* v0.18.6 · 源阶段 (检测) 运行态: 多阶段批跑时显实时检出框数。 */}
-            {stagesGraph.length > 0 && sourceDetected != null && (
-              <div className={styles.stageStatRow}>
-                <b>阶段 1 · 检测</b>：检出 {sourceDetected} 框
-                {stagesRunning && " · 运行中…"}
+            {/* v0.18.16 · 两列编排: 左 DAG 画布 (点选/增删/拖边改父), 右选中节点参数检查器。
+                页面高度恒定 (右列永远一张卡), 结构所见即所得。 */}
+            <div className={styles.editorTwoCol}>
+              <div className={styles.editorCanvas}>
+                <Suspense
+                  fallback={<div className={styles.canvasFallback}>加载编排画布…</div>}
+                >
+                  <PipelineGraphCanvas
+                    models={graphNodes}
+                    selectedSid={selectedSid}
+                    onSelect={setSelectedSid}
+                    onAddChild={addStage}
+                    onRemove={removeStage}
+                    onReparent={onReparent}
+                    canReparentConn={canReparentConn}
+                  />
+                </Suspense>
+                {backends.length < 2 ? (
+                  <span className={styles.stageEmptyHint}>
+                    需在项目设置绑定第二个 ML backend，才能加下游分类/检测子阶段（下游须用不同于检测的后端）。
+                  </span>
+                ) : stagesGraph.length === 0 ? (
+                  <span className={styles.stageEmptyHint}>
+                    从源节点的 <Icon name="plus" size={10} /> 拖出（或点 +）加下游阶段：检出框后，下游对每个框跑分类补属性 / 检测子物体。
+                  </span>
+                ) : null}
               </div>
-            )}
 
-            {/* v0.18.15 · 受限树形结构摘要 (ASCII): 一眼看清 检测(源) → 子 → 孙 的层级与产物。 */}
-            <StageGraphSummary stagesGraph={stagesGraph} payloads={downstreamPayloads} />
-
-            {/* v0.18.2 / v0.18.15 · 多阶段预标注 (受限树形, max depth 3): 各下游阶段卡按 parentSid
-                缩进渲染。每张卡把派生 payload 上抛, 容器据 stagesGraph 顺序分配 stage 号 + parent_stage。
-                产几何的阶段 (检测/分割) 且 depth<3 时可「加子阶段」。 */}
-            {stagesGraph.map((e, i) => {
-              const payload = downstreamPayloads[i];
-              const depth = depthBySid[e.sid] ?? 2;
-              const producesGeometry =
-                payload?.write?.target === "geometry" ||
-                payload?.write?.target === "intermediate";
-              const canHaveChild = producesGeometry && depth < 3 && backends.length >= 2;
-              return (
-                <div key={e.sid} className={depth >= 3 ? styles.stageChildIndent : undefined}>
+              {/* 检查器: 所有配置体常驻挂载, 非选中者 CSS 隐藏 (保住各自 usePreannotateConfig 状态)。 */}
+              <div className={styles.editorInspector}>
+                {/* 源参数 (检测): 选中源时显示。 */}
+                <div hidden={selectedSid !== ROOT_SID}>
+                  <strong className={styles.sectionTitle}>源阶段 · 检测参数</strong>
+                  <PreannotateConfigForm
+                    cfg={cfg}
+                    backends={backends}
+                    selectedBackendId={selectedBackendId}
+                    onSelectBackend={setSelectedBackendId}
+                    projectMlBackendId={project?.ml_backend_id}
+                  />
+                </div>
+                {/* 各下游阶段卡: 全部挂载, 非选中 hidden。 */}
+                {stagesGraph.map((e, i) => (
                   <StageCard
+                    key={e.sid}
                     id={e.sid}
                     displayIndex={i + 2}
                     projectId={projectId}
@@ -579,17 +681,13 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                     conflictKeys={conflictInfo.perCard[e.sid]}
                     stat={stageStatByIndex.get(i + 1)}
                     runState={stageRunState(i + 1)}
+                    hidden={selectedSid !== e.sid}
                     onChange={onStageChange}
                     onRemove={removeStage}
                   />
-                  {canHaveChild && (
-                    <Button size="sm" variant="ghost" onClick={() => addStage(e.sid)}>
-                      <Icon name="plus" size={11} /> 加子阶段（对该阶段产出的每个框继续跑）
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            </div>
 
             {/* v0.18.5 · 键冲突配置期预警: 多个 attributes 阶段写同一最终键 → 红字提示 + 末位覆盖开关。 */}
             {hasKeyConflict && (
@@ -609,30 +707,6 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                     允许末位覆盖（last_wins）
                   </label>
                 </div>
-              </div>
-            )}
-
-            {/* v0.18.5 · 单 backend 兜底: 项目只绑 1 个 backend 时无法加下游分类阶段。 */}
-            {backends.length < 2 ? (
-              <div className={styles.field}>
-                <span className={styles.mutedText}>
-                  需在项目设置绑定第二个 ML backend，才能加分类阶段（下游须用不同于检测的后端）。
-                </span>
-              </div>
-            ) : (
-              <div className={styles.field}>
-                {/* v0.18.8 · 空态引导: 未加任何下游阶段时给一句示意 (检测 → 分类)。 */}
-                {stagesGraph.length === 0 && (
-                  <span className={styles.stageEmptyHint}>
-                    可串接「检测 → 分类」流水线：源阶段检出框后，下游分类器对每个框补属性。
-                  </span>
-                )}
-                <Button size="sm" variant="ghost" onClick={() => addStage("root")}>
-                  <Icon name="plus" size={11} />
-                  {stagesGraph.length === 0
-                    ? "加第二阶段（对每个检测框跑分类 → 写回属性）"
-                    : "并行加同级阶段（同源、各写不同属性）"}
-                </Button>
               </div>
             )}
 

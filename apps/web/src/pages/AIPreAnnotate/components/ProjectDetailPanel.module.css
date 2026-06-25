@@ -124,10 +124,6 @@
   background: var(--sc-muted);
   border-radius: var(--sc-radius);
 }
-.stageStatRow {
-  font-size: 12px;
-  color: var(--sc-foreground);
-}
 
 /* v0.18.2 · 阶段级字段的文本/数字输入 (类别过滤 / pad / 写回键)。 */
 .textInput {
@@ -233,68 +229,40 @@
   line-height: 1.5;
 }
 
-/* v0.18.15 · depth-3 子阶段缩进 (受限树形最深 3 层, 下游仅 depth 2/3 两档)。 */
-.stageChildIndent {
-  margin-left: 20px;
+/* v0.18.16 · 两列编排: 左 DAG 画布 + 右选中节点参数检查器。窄屏退化为单列堆叠。 */
+.editorTwoCol {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.1fr);
+  gap: 12px;
+  align-items: start;
 }
-
-/* v0.18.15 · 受限树形流水线可视化结构摘要。 */
-.stageTree {
+@media (max-width: 720px) {
+  .editorTwoCol {
+    grid-template-columns: 1fr;
+  }
+}
+.editorCanvas {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  gap: 6px;
+  min-width: 0;
+}
+.editorInspector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.canvasFallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 340px;
+  color: var(--sc-muted-foreground);
+  font-size: 12px;
   background: var(--sc-muted);
   border: 1px solid var(--sc-border);
   border-radius: 8px;
-  overflow-x: auto;
-}
-
-/* 子层: 左侧竖引导线 + 与父节点的纵向间距。 */
-.stageTreeChildren {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-  margin-left: 9px;
-  padding-left: 16px;
-  border-left: 1px solid var(--sc-border);
-}
-
-/* 单个分支: 用肘形伪元素把竖引导线接到本节点 chip。 */
-.stageTreeBranch {
-  position: relative;
-}
-.stageTreeBranch::before {
-  content: "";
-  position: absolute;
-  left: -16px;
-  top: 14px;
-  width: 13px;
-  height: 1px;
-  background: var(--sc-border);
-}
-
-/* 节点 chip: 图标 + 角色徽标 + 详情, 卡面 + 圆角描边。 */
-.stageNode {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  width: fit-content;
-  padding: 4px 10px;
-  background: var(--sc-card);
-  border: 1px solid var(--sc-border);
-  border-radius: 8px;
-  font-size: 11px;
-}
-.stageNodeIcon {
-  color: var(--sc-muted-foreground);
-}
-.stageNodeName {
-  font-weight: 600;
-}
-.stageNodeDetail {
-  color: var(--sc-muted-foreground);
 }
 
 /* v0.18.8 · 阶段卡 (Card 卡面): 内边距 + 组间距 + 左侧角色轨。 */
@@ -304,6 +272,10 @@
   gap: 10px;
   padding: 12px 14px;
   border-left: 3px solid var(--sc-brand);
+}
+/* v0.18.16 · 检查器里非选中阶段卡: CSS 隐藏 (不卸载, 保住自持 usePreannotateConfig 状态)。 */
+.stageHidden {
+  display: none;
 }
 .stageCardHeader {
   display: flex;

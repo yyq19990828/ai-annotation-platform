@@ -34,6 +34,26 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.16] - 2026-06-25
+
+把 `/ai-pre` 的受限树形编排从**竖排阶段卡**重做成**两列：左 DAG 画布 + 右节点检查器**。竖排卡片随并行 / 嵌套阶段无限拉长页面、结构靠缩进脑补；新画布让拓扑一眼可见、页面高度恒定（右列永远一张卡）。纯前端重做，后端零改动（仍由 `stagesGraph` 派生 `pipeline_stages`，复用 0.18.15 的校验 / 投递烘焙 / 几何回映）。规划详见 [`docs/plans/2026-06-25-v0.18.16-staged-preannotate-dag-canvas-draft.md`](docs/plans/2026-06-25-v0.18.16-staged-preannotate-dag-canvas-draft.md)。
+
+### Added
+
+- **受限树形 DAG 画布**：新增 `PipelineGraphCanvas`（`@xyflow/react` v12，经 `React.lazy` 隔离成独立 chunk、不进主包），把 `stagesGraph` 派生成分层 DAG（`col=depth-1`，源 → 子 → 孙）。节点带角色徽标（检测 / 分割 / 分类）、运行态圆点、迷你计数；产几何的节点才有出向 handle（「叶子不可有子」编码进 UI）。点选节点 → 右列检查器切到其参数。
+- **节点编辑手势**：节点上 `+` 加子 / `🗑` 级联删；拖节点连接点到空白 → 新建子阶段；**拖动连线改父**（re-parent）。受限规则（无环 / 深度 ≤ 3 / 父产几何）收敛到纯函数 `canReparent`，`isValidConnection` 实时校验、非法连接回弹 + toast 原因。
+- **纯函数图层 `utils/pipelineGraph.ts`**：`buildFlow` / `depthBySid` / `descendantsOf` / `subtreeHeight` / `canAddChild` / `canReparent` / `reparent` / `roleOf` / `detailOf`，与 react-flow 运行时解耦、可单测。
+
+### Changed
+
+- **检查器持久化**：所有 `StageCard` 与源参数表单常驻挂载、非选中者 CSS 隐藏（`hidden`），切换选中节点不丢各自 `usePreannotateConfig` 状态。
+- **运行态落到画布节点**：源节点显检出框数，下游节点显运行态圆点 + 「目标 / 成功」计数；键冲突节点 danger 描边（顶部预警与末位覆盖开关保留）。
+- 移除竖排阶段卡的「加第二阶段 / 并行加同级 / 加子阶段」按钮、缩进渲染与只读 `StageGraphSummary` ASCII 摘要条（被画布取代）。
+
+### Compatibility
+
+- 纯前端编排 UI 重做；`pipeline_stages` 组装逻辑、`StageCard` 配置体、`usePreannotateConfig`、运行 / 并发 / 键冲突逻辑全部复用。无协议改动、无 DB migration、无新增环境变量。
+
 ## [0.18.15] - 2026-06-25
 
 承接 0.18.14 显式推迟的两块 plumbing，补齐**几何 depth-3**：`person → 在 person crop 上检测 hat → 给 hat 分类 color` 现在真能跑——检测器在父框 crop 上检出的子物体几何按仿射变换**回映回原图坐标**，并作为新框供下游消费。同时把「模型 I/O 输入契约」做成一等协议字段 `supported_inputs`，让投递方式与父子可达性可声明、可校验。前端补齐受限树形构建器（「加子阶段」+ ASCII 摘要条），用户搭出的 depth-3 链路所见即所跑。规划详见 [`docs/plans/2026-06-25-v0.18.15-model-io-contract-and-crop-remap-draft.md`](docs/plans/2026-06-25-v0.18.15-model-io-contract-and-crop-remap-draft.md)。

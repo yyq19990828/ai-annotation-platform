@@ -121,6 +121,8 @@ interface Props {
   stat?: PipelineStageStat;
   /** v0.18.6 · 本阶段运行态 (徽标用): pending/running/done。 */
   runState?: "pending" | "running" | "done";
+  /** v0.18.16 · 检查器里非选中卡 CSS 隐藏 (不卸载, 保住自持配置状态)。 */
+  hidden?: boolean;
   /** 派生出的 stage payload (未就绪=null) 上抛给容器; 容器据此组装 pipeline_stages。 */
   onChange: (id: string, payload: PipelineStagePayload | null) => void;
   onRemove: (id: string) => void;
@@ -138,6 +140,7 @@ export function StageCard({
   conflictKeys,
   stat,
   runState = "pending",
+  hidden = false,
   onChange,
   onRemove,
 }: Props) {
@@ -308,7 +311,7 @@ export function StageCard({
   const okPct = targeted > 0 ? ((stat?.ok ?? 0) / targeted) * 100 : 0;
 
   return (
-    <Card className={styles.stageCard}>
+    <Card className={cx(styles.stageCard, hidden && styles.stageHidden)}>
       <div className={styles.stageCardHeader}>
         <span className={styles.stageRole}>
           <Icon name="brain" size={13} />
