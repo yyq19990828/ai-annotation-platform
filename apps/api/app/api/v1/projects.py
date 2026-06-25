@@ -1365,6 +1365,23 @@ class PreannotateRequest(BaseModel):
         return self
 
 
+def _stage_supported_inputs(backend, model_id: str | None) -> list[str]:
+    """v0.18.15 · 从 backend 能力快照取某 model 的 supported_inputs (一等输入契约)。
+
+    health_meta.capabilities.models[] 已由 extract_capabilities 规范化 (含合成默认)。
+    无快照 / 无 model_id / 匹配不到 → 返回 [] (调用方据此放过门控, 保持零退化)。
+    """
+    meta = getattr(backend, "health_meta", None)
+    caps = meta.get("capabilities") if isinstance(meta, dict) else None
+    models = caps.get("models") if isinstance(caps, dict) else None
+    if not isinstance(models, list) or model_id is None:
+        return []
+    for m in models:
+        if isinstance(m, dict) and str(m.get("id")) == str(model_id):
+            return list(m.get("supported_inputs") or [])
+    return []
+
+
 @router.post("/{project_id}/preannotate")
 async def trigger_preannotation(
     body: PreannotateRequest,
@@ -1389,6 +1406,7 @@ async def trigger_preannotation(
     if body.pipeline_stages:
         norm: list[dict] = []
         for st in body.pipeline_stages:
+            resolved_input = st.input
             if st.parent_stage is not None:
                 st_backend = await svc.get(st.ml_backend_id)
                 if not st_backend or st_backend.project_id != project.id:
@@ -1396,6 +1414,24 @@ async def trigger_preannotation(
                         status_code=404,
                         detail=f"stage {st.stage} 的 ML Backend 不存在或不属于本项目",
                     )
+                # v0.18.15 · 按子模型 supported_inputs 解析投递方式 + 几何可达性门控。
+                # 产几何的子: supported_inputs 须含 'bbox_prompt' (geometry-prompt 路径) 或
+                # 'crop' (普通检测器在 crop 上跑 + 坐标回映)。据此把投递方式烘焙进 input.mode,
+                # worker 直接消费 (无快照时 inputs=[] → 放过门控、不烘焙, 保持零退化)。
+                target = (st.write or {}).get("target", "attributes")
+                inputs = _stage_supported_inputs(st_backend, st.model_id)
+                if target in {"geometry", "intermediate"} and inputs:
+                    if "bbox_prompt" not in inputs and "crop" not in inputs:
+                        raise HTTPException(
+                            status_code=422,
+                            detail=(
+                                f"stage {st.stage} 产几何 (write.target={target!r}), 但其模型 "
+                                f"supported_inputs={inputs} 不含 'bbox_prompt'/'crop', 无法作几何下游"
+                            ),
+                        )
+                    if not (st.input or {}).get("mode"):
+                        mode = "geometry" if "bbox_prompt" in inputs else "crop"
+                        resolved_input = {**(st.input or {}), "mode": mode}
             norm.append(
                 {
                     "stage": st.stage,
@@ -1410,6 +1446,10 @@ async def trigger_preannotation(
                     "roi": st.roi,
                     "write": st.write,
                     "on_failure": st.on_failure,
+                    # v0.18.14 · 卡片显示名 + 写回属性键前缀 (子物体命名空间, 如 hat_color)。
+                    "label": st.label,
+                    # v0.18.15 · 投递模式: 用户显式 input 或按 supported_inputs 烘焙的结果。
+                    "input": resolved_input,
                     # v0.18.2 · 键冲突策略下放到每个下游阶段, worker 末位覆盖时据此合并。
                     "on_key_conflict": body.on_key_conflict,
                 }

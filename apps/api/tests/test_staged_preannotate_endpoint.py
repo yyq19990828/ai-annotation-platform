@@ -465,6 +465,108 @@ async def test_geometry_target_skips_key_conflict(
     assert resp.status_code == 200, resp.text
 
 
+async def _set_model_caps(db, backend, model_id, supported_inputs):
+    """v0.18.15 · 给 backend 灌一份能力快照 (含某 model 的 supported_inputs), 供门控/烘焙测试。"""
+    backend.health_meta = {
+        "capabilities": {"models": [{"id": model_id, "supported_inputs": supported_inputs}]}
+    }
+    db.add(backend)
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_reject_geometry_child_without_compatible_input(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # v0.18.15 · 产几何的子, supported_inputs 只有 full_image (无 bbox_prompt/crop) → 422。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    await _set_model_caps(db_session, classify, "fullimg-only", ["full_image"])
+    stages = [
+        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
+         "write": {"target": "geometry"}},
+        {"stage": 1, "ml_backend_id": str(classify.id), "model_id": "fullimg-only",
+         "parent_stage": 0, "write": {"target": "geometry"}},
+    ]
+    resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
+    assert resp.status_code == 422, resp.text
+    assert "无法作几何下游" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_bakes_crop_delivery_for_plain_detector_geometry_child(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # v0.18.15 · 产几何的子是普通检测器 (supported_inputs 含 crop) → 烘焙 input.mode=crop。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    await _set_model_caps(db_session, classify, "hat-det", ["full_image", "crop"])
+    stages = [
+        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
+         "write": {"target": "geometry"}},
+        {"stage": 1, "ml_backend_id": str(classify.id), "model_id": "hat-det",
+         "parent_stage": 0, "write": {"target": "geometry"}},
+    ]
+    resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
+    assert resp.status_code == 200, resp.text
+    fwd = _mock_celery["kwargs"]["pipeline_stages"]
+    assert fwd[1]["input"] == {"mode": "crop"}
+
+
+@pytest.mark.asyncio
+async def test_bakes_geometry_delivery_for_box_seg_child(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # v0.18.15 · 产几何的子是 box-prompt seg (supported_inputs 含 bbox_prompt) → input.mode=geometry。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    await _set_model_caps(db_session, classify, "box-seg", ["bbox_prompt", "full_image"])
+    stages = [
+        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
+         "write": {"target": "geometry"}},
+        {"stage": 1, "ml_backend_id": str(classify.id), "model_id": "box-seg",
+         "parent_stage": 0, "write": {"target": "geometry"}},
+    ]
+    resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
+    assert resp.status_code == 200, resp.text
+    fwd = _mock_celery["kwargs"]["pipeline_stages"]
+    assert fwd[1]["input"] == {"mode": "geometry"}
+
+
+@pytest.mark.asyncio
+async def test_explicit_input_mode_not_overridden(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # v0.18.15 · 用户显式 input.mode 不被烘焙覆盖。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    await _set_model_caps(db_session, classify, "box-seg", ["bbox_prompt", "full_image"])
+    stages = [
+        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
+         "write": {"target": "geometry"}},
+        {"stage": 1, "ml_backend_id": str(classify.id), "model_id": "box-seg",
+         "parent_stage": 0, "input": {"mode": "geometry"},
+         "write": {"target": "geometry"}},
+    ]
+    resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
+    assert resp.status_code == 200, resp.text
+    assert _mock_celery["kwargs"]["pipeline_stages"][1]["input"] == {"mode": "geometry"}
+
+
+@pytest.mark.asyncio
+async def test_label_forwarded_to_worker(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # v0.18.15 · 修复: label 字段须透传给 worker (子物体属性前缀链路依赖它)。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = _stages(detect.id, classify.id)
+    stages[1]["label"] = "hat"
+    resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
+    assert resp.status_code == 200, resp.text
+    assert _mock_celery["kwargs"]["pipeline_stages"][1]["label"] == "hat"
+
+
 @pytest.mark.asyncio
 async def test_reject_source_backend_mismatch(
     httpx_client_bound, super_admin, db_session, _mock_celery

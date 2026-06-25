@@ -78,11 +78,11 @@ export const COMPOSITION_BADGE: Record<
   composite: { variant: "ai", label: "内置流程", title: "一个 model 内部串联多个原子（内置编排）" },
 };
 
-// supported_prompts → 中文短标签 (模型可接受的输入声明)。
-const PROMPT_LABELS: Record<string, string> = {
-  point: "点", bbox: "框", text: "文本", exemplar: "样例",
-  scribble: "涂抹", sketch: "草图", mask: "掩膜",
+// v0.18.15 · supported_inputs → 中文短标签 (一等输入契约: 模型能吃哪些投递形态)。
+// 「平台如何把数据喂给模型」(整图/裁剪/框提示/点提示), 与交互式 prompt 解耦。
+const INPUT_LABELS: Record<string, string> = {
+  full_image: "整图", crop: "裁剪", bbox_prompt: "框提示", point_prompt: "点提示",
 };
-export function promptLabel(p: string) {
-  return PROMPT_LABELS[p] ?? p;
+export function inputLabel(i: string) {
+  return INPUT_LABELS[i] ?? i;
 }

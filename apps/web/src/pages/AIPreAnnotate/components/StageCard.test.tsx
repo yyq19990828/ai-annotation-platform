@@ -165,6 +165,47 @@ describe("StageCard v0.18.5/6", () => {
     expect(lastPayload?.model_variants).toEqual({ sam_variant: "tiny" }); // dino 被过滤
   });
 
+  it("v0.18.15 · 分类阶段有「子物体命名」输入, 填了 → payload 带 label 前缀", () => {
+    const onChange = vi.fn();
+    renderCard({ onChange });
+    const labelInput = screen.getByPlaceholderText("留空=不加前缀");
+    fireEvent.change(labelInput, { target: { value: "hat" } });
+    const calls = onChange.mock.calls;
+    const lastPayload = calls[calls.length - 1]?.[1];
+    expect(lastPayload?.label).toBe("hat");
+    expect(lastPayload?.write?.target).toBe("attributes");
+  });
+
+  it("v0.18.15 · 选 detection 下游 → crop-detect 几何 payload (crop 投递 + 回映)", () => {
+    mockCfg.currentVariantSlice = { size: "s" };
+    mockCfg.capabilitiesQ = {
+      isLoading: false,
+      data: {
+        models: [
+          {
+            id: "hat-detector",
+            task: "detection",
+            display_name: "帽子检测",
+            is_interactive: false,
+            supported_variants: [{ key: "size", variants: [{ value: "s" }] }],
+          },
+        ],
+      },
+    };
+    const onChange = vi.fn();
+    renderCard({ onChange });
+    // 提示: 在父框 crop 上检测子物体
+    expect(screen.getByText(/在父框 crop 上检测子物体/)).toBeInTheDocument();
+    const calls = onChange.mock.calls;
+    const lastPayload = calls[calls.length - 1]?.[1];
+    expect(lastPayload?.model_id).toBe("hat-detector");
+    expect(lastPayload?.task_type).toBe("detection");
+    expect(lastPayload?.roi?.mode).toBe("crop");
+    expect(lastPayload?.input?.mode).toBe("crop");
+    expect(lastPayload?.write?.target).toBe("geometry");
+    expect(lastPayload?.model_variants).toEqual({ size: "s" });
+  });
+
   it("点类别 chip 选中后再点清空", () => {
     renderCard();
     const carChip = screen.getByRole("button", { name: "car" });

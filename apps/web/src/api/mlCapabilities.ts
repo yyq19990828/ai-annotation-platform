@@ -81,6 +81,8 @@ export interface CapabilityInstanceModel {
   infra: string | null;
   is_interactive: boolean;
   supported_prompts: string[];
+  // v0.18.15 · 一等输入契约 (full_image | crop | bbox_prompt | point_prompt); 见 MLModelCapability.
+  supported_inputs?: string[];
   supported_geometric_outputs: string[];
   supported_trackers: string[];
   modality: string | null;

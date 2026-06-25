@@ -34,6 +34,7 @@ import { PredictionImportWizard } from "@/components/predictions/PredictionImpor
 import { usePreannotateConfig } from "./usePreannotateConfig";
 import { PreannotateConfigForm } from "./PreannotateConfigForm";
 import { StageCard } from "./StageCard";
+import { StageGraphSummary } from "./StageGraphSummary";
 import styles from "./ProjectDetailPanel.module.css";
 
 // v0.11.24 · 预标幂等模式
@@ -137,7 +138,9 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // v0.18.2 · 多阶段预标注 (路径 B M2): 下游阶段卡列表 (并行兄弟, 单层扇出)。每张卡 (StageCard)
   // 自持一份 usePreannotateConfig + PreannotateConfigForm 实例 —— 共享 hook/组件本身不感知阶段
   // 编排 (红线)。卡片把派生 stage payload 上抛, 容器在运行时组装成 pipeline_stages。
-  const [downstreamIds, setDownstreamIds] = useState<string[]>([]);
+  // v0.18.15 · 受限树形 (max depth 3): 下游阶段为 {sid, parentSid} 列表, parentSid="root"=源阶段。
+  // 数组顺序即添加顺序 (子总在父之后追加 → 运行期分配的 stage 号天然满足「父序号 < 子序号」)。
+  const [stagesGraph, setStagesGraph] = useState<Array<{ sid: string; parentSid: string }>>([]);
   const stagePayloadsRef = useRef<Record<string, PipelineStagePayload | null>>({});
   const [stageTick, setStageTick] = useState(0); // 卡片回报 payload → bump 触发 canRun 重算
   const onStageChange = useCallback(
@@ -148,10 +151,23 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     [],
   );
   const seqRef = useRef(0);
-  const addStage = () =>
-    setDownstreamIds((ids) => [...ids, `stage-${(seqRef.current += 1)}`]);
+  const addStage = (parentSid: string) =>
+    setStagesGraph((g) => [...g, { sid: `stage-${(seqRef.current += 1)}`, parentSid }]);
   const removeStage = (sid: string) =>
-    setDownstreamIds((ids) => ids.filter((x) => x !== sid));
+    setStagesGraph((g) => {
+      // 级联移除该阶段及其全部后代 (父被删, 子无依附)。
+      const dead = new Set([sid]);
+      for (let changed = true; changed; ) {
+        changed = false;
+        for (const e of g) {
+          if (dead.has(e.parentSid) && !dead.has(e.sid)) {
+            dead.add(e.sid);
+            changed = true;
+          }
+        }
+      }
+      return g.filter((e) => !dead.has(e.sid));
+    });
 
   // v0.18.3 · 运行态可视化: 跑批后轮询最后一个多阶段 job 的 result.pipeline_stages (终态真值)。
   const [lastPipelineJobId, setLastPipelineJobId] = useState<string | null>(null);
@@ -210,7 +226,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // 项目切换时重置批次选择 + 下游阶段卡 (prompt / outputMode 的重置在 usePreannotateConfig 内).
   useEffect(() => {
     setSelectedBatchIds(new Set());
-    setDownstreamIds([]);
+    setStagesGraph([]);
     stagePayloadsRef.current = {};
     setLastPipelineJobId(null);
     setKeyConflictLastWins(false);
@@ -240,14 +256,21 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     });
   };
 
-  // 下游卡的派生 payload (stageTick 变化时重算); 全部就绪才允许跑。
+  // 下游卡的派生 payload (stageTick 变化时重算); 全部就绪才允许跑。按 stagesGraph 顺序。
   const downstreamPayloads = useMemo(
-    () => downstreamIds.map((sid) => stagePayloadsRef.current[sid] ?? null),
+    () => stagesGraph.map((e) => stagePayloadsRef.current[e.sid] ?? null),
     // stagePayloadsRef 是 ref, 卡片回报后靠 stageTick 触发重算 (eslint 看不到这层)。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [downstreamIds, stageTick],
+    [stagesGraph, stageTick],
   );
   const allDownstreamReady = downstreamPayloads.every((p) => p != null);
+
+  // v0.18.15 · 每阶段深度 (root=1); 子=父+1。用于 depth<3 的「加子阶段」门控。
+  const depthBySid = useMemo(() => {
+    const d: Record<string, number> = { root: 1 };
+    for (const e of stagesGraph) d[e.sid] = (d[e.parentSid] ?? 1) + 1;
+    return d;
+  }, [stagesGraph]);
 
   // v0.18.5 · 选择器化数据源: 项目类别 (类名) + 项目属性 schema 字段键, 传给 StageCard 多选。
   const projectClasses = useMemo(
@@ -259,18 +282,37 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     [project?.attribute_schema],
   );
 
-  // v0.18.5 · 键冲突配置期预警: 多张并行卡 write.keys 写同一键 → 该键即冲突。
-  // 算出冲突键集 (出现在 ≥2 张卡的键), 下发给卡片标红 + 顶部提示。
-  const conflictKeys = useMemo(() => {
+  // v0.18.5 / v0.18.15 · 键冲突配置期预警: 多个 attributes 阶段写同一「最终键」(label 前缀后) → 冲突。
+  // 与后端校验对齐 (按 label 加完前缀的最终键去重): hat_color 与 shoe_color 不冲突。
+  // 算出冲突的最终键 (供顶部提示) + 每卡命中的原始键集 (供 chip 标红)。
+  const conflictInfo = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const p of downstreamPayloads) {
-      for (const k of p?.write?.keys ?? []) {
-        counts.set(k, (counts.get(k) ?? 0) + 1);
+    downstreamPayloads.forEach((p) => {
+      if (p?.write?.target !== "attributes") return;
+      const prefix = p.label ? `${p.label}_` : "";
+      for (const k of p.write.keys ?? []) counts.set(prefix + k, (counts.get(prefix + k) ?? 0) + 1);
+    });
+    const conflictFinals = new Set(
+      Array.from(counts).filter(([, n]) => n >= 2).map(([k]) => k),
+    );
+    const perCard: Record<string, Set<string>> = {};
+    const displayFinals = new Set<string>();
+    stagesGraph.forEach((e, i) => {
+      const p = downstreamPayloads[i];
+      if (p?.write?.target !== "attributes") return;
+      const prefix = p.label ? `${p.label}_` : "";
+      const set = new Set<string>();
+      for (const k of p.write.keys ?? []) {
+        if (conflictFinals.has(prefix + k)) {
+          set.add(k);
+          displayFinals.add(prefix + k);
+        }
       }
-    }
-    return new Set(Array.from(counts).filter(([, n]) => n >= 2).map(([k]) => k));
-  }, [downstreamPayloads]);
-  const hasKeyConflict = conflictKeys.size > 0;
+      if (set.size) perCard[e.sid] = set;
+    });
+    return { conflictFinals, perCard, displayFinals };
+  }, [stagesGraph, downstreamPayloads]);
+  const hasKeyConflict = conflictInfo.conflictFinals.size > 0;
   // 键冲突策略: reject (默认, 后端校验期拦) | last_wins (末位覆盖, 用户显式允许)。
   const [keyConflictLastWins, setKeyConflictLastWins] = useState(false);
 
@@ -278,7 +320,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // (无键冲突 || 已选末位覆盖)。
   const canRun =
     cfg.configReady &&
-    (downstreamIds.length === 0 || allDownstreamReady) &&
+    (stagesGraph.length === 0 || allDownstreamReady) &&
     selectedBatchIds.size > 0 &&
     !running &&
     (!hasKeyConflict || keyConflictLastWins);
@@ -289,14 +331,19 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     // v0.18.2 · 有下游阶段卡且全就绪 → 组装 pipeline_stages (源 + N 个并行兄弟 classify)。
     // 源阶段 ml_backend_id 须等于顶层 (baseArgs.ml_backend_id), 后端据此复用既有 backend 校验。
     let pipelineStages: PipelineStagePayload[] | undefined;
-    if (downstreamIds.length > 0) {
+    if (stagesGraph.length > 0) {
       if (!allDownstreamReady) return;
+      // sid → stage 号: 源="root"=0, 下游按 stagesGraph 顺序 1..N (父总在前 → 父号 < 子号)。
+      const numberBySid: Record<string, number> = { root: 0 };
+      stagesGraph.forEach((e, i) => {
+        numberBySid[e.sid] = i + 1;
+      });
       pipelineStages = [
         argsToStage(baseArgs, 0),
-        ...downstreamPayloads.map((p, i) => ({
-          ...(p as PipelineStagePayload),
+        ...stagesGraph.map((e, i) => ({
+          ...(downstreamPayloads[i] as PipelineStagePayload),
           stage: i + 1,
-          parent_stage: 0,
+          parent_stage: numberBySid[e.parentSid],
         })),
       ];
     }
@@ -498,54 +545,60 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
             />
 
             {/* v0.18.6 · 源阶段 (检测) 运行态: 多阶段批跑时显实时检出框数。 */}
-            {downstreamIds.length > 0 && sourceDetected != null && (
+            {stagesGraph.length > 0 && sourceDetected != null && (
               <div className={styles.stageStatRow}>
                 <b>阶段 1 · 检测</b>：检出 {sourceDetected} 框
                 {stagesRunning && " · 运行中…"}
               </div>
             )}
 
-            {/* v0.18.8 · 流水线连接线: 源 (检测) → 对每个检测框裁 ROI → 下游并行分类扇出。 */}
-            {downstreamIds.length > 0 && (
-              <div className={styles.pipelineConnector}>
-                <Icon name="arrowRight" size={11} className={styles.pipelineConnectorIcon} />
-                对每个检测框裁 ROI 喂下游分类
-                {downstreamIds.length > 1 && (
-                  <span className={styles.pipelineParallelTag}>并行 ×{downstreamIds.length}</span>
-                )}
-              </div>
-            )}
+            {/* v0.18.15 · 受限树形结构摘要 (ASCII): 一眼看清 检测(源) → 子 → 孙 的层级与产物。 */}
+            <StageGraphSummary stagesGraph={stagesGraph} payloads={downstreamPayloads} />
 
-            {/* v0.18.2 · 多阶段预标注 (路径 B M2): 下游阶段卡 (并行兄弟, 单层扇出)。
-                每张卡对源阶段检测框按类别裁 ROI 喂下游分类, 结果合并进框属性; 多卡 = 同类/不同类
-                各喂不同分类器 (声明式类别路由)。v0.18.6: 各卡自显运行态徽标 + 实时计数。 */}
-            {downstreamIds.map((sid, i) => (
-              <StageCard
-                key={sid}
-                id={sid}
-                displayIndex={i + 2}
-                projectId={projectId}
-                backends={backends}
-                projectMlBackendId={project?.ml_backend_id}
-                sourceBackendId={selectedBackendId}
-                projectClasses={projectClasses}
-                projectAttributeKeys={projectAttributeKeys}
-                conflictKeys={conflictKeys}
-                stat={stageStatByIndex.get(i + 1)}
-                runState={stageRunState(i + 1)}
-                onChange={onStageChange}
-                onRemove={removeStage}
-              />
-            ))}
+            {/* v0.18.2 / v0.18.15 · 多阶段预标注 (受限树形, max depth 3): 各下游阶段卡按 parentSid
+                缩进渲染。每张卡把派生 payload 上抛, 容器据 stagesGraph 顺序分配 stage 号 + parent_stage。
+                产几何的阶段 (检测/分割) 且 depth<3 时可「加子阶段」。 */}
+            {stagesGraph.map((e, i) => {
+              const payload = downstreamPayloads[i];
+              const depth = depthBySid[e.sid] ?? 2;
+              const producesGeometry =
+                payload?.write?.target === "geometry" ||
+                payload?.write?.target === "intermediate";
+              const canHaveChild = producesGeometry && depth < 3 && backends.length >= 2;
+              return (
+                <div key={e.sid} className={depth >= 3 ? styles.stageChildIndent : undefined}>
+                  <StageCard
+                    id={e.sid}
+                    displayIndex={i + 2}
+                    projectId={projectId}
+                    backends={backends}
+                    projectMlBackendId={project?.ml_backend_id}
+                    sourceBackendId={selectedBackendId}
+                    projectClasses={projectClasses}
+                    projectAttributeKeys={projectAttributeKeys}
+                    conflictKeys={conflictInfo.perCard[e.sid]}
+                    stat={stageStatByIndex.get(i + 1)}
+                    runState={stageRunState(i + 1)}
+                    onChange={onStageChange}
+                    onRemove={removeStage}
+                  />
+                  {canHaveChild && (
+                    <Button size="sm" variant="ghost" onClick={() => addStage(e.sid)}>
+                      <Icon name="plus" size={11} /> 加子阶段（对该阶段产出的每个框继续跑）
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
 
-            {/* v0.18.5 · 键冲突配置期预警: 多张并行卡写同一属性键 → 红字提示 + 末位覆盖开关。 */}
+            {/* v0.18.5 · 键冲突配置期预警: 多个 attributes 阶段写同一最终键 → 红字提示 + 末位覆盖开关。 */}
             {hasKeyConflict && (
               <div className={styles.stageWarn}>
                 <Icon name="warning" size={12} />
                 <div className={styles.field}>
                   <span>
-                    多个并行阶段写同一属性键：
-                    {Array.from(conflictKeys).join("、")}。默认拦截，无法运行。
+                    多个阶段写同一属性键：
+                    {Array.from(conflictInfo.displayFinals).join("、")}。默认拦截，无法运行。
                   </span>
                   <label className={styles.inlineCheckbox}>
                     <input
@@ -569,14 +622,14 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
             ) : (
               <div className={styles.field}>
                 {/* v0.18.8 · 空态引导: 未加任何下游阶段时给一句示意 (检测 → 分类)。 */}
-                {downstreamIds.length === 0 && (
+                {stagesGraph.length === 0 && (
                   <span className={styles.stageEmptyHint}>
                     可串接「检测 → 分类」流水线：源阶段检出框后，下游分类器对每个框补属性。
                   </span>
                 )}
-                <Button size="sm" variant="ghost" onClick={addStage}>
+                <Button size="sm" variant="ghost" onClick={() => addStage("root")}>
                   <Icon name="plus" size={11} />
-                  {downstreamIds.length === 0
+                  {stagesGraph.length === 0
                     ? "加第二阶段（对每个检测框跑分类 → 写回属性）"
                     : "并行加同级阶段（同源、各写不同属性）"}
                 </Button>

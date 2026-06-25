@@ -15,7 +15,7 @@ import {
   runtimeKeyFor,
   tierLabel,
 } from "./catalogModel";
-import { COMPOSITION_BADGE, infraLabel, modalityLabel, promptLabel, taskLabel, taskVariant } from "./labels";
+import { COMPOSITION_BADGE, infraLabel, inputLabel, modalityLabel, taskLabel, taskVariant } from "./labels";
 import { WarmButton } from "./WarmButton";
 
 const TAG_CLASS =
@@ -97,10 +97,10 @@ export function ModelCard({ item }: { item: FlatModel }) {
       </Row>
 
       <Row label="可接受输入">
-        {(m.supported_prompts?.length ?? 0) > 0 ? (
-          m.supported_prompts!.map((p) => (
-            <span key={p} className={TAG_CLASS}>
-              {promptLabel(p)}
+        {(m.supported_inputs?.length ?? 0) > 0 ? (
+          m.supported_inputs!.map((i) => (
+            <span key={i} className={TAG_CLASS}>
+              {inputLabel(i)}
             </span>
           ))
         ) : (

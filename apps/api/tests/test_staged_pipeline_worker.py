@@ -684,3 +684,142 @@ async def test_intermediate_target_not_appended(monkeypatch):
     # intermediate → polygon 不追加进结果 (仅内部供下游消费); 原框保留。
     assert len(out) == 1
     assert stats[1]["ok"] == 1
+
+
+@pytest.mark.asyncio
+async def test_crop_detect_geometry_remaps_to_image(monkeypatch):
+    """v0.18.15 · crop 投递 + target=geometry: 下游普通检测器在 crop 上检出, 回映回原图坐标。
+
+    单层 person → 在 person crop 上检测 hat (普通检测器), hat 框回映回原图并落在 person 内, 追加进结果。
+    """
+    monkeypatch.setattr(
+        worker_tasks,
+        "_load_task_image",
+        lambda t: Image.new("RGB", (1000, 1000), (1, 2, 3)),
+    )
+    task = _Task()
+    # person 像素 (200,200)-(600,600) → transform ox=oy=0.2, sx=sy=0.4 (pad=0)
+    person = [_bbox(20, 20, 40, 40, cls="person")]
+    detect = _FakeClient(responses=[[_Result(task.id, person)]])
+    # hat-detect 在 crop 上返回 crop-pct 坐标的 hat 框 (居中偏上)
+    hat_detect = _FakeClient(
+        responses=[
+            [
+                _Result(
+                    "0",
+                    [
+                        {
+                            "type": "rectanglelabels",
+                            "value": {
+                                "x": 25,
+                                "y": 10,
+                                "width": 50,
+                                "height": 30,
+                                "rectanglelabels": ["hat"],
+                            },
+                        }
+                    ],
+                )
+            ]
+        ]
+    )
+    stages = [
+        {"stage": 0, "parent_stage": None},
+        {
+            "stage": 1,
+            "parent_stage": 0,
+            "roi": {"mode": "crop", "pad": 0},
+            "input": {"mode": "crop"},
+            "write": {"target": "geometry"},
+        },
+    ]
+    results, extra, stats = await worker_tasks._run_task_pipeline(
+        task,
+        stages,
+        [detect, hat_detect],
+        [None, None],
+        resolve_url=lambda t: "http://x/img.jpg",
+        stage_modes=["crop", "crop"],
+    )
+    out = results[0].result
+    # person 原框保留 + hat 新框追加
+    assert len(out) == 2
+    hat = out[1]
+    assert hat["type"] == "rectanglelabels"
+    assert hat["parent_box_idx"] == 0
+    # 回映: x=(0.2+0.25*0.4)*100=30, y=(0.2+0.10*0.4)*100=24, w=50*0.4=20, h=30*0.4=12
+    v = hat["value"]
+    assert v["x"] == pytest.approx(30) and v["y"] == pytest.approx(24)
+    assert v["width"] == pytest.approx(20) and v["height"] == pytest.approx(12)
+    # hat 落在 person 框 (20~60) 内部
+    assert 20 <= v["x"] and v["x"] + v["width"] <= 60
+    assert 20 <= v["y"] and v["y"] + v["height"] <= 60
+    assert stats[1]["ok"] == 1
+
+
+@pytest.mark.asyncio
+async def test_depth_three_geometry_then_attribute(monkeypatch):
+    """v0.18.15 · 几何 depth-3: person → 检测 hat (crop-detect) → hat 的 color (crop 分类)。
+
+    hat 框回映回原图, color 阶段裁 hat 框跑分类, 加 hat_ 前缀写回 hat 框; max_depth==3。
+    """
+    monkeypatch.setattr(
+        worker_tasks,
+        "_load_task_image",
+        lambda t: Image.new("RGB", (1000, 1000), (1, 2, 3)),
+    )
+    task = _Task()
+    person = [_bbox(20, 20, 40, 40, cls="person")]
+    detect = _FakeClient(responses=[[_Result(task.id, person)]])
+    hat_detect = _FakeClient(
+        responses=[
+            [
+                _Result(
+                    "0",
+                    [
+                        {
+                            "type": "rectanglelabels",
+                            "value": {"x": 25, "y": 10, "width": 50, "height": 30},
+                        }
+                    ],
+                )
+            ]
+        ]
+    )
+    # color 阶段裁 hat 框 (stage_outputs[1] 的下标 0) → 返回 color
+    color_clf = _FakeClient(
+        responses=[[_Result("0", [{"score": 0.9, "attributes": {"color": "red"}}])]]
+    )
+    stages = [
+        {"stage": 0, "parent_stage": None},
+        {
+            "stage": 1,
+            "parent_stage": 0,
+            "roi": {"mode": "crop", "pad": 0},
+            "input": {"mode": "crop"},
+            "write": {"target": "geometry"},
+        },
+        {
+            "stage": 2,
+            "parent_stage": 1,
+            "label": "hat",
+            "roi": {"mode": "crop", "pad": 0},
+            "write": {"target": "attributes", "keys": ["color"]},
+        },
+    ]
+    results, extra, stats = await worker_tasks._run_task_pipeline(
+        task,
+        stages,
+        [detect, hat_detect, color_clf],
+        [None, None, None],
+        resolve_url=lambda t: "http://x/img.jpg",
+        stage_modes=["crop", "crop", "crop"],
+    )
+    out = results[0].result
+    assert len(out) == 2  # person + hat
+    hat = out[1]
+    # color 写回 hat 框, 带 hat_ 前缀
+    assert hat["attributes"] == {"hat_color": "red"}
+    assert extra["pipeline"]["max_depth"] == 3
+    assert extra["pipeline"]["enriched_attr_keys"] == ["hat_color"]
+    assert stats[1]["ok"] == 1 and stats[2]["ok"] == 1

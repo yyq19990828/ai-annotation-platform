@@ -34,6 +34,26 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.15] - 2026-06-25
+
+承接 0.18.14 显式推迟的两块 plumbing，补齐**几何 depth-3**：`person → 在 person crop 上检测 hat → 给 hat 分类 color` 现在真能跑——检测器在父框 crop 上检出的子物体几何按仿射变换**回映回原图坐标**，并作为新框供下游消费。同时把「模型 I/O 输入契约」做成一等协议字段 `supported_inputs`，让投递方式与父子可达性可声明、可校验。前端补齐受限树形构建器（「加子阶段」+ ASCII 摘要条），用户搭出的 depth-3 链路所见即所跑。规划详见 [`docs/plans/2026-06-25-v0.18.15-model-io-contract-and-crop-remap-draft.md`](docs/plans/2026-06-25-v0.18.15-model-io-contract-and-crop-remap-draft.md)。
+
+### Added
+
+- **crop 坐标回映**：`roi.py` 的 `CropBatch` 增 `transforms`（每个 crop 在原图的归一化仿射变换 `{ox,oy,sx,sy}`，旁路不入线格式），新增 `remap_geometry_to_image()`（crop-local 几何反投影回原图坐标，bbox + polygon）与 `compose_transforms()`（链式 crop 变换合成）。crop / geometry-prompt 原语支持 **polygon 父框**（取外接框裁剪 / 归一化）。
+- **一等模型 I/O 输入契约 `supported_inputs`**：协议新增 `supported_inputs`（`full_image | crop | bbox_prompt | point_prompt`），与 `supported_prompts`（交互 prompt）解耦。`extract_capabilities` 规范化 + 扁平并集透传；老 backend 缺字段按 `supported_prompts` 合成兼容默认（零退化）。前端类型 + 模型市场卡片「可接受输入」行改读 `supported_inputs`（整图 / 裁剪 / 框提示 / 点提示）。
+- **受限树形前端构建器**：`ProjectDetailPanel` 从扁平 `downstreamIds`（恒 `parent_stage=0`）升级为 `stagesGraph` 树（`{sid, parentSid}`）；产几何的阶段卡（框→分割 / 检测）在 `depth<3` 时出「加子阶段」按钮，子卡缩进渲染；新增只读 `StageGraphSummary` ASCII 摘要条。`StageCard` 增「子物体命名」（`label`）输入、下游模型新增 `detection`（crop-detect 几何子）。
+
+### Changed
+
+- **Worker crop-detect 第三态**：crop 分支按 `write.target` 分流——`attributes` 走属性合并（现状）；`geometry/intermediate` 走 crop-detect（下游在 crop 上检出几何 → `remap_geometry_to_image` 回映回原图 → 写 `stage_outputs` 供下游消费、`geometry` 追加进预测）。每个 crop 均裁自原图、transform 即相对原图，无需链式 compose（且避免逐层 JPEG 误差累积）。
+- **端点按 `supported_inputs` 解析投递 + 可达性门控**：`POST /preannotate` 按子模型 `supported_inputs` 把投递方式烘焙进阶段 `input.mode`（box-seg→geometry、普通检测器→crop）；产几何的子若 `supported_inputs` 既不含 `bbox_prompt` 也不含 `crop` → 422。修复 0.18.14 端点未透传 `label` / `input` 到 worker 的链路缺口（子物体属性前缀此前在真实端点下不生效）。
+- **前端键冲突检测对齐后端**：改按「加完 `label` 前缀的最终键」去重（`hat_color` 与 `shoe_color` 不冲突），消除跨 label 同原始键的误报。
+
+### Compatibility
+
+- `supported_inputs` 协议字段 additive，老 backend 缺省由平台合成，零退化。`roi.py` `transforms` 为新增旁路返回，单阶段 / depth-2 路径不读它即保持原行为。0.18.14 的全部接受 / 拒绝用例不退化；新增门控仅在 backend 有能力快照时生效。API 路由不变，无 DB migration，无新增环境变量。
+
 ## [0.18.14] - 2026-06-25
 
 阶段化预标注 `/ai-pre` 从「单源 + 一层扇出」扩展为**受限树形流水线**（最大深度 3）：一个下游阶段可以消费另一个下游阶段的输出。后端 schema / 校验 / worker 执行 / provenance meta 全部到位；前端模型市场卡片同步补齐字段展示。**本版交付结构骨架**——depth-3 的 attribute 链（`detect → classify A → classify B`，属性累加到 root）可跑；真正的几何 depth-3（`person → 检测 hat → color`，需要 crop 内检测 + 坐标回映）所需的 ROI 原语不在本版，见 0.18.15 计划。规划详见 [`docs/plans/2026-06-25-v0.18.14-staged-preannotate-tree-dag-draft.md`](docs/plans/2026-06-25-v0.18.14-staged-preannotate-tree-dag-draft.md)。

@@ -156,12 +156,13 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 }
 ```
 
-**判别器**：平台用下游 model 的 `supported_prompts` 决定投递方式，**不新增字段**：
+**判别器**：投递方式是「产物形态」（下游阶段 `write.target`）与「投递方式」（下游 model 的 `supported_inputs`，见 §3.1）二维决定的：
 
-- `["none"]` → **crop 模式**（现状：平台逐父框裁 crop 图上传，下游收单张 ROI，如 onnxtools 纯分类）。
-- 含 `bbox` 且 `is_interactive=false` → **geometry 模式**（本节：全图 + 框列表，box-seg 原子）。
+- `write.target=attributes` → **crop 模式**：平台逐父框裁 crop 图上传，下游收单张 ROI 回属性（如 onnxtools 纯分类）。
+- `write.target ∈ {geometry, intermediate}` 且下游 `supported_inputs` 含 `bbox_prompt` → **geometry 模式**：全图 + 父框归一化列表喂 box-seg 原子，回原图坐标 polygon。
+- `write.target ∈ {geometry, intermediate}` 且下游 `supported_inputs` 含 `crop`（普通检测器） → **crop-detect 模式**：平台裁父框 ROI 喂检测器，检出几何按 crop 仿射变换**回映回原图坐标**，作为新框追加 / 供下游消费（支持几何 depth-3，如 `person → 在 person crop 上检测 hat → 给 hat 分类 color`）。
 
-老 backend（均为 `none`/crop）行为不变；本约定纯加法，随 `protocol_version` 升 **2.2**。
+平台在 `POST /preannotate` 端点按子模型 `supported_inputs` 解析投递方式并烘焙进阶段 `input.mode`，worker 直接消费；产几何的子若 `supported_inputs` 既不含 `bbox_prompt` 也不含 `crop`，端点 422 拒绝（不可达）。老 backend 缺 `supported_inputs` 时平台按 `supported_prompts` 合成兼容默认（见 §3.1），零退化。本约定纯加法。
 
 ### 2.2 交互式预测
 
@@ -327,7 +328,9 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 >
 > v0.14.10 起，超管运行时观测端点 `GET /admin/ml-integrations/observe` 也会把 `/setup.supported_variants` 原样透传到每个 `ObserveTarget.supported_variants`，用于 env-only 容器的只读多轴变体展示。旧 grounded-sam2/sam3 的 `sam_variant` / `dino_variant` enum 仍会通过 `variant_catalog` 双发；仅声明通用 `supported_variants` 的容器暂不启用「试启动」，`POST /admin/ml-integrations/observe/smoke-test` 收到 `variant: {axis: value}` 时返回 `skipped=true`，直到 backend 实现通用 warm 接口。
 
-> **`supported_prompts`**：枚举 `point | bbox | text | exemplar | sketch | scribble | …`。前端 ToolDock 据此置灰不支持的工具。
+> **`supported_prompts`**：枚举 `point | bbox | text | exemplar | sketch | scribble | …`。**交互式用户 prompt**，前端 ToolDock 据此置灰不支持的工具。
+>
+> **`supported_inputs`**（一等输入契约）：枚举 `full_image | crop | bbox_prompt | point_prompt`，声明本 model 能吃哪些**投递形态**，与 `supported_prompts`（交互 prompt）**解耦**——纯分类器 `supported_prompts=[]` 但 `supported_inputs=["full_image","crop"]`；box-seg `supported_inputs=["bbox_prompt","full_image"]`。多阶段编排据此判定父子可达性（产几何的子须含 `bbox_prompt` 或 `crop`）并选择投递方式（见 §2.1.1 判别器）；模型市场「可接受输入」行也由它驱动。**老 backend 缺字段时平台合成兼容默认**：含 `bbox` prompt → `["bbox_prompt","full_image"]`；含 `point` → 加 `point_prompt`；非交互模型额外含 `crop`；任何模型都含 `full_image`（见 services/ml_capabilities.py `_synthesize_supported_inputs`）。
 >
 > **`supported_text_outputs`**：text 路径支持的 `Context.output` 取值。
 >

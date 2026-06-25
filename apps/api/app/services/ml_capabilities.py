@@ -39,6 +39,28 @@ __all__ = [
 _MODALITY_ORDER = {"image": 0, "video": 1, "lidar": 2}
 _LIDAR_GEOMETRY = {"lidar_box_3d", "point_mask_3d"}
 
+# v0.18.15 · 交互式 prompt (需用户/上游显式给点/框/文本等); 含这些的模型不默认走 crop 投递。
+_INTERACTIVE_PROMPTS = {"point", "bbox", "text", "exemplar", "scribble", "sketch", "mask"}
+
+
+def _synthesize_supported_inputs(prompts: list[str]) -> list[str]:
+    """v0.18.15 · 老 backend 缺 supported_inputs 时, 按 supported_prompts 合成兼容默认。
+
+    受控词表: ``full_image | crop | bbox_prompt | point_prompt``。
+    - bbox/point prompt → 对应 ``bbox_prompt`` / ``point_prompt`` (box-seg 类走 geometry-prompt)。
+    - 一律含 ``full_image`` (任何模型都能吃整图)。
+    - 非交互模型 (纯检测/分类/OCR…) 额外含 ``crop`` (平台可裁父框 ROI 喂入), 让其能作几何/属性下游。
+    """
+    out: list[str] = []
+    if "bbox" in prompts:
+        out.append("bbox_prompt")
+    if "point" in prompts:
+        out.append("point_prompt")
+    out.append("full_image")
+    if not any(p in _INTERACTIVE_PROMPTS for p in prompts):
+        out.append("crop")
+    return list(dict.fromkeys(out))
+
 
 def _normalize_infra(value: object) -> str:
     """空 → "unknown"; 受控值小写归一; 非受控但非空 → 原样小写 (前端容忍未知)。"""
@@ -85,6 +107,10 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         else backend_infra,
         "is_interactive": bool(model.get("is_interactive")),
         "supported_prompts": list(model.get("supported_prompts") or []),
+        # v0.18.15 · 一等输入契约 (与 supported_prompts 解耦): 模型能吃哪些投递形态
+        # (full_image | crop | bbox_prompt | point_prompt)。缺省按 prompts 合成兼容默认。
+        "supported_inputs": list(model.get("supported_inputs") or [])
+        or _synthesize_supported_inputs(list(model.get("supported_prompts") or [])),
         "supported_geometric_outputs": geo,
         "output_attribute_types": list(model.get("output_attribute_types") or []),
         # 协议③ · backend 自报的属性 schema (含 select options), 供平台一键导入项目 attribute_schema.
@@ -138,6 +164,8 @@ def _synthesize_single_model(setup: dict, backend_infra: str) -> dict:
         "infra": backend_infra,
         "is_interactive": bool(setup.get("is_interactive")),
         "supported_prompts": prompts,
+        # v0.18.15 · 老 backend 无 supported_inputs, 按 prompts 合成兼容默认 (零退化)。
+        "supported_inputs": _synthesize_supported_inputs(prompts),
         "supported_geometric_outputs": list(
             setup.get("supported_geometric_outputs") or []
         ),
@@ -186,6 +214,7 @@ def extract_capabilities(setup: dict | None) -> dict | None:
         "models": models,
         "is_interactive": any(m["is_interactive"] for m in models),
         "supported_prompts": _union(models, "supported_prompts"),
+        "supported_inputs": _union(models, "supported_inputs"),
         "supported_trackers": _union(models, "supported_trackers"),
         "supported_text_outputs": _union(models, "supported_text_outputs"),
         "supported_geometric_outputs": _union(models, "supported_geometric_outputs"),

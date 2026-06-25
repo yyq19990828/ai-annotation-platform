@@ -226,31 +226,30 @@
 }
 
 /* v0.18.8 · 流水线连接线 (源 → 下游扇出): 内置「裁 ROI」语义, 非节点图。 */
-.pipelineConnector {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-left: 4px;
-  color: var(--sc-muted-foreground);
-  font-size: 11px;
-}
-.pipelineConnectorIcon {
-  transform: rotate(90deg);
-  color: var(--sc-brand);
-}
-.pipelineParallelTag {
-  padding: 0 7px;
-  color: var(--sc-brand);
-  font-size: 10px;
-  border: 1px solid var(--sc-brand);
-  border-radius: 999px;
-}
-
 /* v0.18.8 · 空态引导文案。 */
 .stageEmptyHint {
   color: var(--sc-muted-foreground);
   font-size: 11px;
   line-height: 1.5;
+}
+
+/* v0.18.15 · depth-3 子阶段缩进 (受限树形最深 3 层, 下游仅 depth 2/3 两档)。 */
+.stageChildIndent {
+  margin-left: 20px;
+}
+
+/* v0.18.15 · 受限树形流水线 ASCII 摘要条。 */
+.stageGraphSummary {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
+  border-radius: 6px;
+  color: var(--sc-muted-foreground);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre;
+  overflow-x: auto;
 }
 
 /* v0.18.8 · 阶段卡 (Card 卡面): 内边距 + 组间距 + 左侧角色轨。 */

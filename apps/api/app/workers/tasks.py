@@ -187,11 +187,13 @@ _PAD_BY_DEPTH: dict[int, float] = {1: 0.05, 2: 0.08, 3: 0.12}
 
 
 def _resolve_input_mode(stage: dict) -> str:
-    """v0.18.14 · 下游阶段投递模式: 显式 input.mode 覆盖, 否则按 write.target 推断。
+    """v0.18.14 / v0.18.15 · 下游阶段投递模式 (crop|geometry): 显式 input.mode 覆盖, 否则按 write.target 推断。
 
-    crop 钉死在「只产属性」(下游回 attributes、无坐标), geometry-prompt 服务产几何的下游
-    (整图 + 父框归一化列表, 下游回原图坐标几何)。替换旧 _stage_input_mode 的 supported_prompts
-    反推: 语义更稳——crop 不会被误用于产几何的子, 与端点校验 (projects.py 受限树形) 一致。
+    投递模式是「产物形态」(write.target) 与「投递方式」(supported_inputs) 的二维结果:
+    端点 (projects.py) 按子模型 supported_inputs 解析投递方式并烘焙进 ``input.mode`` —
+    产几何的子若是 box-prompt seg → ``geometry`` (整图+父框列表); 若是普通检测器 (supported_inputs
+    含 crop) → ``crop`` (裁父框 ROI, 检出几何回映回原图)。本函数只读已烘焙的 input.mode,
+    缺省 (旧 payload / 端点未烘焙) 回落 write.target 启发式: 产几何→geometry, 产属性→crop。
     """
     explicit = (stage.get("input") or {}).get("mode")
     if explicit in {"crop", "geometry"}:
@@ -281,6 +283,7 @@ async def _run_task_pipeline(
         crop_inputs_from_boxes,
         geometry_prompts_from_boxes,
         merge_classify_attributes,
+        remap_geometry_to_image,
     )
 
     url = resolve_url(task)
@@ -370,7 +373,9 @@ async def _run_task_pipeline(
                         exc,
                     )
                 continue
-            # ── crop 模式 (钉死 attributes-only: 逐父框裁 ROI 喂下游分类) ──
+            # ── crop 投递 (平台逐父框裁 ROI 喂下游) ──
+            # attributes: 下游回属性, 合并进父框。geometry/intermediate: 下游在 crop 上检出
+            # 新子物体 (普通检测器, supported_inputs 含 crop), 检出几何回映回原图坐标 (v0.18.15)。
             if image is None:  # crop 阶段必有原图 (needs_image 已保证); 防御性跳过。
                 stage_outputs[snum] = parent_boxes
                 continue
@@ -387,31 +392,59 @@ async def _run_task_pipeline(
             )
             stats[snum]["skipped_geometry"] += batch.skipped_geometry
             crop_inputs = batch.inputs
-            # crop 阶段对下游暴露 (可能已富集属性的) 父框几何, 供孙子阶段消费。
+            # 默认 (attributes): 对孙子暴露 (可能已富集属性的) 父框几何。
+            # geometry/intermediate: 下面用回映后的检出几何改写 stage_outputs[snum]。
             stage_outputs[snum] = parent_boxes
             if not crop_inputs:
+                if target != "attributes":
+                    stage_outputs[snum] = []
                 continue  # 无符合类别/几何的父框 → 本阶段对本图降级跳过
             targeted = {int(ci["id"]) for ci in crop_inputs}
             stats[snum]["targeted"] += len(targeted)
             try:
-                cls_results = await stage_clients[si].predict(
+                ds_results = await stage_clients[si].predict(
                     crop_inputs, context=stage_contexts[si]
                 )
-                merged = merge_classify_attributes(
-                    parent_boxes, cls_results, write_keys=write_keys, label=label
-                )
-                stats[snum]["ok"] += merged
-                stats[snum]["failed"] += len(targeted) - merged
-                if write_keys:
-                    prefix = f"{label}_" if label else ""
-                    enriched_keys.update(f"{prefix}{k}" for k in write_keys)
+                if target == "attributes":
+                    merged = merge_classify_attributes(
+                        parent_boxes, ds_results, write_keys=write_keys, label=label
+                    )
+                    stats[snum]["ok"] += merged
+                    stats[snum]["failed"] += len(targeted) - merged
+                    if write_keys:
+                        prefix = f"{label}_" if label else ""
+                        enriched_keys.update(f"{prefix}{k}" for k in write_keys)
+                else:
+                    # crop-detect: 每个 crop 的检出几何按其 transform 回映回原图坐标
+                    # (每个 crop 都裁自原图, transform 即相对原图, 无需链式 compose)。
+                    produced: list[dict] = []
+                    for cr in ds_results:
+                        transform = batch.transforms.get(str(cr.task_id))
+                        if transform is None:
+                            continue
+                        remapped = remap_geometry_to_image(cr.result or [], transform)
+                        try:
+                            pidx = int(cr.task_id)
+                        except (TypeError, ValueError):
+                            pidx = None
+                        for s in remapped:
+                            if pidx is not None:
+                                s["parent_box_idx"] = pidx
+                        produced.extend(remapped)
+                    stats[snum]["ok"] += len(produced)
+                    stage_outputs[snum] = produced
+                    # geometry → 落库为候选 shape; intermediate → 仅供下游消费, 不落库。
+                    if target == "geometry":
+                        new_shapes.extend(produced)
             except Exception as exc:  # noqa: BLE001
                 # 阶段级失败: keep_parent=保留上游框属性留空; drop_box=丢这些父框。
                 stats[snum]["failed"] += len(targeted)
+                if target != "attributes":
+                    stage_outputs[snum] = []
                 if stage.get("on_failure") == "drop_box":
                     dropped |= targeted
                 logger.warning(
-                    "[ai-pre] stage %s 下游分类失败 (on_failure=%s): %s: %s",
+                    "[ai-pre] stage %s 下游 crop 投递失败 (on_failure=%s): %s: %s",
                     snum,
                     stage.get("on_failure", "keep_parent"),
                     type(exc).__name__,

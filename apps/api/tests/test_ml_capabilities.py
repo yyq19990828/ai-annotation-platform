@@ -235,6 +235,65 @@ def test_model_infra_override():
 # ── 向后兼容: 老 backend 无 models[] → 合成隐式单 model ──
 
 
+def test_supported_inputs_explicit_passthrough():
+    """显式声明 supported_inputs 原样透传, 不被合成覆盖。"""
+    setup = {
+        "name": "bk",
+        "infra": "onnx",
+        "models": [
+            {
+                "id": "m",
+                "task": "detection",
+                "supported_inputs": ["full_image"],
+                "supported_geometric_outputs": ["bbox"],
+            }
+        ],
+    }
+    m = extract_capabilities(setup)["models"][0]
+    assert m["supported_inputs"] == ["full_image"]
+
+
+def test_supported_inputs_synthesized_for_plain_detector():
+    """纯检测器 (无交互 prompt) 缺字段 → 合成 [full_image, crop] (可作 crop 下游)。"""
+    setup = {
+        "name": "bk",
+        "infra": "onnx",
+        "models": [{"id": "det", "task": "detection", "supported_geometric_outputs": ["bbox"]}],
+    }
+    m = extract_capabilities(setup)["models"][0]
+    assert m["supported_inputs"] == ["full_image", "crop"]
+
+
+def test_supported_inputs_synthesized_for_box_seg():
+    """box-prompt seg (supported_prompts=[bbox]) → [bbox_prompt, full_image], 不含 crop。"""
+    setup = {
+        "name": "bk",
+        "infra": "pytorch",
+        "models": [
+            {
+                "id": "boxseg",
+                "task": "interactive_seg",
+                "supported_prompts": ["bbox"],
+                "supported_geometric_outputs": ["polygon"],
+            }
+        ],
+    }
+    m = extract_capabilities(setup)["models"][0]
+    assert m["supported_inputs"] == ["bbox_prompt", "full_image"]
+
+
+def test_supported_inputs_union_and_legacy_synth():
+    """扁平并集含 supported_inputs; 老 backend (无 models[]) 也合成。"""
+    setup = {
+        "name": "legacy-det",
+        "supported_prompts": ["none"],
+        "supported_geometric_outputs": ["bbox"],
+    }
+    caps = extract_capabilities(setup)
+    assert "crop" in caps["supported_inputs"]
+    assert caps["models"][0]["supported_inputs"] == ["full_image", "crop"]
+
+
 def test_legacy_grounded_sam2_synthesizes_single_model():
     # grounded-sam2: 有 prompts + trackers, 无 models[] / infra
     setup = {

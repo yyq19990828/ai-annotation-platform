@@ -24,45 +24,89 @@ class CropBatch:
 
     skipped_geometry: 命中本阶段路由 (类别匹配) 但因几何不支持 (非 bbox / 旋转框 / 退化框)
     无法裁 crop 而被跳过的父框数。供逐阶段统计暴露「N 框因几何不支持未富集」, 不再静默。
+
+    transforms: v0.18.15 · ``{box_idx_str: {ox, oy, sx, sy}}`` —— 每个裁出的 crop 在原图的
+        仿射变换 (归一化图像空间: crop 左上角 + 宽高占图比例), 供 :func:`remap_geometry_to_image`
+        把下游在 crop 上检出的几何反投影回原图坐标。不写进 ``inputs`` (线格式零变化, 不泄漏给 backend)。
     """
 
     inputs: list[dict] = field(default_factory=list)
     skipped_geometry: int = 0
+    transforms: dict[str, dict] = field(default_factory=dict)
 
 
 def box_class_name(box: dict) -> str | None:
-    """从 LS 标准 shape 提取 class_name (value.rectanglelabels[0] / value.labels[0])。
+    """从 LS 标准 shape 提取 class_name (rectanglelabels / polygonlabels / labels[0])。
 
-    v0.18.2 · parent_class_filter 类别路由用。取不到返回 None。
+    v0.18.2 · parent_class_filter 类别路由用。v0.18.15 · 兼容 polygon 父框。取不到返回 None。
     """
     value = box.get("value") or {}
-    labels = value.get("rectanglelabels") or value.get("labels")
+    labels = (
+        value.get("rectanglelabels")
+        or value.get("polygonlabels")
+        or value.get("labels")
+    )
     if isinstance(labels, list) and labels:
         return labels[0]
     return None
 
 
-def _bbox_pixels_from_ls_value(
-    value: dict, img_w: int, img_h: int
-) -> tuple[float, float, float, float] | None:
-    """LS 标准 value(x/y/width/height, 百分比 0-100) → 像素 (left, top, right, bottom)。
+def _polygon_bbox_pct(value: dict) -> tuple[float, float, float, float] | None:
+    """polygon value.points ([[x,y],...] 百分比 0-100) → 外接框 (x, y, w, h) 百分比。
 
-    旋转框 (value.rotation 非 0) 本期不裁, 返回 None (留 M2)。无效数值返回 None。
+    v0.18.15 · polygon 父框取外接框作 ROI。点不足 / 非法返回 None。
     """
-    if value.get("rotation"):
-        return None
-    raw = (value.get("x"), value.get("y"), value.get("width"), value.get("height"))
-    if any(v is None for v in raw):
+    pts = value.get("points")
+    if not isinstance(pts, list) or len(pts) < 3:
         return None
     try:
-        x, y, w, h = (float(v) for v in raw)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+        xs = [float(p[0]) for p in pts]
+        ys = [float(p[1]) for p in pts]
+    except (TypeError, ValueError, IndexError):
         return None
-    left = x / 100.0 * img_w
-    top = y / 100.0 * img_h
-    right = (x + w) / 100.0 * img_w
-    bottom = (y + h) / 100.0 * img_h
-    return left, top, right, bottom
+    x0, x1 = min(xs), max(xs)
+    y0, y1 = min(ys), max(ys)
+    return x0, y0, x1 - x0, y1 - y0
+
+
+def _box_bbox_pct(box: dict) -> tuple[float, float, float, float] | None:
+    """父框 → 外接框 (x, y, w, h) 百分比 (0-100)。
+
+    v0.18.15 · 统一 rectanglelabels (轴对齐 bbox, 旋转框跳过) 与 polygonlabels (取外接框)。
+    其余几何 / 非法返回 None (调用方计入 skipped_geometry)。
+    """
+    btype = box.get("type")
+    value = box.get("value") or {}
+    if btype == "rectanglelabels":
+        if value.get("rotation"):
+            return None
+        raw = (value.get("x"), value.get("y"), value.get("width"), value.get("height"))
+        if any(v is None for v in raw):
+            return None
+        try:
+            x, y, w, h = (float(v) for v in raw)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+        return x, y, w, h
+    if btype == "polygonlabels":
+        return _polygon_bbox_pct(value)
+    return None
+
+
+def _box_bbox_pixels(
+    box: dict, img_w: int, img_h: int
+) -> tuple[float, float, float, float] | None:
+    """父框 → 像素外接框 (left, top, right, bottom); 委托 :func:`_box_bbox_pct`。"""
+    pct = _box_bbox_pct(box)
+    if pct is None:
+        return None
+    x, y, w, h = pct
+    return (
+        x / 100.0 * img_w,
+        y / 100.0 * img_h,
+        (x + w) / 100.0 * img_w,
+        (y + h) / 100.0 * img_h,
+    )
 
 
 def crop_inputs_from_boxes(
@@ -102,6 +146,7 @@ def crop_inputs_from_boxes(
     filter_set = set(parent_class_filter) if parent_class_filter else None
     inputs: list[dict] = []
     skipped_geometry = 0
+    transforms: dict[str, dict] = {}
     for idx, box in enumerate(boxes):
         if not isinstance(box, dict):
             continue
@@ -110,13 +155,12 @@ def crop_inputs_from_boxes(
             continue
         cache_key = (idx, round(pad, 4))
         if cache is not None and cache_key in cache:
-            inputs.append(cache[cache_key])
+            cached = cache[cache_key]
+            inputs.append(cached["input"])
+            transforms[str(idx)] = cached["transform"]
             continue
-        # 几何门控: 非 bbox / 旋转框 / 退化框 → 本阶段无法裁 crop, 计入 skipped_geometry。
-        if box.get("type") != "rectanglelabels":
-            skipped_geometry += 1
-            continue
-        px = _bbox_pixels_from_ls_value(box.get("value") or {}, img_w, img_h)
+        # 几何门控: 非 bbox/polygon / 旋转框 / 退化框 → 无法裁 crop, 计入 skipped_geometry。
+        px = _box_bbox_pixels(box, img_w, img_h)
         if px is None:
             skipped_geometry += 1
             continue
@@ -130,7 +174,9 @@ def crop_inputs_from_boxes(
         top = max(0.0, top - bh * pad)
         right = min(float(img_w), right + bw * pad)
         bottom = min(float(img_h), bottom + bh * pad)
-        crop = image.crop((int(left), int(top), int(round(right)), int(round(bottom))))
+        left_int, top_int = int(left), int(top)
+        right_int, bottom_int = int(round(right)), int(round(bottom))
+        crop = image.crop((left_int, top_int, right_int, bottom_int))
         if crop.width <= 0 or crop.height <= 0:
             skipped_geometry += 1
             continue
@@ -153,10 +199,20 @@ def crop_inputs_from_boxes(
                 "ascii"
             )
         inp = {"id": str(idx), "file_path": file_path}
+        # v0.18.15 · crop→原图仿射变换 (归一化图像空间), 供 remap_geometry_to_image 反投影。
+        transform = {
+            "ox": left_int / img_w,
+            "oy": top_int / img_h,
+            "sx": (right_int - left_int) / img_w,
+            "sy": (bottom_int - top_int) / img_h,
+        }
+        transforms[str(idx)] = transform
         if cache is not None:
-            cache[cache_key] = inp
+            cache[cache_key] = {"input": inp, "transform": transform}
         inputs.append(inp)
-    return CropBatch(inputs=inputs, skipped_geometry=skipped_geometry)
+    return CropBatch(
+        inputs=inputs, skipped_geometry=skipped_geometry, transforms=transforms
+    )
 
 
 @dataclass
@@ -198,19 +254,12 @@ def geometry_prompts_from_boxes(
             continue
         if filter_set is not None and box_class_name(box) not in filter_set:
             continue
-        value = box.get("value") or {}
-        if box.get("type") != "rectanglelabels" or value.get("rotation"):
+        # v0.18.15 · 统一支持 rectanglelabels (旋转框跳过) 与 polygonlabels (取外接框)。
+        pct = _box_bbox_pct(box)
+        if pct is None:
             skipped_geometry += 1
             continue
-        raw = (value.get("x"), value.get("y"), value.get("width"), value.get("height"))
-        if any(v is None for v in raw):
-            skipped_geometry += 1
-            continue
-        try:
-            x, y, w, h = (float(v) for v in raw)  # type: ignore[arg-type]
-        except (TypeError, ValueError):
-            skipped_geometry += 1
-            continue
+        x, y, w, h = pct
         if w <= 0 or h <= 0:
             skipped_geometry += 1
             continue
@@ -245,6 +294,59 @@ def collect_geometry_shapes(seg_results: list, boxes: list[dict]) -> list[dict]:
             if pidx is not None and not (0 <= int(pidx) < len(boxes)):
                 continue
             out.append(s)
+    return out
+
+
+def compose_transforms(outer: dict, inner: dict) -> dict:
+    """v0.18.15 · 链式 crop 变换合成 (depth-3): inner 相对 outer crop, 返回 inner 相对原图的变换。
+
+    归一化图像空间下: ``inner`` 的偏移先按 ``outer`` 缩放再叠加 ``outer`` 偏移, 缩放相乘。
+    """
+    return {
+        "ox": outer["ox"] + inner["ox"] * outer["sx"],
+        "oy": outer["oy"] + inner["oy"] * outer["sy"],
+        "sx": outer["sx"] * inner["sx"],
+        "sy": outer["sy"] * inner["sy"],
+    }
+
+
+def remap_geometry_to_image(shapes: list[dict], transform: dict) -> list[dict]:
+    """把下游在 crop 上检出的几何 (crop 百分比坐标) 反投影回原图百分比坐标。
+
+    v0.18.15 · ``transform={ox,oy,sx,sy}`` 为 crop 在原图的归一化偏移 + 缩放
+    (见 :class:`CropBatch`)。rectanglelabels (x/y/width/height) 与 polygonlabels (points)
+    都按 ``img_pct = (offset + crop_pct/100 * scale) * 100`` 反投影。不改入参, 返回新列表;
+    非 bbox/polygon 或缺坐标的 shape 丢弃。
+    """
+    ox, oy = transform["ox"], transform["oy"]
+    sx, sy = transform["sx"], transform["sy"]
+    out: list[dict] = []
+    for s in shapes:
+        if not isinstance(s, dict):
+            continue
+        value = dict(s.get("value") or {})
+        btype = s.get("type")
+        if btype == "rectanglelabels":
+            if any(value.get(k) is None for k in ("x", "y", "width", "height")):
+                continue
+            value["x"] = (ox + float(value["x"]) / 100.0 * sx) * 100.0
+            value["y"] = (oy + float(value["y"]) / 100.0 * sy) * 100.0
+            value["width"] = float(value["width"]) * sx
+            value["height"] = float(value["height"]) * sy
+        elif btype == "polygonlabels":
+            pts = value.get("points")
+            if not isinstance(pts, list):
+                continue
+            value["points"] = [
+                [
+                    (ox + float(p[0]) / 100.0 * sx) * 100.0,
+                    (oy + float(p[1]) / 100.0 * sy) * 100.0,
+                ]
+                for p in pts
+            ]
+        else:
+            continue
+        out.append({**s, "value": value})
     return out
 
 
