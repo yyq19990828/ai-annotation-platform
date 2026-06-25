@@ -106,28 +106,6 @@
   color: var(--sc-destructive);
 }
 
-/* 空态 ghost CTA (画布中央)。 */
-.ghostCta {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  color: var(--sc-muted-foreground);
-  font-size: 12px;
-  cursor: pointer;
-  background: var(--sc-card);
-  border: 1px dashed var(--sc-border);
-  border-radius: 8px;
-}
-.ghostCta:hover {
-  color: var(--sc-foreground);
-  border-color: var(--sc-ring);
-}
-
 .nodeHeader {
   display: flex;
   align-items: center;

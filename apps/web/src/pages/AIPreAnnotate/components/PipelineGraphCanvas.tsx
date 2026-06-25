@@ -317,9 +317,6 @@ function Flow({
     [onSelect, onAddChild, onRemove, connectingFrom, canReparentConn],
   );
 
-  // 空态: 只有源节点且源可加子 → 画布中央 ghost CTA。
-  const showGhost = models.length === 1 && (models[0]?.canAddChild ?? false);
-
   return (
     <div className={styles.canvas} tabIndex={0} onKeyDown={onKeyDown}>
       <CanvasCtx.Provider value={callbacks}>
@@ -347,11 +344,6 @@ function Flow({
           <Controls showInteractive={false} />
           {nodeCount > 4 && <MiniMap pannable zoomable />}
         </ReactFlow>
-        {showGhost && (
-          <button type="button" className={styles.ghostCta} onClick={() => onAddChild(ROOT_SID)}>
-            <Icon name="plus" size={14} /> 加第二阶段（对每个检测框跑分类 / 检测子物体）
-          </button>
-        )}
       </CanvasCtx.Provider>
     </div>
   );

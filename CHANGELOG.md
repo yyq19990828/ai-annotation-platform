@@ -43,7 +43,7 @@
 - **受限树形 DAG 画布**：新增 `PipelineGraphCanvas`（`@xyflow/react` v12，经 `React.lazy` 隔离成独立 chunk、不进主包），把 `stagesGraph` 派生成分层 DAG（`col=depth-1`，源 → 子 → 孙）。节点带角色徽标（检测 / 分割 / 分类）、运行态圆点、迷你计数；产几何的节点才有出向 handle（「叶子不可有子」编码进 UI）。点选节点 → 右列检查器切到其参数。
 - **节点编辑手势**：节点上 `+` 加子 / `🗑` 级联删；拖节点连接点到空白 → 新建子阶段；**拖动连线改父**（re-parent）。受限规则（无环 / 深度 ≤ 3 / 父产几何）收敛到纯函数 `canReparent`，`isValidConnection` 实时校验、非法连接回弹 + toast 原因。
 - **纯函数图层 `utils/pipelineGraph.ts`**：`buildFlow` / `depthBySid` / `descendantsOf` / `subtreeHeight` / `canAddChild` / `canReparent` / `reparent` / `roleOf` / `detailOf`，与 react-flow 运行时解耦、可单测。
-- **节点信息增强（§13）**：节点直显 backend / 「待配置」态 / 父框过滤芯片 / 运行进度条 / 可达性 ⚠ 标红，hover 浮层显全量（模型·任务·投递·变体·写回键）。可达性前移——`StageCard` 上抛 `StageCaps`，`stageWarning` 纯函数按端点 422 同判据标红（仅提示、不硬拦）。拖拽改父时合法落点高亮、非法变淡；方向键在节点间移动选中；>4 节点出 MiniMap；空态 ghost CTA；删带后代节点提示连带数。
+- **节点信息增强（§13）**：节点直显 backend / 「待配置」态 / 父框过滤芯片 / 运行进度条 / 可达性 ⚠ 标红，hover 浮层显全量（模型·任务·投递·变体·写回键）。可达性前移——`StageCard` 上抛 `StageCaps`，`stageWarning` 纯函数按端点 422 同判据标红（仅提示、不硬拦）。拖拽改父时合法落点高亮、非法变淡；方向键在节点间移动选中；>4 节点出 MiniMap；删带后代节点提示连带数。
 
 ### Changed
 
