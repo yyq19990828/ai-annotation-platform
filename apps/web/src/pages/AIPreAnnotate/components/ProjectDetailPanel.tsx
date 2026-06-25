@@ -172,6 +172,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     setSelectedSid(sid); // 新建即选中 → 右列直接进该阶段参数。
   }, []);
   const removeStage = useCallback((sid: string) => {
+    if (sid === ROOT_SID) return; // 源不可删 (会级联清空整棵树)。
     setStagesGraph((g) => {
       // 级联移除该阶段及其全部后代 (父被删, 子无依附)。
       const dead = new Set([sid]);

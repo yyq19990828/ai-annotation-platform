@@ -30,7 +30,7 @@ import "@xyflow/react/dist/style.css";
 
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
-import { buildFlow, type GraphNodeModel, type StageNodeData } from "../utils/pipelineGraph";
+import { ROOT_SID, buildFlow, type GraphNodeModel, type StageNodeData } from "../utils/pipelineGraph";
 import styles from "./PipelineGraphCanvas.module.css";
 
 interface CanvasCallbacks {
@@ -201,6 +201,16 @@ function Flow({
     },
     [onAddChild],
   );
+  // Delete/Backspace 删选中节点: react-flow 默认只删其内部态 (假删除), 须回写真值源 stagesGraph。
+  // 源节点不可删 (删它会级联清空整棵树)。
+  const onNodesDelete = useCallback(
+    (deleted: Node[]) => {
+      deleted.forEach((n) => {
+        if (n.id !== ROOT_SID) onRemove(n.id);
+      });
+    },
+    [onRemove],
+  );
 
   const callbacks = useMemo(() => ({ onSelect, onAddChild, onRemove }), [onSelect, onAddChild, onRemove]);
 
@@ -222,6 +232,7 @@ function Flow({
           onConnect={onConnect}
           onReconnect={onReconnect}
           onConnectEnd={onConnectEnd}
+          onNodesDelete={onNodesDelete}
           isValidConnection={isValidConnection}
           onNodeClick={(_e, n) => onSelect(n.id)}
         >
