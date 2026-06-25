@@ -600,8 +600,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           return;
 
         case "samPolarity": {
-          // v0.10.2 · 仅 smart-point 工具下消费.
-          if (s.tool === "smart-point") {
+          // v0.10.2 · smart-point 点正负; v0.18.19 · exemplar 框正负 (refine 会话) 同享极性。
+          if (s.tool === "smart-point" || s.tool === "exemplar") {
             s.setSamPolarity(action.polarity);
           }
           return;

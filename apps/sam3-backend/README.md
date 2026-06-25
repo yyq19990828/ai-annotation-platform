@@ -30,7 +30,7 @@
 | `context.type=point` | `model.predict_inst(point_coords, point_labels)` → 单实例 mask | 单点交互, 正/负点累加精修 (前端重发全量点); `multimask_output` 出 3 候选 |
 | `context.type=interactive_box` | `model.predict_inst(box)` → 单框单 mask | SAM 2 式「框内出一个 mask」; ≠ exemplar 的全图相似 |
 | `context.type=text` | `set_text_prompt(prompt)` → PCS 一步出全图匹配概念 | 文本批量预标 / `/ai-pre` |
-| `context.type=exemplar` | `add_geometric_prompt(box, label=True)` → 全图相似实例 | PCS 视觉示例: 「找全图与示例框相似的实例」 |
+| `context.type=exemplar` | `(可选)set_text_prompt → 顺序多次 add_geometric_prompt(box, label)` → 全图相似实例 | PCS 视觉示例迭代 refine: 多正负框累加 (`exemplars[]`, 正框扩召回 / 负框排误检) + 可选 text 概念组合 + per-request 阈值重过滤; 缺省退化单 `bbox` 正框 |
 | ~~`context.type=bbox`~~ | — | v0.18.17 退役 (仅作几何形状); 旧请求落 422 |
 
 point / interactive_box 与 PCS 共用同一 `backbone_out` 缓存 (开 inst 后 `set_image` 一次同产两路特征). 返回数据均为 `polygonlabels` / `rectanglelabels` (归一化 [0,1]) + score + model_version + inference_time_ms.
@@ -80,6 +80,7 @@ git add vendor/sam3 && git commit -m "vendor: bump sam3 to <commit-sha>"
 升级 commit 时务必跑 5-clicks 集成验收, 复核以下签名是否仍然存在:
 - `Sam3Processor` 公共方法 (`set_image` / `set_text_prompt` / `add_geometric_prompt` / `reset_all_prompts`) 与 `state` dict 字段 (`backbone_out` / `geometric_prompt` / `masks` / `boxes` / `scores`)。
 - v0.18.17 inst 路径: `model.predict_inst(inference_state, point_coords=, point_labels=, box=, multimask_output=)` 返回 `(masks CxHxW, iou C, low_res Cx256x256)`; `SAM3InteractiveImagePredictor.predict(...)` 签名; `state["backbone_out"]["sam2_backbone_out"]` 字段 (开 inst 后 `set_image` 产出)。
+- v0.18.19 exemplar refine 依赖: `geometric_prompt.append_boxes(boxes, labels)` 是**累加**语义 (concat 非覆盖, 见 `geometry_encoders.py`), 多次 `add_geometric_prompt` 顺序叠框; `add_geometric_prompt(box, label, state)` 的 `label: bool` 约定 `True`=正框 / `False`=负框; `set_text_prompt` 后再叠几何框可组合 (后者在 `language_features` 已存在时不补 dummy "visual")。任一约定变更需同步 `predict_exemplars`。
 
 ---
 
@@ -154,8 +155,13 @@ GET  /cache/stats   → {"size": N, "capacity": 32, "hits":..., "misses":..., "h
 // 交互式 point
 {"task": {"id":1, "file_path":"https://..."}, "context": {"type":"point", "points":[[0.5,0.5]], "labels":[1]}}
 
-// 交互式 exemplar (v0.10.0 新增)
+// 交互式 exemplar (单框, 兼容旧路径)
 {"task": {"id":1, "file_path":"https://..."}, "context": {"type":"exemplar", "bbox":[0.2,0.2,0.45,0.55]}}
+
+// 交互式 exemplar refine (多正负框 + text 组合 + 阈值)
+{"task": {"id":1, "file_path":"https://..."}, "context": {"type":"exemplar",
+  "exemplars":[{"bbox":[0.2,0.2,0.45,0.55],"label":true},{"bbox":[0.6,0.6,0.7,0.7],"label":false}],
+  "text":"car", "score_threshold":0.5, "output":"mask"}}
 
 // 批量 text
 {"tasks": [{"id":1,"file_path":"..."}, {"id":2,"file_path":"..."}], "context": {"type":"text", "text":"ripe apples"}}

@@ -1917,7 +1917,26 @@ export function useWorkbenchShellModel({
           isLoading={mlCapabilities.isLoading}
           isError={mlCapabilities.isError}
           exemplarOutputMode={s.exemplarOutputMode}
-          onSetExemplarOutputMode={handleSetExemplarOutputMode}
+          onSetExemplarOutputMode={(mode) => {
+            // v0.18.19 · 切输出形态时若 exemplar 会话进行中, 用当前会话重跑 (output 透传)。
+            handleSetExemplarOutputMode(mode);
+            sam.rerunExemplar(mode);
+          }}
+          exemplarText={sam.exemplarText}
+          onSetExemplarText={sam.setExemplarText}
+          exemplarThreshold={sam.exemplarThreshold}
+          onSetExemplarThreshold={sam.setExemplarThreshold}
+          exemplarThresholdDefault={
+            ((): number | undefined => {
+              const def = (
+                mlCapabilities.paramsSchema?.properties?.score_threshold as
+                  | { default?: unknown }
+                  | undefined
+              )?.default;
+              return typeof def === "number" ? def : undefined;
+            })()
+          }
+          exemplarSessionActive={sam.sessionExemplars.length > 0}
           models={mlCapabilities.models}
           activeModelId={mlCapabilities.activeModelId}
           onSetActiveModelId={mlCapabilities.setActiveModelId}
@@ -2103,7 +2122,9 @@ export function useWorkbenchShellModel({
               ? buildPredictParams(preCfg.paramsValue, preCfg.currentVariantSlice)
               : {};
           if (prompt.kind === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1, extra);
-          if (prompt.kind === "exemplar") return sam.runExemplar(prompt.bbox, s.exemplarOutputMode, extra);
+          if (prompt.kind === "exemplar")
+            // v0.18.19 · alt=负框 (排误检) / 否则正框 (扩召回); refine 会话每次重发全量。
+            return sam.runExemplar(prompt.bbox, prompt.alt ? 0 : 1, s.exemplarOutputMode, extra);
           return sam.runBbox(prompt.bbox, extra);
         },
         onCommitMove: handleCommitMove,
@@ -2118,6 +2139,7 @@ export function useWorkbenchShellModel({
         samCandidates: sam.candidates,
         samActiveIdx: sam.activeIdx,
         samSessionPoints: sam.sessionPoints,
+        samSessionExemplars: sam.sessionExemplars,
         samSubTool: s.samSubTool,
         samPolarity: s.samPolarity,
         onRefineSamCandidate: handleRefineSamCandidate,

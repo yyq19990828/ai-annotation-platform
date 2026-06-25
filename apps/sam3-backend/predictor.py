@@ -91,7 +91,8 @@ SAM3_RESOLUTION = 1008
 
 
 class SAM3Predictor:
-    """三种 prompt (text / bbox / exemplar) 路由到 Sam3Processor; 返回归一化 polygon dict 列表."""
+    """各 prompt (text / exemplar 多正负框 / point / interactive_box) 路由到 Sam3Processor;
+    返回归一化 polygon/rect dict 列表."""
 
     def __init__(
         self,
@@ -243,11 +244,16 @@ class SAM3Predictor:
         """SAM 3 image API 中 bbox prompt 与 exemplar 是同一调用 (add_geometric_prompt),
         语义都是「找全图与 box 内对象相似的所有实例」. 没有 SAM-2-style 的「这个 box 内部出一个 mask」.
         用户期待单框单 mask 的场景请走 grounded-sam2-backend.
+
+        v0.18.19 起内部转 predict_exemplars 单元素正框 (兼容薄封装).
         """
-        return self._predict_geometric(
-            image, bbox, output=output, cache_key=cache_key,
+        return self.predict_exemplars(
+            image,
+            [{"bbox": bbox, "label": True}],
+            output=output,
+            cache_key=cache_key,
             simplify_tolerance=simplify_tolerance,
-            score_threshold=score_threshold, prompt_name="bbox",
+            score_threshold=score_threshold,
         )
 
     def predict_exemplar(
@@ -260,12 +266,71 @@ class SAM3Predictor:
         simplify_tolerance: float | None = None,
         score_threshold: float | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
-        """v0.10.0 新增 exemplar prompt; 与 predict_bbox 同底层调用, 协议层语义不同."""
-        return self._predict_geometric(
-            image, exemplar_bbox, output=output, cache_key=cache_key,
+        """v0.10.0 单框 exemplar; v0.18.19 起内部转 predict_exemplars 单元素正框 (兼容薄封装)."""
+        return self.predict_exemplars(
+            image,
+            [{"bbox": exemplar_bbox, "label": True}],
+            output=output,
+            cache_key=cache_key,
             simplify_tolerance=simplify_tolerance,
-            score_threshold=score_threshold, prompt_name="exemplar",
+            score_threshold=score_threshold,
         )
+
+    def predict_exemplars(
+        self,
+        image: Image.Image | None,
+        exemplars: list[dict[str, Any]],
+        *,
+        text: str | None = None,
+        output: str = "mask",
+        cache_key: str | None = None,
+        simplify_tolerance: float | None = None,
+        score_threshold: float | None = None,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """v0.18.19 · PCS 多正负框 (+ 可选 text) 迭代 refinement (无状态: 每请求重发全量).
+
+        - exemplars: [{bbox:[x1,y1,x2,y2] 归一化 xyxy, label:bool}, ...]; True=正框(扩召回) /
+          False=负框(排误检). 顺序累加经 add_geometric_prompt (append_boxes 非覆盖).
+        - text: 非空时先 set_text_prompt, 再叠几何框 (text 概念 + 视觉示例组合). 缺省纯几何.
+        - score_threshold: per-request 阈值重过滤; backbone 缓存命中下只重跑 grounding head.
+        - output: box/mask/both 透传 _build_results (三分支已就绪).
+
+        无 label 的几何 prompt 用 "object" 占位; workbench 按当前 active label 重写.
+        """
+        self._apply_score_threshold(score_threshold)
+        trimmed_text = (text or "").strip()
+        with torch.autocast(self.device, dtype=torch.bfloat16, enabled=(self.device == "cuda")):
+            state, w, h, hit = self._prime_state(image, cache_key)
+            self._processor.reset_all_prompts(state)
+
+            if trimmed_text:
+                state = self._processor.set_text_prompt(trimmed_text, state)
+
+            for ex in exemplars:
+                x1, y1, x2, y2 = ex["bbox"]
+                cx = (x1 + x2) / 2.0
+                cy = (y1 + y2) / 2.0
+                bw = x2 - x1
+                bh = y2 - y1
+                label = bool(ex.get("label", True))
+                # 协议归一化 xyxy → 归一化 cxcywh; True 正框 / False 负框 (vendor add_geometric_prompt).
+                state = self._processor.add_geometric_prompt([cx, cy, bw, bh], label, state)
+
+            boxes, masks, scores = self._extract_outputs(state)
+        self._processor.reset_all_prompts(state)
+
+        if masks is None or len(masks) == 0:
+            logger.info(
+                "SAM 3 returned 0 instances for exemplars=%d text=%r",
+                len(exemplars), trimmed_text or None,
+            )
+            return [], hit
+
+        label = trimmed_text or "object"
+        return self._build_results(
+            boxes, masks, scores, w, h, label=label, output=output,
+            simplify_tolerance=simplify_tolerance, prompt_name="exemplar",
+        ), hit
 
     def predict_interactive(
         self,
@@ -348,48 +413,6 @@ class SAM3Predictor:
             self._maybe_warn_vertex_count(rings, eff_tol, int(mask.sum()), prompt="interactive")
             results.append(self._rings_to_polygon_label(rings, "object", float(ious[i])))
         return results
-
-    def _predict_geometric(
-        self,
-        image: Image.Image | None,
-        bbox: list[float],
-        *,
-        output: str,
-        cache_key: str | None,
-        simplify_tolerance: float | None,
-        score_threshold: float | None,
-        prompt_name: str,
-    ) -> tuple[list[dict[str, Any]], bool]:
-        self._apply_score_threshold(score_threshold)
-        # 同 predict_text: ckpt fp32/bf16 混搭, 必须包 autocast.
-        with torch.autocast(self.device, dtype=torch.bfloat16, enabled=(self.device == "cuda")):
-            state, w, h, hit = self._prime_state(image, cache_key)
-            self._processor.reset_all_prompts(state)
-
-            # 协议 bbox 是归一化 xyxy → 转 归一化 cxcywh
-            x1, y1, x2, y2 = bbox
-            cx = (x1 + x2) / 2.0
-            cy = (y1 + y2) / 2.0
-            bw = x2 - x1
-            bh = y2 - y1
-            state = self._processor.add_geometric_prompt(
-                [cx, cy, bw, bh], True, state
-            )
-
-            boxes, masks, scores = self._extract_outputs(state)
-        self._processor.reset_all_prompts(state)
-
-        if masks is None or len(masks) == 0:
-            logger.info(
-                "SAM 3 returned 0 similar instances for %s bbox=%s", prompt_name, bbox
-            )
-            return [], hit
-
-        # geometric prompt 没有自然 label, 用 "object" 占位; workbench 会按当前 active label 重写.
-        return self._build_results(
-            boxes, masks, scores, w, h, label="object", output=output,
-            simplify_tolerance=simplify_tolerance, prompt_name=prompt_name,
-        ), hit
 
     # ---------- 输出处理 ----------
 

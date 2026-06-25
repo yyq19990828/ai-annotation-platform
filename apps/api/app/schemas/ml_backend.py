@@ -239,7 +239,9 @@ class InteractiveRequest(BaseModel):
       （v0.18.17 · SAM-style 单框单 mask; 双 backend 统一名, 旧 ``bbox`` prompt 已退役）
     - ``polygon``：``{"type":"polygon","points":[[x,y],...]}``
     - ``text``：``{"type":"text","text":"ripe apples"}``（Grounded-SAM-2 DINO / SAM 3 PCS）
-    - ``exemplar``：``{"type":"exemplar","bbox":[x1,y1,x2,y2]}``（SAM 3 PCS 全图相似实例）。
+    - ``exemplar``：``{"type":"exemplar","bbox":[x1,y1,x2,y2]}`` 或多正负框
+      ``{"type":"exemplar","exemplars":[{"bbox":[...],"label":true},...],"text":"car","score_threshold":0.5}``
+      （SAM 3 PCS 全图相似实例; v0.18.19 起支持多正负框累加 + text 概念组合 + 阈值重过滤的迭代 refinement）。
     """
 
     task_id: UUID

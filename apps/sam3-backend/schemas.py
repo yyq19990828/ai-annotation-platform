@@ -33,11 +33,29 @@ __all__ = [
     "BatchPredictRequest",
     "BatchPredictResponse",
     "Context",
+    "Exemplar",
     "InteractiveRequest",
     "PredictionResult",
     "TaskItem",
     "WarmupResponse",
 ]
+
+
+class Exemplar(BaseModel):
+    """v0.18.19 · PCS 多正负框中的单个视觉示例。
+
+    bbox: 归一化 xyxy [x1, y1, x2, y2]; label: True=正框(扩召回) / False=负框(排误检)。
+    backend 顺序累加 (add_geometric_prompt), 每请求重发全量 (无状态)。
+    """
+
+    bbox: list[float]
+    label: bool = True
+
+    @model_validator(mode="after")
+    def _validate_bbox(self) -> Exemplar:
+        if len(self.bbox) != 4:
+            raise ValueError("exemplar.bbox=[x1,y1,x2,y2] required (length 4)")
+        return self
 
 
 class Context(BaseModel):
@@ -46,8 +64,11 @@ class Context(BaseModel):
     type: Literal["point", "interactive_box", "polygon", "text", "exemplar"]
     points: list[list[float]] | None = None
     labels: list[int] | None = None
-    # bbox: type=interactive_box 时是单框 prompt; type=exemplar 时是视觉示例框 (语义靠 type 区分)
+    # bbox: type=interactive_box 时是单框 prompt; type=exemplar 时是单视觉示例框 (兼容旧单框路径)
     bbox: list[float] | None = None
+    # v0.18.19 · type=exemplar 多正负框累加 (扩召回 / 去误检); 非空时优先于单 bbox.
+    # 可与 text 同时传 (text 概念 + 几何示例组合)。
+    exemplars: list[Exemplar] | None = None
     text: str | None = None
     # v0.9.4 phase 2 (与 grounded-sam2 协议一致): text 路径输出形态
     output: Literal["box", "mask", "both"] = "mask"
@@ -62,8 +83,12 @@ class Context(BaseModel):
     @model_validator(mode="after")
     def _validate_required_fields(self) -> Context:
         if self.type == "exemplar":
-            if self.bbox is None or len(self.bbox) != 4:
-                raise ValueError("context.bbox=[x1,y1,x2,y2] required for type=exemplar")
+            # v0.18.19 · 多框 exemplars 优先; 缺省退化单 bbox (旧路径兼容)。两者皆缺则报错。
+            if not self.exemplars and (self.bbox is None or len(self.bbox) != 4):
+                raise ValueError(
+                    "type=exemplar requires non-empty context.exemplars[] "
+                    "or context.bbox=[x1,y1,x2,y2]"
+                )
         if self.type == "interactive_box":
             if self.bbox is None or len(self.bbox) != 4:
                 raise ValueError("context.bbox=[x1,y1,x2,y2] required for type=interactive_box")

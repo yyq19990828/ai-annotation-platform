@@ -177,12 +177,15 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   "context": {
     "type": "point" | "interactive_box" | "polygon" | "text" | "exemplar",
     "points": [[x, y], ...],                // type=point 时 (正/负点累加, 前端重发全量点)
-    "bbox": [x1, y1, x2, y2],               // type=interactive_box 时 (单框 prompt) 或 type=exemplar 时 (视觉示例框)
+    "bbox": [x1, y1, x2, y2],               // type=interactive_box 时 (单框 prompt) 或 type=exemplar 时 (单视觉示例框, 兼容旧路径)
+    "exemplars": [                          // type=exemplar 多正负框累加 (优先于单 bbox); 见下
+      { "bbox": [x1, y1, x2, y2], "label": true }
+    ],
     "labels": [1, 0, ...],                  // 可选；point 类型，1=positive 0=negative
     "multimask_output": false,              // 可选; point/interactive_box 单点歧义出 3 候选 (按 iou 降序), 默认单 mask
     "mask_input": "<base64>",               // 可选; 上一轮 256×256 low-res logits 回灌 (多点精修, 见下), 不透明字符串
-    "text": "ripe apples",                  // type=text 时（Grounded-SAM-2 / SAM 3 PCS 文本入口）
-    "output": "box" | "mask" | "both",      // 仅 type=text 生效, 默认 "mask" 老前端兼容
+    "text": "ripe apples",                  // type=text 时（Grounded-SAM-2 / SAM 3 PCS 文本入口）; type=exemplar 时可叠加为概念组合
+    "output": "box" | "mask" | "both",      // type=text / type=exemplar 生效, 默认 "mask" 老前端兼容
     "box_threshold": 0.35,                  // 可选; type=text 时 backend 的 DINO 阈值 override (grounded-sam2 专属)
     "text_threshold": 0.25,                 // 可选; 同上
     "score_threshold": 0.5,                 // SAM 3 PCS text/exemplar 路径 score 过滤阈值
@@ -211,7 +214,13 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 >
 > **兼容期旧字段**：v2.1 backend 必须继续接受一版旧写法并 normalize 到 `context.model_variants`：yolo 的 `context.variants`、grounded-sam2 的 `context.sam_variant` / `context.dino_variant`、sam3 的 `context.model_variant`。收到旧字段时应记录 deprecation warning；若新旧字段同时存在，新字段优先。
 
-> **`type=exemplar`**（仅 SAM 3 支持）：取图中已有的一个 bbox 作为视觉示例，由 SAM 3 PCS 一步出全图相似实例的 masks。`bbox` 字段承载 4 坐标（与 `type=interactive_box` 共用字段，语义靠 `type` 区分：exemplar=全图相似，interactive_box=单框单 mask）。返回 `result[]` 是多个 `polygonlabels`，`polygonlabels: ["object"]`（前端按当前 active label 批量改写）。apps/api 仅在项目挂了支持 exemplar 的 backend（`/setup.supported_prompts` 含 `exemplar`）时才放行；未挂返回 400。前端 UI 入口在工作台 Shift+拖框。
+> **`type=exemplar`**（仅 SAM 3 支持）：取图中已有的 bbox 作为视觉示例，由 SAM 3 PCS 出全图相似实例的 masks。这是一个**无状态迭代 refine 会话**：前端维护「进行中的正/负框集 + 叠加 text + 阈值」，每次操作（加框 / 拖阈值 / 改 text）重发全量，backend 一次 `reset_all_prompts → (可选)set_text_prompt → 顺序多次 add_geometric_prompt(box, label) → 按 per-request `score_threshold` 过滤`（backbone 缓存命中下只重跑 grounding head，不重跑 backbone）。
+>
+> - `exemplars[]`（优先）：`[{bbox:[x1,y1,x2,y2], label:bool}]` 多正负框累加。`label=true`=正框（扩召回）/ `label=false`=负框（排误检）。缺省 `exemplars` 时退化为单 `bbox` 正框（旧路径兼容）。
+> - `text`：可与 `exemplars` 同时传，组合为「text 概念 + 视觉示例」；非空时返回的 `polygonlabels` 用该短语，否则用 `["object"]`（前端按当前 active label 批量改写）。
+> - `score_threshold` / `output`（box/mask/both）复用通用字段。
+>
+> `bbox`/`exemplars[].bbox` 与 `type=interactive_box` 的 `bbox` 语义靠 `type` 区分：exemplar=全图相似，interactive_box=单框单 mask。`/setup` 在 `exemplar_capabilities`（`multi_box` / `negative_box` / `text_combination` / `threshold_refilter`）声明该 refine 能力，前端据此启用会话控件。apps/api 仅在项目挂了支持 exemplar 的 backend（`/setup.supported_prompts` 含 `exemplar`）时才放行；未挂返回 400。前端 UI 入口在工作台 exemplar 工具拖框（Alt 拖框或负极性 = 负框）。
 
 > **`type=video_tracker`**：由 `VideoTrackerJob` worker 使用，gsam2 backend 接通真实 `sam2_video`。平台会按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 把长区间分窗，多次调用项目绑定的 connected ML Backend。请求 `task.file_path` 是视频 signed URL；`context` 包含 `model_key`（`sam2_video` / `sam3_video`）、`job_id`、`dataset_item_id`、`annotation_id`、`from_frame`、`to_frame`、`direction`、`prompt` 和 `source_geometry`。响应 `result[]` 每项为 `{ frame_index, geometry, confidence?, outside? }`；低于平台阈值的 `confidence` 会被写成 outside prediction range。
 >

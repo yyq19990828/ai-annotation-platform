@@ -158,6 +158,108 @@ def test_exemplar_score_threshold_override(predictor_with_mocks, fake_image):
     assert inst._processor.confidence_threshold == 0.85
 
 
+# ---------- predict_exemplars (v0.18.19 · 多正负框 + text 组合) ----------
+
+
+def test_exemplars_multi_box_accumulated(predictor_with_mocks, fake_image):
+    """多框顺序累加: add_geometric_prompt 每框各调一次, 正/负 label 透传。"""
+    inst = predictor_with_mocks
+    state = _fake_state_after_set_image()
+    inst._processor.set_image = MagicMock(return_value=state)
+
+    def add_geo(box, label, st):
+        _populate_state_with_outputs(st, 1)
+        return st
+
+    inst._processor.add_geometric_prompt = MagicMock(side_effect=add_geo)
+    inst._processor.set_text_prompt = MagicMock(return_value=state)
+    inst._processor.reset_all_prompts = MagicMock()
+
+    results, _ = inst.predict_exemplars(
+        fake_image,
+        [
+            {"bbox": [0.1, 0.1, 0.2, 0.2], "label": True},
+            {"bbox": [0.5, 0.5, 0.6, 0.6], "label": False},
+        ],
+        cache_key="kex1",
+    )
+
+    assert len(results) == 1
+    assert inst._processor.add_geometric_prompt.call_count == 2
+    calls = inst._processor.add_geometric_prompt.call_args_list
+    # 第 1 框正 (True), 第 2 框负 (False); box 是归一化 cxcywh。
+    assert calls[0].args[1] is True
+    assert calls[1].args[1] is False
+    assert calls[0].args[0] == pytest.approx([0.15, 0.15, 0.1, 0.1])
+    # text 未传 → 不调 set_text_prompt。
+    inst._processor.set_text_prompt.assert_not_called()
+
+
+def test_exemplars_with_text_combination(predictor_with_mocks, fake_image):
+    """text 概念 + 几何框组合: 先 set_text_prompt 再叠框; label 用 text。"""
+    inst = predictor_with_mocks
+    state = _fake_state_after_set_image()
+    inst._processor.set_image = MagicMock(return_value=state)
+    inst._processor.set_text_prompt = MagicMock(return_value=state)
+
+    def add_geo(box, label, st):
+        _populate_state_with_outputs(st, 2)
+        return st
+
+    inst._processor.add_geometric_prompt = MagicMock(side_effect=add_geo)
+    inst._processor.reset_all_prompts = MagicMock()
+
+    results, _ = inst.predict_exemplars(
+        fake_image,
+        [{"bbox": [0.1, 0.1, 0.3, 0.3], "label": False}],
+        text="car",
+        cache_key="kex2",
+    )
+
+    inst._processor.set_text_prompt.assert_called_once_with("car", state)
+    assert len(results) == 2
+    # text 组合时 label 用 text 短语而非 "object"。
+    for r in results:
+        assert r["value"]["polygonlabels"] == ["car"]
+
+
+def test_exemplars_score_threshold_override(predictor_with_mocks, fake_image):
+    inst = predictor_with_mocks
+    state = _fake_state_after_set_image()
+    inst._processor.set_image = MagicMock(return_value=state)
+    inst._processor.add_geometric_prompt = MagicMock(return_value=state)
+    inst._processor.reset_all_prompts = MagicMock()
+
+    inst.predict_exemplars(
+        fake_image,
+        [{"bbox": [0.1, 0.1, 0.2, 0.2], "label": True}],
+        cache_key="kex3",
+        score_threshold=0.9,
+    )
+    assert inst._processor.confidence_threshold == 0.9
+
+
+def test_predict_exemplar_delegates_to_exemplars(predictor_with_mocks, fake_image):
+    """单框薄封装: predict_exemplar → predict_exemplars 单元素正框。"""
+    inst = predictor_with_mocks
+    state = _fake_state_after_set_image()
+    inst._processor.set_image = MagicMock(return_value=state)
+
+    def add_geo(box, label, st):
+        _populate_state_with_outputs(st, 1)
+        return st
+
+    inst._processor.add_geometric_prompt = MagicMock(side_effect=add_geo)
+    inst._processor.reset_all_prompts = MagicMock()
+
+    results, _ = inst.predict_exemplar(
+        fake_image, exemplar_bbox=[0.2, 0.2, 0.45, 0.55], cache_key="kex4"
+    )
+    assert len(results) == 1
+    inst._processor.add_geometric_prompt.assert_called_once()
+    assert inst._processor.add_geometric_prompt.call_args.args[1] is True
+
+
 # ---------- predict_bbox (与 exemplar 同底层) ----------
 
 

@@ -178,7 +178,8 @@ interface ImageStageProps {
   onSamPrompt?: (prompt:
     | { kind: "point"; pt: [number, number]; alt: boolean }
     | { kind: "bbox"; bbox: [number, number, number, number] }
-    | { kind: "exemplar"; bbox: [number, number, number, number] }
+    // v0.18.19 · exemplar refine: alt=负框 (排误检) / 否则正框 (扩召回)。
+    | { kind: "exemplar"; bbox: [number, number, number, number]; alt: boolean }
   ) => void;
   /**
    * v0.9.2 · SAM 候选 polygon（待确认紫虚线）。当前候选 stroke 加粗，其它半透。
@@ -197,6 +198,11 @@ interface ImageStageProps {
    * 会话非空时, 在 overlay 层渲染正点绿色实心圆 / 负点红色叉, 跟随视口缩放平移。
    */
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0 }[];
+  /**
+   * v0.18.19 · exemplar refine 会话已落的正/负框 (归一化 xyxy + 极性)。仅 exemplar 工具激活且
+   * 会话非空时渲染: 正框=绿色实线 (扩召回) / 负框=红色虚线 (排误检), 跟随视口缩放平移。
+   */
+  samSessionExemplars?: { bbox: [number, number, number, number]; polarity: 1 | 0 }[];
   onCommitMove?: (id: string, before: Geom, after: Geom) => void;
   onCommitResize?: (id: string, before: Geom, after: Geom) => void;
   /** polygon 顶点几何变更（拖动 / Alt 新增 / Shift 删除）；before/after 为完整 points 列表。 */
@@ -254,6 +260,116 @@ interface ImageStageProps {
   onIssuePinDrop?: (x: number, y: number) => void;
 }
 
+// v0.18.19 · SAM 候选「待确认」紫虚线 overlay。抽成独立组件: 内部 rAF 驱动 dashOffset 做
+// marching-ants 流动动效, 把每帧重渲隔离在这一小块 (候选数少), 不带动整个 ImageStage 重渲。
+// 紫色边缘整体加粗 (选中 / 未选中都加粗, active 略粗以区分)。
+type SamCandidateShape = {
+  id: string;
+  type: "polygonlabels" | "rectanglelabels";
+  points?: [number, number][];
+  bbox?: { x: number; y: number; width: number; height: number };
+};
+
+const SAM_CANDIDATE_STROKE = "#a855f7";
+// 屏幕像素: 虚线段 + 间隔 (一个周期 = 10px); 流速 (px/秒)。
+const SAM_DASH: [number, number] = [6, 4];
+const SAM_DASH_PERIOD = SAM_DASH[0] + SAM_DASH[1];
+const SAM_FLOW_SPEED = 22;
+
+function SamCandidateOverlay({
+  candidates,
+  activeIdx,
+  imgW,
+  imgH,
+  scale,
+  tool,
+}: {
+  candidates: SamCandidateShape[];
+  activeIdx: number;
+  imgW: number;
+  imgH: number;
+  scale: number;
+  tool: string;
+}) {
+  const hasCandidates = candidates.length > 0;
+  const [dashOffset, setDashOffset] = useState(0);
+  useEffect(() => {
+    if (!hasCandidates) return;
+    let raf = 0;
+    let start: number | null = null;
+    const loop = (t: number) => {
+      if (start === null) start = t;
+      // 负向偏移 → 虚线沿边缘「向前流动」(marching ants)。周期取模避免数值无限增大。
+      setDashOffset(-(((t - start) / 1000) * SAM_FLOW_SPEED) % SAM_DASH_PERIOD);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [hasCandidates]);
+
+  if (!hasCandidates) return null;
+
+  const dash = [SAM_DASH[0] / scale, SAM_DASH[1] / scale];
+  const offset = dashOffset / scale;
+
+  return (
+    <>
+      {candidates.map((c, idx) => {
+        const isActive = idx === activeIdx;
+        // 整体加粗: 未选中也明显; active 再粗一档以区分当前候选。
+        const strokeWidth = (isActive ? 3.5 : 2.5) / scale;
+        const fillRgba = hexToRgba(SAM_CANDIDATE_STROKE, isActive ? 0.18 : 0.08);
+        const opacity = isActive ? 1 : 0.7;
+        const common = {
+          stroke: SAM_CANDIDATE_STROKE,
+          strokeWidth,
+          dash,
+          dashOffset: offset,
+          fill: fillRgba,
+          opacity,
+          listening: false as const,
+        };
+
+        // Magic Box: polygon 候选只作几何源, 视觉以紧凑外接矩形预览。
+        if (tool === "magic-box" && c.points && c.points.length >= 3) {
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          for (const [x, y] of c.points) {
+            if (x < minX) minX = x; if (y < minY) minY = y;
+            if (x > maxX) maxX = x; if (y > maxY) maxY = y;
+          }
+          if (!isFinite(minX)) return null;
+          return (
+            <Rect
+              key={c.id}
+              x={minX * imgW}
+              y={minY * imgH}
+              width={(maxX - minX) * imgW}
+              height={(maxY - minY) * imgH}
+              {...common}
+            />
+          );
+        }
+        if (c.type === "rectanglelabels" && c.bbox) {
+          return (
+            <Rect
+              key={c.id}
+              x={c.bbox.x * imgW}
+              y={c.bbox.y * imgH}
+              width={c.bbox.width * imgW}
+              height={c.bbox.height * imgH}
+              {...common}
+            />
+          );
+        }
+        if (!c.points || c.points.length < 3) return null;
+        const flat: number[] = [];
+        for (const [x, y] of c.points) flat.push(x * imgW, y * imgH);
+        return <Line key={c.id} points={flat} closed {...common} />;
+      })}
+    </>
+  );
+}
+
 // ── main component ──────────────────────────────────────────────────────────
 export function ImageStage({
   fileUrl, blurhash, imageWidth, imageHeight, tool, activeClass,
@@ -261,7 +377,7 @@ export function ImageStage({
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
   onJoinSelected, onCropSelected,
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass, onPatchShapeFlag, clipboardActions,
-  onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0, samSessionPoints,
+  onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0, samSessionPoints, samSessionExemplars,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
   onStageGeometry, overlay, polygonDraft, keypointDraft, keypointSchema, onCommitKeypointGeometry, samSubTool, samPolarity,
   canvasShapes, canvasEditable = false, canvasStroke = "#ef4444", onCanvasStrokeCommit,
@@ -669,7 +785,7 @@ export function ImageStage({
             const y2 = Math.max(d.sy, d.cy);
             if (x2 - x1 > 0.005 && y2 - y1 > 0.005) {
               if (d.mode === "exemplar") {
-                onSamPrompt?.({ kind: "exemplar", bbox: [x1, y1, x2, y2] });
+                onSamPrompt?.({ kind: "exemplar", bbox: [x1, y1, x2, y2], alt: d.alt });
               } else {
                 onSamPrompt?.({ kind: "bbox", bbox: [x1, y1, x2, y2] });
               }
@@ -1466,72 +1582,16 @@ export function ImageStage({
               listening={false}
             />
           )}
-          {samCandidates && samCandidates.length > 0 && samCandidates.map((c, idx) => {
-            const isActive = idx === samActiveIdx;
-            const stroke = "#a855f7";
-            const strokeWidth = (isActive ? 2.5 : 1.4) / vp.scale;
-            const dashArr = [6 / vp.scale, 4 / vp.scale];
-            const fillRgba = hexToRgba(stroke, isActive ? 0.18 : 0.06);
-            const opacity = isActive ? 1 : 0.55;
-            // v0.10.17 · Magic Box: polygon 候选只用作几何源, 视觉上以紧凑外接矩形预览, 不渲染多边形 mask.
-            if (tool === "magic-box" && c.points && c.points.length >= 3) {
-              let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-              for (const [x, y] of c.points) {
-                if (x < minX) minX = x; if (y < minY) minY = y;
-                if (x > maxX) maxX = x; if (y > maxY) maxY = y;
-              }
-              if (!isFinite(minX)) return null;
-              return (
-                <Rect
-                  key={c.id}
-                  x={minX * imgW}
-                  y={minY * imgH}
-                  width={(maxX - minX) * imgW}
-                  height={(maxY - minY) * imgH}
-                  stroke={stroke}
-                  strokeWidth={strokeWidth}
-                  dash={dashArr}
-                  fill={fillRgba}
-                  opacity={opacity}
-                  listening={false}
-                />
-              );
-            }
-            // v0.9.4 phase 2 · 按 type 分发渲染: rectanglelabels → Rect; polygonlabels → Line.
-            if (c.type === "rectanglelabels" && c.bbox) {
-              return (
-                <Rect
-                  key={c.id}
-                  x={c.bbox.x * imgW}
-                  y={c.bbox.y * imgH}
-                  width={c.bbox.width * imgW}
-                  height={c.bbox.height * imgH}
-                  stroke={stroke}
-                  strokeWidth={strokeWidth}
-                  dash={dashArr}
-                  fill={fillRgba}
-                  opacity={opacity}
-                  listening={false}
-                />
-              );
-            }
-            if (!c.points || c.points.length < 3) return null;
-            const flat: number[] = [];
-            for (const [x, y] of c.points) flat.push(x * imgW, y * imgH);
-            return (
-              <Line
-                key={c.id}
-                points={flat}
-                closed
-                stroke={stroke}
-                strokeWidth={strokeWidth}
-                dash={dashArr}
-                fill={fillRgba}
-                opacity={opacity}
-                listening={false}
-              />
-            );
-          })}
+          {samCandidates && samCandidates.length > 0 && (
+            <SamCandidateOverlay
+              candidates={samCandidates}
+              activeIdx={samActiveIdx}
+              imgW={imgW}
+              imgH={imgH}
+              scale={vp.scale}
+              tool={tool}
+            />
+          )}
 
           {/* v0.18.18 · §5.5 会话点位: smart-point 多点精修时显示已落的正/负点
               (正=绿色实心圆, 负=红色叉), 让用户看到点过哪、哪些正/负, 跟随视口缩放。 */}
@@ -1572,6 +1632,27 @@ export function ImageStage({
                     listening={false}
                   />
                 </Group>
+              );
+            })}
+
+          {/* v0.18.19 · exemplar refine 会话框: 正框=绿色实线 (扩召回) / 负框=红色虚线 (排误检),
+              让用户看清拖过哪些示例、哪些正/负, 跟随视口缩放。颜色与点会话正/负一致。 */}
+          {samSubTool === "exemplar" && samSessionExemplars && samSessionExemplars.length > 0 &&
+            samSessionExemplars.map((se, idx) => {
+              const [x1, y1, x2, y2] = se.bbox;
+              const positive = se.polarity === 1;
+              return (
+                <Rect
+                  key={`sam-ex-${idx}`}
+                  x={x1 * imgW}
+                  y={y1 * imgH}
+                  width={(x2 - x1) * imgW}
+                  height={(y2 - y1) * imgH}
+                  stroke={positive ? "#22c55e" : "#ef4444"}
+                  strokeWidth={2 / vp.scale}
+                  dash={positive ? undefined : [6 / vp.scale, 4 / vp.scale]}
+                  listening={false}
+                />
               );
             })}
 

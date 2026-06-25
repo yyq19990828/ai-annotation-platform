@@ -28,6 +28,17 @@ export interface AIToolDrawerProps {
   // exemplar 工具输出形态 (box/mask/both); 会话级状态由 WorkbenchShell 持有.
   exemplarOutputMode?: TextOutputMode;
   onSetExemplarOutputMode?: (mode: TextOutputMode) => void;
+  // v0.18.19 · exemplar refine 会话控件 (多正负框 + text 组合 + 阈值重过滤).
+  /** 叠加的 text 概念 (PCS text + 几何示例组合); 改动即重跑当前会话。 */
+  exemplarText?: string;
+  onSetExemplarText?: (text: string) => void;
+  /** per-request 阈值; null=用 backend 默认。拖动即重过滤当前会话。 */
+  exemplarThreshold?: number | null;
+  onSetExemplarThreshold?: (thr: number | null) => void;
+  /** backend 默认阈值 (slider 在未覆盖时的展示初值, 取自 /setup.params)。 */
+  exemplarThresholdDefault?: number;
+  /** 会话进行中 (已落 ≥1 框); 决定阈值/文本提示文案。 */
+  exemplarSessionActive?: boolean;
   // v0.14.9 · 能力声明协议 v2 · 多模型选择. models 长度 <= 1 时**不渲染**选择器 (向后兼容).
   models?: MLModelCapability[];
   activeModelId?: string;
@@ -109,6 +120,12 @@ export function AIToolDrawer({
   isError,
   exemplarOutputMode,
   onSetExemplarOutputMode,
+  exemplarText,
+  onSetExemplarText,
+  exemplarThreshold,
+  onSetExemplarThreshold,
+  exemplarThresholdDefault,
+  exemplarSessionActive,
   models,
   activeModelId,
   onSetActiveModelId,
@@ -199,8 +216,8 @@ export function AIToolDrawer({
         </div>
       )}
 
-      {/* 工具特定控件 */}
-      {tool === "smart-point" && (
+      {/* 工具特定控件: 极性切换 (smart-point 点正负 / exemplar 框正负, 与 Alt 修饰键合并)。 */}
+      {(tool === "smart-point" || tool === "exemplar") && (
         <div className="flex items-center gap-2">
           <span className={FIELD_LABEL_CLASS}>极性</span>
           <button
@@ -209,9 +226,17 @@ export function AIToolDrawer({
             onClick={() => onSetSamPolarity(samPolarity === "positive" ? "negative" : "positive")}
             className={cn(
               "flex size-6 cursor-pointer appearance-none items-center justify-center rounded-full border-0 p-0 text-white",
-              samPolarity === "positive" ? "bg-emerald-500" : "bg-amber-500",
+              samPolarity === "positive" ? "bg-emerald-500" : "bg-rose-500",
             )}
-            title={samPolarity === "positive" ? "正向 (+) — 按 - 切负向" : "负向 (−) — 按 + 切正向"}
+            title={
+              tool === "exemplar"
+                ? samPolarity === "positive"
+                  ? "正框 (+, 扩召回) — 按 - 切负框 / 或 Alt 拖框"
+                  : "负框 (−, 排误检) — 按 + 切正框 / 或 Alt 拖框"
+                : samPolarity === "positive"
+                  ? "正向 (+) — 按 - 切负向"
+                  : "负向 (−) — 按 + 切正向"
+            }
           >
             <Icon name={samPolarity === "positive" ? "plus" : "minus"} size={14} />
           </button>
@@ -229,6 +254,46 @@ export function AIToolDrawer({
         <div className="flex flex-col gap-1" data-testid="exemplar-output-mode">
           <span className={FIELD_LABEL_CLASS}>输出形态</span>
           <SamOutputModeTabs value={exemplarOutputMode} onChange={onSetExemplarOutputMode} />
+        </div>
+      )}
+
+      {/* v0.18.19 · exemplar refine: 叠加 text 概念 + per-request 阈值。会话进行中改动即重跑。 */}
+      {tool === "exemplar" && onSetExemplarText && (
+        <div className="flex flex-col gap-1" data-testid="exemplar-text">
+          <span className={FIELD_LABEL_CLASS}>叠加文本概念 (可选)</span>
+          <input
+            type="text"
+            value={exemplarText ?? ""}
+            onChange={(e) => onSetExemplarText(e.target.value)}
+            placeholder="如 car (与示例框组合)"
+            className="rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground placeholder:text-muted-foreground"
+          />
+        </div>
+      )}
+
+      {tool === "exemplar" && onSetExemplarThreshold && (
+        <div className="flex flex-col gap-1" data-testid="exemplar-threshold">
+          <div className="flex items-center justify-between">
+            <span className={FIELD_LABEL_CLASS}>置信度阈值</span>
+            <span className="text-2xs tabular-nums text-muted-foreground">
+              {(exemplarThreshold ?? exemplarThresholdDefault ?? 0.5).toFixed(2)}
+              {exemplarThreshold == null && " (默认)"}
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={exemplarThreshold ?? exemplarThresholdDefault ?? 0.5}
+            onChange={(e) => onSetExemplarThreshold(Number(e.target.value))}
+            className="w-full cursor-pointer accent-brand"
+          />
+          <span className="text-2xs leading-[1.3] text-muted-foreground">
+            {exemplarSessionActive
+              ? "拖动实时增减结果 (调高更准 / 调低更全)"
+              : "拖框后开始 refine; 加正框扩召回 / Alt 或负极性加负框去误检"}
+          </span>
         </div>
       )}
 

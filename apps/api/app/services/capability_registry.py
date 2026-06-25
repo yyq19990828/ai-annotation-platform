@@ -282,7 +282,8 @@ TASKS: tuple[TaskSpec, ...] = (
         protocol_notes=(
             "/setup.supported_prompts 含 point/interactive_box/text/exemplar "
             "(point/interactive_box 为 SAM-style 单实例点/框交互, 支持正负点累加 + multimask 候选; "
-            "exemplar 为 PCS 全图相似; bbox 已退役为纯几何形状); "
+            "exemplar 为 PCS 全图相似, 支持多正负框累加 + text 概念组合 + per-request 阈值重过滤的"
+            "迭代 refinement; bbox 已退役为纯几何形状); "
             "/predict 响应 mask 或 polygon, 平台转换为 polygon 落库。"
         ),
         suggested_backends=(

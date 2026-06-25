@@ -375,4 +375,103 @@ describe("useInteractiveAI", () => {
     act(() => result.current.cancel());
     expect(result.current.candidates).toHaveLength(0);
   });
+
+  // v0.18.19 · exemplar refine 会话 (多正负框 + text 组合 + 阈值重过滤)
+  describe("exemplar refine 会话", () => {
+    it("runExemplar 累加正/负框, 每次重发全量 exemplars[]", async () => {
+      interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+      const { result } = renderHook(() => useInteractiveAI(ARGS));
+
+      act(() => result.current.runExemplar([0.1, 0.1, 0.2, 0.2], 1, "mask"));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
+      expect(interactiveAnnotateMock.mock.calls[0][2].context).toMatchObject({
+        type: "exemplar",
+        exemplars: [{ bbox: [0.1, 0.1, 0.2, 0.2], label: true }],
+        output: "mask",
+      });
+
+      act(() => result.current.runExemplar([0.5, 0.5, 0.6, 0.6], 0, "mask"));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(2));
+      // 第二次重发全量 (正框 + 负框)。
+      expect(interactiveAnnotateMock.mock.calls[1][2].context.exemplars).toEqual([
+        { bbox: [0.1, 0.1, 0.2, 0.2], label: true },
+        { bbox: [0.5, 0.5, 0.6, 0.6], label: false },
+      ]);
+      // 会话框镜像供画布 overlay。
+      expect(result.current.sessionExemplars).toEqual([
+        { bbox: [0.1, 0.1, 0.2, 0.2], polarity: 1 },
+        { bbox: [0.5, 0.5, 0.6, 0.6], polarity: 0 },
+      ]);
+    });
+
+    it("setExemplarText 会话进行中即重跑, 携带 text 组合", async () => {
+      interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+      const { result } = renderHook(() => useInteractiveAI(ARGS));
+
+      act(() => result.current.runExemplar([0.1, 0.1, 0.3, 0.3], 1, "mask"));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
+
+      act(() => result.current.setExemplarText("car"));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(2));
+      expect(interactiveAnnotateMock.mock.calls[1][2].context).toMatchObject({
+        type: "exemplar",
+        exemplars: [{ bbox: [0.1, 0.1, 0.3, 0.3], label: true }],
+        text: "car",
+      });
+    });
+
+    it("setExemplarThreshold 会话进行中重过滤, 携带 score_threshold", async () => {
+      interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+      const { result } = renderHook(() => useInteractiveAI(ARGS));
+
+      act(() => result.current.runExemplar([0.1, 0.1, 0.3, 0.3], 1, "mask"));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
+
+      act(() => result.current.setExemplarThreshold(0.8));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(2));
+      expect(interactiveAnnotateMock.mock.calls[1][2].context.score_threshold).toBe(0.8);
+    });
+
+    it("无会话时 setExemplarText/Threshold 不发请求 (仅暂存)", async () => {
+      const { result } = renderHook(() => useInteractiveAI(ARGS));
+      act(() => result.current.setExemplarText("car"));
+      act(() => result.current.setExemplarThreshold(0.7));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(interactiveAnnotateMock).not.toHaveBeenCalled();
+      expect(result.current.exemplarText).toBe("car");
+      expect(result.current.exemplarThreshold).toBe(0.7);
+    });
+
+    it("rerunExemplar(outputMode) 用当前会话重跑, 透传新 output", async () => {
+      interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+      const { result } = renderHook(() => useInteractiveAI(ARGS));
+      act(() => result.current.runExemplar([0.1, 0.1, 0.3, 0.3], 1, "mask"));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
+
+      act(() => result.current.rerunExemplar("both"));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(2));
+      expect(interactiveAnnotateMock.mock.calls[1][2].context.output).toBe("both");
+    });
+
+    it("切到 point/text/bbox 模式 → 重置 exemplar 会话框", async () => {
+      interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+      const { result } = renderHook(() => useInteractiveAI(ARGS));
+      act(() => result.current.runExemplar([0.1, 0.1, 0.3, 0.3], 1, "mask"));
+      await waitFor(() => expect(result.current.sessionExemplars).toHaveLength(1));
+      act(() => result.current.runText("dog"));
+      expect(result.current.sessionExemplars).toHaveLength(0);
+    });
+
+    it("cancel 清空 exemplar 会话 (框 + text + 阈值)", async () => {
+      interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+      const { result } = renderHook(() => useInteractiveAI(ARGS));
+      act(() => result.current.runExemplar([0.1, 0.1, 0.3, 0.3], 1, "mask"));
+      await waitFor(() => expect(result.current.sessionExemplars).toHaveLength(1));
+      act(() => result.current.setExemplarText("car"));
+      act(() => result.current.cancel());
+      expect(result.current.sessionExemplars).toHaveLength(0);
+      expect(result.current.exemplarText).toBe("");
+      expect(result.current.exemplarThreshold).toBeNull();
+    });
+  });
 });

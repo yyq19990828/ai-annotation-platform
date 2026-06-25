@@ -61,16 +61,33 @@ export interface UseInteractiveAIReturn {
    * 提交 / 取消 / 切 prompt / 切 task·backend 时清空。空数组 = 无进行中的多点精修会话。
    */
   sessionPoints: { pt: [number, number]; polarity: 1 | 0 }[];
+  /**
+   * v0.18.19 · PCS exemplar refine 会话已落的正/负框 (归一化 xyxy + 极性), 供画布 overlay 渲染。
+   * 正框=扩召回 / 负框=排误检; 每次操作重发全量。Esc / 切 prompt / 切 task·backend 时清空。
+   */
+  sessionExemplars: { bbox: [number, number, number, number]; polarity: 1 | 0 }[];
+  /** v0.18.19 · exemplar 会话叠加的 text 概念 (PCS text + 几何组合); 改动即重跑当前会话。 */
+  exemplarText: string;
+  setExemplarText: (text: string) => void;
+  /** v0.18.19 · exemplar 会话 per-request 阈值; null=用 backend 默认。拖动即重过滤当前会话。 */
+  exemplarThreshold: number | null;
+  setExemplarThreshold: (thr: number | null) => void;
   /** v0.10.2 · 各 run* 接受可选 extraParams; 由 AIToolDrawer 注入 (box_threshold 等). */
   runPoint: (pt: [number, number], polarity: 1 | 0, extraParams?: Record<string, unknown>) => void;
   runBbox: (bbox: [number, number, number, number], extraParams?: Record<string, unknown>) => void;
   runText: (text: string, outputMode?: TextOutputMode, extraParams?: Record<string, unknown>) => void;
-  /** v0.10.2 · SAM 3 exemplar prompt: 与 bbox 同手势, 但 context.type="exemplar". outputMode 同 text 选 box/mask/both. */
+  /**
+   * v0.18.19 · SAM 3 exemplar refine 会话: 拖框累加到正/负框集 (polarity 1=正 / 0=负), 每次
+   * 重发全量 exemplars[] + text + 阈值 + output。与 bbox 同手势, context.type="exemplar"。
+   */
   runExemplar: (
     bbox: [number, number, number, number],
+    polarity: 1 | 0,
     outputMode?: TextOutputMode,
     extraParams?: Record<string, unknown>,
   ) => void;
+  /** v0.18.19 · 不加新框, 用当前会话 (含最新 text/阈值/output) 重跑; outputMode 变更时由 shell 调。 */
+  rerunExemplar: (outputMode?: TextOutputMode, extraParams?: Record<string, unknown>) => void;
   cycle: (dir: 1 | -1) => void;
   /** 接受一个候选；调用方拿到 candidate 后落库（创建 polygon annotation），随后调 consume(idx) 清除该条。 */
   consume: (idx: number) => void;
@@ -113,6 +130,35 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     pointSessionRef.current = [];
     maskInputRef.current = null;
     setSessionPoints([]);
+  }, []);
+
+  // v0.18.19 · exemplar refine 会话: 累加同一概念的正/负框, 每次重发全量 (无状态后端). 拖正框
+  // 扩召回 / 拖负框去误检 / 拖阈值实时增减 / 叠 text 概念。会话在 Esc(cancel) / 切 task·backend /
+  // 切到其它 prompt 模式 (point/bbox/text) 时重置。lastExemplarArgsRef 存上次 dispatch 的
+  // outputMode + extra, 供「不加新框」的 text/阈值/output 变更重跑复用。
+  const exemplarSessionRef = useRef<
+    { bbox: [number, number, number, number]; polarity: 1 | 0 }[]
+  >([]);
+  const lastExemplarArgsRef = useRef<{
+    outputMode: TextOutputMode;
+    extra: Record<string, unknown>;
+  }>({ outputMode: "mask", extra: {} });
+  const [sessionExemplars, setSessionExemplars] = useState<
+    { bbox: [number, number, number, number]; polarity: 1 | 0 }[]
+  >([]);
+  const [exemplarText, setExemplarTextState] = useState("");
+  const [exemplarThreshold, setExemplarThresholdState] = useState<number | null>(null);
+  // dispatchExemplar 读这两个 ref 拿最新 text/阈值, 避免把它们塞进 useCallback 依赖导致闭包过期。
+  const exemplarTextRef = useRef("");
+  const exemplarThresholdRef = useRef<number | null>(null);
+  const resetExemplarSession = useCallback(() => {
+    exemplarSessionRef.current = [];
+    exemplarTextRef.current = "";
+    exemplarThresholdRef.current = null;
+    lastExemplarArgsRef.current = { outputMode: "mask", extra: {} };
+    setSessionExemplars([]);
+    setExemplarTextState("");
+    setExemplarThresholdState(null);
   }, []);
 
   // v0.10.23 · 会话级模型变体切换反馈。变体切换是惰性的：用户在 AI 面板下拉选了新变体后,
@@ -229,6 +275,8 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   const runPoint = useCallback(
     (pt: [number, number], polarity: 1 | 0, extraParams?: Record<string, unknown>) => {
       if (!guard()) return;
+      // v0.18.19 · 切到点模式 → 重置 exemplar 会话 (互斥)。
+      resetExemplarSession();
       // v0.18.17 · 累加到当前点会话, 每次重发全量点 (正/负点精修同一对象).
       pointSessionRef.current = [...pointSessionRef.current, { pt, polarity }];
       const session = pointSessionRef.current;
@@ -257,7 +305,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         );
       }, DEBOUNCE_MS);
     },
-    [guard, dispatch],
+    [guard, dispatch, resetExemplarSession],
   );
 
   const runBbox = useCallback(
@@ -266,12 +314,13 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       // v0.18.17 · 切到框模式 → 重置点会话; type=interactive_box (旧 "bbox" 退役).
       // 单框默认单 mask (multimask_output 缺省 false, 保留旧 bbox 行为).
       resetPointSession();
+      resetExemplarSession();
       dispatch(
         { ...(extraParams ?? {}), type: "interactive_box", bbox, multimask_output: false },
         "bbox",
       );
     },
-    [guard, dispatch, resetPointSession],
+    [guard, dispatch, resetPointSession, resetExemplarSession],
   );
 
   const runText = useCallback(
@@ -280,25 +329,84 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       const trimmed = text.trim();
       if (!trimmed) return;
       resetPointSession();
+      resetExemplarSession();
       // v0.9.4 phase 2 · output 字段控制 box/mask/both; 老 backend 缺字段时仍走 mask 兼容.
       dispatch({ ...(extraParams ?? {}), type: "text", text: trimmed, output: outputMode }, "text");
     },
-    [guard, dispatch, resetPointSession],
+    [guard, dispatch, resetPointSession, resetExemplarSession],
   );
+
+  // v0.18.19 · 用当前会话 (全量正/负框 + text + 阈值) 重发一次 exemplar 请求 (无状态后端).
+  // outputMode / extra 取自 lastExemplarArgsRef (上次 run/rerun 写入); text/阈值取自 ref 实时值。
+  const dispatchExemplar = useCallback(() => {
+    const session = exemplarSessionRef.current;
+    if (session.length === 0) return;
+    const { outputMode, extra } = lastExemplarArgsRef.current;
+    const exemplars = session.map((s) => ({ bbox: s.bbox, label: s.polarity === 1 }));
+    const text = exemplarTextRef.current.trim();
+    const thr = exemplarThresholdRef.current;
+    dispatch(
+      {
+        ...extra,
+        type: "exemplar",
+        exemplars,
+        output: outputMode,
+        ...(text ? { text } : {}),
+        ...(thr != null ? { score_threshold: thr } : {}),
+      },
+      "exemplar",
+    );
+  }, [dispatch]);
 
   const runExemplar = useCallback(
     (
       bbox: [number, number, number, number],
+      polarity: 1 | 0,
       outputMode: TextOutputMode = "mask",
       extraParams?: Record<string, unknown>,
     ) => {
       if (!guard()) return;
+      // v0.18.19 · 切到 exemplar 模式 → 重置点会话; 拖框累加到正/负框集, 每次重发全量。
       resetPointSession();
-      // v0.10.2 · 协议 §2.2: type=exemplar 复用 bbox 字段, 语义靠 type 区分.
-      // output 字段控制 box/mask/both (对齐 text); 老 backend 缺字段时仍走 mask 兼容.
-      dispatch({ ...(extraParams ?? {}), type: "exemplar", bbox, output: outputMode }, "exemplar");
+      exemplarSessionRef.current = [...exemplarSessionRef.current, { bbox, polarity }];
+      setSessionExemplars(exemplarSessionRef.current);
+      lastExemplarArgsRef.current = { outputMode, extra: extraParams ?? {} };
+      dispatchExemplar();
     },
-    [guard, dispatch, resetPointSession],
+    [guard, resetPointSession, dispatchExemplar],
+  );
+
+  const rerunExemplar = useCallback(
+    (outputMode?: TextOutputMode, extraParams?: Record<string, unknown>) => {
+      if (!guard()) return;
+      if (exemplarSessionRef.current.length === 0) return;
+      lastExemplarArgsRef.current = {
+        outputMode: outputMode ?? lastExemplarArgsRef.current.outputMode,
+        extra: extraParams ?? lastExemplarArgsRef.current.extra,
+      };
+      dispatchExemplar();
+    },
+    [guard, dispatchExemplar],
+  );
+
+  const setExemplarText = useCallback(
+    (text: string) => {
+      exemplarTextRef.current = text;
+      setExemplarTextState(text);
+      // 会话进行中即重跑 (叠/改 text 概念); 无会话时仅暂存, 下次拖框带上。
+      if (exemplarSessionRef.current.length > 0) dispatchExemplar();
+    },
+    [dispatchExemplar],
+  );
+
+  const setExemplarThreshold = useCallback(
+    (thr: number | null) => {
+      exemplarThresholdRef.current = thr;
+      setExemplarThresholdState(thr);
+      // 拖阈值实时重过滤 (会话进行中); backbone 缓存命中下只重跑 grounding head。
+      if (exemplarSessionRef.current.length > 0) dispatchExemplar();
+    },
+    [dispatchExemplar],
   );
 
   const cycleStable = useCallback(
@@ -331,13 +439,14 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
 
   const cancel = useCallback(() => {
     resetPointSession();
+    resetExemplarSession();
     setCandidates([]);
     setActiveIdx(0);
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-  }, [resetPointSession]);
+  }, [resetPointSession, resetExemplarSession]);
 
   // v0.10.4 I6.2 · 预热去重：同 (taskId, mlBackendId) 只发一次。
   const warmedRef = useRef<string | null>(null);
@@ -368,21 +477,28 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       });
   }, [projectId, taskId, mlBackendId, cache]);
 
-  // 切 task / backend → 重置预热记忆 + 点会话 (含 mask_input 回灌 + 可视化点)
+  // 切 task / backend → 重置预热记忆 + 点会话 (含 mask_input 回灌 + 可视化点) + exemplar 会话
   useEffect(() => {
     warmedRef.current = null;
     resetPointSession();
-  }, [taskId, mlBackendId, resetPointSession]);
+    resetExemplarSession();
+  }, [taskId, mlBackendId, resetPointSession, resetExemplarSession]);
 
   return {
     candidates,
     activeIdx,
     isRunning,
     sessionPoints,
+    sessionExemplars,
+    exemplarText,
+    setExemplarText,
+    exemplarThreshold,
+    setExemplarThreshold,
     runPoint,
     runBbox,
     runText,
     runExemplar,
+    rerunExemplar,
     cycle: cycleStable,
     consume,
     cancel,

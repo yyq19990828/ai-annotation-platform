@@ -34,6 +34,24 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.19] - 2026-06-25
+
+SAM 3 PCS exemplar 从「一发定生死」升级为**无状态迭代 refine 会话**，解决「全图相似不好用」：可累加多正负框（正框扩召回 / 负框排误检）、叠加 text 概念、拖阈值实时增减结果。源码证实 PCS 原生支持多 exemplar 累加（`append_boxes` concat 非覆盖）、负框（`add_geometric_prompt(label=False)`）、text+几何组合与阈值重过滤，此前 backend 每请求只发单正框、阈值写死，把官方交互循环整组丢弃。规划详见 [`docs/plans/2026-06-25-v0.18.19-sam3-pcs-iterative-refinement.md`](docs/plans/2026-06-25-v0.18.19-sam3-pcs-iterative-refinement.md)。
+
+### Added
+
+- **多正负框 + text 组合 exemplar（sam3-backend）**：`context.exemplars[]`（`[{bbox, label}]`，优先于单 `bbox`）顺序累加经 `add_geometric_prompt`；`label=true` 正框 / `false` 负框。可与 `context.text` 同时传，组合为「概念 + 视觉示例」。`predict_exemplars()` 统一三分支输出（box/mask/both），单框 `predict_bbox` / `predict_exemplar` 退化为薄封装。`/setup` 新增 `exemplar_capabilities`（`multi_box` / `negative_box` / `text_combination` / `threshold_refilter`）供前端开关。
+- **前端 exemplar refine 会话**：exemplar 工具从单发升级为会话——拖框出全图相似实例后，继续加正框扩召回 / 加负框去误检（Alt 拖框或负极性切换）/ 拖阈值滑块实时重过滤 / 叠加文本概念，每次操作重发全量。画布 overlay 渲染会话已落的正框（绿色实线）/ 负框（红色虚线），`Esc`·切 prompt·切 task·backend 时清除。
+- **候选紫虚线视觉强化**：SAM 候选「待确认」边框整体加粗（选中 / 未选中都更醒目），并加 marching-ants 流动虚线动效。渲染抽成独立 overlay 组件，逐帧动画用 `requestAnimationFrame` 隔离在该子树，不带动整个画布重渲。
+
+### Changed
+
+- **per-request 阈值重过滤**：无状态下每次重发全量 exemplars + 阈值，backbone 缓存命中时只重跑 grounding head（不重跑 backbone），略贵换可扩展性。
+
+### Compatibility
+
+- 向后兼容：旧单框请求（`type=exemplar` + 单 `context.bbox`）行为回归不破；新字段 `exemplars[]` 均可选。无 DB migration，无新增环境变量。
+
 ## [0.18.18] - 2026-06-25
 
 交互分割多点精修质量优化：`mask_input` 回灌增量 + 会话点位可视化。SAM2/SAM3 的 `predict()` 接收上一轮 256×256 low-res logits 回灌，多点精修时稳住 mask 边界、修复「过度点击反而崩坏」。为保持 backend 无状态，logits 由前端携带往返（响应 `mask_input_next` → 下次点击 `context.mask_input`，前端只搬运不解析）；仅 `multimask_output=false` 的单 mask 精修阶段启用，规避多候选 index 歧义。同时补齐多点精修的可用性短板：画布渲染会话已落的正/负点（正绿圆 / 负红叉）。规划与量化详见 [`docs/plans/2026-06-25-v0.18.18-interactive-seg-mask-input-refeed.md`](docs/plans/2026-06-25-v0.18.18-interactive-seg-mask-input-refeed.md)。

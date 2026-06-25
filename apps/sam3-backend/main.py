@@ -351,6 +351,14 @@ def setup() -> dict:
         # 点/框交互, 走 model.predict_inst). "bbox" 已退出交互 prompt 命名空间 (仅几何形状);
         # PCS「找全图相似」统一走 "exemplar" (add_geometric_prompt). text = PCS 文本概念.
         "supported_prompts": ["point", "interactive_box", "text", "exemplar"],
+        # v0.18.19 · exemplar 升级为多正负框 + text 组合 + per-request 阈值重过滤的迭代会话.
+        # 前端据此把 exemplar 工具从「一发」升级为 refine 会话 (加正框/负框/拖阈值/叠 text).
+        "exemplar_capabilities": {
+            "multi_box": True,
+            "negative_box": True,
+            "text_combination": True,
+            "threshold_refilter": True,
+        },
         "supported_text_outputs": ["box", "mask", "both"],
         # exemplar 走 add_geometric_prompt; state 同时产出 boxes/masks, 三档都支持.
         "supported_geometric_outputs": ["box", "mask", "both"],
@@ -592,6 +600,33 @@ def _coerce_output(ctx: dict) -> str:
     return mode
 
 
+def _coerce_exemplars(ctx: dict) -> list[dict]:
+    """v0.18.19 · 归一 type=exemplar 的几何输入为 [{bbox, label}] 列表。
+
+    优先读多框 `exemplars[]`; 缺省退化单 `bbox` 正框 (旧路径兼容)。每框 bbox 必须长度 4。
+    """
+    raw = ctx.get("exemplars")
+    if raw:
+        out: list[dict] = []
+        for i, ex in enumerate(raw):
+            bbox = ex.get("bbox") if isinstance(ex, dict) else None
+            if not bbox or len(bbox) != 4:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"context.exemplars[{i}].bbox=[x1,y1,x2,y2] required (length 4)",
+                )
+            out.append({"bbox": bbox, "label": bool(ex.get("label", True))})
+        return out
+
+    bbox = ctx.get("bbox")
+    if not bbox or len(bbox) != 4:
+        raise HTTPException(
+            status_code=422,
+            detail="type=exemplar requires context.exemplars[] or context.bbox=[x1,y1,x2,y2]",
+        )
+    return [{"bbox": bbox, "label": True}]
+
+
 def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict], bool, str | None]:
     """返回 (results, cache_hit, mask_input_next). 命中时 point/bbox/exemplar 跳过 image fetch.
 
@@ -649,17 +684,15 @@ def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict]
         return results, hit, None
 
     if ptype == "exemplar":
-        exemplar_bbox = ctx.get("bbox")
-        if not exemplar_bbox or len(exemplar_bbox) != 4:
-            raise HTTPException(
-                status_code=422,
-                detail="context.bbox=[x1,y1,x2,y2] required for type=exemplar",
-            )
+        # v0.18.19 · 多正负框 exemplars[] (+ 可选 text 组合) 优先; 缺省退化单 bbox 正框.
+        exemplars = _coerce_exemplars(ctx)
+        text = (ctx.get("text") or "").strip() or None
         output_mode = _coerce_output(ctx)
         image = None if _cache.peek(cache_key) else _fetch_image(file_path)
-        results, hit = p.predict_exemplar(
+        results, hit = p.predict_exemplars(
             image,
-            exemplar_bbox,
+            exemplars,
+            text=text,
             output=output_mode,
             cache_key=cache_key,
             simplify_tolerance=simplify_tol,

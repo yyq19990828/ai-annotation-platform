@@ -127,6 +127,7 @@ const baseProps = {
     samCandidates: [],
     samActiveIdx: -1,
     samSessionPoints: [],
+    samSessionExemplars: [],
     samSubTool: null,
     samPolarity: "fg",
   },
