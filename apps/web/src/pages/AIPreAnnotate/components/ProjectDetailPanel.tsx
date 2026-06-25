@@ -35,9 +35,11 @@ import { usePreannotateConfig } from "./usePreannotateConfig";
 import { PreannotateConfigForm } from "./PreannotateConfigForm";
 import { StageCard } from "./StageCard";
 import {
+  MAX_DEPTH,
   ROOT_SID,
   canAddChild as pureCanAddChild,
   canReparent,
+  depthBySid,
   detailOf,
   producesGeometry,
   reparent,
@@ -166,11 +168,19 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     [],
   );
   const seqRef = useRef(0);
-  const addStage = useCallback((parentSid: string) => {
-    const sid = `stage-${(seqRef.current += 1)}`;
-    setStagesGraph((g) => [...g, { sid, parentSid }]);
-    setSelectedSid(sid); // 新建即选中 → 右列直接进该阶段参数。
-  }, []);
+  const addStage = useCallback(
+    (parentSid: string) => {
+      // 超深兜底: 父已达最大深度则拒绝 (UI 的 canAddChild 正常已挡, 这里防漏)。
+      if (parentSid !== ROOT_SID && (depthBySid(stagesGraph)[parentSid] ?? 1) >= MAX_DEPTH) {
+        pushToast({ msg: "无法加子阶段", sub: `流水线最深 ${MAX_DEPTH} 层`, kind: "warning" });
+        return;
+      }
+      const sid = `stage-${(seqRef.current += 1)}`;
+      setStagesGraph((g) => [...g, { sid, parentSid }]);
+      setSelectedSid(sid); // 新建即选中 → 右列直接进该阶段参数。
+    },
+    [stagesGraph, pushToast],
+  );
   const removeStage = useCallback((sid: string) => {
     if (sid === ROOT_SID) return; // 源不可删 (会级联清空整棵树)。
     setStagesGraph((g) => {

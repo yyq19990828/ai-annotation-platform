@@ -34,6 +34,32 @@ describe("派生", () => {
     expect(depthBySid(g)).toEqual({ root: 1, a: 2, b: 3 });
   });
 
+  it("depthBySid: 顺序无关 —— 子排在父之前 (改父后) 仍算对深度", () => {
+    // 改父常导致子在数组中排在新父之前; 不能依赖数组顺序。
+    const g: StageEntry[] = [
+      { sid: "b", parentSid: "a" }, // 子先出现
+      { sid: "a", parentSid: ROOT_SID }, // 父后出现
+    ];
+    expect(depthBySid(g)).toEqual({ root: 1, a: 2, b: 3 });
+  });
+
+  it("depthBySid: 环不死循环 (兜底为 1)", () => {
+    const g: StageEntry[] = [
+      { sid: "a", parentSid: "b" },
+      { sid: "b", parentSid: "a" },
+    ];
+    expect(() => depthBySid(g)).not.toThrow();
+  });
+
+  it("canAddChild: 乱序下 depth-3 节点仍不可加子 (防造 depth>3)", () => {
+    // root→a→b, 但数组里 b 在 a 前。b 实为 depth-3, 不可再加子。
+    const g: StageEntry[] = [
+      { sid: "b", parentSid: "a" },
+      { sid: "a", parentSid: ROOT_SID },
+    ];
+    expect(canAddChild(g, { a: geom(), b: geom() }, "b")).toBe(false);
+  });
+
   it("descendantsOf: 含全部后代不含自身", () => {
     const g: StageEntry[] = [
       { sid: "a", parentSid: ROOT_SID },

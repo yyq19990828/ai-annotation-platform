@@ -53,11 +53,24 @@ export function detailOf(payload: PipelineStagePayload | null | undefined): stri
   return keys.length > 0 ? keys.map((k) => prefix + k).join(", ") : "全部属性";
 }
 
-/** 每 sid 深度 (root=1, 子=父+1)。 */
+/**
+ * 每 sid 深度 (root=1, 子=父+1)。
+ * 顺父链递归求值, **与数组顺序无关** —— 改父后子可能排在新父之前, 不能假设父先于子出现
+ * (否则深度被低估 → canAddChild 误判 → 造出 depth>3)。带环兜底。
+ */
 export function depthBySid(graph: StageEntry[]): Record<string, number> {
-  const d: Record<string, number> = { [ROOT_SID]: 1 };
-  for (const e of graph) d[e.sid] = (d[e.parentSid] ?? 1) + 1;
-  return d;
+  const parentOf: Record<string, string> = {};
+  for (const e of graph) parentOf[e.sid] = e.parentSid;
+  const memo: Record<string, number> = { [ROOT_SID]: 1 };
+  const depthOf = (sid: string, seen: Set<string>): number => {
+    if (memo[sid] != null) return memo[sid];
+    const p = parentOf[sid];
+    if (p == null || seen.has(sid)) return (memo[sid] = 1); // 孤儿 / 环 → 兜底为 1
+    seen.add(sid);
+    return (memo[sid] = depthOf(p, seen) + 1);
+  };
+  for (const e of graph) depthOf(e.sid, new Set());
+  return memo;
 }
 
 /** sid 的全部后代 (不含自身)。用于级联删 + 环检测。 */
@@ -177,14 +190,16 @@ export function buildFlow(
 ): { nodes: Node<StageNodeData>[]; edges: Edge[] } {
   const bySid = new Map(models.map((m) => [m.sid, m]));
   const depth: Record<string, number> = {};
-  const computeDepth = (sid: string): number => {
+  // seen 防护: 即便上游漏过了环 / 超深图, 也不让递归打爆栈 (画布崩溃)。
+  const computeDepth = (sid: string, seen: Set<string>): number => {
     if (depth[sid] != null) return depth[sid];
     const m = bySid.get(sid);
     const p = m?.parentSid;
-    depth[sid] = p == null ? 1 : computeDepth(p) + 1;
-    return depth[sid];
+    if (p == null || seen.has(sid)) return (depth[sid] = 1);
+    seen.add(sid);
+    return (depth[sid] = computeDepth(p, seen) + 1);
   };
-  models.forEach((m) => computeDepth(m.sid));
+  models.forEach((m) => computeDepth(m.sid, new Set()));
 
   // DFS 从源出发, 给每列分配递增 row, 保证兄弟稳定纵向排布。
   const rowInCol: Record<number, number> = {};
