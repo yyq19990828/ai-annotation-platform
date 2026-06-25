@@ -571,6 +571,8 @@ def setup() -> dict:
             # 纯 DINO 文本检测,单次推理原子。
             "composition": "atom",
             "supported_prompts": ["text"],
+            # 文本检测器: 可跑整图, 也可在父框 crop 上检子物体 (crop-detect 下游)。
+            "supported_inputs": ["full_image", "crop"],
             "supported_geometric_outputs": ["bbox"],
             "supported_text_outputs": ["box"],
             "supported_variants": [_dino_variant_axis()],
@@ -588,6 +590,8 @@ def setup() -> dict:
             # 一个 model 内部串 DINO(文本→框) + SAM(框→mask),内部编排复合。
             "composition": "composite",
             "supported_prompts": ["text"],
+            # 文本→分割: 整图 / 父框 crop 上跑 (文本驱动, 复合内部 DINO+SAM)。
+            "supported_inputs": ["full_image", "crop"],
             "supported_geometric_outputs": ["polygon"],
             "supported_text_outputs": ["mask", "both"],
             "supported_variants": base["supported_variants"],
@@ -605,6 +609,8 @@ def setup() -> dict:
             # 单次 SAM 推理(prompt→mask),原子。
             "composition": "atom",
             "supported_prompts": ["point", "bbox"],
+            # 交互分割: 消费点 / 框提示 (不作批量 crop 下游)。
+            "supported_inputs": ["bbox_prompt", "point_prompt", "full_image"],
             "supported_geometric_outputs": ["polygon"],
             "supported_variants": [_sam_variant_axis()],
             "variants_shared_across_tasks": True,
@@ -621,6 +627,8 @@ def setup() -> dict:
             # 跨帧 memory bank 的有状态视频追踪,内部编排复合。
             "composition": "composite",
             "supported_prompts": ["bbox"],
+            # 视频追踪: 以框提示初始化 (有状态视频, 非批量 crop 下游)。
+            "supported_inputs": ["bbox_prompt", "full_image"],
             "supported_geometric_outputs": ["bbox"],
             "supported_trackers": ["sam2_video"],
             "supported_variants": [_sam_variant_axis()],
@@ -641,6 +649,8 @@ def setup() -> dict:
             # 单次 SAM 推理(框→mask),原子;DINO 不参与, 故只声明 sam 轴。
             "composition": "atom",
             "supported_prompts": ["bbox"],
+            # 框→分割: 消费上游检测框 (geometry-prompt 批量下游)。
+            "supported_inputs": ["bbox_prompt", "full_image"],
             "supported_geometric_outputs": ["polygon"],
             "supported_variants": [_sam_variant_axis()],
             "variants_shared_across_tasks": True,

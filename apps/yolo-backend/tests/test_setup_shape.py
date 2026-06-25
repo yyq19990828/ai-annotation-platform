@@ -52,6 +52,12 @@ def test_setup_has_four_models(setup_dict: dict) -> None:
     assert ids == {"detect", "segment", "pose", "obb"}
 
 
+def test_setup_models_declare_supported_inputs(setup_dict: dict) -> None:
+    """v0.18.16 · 各 task 显式声明 supported_inputs (整图 + crop, 可作 crop-detect 下游)。"""
+    for m in setup_dict["models"]:
+        assert m["supported_inputs"] == ["full_image", "crop"]
+
+
 def test_setup_models_carry_protocol_task(setup_dict: dict) -> None:
     tasks = {m["task"] for m in setup_dict["models"]}
     assert tasks == {"detection", "segmentation", "keypoint", "obb"}

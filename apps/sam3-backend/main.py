@@ -444,6 +444,8 @@ def setup() -> dict:
             # v0.18.12 · 纯文本检测, 原子单元。
             "composition": "atom",
             "supported_prompts": ["text"],
+            # 文本检测器: 整图 / 父框 crop 上检子物体 (crop-detect 下游)。
+            "supported_inputs": ["full_image", "crop"],
             "supported_geometric_outputs": ["bbox"],
             "supported_text_outputs": ["box"],
             "supported_variants": base["supported_variants"],
@@ -461,6 +463,8 @@ def setup() -> dict:
             # v0.18.12 · 文本→检测→分割一体的内置流程, 非原子。
             "composition": "composite",
             "supported_prompts": ["text"],
+            # 文本→分割: 整图 / 父框 crop 上跑 (文本驱动, 内置流程)。
+            "supported_inputs": ["full_image", "crop"],
             "supported_geometric_outputs": ["polygon"],
             "supported_text_outputs": ["mask", "both"],
             "supported_variants": base["supported_variants"],
@@ -478,6 +482,8 @@ def setup() -> dict:
             # v0.18.12 · 单步交互分割 (exemplar→mask), 原子单元。
             "composition": "atom",
             "supported_prompts": ["exemplar"],
+            # 交互分割: exemplar 提示驱动, 整图 (不作批量 crop/框下游)。
+            "supported_inputs": ["full_image"],
             "supported_geometric_outputs": ["polygon"],
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,

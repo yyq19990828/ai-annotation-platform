@@ -359,6 +359,8 @@ def _build_model_entry(
         # YOLO 各 task 均单次推理,原子(协议 v2.2)。
         "composition": "atom",
         "supported_prompts": ["none"],
+        # 纯批量检测/分割: 整图, 也可在父框 crop 上跑 (crop-detect 下游)。
+        "supported_inputs": ["full_image", "crop"],
         "supported_geometric_outputs": geometric_outputs,
         "output_attribute_types": ["class", "score"],
         "supported_variants": _supported_variants_for(task),

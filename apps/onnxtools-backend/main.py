@@ -177,6 +177,8 @@ def _detect_model_entry() -> dict[str, Any]:
         "composition": "composite",
         "is_interactive": False,
         "supported_prompts": ["none"],
+        # 一锅端检测+属性: 整图 / 父框 crop 上跑。
+        "supported_inputs": ["full_image", "crop"],
         "supported_geometric_outputs": ["bbox"],
         # 协议③：输出属性类型 + 取值域自描述，供平台一键导入项目 attribute_schema
         "output_attribute_types": ["class"],
@@ -202,6 +204,8 @@ def _detect_only_model_entry() -> dict[str, Any]:
         "composition": "atom",
         "is_interactive": False,
         "supported_prompts": ["none"],
+        # 纯检测: 整图 / 父框 crop 上检子物体 (crop-detect 下游)。
+        "supported_inputs": ["full_image", "crop"],
         "supported_geometric_outputs": ["bbox"],
         # 纯检测不写属性,不声明 output_attribute_*（属性交下游纯分类原子）。
         "default_thresholds": {"conf": CONF_THRES},
@@ -225,6 +229,8 @@ def _classify_model_entry() -> dict[str, Any]:
         "composition": "atom",
         "is_interactive": False,
         "supported_prompts": ["none"],
+        # 纯分类: 对裁好的 ROI(crop)分类, 也可整图。
+        "supported_inputs": ["full_image", "crop"],
         # 纯分类不产几何(整图框仅占位,平台 merge 丢弃),不声明几何输出能力。
         "supported_geometric_outputs": [],
         "output_attribute_types": ["class"],

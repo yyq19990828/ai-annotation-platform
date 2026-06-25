@@ -57,6 +57,20 @@ def test_setup_models_cover_protocol_tasks():
     assert tasks == {"detection", "segmentation", "interactive_seg", "tracker"}
 
 
+def test_setup_models_declare_supported_inputs():
+    """v0.18.16 · 各 model 显式声明 supported_inputs (一等输入契约)。"""
+    by_id = {m["id"]: m for m in setup()["models"]}
+    assert by_id["grounded-sam2-detection"]["supported_inputs"] == ["full_image", "crop"]
+    assert by_id["grounded-sam2-segmentation"]["supported_inputs"] == ["full_image", "crop"]
+    assert by_id["grounded-sam2-interactive-seg"]["supported_inputs"] == [
+        "bbox_prompt",
+        "point_prompt",
+        "full_image",
+    ]
+    assert by_id["grounded-sam2-tracker"]["supported_inputs"] == ["bbox_prompt", "full_image"]
+    assert by_id["grounded-sam2-box-seg"]["supported_inputs"] == ["bbox_prompt", "full_image"]
+
+
 def test_setup_each_model_carries_infra_pytorch():
     data = setup()
     for m in data["models"]:

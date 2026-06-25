@@ -55,6 +55,14 @@ def test_setup_each_model_carries_infra_pytorch(setup_fn):
         assert m["model_family"] == "sam3"
 
 
+def test_setup_models_declare_supported_inputs(setup_fn):
+    """v0.18.16 · 各 model 显式声明 supported_inputs (一等输入契约)。"""
+    by_id = {m["id"]: m for m in setup_fn()["models"]}
+    assert by_id["sam3-detection"]["supported_inputs"] == ["full_image", "crop"]
+    assert by_id["sam3-segmentation"]["supported_inputs"] == ["full_image", "crop"]
+    assert by_id["sam3-interactive-seg"]["supported_inputs"] == ["full_image"]
+
+
 def test_detection_model_text_to_bbox(setup_fn):
     data = setup_fn()
     det = next(m for m in data["models"] if m["task"] == "detection")
