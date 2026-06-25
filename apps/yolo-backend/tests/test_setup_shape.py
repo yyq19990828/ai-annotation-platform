@@ -232,9 +232,24 @@ def test_setup_yolo11_recommended_in_each_model(setup_dict: dict) -> None:
 def test_setup_params_schema_keys(setup_dict: dict) -> None:
     for m in setup_dict["models"]:
         props = m["params"]["properties"]
-        assert "conf" in props
         assert "iou" in props
         assert "max_det" in props
+        # v0.18.24 · exemplar 用 score_threshold 替代 conf 作为置信度旋钮 (与 sam3 字段名对齐),
+        # 闭集/文本路径仍用 conf。
+        if m["id"] in EXEMPLAR_IDS:
+            assert "score_threshold" in props
+            assert "conf" not in props
+        else:
+            assert "conf" in props
+
+
+def test_setup_exemplar_params_score_threshold_default(setup_dict: dict) -> None:
+    """v0.18.24 · exemplar 阈值默认 0.25 (前端阈值滑块初值由此而来); YOLOE VP 打分偏保守,
+    沿用闭集 0.5 会把正确候选挡在门外。"""
+    ex = next(m for m in setup_dict["models"] if m["id"] == "exemplar-yoloe")
+    st = ex["params"]["properties"]["score_threshold"]
+    assert st["default"] == 0.25
+    assert st["x-platform-role"] == "confidence"
 
 
 def test_setup_params_schema_platform_roles(setup_dict: dict) -> None:

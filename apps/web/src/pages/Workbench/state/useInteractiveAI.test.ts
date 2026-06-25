@@ -64,37 +64,6 @@ describe("useInteractiveAI", () => {
     expect(result.current.candidates[0].source).toBe("bbox");
   });
 
-  it("runText 路由到 ctx.type='text' 并 trim 空白", async () => {
-    interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
-    const { result } = renderHook(() => useInteractiveAI(ARGS));
-    act(() => result.current.runText("  car  "));
-    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
-    expect(interactiveAnnotateMock.mock.calls[0][2].context).toEqual({
-      type: "text",
-      text: "car",
-      output: "mask", // v0.9.4 phase 2 · 默认 mask 兼容老前端 / 老 backend
-    });
-  });
-
-  it("runText 透传 outputMode='box' 走 DINO 直出路径", async () => {
-    interactiveAnnotateMock.mockResolvedValue({ result: [], score: null });
-    const { result } = renderHook(() => useInteractiveAI(ARGS));
-    act(() => result.current.runText("person", "box"));
-    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
-    expect(interactiveAnnotateMock.mock.calls[0][2].context).toMatchObject({
-      type: "text",
-      text: "person",
-      output: "box",
-    });
-  });
-
-  it("runText 空字符串不发请求", async () => {
-    const { result } = renderHook(() => useInteractiveAI(ARGS));
-    act(() => result.current.runText("   "));
-    await new Promise((r) => setTimeout(r, 20));
-    expect(interactiveAnnotateMock).not.toHaveBeenCalled();
-  });
-
   it("runPoint 累加全量点 (v0.18.17 · 防抖窗口内多次点击累加成一个会话, 重发全量)", async () => {
     interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
     vi.useFakeTimers();
@@ -205,7 +174,7 @@ describe("useInteractiveAI", () => {
   it("空 result → 提示 + candidates 清空", async () => {
     interactiveAnnotateMock.mockResolvedValue({ result: [] });
     const { result } = renderHook(() => useInteractiveAI(ARGS));
-    act(() => result.current.runText("nothing"));
+    act(() => result.current.runBbox([0.1, 0.1, 0.2, 0.2]));
     await waitFor(() =>
       expect(pushToastMock).toHaveBeenCalledWith(
         expect.objectContaining({ msg: "SAM 未返回候选" }),
@@ -247,7 +216,7 @@ describe("useInteractiveAI", () => {
       ],
     });
     const { result } = renderHook(() => useInteractiveAI(ARGS));
-    act(() => result.current.runText("a b c"));
+    act(() => result.current.runBbox([0.1, 0.1, 0.2, 0.2]));
     await waitFor(() => expect(result.current.candidates).toHaveLength(3));
     expect(result.current.activeIdx).toBe(0);
     act(() => result.current.cycle(1));
@@ -453,12 +422,12 @@ describe("useInteractiveAI", () => {
       expect(interactiveAnnotateMock.mock.calls[1][2].context.output).toBe("both");
     });
 
-    it("切到 point/text/bbox 模式 → 重置 exemplar 会话框", async () => {
+    it("切到 point/bbox 模式 → 重置 exemplar 会话框", async () => {
       interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
       const { result } = renderHook(() => useInteractiveAI(ARGS));
       act(() => result.current.runExemplar([0.1, 0.1, 0.3, 0.3], 1, "mask"));
       await waitFor(() => expect(result.current.sessionExemplars).toHaveLength(1));
-      act(() => result.current.runText("dog"));
+      act(() => result.current.runBbox([0.4, 0.4, 0.6, 0.6]));
       expect(result.current.sessionExemplars).toHaveLength(0);
     });
 

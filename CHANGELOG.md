@@ -34,6 +34,16 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.24] - 2026-06-26
+
+### Fixed
+
+- **YOLOE exemplar 候选静默不显示（坐标系 bug）**：yolo-backend 的 exemplar 交互候选误用了批量入库的 Label Studio 百分比坐标（0-100），而前端交互候选浮层 `SamCandidateOverlay` 按归一化（0-1）渲染（与 sam3/gsam2 交互候选一致）——`x=0.55` 被发成 `55`，渲染时 `55 × imgW` 把框画到画布外，导致「后端明明返回了高分候选、前端却完全看不见，且因非空结果不报错而静默无提示」。修复：`_emit_detection`/`_emit_segmentation` 增加 `normalized` 开关，exemplar（交互单数 wire）发归一化 0-1，闭集四 task / 文本批量路径（走入库）仍发百分比。
+
+### Changed
+
+- **YOLOE exemplar 默认阈值 0.5 → 0.25**：yolo-backend `/setup` 的 `exemplar-yoloe` 模型改用专属 params——以 `score_threshold`（默认 **0.25**，`x-platform-role=confidence`，与 sam3 字段名对齐）替代闭集路径的 `conf`，工作台 exemplar 阈值滑块初值由此而来。YOLOE 视觉提示对相似目标的相似度打分天然偏保守（实测相似小目标多框命中也仅 ~0.5），沿用闭集默认 0.5 会把正确候选挡在门外；0.25 是召回与噪声的平衡点（大而有辨识度的目标仍 >0.9，不受影响）。`iou`/`max_det` 与闭集一致。
+
 ## [0.18.23] - 2026-06-26
 
 yolo-backend 开集 epic 收官 (第 3/3 版): YOLOE **visual prompt exemplar** 接成交互工具——工作台拖框圈一个样例, YOLOE 在全图找出同类目标 (框 / mask), 与 sam3 的 exemplar「找全图相似」同列。后端推理链路 + 平台能力透传 + 前端工具门控全部落地。规划见 [`docs/plans/2026-06-25-v0.18.23-yoloe-visual-prompt-exemplar.md`](docs/plans/2026-06-25-v0.18.23-yoloe-visual-prompt-exemplar.md)。

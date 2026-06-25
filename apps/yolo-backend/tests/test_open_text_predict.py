@@ -204,3 +204,35 @@ async def test_exemplar_score_threshold_maps_to_conf() -> None:
     p = YoloPredictor(_FakePool(model))
     await p.predict_one("x", _ex_ctx("box", [{"bbox": [0, 0, 0.2, 0.2]}], score_threshold=0.4))
     assert model.last_predict_kw["conf"] == 0.4
+
+
+async def test_exemplar_box_coords_are_normalized_0_1() -> None:
+    """v0.18.24 · exemplar 是交互候选 → 坐标须归一化 0-1 (与 sam3/gsam2 一致),
+    否则前端浮层 `coord * imgW` 把框画到画布外 (百分比 ×imgW = ×100 飞出)。
+    fake box xyxy=[10,20,110,220] / 图 200×240 → x=0.05 w=0.5。"""
+    p = YoloPredictor(_FakePool(_FakeYoloe(with_mask=False)))
+    items, *_ = await p.predict_one("x", _ex_ctx("box", [{"bbox": [0, 0, 0.2, 0.2]}]))
+    v = items[0]["value"]
+    assert v["x"] == pytest.approx(0.05)
+    assert v["y"] == pytest.approx(20 / 240)
+    assert v["width"] == pytest.approx(0.5)
+    assert v["height"] == pytest.approx(200 / 240)
+
+
+async def test_exemplar_polygon_coords_are_normalized_0_1() -> None:
+    """exemplar mask 多边形同样归一化 0-1。fake poly 角点 (10,20) / 200×240 → (0.05, 0.0833)。"""
+    p = YoloPredictor(_FakePool(_FakeYoloe(with_mask=True)))
+    items, *_ = await p.predict_one("x", _ex_ctx("mask", [{"bbox": [0, 0, 0.2, 0.2]}]))
+    pts = items[0]["value"]["points"]
+    assert pts[0][0] == pytest.approx(0.05)
+    assert pts[0][1] == pytest.approx(20 / 240)
+
+
+async def test_text_batch_box_coords_stay_percent() -> None:
+    """对照: 文本批量路径走入库, 坐标保持 Label Studio 百分比 (0-100), 不受 exemplar 归一化影响。
+    同一 fake box → x=5.0 w=50.0。"""
+    p = YoloPredictor(_FakePool(_FakeYoloe(with_mask=False)))
+    items, *_ = await p.predict_one("x", _ctx("box"))
+    v = items[0]["value"]
+    assert v["x"] == pytest.approx(5.0)
+    assert v["width"] == pytest.approx(50.0)

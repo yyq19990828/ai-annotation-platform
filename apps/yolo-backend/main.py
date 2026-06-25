@@ -340,6 +340,35 @@ _PARAMS_SCHEMA = {
     },
 }
 
+# v0.18.24 · exemplar (YOLOE 视觉提示) 专属 params: 用 `score_threshold` 替代 conf 作为置信度
+# 旋钮 (与 sam3 字段名对齐, 平台 exemplar 阈值滑块读 model.params.score_threshold.default)。
+# 默认 0.25 而非闭集 0.25→实测 YOLOE VP 相似度分天然打得保守 (相似小目标多框命中也仅 ~0.5),
+# 沿用闭集 0.5 会把正确候选挡在门外; 0.25 是召回与噪声的平衡点 (大目标仍 >0.9, 不受影响)。
+_EXEMPLAR_DEFAULT_SCORE_THRESHOLD = 0.25
+_EXEMPLAR_PARAMS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "score_threshold": {
+            "type": "number", "minimum": 0.0, "maximum": 1.0,
+            "default": _EXEMPLAR_DEFAULT_SCORE_THRESHOLD,
+            "title": "置信度阈值",
+            "x-platform-role": PlatformRole.CONFIDENCE.value,
+            "description": "只保留相似度高于此值的候选。YOLOE 视觉提示对相似目标打分偏保守, 阈值不宜过高; 调低=更多候选但可能含误检。",
+        },
+        "iou": {
+            "type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.70,
+            "title": "NMS IoU 阈值",
+            "x-platform-role": PlatformRole.IOU.value,
+            "description": "非极大值抑制重叠阈值. 调高保留更多重叠框, 调低更严格去重.",
+        },
+        "max_det": {
+            "type": "integer", "minimum": 1, "maximum": 1000, "default": 300,
+            "title": "单图最大检出数",
+            "x-platform-role": PlatformRole.MAX_DET.value,
+        },
+    },
+}
+
 
 def _variant_combinations_for(task: str) -> list[list[str]]:
     """该 task 下所有合法 (series, size) 组合, 与 supported_variants 轴顺序一致.
@@ -523,7 +552,8 @@ def _build_exemplar_model_entry() -> dict[str, Any]:
         ),
         "variant_combinations": _openvocab_variant_combinations(OPENVOCAB_YOLOE_SERIES),
         "default_variants": {"series": default_series, "size": default_size},
-        "params": _PARAMS_SCHEMA,
+        # exemplar 专属 params: score_threshold 默认 0.25 (前端阈值滑块初值由此而来)。
+        "params": _EXEMPLAR_PARAMS_SCHEMA,
     }
 
 

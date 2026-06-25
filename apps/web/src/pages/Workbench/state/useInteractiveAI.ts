@@ -13,14 +13,14 @@ import { createSamCache, makeSamCacheKey } from "./useSamCache";
  *   point           : ctx { type:"point", points:[[x,y],...], labels:[1|0,...], multimask_output }
  *                     (v0.18.17 · 正/负点累加, 每次重发全量点; 首点 multimask 出候选)
  *   interactive_box : ctx { type:"interactive_box", bbox:[x1,y1,x2,y2] } (v0.18.17 · 旧 "bbox" 改名)
- *   text            : ctx { type:"text",  text }
  *   exemplar        : ctx { type:"exemplar", bbox:[x1,y1,x2,y2] } (SAM 3 PCS 全图相似)
  * 后端返回 `result[]`，每条形如：
  *   { type:"polygonlabels", value:{ points:[[x,y]...], polygonlabels:[label] }, score }
  *
  * 候选以「待确认紫虚线」叠加到 Konva canvas，由 `<PendingPolygonsOverlay>` 消费。
  *
- * 防抖：runPoint 80ms（轻击 / 多点同图场景）；runBbox / runText 不防抖（一次完整动作）。
+ * 防抖：runPoint 80ms（轻击 / 多点同图场景）；runBbox 不防抖（一次完整动作）。
+ * 文本召回 (type=text) 自 v0.14.18 起归批量 AI 面板，不再走本 hook 的交互浮层。
  */
 /** v0.9.4 phase 2 · text 模式输出形态. point/bbox 模式恒为 "mask"(协议默认). */
 export type TextOutputMode = "box" | "mask" | "both";
@@ -43,7 +43,7 @@ export interface PendingCandidate {
   label: string;
   score: number | null;
   /** 触发该候选的 prompt 类型 */
-  source: "point" | "bbox" | "text" | "exemplar";
+  source: "point" | "bbox" | "exemplar";
 }
 
 export interface UseInteractiveAIArgs {
@@ -75,7 +75,6 @@ export interface UseInteractiveAIReturn {
   /** v0.10.2 · 各 run* 接受可选 extraParams; 由 AIToolDrawer 注入 (box_threshold 等). */
   runPoint: (pt: [number, number], polarity: 1 | 0, extraParams?: Record<string, unknown>) => void;
   runBbox: (bbox: [number, number, number, number], extraParams?: Record<string, unknown>) => void;
-  runText: (text: string, outputMode?: TextOutputMode, extraParams?: Record<string, unknown>) => void;
   /**
    * v0.18.19 · SAM 3 exemplar refine 会话: 拖框累加到正/负框集 (polarity 1=正 / 0=负), 每次
    * 重发全量 exemplars[] + text + 阈值 + output。与 bbox 同手势, context.type="exemplar"。
@@ -250,7 +249,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         if (next.length === 0) {
           pushToast({
             msg: "SAM 未返回候选",
-            sub: source === "text" ? "请尝试英文 prompt 或调低阈值" : "请尝试不同的位置/区域",
+            sub: source === "exemplar" ? "可调低阈值或多画几个样例框" : "请尝试不同的位置/区域",
             kind: "warning",
           });
         }
@@ -319,19 +318,6 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         { ...(extraParams ?? {}), type: "interactive_box", bbox, multimask_output: false },
         "bbox",
       );
-    },
-    [guard, dispatch, resetPointSession, resetExemplarSession],
-  );
-
-  const runText = useCallback(
-    (text: string, outputMode: TextOutputMode = "mask", extraParams?: Record<string, unknown>) => {
-      if (!guard()) return;
-      const trimmed = text.trim();
-      if (!trimmed) return;
-      resetPointSession();
-      resetExemplarSession();
-      // v0.9.4 phase 2 · output 字段控制 box/mask/both; 老 backend 缺字段时仍走 mask 兼容.
-      dispatch({ ...(extraParams ?? {}), type: "text", text: trimmed, output: outputMode }, "text");
     },
     [guard, dispatch, resetPointSession, resetExemplarSession],
   );
@@ -496,7 +482,6 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     setExemplarThreshold,
     runPoint,
     runBbox,
-    runText,
     runExemplar,
     rerunExemplar,
     cycle: cycleStable,

@@ -99,14 +99,18 @@ def _load_image(file_path: str, *, http_timeout: float = 10.0) -> Image.Image:
 def _bbox_to_rectanglelabels(
     x1: float, y1: float, x2: float, y2: float,
     cls_name: str, score: float, img_w: int, img_h: int,
+    normalized: bool = False,
 ) -> dict[str, Any]:
+    # 批量入库走 Label Studio 百分比 (0-100); 交互候选浮层 (sam3/gsam2 约定) 走归一化 (0-1)。
+    # 同一 emit 两种消费方坐标系不同, 由调用方按 wire (批量/交互) 指定 normalized。
+    s = 1.0 if normalized else 100.0
     return {
         "type": "rectanglelabels",
         "value": {
-            "x": (x1 / img_w) * 100.0,
-            "y": (y1 / img_h) * 100.0,
-            "width": ((x2 - x1) / img_w) * 100.0,
-            "height": ((y2 - y1) / img_h) * 100.0,
+            "x": (x1 / img_w) * s,
+            "y": (y1 / img_h) * s,
+            "width": ((x2 - x1) / img_w) * s,
+            "height": ((y2 - y1) / img_h) * s,
             "rectanglelabels": [cls_name],
         },
         "score": score,
@@ -116,11 +120,14 @@ def _bbox_to_rectanglelabels(
 def _polygon_to_polygonlabels(
     points_xy: list[tuple[float, float]],
     cls_name: str, score: float, img_w: int, img_h: int,
+    normalized: bool = False,
 ) -> dict[str, Any] | None:
-    """ultralytics mask 已经吐出 polygon 点列 (像素), 这里只做归一化."""
+    """ultralytics mask 已经吐出 polygon 点列 (像素), 这里只做缩放.
+    normalized=False → 百分比 (批量入库); True → 0-1 (交互候选浮层)。"""
     if len(points_xy) < 3:
         return None
-    pts = [[(x / img_w) * 100.0, (y / img_h) * 100.0] for x, y in points_xy]
+    s = 1.0 if normalized else 100.0
+    pts = [[(x / img_w) * s, (y / img_h) * s] for x, y in points_xy]
     return {
         "type": "polygonlabels",
         "value": {
@@ -372,15 +379,19 @@ class YoloPredictor:
         # exemplar 输出形态 box/mask/both (VPSeg 同时产出, 按 output 取用).
         want_mask = ctx.output in ("mask", "both")
         want_box = ctx.output == "box" or ctx.output == "both" or not want_mask
+        # exemplar 是交互单数 wire, 候选走前端浮层 (SamCandidateOverlay) → 坐标须归一化 0-1
+        # (与 sam3/gsam2 交互候选一致); 批量入库的百分比仅用于闭集四 task / 文本批量路径。
         items: list[dict[str, Any]] = []
         if want_box:
-            items += _emit_detection(r0, names, img_w, img_h)
+            items += _emit_detection(r0, names, img_w, img_h, normalized=True)
         if want_mask:
-            items += _emit_segmentation(r0, names, img_w, img_h)
+            items += _emit_segmentation(r0, names, img_w, img_h, normalized=True)
         return items, cache_hit, load_ms, inference_ms
 
 
-def _emit_detection(r0: Any, names: dict[int, str], img_w: int, img_h: int) -> list[dict]:
+def _emit_detection(
+    r0: Any, names: dict[int, str], img_w: int, img_h: int, normalized: bool = False,
+) -> list[dict]:
     out: list[dict] = []
     boxes = getattr(r0, "boxes", None)
     if boxes is None or len(boxes) == 0:
@@ -393,12 +404,14 @@ def _emit_detection(r0: Any, names: dict[int, str], img_w: int, img_h: int) -> l
         cls_idx = int(clss[i])
         cls_name = names.get(cls_idx, str(cls_idx))
         out.append(_bbox_to_rectanglelabels(
-            x1, y1, x2, y2, cls_name, float(confs[i]), img_w, img_h
+            x1, y1, x2, y2, cls_name, float(confs[i]), img_w, img_h, normalized=normalized
         ))
     return out
 
 
-def _emit_segmentation(r0: Any, names: dict[int, str], img_w: int, img_h: int) -> list[dict]:
+def _emit_segmentation(
+    r0: Any, names: dict[int, str], img_w: int, img_h: int, normalized: bool = False,
+) -> list[dict]:
     out: list[dict] = []
     masks = getattr(r0, "masks", None)
     boxes = getattr(r0, "boxes", None)
@@ -413,7 +426,7 @@ def _emit_segmentation(r0: Any, names: dict[int, str], img_w: int, img_h: int) -
         cls_idx = int(clss[i]) if i < len(clss) else 0
         cls_name = names.get(cls_idx, str(cls_idx))
         score = float(confs[i]) if i < len(confs) else 0.0
-        item = _polygon_to_polygonlabels(pts, cls_name, score, img_w, img_h)
+        item = _polygon_to_polygonlabels(pts, cls_name, score, img_w, img_h, normalized=normalized)
         if item is not None:
             out.append(item)
     return out
