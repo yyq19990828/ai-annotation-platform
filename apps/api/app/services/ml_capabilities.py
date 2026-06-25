@@ -137,6 +137,10 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         # v0.14.17 · 闭集检测器的原生类别表 (yolo model.names, [{index,name}]); 供前端类别白名单.
         # 仅在该 task 模型已加载过 (warmup/predict) 时 backend /setup 才带, 否则为空。
         "classes": list(model.get("classes") or []),
+        # v0.18.23 · exemplar 模型的能力声明 (multi_box / negative_box / text_combination /
+        # threshold_refilter); 前端工作台据此渲染 exemplar 控件 (YOLOE 无负框 → 隐藏负极性)。
+        # 缺字段 = None, 前端按「全支持」向后兼容。
+        "exemplar_capabilities": model.get("exemplar_capabilities") or None,
     }
     out["modality"] = _model_modality(out)
     return out
@@ -181,6 +185,8 @@ def _synthesize_single_model(setup: dict, backend_infra: str) -> dict:
         "default_thresholds": {},
         "resource_profile": {},
         "params": setup.get("params") or {},
+        # v0.18.23 · 老 backend (sam3) 的 exemplar 能力在顶层声明, 透传供前端 exemplar 控件渲染。
+        "exemplar_capabilities": setup.get("exemplar_capabilities") or None,
     }
     out["modality"] = _model_modality(out)
     return out

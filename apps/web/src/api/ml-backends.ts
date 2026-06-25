@@ -82,6 +82,15 @@ export interface MLModelCapability {
   // v0.14.17 · 模型原生类别表 (闭集检测器, 读自权重 model.names). 供前端渲染类别白名单勾选;
   // 仅在该 task 模型已加载过 (warmup / 首次 predict 后) 时有值。
   classes?: { index: number; name: string }[];
+  // v0.18.23 · exemplar 模型能力声明; 工作台 AI 面板据此渲染 exemplar 控件
+  // (negative_box=false → 隐藏负极性按钮; text_combination=false → 隐藏 text 输入)。
+  // 缺省 = 全支持 (向后兼容 sam3 现状)。
+  exemplar_capabilities?: {
+    multi_box?: boolean;
+    negative_box?: boolean;
+    text_combination?: boolean;
+    threshold_refilter?: boolean;
+  };
 }
 
 // v0.10.1 · /setup 协议自描述响应 (与后端 sam3/grounded-sam2 main.py 同构).

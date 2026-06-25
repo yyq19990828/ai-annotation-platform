@@ -4,6 +4,8 @@
 // v0.14.18 · text-prompt 工具归批量线 (从工具栏摘除), 故 SamTextPanel 输入段不再在此渲染;
 //   「后端」槽位改为交互后端选择器 (≥2 候选时可切, 能力作用域化); 模型选择器按当前工具 prompt 过滤.
 
+import { useEffect } from "react";
+
 import { Icon } from "@/components/ui/Icon";
 import type { MLBackendCapability, MLModelCapability } from "@/api/ml-backends";
 import type { SamPolarity, Tool } from "../state/useWorkbenchState";
@@ -153,6 +155,25 @@ export function AIToolDrawer({
   const showModelSelector = filteredModels.length > 1 && !!onSetActiveModelId;
   const warnings = capabilityWarnings ?? [];
 
+  // v0.18.23 · 当前 exemplar 工具对应的交互模型能力 (隐藏后端不支持的控件)。
+  // 优先取选中 activeModel, 回退到首个支持 exemplar 的交互模型 (单后端常态)。
+  const exemplarModel =
+    tool === "exemplar"
+      ? (filteredModels.find((m) => m.id === activeModelId) ?? filteredModels[0])
+      : undefined;
+  const exCaps = exemplarModel?.exemplar_capabilities;
+  // 缺省 = 全支持 (向后兼容 sam3 旧 setup 不带本字段时不改行为)。
+  const exemplarNegative = exCaps?.negative_box !== false;
+  const exemplarTextCombo = exCaps?.text_combination !== false;
+
+  // 后端无负框 (YOLOE) 时强制正极性: 隐藏负极性按钮后, 防止从 smart-point 残留的负极性
+  // 让 exemplar 拖框误发 label=False (被后端剔除 → 0 结果)。
+  useEffect(() => {
+    if (tool === "exemplar" && !exemplarNegative && samPolarity === "negative") {
+      onSetSamPolarity("positive");
+    }
+  }, [tool, exemplarNegative, samPolarity, onSetSamPolarity]);
+
   // v0.14.18 · 交互后端选择器: ≥2 个候选 (支持当前工具 prompt 的后端) 时可切, 否则只读显示。
   const backendCands = interactiveBackends ?? [];
   const canSwitchBackend = backendCands.length >= 2 && !!onSelectInteractive;
@@ -216,8 +237,9 @@ export function AIToolDrawer({
         </div>
       )}
 
-      {/* 工具特定控件: 极性切换 (smart-point 点正负 / exemplar 框正负, 与 Alt 修饰键合并)。 */}
-      {(tool === "smart-point" || tool === "exemplar") && (
+      {/* 工具特定控件: 极性切换 (smart-point 点正负 / exemplar 框正负, 与 Alt 修饰键合并)。
+          v0.18.23 · exemplar 仅在后端支持负框时显示 (YOLOE negative_box=false → 隐藏, 恒正框)。 */}
+      {(tool === "smart-point" || (tool === "exemplar" && exemplarNegative)) && (
         <div className="flex items-center gap-2">
           <span className={FIELD_LABEL_CLASS}>极性</span>
           <button
@@ -257,8 +279,9 @@ export function AIToolDrawer({
         </div>
       )}
 
-      {/* v0.18.19 · exemplar refine: 叠加 text 概念 + per-request 阈值。会话进行中改动即重跑。 */}
-      {tool === "exemplar" && onSetExemplarText && (
+      {/* v0.18.19 · exemplar refine: 叠加 text 概念 + per-request 阈值。会话进行中改动即重跑。
+          v0.18.23 · text 叠加仅在后端支持时显示 (YOLOE text_combination=false → 隐藏)。 */}
+      {tool === "exemplar" && onSetExemplarText && exemplarTextCombo && (
         <div className="flex flex-col gap-1" data-testid="exemplar-text">
           <span className={FIELD_LABEL_CLASS}>叠加文本概念 (可选)</span>
           <input
