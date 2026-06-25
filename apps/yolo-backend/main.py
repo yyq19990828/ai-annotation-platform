@@ -450,20 +450,29 @@ def _openvocab_variant_combinations(
 def _build_openvocab_model_entry(
     model_id: str, display_name: str,
     series_matrix: dict[str, tuple[str, ...]], default: tuple[str, str],
+    *,
+    task: str = "detection",
+    geometric_outputs: list[str] | None = None,
+    supported_text_outputs: list[str] | None = None,
 ) -> dict[str, Any]:
-    """开集文本检测 model 条目 (v0.18.21). 与闭集结构一致, 但 supported_prompts=['text']."""
+    """开集文本 model 条目 (v0.18.21 检测 / v0.18.22 分割). 与闭集结构一致, 但
+    supported_prompts=['text']; task/几何输出/文本输出形态按条目区分.
+
+    supported_text_outputs (协议: 文本批量路径的输出形态选项, 与 gsam2 同形) 决定前端文本面板
+    是否展示 box/mask/both 三选: 检测条目 ['box'] 锁框, 分割条目 ['mask','both'] 出掩膜。
+    """
     default_series, default_size = default
-    return {
+    entry: dict[str, Any] = {
         "id": model_id,
         "display_name": display_name,
-        "task": "detection",
+        "task": task,
         "model_family": "yolo",
         "infra": "pytorch",
         "is_interactive": False,  # 文本=批量, 不进交互工具栏.
         "composition": "atom",
         "supported_prompts": ["text"],
         "supported_inputs": ["full_image", "crop"],
-        "supported_geometric_outputs": ["bbox"],
+        "supported_geometric_outputs": geometric_outputs or ["bbox"],
         "output_attribute_types": ["class"],
         "resource_profile": {"device": "gpu", "batchable": True},
         "supported_variants": _build_openvocab_variants(series_matrix, default),
@@ -471,6 +480,9 @@ def _build_openvocab_model_entry(
         "default_variants": {"series": default_series, "size": default_size},
         "params": _PARAMS_SCHEMA,
     }
+    if supported_text_outputs is not None:
+        entry["supported_text_outputs"] = supported_text_outputs
+    return entry
 
 
 @app.get("/setup")
@@ -514,10 +526,21 @@ def setup() -> dict[str, Any]:
             _build_openvocab_model_entry(
                 "detect-world", "YOLO-World 开集文本检测",
                 OPENVOCAB_WORLD_SERIES, OPENVOCAB_DEFAULT_WORLD,
+                task="detection", geometric_outputs=["bbox"],
+                supported_text_outputs=["box"],
             ),
             _build_openvocab_model_entry(
                 "detect-yoloe", "YOLOE 开集文本检测",
                 OPENVOCAB_YOLOE_SERIES, OPENVOCAB_DEFAULT_YOLOE,
+                task="detection", geometric_outputs=["bbox"],
+                supported_text_outputs=["box"],
+            ),
+            # v0.18.22 · YOLOE 开集文本分割 (同 -seg 权重出 mask, 与 detect-yoloe 共用句柄).
+            _build_openvocab_model_entry(
+                "segment-yoloe", "YOLOE 开集文本分割",
+                OPENVOCAB_YOLOE_SERIES, OPENVOCAB_DEFAULT_YOLOE,
+                task="segmentation", geometric_outputs=["polygon"],
+                supported_text_outputs=["mask", "both"],
             ),
         ],
     }

@@ -34,6 +34,15 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.22] - 2026-06-26
+
+yolo-backend 开集文本能力补齐**实例分割**：批量文本面板用自然语言类名让 YOLOE 出多边形 mask（与 grounded-sam2 文本分割同形）。复用 v0.18.21 的文本推理链路与 PE 缓存，同一 `-seg` 权重检测/分割共用一份句柄——`detect-yoloe` 与 `segment-yoloe` 走同一 pool key，仅按 `output`（box/mask/both）取框 / mask / 两者。YOLO-World 无分割头，本版仅涉及 YOLOE。yolo 开集 epic 第 2/3 版。规划见 [`docs/plans/2026-06-25-v0.18.22-yoloe-openvocab-text-segmentation.md`](docs/plans/2026-06-25-v0.18.22-yoloe-openvocab-text-segmentation.md)。
+
+### Added
+
+- **开集文本分割模型（yolo-backend）**：`/setup` 新增 `segment-yoloe`（YOLOE，series `yoloe-v8`/`yoloe-11`/`yoloe-26` × 档位），`task=segmentation`、`supported_geometric_outputs=["polygon"]`、`supported_text_outputs=["mask","both"]`、`supported_prompts=["text"]`、`is_interactive=false`。前端文本面板据 `supported_text_outputs` 派生输出形态三选，与 gsam2 文本分割同列。
+- **文本→mask 推理分支**：`_predict_open_text` 按 `ctx.output` 分流——`box` 出 `rectanglelabels`、`mask` 出 `polygonlabels`（复用闭集 segment 的 mask→polygon 简化链路）、`both` 同时返回；world 系列即便请求 mask 也退回检测框（无分割头）。`detect-yoloe`/`segment-yoloe` 同 `-seg` 权重共用 pool 句柄，切换输出形态无需重载（实测 mask 复用 warm 句柄 ~12ms）。
+
 ## [0.18.21] - 2026-06-25
 
 yolo-backend 从「纯闭集批量」扩出**开集文本检测**：在批量文本面板用自然语言类名（如 `person, bus`）让 YOLO-World / YOLOE 出框，与 grounded-sam2 的文本能力同列。零新仓（ultralytics 8.4.x 原生内置 `YOLOWorld`/`YOLOE`），权重按 release v8.4.0 实测核对可下载。yolo 开集 epic 第 1/3 版（后续 v0.18.22 文本分割、v0.18.23 visual prompt exemplar 交互）。规划见 [`docs/plans/2026-06-25-v0.18.21-yolo-openvocab-text-detection.md`](docs/plans/2026-06-25-v0.18.21-yolo-openvocab-text-detection.md)。

@@ -40,9 +40,11 @@ def test_setup_infra_pytorch(setup_dict: dict) -> None:
     assert setup_dict["infra"] == "pytorch"
 
 
-# v0.18.21 起闭集四 task + 开集两条文本检测模型并存.
+# v0.18.21 起闭集四 task + 开集文本检测 2 条; v0.18.22 加开集文本分割 1 条.
 CLOSED_IDS = {"detect", "segment", "pose", "obb"}
-OPENVOCAB_IDS = {"detect-world", "detect-yoloe"}
+OPENVOCAB_DETECT_IDS = {"detect-world", "detect-yoloe"}
+OPENVOCAB_SEGMENT_IDS = {"segment-yoloe"}
+OPENVOCAB_IDS = OPENVOCAB_DETECT_IDS | OPENVOCAB_SEGMENT_IDS
 
 
 def test_setup_supported_prompts_none_and_text(setup_dict: dict) -> None:
@@ -50,24 +52,48 @@ def test_setup_supported_prompts_none_and_text(setup_dict: dict) -> None:
     assert setup_dict["supported_prompts"] == ["none", "text"]
 
 
-def test_setup_has_six_models(setup_dict: dict) -> None:
-    """v0.18.21 · 闭集 4 + 开集文本检测 2 = 6."""
+def test_setup_has_seven_models(setup_dict: dict) -> None:
+    """v0.18.22 · 闭集 4 + 开集文本检测 2 + 开集文本分割 1 = 7."""
     models = setup_dict["models"]
-    assert len(models) == 6
+    assert len(models) == 7
     ids = {m["id"] for m in models}
     assert ids == CLOSED_IDS | OPENVOCAB_IDS
 
 
 def test_setup_openvocab_models_declare_text_prompt(setup_dict: dict) -> None:
-    """开集模型 supported_prompts=['text'], 闭集为 ['none']."""
+    """开集模型 supported_prompts=['text'] 且非交互; 闭集为 ['none'].
+
+    检测条目几何=bbox, 分割条目几何=polygon。
+    """
     for m in setup_dict["models"]:
-        if m["id"] in OPENVOCAB_IDS:
+        if m["id"] in OPENVOCAB_DETECT_IDS:
             assert m["supported_prompts"] == ["text"]
             assert m["task"] == "detection"
             assert m["supported_geometric_outputs"] == ["bbox"]
             assert m["is_interactive"] is False
+        elif m["id"] in OPENVOCAB_SEGMENT_IDS:
+            assert m["supported_prompts"] == ["text"]
+            assert m["task"] == "segmentation"
+            assert m["supported_geometric_outputs"] == ["polygon"]
+            assert m["is_interactive"] is False
         else:
             assert m["supported_prompts"] == ["none"]
+
+
+def test_setup_openvocab_text_outputs(setup_dict: dict) -> None:
+    """v0.18.22 · 文本输出形态: 检测条目锁 box, 分割条目 mask/both (与 gsam2 同形)。"""
+    for m in setup_dict["models"]:
+        if m["id"] in OPENVOCAB_DETECT_IDS:
+            assert m["supported_text_outputs"] == ["box"]
+        elif m["id"] in OPENVOCAB_SEGMENT_IDS:
+            assert m["supported_text_outputs"] == ["mask", "both"]
+
+
+def test_setup_segment_yoloe_yoloe_series_only(setup_dict: dict) -> None:
+    """segment-yoloe 只暴露 yoloe series (world 无分割头)。"""
+    seg = next(m for m in setup_dict["models"] if m["id"] == "segment-yoloe")
+    series = {v["value"] for a in seg["supported_variants"] if a["key"] == "series" for v in a["variants"]}
+    assert series == {"yoloe-v8", "yoloe-11", "yoloe-26"}
 
 
 def test_setup_openvocab_series_namespaces(setup_dict: dict) -> None:
@@ -280,8 +306,10 @@ def test_setup_default_variants_prefer_yolo11_s(setup_dict: dict) -> None:
 def test_setup_openvocab_default_variants(setup_dict: dict) -> None:
     world = next(m for m in setup_dict["models"] if m["id"] == "detect-world")
     yoloe = next(m for m in setup_dict["models"] if m["id"] == "detect-yoloe")
+    seg = next(m for m in setup_dict["models"] if m["id"] == "segment-yoloe")
     assert world["default_variants"] == {"series": "yolo-worldv2", "size": "s"}
     assert yoloe["default_variants"] == {"series": "yoloe-11", "size": "s"}
+    assert seg["default_variants"] == {"series": "yoloe-11", "size": "s"}
 
 
 # ---------- v0.14.14: warmup_endpoint 声明 ----------

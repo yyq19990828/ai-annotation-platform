@@ -242,10 +242,16 @@ class YoloPredictor:
     async def _predict_open_text(
         self, file_path: str, ctx: Context
     ) -> tuple[list[dict[str, Any]], bool, int | None, int]:
-        """开集文本检测 (v0.18.21). series 决定 family (world/yoloe), 文本 → 类名 → 检测框.
+        """开集文本推理 (v0.18.21 检测 / v0.18.22 分割). series 决定 family (world/yoloe),
+        文本 → 类名 → 框 / mask.
 
-        pool key 用 (POOL_TASK_OPENVOCAB, series, size): yoloe 的 det/seg 同权重共用一份.
-        v0.18.21 仅 output=box → 检测 (rectanglelabels); mask 留 v0.18.22.
+        pool key 用 (POOL_TASK_OPENVOCAB, series, size): yoloe 的 det/seg 同权重共用一份,
+        detect-yoloe 与 segment-yoloe 走同一句柄, 仅 ctx.output 决定取 box / mask / 两者.
+
+        - output=box  → 检测框 (rectanglelabels). world/yoloe 皆可.
+        - output=mask → 实例分割 (polygonlabels). 仅 yoloe -seg 权重有 mask 头;
+          world 无分割头时退回检测框.
+        - output=both → 同时返回框 + mask.
         """
         variants: Variants = ctx.variants
         series, size = variants.series, variants.size
@@ -281,7 +287,15 @@ class YoloPredictor:
         r0 = results[0]
         # set_classes 后 model.names = 设入的类名, cls index 映射回类名.
         names: dict[int, str] = getattr(r0, "names", {}) or getattr(model, "names", {})
-        items = _emit_detection(r0, names, img_w, img_h)
+
+        # mask 仅 yoloe -seg 权重有; world 即便请求 mask 也无分割头 → 退回检测框.
+        want_mask = ctx.output in ("mask", "both") and family == "yoloe"
+        want_box = ctx.output == "box" or ctx.output == "both" or not want_mask
+        items: list[dict[str, Any]] = []
+        if want_box:
+            items += _emit_detection(r0, names, img_w, img_h)
+        if want_mask:
+            items += _emit_segmentation(r0, names, img_w, img_h)
         return items, cache_hit, load_ms, inference_ms
 
 

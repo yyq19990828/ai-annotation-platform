@@ -95,6 +95,32 @@ def test_context_text_accepts_yoloe_series() -> None:
     assert ctx.variants.series == "yoloe-11"
     # 无顶层 conf → 走默认.
     assert ctx.params.conf == 0.25
+    # output 缺省 → box (v0.18.21 检测态默认).
+    assert ctx.output == "box"
+
+
+def test_context_text_segment_output_mask() -> None:
+    """v0.18.22 · segment-yoloe 文本分割: output=mask 透传 (后端据此取 polygon)."""
+    ctx = Context.model_validate({
+        "type": "text",
+        "text": "cat, dog",
+        "output": "mask",
+        "model_id": "segment-yoloe",
+        "model_variants": {"series": "yoloe-11", "size": "s"},
+    })
+    assert ctx.output == "mask"
+    assert ctx.model_id == "segment-yoloe"
+    assert ctx.variants.series == "yoloe-11"
+
+
+def test_context_text_output_rejects_unknown() -> None:
+    with pytest.raises(ValidationError):
+        Context.model_validate({
+            "type": "text",
+            "text": "cat",
+            "output": "polygon",  # 仅 box/mask/both 合法.
+            "model_variants": {"series": "yoloe-11", "size": "s"},
+        })
 
 
 def test_context_closed_set_nested_params_unaffected() -> None:
