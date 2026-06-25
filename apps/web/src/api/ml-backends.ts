@@ -196,7 +196,7 @@ export const mlBackendsApi = {
   // v0.14.14 协议 §4.4 · POST /warmup 代理. body 各 backend 自定义:
   //   yolo:  { task: "detection", variants: { series: "yolo11", size: "s" } }
   //   gsam2: { variants: { sam_variant: "small", dino_variant: "B" } }
-  //   sam3:  {} 或 { variants: { model_variant: "sam3.1" } }
+  //   sam3:  {} 或 { variants: { model_variant: "sam3" } }
   warmup: (
     projectId: string,
     backendId: string,

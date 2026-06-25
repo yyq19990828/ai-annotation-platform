@@ -40,7 +40,10 @@ _MODALITY_ORDER = {"image": 0, "video": 1, "lidar": 2}
 _LIDAR_GEOMETRY = {"lidar_box_3d", "point_mask_3d"}
 
 # v0.18.15 · 交互式 prompt (需用户/上游显式给点/框/文本等); 含这些的模型不默认走 crop 投递。
-_INTERACTIVE_PROMPTS = {"point", "bbox", "text", "exemplar", "scribble", "sketch", "mask"}
+# v0.18.17 · bbox→interactive_box (SAM-style 单框单 mask); 保留 "bbox" 兼容旧快照(已退役)。
+_INTERACTIVE_PROMPTS = {
+    "point", "interactive_box", "bbox", "text", "exemplar", "scribble", "sketch", "mask",
+}
 
 
 def _synthesize_supported_inputs(prompts: list[str]) -> list[str]:
@@ -52,7 +55,7 @@ def _synthesize_supported_inputs(prompts: list[str]) -> list[str]:
     - 非交互模型 (纯检测/分类/OCR…) 额外含 ``crop`` (平台可裁父框 ROI 喂入), 让其能作几何/属性下游。
     """
     out: list[str] = []
-    if "bbox" in prompts:
+    if "interactive_box" in prompts or "bbox" in prompts:
         out.append("bbox_prompt")
     if "point" in prompts:
         out.append("point_prompt")
@@ -144,14 +147,14 @@ def _synthesize_single_model(setup: dict, backend_infra: str) -> dict:
 
     task 由现有信号推断:
     - `supported_trackers` 非空 ⇒ tracker
-    - `supported_prompts` 含 point/bbox/text/exemplar ⇒ interactive_seg (SAM 类)
+    - `supported_prompts` 含 point/interactive_box/text/exemplar ⇒ interactive_seg (SAM 类)
     - 否则 ⇒ detection
     """
     prompts = list(setup.get("supported_prompts") or [])
     trackers = list(setup.get("supported_trackers") or [])
     if trackers:
         task = "tracker"
-    elif any(p in ("point", "bbox", "text", "exemplar") for p in prompts):
+    elif any(p in ("point", "interactive_box", "bbox", "text", "exemplar") for p in prompts):
         task = "interactive_seg"
     else:
         task = "detection"

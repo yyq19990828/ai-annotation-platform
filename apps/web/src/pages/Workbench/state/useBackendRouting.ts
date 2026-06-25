@@ -2,7 +2,7 @@
  * v0.14.18 · 多 ML Backend 能力路由 (交互线).
  *
  * 一个项目注册多个 backend 时, 工作台 AI 从"单 active 后端驱动一切"改成"按角色 + 能力路由":
- * 交互工具 (point/bbox/exemplar) 各自解析到支持该 prompt 的交互后端, 批量线另走 batchBackendId。
+ * 交互工具 (point/interactive_box/exemplar) 各自解析到支持该 prompt 的交互后端, 批量线另走 batchBackendId。
  * 本 hook 只负责交互线: 对每个注册后端拉 /setup 建 capIndex, 产出 isPromptSupported (并集) +
  * resolveInteractive (逐 prompt 确定性解析 + preferred 兜底) + preferred 状态/持久化。
  *
@@ -13,8 +13,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { mlBackendsApi, type MLBackendCapability } from "@/api/ml-backends";
 
-/** 交互 prompt 集合 (text 归批量线, 不在此)。 */
-export const INTERACTIVE_PROMPTS = ["point", "bbox", "exemplar"] as const;
+/** 交互 prompt 集合 (text 归批量线, 不在此)。v0.18.17 · bbox→interactive_box。 */
+export const INTERACTIVE_PROMPTS = ["point", "interactive_box", "exemplar"] as const;
 export type InteractivePrompt = (typeof INTERACTIVE_PROMPTS)[number];
 
 function isInteractivePrompt(p: string): p is InteractivePrompt {

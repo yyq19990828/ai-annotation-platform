@@ -233,11 +233,13 @@ class InteractiveRequest(BaseModel):
     """工作台「AI 助手」单次推理请求。`context` 透传至 backend，平台不做 schema 校验。
 
     `context.type` 协商枚举（详见 `docs-site/dev/ml-backend-protocol.md` §2.2）：
-    - ``point``：``{"type":"point","points":[[x,y],...],"labels":[1,0,...]}``
-    - ``bbox``：``{"type":"bbox","bbox":[x1,y1,x2,y2]}``
+    - ``point``：``{"type":"point","points":[[x,y],...],"labels":[1,0,...],"multimask_output":false}``
+      （v0.18.17 · SAM-style 单实例点交互, 正/负点累加由前端重发全量点; multimask 出 3 候选）
+    - ``interactive_box``：``{"type":"interactive_box","bbox":[x1,y1,x2,y2],"multimask_output":false}``
+      （v0.18.17 · SAM-style 单框单 mask; 双 backend 统一名, 旧 ``bbox`` prompt 已退役）
     - ``polygon``：``{"type":"polygon","points":[[x,y],...]}``
-    - ``text``：``{"type":"text","text":"ripe apples"}``（v0.9.x Grounded-SAM-2）
-    - ``exemplar``：留给 v0.10.x SAM 3。
+    - ``text``：``{"type":"text","text":"ripe apples"}``（Grounded-SAM-2 DINO / SAM 3 PCS）
+    - ``exemplar``：``{"type":"exemplar","bbox":[x1,y1,x2,y2]}``（SAM 3 PCS 全图相似实例）。
     """
 
     task_id: UUID

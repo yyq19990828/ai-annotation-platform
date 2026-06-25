@@ -14,10 +14,11 @@ import {
   type CapIndex,
 } from "../useBackendRouting";
 
-// gsam2 协议 2.1: 4 个 task model, 仅 interactive_seg 交互 (point/bbox); detection/seg 带 text。
+// gsam2 协议 2.1: 4 个 task model, 仅 interactive_seg 交互 (point/interactive_box); detection/seg 带 text。
+// tracker 的 "bbox" 是视频追踪种子 (非图像交互 prompt), v0.18.17 后不计入交互 prompt 集。
 const GSAM2: MLBackendCapability = {
   name: "grounded-sam2",
-  supported_prompts: ["point", "bbox", "text"],
+  supported_prompts: ["point", "interactive_box", "text"],
   models: [
     { id: "det", task: "detection", is_interactive: false, supported_prompts: ["text"] },
     { id: "seg", task: "segmentation", is_interactive: false, supported_prompts: ["text"] },
@@ -25,7 +26,7 @@ const GSAM2: MLBackendCapability = {
       id: "iseg",
       task: "interactive_seg",
       is_interactive: true,
-      supported_prompts: ["point", "bbox"],
+      supported_prompts: ["point", "interactive_box"],
     },
     {
       id: "trk",
@@ -44,17 +45,18 @@ const YOLO: MLBackendCapability = {
   models: [{ id: "y-det", task: "detection", is_interactive: false, supported_prompts: ["none"] }],
 };
 
-// sam3: 老式单 model 后端 (无 models[]), 顶层 bbox/text/exemplar 交互。
+// sam3: 老式单 model 后端 (无 models[]), 顶层 interactive_box/text/exemplar 交互。
 const SAM3: MLBackendCapability = {
   name: "sam3",
   is_interactive: true,
-  supported_prompts: ["bbox", "text", "exemplar"],
+  supported_prompts: ["interactive_box", "text", "exemplar"],
 };
 
 describe("buildCapEntry", () => {
-  it("gsam2: 交互 prompt 仅取 is_interactive model 的并集 (point/bbox), text 来自非交互 model", () => {
+  it("gsam2: 交互 prompt 仅取 is_interactive model 的并集 (point/interactive_box), text 来自非交互 model", () => {
     const e = buildCapEntry(GSAM2);
-    expect([...e.prompts].sort()).toEqual(["bbox", "point"]);
+    // tracker 的 "bbox" 是视频种子, 不计入交互 prompt 集。
+    expect([...e.prompts].sort()).toEqual(["interactive_box", "point"]);
     expect(e.prompts.has("exemplar")).toBe(false);
     expect(e.textCapable).toBe(true);
     expect(e.isInteractive).toBe(true);
@@ -69,9 +71,9 @@ describe("buildCapEntry", () => {
     expect(e.isInteractive).toBe(false);
   });
 
-  it("sam3: 老式单 model 走顶层字段, 交互 prompt = bbox/exemplar (text 归批量)", () => {
+  it("sam3: 老式单 model 走顶层字段, 交互 prompt = interactive_box/exemplar (text 归批量)", () => {
     const e = buildCapEntry(SAM3);
-    expect([...e.prompts].sort()).toEqual(["bbox", "exemplar"]);
+    expect([...e.prompts].sort()).toEqual(["exemplar", "interactive_box"]);
     expect(e.textCapable).toBe(true);
     expect(e.isInteractive).toBe(true);
   });
@@ -95,7 +97,7 @@ describe("candidatesFor", () => {
     const idx = mkIndex({ yolo: YOLO, gsam2: GSAM2, sam3: SAM3 });
     const order = ["yolo", "gsam2", "sam3"];
     expect(candidatesFor(idx, order, "point")).toEqual(["gsam2"]);
-    expect(candidatesFor(idx, order, "bbox")).toEqual(["gsam2", "sam3"]);
+    expect(candidatesFor(idx, order, "interactive_box")).toEqual(["gsam2", "sam3"]);
     expect(candidatesFor(idx, order, "exemplar")).toEqual(["sam3"]);
   });
 });
@@ -106,21 +108,21 @@ describe("resolveInteractive — 三情形 + 兜底链", () => {
     const order = ["yolo", "gsam2"];
     // 项目默认 = yolo (非交互), preferred 缺省
     expect(resolveInteractive(idx, order, "yolo", null, "point")).toBe("gsam2");
-    expect(resolveInteractive(idx, order, "yolo", null, "bbox")).toBe("gsam2");
+    expect(resolveInteractive(idx, order, "yolo", null, "interactive_box")).toBe("gsam2");
     // exemplar 无候选 → null (工具置灰)
     expect(resolveInteractive(idx, order, "yolo", null, "exemplar")).toBeNull();
   });
 
-  it("情形2 两个都支持 bbox: preferred 优先, 缺省回落项目默认", () => {
+  it("情形2 两个都支持 interactive_box: preferred 优先, 缺省回落项目默认", () => {
     const idx = mkIndex({ gsam2: GSAM2, sam3: SAM3 });
     const order = ["gsam2", "sam3"];
     // 项目默认 = gsam2, 无 preferred → 默认优先
-    expect(resolveInteractive(idx, order, "gsam2", null, "bbox")).toBe("gsam2");
+    expect(resolveInteractive(idx, order, "gsam2", null, "interactive_box")).toBe("gsam2");
     // 用户 preferred = sam3 → 覆盖默认 (关键: 默认本身交互时选择器仍生效)
-    expect(resolveInteractive(idx, order, "gsam2", "sam3", "bbox")).toBe("sam3");
+    expect(resolveInteractive(idx, order, "gsam2", "sam3", "interactive_box")).toBe("sam3");
   });
 
-  it("情形3 异构 A只point B只bbox: 自动分流", () => {
+  it("情形3 异构 A只point B只interactive_box: 自动分流", () => {
     const A: MLBackendCapability = {
       name: "A",
       supported_prompts: ["point"],
@@ -128,30 +130,30 @@ describe("resolveInteractive — 三情形 + 兜底链", () => {
     };
     const B: MLBackendCapability = {
       name: "B",
-      supported_prompts: ["bbox"],
-      models: [{ id: "b", is_interactive: true, supported_prompts: ["bbox"] }],
+      supported_prompts: ["interactive_box"],
+      models: [{ id: "b", is_interactive: true, supported_prompts: ["interactive_box"] }],
     };
     const idx = mkIndex({ A, B });
     const order = ["A", "B"];
-    // preferred=A 但 bbox 不被 A 支持 → 按兜底链落到 B
+    // preferred=A 但 interactive_box 不被 A 支持 → 按兜底链落到 B
     expect(resolveInteractive(idx, order, null, "A", "point")).toBe("A");
-    expect(resolveInteractive(idx, order, null, "A", "bbox")).toBe("B");
+    expect(resolveInteractive(idx, order, null, "A", "interactive_box")).toBe("B");
   });
 
   it("兜底链: preferred 不在候选 → 项目默认 → 注册序第一个", () => {
     const idx = mkIndex({ gsam2: GSAM2, sam3: SAM3 });
     const order = ["gsam2", "sam3"];
     // preferred=不存在的id, 默认=sam3 (候选) → 用默认
-    expect(resolveInteractive(idx, order, "sam3", "ghost", "bbox")).toBe("sam3");
+    expect(resolveInteractive(idx, order, "sam3", "ghost", "interactive_box")).toBe("sam3");
     // preferred 和默认都不在候选 → 注册序第一个 (gsam2)
-    expect(resolveInteractive(idx, order, "ghost", "ghost2", "bbox")).toBe("gsam2");
+    expect(resolveInteractive(idx, order, "ghost", "ghost2", "interactive_box")).toBe("gsam2");
   });
 
   it("reachable 降级: 候选后端 /setup 失败 → 从候选排除", () => {
     const idx = mkIndex({ gsam2: undefined, sam3: SAM3 }); // gsam2 拉取失败
     const order = ["gsam2", "sam3"];
-    expect(candidatesFor(idx, order, "bbox")).toEqual(["sam3"]);
-    expect(resolveInteractive(idx, order, "gsam2", "gsam2", "bbox")).toBe("sam3");
+    expect(candidatesFor(idx, order, "interactive_box")).toEqual(["sam3"]);
+    expect(resolveInteractive(idx, order, "gsam2", "gsam2", "interactive_box")).toBe("sam3");
     // point 仅 gsam2 支持但已不可达 → null
     expect(resolveInteractive(idx, order, "gsam2", null, "point")).toBeNull();
   });

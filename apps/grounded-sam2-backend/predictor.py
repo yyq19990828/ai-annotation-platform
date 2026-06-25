@@ -146,33 +146,46 @@ class GroundedSAM2Predictor:
         points: list[list[float]],
         labels: list[int],
         *,
+        multimask_output: bool = False,
         cache_key: str | None = None,
         simplify_tolerance: float | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
-        """返回 (results, cache_hit). image=None 仅在 cache_key 命中时可省."""
+        """返回 (results, cache_hit). image=None 仅在 cache_key 命中时可省.
+
+        v0.18.17 · 正/负点累加由前端重发全量点 (无状态); multimask_output=True 单点歧义出
+        3 候选 (按 iou 降序, 前端 top-1 + 切换).
+        """
         w, h, hit = self._prime_sam(image, cache_key)
         px = np.array([[p[0] * w, p[1] * h] for p in points], dtype=np.float32)
         lab = np.array(labels, dtype=np.int32)
         masks, scores, _ = self._sam_predictor.predict(
-            point_coords=px, point_labels=lab, multimask_output=False
+            point_coords=px, point_labels=lab, multimask_output=multimask_output
         )
-        return self._masks_to_results(masks, scores, w, h, simplify_tolerance), hit
+        return self._masks_to_results(
+            masks, scores, w, h, simplify_tolerance, sort_by_score=multimask_output
+        ), hit
 
     def predict_bbox(
         self,
         image: Image.Image | None,
         bbox: list[float],
         *,
+        multimask_output: bool = False,
         cache_key: str | None = None,
         simplify_tolerance: float | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
+        """v0.18.17 · interactive_box 单框单 mask (协议 type=interactive_box 路由到此).
+        multimask_output=True 出 3 候选 (按 iou 降序)."""
         w, h, hit = self._prime_sam(image, cache_key)
         x1, y1, x2, y2 = bbox
         box_px = np.array([x1 * w, y1 * h, x2 * w, y2 * h], dtype=np.float32)
         masks, scores, _ = self._sam_predictor.predict(
-            point_coords=None, point_labels=None, box=box_px[None, :], multimask_output=False
+            point_coords=None, point_labels=None, box=box_px[None, :],
+            multimask_output=multimask_output,
         )
-        return self._masks_to_results(masks, scores, w, h, simplify_tolerance), hit
+        return self._masks_to_results(
+            masks, scores, w, h, simplify_tolerance, sort_by_score=multimask_output
+        ), hit
 
     def predict_boxes(
         self,
@@ -464,9 +477,17 @@ class GroundedSAM2Predictor:
         w: int,
         h: int,
         simplify_tolerance: float | None = None,
+        *,
+        sort_by_score: bool = False,
     ) -> list[dict[str, Any]]:
         if masks.ndim == 4:
             masks = masks[:, 0]
+        # v0.18.17 · multimask 候选按 score 降序, 保证 results[0]=top-1 (与 sam3 对齐);
+        # 单 mask / predict_boxes 路径 (sort_by_score=False) 保留原顺序 (parent_box_idx 依赖).
+        if sort_by_score and scores is not None and len(scores) > 1:
+            order = np.argsort(-np.asarray(scores))
+            masks = masks[order]
+            scores = np.asarray(scores)[order]
         out: list[dict[str, Any]] = []
         eff_tol = (
             DEFAULT_SIMPLIFY_TOLERANCE if simplify_tolerance is None else float(simplify_tolerance)

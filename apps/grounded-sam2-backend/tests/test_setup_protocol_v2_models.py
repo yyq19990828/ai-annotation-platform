@@ -96,7 +96,8 @@ def test_segmentation_model_text_to_polygon():
 def test_interactive_seg_model_point_box_to_polygon():
     data = setup()
     inter = next(m for m in data["models"] if m["task"] == "interactive_seg")
-    assert set(inter["supported_prompts"]) == {"point", "bbox"}
+    # v0.18.17 · bbox→interactive_box (图像交互单框单 mask).
+    assert set(inter["supported_prompts"]) == {"point", "interactive_box"}
     assert inter["supported_geometric_outputs"] == ["polygon"]
     assert inter["is_interactive"] is True
 
@@ -111,7 +112,8 @@ def test_tracker_model_sam2_video():
 def test_top_level_back_compat_fields_unchanged():
     """顶层 supported_prompts / supported_trackers 保留, 供未升级平台合成隐式单 model."""
     data = setup()
-    assert set(data["supported_prompts"]) == {"point", "bbox", "text"}
+    # v0.18.17 · bbox→interactive_box (图像交互); tracker/box-seg 的 bbox 不在顶层 prompts.
+    assert set(data["supported_prompts"]) == {"point", "interactive_box", "text"}
     assert data["supported_trackers"] == ["sam2_video"]
 
 

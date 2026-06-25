@@ -9,13 +9,15 @@
     GET  /cache/stats   embedding cache 当前状态 (v0.9.1)
 
 prompt 类型:
-    - context.type == "point"  → SAM 直接出 mask
-    - context.type == "bbox"   → SAM 直接出 mask
-    - context.type == "text"   → GroundingDINO 出 boxes → SAM 出 mask（可批量）
+    - context.type == "point"           → SAM 直接出 mask (正/负点累加; multimask 候选)
+    - context.type == "interactive_box" → SAM 单框单 mask (v0.18.17 · 旧 "bbox" 改名)
+    - context.type == "text"            → GroundingDINO 出 boxes → SAM 出 mask（可批量）
+    注: "bbox" 已退出交互 prompt 命名空间 (旧 type=bbox 落 422); tracker / box-seg 的 bbox
+    是几何输入/追踪种子, 走 geometry-prompt 批量路径, 与此无关.
 
 v0.9.1 (M1) 加入 SAM 2 image embedding LRU 缓存:
     cache_key = sha1(url_path|sam_variant); 同图二次操作跳过 ~1.5s 的 image encoder.
-    point/bbox 命中可同时跳过 _fetch_image; text 仅省 set_image (DINO 仍需原图).
+    point/interactive_box 命中可同时跳过 _fetch_image; text 仅省 set_image (DINO 仍需原图).
 """
 
 from __future__ import annotations
@@ -483,7 +485,10 @@ def setup() -> dict:
         "is_interactive": True,
         # v0.14.14: 声明本 backend 支持 POST /warmup (协议 §4.4).
         "warmup_endpoint": True,
-        "supported_prompts": ["point", "bbox", "text"],
+        # v0.18.17 · "bbox" 图像交互单框 prompt 改名 "interactive_box" (统一双 backend 命名).
+        # tracker / box-seg 的 "bbox" 是几何输入/追踪种子 (走 geometry-prompt 批量, 非 /predict
+        # context.type 路由), 属存活的「几何形状」语义, 各自保留 (见下方 models[])。
+        "supported_prompts": ["point", "interactive_box", "text"],
         # v0.9.4 phase 2 · text 路径输出形态选择 (box=DINO 直出, mask=DINO+SAM, both=配对返回).
         "supported_text_outputs": ["box", "mask", "both"],
         # v0.10.35 §B · 平台 video_tracker 协议桥据此判断 backend 是否支持视频跟踪.
@@ -608,7 +613,8 @@ def setup() -> dict:
             "is_interactive": True,
             # 单次 SAM 推理(prompt→mask),原子。
             "composition": "atom",
-            "supported_prompts": ["point", "bbox"],
+            # v0.18.17 · bbox→interactive_box (图像交互单框单 mask).
+            "supported_prompts": ["point", "interactive_box"],
             # 交互分割: 消费点 / 框提示 (不作批量 crop 下游)。
             "supported_inputs": ["bbox_prompt", "point_prompt", "full_image"],
             "supported_geometric_outputs": ["polygon"],
@@ -827,31 +833,42 @@ async def _run_prompt(
         labels = ctx.get("labels") or [1] * len(points)
         if not points:
             raise HTTPException(status_code=422, detail="context.points required for type=point")
+        # v0.18.17 · 正/负点累加由前端重发全量点; multimask 单点歧义出候选.
+        multimask = bool(ctx.get("multimask_output", False))
         if not cache.peek(cache_key):
             # miss: 拉图 + 让 predictor 内部 set_image + put
             image = _fetch_image(file_path)
             results, hit = p.predict_point(
-                image, points, labels, cache_key=cache_key, simplify_tolerance=simplify_tol
+                image, points, labels, multimask_output=multimask,
+                cache_key=cache_key, simplify_tolerance=simplify_tol,
             )
         else:
             # hit: 不拉图; predictor 走 restore_sam 路径
             results, hit = p.predict_point(
-                None, points, labels, cache_key=cache_key, simplify_tolerance=simplify_tol
+                None, points, labels, multimask_output=multimask,
+                cache_key=cache_key, simplify_tolerance=simplify_tol,
             )
         return results, hit, sv, dv, pool_cache_hit, model_load_ms
 
-    if ptype == "bbox":
+    if ptype == "interactive_box":
+        # v0.18.17 · 单框单 mask (旧 type=bbox 改名; bbox 已退出交互 prompt 命名空间).
         bbox = ctx.get("bbox")
         if not bbox or len(bbox) != 4:
-            raise HTTPException(status_code=422, detail="context.bbox=[x1,y1,x2,y2] required")
+            raise HTTPException(
+                status_code=422,
+                detail="context.bbox=[x1,y1,x2,y2] required for type=interactive_box",
+            )
+        multimask = bool(ctx.get("multimask_output", False))
         if not cache.peek(cache_key):
             image = _fetch_image(file_path)
             results, hit = p.predict_bbox(
-                image, bbox, cache_key=cache_key, simplify_tolerance=simplify_tol
+                image, bbox, multimask_output=multimask,
+                cache_key=cache_key, simplify_tolerance=simplify_tol,
             )
         else:
             results, hit = p.predict_bbox(
-                None, bbox, cache_key=cache_key, simplify_tolerance=simplify_tol
+                None, bbox, multimask_output=multimask,
+                cache_key=cache_key, simplify_tolerance=simplify_tol,
             )
         return results, hit, sv, dv, pool_cache_hit, model_load_ms
 

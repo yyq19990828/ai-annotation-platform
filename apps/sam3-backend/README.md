@@ -1,6 +1,6 @@
 # sam3-backend
 
-> v0.10.x AI 基座的 ML Backend — 把 [`facebookresearch/sam3`](https://github.com/facebookresearch/sam3) (848M, 2025-11) + `facebook/sam3.1` (2026-03 权重) 打包成独立 GPU 服务, 遵循平台 [ML Backend 协议契约](../../docs-site/dev/reference/ml-backend-protocol.md).
+> v0.10.x AI 基座的 ML Backend — 把 [`facebookresearch/sam3`](https://github.com/facebookresearch/sam3) (848M, 2025-11) 打包成独立 GPU 服务, 遵循平台 [ML Backend 协议契约](../../docs-site/dev/reference/ml-backend-protocol.md). 图像 PCS + inst 交互用 `facebook/sam3` 的 `sam3.pt`; `facebook/sam3.1` 的 `sam3.1_multiplex.pt` (视频权重) 一并落盘, 预留后续视频追踪.
 >
 > 当前版本: **v0.10.0 (M0 — 容器化 + exemplar 协议落地)**. 后续 v0.10.1 ~ v0.10.3 在 [`ROADMAP/[archived]0.10.x.md`](../../ROADMAP/[archived]0.10.x.md) 切片.
 
@@ -12,9 +12,10 @@
 
 | 能力 | grounded-sam2-backend | sam3-backend |
 |---|---|---|
-| `point` / `bbox` prompt | ✅ SAM 2.1 直接 | ✅ SAM 3 image predictor |
+| `point` prompt (单实例点交互) | ✅ SAM 2.1 直接 | ✅ inst predictor (`model.predict_inst`, v0.18.17 开 inst) |
+| `interactive_box` prompt (单框单 mask) | ✅ SAM 2.1 直接 | ✅ inst predictor (v0.18.17) |
 | `text` prompt | ✅ DINO → SAM 复合链 | ✅ SAM 3 PCS 单模型一步出 |
-| **`exemplar` prompt** | ❌ | ✅ SAM 3 PCS 视觉示例 → 全图相似实例 |
+| **`exemplar` prompt** (全图相似) | ❌ | ✅ SAM 3 PCS 视觉示例 → 全图相似实例 |
 | 推荐 GPU | 4060 / 3090 / A100 | **3090 / A100** (不部署 4060) |
 | Python / CUDA | 3.10 / 12.1 | 3.12 / 12.6 |
 
@@ -22,16 +23,17 @@
 
 ## 能力盘点
 
-> v0.10.0 选项 A: 不启用 `enable_inst_interactivity`. SAM 3 原生 image API 不包含 point prompt, 单点交互让 grounded-sam2-backend 兜底.
+> v0.18.17 选项 B: 启用 `enable_inst_interactivity`, 解锁 SAM-style 单实例点/框交互 (`model.predict_inst`). multiplex 权重自带 tracker.*, 无需额外下载; 代价是常驻显存 +2-3GB.
 
 | Prompt | 链路 | 用途 |
 |---|---|---|
-| `context.type=point` | ❌ 不支持 | 返回 400; workbench 应挂 grounded-sam2-backend |
-| `context.type=bbox` | `add_geometric_prompt(box, label=True)` → 全图相似实例 | ⚠️ 行为与 SAM 2 不同: 不是「box 内出一个 mask」, 而是「找全图与 box 内对象相似的实例」(SAM 3 PCS 视觉示例语义). 单框单 mask 场景请走 grounded-sam2 |
+| `context.type=point` | `model.predict_inst(point_coords, point_labels)` → 单实例 mask | 单点交互, 正/负点累加精修 (前端重发全量点); `multimask_output` 出 3 候选 |
+| `context.type=interactive_box` | `model.predict_inst(box)` → 单框单 mask | SAM 2 式「框内出一个 mask」; ≠ exemplar 的全图相似 |
 | `context.type=text` | `set_text_prompt(prompt)` → PCS 一步出全图匹配概念 | 文本批量预标 / `/ai-pre` |
-| `context.type=exemplar` | 与 bbox 同底层调用 | v0.10.1 工作台 Shift+拖框入口; 协议层独立类型方便前端 UI 区分 |
+| `context.type=exemplar` | `add_geometric_prompt(box, label=True)` → 全图相似实例 | PCS 视觉示例: 「找全图与示例框相似的实例」 |
+| ~~`context.type=bbox`~~ | — | v0.18.17 退役 (仅作几何形状); 旧请求落 422 |
 
-返回数据均为 `polygonlabels` / `rectanglelabels` (归一化 [0,1]) + score + model_version + inference_time_ms.
+point / interactive_box 与 PCS 共用同一 `backbone_out` 缓存 (开 inst 后 `set_image` 一次同产两路特征). 返回数据均为 `polygonlabels` / `rectanglelabels` (归一化 [0,1]) + score + model_version + inference_time_ms.
 
 ---
 
@@ -50,7 +52,7 @@ apps/sam3-backend/
 ├── tests/                  pytest 单测 (无 GPU 即可跑)
 ├── checkpoints/            权重落盘点 (启动时下载, 挂 volume)
 ├── scripts/
-│   ├── download_checkpoints.py   幂等拉 sam3.1 权重 (gated, 需 HF_TOKEN)
+│   ├── download_checkpoints.py   幂等拉 sam3.pt + sam3.1_multiplex 权重 (gated, 需 HF_TOKEN)
 │   └── sync_vendor.sh            同步上游到 vendor/
 ├── vendor/
 │   └── sam3/               vendored copy (须先跑 sync_vendor.sh)
@@ -75,15 +77,17 @@ git add vendor/sam3 && git commit -m "vendor: bump sam3 to <commit-sha>"
 
 > ✅ **2026-05-13 状态**: vendor 已就位 + `predictor.py` / `embedding_cache.py` / `tests/` 已按真实 API 重写 (45 单测全绿). v0.10.0 选项 A: 不启用 `enable_inst_interactivity`, 放弃 point prompt, 让 grounded-sam2-backend 兜底单点交互. 等首位 GPU 部署者跑端到端验收 (HF_TOKEN + `--profile gpu-sam3`).
 
-升级 commit 时务必跑 5-clicks 集成验收, 复核 `Sam3Processor` 公共方法签名 (`set_image` / `set_text_prompt` / `add_geometric_prompt` / `reset_all_prompts`) 与 `state` dict 字段 (`backbone_out` / `geometric_prompt` / `masks` / `boxes` / `scores`) 是否仍然存在.
+升级 commit 时务必跑 5-clicks 集成验收, 复核以下签名是否仍然存在:
+- `Sam3Processor` 公共方法 (`set_image` / `set_text_prompt` / `add_geometric_prompt` / `reset_all_prompts`) 与 `state` dict 字段 (`backbone_out` / `geometric_prompt` / `masks` / `boxes` / `scores`)。
+- v0.18.17 inst 路径: `model.predict_inst(inference_state, point_coords=, point_labels=, box=, multimask_output=)` 返回 `(masks CxHxW, iou C, low_res Cx256x256)`; `SAM3InteractiveImagePredictor.predict(...)` 签名; `state["backbone_out"]["sam2_backbone_out"]` 字段 (开 inst 后 `set_image` 产出)。
 
 ---
 
 ## HF_TOKEN 配置
 
-`facebook/sam3.1` 是 **gated repo**, 必须:
+`facebook/sam3` 与 `facebook/sam3.1` 均为 **gated repo**, 必须:
 
-1. 在 [https://huggingface.co/facebook/sam3.1](https://huggingface.co/facebook/sam3.1) 接受 license.
+1. 分别在 [https://huggingface.co/facebook/sam3](https://huggingface.co/facebook/sam3) 与 [https://huggingface.co/facebook/sam3.1](https://huggingface.co/facebook/sam3.1) 接受 license.
 2. 创建一个 read-only access token: [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
 3. 写到根 `.env`:
 
@@ -104,7 +108,7 @@ git add vendor/sam3 && git commit -m "vendor: bump sam3 to <commit-sha>"
 - `nvidia-container-toolkit` 已装好.
 - 主机 GPU 架构在 `TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0"` 范围内 (A100 / RTX 30 / RTX 40 / H100 / H200).
 - 显存建议 ≥ 16 GB (FP16 下 sam3 单图 ~6-7 GB, 留余量做 batch).
-- `.env` 已配 `HF_TOKEN` 并接受 sam3.1 license.
+- `.env` 已配 `HF_TOKEN` 并接受 sam3 / sam3.1 license.
 
 **镜像 mirror 注意**: Dockerfile 用 `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` (torch + CUDA + cudnn 一站式, 不需要 pip 重装 torch). 若 mirror 无该 tag, 备选 `pytorch/pytorch:2.7.1-cuda12.6-cudnn9-devel` (CUDA 12.6 下限) 或 `pytorch/pytorch:2.8.0-cuda12.8-cudnn9-devel` (更新, 不一定存在). vendor README §82 推荐的是 `torch==2.10.0+cu128`, 我们用 2.7.1 已满足 vendor §70 的「torch >= 2.7」下限, 换取镜像可用性.
 
@@ -127,21 +131,21 @@ curl -X POST http://localhost:8002/predict \
        "context":{"type":"exemplar","bbox":[0.2,0.2,0.45,0.55]}}'
 ```
 
-首次启动会下载 sam3.1 权重 (~3.2 GB), 冷启动 3-8 分钟取决于网速.
+首次启动会下载 sam3.pt + sam3.1_multiplex 权重 (~6.6 GB 合计), 冷启动数分钟取决于网速.
 
 ---
 
 ## 端点速查
 
-完整规范以 [`docs-site/dev/reference/ml-backend-protocol.md`](../../docs-site/dev/reference/ml-backend-protocol.md) 为准. 本 backend 实现版本 `sam3.1`.
+完整规范以 [`docs-site/dev/reference/ml-backend-protocol.md`](../../docs-site/dev/reference/ml-backend-protocol.md) 为准. 本 backend 图像模型变体 `sam3`.
 
 ```
-GET  /health        → {"ok": true, "gpu": true, "model_version": "sam3.1", "loaded": true, ...}
-GET  /setup         → {"name":"sam3", "supported_prompts":["point","bbox","text","exemplar"], ...}
-GET  /versions      → {"versions": ["sam3.1"]}
+GET  /health        → {"ok": true, "gpu": true, "model_version": "sam3", "loaded": true, ...}
+GET  /setup         → {"name":"sam3", "supported_prompts":["point","interactive_box","text","exemplar"], ...}
+GET  /versions      → {"versions": ["sam3"]}
 POST /predict       → 交互式 (task+context) 或 批量 (tasks[])
 GET  /metrics       → Prometheus exposition (sam3_* 指标)
-GET  /cache/stats   → {"size": N, "capacity": 32, "hits":..., "misses":..., "hit_rate": 0.85, "variant": "sam3.1"}
+GET  /cache/stats   → {"size": N, "capacity": 32, "hits":..., "misses":..., "hit_rate": 0.85, "variant": "sam3"}
 ```
 
 `POST /predict` 按 body shape 自动分流, 与 grounded-sam2-backend 完全一致:
@@ -163,10 +167,12 @@ GET  /cache/stats   → {"size": N, "capacity": 32, "hits":..., "misses":..., "h
 
 | Env | 默认 | 说明 |
 |---|---|---|
-| `HF_TOKEN` | — | **必填**; sam3.1 是 gated repo. |
+| `HF_TOKEN` | — | **必填**; sam3 / sam3.1 均为 gated repo. |
 | `CHECKPOINT_DIR` | `/app/checkpoints` | 权重落盘点 (volume 挂载). |
-| `SAM3_HF_REPO_ID` | `facebook/sam3.1` | HuggingFace repo. |
-| `SAM3_CHECKPOINT_FILE` | `sam3.1.pt` | 文件名 (以官仓 README 实际名为准). |
+| `SAM3_IMAGE_HF_REPO_ID` | `facebook/sam3` | 图像模型 (PCS + inst) repo. |
+| `SAM3_IMAGE_CHECKPOINT_FILE` | `sam3.pt` | 图像模型权重文件名. |
+| `SAM3_HF_REPO_ID` | `facebook/sam3.1` | 视频 multiplex repo (预留). |
+| `SAM3_CHECKPOINT_FILE` | `sam3.1_multiplex.pt` | 视频追踪权重文件名 (预留). |
 | `SAM3_EMBEDDING_CACHE_SIZE` | `32` | LRU 容量; A100 充裕可调到 64. |
 | `SAM3_SCORE_THRESHOLD` | `0.5` | text / exemplar 路径 PCS score 过滤阈值. |
 | `LOG_LEVEL` | `INFO` | DEBUG / INFO / WARNING. |
@@ -178,7 +184,7 @@ GET  /cache/stats   → {"size": N, "capacity": 32, "hits":..., "misses":..., "h
 
 ## Idle Unload (双 backend 并存的关键)
 
-sam3.1 FP16 常驻 ~7GB 显存, 3090 单卡若同时挂 grounded-sam2 (~2GB) 与平台其他 GPU 任务, 必须靠 idle unload 互让显存. 机制:
+sam3 (开 inst) FP16 常驻 ~5.8GB 显存, 单卡若同时挂 grounded-sam2 (~2GB) 与平台其他 GPU 任务, 必须靠 idle unload 互让显存. 机制:
 
 1. **自动卸载**: 后台 `_idle_watcher` 每 `SAM3_IDLE_CHECK_INTERVAL` 秒检查; 若 `_predictor` 已加载且 `last_request_age >= SAM3_IDLE_UNLOAD_SECONDS` → 释放模型 + `torch.cuda.empty_cache()` + clear embedding cache (避免悬挂的 GPU 张量).
 2. **懒重载**: 下一次 `/predict` 请求触发 `_ensure_predictor_loaded()`, 在 `asyncio.Lock` 内 `run_in_executor` 异步重建, 冷启动 ~8-12s; 并发请求串行化, 不会双重构造 OOM.
@@ -220,7 +226,7 @@ sam3.1 FP16 常驻 ~7GB 显存, 3090 单卡若同时挂 grounded-sam2 (~2GB) 与
 
 **HF_TOKEN 未设置**: 容器启动后 `download_checkpoints.py` 立即 fail-fast 退出. 检查 `.env` 与 docker-compose 的 environment 注入是否一致.
 
-**license not accepted**: HuggingFace API 返回 401/403. 浏览器登 [https://huggingface.co/facebook/sam3.1](https://huggingface.co/facebook/sam3.1) 接受 license 后重试.
+**license not accepted**: HuggingFace API 返回 401/403. 浏览器登 [https://huggingface.co/facebook/sam3](https://huggingface.co/facebook/sam3) 与 [https://huggingface.co/facebook/sam3.1](https://huggingface.co/facebook/sam3.1) 接受 license 后重试.
 
 **首次启动卡住 > 8 分钟**: `docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-sam3 logs -f sam3-backend` 查看下载进度. HuggingFace 偶发限速, 重试即可.
 

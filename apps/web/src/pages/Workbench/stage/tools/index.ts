@@ -42,8 +42,9 @@ export type ToolId =
   // v0.10.28 · 关键点 (COCO 范式: 命名节点 + 骨骼连线).
   | "keypoint";
 
-/** v0.10.2 · 后端 /setup.supported_prompts 字段对应的 prompt 类型集合. */
-export type RequiredPrompt = "point" | "bbox" | "text" | "exemplar";
+/** v0.10.2 · 后端 /setup.supported_prompts 字段对应的 prompt 类型集合.
+ *  v0.18.17 · "bbox" 改名 "interactive_box" (单框单 mask, 统一双 backend); 与后端 supported_prompts 对齐. */
+export type RequiredPrompt = "point" | "interactive_box" | "text" | "exemplar";
 
 export interface ToolMeta {
   id: ToolId;

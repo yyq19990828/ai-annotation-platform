@@ -17,7 +17,8 @@ import {
 // 引入 activeModel 概念 — prompts/paramsSchema 优先取 active model 的字段;
 // 无 models (grounded-sam2 / sam3 等单模型) 时完全回落到顶层逻辑, 行为与改造前一致 (向后兼容).
 
-const FALLBACK_PROMPTS = ["point", "bbox", "text"] as const;
+// v0.18.17 · bbox→interactive_box (统一双 backend 命名); fallback 用于 backend 未声明 supported_prompts.
+const FALLBACK_PROMPTS = ["point", "interactive_box", "text"] as const;
 
 export interface MLCapabilitiesResult {
   /** 后端声明支持的 prompt 类型. 拉取失败 -> []; 缺字段 -> FALLBACK_PROMPTS. 有 activeModel 时优先取 model.supported_prompts. */
@@ -86,7 +87,7 @@ export function useMLCapabilities(
   } else if (capability) {
     if (typeof console !== "undefined") {
       console.warn(
-        "[useMLCapabilities] backend /setup missing supported_prompts; falling back to point/bbox/text. Upgrade backend to v0.10.1+.",
+        "[useMLCapabilities] backend /setup missing supported_prompts; falling back to point/interactive_box/text. Upgrade backend to v0.10.1+.",
       );
     }
     prompts = [...FALLBACK_PROMPTS];

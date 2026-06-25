@@ -179,7 +179,7 @@ v0.10.0+ 的高精度 backend（`facebookresearch/sam3` + `facebook/sam3.1` 权�
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `HF_TOKEN` **必填** | 空 | sam3.1 权重是 gated repo（~3.2GB），首次启动下载必须带；`start_period=180s`。 |
+| `HF_TOKEN` **必填** | 空 | sam3（图像）与 sam3.1（视频，预留）权重均为 gated repo（合计 ~6.6GB），首次启动下载必须带；`start_period=180s`。 |
 | `SAM3_EMBEDDING_CACHE_SIZE` | `32` | 图像 embedding LRU 缓存条数。 |
 | `SAM3_SCORE_THRESHOLD` | `0.5` | 检测置信度阈值；召回不足下调、误检多上调。 |
 | `SAM3_LOG_LEVEL` | `INFO` | `DEBUG / INFO / WARNING`。 |

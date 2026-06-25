@@ -47,7 +47,7 @@ describe("useInteractiveAI", () => {
     recordPredictCacheHitMock.mockReset();
   });
 
-  it("runBbox 路由到 ctx.type='bbox'", async () => {
+  it("runBbox 路由到 ctx.type='interactive_box' (v0.18.17 · 旧 bbox 改名)", async () => {
     interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
     const { result } = renderHook(() => useInteractiveAI(ARGS));
     act(() => result.current.runBbox([0.1, 0.1, 0.4, 0.4]));
@@ -56,8 +56,9 @@ describe("useInteractiveAI", () => {
     expect(pid).toBe("p1");
     expect(bid).toBe("b1");
     expect(payload.task_id).toBe("t1");
-    expect(payload.context.type).toBe("bbox");
+    expect(payload.context.type).toBe("interactive_box");
     expect(payload.context.bbox).toEqual([0.1, 0.1, 0.4, 0.4]);
+    expect(payload.context.multimask_output).toBe(false);
     await waitFor(() => expect(result.current.candidates).toHaveLength(1));
     expect(result.current.candidates[0].label).toBe("person");
     expect(result.current.candidates[0].source).toBe("bbox");
@@ -94,23 +95,37 @@ describe("useInteractiveAI", () => {
     expect(interactiveAnnotateMock).not.toHaveBeenCalled();
   });
 
-  it("runPoint 80ms 防抖合并连续点击", async () => {
+  it("runPoint 累加全量点 (v0.18.17 · 防抖窗口内多次点击累加成一个会话, 重发全量)", async () => {
     interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
     vi.useFakeTimers();
     try {
       const { result } = renderHook(() => useInteractiveAI(ARGS));
       act(() => result.current.runPoint([0.1, 0.1], 1));
-      act(() => result.current.runPoint([0.2, 0.2], 1));
+      act(() => result.current.runPoint([0.2, 0.2], 0));
       act(() => result.current.runPoint([0.3, 0.3], 1));
       expect(interactiveAnnotateMock).not.toHaveBeenCalled();
       await act(async () => {
         await vi.advanceTimersByTimeAsync(100);
       });
       expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1);
-      expect(interactiveAnnotateMock.mock.calls[0][2].context.points).toEqual([[0.3, 0.3]]);
+      const ctx = interactiveAnnotateMock.mock.calls[0][2].context;
+      // 累加: 全量点 + 对应极性; ≥2 点 → multimask_output=false (单 mask 精修).
+      expect(ctx.points).toEqual([[0.1, 0.1], [0.2, 0.2], [0.3, 0.3]]);
+      expect(ctx.labels).toEqual([1, 0, 1]);
+      expect(ctx.multimask_output).toBe(false);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("runPoint 首点 multimask_output=true (单点歧义出候选)", async () => {
+    interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
+    const ctx = interactiveAnnotateMock.mock.calls[0][2].context;
+    expect(ctx.points).toEqual([[0.5, 0.5]]);
+    expect(ctx.multimask_output).toBe(true);
   });
 
   it("Alt+点击 (polarity=0) 透传 negative label", async () => {
@@ -155,6 +170,30 @@ describe("useInteractiveAI", () => {
       ),
     );
     expect(result.current.candidates).toHaveLength(0);
+  });
+
+  it("多连通 mask (value.polygons) → 取面积最大外环, 不丢候选", async () => {
+    // 后端多环结构: 一个大三角 (面积 0.5) + 一个碎屑小三角 (面积 ~0.005)。
+    interactiveAnnotateMock.mockResolvedValue({
+      result: [
+        {
+          type: "polygonlabels",
+          value: {
+            polygons: [
+              { points: [[0, 0], [0.1, 0], [0, 0.1]] }, // 碎屑
+              { points: [[0, 0], [1, 0], [0, 1]] }, // 主体 (最大)
+            ],
+            polygonlabels: ["object"],
+          },
+          score: 0.9,
+        },
+      ],
+    });
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    // 取最大外环 (主体三角), 而非碎屑。
+    expect(result.current.candidates[0].points).toEqual([[0, 0], [1, 0], [0, 1]]);
   });
 
   it("cycle 在候选间循环切换", async () => {

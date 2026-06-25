@@ -1,4 +1,4 @@
-"""EmbeddingCache 行为单测 (无 GPU). 镜像 grounded-sam2-backend 的覆盖, variant 默认 sam3.1."""
+"""EmbeddingCache 行为单测 (无 GPU). 镜像 grounded-sam2-backend 的覆盖, variant 默认 sam3."""
 
 from __future__ import annotations
 
@@ -18,31 +18,31 @@ def _entry(tag: int = 0) -> CacheEntry:
 
 def test_cache_key_strips_query_string():
     a = compute_cache_key(
-        "https://minio.local/bucket/img.jpg?X-Amz-Signature=aaa&X-Amz-Date=20260101", "sam3.1"
+        "https://minio.local/bucket/img.jpg?X-Amz-Signature=aaa&X-Amz-Date=20260101", "sam3"
     )
     b = compute_cache_key(
-        "https://minio.local/bucket/img.jpg?X-Amz-Signature=bbb&X-Amz-Date=20260102", "sam3.1"
+        "https://minio.local/bucket/img.jpg?X-Amz-Signature=bbb&X-Amz-Date=20260102", "sam3"
     )
     assert a == b, "presigned URL signature 滚动不应让 key 变化"
 
 
 def test_cache_key_distinguishes_paths():
-    a = compute_cache_key("https://minio.local/bucket/a.jpg", "sam3.1")
-    b = compute_cache_key("https://minio.local/bucket/b.jpg", "sam3.1")
+    a = compute_cache_key("https://minio.local/bucket/a.jpg", "sam3")
+    b = compute_cache_key("https://minio.local/bucket/b.jpg", "sam3")
     assert a != b
 
 
 def test_cache_key_distinguishes_sam2_vs_sam3():
     """sam2 cache 与 sam3 cache 必须互不污染 (embedding 来自不同模型, 不能跨)."""
     base = "https://minio.local/bucket/img.jpg"
-    assert compute_cache_key(base, "tiny") != compute_cache_key(base, "sam3.1")
-    assert compute_cache_key(base, "sam3.1") != compute_cache_key(base, "sam3.1-int8")
+    assert compute_cache_key(base, "tiny") != compute_cache_key(base, "sam3")
+    assert compute_cache_key(base, "sam3") != compute_cache_key(base, "sam3-int8")
 
 
 def test_cache_key_local_path():
-    a = compute_cache_key("/data/a.jpg", "sam3.1")
-    b = compute_cache_key("/data/a.jpg", "sam3.1")
-    c = compute_cache_key("/data/b.jpg", "sam3.1")
+    a = compute_cache_key("/data/a.jpg", "sam3")
+    b = compute_cache_key("/data/a.jpg", "sam3")
+    c = compute_cache_key("/data/b.jpg", "sam3")
     assert a == b
     assert a != c
 
@@ -59,8 +59,8 @@ def test_put_get_roundtrip():
 
 def test_default_variant_is_sam3_1():
     c = EmbeddingCache(capacity=4)
-    assert c.sam_variant == "sam3.1"
-    assert c.stats()["variant"] == "sam3.1"
+    assert c.sam_variant == "sam3"
+    assert c.stats()["variant"] == "sam3"
 
 
 def test_get_miss_returns_none_and_counts():

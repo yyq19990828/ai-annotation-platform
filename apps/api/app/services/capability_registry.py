@@ -280,8 +280,10 @@ TASKS: tuple[TaskSpec, ...] = (
         default_modalities=("image",),
         typical_models=("SAM", "SAM2", "SAM3", "Grounded-SAM"),
         protocol_notes=(
-            "/setup.supported_prompts 含 point/bbox/text/exemplar; "
-            "/predict 响应 mask 或 polygon, 平台按 v0.10.x 转换为 polygon 落库。"
+            "/setup.supported_prompts 含 point/interactive_box/text/exemplar "
+            "(point/interactive_box 为 SAM-style 单实例点/框交互, 支持正负点累加 + multimask 候选; "
+            "exemplar 为 PCS 全图相似; bbox 已退役为纯几何形状); "
+            "/predict 响应 mask 或 polygon, 平台转换为 polygon 落库。"
         ),
         suggested_backends=(
             SuggestedBackend(

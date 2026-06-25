@@ -78,11 +78,11 @@ def test_segmentation_model_text_to_polygon(setup_fn):
     assert seg["supported_geometric_outputs"] == ["polygon"]
 
 
-def test_interactive_seg_model_exemplar(setup_fn):
-    """SAM 3 的交互分割走 exemplar 路径 (示例框 PCS), 不暴露 point/bbox 单物体语义."""
+def test_interactive_seg_model_prompts(setup_fn):
+    """v0.18.17 · 交互分割含 SAM-style point/interactive_box (inst) + exemplar (PCS)."""
     data = setup_fn()
     inter = next(m for m in data["models"] if m["task"] == "interactive_seg")
-    assert inter["supported_prompts"] == ["exemplar"]
+    assert inter["supported_prompts"] == ["point", "interactive_box", "exemplar"]
     assert inter["supported_geometric_outputs"] == ["polygon"]
     assert inter["is_interactive"] is True
 
@@ -97,9 +97,9 @@ def test_models_carry_composition_dimension(setup_fn):
 
 
 def test_top_level_back_compat_fields_unchanged(setup_fn):
-    """顶层 supported_prompts 保留 (text + exemplar), 供未升级平台合成隐式单 model."""
+    """v0.18.17 · 顶层 supported_prompts: point/interactive_box/text/exemplar (bbox 已退役)."""
     data = setup_fn()
-    assert set(data["supported_prompts"]) == {"text", "exemplar"}
+    assert set(data["supported_prompts"]) == {"point", "interactive_box", "text", "exemplar"}
 
 
 def test_setup_params_schema_platform_roles(setup_fn):

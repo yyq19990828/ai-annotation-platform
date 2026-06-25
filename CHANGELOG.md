@@ -34,6 +34,26 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.17] - 2026-06-25
+
+双 backend SAM-style 单实例交互对齐 + 协议统一。sam3-backend 开启 `enable_inst_interactivity` 解锁 SAM-style `point` / `interactive_box` 交互（走 `model.predict_inst`，与 PCS 共用同一 `backbone_out` 缓存）；grounded-sam2-backend 复用已加载权重透传 `multimask_output`。两 backend 点交互升级为正/负点累加（前端重发全量点、后端无状态），单点歧义出 `multimask_output` 三候选。同时统一交互 prompt 命名：单框单 mask 走 `interactive_box`、PCS 找全图相似走 `exemplar`，`bbox` 退出交互命名空间。规划详见 [`docs/plans/2026-06-25-v0.18.17-interactive-seg-dual-backend-sam-iterative.md`](docs/plans/2026-06-25-v0.18.17-interactive-seg-dual-backend-sam-iterative.md)。
+
+### Added
+
+- **sam3 原生单实例交互**：新增 `predict_interactive`（走 `model.predict_inst`，复用 PCS 同一 `backbone_out` 缓存），解锁 SAM-style `point` / `interactive_box`；`/setup.supported_prompts` = `[point, interactive_box, text, exemplar]`。
+- **正/负点累加迭代精修**：前端点工具改为累加会话（每次重发全量点，后端无状态），首点 `multimask_output=true` 出 3 候选（按 iou 降序、`Tab` 切换、默认 top-1），≥2 点转单 mask 精修；会话在提交 / `Esc` / 切 task·backend 时重置。
+
+### Changed
+
+- **sam3 图像模型 checkpoint → `sam3.pt`（3.0）**：官方 image+inst 路径所用权重；`sam3.1_multiplex.pt`（视频权重）保留供后续视频追踪——multiplex 的 inst 权重命名/结构与 vendored image-inst 代码不兼容，强用会静默加载随机权重产生噪声 mask。模型变体名随之由 `sam3.1` 改为 `sam3`（前后端一致：`/setup` 变体轴 / `model_version` / 缓存 variant）。
+- **交互 prompt 命名统一**：`bbox` 退出交互 prompt 命名空间（仅保留为几何形状），单框单 mask 统一走 `interactive_box`；PCS「找全图相似」统一走 `exemplar`。gsam2 `predict_point` / `predict_bbox`（更名 `interactive_box`）透传 `multimask_output`。前端工具门控 / 路由 / 兜底全部对齐新命名。
+- **候选归一化补多连通 mask**：后端多环 mask 用 `value.polygons` 承载（单环仍用 `value.points`），前端 `normalizeResult` 取面积最大外环——修复 inst 点 mask 常多连通导致候选被静默丢弃、「同位置时好时坏」。
+
+### Compatibility
+
+- **破坏性**：旧 `type=bbox` 交互请求返回 422（项目未正式上线，不留兼容别名）。模型变体名 `sam3.1`→`sam3`，已注册 sam3 backend 需重读 `/setup`（重新绑定或刷新能力快照）以更新变体值。
+- gsam2 的几何 seed（tracker / box-seg）仍用 `bbox`（几何形状，非交互 prompt），不受影响。无 DB migration，无新增环境变量。
+
 ## [0.18.16] - 2026-06-25
 
 把 `/ai-pre` 的受限树形编排从**竖排阶段卡**重做成**两列：左 DAG 画布 + 右节点检查器**。竖排卡片随并行 / 嵌套阶段无限拉长页面、结构靠缩进脑补；新画布让拓扑一眼可见、页面高度恒定（右列永远一张卡）。纯前端重做，后端零改动（仍由 `stagesGraph` 派生 `pipeline_stages`，复用 0.18.15 的校验 / 投递烘焙 / 几何回映）。规划详见 [`docs/plans/2026-06-25-v0.18.16-staged-preannotate-dag-canvas-draft.md`](docs/plans/2026-06-25-v0.18.16-staged-preannotate-dag-canvas-draft.md)。

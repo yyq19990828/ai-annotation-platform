@@ -44,7 +44,7 @@ describe("useMLCapabilities", () => {
     expect(result.current.capability?.supported_variants?.[0]?.key).toBe("sam_variant");
   });
 
-  it("falls back to point/bbox/text when supported_prompts missing", async () => {
+  it("falls back to point/interactive_box/text when supported_prompts missing", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     mockSetup.mockResolvedValue({ name: "legacy-backend" });
     const { result } = renderHook(
@@ -52,7 +52,7 @@ describe("useMLCapabilities", () => {
       { wrapper },
     );
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.prompts).toEqual(["point", "bbox", "text"]);
+    expect(result.current.prompts).toEqual(["point", "interactive_box", "text"]);
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });

@@ -69,7 +69,7 @@ def test_pool_status_after_ensure_loaded(main_module):
     assert s["current_size"] == 1
     assert len(s["loaded_keys"]) == 1
     key = s["loaded_keys"][0]
-    assert key["key"] == "sam3.1"
+    assert key["key"] == "sam3"
     assert isinstance(key["loaded_at"], str)
     assert isinstance(key["last_used_at"], str)
     assert key["hit_count"] == 0  # 第一次是 miss, 不算 hit
@@ -90,7 +90,7 @@ def test_pool_status_unload_sets_last_evict_manual(main_module):
     _run(m._unload_predictor(reason="manual"))
     s = m._pool_status()
     assert s["current_size"] == 0
-    assert s["last_evict"]["key"] == "sam3.1"
+    assert s["last_evict"]["key"] == "sam3"
     assert s["last_evict"]["reason"] == "manual"
 
 

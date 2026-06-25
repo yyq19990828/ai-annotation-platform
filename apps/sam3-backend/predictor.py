@@ -3,12 +3,12 @@
 vendor: facebookresearch/sam3 @ 4cbac14, 通过 scripts/sync_vendor.sh 同步.
 入口: `from sam3 import build_sam3_image_model` + `from sam3.model.sam3_image_processor import Sam3Processor`.
 
-支持的 prompt (v0.10.0 选项 A: 不启用 inst_interactivity):
-  - text:     processor.set_text_prompt(prompt, state) → 全图所有匹配概念的 mask + box
-  - bbox:     processor.add_geometric_prompt(box, label=True, state) → 全图与 box 内对象相似的所有实例
-  - exemplar: 与 bbox 同一底层调用; 协议层语义不同, 物理上是 alias
-  - point:    ❌ 不支持. SAM 3 image API 没有点 prompt; 需要 enable_inst_interactivity=True
-              额外加载 ~2-3GB tracker base. 选项 A 显式放弃, 让 grounded-sam2-backend 兜底.
+支持的 prompt (v0.18.17 选项 B: 启用 inst_interactivity):
+  - text:            processor.set_text_prompt(prompt, state) → 全图所有匹配概念的 mask + box
+  - exemplar:        processor.add_geometric_prompt(box, label=True, state) → 全图相似实例 (PCS)
+  - point:           model.predict_inst(state, point_coords, point_labels) → 单实例点交互 (SAM-style)
+  - interactive_box: model.predict_inst(state, box) → 单框单 mask (SAM-style, ≠ exemplar 的全图相似)
+  注: point / interactive_box 与 PCS 共用同一 backbone_out 缓存 (开 inst 后 set_image 同产两路特征).
 
 API 形态关键点 (与 SAM 2 / grounded-sam2 完全不同):
   1. Sam3Processor 是 stateful wrapper, state 是 dict. set_image() 把图像 features 写到
@@ -57,8 +57,9 @@ DEFAULT_SIMPLIFY_TOLERANCE = 1.0
 VERTEX_COUNT_WARN_THRESHOLD = 200
 
 CHECKPOINT_DIR = os.getenv("CHECKPOINT_DIR", "/app/checkpoints")
-# SAM 3 当前仅一档 848M; 路线图 §1.1 明确.
-MODEL_VARIANT = "sam3.1"
+# 图像模型变体名: 当前加载 sam3.pt (facebook/sam3, 3.0) —— 官方 image+inst 路径所用权重。
+# (sam3.1_multiplex 是视频模型, 与 image-inst 代码不兼容, 仅留作后续视频追踪, 见 _load_model。)
+MODEL_VARIANT = "sam3"
 
 # Sam3Processor 默认 confidence_threshold; per-request 由 context.score_threshold 覆盖.
 DEFAULT_SCORE_THRESHOLD = float(os.getenv("SAM3_SCORE_THRESHOLD", "0.5"))
@@ -87,14 +88,24 @@ class SAM3Predictor:
     # ---------- 模型加载 ----------
 
     def _load_model(self):
-        """加载 SAM 3 image model. 选项 A: 不启用 inst_interactivity (无点 prompt)."""
+        """加载 SAM 3 image model.
+
+        v0.18.17: 启用 inst_interactivity, 解锁 SAM-style point / 单框单 mask 交互
+        (model.predict_inst); 同一模型亦提供 PCS (text / exemplar)。
+
+        checkpoint 用 sam3.pt (3.0) 而非 sam3.1_multiplex.pt: 后者是视频模型
+        (config.architectures=["Sam3VideoModel"]), 其 inst 权重命名 (tracker.model.* /
+        interactive_convs) 与 vendored 代码期望的 image-inst 结构 (inst_interactive_predictor.
+        model.* / sam2_convs + convs.3) 不兼容, 会因 key 不匹配静默加载随机权重 → 噪声 mask。
+        官方 sam3_for_sam1_task_example.ipynb 即用 sam3.pt 跑 inst。multiplex 保留供后续视频追踪。
+        """
         # vendor: facebookresearch/sam3 commit 4cbac14
         from sam3 import build_sam3_image_model  # type: ignore[import-not-found]
 
         # 优先用本地 checkpoint (容器启动时由 download_checkpoints.py 拉到 /app/checkpoints),
-        # fallback 走 vendor 内置 hf_hub_download (`load_from_HF=True`).
+        # fallback 走 vendor 内置 hf_hub_download (`load_from_HF=True`, 默认即 sam3.pt).
         ckpt_path: str | None = None
-        candidate = os.path.join(self.checkpoint_dir, "sam3.1_multiplex.pt")
+        candidate = os.path.join(self.checkpoint_dir, "sam3.pt")
         if os.path.isfile(candidate):
             ckpt_path = candidate
             logger.info("using local checkpoint: %s", ckpt_path)
@@ -104,7 +115,7 @@ class SAM3Predictor:
             load_from_HF=(ckpt_path is None),
             device=self.device,
             enable_segmentation=True,
-            enable_inst_interactivity=False,  # 选项 A
+            enable_inst_interactivity=True,  # v0.18.17: 解锁 point / interactive_box
             eval_mode=True,
         )
         return model
@@ -232,6 +243,78 @@ class SAM3Predictor:
             simplify_tolerance=simplify_tolerance,
             score_threshold=score_threshold, prompt_name="exemplar",
         )
+
+    def predict_interactive(
+        self,
+        image: Image.Image | None,
+        *,
+        points: list[list[float]] | None = None,
+        labels: list[int] | None = None,
+        box: list[float] | None = None,
+        multimask_output: bool = False,
+        cache_key: str | None = None,
+        simplify_tolerance: float | None = None,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """v0.18.17 · SAM-style 单实例点/框交互 (与 grounded-sam2 对齐).
+
+        走 inst_interactive_predictor (model.predict_inst), 复用同一 backbone_out 缓存
+        (开 inst 后 set_image 一次同产 PCS + sam2 特征). 与 PCS (text/exemplar) 语义不同:
+        这里是「点/框精修出单实例 mask」, 不是「找全图相似」.
+
+        - points: 归一化 [[x,y],...]; labels: 1=正点 / 0=负点 (累加由前端重发全量点).
+        - box:    归一化 [x1,y1,x2,y2] 单框单 mask.
+        - multimask_output=True: 单点歧义时返回 3 候选 (按 iou 降序), 前端 top-1 + 切换.
+
+        返回 polygonlabels; geometric 无自然 label, 用 "object" 占位, workbench 按 active label 重写.
+        """
+        with torch.autocast(self.device, dtype=torch.bfloat16, enabled=(self.device == "cuda")):
+            state, w, h, hit = self._prime_state(image, cache_key)
+
+            kwargs: dict[str, Any] = {"multimask_output": multimask_output}
+            if points:
+                kwargs["point_coords"] = np.array(
+                    [[p[0] * w, p[1] * h] for p in points], dtype=np.float32
+                )
+                kwargs["point_labels"] = np.array(labels or [1] * len(points), dtype=np.int32)
+            if box is not None:
+                x1, y1, x2, y2 = box
+                kwargs["box"] = np.array([x1 * w, y1 * h, x2 * w, y2 * h], dtype=np.float32)
+
+            # predict_inst 复用 state["backbone_out"]["sam2_backbone_out"], 不重跑 backbone.
+            # 返回 (masks CxHxW, iou C, low_res Cx256x256); masks 已 threshold 成 0/1 float.
+            masks, ious, _low_res = self._model.predict_inst(state, **kwargs)
+
+        return self._build_interactive_results(
+            masks, ious, w, h, simplify_tolerance=simplify_tolerance,
+        ), hit
+
+    def _build_interactive_results(
+        self,
+        masks: np.ndarray,
+        ious: np.ndarray,
+        w: int,
+        h: int,
+        *,
+        simplify_tolerance: float | None,
+    ) -> list[dict[str, Any]]:
+        """inst 输出 (CxHxW masks + C ious) → polygonlabels 列表 (按 iou 降序)."""
+        if masks is None or len(masks) == 0:
+            return []
+        eff_tol = (
+            DEFAULT_SIMPLIFY_TOLERANCE if simplify_tolerance is None else float(simplify_tolerance)
+        )
+        order = np.argsort(-np.asarray(ious))  # iou 降序; 多候选时前端取 top-1
+        results: list[dict[str, Any]] = []
+        for i in order:
+            mask = masks[i]
+            rings = mask_to_multi_polygon(
+                mask.astype(np.uint8), tolerance=eff_tol, normalize_to=(w, h)
+            )
+            if not rings:
+                continue
+            self._maybe_warn_vertex_count(rings, eff_tol, int(mask.sum()), prompt="interactive")
+            results.append(self._rings_to_polygon_label(rings, "object", float(ious[i])))
+        return results
 
     def _predict_geometric(
         self,

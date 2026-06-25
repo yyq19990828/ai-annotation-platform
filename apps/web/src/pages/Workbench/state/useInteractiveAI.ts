@@ -9,10 +9,12 @@ import { createSamCache, makeSamCacheKey } from "./useSamCache";
 /**
  * v0.9.2 · 工作台 SAM 交互式 hook。
  *
- * 三种 prompt 全部走 `POST /projects/{pid}/ml-backends/{bid}/interactive-annotating`：
- *   point  : ctx { type:"point", points:[[x,y]], labels:[1|0] }
- *   bbox   : ctx { type:"bbox",  bbox:[x1,y1,x2,y2] }
- *   text   : ctx { type:"text",  text }
+ * 各 prompt 全部走 `POST /projects/{pid}/ml-backends/{bid}/interactive-annotating`：
+ *   point           : ctx { type:"point", points:[[x,y],...], labels:[1|0,...], multimask_output }
+ *                     (v0.18.17 · 正/负点累加, 每次重发全量点; 首点 multimask 出候选)
+ *   interactive_box : ctx { type:"interactive_box", bbox:[x1,y1,x2,y2] } (v0.18.17 · 旧 "bbox" 改名)
+ *   text            : ctx { type:"text",  text }
+ *   exemplar        : ctx { type:"exemplar", bbox:[x1,y1,x2,y2] } (SAM 3 PCS 全图相似)
  * 后端返回 `result[]`，每条形如：
  *   { type:"polygonlabels", value:{ points:[[x,y]...], polygonlabels:[label] }, score }
  *
@@ -89,6 +91,14 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflightRef = useRef(0);
+
+  // v0.18.17 · 点交互会话: 累加同一对象的正/负点, 每次重发全量点 (无状态后端). 单点首击
+  // multimask 出候选; ≥2 点转单 mask 精修. 会话在 提交(consume point 候选) / Esc(cancel) /
+  // 切 task·backend / 切 prompt 模式(bbox/text/exemplar) 时重置。
+  const pointSessionRef = useRef<{ pt: [number, number]; polarity: 1 | 0 }[]>([]);
+  const resetPointSession = useCallback(() => {
+    pointSessionRef.current = [];
+  }, []);
 
   // v0.10.23 · 会话级模型变体切换反馈。变体切换是惰性的：用户在 AI 面板下拉选了新变体后,
   // 直到下一次预测才把它发给 backend (首次冷启 1-3s+)。lastAppliedVariantRef 记「上次成功
@@ -198,10 +208,17 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   const runPoint = useCallback(
     (pt: [number, number], polarity: 1 | 0, extraParams?: Record<string, unknown>) => {
       if (!guard()) return;
+      // v0.18.17 · 累加到当前点会话, 每次重发全量点 (正/负点精修同一对象).
+      pointSessionRef.current = [...pointSessionRef.current, { pt, polarity }];
+      const session = pointSessionRef.current;
+      const points = session.map((s) => s.pt);
+      const labels = session.map((s) => s.polarity);
+      // 单点首击 multimask 出 3 候选 (top-1 + Tab 切换); 累加 ≥2 点转单 mask 精修.
+      const multimask = session.length === 1;
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         dispatch(
-          { ...(extraParams ?? {}), type: "point", points: [pt], labels: [polarity] },
+          { ...(extraParams ?? {}), type: "point", points, labels, multimask_output: multimask },
           "point",
         );
       }, DEBOUNCE_MS);
@@ -212,9 +229,15 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   const runBbox = useCallback(
     (bbox: [number, number, number, number], extraParams?: Record<string, unknown>) => {
       if (!guard()) return;
-      dispatch({ ...(extraParams ?? {}), type: "bbox", bbox }, "bbox");
+      // v0.18.17 · 切到框模式 → 重置点会话; type=interactive_box (旧 "bbox" 退役).
+      // 单框默认单 mask (multimask_output 缺省 false, 保留旧 bbox 行为).
+      resetPointSession();
+      dispatch(
+        { ...(extraParams ?? {}), type: "interactive_box", bbox, multimask_output: false },
+        "bbox",
+      );
     },
-    [guard, dispatch],
+    [guard, dispatch, resetPointSession],
   );
 
   const runText = useCallback(
@@ -222,10 +245,11 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       if (!guard()) return;
       const trimmed = text.trim();
       if (!trimmed) return;
+      resetPointSession();
       // v0.9.4 phase 2 · output 字段控制 box/mask/both; 老 backend 缺字段时仍走 mask 兼容.
       dispatch({ ...(extraParams ?? {}), type: "text", text: trimmed, output: outputMode }, "text");
     },
-    [guard, dispatch],
+    [guard, dispatch, resetPointSession],
   );
 
   const runExemplar = useCallback(
@@ -235,11 +259,12 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       extraParams?: Record<string, unknown>,
     ) => {
       if (!guard()) return;
+      resetPointSession();
       // v0.10.2 · 协议 §2.2: type=exemplar 复用 bbox 字段, 语义靠 type 区分.
       // output 字段控制 box/mask/both (对齐 text); 老 backend 缺字段时仍走 mask 兼容.
       dispatch({ ...(extraParams ?? {}), type: "exemplar", bbox, output: outputMode }, "exemplar");
     },
-    [guard, dispatch],
+    [guard, dispatch, resetPointSession],
   );
 
   const cycleStable = useCallback(
@@ -253,19 +278,32 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     [candidates.length],
   );
 
-  const consume = useCallback((idx: number) => {
-    setCandidates((prev) => prev.filter((_, i) => i !== idx));
-    setActiveIdx((i) => Math.max(0, i >= idx ? i - 1 : i));
-  }, []);
+  const consume = useCallback(
+    (idx: number) => {
+      // v0.18.17 · point / interactive_box 的多候选是「同一对象的备选 mask」, 接受一个即
+      // 清空全部 + 重置点会话 (开始下一个对象); text / exemplar 是「多实例」, 仅移除被接受的那条.
+      const c = candidates[idx];
+      if (c && (c.source === "point" || c.source === "bbox")) {
+        resetPointSession();
+        setCandidates([]);
+        setActiveIdx(0);
+        return;
+      }
+      setCandidates((prev) => prev.filter((_, i) => i !== idx));
+      setActiveIdx((i) => Math.max(0, i >= idx ? i - 1 : i));
+    },
+    [candidates, resetPointSession],
+  );
 
   const cancel = useCallback(() => {
+    resetPointSession();
     setCandidates([]);
     setActiveIdx(0);
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-  }, []);
+  }, [resetPointSession]);
 
   // v0.10.4 I6.2 · 预热去重：同 (taskId, mlBackendId) 只发一次。
   const warmedRef = useRef<string | null>(null);
@@ -296,9 +334,10 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       });
   }, [projectId, taskId, mlBackendId, cache]);
 
-  // 切 task / backend → 重置预热记忆
+  // 切 task / backend → 重置预热记忆 + 点会话
   useEffect(() => {
     warmedRef.current = null;
+    pointSessionRef.current = [];
   }, [taskId, mlBackendId]);
 
   return {
@@ -407,6 +446,8 @@ interface BackendResult {
   value?: {
     // polygonlabels 字段
     points?: [number, number][];
+    // 后端 _rings_to_polygon_label 在「多连通区域」时改用 polygons[] 承载各外环 (单环时才用 points)。
+    polygons?: { points: [number, number][]; holes?: [number, number][][] }[];
     polygonlabels?: string[];
     // rectanglelabels 字段 (v0.9.4 phase 2)
     x?: number;
@@ -449,7 +490,10 @@ function normalizeResult(
   }
 
   // 默认 / 显式 polygonlabels
-  const pts = r?.value?.points;
+  // 后端按环数分发: 单环 → value.points; 多连通区域 → value.polygons[].points。
+  // 候选/预览/落库均为单环模型, 故多环时取「面积最大」外环 (主体), 丢弃碎屑噪点 —
+  // 此前只读 value.points, 多环结果被静默丢弃 → "同位置时好时坏 / 没有候选区域"。
+  const pts = pickPrimaryRing(r?.value);
   if (!Array.isArray(pts) || pts.length < 3) return null;
   return {
     id,
@@ -459,4 +503,34 @@ function normalizeResult(
     score,
     source,
   };
+}
+
+/** 多边形面积 (shoelace 绝对值; 归一化坐标, 仅用于比较取大). */
+function ringArea(ring: [number, number][]): number {
+  let a = 0;
+  for (let i = 0, n = ring.length; i < n; i++) {
+    const [x1, y1] = ring[i];
+    const [x2, y2] = ring[(i + 1) % n];
+    a += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(a) / 2;
+}
+
+/** 单环取 points; 多环 (value.polygons) 取面积最大外环。无有效环返回 null。 */
+function pickPrimaryRing(value: BackendResult["value"]): [number, number][] | null {
+  if (Array.isArray(value?.points) && value.points.length >= 3) return value.points;
+  const polys = value?.polygons;
+  if (!Array.isArray(polys) || polys.length === 0) return null;
+  let best: [number, number][] | null = null;
+  let bestArea = -1;
+  for (const p of polys) {
+    const ring = p?.points;
+    if (!Array.isArray(ring) || ring.length < 3) continue;
+    const area = ringArea(ring);
+    if (area > bestArea) {
+      bestArea = area;
+      best = ring;
+    }
+  }
+  return best;
 }

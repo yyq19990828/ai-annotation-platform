@@ -22,8 +22,8 @@ from main import setup
 def test_setup_supported_variants_declare_single_axis():
     """v0.14.12 · 单档 backend 也要显式声明 variant 轴 (供模型市场显示具体权重).
 
-    SAM 3 仅一档官方权重 (sam3.1), supported_variants 一轴一值; sam_variant /
-    dino_variant 不应混进 params (与 gsam2 严格分离).
+    SAM 3 图像模型单档官方权重 (sam3, facebook/sam3), supported_variants 一轴一值;
+    sam_variant / dino_variant 不应混进 params (与 gsam2 严格分离).
     """
     data = setup()
 
@@ -31,7 +31,7 @@ def test_setup_supported_variants_declare_single_axis():
     assert len(axes) == 1
     assert axes[0]["key"] == "model_variant"
     assert len(axes[0]["variants"]) == 1
-    assert axes[0]["variants"][0]["value"] == "sam3.1"
+    assert axes[0]["variants"][0]["value"] == "sam3"
 
     assert "sam_variant" not in data["params"]["properties"]
     assert "dino_variant" not in data["params"]["properties"]
@@ -44,7 +44,7 @@ def test_setup_default_variants_present_on_each_model():
     for model in data["models"]:
         dv = model.get("default_variants")
         assert isinstance(dv, dict) and dv, f"{model['id']} missing default_variants"
-        assert dv == {"model_variant": "sam3.1"}
+        assert dv == {"model_variant": "sam3"}
 
 
 def test_setup_default_variants_match_env_model_variant():

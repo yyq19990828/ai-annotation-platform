@@ -41,10 +41,12 @@ __all__ = [
 
 
 class Context(BaseModel):
-    type: Literal["point", "bbox", "polygon", "text", "exemplar"]
+    # v0.18.17 · "interactive_box" = SAM-style 单框单 mask (开 inst 后); "bbox" 退役为纯几何形状,
+    # 不再作交互 prompt (PCS 全图相似统一走 "exemplar"). "point" 升级为 inst 单实例点交互 (累加).
+    type: Literal["point", "interactive_box", "polygon", "text", "exemplar"]
     points: list[list[float]] | None = None
     labels: list[int] | None = None
-    # bbox: type=bbox 时是 prompt 框; type=exemplar 时是视觉示例框 (语义靠 type 区分)
+    # bbox: type=interactive_box 时是单框 prompt; type=exemplar 时是视觉示例框 (语义靠 type 区分)
     bbox: list[float] | None = None
     text: str | None = None
     # v0.9.4 phase 2 (与 grounded-sam2 协议一致): text 路径输出形态
@@ -54,12 +56,20 @@ class Context(BaseModel):
     # v0.10.0 · SAM 3 PCS exemplar / text 路径可选 score 阈值;
     # 缺省走 backend env SAM3_SCORE_THRESHOLD (默认 0.5).
     score_threshold: float | None = None
+    # v0.18.17 · point / interactive_box 单点歧义时出 3 候选 (按 iou 降序); 缺省单 mask.
+    multimask_output: bool = False
 
     @model_validator(mode="after")
     def _validate_required_fields(self) -> Context:
         if self.type == "exemplar":
             if self.bbox is None or len(self.bbox) != 4:
                 raise ValueError("context.bbox=[x1,y1,x2,y2] required for type=exemplar")
+        if self.type == "interactive_box":
+            if self.bbox is None or len(self.bbox) != 4:
+                raise ValueError("context.bbox=[x1,y1,x2,y2] required for type=interactive_box")
+        if self.type == "point":
+            if not self.points:
+                raise ValueError("context.points required for type=point")
         return self
 
 

@@ -59,7 +59,7 @@ class LoadedKey(BaseModel):
     """`/health.pool.loaded_keys[]` 单条已加载权重描述.
 
     `key` 是 backend-defined 的 opaque 字符串 (yolo 用 `task/series/size`,
-    gsam2 用 `sam=tiny/dino=T`, sam3 用 `sam3.1`), 前端只做字符串相等比较.
+    gsam2 用 `sam=tiny/dino=T`, sam3 用 `sam3`), 前端只做字符串相等比较.
     """
 
     key: str

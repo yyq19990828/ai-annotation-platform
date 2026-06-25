@@ -330,3 +330,87 @@ def test_reset_called_before_and_after_prompt(predictor_with_mocks, fake_image):
 
     # reset 应被调 2 次: prompt 前 (清除 stale) + prompt 后 (cleanup)
     assert inst._processor.reset_all_prompts.call_count == 2
+
+
+# ---------- predict_interactive (v0.18.17 · SAM-style point / interactive_box) ----------
+
+
+def _fake_inst_output(num: int):
+    """模拟 model.predict_inst 返回 (masks CxHxW float 0/1, iou C, low_res Cx256x256)."""
+    mask = np.zeros((480, 640), dtype=np.float32)
+    mask[100:300, 100:300] = 1.0
+    masks = np.stack([mask] * num)  # (C, H, W)
+    ious = np.array([0.7, 0.95, 0.6][:num], dtype=np.float32)
+    low_res = np.zeros((num, 256, 256), dtype=np.float32)
+    return masks, ious, low_res
+
+
+def test_interactive_point_returns_polygon(predictor_with_mocks, fake_image):
+    inst = predictor_with_mocks
+    inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
+    inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(1))
+
+    results, hit = inst.predict_interactive(
+        fake_image, points=[[0.5, 0.5]], labels=[1], cache_key="ip1"
+    )
+    assert hit is False
+    assert len(results) == 1
+    assert results[0]["type"] == "polygonlabels"
+    assert results[0]["value"]["polygonlabels"] == ["object"]
+
+
+def test_interactive_point_pixel_scaling(predictor_with_mocks, fake_image):
+    """归一化点 → 像素 (640x480): [0.5,0.5] → [320,240]; 默认 multimask=False."""
+    inst = predictor_with_mocks
+    inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
+    inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(1))
+
+    inst.predict_interactive(fake_image, points=[[0.5, 0.5]], labels=[1], cache_key="ip2")
+
+    kw = inst._model.predict_inst.call_args.kwargs
+    assert kw["point_coords"].tolist() == [[320.0, 240.0]]
+    assert kw["point_labels"].tolist() == [1]
+    assert kw["multimask_output"] is False
+
+
+def test_interactive_box_pixel_scaling(predictor_with_mocks, fake_image):
+    """归一化 xyxy [0.1,0.2,0.5,0.6] → 像素 [64,96,320,288]."""
+    inst = predictor_with_mocks
+    inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
+    inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(1))
+
+    inst.predict_interactive(fake_image, box=[0.1, 0.2, 0.5, 0.6], cache_key="ib1")
+
+    kw = inst._model.predict_inst.call_args.kwargs
+    assert kw["box"].tolist() == [64.0, 96.0, 320.0, 288.0]
+
+
+def test_interactive_multimask_sorted_by_iou(predictor_with_mocks, fake_image):
+    """multimask 3 候选按 iou 降序; 首条 score 最高 (0.95)."""
+    inst = predictor_with_mocks
+    inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
+    inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(3))
+
+    results, _ = inst.predict_interactive(
+        fake_image, points=[[0.5, 0.5]], labels=[1], multimask_output=True, cache_key="im1"
+    )
+    assert len(results) == 3
+    scores = [r["score"] for r in results]
+    assert scores == sorted(scores, reverse=True)
+    assert scores[0] == pytest.approx(0.95)
+
+
+def test_interactive_empty_when_no_mask(predictor_with_mocks, fake_image):
+    inst = predictor_with_mocks
+    inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
+    empty = (
+        np.zeros((0, 480, 640), dtype=np.float32),
+        np.zeros((0,), dtype=np.float32),
+        np.zeros((0, 256, 256), dtype=np.float32),
+    )
+    inst._model.predict_inst = MagicMock(return_value=empty)
+
+    results, _ = inst.predict_interactive(
+        fake_image, points=[[0.5, 0.5]], labels=[1], cache_key="ie1"
+    )
+    assert results == []

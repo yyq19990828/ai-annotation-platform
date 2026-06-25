@@ -3,7 +3,7 @@
 实现 docs-site/dev/reference/ml-backend-protocol.md 规定的 4 个端点 + 2 个观测端点 +
 2 个运维端点 (与 grounded-sam2-backend 对齐):
     GET  /health        探活 (含 GPU / cache / PerfHud / idle 状态)
-    GET  /setup         模型配置 (supported_prompts 含 exemplar)
+    GET  /setup         模型配置 (supported_prompts: point/interactive_box/text/exemplar)
     GET  /versions      可用版本
     POST /predict       交互式 / 批量预测 (懒加载: idle unload 后自动重建)
     GET  /metrics       Prometheus exposition (sam3_* 指标)
@@ -11,17 +11,15 @@
     POST /unload        主动卸载模型释放显存
     POST /reload        主动重载模型
 
-prompt 类型 (v0.10.0 选项 A — 不启用 inst_interactivity, 放弃 point):
-    - context.type == "text"     → Sam3Processor.set_text_prompt → 全图所有匹配概念的 masks
-    - context.type == "bbox"     → Sam3Processor.add_geometric_prompt(label=True) → 全图相似实例
-    - context.type == "exemplar" → 与 bbox 同底层; 协议层语义不同
-    - context.type == "point"    → 返回 400. SAM 3 image API 没有点 prompt;
-                                    需 enable_inst_interactivity=True 才有, v0.10.0 选项 A 放弃.
-                                    workbench 单点交互让 grounded-sam2-backend 兜底.
+prompt 类型 (v0.18.17 选项 B — 启用 inst_interactivity):
+    - context.type == "text"            → Sam3Processor.set_text_prompt → 全图所有匹配概念的 masks
+    - context.type == "exemplar"        → Sam3Processor.add_geometric_prompt → 全图相似实例 (PCS)
+    - context.type == "point"           → model.predict_inst(point_coords) → 单实例点交互 (SAM-style)
+    - context.type == "interactive_box" → model.predict_inst(box) → 单框单 mask (SAM-style)
 
-⚠️ SAM 3 image API 的 bbox 与 SAM 2 行为不同: 它不是「这个 box 内出一个 mask」,
-而是「找全图与 box 内对象相似的所有实例」(SAM 3 PCS 视觉示例语义). 用户想要
-单框单 mask 走 grounded-sam2 backend.
+"point" / "interactive_box" 与 "exemplar" 语义不同: 前两者是「点/框精修出单实例 mask」,
+后者是 PCS「找全图与示例框相似的所有实例」. "bbox" 已于 v0.18.17 退出交互 prompt 命名空间
+(仅作几何形状), 旧 type=bbox 请求落到 422.
 
 Idle Unload (双 backend 并存场景的显存让渡机制):
     SAM 3.1 FP16 ~6-7GB 常驻显存; 3090 单卡若同时常驻 grounded-sam2 (~2GB) + sam3 (~7GB),
@@ -79,7 +77,7 @@ UTC = timezone.utc
 logger = logging.getLogger("sam3-backend")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 
-MODEL_VERSION = MODEL_VARIANT  # "sam3.1"; 路线图 §1.1 明确 SAM 3 仅一档
+MODEL_VERSION = MODEL_VARIANT  # "sam3" (图像模型即 facebook/sam3 单档)
 # v0.10.1 · /setup 协议标准化暴露 backend 镜像版本 (与 FastAPI app.version 同源).
 BACKEND_VERSION = os.getenv("BACKEND_VERSION", "0.10.1")
 IMAGE_DOWNLOAD_TIMEOUT = float(os.getenv("IMAGE_DOWNLOAD_TIMEOUT", "30"))
@@ -97,7 +95,7 @@ _cache = EmbeddingCache(capacity=EMBEDDING_CACHE_SIZE, sam_variant=MODEL_VERSION
 _last_request_at: float = time.monotonic()
 _predictor_lock = asyncio.Lock()
 _idle_task: asyncio.Task | None = None
-# v0.14.14: PoolStatus 元数据 (sam3 是单档 sam3.1, cap 永远 1).
+# v0.14.14: PoolStatus 元数据 (sam3 图像模型单档, cap 永远 1).
 _pool_loaded_at: datetime | None = None
 _pool_last_used_at: datetime | None = None
 _pool_hit_count: int = 0
@@ -193,7 +191,7 @@ async def _unload_predictor(reason: str) -> bool:
 def _pool_status() -> dict[str, Any]:
     """v0.14.14 协议 §4.3 PoolStatus: cap=1, current_size 0/1, loaded_keys, last_evict.
 
-    sam3 是单档 sam3.1, cap 永远 1; current_size = 1 表示已加载, 0 表示未加载或 idle unload 后.
+    sam3 图像模型单档, cap 永远 1; current_size = 1 表示已加载, 0 表示未加载或 idle unload 后.
     """
     loaded_keys: list[dict[str, Any]] = []
     if _predictor is not None and _pool_loaded_at is not None:
@@ -349,29 +347,25 @@ def setup() -> dict:
         "warmup_endpoint": True,
         "labels": [],
         "is_interactive": True,
-        # v0.10.0 选项 A: 不暴露 "point" (Sam3Processor image API 不支持).
-        # 也不暴露 "bbox": 选项 A 下 sam3 的 bbox 物理上走 add_geometric_prompt (PCS 找全图
-        # 相似实例), 不是 SAM2 式「框内单物体单 mask」。前端的 smart-box / magic-box 工具语义
-        # 是单物体框, 与 PCS 不符, 故不宣称 bbox, 让 ToolDock 把这两个工具与 point 一起置灰;
-        # 想用「找相似」的用户走 exemplar 工具 (同底层, 协议层语义明确)。
-        # 单物体框 / 单点交互需挂 grounded-sam2-backend, 或在大显存卡上开 inst_interactivity 后
-        # 由该 build 重新宣称 point/bbox (按 build 真实能力声明)。
-        "supported_prompts": ["text", "exemplar"],
+        # v0.18.17 选项 B: 开 inst_interactivity 后宣称 point + interactive_box (SAM-style 单实例
+        # 点/框交互, 走 model.predict_inst). "bbox" 已退出交互 prompt 命名空间 (仅几何形状);
+        # PCS「找全图相似」统一走 "exemplar" (add_geometric_prompt). text = PCS 文本概念.
+        "supported_prompts": ["point", "interactive_box", "text", "exemplar"],
         "supported_text_outputs": ["box", "mask", "both"],
         # exemplar 走 add_geometric_prompt; state 同时产出 boxes/masks, 三档都支持.
         "supported_geometric_outputs": ["box", "mask", "both"],
         # v0.14.12 · 显式暴露单档 variant, 让模型市场能展示该具体权重 (此前 [] 导致
-        # 卡片/列表无法显示「该 backend 加载的是 sam3.1」). 三个 task 共享同一份权重,
+        # 卡片/列表无法显示「该 backend 加载的是 sam3」). 三个 task 共享同一份权重,
         # variants_shared_across_tasks 在每个 model 上设 True 让列表合并到 1 行。
         "supported_variants": [
             {
                 "key": "model_variant",
                 "title": "模型版本",
-                "description": "SAM 3 当前仅有一档官方权重 (facebook/sam3.1).",
+                "description": "SAM 3 图像模型权重 (facebook/sam3, 即 image + inst 交互所用).",
                 "variants": [
                     {
                         "value": MODEL_VARIANT,
-                        "label": "SAM 3.1" if MODEL_VARIANT == "sam3.1" else MODEL_VARIANT,
+                        "label": "SAM 3" if MODEL_VARIANT == "sam3" else MODEL_VARIANT,
                         "recommended": True,
                     },
                 ],
@@ -429,7 +423,7 @@ def setup() -> dict:
     # 顶层 supported_prompts / supported_geometric_outputs 全部保留, 供未迁移平台
     # 向后兼容 (合成隐式单 model 路径)。
     base["infra"] = "pytorch"
-    # v0.14.13 · `default_variants`: 跨 backend 对称声明 (sam3 当前只有单档 sam3.1).
+    # v0.14.13 · `default_variants`: 跨 backend 对称声明 (sam3 图像模型只有单档).
     # 即便单值, 前端 VariantSelector 仍按统一规则消费 model.default_variants 拿初值,
     # 避免对"单档 backend"再走特殊分支.
     _default_variants = {"model_variant": MODEL_VARIANT}
@@ -474,15 +468,17 @@ def setup() -> dict:
         },
         {
             "id": "sam3-interactive-seg",
-            "display_name": "SAM 3 · 交互分割 (Exemplar)",
+            "display_name": "SAM 3 · 交互分割 (点/框/Exemplar)",
             "task": "interactive_seg",
             "model_family": "sam3",
             "infra": "pytorch",
             "is_interactive": True,
-            # v0.18.12 · 单步交互分割 (exemplar→mask), 原子单元。
+            # v0.18.12 · 单步交互分割, 原子单元。
+            # v0.18.17 · 开 inst 后并入 SAM-style point / interactive_box 单实例交互 (与 exemplar 的
+            # PCS 全图相似并列; 三者均走整图、出 polygon)。
             "composition": "atom",
-            "supported_prompts": ["exemplar"],
-            # 交互分割: exemplar 提示驱动, 整图 (不作批量 crop/框下游)。
+            "supported_prompts": ["point", "interactive_box", "exemplar"],
+            # 交互分割: 点/框/exemplar 提示驱动, 整图 (不作批量 crop/框下游)。
             "supported_inputs": ["full_image"],
             "supported_geometric_outputs": ["polygon"],
             "supported_variants": base["supported_variants"],
@@ -529,7 +525,7 @@ async def reload() -> dict:
 
 
 class WarmupRequest(BaseModel):
-    """sam3 是单档 sam3.1; variants 可选 {model_variant: "sam3.1"}, 仅校验."""
+    """sam3 图像模型单档; variants 可选 {model_variant: "sam3"}, 仅校验."""
 
     variants: dict[str, str] = {}
 
@@ -538,7 +534,7 @@ class WarmupRequest(BaseModel):
 async def warmup(req: WarmupRequest | None = None) -> WarmupResponse:
     """v0.14.14: 加载 SAM 3 权重到 GPU 不跑 forward.
 
-    sam3 单档, variants.model_variant 必须等于 sam3.1 (或缺省). 重复预热返回 cache_hit=true.
+    sam3 单档, variants.model_variant 必须等于 sam3 (或缺省). 重复预热返回 cache_hit=true.
     """
     if req is not None and req.variants:
         mv = req.variants.get("model_variant")
@@ -598,28 +594,30 @@ def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict]
     score_th = ctx.get("score_threshold")
 
     if ptype == "point":
-        # v0.10.0 选项 A: sam3-backend 不支持 point. workbench 应该挂 grounded-sam2 兜底.
-        raise HTTPException(
-            status_code=400,
-            detail="sam3-backend does not support point prompts. "
-            "Use grounded-sam2-backend for point interactivity, "
-            "or send type=bbox/text/exemplar to this backend.",
+        # v0.18.17 · inst 单实例点交互 (累加正负点; multimask 候选).
+        points = ctx.get("points") or []
+        if not points:
+            raise HTTPException(status_code=422, detail="context.points required for type=point")
+        labels = ctx.get("labels") or [1] * len(points)
+        multimask = bool(ctx.get("multimask_output", False))
+        image = None if _cache.peek(cache_key) else _fetch_image(file_path)
+        return p.predict_interactive(
+            image, points=points, labels=labels, multimask_output=multimask,
+            cache_key=cache_key, simplify_tolerance=simplify_tol,
         )
 
-    if ptype == "bbox":
-        bbox = ctx.get("bbox")
-        if not bbox or len(bbox) != 4:
-            raise HTTPException(status_code=422, detail="context.bbox=[x1,y1,x2,y2] required")
-        output_mode = _coerce_output(ctx)
-        if not _cache.peek(cache_key):
-            image = _fetch_image(file_path)
-            return p.predict_bbox(
-                image, bbox, output=output_mode, cache_key=cache_key,
-                simplify_tolerance=simplify_tol, score_threshold=score_th,
+    if ptype == "interactive_box":
+        # v0.18.17 · inst 单框单 mask (≠ exemplar 的全图相似; bbox prompt 已退役).
+        box = ctx.get("bbox")
+        if not box or len(box) != 4:
+            raise HTTPException(
+                status_code=422, detail="context.bbox=[x1,y1,x2,y2] required for type=interactive_box"
             )
-        return p.predict_bbox(
-            None, bbox, output=output_mode, cache_key=cache_key,
-            simplify_tolerance=simplify_tol, score_threshold=score_th,
+        multimask = bool(ctx.get("multimask_output", False))
+        image = None if _cache.peek(cache_key) else _fetch_image(file_path)
+        return p.predict_interactive(
+            image, box=box, multimask_output=multimask,
+            cache_key=cache_key, simplify_tolerance=simplify_tol,
         )
 
     if ptype == "text":

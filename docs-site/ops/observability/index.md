@@ -146,7 +146,7 @@ v0.14.14 把三个 backend 的 `/health.pool` 统一成 `PoolStatus`（协议 §
 |---|---|
 | yolo-backend | `{series}/{size}/{task}`，如 `yolov11/s/detection` |
 | grounded-sam2-backend | `sam={sam_variant}/dino={dino_variant}`；video 池另用 `video:sam=…` 区分 |
-| sam3-backend | 模型变体字符串如 `sam3.1`；`cap` 永远 `1` |
+| sam3-backend | 模型变体字符串如 `sam3`；`cap` 永远 `1` |
 
 **`/predict` 响应观测三件套**（协议 §4.2）：
 
