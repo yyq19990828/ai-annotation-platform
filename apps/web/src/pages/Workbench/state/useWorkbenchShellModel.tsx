@@ -52,7 +52,8 @@ import {
   INTERACTIVE_PROMPTS,
 } from "./useBackendRouting";
 import { useCapabilityValidation } from "./useCapabilityValidation";
-import { AIToolDrawer } from "../shell/AIToolDrawer";
+import { useAiToolModelPref } from "./useAiToolModelPref";
+import { InteractiveToolBar } from "../shell/InteractiveToolBar";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
@@ -798,10 +799,14 @@ export function useWorkbenchShellModel({
     taskId,
     mlBackendId: interactiveBackendId,
   });
-  // 交互工具抽屉 (AIToolDrawer) 的能力/模型反映"解析到的交互后端"; 门控 (isPromptSupported) 走 routing 并集。
+  // v0.18.25 · 引擎(模型)选择的服务端持久化偏好 (User.preferences.ai.model_by_backend, 跨设备);
+  // 作"默认之前的回落"注入 useMLCapabilities, 用户本会话显式选择仍盖过它。
+  const modelPref = useAiToolModelPref(interactiveBackendId);
+  // 交互工具栏的能力/模型反映"解析到的交互后端"; 门控 (isPromptSupported) 走 routing 并集。
   const mlCapabilities = useMLCapabilities(
     projectId ?? null,
     interactiveBackendId,
+    modelPref.savedModelId ?? null,
   );
   // v0.14.9 · active model 输出几何 / 文本属性 与项目配置的兼容性警告 (非阻断)。
   const capabilityWarnings = useCapabilityValidation({
@@ -1907,52 +1912,6 @@ export function useWorkbenchShellModel({
       videoTool: s.videoTool, onSetVideoTool: s.setVideoTool,
       isPromptSupported: routing.isPromptSupported,
       capabilitiesLoading: routing.isLoading,
-      aiToolDrawer: isAIToolId(s.tool) && aiDrawerOpen ? (
-        <AIToolDrawer
-          tool={s.tool}
-          backendName={mlCapabilities.capability?.name}
-          capability={mlCapabilities.capability}
-          samPolarity={s.samPolarity}
-          onSetSamPolarity={s.setSamPolarity}
-          isLoading={mlCapabilities.isLoading}
-          isError={mlCapabilities.isError}
-          exemplarOutputMode={s.exemplarOutputMode}
-          onSetExemplarOutputMode={(mode) => {
-            // v0.18.19 · 切输出形态时若 exemplar 会话进行中, 用当前会话重跑 (output 透传)。
-            handleSetExemplarOutputMode(mode);
-            sam.rerunExemplar(mode);
-          }}
-          exemplarText={sam.exemplarText}
-          onSetExemplarText={sam.setExemplarText}
-          exemplarThreshold={sam.exemplarThreshold}
-          onSetExemplarThreshold={sam.setExemplarThreshold}
-          exemplarThresholdDefault={
-            ((): number | undefined => {
-              const def = (
-                mlCapabilities.paramsSchema?.properties?.score_threshold as
-                  | { default?: unknown }
-                  | undefined
-              )?.default;
-              return typeof def === "number" ? def : undefined;
-            })()
-          }
-          exemplarSessionActive={sam.sessionExemplars.length > 0}
-          models={mlCapabilities.models}
-          activeModelId={mlCapabilities.activeModelId}
-          onSetActiveModelId={mlCapabilities.setActiveModelId}
-          capabilityWarnings={capabilityWarnings}
-          interactiveBackends={
-            (activeInteractivePrompt
-              ? routing.candidatesFor(activeInteractivePrompt)
-              : []
-            )
-              .map((id) => backends.find((b) => b.id === id))
-              .filter((b): b is { id: string; name: string } => !!b)
-          }
-          selectedInteractiveId={interactiveBackendId}
-          onSelectInteractive={routing.setPreferredInteractiveId}
-        />
-      ) : null,
       reviewMode: mode === "review", videoMode: isVideoTask,
       enabledToolUnits,
       videoModes,
@@ -2035,6 +1994,58 @@ export function useWorkbenchShellModel({
                 onSetRadius={maskEditor.setRadius}
                 onCommit={commitMaskAsPolygon}
                 onCancel={cancelMaskEdit}
+              />
+            )}
+            {/* v0.18.25 · 交互工具上下文浮块 (前 AIToolDrawer): 选中 AI 工具时浮在画布顶部居中,
+                与 MaskToolbar 互斥 (mask 非 AI 工具)。引擎选择经 modelPref 服务端持久化。 */}
+            {isAIToolId(s.tool) && aiDrawerOpen && (
+              <InteractiveToolBar
+                tool={s.tool}
+                backendName={mlCapabilities.capability?.name}
+                capability={mlCapabilities.capability}
+                samPolarity={s.samPolarity}
+                onSetSamPolarity={s.setSamPolarity}
+                isLoading={mlCapabilities.isLoading}
+                isError={mlCapabilities.isError}
+                exemplarOutputMode={s.exemplarOutputMode}
+                onSetExemplarOutputMode={(mode) => {
+                  // 切输出形态时若 exemplar 会话进行中, 用当前会话重跑 (output 透传)。
+                  handleSetExemplarOutputMode(mode);
+                  sam.rerunExemplar(mode);
+                }}
+                exemplarText={sam.exemplarText}
+                onSetExemplarText={sam.setExemplarText}
+                exemplarThreshold={sam.exemplarThreshold}
+                onSetExemplarThreshold={sam.setExemplarThreshold}
+                exemplarThresholdDefault={
+                  ((): number | undefined => {
+                    const def = (
+                      mlCapabilities.paramsSchema?.properties?.score_threshold as
+                        | { default?: unknown }
+                        | undefined
+                    )?.default;
+                    return typeof def === "number" ? def : undefined;
+                  })()
+                }
+                exemplarSessionActive={sam.sessionExemplars.length > 0}
+                models={mlCapabilities.models}
+                activeModelId={mlCapabilities.activeModelId}
+                onSetActiveModelId={(id) => {
+                  // 会话内选中 + 服务端持久化 (按 backend, 跨设备)。
+                  mlCapabilities.setActiveModelId(id);
+                  modelPref.save(id);
+                }}
+                capabilityWarnings={capabilityWarnings}
+                interactiveBackends={
+                  (activeInteractivePrompt
+                    ? routing.candidatesFor(activeInteractivePrompt)
+                    : []
+                  )
+                    .map((id) => backends.find((b) => b.id === id))
+                    .filter((b): b is { id: string; name: string } => !!b)
+                }
+                selectedInteractiveId={interactiveBackendId}
+                onSelectInteractive={routing.setPreferredInteractiveId}
               />
             )}
             <WorkbenchOverlays

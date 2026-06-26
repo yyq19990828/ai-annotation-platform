@@ -343,7 +343,7 @@ interface AIPredictionPopoverProps {
   onRunAi: () => void;
   onAcceptAll: () => void;
   onSetConfThreshold: (v: number) => void;
-  // v0.10.23 · 设计 B · 文本输入段下沉到 AIToolDrawer; popover 不再承载 SAM 文本提示控件.
+  // v0.10.23 · 设计 B · 文本输入段下沉到 InteractiveToolBar; popover 不再承载 SAM 文本提示控件.
   taskAiCost?: number;
   taskAiAvgMs?: number | null;
   taskAiPredictionCount?: number;

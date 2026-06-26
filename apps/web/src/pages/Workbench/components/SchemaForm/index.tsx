@@ -70,7 +70,7 @@ export interface SchemaFormProps {
   disabled?: boolean;
 }
 
-/** 从 schema.properties 派生 defaults; 用于 AIToolDrawer 切换工具时 reset. */
+/** 从 schema.properties 派生 defaults; 用于 InteractiveToolBar 切换工具时 reset. */
 export function deriveDefaults(schema: JsonSchemaObject | undefined): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (!schema?.properties) return out;

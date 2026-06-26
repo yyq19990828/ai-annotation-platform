@@ -49,6 +49,10 @@ function pickDefaultModel(models: MLModelCapability[]): MLModelCapability | unde
 export function useMLCapabilities(
   projectId: string | undefined | null,
   backendId: string | undefined | null,
+  // v0.18.25 · 引擎(模型)选择的服务端持久化偏好 (按 backend, 来自 User.preferences.ai.model_by_backend,
+  // 经 useAiToolModelPref 注入)。作"默认之前的回落": 用户本会话显式选择 (selectedModelId) > 本偏好 >
+  // pickDefaultModel。镜像 useBackendRouting 的 preferred→default 模式; 不在本 hook 内做副作用, 保持纯净可测。
+  preferredModelId?: string | null,
 ): MLCapabilitiesResult {
   const enabled = Boolean(projectId && backendId);
   const query = useQuery({
@@ -70,11 +74,15 @@ export function useMLCapabilities(
   const [selectedModelId, setSelectedModelId] = useState<string | undefined>(undefined);
   const activeModel = useMemo<MLModelCapability | undefined>(() => {
     if (models.length === 0) return undefined;
-    const picked = selectedModelId
+    // 优先级: 本会话显式选择 > 服务端持久化偏好 > 默认; 各级都校验仍是合法 model (后端被删/换档自愈)。
+    const bySession = selectedModelId
       ? models.find((m) => m.id === selectedModelId)
       : undefined;
-    return picked ?? pickDefaultModel(models);
-  }, [models, selectedModelId]);
+    const byPref = preferredModelId
+      ? models.find((m) => m.id === preferredModelId)
+      : undefined;
+    return bySession ?? byPref ?? pickDefaultModel(models);
+  }, [models, selectedModelId, preferredModelId]);
 
   let prompts: string[];
   if (query.isError) {

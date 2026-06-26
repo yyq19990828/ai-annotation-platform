@@ -34,6 +34,13 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.25] - 2026-06-26
+
+### Changed
+
+- **交互工具配置浮块：`AIToolDrawer` 退役 → 画布顶部居中浮块**：选中 AI 交互工具（point/box/exemplar）时，引擎（后端+模型）选择与工具实时参数（极性/输出形态/叠加文本/阈值）改由画布顶部居中的横排浮块（`InteractiveToolBar`）承载，与 `MaskToolbar` 互斥；不再贴 `ToolDock` 右侧竖排抽屉。仅图片工作台呈现（point/box/exemplar 是图片交互）。这是「交互工具栏重设计」epic 的第一步（见 `docs/plans/2026-06-26-v0.18.25-interactive-ai-toolbar-redesign.md`）。
+- **交互工具的引擎（模型）选择持久化**：模型选择从「会话级、刷新即丢」升级为跟随用户账号、跨设备的服务端偏好（`User.preferences.ai.model_by_backend`，按 ML backend 分桶），与已有的 AI 工具参数偏好（`params_by_backend`）同窝在 `ai` 子树下。为此 `PATCH /auth/me/preferences` 的 `ai` 子树改为「深一层合并」——`params`/`model` 两个子键由不同入口各自独立保存、互不覆盖。
+
 ## [0.18.24] - 2026-06-26
 
 ### Fixed

@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment } from "react";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { ALL_TOOLS, type CanvasTool, type ToolId } from "../stage/tools";
@@ -30,11 +30,6 @@ interface ToolDockProps {
   isPromptSupported?: (type: string) => boolean;
   /** v0.10.2 · capability 加载中: AI 工具组半透 + 不可点 (避免误用回退到的 fallback). */
   capabilitiesLoading?: boolean;
-  /**
-   * v0.10.2 · AI 工具激活时由父层渲染的右侧抽屉 (AIToolDrawer).
-   * ToolDock 自身不持有 schema/params 状态, 只负责定位.
-   */
-  aiToolDrawer?: ReactNode;
   /** M2 · review 模式下只显示 Hand 工具. */
   reviewMode?: boolean;
   /** v0.9.20 · 视频工作台分离单帧 bbox 与 track 工具. */
@@ -112,7 +107,8 @@ const cn = (...parts: Array<string | false | null | undefined>) => parts.filter(
  *   ─── 分隔 ───
  *   AI 工具 (按 prompt 范式): smart-point, smart-box, text-prompt, exemplar
  *     每个工具声明 requiredPrompt; backend 不支持时按钮置灰 + tooltip 提示.
- *     任一 AI 工具激活时, 其右侧抽屉显示 AIToolDrawer (后端 + 参数 + 工具控件).
+ *     v0.18.25 · 引擎/参数浮块 (InteractiveToolBar) 已移到画布顶部居中 (由 stage overlays 渲染),
+ *     不再贴 ToolDock 右侧; ToolDock 只负责工具按钮本身。
  *   ─── 分隔 ───
  *   视图: hand
  */
@@ -123,7 +119,6 @@ export function ToolDock({
   onSetVideoTool,
   isPromptSupported,
   capabilitiesLoading = false,
-  aiToolDrawer,
   reviewMode = false,
   videoMode = false,
   enabledToolUnits = null,
@@ -286,12 +281,6 @@ export function ToolDock({
                   </span>
                 </button>
               </Tooltip>
-              {/* AIToolDrawer 在 AI 工具激活时挂在该按钮右侧 */}
-              {active && isAITool(t) && aiToolDrawer && (
-                <div className="absolute left-full top-[-6px] z-local-5 ml-2">
-                  {aiToolDrawer}
-                </div>
-              )}
             </div>
           </Fragment>
         );

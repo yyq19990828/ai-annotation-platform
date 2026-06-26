@@ -213,9 +213,15 @@ export interface WorkbenchLayoutPreferences {
   pointcloudCamera: PointcloudCameraState | null;
 }
 
-/** 每用户的 AI 工具推理参数偏好，按 ML backend id 分桶（不同后端参数 schema 不同）。 */
+/**
+ * 每用户的 AI 工具偏好，按 ML backend id 分桶。两个子键各自独立保存（后端 `ai` 子树深一层合并）:
+ * - params_by_backend: 推理参数（不同后端参数 schema 不同）。
+ * - model_by_backend (v0.18.25): 交互工具的引擎(模型)选择。
+ * 各 writer 只提交自己那半子键，故二者皆可选。
+ */
 export interface AIToolPreferences {
-  params_by_backend: Record<string, Record<string, unknown>>;
+  params_by_backend?: Record<string, Record<string, unknown>>;
+  model_by_backend?: Record<string, string>;
 }
 
 /** v0.15.25 · 主题偏好:light/dark 固定，system 跟随 OS prefers-color-scheme。 */

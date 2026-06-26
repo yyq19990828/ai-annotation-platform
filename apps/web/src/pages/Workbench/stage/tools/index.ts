@@ -180,7 +180,7 @@ export const ALL_TOOLS: CanvasTool[] = [
   MagicBoxTool,
 ];
 
-/** v0.10.2 · 仅 AI 工具子集 (requiredPrompt 非空), 供 hotkey 循环和 AIToolDrawer 判定. */
+/** v0.10.2 · 仅 AI 工具子集 (requiredPrompt 非空), 供 hotkey 循环和 InteractiveToolBar 判定. */
 export const AI_TOOLS: CanvasTool[] = ALL_TOOLS.filter((t) => !!t.requiredPrompt);
 export const AI_TOOL_IDS: ToolId[] = AI_TOOLS.map((t) => t.id);
 

@@ -217,7 +217,14 @@ async def update_preferences(
     incoming = validated.model_dump(mode="json", exclude_unset=True, by_alias=True)
     # 顶层子树浅合并：本次未提交 workbench 时 merged.workbench 取存量值，可能仍残留已移除的
     # layout 旧键 → strip 后再存回，使每次 PATCH 顺带自愈，下方 return 的 validate 也不 422。
-    merged = _strip_removed_workbench_keys({**(user.preferences or {}), **incoming})
+    existing = user.preferences or {}
+    merged = {**existing, **incoming}
+    # v0.18.25 · ai 子树「深一层合并」：params_by_backend / model_by_backend 由不同前端 hook
+    # 各自只提交自己那半子键 (exclude_unset 下 incoming.ai 仅含本次提交键)，故合并 child key
+    # 而非整体替换，避免一方写入冲掉另一方。其余子树 (workbench) 仍按顶层浅合并 (前端提交全量)。
+    if isinstance(incoming.get("ai"), dict) and isinstance(existing.get("ai"), dict):
+        merged["ai"] = {**existing["ai"], **incoming["ai"]}
+    merged = _strip_removed_workbench_keys(merged)
     user.preferences = merged
     await db.commit()
     return UserPreferences.model_validate(merged)

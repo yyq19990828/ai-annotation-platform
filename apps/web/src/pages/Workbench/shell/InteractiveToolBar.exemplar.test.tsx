@@ -1,8 +1,8 @@
-// v0.18.23 · AIToolDrawer exemplar 能力驱动渲染: 后端无负框/无 text 叠加时隐藏对应控件。
+// v0.18.25 · InteractiveToolBar (前 AIToolDrawer) exemplar 能力驱动渲染: 后端无负框/无 text 叠加时隐藏对应控件。
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { AIToolDrawer } from "./AIToolDrawer";
+import { InteractiveToolBar } from "./InteractiveToolBar";
 import type { MLModelCapability } from "@/api/ml-backends";
 
 function exemplarModel(
@@ -20,7 +20,7 @@ function exemplarModel(
 
 function renderDrawer(model: MLModelCapability) {
   return render(
-    <AIToolDrawer
+    <InteractiveToolBar
       tool="exemplar"
       backendName="yolo-backend"
       capability={undefined}
@@ -40,7 +40,7 @@ function renderDrawer(model: MLModelCapability) {
   );
 }
 
-describe("AIToolDrawer · exemplar 能力门控", () => {
+describe("InteractiveToolBar · exemplar 能力门控", () => {
   it("negative_box=false 隐藏负极性按钮", () => {
     renderDrawer(exemplarModel({ negative_box: false, text_combination: false }));
     expect(screen.queryByTestId("ai-tool-polarity")).toBeNull();

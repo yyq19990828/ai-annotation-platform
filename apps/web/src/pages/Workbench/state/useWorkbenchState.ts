@@ -6,7 +6,7 @@ import { useWorkbenchConfig } from "./useWorkbenchConfig";
 
 // v0.10.2 · Tool union 扩展: 旧 "sam" 拆为 4 个独立 AI 工具 (smart-point / smart-box /
 // text-prompt / exemplar), 每个绑定一个 prompt 范式. 状态层仅保留 polarity (smart-point
-// 用) 和 aiToolParams (AIToolDrawer 用); samSubTool 由 tool 派生, 不再独立持有.
+// 用) 和 aiToolParams (InteractiveToolBar 用); samSubTool 由 tool 派生, 不再独立持有.
 export type Tool =
   // 选择工具：点选 / 移动已有标注与预标注；默认工具，ESC 回退到它。
   | "select"
@@ -48,7 +48,7 @@ export function toolToSamSubTool(tool: Tool): SamSubTool | null {
       return "point";
     case "smart-box":
       return "bbox";
-    // v0.10.17 · Magic Box 也是 bbox prompt; 共用 AIToolDrawer 的 bbox subtool UI.
+    // v0.10.17 · Magic Box 也是 bbox prompt; 共用 InteractiveToolBar 的 bbox subtool UI.
     case "magic-box":
       return "bbox";
     case "text-prompt":
@@ -123,7 +123,7 @@ export function useWorkbenchState() {
   const [samPolarity, setSamPolarity] = useState<SamPolarity>("positive");
   // exemplar 子工具输出形态 (box/mask/both); 会话级.
   const [exemplarOutputMode, setExemplarOutputMode] = useState<TextOutputMode>("mask");
-  /** v0.10.2 · AIToolDrawer 维护的后端参数 (来自 /setup.params schema). 切换工具时重置. */
+  /** v0.10.2 · InteractiveToolBar 维护的后端参数 (来自 /setup.params schema). 切换工具时重置. */
   const [aiToolParams, setAiToolParams] = useState<Record<string, unknown>>({});
   // v0.10.23 · 模型变体 (sam_variant / dino_variant) 从 aiToolParams 拆出: 落点 AI 面板, 会话级,
   // 切工具不重置 (设置型). 值在 run 时合进 context (链路见 useInteractiveAI.extraParams).

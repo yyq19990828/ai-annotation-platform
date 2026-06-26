@@ -72,7 +72,7 @@ export interface UseInteractiveAIReturn {
   /** v0.18.19 · exemplar 会话 per-request 阈值; null=用 backend 默认。拖动即重过滤当前会话。 */
   exemplarThreshold: number | null;
   setExemplarThreshold: (thr: number | null) => void;
-  /** v0.10.2 · 各 run* 接受可选 extraParams; 由 AIToolDrawer 注入 (box_threshold 等). */
+  /** v0.10.2 · 各 run* 接受可选 extraParams; 由 InteractiveToolBar 注入 (box_threshold 等). */
   runPoint: (pt: [number, number], polarity: 1 | 0, extraParams?: Record<string, unknown>) => void;
   runBbox: (bbox: [number, number, number, number], extraParams?: Record<string, unknown>) => void;
   /**

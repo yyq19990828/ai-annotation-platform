@@ -246,7 +246,7 @@ export function useBackendRouting({
     capIndex[preferredOverride].prompts.size > 0;
   const preferredInteractiveId = overrideValid ? preferredOverride : fallbackPreferred;
 
-  // useCallback: 引用稳定, 下传到 (可能 memo 化的) AIToolDrawer 选择器时不致每渲染失效。
+  // useCallback: 引用稳定, 下传到 (可能 memo 化的) InteractiveToolBar 选择器时不致每渲染失效。
   const setPreferredInteractiveId = useCallback(
     (id: string | null) => {
       setPreferredOverride(id);
