@@ -25,6 +25,7 @@ from app.schemas.ml_capabilities import (
     ProtocolGeometryItem,
     ProtocolInfraItem,
     ProtocolModalityItem,
+    ProtocolPromptItem,
     ProtocolTaskItem,
     SuggestedBackendItem,
 )
@@ -33,6 +34,7 @@ from app.services.capability_registry import (
     GEOMETRIES,
     INFRAS,
     MODALITIES,
+    PROMPTS,
     TASKS,
 )
 
@@ -75,6 +77,16 @@ def _build_payload() -> ProtocolCapabilitiesResponse:
         geometries=[
             ProtocolGeometryItem(id=s.id, label=s.label, summary=s.summary)
             for s in GEOMETRIES
+        ],
+        prompts=[
+            ProtocolPromptItem(
+                id=s.id,
+                label=s.label,
+                summary=s.summary,
+                requires_input=s.requires_input,
+                interactive_route=s.interactive_route,
+            )
+            for s in PROMPTS
         ],
     )
 

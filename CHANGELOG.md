@@ -34,6 +34,13 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.30] - 2026-06-26
+
+### Added
+
+- **能力受控词表 codegen 管道（registry → 前端 SSOT）**：后端 `capability_registry`（task/infra/modality/geometry/prompt 五张受控词表）经新增 `scripts/export_capability_registry.py` 导出 `capability-registry.snapshot.json`，前端 `apps/web/scripts/gen-capability-vocab.mjs` 读 snapshot 生成 `capabilityVocab.gen.ts`（ID 集合 + 类型 union + 结构元数据 + prompt 双维度派生集合）。镜像现有 OpenAPI codegen 链路：pre-commit `regen-capability-registry-snapshot` 自动重导 + CI `test_capability_registry_contract` 防漂移 + 前端 prebuild 跟 snapshot。`GET /v1/ml-capabilities/protocol` 顺带对外暴露 `prompts`。
+- 工作台交互路由 `INTERACTIVE_PROMPTS` 改 import 生成的 `INTERACTIVE_ROUTE_PROMPT_IDS`，消除前端手抄、堵住「后端新增 interactive prompt 前端不认」的静默失败（见 `docs/plans/2026-06-26-v0.18.30-capability-registry-codegen.md`）。
+
 ## [0.18.29] - 2026-06-26
 
 ### Added

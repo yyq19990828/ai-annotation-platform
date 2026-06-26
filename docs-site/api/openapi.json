@@ -13770,6 +13770,14 @@
             "title": "Modalities",
             "type": "array"
           },
+          "prompts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ProtocolPromptItem"
+            },
+            "title": "Prompts",
+            "type": "array"
+          },
           "tasks": {
             "items": {
               "$ref": "#/components/schemas/ProtocolTaskItem"
@@ -13859,6 +13867,39 @@
           "summary"
         ],
         "title": "ProtocolModalityItem",
+        "type": "object"
+      },
+      "ProtocolPromptItem": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "interactive_route": {
+            "title": "Interactive Route",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "requires_input": {
+            "title": "Requires Input",
+            "type": "boolean"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "summary",
+          "requires_input",
+          "interactive_route"
+        ],
+        "title": "ProtocolPromptItem",
         "type": "object"
       },
       "ProtocolTaskItem": {
@@ -19828,7 +19869,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.18.29"
+    "version": "0.18.30"
   },
   "openapi": "3.1.0",
   "paths": {

@@ -1,7 +1,7 @@
 {
   "name": "@anno/web",
   "private": true,
-  "version": "0.18.29",
+  "version": "0.18.30",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,7 +12,7 @@
     "lint:css-tokens": "node scripts/check-tw-tokens.mjs",
     "lint:tw-tokens": "node scripts/check-tw-tokens.mjs",
     "typecheck": "tsc --noEmit",
-    "codegen": "openapi-ts",
+    "codegen": "openapi-ts && node scripts/gen-capability-vocab.mjs",
     "codegen:watch": "openapi-ts --watch",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// v0.7.5 · 仅在 OpenAPI snapshot 比生成产物新（或缺产物）时跑 codegen。
-// 加速 `pnpm build` —— 默认 prebuild 走这里，跳过未变 snapshot。
+// v0.7.5 · 仅在 snapshot 比生成产物新（或缺产物）时跑 codegen，加速 `pnpm build`。
+// v0.18.30 · 扩展为多 snapshot 检查: OpenAPI 类型 + capability registry 受控词表。
 //
 // 触发重新生成的条件（任一）：
-//   1. src/api/generated/types.gen.ts 不存在
-//   2. apps/api/openapi.snapshot.json 的 mtime 比 types.gen.ts 新
+//   1. 任一生成产物 (types.gen.ts / capabilityVocab.gen.ts) 不存在
+//   2. 任一 snapshot 的 mtime 比其对应生成产物新
 //   3. OPENAPI_URL 环境变量被显式设置（CI / 自定义场景，绕过 mtime 比较）
 //
 // 强制重新生成：删除 src/api/generated 后跑 `pnpm build`，或直接 `pnpm codegen`。
@@ -16,8 +16,19 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(__dirname, "..");
-const snapshot = resolve(webRoot, "../api/openapi.snapshot.json");
-const generated = resolve(webRoot, "src/api/generated/types.gen.ts");
+
+// 每条 = 一对 (snapshot 源, 生成产物)。pnpm codegen 一次跑全部生成步骤,
+// 故任一对需要重生成就整体跑一次即可。
+const PAIRS = [
+  {
+    snapshot: resolve(webRoot, "../api/openapi.snapshot.json"),
+    generated: resolve(webRoot, "src/api/generated/types.gen.ts"),
+  },
+  {
+    snapshot: resolve(webRoot, "../api/capability-registry.snapshot.json"),
+    generated: resolve(webRoot, "src/api/generated/capabilityVocab.gen.ts"),
+  },
+];
 
 function runCodegen() {
   const result = spawnSync("pnpm", ["codegen"], {
@@ -33,25 +44,28 @@ if (process.env.OPENAPI_URL) {
   runCodegen();
 }
 
-if (!existsSync(generated)) {
-  console.log("[codegen-if-changed] generated client missing, generating");
-  runCodegen();
+for (const { generated } of PAIRS) {
+  if (!existsSync(generated)) {
+    console.log(`[codegen-if-changed] missing ${generated}, regenerating`);
+    runCodegen();
+  }
 }
 
-if (!existsSync(snapshot)) {
-  console.warn(
-    `[codegen-if-changed] snapshot not found at ${snapshot} — skipping (generated kept as-is)`,
-  );
-  process.exit(0);
+let needs = false;
+for (const { snapshot, generated } of PAIRS) {
+  if (!existsSync(snapshot)) {
+    console.warn(`[codegen-if-changed] snapshot not found at ${snapshot} — skipping that pair`);
+    continue;
+  }
+  if (statSync(snapshot).mtimeMs > statSync(generated).mtimeMs) {
+    console.log(`[codegen-if-changed] ${snapshot} newer than generated, regenerating`);
+    needs = true;
+  }
 }
 
-const snapMtime = statSync(snapshot).mtimeMs;
-const genMtime = statSync(generated).mtimeMs;
-
-if (snapMtime > genMtime) {
-  console.log("[codegen-if-changed] snapshot newer than generated, regenerating");
+if (needs) {
   runCodegen();
 } else {
-  console.log("[codegen-if-changed] snapshot unchanged, skipping codegen");
+  console.log("[codegen-if-changed] snapshots unchanged, skipping codegen");
   process.exit(0);
 }

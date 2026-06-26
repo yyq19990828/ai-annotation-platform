@@ -12,10 +12,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { mlBackendsApi, type MLBackendCapability } from "@/api/ml-backends";
+import { INTERACTIVE_ROUTE_PROMPT_IDS } from "@/api/generated/capabilityVocab.gen";
 
-/** 交互 prompt 集合 (text 归批量线, 不在此)。v0.18.17 · bbox→interactive_box。 */
-export const INTERACTIVE_PROMPTS = ["point", "interactive_box", "exemplar"] as const;
-export type InteractivePrompt = (typeof INTERACTIVE_PROMPTS)[number];
+/**
+ * 交互 prompt 集合 (进画布交互工具线; text 归批量线不在此)。v0.18.30 · SSOT 来自后端
+ * capability_registry 的 PROMPTS.interactive_route, 经 codegen 生成 (消除手抄漂移:
+ * 后端新增 interactive prompt 前端自动认)。当前含 point/interactive_box/exemplar +
+ * 预留 scribble/sketch/mask (无 backend 消费时 candidatesFor 为空, 工具仍灰, 无副作用)。
+ */
+export const INTERACTIVE_PROMPTS = INTERACTIVE_ROUTE_PROMPT_IDS;
+export type InteractivePrompt = (typeof INTERACTIVE_ROUTE_PROMPT_IDS)[number];
 
 function isInteractivePrompt(p: string): p is InteractivePrompt {
   return (INTERACTIVE_PROMPTS as readonly string[]).includes(p);

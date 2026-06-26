@@ -1,0 +1,462 @@
+{
+  "geometries": [
+    {
+      "id": "bbox",
+      "label": "bbox",
+      "summary": "2D 轴对齐矩形。"
+    },
+    {
+      "id": "rotated_bbox",
+      "label": "rotated bbox",
+      "summary": "带旋转角度的 2D 矩形 (OBB)。"
+    },
+    {
+      "id": "polygon",
+      "label": "polygon",
+      "summary": "2D 多边形 (单环或 multi_polygon)。"
+    },
+    {
+      "id": "polyline",
+      "label": "polyline",
+      "summary": "2D 折线。"
+    },
+    {
+      "id": "keypoint",
+      "label": "keypoint",
+      "summary": "2D 关键点集合 (含可见性)。"
+    },
+    {
+      "id": "lidar_box_3d",
+      "label": "3D box",
+      "summary": "3D 立体框, 用于点云标注。"
+    },
+    {
+      "id": "point_mask_3d",
+      "label": "point mask 3D",
+      "summary": "点云逐点 mask。"
+    },
+    {
+      "id": "none",
+      "label": "none",
+      "summary": "纯分类等无几何输出。"
+    }
+  ],
+  "infras": [
+    {
+      "id": "pytorch",
+      "label": "PyTorch",
+      "summary": "原生 .pt / TorchScript 部署。"
+    },
+    {
+      "id": "onnx",
+      "label": "ONNX",
+      "summary": "跨框架推理, 与硬件解耦。"
+    },
+    {
+      "id": "paddle",
+      "label": "Paddle",
+      "summary": "PaddlePaddle / PaddleOCR / PP-Detection 系。"
+    },
+    {
+      "id": "tensorrt",
+      "label": "TensorRT",
+      "summary": "NVIDIA GPU 高性能推理。"
+    },
+    {
+      "id": "openvino",
+      "label": "OpenVINO",
+      "summary": "Intel CPU / iGPU / NPU 优化。"
+    },
+    {
+      "id": "other",
+      "label": "其他",
+      "summary": "协议允许的自定义运行时声明。"
+    }
+  ],
+  "modalities": [
+    {
+      "id": "image",
+      "label": "图像",
+      "summary": "2D 图片 (含视频单帧)。"
+    },
+    {
+      "id": "video",
+      "label": "视频",
+      "summary": "多帧视频序列。"
+    },
+    {
+      "id": "lidar",
+      "label": "点云",
+      "summary": "3D LiDAR 点云 (含 6 相机融合场景帧)。"
+    }
+  ],
+  "prompts": [
+    {
+      "id": "none",
+      "interactive_route": false,
+      "label": "无提示",
+      "requires_input": false,
+      "summary": "纯批量推理, 无需用户提示 (检测/分类等)。"
+    },
+    {
+      "id": "point",
+      "interactive_route": true,
+      "label": "点提示",
+      "requires_input": true,
+      "summary": "SAM-style 正/负点累加, 单实例交互分割。"
+    },
+    {
+      "id": "interactive_box",
+      "interactive_route": true,
+      "label": "框提示",
+      "requires_input": true,
+      "summary": "SAM-style 单框单 mask 交互分割。"
+    },
+    {
+      "id": "text",
+      "interactive_route": false,
+      "label": "文本提示",
+      "requires_input": true,
+      "summary": "开放词汇文本驱动检测/分割; 走批量线, 不进画布交互工具。"
+    },
+    {
+      "id": "exemplar",
+      "interactive_route": true,
+      "label": "视觉示例",
+      "requires_input": true,
+      "summary": "PCS 框样例找全图同类, 多正负框 + text 概念 + 阈值迭代 refinement。"
+    },
+    {
+      "id": "scribble",
+      "interactive_route": true,
+      "label": "涂抹",
+      "requires_input": true,
+      "summary": "涂抹笔迹提示 (预留, 暂无 backend 消费)。"
+    },
+    {
+      "id": "sketch",
+      "interactive_route": true,
+      "label": "勾画",
+      "requires_input": true,
+      "summary": "勾画轮廓提示 (预留, 暂无 backend 消费)。"
+    },
+    {
+      "id": "mask",
+      "interactive_route": true,
+      "label": "掩膜",
+      "requires_input": true,
+      "summary": "已有 mask 作提示再细化 (预留/迭代)。"
+    },
+    {
+      "id": "bbox",
+      "interactive_route": false,
+      "label": "bbox (退役)",
+      "requires_input": true,
+      "summary": "旧单框提示, 已被 interactive_box 取代; 仅兼容历史快照。"
+    }
+  ],
+  "tasks": [
+    {
+      "default_geometry": [
+        "bbox"
+      ],
+      "default_modalities": [
+        "image",
+        "video"
+      ],
+      "id": "detection",
+      "label": "目标检测",
+      "protocol_notes": "/predict 响应 result.type=rectanglelabels, value 含 x/y/width/height + rectanglelabels[]; 协议 v2 §4.1 范例 A。",
+      "suggested_backends": [
+        {
+          "builtin": true,
+          "infra": "pytorch",
+          "name": "Grounded-SAM-2 (gsam2)",
+          "repo_url": "https://github.com/IDEA-Research/Grounded-SAM-2",
+          "research_link": null,
+          "summary": "平台自带参考实现, docker-compose 内置. 文本/框 prompt 驱动开放词汇检测。"
+        },
+        {
+          "builtin": true,
+          "infra": "pytorch",
+          "name": "SAM3 (sam3)",
+          "repo_url": "https://github.com/facebookresearch/segment-anything",
+          "research_link": null,
+          "summary": "平台自带参考实现, docker-compose 内置. SAM 系列检测/分割/交互一体。"
+        },
+        {
+          "builtin": false,
+          "infra": "pytorch",
+          "name": "Label Studio ML Backend (YOLO)",
+          "repo_url": "https://github.com/HumanSignal/label-studio-ml-backend",
+          "research_link": "docs/research/01-label-studio.md",
+          "summary": "官方示例覆盖 YOLOv8 / DETR, 适合上手。"
+        },
+        {
+          "builtin": false,
+          "infra": "pytorch",
+          "name": "X-AnyLabeling",
+          "repo_url": "https://github.com/CVHub520/X-AnyLabeling",
+          "research_link": "docs/research/04-x-anylabeling.md",
+          "summary": "本平台 v0.14.x 重点参考的开源端, 自带多种检测模型。"
+        }
+      ],
+      "summary": "在图像或视频帧中输出 bbox + 类别标签。",
+      "typical_models": [
+        "YOLO 系",
+        "DETR 系",
+        "Grounding DINO",
+        "SAM3"
+      ]
+    },
+    {
+      "default_geometry": [
+        "rotated_bbox"
+      ],
+      "default_modalities": [
+        "image"
+      ],
+      "id": "obb",
+      "label": "旋转框",
+      "protocol_notes": "/predict 响应 value 含 x/y/width/height/rotation; rotation 单位为度 (0-360)。",
+      "suggested_backends": [
+        {
+          "builtin": false,
+          "infra": null,
+          "name": "X-AnyLabeling (YOLOv8-OBB)",
+          "repo_url": "https://github.com/CVHub520/X-AnyLabeling",
+          "research_link": "docs/research/04-x-anylabeling.md",
+          "summary": "自带 OBB 模型, 协议直连本平台。"
+        }
+      ],
+      "summary": "在图像中输出带旋转角度的矩形 (Oriented Bounding Box)。",
+      "typical_models": [
+        "YOLOv8-OBB",
+        "Rotated DETR",
+        "Oriented R-CNN"
+      ]
+    },
+    {
+      "default_geometry": [
+        "polygon"
+      ],
+      "default_modalities": [
+        "image"
+      ],
+      "id": "segmentation",
+      "label": "实例分割",
+      "protocol_notes": "/predict 响应 result.type=polygonlabels, value.points 为闭合多边形; 可由平台 mask→polygon 转换器从 mask 像素输出派生。",
+      "suggested_backends": [
+        {
+          "builtin": true,
+          "infra": "pytorch",
+          "name": "Grounded-SAM-2 (gsam2)",
+          "repo_url": "https://github.com/IDEA-Research/Grounded-SAM-2",
+          "research_link": null,
+          "summary": "平台自带参考实现, docker-compose 内置. mask 输出经平台转 polygon 落库。"
+        },
+        {
+          "builtin": true,
+          "infra": "pytorch",
+          "name": "SAM3 (sam3)",
+          "repo_url": "https://github.com/facebookresearch/segment-anything",
+          "research_link": null,
+          "summary": "平台自带参考实现, docker-compose 内置. 高质量 SAM 系分割。"
+        },
+        {
+          "builtin": false,
+          "infra": "pytorch",
+          "name": "Label Studio ML Backend (Mask R-CNN)",
+          "repo_url": "https://github.com/HumanSignal/label-studio-ml-backend",
+          "research_link": "docs/research/01-label-studio.md",
+          "summary": "官方示例含 Mask R-CNN。"
+        }
+      ],
+      "summary": "为每个对象输出 polygon / multi_polygon 几何 + 类别。",
+      "typical_models": [
+        "Mask R-CNN",
+        "YOLO-Seg",
+        "SegFormer",
+        "SAM3"
+      ]
+    },
+    {
+      "default_geometry": [
+        "keypoint"
+      ],
+      "default_modalities": [
+        "image"
+      ],
+      "id": "keypoint",
+      "label": "关键点",
+      "protocol_notes": "/predict 响应 result.type=keypointlabels; 每点含 x/y/visibility, 建议同时声明 skeleton 边以便平台渲染连线。",
+      "suggested_backends": [
+        {
+          "builtin": false,
+          "infra": null,
+          "name": "X-AnyLabeling (YOLOv8-Pose)",
+          "repo_url": "https://github.com/CVHub520/X-AnyLabeling",
+          "research_link": "docs/research/04-x-anylabeling.md",
+          "summary": "提供 YOLOv8-Pose 关键点模型。"
+        }
+      ],
+      "summary": "输出 2D 关键点集合 (含可见性), 如人体姿态、面部关键点。",
+      "typical_models": [
+        "YOLOv8-Pose",
+        "HRNet",
+        "OpenPose"
+      ]
+    },
+    {
+      "default_geometry": [
+        "none"
+      ],
+      "default_modalities": [
+        "image"
+      ],
+      "id": "classification",
+      "label": "图像分类",
+      "protocol_notes": "/predict 响应 result.type=choices, value.choices 为类别名数组; supported_geometric_outputs=['none']。",
+      "suggested_backends": [
+        {
+          "builtin": false,
+          "infra": null,
+          "name": "Label Studio ML Backend (HuggingFace classifier)",
+          "repo_url": "https://github.com/HumanSignal/label-studio-ml-backend",
+          "research_link": "docs/research/01-label-studio.md",
+          "summary": "HuggingFace transformer 分类示例。"
+        }
+      ],
+      "summary": "对整张图或裁片输出类别标签, 无几何输出。",
+      "typical_models": [
+        "ResNet",
+        "ViT",
+        "EfficientNet"
+      ]
+    },
+    {
+      "default_geometry": [
+        "bbox"
+      ],
+      "default_modalities": [
+        "image"
+      ],
+      "id": "ocr",
+      "label": "OCR",
+      "protocol_notes": "/predict 响应 result.value 含 bbox + attributes.text (必填), 可选 attributes.language / attributes.orientation; 协议 v2 §4.1 范例 C。",
+      "suggested_backends": [
+        {
+          "builtin": false,
+          "infra": null,
+          "name": "PaddleOCR (via Label Studio ML)",
+          "repo_url": "https://github.com/PaddlePaddle/PaddleOCR",
+          "research_link": null,
+          "summary": "工业级 OCR, Paddle infra; 可包装为 ML backend。"
+        },
+        {
+          "builtin": false,
+          "infra": null,
+          "name": "RapidOCR (ONNX)",
+          "repo_url": "https://github.com/RapidAI/RapidOCR",
+          "research_link": null,
+          "summary": "ONNX runtime, CPU 友好, 部署简单。"
+        }
+      ],
+      "summary": "从图像中提取文本框与文本内容 (v0.14.9 首发模型族)。",
+      "typical_models": [
+        "PaddleOCR",
+        "EasyOCR",
+        "RapidOCR"
+      ]
+    },
+    {
+      "default_geometry": [
+        "bbox"
+      ],
+      "default_modalities": [
+        "image"
+      ],
+      "id": "doc_layout",
+      "label": "版面分析",
+      "protocol_notes": "/predict 响应 result.value 含 bbox + class_name (受控: title/paragraph/table/figure/formula/list/header/footer); 协议 v2 §4.1 范例 C。",
+      "suggested_backends": [
+        {
+          "builtin": false,
+          "infra": null,
+          "name": "PP-StructureV2",
+          "repo_url": "https://github.com/PaddlePaddle/PaddleOCR/tree/main/ppstructure",
+          "research_link": null,
+          "summary": "Paddle 版面分析, 含 table / formula 识别。"
+        }
+      ],
+      "summary": "对文档页面输出版面元素区块 (标题/段落/表格/插图等)。",
+      "typical_models": [
+        "LayoutLMv3",
+        "PP-StructureV2",
+        "DiT"
+      ]
+    },
+    {
+      "default_geometry": [],
+      "default_modalities": [
+        "video"
+      ],
+      "id": "tracker",
+      "label": "视频追踪",
+      "protocol_notes": "/setup.supported_trackers 声明可用 tracker; /predict 在视频帧上返回带 instance_id 的 bbox 序列。",
+      "suggested_backends": [
+        {
+          "builtin": true,
+          "infra": "pytorch",
+          "name": "Grounded-SAM-2 (gsam2)",
+          "repo_url": "https://github.com/IDEA-Research/Grounded-SAM-2",
+          "research_link": null,
+          "summary": "平台自带参考实现, docker-compose 内置. 含 SAM2 Video 视频追踪能力。"
+        }
+      ],
+      "summary": "跨帧追踪同一对象, 输出对象 id + 每帧 bbox。",
+      "typical_models": [
+        "ByteTrack",
+        "OC-SORT",
+        "SAM2 Video"
+      ]
+    },
+    {
+      "default_geometry": [
+        "polygon"
+      ],
+      "default_modalities": [
+        "image"
+      ],
+      "id": "interactive_seg",
+      "label": "交互分割",
+      "protocol_notes": "/setup.supported_prompts 含 point/interactive_box/text/exemplar (point/interactive_box 为 SAM-style 单实例点/框交互, 支持正负点累加 + multimask 候选; exemplar 为 PCS 全图相似, 支持多正负框累加 + text 概念组合 + per-request 阈值重过滤的迭代 refinement; bbox 已退役为纯几何形状); /predict 响应 mask 或 polygon, 平台转换为 polygon 落库。",
+      "suggested_backends": [
+        {
+          "builtin": true,
+          "infra": "pytorch",
+          "name": "Grounded-SAM-2 (gsam2)",
+          "repo_url": "https://github.com/IDEA-Research/Grounded-SAM-2",
+          "research_link": null,
+          "summary": "平台自带参考实现, docker-compose 内置. 文本+框 prompt 开放词汇交互分割。"
+        },
+        {
+          "builtin": true,
+          "infra": "pytorch",
+          "name": "SAM3 (sam3)",
+          "repo_url": "https://github.com/facebookresearch/segment-anything",
+          "research_link": null,
+          "summary": "平台自带参考实现, docker-compose 内置. Meta 官方 SAM 高质量分割。"
+        }
+      ],
+      "summary": "基于用户 prompt (点/框/文本) 对图像做交互式实例分割。",
+      "typical_models": [
+        "SAM",
+        "SAM2",
+        "SAM3",
+        "Grounded-SAM"
+      ]
+    }
+  ],
+  "version": "v2"
+}
