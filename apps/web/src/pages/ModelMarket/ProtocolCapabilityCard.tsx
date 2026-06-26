@@ -1,27 +1,17 @@
 // v0.14.11 · 协议能力卡片 — 一张卡 = 一个协议 task; 卡内挂载已注册 backend 的 model.
-// 与 ModelCard (CapabilityCatalogPanel 内) 的区别: 概览化, 只显示 name + task/infra badge
-// + backend 来源, 不展开 variants / resource / output_attribute_types. 用户想看完整细节
-// 切到 groupBy=backend 模式即可。
+// 卡内已接入模型直接复用 ModelCard, 与 groupBy=backend/infra 等其他分组视图字段对齐
+// (展开可接受输入 / 输出几何 / 输出属性 / 资源 / 变体组合 / 运行时); 空态仍引导注册。
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { ProtocolTask } from "@/api/mlCapabilities";
-
-// 协议卡内 model 子卡的最小展示形态. v0.14.11 数据源由 instances 端点提供
-// (env-only + registered 合并), 不含 url / health 等敏感字段。
-export interface MountedModel {
-  id: string;
-  display_name: string;
-  infra?: string | null;
-  is_interactive?: boolean;
-  backendName: string;
-  source: "env_only" | "registered" | string;
-}
+import { ModelCard } from "./capability/ModelCard";
+import type { FlatModel } from "./capability/types";
 
 interface Props {
   task: ProtocolTask;
-  mounted: MountedModel[];
+  mounted: FlatModel[];
   /** 中文 infra label (复用 panel 内 INFRA_LABELS, 通过 props 注入避免循环依赖). */
   infraLabel: (infra: string) => string;
   /** 中文 modality label. */
@@ -81,34 +71,9 @@ export function ProtocolCapabilityCard({
       <p className="m-0 text-xs leading-normal text-muted-foreground">{task.summary}</p>
 
       {!empty && (
-        <div className="mt-1 grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+        <div className="mt-1 grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-2">
           {mounted.map((m) => (
-            <div
-              key={`${m.backendName}:${m.id}`}
-              className="flex flex-col gap-1 rounded-sm border border-border bg-muted px-2.5 py-2"
-            >
-              <div
-                className="overflow-hidden text-ellipsis whitespace-nowrap text-xs font-semibold text-foreground"
-                title={m.display_name}
-              >
-                {m.display_name}
-              </div>
-              <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-                {m.infra && <span>{infraLabel(m.infra)}</span>}
-                {m.is_interactive && <span>· 交互式</span>}
-                {m.source === "env_only" ? (
-                  <Badge variant="success">自带</Badge>
-                ) : (
-                  <Badge variant="outline">已注册</Badge>
-                )}
-              </div>
-              <div
-                className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground"
-                title={m.backendName}
-              >
-                <Icon name="bot" size={10} /> {m.backendName}
-              </div>
-            </div>
+            <ModelCard key={`${m.backendId}:${m.model.id}`} item={m} />
           ))}
         </div>
       )}

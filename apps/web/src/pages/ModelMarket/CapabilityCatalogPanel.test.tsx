@@ -181,8 +181,8 @@ describe("CapabilityCatalogPanel · 协议双层视图", () => {
     renderUI();
     await screen.findByText("Grounded-SAM 2 · 文本检测");
     expect(screen.getByText("Grounded-SAM 2 · 视频追踪")).toBeInTheDocument();
-    // env-only model 有「自带」徽标
-    expect(screen.getAllByText("自带").length).toBeGreaterThan(0);
+    // env-only model 复用 ModelCard 渲染, 来源行展示「平台内置 · <backend名>」
+    expect(screen.getAllByText(/平台内置/).length).toBeGreaterThan(0);
     // detection / tracker 协议卡都不再是「暂无接入」
     const undeployedCount = screen.queryAllByText("暂无接入").length;
     // 9 张卡里只剩 7 张暂无接入 (detection / tracker 各挂了 1 个 model)
