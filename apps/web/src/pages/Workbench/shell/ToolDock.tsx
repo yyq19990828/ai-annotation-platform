@@ -134,7 +134,7 @@ export function ToolDock({
       return enabledToolUnits.has(unit);
     });
     return (
-      <div className={ROOT_CLASS} data-workbench-tool-dock>
+      <div className={ROOT_CLASS}>
         {visibleThreeDTools.map((t) => {
           const active = threeDTool === t.id;
           return (
@@ -168,7 +168,7 @@ export function ToolDock({
       return true;
     });
     return (
-      <div className={ROOT_CLASS} data-workbench-tool-dock>
+      <div className={ROOT_CLASS}>
         {visibleVideoTools.map((t, idx) => {
           const active = videoTool === t.id;
           const prevGroup = idx > 0 ? visibleVideoTools[idx - 1].group : null;
@@ -220,7 +220,7 @@ export function ToolDock({
     t.id === "select" ? "select" : t.id === "hand" ? "view" : isAITool(t) ? "ai" : "draw";
 
   return (
-    <div className={ROOT_CLASS} data-workbench-tool-dock>
+    <div className={ROOT_CLASS}>
       {visibleTools.map((t, idx) => {
         const active = tool === t.id;
         const prevGroup = idx > 0 ? groupOf(visibleTools[idx - 1]) : null;

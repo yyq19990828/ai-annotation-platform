@@ -8,12 +8,16 @@
 import { useEffect } from "react";
 
 import { Icon } from "@/components/ui/Icon";
-import type { MLBackendCapability, MLModelCapability } from "@/api/ml-backends";
+import type {
+  MLBackendCapability,
+  MLBackendSupportedVariantGroup,
+  MLModelCapability,
+} from "@/api/ml-backends";
+import { VariantSelector } from "@/components/ml/VariantSelector";
 import type { SamPolarity, Tool } from "../state/useWorkbenchState";
 import type { TextOutputMode } from "../state/useInteractiveAI";
 import type { CapabilityWarning } from "../state/useCapabilityValidation";
 import { TOOL_REGISTRY, type ToolId } from "../stage/tools";
-import { SamOutputModeTabs } from "./SamOutputModeTabs";
 
 const FIELD_LABEL_CLASS = "text-2xs text-muted-foreground";
 const SELECT_CLASS =
@@ -53,6 +57,15 @@ export interface InteractiveToolBarProps {
   interactiveBackends?: Array<{ id: string; name: string }>;
   selectedInteractiveId?: string | null;
   onSelectInteractive?: (id: string) => void;
+  // v0.18.26 · 模型权重(档位)选择: 交互后端 activeModel 的 variant 轴 (series/size 等);
+  //   选择写回项目级 default_variants (与批量预标注同源)。无 variant 轴时不渲染入口。
+  variantGroups?: MLBackendSupportedVariantGroup[];
+  variantCombinations?: string[][];
+  /** backend 自报 + 项目偏好合并后的默认 variant 组合 (axis_key → value)。 */
+  variantDefaults?: Record<string, string>;
+  /** 当前项目已选 variant slice (缺轴由 variantDefaults 兜底)。 */
+  variantValue?: Record<string, string>;
+  onVariantChange?: (next: Record<string, unknown>) => void;
 }
 
 // model.task → 中文分组标题. 受控 task 之外的归「其他」。
@@ -136,9 +149,15 @@ export function InteractiveToolBar({
   interactiveBackends,
   selectedInteractiveId,
   onSelectInteractive,
+  variantGroups,
+  variantCombinations,
+  variantDefaults,
+  variantValue,
+  onVariantChange,
 }: InteractiveToolBarProps) {
   const meta = TOOL_REGISTRY[tool];
   const hint = TOOL_HINT[tool];
+  const hasVariants = !!variantGroups && variantGroups.length > 0 && !!onVariantChange;
 
   // 模型选择器按当前工具 prompt 过滤: 只列声明支持该交互 prompt 的图像交互 model
   // (point → 仅 interactive_seg; tracker 属视频, 排除)。过滤后通常剩 1 个 → 选择器自动隐藏。
@@ -182,7 +201,6 @@ export function InteractiveToolBar({
   return (
     <div
       data-testid="interactive-toolbar"
-      data-ai-drawer-root
       className="absolute left-1/2 top-3 z-local-5 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-col gap-1 rounded-md border border-border bg-card px-3 py-1.5 shadow-md"
       onMouseDown={(e) => e.stopPropagation()}
     >
@@ -238,6 +256,17 @@ export function InteractiveToolBar({
               ))}
             </select>
           )}
+          {/* v0.18.26 · 模型权重(档位): 内联紧凑下拉 (series/size 多轴, 复用 VariantSelector 联动逻辑)。 */}
+          {hasVariants && (
+            <VariantSelector
+              compact
+              supportedVariants={variantGroups}
+              variantCombinations={variantCombinations}
+              defaults={variantDefaults}
+              value={variantValue ?? {}}
+              onChange={(next) => onVariantChange?.(next)}
+            />
+          )}
         </div>
 
         {/* 极性切换 (smart-point 点正负 / exemplar 框正负, 与 Alt 修饰键合并)。
@@ -271,13 +300,23 @@ export function InteractiveToolBar({
           </>
         )}
 
-        {/* exemplar 输出形态三选一 (box/mask/both) */}
+        {/* exemplar 输出形态三选一 (box/mask/both) — 下拉, 与引擎排下拉风格统一 */}
         {tool === "exemplar" && exemplarOutputMode && onSetExemplarOutputMode && (
           <>
             {DIVIDER}
             <div className="flex items-center gap-1.5" data-testid="exemplar-output-mode">
               <span className={FIELD_LABEL_CLASS}>形态</span>
-              <SamOutputModeTabs value={exemplarOutputMode} onChange={onSetExemplarOutputMode} />
+              <select
+                data-testid="exemplar-output-mode-select"
+                value={exemplarOutputMode}
+                onChange={(e) => onSetExemplarOutputMode(e.target.value as TextOutputMode)}
+                className={`${SELECT_CLASS} cursor-pointer`}
+                title="输出形态"
+              >
+                <option value="box">□ 框</option>
+                <option value="mask">○ 掩膜</option>
+                <option value="both">⊕ 全部</option>
+              </select>
             </div>
           </>
         )}

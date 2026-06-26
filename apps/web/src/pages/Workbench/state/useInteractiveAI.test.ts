@@ -183,6 +183,22 @@ describe("useInteractiveAI", () => {
     expect(result.current.candidates).toHaveLength(0);
   });
 
+  it("v0.18.26 · 出候选 → 弹候选数提示 (与无候选对齐)", async () => {
+    interactiveAnnotateMock.mockResolvedValue({
+      result: [
+        { type: "rectanglelabels", value: { x: 1, y: 1, width: 5, height: 5, rectanglelabels: ["a"] }, score: 0.9 },
+        { type: "rectanglelabels", value: { x: 1, y: 1, width: 5, height: 5, rectanglelabels: ["b"] }, score: 0.8 },
+      ],
+    });
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() => result.current.runBbox([0.1, 0.1, 0.2, 0.2]));
+    await waitFor(() =>
+      expect(pushToastMock).toHaveBeenCalledWith(
+        expect.objectContaining({ msg: "2 个候选", kind: "success" }),
+      ),
+    );
+  });
+
   it("多连通 mask (value.polygons) → 取面积最大外环, 不丢候选", async () => {
     // 后端多环结构: 一个大三角 (面积 0.5) + 一个碎屑小三角 (面积 ~0.005)。
     interactiveAnnotateMock.mockResolvedValue({

@@ -39,6 +39,11 @@ interface VariantSelectorProps {
   value: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
   disabled?: boolean;
+  /**
+   * v0.18.26 · 紧凑内联模式 (工作台交互工具栏浮块用): 每轴渲染为带轴名前缀的裸 select, 横排排列,
+   * 不显示显存/推荐 pill 与描述 note。复用同一套 normalizeFields / 联动逻辑。
+   */
+  compact?: boolean;
 }
 
 interface NormalizedVariantField {
@@ -204,6 +209,7 @@ export function VariantSelector({
   value,
   onChange,
   disabled = false,
+  compact = false,
 }: VariantSelectorProps) {
   const fields = normalizeFields(
     schema,
@@ -237,6 +243,41 @@ export function VariantSelector({
     }
     onChange(next);
   };
+
+  // v0.18.26 · 紧凑内联模式: 横排裸 select, 每轴前缀轴名, 不渲染显存/推荐 pill 与 note。
+  if (compact) {
+    return (
+      <>
+        {fields.map((field) => {
+          const current =
+            typeof value[field.key] === "string"
+              ? (value[field.key] as string)
+              : field.fallback;
+          const selected =
+            field.options.find((option) => option.value === current) ?? field.options[0]!;
+          return (
+            <div key={field.key} className="flex items-center gap-1">
+              <span className="text-2xs text-muted-foreground">{field.title}</span>
+              <select
+                data-testid={`ai-variant-${field.key}`}
+                value={selected.value}
+                disabled={disabled}
+                onChange={(e) => handleChange(field.key, e.target.value)}
+                className="cursor-pointer appearance-none rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground"
+                title={field.title}
+              >
+                {field.options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label ?? option.value}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        })}
+      </>
+    );
+  }
 
   return (
     <div data-testid="ai-variant-selector" className={styles.root}>

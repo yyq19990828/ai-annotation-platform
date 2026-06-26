@@ -252,6 +252,17 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
             sub: source === "exemplar" ? "可调低阈值或多画几个样例框" : "请尝试不同的位置/区域",
             kind: "warning",
           });
+        } else {
+          // v0.18.26 · 出候选也给提示, 与「无候选」行为对齐: 右上角告知本轮候选数。
+          // 候选是画布上的待确认浮层 (紫虚线), 不在右栏; point 多候选为同一对象的备选 mask。
+          pushToast({
+            msg: `${next.length} 个候选`,
+            sub:
+              source === "point"
+                ? "Tab 切换备选 / Enter 采纳"
+                : "在画布上确认候选",
+            kind: "success",
+          });
         }
       } catch (err) {
         if (myInflight !== inflightRef.current) return;

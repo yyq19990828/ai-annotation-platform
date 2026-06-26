@@ -4,7 +4,7 @@ import {
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
-import { useProject } from "@/hooks/useProjects";
+import { useProject, useUpdateProject } from "@/hooks/useProjects";
 import {
   useTaskList, useTask, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
   useUpdateAnnotation, useSubmitTask,
@@ -354,7 +354,6 @@ export function useWorkbenchShellModel({
   // 开关 aiPopoverOpen 因切 task 时被关闭(与任务流纠缠)留壳层。
   const { aiPopoverPosition, setAiPopoverPosition, aiPopoverSize, setAiPopoverSize } =
     useAiPopoverFrame();
-  const [aiDrawerOpen, setAiDrawerOpen] = useState(true);
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
   const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(
@@ -814,6 +813,46 @@ export function useWorkbenchShellModel({
     enabledToolUnits,
     toolBindings: currentProject?.tool_bindings,
   });
+  // v0.18.26 · 交互工具档位(模型权重)选择: 源自交互后端 activeModel 的 variant 轴, 选择写回
+  // 项目级 default_variants (与批量预标注同源; 一项目一后端一份偏好, 交互/批量共用同一档位)。
+  const updateProjectMu = useUpdateProject(projectId ?? "");
+  const interactiveVariantGroups = mlCapabilities.activeModel?.supported_variants;
+  const interactiveVariantCombos = mlCapabilities.activeModel?.variant_combinations;
+  const interactiveProjectVariantSlice = useMemo<Record<string, string>>(
+    () =>
+      interactiveBackendId
+        ? currentProject?.default_variants?.[interactiveBackendId] ?? {}
+        : {},
+    [currentProject?.default_variants, interactiveBackendId],
+  );
+  // 请求实际下发的档位: backend 自报默认 + 项目偏好覆盖 (缺轴回落 backend 默认)。
+  const interactiveVariantSlice = useMemo<Record<string, string>>(
+    () => ({
+      ...(mlCapabilities.activeModel?.default_variants ?? {}),
+      ...interactiveProjectVariantSlice,
+    }),
+    [mlCapabilities.activeModel, interactiveProjectVariantSlice],
+  );
+  const handleInteractiveVariantChange = useCallback(
+    (next: Record<string, unknown>) => {
+      if (!interactiveBackendId) return;
+      const axisKeys = (interactiveVariantGroups ?? [])
+        .map((g) => g.key)
+        .filter((k): k is string => typeof k === "string");
+      if (axisKeys.length === 0) return;
+      const slice: Record<string, string> = {};
+      for (const k of axisKeys) {
+        const v = next[k];
+        if (typeof v === "string") slice[k] = v;
+      }
+      const merged: Record<string, Record<string, string>> = {
+        ...(currentProject?.default_variants ?? {}),
+        [interactiveBackendId]: slice,
+      };
+      updateProjectMu.mutate({ default_variants: merged });
+    },
+    [interactiveBackendId, interactiveVariantGroups, currentProject?.default_variants, updateProjectMu],
+  );
   // AI"配置区"共享状态 (任务类型 / 模型任务 / 类别白名单 / variant / 参数 / 输出形态 / buildArgs);
   // 与批量页 ProjectDetailPanel 同一 hook + PreannotateConfigForm (单一事实源). 驱动批量 AI 面板
   // (运行当前题 AI) — 批量线, 用 batchBackendId.
@@ -858,45 +897,6 @@ export function useWorkbenchShellModel({
     if (!isVideoTask) return;
     if (tool !== "box" && tool !== "select") setTool("box");
   }, [isVideoTask, tool, setTool]);
-
-  useEffect(() => {
-    if (!isAIToolId(s.tool)) return;
-    if (!aiDrawerOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      const active = document.activeElement;
-      if (active instanceof HTMLElement) {
-        const tag = active.tagName.toLowerCase();
-        if (tag === "input" || tag === "textarea" || active.isContentEditable) return;
-      }
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      setAiDrawerOpen(false);
-    };
-    window.addEventListener("keydown", onKey, { capture: true });
-    return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [s.tool, aiDrawerOpen]);
-
-  useEffect(() => {
-    if (!isAIToolId(s.tool)) return;
-    if (!aiDrawerOpen) return;
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
-      if (target.closest("[data-ai-drawer-root]")) return;
-      if (target.closest("[data-workbench-tool-dock]")) return;
-      // 点画布关闭浮层, 但**不要** preventDefault/stopPropagation: 否则浏览器不再生成
-      // 兼容 mousedown, Konva <Stage onMouseDown> 收不到事件 → 首次 AI 拖框被吞掉
-      // (smart-box / exemplar 等画第一框无效)。关闭浮层与触发绘制手势应同帧并存。
-      setAiDrawerOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown, { capture: true });
-    return () => document.removeEventListener("pointerdown", onPointerDown, { capture: true });
-  }, [s.tool, aiDrawerOpen]);
-
-  useEffect(() => {
-    if (isAIToolId(s.tool)) setAiDrawerOpen(true);
-  }, [s.tool]);
 
   const {
     conflictOpen,
@@ -1905,10 +1905,7 @@ export function useWorkbenchShellModel({
     },
     toolDock: {
       tool: s.tool,
-      onSetTool: (next) => {
-        s.setTool(next);
-        if (isAIToolId(next)) setAiDrawerOpen(true);
-      },
+      onSetTool: s.setTool,
       videoTool: s.videoTool, onSetVideoTool: s.setVideoTool,
       isPromptSupported: routing.isPromptSupported,
       capabilitiesLoading: routing.isLoading,
@@ -1998,7 +1995,7 @@ export function useWorkbenchShellModel({
             )}
             {/* v0.18.25 · 交互工具上下文浮块 (前 AIToolDrawer): 选中 AI 工具时浮在画布顶部居中,
                 与 MaskToolbar 互斥 (mask 非 AI 工具)。引擎选择经 modelPref 服务端持久化。 */}
-            {isAIToolId(s.tool) && aiDrawerOpen && (
+            {isAIToolId(s.tool) && (
               <InteractiveToolBar
                 tool={s.tool}
                 backendName={mlCapabilities.capability?.name}
@@ -2046,6 +2043,11 @@ export function useWorkbenchShellModel({
                 }
                 selectedInteractiveId={interactiveBackendId}
                 onSelectInteractive={routing.setPreferredInteractiveId}
+                variantGroups={interactiveVariantGroups}
+                variantCombinations={interactiveVariantCombos}
+                variantDefaults={interactiveVariantSlice}
+                variantValue={interactiveProjectVariantSlice}
+                onVariantChange={handleInteractiveVariantChange}
               />
             )}
             <WorkbenchOverlays
@@ -2126,12 +2128,13 @@ export function useWorkbenchShellModel({
         onCommitRotatedBbox: createRotatedBbox,
         onCommitRotateBbox: handleCommitRotateBbox,
         onSamPrompt: (prompt) => {
-          // v0.14.18 · 交互 variant/params 仅当交互后端与批量配置后端一致时复用 preCfg (单后端,
-          // 行为不变); 多后端 (交互≠批量) 时不混用批量后端的 variant, 交互后端用其预热/默认变体。
-          const extra =
-            interactiveBackendId === batchBackendId
-              ? buildPredictParams(preCfg.paramsValue, preCfg.currentVariantSlice)
-              : {};
+          // v0.18.26 · 档位(model_variants)走交互后端自己的偏好 (interactiveVariantSlice =
+          // 项目 default_variants[交互后端] 合并 backend 默认), 不再受"交互后端是否==批量后端"约束,
+          // 由工具栏「档位」选择器驱动。params (阈值等) 仍仅在同后端时复用批量 preCfg.paramsValue。
+          const extra = buildPredictParams(
+            interactiveBackendId === batchBackendId ? preCfg.paramsValue : undefined,
+            interactiveVariantSlice,
+          );
           if (prompt.kind === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1, extra);
           if (prompt.kind === "exemplar")
             // v0.18.19 · alt=负框 (排误检) / 否则正框 (扩召回); refine 会话每次重发全量。

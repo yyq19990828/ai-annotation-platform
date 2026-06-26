@@ -34,6 +34,18 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.26] - 2026-06-26
+
+### Added
+
+- **交互工具栏支持模型权重（档位）选择**：`InteractiveToolBar` 引擎组内新增内联档位选择——读取当前模型的 `supported_variants` / `variant_combinations`，按轴渲染为紧凑横排裸 `<select>`（`VariantSelector` 新增 `compact` 模式），与批量预标注共用同一套联动/默认值逻辑。档位变更写入项目级 `default_variants[backend]`（经 `useUpdateProject`），批量与交互共享。
+- **出候选右上角信息提示**：交互预测返回非空候选时，右上角弹 success toast（`N 个候选`），子文案区分来源（point：`Tab 切换备选 / Enter 采纳`；box/exemplar：`在画布上确认候选`），与「未返回候选」的 warning 提示行为对齐。
+
+### Changed
+
+- **交互工具浮块改为常驻**：选中 AI 交互工具时顶部浮块保持可见，不再「点画布/按 Esc 即隐藏」。旧的自动隐藏机制（点画布关闭 + Esc 关闭 + 工具切换重开 + `ToolDock`/浮块的豁免标记）是为贴边竖排抽屉设计的，顶部居中浮块不遮挡绘制区，故整套移除。
+- **交互工具浮块输出形态改为下拉选择**：原 `SamOutputModeTabs` 三按钮 tab 改为单个 `<select>`（□ 框 / ○ 掩膜 / ⊕ 全部），与档位选择视觉统一、占位更紧凑。
+
 ## [0.18.25] - 2026-06-26
 
 ### Changed
