@@ -358,3 +358,52 @@ def test_setup_openvocab_default_variants(setup_dict: dict) -> None:
 def test_setup_warmup_endpoint_true(setup_dict: dict) -> None:
     """v0.14.14 协议 §4.4 · 顶层 warmup_endpoint 必须为 True (yolo 支持 /warmup)."""
     assert setup_dict["warmup_endpoint"] is True
+
+
+# ---------- v0.18.32: params schema 按上下文派生 (文案中性化 + 默认值校准) ----------
+
+
+def test_setup_conf_description_task_neutral(setup_dict: dict) -> None:
+    """v0.18.32 · 所有带 conf 的 model (闭集 + 开集) 的 conf 文案不再写死"检测/分割",
+    以免挂到 pose/obb/开集时不贴切。"""
+    for m in setup_dict["models"]:
+        props = m["params"]["properties"]
+        if "conf" not in props:
+            continue  # exemplar 用 score_threshold, 不在此约束.
+        assert "检测/分割" not in props["conf"]["description"], m["id"]
+
+
+def test_setup_closed_set_conf_default_unchanged(setup_dict: dict) -> None:
+    """v0.18.32 · 闭集四 task conf 默认值逐字节不变 (零回归: 仍 0.25)。"""
+    for mid in CLOSED_IDS:
+        m = next(x for x in setup_dict["models"] if x["id"] == mid)
+        assert m["params"]["properties"]["conf"]["default"] == 0.25, mid
+
+
+def test_setup_openvocab_conf_default_and_desc(setup_dict: dict) -> None:
+    """v0.18.32 · 开集文本三 model 默认仍 0.25 (本版无实测证据下调), 文案点明开集语义。"""
+    for mid in OPENVOCAB_DETECT_IDS | OPENVOCAB_SEGMENT_IDS:
+        m = next(x for x in setup_dict["models"] if x["id"] == mid)
+        conf = m["params"]["properties"]["conf"]
+        assert conf["default"] == 0.25, mid
+        assert "开集" in conf["description"], mid
+
+
+def test_setup_obb_iou_description_mentions_rotated(setup_dict: dict) -> None:
+    """v0.18.32 · obb 的 iou 文案注明走旋转 NMS (probiou); 其余 task 不带这句。"""
+    obb = next(m for m in setup_dict["models"] if m["id"] == "obb")
+    assert "probiou" in obb["params"]["properties"]["iou"]["description"]
+    detect = next(m for m in setup_dict["models"] if m["id"] == "detect")
+    assert "probiou" not in detect["params"]["properties"]["iou"]["description"]
+
+
+def test_build_params_schema_derivations_independent() -> None:
+    """v0.18.32 · _build_params_schema 每次返回独立深拷贝, 改一份不影响另一份。"""
+    import main  # noqa: PLC0415
+
+    a = main._build_params_schema()
+    b = main._build_params_schema(conf_default=0.4)
+    a["properties"]["conf"]["default"] = 0.99
+    assert b["properties"]["conf"]["default"] == 0.4
+    # 派生不应回写基础表。
+    assert main._BASE_PARAMS_SCHEMA["properties"]["conf"]["default"] == 0.25

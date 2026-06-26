@@ -19876,7 +19876,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.18.31"
+    "version": "0.18.32"
   },
   "openapi": "3.1.0",
   "paths": {

@@ -34,6 +34,12 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.32] - 2026-06-26
+
+### Changed
+
+- **YOLO `/setup` 预标参数声明按上下文派生（文案中性化 + obb 旋转 NMS 说明）**：此前六个 model（闭集 detect/segment/pose/obb + 开集文本检测/分割）共用一份 `_PARAMS_SCHEMA`，`conf` 文案写死「检测/分割」，挂到 pose/obb/开集时不贴切。改为小工厂 `_build_params_schema(*, conf_default, conf_desc, iou_desc)` 按上下文派生独立深拷贝：基础表 `conf` 文案改为 task 中性；obb 的 `iou` 文案补一句「朝向框走旋转 NMS（probiou），阈值含义相同」；开集文本三 model 的 `conf` 文案点明「文本匹配置信度、开集打分偏保守」。查证 ultralytics 源码确认 conf/iou/max_det 对四 task 全生效（pose/obb 同走 `DetectionPredictor.postprocess` 的 NMS，obb 仅多 `rotated=True`），故**不拆参数集**。**所有默认值逐字节不变**（闭集/开集 conf 仍 0.25、max_det 仍 300）——开集默认下调缺 GPU 实测证据，本版不盲改（见 `docs/plans/2026-06-26-v0.18.32-yolo-params-schema-precision.md` §3）。纯 backend 改动，前端 `SchemaForm` schema-driven 自动渲染新文案；不动协议/平台/前端代码。yolo-backend `BACKEND_VERSION` 0.1.0 → 0.1.1。
+
 ## [0.18.31] - 2026-06-26
 
 ### Added

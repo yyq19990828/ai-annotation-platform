@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import os
 import time
@@ -77,7 +78,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 
-BACKEND_VERSION = "0.1.0"  # backend 仓自身版本, 与 ultralytics 版本独立
+BACKEND_VERSION = "0.1.1"  # backend 仓自身版本, 与 ultralytics 版本独立
 MODEL_VERSION = "ultralytics-8.4.x"
 
 DEVICE = os.environ.get("YOLO_DEVICE", "cuda:0")
@@ -317,14 +318,18 @@ def _supported_variants_for(task: str) -> list[dict[str, Any]]:
     return [series_axis, size_axis]
 
 
-_PARAMS_SCHEMA = {
+# 闭集四 task (detect/segment/pose/obb) 全继承 DetectionPredictor.postprocess, 走同一条
+# NMS, conf/iou/max_det 三参对四 task 都生效 (obb 仅多 rotated=True 走 probiou NMS, 阈值语义
+# 不变)。故参数集本就一致, 无需按 task 拆; 仅 description/default 按上下文 (闭集/开集/obb) 派生。
+_BASE_PARAMS_SCHEMA = {
     "type": "object",
     "properties": {
         "conf": {
             "type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.25,
             "title": "置信度阈值",
             "x-platform-role": PlatformRole.CONFIDENCE.value,
-            "description": "保留置信度高于此值的检测/分割结果. 调高=更少更准, 调低=更多但含噪.",
+            # task 中性文案: 被 detect/segment/pose/obb/开集六个 model 共用, 不写死"检测/分割".
+            "description": "保留置信度高于此值的结果. 调高=更少更准, 调低=更多但含噪.",
         },
         "iou": {
             "type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.70,
@@ -340,10 +345,44 @@ _PARAMS_SCHEMA = {
     },
 }
 
+
+def _build_params_schema(
+    *, conf_default: float = 0.25,
+    conf_desc: str | None = None, iou_desc: str | None = None,
+) -> dict[str, Any]:
+    """从基础参数表派生一份**独立** schema (深拷贝, 避免多处共享同一可变 dict),
+    仅按上下文覆盖 conf 默认值/文案与 iou 文案。参数集 (conf/iou/max_det) 保持一致。"""
+    schema = copy.deepcopy(_BASE_PARAMS_SCHEMA)
+    props = schema["properties"]
+    props["conf"]["default"] = conf_default
+    if conf_desc is not None:
+        props["conf"]["description"] = conf_desc
+    if iou_desc is not None:
+        props["iou"]["description"] = iou_desc
+    return schema
+
+
+# 闭集四 task + 顶层 hint 共用基础默认 (等价改造前, 零回归)。
+_PARAMS_SCHEMA = _build_params_schema()
+
+# obb: iou 仍走 NMS 但是旋转 (probiou) 版本, 阈值语义不变; 文案补一句说明。conf/max_det 同基础。
+_OBB_PARAMS_SCHEMA = _build_params_schema(
+    iou_desc="非极大值抑制重叠阈值 (朝向框走旋转 NMS / probiou, 阈值含义相同). "
+             "调高保留更多重叠框, 调低更严格去重.",
+)
+
+# 开集文本 (detect-world / detect-yoloe / segment-yoloe): conf 是文本匹配置信度。默认仍取 0.25
+# (与闭集同值)——本版无 GPU 实测证据下调, 不盲改 (见 v0.18.32 计划 §3); 仅文案点明开集语义。
+_OPENVOCAB_PARAMS_SCHEMA = _build_params_schema(
+    conf_desc="保留文本匹配置信度高于此值的结果. YOLOE/World 开集打分偏保守, "
+              "调高=更少更准, 调低=更多但含噪.",
+)
+
 # v0.18.24 · exemplar (YOLOE 视觉提示) 专属 params: 用 `score_threshold` 替代 conf 作为置信度
 # 旋钮 (与 sam3 字段名对齐, 平台 exemplar 阈值滑块读 model.params.score_threshold.default)。
-# 默认 0.25 而非闭集 0.25→实测 YOLOE VP 相似度分天然打得保守 (相似小目标多框命中也仅 ~0.5),
-# 沿用闭集 0.5 会把正确候选挡在门外; 0.25 是召回与噪声的平衡点 (大目标仍 >0.9, 不受影响)。
+# 默认 0.25, 与闭集 conf 同值但语义是"相似度"而非检测置信度: 实测 YOLOE VP 相似度分天然打得
+# 保守 (相似小目标多框命中也仅 ~0.5), 取更高阈值 (如 0.5) 会把正确候选挡在门外; 0.25 是召回与
+# 噪声的平衡点 (大目标仍 >0.9, 不受影响)。
 _EXEMPLAR_DEFAULT_SCORE_THRESHOLD = 0.25
 _EXEMPLAR_PARAMS_SCHEMA = {
     "type": "object",
@@ -404,6 +443,8 @@ def _default_variants_for(task: str) -> dict[str, str]:
 def _build_model_entry(
     model_id: str, display_name: str, task: str,
     geometric_outputs: list[str],
+    *,
+    params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "id": model_id,
@@ -424,7 +465,7 @@ def _build_model_entry(
         "supported_variants": _supported_variants_for(task),
         "variant_combinations": _variant_combinations_for(task),
         "default_variants": _default_variants_for(task),
-        "params": _PARAMS_SCHEMA,
+        "params": params if params is not None else _PARAMS_SCHEMA,
     }
     # v0.14.17: 模型原生类别表 (model.names), 供前端渲染类别白名单. 仅在该 task 模型已加载过
     # (warmup / 首次 predict 后) 时有值; 未加载时省略, 前端回退"不按类筛选". 读自权重 metadata,
@@ -507,7 +548,7 @@ def _build_openvocab_model_entry(
         "supported_variants": _build_openvocab_variants(series_matrix, default),
         "variant_combinations": _openvocab_variant_combinations(series_matrix),
         "default_variants": {"series": default_series, "size": default_size},
-        "params": _PARAMS_SCHEMA,
+        "params": _OPENVOCAB_PARAMS_SCHEMA,
     }
     if supported_text_outputs is not None:
         entry["supported_text_outputs"] = supported_text_outputs
@@ -596,6 +637,7 @@ def setup() -> dict[str, Any]:
             _build_model_entry(
                 "obb", "YOLO 朝向框",
                 "obb", ["rotated_bbox"],
+                params=_OBB_PARAMS_SCHEMA,
             ),
             # v0.18.21 · 开集文本检测 (批量文本面板, 与 gsam2 text 同列).
             _build_openvocab_model_entry(
