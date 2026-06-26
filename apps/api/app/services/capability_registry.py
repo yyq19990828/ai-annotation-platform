@@ -3,7 +3,7 @@
 v0.14.11 引入。本模块定义平台对外承诺支持的「能力清单」, 是「模型市场 / 能力目录」
 的协议层数据源:
 
-- task / infra / modality / geometry 四张受控词表;
+- task / infra / modality / geometry / prompt 五张受控词表;
 - 每条 task 的人类可读元数据 (label / 简介 / 协议要求 / 推荐 backend);
 - 由 `GET /v1/ml-capabilities/protocol` 直接对外暴露 (无 project 作用域);
 - 也被 `services/ml_capabilities.py` 内部消费 (受控词表 + task 默认几何)。
@@ -63,6 +63,23 @@ class GeometrySpec:
     id: str
     label: str
     summary: str
+
+
+@dataclass(frozen=True)
+class PromptSpec:
+    """supported_prompts 的一条合法值。两维度元数据消解前后端「interactive」语义漂移:
+
+    - requires_input: 需用户/上游显式给输入 (点/框/文本/示例), 含这类 prompt 的模型不默认走
+      crop 投递。等价旧 `ml_capabilities._INTERACTIVE_PROMPTS` 语义 (含 text)。
+    - interactive_route: 进画布交互工具线 (逐 prompt 路由到交互后端)。等价旧前端
+      `useBackendRouting.INTERACTIVE_PROMPTS` 语义 (不含 text — text 归批量线)。
+    """
+
+    id: str
+    label: str
+    summary: str
+    requires_input: bool
+    interactive_route: bool
 
 
 # ── 9 个 task (v0.14.9 协议 v2 受控词表, 顺序即 UI 展示顺序) ───────────────────
@@ -353,11 +370,43 @@ GEOMETRIES: tuple[GeometrySpec, ...] = (
 )
 
 
+# ── prompt 受控词表 (v0.18.29 · supported_prompts 合法值) ──────────────────────
+# 此前散落在 `ml_capabilities._INTERACTIVE_PROMPTS` 与前端三处常量, 现统一为 SSOT。
+# 这是「补登已在协议流通的既有值」(非扩协议), 沿用 v0.14.11 既有词表惯例, 不另起 ADR。
+PROMPTS: tuple[PromptSpec, ...] = (
+    PromptSpec(id="none", label="无提示", requires_input=False, interactive_route=False,
+               summary="纯批量推理, 无需用户提示 (检测/分类等)。"),
+    PromptSpec(id="point", label="点提示", requires_input=True, interactive_route=True,
+               summary="SAM-style 正/负点累加, 单实例交互分割。"),
+    PromptSpec(id="interactive_box", label="框提示", requires_input=True, interactive_route=True,
+               summary="SAM-style 单框单 mask 交互分割。"),
+    PromptSpec(id="text", label="文本提示", requires_input=True, interactive_route=False,
+               summary="开放词汇文本驱动检测/分割; 走批量线, 不进画布交互工具。"),
+    PromptSpec(id="exemplar", label="视觉示例", requires_input=True, interactive_route=True,
+               summary="PCS 框样例找全图同类, 多正负框 + text 概念 + 阈值迭代 refinement。"),
+    PromptSpec(id="scribble", label="涂抹", requires_input=True, interactive_route=True,
+               summary="涂抹笔迹提示 (预留, 暂无 backend 消费)。"),
+    PromptSpec(id="sketch", label="勾画", requires_input=True, interactive_route=True,
+               summary="勾画轮廓提示 (预留, 暂无 backend 消费)。"),
+    PromptSpec(id="mask", label="掩膜", requires_input=True, interactive_route=True,
+               summary="已有 mask 作提示再细化 (预留/迭代)。"),
+    PromptSpec(id="bbox", label="bbox (退役)", requires_input=True, interactive_route=False,
+               summary="旧单框提示, 已被 interactive_box 取代; 仅兼容历史快照。"),
+)
+
+
 # ── 派生表 (供 ml_capabilities.py 消费, 避免双份维护) ───────────────────────────
 INFRA_VALUES: tuple[str, ...] = tuple(s.id for s in INFRAS)
 TASK_VALUES: tuple[str, ...] = tuple(s.id for s in TASKS)
 GEOMETRY_VALUES: tuple[str, ...] = tuple(s.id for s in GEOMETRIES)
 MODALITY_VALUES: tuple[str, ...] = tuple(s.id for s in MODALITIES)
+PROMPT_VALUES: tuple[str, ...] = tuple(s.id for s in PROMPTS)
+# requires_input 集合 = 旧 _INTERACTIVE_PROMPTS (含 text/bbox); interactive_route 集合 =
+# 旧前端 INTERACTIVE_PROMPTS 的超集 (含预留 scribble/sketch/mask, 不含 text)。
+PROMPTS_REQUIRES_INPUT: frozenset[str] = frozenset(s.id for s in PROMPTS if s.requires_input)
+PROMPTS_INTERACTIVE_ROUTE: frozenset[str] = frozenset(
+    s.id for s in PROMPTS if s.interactive_route
+)
 
 TASK_DEFAULT_GEOMETRY: dict[str, list[str]] = {
     s.id: list(s.default_geometry) for s in TASKS

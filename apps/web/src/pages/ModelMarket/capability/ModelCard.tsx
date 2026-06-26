@@ -49,11 +49,22 @@ export function ModelCard({ item }: { item: FlatModel }) {
         >
           {m.display_name ?? m.id}
         </span>
-        {item.stale && (
-          <span title="来源 backend 当前未连接，目录可能为缓存旧值">
-            <Badge variant="warning">缓存</Badge>
-          </span>
-        )}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {item.warnings && item.warnings.length > 0 && (
+            <span
+              title={item.warnings
+                .map((w) => `${w.field}=${w.value}: ${w.message}`)
+                .join("\n")}
+            >
+              <Badge variant="warning">⚠ 协议 {item.warnings.length}</Badge>
+            </span>
+          )}
+          {item.stale && (
+            <span title="来源 backend 当前未连接，目录可能为缓存旧值">
+              <Badge variant="warning">缓存</Badge>
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">

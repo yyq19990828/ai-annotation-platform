@@ -3305,6 +3305,14 @@
             "default": false,
             "title": "Warmup Endpoint",
             "type": "boolean"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CapabilityWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "title": "BackendCapabilities",
@@ -5597,6 +5605,46 @@
           "instances"
         ],
         "title": "CapabilityInstancesResponse",
+        "type": "object"
+      },
+      "CapabilityWarning": {
+        "description": "v0.18.29 · backend `/setup` 上报值的受控词表校验诊断 (越界即记, 不阻断解析)。\n\n由 services/ml_capabilities._collect_warnings 产出; 前端模型市场据此显示 ⚠ +\n可读原因, 把「字段拼错 / 值越界致工具静默不亮」变成可见信号。",
+        "properties": {
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "level": {
+            "default": "warning",
+            "title": "Level",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "value",
+          "message"
+        ],
+        "title": "CapabilityWarning",
         "type": "object"
       },
       "CeleryHealthSummary": {
@@ -19780,7 +19828,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.18.28"
+    "version": "0.18.29"
   },
   "openapi": "3.1.0",
   "paths": {

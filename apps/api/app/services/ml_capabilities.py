@@ -23,6 +23,8 @@ from __future__ import annotations
 from .capability_registry import (
     GEOMETRY_VALUES,
     INFRA_VALUES,
+    PROMPT_VALUES,
+    PROMPTS_REQUIRES_INPUT,
     TASK_DEFAULT_GEOMETRY as _TASK_DEFAULT_GEOMETRY,
     TASK_VALUES,
 )
@@ -39,11 +41,8 @@ __all__ = [
 _MODALITY_ORDER = {"image": 0, "video": 1, "lidar": 2}
 _LIDAR_GEOMETRY = {"lidar_box_3d", "point_mask_3d"}
 
-# v0.18.15 · 交互式 prompt (需用户/上游显式给点/框/文本等); 含这些的模型不默认走 crop 投递。
-# v0.18.17 · bbox→interactive_box (SAM-style 单框单 mask); 保留 "bbox" 兼容旧快照(已退役)。
-_INTERACTIVE_PROMPTS = {
-    "point", "interactive_box", "bbox", "text", "exemplar", "scribble", "sketch", "mask",
-}
+# v0.18.29 · 交互式 prompt 集合统一由 capability_registry SSOT 派生 (PROMPTS_REQUIRES_INPUT,
+# 等价旧硬编码 8 元组)。语义不变: 含这类 prompt 的模型不默认走 crop 投递。
 
 
 def _synthesize_supported_inputs(prompts: list[str]) -> list[str]:
@@ -60,7 +59,7 @@ def _synthesize_supported_inputs(prompts: list[str]) -> list[str]:
     if "point" in prompts:
         out.append("point_prompt")
     out.append("full_image")
-    if not any(p in _INTERACTIVE_PROMPTS for p in prompts):
+    if not any(p in PROMPTS_REQUIRES_INPUT for p in prompts):
         out.append("crop")
     return list(dict.fromkeys(out))
 
@@ -192,6 +191,52 @@ def _synthesize_single_model(setup: dict, backend_infra: str) -> dict:
     return out
 
 
+def _collect_warnings(models: list[dict]) -> list[dict]:
+    """校验规范化后各 model 的受控值, 越界即记 warning (只诊断、不改写)。
+
+    v0.18.29 · 把「字段拼错 / 值越界致工具静默不亮」变成模型市场可见信号。只校验受控值
+    (task / infra / supported_prompts / supported_geometric_outputs); 派生缺省
+    (task / infra == "unknown") 跳过 — 那是 backend 没声明、平台已兜底, 非越界。未知键检测
+    从简不做 (避免维护键白名单 + 噪音), 留后续。
+    """
+    out: list[dict] = []
+
+    def warn(
+        model_id: str, field: str, value: str, message: str, level: str = "warning"
+    ) -> None:
+        out.append(
+            {
+                "level": level,
+                "model_id": model_id,
+                "field": field,
+                "value": value,
+                "message": message,
+            }
+        )
+
+    for m in models:
+        mid = str(m.get("id") or "?")
+        task = m.get("task")
+        if task and task != "unknown" and task not in TASK_VALUES:
+            warn(
+                mid, "task", task,
+                f"未知 task「{task}」不在受控词表; 平台无法据此派生默认几何/模态。",
+            )
+        infra = m.get("infra")
+        if infra and infra != "unknown" and infra not in INFRA_VALUES:
+            warn(mid, "infra", infra, f"未知 infra「{infra}」不在受控词表。", level="info")
+        for p in m.get("supported_prompts") or []:
+            if p not in PROMPT_VALUES:
+                warn(
+                    mid, "supported_prompts", p,
+                    f"未知 prompt「{p}」; 前端工具门控不识别, 该提示将静默失效。",
+                )
+        for g in m.get("supported_geometric_outputs") or []:
+            if g not in GEOMETRY_VALUES:
+                warn(mid, "supported_geometric_outputs", g, f"未知几何输出「{g}」不在受控词表。")
+    return out
+
+
 def extract_capabilities(setup: dict | None) -> dict | None:
     """从 `/setup` 响应抽能力快照; setup 为空返回 None。
 
@@ -227,6 +272,8 @@ def extract_capabilities(setup: dict | None) -> dict | None:
         "supported_trackers": _union(models, "supported_trackers"),
         "supported_text_outputs": _union(models, "supported_text_outputs"),
         "supported_geometric_outputs": _union(models, "supported_geometric_outputs"),
+        # v0.18.29 · 受控词表校验诊断 (越界 task/infra/prompt/geometry); 空 = 全合法。
+        "warnings": _collect_warnings(models),
     }
     caps["modalities"] = derive_modalities(caps)
     return caps

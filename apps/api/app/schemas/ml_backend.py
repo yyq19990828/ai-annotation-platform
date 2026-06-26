@@ -124,6 +124,19 @@ class ModelCapability(BaseModel):
         extra = "allow"
 
 
+class CapabilityWarning(BaseModel):
+    """v0.18.29 · backend `/setup` 上报值的受控词表校验诊断 (越界即记, 不阻断解析)。
+
+    由 services/ml_capabilities._collect_warnings 产出; 前端模型市场据此显示 ⚠ +
+    可读原因, 把「字段拼错 / 值越界致工具静默不亮」变成可见信号。"""
+
+    level: str = "warning"  # warning | info
+    model_id: str | None = None
+    field: str
+    value: str
+    message: str
+
+
 class BackendCapabilities(BaseModel):
     """v0.10.37 · backend `/setup` 能力快照 (epic 阶段 1).
 
@@ -148,6 +161,8 @@ class BackendCapabilities(BaseModel):
     supported_text_outputs: list[str] = []
     supported_geometric_outputs: list[str] = []
     modalities: list[str] = []
+    # v0.18.29 · 受控词表校验诊断 (越界 task/infra/prompt/geometry); 空 = 全合法。
+    warnings: list[CapabilityWarning] = []
 
 
 class HealthMeta(BaseModel):

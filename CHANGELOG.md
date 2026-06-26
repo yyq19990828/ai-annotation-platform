@@ -34,6 +34,13 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.29] - 2026-06-26
+
+### Added
+
+- **ML backend 协议契约校验（受控词表诊断）**：平台抽取 backend `/setup` 能力快照时（`extract_capabilities`），按 `capability_registry` 受控词表校验各 model 上报的 `task` / `infra` / `supported_prompts` / `supported_geometric_outputs`，越界值收集成 `capabilities.warnings[]` 落 `health_meta`，经 `/capabilities` 端点暴露；模型市场能力目录在对应 model 卡显示 ⚠ 徽标 + 可读原因（按 `model_id` 关联）。把过去「字段拼错 / 值越界致工具静默不亮」的隐性失败变成可见诊断。只校验、不改写——越界值仍原样规范化，零回归。
+- **prompt 受控词表 SSOT**：`capability_registry` 新增第五张受控词表 `PROMPTS`（`none/point/interactive_box/text/exemplar/scribble/sketch/mask/bbox`），每条带 `requires_input` + `interactive_route` 双维度元数据，消解前后端「interactive」语义漂移（`text` 需输入但不进画布交互线）。`ml_capabilities._INTERACTIVE_PROMPTS` 改由 `PROMPTS_REQUIRES_INPUT` 派生，等价旧硬编码、零行为变化。为 v0.18.30 前端 codegen 贯通铺底（见 `docs/plans/2026-06-26-v0.18.29-ml-capability-wiring-hardening.md`）。
+
 ## [0.18.28] - 2026-06-26
 
 ### Added

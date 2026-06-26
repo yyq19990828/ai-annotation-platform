@@ -93,6 +93,16 @@ export interface MLModelCapability {
   };
 }
 
+// v0.18.29 · backend /setup 上报值的受控词表校验诊断 (越界 task/infra/prompt/geometry).
+// 仅 /capabilities (health_meta 派生) 端点带; 原始 /setup 代理不带. 空 = 全合法.
+export interface CapabilityWarning {
+  level: string; // warning | info
+  model_id?: string | null;
+  field: string;
+  value: string;
+  message: string;
+}
+
 // v0.10.1 · /setup 协议自描述响应 (与后端 sam3/grounded-sam2 main.py 同构).
 // `params` 为 JSON Schema (Draft-07 子集), M2 schema-form 据此渲染参数面板.
 export interface MLBackendCapability {
@@ -122,6 +132,8 @@ export interface MLBackendCapability {
   models?: MLModelCapability[];
   // capabilities 端点 (health_meta 派生) 会带派生模态; 原始 /setup 不带.
   modalities?: string[];
+  // v0.18.29 · 受控词表校验诊断 (仅 /capabilities 带); 空/缺 = 全合法.
+  warnings?: CapabilityWarning[];
 }
 
 export const mlBackendsApi = {

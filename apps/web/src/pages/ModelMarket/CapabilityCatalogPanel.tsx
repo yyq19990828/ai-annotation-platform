@@ -254,6 +254,8 @@ export function CapabilityCatalogPanel() {
           healthMeta: r.backend.health_meta,
           warmupEndpoint: cap.warmup_endpoint ?? r.backend.health_meta?.capabilities?.warmup_endpoint,
           stale,
+          // v0.18.29 · 该 model 命中的受控词表越界诊断 (按 model_id 关联)。
+          warnings: cap.warnings?.filter((w) => w.model_id === m.id),
         });
       }
     }

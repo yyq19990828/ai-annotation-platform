@@ -248,6 +248,69 @@ describe("CapabilityCatalogPanel · 协议双层视图", () => {
     expect(screen.getAllByText("shared-yolo").length).toBe(2); // group header + 来源列
   });
 
+  it("backend 上报越界字段 → capabilities.warnings → ModelCard 显示 ⚠ 徽标", async () => {
+    // v0.18.29 · 协议契约校验: backend 上报越界 prompt「boxes」, 平台 /capabilities 带 warnings,
+    // 模型市场该 model 卡显示 ⚠ + 可读原因 (按 model_id 关联)。
+    mockOverview.mockResolvedValue({
+      projects: [
+        {
+          project_id: "p1",
+          project_name: "项目甲",
+          backends: [
+            {
+              id: "bk1",
+              project_id: "p1",
+              name: "bad-yolo",
+              url: "http://172.17.0.1:9001/",
+              state: "connected" as const,
+              auth_method: "none",
+              is_interactive: false,
+              extra_params: {},
+              created_at: "2026-06-01T00:00:00Z",
+              updated_at: "2026-06-01T00:00:00Z",
+              last_checked_at: null,
+              error_message: null,
+              health_meta: null,
+            },
+          ],
+        },
+      ],
+      total_backends: 1,
+      connected_backends: 1,
+    });
+    const { mlBackendsApi } = await import("@/api/ml-backends");
+    (mlBackendsApi.capabilities as ReturnType<typeof vi.fn>).mockResolvedValue({
+      name: "bad-yolo",
+      infra: "pytorch",
+      is_interactive: false,
+      supported_prompts: ["boxes"],
+      supported_geometric_outputs: ["bbox"],
+      models: [
+        {
+          id: "detect",
+          display_name: "YOLO 目标检测",
+          task: "detection",
+          infra: "pytorch",
+          supported_geometric_outputs: ["bbox"],
+          supported_prompts: ["boxes"],
+        },
+      ],
+      warnings: [
+        {
+          level: "warning",
+          model_id: "detect",
+          field: "supported_prompts",
+          value: "boxes",
+          message: "未知 prompt「boxes」; 前端工具门控不识别, 该提示将静默失效。",
+        },
+      ],
+    });
+    renderUI();
+    const select = (await screen.findByRole("combobox")) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "backend" } });
+    await screen.findByText("⚠ 协议 1");
+  });
+
   it("搜索 'ocr' → 仅 OCR 协议卡可见", async () => {
     renderUI();
     await screen.findByText(/支持 9 类 AI 标注能力/);
