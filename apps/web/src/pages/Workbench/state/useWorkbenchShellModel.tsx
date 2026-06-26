@@ -53,6 +53,7 @@ import {
 } from "./useBackendRouting";
 import { useCapabilityValidation } from "./useCapabilityValidation";
 import { useAiToolModelPref } from "./useAiToolModelPref";
+import { useInteractiveBackendPref } from "./useInteractiveBackendPref";
 import { InteractiveToolBar } from "../shell/InteractiveToolBar";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
@@ -784,11 +785,14 @@ export function useWorkbenchShellModel({
   });
 
   // v0.14.18 · 交互线能力路由: 对每个注册后端拉 /setup 建 capIndex, 按当前工具 prompt 解析交互后端。
+  // v0.18.31 · 交互后端选择的服务端持久化偏好 (按 project, 跨设备; 替代旧 localStorage)。
+  const interactiveBackendPref = useInteractiveBackendPref(projectId);
   const routing = useBackendRouting({
     projectId,
-    userId: meUserId,
     backends,
     defaultBackendId: currentProject?.ml_backend_id ?? null,
+    savedInteractiveBackendId: interactiveBackendPref.savedBackendId ?? null,
+    onSaveInteractiveBackend: interactiveBackendPref.save,
   });
   // 当前工具对应的交互 prompt (非交互工具回落 point, 仅用于 sam/warmup 的后端选取, 不参与门控)。
   const activeInteractivePrompt = promptOfTool(s.tool);

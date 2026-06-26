@@ -136,6 +136,19 @@ export interface MLBackendCapability {
   warnings?: CapabilityWarning[];
 }
 
+/**
+ * v0.18.31 · `/setup` 统一 query key。此前全仓三套命名 (ml-backends…setup / ml-backend-setup /
+ * ml-capabilities) 打同一个 `setup` 端点 → 同 backend 被缓存成多份 + 重复请求, 且 invalidate
+ * 漏失效。统一为 `ml-backends` 前缀, 让 `useMLBackends` 的 `["ml-backends", projectId]` 前缀
+ * invalidate 能命中全部 setup 缓存。
+ */
+export function mlBackendSetupQueryKey(
+  projectId: string | null | undefined,
+  backendId: string | null | undefined,
+) {
+  return ["ml-backends", projectId, backendId, "setup"] as const;
+}
+
 export const mlBackendsApi = {
   list: (projectId: string) =>
     apiClient.get<MLBackendResponse[]>(`/projects/${projectId}/ml-backends`),

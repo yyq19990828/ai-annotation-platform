@@ -11,7 +11,11 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
-import { mlBackendsApi, type MLBackendCapability } from "@/api/ml-backends";
+import {
+  mlBackendsApi,
+  mlBackendSetupQueryKey,
+  type MLBackendCapability,
+} from "@/api/ml-backends";
 import { INTERACTIVE_ROUTE_PROMPT_IDS } from "@/api/generated/capabilityVocab.gen";
 
 /**
@@ -145,41 +149,19 @@ export function pickDefaultPreferred(
   return order.find((id) => capIndex[id]?.reachable && capIndex[id].prompts.size > 0) ?? null;
 }
 
-function storageKey(userId: string | null | undefined, projectId: string | null | undefined): string {
-  return `wb:preferred-interactive:${userId ?? "anon"}:${projectId ?? "none"}`;
-}
-
-function readStoredPreferred(
-  userId: string | null | undefined,
-  projectId: string | null | undefined,
-): string | null {
-  try {
-    return localStorage.getItem(storageKey(userId, projectId));
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredPreferred(
-  userId: string | null | undefined,
-  projectId: string | null | undefined,
-  id: string | null,
-): void {
-  try {
-    if (id) localStorage.setItem(storageKey(userId, projectId), id);
-    else localStorage.removeItem(storageKey(userId, projectId));
-  } catch {
-    /* ignore quota / privacy mode */
-  }
-}
-
 export interface BackendRoutingArgs {
   projectId: string | null | undefined;
-  userId: string | null | undefined;
   /** 已注册后端 (注册顺序 = list 返回顺序)。 */
   backends: Array<{ id: string; name: string }>;
   /** 项目默认后端 (ml_backend_id)。 */
   defaultBackendId: string | null;
+  /**
+   * v0.18.31 · 服务端持久化的交互后端偏好 (按 project, 经 useInteractiveBackendPref 注入)。
+   * 替代旧 localStorage `wb:preferred-interactive` (不跨设备 = BUG)。
+   */
+  savedInteractiveBackendId?: string | null;
+  /** v0.18.31 · 写回服务端偏好 (debounced); 用户切换交互后端时调用。 */
+  onSaveInteractiveBackend: (id: string | null) => void;
 }
 
 export interface BackendRoutingResult {
@@ -198,15 +180,16 @@ export interface BackendRoutingResult {
 
 export function useBackendRouting({
   projectId,
-  userId,
   backends,
   defaultBackendId,
+  savedInteractiveBackendId,
+  onSaveInteractiveBackend,
 }: BackendRoutingArgs): BackendRoutingResult {
   const order = useMemo(() => backends.map((b) => b.id), [backends]);
 
   const queries = useQueries({
     queries: backends.map((b) => ({
-      queryKey: ["ml-backends", projectId, b.id, "setup"],
+      queryKey: mlBackendSetupQueryKey(projectId, b.id),
       queryFn: () => mlBackendsApi.setup(projectId as string, b.id),
       enabled: !!projectId,
       staleTime: 5 * 60 * 1000,
@@ -235,11 +218,12 @@ export function useBackendRouting({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [capSignature]);
 
-  // preferred: 优先读持久化 (若仍是合法交互候选), 否则按默认规则。
+  // preferred: 优先用服务端持久化偏好 (若仍是合法交互候选), 否则按默认规则。
+  // v0.18.31 · 偏好来源从 localStorage 迁到注入的 savedInteractiveBackendId (跨设备)。
   const [preferredOverride, setPreferredOverride] = useState<string | null>(null);
   useEffect(() => {
-    setPreferredOverride(readStoredPreferred(userId, projectId));
-  }, [userId, projectId]);
+    setPreferredOverride(savedInteractiveBackendId ?? null);
+  }, [savedInteractiveBackendId]);
 
   const fallbackPreferred = useMemo(
     () => pickDefaultPreferred(capIndex, order, defaultBackendId),
@@ -256,9 +240,9 @@ export function useBackendRouting({
   const setPreferredInteractiveId = useCallback(
     (id: string | null) => {
       setPreferredOverride(id);
-      writeStoredPreferred(userId, projectId, id);
+      onSaveInteractiveBackend(id);
     },
-    [userId, projectId],
+    [onSaveInteractiveBackend],
   );
 
   return {

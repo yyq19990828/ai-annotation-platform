@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   mlBackendsApi,
+  mlBackendSetupQueryKey,
   type MLBackendCapability,
   type MLModelCapability,
 } from "@/api/ml-backends";
@@ -56,7 +57,7 @@ export function useMLCapabilities(
 ): MLCapabilitiesResult {
   const enabled = Boolean(projectId && backendId);
   const query = useQuery({
-    queryKey: ["ml-capabilities", projectId, backendId],
+    queryKey: mlBackendSetupQueryKey(projectId, backendId),
     queryFn: () => mlBackendsApi.setup(projectId!, backendId!),
     enabled,
     staleTime: 5 * 60 * 1000,

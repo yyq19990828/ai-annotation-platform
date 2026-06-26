@@ -7,6 +7,10 @@ const mockSetup = vi.hoisted(() => vi.fn());
 
 vi.mock("@/api/ml-backends", () => ({
   mlBackendsApi: { setup: mockSetup },
+  mlBackendSetupQueryKey: (
+    projectId: string | null | undefined,
+    backendId: string | null | undefined,
+  ) => ["ml-backends", projectId, backendId, "setup"],
 }));
 
 import { useMLCapabilities } from "./useMLCapabilities";

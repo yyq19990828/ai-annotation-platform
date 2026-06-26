@@ -18,6 +18,7 @@ import {
   type MLBackendSupportedVariantGroup,
   type MLBackendVariant,
   type MLModelCapability,
+  mlBackendSetupQueryKey,
 } from "@/api/ml-backends";
 import type { MLBackendItem } from "@/api/adminMlIntegrations";
 import {
@@ -68,7 +69,7 @@ export function VariantPanel({
   isWarming: boolean;
 }) {
   const { data: setup, isLoading, isError } = useQuery({
-    queryKey: ["ml-backend-setup", projectId, backend.id],
+    queryKey: mlBackendSetupQueryKey(projectId, backend.id),
     queryFn: () => mlBackendsApi.setup(projectId, backend.id),
     staleTime: 30_000,
   });

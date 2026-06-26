@@ -34,6 +34,16 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.31] - 2026-06-26
+
+### Added
+
+- **交互后端选择跨设备持久化**：工作台交互工具栏的交互后端(引擎)选择从 localStorage（不跨设备）迁到 `User.preferences.ai.interactive_backend_by_project`（按 project 分桶、跟用户走、跨设备），与 model/参数偏好对齐。新增 `useInteractiveBackendPref` hook；`useBackendRouting` 改为接收注入的偏好 + debounced 写回，删除 localStorage `wb:preferred-interactive`。收尾「能力接线健壮性整治」epic（见 `docs/plans/2026-06-26-v0.18.29-ml-capability-wiring-hardening.md`）。
+
+### Fixed
+
+- **`/setup` queryKey 命名失控 + invalidate 漏失效**：全仓 7 处用三套 queryKey 名（`ml-backends…setup` / `ml-backend-setup` / `ml-capabilities`）打同一个 `/setup` 端点，导致同 backend 被缓存成多份 + 重复请求，且 `useMLBackends` 的前缀 invalidate 只命中其中一套——刷新/重连 backend 后 ModelMarket 与工作台可能显示旧能力。统一抽 `mlBackendSetupQueryKey` helper，7 处共用，invalidate 一并命中全部。
+
 ## [0.18.30] - 2026-06-26
 
 ### Added

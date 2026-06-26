@@ -77,6 +77,7 @@ vi.mock("@/api/ml-backends", () => ({
     capabilities: (projectId: string, backendId: string) =>
       mockCapabilitiesAPI(projectId, backendId),
   },
+  mlBackendSetupQueryKey: (p: unknown, b: unknown) => ["ml-backends", p, b, "setup"],
 }));
 vi.mock("@/api/auth", () => ({
   authApi: {

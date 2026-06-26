@@ -51,6 +51,13 @@
         "additionalProperties": false,
         "description": "每用户的 AI 工具偏好，按 ML backend id 分桶。\n\n不同 backend 的 /setup.params schema 不同（gsam2 有 box/text_threshold，sam3 有\nscore_threshold 等），故按 backend id 各存一份，互不污染；多用户各自一份 preferences，\n天然隔离不打架。值为 /setup.params 对应的自由 dict，平台只做存取不强校验字段。\n\nv0.18.25 · 新增 model_by_backend：交互工具的引擎(模型)选择，同样按 backend 分桶。\n本子树为「深一层合并」(update_preferences)，故 params/model 两个子键可各自独立保存。",
         "properties": {
+          "interactive_backend_by_project": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Interactive Backend By Project",
+            "type": "object"
+          },
           "model_by_backend": {
             "additionalProperties": {
               "type": "string"
@@ -19869,7 +19876,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.18.30"
+    "version": "0.18.31"
   },
   "openapi": "3.1.0",
   "paths": {

@@ -16,6 +16,7 @@ import {
   type MLBackendCapability,
   type MLBackendVariant,
   type MLModelCapability,
+  mlBackendSetupQueryKey,
 } from "@/api/ml-backends";
 import {
   useMLBackendHealth,
@@ -184,7 +185,7 @@ function RegisteredRuntimeCard({
   const modelVersion = observe?.model_version ?? backend.health_meta?.model_version;
   const supportsWarmup = backend.health_meta?.capabilities?.warmup_endpoint === true;
   const setupQ = useQuery({
-    queryKey: ["ml-backend-setup", projectId, backend.id],
+    queryKey: mlBackendSetupQueryKey(projectId, backend.id),
     queryFn: () => mlBackendsApi.setup(projectId, backend.id),
     enabled: supportsWarmup,
     staleTime: 30_000,

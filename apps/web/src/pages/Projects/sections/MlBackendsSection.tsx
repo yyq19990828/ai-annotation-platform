@@ -19,7 +19,11 @@ import {
   TextOutputDefaultSelect,
   type TextOutputDefault,
 } from "@/components/projects/shared/TextOutputDefaultSelect";
-import { mlBackendsApi, type MLBackendCapability } from "@/api/ml-backends";
+import {
+  mlBackendsApi,
+  mlBackendSetupQueryKey,
+  type MLBackendCapability,
+} from "@/api/ml-backends";
 import type { ProjectResponse } from "@/api/projects";
 import type { MLBackendResponse } from "@/types";
 import { LABEL_CLASS } from "./formClasses";
@@ -119,7 +123,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
   // 管理面板低频, 不做合并端点; 未来 N>5 再优化.
   const capabilities = useQueries({
     queries: backends.map((b) => ({
-      queryKey: ["ml-backends", project.id, b.id, "setup"],
+      queryKey: mlBackendSetupQueryKey(project.id, b.id),
       queryFn: () => mlBackendsApi.setup(project.id, b.id),
       staleTime: 60_000,
       retry: false,

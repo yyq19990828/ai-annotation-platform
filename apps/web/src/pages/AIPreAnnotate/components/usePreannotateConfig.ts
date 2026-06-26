@@ -14,6 +14,7 @@ import { type TextOutputMode, type PredictMode } from "@/hooks/usePreannotation"
 import { aliasFrequencyApi } from "@/api/aliasFrequency";
 import {
   mlBackendsApi,
+  mlBackendSetupQueryKey,
   type MLModelCapability,
 } from "@/api/ml-backends";
 import {
@@ -97,7 +98,7 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
 
   // v0.10.38 · 按后端参数面板: 拉选中 backend 的 /setup.params 渲染 SchemaForm.
   const setupQ = useQuery({
-    queryKey: ["ml-backends", projectId, backendId, "setup"],
+    queryKey: mlBackendSetupQueryKey(projectId, backendId),
     queryFn: () => mlBackendsApi.setup(projectId, backendId as string),
     enabled: !!backendId,
     staleTime: 60_000,
@@ -334,7 +335,7 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
         queryKey: ["ml-backends", projectId, backendId, "capabilities"],
       });
       qc.invalidateQueries({
-        queryKey: ["ml-backends", projectId, backendId, "setup"],
+        queryKey: mlBackendSetupQueryKey(projectId, backendId),
       });
     },
     onError: (err) =>
