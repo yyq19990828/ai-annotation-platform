@@ -11867,6 +11867,21 @@
             ],
             "title": "Owner Name"
           },
+          "preannotate_pipeline": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preannotate Pipeline"
+          },
           "prefer_same_scene_continuation": {
             "default": false,
             "title": "Prefer Same Scene Continuation",
@@ -13399,6 +13414,21 @@
               }
             ],
             "title": "Name"
+          },
+          "preannotate_pipeline": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preannotate Pipeline"
           },
           "prefer_same_scene_continuation": {
             "anyOf": [
@@ -19750,7 +19780,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.18.25"
+    "version": "0.18.28"
   },
   "openapi": "3.1.0",
   "paths": {

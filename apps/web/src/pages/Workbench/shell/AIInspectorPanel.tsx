@@ -341,6 +341,11 @@ interface AIPredictionPopoverProps {
   aiTakeoverRate: number;
   onClose: () => void;
   onRunAi: () => void;
+  // v0.18.28 · 项目存了编排 (v0.18.27) 时多出「运行当前题（按项目编排）」入口。
+  // popover 仍是执行器、非编排编辑器: 编排在 /ai-pre 定义, 这里只把它跑当前一图。
+  hasProjectPipeline?: boolean;
+  projectPipelineStageCount?: number;
+  onRunPipeline?: () => void;
   onAcceptAll: () => void;
   onSetConfThreshold: (v: number) => void;
   // v0.10.23 · 设计 B · 文本输入段下沉到 InteractiveToolBar; popover 不再承载 SAM 文本提示控件.
@@ -373,6 +378,9 @@ export function AIPredictionPopover({
   aiTakeoverRate,
   onClose,
   onRunAi,
+  hasProjectPipeline,
+  projectPipelineStageCount,
+  onRunPipeline,
   onAcceptAll,
   onSetConfThreshold,
   taskAiCost,
@@ -542,6 +550,20 @@ export function AIPredictionPopover({
             <Icon name="check" size={11} />采纳当前候选
           </Button>
         </div>
+        {/* v0.18.28 · 项目存了编排时单独一行: 把项目编排只跑当前一图 (执行器, 非编排编辑器)。 */}
+        {hasProjectPipeline && onRunPipeline && (
+          <Button
+            variant="ai"
+            size="sm"
+            onClick={onRunPipeline}
+            disabled={aiRunning}
+            className="mb-2.5 w-full"
+            title="按项目已保存的多阶段编排, 对当前题跑完整流水线"
+          >
+            <Icon name="layers" size={11} />
+            运行当前题（按项目编排 · {projectPipelineStageCount} 阶段）
+          </Button>
+        )}
       </div>
 
       {/* v0.14.18 · header 以下整体可滚 (拖动头固定), 修面板内容超高时底部 (输出形态/效率) 被截断. */}

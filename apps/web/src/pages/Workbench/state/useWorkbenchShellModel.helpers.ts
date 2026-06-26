@@ -12,6 +12,10 @@ import {
 } from "../shell/floatingPanelSizing";
 import type { FloatingPanelState, FloatingSelectionState } from "@/api/auth";
 import type { Viewport } from "./useViewportTransform";
+import type {
+  PipelineStagePayload,
+  TriggerPreannotationPayload,
+} from "@/hooks/usePreannotation";
 
 export const VARIANT_FIELD_SET = new Set<string>(VARIANT_FIELD_KEYS);
 
@@ -124,6 +128,29 @@ export function resolveFloatingSelectionRect(state: FloatingSelectionState): Flo
 export function promptOfTool(tool: ToolId): InteractivePrompt | null {
   const rp = TOOL_REGISTRY[tool]?.requiredPrompt;
   return rp && rp !== "text" ? rp : null;
+}
+
+// v0.18.28 · popover「运行当前题（按项目编排）」的 mutation 载荷构造 (纯函数, 供 hook 与单测复用)。
+// 项目编排 (v0.18.27 存的 pipeline_stages) + 当前 taskId → preannotate 载荷; 守卫不满足返回 null。
+// 顶层 ml_backend_id 取源阶段 (parent_stage 为 null/undefined) 的 backend, 满足后端「源阶段
+// backend == 顶层」校验; 找不到源阶段则回落首个阶段。on_key_conflict=last_wins: 保存态未持久化
+// 键冲突选择, last_wins 对无冲突编排无副作用、对有冲突的也能直接跑。
+export function buildPipelineRunPayload(
+  stages: PipelineStagePayload[] | null | undefined,
+  taskId: string | null | undefined,
+): TriggerPreannotationPayload | null {
+  if (!stages?.length || !taskId) return null;
+  const rootBackendId =
+    stages.find((s) => s.parent_stage == null)?.ml_backend_id ??
+    stages[0]?.ml_backend_id;
+  if (!rootBackendId) return null;
+  return {
+    ml_backend_id: rootBackendId,
+    task_ids: [taskId],
+    pipeline_stages: stages,
+    predict_mode: "overwrite",
+    on_key_conflict: "last_wins",
+  };
 }
 
 // v0.16.x 拆分(第 2 批)· 图钉聚焦视口平移:把 anchor(0-1 归一坐标)对应像素点平移到

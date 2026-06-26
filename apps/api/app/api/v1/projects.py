@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ValidationError, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text, or_, and_
 from app.deps import (
@@ -663,6 +663,9 @@ async def update_project(
             payload.get("data_type", project.data_type),
         )
     await _assert_project_kind_update_allowed(db, project, payload)
+    # v0.18.27 · 项目级编排结构校验 (显式 null = 清除, 跳过校验直接置 None)。
+    if payload.get("preannotate_pipeline") is not None:
+        _validate_saved_pipeline(payload["preannotate_pipeline"])
     if "ml_backend_id" in payload:
         if payload["ml_backend_id"]:
             # v0.10.37 · 绑定按 data_type 校验模态 (用应用 payload 后的有效 data_type)
@@ -1363,6 +1366,38 @@ class PreannotateRequest(BaseModel):
                         )
                     final_keys[final] = s.stage
         return self
+
+
+def _validate_saved_pipeline(stages) -> None:
+    """v0.18.27 · 校验「保存到项目」的编排结构, 复用预标注端点同款 PipelineStage + 树形校验。
+
+    存储态 ml_backend_id 是 str (PipelineStage 自动 coerce 成 UUID)。顶层 ml_backend_id
+    取源阶段 (parent_stage=None) 的 backend, 以满足 PreannotateRequest「源阶段 backend 须
+    等于顶层」约束。结构非法 → 422 (避免脏编排存进库, 到 v0.18.28 执行时才炸)。
+
+    注意: 仅做结构 / 树形校验, 不校验 backend 存在性与归属 (那是执行期 trigger_preannotation
+    的职责); 本版只存不跑。
+    """
+    if not stages:
+        return
+    if not isinstance(stages, list) or not all(isinstance(s, dict) for s in stages):
+        raise HTTPException(
+            status_code=422, detail="preannotate_pipeline 须为阶段对象数组"
+        )
+    roots = [s for s in stages if s.get("parent_stage") is None]
+    if len(roots) != 1:
+        raise HTTPException(
+            status_code=422,
+            detail="preannotate_pipeline 须恰有一个源阶段 (parent_stage=None)",
+        )
+    try:
+        PreannotateRequest(
+            ml_backend_id=roots[0].get("ml_backend_id"), pipeline_stages=stages
+        )
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=422, detail=f"preannotate_pipeline 校验失败: {e}"
+        ) from e
 
 
 def _stage_supported_inputs(backend, model_id: str | None) -> list[str]:

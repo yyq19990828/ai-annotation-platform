@@ -34,6 +34,18 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.28] - 2026-06-26
+
+### Added
+
+- **「当前题 AI」popover 新增「运行当前题（按项目编排）」**：项目在 `/ai-pre` 存了编排（v0.18.27）后，工作台 popover 多出一个执行入口，把那条多阶段编排只跑当前一图（`task_ids=[当前题]` + `pipeline_stages=项目编排` + `predict_mode=overwrite` + `on_key_conflict=last_wins`）；顶层 `ml_backend_id` 取源阶段 backend。项目无编排时该按钮不渲染，popover 退化为现状单阶段「运行当前题」（完全向后兼容）。popover 仍是执行器、不是编排编辑器——编排在 `/ai-pre` 定义保存。这是「交互工具栏重设计」epic 的收尾（见 `docs/plans/2026-06-26-v0.18.28-popover-run-project-pipeline.md`）。
+
+## [0.18.27] - 2026-06-26
+
+### Added
+
+- **项目级「已保存的编排」（`Project.preannotate_pipeline`，方案 A）**：项目新增一条 nullable JSONB 列存一条 `pipeline_stages` 形状的编排（一项目一条）。`/ai-pre` 项目详情页新增「保存为项目编排」（单阶段也存成单元素数组）与「清除」，并显示「已保存编排 · N 阶段」标识。PATCH 时复用预标注端点同款 `PipelineStage` + 树形校验复核结构（非法 → 422），避免脏编排落库；显式 `null` = 清除，不传 = 不动。本版只存不跑——执行入口在 v0.18.28（见 `docs/plans/2026-06-26-v0.18.27-project-pipeline-persistence.md`）。
+
 ## [0.18.26] - 2026-06-26
 
 ### Added

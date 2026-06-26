@@ -105,6 +105,7 @@ import { useMaskEditor } from "./useMaskEditor";
 import { MaskToolbar } from "../shell/MaskToolbar";
 import { useVideoAnnotationActions } from "../stages/video/useVideoAnnotationActions";
 import {
+  buildPipelineRunPayload,
   buildPredictParams,
   promptOfTool,
   resolveFloatingClassPaletteRect,
@@ -1141,6 +1142,28 @@ export function useWorkbenchShellModel({
       },
     );
   }, [projectId, batchBackendId, aiModel, taskId, triggerPreannotation, pushToast, preCfg]);
+
+  // v0.18.28 · 项目已存编排 (v0.18.27) 时, popover 多出「运行当前题（按项目编排）」入口。
+  // popover 仍是执行器、不是编排编辑器: 编排在 /ai-pre 定义保存, 这里只把那条编排跑当前一图。
+  const projectPipeline = currentProject?.preannotate_pipeline ?? null;
+  const hasProjectPipeline = (projectPipeline?.length ?? 0) > 0;
+  const projectPipelineStageCount = projectPipeline?.length ?? 0;
+  const handleRunAiPipeline = useCallback(() => {
+    const payload = buildPipelineRunPayload(
+      currentProject?.preannotate_pipeline,
+      taskId,
+    );
+    if (!payload) return;
+    pushToast({
+      msg: "AI 正在按项目编排分析...",
+      sub: `${payload.pipeline_stages?.length ?? 0} 阶段`,
+    });
+    triggerPreannotation.mutate(payload, {
+      onSuccess: () => preCfg.markHot(),
+      onError: (err: unknown) =>
+        pushToast({ msg: "AI 编排预标失败", sub: String(err), kind: "error" }),
+    });
+  }, [currentProject?.preannotate_pipeline, taskId, triggerPreannotation, pushToast, preCfg]);
 
   const {
     handleVideoCreate,
@@ -2319,6 +2342,10 @@ export function useWorkbenchShellModel({
       confThreshold: s.confThreshold, aiTakeoverRate,
       onClose: () => setAiPopoverOpen(false),
       onRunAi: handleRunAi,
+      // v0.18.28 · 项目存了编排时多给一个「按项目编排跑当前题」入口。
+      hasProjectPipeline,
+      projectPipelineStageCount,
+      onRunPipeline: handleRunAiPipeline,
       onAcceptAll: handleAcceptAll,
       onSetConfThreshold: s.setConfThreshold,
       taskAiCost: taskAiMeta.totalCost,

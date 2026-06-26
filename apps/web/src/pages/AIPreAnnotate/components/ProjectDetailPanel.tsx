@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
-import { useProject } from "@/hooks/useProjects";
+import { useProject, useUpdateProject } from "@/hooks/useProjects";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useMLBackends } from "@/hooks/useMLBackends";
@@ -135,8 +135,14 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
         text_threshold?: number | null;
         // v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶), 详见 ProjectOut.default_variants.
         default_variants?: Record<string, Record<string, string>>;
+        // v0.18.27 · 项目级「已保存的编排」(方案 A); null/缺 = 未配编排.
+        preannotate_pipeline?: PipelineStagePayload[] | null;
       }
     | undefined;
+  // v0.18.27 · 项目编排保存 / 清除 (方案 A, 一项目一条)。
+  const updateProject = useUpdateProject(projectId);
+  const savedPipeline = project?.preannotate_pipeline ?? null;
+  const savedStageCount = savedPipeline?.length ?? 0;
   // v0.10.38 · 模态分流: summary 优先 (列表已带), 回落 project 查询.
   const dataType = summary?.data_type ?? project?.data_type ?? "image";
 
@@ -465,28 +471,81 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     !running &&
     (!hasKeyConflict || keyConflictLastWins);
 
+  // v0.18.2 · 有下游阶段卡且全就绪 → 组装 pipeline_stages (源 + N 个并行兄弟 classify)。
+  // 源阶段 ml_backend_id 须等于顶层 (baseArgs.ml_backend_id), 后端据此复用既有 backend 校验。
+  // 单阶段 (无下游卡) 返回 undefined: onRun 据此走单阶段执行 (向后兼容); 保存编排时另行兜成
+  // 单元素数组 (见 onSavePipeline)。两处共用本函数, 避免拼装逻辑分叉 (plan §7 风险)。
+  const buildDownstreamStages = (
+    baseArgs: PreannotateArgs,
+  ): PipelineStagePayload[] | undefined => {
+    if (stagesGraph.length === 0 || !allDownstreamReady) return undefined;
+    // sid → stage 号: 源="root"=0, 下游按 stagesGraph 顺序 1..N (父总在前 → 父号 < 子号)。
+    const numberBySid: Record<string, number> = { root: 0 };
+    stagesGraph.forEach((e, i) => {
+      numberBySid[e.sid] = i + 1;
+    });
+    return [
+      argsToStage(baseArgs, 0),
+      ...stagesGraph.map((e, i) => ({
+        ...(downstreamPayloads[i] as PipelineStagePayload),
+        stage: i + 1,
+        parent_stage: numberBySid[e.parentSid],
+      })),
+    ];
+  };
+
+  // v0.18.27 · 保存当前配置为「项目编排」(方案 A, 一项目一条)。单阶段也存成单元素数组,
+  // 保持「一项目一编排」语义; v0.18.28 popover 据此对当前图跑完整链。本版只存不跑。
+  const onSavePipeline = () => {
+    const baseArgs = cfg.buildArgs(predictMode);
+    if (!baseArgs) {
+      pushToast({ msg: "配置未就绪", sub: "请先选模型 / 配齐参数", kind: "warning" });
+      return;
+    }
+    if (stagesGraph.length > 0 && !allDownstreamReady) {
+      pushToast({ msg: "下游阶段未就绪", sub: "请配齐各阶段卡", kind: "warning" });
+      return;
+    }
+    const stages = buildDownstreamStages(baseArgs) ?? [argsToStage(baseArgs, 0)];
+    updateProject.mutate(
+      { preannotate_pipeline: stages },
+      {
+        onSuccess: () =>
+          pushToast({
+            msg: "已保存为项目编排",
+            sub: `${stages.length} 阶段`,
+            kind: "success",
+          }),
+        onError: (e) =>
+          pushToast({
+            msg: "保存项目编排失败",
+            sub: (e as Error).message,
+            kind: "warning",
+          }),
+      },
+    );
+  };
+
+  const onClearPipeline = () => {
+    updateProject.mutate(
+      { preannotate_pipeline: null },
+      {
+        onSuccess: () => pushToast({ msg: "已清除项目编排", kind: "success" }),
+        onError: (e) =>
+          pushToast({
+            msg: "清除项目编排失败",
+            sub: (e as Error).message,
+            kind: "warning",
+          }),
+      },
+    );
+  };
+
   const onRun = async () => {
     const baseArgs = cfg.buildArgs(predictMode);
     if (!baseArgs || selectedBatchIds.size === 0) return;
-    // v0.18.2 · 有下游阶段卡且全就绪 → 组装 pipeline_stages (源 + N 个并行兄弟 classify)。
-    // 源阶段 ml_backend_id 须等于顶层 (baseArgs.ml_backend_id), 后端据此复用既有 backend 校验。
-    let pipelineStages: PipelineStagePayload[] | undefined;
-    if (stagesGraph.length > 0) {
-      if (!allDownstreamReady) return;
-      // sid → stage 号: 源="root"=0, 下游按 stagesGraph 顺序 1..N (父总在前 → 父号 < 子号)。
-      const numberBySid: Record<string, number> = { root: 0 };
-      stagesGraph.forEach((e, i) => {
-        numberBySid[e.sid] = i + 1;
-      });
-      pipelineStages = [
-        argsToStage(baseArgs, 0),
-        ...stagesGraph.map((e, i) => ({
-          ...(downstreamPayloads[i] as PipelineStagePayload),
-          stage: i + 1,
-          parent_stage: numberBySid[e.parentSid],
-        })),
-      ];
-    }
+    const pipelineStages = buildDownstreamStages(baseArgs);
+    if (stagesGraph.length > 0 && !pipelineStages) return;
     const ids = Array.from(selectedBatchIds);
     setRunning(true);
     try {
@@ -826,6 +885,33 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                     ? "跑预标（先选批次）"
                     : `跑预标（${selectedBatchIds.size} 批）`}
               </Button>
+              {/* v0.18.27 · 把当前配置存为「项目编排」(方案 A); v0.18.28 popover「运行当前题（按项目编排）」据此读取。 */}
+              <Button
+                variant="default"
+                onClick={onSavePipeline}
+                disabled={
+                  !cfg.configReady ||
+                  (stagesGraph.length > 0 && !allDownstreamReady) ||
+                  updateProject.isPending
+                }
+                title="把当前配置（含多阶段编排）保存到项目，供工作台 popover 单图执行"
+              >
+                <Icon name="save" size={12} />
+                保存为项目编排
+              </Button>
+              {savedStageCount > 0 && (
+                <>
+                  <Badge>已保存编排 · {savedStageCount} 阶段</Badge>
+                  <Button
+                    variant="ghost"
+                    onClick={onClearPipeline}
+                    disabled={updateProject.isPending}
+                    title="清除项目已保存的编排"
+                  >
+                    清除
+                  </Button>
+                </>
+              )}
             </div>
           </div>
       </Card>

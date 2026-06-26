@@ -14,6 +14,8 @@ import type {
   VideoSamplingConfig as GenVideoSamplingConfig,
 } from "./generated/types.gen";
 import type { ToolUnitId } from "@/constants/toolUnits";
+// v0.18.27 · 项目级「已保存的编排」复用预标注阶段载荷类型 (与后端 PipelineStage 同构).
+import type { PipelineStagePayload } from "@/hooks/usePreannotation";
 
 // ── 类型再导出（向后兼容旧 import 名） ─────────────────────────────
 //
@@ -58,6 +60,8 @@ export interface ProjectRenderingConfig {
 // v0.10.10 · 待 codegen 重跑前手动扩 rendering_config 字段。
 export type ProjectResponse = ProjectOut & {
   rendering_config?: ProjectRenderingConfig;
+  // v0.18.27 · 项目级「已保存的编排」(方案 A); null/缺 = 未配编排. 待 codegen 重跑后自带.
+  preannotate_pipeline?: PipelineStagePayload[] | null;
 };
 export type ProjectStatsResponse = ProjectStats;
 export type ProjectMemberResponse = ProjectMemberOut;
@@ -82,6 +86,8 @@ export type ProjectUpdatePayload = ProjectUpdate & {
   // v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶); 待 codegen 重跑后从 ProjectUpdate 自带.
   // 形状: {"<backend_uuid>": {"<axis_key>": "<axis_value>", ...}, ...}
   default_variants?: Record<string, Record<string, string>> | null;
+  // v0.18.27 · 项目级「已保存的编排」(方案 A); 显式 null = 清除, 不传 = 不动. 待 codegen 重跑后自带.
+  preannotate_pipeline?: PipelineStagePayload[] | null;
 };
 
 // v0.10.13 · E1 · 项目标注指引图片资源 entry, 与后端 guide_asset.py 同构.
