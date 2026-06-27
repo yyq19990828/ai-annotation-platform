@@ -157,7 +157,9 @@ def _synthesize_single_model(setup: dict, backend_infra: str) -> dict:
     trackers = list(setup.get("supported_trackers") or [])
     if trackers:
         task = "tracker"
-    elif any(p in ("point", "interactive_box", "bbox", "text", "exemplar") for p in prompts):
+    elif any(
+        p in ("point", "interactive_box", "bbox", "text", "exemplar") for p in prompts
+    ):
         task = "interactive_seg"
     else:
         task = "detection"
@@ -219,21 +221,36 @@ def _collect_warnings(models: list[dict]) -> list[dict]:
         task = m.get("task")
         if task and task != "unknown" and task not in TASK_VALUES:
             warn(
-                mid, "task", task,
+                mid,
+                "task",
+                task,
                 f"未知 task「{task}」不在受控词表; 平台无法据此派生默认几何/模态。",
             )
         infra = m.get("infra")
         if infra and infra != "unknown" and infra not in INFRA_VALUES:
-            warn(mid, "infra", infra, f"未知 infra「{infra}」不在受控词表。", level="info")
+            warn(
+                mid,
+                "infra",
+                infra,
+                f"未知 infra「{infra}」不在受控词表。",
+                level="info",
+            )
         for p in m.get("supported_prompts") or []:
             if p not in PROMPT_VALUES:
                 warn(
-                    mid, "supported_prompts", p,
+                    mid,
+                    "supported_prompts",
+                    p,
                     f"未知 prompt「{p}」; 前端工具门控不识别, 该提示将静默失效。",
                 )
         for g in m.get("supported_geometric_outputs") or []:
             if g not in GEOMETRY_VALUES:
-                warn(mid, "supported_geometric_outputs", g, f"未知几何输出「{g}」不在受控词表。")
+                warn(
+                    mid,
+                    "supported_geometric_outputs",
+                    g,
+                    f"未知几何输出「{g}」不在受控词表。",
+                )
     return out
 
 

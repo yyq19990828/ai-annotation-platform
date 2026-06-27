@@ -287,14 +287,24 @@ def test_remap_bbox_roundtrip_lands_in_parent():
     """crop 内全幅检出 → 回映回原父框; 居中半幅 → 落父框内部。"""
     transform = {"ox": 0.4, "oy": 0.4, "sx": 0.2, "sy": 0.2}
     # 全幅检出 (整张 crop) → 应还原成父框 (40,40,20,20)
-    full = [{"type": "rectanglelabels", "value": {"x": 0, "y": 0, "width": 100, "height": 100}}]
+    full = [
+        {
+            "type": "rectanglelabels",
+            "value": {"x": 0, "y": 0, "width": 100, "height": 100},
+        }
+    ]
     [r] = remap_geometry_to_image(full, transform)
     assert r["value"]["x"] == pytest.approx(40)
     assert r["value"]["y"] == pytest.approx(40)
     assert r["value"]["width"] == pytest.approx(20)
     assert r["value"]["height"] == pytest.approx(20)
     # 居中半幅 → 落在父框 (40~60) 内部 (45~55)
-    center = [{"type": "rectanglelabels", "value": {"x": 25, "y": 25, "width": 50, "height": 50}}]
+    center = [
+        {
+            "type": "rectanglelabels",
+            "value": {"x": 25, "y": 25, "width": 50, "height": 50},
+        }
+    ]
     [c] = remap_geometry_to_image(center, transform)
     assert c["value"]["x"] == pytest.approx(45)
     assert c["value"]["width"] == pytest.approx(10)
@@ -303,7 +313,9 @@ def test_remap_bbox_roundtrip_lands_in_parent():
 
 def test_remap_polygon_points():
     transform = {"ox": 0.4, "oy": 0.4, "sx": 0.2, "sy": 0.2}
-    shapes = [{"type": "polygonlabels", "value": {"points": [[0, 0], [100, 0], [100, 100]]}}]
+    shapes = [
+        {"type": "polygonlabels", "value": {"points": [[0, 0], [100, 0], [100, 100]]}}
+    ]
     [r] = remap_geometry_to_image(shapes, transform)
     assert r["value"]["points"][0] == [pytest.approx(40), pytest.approx(40)]
     assert r["value"]["points"][1] == [pytest.approx(60), pytest.approx(40)]
@@ -312,7 +324,12 @@ def test_remap_polygon_points():
 
 def test_remap_does_not_mutate_input():
     transform = {"ox": 0.5, "oy": 0.0, "sx": 0.5, "sy": 1.0}
-    shapes = [{"type": "rectanglelabels", "value": {"x": 0, "y": 0, "width": 100, "height": 100}}]
+    shapes = [
+        {
+            "type": "rectanglelabels",
+            "value": {"x": 0, "y": 0, "width": 100, "height": 100},
+        }
+    ]
     remap_geometry_to_image(shapes, transform)
     assert shapes[0]["value"]["x"] == 0  # 原始未改
 
@@ -342,7 +359,9 @@ def test_crop_supports_polygon_parent_bbox():
 
 def test_geometry_prompts_supports_polygon_parent():
     """polygon 父框 → geometry-prompt 取外接框归一化。"""
-    boxes = [_poly([[10, 20], [40, 20], [40, 60], [10, 60]])]  # bbox x=10,y=20,w=30,h=40
+    boxes = [
+        _poly([[10, 20], [40, 20], [40, 60], [10, 60]])
+    ]  # bbox x=10,y=20,w=30,h=40
     batch = geometry_prompts_from_boxes(boxes)
     assert batch.skipped_geometry == 0
     assert batch.prompts[0]["box"][0] == pytest.approx(0.1)

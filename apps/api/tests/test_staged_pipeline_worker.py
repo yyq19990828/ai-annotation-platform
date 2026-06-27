@@ -553,8 +553,13 @@ async def test_drop_box_on_one_sibling_keeps_other_sibling_boxes(monkeypatch):
 
 def test_resolve_input_mode_by_write_target():
     """v0.18.14 · 投递模式按 write.target 推断, input.mode 可覆盖。"""
-    assert worker_tasks._resolve_input_mode({"write": {"target": "attributes"}}) == "crop"
-    assert worker_tasks._resolve_input_mode({"write": {"target": "geometry"}}) == "geometry"
+    assert (
+        worker_tasks._resolve_input_mode({"write": {"target": "attributes"}}) == "crop"
+    )
+    assert (
+        worker_tasks._resolve_input_mode({"write": {"target": "geometry"}})
+        == "geometry"
+    )
     assert (
         worker_tasks._resolve_input_mode({"write": {"target": "intermediate"}})
         == "geometry"

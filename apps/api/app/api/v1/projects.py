@@ -1356,8 +1356,7 @@ class PreannotateRequest(BaseModel):
                 # 静默忽略并回落 write.target 启发式), 校验期直接拒绝以保契约一致 (见 issue 0006)。
                 if imode is not None and imode not in {"crop", "geometry"}:
                     raise ValueError(
-                        "input.mode 须为 'crop' / 'geometry', "
-                        f"收到 {imode!r}"
+                        f"input.mode 须为 'crop' / 'geometry', 收到 {imode!r}"
                     )
             known_depth[s.stage] = parent_depth + 1
             known_target[s.stage] = target

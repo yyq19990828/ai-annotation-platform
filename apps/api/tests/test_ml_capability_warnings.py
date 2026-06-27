@@ -78,8 +78,14 @@ def test_absent_task_not_flagged():
 def test_prompts_requires_input_matches_legacy_interactive_set():
     """SSOT 派生集合 == 改造前 ml_capabilities._INTERACTIVE_PROMPTS 硬编码 (防迁移漂移)。"""
     legacy = {
-        "point", "interactive_box", "bbox", "text", "exemplar",
-        "scribble", "sketch", "mask",
+        "point",
+        "interactive_box",
+        "bbox",
+        "text",
+        "exemplar",
+        "scribble",
+        "sketch",
+        "mask",
     }
     assert set(PROMPTS_REQUIRES_INPUT) == legacy
 

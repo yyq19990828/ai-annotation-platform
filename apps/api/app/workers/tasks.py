@@ -326,7 +326,9 @@ async def _run_task_pipeline(
             else None
         )
         dropped: set[int] = set()
-        new_shapes: list[dict] = []  # geometry-target 阶段产出的 shape, 阶段循环后追加进预测
+        new_shapes: list[
+            dict
+        ] = []  # geometry-target 阶段产出的 shape, 阶段循环后追加进预测
         for si in range(1, len(stages)):
             stage = stages[si]
             snum = stage["stage"]

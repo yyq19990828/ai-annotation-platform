@@ -15,7 +15,9 @@ import pytest
 
 from app.api.v1.ml_capabilities import _build_payload
 
-SNAPSHOT_PATH = Path(__file__).resolve().parents[1] / "capability-registry.snapshot.json"
+SNAPSHOT_PATH = (
+    Path(__file__).resolve().parents[1] / "capability-registry.snapshot.json"
+)
 
 
 def _normalize(data: dict) -> str:

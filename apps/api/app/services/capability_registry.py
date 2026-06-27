@@ -374,24 +374,69 @@ GEOMETRIES: tuple[GeometrySpec, ...] = (
 # 此前散落在 `ml_capabilities._INTERACTIVE_PROMPTS` 与前端三处常量, 现统一为 SSOT。
 # 这是「补登已在协议流通的既有值」(非扩协议), 沿用 v0.14.11 既有词表惯例, 不另起 ADR。
 PROMPTS: tuple[PromptSpec, ...] = (
-    PromptSpec(id="none", label="无提示", requires_input=False, interactive_route=False,
-               summary="纯批量推理, 无需用户提示 (检测/分类等)。"),
-    PromptSpec(id="point", label="点提示", requires_input=True, interactive_route=True,
-               summary="SAM-style 正/负点累加, 单实例交互分割。"),
-    PromptSpec(id="interactive_box", label="框提示", requires_input=True, interactive_route=True,
-               summary="SAM-style 单框单 mask 交互分割。"),
-    PromptSpec(id="text", label="文本提示", requires_input=True, interactive_route=False,
-               summary="开放词汇文本驱动检测/分割; 走批量线, 不进画布交互工具。"),
-    PromptSpec(id="exemplar", label="视觉示例", requires_input=True, interactive_route=True,
-               summary="PCS 框样例找全图同类, 多正负框 + text 概念 + 阈值迭代 refinement。"),
-    PromptSpec(id="scribble", label="涂抹", requires_input=True, interactive_route=True,
-               summary="涂抹笔迹提示 (预留, 暂无 backend 消费)。"),
-    PromptSpec(id="sketch", label="勾画", requires_input=True, interactive_route=True,
-               summary="勾画轮廓提示 (预留, 暂无 backend 消费)。"),
-    PromptSpec(id="mask", label="掩膜", requires_input=True, interactive_route=True,
-               summary="已有 mask 作提示再细化 (预留/迭代)。"),
-    PromptSpec(id="bbox", label="bbox (退役)", requires_input=True, interactive_route=False,
-               summary="旧单框提示, 已被 interactive_box 取代; 仅兼容历史快照。"),
+    PromptSpec(
+        id="none",
+        label="无提示",
+        requires_input=False,
+        interactive_route=False,
+        summary="纯批量推理, 无需用户提示 (检测/分类等)。",
+    ),
+    PromptSpec(
+        id="point",
+        label="点提示",
+        requires_input=True,
+        interactive_route=True,
+        summary="SAM-style 正/负点累加, 单实例交互分割。",
+    ),
+    PromptSpec(
+        id="interactive_box",
+        label="框提示",
+        requires_input=True,
+        interactive_route=True,
+        summary="SAM-style 单框单 mask 交互分割。",
+    ),
+    PromptSpec(
+        id="text",
+        label="文本提示",
+        requires_input=True,
+        interactive_route=False,
+        summary="开放词汇文本驱动检测/分割; 走批量线, 不进画布交互工具。",
+    ),
+    PromptSpec(
+        id="exemplar",
+        label="视觉示例",
+        requires_input=True,
+        interactive_route=True,
+        summary="PCS 框样例找全图同类, 多正负框 + text 概念 + 阈值迭代 refinement。",
+    ),
+    PromptSpec(
+        id="scribble",
+        label="涂抹",
+        requires_input=True,
+        interactive_route=True,
+        summary="涂抹笔迹提示 (预留, 暂无 backend 消费)。",
+    ),
+    PromptSpec(
+        id="sketch",
+        label="勾画",
+        requires_input=True,
+        interactive_route=True,
+        summary="勾画轮廓提示 (预留, 暂无 backend 消费)。",
+    ),
+    PromptSpec(
+        id="mask",
+        label="掩膜",
+        requires_input=True,
+        interactive_route=True,
+        summary="已有 mask 作提示再细化 (预留/迭代)。",
+    ),
+    PromptSpec(
+        id="bbox",
+        label="bbox (退役)",
+        requires_input=True,
+        interactive_route=False,
+        summary="旧单框提示, 已被 interactive_box 取代; 仅兼容历史快照。",
+    ),
 )
 
 
@@ -403,7 +448,9 @@ MODALITY_VALUES: tuple[str, ...] = tuple(s.id for s in MODALITIES)
 PROMPT_VALUES: tuple[str, ...] = tuple(s.id for s in PROMPTS)
 # requires_input 集合 = 旧 _INTERACTIVE_PROMPTS (含 text/bbox); interactive_route 集合 =
 # 旧前端 INTERACTIVE_PROMPTS 的超集 (含预留 scribble/sketch/mask, 不含 text)。
-PROMPTS_REQUIRES_INPUT: frozenset[str] = frozenset(s.id for s in PROMPTS if s.requires_input)
+PROMPTS_REQUIRES_INPUT: frozenset[str] = frozenset(
+    s.id for s in PROMPTS if s.requires_input
+)
 PROMPTS_INTERACTIVE_ROUTE: frozenset[str] = frozenset(
     s.id for s in PROMPTS if s.interactive_route
 )

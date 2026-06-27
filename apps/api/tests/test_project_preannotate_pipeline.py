@@ -98,9 +98,7 @@ async def test_patch_persists_and_get_returns_pipeline(
 
 
 @pytest.mark.asyncio
-async def test_patch_single_stage_pipeline(
-    httpx_client_bound, super_admin, db_session
-):
+async def test_patch_single_stage_pipeline(httpx_client_bound, super_admin, db_session):
     owner, token = super_admin
     proj, detect, _ = await _seed(db_session, owner.id)
     stages = [{"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect"}]
@@ -114,9 +112,7 @@ async def test_patch_single_stage_pipeline(
 
 
 @pytest.mark.asyncio
-async def test_patch_null_clears_pipeline(
-    httpx_client_bound, super_admin, db_session
-):
+async def test_patch_null_clears_pipeline(httpx_client_bound, super_admin, db_session):
     owner, token = super_admin
     proj, detect, classify = await _seed(db_session, owner.id)
     await httpx_client_bound.patch(
@@ -134,9 +130,7 @@ async def test_patch_null_clears_pipeline(
 
 
 @pytest.mark.asyncio
-async def test_patch_omit_keeps_pipeline(
-    httpx_client_bound, super_admin, db_session
-):
+async def test_patch_omit_keeps_pipeline(httpx_client_bound, super_admin, db_session):
     owner, token = super_admin
     proj, detect, classify = await _seed(db_session, owner.id)
     stages = _stages(detect.id, classify.id)
@@ -172,9 +166,7 @@ async def test_patch_rejects_duplicate_stage(
 
 
 @pytest.mark.asyncio
-async def test_patch_rejects_no_root_stage(
-    httpx_client_bound, super_admin, db_session
-):
+async def test_patch_rejects_no_root_stage(httpx_client_bound, super_admin, db_session):
     owner, token = super_admin
     proj, detect, classify = await _seed(db_session, owner.id)
     stages = _stages(detect.id, classify.id)
@@ -188,9 +180,7 @@ async def test_patch_rejects_no_root_stage(
 
 
 @pytest.mark.asyncio
-async def test_patch_rejects_bad_uuid(
-    httpx_client_bound, super_admin, db_session
-):
+async def test_patch_rejects_bad_uuid(httpx_client_bound, super_admin, db_session):
     owner, token = super_admin
     proj, _, _ = await _seed(db_session, owner.id)
     stages = [{"stage": 0, "ml_backend_id": "not-a-uuid", "model_id": "detect"}]

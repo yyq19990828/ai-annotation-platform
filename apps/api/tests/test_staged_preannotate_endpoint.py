@@ -203,15 +203,33 @@ async def test_accept_depth_three_geometry_chain(
     owner, token = super_admin
     proj, detect, classify, batch = await _seed(db_session, owner.id)
     stages = [
-        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
-         "write": {"target": "geometry"}},
-        {"stage": 1, "ml_backend_id": str(classify.id), "model_id": "box-seg",
-         "parent_stage": 0, "roi": {"mode": "geometry"},
-         "write": {"target": "intermediate"}},
-        {"stage": 2, "ml_backend_id": str(classify.id), "model_id": "color-clf",
-         "parent_stage": 1, "label": "hat",
-         "roi": {"mode": "crop", "pad": 0.1},
-         "write": {"target": "attributes", "target_stage": "root", "keys": ["color"]}},
+        {
+            "stage": 0,
+            "ml_backend_id": str(detect.id),
+            "model_id": "detect",
+            "write": {"target": "geometry"},
+        },
+        {
+            "stage": 1,
+            "ml_backend_id": str(classify.id),
+            "model_id": "box-seg",
+            "parent_stage": 0,
+            "roi": {"mode": "geometry"},
+            "write": {"target": "intermediate"},
+        },
+        {
+            "stage": 2,
+            "ml_backend_id": str(classify.id),
+            "model_id": "color-clf",
+            "parent_stage": 1,
+            "label": "hat",
+            "roi": {"mode": "crop", "pad": 0.1},
+            "write": {
+                "target": "attributes",
+                "target_stage": "root",
+                "keys": ["color"],
+            },
+        },
     ]
     resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
     assert resp.status_code == 200, resp.text
@@ -226,12 +244,25 @@ async def test_reject_forward_parent_stage(
     owner, token = super_admin
     proj, detect, classify, batch = await _seed(db_session, owner.id)
     stages = [
-        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
-         "write": {"target": "geometry"}},
-        {"stage": 1, "ml_backend_id": str(classify.id), "parent_stage": 2,
-         "write": {"target": "attributes", "keys": ["a"]}},
-        {"stage": 2, "ml_backend_id": str(classify.id), "parent_stage": 0,
-         "roi": {"mode": "geometry"}, "write": {"target": "intermediate"}},
+        {
+            "stage": 0,
+            "ml_backend_id": str(detect.id),
+            "model_id": "detect",
+            "write": {"target": "geometry"},
+        },
+        {
+            "stage": 1,
+            "ml_backend_id": str(classify.id),
+            "parent_stage": 2,
+            "write": {"target": "attributes", "keys": ["a"]},
+        },
+        {
+            "stage": 2,
+            "ml_backend_id": str(classify.id),
+            "parent_stage": 0,
+            "roi": {"mode": "geometry"},
+            "write": {"target": "intermediate"},
+        },
     ]
     resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
     assert resp.status_code == 422, resp.text
@@ -246,14 +277,32 @@ async def test_reject_depth_four(
     owner, token = super_admin
     proj, detect, classify, batch = await _seed(db_session, owner.id)
     stages = [
-        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
-         "write": {"target": "geometry"}},
-        {"stage": 1, "ml_backend_id": str(classify.id), "parent_stage": 0,
-         "roi": {"mode": "geometry"}, "write": {"target": "intermediate"}},
-        {"stage": 2, "ml_backend_id": str(classify.id), "parent_stage": 1,
-         "roi": {"mode": "geometry"}, "write": {"target": "intermediate"}},
-        {"stage": 3, "ml_backend_id": str(classify.id), "parent_stage": 2,
-         "write": {"target": "attributes", "keys": ["color"]}},
+        {
+            "stage": 0,
+            "ml_backend_id": str(detect.id),
+            "model_id": "detect",
+            "write": {"target": "geometry"},
+        },
+        {
+            "stage": 1,
+            "ml_backend_id": str(classify.id),
+            "parent_stage": 0,
+            "roi": {"mode": "geometry"},
+            "write": {"target": "intermediate"},
+        },
+        {
+            "stage": 2,
+            "ml_backend_id": str(classify.id),
+            "parent_stage": 1,
+            "roi": {"mode": "geometry"},
+            "write": {"target": "intermediate"},
+        },
+        {
+            "stage": 3,
+            "ml_backend_id": str(classify.id),
+            "parent_stage": 2,
+            "write": {"target": "attributes", "keys": ["color"]},
+        },
     ]
     resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
     assert resp.status_code == 422, resp.text
@@ -268,12 +317,24 @@ async def test_reject_parent_not_geometry(
     owner, token = super_admin
     proj, detect, classify, batch = await _seed(db_session, owner.id)
     stages = [
-        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
-         "write": {"target": "geometry"}},
-        {"stage": 1, "ml_backend_id": str(classify.id), "parent_stage": 0,
-         "write": {"target": "attributes", "keys": ["color"]}},
-        {"stage": 2, "ml_backend_id": str(classify.id), "parent_stage": 1,
-         "write": {"target": "attributes", "keys": ["shade"]}},
+        {
+            "stage": 0,
+            "ml_backend_id": str(detect.id),
+            "model_id": "detect",
+            "write": {"target": "geometry"},
+        },
+        {
+            "stage": 1,
+            "ml_backend_id": str(classify.id),
+            "parent_stage": 0,
+            "write": {"target": "attributes", "keys": ["color"]},
+        },
+        {
+            "stage": 2,
+            "ml_backend_id": str(classify.id),
+            "parent_stage": 1,
+            "write": {"target": "attributes", "keys": ["shade"]},
+        },
     ]
     resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
     assert resp.status_code == 422, resp.text
@@ -288,7 +349,11 @@ async def test_reject_unsupported_target_stage(
     owner, token = super_admin
     proj, detect, classify, batch = await _seed(db_session, owner.id)
     stages = _stages(detect.id, classify.id)
-    stages[1]["write"] = {"target": "attributes", "target_stage": "parent", "keys": ["color"]}
+    stages[1]["write"] = {
+        "target": "attributes",
+        "target_stage": "parent",
+        "keys": ["color"],
+    }
     resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
     assert resp.status_code == 422, resp.text
     assert "暂不支持" in resp.text
@@ -468,7 +533,9 @@ async def test_geometry_target_skips_key_conflict(
 async def _set_model_caps(db, backend, model_id, supported_inputs):
     """v0.18.15 · 给 backend 灌一份能力快照 (含某 model 的 supported_inputs), 供门控/烘焙测试。"""
     backend.health_meta = {
-        "capabilities": {"models": [{"id": model_id, "supported_inputs": supported_inputs}]}
+        "capabilities": {
+            "models": [{"id": model_id, "supported_inputs": supported_inputs}]
+        }
     }
     db.add(backend)
     await db.commit()
@@ -483,10 +550,19 @@ async def test_reject_geometry_child_without_compatible_input(
     proj, detect, classify, batch = await _seed(db_session, owner.id)
     await _set_model_caps(db_session, classify, "fullimg-only", ["full_image"])
     stages = [
-        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
-         "write": {"target": "geometry"}},
-        {"stage": 1, "ml_backend_id": str(classify.id), "model_id": "fullimg-only",
-         "parent_stage": 0, "write": {"target": "geometry"}},
+        {
+            "stage": 0,
+            "ml_backend_id": str(detect.id),
+            "model_id": "detect",
+            "write": {"target": "geometry"},
+        },
+        {
+            "stage": 1,
+            "ml_backend_id": str(classify.id),
+            "model_id": "fullimg-only",
+            "parent_stage": 0,
+            "write": {"target": "geometry"},
+        },
     ]
     resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
     assert resp.status_code == 422, resp.text
@@ -502,10 +578,19 @@ async def test_bakes_crop_delivery_for_plain_detector_geometry_child(
     proj, detect, classify, batch = await _seed(db_session, owner.id)
     await _set_model_caps(db_session, classify, "hat-det", ["full_image", "crop"])
     stages = [
-        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
-         "write": {"target": "geometry"}},
-        {"stage": 1, "ml_backend_id": str(classify.id), "model_id": "hat-det",
-         "parent_stage": 0, "write": {"target": "geometry"}},
+        {
+            "stage": 0,
+            "ml_backend_id": str(detect.id),
+            "model_id": "detect",
+            "write": {"target": "geometry"},
+        },
+        {
+            "stage": 1,
+            "ml_backend_id": str(classify.id),
+            "model_id": "hat-det",
+            "parent_stage": 0,
+            "write": {"target": "geometry"},
+        },
     ]
     resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
     assert resp.status_code == 200, resp.text
@@ -520,12 +605,23 @@ async def test_bakes_geometry_delivery_for_box_seg_child(
     # v0.18.15 · 产几何的子是 box-prompt seg (supported_inputs 含 bbox_prompt) → input.mode=geometry。
     owner, token = super_admin
     proj, detect, classify, batch = await _seed(db_session, owner.id)
-    await _set_model_caps(db_session, classify, "box-seg", ["bbox_prompt", "full_image"])
+    await _set_model_caps(
+        db_session, classify, "box-seg", ["bbox_prompt", "full_image"]
+    )
     stages = [
-        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
-         "write": {"target": "geometry"}},
-        {"stage": 1, "ml_backend_id": str(classify.id), "model_id": "box-seg",
-         "parent_stage": 0, "write": {"target": "geometry"}},
+        {
+            "stage": 0,
+            "ml_backend_id": str(detect.id),
+            "model_id": "detect",
+            "write": {"target": "geometry"},
+        },
+        {
+            "stage": 1,
+            "ml_backend_id": str(classify.id),
+            "model_id": "box-seg",
+            "parent_stage": 0,
+            "write": {"target": "geometry"},
+        },
     ]
     resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
     assert resp.status_code == 200, resp.text
@@ -540,13 +636,24 @@ async def test_explicit_input_mode_not_overridden(
     # v0.18.15 · 用户显式 input.mode 不被烘焙覆盖。
     owner, token = super_admin
     proj, detect, classify, batch = await _seed(db_session, owner.id)
-    await _set_model_caps(db_session, classify, "box-seg", ["bbox_prompt", "full_image"])
+    await _set_model_caps(
+        db_session, classify, "box-seg", ["bbox_prompt", "full_image"]
+    )
     stages = [
-        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
-         "write": {"target": "geometry"}},
-        {"stage": 1, "ml_backend_id": str(classify.id), "model_id": "box-seg",
-         "parent_stage": 0, "input": {"mode": "geometry"},
-         "write": {"target": "geometry"}},
+        {
+            "stage": 0,
+            "ml_backend_id": str(detect.id),
+            "model_id": "detect",
+            "write": {"target": "geometry"},
+        },
+        {
+            "stage": 1,
+            "ml_backend_id": str(classify.id),
+            "model_id": "box-seg",
+            "parent_stage": 0,
+            "input": {"mode": "geometry"},
+            "write": {"target": "geometry"},
+        },
     ]
     resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
     assert resp.status_code == 200, resp.text
@@ -636,15 +743,29 @@ async def test_reject_drop_box_on_non_root_parent(
     owner, token = super_admin
     proj, detect, classify, batch = await _seed(db_session, owner.id)
     stages = [
-        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
-         "write": {"target": "geometry"}},
-        {"stage": 1, "ml_backend_id": str(classify.id), "model_id": "box-seg",
-         "parent_stage": 0, "roi": {"mode": "geometry"},
-         "write": {"target": "intermediate"}},
-        {"stage": 2, "ml_backend_id": str(classify.id), "model_id": "color-clf",
-         "parent_stage": 1, "on_failure": "drop_box",
-         "roi": {"mode": "crop", "pad": 0.1},
-         "write": {"target": "attributes", "keys": ["color"]}},
+        {
+            "stage": 0,
+            "ml_backend_id": str(detect.id),
+            "model_id": "detect",
+            "write": {"target": "geometry"},
+        },
+        {
+            "stage": 1,
+            "ml_backend_id": str(classify.id),
+            "model_id": "box-seg",
+            "parent_stage": 0,
+            "roi": {"mode": "geometry"},
+            "write": {"target": "intermediate"},
+        },
+        {
+            "stage": 2,
+            "ml_backend_id": str(classify.id),
+            "model_id": "color-clf",
+            "parent_stage": 1,
+            "on_failure": "drop_box",
+            "roi": {"mode": "crop", "pad": 0.1},
+            "write": {"target": "attributes", "keys": ["color"]},
+        },
     ]
     resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
     assert resp.status_code == 422, resp.text

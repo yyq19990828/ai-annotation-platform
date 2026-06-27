@@ -90,7 +90,13 @@ def test_exemplar_capabilities_absent_is_none():
     setup = {
         "name": "yolo-backend",
         "infra": "pytorch",
-        "models": [{"id": "detect", "task": "detection", "supported_geometric_outputs": ["bbox"]}],
+        "models": [
+            {
+                "id": "detect",
+                "task": "detection",
+                "supported_geometric_outputs": ["bbox"],
+            }
+        ],
     }
     model = extract_capabilities(setup)["models"][0]
     assert model["exemplar_capabilities"] is None
@@ -308,7 +314,9 @@ def test_supported_inputs_synthesized_for_plain_detector():
     setup = {
         "name": "bk",
         "infra": "onnx",
-        "models": [{"id": "det", "task": "detection", "supported_geometric_outputs": ["bbox"]}],
+        "models": [
+            {"id": "det", "task": "detection", "supported_geometric_outputs": ["bbox"]}
+        ],
     }
     m = extract_capabilities(setup)["models"][0]
     assert m["supported_inputs"] == ["full_image", "crop"]
