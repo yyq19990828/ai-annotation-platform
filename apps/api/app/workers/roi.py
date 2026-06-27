@@ -134,8 +134,10 @@ def crop_inputs_from_boxes(
             ``data:`` 的后端) 内联 base64; ``"presigned"`` (worker 生产默认) 经 ``upload_fn``
             上传对象存储回 URL——对所有走 ``httpx.get`` 的下游后端 (gsam2/sam3) 通用。
         upload_fn: v0.18.4 · ``delivery="presigned"`` 时必传, ``(box_idx, jpeg_bytes) -> url``。
-        cache: v0.18.4 · 可选 ``{(box_idx, pad_rounded): input}``。并行兄弟阶段 target 同一批父框
-            时按 ``(box_idx, pad)`` 复用已裁/已上传 crop, 不重复裁剪 + 重编码 + 重上传。
+        cache: v0.18.4 · 可选 ``{cache_key: input}``。并行兄弟阶段 target 同一批父框时复用
+            已裁/已上传 crop, 不重复裁剪 + 重编码 + 重上传。**调用方需为每个父阶段传独立 cache**
+            (或在 cache key 里包 parent_stage), 否则 depth-3 阶段的子下标 (中间几何) 会与
+            root_boxes 的 (idx, pad) 撞键, 喂错图 (claude[bot] P1)。
 
     Returns:
         :class:`CropBatch` —— ``inputs`` 每项 ``{"id": "<box_idx>", "file_path": <data uri | url>}``,

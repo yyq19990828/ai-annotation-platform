@@ -18,6 +18,7 @@ v0.14.12 · 通用部分 (TaskItem / PredictionResult / BatchPredictResponse) �
 
 from __future__ import annotations
 
+import math
 from typing import Any, Literal
 
 from aap_protocol_v2 import (
@@ -55,6 +56,14 @@ class Exemplar(BaseModel):
     def _validate_bbox(self) -> Exemplar:
         if len(self.bbox) != 4:
             raise ValueError("exemplar.bbox=[x1,y1,x2,y2] required (length 4)")
+        # 与 yolo Exemplar 对齐: NaN/Inf 拒, [0,1] 越界 + 反向/退化框拒, 避免 backend 内部异常。
+        if any(not math.isfinite(v) for v in self.bbox):
+            raise ValueError("exemplar.bbox must be finite (no NaN/Inf)")
+        x1, y1, x2, y2 = self.bbox
+        if not (0.0 <= x1 < x2 <= 1.0 and 0.0 <= y1 < y2 <= 1.0):
+            raise ValueError(
+                "exemplar.bbox must be normalized [x1,y1,x2,y2] with 0≤x1<x2≤1 and 0≤y1<y2≤1"
+            )
         return self
 
 

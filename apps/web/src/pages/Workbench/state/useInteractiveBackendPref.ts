@@ -26,6 +26,14 @@ export function useInteractiveBackendPref(projectId: string | null | undefined) 
   useEffect(() => {
     let active = true;
     if (!userId) {
+      // 切账号/登出: 清掉上一个用户的 byProject + 取消任何 pending 写, 否则下一个用户首渲染
+      // useBackendRouting.preferredOverride 会读到上一个用户的项目→后端映射 (issue claude[bot] P1).
+      setByProject({});
+      pendingRef.current = null;
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
       setLoaded(false);
       return;
     }
@@ -46,7 +54,19 @@ export function useInteractiveBackendPref(projectId: string | null | undefined) 
 
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
+      // 切完后端立刻离开 workbench → 节流 pending 还在 timer 里, 不 flush 这次选择会丢
+      // (违背"跨设备持久化"承诺, 见 issue claude[bot] P1)。fire-and-forget flush。
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+        const payload = pendingRef.current;
+        if (payload) {
+          authApi
+            .updatePreferences({ ai: { interactive_backend_by_project: payload } })
+            .catch(() => {});
+          pendingRef.current = null;
+        }
+      }
     };
   }, []);
 

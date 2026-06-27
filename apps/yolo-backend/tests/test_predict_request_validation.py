@@ -168,6 +168,44 @@ def test_exemplar_bbox_length_validated() -> None:
         })
 
 
+# claude[bot] P1 回归 · 归一化 bbox 范围守卫 (NaN/[0,1] 越界/反向/退化框 422, 避免直传 ultralytics 内部异常)
+def test_exemplar_bbox_out_of_range_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Context.model_validate({
+            "type": "exemplar",
+            "exemplars": [{"bbox": [-0.1, 0.2, 0.5, 0.6]}],
+            "model_variants": {"series": "yoloe-11", "size": "s"},
+        })
+
+
+def test_exemplar_bbox_reversed_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Context.model_validate({
+            "type": "exemplar",
+            "exemplars": [{"bbox": [0.5, 0.2, 0.1, 0.6]}],
+            "model_variants": {"series": "yoloe-11", "size": "s"},
+        })
+
+
+def test_exemplar_bbox_nan_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Context.model_validate({
+            "type": "exemplar",
+            "exemplars": [{"bbox": [float("nan"), 0.2, 0.5, 0.6]}],
+            "model_variants": {"series": "yoloe-11", "size": "s"},
+        })
+
+
+def test_exemplar_bbox_degenerate_rejected() -> None:
+    """x1==x2 (零宽) 也拒, 喂给 ultralytics 会得到空 tensor 静默退化。"""
+    with pytest.raises(ValidationError):
+        Context.model_validate({
+            "type": "exemplar",
+            "exemplars": [{"bbox": [0.3, 0.2, 0.3, 0.6]}],
+            "model_variants": {"series": "yoloe-11", "size": "s"},
+        })
+
+
 def test_batch_request_accepts_singular_task_wire() -> None:
     """平台 predict_interactive 向 /predict 发单数 task → 归一成 tasks=[task]."""
     req = BatchPredictRequest.model_validate({

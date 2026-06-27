@@ -775,14 +775,36 @@ async def reload(req: ReloadRequest | None = None) -> dict:
 async def warmup(req: WarmupRequest) -> WarmupResponse:
     """v0.14.14 协议 §4.4 · 加载指定 (sam_variant, dino_variant) 权重到 pool, 不跑 forward.
 
-    缺失的 axis 回退 backend env 默认 (SAM_VARIANT / DINO_VARIANT). pool 满时按 LRU
-    淘汰最旧 key, evicted 字段回填给前端 toast.
+    task 路由 (issue claude[bot] P1, 与 /reload 行为对齐):
+    - tracker → 独立 video_pool (单维 sam_variant, 无 dino); 不动图片池, 不强制 DINO.
+    - detection / segmentation / interactive_seg / None → 图片池 ModelPool (SAM + DINO).
+
+    缺失的 axis 回退 backend env 默认 (SAM_VARIANT / DINO_VARIANT). 池满按 LRU 淘汰最旧 key,
+    evicted 字段回填给前端 toast.
     """
     variants = req.variants or {}
     sv = variants.get("sam_variant") or SAM_VARIANT
-    dv = variants.get("dino_variant") or DINO_VARIANT
     if sv not in SAM2_CONFIGS:
         raise VariantNotSupportedError("sam_variant", sv, sorted(SAM2_CONFIGS))
+
+    # tracker: 走独立 video_pool, 不复用图片池 / 不校验 DINO (video predictor 不用 DINO)。
+    if req.task == "tracker":
+        try:
+            cache_hit, load_ms, evicted = await _video_pool.warmup(sv)
+        except RuntimeError as exc:
+            raise ModelUnavailableError(sv, str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise ModelUnavailableError(
+                sv, f"video checkpoint not provisioned: {exc}"
+            ) from exc
+        return WarmupResponse(
+            ok=True,
+            model_load_ms=load_ms,
+            cache_hit=cache_hit,
+            evicted=evicted,
+        )
+
+    dv = variants.get("dino_variant") or DINO_VARIANT
     if dv not in DINO_CONFIGS:
         raise VariantNotSupportedError("dino_variant", dv, sorted(DINO_CONFIGS))
     try:

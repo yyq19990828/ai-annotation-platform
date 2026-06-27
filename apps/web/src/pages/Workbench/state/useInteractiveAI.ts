@@ -223,6 +223,9 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       if (cached) {
         setCandidates(cached);
         setActiveIdx(0);
+        // 上面 L212-213 已经 abort 旧请求 + 自增 inflightRef; 旧请求 finally 守卫不再通过
+        // → 旋转图标永不清除 (issue claude[bot] P1)。此处显式复位。
+        setIsRunning(false);
         return;
       }
       // v0.10.23 · 本次请求携带的变体是否与上次成功应用的不同 → 切换后首次预测, 弹三态通知。

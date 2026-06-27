@@ -25,6 +25,13 @@ export function useAiToolModelPref(backendId: string | null | undefined) {
   useEffect(() => {
     let active = true;
     if (!userId) {
+      // 切账号/登出: 清掉上一个用户的 byBackend + 取消任何 pending 写 (issue claude[bot] P1)。
+      setByBackend({});
+      pendingRef.current = null;
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
       setLoaded(false);
       return;
     }
@@ -45,7 +52,19 @@ export function useAiToolModelPref(backendId: string | null | undefined) {
 
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
+      // 切完模型立刻离开 workbench → unmount flush pending, 否则节流窗口内最后一次选择会丢
+      // (违背"跨设备持久化"承诺)。
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+        const payload = pendingRef.current;
+        if (payload) {
+          authApi
+            .updatePreferences({ ai: { model_by_backend: payload } })
+            .catch(() => {});
+          pendingRef.current = null;
+        }
+      }
     };
   }, []);
 

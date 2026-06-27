@@ -361,6 +361,38 @@ describe("useInteractiveAI", () => {
     expect(result.current.candidates).toHaveLength(0);
   });
 
+  // claude[bot] P1 回归 · cache-hit-after-inflight: 上一个真实请求 in-flight 时, 紧接着
+  // 触发一次命中前端缓存的调用 → 旧请求被 abort + inflightRef 自增, 但 cache 分支直接 return,
+  // 旧请求 finally 守卫不通过 → isRunning 卡在 true。修后 cache 分支显式 setIsRunning(false)。
+  it("cache 命中且上一个请求 in-flight 时 isRunning 复位 (P1 回归)", async () => {
+    // 调用次序: 1) 跑通填 cache → 2) hang 住模拟 in-flight → 3) cache 命中(不再调 mock)。
+    interactiveAnnotateMock.mockResolvedValueOnce(POLY_RESPONSE);
+    let secondResolve: ((v: typeof POLY_RESPONSE) => void) | undefined;
+    interactiveAnnotateMock.mockImplementationOnce(
+      () => new Promise((res) => { secondResolve = res as typeof secondResolve; }),
+    );
+
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+
+    // 第 1 次: 同一 bbox 跑通 → 缓存填好。
+    act(() => result.current.runBbox([0, 0, 0.5, 0.5]));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    expect(result.current.isRunning).toBe(false);
+
+    // 第 2 次: 换 prompt, hang 住 (mockImplementationOnce 走这次)。
+    act(() => result.current.runBbox([0.1, 0.1, 0.4, 0.4]));
+    await waitFor(() => expect(result.current.isRunning).toBe(true));
+
+    // 第 3 次: 回到第 1 次的 prompt → cache 命中, 在 in-flight 期间触发。
+    act(() => result.current.runBbox([0, 0, 0.5, 0.5]));
+    // 候选立刻复用 (cache 同步命中); isRunning 必须立刻复位, 不等 in-flight resolve。
+    expect(result.current.candidates).toHaveLength(1);
+    expect(result.current.isRunning).toBe(false);
+
+    // 收尾: 让 hang 的请求 resolve, 防止泄漏 (旧请求的结果被 inflight 守卫丢弃)。
+    secondResolve?.(POLY_RESPONSE);
+  });
+
   // v0.18.19 · exemplar refine 会话 (多正负框 + text 组合 + 阈值重过滤)
   describe("exemplar refine 会话", () => {
     it("runExemplar 累加正/负框, 每次重发全量 exemplars[]", async () => {

@@ -153,6 +153,64 @@ class VideoPool:
         finally:
             lock.release()
 
+    async def warmup(
+        self, sam_variant: str
+    ) -> tuple[bool, int | None, str | None]:
+        """协议 §4.4 · 加载 video tracker 权重到池, 不跑 forward。
+
+        与 ModelPool.warmup 接口对齐: 返回 (cache_hit, model_load_ms, evicted_key_str)。
+        命中不算 hit_count (warmup ≠ predict 用), 仅 touch lru。
+        """
+        existing = self._trackers.get(sam_variant)
+        if existing is not None:
+            self._trackers.move_to_end(sam_variant)
+            self._lru_ts[sam_variant] = time.monotonic()
+            self._last_used_at[sam_variant] = datetime.now(UTC)
+            return True, None, None
+
+        lock = self._lock_for(sam_variant)
+        try:
+            await asyncio.wait_for(lock.acquire(), timeout=self._build_timeout)
+        except (asyncio.TimeoutError, TimeoutError) as exc:
+            raise RuntimeError(
+                f"video pool busy: timed out warming up variant {sam_variant!r} "
+                f"after {self._build_timeout}s"
+            ) from exc
+        try:
+            existing = self._trackers.get(sam_variant)
+            if existing is not None:
+                self._trackers.move_to_end(sam_variant)
+                self._lru_ts[sam_variant] = time.monotonic()
+                self._last_used_at[sam_variant] = datetime.now(UTC)
+                return True, None, None
+
+            evict_marker = self._last_evict
+            self._evict_until(self._cap - 1)
+            evicted_key_str: str | None = None
+            if self._last_evict is not None and self._last_evict is not evict_marker:
+                evicted_key_str = self._last_evict["key"]
+
+            loop = asyncio.get_running_loop()
+            t0 = time.monotonic()
+            tracker = await loop.run_in_executor(None, self._build_tracker, sam_variant)
+            load_ms = int((time.monotonic() - t0) * 1000)
+            now = datetime.now(UTC)
+            self._trackers[sam_variant] = tracker
+            self._trackers.move_to_end(sam_variant)
+            self._lru_ts[sam_variant] = time.monotonic()
+            self._loaded_at[sam_variant] = now
+            self._last_used_at[sam_variant] = now
+            self._hit_count[sam_variant] = 0
+            logger.info(
+                "video variant %r warmed up; pool size=%d/%d",
+                sam_variant,
+                len(self._trackers),
+                self._cap,
+            )
+            return False, load_ms, evicted_key_str
+        finally:
+            lock.release()
+
     def _evict_until(self, target_size: int) -> None:
         while len(self._trackers) > max(0, target_size):
             evict_variant, tracker = self._trackers.popitem(last=False)

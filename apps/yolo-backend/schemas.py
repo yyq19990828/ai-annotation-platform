@@ -8,6 +8,7 @@ Context: 与 sam3/gsam2 的 prompt 驱动不同, yolo 走纯批量 + variants �
 from __future__ import annotations
 
 import logging
+import math
 from typing import Literal
 
 from aap_protocol_v2 import (
@@ -74,6 +75,15 @@ class Exemplar(BaseModel):
     def _validate_bbox(self) -> "Exemplar":
         if len(self.bbox) != 4:
             raise ValueError("exemplar.bbox=[x1,y1,x2,y2] required (length 4)")
+        # 归一化坐标守卫: NaN/Inf 直接拒, [0,1] 越界 + 反向/退化框拒, 避免 ultralytics
+        # 内部 500 或静默退化为空 tensor (issue claude[bot] P1)。
+        if any(not math.isfinite(v) for v in self.bbox):
+            raise ValueError("exemplar.bbox must be finite (no NaN/Inf)")
+        x1, y1, x2, y2 = self.bbox
+        if not (0.0 <= x1 < x2 <= 1.0 and 0.0 <= y1 < y2 <= 1.0):
+            raise ValueError(
+                "exemplar.bbox must be normalized [x1,y1,x2,y2] with 0≤x1<x2≤1 and 0≤y1<y2≤1"
+            )
         return self
 
 

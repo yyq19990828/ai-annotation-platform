@@ -318,8 +318,10 @@ async def _run_task_pipeline(
         stats[root_stage]["detected"] += len(root_boxes)
         # 每阶段对下游暴露的几何 (按 stage 号): root 暴露检测框, 下游按 parent_stage 取上游输出。
         stage_outputs: dict[int, list] = {root_stage: root_boxes}
-        # v0.18.4 · 并行兄弟阶段 target 同一批父框时按 (box_idx, pad) 复用已裁/已上传 crop。
-        crop_cache: dict = {}
+        # v0.18.4 · 并行兄弟阶段 target 同一批父框时按 (box_idx, pad) 复用已裁/已上传 crop;
+        # depth-3 阶段的子下标语义与 root_boxes 不同 (是中间几何), 按 parent_stage 分桶
+        # 避免 (idx, pad) 撞键喂错图 (claude[bot] P1)。
+        crop_cache_by_parent: dict[int | None, dict] = {}
         upload_fn = (
             (lambda idx, buf: upload_crop(task, idx, buf))
             if upload_crop is not None
@@ -382,6 +384,8 @@ async def _run_task_pipeline(
                 stage_outputs[snum] = parent_boxes
                 continue
             pad = _resolve_pad(stage, depths.get(snum, 2))
+            parent_key = stage.get("parent_stage")
+            crop_cache = crop_cache_by_parent.setdefault(parent_key, {})
             batch = crop_inputs_from_boxes(
                 image,
                 parent_boxes,
