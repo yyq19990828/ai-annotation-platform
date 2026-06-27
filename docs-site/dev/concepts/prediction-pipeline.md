@@ -118,10 +118,12 @@ sequenceDiagram
 
 | 字段 | 来源 | 含义 |
 |---|---|---|
-| `supported_prompts` | `/setup` 直传 | 支持的图像提示类型（text/point/bbox/exemplar 等）|
+| `supported_prompts` | `/setup` 直传 | 支持的图像提示类型（text/point/interactive_box/exemplar 等）|
+| `supported_inputs` | `/setup.models[]` 或平台兼容合成 | 支持的投递形态（整图 / 裁剪图 / 框提示 / 点提示），多阶段父子可达性用它判断 |
 | `supported_trackers` | `/setup` 直传 | 支持的视频追踪器（如 `sam2_video`）|
 | `modalities` | `derive_modalities()` 派生 | `supported_prompts` 非空 → `image`；`supported_trackers` 非空 → `video` |
 | `is_interactive` | `/setup.is_interactive` | 健康检查时回写，不再手填 |
+| `warnings` | 平台校验派生 | 受控词表越界诊断（task / infra / prompt / geometry），模型市场显示为 `⚠ 协议 N` |
 
 `health_meta` 字段类型为 `HealthMeta(extra="allow")`，无需 alembic 迁移。探测失败时静默跳过，不影响健康检查结果（fail-open）。
 

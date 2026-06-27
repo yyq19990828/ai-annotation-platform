@@ -21,7 +21,7 @@ last_reviewed: 2026-06-08
 
 ## 项目作用域与数量上限
 
-`ml_backends.project_id` 按 1:N 设计；同一个项目可以注册多条 backend 记录，前端的多 backend 选择器也会在配额放开后自然生效。当前开发环境默认 `MAX_ML_BACKENDS_PER_PROJECT=1`，是为了避免单机同时常驻 grounded-sam2 与 sam3 等大模型导致显存爆掉；生产环境可按机器显存和并发预算调大该值。
+`ml_backends.project_id` 按 1:N 设计；同一个项目可以注册多条 backend 记录，前端多 backend 选择器已经按「交互线 / 批量线 / 编排阶段」分流。当前开发环境默认 `MAX_ML_BACKENDS_PER_PROJECT=3`，给检测 + 分割 / 分类 + 备用 backend 留出基本空间；生产环境可按机器显存和并发预算调大或调小该值。
 
 这个限制只影响「一个项目能注册多少条 backend」。新建项目时选择「复用 backend」仍会复制一条 backend 行到新项目；未注册 backend 但已启用 AI 的项目也会出现在模型市场，便于从模型市场直接注册第一条 backend。
 
@@ -214,13 +214,13 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 >
 > **兼容期旧字段**：backend 必须继续接受一版旧写法并 normalize 到 `context.model_variants`：yolo 的 `context.variants`、grounded-sam2 的 `context.sam_variant` / `context.dino_variant`、sam3 的 `context.model_variant`。收到旧字段时应记录 deprecation warning；若新旧字段同时存在，新字段优先。
 
-> **`type=exemplar`**（仅 SAM 3 支持）：取图中已有的 bbox 作为视觉示例，由 SAM 3 PCS 出全图相似实例的 masks。这是一个**无状态迭代 refine 会话**：前端维护「进行中的正/负框集 + 叠加 text + 阈值」，每次操作（加框 / 拖阈值 / 改 text）重发全量，backend 一次 `reset_all_prompts → (可选)set_text_prompt → 顺序多次 add_geometric_prompt(box, label) → 按 per-request `score_threshold` 过滤`（backbone 缓存命中下只重跑 grounding head，不重跑 backbone）。
+> **`type=exemplar`**：取图中已有的 bbox 作为视觉示例，返回全图相似实例。SAM 3 PCS 支持正/负框集 + 叠加 text + 阈值 refine；YOLOE visual prompt 支持多正框 + 阈值 refine，但不支持负框或文本叠加。这是一个**无状态迭代 refine 会话**：前端维护「进行中的框集 + 可选 text + 阈值」，每次操作（加框 / 拖阈值 / 改 text）重发全量，backend 按自身能力消费。
 >
 > - `exemplars[]`（优先）：`[{bbox:[x1,y1,x2,y2], label:bool}]` 多正负框累加。`label=true`=正框（扩召回）/ `label=false`=负框（排误检）。缺省 `exemplars` 时退化为单 `bbox` 正框（旧路径兼容）。
 > - `text`：可与 `exemplars` 同时传，组合为「text 概念 + 视觉示例」；非空时返回的 `polygonlabels` 用该短语，否则用 `["object"]`（前端按当前 active label 批量改写）。
 > - `score_threshold` / `output`（box/mask/both）复用通用字段。
 >
-> `bbox`/`exemplars[].bbox` 与 `type=interactive_box` 的 `bbox` 语义靠 `type` 区分：exemplar=全图相似，interactive_box=单框单 mask。`/setup` 在 `exemplar_capabilities`（`multi_box` / `negative_box` / `text_combination` / `threshold_refilter`）声明该 refine 能力，前端据此启用会话控件。apps/api 仅在项目挂了支持 exemplar 的 backend（`/setup.supported_prompts` 含 `exemplar`）时才放行；未挂返回 400。前端 UI 入口在工作台 exemplar 工具拖框（Alt 拖框或负极性 = 负框）。
+> `bbox`/`exemplars[].bbox` 与 `type=interactive_box` 的 `bbox` 语义靠 `type` 区分：exemplar=全图相似，interactive_box=单框单 mask。`/setup` 在 `exemplar_capabilities`（`multi_box` / `negative_box` / `text_combination` / `threshold_refilter`）声明该 refine 能力，前端据此启用会话控件：如 `negative_box=false` 时隐藏负极性并强制正框，`text_combination=false` 时隐藏叠加文本。缺字段按全支持处理，兼容旧 SAM 3 backend。apps/api 仅在项目挂了支持 exemplar 的 backend（`/setup.supported_prompts` 含 `exemplar`）时才放行；未挂返回 400。前端 UI 入口在工作台 exemplar 工具拖框（Alt 拖框或负极性 = 负框）。
 
 > **`type=video_tracker`**：由 `VideoTrackerJob` worker 使用，gsam2 backend 接通真实 `sam2_video`。平台会按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 把长区间分窗，多次调用项目绑定的 connected ML Backend。请求 `task.file_path` 是视频 signed URL；`context` 包含 `model_key`（`sam2_video` / `sam3_video`）、`job_id`、`dataset_item_id`、`annotation_id`、`from_frame`、`to_frame`、`direction`、`prompt` 和 `source_geometry`。响应 `result[]` 每项为 `{ frame_index, geometry, confidence?, outside? }`；低于平台阈值的 `confidence` 会被写成 outside prediction range。
 >
@@ -241,7 +241,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 > - `both`：同 instance 配对返回 `[rectanglelabels, polygonlabels, ...]` 严格交错（box 优先，对应 polygon 在后）。前端 `Tab` 切活跃几何，`Enter` 接受当前形态。
 > - **老 backend 兼容**：缺 `output` 字段时按 `"mask"` 路径返回，零回归。
 > - **老前端兼容**：不识别 `rectanglelabels` 候选时只显示 `polygonlabels`。
-> - **point/bbox/polygon 类型**：`output` 字段无意义，始终走 SAM mask → polygon。
+> - **point/interactive_box/polygon 类型**：`output` 字段无意义，始终走 SAM mask → polygon。
 
 > **`simplify_tolerance: number`**（可选；缺省走 backend 默认 1.0）：
 > - 像素级 shapely.simplify 容差。**大物体 / 大致形状** 调高（2-3）减顶点、提速；**精细物体** 调低（0.3-0.5）保细节。
@@ -350,7 +350,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 > **`supported_prompts`**：枚举 `point | interactive_box | text | exemplar | sketch | scribble | …`。**交互式用户 prompt**，前端 ToolDock 据此置灰不支持的工具。（`bbox` 已退出交互 prompt 命名空间，仅保留为几何形状名。）
 >
-> **`supported_inputs`**（一等输入契约）：枚举 `full_image | crop | bbox_prompt | point_prompt`，声明本 model 能吃哪些**投递形态**，与 `supported_prompts`（交互 prompt）**解耦**——纯分类器 `supported_prompts=[]` 但 `supported_inputs=["full_image","crop"]`；box-seg `supported_inputs=["bbox_prompt","full_image"]`。多阶段编排据此判定父子可达性（产几何的子须含 `bbox_prompt` 或 `crop`）并选择投递方式（见 §2.1.1 判别器）；模型市场「可接受输入」行也由它驱动。**老 backend 缺字段时平台合成兼容默认**：含 `bbox` prompt → `["bbox_prompt","full_image"]`；含 `point` → 加 `point_prompt`；非交互模型额外含 `crop`；任何模型都含 `full_image`（见 services/ml_capabilities.py `_synthesize_supported_inputs`）。
+> **`supported_inputs`**（一等输入契约）：枚举 `full_image | crop | bbox_prompt | point_prompt`，声明本 model 能吃哪些**投递形态**，与 `supported_prompts`（交互 prompt）**解耦**——纯分类器 `supported_prompts=[]` 但 `supported_inputs=["full_image","crop"]`；box-seg `supported_inputs=["bbox_prompt","full_image"]`。多阶段编排据此判定父子可达性（产几何的子须含 `bbox_prompt` 或 `crop`）并选择投递方式（见 §2.1.1 判别器）；模型市场「可接受输入」行也由它驱动。**老 backend 缺字段时平台合成兼容默认**：含 `interactive_box`（或历史 `bbox`）prompt → `["bbox_prompt","full_image"]`；含 `point` → 加 `point_prompt`；非交互模型额外含 `crop`；任何模型都含 `full_image`（见 services/ml_capabilities.py `_synthesize_supported_inputs`）。
 >
 > **`supported_text_outputs`**：text 路径支持的 `Context.output` 取值。
 >
@@ -362,7 +362,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 **前端兜底**：返回体缺 `supported_prompts` 时前端回落 `["point","interactive_box","text"]` 并 `console.warn` 提示升级 backend。`/setup` 502 时整套 AI 工具置灰。
 
-> **能力快照持久化**：除上述代理端点的实时拉取外，平台在 `check_health`（services/ml_backend.py）拉完 `/health` 后会 best-effort 再探一次 `/setup`，把能力快照（`supported_prompts` / `supported_trackers` / `supported_text_outputs` / `supported_geometric_outputs` + 平台派生的 `modalities`）落进 `ml_backends.health_meta["capabilities"]`，供「按模态分流 / 绑定校验 / 列表只读展示」消费（无需每处实时拉 `/setup`）。模态派生规则：`supported_prompts` 非空 ⇒ image、`supported_trackers` 非空 ⇒ video（见 services/ml_capabilities.py）。
+> **能力快照持久化**：除上述代理端点的实时拉取外，平台在 `check_health`（services/ml_backend.py）拉完 `/health` 后会 best-effort 再探一次 `/setup`，把能力快照（`models[]`、`supported_prompts`、`supported_inputs`、`supported_trackers`、`supported_text_outputs`、`supported_geometric_outputs`、`warnings` + 平台派生的 `modalities`）落进 `ml_backends.health_meta["capabilities"]`，供「按模态分流 / 绑定校验 / 列表只读展示」消费（无需每处实时拉 `/setup`）。模态派生规则：`supported_prompts` 非空 ⇒ image、`supported_trackers` 非空 ⇒ video（见 services/ml_capabilities.py）。
 >
 > **`is_interactive` 改派生**：`is_interactive` 不再由注册表单手填，而是以 backend `/setup.is_interactive` 自报为真值，在 `check_health` 时回写 `MLBackend.is_interactive`。backend 必须在 `/setup` 如实声明该位。
 >
@@ -421,6 +421,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   "composition": "atom",                // 可选. atom=单次推理原子; composite=内部编排多原子. 缺省 atom
 
   "supported_prompts": ["none"],        // 受控. none = 纯批量,无交互 prompt
+  "supported_inputs": ["full_image", "crop"], // 可选. full_image/crop/bbox_prompt/point_prompt; 缺省由平台合成
   "supported_geometric_outputs": ["bbox"],   // 受控,复用现有字段名
   "output_attribute_types": [],         // 受控. OCR: ["text","language"]; cls: ["class"]
   "supported_text_outputs": [],         // v1 已有,text 路径专用(box/mask/both)
@@ -467,7 +468,9 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 - **缺省**：老 backend 不报 `infra` ⇒ 缓存标 `unknown`，UI 不渲染 badge 或显示「未声明」。
 - **边界**：`infra` 是纯元数据 —— 不改 `/predict` 协议、不影响 result schema、不参与项目兼容性的硬校验（仅展示 badge + 排障溯源）。
 
-**`supported_prompts`（沿用 v1，新增 `none`）** —— `none`（纯批量，无交互） / `point` / `interactive_box` / `text` / `exemplar` / `sketch` / `scribble`。YOLO / OCR / layout 是 `["none"]`（批量自动）；SAM 类是 point/interactive_box/text/exemplar。
+**`supported_prompts`（prompt 受控词表）** —— `none`（纯批量，无交互） / `point` / `interactive_box` / `text` / `exemplar` / `sketch` / `scribble` / `mask` / `bbox`（退役兼容）。YOLO / OCR / layout 闭集模型通常是 `["none"]`（批量自动）；SAM 类是 point/interactive_box/text/exemplar；YOLOE visual prompt exemplar 是 `["exemplar"]`。`text` 需要用户输入，但不进入画布交互工具线；`bbox` 仅兼容历史快照，新增 backend 应使用 `interactive_box`。
+
+**`supported_inputs`（投递形态受控词表）** —— `full_image` / `crop` / `bbox_prompt` / `point_prompt`。它描述平台如何把上游产物交给这个 model：整图、裁剪 ROI、框提示或点提示。多阶段编排只看这个字段决定父子可达性，不再从 `supported_prompts` 猜测；老 backend 缺字段时由平台按 prompt 合成兼容默认。
 
 **`composition`（原子 vs 内部编排，可选）** <!-- since 协议 v2.2 --> —— `atom`（单次推理 / 单原子） / `composite`（一个 model 内部编排多个原子、一次 `/predict` 一气呵成）：
 
@@ -485,18 +488,23 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   "infra": "pytorch",                 // backend 默认
   "models": [
     { "id": "detect", "task": "detection", "model_family": "yolo", "infra": "pytorch",
-      "supported_prompts": ["none"], "supported_geometric_outputs": ["bbox"],
+      "supported_prompts": ["none"], "supported_inputs": ["full_image", "crop"],
+      "supported_geometric_outputs": ["bbox"],
       "output_attribute_types": [], "supported_variants": [/*…*/],
       "default_thresholds": {/*…*/}, "resource_profile": {/*…*/}, "modality": "image" }
     /* … */
   ],
   // 兼容字段:老消费方仍能读到「扁平并集」(所有 model 的 prompts/geometry 去重合并)
-  "supported_prompts": ["none"], "supported_geometric_outputs": ["bbox","polygon","keypoint","rotated_bbox"],
-  "modalities": ["image"]
+  "supported_prompts": ["none"], "supported_inputs": ["full_image","crop"],
+  "supported_geometric_outputs": ["bbox","polygon","keypoint","rotated_bbox"],
+  "modalities": ["image"],
+  "warnings": []
 }
 ```
 
 保留顶层「扁平并集」字段，让现有 `useMLCapabilities` / 绑定校验在改造完成前零回归。模态派生升级为 **per-model 派生 + backend 汇总**：`task=tracker` 或 `supported_trackers` 非空 ⇒ video；几何含 `lidar_box_3d` / `point_mask_3d` ⇒ lidar（留位）；否则 ⇒ image（含 `supported_prompts=["none"]` 的批量模型）。backend `modalities` = 各 model modality 去重并集。
+
+`warnings` 是非阻断诊断列表，由平台校验规范化后的 `task` / `infra` / `supported_prompts` / `supported_geometric_outputs` 是否落在受控词表内后生成。每条包含 `{level, model_id, field, value, message}`。模型市场用它显示 `⚠ 协议 N`，帮助接入方发现字段拼写或枚举漂移；平台不会因此丢弃该 model。
 
 ### 4.1.5 向后兼容规则
 
@@ -658,11 +666,11 @@ GET  /projects/{pid}/ml-backends/{bid}/capabilities          # 返回 models[] �
 POST /projects/{pid}/ml-backends/{bid}/capabilities/refresh  # 强制重探 /setup 并刷新缓存
 ```
 
-- `capabilities` 返回派生后的 model 目录（含每条 `infra` / `task` / `supported_geometric_outputs` / `output_attribute_types` / `supported_variants` / `last_seen_at`），供模型市场 / 工作台多模型选择器消费。
+- `capabilities` 返回派生后的 model 目录（含每条 `infra` / `task` / `supported_inputs` / `supported_geometric_outputs` / `output_attribute_types` / `supported_variants` / `last_seen_at`），并在顶层携带受控词表诊断 `warnings`，供模型市场 / 工作台多模型选择器消费。
 - `capabilities/refresh` 跳过缓存强制重探，用于 backend 升级 model_version 后立即看到新能力。
 - 批量预标入口扩展 `model_id`（指向目录条目；缺省 = backend 隐式单 model，兼容老路径）；variant / threshold 经 `context` / `params` 透传。
 
-> Phase 2 起若放开 `MAX_ML_BACKENDS_PER_PROJECT > 1` 或需要跨 backend 模型检索，再考虑独立表 `ml_model_capabilities` 与全局聚合端点 `GET /ml-backends/capabilities`。
+> 若后续需要持久化跨 backend 模型检索，再考虑独立表 `ml_model_capabilities` 与全局聚合端点 `GET /ml-backends/capabilities`。
 
 ### 4.1.10 可跑参考实现
 
@@ -713,11 +721,37 @@ GET /api/v1/ml-capabilities/protocol
   ],
   "infras":     [ { "id": "pytorch", "label": "PyTorch", "summary": "..." }, ... ],   // 6 项
   "modalities": [ { "id": "image",   "label": "图像",   "summary": "..." }, ... ],   // 3 项 (image/video/lidar)
-  "geometries": [ { "id": "bbox",    "label": "bbox",   "summary": "..." }, ... ]   // 8 项
+  "geometries": [ { "id": "bbox",    "label": "bbox",   "summary": "..." }, ... ],  // 8 项
+  "prompts": [
+    {
+      "id": "interactive_box",
+      "label": "框提示",
+      "summary": "SAM-style 单框单 mask 交互分割。",
+      "requires_input": true,
+      "interactive_route": true
+    },
+    {
+      "id": "text",
+      "label": "文本提示",
+      "summary": "开放词汇文本驱动检测/分割; 走批量线, 不进画布交互工具。",
+      "requires_input": true,
+      "interactive_route": false
+    }
+    // 共 9 个 prompt
+  ]
 }
 ```
 
 **消费方**：前端 `CapabilityCatalogPanel` 默认 `groupBy=task`，遍历 `tasks` 渲染 9 张协议卡；已注册 backend 的 model 按 `model.task` 字段挂载到对应卡下。无 backend 注册时协议卡仍可见（带「暂无接入」徽标 + 推荐 backend CTA），不再阻塞用户探索。
+
+**维护流程**：`capability_registry.py` 是 task / infra / modality / geometry / prompt 的 SSOT。修改受控词表、响应 schema 或序列化后，运行：
+
+```bash
+cd apps/api && uv run python ../../scripts/export_capability_registry.py
+cd ../.. && pnpm codegen
+```
+
+第一步刷新 `apps/api/capability-registry.snapshot.json`；第二步让前端根据 snapshot 生成受控词表常量。pre-commit 会对 registry 相关文件自动重导 snapshot，CI 可用 `uv run python ../../scripts/export_capability_registry.py --check` 检测漂移。
 
 **协议与实例的关系**：
 

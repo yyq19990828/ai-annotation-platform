@@ -19,15 +19,15 @@ last_reviewed: 2026-06-10
 | 工具 | 图标 | 默认快捷键 | 后端要求 | 输出形态 |
 |---|---|---|---|---|
 | **智能点** | 🎯 | `S` 循环 | `point` | polygon 候选 |
-| **智能框** | ▭ | `S` 循环 | `bbox` | polygon 候选 |
-| **Magic Box** | ✨ | `G` / `S` 循环 | `bbox` | **直接** bbox 标注 |
-| **Exemplar 示例** | ⎘ | `S` 循环 | `exemplar` (仅 SAM 3) | polygon / bbox 候选 |
+| **智能框** | ▭ | `S` 循环 | `interactive_box` | polygon 候选 |
+| **Magic Box** | ✨ | `G` / `S` 循环 | `interactive_box` | **直接** bbox 标注 |
+| **Exemplar 示例** | ⎘ | `S` 循环 | `exemplar` | polygon / bbox 候选 |
 
-> **文本提示「找全图」已归批量线(v0.14.18)**:给词→全图找所有实例本质是批量语义(后端自报 detection/segmentation 文本路径 `is_interactive: False`),不再是工具栏交互工具,改在 **AI 面板 / 批量预标页** 使用(见下方「文本预标『找全图』」一节)。工具栏只保留需要在画布上画点/框/示例的交互工具。
+> **文本提示「找全图」已归批量线**:给词→全图找所有实例本质是批量语义(后端自报 detection/segmentation 文本路径 `is_interactive: False`),不再是工具栏交互工具,改在 **AI 面板 / 批量预标页** 使用(见下方「文本预标『找全图』」一节)。工具栏只保留需要在画布上画点/框/示例的交互工具。
 
 按 `S` 在 4 个 AI 工具之间循环，**跳过当前后端不支持的工具**（按钮置灰）；循环顺序: smart-point → smart-box → **magic-box** → exemplar → 回 smart-point。`Alt+3` 与 `S` 等价。
 
-> **能力来自后端 `/setup.supported_prompts`(按交互后端并集，v0.14.18)**：项目可注册多个后端,工具栏某交互工具只要**任一已注册的交互后端**支持该 prompt 就亮。挂 `grounded-sam2`（point/bbox）时 Exemplar 灰;挂 `sam3-backend`（exemplar）时 **Smart Point、Smart Box、Magic Box 都灰**——sam3 这一档物理上只做 PCS「找全图相似」(走 Exemplar),不做单物体的点/框分割(需 grounded-sam2 或大显存卡开 inst_interactivity)。鼠标 hover 灰按钮会显示「当前后端不支持此交互模式」。同时注册 gsam2 + sam3 时,point/bbox 自动路由到 gsam2、exemplar 路由到 sam3,各司其职(见[交互后端选择](#交互后端选择多后端))。
+> **能力来自后端 `/setup.supported_prompts`（按交互后端并集）**：项目可注册多个后端,工具栏某交互工具只要**任一已注册的交互后端**支持该 prompt 就亮。挂 `grounded-sam2`（point/interactive_box）时 Exemplar 灰;只挂仅支持 exemplar 的 backend 时 **Smart Point、Smart Box、Magic Box 都灰**。鼠标 hover 灰按钮会显示「当前后端不支持此交互模式」。同时注册 gsam2 + sam3 / yolo-backend 时,point/interactive_box 自动路由到 gsam2、exemplar 路由到支持视觉示例的 backend,各司其职(见[交互后端选择](#交互后端选择多后端))。
 
 ## 工具说明
 
@@ -60,11 +60,11 @@ last_reviewed: 2026-06-10
 
 ### 文本预标「找全图」— AI 面板(批量线)
 
-> v0.14.18 起,文本提示不再是工具栏交互工具。给词→全图找所有实例属**批量能力**,在悬浮 **AI 面板**(点工具栏「AI」打开)或**批量预标页**使用。
+> 文本提示不再是工具栏交互工具。给词→全图找所有实例属**批量能力**,在悬浮 **AI 面板**(点工具栏「AI」打开)或**批量预标页**使用。
 
-在 AI 面板的 Prompt 输入框填英文 prompt（如 `ripe apple`、`car . truck . bicycle`），GroundingDINO 或 SAM 3 PCS 批量返回候选。
+在 AI 面板的 Prompt 输入框填英文 prompt（如 `ripe apple`、`car . truck . bicycle`），GroundingDINO、SAM 3 PCS、YOLO-World 或 YOLOE 会按当前 model 能力批量返回候选。
 
-输出形态三选一(由后端顶层 `supported_text_outputs` 决定可见性,v0.14.18 修复了 gsam2 只能选 box/DINO 变体的问题):
+输出形态三选一(由后端 `supported_text_outputs` 决定可见性):
 
 ![文本提示三种输出形态](../images/sam/text-three-modes.png)
 
@@ -76,18 +76,20 @@ last_reviewed: 2026-06-10
 
 输出形态会按账号记住上次显式选择。下次进入没有项目默认的项目时,优先使用本会话选择,再使用账号记忆;项目级「SAM 文本预标默认输出」始终优先。
 
-### Exemplar 示例（仅 SAM 3）
+### Exemplar 示例（视觉示例）
 
 ![Exemplar 输出形态](../images/sam/exemplar-output-mode.png)
 
-拖框圈出图中**已有的一个示例实例**，SAM 3 PCS 一步返回**全图相似实例**。这不是一发定生死——拖第一个框后进入**迭代 refine 会话**，可以一边看结果一边收紧：
+拖框圈出图中**已有的一个示例实例**，支持 exemplar 的 backend 会返回**全图相似实例**。SAM 3 PCS 支持正/负框、文本概念叠加和阈值重筛；YOLOE visual prompt 支持多正框和阈值，但没有负框与文本概念叠加。工具栏会读取 `/setup.exemplar_capabilities` 自动隐藏当前 backend 不支持的控件。
+
+这不是一发定生死——拖第一个框后进入**迭代 refine 会话**，可以一边看结果一边收紧：
 
 - **继续加正框** — 漏检的实例旁再拖一个框，扩大召回。
-- **加负框排误检** — `Alt+拖框` 或先在交互工具栏把极性切到 `−`，框住误检的实例，它就会从结果里消失。会话框在画布上以颜色区分：**正框绿色实线 / 负框红色虚线**。
+- **加负框排误检** — 支持负框的 backend 可用 `Alt+拖框`，或先在交互工具栏把极性切到 `−`，框住误检的实例，它就会从结果里消失。会话框在画布上以颜色区分：**正框绿色实线 / 负框红色虚线**。
 - **拖置信度阈值** — 交互工具栏的滑块实时增减结果（调高更准、调低更全），无需重新拖框。
-- **叠加文本概念** — 在「叠加文本概念」输入框填如 `car`，与示例框组合成「这个概念 + 长这样的」。
+- **叠加文本概念** — 支持文本组合的 backend 会显示「叠加文本概念」输入框；填如 `car` 后，与示例框组合成「这个概念 + 长这样的」。
 
-每次操作都重发全量（多框 + 文本 + 阈值），满意后再逐条 `Enter` 确认。`Esc` 清空整个会话。
+每次操作都会按当前 backend 支持的能力重发全量（框集、可选文本、阈值），满意后再逐条 `Enter` 确认。`Esc` 清空整个会话。
 
 交互工具栏提供与文本提示相同的输出形态三选一（`□ 框` / `○ 掩膜` / `⊕ 全部`），默认 `○ 掩膜`；选 `□ 框` 仅返回 box，`⊕ 全部` 同实例配对 box + polygon。该选择与文本提示共用账号级记忆规则。
 
@@ -138,7 +140,7 @@ AI 候选列表行右侧有「精修」按钮（仅 polygon 类型候选显示�
 - 切某个工具的后端后会记为你的「首选交互后端」(**按 user × project 持久化**);切到另一个该首选不支持的工具时,自动按兜底链(首选 → 项目默认 → 注册序)回退到能跑的后端。
 - 只有 1 个候选后端时下拉只读(无 UI 噪音),行为 = 单后端现状。
 
-> 交互线(point/bbox/exemplar)与批量线(文本/几何/OCR/版面)各自独立选后端:工具栏「后端」管交互,AI 面板顶部的 backend 选择器管当前题运行。项目「项目主后端」(`ml_backend_id`)只是初始选择 / fallback + AI 总开关,不再是交互能力闸门。
+> 交互线(point/interactive_box/exemplar)与批量线(文本/几何/OCR/版面)各自独立选后端:工具栏「后端」管交互,AI 面板顶部的 backend 选择器管当前题运行。项目「项目主后端」(`ml_backend_id`)只是初始选择 / fallback + AI 总开关,不再是交互能力闸门。
 
 ## 多模型选择与兼容性提示
 

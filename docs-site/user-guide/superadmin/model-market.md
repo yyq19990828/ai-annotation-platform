@@ -29,12 +29,23 @@ last_reviewed: 2026-06-10
 
 > 「能力目录」与 backend 注册解耦：默认按**协议能力 (task)** 分组渲染协议卡，无 backend 注册时仍完整展示协议层支持的全部能力 + 推荐 backend；详见 [ADR-0037](../../dev/adr/0037-protocol-capability-catalog-decoupling)。
 
+<!-- TODO IMAGE_CHECKLIST: images/superadmin/model-market/protocol-card-details.png — 能力目录协议卡 + ModelCard 详情态。 -->
+
 能力目录默认按**协议能力 (task)** 分组：
 
 - 始终渲染 9 张协议卡（detection / obb / segmentation / keypoint / classification / ocr / doc_layout / tracker / interactive_seg），数据来自 `GET /v1/ml-capabilities/protocol`（与 backend 注册无关）。
 - 已注册 backend 的 model 按 `model.task` 字段挂载到对应卡片下；卡片标题旁显示「N 个模型已接入」徽标。
 - 未挂任何 model 的协议卡显示「暂无接入」徽标，并列出**典型模型**与**推荐 backend**（含 GitHub 链接），CTA「去注册 backend」可一键跳到 `?tab=registry`。
 - 零接入时顶部加 onboarding 横幅，强调「平台支持 9 类 AI 标注能力，当前还没有 backend 接入」。
+
+已接入的 model 会复用统一的 ModelCard 展示：
+
+- 顶部显示 task、原子 / 内置流程、infra、模态、模型族和交互式徽标。
+- 「运行时」行显示当前 pool 尺寸、默认变体是否已加载，并提供可用时的预热按钮。
+- 「可接受输入」区分整图、裁剪图、框提示、点提示；多阶段预标用它判断下游阶段能否接上游框。
+- 「输出几何 / 输出属性」展示落库形态和可写属性，例如 bbox、polygon、text、class。
+- 「资源」展示 backend 自报的设备、batchable 等画像；变体区展示 series / size / SAM / DINO 等轴、显存估算、速度档和推荐项。
+- 若 backend `/setup` 里 task、infra、prompt 或几何枚举不在平台受控词表内，卡片右上角会显示 `⚠ 协议 N`，hover 可看具体字段和值；这是诊断提示，不会阻断目录解析。
 
 切换到「分组：backend / infra / 不分组」时进入 model-centric 视图（按 model 条目展开，零接入时显示空态）。
 

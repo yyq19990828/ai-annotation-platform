@@ -10,9 +10,9 @@ last_reviewed: 2026-06-10
 
 > 适用角色：项目管理员 / 超级管理员
 
-每个项目可以绑定 ML backend 用于工作台交互式 AI 工具（智能点 / 智能框 / Exemplar，均为画布手势驱动）和批量预标注（文本「找全图」/ 几何 / OCR / 版面）。本页解释**注册、绑定、解绑**三件事，以及开发环境为什么默认只允许每个项目注册一个。
+每个项目可以绑定 ML backend 用于工作台交互式 AI 工具（智能点 / 智能框 / Exemplar，均为画布手势驱动）和批量预标注（文本「找全图」/ 几何 / OCR / 版面）。本页解释**注册、绑定、解绑**三件事，以及为什么系统仍保留每项目 backend 数量上限。
 
-> **交互线 / 批量线分流**：注册多个后端时，工作台 AI 按角色 + 能力路由——交互工具(point/bbox/exemplar)自动路由到支持该 prompt 的交互后端，批量预标走批量后端，两条线**同时就绪**。例如 yolo 设为项目主后端（批量几何）+ gsam2 注册：批量运行走 yolo，工具栏 point/bbox 自动命中 gsam2。文本「找全图」属批量线（不在工具栏）。详见 [AI 工具组 § 交互后端选择](../workbench/sam-tool.md#交互后端选择多后端)。
+> **交互线 / 批量线分流**：注册多个后端时，工作台 AI 按角色 + 能力路由——交互工具(point/interactive_box/exemplar)自动路由到支持该 prompt 的交互后端，批量预标走批量后端，两条线**同时就绪**。例如 yolo 设为项目主后端（批量几何）+ gsam2 注册：批量运行走 yolo，工具栏 point/interactive_box 自动命中 gsam2。文本「找全图」属批量线（不在工具栏）。详见 [AI 工具组 § 交互后端选择](../workbench/sam-tool.md#交互后端选择多后端)。
 
 ## 注册一个 backend
 
@@ -20,7 +20,7 @@ last_reviewed: 2026-06-10
 
 进入 **项目设置 → ML 模型** 标签。页面上方是 AI 预标注设置，页面下方是本项目的 backend 注册列表：
 
-- 标题右侧角标显示 **已用 X / Y**——X 是当前已注册数，Y 是 `MAX_ML_BACKENDS_PER_PROJECT`（默认 1）。
+- 标题右侧角标显示 **已用 X / Y**——X 是当前已注册数，Y 是 `MAX_ML_BACKENDS_PER_PROJECT`（默认 3）。
 - 点 **「注册 backend」** 弹出表单。
 - 必填项：
   - **名称**：本项目内唯一，建议带模型/环境后缀，如 `grounded-sam2-prod`。
@@ -59,22 +59,23 @@ last_reviewed: 2026-06-10
 
 表格的「能力」列展示每个 backend 的 `supported_prompts` 与 `supported_trackers`（视频追踪），例如：
 
-- `grounded-sam2`：`point` `bbox` `text` `sam2_video`（最后一项为视频追踪能力徽标）
-- `sam3-backend`：`bbox` `text` `exemplar`
+- `grounded-sam2`：`point` `interactive_box` `text` `sam2_video`（最后一项为视频追踪能力徽标）
+- `sam3-backend`：`point` `interactive_box` `text` `exemplar`
+- `yolo-backend`：`none` `text` `exemplar`（闭集检测/分割/关键点/旋转框走批量线；YOLOE 视觉提示走 Exemplar）
 
 数据来自后端 `GET /setup`（详见 [开发文档 § ML Backend Protocol](../../dev/reference/ml-backend-protocol.md)）。后端如返回 `—`，说明 `/setup` 不可达或协议信息不完整。
 
-## 为什么开发环境默认只能注册一个？
+模型市场会展示更完整的 model 粒度能力，包括「可接受输入」（整图 / 裁剪图 / 框提示 / 点提示）、「输出几何」、「输出属性」、资源画像和变体轴。多阶段预标会用「可接受输入」判断下游阶段能否消费上游框：分类器通常吃裁剪图，框提示分割模型通常吃框提示。
 
-测试环境单机显存有限。**两个 backend（grounded-sam2 + sam3）同时长驻会爆显存**。所以 `MAX_ML_BACKENDS_PER_PROJECT` 默认是 1。
+## 为什么还有注册上限？
 
-后端 API 和 DB schema 已经按 1:N 设计；前端的多 backend 选择器也会在配额放开后出现。生产环境可按显存和并发预算调大 env：
+跨 backend 编排需要同一项目同时挂检测、分割、分类等多个 backend，所以开发环境默认放开到 3。上限仍然保留，避免单机同时常驻多个大模型导致显存超预算。生产环境可按显存和并发预算调大 env：
 
 ```bash
-MAX_ML_BACKENDS_PER_PROJECT=2
+MAX_ML_BACKENDS_PER_PROJECT=3
 ```
 
-UI 形态不会变——配额角标自动更新、「注册 backend」按钮自动解禁。具体决策见 [ADR-0019](../../dev/adr/0019-prompt-first-tooldock-1n-arch.md)。
+UI 形态不会变——配额角标自动更新，「注册 backend」按钮会在达到上限后置灰。具体决策见 [ADR-0019](../../dev/adr/0019-prompt-first-tooldock-1n-arch.md)。
 
 ## 达到上限时会发生什么？
 
