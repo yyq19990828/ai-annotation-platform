@@ -162,7 +162,7 @@
 - [ ] `images/polyline/vertex-edit.png` — 折线选中态 Alt 插入/Shift 删除提示
 - [x] `images/workbench/rotated-bbox.gif` — 拖框生成旋转框（angle=0）全过程 `[auto-gif]`（flows/rotated-bbox，P-COCO8；旋转手柄演示待补，盲拖坐标易空拖出第二框）
 - [ ] `images/workbench/rotated-bbox-rotate.png` — 旋转约 30° 后状态 + 角度值
-- [x] `images/sam/ai-tool-drawer.png` — AIToolDrawer 全图（后端下拉/极性切换/状态灯） [auto]
+- [ ] `images/sam/interactive-toolbar.png` — 画布顶部交互工具栏（引擎/模型/档位下拉 + 工具特定控件 + 状态灯）；旧 `ai-tool-drawer.png` 已退役待替换
 - [x] `images/sam/exemplar-output-mode.png` — 输出形态三选一 TabRow [auto]
 - [x] `images/sam/ai-inspector-panel.png` — 悬浮 AI 面板（Prompt/阈值滑块/变体选择） [auto]
 - [ ] `images/video-playback/sampling-config.png` — 项目设置帧采样配置区（mode/target_fps/frame_step） [manual]

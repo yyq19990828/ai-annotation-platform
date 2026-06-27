@@ -201,15 +201,17 @@ if params:
 }
 ```
 
-### 下游投递路由（`_stage_input_mode`）
+### 下游投递路由（`_resolve_input_mode`）
 
-worker 按下游 model 的 `supported_prompts` 自动选投递方式([apps/api/app/workers/tasks.py:171](../../../apps/api/app/workers/tasks.py)):
+worker 解析投递模式：端点（`apps/api/app/api/v1/projects.py`）按下游 model 的 `supported_inputs` + `write.target` 烘焙 `input.mode`，worker（`apps/api/app/workers/tasks.py::_resolve_input_mode`）只读已烘焙的字段，缺省回落 `write.target` 启发式（产几何→`geometry`，产属性→`crop`）。
 
-| 下游 model 能力 | 投递模式 | 投递内容 | 典型场景 |
+| `write.target` × 下游 `supported_inputs` | 投递模式 | 投递内容 | 典型场景 |
 |---|---|---|---|
-| `supported_prompts` 不含 `bbox`（纯分类） | `crop` | 平台按 `parent_class_filter` 裁父框 ROI（`pad` 默认 5%） | yolo/onnxtools 纯分类 |
-| `supported_prompts` 含 `bbox` 且非交互 | `geometry` | 全图 URL + 父框归一化坐标列表（`tasks[].prompts[]`） | gsam2 `box-seg`：`set_image` 一次、N 框共享 embedding 出 polygon |
-| 取不到 model | `crop` | 同上 | 向后兼容回落 |
+| `attributes`（产属性，纯分类） | `crop` | 平台按 `parent_class_filter` 裁父框 ROI（pad 按深度，root+1=5% / root+2=8% / root+3=12%） | yolo/onnxtools 纯分类，回属性合并进父框 |
+| `geometry` × box-prompt seg（`supported_inputs` 含 `geometry`） | `geometry` | 全图 URL + 父框归一化坐标列表（`tasks[].prompts[]`） | gsam2 `box-seg`：`set_image` 一次、N 框共享 embedding 出 polygon |
+| `geometry` × 普通检测器（`supported_inputs` 含 `crop`） | `crop` | 同上裁父框 ROI 喂下游 → 检出几何按 crop transform 回映回原图坐标 | depth-3 crop-detect：父框 ROI 内检出新子物体，落库为新 polygon |
+| `intermediate` | `geometry` / `crop` | 同上，但产出仅供下游消费，不落库 | 中间几何（如 box-seg → 给孙子阶段做 ROI） |
+| 缺省（旧 payload / 端点未烘焙） | 按 `write.target` 推断 | 产几何 `geometry`，产属性 `crop` | 向后兼容回落 |
 
 ### crop 投递通用化
 
@@ -269,7 +271,7 @@ worker 累加各阶段 stats（源阶段 `{detected}`、下游 `{targeted, ok, f
 ## 代码索引
 
 - 模型：`apps/api/app/db/models/async_job.py`、`apps/api/app/db/models/prediction.py`
-- Worker：`apps/api/app/workers/tasks.py::batch_predict` / `_run_batch` / `_run_task_pipeline` / `_stage_input_mode`
+- Worker：`apps/api/app/workers/tasks.py::batch_predict` / `_run_batch` / `_run_task_pipeline` / `_resolve_input_mode`
 - ROI 路由：`apps/api/app/workers/roi.py`（`crop_inputs_from_boxes` / `geometry_prompts_from_boxes` / `merge_classify_attributes`）
 - async job service：`apps/api/app/services/async_job.py`
 - 端点：`apps/api/app/api/v1/predictions.py`（结果查询 + `POST /tasks/{id}/predictions/{pid}/accept` `attribute_overrides`）、`apps/api/app/api/v1/projects.py::trigger_preannotation`（触发）

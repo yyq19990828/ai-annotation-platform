@@ -72,6 +72,7 @@ graph TD
 | `ml_backend_id` | 实际绑定的 ML backend |
 | `ai_model` | display hint，不再是行为真值 |
 | `box_threshold` / `text_threshold` / `text_output_default` | 项目级 AI 推理默认参数 |
+| `preannotate_pipeline` | nullable JSONB · 项目级「已保存的预标编排」（方案 A，一项目一条）；`null` / 缺省 = 未配编排，工作台 AI 预标 popover 按此跑当前题。单阶段配置也存成单元素数组，保留「一项目一编排」语义。详见 [预标注流水线 · 多阶段预标注](./prediction-pipeline#多阶段预标注pipeline_stages路径-b) |
 | `scene_mode` | 是否为 scene 模式项目（默认 `false`）；仅 image / lidar 项目可开启，且需绑定 `has_scenes=true` 的数据集（已建 task 后不可切换） |
 | `prefer_same_scene_continuation` | scene 模式连续派题开关（默认 `false`）：打开后 `get_next_task` 优先返回用户上次提交 task 的同 scene 下一帧 |
 | `scene_continuation_window_min` | 连续 session 估计窗口（分钟，默认 `30`，约束 1~480） |
