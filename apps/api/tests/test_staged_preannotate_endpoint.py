@@ -625,3 +625,55 @@ async def test_reject_source_backend_other_project(
     )
     assert resp.status_code == 404, resp.text
     assert "ML Backend not found" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_reject_drop_box_on_non_root_parent(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # issue 0001 · 深层 (非-root-父) 阶段设 on_failure=drop_box → 422。worker 侧 dropped 的下标
+    # 只与 root_boxes 对齐, 深层父框下标语义不同, 放行会误删无关 root 框。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = [
+        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "detect",
+         "write": {"target": "geometry"}},
+        {"stage": 1, "ml_backend_id": str(classify.id), "model_id": "box-seg",
+         "parent_stage": 0, "roi": {"mode": "geometry"},
+         "write": {"target": "intermediate"}},
+        {"stage": 2, "ml_backend_id": str(classify.id), "model_id": "color-clf",
+         "parent_stage": 1, "on_failure": "drop_box",
+         "roi": {"mode": "crop", "pad": 0.1},
+         "write": {"target": "attributes", "keys": ["color"]}},
+    ]
+    resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
+    assert resp.status_code == 422, resp.text
+    assert "仅支持父阶段为源阶段" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_accept_drop_box_on_root_parent(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # issue 0001 回归 · 父=源阶段 (root) 的 drop_box 仍合法 (下标对齐, 旧双阶段行为不变)。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = _stages(detect.id, classify.id)
+    stages[1]["on_failure"] = "drop_box"  # parent_stage=0=root
+    resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_reject_full_image_input_mode(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # issue 0006 · input.mode=full_image 非真实投递模式 (worker 只认 crop/geometry, 会静默忽略),
+    # 校验期直接拒绝以保契约一致。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = _stages(detect.id, classify.id)
+    stages[1]["input"] = {"mode": "full_image"}
+    resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
+    assert resp.status_code == 422, resp.text
+    assert "input.mode 须为" in resp.text

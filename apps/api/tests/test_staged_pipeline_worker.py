@@ -823,3 +823,72 @@ async def test_depth_three_geometry_then_attribute(monkeypatch):
     assert extra["pipeline"]["max_depth"] == 3
     assert extra["pipeline"]["enriched_attr_keys"] == ["hat_color"]
     assert stats[1]["ok"] == 1 and stats[2]["ok"] == 1
+
+
+@pytest.mark.asyncio
+async def test_depth_three_drop_box_does_not_delete_root(monkeypatch):
+    """issue 0001 · 深层 (父=中间阶段) 的 on_failure=drop_box 不得误删无关 root 框。
+
+    person → crop-detect hat (geometry, 落库) → 裁 hat 框跑 color 分类 (drop_box) 但下游炸。
+    drop 发生在 new_shapes 追加前, root_boxes 此刻只有 [person]; 旧代码会用 hat 在
+    stage_outputs[1] 的下标 {0} 去删 root_boxes → 误删 person。兜底 gate (父!=root 不删)
+    保住 person, 退化为 keep_parent。
+    """
+    monkeypatch.setattr(
+        worker_tasks,
+        "_load_task_image",
+        lambda t: Image.new("RGB", (1000, 1000), (1, 2, 3)),
+    )
+    task = _Task()
+    person = [_bbox(20, 20, 40, 40, cls="person")]
+    detect = _FakeClient(responses=[[_Result(task.id, person)]])
+    hat_detect = _FakeClient(
+        responses=[
+            [
+                _Result(
+                    "0",
+                    [
+                        {
+                            "type": "rectanglelabels",
+                            "value": {"x": 25, "y": 10, "width": 50, "height": 30},
+                        }
+                    ],
+                )
+            ]
+        ]
+    )
+
+    class _BoomClient:
+        async def predict(self, inputs, context=None):
+            raise RuntimeError("color clf down")
+
+    stages = [
+        {"stage": 0, "parent_stage": None},
+        {
+            "stage": 1,
+            "parent_stage": 0,
+            "roi": {"mode": "crop", "pad": 0},
+            "input": {"mode": "crop"},
+            "write": {"target": "geometry"},
+        },
+        {
+            "stage": 2,
+            "parent_stage": 1,
+            "on_failure": "drop_box",
+            "roi": {"mode": "crop", "pad": 0},
+            "write": {"target": "attributes", "keys": ["color"]},
+        },
+    ]
+    results, _extra, stats = await worker_tasks._run_task_pipeline(
+        task,
+        stages,
+        [detect, hat_detect, _BoomClient()],
+        [None, None, None],
+        resolve_url=lambda t: "http://x/img.jpg",
+        stage_modes=["crop", "crop", "crop"],
+    )
+    out = results[0].result
+    # person (root) + hat (stage1 落库) 都在; person 未被深层 drop_box 误删。
+    assert len(out) == 2
+    assert out[0]["value"]["rectanglelabels"] == ["person"]
+    assert stats[2]["failed"] == 1

@@ -46,6 +46,7 @@ from model_registry import (
     OPENVOCAB_WORLD_SERIES,
     OPENVOCAB_YOLOE_SERIES,
     POOL_TASK_OPENVOCAB,
+    POOL_TASK_OPENVOCAB_VP,
     RECOMMENDED_SERIES,
     RECOMMENDED_SIZE,
     SERIES_LABEL,
@@ -782,11 +783,17 @@ async def warmup(req: WarmupRequest) -> WarmupResponse:
     if _model_pool is None:
         raise HTTPException(status_code=503, detail="backend not ready")
     series, size = req.variants.series, req.variants.size
-    # 开集 series: 校验 + 预热走 openvocab pool task (与 /predict 文本路径同 key).
+    # 开集 series: 校验 + 预热. exemplar (task=interactive_seg, = /setup exemplar 模型条目的
+    # task) 走独立 VP pool (与 /predict 视觉提示路径 _predict_visual_prompt 同 key), 否则首次
+    # 拖框仍冷启 (见 issue 0003); 文本检测/分割走 openvocab pool (与文本路径同 key).
     if is_openvocab_series(series):
         if not is_openvocab_supported(series, size):
             raise _unsupported_combo_error(req.task, series, size)
-        pool_task = POOL_TASK_OPENVOCAB
+        pool_task = (
+            POOL_TASK_OPENVOCAB_VP
+            if req.task == "interactive_seg"
+            else POOL_TASK_OPENVOCAB
+        )
     else:
         if size not in MODEL_MATRIX.get(req.task, {}).get(series, ()):
             raise _unsupported_combo_error(req.task, series, size)

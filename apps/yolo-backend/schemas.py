@@ -161,7 +161,11 @@ class BatchPredictRequest(BaseModel):
 
 
 class WarmupRequest(BaseModel):
-    """v0.14.14 协议 §4.4 `/warmup` 请求体. 与 predict context 结构相近, 但不带图像."""
+    """v0.14.14 协议 §4.4 `/warmup` 请求体. 与 predict context 结构相近, 但不带图像.
 
-    task: Literal["detection", "segmentation", "keypoint", "obb"]
+    task 取 /setup models[].task: 闭集四 task + 开集交互 exemplar 模型条目的 ``interactive_seg``
+    (令 warmup 命中独立的 VP pool POOL_TASK_OPENVOCAB_VP, 与首次拖框交互同句柄; 见 issue 0003)。
+    开集文本检测/分割条目的 task 仍是 detection/segmentation, 由 series 判定走文本 pool。"""
+
+    task: Literal["detection", "segmentation", "keypoint", "obb", "interactive_seg"]
     variants: Variants

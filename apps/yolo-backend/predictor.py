@@ -376,9 +376,10 @@ class YoloPredictor:
         r0 = results[0]
         names: dict[int, str] = getattr(r0, "names", {}) or getattr(model, "names", {})
 
-        # exemplar 输出形态 box/mask/both (VPSeg 同时产出, 按 output 取用).
+        # exemplar 输出形态 box/mask/both (VPSeg 同时产出, 按 output 取用)。output 受
+        # Literal 约束恒为三者之一, 直接读即可 (无需文本路径那种 not want_mask 兜底)。
         want_mask = ctx.output in ("mask", "both")
-        want_box = ctx.output == "box" or ctx.output == "both" or not want_mask
+        want_box = ctx.output in ("box", "both")
         # exemplar 是交互单数 wire, 候选走前端浮层 (SamCandidateOverlay) → 坐标须归一化 0-1
         # (与 sam3/gsam2 交互候选一致); 批量入库的百分比仅用于闭集四 task / 文本批量路径。
         items: list[dict[str, Any]] = []

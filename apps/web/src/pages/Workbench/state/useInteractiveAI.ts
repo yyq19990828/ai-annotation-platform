@@ -101,6 +101,9 @@ export interface UseInteractiveAIReturn {
 }
 
 const DEBOUNCE_MS = 80;
+// v0.18.x · exemplar 阈值滑块/文本框连续变更的防抖窗口 (拖一次滑块约 20 个 tick → 仅末位
+// 生效一次 dispatch), 比 point 的 80ms 长, 因 exemplar 单次后端推理更重 (见 issue 0002)。
+const EXEMPLAR_DEBOUNCE_MS = 220;
 
 export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIReturn {
   const { projectId, taskId, mlBackendId } = args;
@@ -111,7 +114,12 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   const [isRunning, setIsRunning] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // v0.18.x · exemplar text/阈值连发的独立防抖 timer (与 point 的 debounceRef 互不干扰)。
+  const exemplarDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflightRef = useRef(0);
+  // v0.18.x · 当前 in-flight 交互请求的 AbortController: 新请求发起前 abort 掉上一个, 避免被
+  // 取代的旧请求仍在后端跑到完成 (GPU 洪泛, 见 issue 0002)。
+  const abortRef = useRef<AbortController | null>(null);
 
   // v0.18.17 · 点交互会话: 累加同一对象的正/负点, 每次重发全量点 (无状态后端). 单点首击
   // multimask 出候选; ≥2 点转单 mask 精修. 会话在 提交(consume point 候选) / Esc(cancel) /
@@ -178,6 +186,8 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (exemplarDebounceRef.current) clearTimeout(exemplarDebounceRef.current);
+      abortRef.current?.abort();
     };
   }, []);
 
@@ -197,6 +207,10 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   const dispatch = useCallback(
     async (context: Record<string, unknown>, source: PendingCandidate["source"]) => {
       if (!projectId || !taskId || !mlBackendId) return;
+      // v0.18.x · 新请求发起即 abort 上一个仍在跑的交互请求, 并自增 inflight 让旧请求结果失效
+      // (含 cache-hit 路径, 防止旧 in-flight 完成后覆盖刚命中的缓存; 见 issue 0002)。
+      abortRef.current?.abort();
+      const myInflight = ++inflightRef.current;
       const normalized = normalizePredictContext(context);
       const requestContext = normalized.context;
       const ctxKind = (requestContext.type as string | undefined) ?? source;
@@ -218,13 +232,16 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       if (isVariantSwitch) {
         pushToast({ msg: `正在切换到 ${variantLabel(requestContext)} 模型…` });
       }
-      const myInflight = ++inflightRef.current;
+      const controller = new AbortController();
+      abortRef.current = controller;
       setIsRunning(true);
       try {
-        const resp = await mlBackendsApi.interactiveAnnotate(projectId, mlBackendId, {
-          task_id: taskId,
-          context: requestContext,
-        });
+        const resp = await mlBackendsApi.interactiveAnnotate(
+          projectId,
+          mlBackendId,
+          { task_id: taskId, context: requestContext },
+          controller.signal,
+        );
         // 只接受最新一次请求的结果（防止防抖窗口外的旧请求覆盖新候选）
         if (myInflight !== inflightRef.current) return;
         // v0.18.18 · 存本轮回灌 token: 单 mask 精修阶段非空, 多候选 / 框 / text / exemplar 为 null
@@ -265,7 +282,8 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
           });
         }
       } catch (err) {
-        if (myInflight !== inflightRef.current) return;
+        // abort 掉的旧请求 (被新请求取代) 静默忽略, 不弹错误 toast (见 issue 0002)。
+        if (controller.signal.aborted || myInflight !== inflightRef.current) return;
         const formatted = formatPredictError(err);
         const msg = err instanceof Error ? err.message : String(err);
         // 切换后首次预测失败 → 不更新 lastAppliedVariant (下次重试仍视为切换), 落到切换失败态;
@@ -355,6 +373,15 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     );
   }, [dispatch]);
 
+  // v0.18.x · text/阈值连续变更走防抖: 拖一次滑块约 20 个 tick 只在末位触发一次 dispatch
+  // (见 issue 0002)。runExemplar (拖新框) / rerunExemplar (切 output) 是单次明确动作, 即时 dispatch。
+  const dispatchExemplarDebounced = useCallback(() => {
+    if (exemplarDebounceRef.current) clearTimeout(exemplarDebounceRef.current);
+    exemplarDebounceRef.current = setTimeout(() => {
+      dispatchExemplar();
+    }, EXEMPLAR_DEBOUNCE_MS);
+  }, [dispatchExemplar]);
+
   const runExemplar = useCallback(
     (
       bbox: [number, number, number, number],
@@ -390,20 +417,20 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     (text: string) => {
       exemplarTextRef.current = text;
       setExemplarTextState(text);
-      // 会话进行中即重跑 (叠/改 text 概念); 无会话时仅暂存, 下次拖框带上。
-      if (exemplarSessionRef.current.length > 0) dispatchExemplar();
+      // 会话进行中即重跑 (叠/改 text 概念, 防抖合并逐字符输入); 无会话时仅暂存, 下次拖框带上。
+      if (exemplarSessionRef.current.length > 0) dispatchExemplarDebounced();
     },
-    [dispatchExemplar],
+    [dispatchExemplarDebounced],
   );
 
   const setExemplarThreshold = useCallback(
     (thr: number | null) => {
       exemplarThresholdRef.current = thr;
       setExemplarThresholdState(thr);
-      // 拖阈值实时重过滤 (会话进行中); backbone 缓存命中下只重跑 grounding head。
-      if (exemplarSessionRef.current.length > 0) dispatchExemplar();
+      // 拖阈值重过滤 (会话进行中, 防抖合并连续 tick); backbone 缓存命中下只重跑 grounding head。
+      if (exemplarSessionRef.current.length > 0) dispatchExemplarDebounced();
     },
-    [dispatchExemplar],
+    [dispatchExemplarDebounced],
   );
 
   const cycleStable = useCallback(
@@ -443,6 +470,15 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
+    if (exemplarDebounceRef.current) {
+      clearTimeout(exemplarDebounceRef.current);
+      exemplarDebounceRef.current = null;
+    }
+    // v0.18.x · abort 在跑的请求 + 自增 inflight, 取消会话后无结果再回来覆盖 (见 issue 0002)。
+    // abort 后旧请求的 finally 因 inflight 已变不会复位 isRunning, 这里显式收尾。
+    abortRef.current?.abort();
+    inflightRef.current++;
+    setIsRunning(false);
   }, [resetPointSession, resetExemplarSession]);
 
   // v0.10.4 I6.2 · 预热去重：同 (taskId, mlBackendId) 只发一次。

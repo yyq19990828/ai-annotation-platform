@@ -876,8 +876,15 @@ export function useWorkbenchShellModel({
     sam.warmup();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stageKind, taskId, warmupPointBackendId]);
+  // v0.18.x · 工具切换按 prompt 种类变化取消交互会话: AI↔AI (如 point→exemplar) 与 AI↔非AI
+  // 切换都会改变 prompt 种类, 一并清掉上一个工具残留的 ghost 点位 overlay / stale mask_input
+  // (见 issue 0004; promptOfTool 对非 AI / text 工具返回 null)。同 prompt 种类切换不清 (会话兼容)。
+  const prevToolPromptRef = useRef(promptOfTool(s.tool));
   useEffect(() => {
-    if (!isAIToolId(s.tool) && sam.candidates.length > 0) sam.cancel();
+    const nextPrompt = promptOfTool(s.tool);
+    const changed = prevToolPromptRef.current !== nextPrompt;
+    prevToolPromptRef.current = nextPrompt;
+    if (changed) sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.tool]);
   // v0.14.18 · 门控走 routing 并集: 某交互 prompt 只要任一交互后端支持, 工具就亮。

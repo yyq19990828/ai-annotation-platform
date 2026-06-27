@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
-from pydantic import BaseModel, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text, or_, and_
 from app.deps import (
@@ -1211,6 +1211,10 @@ class PipelineStage(BaseModel):
     (parent_class_filter)、阶段级失败策略 (on_failure)。深度≥3 / new_shape 留 M3。
     """
 
+    # 脏键在校验期即 422, 不再原样落进 preannotate_pipeline JSONB (见 issue 0008.1);
+    # 前端 PipelineStagePayload 键集与此严格一致, 不会误伤。
+    model_config = ConfigDict(extra="forbid")
+
     stage: int
     ml_backend_id: uuid.UUID
     model_id: str | None = None
@@ -1313,6 +1317,14 @@ class PreannotateRequest(BaseModel):
                     f"stage {s.stage} 的父阶段 {s.parent_stage} write.target={parent_target!r}, "
                     "不产几何, 无法作为父阶段"
                 )
+            # drop_box 的「丢父框」语义仅在父阶段为源阶段 (root) 时下标才与 root_boxes 对齐;
+            # 深层 (非-root-父) 阶段的父几何是中间产物, worker 误用其下标会删掉无关的 root 框
+            # (见 issue 0001)。深层 drop_box 语义未定义, 此处直接拒绝, 防止静默数据丢失。
+            if s.on_failure == "drop_box" and s.parent_stage != root.stage:
+                raise ValueError(
+                    f"stage {s.stage} 的 on_failure='drop_box' 仅支持父阶段为源阶段 "
+                    f"(stage {root.stage}); 深层阶段请用 on_failure='keep_parent'"
+                )
             target = (s.write or {}).get("target", "attributes")
             # geometry: 下游产独立 polygon 追加为 new shape。intermediate: 只产几何给下游消费,
             # 不落库为候选。attributes: 纯分类下游写回父框 attributes。
@@ -1339,9 +1351,12 @@ class PreannotateRequest(BaseModel):
                     raise ValueError("roi.pad 须在 [0, 0.5] 区间")
             if s.input is not None:
                 imode = s.input.get("mode")
-                if imode is not None and imode not in {"full_image", "crop", "geometry"}:
+                # 下游阶段投递只有 crop (裁父框 ROI) / geometry (整图+父框列表) 两态; worker
+                # _resolve_input_mode 也只认这两个。full_image 不是真实投递模式 (会被 worker
+                # 静默忽略并回落 write.target 启发式), 校验期直接拒绝以保契约一致 (见 issue 0006)。
+                if imode is not None and imode not in {"crop", "geometry"}:
                     raise ValueError(
-                        "input.mode 须为 'full_image' / 'crop' / 'geometry', "
+                        "input.mode 须为 'crop' / 'geometry', "
                         f"收到 {imode!r}"
                     )
             known_depth[s.stage] = parent_depth + 1

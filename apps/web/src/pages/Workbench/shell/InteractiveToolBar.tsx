@@ -363,6 +363,18 @@ export function InteractiveToolBar({
                 {(exemplarThreshold ?? exemplarThresholdDefault ?? 0.5).toFixed(2)}
                 {exemplarThreshold == null && "*"}
               </span>
+              {/* 拖动后阈值变成固定值, 此按钮把它重置回 null (跟随后端默认, 显示 *)。见 issue 0007。 */}
+              {exemplarThreshold != null && (
+                <button
+                  type="button"
+                  data-testid="exemplar-threshold-reset"
+                  onClick={() => onSetExemplarThreshold(null)}
+                  className="flex size-5 cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent p-0 text-muted-foreground hover:text-foreground"
+                  title="重置为后端默认阈值 (*)"
+                >
+                  <Icon name="rotate-ccw" size={11} />
+                </button>
+              )}
             </div>
           </>
         )}

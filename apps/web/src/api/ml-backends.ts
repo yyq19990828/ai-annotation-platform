@@ -215,7 +215,14 @@ export const mlBackendsApi = {
   predictTest: (projectId: string, backendId: string, taskId: string) =>
     apiClient.post(`/projects/${projectId}/ml-backends/${backendId}/predict-test?task_id=${taskId}`),
 
-  interactiveAnnotate: (projectId: string, backendId: string, payload: InteractiveRequest) =>
+  // v0.18.x · 可选 signal: 交互阈值/文本连发时, 新请求 abort 掉被取代的旧请求, 避免后端
+  // GPU 洪泛 (见 issue 0002)。被 abort 的请求在前端 fetch 层抛 AbortError, 调用方静默忽略。
+  interactiveAnnotate: (
+    projectId: string,
+    backendId: string,
+    payload: InteractiveRequest,
+    signal?: AbortSignal,
+  ) =>
     apiClient.post<{
       result: unknown[];
       score: number | null;
@@ -228,6 +235,7 @@ export const mlBackendsApi = {
     }>(
       `/projects/${projectId}/ml-backends/${backendId}/interactive-annotating`,
       payload,
+      signal ? { signal } : undefined,
     ),
 
   // v0.14.14 协议 §4.4 · POST /warmup 代理. body 各 backend 自定义:

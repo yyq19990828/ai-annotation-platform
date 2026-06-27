@@ -441,7 +441,14 @@ async def _run_task_pipeline(
                 stats[snum]["failed"] += len(targeted)
                 if target != "attributes":
                     stage_outputs[snum] = []
-                if stage.get("on_failure") == "drop_box":
+                # drop_box 的 targeted 是本阶段 parent_boxes 的下标, 而 dropped 恒作用于
+                # root_boxes。仅当父阶段就是 root 时两者下标才对齐; 深层父阶段的 parent_boxes
+                # 是中间几何 (与 root_boxes 下标语义不同), 误用会删掉无关的 root 框。校验层已
+                # 禁止非-root-父阶段设 drop_box, 此处兜底: 父非 root 时不删 (退化为 keep_parent)。
+                if (
+                    stage.get("on_failure") == "drop_box"
+                    and stage.get("parent_stage") == root_stage
+                ):
                     dropped |= targeted
                 logger.warning(
                     "[ai-pre] stage %s 下游 crop 投递失败 (on_failure=%s): %s: %s",

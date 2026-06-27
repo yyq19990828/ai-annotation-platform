@@ -125,6 +125,8 @@
 
 ### C.1 渲染性能 / 大图大量框
 - **大图 tile / 多边形 LOD**：多边形 LOD（I2）已落 v0.10.4；大图 tile（I1）见 §C.7。
+- **交互工具 preference 重复拉取去重**（**P3**，纯前端，非 bug；feat/26-06-25 代码审查 0008.2）：`useInteractiveBackendPref` / `useAiToolModelPref` / `useAiToolParamPrefs` 三个 hook 各自 mount 时各发一次 `authApi.getPreferences()` → 每次进工作台 3 次相同 GET（均在 `useWorkbenchShellModel` 挂载）。非正确性问题（服务端按子键 deep-merge，写不互相覆盖，已验证）。改为共享一个 react-query `["me","preferences"]` query，writer 走 `setQueryData`/invalidate。触发：随手优化，或进工作台网络瀑布观察到冗余请求。
+- **PipelineGraphCanvas 节点态每 tick 重置**（**P3**，纯前端，非 bug；feat/26-06-25 代码审查 0008.6）：`apps/web/src/pages/AIPreAnnotate/components/PipelineGraphCanvas.tsx` 的 `useEffect(() => setNodes(flow.nodes), [flow.nodes])` 中 `flow` 依赖频繁重建的 `models`，每次子卡回报 payload 都整体 `setNodes`，丢弃 react-flow 已测量尺寸再重测（`fitView` 已用 `nodeCount` 限流不会跳视口，故仅轻微重测量/闪烁）。让 `graphNodes` 在 payload 浅相等时保持引用稳定。触发：编排画布闪烁反馈或随手优化。
 
 ### C.3 标注体验（核心生产力杠杆）
 - **`U` 键准确度升级**：v0.5.2 用启发式；准确「最不确定」需要后端 `?order=conf_asc` 端点（list_tasks 加 LEFT JOIN predictions GROUP BY avg(confidence)）。

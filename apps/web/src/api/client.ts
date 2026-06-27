@@ -90,8 +90,8 @@ async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?:
 
 export const apiClient = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "POST", body: JSON.stringify(body ?? {}) }),
+  post: <T>(path: string, body?: unknown, extra?: RequestInit) =>
+    request<T>(path, { method: "POST", body: JSON.stringify(body ?? {}), ...extra }),
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PUT", body: JSON.stringify(body ?? {}) }),
   patch: <T>(path: string, body?: unknown, extra?: RequestInit) =>

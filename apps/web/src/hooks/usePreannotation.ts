@@ -111,8 +111,9 @@ export interface PipelineStagePayload {
   on_failure?: "keep_parent" | "drop_box";
   /** v0.18.14 · 卡片显示名 + 写回属性键前缀 (子物体命名空间, 如 hat_color)。 */
   label?: string;
-  /** v0.18.15 · 显式投递模式覆盖; 缺省由后端按 supported_inputs 烘焙。 */
-  input?: { mode: "full_image" | "crop" | "geometry" };
+  /** v0.18.15 · 显式投递模式覆盖 (下游阶段只有 crop/geometry 两态); 缺省由后端按
+   *  supported_inputs 烘焙。full_image 非真实投递模式, 后端校验会拒 (见 issue 0006)。 */
+  input?: { mode: "crop" | "geometry" };
 }
 
 export interface TriggerPreannotationResponse {

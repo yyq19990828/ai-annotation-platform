@@ -845,11 +845,20 @@ v0.14.12 时三家 backend 的 `/health.pool` 字段各不相同（yolo 用 `poo
 **请求**（per-backend 自定义结构；建议与 `/predict` 的 context 部分一致）：
 
 ```jsonc
-// yolo-backend
+// yolo-backend (闭集 / 开集文本检测分割)
 POST /warmup
 {
   "task": "detection",
   "variants": { "series": "yolov11", "size": "s" }
+}
+
+// yolo-backend (YOLOE 视觉提示 exemplar)
+// task 取 /setup 的 exemplar 模型条目 task=interactive_seg, 令 warmup 命中独立的 VP pool
+// (与首次拖框交互同句柄); 若误用 detection/segmentation 会预热到文本 pool, 首次交互仍冷启。
+POST /warmup
+{
+  "task": "interactive_seg",
+  "variants": { "series": "yoloe-26", "size": "m" }
 }
 
 // grounded-sam2-backend (同时预热 SAM + DINO)
