@@ -163,10 +163,10 @@ test.describe("annotation workbench", () => {
     // ② exemplar 工具置灰
     await expect(exemplarBtn).toHaveAttribute("aria-disabled", "true");
 
-    // ③ 激活 smart-point → AIToolDrawer 出现
+    // ③ 激活 smart-point → 画布顶部交互工具栏出现 (v0.18.25 AIToolDrawer 退役改 InteractiveToolBar)
     await pointBtn.click();
     await expect(pointBtn).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("ai-tool-drawer")).toBeVisible();
+    await expect(page.getByTestId("interactive-toolbar")).toBeVisible();
 
     // ④ 点击 stage → dispatch context.type === "point"
     const stage = page.getByTestId("workbench-stage");
