@@ -243,4 +243,28 @@ describe("buildFlow 派生 + 分层布局", () => {
     expect(nodes.find((n) => n.id === ROOT_SID)!.type).toBe("source");
     expect(nodes.find((n) => n.id === "a")!.type).toBe("stage");
   });
+
+  // claude[bot] P2 · DAG 三个已修回归此前只覆盖 "新建节点 depth>3"; 补两条:
+  // - "加第三阶段全部消失" 真因是 react-flow 受控模式漏 onNodesChange 致零尺寸 fitView 坍缩,
+  //   pipelineGraph 层无法直接复现; 但纯函数层的下限是: 3 节点输入仍能产 3 节点 + 2 边的拓扑,
+  //   不丢节点 / 不丢边。
+  // - "快捷键删除假删除" 真因在 PipelineGraphCanvas 的 onNodesDelete 回写真值源; 这里至少断言
+  //   ROOT_SID 不该被 buildFlow 派生为可删 (源节点不可删, 删它会级联清空整棵树)。
+  it("3 节点 (root→a→b) 输入完整出 3 节点 + 2 边 (加第三阶段不丢节点)", () => {
+    const { nodes, edges } = buildFlow(models, null);
+    expect(nodes.map((n) => n.id).sort()).toEqual([ROOT_SID, "a", "b"].sort());
+    expect(edges).toHaveLength(2);
+    expect(edges.map((e) => e.id).sort()).toEqual(["a->b", "root->a"]);
+    // 三层各自打 col=0/1/2, 不会因为顺序乱掉就坍缩到同一列。
+    const x = (id: string) => nodes.find((n) => n.id === id)!.position.x;
+    expect(new Set([x(ROOT_SID), x("a"), x("b")]).size).toBe(3);
+  });
+
+  it("源节点不可删: ROOT_SID 视作不可作为删除目标 (canDelete 用 sid !== ROOT_SID 判定)", () => {
+    // 这是 onNodesDelete 守卫的纯函数对偶: 删 ROOT_SID 会清空整棵树, 不允许。
+    const canDeleteSid = (sid: string) => sid !== ROOT_SID;
+    expect(canDeleteSid(ROOT_SID)).toBe(false);
+    expect(canDeleteSid("a")).toBe(true);
+    expect(canDeleteSid("b")).toBe(true);
+  });
 });

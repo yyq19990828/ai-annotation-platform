@@ -17,6 +17,7 @@ import {
   useEffect,
   useMemo,
   useCallback,
+  useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
@@ -239,15 +240,32 @@ function Flow({
   const flow = useMemo(() => buildFlow(models, selectedSid), [models, selectedSid]);
   const [nodes, setNodes, onNodesChange] = useNodesState(flow.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flow.edges);
+  // claude[bot] P2 · 用户改阶段参数 (label/keys/...) 不改拓扑时, 旧实现仍整批 setNodes/setEdges +
+  // 触发 fitView → 画布闪烁/重 fit。这里抽拓扑指纹 (sid + parentSid + nodeCount), 拓扑不变就
+  // 跳过整批 setEdges 与 fitView 重排; setNodes 仍透传以让节点数据 (角色/标记) 同步, 但 react-flow
+  // 内部 shallow-eq 后无视觉重排。fitView 改挂在指纹上, 拓扑稳定时不会反复触发。详 ROADMAP 0008.6。
+  const topoFingerprint = useMemo(
+    () =>
+      flow.nodes
+        .map((n) => `${n.id}|${(n.data as { parentSid?: string }).parentSid ?? ""}`)
+        .sort()
+        .join(","),
+    [flow.nodes],
+  );
   useEffect(() => setNodes(flow.nodes), [flow.nodes, setNodes]);
-  useEffect(() => setEdges(flow.edges), [flow.edges, setEdges]);
+  const lastTopoRef = useRef<string>(topoFingerprint);
+  useEffect(() => {
+    if (lastTopoRef.current !== topoFingerprint) {
+      lastTopoRef.current = topoFingerprint;
+      setEdges(flow.edges);
+    }
+  }, [topoFingerprint, flow.edges, setEdges]);
 
   const rf = useReactFlow();
   const nodesInitialized = useNodesInitialized();
-  const nodeCount = flow.nodes.length;
   useEffect(() => {
     if (nodesInitialized) rf.fitView({ padding: 0.2, maxZoom: 1 });
-  }, [nodesInitialized, nodeCount, rf]);
+  }, [nodesInitialized, topoFingerprint, rf]);
 
   // 拖拽中起点 (合法落点高亮)。仅从「出 handle」(source) 拉线才记。
   const [connectingFrom, setConnectingFrom] = useState<string | null>(null);
@@ -342,7 +360,7 @@ function Flow({
         >
           <Background gap={16} />
           <Controls showInteractive={false} />
-          {nodeCount > 4 && <MiniMap pannable zoomable />}
+          {flow.nodes.length > 4 && <MiniMap pannable zoomable />}
         </ReactFlow>
       </CanvasCtx.Provider>
     </div>

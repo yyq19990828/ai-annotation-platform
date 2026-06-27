@@ -25,6 +25,7 @@ import re
 
 import httpx
 import numpy as np
+from fastapi import HTTPException
 from PIL import Image
 
 from model_registry import (
@@ -50,21 +51,35 @@ def _parse_open_classes(text: str | None) -> list[str]:
     return out
 
 
+_PE_CACHE_PER_MODEL = 16  # claude[bot] P2 · 开词表 PE 缓存上限 (每模型 LRU)。
+
+
 def _ensure_open_classes(model: Any, classes: list[str], family: str) -> None:
     """把开放词表写入模型. 同一组类名 (含顺序) 已设过则跳过, 省去 CLIP/MobileCLIP 重复编码.
 
     批量同一 prompt 跑 N 图时只编码一次; YOLOE 另存 PE 字典, 切换 prompt 再切回也命中.
+
+    claude[bot] P2 · PE 缓存改用 OrderedDict 做 LRU (上限 _PE_CACHE_PER_MODEL):
+    多变文本提示场景此前会无界增长直到模型句柄被外层 LRU 淘汰; 加上限避免内存爆炸。
     """
     key = tuple(classes)
     if getattr(model, "_aap_classes", None) == key:
         return
     if family == "yoloe":
-        cache: dict[tuple[str, ...], Any] = getattr(model, "_aap_pe_cache", None) or {}
+        from collections import OrderedDict  # noqa: PLC0415
+
+        cache = getattr(model, "_aap_pe_cache", None)
+        if not isinstance(cache, OrderedDict):
+            cache = OrderedDict()
         pe = cache.get(key)
         if pe is None:
             pe = model.get_text_pe(list(classes))
             cache[key] = pe
-            model._aap_pe_cache = cache
+            while len(cache) > _PE_CACHE_PER_MODEL:
+                cache.popitem(last=False)
+        else:
+            cache.move_to_end(key)
+        model._aap_pe_cache = cache
         model.set_classes(list(classes), pe)
     else:  # world: set_classes 无 embeddings 形参, 内部自做 CLIP 编码.
         model.set_classes(list(classes))
@@ -273,6 +288,17 @@ class YoloPredictor:
         series, size = variants.series, variants.size
         family = openvocab_family(series)
         classes = _parse_open_classes(ctx.text)
+
+        # claude[bot] P2 · YOLO-World 无分割头, 请求 mask/both 此前静默降级回 box; 改为 422,
+        # 让上游知道这个组合不被支持 (与 /setup.supported_text_outputs=["box"] 声明一致)。
+        if family == "world" and ctx.output in ("mask", "both"):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"YOLO-World ({series}) 仅支持 output='box' "
+                    f"(无分割头), 收到 output='{ctx.output}'。"
+                ),
+            )
 
         model, cache_hit, load_ms = await self._pool.get(
             POOL_TASK_OPENVOCAB, series, size

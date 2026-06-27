@@ -345,6 +345,9 @@ interface AIPredictionPopoverProps {
   // popover 仍是执行器、非编排编辑器: 编排在 /ai-pre 定义, 这里只把它跑当前一图。
   hasProjectPipeline?: boolean;
   projectPipelineStageCount?: number;
+  // claude[bot] P1 #5 · 编排可执行 (引用的 backend 都还在); false 时按钮禁用 + 提示。
+  projectPipelineRunnable?: boolean;
+  pipelineMissingBackendCount?: number;
   onRunPipeline?: () => void;
   onAcceptAll: () => void;
   onSetConfThreshold: (v: number) => void;
@@ -380,6 +383,8 @@ export function AIPredictionPopover({
   onRunAi,
   hasProjectPipeline,
   projectPipelineStageCount,
+  projectPipelineRunnable = true,
+  pipelineMissingBackendCount = 0,
   onRunPipeline,
   onAcceptAll,
   onSetConfThreshold,
@@ -551,17 +556,24 @@ export function AIPredictionPopover({
           </Button>
         </div>
         {/* v0.18.28 · 项目存了编排时单独一行: 把项目编排只跑当前一图 (执行器, 非编排编辑器)。 */}
+        {/* claude[bot] P1 #5 · 引用的 backend 被删/停 → 按钮禁用 + 标注原因, 避免默默 422。 */}
         {hasProjectPipeline && onRunPipeline && (
           <Button
             variant="ai"
             size="sm"
             onClick={onRunPipeline}
-            disabled={aiRunning}
+            disabled={aiRunning || !projectPipelineRunnable}
             className="mb-2.5 w-full"
-            title="按项目已保存的多阶段编排, 对当前题跑完整流水线"
+            title={
+              projectPipelineRunnable
+                ? "按项目已保存的多阶段编排, 对当前题跑完整流水线"
+                : `编排引用的 ${pipelineMissingBackendCount} 个后端不可用, 请到「AI 预标」修编排或重新注册`
+            }
           >
             <Icon name="layers" size={11} />
-            运行当前题（按项目编排 · {projectPipelineStageCount} 阶段）
+            {projectPipelineRunnable
+              ? `运行当前题（按项目编排 · ${projectPipelineStageCount} 阶段）`
+              : `编排引用 ${pipelineMissingBackendCount} 个后端不可用`}
           </Button>
         )}
       </div>

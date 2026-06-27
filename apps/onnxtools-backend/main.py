@@ -72,6 +72,43 @@ IDLE_CHECK_INTERVAL = float(os.environ.get("ONNXTOOLS_IDLE_CHECK_INTERVAL", "60"
 _predictor: VehicleAttributePredictor | None = None
 _idle_task: asyncio.Task | None = None
 _last_used: float | None = None
+# claude[bot] P2 · per-handle 池统计 (loaded_at / last_used_at / hit_count), 替代
+# /health.pool 此前对所有 handle 硬编码 hit_count=0 + last_used_at=loaded_at = 全局 _last_used。
+# 旧实现让 AdminDashboard idle/stale 判定持续报"空闲", 触发假告警。
+_handle_stats: dict[str, dict[str, Any]] = {}
+
+
+def _handle_for(model_id: str | None) -> str:
+    """model_id → handle 名 (与 VehicleAttributePredictor.warm/predict 内部路由一致)。"""
+    if model_id == "vehicle-attr-classify":
+        return "va"
+    if model_id == "vehicle-detect":
+        return "detector"
+    return "pipeline"
+
+
+def _touch_handle(name: str, *, hit: bool) -> None:
+    """更新 handle 的 last_used_at / hit_count; 首见时同时写 loaded_at。
+
+    hit=True (predict 完成) 才递增 hit_count; warmup 不算 hit (只更新 loaded_at)。
+    """
+    now = datetime.now(UTC).isoformat()
+    rec = _handle_stats.get(name)
+    if rec is None:
+        _handle_stats[name] = {
+            "loaded_at": now,
+            "last_used_at": now,
+            "hit_count": 1 if hit else 0,
+        }
+        return
+    rec["last_used_at"] = now
+    if hit:
+        rec["hit_count"] = rec.get("hit_count", 0) + 1
+
+
+def _forget_handles() -> None:
+    """unload / idle-unload 释放后清零 (下次 warm/predict 重新建)。"""
+    _handle_stats.clear()
 
 
 def _make_detector() -> Any:
@@ -116,6 +153,7 @@ async def _idle_watcher() -> None:
             idle = time.time() - _last_used
             if idle >= IDLE_UNLOAD_SECONDS:
                 n = _predictor.unload()
+                _forget_handles()
                 logger.info("idle unloaded %d handles (idle=%.0fs)", n, idle)
         except asyncio.CancelledError:
             raise
@@ -160,14 +198,23 @@ def _pool_status() -> dict[str, Any]:
     current_size=已加载句柄数, loaded_keys 列出各句柄名 (last_used 取末次推理时间)。
     """
     handles = _predictor.loaded_handles() if _predictor is not None else []
-    last_used_iso = (
+    fallback_iso = (
         datetime.fromtimestamp(_last_used, UTC).isoformat() if _last_used is not None else None
     )
-    loaded_keys = [
-        {"key": f"onnxtools/{name}", "loaded_at": last_used_iso,
-         "last_used_at": last_used_iso, "hit_count": 0}
-        for name in handles
-    ]
+    loaded_keys = []
+    for name in handles:
+        rec = _handle_stats.get(name)
+        if rec is None:
+            # 兜底: handle 已加载但 stats 未记 (理论上 warm/predict 都会 touch)。
+            loaded_keys.append(
+                {"key": f"onnxtools/{name}", "loaded_at": fallback_iso,
+                 "last_used_at": fallback_iso, "hit_count": 0}
+            )
+        else:
+            loaded_keys.append(
+                {"key": f"onnxtools/{name}", "loaded_at": rec["loaded_at"],
+                 "last_used_at": rec["last_used_at"], "hit_count": rec["hit_count"]}
+            )
     return {
         "cap": 3,
         "current_size": len(handles),
@@ -311,6 +358,8 @@ def warmup(body: dict[str, Any] | None = None) -> WarmupResponse:
     cache_hit = _predictor.warm(model_id)
     load_ms = int((time.monotonic() - t0) * 1000)
     _last_used = time.time()
+    # claude[bot] P2 · 把 warmup 反映到 per-handle 池统计 (hit=False, warmup 不算推理命中)。
+    _touch_handle(_handle_for(model_id), hit=False)
     return WarmupResponse(ok=True, model_load_ms=load_ms, cache_hit=cache_hit, evicted=None)
 
 
@@ -320,6 +369,7 @@ def unload() -> dict[str, Any]:
     if _predictor is None:
         return {"ok": True, "unloaded": 0}
     n = _predictor.unload()
+    _forget_handles()
     return {"ok": True, "unloaded": n}
 
 
@@ -337,10 +387,13 @@ def predict(req: BatchPredictRequest) -> BatchPredictResponse:
     detect_only = model_id == DETECT_ONLY_MODEL_ID
     if classify_only:
         model_version = VA_MODEL_VERSION
+        handle_name = "va"
     elif detect_only:
         model_version = DET_ONLY_MODEL_VERSION
+        handle_name = "detector"
     else:
         model_version = MODEL_VERSION
+        handle_name = "pipeline"
 
     results: list[PredictionResult] = []
     for t in req.tasks:
@@ -351,6 +404,8 @@ def predict(req: BatchPredictRequest) -> BatchPredictResponse:
                 items, infer_ms = _predictor.detect_one(t.file_path)
             else:
                 items, infer_ms = _predictor.predict_one(t.file_path)
+            # claude[bot] P2 · 真实推理命中, 更新该 handle 的 last_used_at + hit_count。
+            _touch_handle(handle_name, hit=True)
             score = max((r.get("score", 0.0) for r in items), default=0.0)
             results.append(
                 PredictionResult(

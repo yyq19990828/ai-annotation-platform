@@ -491,4 +491,37 @@ describe("useInteractiveAI", () => {
       expect(result.current.exemplarThreshold).toBeNull();
     });
   });
+
+  // claude[bot] P1 #2 回归: cache 命中分支需显式 setIsRunning(false), 否则上一次 in-flight
+  // 被 abort + inflightRef 已自增 → 旧请求 finally 守卫不再通过, 旋转图标永不清除。
+  // 复现路径: 真实请求 in-flight 时同一 key 再发一次 (命中 cache) → isRunning 应回 false。
+  it("§P1 #2 · cache 命中 (紧跟 in-flight) 时 isRunning 必须复位", async () => {
+    // 第 1 发: 真实 HTTP, 永不 resolve (模拟 in-flight)。
+    let firstResolve: (v: unknown) => void = () => {};
+    const firstPromise = new Promise((res) => {
+      firstResolve = res;
+    });
+    // 第 2 发: 同 key, 应命中本地 cache, 不进 mock。
+    interactiveAnnotateMock.mockImplementationOnce(() => firstPromise);
+
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    // 第 1 次: in-flight, isRunning=true。
+    act(() => result.current.runBbox([0.1, 0.1, 0.4, 0.4]));
+    await waitFor(() => expect(result.current.isRunning).toBe(true));
+
+    // 让第 1 个请求 resolve 出候选, 触发 cache 写入 (同 key 下次命中)。
+    await act(async () => {
+      firstResolve(POLY_RESPONSE);
+      await firstPromise;
+    });
+    await waitFor(() => expect(result.current.isRunning).toBe(false));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+
+    // 第 2 次相同 bbox: 命中 cache; 旧 abort + inflightRef++ 仍发生, 但 isRunning 必须回 false。
+    act(() => result.current.runBbox([0.1, 0.1, 0.4, 0.4]));
+    // 不要 await waitFor (cache 同步生效); 立即断言。
+    expect(result.current.isRunning).toBe(false);
+    // 第 2 次未发 HTTP (cache 命中)。
+    expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1);
+  });
 });

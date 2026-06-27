@@ -135,15 +135,25 @@ export function promptOfTool(tool: ToolId): InteractivePrompt | null {
 // 顶层 ml_backend_id 取源阶段 (parent_stage 为 null/undefined) 的 backend, 满足后端「源阶段
 // backend == 顶层」校验; 找不到源阶段则回落首个阶段。on_key_conflict=last_wins: 保存态未持久化
 // 键冲突选择, last_wins 对无冲突编排无副作用、对有冲突的也能直接跑。
+//
+// availableBackendIds (claude[bot] P1 #5): 当传入时校验 stages 引用的全部 backend id
+// 必须在集合里, 否则返回 null (保存态后引用的 backend 被删/停, 直接跑只会拿到通用 422,
+// 上层应据此弹"引用后端不可用"提示, 而非默默发请求)。未传时跳过校验 (向后兼容)。
 export function buildPipelineRunPayload(
   stages: PipelineStagePayload[] | null | undefined,
   taskId: string | null | undefined,
+  availableBackendIds?: Set<string> | null,
 ): TriggerPreannotationPayload | null {
   if (!stages?.length || !taskId) return null;
   const rootBackendId =
     stages.find((s) => s.parent_stage == null)?.ml_backend_id ??
     stages[0]?.ml_backend_id;
   if (!rootBackendId) return null;
+  if (availableBackendIds) {
+    for (const s of stages) {
+      if (s.ml_backend_id && !availableBackendIds.has(s.ml_backend_id)) return null;
+    }
+  }
   return {
     ml_backend_id: rootBackendId,
     task_ids: [taskId],
@@ -151,6 +161,22 @@ export function buildPipelineRunPayload(
     predict_mode: "overwrite",
     on_key_conflict: "last_wins",
   };
+}
+
+// claude[bot] P1 #5 · 列出 stages 里引用的 backend id 中, 不在 available 集合里的 (= 被删/停)。
+// 给 UI 渲染"引用后端不可用"提示用; stages 重复引用同一 backend 时去重。
+export function missingBackendIdsForStages(
+  stages: PipelineStagePayload[] | null | undefined,
+  availableBackendIds: Set<string> | null | undefined,
+): string[] {
+  if (!stages?.length || !availableBackendIds) return [];
+  const missing = new Set<string>();
+  for (const s of stages) {
+    if (s.ml_backend_id && !availableBackendIds.has(s.ml_backend_id)) {
+      missing.add(s.ml_backend_id);
+    }
+  }
+  return Array.from(missing);
 }
 
 // v0.16.x 拆分(第 2 批)· 图钉聚焦视口平移:把 anchor(0-1 归一坐标)对应像素点平移到

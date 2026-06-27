@@ -15,7 +15,7 @@ from aap_protocol_v2 import (
     TaskItem,
     WarmupResponse,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 __all__ = [
     "AnnotationResult",
@@ -47,9 +47,9 @@ class Context(BaseModel):
     # both: 同 instance 配对返回 rectanglelabels + polygonlabels
     # point/interactive_box 类型下此字段无意义 (始终走 SAM mask → polygon 路径)
     output: Literal["box", "mask", "both"] = "mask"
-    # v0.9.2 项目级 DINO 阈值注入 (text 路径生效)
-    box_threshold: float | None = None
-    text_threshold: float | None = None
+    # v0.9.2 项目级 DINO 阈值注入 (text 路径生效). claude[bot] P2 · [0,1] 范围守卫。
+    box_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    text_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     # v0.9.4 phase 3: shapely.simplify tolerance 像素级覆盖 (None 走 predictor.DEFAULT_SIMPLIFY_TOLERANCE).
     # 仅 mask/both 路径有意义 (box 路径不简化); 大物体可调高 (2-3) 减顶点, 精细物体调低 (0.3-0.5).
     simplify_tolerance: float | None = None

@@ -150,16 +150,20 @@ def _synthesize_single_model(setup: dict, backend_infra: str) -> dict:
 
     task 由现有信号推断:
     - `supported_trackers` 非空 ⇒ tracker
-    - `supported_prompts` 含 point/interactive_box/text/exemplar ⇒ interactive_seg (SAM 类)
+    - `supported_prompts` 含交互路由的 prompt (PROMPTS_INTERACTIVE_ROUTE) ⇒ interactive_seg (SAM 类)
     - 否则 ⇒ detection
+
+    claude[bot] P2 · 用 SSOT `PROMPTS_INTERACTIVE_ROUTE` (point/interactive_box/exemplar)
+    替代原硬编码 tuple, 修 text-only legacy backend (如 GroundingDINO) 被误判为 interactive_seg
+    的 bug —— text 走批量线、非交互路由, 不应让 task=detection 的纯文本 backend 看起来像 SAM。
     """
+    from .capability_registry import PROMPTS_INTERACTIVE_ROUTE  # 局部 import 避免循环。
+
     prompts = list(setup.get("supported_prompts") or [])
     trackers = list(setup.get("supported_trackers") or [])
     if trackers:
         task = "tracker"
-    elif any(
-        p in ("point", "interactive_box", "bbox", "text", "exemplar") for p in prompts
-    ):
+    elif any(p in PROMPTS_INTERACTIVE_ROUTE for p in prompts):
         task = "interactive_seg"
     else:
         task = "detection"
@@ -198,9 +202,20 @@ def _collect_warnings(models: list[dict]) -> list[dict]:
 
     v0.18.29 · 把「字段拼错 / 值越界致工具静默不亮」变成模型市场可见信号。只校验受控值
     (task / infra / supported_prompts / supported_geometric_outputs); 派生缺省
-    (task / infra == "unknown") 跳过 — 那是 backend 没声明、平台已兜底, 非越界。未知键检测
-    从简不做 (避免维护键白名单 + 噪音), 留后续。
+    (task / infra == "unknown") 跳过 — 那是 backend 没声明、平台已兜底, 非越界。
+
+    claude[bot] P2 · 加未知字段名检测: ModelCapability 用 ``extra=allow``, backend 拼错
+    (如 ``output_attribute_typo``) 既逃 schema 校验又逃 warning, 与本批 SSOT 方向相反。
+    白名单 = ModelCapability.model_fields ∪ _normalize_model 透传的扩展字段
+    (``modality`` 为派生, ``exemplar_capabilities`` 为协议外透传). 多余键发 info 级警告。
     """
+    from app.schemas.ml_backend import ModelCapability
+
+    known_model_keys = set(ModelCapability.model_fields.keys()) | {
+        # ModelCapability 用 extra=allow 接以下透传 / 派生字段, 不算未知。
+        "supported_inputs",  # v0.18.15 输入契约
+        "exemplar_capabilities",  # v0.18.23 透传给前端 exemplar 控件
+    }
     out: list[dict] = []
 
     def warn(
@@ -251,6 +266,17 @@ def _collect_warnings(models: list[dict]) -> list[dict]:
                     g,
                     f"未知几何输出「{g}」不在受控词表。",
                 )
+        # claude[bot] P2 · ModelCapability extra=allow 不会拒未知键; 这里发 info 警告
+        # 抓 backend 字段名拼写错误 (如 output_attribute_typo) 让其在模型市场可见。
+        unknown_keys = sorted(set(m.keys()) - known_model_keys)
+        for k in unknown_keys:
+            warn(
+                mid,
+                k,
+                "",
+                f"未知字段「{k}」不在 ModelCapability schema; 可能是拼写错误, 平台会忽略。",
+                level="info",
+            )
     return out
 
 

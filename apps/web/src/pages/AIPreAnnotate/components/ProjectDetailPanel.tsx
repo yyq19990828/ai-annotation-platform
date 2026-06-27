@@ -147,7 +147,10 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   const dataType = summary?.data_type ?? project?.data_type ?? "image";
 
   const backendsQ = useMLBackends(projectId);
-  const backends = (backendsQ.data ?? []) as unknown as Array<{ id: string; name: string }>;
+  const backends = useMemo(
+    () => (backendsQ.data ?? []) as unknown as Array<{ id: string; name: string }>,
+    [backendsQ.data],
+  );
   // v0.10.38 · 多 backend 选择: 默认绑定值, 用户可在项目已注册 backend 间切换 (epic 阶段 2).
   const [selectedBackendId, setSelectedBackendId] = useState<string | null>(null);
   const firstBackendId = backends[0]?.id ?? null;
@@ -157,6 +160,17 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   }, [projectId, project?.ml_backend_id, firstBackendId]);
   const selectedBackend =
     backends.find((b) => b.id === selectedBackendId) ?? null;
+  // claude[bot] P1 #5 · 已保存编排里引用的 backend id 在本项目当前 backends 列表里缺多少 (= 被删/停)。
+  // 编排可能跨多个 backend, 集合用 backends.map(b.id); 工作台 popover 入口同步据此禁用。
+  const savedPipelineMissingBackendCount = useMemo(() => {
+    if (!savedPipeline?.length) return 0;
+    const known = new Set(backends.map((b) => b.id));
+    const missing = new Set<string>();
+    for (const s of savedPipeline) {
+      if (s.ml_backend_id && !known.has(s.ml_backend_id)) missing.add(s.ml_backend_id);
+    }
+    return missing.size;
+  }, [savedPipeline, backends]);
 
   // 预标配置区共享状态 (任务类型 / 几何 task / 类别白名单 / variant / 参数 / prompt / 预设 /
   // 输出形态 / buildArgs); 详见 usePreannotateConfig. 工作台 AI 面板复用同一 hook + PreannotateConfigForm.
@@ -902,6 +916,16 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               {savedStageCount > 0 && (
                 <>
                   <Badge>已保存编排 · {savedStageCount} 阶段</Badge>
+                  {/* claude[bot] P1 #5 · 引用的 backend 被删/停 → 工作台 popover「按编排跑」会禁用; 这里同时提示。 */}
+                  {savedPipelineMissingBackendCount > 0 && (
+                    <span
+                      title="编排引用的 backend 不在本项目注册列表里 (被删或未注册); 工作台 popover「按编排跑」会被禁用, 请重新注册或修改编排"
+                    >
+                      <Badge variant="warning">
+                        引用 {savedPipelineMissingBackendCount} 个后端不可用
+                      </Badge>
+                    </span>
+                  )}
                   <Button
                     variant="ghost"
                     onClick={onClearPipeline}

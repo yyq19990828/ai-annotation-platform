@@ -107,6 +107,7 @@ import { MaskToolbar } from "../shell/MaskToolbar";
 import { useVideoAnnotationActions } from "../stages/video/useVideoAnnotationActions";
 import {
   buildPipelineRunPayload,
+  missingBackendIdsForStages,
   buildPredictParams,
   promptOfTool,
   resolveFloatingClassPaletteRect,
@@ -195,7 +196,10 @@ export function useWorkbenchShellModel({
   //     驱动 preCfg / handleRunAi / AI 面板 backend 选择器, 沿用批量页 ProjectDetailPanel 切换语义。
   //   交互线 — point/bbox/exemplar 工具各自按能力路由到交互后端 (见下方 routing / interactiveBackendId)。
   const backendsQ = useMLBackends(projectId);
-  const backends = (backendsQ.data ?? []) as unknown as Array<{ id: string; name: string }>;
+  const backends = useMemo(
+    () => (backendsQ.data ?? []) as unknown as Array<{ id: string; name: string }>,
+    [backendsQ.data],
+  );
   const firstBackendId = backends[0]?.id ?? null;
   const [batchBackendId, setBatchBackendId] = useState<string | null>(null);
   // 工作台是常驻 session: 用户在 AI 面板手动选过批量 backend 后, 不能因项目默认后端被外部改动
@@ -1159,10 +1163,31 @@ export function useWorkbenchShellModel({
   const projectPipeline = currentProject?.preannotate_pipeline ?? null;
   const hasProjectPipeline = (projectPipeline?.length ?? 0) > 0;
   const projectPipelineStageCount = projectPipeline?.length ?? 0;
+  // claude[bot] P1 #5 · 编排引用的 backend 被删/停时, popover 入口该不可点 + 弹明确原因, 而非默默 422。
+  // 复用上面已拉的 backends 列表 (line ~199 backendsQ), 不重复 query。
+  const availableBackendIds = useMemo(
+    () => new Set<string>(backends.map((b) => b.id)),
+    [backends],
+  );
+  const pipelineMissingBackends = useMemo(
+    () => missingBackendIdsForStages(projectPipeline, availableBackendIds),
+    [projectPipeline, availableBackendIds],
+  );
+  const projectPipelineRunnable =
+    hasProjectPipeline && pipelineMissingBackends.length === 0;
   const handleRunAiPipeline = useCallback(() => {
+    if (pipelineMissingBackends.length > 0) {
+      pushToast({
+        msg: "项目编排引用的后端不可用",
+        sub: `请到「AI 预标」修编排或重新注册 ${pipelineMissingBackends.length} 个后端`,
+        kind: "warning",
+      });
+      return;
+    }
     const payload = buildPipelineRunPayload(
       currentProject?.preannotate_pipeline,
       taskId,
+      availableBackendIds,
     );
     if (!payload) return;
     pushToast({
@@ -1174,7 +1199,15 @@ export function useWorkbenchShellModel({
       onError: (err: unknown) =>
         pushToast({ msg: "AI 编排预标失败", sub: String(err), kind: "error" }),
     });
-  }, [currentProject?.preannotate_pipeline, taskId, triggerPreannotation, pushToast, preCfg]);
+  }, [
+    currentProject?.preannotate_pipeline,
+    taskId,
+    triggerPreannotation,
+    pushToast,
+    preCfg,
+    availableBackendIds,
+    pipelineMissingBackends,
+  ]);
 
   const {
     handleVideoCreate,
@@ -2356,6 +2389,9 @@ export function useWorkbenchShellModel({
       // v0.18.28 · 项目存了编排时多给一个「按项目编排跑当前题」入口。
       hasProjectPipeline,
       projectPipelineStageCount,
+      // claude[bot] P1 #5 · 编排可执行 (引用的 backend 都还在); false 时 popover 入口禁用并提示。
+      projectPipelineRunnable,
+      pipelineMissingBackendCount: pipelineMissingBackends.length,
       onRunPipeline: handleRunAiPipeline,
       onAcceptAll: handleAcceptAll,
       onSetConfThreshold: s.setConfThreshold,

@@ -27,7 +27,7 @@ from aap_protocol_v2 import (
     TaskItem,
     WarmupResponse,
 )
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 __all__ = [
     "AnnotationResult",
@@ -84,8 +84,8 @@ class Context(BaseModel):
     # v0.9.4 phase 3: shapely.simplify 像素级覆盖 (mask/both/exemplar 路径生效)
     simplify_tolerance: float | None = None
     # v0.10.0 · SAM 3 PCS exemplar / text 路径可选 score 阈值;
-    # 缺省走 backend env SAM3_SCORE_THRESHOLD (默认 0.5).
-    score_threshold: float | None = None
+    # 缺省走 backend env SAM3_SCORE_THRESHOLD (默认 0.5). claude[bot] P2 · [0,1] 范围守卫。
+    score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     # v0.18.17 · point / interactive_box 单点歧义时出 3 候选 (按 iou 降序); 缺省单 mask.
     multimask_output: bool = False
 
