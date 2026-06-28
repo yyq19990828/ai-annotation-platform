@@ -14,6 +14,8 @@ import type {
   VideoSamplingConfig as GenVideoSamplingConfig,
 } from "./generated/types.gen";
 import type { ToolUnitId } from "@/constants/toolUnits";
+// v0.18.27 · 项目级「已保存的编排」复用预标注阶段载荷类型 (与后端 PipelineStage 同构).
+import type { PipelineStagePayload } from "@/hooks/usePreannotation";
 
 // ── 类型再导出（向后兼容旧 import 名） ─────────────────────────────
 //
@@ -56,8 +58,11 @@ export interface ProjectRenderingConfig {
 
 /** v0.6.4 起 ProjectOut 已强类型，ProjectResponse 仅作为旧导出名保留。 */
 // v0.10.10 · 待 codegen 重跑前手动扩 rendering_config 字段。
-export type ProjectResponse = ProjectOut & {
+// v0.18.27 · codegen 已含 preannotate_pipeline (Array<{[k]:unknown}>), Omit 后用富类型覆盖.
+export type ProjectResponse = Omit<ProjectOut, "preannotate_pipeline"> & {
   rendering_config?: ProjectRenderingConfig;
+  // v0.18.27 · 项目级「已保存的编排」(方案 A); null/缺 = 未配编排.
+  preannotate_pipeline?: PipelineStagePayload[] | null;
 };
 export type ProjectStatsResponse = ProjectStats;
 export type ProjectMemberResponse = ProjectMemberOut;
@@ -75,13 +80,17 @@ export type ProjectCreatePayload = ProjectCreate & {
 };
 // v0.10.10 · I17.3 · 加 rendering_config 字段；待 codegen 重跑。
 // v0.10.13 · E1 · 加 annotation_guide / guide_assets; 待 codegen 重跑。
-export type ProjectUpdatePayload = ProjectUpdate & {
+// v0.18.27 · codegen 已含 preannotate_pipeline (Array<{[k]:unknown}>), Omit 后用富类型覆盖
+// 避免与 PipelineStagePayload[] 交叉时报缺索引签名。
+export type ProjectUpdatePayload = Omit<ProjectUpdate, "preannotate_pipeline"> & {
   rendering_config?: ProjectRenderingConfig | null;
   annotation_guide?: string | null;
   guide_assets?: GuideAssetEntry[] | null;
   // v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶); 待 codegen 重跑后从 ProjectUpdate 自带.
   // 形状: {"<backend_uuid>": {"<axis_key>": "<axis_value>", ...}, ...}
   default_variants?: Record<string, Record<string, string>> | null;
+  // v0.18.27 · 项目级「已保存的编排」(方案 A); 显式 null = 清除, 不传 = 不动.
+  preannotate_pipeline?: PipelineStagePayload[] | null;
 };
 
 // v0.10.13 · E1 · 项目标注指引图片资源 entry, 与后端 guide_asset.py 同构.

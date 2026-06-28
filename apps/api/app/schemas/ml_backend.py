@@ -124,6 +124,19 @@ class ModelCapability(BaseModel):
         extra = "allow"
 
 
+class CapabilityWarning(BaseModel):
+    """v0.18.29 · backend `/setup` 上报值的受控词表校验诊断 (越界即记, 不阻断解析)。
+
+    由 services/ml_capabilities._collect_warnings 产出; 前端模型市场据此显示 ⚠ +
+    可读原因, 把「字段拼错 / 值越界致工具静默不亮」变成可见信号。"""
+
+    level: str = "warning"  # warning | info
+    model_id: str | None = None
+    field: str
+    value: str
+    message: str
+
+
 class BackendCapabilities(BaseModel):
     """v0.10.37 · backend `/setup` 能力快照 (epic 阶段 1).
 
@@ -148,6 +161,8 @@ class BackendCapabilities(BaseModel):
     supported_text_outputs: list[str] = []
     supported_geometric_outputs: list[str] = []
     modalities: list[str] = []
+    # v0.18.29 · 受控词表校验诊断 (越界 task/infra/prompt/geometry); 空 = 全合法。
+    warnings: list[CapabilityWarning] = []
 
 
 class HealthMeta(BaseModel):
@@ -233,11 +248,15 @@ class InteractiveRequest(BaseModel):
     """工作台「AI 助手」单次推理请求。`context` 透传至 backend，平台不做 schema 校验。
 
     `context.type` 协商枚举（详见 `docs-site/dev/ml-backend-protocol.md` §2.2）：
-    - ``point``：``{"type":"point","points":[[x,y],...],"labels":[1,0,...]}``
-    - ``bbox``：``{"type":"bbox","bbox":[x1,y1,x2,y2]}``
+    - ``point``：``{"type":"point","points":[[x,y],...],"labels":[1,0,...],"multimask_output":false}``
+      （v0.18.17 · SAM-style 单实例点交互, 正/负点累加由前端重发全量点; multimask 出 3 候选）
+    - ``interactive_box``：``{"type":"interactive_box","bbox":[x1,y1,x2,y2],"multimask_output":false}``
+      （v0.18.17 · SAM-style 单框单 mask; 双 backend 统一名, 旧 ``bbox`` prompt 已退役）
     - ``polygon``：``{"type":"polygon","points":[[x,y],...]}``
-    - ``text``：``{"type":"text","text":"ripe apples"}``（v0.9.x Grounded-SAM-2）
-    - ``exemplar``：留给 v0.10.x SAM 3。
+    - ``text``：``{"type":"text","text":"ripe apples"}``（Grounded-SAM-2 DINO / SAM 3 PCS）
+    - ``exemplar``：``{"type":"exemplar","bbox":[x1,y1,x2,y2]}`` 或多正负框
+      ``{"type":"exemplar","exemplars":[{"bbox":[...],"label":true},...],"text":"car","score_threshold":0.5}``
+      （SAM 3 PCS 全图相似实例; v0.18.19 起支持多正负框累加 + text 概念组合 + 阈值重过滤的迭代 refinement）。
     """
 
     task_id: UUID

@@ -49,6 +49,17 @@ repos:
         files: ^apps/api/app/(api|schemas)/.*\.py$
         pass_filenames: false
 
+      # v0.18.30 · 改 capability registry 受控词表(或其响应 schema/序列化)时, 重导
+      # capability-registry snapshot 并 git add。前端 codegen 读此 snapshot 生成受控词表
+      # 常量(apps/web/scripts/gen-capability-vocab.mjs); CI test_capability_registry_contract
+      # 兜底。把"忘了重导致前端 stale"变成提交即修复(与 regen-openapi-snapshot 同思路)。
+      - id: regen-capability-registry-snapshot
+        name: Regenerate capability registry snapshot (apps/api)
+        entry: bash -c 'cd apps/api && uv run python ../../scripts/export_capability_registry.py && cd ../.. && git add apps/api/capability-registry.snapshot.json 2>/dev/null || true'
+        language: system
+        files: ^apps/api/app/services/capability_registry\.py$|^apps/api/app/schemas/ml_capabilities\.py$|^apps/api/app/api/v1/ml_capabilities\.py$
+        pass_filenames: false
+
       # 改快捷键 / 工作台设置定义源时,自动重新生成对应的 .generated.md 并 git add,
       # 把"忘了重新生成导致文档漂移"变成提交即修复(与 regen-openapi-snapshot 同思路)。
       # CI 侧另有 docs-site `check:codegen`(--check)作为兜底闸门。

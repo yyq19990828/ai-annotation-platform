@@ -68,6 +68,25 @@ cd apps/web && pnpm codegen
 
 `pnpm build` 通过 `prebuild` hook (`scripts/codegen-if-changed.mjs`) 仅在 snapshot 比生成产物新时跑 codegen, 加速开发循环。
 
+## Capability Registry Codegen
+
+ML 能力目录还有一条独立的受控词表链路：`apps/api/app/services/capability_registry.py` 是 task / infra / modality / geometry / prompt 的单源真值，`GET /ml-capabilities/protocol` 和前端能力目录都消费它。
+
+```bash
+# 1. 后端受控词表或响应 schema 变化后，刷新 snapshot
+cd apps/api && uv run python ../../scripts/export_capability_registry.py
+
+# 2. 生成前端常量与普通 API types
+cd ../.. && pnpm codegen
+```
+
+输出：
+
+- `apps/api/capability-registry.snapshot.json`：版本化契约，必须提交。
+- `apps/web/src/api/generated/capabilityVocab.gen.ts`：由 `apps/web/scripts/gen-capability-vocab.mjs` 从 snapshot 生成，构建时自动刷新。
+
+pre-commit 会在 capability registry、schema 或 API 序列化文件变更时自动重导 snapshot；CI 的 `export_capability_registry.py --check` 负责发现未提交的漂移。
+
 ### 当前 codegen 覆盖
 
 - ✅ `AsyncJobOut` **从 codegen 派生**，见 `apps/web/src/api/asyncJobs.ts`

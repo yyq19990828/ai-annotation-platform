@@ -18,6 +18,7 @@ import {
   type MLBackendSupportedVariantGroup,
   type MLBackendVariant,
   type MLModelCapability,
+  mlBackendSetupQueryKey,
 } from "@/api/ml-backends";
 import type { MLBackendItem } from "@/api/adminMlIntegrations";
 import {
@@ -68,7 +69,7 @@ export function VariantPanel({
   isWarming: boolean;
 }) {
   const { data: setup, isLoading, isError } = useQuery({
-    queryKey: ["ml-backend-setup", projectId, backend.id],
+    queryKey: mlBackendSetupQueryKey(projectId, backend.id),
     queryFn: () => mlBackendsApi.setup(projectId, backend.id),
     staleTime: 30_000,
   });
@@ -153,6 +154,24 @@ export function VariantPanel({
   );
   const isVideoSelectedLoaded = videoLoaded.includes(videoSam);
 
+  // v0.18.17 · 通用单变体后端 (如 sam3): 有 generic variant 目录但无 gsam2 sam/dino 轴, 单池单变体。
+  // pool key 原样即变体字符串 (如 "sam3"), 不走 gsam2 sam=X/dino=Y 解析 → 单独走 raw-key 展示/预热。
+  const genericImageMode =
+    !supportsVariants && genericVariantGroups.length > 0 && !isMultiModelBackend;
+  const loadedRawKeys = pool?.loaded_keys?.map((k) => k.key) ?? [];
+  const imageLoadedCount = genericImageMode ? loadedRawKeys.length : loaded.length;
+  const canGenericWarm = setup?.warmup_endpoint === true;
+  // generic 预热目标: 各轴取 recommended (或首个) 组成 variants map (单轴单值, 如 {model_variant:"sam3"}).
+  const genericWarmVariants: Record<string, string> = {};
+  for (const g of genericVariantGroups) {
+    const opts = g.variants ?? [];
+    const rec = opts.find((v) => v.recommended) ?? opts[0];
+    if (rec) genericWarmVariants[g.key] = rec.value;
+  }
+  const genericWarmTargetKey = Object.values(genericWarmVariants)[0];
+  const genericWarmLoaded =
+    genericWarmTargetKey != null && loadedRawKeys.includes(genericWarmTargetKey);
+
   const body = isMultiModelBackend ? (
     setup!.models!.map((model) => (
       <ModelVariantWarmSection
@@ -172,8 +191,8 @@ export function VariantPanel({
             <div className={SECTION_CLASS}>
               <div className={SECTION_TITLE_CLASS}>通用变体目录</div>
               <GenericVariantDirectory groups={genericVariantGroups} />
-              {!supportsVariants && (
-                <div className={HINT_CLASS}>该 backend 暂未实现通用 warm 接口，变体目录仅用于只读展示。</div>
+              {!supportsVariants && !canGenericWarm && (
+                <div className={HINT_CLASS}>该 backend 暂未实现 warm 接口，变体目录仅用于只读展示。</div>
               )}
             </div>
           )}
@@ -183,12 +202,43 @@ export function VariantPanel({
               图像推理变体 · 已加载
               {pool?.cap != null && (
                 <span className={CAP_CLASS}>
-                  {loaded.length}/{pool.cap}
+                  {imageLoadedCount}/{pool.cap}
                 </span>
               )}
             </div>
-            {loaded.length === 0 ? (
+            {imageLoadedCount === 0 ? (
               <div className={NOTE_CLASS}>暂无变体常驻显存（idle 卸载或未预热）</div>
+            ) : genericImageMode ? (
+              // 通用单变体: pool key 原样展示 (无 sam/dino 维度, 无独立 cache 分桶).
+              <div className="max-w-full overflow-x-auto">
+                <table className={TABLE_CLASS}>
+                  <thead>
+                    <tr>
+                      {["变体", "最近使用"].map((h) => (
+                        <th key={h}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadedRawKeys.map((key) => {
+                      const ts = lruTs[key];
+                      return (
+                        <tr key={key}>
+                          <td
+                            className="max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap"
+                            title={key}
+                          >
+                            <span className="mono">{key}</span>
+                          </td>
+                          <td className="whitespace-nowrap text-muted-foreground">
+                            {ts != null ? `t-${ts.toFixed(0)}s` : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             ) : (
               <div className="max-w-full overflow-x-auto">
                 <table className={TABLE_CLASS}>
@@ -240,6 +290,21 @@ export function VariantPanel({
 
           <div className={SECTION_CLASS}>
             <div className={SECTION_TITLE_CLASS}>图像推理变体 · 预热</div>
+            {genericImageMode ? (
+              // 通用单变体: 无 sam/dino 下拉, 单按钮预热默认变体 (= 顶部「预热默认」目标)。
+              <div className={WARM_ROW_CLASS}>
+                <Button
+                  size="xs"
+                  onClick={() => onWarm({ variants: genericWarmVariants })}
+                  disabled={isWarming || !canGenericWarm}
+                  title={canGenericWarm ? "预热该变体载入显存" : "该 backend 未实现 warm 接口"}
+                >
+                  <Icon name="play" size={10} />
+                  预热
+                </Button>
+                {genericWarmLoaded && <Badge variant="success">已在显存</Badge>}
+              </div>
+            ) : (
             <div className={WARM_ROW_CLASS}>
               {samEnum.length > 0 && (
                 <label className={FIELD_CLASS}>
@@ -281,6 +346,7 @@ export function VariantPanel({
               </Button>
               {isSelectedLoaded && <Badge variant="success">已在显存</Badge>}
             </div>
+            )}
             <div className={HINT_CLASS}>
               预热把所选变体载入 pool（受 cap 限制，超出按 LRU 驱逐）；预热后请「健康检查」刷新上表。
             </div>

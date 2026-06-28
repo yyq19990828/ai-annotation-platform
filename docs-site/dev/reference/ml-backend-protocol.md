@@ -21,7 +21,7 @@ last_reviewed: 2026-06-08
 
 ## 项目作用域与数量上限
 
-`ml_backends.project_id` 按 1:N 设计；同一个项目可以注册多条 backend 记录，前端的多 backend 选择器也会在配额放开后自然生效。当前开发环境默认 `MAX_ML_BACKENDS_PER_PROJECT=1`，是为了避免单机同时常驻 grounded-sam2 与 sam3 等大模型导致显存爆掉；生产环境可按机器显存和并发预算调大该值。
+`ml_backends.project_id` 按 1:N 设计；同一个项目可以注册多条 backend 记录，前端多 backend 选择器已经按「交互线 / 批量线 / 编排阶段」分流。当前开发环境默认 `MAX_ML_BACKENDS_PER_PROJECT=3`，给检测 + 分割 / 分类 + 备用 backend 留出基本空间；生产环境可按机器显存和并发预算调大或调小该值。
 
 这个限制只影响「一个项目能注册多少条 backend」。新建项目时选择「复用 backend」仍会复制一条 backend 行到新项目；未注册 backend 但已启用 AI 的项目也会出现在模型市场，便于从模型市场直接注册第一条 backend。
 
@@ -66,7 +66,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 - 项目管理员在前端点「测试连接」（`POST /api/v1/projects/{pid}/ml-backends/{bid}/health`）。
 - 周期健康检查可按 ROADMAP 的 ML Backend 健康检查方案扩展。
 
-> **`pool` 子对象**（v0.14.14 起三 backend 统一为 `PoolStatus` 结构，详见 §4.3）：`{ cap, current_size, loaded_keys: [{key, loaded_at, last_used_at, hit_count}], last_evict: {key, at, reason} | null }`。`key` 是 backend-defined 的 opaque 字符串（yolo `{series}/{size}/{task}`、gsam2 `sam=X/dino=Y`、sam3 `sam3.1`），前端只做相等比较。`last_evict.reason` 受控为 `lru | manual | idle_timeout`。平台 `health_meta()` 一并缓存到 `ml_backends.health_meta.pool`，模型市场列表用 `loaded_keys[]` 反查每行 variant 的运行时态。**老 backend**（v0.14.13 及之前）的 `pool` 字段结构是各家各异的旧格式，平台层向后兼容；新接入的 backend 必须按 §4.3 落地。
+> **`pool` 子对象**（三 backend 统一为 `PoolStatus` 结构，详见 §4.3）：`{ cap, current_size, loaded_keys: [{key, loaded_at, last_used_at, hit_count}], last_evict: {key, at, reason} | null }`。`key` 是 backend-defined 的 opaque 字符串（yolo `{series}/{size}/{task}`、gsam2 `sam=X/dino=Y`、sam3 `sam3`），前端只做相等比较。`last_evict.reason` 受控为 `lru | manual | idle_timeout`。平台 `health_meta()` 一并缓存到 `ml_backends.health_meta.pool`，模型市场列表用 `loaded_keys[]` 反查每行 variant 的运行时态。**未统一的老 backend**回的 `pool` 字段结构各家各异（早期格式），平台层向后兼容；新接入的 backend 必须按 §4.3 落地。<!-- since v0.14.14 (PoolStatus 统一) -->
 
 > **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，grounded-sam2 实现）：`/unload` 清空整池释放显存；`/reload` 预热模型进 pool。`/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.model_variants`）；也接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。新 backend 应优先实现 §4.4 `/warmup`。
 
@@ -156,12 +156,13 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 }
 ```
 
-**判别器**：平台用下游 model 的 `supported_prompts` 决定投递方式，**不新增字段**：
+**判别器**：投递方式是「产物形态」（下游阶段 `write.target`）与「投递方式」（下游 model 的 `supported_inputs`，见 §3.1）二维决定的：
 
-- `["none"]` → **crop 模式**（现状：平台逐父框裁 crop 图上传，下游收单张 ROI，如 onnxtools 纯分类）。
-- 含 `bbox` 且 `is_interactive=false` → **geometry 模式**（本节：全图 + 框列表，box-seg 原子）。
+- `write.target=attributes` → **crop 模式**：平台逐父框裁 crop 图上传，下游收单张 ROI 回属性（如 onnxtools 纯分类）。
+- `write.target ∈ {geometry, intermediate}` 且下游 `supported_inputs` 含 `bbox_prompt` → **geometry 模式**：全图 + 父框归一化列表喂 box-seg 原子，回原图坐标 polygon。
+- `write.target ∈ {geometry, intermediate}` 且下游 `supported_inputs` 含 `crop`（普通检测器） → **crop-detect 模式**：平台裁父框 ROI 喂检测器，检出几何按 crop 仿射变换**回映回原图坐标**，作为新框追加 / 供下游消费（支持几何 depth-3，如 `person → 在 person crop 上检测 hat → 给 hat 分类 color`）。
 
-老 backend（均为 `none`/crop）行为不变；本约定纯加法，随 `protocol_version` 升 **2.2**。
+平台在 `POST /preannotate` 端点按子模型 `supported_inputs` 解析投递方式并烘焙进阶段 `input.mode`，worker 直接消费；产几何的子若 `supported_inputs` 既不含 `bbox_prompt` 也不含 `crop`，端点 422 拒绝（不可达）。老 backend 缺 `supported_inputs` 时平台按 `supported_prompts` 合成兼容默认（见 §3.1），零退化。本约定纯加法。
 
 ### 2.2 交互式预测
 
@@ -174,12 +175,17 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 {
   "task": { "id": "<task_uuid>", "file_path": "..." },
   "context": {
-    "type": "point" | "bbox" | "polygon" | "text" | "exemplar",
-    "points": [[x, y], ...],                // type=point 时
-    "bbox": [x1, y1, x2, y2],               // type=bbox 时 (prompt 框) 或 type=exemplar 时 (视觉示例框)
+    "type": "point" | "interactive_box" | "polygon" | "text" | "exemplar",
+    "points": [[x, y], ...],                // type=point 时 (正/负点累加, 前端重发全量点)
+    "bbox": [x1, y1, x2, y2],               // type=interactive_box 时 (单框 prompt) 或 type=exemplar 时 (单视觉示例框, 兼容旧路径)
+    "exemplars": [                          // type=exemplar 多正负框累加 (优先于单 bbox); 见下
+      { "bbox": [x1, y1, x2, y2], "label": true }
+    ],
     "labels": [1, 0, ...],                  // 可选；point 类型，1=positive 0=negative
-    "text": "ripe apples",                  // type=text 时（Grounded-SAM-2 / SAM 3 PCS 文本入口）
-    "output": "box" | "mask" | "both",      // 仅 type=text 生效, 默认 "mask" 老前端兼容
+    "multimask_output": false,              // 可选; point/interactive_box 单点歧义出 3 候选 (按 iou 降序), 默认单 mask
+    "mask_input": "<base64>",               // 可选; 上一轮 256×256 low-res logits 回灌 (多点精修, 见下), 不透明字符串
+    "text": "ripe apples",                  // type=text 时（Grounded-SAM-2 / SAM 3 PCS 文本入口）; type=exemplar 时可叠加为概念组合
+    "output": "box" | "mask" | "both",      // type=text / type=exemplar 生效, 默认 "mask" 老前端兼容
     "box_threshold": 0.35,                  // 可选; type=text 时 backend 的 DINO 阈值 override (grounded-sam2 专属)
     "text_threshold": 0.25,                 // 可选; 同上
     "score_threshold": 0.5,                 // SAM 3 PCS text/exemplar 路径 score 过滤阈值
@@ -194,13 +200,27 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 `context` 是个开放 dict——平台和 backend 协商具体字段，平台不做 schema 校验（`ml_client.py:64-82`）。
 
+> **`type=point` / `type=interactive_box`**：SAM-style 单实例交互分割，两个 backend 同名同义（grounded-sam2 走 SAM 2.1 image predictor，SAM 3 走 inst predictor `model.predict_inst`）。`point` 支持正/负点累加——前端把同一对象的全部点每次重发（无状态后端），1=positive 0=negative；`interactive_box` 是单框单 mask。`multimask_output=true` 时单点歧义返回 3 个候选 mask（`result[]` 按 iou 降序，前端默认取 top-1 + 切换）。返回 `polygonlabels: ["object"]`（前端按 active label 改写）。`bbox` 作为交互 prompt 已退役（仅保留为几何形状）；旧 `type=bbox` 请求返回 422。
+
+> **`mask_input` 回灌（多点精修增量）**：SAM2/SAM3 的 `predict()` 接收上一轮 256×256 low-res logits 回灌，多次点击精修同一对象时显著提升 mask 稳定性与边界质量。为保持 backend 无状态，这些 logits 由前端携带往返：backend 在 `multimask_output=false` 的单 mask 路径把本轮 `low_res_masks` 编码成响应字段 `mask_input_next`，前端**原样存储、不解析**，下一次点击经 `context.mask_input` 回传；backend 解码后喂回 `predict(mask_input=...)`。
+>
+> - **编码格式**（不透明字符串，仅 backend 编解码，前端只搬运）：`float16(256×256)` → `tobytes` → `zlib(level=6)` → 前缀 magic `m1` → `base64(ascii)`。每轮往返 ~128KB（float16）/ ~175KB（base64 上界），zlib 对 clamp 到 `[-32,32]` 的饱和 logits 进一步压缩。实现见 `apps/_shared/protocol_v2/.../mask_codec.py`（两 backend 共用）。
+> - **仅多点精修阶段启用**：`mask_input_next` 只在 `multimask_output=false`（≥2 点的单 mask 精修）的 `point` 路径返回；`multimask_output=true`（首点 3 候选）会有 index 歧义，恒返回 `null`。`interactive_box` / `text` / `exemplar` 单发 prompt 不链式精修，恒 `null`。回灌因此自然从第 3 次点击起生效（首点候选阶段不回灌、第 2 点尚无上一轮单 mask logits）。
+> - **失效**：前端在提交候选 / 取消（Esc）/ 切 prompt 模式 / 切 task·backend 时丢弃所存 logits。坏 / 过期的 `mask_input` 串 backend 静默忽略（记 warning），不让单次精修整体失败。
+
 > **`type=text`**：Grounded-SAM-2 走 GroundingDINO 文本 → boxes → SAM mask 复合链路；SAM 3 走 PCS 单模型一步出 mask。两者返回 `result[]` 字面一致（多 polygon / 多 rect / 配对）。`box_threshold` / `text_threshold` 仅 grounded-sam2 消费；`score_threshold` 仅 SAM 3 消费。
 
-> **`context.model_variants`（v2.1）**：请求级模型变体热切换。结构是扁平 `dict[axis_key, axis_value]`，`axis_key` 必须来自当前 model 的 `/setup.supported_variants[].key`。yolo 示例：`{"series":"yolov11","size":"s"}`；grounded-sam2 示例：`{"sam_variant":"large","dino_variant":"B"}`；sam3 示例：`{"model_variant":"sam3.1"}`。backend 内 ModelPool 按这些轴组成 cache key：命中复用、miss 冷启；非法值或非法组合返回 422；变体合法但权重缺失 / 显存不可服务返回 503 + `Retry-After`。返回 `model_version` 可按本次请求变体拼（如 `grounded-sam2-dinoB-sam2.1large`）。embedding cache 按变体分桶（不同变体张量不可跨用），命中只在同变体同图。
+> **`context.model_variants`**：请求级模型变体热切换。结构是扁平 `dict[axis_key, axis_value]`，`axis_key` 必须来自当前 model 的 `/setup.supported_variants[].key`。yolo 示例：`{"series":"yolov11","size":"s"}`；grounded-sam2 示例：`{"sam_variant":"large","dino_variant":"B"}`；sam3 示例：`{"model_variant":"sam3"}`。backend 内 ModelPool 按这些轴组成 cache key：命中复用、miss 冷启；非法值或非法组合返回 422；变体合法但权重缺失 / 显存不可服务返回 503 + `Retry-After`。返回 `model_version` 可按本次请求变体拼（如 `grounded-sam2-dinoB-sam2.1large`）。embedding cache 按变体分桶（不同变体张量不可跨用），命中只在同变体同图。<!-- since protocol v2.1 -->
 >
-> **兼容期旧字段**：v2.1 backend 必须继续接受一版旧写法并 normalize 到 `context.model_variants`：yolo 的 `context.variants`、grounded-sam2 的 `context.sam_variant` / `context.dino_variant`、sam3 的 `context.model_variant`。收到旧字段时应记录 deprecation warning；若新旧字段同时存在，新字段优先。
+> **兼容期旧字段**：backend 必须继续接受一版旧写法并 normalize 到 `context.model_variants`：yolo 的 `context.variants`、grounded-sam2 的 `context.sam_variant` / `context.dino_variant`、sam3 的 `context.model_variant`。收到旧字段时应记录 deprecation warning；若新旧字段同时存在，新字段优先。
 
-> **`type=exemplar`**（仅 SAM 3 支持）：取图中已有的一个 bbox 作为视觉示例，由 SAM 3 PCS 一步出全图相似实例的 masks。`bbox` 字段承载 4 坐标（与 `type=bbox` 共用字段，语义靠 `type` 区分）。返回 `result[]` 是多个 `polygonlabels`，`polygonlabels: ["object"]`（前端按当前 active label 批量改写）。apps/api 仅在项目挂了支持 exemplar 的 backend（`/setup.supported_prompts` 含 `exemplar`）时才放行；未挂返回 400。前端 UI 入口在工作台 Shift+拖框。
+> **`type=exemplar`**：取图中已有的 bbox 作为视觉示例，返回全图相似实例。SAM 3 PCS 支持正/负框集 + 叠加 text + 阈值 refine；YOLOE visual prompt 支持多正框 + 阈值 refine，但不支持负框或文本叠加。这是一个**无状态迭代 refine 会话**：前端维护「进行中的框集 + 可选 text + 阈值」，每次操作（加框 / 拖阈值 / 改 text）重发全量，backend 按自身能力消费。
+>
+> - `exemplars[]`（优先）：`[{bbox:[x1,y1,x2,y2], label:bool}]` 多正负框累加。`label=true`=正框（扩召回）/ `label=false`=负框（排误检）。缺省 `exemplars` 时退化为单 `bbox` 正框（旧路径兼容）。
+> - `text`：可与 `exemplars` 同时传，组合为「text 概念 + 视觉示例」；非空时返回的 `polygonlabels` 用该短语，否则用 `["object"]`（前端按当前 active label 批量改写）。
+> - `score_threshold` / `output`（box/mask/both）复用通用字段。
+>
+> `bbox`/`exemplars[].bbox` 与 `type=interactive_box` 的 `bbox` 语义靠 `type` 区分：exemplar=全图相似，interactive_box=单框单 mask。`/setup` 在 `exemplar_capabilities`（`multi_box` / `negative_box` / `text_combination` / `threshold_refilter`）声明该 refine 能力，前端据此启用会话控件：如 `negative_box=false` 时隐藏负极性并强制正框，`text_combination=false` 时隐藏叠加文本。缺字段按全支持处理，兼容旧 SAM 3 backend。apps/api 仅在项目挂了支持 exemplar 的 backend（`/setup.supported_prompts` 含 `exemplar`）时才放行；未挂返回 400。前端 UI 入口在工作台 exemplar 工具拖框（Alt 拖框或负极性 = 负框）。
 
 > **`type=video_tracker`**：由 `VideoTrackerJob` worker 使用，gsam2 backend 接通真实 `sam2_video`。平台会按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 把长区间分窗，多次调用项目绑定的 connected ML Backend。请求 `task.file_path` 是视频 signed URL；`context` 包含 `model_key`（`sam2_video` / `sam3_video`）、`job_id`、`dataset_item_id`、`annotation_id`、`from_frame`、`to_frame`、`direction`、`prompt` 和 `source_geometry`。响应 `result[]` 每项为 `{ frame_index, geometry, confidence?, outside? }`；低于平台阈值的 `confidence` 会被写成 outside prediction range。
 >
@@ -221,7 +241,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 > - `both`：同 instance 配对返回 `[rectanglelabels, polygonlabels, ...]` 严格交错（box 优先，对应 polygon 在后）。前端 `Tab` 切活跃几何，`Enter` 接受当前形态。
 > - **老 backend 兼容**：缺 `output` 字段时按 `"mask"` 路径返回，零回归。
 > - **老前端兼容**：不识别 `rectanglelabels` 候选时只显示 `polygonlabels`。
-> - **point/bbox/polygon 类型**：`output` 字段无意义，始终走 SAM mask → polygon。
+> - **point/interactive_box/polygon 类型**：`output` 字段无意义，始终走 SAM mask → polygon。
 
 > **`simplify_tolerance: number`**（可选；缺省走 backend 默认 1.0）：
 > - 像素级 shapely.simplify 容差。**大物体 / 大致形状** 调高（2-3）减顶点、提速；**精细物体** 调低（0.3-0.5）保细节。
@@ -235,7 +255,8 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   "result": [<annotation>, ...],
   "score": 0.85,
   "model_version": "sam-vit-h",
-  "inference_time_ms": 180
+  "inference_time_ms": 180,
+  "mask_input_next": "<base64>"            // 可选; 仅 point 单 mask 精修阶段非空, 前端原样回带 (见上 mask_input)
 }
 ```
 
@@ -288,10 +309,10 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   "version": "0.10.1",                          // 必填. backend 镜像/代码版本
   "protocol_version": "2.1",                     // v0.14.15 起推荐；缺省按 2.0/legacy 兼容
   "compat_protocol_versions": ["2.0"],           // 本 backend 仍接受的旧 minor 版本
-  "model_version": "sam3.1",                    // 必填. 实际加载的模型 ckpt 版本
+  "model_version": "sam3",                    // 必填. 实际加载的模型 ckpt 版本
   "is_interactive": true,
   "labels": [],                                 // 可选. backend 已知类别 hint
-  "supported_prompts": ["text", "exemplar"],     // 选项 A 的 sam3 不暴露 point/bbox: 物理上只有 PCS 找相似(exemplar)与 text; 单物体点/框需 grounded-sam2 或开 inst_interactivity
+  "supported_prompts": ["point", "interactive_box", "text", "exemplar"],  // sam3 开 inst_interactivity 后: point/interactive_box (SAM-style 单实例) + exemplar (PCS 找相似) + text
   "supported_text_outputs": ["box", "mask", "both"],
   "supported_variants": [
     {
@@ -327,7 +348,9 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 >
 > v0.14.10 起，超管运行时观测端点 `GET /admin/ml-integrations/observe` 也会把 `/setup.supported_variants` 原样透传到每个 `ObserveTarget.supported_variants`，用于 env-only 容器的只读多轴变体展示。旧 grounded-sam2/sam3 的 `sam_variant` / `dino_variant` enum 仍会通过 `variant_catalog` 双发；仅声明通用 `supported_variants` 的容器暂不启用「试启动」，`POST /admin/ml-integrations/observe/smoke-test` 收到 `variant: {axis: value}` 时返回 `skipped=true`，直到 backend 实现通用 warm 接口。
 
-> **`supported_prompts`**：枚举 `point | bbox | text | exemplar | sketch | scribble | …`。前端 ToolDock 据此置灰不支持的工具。
+> **`supported_prompts`**：枚举 `point | interactive_box | text | exemplar | sketch | scribble | …`。**交互式用户 prompt**，前端 ToolDock 据此置灰不支持的工具。（`bbox` 已退出交互 prompt 命名空间，仅保留为几何形状名。）
+>
+> **`supported_inputs`**（一等输入契约）：枚举 `full_image | crop | bbox_prompt | point_prompt`，声明本 model 能吃哪些**投递形态**，与 `supported_prompts`（交互 prompt）**解耦**——纯分类器 `supported_prompts=[]` 但 `supported_inputs=["full_image","crop"]`；box-seg `supported_inputs=["bbox_prompt","full_image"]`。多阶段编排据此判定父子可达性（产几何的子须含 `bbox_prompt` 或 `crop`）并选择投递方式（见 §2.1.1 判别器）；模型市场「可接受输入」行也由它驱动。**老 backend 缺字段时平台合成兼容默认**：含 `interactive_box`（或历史 `bbox`）prompt → `["bbox_prompt","full_image"]`；含 `point` → 加 `point_prompt`；非交互模型额外含 `crop`；任何模型都含 `full_image`（见 services/ml_capabilities.py `_synthesize_supported_inputs`）。
 >
 > **`supported_text_outputs`**：text 路径支持的 `Context.output` 取值。
 >
@@ -337,9 +360,9 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 **平台代理端点**：前端通过 `GET /api/v1/projects/{id}/ml-backends/{bid}/setup` 拉取；apps/api 30s TTL 进程内缓存，update/delete backend 时自动 invalidate。
 
-**前端兜底**：返回体缺 `supported_prompts` 时前端回落 `["point","bbox","text"]` 并 `console.warn` 提示升级 backend。`/setup` 502 时整套 AI 工具置灰。
+**前端兜底**：返回体缺 `supported_prompts` 时前端回落 `["point","interactive_box","text"]` 并 `console.warn` 提示升级 backend。`/setup` 502 时整套 AI 工具置灰。
 
-> **能力快照持久化**：除上述代理端点的实时拉取外，平台在 `check_health`（services/ml_backend.py）拉完 `/health` 后会 best-effort 再探一次 `/setup`，把能力快照（`supported_prompts` / `supported_trackers` / `supported_text_outputs` / `supported_geometric_outputs` + 平台派生的 `modalities`）落进 `ml_backends.health_meta["capabilities"]`，供「按模态分流 / 绑定校验 / 列表只读展示」消费（无需每处实时拉 `/setup`）。模态派生规则：`supported_prompts` 非空 ⇒ image、`supported_trackers` 非空 ⇒ video（见 services/ml_capabilities.py）。
+> **能力快照持久化**：除上述代理端点的实时拉取外，平台在 `check_health`（services/ml_backend.py）拉完 `/health` 后会 best-effort 再探一次 `/setup`，把能力快照（`models[]`、`supported_prompts`、`supported_inputs`、`supported_trackers`、`supported_text_outputs`、`supported_geometric_outputs`、`warnings` + 平台派生的 `modalities`）落进 `ml_backends.health_meta["capabilities"]`，供「按模态分流 / 绑定校验 / 列表只读展示」消费（无需每处实时拉 `/setup`）。模态派生规则：`supported_prompts` 非空 ⇒ image、`supported_trackers` 非空 ⇒ video（见 services/ml_capabilities.py）。
 >
 > **`is_interactive` 改派生**：`is_interactive` 不再由注册表单手填，而是以 backend `/setup.is_interactive` 自报为真值，在 `check_health` 时回写 `MLBackend.is_interactive`。backend 必须在 `/setup` 如实声明该位。
 >
@@ -398,6 +421,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   "composition": "atom",                // 可选. atom=单次推理原子; composite=内部编排多原子. 缺省 atom
 
   "supported_prompts": ["none"],        // 受控. none = 纯批量,无交互 prompt
+  "supported_inputs": ["full_image", "crop"], // 可选. full_image/crop/bbox_prompt/point_prompt; 缺省由平台合成
   "supported_geometric_outputs": ["bbox"],   // 受控,复用现有字段名
   "output_attribute_types": [],         // 受控. OCR: ["text","language"]; cls: ["class"]
   "supported_text_outputs": [],         // v1 已有,text 路径专用(box/mask/both)
@@ -444,7 +468,9 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 - **缺省**：老 backend 不报 `infra` ⇒ 缓存标 `unknown`，UI 不渲染 badge 或显示「未声明」。
 - **边界**：`infra` 是纯元数据 —— 不改 `/predict` 协议、不影响 result schema、不参与项目兼容性的硬校验（仅展示 badge + 排障溯源）。
 
-**`supported_prompts`（沿用 v1，新增 `none`）** —— `none`（纯批量，无交互） / `point` / `bbox` / `text` / `exemplar` / `sketch` / `scribble`。YOLO / OCR / layout 是 `["none"]`（批量自动）；SAM 类仍是 point/bbox/text/exemplar。
+**`supported_prompts`（prompt 受控词表）** —— `none`（纯批量，无交互） / `point` / `interactive_box` / `text` / `exemplar` / `sketch` / `scribble` / `mask` / `bbox`（退役兼容）。YOLO / OCR / layout 闭集模型通常是 `["none"]`（批量自动）；SAM 类是 point/interactive_box/text/exemplar；YOLOE visual prompt exemplar 是 `["exemplar"]`。`text` 需要用户输入，但不进入画布交互工具线；`bbox` 仅兼容历史快照，新增 backend 应使用 `interactive_box`。
+
+**`supported_inputs`（投递形态受控词表）** —— `full_image` / `crop` / `bbox_prompt` / `point_prompt`。它描述平台如何把上游产物交给这个 model：整图、裁剪 ROI、框提示或点提示。多阶段编排只看这个字段决定父子可达性，不再从 `supported_prompts` 猜测；老 backend 缺字段时由平台按 prompt 合成兼容默认。
 
 **`composition`（原子 vs 内部编排，可选）** <!-- since 协议 v2.2 --> —— `atom`（单次推理 / 单原子） / `composite`（一个 model 内部编排多个原子、一次 `/predict` 一气呵成）：
 
@@ -462,24 +488,29 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   "infra": "pytorch",                 // backend 默认
   "models": [
     { "id": "detect", "task": "detection", "model_family": "yolo", "infra": "pytorch",
-      "supported_prompts": ["none"], "supported_geometric_outputs": ["bbox"],
+      "supported_prompts": ["none"], "supported_inputs": ["full_image", "crop"],
+      "supported_geometric_outputs": ["bbox"],
       "output_attribute_types": [], "supported_variants": [/*…*/],
       "default_thresholds": {/*…*/}, "resource_profile": {/*…*/}, "modality": "image" }
     /* … */
   ],
   // 兼容字段:老消费方仍能读到「扁平并集」(所有 model 的 prompts/geometry 去重合并)
-  "supported_prompts": ["none"], "supported_geometric_outputs": ["bbox","polygon","keypoint","rotated_bbox"],
-  "modalities": ["image"]
+  "supported_prompts": ["none"], "supported_inputs": ["full_image","crop"],
+  "supported_geometric_outputs": ["bbox","polygon","keypoint","rotated_bbox"],
+  "modalities": ["image"],
+  "warnings": []
 }
 ```
 
 保留顶层「扁平并集」字段，让现有 `useMLCapabilities` / 绑定校验在改造完成前零回归。模态派生升级为 **per-model 派生 + backend 汇总**：`task=tracker` 或 `supported_trackers` 非空 ⇒ video；几何含 `lidar_box_3d` / `point_mask_3d` ⇒ lidar（留位）；否则 ⇒ image（含 `supported_prompts=["none"]` 的批量模型）。backend `modalities` = 各 model modality 去重并集。
 
+`warnings` 是非阻断诊断列表，由平台校验规范化后的 `task` / `infra` / `supported_prompts` / `supported_geometric_outputs` 是否落在受控词表内后生成。每条包含 `{level, model_id, field, value, message}`。模型市场用它显示 `⚠ 协议 N`，帮助接入方发现字段拼写或枚举漂移；平台不会因此丢弃该 model。
+
 ### 4.1.5 向后兼容规则
 
 | backend 形态 | 平台解析 |
 |---|---|
-| 无 `models[]` | 顶层 `supported_*` / `params` 合成 1 个隐式 model：`id="default"`，`task` 由现有信号推断（`supported_trackers` 非空 → `tracker`、`supported_prompts` 含 point/bbox/text/exemplar → `interactive_seg`、否则 `detection`），`infra="unknown"` |
+| 无 `models[]` | 顶层 `supported_*` / `params` 合成 1 个隐式 model：`id="default"`，`task` 由现有信号推断（`supported_trackers` 非空 → `tracker`、`supported_prompts` 含 point/interactive_box/text/exemplar → `interactive_seg`、否则 `detection`），`infra="unknown"` |
 | 无 `infra` | model.infra = backend.infra = `"unknown"` |
 | 有 `models[]` 但条目缺 `task` | 该条目按 `unknown` task 入目录，UI 标「能力未声明」，兼容性校验 fail-open（放行，留到 `/predict` 暴露） |
 
@@ -584,7 +615,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 { "default_variants": { "sam_variant": "tiny", "dino_variant": "T" } }
 
 // sam3 (单档, 仍按对称约定声明):
-{ "default_variants": { "model_variant": "sam3.1" } }
+{ "default_variants": { "model_variant": "sam3" } }
 ```
 
 - **每 model 一份**：因为同 backend 不同 task 可能选不同档（yolo 通常 4 task 共用 yolo11/s；但 backend 完全有自由按 task 调整）。
@@ -635,11 +666,11 @@ GET  /projects/{pid}/ml-backends/{bid}/capabilities          # 返回 models[] �
 POST /projects/{pid}/ml-backends/{bid}/capabilities/refresh  # 强制重探 /setup 并刷新缓存
 ```
 
-- `capabilities` 返回派生后的 model 目录（含每条 `infra` / `task` / `supported_geometric_outputs` / `output_attribute_types` / `supported_variants` / `last_seen_at`），供模型市场 / 工作台多模型选择器消费。
+- `capabilities` 返回派生后的 model 目录（含每条 `infra` / `task` / `supported_inputs` / `supported_geometric_outputs` / `output_attribute_types` / `supported_variants` / `last_seen_at`），并在顶层携带受控词表诊断 `warnings`，供模型市场 / 工作台多模型选择器消费。
 - `capabilities/refresh` 跳过缓存强制重探，用于 backend 升级 model_version 后立即看到新能力。
 - 批量预标入口扩展 `model_id`（指向目录条目；缺省 = backend 隐式单 model，兼容老路径）；variant / threshold 经 `context` / `params` 透传。
 
-> Phase 2 起若放开 `MAX_ML_BACKENDS_PER_PROJECT > 1` 或需要跨 backend 模型检索，再考虑独立表 `ml_model_capabilities` 与全局聚合端点 `GET /ml-backends/capabilities`。
+> 若后续需要持久化跨 backend 模型检索，再考虑独立表 `ml_model_capabilities` 与全局聚合端点 `GET /ml-backends/capabilities`。
 
 ### 4.1.10 可跑参考实现
 
@@ -690,11 +721,37 @@ GET /api/v1/ml-capabilities/protocol
   ],
   "infras":     [ { "id": "pytorch", "label": "PyTorch", "summary": "..." }, ... ],   // 6 项
   "modalities": [ { "id": "image",   "label": "图像",   "summary": "..." }, ... ],   // 3 项 (image/video/lidar)
-  "geometries": [ { "id": "bbox",    "label": "bbox",   "summary": "..." }, ... ]   // 8 项
+  "geometries": [ { "id": "bbox",    "label": "bbox",   "summary": "..." }, ... ],  // 8 项
+  "prompts": [
+    {
+      "id": "interactive_box",
+      "label": "框提示",
+      "summary": "SAM-style 单框单 mask 交互分割。",
+      "requires_input": true,
+      "interactive_route": true
+    },
+    {
+      "id": "text",
+      "label": "文本提示",
+      "summary": "开放词汇文本驱动检测/分割; 走批量线, 不进画布交互工具。",
+      "requires_input": true,
+      "interactive_route": false
+    }
+    // 共 9 个 prompt
+  ]
 }
 ```
 
 **消费方**：前端 `CapabilityCatalogPanel` 默认 `groupBy=task`，遍历 `tasks` 渲染 9 张协议卡；已注册 backend 的 model 按 `model.task` 字段挂载到对应卡下。无 backend 注册时协议卡仍可见（带「暂无接入」徽标 + 推荐 backend CTA），不再阻塞用户探索。
+
+**维护流程**：`capability_registry.py` 是 task / infra / modality / geometry / prompt 的 SSOT。修改受控词表、响应 schema 或序列化后，运行：
+
+```bash
+cd apps/api && uv run python ../../scripts/export_capability_registry.py
+cd ../.. && pnpm codegen
+```
+
+第一步刷新 `apps/api/capability-registry.snapshot.json`；第二步让前端根据 snapshot 生成受控词表常量。pre-commit 会对 registry 相关文件自动重导 snapshot，CI 可用 `uv run python ../../scripts/export_capability_registry.py --check` 检测漂移。
 
 **协议与实例的关系**：
 
@@ -805,7 +862,7 @@ v0.14.12 时三家 backend 的 `/health.pool` 字段各不相同（yolo 用 `poo
 |---|---|
 | yolo-backend | `{series}/{size}/{task}`，如 `yolov11/s/detection` |
 | grounded-sam2-backend | image pool 用 `sam={sam_variant}/dino={dino_variant}`，如 `sam=tiny/dino=B`；video pool 的 key 就是 `sam_variant` 字符串 |
-| sam3-backend | 模型变体字符串，如 `sam3.1`；cap 永远 `1` |
+| sam3-backend | 模型变体字符串，如 `sam3`；cap 永远 `1` |
 
 **LRU evict 触发**：pool 满 + miss 时按 LRU 头部淘汰，`last_evict.reason="lru"`。`/unload` 手动卸载用 `"manual"`，sam3 的 idle 超时用 `"idle_timeout"`。
 
@@ -822,11 +879,20 @@ v0.14.12 时三家 backend 的 `/health.pool` 字段各不相同（yolo 用 `poo
 **请求**（per-backend 自定义结构；建议与 `/predict` 的 context 部分一致）：
 
 ```jsonc
-// yolo-backend
+// yolo-backend (闭集 / 开集文本检测分割)
 POST /warmup
 {
   "task": "detection",
   "variants": { "series": "yolov11", "size": "s" }
+}
+
+// yolo-backend (YOLOE 视觉提示 exemplar)
+// task 取 /setup 的 exemplar 模型条目 task=interactive_seg, 令 warmup 命中独立的 VP pool
+// (与首次拖框交互同句柄); 若误用 detection/segmentation 会预热到文本 pool, 首次交互仍冷启。
+POST /warmup
+{
+  "task": "interactive_seg",
+  "variants": { "series": "yoloe-26", "size": "m" }
 }
 
 // grounded-sam2-backend (同时预热 SAM + DINO)
@@ -839,7 +905,7 @@ POST /warmup
 // sam3-backend
 POST /warmup
 {
-  "variants": { "model_variant": "sam3.1" }
+  "variants": { "model_variant": "sam3" }
 }
 ```
 
@@ -1054,7 +1120,7 @@ v0.14.15 是 protocol v2.1 minor bump，不是 v3。平台与内置 backend 保�
 |---|---|---|
 | `context.variants.{series,size}` | `context.model_variants.{series,size}` | yolo-backend normalize 并记录 deprecation warning |
 | `context.sam_variant` / `context.dino_variant` | `context.model_variants.{sam_variant,dino_variant}` | grounded-sam2-backend normalize；新字段优先 |
-| `context.model_variant` | `context.model_variants.model_variant` | sam3-backend normalize；非 `sam3.1` 仍返回 422 |
+| `context.model_variant` | `context.model_variants.model_variant` | sam3-backend normalize；非 `sam3` 仍返回 422 |
 | `params.*_variant.enum` 无 role | `supported_variants[]` 或 `x-platform-role=modelVariant` | 前端仍回落渲染 legacy enum；新 backend 应声明 `supported_variants` |
 | `projects.ai_model` | `projects.ml_backend_id` + backend name 展示 | v0.14.15 DB 迁移删除列；解绑过的项目若残留旧 `ai_model` 字符串会被直接丢弃 |
 

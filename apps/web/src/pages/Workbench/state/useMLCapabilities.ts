@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   mlBackendsApi,
+  mlBackendSetupQueryKey,
   type MLBackendCapability,
   type MLModelCapability,
 } from "@/api/ml-backends";
@@ -17,7 +18,8 @@ import {
 // 引入 activeModel 概念 — prompts/paramsSchema 优先取 active model 的字段;
 // 无 models (grounded-sam2 / sam3 等单模型) 时完全回落到顶层逻辑, 行为与改造前一致 (向后兼容).
 
-const FALLBACK_PROMPTS = ["point", "bbox", "text"] as const;
+// v0.18.17 · bbox→interactive_box (统一双 backend 命名); fallback 用于 backend 未声明 supported_prompts.
+const FALLBACK_PROMPTS = ["point", "interactive_box", "text"] as const;
 
 export interface MLCapabilitiesResult {
   /** 后端声明支持的 prompt 类型. 拉取失败 -> []; 缺字段 -> FALLBACK_PROMPTS. 有 activeModel 时优先取 model.supported_prompts. */
@@ -48,10 +50,14 @@ function pickDefaultModel(models: MLModelCapability[]): MLModelCapability | unde
 export function useMLCapabilities(
   projectId: string | undefined | null,
   backendId: string | undefined | null,
+  // v0.18.25 · 引擎(模型)选择的服务端持久化偏好 (按 backend, 来自 User.preferences.ai.model_by_backend,
+  // 经 useAiToolModelPref 注入)。作"默认之前的回落": 用户本会话显式选择 (selectedModelId) > 本偏好 >
+  // pickDefaultModel。镜像 useBackendRouting 的 preferred→default 模式; 不在本 hook 内做副作用, 保持纯净可测。
+  preferredModelId?: string | null,
 ): MLCapabilitiesResult {
   const enabled = Boolean(projectId && backendId);
   const query = useQuery({
-    queryKey: ["ml-capabilities", projectId, backendId],
+    queryKey: mlBackendSetupQueryKey(projectId, backendId),
     queryFn: () => mlBackendsApi.setup(projectId!, backendId!),
     enabled,
     staleTime: 5 * 60 * 1000,
@@ -69,11 +75,15 @@ export function useMLCapabilities(
   const [selectedModelId, setSelectedModelId] = useState<string | undefined>(undefined);
   const activeModel = useMemo<MLModelCapability | undefined>(() => {
     if (models.length === 0) return undefined;
-    const picked = selectedModelId
+    // 优先级: 本会话显式选择 > 服务端持久化偏好 > 默认; 各级都校验仍是合法 model (后端被删/换档自愈)。
+    const bySession = selectedModelId
       ? models.find((m) => m.id === selectedModelId)
       : undefined;
-    return picked ?? pickDefaultModel(models);
-  }, [models, selectedModelId]);
+    const byPref = preferredModelId
+      ? models.find((m) => m.id === preferredModelId)
+      : undefined;
+    return bySession ?? byPref ?? pickDefaultModel(models);
+  }, [models, selectedModelId, preferredModelId]);
 
   let prompts: string[];
   if (query.isError) {
@@ -86,7 +96,7 @@ export function useMLCapabilities(
   } else if (capability) {
     if (typeof console !== "undefined") {
       console.warn(
-        "[useMLCapabilities] backend /setup missing supported_prompts; falling back to point/bbox/text. Upgrade backend to v0.10.1+.",
+        "[useMLCapabilities] backend /setup missing supported_prompts; falling back to point/interactive_box/text. Upgrade backend to v0.10.1+.",
       );
     }
     prompts = [...FALLBACK_PROMPTS];

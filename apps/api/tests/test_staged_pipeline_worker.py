@@ -103,7 +103,7 @@ async def test_two_stage_enriches_attributes(monkeypatch):
     monkeypatch.setattr(
         worker_tasks,
         "_load_task_image",
-        lambda t: Image.new("RGB", (200, 200), (1, 2, 3)),
+        lambda t: Image.new("RGB", (1000, 1000), (1, 2, 3)),
     )
 
     stages = [
@@ -146,7 +146,7 @@ async def test_parent_class_filter_routes_by_class(monkeypatch):
     monkeypatch.setattr(
         worker_tasks,
         "_load_task_image",
-        lambda t: Image.new("RGB", (200, 200), (1, 2, 3)),
+        lambda t: Image.new("RGB", (1000, 1000), (1, 2, 3)),
     )
     stages = [
         {"stage": 0, "parent_stage": None},
@@ -174,7 +174,7 @@ async def test_on_failure_keep_parent_vs_drop_box(monkeypatch):
     monkeypatch.setattr(
         worker_tasks,
         "_load_task_image",
-        lambda t: Image.new("RGB", (200, 200), (1, 2, 3)),
+        lambda t: Image.new("RGB", (1000, 1000), (1, 2, 3)),
     )
 
     class _BoomClient:
@@ -257,7 +257,12 @@ async def test_geometry_stage_appends_polygons(monkeypatch):
     )
     stages = [
         {"stage": 0, "parent_stage": None},
-        {"stage": 1, "parent_stage": 0, "roi": {"mode": "geometry"}},
+        {
+            "stage": 1,
+            "parent_stage": 0,
+            "roi": {"mode": "geometry"},
+            "write": {"target": "geometry"},
+        },
     ]
     results, extra, stats = await worker_tasks._run_task_pipeline(
         task,
@@ -342,7 +347,7 @@ async def test_presigned_delivery_wires_upload_crop(monkeypatch):
     monkeypatch.setattr(
         worker_tasks,
         "_load_task_image",
-        lambda t: Image.new("RGB", (200, 200), (1, 2, 3)),
+        lambda t: Image.new("RGB", (1000, 1000), (1, 2, 3)),
     )
     task = _Task()
     boxes = [_bbox(10, 10, 20, 20), _bbox(50, 50, 10, 10)]
@@ -388,7 +393,7 @@ async def test_crop_cache_reused_across_parallel_siblings(monkeypatch):
     monkeypatch.setattr(
         worker_tasks,
         "_load_task_image",
-        lambda t: Image.new("RGB", (200, 200), (1, 2, 3)),
+        lambda t: Image.new("RGB", (1000, 1000), (1, 2, 3)),
     )
     task = _Task()
     boxes = [_bbox(10, 10, 20, 20), _bbox(50, 50, 10, 10)]
@@ -439,7 +444,7 @@ async def test_skipped_geometry_counted_and_topology_in_extra(monkeypatch):
     monkeypatch.setattr(
         worker_tasks,
         "_load_task_image",
-        lambda t: Image.new("RGB", (200, 200), (1, 2, 3)),
+        lambda t: Image.new("RGB", (1000, 1000), (1, 2, 3)),
     )
     task = _Task()
     boxes = [
@@ -483,11 +488,17 @@ async def test_skipped_geometry_counted_and_topology_in_extra(monkeypatch):
     topo = extra["pipeline"]["stages"]
     assert topo[1] == {
         "stage": 1,
+        "parent_stage": 0,
+        "depth": 2,
+        "label": None,
         "ml_backend_id": "be-1",
         "model_id": "cls",
         "parent_class_filter": ["car"],
         "write_keys": ["color"],
+        "write_target": None,
+        "target_stage": "root",
     }
+    assert extra["pipeline"]["max_depth"] == 2
 
 
 @pytest.mark.asyncio
@@ -496,7 +507,7 @@ async def test_drop_box_on_one_sibling_keeps_other_sibling_boxes(monkeypatch):
     monkeypatch.setattr(
         worker_tasks,
         "_load_task_image",
-        lambda t: Image.new("RGB", (200, 200), (1, 2, 3)),
+        lambda t: Image.new("RGB", (1000, 1000), (1, 2, 3)),
     )
     task = _Task()
     boxes = [_bbox(10, 10, 20, 20, cls="car"), _bbox(50, 50, 10, 10, cls="person")]
@@ -537,4 +548,352 @@ async def test_drop_box_on_one_sibling_keeps_other_sibling_boxes(monkeypatch):
     assert len(surviving) == 1
     assert surviving[0]["value"]["rectanglelabels"] == ["car"]
     assert surviving[0]["attributes"] == {"color": "blue"}
+    assert stats[2]["failed"] == 1
+
+
+def test_resolve_input_mode_by_write_target():
+    """v0.18.14 · 投递模式按 write.target 推断, input.mode 可覆盖。"""
+    assert (
+        worker_tasks._resolve_input_mode({"write": {"target": "attributes"}}) == "crop"
+    )
+    assert (
+        worker_tasks._resolve_input_mode({"write": {"target": "geometry"}})
+        == "geometry"
+    )
+    assert (
+        worker_tasks._resolve_input_mode({"write": {"target": "intermediate"}})
+        == "geometry"
+    )
+    assert worker_tasks._resolve_input_mode({}) == "crop"  # 缺省 attributes → crop
+    # 显式 input.mode 覆盖 write.target 推断
+    assert (
+        worker_tasks._resolve_input_mode(
+            {"input": {"mode": "geometry"}, "write": {"target": "attributes"}}
+        )
+        == "geometry"
+    )
+
+
+def test_resolve_pad_by_depth():
+    """v0.18.14 · pad: 显式 roi.pad 优先, 缺省按深度取默认。"""
+    assert worker_tasks._resolve_pad({"roi": {"pad": 0.2}}, 2) == 0.2  # 显式优先
+    assert worker_tasks._resolve_pad({}, 1) == 0.05
+    assert worker_tasks._resolve_pad({}, 2) == 0.08
+    assert worker_tasks._resolve_pad({}, 3) == 0.12
+    assert worker_tasks._resolve_pad({}, 9) == 0.05  # 未知深度回落
+
+
+def test_compute_stage_depths():
+    """v0.18.14 · 按 parent_stage 链派生深度 (root=1)。"""
+    stages = [
+        {"stage": 0, "parent_stage": None},
+        {"stage": 1, "parent_stage": 0},
+        {"stage": 2, "parent_stage": 1},
+        {"stage": 3, "parent_stage": 0},
+    ]
+    assert worker_tasks._compute_stage_depths(stages) == {0: 1, 1: 2, 2: 3, 3: 2}
+
+
+@pytest.mark.asyncio
+async def test_depth_three_attribute_chain(monkeypatch):
+    """v0.18.14 · depth-3 attribute 链: root → classify(color) → classify(label=sub, vtype)。
+
+    两个分类阶段都裁同一批向下透传的 root 框, 属性累加到 root; 带 label 的阶段加前缀;
+    max_depth=3; enriched_attr_keys 含前缀后的最终键。
+    """
+    monkeypatch.setattr(
+        worker_tasks,
+        "_load_task_image",
+        lambda t: Image.new("RGB", (1000, 1000), (1, 2, 3)),
+    )
+    task = _Task()
+    boxes = [_bbox(10, 10, 30, 30)]
+    detect = _FakeClient(responses=[[_Result(task.id, boxes)]])
+    clf_a = _FakeClient(
+        responses=[[_Result("0", [{"score": 0.9, "attributes": {"color": "blue"}}])]]
+    )
+    clf_b = _FakeClient(
+        responses=[[_Result("0", [{"score": 0.9, "attributes": {"vtype": "bus"}}])]]
+    )
+    stages = [
+        {"stage": 0, "parent_stage": None},
+        {
+            "stage": 1,
+            "parent_stage": 0,
+            "roi": {"mode": "crop"},
+            "write": {"target": "attributes", "keys": ["color"]},
+        },
+        {
+            "stage": 2,
+            "parent_stage": 1,
+            "label": "sub",
+            "roi": {"mode": "crop"},
+            "write": {"target": "attributes", "keys": ["vtype"]},
+        },
+    ]
+    results, extra, stats = await worker_tasks._run_task_pipeline(
+        task,
+        stages,
+        [detect, clf_a, clf_b],
+        [None, None, None],
+        resolve_url=lambda t: "http://x/img.jpg",
+        stage_modes=["crop", "crop", "crop"],
+    )
+    out = results[0].result
+    assert out[0]["attributes"] == {"color": "blue", "sub_vtype": "bus"}
+    assert extra["pipeline"]["max_depth"] == 3
+    assert extra["pipeline"]["enriched_attr_keys"] == ["color", "sub_vtype"]
+    assert stats[1]["ok"] == 1 and stats[2]["ok"] == 1
+
+
+@pytest.mark.asyncio
+async def test_intermediate_target_not_appended(monkeypatch):
+    """v0.18.14 · write.target=intermediate: 产几何供下游消费但不落库为候选 (不追加进结果)。"""
+    task = _Task()
+    boxes = [_bbox(10, 10, 30, 30)]
+    detect = _FakeClient(responses=[[_Result(task.id, boxes)]])
+    seg = _FakeClient(
+        responses=[
+            [
+                _Result(
+                    task.id,
+                    [
+                        {
+                            "type": "polygonlabels",
+                            "parent_box_idx": 0,
+                            "value": {"points": [[0, 0], [1, 1], [2, 0]]},
+                        }
+                    ],
+                )
+            ]
+        ]
+    )
+    stages = [
+        {"stage": 0, "parent_stage": None},
+        {
+            "stage": 1,
+            "parent_stage": 0,
+            "roi": {"mode": "geometry"},
+            "write": {"target": "intermediate"},
+        },
+    ]
+    results, _extra, stats = await worker_tasks._run_task_pipeline(
+        task,
+        stages,
+        [detect, seg],
+        [None, None],
+        resolve_url=lambda t: "http://x/img.jpg",
+        stage_modes=["crop", "geometry"],
+    )
+    out = results[0].result
+    # intermediate → polygon 不追加进结果 (仅内部供下游消费); 原框保留。
+    assert len(out) == 1
+    assert stats[1]["ok"] == 1
+
+
+@pytest.mark.asyncio
+async def test_crop_detect_geometry_remaps_to_image(monkeypatch):
+    """v0.18.15 · crop 投递 + target=geometry: 下游普通检测器在 crop 上检出, 回映回原图坐标。
+
+    单层 person → 在 person crop 上检测 hat (普通检测器), hat 框回映回原图并落在 person 内, 追加进结果。
+    """
+    monkeypatch.setattr(
+        worker_tasks,
+        "_load_task_image",
+        lambda t: Image.new("RGB", (1000, 1000), (1, 2, 3)),
+    )
+    task = _Task()
+    # person 像素 (200,200)-(600,600) → transform ox=oy=0.2, sx=sy=0.4 (pad=0)
+    person = [_bbox(20, 20, 40, 40, cls="person")]
+    detect = _FakeClient(responses=[[_Result(task.id, person)]])
+    # hat-detect 在 crop 上返回 crop-pct 坐标的 hat 框 (居中偏上)
+    hat_detect = _FakeClient(
+        responses=[
+            [
+                _Result(
+                    "0",
+                    [
+                        {
+                            "type": "rectanglelabels",
+                            "value": {
+                                "x": 25,
+                                "y": 10,
+                                "width": 50,
+                                "height": 30,
+                                "rectanglelabels": ["hat"],
+                            },
+                        }
+                    ],
+                )
+            ]
+        ]
+    )
+    stages = [
+        {"stage": 0, "parent_stage": None},
+        {
+            "stage": 1,
+            "parent_stage": 0,
+            "roi": {"mode": "crop", "pad": 0},
+            "input": {"mode": "crop"},
+            "write": {"target": "geometry"},
+        },
+    ]
+    results, extra, stats = await worker_tasks._run_task_pipeline(
+        task,
+        stages,
+        [detect, hat_detect],
+        [None, None],
+        resolve_url=lambda t: "http://x/img.jpg",
+        stage_modes=["crop", "crop"],
+    )
+    out = results[0].result
+    # person 原框保留 + hat 新框追加
+    assert len(out) == 2
+    hat = out[1]
+    assert hat["type"] == "rectanglelabels"
+    assert hat["parent_box_idx"] == 0
+    # 回映: x=(0.2+0.25*0.4)*100=30, y=(0.2+0.10*0.4)*100=24, w=50*0.4=20, h=30*0.4=12
+    v = hat["value"]
+    assert v["x"] == pytest.approx(30) and v["y"] == pytest.approx(24)
+    assert v["width"] == pytest.approx(20) and v["height"] == pytest.approx(12)
+    # hat 落在 person 框 (20~60) 内部
+    assert 20 <= v["x"] and v["x"] + v["width"] <= 60
+    assert 20 <= v["y"] and v["y"] + v["height"] <= 60
+    assert stats[1]["ok"] == 1
+
+
+@pytest.mark.asyncio
+async def test_depth_three_geometry_then_attribute(monkeypatch):
+    """v0.18.15 · 几何 depth-3: person → 检测 hat (crop-detect) → hat 的 color (crop 分类)。
+
+    hat 框回映回原图, color 阶段裁 hat 框跑分类, 加 hat_ 前缀写回 hat 框; max_depth==3。
+    """
+    monkeypatch.setattr(
+        worker_tasks,
+        "_load_task_image",
+        lambda t: Image.new("RGB", (1000, 1000), (1, 2, 3)),
+    )
+    task = _Task()
+    person = [_bbox(20, 20, 40, 40, cls="person")]
+    detect = _FakeClient(responses=[[_Result(task.id, person)]])
+    hat_detect = _FakeClient(
+        responses=[
+            [
+                _Result(
+                    "0",
+                    [
+                        {
+                            "type": "rectanglelabels",
+                            "value": {"x": 25, "y": 10, "width": 50, "height": 30},
+                        }
+                    ],
+                )
+            ]
+        ]
+    )
+    # color 阶段裁 hat 框 (stage_outputs[1] 的下标 0) → 返回 color
+    color_clf = _FakeClient(
+        responses=[[_Result("0", [{"score": 0.9, "attributes": {"color": "red"}}])]]
+    )
+    stages = [
+        {"stage": 0, "parent_stage": None},
+        {
+            "stage": 1,
+            "parent_stage": 0,
+            "roi": {"mode": "crop", "pad": 0},
+            "input": {"mode": "crop"},
+            "write": {"target": "geometry"},
+        },
+        {
+            "stage": 2,
+            "parent_stage": 1,
+            "label": "hat",
+            "roi": {"mode": "crop", "pad": 0},
+            "write": {"target": "attributes", "keys": ["color"]},
+        },
+    ]
+    results, extra, stats = await worker_tasks._run_task_pipeline(
+        task,
+        stages,
+        [detect, hat_detect, color_clf],
+        [None, None, None],
+        resolve_url=lambda t: "http://x/img.jpg",
+        stage_modes=["crop", "crop", "crop"],
+    )
+    out = results[0].result
+    assert len(out) == 2  # person + hat
+    hat = out[1]
+    # color 写回 hat 框, 带 hat_ 前缀
+    assert hat["attributes"] == {"hat_color": "red"}
+    assert extra["pipeline"]["max_depth"] == 3
+    assert extra["pipeline"]["enriched_attr_keys"] == ["hat_color"]
+    assert stats[1]["ok"] == 1 and stats[2]["ok"] == 1
+
+
+@pytest.mark.asyncio
+async def test_depth_three_drop_box_does_not_delete_root(monkeypatch):
+    """issue 0001 · 深层 (父=中间阶段) 的 on_failure=drop_box 不得误删无关 root 框。
+
+    person → crop-detect hat (geometry, 落库) → 裁 hat 框跑 color 分类 (drop_box) 但下游炸。
+    drop 发生在 new_shapes 追加前, root_boxes 此刻只有 [person]; 旧代码会用 hat 在
+    stage_outputs[1] 的下标 {0} 去删 root_boxes → 误删 person。兜底 gate (父!=root 不删)
+    保住 person, 退化为 keep_parent。
+    """
+    monkeypatch.setattr(
+        worker_tasks,
+        "_load_task_image",
+        lambda t: Image.new("RGB", (1000, 1000), (1, 2, 3)),
+    )
+    task = _Task()
+    person = [_bbox(20, 20, 40, 40, cls="person")]
+    detect = _FakeClient(responses=[[_Result(task.id, person)]])
+    hat_detect = _FakeClient(
+        responses=[
+            [
+                _Result(
+                    "0",
+                    [
+                        {
+                            "type": "rectanglelabels",
+                            "value": {"x": 25, "y": 10, "width": 50, "height": 30},
+                        }
+                    ],
+                )
+            ]
+        ]
+    )
+
+    class _BoomClient:
+        async def predict(self, inputs, context=None):
+            raise RuntimeError("color clf down")
+
+    stages = [
+        {"stage": 0, "parent_stage": None},
+        {
+            "stage": 1,
+            "parent_stage": 0,
+            "roi": {"mode": "crop", "pad": 0},
+            "input": {"mode": "crop"},
+            "write": {"target": "geometry"},
+        },
+        {
+            "stage": 2,
+            "parent_stage": 1,
+            "on_failure": "drop_box",
+            "roi": {"mode": "crop", "pad": 0},
+            "write": {"target": "attributes", "keys": ["color"]},
+        },
+    ]
+    results, _extra, stats = await worker_tasks._run_task_pipeline(
+        task,
+        stages,
+        [detect, hat_detect, _BoomClient()],
+        [None, None, None],
+        resolve_url=lambda t: "http://x/img.jpg",
+        stage_modes=["crop", "crop", "crop"],
+    )
+    out = results[0].result
+    # person (root) + hat (stage1 落库) 都在; person 未被深层 drop_box 误删。
+    assert len(out) == 2
+    assert out[0]["value"]["rectanglelabels"] == ["person"]
     assert stats[2]["failed"] == 1

@@ -11,13 +11,14 @@ async function openCoco8OrThrow(
   }
 }
 
-// AI 工具只在绑定了 ML backend 的项目里可激活（否则工具按钮置灰，drawer 打不开）。
+// AI 工具只在绑定了 ML backend 的项目里可激活（否则工具按钮置灰，工具栏打不开）。
 // dev 环境里 P-0001「2D图片标注测试」注册了 gsam2 backend，故 AI 工具 scene 固定指向它。
 const PROJECT_AI = "3f999396-65da-4f2b-a32d-d1560bad74b0"; // P-0001 · gsam2 connected
 
 // 工作台布局 + AI 工具体系截图。
-// 工具激活：ToolDock 按钮 testid 为 `tool-btn-{id}`，AI 工具(smart-point/smart-box/exemplar)
-// 激活后右侧打开 AIToolDrawer(testid=ai-tool-drawer)；mask 工具激活后画布上方浮 MaskToolbar(testid=mask-toolbar)。
+// 工具激活：ToolDock 按钮 testid 为 `tool-btn-{id}`；AI 工具(smart-point/smart-box/exemplar)
+// 激活后画布顶部居中浮 InteractiveToolBar(testid=interactive-toolbar, v0.18.25 取代旧 AIToolDrawer)；
+// mask 工具激活后画布上方浮 MaskToolbar(testid=mask-toolbar)，两者互斥。
 // AI 工具能否激活取决于 backend capability（seed 项目 P-0001 绑定 gsam2）。
 
 export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
@@ -59,20 +60,20 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
     target: "docs-site/user-guide/images/mask-brush/toolbar-overview.png",
   },
   {
-    name: "sam/ai-tool-drawer",
+    name: "sam/interactive-toolbar",
     role: "annotator",
     route: () => `/projects/${PROJECT_AI}/annotate`,
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
       await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 }).catch(() => {});
-      // 激活 AI 工具 smart-box（bbox prompt，grounded-sam2 支持），打开 AIToolDrawer
+      // 激活 AI 工具 smart-box（bbox prompt，grounded-sam2 支持），顶部交互工具栏出现
       const btn = page.locator('[data-testid="tool-btn-smart-box"]');
       if (await btn.count()) await btn.click();
-      await page.waitForSelector('[data-testid="ai-tool-drawer"]', { timeout: 3000 }).catch(() => {});
+      await page.waitForSelector('[data-testid="interactive-toolbar"]', { timeout: 3000 }).catch(() => {});
       await page.waitForTimeout(200);
     },
-    capture: { kind: "locator", selector: '[data-testid="ai-tool-drawer"]', padding: 8 },
-    target: "docs-site/user-guide/images/sam/ai-tool-drawer.png",
+    capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 8 },
+    target: "docs-site/user-guide/images/sam/interactive-toolbar.png",
   },
   {
     name: "sam/exemplar-output-mode",
@@ -82,13 +83,13 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
     prepare: async (page, data) => {
       await openCoco8OrThrow(page, data, "sam/exemplar-output-mode");
       await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 });
-      // 激活 exemplar 工具，AIToolDrawer 内出现「输出形态」TabRow
+      // 激活 exemplar 工具，顶部交互工具栏内出现「输出形态」TabRow
       const btn = page.locator('[data-testid="tool-btn-exemplar"]');
       if (await btn.count()) await btn.click({ timeout: 4000 }).catch(() => {});
       await page.waitForSelector('[data-testid="exemplar-output-mode"]', { timeout: 3000 });
       await page.waitForTimeout(200);
     },
-    capture: { kind: "locator", selector: '[data-testid="ai-tool-drawer"]', padding: 8 },
+    capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 8 },
     annotate: [
       { selector: '[data-testid="exemplar-output-mode"]', style: "rect-red", label: "输出形态" },
     ],

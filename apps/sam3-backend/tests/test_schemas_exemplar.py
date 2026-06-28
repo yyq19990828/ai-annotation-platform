@@ -9,13 +9,13 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from schemas import Context
+from schemas import Context, Exemplar
 
 
 def test_exemplar_requires_bbox():
     with pytest.raises(ValidationError) as exc:
         Context(type="exemplar")
-    assert "context.bbox" in str(exc.value)
+    assert "context.exemplars" in str(exc.value) or "context.bbox" in str(exc.value)
 
 
 def test_exemplar_requires_bbox_length_4():
@@ -36,24 +36,101 @@ def test_text_still_works_without_bbox():
     assert ctx.bbox is None
 
 
-def test_point_still_works_without_bbox():
+def test_point_requires_points():
+    """v0.18.17 · point 升级为 inst 单实例交互, 必须带 points."""
     ctx = Context(type="point", points=[[0.5, 0.5]], labels=[1])
     assert ctx.type == "point"
+    with pytest.raises(ValidationError) as exc:
+        Context(type="point")
+    assert "context.points" in str(exc.value)
+
+
+def test_interactive_box_requires_bbox():
+    """v0.18.17 · interactive_box (单框单 mask) 必须带 bbox=[x1,y1,x2,y2]."""
+    ctx = Context(type="interactive_box", bbox=[0.1, 0.1, 0.4, 0.4])
+    assert ctx.type == "interactive_box"
+    with pytest.raises(ValidationError) as exc:
+        Context(type="interactive_box")
+    assert "context.bbox" in str(exc.value)
 
 
 def test_supported_types():
-    """v0.10.0 supported_prompts: point / bbox / polygon / text / exemplar."""
-    for t in ["point", "bbox", "polygon", "text"]:
-        Context(type=t)  # no extra validation for these
+    """v0.18.17 supported_prompts: point / interactive_box / polygon / text / exemplar."""
+    Context(type="polygon")  # 无额外校验
+    Context(type="text")
+    Context(type="point", points=[[0.5, 0.5]], labels=[1])
+    Context(type="interactive_box", bbox=[0, 0, 1, 1])
     Context(type="exemplar", bbox=[0, 0, 1, 1])
+
+
+def test_bbox_prompt_retired():
+    """v0.18.17 · type=bbox 已退出交互 prompt 命名空间, 落 ValidationError."""
+    with pytest.raises(ValidationError):
+        Context(type="bbox", bbox=[0, 0, 1, 1])  # type: ignore[arg-type]
 
 
 def test_invalid_type_rejected():
     with pytest.raises(ValidationError):
-        Context(type="video_tracker")  # v0.10.0 sam3-backend 不接 video; v0.11+
+        Context(type="video_tracker")  # type: ignore[arg-type]  # sam3-backend 不接 video
+
+
+def test_multimask_output_field():
+    """v0.18.17 · point / interactive_box 候选开关, 缺省 False."""
+    assert Context(type="point", points=[[0.5, 0.5]]).multimask_output is False
+    ctx = Context(type="point", points=[[0.5, 0.5]], multimask_output=True)
+    assert ctx.multimask_output is True
 
 
 def test_score_threshold_field_present():
-    """v0.10.0 新增 score_threshold (text / exemplar 路径)."""
+    """score_threshold (text / exemplar 路径)."""
     ctx = Context(type="text", text="cat", score_threshold=0.7)
     assert ctx.score_threshold == 0.7
+
+
+# ---------- v0.18.19 · 多正负框 exemplars ----------
+
+
+def test_exemplar_with_multi_box_exemplars():
+    """exemplars[] 多正负框累加; 缺省 label 视为正框。"""
+    ctx = Context(
+        type="exemplar",
+        exemplars=[
+            {"bbox": [0.1, 0.1, 0.2, 0.2], "label": True},
+            {"bbox": [0.5, 0.5, 0.6, 0.6], "label": False},
+            {"bbox": [0.7, 0.7, 0.8, 0.8]},
+        ],
+    )
+    assert ctx.exemplars is not None and len(ctx.exemplars) == 3
+    assert ctx.exemplars[0].label is True
+    assert ctx.exemplars[1].label is False
+    assert ctx.exemplars[2].label is True  # 缺省正框
+
+
+def test_exemplar_item_bbox_length_validated():
+    with pytest.raises(ValidationError):
+        Context(type="exemplar", exemplars=[{"bbox": [0.1, 0.2, 0.3]}])
+
+
+def test_exemplar_with_text_combination():
+    """text 概念 + exemplars 几何框可同时传 (组合)。"""
+    ctx = Context(
+        type="exemplar",
+        text="car",
+        exemplars=[{"bbox": [0.1, 0.1, 0.3, 0.3], "label": False}],
+    )
+    assert ctx.text == "car"
+    assert ctx.exemplars is not None and len(ctx.exemplars) == 1
+
+
+def test_exemplar_single_bbox_still_valid_without_exemplars():
+    """旧单框路径 (无 exemplars, 带 bbox) 回归不破。"""
+    ctx = Context(type="exemplar", bbox=[0.2, 0.2, 0.45, 0.55])
+    assert ctx.exemplars is None
+    assert ctx.bbox == [0.2, 0.2, 0.45, 0.55]
+
+
+def test_exemplar_model_direct():
+    ex = Exemplar(bbox=[0.0, 0.0, 1.0, 1.0])
+    assert ex.label is True
+    with pytest.raises(ValidationError):
+        Exemplar(bbox=[0.0, 0.0])

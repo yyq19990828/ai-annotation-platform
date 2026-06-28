@@ -57,6 +57,41 @@ def test_setup_models_cover_protocol_tasks():
     assert tasks == {"detection", "segmentation", "interactive_seg", "tracker"}
 
 
+def test_setup_models_declare_supported_inputs():
+    """v0.18.16 · 各 model 显式声明 supported_inputs (一等输入契约)。"""
+    by_id = {m["id"]: m for m in setup()["models"]}
+    assert by_id["grounded-sam2-detection"]["supported_inputs"] == ["full_image", "crop"]
+    assert by_id["grounded-sam2-segmentation"]["supported_inputs"] == ["full_image", "crop"]
+    assert by_id["grounded-sam2-interactive-seg"]["supported_inputs"] == [
+        "bbox_prompt",
+        "point_prompt",
+        "full_image",
+    ]
+    assert by_id["grounded-sam2-tracker"]["supported_inputs"] == ["bbox_prompt", "full_image"]
+    assert by_id["grounded-sam2-box-seg"]["supported_inputs"] == ["bbox_prompt", "full_image"]
+
+
+def test_setup_models_declare_output_attribute_types():
+    """v0.18.16 · 文本检测/分割自报类别; 交互/追踪/框→mask 不自产属性 (留空)。score 不入属性。"""
+    by_id = {m["id"]: m for m in setup()["models"]}
+    assert by_id["grounded-sam2-detection"]["output_attribute_types"] == ["class"]
+    assert by_id["grounded-sam2-segmentation"]["output_attribute_types"] == ["class"]
+    # 交互分割 / 视频追踪 / 框→mask 细化: 透传或无类别产出, 不声明。
+    assert "output_attribute_types" not in by_id["grounded-sam2-interactive-seg"]
+    assert "output_attribute_types" not in by_id["grounded-sam2-tracker"]
+    assert "output_attribute_types" not in by_id["grounded-sam2-box-seg"]
+
+
+def test_setup_models_declare_resource_profile():
+    """v0.18.16 · 资源画像: 批量模型 batchable=True, 交互/视频追踪逐次 batchable=False (不填 vram)。"""
+    by_id = {m["id"]: m for m in setup()["models"]}
+    assert by_id["grounded-sam2-detection"]["resource_profile"] == {"device": "gpu", "batchable": True}
+    assert by_id["grounded-sam2-segmentation"]["resource_profile"] == {"device": "gpu", "batchable": True}
+    assert by_id["grounded-sam2-box-seg"]["resource_profile"] == {"device": "gpu", "batchable": True}
+    assert by_id["grounded-sam2-interactive-seg"]["resource_profile"] == {"device": "gpu", "batchable": False}
+    assert by_id["grounded-sam2-tracker"]["resource_profile"] == {"device": "gpu", "batchable": False}
+
+
 def test_setup_each_model_carries_infra_pytorch():
     data = setup()
     for m in data["models"]:
@@ -82,7 +117,8 @@ def test_segmentation_model_text_to_polygon():
 def test_interactive_seg_model_point_box_to_polygon():
     data = setup()
     inter = next(m for m in data["models"] if m["task"] == "interactive_seg")
-    assert set(inter["supported_prompts"]) == {"point", "bbox"}
+    # v0.18.17 · bbox→interactive_box (图像交互单框单 mask).
+    assert set(inter["supported_prompts"]) == {"point", "interactive_box"}
     assert inter["supported_geometric_outputs"] == ["polygon"]
     assert inter["is_interactive"] is True
 
@@ -97,7 +133,8 @@ def test_tracker_model_sam2_video():
 def test_top_level_back_compat_fields_unchanged():
     """顶层 supported_prompts / supported_trackers 保留, 供未升级平台合成隐式单 model."""
     data = setup()
-    assert set(data["supported_prompts"]) == {"point", "bbox", "text"}
+    # v0.18.17 · bbox→interactive_box (图像交互); tracker/box-seg 的 bbox 不在顶层 prompts.
+    assert set(data["supported_prompts"]) == {"point", "interactive_box", "text"}
     assert data["supported_trackers"] == ["sam2_video"]
 
 

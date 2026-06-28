@@ -26,8 +26,10 @@ import {
 import {
   useProtocolCapabilities,
   useCapabilityInstances,
+  type CapabilityInstance,
+  type CapabilityInstanceModel,
 } from "@/api/mlCapabilities";
-import { ProtocolCapabilityCard, type MountedModel } from "./ProtocolCapabilityCard";
+import { ProtocolCapabilityCard } from "./ProtocolCapabilityCard";
 import { EmptyCatalogBanner } from "./EmptyCatalogBanner";
 import {
   taskLabel,
@@ -70,6 +72,49 @@ interface BackendResult {
   isLoading: boolean;
   isError: boolean;
   error?: unknown;
+}
+
+// 协议卡视图把 instances 端点的 model 合成 FlatModel, 以便复用 ModelCard 渲染 (与其他
+// 分组视图对齐)。instances 端点不带运行时池 / resource_profile, 故这些字段在卡上显示
+// 占位 "—"; 当 admin 的 flatModels (来自 /capabilities) 有同名条目时, 上层会优先用富数据。
+function instanceModelToFlat(inst: CapabilityInstance, m: CapabilityInstanceModel): FlatModel {
+  const infraFallback = inst.infra && inst.infra !== "unknown" ? inst.infra : undefined;
+  const source: FlatModel["source"] = inst.source === "env_only" ? "env_only" : "registered";
+  return {
+    model: {
+      id: m.id,
+      display_name: m.display_name,
+      task: m.task,
+      model_family: m.model_family ?? undefined,
+      composition: m.composition,
+      infra: m.infra ?? infraFallback,
+      is_interactive: m.is_interactive,
+      supported_prompts: m.supported_prompts,
+      supported_inputs: m.supported_inputs,
+      supported_geometric_outputs: m.supported_geometric_outputs,
+      // instances 端点只带 schema (含 select options), ModelCard 的「输出属性」行读
+      // output_attribute_types, 这里用 schema 的 label/key 投影出展示用类型列表。
+      output_attribute_types: m.output_attribute_schema?.map((s) => s.label || s.key),
+      output_attribute_schema: m.output_attribute_schema,
+      supported_trackers: m.supported_trackers,
+      supported_variants: m.supported_variants,
+      variant_combinations: m.variant_combinations,
+      variants_shared_across_tasks: m.variants_shared_across_tasks,
+      default_variants: m.default_variants,
+      modality: m.modality ?? undefined,
+    },
+    backendId: source === "env_only" ? `env-only:${inst.name}` : `instance:${inst.name}`,
+    backendName: inst.name,
+    projectId: "",
+    projectName: source === "env_only" ? "平台内置" : "已注册",
+    source,
+    registeredProjects: [],
+    backendInfra: infraFallback,
+    backendModalities: m.modality ? [m.modality] : undefined,
+    healthMeta: undefined,
+    warmupEndpoint: inst.warmup_endpoint ?? false,
+    stale: false,
+  };
 }
 
 export function CapabilityCatalogPanel() {
@@ -209,6 +254,8 @@ export function CapabilityCatalogPanel() {
           healthMeta: r.backend.health_meta,
           warmupEndpoint: cap.warmup_endpoint ?? r.backend.health_meta?.capabilities?.warmup_endpoint,
           stale,
+          // v0.18.29 · 该 model 命中的受控词表越界诊断 (按 model_id 关联)。
+          warnings: cap.warnings?.filter((w) => w.model_id === m.id),
         });
       }
     }
@@ -315,13 +362,22 @@ export function CapabilityCatalogPanel() {
 
   const grouped = useMemo(() => groupModels(filtered, groupBy), [filtered, groupBy]);
 
+  // 协议卡复用 ModelCard 渲染已接入模型, 故按 (backendName, model.id) 建索引: 当 admin
+  // 的 flatModels (来自 /capabilities, 带运行时池 / resource_profile) 有同名条目时优先用富数据,
+  // 非 admin 回落到 instances 合成的结构化字段。
+  const flatByKey = useMemo(() => {
+    const map = new Map<string, FlatModel>();
+    for (const f of flatModels) map.set(`${f.backendName}::${f.model.id}`, f);
+    return map;
+  }, [flatModels]);
+
   // v0.14.11 · 协议卡视图: 遍历 protocol.tasks 渲染 9 张卡 (零接入也显示);
   // 数据源是 instances 端点 (env-only + 注册合并, 与 admin overview 完全解耦),
   // 按 model.task 挂到协议卡。search / taskFilter 同时作用于 task 卡过滤。
   const protocolView = useMemo(() => {
     if (!protocol) return null;
     const needle = search.trim().toLocaleLowerCase();
-    const byTask = new Map<string, MountedModel[]>();
+    const byTask = new Map<string, FlatModel[]>();
     for (const inst of instancesData?.instances ?? []) {
       const infraFallback = inst.infra && inst.infra !== "unknown" ? inst.infra : null;
       for (const m of inst.models) {
@@ -334,14 +390,8 @@ export function CapabilityCatalogPanel() {
         }
         const taskId = m.task ?? "unknown";
         if (!byTask.has(taskId)) byTask.set(taskId, []);
-        byTask.get(taskId)!.push({
-          id: m.id,
-          display_name: m.display_name,
-          infra: m.infra ?? infraFallback,
-          is_interactive: m.is_interactive,
-          backendName: inst.name,
-          source: inst.source,
-        });
+        const enriched = flatByKey.get(`${inst.name}::${m.id}`) ?? instanceModelToFlat(inst, m);
+        byTask.get(taskId)!.push(enriched);
       }
     }
     return protocol.tasks
@@ -358,7 +408,7 @@ export function CapabilityCatalogPanel() {
         return true;
       })
       .map((task) => ({ task, mounted: byTask.get(task.id) ?? [] }));
-  }, [protocol, instancesData, taskFilter, infraFilter, modalityFilter, search]);
+  }, [protocol, instancesData, flatByKey, taskFilter, infraFilter, modalityFilter, search]);
 
   const hasActiveFilter =
     taskFilter.size > 0 ||

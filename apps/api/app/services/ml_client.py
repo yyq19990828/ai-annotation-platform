@@ -82,6 +82,8 @@ class PredictionResult:
     # v0.9.11 · token / cost 透传 (LLM-backed backend 才有, grounded-sam2 当前留 None).
     # worker 累加到 async_job.result.total_cost, prediction_meta 单条留档.
     meta: dict | None = None
+    # v0.18.18 · 交互单实例精修的 low-res logits 回灌 (base64); 平台仅透传, 前端原样回带.
+    mask_input_next: str | None = None
 
 
 class MLBackendClient:
@@ -256,6 +258,7 @@ class MLBackendClient:
             cache_hit=data.get("cache_hit"),
             model_load_ms=data.get("model_load_ms"),
             meta=data.get("meta"),
+            mask_input_next=data.get("mask_input_next"),
         )
 
     async def unload(self) -> dict:

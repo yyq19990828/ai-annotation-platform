@@ -77,3 +77,12 @@ export const COMPOSITION_BADGE: Record<
   atom: { variant: "outline", label: "原子", title: "单次推理原子，可作编排单元" },
   composite: { variant: "ai", label: "内置流程", title: "一个 model 内部串联多个原子（内置编排）" },
 };
+
+// v0.18.15 · supported_inputs → 中文短标签 (一等输入契约: 模型能吃哪些投递形态)。
+// 「平台如何把数据喂给模型」(整图/裁剪/框提示/点提示), 与交互式 prompt 解耦。
+const INPUT_LABELS: Record<string, string> = {
+  full_image: "整图", crop: "裁剪", bbox_prompt: "框提示", point_prompt: "点提示",
+};
+export function inputLabel(i: string) {
+  return INPUT_LABELS[i] ?? i;
+}

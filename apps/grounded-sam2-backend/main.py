@@ -9,13 +9,15 @@
     GET  /cache/stats   embedding cache 当前状态 (v0.9.1)
 
 prompt 类型:
-    - context.type == "point"  → SAM 直接出 mask
-    - context.type == "bbox"   → SAM 直接出 mask
-    - context.type == "text"   → GroundingDINO 出 boxes → SAM 出 mask（可批量）
+    - context.type == "point"           → SAM 直接出 mask (正/负点累加; multimask 候选)
+    - context.type == "interactive_box" → SAM 单框单 mask (v0.18.17 · 旧 "bbox" 改名)
+    - context.type == "text"            → GroundingDINO 出 boxes → SAM 出 mask（可批量）
+    注: "bbox" 已退出交互 prompt 命名空间 (旧 type=bbox 落 422); tracker / box-seg 的 bbox
+    是几何输入/追踪种子, 走 geometry-prompt 批量路径, 与此无关.
 
 v0.9.1 (M1) 加入 SAM 2 image embedding LRU 缓存:
     cache_key = sha1(url_path|sam_variant); 同图二次操作跳过 ~1.5s 的 image encoder.
-    point/bbox 命中可同时跳过 _fetch_image; text 仅省 set_image (DINO 仍需原图).
+    point/interactive_box 命中可同时跳过 _fetch_image; text 仅省 set_image (DINO 仍需原图).
 """
 
 from __future__ import annotations
@@ -483,7 +485,10 @@ def setup() -> dict:
         "is_interactive": True,
         # v0.14.14: 声明本 backend 支持 POST /warmup (协议 §4.4).
         "warmup_endpoint": True,
-        "supported_prompts": ["point", "bbox", "text"],
+        # v0.18.17 · "bbox" 图像交互单框 prompt 改名 "interactive_box" (统一双 backend 命名).
+        # tracker / box-seg 的 "bbox" 是几何输入/追踪种子 (走 geometry-prompt 批量, 非 /predict
+        # context.type 路由), 属存活的「几何形状」语义, 各自保留 (见下方 models[])。
+        "supported_prompts": ["point", "interactive_box", "text"],
         # v0.9.4 phase 2 · text 路径输出形态选择 (box=DINO 直出, mask=DINO+SAM, both=配对返回).
         "supported_text_outputs": ["box", "mask", "both"],
         # v0.10.35 §B · 平台 video_tracker 协议桥据此判断 backend 是否支持视频跟踪.
@@ -571,7 +576,11 @@ def setup() -> dict:
             # 纯 DINO 文本检测,单次推理原子。
             "composition": "atom",
             "supported_prompts": ["text"],
+            # 文本检测器: 可跑整图, 也可在父框 crop 上检子物体 (crop-detect 下游)。
+            "supported_inputs": ["full_image", "crop"],
             "supported_geometric_outputs": ["bbox"],
+            "output_attribute_types": ["class"],
+            "resource_profile": {"device": "gpu", "batchable": True},
             "supported_text_outputs": ["box"],
             "supported_variants": [_dino_variant_axis()],
             "variants_shared_across_tasks": True,
@@ -588,7 +597,11 @@ def setup() -> dict:
             # 一个 model 内部串 DINO(文本→框) + SAM(框→mask),内部编排复合。
             "composition": "composite",
             "supported_prompts": ["text"],
+            # 文本→分割: 整图 / 父框 crop 上跑 (文本驱动, 复合内部 DINO+SAM)。
+            "supported_inputs": ["full_image", "crop"],
             "supported_geometric_outputs": ["polygon"],
+            "output_attribute_types": ["class"],
+            "resource_profile": {"device": "gpu", "batchable": True},
             "supported_text_outputs": ["mask", "both"],
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,
@@ -604,8 +617,13 @@ def setup() -> dict:
             "is_interactive": True,
             # 单次 SAM 推理(prompt→mask),原子。
             "composition": "atom",
-            "supported_prompts": ["point", "bbox"],
+            # v0.18.17 · bbox→interactive_box (图像交互单框单 mask).
+            "supported_prompts": ["point", "interactive_box"],
+            # 交互分割: 消费点 / 框提示 (不作批量 crop 下游)。
+            "supported_inputs": ["bbox_prompt", "point_prompt", "full_image"],
             "supported_geometric_outputs": ["polygon"],
+            # 单实例交互推理, 不作批量。output_attribute_types 留空 (无类别/置信度产出)。
+            "resource_profile": {"device": "gpu", "batchable": False},
             "supported_variants": [_sam_variant_axis()],
             "variants_shared_across_tasks": True,
             "default_variants": {"sam_variant": SAM_VARIANT},
@@ -621,7 +639,11 @@ def setup() -> dict:
             # 跨帧 memory bank 的有状态视频追踪,内部编排复合。
             "composition": "composite",
             "supported_prompts": ["bbox"],
+            # 视频追踪: 以框提示初始化 (有状态视频, 非批量 crop 下游)。
+            "supported_inputs": ["bbox_prompt", "full_image"],
             "supported_geometric_outputs": ["bbox"],
+            # 有状态视频追踪, 跨帧串行不可批量。output_attribute_types 留空。
+            "resource_profile": {"device": "gpu", "batchable": False},
             "supported_trackers": ["sam2_video"],
             "supported_variants": [_sam_variant_axis()],
             "variants_shared_across_tasks": True,
@@ -641,7 +663,12 @@ def setup() -> dict:
             # 单次 SAM 推理(框→mask),原子;DINO 不参与, 故只声明 sam 轴。
             "composition": "atom",
             "supported_prompts": ["bbox"],
+            # 框→分割: 消费上游检测框 (geometry-prompt 批量下游)。
+            "supported_inputs": ["bbox_prompt", "full_image"],
             "supported_geometric_outputs": ["polygon"],
+            # 框→mask 批量细化: 消费上游检测框, 透传其类别, 自身不分类。
+            # 故批量可跑但 output_attribute_types 留空 (不自产 class/score)。
+            "resource_profile": {"device": "gpu", "batchable": True},
             "supported_variants": [_sam_variant_axis()],
             "variants_shared_across_tasks": True,
             "default_variants": {"sam_variant": SAM_VARIANT},
@@ -748,14 +775,36 @@ async def reload(req: ReloadRequest | None = None) -> dict:
 async def warmup(req: WarmupRequest) -> WarmupResponse:
     """v0.14.14 协议 §4.4 · 加载指定 (sam_variant, dino_variant) 权重到 pool, 不跑 forward.
 
-    缺失的 axis 回退 backend env 默认 (SAM_VARIANT / DINO_VARIANT). pool 满时按 LRU
-    淘汰最旧 key, evicted 字段回填给前端 toast.
+    task 路由 (issue claude[bot] P1, 与 /reload 行为对齐):
+    - tracker → 独立 video_pool (单维 sam_variant, 无 dino); 不动图片池, 不强制 DINO.
+    - detection / segmentation / interactive_seg / None → 图片池 ModelPool (SAM + DINO).
+
+    缺失的 axis 回退 backend env 默认 (SAM_VARIANT / DINO_VARIANT). 池满按 LRU 淘汰最旧 key,
+    evicted 字段回填给前端 toast.
     """
     variants = req.variants or {}
     sv = variants.get("sam_variant") or SAM_VARIANT
-    dv = variants.get("dino_variant") or DINO_VARIANT
     if sv not in SAM2_CONFIGS:
         raise VariantNotSupportedError("sam_variant", sv, sorted(SAM2_CONFIGS))
+
+    # tracker: 走独立 video_pool, 不复用图片池 / 不校验 DINO (video predictor 不用 DINO)。
+    if req.task == "tracker":
+        try:
+            cache_hit, load_ms, evicted = await _video_pool.warmup(sv)
+        except RuntimeError as exc:
+            raise ModelUnavailableError(sv, str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise ModelUnavailableError(
+                sv, f"video checkpoint not provisioned: {exc}"
+            ) from exc
+        return WarmupResponse(
+            ok=True,
+            model_load_ms=load_ms,
+            cache_hit=cache_hit,
+            evicted=evicted,
+        )
+
+    dv = variants.get("dino_variant") or DINO_VARIANT
     if dv not in DINO_CONFIGS:
         raise VariantNotSupportedError("dino_variant", dv, sorted(DINO_CONFIGS))
     try:
@@ -785,13 +834,14 @@ def _fetch_image(file_path: str) -> Image.Image:
 
 async def _run_prompt(
     file_path: str, ctx: dict
-) -> tuple[list[dict], bool, str, str, bool, int | None]:
+) -> tuple[list[dict], bool, str, str, bool, int | None, str | None]:
     """v0.14.14 返回 (results, embedding_hit, sam_variant, dino_variant,
-    pool_cache_hit, model_load_ms).
+    pool_cache_hit, model_load_ms, mask_input_next).
 
     - embedding_hit: 图像 embedding 缓存命中 (image fetch / set_image 跳过)
     - pool_cache_hit: model pool 命中 (权重已加载, 不需冷启)
     - model_load_ms: 本次 pool miss 的 build 耗时, 命中时 None
+    - mask_input_next: v0.18.18 · point 精修单 mask 阶段的 low-res logits 回灌, 其余恒 None
     """
     sv, dv = _resolve_variant(ctx)
     p, pool_cache_hit, model_load_ms = await _get_predictor(sv, dv)
@@ -817,33 +867,34 @@ async def _run_prompt(
         labels = ctx.get("labels") or [1] * len(points)
         if not points:
             raise HTTPException(status_code=422, detail="context.points required for type=point")
-        if not cache.peek(cache_key):
-            # miss: 拉图 + 让 predictor 内部 set_image + put
-            image = _fetch_image(file_path)
-            results, hit = p.predict_point(
-                image, points, labels, cache_key=cache_key, simplify_tolerance=simplify_tol
-            )
-        else:
-            # hit: 不拉图; predictor 走 restore_sam 路径
-            results, hit = p.predict_point(
-                None, points, labels, cache_key=cache_key, simplify_tolerance=simplify_tol
-            )
-        return results, hit, sv, dv, pool_cache_hit, model_load_ms
+        # v0.18.17 · 正/负点累加由前端重发全量点; multimask 单点歧义出候选.
+        multimask = bool(ctx.get("multimask_output", False))
+        # v0.18.18 · 上一轮 low-res logits 回灌 (多点精修阶段; 首点 multimask 候选阶段前端不回传).
+        mask_input = ctx.get("mask_input")
+        # miss: 拉图 + 让 predictor 内部 set_image + put; hit: 不拉图, 走 restore_sam.
+        image = None if cache.peek(cache_key) else _fetch_image(file_path)
+        results, hit, mask_input_next = p.predict_point(
+            image, points, labels, multimask_output=multimask,
+            mask_input=mask_input, cache_key=cache_key, simplify_tolerance=simplify_tol,
+        )
+        return results, hit, sv, dv, pool_cache_hit, model_load_ms, mask_input_next
 
-    if ptype == "bbox":
+    if ptype == "interactive_box":
+        # v0.18.17 · 单框单 mask (旧 type=bbox 改名; bbox 已退出交互 prompt 命名空间).
         bbox = ctx.get("bbox")
         if not bbox or len(bbox) != 4:
-            raise HTTPException(status_code=422, detail="context.bbox=[x1,y1,x2,y2] required")
-        if not cache.peek(cache_key):
-            image = _fetch_image(file_path)
-            results, hit = p.predict_bbox(
-                image, bbox, cache_key=cache_key, simplify_tolerance=simplify_tol
+            raise HTTPException(
+                status_code=422,
+                detail="context.bbox=[x1,y1,x2,y2] required for type=interactive_box",
             )
-        else:
-            results, hit = p.predict_bbox(
-                None, bbox, cache_key=cache_key, simplify_tolerance=simplify_tol
-            )
-        return results, hit, sv, dv, pool_cache_hit, model_load_ms
+        multimask = bool(ctx.get("multimask_output", False))
+        image = None if cache.peek(cache_key) else _fetch_image(file_path)
+        # 框单发不回灌 → predict_bbox 第 3 项恒 None.
+        results, hit, _ = p.predict_bbox(
+            image, bbox, multimask_output=multimask,
+            cache_key=cache_key, simplify_tolerance=simplify_tol,
+        )
+        return results, hit, sv, dv, pool_cache_hit, model_load_ms, None
 
     if ptype == "text":
         text = (ctx.get("text") or "").strip()
@@ -870,7 +921,7 @@ async def _run_prompt(
             text_threshold=text_th,
             simplify_tolerance=simplify_tol,
         )
-        return results, hit, sv, dv, pool_cache_hit, model_load_ms
+        return results, hit, sv, dv, pool_cache_hit, model_load_ms, None
 
     raise HTTPException(status_code=422, detail=f"unsupported context.type: {ptype}")
 
@@ -896,10 +947,10 @@ def _parse_box_prompts(raw: object) -> list[tuple[list[float], int]]:
 
 async def _run_box_seg(
     file_path: str, prompts: list[tuple[list[float], int]], ctx: dict
-) -> tuple[list[dict], bool, str, str, bool, int | None]:
+) -> tuple[list[dict], bool, str, str, bool, int | None, str | None]:
     """v0.18.12 · 框→mask 批量分割: 全图 set_image 一次, N 框共享 embedding。
 
-    返回签名与 :func:`_run_prompt` 对齐(results 各带 parent_box_idx)。
+    返回签名与 :func:`_run_prompt` 对齐(results 各带 parent_box_idx); 末位 mask_input_next 恒 None。
     """
     sv, dv = _resolve_variant(ctx)
     p, pool_cache_hit, model_load_ms = await _get_predictor(sv, dv)
@@ -920,7 +971,7 @@ async def _run_box_seg(
     results, hit = p.predict_boxes(
         image, prompts, cache_key=cache_key, simplify_tolerance=simplify_tol
     )
-    return results, hit, sv, dv, pool_cache_hit, model_load_ms
+    return results, hit, sv, dv, pool_cache_hit, model_load_ms, None
 
 
 def _observe(prompt_type: str, hit: bool, started: float) -> int:
@@ -1089,7 +1140,7 @@ async def predict(request: Request):
                 inference_time_ms=elapsed_ms,
             ).model_dump(exclude_none=True)
         # _run_prompt 内部经 pool 取请求级变体 predictor (miss 触发冷启).
-        result, hit, sv, dv, pool_cache_hit, model_load_ms = await _run_prompt(
+        result, hit, sv, dv, pool_cache_hit, model_load_ms, mask_input_next = await _run_prompt(
             task["file_path"], ctx
         )
         elapsed_ms = _observe(ctx.get("type") or "unknown", hit, started)
@@ -1100,6 +1151,7 @@ async def predict(request: Request):
             inference_time_ms=elapsed_ms,
             cache_hit=pool_cache_hit,
             model_load_ms=model_load_ms,
+            mask_input_next=mask_input_next,
         ).model_dump(exclude_none=True)
 
     # 批量: tasks 数组（M0 仅支持顶层 context.text 时整批同 prompt）
@@ -1125,13 +1177,14 @@ async def predict(request: Request):
             box_prompts = t.get("prompts")
             obs_type = "box_seg" if box_prompts else (ctx.get("type") or "unknown")
             try:
+                # 批量路径不回灌 mask_input → 丢弃末位 mask_input_next.
                 if box_prompts:
                     prompts = _parse_box_prompts(box_prompts)
-                    result, hit, sv, dv, pool_cache_hit, model_load_ms = await _run_box_seg(
+                    result, hit, sv, dv, pool_cache_hit, model_load_ms, _ = await _run_box_seg(
                         t["file_path"], prompts, ctx
                     )
                 else:
-                    result, hit, sv, dv, pool_cache_hit, model_load_ms = await _run_prompt(
+                    result, hit, sv, dv, pool_cache_hit, model_load_ms, _ = await _run_prompt(
                         t["file_path"], ctx
                     )
             except HTTPException:

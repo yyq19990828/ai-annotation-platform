@@ -181,8 +181,8 @@ describe("CapabilityCatalogPanel · 协议双层视图", () => {
     renderUI();
     await screen.findByText("Grounded-SAM 2 · 文本检测");
     expect(screen.getByText("Grounded-SAM 2 · 视频追踪")).toBeInTheDocument();
-    // env-only model 有「自带」徽标
-    expect(screen.getAllByText("自带").length).toBeGreaterThan(0);
+    // env-only model 复用 ModelCard 渲染, 来源行展示「平台内置 · <backend名>」
+    expect(screen.getAllByText(/平台内置/).length).toBeGreaterThan(0);
     // detection / tracker 协议卡都不再是「暂无接入」
     const undeployedCount = screen.queryAllByText("暂无接入").length;
     // 9 张卡里只剩 7 张暂无接入 (detection / tracker 各挂了 1 个 model)
@@ -246,6 +246,69 @@ describe("CapabilityCatalogPanel · 协议双层视图", () => {
     expect(mlBackendsApi.capabilities).toHaveBeenCalledTimes(1);
     // 同 backendName 的 group 只出现一次 (按 URL 合并)
     expect(screen.getAllByText("shared-yolo").length).toBe(2); // group header + 来源列
+  });
+
+  it("backend 上报越界字段 → capabilities.warnings → ModelCard 显示 ⚠ 徽标", async () => {
+    // v0.18.29 · 协议契约校验: backend 上报越界 prompt「boxes」, 平台 /capabilities 带 warnings,
+    // 模型市场该 model 卡显示 ⚠ + 可读原因 (按 model_id 关联)。
+    mockOverview.mockResolvedValue({
+      projects: [
+        {
+          project_id: "p1",
+          project_name: "项目甲",
+          backends: [
+            {
+              id: "bk1",
+              project_id: "p1",
+              name: "bad-yolo",
+              url: "http://172.17.0.1:9001/",
+              state: "connected" as const,
+              auth_method: "none",
+              is_interactive: false,
+              extra_params: {},
+              created_at: "2026-06-01T00:00:00Z",
+              updated_at: "2026-06-01T00:00:00Z",
+              last_checked_at: null,
+              error_message: null,
+              health_meta: null,
+            },
+          ],
+        },
+      ],
+      total_backends: 1,
+      connected_backends: 1,
+    });
+    const { mlBackendsApi } = await import("@/api/ml-backends");
+    (mlBackendsApi.capabilities as ReturnType<typeof vi.fn>).mockResolvedValue({
+      name: "bad-yolo",
+      infra: "pytorch",
+      is_interactive: false,
+      supported_prompts: ["boxes"],
+      supported_geometric_outputs: ["bbox"],
+      models: [
+        {
+          id: "detect",
+          display_name: "YOLO 目标检测",
+          task: "detection",
+          infra: "pytorch",
+          supported_geometric_outputs: ["bbox"],
+          supported_prompts: ["boxes"],
+        },
+      ],
+      warnings: [
+        {
+          level: "warning",
+          model_id: "detect",
+          field: "supported_prompts",
+          value: "boxes",
+          message: "未知 prompt「boxes」; 前端工具门控不识别, 该提示将静默失效。",
+        },
+      ],
+    });
+    renderUI();
+    const select = (await screen.findByRole("combobox")) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "backend" } });
+    await screen.findByText("⚠ 协议 1");
   });
 
   it("搜索 'ocr' → 仅 OCR 协议卡可见", async () => {

@@ -50,6 +50,9 @@ class Project(Base):
     default_variants: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict
     )
+    # v0.18.27 · 项目级「已保存的编排」(方案 A, 一项目一条); 形状 = pipeline_stages 数组
+    # (ml_backend_id 存 str)。NULL = 未配编排 → popover 不出「运行项目编排」入口。
+    preannotate_pipeline: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     label_config: Mapped[dict] = mapped_column(JSONB, default=dict)
     # v0.10.17 · 工具维度类别 / 属性绑定 (ROADMAP §A 新建向导通用化).
     # 形状: { tool_unit_id: { enabled, classes: [...], attribute_schema: {...} } }

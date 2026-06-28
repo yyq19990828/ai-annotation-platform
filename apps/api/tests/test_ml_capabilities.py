@@ -46,6 +46,62 @@ def test_extract_passes_through_output_attribute_schema():
     assert model["output_attribute_schema"][0]["options"][0]["value"] == "car"
 
 
+def test_exemplar_capabilities_passthrough_multi_model():
+    """v0.18.23 · 多模型 backend (yolo) 的 exemplar 模型 exemplar_capabilities 透传到能力快照。"""
+    setup = {
+        "name": "yolo-backend",
+        "infra": "pytorch",
+        "models": [
+            {
+                "id": "exemplar-yoloe",
+                "task": "interactive_seg",
+                "is_interactive": True,
+                "supported_prompts": ["exemplar"],
+                "supported_geometric_outputs": ["bbox", "polygon"],
+                "exemplar_capabilities": {
+                    "multi_box": True,
+                    "negative_box": False,
+                    "text_combination": False,
+                    "threshold_refilter": True,
+                },
+            }
+        ],
+    }
+    model = extract_capabilities(setup)["models"][0]
+    assert model["exemplar_capabilities"]["negative_box"] is False
+    assert model["exemplar_capabilities"]["text_combination"] is False
+
+
+def test_exemplar_capabilities_passthrough_legacy_single_model():
+    """v0.18.23 · 老 backend (sam3) 顶层 exemplar_capabilities 经合成单 model 透传。"""
+    setup = {
+        "name": "sam3-backend",
+        "is_interactive": True,
+        "supported_prompts": ["exemplar", "text"],
+        "supported_geometric_outputs": ["polygon"],
+        "exemplar_capabilities": {"multi_box": True, "negative_box": True},
+    }
+    model = extract_capabilities(setup)["models"][0]
+    assert model["exemplar_capabilities"]["negative_box"] is True
+
+
+def test_exemplar_capabilities_absent_is_none():
+    """缺字段 = None (前端按全支持向后兼容)。"""
+    setup = {
+        "name": "yolo-backend",
+        "infra": "pytorch",
+        "models": [
+            {
+                "id": "detect",
+                "task": "detection",
+                "supported_geometric_outputs": ["bbox"],
+            }
+        ],
+    }
+    model = extract_capabilities(setup)["models"][0]
+    assert model["exemplar_capabilities"] is None
+
+
 def test_composition_passthrough_and_default():
     """协议 v2.2 · composition 透传; 缺省 atom（visibility 字段已删,仅留 composition 一根轴）。"""
     setup = {
@@ -233,6 +289,67 @@ def test_model_infra_override():
 
 
 # ── 向后兼容: 老 backend 无 models[] → 合成隐式单 model ──
+
+
+def test_supported_inputs_explicit_passthrough():
+    """显式声明 supported_inputs 原样透传, 不被合成覆盖。"""
+    setup = {
+        "name": "bk",
+        "infra": "onnx",
+        "models": [
+            {
+                "id": "m",
+                "task": "detection",
+                "supported_inputs": ["full_image"],
+                "supported_geometric_outputs": ["bbox"],
+            }
+        ],
+    }
+    m = extract_capabilities(setup)["models"][0]
+    assert m["supported_inputs"] == ["full_image"]
+
+
+def test_supported_inputs_synthesized_for_plain_detector():
+    """纯检测器 (无交互 prompt) 缺字段 → 合成 [full_image, crop] (可作 crop 下游)。"""
+    setup = {
+        "name": "bk",
+        "infra": "onnx",
+        "models": [
+            {"id": "det", "task": "detection", "supported_geometric_outputs": ["bbox"]}
+        ],
+    }
+    m = extract_capabilities(setup)["models"][0]
+    assert m["supported_inputs"] == ["full_image", "crop"]
+
+
+def test_supported_inputs_synthesized_for_box_seg():
+    """box-prompt seg (supported_prompts=[bbox]) → [bbox_prompt, full_image], 不含 crop。"""
+    setup = {
+        "name": "bk",
+        "infra": "pytorch",
+        "models": [
+            {
+                "id": "boxseg",
+                "task": "interactive_seg",
+                "supported_prompts": ["bbox"],
+                "supported_geometric_outputs": ["polygon"],
+            }
+        ],
+    }
+    m = extract_capabilities(setup)["models"][0]
+    assert m["supported_inputs"] == ["bbox_prompt", "full_image"]
+
+
+def test_supported_inputs_union_and_legacy_synth():
+    """扁平并集含 supported_inputs; 老 backend (无 models[]) 也合成。"""
+    setup = {
+        "name": "legacy-det",
+        "supported_prompts": ["none"],
+        "supported_geometric_outputs": ["bbox"],
+    }
+    caps = extract_capabilities(setup)
+    assert "crop" in caps["supported_inputs"]
+    assert caps["models"][0]["supported_inputs"] == ["full_image", "crop"]
 
 
 def test_legacy_grounded_sam2_synthesizes_single_model():

@@ -42,8 +42,9 @@ export type ToolId =
   // v0.10.28 · 关键点 (COCO 范式: 命名节点 + 骨骼连线).
   | "keypoint";
 
-/** v0.10.2 · 后端 /setup.supported_prompts 字段对应的 prompt 类型集合. */
-export type RequiredPrompt = "point" | "bbox" | "text" | "exemplar";
+/** v0.10.2 · 后端 /setup.supported_prompts 字段对应的 prompt 类型集合.
+ *  v0.18.17 · "bbox" 改名 "interactive_box" (单框单 mask, 统一双 backend); 与后端 supported_prompts 对齐. */
+export type RequiredPrompt = "point" | "interactive_box" | "text" | "exemplar";
 
 export interface ToolMeta {
   id: ToolId;
@@ -179,7 +180,7 @@ export const ALL_TOOLS: CanvasTool[] = [
   MagicBoxTool,
 ];
 
-/** v0.10.2 · 仅 AI 工具子集 (requiredPrompt 非空), 供 hotkey 循环和 AIToolDrawer 判定. */
+/** v0.10.2 · 仅 AI 工具子集 (requiredPrompt 非空), 供 hotkey 循环和 InteractiveToolBar 判定. */
 export const AI_TOOLS: CanvasTool[] = ALL_TOOLS.filter((t) => !!t.requiredPrompt);
 export const AI_TOOL_IDS: ToolId[] = AI_TOOLS.map((t) => t.id);
 

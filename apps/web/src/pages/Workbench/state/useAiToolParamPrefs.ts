@@ -9,7 +9,7 @@ import { useAuthStore } from "@/stores/authStore";
  * score_threshold 等），故按 backend id 分桶存取。每位用户各自一份 User.preferences.ai，
  * 天然隔离——多账户在同一项目调参互不影响。
  *
- * 读取优先级链由调用方实现：用户偏好（本 hook）→ 后端 /setup 默认（AIToolDrawer.deriveDefaults）。
+ * 读取优先级链由调用方实现：用户偏好（本 hook）→ 后端 /setup 默认（InteractiveToolBar.deriveDefaults）。
  */
 export function useAiToolParamPrefs(backendId: string | null | undefined) {
   const userId = useAuthStore((s) => s.user?.id);

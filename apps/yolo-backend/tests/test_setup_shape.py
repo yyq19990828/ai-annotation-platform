@@ -40,21 +40,118 @@ def test_setup_infra_pytorch(setup_dict: dict) -> None:
     assert setup_dict["infra"] == "pytorch"
 
 
-def test_setup_supported_prompts_none_only(setup_dict: dict) -> None:
-    """yolo 是纯批量, supported_prompts 只有 'none'."""
-    assert setup_dict["supported_prompts"] == ["none"]
+# v0.18.21 起闭集四 task + 开集文本检测 2 条; v0.18.22 加开集文本分割 1 条;
+# v0.18.23 加 YOLOE visual prompt exemplar 1 条 (交互, is_interactive=true).
+CLOSED_IDS = {"detect", "segment", "pose", "obb"}
+OPENVOCAB_DETECT_IDS = {"detect-world", "detect-yoloe"}
+OPENVOCAB_SEGMENT_IDS = {"segment-yoloe"}
+EXEMPLAR_IDS = {"exemplar-yoloe"}
+# 全部走开集 yoloe/world 权重矩阵 (变体合法性校验共用 is_openvocab_supported).
+OPENVOCAB_IDS = OPENVOCAB_DETECT_IDS | OPENVOCAB_SEGMENT_IDS | EXEMPLAR_IDS
 
 
-def test_setup_has_four_models(setup_dict: dict) -> None:
+def test_setup_supported_prompts_none_text_exemplar(setup_dict: dict) -> None:
+    """v0.18.23 · 闭集 none + 开集 text + 视觉提示 exemplar 的顶层并集 hint."""
+    assert setup_dict["supported_prompts"] == ["none", "text", "exemplar"]
+
+
+def test_setup_has_eight_models(setup_dict: dict) -> None:
+    """v0.18.23 · 闭集 4 + 开集文本检测 2 + 文本分割 1 + 视觉提示 exemplar 1 = 8."""
     models = setup_dict["models"]
-    assert len(models) == 4
+    assert len(models) == 8
     ids = {m["id"] for m in models}
-    assert ids == {"detect", "segment", "pose", "obb"}
+    assert ids == CLOSED_IDS | OPENVOCAB_IDS
+
+
+def test_setup_openvocab_models_declare_text_prompt(setup_dict: dict) -> None:
+    """开集模型 supported_prompts 与 task: 文本检测=bbox/text, 文本分割=polygon/text,
+    exemplar=interactive/exemplar; 闭集为 ['none'].
+    """
+    for m in setup_dict["models"]:
+        if m["id"] in OPENVOCAB_DETECT_IDS:
+            assert m["supported_prompts"] == ["text"]
+            assert m["task"] == "detection"
+            assert m["supported_geometric_outputs"] == ["bbox"]
+            assert m["is_interactive"] is False
+        elif m["id"] in OPENVOCAB_SEGMENT_IDS:
+            assert m["supported_prompts"] == ["text"]
+            assert m["task"] == "segmentation"
+            assert m["supported_geometric_outputs"] == ["polygon"]
+            assert m["is_interactive"] is False
+        elif m["id"] in EXEMPLAR_IDS:
+            assert m["supported_prompts"] == ["exemplar"]
+            assert m["task"] == "interactive_seg"
+            assert m["is_interactive"] is True
+        else:
+            assert m["supported_prompts"] == ["none"]
+
+
+def test_setup_exemplar_model_shape(setup_dict: dict) -> None:
+    """v0.18.23 · exemplar-yoloe: 交互 / 非批量 / box+polygon 双输出 / 仅 yoloe series."""
+    ex = next(m for m in setup_dict["models"] if m["id"] == "exemplar-yoloe")
+    assert ex["is_interactive"] is True
+    assert ex["resource_profile"] == {"device": "gpu", "batchable": False}
+    assert ex["supported_inputs"] == ["full_image"]
+    assert ex["supported_geometric_outputs"] == ["bbox", "polygon"]
+    series = {v["value"] for a in ex["supported_variants"] if a["key"] == "series" for v in a["variants"]}
+    assert series == {"yoloe-v8", "yoloe-11", "yoloe-26"}
+    assert ex["default_variants"] == {"series": "yoloe-11", "size": "s"}
+
+
+def test_setup_openvocab_text_outputs(setup_dict: dict) -> None:
+    """v0.18.22 · 文本输出形态: 检测条目锁 box, 分割条目 mask/both (与 gsam2 同形)。"""
+    for m in setup_dict["models"]:
+        if m["id"] in OPENVOCAB_DETECT_IDS:
+            assert m["supported_text_outputs"] == ["box"]
+        elif m["id"] in OPENVOCAB_SEGMENT_IDS:
+            assert m["supported_text_outputs"] == ["mask", "both"]
+
+
+def test_setup_segment_yoloe_yoloe_series_only(setup_dict: dict) -> None:
+    """segment-yoloe 只暴露 yoloe series (world 无分割头)。"""
+    seg = next(m for m in setup_dict["models"] if m["id"] == "segment-yoloe")
+    series = {v["value"] for a in seg["supported_variants"] if a["key"] == "series" for v in a["variants"]}
+    assert series == {"yoloe-v8", "yoloe-11", "yoloe-26"}
+
+
+def test_setup_openvocab_series_namespaces(setup_dict: dict) -> None:
+    """detect-world 只暴露 world series, detect-yoloe 只暴露 yoloe series."""
+    world = next(m for m in setup_dict["models"] if m["id"] == "detect-world")
+    yoloe = next(m for m in setup_dict["models"] if m["id"] == "detect-yoloe")
+    world_series = {v["value"] for a in world["supported_variants"] if a["key"] == "series" for v in a["variants"]}
+    yoloe_series = {v["value"] for a in yoloe["supported_variants"] if a["key"] == "series" for v in a["variants"]}
+    assert world_series == {"yolo-worldv2", "yolo-world"}
+    assert yoloe_series == {"yoloe-v8", "yoloe-11", "yoloe-26"}
+
+
+def test_setup_models_declare_supported_inputs(setup_dict: dict) -> None:
+    """v0.18.16 · 批量 task 声明 supported_inputs (整图 + crop, 可作 crop-detect 下游);
+    交互 exemplar 仅整图。"""
+    for m in setup_dict["models"]:
+        if m["id"] in EXEMPLAR_IDS:
+            assert m["supported_inputs"] == ["full_image"]
+        else:
+            assert m["supported_inputs"] == ["full_image", "crop"]
+
+
+def test_setup_models_declare_output_attribute_types(setup_dict: dict) -> None:
+    """v0.18.16 · 各 task 自报输出属性 (仅类别; score 是 prediction 一等字段不入属性)。"""
+    for m in setup_dict["models"]:
+        assert m["output_attribute_types"] == ["class"]
+
+
+def test_setup_models_declare_resource_profile(setup_dict: dict) -> None:
+    """v0.18.16 · 批量 task GPU 可批量; 交互 exemplar GPU 单次不可批量。"""
+    for m in setup_dict["models"]:
+        if m["id"] in EXEMPLAR_IDS:
+            assert m["resource_profile"] == {"device": "gpu", "batchable": False}
+        else:
+            assert m["resource_profile"] == {"device": "gpu", "batchable": True}
 
 
 def test_setup_models_carry_protocol_task(setup_dict: dict) -> None:
     tasks = {m["task"] for m in setup_dict["models"]}
-    assert tasks == {"detection", "segmentation", "keypoint", "obb"}
+    assert tasks == {"detection", "segmentation", "keypoint", "obb", "interactive_seg"}
 
 
 def test_setup_models_all_family_yolo(setup_dict: dict) -> None:
@@ -123,6 +220,8 @@ def test_setup_pose_obb_only_v8_v11_v26(setup_dict: dict) -> None:
 
 def test_setup_yolo11_recommended_in_each_model(setup_dict: dict) -> None:
     for m in setup_dict["models"]:
+        if m["id"] in OPENVOCAB_IDS:
+            continue  # 开集模型无 yolo11 系列 (单独 test 校验其推荐项).
         series_axis = next(a for a in m["supported_variants"] if a["key"] == "series")
         recommended = [v for v in series_axis["variants"] if v.get("recommended")]
         # yolo11 在 4 个 model 中都有, 应被标推荐.
@@ -133,9 +232,24 @@ def test_setup_yolo11_recommended_in_each_model(setup_dict: dict) -> None:
 def test_setup_params_schema_keys(setup_dict: dict) -> None:
     for m in setup_dict["models"]:
         props = m["params"]["properties"]
-        assert "conf" in props
         assert "iou" in props
         assert "max_det" in props
+        # v0.18.24 · exemplar 用 score_threshold 替代 conf 作为置信度旋钮 (与 sam3 字段名对齐),
+        # 闭集/文本路径仍用 conf。
+        if m["id"] in EXEMPLAR_IDS:
+            assert "score_threshold" in props
+            assert "conf" not in props
+        else:
+            assert "conf" in props
+
+
+def test_setup_exemplar_params_score_threshold_default(setup_dict: dict) -> None:
+    """v0.18.24 · exemplar 阈值默认 0.25 (前端阈值滑块初值由此而来); YOLOE VP 打分偏保守,
+    沿用闭集 0.5 会把正确候选挡在门外。"""
+    ex = next(m for m in setup_dict["models"] if m["id"] == "exemplar-yoloe")
+    st = ex["params"]["properties"]["score_threshold"]
+    assert st["default"] == 0.25
+    assert st["x-platform-role"] == "confidence"
 
 
 def test_setup_params_schema_platform_roles(setup_dict: dict) -> None:
@@ -189,9 +303,13 @@ def test_setup_obb_variant_combinations_count(setup_dict: dict) -> None:
 
 
 def test_setup_variant_combinations_all_legal(setup_dict: dict) -> None:
-    """每个 combo 必须在 MODEL_MATRIX 中确实存在 (避免序列化错位)."""
+    """每个 combo 必须在对应矩阵中确实存在 (闭集 MODEL_MATRIX / 开集 openvocab)."""
     import main as m  # noqa: PLC0415
     for entry in setup_dict["models"]:
+        if entry["id"] in OPENVOCAB_IDS:
+            for series, size in entry["variant_combinations"]:
+                assert m.is_openvocab_supported(series, size), (series, size)
+            continue
         task = entry["task"]
         for series, size in entry["variant_combinations"]:
             assert size in m.MODEL_MATRIX[task][series], (task, series, size)
@@ -206,18 +324,32 @@ def test_setup_each_model_has_default_variants(setup_dict: dict) -> None:
 
 
 def test_setup_default_variants_legal(setup_dict: dict) -> None:
-    """default_variants 必须是该 task 下的合法 (series, size) 组合."""
+    """default_variants 必须是合法 (series, size) 组合 (闭集 / 开集各自矩阵)."""
     import main as m  # noqa: PLC0415
     for entry in setup_dict["models"]:
-        task = entry["task"]
         dv = entry["default_variants"]
+        if entry["id"] in OPENVOCAB_IDS:
+            assert m.is_openvocab_supported(dv["series"], dv["size"]), (entry["id"], dv)
+            continue
+        task = entry["task"]
         assert dv["size"] in m.MODEL_MATRIX[task][dv["series"]], (task, dv)
 
 
 def test_setup_default_variants_prefer_yolo11_s(setup_dict: dict) -> None:
-    """yolo11/s 4 task 全覆盖, 推荐组合应被选中."""
+    """闭集 4 task 默认 yolo11/s; 开集 world→worldv2/s, yoloe→yoloe-11/s."""
     for entry in setup_dict["models"]:
+        if entry["id"] in OPENVOCAB_IDS:
+            continue
         assert entry["default_variants"] == {"series": "yolo11", "size": "s"}, entry["id"]
+
+
+def test_setup_openvocab_default_variants(setup_dict: dict) -> None:
+    world = next(m for m in setup_dict["models"] if m["id"] == "detect-world")
+    yoloe = next(m for m in setup_dict["models"] if m["id"] == "detect-yoloe")
+    seg = next(m for m in setup_dict["models"] if m["id"] == "segment-yoloe")
+    assert world["default_variants"] == {"series": "yolo-worldv2", "size": "s"}
+    assert yoloe["default_variants"] == {"series": "yoloe-11", "size": "s"}
+    assert seg["default_variants"] == {"series": "yoloe-11", "size": "s"}
 
 
 # ---------- v0.14.14: warmup_endpoint 声明 ----------
@@ -226,3 +358,52 @@ def test_setup_default_variants_prefer_yolo11_s(setup_dict: dict) -> None:
 def test_setup_warmup_endpoint_true(setup_dict: dict) -> None:
     """v0.14.14 协议 §4.4 · 顶层 warmup_endpoint 必须为 True (yolo 支持 /warmup)."""
     assert setup_dict["warmup_endpoint"] is True
+
+
+# ---------- v0.18.32: params schema 按上下文派生 (文案中性化 + 默认值校准) ----------
+
+
+def test_setup_conf_description_task_neutral(setup_dict: dict) -> None:
+    """v0.18.32 · 所有带 conf 的 model (闭集 + 开集) 的 conf 文案不再写死"检测/分割",
+    以免挂到 pose/obb/开集时不贴切。"""
+    for m in setup_dict["models"]:
+        props = m["params"]["properties"]
+        if "conf" not in props:
+            continue  # exemplar 用 score_threshold, 不在此约束.
+        assert "检测/分割" not in props["conf"]["description"], m["id"]
+
+
+def test_setup_closed_set_conf_default_unchanged(setup_dict: dict) -> None:
+    """v0.18.32 · 闭集四 task conf 默认值逐字节不变 (零回归: 仍 0.25)。"""
+    for mid in CLOSED_IDS:
+        m = next(x for x in setup_dict["models"] if x["id"] == mid)
+        assert m["params"]["properties"]["conf"]["default"] == 0.25, mid
+
+
+def test_setup_openvocab_conf_default_and_desc(setup_dict: dict) -> None:
+    """v0.18.32 · 开集文本三 model 默认仍 0.25 (本版无实测证据下调), 文案点明开集语义。"""
+    for mid in OPENVOCAB_DETECT_IDS | OPENVOCAB_SEGMENT_IDS:
+        m = next(x for x in setup_dict["models"] if x["id"] == mid)
+        conf = m["params"]["properties"]["conf"]
+        assert conf["default"] == 0.25, mid
+        assert "开集" in conf["description"], mid
+
+
+def test_setup_obb_iou_description_mentions_rotated(setup_dict: dict) -> None:
+    """v0.18.32 · obb 的 iou 文案注明走旋转 NMS (probiou); 其余 task 不带这句。"""
+    obb = next(m for m in setup_dict["models"] if m["id"] == "obb")
+    assert "probiou" in obb["params"]["properties"]["iou"]["description"]
+    detect = next(m for m in setup_dict["models"] if m["id"] == "detect")
+    assert "probiou" not in detect["params"]["properties"]["iou"]["description"]
+
+
+def test_build_params_schema_derivations_independent() -> None:
+    """v0.18.32 · _build_params_schema 每次返回独立深拷贝, 改一份不影响另一份。"""
+    import main  # noqa: PLC0415
+
+    a = main._build_params_schema()
+    b = main._build_params_schema(conf_default=0.4)
+    a["properties"]["conf"]["default"] = 0.99
+    assert b["properties"]["conf"]["default"] == 0.4
+    # 派生不应回写基础表。
+    assert main._BASE_PARAMS_SCHEMA["properties"]["conf"]["default"] == 0.25

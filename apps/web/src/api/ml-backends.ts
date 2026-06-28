@@ -50,6 +50,10 @@ export interface MLModelCapability {
   infra?: string;
   is_interactive?: boolean;
   supported_prompts?: string[];
+  // v0.18.15 · 一等输入契约 (与 supported_prompts 解耦): 模型能吃哪些投递形态
+  // (full_image | crop | bbox_prompt | point_prompt). 老 backend 缺字段时由平台合成默认.
+  // 模型市场「可接受输入」行 + 多阶段编排父子兼容过滤据此判定.
+  supported_inputs?: string[];
   supported_geometric_outputs?: string[];
   output_attribute_types?: string[];
   // v0.18.0 · backend 自报输出属性 schema (含 select options); 二阶段 backend (onnxtools
@@ -78,6 +82,25 @@ export interface MLModelCapability {
   // v0.14.17 · 模型原生类别表 (闭集检测器, 读自权重 model.names). 供前端渲染类别白名单勾选;
   // 仅在该 task 模型已加载过 (warmup / 首次 predict 后) 时有值。
   classes?: { index: number; name: string }[];
+  // v0.18.23 · exemplar 模型能力声明; 工作台 AI 面板据此渲染 exemplar 控件
+  // (negative_box=false → 隐藏负极性按钮; text_combination=false → 隐藏 text 输入)。
+  // 缺省 = 全支持 (向后兼容 sam3 现状)。
+  exemplar_capabilities?: {
+    multi_box?: boolean;
+    negative_box?: boolean;
+    text_combination?: boolean;
+    threshold_refilter?: boolean;
+  };
+}
+
+// v0.18.29 · backend /setup 上报值的受控词表校验诊断 (越界 task/infra/prompt/geometry).
+// 仅 /capabilities (health_meta 派生) 端点带; 原始 /setup 代理不带. 空 = 全合法.
+export interface CapabilityWarning {
+  level: string; // warning | info
+  model_id?: string | null;
+  field: string;
+  value: string;
+  message: string;
 }
 
 // v0.10.1 · /setup 协议自描述响应 (与后端 sam3/grounded-sam2 main.py 同构).
@@ -109,6 +132,21 @@ export interface MLBackendCapability {
   models?: MLModelCapability[];
   // capabilities 端点 (health_meta 派生) 会带派生模态; 原始 /setup 不带.
   modalities?: string[];
+  // v0.18.29 · 受控词表校验诊断 (仅 /capabilities 带); 空/缺 = 全合法.
+  warnings?: CapabilityWarning[];
+}
+
+/**
+ * v0.18.31 · `/setup` 统一 query key。此前全仓三套命名 (ml-backends…setup / ml-backend-setup /
+ * ml-capabilities) 打同一个 `setup` 端点 → 同 backend 被缓存成多份 + 重复请求, 且 invalidate
+ * 漏失效。统一为 `ml-backends` 前缀, 让 `useMLBackends` 的 `["ml-backends", projectId]` 前缀
+ * invalidate 能命中全部 setup 缓存。
+ */
+export function mlBackendSetupQueryKey(
+  projectId: string | null | undefined,
+  backendId: string | null | undefined,
+) {
+  return ["ml-backends", projectId, backendId, "setup"] as const;
 }
 
 export const mlBackendsApi = {
@@ -177,22 +215,33 @@ export const mlBackendsApi = {
   predictTest: (projectId: string, backendId: string, taskId: string) =>
     apiClient.post(`/projects/${projectId}/ml-backends/${backendId}/predict-test?task_id=${taskId}`),
 
-  interactiveAnnotate: (projectId: string, backendId: string, payload: InteractiveRequest) =>
+  // v0.18.x · 可选 signal: 交互阈值/文本连发时, 新请求 abort 掉被取代的旧请求, 避免后端
+  // GPU 洪泛 (见 issue 0002)。被 abort 的请求在前端 fetch 层抛 AbortError, 调用方静默忽略。
+  interactiveAnnotate: (
+    projectId: string,
+    backendId: string,
+    payload: InteractiveRequest,
+    signal?: AbortSignal,
+  ) =>
     apiClient.post<{
       result: unknown[];
       score: number | null;
       inference_time_ms: number | null;
       cache_hit?: boolean | null;
       model_load_ms?: number | null;
+      // v0.18.18 · 交互精修 low-res logits 回灌 (base64, 不透明); 前端原样存储、
+      // 下次点击经 context.mask_input 回传。仅 multimask=False 的单 mask 精修阶段非空。
+      mask_input_next?: string | null;
     }>(
       `/projects/${projectId}/ml-backends/${backendId}/interactive-annotating`,
       payload,
+      signal ? { signal } : undefined,
     ),
 
   // v0.14.14 协议 §4.4 · POST /warmup 代理. body 各 backend 自定义:
   //   yolo:  { task: "detection", variants: { series: "yolo11", size: "s" } }
   //   gsam2: { variants: { sam_variant: "small", dino_variant: "B" } }
-  //   sam3:  {} 或 { variants: { model_variant: "sam3.1" } }
+  //   sam3:  {} 或 { variants: { model_variant: "sam3" } }
   warmup: (
     projectId: string,
     backendId: string,

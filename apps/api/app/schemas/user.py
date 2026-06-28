@@ -268,15 +268,23 @@ class WorkbenchPreferences(BaseModel):
 
 
 class AIToolPreferences(BaseModel):
-    """每用户的 AI 工具推理参数偏好，按 ML backend id 分桶。
+    """每用户的 AI 工具偏好，按 ML backend id 分桶。
 
     不同 backend 的 /setup.params schema 不同（gsam2 有 box/text_threshold，sam3 有
     score_threshold 等），故按 backend id 各存一份，互不污染；多用户各自一份 preferences，
-    天然隔离不打架。值为 /setup.params 对应的自由 dict，平台只做存取不强校验字段。"""
+    天然隔离不打架。值为 /setup.params 对应的自由 dict，平台只做存取不强校验字段。
+
+    v0.18.25 · 新增 model_by_backend：交互工具的引擎(模型)选择，同样按 backend 分桶。
+    本子树为「深一层合并」(update_preferences)，故 params/model 两个子键可各自独立保存。"""
 
     model_config = {"extra": "forbid"}
 
     params_by_backend: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    model_by_backend: dict[str, str] = Field(default_factory=dict)
+    # v0.18.31 · 交互后端(引擎)选择, 按 project 分桶(每项目各记用哪个交互后端)。此前存
+    # localStorage(wb:preferred-interactive)不跨设备 = BUG; 现迁服务端与 model/params 对齐
+    # (深合并故三键各自独立保存)。注: 按 project 分桶, 与 model 选择按 backend 分桶是有意区别。
+    interactive_backend_by_project: dict[str, str] = Field(default_factory=dict)
 
 
 class UIPreferences(BaseModel):

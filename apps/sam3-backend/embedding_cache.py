@@ -4,8 +4,8 @@
 SAM 3 单次 image encoder 前向 ~ 1-2s (3090 / A100), 缓存命中后同图二次 prompt
 跳过 encoder, 与 sam2 缓存机制语义等价.
 
-Key 设计差异: variant 标签固定为 "sam3.1" (SAM 3 仅一档 848M, 无 tiny/large 之分),
-但仍保留 sam_variant 字段以便未来量化版本接入时分桶 (e.g. "sam3.1-int8").
+Key 设计差异: variant 标签固定为 "sam3" (图像模型即 facebook/sam3 单档, 无 tiny/large 之分),
+但仍保留 sam_variant 字段以便未来量化版本接入时分桶 (e.g. "sam3-int8").
 sam2 缓存与 sam3 缓存互不共享 (embedding 来自不同模型, 不能跨), 由 cache_key 包含 variant
 天然隔离.
 """
@@ -61,7 +61,7 @@ def compute_cache_key(file_path: str, sam_variant: str) -> str:
 class EmbeddingCache:
     """线程安全 LRU. FastAPI 单 worker 也加锁, 与 grounded-sam2-backend 实现完全一致."""
 
-    def __init__(self, capacity: int = 32, sam_variant: str = "sam3.1") -> None:
+    def __init__(self, capacity: int = 32, sam_variant: str = "sam3") -> None:
         if capacity <= 0:
             raise ValueError("capacity must be positive")
         self._capacity = capacity

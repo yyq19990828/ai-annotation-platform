@@ -77,6 +77,7 @@ vi.mock("@/api/ml-backends", () => ({
     capabilities: (projectId: string, backendId: string) =>
       mockCapabilitiesAPI(projectId, backendId),
   },
+  mlBackendSetupQueryKey: (p: unknown, b: unknown) => ["ml-backends", p, b, "setup"],
 }));
 vi.mock("@/api/auth", () => ({
   authApi: {
@@ -353,20 +354,18 @@ describe("ProjectDetailPanel v0.9.12", () => {
     expect(onBack).toHaveBeenCalled();
   });
 
-  // v0.18.5 · 多阶段配置硬化: 单 backend 兜底 + 加阶段门控。
-  describe("多阶段下游 backend 门控 (v0.18.5)", () => {
-    it("单 backend 项目: 提示需绑第二个 backend, 不出现加阶段按钮", () => {
+  // v0.18.5 / v0.18.16 · 多阶段下游 backend 门控: 单 backend 兜底提示 vs 双 backend 可编排。
+  // 加阶段已移入 DAG 画布 (lazy, 测试里渲染 Suspense 占位), 故此处只断言两列编排区的兜底/引导文案。
+  describe("多阶段下游 backend 门控 (v0.18.16)", () => {
+    it("单 backend 项目: 提示需绑第二个 backend", () => {
       // 默认 mockUseMLBackends 只有 bk1 (单 backend)。
       renderUI();
       expect(
         screen.getByText(/需在项目设置绑定第二个 ML backend/),
       ).toBeInTheDocument();
-      expect(
-        screen.queryByRole("button", { name: /加第二阶段/ }),
-      ).toBeNull();
     });
 
-    it("双 backend 项目: 出现加阶段按钮, 无单 backend 提示", () => {
+    it("双 backend 项目: 无单 backend 提示, 显示编排空态引导", () => {
       mockUseMLBackends.mockReturnValue({
         data: [
           { id: "bk1", name: "grounded-sam2" },
@@ -376,11 +375,9 @@ describe("ProjectDetailPanel v0.9.12", () => {
       });
       renderUI();
       expect(
-        screen.getByRole("button", { name: /加第二阶段/ }),
-      ).toBeInTheDocument();
-      expect(
         screen.queryByText(/需在项目设置绑定第二个 ML backend/),
       ).toBeNull();
+      expect(screen.getByText(/加下游阶段/)).toBeInTheDocument();
     });
   });
 

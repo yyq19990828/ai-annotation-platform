@@ -47,7 +47,7 @@ describe("useInteractiveAI", () => {
     recordPredictCacheHitMock.mockReset();
   });
 
-  it("runBbox 路由到 ctx.type='bbox'", async () => {
+  it("runBbox 路由到 ctx.type='interactive_box' (v0.18.17 · 旧 bbox 改名)", async () => {
     interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
     const { result } = renderHook(() => useInteractiveAI(ARGS));
     act(() => result.current.runBbox([0.1, 0.1, 0.4, 0.4]));
@@ -56,61 +56,87 @@ describe("useInteractiveAI", () => {
     expect(pid).toBe("p1");
     expect(bid).toBe("b1");
     expect(payload.task_id).toBe("t1");
-    expect(payload.context.type).toBe("bbox");
+    expect(payload.context.type).toBe("interactive_box");
     expect(payload.context.bbox).toEqual([0.1, 0.1, 0.4, 0.4]);
+    expect(payload.context.multimask_output).toBe(false);
     await waitFor(() => expect(result.current.candidates).toHaveLength(1));
     expect(result.current.candidates[0].label).toBe("person");
     expect(result.current.candidates[0].source).toBe("bbox");
   });
 
-  it("runText 路由到 ctx.type='text' 并 trim 空白", async () => {
-    interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
-    const { result } = renderHook(() => useInteractiveAI(ARGS));
-    act(() => result.current.runText("  car  "));
-    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
-    expect(interactiveAnnotateMock.mock.calls[0][2].context).toEqual({
-      type: "text",
-      text: "car",
-      output: "mask", // v0.9.4 phase 2 · 默认 mask 兼容老前端 / 老 backend
-    });
-  });
-
-  it("runText 透传 outputMode='box' 走 DINO 直出路径", async () => {
-    interactiveAnnotateMock.mockResolvedValue({ result: [], score: null });
-    const { result } = renderHook(() => useInteractiveAI(ARGS));
-    act(() => result.current.runText("person", "box"));
-    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
-    expect(interactiveAnnotateMock.mock.calls[0][2].context).toMatchObject({
-      type: "text",
-      text: "person",
-      output: "box",
-    });
-  });
-
-  it("runText 空字符串不发请求", async () => {
-    const { result } = renderHook(() => useInteractiveAI(ARGS));
-    act(() => result.current.runText("   "));
-    await new Promise((r) => setTimeout(r, 20));
-    expect(interactiveAnnotateMock).not.toHaveBeenCalled();
-  });
-
-  it("runPoint 80ms 防抖合并连续点击", async () => {
+  it("runPoint 累加全量点 (v0.18.17 · 防抖窗口内多次点击累加成一个会话, 重发全量)", async () => {
     interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
     vi.useFakeTimers();
     try {
       const { result } = renderHook(() => useInteractiveAI(ARGS));
       act(() => result.current.runPoint([0.1, 0.1], 1));
-      act(() => result.current.runPoint([0.2, 0.2], 1));
+      act(() => result.current.runPoint([0.2, 0.2], 0));
       act(() => result.current.runPoint([0.3, 0.3], 1));
       expect(interactiveAnnotateMock).not.toHaveBeenCalled();
       await act(async () => {
         await vi.advanceTimersByTimeAsync(100);
       });
       expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1);
-      expect(interactiveAnnotateMock.mock.calls[0][2].context.points).toEqual([[0.3, 0.3]]);
+      const ctx = interactiveAnnotateMock.mock.calls[0][2].context;
+      // 累加: 全量点 + 对应极性; ≥2 点 → multimask_output=false (单 mask 精修).
+      expect(ctx.points).toEqual([[0.1, 0.1], [0.2, 0.2], [0.3, 0.3]]);
+      expect(ctx.labels).toEqual([1, 0, 1]);
+      expect(ctx.multimask_output).toBe(false);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("runPoint 首点 multimask_output=true (单点歧义出候选)", async () => {
+    interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
+    const ctx = interactiveAnnotateMock.mock.calls[0][2].context;
+    expect(ctx.points).toEqual([[0.5, 0.5]]);
+    expect(ctx.multimask_output).toBe(true);
+  });
+
+  it("§5.4 mask_input 回灌: 首点不回灌, ≥2 点回传上一轮 low-res logits", async () => {
+    // 首点 multimask → 后端 mask_input_next=null; 第 2 点起单 mask → 返回 token 供下次回传。
+    interactiveAnnotateMock
+      .mockResolvedValueOnce({ ...POLY_RESPONSE, mask_input_next: null })
+      .mockResolvedValueOnce({ ...POLY_RESPONSE, mask_input_next: "TOKEN_A" })
+      .mockResolvedValueOnce({ ...POLY_RESPONSE, mask_input_next: "TOKEN_B" });
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+
+    act(() => result.current.runPoint([0.1, 0.1], 1));
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
+    await act(async () => { await Promise.resolve(); });
+    // 首点候选阶段 (multimask=true) 不回灌。
+    expect(interactiveAnnotateMock.mock.calls[0][2].context.mask_input).toBeUndefined();
+
+    act(() => result.current.runPoint([0.2, 0.2], 1));
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(2));
+    await act(async () => { await Promise.resolve(); });
+    // 第 2 点: 上一轮 (首点) 返回 null → maskInputRef 仍空, 不回灌。
+    expect(interactiveAnnotateMock.mock.calls[1][2].context.mask_input).toBeUndefined();
+
+    act(() => result.current.runPoint([0.3, 0.3], 1));
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(3));
+    // 第 3 点: 回传第 2 点返回的 TOKEN_A。
+    expect(interactiveAnnotateMock.mock.calls[2][2].context.mask_input).toBe("TOKEN_A");
+  });
+
+  it("§5.5 sessionPoints 累加并随 cancel 清空", async () => {
+    interactiveAnnotateMock.mockResolvedValue({ ...POLY_RESPONSE, mask_input_next: null });
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+
+    act(() => result.current.runPoint([0.1, 0.1], 1));
+    await waitFor(() => expect(result.current.sessionPoints).toHaveLength(1));
+    act(() => result.current.runPoint([0.2, 0.2], 0));
+    await waitFor(() => expect(result.current.sessionPoints).toHaveLength(2));
+    expect(result.current.sessionPoints).toEqual([
+      { pt: [0.1, 0.1], polarity: 1 },
+      { pt: [0.2, 0.2], polarity: 0 },
+    ]);
+    act(() => result.current.cancel());
+    expect(result.current.sessionPoints).toHaveLength(0);
   });
 
   it("Alt+点击 (polarity=0) 透传 negative label", async () => {
@@ -148,13 +174,53 @@ describe("useInteractiveAI", () => {
   it("空 result → 提示 + candidates 清空", async () => {
     interactiveAnnotateMock.mockResolvedValue({ result: [] });
     const { result } = renderHook(() => useInteractiveAI(ARGS));
-    act(() => result.current.runText("nothing"));
+    act(() => result.current.runBbox([0.1, 0.1, 0.2, 0.2]));
     await waitFor(() =>
       expect(pushToastMock).toHaveBeenCalledWith(
         expect.objectContaining({ msg: "SAM 未返回候选" }),
       ),
     );
     expect(result.current.candidates).toHaveLength(0);
+  });
+
+  it("v0.18.26 · 出候选 → 弹候选数提示 (与无候选对齐)", async () => {
+    interactiveAnnotateMock.mockResolvedValue({
+      result: [
+        { type: "rectanglelabels", value: { x: 1, y: 1, width: 5, height: 5, rectanglelabels: ["a"] }, score: 0.9 },
+        { type: "rectanglelabels", value: { x: 1, y: 1, width: 5, height: 5, rectanglelabels: ["b"] }, score: 0.8 },
+      ],
+    });
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() => result.current.runBbox([0.1, 0.1, 0.2, 0.2]));
+    await waitFor(() =>
+      expect(pushToastMock).toHaveBeenCalledWith(
+        expect.objectContaining({ msg: "2 个候选", kind: "success" }),
+      ),
+    );
+  });
+
+  it("多连通 mask (value.polygons) → 取面积最大外环, 不丢候选", async () => {
+    // 后端多环结构: 一个大三角 (面积 0.5) + 一个碎屑小三角 (面积 ~0.005)。
+    interactiveAnnotateMock.mockResolvedValue({
+      result: [
+        {
+          type: "polygonlabels",
+          value: {
+            polygons: [
+              { points: [[0, 0], [0.1, 0], [0, 0.1]] }, // 碎屑
+              { points: [[0, 0], [1, 0], [0, 1]] }, // 主体 (最大)
+            ],
+            polygonlabels: ["object"],
+          },
+          score: 0.9,
+        },
+      ],
+    });
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    // 取最大外环 (主体三角), 而非碎屑。
+    expect(result.current.candidates[0].points).toEqual([[0, 0], [1, 0], [0, 1]]);
   });
 
   it("cycle 在候选间循环切换", async () => {
@@ -166,7 +232,7 @@ describe("useInteractiveAI", () => {
       ],
     });
     const { result } = renderHook(() => useInteractiveAI(ARGS));
-    act(() => result.current.runText("a b c"));
+    act(() => result.current.runBbox([0.1, 0.1, 0.2, 0.2]));
     await waitFor(() => expect(result.current.candidates).toHaveLength(3));
     expect(result.current.activeIdx).toBe(0);
     act(() => result.current.cycle(1));
@@ -293,5 +359,169 @@ describe("useInteractiveAI", () => {
     await waitFor(() => expect(result.current.candidates).toHaveLength(1));
     act(() => result.current.cancel());
     expect(result.current.candidates).toHaveLength(0);
+  });
+
+  // claude[bot] P1 回归 · cache-hit-after-inflight: 上一个真实请求 in-flight 时, 紧接着
+  // 触发一次命中前端缓存的调用 → 旧请求被 abort + inflightRef 自增, 但 cache 分支直接 return,
+  // 旧请求 finally 守卫不通过 → isRunning 卡在 true。修后 cache 分支显式 setIsRunning(false)。
+  it("cache 命中且上一个请求 in-flight 时 isRunning 复位 (P1 回归)", async () => {
+    // 调用次序: 1) 跑通填 cache → 2) hang 住模拟 in-flight → 3) cache 命中(不再调 mock)。
+    interactiveAnnotateMock.mockResolvedValueOnce(POLY_RESPONSE);
+    let secondResolve: ((v: typeof POLY_RESPONSE) => void) | undefined;
+    interactiveAnnotateMock.mockImplementationOnce(
+      () => new Promise((res) => { secondResolve = res as typeof secondResolve; }),
+    );
+
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+
+    // 第 1 次: 同一 bbox 跑通 → 缓存填好。
+    act(() => result.current.runBbox([0, 0, 0.5, 0.5]));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    expect(result.current.isRunning).toBe(false);
+
+    // 第 2 次: 换 prompt, hang 住 (mockImplementationOnce 走这次)。
+    act(() => result.current.runBbox([0.1, 0.1, 0.4, 0.4]));
+    await waitFor(() => expect(result.current.isRunning).toBe(true));
+
+    // 第 3 次: 回到第 1 次的 prompt → cache 命中, 在 in-flight 期间触发。
+    act(() => result.current.runBbox([0, 0, 0.5, 0.5]));
+    // 候选立刻复用 (cache 同步命中); isRunning 必须立刻复位, 不等 in-flight resolve。
+    expect(result.current.candidates).toHaveLength(1);
+    expect(result.current.isRunning).toBe(false);
+
+    // 收尾: 让 hang 的请求 resolve, 防止泄漏 (旧请求的结果被 inflight 守卫丢弃)。
+    secondResolve?.(POLY_RESPONSE);
+  });
+
+  // v0.18.19 · exemplar refine 会话 (多正负框 + text 组合 + 阈值重过滤)
+  describe("exemplar refine 会话", () => {
+    it("runExemplar 累加正/负框, 每次重发全量 exemplars[]", async () => {
+      interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+      const { result } = renderHook(() => useInteractiveAI(ARGS));
+
+      act(() => result.current.runExemplar([0.1, 0.1, 0.2, 0.2], 1, "mask"));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
+      expect(interactiveAnnotateMock.mock.calls[0][2].context).toMatchObject({
+        type: "exemplar",
+        exemplars: [{ bbox: [0.1, 0.1, 0.2, 0.2], label: true }],
+        output: "mask",
+      });
+
+      act(() => result.current.runExemplar([0.5, 0.5, 0.6, 0.6], 0, "mask"));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(2));
+      // 第二次重发全量 (正框 + 负框)。
+      expect(interactiveAnnotateMock.mock.calls[1][2].context.exemplars).toEqual([
+        { bbox: [0.1, 0.1, 0.2, 0.2], label: true },
+        { bbox: [0.5, 0.5, 0.6, 0.6], label: false },
+      ]);
+      // 会话框镜像供画布 overlay。
+      expect(result.current.sessionExemplars).toEqual([
+        { bbox: [0.1, 0.1, 0.2, 0.2], polarity: 1 },
+        { bbox: [0.5, 0.5, 0.6, 0.6], polarity: 0 },
+      ]);
+    });
+
+    it("setExemplarText 会话进行中即重跑, 携带 text 组合", async () => {
+      interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+      const { result } = renderHook(() => useInteractiveAI(ARGS));
+
+      act(() => result.current.runExemplar([0.1, 0.1, 0.3, 0.3], 1, "mask"));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
+
+      act(() => result.current.setExemplarText("car"));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(2));
+      expect(interactiveAnnotateMock.mock.calls[1][2].context).toMatchObject({
+        type: "exemplar",
+        exemplars: [{ bbox: [0.1, 0.1, 0.3, 0.3], label: true }],
+        text: "car",
+      });
+    });
+
+    it("setExemplarThreshold 会话进行中重过滤, 携带 score_threshold", async () => {
+      interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+      const { result } = renderHook(() => useInteractiveAI(ARGS));
+
+      act(() => result.current.runExemplar([0.1, 0.1, 0.3, 0.3], 1, "mask"));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
+
+      act(() => result.current.setExemplarThreshold(0.8));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(2));
+      expect(interactiveAnnotateMock.mock.calls[1][2].context.score_threshold).toBe(0.8);
+    });
+
+    it("无会话时 setExemplarText/Threshold 不发请求 (仅暂存)", async () => {
+      const { result } = renderHook(() => useInteractiveAI(ARGS));
+      act(() => result.current.setExemplarText("car"));
+      act(() => result.current.setExemplarThreshold(0.7));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(interactiveAnnotateMock).not.toHaveBeenCalled();
+      expect(result.current.exemplarText).toBe("car");
+      expect(result.current.exemplarThreshold).toBe(0.7);
+    });
+
+    it("rerunExemplar(outputMode) 用当前会话重跑, 透传新 output", async () => {
+      interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+      const { result } = renderHook(() => useInteractiveAI(ARGS));
+      act(() => result.current.runExemplar([0.1, 0.1, 0.3, 0.3], 1, "mask"));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
+
+      act(() => result.current.rerunExemplar("both"));
+      await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(2));
+      expect(interactiveAnnotateMock.mock.calls[1][2].context.output).toBe("both");
+    });
+
+    it("切到 point/bbox 模式 → 重置 exemplar 会话框", async () => {
+      interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+      const { result } = renderHook(() => useInteractiveAI(ARGS));
+      act(() => result.current.runExemplar([0.1, 0.1, 0.3, 0.3], 1, "mask"));
+      await waitFor(() => expect(result.current.sessionExemplars).toHaveLength(1));
+      act(() => result.current.runBbox([0.4, 0.4, 0.6, 0.6]));
+      expect(result.current.sessionExemplars).toHaveLength(0);
+    });
+
+    it("cancel 清空 exemplar 会话 (框 + text + 阈值)", async () => {
+      interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+      const { result } = renderHook(() => useInteractiveAI(ARGS));
+      act(() => result.current.runExemplar([0.1, 0.1, 0.3, 0.3], 1, "mask"));
+      await waitFor(() => expect(result.current.sessionExemplars).toHaveLength(1));
+      act(() => result.current.setExemplarText("car"));
+      act(() => result.current.cancel());
+      expect(result.current.sessionExemplars).toHaveLength(0);
+      expect(result.current.exemplarText).toBe("");
+      expect(result.current.exemplarThreshold).toBeNull();
+    });
+  });
+
+  // claude[bot] P1 #2 回归: cache 命中分支需显式 setIsRunning(false), 否则上一次 in-flight
+  // 被 abort + inflightRef 已自增 → 旧请求 finally 守卫不再通过, 旋转图标永不清除。
+  // 复现路径: 真实请求 in-flight 时同一 key 再发一次 (命中 cache) → isRunning 应回 false。
+  it("§P1 #2 · cache 命中 (紧跟 in-flight) 时 isRunning 必须复位", async () => {
+    // 第 1 发: 真实 HTTP, 永不 resolve (模拟 in-flight)。
+    let firstResolve: (v: unknown) => void = () => {};
+    const firstPromise = new Promise((res) => {
+      firstResolve = res;
+    });
+    // 第 2 发: 同 key, 应命中本地 cache, 不进 mock。
+    interactiveAnnotateMock.mockImplementationOnce(() => firstPromise);
+
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    // 第 1 次: in-flight, isRunning=true。
+    act(() => result.current.runBbox([0.1, 0.1, 0.4, 0.4]));
+    await waitFor(() => expect(result.current.isRunning).toBe(true));
+
+    // 让第 1 个请求 resolve 出候选, 触发 cache 写入 (同 key 下次命中)。
+    await act(async () => {
+      firstResolve(POLY_RESPONSE);
+      await firstPromise;
+    });
+    await waitFor(() => expect(result.current.isRunning).toBe(false));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+
+    // 第 2 次相同 bbox: 命中 cache; 旧 abort + inflightRef++ 仍发生, 但 isRunning 必须回 false。
+    act(() => result.current.runBbox([0.1, 0.1, 0.4, 0.4]));
+    // 不要 await waitFor (cache 同步生效); 立即断言。
+    expect(result.current.isRunning).toBe(false);
+    // 第 2 次未发 HTTP (cache 命中)。
+    expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1);
   });
 });

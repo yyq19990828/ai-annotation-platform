@@ -124,10 +124,6 @@
   background: var(--sc-muted);
   border-radius: var(--sc-radius);
 }
-.stageStatRow {
-  font-size: 12px;
-  color: var(--sc-foreground);
-}
 
 /* v0.18.2 · 阶段级字段的文本/数字输入 (类别过滤 / pad / 写回键)。 */
 .textInput {
@@ -226,31 +222,47 @@
 }
 
 /* v0.18.8 · 流水线连接线 (源 → 下游扇出): 内置「裁 ROI」语义, 非节点图。 */
-.pipelineConnector {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-left: 4px;
-  color: var(--sc-muted-foreground);
-  font-size: 11px;
-}
-.pipelineConnectorIcon {
-  transform: rotate(90deg);
-  color: var(--sc-brand);
-}
-.pipelineParallelTag {
-  padding: 0 7px;
-  color: var(--sc-brand);
-  font-size: 10px;
-  border: 1px solid var(--sc-brand);
-  border-radius: 999px;
-}
-
 /* v0.18.8 · 空态引导文案。 */
 .stageEmptyHint {
   color: var(--sc-muted-foreground);
   font-size: 11px;
   line-height: 1.5;
+}
+
+/* v0.18.16 · 两列编排: 左 DAG 画布 + 右选中节点参数检查器。窄屏退化为单列堆叠。 */
+.editorTwoCol {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.1fr);
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 720px) {
+  .editorTwoCol {
+    grid-template-columns: 1fr;
+  }
+}
+.editorCanvas {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.editorInspector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.canvasFallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 340px;
+  color: var(--sc-muted-foreground);
+  font-size: 12px;
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
+  border-radius: 8px;
 }
 
 /* v0.18.8 · 阶段卡 (Card 卡面): 内边距 + 组间距 + 左侧角色轨。 */
@@ -260,6 +272,10 @@
   gap: 10px;
   padding: 12px 14px;
   border-left: 3px solid var(--sc-brand);
+}
+/* v0.18.16 · 检查器里非选中阶段卡: CSS 隐藏 (不卸载, 保住自持 usePreannotateConfig 状态)。 */
+.stageHidden {
+  display: none;
 }
 .stageCardHeader {
   display: flex;

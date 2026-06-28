@@ -15,9 +15,11 @@ from PIL import Image
 
 from app.workers.roi import (
     collect_geometry_shapes,
+    compose_transforms,
     crop_inputs_from_boxes,
     geometry_prompts_from_boxes,
     merge_classify_attributes,
+    remap_geometry_to_image,
 )
 
 
@@ -260,6 +262,111 @@ def test_geometry_prompts_skips_rotated_and_degenerate():
     assert batch.skipped_geometry == 2
     assert len(batch.prompts) == 1
     assert batch.prompts[0]["parent_box_idx"] == 2
+
+
+# ── v0.18.15 · crop 坐标回映 + polygon 父框 ──
+
+
+def _poly(pts, cls="person"):
+    return {"type": "polygonlabels", "value": {"points": pts, "polygonlabels": [cls]}}
+
+
+def test_crop_records_transform_normalized():
+    """crop 落归一化图像空间的仿射变换 (ox/oy/sx/sy), 供回映。"""
+    img = _img(1000, 500)
+    boxes = [_bbox(40, 40, 20, 20)]  # 像素 left=400,top=200,200x100
+    batch = crop_inputs_from_boxes(img, boxes, pad=0.0)
+    t = batch.transforms["0"]
+    assert t["ox"] == pytest.approx(0.4)
+    assert t["oy"] == pytest.approx(0.4)
+    assert t["sx"] == pytest.approx(0.2)
+    assert t["sy"] == pytest.approx(0.2)
+
+
+def test_remap_bbox_roundtrip_lands_in_parent():
+    """crop 内全幅检出 → 回映回原父框; 居中半幅 → 落父框内部。"""
+    transform = {"ox": 0.4, "oy": 0.4, "sx": 0.2, "sy": 0.2}
+    # 全幅检出 (整张 crop) → 应还原成父框 (40,40,20,20)
+    full = [
+        {
+            "type": "rectanglelabels",
+            "value": {"x": 0, "y": 0, "width": 100, "height": 100},
+        }
+    ]
+    [r] = remap_geometry_to_image(full, transform)
+    assert r["value"]["x"] == pytest.approx(40)
+    assert r["value"]["y"] == pytest.approx(40)
+    assert r["value"]["width"] == pytest.approx(20)
+    assert r["value"]["height"] == pytest.approx(20)
+    # 居中半幅 → 落在父框 (40~60) 内部 (45~55)
+    center = [
+        {
+            "type": "rectanglelabels",
+            "value": {"x": 25, "y": 25, "width": 50, "height": 50},
+        }
+    ]
+    [c] = remap_geometry_to_image(center, transform)
+    assert c["value"]["x"] == pytest.approx(45)
+    assert c["value"]["width"] == pytest.approx(10)
+    assert 40 <= c["value"]["x"] <= 60
+
+
+def test_remap_polygon_points():
+    transform = {"ox": 0.4, "oy": 0.4, "sx": 0.2, "sy": 0.2}
+    shapes = [
+        {"type": "polygonlabels", "value": {"points": [[0, 0], [100, 0], [100, 100]]}}
+    ]
+    [r] = remap_geometry_to_image(shapes, transform)
+    assert r["value"]["points"][0] == [pytest.approx(40), pytest.approx(40)]
+    assert r["value"]["points"][1] == [pytest.approx(60), pytest.approx(40)]
+    assert r["value"]["points"][2] == [pytest.approx(60), pytest.approx(60)]
+
+
+def test_remap_does_not_mutate_input():
+    transform = {"ox": 0.5, "oy": 0.0, "sx": 0.5, "sy": 1.0}
+    shapes = [
+        {
+            "type": "rectanglelabels",
+            "value": {"x": 0, "y": 0, "width": 100, "height": 100},
+        }
+    ]
+    remap_geometry_to_image(shapes, transform)
+    assert shapes[0]["value"]["x"] == 0  # 原始未改
+
+
+def test_compose_transforms_chains_depth3():
+    """outer crop 占图右半, inner 占 crop 右半 → 合成后占图右 1/4 起。"""
+    outer = {"ox": 0.4, "oy": 0.4, "sx": 0.2, "sy": 0.2}
+    inner = {"ox": 0.5, "oy": 0.0, "sx": 0.5, "sy": 1.0}
+    c = compose_transforms(outer, inner)
+    assert c["ox"] == pytest.approx(0.5)  # 0.4 + 0.5*0.2
+    assert c["oy"] == pytest.approx(0.4)
+    assert c["sx"] == pytest.approx(0.1)  # 0.2*0.5
+    assert c["sy"] == pytest.approx(0.2)
+
+
+def test_crop_supports_polygon_parent_bbox():
+    """polygon 父框取外接框裁 crop, 并落 transform。"""
+    img = _img(1000, 1000)
+    boxes = [_poly([[10, 10], [30, 10], [30, 30], [10, 30]])]  # 外接框 10,10,20,20
+    batch = crop_inputs_from_boxes(img, boxes, pad=0.0)
+    assert len(batch.inputs) == 1
+    crop = _decode(batch.inputs[0]["file_path"])
+    assert crop.size == (200, 200)
+    assert batch.transforms["0"]["ox"] == pytest.approx(0.1)
+    assert batch.transforms["0"]["sx"] == pytest.approx(0.2)
+
+
+def test_geometry_prompts_supports_polygon_parent():
+    """polygon 父框 → geometry-prompt 取外接框归一化。"""
+    boxes = [
+        _poly([[10, 20], [40, 20], [40, 60], [10, 60]])
+    ]  # bbox x=10,y=20,w=30,h=40
+    batch = geometry_prompts_from_boxes(boxes)
+    assert batch.skipped_geometry == 0
+    assert batch.prompts[0]["box"][0] == pytest.approx(0.1)
+    assert batch.prompts[0]["box"][2] == pytest.approx(0.4)
+    assert batch.prompts[0]["box"][3] == pytest.approx(0.6)
 
 
 def test_collect_geometry_shapes_filters_bad_parent_idx():

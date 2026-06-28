@@ -135,6 +135,10 @@ class ProjectUpdate(BaseModel):
     # v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶).
     # PATCH 用整体替换语义; 前端可只发改动的 backend 桶 (其它桶保留靠业务侧 merge).
     default_variants: dict[str, dict[str, str]] | None = None
+    # v0.18.27 · 项目级「已保存的编排」(方案 A). exclude_unset 区分「不改」与「清除」:
+    # 不传 = 不动; 显式 null = 清除。非空时结构由 update_project 端点用 PipelineStage 复核。
+    # 用 list[dict] 而非 list[PipelineStage]: 存储态 ml_backend_id 是 str, 且要原样回吐 JSONB。
+    preannotate_pipeline: list[dict] | None = None
 
 
 class ProjectBatchSummary(BaseModel):
@@ -185,6 +189,8 @@ class ProjectOut(BaseModel):
     scene_continuation_window_min: int = 30
     # v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶). 空 dict = 未设, 由前端落到 backend.default_variants.
     default_variants: dict[str, dict[str, str]] = Field(default_factory=dict)
+    # v0.18.27 · 项目级「已保存的编排」(方案 A). None = 未配编排.
+    preannotate_pipeline: list[dict] | None = None
     # v0.10.13 · E1 · 标注指引 Markdown 原文; None 表示未配置.
     annotation_guide: str | None = None
     # v0.10.13 · E1 · 已上传的指引图片资源元数据列表.

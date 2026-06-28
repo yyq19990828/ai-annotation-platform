@@ -34,6 +34,229 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.32] - 2026-06-26
+
+### Changed
+
+- **YOLO `/setup` 预标参数声明按上下文派生（文案中性化 + obb 旋转 NMS 说明）**：此前六个 model（闭集 detect/segment/pose/obb + 开集文本检测/分割）共用一份 `_PARAMS_SCHEMA`，`conf` 文案写死「检测/分割」，挂到 pose/obb/开集时不贴切。改为小工厂 `_build_params_schema(*, conf_default, conf_desc, iou_desc)` 按上下文派生独立深拷贝：基础表 `conf` 文案改为 task 中性；obb 的 `iou` 文案补一句「朝向框走旋转 NMS（probiou），阈值含义相同」；开集文本三 model 的 `conf` 文案点明「文本匹配置信度、开集打分偏保守」。查证 ultralytics 源码确认 conf/iou/max_det 对四 task 全生效（pose/obb 同走 `DetectionPredictor.postprocess` 的 NMS，obb 仅多 `rotated=True`），故**不拆参数集**。**所有默认值逐字节不变**（闭集/开集 conf 仍 0.25、max_det 仍 300）——开集默认下调缺 GPU 实测证据，本版不盲改（见 `docs/plans/2026-06-26-v0.18.32-yolo-params-schema-precision.md` §3）。纯 backend 改动，前端 `SchemaForm` schema-driven 自动渲染新文案；不动协议/平台/前端代码。yolo-backend `BACKEND_VERSION` 0.1.0 → 0.1.1。
+
+## [0.18.31] - 2026-06-26
+
+### Added
+
+- **交互后端选择跨设备持久化**：工作台交互工具栏的交互后端(引擎)选择从 localStorage（不跨设备）迁到 `User.preferences.ai.interactive_backend_by_project`（按 project 分桶、跟用户走、跨设备），与 model/参数偏好对齐。新增 `useInteractiveBackendPref` hook；`useBackendRouting` 改为接收注入的偏好 + debounced 写回，删除 localStorage `wb:preferred-interactive`。收尾「能力接线健壮性整治」epic（见 `docs/plans/2026-06-26-v0.18.29-ml-capability-wiring-hardening.md`）。
+
+### Fixed
+
+- **`/setup` queryKey 命名失控 + invalidate 漏失效**：全仓 7 处用三套 queryKey 名（`ml-backends…setup` / `ml-backend-setup` / `ml-capabilities`）打同一个 `/setup` 端点，导致同 backend 被缓存成多份 + 重复请求，且 `useMLBackends` 的前缀 invalidate 只命中其中一套——刷新/重连 backend 后 ModelMarket 与工作台可能显示旧能力。统一抽 `mlBackendSetupQueryKey` helper，7 处共用，invalidate 一并命中全部。
+
+## [0.18.30] - 2026-06-26
+
+### Added
+
+- **能力受控词表 codegen 管道（registry → 前端 SSOT）**：后端 `capability_registry`（task/infra/modality/geometry/prompt 五张受控词表）经新增 `scripts/export_capability_registry.py` 导出 `capability-registry.snapshot.json`，前端 `apps/web/scripts/gen-capability-vocab.mjs` 读 snapshot 生成 `capabilityVocab.gen.ts`（ID 集合 + 类型 union + 结构元数据 + prompt 双维度派生集合）。镜像现有 OpenAPI codegen 链路：pre-commit `regen-capability-registry-snapshot` 自动重导 + CI `test_capability_registry_contract` 防漂移 + 前端 prebuild 跟 snapshot。`GET /v1/ml-capabilities/protocol` 顺带对外暴露 `prompts`。
+- 工作台交互路由 `INTERACTIVE_PROMPTS` 改 import 生成的 `INTERACTIVE_ROUTE_PROMPT_IDS`，消除前端手抄、堵住「后端新增 interactive prompt 前端不认」的静默失败（见 `docs/plans/2026-06-26-v0.18.30-capability-registry-codegen.md`）。
+
+## [0.18.29] - 2026-06-26
+
+### Added
+
+- **ML backend 协议契约校验（受控词表诊断）**：平台抽取 backend `/setup` 能力快照时（`extract_capabilities`），按 `capability_registry` 受控词表校验各 model 上报的 `task` / `infra` / `supported_prompts` / `supported_geometric_outputs`，越界值收集成 `capabilities.warnings[]` 落 `health_meta`，经 `/capabilities` 端点暴露；模型市场能力目录在对应 model 卡显示 ⚠ 徽标 + 可读原因（按 `model_id` 关联）。把过去「字段拼错 / 值越界致工具静默不亮」的隐性失败变成可见诊断。只校验、不改写——越界值仍原样规范化，零回归。
+- **prompt 受控词表 SSOT**：`capability_registry` 新增第五张受控词表 `PROMPTS`（`none/point/interactive_box/text/exemplar/scribble/sketch/mask/bbox`），每条带 `requires_input` + `interactive_route` 双维度元数据，消解前后端「interactive」语义漂移（`text` 需输入但不进画布交互线）。`ml_capabilities._INTERACTIVE_PROMPTS` 改由 `PROMPTS_REQUIRES_INPUT` 派生，等价旧硬编码、零行为变化。为 v0.18.30 前端 codegen 贯通铺底（见 `docs/plans/2026-06-26-v0.18.29-ml-capability-wiring-hardening.md`）。
+
+## [0.18.28] - 2026-06-26
+
+### Added
+
+- **「当前题 AI」popover 新增「运行当前题（按项目编排）」**：项目在 `/ai-pre` 存了编排（v0.18.27）后，工作台 popover 多出一个执行入口，把那条多阶段编排只跑当前一图（`task_ids=[当前题]` + `pipeline_stages=项目编排` + `predict_mode=overwrite` + `on_key_conflict=last_wins`）；顶层 `ml_backend_id` 取源阶段 backend。项目无编排时该按钮不渲染，popover 退化为现状单阶段「运行当前题」（完全向后兼容）。popover 仍是执行器、不是编排编辑器——编排在 `/ai-pre` 定义保存。这是「交互工具栏重设计」epic 的收尾（见 `docs/plans/2026-06-26-v0.18.28-popover-run-project-pipeline.md`）。
+
+## [0.18.27] - 2026-06-26
+
+### Added
+
+- **项目级「已保存的编排」（`Project.preannotate_pipeline`，方案 A）**：项目新增一条 nullable JSONB 列存一条 `pipeline_stages` 形状的编排（一项目一条）。`/ai-pre` 项目详情页新增「保存为项目编排」（单阶段也存成单元素数组）与「清除」，并显示「已保存编排 · N 阶段」标识。PATCH 时复用预标注端点同款 `PipelineStage` + 树形校验复核结构（非法 → 422），避免脏编排落库；显式 `null` = 清除，不传 = 不动。本版只存不跑——执行入口在 v0.18.28（见 `docs/plans/2026-06-26-v0.18.27-project-pipeline-persistence.md`）。
+
+## [0.18.26] - 2026-06-26
+
+### Added
+
+- **交互工具栏支持模型权重（档位）选择**：`InteractiveToolBar` 引擎组内新增内联档位选择——读取当前模型的 `supported_variants` / `variant_combinations`，按轴渲染为紧凑横排裸 `<select>`（`VariantSelector` 新增 `compact` 模式），与批量预标注共用同一套联动/默认值逻辑。档位变更写入项目级 `default_variants[backend]`（经 `useUpdateProject`），批量与交互共享。
+- **出候选右上角信息提示**：交互预测返回非空候选时，右上角弹 success toast（`N 个候选`），子文案区分来源（point：`Tab 切换备选 / Enter 采纳`；box/exemplar：`在画布上确认候选`），与「未返回候选」的 warning 提示行为对齐。
+
+### Changed
+
+- **交互工具浮块改为常驻**：选中 AI 交互工具时顶部浮块保持可见，不再「点画布/按 Esc 即隐藏」。旧的自动隐藏机制（点画布关闭 + Esc 关闭 + 工具切换重开 + `ToolDock`/浮块的豁免标记）是为贴边竖排抽屉设计的，顶部居中浮块不遮挡绘制区，故整套移除。
+- **交互工具浮块输出形态改为下拉选择**：原 `SamOutputModeTabs` 三按钮 tab 改为单个 `<select>`（□ 框 / ○ 掩膜 / ⊕ 全部），与档位选择视觉统一、占位更紧凑。
+
+## [0.18.25] - 2026-06-26
+
+### Changed
+
+- **交互工具配置浮块：`AIToolDrawer` 退役 → 画布顶部居中浮块**：选中 AI 交互工具（point/box/exemplar）时，引擎（后端+模型）选择与工具实时参数（极性/输出形态/叠加文本/阈值）改由画布顶部居中的横排浮块（`InteractiveToolBar`）承载，与 `MaskToolbar` 互斥；不再贴 `ToolDock` 右侧竖排抽屉。仅图片工作台呈现（point/box/exemplar 是图片交互）。这是「交互工具栏重设计」epic 的第一步（见 `docs/plans/2026-06-26-v0.18.25-interactive-ai-toolbar-redesign.md`）。
+- **交互工具的引擎（模型）选择持久化**：模型选择从「会话级、刷新即丢」升级为跟随用户账号、跨设备的服务端偏好（`User.preferences.ai.model_by_backend`，按 ML backend 分桶），与已有的 AI 工具参数偏好（`params_by_backend`）同窝在 `ai` 子树下。为此 `PATCH /auth/me/preferences` 的 `ai` 子树改为「深一层合并」——`params`/`model` 两个子键由不同入口各自独立保存、互不覆盖。
+
+## [0.18.24] - 2026-06-26
+
+### Fixed
+
+- **YOLOE exemplar 候选静默不显示（坐标系 bug）**：yolo-backend 的 exemplar 交互候选误用了批量入库的 Label Studio 百分比坐标（0-100），而前端交互候选浮层 `SamCandidateOverlay` 按归一化（0-1）渲染（与 sam3/gsam2 交互候选一致）——`x=0.55` 被发成 `55`，渲染时 `55 × imgW` 把框画到画布外，导致「后端明明返回了高分候选、前端却完全看不见，且因非空结果不报错而静默无提示」。修复：`_emit_detection`/`_emit_segmentation` 增加 `normalized` 开关，exemplar（交互单数 wire）发归一化 0-1，闭集四 task / 文本批量路径（走入库）仍发百分比。
+
+### Changed
+
+- **YOLOE exemplar 默认阈值 0.5 → 0.25**：yolo-backend `/setup` 的 `exemplar-yoloe` 模型改用专属 params——以 `score_threshold`（默认 **0.25**，`x-platform-role=confidence`，与 sam3 字段名对齐）替代闭集路径的 `conf`，工作台 exemplar 阈值滑块初值由此而来。YOLOE 视觉提示对相似目标的相似度打分天然偏保守（实测相似小目标多框命中也仅 ~0.5），沿用闭集默认 0.5 会把正确候选挡在门外；0.25 是召回与噪声的平衡点（大而有辨识度的目标仍 >0.9，不受影响）。`iou`/`max_det` 与闭集一致。
+
+## [0.18.23] - 2026-06-26
+
+yolo-backend 开集 epic 收官 (第 3/3 版): YOLOE **visual prompt exemplar** 接成交互工具——工作台拖框圈一个样例, YOLOE 在全图找出同类目标 (框 / mask), 与 sam3 的 exemplar「找全图相似」同列。后端推理链路 + 平台能力透传 + 前端工具门控全部落地。规划见 [`docs/plans/2026-06-25-v0.18.23-yoloe-visual-prompt-exemplar.md`](docs/plans/2026-06-25-v0.18.23-yoloe-visual-prompt-exemplar.md)。
+
+### Added
+
+- **YOLOE 视觉提示交互模型 (yolo-backend)**：`/setup` 新增 `exemplar-yoloe`（`is_interactive=true`、`supported_prompts=["exemplar"]`、`task=interactive_seg`、几何输出 `bbox`+`polygon`、仅 yoloe series），令 yolo-backend 整体成为交互 backend——工作台 ExemplarTool 在选定 yolo-backend 时自动启用。声明 `exemplar_capabilities`（`multi_box`、`negative_box=false`、`text_combination=false`、`threshold_refilter`）供前端按能力渲染控件。
+- **visual prompt 推理分支**：`type=exemplar` 走 `_predict_visual_prompt`——仅取正框样例（YOLOE 无负框）、归一化 bbox→像素、`visual_prompts={bboxes, cls=0}`（MVP 单类）、`refer_image=源图自身`（同图）、统一用 `YOLOEVPSegPredictor`（`-seg` 权重一次产出框+mask，按 `output` 取 box/mask/both）；`score_threshold` 映射 conf。独立 pool key（与文本句柄隔离，避免 VP 改写模型状态污染文本嵌入缓存）。工作台 exemplar 工具暂无变体选择器、拖框不带 `model_variants` 时，`Context` 回落 yoloe 默认档（yoloe-11/s），与 gsam2 交互变体 env 兜底同理（避免 variants 必填校验 502）。
+
+- **exemplar 能力门控 (平台 + 前端)**：平台 `ml_capabilities` 透传各模型的 `exemplar_capabilities`（此前被规范化丢弃）；工作台 AI 抽屉据此按能力渲染 exemplar 控件——YOLOE（`negative_box=false`/`text_combination=false`）隐藏负极性按钮与叠加文本输入，并强制正极性（防 smart-point 残留负极性误发被剔除的负框）；sam3（全支持）行为不变。输出形态三选（box/mask/both）恒显示。
+
+### Changed
+
+- **yolo-backend `/predict` 双形态 wire（请求 + 响应）**：交互调用发单数 `{task, context}`、批量发 `{tasks, context}`；端点按 wire 形态返回对应响应——单数回 `PredictionResult`（顶层 `result`），复数回 `BatchPredictResponse`（`results[]`），与 gsam2/sam3 契约一致。修复此前只归一了请求、却恒返回批量 `{results:[...]}` 的缺陷：平台 `predict_interactive` 读顶层 `data["result"]` 拿不到结果，导致 YOLOE exemplar（及任何 yolo 交互）候选在平台侧静默丢空。
+
+## [0.18.22] - 2026-06-26
+
+yolo-backend 开集文本能力补齐**实例分割**：批量文本面板用自然语言类名让 YOLOE 出多边形 mask（与 grounded-sam2 文本分割同形）。复用 v0.18.21 的文本推理链路与 PE 缓存，同一 `-seg` 权重检测/分割共用一份句柄——`detect-yoloe` 与 `segment-yoloe` 走同一 pool key，仅按 `output`（box/mask/both）取框 / mask / 两者。YOLO-World 无分割头，本版仅涉及 YOLOE。yolo 开集 epic 第 2/3 版。规划见 [`docs/plans/2026-06-25-v0.18.22-yoloe-openvocab-text-segmentation.md`](docs/plans/2026-06-25-v0.18.22-yoloe-openvocab-text-segmentation.md)。
+
+### Added
+
+- **开集文本分割模型（yolo-backend）**：`/setup` 新增 `segment-yoloe`（YOLOE，series `yoloe-v8`/`yoloe-11`/`yoloe-26` × 档位），`task=segmentation`、`supported_geometric_outputs=["polygon"]`、`supported_text_outputs=["mask","both"]`、`supported_prompts=["text"]`、`is_interactive=false`。前端文本面板据 `supported_text_outputs` 派生输出形态三选，与 gsam2 文本分割同列。
+- **文本→mask 推理分支**：`_predict_open_text` 按 `ctx.output` 分流——`box` 出 `rectanglelabels`、`mask` 出 `polygonlabels`（复用闭集 segment 的 mask→polygon 简化链路）、`both` 同时返回；world 系列即便请求 mask 也退回检测框（无分割头）。`detect-yoloe`/`segment-yoloe` 同 `-seg` 权重共用 pool 句柄，切换输出形态无需重载（实测 mask 复用 warm 句柄 ~12ms）。
+
+## [0.18.21] - 2026-06-25
+
+yolo-backend 从「纯闭集批量」扩出**开集文本检测**：在批量文本面板用自然语言类名（如 `person, bus`）让 YOLO-World / YOLOE 出框，与 grounded-sam2 的文本能力同列。零新仓（ultralytics 8.4.x 原生内置 `YOLOWorld`/`YOLOE`），权重按 release v8.4.0 实测核对可下载。yolo 开集 epic 第 1/3 版（后续 v0.18.22 文本分割、v0.18.23 visual prompt exemplar 交互）。规划见 [`docs/plans/2026-06-25-v0.18.21-yolo-openvocab-text-detection.md`](docs/plans/2026-06-25-v0.18.21-yolo-openvocab-text-detection.md)。
+
+### Added
+
+- **开集文本检测模型（yolo-backend）**：`/setup` 新增 `detect-world`（YOLO-World，series `yolo-worldv2`/`yolo-world` × s/m/l/x）与 `detect-yoloe`（YOLOE，series `yoloe-v8`/`yoloe-11`/`yoloe-26`），`supported_prompts=["text"]`、`task=detection`、`is_interactive=false`（文本=批量，进批量面板不进交互工具栏）。开集 series 独立命名空间，不混入闭集 `MODEL_MATRIX`；YOLOE 复用 `-seg` 权重取 box（同权重供后续分割/视觉提示共用）。
+- **文本提示推理链路**：`Context` 支持平台文本扁平 wire（`type=text` + `text` + `model_id` + `model_variants` + 顶层 conf/iou/max_det 收拢）；按 series 派生 family（world→`YOLOWorld`/yoloe→`YOLOE`），文本经 CLIP（World）/ MobileCLIP（YOLOE）编码后检测，结果映射 `rectanglelabels`。
+- **文本嵌入缓存**：同一组类名（含顺序）跨图复用不重复编码；YOLOE 另存 PE 字典，切换 prompt 再切回仍命中（实测新类名编码 ~350ms，缓存命中 ~17ms）。
+
+### Changed
+
+- **yolo-backend 镜像**：Dockerfile 加 `git` + 烤入 ultralytics CLIP fork（修复此前文本提示因无 git 致运行时 AutoUpdate 安装 CLIP 失败的硬阻塞）；文本编码器权重（CLIP ViT-B/32 ~338MB + `mobileclip_blt.ts` ~572MB）经 `/app/weights` 软链落 checkpoints 持久卷，首下后跨重启复用，不烤进镜像层。
+
+## [0.18.19] - 2026-06-25
+
+SAM 3 PCS exemplar 从「一发定生死」升级为**无状态迭代 refine 会话**，解决「全图相似不好用」：可累加多正负框（正框扩召回 / 负框排误检）、叠加 text 概念、拖阈值实时增减结果。源码证实 PCS 原生支持多 exemplar 累加（`append_boxes` concat 非覆盖）、负框（`add_geometric_prompt(label=False)`）、text+几何组合与阈值重过滤，此前 backend 每请求只发单正框、阈值写死，把官方交互循环整组丢弃。规划详见 [`docs/plans/2026-06-25-v0.18.19-sam3-pcs-iterative-refinement.md`](docs/plans/2026-06-25-v0.18.19-sam3-pcs-iterative-refinement.md)。
+
+### Added
+
+- **多正负框 + text 组合 exemplar（sam3-backend）**：`context.exemplars[]`（`[{bbox, label}]`，优先于单 `bbox`）顺序累加经 `add_geometric_prompt`；`label=true` 正框 / `false` 负框。可与 `context.text` 同时传，组合为「概念 + 视觉示例」。`predict_exemplars()` 统一三分支输出（box/mask/both），单框 `predict_bbox` / `predict_exemplar` 退化为薄封装。`/setup` 新增 `exemplar_capabilities`（`multi_box` / `negative_box` / `text_combination` / `threshold_refilter`）供前端开关。
+- **前端 exemplar refine 会话**：exemplar 工具从单发升级为会话——拖框出全图相似实例后，继续加正框扩召回 / 加负框去误检（Alt 拖框或负极性切换）/ 拖阈值滑块实时重过滤 / 叠加文本概念，每次操作重发全量。画布 overlay 渲染会话已落的正框（绿色实线）/ 负框（红色虚线），`Esc`·切 prompt·切 task·backend 时清除。
+- **候选紫虚线视觉强化**：SAM 候选「待确认」边框整体加粗（选中 / 未选中都更醒目），并加 marching-ants 流动虚线动效。渲染抽成独立 overlay 组件，逐帧动画用 `requestAnimationFrame` 隔离在该子树，不带动整个画布重渲。
+
+### Changed
+
+- **per-request 阈值重过滤**：无状态下每次重发全量 exemplars + 阈值，backbone 缓存命中时只重跑 grounding head（不重跑 backbone），略贵换可扩展性。
+
+### Compatibility
+
+- 向后兼容：旧单框请求（`type=exemplar` + 单 `context.bbox`）行为回归不破；新字段 `exemplars[]` 均可选。无 DB migration，无新增环境变量。
+
+## [0.18.18] - 2026-06-25
+
+交互分割多点精修质量优化：`mask_input` 回灌增量 + 会话点位可视化。SAM2/SAM3 的 `predict()` 接收上一轮 256×256 low-res logits 回灌，多点精修时稳住 mask 边界、修复「过度点击反而崩坏」。为保持 backend 无状态，logits 由前端携带往返（响应 `mask_input_next` → 下次点击 `context.mask_input`，前端只搬运不解析）；仅 `multimask_output=false` 的单 mask 精修阶段启用，规避多候选 index 歧义。同时补齐多点精修的可用性短板：画布渲染会话已落的正/负点（正绿圆 / 负红叉）。规划与量化详见 [`docs/plans/2026-06-25-v0.18.18-interactive-seg-mask-input-refeed.md`](docs/plans/2026-06-25-v0.18.18-interactive-seg-mask-input-refeed.md)。
+
+### Added
+
+- **`mask_input` 回灌（迭代精修增量）**：两 backend 解码 `context.mask_input` 透传上游 `predict(mask_input=...)`，单 mask 阶段把本轮 `low_res_masks` 编码回 `mask_input_next`；前端存储并在 ≥2 点精修时回传。编解码（`float16 + zlib + base64`）集中在共享包 `aap_protocol_v2.mask_codec`，对前端是不透明 token。GPU 实测（gsam2 large / coco8-seg）5-click IoU 中位 +1.86%、均值 +7.16%，并消除 OFF 在末次点击的退化；真实往返体积 <1KB（zlib 压饱和 logits）。
+- **会话点位可视化**：`smart-point` 多点精修时画布 overlay 渲染已落的正点（绿色实心圆）/ 负点（红色叉），跟随视口缩放平移；提交 / `Esc` / 切 prompt·task·backend 时随会话清除。
+
+### Changed
+
+- **交互单实例响应携带 `mask_input_next`**：`PredictionResult` 新增可选字段（协议 §2.2 编码约定同步）；平台层透传，仅交互单实例路径非空。坏 / 过期 `mask_input` 串 backend 静默忽略，不让单次精修整体失败。
+
+### Compatibility
+
+- 纯增量、向后兼容：新增字段均可选，老前端 / 老 backend 缺字段时行为不变。无 DB migration，无新增环境变量。
+
+## [0.18.17] - 2026-06-25
+
+双 backend SAM-style 单实例交互对齐 + 协议统一。sam3-backend 开启 `enable_inst_interactivity` 解锁 SAM-style `point` / `interactive_box` 交互（走 `model.predict_inst`，与 PCS 共用同一 `backbone_out` 缓存）；grounded-sam2-backend 复用已加载权重透传 `multimask_output`。两 backend 点交互升级为正/负点累加（前端重发全量点、后端无状态），单点歧义出 `multimask_output` 三候选。同时统一交互 prompt 命名：单框单 mask 走 `interactive_box`、PCS 找全图相似走 `exemplar`，`bbox` 退出交互命名空间。规划详见 [`docs/plans/2026-06-25-v0.18.17-interactive-seg-dual-backend-sam-iterative.md`](docs/plans/2026-06-25-v0.18.17-interactive-seg-dual-backend-sam-iterative.md)。
+
+### Added
+
+- **sam3 原生单实例交互**：新增 `predict_interactive`（走 `model.predict_inst`，复用 PCS 同一 `backbone_out` 缓存），解锁 SAM-style `point` / `interactive_box`；`/setup.supported_prompts` = `[point, interactive_box, text, exemplar]`。
+- **正/负点累加迭代精修**：前端点工具改为累加会话（每次重发全量点，后端无状态），首点 `multimask_output=true` 出 3 候选（按 iou 降序、`Tab` 切换、默认 top-1），≥2 点转单 mask 精修；会话在提交 / `Esc` / 切 task·backend 时重置。
+
+### Changed
+
+- **sam3 图像模型 checkpoint → `sam3.pt`（3.0）**：官方 image+inst 路径所用权重；`sam3.1_multiplex.pt`（视频权重）保留供后续视频追踪——multiplex 的 inst 权重命名/结构与 vendored image-inst 代码不兼容，强用会静默加载随机权重产生噪声 mask。模型变体名随之由 `sam3.1` 改为 `sam3`（前后端一致：`/setup` 变体轴 / `model_version` / 缓存 variant）。
+- **交互 prompt 命名统一**：`bbox` 退出交互 prompt 命名空间（仅保留为几何形状），单框单 mask 统一走 `interactive_box`；PCS「找全图相似」统一走 `exemplar`。gsam2 `predict_point` / `predict_bbox`（更名 `interactive_box`）透传 `multimask_output`。前端工具门控 / 路由 / 兜底全部对齐新命名。
+- **候选归一化补多连通 mask**：后端多环 mask 用 `value.polygons` 承载（单环仍用 `value.points`），前端 `normalizeResult` 取面积最大外环——修复 inst 点 mask 常多连通导致候选被静默丢弃、「同位置时好时坏」。
+
+### Compatibility
+
+- **破坏性**：旧 `type=bbox` 交互请求返回 422（项目未正式上线，不留兼容别名）。模型变体名 `sam3.1`→`sam3`，已注册 sam3 backend 需重读 `/setup`（重新绑定或刷新能力快照）以更新变体值。
+- gsam2 的几何 seed（tracker / box-seg）仍用 `bbox`（几何形状，非交互 prompt），不受影响。无 DB migration，无新增环境变量。
+
+## [0.18.16] - 2026-06-25
+
+把 `/ai-pre` 的受限树形编排从**竖排阶段卡**重做成**两列：左 DAG 画布 + 右节点检查器**。竖排卡片随并行 / 嵌套阶段无限拉长页面、结构靠缩进脑补；新画布让拓扑一眼可见、页面高度恒定（右列永远一张卡）。纯前端重做，后端零改动（仍由 `stagesGraph` 派生 `pipeline_stages`，复用 0.18.15 的校验 / 投递烘焙 / 几何回映）。规划详见 [`docs/plans/2026-06-25-v0.18.16-staged-preannotate-dag-canvas-draft.md`](docs/plans/2026-06-25-v0.18.16-staged-preannotate-dag-canvas-draft.md)。
+
+### Added
+
+- **受限树形 DAG 画布**：新增 `PipelineGraphCanvas`（`@xyflow/react` v12，经 `React.lazy` 隔离成独立 chunk、不进主包），把 `stagesGraph` 派生成分层 DAG（`col=depth-1`，源 → 子 → 孙）。节点带角色徽标（检测 / 分割 / 分类）、运行态圆点、迷你计数；产几何的节点才有出向 handle（「叶子不可有子」编码进 UI）。点选节点 → 右列检查器切到其参数。
+- **节点编辑手势**：节点上 `+` 加子 / `🗑` 级联删；拖节点连接点到空白 → 新建子阶段；**拖动连线改父**（re-parent）。受限规则（无环 / 深度 ≤ 3 / 父产几何）收敛到纯函数 `canReparent`，`isValidConnection` 实时校验、非法连接回弹 + toast 原因。
+- **纯函数图层 `utils/pipelineGraph.ts`**：`buildFlow` / `depthBySid` / `descendantsOf` / `subtreeHeight` / `canAddChild` / `canReparent` / `reparent` / `roleOf` / `detailOf`，与 react-flow 运行时解耦、可单测。
+- **节点信息增强（§13）**：节点直显 backend / 「待配置」态 / 父框过滤芯片 / 运行进度条 / 可达性 ⚠ 标红，hover 浮层显全量（模型·任务·投递·变体·写回键）。可达性前移——`StageCard` 上抛 `StageCaps`，`stageWarning` 纯函数按端点 422 同判据标红（仅提示、不硬拦）。拖拽改父时合法落点高亮、非法变淡；方向键在节点间移动选中；>4 节点出 MiniMap；删带后代节点提示连带数。
+
+### Changed
+
+- **检查器持久化**：所有 `StageCard` 与源参数表单常驻挂载、非选中者 CSS 隐藏（`hidden`），切换选中节点不丢各自 `usePreannotateConfig` 状态。
+- **运行态落到画布节点**：源节点显检出框数，下游节点显运行态圆点 + 「目标 / 成功」计数；键冲突节点 danger 描边（顶部预警与末位覆盖开关保留）。
+- 移除竖排阶段卡的「加第二阶段 / 并行加同级 / 加子阶段」按钮、缩进渲染与只读 `StageGraphSummary` ASCII 摘要条（被画布取代）。
+
+### Compatibility
+
+- 纯前端编排 UI 重做；`pipeline_stages` 组装逻辑、`StageCard` 配置体、`usePreannotateConfig`、运行 / 并发 / 键冲突逻辑全部复用。无协议改动、无 DB migration、无新增环境变量。
+
+## [0.18.15] - 2026-06-25
+
+承接 0.18.14 显式推迟的两块 plumbing，补齐**几何 depth-3**：`person → 在 person crop 上检测 hat → 给 hat 分类 color` 现在真能跑——检测器在父框 crop 上检出的子物体几何按仿射变换**回映回原图坐标**，并作为新框供下游消费。同时把「模型 I/O 输入契约」做成一等协议字段 `supported_inputs`，让投递方式与父子可达性可声明、可校验。前端补齐受限树形构建器（「加子阶段」+ ASCII 摘要条），用户搭出的 depth-3 链路所见即所跑。规划详见 [`docs/plans/2026-06-25-v0.18.15-model-io-contract-and-crop-remap-draft.md`](docs/plans/2026-06-25-v0.18.15-model-io-contract-and-crop-remap-draft.md)。
+
+### Added
+
+- **crop 坐标回映**：`roi.py` 的 `CropBatch` 增 `transforms`（每个 crop 在原图的归一化仿射变换 `{ox,oy,sx,sy}`，旁路不入线格式），新增 `remap_geometry_to_image()`（crop-local 几何反投影回原图坐标，bbox + polygon）与 `compose_transforms()`（链式 crop 变换合成）。crop / geometry-prompt 原语支持 **polygon 父框**（取外接框裁剪 / 归一化）。
+- **一等模型 I/O 输入契约 `supported_inputs`**：协议新增 `supported_inputs`（`full_image | crop | bbox_prompt | point_prompt`），与 `supported_prompts`（交互 prompt）解耦。`extract_capabilities` 规范化 + 扁平并集透传；老 backend 缺字段按 `supported_prompts` 合成兼容默认（零退化）。前端类型 + 模型市场卡片「可接受输入」行改读 `supported_inputs`（整图 / 裁剪 / 框提示 / 点提示）。
+- **受限树形前端构建器**：`ProjectDetailPanel` 从扁平 `downstreamIds`（恒 `parent_stage=0`）升级为 `stagesGraph` 树（`{sid, parentSid}`）；产几何的阶段卡（框→分割 / 检测）在 `depth<3` 时出「加子阶段」按钮，子卡缩进渲染；新增只读 `StageGraphSummary` ASCII 摘要条。`StageCard` 增「子物体命名」（`label`）输入、下游模型新增 `detection`（crop-detect 几何子）。
+
+### Changed
+
+- **Worker crop-detect 第三态**：crop 分支按 `write.target` 分流——`attributes` 走属性合并（现状）；`geometry/intermediate` 走 crop-detect（下游在 crop 上检出几何 → `remap_geometry_to_image` 回映回原图 → 写 `stage_outputs` 供下游消费、`geometry` 追加进预测）。每个 crop 均裁自原图、transform 即相对原图，无需链式 compose（且避免逐层 JPEG 误差累积）。
+- **端点按 `supported_inputs` 解析投递 + 可达性门控**：`POST /preannotate` 按子模型 `supported_inputs` 把投递方式烘焙进阶段 `input.mode`（box-seg→geometry、普通检测器→crop）；产几何的子若 `supported_inputs` 既不含 `bbox_prompt` 也不含 `crop` → 422。修复 0.18.14 端点未透传 `label` / `input` 到 worker 的链路缺口（子物体属性前缀此前在真实端点下不生效）。
+- **前端键冲突检测对齐后端**：改按「加完 `label` 前缀的最终键」去重（`hat_color` 与 `shoe_color` 不冲突），消除跨 label 同原始键的误报。
+
+### Compatibility
+
+- `supported_inputs` 协议字段 additive，老 backend 缺省由平台合成，零退化。`roi.py` `transforms` 为新增旁路返回，单阶段 / depth-2 路径不读它即保持原行为。0.18.14 的全部接受 / 拒绝用例不退化；新增门控仅在 backend 有能力快照时生效。API 路由不变，无 DB migration，无新增环境变量。
+
+## [0.18.14] - 2026-06-25
+
+阶段化预标注 `/ai-pre` 从「单源 + 一层扇出」扩展为**受限树形流水线**（最大深度 3）：一个下游阶段可以消费另一个下游阶段的输出。后端 schema / 校验 / worker 执行 / provenance meta 全部到位；前端模型市场卡片同步补齐字段展示。**本版交付结构骨架**——depth-3 的 attribute 链（`detect → classify A → classify B`，属性累加到 root）可跑；真正的几何 depth-3（`person → 检测 hat → color`，需要 crop 内检测 + 坐标回映）所需的 ROI 原语不在本版，见 0.18.15 计划。规划详见 [`docs/plans/2026-06-25-v0.18.14-staged-preannotate-tree-dag-draft.md`](docs/plans/2026-06-25-v0.18.14-staged-preannotate-tree-dag-draft.md)。
+
+### Added
+
+- **受限树形流水线（max depth 3）**：`PipelineStage` 新增 `label`（写回属性键前缀，子物体命名空间如 `hat_color`）、`input.mode`（显式投递模式覆盖）、`write.target_stage`（祖先选择扩展位，本版仅接受 `root`）；`write.target` 增 `intermediate`（只产几何给下游消费、不落库为候选）。校验从「单层扇出」替换为受限树形校验器：`parent_stage` 须指向更早且产几何的阶段、链路深度 ≤ 3、属性键按「加完 label 前缀的最终键」去重。
+- **模型市场卡片字段统一**：`ModelCard` 的「原子 / 内置流程」徽标恒显（缺省回落 `atom`）；「输出几何 / 输出属性 / 资源」三行改为恒渲染、空值占位 `—`，不再整行消失；新增「可接受输入」行（读 `supported_prompts`，无 prompt 接口的纯分类器显示「整图」）。
+
+### Changed
+
+- **Worker 拓扑执行**：`_run_task_pipeline` 引入按 `stage` 号索引的 `stage_outputs` map，下游阶段从 `parent_stage` 取上游输出（不再恒为 root）。投递模式判据从下游 `supported_prompts` 反推改为按子 `write.target` 正推（`attributes → crop`、`geometry/intermediate → geometry-prompt`），crop 钉死在「只产属性」；crop pad 缺省按深度取默认（`{1:0.05, 2:0.08, 3:0.12}`）、新增 `min_crop_side_px=32` 守卫（短边过小的嵌套裁剪跳过、计 `skipped_geometry`、父框靠 `keep_parent` 保留）；属性写回支持 `label` 前缀（设了才加、缺省写原始键保双阶段零退化）。
+- **provenance meta**：`PredictionMeta.extra.pipeline` 增 `max_depth` 及每阶段 `depth / parent_stage / label / write_target / target_stage`（JSONB additive，旧记录读取兼容）。
+
+### Compatibility
+
+- v0.18.13 的 `pipeline_stages` payload（`parent_stage=0` 的双阶段树）不改字节即通过新校验、跑通新 worker；新字段全部可选并带向后兼容默认。API 路由不变（`POST /projects/{id}/preannotate`），无 DB migration，无新增环境变量。
+
 ## [0.18.13] - 2026-06-24
 
 onnxtools 原子层直架单模型推理类 + 删 `visibility` 字段改用 `composition` 单轴过滤 + 单阶段配置修复。修了 v0.18.9 拆原子时把单后端「检测+属性一把梭」从单阶段路径弄丢的回归（用户无感）：onnxtools 三个 model 各架在自己的单模型类上（`vehicle-detect`→独立 `RtdetrORT`、`vehicle-attr-classify`→独立 `VehicleAttributeORT`、`vehicle-attr` 一锅端→`VehicleAttributePipeline`），按 model_id 懒加载——detect-only 部署只加载检测器、classify-only 只加载分类器。同时把 v0.18.11 引入的 `visibility` 字段整体删除（全平台仅 onnxtools 一处用、且与 `composition` 语义重载），过滤统一收敛到 `composition` 一根轴：编排下游 stage 只组合 `atom`，单阶段/工作台不过滤、一锅端 `vehicle-attr` 可作开箱即用默认。

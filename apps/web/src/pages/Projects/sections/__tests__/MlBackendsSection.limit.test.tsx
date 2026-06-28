@@ -35,6 +35,7 @@ vi.mock("@/components/ui/Toast", async () => {
 });
 vi.mock("@/api/ml-backends", () => ({
   mlBackendsApi: { setup: (...a: unknown[]) => mockSetup(...a) },
+  mlBackendSetupQueryKey: (p: unknown, b: unknown) => ["ml-backends", p, b, "setup"],
 }));
 // FormModal 在 limit 态下不会真正打开 — 用空实现避免依赖.
 vi.mock("@/components/projects/MlBackendFormModal", () => ({

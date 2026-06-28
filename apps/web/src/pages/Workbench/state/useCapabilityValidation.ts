@@ -11,7 +11,7 @@ import type { ToolUnitId } from "@/constants/toolUnits";
 //   2) 文本属性: model.output_attribute_types 含 "text" (OCR 文本输出) 时,
 //      项目是否在某个启用 unit 的 attribute_schema 配了 type=text 属性来承接识别文本.
 //
-// 任一不满足时返回一条 warning; 上层在 AIToolDrawer / AIInspectorPanel 以非阻断条幅展示.
+// 任一不满足时返回一条 warning; 上层在 InteractiveToolBar / AIInspectorPanel 以非阻断条幅展示.
 
 export interface CapabilityWarning {
   /** 稳定 key, 供 React list + 去重. */
@@ -70,7 +70,7 @@ export interface UseCapabilityValidationArgs {
 
 /**
  * 返回 active model 与项目配置的兼容性警告数组 (可能为空).
- * 纯派生, 无副作用; 由 AIToolDrawer / AIInspectorPanel 展示.
+ * 纯派生, 无副作用; 由 InteractiveToolBar / AIInspectorPanel 展示.
  */
 export function useCapabilityValidation({
   activeModel,

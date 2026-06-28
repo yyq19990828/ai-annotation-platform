@@ -2,7 +2,7 @@
  * v0.14.18 · 多 ML Backend 能力路由 (交互线).
  *
  * 一个项目注册多个 backend 时, 工作台 AI 从"单 active 后端驱动一切"改成"按角色 + 能力路由":
- * 交互工具 (point/bbox/exemplar) 各自解析到支持该 prompt 的交互后端, 批量线另走 batchBackendId。
+ * 交互工具 (point/interactive_box/exemplar) 各自解析到支持该 prompt 的交互后端, 批量线另走 batchBackendId。
  * 本 hook 只负责交互线: 对每个注册后端拉 /setup 建 capIndex, 产出 isPromptSupported (并集) +
  * resolveInteractive (逐 prompt 确定性解析 + preferred 兜底) + preferred 状态/持久化。
  *
@@ -11,11 +11,21 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
-import { mlBackendsApi, type MLBackendCapability } from "@/api/ml-backends";
+import {
+  mlBackendsApi,
+  mlBackendSetupQueryKey,
+  type MLBackendCapability,
+} from "@/api/ml-backends";
+import { INTERACTIVE_ROUTE_PROMPT_IDS } from "@/api/generated/capabilityVocab.gen";
 
-/** 交互 prompt 集合 (text 归批量线, 不在此)。 */
-export const INTERACTIVE_PROMPTS = ["point", "bbox", "exemplar"] as const;
-export type InteractivePrompt = (typeof INTERACTIVE_PROMPTS)[number];
+/**
+ * 交互 prompt 集合 (进画布交互工具线; text 归批量线不在此)。v0.18.30 · SSOT 来自后端
+ * capability_registry 的 PROMPTS.interactive_route, 经 codegen 生成 (消除手抄漂移:
+ * 后端新增 interactive prompt 前端自动认)。当前含 point/interactive_box/exemplar +
+ * 预留 scribble/sketch/mask (无 backend 消费时 candidatesFor 为空, 工具仍灰, 无副作用)。
+ */
+export const INTERACTIVE_PROMPTS = INTERACTIVE_ROUTE_PROMPT_IDS;
+export type InteractivePrompt = (typeof INTERACTIVE_ROUTE_PROMPT_IDS)[number];
 
 function isInteractivePrompt(p: string): p is InteractivePrompt {
   return (INTERACTIVE_PROMPTS as readonly string[]).includes(p);
@@ -139,41 +149,19 @@ export function pickDefaultPreferred(
   return order.find((id) => capIndex[id]?.reachable && capIndex[id].prompts.size > 0) ?? null;
 }
 
-function storageKey(userId: string | null | undefined, projectId: string | null | undefined): string {
-  return `wb:preferred-interactive:${userId ?? "anon"}:${projectId ?? "none"}`;
-}
-
-function readStoredPreferred(
-  userId: string | null | undefined,
-  projectId: string | null | undefined,
-): string | null {
-  try {
-    return localStorage.getItem(storageKey(userId, projectId));
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredPreferred(
-  userId: string | null | undefined,
-  projectId: string | null | undefined,
-  id: string | null,
-): void {
-  try {
-    if (id) localStorage.setItem(storageKey(userId, projectId), id);
-    else localStorage.removeItem(storageKey(userId, projectId));
-  } catch {
-    /* ignore quota / privacy mode */
-  }
-}
-
 export interface BackendRoutingArgs {
   projectId: string | null | undefined;
-  userId: string | null | undefined;
   /** 已注册后端 (注册顺序 = list 返回顺序)。 */
   backends: Array<{ id: string; name: string }>;
   /** 项目默认后端 (ml_backend_id)。 */
   defaultBackendId: string | null;
+  /**
+   * v0.18.31 · 服务端持久化的交互后端偏好 (按 project, 经 useInteractiveBackendPref 注入)。
+   * 替代旧 localStorage `wb:preferred-interactive` (不跨设备 = BUG)。
+   */
+  savedInteractiveBackendId?: string | null;
+  /** v0.18.31 · 写回服务端偏好 (debounced); 用户切换交互后端时调用。 */
+  onSaveInteractiveBackend: (id: string | null) => void;
 }
 
 export interface BackendRoutingResult {
@@ -192,15 +180,16 @@ export interface BackendRoutingResult {
 
 export function useBackendRouting({
   projectId,
-  userId,
   backends,
   defaultBackendId,
+  savedInteractiveBackendId,
+  onSaveInteractiveBackend,
 }: BackendRoutingArgs): BackendRoutingResult {
   const order = useMemo(() => backends.map((b) => b.id), [backends]);
 
   const queries = useQueries({
     queries: backends.map((b) => ({
-      queryKey: ["ml-backends", projectId, b.id, "setup"],
+      queryKey: mlBackendSetupQueryKey(projectId, b.id),
       queryFn: () => mlBackendsApi.setup(projectId as string, b.id),
       enabled: !!projectId,
       staleTime: 5 * 60 * 1000,
@@ -229,11 +218,12 @@ export function useBackendRouting({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [capSignature]);
 
-  // preferred: 优先读持久化 (若仍是合法交互候选), 否则按默认规则。
+  // preferred: 优先用服务端持久化偏好 (若仍是合法交互候选), 否则按默认规则。
+  // v0.18.31 · 偏好来源从 localStorage 迁到注入的 savedInteractiveBackendId (跨设备)。
   const [preferredOverride, setPreferredOverride] = useState<string | null>(null);
   useEffect(() => {
-    setPreferredOverride(readStoredPreferred(userId, projectId));
-  }, [userId, projectId]);
+    setPreferredOverride(savedInteractiveBackendId ?? null);
+  }, [savedInteractiveBackendId]);
 
   const fallbackPreferred = useMemo(
     () => pickDefaultPreferred(capIndex, order, defaultBackendId),
@@ -246,13 +236,13 @@ export function useBackendRouting({
     capIndex[preferredOverride].prompts.size > 0;
   const preferredInteractiveId = overrideValid ? preferredOverride : fallbackPreferred;
 
-  // useCallback: 引用稳定, 下传到 (可能 memo 化的) AIToolDrawer 选择器时不致每渲染失效。
+  // useCallback: 引用稳定, 下传到 (可能 memo 化的) InteractiveToolBar 选择器时不致每渲染失效。
   const setPreferredInteractiveId = useCallback(
     (id: string | null) => {
       setPreferredOverride(id);
-      writeStoredPreferred(userId, projectId, id);
+      onSaveInteractiveBackend(id);
     },
-    [userId, projectId],
+    [onSaveInteractiveBackend],
   );
 
   return {

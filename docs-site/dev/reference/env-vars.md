@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-23
+last_reviewed: 2026-06-26
 ---
 
 # 环境变量参考
@@ -203,11 +203,15 @@ last_reviewed: 2026-06-23
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `HF_TOKEN` | `hf_xxxxxxxxxxxx` | ⚠️ HF_TOKEN 必填: facebook/sam3.1 是 gated repo, 必须先在 HuggingFace 接受 license (https://huggingface.co/facebook/sam3.1), 再创建 read-only token (https://huggingface.co/settings/tokens) 填到这里. |
+| `HF_TOKEN` | `hf_xxxxxxxxxxxx` | ⚠️ HF_TOKEN 必填: facebook/sam3 (图像 PCS + inst) 与 facebook/sam3.1 (视频权重, 预留) 均为 gated repo, 必须先分别在 HuggingFace 接受 license (https://huggingface.co/facebook/sam3 与 https://huggingface.co/facebook/sam3.1), 再创建 read-only token (https://huggingface.co/settings/tokens) 填到这里. |
+| `SAM3_IMAGE_HF_REPO_ID` | `facebook/sam3` | 图像模型 (实际 /predict 加载) 仓库与权重文件; 默认 sam3.pt (3.0, 官方 image+inst 路径). |
+| `SAM3_IMAGE_CHECKPOINT_FILE` | `sam3.pt` | — |
+| `SAM3_HF_REPO_ID` | `facebook/sam3.1` | 视频 multiplex 仓库与权重文件 (一并落盘, 预留后续视频追踪). |
+| `SAM3_CHECKPOINT_FILE` | `sam3.1_multiplex.pt` | — |
 | `SAM3_EMBEDDING_CACHE_SIZE` | `32` | Embedding cache LRU 容量; A100 充裕可调到 64, 4060 别部 sam3. |
 | `SAM3_SCORE_THRESHOLD` | `0.5` | SAM 3 PCS text / exemplar 路径 score 过滤阈值; 召回不足下调到 0.3, 误检多调到 0.6. |
 | `SAM3_LOG_LEVEL` | `INFO` | Backend 日志级别 (DEBUG / INFO / WARNING). |
-| `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒后自动卸载模型释放显存 (sam3 FP16 ~7GB, 与 grounded-sam2 并存强烈建议保留); <=0 关闭定时卸载, 仍可通过 POST /unload 手动卸载. 下次 /predict 自动懒重载 (冷启动 ~8-12s). |
+| `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒后自动卸载模型释放显存 (sam3 开 inst FP16 ~5.8GB, 与 grounded-sam2 并存强烈建议保留); <=0 关闭定时卸载, 仍可通过 POST /unload 手动卸载. 下次 /predict 自动懒重载 (冷启动 ~8-12s). |
 | `SAM3_IDLE_CHECK_INTERVAL` | `60` | idle 检查器轮询间隔 (默认 60s). |
 
 ## DuckDB 离线分析视图

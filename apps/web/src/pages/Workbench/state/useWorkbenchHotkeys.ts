@@ -565,11 +565,13 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
             const cycle: Array<"smart-point" | "smart-box" | "magic-box" | "exemplar"> = [
               "smart-point", "smart-box", "magic-box", "exemplar",
             ];
+            // v0.18.17 · smart-box / magic-box 的 prompt key 改名 interactive_box (与后端
+            // supported_prompts 对齐); 否则按旧 "bbox" 比对 → 工具被错误置灰.
             const requiredOf = (t: typeof cycle[number]) =>
               ({
                 "smart-point": "point",
-                "smart-box": "bbox",
-                "magic-box": "bbox",
+                "smart-box": "interactive_box",
+                "magic-box": "interactive_box",
                 exemplar: "exemplar",
               } as const)[t];
             const isEnabled = (t: typeof cycle[number]) =>
@@ -598,8 +600,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           return;
 
         case "samPolarity": {
-          // v0.10.2 · 仅 smart-point 工具下消费.
-          if (s.tool === "smart-point") {
+          // v0.10.2 · smart-point 点正负; v0.18.19 · exemplar 框正负 (refine 会话) 同享极性。
+          if (s.tool === "smart-point" || s.tool === "exemplar") {
             s.setSamPolarity(action.polarity);
           }
           return;

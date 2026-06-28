@@ -23,6 +23,8 @@ from __future__ import annotations
 from .capability_registry import (
     GEOMETRY_VALUES,
     INFRA_VALUES,
+    PROMPT_VALUES,
+    PROMPTS_REQUIRES_INPUT,
     TASK_DEFAULT_GEOMETRY as _TASK_DEFAULT_GEOMETRY,
     TASK_VALUES,
 )
@@ -38,6 +40,28 @@ __all__ = [
 # 模态规范顺序 (image < video < lidar)。
 _MODALITY_ORDER = {"image": 0, "video": 1, "lidar": 2}
 _LIDAR_GEOMETRY = {"lidar_box_3d", "point_mask_3d"}
+
+# v0.18.29 · 交互式 prompt 集合统一由 capability_registry SSOT 派生 (PROMPTS_REQUIRES_INPUT,
+# 等价旧硬编码 8 元组)。语义不变: 含这类 prompt 的模型不默认走 crop 投递。
+
+
+def _synthesize_supported_inputs(prompts: list[str]) -> list[str]:
+    """v0.18.15 · 老 backend 缺 supported_inputs 时, 按 supported_prompts 合成兼容默认。
+
+    受控词表: ``full_image | crop | bbox_prompt | point_prompt``。
+    - bbox/point prompt → 对应 ``bbox_prompt`` / ``point_prompt`` (box-seg 类走 geometry-prompt)。
+    - 一律含 ``full_image`` (任何模型都能吃整图)。
+    - 非交互模型 (纯检测/分类/OCR…) 额外含 ``crop`` (平台可裁父框 ROI 喂入), 让其能作几何/属性下游。
+    """
+    out: list[str] = []
+    if "interactive_box" in prompts or "bbox" in prompts:
+        out.append("bbox_prompt")
+    if "point" in prompts:
+        out.append("point_prompt")
+    out.append("full_image")
+    if not any(p in PROMPTS_REQUIRES_INPUT for p in prompts):
+        out.append("crop")
+    return list(dict.fromkeys(out))
 
 
 def _normalize_infra(value: object) -> str:
@@ -85,6 +109,10 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         else backend_infra,
         "is_interactive": bool(model.get("is_interactive")),
         "supported_prompts": list(model.get("supported_prompts") or []),
+        # v0.18.15 · 一等输入契约 (与 supported_prompts 解耦): 模型能吃哪些投递形态
+        # (full_image | crop | bbox_prompt | point_prompt)。缺省按 prompts 合成兼容默认。
+        "supported_inputs": list(model.get("supported_inputs") or [])
+        or _synthesize_supported_inputs(list(model.get("supported_prompts") or [])),
         "supported_geometric_outputs": geo,
         "output_attribute_types": list(model.get("output_attribute_types") or []),
         # 协议③ · backend 自报的属性 schema (含 select options), 供平台一键导入项目 attribute_schema.
@@ -108,6 +136,10 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         # v0.14.17 · 闭集检测器的原生类别表 (yolo model.names, [{index,name}]); 供前端类别白名单.
         # 仅在该 task 模型已加载过 (warmup/predict) 时 backend /setup 才带, 否则为空。
         "classes": list(model.get("classes") or []),
+        # v0.18.23 · exemplar 模型的能力声明 (multi_box / negative_box / text_combination /
+        # threshold_refilter); 前端工作台据此渲染 exemplar 控件 (YOLOE 无负框 → 隐藏负极性)。
+        # 缺字段 = None, 前端按「全支持」向后兼容。
+        "exemplar_capabilities": model.get("exemplar_capabilities") or None,
     }
     out["modality"] = _model_modality(out)
     return out
@@ -118,14 +150,20 @@ def _synthesize_single_model(setup: dict, backend_infra: str) -> dict:
 
     task 由现有信号推断:
     - `supported_trackers` 非空 ⇒ tracker
-    - `supported_prompts` 含 point/bbox/text/exemplar ⇒ interactive_seg (SAM 类)
+    - `supported_prompts` 含交互路由的 prompt (PROMPTS_INTERACTIVE_ROUTE) ⇒ interactive_seg (SAM 类)
     - 否则 ⇒ detection
+
+    claude[bot] P2 · 用 SSOT `PROMPTS_INTERACTIVE_ROUTE` (point/interactive_box/exemplar)
+    替代原硬编码 tuple, 修 text-only legacy backend (如 GroundingDINO) 被误判为 interactive_seg
+    的 bug —— text 走批量线、非交互路由, 不应让 task=detection 的纯文本 backend 看起来像 SAM。
     """
+    from .capability_registry import PROMPTS_INTERACTIVE_ROUTE  # 局部 import 避免循环。
+
     prompts = list(setup.get("supported_prompts") or [])
     trackers = list(setup.get("supported_trackers") or [])
     if trackers:
         task = "tracker"
-    elif any(p in ("point", "bbox", "text", "exemplar") for p in prompts):
+    elif any(p in PROMPTS_INTERACTIVE_ROUTE for p in prompts):
         task = "interactive_seg"
     else:
         task = "detection"
@@ -138,6 +176,8 @@ def _synthesize_single_model(setup: dict, backend_infra: str) -> dict:
         "infra": backend_infra,
         "is_interactive": bool(setup.get("is_interactive")),
         "supported_prompts": prompts,
+        # v0.18.15 · 老 backend 无 supported_inputs, 按 prompts 合成兼容默认 (零退化)。
+        "supported_inputs": _synthesize_supported_inputs(prompts),
         "supported_geometric_outputs": list(
             setup.get("supported_geometric_outputs") or []
         ),
@@ -150,8 +190,93 @@ def _synthesize_single_model(setup: dict, backend_infra: str) -> dict:
         "default_thresholds": {},
         "resource_profile": {},
         "params": setup.get("params") or {},
+        # v0.18.23 · 老 backend (sam3) 的 exemplar 能力在顶层声明, 透传供前端 exemplar 控件渲染。
+        "exemplar_capabilities": setup.get("exemplar_capabilities") or None,
     }
     out["modality"] = _model_modality(out)
+    return out
+
+
+def _collect_warnings(models: list[dict]) -> list[dict]:
+    """校验规范化后各 model 的受控值, 越界即记 warning (只诊断、不改写)。
+
+    v0.18.29 · 把「字段拼错 / 值越界致工具静默不亮」变成模型市场可见信号。只校验受控值
+    (task / infra / supported_prompts / supported_geometric_outputs); 派生缺省
+    (task / infra == "unknown") 跳过 — 那是 backend 没声明、平台已兜底, 非越界。
+
+    claude[bot] P2 · 加未知字段名检测: ModelCapability 用 ``extra=allow``, backend 拼错
+    (如 ``output_attribute_typo``) 既逃 schema 校验又逃 warning, 与本批 SSOT 方向相反。
+    白名单 = ModelCapability.model_fields ∪ _normalize_model 透传的扩展字段
+    (``modality`` 为派生, ``exemplar_capabilities`` 为协议外透传). 多余键发 info 级警告。
+    """
+    from app.schemas.ml_backend import ModelCapability
+
+    known_model_keys = set(ModelCapability.model_fields.keys()) | {
+        # ModelCapability 用 extra=allow 接以下透传 / 派生字段, 不算未知。
+        "supported_inputs",  # v0.18.15 输入契约
+        "exemplar_capabilities",  # v0.18.23 透传给前端 exemplar 控件
+    }
+    out: list[dict] = []
+
+    def warn(
+        model_id: str, field: str, value: str, message: str, level: str = "warning"
+    ) -> None:
+        out.append(
+            {
+                "level": level,
+                "model_id": model_id,
+                "field": field,
+                "value": value,
+                "message": message,
+            }
+        )
+
+    for m in models:
+        mid = str(m.get("id") or "?")
+        task = m.get("task")
+        if task and task != "unknown" and task not in TASK_VALUES:
+            warn(
+                mid,
+                "task",
+                task,
+                f"未知 task「{task}」不在受控词表; 平台无法据此派生默认几何/模态。",
+            )
+        infra = m.get("infra")
+        if infra and infra != "unknown" and infra not in INFRA_VALUES:
+            warn(
+                mid,
+                "infra",
+                infra,
+                f"未知 infra「{infra}」不在受控词表。",
+                level="info",
+            )
+        for p in m.get("supported_prompts") or []:
+            if p not in PROMPT_VALUES:
+                warn(
+                    mid,
+                    "supported_prompts",
+                    p,
+                    f"未知 prompt「{p}」; 前端工具门控不识别, 该提示将静默失效。",
+                )
+        for g in m.get("supported_geometric_outputs") or []:
+            if g not in GEOMETRY_VALUES:
+                warn(
+                    mid,
+                    "supported_geometric_outputs",
+                    g,
+                    f"未知几何输出「{g}」不在受控词表。",
+                )
+        # claude[bot] P2 · ModelCapability extra=allow 不会拒未知键; 这里发 info 警告
+        # 抓 backend 字段名拼写错误 (如 output_attribute_typo) 让其在模型市场可见。
+        unknown_keys = sorted(set(m.keys()) - known_model_keys)
+        for k in unknown_keys:
+            warn(
+                mid,
+                k,
+                "",
+                f"未知字段「{k}」不在 ModelCapability schema; 可能是拼写错误, 平台会忽略。",
+                level="info",
+            )
     return out
 
 
@@ -186,9 +311,12 @@ def extract_capabilities(setup: dict | None) -> dict | None:
         "models": models,
         "is_interactive": any(m["is_interactive"] for m in models),
         "supported_prompts": _union(models, "supported_prompts"),
+        "supported_inputs": _union(models, "supported_inputs"),
         "supported_trackers": _union(models, "supported_trackers"),
         "supported_text_outputs": _union(models, "supported_text_outputs"),
         "supported_geometric_outputs": _union(models, "supported_geometric_outputs"),
+        # v0.18.29 · 受控词表校验诊断 (越界 task/infra/prompt/geometry); 空 = 全合法。
+        "warnings": _collect_warnings(models),
     }
     caps["modalities"] = derive_modalities(caps)
     return caps

@@ -67,6 +67,85 @@ async def test_patch_image_subtree_only_touches_submitted_field(
     assert resp.json()["workbench"]["image"]["controlPointsSize"] == 10
 
 
+async def test_patch_ai_subtree_deep_merges_params_and_model(httpx_client, annotator):
+    """v0.18.25 · ai 子树深一层合并: params_by_backend / model_by_backend 由不同前端 hook
+    各自只提交自己那半子键, 互不冲掉 (区别于 workbench 的整子树替换)。"""
+    _, token = annotator
+    bid = "11111111-1111-1111-1111-111111111111"
+
+    # 1) 先写参数偏好 (模拟 useAiToolParamPrefs)。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"ai": {"params_by_backend": {bid: {"score_threshold": 0.3}}}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+
+    # 2) 再写模型选择偏好 (模拟 useAiToolModelPref) — 不应冲掉上一步的参数。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"ai": {"model_by_backend": {bid: "detect-yoloe"}}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    ai = resp.json()["ai"]
+    assert ai["params_by_backend"] == {bid: {"score_threshold": 0.3}}
+    assert ai["model_by_backend"] == {bid: "detect-yoloe"}
+
+    # 3) 反向: 再改参数, 模型选择仍在。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"ai": {"params_by_backend": {bid: {"score_threshold": 0.9}}}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    ai = resp.json()["ai"]
+    assert ai["params_by_backend"] == {bid: {"score_threshold": 0.9}}
+    assert ai["model_by_backend"] == {bid: "detect-yoloe"}
+
+    # GET 读回一致。
+    resp = await httpx_client.get(PREFS_URL, headers=_bearer(token))
+    assert resp.json()["ai"]["model_by_backend"] == {bid: "detect-yoloe"}
+
+
+async def test_patch_ai_interactive_backend_independent(httpx_client, annotator):
+    """v0.18.31 · 第三个 ai 子键 interactive_backend_by_project (交互后端选择, 按 project)
+    与 params/model 独立深合并, 三键互不覆盖。"""
+    _, token = annotator
+    bid = "22222222-2222-2222-2222-222222222222"
+    pid = "33333333-3333-3333-3333-333333333333"
+
+    # 先写 model + params。
+    await httpx_client.patch(
+        PREFS_URL,
+        json={"ai": {"model_by_backend": {bid: "detect"}}},
+        headers=_bearer(token),
+    )
+    await httpx_client.patch(
+        PREFS_URL,
+        json={"ai": {"params_by_backend": {bid: {"score_threshold": 0.5}}}},
+        headers=_bearer(token),
+    )
+
+    # 再写交互后端选择 (模拟 useInteractiveBackendPref) — 不冲掉前两者。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"ai": {"interactive_backend_by_project": {pid: bid}}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    ai = resp.json()["ai"]
+    assert ai["interactive_backend_by_project"] == {pid: bid}
+    assert ai["model_by_backend"] == {bid: "detect"}
+    assert ai["params_by_backend"] == {bid: {"score_threshold": 0.5}}
+
+    # GET 读回三键齐全。
+    resp = await httpx_client.get(PREFS_URL, headers=_bearer(token))
+    ai = resp.json()["ai"]
+    assert ai["interactive_backend_by_project"] == {pid: bid}
+    assert ai["model_by_backend"] == {bid: "detect"}
+
+
 # ── 2. legacy 平铺键提升器 ───────────────────────────────────────────
 
 

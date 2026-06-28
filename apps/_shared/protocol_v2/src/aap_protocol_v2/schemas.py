@@ -44,6 +44,10 @@ class PredictionResult(BaseModel):
     cache_hit: bool | None = None
     model_load_ms: int | None = None
     pool_state: PoolStateSnapshot | None = None
+    # v0.18.18 · 交互单实例精修的 256×256 low-res logits 回灌 (base64, 见 mask_codec)。
+    # 仅 multimask_output=False 的单 mask 路径返回 (规避多候选 index 歧义); 前端原样
+    # 存储、下次点击经 context.mask_input 回传。None = 本轮不回灌。
+    mask_input_next: str | None = None
 
 
 class BatchPredictResponse(BaseModel):
@@ -59,7 +63,7 @@ class LoadedKey(BaseModel):
     """`/health.pool.loaded_keys[]` 单条已加载权重描述.
 
     `key` 是 backend-defined 的 opaque 字符串 (yolo 用 `task/series/size`,
-    gsam2 用 `sam=tiny/dino=T`, sam3 用 `sam3.1`), 前端只做字符串相等比较.
+    gsam2 用 `sam=tiny/dino=T`, sam3 用 `sam3`), 前端只做字符串相等比较.
     """
 
     key: str

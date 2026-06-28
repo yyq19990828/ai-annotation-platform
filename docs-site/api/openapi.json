@@ -49,8 +49,22 @@
       },
       "AIToolPreferences": {
         "additionalProperties": false,
-        "description": "每用户的 AI 工具推理参数偏好，按 ML backend id 分桶。\n\n不同 backend 的 /setup.params schema 不同（gsam2 有 box/text_threshold，sam3 有\nscore_threshold 等），故按 backend id 各存一份，互不污染；多用户各自一份 preferences，\n天然隔离不打架。值为 /setup.params 对应的自由 dict，平台只做存取不强校验字段。",
+        "description": "每用户的 AI 工具偏好，按 ML backend id 分桶。\n\n不同 backend 的 /setup.params schema 不同（gsam2 有 box/text_threshold，sam3 有\nscore_threshold 等），故按 backend id 各存一份，互不污染；多用户各自一份 preferences，\n天然隔离不打架。值为 /setup.params 对应的自由 dict，平台只做存取不强校验字段。\n\nv0.18.25 · 新增 model_by_backend：交互工具的引擎(模型)选择，同样按 backend 分桶。\n本子树为「深一层合并」(update_preferences)，故 params/model 两个子键可各自独立保存。",
         "properties": {
+          "interactive_backend_by_project": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Interactive Backend By Project",
+            "type": "object"
+          },
+          "model_by_backend": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model By Backend",
+            "type": "object"
+          },
           "params_by_backend": {
             "additionalProperties": {
               "additionalProperties": true,
@@ -3298,6 +3312,14 @@
             "default": false,
             "title": "Warmup Endpoint",
             "type": "boolean"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CapabilityWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "title": "BackendCapabilities",
@@ -5590,6 +5612,46 @@
           "instances"
         ],
         "title": "CapabilityInstancesResponse",
+        "type": "object"
+      },
+      "CapabilityWarning": {
+        "description": "v0.18.29 · backend `/setup` 上报值的受控词表校验诊断 (越界即记, 不阻断解析)。\n\n由 services/ml_capabilities._collect_warnings 产出; 前端模型市场据此显示 ⚠ +\n可读原因, 把「字段拼错 / 值越界致工具静默不亮」变成可见信号。",
+        "properties": {
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "level": {
+            "default": "warning",
+            "title": "Level",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "value",
+          "message"
+        ],
+        "title": "CapabilityWarning",
         "type": "object"
       },
       "CeleryHealthSummary": {
@@ -8130,7 +8192,7 @@
         "type": "object"
       },
       "InteractiveRequest": {
-        "description": "工作台「AI 助手」单次推理请求。`context` 透传至 backend，平台不做 schema 校验。\n\n`context.type` 协商枚举（详见 `docs-site/dev/ml-backend-protocol.md` §2.2）：\n- ``point``：``{\"type\":\"point\",\"points\":[[x,y],...],\"labels\":[1,0,...]}``\n- ``bbox``：``{\"type\":\"bbox\",\"bbox\":[x1,y1,x2,y2]}``\n- ``polygon``：``{\"type\":\"polygon\",\"points\":[[x,y],...]}``\n- ``text``：``{\"type\":\"text\",\"text\":\"ripe apples\"}``（v0.9.x Grounded-SAM-2）\n- ``exemplar``：留给 v0.10.x SAM 3。",
+        "description": "工作台「AI 助手」单次推理请求。`context` 透传至 backend，平台不做 schema 校验。\n\n`context.type` 协商枚举（详见 `docs-site/dev/ml-backend-protocol.md` §2.2）：\n- ``point``：``{\"type\":\"point\",\"points\":[[x,y],...],\"labels\":[1,0,...],\"multimask_output\":false}``\n  （v0.18.17 · SAM-style 单实例点交互, 正/负点累加由前端重发全量点; multimask 出 3 候选）\n- ``interactive_box``：``{\"type\":\"interactive_box\",\"bbox\":[x1,y1,x2,y2],\"multimask_output\":false}``\n  （v0.18.17 · SAM-style 单框单 mask; 双 backend 统一名, 旧 ``bbox`` prompt 已退役）\n- ``polygon``：``{\"type\":\"polygon\",\"points\":[[x,y],...]}``\n- ``text``：``{\"type\":\"text\",\"text\":\"ripe apples\"}``（Grounded-SAM-2 DINO / SAM 3 PCS）\n- ``exemplar``：``{\"type\":\"exemplar\",\"bbox\":[x1,y1,x2,y2]}`` 或多正负框\n  ``{\"type\":\"exemplar\",\"exemplars\":[{\"bbox\":[...],\"label\":true},...],\"text\":\"car\",\"score_threshold\":0.5}``\n  （SAM 3 PCS 全图相似实例; v0.18.19 起支持多正负框累加 + text 概念组合 + 阈值重过滤的迭代 refinement）。",
         "properties": {
           "context": {
             "additionalProperties": true,
@@ -9950,6 +10012,7 @@
         "type": "object"
       },
       "PipelineStage": {
+        "additionalProperties": false,
         "description": "v0.18.1 · 多阶段预标注的单个阶段声明 (路径 B).\n\nstage 0 (parent_stage=None) 是源检测阶段, 吃整图产框; 下游阶段 (parent_stage 指向源阶段)\n平台按父框 bbox 裁 ROI crop 喂入, 把返回的 attributes 合并进父框 (write.target=attributes)。\nv0.18.2 (M2): 支持单层并行扇出 (多个下游共享同一 parent_stage)、按类别路由\n(parent_class_filter)、阶段级失败策略 (on_failure)。深度≥3 / new_shape 留 M3。",
         "properties": {
           "class_filter": {
@@ -9965,6 +10028,29 @@
               }
             ],
             "title": "Class Filter"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
           },
           "ml_backend_id": {
             "format": "uuid",
@@ -11837,6 +11923,21 @@
             ],
             "title": "Owner Name"
           },
+          "preannotate_pipeline": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preannotate Pipeline"
+          },
           "prefer_same_scene_continuation": {
             "default": false,
             "title": "Prefer Same Scene Continuation",
@@ -13370,6 +13471,21 @@
             ],
             "title": "Name"
           },
+          "preannotate_pipeline": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preannotate Pipeline"
+          },
           "prefer_same_scene_continuation": {
             "anyOf": [
               {
@@ -13662,6 +13778,14 @@
             "title": "Modalities",
             "type": "array"
           },
+          "prompts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ProtocolPromptItem"
+            },
+            "title": "Prompts",
+            "type": "array"
+          },
           "tasks": {
             "items": {
               "$ref": "#/components/schemas/ProtocolTaskItem"
@@ -13751,6 +13875,39 @@
           "summary"
         ],
         "title": "ProtocolModalityItem",
+        "type": "object"
+      },
+      "ProtocolPromptItem": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "interactive_route": {
+            "title": "Interactive Route",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "requires_input": {
+            "title": "Requires Input",
+            "type": "boolean"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "summary",
+          "requires_input",
+          "interactive_route"
+        ],
+        "title": "ProtocolPromptItem",
         "type": "object"
       },
       "ProtocolTaskItem": {
@@ -19720,7 +19877,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.18.13"
+    "version": "0.18.32"
   },
   "openapi": "3.1.0",
   "paths": {

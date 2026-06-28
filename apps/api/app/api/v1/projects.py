@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text, or_, and_
 from app.deps import (
@@ -663,6 +663,9 @@ async def update_project(
             payload.get("data_type", project.data_type),
         )
     await _assert_project_kind_update_allowed(db, project, payload)
+    # v0.18.27 · 项目级编排结构校验 (显式 null = 清除, 跳过校验直接置 None)。
+    if payload.get("preannotate_pipeline") is not None:
+        _validate_saved_pipeline(payload["preannotate_pipeline"])
     if "ml_backend_id" in payload:
         if payload["ml_backend_id"]:
             # v0.10.37 · 绑定按 data_type 校验模态 (用应用 payload 后的有效 data_type)
@@ -1208,6 +1211,10 @@ class PipelineStage(BaseModel):
     (parent_class_filter)、阶段级失败策略 (on_failure)。深度≥3 / new_shape 留 M3。
     """
 
+    # 脏键在校验期即 422, 不再原样落进 preannotate_pipeline JSONB (见 issue 0008.1);
+    # 前端 PipelineStagePayload 键集与此严格一致, 不会误伤。
+    model_config = ConfigDict(extra="forbid")
+
     stage: int
     ml_backend_id: uuid.UUID
     model_id: str | None = None
@@ -1226,6 +1233,12 @@ class PipelineStage(BaseModel):
     write: dict | None = None
     # v0.18.2 · 阶段级失败策略: keep_parent (默认, 下游失败保留上游框、属性留空) | drop_box (丢父框)。
     on_failure: Literal["keep_parent", "drop_box"] = "keep_parent"
+    # v0.18.14 · 卡片显示名 + 写回属性键前缀。设了 label, 写回键加 f"{label}_" 前缀 (子物体
+    # 命名空间, 如 hat_color / shoe_color); 缺省写原始键 (双阶段零退化)。
+    label: str | None = None
+    # v0.18.14 · 显式输入模式覆盖 {"mode": "full_image"|"crop"|"geometry"}; 缺省由 worker 按
+    # write.target 推断 (attributes→crop, geometry/intermediate→geometry-prompt)。
+    input: dict | None = None
 
 
 class PreannotateRequest(BaseModel):
@@ -1277,22 +1290,55 @@ class PreannotateRequest(BaseModel):
         root = roots[0]
         if root.ml_backend_id != self.ml_backend_id:
             raise ValueError("源阶段 ml_backend_id 须与顶层 ml_backend_id 一致")
-        for s in stages:
+        # v0.18.14 · 受限树形校验 (max depth 3): 替换原单层扇出约束。
+        # parent_stage 须指向已定义且更早的阶段 (序号严格小于, 自然无环); 父须产可消费几何
+        # (write.target ∈ {geometry, intermediate}); 任一链路深度 ≤ 3。
+        # parent_stage=0 的旧双阶段 payload 在此等价通过 (root depth=1, 子 depth=2)。
+        known_depth: dict[int, int] = {root.stage: 1}
+        known_target: dict[int, str] = {
+            root.stage: (root.write or {}).get("target", "geometry")
+        }
+        for s in sorted(stages, key=lambda x: x.stage):
             if s.parent_stage is None:
                 continue
-            # M2: 单层扇出 (深度 2) —— 下游 parent_stage 只能指向源阶段, 不支持子阶段再扇出。
-            if s.parent_stage != root.stage:
+            if s.parent_stage not in known_depth:
                 raise ValueError(
-                    f"stage {s.stage} 的 parent_stage 只能指向源阶段 {root.stage} (本期仅单层扇出)"
+                    f"stage {s.stage} 的 parent_stage={s.parent_stage} 未在前面定义; "
+                    "受限树形要求父阶段序号严格小于子阶段"
                 )
-            if s.write is not None:
-                target = s.write.get("target", "attributes")
-                # geometry: gsam2 box-seg 等下游产独立 polygon 追加为 new shape (无 attribute keys)。
-                # attributes: 纯分类下游写回父框 attributes。
-                if target not in {"attributes", "geometry"}:
-                    raise ValueError(
-                        f"write.target 须为 'attributes' 或 'geometry', 收到 {target!r}"
-                    )
+            parent_depth = known_depth[s.parent_stage]
+            if parent_depth >= 3:
+                raise ValueError(
+                    f"stage {s.stage} 超过最大深度 3 (父深度={parent_depth})"
+                )
+            parent_target = known_target[s.parent_stage]
+            if parent_target not in {"geometry", "intermediate"}:
+                raise ValueError(
+                    f"stage {s.stage} 的父阶段 {s.parent_stage} write.target={parent_target!r}, "
+                    "不产几何, 无法作为父阶段"
+                )
+            # drop_box 的「丢父框」语义仅在父阶段为源阶段 (root) 时下标才与 root_boxes 对齐;
+            # 深层 (非-root-父) 阶段的父几何是中间产物, worker 误用其下标会删掉无关的 root 框
+            # (见 issue 0001)。深层 drop_box 语义未定义, 此处直接拒绝, 防止静默数据丢失。
+            if s.on_failure == "drop_box" and s.parent_stage != root.stage:
+                raise ValueError(
+                    f"stage {s.stage} 的 on_failure='drop_box' 仅支持父阶段为源阶段 "
+                    f"(stage {root.stage}); 深层阶段请用 on_failure='keep_parent'"
+                )
+            target = (s.write or {}).get("target", "attributes")
+            # geometry: 下游产独立 polygon 追加为 new shape。intermediate: 只产几何给下游消费,
+            # 不落库为候选。attributes: 纯分类下游写回父框 attributes。
+            if target not in {"attributes", "geometry", "intermediate"}:
+                raise ValueError(
+                    "write.target 须为 'attributes' / 'geometry' / 'intermediate', "
+                    f"收到 {target!r}"
+                )
+            # 未来祖先选择扩展点; 本版仅接受 'root' (缺省也按 root 处理)。
+            ts = (s.write or {}).get("target_stage")
+            if ts not in (None, "root"):
+                raise ValueError(
+                    f"stage {s.stage} 的 write.target_stage={ts!r} 暂不支持, 本版仅接受 'root'"
+                )
             if s.roi is not None:
                 mode = s.roi.get("mode", "crop")
                 # crop: 平台裁父框 ROI 喂下游分类。geometry: 全图 + 父框列表喂 box-seg。
@@ -1303,22 +1349,86 @@ class PreannotateRequest(BaseModel):
                 pad = s.roi.get("pad")
                 if pad is not None and not (0.0 <= float(pad) <= 0.5):
                     raise ValueError("roi.pad 须在 [0, 0.5] 区间")
-        # 并行兄弟键冲突: 多个下游 attributes-target 阶段声明 write.keys 写同一键 → reject 时 422。
-        # geometry-target 不写 attributes (产独立 polygon shape), 不参与 keys 冲突检测。
+            if s.input is not None:
+                imode = s.input.get("mode")
+                # 下游阶段投递只有 crop (裁父框 ROI) / geometry (整图+父框列表) 两态; worker
+                # _resolve_input_mode 也只认这两个。full_image 不是真实投递模式 (会被 worker
+                # 静默忽略并回落 write.target 启发式), 校验期直接拒绝以保契约一致 (见 issue 0006)。
+                if imode is not None and imode not in {"crop", "geometry"}:
+                    raise ValueError(
+                        f"input.mode 须为 'crop' / 'geometry', 收到 {imode!r}"
+                    )
+            known_depth[s.stage] = parent_depth + 1
+            known_target[s.stage] = target
+        # 属性键冲突: 按"加完 label 前缀的最终键"维度 (写回 root)。无 label 时用原始键 (= 旧双阶段
+        # 行为, 零退化); 设了 label 才加 f"{label}_" 前缀 (子物体命名空间, 与 worker 写回一致)。
+        # geometry/intermediate 不写 attributes, 不参与冲突检测。
         if self.on_key_conflict == "reject":
-            seen_keys: set[str] = set()
+            final_keys: dict[str, int] = {}
             for s in stages:
                 if s.parent_stage is None or not s.write:
                     continue
                 if s.write.get("target", "attributes") != "attributes":
                     continue
+                prefix = f"{s.label}_" if s.label else ""
                 for k in s.write.get("keys") or []:
-                    if k in seen_keys:
+                    final = f"{prefix}{k}"
+                    if final in final_keys:
                         raise ValueError(
-                            f"多个阶段写同一属性键 {k!r}; 设 on_key_conflict=last_wins 以允许末位覆盖"
+                            f"attribute key 冲突: stage {s.stage} 与 stage {final_keys[final]} "
+                            f"都写 {final!r} 到 root; 设 on_key_conflict=last_wins 以允许末位覆盖"
                         )
-                    seen_keys.add(k)
+                    final_keys[final] = s.stage
         return self
+
+
+def _validate_saved_pipeline(stages) -> None:
+    """v0.18.27 · 校验「保存到项目」的编排结构, 复用预标注端点同款 PipelineStage + 树形校验。
+
+    存储态 ml_backend_id 是 str (PipelineStage 自动 coerce 成 UUID)。顶层 ml_backend_id
+    取源阶段 (parent_stage=None) 的 backend, 以满足 PreannotateRequest「源阶段 backend 须
+    等于顶层」约束。结构非法 → 422 (避免脏编排存进库, 到 v0.18.28 执行时才炸)。
+
+    注意: 仅做结构 / 树形校验, 不校验 backend 存在性与归属 (那是执行期 trigger_preannotation
+    的职责); 本版只存不跑。
+    """
+    if not stages:
+        return
+    if not isinstance(stages, list) or not all(isinstance(s, dict) for s in stages):
+        raise HTTPException(
+            status_code=422, detail="preannotate_pipeline 须为阶段对象数组"
+        )
+    roots = [s for s in stages if s.get("parent_stage") is None]
+    if len(roots) != 1:
+        raise HTTPException(
+            status_code=422,
+            detail="preannotate_pipeline 须恰有一个源阶段 (parent_stage=None)",
+        )
+    try:
+        PreannotateRequest(
+            ml_backend_id=roots[0].get("ml_backend_id"), pipeline_stages=stages
+        )
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=422, detail=f"preannotate_pipeline 校验失败: {e}"
+        ) from e
+
+
+def _stage_supported_inputs(backend, model_id: str | None) -> list[str]:
+    """v0.18.15 · 从 backend 能力快照取某 model 的 supported_inputs (一等输入契约)。
+
+    health_meta.capabilities.models[] 已由 extract_capabilities 规范化 (含合成默认)。
+    无快照 / 无 model_id / 匹配不到 → 返回 [] (调用方据此放过门控, 保持零退化)。
+    """
+    meta = getattr(backend, "health_meta", None)
+    caps = meta.get("capabilities") if isinstance(meta, dict) else None
+    models = caps.get("models") if isinstance(caps, dict) else None
+    if not isinstance(models, list) or model_id is None:
+        return []
+    for m in models:
+        if isinstance(m, dict) and str(m.get("id")) == str(model_id):
+            return list(m.get("supported_inputs") or [])
+    return []
 
 
 @router.post("/{project_id}/preannotate")
@@ -1345,6 +1455,7 @@ async def trigger_preannotation(
     if body.pipeline_stages:
         norm: list[dict] = []
         for st in body.pipeline_stages:
+            resolved_input = st.input
             if st.parent_stage is not None:
                 st_backend = await svc.get(st.ml_backend_id)
                 if not st_backend or st_backend.project_id != project.id:
@@ -1352,6 +1463,24 @@ async def trigger_preannotation(
                         status_code=404,
                         detail=f"stage {st.stage} 的 ML Backend 不存在或不属于本项目",
                     )
+                # v0.18.15 · 按子模型 supported_inputs 解析投递方式 + 几何可达性门控。
+                # 产几何的子: supported_inputs 须含 'bbox_prompt' (geometry-prompt 路径) 或
+                # 'crop' (普通检测器在 crop 上跑 + 坐标回映)。据此把投递方式烘焙进 input.mode,
+                # worker 直接消费 (无快照时 inputs=[] → 放过门控、不烘焙, 保持零退化)。
+                target = (st.write or {}).get("target", "attributes")
+                inputs = _stage_supported_inputs(st_backend, st.model_id)
+                if target in {"geometry", "intermediate"} and inputs:
+                    if "bbox_prompt" not in inputs and "crop" not in inputs:
+                        raise HTTPException(
+                            status_code=422,
+                            detail=(
+                                f"stage {st.stage} 产几何 (write.target={target!r}), 但其模型 "
+                                f"supported_inputs={inputs} 不含 'bbox_prompt'/'crop', 无法作几何下游"
+                            ),
+                        )
+                    if not (st.input or {}).get("mode"):
+                        mode = "geometry" if "bbox_prompt" in inputs else "crop"
+                        resolved_input = {**(st.input or {}), "mode": mode}
             norm.append(
                 {
                     "stage": st.stage,
@@ -1366,6 +1495,10 @@ async def trigger_preannotation(
                     "roi": st.roi,
                     "write": st.write,
                     "on_failure": st.on_failure,
+                    # v0.18.14 · 卡片显示名 + 写回属性键前缀 (子物体命名空间, 如 hat_color)。
+                    "label": st.label,
+                    # v0.18.15 · 投递模式: 用户显式 input 或按 supported_inputs 烘焙的结果。
+                    "input": resolved_input,
                     # v0.18.2 · 键冲突策略下放到每个下游阶段, worker 末位覆盖时据此合并。
                     "on_key_conflict": body.on_key_conflict,
                 }

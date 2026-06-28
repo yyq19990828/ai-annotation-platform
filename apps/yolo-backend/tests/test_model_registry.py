@@ -10,9 +10,14 @@ import pytest
 
 from model_registry import (
     MODEL_MATRIX,
+    OPENVOCAB_SERIES,
     UnsupportedVariantError,
+    is_openvocab_series,
+    is_openvocab_supported,
     is_supported,
     iter_supported_combinations,
+    openvocab_family,
+    resolve_openvocab_weight_filename,
     resolve_weight_filename,
     series_options_for_task,
     sizes_for,
@@ -172,3 +177,52 @@ def test_sizes_for_yolov9_det_vs_seg() -> None:
     seg_sizes = sizes_for("segmentation", "yolov9")
     assert det_sizes == ["t", "s", "m", "c", "e"]
     assert seg_sizes == ["c", "e"]
+
+
+# ── v0.18.21 · 开集 (open-vocabulary) 权重矩阵金本位 (release v8.4.0 实测可下载) ──
+
+
+def test_openvocab_series_namespace() -> None:
+    assert OPENVOCAB_SERIES == {
+        "yolo-worldv2", "yolo-world", "yoloe-v8", "yoloe-11", "yoloe-26",
+    }
+
+
+def test_openvocab_family_mapping() -> None:
+    assert openvocab_family("yolo-worldv2") == "world"
+    assert openvocab_family("yolo-world") == "world"
+    assert openvocab_family("yoloe-11") == "yoloe"
+    assert openvocab_family("yoloe-26") == "yoloe"
+
+
+def test_openvocab_series_disjoint_from_closed() -> None:
+    """开集 series 不与闭集 MODEL_MATRIX series 命名冲突."""
+    closed = {s for by in MODEL_MATRIX.values() for s in by}
+    assert OPENVOCAB_SERIES.isdisjoint(closed)
+    for s in OPENVOCAB_SERIES:
+        assert is_openvocab_series(s)
+    assert not is_openvocab_series("yolo11")
+
+
+def test_openvocab_weight_filenames() -> None:
+    """与 ultralytics assets release v8.4.0 实际文件名严格对应."""
+    assert resolve_openvocab_weight_filename("yolo-worldv2", "s") == "yolov8s-worldv2.pt"
+    assert resolve_openvocab_weight_filename("yolo-world", "x") == "yolov8x-world.pt"
+    assert resolve_openvocab_weight_filename("yoloe-v8", "l") == "yoloe-v8l-seg.pt"
+    assert resolve_openvocab_weight_filename("yoloe-11", "s") == "yoloe-11s-seg.pt"
+    assert resolve_openvocab_weight_filename("yoloe-26", "n") == "yoloe-26n-seg.pt"
+
+
+def test_openvocab_supported_sizes() -> None:
+    # world 仅 s/m/l/x (无 n); yoloe-v8/11 仅 s/m/l; yoloe-26 含 n..x.
+    assert is_openvocab_supported("yolo-worldv2", "s")
+    assert not is_openvocab_supported("yolo-worldv2", "n")
+    assert not is_openvocab_supported("yoloe-11", "x")
+    assert is_openvocab_supported("yoloe-26", "x")
+
+
+def test_openvocab_unsupported_raises() -> None:
+    with pytest.raises(UnsupportedVariantError):
+        resolve_openvocab_weight_filename("yoloe-11", "x")
+    with pytest.raises(UnsupportedVariantError):
+        resolve_openvocab_weight_filename("yolo-worldv2", "n")

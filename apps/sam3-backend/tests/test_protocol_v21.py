@@ -31,17 +31,17 @@ def _run(coro):
 
 def test_normalize_predict_context_accepts_model_variants(main_module):
     ctx = main_module._normalize_predict_context(
-        {"type": "text", "model_variants": {"model_variant": "sam3.1"}}
+        {"type": "text", "model_variants": {"model_variant": "sam3"}}
     )
-    assert ctx["model_variants"] == {"model_variant": "sam3.1"}
+    assert ctx["model_variants"] == {"model_variant": "sam3"}
 
 
 def test_normalize_predict_context_accepts_legacy_model_variant_with_warning(
     main_module, caplog
 ):
     caplog.set_level("WARNING")
-    ctx = main_module._normalize_predict_context({"type": "text", "model_variant": "sam3.1"})
-    assert ctx["model_variants"] == {"model_variant": "sam3.1"}
+    ctx = main_module._normalize_predict_context({"type": "text", "model_variant": "sam3"})
+    assert ctx["model_variants"] == {"model_variant": "sam3"}
     assert "context.model_variant -> context.model_variants" in caplog.text
 
 
@@ -56,7 +56,7 @@ def test_normalize_predict_context_invalid_model_variant_returns_standard_422(ma
         "error_code": "variant_not_supported",
         "axis": "model_variant",
         "value": "sam3.0",
-        "allowed": ["sam3.1"],
+        "allowed": ["sam3"],
     }
 
 

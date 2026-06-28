@@ -54,7 +54,7 @@ export interface ImageWorkbenchProps {
   onSamPrompt: (prompt:
     | { kind: "point"; pt: [number, number]; alt: boolean }
     | { kind: "bbox"; bbox: [number, number, number, number] }
-    | { kind: "exemplar"; bbox: [number, number, number, number] }
+    | { kind: "exemplar"; bbox: [number, number, number, number]; alt: boolean }
   ) => void;
   samCandidates: {
     id: string;
@@ -63,6 +63,10 @@ export interface ImageWorkbenchProps {
     bbox?: { x: number; y: number; width: number; height: number };
   }[];
   samActiveIdx: number;
+  /** v0.18.18 · §5.5 当前点会话已落的正/负点, 透传画布 overlay。 */
+  samSessionPoints: { pt: [number, number]; polarity: 1 | 0 }[];
+  /** v0.18.19 · exemplar refine 会话已落的正/负框, 透传画布 overlay。 */
+  samSessionExemplars: { bbox: [number, number, number, number]; polarity: 1 | 0 }[];
   /** v0.10.2 · 派生自 tool, 非 AI 工具时为 null. */
   samSubTool: SamSubTool | null;
   samPolarity: SamPolarity;
@@ -142,6 +146,8 @@ export function ImageWorkbench({
   onSamPrompt,
   samCandidates,
   samActiveIdx,
+  samSessionPoints,
+  samSessionExemplars,
   samSubTool,
   samPolarity,
   onCommitMove,
@@ -214,6 +220,8 @@ export function ImageWorkbench({
       onSamPrompt={onSamPrompt}
       samCandidates={samCandidates}
       samActiveIdx={samActiveIdx}
+      samSessionPoints={samSessionPoints}
+      samSessionExemplars={samSessionExemplars}
       samSubTool={samSubTool}
       samPolarity={samPolarity}
       onCommitMove={onCommitMove}

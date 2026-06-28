@@ -341,9 +341,17 @@ interface AIPredictionPopoverProps {
   aiTakeoverRate: number;
   onClose: () => void;
   onRunAi: () => void;
+  // v0.18.28 · 项目存了编排 (v0.18.27) 时多出「运行当前题（按项目编排）」入口。
+  // popover 仍是执行器、非编排编辑器: 编排在 /ai-pre 定义, 这里只把它跑当前一图。
+  hasProjectPipeline?: boolean;
+  projectPipelineStageCount?: number;
+  // claude[bot] P1 #5 · 编排可执行 (引用的 backend 都还在); false 时按钮禁用 + 提示。
+  projectPipelineRunnable?: boolean;
+  pipelineMissingBackendCount?: number;
+  onRunPipeline?: () => void;
   onAcceptAll: () => void;
   onSetConfThreshold: (v: number) => void;
-  // v0.10.23 · 设计 B · 文本输入段下沉到 AIToolDrawer; popover 不再承载 SAM 文本提示控件.
+  // v0.10.23 · 设计 B · 文本输入段下沉到 InteractiveToolBar; popover 不再承载 SAM 文本提示控件.
   taskAiCost?: number;
   taskAiAvgMs?: number | null;
   taskAiPredictionCount?: number;
@@ -373,6 +381,11 @@ export function AIPredictionPopover({
   aiTakeoverRate,
   onClose,
   onRunAi,
+  hasProjectPipeline,
+  projectPipelineStageCount,
+  projectPipelineRunnable = true,
+  pipelineMissingBackendCount = 0,
+  onRunPipeline,
   onAcceptAll,
   onSetConfThreshold,
   taskAiCost,
@@ -542,6 +555,27 @@ export function AIPredictionPopover({
             <Icon name="check" size={11} />采纳当前候选
           </Button>
         </div>
+        {/* v0.18.28 · 项目存了编排时单独一行: 把项目编排只跑当前一图 (执行器, 非编排编辑器)。 */}
+        {/* claude[bot] P1 #5 · 引用的 backend 被删/停 → 按钮禁用 + 标注原因, 避免默默 422。 */}
+        {hasProjectPipeline && onRunPipeline && (
+          <Button
+            variant="ai"
+            size="sm"
+            onClick={onRunPipeline}
+            disabled={aiRunning || !projectPipelineRunnable}
+            className="mb-2.5 w-full"
+            title={
+              projectPipelineRunnable
+                ? "按项目已保存的多阶段编排, 对当前题跑完整流水线"
+                : `编排引用的 ${pipelineMissingBackendCount} 个后端不可用, 请到「AI 预标」修编排或重新注册`
+            }
+          >
+            <Icon name="layers" size={11} />
+            {projectPipelineRunnable
+              ? `运行当前题（按项目编排 · ${projectPipelineStageCount} 阶段）`
+              : `编排引用 ${pipelineMissingBackendCount} 个后端不可用`}
+          </Button>
+        )}
       </div>
 
       {/* v0.14.18 · header 以下整体可滚 (拖动头固定), 修面板内容超高时底部 (输出形态/效率) 被截断. */}

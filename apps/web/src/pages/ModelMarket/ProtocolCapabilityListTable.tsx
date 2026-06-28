@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { ProtocolTask } from "@/api/mlCapabilities";
 import { taskVariant } from "./capability/labels";
-import type { MountedModel } from "./ProtocolCapabilityCard";
+import { effectiveInfra } from "./capability/catalogModel";
+import type { FlatModel } from "./capability/types";
 
 const TABLE_CLASS =
   "w-full min-w-[980px] border-separate border-spacing-0 text-xs " +
@@ -15,7 +16,7 @@ const TABLE_CLASS =
 
 interface ProtocolCapabilityListRow {
   task: ProtocolTask;
-  mounted: MountedModel[];
+  mounted: FlatModel[];
 }
 
 interface Props {
@@ -93,20 +94,22 @@ export function ProtocolCapabilityListTable({
                 <td className="min-w-[260px] max-w-[360px]">
                   {mounted.length > 0 ? (
                     <div className="flex flex-col gap-1.5">
-                      {mounted.slice(0, 3).map((m) => (
+                      {mounted.slice(0, 3).map((m) => {
+                        const infra = effectiveInfra(m.model, m.backendInfra);
+                        return (
                         <div
-                          key={`${task.id}:${m.backendName}:${m.id}`}
+                          key={`${task.id}:${m.backendName}:${m.model.id}`}
                           className="min-w-0 rounded-sm border border-border bg-muted px-2 py-1.5"
                         >
                           <div
                             className="overflow-hidden text-ellipsis whitespace-nowrap font-semibold text-foreground"
-                            title={m.display_name}
+                            title={m.model.display_name ?? m.model.id}
                           >
-                            {m.display_name}
+                            {m.model.display_name ?? m.model.id}
                           </div>
                           <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-2xs text-muted-foreground">
-                            {m.infra && <span>{infraLabel(m.infra)}</span>}
-                            {m.is_interactive && <span>交互式</span>}
+                            {infra && <span>{infraLabel(infra)}</span>}
+                            {m.model.is_interactive && <span>交互式</span>}
                             <Badge variant={m.source === "env_only" ? "success" : "outline"}>
                               {m.source === "env_only" ? "自带" : "已注册"}
                             </Badge>
@@ -118,7 +121,8 @@ export function ProtocolCapabilityListTable({
                             </span>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                       {mounted.length > 3 && (
                         <span className="text-2xs text-muted-foreground">
                           +{mounted.length - 3} 个模型

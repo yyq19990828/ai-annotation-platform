@@ -24,6 +24,7 @@ import type {
   PipelineStagePayload,
   PipelineStageStat,
 } from "@/hooks/usePreannotation";
+import type { StageCaps } from "../utils/pipelineGraph";
 import styles from "./ProjectDetailPanel.module.css";
 
 // v0.18.8 · 运行态 → Badge 原语 (语义色 + 暗色配对走设计系统, 不裸色)。
@@ -121,8 +122,12 @@ interface Props {
   stat?: PipelineStageStat;
   /** v0.18.6 · 本阶段运行态 (徽标用): pending/running/done。 */
   runState?: "pending" | "running" | "done";
+  /** v0.18.16 · 检查器里非选中卡 CSS 隐藏 (不卸载, 保住自持配置状态)。 */
+  hidden?: boolean;
   /** 派生出的 stage payload (未就绪=null) 上抛给容器; 容器据此组装 pipeline_stages。 */
   onChange: (id: string, payload: PipelineStagePayload | null) => void;
+  /** v0.18.16 §13 · 上抛能力旗标, 供画布作可达性 / 产属性警示 (标红不硬拦)。 */
+  onCaps?: (id: string, caps: StageCaps | null) => void;
   onRemove: (id: string) => void;
 }
 
@@ -138,7 +143,9 @@ export function StageCard({
   conflictKeys,
   stat,
   runState = "pending",
+  hidden = false,
   onChange,
+  onCaps,
   onRemove,
 }: Props) {
   const [backendId, setBackendId] = useState<string | null>(() => {
@@ -150,6 +157,8 @@ export function StageCard({
   const [classFilter, setClassFilter] = useState<Set<string>>(new Set());
   const [pad, setPad] = useState(0.05);
   const [writeKeys, setWriteKeys] = useState<Set<string>>(new Set());
+  // v0.18.15 · 子物体命名 (写回属性键前缀, 如 hat → hat_color); 仅 attributes (分类) 阶段有意义。
+  const [label, setLabel] = useState("");
 
   // v0.18.5 · 写回属性键选项: 优先下游 backend 自报 output_attribute_schema 的 key (最准),
   // 回落项目 attribute_schema 字段 key。
@@ -187,9 +196,10 @@ export function StageCard({
     ? cfg.buildArgs("skip_predicted")
     : null;
 
-  // v0.18.2 / v0.18.13 · 下游可选 model: 非交互、原子 (composition!=composite) 的批量单元 ——
-  //   classification (上游裁 ROI 跑分类, crop 投递) 或 box-seg (segmentation + bbox prompt,
-  //   消费上游框出 mask, geometry 投递)。编排只组合 atom: 一锅端 composite / 交互式不作下游。
+  // v0.18.2 / v0.18.13 / v0.18.15 · 下游可选 model: 非交互、原子 (composition!=composite) 的批量单元 ——
+  //   classification (裁 ROI 跑分类, crop 投递, 产属性) / box-seg (segmentation + bbox prompt,
+  //   消费上游框出 mask, geometry 投递, 产几何) / detection (普通检测器在父 crop 上检子物体,
+  //   crop 投递 + 坐标回映, 产几何, v0.18.15)。编排只组合 atom: 一锅端 composite / 交互式不作下游。
   const downstreamModels = useMemo(() => {
     const models = cfg.capabilitiesQ.data?.models ?? [];
     return models.filter(
@@ -197,6 +207,7 @@ export function StageCard({
         m.composition !== "composite" &&
         !m.is_interactive &&
         (m.task === "classification" ||
+          m.task === "detection" ||
           (m.task === "segmentation" && (m.supported_prompts ?? []).includes("bbox"))),
     );
   }, [cfg.capabilitiesQ.data]);
@@ -213,10 +224,16 @@ export function StageCard({
   const selectedModel = downstreamModels.find((m) => m.id === selectedModelId) ?? null;
 
   // box-seg geometry 下游: 消费上游框出 polygon (走平台 geometry 投递, 无需 prompt / 不裁 crop)。
-  const isGeometryDownstream =
+  const isBoxSegGeometry =
     selectedModel?.task === "segmentation" &&
     (selectedModel?.supported_prompts ?? []).includes("bbox") &&
     !selectedModel?.is_interactive;
+  // v0.18.15 · crop-detect geometry 下游: 普通检测器在父 crop 上检子物体, crop 投递 + 坐标回映。
+  const isCropDetectGeometry =
+    selectedModel?.task === "detection" && !selectedModel?.is_interactive;
+  // 产几何的两类下游 (共用: 隐藏属性字段, 允许作父阶段)。isBoxSegGeometry 走 geometry 投递,
+  // isCropDetectGeometry 走 crop 投递。
+  const isGeometryDownstream = isBoxSegGeometry || isCropDetectGeometry;
 
   // 派生 stage payload (不含 stage 序号 / parent_stage, 由容器补)。
   // stageArgs / currentVariantSlice 每次渲染新对象, 用 JSON 串作 useMemo 稳定依赖 (抽出供静态检查)。
@@ -235,18 +252,24 @@ export function StageCard({
       return {
         ml_backend_id: backendId,
         model_id: selectedModel.id,
-        task_type: "segmentation",
+        task_type: selectedModel.task,
         model_variants: variantSlice,
         params: {},
         parent_class_filter: classArr.length > 0 ? classArr : undefined,
-        // 平台按下游 supported_prompts 自动判 geometry 投递; roi.mode 仅作记录。
-        roi: { mode: "geometry", pad },
-        write: { target: "geometry" },
+        // box-seg → geometry 投递 (整图+父框列表); crop-detect → crop 投递 (裁父框 + 坐标回映)。
+        ...(isCropDetectGeometry
+          ? {
+              roi: { mode: "crop" as const, pad },
+              input: { mode: "crop" as const },
+              write: { target: "geometry" as const },
+            }
+          : { roi: { mode: "geometry" as const, pad }, write: { target: "geometry" as const } }),
       };
     }
     // classify 下游 (现状): 走 buildArgs + 选中分类 model 覆盖。
     if (!stageArgs) return null;
     const keyArr = Array.from(writeKeys);
+    const labelTrim = label.trim();
     return {
       ml_backend_id: stageArgs.ml_backend_id,
       model_id: selectedModel?.id ?? stageArgs.model_id,
@@ -256,6 +279,7 @@ export function StageCard({
       class_filter: stageArgs.class_filter,
       parent_class_filter: classArr.length > 0 ? classArr : undefined,
       roi: { mode: "crop", pad },
+      ...(labelTrim ? { label: labelTrim } : {}),
       write: {
         target: "attributes",
         ...(keyArr.length > 0 ? { keys: keyArr } : {}),
@@ -265,12 +289,14 @@ export function StageCard({
   }, [
     stageArgsKey,
     isGeometryDownstream,
+    isCropDetectGeometry,
     backendId,
     selectedModel?.id,
     variantSliceKey,
     classFilter,
     pad,
     writeKeys,
+    label,
   ]);
 
   // 用 ref 固定 onChange, 避免容器每次渲染触发本 effect。
@@ -284,16 +310,42 @@ export function StageCard({
     return () => onChangeRef.current(id, null);
   }, [id]);
 
+  // v0.18.16 §13 · 能力旗标上抛 (供画布可达性 / 产属性警示)。
+  const supportedInputs = selectedModel?.supported_inputs ?? [];
+  const supportedInputsKey = supportedInputs.join(",");
+  const caps = useMemo<StageCaps>(
+    () => ({
+      hasCapabilities: capabilitiesReady,
+      knownInputs: supportedInputs.length > 0,
+      acceptsCrop: supportedInputs.includes("crop"),
+      acceptsBboxPrompt: supportedInputs.includes("bbox_prompt"),
+      producesAttributes,
+    }),
+    // supportedInputsKey 串化 supportedInputs 作稳定依赖。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [supportedInputsKey, capabilitiesReady, producesAttributes],
+  );
+  const onCapsRef = useRef(onCaps);
+  onCapsRef.current = onCaps;
+  useEffect(() => {
+    onCapsRef.current?.(id, caps);
+  }, [id, caps]);
+  useEffect(() => {
+    return () => onCapsRef.current?.(id, null);
+  }, [id]);
+
   const badge = RUN_STATE_BADGE[runState] ?? RUN_STATE_BADGE.pending;
   const targeted = stat?.targeted ?? 0;
   const okPct = targeted > 0 ? ((stat?.ok ?? 0) / targeted) * 100 : 0;
 
   return (
-    <Card className={styles.stageCard}>
+    <Card className={cx(styles.stageCard, hidden && styles.stageHidden)}>
       <div className={styles.stageCardHeader}>
         <span className={styles.stageRole}>
           <Icon name="brain" size={13} />
-          <Badge variant="accent">{isGeometryDownstream ? "分割" : "分类"}</Badge>
+          <Badge variant="accent">
+            {isCropDetectGeometry ? "检测" : isBoxSegGeometry ? "分割" : "分类"}
+          </Badge>
           <strong className={styles.sectionTitle}>阶段 {displayIndex}</strong>
         </span>
         <span className={styles.stageHeaderRight}>
@@ -362,7 +414,12 @@ export function StageCard({
         </label>
       )}
 
-      {isGeometryDownstream ? (
+      {isCropDetectGeometry ? (
+        <span className={styles.mutedText}>
+          下游模型：{selectedModel?.display_name || selectedModel?.id}（在父框 crop 上检测子物体，
+          检出几何回映回原图坐标并追加为新框；可作下游阶段的父）
+        </span>
+      ) : isBoxSegGeometry ? (
         <span className={styles.mutedText}>
           下游模型：{selectedModel?.display_name || selectedModel?.id}（框→分割：消费上游检测框出
           mask，无需 prompt；上方 prompt/输出形态对本阶段不生效，仅 SAM 变体有效）
@@ -411,6 +468,23 @@ export function StageCard({
               const v = parseFloat(e.target.value);
               if (!Number.isNaN(v)) setPad(Math.min(0.5, Math.max(0, v)));
             }}
+          />
+        </div>
+      )}
+
+      {/* v0.18.15 · 子物体命名 (写回属性键前缀): 父是几何阶段时, 给本阶段属性加命名空间,
+          如父=hat 检测、本阶段写 color → hat_color。留空=写原始键 (双阶段零退化)。 */}
+      {!isGeometryDownstream && (
+        <div className={styles.field}>
+          <span className={styles.fieldLabel}>
+            子物体命名（可选，写回属性键前缀，如 hat → hat_color）
+          </span>
+          <input
+            className={styles.textInput}
+            type="text"
+            placeholder="留空=不加前缀"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
           />
         </div>
       )}

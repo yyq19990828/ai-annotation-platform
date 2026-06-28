@@ -1,7 +1,7 @@
 // 能力目录的共享类型(从 CapabilityCatalogPanel.tsx 拆出,行为零变化)。
 
 import type { MLBackendItem } from "@/api/adminMlIntegrations";
-import type { MLModelCapability } from "@/api/ml-backends";
+import type { CapabilityWarning, MLModelCapability } from "@/api/ml-backends";
 
 // 一个展开后的 model 条目 (附带其来源 backend, 供分组/过滤/标题用).
 export interface FlatModel {
@@ -21,6 +21,8 @@ export interface FlatModel {
   healthMeta?: MLBackendItem["health_meta"];
   warmupEndpoint?: boolean;
   stale: boolean;
+  // v0.18.29 · 该 model 命中的受控词表校验诊断 (越界 task/prompt/geometry); 缺/空 = 合法。
+  warnings?: CapabilityWarning[];
 }
 
 export type CatalogViewMode = "cards" | "list";

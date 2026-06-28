@@ -18,6 +18,7 @@ v0.14.12 · 通用部分 (TaskItem / PredictionResult / BatchPredictResponse) �
 
 from __future__ import annotations
 
+import math
 from typing import Any, Literal
 
 from aap_protocol_v2 import (
@@ -26,13 +27,14 @@ from aap_protocol_v2 import (
     TaskItem,
     WarmupResponse,
 )
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 __all__ = [
     "AnnotationResult",
     "BatchPredictRequest",
     "BatchPredictResponse",
     "Context",
+    "Exemplar",
     "InteractiveRequest",
     "PredictionResult",
     "TaskItem",
@@ -40,26 +42,68 @@ __all__ = [
 ]
 
 
+class Exemplar(BaseModel):
+    """v0.18.19 · PCS 多正负框中的单个视觉示例。
+
+    bbox: 归一化 xyxy [x1, y1, x2, y2]; label: True=正框(扩召回) / False=负框(排误检)。
+    backend 顺序累加 (add_geometric_prompt), 每请求重发全量 (无状态)。
+    """
+
+    bbox: list[float]
+    label: bool = True
+
+    @model_validator(mode="after")
+    def _validate_bbox(self) -> Exemplar:
+        if len(self.bbox) != 4:
+            raise ValueError("exemplar.bbox=[x1,y1,x2,y2] required (length 4)")
+        # 与 yolo Exemplar 对齐: NaN/Inf 拒, [0,1] 越界 + 反向/退化框拒, 避免 backend 内部异常。
+        if any(not math.isfinite(v) for v in self.bbox):
+            raise ValueError("exemplar.bbox must be finite (no NaN/Inf)")
+        x1, y1, x2, y2 = self.bbox
+        if not (0.0 <= x1 < x2 <= 1.0 and 0.0 <= y1 < y2 <= 1.0):
+            raise ValueError(
+                "exemplar.bbox must be normalized [x1,y1,x2,y2] with 0≤x1<x2≤1 and 0≤y1<y2≤1"
+            )
+        return self
+
+
 class Context(BaseModel):
-    type: Literal["point", "bbox", "polygon", "text", "exemplar"]
+    # v0.18.17 · "interactive_box" = SAM-style 单框单 mask (开 inst 后); "bbox" 退役为纯几何形状,
+    # 不再作交互 prompt (PCS 全图相似统一走 "exemplar"). "point" 升级为 inst 单实例点交互 (累加).
+    type: Literal["point", "interactive_box", "polygon", "text", "exemplar"]
     points: list[list[float]] | None = None
     labels: list[int] | None = None
-    # bbox: type=bbox 时是 prompt 框; type=exemplar 时是视觉示例框 (语义靠 type 区分)
+    # bbox: type=interactive_box 时是单框 prompt; type=exemplar 时是单视觉示例框 (兼容旧单框路径)
     bbox: list[float] | None = None
+    # v0.18.19 · type=exemplar 多正负框累加 (扩召回 / 去误检); 非空时优先于单 bbox.
+    # 可与 text 同时传 (text 概念 + 几何示例组合)。
+    exemplars: list[Exemplar] | None = None
     text: str | None = None
     # v0.9.4 phase 2 (与 grounded-sam2 协议一致): text 路径输出形态
     output: Literal["box", "mask", "both"] = "mask"
     # v0.9.4 phase 3: shapely.simplify 像素级覆盖 (mask/both/exemplar 路径生效)
     simplify_tolerance: float | None = None
     # v0.10.0 · SAM 3 PCS exemplar / text 路径可选 score 阈值;
-    # 缺省走 backend env SAM3_SCORE_THRESHOLD (默认 0.5).
-    score_threshold: float | None = None
+    # 缺省走 backend env SAM3_SCORE_THRESHOLD (默认 0.5). claude[bot] P2 · [0,1] 范围守卫。
+    score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    # v0.18.17 · point / interactive_box 单点歧义时出 3 候选 (按 iou 降序); 缺省单 mask.
+    multimask_output: bool = False
 
     @model_validator(mode="after")
     def _validate_required_fields(self) -> Context:
         if self.type == "exemplar":
+            # v0.18.19 · 多框 exemplars 优先; 缺省退化单 bbox (旧路径兼容)。两者皆缺则报错。
+            if not self.exemplars and (self.bbox is None or len(self.bbox) != 4):
+                raise ValueError(
+                    "type=exemplar requires non-empty context.exemplars[] "
+                    "or context.bbox=[x1,y1,x2,y2]"
+                )
+        if self.type == "interactive_box":
             if self.bbox is None or len(self.bbox) != 4:
-                raise ValueError("context.bbox=[x1,y1,x2,y2] required for type=exemplar")
+                raise ValueError("context.bbox=[x1,y1,x2,y2] required for type=interactive_box")
+        if self.type == "point":
+            if not self.points:
+                raise ValueError("context.points required for type=point")
         return self
 
 

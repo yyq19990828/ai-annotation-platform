@@ -69,6 +69,7 @@
   - **`predictions_import` 审计 detail 专项**（**P3**）：在 `app/services/audit.py` 加 `predictions_import_detail()` helper（补 task / model_version / hash 取证字段）。触发：审计期反馈 detail 不足。
 - **训练队列**：路由 `/training` 占位。等数据集 snapshot + 主动学习闭环成熟一并做。
 - **ML backend storage endpoint 选择机制（生产化）**（**P3**）：dev `ML_BACKEND_STORAGE_HOST` + ADR-0012 框架已收口；生产场景多变, 第一个生产部署遇到再扩策略表（"何时设、设啥值、何时留空"）。
+- **项目编排多条命名持久化（`project_pipelines` 表）**（**P3**，按需触发）：v0.18.x「项目编排」落地走**方案 A** —— `Project.preannotate_pipeline` 单列 JSONB 存「一项目一条当前编排」，供「当前题 AI」popover 的「运行当前题（按项目编排）」读取（见 plan [`docs/plans/2026-06-26-v0.18.25-interactive-ai-toolbar-redesign.md`](docs/plans/2026-06-26-v0.18.25-interactive-ai-toolbar-redesign.md)，依赖 [多阶段预标注编排 epic](ROADMAP/2026-06-23-staged-preannotation-pipeline-roadmap.md)）。当出现「一个项目要保存多条命名编排并切换」（如『仅检测』『检测+车辆属性』『检测+OCR』并存）需求时，再升级为独立 `project_pipelines(id, project_id, name, stages JSONB, is_default, …)` 表 + 编排选择 UI。**触发**：单项目多命名编排诉求 ≥ 2 例，或跨项目编排复用/共享需求出现。不要因「灵活性」提前建表（YAGNI，对照决策底线表「标注配置」行）。
 
 ### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
@@ -124,6 +125,8 @@
 
 ### C.1 渲染性能 / 大图大量框
 - **大图 tile / 多边形 LOD**：多边形 LOD（I2）已落 v0.10.4；大图 tile（I1）见 §C.7。
+- **交互工具 preference 重复拉取去重**（**P3**，纯前端，非 bug；feat/26-06-25 代码审查 0008.2）：`useInteractiveBackendPref` / `useAiToolModelPref` / `useAiToolParamPrefs` 三个 hook 各自 mount 时各发一次 `authApi.getPreferences()` → 每次进工作台 3 次相同 GET（均在 `useWorkbenchShellModel` 挂载）。非正确性问题（服务端按子键 deep-merge，写不互相覆盖，已验证）。改为共享一个 react-query `["me","preferences"]` query，writer 走 `setQueryData`/invalidate。触发：随手优化，或进工作台网络瀑布观察到冗余请求。
+- **PipelineGraphCanvas 节点态每 tick 重置**（**P3**，纯前端，非 bug；feat/26-06-25 代码审查 0008.6）：`apps/web/src/pages/AIPreAnnotate/components/PipelineGraphCanvas.tsx` 的 `useEffect(() => setNodes(flow.nodes), [flow.nodes])` 中 `flow` 依赖频繁重建的 `models`，每次子卡回报 payload 都整体 `setNodes`，丢弃 react-flow 已测量尺寸再重测（`fitView` 已用 `nodeCount` 限流不会跳视口，故仅轻微重测量/闪烁）。让 `graphNodes` 在 payload 浅相等时保持引用稳定。触发：编排画布闪烁反馈或随手优化。
 
 ### C.3 标注体验（核心生产力杠杆）
 - **`U` 键准确度升级**：v0.5.2 用启发式；准确「最不确定」需要后端 `?order=conf_asc` 端点（list_tasks 加 LEFT JOIN predictions GROUP BY avg(confidence)）。

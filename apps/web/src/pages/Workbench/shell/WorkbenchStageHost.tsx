@@ -153,7 +153,7 @@ interface WorkbenchStageHostImageProps {
   onSamPrompt: (prompt:
     | { kind: "point"; pt: [number, number]; alt: boolean }
     | { kind: "bbox"; bbox: [number, number, number, number] }
-    | { kind: "exemplar"; bbox: [number, number, number, number] }
+    | { kind: "exemplar"; bbox: [number, number, number, number]; alt: boolean }
   ) => void;
   onCommitMove: (id: string, before: Geom, after: Geom) => void;
   onCommitResize: (id: string, before: Geom, after: Geom) => void;
@@ -173,6 +173,10 @@ interface WorkbenchStageHostAiProps {
     bbox?: { x: number; y: number; width: number; height: number };
   }[];
   samActiveIdx: number;
+  /** v0.18.18 · §5.5 当前点会话已落的正/负点, 透传到画布 overlay 渲染。 */
+  samSessionPoints: { pt: [number, number]; polarity: 1 | 0 }[];
+  /** v0.18.19 · exemplar refine 会话已落的正/负框, 透传到画布 overlay 渲染。 */
+  samSessionExemplars: { bbox: [number, number, number, number]; polarity: 1 | 0 }[];
   samSubTool: SamSubTool | null;
   samPolarity: SamPolarity;
   /** v0.10.9 · SAM 候选「精修」入口（画布浮按钮 + R 键）。 */
@@ -325,6 +329,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     const {
       samCandidates,
       samActiveIdx,
+      samSessionPoints,
+      samSessionExemplars,
       samSubTool,
       samPolarity,
       onRefineSamCandidate,
@@ -465,6 +471,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onSamPrompt={onSamPrompt}
             samCandidates={samCandidates}
             samActiveIdx={samActiveIdx}
+            samSessionPoints={samSessionPoints}
+            samSessionExemplars={samSessionExemplars}
             samSubTool={samSubTool}
             samPolarity={samPolarity}
             onCommitMove={onCommitMove}

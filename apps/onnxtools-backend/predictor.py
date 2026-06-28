@@ -198,6 +198,31 @@ class VehicleAttributePredictor:
         """当前已加载(非 None)的句柄数,供 /health 与 idle 判定。"""
         return sum(h is not None for h in (self._detector, self._va_classifier, self._pipeline))
 
+    def loaded_handles(self) -> list[str]:
+        """已加载句柄名列表 (供 /health.pool.loaded_keys 展示)。"""
+        names: list[str] = []
+        if self._pipeline is not None:
+            names.append("pipeline")
+        if self._detector is not None:
+            names.append("detector")
+        if self._va_classifier is not None:
+            names.append("va")
+        return names
+
+    def warm(self, model_id: str | None) -> bool:
+        """按 model_id 触发对应句柄懒加载 (无则预热一锅端 pipeline)。
+
+        返回 cache_hit: True 表示目标句柄此前已加载 (本次未新增)。供 /warmup 响应。
+        """
+        before = self.loaded_count()
+        if model_id == "vehicle-attr-classify":
+            _ = self.va_classifier
+        elif model_id == "vehicle-detect":
+            _ = self.detector
+        else:  # 默认 / vehicle-attr → 一锅端 pipeline
+            _ = self.pipeline
+        return self.loaded_count() == before
+
     def unload(self) -> int:
         """释放全部已加载句柄,返回释放数(供 /unload 与 idle-unload)。"""
         n = self.loaded_count()

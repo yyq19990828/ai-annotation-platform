@@ -47,6 +47,16 @@ class ProtocolGeometryItem(BaseModel):
     summary: str
 
 
+class ProtocolPromptItem(BaseModel):
+    # v0.18.30 · prompt 受控词表对外暴露 (供前端 codegen + 运行时同源)。
+    # requires_input/interactive_route 双维度见 capability_registry.PromptSpec。
+    id: str
+    label: str
+    summary: str
+    requires_input: bool
+    interactive_route: bool
+
+
 class InstanceVariantOption(BaseModel):
     """variants axis 内一条选项 (透传自 backend /setup; 用于前端列表按 axis 拆行)."""
 
@@ -135,3 +145,5 @@ class ProtocolCapabilitiesResponse(BaseModel):
     infras: list[ProtocolInfraItem]
     modalities: list[ProtocolModalityItem]
     geometries: list[ProtocolGeometryItem]
+    # v0.18.30 · prompt 受控词表 (第五张; 此前仅内部消费, 现对外暴露供前端 codegen)。
+    prompts: list[ProtocolPromptItem] = []

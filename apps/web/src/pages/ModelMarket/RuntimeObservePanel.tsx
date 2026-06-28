@@ -16,6 +16,7 @@ import {
   type MLBackendCapability,
   type MLBackendVariant,
   type MLModelCapability,
+  mlBackendSetupQueryKey,
 } from "@/api/ml-backends";
 import {
   useMLBackendHealth,
@@ -184,7 +185,7 @@ function RegisteredRuntimeCard({
   const modelVersion = observe?.model_version ?? backend.health_meta?.model_version;
   const supportsWarmup = backend.health_meta?.capabilities?.warmup_endpoint === true;
   const setupQ = useQuery({
-    queryKey: ["ml-backend-setup", projectId, backend.id],
+    queryKey: mlBackendSetupQueryKey(projectId, backend.id),
     queryFn: () => mlBackendsApi.setup(projectId, backend.id),
     enabled: supportsWarmup,
     staleTime: 30_000,
@@ -274,21 +275,21 @@ function RegisteredRuntimeCard({
       />
 
       <div className="flex items-center gap-2">
-        <Button size="sm" onClick={onHealth} disabled={health.isPending} title="健康检查">
-          <Icon name="refresh" size={11} />
+        <Button size="xs" onClick={onHealth} disabled={health.isPending} title="健康检查">
+          <Icon name="refresh" size={10} />
           健康检查
         </Button>
-        <Button size="sm" onClick={onUnload} disabled={unload.isPending} title="卸载模型释放显存">
-          <Icon name="pause" size={11} />
+        <Button size="xs" onClick={onUnload} disabled={unload.isPending} title="卸载模型释放显存">
+          <Icon name="pause" size={10} />
           卸载
         </Button>
         <Button
-          size="sm"
+          size="xs"
           onClick={() => onWarm()}
           disabled={reload.isPending || warmup.isPending || (supportsWarmup && setupQ.isLoading)}
           title="预热默认模型"
         >
-          <Icon name="play" size={11} />
+          <Icon name="play" size={10} />
           预热默认
         </Button>
       </div>
