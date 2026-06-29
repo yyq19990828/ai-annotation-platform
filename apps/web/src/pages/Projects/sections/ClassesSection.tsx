@@ -13,8 +13,13 @@ import {
   type AttributeSchema,
 } from "@/api/projects";
 import { AttributeSchemaEditor, validateAttributeFields } from "./AttributeSchemaEditor";
-import { PrefillFromBackendDialog, type PrefillPicked } from "./PrefillFromBackendDialog";
+import {
+  PrefillFromBackendDialog,
+  type PrefillPicked,
+  itemToField,
+} from "./PrefillFromBackendDialog";
 import { ClassEditor, defaultColorFor, type ClassRow } from "./ClassEditor";
+import { useCapabilityInstances } from "@/api/mlCapabilities";
 import { KeypointSchemaEditor } from "./KeypointSchemaEditor";
 import { ToolUnitTabs } from "./ToolUnitTabs";
 import { resolveClassVisual, type ClassRefLite } from "./resolveClassVisual";
@@ -89,6 +94,24 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
   };
 
   const activeBinding = bindings[activeUnit];
+
+  // v0.20.1 · 推荐属性字段: 从在线 backend 自报的 output_attribute_schema 取落点类属性
+  // (text/language/orientation) 的完整定义 (含 type/options), 排除当前单位已有 key。
+  // 供 AttributeSchemaEditor 一键填入, 让手建字段的 key 天然对齐协议、不被落点校验漏判。
+  const { data: capInstances } = useCapabilityInstances();
+  const recommendedAttrFields = useMemo(() => {
+    const LANDING = new Set(["text", "language", "orientation"]);
+    const byKey = new Map<string, AttributeField>();
+    for (const inst of capInstances?.instances ?? [])
+      for (const m of inst.models)
+        for (const item of m.output_attribute_schema ?? [])
+          if (LANDING.has(item.key) && !byKey.has(item.key))
+            byKey.set(item.key, itemToField(item));
+    const existing = new Set(
+      (activeBinding?.attributeFields ?? []).map((f) => f.key).filter(Boolean),
+    );
+    return [...byKey.values()].filter((f) => !existing.has(f.key));
+  }, [capInstances, activeBinding]);
 
   // v0.17.15 · alias_to 链接目标: 其它启用工具单位 (≠ 当前) 且有类的 unit。
   const linkTargets = useMemo(
@@ -464,6 +487,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
                     value={activeBinding.attributeFields}
                     onChange={onAttributeChange}
                     onConfirmDelete={confirmAttributeDelete}
+                    recommendedFields={recommendedAttrFields}
                   />
                 </section>
               </div>

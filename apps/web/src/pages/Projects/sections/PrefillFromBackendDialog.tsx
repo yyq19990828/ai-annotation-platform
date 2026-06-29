@@ -39,7 +39,7 @@ const ALLOWED_TYPES: AttributeFieldType[] = [
   "range",
 ];
 
-function itemToField(item: OutputAttributeSchemaItem): AttributeField {
+export function itemToField(item: OutputAttributeSchemaItem): AttributeField {
   const type = (ALLOWED_TYPES as string[]).includes(item.type)
     ? (item.type as AttributeFieldType)
     : "text";

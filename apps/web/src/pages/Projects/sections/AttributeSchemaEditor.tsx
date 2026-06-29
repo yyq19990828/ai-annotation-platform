@@ -35,6 +35,12 @@ interface Props {
   emptyHint?: string;
   /** 删除前确认；返回 false 时取消删除。 */
   onConfirmDelete?: (field: AttributeField) => boolean | Promise<boolean>;
+  /**
+   * v0.20.1 · 推荐属性字段（已含完整 key/type/options，来自在线 backend 自报 schema，
+   * 调用方已排除项目已有 key）。手工建字段时一键填入，让 key 天然对齐协议（如 OCR 的
+   * language/orientation），避免取成 lang/语言 等导致落点校验漏判。空 = 不显示推荐区。
+   */
+  recommendedFields?: AttributeField[];
 }
 
 export function AttributeSchemaEditor({
@@ -42,6 +48,7 @@ export function AttributeSchemaEditor({
   onChange,
   emptyHint = "尚未配置任何属性",
   onConfirmDelete,
+  recommendedFields = [],
 }: Props) {
   const setField = (i: number, patch: Partial<AttributeField>) =>
     onChange(value.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
@@ -172,10 +179,28 @@ export function AttributeSchemaEditor({
         </div>
       ))}
 
-      <div className="flex justify-start">
+      <div className="flex flex-wrap items-center gap-2">
         <Button variant="ghost" onClick={addField}>
           <Icon name="plus" size={12} />新增属性
         </Button>
+        {recommendedFields.length > 0 && (
+          <>
+            <span className="text-2xs text-muted-foreground">推荐（来自 ML Backend）：</span>
+            {recommendedFields.map((rf) => (
+              <button
+                key={rf.key}
+                type="button"
+                onClick={() => onChange([...value, rf])}
+                title={`一键添加属性「${rf.label || rf.key}」(key=${rf.key})`}
+                className="inline-flex items-center gap-1 rounded-sm border border-dashed border-border px-2 py-1 text-xs text-foreground hover:bg-muted"
+              >
+                <Icon name="plus" size={10} />
+                {rf.label || rf.key}
+                <code className="text-2xs text-muted-foreground">{rf.key}</code>
+              </button>
+            ))}
+          </>
+        )}
       </div>
     </div>
   );

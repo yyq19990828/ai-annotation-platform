@@ -130,6 +130,10 @@ export function useCapabilityValidation({
       unitsToCheck.some((u) => (schemaOf(u)?.fields ?? []).some((f) => f.key === key));
     for (const type of Object.keys(ATTR_TYPE_LANDING)) {
       if (!declaredTypes.includes(type)) continue;
+      // 判据差异是有意的 (v0.20.1 定调, 勿"统一"): text 是「类型槽」——任何 text 类型字段
+      // 都能装识别文本, 故按 type 匹配; language/orientation 是「具名值槽」——固定取值域的具体
+      // 属性, 故按 key 具名匹配。手建字段易把 key 取错, 故项目设置「类别与属性」页提供「推荐属性」
+      // 一键填入对齐协议 key (见 AttributeSchemaEditor.recommendedFields)。
       const ok =
         type === "text"
           ? unitsToCheck.some((u) => schemaHasTextField(schemaOf(u)))
