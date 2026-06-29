@@ -182,7 +182,9 @@ class HealthMeta(BaseModel):
 
 class MLBackendOut(BaseModel):
     id: UUID
-    project_id: UUID
+    # v0.19.0 ADR-0044 · backend 上提为全局注册项, 无项目归属; 项目作用域端点从路径注入
+    # 本项目 id (表「该项目启用了此全局 backend」), 全局/admin 端点留 None。
+    project_id: UUID | None = None
     name: str
     url: str
     state: str

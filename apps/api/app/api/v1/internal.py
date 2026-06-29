@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
 from app.deps import get_db
 
 router = APIRouter()
@@ -59,8 +59,7 @@ async def metrics_targets(
 ) -> list[dict]:
     """返回 Prometheus http_sd 格式的 ML backend scrape target 列表。
 
-    ml_backends 是 project-scoped, 同一物理 backend 可能多条记录 → 按 host:port
-    去重 (首条胜出)。
+    v0.19.0 ADR-0044 · backend 已全局去重 (registry url unique), 仍按 host:port 兜底去重。
     """
     _check_token(authorization)
 
@@ -78,7 +77,6 @@ async def metrics_targets(
             "labels": {
                 "service": b.name,
                 "backend_id": str(b.id),
-                "project_id": str(b.project_id),
             },
         }
         for hp, b in by_target.items()

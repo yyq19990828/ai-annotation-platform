@@ -41,7 +41,7 @@ from app.deps import (
     require_scopes,
 )
 from app.db.enums import UserRole
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
 from app.db.models.prediction import FailedPrediction
 from app.db.models.project import Project
 from app.db.models.task import Task

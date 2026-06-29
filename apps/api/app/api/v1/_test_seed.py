@@ -282,18 +282,25 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     batch.total_tasks = len(tasks)
 
     # v0.9.4 phase 3: SAM E2E 用 mock ml_backend (url 不会被真请求, page.route 拦截)
-    from app.db.models.ml_backend import MLBackend
+    # v0.19.0 ADR-0044 · 建全局注册项 + 为本项目启用关联。
+    from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 
-    mock_backend = MLBackend(
-        project_id=project.id,
+    mock_backend = MLBackendRegistry(
         name="E2E SAM Mock",
         url="http://mock-sam.e2e:9999",
         state="connected",
         is_interactive=True,
         auth_method="none",
         extra_params={"e2e_mock": True},
+        source="manual",
     )
     db.add(mock_backend)
+    await db.flush()
+    db.add(
+        ProjectMLBackend(
+            project_id=project.id, registry_id=mock_backend.id, enabled=True
+        )
+    )
     await db.flush()
     project.ai_enabled = True
     project.ml_backend_id = mock_backend.id

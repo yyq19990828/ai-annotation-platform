@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.enums import UserRole
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.db.models.user import User
 from app.deps import get_db, require_roles
@@ -99,28 +99,29 @@ async def get_overview(
         total_size_bytes=sum(i.total_size_bytes for i in items),
     )
 
+    # v0.19.0 ADR-0044 · backend 全局化; 「按项目分组」改为按项目「已启用」关联分组
+    # (project_ml_backend join registry)。total/connected 统计全局注册表去重后的真值。
     res = await db.execute(
-        select(MLBackend).order_by(MLBackend.project_id, MLBackend.created_at.desc())
+        select(Project, MLBackendRegistry)
+        .join(ProjectMLBackend, ProjectMLBackend.project_id == Project.id)
+        .join(
+            MLBackendRegistry, MLBackendRegistry.id == ProjectMLBackend.registry_id
+        )
+        .where(ProjectMLBackend.enabled.is_(True))
+        .order_by(Project.name, MLBackendRegistry.created_at.desc())
     )
-    backends = list(res.scalars().all())
-    project_ids = {b.project_id for b in backends}
-    projects_by_id: dict = {}
-    if project_ids:
-        pres = await db.execute(select(Project).where(Project.id.in_(project_ids)))
-        for p in pres.scalars().all():
-            projects_by_id[p.id] = p
-
     grouped: dict[str, ProjectMLBackendsGroup] = {}
-    for b in backends:
-        proj = projects_by_id.get(b.project_id)
-        pid_str = str(b.project_id)
+    for proj, b in res.all():
+        pid_str = str(proj.id)
         if pid_str not in grouped:
             grouped[pid_str] = ProjectMLBackendsGroup(
-                project_id=pid_str,
-                project_name=proj.name if proj else "(已删除项目)",
-                backends=[],
+                project_id=pid_str, project_name=proj.name, backends=[]
             )
-        grouped[pid_str].backends.append(MLBackendOut.model_validate(b))
+        grouped[pid_str].backends.append(
+            MLBackendOut.model_validate(b, from_attributes=True).model_copy(
+                update={"project_id": proj.id}
+            )
+        )
 
     ai_projects_res = await db.execute(
         select(Project).where(Project.ai_enabled.is_(True)).order_by(Project.name)
@@ -134,11 +135,14 @@ async def get_overview(
                 backends=[],
             )
 
+    reg = list(
+        (await db.execute(select(MLBackendRegistry))).scalars().all()
+    )
     return MLIntegrationsOverview(
         storage=storage_overview,
         projects=list(grouped.values()),
-        total_backends=len(backends),
-        connected_backends=sum(1 for b in backends if b.state == "connected"),
+        total_backends=len(reg),
+        connected_backends=sum(1 for b in reg if b.state == "connected"),
     )
 
 
@@ -256,23 +260,19 @@ async def list_all_backends(
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_roles(UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN)),
 ) -> GlobalBackendListResponse:
-    """列系统内所有 ml_backends, 含 source project name 作为来源标签.
+    """v0.19.0 ADR-0044 · 列全局注册表所有 backend。
 
-    用于 CreateProjectWizard step 4 让用户选「复用一个已注册 backend」, 复用时
-    create_project 端点会复制 row 入新项目 (保留 url/auth/extra_params, 重置 state).
+    用于 CreateProjectWizard step 4 让用户选「为新项目启用一个已注册 backend」;
+    复用时 create_project 端点为新项目建启用关联 (复用同一全局 registry id)。
+    source_project_* 字段保留兼容: 现以 source ('manual'/'env') 作来源标签。
     """
     res = await db.execute(
-        select(MLBackend, Project.name)
-        .join(Project, Project.id == MLBackend.project_id)
-        .order_by(MLBackend.last_checked_at.desc().nullslast())
+        select(MLBackendRegistry).order_by(
+            MLBackendRegistry.last_checked_at.desc().nullslast()
+        )
     )
     items: list[GlobalBackendItem] = []
-    seen_urls: set[str] = set()
-    for backend, project_name in res.all():
-        # 同 url 多项目共享时只保留最新 health 的一份, 避免 dropdown 出 N 行重复
-        if backend.url in seen_urls:
-            continue
-        seen_urls.add(backend.url)
+    for backend in res.scalars().all():
         items.append(
             GlobalBackendItem(
                 id=str(backend.id),
@@ -282,8 +282,8 @@ async def list_all_backends(
                 is_interactive=backend.is_interactive,
                 auth_method=backend.auth_method,
                 health_meta=backend.health_meta,
-                source_project_id=str(backend.project_id),
-                source_project_name=project_name or "(未命名项目)",
+                source_project_id="",
+                source_project_name=backend.source,
                 last_checked_at=backend.last_checked_at.isoformat()
                 if backend.last_checked_at
                 else None,
@@ -437,25 +437,17 @@ async def observe_backends(
     async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
         targets = await asyncio.gather(*[_probe_one(client, u) for u in urls])
 
-    # 标注哪些观测 URL 已被项目注册占用 (冲突感知)。
-    res = await db.execute(select(MLBackend.url, MLBackend.project_id))
-    reg_by_url: dict[str, set] = {}
-    for url, pid in res.all():
-        reg_by_url.setdefault(url.rstrip("/"), set()).add(pid)
-    proj_names: dict = {}
-    all_pids = {pid for pids in reg_by_url.values() for pid in pids}
-    if all_pids:
-        pres = await db.execute(
-            select(Project.id, Project.name).where(Project.id.in_(all_pids))
-        )
-        proj_names = {pid: name for pid, name in pres.all()}
+    # v0.19.0 ADR-0044 · 标注哪些观测 URL 已在全局注册表 (含 env 自动 upsert / manual)。
+    res = await db.execute(
+        select(MLBackendRegistry.url, MLBackendRegistry.source)
+    )
+    src_by_url: dict[str, str] = {url.rstrip("/"): src for url, src in res.all()}
 
     for t in targets:
-        pids = reg_by_url.get(t.url.rstrip("/"))
-        if pids:
+        src = src_by_url.get(t.url.rstrip("/"))
+        if src:
             t.registered = True
-            names = [proj_names.get(p, "(已删除项目)") for p in pids]
-            t.registered_label = " / ".join(names)
+            t.registered_label = f"已注册 ({src})"
 
     return ObserveResponse(targets=list(targets), configured_count=len(urls))
 

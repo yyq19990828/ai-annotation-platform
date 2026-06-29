@@ -109,7 +109,7 @@ async def _do_retry_with_factory(
 async def _retry_job_metadata(
     db: AsyncSession, fid: uuid.UUID
 ) -> tuple[uuid.UUID | None, dict]:
-    from app.db.models.ml_backend import MLBackend
+    from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
     from app.db.models.prediction import FailedPrediction
     from app.db.models.project import Project
     from app.db.models.task import Task
@@ -156,7 +156,7 @@ def _retry_result_payload(result: dict) -> dict:
 
 async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> dict:
     """重试业务逻辑。终态通知由外层 async_jobs 统一发。"""
-    from app.db.models.ml_backend import MLBackend
+    from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
     from app.db.models.prediction import FailedPrediction
     from app.db.models.task import Task
     from app.services.ml_client import MLBackendClient

@@ -8822,9 +8822,16 @@
             "type": "string"
           },
           "project_id": {
-            "format": "uuid",
-            "title": "Project Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
           },
           "state": {
             "title": "State",
@@ -8842,7 +8849,6 @@
         },
         "required": [
           "id",
-          "project_id",
           "name",
           "url",
           "state",
@@ -19877,7 +19883,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.18.32"
+    "version": "0.18.33"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -20170,7 +20176,7 @@
     },
     "/api/v1/admin/ml-integrations/all": {
       "get": {
-        "description": "列系统内所有 ml_backends, 含 source project name 作为来源标签.\n\n用于 CreateProjectWizard step 4 让用户选「复用一个已注册 backend」, 复用时\ncreate_project 端点会复制 row 入新项目 (保留 url/auth/extra_params, 重置 state).",
+        "description": "v0.19.0 ADR-0044 · 列全局注册表所有 backend。\n\n用于 CreateProjectWizard step 4 让用户选「为新项目启用一个已注册 backend」;\n复用时 create_project 端点为新项目建启用关联 (复用同一全局 registry id)。\nsource_project_* 字段保留兼容: 现以 source ('manual'/'env') 作来源标签。",
         "operationId": "list_all_backends_api_v1_admin_ml_integrations_all_get",
         "responses": {
           "200": {
@@ -20468,7 +20474,7 @@
     },
     "/api/v1/admin/preannotate-summary": {
       "get": {
-        "description": "v0.9.12 B-17 · 给 ProjectCardGrid 提供 per-project 聚合.\n\n仅返回有 ml_backend 注册的项目 (EXISTS ml_backends WHERE project_id=...).\nv0.10.38 · 撤回 v0.10.36 的 data_type=\"image\" 过滤: 模态分流改到前端 ProjectDetailPanel\n(image 走文本批量预标, video 走引导卡片+job 历史), summary 返回 data_type 供前端路由.",
+        "description": "v0.9.12 B-17 · 给 ProjectCardGrid 提供 per-project 聚合.\n\n仅返回有「已启用」全局 backend 的项目 (EXISTS project_ml_backend WHERE enabled).\nv0.10.38 · 撤回 v0.10.36 的 data_type=\"image\" 过滤: 模态分流改到前端 ProjectDetailPanel\n(image 走文本批量预标, video 走引导卡片+job 历史), summary 返回 data_type 供前端路由.",
         "operationId": "list_preannotate_project_summary_api_v1_admin_preannotate_summary_get",
         "responses": {
           "200": {

@@ -3,13 +3,11 @@ import uuid
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.deps import get_db, require_roles
 from app.db.enums import UserRole
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.db.models.user import User
 from app.db.models.task import Task
 from app.schemas.ml_backend import (
@@ -21,7 +19,7 @@ from app.schemas.ml_backend import (
     InteractiveRequest,
     BackendCapabilities,
 )
-from app.services.ml_backend import MLBackendDeleteBlocked, MLBackendService
+from app.services.ml_backend import MLBackendService
 from app.services import ml_client as ml_client_module
 from app.services.ml_capabilities import extract_capabilities
 from app.services.storage import StorageService
@@ -35,6 +33,13 @@ _setup_cache: dict[uuid.UUID, tuple[float, dict]] = {}
 router = APIRouter()
 
 _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+
+
+def _out(backend: MLBackendRegistry, project_id: uuid.UUID) -> MLBackendOut:
+    """把全局注册行序列化为 MLBackendOut, 注入「本项目」id (表该项目启用了此 backend)。"""
+    return MLBackendOut.model_validate(backend, from_attributes=True).model_copy(
+        update={"project_id": project_id}
+    )
 
 
 def _resolve_task_url(task: Task) -> str:
@@ -58,41 +63,22 @@ async def create_ml_backend(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
-    # v0.10.1 · MAX_ML_BACKENDS_PER_PROJECT 上限校验. DB 已按 1:N 设计 (project_id 非 unique),
-    # 应用层挡入口防显存爆炸. 超限时返 409 + 结构化 detail{code,message}, 前端 M3 据此渲染弹窗.
-    limit = settings.max_ml_backends_per_project
-    if limit > 0:
-        existing = await db.execute(
-            select(func.count())
-            .select_from(MLBackend)
-            .where(MLBackend.project_id == project_id)
-        )
-        existing_count = int(existing.scalar() or 0)
-        if existing_count >= limit:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "ML_BACKEND_LIMIT_REACHED",
-                    "message": (
-                        f"当前项目已绑定 {existing_count} 个 ML 后端,"
-                        f"达到上限 {limit}。请先解绑现有后端再添加。"
-                    ),
-                    "limit": limit,
-                    "current": existing_count,
-                },
-            )
-
+    # v0.19.0 ADR-0044 · 「为项目添加 backend」= 按 url 复用/新建全局注册项 + 为本项目启用。
+    # 不再有 max_ml_backends_per_project 上限 (显存保护交全局行 extra_params.max_concurrency)。
     svc = MLBackendService(db)
-    backend = await svc.create(
-        project_id=project_id,
-        name=data.name,
-        url=data.url,
-        is_interactive=data.is_interactive,
-        auth_method=data.auth_method,
-        auth_token=data.auth_token,
-        extra_params=data.extra_params,
-    )
-    # B-5 · AI 审计 — ML backend 注册
+    backend = await svc.get_by_url(data.url)
+    if backend is None:
+        backend = await svc.create_registry(
+            name=data.name,
+            url=data.url,
+            source="manual",
+            is_interactive=data.is_interactive,
+            auth_method=data.auth_method,
+            auth_token=data.auth_token,
+            extra_params=data.extra_params,
+        )
+    await svc.set_enabled(project_id, backend.id, enabled=True)
+    # B-5 · AI 审计 — ML backend 注册 + 项目启用
     await AuditService.log(
         db,
         actor=current_user,
@@ -110,7 +96,7 @@ async def create_ml_backend(
     )
     await db.commit()
     await db.refresh(backend)
-    return backend
+    return _out(backend, project_id)
 
 
 @router.get("", response_model=list[MLBackendOut])
@@ -122,7 +108,8 @@ async def list_ml_backends(
     ),
 ):
     svc = MLBackendService(db)
-    return await svc.list_by_project(project_id)
+    backends = await svc.list_enabled_for_project(project_id)
+    return [_out(b, project_id) for b in backends]
 
 
 @router.get("/{backend_id}", response_model=MLBackendOut)
@@ -136,9 +123,9 @@ async def get_ml_backend(
 ):
     svc = MLBackendService(db)
     backend = await svc.get(backend_id)
-    if not backend or backend.project_id != project_id:
+    if not backend or not await svc.is_enabled(project_id, backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
-    return backend
+    return _out(backend, project_id)
 
 
 @router.put("/{backend_id}", response_model=MLBackendOut)
@@ -151,8 +138,11 @@ async def update_ml_backend(
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
     svc = MLBackendService(db)
+    if not await svc.is_enabled(project_id, backend_id):
+        raise HTTPException(status_code=404, detail="ML Backend not found")
     _setup_cache.pop(backend_id, None)
     updates = data.model_dump(exclude_unset=True)
+    # 更新作用于全局注册行 (auth/url/extra_params 等端点固有属性)。
     backend = await svc.update(backend_id, **updates)
     if not backend:
         raise HTTPException(status_code=404, detail="ML Backend not found")
@@ -168,7 +158,7 @@ async def update_ml_backend(
     )
     await db.commit()
     await db.refresh(backend)
-    return backend
+    return _out(backend, project_id)
 
 
 @router.delete("/{backend_id}", status_code=204)
@@ -179,17 +169,13 @@ async def delete_ml_backend(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
+    # v0.19.0 ADR-0044 · 项目作用域的「删除」= 为本项目停用全局 backend (不删全局注册项;
+    # 删全局项是 superadmin 的 admin 端点, 见 PR3)。
     svc = MLBackendService(db)
-    _setup_cache.pop(backend_id, None)
-    try:
-        deleted = await svc.delete(backend_id)
-    except MLBackendDeleteBlocked as exc:
-        raise HTTPException(
-            status_code=409,
-            detail=f"ML Backend has {exc.running_jobs} running prediction job(s); wait or cancel before deleting",
-        )
-    if not deleted:
+    if not await svc.is_enabled(project_id, backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
+    _setup_cache.pop(backend_id, None)
+    await svc.set_enabled(project_id, backend_id, enabled=False)
     await AuditService.log(
         db,
         actor=current_user,
@@ -198,7 +184,7 @@ async def delete_ml_backend(
         target_id=str(backend_id),
         request=request,
         status_code=204,
-        detail={"project_id": str(project_id)},
+        detail={"project_id": str(project_id), "op": "disable"},
     )
     await db.commit()
 
@@ -372,7 +358,7 @@ async def get_ml_backend_setup(
     """
     svc = MLBackendService(db)
     backend = await svc.get(backend_id)
-    if not backend or backend.project_id != project_id:
+    if not backend or not await svc.is_enabled(project_id, backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
     return await _fetch_setup_cached(backend, backend_id)
@@ -394,7 +380,7 @@ async def get_ml_backend_capabilities(
     """
     svc = MLBackendService(db)
     backend = await svc.get(backend_id)
-    if not backend or backend.project_id != project_id:
+    if not backend or not await svc.is_enabled(project_id, backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
     setup = await _fetch_setup_cached(backend, backend_id)
@@ -414,7 +400,7 @@ async def refresh_ml_backend_capabilities(
     """
     svc = MLBackendService(db)
     backend = await svc.get(backend_id)
-    if not backend or backend.project_id != project_id:
+    if not backend or not await svc.is_enabled(project_id, backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
     _setup_cache.pop(backend_id, None)
@@ -431,7 +417,7 @@ async def check_health(
 ):
     svc = MLBackendService(db)
     backend = await svc.get(backend_id)
-    if not backend:
+    if not backend or not await svc.is_enabled(project_id, backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
     healthy = await svc.check_health(backend_id)
     await db.commit()
@@ -452,7 +438,7 @@ async def predict_test(
 ):
     svc = MLBackendService(db)
     backend = await svc.get(backend_id)
-    if not backend:
+    if not backend or not await svc.is_enabled(project_id, backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
     task = await db.get(Task, task_id)
@@ -483,7 +469,7 @@ async def interactive_annotating(
 ):
     svc = MLBackendService(db)
     backend = await svc.get(backend_id)
-    if not backend:
+    if not backend or not await svc.is_enabled(project_id, backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
     if not backend.is_interactive:
         raise HTTPException(

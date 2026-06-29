@@ -44,7 +44,6 @@ from app.services.project_clone import (
     CLONEABLE_PROJECT_FIELDS as _CLONEABLE_PROJECT_FIELDS,  # noqa: F401 (re-export)
     merge_from_source as _merge_from_source_project_impl,
 )
-from app.config import settings
 
 router = APIRouter()
 
@@ -212,8 +211,9 @@ async def _serialize_project(
     data["member_count"] = member_count
     data["ai_completed_tasks"] = ai_completed
     data["batch_summary"] = batch_summary
-    # v0.10.1 · 透出 env 控制的 1:N 上限 (默认 1), 供前端渲染添加按钮禁用状态.
-    data["ml_backend_limit"] = settings.max_ml_backends_per_project
+    # v0.19.0 ADR-0044 · 项目启用不再设上限 (显存保护交全局 extra_params.max_concurrency);
+    # 0 = 不限, 前端按 >0 判定禁用添加按钮。
+    data["ml_backend_limit"] = 0
     return data
 
 
@@ -468,7 +468,7 @@ async def create_project(
     source_id = payload.pop("ml_backend_source_id", None)
     source_backend = None
     if source_id is not None:
-        from app.db.models.ml_backend import MLBackend as _MLB
+        from app.db.models.ml_backend_registry import MLBackendRegistry as _MLB
 
         source_backend = await db.get(_MLB, source_id)
         if source_backend is None:
@@ -503,7 +503,7 @@ async def create_project(
                     "guide_assets", _copy.deepcopy(source_project.guide_assets)
                 )
         if source_backend is None and source_project.ml_backend_id is not None:
-            from app.db.models.ml_backend import MLBackend as _MLB
+            from app.db.models.ml_backend_registry import MLBackendRegistry as _MLB
 
             source_backend = await db.get(_MLB, source_project.ml_backend_id)
     elif copy_guide:
@@ -568,32 +568,13 @@ async def create_project(
 async def _clone_backend_to_new_project(
     db: AsyncSession, *, source, new_project_id: uuid.UUID
 ) -> uuid.UUID:
-    """v0.9.7 · 把 source backend 行复制一份给新项目.
-
-    保留 url/auth_method/auth_token/extra_params/is_interactive/name; 重置
-    state="disconnected" + 清空 health_meta + last_checked_at, 强制新项目自行
-    health-check 再绑定. 返回新 backend id.
+    """v0.19.0 ADR-0044 · backend 已是全局注册项, 「克隆给新项目」退化为「为新项目启用同一
+    全局 backend」: 建一条 project_ml_backend 关联, 复用 source.id (registry id)。返回 registry id。
     """
-    from app.db.models.ml_backend import MLBackend as _MLB
+    from app.services.ml_backend import MLBackendService
 
-    new_id = uuid.uuid4()
-    cloned = _MLB(
-        id=new_id,
-        project_id=new_project_id,
-        name=source.name,
-        url=source.url,
-        state="disconnected",
-        is_interactive=source.is_interactive,
-        auth_method=source.auth_method,
-        auth_token=source.auth_token,
-        extra_params=dict(source.extra_params or {}),
-        health_meta=None,
-        error_message=None,
-        last_checked_at=None,
-    )
-    db.add(cloned)
-    await db.flush()
-    return new_id
+    await MLBackendService(db).set_enabled(new_project_id, source.id, enabled=True)
+    return source.id
 
 
 # v0.10.14 · E2 · 白名单 + merge 实现迁出至 app.services.project_clone, 供
@@ -612,7 +593,7 @@ async def _validate_backend_modality(
     """
     if data_type not in ("image", "video"):
         return
-    from app.db.models.ml_backend import MLBackend as _MLB
+    from app.db.models.ml_backend_registry import MLBackendRegistry as _MLB
     from app.services.ml_capabilities import derive_modalities, extract_capabilities
     from app.services.ml_client import MLBackendClient
 
@@ -1444,9 +1425,9 @@ async def trigger_preannotation(
 
     svc = MLBackendService(db)
     backend = await svc.get(body.ml_backend_id)
-    # 校验 backend 存在且归属当前项目: 与下面下游阶段校验对称, 防止 owner 手动 POST
-    # 别项目 backend id 触发跨项目预标。404 (不可枚举) 与下游分支一致。
-    if not backend or backend.project_id != project.id:
+    # v0.19.0 ADR-0044 · 校验 backend 存在且在本项目「已启用」(project_ml_backend.enabled):
+    # 与下游阶段校验对称, 防止 owner 手动 POST 未启用/别项目 backend id 触发预标。
+    if not backend or not await svc.is_enabled(project.id, body.ml_backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
     # v0.18.1 · 多阶段编排: 校验每个下游阶段的 backend 存在且归属本项目, 归一化成 worker
@@ -1458,10 +1439,12 @@ async def trigger_preannotation(
             resolved_input = st.input
             if st.parent_stage is not None:
                 st_backend = await svc.get(st.ml_backend_id)
-                if not st_backend or st_backend.project_id != project.id:
+                if not st_backend or not await svc.is_enabled(
+                    project.id, st.ml_backend_id
+                ):
                     raise HTTPException(
                         status_code=404,
-                        detail=f"stage {st.stage} 的 ML Backend 不存在或不属于本项目",
+                        detail=f"stage {st.stage} 的 ML Backend 不存在或未在本项目启用",
                     )
                 # v0.18.15 · 按子模型 supported_inputs 解析投递方式 + 几何可达性门控。
                 # 产几何的子: supported_inputs 须含 'bbox_prompt' (geometry-prompt 路径) 或

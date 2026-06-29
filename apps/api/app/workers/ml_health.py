@@ -30,8 +30,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.config import settings
-from app.db.models.ml_backend import MLBackend
-from app.db.models.project import Project
+from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
 from app.services.ml_backend import MLBackendService
 from app.workers._db import task_session
 from app.services.ml_client import MLBackendClient
@@ -113,7 +112,9 @@ def _binding_for_backend(
     return {
         "backend_id": str(backend.id),
         "backend_name": backend.name,
-        "project_id": str(backend.project_id) if backend.project_id else None,
+        # v0.19.0 ADR-0044 · backend 全局化, 不再属于单一项目; 项目归属由 project_ml_backend
+        # 关联表表达 (健康概览不再按项目拆分)。
+        "project_id": None,
         "project_display_id": project_display_id,
         "project_name": project_name,
     }
@@ -186,15 +187,15 @@ async def _publish_stats_async() -> dict:
     )
     try:
         async with SessionLocal() as db:
-            # ml_backends 无 is_active 字段; state == 'disconnected' 跳过 (一直 down 的 backend 不打)
-            rows = (
+            # 全局注册表; state == 'disconnected' 跳过 (一直 down 的 backend 不打)
+            backends = (
                 await db.execute(
-                    select(MLBackend, Project.display_id, Project.name)
-                    .join(Project, Project.id == MLBackend.project_id)
+                    select(MLBackend)
                     .where(MLBackend.state != "disconnected")
-                    .order_by(Project.display_id.asc(), MLBackend.created_at.asc())
+                    .order_by(MLBackend.created_at.asc())
                 )
-            ).all()
+            ).scalars().all()
+            rows = [(b, None, None) for b in backends]
     finally:
         await engine.dispose()
 

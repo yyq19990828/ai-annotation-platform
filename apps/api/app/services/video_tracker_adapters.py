@@ -9,7 +9,7 @@ from app.config import settings
 from app.services.ml_client import MLBackendClient
 
 if TYPE_CHECKING:
-    from app.db.models.ml_backend import MLBackend
+    from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
 
 
 @dataclass(frozen=True)
