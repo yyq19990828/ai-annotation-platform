@@ -19,7 +19,6 @@ import {
   mlBackendSetupQueryKey,
   type MLBackendCapability,
   type ProjectMLBackendItem,
-  type ProjectMLBackendEnablementPayload,
 } from "@/api/ml-backends";
 import type { ProjectResponse } from "@/api/projects";
 import type { MLBackendResponse } from "@/types";
@@ -31,8 +30,6 @@ function cn(...xs: Array<string | false | null | undefined>): string {
 
 const CONTROL_CLASS =
   "box-border w-full appearance-none rounded-md border border-border bg-muted px-2.5 py-2 text-sm text-foreground outline-none [font-family:inherit]";
-const THRESHOLD_CLASS =
-  "box-border w-20 appearance-none rounded-md border border-border bg-muted px-2 py-1 text-xs text-foreground outline-none [font-family:inherit]";
 const TABLE_HEAD_CELL =
   "whitespace-nowrap border-b border-border bg-muted px-3 py-1.5 text-left text-xs font-medium text-muted-foreground";
 const TABLE_CELL = "border-b border-border px-3 py-2 align-middle";
@@ -43,76 +40,8 @@ const STATE_VARIANT: Record<string, "success" | "warning" | "outline" | "danger"
   error: "danger",
 };
 
-// 项目级阈值覆盖输入: 本地态编辑, blur 时提交; 空 = 清除覆盖 (回落 backend 默认)。
-function OverrideCell({
-  item,
-  disabled,
-  onCommit,
-}: {
-  item: ProjectMLBackendItem;
-  disabled: boolean;
-  onCommit: (payload: ProjectMLBackendEnablementPayload) => void;
-}) {
-  const [box, setBox] = useState<string>(item.box_threshold?.toString() ?? "");
-  const [text, setText] = useState<string>(item.text_threshold?.toString() ?? "");
-
-  useEffect(() => {
-    setBox(item.box_threshold?.toString() ?? "");
-    setText(item.text_threshold?.toString() ?? "");
-  }, [item.box_threshold, item.text_threshold]);
-
-  const commit = (field: "box_threshold" | "text_threshold", raw: string) => {
-    const trimmed = raw.trim();
-    const next = trimmed === "" ? null : Number(trimmed);
-    if (trimmed !== "" && Number.isNaN(next)) return;
-    const current = field === "box_threshold" ? item.box_threshold : item.text_threshold;
-    if ((next ?? null) === (current ?? null)) return;
-    onCommit({ enabled: true, [field]: next });
-  };
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <span className="w-7">box</span>
-        <input
-          type="number"
-          step={0.05}
-          min={0}
-          max={1}
-          value={box}
-          placeholder="默认"
-          disabled={disabled}
-          onChange={(e) => setBox(e.target.value)}
-          onBlur={(e) => commit("box_threshold", e.target.value)}
-          className={THRESHOLD_CLASS}
-        />
-      </label>
-      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <span className="w-7">text</span>
-        <input
-          type="number"
-          step={0.05}
-          min={0}
-          max={1}
-          value={text}
-          placeholder="默认"
-          disabled={disabled}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={(e) => commit("text_threshold", e.target.value)}
-          className={THRESHOLD_CLASS}
-        />
-      </label>
-      {item.default_variants && Object.keys(item.default_variants).length > 0 && (
-        <div className="mono max-w-[180px] truncate text-[11px] text-muted-foreground" title={JSON.stringify(item.default_variants)}>
-          变体: {Object.entries(item.default_variants).map(([k, v]) => `${k}=${String(v)}`).join(", ")}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// v0.19.0 · ADR-0044 · 「管理 backend」悬浮面板: 列出全部全局 backend, 在此勾选启用/停用
-// + 编辑项目级阈值覆盖。主表只展示已启用项, 增删启用都在本面板里做。
+// v0.19.0 · ADR-0044 · 「管理 backend」悬浮面板: 列出全部全局 backend, 在此勾选启用/停用。
+// 主表只展示已启用项, 增删启用都在本面板里做。
 function ManageBackendsPanel({
   open,
   onClose,
@@ -120,7 +49,6 @@ function ManageBackendsPanel({
   canManage,
   pending,
   onToggle,
-  onCommitOverride,
 }: {
   open: boolean;
   onClose: () => void;
@@ -128,10 +56,6 @@ function ManageBackendsPanel({
   canManage: boolean;
   pending: boolean;
   onToggle: (item: ProjectMLBackendItem, next: boolean) => void;
-  onCommitOverride: (
-    item: ProjectMLBackendItem,
-    payload: ProjectMLBackendEnablementPayload,
-  ) => void;
 }) {
   return (
     <Modal open={open} onClose={onClose} title="管理项目 ML backend" width={720}>
@@ -179,15 +103,6 @@ function ManageBackendsPanel({
                   >
                     {b.url}
                   </div>
-                  {item.enabled && (
-                    <div className="mt-2">
-                      <OverrideCell
-                        item={item}
-                        disabled={!canManage || pending}
-                        onCommit={(payload) => onCommitOverride(item, payload)}
-                      />
-                    </div>
-                  )}
                 </div>
               </li>
             );
@@ -261,7 +176,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
     );
   };
 
-  // v0.19.0 · ADR-0044 · 启用/停用某全局 backend + 写项目级覆盖。覆盖缺省 = 不改动。
+  // v0.19.0 · ADR-0044 · 启用/停用某全局 backend。
   const onToggleEnabled = (item: ProjectMLBackendItem, next: boolean) => {
     setEnablement.mutate(
       { registryId: item.backend.id, payload: { enabled: next } },
@@ -272,19 +187,6 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
             kind: "success",
           }),
         onError: (e) => pushToast({ msg: "操作失败", sub: (e as Error).message }),
-      },
-    );
-  };
-
-  const onCommitOverride = (
-    item: ProjectMLBackendItem,
-    payload: ProjectMLBackendEnablementPayload,
-  ) => {
-    setEnablement.mutate(
-      { registryId: item.backend.id, payload },
-      {
-        onSuccess: () => pushToast({ msg: "项目级覆盖已保存", kind: "success" }),
-        onError: (e) => pushToast({ msg: "保存失败", sub: (e as Error).message }),
       },
     );
   };
@@ -326,7 +228,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
             </span>
           </h3>
           <div className="mt-0.5 text-xs text-muted-foreground">
-            本表仅显示本项目已启用的 ML backend；点「管理 backend」可启用/停用全局 backend 并调整项目级阈值覆盖。
+            本表仅显示本项目已启用的 ML backend；点「管理 backend」可启用/停用全局 backend。推理参数在工作台 / 预标运行时按 backend 自报的 /setup 调。
           </div>
         </div>
         {canManage && (
@@ -445,7 +347,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
             <table className="w-full min-w-[920px] border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
-                  {["名称", "URL", "类型", "能力", "状态", "项目级覆盖", "操作"].map((h) => (
+                  {["名称", "URL", "类型", "能力", "状态", "操作"].map((h) => (
                     <th
                       key={h}
                       className={TABLE_HEAD_CELL}
@@ -503,13 +405,6 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                         </Badge>
                       </td>
                       <td className={TABLE_CELL}>
-                        <OverrideCell
-                          item={item}
-                          disabled={!canManage || setEnablement.isPending}
-                          onCommit={(payload) => onCommitOverride(item, payload)}
-                        />
-                      </td>
-                      <td className={TABLE_CELL}>
                         <div className="inline-flex items-center gap-1.5 whitespace-nowrap">
                         {project.ml_backend_id !== b.id && (
                           <Button
@@ -553,7 +448,6 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
         canManage={canManage}
         pending={setEnablement.isPending}
         onToggle={onToggleEnabled}
-        onCommitOverride={onCommitOverride}
       />
     </Card>
   );

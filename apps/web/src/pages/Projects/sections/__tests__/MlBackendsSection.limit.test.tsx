@@ -74,8 +74,6 @@ function item(enabled: boolean) {
   return {
     backend: SAMPLE_BACKEND,
     enabled,
-    box_threshold: null,
-    text_threshold: null,
     default_variants: null,
   };
 }

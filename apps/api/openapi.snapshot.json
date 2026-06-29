@@ -11632,19 +11632,8 @@
         "type": "object"
       },
       "ProjectMLBackendEnablement": {
-        "description": "切换项目启用 + 写项目级覆盖 (阈值/变体)。覆盖项缺省 = 不改动。",
+        "description": "切换项目启用 + 写项目级变体覆盖。覆盖项缺省 = 不改动。",
         "properties": {
-          "box_threshold": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Box Threshold"
-          },
           "default_variants": {
             "anyOf": [
               {
@@ -11660,17 +11649,6 @@
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
-          },
-          "text_threshold": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Threshold"
           }
         },
         "required": [
@@ -11680,21 +11658,10 @@
         "type": "object"
       },
       "ProjectMLBackendItem": {
-        "description": "一行 = 一个全局 backend 在本项目的启用态 + 项目级覆盖。\n\n`backend` 是全局注册项快照 (project_id=None); `enabled`/覆盖三项来自\nproject_ml_backend 关联 (无关联则 enabled=False、覆盖全 None)。",
+        "description": "一行 = 一个全局 backend 在本项目的启用态 + 项目级覆盖。\n\n`backend` 是全局注册项快照 (project_id=None); `enabled`/`default_variants` 来自\nproject_ml_backend 关联 (无关联则 enabled=False、覆盖 None)。",
         "properties": {
           "backend": {
             "$ref": "#/components/schemas/MLBackendOut"
-          },
-          "box_threshold": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Box Threshold"
           },
           "default_variants": {
             "anyOf": [
@@ -11712,17 +11679,6 @@
             "default": false,
             "title": "Enabled",
             "type": "boolean"
-          },
-          "text_threshold": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Threshold"
           }
         },
         "required": [

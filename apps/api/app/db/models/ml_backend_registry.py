@@ -3,7 +3,6 @@ from datetime import datetime
 from sqlalchemy import (
     String,
     Boolean,
-    Float,
     DateTime,
     ForeignKey,
     UniqueConstraint,
@@ -57,7 +56,7 @@ class ProjectMLBackend(Base):
     """v0.19.0 · 项目 × 注册项关联(ADR-0044)。
 
     项目层退化为「启用开关 + 项目级覆盖」: enabled 控制该项目能否选用此全局 backend;
-    box_threshold / text_threshold / default_variants 是项目级业务覆盖(可空,空=用全局默认)。
+    default_variants 是项目级变体覆盖(可空,空=用全局默认)。阈值覆盖(box/text)已退役。
     预标 / DAG 下游 / backends>=2 门控读 enabled=true 集合。
     """
 
@@ -80,9 +79,8 @@ class ProjectMLBackend(Base):
         index=True,
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    # 项目级业务覆盖(可空)
-    box_threshold: Mapped[float | None] = mapped_column(Float, nullable=True)
-    text_threshold: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # 项目级业务覆盖(可空)。阈值(box/text)已退役: per-backend 调参由运行时按 /setup.params
+    # 通用渲染, 项目级单值 project.box_threshold 兜底。变体覆盖保留为未来落点。
     default_variants: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

@@ -74,7 +74,7 @@ GET    /admin/ml-integrations/all                        # 全局列表（新建
 
 注册仅是创建可选项。真正生效需要项目把它启用：
 
-1. 项目设置 → **ML 模型** → 点「管理 backend」在全局 backend 清单里**勾选启用**该 backend（可同时设项目级阈值 / 变体覆盖）
+1. 项目设置 → **ML 模型** → 点「管理 backend」在全局 backend 清单里**勾选启用**该 backend（推理参数运行时按 backend 自报的 `/setup.params` 调，不在此预设）
 2. 同一页在 **项目主后端** 下拉里选一个**已启用**的 backend（设了主后端即视为启用 AI 预标注）
 3. 保存 AI 设置
 

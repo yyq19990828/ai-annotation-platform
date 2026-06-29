@@ -155,7 +155,7 @@ class MLBackendService:
         enabled: bool,
         **overrides,
     ) -> ProjectMLBackend:
-        """切换项目启用 + 写项目级覆盖 (box_threshold/text_threshold/default_variants)。"""
+        """切换项目启用 + 写项目级变体覆盖 (default_variants)。"""
         assoc = await self.get_assoc(project_id, registry_id)
         if assoc is None:
             assoc = ProjectMLBackend(
@@ -167,7 +167,7 @@ class MLBackendService:
             self.db.add(assoc)
         else:
             assoc.enabled = enabled
-        for key in ("box_threshold", "text_threshold", "default_variants"):
+        for key in ("default_variants",):
             if key in overrides:
                 setattr(assoc, key, overrides[key])
         await self.db.flush()

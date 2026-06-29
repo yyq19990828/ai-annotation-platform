@@ -242,13 +242,11 @@ class MLBackendHealthResponse(BaseModel):
 class ProjectMLBackendItem(BaseModel):
     """一行 = 一个全局 backend 在本项目的启用态 + 项目级覆盖。
 
-    `backend` 是全局注册项快照 (project_id=None); `enabled`/覆盖三项来自
-    project_ml_backend 关联 (无关联则 enabled=False、覆盖全 None)。"""
+    `backend` 是全局注册项快照 (project_id=None); `enabled`/`default_variants` 来自
+    project_ml_backend 关联 (无关联则 enabled=False、覆盖 None)。"""
 
     backend: MLBackendOut
     enabled: bool = False
-    box_threshold: float | None = None
-    text_threshold: float | None = None
     default_variants: dict | None = None
 
 
@@ -257,11 +255,9 @@ class ProjectMLBackendList(BaseModel):
 
 
 class ProjectMLBackendEnablement(BaseModel):
-    """切换项目启用 + 写项目级覆盖 (阈值/变体)。覆盖项缺省 = 不改动。"""
+    """切换项目启用 + 写项目级变体覆盖。覆盖项缺省 = 不改动。"""
 
     enabled: bool
-    box_threshold: float | None = None
-    text_threshold: float | None = None
     default_variants: dict | None = None
 
 

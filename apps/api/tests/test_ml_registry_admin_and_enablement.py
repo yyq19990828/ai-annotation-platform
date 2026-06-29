@@ -140,7 +140,10 @@ async def test_available_lists_all_with_enabled_flag(
     off = await _seed_registry(db_session, name="off")
     db_session.add(
         ProjectMLBackend(
-            project_id=proj.id, registry_id=on.id, enabled=True, box_threshold=0.5
+            project_id=proj.id,
+            registry_id=on.id,
+            enabled=True,
+            default_variants={"sam_variant": "large"},
         )
     )
     await db_session.commit()
@@ -152,9 +155,9 @@ async def test_available_lists_all_with_enabled_flag(
     assert res.status_code == 200, res.text
     by_id = {it["backend"]["id"]: it for it in res.json()["items"]}
     assert by_id[str(on.id)]["enabled"] is True
-    assert by_id[str(on.id)]["box_threshold"] == 0.5
+    assert by_id[str(on.id)]["default_variants"] == {"sam_variant": "large"}
     assert by_id[str(off.id)]["enabled"] is False
-    assert by_id[str(off.id)]["box_threshold"] is None
+    assert by_id[str(off.id)]["default_variants"] is None
 
 
 async def test_enablement_toggle_and_override(httpx_client, db_session, super_admin):
@@ -163,17 +166,16 @@ async def test_enablement_toggle_and_override(httpx_client, db_session, super_ad
     b = await _seed_registry(db_session, name="tog")
     await db_session.commit()
 
-    # 启用 + 写覆盖
+    # 启用 + 写变体覆盖
     res = await httpx_client.put(
         f"/api/v1/projects/{proj.id}/ml-backends/{b.id}/enablement",
-        json={"enabled": True, "box_threshold": 0.4, "text_threshold": 0.3},
+        json={"enabled": True, "default_variants": {"sam_variant": "base"}},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["enabled"] is True
-    assert body["box_threshold"] == 0.4
-    assert body["text_threshold"] == 0.3
+    assert body["default_variants"] == {"sam_variant": "base"}
 
     # 停用 (覆盖缺省不动)
     res = await httpx_client.put(
@@ -183,7 +185,7 @@ async def test_enablement_toggle_and_override(httpx_client, db_session, super_ad
     )
     assert res.status_code == 200
     assert res.json()["enabled"] is False
-    assert res.json()["box_threshold"] == 0.4
+    assert res.json()["default_variants"] == {"sam_variant": "base"}
 
 
 async def test_enablement_unknown_backend_404(httpx_client, db_session, super_admin):

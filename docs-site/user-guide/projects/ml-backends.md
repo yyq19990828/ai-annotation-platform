@@ -10,7 +10,7 @@ last_reviewed: 2026-06-10
 
 > 适用角色：项目管理员 / 超级管理员
 
-每个项目从**全局 ML backend 注册表**里勾选启用一个或多个 backend，用于工作台交互式 AI 工具（智能点 / 智能框 / Exemplar，均为画布手势驱动）和批量预标注（文本「找全图」/ 几何 / OCR / 版面）。本页解释项目侧的**启用、阈值覆盖、设主后端**三件事。物理 backend 的全局注册（新增 / 编辑 / 删除）是超管在[模型市场](../superadmin/model-market.md)的职责；项目侧只做启用与项目级覆盖，不复制 backend。
+每个项目从**全局 ML backend 注册表**里勾选启用一个或多个 backend，用于工作台交互式 AI 工具（智能点 / 智能框 / Exemplar，均为画布手势驱动）和批量预标注（文本「找全图」/ 几何 / OCR / 版面）。本页解释项目侧的**启用、设主后端**两件事。物理 backend 的全局注册（新增 / 编辑 / 删除）是超管在[模型市场](../superadmin/model-market.md)的职责；项目侧只做启用，不复制 backend。推理参数（如检测阈值）不在项目设置预设，而是在工作台 / 预标**运行时**按 backend 自报的 `/setup.params` 调整（详见下）。
 
 > **交互线 / 批量线分流**：启用多个后端时，工作台 AI 按角色 + 能力路由——交互工具(point/interactive_box/exemplar)自动路由到支持该 prompt 的交互后端，批量预标走批量后端，两条线**同时就绪**。例如 yolo 设为项目主后端（批量几何）+ gsam2 启用：批量运行走 yolo，工具栏 point/interactive_box 自动命中 gsam2。文本「找全图」属批量线（不在工具栏）。详见 [AI 工具组 § 交互后端选择](../workbench/sam-tool.md#交互后端选择多后端)。
 
@@ -18,11 +18,11 @@ last_reviewed: 2026-06-10
 
 ![ML 模型 tab：全局 backend 启用清单](../images/projects/ml-backends/register-form.png)
 
-进入 **项目设置 → ML 模型** 标签。页面上方是 AI 预标注设置，下方是**全局 backend 启用清单**——列出注册表里全部 backend（含 env 自动注册项），每行可勾选「启用」并设项目级覆盖：
+进入 **项目设置 → ML 模型** 标签。页面上方是 AI 预标注设置，下方是**全局 backend 启用清单**——列出注册表里全部 backend（含 env 自动注册项），点「管理 backend」在悬浮面板里逐个勾选「启用」：
 
 - **启用开关**：勾选后该 backend 对本项目可用（成为工作台 AI 与批量预标的可选项）。取消勾选即对本项目停用，不影响其它项目，也不删除全局注册项。
-- **阈值覆盖**（可选）：`box_threshold` / `text_threshold`，只覆盖本项目调用该 backend 时的默认值；留空 = 用全局默认。
-- **变体覆盖**（可选，`default_variants`）：覆盖本项目默认选用的 SAM / DINO 变体。
+
+> **推理参数不在此预设**：检测阈值（如 `box_threshold` / `text_threshold`）这类参数因 backend 而异（由协议 `/setup.params` 自描述），统一在工作台「当前题 AI」面板与 `/ai-pre` 跑批配置里**运行时**按所选 backend 动态渲染调整、即调即生效；项目级 `box_threshold`（默认 0.35）仅作 `/setup` 拉取失败时的兜底。
 
 每行还展示全局注册项自带的能力快照（`supported_prompts` / `supported_trackers`）、URL、鉴权方式与 `max_concurrency` 并发闸——这些由超管在全局注册时设定，项目侧只读。
 

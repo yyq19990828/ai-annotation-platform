@@ -132,8 +132,6 @@ async def list_available_ml_backends(
         ProjectMLBackendItem(
             backend=MLBackendOut.model_validate(reg, from_attributes=True),
             enabled=bool(assoc and assoc.enabled),
-            box_threshold=assoc.box_threshold if assoc else None,
-            text_threshold=assoc.text_threshold if assoc else None,
             default_variants=assoc.default_variants if assoc else None,
         )
         for reg, assoc in rows
@@ -160,11 +158,7 @@ async def set_ml_backend_enablement(
         raise HTTPException(status_code=404, detail="ML Backend not found")
     overrides = {
         k: v
-        for k, v in (
-            ("box_threshold", data.box_threshold),
-            ("text_threshold", data.text_threshold),
-            ("default_variants", data.default_variants),
-        )
+        for k, v in (("default_variants", data.default_variants),)
         if v is not None
     }
     assoc = await svc.set_enabled(
@@ -191,8 +185,6 @@ async def set_ml_backend_enablement(
     return ProjectMLBackendItem(
         backend=MLBackendOut.model_validate(backend, from_attributes=True),
         enabled=assoc.enabled,
-        box_threshold=assoc.box_threshold,
-        text_threshold=assoc.text_threshold,
         default_variants=assoc.default_variants,
     )
 
