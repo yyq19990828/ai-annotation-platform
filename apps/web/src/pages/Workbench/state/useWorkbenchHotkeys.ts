@@ -546,6 +546,16 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           return;
         }
 
+        case "cycleAi": {
+          // AI 待审框（悬空预测）循环：与 cycleUser 对称，但遍历 aiBoxes。空列表静默无操作。
+          if (aiBoxes.length === 0) return;
+          e.preventDefault();
+          const idxNow = s.selectedId ? aiBoxes.findIndex((b) => b.id === s.selectedId) : -1;
+          const next = (idxNow + action.dir + aiBoxes.length) % aiBoxes.length;
+          s.setSelectedId(aiBoxes[next].id);
+          return;
+        }
+
         case "smartNext": smartNext(action.mode); return;
 
         case "changeClass": {

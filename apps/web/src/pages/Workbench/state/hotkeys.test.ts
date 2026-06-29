@@ -92,6 +92,10 @@ describe("dispatchKey · 单键", () => {
     expect(dispatch({ key: "j" })).toEqual({ type: "cycleUser", dir: 1, loop: false });
     expect(dispatch({ key: "k" })).toEqual({ type: "cycleUser", dir: -1, loop: false });
   });
+  it("X / Shift+X → cycleAi（AI 待审框，循环）", () => {
+    expect(dispatch({ key: "x" })).toEqual({ type: "cycleAi", dir: 1 });
+    expect(dispatch({ key: "X", shiftKey: true })).toEqual({ type: "cycleAi", dir: -1 });
+  });
   it("[ / ] → 阈值微调", () => {
     expect(dispatch({ key: "[" })).toEqual({ type: "thresholdAdjust", delta: -0.05 });
     expect(dispatch({ key: "]" })).toEqual({ type: "thresholdAdjust", delta: 0.05 });

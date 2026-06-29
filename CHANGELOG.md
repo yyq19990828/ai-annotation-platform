@@ -34,6 +34,12 @@
 <!-- 0.18.x 版本变更按版本段追加到本区；进入 0.19.x 后整体移到 docs/changelogs/0.18.x.md -->
 <!-- 0.18.7（并行扇出规模化 / Celery chord）为规模驱动的「按需」版本，无实测 wall-clock 压力前不实施，故版本号留空，见 docs/plans/2026-06-23-v0.18.7-staged-preannotate-chord-parallelism.md -->
 
+## [0.18.33] - 2026-06-29
+
+### Added
+
+- **快捷键 `X` / `Shift+X` 循环选中「AI 待审」框**：标注详情面板的「AI 待审」列(来自悬空预测的 `AiBox`，id 形如 `pred-xxx`)此前只能用鼠标点列表行选中，`Tab`/`J`/`K`(`cycleUser`)只遍历已落库的人工标注、够不到它。新增 `X`(下一个)/ `Shift+X`(上一个)循环选中 AI 待审框，与 `Tab` 之于人工框完全对称(循环、方向由 Shift 决定)；选中后即可用既有 `A` 采纳 / `D` 忽略。两套循环共用 `selectedId`，职责不交叉。`X` 仅图片模式生效(视频模式 `Tab` 仍是 `videoCycleTrack`)，不与 SAM 交互浮层的本地 `Tab/Enter/Esc/R` 监听冲突。`x`/`X` 加入 `RESERVED_LETTERS`，不再落到按字母切类别的兜底。
+
 ## [0.18.32] - 2026-06-26
 
 ### Changed
