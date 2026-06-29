@@ -300,6 +300,37 @@ async def test_ml_backends_tab_renders_and_colors():
         assert "73%" in row[4]
 
 
+async def test_ml_backends_dedup_shared_backend_merges_one_row():
+    # v0.19.1 · 同一全局 backend 被多个项目启用 → 各项目作用域端点返回同一 registry id;
+    # 聚合须按 id 去重为一行 (否则 DataTable 同 key add_row 崩溃), 项目列示「N 个项目」。
+    proj_a = _project()
+    proj_b = Project(
+        id=uuid4(),
+        display_id="P-2",
+        name="proj-b",
+        type_key="detection",
+        data_type="image",
+        status="active",
+        total_tasks=0,
+        completed_tasks=0,
+    )
+    shared = _ml_backend(proj_a.id)  # 固定 id 的同一实例, 两项目共享
+    client = _StubClient(
+        [proj_a, proj_b],
+        [_dataset()],
+        [JobPage(items=[_job("running")], total=1)],
+        {proj_a.id: [shared], proj_b.id: [shared]},
+    )
+    app = AapTuiApp(client, base_url=BASE)
+    async with app.run_test(size=(120, 30)) as pilot:
+        await _settle(app, pilot)
+        table = app.query_one("#ml-backends-table", DataTable)
+        assert table.row_count == 1
+        row = table.get_row_at(0)
+        assert row[0] == "sam2-backend"
+        assert row[1] == "2 个项目"
+
+
 async def test_ml_backend_detail_on_enter_pushes_screen():
     # 回车 push 实时详情屏 MlBackendDetailScreen; 顶部 #ml-static 仍是 REST 快照。
     # 测试无 api_key (base_url 给了但 api_key 缺), WS 不启动, 仅展示静态体 + 降级提示, 不崩。

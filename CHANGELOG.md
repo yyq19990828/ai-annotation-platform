@@ -39,9 +39,16 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.19.x 版本段累积在本区；进入 0.20.x 后整体移到 docs/changelogs/0.19.x.md。
 -->
 
+## [0.19.1] - 2026-06-29
+
+### Changed
+
+- **Python SDK 与全局 ML Backend 注册表对齐**（ADR-0044）：`MLBackend.project_id` 从必填放宽为可选（全局 / admin 场景 backend 无项目归属，项目作用域端点仍回填本项目 id）；`ml-backends list` 现只返回**本项目已启用**的全局 backend，`MLBackend.id` 为全局 registry id（同一物理 backend 跨项目返回同一 id），docstring / README 同步说明。脚本里硬编码的旧 per-project backend id 在 0.19.0 迁移后已失效，需改用 registry id。SDK 包版本 → 0.15.17。
+
 ### Fixed
 
 - **仪表盘「近期审计活动」恒显示「暂无业务事件」**：原实现只取最新 8 条审计日志后在前端过滤掉 `http.*` 请求日志，而审计表被海量 `http.*` 淹没，业务事件早被挤出这 8 条窗口 → 永远过滤为空。改为向服务端传 `business_only=true`（`WHERE action NOT LIKE 'http.%'`）直接取 8 条业务事件。同步修复空状态卡片里活动图标因 `svg{display:block}` 而左对齐、与居中文案错位的问题。
+- **Python SDK TUI 在多项目共享同一 backend 时崩溃**：`aap tui` 的 ML Backend 列表逐项目聚合，0.19.0 全局注册表下同一物理 backend 被多个项目启用会返回同一 registry id，旧逻辑用相同 key 重复 `add_row` 触发 Textual DataTable `DuplicateKey` 异常。改为按 id 去重合并为一行（项目列显示「N 个项目」）。
 
 ## [0.19.0] - 2026-06-29
 
