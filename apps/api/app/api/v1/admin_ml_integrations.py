@@ -14,8 +14,10 @@ import re
 import time
 from typing import Literal
 
+import uuid
+
 import httpx
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,9 +28,15 @@ from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBacken
 from app.db.models.project import Project
 from app.db.models.user import User
 from app.deps import get_db, require_roles
-from app.schemas.ml_backend import MLBackendOut
+from app.schemas.ml_backend import (
+    MLBackendCreate,
+    MLBackendHealthResponse,
+    MLBackendOut,
+    MLBackendUpdate,
+)
 from app.schemas.storage import BucketSummary
 from app.services.audit import AuditService
+from app.services.ml_backend import MLBackendDeleteBlocked, MLBackendService
 from app.services.storage import storage_service
 
 router = APIRouter()
@@ -290,6 +298,134 @@ async def list_all_backends(
             )
         )
     return GlobalBackendListResponse(items=items)
+
+
+# ─── v0.19.0 ADR-0044 · superadmin 全局注册表 CRUD ──────────────────────────
+#
+# backend 是全局资源 (一物理 backend = 一 registry 行 = 一能力快照 = 一并发闸)。
+# 增删改全局项是 superadmin 职责 (ModelMarket 注册管理), 与「项目启用」(PUT
+# /projects/{id}/ml-backends/{rid}/enablement) 解耦。删除走 service 的 running-job
+# 守卫 + projects/predictions FK SET NULL 级联。
+
+
+@router.post("/registry", response_model=MLBackendOut, status_code=201)
+async def create_registry(
+    data: MLBackendCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> MLBackendOut:
+    """注册一个全局 backend (source=manual)。同 url 已存在则 409。"""
+    svc = MLBackendService(db)
+    existing = await svc.get_by_url(data.url)
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"该 URL 已注册为全局 backend ({existing.name})",
+        )
+    backend = await svc.create_registry(
+        name=data.name,
+        url=data.url,
+        source="manual",
+        is_interactive=data.is_interactive,
+        auth_method=data.auth_method,
+        auth_token=data.auth_token,
+        extra_params=data.extra_params,
+    )
+    await AuditService.log(
+        db,
+        actor=admin,
+        action="ml_registry.created",
+        target_type="ml_backend",
+        target_id=str(backend.id),
+        request=request,
+        status_code=201,
+        detail={"name": data.name, "url": data.url},
+    )
+    await db.commit()
+    await db.refresh(backend)
+    return MLBackendOut.model_validate(backend, from_attributes=True)
+
+
+@router.put("/registry/{registry_id}", response_model=MLBackendOut)
+async def update_registry(
+    registry_id: uuid.UUID,
+    data: MLBackendUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> MLBackendOut:
+    """编辑全局 backend 的端点固有属性 (name/url/auth/extra_params/is_interactive)。"""
+    svc = MLBackendService(db)
+    updates = data.model_dump(exclude_unset=True)
+    backend = await svc.update(registry_id, **updates)
+    if backend is None:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+    await AuditService.log(
+        db,
+        actor=admin,
+        action="ml_registry.updated",
+        target_type="ml_backend",
+        target_id=str(registry_id),
+        request=request,
+        status_code=200,
+        detail={"fields": list(updates.keys())},
+    )
+    await db.commit()
+    await db.refresh(backend)
+    return MLBackendOut.model_validate(backend, from_attributes=True)
+
+
+@router.delete("/registry/{registry_id}", status_code=204)
+async def delete_registry(
+    registry_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> None:
+    """删除全局 backend。running prediction job 仍在跑则 409; 否则级联解绑
+    projects.ml_backend_id / project_ml_backend (CASCADE) / 历史 prediction (SET NULL)。"""
+    svc = MLBackendService(db)
+    try:
+        ok = await svc.delete(registry_id)
+    except MLBackendDeleteBlocked as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"该 backend 上仍有 {exc.running_jobs} 个运行中的预标任务, 无法删除",
+        ) from exc
+    if not ok:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+    await AuditService.log(
+        db,
+        actor=admin,
+        action="ml_registry.deleted",
+        target_type="ml_backend",
+        target_id=str(registry_id),
+        request=request,
+        status_code=204,
+        detail={},
+    )
+    await db.commit()
+
+
+@router.post("/registry/{registry_id}/health", response_model=MLBackendHealthResponse)
+async def check_registry_health(
+    registry_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> MLBackendHealthResponse:
+    """对全局 backend 探活 + 落能力快照 (与项目作用域 health 同逻辑, 无项目启用前置)。"""
+    svc = MLBackendService(db)
+    backend = await svc.get(registry_id)
+    if backend is None:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+    healthy = await svc.check_health(registry_id)
+    await db.commit()
+    return MLBackendHealthResponse(
+        status="ok" if healthy else "error",
+        backend_id=backend.id,
+        backend_name=backend.name,
+    )
 
 
 # ─── v0.10.26 · 容器直连观测 (与项目注册解耦) ──────────────────────────────

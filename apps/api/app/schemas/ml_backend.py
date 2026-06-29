@@ -238,6 +238,33 @@ class MLBackendHealthResponse(BaseModel):
     backend_name: str
 
 
+# v0.19.0 ADR-0044 · 项目「启用勾选清单」: 列出全部全局 backend + 本项目启用态/覆盖。
+class ProjectMLBackendItem(BaseModel):
+    """一行 = 一个全局 backend 在本项目的启用态 + 项目级覆盖。
+
+    `backend` 是全局注册项快照 (project_id=None); `enabled`/覆盖三项来自
+    project_ml_backend 关联 (无关联则 enabled=False、覆盖全 None)。"""
+
+    backend: MLBackendOut
+    enabled: bool = False
+    box_threshold: float | None = None
+    text_threshold: float | None = None
+    default_variants: dict | None = None
+
+
+class ProjectMLBackendList(BaseModel):
+    items: list[ProjectMLBackendItem]
+
+
+class ProjectMLBackendEnablement(BaseModel):
+    """切换项目启用 + 写项目级覆盖 (阈值/变体)。覆盖项缺省 = 不改动。"""
+
+    enabled: bool
+    box_threshold: float | None = None
+    text_threshold: float | None = None
+    default_variants: dict | None = None
+
+
 # v0.10.26 · 模型市场单变体预热. 缺省时 backend 用默认变体 (保持旧 /reload 行为).
 class MLBackendReloadRequest(BaseModel):
     sam_variant: str | None = None

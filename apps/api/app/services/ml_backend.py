@@ -114,6 +114,23 @@ class MLBackendService:
         )
         return list(result.scalars().all())
 
+    async def list_available_for_project(
+        self, project_id: uuid.UUID
+    ) -> list[tuple[MLBackendRegistry, ProjectMLBackend | None]]:
+        """全部全局 backend + 本项目关联 (None=未建关联即未启用)。项目设置勾选清单读此。
+
+        LEFT JOIN 保证未启用 / 从未关联过的全局项也出现在清单里 (供勾选启用)。"""
+        result = await self.db.execute(
+            select(MLBackendRegistry, ProjectMLBackend)
+            .outerjoin(
+                ProjectMLBackend,
+                (ProjectMLBackend.registry_id == MLBackendRegistry.id)
+                & (ProjectMLBackend.project_id == project_id),
+            )
+            .order_by(MLBackendRegistry.created_at.desc())
+        )
+        return [(reg, assoc) for reg, assoc in result.all()]
+
     async def get_assoc(
         self, project_id: uuid.UUID, registry_id: uuid.UUID
     ) -> ProjectMLBackend | None:

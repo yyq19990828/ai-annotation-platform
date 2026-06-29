@@ -18,6 +18,9 @@ from app.schemas.ml_backend import (
     MLBackendReloadRequest,
     InteractiveRequest,
     BackendCapabilities,
+    ProjectMLBackendItem,
+    ProjectMLBackendList,
+    ProjectMLBackendEnablement,
 )
 from app.services.ml_backend import MLBackendService
 from app.services import ml_client as ml_client_module
@@ -110,6 +113,88 @@ async def list_ml_backends(
     svc = MLBackendService(db)
     backends = await svc.list_enabled_for_project(project_id)
     return [_out(b, project_id) for b in backends]
+
+
+@router.get("/available", response_model=ProjectMLBackendList)
+async def list_available_ml_backends(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_MANAGERS)),
+):
+    """v0.19.0 ADR-0044 · 项目设置「启用勾选清单」: 列出全部全局 backend + 本项目启用态/覆盖。
+
+    与 GET "" (只返回已启用) 区分: 本端点含未启用项, 供项目管理员勾选启用。
+    路由声明在 `/{backend_id}` 之前, 避免被当作 backend_id 捕获。
+    """
+    svc = MLBackendService(db)
+    rows = await svc.list_available_for_project(project_id)
+    items = [
+        ProjectMLBackendItem(
+            backend=MLBackendOut.model_validate(reg, from_attributes=True),
+            enabled=bool(assoc and assoc.enabled),
+            box_threshold=assoc.box_threshold if assoc else None,
+            text_threshold=assoc.text_threshold if assoc else None,
+            default_variants=assoc.default_variants if assoc else None,
+        )
+        for reg, assoc in rows
+    ]
+    return ProjectMLBackendList(items=items)
+
+
+@router.put("/{backend_id}/enablement", response_model=ProjectMLBackendItem)
+async def set_ml_backend_enablement(
+    project_id: uuid.UUID,
+    backend_id: uuid.UUID,
+    data: ProjectMLBackendEnablement,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_MANAGERS)),
+):
+    """v0.19.0 ADR-0044 · 切换本项目对某全局 backend 的启用 + 写项目级覆盖 (阈值/变体)。
+
+    全局 backend 必须存在 (不在此创建全局项; 注册全局项走 admin 端点)。
+    """
+    svc = MLBackendService(db)
+    backend = await svc.get(backend_id)
+    if backend is None:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+    overrides = {
+        k: v
+        for k, v in (
+            ("box_threshold", data.box_threshold),
+            ("text_threshold", data.text_threshold),
+            ("default_variants", data.default_variants),
+        )
+        if v is not None
+    }
+    assoc = await svc.set_enabled(
+        project_id, backend_id, enabled=data.enabled, **overrides
+    )
+    _setup_cache.pop(backend_id, None)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action="ml_backend.enablement",
+        target_type="ml_backend",
+        target_id=str(backend_id),
+        request=request,
+        status_code=200,
+        detail={
+            "project_id": str(project_id),
+            "enabled": data.enabled,
+            "overrides": list(overrides.keys()),
+        },
+    )
+    await db.commit()
+    await db.refresh(backend)
+    await db.refresh(assoc)
+    return ProjectMLBackendItem(
+        backend=MLBackendOut.model_validate(backend, from_attributes=True),
+        enabled=assoc.enabled,
+        box_threshold=assoc.box_threshold,
+        text_threshold=assoc.text_threshold,
+        default_variants=assoc.default_variants,
+    )
 
 
 @router.get("/{backend_id}", response_model=MLBackendOut)
