@@ -44,6 +44,7 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 
 - **从 ML Backend 预填项目配置**：项目「类别与属性」页的「从 ML Backend 导入」对话框升级为**类别 + 属性**两区，可一键把 backend 自报的类别（如 YOLO 的 COCO 类）与输出属性 schema 合并进当前工具单位（类别同名跳过、属性同 key 覆盖），免去手抄。此前 backend 自报的 `classes` 在能力实例接口被裁掉、类别只能手抄，现已透传。
 - **手建属性字段推荐 key**：项目「类别与属性」页新建属性时，从在线 backend 自报的输出属性 schema 推荐 `text`/`language`/`orientation` 等落点类字段（含完整类型/选项）一键填入，让手建字段的 key 天然对齐协议、不被工作台「采纳后该属性将丢失」校验漏判。
+- **工作台属性键一键补全**：工作台 active model 自报会产出某属性、但项目缺承接字段时，「采纳后该属性将丢失」警告旁新增「一键补全」CTA，点击（带确认）即把该 model 自报的属性字段补进项目所有启用工具单位（同 key 覆盖、新 key 追加），补完警告自动消失，免去跳去项目设置手工补。
 
 ### Changed
 

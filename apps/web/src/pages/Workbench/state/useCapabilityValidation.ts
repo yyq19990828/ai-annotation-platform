@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { MLModelCapability } from "@/api/ml-backends";
-import type { AttributeSchema, ToolBindings } from "@/api/projects";
+import type { AttributeField, AttributeSchema, ToolBindings } from "@/api/projects";
 import type { ToolUnitId } from "@/constants/toolUnits";
 
 // v0.14.9 · 能力声明协议 v2 — active model 与项目配置的兼容性校验 (非阻断, 仅警告).
@@ -20,7 +20,18 @@ export interface CapabilityWarning {
   key: string;
   /** 中文提示文案 (硬编码). */
   message: string;
+  /**
+   * v0.20.2 · 该警告可「一键补全」的属性字段 (仅属性落点警告携带)。
+   * 取自 active model 自报 output_attribute_schema 中 key 对应的项, 已转成项目 AttributeField;
+   * 上层据此在警告条旁渲染「补全」CTA, 把字段补进项目所有启用工具单位。
+   * 缺失 = 无对应 schema 项 (无字段可补), 不给 CTA。
+   */
+  fillable?: AttributeField;
 }
+
+// v0.20.2 · output_attribute_schema item.type → 项目 AttributeField.type 合法集; 越界回落 text。
+// 与 Projects/sections itemToField 同口径, 但内联实现避免跨 feature 耦合。
+const ALLOWED_ATTR_TYPES = ["text", "number", "boolean", "select", "multiselect", "range"];
 
 // model 几何输出名 → 项目 tool_unit 几何能力的映射.
 // model.supported_geometric_outputs 用 grounded-sam2 / 协议 v2 的命名 (bbox/polygon/mask/...),
@@ -141,9 +152,28 @@ export function useCapabilityValidation({
             ? (enabledToolUnits?.has("rotated_bbox") ?? false) || hasFieldKey("orientation")
             : hasFieldKey(type); // language: 项目需有 key=language 的属性字段
       if (ok) continue;
+      // v0.20.2 · 从 model 自报 schema 取 key=type 的字段定义, 内联转 AttributeField 作「一键补全」载荷。
+      // 找不到对应 schema 项就不带 fillable (没字段可补, 上层不给 CTA)。
+      const schemaItem = (activeModel.output_attribute_schema ?? []).find((s) => s.key === type);
+      let fillable: AttributeField | undefined;
+      if (schemaItem) {
+        const fieldType = (ALLOWED_ATTR_TYPES.includes(schemaItem.type)
+          ? schemaItem.type
+          : "text") as AttributeField["type"];
+        fillable = {
+          key: schemaItem.key,
+          label: schemaItem.label || schemaItem.key,
+          type: fieldType,
+          required: false,
+          ...(schemaItem.options?.length
+            ? { options: schemaItem.options.map((o) => ({ value: o.value, label: o.label })) }
+            : {}),
+        };
+      }
       warnings.push({
         key: `attr-${type}`,
         message: `模型「${modelLabel}」会输出${ATTR_TYPE_LANDING[type]}，但当前项目未配置对应承接位（${ATTR_TYPE_HINT[type]}），采纳后该属性将丢失。`,
+        ...(fillable ? { fillable } : {}),
       });
     }
 

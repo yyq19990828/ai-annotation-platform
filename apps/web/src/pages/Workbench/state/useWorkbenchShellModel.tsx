@@ -31,6 +31,7 @@ import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 import { useWorkbenchState } from "./useWorkbenchState";
 import { useToolBindings, classesForUnit } from "./useToolBindings";
 import type { ToolUnitId } from "@/constants/toolUnits";
+import type { AttributeField, ToolBinding, ToolBindings } from "@/api/projects";
 import { useViewportTransform } from "./useViewportTransform";
 import { useIssuePins } from "./useIssuePins";
 import { usePredictionPropagation } from "./usePredictionPropagation";
@@ -857,6 +858,52 @@ export function useWorkbenchShellModel({
       updateProjectMu.mutate({ default_variants: merged });
     },
     [interactiveBackendId, interactiveVariantGroups, currentProject?.default_variants, updateProjectMu],
+  );
+  // v0.20.2 · 「采纳后该属性将丢失」警告的一键补全: 把 active model 自报的属性字段 (warning.fillable)
+  // 补进项目「所有启用工具单位」的 attribute_schema.fields (同 key 覆盖、新 key 追加), 立即落库。
+  // 写项目配置是有副作用操作, 故先 window.confirm 确认 (plan 风险项)。补完后 enabledToolUnits 派生
+  // 收敛, useCapabilityValidation 重算, 该条警告自动消失。
+  const handleFillAttribute = useCallback(
+    (field: AttributeField) => {
+      const tb = currentProject?.tool_bindings;
+      if (!tb) return;
+      const enabledUnits = (Object.keys(tb) as ToolUnitId[]).filter((u) => tb[u]?.enabled);
+      if (enabledUnits.length === 0) {
+        pushToast({ msg: "当前项目没有启用的工具单位, 无法补全属性", kind: "warning" });
+        return;
+      }
+      if (
+        !window.confirm(
+          `将把属性「${field.label}」(key=${field.key}) 补进当前项目所有启用工具单位, 并立即保存。继续?`,
+        )
+      ) {
+        return;
+      }
+      // 仅改启用单位的 attribute_schema; 其余单位 (禁用/未配) 原样保留, 避免误丢配置。
+      const nextTb: ToolBindings = {};
+      for (const [unit, binding] of Object.entries(tb) as [ToolUnitId, ToolBinding][]) {
+        if (!binding) continue;
+        if (!binding.enabled) {
+          nextTb[unit] = binding;
+          continue;
+        }
+        const fields = ((binding.attribute_schema?.fields ?? []) as AttributeField[]).slice();
+        const idx = fields.findIndex((f) => f.key === field.key);
+        if (idx >= 0) fields[idx] = field;
+        else fields.push(field);
+        nextTb[unit] = { ...binding, attribute_schema: { fields } };
+      }
+      updateProjectMu.mutate(
+        { tool_bindings: nextTb },
+        {
+          onSuccess: () =>
+            pushToast({ msg: `已补全属性「${field.label}」到项目`, kind: "success" }),
+          onError: (err) =>
+            pushToast({ msg: "补全属性失败", sub: (err as Error).message, kind: "error" }),
+        },
+      );
+    },
+    [currentProject?.tool_bindings, updateProjectMu, pushToast],
   );
   // AI"配置区"共享状态 (任务类型 / 模型任务 / 类别白名单 / variant / 参数 / 输出形态 / buildArgs);
   // 与批量页 ProjectDetailPanel 同一 hook + PreannotateConfigForm (单一事实源). 驱动批量 AI 面板
@@ -2096,6 +2143,7 @@ export function useWorkbenchShellModel({
                   modelPref.save(id);
                 }}
                 capabilityWarnings={capabilityWarnings}
+                onFillAttribute={handleFillAttribute}
                 interactiveBackends={
                   (activeInteractivePrompt
                     ? routing.candidatesFor(activeInteractivePrompt)
@@ -2269,6 +2317,7 @@ export function useWorkbenchShellModel({
       widthMin: sidebarMinPx, widthMax: sidebarMaxPx, widthResetTo: sidebarResetPx,
       onDetach: detachInspector,
       capabilityWarnings,
+      onFillAttribute: handleFillAttribute,
       aiBoxes: modeState.diffMode !== "final" ? aiBoxes : [],
       predictionSourceFilter,
       userBoxes, orphanUserBoxIds: orphanAnnotationIds,

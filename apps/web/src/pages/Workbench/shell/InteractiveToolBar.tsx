@@ -7,12 +7,14 @@
 
 import { useEffect } from "react";
 
+import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type {
   MLBackendCapability,
   MLBackendSupportedVariantGroup,
   MLModelCapability,
 } from "@/api/ml-backends";
+import type { AttributeField } from "@/api/projects";
 import { VariantSelector } from "@/components/ml/VariantSelector";
 import type { SamPolarity, Tool } from "../state/useWorkbenchState";
 import type { TextOutputMode } from "../state/useInteractiveAI";
@@ -52,6 +54,9 @@ export interface InteractiveToolBarProps {
   onSetActiveModelId?: (id: string) => void;
   // active model 与项目配置的兼容性警告 (非阻断). 空数组时不渲染。
   capabilityWarnings?: CapabilityWarning[];
+  // v0.20.2 · 「采纳后该属性将丢失」警告的一键补全回调: 把 model 自报字段补进项目所有启用工具单位。
+  //   仅 warning.fillable 存在时渲染 CTA; 缺省 = 不渲染补全按钮。
+  onFillAttribute?: (field: AttributeField) => void;
   // 交互后端选择器 (能力作用域化): 只列支持当前工具 prompt 的后端, 选中值 = 实际解析后端.
   //   <2 个候选时退化为只读显示 (无 UI 噪音), 行为 = 单后端现状.
   interactiveBackends?: Array<{ id: string; name: string }>;
@@ -146,6 +151,7 @@ export function InteractiveToolBar({
   activeModelId,
   onSetActiveModelId,
   capabilityWarnings,
+  onFillAttribute,
   interactiveBackends,
   selectedInteractiveId,
   onSelectInteractive,
@@ -410,6 +416,16 @@ export function InteractiveToolBar({
             >
               <Icon name="warning" size={11} />
               <span>{w.message}</span>
+              {w.fillable && onFillAttribute && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => onFillAttribute(w.fillable!)}
+                  title="把该属性字段补进项目所有启用工具单位"
+                >
+                  一键补全
+                </Button>
+              )}
             </div>
           ))}
         </div>

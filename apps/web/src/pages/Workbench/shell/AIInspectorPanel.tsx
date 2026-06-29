@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import type { Annotation, AnnotationResponse } from "@/types";
-import type { AttributeSchema } from "@/api/projects";
+import type { AttributeField, AttributeSchema } from "@/api/projects";
 import type { CapabilityWarning } from "../state/useCapabilityValidation";
 import {
   PREDICTION_SOURCE_FILTERS,
@@ -95,6 +95,11 @@ interface AIInspectorPanelProps {
   floating?: boolean;
   /** v0.14.9 · active model 与项目配置的兼容性警告 (非阻断)；空时不渲染。 */
   capabilityWarnings?: CapabilityWarning[];
+  /**
+   * v0.20.2 · 「采纳后该属性将丢失」警告的一键补全回调: 把 model 自报字段补进项目所有启用工具单位。
+   * 仅 warning.fillable 存在时渲染 CTA; 缺省 = 不渲染补全按钮。
+   */
+  onFillAttribute?: (field: AttributeField) => void;
 }
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -129,6 +134,7 @@ export function AIInspectorPanel({
   onDetach,
   floating = false,
   capabilityWarnings,
+  onFillAttribute,
 }: AIInspectorPanelProps) {
   const selSet = selectedIds && selectedIds.length > 0
     ? new Set(selectedIds)
@@ -195,6 +201,16 @@ export function AIInspectorPanel({
             <div key={w.key} className="flex items-start gap-1.5 text-xs leading-[1.4] text-status-caution">
               <Icon name="warning" size={11} />
               <span>{w.message}</span>
+              {w.fillable && onFillAttribute && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => onFillAttribute(w.fillable!)}
+                  title="把该属性字段补进项目所有启用工具单位"
+                >
+                  一键补全
+                </Button>
+              )}
             </div>
           ))}
         </div>
