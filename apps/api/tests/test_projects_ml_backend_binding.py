@@ -13,7 +13,7 @@ import uuid
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.services.ml_backend import MLBackendService
 
@@ -36,16 +36,19 @@ async def _seed_project(db: AsyncSession, owner_id: uuid.UUID, **overrides) -> P
 
 async def _seed_backend(
     db: AsyncSession, project_id: uuid.UUID, name: str = "alpha-backend"
-) -> MLBackend:
-    b = MLBackend(
+) -> MLBackendRegistry:
+    """v0.19.0 ADR-0044 · 建全局注册项 + 为本项目建启用关联 (项目内「可用 backend」读
+    enabled 集合; url 全局唯一, 故每次造唯一 url)。"""
+    b = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=project_id,
         name=name,
-        url="http://example/",
+        url=f"http://example/{uuid.uuid4().hex[:8]}",
         is_interactive=True,
         state="connected",
     )
     db.add(b)
+    await db.flush()
+    db.add(ProjectMLBackend(project_id=project_id, registry_id=b.id, enabled=True))
     await db.flush()
     return b
 
@@ -121,9 +124,9 @@ async def test_delete_ml_backend_sets_project_null(db_session, super_admin):
     await db_session.flush()
     await db_session.commit()
 
-    # ON DELETE SET NULL — 走原生 SQL 触发 FK 级联
+    # ON DELETE SET NULL — 走原生 SQL 触发 FK 级联 (FK 现指向 ml_backend_registry)
     await db_session.execute(
-        text("DELETE FROM ml_backends WHERE id = :bid"), {"bid": backend.id}
+        text("DELETE FROM ml_backend_registry WHERE id = :bid"), {"bid": backend.id}
     )
     await db_session.commit()
 

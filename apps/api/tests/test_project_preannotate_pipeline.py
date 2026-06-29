@@ -14,7 +14,7 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 
 
@@ -35,17 +35,16 @@ async def _seed(db: AsyncSession, owner_id: uuid.UUID):
     )
     db.add(proj)
     await db.flush()
-    detect = MLBackend(
+    # v0.19.0 ADR-0044 · 全局注册项 + 项目启用关联 (编排阶段引用 registry id)。
+    detect = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=proj.id,
         name="detect",
         url="http://detect/",
         is_interactive=False,
         state="connected",
     )
-    classify = MLBackend(
+    classify = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=proj.id,
         name="classify",
         url="http://classify/",
         is_interactive=False,
@@ -54,6 +53,8 @@ async def _seed(db: AsyncSession, owner_id: uuid.UUID):
     db.add(detect)
     db.add(classify)
     await db.flush()
+    db.add(ProjectMLBackend(project_id=proj.id, registry_id=detect.id, enabled=True))
+    db.add(ProjectMLBackend(project_id=proj.id, registry_id=classify.id, enabled=True))
     proj.ml_backend_id = detect.id
     await db.commit()
     return proj, detect, classify

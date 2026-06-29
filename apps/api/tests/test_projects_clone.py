@@ -17,7 +17,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.db.models.project import Project
 from app.db.models.user import User
 
@@ -41,12 +41,12 @@ async def _seed_project(db: AsyncSession, owner_id: uuid.UUID, **overrides) -> P
 
 async def _seed_backend(
     db: AsyncSession, project_id: uuid.UUID, name: str = "src-backend"
-) -> MLBackend:
-    b = MLBackend(
+) -> MLBackendRegistry:
+    # v0.19.0 ADR-0044 · backend 已上提为全局注册项 (无 project_id); url 全局唯一。
+    b = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=project_id,
         name=name,
-        url="http://example.test/",
+        url=f"http://example.test/{uuid.uuid4().hex[:8]}",
         is_interactive=True,
         state="connected",
         auth_method="bearer",
@@ -183,9 +183,14 @@ async def test_clone_auto_derives_ml_backend_from_source(
     resp = await httpx_client_bound.post("/api/v1/projects", json=body, headers=headers)
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    # 新项目获得了自己的 backend (id != 源 backend id)
-    assert data["ml_backend_id"] is not None
-    assert data["ml_backend_id"] != str(backend.id)
+    # v0.19.0 ADR-0044 · clone 复用同一全局 registry id (不再复制新 backend row)
+    assert data["ml_backend_id"] == str(backend.id)
+    # 新项目获得一条启用关联
+    from app.services.ml_backend import MLBackendService
+
+    assert await MLBackendService(db_session).is_enabled(
+        uuid.UUID(data["id"]), backend.id
+    )
 
 
 async def test_clone_without_view_permission_returns_404(
