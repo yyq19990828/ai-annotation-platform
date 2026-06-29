@@ -39,6 +39,10 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.19.x 版本段累积在本区；进入 0.20.x 后整体移到 docs/changelogs/0.19.x.md。
 -->
 
+### Changed
+
+- onnxtools-backend 镜像基座从 `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` 换成 `nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04`，删除从未被使用的 torch/torchvision/torchaudio（onnxtools 链路只需 onnxruntime-gpu + opencv），镜像体积从 18.3GB 降到 6.11GB（约 -12GB）。系统 cuDNN/CUDA 走标准路径，onnxruntime 的 CUDAExecutionProvider 无需再靠 ENTRYPOINT 的 `LD_LIBRARY_PATH` 拼接 torch 自带 nvidia 库即可启用。
+
 ## [0.19.5] - 2026-06-29
 
 ### Added
