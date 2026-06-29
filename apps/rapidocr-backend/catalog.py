@@ -134,20 +134,21 @@ def _build(version: str, size: str, rec_lang: str, *, use_det: bool, use_cls: bo
 
 # ---------------- /setup 能力自报 ----------------
 
+# variant option 形态：{value, label}（协议 InstanceVariantOption）；轴形态：{key, title, variants}。
 def _version_axis(combos: list[tuple]) -> dict:
     versions = sorted({c[0] for c in combos})
-    return {"key": "version", "title": "PP-OCR 版本", "variants": [{"key": v, "title": v.upper()} for v in versions]}
+    return {"key": "version", "title": "PP-OCR 版本", "variants": [{"value": v, "label": v.upper()} for v in versions]}
 
 
 def _size_axis(combos: list[tuple]) -> dict:
     # 按出现顺序去重，保留 mobile/server/tiny/small/medium 的语义顺序。
     order = ["mobile", "server", "tiny", "small", "medium"]
     sizes = sorted({c[1] for c in combos}, key=order.index)
-    return {"key": "size", "title": "尺寸 / 精度档", "variants": [{"key": s, "title": s} for s in sizes]}
+    return {"key": "size", "title": "尺寸 / 精度档", "variants": [{"value": s, "label": s} for s in sizes]}
 
 
 def _lang_axis() -> dict:
-    return {"key": "lang", "title": "语言", "variants": [{"key": "universal", "title": "通用(中英)"}, {"key": "en", "title": "英文"}]}
+    return {"key": "lang", "title": "语言", "variants": [{"value": "universal", "label": "通用(中英)"}, {"value": "en", "label": "英文"}]}
 
 
 _ATTR_TEXT = {"key": "text", "label": "识别文本", "type": "text"}
