@@ -11,7 +11,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.services.ml_client import MLBackendClient
 
 
@@ -21,7 +21,7 @@ def _backend(
     backend_id="00000000-0000-0000-0000-000000000099",
     extra_params=None,
 ):
-    b = MLBackend()
+    b = MLBackendRegistry()
     b.id = backend_id
     b.url = url
     b.auth_method = "none"

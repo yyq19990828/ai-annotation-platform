@@ -11,12 +11,12 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.services.ml_client import MLBackendClient
 
 
 def _backend(url="http://fake:9090"):
-    b = MLBackend()
+    b = MLBackendRegistry()
     b.id = "00000000-0000-0000-0000-0000000000aa"
     b.url = url
     b.auth_method = "none"
