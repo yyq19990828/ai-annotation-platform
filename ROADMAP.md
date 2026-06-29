@@ -12,6 +12,14 @@
 
 ### 计划中
 
+- **ML 能力字段消费后续序列（v0.19.3 → v0.21.0）**：v0.19.2「字段消费」衍生的优化序列，已细化到 `docs/plans/`，按版本顺延：
+  - [v0.19.3 两层校验对称收口](../docs/plans/2026-06-29-v0.19.3-two-layer-validation-symmetry.md)（保存编排补能力校验 + config-time batchable 预警 + 跨端契约测试）
+  - [v0.19.4 instances 能力徽标](../docs/plans/2026-06-29-v0.19.4-instances-capability-badges.md)（吃 WS0 透传字段，纯前端）
+  - [v0.19.5 device 设备队列路由](../docs/plans/2026-06-29-v0.19.5-device-aware-queue-routing.md)（消费唯一闲置字段 `resource_profile.device`）
+  - [v0.20.0 RapidOCR backend](../docs/plans/2026-06-29-v0.20.0-rapidocr-backend.md)（第五 backend · OCR 首发 · WS1 text/language/orientation 落点真实 producer）
+  - [v0.20.1 属性语义角色](../docs/plans/2026-06-29-v0.20.1-attribute-semantic-role.md)（落点判定从字符串约定升级为 `semantic_role`）
+  - [v0.20.2 属性键一键补全](../docs/plans/2026-06-29-v0.20.2-writekeys-one-click-fill.md)（对账警告 → 一键修复）
+  - [v0.21.0 全局编排选择器](../docs/plans/2026-06-29-v0.21.0-global-pipeline-selector.md)（WS0 正主消费方 · 跨项目命名编排，依赖 `project_pipelines` 表）
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
 - **[点云 + 图像联合标注（2026-06-14）](./ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)**：3D 旗舰独立 epic。读方向(3D 框投影到相机图)已落 v0.13.4；写方向(相机图 2D 框种 3D 框 frustum fit → 投影手柄微调 → 多相机一致性)Phase 1 已落 v0.15.24(视锥反算选点 + 3D 框初值拟合)，Phase 2-3(投影手柄微调 / 多相机一致性)待开工。配套 §C.8 拖影消除两版本(v0.15.22 剔除 / v0.15.23 逐目标补偿)构成「3D 前线深化」近期切片。
