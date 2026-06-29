@@ -541,10 +541,10 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                         />
                       </td>
                       <td className={TABLE_CELL}>
-                        <div className="inline-flex gap-1.5 whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1.5 whitespace-nowrap">
                         {project.ml_backend_id !== b.id && (
                           <Button
-                            size="sm"
+                            size="xs"
                             variant="ai"
                             onClick={() => onBind(b)}
                             disabled={!canManage || updateProject.isPending}
@@ -554,19 +554,17 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                           </Button>
                         )}
                         {project.ml_backend_id === b.id && (
-                          <span className="self-center">
-                            <Badge variant="ai">
-                              主后端
-                            </Badge>
-                          </span>
+                          <Badge variant="ai">
+                            主后端
+                          </Badge>
                         )}
                         <Button
-                          size="sm"
+                          size="xs"
                           onClick={() => onHealth(b)}
                           disabled={health.isPending}
                           title="健康检查"
                         >
-                          <Icon name="refresh" size={11} />
+                          <Icon name="refresh" />
                         </Button>
                         </div>
                       </td>
