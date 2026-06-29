@@ -42,6 +42,7 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 ### Added
 
 - AI 预标注编排「能力校验」补齐配置期一层，与派发期 422 对称：源模型选择器、下游阶段卡在**配置期**就对 `batchable=false`（交互 / 有状态模型）与「写属性却不产 `class`」的误配标红预警；保存编排（`PATCH /projects/{id}`）的响应回带 `capability_warnings[]` 软提示。把「存得下不一定跑得了」前移到配置 / 保存时暴露，而非跑到派发才报错；保存只软提示不硬挡（保留「先存草稿、之后换 backend」的合法流，派发期 422 仍是最终闸）。
+- 模型市场「能力目录」卡片新增**批量 / 设备徽标**：模型自报 `resource_profile.batchable` 时显示「可批量」/「交互·有状态」，`device` 显示「GPU/CPU」，让用户一眼看出某模型能否进批量预标、跑在什么设备上，无需进项目编排才发现。`/instances` 视图此前丢弃了 `resource_profile`（仅 `/capabilities` 富数据视图可见），现已透传到协议卡视图与平台内置（env-only）模型卡。缺省字段不显示，向后兼容。
 
 ### Changed
 
