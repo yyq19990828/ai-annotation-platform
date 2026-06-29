@@ -1,12 +1,12 @@
-"""v0.10.1 · M1 Capability 协商基础设施.
+"""v0.10.1 · M1 Capability 协商基础设施 (v0.19.0 ADR-0044 数据模型迁移).
 
 覆盖:
-- POST /projects/{id}/ml-backends 在已绑定 backend 数 ≥ MAX_ML_BACKENDS_PER_PROJECT 时
-  返回 409 + detail{code:"ML_BACKEND_LIMIT_REACHED"}.
-- 边界场景: 上限调大后第 2 个绑定能成功.
-- GET /projects/{id}/ml-backends/{bid}/setup 代理 backend /setup; 32 进程内 TTL 缓存命中
+- POST /projects/{id}/ml-backends: 全局注册项按 url 复用/新建 + 为项目启用。
+  · 不再有 max_ml_backends_per_project 上限, 同项目可添加多个 backend 都成功。
+  · 同一 url 第二次添加复用同一 registry id。
+- GET /projects/{id}/ml-backends/{bid}/setup 代理 backend /setup; 30s 进程内 TTL 缓存命中
   第二次不再调下游.
-- 404: 拿其它项目的 backend_id 时不串台.
+- 404: backend 未在本项目启用 (跨项目) 时不串台.
 """
 
 from __future__ import annotations
@@ -17,8 +17,7 @@ from unittest.mock import patch
 import pytest
 
 from app.api.v1 import ml_backends as ml_backends_route
-from app.config import settings
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 
 
@@ -37,16 +36,18 @@ async def _seed_project(db, owner_id) -> Project:
     return proj
 
 
-async def _seed_backend(db, project_id, name="grounded-sam2") -> MLBackend:
-    b = MLBackend(
+async def _seed_backend(db, project_id, name="grounded-sam2") -> MLBackendRegistry:
+    """建全局注册项 + 为项目启用 (ADR-0044)。url 全局唯一, 每次生成不同 url。"""
+    b = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=project_id,
         name=name,
-        url="http://example/",
+        url=f"http://example-{uuid.uuid4().hex[:8]}/",
         is_interactive=True,
         state="connected",
     )
     db.add(b)
+    await db.flush()
+    db.add(ProjectMLBackend(project_id=project_id, registry_id=b.id, enabled=True))
     await db.flush()
     return b
 
@@ -58,50 +59,51 @@ def _clear_setup_cache():
     ml_backends_route._setup_cache.clear()
 
 
-async def test_create_ml_backend_rejected_at_limit(
-    httpx_client_bound, super_admin, db_session, monkeypatch
+async def test_create_multiple_ml_backends_no_limit(
+    httpx_client_bound, super_admin, db_session
 ):
+    """ADR-0044 · 不再有单项目 backend 上限: 同项目连加多个 backend 都成功。"""
     user, token = super_admin
-    monkeypatch.setattr(settings, "max_ml_backends_per_project", 1)
     proj = await _seed_project(db_session, user.id)
     await _seed_backend(db_session, proj.id, name="grounded-sam2")
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
-        f"/api/v1/projects/{proj.id}/ml-backends",
-        json={"name": "sam3", "url": "http://sam3/", "is_interactive": True},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert resp.status_code == 409, resp.text
-    detail = resp.json()["detail"]
-    assert detail["code"] == "ML_BACKEND_LIMIT_REACHED"
-    assert detail["limit"] == 1
-    assert detail["current"] == 1
-    assert "上限" in detail["message"]
+    headers = {"Authorization": f"Bearer {token}"}
+    for i in range(3):
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{proj.id}/ml-backends",
+            json={"name": f"sam3-{i}", "url": f"http://sam3-{i}/", "is_interactive": True},
+            headers=headers,
+        )
+        assert resp.status_code == 201, resp.text
 
 
-async def test_create_ml_backend_allowed_when_limit_raised(
-    httpx_client_bound, super_admin, db_session, monkeypatch
+async def test_create_ml_backend_reuses_registry_by_url(
+    httpx_client_bound, super_admin, db_session
 ):
+    """ADR-0044 · 同一 url 第二次添加复用同一全局 registry id (不新建)。"""
     user, token = super_admin
-    monkeypatch.setattr(settings, "max_ml_backends_per_project", 2)
     proj = await _seed_project(db_session, user.id)
-    await _seed_backend(db_session, proj.id, name="grounded-sam2")
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
-        f"/api/v1/projects/{proj.id}/ml-backends",
-        json={"name": "sam3", "url": "http://sam3/", "is_interactive": True},
-        headers={"Authorization": f"Bearer {token}"},
+    headers = {"Authorization": f"Bearer {token}"}
+    body = {"name": "sam3", "url": "http://sam3-reuse/", "is_interactive": True}
+    r1 = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/ml-backends", json=body, headers=headers
     )
-    assert resp.status_code == 201, resp.text
+    r2 = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/ml-backends", json=body, headers=headers
+    )
+    assert r1.status_code == 201, r1.text
+    assert r2.status_code == 201, r2.text
+    assert r1.json()["id"] == r2.json()["id"]
 
 
 async def test_project_out_carries_ml_backend_limit(
-    httpx_client_bound, super_admin, db_session, monkeypatch
+    httpx_client_bound, super_admin, db_session
 ):
+    """ADR-0044 · 上限已移除, ProjectOut.ml_backend_limit 恒为 0。"""
     user, token = super_admin
-    monkeypatch.setattr(settings, "max_ml_backends_per_project", 3)
     proj = await _seed_project(db_session, user.id)
     await db_session.commit()
 
@@ -110,7 +112,7 @@ async def test_project_out_carries_ml_backend_limit(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["ml_backend_limit"] == 3
+    assert resp.json()["ml_backend_limit"] == 0
 
 
 async def test_setup_proxy_returns_capability_and_caches(
@@ -151,6 +153,7 @@ async def test_setup_proxy_returns_capability_and_caches(
 async def test_setup_proxy_404_on_cross_project_backend(
     httpx_client_bound, super_admin, db_session
 ):
+    """ADR-0044 · backend 只对 B 项目启用, 用 A 项目路径访问 → 404 (未启用)。"""
     user, token = super_admin
     proj_a = await _seed_project(db_session, user.id)
     proj_b = await _seed_project(db_session, user.id)

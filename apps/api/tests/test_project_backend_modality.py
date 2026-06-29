@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry
 from tests.factory import create_project
 
 _IMAGE_SETUP = {
@@ -32,12 +32,13 @@ _VIDEO_SETUP = {
 }
 
 
-async def _seed_backend(db, project_id, *, name="bk") -> MLBackend:
-    b = MLBackend(
+async def _seed_backend(db, project_id, *, name="bk") -> MLBackendRegistry:
+    """ADR-0044 · backend 现为全局注册项 (无 project_id); 绑定经 PATCH ml_backend_id,
+    模态校验走 db.get(MLBackendRegistry, id)。project_id 仅保留签名兼容, 不入库。"""
+    b = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=project_id,
         name=name,
-        url="http://example/",
+        url=f"http://example-{uuid.uuid4().hex[:8]}/",
         is_interactive=False,
         state="connected",
     )
