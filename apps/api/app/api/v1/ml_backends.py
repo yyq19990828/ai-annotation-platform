@@ -157,9 +157,7 @@ async def set_ml_backend_enablement(
     if backend is None:
         raise HTTPException(status_code=404, detail="ML Backend not found")
     overrides = {
-        k: v
-        for k, v in (("default_variants", data.default_variants),)
-        if v is not None
+        k: v for k, v in (("default_variants", data.default_variants),) if v is not None
     }
     assoc = await svc.set_enabled(
         project_id, backend_id, enabled=data.enabled, **overrides

@@ -112,9 +112,7 @@ async def get_overview(
     res = await db.execute(
         select(Project, MLBackendRegistry)
         .join(ProjectMLBackend, ProjectMLBackend.project_id == Project.id)
-        .join(
-            MLBackendRegistry, MLBackendRegistry.id == ProjectMLBackend.registry_id
-        )
+        .join(MLBackendRegistry, MLBackendRegistry.id == ProjectMLBackend.registry_id)
         .where(ProjectMLBackend.enabled.is_(True))
         .order_by(Project.name, MLBackendRegistry.created_at.desc())
     )
@@ -143,9 +141,7 @@ async def get_overview(
                 backends=[],
             )
 
-    reg = list(
-        (await db.execute(select(MLBackendRegistry))).scalars().all()
-    )
+    reg = list((await db.execute(select(MLBackendRegistry))).scalars().all())
     return MLIntegrationsOverview(
         storage=storage_overview,
         projects=list(grouped.values()),
@@ -576,9 +572,7 @@ async def observe_backends(
         targets = await asyncio.gather(*[_probe_one(client, u) for u in urls])
 
     # v0.19.0 ADR-0044 · 标注哪些观测 URL 已在全局注册表 (含 env 自动 upsert / manual)。
-    res = await db.execute(
-        select(MLBackendRegistry.url, MLBackendRegistry.source)
-    )
+    res = await db.execute(select(MLBackendRegistry.url, MLBackendRegistry.source))
     src_by_url: dict[str, str] = {url.rstrip("/"): src for url, src in res.all()}
 
     for t in targets:

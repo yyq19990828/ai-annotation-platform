@@ -71,9 +71,7 @@ def check_capability_violations(
     return violations
 
 
-def resolve_preannotate_queue(
-    devices, *, gpu_queue: str, cpu_queue: str
-) -> str:
+def resolve_preannotate_queue(devices, *, gpu_queue: str, cpu_queue: str) -> str:
     """v0.19.5 · 按整条 pipeline 各阶段 resource_profile.device 决定 Celery 队列。
 
     保守策略: 仅当**所有阶段都显式 device=cpu** 时才进 cpu_queue; 任一阶段 device=gpu /

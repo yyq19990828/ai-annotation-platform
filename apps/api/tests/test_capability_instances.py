@@ -279,9 +279,7 @@ async def test_instances_no_sensitive_fields_leaked(
 
 
 @pytest.mark.asyncio
-async def test_instances_warmup_endpoint_true(
-    httpx_client, auth_headers, db_session
-):
+async def test_instances_warmup_endpoint_true(httpx_client, auth_headers, db_session):
     """backend 自报 warmup_endpoint=true 时, instances 响应应带 true."""
     db_session.add(
         MLBackendRegistry(

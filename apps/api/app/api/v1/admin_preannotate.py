@@ -380,9 +380,7 @@ async def list_preannotate_project_summary(
     # v0.19.0 ADR-0044 · 按项目启用关联 join 全局注册表取本项目可用 backend。
     bk_q = await db.execute(
         select(ProjectMLBackend.project_id, MLBackendRegistry)
-        .join(
-            MLBackendRegistry, MLBackendRegistry.id == ProjectMLBackend.registry_id
-        )
+        .join(MLBackendRegistry, MLBackendRegistry.id == ProjectMLBackend.registry_id)
         .where(
             ProjectMLBackend.project_id.in_(project_ids),
             ProjectMLBackend.enabled.is_(True),

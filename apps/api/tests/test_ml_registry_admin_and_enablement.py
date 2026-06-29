@@ -113,9 +113,7 @@ async def test_delete_registry_cascades_project_binding(
     user, token = super_admin
     proj = await _seed_project(db_session, user.id)
     b = await _seed_registry(db_session, name="todel")
-    db_session.add(
-        ProjectMLBackend(project_id=proj.id, registry_id=b.id, enabled=True)
-    )
+    db_session.add(ProjectMLBackend(project_id=proj.id, registry_id=b.id, enabled=True))
     proj.ml_backend_id = b.id
     await db_session.commit()
 
