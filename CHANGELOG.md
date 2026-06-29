@@ -40,6 +40,8 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.20.x 版本段累积在本区；进入 0.21.x 后整体移到 docs/changelogs/0.20.x.md。
 -->
 
+## [0.20.4] - 2026-06-30
+
 ### Added
 
 - **从 ML Backend 预填项目配置**：项目「类别与属性」页的「从 ML Backend 导入」对话框升级为**类别 + 属性**两区，可一键把 backend 自报的类别（如 YOLO 的 COCO 类）与输出属性 schema 合并进当前工具单位（类别同名跳过、属性同 key 覆盖），免去手抄。此前 backend 自报的 `classes` 在能力实例接口被裁掉、类别只能手抄，现已透传。
