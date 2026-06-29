@@ -44,7 +44,7 @@ last_reviewed: 2026-06-12
 docker compose up -d
 ```
 
-默认（不带 `--profile`）拉起 7 个容器：postgres / redis / minio / mailpit / celery-worker / celery-worker-export / celery-beat。GPU ML backend（profile `gpu` / `gpu-sam3` / `gpu-yolo`）与监控（profile `monitoring`）默认不启动，按需单独开。
+默认（不带 `--profile`）拉起 9 个容器：postgres / redis / minio / mailpit / celery-worker / celery-worker-gpu / celery-worker-cpu / celery-worker-export / celery-beat。GPU ML backend（profile `gpu` / `gpu-sam3` / `gpu-yolo`）与监控（profile `monitoring`）默认不启动，按需单独开。
 
 ### 2.2 跑数据库迁移
 

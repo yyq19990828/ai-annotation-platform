@@ -31,8 +31,12 @@ from app.schemas.project import (
     ProjectMemberCreate,
     ProjectTransferRequest,
 )
+from app.config import settings
 from app.services.display_id import next_display_id
-from app.services.pipeline_validation import check_capability_violations
+from app.services.pipeline_validation import (
+    check_capability_violations,
+    resolve_preannotate_queue,
+)
 from app.services.project_kind import (
     ProjectKind,
     canonical_media_kind,
@@ -1432,6 +1436,13 @@ def _stage_model(backend, model_id: str | None) -> dict:
     return {}
 
 
+def _stage_device(backend, model_id: str | None) -> str | None:
+    """v0.19.5 · 取某 model 的 resource_profile.device (gpu/cpu); 无快照/未自报 → None。"""
+    rp = _stage_model(backend, model_id).get("resource_profile") or {}
+    d = rp.get("device")
+    return d if isinstance(d, str) else None
+
+
 def _assert_capabilities(
     backend, model_id: str | None, where: str, *, writes_attributes: bool
 ) -> None:
@@ -1508,6 +1519,9 @@ async def trigger_preannotation(
     # 源阶段不写属性, class 判据不适用 (writes_attributes=False)。
     _assert_capabilities(backend, body.model_id, "源阶段", writes_attributes=False)
 
+    # v0.19.5 · 设备感知队列路由: 收集源 + 各下游阶段 model 的 device, 据此选 Celery 队列。
+    stage_devices: list[str | None] = [_stage_device(backend, body.model_id)]
+
     # v0.18.1 · 多阶段编排: 校验每个下游阶段的 backend 存在且归属本项目, 归一化成 worker
     # 可消费的 stage dict 列表 (uuid → str)。源阶段 backend 归属已在上面校验。
     pipeline_stages_payload: list[dict] | None = None
@@ -1533,6 +1547,8 @@ async def trigger_preannotation(
                     writes_attributes=(st.write or {}).get("target", "attributes")
                     == "attributes",
                 )
+                # v0.19.5 · 收集下游阶段 device 供队列路由。
+                stage_devices.append(_stage_device(st_backend, st.model_id))
                 # v0.18.15 · 按子模型 supported_inputs 解析投递方式 + 几何可达性门控。
                 # 产几何的子: supported_inputs 须含 'bbox_prompt' (geometry-prompt 路径) 或
                 # 'crop' (普通检测器在 crop 上跑 + 坐标回映)。据此把投递方式烘焙进 input.mode,
@@ -1603,24 +1619,35 @@ async def trigger_preannotation(
 
     from app.workers.tasks import batch_predict
 
-    job = batch_predict.delay(
-        str(project.id),
-        str(body.ml_backend_id),
-        [str(tid) for tid in body.task_ids] if body.task_ids else None,
-        prompt=body.prompt,
-        output_mode=body.output_mode,
-        batch_id=str(body.batch_id) if body.batch_id else None,
-        user_id=str(current_user.id),
-        params=body.params or None,
-        predict_mode=body.predict_mode,
-        # v0.14.9 · 协议 v2: 多模型路由 + task 别名透传到 /predict context
-        model_id=body.model_id,
-        task_type=body.task_type,
-        # v0.14.17 · 协议 v2 结构化 variant 路径 (YOLO) + 类别白名单
-        model_variants=body.model_variants,
-        class_filter=body.class_filter,
-        # v0.18.1 · 多阶段预标注: 非空时 worker 走阶段化编排 (detect→ROI→classify)
-        pipeline_stages=pipeline_stages_payload,
+    # v0.19.5 · 设备感知路由: 全 CPU pipeline → cpu 队列; 任一 GPU/未自报阶段 → gpu(ml) 队列 (零退化)。
+    queue = resolve_preannotate_queue(
+        stage_devices,
+        gpu_queue=settings.preannotate_gpu_queue,
+        cpu_queue=settings.preannotate_cpu_queue,
+    )
+    job = batch_predict.apply_async(
+        args=[
+            str(project.id),
+            str(body.ml_backend_id),
+            [str(tid) for tid in body.task_ids] if body.task_ids else None,
+        ],
+        kwargs={
+            "prompt": body.prompt,
+            "output_mode": body.output_mode,
+            "batch_id": str(body.batch_id) if body.batch_id else None,
+            "user_id": str(current_user.id),
+            "params": body.params or None,
+            "predict_mode": body.predict_mode,
+            # v0.14.9 · 协议 v2: 多模型路由 + task 别名透传到 /predict context
+            "model_id": body.model_id,
+            "task_type": body.task_type,
+            # v0.14.17 · 协议 v2 结构化 variant 路径 (YOLO) + 类别白名单
+            "model_variants": body.model_variants,
+            "class_filter": body.class_filter,
+            # v0.18.1 · 多阶段预标注: 非空时 worker 走阶段化编排 (detect→ROI→classify)
+            "pipeline_stages": pipeline_stages_payload,
+        },
+        queue=queue,
     )
     # B-5 · AI 预标注触发审计 — 让超管在 /audit 看到 谁/何时/对哪个 batch 跑了 AI
     await AuditService.log(

@@ -151,6 +151,13 @@ class Settings(BaseSettings):
 
     celery_broker_url: str = ""
 
+    # v0.19.5 · 设备感知预标队列路由 (resource_profile.device → Celery 队列)。
+    # gpu 默认复用现有 "ml" 队列 (零退化: 老 backend / 混合 device pipeline 仍落此);
+    # 全 CPU pipeline 进 "ml.cpu" 队列, 由 CPU worker 组高并发消费。
+    # 注意: 改这两个队列名须同步 docker-compose 各 worker 的 -Q 订阅, 否则任务静默积压。
+    preannotate_gpu_queue: str = "ml"
+    preannotate_cpu_queue: str = "ml.cpu"
+
     # v0.9.25 · 视频后端帧服务 Wave B。Chunk 与单帧缓存都落在 datasets bucket。
     video_chunk_size_frames: int = 60
     # v0.10.29 · chunk warmup look-ahead: 请求命中 chunk N 时顺带预解码 N+1..N+K。

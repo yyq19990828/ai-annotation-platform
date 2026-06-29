@@ -90,14 +90,16 @@ def _mock_celery(monkeypatch):
     class _FakeJob:
         id = "fake-job-uuid"
 
-    def _fake_delay(*args, **kwargs):
-        captured["args"] = args
-        captured["kwargs"] = kwargs
+    # v0.19.5 · 派发改用 apply_async(args=, kwargs=, queue=)。
+    def _fake_apply_async(args=None, kwargs=None, queue=None, **_extra):
+        captured["args"] = tuple(args or ())
+        captured["kwargs"] = kwargs or {}
+        captured["queue"] = queue
         return _FakeJob()
 
     from app.workers import tasks as worker_tasks
 
-    monkeypatch.setattr(worker_tasks.batch_predict, "delay", _fake_delay)
+    monkeypatch.setattr(worker_tasks.batch_predict, "apply_async", _fake_apply_async)
     return captured
 
 

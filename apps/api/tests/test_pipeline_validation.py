@@ -10,7 +10,10 @@ from pathlib import Path
 
 import pytest
 
-from app.services.pipeline_validation import check_capability_violations
+from app.services.pipeline_validation import (
+    check_capability_violations,
+    resolve_preannotate_queue,
+)
 
 # fixture 落在前端包内 (vitest 受 tsconfig include=src 约束只能 import src 下文件);
 # pytest 读任意路径无碍, 故走仓库根的文件路径常量。parents[3] = 仓库根。
@@ -41,6 +44,26 @@ def test_capability_contract(case):
     codes = [v.code for v in violations]
     # 序列断言 (强于集合): 后端 append 顺序 batchable → class, 与 fixture expect_codes 一致。
     assert codes == case["expect_codes"]
+
+
+@pytest.mark.parametrize(
+    "devices, expected",
+    [
+        (["cpu"], "ml.cpu"),
+        (["cpu", "cpu"], "ml.cpu"),
+        (["CPU", "cpu"], "ml.cpu"),  # 大小写不敏感
+        (["gpu"], "ml"),
+        (["gpu", "cpu"], "ml"),  # 混合 → 保守进 gpu
+        ([None], "ml"),  # 未自报 → 视作 gpu
+        (["cpu", None], "ml"),  # 任一未自报 → gpu
+        ([], "ml"),  # 空 → gpu
+    ],
+)
+def test_resolve_preannotate_queue(devices, expected):
+    assert (
+        resolve_preannotate_queue(devices, gpu_queue="ml", cpu_queue="ml.cpu")
+        == expected
+    )
 
 
 def test_violation_detail_carries_context():

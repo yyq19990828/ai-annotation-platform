@@ -28,7 +28,9 @@ graph TB
   subgraph App[应用容器 docker-compose.prod.yml]
     Web[web 容器 :8088→80<br/>nginx 静态托管 + 反代]
     API[api 容器 :8080→8000<br/>uvicorn · WS · 自动迁移]
-    Worker[Celery worker × N<br/>消费 6 个队列]
+    Worker[Celery worker 主<br/>default/media/cleanup/audit]
+    WorkerGpu[Celery worker gpu<br/>ml/gpu · 低并发护显存]
+    WorkerCpu[Celery worker cpu<br/>ml.cpu · 高并发]
     Export[Celery worker export<br/>导出任务隔离队列]
     Beat[Celery beat × 1<br/>单实例 · 定时任务]
   end
@@ -279,11 +281,11 @@ docker compose --env-file .env.production \
 
 - **构建并起 api 容器**（`infra/docker/Dockerfile.api`）：entrypoint `apps/api/scripts/entrypoint.sh` 先 `alembic upgrade head`，再 exec uvicorn（`--host 0.0.0.0 --port 8000`，宿主映射 `8080:8000`）。**迁移自动跑，无需手动**。
 - **构建并起 web 容器**（`infra/docker/Dockerfile.web`，多阶段）：`pnpm build` 产物交容器内 nginx 托管，nginx 反代 `/api/` `/ws/`→`api:8000`（`infra/docker/nginx.conf`），宿主映射 `8088:80`。
-- **celery-worker / celery-worker-export / celery-beat** 改用生产配置（`env_file: .env.production` + inline 覆盖基础文件硬编码的 dev infra 凭据）。
+- **celery-worker / celery-worker-gpu / celery-worker-cpu / celery-worker-export / celery-beat** 改用生产配置（`env_file: .env.production` + inline 覆盖基础文件硬编码的 dev infra 凭据）。
 
 两个 `-f` 与 `--env-file .env.production` **都不可省**：前者把 prod 叠加文件合进来才会容器化 api/web，后者是 worker 用 `${VAR}` 覆盖 dev 凭据的插值源（原理见[运行环境形态](/dev/concepts/runtime-environments)）。
 
-跑完后栈内共 9 个容器：postgres / redis / minio / mailpit / api / web / celery-worker / celery-worker-export / celery-beat。GPU backend（profile `gpu` / `gpu-sam3`）与监控（profile `monitoring`）按需单独启用；mailpit 是 dev SMTP 收件箱，**生产应禁用并改真实 SMTP**（见 §2.10）。
+跑完后栈内共 11 个容器：postgres / redis / minio / mailpit / api / web / celery-worker / celery-worker-gpu / celery-worker-cpu / celery-worker-export / celery-beat。GPU backend（profile `gpu` / `gpu-sam3`）与监控（profile `monitoring`）按需单独启用；mailpit 是 dev SMTP 收件箱，**生产应禁用并改真实 SMTP**（见 §2.10）。
 
 > 宿主端口 `8080`（api）/ `8088`（web）只供外层反代转发，**绝不直接暴露公网**。prod 叠加文件默认把它们绑在宿主回环 `127.0.0.1`（`${PROXY_BIND_HOST:-127.0.0.1}`）——外层反代同机时开箱即安全；反代在**别的机器**时于 `.env.production` 设 `PROXY_BIND_HOST=<内网IP>`（勿用 `0.0.0.0`）。详见[端口暴露与网络安全](/ops/deploy/network-security)。
 
@@ -291,15 +293,18 @@ docker compose --env-file .env.production \
 
 worker/beat 容器已在 `docker-compose.yml` 定义、由 §4.1 一并拉起，下面是排障时需要的背景。
 
-主 worker 订阅 6 个队列（少订阅一个 → 该队列任务静默堆积）：
-- `default` — 兜底队列（`task_default_queue`）、PerfHud 推送、心跳、在线状态、分区维护等
-- `ml` — 自动预标注、模型调用
-- `media` — 图像/视频转码、缩略图、视频帧
-- `gpu` — 视频目标追踪
-- `cleanup` — 软删清理、效率看板物化视图刷新、DuckDB 同步
-- `audit` — 审计日志 / task event 批量入库
+预标任务按模型自报的 `resource_profile.device` 做**设备感知队列路由**，worker 按设备分组消费（少订阅一个队列 → 该队列任务静默堆积）：
 
-**导出专用 worker（`celery-worker-export`，v0.10.27）**：`export` 队列由独立 worker 处理，让导出大任务资源隔离、不拖累预标 / 媒体；主 worker **不订阅** `export`，故单独成一个容器。
+- **主 worker（`celery-worker`）** 订阅通用队列：
+  - `default` — 兜底队列（`task_default_queue`）、PerfHud 推送、心跳、在线状态、分区维护等
+  - `media` — 图像/视频转码、缩略图、视频帧
+  - `cleanup` — 软删清理、效率看板物化视图刷新、DuckDB 同步
+  - `audit` — 审计日志 / task event 批量入库
+- **GPU worker（`celery-worker-gpu`）** 订阅 `ml`（自动预标注 / 模型调用，整条 pipeline 任一阶段 device=gpu 或未自报即落此）+ `gpu`（视频目标追踪）；并发默认 `CELERY_GPU_CONCURRENCY=2`，**低并发护显存**。
+- **CPU worker（`celery-worker-cpu`）** 订阅 `ml.cpu`（整条 pipeline 全部 device=cpu 的预标任务）；并发默认 `CELERY_CPU_CONCURRENCY=4`，可较高。
+- **导出 worker（`celery-worker-export`）** 订阅 `export`（导出大任务资源隔离，不拖累预标 / 媒体）。
+
+队列名经 `PREANNOTATE_GPU_QUEUE`（默认 `ml`）/ `PREANNOTATE_CPU_QUEUE`（默认 `ml.cpu`）配置；改名须同步各 worker 的 `-Q`，否则任务静默积压。device 未自报的老 backend / 混合 device 的 pipeline 一律保守落 `ml`（GPU 队列），与拆分前行为等价、零退化。
 
 **Celery beat（`celery-beat`，必须单实例，v0.9.11）**：定时任务调度（审计 partition 月度归档、PerfHud 推送、ml health 巡检等）。worker 可水平扩多副本（`docker compose up -d --scale celery-worker=N`），但 **beat 多实例会重复触发，绝不能扩副本**。漏了 beat 不报错，但所有定时任务静默不跑。
 
@@ -342,8 +347,10 @@ uv sync
 uv run alembic upgrade head
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers $(($(nproc) * 2 + 1))
 
-# Celery（主 worker / 导出 worker / beat 各一个进程，beat 务必单实例）
-uv run celery -A app.workers.celery_app worker -l info -Q default,ml,media,gpu,cleanup,audit --concurrency=4
+# Celery（主 / GPU / CPU / 导出 worker + beat，beat 务必单实例）
+uv run celery -A app.workers.celery_app worker -l info -Q default,media,cleanup,audit --concurrency=4
+uv run celery -A app.workers.celery_app worker -l info -Q ml,gpu --concurrency=2
+uv run celery -A app.workers.celery_app worker -l info -Q ml.cpu --concurrency=4
 uv run celery -A app.workers.celery_app worker -l info -Q export --concurrency=2
 uv run celery -A app.workers.celery_app beat -l info --schedule=/tmp/celerybeat-schedule
 

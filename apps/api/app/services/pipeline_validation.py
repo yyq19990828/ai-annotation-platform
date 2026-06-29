@@ -69,3 +69,20 @@ def check_capability_violations(
             )
 
     return violations
+
+
+def resolve_preannotate_queue(
+    devices, *, gpu_queue: str, cpu_queue: str
+) -> str:
+    """v0.19.5 · 按整条 pipeline 各阶段 resource_profile.device 决定 Celery 队列。
+
+    保守策略: 仅当**所有阶段都显式 device=cpu** 时才进 cpu_queue; 任一阶段 device=gpu /
+    未自报 (None → 视作 gpu) → 进 gpu_queue。这样老 backend / 混合 device pipeline 都落 gpu_queue,
+    与现状 (全部进 ml 队列) 完全等价, 零退化。空列表 → gpu_queue。
+
+    devices: 各阶段 device 字符串或 None 的可迭代。
+    """
+    normalized = [(d or "gpu").lower() for d in devices]
+    if normalized and all(d == "cpu" for d in normalized):
+        return cpu_queue
+    return gpu_queue

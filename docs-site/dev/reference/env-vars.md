@@ -32,6 +32,15 @@ last_reviewed: 2026-06-29
 |---|---|---|
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis 连接地址，用于会话缓存、速率限制等 格式：redis://[:密码@]主机:端口/数据库编号 |
 
+## --- 设备感知预标队列路由 ---
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `PREANNOTATE_GPU_QUEUE` | `ml` | 按模型自报的 resource_profile.device 把预标任务路由到不同 Celery 队列: 整条 pipeline 全部 device=cpu → CPU 队列 (高并发); 任一 GPU/未自报阶段 → GPU 队列 (低并发护显存)。 队列名默认复用现有 "ml" (GPU) + 新增 "ml.cpu" (CPU)。改名须同步 docker-compose 各 worker 的 -Q。 |
+| `PREANNOTATE_CPU_QUEUE` | `ml.cpu` | — |
+| `CELERY_GPU_CONCURRENCY` | `2` | GPU/CPU 预标 worker 并发 (docker-compose celery-worker-gpu / celery-worker-cpu 读取)。 GPU 低并发避免多预标并发打爆显存; CPU 可较高并发。 |
+| `CELERY_CPU_CONCURRENCY` | `4` | — |
+
 ## 对象存储 (MinIO / S3 兼容)
 
 | 变量 | 默认值 | 说明 |

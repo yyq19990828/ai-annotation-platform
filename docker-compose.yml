@@ -73,7 +73,9 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.api
-    command: celery -A app.workers.celery_app worker -l info -Q default,ml,media,gpu,cleanup,audit --concurrency=4
+    # v0.19.5 · 通用队列组 (非 GPU/CPU 预标)。ml/gpu 预标已拆到 celery-worker-gpu,
+    # ml.cpu 拆到 celery-worker-cpu, 实现设备感知并发隔离。
+    command: celery -A app.workers.celery_app worker -l info -Q default,media,cleanup,audit --concurrency=4
     environment:
       DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
       REDIS_URL: redis://redis:6379/0
@@ -97,6 +99,74 @@ services:
     # v0.10.24 · worker 健康探针: inspect ping 自身节点 (-d 限定当前 worker, 不等其它副本)。
     # 必须用 CMD-SHELL — exec-form 无 shell, $$HOSTNAME 不展开会 ping 字面节点名导致永远 unhealthy。
     # start_period 留足 image 冷启 + broker 连接; SIGTERM 后给 30s warm shutdown 跑完在途任务。
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 40s
+    stop_grace_period: 30s
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  # v0.19.5 · GPU 预标 worker. 消费 ml (设备=gpu/未自报的预标) + gpu (视频追踪) 队列, 低并发护显存。
+  # 配置照抄 celery-worker, 仅改 -Q 与并发 (CELERY_GPU_CONCURRENCY, 默认 2)。
+  celery-worker-gpu:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    command: celery -A app.workers.celery_app worker -l info -Q ml,gpu --concurrency=${CELERY_GPU_CONCURRENCY:-2}
+    environment:
+      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
+    volumes:
+      - ./data/duckdb:/var/lib/duckdb
+      - ./config/ssh/known_hosts:/root/.ssh/known_hosts:ro
+      - ./apps/api:/app
+      - /app/.venv
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 40s
+    stop_grace_period: 30s
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  # v0.19.5 · CPU 预标 worker. 消费 ml.cpu (整条 pipeline 全部 device=cpu 的预标) 队列, 高并发。
+  # 配置照抄 celery-worker, 仅改 -Q 与并发 (CELERY_CPU_CONCURRENCY, 默认 4)。
+  celery-worker-cpu:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    command: celery -A app.workers.celery_app worker -l info -Q ml.cpu --concurrency=${CELERY_CPU_CONCURRENCY:-4}
+    environment:
+      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
+    volumes:
+      - ./data/duckdb:/var/lib/duckdb
+      - ./config/ssh/known_hosts:/root/.ssh/known_hosts:ro
+      - ./apps/api:/app
+      - /app/.venv
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
       interval: 30s

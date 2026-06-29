@@ -43,6 +43,7 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 
 - AI 预标注编排「能力校验」补齐配置期一层，与派发期 422 对称：源模型选择器、下游阶段卡在**配置期**就对 `batchable=false`（交互 / 有状态模型）与「写属性却不产 `class`」的误配标红预警；保存编排（`PATCH /projects/{id}`）的响应回带 `capability_warnings[]` 软提示。把「存得下不一定跑得了」前移到配置 / 保存时暴露，而非跑到派发才报错；保存只软提示不硬挡（保留「先存草稿、之后换 backend」的合法流，派发期 422 仍是最终闸）。
 - 模型市场「能力目录」卡片新增**批量 / 设备徽标**：模型自报 `resource_profile.batchable` 时显示「可批量」/「交互·有状态」，`device` 显示「GPU/CPU」，让用户一眼看出某模型能否进批量预标、跑在什么设备上，无需进项目编排才发现。`/instances` 视图此前丢弃了 `resource_profile`（仅 `/capabilities` 富数据视图可见），现已透传到协议卡视图与平台内置（env-only）模型卡。缺省字段不显示，向后兼容。
+- **设备感知预标队列路由**：按模型自报的 `resource_profile.device` 把批量预标任务路由到不同 Celery 队列——整条 pipeline 全部 `device=cpu` 进 `ml.cpu` 队列（CPU worker 高并发），任一阶段 `device=gpu` 或未自报则进 `ml` 队列（GPU worker 低并发护显存）。GPU 模型与 CPU 模型不再抢同一并发池：多个 GPU 预标并发不再争显存致 OOM，CPU 模型也不再被 GPU 任务拖慢。docker-compose 拆出 `celery-worker-gpu` / `celery-worker-cpu` 两组 worker（并发经 `CELERY_GPU_CONCURRENCY` / `CELERY_CPU_CONCURRENCY` 配置）。老 backend / 未自报 device / 混合 device 的 pipeline 一律保守落 GPU 队列，与拆分前行为等价、零退化。
 
 ### Changed
 

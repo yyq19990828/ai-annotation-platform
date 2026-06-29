@@ -132,13 +132,14 @@ docker compose down -v
 
 Celery 里任务先被**投递（publish）到某个命名队列**，worker 只**消费它显式订阅（`-Q`）的队列**。投到没人订阅的队列的任务会一直躺着、永不执行。
 
-- **worker 订阅**：`-Q default,ml,media,gpu,cleanup,audit`（`--concurrency=4`）—— 当前单 worker 订阅全部 6 个业务队列。
+- **worker 分组订阅**（按设备隔离并发）：主 worker `-Q default,media,cleanup,audit`（`--concurrency=4`）；GPU worker `-Q ml,gpu`（`CELERY_GPU_CONCURRENCY=2`，低并发护显存）；CPU worker `-Q ml.cpu`（`CELERY_CPU_CONCURRENCY=4`）；导出 worker `-Q export`。预标任务按模型 `resource_profile.device` 路由：整条 pipeline 全 CPU → `ml.cpu`，任一 GPU/未自报 → `ml`（保守，零退化）。
 - **任务 → 队列 的映射**：`apps/api/app/workers/celery_app.py` 的 `task_routes` 显式指定；**未显式路由的任务落到 `task_default_queue`**。
 
   | Queue | 谁路由进来 | 典型任务 | 前端可见？ |
   |---|---|---|---|
   | `default` | `task_default_queue` 兜底 + ml_health | `publish_ml_backend_stats`(PerfHud) / `check_ml_backends_health` / `worker-heartbeat` / `mark_inactive_offline`(在线状态) / 各 `ensure_future_*_partitions` | 部分（PerfHud / 在线状态点） |
-  | `ml` | `batch_predict` / `retry_failed_prediction` | 跑 ML backend / 重试失败预测 | ✅ 工作台 AI 候选框 |
+  | `ml` | `batch_predict`（device=gpu/未自报）/ `retry_failed_prediction` | 跑 GPU ML backend / 重试失败预测 | ✅ 工作台 AI 候选框 |
+  | `ml.cpu` | `batch_predict`（整条 pipeline 全 device=cpu） | 跑 CPU 模型预标（高并发） | ✅ 工作台 AI 候选框 |
   | `media` | `generate_thumbnail` / `extract_video_frames` / `run_dataset_import` 等 | 缩略图、视频帧、媒体 backfill、连接器数据集导入 | ✅ 列表 / 工作台的图与帧 / 数据集导入进度 |
   | `gpu` | `run_video_tracker_job` | 视频目标追踪 | ✅ 视频追踪结果 |
   | `cleanup` | `purge_soft_deleted_attachments` / `refresh_user_perf_mv` / `sync_to_duckdb` 等 | 清理、效率看板物化视图刷新、DuckDB 同步 | 间接（效率看板数据） |
