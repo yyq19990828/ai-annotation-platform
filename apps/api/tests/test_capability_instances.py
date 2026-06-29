@@ -508,3 +508,52 @@ async def test_instances_skips_malformed_backend_without_500(
     names = {inst["name"] for inst in r.json()["instances"]}
     # 合规的 backend 仍在; 不合规的被跳过。
     assert names == {"good"}
+
+
+# ---------- v0.20.3 · classes 透传 (供前端「从 backend 预填配置」导入类别) ----------
+
+
+@pytest.mark.asyncio
+async def test_instances_passthrough_classes(httpx_client, auth_headers, db_session):
+    """/instances 透传 backend 自报的 classes (yolo COCO 等); 缺字段 → []。
+
+    回归: classes 此前在 _shape_models 被裁掉, 导致前端拿不到类别清单、无法一键预填。
+    """
+    db_session.add(
+        MLBackendRegistry(
+            id=uuid.uuid4(),
+            name="yolo-classes",
+            url="http://yolocls:8003",
+            state="connected",
+            auth_method="none",
+            extra_params={},
+            source="env",
+            health_meta={
+                "capabilities": {
+                    "infra": "pytorch",
+                    "models": [
+                        {
+                            "id": "detect",
+                            "task": "detection",
+                            "supported_geometric_outputs": ["bbox"],
+                            "classes": ["person", "car", "dog"],
+                        },
+                        {
+                            "id": "noclass",
+                            "task": "detection",
+                            "supported_geometric_outputs": ["bbox"],
+                        },
+                    ],
+                }
+            },
+        )
+    )
+    await db_session.flush()
+
+    r = await httpx_client.get(
+        "/api/v1/ml-capabilities/instances", headers=auth_headers
+    )
+    assert r.status_code == 200
+    models = {m["id"]: m for m in r.json()["instances"][0]["models"]}
+    assert models["detect"]["classes"] == ["person", "car", "dog"]
+    assert models["noclass"]["classes"] == []

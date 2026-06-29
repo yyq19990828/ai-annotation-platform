@@ -1,12 +1,14 @@
 /**
- * v0.18.0 · 从 ML Backend 导入属性 schema
+ * v0.20.3 · 从 ML Backend 预填项目配置（类别 + 属性）
  *
- * 二阶段 backend (如 onnxtools 车辆属性) 在 /setup 自报 output_attribute_schema —— 声明
- * /predict 会写入哪些 attributes (vehicle_type / color 等, 含 select options)。本对话框列出
- * 所有「有输出属性」的 backend / model, 让用户选一个并勾选要导入的字段, 一键合并进当前工具
- * 单位的 attribute_schema, 免去手抄选项 + key 对齐。
+ * backend /setup 自报 `classes`（yolo COCO 等）+ `output_attribute_schema`（二阶段属性，
+ * 如 onnxtools 车型/颜色，含 select options）。本对话框列出「有类别或有属性可预填」的 model，
+ * 让用户选一个、分别勾选类别 / 属性字段，一键合并进当前工具单位：
+ *   - 类别 → 工具单位 classRows（同名跳过、自动配色）；
+ *   - 属性 → 工具单位 attribute_schema（同 key 覆盖、新 key 追加）。
  *
- * 纯受控: 确认后回调 onImport(fields), 由调用方 (ClassesSection) 决定如何与现有属性合并。
+ * 纯受控：确认后回调 onPrefill({ classes, attributes })，由调用方（ClassesSection）决定合并。
+ * 前身 v0.18.0 ImportAttributesFromBackendDialog 仅导属性；v0.20.3 补齐类别、对称化为「预填配置」。
  */
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
@@ -56,6 +58,7 @@ function itemToField(item: OutputAttributeSchemaItem): AttributeField {
 interface ModelEntry {
   backendName: string;
   model: CapabilityInstanceModel;
+  classes: string[];
   schema: OutputAttributeSchemaItem[];
 }
 
@@ -63,40 +66,56 @@ function collectEntries(instances: CapabilityInstance[]): ModelEntry[] {
   const out: ModelEntry[] = [];
   for (const inst of instances) {
     for (const model of inst.models) {
-      // 一锅端 composite 与纯分类 atom 声明同一份属性 schema; 跳过 composite 避免重复导入源。
+      // 一锅端 composite 与原子声明同一份属性/类别; 跳过 composite 避免重复预填源。
       if (model.composition === "composite") continue;
+      const classes = model.classes ?? [];
       const schema = model.output_attribute_schema ?? [];
-      if (schema.length > 0) {
-        out.push({ backendName: inst.name, model, schema });
+      if (classes.length > 0 || schema.length > 0) {
+        out.push({ backendName: inst.name, model, classes, schema });
       }
     }
   }
   return out;
 }
 
+export interface PrefillPicked {
+  classes: string[];
+  attributes: AttributeField[];
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
-  /** 用户确认导入的字段（已按勾选过滤、映射成 AttributeField）。 */
-  onImport: (fields: AttributeField[]) => void;
+  /** 用户确认预填的类别名 + 属性字段（已按勾选过滤）。 */
+  onPrefill: (picked: PrefillPicked) => void;
   /** 当前工具单位名（仅用于文案提示）。 */
   targetUnitLabel: string;
+  /** 当前工具单位已有类名 / 属性 key，用于标记「已存在」并默认不勾选。 */
+  existingClassNames?: string[];
+  existingAttrKeys?: string[];
 }
 
-export function ImportAttributesFromBackendDialog({
+export function PrefillFromBackendDialog({
   open,
   onClose,
-  onImport,
+  onPrefill,
   targetUnitLabel,
+  existingClassNames = [],
+  existingAttrKeys = [],
 }: Props) {
   const { data, isLoading, isError } = useCapabilityInstances();
   const entries = useMemo(
     () => (data ? collectEntries(data.instances) : []),
     [data],
   );
+  const existingClasses = useMemo(
+    () => new Set(existingClassNames),
+    [existingClassNames],
+  );
+  const existingKeys = useMemo(() => new Set(existingAttrKeys), [existingAttrKeys]);
 
-  // 选中的 model（backendName + model.id 唯一）与勾选的字段 key 集合。
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [checkedClasses, setCheckedClasses] = useState<Set<string>>(new Set());
   const [checkedKeys, setCheckedKeys] = useState<Set<string>>(new Set());
 
   const selected = useMemo(
@@ -108,36 +127,40 @@ export function ImportAttributesFromBackendDialog({
 
   const selectEntry = (entry: ModelEntry) => {
     setSelectedId(`${entry.backendName}::${entry.model.id}`);
-    // 默认全选可导入字段。
-    setCheckedKeys(new Set(entry.schema.map((s) => s.key)));
+    // 默认勾选「项目还没有的」类别 / 属性，已存在的不勾（避免无谓覆盖）。
+    setCheckedClasses(new Set(entry.classes.filter((c) => !existingClasses.has(c))));
+    setCheckedKeys(
+      new Set(entry.schema.map((s) => s.key).filter((k) => !existingKeys.has(k))),
+    );
   };
 
-  const toggleKey = (key: string) => {
-    setCheckedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  const toggle = (set: Set<string>, key: string): Set<string> => {
+    const next = new Set(set);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
   };
 
-  const handleImport = () => {
+  const handlePrefill = () => {
     if (!selected) return;
-    const fields = selected.schema
+    const classes = selected.classes.filter((c) => checkedClasses.has(c));
+    const attributes = selected.schema
       .filter((s) => checkedKeys.has(s.key))
       .map(itemToField);
-    if (fields.length === 0) return;
-    onImport(fields);
+    if (classes.length === 0 && attributes.length === 0) return;
+    onPrefill({ classes, attributes });
     onClose();
   };
 
+  const pickedCount = checkedClasses.size + checkedKeys.size;
+
   return (
-    <Modal open={open} onClose={onClose} title="从 ML Backend 导入属性" width={640}>
+    <Modal open={open} onClose={onClose} title="从 ML Backend 预填配置" width={640}>
       <div className="flex flex-col gap-3">
         <p className="m-0 text-xs leading-normal text-muted-foreground">
-          二阶段 backend 会自报它写入的属性字段（如车型 / 颜色，含下拉选项）。选择一个模型，
-          勾选要导入的字段，即可合并进「{targetUnitLabel}」工具单位的属性 schema（同 key 覆盖、
-          新增追加）。
+          backend 会自报它产出的类别（如 YOLO 的 COCO 类）与写入的属性字段（如车型 / 颜色，含下拉选项）。
+          选择一个模型，勾选要预填的类别 / 属性，即可合并进「{targetUnitLabel}」工具单位
+          （类别同名跳过、属性同 key 覆盖）。
         </p>
 
         {isLoading && (
@@ -152,20 +175,21 @@ export function ImportAttributesFromBackendDialog({
         )}
         {!isLoading && !isError && entries.length === 0 && (
           <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-            当前没有任何在线 backend 自报输出属性 schema。需要二阶段 backend（如 onnxtools
-            车辆属性）上线后才能导入。
+            当前没有任何在线 backend 自报类别或输出属性 schema。需要 backend（如 YOLO 检测、
+            onnxtools 车辆属性）上线后才能预填。
           </div>
         )}
 
         {entries.length > 0 && (
           <div className="flex flex-col gap-2">
-            <span className="text-xs font-semibold text-muted-foreground">
-              选择模型
-            </span>
+            <span className="text-xs font-semibold text-muted-foreground">选择模型</span>
             <div className="flex flex-col gap-1.5">
               {entries.map((entry) => {
                 const id = `${entry.backendName}::${entry.model.id}`;
                 const active = id === selectedId;
+                const parts: string[] = [];
+                if (entry.classes.length) parts.push(`${entry.classes.length} 个类别`);
+                if (entry.schema.length) parts.push(`${entry.schema.length} 个属性`);
                 return (
                   <button
                     key={id}
@@ -182,12 +206,10 @@ export function ImportAttributesFromBackendDialog({
                         {entry.model.display_name}
                       </span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        {entry.backendName} · {entry.schema.length} 个属性
+                        {entry.backendName} · {parts.join(" · ")}
                       </span>
                     </span>
-                    {active && (
-                      <Icon name="check" size={14} className="text-brand" />
-                    )}
+                    {active && <Icon name="check" size={14} className="text-brand" />}
                   </button>
                 );
               })}
@@ -195,14 +217,66 @@ export function ImportAttributesFromBackendDialog({
           </div>
         )}
 
-        {selected && (
+        {selected && selected.classes.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-muted-foreground">
+                类别（勾选要预填的）
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="text-2xs text-brand hover:underline"
+                  onClick={() => setCheckedClasses(new Set(selected.classes))}
+                >
+                  全选
+                </button>
+                <button
+                  type="button"
+                  className="text-2xs text-muted-foreground hover:underline"
+                  onClick={() => setCheckedClasses(new Set())}
+                >
+                  清空
+                </button>
+              </div>
+            </div>
+            <div className="flex max-h-44 flex-wrap content-start gap-1.5 overflow-y-auto rounded-md border border-border bg-card p-2">
+              {selected.classes.map((name) => {
+                const checked = checkedClasses.has(name);
+                const exists = existingClasses.has(name);
+                return (
+                  <label
+                    key={name}
+                    className={`inline-flex cursor-pointer items-center gap-1.5 rounded-sm border px-2 py-1 text-xs ${
+                      checked ? "border-primary bg-primary/10" : "border-border bg-muted"
+                    }`}
+                    title={exists ? "该工具单位已有同名类别，预填时会跳过" : undefined}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => setCheckedClasses((p) => toggle(p, name))}
+                    />
+                    <span className="text-foreground">{name}</span>
+                    {exists && (
+                      <span className="text-2xs text-muted-foreground">已存在</span>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {selected && selected.schema.length > 0 && (
           <div className="flex flex-col gap-2">
             <span className="text-xs font-semibold text-muted-foreground">
-              字段预览（勾选要导入的）
+              属性（勾选要预填的）
             </span>
             <div className="flex flex-col gap-1.5">
               {selected.schema.map((item) => {
                 const checked = checkedKeys.has(item.key);
+                const exists = existingKeys.has(item.key);
                 return (
                   <label
                     key={item.key}
@@ -211,7 +285,7 @@ export function ImportAttributesFromBackendDialog({
                     <input
                       type="checkbox"
                       checked={checked}
-                      onChange={() => toggleKey(item.key)}
+                      onChange={() => setCheckedKeys((p) => toggle(p, item.key))}
                       className="mt-0.5"
                     />
                     <span className="min-w-0 flex-1">
@@ -225,6 +299,9 @@ export function ImportAttributesFromBackendDialog({
                         <span className="text-2xs text-muted-foreground">
                           {FIELD_TYPE_LABEL[item.type] ?? item.type}
                         </span>
+                        {exists && (
+                          <span className="text-2xs text-status-caution">已存在 · 将覆盖</span>
+                        )}
                       </span>
                       {item.options?.length ? (
                         <span className="mt-1 block text-xs text-muted-foreground">
@@ -248,12 +325,8 @@ export function ImportAttributesFromBackendDialog({
           <Button variant="ghost" onClick={onClose}>
             取消
           </Button>
-          <Button
-            variant="primary"
-            disabled={!selected || checkedKeys.size === 0}
-            onClick={handleImport}
-          >
-            导入选中字段
+          <Button variant="primary" disabled={!selected || pickedCount === 0} onClick={handlePrefill}>
+            预填选中项
           </Button>
         </div>
       </div>

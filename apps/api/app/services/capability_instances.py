@@ -87,6 +87,9 @@ def _shape_models(caps: dict | None) -> list[dict]:
                 # 协议③ · 属性输出类型 + schema 自描述, 供前端「从 backend 导入属性」.
                 "output_attribute_types": list(m.get("output_attribute_types") or []),
                 "output_attribute_schema": list(m.get("output_attribute_schema") or []),
+                # v0.20.3 · 透传 backend 自报的类别清单 (yolo COCO 等), 供前端「从 backend
+                # 预填配置」一键导入类别。extract_capabilities 早已保留, 此前在本层被裁掉。
+                "classes": list(m.get("classes") or []),
                 "modality": m.get("modality"),
                 "supported_variants": list(m.get("supported_variants") or []),
                 "variant_combinations": list(m.get("variant_combinations") or []),
