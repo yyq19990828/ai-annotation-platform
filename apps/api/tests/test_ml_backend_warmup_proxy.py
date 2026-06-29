@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from tests.factory import create_project
 
 
@@ -21,12 +21,12 @@ pytestmark = pytest.mark.asyncio
 
 async def _make_backend(
     db_session, project_id: uuid.UUID, name: str = "yolo"
-) -> MLBackend:
-    b = MLBackend(
+) -> MLBackendRegistry:
+    """建全局注册项 + 为项目启用 (ADR-0044)。url 全局唯一。"""
+    b = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=project_id,
         name=name,
-        url="http://yolo:8003",
+        url=f"http://yolo-{uuid.uuid4().hex[:8]}:8003",
         state="connected",
         is_interactive=False,
         auth_method="none",
@@ -34,6 +34,10 @@ async def _make_backend(
         health_meta={},
     )
     db_session.add(b)
+    await db_session.flush()
+    db_session.add(
+        ProjectMLBackend(project_id=project_id, registry_id=b.id, enabled=True)
+    )
     await db_session.flush()
     return b
 
