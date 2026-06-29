@@ -211,9 +211,6 @@ async def _serialize_project(
     data["member_count"] = member_count
     data["ai_completed_tasks"] = ai_completed
     data["batch_summary"] = batch_summary
-    # v0.19.0 ADR-0044 · 项目启用不再设上限 (显存保护交全局 extra_params.max_concurrency);
-    # 0 = 不限, 前端按 >0 判定禁用添加按钮。
-    data["ml_backend_limit"] = 0
     return data
 
 

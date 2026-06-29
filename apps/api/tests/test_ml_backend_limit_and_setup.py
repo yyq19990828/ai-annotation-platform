@@ -99,10 +99,10 @@ async def test_create_ml_backend_reuses_registry_by_url(
     assert r1.json()["id"] == r2.json()["id"]
 
 
-async def test_project_out_carries_ml_backend_limit(
+async def test_project_out_drops_ml_backend_limit(
     httpx_client_bound, super_admin, db_session
 ):
-    """ADR-0044 · 上限已移除, ProjectOut.ml_backend_limit 恒为 0。"""
+    """ADR-0044 · 上限彻底退役, ProjectOut 不再透出 ml_backend_limit 字段。"""
     user, token = super_admin
     proj = await _seed_project(db_session, user.id)
     await db_session.commit()
@@ -112,7 +112,7 @@ async def test_project_out_carries_ml_backend_limit(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["ml_backend_limit"] == 0
+    assert "ml_backend_limit" not in resp.json()
 
 
 async def test_setup_proxy_returns_capability_and_caches(

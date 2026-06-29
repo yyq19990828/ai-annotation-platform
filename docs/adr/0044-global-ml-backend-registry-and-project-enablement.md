@@ -1,7 +1,7 @@
 # 0044 — ML Backend 全局注册表 + 项目级启用（解耦能力声明与项目绑定）
 
-- **Status:** Proposed
-- **Date:** 2026-06-25（提案；目标 v0.19.0 落地）
+- **Status:** Accepted
+- **Date:** 2026-06-25（提案）/ 2026-06-29（v0.19.0 落地，迁移 `0108`）
 - **Deciders:** core team
 - **Supersedes:** —（在 [ADR-0020](./0020-ml-backend-capability-negotiation.md) / [ADR-0036](./0036-ml-backend-capability-protocol-v2-multi-model.md) / [ADR-0037](./0037-protocol-capability-catalog-decoupling.md) 之上做注册模型的加法，不推翻协议）
 
