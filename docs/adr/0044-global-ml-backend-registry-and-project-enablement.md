@@ -1,7 +1,7 @@
 # 0044 — ML Backend 全局注册表 + 项目级启用（解耦能力声明与项目绑定）
 
-- **Status:** Proposed
-- **Date:** 2026-06-25（提案；目标 v0.19.0 落地）
+- **Status:** Accepted
+- **Date:** 2026-06-25（提案）/ 2026-06-29（v0.19.0 落地，迁移 `0108`）
 - **Deciders:** core team
 - **Supersedes:** —（在 [ADR-0020](./0020-ml-backend-capability-negotiation.md) / [ADR-0036](./0036-ml-backend-capability-protocol-v2-multi-model.md) / [ADR-0037](./0037-protocol-capability-catalog-decoupling.md) 之上做注册模型的加法，不推翻协议）
 
@@ -37,8 +37,10 @@
 
 新增两张表（命名待定，下为语义）：
 
-- `ml_backend_registry`（全局，superadmin 维护）：`id`、`name`、`url`、`state`、`is_interactive`、`health_meta`（能力快照单份真值）、`source`（`manual` | `env`）。env 配置的 backend 启动时**自动 upsert** 成 `source=env` 的注册项（不再走 `_load_env_only_instances` 临时探测）。
-- `project_ml_backend`（项目 × 注册项关联）：`project_id`、`registry_id`、`enabled`、项目级覆盖（`box_threshold` / `text_threshold` / `default_variants` / 可选 `url_override`）。
+- `ml_backend_registry`（全局，superadmin 维护）：`id`、`name`、`url`、`state`、`is_interactive`、`auth_method` / `auth_token` / `extra_params`、`health_meta`（能力快照单份真值）、`source`（`manual` | `env`）。env 配置的 backend 启动时**自动 upsert** 成 `source=env` 的注册项（不再走 `_load_env_only_instances` 临时探测）。
+- `project_ml_backend`（项目 × 注册项关联）：`project_id`、`registry_id`、`enabled`、项目级覆盖（`box_threshold` / `text_threshold` / `default_variants`；**不做** `url_override`，见 Alternatives）。
+
+`auth_method` / `auth_token`（调用该 url 的访问凭证，`ml_client.py:101-104`）与 `extra_params`（`max_concurrency` 并发限速闸，`ml_client.py:95-99`）是「如何与物理端点对话」的**端点固有属性、与项目无关**，故随 url 上提到全局注册行，**不做项目覆盖**；项目覆盖只保留真正业务相关的阈值/变体。
 
 能力快照 `health_meta.capabilities` **只在全局注册表项上维护一份**，`check_health`（`services/ml_backend.py:121`）改为对注册表项探测、写回全局行；所有项目共享同一份快照。
 
@@ -49,7 +51,12 @@
 
 ### 迁移
 
-现有 `ml_backends` 行：按 `url` 去重 upsert 进 `ml_backend_registry`，每行再生成一条 `project_ml_backend(enabled=true)` 保留项目归属与覆盖配置。指向 `ml_backends.id` 的外键（`project.ml_backend_id`、`prediction.ml_backend_id`，均 `ondelete=SET NULL`，见 `db/models/project.py:44`、`db/models/prediction.py:31,114`）改指向新表或保留 backend 概念 id 的稳定映射——迁移脚本须保证历史 prediction 的 backend 溯源不丢。
+现有 `ml_backends` 行：按 `url` 去重 upsert 进 `ml_backend_registry`，每行再生成一条 `project_ml_backend(enabled=true)` 保留项目归属与覆盖配置。迁移建一张全量 `old_id → registry_id` 映射，一次性重写所有引用，迁移脚本须保证历史 prediction 的 backend 溯源不丢：
+
+- **外键三处**（均 `ondelete=SET NULL`）：`projects.ml_backend_id`、`failed_predictions.ml_backend_id`、`predictions.ml_backend_id`。注意 **`predictions` 是按月分区表**（`predictions_y2026mNN` + `_default`），FK 在父表与各分区都有——重指须 DROP 父表约束（级联各分区）→ UPDATE 父表（传播各分区）→ ADD 父表新约束，不是单条 ALTER。
+- **用户偏好 JSONB 三子键**：`users.preferences.ai` 的 `params_by_backend`（key 是 backend id）、`model_by_backend`（key 是 backend id）、`interactive_backend_by_project`（value 是 backend id）都须按映射重写，否则升级后参数预设/引擎/模型偏好静默丢失。
+
+> PR1 副本库 spike（见计划 §10）已验证上述迁移在 upgrade 方向稳健；downgrade 因去重不可逆，采 forward-only 姿态。
 
 ### 权限
 
@@ -64,6 +71,7 @@
 - env-configured backend 升级为一等注册项（自动 upsert），「看得到也用得到」，消除 `_load_env_only_instances` 半成品分支。
 - 多阶段 DAG「≥2 backend」门槛大幅降低：项目里勾选启用即可，不必重复注册（直接缓解 [ADR-0043](./0043-staged-preannotation-pipeline.md) / v0.18.16 的注册摩擦）。
 - 能力概念归位：固有能力在 backend 层，项目层只表达「用不用 + 怎么调」。
+- **顺带修一个隐性限速 bug**：`max_concurrency` 的 semaphore 按 `backend_id` keyed（`ml_client.py:99`）。现状下同一物理 backend 在 N 个项目各注册一行 = N 个独立 semaphore，限速形同虚设（N×4 并发打同一 backend）；全局注册表收成「一物理 backend = 一 registry id = 一 semaphore」，per-backend 限速首次真正生效。
 
 负向：
 

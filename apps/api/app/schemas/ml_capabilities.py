@@ -78,9 +78,10 @@ class InstanceVariantGroup(BaseModel):
 
 
 class InstanceModelItem(BaseModel):
-    """实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 resource_profile /
-    params 等运维信息; v0.14.12 起补 supported_variants + variant_combinations 让
-    前端能按主轴展开「具体模型」行)."""
+    """实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 url / params 等运维
+    信息; v0.14.12 起补 supported_variants + variant_combinations 让前端能按主轴展开
+    「具体模型」行; v0.19.2 WS0 起补 supported_inputs + resource_profile, 与项目级
+    /capabilities 对齐, 供全局编排选择器消费投递契约/批量画像)."""
 
     id: str
     display_name: str
@@ -89,6 +90,10 @@ class InstanceModelItem(BaseModel):
     infra: str | None = None
     is_interactive: bool = False
     supported_prompts: list[str] = []
+    # v0.19.2 WS0 · 一等输入契约 (full_image|crop|bbox_prompt|point_prompt) + 资源画像
+    # (device / batchable)。原 /instances 裁掉了二者, 全局编排选择器需要。
+    supported_inputs: list[str] = []
+    resource_profile: dict = {}
     supported_geometric_outputs: list[str] = []
     supported_trackers: list[str] = []
     # 协议③ · 属性输出类型 + schema 自描述 (含 select options), 供「从 backend 导入属性」.

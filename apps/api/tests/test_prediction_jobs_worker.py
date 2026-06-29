@@ -21,14 +21,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.async_job import AsyncJob, AsyncJobStatus
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.db.models.notification import Notification
 from app.db.models.project import Project
 
 
 async def _seed_project_and_backend(
     db: AsyncSession, owner_id: uuid.UUID
-) -> tuple[Project, MLBackend]:
+) -> tuple[Project, MLBackendRegistry]:
     suffix = uuid.uuid4().hex[:8]
     proj = Project(
         id=uuid.uuid4(),
@@ -41,11 +41,11 @@ async def _seed_project_and_backend(
     db.add(proj)
     await db.flush()
 
-    backend = MLBackend(
+    # v0.19.0 ADR-0044 · backend 现为全局注册项; worker 直接 db.get(registry), 无需项目启用关联
+    backend = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=proj.id,
         name="g-sam2",
-        url="http://test/",
+        url=f"http://test-{suffix}/",
         is_interactive=True,
         state="connected",
     )

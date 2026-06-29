@@ -41,7 +41,7 @@ class Project(Base):
     status: Mapped[str] = mapped_column(String(30), default="in_progress")
     ai_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     ml_backend_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("ml_backends.id", ondelete="SET NULL")
+        UUID(as_uuid=True), ForeignKey("ml_backend_registry.id", ondelete="SET NULL")
     )
     # v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶).
     # 形状: { "<backend_uuid>": { "<axis_key>": "<axis_value>", ... }, ... }
@@ -74,8 +74,6 @@ class Project(Base):
     text_threshold: Mapped[float] = mapped_column(
         Float, nullable=False, server_default="0.25", default=0.25
     )
-    # v0.9.5 · 工作台 SamTextPanel 默认输出形态 (None 走 type_key 智能默认)
-    text_output_default: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict = 全部沿用用户级 preferences
     rendering_config: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict

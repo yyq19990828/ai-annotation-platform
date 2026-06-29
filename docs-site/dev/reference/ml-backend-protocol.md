@@ -15,15 +15,18 @@ last_reviewed: 2026-06-08
 > - HTTP 接入点: `apps/api/app/api/v1/ml_backends.py`
 > - 数据模型: `apps/api/app/db/models/{ml_backend,prediction}.py`
 
-平台不内置任何具体模型。它把每个项目可挂接的「推理服务」抽象成 `MLBackend` 行——一个 URL + 鉴权信息 + 几个布尔位（`is_interactive` / `state`）。本文规定接入方需要实现的 4 个 HTTP 端点与请求/响应 schema。只要遵循，就能在「项目设置 → ML Backends」里挂接。
+平台不内置任何具体模型。它把可挂接的「推理服务」抽象成 `MLBackend` 行——一个 URL + 鉴权信息 + 几个布尔位（`is_interactive` / `state`）。本文规定接入方需要实现的 4 个 HTTP 端点与请求/响应 schema。只要遵循，就能在「模型市场 → 注册管理」里注册、在「项目设置 → ML 模型」里启用。
 
 ---
 
-## 项目作用域与数量上限
+## 全局注册表与项目启用
 
-`ml_backends.project_id` 按 1:N 设计；同一个项目可以注册多条 backend 记录，前端多 backend 选择器已经按「交互线 / 批量线 / 编排阶段」分流。当前开发环境默认 `MAX_ML_BACKENDS_PER_PROJECT=3`，给检测 + 分割 / 分类 + 备用 backend 留出基本空间；生产环境可按机器显存和并发预算调大或调小该值。
+ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全局 `ml_backend_registry` 一行 = 一份能力快照 = 一个并发限速闸；项目侧只做「启用」。两层职责：
 
-这个限制只影响「一个项目能注册多少条 backend」。新建项目时选择「复用 backend」仍会复制一条 backend 行到新项目；未注册 backend 但已启用 AI 的项目也会出现在模型市场，便于从模型市场直接注册第一条 backend。
+- **全局层（超管）**：`ml_backend_registry`。URL / 鉴权 / `auth_method` / `auth_token` / `extra_params`（含 `max_concurrency`）/ `is_interactive` / `state` 等端点固有属性写在这里，所有启用该 backend 的项目共享。env 配置的 backend 启动时自动 upsert 为 `source=env` 注册项；env 删项时对应行置 `disconnected` 而非删除，保留历史 prediction 溯源。
+- **项目层（项目管理员）**：`project_ml_backend` 关联表，仅记「启用 / 停用」+ 项目级变体覆盖（`default_variants`）。多阶段编排里选不同 backend 跑不同阶段时，先在「管理 backend」面板里勾选启用，再到编排卡里选用即可。
+
+**没有项目级数量上限**。旧的 `max_ml_backends_per_project` 与多阶段 DAG 需 ≥2 backend 直接冲突，已退役；显存保护改由全局行的 `max_concurrency` 并发闸兜底（同一物理 backend 全局一个 semaphore，不会被「多项目各持一个独立 semaphore」绕过）。新建项目不再有「复用 backend = 克隆一行」语义，统一走「在新项目里勾选启用某个已注册 backend」。
 
 ---
 
@@ -163,6 +166,13 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 - `write.target ∈ {geometry, intermediate}` 且下游 `supported_inputs` 含 `crop`（普通检测器） → **crop-detect 模式**：平台裁父框 ROI 喂检测器，检出几何按 crop 仿射变换**回映回原图坐标**，作为新框追加 / 供下游消费（支持几何 depth-3，如 `person → 在 person crop 上检测 hat → 给 hat 分类 color`）。
 
 平台在 `POST /preannotate` 端点按子模型 `supported_inputs` 解析投递方式并烘焙进阶段 `input.mode`，worker 直接消费；产几何的子若 `supported_inputs` 既不含 `bbox_prompt` 也不含 `crop`，端点 422 拒绝（不可达）。老 backend 缺 `supported_inputs` 时平台按 `supported_prompts` 合成兼容默认（见 §3.1），零退化。本约定纯加法。
+
+派发期还会就「跑完必然空结果」的结构性误配再叠加两条 422（同样只在模型**显式**自报了对应字段时触发，缺省跳过，零退化）：
+
+- 阶段所选模型 `resource_profile.batchable=false`（交互 / 有状态视频追踪）→ 拒绝进批量预标流水线（源阶段与下游阶段同判据；比 `is_interactive` 更诚实的单一批量判据）。
+- 阶段 `write.target=attributes` 但模型 `output_attribute_types` 不含 `class` → 拒绝（作分类下游只会产出空属性）。
+
+这两条判据是**两层对称**的：派发期 422 是最终拦截，配置期则前移为**非阻断预警**——前端编排面板按同判据对源 / 下游阶段标红（源模型选择器 + 阶段卡），`PATCH /projects/{id}` 保存编排时响应体回带 `capability_warnings[]`（保存是配置中途态，能力快照可能滞后、亦允许「先存草稿、之后换 backend」，故只软提示不硬挡）。判据本体抽在 `app/services/pipeline_validation.py` 的纯函数里，由保存路径、派发路径与前端 `stageWarning` 共用一份，并以跨端 fixture（`apps/web/src/__fixtures__/capability-validation-cases.json`）双端断言防漂移。
 
 ### 2.2 交互式预测
 
@@ -460,7 +470,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 `bbox` / `rotated_bbox` / `polygon` / `polyline` / `keypoint` / `none`。
 （3D 的 `lidar_box_3d` / `point_mask_3d` 暂不在本版 backend 范围，留位。）
 
-**`output_attribute_types`（属性输出，半开放）** —— `text`（OCR 文本） / `language` / `orientation` / `class`（分类标签）。其余按需扩展；layout 版面类别走 `class_name`（而非 attribute）。
+**`output_attribute_types`（属性输出，半开放）** —— `text`（OCR 文本） / `language` / `orientation` / `class`（分类标签）。其余按需扩展；layout 版面类别走 `class_name`（而非 attribute）。平台消费：画布对 `text` / `language` / `orientation` 校验项目是否有承接位（缺则非阻断警告「采纳后该属性丢失」，`class` 因 taxonomy 几乎恒在而跳过）；编排分类下游阶段若模型自报此字段却不含 `class`，派发期 422（见 §2.1.1）。
 
 **`infra`（基础设施，受控，v2 新增）** —— `pytorch` / `onnx` / `paddle` / `tensorrt` / `openvino` / `other`（兜底）：
 
@@ -777,8 +787,9 @@ cd ../.. && pnpm codegen
 |------|------------------------------|--------------------------------|
 | url | ✓ | ✗（避免暴露内网拓扑） |
 | gpu_info / cache / pool / video_pool | ✓ | ✗（运维敏感） |
-| supported_variants / resource_profile / params | ✓ | ✗（细节给项目级视图） |
-| `models[]` 的核心字段（id / display_name / task / infra / prompts / geometry / trackers / modality） | ✓ | ✓ |
+| params | ✓ | ✗（运维细节给项目级视图） |
+| `models[]` 的核心字段（id / display_name / task / infra / prompts / geometry / trackers / modality / output_attribute_types / supported_variants） | ✓ | ✓ |
+| supported_inputs / resource_profile | ✓ | ✓（全局编排选择器需投递契约 + 批量画像，故透传） |
 
 **响应结构**：
 
@@ -797,8 +808,10 @@ cd ../.. && pnpm codegen
           "infra": "pytorch",
           "is_interactive": false,
           "supported_prompts": ["text"],
+          "supported_inputs": ["full_image", "crop"],
           "supported_geometric_outputs": ["bbox"],
           "supported_trackers": [],
+          "resource_profile": { "device": "gpu", "batchable": true },
           "modality": "image"
         }
         // ...

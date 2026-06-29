@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import BatchStatus
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
@@ -37,19 +37,17 @@ async def _seed(db: AsyncSession, owner_id: uuid.UUID):
     db.add(proj)
     await db.flush()
 
-    detect = MLBackend(
+    detect = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=proj.id,
         name="detect",
-        url="http://detect/",
+        url=f"http://detect-{suffix}/",
         is_interactive=False,
         state="connected",
     )
-    classify = MLBackend(
+    classify = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=proj.id,
         name="classify",
-        url="http://classify/",
+        url=f"http://classify-{suffix}/",
         is_interactive=False,
         state="connected",
     )
@@ -57,6 +55,10 @@ async def _seed(db: AsyncSession, owner_id: uuid.UUID):
     db.add(classify)
     await db.flush()
     proj.ml_backend_id = detect.id
+    # v0.19.0 ADR-0044 · 源阶段 + 下游阶段 backend 均须在本项目「已启用」
+    db.add(ProjectMLBackend(project_id=proj.id, registry_id=detect.id, enabled=True))
+    db.add(ProjectMLBackend(project_id=proj.id, registry_id=classify.id, enabled=True))
+    await db.flush()
 
     batch = TaskBatch(
         id=uuid.uuid4(),
@@ -89,14 +91,16 @@ def _mock_celery(monkeypatch):
     class _FakeJob:
         id = "fake-job-uuid"
 
-    def _fake_delay(*args, **kwargs):
-        captured["args"] = args
-        captured["kwargs"] = kwargs
+    # v0.19.5 · 派发改用 apply_async(args=, kwargs=, queue=) 以做设备感知队列路由。
+    def _fake_apply_async(args=None, kwargs=None, queue=None, **_extra):
+        captured["args"] = tuple(args or ())
+        captured["kwargs"] = kwargs or {}
+        captured["queue"] = queue
         return _FakeJob()
 
     from app.workers import tasks as worker_tasks
 
-    monkeypatch.setattr(worker_tasks.batch_predict, "delay", _fake_delay)
+    monkeypatch.setattr(worker_tasks.batch_predict, "apply_async", _fake_apply_async)
     return captured
 
 
@@ -717,8 +721,8 @@ async def test_reject_unknown_downstream_backend(
 async def test_reject_source_backend_other_project(
     httpx_client_bound, super_admin, db_session, _mock_celery
 ):
-    # 顶层 ml_backend_id 指向别项目的 backend → 应 404 (与下游 backend 校验对称, 不可枚举)。
-    # 此前源 backend 只校验存在性, 不校验归属, 与下游分支不对称。
+    # v0.19.0 ADR-0044 · backend 现为全局注册项, 隔离改读「项目已启用」: detect_b 虽全局存在,
+    # 但未在 proj_a 启用 (ProjectMLBackend) → is_enabled(proj_a, detect_b)=False → 404。
     owner, token = super_admin
     proj_a, _, _, batch_a = await _seed(db_session, owner.id)
     _proj_b, detect_b, _, _ = await _seed(db_session, owner.id)
@@ -798,3 +802,239 @@ async def test_reject_full_image_input_mode(
     resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
     assert resp.status_code == 422, resp.text
     assert "input.mode 须为" in resp.text
+
+
+# ---------- v0.19.2 WS2 · batchable + output_attribute_types 落点硬校验 ----------
+
+
+async def _set_caps(db, backend, models: list[dict]):
+    """灌一份能力快照 (含多 model 的 resource_profile / output_attribute_types 等)。"""
+    backend.health_meta = {"capabilities": {"models": models}}
+    db.add(backend)
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_reject_source_model_not_batchable(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # WS2: 源模型自报 batchable=false (交互/有状态) → 不能批量预标, 422。
+    owner, token = super_admin
+    proj, detect, _, batch = await _seed(db_session, owner.id)
+    await _set_caps(
+        db_session,
+        detect,
+        [{"id": "interactive-seg", "resource_profile": {"batchable": False}}],
+    )
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(detect.id),
+            "batch_id": str(batch.id),
+            "model_id": "interactive-seg",
+        },
+    )
+    assert resp.status_code == 422, resp.text
+    assert "batchable=false" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_accept_source_model_batchable_true(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # WS2 零退化: 源模型 batchable=true → 放行。
+    owner, token = super_admin
+    proj, detect, _, batch = await _seed(db_session, owner.id)
+    await _set_caps(
+        db_session,
+        detect,
+        [{"id": "yolo-det", "resource_profile": {"batchable": True}}],
+    )
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(detect.id),
+            "batch_id": str(batch.id),
+            "model_id": "yolo-det",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_reject_downstream_model_not_batchable(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # WS2: 下游阶段模型 batchable=false → 422。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    await _set_caps(
+        db_session,
+        classify,
+        [{"id": "va", "resource_profile": {"batchable": False}}],
+    )
+    resp = await _post_stages(
+        httpx_client_bound, token, proj, detect, batch, _stages(detect.id, classify.id)
+    )
+    assert resp.status_code == 422, resp.text
+    assert "batchable=false" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_reject_attributes_stage_model_without_class(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # WS2: write.target=attributes 但模型 output_attribute_types 不含 class → 422 (属性恒空)。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    await _set_caps(
+        db_session,
+        classify,
+        [{"id": "va", "output_attribute_types": ["text"]}],
+    )
+    resp = await _post_stages(
+        httpx_client_bound, token, proj, detect, batch, _stages(detect.id, classify.id)
+    )
+    assert resp.status_code == 422, resp.text
+    assert "不含 'class'" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_accept_attributes_stage_model_with_class(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # WS2 零退化: 模型自报 output_attribute_types 含 class → 放行。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    await _set_caps(
+        db_session,
+        classify,
+        [{"id": "va", "output_attribute_types": ["class"]}],
+    )
+    resp = await _post_stages(
+        httpx_client_bound, token, proj, detect, batch, _stages(detect.id, classify.id)
+    )
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_accept_attributes_stage_model_no_self_report(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # WS2 零退化: 模型未自报 output_attribute_types (老 backend) → 跳过 class 校验, 放行。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    await _set_caps(db_session, classify, [{"id": "va"}])
+    resp = await _post_stages(
+        httpx_client_bound, token, proj, detect, batch, _stages(detect.id, classify.id)
+    )
+    assert resp.status_code == 200, resp.text
+
+
+# ---------- v0.19.5 · resource_profile.device 设备感知队列路由 ----------
+
+
+async def _post_single(client, token, proj, detect, batch, model_id):
+    return await client.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(detect.id),
+            "batch_id": str(batch.id),
+            "model_id": model_id,
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_route_cpu_model_to_cpu_queue(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # 源模型 device=cpu（单模型预标=全 CPU pipeline）→ ml.cpu 队列。
+    owner, token = super_admin
+    proj, detect, _, batch = await _seed(db_session, owner.id)
+    await _set_caps(
+        db_session, detect, [{"id": "cpu-det", "resource_profile": {"device": "cpu"}}]
+    )
+    resp = await _post_single(httpx_client_bound, token, proj, detect, batch, "cpu-det")
+    assert resp.status_code == 200, resp.text
+    assert _mock_celery["queue"] == "ml.cpu"
+
+
+@pytest.mark.asyncio
+async def test_route_gpu_model_to_gpu_queue(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # 源模型 device=gpu → ml 队列。
+    owner, token = super_admin
+    proj, detect, _, batch = await _seed(db_session, owner.id)
+    await _set_caps(
+        db_session, detect, [{"id": "gpu-det", "resource_profile": {"device": "gpu"}}]
+    )
+    resp = await _post_single(httpx_client_bound, token, proj, detect, batch, "gpu-det")
+    assert resp.status_code == 200, resp.text
+    assert _mock_celery["queue"] == "ml"
+
+
+@pytest.mark.asyncio
+async def test_route_no_device_to_gpu_queue(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # 零退化: 老 backend 未自报 device → 进默认 ml 队列。
+    owner, token = super_admin
+    proj, detect, _, batch = await _seed(db_session, owner.id)
+    await _set_caps(db_session, detect, [{"id": "plain-det"}])
+    resp = await _post_single(
+        httpx_client_bound, token, proj, detect, batch, "plain-det"
+    )
+    assert resp.status_code == 200, resp.text
+    assert _mock_celery["queue"] == "ml"
+
+
+@pytest.mark.asyncio
+async def test_route_mixed_pipeline_to_gpu_queue(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # 混合 device pipeline (源 cpu + 下游 gpu) → 保守进 ml 队列 (任一 GPU 阶段 → GPU 队列)。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    await _set_caps(
+        db_session, detect, [{"id": "cpu-det", "resource_profile": {"device": "cpu"}}]
+    )
+    await _set_caps(
+        db_session,
+        classify,
+        [
+            {
+                "id": "va",
+                "resource_profile": {"device": "gpu"},
+                "output_attribute_types": ["class"],
+            }
+        ],
+    )
+    stages = [
+        {"stage": 0, "ml_backend_id": str(detect.id), "model_id": "cpu-det"},
+        {
+            "stage": 1,
+            "ml_backend_id": str(classify.id),
+            "model_id": "va",
+            "task_type": "classification",
+            "parent_stage": 0,
+            "roi": {"mode": "crop", "pad": 0.05},
+            "write": {"target": "attributes", "keys": ["color"]},
+        },
+    ]
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(detect.id),
+            "batch_id": str(batch.id),
+            "model_id": "cpu-det",
+            "pipeline_stages": stages,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert _mock_celery["queue"] == "ml"

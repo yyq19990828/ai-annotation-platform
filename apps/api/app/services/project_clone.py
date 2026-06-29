@@ -31,7 +31,6 @@ CLONEABLE_PROJECT_FIELDS: tuple[str, ...] = (
     "iou_dedup_threshold",
     "box_threshold",
     "text_threshold",
-    "text_output_default",
     "rendering_config",
 )
 

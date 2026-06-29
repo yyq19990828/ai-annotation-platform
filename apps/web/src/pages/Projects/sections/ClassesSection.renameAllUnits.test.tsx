@@ -48,7 +48,6 @@ function makeProject(toolBindings: Record<string, unknown>): ProjectResponse {
     iou_dedup_threshold: 0.7,
     box_threshold: 0.35,
     text_threshold: 0.25,
-    text_output_default: null,
     description: null,
     completed_count: 0,
     total_tasks_count: 0,

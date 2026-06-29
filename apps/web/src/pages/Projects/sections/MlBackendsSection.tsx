@@ -4,25 +4,21 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
 import { useToastStore } from "@/components/ui/Toast";
 import {
-  useMLBackends,
-  useDeleteMLBackend,
+  useAvailableMLBackends,
+  useSetMLBackendEnablement,
   useMLBackendHealth,
 } from "@/hooks/useMLBackends";
 import { useUpdateProject } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import { usePermissions } from "@/hooks/usePermissions";
-import { MlBackendFormModal } from "@/components/projects/MlBackendFormModal";
-import { MlBackendLimitModal } from "@/components/projects/MlBackendLimitModal";
-import {
-  TextOutputDefaultSelect,
-  type TextOutputDefault,
-} from "@/components/projects/shared/TextOutputDefaultSelect";
 import {
   mlBackendsApi,
   mlBackendSetupQueryKey,
   type MLBackendCapability,
+  type ProjectMLBackendItem,
 } from "@/api/ml-backends";
 import type { ProjectResponse } from "@/api/projects";
 import type { MLBackendResponse } from "@/types";
@@ -44,9 +40,77 @@ const STATE_VARIANT: Record<string, "success" | "warning" | "outline" | "danger"
   error: "danger",
 };
 
-function formatDate(iso: string | null | undefined) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("zh-CN", { hour12: false });
+// v0.19.0 · ADR-0044 · 「管理 backend」悬浮面板: 列出全部全局 backend, 在此勾选启用/停用。
+// 主表只展示已启用项, 增删启用都在本面板里做。
+function ManageBackendsPanel({
+  open,
+  onClose,
+  items,
+  canManage,
+  pending,
+  onToggle,
+}: {
+  open: boolean;
+  onClose: () => void;
+  items: ProjectMLBackendItem[];
+  canManage: boolean;
+  pending: boolean;
+  onToggle: (item: ProjectMLBackendItem, next: boolean) => void;
+}) {
+  return (
+    <Modal open={open} onClose={onClose} title="管理项目 ML backend" width={720}>
+      <div className="mb-3 text-xs text-muted-foreground">
+        勾选启用本项目要用的全局 backend，并可按项目调整阈值覆盖；全局 backend 由超管在「模型市场」注册。
+      </div>
+      {items.length === 0 ? (
+        <div className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+          <Icon name="bot" size={28} className="mb-1.5 opacity-25" />
+          <div>暂无可用的全局 ML backend</div>
+          <div className="mt-1 text-xs">请由超管在「模型市场」注册全局 backend 后，在此勾选启用</div>
+        </div>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {items.map((item) => {
+            const b = item.backend;
+            return (
+              <li
+                key={b.id}
+                className="flex items-start gap-3 rounded-md border border-border bg-background p-3"
+              >
+                <input
+                  type="checkbox"
+                  aria-label={`启用 ${b.name}`}
+                  checked={item.enabled}
+                  disabled={!canManage || pending}
+                  onChange={(e) => onToggle(item, e.target.checked)}
+                  className="mt-1 accent-violet-500"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium" title={b.name}>
+                      {b.name}
+                    </span>
+                    <Badge variant={b.is_interactive ? "ai" : "outline"}>
+                      {b.is_interactive ? "交互式" : "批量"}
+                    </Badge>
+                    <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
+                      {b.state}
+                    </Badge>
+                  </div>
+                  <div
+                    className="mono mt-0.5 truncate text-xs text-muted-foreground"
+                    title={b.url}
+                  >
+                    {b.url}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Modal>
+  );
 }
 
 export function MlBackendsSection({ project }: { project: ProjectResponse }) {
@@ -54,43 +118,41 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
   const { role } = usePermissions();
   const canManage = role === "super_admin" || role === "project_admin";
 
-  const { data: backends = [], isLoading, isError, error } = useMLBackends(project.id);
-  const del = useDeleteMLBackend(project.id);
+  const [manageOpen, setManageOpen] = useState(false);
+
+  const { data, isLoading, isError, error } = useAvailableMLBackends(project.id);
+  const items = data?.items ?? [];
+  const enabledItems = items.filter((it) => it.enabled);
+  const enabledBackends = enabledItems.map((it) => it.backend);
+
+  const setEnablement = useSetMLBackendEnablement(project.id);
   const health = useMLBackendHealth(project.id);
   // 行内「设为主后端」快捷设置项目主后端，免回基本信息 tab 手选。
   const updateProject = useUpdateProject(project.id);
-  const [aiEnabled, setAiEnabled] = useState(project.ai_enabled);
+  // v0.19.0 · ai_enabled 不再手动开关, 自动派生「设了项目主后端即视为启用 AI」。
   const [mlBackendId, setMlBackendId] = useState<string | null>(
     project.ml_backend_id ?? null,
   );
   const [iouThreshold, setIouThreshold] = useState(project.iou_dedup_threshold ?? 0.7);
-  const [textOutputDefault, setTextOutputDefault] = useState<string>(
-    project.text_output_default ?? "",
-  );
 
   useEffect(() => {
-    setAiEnabled(project.ai_enabled);
     setMlBackendId(project.ml_backend_id ?? null);
     setIouThreshold(project.iou_dedup_threshold ?? 0.7);
-    setTextOutputDefault(project.text_output_default ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
   const aiSettingsDirty =
-    aiEnabled !== project.ai_enabled ||
     (mlBackendId ?? null) !== (project.ml_backend_id ?? null) ||
-    Math.abs(iouThreshold - (project.iou_dedup_threshold ?? 0.7)) > 0.001 ||
-    textOutputDefault !== (project.text_output_default ?? "");
+    Math.abs(iouThreshold - (project.iou_dedup_threshold ?? 0.7)) > 0.001;
 
   useUnsavedWarning(aiSettingsDirty);
 
   const onSaveAiSettings = () => {
     updateProject.mutate(
       {
-        ai_enabled: aiEnabled,
-        ml_backend_id: aiEnabled ? mlBackendId : null,
+        ai_enabled: mlBackendId != null,
+        ml_backend_id: mlBackendId,
         iou_dedup_threshold: iouThreshold,
-        text_output_default: (textOutputDefault || null) as "box" | "mask" | "both" | null,
       },
       {
         onSuccess: () =>
@@ -114,49 +176,33 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
     );
   };
 
-  // v0.10.3 · 容量上限. 后端 ml_backend_limit 来自 settings.max_ml_backends_per_project.
-  // 0 视为不限 (与后端一致, 见 apps/api/app/api/v1/ml_backends.py:65).
-  const limit = (project as ProjectResponse & { ml_backend_limit?: number }).ml_backend_limit ?? 1;
-  const atLimit = limit > 0 && backends.length >= limit;
+  // v0.19.0 · ADR-0044 · 启用/停用某全局 backend。
+  const onToggleEnabled = (item: ProjectMLBackendItem, next: boolean) => {
+    setEnablement.mutate(
+      { registryId: item.backend.id, payload: { enabled: next } },
+      {
+        onSuccess: () =>
+          pushToast({
+            msg: next ? `已启用「${item.backend.name}」` : `已停用「${item.backend.name}」`,
+            kind: "success",
+          }),
+        onError: (e) => pushToast({ msg: "操作失败", sub: (e as Error).message }),
+      },
+    );
+  };
 
-  // v0.10.3 · 每个 backend 拉一次 /setup 拿 supported_prompts; 失败容忍, 列显示 "—".
-  // 管理面板低频, 不做合并端点; 未来 N>5 再优化.
+  // 仅对已启用 backend 拉 /setup 拿 supported_prompts; 失败容忍, 列显示 "—"。
+  // 管理面板低频, 不做合并端点; 未来 N>5 再优化。
   const capabilities = useQueries({
-    queries: backends.map((b) => ({
+    queries: enabledBackends.map((b) => ({
       queryKey: mlBackendSetupQueryKey(project.id, b.id),
       queryFn: () => mlBackendsApi.setup(project.id, b.id),
       staleTime: 60_000,
       retry: false,
     })),
   });
+  const capById = new Map(enabledBackends.map((b, i) => [b.id, capabilities[i]]));
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<MLBackendResponse | null>(null);
-  const [limitDetail, setLimitDetail] = useState<{
-    open: boolean;
-    serverMessage?: string;
-    currentOverride?: number;
-  }>({ open: false });
-
-  const openCreate = () => {
-    if (atLimit) {
-      setLimitDetail({ open: true });
-      return;
-    }
-    setEditing(null);
-    setModalOpen(true);
-  };
-  const openEdit = (b: MLBackendResponse) => {
-    setEditing(b);
-    setModalOpen(true);
-  };
-  const onDelete = (b: MLBackendResponse) => {
-    if (!window.confirm(`确认删除 backend「${b.name}」？此操作不可撤销。`)) return;
-    del.mutate(b.id, {
-      onSuccess: () => pushToast({ msg: "已删除 backend", kind: "success" }),
-      onError: (e) => pushToast({ msg: "删除失败", sub: (e as Error).message }),
-    });
-  };
   const onHealth = (b: MLBackendResponse) => {
     health.mutate(b.id, {
       onSuccess: (res) =>
@@ -168,12 +214,6 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
     });
   };
 
-  const registerTitle = !canManage
-    ? "需要 PROJECT_ADMIN 权限"
-    : atLimit
-    ? `已达上限 ${limit}，请先删除现有后端`
-    : undefined;
-
   return (
     <Card>
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5">
@@ -184,36 +224,31 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
               data-testid="ml-backend-quota"
               className="ml-2 text-xs font-medium text-muted-foreground"
             >
-              已用 {backends.length} / {limit > 0 ? limit : "∞"}
+              已启用 {enabledBackends.length} / {items.length}
             </span>
           </h3>
           <div className="mt-0.5 text-xs text-muted-foreground">
-            管理本项目作用域的 ML backend，并配置 AI 预标注入口。
+            本表仅显示本项目已启用的 ML backend；点「管理 backend」可启用/停用全局 backend。推理参数在工作台 / 预标运行时按 backend 自报的 /setup 调。
           </div>
         </div>
-        <Button
-          variant="primary"
-          disabled={!canManage || atLimit}
-          onClick={openCreate}
-          title={registerTitle}
-        >
-          <Icon name="plus" size={12} />
-          注册 backend
-        </Button>
+        {canManage && (
+          <Button
+            variant="primary"
+            onClick={() => setManageOpen(true)}
+            disabled={isLoading || isError}
+          >
+            <Icon name="plus" size={13} />
+            管理 backend
+          </Button>
+        )}
       </div>
 
       <div className="border-b border-border bg-background px-4 py-3.5">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold">
-            <input
-              type="checkbox"
-              checked={aiEnabled}
-              onChange={(e) => setAiEnabled(e.target.checked)}
-              className="accent-violet-500"
-            />
+          <span className="inline-flex items-center gap-2 text-sm font-semibold">
             <Icon name="sparkles" size={14} className="text-status-info" />
-            启用 AI 预标注
-          </label>
+            AI 预标注设置
+          </span>
           {aiSettingsDirty && (
             <span
               className="inline-flex items-center gap-1.5 text-xs font-medium text-status-caution"
@@ -225,17 +260,16 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
           )}
         </div>
 
-        <div className="grid grid-cols-[minmax(260px,1.2fr)_minmax(220px,1fr)] gap-3.5 [&>:last-child]:col-span-full">
+        <div className="grid grid-cols-[minmax(260px,1.2fr)_minmax(220px,1fr)] gap-3.5">
           <div>
             <label className={LABEL_CLASS}>项目主后端</label>
             <select
               value={mlBackendId ?? ""}
               onChange={(e) => setMlBackendId(e.target.value || null)}
-              disabled={!aiEnabled}
               className={cn(CONTROL_CLASS, "cursor-pointer")}
             >
               <option value="">未设项目主后端（项目按肉眼标注运行，AI 待接入）</option>
-              {backends.map((b) => (
+              {enabledBackends.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
                   {b.state === "connected" ? " · 在线" : ` · ${b.state}`}
@@ -244,10 +278,10 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
               ))}
             </select>
             <div className="mt-1 text-xs leading-normal text-muted-foreground">
-              项目主后端用于工作台 AI 与新建预标配置的初始选择 / fallback；多阶段预标注中，每个阶段显式选择的 backend/model 仍然独立生效。平台所有“模型名”展示均直接来自 backend.name。
-              {backends.length === 0 && (
+              设了项目主后端即视为启用 AI 预标注（留空 = 不启用）。主后端用于工作台 AI 与新建预标配置的初始选择 / fallback；多阶段预标注中，每个阶段显式选择的 backend/model 仍然独立生效。平台所有“模型名”展示均直接来自 backend.name。
+              {enabledBackends.length === 0 && (
                 <span className="ml-1 text-status-caution">
-                  暂无可用 backend；可先在本页注册。
+                  暂无已启用 backend；请点右上「管理 backend」勾选启用。
                 </span>
               )}
             </div>
@@ -265,24 +299,12 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                 step={0.05}
                 value={iouThreshold}
                 onChange={(e) => setIouThreshold(Number(e.target.value))}
-                disabled={!aiEnabled}
                 className="flex-1 accent-violet-500"
               />
               <span className={cn("mono", "min-w-[48px] text-right text-sm text-foreground")}>
                 {iouThreshold.toFixed(2)}
               </span>
             </div>
-          </div>
-
-          <div>
-            <label className={LABEL_CLASS}>
-              SAM 文本预标默认输出 <span className="font-normal text-muted-foreground">工作台“找全图”的初始值</span>
-            </label>
-            <TextOutputDefaultSelect
-              value={textOutputDefault as TextOutputDefault}
-              onChange={(v) => setTextOutputDefault(v)}
-              disabled={!aiEnabled}
-            />
           </div>
         </div>
 
@@ -309,19 +331,23 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
             加载失败：{(error as Error)?.message ?? "未知错误"}
           </div>
         )}
-        {!isLoading && !isError && backends.length === 0 && (
+        {!isLoading && !isError && enabledItems.length === 0 && (
           <div className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
             <Icon name="bot" size={28} className="mb-1.5 opacity-25" />
-            <div>本项目暂未注册任何 ML backend</div>
-            <div className="mt-1 text-xs">点击右上角「注册 backend」开始接入</div>
+            <div>本项目暂未启用任何 ML backend</div>
+            <div className="mt-1 text-xs">
+              {items.length > 0
+                ? "点右上「管理 backend」从全局注册表勾选启用"
+                : "请由超管在「模型市场」注册全局 backend 后，再来此启用"}
+            </div>
           </div>
         )}
-        {!isLoading && backends.length > 0 && (
+        {!isLoading && !isError && enabledItems.length > 0 && (
           <div className="w-full overflow-x-auto">
-            <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-sm">
+            <table className="w-full min-w-[920px] border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
-                  {["名称", "URL", "类型", "能力", "状态", "最近检查", "操作"].map((h) => (
+                  {["名称", "URL", "类型", "能力", "状态", "操作"].map((h) => (
                     <th
                       key={h}
                       className={TABLE_HEAD_CELL}
@@ -332,8 +358,9 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                 </tr>
               </thead>
               <tbody>
-                {backends.map((b, i) => {
-                  const capQ = capabilities[i];
+                {enabledItems.map((item) => {
+                  const b = item.backend;
+                  const capQ = capById.get(b.id);
                   const cap = capQ?.data as MLBackendCapability | undefined;
                   return (
                     <tr key={b.id}>
@@ -377,14 +404,11 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                           {b.state}
                         </Badge>
                       </td>
-                      <td className={cn(TABLE_CELL, "whitespace-nowrap text-muted-foreground")}>
-                        {formatDate(b.last_checked_at)}
-                      </td>
                       <td className={TABLE_CELL}>
-                        <div className="inline-flex gap-1.5 whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1.5 whitespace-nowrap">
                         {project.ml_backend_id !== b.id && (
                           <Button
-                            size="sm"
+                            size="xs"
                             variant="ai"
                             onClick={() => onBind(b)}
                             disabled={!canManage || updateProject.isPending}
@@ -394,36 +418,17 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                           </Button>
                         )}
                         {project.ml_backend_id === b.id && (
-                          <span className="self-center">
-                            <Badge variant="ai">
-                              主后端
-                            </Badge>
-                          </span>
+                          <Badge variant="ai">
+                            主后端
+                          </Badge>
                         )}
                         <Button
-                          size="sm"
+                          size="xs"
                           onClick={() => onHealth(b)}
                           disabled={health.isPending}
                           title="健康检查"
                         >
-                          <Icon name="refresh" size={11} />
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => openEdit(b)}
-                          disabled={!canManage}
-                          title={canManage ? "编辑" : "需要 PROJECT_ADMIN 权限"}
-                        >
-                          <Icon name="edit" size={11} />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="danger"
-                          onClick={() => onDelete(b)}
-                          disabled={!canManage || del.isPending}
-                          title={canManage ? "删除" : "需要 PROJECT_ADMIN 权限"}
-                        >
-                          <Icon name="trash" size={11} />
+                          <Icon name="refresh" />
                         </Button>
                         </div>
                       </td>
@@ -436,25 +441,13 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
         )}
       </div>
 
-      <MlBackendFormModal
-        open={modalOpen}
-        projectId={project.id}
-        backend={editing}
-        onClose={() => setModalOpen(false)}
-        onLimitReached={(d) =>
-          setLimitDetail({
-            open: true,
-            serverMessage: d.message,
-            currentOverride: d.current,
-          })
-        }
-      />
-      <MlBackendLimitModal
-        open={limitDetail.open}
-        limit={limit}
-        current={limitDetail.currentOverride ?? backends.length}
-        serverMessage={limitDetail.serverMessage}
-        onClose={() => setLimitDetail({ open: false })}
+      <ManageBackendsPanel
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        items={items}
+        canManage={canManage}
+        pending={setEnablement.isPending}
+        onToggle={onToggleEnabled}
       />
     </Card>
   );

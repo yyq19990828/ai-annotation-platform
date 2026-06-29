@@ -483,6 +483,19 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     };
   };
 
+  // v0.19.3 WS2 · 当前激活的「源模型」(批量预标流水线的根, 与 buildArgs 选 model 一致)。
+  //   自报 resource_profile.batchable=false (交互/有状态) → 不能批量预标, 给非阻断预警
+  //   (与端点 _assert_capabilities 源阶段 422 对齐; config-time 前移, 不硬挡)。
+  const sourceModel = isGeometricBackend
+    ? geometricModel
+    : isDocMode
+      ? activeDocModel
+      : textModel;
+  const sourceBatchableWarning =
+    sourceModel?.resource_profile?.batchable === false
+      ? "该模型为交互/有状态模型（batchable=false），不能用于批量预标流水线"
+      : null;
+
   /** 推理成功后兜底标热 (异步 trigger 拿不到 cache_hit). */
   const markHot = () => {
     if (!backendId) return;
@@ -549,6 +562,8 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     // 输出形态
     outputMode,
     setOutputMode,
+    // v0.19.3 WS2 · 源模型 batchable 非阻断预警 (null = 无)。
+    sourceBatchableWarning,
     // 运行
     configReady,
     buildArgs,

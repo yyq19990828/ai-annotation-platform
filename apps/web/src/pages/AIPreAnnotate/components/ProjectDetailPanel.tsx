@@ -389,7 +389,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   const [keyConflictLastWins, setKeyConflictLastWins] = useState(false);
 
   // v0.18.16 · DAG 图节点模型 (源 + 各下游): 角色徽标 / 运行态 / 迷你计数 / 可加子 / 键冲突。
-  // 下游须用不同于检测的 backend → 加子额外要求 backends>=2 (与原 canHaveChild 一致)。
+  // 下游须用不同于检测的 backend → 加子额外要求项目已启用 backend 数>=2 (与原 canHaveChild 一致)。
+  // backends 读 GET /projects/{id}/ml-backends, ADR-0044 后该端点只返回项目「已启用」集合。
   const canAddBackend = backends.length >= 2;
   const graphNodes = useMemo<GraphNodeModel[]>(() => {
     const nameOf = (id?: string | null) =>

@@ -15,7 +15,17 @@ from app.workers.celery_app import celery_app
 router = APIRouter()
 
 CELERY_INSPECT_TIMEOUT_SECONDS = 0.75
-CELERY_QUEUE_NAMES = ("default", "ml", "media", "gpu", "cleanup", "audit", "export")
+# v0.19.5 · ml.cpu = 设备感知路由的 CPU 预标队列 (全 CPU pipeline 落此)。
+CELERY_QUEUE_NAMES = (
+    "default",
+    "ml",
+    "ml.cpu",
+    "media",
+    "gpu",
+    "cleanup",
+    "audit",
+    "export",
+)
 
 
 async def _check_db() -> dict:

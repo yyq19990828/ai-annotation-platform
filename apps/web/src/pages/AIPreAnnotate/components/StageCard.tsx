@@ -310,6 +310,31 @@ export function StageCard({
     return () => onChangeRef.current(id, null);
   }, [id]);
 
+  // v0.19.2 WS1 · 选中分类下游 model 自报了属性类型却不含 class → 跑完属性恒空 (与端点 422 对齐)。
+  // undefined = 未自报 (不判); false = 自报了但缺 class。
+  const selectedModelTypes = selectedModel?.output_attribute_types ?? [];
+  const producesClass =
+    selectedModelTypes.length > 0 ? selectedModelTypes.includes("class") : undefined;
+  const showNoClassWarning =
+    !isGeometryDownstream && capabilitiesReady && producesClass === false;
+  // v0.19.2 WS1 · write.keys 与 model 自报 output_attribute_schema 对账 (config-time 警告, 不硬挡):
+  // 选的键不在 model schema 字段集 → 该 model 可能不产出。schema 缺失时跳过 (向后兼容)。
+  const schemaKeySet = new Set(
+    (selectedModel?.output_attribute_schema ?? [])
+      .map((a) => a?.key)
+      .filter((k): k is string => !!k),
+  );
+  const unknownWriteKeys =
+    schemaKeySet.size > 0
+      ? Array.from(writeKeys).filter((k) => !schemaKeySet.has(k))
+      : [];
+
+  // v0.19.3 WS2 · 选中下游 model 自报 batchable (resource_profile.batchable) → false 即交互/有状态,
+  // 不能进批量预标 (与端点 _assert_capabilities 对齐)。非 boolean = 未自报 (不判)。
+  const rpBatchable = selectedModel?.resource_profile?.batchable;
+  const batchable = typeof rpBatchable === "boolean" ? rpBatchable : undefined;
+  const showNotBatchableWarning = capabilitiesReady && batchable === false;
+
   // v0.18.16 §13 · 能力旗标上抛 (供画布可达性 / 产属性警示)。
   const supportedInputs = selectedModel?.supported_inputs ?? [];
   const supportedInputsKey = supportedInputs.join(",");
@@ -320,10 +345,12 @@ export function StageCard({
       acceptsCrop: supportedInputs.includes("crop"),
       acceptsBboxPrompt: supportedInputs.includes("bbox_prompt"),
       producesAttributes,
+      producesClass,
+      batchable,
     }),
     // supportedInputsKey 串化 supportedInputs 作稳定依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [supportedInputsKey, capabilitiesReady, producesAttributes],
+    [supportedInputsKey, capabilitiesReady, producesAttributes, producesClass, batchable],
   );
   const onCapsRef = useRef(onCaps);
   onCapsRef.current = onCaps;
@@ -441,6 +468,26 @@ export function StageCard({
         </div>
       )}
 
+      {/* v0.19.3 WS2 · 选中 model 自报 batchable=false (交互/有状态) → 不能批量预标 (端点会 422)。 */}
+      {showNotBatchableWarning && (
+        <div className={styles.stageWarn}>
+          <Icon name="warning" size={12} />
+          <span>
+            该模型为交互/有状态模型（batchable=false），不能用于批量预标流水线，运行将被端点拒绝。
+          </span>
+        </div>
+      )}
+
+      {/* v0.19.2 WS1 · 选中 model 自报属性类型却不含 class → 跑完属性恒空 (端点会 422)。 */}
+      {showNoClassWarning && (
+        <div className={styles.stageWarn}>
+          <Icon name="warning" size={12} />
+          <span>
+            该模型不产类别属性（output_attribute_types 不含 class），作分类下游属性恒空，运行将被端点拒绝。
+          </span>
+        </div>
+      )}
+
       <div className={styles.field}>
         <span className={styles.fieldLabel}>
           父框类别（留空=对全部父框跑；按检测框类名匹配）
@@ -505,6 +552,15 @@ export function StageCard({
             conflictKeys={conflictKeys}
             emptyHint="下游 backend 未自报属性 schema，且项目无属性字段；留空=接收全部键"
           />
+          {/* v0.19.2 WS1 · write.keys 对账: 选的键不在 model 自报 schema 内 → 可能永不产出 (仅警告)。 */}
+          {unknownWriteKeys.length > 0 && (
+            <div className={styles.stageWarn}>
+              <Icon name="warning" size={12} />
+              <span>
+                属性键 {unknownWriteKeys.join("、")} 不在该模型自报的属性 schema 中，可能不会被产出。
+              </span>
+            </div>
+          )}
         </div>
       )}
     </Card>

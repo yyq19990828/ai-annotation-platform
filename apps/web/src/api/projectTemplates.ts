@@ -36,7 +36,6 @@ export interface ProjectTemplateOut {
   iou_dedup_threshold: number;
   box_threshold: number;
   text_threshold: number;
-  text_output_default: "box" | "mask" | "both" | null;
   rendering_config: ProjectRenderingConfig;
   annotation_guide: string | null;
 
@@ -69,7 +68,6 @@ export interface ProjectTemplateCreatePayload {
   iou_dedup_threshold?: number;
   box_threshold?: number;
   text_threshold?: number;
-  text_output_default?: "box" | "mask" | "both" | null;
   rendering_config?: ProjectRenderingConfig | null;
   annotation_guide?: string | null;
   scope?: TemplateScope;

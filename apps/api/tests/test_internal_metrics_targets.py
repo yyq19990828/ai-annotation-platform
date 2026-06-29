@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import pytest
 
-from tests.factory import create_project
-
 
 def test_url_to_hostport_variants() -> None:
     from app.api.v1.internal import _url_to_hostport
@@ -48,39 +46,33 @@ def test_check_token_valid_and_invalid(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_metrics_targets_excludes_disconnected_and_dedupes(
-    httpx_client_bound, db_session, super_admin, monkeypatch
+    httpx_client_bound, db_session, monkeypatch
 ) -> None:
     from app.api.v1 import internal
-    from app.db.models.ml_backend import MLBackend
+    from app.db.models.ml_backend_registry import MLBackendRegistry
 
     monkeypatch.setattr(internal.settings, "metrics_sd_token", "")
 
-    user, _ = super_admin
-    proj_a = await create_project(db_session, owner_id=user.id, name="PA")
-    proj_b = await create_project(db_session, owner_id=user.id, name="PB")
-
+    # v0.19.0 ADR-0044 · backend 是全局注册项 (url unique), 不再按项目拆分。
+    # 两个 distinct url 解析到同一 host:port → 仍按 host:port 兜底去重为 1。
     db_session.add_all(
         [
-            MLBackend(
-                project_id=proj_a.id,
+            MLBackendRegistry(
                 name="sam3",
                 url="http://sam3-backend:8080",
                 state="connected",
             ),
-            MLBackend(
-                project_id=proj_b.id,
+            MLBackendRegistry(
                 name="sam3",
-                url="http://sam3-backend:8080",
+                url="http://sam3-backend:8080/v2",
                 state="connected",
             ),
-            MLBackend(
-                project_id=proj_a.id,
+            MLBackendRegistry(
                 name="grounded-sam2",
                 url="http://gs2:8001",
                 state="error",
             ),
-            MLBackend(
-                project_id=proj_a.id,
+            MLBackendRegistry(
                 name="ignored",
                 url="http://offline:9000",
                 state="disconnected",

@@ -6,14 +6,14 @@ status: stable
 last_reviewed: 2026-06-10
 ---
 
-# ML Backend 注册
+# ML Backend 注册（全局注册表）
 
-ML Backend 是平台对接外部推理服务的契约层。每个 Backend 是一行 `ml_backends` 记录，绑定到具体项目后，AI 预标注任务才能找到推理目标。
+ML Backend 是平台对接外部推理服务的契约层。注册表是**全局**的：一个物理 backend（一行 `ml_backends` 记录，URL 全局唯一）只注册一次，所有项目共享同一条记录。项目侧不再各自注册 backend，而是从全局注册表里**勾选启用**（详见 [启用 ML 后端](../projects/ml-backends)）。
 
 ## 入口
 
-- 项目侧：项目设置 → **ML 模型** tab（写权限属项目管理员 / 超级管理员）
-- 全局侧（仅超管）：`/model-market`
+- 全局注册（新增 / 编辑 / 删除 / 健康检查，仅超管）：`/model-market` → **注册管理** tab
+- 项目启用（勾选已注册 backend + 项目级覆盖，项目管理员 / 超级管理员）：项目设置 → **ML 模型** tab
 
 ## 表单字段
 
@@ -22,7 +22,7 @@ ML Backend 是平台对接外部推理服务的契约层。每个 Backend 是一
 | 字段 | 含义 | 约束 |
 |---|---|---|
 | 名称 | 显示名 | 无全局唯一性约束（`ml_backends` 表无 UNIQUE 索引） |
-| URL | Backend HTTP 入口 | **不能填 loopback**（详见下） |
+| URL | Backend HTTP 入口 | **全局唯一**（同一 URL 只能注册一次）；**不能填 loopback**（详见下） |
 | 交互式 | 是否支持工作台一键推理 | 布尔开关，默认关 |
 | API Key | 可选，header `Authorization: Bearer ...` | — |
 | 额外参数 | JSON 扩展字段（如 `max_concurrency`） | — |
@@ -58,25 +58,39 @@ dev 环境 placeholder 已默认填 `172.17.0.1:8001`。
 
 **注册前连通性测试**：`POST /admin/ml-integrations/probe` 提供无 DB 副作用的探测（`/probe`），注册表单「测试连接」按钮即调用此端点。
 
-## 项目绑定
+## 全局注册 CRUD（超管）
 
-注册仅是创建可选项。真正生效需要：
+注册管理 tab 对全局注册表做增删改查，对应后端端点：
 
-1. 项目设置 → **ML 模型** → 勾选 **启用 AI 预标注**
-2. 在同一页的 **项目主后端** 下拉选刚注册的 backend
+```http
+POST   /admin/ml-integrations/registry                  # 新增全局 backend
+PUT    /admin/ml-integrations/registry/:registry_id     # 编辑
+DELETE /admin/ml-integrations/registry/:registry_id     # 删除
+POST   /admin/ml-integrations/registry/:registry_id/health   # 健康检查（探 /setup 派生能力）
+GET    /admin/ml-integrations/all                        # 全局列表（新建项目向导复用）
+```
+
+## 项目启用
+
+注册仅是创建可选项。真正生效需要项目把它启用：
+
+1. 项目设置 → **ML 模型** → 点「管理 backend」在全局 backend 清单里**勾选启用**该 backend（推理参数运行时按 backend 自报的 `/setup.params` 调，不在此预设）
+2. 同一页在 **项目主后端** 下拉里选一个**已启用**的 backend（设了主后端即视为启用 AI 预标注）
 3. 保存 AI 设置
 
-未设项目主后端直接跑预标会报错，并在前端给出配置引导。
+未设项目主后端直接跑预标会报错，并在前端给出配置引导。详见 [启用 ML 后端](../projects/ml-backends)。
 
-## 复用其它项目的 Backend
+## 引用全局注册项（不复制）
 
-新建项目 wizard step 4 提供下拉选其它项目已注册的 backend，平台会**复制**一份到新项目（不是引用）。这样修改互不影响，也避免单项目 backend 删除影响他人。
+新建项目 wizard step 4 提供下拉选已注册的全局 backend；选中即为新项目**启用**该全局注册项（**引用同一全局 id，不再复制一份**）。这样所有项目共享同一物理 backend 记录，能力快照与健康状态一处维护、处处一致。
 
-后端：`GET /admin/ml-integrations/all` 返回全局可见的 backend 列表。
+后端：`GET /admin/ml-integrations/all` 返回全局注册表列表。
 
 ## 删除
 
-**超级管理员和项目管理员均可删除**（`require_roles(SUPER_ADMIN, PROJECT_ADMIN)`，`apps/api/app/api/v1/ml_backends.py:185`）。删除前若有正在运行的预测 job，返回 `HTTP 409` 阻断；无 running job 时直接删除，`projects.ml_backend_id` 通过 ON DELETE SET NULL 自动置空（`apps/api/app/db/models/project.py:44`）。
+物理删除全局 backend 是**超管职责**（`DELETE /admin/ml-integrations/registry/:registry_id`）。删除前若有正在运行的预测 job，返回 `HTTP 409` 阻断；无 running job 时直接删除，所有引用它的项目 `ml_backend_id` 通过 ON DELETE SET NULL 自动置空（`apps/api/app/db/models/project.py:44`）。
+
+项目管理员不能物理删除全局 backend，只能在项目设置里**取消勾选启用**让它对本项目停用（不影响其它项目）。
 
 ## 审计
 

@@ -74,7 +74,6 @@ class ProjectCreate(BaseModel):
     due_date: date | None = None
     box_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
-    text_output_default: Literal["box", "mask", "both"] | None = None
     # v0.10.29 · 视频帧逻辑采样配置; None / 缺省 = 不采样 (空 dict).
     video_sampling: VideoSamplingConfig | None = None
     # v0.14.4 · 项目级 scene 模式声明;仅 image/lidar 项目可开启。
@@ -117,8 +116,6 @@ class ProjectUpdate(BaseModel):
     # v0.9.2 · DINO 阈值项目级 override
     box_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
-    # v0.9.5 · 工作台 SamTextPanel 默认输出形态（None 走 type_key 智能默认）
-    text_output_default: Literal["box", "mask", "both"] | None = None
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict / 字段缺省 = 沿用用户级偏好
     rendering_config: ProjectRenderingConfig | None = None
     # v0.10.13 · E1 · 标注指引 Markdown 原文; 显式 None 仅在 owner 主动清空时出现.
@@ -162,9 +159,6 @@ class ProjectOut(BaseModel):
     status: str
     ai_enabled: bool
     ml_backend_id: UUID | None = None
-    # v0.10.1 · 单项目可绑定的 ML backend 数量上限 (来自 settings.max_ml_backends_per_project).
-    # 前端 ProjectSettings 据此渲染「+ 添加后端」按钮的禁用状态及 Modal 文案 (M3).
-    ml_backend_limit: int = 1
     # v0.10.22 · 扁平视图字段不再有 DB 列, 由下方 validator 从 tool_bindings 读时派生.
     classes: list[str] = []
     classes_config: ClassesConfig = {}
@@ -178,7 +172,6 @@ class ProjectOut(BaseModel):
     iou_dedup_threshold: float = 0.7
     box_threshold: float = 0.35
     text_threshold: float = 0.25
-    text_output_default: str | None = None
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict 表示项目不覆盖任何字段
     rendering_config: ProjectRenderingConfig = ProjectRenderingConfig()
     # v0.10.29 · 视频帧逻辑采样配置; 空 dict (mode=none) 表示不采样.
@@ -191,6 +184,9 @@ class ProjectOut(BaseModel):
     default_variants: dict[str, dict[str, str]] = Field(default_factory=dict)
     # v0.18.27 · 项目级「已保存的编排」(方案 A). None = 未配编排.
     preannotate_pipeline: list[dict] | None = None
+    # v0.19.3 WS1 · 保存编排时的能力软提示 (batchable/产 class 判据), 仅 PATCH 响应填充;
+    # 非 DB 列, 不挡保存, dispatch-time 422 仍是最终闸。
+    capability_warnings: list[str] = []
     # v0.10.13 · E1 · 标注指引 Markdown 原文; None 表示未配置.
     annotation_guide: str | None = None
     # v0.10.13 · E1 · 已上传的指引图片资源元数据列表.

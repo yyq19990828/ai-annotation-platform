@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from fastapi import HTTPException
 
 from app.config import settings
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.observability.metrics import observe_ml_backend
 
 logger = logging.getLogger(__name__)
@@ -87,7 +87,7 @@ class PredictionResult:
 
 
 class MLBackendClient:
-    def __init__(self, backend: MLBackend) -> None:
+    def __init__(self, backend: MLBackendRegistry) -> None:
         self.base_url = backend.url.rstrip("/")
         self.auth_method = backend.auth_method
         self.auth_token = backend.auth_token

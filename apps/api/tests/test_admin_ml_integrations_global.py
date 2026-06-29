@@ -6,13 +6,14 @@ import uuid
 
 import pytest
 
-from app.db.models.ml_backend import MLBackend
-from tests.factory import create_project
+from app.db.models.ml_backend_registry import MLBackendRegistry
+from app.services.ml_backend import MLBackendService
 
 
-async def _make_backend(db, *, project_id, name="b", url="http://h:8000"):
-    b = MLBackend(
-        project_id=project_id,
+async def _make_backend(db, *, name="b", url="http://h:8000"):
+    """v0.19.0 ADR-0044 · backend 已上提为全局注册项 (无 project_id)。"""
+    b = MLBackendRegistry(
+        id=uuid.uuid4(),
         name=name,
         url=url,
         state="connected",
@@ -37,17 +38,11 @@ async def test_list_all_requires_admin(httpx_client, annotator):
 
 
 @pytest.mark.asyncio
-async def test_list_all_dedups_by_url(httpx_client, db_session, super_admin):
-    user, token = super_admin
-    p1 = await create_project(db_session, owner_id=user.id, name="P1")
-    p2 = await create_project(db_session, owner_id=user.id, name="P2")
-    await _make_backend(
-        db_session, project_id=p1.id, url="http://shared:8000", name="A"
-    )
-    await _make_backend(
-        db_session, project_id=p2.id, url="http://shared:8000", name="B"
-    )
-    await _make_backend(db_session, project_id=p1.id, url="http://other:8000", name="C")
+async def test_list_all_lists_registry_rows(httpx_client, db_session, super_admin):
+    """v0.19.0 ADR-0044 · url 全局唯一, /all 直接列全局注册表所有行 (不再按 source project 去重)。"""
+    _, token = super_admin
+    await _make_backend(db_session, url="http://shared:8000", name="A")
+    await _make_backend(db_session, url="http://other:8000", name="C")
     await db_session.commit()
 
     res = await httpx_client.get(
@@ -59,19 +54,19 @@ async def test_list_all_dedups_by_url(httpx_client, db_session, super_admin):
     urls = sorted(it["url"] for it in items)
     assert urls == ["http://other:8000", "http://shared:8000"]
     for it in items:
-        assert "source_project_name" in it
-        assert it["source_project_name"] in {"P1", "P2"}
+        # source_project_name 现承载来源标签 (manual/env), source_project_id 置空
+        assert it["source_project_name"] == "manual"
+        assert it["source_project_id"] == ""
 
 
 @pytest.mark.asyncio
-async def test_create_project_with_backend_source_clones_row(
+async def test_create_project_with_backend_source_reuses_registry(
     httpx_client, db_session, super_admin
 ):
-    user, token = super_admin
-    src_proj = await create_project(db_session, owner_id=user.id, name="Source")
+    """v0.19.0 ADR-0044 · 复用已注册 backend 不复制 row, 而是为新项目建启用关联, 共享同一全局 id。"""
+    _, token = super_admin
     src = await _make_backend(
         db_session,
-        project_id=src_proj.id,
         url="http://source:8001",
         name="src-backend",
     )
@@ -91,18 +86,10 @@ async def test_create_project_with_backend_source_clones_row(
     )
     assert res.status_code == 200, res.text
     body = res.json()
-    new_backend_id = body["ml_backend_id"]
-    assert new_backend_id is not None
-    assert new_backend_id != str(src.id)  # 复制 row 而非引用 source
-
-    # 新 backend 应在新项目下, state 重置, url 保留
-    new_backend = await db_session.get(MLBackend, uuid.UUID(new_backend_id))
-    assert new_backend is not None
-    assert new_backend.url == "http://source:8001"
-    assert new_backend.name == "src-backend"
-    assert new_backend.state == "disconnected"
-    assert new_backend.health_meta is None
-    assert str(new_backend.project_id) == body["id"]
+    # 新项目绑定同一全局 registry id (不再是新 backend id)
+    assert body["ml_backend_id"] == str(src.id)
+    # 新项目获得一条启用关联
+    assert await MLBackendService(db_session).is_enabled(uuid.UUID(body["id"]), src.id)
 
 
 @pytest.mark.asyncio

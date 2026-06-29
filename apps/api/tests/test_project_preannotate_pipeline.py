@@ -14,7 +14,7 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 
 
@@ -35,17 +35,16 @@ async def _seed(db: AsyncSession, owner_id: uuid.UUID):
     )
     db.add(proj)
     await db.flush()
-    detect = MLBackend(
+    # v0.19.0 ADR-0044 · 全局注册项 + 项目启用关联 (编排阶段引用 registry id)。
+    detect = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=proj.id,
         name="detect",
         url="http://detect/",
         is_interactive=False,
         state="connected",
     )
-    classify = MLBackend(
+    classify = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=proj.id,
         name="classify",
         url="http://classify/",
         is_interactive=False,
@@ -54,6 +53,8 @@ async def _seed(db: AsyncSession, owner_id: uuid.UUID):
     db.add(detect)
     db.add(classify)
     await db.flush()
+    db.add(ProjectMLBackend(project_id=proj.id, registry_id=detect.id, enabled=True))
+    db.add(ProjectMLBackend(project_id=proj.id, registry_id=classify.id, enabled=True))
     proj.ml_backend_id = detect.id
     await db.commit()
     return proj, detect, classify
@@ -190,3 +191,48 @@ async def test_patch_rejects_bad_uuid(httpx_client_bound, super_admin, db_sessio
         json={"preannotate_pipeline": stages},
     )
     assert resp.status_code == 422, resp.text
+
+
+# ---------- v0.19.3 WS1 · 保存路径能力软提示 (不挡, 与 dispatch 422 同判据) ----------
+
+
+async def _set_caps(db: AsyncSession, backend, models: list[dict]):
+    backend.health_meta = {"capabilities": {"models": models}}
+    db.add(backend)
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_patch_emits_capability_warnings_not_blocked(
+    httpx_client_bound, super_admin, db_session
+):
+    # 源模型自报 batchable=false → 保存仍 200 (软提示), 响应回带 capability_warnings。
+    owner, token = super_admin
+    proj, detect, classify = await _seed(db_session, owner.id)
+    await _set_caps(
+        db_session, detect, [{"id": "detect", "resource_profile": {"batchable": False}}]
+    )
+    resp = await httpx_client_bound.patch(
+        f"/api/v1/projects/{proj.id}",
+        headers=_bearer(token),
+        json={"preannotate_pipeline": _stages(detect.id, classify.id)},
+    )
+    assert resp.status_code == 200, resp.text
+    warnings = resp.json()["capability_warnings"]
+    assert any("batchable=false" in w for w in warnings), warnings
+
+
+@pytest.mark.asyncio
+async def test_patch_no_warnings_when_capable(
+    httpx_client_bound, super_admin, db_session
+):
+    # 零退化: 无能力快照 (老 backend) → 保存 200 且 capability_warnings 为空。
+    owner, token = super_admin
+    proj, detect, classify = await _seed(db_session, owner.id)
+    resp = await httpx_client_bound.patch(
+        f"/api/v1/projects/{proj.id}",
+        headers=_bearer(token),
+        json={"preannotate_pipeline": _stages(detect.id, classify.id)},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["capability_warnings"] == []

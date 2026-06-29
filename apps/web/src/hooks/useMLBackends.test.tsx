@@ -3,15 +3,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockDelete = vi.fn();
+const mockSetEnablement = vi.fn();
 
 vi.mock("@/api/ml-backends", () => ({
   mlBackendsApi: {
-    delete: (...args: unknown[]) => mockDelete(...args),
+    setEnablement: (...args: unknown[]) => mockSetEnablement(...args),
   },
 }));
 
-import { useDeleteMLBackend } from "./useMLBackends";
+import { useSetMLBackendEnablement } from "./useMLBackends";
 
 function makeWrapper(client: QueryClient) {
   return function Wrapper({ children }: PropsWithChildren) {
@@ -21,10 +21,10 @@ function makeWrapper(client: QueryClient) {
 
 describe("useMLBackends mutations", () => {
   beforeEach(() => {
-    mockDelete.mockReset().mockResolvedValue(undefined);
+    mockSetEnablement.mockReset().mockResolvedValue(undefined);
   });
 
-  it("删除 backend 后刷新项目总览相关查询", async () => {
+  it("切换启用后刷新项目总览相关查询", async () => {
     const qc = new QueryClient({
       defaultOptions: {
         queries: { retry: false },
@@ -33,17 +33,21 @@ describe("useMLBackends mutations", () => {
     });
     const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
 
-    const { result } = renderHook(() => useDeleteMLBackend("p1"), {
+    const { result } = renderHook(() => useSetMLBackendEnablement("p1"), {
       wrapper: makeWrapper(qc),
     });
 
+    const payload = { enabled: true };
     await act(async () => {
-      await result.current.mutateAsync("b1");
+      await result.current.mutateAsync({ registryId: "r1", payload });
     });
 
-    expect(mockDelete).toHaveBeenCalledWith("p1", "b1");
+    expect(mockSetEnablement).toHaveBeenCalledWith("p1", "r1", payload);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["ml-backends", "p1"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["projects"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["project", "p1"] });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["admin", "ml-integrations", "overview"],
+    });
   });
 });

@@ -14,21 +14,29 @@ import re
 import time
 from typing import Literal
 
+import uuid
+
 import httpx
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.enums import UserRole
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.db.models.user import User
 from app.deps import get_db, require_roles
-from app.schemas.ml_backend import MLBackendOut
+from app.schemas.ml_backend import (
+    MLBackendCreate,
+    MLBackendHealthResponse,
+    MLBackendOut,
+    MLBackendUpdate,
+)
 from app.schemas.storage import BucketSummary
 from app.services.audit import AuditService
+from app.services.ml_backend import MLBackendDeleteBlocked, MLBackendService
 from app.services.storage import storage_service
 
 router = APIRouter()
@@ -99,28 +107,27 @@ async def get_overview(
         total_size_bytes=sum(i.total_size_bytes for i in items),
     )
 
+    # v0.19.0 ADR-0044 · backend 全局化; 「按项目分组」改为按项目「已启用」关联分组
+    # (project_ml_backend join registry)。total/connected 统计全局注册表去重后的真值。
     res = await db.execute(
-        select(MLBackend).order_by(MLBackend.project_id, MLBackend.created_at.desc())
+        select(Project, MLBackendRegistry)
+        .join(ProjectMLBackend, ProjectMLBackend.project_id == Project.id)
+        .join(MLBackendRegistry, MLBackendRegistry.id == ProjectMLBackend.registry_id)
+        .where(ProjectMLBackend.enabled.is_(True))
+        .order_by(Project.name, MLBackendRegistry.created_at.desc())
     )
-    backends = list(res.scalars().all())
-    project_ids = {b.project_id for b in backends}
-    projects_by_id: dict = {}
-    if project_ids:
-        pres = await db.execute(select(Project).where(Project.id.in_(project_ids)))
-        for p in pres.scalars().all():
-            projects_by_id[p.id] = p
-
     grouped: dict[str, ProjectMLBackendsGroup] = {}
-    for b in backends:
-        proj = projects_by_id.get(b.project_id)
-        pid_str = str(b.project_id)
+    for proj, b in res.all():
+        pid_str = str(proj.id)
         if pid_str not in grouped:
             grouped[pid_str] = ProjectMLBackendsGroup(
-                project_id=pid_str,
-                project_name=proj.name if proj else "(已删除项目)",
-                backends=[],
+                project_id=pid_str, project_name=proj.name, backends=[]
             )
-        grouped[pid_str].backends.append(MLBackendOut.model_validate(b))
+        grouped[pid_str].backends.append(
+            MLBackendOut.model_validate(b, from_attributes=True).model_copy(
+                update={"project_id": proj.id}
+            )
+        )
 
     ai_projects_res = await db.execute(
         select(Project).where(Project.ai_enabled.is_(True)).order_by(Project.name)
@@ -134,11 +141,12 @@ async def get_overview(
                 backends=[],
             )
 
+    reg = list((await db.execute(select(MLBackendRegistry))).scalars().all())
     return MLIntegrationsOverview(
         storage=storage_overview,
         projects=list(grouped.values()),
-        total_backends=len(backends),
-        connected_backends=sum(1 for b in backends if b.state == "connected"),
+        total_backends=len(reg),
+        connected_backends=sum(1 for b in reg if b.state == "connected"),
     )
 
 
@@ -241,6 +249,7 @@ class GlobalBackendItem(BaseModel):
     state: str
     is_interactive: bool
     auth_method: str
+    extra_params: dict = Field(default_factory=dict)
     health_meta: dict | None = None
     source_project_id: str
     source_project_name: str
@@ -256,23 +265,19 @@ async def list_all_backends(
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_roles(UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN)),
 ) -> GlobalBackendListResponse:
-    """列系统内所有 ml_backends, 含 source project name 作为来源标签.
+    """v0.19.0 ADR-0044 · 列全局注册表所有 backend。
 
-    用于 CreateProjectWizard step 4 让用户选「复用一个已注册 backend」, 复用时
-    create_project 端点会复制 row 入新项目 (保留 url/auth/extra_params, 重置 state).
+    用于 CreateProjectWizard step 4 让用户选「为新项目启用一个已注册 backend」;
+    复用时 create_project 端点为新项目建启用关联 (复用同一全局 registry id)。
+    source_project_* 字段保留兼容: 现以 source ('manual'/'env') 作来源标签。
     """
     res = await db.execute(
-        select(MLBackend, Project.name)
-        .join(Project, Project.id == MLBackend.project_id)
-        .order_by(MLBackend.last_checked_at.desc().nullslast())
+        select(MLBackendRegistry).order_by(
+            MLBackendRegistry.last_checked_at.desc().nullslast()
+        )
     )
     items: list[GlobalBackendItem] = []
-    seen_urls: set[str] = set()
-    for backend, project_name in res.all():
-        # 同 url 多项目共享时只保留最新 health 的一份, 避免 dropdown 出 N 行重复
-        if backend.url in seen_urls:
-            continue
-        seen_urls.add(backend.url)
+    for backend in res.scalars().all():
         items.append(
             GlobalBackendItem(
                 id=str(backend.id),
@@ -281,15 +286,144 @@ async def list_all_backends(
                 state=backend.state,
                 is_interactive=backend.is_interactive,
                 auth_method=backend.auth_method,
+                extra_params=backend.extra_params or {},
                 health_meta=backend.health_meta,
-                source_project_id=str(backend.project_id),
-                source_project_name=project_name or "(未命名项目)",
+                source_project_id="",
+                source_project_name=backend.source,
                 last_checked_at=backend.last_checked_at.isoformat()
                 if backend.last_checked_at
                 else None,
             )
         )
     return GlobalBackendListResponse(items=items)
+
+
+# ─── v0.19.0 ADR-0044 · superadmin 全局注册表 CRUD ──────────────────────────
+#
+# backend 是全局资源 (一物理 backend = 一 registry 行 = 一能力快照 = 一并发闸)。
+# 增删改全局项是 superadmin 职责 (ModelMarket 注册管理), 与「项目启用」(PUT
+# /projects/{id}/ml-backends/{rid}/enablement) 解耦。删除走 service 的 running-job
+# 守卫 + projects/predictions FK SET NULL 级联。
+
+
+@router.post("/registry", response_model=MLBackendOut, status_code=201)
+async def create_registry(
+    data: MLBackendCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> MLBackendOut:
+    """注册一个全局 backend (source=manual)。同 url 已存在则 409。"""
+    svc = MLBackendService(db)
+    existing = await svc.get_by_url(data.url)
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"该 URL 已注册为全局 backend ({existing.name})",
+        )
+    backend = await svc.create_registry(
+        name=data.name,
+        url=data.url,
+        source="manual",
+        is_interactive=data.is_interactive,
+        auth_method=data.auth_method,
+        auth_token=data.auth_token,
+        extra_params=data.extra_params,
+    )
+    await AuditService.log(
+        db,
+        actor=admin,
+        action="ml_registry.created",
+        target_type="ml_backend",
+        target_id=str(backend.id),
+        request=request,
+        status_code=201,
+        detail={"name": data.name, "url": data.url},
+    )
+    await db.commit()
+    await db.refresh(backend)
+    return MLBackendOut.model_validate(backend, from_attributes=True)
+
+
+@router.put("/registry/{registry_id}", response_model=MLBackendOut)
+async def update_registry(
+    registry_id: uuid.UUID,
+    data: MLBackendUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> MLBackendOut:
+    """编辑全局 backend 的端点固有属性 (name/url/auth/extra_params/is_interactive)。"""
+    svc = MLBackendService(db)
+    updates = data.model_dump(exclude_unset=True)
+    backend = await svc.update(registry_id, **updates)
+    if backend is None:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+    await AuditService.log(
+        db,
+        actor=admin,
+        action="ml_registry.updated",
+        target_type="ml_backend",
+        target_id=str(registry_id),
+        request=request,
+        status_code=200,
+        detail={"fields": list(updates.keys())},
+    )
+    await db.commit()
+    await db.refresh(backend)
+    return MLBackendOut.model_validate(backend, from_attributes=True)
+
+
+@router.delete("/registry/{registry_id}", status_code=204)
+async def delete_registry(
+    registry_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> None:
+    """删除全局 backend。running prediction job 仍在跑则 409; 否则级联解绑
+    projects.ml_backend_id / project_ml_backend (CASCADE) / 历史 prediction (SET NULL)。"""
+    svc = MLBackendService(db)
+    try:
+        ok = await svc.delete(registry_id)
+    except MLBackendDeleteBlocked as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"该 backend 上仍有 {exc.running_jobs} 个运行中的预标任务, 无法删除",
+        ) from exc
+    if not ok:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+    await AuditService.log(
+        db,
+        actor=admin,
+        action="ml_registry.deleted",
+        target_type="ml_backend",
+        target_id=str(registry_id),
+        request=request,
+        status_code=204,
+        detail={},
+    )
+    await db.commit()
+
+
+@router.post("/registry/{registry_id}/health", response_model=MLBackendHealthResponse)
+async def check_registry_health(
+    registry_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> MLBackendHealthResponse:
+    """对全局 backend 探活 + 落能力快照 (与项目作用域 health 同逻辑, 无项目启用前置)。"""
+    svc = MLBackendService(db)
+    backend = await svc.get(registry_id)
+    if backend is None:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+    healthy = await svc.check_health(registry_id)
+    await db.commit()
+    return MLBackendHealthResponse(
+        status="ok" if healthy else "error",
+        backend_id=backend.id,
+        backend_name=backend.name,
+    )
 
 
 # ─── v0.10.26 · 容器直连观测 (与项目注册解耦) ──────────────────────────────
@@ -437,25 +571,15 @@ async def observe_backends(
     async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
         targets = await asyncio.gather(*[_probe_one(client, u) for u in urls])
 
-    # 标注哪些观测 URL 已被项目注册占用 (冲突感知)。
-    res = await db.execute(select(MLBackend.url, MLBackend.project_id))
-    reg_by_url: dict[str, set] = {}
-    for url, pid in res.all():
-        reg_by_url.setdefault(url.rstrip("/"), set()).add(pid)
-    proj_names: dict = {}
-    all_pids = {pid for pids in reg_by_url.values() for pid in pids}
-    if all_pids:
-        pres = await db.execute(
-            select(Project.id, Project.name).where(Project.id.in_(all_pids))
-        )
-        proj_names = {pid: name for pid, name in pres.all()}
+    # v0.19.0 ADR-0044 · 标注哪些观测 URL 已在全局注册表 (含 env 自动 upsert / manual)。
+    res = await db.execute(select(MLBackendRegistry.url, MLBackendRegistry.source))
+    src_by_url: dict[str, str] = {url.rstrip("/"): src for url, src in res.all()}
 
     for t in targets:
-        pids = reg_by_url.get(t.url.rstrip("/"))
-        if pids:
+        src = src_by_url.get(t.url.rstrip("/"))
+        if src:
             t.registered = True
-            names = [proj_names.get(p, "(已删除项目)") for p in pids]
-            t.registered_label = " / ".join(names)
+            t.registered_label = f"已注册 ({src})"
 
     return ObserveResponse(targets=list(targets), configured_count=len(urls))
 

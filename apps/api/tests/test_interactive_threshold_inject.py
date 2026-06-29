@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.services.ml_client import PredictionResult
@@ -34,15 +34,17 @@ async def _seed(db, owner_id, *, box=0.4, text=0.3):
     db.add(proj)
     await db.flush()
 
-    backend = MLBackend(
+    # ADR-0044 · 全局注册项 + 为项目启用 (交互端点授权读 ProjectMLBackend.enabled)。
+    backend = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=proj.id,
         name="dino-sam2",
-        url="http://example/",
+        url=f"http://example-{suffix}/",
         is_interactive=True,
         state="connected",
     )
     db.add(backend)
+    await db.flush()
+    db.add(ProjectMLBackend(project_id=proj.id, registry_id=backend.id, enabled=True))
     await db.flush()
 
     task = Task(

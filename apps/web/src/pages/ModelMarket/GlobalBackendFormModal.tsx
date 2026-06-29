@@ -1,3 +1,10 @@
+/**
+ * v0.19.0 · ADR-0044 · superadmin 全局 ML backend 注册/编辑弹窗。
+ *
+ * 字段：name / url / 认证 / max_concurrency / extra_params + 测试连接，调用全局注册表端点：
+ * 新建 = createRegistry，编辑 = updateRegistry。编辑时数据源（GlobalBackendItem）不含
+ * extra_params，故仅当用户实际填写时才下发 extra_params / auth_token，避免把后端已有值覆盖为空。
+ */
 import { useEffect, useState } from "react";
 import { clsx } from "clsx";
 import { useQuery } from "@tanstack/react-query";
@@ -6,65 +13,57 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import {
-  useCreateMLBackend,
-  useUpdateMLBackend,
-} from "@/hooks/useMLBackends";
-import type {
-  MLBackendCreatePayload,
-  MLBackendUpdatePayload,
-} from "@/api/ml-backends";
-import {
   adminMlIntegrationsApi,
   type ProbeResponse,
+  type MLBackendRegistryCreatePayload,
+  type MLBackendRegistryUpdatePayload,
 } from "@/api/adminMlIntegrations";
-import type { MLBackendResponse } from "@/types";
-import styles from "./MlBackendFormModal.module.css";
+import { useCreateRegistry, useUpdateRegistry } from "./useGlobalRegistry";
 
-interface LimitReachedDetail {
-  limit?: number;
-  current?: number;
-  message?: string;
+/** 编辑模式入参：来自 GlobalBackendItem 的最小子集（不含 extra_params）。 */
+export interface GlobalRegistryEditTarget {
+  id: string;
+  name: string;
+  url: string;
+  auth_method: string;
 }
 
 interface Props {
   open: boolean;
-  projectId: string;
   /** 提供则进入编辑模式 */
-  backend?: MLBackendResponse | null;
+  backend?: GlobalRegistryEditTarget | null;
   onClose: () => void;
-  /** v0.10.3 · 后端返 409 ML_BACKEND_LIMIT_REACHED 时回调; 由父组件弹 LimitModal. */
-  onLimitReached?: (detail: LimitReachedDetail) => void;
 }
 
-export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitReached }: Props) {
+const LABEL_CLASS = "mb-1.5 block text-xs font-medium text-muted-foreground";
+const INPUT_CLASS =
+  "box-border w-full appearance-none rounded-md border border-border bg-muted px-2.5 py-2 text-sm text-foreground outline-none [font-family:inherit]";
+const MONO_INPUT_CLASS = "font-mono text-xs";
+const HELP_CLASS = "mt-1 text-2xs text-muted-foreground";
+
+export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
   const isEdit = !!backend;
   const pushToast = useToastStore((s) => s.push);
-  const create = useCreateMLBackend(projectId);
-  const update = useUpdateMLBackend(projectId);
+  const create = useCreateRegistry();
+  const update = useUpdateRegistry();
 
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [authMethod, setAuthMethod] = useState<"none" | "token">("none");
   const [authToken, setAuthToken] = useState("");
-  // v0.9.13 · max_concurrency 单独 number input, 提交时合并进 extra_params (覆盖
-  // textarea JSON 同名键). 后端 ml_client.py:51-54 读 extra_params.max_concurrency
-  // 控制单 backend 最大并发预标请求数, 默认 4.
-  const [maxConcurrency, setMaxConcurrency] = useState<string>("");
+  const [maxConcurrency, setMaxConcurrency] = useState("");
   const [extraText, setExtraText] = useState("");
   const [extraOpen, setExtraOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // v0.9.6 · /runtime-hints 启动时一次性查, 用作 URL placeholder
   const hintsQ = useQuery({
     queryKey: ["admin", "ml-integrations", "runtime-hints"],
     queryFn: () => adminMlIntegrationsApi.runtimeHints(),
     staleTime: Infinity,
     enabled: open,
   });
-  const urlPlaceholder =
-    hintsQ.data?.ml_backend_default_url ?? "http://172.17.0.1:8001";
+  const urlPlaceholder = hintsQ.data?.ml_backend_default_url ?? "http://172.17.0.1:8001";
 
-  // v0.9.6 · 测试连接状态 (无 DB 副作用 probe)
   const [probing, setProbing] = useState(false);
   const [probeResult, setProbeResult] = useState<ProbeResponse | null>(null);
 
@@ -88,12 +87,7 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
       });
       setProbeResult(res);
     } catch (e) {
-      const err = e as { message?: string };
-      setProbeResult({
-        ok: false,
-        latency_ms: 0,
-        error: err.message ?? "请求失败",
-      });
+      setProbeResult({ ok: false, latency_ms: 0, error: (e as Error).message ?? "请求失败" });
     } finally {
       setProbing(false);
     }
@@ -108,13 +102,10 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
       setUrl(backend.url);
       setAuthMethod((backend.auth_method as "none" | "token") ?? "none");
       setAuthToken("");
-      const extra = { ...(backend.extra_params ?? {}) } as Record<string, unknown>;
-      const mc = extra.max_concurrency;
-      setMaxConcurrency(typeof mc === "number" ? String(mc) : "");
-      // 把 max_concurrency 从 textarea 视图剔除, 避免与上方 number input 重复
-      delete extra.max_concurrency;
-      setExtraText(Object.keys(extra).length ? JSON.stringify(extra, null, 2) : "");
-      setExtraOpen(Object.keys(extra).length > 0);
+      // GlobalBackendItem 不含 extra_params，编辑时留空，提交时不下发以保留后端原值。
+      setMaxConcurrency("");
+      setExtraText("");
+      setExtraOpen(false);
     } else {
       setName("");
       setUrl("");
@@ -145,7 +136,8 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
       return;
     }
 
-    let extraParams: Record<string, unknown> = {};
+    // extra_params：仅当用户填了 textarea 或 max_concurrency 时才构造并下发。
+    let extraParams: Record<string, unknown> | undefined;
     if (extraText.trim()) {
       try {
         const parsed = JSON.parse(extraText);
@@ -158,65 +150,47 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
         return;
       }
     }
-
-    // v0.9.13 · max_concurrency 校验 + 合并 (覆盖 textarea JSON 同名键)
     if (maxConcurrency.trim()) {
       const mc = Number(maxConcurrency);
       if (!Number.isInteger(mc) || mc < 1 || mc > 32) {
         setError("max_concurrency 需为 1-32 整数");
         return;
       }
-      extraParams.max_concurrency = mc;
+      extraParams = { ...(extraParams ?? {}), max_concurrency: mc };
     }
+
+    const token = authMethod === "token" && authToken.trim() ? authToken.trim() : undefined;
 
     try {
       if (isEdit && backend) {
-        const payload: MLBackendUpdatePayload = {
+        const payload: MLBackendRegistryUpdatePayload = {
           name: trimmedName,
           url: trimmedUrl,
           auth_method: authMethod,
-          extra_params: extraParams,
         };
-        if (authMethod === "token" && authToken.trim()) {
-          payload.auth_token = authToken.trim();
-        }
-        await update.mutateAsync({ backendId: backend.id, payload });
-        pushToast({ msg: "已更新 backend", kind: "success" });
+        if (extraParams !== undefined) payload.extra_params = extraParams;
+        if (token) payload.auth_token = token;
+        await update.mutateAsync({ id: backend.id, payload });
+        pushToast({ msg: "已更新全局 backend", kind: "success" });
       } else {
-        const payload: MLBackendCreatePayload = {
+        const payload: MLBackendRegistryCreatePayload = {
           name: trimmedName,
           url: trimmedUrl,
           auth_method: authMethod,
-          extra_params: extraParams,
         };
-        if (authMethod === "token" && authToken.trim()) {
-          payload.auth_token = authToken.trim();
-        }
+        if (extraParams !== undefined) payload.extra_params = extraParams;
+        if (token) payload.auth_token = token;
         await create.mutateAsync(payload);
-        pushToast({ msg: "已注册 backend", kind: "success" });
+        pushToast({ msg: "已注册全局 backend", kind: "success" });
       }
       onClose();
     } catch (e) {
-      // v0.10.3 · 拦 409 ML_BACKEND_LIMIT_REACHED → 切到父组件 LimitModal, 不在表单里显示通用 error.
-      const apiErr = e as {
-        status?: number;
-        detailRaw?: unknown;
-        response?: { data?: { detail?: string } };
-        message?: string;
-      };
-      const detail = apiErr.detailRaw;
-      if (
-        apiErr.status === 409 &&
-        detail &&
-        typeof detail === "object" &&
-        (detail as { code?: unknown }).code === "ML_BACKEND_LIMIT_REACHED"
-      ) {
-        const d = detail as { limit?: number; current?: number; message?: string };
-        onLimitReached?.({ limit: d.limit, current: d.current, message: d.message });
-        onClose();
+      const apiErr = e as { status?: number; message?: string };
+      if (apiErr.status === 409) {
+        setError(apiErr.message || "该 URL 已被注册（不可重复）");
         return;
       }
-      setError(apiErr.response?.data?.detail ?? apiErr.message ?? "请求失败");
+      setError(apiErr.message ?? "请求失败");
     }
   };
 
@@ -224,22 +198,22 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
     <Modal
       open={open}
       onClose={submitting ? () => {} : onClose}
-      title={isEdit ? "编辑 ML Backend" : "注册 ML Backend"}
+      title={isEdit ? "编辑全局 ML Backend" : "注册全局 ML Backend"}
       width={560}
     >
-      <div className={styles.stack}>
+      <div className="flex flex-col gap-3.5">
         <div>
-          <label className={styles.label}>名称</label>
+          <label className={LABEL_CLASS}>名称</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="例如 grounded-sam2-prod"
             maxLength={120}
-            className={styles.input}
+            className={INPUT_CLASS}
           />
         </div>
         <div>
-          <label className={styles.label}>URL</label>
+          <label className={LABEL_CLASS}>URL</label>
           <input
             value={url}
             onChange={(e) => {
@@ -247,24 +221,25 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
               setProbeResult(null);
             }}
             placeholder={urlPlaceholder}
-            className={clsx(styles.input, styles.monoInput)}
+            className={clsx(INPUT_CLASS, MONO_INPUT_CLASS)}
           />
-          <div className={styles.helpText}>
-            后端容器内可达地址。Docker 同主机宿主网常用 <span className="mono">172.17.0.1</span>。
+          <div className={HELP_CLASS}>
+            后端容器内可达地址。Docker 同主机宿主网常用 <span className="font-mono">172.17.0.1</span>。
           </div>
-          {/* v0.9.6 · 测试连接 (POST /admin/ml-integrations/probe, 无 DB 副作用) */}
-          <div className={styles.probeRow}>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <Button size="sm" variant="ghost" onClick={onProbe} disabled={probing}>
-              {probing
-                ? <Icon name="loader2" size={11} className="spin" />
-                : <Icon name="activity" size={11} />}
+              {probing ? (
+                <Icon name="loader2" size={11} className="spin" />
+              ) : (
+                <Icon name="activity" size={11} />
+              )}
               {probing ? "探测中..." : "测试连接"}
             </Button>
             {probeResult && (
               <span
                 className={clsx(
-                  styles.probeResult,
-                  probeResult.ok ? styles.probeResultOk : styles.probeResultError,
+                  "inline-flex items-center gap-1 text-xs",
+                  probeResult.ok ? "text-status-positive" : "text-status-danger",
                 )}
               >
                 <Icon name={probeResult.ok ? "check" : "warning"} size={11} />
@@ -280,54 +255,54 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
             )}
           </div>
         </div>
-        <div className={styles.helpText}>
-          <Icon name="sparkles" size={12} className={styles.aiIcon} />
-          交互能力 / 支持模态（图像 prompt、视频 tracker）将在健康检查时从 backend
-          自报的 <span className="mono">/setup</span> 自动探测，无需手填。
+        <div className={HELP_CLASS}>
+          <Icon name="sparkles" size={12} className="mr-1 inline text-chart-4" />
+          交互能力 / 支持模态（图像 prompt、视频 tracker）将在健康检查时从 backend 自报的{" "}
+          <span className="font-mono">/setup</span> 自动探测，无需手填。
         </div>
         <div>
-          <label className={styles.label}>认证方式</label>
+          <label className={LABEL_CLASS}>认证方式</label>
           <select
             value={authMethod}
             onChange={(e) => setAuthMethod(e.target.value as "none" | "token")}
-            className={clsx(styles.input, styles.selectInput)}
+            className={clsx(INPUT_CLASS, "cursor-pointer")}
           >
             <option value="none">none（无认证）</option>
             <option value="token">token（Bearer header）</option>
           </select>
           {authMethod === "token" && (
-            <div className={styles.tokenField}>
-              <label className={styles.label}>Token</label>
+            <div className="mt-2">
+              <label className={LABEL_CLASS}>Token</label>
               <input
                 type="password"
                 value={authToken}
                 onChange={(e) => setAuthToken(e.target.value)}
                 placeholder={isEdit ? "••• 留空则保持原值" : "Bearer token"}
-                className={styles.input}
+                className={INPUT_CLASS}
               />
             </div>
           )}
         </div>
         <div>
-          <label className={styles.label}>最大并发（max_concurrency）</label>
+          <label className={LABEL_CLASS}>最大并发（max_concurrency）</label>
           <input
             type="number"
             min={1}
             max={32}
             value={maxConcurrency}
             onChange={(e) => setMaxConcurrency(e.target.value)}
-            placeholder="默认 4"
-            className={clsx(styles.input, styles.concurrencyInput)}
+            placeholder={isEdit ? "留空保持原值" : "默认 4"}
+            className={clsx(INPUT_CLASS, "w-[120px]")}
           />
-          <div className={styles.helpText}>
-            单 backend 同时处理的预标请求上限；留空走默认（4）。
+          <div className={HELP_CLASS}>
+            单 backend 同时处理的预标请求上限；{isEdit ? "留空保持原值。" : "留空走默认（4）。"}
           </div>
         </div>
         <div>
           <button
             type="button"
             onClick={() => setExtraOpen((s) => !s)}
-            className={styles.extraToggle}
+            className="inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs text-muted-foreground [font-family:inherit]"
           >
             <Icon name={extraOpen ? "chevDown" : "chevRight"} size={12} />
             高级 · extra_params (JSON)
@@ -338,17 +313,20 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
               onChange={(e) => setExtraText(e.target.value)}
               placeholder='{ "model_size": "large" }'
               rows={4}
-              className={clsx(styles.input, styles.extraTextarea)}
+              className={clsx(INPUT_CLASS, MONO_INPUT_CLASS, "mt-1.5 resize-y")}
             />
+          )}
+          {isEdit && (
+            <div className={HELP_CLASS}>编辑时留空不会清除后端已有的 extra_params。</div>
           )}
         </div>
         {error && (
-          <div className={styles.errorBox}>
-            <Icon name="warning" size={12} className={styles.errorIcon} />
+          <div className="flex items-start gap-1.5 rounded-md border border-status-danger bg-status-danger-soft px-2.5 py-2 text-xs text-status-danger">
+            <Icon name="warning" size={12} className="mt-0.5 flex-shrink-0" />
             <span>{error}</span>
           </div>
         )}
-        <div className={styles.actions}>
+        <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose} disabled={submitting}>
             取消
           </Button>

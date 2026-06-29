@@ -19,5 +19,5 @@ export { meApi } from "./me";
 export type { ProfileUpdatePayload, PasswordChangePayload } from "./me";
 export { settingsApi } from "./settings";
 export type { SystemSettingsResponse, SmtpStatusResponse } from "./settings";
-export type { MLBackendCreatePayload, InteractiveRequest } from "./ml-backends";
+export type { InteractiveRequest } from "./ml-backends";
 export type { UploadInitPayload } from "./files";

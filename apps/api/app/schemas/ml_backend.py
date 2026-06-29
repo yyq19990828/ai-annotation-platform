@@ -182,7 +182,9 @@ class HealthMeta(BaseModel):
 
 class MLBackendOut(BaseModel):
     id: UUID
-    project_id: UUID
+    # v0.19.0 ADR-0044 · backend 上提为全局注册项, 无项目归属; 项目作用域端点从路径注入
+    # 本项目 id (表「该项目启用了此全局 backend」), 全局/admin 端点留 None。
+    project_id: UUID | None = None
     name: str
     url: str
     state: str
@@ -234,6 +236,29 @@ class MLBackendHealthResponse(BaseModel):
     status: str
     backend_id: UUID
     backend_name: str
+
+
+# v0.19.0 ADR-0044 · 项目「启用勾选清单」: 列出全部全局 backend + 本项目启用态/覆盖。
+class ProjectMLBackendItem(BaseModel):
+    """一行 = 一个全局 backend 在本项目的启用态 + 项目级覆盖。
+
+    `backend` 是全局注册项快照 (project_id=None); `enabled`/`default_variants` 来自
+    project_ml_backend 关联 (无关联则 enabled=False、覆盖 None)。"""
+
+    backend: MLBackendOut
+    enabled: bool = False
+    default_variants: dict | None = None
+
+
+class ProjectMLBackendList(BaseModel):
+    items: list[ProjectMLBackendItem]
+
+
+class ProjectMLBackendEnablement(BaseModel):
+    """切换项目启用 + 写项目级变体覆盖。覆盖项缺省 = 不改动。"""
+
+    enabled: bool
+    default_variants: dict | None = None
 
 
 # v0.10.26 · 模型市场单变体预热. 缺省时 backend 用默认变体 (保持旧 /reload 行为).

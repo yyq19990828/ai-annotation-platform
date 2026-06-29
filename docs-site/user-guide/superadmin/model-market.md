@@ -17,7 +17,7 @@ last_reviewed: 2026-06-10
 - 按 model 条目检索能力目录
 - 看注册 backend 与 env-only 容器的实时健康 / GPU / pool 状态
 - 对注册 backend 执行健康检查、卸载、预热
-- 全局新增 / 编辑 / 删除项目级 backend
+- 全局新增 / 编辑 / 删除 backend，并查看各项目对它的启用状态
 
 ## 主要视图
 
@@ -59,25 +59,34 @@ last_reviewed: 2026-06-10
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/model-market-runtime-card.png — backend 卡片（GPU 显存 + 池状态 + 操作按钮） [manual] -->
 
-运行时观测是 runtime-centric 视图。它以**已注册 backend** 为主键展示，因为健康检查、卸载、预热都需要 `project_id + backend_id`。`ML_BACKEND_OBSERVE_URLS` 返回的实时指标按 URL join 到注册 backend：
+运行时观测是 runtime-centric 视图。它以**全局注册 backend** 为主键展示。`ML_BACKEND_OBSERVE_URLS` 返回的实时指标按 URL join 到注册 backend：
 
-- 同一 URL 被多个项目注册时，会按每个项目 backend 各显示一行；实时指标共享同一个容器值。
+- 每个全局注册 backend 一行（URL 全局唯一），实时指标取对应容器值。
 - 观测 URL 没有匹配任何注册 backend 时，会进入「未注册容器」分组，只支持直连 observe / smoke-test。
 - 已注册 backend 可执行健康检查、卸载、默认预热，并展示变体面板。
 - env-only 容器若只暴露通用 `supported_variants`，当前只读展示变体目录；「试启动」保持 disabled，等待 backend 实现通用 warm 接口。
 
 ### 3. 注册管理
 
-注册管理只保留项目级 backend CRUD：
+注册管理是**全局注册表**的中心，分两块：上方是跨项目共享的 backend 扁平列表，下方是只读的「项目启用概览」。每个物理 backend 全局只有一行，注册一次、所有项目共享。
+
+**全局注册表**（扁平列表）：
 
 | 列 | 说明 |
 |---|---|
 | 名称 | backend 名称 |
-| URL | 注册地址 |
-| 类型 | 交互式 / 批量；最大并发 chip |
+| URL | 注册地址（全局唯一） |
+| 来源 | `manual`（超管手动注册）/ `env`（env 配置启动后自动注册） |
+| 类型 | 交互式 / 批量；最大并发 chip（`extra_params.max_concurrency`，缺省不显示） |
 | 状态 | 注册记录最近状态与错误片段 |
 | 最近检查 | 上次健康检查时间 |
-| 操作 | 编辑 / 删除 |
+| 操作 | 编辑 / 删除 / 健康检查（**仅超管**） |
+
+对应后端端点：`POST /admin/ml-integrations/registry`（新增）、`PUT /admin/ml-integrations/registry/:id`（编辑）、`DELETE /admin/ml-integrations/registry/:id`（删除）、`POST /admin/ml-integrations/registry/:id/health`（健康检查）。
+
+**项目启用概览**（**仅超管可见 · 只读**）：列出每个启用了 AI 的项目，以及它当前启用了哪些 backend（已启用 AI 但未启用任何 backend 的项目会标黄提示），每行提供「打开项目设置 →」入口。这里只看不改——项目启用本身在项目设置里做（详见 [启用 ML 后端](../projects/ml-backends)）。
+
+> **角色门控**：超管可在全局注册表做增删改查 + 健康检查，并看到项目启用概览。项目管理员进本 tab 时全局注册表为**只读**（隐藏注册 / 编辑 / 删除），且看不到项目启用概览——项目管理员只在自己的项目设置里勾选启用 backend。
 
 运行时指标（GPU、cache、model_version、pool）和生命周期动作已经迁到「运行时观测」。
 
@@ -106,11 +115,11 @@ backend 的变体面板拆成两组：
 
 ## 新建 / 编辑 Backend
 
-「注册管理」列表会显示两类项目：已注册 backend 的项目，以及已启用 AI 但还没有 backend 的项目。后者会显示「AI 已启用 · 未注册 backend」，可直接点「注册第一个 backend」把第一条 backend 记录注册到该项目；注册表单与 [ML Backend 注册](./ml-backend-registry) 等价。
+点「注册管理」右上角的 **「注册 backend」** 即可新增一条全局 backend 记录；点某行的「编辑」可改其 URL / 名称 / 鉴权 / `extra_params`（含 `max_concurrency`）。注册表单字段与校验详见 [ML Backend 注册](./ml-backend-registry)。env 配置的 backend 启动后会自动出现在列表里（来源 `env`），无需手动注册。
 
 ## 删除
 
-「注册管理」列表支持逐条删除 backend（超管和项目管理员均可操作）。平台**不提供批量删除孤立 backend** 功能；如需批量清理，需逐条在项目设置解绑后删除，或直接在项目设置中删除。删除规则详见 [ML Backend 注册](./ml-backend-registry#删除)。
+「注册管理」列表支持逐条删除全局 backend（**仅超管**）。删除会从注册表移除该记录，所有引用它的项目 `ml_backend_id` 自动置空（ON DELETE SET NULL）。若有正在运行的预测 job 会返回 `HTTP 409` 阻断。项目管理员若只想让某 backend 对本项目失效，应在项目设置取消勾选启用，而非删除。删除规则详见 [ML Backend 注册](./ml-backend-registry#删除)。
 
 ## 路由历史
 

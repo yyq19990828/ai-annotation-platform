@@ -71,7 +71,7 @@ graph TD
 | `task_lock_ttl_seconds` | task 锁 TTL |
 | `ml_backend_id` | 实际绑定的 ML backend |
 | `ai_model` | display hint，不再是行为真值 |
-| `box_threshold` / `text_threshold` / `text_output_default` | 项目级 AI 推理默认参数 |
+| `box_threshold` / `text_threshold` | 项目级 AI 推理默认参数 |
 | `preannotate_pipeline` | nullable JSONB · 项目级「已保存的预标编排」（方案 A，一项目一条）；`null` / 缺省 = 未配编排，工作台 AI 预标 popover 按此跑当前题。单阶段配置也存成单元素数组，保留「一项目一编排」语义。详见 [预标注流水线 · 多阶段预标注](./prediction-pipeline#多阶段预标注pipeline_stages路径-b) |
 | `scene_mode` | 是否为 scene 模式项目（默认 `false`）；仅 image / lidar 项目可开启，且需绑定 `has_scenes=true` 的数据集（已建 task 后不可切换） |
 | `prefer_same_scene_continuation` | scene 模式连续派题开关（默认 `false`）：打开后 `get_next_task` 优先返回用户上次提交 task 的同 scene 下一帧 |
@@ -157,14 +157,13 @@ scene 模式项目额外多一层连续派题逻辑：打开 `prefer_same_scene_
 
 项目还决定：
 
-- 是否启用 AI：`ai_enabled`
+- 是否启用 AI：`ai_enabled`（自动派生——设了 `ml_backend_id` 即为 true）
 - 绑定哪个 ML backend：`ml_backend_id`
 - 文本预标注默认阈值：`box_threshold` / `text_threshold`
-- 默认输出形态：`text_output_default`
 
 AI 能力是 project 级开关，不是 batch 或 task 私有配置。
 
-前端项目设置的归属：这些 AI 字段统一在 `ML 模型` 页维护。该页上方是项目级 AI 预标注设置（启用开关、绑定 backend、去重阈值、文本输出默认值），下方是项目作用域内 ML backend 的注册、健康检查与快捷绑定列表。
+前端项目设置的归属：这些 AI 字段统一在 `ML 模型` 页维护。该页上方是项目级 AI 预标注设置（选主后端即派生启用、去重阈值），下方是**对全局 backend 的启用 / 禁用清单**——「管理 backend」面板列出全局注册表里全部 backend，逐个勾选启用（主后端只能从已启用的里选）。per-backend 阈值覆盖已退役：推理参数运行时按 `/setup.params` 通用渲染，项目级 `box_threshold` 仅作兜底。backend 的物理注册与健康检查归超管在模型市场维护，项目侧不注册 backend。
 
 ## 成员与权限边界
 

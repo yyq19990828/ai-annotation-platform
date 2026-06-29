@@ -75,8 +75,6 @@ export interface FormState {
   unitBindings: UnitBindingMap;
   activeUnit: ToolUnitId;
   aiEnabled: boolean;
-  /** v0.9.6 · SAM 文本预标默认输出 ("" = 自动按 type_key, 与 ML 模型页 4 项一致). */
-  textOutputDefault: "" | "box" | "mask" | "both";
   /** v0.9.7 · 复用现有 backend; "" = 暂不绑定 (项目创建后到设置页注册). */
   mlBackendSourceId: string;
   sceneMode: boolean;
@@ -115,7 +113,6 @@ const INITIAL: FormState = {
   unitBindings: defaultUnitBindings("image-det"),
   activeUnit: "bbox",
   aiEnabled: false,
-  textOutputDefault: "",
   mlBackendSourceId: "",
   sceneMode: false,
   datasetIds: [],
@@ -212,11 +209,6 @@ function buildUnitBindingsFromSource(src: {
 
 function buildFormFromSource(src: ProjectResponse): FormState {
   const { unitBindings, activeUnit } = buildUnitBindingsFromSource(src);
-  const textOutputDefault =
-    src.text_output_default === "box" || src.text_output_default === "mask" ||
-    src.text_output_default === "both"
-      ? src.text_output_default
-      : "";
   return {
     ...INITIAL,
     name: src.name ? `${src.name} (副本)` : "",
@@ -227,7 +219,6 @@ function buildFormFromSource(src: ProjectResponse): FormState {
     unitBindings,
     activeUnit,
     aiEnabled: src.ai_enabled,
-    textOutputDefault,
     mlBackendSourceId: src.ml_backend_id ?? "",
     sceneMode: !!src.scene_mode,
     splitStrategy: src.scene_mode ? "by_scene" : "none",
@@ -241,11 +232,6 @@ function buildFormFromTemplate(t: ProjectTemplateOut): FormState {
   const { unitBindings, activeUnit } = buildUnitBindingsFromSource(
     t as Parameters<typeof buildUnitBindingsFromSource>[0],
   );
-  const textOutputDefault =
-    t.text_output_default === "box" || t.text_output_default === "mask" ||
-    t.text_output_default === "both"
-      ? t.text_output_default
-      : "";
   return {
     ...INITIAL,
     name: "",
@@ -256,7 +242,6 @@ function buildFormFromTemplate(t: ProjectTemplateOut): FormState {
     unitBindings,
     activeUnit,
     aiEnabled: t.ai_enabled,
-    textOutputDefault,
     sceneMode: false,
   };
 }
@@ -436,10 +421,7 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
         attribute_schema,
         tool_bindings,
         ai_enabled: form.aiEnabled,
-        // v0.9.6 · 仅启用 AI 时携带; "" = null (走智能默认)
-        text_output_default:
-          form.aiEnabled && form.textOutputDefault ? form.textOutputDefault : null,
-        // v0.9.7 · 仅启用 AI 且选了 source backend 时携带; 后端会复制 row 入新项目
+        // v0.9.7 · 仅启用 AI 且选了 source backend 时携带; 后端为新项目启用同一全局 backend
         ml_backend_source_id:
           form.aiEnabled && form.mlBackendSourceId ? form.mlBackendSourceId : null,
         scene_mode: form.sceneMode,

@@ -41,7 +41,7 @@ const TD_CLASS = "border-b border-border p-3 align-middle";
 const TH_CLASS =
   "border-b border-border bg-muted px-3 py-2.5 text-left text-xs font-medium text-muted-foreground whitespace-nowrap first:pl-4 last:pr-4";
 const BATCH_LINK_CLASS =
-  "mt-1 cursor-pointer appearance-none border-0 bg-transparent p-0 text-xs text-muted-foreground underline decoration-dotted underline-offset-2 [font:inherit]";
+  "mt-1 inline-flex items-center gap-1 cursor-pointer appearance-none border-0 bg-transparent p-0 text-xs text-muted-foreground underline decoration-dotted underline-offset-2";
 
 function AdminProjectRow({
   p,

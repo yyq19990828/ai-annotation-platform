@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.async_job import AsyncJob, AsyncJobStatus
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.services.ml_client import MLBackendClient
 
@@ -19,111 +20,198 @@ class MLBackendDeleteBlocked(Exception):
 
 
 class MLBackendService:
+    """v0.19.0 ADR-0044 · backend 上提为全局注册表(MLBackendRegistry) + 项目启用关联
+    (ProjectMLBackend)。本服务既管全局注册项(superadmin)，也管项目级启用/覆盖。
+
+    `get` 按 registry id 返回全局注册项; 项目内「可用 backend」走
+    `list_enabled_for_project` / `get_enabled` (读 ProjectMLBackend.enabled=true)。
+    """
+
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def create(
-        self, project_id: uuid.UUID, name: str, url: str, **kwargs
-    ) -> MLBackend:
-        backend = MLBackend(
-            id=uuid.uuid4(), project_id=project_id, name=name, url=url, **kwargs
+    # ── 全局注册表 ───────────────────────────────────────────────────────────
+    async def create_registry(
+        self, name: str, url: str, source: str = "manual", **kwargs
+    ) -> MLBackendRegistry:
+        row = MLBackendRegistry(
+            id=uuid.uuid4(), name=name, url=url.rstrip("/"), source=source, **kwargs
         )
-        self.db.add(backend)
+        self.db.add(row)
         await self.db.flush()
-        return backend
+        return row
 
-    async def get(self, backend_id: uuid.UUID) -> MLBackend | None:
+    async def get(self, registry_id: uuid.UUID) -> MLBackendRegistry | None:
         result = await self.db.execute(
-            select(MLBackend).where(MLBackend.id == backend_id)
+            select(MLBackendRegistry).where(MLBackendRegistry.id == registry_id)
         )
         return result.scalar_one_or_none()
 
-    async def list_by_project(self, project_id: uuid.UUID) -> list[MLBackend]:
+    async def get_by_url(self, url: str) -> MLBackendRegistry | None:
         result = await self.db.execute(
-            select(MLBackend)
-            .where(MLBackend.project_id == project_id)
-            .order_by(MLBackend.created_at.desc())
+            select(MLBackendRegistry).where(MLBackendRegistry.url == url.rstrip("/"))
+        )
+        return result.scalar_one_or_none()
+
+    async def list_registry(self) -> list[MLBackendRegistry]:
+        result = await self.db.execute(
+            select(MLBackendRegistry).order_by(MLBackendRegistry.created_at.desc())
         )
         return list(result.scalars().all())
 
-    async def update(self, backend_id: uuid.UUID, **kwargs) -> MLBackend | None:
-        backend = await self.get(backend_id)
-        if not backend:
+    async def update(
+        self, registry_id: uuid.UUID, **kwargs
+    ) -> MLBackendRegistry | None:
+        row = await self.get(registry_id)
+        if not row:
             return None
         for key, value in kwargs.items():
-            if hasattr(backend, key):
-                setattr(backend, key, value)
+            if hasattr(row, key):
+                setattr(row, key, value)
         await self.db.flush()
-        return backend
+        return row
 
-    async def delete(self, backend_id: uuid.UUID) -> bool:
-        backend = await self.get(backend_id)
-        if not backend:
+    async def delete(self, registry_id: uuid.UUID) -> bool:
+        row = await self.get(registry_id)
+        if not row:
             return False
-        # v0.10.49 · prediction_jobs 已收敛进 async_jobs；按 payload.ml_backend_id 查 running
+        # prediction job 仍在跑则拒删 (payload.ml_backend_id 现存 registry id)
         running = await self.db.execute(
             select(AsyncJob).where(
                 AsyncJob.kind == "batch_predict",
-                AsyncJob.payload["ml_backend_id"].astext == str(backend_id),
+                AsyncJob.payload["ml_backend_id"].astext == str(registry_id),
                 AsyncJob.status == AsyncJobStatus.RUNNING.value,
             )
         )
         running_jobs = list(running.scalars().all())
         if running_jobs:
             raise MLBackendDeleteBlocked(len(running_jobs))
+        # 级联: 解绑 projects.ml_backend_id (SET NULL 语义); project_ml_backend 关联
+        # 由 FK ondelete=CASCADE 自动清。历史 prediction.ml_backend_id 同样 SET NULL。
         bound_projects = await self.db.execute(
-            select(Project).where(Project.ml_backend_id == backend_id)
+            select(Project).where(Project.ml_backend_id == registry_id)
         )
         for project in bound_projects.scalars():
             project.ml_backend_id = None
-        await self.db.delete(backend)
+        await self.db.delete(row)
         await self.db.flush()
         return True
 
-    async def unload(self, backend_id: uuid.UUID) -> dict | None:
-        backend = await self.get(backend_id)
+    # ── 项目启用关联 ─────────────────────────────────────────────────────────
+    async def list_enabled_for_project(
+        self, project_id: uuid.UUID
+    ) -> list[MLBackendRegistry]:
+        """该项目已启用的全局 backend (registry 行)。预标 / DAG 下游 / 门控读此集合。"""
+        result = await self.db.execute(
+            select(MLBackendRegistry)
+            .join(
+                ProjectMLBackend,
+                ProjectMLBackend.registry_id == MLBackendRegistry.id,
+            )
+            .where(
+                ProjectMLBackend.project_id == project_id,
+                ProjectMLBackend.enabled.is_(True),
+            )
+            .order_by(MLBackendRegistry.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def list_available_for_project(
+        self, project_id: uuid.UUID
+    ) -> list[tuple[MLBackendRegistry, ProjectMLBackend | None]]:
+        """全部全局 backend + 本项目关联 (None=未建关联即未启用)。项目设置勾选清单读此。
+
+        LEFT JOIN 保证未启用 / 从未关联过的全局项也出现在清单里 (供勾选启用)。"""
+        result = await self.db.execute(
+            select(MLBackendRegistry, ProjectMLBackend)
+            .outerjoin(
+                ProjectMLBackend,
+                (ProjectMLBackend.registry_id == MLBackendRegistry.id)
+                & (ProjectMLBackend.project_id == project_id),
+            )
+            .order_by(MLBackendRegistry.created_at.desc())
+        )
+        return [(reg, assoc) for reg, assoc in result.all()]
+
+    async def get_assoc(
+        self, project_id: uuid.UUID, registry_id: uuid.UUID
+    ) -> ProjectMLBackend | None:
+        result = await self.db.execute(
+            select(ProjectMLBackend).where(
+                ProjectMLBackend.project_id == project_id,
+                ProjectMLBackend.registry_id == registry_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def is_enabled(self, project_id: uuid.UUID, registry_id: uuid.UUID) -> bool:
+        assoc = await self.get_assoc(project_id, registry_id)
+        return bool(assoc and assoc.enabled)
+
+    async def set_enabled(
+        self,
+        project_id: uuid.UUID,
+        registry_id: uuid.UUID,
+        enabled: bool,
+        **overrides,
+    ) -> ProjectMLBackend:
+        """切换项目启用 + 写项目级变体覆盖 (default_variants)。"""
+        assoc = await self.get_assoc(project_id, registry_id)
+        if assoc is None:
+            assoc = ProjectMLBackend(
+                id=uuid.uuid4(),
+                project_id=project_id,
+                registry_id=registry_id,
+                enabled=enabled,
+            )
+            self.db.add(assoc)
+        else:
+            assoc.enabled = enabled
+        for key in ("default_variants",):
+            if key in overrides:
+                setattr(assoc, key, overrides[key])
+        await self.db.flush()
+        return assoc
+
+    # ── client 操作 (按 registry id) ─────────────────────────────────────────
+    async def unload(self, registry_id: uuid.UUID) -> dict | None:
+        backend = await self.get(registry_id)
         if not backend:
             return None
-        client = MLBackendClient(backend)
-        return await client.unload()
+        return await MLBackendClient(backend).unload()
 
     async def reload(
         self,
-        backend_id: uuid.UUID,
+        registry_id: uuid.UUID,
         sam_variant: str | None = None,
         dino_variant: str | None = None,
         task_type: str | None = None,
     ) -> dict | None:
-        backend = await self.get(backend_id)
+        backend = await self.get(registry_id)
         if not backend:
             return None
-        client = MLBackendClient(backend)
-        return await client.reload(
+        return await MLBackendClient(backend).reload(
             sam_variant=sam_variant, dino_variant=dino_variant, task_type=task_type
         )
 
-    async def warmup(self, backend_id: uuid.UUID, body: dict) -> dict | None:
-        """v0.14.14 协议 §4.4 · 转发 /warmup. body 原样上抛 backend, 各 backend schema 不同."""
-        backend = await self.get(backend_id)
+    async def warmup(self, registry_id: uuid.UUID, body: dict) -> dict | None:
+        """协议 §4.4 · 转发 /warmup. body 原样上抛 backend, 各 backend schema 不同."""
+        backend = await self.get(registry_id)
         if not backend:
             return None
-        client = MLBackendClient(backend)
-        return await client.warmup(body)
+        return await MLBackendClient(backend).warmup(body)
 
-    async def check_health(self, backend_id: uuid.UUID) -> bool:
-        from datetime import UTC, datetime
-
-        backend = await self.get(backend_id)
+    async def check_health(self, registry_id: uuid.UUID) -> bool:
+        backend = await self.get(registry_id)
         if not backend:
             return False
         client = MLBackendClient(backend)
-        # v0.9.6 · 用 health_meta 一次性拉 ok + meta, 把深度指标缓存到表
+        # v0.9.6 · 用 health_meta 一次性拉 ok + meta, 把深度指标缓存到全局注册行
         healthy, meta = await client.health_meta()
         backend.state = "connected" if healthy else "error"
         backend.last_checked_at = datetime.now(UTC)
         if meta is not None:
-            # v0.10.37 · 顺带探 /setup, 把能力快照落进 health_meta["capabilities"]
-            # (epic 阶段 1); 探测失败不影响 health 结果, 静默跳过.
+            # v0.10.37 · 顺带探 /setup, 把能力快照落进 health_meta["capabilities"]。
             from app.services.ml_capabilities import extract_capabilities
 
             try:
@@ -138,23 +226,33 @@ class MLBackendService:
         await self.db.flush()
         return healthy
 
-    async def get_interactive_backend(self, project_id: uuid.UUID) -> MLBackend | None:
+    async def get_interactive_backend(
+        self, project_id: uuid.UUID
+    ) -> MLBackendRegistry | None:
+        """该项目已启用且 is_interactive 的 connected backend。"""
         result = await self.db.execute(
-            select(MLBackend).where(
-                MLBackend.project_id == project_id,
-                MLBackend.is_interactive.is_(True),
-                MLBackend.state == "connected",
+            select(MLBackendRegistry)
+            .join(
+                ProjectMLBackend,
+                ProjectMLBackend.registry_id == MLBackendRegistry.id,
+            )
+            .where(
+                ProjectMLBackend.project_id == project_id,
+                ProjectMLBackend.enabled.is_(True),
+                MLBackendRegistry.is_interactive.is_(True),
+                MLBackendRegistry.state == "connected",
             )
         )
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
-    async def get_project_backend(self, project_id: uuid.UUID) -> MLBackend | None:
-        """v0.8.6 F3 · 优先返回 project.ml_backend_id 显式绑定，否则 fallback 到旧逻辑。"""
-        from app.db.models.project import Project
-
+    async def get_project_backend(
+        self, project_id: uuid.UUID
+    ) -> MLBackendRegistry | None:
+        """优先返回 project.ml_backend_id 显式绑定(且项目已启用)，否则 fallback 交互式。"""
         proj = await self.db.get(Project, project_id)
         if proj is not None and proj.ml_backend_id is not None:
-            backend = await self.get(proj.ml_backend_id)
-            if backend is not None:
-                return backend
+            if await self.is_enabled(project_id, proj.ml_backend_id):
+                backend = await self.get(proj.ml_backend_id)
+                if backend is not None:
+                    return backend
         return await self.get_interactive_backend(project_id)

@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import BatchStatus, UserRole
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.async_job import AsyncJob
 from app.db.models.prediction import FailedPrediction, Prediction
 from app.db.models.project import Project
@@ -328,13 +328,18 @@ async def list_preannotate_project_summary(
 ) -> PreannotateProjectSummaryResponse:
     """v0.9.12 B-17 · 给 ProjectCardGrid 提供 per-project 聚合.
 
-    仅返回有 ml_backend 注册的项目 (EXISTS ml_backends WHERE project_id=...).
+    仅返回有「已启用」全局 backend 的项目 (EXISTS project_ml_backend WHERE enabled).
     v0.10.38 · 撤回 v0.10.36 的 data_type="image" 过滤: 模态分流改到前端 ProjectDetailPanel
     (image 走文本批量预标, video 走引导卡片+job 历史), summary 返回 data_type 供前端路由.
     """
     pres = await db.execute(
         select(Project).where(
-            select(MLBackend.id).where(MLBackend.project_id == Project.id).exists(),
+            select(ProjectMLBackend.id)
+            .where(
+                ProjectMLBackend.project_id == Project.id,
+                ProjectMLBackend.enabled.is_(True),
+            )
+            .exists(),
         )
     )
     projects = list(pres.scalars().all())
@@ -372,17 +377,23 @@ async def list_preannotate_project_summary(
     )
     fail_counts = {pid: int(cnt) for pid, cnt in fail_q.all()}
 
+    # v0.19.0 ADR-0044 · 按项目启用关联 join 全局注册表取本项目可用 backend。
     bk_q = await db.execute(
-        select(MLBackend).where(MLBackend.project_id.in_(project_ids))
+        select(ProjectMLBackend.project_id, MLBackendRegistry)
+        .join(MLBackendRegistry, MLBackendRegistry.id == ProjectMLBackend.registry_id)
+        .where(
+            ProjectMLBackend.project_id.in_(project_ids),
+            ProjectMLBackend.enabled.is_(True),
+        )
     )
-    all_backends = list(bk_q.scalars().all())
-    backends_by_project: dict[uuid.UUID, MLBackend] = {}
+    rows = list(bk_q.all())
+    backends_by_project: dict[uuid.UUID, MLBackendRegistry] = {}
     # 同项目多 backend 时优先选 Project.ml_backend_id 指向的那条; 否则任取一条.
-    for bk in all_backends:
-        backends_by_project.setdefault(bk.project_id, bk)
+    for pid, bk in rows:
+        backends_by_project.setdefault(pid, bk)
     for proj in projects:
         if proj.ml_backend_id:
-            for bk in all_backends:
+            for pid, bk in rows:
                 if bk.id == proj.ml_backend_id:
                     backends_by_project[proj.id] = bk
                     break

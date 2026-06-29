@@ -163,6 +163,14 @@ export function PreannotateConfigForm({
         </div>
       ) : null}
 
+      {/* v0.19.3 WS2 · 源模型自报 batchable=false (交互/有状态) → 不能批量预标 (端点会 422)。 */}
+      {cfg.sourceBatchableWarning && (
+        <div className={styles.stageWarn}>
+          <Icon name="warning" size={12} />
+          <span>{cfg.sourceBatchableWarning}，运行将被端点拒绝。</span>
+        </div>
+      )}
+
       {/* v0.14.17 · YOLO 类别白名单勾选 ([index]类名). 留空=全部. */}
       {cfg.isGeometricBackend && (
         <ClassWhitelistRow

@@ -72,9 +72,9 @@ last_reviewed: 2026-06-10
 - `○ 掩膜`：mask → polygon（image-seg 项目默认）
 - `⊕ 全部`：同实例配对 box + polygon
 
-变体选择器对 gsam2 文本路径同时给出 **SAM2 变体 + DINO 变体两组**(后端内部按 output_mode 编排 detection/segmentation)。项目设置 → ML 模型 →「SAM 文本预标默认输出」可锁定项目级默认。
+变体选择器对 gsam2 文本路径同时给出 **SAM2 变体 + DINO 变体两组**(后端内部按 output_mode 编排 detection/segmentation)。
 
-输出形态会按账号记住上次显式选择。下次进入没有项目默认的项目时,优先使用本会话选择,再使用账号记忆;项目级「SAM 文本预标默认输出」始终优先。
+输出形态会按账号记住上次显式选择:优先使用本会话选择,再使用账号记忆,最后按项目 `type_key` 智能默认(image-det → 框,其它 → 掩膜)。
 
 ### Exemplar 示例（视觉示例）
 

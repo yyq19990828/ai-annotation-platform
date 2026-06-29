@@ -169,6 +169,7 @@ export interface GlobalBackendItem {
   state: string;
   is_interactive: boolean;
   auth_method: string;
+  extra_params: Record<string, unknown>;
   health_meta: BackendHealthMeta | null;
   source_project_id: string;
   source_project_name: string;
@@ -177,6 +178,42 @@ export interface GlobalBackendItem {
 
 export interface GlobalBackendListResponse {
   items: GlobalBackendItem[];
+}
+
+// ── v0.19.0 · ADR-0044 · superadmin 全局注册表 CRUD ──────────────────
+// 全局 backend (project_id 为 null), 走 /admin/ml-integrations/registry。
+export interface MLBackendOut {
+  id: string;
+  project_id: string | null;
+  name: string;
+  url: string;
+  state: string;
+  is_interactive: boolean;
+  auth_method: string;
+  extra_params: Record<string, unknown>;
+  health_meta?: BackendHealthMeta | null;
+  error_message: string | null;
+  last_checked_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MLBackendRegistryCreatePayload {
+  name: string;
+  url: string;
+  is_interactive?: boolean;
+  auth_method?: "none" | "token";
+  auth_token?: string | null;
+  extra_params?: Record<string, unknown>;
+}
+
+// update 与 create 同字段, 但全部可选 (仅下发改动字段)。
+export type MLBackendRegistryUpdatePayload = Partial<MLBackendRegistryCreatePayload>;
+
+export interface RegistryHealthResponse {
+  status: "ok" | "error";
+  backend_id: string;
+  backend_name: string;
 }
 
 // ── v0.10.26 · 容器直连观测 (与项目注册解耦) ─────────────────────────
@@ -250,4 +287,16 @@ export const adminMlIntegrationsApi = {
   /** v0.10.26 · 试启动: 空池时 warm→自动 unload 验证可加载性. */
   observeSmokeTest: (payload: SmokeTestRequest) =>
     apiClient.post<SmokeTestResponse>("/admin/ml-integrations/observe/smoke-test", payload),
+  /** v0.19.0 · ADR-0044 · superadmin 注册全局 backend (project_id=null); url 重复返 409. */
+  createRegistry: (payload: MLBackendRegistryCreatePayload) =>
+    apiClient.post<MLBackendOut>("/admin/ml-integrations/registry", payload),
+  /** v0.19.0 · 编辑全局 backend; 仅下发改动字段; 不存在返 404. */
+  updateRegistry: (id: string, payload: MLBackendRegistryUpdatePayload) =>
+    apiClient.put<MLBackendOut>(`/admin/ml-integrations/registry/${id}`, payload),
+  /** v0.19.0 · 删除全局 backend; 有运行中预标任务返 409; 不存在返 404. */
+  deleteRegistry: (id: string) =>
+    apiClient.delete<void>(`/admin/ml-integrations/registry/${id}`),
+  /** v0.19.0 · 对全局 backend 触发一次健康检查. */
+  registryHealth: (id: string) =>
+    apiClient.post<RegistryHealthResponse>(`/admin/ml-integrations/registry/${id}/health`),
 };

@@ -12,6 +12,14 @@
 
 ### 计划中
 
+- **ML 能力字段消费后续序列（v0.19.3 → v0.21.0）**：v0.19.2「字段消费」衍生的优化序列，已细化到 `docs/plans/`，按版本顺延：
+  - [v0.19.3 两层校验对称收口](../docs/plans/2026-06-29-v0.19.3-two-layer-validation-symmetry.md)（保存编排补能力校验 + config-time batchable 预警 + 跨端契约测试）
+  - [v0.19.4 instances 能力徽标](../docs/plans/2026-06-29-v0.19.4-instances-capability-badges.md)（吃 WS0 透传字段，纯前端）
+  - [v0.19.5 device 设备队列路由](../docs/plans/2026-06-29-v0.19.5-device-aware-queue-routing.md)（消费唯一闲置字段 `resource_profile.device`）
+  - [v0.20.0 RapidOCR backend](../docs/plans/2026-06-29-v0.20.0-rapidocr-backend.md)（第五 backend · OCR 首发 · WS1 text/language/orientation 落点真实 producer）
+  - [v0.20.1 属性语义角色](../docs/plans/2026-06-29-v0.20.1-attribute-semantic-role.md)（落点判定从字符串约定升级为 `semantic_role`）
+  - [v0.20.2 属性键一键补全](../docs/plans/2026-06-29-v0.20.2-writekeys-one-click-fill.md)（对账警告 → 一键修复）
+  - [v0.21.0 全局编排选择器](../docs/plans/2026-06-29-v0.21.0-global-pipeline-selector.md)（WS0 正主消费方 · 跨项目命名编排，依赖 `project_pipelines` 表）
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
 - **[点云 + 图像联合标注（2026-06-14）](./ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)**：3D 旗舰独立 epic。读方向(3D 框投影到相机图)已落 v0.13.4；写方向(相机图 2D 框种 3D 框 frustum fit → 投影手柄微调 → 多相机一致性)Phase 1 已落 v0.15.24(视锥反算选点 + 3D 框初值拟合)，Phase 2-3(投影手柄微调 / 多相机一致性)待开工。配套 §C.8 拖影消除两版本(v0.15.22 剔除 / v0.15.23 逐目标补偿)构成「3D 前线深化」近期切片。
@@ -69,7 +77,9 @@
   - **`predictions_import` 审计 detail 专项**（**P3**）：在 `app/services/audit.py` 加 `predictions_import_detail()` helper（补 task / model_version / hash 取证字段）。触发：审计期反馈 detail 不足。
 - **训练队列**：路由 `/training` 占位。等数据集 snapshot + 主动学习闭环成熟一并做。
 - **ML backend storage endpoint 选择机制（生产化）**（**P3**）：dev `ML_BACKEND_STORAGE_HOST` + ADR-0012 框架已收口；生产场景多变, 第一个生产部署遇到再扩策略表（"何时设、设啥值、何时留空"）。
+- **Python SDK 暴露全局注册表 CRUD / 项目启用管理端点**（**P3**，按需触发）：v0.19.0 把 ML backend 上提为全局注册表（[ADR-0044](docs/adr/0044-global-ml-backend-registry-and-project-enablement.md)），v0.19.1 已让 SDK 只读路径（`MLBackends.list/get`）与之对齐（见 plan [`docs/plans/2026-06-29-v0.19.1-python-sdk-global-registry-alignment.md`](docs/plans/2026-06-29-v0.19.1-python-sdk-global-registry-alignment.md)），但**写路径仍只在 Web 端**：超管全局注册 CRUD（`POST/PUT/DELETE /admin/ml-integrations/registry` + `POST .../registry/{id}/health`）、项目启用清单（`GET /projects/{id}/ml-backends/available`、`PUT .../{rid}/enablement`）。封装为 SDK 客户端方法 + `aap` CLI 子命令，需同步扩 `packages/python-sdk/src/ai_annotation/_http.py` 端点白名单并过 `test_openapi_contract` 对账。属 **SDK feature（非 patch）**，对应 SDK minor。**触发**：出现脚本化批量注册 / 启用 backend 的诉求（CI 部署、多环境批量配置）。
 - **项目编排多条命名持久化（`project_pipelines` 表）**（**P3**，按需触发）：v0.18.x「项目编排」落地走**方案 A** —— `Project.preannotate_pipeline` 单列 JSONB 存「一项目一条当前编排」，供「当前题 AI」popover 的「运行当前题（按项目编排）」读取（见 plan [`docs/plans/2026-06-26-v0.18.25-interactive-ai-toolbar-redesign.md`](docs/plans/2026-06-26-v0.18.25-interactive-ai-toolbar-redesign.md)，依赖 [多阶段预标注编排 epic](ROADMAP/2026-06-23-staged-preannotation-pipeline-roadmap.md)）。当出现「一个项目要保存多条命名编排并切换」（如『仅检测』『检测+车辆属性』『检测+OCR』并存）需求时，再升级为独立 `project_pipelines(id, project_id, name, stages JSONB, is_default, …)` 表 + 编排选择 UI。**触发**：单项目多命名编排诉求 ≥ 2 例，或跨项目编排复用/共享需求出现。不要因「灵活性」提前建表（YAGNI，对照决策底线表「标注配置」行）。
+- **`batchable` 驱动源阶段分块预标（WS3）**（**P3**，先压测再立项）：从 v0.19.2「ML 能力字段消费」计划[出范围存档](docs/plans/2026-06-26-v0.19.2-ml-capability-field-consumption.md#ws3--batchable-驱动源阶段分块不进-v0192存档待立项)。把 `_run_batch`（`apps/api/app/workers/tasks.py:801`）源阶段「逐图循环」改为 `batchable=true` 时按块聚合发 `predict(tasks=[...])`。**收益有限**：四个 backend 服务端都是 `for t in req.tasks` 顺序循环、不堆 GPU batch，故推理总时长一秒不省，3a 只摊销 per-call overhead（HTTP 往返 / context 校验 / Celery↔backend 延迟，毛估 5–15% wall-clock）；却要改动核心批量执行路径的失败 / 进度 / 取消三处粒度（逐图→逐块），改坏会静默吞结果。**触发**：批量吞吐成为实测痛点；且应与 3b（真 GPU 批量，需 backend 改动 + 单独 ADR + 逐 backend 计划）合并立项算总账，避免先改一遍执行路径、3b 再改第二遍。
 
 ### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。

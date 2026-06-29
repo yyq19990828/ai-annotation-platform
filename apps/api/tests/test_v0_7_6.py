@@ -505,7 +505,7 @@ async def test_reset_to_draft_cascades_predictions(
     """v0.9.12 B-15: reset_to_draft 必须清光本 batch 关联的 predictions / failed_predictions /
     prediction_jobs / prediction_metas. 否则 /ai-pre 仍会渲染该 batch 已就绪卡片."""
     from app.db.models.async_job import AsyncJob
-    from app.db.models.ml_backend import MLBackend
+    from app.db.models.ml_backend_registry import MLBackendRegistry
     from app.db.models.prediction import FailedPrediction, Prediction, PredictionMeta
 
     owner, owner_token = super_admin
@@ -518,9 +518,9 @@ async def test_reset_to_draft_cascades_predictions(
         n_tasks=2,
         task_status="pending",
     )
-    backend = MLBackend(
+    # v0.19.0 ADR-0044 · backend 已上提为全局注册项 (无 project_id)。
+    backend = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=p.id,
         name="cascade-test",
         url="http://example/",
     )

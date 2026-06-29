@@ -1359,17 +1359,26 @@ class AapTuiApp(App[None]):
         self.call_from_thread(self._render_jobs, page.items)
 
     def _load_ml_backends(self) -> None:
-        """ml-backends 列表是 project-scoped: 遍历项目逐个聚合 (N+1, 单 worker 内串行)。"""
+        """ml-backends 列表是 project-scoped: 遍历项目逐个聚合 (N+1, 单 worker 内串行)。
+
+        v0.19.1 · 全局注册表 (ADR-0044) 下同一物理 backend 可被多个项目启用, 逐项目
+        返回的是同一 registry id; 按 id 去重合并为一行 (累积所属项目), 既避免 DataTable
+        同一 key 重复 add_row 崩溃, 也免得展示重复行。
+        """
         try:
             projects = self._client.projects.list()
-            rows: list[tuple[Project, MLBackend]] = []
+            merged: dict[str, tuple[MLBackend, list[Project]]] = {}
             for p in projects:
                 for b in self._client.ml_backends.list(p.id):
-                    rows.append((p, b))
+                    key = str(b.id)
+                    if key in merged:
+                        merged[key][1].append(p)
+                    else:
+                        merged[key] = (b, [p])
         except Exception as exc:  # noqa: BLE001
             self.call_from_thread(self._set_status, f"ml-backends 加载失败: {exc}")
             return
-        self.call_from_thread(self._render_ml_backends, rows)
+        self.call_from_thread(self._render_ml_backends, list(merged.values()))
 
     def _load_stats(self) -> None:
         try:
@@ -1489,16 +1498,23 @@ class AapTuiApp(App[None]):
             self._set_status(f"{len(flipped)} 个 job 刚完成")
             self.notify(f"{len(flipped)} 个 job 刚完成", severity="information")
 
-    def _render_ml_backends(self, rows: list[tuple[Project, MLBackend]]) -> None:
+    def _render_ml_backends(
+        self, rows: list[tuple[MLBackend, list[Project]]]
+    ) -> None:
         table = self.query_one("#ml-backends-table", DataTable)
-        self._ml_backends = {str(b.id): b for _, b in rows}
+        self._ml_backends = {str(b.id): b for b, _ in rows}
         table.clear()
-        for project, b in rows:
+        for b, projects in rows:
             state_style = _ML_STATE_STYLE.get(b.state, "")
             model_version = (b.health_meta.model_version if b.health_meta else None) or "-"
+            project_cell = (
+                projects[0].display_id
+                if len(projects) == 1
+                else f"{len(projects)} 个项目"
+            )
             table.add_row(
                 b.name,
-                project.display_id,
+                project_cell,
                 Text(b.state, style=state_style),
                 model_version,
                 _ml_util(b),

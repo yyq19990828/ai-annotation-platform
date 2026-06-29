@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from app.config import settings
 from app.db.models.annotation import Annotation
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.project import Project
 from app.db.models.task import Task
@@ -250,8 +250,7 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
     user, _ = super_admin
     task, item = await _make_video_task(db_session, user.id)
     project = await db_session.get(Project, task.project_id)
-    backend = MLBackend(
-        project_id=task.project_id,
+    backend = MLBackendRegistry(
         name="SAM2 Video",
         url="http://sam2-video.test",
         state="connected",
@@ -261,6 +260,13 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
     db_session.add(backend)
     await db_session.flush()
     project.ml_backend_id = backend.id
+    # v0.19.0 ADR-0044 · get_project_backend 优先 project.ml_backend_id 且需项目「已启用」
+    db_session.add(
+        ProjectMLBackend(
+            project_id=task.project_id, registry_id=backend.id, enabled=True
+        )
+    )
+    await db_session.flush()
     annotation = Annotation(
         task_id=task.id,
         project_id=task.project_id,
@@ -341,8 +347,7 @@ async def test_tracker_worker_marks_low_confidence_backend_results_outside(
     user, _ = super_admin
     task, item = await _make_video_task(db_session, user.id)
     project = await db_session.get(Project, task.project_id)
-    backend = MLBackend(
-        project_id=task.project_id,
+    backend = MLBackendRegistry(
         name="SAM3 Video",
         url="http://sam3-video.test",
         state="connected",
@@ -352,6 +357,13 @@ async def test_tracker_worker_marks_low_confidence_backend_results_outside(
     db_session.add(backend)
     await db_session.flush()
     project.ml_backend_id = backend.id
+    # v0.19.0 ADR-0044 · get_project_backend 优先 project.ml_backend_id 且需项目「已启用」
+    db_session.add(
+        ProjectMLBackend(
+            project_id=task.project_id, registry_id=backend.id, enabled=True
+        )
+    )
+    await db_session.flush()
     annotation = Annotation(
         task_id=task.id,
         project_id=task.project_id,

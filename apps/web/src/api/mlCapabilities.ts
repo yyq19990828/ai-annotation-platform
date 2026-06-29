@@ -83,6 +83,9 @@ export interface CapabilityInstanceModel {
   supported_prompts: string[];
   // v0.18.15 · 一等输入契约 (full_image | crop | bbox_prompt | point_prompt); 见 MLModelCapability.
   supported_inputs?: string[];
+  // v0.19.2 WS0 · backend 自报的资源画像 (batchable / device / vram 等); 由 /instances 透传。
+  // 老 backend 缺字段 = {}。前端模型市场卡据此渲染「可批量 / 设备」徽标。
+  resource_profile?: Record<string, unknown>;
   supported_geometric_outputs: string[];
   supported_trackers: string[];
   modality: string | null;

@@ -13,33 +13,14 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.ml_backend import MLBackend
-from app.db.models.project import Project
+from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
 from app.services.ml_backend import MLBackendService
 
 
-async def _make_project(db: AsyncSession, owner_id: uuid.UUID) -> Project:
-    suffix = uuid.uuid4().hex[:8]
-    proj = Project(
-        id=uuid.uuid4(),
-        display_id=f"P-{suffix}",
-        name=f"p-{suffix}",
-        type_label="image-det",
-        type_key="image-det",
-        owner_id=owner_id,
-        status="in_progress",
-    )
-    db.add(proj)
-    await db.flush()
-    return proj
-
-
-async def _make_backend(
-    db: AsyncSession, project_id: uuid.UUID, url: str = "http://example/"
-) -> MLBackend:
+async def _make_backend(db: AsyncSession, url: str = "http://example/") -> MLBackend:
+    # v0.19.0 ADR-0044 · backend 上提为全局注册表, 不再有 project_id。
     backend = MLBackend(
         id=uuid.uuid4(),
-        project_id=project_id,
         name="test-backend",
         url=url,
         state="disconnected",
@@ -51,11 +32,9 @@ async def _make_backend(
 
 
 async def test_check_health_updates_last_checked_at(
-    db_session: AsyncSession, monkeypatch, super_admin
+    db_session: AsyncSession, monkeypatch
 ):
-    user, _ = super_admin
-    proj = await _make_project(db_session, user.id)
-    backend = await _make_backend(db_session, proj.id)
+    backend = await _make_backend(db_session)
 
     async def fake_health_meta(self) -> tuple[bool, dict | None]:  # noqa: ARG001
         return True, None
@@ -80,11 +59,9 @@ async def test_check_health_updates_last_checked_at(
 
 
 async def test_check_health_marks_error_on_failure(
-    db_session: AsyncSession, monkeypatch, super_admin
+    db_session: AsyncSession, monkeypatch
 ):
-    user, _ = super_admin
-    proj = await _make_project(db_session, user.id)
-    backend = await _make_backend(db_session, proj.id)
+    backend = await _make_backend(db_session)
 
     async def fake_health_meta(self) -> tuple[bool, dict | None]:  # noqa: ARG001
         return False, None
@@ -126,9 +103,7 @@ def test_build_stats_snapshot_keeps_runtime_load_state():
     from app.workers.ml_health import _build_stats_snapshot
 
     project_id = uuid.uuid4()
-    backend = MLBackend(
-        id=uuid.uuid4(), project_id=project_id, name="sam2", url="http://example"
-    )
+    backend = MLBackend(id=uuid.uuid4(), name="sam2", url="http://example")
     snap = _build_stats_snapshot(
         backend,
         ok=True,
@@ -169,12 +144,8 @@ def test_group_backend_rows_merges_same_physical_backend_by_auth_scope():
     """PerfHud 按物理 endpoint 聚合, 但不同鉴权配置不能共用一次 health probe."""
     from app.workers.ml_health import _group_backend_rows
 
-    project_a = uuid.uuid4()
-    project_b = uuid.uuid4()
-    project_c = uuid.uuid4()
     backend_a = MLBackend(
         id=uuid.uuid4(),
-        project_id=project_a,
         name="sam-a",
         url="http://ml.local:9000/api",
         auth_method="token",
@@ -182,7 +153,6 @@ def test_group_backend_rows_merges_same_physical_backend_by_auth_scope():
     )
     backend_b = MLBackend(
         id=uuid.uuid4(),
-        project_id=project_b,
         name="sam-b",
         url="http://ml.local:9000/",
         auth_method="token",
@@ -190,7 +160,6 @@ def test_group_backend_rows_merges_same_physical_backend_by_auth_scope():
     )
     backend_c = MLBackend(
         id=uuid.uuid4(),
-        project_id=project_c,
         name="sam-c",
         url="http://ml.local:9000/",
         auth_method="token",

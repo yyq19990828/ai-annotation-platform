@@ -102,7 +102,7 @@ scene 模式适合“一个连续场景被拆成多个 task”的项目，例如
 1. 在 Dashboard 找到要复制的项目卡片 → 右下角 `⋮` → 「复制项目配置」。
 2. 自动跳到 Wizard，顶部出现 banner「已用源项目配置预填表单」；新项目名默认为 `{源项目名} (副本)`。
 3. 7 步流程正常往下走，任何字段都可以在某步覆盖（你的修改优先于源配置）。
-4. 提交后新项目就绪。**只复制配置**：`tool_bindings`（类别与属性 schema）/ `type_key` / `type_label` / `data_type` / `ai_enabled` / `label_config` / `sampling` / `rendering_config` / `show_overlap_first` / `iou_dedup_threshold` / `box_threshold` / `text_threshold` / `text_output_default` / `maximum_annotations`（完整列表见后端 `CLONEABLE_PROJECT_FIELDS`）。**不复制运行时数据**：datasets / tasks / annotations / members / batches。
+4. 提交后新项目就绪。**只复制配置**：`tool_bindings`（类别与属性 schema）/ `type_key` / `type_label` / `data_type` / `ai_enabled` / `label_config` / `sampling` / `rendering_config` / `show_overlap_first` / `iou_dedup_threshold` / `box_threshold` / `text_threshold` / `maximum_annotations`（完整列表见后端 `CLONEABLE_PROJECT_FIELDS`）。**不复制运行时数据**：datasets / tasks / annotations / members / batches。
 
 > 需要跨项目共享 / 跨组织共享 / 模板治理？使用「项目模板库」独立资产形态，
 > 详见 [项目模板库（Project Templates）](./project-templates.md)。

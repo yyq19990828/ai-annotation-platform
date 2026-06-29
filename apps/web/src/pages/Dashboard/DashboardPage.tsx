@@ -256,8 +256,8 @@ export function DashboardPage() {
   }, [advanced, filter]);
 
   const { data: stats } = useProjectStats();
-  const { data: audit } = useAuditLogs({ page: 1, page_size: 8 });
-  const recentActivity = (audit?.items ?? []).filter((it) => !it.action.startsWith("http.")).slice(0, 8);
+  const { data: audit } = useAuditLogs({ page: 1, page_size: 8, business_only: true });
+  const recentActivity = audit?.items ?? [];
 
   return (
     <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground max-[900px]:p-4">

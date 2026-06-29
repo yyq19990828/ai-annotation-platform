@@ -30,7 +30,7 @@ from app.schemas.dashboard import (
 )
 from app.db.models.project_member import ProjectMember
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
 from app.services.dashboard_stats import (
     _class_distribution,
     _first_pass_yield,
@@ -77,7 +77,7 @@ async def admin_dashboard(
     ml_total = 0
     ml_connected = 0
     try:
-        from app.db.models.ml_backend import MLBackend
+        from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
 
         ml_result = await db.execute(select(MLBackend))
         ml_backends = ml_result.scalars().all()

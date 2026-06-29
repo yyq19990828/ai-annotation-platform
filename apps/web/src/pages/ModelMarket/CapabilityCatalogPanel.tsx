@@ -75,8 +75,9 @@ interface BackendResult {
 }
 
 // 协议卡视图把 instances 端点的 model 合成 FlatModel, 以便复用 ModelCard 渲染 (与其他
-// 分组视图对齐)。instances 端点不带运行时池 / resource_profile, 故这些字段在卡上显示
-// 占位 "—"; 当 admin 的 flatModels (来自 /capabilities) 有同名条目时, 上层会优先用富数据。
+// 分组视图对齐)。instances 端点不带运行时池 (池大小 / 加载态在卡上显示占位); resource_profile
+// 自 v0.19.2 WS0 起已透传, 故「可批量 / 设备 / 资源」徽标可直接渲染。当 admin 的 flatModels
+// (来自 /capabilities) 有同名条目时, 上层会优先用富数据 (带运行时池)。
 function instanceModelToFlat(inst: CapabilityInstance, m: CapabilityInstanceModel): FlatModel {
   const infraFallback = inst.infra && inst.infra !== "unknown" ? inst.infra : undefined;
   const source: FlatModel["source"] = inst.source === "env_only" ? "env_only" : "registered";
@@ -91,6 +92,7 @@ function instanceModelToFlat(inst: CapabilityInstance, m: CapabilityInstanceMode
       is_interactive: m.is_interactive,
       supported_prompts: m.supported_prompts,
       supported_inputs: m.supported_inputs,
+      resource_profile: m.resource_profile,
       supported_geometric_outputs: m.supported_geometric_outputs,
       // instances 端点只带 schema (含 select options), ModelCard 的「输出属性」行读
       // output_attribute_types, 这里用 schema 的 label/key 投影出展示用类型列表。
@@ -277,6 +279,8 @@ export function CapabilityCatalogPanel() {
             infra: m.infra ?? infraFallback,
             is_interactive: m.is_interactive,
             supported_prompts: m.supported_prompts,
+            supported_inputs: m.supported_inputs,
+            resource_profile: m.resource_profile,
             supported_geometric_outputs: m.supported_geometric_outputs,
             supported_trackers: m.supported_trackers,
             supported_variants: m.supported_variants,

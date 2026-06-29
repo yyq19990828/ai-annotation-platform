@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-26
+last_reviewed: 2026-06-29
 ---
 
 # 环境变量参考
@@ -31,6 +31,15 @@ last_reviewed: 2026-06-26
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis 连接地址，用于会话缓存、速率限制等 格式：redis://[:密码@]主机:端口/数据库编号 |
+
+## --- 设备感知预标队列路由 ---
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `PREANNOTATE_GPU_QUEUE` | `ml` | 按模型自报的 resource_profile.device 把预标任务路由到不同 Celery 队列: 整条 pipeline 全部 device=cpu → CPU 队列 (高并发); 任一 GPU/未自报阶段 → GPU 队列 (低并发护显存)。 队列名默认复用现有 "ml" (GPU) + 新增 "ml.cpu" (CPU)。改名须同步 docker-compose 各 worker 的 -Q。 |
+| `PREANNOTATE_CPU_QUEUE` | `ml.cpu` | — |
+| `CELERY_GPU_CONCURRENCY` | `2` | GPU/CPU 预标 worker 并发 (docker-compose celery-worker-gpu / celery-worker-cpu 读取)。 GPU 低并发避免多预标并发打爆显存; CPU 可较高并发。 |
+| `CELERY_CPU_CONCURRENCY` | `4` | — |
 
 ## 对象存储 (MinIO / S3 兼容)
 
@@ -72,12 +81,6 @@ last_reviewed: 2026-06-26
 | `STRICT_OFFLINE` | `1: checkpoints/ 缺权重直接返 400, 不去 GH release 下载.` | — |
 | `YOLO_STRICT_OFFLINE` | `0` | — |
 | `YOLO_LOG_LEVEL` | `INFO` | — |
-
-## 单项目最多可绑定的 ML backend 数量上限. DB / API / UI 均按 1:N 设计.
-
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `MAX_ML_BACKENDS_PER_PROJECT` | `3` | 多阶段预标注 (路径 B) 需 ≥2 backend (detect + classify), 默认放开到 3; 仍保留上限挡入口防显存爆炸, 生产按显存预算调整. |
 
 ## Prometheus http_sd 服务发现端点 /api/v1/internal/metrics-targets 的可选 bearer token。
 

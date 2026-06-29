@@ -32,8 +32,13 @@ export function ModelCard({ item }: { item: FlatModel }) {
   const variantGroups = (m.supported_variants ?? []).filter(
     (g) => Array.isArray(g.variants) && g.variants.length > 0,
   );
+  // v0.19.4 · batchable / device 升级为语义徽标 (顶部 badge 行), 资源行排除二者只留余项 (vram 等)。
   const resource = m.resource_profile ?? {};
-  const resourceEntries = Object.entries(resource).filter(([, v]) => v != null);
+  const batchable = typeof resource.batchable === "boolean" ? resource.batchable : undefined;
+  const device = typeof resource.device === "string" ? resource.device : undefined;
+  const resourceEntries = Object.entries(resource).filter(
+    ([k, v]) => v != null && k !== "batchable" && k !== "device",
+  );
   const defaultVariants = pickDefaultVariants(m);
   const cardRuntimeKey = runtimeKeyFor(m.task, defaultVariants);
   const loaded = isLoadedRuntimeKey(item, defaultVariants, cardRuntimeKey);
@@ -81,6 +86,23 @@ export function ModelCard({ item }: { item: FlatModel }) {
           </Badge>
         ))}
         {m.is_interactive && <Badge variant="ai">交互式</Badge>}
+        {/* v0.19.4 · 批量徽标: 一眼看出能否进批量预标 (交互/有状态模型不可批量)。 */}
+        {batchable === true && (
+          <span title="resource_profile.batchable=true：可用于批量预标流水线">
+            <Badge variant="success">可批量</Badge>
+          </span>
+        )}
+        {batchable === false && (
+          <span title="resource_profile.batchable=false：交互/有状态模型，不可用于批量预标">
+            <Badge variant="warning">交互/有状态</Badge>
+          </span>
+        )}
+        {/* v0.19.4 · 设备徽标: resource_profile.device。 */}
+        {device && (
+          <span title={`resource_profile.device=${device}`}>
+            <Badge variant="outline">{device.toUpperCase()}</Badge>
+          </span>
+        )}
         {m.model_family && (
           <span
             className="mono rounded-full border border-border px-2 py-px text-2xs text-muted-foreground"

@@ -254,7 +254,7 @@ histogram_quantile(0.95,
 
 **调整后必须重启 worker**：信号量按 backend_id 永久缓存，改字段后须 `docker compose restart api celery-worker` 才能生效。若要运行期热更新，需要把 cache key 改为 `(backend_id, max_cc)` 或加 invalidation 机制。
 
-**注册表单 UI**：`MlBackendFormModal` 在「认证方式」下方提供「最大并发」number input（1-32，留空走默认 4），提交时合并到 `extra_params.max_concurrency`（覆盖 textarea JSON 同名键）。`RegisteredBackendsTab` 列表行类型列旁显示 `≤N 并发` chip，缺省值不渲染避免列表噪音。不再需要直接手改 DB JSONB 字段。
+**注册表单 UI**：全局注册表单 `GlobalBackendFormModal`（模型市场 → 注册管理，仅超管）在「认证方式」下方提供「最大并发」number input（1-32，留空走默认 4），提交时合并到 `extra_params.max_concurrency`（覆盖 textarea JSON 同名键）。`RegisteredBackendsTab` 全局注册表行的类型列旁显示 `≤N 并发` chip，缺省值不渲染避免列表噪音——限速真正 per-物理-backend 生效，此 chip 即该物理 backend 的全局并发闸。不再需要直接手改 DB JSONB 字段。 <!-- since v0.19.0 · ADR-0044 限速上提全局 -->
 
 **前端可见性**: `/admin/preannotate-summary` 透传 `ml_backend_max_concurrency` 给 `ProjectCardGrid` 卡片 + `ProjectDetailPanel` 头部展示「最多 N 并发」, 多 batch 并行预标时给 admin 心理预期.
 

@@ -72,16 +72,20 @@ async def _seed_batch_with_predictions(
     db, project_id, *, status: str = "pre_annotated"
 ):
     from app.db.models.async_job import AsyncJob
-    from app.db.models.ml_backend import MLBackend
+    from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
     from app.db.models.prediction import Prediction
 
     batch = await create_batch(db, project_id=project_id, status=status)
     task = await _create_task(db, project_id=project_id, batch_id=batch.id)
-    backend = MLBackend(
-        id=uuid.uuid4(), project_id=project_id, name="bk", url="http://x/"
+    # v0.19.0 ADR-0044 · 全局注册项 + 项目启用关联 (url 全局唯一, 故每次造唯一 url)。
+    backend = MLBackendRegistry(
+        id=uuid.uuid4(), name="bk", url=f"http://x-{uuid.uuid4().hex[:8]}/"
     )
     db.add(backend)
     await db.flush()
+    db.add(
+        ProjectMLBackend(project_id=project_id, registry_id=backend.id, enabled=True)
+    )
     db.add(
         Prediction(
             task_id=task.id,
@@ -253,7 +257,7 @@ async def test_preannotate_summary_includes_all_modalities_with_data_type(
     httpx_client, db_session, super_admin
 ):
     """v0.10.38 · 撤回 v0.10.36 的 image-only 过滤: 视频/图像项目都出现, 带 data_type 供前端分流."""
-    from app.db.models.ml_backend import MLBackend
+    from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 
     user, token = super_admin
     p_img = await create_project(db_session, owner_id=user.id, name="img-proj")
@@ -262,8 +266,13 @@ async def test_preannotate_summary_includes_all_modalities_with_data_type(
     )
     p_video.data_type = "video"
     for proj in (p_img, p_video):
+        reg = MLBackendRegistry(
+            id=uuid.uuid4(), name="bk", url=f"http://x-{uuid.uuid4().hex[:8]}/"
+        )
+        db_session.add(reg)
+        await db_session.flush()
         db_session.add(
-            MLBackend(id=uuid.uuid4(), project_id=proj.id, name="bk", url="http://x/")
+            ProjectMLBackend(project_id=proj.id, registry_id=reg.id, enabled=True)
         )
     await db_session.commit()
 

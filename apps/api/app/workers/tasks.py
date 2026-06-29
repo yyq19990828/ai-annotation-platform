@@ -519,7 +519,7 @@ async def _run_batch(
 
     from app.db.enums import BatchStatus
     from app.db.models.async_job import AsyncJob, AsyncJobStatus
-    from app.db.models.ml_backend import MLBackend
+    from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
     from app.db.models.project import Project
     from app.db.models.task import Task
     from app.db.models.task_batch import TaskBatch

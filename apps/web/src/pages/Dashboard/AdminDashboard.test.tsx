@@ -19,7 +19,7 @@ vi.mock("@/hooks/useProjects", () => ({
   useProjects: () => mockUseProjects(),
 }));
 vi.mock("@/hooks/useAudit", () => ({
-  useAuditLogs: () => mockUseAuditLogs(),
+  useAuditLogs: (...args: unknown[]) => mockUseAuditLogs(...args),
 }));
 // 重 wizard 子组件 stub（避免它们的 react-query / form 复杂度）
 vi.mock("@/components/projects/CreateProjectWizard", () => ({
@@ -180,18 +180,19 @@ describe("AdminDashboard", () => {
     expect(screen.getByText("暂无业务事件")).toBeInTheDocument();
   });
 
-  it("audit 含 http.* 项被过滤掉，仅显示业务事件", () => {
+  it("以 business_only 向服务端请求业务事件（http.* 由后端排除）", () => {
     mockUseAdminStats.mockReturnValue({ data: baseStats, isLoading: false });
     mockUseAuditLogs.mockReturnValue({
       data: {
         items: [
-          { id: "1", action: "http.get", actor_email: "a@x.com", created_at: new Date().toISOString() },
           { id: "2", action: "user.create", actor_email: "b@x.com", target_type: "user", target_id: "u1", created_at: new Date().toISOString() },
         ],
       },
     });
     renderUI();
+    expect(mockUseAuditLogs).toHaveBeenCalledWith(
+      expect.objectContaining({ business_only: true }),
+    );
     expect(screen.getByText("b@x.com")).toBeInTheDocument();
-    expect(screen.queryByText("a@x.com")).not.toBeInTheDocument();
   });
 });

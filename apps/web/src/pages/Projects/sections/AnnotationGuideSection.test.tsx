@@ -80,7 +80,6 @@ function makeProject(
     iou_dedup_threshold: 0.7,
     box_threshold: 0.35,
     text_threshold: 0.25,
-    text_output_default: null,
     rendering_config: {},
     total_tasks: 0,
     completed_tasks: 0,

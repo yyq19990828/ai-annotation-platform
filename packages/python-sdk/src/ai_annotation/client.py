@@ -380,7 +380,12 @@ class Exports:
 
 
 class MLBackends:
-    """项目挂载的 ML Backend 只读监控 (健康状态 + GPU/cache 指标)。"""
+    """ML Backend 只读监控 (健康状态 + GPU/cache 指标)。
+
+    v0.19.1 · 全局注册表 (ADR-0044) 下, `list` 只返回**本项目已启用**的全局
+    backend (非「项目挂载的全部」); `MLBackend.id` 是全局 registry id, 同一物理
+    backend 在不同项目里返回同一 id。注册 / 项目启用管理仍只在 Web 端, SDK 暂不暴露。
+    """
 
     def __init__(self, http: HttpTransport):
         self._http = http

@@ -7336,6 +7336,11 @@
             "title": "Auth Method",
             "type": "string"
           },
+          "extra_params": {
+            "additionalProperties": true,
+            "title": "Extra Params",
+            "type": "object"
+          },
           "health_meta": {
             "anyOf": [
               {
@@ -7945,7 +7950,7 @@
         "type": "object"
       },
       "InstanceModelItem": {
-        "description": "实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 resource_profile /\nparams 等运维信息; v0.14.12 起补 supported_variants + variant_combinations 让\n前端能按主轴展开「具体模型」行).",
+        "description": "实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 url / params 等运维\n信息; v0.14.12 起补 supported_variants + variant_combinations 让前端能按主轴展开\n「具体模型」行; v0.19.2 WS0 起补 supported_inputs + resource_profile, 与项目级\n/capabilities 对齐, 供全局编排选择器消费投递契约/批量画像).",
         "properties": {
           "composition": {
             "default": "atom",
@@ -8023,12 +8028,26 @@
             "title": "Output Attribute Types",
             "type": "array"
           },
+          "resource_profile": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Resource Profile",
+            "type": "object"
+          },
           "supported_geometric_outputs": {
             "default": [],
             "items": {
               "type": "string"
             },
             "title": "Supported Geometric Outputs",
+            "type": "array"
+          },
+          "supported_inputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Inputs",
             "type": "array"
           },
           "supported_prompts": {
@@ -8822,9 +8841,16 @@
             "type": "string"
           },
           "project_id": {
-            "format": "uuid",
-            "title": "Project Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
           },
           "state": {
             "title": "State",
@@ -8842,7 +8868,6 @@
         },
         "required": [
           "id",
-          "project_id",
           "name",
           "url",
           "state",
@@ -11530,22 +11555,6 @@
             ],
             "title": "Template Id"
           },
-          "text_output_default": {
-            "anyOf": [
-              {
-                "enum": [
-                  "box",
-                  "mask",
-                  "both"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Output Default"
-          },
           "text_threshold": {
             "anyOf": [
               {
@@ -11634,6 +11643,78 @@
           }
         },
         "title": "ProjectDistributeBatches",
+        "type": "object"
+      },
+      "ProjectMLBackendEnablement": {
+        "description": "切换项目启用 + 写项目级变体覆盖。覆盖项缺省 = 不改动。",
+        "properties": {
+          "default_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Variants"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "ProjectMLBackendEnablement",
+        "type": "object"
+      },
+      "ProjectMLBackendItem": {
+        "description": "一行 = 一个全局 backend 在本项目的启用态 + 项目级覆盖。\n\n`backend` 是全局注册项快照 (project_id=None); `enabled`/`default_variants` 来自\nproject_ml_backend 关联 (无关联则 enabled=False、覆盖 None)。",
+        "properties": {
+          "backend": {
+            "$ref": "#/components/schemas/MLBackendOut"
+          },
+          "default_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Variants"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "backend"
+        ],
+        "title": "ProjectMLBackendItem",
+        "type": "object"
+      },
+      "ProjectMLBackendList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectMLBackendItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ProjectMLBackendList",
         "type": "object"
       },
       "ProjectMLBackendsGroup": {
@@ -11767,6 +11848,14 @@
             "title": "Box Threshold",
             "type": "number"
           },
+          "capability_warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Capability Warnings",
+            "type": "array"
+          },
           "classes": {
             "default": [],
             "items": {
@@ -11875,11 +11964,6 @@
             ],
             "title": "Ml Backend Id"
           },
-          "ml_backend_limit": {
-            "default": 1,
-            "title": "Ml Backend Limit",
-            "type": "integer"
-          },
           "model_version": {
             "anyOf": [
               {
@@ -11979,17 +12063,6 @@
             "default": 300,
             "title": "Task Lock Ttl Seconds",
             "type": "integer"
-          },
-          "text_output_default": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Output Default"
           },
           "text_threshold": {
             "default": 0.25,
@@ -12732,22 +12805,6 @@
             ],
             "title": "Source Project Id"
           },
-          "text_output_default": {
-            "anyOf": [
-              {
-                "enum": [
-                  "box",
-                  "mask",
-                  "both"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Output Default"
-          },
           "text_threshold": {
             "default": 0.25,
             "maximum": 1.0,
@@ -12948,17 +13005,6 @@
               }
             ],
             "title": "Source Project Id"
-          },
-          "text_output_default": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Output Default"
           },
           "text_threshold": {
             "default": 0.25,
@@ -13210,22 +13256,6 @@
               }
             ],
             "title": "Show Overlap First"
-          },
-          "text_output_default": {
-            "anyOf": [
-              {
-                "enum": [
-                  "box",
-                  "mask",
-                  "both"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Output Default"
           },
           "text_threshold": {
             "anyOf": [
@@ -13563,22 +13593,6 @@
               }
             ],
             "title": "Status"
-          },
-          "text_output_default": {
-            "anyOf": [
-              {
-                "enum": [
-                  "box",
-                  "mask",
-                  "both"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Output Default"
           },
           "text_threshold": {
             "anyOf": [
@@ -19877,7 +19891,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.18.32"
+    "version": "0.19.5"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -20170,7 +20184,7 @@
     },
     "/api/v1/admin/ml-integrations/all": {
       "get": {
-        "description": "列系统内所有 ml_backends, 含 source project name 作为来源标签.\n\n用于 CreateProjectWizard step 4 让用户选「复用一个已注册 backend」, 复用时\ncreate_project 端点会复制 row 入新项目 (保留 url/auth/extra_params, 重置 state).",
+        "description": "v0.19.0 ADR-0044 · 列全局注册表所有 backend。\n\n用于 CreateProjectWizard step 4 让用户选「为新项目启用一个已注册 backend」;\n复用时 create_project 端点为新项目建启用关联 (复用同一全局 registry id)。\nsource_project_* 字段保留兼容: 现以 source ('manual'/'env') 作来源标签。",
         "operationId": "list_all_backends_api_v1_admin_ml_integrations_all_get",
         "responses": {
           "200": {
@@ -20342,6 +20356,201 @@
         ]
       }
     },
+    "/api/v1/admin/ml-integrations/registry": {
+      "post": {
+        "description": "注册一个全局 backend (source=manual)。同 url 已存在则 409。",
+        "operationId": "create_registry_api_v1_admin_ml_integrations_registry_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MLBackendCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MLBackendOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Registry",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/registry/{registry_id}": {
+      "delete": {
+        "description": "删除全局 backend。running prediction job 仍在跑则 409; 否则级联解绑\nprojects.ml_backend_id / project_ml_backend (CASCADE) / 历史 prediction (SET NULL)。",
+        "operationId": "delete_registry_api_v1_admin_ml_integrations_registry__registry_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "registry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Registry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Registry",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      },
+      "put": {
+        "description": "编辑全局 backend 的端点固有属性 (name/url/auth/extra_params/is_interactive)。",
+        "operationId": "update_registry_api_v1_admin_ml_integrations_registry__registry_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "registry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Registry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MLBackendUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MLBackendOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Registry",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/registry/{registry_id}/health": {
+      "post": {
+        "description": "对全局 backend 探活 + 落能力快照 (与项目作用域 health 同逻辑, 无项目启用前置)。",
+        "operationId": "check_registry_health_api_v1_admin_ml_integrations_registry__registry_id__health_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "registry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Registry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MLBackendHealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Check Registry Health",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
     "/api/v1/admin/ml-integrations/runtime-hints": {
       "get": {
         "operationId": "runtime_hints_api_v1_admin_ml_integrations_runtime_hints_get",
@@ -20468,7 +20677,7 @@
     },
     "/api/v1/admin/preannotate-summary": {
       "get": {
-        "description": "v0.9.12 B-17 · 给 ProjectCardGrid 提供 per-project 聚合.\n\n仅返回有 ml_backend 注册的项目 (EXISTS ml_backends WHERE project_id=...).\nv0.10.38 · 撤回 v0.10.36 的 data_type=\"image\" 过滤: 模态分流改到前端 ProjectDetailPanel\n(image 走文本批量预标, video 走引导卡片+job 历史), summary 返回 data_type 供前端路由.",
+        "description": "v0.9.12 B-17 · 给 ProjectCardGrid 提供 per-project 聚合.\n\n仅返回有「已启用」全局 backend 的项目 (EXISTS project_ml_backend WHERE enabled).\nv0.10.38 · 撤回 v0.10.36 的 data_type=\"image\" 过滤: 模态分流改到前端 ProjectDetailPanel\n(image 走文本批量预标, video 走引导卡片+job 历史), summary 返回 data_type 供前端路由.",
         "operationId": "list_preannotate_project_summary_api_v1_admin_preannotate_summary_get",
         "responses": {
           "200": {
@@ -29361,6 +29570,55 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/ml-backends/available": {
+      "get": {
+        "description": "v0.19.0 ADR-0044 · 项目设置「启用勾选清单」: 列出全部全局 backend + 本项目启用态/覆盖。\n\n与 GET \"\" (只返回已启用) 区分: 本端点含未启用项, 供项目管理员勾选启用。\n路由声明在 `/{backend_id}` 之前, 避免被当作 backend_id 捕获。",
+        "operationId": "list_available_ml_backends_api_v1_projects__project_id__ml_backends_available_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMLBackendList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Available Ml Backends",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/ml-backends/{backend_id}": {
       "delete": {
         "operationId": "delete_ml_backend_api_v1_projects__project_id__ml_backends__backend_id__delete",
@@ -29647,6 +29905,75 @@
           }
         ],
         "summary": "Refresh Ml Backend Capabilities",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ml-backends/{backend_id}/enablement": {
+      "put": {
+        "description": "v0.19.0 ADR-0044 · 切换本项目对某全局 backend 的启用 + 写项目级覆盖 (阈值/变体)。\n\n全局 backend 必须存在 (不在此创建全局项; 注册全局项走 admin 端点)。",
+        "operationId": "set_ml_backend_enablement_api_v1_projects__project_id__ml_backends__backend_id__enablement_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Backend Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectMLBackendEnablement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMLBackendItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Ml Backend Enablement",
         "tags": [
           "ml-backends"
         ]

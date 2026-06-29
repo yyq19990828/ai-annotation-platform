@@ -51,20 +51,35 @@ DELETE /api/v1/admin/ml-integrations/:id       # 仅 super_admin
 
 不阻断创建——网络抖动不应让你卡住。
 
-## 项目绑定
+## 项目启用与主后端
 
-绑定走项目侧：
+每个项目从全局注册表勾选启用 backend，并设主后端。
+
+启用 / 覆盖（项目作用域）：
+
+```http
+GET /api/v1/projects/:id/ml-backends/available
+PUT /api/v1/projects/:id/ml-backends/:registry_id/enablement
+{ "enabled": true, "box_threshold": 0.3, "text_threshold": 0.25, "default_variants": {} }
+```
+
+- `available` 列出全部全局 backend + 本项目启用态 / 覆盖。
+- `enablement` 切换启用并写项目级覆盖（`box_threshold` / `text_threshold` / `default_variants` 均可选）。
+
+设主后端 / AI 开关（走项目本体）：
 
 ```http
 PATCH /api/v1/projects/:id
 { "ml_backend_id": 3, "ai_enabled": true }
 ```
 
-未绑定状态下触发预标会得到明确错误：
+`ml_backend_id` 只能取**已启用**的 backend。未设主后端直接触发预标会得到明确错误：
 
 ```json
 { "detail": "Project has no ML backend bound. Configure in project settings." }
 ```
+
+> 旧的项目作用域端点仍向后兼容：`POST /api/v1/projects/:id/ml-backends`（按 URL 复用或新建全局项 + 启用）、`DELETE`（停用）。主推路径是上面的启用清单。
 
 ## 协议
 

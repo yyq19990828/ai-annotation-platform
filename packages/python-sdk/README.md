@@ -62,10 +62,15 @@ aap predictions import <project-id> result.json --format aap_json [--dry-run]
 aap jobs wait <job-id>                             # 进度条跟随到终态
 aap export project <project-id> --target aap_json --out out.zip
 
+aap ml-backends list --project <project-id>        # 列本项目已启用的 ML Backend + 健康状态
+aap ml-backends get <backend-id> --project <project-id>
+
 aap tui        # 需要 [tui] extras
 ```
 
 所有命令支持 `--json`:输出裸 JSON、无 rich 装饰/进度条,退出码非 0 表示失败,供 CI/脚本使用。错误统一一行 stderr 提示(401 时提示先 `aap login`)。
+
+> **ML Backend 全局注册表(自平台 0.19.0 起)**:backend 已上提为全局注册项,`ml-backends list` 只返回**本项目已启用**的 backend;`MLBackend.id` 是全局 registry id,同一物理 backend 在不同项目里返回同一 id。脚本里硬编码的旧 per-project backend id 在 0.19.0 迁移后已失效,需改用新的 registry id。注册 / 项目启用管理仍只在 Web 端。
 
 ## 测试
 

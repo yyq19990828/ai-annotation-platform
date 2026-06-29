@@ -86,11 +86,23 @@ export interface StageCaps {
   acceptsCrop: boolean;
   acceptsBboxPrompt: boolean;
   producesAttributes: boolean;
+  /**
+   * v0.19.2 WS1 · 选中 model 是否产类别属性 (output_attribute_types 含 "class")。
+   * undefined = model 未自报属性类型 (无法判, 不警示); false = 自报了但不含 class。
+   */
+  producesClass?: boolean;
+  /**
+   * v0.19.3 WS2 · 选中 model 是否可批量 (resource_profile.batchable)。
+   * undefined = 未自报 (老 backend, 不警示); false = 自报交互/有状态, 不能进批量预标。
+   */
+  batchable?: boolean;
 }
 
 /**
  * 节点警示文案 (标红, 不硬拦运行 —— 与端点 422 同判据, 仅前移到画布)。
+ * - 模型自报 batchable=false (交互/有状态) → 不能进批量预标 (端点 422, WS2)。
  * - 产几何的子既不接 crop 也不接 bbox_prompt → 不可达 (端点会 422)。
+ * - 分类子但所选 model 自报属性类型却不含 class → 属性恒空 (端点 422, WS1/WS2)。
  * - 分类子但后端不产属性 → 属性恒空。
  * 返回 null = 无警示。
  */
@@ -99,11 +111,16 @@ export function stageWarning(
   caps: StageCaps | null | undefined,
 ): string | null {
   if (!payload || !caps || !caps.hasCapabilities) return null;
+  // batchable 对源/下游均适用, 优先判 (与端点 _assert_capabilities 先判 batchable 对称)。
+  if (caps.batchable === false)
+    return "该模型为交互/有状态模型（batchable=false），不能用于批量预标流水线";
   if (producesGeometry(payload)) {
     if (caps.knownInputs && !caps.acceptsCrop && !caps.acceptsBboxPrompt)
       return "该模型不接受裁剪图 / 框提示，无法作几何下游（运行将被端点拒绝）";
     return null;
   }
+  if (caps.producesClass === false)
+    return "该模型不产类别属性（output_attribute_types 不含 class），作分类下游属性恒空";
   if (!caps.producesAttributes)
     return "该后端不自报输出属性，作下游分类只会重新检测、属性恒空";
   return null;

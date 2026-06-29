@@ -64,7 +64,7 @@ last_reviewed: 2026-06-10
 
 提交后：
 
-- 新项目的字段从模板 deepcopy（**修改新项目不影响模板**）。复制白名单（`CLONEABLE_PROJECT_FIELDS`）为：`type_label`、`type_key`、`data_type`、`tool_bindings`（类别与属性 schema）、`ai_enabled`、`label_config`、`sampling`、`maximum_annotations`、`show_overlap_first`、`iou_dedup_threshold`、`box_threshold`、`text_threshold`、`text_output_default`、`rendering_config`。**不复制**运行时数据（datasets / tasks / annotations / members / batches）。
+- 新项目的字段从模板 deepcopy（**修改新项目不影响模板**）。复制白名单（`CLONEABLE_PROJECT_FIELDS`）为：`type_label`、`type_key`、`data_type`、`tool_bindings`（类别与属性 schema）、`ai_enabled`、`label_config`、`sampling`、`maximum_annotations`、`show_overlap_first`、`iou_dedup_threshold`、`box_threshold`、`text_threshold`、`rendering_config`。**不复制**运行时数据（datasets / tasks / annotations / members / batches）。
 - 模板 `usage_count` + 1。
 - 模板的 `annotation_guide` 文本会复制到新项目；**guide_assets（图片资源）不会复制**，需要在新项目设置页重新上传。
 

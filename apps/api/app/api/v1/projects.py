@@ -31,7 +31,12 @@ from app.schemas.project import (
     ProjectMemberCreate,
     ProjectTransferRequest,
 )
+from app.config import settings
 from app.services.display_id import next_display_id
+from app.services.pipeline_validation import (
+    check_capability_violations,
+    resolve_preannotate_queue,
+)
 from app.services.project_kind import (
     ProjectKind,
     canonical_media_kind,
@@ -44,7 +49,6 @@ from app.services.project_clone import (
     CLONEABLE_PROJECT_FIELDS as _CLONEABLE_PROJECT_FIELDS,  # noqa: F401 (re-export)
     merge_from_source as _merge_from_source_project_impl,
 )
-from app.config import settings
 
 router = APIRouter()
 
@@ -212,8 +216,6 @@ async def _serialize_project(
     data["member_count"] = member_count
     data["ai_completed_tasks"] = ai_completed
     data["batch_summary"] = batch_summary
-    # v0.10.1 · 透出 env 控制的 1:N 上限 (默认 1), 供前端渲染添加按钮禁用状态.
-    data["ml_backend_limit"] = settings.max_ml_backends_per_project
     return data
 
 
@@ -464,11 +466,11 @@ async def create_project(
         payload.pop(_legacy_key, None)
 
     # v0.9.7 · 取出 source_id (若给定), 校验存在性后再创建项目;
-    # 项目 INSERT 完成后再复制 backend (受 FK ml_backends.project_id 约束).
+    # 项目 INSERT 完成后再为新项目启用 backend (项目 → project_ml_backend FK).
     source_id = payload.pop("ml_backend_source_id", None)
     source_backend = None
     if source_id is not None:
-        from app.db.models.ml_backend import MLBackend as _MLB
+        from app.db.models.ml_backend_registry import MLBackendRegistry as _MLB
 
         source_backend = await db.get(_MLB, source_id)
         if source_backend is None:
@@ -503,7 +505,7 @@ async def create_project(
                     "guide_assets", _copy.deepcopy(source_project.guide_assets)
                 )
         if source_backend is None and source_project.ml_backend_id is not None:
-            from app.db.models.ml_backend import MLBackend as _MLB
+            from app.db.models.ml_backend_registry import MLBackendRegistry as _MLB
 
             source_backend = await db.get(_MLB, source_project.ml_backend_id)
     elif copy_guide:
@@ -534,6 +536,10 @@ async def create_project(
         )
 
     new_project_id = uuid.uuid4()
+    # v0.19.0 ADR-0044 · 直接指定主 backend (非克隆路径) 时, 同步在新项目建启用关联;
+    # 不然 project_ml_backend 缺行, trigger_preannotation 的 is_enabled 校验 404 +
+    # ai_enabled 又派生为 true → 工作台显示「已启用 AI 却跑不起来」。
+    main_backend_to_enable = payload.get("ml_backend_id") if source_backend is None else None
     project = Project(
         id=new_project_id,
         display_id=await next_display_id(db, "projects"),
@@ -541,7 +547,7 @@ async def create_project(
         **payload,
     )
     db.add(project)
-    await db.flush()  # 让 project row 入 DB, 满足 ml_backends FK
+    await db.flush()  # 让 project row 入 DB, 满足 project_ml_backend FK
 
     if source_backend is not None:
         new_backend_id = await _clone_backend_to_new_project(
@@ -551,6 +557,12 @@ async def create_project(
         # v0.10.37 · 克隆源项目 backend 落定后, 同样按新项目 data_type 校验模态
         # (clone 复制了 url/auth, 实时探 /setup 与校验 source 等价).
         await _validate_backend_modality(db, new_backend_id, project.data_type)
+    elif main_backend_to_enable is not None:
+        from app.services.ml_backend import MLBackendService
+
+        await MLBackendService(db).set_enabled(
+            new_project_id, main_backend_to_enable, enabled=True
+        )
 
     if template is not None:
         template.usage_count = (template.usage_count or 0) + 1
@@ -568,32 +580,13 @@ async def create_project(
 async def _clone_backend_to_new_project(
     db: AsyncSession, *, source, new_project_id: uuid.UUID
 ) -> uuid.UUID:
-    """v0.9.7 · 把 source backend 行复制一份给新项目.
-
-    保留 url/auth_method/auth_token/extra_params/is_interactive/name; 重置
-    state="disconnected" + 清空 health_meta + last_checked_at, 强制新项目自行
-    health-check 再绑定. 返回新 backend id.
+    """v0.19.0 ADR-0044 · backend 已是全局注册项, 「克隆给新项目」退化为「为新项目启用同一
+    全局 backend」: 建一条 project_ml_backend 关联, 复用 source.id (registry id)。返回 registry id。
     """
-    from app.db.models.ml_backend import MLBackend as _MLB
+    from app.services.ml_backend import MLBackendService
 
-    new_id = uuid.uuid4()
-    cloned = _MLB(
-        id=new_id,
-        project_id=new_project_id,
-        name=source.name,
-        url=source.url,
-        state="disconnected",
-        is_interactive=source.is_interactive,
-        auth_method=source.auth_method,
-        auth_token=source.auth_token,
-        extra_params=dict(source.extra_params or {}),
-        health_meta=None,
-        error_message=None,
-        last_checked_at=None,
-    )
-    db.add(cloned)
-    await db.flush()
-    return new_id
+    await MLBackendService(db).set_enabled(new_project_id, source.id, enabled=True)
+    return source.id
 
 
 # v0.10.14 · E2 · 白名单 + merge 实现迁出至 app.services.project_clone, 供
@@ -612,7 +605,7 @@ async def _validate_backend_modality(
     """
     if data_type not in ("image", "video"):
         return
-    from app.db.models.ml_backend import MLBackend as _MLB
+    from app.db.models.ml_backend_registry import MLBackendRegistry as _MLB
     from app.services.ml_capabilities import derive_modalities, extract_capabilities
     from app.services.ml_client import MLBackendClient
 
@@ -674,6 +667,14 @@ async def update_project(
                 payload["ml_backend_id"],
                 payload.get("data_type") or project.data_type,
             )
+            # v0.19.0 ADR-0044 · 设主 backend 即视为「本项目启用该 backend」;
+            # 否则 trigger_preannotation 的 is_enabled 校验 404, 而 ai_enabled 又自动派生 true
+            # → 工作台显示「已启用 AI 却跑不起来」。与 PUT /ml-backends/{rid}/enablement 对称。
+            from app.services.ml_backend import MLBackendService
+
+            await MLBackendService(db).set_enabled(
+                project.id, payload["ml_backend_id"], enabled=True
+            )
 
     # v0.10.22 · 同 create_project: 旧扁平输入反向派生进 tool_bindings 后剔除.
     from app.services.project import coalesce_legacy_into_tool_bindings
@@ -690,7 +691,12 @@ async def update_project(
         setattr(project, k, v)
     await db.commit()
     await db.refresh(project)
-    return await _serialize_project(db, project)
+    result = await _serialize_project(db, project)
+    # v0.19.3 WS1 · 保存编排能力软提示 (不挡, dispatch-time 422 仍是最终闸)。
+    result["capability_warnings"] = await _compute_pipeline_capability_warnings(
+        db, project.preannotate_pipeline
+    )
+    return result
 
 
 @router.delete("/{project_id}", status_code=204)
@@ -738,7 +744,9 @@ async def delete_project(
         ),
         p,
     )
-    await db.execute(text("DELETE FROM ml_backends WHERE project_id = :pid"), p)
+    # v0.19.0 ADR-0044 · 全局 backend 注册项不属于某个项目, 不随项目删;
+    # project_ml_backend.project_id ON DELETE CASCADE, db.delete(project) 会自动清启用关联;
+    # registry 行的下线/复用走 superadmin /admin/ml-integrations/registry 端点。
     await db.execute(
         text("UPDATE bug_reports SET project_id = NULL WHERE project_id = :pid"),
         p,
@@ -1431,6 +1439,84 @@ def _stage_supported_inputs(backend, model_id: str | None) -> list[str]:
     return []
 
 
+def _stage_model(backend, model_id: str | None) -> dict:
+    """v0.19.2 WS2 · 从 backend 能力快照取某 model 的规范化条目 (无快照/匹配不到 → {})。
+
+    供 dispatch-time 校验读 resource_profile / output_attribute_types。读
+    health_meta.capabilities.models[] (extract_capabilities 已规范化), 不走 /instances。
+    """
+    meta = getattr(backend, "health_meta", None)
+    caps = meta.get("capabilities") if isinstance(meta, dict) else None
+    models = caps.get("models") if isinstance(caps, dict) else None
+    if not isinstance(models, list) or model_id is None:
+        return {}
+    for m in models:
+        if isinstance(m, dict) and str(m.get("id")) == str(model_id):
+            return m
+    return {}
+
+
+def _stage_device(backend, model_id: str | None) -> str | None:
+    """v0.19.5 · 取某 model 的 resource_profile.device (gpu/cpu); 无快照/未自报 → None。"""
+    rp = _stage_model(backend, model_id).get("resource_profile") or {}
+    d = rp.get("device")
+    return d if isinstance(d, str) else None
+
+
+def _assert_capabilities(
+    backend, model_id: str | None, where: str, *, writes_attributes: bool
+) -> None:
+    """v0.19.3 WS1 · 派发期能力闸门: 任一能力违例 → 422 硬挡。
+
+    判据本体抽到 services/pipeline_validation.check_capability_violations (纯函数), 与保存路径
+    软提示 + 前端 stageWarning 共用同一 SSOT。batchable=false (交互/有状态) 不可批量; 写属性的
+    下游模型不产 class → 提前拦。均「显式自报才拦, 缺省放过」, 对老 backend 零退化。
+    """
+    violations = check_capability_violations(
+        _stage_model(backend, model_id),
+        where=where,
+        model_id=model_id,
+        writes_attributes=writes_attributes,
+    )
+    if violations:
+        raise HTTPException(status_code=422, detail=violations[0].detail)
+
+
+async def _compute_pipeline_capability_warnings(db, stages) -> list[str]:
+    """v0.19.3 WS1 · 保存编排时算「能力软提示」(不挡), 与 dispatch 422 同判据共享纯函数。
+
+    保存是配置中途态: backend 可能未启用 / 能力快照滞后 / 先存草稿之后再换 backend, 故只软提示。
+    解析不到 backend 的阶段静默跳过 (留 dispatch-time 422 作最终把关)。返回 detail 字符串列表。
+    """
+    if not stages or not isinstance(stages, list):
+        return []
+    from app.services.ml_backend import MLBackendService
+
+    svc = MLBackendService(db)
+    warnings: list[str] = []
+    for s in stages:
+        if not isinstance(s, dict) or not s.get("ml_backend_id"):
+            continue
+        backend = await svc.get(s["ml_backend_id"])
+        if not backend:
+            continue
+        is_source = s.get("parent_stage") is None
+        where = "源阶段" if is_source else f"stage {s.get('stage')} "
+        # 源阶段不写属性, class 判据不适用 (与 dispatch 对称)。
+        writes_attributes = (
+            not is_source
+            and (s.get("write") or {}).get("target", "attributes") == "attributes"
+        )
+        violations = check_capability_violations(
+            _stage_model(backend, s.get("model_id")),
+            where=where,
+            model_id=s.get("model_id"),
+            writes_attributes=writes_attributes,
+        )
+        warnings.extend(v.detail for v in violations)
+    return warnings
+
+
 @router.post("/{project_id}/preannotate")
 async def trigger_preannotation(
     body: PreannotateRequest,
@@ -1444,10 +1530,17 @@ async def trigger_preannotation(
 
     svc = MLBackendService(db)
     backend = await svc.get(body.ml_backend_id)
-    # 校验 backend 存在且归属当前项目: 与下面下游阶段校验对称, 防止 owner 手动 POST
-    # 别项目 backend id 触发跨项目预标。404 (不可枚举) 与下游分支一致。
-    if not backend or backend.project_id != project.id:
+    # v0.19.0 ADR-0044 · 校验 backend 存在且在本项目「已启用」(project_ml_backend.enabled):
+    # 与下游阶段校验对称, 防止 owner 手动 POST 未启用/别项目 backend id 触发预标。
+    if not backend or not await svc.is_enabled(project.id, body.ml_backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
+
+    # v0.19.2 WS2 · 源阶段 (单模型预标 / 流水线源) batchable 闸门: 交互/有状态模型不可批量。
+    # 源阶段不写属性, class 判据不适用 (writes_attributes=False)。
+    _assert_capabilities(backend, body.model_id, "源阶段", writes_attributes=False)
+
+    # v0.19.5 · 设备感知队列路由: 收集源 + 各下游阶段 model 的 device, 据此选 Celery 队列。
+    stage_devices: list[str | None] = [_stage_device(backend, body.model_id)]
 
     # v0.18.1 · 多阶段编排: 校验每个下游阶段的 backend 存在且归属本项目, 归一化成 worker
     # 可消费的 stage dict 列表 (uuid → str)。源阶段 backend 归属已在上面校验。
@@ -1458,11 +1551,24 @@ async def trigger_preannotation(
             resolved_input = st.input
             if st.parent_stage is not None:
                 st_backend = await svc.get(st.ml_backend_id)
-                if not st_backend or st_backend.project_id != project.id:
+                if not st_backend or not await svc.is_enabled(
+                    project.id, st.ml_backend_id
+                ):
                     raise HTTPException(
                         status_code=404,
-                        detail=f"stage {st.stage} 的 ML Backend 不存在或不属于本项目",
+                        detail=f"stage {st.stage} 的 ML Backend 不存在或未在本项目启用",
                     )
+                # v0.19.2 WS2 / v0.19.3 WS1 · 下游阶段能力闸门: batchable + 写属性产 class。
+                # 写属性的子但模型不产 class → 跑完属性恒空, 提前 422。
+                _assert_capabilities(
+                    st_backend,
+                    st.model_id,
+                    f"stage {st.stage} ",
+                    writes_attributes=(st.write or {}).get("target", "attributes")
+                    == "attributes",
+                )
+                # v0.19.5 · 收集下游阶段 device 供队列路由。
+                stage_devices.append(_stage_device(st_backend, st.model_id))
                 # v0.18.15 · 按子模型 supported_inputs 解析投递方式 + 几何可达性门控。
                 # 产几何的子: supported_inputs 须含 'bbox_prompt' (geometry-prompt 路径) 或
                 # 'crop' (普通检测器在 crop 上跑 + 坐标回映)。据此把投递方式烘焙进 input.mode,
@@ -1533,24 +1639,35 @@ async def trigger_preannotation(
 
     from app.workers.tasks import batch_predict
 
-    job = batch_predict.delay(
-        str(project.id),
-        str(body.ml_backend_id),
-        [str(tid) for tid in body.task_ids] if body.task_ids else None,
-        prompt=body.prompt,
-        output_mode=body.output_mode,
-        batch_id=str(body.batch_id) if body.batch_id else None,
-        user_id=str(current_user.id),
-        params=body.params or None,
-        predict_mode=body.predict_mode,
-        # v0.14.9 · 协议 v2: 多模型路由 + task 别名透传到 /predict context
-        model_id=body.model_id,
-        task_type=body.task_type,
-        # v0.14.17 · 协议 v2 结构化 variant 路径 (YOLO) + 类别白名单
-        model_variants=body.model_variants,
-        class_filter=body.class_filter,
-        # v0.18.1 · 多阶段预标注: 非空时 worker 走阶段化编排 (detect→ROI→classify)
-        pipeline_stages=pipeline_stages_payload,
+    # v0.19.5 · 设备感知路由: 全 CPU pipeline → cpu 队列; 任一 GPU/未自报阶段 → gpu(ml) 队列 (零退化)。
+    queue = resolve_preannotate_queue(
+        stage_devices,
+        gpu_queue=settings.preannotate_gpu_queue,
+        cpu_queue=settings.preannotate_cpu_queue,
+    )
+    job = batch_predict.apply_async(
+        args=[
+            str(project.id),
+            str(body.ml_backend_id),
+            [str(tid) for tid in body.task_ids] if body.task_ids else None,
+        ],
+        kwargs={
+            "prompt": body.prompt,
+            "output_mode": body.output_mode,
+            "batch_id": str(body.batch_id) if body.batch_id else None,
+            "user_id": str(current_user.id),
+            "params": body.params or None,
+            "predict_mode": body.predict_mode,
+            # v0.14.9 · 协议 v2: 多模型路由 + task 别名透传到 /predict context
+            "model_id": body.model_id,
+            "task_type": body.task_type,
+            # v0.14.17 · 协议 v2 结构化 variant 路径 (YOLO) + 类别白名单
+            "model_variants": body.model_variants,
+            "class_filter": body.class_filter,
+            # v0.18.1 · 多阶段预标注: 非空时 worker 走阶段化编排 (detect→ROI→classify)
+            "pipeline_stages": pipeline_stages_payload,
+        },
+        queue=queue,
     )
     # B-5 · AI 预标注触发审计 — 让超管在 /audit 看到 谁/何时/对哪个 batch 跑了 AI
     await AuditService.log(

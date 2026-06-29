@@ -102,14 +102,15 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     # 2) 按 FK 依赖顺序定向 DELETE。
     #    用 SAVEPOINT 隔离每个 DELETE：单条失败（如表不存在 / 列名漂移）不让外层
     #    事务进入 aborted 状态。asyncpg 的 InFailedSQLTransactionError 必须靠
-    #    SAVEPOINT 回滚，try/except 单纯吞异常不够。
+    #    SAVEPOINT 回滚，try/except 单纯吞异常不够。让异常穿过 begin_nested 的
+    #    `async with` 自动 ROLLBACK TO SAVEPOINT,外层再 catch——双 rollback 会让
+    #    SA 在 __aexit__ 试图 RELEASE 已经手动 rollback 的 SP,事务进入怪状态致 500。
     async def _try_delete(sql: str, params: dict | None = None) -> None:
-        async with db.begin_nested() as sp:
-            try:
+        try:
+            async with db.begin_nested():
                 await db.execute(text(sql), params or {})
-            except Exception as exc:
-                log.warning("seed_reset skip · %s · %s", sql.split()[2], exc)
-                await sp.rollback()
+        except Exception as exc:
+            log.warning("seed_reset skip · %s · %s", sql.split()[2], exc)
 
     if fixture_project_ids:
         # 2a) 找 fixture 项目下所有 task/annotation 的 id（在 SAVEPOINT 里）
@@ -189,9 +190,11 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
             {"pids": fixture_project_ids},
         )
 
-        # 2d) 删 ml_backends（FK 无 ondelete）
+        # 2d) v0.19.0 ADR-0044 · 断开项目对全局 backend 的启用关联;
+        #     project_ml_backend.project_id FK ON DELETE CASCADE,删项目时也会自动清,
+        #     这里显式清避免后续 mock registry 行被 CASCADE 时跨 SAVEPOINT 留尾。
         await _try_delete(
-            "DELETE FROM ml_backends WHERE project_id = ANY(:pids)",
+            "DELETE FROM project_ml_backend WHERE project_id = ANY(:pids)",
             {"pids": fixture_project_ids},
         )
 
@@ -228,6 +231,12 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         # 用户最后删（前面所有反向引用清干净后，仅靠 ON DELETE SET NULL FK 的字段
         # 会被 PG 自动置 NULL，无 ondelete 的字段需我们已手动删完）。
         await _try_delete("DELETE FROM users WHERE email LIKE '%@e2e.test'")
+
+    # v0.19.0 ADR-0044 · 清旧的 E2E mock registry 行(url unique 约束,
+    # 重建必须先删旧)。共享注册项不删,只删本 fixture 自造的 mock url。
+    await _try_delete(
+        "DELETE FROM ml_backend_registry WHERE url = 'http://mock-sam.e2e:9999'"
+    )
 
     await db.flush()
 
@@ -282,18 +291,25 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     batch.total_tasks = len(tasks)
 
     # v0.9.4 phase 3: SAM E2E 用 mock ml_backend (url 不会被真请求, page.route 拦截)
-    from app.db.models.ml_backend import MLBackend
+    # v0.19.0 ADR-0044 · 建全局注册项 + 为本项目启用关联。
+    from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 
-    mock_backend = MLBackend(
-        project_id=project.id,
+    mock_backend = MLBackendRegistry(
         name="E2E SAM Mock",
         url="http://mock-sam.e2e:9999",
         state="connected",
         is_interactive=True,
         auth_method="none",
         extra_params={"e2e_mock": True},
+        source="manual",
     )
     db.add(mock_backend)
+    await db.flush()
+    db.add(
+        ProjectMLBackend(
+            project_id=project.id, registry_id=mock_backend.id, enabled=True
+        )
+    )
     await db.flush()
     project.ai_enabled = True
     project.ml_backend_id = mock_backend.id

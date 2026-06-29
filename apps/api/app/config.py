@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # v0.10.24 · 版本号单源真值。FastAPI title version 与 /health version 都读它，
     # 发版只改这一处（+ pyproject.toml / package.json）。运维 scrape /health 拿到的
     # 版本号此前长期 stale（曾硬编码 0.7.6），故收口到 settings。
-    app_version: str = "0.18.32"
+    app_version: str = "0.19.5"
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
 
@@ -149,12 +149,14 @@ class Settings(BaseSettings):
     # 设为非空时, 该端点校验请求头 Authorization: Bearer <token>, 不匹配返回 401。
     metrics_sd_token: str = ""
 
-    # v0.10.1 · 单项目最多可绑定的 ML backend 数量上限。schema/UI 已按 1:N 一步到位设计,
-    # 防止测试环境同时常驻 grounded-sam2 (~2GB) + sam3 (~7GB) 显存爆炸。
-    # v0.18.1 · 多阶段预标注 (路径 B) 天然需 ≥2 backend (detect + classify), 默认放开到 3;
-    # 仍保留上限挡入口, 生产按显存预算调整。
-    max_ml_backends_per_project: int = 3
     celery_broker_url: str = ""
+
+    # v0.19.5 · 设备感知预标队列路由 (resource_profile.device → Celery 队列)。
+    # gpu 默认复用现有 "ml" 队列 (零退化: 老 backend / 混合 device pipeline 仍落此);
+    # 全 CPU pipeline 进 "ml.cpu" 队列, 由 CPU worker 组高并发消费。
+    # 注意: 改这两个队列名须同步 docker-compose 各 worker 的 -Q 订阅, 否则任务静默积压。
+    preannotate_gpu_queue: str = "ml"
+    preannotate_cpu_queue: str = "ml.cpu"
 
     # v0.9.25 · 视频后端帧服务 Wave B。Chunk 与单帧缓存都落在 datasets bucket。
     video_chunk_size_frames: int = 60

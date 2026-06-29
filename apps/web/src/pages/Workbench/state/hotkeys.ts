@@ -90,6 +90,8 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Esc"], desc: "取消选择", group: "video", actionType: "cancel" },
   { keys: ["1 — 9"], desc: "切换视频类别（有选中则改选中对象）", group: "video", actionType: "setClassByDigit" },
 
+  { keys: ["X"], desc: "下一个 AI 待审框（循环）", group: "ai", actionType: "cycleAi" },
+  { keys: ["Shift", "X"], desc: "上一个 AI 待审框（循环）", group: "ai", actionType: "cycleAi" },
   { keys: ["A"], desc: "采纳选中 AI 框", group: "ai", actionType: "acceptAi" },
   { keys: ["D"], desc: "忽略选中 AI 框", group: "ai", actionType: "rejectAi" },
   { keys: ["["], desc: "选中态：z_order -1；否则降置信度阈值", group: "ai", actionType: "thresholdAdjust" },
@@ -154,6 +156,7 @@ export type HotkeyAction =
   | { type: "arrowNudge"; dx: number; dy: number }
   | { type: "thresholdAdjust"; delta: number }
   | { type: "cycleUser"; dir: 1 | -1; loop: boolean }
+  | { type: "cycleAi"; dir: 1 | -1 }
   | { type: "smartNext"; mode: "open" | "uncertain" }
   | { type: "changeClass" }
   | { type: "setTool"; tool: "select" | "box" | "rotated-box" | "hand" | "polygon" | "polyline" | "keypoint" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box" | "ai-cycle" }
@@ -227,7 +230,7 @@ export interface DispatchCtx {
 }
 
 // v0.10.5 M4-β · L/H/O 用于 shape 状态位切换（仅选中态消费；保留以防 setClassByLetter 抢键）。
-const RESERVED_LETTERS = new Set(["v","V","b","B","w","W","p","P","s","S","a","A","d","D","e","E","f","F","n","N","u","U","j","J","k","K","c","C","l","L","h","H","o","O","m","M"]);
+const RESERVED_LETTERS = new Set(["v","V","b","B","w","W","p","P","s","S","a","A","d","D","e","E","f","F","n","N","u","U","j","J","k","K","c","C","l","L","h","H","o","O","m","M","x","X"]);
 
 /** 纯函数：解析 keydown 事件为 HotkeyAction。返回 null 表示不消费。 */
 export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | null {
@@ -398,6 +401,10 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   if (e.key === "Tab") return { type: "cycleUser", dir: e.shiftKey ? -1 : 1, loop: true };
   if (e.key === "j" || e.key === "J") return { type: "cycleUser", dir: 1, loop: false };
   if (e.key === "k" || e.key === "K") return { type: "cycleUser", dir: -1, loop: false };
+
+  // v0.18.x · X 循环选中 AI 待审框（与 Tab 之于人工框对称，循环；方向由 Shift 决定）。
+  // 落库人工框走 Tab/J/K（cycleUser），悬空预测走 X（cycleAi），二者共用 selectedId，选中后 A/D 采纳/忽略。
+  if (e.key === "x" || e.key === "X") return { type: "cycleAi", dir: e.shiftKey ? -1 : 1 };
 
   if (e.key === "n" || e.key === "N") return { type: "smartNext", mode: "open" };
   if (e.key === "u" || e.key === "U") return { type: "smartNext", mode: "uncertain" };

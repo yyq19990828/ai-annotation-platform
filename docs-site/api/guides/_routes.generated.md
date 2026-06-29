@@ -25,6 +25,10 @@
 | POST | `/probe` |
 | GET | `/runtime-hints` |
 | GET | `/all` |
+| POST | `/registry` |
+| PUT | `/registry/{registry_id}` |
+| DELETE | `/registry/{registry_id}` |
+| POST | `/registry/{registry_id}/health` |
 | GET | `/observe` |
 | POST | `/observe/smoke-test` |
 
@@ -265,6 +269,8 @@
 
 | Method | Path |
 |---|---|
+| GET | `/available` |
+| PUT | `/{backend_id}/enablement` |
 | GET | `/{backend_id}` |
 | PUT | `/{backend_id}` |
 | DELETE | `/{backend_id}` |
@@ -505,4 +511,4 @@
 
 ---
 
-_共 50 模块 / 268 路由_
+_共 50 模块 / 274 路由_

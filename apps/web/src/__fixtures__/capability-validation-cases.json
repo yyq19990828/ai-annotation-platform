@@ -1,0 +1,75 @@
+{
+  "_doc": "v0.19.3 WS3 · 预标注能力判据跨端契约 fixture (单一事实源)。后端 pytest 喂 services/pipeline_validation.check_capability_violations 断言违例码集合; 前端 vitest 喂 pipelineGraph.stageWarning 断言首条警示。任一端判据漂移 → 对应端测试红。每例至多触发一条判据 (除显式 both 例), expect_codes 顺序与后端一致 (batchable 先于 class); 前端单条警示取 expect_codes[0]。",
+  "codes": {
+    "not_batchable": "resource_profile.batchable 显式 false (交互/有状态) → 不能批量预标",
+    "no_class_attribute": "写属性的下游, 模型自报 output_attribute_types 非空但不含 class → 属性恒空"
+  },
+  "cases": [
+    {
+      "name": "source model not batchable (源阶段 batchable=false)",
+      "model_caps": { "resource_profile": { "batchable": false } },
+      "writes_attributes": false,
+      "expect_codes": ["not_batchable"]
+    },
+    {
+      "name": "downstream not batchable, no attr types (下游 batchable=false)",
+      "model_caps": { "resource_profile": { "batchable": false } },
+      "writes_attributes": true,
+      "expect_codes": ["not_batchable"]
+    },
+    {
+      "name": "both fire: not batchable + no class (batchable 优先)",
+      "model_caps": {
+        "resource_profile": { "batchable": false },
+        "output_attribute_types": ["text"]
+      },
+      "writes_attributes": true,
+      "expect_codes": ["not_batchable", "no_class_attribute"]
+    },
+    {
+      "name": "downstream writes attrs but model lacks class (无 class 属性)",
+      "model_caps": {
+        "resource_profile": { "batchable": true },
+        "output_attribute_types": ["text"]
+      },
+      "writes_attributes": true,
+      "expect_codes": ["no_class_attribute"]
+    },
+    {
+      "name": "downstream produces class (含 class → 放行)",
+      "model_caps": {
+        "resource_profile": { "batchable": true },
+        "output_attribute_types": ["class"]
+      },
+      "writes_attributes": true,
+      "expect_codes": []
+    },
+    {
+      "name": "old backend: no resource_profile, no attr types (零退化放行)",
+      "model_caps": {},
+      "writes_attributes": true,
+      "expect_codes": []
+    },
+    {
+      "name": "batchable true source (放行)",
+      "model_caps": { "resource_profile": { "batchable": true } },
+      "writes_attributes": false,
+      "expect_codes": []
+    },
+    {
+      "name": "lacks class but does NOT write attrs (writes_attributes 门控 → 不触发)",
+      "model_caps": { "output_attribute_types": ["text"] },
+      "writes_attributes": false,
+      "expect_codes": []
+    },
+    {
+      "name": "resource_profile present but batchable absent (缺省不触发)",
+      "model_caps": {
+        "resource_profile": { "gpu": true },
+        "output_attribute_types": ["text"]
+      },
+      "writes_attributes": true,
+      "expect_codes": ["no_class_attribute"]
+    }
+  ]
+}
