@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import BatchStatus
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
@@ -37,19 +37,17 @@ async def _seed(db: AsyncSession, owner_id: uuid.UUID):
     db.add(proj)
     await db.flush()
 
-    detect = MLBackend(
+    detect = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=proj.id,
         name="detect",
-        url="http://detect/",
+        url=f"http://detect-{suffix}/",
         is_interactive=False,
         state="connected",
     )
-    classify = MLBackend(
+    classify = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=proj.id,
         name="classify",
-        url="http://classify/",
+        url=f"http://classify-{suffix}/",
         is_interactive=False,
         state="connected",
     )
@@ -57,6 +55,10 @@ async def _seed(db: AsyncSession, owner_id: uuid.UUID):
     db.add(classify)
     await db.flush()
     proj.ml_backend_id = detect.id
+    # v0.19.0 ADR-0044 · 源阶段 + 下游阶段 backend 均须在本项目「已启用」
+    db.add(ProjectMLBackend(project_id=proj.id, registry_id=detect.id, enabled=True))
+    db.add(ProjectMLBackend(project_id=proj.id, registry_id=classify.id, enabled=True))
+    await db.flush()
 
     batch = TaskBatch(
         id=uuid.uuid4(),
@@ -717,8 +719,8 @@ async def test_reject_unknown_downstream_backend(
 async def test_reject_source_backend_other_project(
     httpx_client_bound, super_admin, db_session, _mock_celery
 ):
-    # 顶层 ml_backend_id 指向别项目的 backend → 应 404 (与下游 backend 校验对称, 不可枚举)。
-    # 此前源 backend 只校验存在性, 不校验归属, 与下游分支不对称。
+    # v0.19.0 ADR-0044 · backend 现为全局注册项, 隔离改读「项目已启用」: detect_b 虽全局存在,
+    # 但未在 proj_a 启用 (ProjectMLBackend) → is_enabled(proj_a, detect_b)=False → 404。
     owner, token = super_admin
     proj_a, _, _, batch_a = await _seed(db_session, owner.id)
     _proj_b, detect_b, _, _ = await _seed(db_session, owner.id)
