@@ -39,6 +39,10 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.19.x 版本段累积在本区；进入 0.20.x 后整体移到 docs/changelogs/0.19.x.md。
 -->
 
+### Added
+
+- **rapidocr-backend**（平台首个真实 OCR backend，第五个 ML backend）：基于 RapidOCR（ONNX）v3.9.0，把 `det → cls → rec` 三段拆为「原子能力 + 端到端编排」，对外自报三个 model —— `ocr-det`（detection 原子，full_image → polygon 文本框）、`ocr-rec`（ocr 原子，crop → 文本 + 方向 + 语言，内部跑 cls 方向校正）、`ocr-e2e`（ocr composite，full_image → polygon + 文本 + 方向 + 语言）。cls（文本行方向 0/180）语言/版本无关、内化进 rec 与 e2e 不单独暴露。支持 PP-OCRv5/v6 × 尺寸档 × 通用(中英)/英文 变体（`context.model_variants` 选档）。激活了协议早已留好的 `ocr` 任务族，并成为 `attributes.text`/`orientation`/`language` 落点校验的首个真实 producer。端口 8005，base 与 onnxtools 共享 nvidia/cuda runtime，GPU 可选。
+
 ### Changed
 
 - onnxtools-backend 镜像基座从 `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` 换成 `nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04`，删除从未被使用的 torch/torchvision/torchaudio（onnxtools 链路只需 onnxruntime-gpu + opencv），镜像体积从 18.3GB 降到 6.11GB（约 -12GB）。系统 cuDNN/CUDA 走标准路径，onnxruntime 的 CUDAExecutionProvider 无需再靠 ENTRYPOINT 的 `LD_LIBRARY_PATH` 拼接 torch 自带 nvidia 库即可启用。

@@ -1,0 +1,224 @@
+"""rapidocr-backend 能力目录（SSOT）。
+
+单一来源同时驱动 `/setup` 自报（main.py）与 `/predict` 路由解析（predictor.py），
+避免两处漂移。详见 docs/plans/2026-06-29-v0.20.0-rapidocr-backend.md「能力分解」。
+
+三个对外 model（映射平台现成任务族）：
+- ``ocr-det`` 文本检测（detection，原子）：full_image → polygon 文本框，无属性。
+- ``ocr-rec`` 文本识别（ocr，原子）：crop → text(+orientation)，内部跑 cls 方向校正。
+- ``ocr-e2e`` 端到端 OCR（ocr，composite）：full_image → polygon + text + orientation。
+
+变体轴：version(v5/v6) × size × lang。size 在 v5 是 mobile/server、v6 是 tiny/small/medium；
+lang 只 universal(中英)/en，且 en 仅 v5-mobile、v6 仅 universal（非笛卡尔积，用 variant_combinations 表达）。
+cls（方向）语言/版本无关，仅按 size 选 mobile/server 档，被 rec 与 e2e 内部共享。
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+MODELS_DIR = os.environ.get("RAPIDOCR_MODEL_DIR", "/app/models")
+
+DET_MODEL_ID = "ocr-det"
+REC_MODEL_ID = "ocr-rec"
+E2E_MODEL_ID = "ocr-e2e"
+
+# ---- 组件权重文件（相对 MODELS_DIR），与 download_models.py 落盘布局一致 ----
+_DET: dict[tuple[str, str], str] = {
+    ("v5", "mobile"): "PP-OCRv5/det/ch_PP-OCRv5_det_mobile.onnx",
+    ("v5", "server"): "PP-OCRv5/det/ch_PP-OCRv5_det_server.onnx",
+    ("v6", "tiny"): "PP-OCRv6/det/PP-OCRv6_det_tiny.onnx",
+    ("v6", "small"): "PP-OCRv6/det/PP-OCRv6_det_small.onnx",
+    ("v6", "medium"): "PP-OCRv6/det/PP-OCRv6_det_medium.onnx",
+}
+_CLS: dict[str, str] = {
+    "mobile": "PP-OCRv5/cls/ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx",
+    "server": "PP-OCRv5/cls/ch_PP-LCNet_x1_0_textline_ori_cls_server.onnx",
+}
+_REC: dict[tuple[str, str, str], str] = {
+    ("v5", "mobile", "universal"): "PP-OCRv5/rec/ch_PP-OCRv5_rec_mobile.onnx",
+    ("v5", "server", "universal"): "PP-OCRv5/rec/ch_PP-OCRv5_rec_server.onnx",
+    ("v5", "mobile", "en"): "PP-OCRv5/rec/en_PP-OCRv5_rec_mobile.onnx",
+    ("v6", "tiny", "universal"): "PP-OCRv6/rec/PP-OCRv6_rec_tiny.onnx",
+    ("v6", "small", "universal"): "PP-OCRv6/rec/PP-OCRv6_rec_small.onnx",
+    ("v6", "medium", "universal"): "PP-OCRv6/rec/PP-OCRv6_rec_medium.onnx",
+}
+
+# 合法 (version, size) for det / (version, size, lang) for rec·e2e（非笛卡尔积）。
+_DET_COMBOS = list(_DET.keys())
+_REC_COMBOS = list(_REC.keys())
+
+# size → cls 档：tiny/small/mobile 配 mobile cls；medium/server 配 server cls。
+_CLS_FOR_SIZE = {
+    "mobile": "mobile", "tiny": "mobile", "small": "mobile",
+    "server": "server", "medium": "server",
+}
+
+_OCR_VERSION = {"v5": "PP-OCRv5", "v6": "PP-OCRv6"}
+# det lang_type：v5 用 ch 检测器、v6 用 multi 检测器（检测与目标语言无关）。
+_DET_LANG = {"v5": "ch", "v6": "multi"}
+# rec lang_type：universal 在 v5 是 ch（含中英）、v6 是 multi；en 走 en。
+_REC_LANG = {("v5", "universal"): "ch", ("v6", "universal"): "multi", ("v5", "en"): "en"}
+
+
+@dataclass(frozen=True)
+class ResolvedEngine:
+    """一次 /predict 解析出的引擎配置 + 运行开关。
+
+    pool_key 由三组件路径 + device 决定：det/e2e 同 (version,size) 复用同一引擎，
+    只是 use_* 不同。"""
+
+    det_path: str
+    cls_path: str
+    rec_path: str
+    det_meta: tuple[str, str, str]  # (ocr_version, model_type, lang_type)
+    rec_meta: tuple[str, str, str]
+    use_det: bool
+    use_cls: bool
+    use_rec: bool
+    lang: str  # universal / en（写入 attributes.language；det 无关时为 ""）
+
+    @property
+    def pool_key(self) -> str:
+        return f"{self.det_path}|{self.cls_path}|{self.rec_path}"
+
+
+def _abs(rel: str) -> str:
+    return os.path.join(MODELS_DIR, rel)
+
+
+def resolve(model_id: str, variants: dict[str, str] | None) -> ResolvedEngine:
+    """把 (model_id, model_variants) 解析为引擎配置。缺省 variant 用各能力默认档。"""
+    v = variants or {}
+    version = v.get("version", "v5")
+    size = v.get("size", "mobile")
+    lang = v.get("lang", "universal")
+
+    if model_id == DET_MODEL_ID:
+        if (version, size) not in _DET:
+            raise ValueError(f"未知 det variant: version={version} size={size}")
+        # det 原子只用 det，但 RapidOCR 构造需三件套 → cls/rec 取同档默认（不参与运行）。
+        rec_lang = "universal"
+        return _build(version, size, rec_lang, use_det=True, use_cls=False, use_rec=False, lang="")
+
+    if model_id in (REC_MODEL_ID, E2E_MODEL_ID):
+        if (version, size, lang) not in _REC:
+            raise ValueError(f"未知 rec/e2e variant: version={version} size={size} lang={lang}")
+        if model_id == REC_MODEL_ID:
+            # rec 原子吃 crop：跳过 det（构造仍需 det 路径，不运行），跑 cls+rec。
+            return _build(version, size, lang, use_det=False, use_cls=True, use_rec=True, lang=lang)
+        # e2e：det→cls→rec 全开。
+        return _build(version, size, lang, use_det=True, use_cls=True, use_rec=True, lang=lang)
+
+    raise ValueError(f"未知 model_id: {model_id}")
+
+
+def _build(version: str, size: str, rec_lang: str, *, use_det: bool, use_cls: bool, use_rec: bool, lang: str) -> ResolvedEngine:
+    det_rel = _DET[(version, size)]
+    cls_rel = _CLS[_CLS_FOR_SIZE[size]]
+    rec_rel = _REC[(version, size, rec_lang)]
+    ocr_ver = _OCR_VERSION[version]
+    return ResolvedEngine(
+        det_path=_abs(det_rel),
+        cls_path=_abs(cls_rel),
+        rec_path=_abs(rec_rel),
+        det_meta=(ocr_ver, size, _DET_LANG[version]),
+        rec_meta=(ocr_ver, size, _REC_LANG[(version, rec_lang)]),
+        use_det=use_det,
+        use_cls=use_cls,
+        use_rec=use_rec,
+        lang=lang,
+    )
+
+
+# ---------------- /setup 能力自报 ----------------
+
+def _version_axis(combos: list[tuple]) -> dict:
+    versions = sorted({c[0] for c in combos})
+    return {"key": "version", "title": "PP-OCR 版本", "variants": [{"key": v, "title": v.upper()} for v in versions]}
+
+
+def _size_axis(combos: list[tuple]) -> dict:
+    # 按出现顺序去重，保留 mobile/server/tiny/small/medium 的语义顺序。
+    order = ["mobile", "server", "tiny", "small", "medium"]
+    sizes = sorted({c[1] for c in combos}, key=order.index)
+    return {"key": "size", "title": "尺寸 / 精度档", "variants": [{"key": s, "title": s} for s in sizes]}
+
+
+def _lang_axis() -> dict:
+    return {"key": "lang", "title": "语言", "variants": [{"key": "universal", "title": "通用(中英)"}, {"key": "en", "title": "英文"}]}
+
+
+_ATTR_TEXT = {"key": "text", "label": "识别文本", "type": "text"}
+_ATTR_ORIENT = {"key": "orientation", "label": "方向", "type": "select", "options": ["0", "180"]}
+_ATTR_LANG = {"key": "language", "label": "语言", "type": "select", "options": ["universal", "en"]}
+
+
+def _det_entry() -> dict:
+    return {
+        "id": DET_MODEL_ID,
+        "display_name": "RapidOCR · 文本检测（原子）",
+        "task": "detection",
+        "model_family": "rapidocr",
+        "infra": "onnx",
+        "composition": "atom",
+        "is_interactive": False,
+        "supported_prompts": ["none"],
+        "supported_inputs": ["full_image"],
+        "supported_geometric_outputs": ["polygon"],
+        "supported_variants": [_version_axis(_DET_COMBOS), _size_axis(_DET_COMBOS)],
+        "variant_combinations": [list(c) for c in _DET_COMBOS],
+        "default_variants": {"version": "v5", "size": "mobile"},
+        "resource_profile": {"device": _device(), "batchable": True},
+    }
+
+
+def _rec_entry() -> dict:
+    return {
+        "id": REC_MODEL_ID,
+        "display_name": "RapidOCR · 文本识别（原子）",
+        "task": "ocr",
+        "model_family": "rapidocr",
+        "infra": "onnx",
+        "composition": "atom",  # 内部含 cls 方向校正
+        "is_interactive": False,
+        "supported_prompts": ["none"],
+        "supported_inputs": ["crop"],
+        "supported_geometric_outputs": ["polygon"],
+        "output_attribute_types": ["text", "orientation", "language"],
+        "output_attribute_schema": [_ATTR_TEXT, _ATTR_ORIENT, _ATTR_LANG],
+        "supported_variants": [_version_axis(_REC_COMBOS), _size_axis(_REC_COMBOS), _lang_axis()],
+        "variant_combinations": [list(c) for c in _REC_COMBOS],
+        "default_variants": {"version": "v5", "size": "mobile", "lang": "universal"},
+        "resource_profile": {"device": _device(), "batchable": True},
+    }
+
+
+def _e2e_entry() -> dict:
+    return {
+        "id": E2E_MODEL_ID,
+        "display_name": "RapidOCR · 端到端 OCR",
+        "task": "ocr",
+        "model_family": "rapidocr",
+        "infra": "onnx",
+        "composition": "composite",  # 内部 det→cls→rec
+        "is_interactive": False,
+        "supported_prompts": ["none"],
+        "supported_inputs": ["full_image"],
+        "supported_geometric_outputs": ["polygon"],
+        "output_attribute_types": ["text", "orientation", "language"],
+        "output_attribute_schema": [_ATTR_TEXT, _ATTR_ORIENT, _ATTR_LANG],
+        "supported_variants": [_version_axis(_REC_COMBOS), _size_axis(_REC_COMBOS), _lang_axis()],
+        "variant_combinations": [list(c) for c in _REC_COMBOS],
+        "default_variants": {"version": "v5", "size": "mobile", "lang": "universal"},
+        "resource_profile": {"device": _device(), "batchable": True},
+    }
+
+
+def _device() -> str:
+    return os.environ.get("RAPIDOCR_DEVICE", "gpu")
+
+
+def model_entries() -> list[dict]:
+    return [_det_entry(), _rec_entry(), _e2e_entry()]
