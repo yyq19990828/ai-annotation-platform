@@ -52,7 +52,9 @@ from app.schemas.prediction import (
     PredictionPurgeRequest,
     PredictionPurgeResponse,
 )
+from app.config import settings
 from app.services.audit import AuditAction, AuditService
+from app.services.pipeline_validation import resolve_preannotate_queue
 
 
 router = APIRouter()
@@ -180,7 +182,22 @@ async def retry_failed_prediction(
     # 投递 Celery task，前端通过 ws 推送获得进度
     from app.workers.predictions_retry import retry_failed_prediction as task_fn
 
-    task_fn.delay(str(failed_id), str(current_user.id))
+    # v0.19.5 · 设备感知路由对齐: 原始失败的 backend 自报 device=cpu 时, 重试也落 ml.cpu 队列,
+    # 而不是按 task_routes 静态路由到 ml(gpu) 占 GPU 并发槽。无自报 → 保守落 gpu(与现状等价)。
+    device: str | None = None
+    if fp.ml_backend_id is not None:
+        backend = await db.get(MLBackend, fp.ml_backend_id)
+        if backend and isinstance(backend.health_meta, dict):
+            rp = (backend.health_meta.get("capabilities") or {}).get(
+                "resource_profile"
+            ) or {}
+            device = rp.get("device")
+    queue = resolve_preannotate_queue(
+        [device],
+        gpu_queue=settings.preannotate_gpu_queue,
+        cpu_queue=settings.preannotate_cpu_queue,
+    )
+    task_fn.apply_async(args=[str(failed_id), str(current_user.id)], queue=queue)
     return RetryResponse(status="queued", failed_id=failed_id)
 
 
