@@ -20,23 +20,15 @@ import {
 import type { MLBackendResponse } from "@/types";
 import styles from "./MlBackendFormModal.module.css";
 
-interface LimitReachedDetail {
-  limit?: number;
-  current?: number;
-  message?: string;
-}
-
 interface Props {
   open: boolean;
   projectId: string;
   /** 提供则进入编辑模式 */
   backend?: MLBackendResponse | null;
   onClose: () => void;
-  /** v0.10.3 · 后端返 409 ML_BACKEND_LIMIT_REACHED 时回调; 由父组件弹 LimitModal. */
-  onLimitReached?: (detail: LimitReachedDetail) => void;
 }
 
-export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitReached }: Props) {
+export function MlBackendFormModal({ open, projectId, backend, onClose }: Props) {
   const isEdit = !!backend;
   const pushToast = useToastStore((s) => s.push);
   const create = useCreateMLBackend(projectId);
@@ -197,25 +189,10 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
       }
       onClose();
     } catch (e) {
-      // v0.10.3 · 拦 409 ML_BACKEND_LIMIT_REACHED → 切到父组件 LimitModal, 不在表单里显示通用 error.
       const apiErr = e as {
-        status?: number;
-        detailRaw?: unknown;
         response?: { data?: { detail?: string } };
         message?: string;
       };
-      const detail = apiErr.detailRaw;
-      if (
-        apiErr.status === 409 &&
-        detail &&
-        typeof detail === "object" &&
-        (detail as { code?: unknown }).code === "ML_BACKEND_LIMIT_REACHED"
-      ) {
-        const d = detail as { limit?: number; current?: number; message?: string };
-        onLimitReached?.({ limit: d.limit, current: d.current, message: d.message });
-        onClose();
-        return;
-      }
       setError(apiErr.response?.data?.detail ?? apiErr.message ?? "请求失败");
     }
   };
