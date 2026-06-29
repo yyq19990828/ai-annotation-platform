@@ -30,6 +30,8 @@ POST /api/v1/projects
 
 `tool_bindings` 是类别与属性的存储真值。`classes_config` / `attribute_schema` 仍会在响应中作为兼容视图派生出来，但新代码应优先写 `tool_bindings`。aliases 用于 AI 预标的 prompt 召回（DINO 对自然语言敏感）。
 
+`ml_backend_source_id` 指向全局注册表里的一个 backend：新建项目时填它即为新项目**启用**该全局注册项（**引用同一全局 id，不复制**），并把它设为项目主后端。留空则新项目不预先启用任何 backend。
+
 ## 配置
 
 ```http
