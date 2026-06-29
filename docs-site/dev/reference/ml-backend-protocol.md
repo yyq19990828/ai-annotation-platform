@@ -15,15 +15,18 @@ last_reviewed: 2026-06-08
 > - HTTP 接入点: `apps/api/app/api/v1/ml_backends.py`
 > - 数据模型: `apps/api/app/db/models/{ml_backend,prediction}.py`
 
-平台不内置任何具体模型。它把每个项目可挂接的「推理服务」抽象成 `MLBackend` 行——一个 URL + 鉴权信息 + 几个布尔位（`is_interactive` / `state`）。本文规定接入方需要实现的 4 个 HTTP 端点与请求/响应 schema。只要遵循，就能在「项目设置 → ML Backends」里挂接。
+平台不内置任何具体模型。它把可挂接的「推理服务」抽象成 `MLBackend` 行——一个 URL + 鉴权信息 + 几个布尔位（`is_interactive` / `state`）。本文规定接入方需要实现的 4 个 HTTP 端点与请求/响应 schema。只要遵循，就能在「模型市场 → 注册管理」里注册、在「项目设置 → ML 模型」里启用。
 
 ---
 
-## 项目作用域与数量上限
+## 全局注册表与项目启用
 
-`ml_backends.project_id` 按 1:N 设计；同一个项目可以注册多条 backend 记录，前端多 backend 选择器已经按「交互线 / 批量线 / 编排阶段」分流。当前开发环境默认 `MAX_ML_BACKENDS_PER_PROJECT=3`，给检测 + 分割 / 分类 + 备用 backend 留出基本空间；生产环境可按机器显存和并发预算调大或调小该值。
+ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全局 `ml_backend_registry` 一行 = 一份能力快照 = 一个并发限速闸；项目侧只做「启用」。两层职责：
 
-这个限制只影响「一个项目能注册多少条 backend」。新建项目时选择「复用 backend」仍会复制一条 backend 行到新项目；未注册 backend 但已启用 AI 的项目也会出现在模型市场，便于从模型市场直接注册第一条 backend。
+- **全局层（超管）**：`ml_backend_registry`。URL / 鉴权 / `auth_method` / `auth_token` / `extra_params`（含 `max_concurrency`）/ `is_interactive` / `state` 等端点固有属性写在这里，所有启用该 backend 的项目共享。env 配置的 backend 启动时自动 upsert 为 `source=env` 注册项；env 删项时对应行置 `disconnected` 而非删除，保留历史 prediction 溯源。
+- **项目层（项目管理员）**：`project_ml_backend` 关联表，仅记「启用 / 停用」+ 项目级变体覆盖（`default_variants`）。多阶段编排里选不同 backend 跑不同阶段时，先在「管理 backend」面板里勾选启用，再到编排卡里选用即可。
+
+**没有项目级数量上限**。旧的 `max_ml_backends_per_project` 与多阶段 DAG 需 ≥2 backend 直接冲突，已退役；显存保护改由全局行的 `max_concurrency` 并发闸兜底（同一物理 backend 全局一个 semaphore，不会被「多项目各持一个独立 semaphore」绕过）。新建项目不再有「复用 backend = 克隆一行」语义，统一走「在新项目里勾选启用某个已注册 backend」。
 
 ---
 

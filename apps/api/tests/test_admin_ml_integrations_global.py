@@ -89,9 +89,7 @@ async def test_create_project_with_backend_source_reuses_registry(
     # 新项目绑定同一全局 registry id (不再是新 backend id)
     assert body["ml_backend_id"] == str(src.id)
     # 新项目获得一条启用关联
-    assert await MLBackendService(db_session).is_enabled(
-        uuid.UUID(body["id"]), src.id
-    )
+    assert await MLBackendService(db_session).is_enabled(uuid.UUID(body["id"]), src.id)
 
 
 @pytest.mark.asyncio

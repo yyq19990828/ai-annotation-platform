@@ -986,7 +986,9 @@ async def test_route_no_device_to_gpu_queue(
     owner, token = super_admin
     proj, detect, _, batch = await _seed(db_session, owner.id)
     await _set_caps(db_session, detect, [{"id": "plain-det"}])
-    resp = await _post_single(httpx_client_bound, token, proj, detect, batch, "plain-det")
+    resp = await _post_single(
+        httpx_client_bound, token, proj, detect, batch, "plain-det"
+    )
     assert resp.status_code == 200, resp.text
     assert _mock_celery["queue"] == "ml"
 

@@ -108,7 +108,13 @@ async def load_capability_instances(db: AsyncSession) -> list[dict]:
     每行优先读 health_meta.capabilities 快照, 缺失时并发 live 探测 /setup。
     source 取注册行的 source ('manual' | 'env')。
     """
-    result = await db.execute(select(MLBackendRegistry))
+    # v0.19.0 ADR-0044 · 过滤掉 disconnected 行(env reconcile 自动置 disconnected
+    # 的注册项 / 长期不可达的 manual 行),与 workers/ml_health.py 的探测口径一致;
+    # 避免「能力目录」露出已下线 backend 的旧 health_meta 快照 (v0.19.4 的 GPU/批量
+    # 徽标会跟着展示已下线 backend 的设备能力, 误导用户)。
+    result = await db.execute(
+        select(MLBackendRegistry).where(MLBackendRegistry.state != "disconnected")
+    )
     backends = list(result.scalars().all())
     if not backends:
         return []

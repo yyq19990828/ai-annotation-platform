@@ -157,9 +157,10 @@ async def test_retry_failed_prediction_queues_celery_and_returns_202(
     await db_session.commit()
 
     headers = {"Authorization": f"Bearer {token}"}
+    # v0.19.5 起 retry 改 apply_async(queue=...) 以走设备感知路由(原 .delay() 静态落 ml/gpu)。
     with patch(
-        "app.workers.predictions_retry.retry_failed_prediction.delay"
-    ) as mock_delay:
+        "app.workers.predictions_retry.retry_failed_prediction.apply_async"
+    ) as mock_apply:
         resp = await httpx_client_bound.post(
             f"/api/v1/admin/failed-predictions/{fp.id}/retry", headers=headers
         )
@@ -168,7 +169,11 @@ async def test_retry_failed_prediction_queues_celery_and_returns_202(
     body = resp.json()
     assert body["status"] == "queued"
     assert body["failed_id"] == str(fp.id)
-    mock_delay.assert_called_once_with(str(fp.id), str(user.id))
+    mock_apply.assert_called_once()
+    call_kwargs = mock_apply.call_args.kwargs
+    assert call_kwargs["args"] == [str(fp.id), str(user.id)]
+    # 未自报 device 的 backend 保守落 gpu(ml)队列。
+    assert call_kwargs["queue"] == "ml"
 
 
 async def test_retry_blocked_when_max_exceeded(

@@ -72,7 +72,11 @@ async def test_create_multiple_ml_backends_no_limit(
     for i in range(3):
         resp = await httpx_client_bound.post(
             f"/api/v1/projects/{proj.id}/ml-backends",
-            json={"name": f"sam3-{i}", "url": f"http://sam3-{i}/", "is_interactive": True},
+            json={
+                "name": f"sam3-{i}",
+                "url": f"http://sam3-{i}/",
+                "is_interactive": True,
+            },
             headers=headers,
         )
         assert resp.status_code == 201, resp.text

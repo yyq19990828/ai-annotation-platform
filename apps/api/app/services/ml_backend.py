@@ -59,7 +59,9 @@ class MLBackendService:
         )
         return list(result.scalars().all())
 
-    async def update(self, registry_id: uuid.UUID, **kwargs) -> MLBackendRegistry | None:
+    async def update(
+        self, registry_id: uuid.UUID, **kwargs
+    ) -> MLBackendRegistry | None:
         row = await self.get(registry_id)
         if not row:
             return None
@@ -142,9 +144,7 @@ class MLBackendService:
         )
         return result.scalar_one_or_none()
 
-    async def is_enabled(
-        self, project_id: uuid.UUID, registry_id: uuid.UUID
-    ) -> bool:
+    async def is_enabled(self, project_id: uuid.UUID, registry_id: uuid.UUID) -> bool:
         assoc = await self.get_assoc(project_id, registry_id)
         return bool(assoc and assoc.enabled)
 

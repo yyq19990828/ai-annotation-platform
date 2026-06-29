@@ -17,9 +17,7 @@ from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
 from app.services.ml_backend import MLBackendService
 
 
-async def _make_backend(
-    db: AsyncSession, url: str = "http://example/"
-) -> MLBackend:
+async def _make_backend(db: AsyncSession, url: str = "http://example/") -> MLBackend:
     # v0.19.0 ADR-0044 · backend 上提为全局注册表, 不再有 project_id。
     backend = MLBackend(
         id=uuid.uuid4(),

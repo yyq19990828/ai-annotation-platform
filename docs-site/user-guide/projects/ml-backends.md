@@ -88,5 +88,3 @@ last_reviewed: 2026-06-10
 - 协议契约：[ML Backend Protocol](../../dev/reference/ml-backend-protocol.md)
 - 架构决策：[ADR-0019 Prompt-first ToolDock + 1:N 架构](../../dev/adr/0019-prompt-first-tooldock-1n-arch.md)、[ADR-0020 Capability 协商](../../dev/adr/0020-ml-backend-capability-negotiation.md)
 - 工作台侧使用：[AI 工具组](../workbench/sam-tool.md)
-</content>
-</invoke>

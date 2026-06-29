@@ -466,7 +466,7 @@ async def create_project(
         payload.pop(_legacy_key, None)
 
     # v0.9.7 · 取出 source_id (若给定), 校验存在性后再创建项目;
-    # 项目 INSERT 完成后再复制 backend (受 FK ml_backends.project_id 约束).
+    # 项目 INSERT 完成后再为新项目启用 backend (项目 → project_ml_backend FK).
     source_id = payload.pop("ml_backend_source_id", None)
     source_backend = None
     if source_id is not None:
@@ -536,6 +536,10 @@ async def create_project(
         )
 
     new_project_id = uuid.uuid4()
+    # v0.19.0 ADR-0044 · 直接指定主 backend (非克隆路径) 时, 同步在新项目建启用关联;
+    # 不然 project_ml_backend 缺行, trigger_preannotation 的 is_enabled 校验 404 +
+    # ai_enabled 又派生为 true → 工作台显示「已启用 AI 却跑不起来」。
+    main_backend_to_enable = payload.get("ml_backend_id") if source_backend is None else None
     project = Project(
         id=new_project_id,
         display_id=await next_display_id(db, "projects"),
@@ -543,7 +547,7 @@ async def create_project(
         **payload,
     )
     db.add(project)
-    await db.flush()  # 让 project row 入 DB, 满足 ml_backends FK
+    await db.flush()  # 让 project row 入 DB, 满足 project_ml_backend FK
 
     if source_backend is not None:
         new_backend_id = await _clone_backend_to_new_project(
@@ -553,6 +557,12 @@ async def create_project(
         # v0.10.37 · 克隆源项目 backend 落定后, 同样按新项目 data_type 校验模态
         # (clone 复制了 url/auth, 实时探 /setup 与校验 source 等价).
         await _validate_backend_modality(db, new_backend_id, project.data_type)
+    elif main_backend_to_enable is not None:
+        from app.services.ml_backend import MLBackendService
+
+        await MLBackendService(db).set_enabled(
+            new_project_id, main_backend_to_enable, enabled=True
+        )
 
     if template is not None:
         template.usage_count = (template.usage_count or 0) + 1
@@ -657,6 +667,14 @@ async def update_project(
                 payload["ml_backend_id"],
                 payload.get("data_type") or project.data_type,
             )
+            # v0.19.0 ADR-0044 · 设主 backend 即视为「本项目启用该 backend」;
+            # 否则 trigger_preannotation 的 is_enabled 校验 404, 而 ai_enabled 又自动派生 true
+            # → 工作台显示「已启用 AI 却跑不起来」。与 PUT /ml-backends/{rid}/enablement 对称。
+            from app.services.ml_backend import MLBackendService
+
+            await MLBackendService(db).set_enabled(
+                project.id, payload["ml_backend_id"], enabled=True
+            )
 
     # v0.10.22 · 同 create_project: 旧扁平输入反向派生进 tool_bindings 后剔除.
     from app.services.project import coalesce_legacy_into_tool_bindings
@@ -726,7 +744,9 @@ async def delete_project(
         ),
         p,
     )
-    await db.execute(text("DELETE FROM ml_backends WHERE project_id = :pid"), p)
+    # v0.19.0 ADR-0044 · 全局 backend 注册项不属于某个项目, 不随项目删;
+    # project_ml_backend.project_id ON DELETE CASCADE, db.delete(project) 会自动清启用关联;
+    # registry 行的下线/复用走 superadmin /admin/ml-integrations/registry 端点。
     await db.execute(
         text("UPDATE bug_reports SET project_id = NULL WHERE project_id = :pid"),
         p,
