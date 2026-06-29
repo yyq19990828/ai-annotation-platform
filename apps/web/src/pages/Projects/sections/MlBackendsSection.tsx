@@ -46,11 +46,6 @@ const STATE_VARIANT: Record<string, "success" | "warning" | "outline" | "danger"
   error: "danger",
 };
 
-function formatDate(iso: string | null | undefined) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("zh-CN", { hour12: false });
-}
-
 // 项目级阈值覆盖输入: 本地态编辑, blur 时提交; 空 = 清除覆盖 (回落 backend 默认)。
 function OverrideCell({
   item,
