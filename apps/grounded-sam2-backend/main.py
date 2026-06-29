@@ -17,20 +17,19 @@ prompt 类型:
 
 v0.9.1 (M1) 加入 SAM 2 image embedding LRU 缓存:
     cache_key = sha1(url_path|sam_variant); 同图二次操作跳过 ~1.5s 的 image encoder.
-    point/interactive_box 命中可同时跳过 _fetch_image; text 仅省 set_image (DINO 仍需原图).
+    point/interactive_box 命中可同时跳过 fetch_image; text 仅省 set_image (DINO 仍需原图).
 """
 
 from __future__ import annotations
 
 import asyncio
-import gc
 import logging
 import os
 import time
-from io import BytesIO
 
 import httpx
 import torch
+from aap_backend_runtime import fetch_image, free_gpu_memory, versions_payload
 from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
     PROTOCOL_VERSION,
@@ -42,7 +41,6 @@ from aap_protocol_v2 import (
 )
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
-from PIL import Image
 from pydantic import BaseModel
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
@@ -129,17 +127,6 @@ async def _prefetch_extras() -> None:
     logger.info("prefetch extras done: %s", _provisioning)
 
 
-def _free_gpu_memory() -> None:
-    """显式释放 CUDA caching allocator 持有的显存, 让 nvidia-smi 立刻可见下降."""
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        try:
-            torch.cuda.ipc_collect()
-        except Exception:  # noqa: BLE001
-            pass
-
-
 def _build_predictor(
     sam_variant: str, dino_variant: str, cache: EmbeddingCache
 ) -> GroundedSAM2Predictor:
@@ -156,7 +143,7 @@ def _build_predictor(
 _pool = ModelPool(
     cap=MODEL_POOL_CAP,
     build_predictor=_build_predictor,
-    free_gpu_memory=_free_gpu_memory,
+    free_gpu_memory=free_gpu_memory,
     embedding_cache_size=EMBEDDING_CACHE_SIZE,
     build_timeout=MODEL_POOL_BUILD_TIMEOUT,
 )
@@ -173,7 +160,7 @@ def _build_video_tracker(sam_variant: str) -> SAM2VideoTracker:
 _video_pool = VideoPool(
     cap=VIDEO_MODEL_POOL_CAP,
     build_tracker=_build_video_tracker,
-    free_gpu_memory=_free_gpu_memory,
+    free_gpu_memory=free_gpu_memory,
     build_timeout=VIDEO_MODEL_POOL_BUILD_TIMEOUT,
     idle_unload_seconds=VIDEO_IDLE_UNLOAD_SECONDS,
 )
@@ -680,7 +667,7 @@ def setup() -> dict:
 
 @app.get("/versions")
 def versions() -> dict:
-    return {"versions": [MODEL_VERSION]}
+    return versions_payload(MODEL_VERSION, BACKEND_VERSION)
 
 
 @app.get("/metrics", include_in_schema=False)
@@ -698,7 +685,7 @@ def cache_stats() -> dict:
 async def unload() -> dict:
     """主动卸载整池释放显存. 已为空闲状态时返回 ok=true, unloaded=false."""
     unloaded = _pool.clear_all(reason="manual")
-    _free_gpu_memory()
+    free_gpu_memory()
     return {"ok": True, "unloaded": unloaded, "loaded": _pool.loaded}
 
 
@@ -821,17 +808,6 @@ async def warmup(req: WarmupRequest) -> WarmupResponse:
     )
 
 
-def _fetch_image(file_path: str) -> Image.Image:
-    if file_path.startswith(("http://", "https://")):
-        with httpx.Client(timeout=IMAGE_DOWNLOAD_TIMEOUT, follow_redirects=True) as client:
-            resp = client.get(file_path)
-            resp.raise_for_status()
-            return Image.open(BytesIO(resp.content)).convert("RGB")
-    if os.path.isfile(file_path):
-        return Image.open(file_path).convert("RGB")
-    raise HTTPException(status_code=400, detail=f"unsupported file_path scheme: {file_path[:64]}")
-
-
 async def _run_prompt(
     file_path: str, ctx: dict
 ) -> tuple[list[dict], bool, str, str, bool, int | None, str | None]:
@@ -872,7 +848,7 @@ async def _run_prompt(
         # v0.18.18 · 上一轮 low-res logits 回灌 (多点精修阶段; 首点 multimask 候选阶段前端不回传).
         mask_input = ctx.get("mask_input")
         # miss: 拉图 + 让 predictor 内部 set_image + put; hit: 不拉图, 走 restore_sam.
-        image = None if cache.peek(cache_key) else _fetch_image(file_path)
+        image = None if cache.peek(cache_key) else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
         results, hit, mask_input_next = p.predict_point(
             image, points, labels, multimask_output=multimask,
             mask_input=mask_input, cache_key=cache_key, simplify_tolerance=simplify_tol,
@@ -888,7 +864,7 @@ async def _run_prompt(
                 detail="context.bbox=[x1,y1,x2,y2] required for type=interactive_box",
             )
         multimask = bool(ctx.get("multimask_output", False))
-        image = None if cache.peek(cache_key) else _fetch_image(file_path)
+        image = None if cache.peek(cache_key) else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
         # 框单发不回灌 → predict_bbox 第 3 项恒 None.
         results, hit, _ = p.predict_bbox(
             image, bbox, multimask_output=multimask,
@@ -911,7 +887,7 @@ async def _run_prompt(
                 status_code=422,
                 detail=f"context.output must be one of box|mask|both, got {output_mode!r}",
             )
-        image = _fetch_image(file_path)
+        image = fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
         results, hit = p.predict_text(
             image,
             text,
@@ -967,7 +943,7 @@ async def _run_box_seg(
             )
         if simplify_tol < 0:
             raise HTTPException(status_code=422, detail="context.simplify_tolerance must be >= 0")
-    image = None if cache.peek(cache_key) else _fetch_image(file_path)
+    image = None if cache.peek(cache_key) else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
     results, hit = p.predict_boxes(
         image, prompts, cache_key=cache_key, simplify_tolerance=simplify_tol
     )

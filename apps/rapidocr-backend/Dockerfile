@@ -33,6 +33,11 @@ RUN python3 -m pip install --upgrade pip "setuptools>=68" wheel
 COPY _shared/protocol_v2/ /app/protocol_v2/
 RUN python3 -m pip install --no-build-isolation -e /app/protocol_v2
 
+# 共享 backend_runtime 包 (apps/_shared/backend_runtime). 仅消费 versions_payload
+# (RapidOCR.load_img 自带下载, 不用 fetch_image)。与其余 backend 单一来源。
+COPY _shared/backend_runtime/ /app/backend_runtime/
+RUN python3 -m pip install --no-build-isolation -e /app/backend_runtime
+
 # RapidOCR（pin v3.9.0）+ GPU onnxruntime + backend 轻依赖。RapidOCR 拉 opencv_python(全量)，
 # 容器无 GUI → 换 opencv-python-headless（仿 RapidOCR 官方 Dockerfile）。
 RUN python3 -m pip install "rapidocr==3.9.0" "onnxruntime-gpu" \

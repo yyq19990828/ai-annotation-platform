@@ -31,16 +31,14 @@ Idle Unload (双 backend 并存场景的显存让渡机制):
 from __future__ import annotations
 
 import asyncio
-import gc
 import logging
 import os
 import time
 from datetime import datetime, timezone
-from io import BytesIO
 from typing import Any
 
-import httpx
 import torch
+from aap_backend_runtime import fetch_image, free_gpu_memory, versions_payload
 from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
     PROTOCOL_VERSION,
@@ -51,7 +49,6 @@ from aap_protocol_v2 import (
 )
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
-from PIL import Image
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 
@@ -105,17 +102,6 @@ _POOL_KEY: str = MODEL_VERSION  # opaque key, 协议 §4.3 sam3 用 model_varian
 
 def _build_predictor() -> SAM3Predictor:
     return SAM3Predictor(embedding_cache=_cache)
-
-
-def _free_gpu_memory() -> None:
-    """显式释放 CUDA caching allocator 持有的显存, 让 nvidia-smi 立刻可见下降."""
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        try:
-            torch.cuda.ipc_collect()
-        except Exception:  # noqa: BLE001
-            pass
 
 
 async def _ensure_predictor_loaded(
@@ -172,9 +158,9 @@ async def _unload_predictor(reason: str) -> bool:
             return False
         logger.info("unloading SAM 3: reason=%s", reason)
         _predictor = None
-        _free_gpu_memory()
+        free_gpu_memory()
         _cache.clear()
-        _free_gpu_memory()
+        free_gpu_memory()
         # 归类 evict reason: idle_* / manual / 其他 → manual
         evict_reason = "idle_timeout" if reason.startswith("idle") else "manual"
         _pool_last_evict = {
@@ -506,7 +492,7 @@ def setup() -> dict:
 
 @app.get("/versions")
 def versions() -> dict:
-    return {"versions": [MODEL_VERSION]}
+    return versions_payload(MODEL_VERSION, BACKEND_VERSION)
 
 
 @app.get("/metrics", include_in_schema=False)
@@ -561,17 +547,6 @@ async def warmup(req: WarmupRequest | None = None) -> WarmupResponse:
         cache_hit=cache_hit,
         evicted=None,
     )
-
-
-def _fetch_image(file_path: str) -> Image.Image:
-    if file_path.startswith(("http://", "https://")):
-        with httpx.Client(timeout=IMAGE_DOWNLOAD_TIMEOUT, follow_redirects=True) as client:
-            resp = client.get(file_path)
-            resp.raise_for_status()
-            return Image.open(BytesIO(resp.content)).convert("RGB")
-    if os.path.isfile(file_path):
-        return Image.open(file_path).convert("RGB")
-    raise HTTPException(status_code=400, detail=f"unsupported file_path scheme: {file_path[:64]}")
 
 
 def _coerce_simplify_tolerance(ctx: dict) -> float | None:
@@ -644,7 +619,7 @@ def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict]
             raise HTTPException(status_code=422, detail="context.points required for type=point")
         labels = ctx.get("labels") or [1] * len(points)
         multimask = bool(ctx.get("multimask_output", False))
-        image = None if _cache.peek(cache_key) else _fetch_image(file_path)
+        image = None if _cache.peek(cache_key) else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
         return p.predict_interactive(
             image, points=points, labels=labels, multimask_output=multimask,
             mask_input=ctx.get("mask_input"),
@@ -659,7 +634,7 @@ def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict]
                 status_code=422, detail="context.bbox=[x1,y1,x2,y2] required for type=interactive_box"
             )
         multimask = bool(ctx.get("multimask_output", False))
-        image = None if _cache.peek(cache_key) else _fetch_image(file_path)
+        image = None if _cache.peek(cache_key) else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
         return p.predict_interactive(
             image, box=box, multimask_output=multimask,
             cache_key=cache_key, simplify_tolerance=simplify_tol,
@@ -671,8 +646,8 @@ def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict]
             raise HTTPException(status_code=422, detail="context.text required for type=text")
         output_mode = _coerce_output(ctx)
         # SAM 3 PCS text 走 image predictor + 缓存; 与 grounded-sam2 (DINO 原图必拉) 不同,
-        # 缓存命中时可省 _fetch_image. text/exemplar 不回灌 mask_input → 第 3 项恒 None.
-        image = None if _cache.peek(cache_key) else _fetch_image(file_path)
+        # 缓存命中时可省 fetch_image. text/exemplar 不回灌 mask_input → 第 3 项恒 None.
+        image = None if _cache.peek(cache_key) else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
         results, hit = p.predict_text(
             image,
             text,
@@ -688,7 +663,7 @@ def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict]
         exemplars = _coerce_exemplars(ctx)
         text = (ctx.get("text") or "").strip() or None
         output_mode = _coerce_output(ctx)
-        image = None if _cache.peek(cache_key) else _fetch_image(file_path)
+        image = None if _cache.peek(cache_key) else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
         results, hit = p.predict_exemplars(
             image,
             exemplars,

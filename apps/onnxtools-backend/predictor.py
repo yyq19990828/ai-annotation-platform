@@ -15,13 +15,12 @@ from __future__ import annotations
 
 import logging
 import time
-from base64 import b64decode
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
-from urllib.parse import urlparse
 
 import cv2
 import numpy as np
+from aap_backend_runtime import fetch_image
 
 logger = logging.getLogger("onnxtools-backend.predictor")
 
@@ -43,7 +42,8 @@ def _class_name_of(names: Any, cls: int) -> str:
 def load_image_bgr(file_path: str, *, http_timeout: float = 10.0) -> np.ndarray:
     """加载图像为 BGR ndarray（VehicleAttributePipeline 期望 cv2 BGR 输入）。
 
-    支持 ``data:`` base64 / ``http(s)://`` presigned URL / 本地绝对路径。
+    下载/解码（``data:`` base64 / ``http(s)://`` presigned URL / 本地绝对路径）复用共享
+    :func:`aap_backend_runtime.fetch_image`（出 RGB ``PIL.Image``）, 再转 cv2 BGR。
 
     Args:
         file_path: 图像来源。
@@ -51,31 +51,9 @@ def load_image_bgr(file_path: str, *, http_timeout: float = 10.0) -> np.ndarray:
 
     Returns:
         BGR 图像 ndarray [H, W, 3]。
-
-    Raises:
-        ValueError: 解码失败时。
     """
-    if file_path.startswith("data:"):
-        _, _, b64 = file_path.partition(",")
-        raw = b64decode(b64)
-    else:
-        parsed = urlparse(file_path)
-        if parsed.scheme in ("http", "https"):
-            import httpx  # 延迟导入：纯映射测试无需 httpx
-
-            with httpx.Client(timeout=http_timeout, follow_redirects=True) as client:
-                resp = client.get(file_path)
-                resp.raise_for_status()
-                raw = resp.content
-        else:
-            with open(file_path, "rb") as f:
-                raw = f.read()
-
-    arr = np.frombuffer(raw, dtype=np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    if img is None:
-        raise ValueError(f"failed to decode image: {file_path[:80]}")
-    return img
+    img = fetch_image(file_path, timeout=http_timeout)
+    return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
 
 def classification_to_result(

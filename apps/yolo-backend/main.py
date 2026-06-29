@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from aap_backend_runtime import free_gpu_memory, versions_payload
 from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
     PROTOCOL_VERSION,
@@ -89,11 +90,6 @@ IDLE_UNLOAD_SECONDS = float(os.environ.get("YOLO_IDLE_UNLOAD_SECONDS", "600"))
 IDLE_CHECK_INTERVAL = float(os.environ.get("YOLO_IDLE_CHECK_INTERVAL", "60"))
 STRICT_OFFLINE = os.environ.get("YOLO_STRICT_OFFLINE", "0") not in ("0", "", "false", "False")
 CHECKPOINTS_DIR = Path(os.environ.get("YOLO_CHECKPOINTS_DIR", "/app/checkpoints"))
-
-
-def _free_gpu_memory() -> None:
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
 
 
 def _build_model(task: str, series: str, size: str):
@@ -179,7 +175,7 @@ async def lifespan(app: FastAPI):
     _model_pool = ModelPool(
         cap=MODEL_POOL_CAP,
         build_model=_build_model,
-        free_gpu_memory=_free_gpu_memory,
+        free_gpu_memory=free_gpu_memory,
         build_timeout=BUILD_TIMEOUT,
     )
     update_pool_size(0)
@@ -672,11 +668,7 @@ def versions() -> dict[str, Any]:
         from ultralytics import __version__ as ul_ver
     except Exception:  # noqa: BLE001
         ul_ver = "unknown"
-    return {
-        "versions": [MODEL_VERSION],
-        "backend_version": BACKEND_VERSION,
-        "ultralytics": ul_ver,
-    }
+    return versions_payload(MODEL_VERSION, BACKEND_VERSION, ultralytics=ul_ver)
 
 
 async def _run_predict(req: BatchPredictRequest) -> list[PredictionResult]:

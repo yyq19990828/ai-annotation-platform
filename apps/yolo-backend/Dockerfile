@@ -35,6 +35,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY _shared/protocol_v2/ /app/protocol_v2/
 RUN pip install --no-build-isolation -e /app/protocol_v2
 
+# 共享 backend_runtime 包 (apps/_shared/backend_runtime). 五 backend 共用的无状态叶子函数
+# (图片下载 / 显存释放 / /versions 载荷). setuptools>=68 已在装 protocol_v2 前升级, 复用.
+COPY _shared/backend_runtime/ /app/backend_runtime/
+RUN pip install --no-build-isolation -e /app/backend_runtime
+
 # 本仓代码 + 测试.
 COPY yolo-backend/pyproject.toml ./
 RUN pip install --upgrade "pip" "setuptools>=68" "wheel" && \

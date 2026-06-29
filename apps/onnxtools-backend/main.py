@@ -27,6 +27,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
+from aap_backend_runtime import versions_payload
 from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
     PROTOCOL_VERSION,
@@ -340,7 +341,7 @@ def setup() -> dict[str, Any]:
 
 @app.get("/versions")
 def versions() -> dict[str, Any]:
-    return {"versions": [MODEL_VERSION], "backend_version": BACKEND_VERSION}
+    return versions_payload(MODEL_VERSION, BACKEND_VERSION)
 
 
 @app.post("/warmup", response_model=WarmupResponse)

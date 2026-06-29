@@ -35,6 +35,11 @@ RUN python3 -m pip install --upgrade pip "setuptools>=68" wheel
 COPY _shared/protocol_v2/ /app/protocol_v2/
 RUN python3 -m pip install --no-build-isolation -e /app/protocol_v2
 
+# 共享 backend_runtime 包 (apps/_shared/backend_runtime). 与其余 backend 共用的无状态叶子函数
+# (图片下载 / /versions 载荷). pillow 经此 editable 安装补上 (onnxtools 不直接声明)。
+COPY _shared/backend_runtime/ /app/backend_runtime/
+RUN python3 -m pip install --no-build-isolation -e /app/backend_runtime
+
 # backend 自身轻依赖 + onnxtools (git 装 main, 带 inference extra: onnxruntime-gpu/opencv/supervision).
 # VehicleAttributePipeline 已合入 onnxtools main; 迭代 onnxtools 后重新 build (pip 缓存失效).
 RUN python3 -m pip install "fastapi>=0.110" "uvicorn[standard]>=0.27" "pydantic>=2.5" "httpx>=0.27" "numpy>=1.24,<3.0" \
