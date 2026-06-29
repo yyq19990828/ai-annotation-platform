@@ -9,32 +9,32 @@ last_reviewed: 2026-06-10
 
 # AI 预标注流水线
 
-本文描述 AI 预标注的完整流程：从注册 ML Backend → 触发预标注 Job → 标注员采用结果。
+本文描述 AI 预标注的完整流程：从全局注册 ML Backend → 项目启用 → 触发预标注 Job → 标注员采用结果。
 
 ## 前提条件
 
 - 已有可用 ML Backend（自部署或使用平台内置 Grounded-SAM-2）
-- 已在 **模型市场**（`/model-market`）完成 ML Backend 注册（super_admin 或 project_admin 均可访问）
+- 超管已在 **模型市场**（`/model-market`）的**全局注册表**完成 ML Backend 注册（env 配置的 backend 启动后自动注册）
 - 项目已创建并上传数据
 
 ## 流程概览
 
 ```
-超管注册 ML Backend → 项目绑定 backend → 触发批量 Job → Job 完成 → 标注员采用 Prediction
+超管全局注册 ML Backend → 项目启用 backend（设主后端） → 触发批量 Job → Job 完成 → 标注员采用 Prediction
 ```
 
-## Step 1：注册 ML Backend
+## Step 1：全局注册 ML Backend（超管）
 
 1. 主导航 → **模型市场**（`/model-market`）→ **注册管理** tab
-2. 填写服务 URL（如 `http://sam-backend:8001`）并点击**测试连接** — 返回 200 且协议版本匹配即可
-3. 保存后可在**能力目录** tab 中看到该 Backend 及其模型条目
+2. 点「注册 backend」，填写服务 URL（如 `http://sam-backend:8001`，全局唯一）并点击**测试连接** — 返回 200 且协议版本匹配即可
+3. 保存后该 backend 进入全局注册表，可在**能力目录** tab 中看到它及其模型条目
 
 详见 [ML Backend 协议](/dev/reference/ml-backend-protocol)。
 
-## Step 2：项目绑定 backend（项目管理员操作）
+## Step 2：项目启用 backend（项目管理员操作）
 
-1. 项目详情 → **设置** → **ML 模型** → 从注册列表选择
-2. 保存（不影响现有 Task 和 Prediction）
+1. 项目详情 → **设置** → **ML 模型** → 在全局 backend 启用清单里**勾选启用**（可设项目级阈值 / 变体覆盖）
+2. 在 **项目主后端** 下拉里选一个已启用的 backend 并保存（不影响现有 Task 和 Prediction）
 
 ## Step 3：触发批量预标注
 

@@ -61,4 +61,4 @@ last_reviewed: 2026-06-10
 
 ## 与 ML backend / model-market 的关系
 
-公共模板可以预填 `ai_enabled` 标志，但**不绑定具体 ml_backend_id 也没有 `ai_model` 字段**（`project_templates` 表中无此列，`apps/api/app/db/models/project_template.py` 可验证）。应用模板创建项目时，新项目需自行注册 / 复用 ml_backend，详见 [ML Backend 注册](./ml-backend-registry)。
+公共模板可以预填 `ai_enabled` 标志，但**不绑定具体 ml_backend_id 也没有 `ai_model` 字段**（`project_templates` 表中无此列，`apps/api/app/db/models/project_template.py` 可验证）。应用模板创建项目时，新项目需自行从全局注册表启用 ml_backend，详见 [启用 ML 后端](../projects/ml-backends)。

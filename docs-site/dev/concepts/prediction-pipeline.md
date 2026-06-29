@@ -266,9 +266,9 @@ worker 累加各阶段 stats（源阶段 `{detected}`、下游 `{targeted, ok, f
 
 这框的某属性来自哪个 backend / model 可逐条追溯——不改表（仍在 `PredictionMeta.extra` JSONB 内），`stage_count` / `enriched_attr_keys` 收口进同一 namespace。
 
-### 配置上限
+### backend 来源与显存保护
 
-`MAX_ML_BACKENDS_PER_PROJECT` 默认 `3`（跨 backend 编排天然需 detect + classify ≥ 2，留一档余量）；仍保留上限挡入口防显存爆炸，生产按显存预算调整。
+backend 走**全局注册 + 项目启用**：一个物理 backend 全局只注册一行，项目按需勾选启用，**没有项目级数量上限**（跨 backend 编排天然需 detect + classify ≥ 2，多阶段 DAG 还会更多）。单机显存爆炸由每个全局注册行的 `max_concurrency`（`ml_backends.extra_params.max_concurrency`）并发闸兜底，限制单 backend 同时并行的预测请求数。
 
 ## 代码索引
 
