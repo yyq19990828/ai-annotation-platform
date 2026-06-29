@@ -28,7 +28,7 @@ class Prediction(Base):
         UUID(as_uuid=True), ForeignKey("projects.id"), index=True
     )
     ml_backend_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("ml_backends.id", ondelete="SET NULL")
+        UUID(as_uuid=True), ForeignKey("ml_backend_registry.id", ondelete="SET NULL")
     )
     model_version: Mapped[str | None] = mapped_column(String(100))
     score: Mapped[float | None] = mapped_column(Float)
@@ -111,7 +111,7 @@ class FailedPrediction(Base):
         UUID(as_uuid=True), ForeignKey("projects.id"), index=True
     )
     ml_backend_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("ml_backends.id", ondelete="SET NULL")
+        UUID(as_uuid=True), ForeignKey("ml_backend_registry.id", ondelete="SET NULL")
     )
     model_version: Mapped[str | None] = mapped_column(String(100))
     error_type: Mapped[str] = mapped_column(String(100), nullable=False)
