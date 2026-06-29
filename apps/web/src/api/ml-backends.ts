@@ -13,6 +13,25 @@ export interface MLBackendCreatePayload {
 
 export type MLBackendUpdatePayload = Partial<MLBackendCreatePayload>;
 
+// v0.19.0 · ADR-0044 全局 ML 注册表: backend 上提为全局表, 项目层退化为「启用关联 + 覆盖」。
+// `available` 端点列出全部全局 backend + 本项目启用态/覆盖; 一行 = 一个全局 backend。
+// backend 快照与 MLBackendResponse 同构 (全局项 project_id=null, 额外带 health_meta)。
+export interface ProjectMLBackendItem {
+  backend: MLBackendResponse;
+  enabled: boolean;
+  box_threshold: number | null;
+  text_threshold: number | null;
+  default_variants: Record<string, unknown> | null;
+}
+
+// 切换项目启用 + 写项目级覆盖 (阈值/变体)。覆盖项缺省 = 不改动。
+export interface ProjectMLBackendEnablementPayload {
+  enabled: boolean;
+  box_threshold?: number | null;
+  text_threshold?: number | null;
+  default_variants?: Record<string, unknown> | null;
+}
+
 export interface InteractiveRequest {
   task_id: string;
   context: Record<string, unknown>;
@@ -152,6 +171,23 @@ export function mlBackendSetupQueryKey(
 export const mlBackendsApi = {
   list: (projectId: string) =>
     apiClient.get<MLBackendResponse[]>(`/projects/${projectId}/ml-backends`),
+
+  // v0.19.0 · ADR-0044 · 列出全部全局 backend + 本项目启用态/覆盖 (项目设置启用清单数据源)。
+  listAvailable: (projectId: string) =>
+    apiClient.get<{ items: ProjectMLBackendItem[] }>(
+      `/projects/${projectId}/ml-backends/available`,
+    ),
+
+  // v0.19.0 · ADR-0044 · 切换某全局 backend 在本项目的启用态 + 写项目级覆盖。
+  setEnablement: (
+    projectId: string,
+    registryId: string,
+    payload: ProjectMLBackendEnablementPayload,
+  ) =>
+    apiClient.put<ProjectMLBackendItem>(
+      `/projects/${projectId}/ml-backends/${registryId}/enablement`,
+      payload,
+    ),
 
   setup: (projectId: string, backendId: string) =>
     apiClient.get<MLBackendCapability>(`/projects/${projectId}/ml-backends/${backendId}/setup`),

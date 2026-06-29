@@ -4,6 +4,7 @@ import {
   type MLBackendCreatePayload,
   type MLBackendUpdatePayload,
   type MLBackendVariant,
+  type ProjectMLBackendEnablementPayload,
 } from "@/api/ml-backends";
 
 function invalidateBackendQueries(qc: QueryClient, projectId: string) {
@@ -18,6 +19,30 @@ export function useMLBackends(projectId: string | undefined) {
     queryKey: ["ml-backends", projectId],
     queryFn: () => mlBackendsApi.list(projectId!),
     enabled: !!projectId,
+  });
+}
+
+// v0.19.0 · ADR-0044 · 全部全局 backend + 本项目启用态/覆盖 (项目设置启用清单)。
+// query key 复用 ["ml-backends", projectId] 前缀, 让 invalidateBackendQueries 一并失效。
+export function useAvailableMLBackends(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ["ml-backends", projectId, "available"],
+    queryFn: () => mlBackendsApi.listAvailable(projectId!),
+    enabled: !!projectId,
+  });
+}
+
+export function useSetMLBackendEnablement(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      registryId,
+      payload,
+    }: {
+      registryId: string;
+      payload: ProjectMLBackendEnablementPayload;
+    }) => mlBackendsApi.setEnablement(projectId, registryId, payload),
+    onSuccess: () => invalidateBackendQueries(qc, projectId),
   });
 }
 

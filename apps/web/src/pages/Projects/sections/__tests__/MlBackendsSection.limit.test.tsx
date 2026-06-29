@@ -1,19 +1,21 @@
 /**
- * v0.10.3 · MlBackendsSection 上限态单测 — 配额角标 / 按钮 disabled / 强行点击触发 LimitModal.
+ * v0.19.0 · ADR-0044 · MlBackendsSection 启用清单单测 —
+ * 已启用角标 / 勾选启用调 setEnablement / 空态 / AI 设置保存设主后端 (仅从已启用项选)。
  *
- * 仅覆盖 M3 新增行为. 其他业务行为 (绑定/删除/编辑) 沿用 v0.9.x 既有 e2e.
+ * 项目层不再「注册 backend」(全局 backend 由超管在模型市场注册); 旧上限态断言已废弃。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-const mockUseMLBackends = vi.fn();
+const mockUseAvailable = vi.fn();
 const mockSetup = vi.fn();
 const mockUpdateMutate = vi.fn();
+const mockSetEnablementMutate = vi.fn();
 
 vi.mock("@/hooks/useMLBackends", () => ({
-  useMLBackends: () => mockUseMLBackends(),
-  useDeleteMLBackend: () => ({ mutate: vi.fn(), isPending: false }),
+  useAvailableMLBackends: () => mockUseAvailable(),
+  useSetMLBackendEnablement: () => ({ mutate: mockSetEnablementMutate, isPending: false }),
   useMLBackendHealth: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("@/hooks/useProjects", () => ({
@@ -37,18 +39,11 @@ vi.mock("@/api/ml-backends", () => ({
   mlBackendsApi: { setup: (...a: unknown[]) => mockSetup(...a) },
   mlBackendSetupQueryKey: (p: unknown, b: unknown) => ["ml-backends", p, b, "setup"],
 }));
-// FormModal 在 limit 态下不会真正打开 — 用空实现避免依赖.
-vi.mock("@/components/projects/MlBackendFormModal", () => ({
-  MlBackendFormModal: () => null,
-}));
 
 import { MlBackendsSection } from "../MlBackendsSection";
 import type { ProjectResponse } from "@/api/projects";
 
-// v0.10.3 · ml_backend_limit 后端字段, codegen 未重跑前 ProjectOut 上没有声明; 测试侧用 augmented 类型.
-type ProjectWithLimit = Partial<ProjectResponse> & { ml_backend_limit?: number };
-
-function renderSection(project: ProjectWithLimit) {
+function renderSection(project: Partial<ProjectResponse>) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const merged = {
     id: "p1",
@@ -76,40 +71,65 @@ const SAMPLE_BACKEND = {
   extra_params: {},
 };
 
+function item(enabled: boolean) {
+  return {
+    backend: SAMPLE_BACKEND,
+    enabled,
+    box_threshold: null,
+    text_threshold: null,
+    default_variants: null,
+  };
+}
+
 beforeEach(() => {
-  mockUseMLBackends.mockReset();
+  mockUseAvailable.mockReset();
   mockSetup.mockReset();
   mockUpdateMutate.mockReset();
+  mockSetEnablementMutate.mockReset();
   mockSetup.mockResolvedValue({ name: "grounded-sam2", supported_prompts: ["point", "bbox", "text"] });
 });
 
-describe("MlBackendsSection 上限态", () => {
-  it("已用 1 / 1 角标 + 注册按钮 disabled", () => {
-    mockUseMLBackends.mockReturnValue({ data: [SAMPLE_BACKEND], isLoading: false, isError: false });
-    renderSection({ id: "p1", ml_backend_id: null, ml_backend_limit: 1 });
-    expect(screen.getByTestId("ml-backend-quota").textContent).toContain("已用 1 / 1");
-    const btn = screen.getByRole("button", { name: /注册 backend/ });
-    expect(btn).toBeDisabled();
-    expect(btn.getAttribute("title")).toContain("已达上限 1");
+describe("MlBackendsSection 启用清单", () => {
+  it("已启用角标 = 启用数 / 全局总数", () => {
+    mockUseAvailable.mockReturnValue({
+      data: { items: [item(true)] },
+      isLoading: false,
+      isError: false,
+    });
+    renderSection({ id: "p1", ml_backend_id: null });
+    expect(screen.getByTestId("ml-backend-quota").textContent).toContain("已启用 1 / 1");
   });
 
-  it("未达上限时按钮可用", () => {
-    mockUseMLBackends.mockReturnValue({ data: [], isLoading: false, isError: false });
-    renderSection({ id: "p1", ml_backend_id: null, ml_backend_limit: 1 });
-    expect(screen.getByTestId("ml-backend-quota").textContent).toContain("已用 0 / 1");
-    expect(screen.getByRole("button", { name: /注册 backend/ })).not.toBeDisabled();
+  it("勾选启用调 setEnablement", () => {
+    mockUseAvailable.mockReturnValue({
+      data: { items: [item(false)] },
+      isLoading: false,
+      isError: false,
+    });
+    renderSection({ id: "p1", ml_backend_id: null });
+    fireEvent.click(screen.getByRole("checkbox", { name: /启用 grounded-sam2/ }));
+    expect(mockSetEnablementMutate).toHaveBeenCalledTimes(1);
+    const [args] = mockSetEnablementMutate.mock.calls[0];
+    expect(args).toMatchObject({ registryId: "b1", payload: { enabled: true } });
   });
 
-  it("limit=0 视为不限, 角标显示 ∞", () => {
-    mockUseMLBackends.mockReturnValue({ data: [SAMPLE_BACKEND], isLoading: false, isError: false });
-    renderSection({ id: "p1", ml_backend_id: null, ml_backend_limit: 0 });
-    expect(screen.getByTestId("ml-backend-quota").textContent).toContain("已用 1 / ∞");
-    expect(screen.getByRole("button", { name: /注册 backend/ })).not.toBeDisabled();
+  it("无全局 backend 时显示空态", () => {
+    mockUseAvailable.mockReturnValue({
+      data: { items: [] },
+      isLoading: false,
+      isError: false,
+    });
+    renderSection({ id: "p1", ml_backend_id: null });
+    expect(screen.getByText(/暂无可用的全局 ML backend/)).toBeTruthy();
   });
 
-  it("AI 设置保存时设项目主后端", () => {
-    mockUseMLBackends.mockReturnValue({ data: [SAMPLE_BACKEND], isLoading: false, isError: false });
-    renderSection({ id: "p1", ml_backend_id: null, ml_backend_limit: 0 });
+  it("AI 设置保存时从已启用项设项目主后端", () => {
+    mockUseAvailable.mockReturnValue({
+      data: { items: [item(true)] },
+      isLoading: false,
+      isError: false,
+    });
+    renderSection({ id: "p1", ml_backend_id: null });
 
     fireEvent.click(screen.getByRole("checkbox", { name: /启用 AI 预标注/ }));
     fireEvent.change(screen.getByDisplayValue(/未设项目主后端/), {
