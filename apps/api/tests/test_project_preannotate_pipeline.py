@@ -191,3 +191,48 @@ async def test_patch_rejects_bad_uuid(httpx_client_bound, super_admin, db_sessio
         json={"preannotate_pipeline": stages},
     )
     assert resp.status_code == 422, resp.text
+
+
+# ---------- v0.19.3 WS1 · 保存路径能力软提示 (不挡, 与 dispatch 422 同判据) ----------
+
+
+async def _set_caps(db: AsyncSession, backend, models: list[dict]):
+    backend.health_meta = {"capabilities": {"models": models}}
+    db.add(backend)
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_patch_emits_capability_warnings_not_blocked(
+    httpx_client_bound, super_admin, db_session
+):
+    # 源模型自报 batchable=false → 保存仍 200 (软提示), 响应回带 capability_warnings。
+    owner, token = super_admin
+    proj, detect, classify = await _seed(db_session, owner.id)
+    await _set_caps(
+        db_session, detect, [{"id": "detect", "resource_profile": {"batchable": False}}]
+    )
+    resp = await httpx_client_bound.patch(
+        f"/api/v1/projects/{proj.id}",
+        headers=_bearer(token),
+        json={"preannotate_pipeline": _stages(detect.id, classify.id)},
+    )
+    assert resp.status_code == 200, resp.text
+    warnings = resp.json()["capability_warnings"]
+    assert any("batchable=false" in w for w in warnings), warnings
+
+
+@pytest.mark.asyncio
+async def test_patch_no_warnings_when_capable(
+    httpx_client_bound, super_admin, db_session
+):
+    # 零退化: 无能力快照 (老 backend) → 保存 200 且 capability_warnings 为空。
+    owner, token = super_admin
+    proj, detect, classify = await _seed(db_session, owner.id)
+    resp = await httpx_client_bound.patch(
+        f"/api/v1/projects/{proj.id}",
+        headers=_bearer(token),
+        json={"preannotate_pipeline": _stages(detect.id, classify.id)},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["capability_warnings"] == []

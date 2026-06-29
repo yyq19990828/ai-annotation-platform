@@ -184,6 +184,9 @@ class ProjectOut(BaseModel):
     default_variants: dict[str, dict[str, str]] = Field(default_factory=dict)
     # v0.18.27 · 项目级「已保存的编排」(方案 A). None = 未配编排.
     preannotate_pipeline: list[dict] | None = None
+    # v0.19.3 WS1 · 保存编排时的能力软提示 (batchable/产 class 判据), 仅 PATCH 响应填充;
+    # 非 DB 列, 不挡保存, dispatch-time 422 仍是最终闸。
+    capability_warnings: list[str] = []
     # v0.10.13 · E1 · 标注指引 Markdown 原文; None 表示未配置.
     annotation_guide: str | None = None
     # v0.10.13 · E1 · 已上传的指引图片资源元数据列表.

@@ -39,6 +39,14 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.19.x 版本段累积在本区；进入 0.20.x 后整体移到 docs/changelogs/0.19.x.md。
 -->
 
+### Added
+
+- AI 预标注编排「能力校验」补齐配置期一层，与派发期 422 对称：源模型选择器、下游阶段卡在**配置期**就对 `batchable=false`（交互 / 有状态模型）与「写属性却不产 `class`」的误配标红预警；保存编排（`PATCH /projects/{id}`）的响应回带 `capability_warnings[]` 软提示。把「存得下不一定跑得了」前移到配置 / 保存时暴露，而非跑到派发才报错；保存只软提示不硬挡（保留「先存草稿、之后换 backend」的合法流，派发期 422 仍是最终闸）。
+
+### Changed
+
+- 预标注能力判据（batchable / 分类阶段产 class）抽成 `app/services/pipeline_validation.py` 纯函数，保存路径、派发路径与前端 `stageWarning` 共用同一份 SSOT，并以跨端 fixture 双端断言（vitest + pytest）防判据漂移。
+
 ## [0.19.2] - 2026-06-29
 
 ### Added

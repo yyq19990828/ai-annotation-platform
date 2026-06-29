@@ -329,6 +329,12 @@ export function StageCard({
       ? Array.from(writeKeys).filter((k) => !schemaKeySet.has(k))
       : [];
 
+  // v0.19.3 WS2 · 选中下游 model 自报 batchable (resource_profile.batchable) → false 即交互/有状态,
+  // 不能进批量预标 (与端点 _assert_capabilities 对齐)。非 boolean = 未自报 (不判)。
+  const rpBatchable = selectedModel?.resource_profile?.batchable;
+  const batchable = typeof rpBatchable === "boolean" ? rpBatchable : undefined;
+  const showNotBatchableWarning = capabilitiesReady && batchable === false;
+
   // v0.18.16 §13 · 能力旗标上抛 (供画布可达性 / 产属性警示)。
   const supportedInputs = selectedModel?.supported_inputs ?? [];
   const supportedInputsKey = supportedInputs.join(",");
@@ -340,10 +346,11 @@ export function StageCard({
       acceptsBboxPrompt: supportedInputs.includes("bbox_prompt"),
       producesAttributes,
       producesClass,
+      batchable,
     }),
     // supportedInputsKey 串化 supportedInputs 作稳定依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [supportedInputsKey, capabilitiesReady, producesAttributes, producesClass],
+    [supportedInputsKey, capabilitiesReady, producesAttributes, producesClass, batchable],
   );
   const onCapsRef = useRef(onCaps);
   onCapsRef.current = onCaps;
@@ -457,6 +464,16 @@ export function StageCard({
           <Icon name="warning" size={12} />
           <span>
             该后端未自报输出属性，作下游分类只会重新检测、属性恒空。请改选会产属性的后端。
+          </span>
+        </div>
+      )}
+
+      {/* v0.19.3 WS2 · 选中 model 自报 batchable=false (交互/有状态) → 不能批量预标 (端点会 422)。 */}
+      {showNotBatchableWarning && (
+        <div className={styles.stageWarn}>
+          <Icon name="warning" size={12} />
+          <span>
+            该模型为交互/有状态模型（batchable=false），不能用于批量预标流水线，运行将被端点拒绝。
           </span>
         </div>
       )}

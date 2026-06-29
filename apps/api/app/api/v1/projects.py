@@ -32,6 +32,7 @@ from app.schemas.project import (
     ProjectTransferRequest,
 )
 from app.services.display_id import next_display_id
+from app.services.pipeline_validation import check_capability_violations
 from app.services.project_kind import (
     ProjectKind,
     canonical_media_kind,
@@ -668,7 +669,12 @@ async def update_project(
         setattr(project, k, v)
     await db.commit()
     await db.refresh(project)
-    return await _serialize_project(db, project)
+    result = await _serialize_project(db, project)
+    # v0.19.3 WS1 · 保存编排能力软提示 (不挡, dispatch-time 422 仍是最终闸)。
+    result["capability_warnings"] = await _compute_pipeline_capability_warnings(
+        db, project.preannotate_pipeline
+    )
+    return result
 
 
 @router.delete("/{project_id}", status_code=204)
@@ -1426,21 +1432,58 @@ def _stage_model(backend, model_id: str | None) -> dict:
     return {}
 
 
-def _assert_batchable(backend, model_id: str | None, where: str) -> None:
-    """v0.19.2 WS2 · 模型显式自报 batchable=false (交互/有状态视频追踪) → 不能进批量预标。
+def _assert_capabilities(
+    backend, model_id: str | None, where: str, *, writes_attributes: bool
+) -> None:
+    """v0.19.3 WS1 · 派发期能力闸门: 任一能力违例 → 422 硬挡。
 
-    仅在 resource_profile.batchable 显式为 False 时拒; 老 backend resource_profile={} →
-    batchable 缺省 → 放过 (零退化)。比 is_interactive 更诚实的单一批量判据。
+    判据本体抽到 services/pipeline_validation.check_capability_violations (纯函数), 与保存路径
+    软提示 + 前端 stageWarning 共用同一 SSOT。batchable=false (交互/有状态) 不可批量; 写属性的
+    下游模型不产 class → 提前拦。均「显式自报才拦, 缺省放过」, 对老 backend 零退化。
     """
-    rp = _stage_model(backend, model_id).get("resource_profile") or {}
-    if rp.get("batchable") is False:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"{where}模型 {model_id!r} 自报 batchable=false (交互/有状态), "
-                "不能用于批量预标注流水线"
-            ),
+    violations = check_capability_violations(
+        _stage_model(backend, model_id),
+        where=where,
+        model_id=model_id,
+        writes_attributes=writes_attributes,
+    )
+    if violations:
+        raise HTTPException(status_code=422, detail=violations[0].detail)
+
+
+async def _compute_pipeline_capability_warnings(db, stages) -> list[str]:
+    """v0.19.3 WS1 · 保存编排时算「能力软提示」(不挡), 与 dispatch 422 同判据共享纯函数。
+
+    保存是配置中途态: backend 可能未启用 / 能力快照滞后 / 先存草稿之后再换 backend, 故只软提示。
+    解析不到 backend 的阶段静默跳过 (留 dispatch-time 422 作最终把关)。返回 detail 字符串列表。
+    """
+    if not stages or not isinstance(stages, list):
+        return []
+    from app.services.ml_backend import MLBackendService
+
+    svc = MLBackendService(db)
+    warnings: list[str] = []
+    for s in stages:
+        if not isinstance(s, dict) or not s.get("ml_backend_id"):
+            continue
+        backend = await svc.get(s["ml_backend_id"])
+        if not backend:
+            continue
+        is_source = s.get("parent_stage") is None
+        where = "源阶段" if is_source else f"stage {s.get('stage')} "
+        # 源阶段不写属性, class 判据不适用 (与 dispatch 对称)。
+        writes_attributes = (
+            not is_source
+            and (s.get("write") or {}).get("target", "attributes") == "attributes"
         )
+        violations = check_capability_violations(
+            _stage_model(backend, s.get("model_id")),
+            where=where,
+            model_id=s.get("model_id"),
+            writes_attributes=writes_attributes,
+        )
+        warnings.extend(v.detail for v in violations)
+    return warnings
 
 
 @router.post("/{project_id}/preannotate")
@@ -1462,7 +1505,8 @@ async def trigger_preannotation(
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
     # v0.19.2 WS2 · 源阶段 (单模型预标 / 流水线源) batchable 闸门: 交互/有状态模型不可批量。
-    _assert_batchable(backend, body.model_id, "源阶段")
+    # 源阶段不写属性, class 判据不适用 (writes_attributes=False)。
+    _assert_capabilities(backend, body.model_id, "源阶段", writes_attributes=False)
 
     # v0.18.1 · 多阶段编排: 校验每个下游阶段的 backend 存在且归属本项目, 归一化成 worker
     # 可消费的 stage dict 列表 (uuid → str)。源阶段 backend 归属已在上面校验。
@@ -1480,30 +1524,15 @@ async def trigger_preannotation(
                         status_code=404,
                         detail=f"stage {st.stage} 的 ML Backend 不存在或未在本项目启用",
                     )
-                # v0.19.2 WS2 · 下游阶段 batchable 闸门 (同源阶段判据)。
-                _assert_batchable(st_backend, st.model_id, f"stage {st.stage} ")
-                # v0.19.2 WS2 · 写属性的子但模型不产 class → 跑完属性恒空, 提前 422。
-                # 仅在模型显式自报了 output_attribute_types 且不含 'class' 时拒; 留空 (老
-                # backend / 未声明) 跳过, 保持零退化。
-                st_types = list(
-                    _stage_model(st_backend, st.model_id).get(
-                        "output_attribute_types"
-                    )
-                    or []
+                # v0.19.2 WS2 / v0.19.3 WS1 · 下游阶段能力闸门: batchable + 写属性产 class。
+                # 写属性的子但模型不产 class → 跑完属性恒空, 提前 422。
+                _assert_capabilities(
+                    st_backend,
+                    st.model_id,
+                    f"stage {st.stage} ",
+                    writes_attributes=(st.write or {}).get("target", "attributes")
+                    == "attributes",
                 )
-                if (
-                    (st.write or {}).get("target", "attributes") == "attributes"
-                    and st_types
-                    and "class" not in st_types
-                ):
-                    raise HTTPException(
-                        status_code=422,
-                        detail=(
-                            f"stage {st.stage} 写属性 (write.target=attributes), 但其模型 "
-                            f"output_attribute_types={st_types} 不含 'class', 作分类下游"
-                            "只会产出空属性"
-                        ),
-                    )
                 # v0.18.15 · 按子模型 supported_inputs 解析投递方式 + 几何可达性门控。
                 # 产几何的子: supported_inputs 须含 'bbox_prompt' (geometry-prompt 路径) 或
                 # 'crop' (普通检测器在 crop 上跑 + 坐标回映)。据此把投递方式烘焙进 input.mode,

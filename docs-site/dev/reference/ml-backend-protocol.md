@@ -169,6 +169,8 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 - 阶段所选模型 `resource_profile.batchable=false`（交互 / 有状态视频追踪）→ 拒绝进批量预标流水线（源阶段与下游阶段同判据；比 `is_interactive` 更诚实的单一批量判据）。
 - 阶段 `write.target=attributes` 但模型 `output_attribute_types` 不含 `class` → 拒绝（作分类下游只会产出空属性）。
 
+这两条判据是**两层对称**的：派发期 422 是最终拦截，配置期则前移为**非阻断预警**——前端编排面板按同判据对源 / 下游阶段标红（源模型选择器 + 阶段卡），`PATCH /projects/{id}` 保存编排时响应体回带 `capability_warnings[]`（保存是配置中途态，能力快照可能滞后、亦允许「先存草稿、之后换 backend」，故只软提示不硬挡）。判据本体抽在 `app/services/pipeline_validation.py` 的纯函数里，由保存路径、派发路径与前端 `stageWarning` 共用一份，并以跨端 fixture（`apps/web/src/__fixtures__/capability-validation-cases.json`）双端断言防漂移。
+
 ### 2.2 交互式预测
 
 适用：标注员在工作台内点「AI 助手」工具发起的单次推理。
