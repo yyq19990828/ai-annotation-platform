@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
 import { useToastStore } from "@/components/ui/Toast";
 import {
   useAvailableMLBackends,
@@ -114,14 +115,104 @@ function OverrideCell({
   );
 }
 
+// v0.19.0 · ADR-0044 · 「管理 backend」悬浮面板: 列出全部全局 backend, 在此勾选启用/停用
+// + 编辑项目级阈值覆盖。主表只展示已启用项, 增删启用都在本面板里做。
+function ManageBackendsPanel({
+  open,
+  onClose,
+  items,
+  canManage,
+  pending,
+  onToggle,
+  onCommitOverride,
+}: {
+  open: boolean;
+  onClose: () => void;
+  items: ProjectMLBackendItem[];
+  canManage: boolean;
+  pending: boolean;
+  onToggle: (item: ProjectMLBackendItem, next: boolean) => void;
+  onCommitOverride: (
+    item: ProjectMLBackendItem,
+    payload: ProjectMLBackendEnablementPayload,
+  ) => void;
+}) {
+  return (
+    <Modal open={open} onClose={onClose} title="管理项目 ML backend" width={720}>
+      <div className="mb-3 text-xs text-muted-foreground">
+        勾选启用本项目要用的全局 backend，并可按项目调整阈值覆盖；全局 backend 由超管在「模型市场」注册。
+      </div>
+      {items.length === 0 ? (
+        <div className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+          <Icon name="bot" size={28} className="mb-1.5 opacity-25" />
+          <div>暂无可用的全局 ML backend</div>
+          <div className="mt-1 text-xs">请由超管在「模型市场」注册全局 backend 后，在此勾选启用</div>
+        </div>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {items.map((item) => {
+            const b = item.backend;
+            return (
+              <li
+                key={b.id}
+                className="flex items-start gap-3 rounded-md border border-border bg-background p-3"
+              >
+                <input
+                  type="checkbox"
+                  aria-label={`启用 ${b.name}`}
+                  checked={item.enabled}
+                  disabled={!canManage || pending}
+                  onChange={(e) => onToggle(item, e.target.checked)}
+                  className="mt-1 accent-violet-500"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium" title={b.name}>
+                      {b.name}
+                    </span>
+                    <Badge variant={b.is_interactive ? "ai" : "outline"}>
+                      {b.is_interactive ? "交互式" : "批量"}
+                    </Badge>
+                    <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
+                      {b.state}
+                    </Badge>
+                  </div>
+                  <div
+                    className="mono mt-0.5 truncate text-xs text-muted-foreground"
+                    title={b.url}
+                  >
+                    {b.url}
+                  </div>
+                  {item.enabled && (
+                    <div className="mt-2">
+                      <OverrideCell
+                        item={item}
+                        disabled={!canManage || pending}
+                        onCommit={(payload) => onCommitOverride(item, payload)}
+                      />
+                    </div>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Modal>
+  );
+}
+
 export function MlBackendsSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
   const { role } = usePermissions();
   const canManage = role === "super_admin" || role === "project_admin";
 
+  const [manageOpen, setManageOpen] = useState(false);
+
   const { data, isLoading, isError, error } = useAvailableMLBackends(project.id);
   const items = data?.items ?? [];
-  const enabledBackends = items.filter((it) => it.enabled).map((it) => it.backend);
+  const enabledItems = items.filter((it) => it.enabled);
+  const enabledBackends = enabledItems.map((it) => it.backend);
 
   const setEnablement = useSetMLBackendEnablement(project.id);
   const health = useMLBackendHealth(project.id);
@@ -247,9 +338,19 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
             </span>
           </h3>
           <div className="mt-0.5 text-xs text-muted-foreground">
-            勾选启用本项目要用的全局 ML backend，并可按项目调整阈值覆盖；全局 backend 由超管在「模型市场」注册。
+            本表仅显示本项目已启用的 ML backend；点「管理 backend」可启用/停用全局 backend 并调整项目级阈值覆盖。
           </div>
         </div>
+        {canManage && (
+          <Button
+            variant="primary"
+            onClick={() => setManageOpen(true)}
+            disabled={isLoading || isError}
+          >
+            <Icon name="plus" size={13} />
+            管理 backend
+          </Button>
+        )}
       </div>
 
       <div className="border-b border-border bg-background px-4 py-3.5">
@@ -359,19 +460,23 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
             加载失败：{(error as Error)?.message ?? "未知错误"}
           </div>
         )}
-        {!isLoading && !isError && items.length === 0 && (
+        {!isLoading && !isError && enabledItems.length === 0 && (
           <div className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
             <Icon name="bot" size={28} className="mb-1.5 opacity-25" />
-            <div>暂无可用的全局 ML backend</div>
-            <div className="mt-1 text-xs">请由超管在「模型市场」注册全局 backend 后，在此勾选启用</div>
+            <div>本项目暂未启用任何 ML backend</div>
+            <div className="mt-1 text-xs">
+              {items.length > 0
+                ? "点右上「管理 backend」从全局注册表勾选启用"
+                : "请由超管在「模型市场」注册全局 backend 后，再来此启用"}
+            </div>
           </div>
         )}
-        {!isLoading && !isError && items.length > 0 && (
+        {!isLoading && !isError && enabledItems.length > 0 && (
           <div className="w-full overflow-x-auto">
-            <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-sm">
+            <table className="w-full min-w-[920px] border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
-                  {["启用", "名称", "URL", "类型", "能力", "状态", "项目级覆盖", "操作"].map((h) => (
+                  {["名称", "URL", "类型", "能力", "状态", "项目级覆盖", "操作"].map((h) => (
                     <th
                       key={h}
                       className={TABLE_HEAD_CELL}
@@ -382,22 +487,12 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => {
+                {enabledItems.map((item) => {
                   const b = item.backend;
                   const capQ = capById.get(b.id);
                   const cap = capQ?.data as MLBackendCapability | undefined;
                   return (
                     <tr key={b.id}>
-                      <td className={cn(TABLE_CELL, "whitespace-nowrap")}>
-                        <input
-                          type="checkbox"
-                          aria-label={`启用 ${b.name}`}
-                          checked={item.enabled}
-                          disabled={!canManage || setEnablement.isPending}
-                          onChange={(e) => onToggleEnabled(item, e.target.checked)}
-                          className="accent-violet-500"
-                        />
-                      </td>
                       <td className={TABLE_CELL}>
                         <div className="max-w-[180px] truncate" title={b.name}>{b.name}</div>
                       </td>
@@ -410,16 +505,13 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                         </Badge>
                       </td>
                       <td className={TABLE_CELL}>
-                        {!item.enabled && (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                        {item.enabled && capQ?.isLoading && (
+                        {capQ?.isLoading && (
                           <span className="text-xs text-muted-foreground">…</span>
                         )}
-                        {item.enabled && capQ?.isError && (
+                        {capQ?.isError && (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
-                        {item.enabled && cap?.supported_prompts && (
+                        {cap?.supported_prompts && (
                           <div className="inline-flex flex-wrap gap-1">
                             {cap.supported_prompts.map((p) => (
                               <Badge key={p} variant="outline">
@@ -442,19 +534,15 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                         </Badge>
                       </td>
                       <td className={TABLE_CELL}>
-                        {item.enabled ? (
-                          <OverrideCell
-                            item={item}
-                            disabled={!canManage || setEnablement.isPending}
-                            onCommit={(payload) => onCommitOverride(item, payload)}
-                          />
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
+                        <OverrideCell
+                          item={item}
+                          disabled={!canManage || setEnablement.isPending}
+                          onCommit={(payload) => onCommitOverride(item, payload)}
+                        />
                       </td>
                       <td className={TABLE_CELL}>
                         <div className="inline-flex gap-1.5 whitespace-nowrap">
-                        {item.enabled && project.ml_backend_id !== b.id && (
+                        {project.ml_backend_id !== b.id && (
                           <Button
                             size="sm"
                             variant="ai"
@@ -472,16 +560,14 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                             </Badge>
                           </span>
                         )}
-                        {item.enabled && (
-                          <Button
-                            size="sm"
-                            onClick={() => onHealth(b)}
-                            disabled={health.isPending}
-                            title="健康检查"
-                          >
-                            <Icon name="refresh" size={11} />
-                          </Button>
-                        )}
+                        <Button
+                          size="sm"
+                          onClick={() => onHealth(b)}
+                          disabled={health.isPending}
+                          title="健康检查"
+                        >
+                          <Icon name="refresh" size={11} />
+                        </Button>
                         </div>
                       </td>
                     </tr>
@@ -492,6 +578,16 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
           </div>
         )}
       </div>
+
+      <ManageBackendsPanel
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        items={items}
+        canManage={canManage}
+        pending={setEnablement.isPending}
+        onToggle={onToggleEnabled}
+        onCommitOverride={onCommitOverride}
+      />
     </Card>
   );
 }

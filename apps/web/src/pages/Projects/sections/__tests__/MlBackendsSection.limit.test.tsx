@@ -100,27 +100,42 @@ describe("MlBackendsSection 启用清单", () => {
     expect(screen.getByTestId("ml-backend-quota").textContent).toContain("已启用 1 / 1");
   });
 
-  it("勾选启用调 setEnablement", () => {
+  it("在「管理 backend」悬浮面板里勾选启用调 setEnablement", () => {
     mockUseAvailable.mockReturnValue({
       data: { items: [item(false)] },
       isLoading: false,
       isError: false,
     });
     renderSection({ id: "p1", ml_backend_id: null });
+    // 主表只显示已启用项; 未启用项的启用勾选在悬浮面板里, 先打开面板。
+    fireEvent.click(screen.getByRole("button", { name: /管理 backend/ }));
     fireEvent.click(screen.getByRole("checkbox", { name: /启用 grounded-sam2/ }));
     expect(mockSetEnablementMutate).toHaveBeenCalledTimes(1);
     const [args] = mockSetEnablementMutate.mock.calls[0];
     expect(args).toMatchObject({ registryId: "b1", payload: { enabled: true } });
   });
 
-  it("无全局 backend 时显示空态", () => {
+  it("主表只显示已启用项: 未启用的 backend 不出现在主表", () => {
+    mockUseAvailable.mockReturnValue({
+      data: { items: [item(false)] },
+      isLoading: false,
+      isError: false,
+    });
+    renderSection({ id: "p1", ml_backend_id: null });
+    // 主表空态 (未启用任何), 面板未开 ⇒ 行内启用勾选不可见。
+    expect(screen.getByText(/本项目暂未启用任何 ML backend/)).toBeTruthy();
+    expect(screen.queryByRole("checkbox", { name: /启用 grounded-sam2/ })).toBeNull();
+  });
+
+  it("无全局 backend 时主表空态提示去模型市场注册", () => {
     mockUseAvailable.mockReturnValue({
       data: { items: [] },
       isLoading: false,
       isError: false,
     });
     renderSection({ id: "p1", ml_backend_id: null });
-    expect(screen.getByText(/暂无可用的全局 ML backend/)).toBeTruthy();
+    expect(screen.getByText(/本项目暂未启用任何 ML backend/)).toBeTruthy();
+    expect(screen.getByText(/模型市场/)).toBeTruthy();
   });
 
   it("AI 设置保存时从已启用项设项目主后端", () => {
