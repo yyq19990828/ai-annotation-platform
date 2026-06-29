@@ -4,11 +4,9 @@
 1. 「平台支持哪些 AI 标注能力?」 → 协议层 (capability_registry.py + /protocol 端点)。
 2. 「现在跑着哪些 model 可用?」 → 实例层 (本模块 + /instances 端点)。
 
-本模块合并两个数据源, 让普通登录用户也能看到完整 model 清单:
-- env-only 容器: settings.ml_backend_observe_urls 配置的 backend (docker-compose
-  自带或运维直连), 探测 /setup 拿协议 v2 的 models[];
-- 项目级注册 backend: ml_backends 表, 读 health_meta.capabilities (与项目级
-  /capabilities 端点同源).
+v0.19.0 ADR-0044 · 数据源统一为**全局注册表 ml_backend_registry**: env 配置的 backend
+启动钩子已自动 upsert 成 source=env 注册行, 不再有 env-only 临时探测分支。每行优先读
+health_meta.capabilities 快照, 缺失时 fallback live 探测 /setup。
 
 输出字段裁剪: 只暴露 source / display_name / infra / models[], 不暴露 url /
 gpu_info / cache / pool 等运维敏感信息, 让普通用户安全消费。
@@ -24,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.services.ml_capabilities import extract_capabilities
 
 logger = logging.getLogger(__name__)
@@ -100,49 +98,18 @@ def _shape_models(caps: dict | None) -> list[dict]:
     return out
 
 
-async def _load_env_only_instances(registered_urls: set[str]) -> list[dict]:
-    """探测 env-only 容器, 跳过已被项目级注册的 URL (避免重复展示)。"""
-    candidates = [u for u in _observe_urls() if u.rstrip("/") not in registered_urls]
-    if not candidates:
-        return []
-    timeout = httpx.Timeout(float(settings.ml_health_timeout))
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        setups = await asyncio.gather(
-            *[_probe_setup(client, u) for u in candidates], return_exceptions=False
-        )
-    instances: list[dict] = []
-    for url, setup in zip(candidates, setups):
-        caps = extract_capabilities(setup) if setup else None
-        if not caps:
-            continue
-        instances.append(
-            {
-                "source": "env_only",
-                "name": (setup or {}).get("name") or url.rstrip("/").split("/")[-1],
-                "infra": caps.get("infra", "unknown"),
-                # v0.14.14: backend 自报是否支持 POST /warmup (协议 §4.4).
-                "warmup_endpoint": bool(caps.get("warmup_endpoint", False)),
-                "models": _shape_models(caps),
-            }
-        )
-    return instances
+async def load_capability_instances(db: AsyncSession) -> list[dict]:
+    """读全局注册表 ml_backend_registry → 平台已知 backend 实例清单。
 
-
-async def _load_registered_instances(db: AsyncSession) -> tuple[list[dict], set[str]]:
-    """从 ml_backends 表读已注册 backend; health_meta 快照缺失时 fallback 到
-    live /setup 探测 (保证 v0.14.9 之前注册的老 backend 也能即时显示)。
-
-    返回 (实例列表, 已注册 URL 集合); URL 集合给 env-only 用作去重。
+    每行优先读 health_meta.capabilities 快照, 缺失时并发 live 探测 /setup。
+    source 取注册行的 source ('manual' | 'env')。
     """
-    stmt = select(MLBackend).where(MLBackend.state == "connected")
-    result = await db.execute(stmt)
-    backends = result.scalars().all()
-
-    urls: set[str] = {b.url.rstrip("/") for b in backends}
+    result = await db.execute(select(MLBackendRegistry))
+    backends = list(result.scalars().all())
     if not backends:
-        return [], urls
+        return []
 
-    # 第一遍: 从 health_meta 快照拿 models; 记录需要 live 探测的 backend。
+    # 第一遍: 从 health_meta 快照拿 models; 记录需要 live 探测的行。
     snapshots: list[dict | None] = []
     needs_probe: list[int] = []
     for idx, b in enumerate(backends):
@@ -155,7 +122,7 @@ async def _load_registered_instances(db: AsyncSession) -> tuple[list[dict], set[
             snapshots.append(None)
             needs_probe.append(idx)
 
-    # 第二遍: 并发 live 探测 (只对快照缺 models 的 backend)。
+    # 第二遍: 并发 live 探测 (只对快照缺 models 的行)。
     if needs_probe:
         timeout = httpx.Timeout(float(settings.ml_health_timeout))
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -174,13 +141,13 @@ async def _load_registered_instances(db: AsyncSession) -> tuple[list[dict], set[
         if not models:
             # 探测失败 / 协议 v1 backend 合成单 model 也失败 → 静默 skip。
             logger.debug(
-                "instances: skip registered backend %s (no models in snapshot or live probe)",
+                "instances: skip backend %s (no models in snapshot or live probe)",
                 b.name,
             )
             continue
         instances.append(
             {
-                "source": "registered",
+                "source": b.source,
                 "name": b.name,
                 "infra": (caps or {}).get("infra") or "unknown",
                 # v0.14.14: backend 自报是否支持 POST /warmup (协议 §4.4).
@@ -188,14 +155,4 @@ async def _load_registered_instances(db: AsyncSession) -> tuple[list[dict], set[
                 "models": models,
             }
         )
-    return instances, urls
-
-
-async def load_capability_instances(db: AsyncSession) -> list[dict]:
-    """合并 env-only + registered → 平台已知 backend 实例清单。
-
-    顺序: env-only 在前 (通常是 docker-compose 自带的 builtin), registered 在后。
-    """
-    registered, registered_urls = await _load_registered_instances(db)
-    env_only = await _load_env_only_instances(registered_urls)
-    return env_only + registered
+    return instances

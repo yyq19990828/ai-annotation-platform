@@ -69,6 +69,14 @@ async def lifespan(app: FastAPI):
             "error tracking is disabled. Set SENTRY_DSN in .env to enable."
         )
     storage_service.ensure_all_buckets()
+    # v0.19.0 ADR-0044 · env 配置的 ML backend 启动时 upsert 成全局注册项 (source=env)。
+    # 失败不阻断启动 (探测超时/DB 抖动仅告警)。
+    try:
+        from app.services.ml_backend_env_sync import sync_env_backends
+
+        await sync_env_backends()
+    except Exception:
+        logger.warning("env ML backend sync failed at startup", exc_info=True)
     yield
     # v0.9.13 · shutdown: 释放 WS Redis pool (带 2s timeout), 避免 --reload / SIGTERM 时
     # worker 卡 "Waiting for background tasks to complete". 客户端 WS 收到 1006 后会自走
