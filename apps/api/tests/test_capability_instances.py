@@ -352,3 +352,82 @@ async def test_instances_warmup_endpoint_false_when_missing(
     )
     data = r.json()
     assert data["instances"][0]["warmup_endpoint"] is False
+
+
+# ---------- v0.19.2 WS0 · supported_inputs + resource_profile 透传 ----------
+
+
+@pytest.mark.asyncio
+async def test_instances_passthrough_supported_inputs_and_resource_profile(
+    httpx_client, auth_headers, db_session
+):
+    """WS0: /instances 现透传 supported_inputs + resource_profile (原被裁掉),
+
+    供全局编排选择器消费投递契约 / 批量画像; 缺字段时 → [] / {}。
+    """
+    db_session.add_all(
+        [
+            MLBackendRegistry(
+                id=uuid.uuid4(),
+                name="onnxtools-env",
+                url="http://onnxtools:8004",
+                state="connected",
+                auth_method="none",
+                extra_params={},
+                source="env",
+                health_meta={
+                    "capabilities": {
+                        "infra": "onnx",
+                        "models": [
+                            {
+                                "id": "classify",
+                                "task": "classification",
+                                "supported_inputs": ["crop", "full_image"],
+                                "resource_profile": {
+                                    "device": "gpu",
+                                    "batchable": True,
+                                },
+                                "output_attribute_types": ["class"],
+                            }
+                        ],
+                    }
+                },
+            ),
+            MLBackendRegistry(
+                id=uuid.uuid4(),
+                name="legacy-no-fields",
+                url="http://legacy2:8005",
+                state="connected",
+                auth_method="none",
+                extra_params={},
+                source="manual",
+                health_meta={
+                    "capabilities": {
+                        "infra": "pytorch",
+                        "models": [
+                            {
+                                "id": "detect",
+                                "task": "detection",
+                                "supported_geometric_outputs": ["bbox"],
+                            }
+                        ],
+                    }
+                },
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    r = await httpx_client.get(
+        "/api/v1/ml-capabilities/instances", headers=auth_headers
+    )
+    assert r.status_code == 200
+    by_name = {inst["name"]: inst for inst in r.json()["instances"]}
+
+    m = by_name["onnxtools-env"]["models"][0]
+    assert m["supported_inputs"] == ["crop", "full_image"]
+    assert m["resource_profile"] == {"device": "gpu", "batchable": True}
+
+    legacy = by_name["legacy-no-fields"]["models"][0]
+    assert legacy["supported_inputs"] == []
+    assert legacy["resource_profile"] == {}

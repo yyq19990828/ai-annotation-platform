@@ -800,3 +800,132 @@ async def test_reject_full_image_input_mode(
     resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
     assert resp.status_code == 422, resp.text
     assert "input.mode 须为" in resp.text
+
+
+# ---------- v0.19.2 WS2 · batchable + output_attribute_types 落点硬校验 ----------
+
+
+async def _set_caps(db, backend, models: list[dict]):
+    """灌一份能力快照 (含多 model 的 resource_profile / output_attribute_types 等)。"""
+    backend.health_meta = {"capabilities": {"models": models}}
+    db.add(backend)
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_reject_source_model_not_batchable(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # WS2: 源模型自报 batchable=false (交互/有状态) → 不能批量预标, 422。
+    owner, token = super_admin
+    proj, detect, _, batch = await _seed(db_session, owner.id)
+    await _set_caps(
+        db_session,
+        detect,
+        [{"id": "interactive-seg", "resource_profile": {"batchable": False}}],
+    )
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(detect.id),
+            "batch_id": str(batch.id),
+            "model_id": "interactive-seg",
+        },
+    )
+    assert resp.status_code == 422, resp.text
+    assert "batchable=false" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_accept_source_model_batchable_true(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # WS2 零退化: 源模型 batchable=true → 放行。
+    owner, token = super_admin
+    proj, detect, _, batch = await _seed(db_session, owner.id)
+    await _set_caps(
+        db_session,
+        detect,
+        [{"id": "yolo-det", "resource_profile": {"batchable": True}}],
+    )
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(detect.id),
+            "batch_id": str(batch.id),
+            "model_id": "yolo-det",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_reject_downstream_model_not_batchable(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # WS2: 下游阶段模型 batchable=false → 422。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    await _set_caps(
+        db_session,
+        classify,
+        [{"id": "va", "resource_profile": {"batchable": False}}],
+    )
+    resp = await _post_stages(
+        httpx_client_bound, token, proj, detect, batch, _stages(detect.id, classify.id)
+    )
+    assert resp.status_code == 422, resp.text
+    assert "batchable=false" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_reject_attributes_stage_model_without_class(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # WS2: write.target=attributes 但模型 output_attribute_types 不含 class → 422 (属性恒空)。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    await _set_caps(
+        db_session,
+        classify,
+        [{"id": "va", "output_attribute_types": ["text"]}],
+    )
+    resp = await _post_stages(
+        httpx_client_bound, token, proj, detect, batch, _stages(detect.id, classify.id)
+    )
+    assert resp.status_code == 422, resp.text
+    assert "不含 'class'" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_accept_attributes_stage_model_with_class(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # WS2 零退化: 模型自报 output_attribute_types 含 class → 放行。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    await _set_caps(
+        db_session,
+        classify,
+        [{"id": "va", "output_attribute_types": ["class"]}],
+    )
+    resp = await _post_stages(
+        httpx_client_bound, token, proj, detect, batch, _stages(detect.id, classify.id)
+    )
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_accept_attributes_stage_model_no_self_report(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    # WS2 零退化: 模型未自报 output_attribute_types (老 backend) → 跳过 class 校验, 放行。
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    await _set_caps(db_session, classify, [{"id": "va"}])
+    resp = await _post_stages(
+        httpx_client_bound, token, proj, detect, batch, _stages(detect.id, classify.id)
+    )
+    assert resp.status_code == 200, resp.text

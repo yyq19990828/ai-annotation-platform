@@ -39,6 +39,18 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.19.x 版本段累积在本区；进入 0.20.x 后整体移到 docs/changelogs/0.19.x.md。
 -->
 
+## [0.19.2] - 2026-06-29
+
+### Added
+
+- **AI 预标注派发期硬校验「跑完必然空结果」的误配**：编排流水线提交时，若所选模型自报 `batchable=false`（交互 / 有状态视频追踪模型）却被放进批量预标，或某分类阶段（`write.target=attributes`）所选模型自报的 `output_attribute_types` 不含 `class`（跑完属性恒空），后端直接返回 422 带可读原因，不再静默跑完一批拿到空结果。模型未自报对应字段（老 backend）时跳过，保持向后兼容。
+- **画布能力校验覆盖更多属性类型**：原先只在模型输出 `text` 属性而项目缺文本字段时提示，现统一覆盖 `text` / `language` / `orientation` 三类——模型声明产出某属性但项目无承接位（语言字段 / 旋转框工具或方向字段）时，给非阻断警告「采纳后该属性将丢失」。`class` 类别刻意不校验（taxonomy 几乎恒在）。
+- **编排卡片属性键对账提示**：分类下游阶段所选「写回属性键」若不在该模型自报的 `output_attribute_schema` 内，卡片给非阻断提示「该模型可能不产出此键」。
+
+### Changed
+
+- **`GET /ml-capabilities/instances` 补透传 `supported_inputs` + `resource_profile`**：原 `/instances` 裁掉了这两个字段，导致走该端点的消费方（模型市场实例视图 / 全局编排选择器）拿不到投递契约与批量画像；现与项目级 `/capabilities` 字段集对齐。
+
 ## [0.19.1] - 2026-06-29
 
 ### Changed

@@ -8,8 +8,10 @@ import type { ToolUnitId } from "@/constants/toolUnits";
 // 两类检查:
 //   1) 几何兼容: active model 的 supported_geometric_outputs 是否落在项目启用的 tool_unit 几何里.
 //      OCR/doc_layout 不产生标准几何 (text / bbox 版面框), 只校验「项目能否承接该几何」.
-//   2) 文本属性: model.output_attribute_types 含 "text" (OCR 文本输出) 时,
-//      项目是否在某个启用 unit 的 attribute_schema 配了 type=text 属性来承接识别文本.
+//   2) 属性落点 (v0.19.2 WS1): 遍历 model.output_attribute_types 声明的每种属性
+//      (text / language / orientation; class 跳过), 校验项目某启用 unit 是否有承接位
+//      (text→type=text 字段; language→key=language 字段; orientation→旋转框工具或
+//      key=orientation 字段), 缺失则警告「采纳后该属性丢失」.
 //
 // 任一不满足时返回一条 warning; 上层在 InteractiveToolBar / AIInspectorPanel 以非阻断条幅展示.
 
@@ -59,6 +61,21 @@ function schemaHasTextField(schema: AttributeSchema | undefined): boolean {
   return (schema?.fields ?? []).some((f) => f.type === "text");
 }
 
+// 半开放受控词表 output_attribute_types 中**需校验落点**的属性类型 → 用户可读标签。
+// `class` 刻意不入表: 类别 taxonomy 几乎恒在, 校验只会制造噪音 (WS1 范围决策)。
+const ATTR_TYPE_LANDING: Record<string, string> = {
+  text: "识别文本（text）",
+  language: "语言（language）",
+  orientation: "方向（orientation）",
+};
+
+// 缺落点时给用户的修复提示 (去项目设置加什么)。
+const ATTR_TYPE_HINT: Record<string, string> = {
+  text: "为对应工具添加 text 属性",
+  language: "添加 key 为 language 的属性字段",
+  orientation: "启用旋转框工具或添加 key 为 orientation 的属性字段",
+};
+
 export interface UseCapabilityValidationArgs {
   /** 当前 active model; 无 model (单模型老 backend 或未拉到能力) 时不产警告. */
   activeModel: MLModelCapability | undefined;
@@ -99,21 +116,31 @@ export function useCapabilityValidation({
       }
     }
 
-    // 2) 文本属性: model 产出文本 (output_attribute_types 含 "text") 时, 项目需有 text 属性承接.
-    const outputsText = (activeModel.output_attribute_types ?? []).includes("text");
-    if (outputsText) {
-      const unitsToCheck = enabledToolUnits && enabledToolUnits.size > 0
+    // 2) 属性输出落点: 遍历 model 声明的每种 output_attribute_type, 校验项目是否有承接位,
+    //    缺失则非阻断警告「采纳后该属性丢失」。class 不入表 —— 类别 taxonomy 几乎恒在, 警告即噪音。
+    const declaredTypes = activeModel.output_attribute_types ?? [];
+    const unitsToCheck =
+      enabledToolUnits && enabledToolUnits.size > 0
         ? [...enabledToolUnits]
         : Object.keys(toolBindings ?? {});
-      const anyTextField = unitsToCheck.some((unit) =>
-        schemaHasTextField(toolBindings?.[unit as ToolUnitId]?.attribute_schema ?? undefined),
-      );
-      if (!anyTextField) {
-        warnings.push({
-          key: "text-attr",
-          message: `模型「${modelLabel}」会输出识别文本，但当前项目未配置文本（text）属性，采纳后文本将丢失。请在项目设置中为对应工具添加 text 属性。`,
-        });
-      }
+    const schemaOf = (unit: string) =>
+      toolBindings?.[unit as ToolUnitId]?.attribute_schema ?? undefined;
+    // 项目某启用 unit 是否有 key=<key> 的属性字段 (OCR 协议写 attributes.language / .orientation)。
+    const hasFieldKey = (key: string) =>
+      unitsToCheck.some((u) => (schemaOf(u)?.fields ?? []).some((f) => f.key === key));
+    for (const type of Object.keys(ATTR_TYPE_LANDING)) {
+      if (!declaredTypes.includes(type)) continue;
+      const ok =
+        type === "text"
+          ? unitsToCheck.some((u) => schemaHasTextField(schemaOf(u)))
+          : type === "orientation"
+            ? (enabledToolUnits?.has("rotated_bbox") ?? false) || hasFieldKey("orientation")
+            : hasFieldKey(type); // language: 项目需有 key=language 的属性字段
+      if (ok) continue;
+      warnings.push({
+        key: `attr-${type}`,
+        message: `模型「${modelLabel}」会输出${ATTR_TYPE_LANDING[type]}，但当前项目未配置对应承接位（${ATTR_TYPE_HINT[type]}），采纳后该属性将丢失。`,
+      });
     }
 
     return warnings;

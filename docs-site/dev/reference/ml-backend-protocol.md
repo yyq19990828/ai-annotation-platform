@@ -164,6 +164,11 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 平台在 `POST /preannotate` 端点按子模型 `supported_inputs` 解析投递方式并烘焙进阶段 `input.mode`，worker 直接消费；产几何的子若 `supported_inputs` 既不含 `bbox_prompt` 也不含 `crop`，端点 422 拒绝（不可达）。老 backend 缺 `supported_inputs` 时平台按 `supported_prompts` 合成兼容默认（见 §3.1），零退化。本约定纯加法。
 
+派发期还会就「跑完必然空结果」的结构性误配再叠加两条 422（同样只在模型**显式**自报了对应字段时触发，缺省跳过，零退化）：
+
+- 阶段所选模型 `resource_profile.batchable=false`（交互 / 有状态视频追踪）→ 拒绝进批量预标流水线（源阶段与下游阶段同判据；比 `is_interactive` 更诚实的单一批量判据）。
+- 阶段 `write.target=attributes` 但模型 `output_attribute_types` 不含 `class` → 拒绝（作分类下游只会产出空属性）。
+
 ### 2.2 交互式预测
 
 适用：标注员在工作台内点「AI 助手」工具发起的单次推理。
@@ -460,7 +465,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 `bbox` / `rotated_bbox` / `polygon` / `polyline` / `keypoint` / `none`。
 （3D 的 `lidar_box_3d` / `point_mask_3d` 暂不在本版 backend 范围，留位。）
 
-**`output_attribute_types`（属性输出，半开放）** —— `text`（OCR 文本） / `language` / `orientation` / `class`（分类标签）。其余按需扩展；layout 版面类别走 `class_name`（而非 attribute）。
+**`output_attribute_types`（属性输出，半开放）** —— `text`（OCR 文本） / `language` / `orientation` / `class`（分类标签）。其余按需扩展；layout 版面类别走 `class_name`（而非 attribute）。平台消费：画布对 `text` / `language` / `orientation` 校验项目是否有承接位（缺则非阻断警告「采纳后该属性丢失」，`class` 因 taxonomy 几乎恒在而跳过）；编排分类下游阶段若模型自报此字段却不含 `class`，派发期 422（见 §2.1.1）。
 
 **`infra`（基础设施，受控，v2 新增）** —— `pytorch` / `onnx` / `paddle` / `tensorrt` / `openvino` / `other`（兜底）：
 
@@ -777,8 +782,9 @@ cd ../.. && pnpm codegen
 |------|------------------------------|--------------------------------|
 | url | ✓ | ✗（避免暴露内网拓扑） |
 | gpu_info / cache / pool / video_pool | ✓ | ✗（运维敏感） |
-| supported_variants / resource_profile / params | ✓ | ✗（细节给项目级视图） |
-| `models[]` 的核心字段（id / display_name / task / infra / prompts / geometry / trackers / modality） | ✓ | ✓ |
+| params | ✓ | ✗（运维细节给项目级视图） |
+| `models[]` 的核心字段（id / display_name / task / infra / prompts / geometry / trackers / modality / output_attribute_types / supported_variants） | ✓ | ✓ |
+| supported_inputs / resource_profile | ✓ | ✓（全局编排选择器需投递契约 + 批量画像，故透传） |
 
 **响应结构**：
 
@@ -797,8 +803,10 @@ cd ../.. && pnpm codegen
           "infra": "pytorch",
           "is_interactive": false,
           "supported_prompts": ["text"],
+          "supported_inputs": ["full_image", "crop"],
           "supported_geometric_outputs": ["bbox"],
           "supported_trackers": [],
+          "resource_profile": { "device": "gpu", "batchable": true },
           "modality": "image"
         }
         // ...

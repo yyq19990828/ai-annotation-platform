@@ -209,6 +209,12 @@ describe("§13 信息 helper", () => {
     it("分类但后端不产属性 → 警示", () => {
       expect(stageWarning(attr(), caps({ producesAttributes: false }))).toMatch(/属性/);
     });
+    it("分类但 model 自报属性类型不含 class (producesClass=false) → 警示", () => {
+      expect(stageWarning(attr(), caps({ producesClass: false }))).toMatch(/class|类别/);
+    });
+    it("producesClass 未知 (undefined) → 不误报", () => {
+      expect(stageWarning(attr(), caps({ producesClass: undefined }))).toBeNull();
+    });
   });
 });
 

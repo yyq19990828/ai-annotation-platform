@@ -7950,7 +7950,7 @@
         "type": "object"
       },
       "InstanceModelItem": {
-        "description": "实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 resource_profile /\nparams 等运维信息; v0.14.12 起补 supported_variants + variant_combinations 让\n前端能按主轴展开「具体模型」行).",
+        "description": "实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 url / params 等运维\n信息; v0.14.12 起补 supported_variants + variant_combinations 让前端能按主轴展开\n「具体模型」行; v0.19.2 WS0 起补 supported_inputs + resource_profile, 与项目级\n/capabilities 对齐, 供全局编排选择器消费投递契约/批量画像).",
         "properties": {
           "composition": {
             "default": "atom",
@@ -8028,12 +8028,26 @@
             "title": "Output Attribute Types",
             "type": "array"
           },
+          "resource_profile": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Resource Profile",
+            "type": "object"
+          },
           "supported_geometric_outputs": {
             "default": [],
             "items": {
               "type": "string"
             },
             "title": "Supported Geometric Outputs",
+            "type": "array"
+          },
+          "supported_inputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Inputs",
             "type": "array"
           },
           "supported_prompts": {
@@ -19869,7 +19883,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.19.0"
+    "version": "0.19.2"
   },
   "openapi": "3.1.0",
   "paths": {

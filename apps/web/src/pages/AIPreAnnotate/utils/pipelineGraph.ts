@@ -86,11 +86,17 @@ export interface StageCaps {
   acceptsCrop: boolean;
   acceptsBboxPrompt: boolean;
   producesAttributes: boolean;
+  /**
+   * v0.19.2 WS1 · 选中 model 是否产类别属性 (output_attribute_types 含 "class")。
+   * undefined = model 未自报属性类型 (无法判, 不警示); false = 自报了但不含 class。
+   */
+  producesClass?: boolean;
 }
 
 /**
  * 节点警示文案 (标红, 不硬拦运行 —— 与端点 422 同判据, 仅前移到画布)。
  * - 产几何的子既不接 crop 也不接 bbox_prompt → 不可达 (端点会 422)。
+ * - 分类子但所选 model 自报属性类型却不含 class → 属性恒空 (端点 422, WS1/WS2)。
  * - 分类子但后端不产属性 → 属性恒空。
  * 返回 null = 无警示。
  */
@@ -104,6 +110,8 @@ export function stageWarning(
       return "该模型不接受裁剪图 / 框提示，无法作几何下游（运行将被端点拒绝）";
     return null;
   }
+  if (caps.producesClass === false)
+    return "该模型不产类别属性（output_attribute_types 不含 class），作分类下游属性恒空";
   if (!caps.producesAttributes)
     return "该后端不自报输出属性，作下游分类只会重新检测、属性恒空";
   return null;

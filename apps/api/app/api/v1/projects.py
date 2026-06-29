@@ -1409,6 +1409,40 @@ def _stage_supported_inputs(backend, model_id: str | None) -> list[str]:
     return []
 
 
+def _stage_model(backend, model_id: str | None) -> dict:
+    """v0.19.2 WS2 · 从 backend 能力快照取某 model 的规范化条目 (无快照/匹配不到 → {})。
+
+    供 dispatch-time 校验读 resource_profile / output_attribute_types。读
+    health_meta.capabilities.models[] (extract_capabilities 已规范化), 不走 /instances。
+    """
+    meta = getattr(backend, "health_meta", None)
+    caps = meta.get("capabilities") if isinstance(meta, dict) else None
+    models = caps.get("models") if isinstance(caps, dict) else None
+    if not isinstance(models, list) or model_id is None:
+        return {}
+    for m in models:
+        if isinstance(m, dict) and str(m.get("id")) == str(model_id):
+            return m
+    return {}
+
+
+def _assert_batchable(backend, model_id: str | None, where: str) -> None:
+    """v0.19.2 WS2 · 模型显式自报 batchable=false (交互/有状态视频追踪) → 不能进批量预标。
+
+    仅在 resource_profile.batchable 显式为 False 时拒; 老 backend resource_profile={} →
+    batchable 缺省 → 放过 (零退化)。比 is_interactive 更诚实的单一批量判据。
+    """
+    rp = _stage_model(backend, model_id).get("resource_profile") or {}
+    if rp.get("batchable") is False:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{where}模型 {model_id!r} 自报 batchable=false (交互/有状态), "
+                "不能用于批量预标注流水线"
+            ),
+        )
+
+
 @router.post("/{project_id}/preannotate")
 async def trigger_preannotation(
     body: PreannotateRequest,
@@ -1427,6 +1461,9 @@ async def trigger_preannotation(
     if not backend or not await svc.is_enabled(project.id, body.ml_backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
+    # v0.19.2 WS2 · 源阶段 (单模型预标 / 流水线源) batchable 闸门: 交互/有状态模型不可批量。
+    _assert_batchable(backend, body.model_id, "源阶段")
+
     # v0.18.1 · 多阶段编排: 校验每个下游阶段的 backend 存在且归属本项目, 归一化成 worker
     # 可消费的 stage dict 列表 (uuid → str)。源阶段 backend 归属已在上面校验。
     pipeline_stages_payload: list[dict] | None = None
@@ -1442,6 +1479,30 @@ async def trigger_preannotation(
                     raise HTTPException(
                         status_code=404,
                         detail=f"stage {st.stage} 的 ML Backend 不存在或未在本项目启用",
+                    )
+                # v0.19.2 WS2 · 下游阶段 batchable 闸门 (同源阶段判据)。
+                _assert_batchable(st_backend, st.model_id, f"stage {st.stage} ")
+                # v0.19.2 WS2 · 写属性的子但模型不产 class → 跑完属性恒空, 提前 422。
+                # 仅在模型显式自报了 output_attribute_types 且不含 'class' 时拒; 留空 (老
+                # backend / 未声明) 跳过, 保持零退化。
+                st_types = list(
+                    _stage_model(st_backend, st.model_id).get(
+                        "output_attribute_types"
+                    )
+                    or []
+                )
+                if (
+                    (st.write or {}).get("target", "attributes") == "attributes"
+                    and st_types
+                    and "class" not in st_types
+                ):
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"stage {st.stage} 写属性 (write.target=attributes), 但其模型 "
+                            f"output_attribute_types={st_types} 不含 'class', 作分类下游"
+                            "只会产出空属性"
+                        ),
                     )
                 # v0.18.15 · 按子模型 supported_inputs 解析投递方式 + 几何可达性门控。
                 # 产几何的子: supported_inputs 须含 'bbox_prompt' (geometry-prompt 路径) 或

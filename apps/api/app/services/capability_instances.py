@@ -76,6 +76,10 @@ def _shape_models(caps: dict | None) -> list[dict]:
                 "infra": m.get("infra"),
                 "is_interactive": bool(m.get("is_interactive")),
                 "supported_prompts": list(m.get("supported_prompts") or []),
+                # v0.19.2 WS0 · 透传一等输入契约 + 资源画像, 让走 /instances 的消费方
+                # (模型市场 instances / 全局编排选择器) 与项目级 /capabilities 拿到同一字段集。
+                "supported_inputs": list(m.get("supported_inputs") or []),
+                "resource_profile": dict(m.get("resource_profile") or {}),
                 "supported_geometric_outputs": list(
                     m.get("supported_geometric_outputs") or []
                 ),
