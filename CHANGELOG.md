@@ -30,9 +30,14 @@
 
 ---
 
-## 最新版本
+## [Unreleased]
 
-<!-- 0.19.x 版本变更按版本段追加到本区；进入 0.20.x 后整体移到 docs/changelogs/0.19.x.md -->
+<!--
+日常变更（含普通 bug 修复）按 Keep a Changelog 类型分组追加到本段：
+Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空组省略）。
+发版时把「## [Unreleased]」重命名为「## [x.y.z] - 日期」，再在其上方留一个空的
+「## [Unreleased]」。0.19.x 版本段累积在本区；进入 0.20.x 后整体移到 docs/changelogs/0.19.x.md。
+-->
 
 ## [0.19.0] - 2026-06-29
 
