@@ -36,7 +36,7 @@ const TABLE_CELL_CLASS = "border-b border-border px-3 py-3 align-middle";
 export function AdminDashboard() {
   const { data: stats, isLoading } = useAdminStats();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
-  const { data: audit } = useAuditLogs({ page: 1, page_size: 8 });
+  const { data: audit } = useAuditLogs({ page: 1, page_size: 8, business_only: true });
   const navigate = useNavigate();
   const location = useLocation();
   const pushToast = useToastStore((s) => s.push);
@@ -46,7 +46,7 @@ export function AdminDashboard() {
   const wizardSourceProjectId = searchParams.get("from") || undefined;
   const [importOpen, setImportOpen] = useState(false);
 
-  const recentActivity = (audit?.items ?? []).filter((it) => !it.action.startsWith("http.")).slice(0, 8);
+  const recentActivity = audit?.items ?? [];
 
   const openWizard = () => {
     const next = new URLSearchParams(searchParams);
@@ -224,7 +224,7 @@ export function AdminDashboard() {
           </Button>
         </div>
         {recentActivity.length === 0 ? (
-          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+          <div className="flex flex-col items-center px-4 py-6 text-center text-sm text-muted-foreground">
             <Icon name="activity" size={26} className="mb-2 opacity-25" />
             <div>暂无业务事件</div>
           </div>

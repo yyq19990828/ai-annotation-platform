@@ -27,7 +27,7 @@ vi.mock("@/hooks/useProjects", () => ({
 }));
 
 vi.mock("@/hooks/useAudit", () => ({
-  useAuditLogs: () => mockUseAuditLogs(),
+  useAuditLogs: (...args: unknown[]) => mockUseAuditLogs(...args),
 }));
 
 vi.mock("@/stores/authStore", () => ({
@@ -225,18 +225,19 @@ describe("DashboardPage", () => {
     expect(screen.queryByText("↑ 12%")).not.toBeInTheDocument();
   });
 
-  it("audit 含 http.* 项被过滤，只显示业务事件", () => {
+  it("以 business_only 向服务端请求业务事件（http.* 由后端排除）", () => {
     mockUseAuditLogs.mockReturnValue({
       data: {
         items: [
-          { id: "1", action: "http.get", actor_email: "a@x.com", created_at: new Date().toISOString() },
           { id: "2", action: "user.login", actor_email: "b@x.com", target_type: "user", target_id: "u2", created_at: new Date().toISOString() },
         ],
       },
     });
     renderUI();
+    expect(mockUseAuditLogs).toHaveBeenCalledWith(
+      expect.objectContaining({ business_only: true }),
+    );
     expect(screen.getByText("b@x.com")).toBeInTheDocument();
-    expect(screen.queryByText("a@x.com")).not.toBeInTheDocument();
   });
 
   it("audit 全空 → 显示「暂无业务事件」", () => {

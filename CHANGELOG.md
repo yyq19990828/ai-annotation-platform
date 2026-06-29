@@ -39,6 +39,10 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.19.x 版本段累积在本区；进入 0.20.x 后整体移到 docs/changelogs/0.19.x.md。
 -->
 
+### Fixed
+
+- **仪表盘「近期审计活动」恒显示「暂无业务事件」**：原实现只取最新 8 条审计日志后在前端过滤掉 `http.*` 请求日志，而审计表被海量 `http.*` 淹没，业务事件早被挤出这 8 条窗口 → 永远过滤为空。改为向服务端传 `business_only=true`（`WHERE action NOT LIKE 'http.%'`）直接取 8 条业务事件。同步修复空状态卡片里活动图标因 `svg{display:block}` 而左对齐、与居中文案错位的问题。
+
 ## [0.19.0] - 2026-06-29
 
 ML Backend 从「项目子资源」上提为**全局注册表**（ADR-0044）：一个物理 backend 全局只注册一次、所有项目共享其能力快照与并发限速闸，项目侧只做「启用」。
