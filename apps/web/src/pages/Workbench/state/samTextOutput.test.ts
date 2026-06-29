@@ -42,17 +42,15 @@ describe("samTextOutput", () => {
     expect(readStoredOutputMode("p1", "u1")).toBeNull();
   });
 
-  it("resolveInitialOutputMode 优先级: projectDefault > sessionStorage > localStorage > typeKey 默认", () => {
-    // projectDefault 命中
+  it("resolveInitialOutputMode 优先级: sessionStorage > localStorage > typeKey 默认", () => {
+    // sessionStorage 命中 (优先于用户级 localStorage)
     window.sessionStorage.setItem(samOutputStorageKey("p1"), "both");
     window.localStorage.setItem(samOutputUserStorageKey("u1", "p1"), "box");
-    expect(resolveInitialOutputMode("p1", "image-det", "mask", "u1")).toBe("mask");
-    // projectDefault 非法 → 忽略，先落 sessionStorage
-    expect(resolveInitialOutputMode("p1", "image-seg", "nope", "u1")).toBe("both");
+    expect(resolveInitialOutputMode("p1", "image-det", "u1")).toBe("both");
     // 无 sessionStorage → 落用户级 localStorage
     window.sessionStorage.clear();
-    expect(resolveInitialOutputMode("p1", "image-seg", undefined, "u1")).toBe("box");
-    // 无 projectDefault、无 stored → typeKey 智能默认
+    expect(resolveInitialOutputMode("p1", "image-seg", "u1")).toBe("box");
+    // 无 stored → typeKey 智能默认
     window.sessionStorage.clear();
     window.localStorage.clear();
     expect(resolveInitialOutputMode("p2", "image-det")).toBe("box");

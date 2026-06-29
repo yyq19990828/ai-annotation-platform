@@ -50,7 +50,6 @@ function renderSection(project: Partial<ProjectResponse>) {
     ai_enabled: false,
     ml_backend_id: null,
     iou_dedup_threshold: 0.7,
-    text_output_default: null,
     ...project,
   };
   return render(
@@ -138,7 +137,7 @@ describe("MlBackendsSection 启用清单", () => {
     expect(screen.getByText(/模型市场/)).toBeTruthy();
   });
 
-  it("AI 设置保存时从已启用项设项目主后端", () => {
+  it("选主后端保存: ai_enabled 自动派生为 true (无独立启用开关)", () => {
     mockUseAvailable.mockReturnValue({
       data: { items: [item(true)] },
       isLoading: false,
@@ -146,7 +145,7 @@ describe("MlBackendsSection 启用清单", () => {
     });
     renderSection({ id: "p1", ml_backend_id: null });
 
-    fireEvent.click(screen.getByRole("checkbox", { name: /启用 AI 预标注/ }));
+    // 无「启用 AI 预标注」勾选框; 设了主后端即派生 ai_enabled=true。
     fireEvent.change(screen.getByDisplayValue(/未设项目主后端/), {
       target: { value: "b1" },
     });

@@ -36,7 +36,6 @@ const baseForm: FormState = {
   unitBindings: {},
   activeUnit: "lidar_box_3d",
   aiEnabled: false,
-  textOutputDefault: "",
   mlBackendSourceId: "",
   sceneMode: true,
   datasetIds: [],

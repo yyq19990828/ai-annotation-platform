@@ -11536,22 +11536,6 @@
             ],
             "title": "Template Id"
           },
-          "text_output_default": {
-            "anyOf": [
-              {
-                "enum": [
-                  "box",
-                  "mask",
-                  "both"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Output Default"
-          },
           "text_threshold": {
             "anyOf": [
               {
@@ -12096,17 +12080,6 @@
             "default": 300,
             "title": "Task Lock Ttl Seconds",
             "type": "integer"
-          },
-          "text_output_default": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Output Default"
           },
           "text_threshold": {
             "default": 0.25,
@@ -12849,22 +12822,6 @@
             ],
             "title": "Source Project Id"
           },
-          "text_output_default": {
-            "anyOf": [
-              {
-                "enum": [
-                  "box",
-                  "mask",
-                  "both"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Output Default"
-          },
           "text_threshold": {
             "default": 0.25,
             "maximum": 1.0,
@@ -13065,17 +13022,6 @@
               }
             ],
             "title": "Source Project Id"
-          },
-          "text_output_default": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Output Default"
           },
           "text_threshold": {
             "default": 0.25,
@@ -13327,22 +13273,6 @@
               }
             ],
             "title": "Show Overlap First"
-          },
-          "text_output_default": {
-            "anyOf": [
-              {
-                "enum": [
-                  "box",
-                  "mask",
-                  "both"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Output Default"
           },
           "text_threshold": {
             "anyOf": [
@@ -13680,22 +13610,6 @@
               }
             ],
             "title": "Status"
-          },
-          "text_output_default": {
-            "anyOf": [
-              {
-                "enum": [
-                  "box",
-                  "mask",
-                  "both"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Output Default"
           },
           "text_threshold": {
             "anyOf": [

@@ -43,7 +43,6 @@ class ProjectTemplateBase(BaseModel):
     iou_dedup_threshold: Annotated[float, Field(ge=0.0, le=1.0)] = 0.7
     box_threshold: Annotated[float, Field(ge=0.0, le=1.0)] = 0.35
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] = 0.25
-    text_output_default: Literal["box", "mask", "both"] | None = None
     rendering_config: ProjectRenderingConfig | None = None
     # E1 整合: 模板携带 markdown 文本; guide_assets 不入模板.
     annotation_guide: str | None = None
@@ -93,7 +92,6 @@ class ProjectTemplateUpdate(BaseModel):
     iou_dedup_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     box_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
-    text_output_default: Literal["box", "mask", "both"] | None = None
     rendering_config: ProjectRenderingConfig | None = None
     annotation_guide: str | None = None
     scope: TemplateScope | None = None
@@ -124,7 +122,6 @@ class ProjectTemplateOut(BaseModel):
     iou_dedup_threshold: float = 0.7
     box_threshold: float = 0.35
     text_threshold: float = 0.25
-    text_output_default: str | None = None
     rendering_config: ProjectRenderingConfig = ProjectRenderingConfig()
     annotation_guide: str | None = None
 

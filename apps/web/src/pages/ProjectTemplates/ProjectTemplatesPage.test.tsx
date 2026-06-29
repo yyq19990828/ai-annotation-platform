@@ -81,7 +81,6 @@ function makeTemplate(overrides: Partial<ProjectTemplateOut> = {}): ProjectTempl
     iou_dedup_threshold: 0.7,
     box_threshold: 0.35,
     text_threshold: 0.25,
-    text_output_default: null,
     rendering_config: {},
     annotation_guide: null,
     scope: overrides.scope ?? "private",

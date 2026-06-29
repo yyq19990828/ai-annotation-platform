@@ -15,10 +15,6 @@ import { useUpdateProject } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
-  TextOutputDefaultSelect,
-  type TextOutputDefault,
-} from "@/components/projects/shared/TextOutputDefaultSelect";
-import {
   mlBackendsApi,
   mlBackendSetupQueryKey,
   type MLBackendCapability,
@@ -218,38 +214,30 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
   const health = useMLBackendHealth(project.id);
   // 行内「设为主后端」快捷设置项目主后端，免回基本信息 tab 手选。
   const updateProject = useUpdateProject(project.id);
-  const [aiEnabled, setAiEnabled] = useState(project.ai_enabled);
+  // v0.19.0 · ai_enabled 不再手动开关, 自动派生「设了项目主后端即视为启用 AI」。
   const [mlBackendId, setMlBackendId] = useState<string | null>(
     project.ml_backend_id ?? null,
   );
   const [iouThreshold, setIouThreshold] = useState(project.iou_dedup_threshold ?? 0.7);
-  const [textOutputDefault, setTextOutputDefault] = useState<string>(
-    project.text_output_default ?? "",
-  );
 
   useEffect(() => {
-    setAiEnabled(project.ai_enabled);
     setMlBackendId(project.ml_backend_id ?? null);
     setIouThreshold(project.iou_dedup_threshold ?? 0.7);
-    setTextOutputDefault(project.text_output_default ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
   const aiSettingsDirty =
-    aiEnabled !== project.ai_enabled ||
     (mlBackendId ?? null) !== (project.ml_backend_id ?? null) ||
-    Math.abs(iouThreshold - (project.iou_dedup_threshold ?? 0.7)) > 0.001 ||
-    textOutputDefault !== (project.text_output_default ?? "");
+    Math.abs(iouThreshold - (project.iou_dedup_threshold ?? 0.7)) > 0.001;
 
   useUnsavedWarning(aiSettingsDirty);
 
   const onSaveAiSettings = () => {
     updateProject.mutate(
       {
-        ai_enabled: aiEnabled,
-        ml_backend_id: aiEnabled ? mlBackendId : null,
+        ai_enabled: mlBackendId != null,
+        ml_backend_id: mlBackendId,
         iou_dedup_threshold: iouThreshold,
-        text_output_default: (textOutputDefault || null) as "box" | "mask" | "both" | null,
       },
       {
         onSuccess: () =>
@@ -355,16 +343,10 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
 
       <div className="border-b border-border bg-background px-4 py-3.5">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold">
-            <input
-              type="checkbox"
-              checked={aiEnabled}
-              onChange={(e) => setAiEnabled(e.target.checked)}
-              className="accent-violet-500"
-            />
+          <span className="inline-flex items-center gap-2 text-sm font-semibold">
             <Icon name="sparkles" size={14} className="text-status-info" />
-            启用 AI 预标注
-          </label>
+            AI 预标注设置
+          </span>
           {aiSettingsDirty && (
             <span
               className="inline-flex items-center gap-1.5 text-xs font-medium text-status-caution"
@@ -376,13 +358,12 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
           )}
         </div>
 
-        <div className="grid grid-cols-[minmax(260px,1.2fr)_minmax(220px,1fr)] gap-3.5 [&>:last-child]:col-span-full">
+        <div className="grid grid-cols-[minmax(260px,1.2fr)_minmax(220px,1fr)] gap-3.5">
           <div>
             <label className={LABEL_CLASS}>项目主后端</label>
             <select
               value={mlBackendId ?? ""}
               onChange={(e) => setMlBackendId(e.target.value || null)}
-              disabled={!aiEnabled}
               className={cn(CONTROL_CLASS, "cursor-pointer")}
             >
               <option value="">未设项目主后端（项目按肉眼标注运行，AI 待接入）</option>
@@ -395,10 +376,10 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
               ))}
             </select>
             <div className="mt-1 text-xs leading-normal text-muted-foreground">
-              项目主后端用于工作台 AI 与新建预标配置的初始选择 / fallback；多阶段预标注中，每个阶段显式选择的 backend/model 仍然独立生效。平台所有“模型名”展示均直接来自 backend.name。
+              设了项目主后端即视为启用 AI 预标注（留空 = 不启用）。主后端用于工作台 AI 与新建预标配置的初始选择 / fallback；多阶段预标注中，每个阶段显式选择的 backend/model 仍然独立生效。平台所有“模型名”展示均直接来自 backend.name。
               {enabledBackends.length === 0 && (
                 <span className="ml-1 text-status-caution">
-                  暂无已启用 backend；请在下方启用清单中勾选。
+                  暂无已启用 backend；请点右上「管理 backend」勾选启用。
                 </span>
               )}
             </div>
@@ -416,24 +397,12 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                 step={0.05}
                 value={iouThreshold}
                 onChange={(e) => setIouThreshold(Number(e.target.value))}
-                disabled={!aiEnabled}
                 className="flex-1 accent-violet-500"
               />
               <span className={cn("mono", "min-w-[48px] text-right text-sm text-foreground")}>
                 {iouThreshold.toFixed(2)}
               </span>
             </div>
-          </div>
-
-          <div>
-            <label className={LABEL_CLASS}>
-              SAM 文本预标默认输出 <span className="font-normal text-muted-foreground">工作台“找全图”的初始值</span>
-            </label>
-            <TextOutputDefaultSelect
-              value={textOutputDefault as TextOutputDefault}
-              onChange={(v) => setTextOutputDefault(v)}
-              disabled={!aiEnabled}
-            />
           </div>
         </div>
 

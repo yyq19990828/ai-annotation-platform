@@ -5,7 +5,6 @@ import { clsx } from "clsx";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
 import { adminMlIntegrationsApi } from "@/api/adminMlIntegrations";
-import { TextOutputDefaultSelect } from "@/components/projects/shared/TextOutputDefaultSelect";
 import type { FormState } from "../CreateProjectWizard";
 import styles from "../CreateProjectWizard.module.css";
 
@@ -40,22 +39,6 @@ export function Step4Ai({
 
       {form.aiEnabled && (
         <>
-          {/* v0.9.6 · SAM 文本预标默认输出 (与 ML 模型页 4 项一致, 复用共享组件) */}
-          <div>
-            <label className={styles.label}>
-              SAM 文本预标默认输出{" "}
-              <span className={styles.labelNote}>
-                （工作台「找全图」初始值，可在工作台临时切换）
-              </span>
-            </label>
-            <TextOutputDefaultSelect
-              value={form.textOutputDefault}
-              onChange={(v) =>
-                setForm((s) => ({ ...s, textOutputDefault: v }))
-              }
-            />
-          </div>
-
           {/* v0.9.7 · 复用现有 backend dropdown — 让新项目立即可用 AI */}
           {/* v0.10.37 · 按项目 data_type 标注 backend 模态匹配 (epic 阶段 1) */}
           <BackendSourceSelect

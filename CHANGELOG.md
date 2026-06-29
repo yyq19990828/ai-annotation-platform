@@ -43,3 +43,4 @@
   - **前端**：ModelMarket 增 superadmin 全局 backend 注册/编辑/删除入口；项目设置「ML 模型」从「注册 backend」改为「启用全局 backend + 项目级阈值/变体覆盖」勾选列表；AIPreAnnotate 多阶段编排门控改读已启用集合（勾选启用第二个 backend 即可加分类阶段，无需重复注册）。
   - **迁移**：alembic `0108` 按 URL 去重回填全局表 + 生成启用关联，建全量 `old_id → registry_id` 映射统一重写外键三处（`projects.ml_backend_id`、分区表 `predictions.ml_backend_id` 两处）+ 用户偏好三子键（`params_by_backend`/`model_by_backend`/`interactive_backend_by_project`），历史 prediction backend 溯源零丢失。回滚为 forward-only 姿态（去重发生即有损）。
   - 移除每项目 backend 注册上限 `max_ml_backends_per_project`（与多阶段 DAG 需 ≥2 backend 直接冲突）；显存保护改由全局行 `max_concurrency` 兜底。
+- **项目设置「ML 模型」UX 精简**：主表只展示本项目**已启用**的 backend，新增「管理 backend」悬浮面板集中做全部全局 backend 的启用/停用 + 项目级阈值覆盖。移除冗余的「启用 AI 预标注」开关——`ai_enabled` 改为**自动派生**（设了项目主后端即为启用）。退役已被交互工具栏 + 用户级偏好架空的项目级「SAM 文本预标默认输出」选项（`text_output_default` 字段连同 `projects` / `project_templates` 两表列一并删除，迁移 `0109`；工作台文本输出初始值回落用户偏好 → `type_key` 智能默认）。

@@ -87,7 +87,6 @@ async def test_clone_copies_all_cloneable_fields(
         ai_enabled=True,
         box_threshold=0.4,
         text_threshold=0.3,
-        text_output_default="mask",
         sampling="random",
         maximum_annotations=3,
         show_overlap_first=True,
@@ -117,7 +116,6 @@ async def test_clone_copies_all_cloneable_fields(
     assert data["ai_enabled"] is True
     assert data["box_threshold"] == pytest.approx(0.4, rel=1e-5)
     assert data["text_threshold"] == pytest.approx(0.3, rel=1e-5)
-    assert data["text_output_default"] == "mask"
     assert data["sampling"] == "random"
     assert data["maximum_annotations"] == 3
     assert data["show_overlap_first"] is True

@@ -184,9 +184,6 @@ export function useWorkbenchShellModel({
 
   const { data: currentProject, isLoading: isProjectLoading } = useProject(routeId ?? "");
   const projectId = currentProject?.id;
-  const projectTextOutputDefault = (
-    currentProject as { text_output_default?: TextOutputMode | null } | null | undefined
-  )?.text_output_default;
 
   const projectName = currentProject?.name ?? "标注工作台";
   const projectDisplayId = currentProject?.display_id ?? "—";
@@ -285,10 +282,9 @@ export function useWorkbenchShellModel({
     setExemplarOutputMode(resolveInitialOutputMode(
       projectId,
       currentProject?.type_key,
-      projectTextOutputDefault,
       meUserId,
     ));
-  }, [projectId, currentProject?.type_key, projectTextOutputDefault, meUserId, setExemplarOutputMode]);
+  }, [projectId, currentProject?.type_key, meUserId, setExemplarOutputMode]);
   const handleSetExemplarOutputMode = useCallback((mode: TextOutputMode) => {
     setExemplarOutputMode(mode);
     if (projectId) writeStoredOutputMode(projectId, mode, meUserId);
