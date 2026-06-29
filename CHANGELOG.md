@@ -40,6 +40,10 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.20.x 版本段累积在本区；进入 0.21.x 后整体移到 docs/changelogs/0.20.x.md。
 -->
 
+### Fixed
+
+- 能力目录端点（`GET /ml-capabilities/instances`）健壮性：某个 backend 自报格式不合规（如 variant 选项缺必填 `value`、`models` 非数组）时，现仅跳过该 backend 并记 warning，而非让一条坏数据的校验异常拖垮整个端点 —— 此前整列构造会因单个 backend 的 `ValidationError` 返回 500，导致所有 backend 的卡片一起从「模型市场 → 能力目录」消失。
+
 ## [0.20.0] - 2026-06-29
 
 ### Added

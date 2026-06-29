@@ -429,3 +429,82 @@ async def test_instances_passthrough_supported_inputs_and_resource_profile(
     legacy = by_name["legacy-no-fields"]["models"][0]
     assert legacy["supported_inputs"] == []
     assert legacy["resource_profile"] == {}
+
+
+# ---------- 健壮性: 单个 backend 自报不合规应跳过而非整体 500 ----------
+
+
+@pytest.mark.asyncio
+async def test_instances_skips_malformed_backend_without_500(
+    httpx_client, auth_headers, db_session
+):
+    """一个 backend 自报 schema 不合规 (variant 选项缺 value) 时, 该 backend 被跳过、
+    其余 backend 正常返回, 端点不 500。
+
+    回归: rapidocr 早期把 supported_variants 选项写成 {key,title} (缺 value) 触发
+    Pydantic ValidationError, 旧实现的整列推导让整个 /instances 端点 500, 所有
+    backend 卡片一起消失。现在逐 backend 构造, 坏的跳过。
+    """
+    db_session.add_all(
+        [
+            MLBackendRegistry(
+                id=uuid.uuid4(),
+                name="bad-variants",
+                url="http://bad:8001",
+                state="connected",
+                auth_method="none",
+                extra_params={},
+                source="manual",
+                health_meta={
+                    "capabilities": {
+                        "infra": "onnx",
+                        "models": [
+                            {
+                                "id": "ocr-rec",
+                                "task": "ocr",
+                                "supported_geometric_outputs": ["polygon"],
+                                # variant 选项缺必填 value (错写成 {key,title})
+                                "supported_variants": [
+                                    {
+                                        "key": "size",
+                                        "title": "尺寸",
+                                        "variants": [{"key": "mobile", "title": "Mobile"}],
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                },
+            ),
+            MLBackendRegistry(
+                id=uuid.uuid4(),
+                name="good",
+                url="http://good:8002",
+                state="connected",
+                auth_method="none",
+                extra_params={},
+                source="env",
+                health_meta={
+                    "capabilities": {
+                        "infra": "pytorch",
+                        "models": [
+                            {
+                                "id": "detect",
+                                "task": "detection",
+                                "supported_geometric_outputs": ["bbox"],
+                            }
+                        ],
+                    }
+                },
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    r = await httpx_client.get(
+        "/api/v1/ml-capabilities/instances", headers=auth_headers
+    )
+    assert r.status_code == 200
+    names = {inst["name"] for inst in r.json()["instances"]}
+    # 合规的 backend 仍在; 不合规的被跳过。
+    assert names == {"good"}
