@@ -253,6 +253,7 @@ class GlobalBackendItem(BaseModel):
     state: str
     is_interactive: bool
     auth_method: str
+    extra_params: dict = Field(default_factory=dict)
     health_meta: dict | None = None
     source_project_id: str
     source_project_name: str
@@ -289,6 +290,7 @@ async def list_all_backends(
                 state=backend.state,
                 is_interactive=backend.is_interactive,
                 auth_method=backend.auth_method,
+                extra_params=backend.extra_params or {},
                 health_meta=backend.health_meta,
                 source_project_id="",
                 source_project_name=backend.source,

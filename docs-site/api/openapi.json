@@ -7336,6 +7336,11 @@
             "title": "Auth Method",
             "type": "string"
           },
+          "extra_params": {
+            "additionalProperties": true,
+            "title": "Extra Params",
+            "type": "object"
+          },
           "health_meta": {
             "anyOf": [
               {

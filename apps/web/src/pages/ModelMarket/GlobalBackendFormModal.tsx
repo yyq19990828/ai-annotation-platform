@@ -1,10 +1,9 @@
 /**
  * v0.19.0 · ADR-0044 · superadmin 全局 ML backend 注册/编辑弹窗。
  *
- * 与项目作用域的 MlBackendFormModal 字段一致（name / url / 认证 / max_concurrency /
- * extra_params + 测试连接），但调用全局注册表端点：新建 = createRegistry，编辑 =
- * updateRegistry。编辑时数据源（GlobalBackendItem）不含 extra_params，故仅当用户实际
- * 填写时才下发 extra_params / auth_token，避免把后端已有值覆盖为空。
+ * 字段：name / url / 认证 / max_concurrency / extra_params + 测试连接，调用全局注册表端点：
+ * 新建 = createRegistry，编辑 = updateRegistry。编辑时数据源（GlobalBackendItem）不含
+ * extra_params，故仅当用户实际填写时才下发 extra_params / auth_token，避免把后端已有值覆盖为空。
  */
 import { useEffect, useState } from "react";
 import { clsx } from "clsx";

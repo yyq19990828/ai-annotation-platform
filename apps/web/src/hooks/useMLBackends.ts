@@ -1,8 +1,6 @@
 import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   mlBackendsApi,
-  type MLBackendCreatePayload,
-  type MLBackendUpdatePayload,
   type MLBackendVariant,
   type ProjectMLBackendEnablementPayload,
 } from "@/api/ml-backends";
@@ -42,31 +40,6 @@ export function useSetMLBackendEnablement(projectId: string) {
       registryId: string;
       payload: ProjectMLBackendEnablementPayload;
     }) => mlBackendsApi.setEnablement(projectId, registryId, payload),
-    onSuccess: () => invalidateBackendQueries(qc, projectId),
-  });
-}
-
-export function useCreateMLBackend(projectId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: MLBackendCreatePayload) => mlBackendsApi.create(projectId, payload),
-    onSuccess: () => invalidateBackendQueries(qc, projectId),
-  });
-}
-
-export function useUpdateMLBackend(projectId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ backendId, payload }: { backendId: string; payload: MLBackendUpdatePayload }) =>
-      mlBackendsApi.update(projectId, backendId, payload),
-    onSuccess: () => invalidateBackendQueries(qc, projectId),
-  });
-}
-
-export function useDeleteMLBackend(projectId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (backendId: string) => mlBackendsApi.delete(projectId, backendId),
     onSuccess: () => invalidateBackendQueries(qc, projectId),
   });
 }

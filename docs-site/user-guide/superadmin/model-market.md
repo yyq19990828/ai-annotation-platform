@@ -68,20 +68,25 @@ last_reviewed: 2026-06-10
 
 ### 3. 注册管理
 
-注册管理是**全局注册表**的中心。超管在此对物理 backend 做增删改查与健康检查；每个 backend 全局只有一行，并展示各项目对它的启用状态。
+注册管理是**全局注册表**的中心，分两块：上方是跨项目共享的 backend 扁平列表，下方是只读的「项目启用概览」。每个物理 backend 全局只有一行，注册一次、所有项目共享。
+
+**全局注册表**（扁平列表）：
 
 | 列 | 说明 |
 |---|---|
 | 名称 | backend 名称 |
 | URL | 注册地址（全局唯一） |
 | 来源 | `manual`（超管手动注册）/ `env`（env 配置启动后自动注册） |
-| 类型 | 交互式 / 批量；最大并发 chip |
+| 类型 | 交互式 / 批量；最大并发 chip（`extra_params.max_concurrency`，缺省不显示） |
 | 状态 | 注册记录最近状态与错误片段 |
-| 启用项目 | 启用了该 backend 的项目数 |
 | 最近检查 | 上次健康检查时间 |
-| 操作 | 编辑 / 删除 / 健康检查 |
+| 操作 | 编辑 / 删除 / 健康检查（**仅超管**） |
 
-对应后端端点：`POST /admin/ml-integrations/registry`（新增）、`PUT /admin/ml-integrations/registry/:id`（编辑）、`DELETE /admin/ml-integrations/registry/:id`（删除）、`POST /admin/ml-integrations/registry/:id/health`（健康检查）。项目侧不在此注册 backend，而是在项目设置勾选启用（详见 [启用 ML 后端](../projects/ml-backends)）。
+对应后端端点：`POST /admin/ml-integrations/registry`（新增）、`PUT /admin/ml-integrations/registry/:id`（编辑）、`DELETE /admin/ml-integrations/registry/:id`（删除）、`POST /admin/ml-integrations/registry/:id/health`（健康检查）。
+
+**项目启用概览**（**仅超管可见 · 只读**）：列出每个启用了 AI 的项目，以及它当前启用了哪些 backend（已启用 AI 但未启用任何 backend 的项目会标黄提示），每行提供「打开项目设置 →」入口。这里只看不改——项目启用本身在项目设置里做（详见 [启用 ML 后端](../projects/ml-backends)）。
+
+> **角色门控**：超管可在全局注册表做增删改查 + 健康检查，并看到项目启用概览。项目管理员进本 tab 时全局注册表为**只读**（隐藏注册 / 编辑 / 删除），且看不到项目启用概览——项目管理员只在自己的项目设置里勾选启用 backend。
 
 运行时指标（GPU、cache、model_version、pool）和生命周期动作已经迁到「运行时观测」。
 

@@ -2,17 +2,6 @@ import { apiClient } from "./client";
 import type { MLBackendResponse } from "@/types";
 import type { OutputAttributeSchemaItem } from "./mlCapabilities";
 
-export interface MLBackendCreatePayload {
-  name: string;
-  url: string;
-  is_interactive?: boolean;
-  auth_method?: string;
-  auth_token?: string;
-  extra_params?: Record<string, unknown>;
-}
-
-export type MLBackendUpdatePayload = Partial<MLBackendCreatePayload>;
-
 // v0.19.0 · ADR-0044 全局 ML 注册表: backend 上提为全局表, 项目层退化为「启用关联 + 覆盖」。
 // `available` 端点列出全部全局 backend + 本项目启用态/覆盖; 一行 = 一个全局 backend。
 // backend 快照与 MLBackendResponse 同构 (全局项 project_id=null, 额外带 health_meta)。
@@ -204,17 +193,8 @@ export const mlBackendsApi = {
       `/projects/${projectId}/ml-backends/${backendId}/capabilities/refresh`,
     ),
 
-  create: (projectId: string, payload: MLBackendCreatePayload) =>
-    apiClient.post<MLBackendResponse>(`/projects/${projectId}/ml-backends`, payload),
-
   get: (projectId: string, backendId: string) =>
     apiClient.get<MLBackendResponse>(`/projects/${projectId}/ml-backends/${backendId}`),
-
-  update: (projectId: string, backendId: string, payload: MLBackendUpdatePayload) =>
-    apiClient.put<MLBackendResponse>(`/projects/${projectId}/ml-backends/${backendId}`, payload),
-
-  delete: (projectId: string, backendId: string) =>
-    apiClient.delete(`/projects/${projectId}/ml-backends/${backendId}`),
 
   health: (projectId: string, backendId: string) =>
     apiClient.post<{ status: string; backend_id: string; backend_name: string }>(

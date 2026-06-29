@@ -169,6 +169,7 @@ export interface GlobalBackendItem {
   state: string;
   is_interactive: boolean;
   auth_method: string;
+  extra_params: Record<string, unknown>;
   health_meta: BackendHealthMeta | null;
   source_project_id: string;
   source_project_name: string;
