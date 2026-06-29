@@ -14,7 +14,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import BatchStatus
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
@@ -41,17 +41,19 @@ async def _seed(db: AsyncSession, owner_id: uuid.UUID):
     db.add(proj)
     await db.flush()
 
-    backend = MLBackend(
+    backend = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=proj.id,
         name="g-sam2",
-        url="http://test/",
+        url=f"http://test-{suffix}/",
         is_interactive=True,
         state="connected",
     )
     db.add(backend)
     await db.flush()
     proj.ml_backend_id = backend.id
+    # v0.19.0 ADR-0044 · 预标校验项目「已启用」, 为该 backend 建启用关联
+    db.add(ProjectMLBackend(project_id=proj.id, registry_id=backend.id, enabled=True))
+    await db.flush()
 
     batch = TaskBatch(
         id=uuid.uuid4(),

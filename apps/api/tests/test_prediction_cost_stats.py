@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.ml_backend import MLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.db.models.prediction import FailedPrediction, Prediction, PredictionMeta
 from app.db.models.project import Project
 from app.db.models.task import Task
@@ -55,12 +55,13 @@ async def _seed_task(db: AsyncSession, project_id: uuid.UUID) -> Task:
 
 async def _seed_backend(
     db: AsyncSession, project_id: uuid.UUID, name: str
-) -> MLBackend:
-    b = MLBackend(
+) -> MLBackendRegistry:
+    # v0.19.0 ADR-0044 · backend 上提为全局注册项 (url unique); cost-stats 按 ml_backend_id
+    # join registry 取 backend_name, 无需项目启用关联。
+    b = MLBackendRegistry(
         id=uuid.uuid4(),
-        project_id=project_id,
         name=name,
-        url="http://example/",
+        url=f"http://example/{name}-{uuid.uuid4().hex[:8]}",
         is_interactive=True,
     )
     db.add(b)
