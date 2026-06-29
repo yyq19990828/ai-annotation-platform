@@ -51,23 +51,19 @@ async def test_overview_groups_backends_by_project(
     user, token = super_admin
     proj = await create_project(db_session, owner_id=user.id, name="P1")
 
-    from app.db.models.ml_backend import MLBackend
+    from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 
+    b1 = MLBackendRegistry(name="b1", url="http://x:9000", state="connected")
+    b2 = MLBackendRegistry(name="b2", url="http://y:9000", state="disconnected")
+    db_session.add(b1)
+    db_session.add(b2)
+    await db_session.flush()
+    # v0.19.0 ADR-0044 · overview 按项目「已启用」全局 backend 分组。
     db_session.add(
-        MLBackend(
-            project_id=proj.id,
-            name="b1",
-            url="http://x:9000",
-            state="connected",
-        )
+        ProjectMLBackend(project_id=proj.id, registry_id=b1.id, enabled=True)
     )
     db_session.add(
-        MLBackend(
-            project_id=proj.id,
-            name="b2",
-            url="http://y:9000",
-            state="disconnected",
-        )
+        ProjectMLBackend(project_id=proj.id, registry_id=b2.id, enabled=True)
     )
     await db_session.flush()
 
@@ -291,18 +287,17 @@ def _fake_client(routes):
 async def test_observe_returns_variant_catalog_and_registered_flag(
     httpx_client, db_session, super_admin, monkeypatch
 ):
-    user, token = super_admin
+    _, token = super_admin
     from app.config import settings
 
     monkeypatch.setattr(settings, "ml_backend_observe_urls", ["http://obs1:8001"])
 
-    # 注册一个同 URL 的 backend → observe 应标 registered。
-    proj = await create_project(db_session, owner_id=user.id, name="POBS")
-    from app.db.models.ml_backend import MLBackend
+    # 全局注册表里有同 URL 的 backend → observe 应标 registered (来源标签 source)。
+    from app.db.models.ml_backend_registry import MLBackendRegistry
 
     db_session.add(
-        MLBackend(
-            project_id=proj.id, name="b", url="http://obs1:8001", state="connected"
+        MLBackendRegistry(
+            name="b", url="http://obs1:8001", state="connected", source="manual"
         )
     )
     await db_session.flush()
@@ -353,7 +348,7 @@ async def test_observe_returns_variant_catalog_and_registered_flag(
     assert t["variant_catalog"]["sam_variant"] == ["tiny", "large"]
     assert t["supported_variants"][0]["key"] == "series"
     assert t["registered"] is True
-    assert "POBS" in (t["registered_label"] or "")
+    assert "manual" in (t["registered_label"] or "")
 
 
 @pytest.mark.asyncio
