@@ -156,6 +156,8 @@ async def predict(req: PredictRequest):
 
 **生产建议**：直接依赖共享库 [`apps/_shared/protocol_v2/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/apps/_shared/protocol_v2)（`aap_protocol_v2`），它提供 `PredictionResult` / `BatchPredictResponse` / `PoolStatus` / `WarmupResponse` 等协议 Pydantic 模型、`VariantNotSupportedError` / `ModelUnavailableError` 标准错误类，以及旧 variant 字段的 normalize 工具——三个生产 backend（yolo / sam3 / grounded-sam2）均已依赖。真实推理 backend 的完整组织方式（ModelPool、observability、tests）首选参考 [`apps/yolo-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/apps/yolo-backend)。
 
+本教程的 OCR 主题，真实推理参考 [`apps/rapidocr-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/apps/rapidocr-backend)：它把 RapidOCR 的 det→cls→rec 拆为**原子能力 + 端到端 composite** 三个 model（`ocr-det` / `ocr-rec` / `ocr-e2e`），示范一个 backend 如何既暴露可被 pipeline 编排的原子阶段、又提供一次跑完的便捷入口，并输出 `attributes.text` / `orientation` / `language` 富属性（协议 §4.1.8）。
+
 ## Step 5：注册到平台并对项目启用
 
 backend 跑起来后：
