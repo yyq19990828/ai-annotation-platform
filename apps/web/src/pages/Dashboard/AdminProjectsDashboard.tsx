@@ -34,7 +34,8 @@ const FILTER_STATUS_MAP: Record<string, string | undefined> = {
   "待审核": "pending_review",
   "已完成": "completed",
 };
-const WORKBENCH_PROJECT_TYPES = new Set(["image-det", "video-track", "lidar"]);
+// 按媒体维度 data_type 放行工作台,图像子类型(det/ocr/seg)同走图像栈,见 DashboardPage。
+const WORKBENCH_DATA_TYPES = new Set(["image", "video", "lidar"]);
 
 // 表格单元(列表视图)共用类
 const TD_CLASS = "border-b border-border p-3 align-middle";
@@ -223,7 +224,7 @@ export function AdminProjectsDashboard() {
     navigate(`/projects/${p.id}/settings${section ? `?section=${section}` : ""}`);
 
   const onOpenProject = (p: ProjectResponse) => {
-    if (WORKBENCH_PROJECT_TYPES.has(p.type_key)) {
+    if (p.data_type && WORKBENCH_DATA_TYPES.has(p.data_type)) {
       navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
     } else {
       pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `${projectDisplayType(p)} 的标注界面尚未实现` });

@@ -12,7 +12,6 @@ import {
   useMLBackendHealth,
 } from "@/hooks/useMLBackends";
 import { useUpdateProject } from "@/hooks/useProjects";
-import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
   mlBackendsApi,
@@ -135,46 +134,51 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
   );
   const [iouThreshold, setIouThreshold] = useState(project.iou_dedup_threshold ?? 0.7);
 
+  // 改动即时生效:下拉 / 行内「设为主后端」/ IoU 滑块都各自直接落库,不再有「保存」批量提交。
+  // 本地态只作乐观显示 + 跟随服务端回灌(切项目、外部改动、提交失败回滚都靠它)。
   useEffect(() => {
     setMlBackendId(project.ml_backend_id ?? null);
     setIouThreshold(project.iou_dedup_threshold ?? 0.7);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id]);
+  }, [project.id, project.ml_backend_id, project.iou_dedup_threshold]);
 
-  const aiSettingsDirty =
-    (mlBackendId ?? null) !== (project.ml_backend_id ?? null) ||
-    Math.abs(iouThreshold - (project.iou_dedup_threshold ?? 0.7)) > 0.001;
-
-  useUnsavedWarning(aiSettingsDirty);
-
-  const onSaveAiSettings = () => {
+  // 设/清项目主后端 → 即时落库(ai_enabled 跟随派生)。乐观更新本地下拉,失败回滚。
+  const commitBackend = (id: string | null, name?: string) => {
+    setMlBackendId(id);
     updateProject.mutate(
-      {
-        ai_enabled: mlBackendId != null,
-        ml_backend_id: mlBackendId,
-        iou_dedup_threshold: iouThreshold,
-      },
+      { ai_enabled: id != null, ml_backend_id: id },
       {
         onSuccess: () =>
-          pushToast({ msg: "AI 预标注设置已保存", kind: "success" }),
-        onError: (e) => pushToast({ msg: "保存失败", sub: (e as Error).message }),
+          pushToast({
+            msg: id
+              ? `已设为项目主后端「${name ?? ""}」`
+              : "已清除项目主后端（AI 预标注停用）",
+            kind: "success",
+          }),
+        onError: (e) => {
+          setMlBackendId(project.ml_backend_id ?? null);
+          pushToast({ msg: "设置失败", sub: (e as Error).message });
+        },
       },
     );
   };
 
-  const onBind = (b: MLBackendResponse) => {
+  // IoU 阈值滑块松手/失焦时提交一次(拖动中只更新本地,不逐帧发请求);无变化跳过。
+  const commitIou = (value: number) => {
+    if (Math.abs(value - (project.iou_dedup_threshold ?? 0.7)) < 0.001) return;
     updateProject.mutate(
-      {
-        ml_backend_id: b.id,
-        ai_enabled: true,
-      } as Parameters<typeof updateProject.mutate>[0],
+      { iou_dedup_threshold: value },
       {
         onSuccess: () =>
-          pushToast({ msg: `已设为项目主后端「${b.name}」`, kind: "success" }),
-        onError: (e) => pushToast({ msg: "设置失败", sub: (e as Error).message }),
+          pushToast({ msg: `去重阈值已保存 ${value.toFixed(2)}`, kind: "success" }),
+        onError: (e) => {
+          setIouThreshold(project.iou_dedup_threshold ?? 0.7);
+          pushToast({ msg: "保存失败", sub: (e as Error).message });
+        },
       },
     );
   };
+
+  const onBind = (b: MLBackendResponse) => commitBackend(b.id, b.name);
 
   // v0.19.0 · ADR-0044 · 启用/停用某全局 backend。
   const onToggleEnabled = (item: ProjectMLBackendItem, next: boolean) => {
@@ -249,15 +253,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
             <Icon name="sparkles" size={14} className="text-status-info" />
             AI 预标注设置
           </span>
-          {aiSettingsDirty && (
-            <span
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-status-caution"
-              data-testid="ai-settings-unsaved"
-            >
-              <span className="size-1.5 rounded-full bg-amber-500" />
-              有未保存的修改
-            </span>
-          )}
+          <span className="text-xs text-muted-foreground">改动即时生效</span>
         </div>
 
         <div className="grid grid-cols-[minmax(260px,1.2fr)_minmax(220px,1fr)] gap-3.5">
@@ -265,7 +261,11 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
             <label className={LABEL_CLASS}>项目主后端</label>
             <select
               value={mlBackendId ?? ""}
-              onChange={(e) => setMlBackendId(e.target.value || null)}
+              disabled={!canManage || updateProject.isPending}
+              onChange={(e) => {
+                const id = e.target.value || null;
+                commitBackend(id, enabledBackends.find((b) => b.id === id)?.name);
+              }}
               className={cn(CONTROL_CLASS, "cursor-pointer")}
             >
               <option value="">未设项目主后端（项目按肉眼标注运行，AI 待接入）</option>
@@ -298,7 +298,11 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                 max={0.95}
                 step={0.05}
                 value={iouThreshold}
+                disabled={!canManage}
                 onChange={(e) => setIouThreshold(Number(e.target.value))}
+                onPointerUp={(e) => commitIou(Number((e.currentTarget as HTMLInputElement).value))}
+                onKeyUp={(e) => commitIou(Number((e.currentTarget as HTMLInputElement).value))}
+                onBlur={(e) => commitIou(Number(e.currentTarget.value))}
                 className="flex-1 accent-violet-500"
               />
               <span className={cn("mono", "min-w-[48px] text-right text-sm text-foreground")}>
@@ -306,16 +310,6 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
               </span>
             </div>
           </div>
-        </div>
-
-        <div className="mt-3 flex justify-end">
-          <Button
-            variant="primary"
-            disabled={!aiSettingsDirty || updateProject.isPending}
-            onClick={onSaveAiSettings}
-          >
-            {updateProject.isPending ? "保存中..." : "保存 AI 设置"}
-          </Button>
         </div>
       </div>
 

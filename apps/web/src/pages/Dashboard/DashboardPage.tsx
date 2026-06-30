@@ -31,7 +31,10 @@ const DATA_TYPE_ICONS: Record<string, IconName> = {
   video: "video",
   lidar: "cube",
 };
-const WORKBENCH_PROJECT_TYPES = new Set(["image-det", "video-track", "lidar"]);
+// 按媒体维度 data_type 放行工作台:image / video / lidar 各有对应渲染栈
+// (stageKind: lidar→3D, video→视频, 其余→图像)。图像子类型 det/ocr/seg 同走图像栈,
+// 不再按 type_key 细分,避免新增图像子类型(如 OCR)漏进白名单。
+const WORKBENCH_DATA_TYPES = new Set(["image", "video", "lidar"]);
 
 // 表格单元(列表视图)共用类
 const TD_CLASS = "border-b border-border p-3 align-middle";
@@ -216,7 +219,7 @@ export function DashboardPage() {
     navigate(`/projects/${p.id}/settings${section ? `?section=${section}` : ""}`);
 
   const onOpenProject = (p: ProjectResponse) => {
-    if (WORKBENCH_PROJECT_TYPES.has(p.type_key)) {
+    if (p.data_type && WORKBENCH_DATA_TYPES.has(p.data_type)) {
       navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
     } else {
       pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `${projectDisplayType(p)} 的标注界面尚未实现` });

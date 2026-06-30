@@ -135,7 +135,7 @@ describe("MlBackendsSection 启用清单", () => {
     expect(screen.getByText(/模型市场/)).toBeTruthy();
   });
 
-  it("选主后端保存: ai_enabled 自动派生为 true (无独立启用开关)", () => {
+  it("选主后端: 下拉 onChange 即时落库, ai_enabled 自动派生 true (无独立保存)", () => {
     mockUseAvailable.mockReturnValue({
       data: { items: [item(true)] },
       isLoading: false,
@@ -143,18 +143,78 @@ describe("MlBackendsSection 启用清单", () => {
     });
     renderSection({ id: "p1", ml_backend_id: null });
 
-    // 无「启用 AI 预标注」勾选框; 设了主后端即派生 ai_enabled=true。
+    // 已无「保存 AI 设置」按钮; 下拉选中即时提交。
+    expect(screen.queryByRole("button", { name: /保存 AI 设置/ })).toBeNull();
     fireEvent.change(screen.getByDisplayValue(/未设项目主后端/), {
       target: { value: "b1" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /保存 AI 设置/ }));
 
     expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
     const [payload] = mockUpdateMutate.mock.calls[0];
-    expect(payload).toMatchObject({
-      ai_enabled: true,
-      ml_backend_id: "b1",
-      iou_dedup_threshold: 0.7,
+    expect(payload).toMatchObject({ ai_enabled: true, ml_backend_id: "b1" });
+  });
+
+  it("清空主后端: 下拉选「未设」即时落库, ai_enabled 派生 false", () => {
+    mockUseAvailable.mockReturnValue({
+      data: { items: [item(true)] },
+      isLoading: false,
+      isError: false,
     });
+    renderSection({ id: "p1", ml_backend_id: "b1", ai_enabled: true });
+
+    fireEvent.change(screen.getByDisplayValue(/grounded-sam2/), {
+      target: { value: "" },
+    });
+
+    expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
+    const [payload] = mockUpdateMutate.mock.calls[0];
+    expect(payload).toMatchObject({ ai_enabled: false, ml_backend_id: null });
+  });
+
+  it("IoU 滑块: 拖动中不发请求, 松手即时落库", () => {
+    mockUseAvailable.mockReturnValue({
+      data: { items: [item(true)] },
+      isLoading: false,
+      isError: false,
+    });
+    renderSection({ id: "p1", ml_backend_id: "b1", iou_dedup_threshold: 0.7 });
+    const slider = screen.getByRole("slider");
+
+    // 拖动只更新本地态, 不提交。
+    fireEvent.change(slider, { target: { value: "0.85" } });
+    expect(mockUpdateMutate).not.toHaveBeenCalled();
+
+    // 松手提交一次。
+    fireEvent.pointerUp(slider);
+    expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
+    expect(mockUpdateMutate.mock.calls[0][0]).toMatchObject({ iou_dedup_threshold: 0.85 });
+  });
+
+  it("下拉跟随服务端主后端: project.ml_backend_id 变化 → 下拉同步 (再无保存按钮可冲掉)", () => {
+    mockUseAvailable.mockReturnValue({
+      data: { items: [item(true)] },
+      isLoading: false,
+      isError: false,
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const base = { id: "p1", ai_enabled: false, ml_backend_id: null, iou_dedup_threshold: 0.7 };
+    const { rerender } = render(
+      <QueryClientProvider client={qc}>
+        <MlBackendsSection project={base as ProjectResponse} />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByDisplayValue(/未设项目主后端/)).toBeTruthy();
+
+    // 行内「设为主后端」(onBind) 落库后服务端值变化 → 重渲染携带新 ml_backend_id。
+    rerender(
+      <QueryClientProvider client={qc}>
+        <MlBackendsSection
+          project={{ ...base, ml_backend_id: "b1", ai_enabled: true } as ProjectResponse}
+        />
+      </QueryClientProvider>,
+    );
+    // 下拉同步到 b1; 已无「保存 AI 设置」按钮可把陈旧值推回(原 bug 根除)。
+    expect(screen.getByDisplayValue(/grounded-sam2/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /保存 AI 设置/ })).toBeNull();
   });
 });

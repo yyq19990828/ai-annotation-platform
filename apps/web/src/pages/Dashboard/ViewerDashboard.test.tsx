@@ -89,7 +89,8 @@ describe("ViewerDashboard", () => {
   });
 
   it("未实现工作台类型点击 → toast 而不是导航", () => {
-    // 注:lidar 自 v0.13.x 已进白名单(点云 3D 工作台),改用尚未实现工作台的 image-seg 验证降级 toast。
+    // 注:工作台现按媒体维度 data_type(image/video/lidar)放行,三种均已实现。
+    // 此 fixture 不带 data_type(媒体维度缺失/未识别),走降级 toast 兜底路径。
     mockUseProjects.mockReturnValue({
       data: [
         {
