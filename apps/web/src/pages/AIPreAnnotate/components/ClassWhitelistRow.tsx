@@ -7,9 +7,11 @@
  *   再补一个文本输入框 (datalist 自动补全) 按类名快速勾选 —— 类别多时不用在长 chip 列里找。
  *   仍 index 制 (闭集只能选模型认识的类), 输入命中类名才落选。
  */
-import { useId, useState } from "react";
+import { useMemo, useState } from "react";
 
 import styles from "./ProjectDetailPanel.module.css";
+
+const MAX_SUGGESTIONS = 8;
 
 function cx(...names: Array<string | false | null | undefined>) {
   return names.filter(Boolean).join(" ");
@@ -26,18 +28,28 @@ interface Props {
 }
 
 export function ClassWhitelistRow({ classes, selected, onChange, onWarm, warming }: Props) {
-  const listId = useId();
   const [draft, setDraft] = useState("");
-  // 文本输入按类名 (大小写不敏感) 找到 index 并勾选; 命中才清空、未命中保留草稿。
-  const addByName = () => {
+  const [open, setOpen] = useState(false);
+
+  // 输入子串 (大小写不敏感) 过滤候选; 空草稿不展开 (避免 80 类全列出来「夸张」)。截断 MAX。
+  const suggestions = useMemo(() => {
     const q = draft.trim().toLowerCase();
-    if (!q) return;
-    const hit = (classes ?? []).find((c) => c.name.toLowerCase() === q);
-    if (!hit) return;
+    if (!q) return [];
+    return (classes ?? [])
+      .filter((c) => c.name.toLowerCase().includes(q))
+      .slice(0, MAX_SUGGESTIONS);
+  }, [classes, draft]);
+
+  const pick = (idx: number) => {
     const next = new Set(selected);
-    next.add(hit.index);
+    next.add(idx);
     onChange(next);
     setDraft("");
+    setOpen(false);
+  };
+  // Enter: 选中首个匹配 (子串命中即可, 不再要求精确等值)。
+  const addByName = () => {
+    if (suggestions.length > 0) pick(suggestions[0].index);
   };
 
   if (!classes || classes.length === 0) {
@@ -77,31 +89,55 @@ export function ClassWhitelistRow({ classes, selected, onChange, onWarm, warming
         类别筛选（可选，留空=检出全部 {classes.length} 类
         {selected.size > 0 ? `；已选 ${selected.size}` : ""}）
       </span>
-      {/* 文本输入: 按类名快速勾选 (datalist 自动补全), 类别多时免在长 chip 列里找。 */}
+      {/* 文本输入: 按类名快速勾选, 自定义下拉 (原生 datalist 弹层字号控不住、80 类时过大)。 */}
       <div className={styles.presetRow}>
-        <input
-          className={styles.textInput}
-          type="text"
-          list={listId}
-          value={draft}
-          placeholder="输入类名快速勾选，如 person"
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              addByName();
-            }
-          }}
-        />
-        <datalist id={listId}>
-          {classes.map((c) => (
-            <option key={c.index} value={c.name} />
-          ))}
-        </datalist>
+        <div className={styles.combo}>
+          <input
+            className={styles.textInput}
+            type="text"
+            value={draft}
+            placeholder="输入类名快速勾选，如 person"
+            onChange={(e) => {
+              setDraft(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            // 延迟关闭, 让下拉项的 mousedown/click 先落地。
+            onBlur={() => setTimeout(() => setOpen(false), 120)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addByName();
+              } else if (e.key === "Escape") {
+                setOpen(false);
+              }
+            }}
+          />
+          {open && suggestions.length > 0 && (
+            <div className={styles.comboList}>
+              {suggestions.map((c) => (
+                <button
+                  key={c.index}
+                  type="button"
+                  className={styles.comboOption}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pick(c.index)}
+                  title={`勾选 [${c.index}] ${c.name}`}
+                >
+                  <span>
+                    {selected.has(c.index) ? "✓ " : ""}
+                    {c.name}
+                  </span>
+                  <span className={styles.comboOptionIdx}>[{c.index}]</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <button
           type="button"
           className={styles.presetButton}
-          disabled={!draft.trim()}
+          disabled={suggestions.length === 0}
           onClick={addByName}
           title="按类名勾选"
         >

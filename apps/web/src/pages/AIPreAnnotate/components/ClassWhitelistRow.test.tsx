@@ -39,6 +39,15 @@ describe("ClassWhitelistRow 文本输入", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("输入子串 → 下拉列出匹配项, 点击勾选", () => {
+    const onChange = vi.fn();
+    render(<ClassWhitelistRow classes={CLASSES} selected={new Set()} onChange={onChange} />);
+    const input = screen.getByPlaceholderText("输入类名快速勾选，如 person");
+    fireEvent.change(input, { target: { value: "ar" } }); // 子串命中 car
+    fireEvent.click(screen.getByTitle("勾选 [2] car"));
+    expect(onChange).toHaveBeenCalledWith(new Set([2]));
+  });
+
   it("classes 未就位 → 提示预热, 无文本输入", () => {
     render(
       <ClassWhitelistRow classes={undefined} selected={new Set()} onChange={() => {}} onWarm={() => {}} />,
