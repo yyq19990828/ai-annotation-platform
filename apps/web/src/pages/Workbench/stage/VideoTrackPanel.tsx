@@ -248,7 +248,7 @@ export function VideoTrackPanel({
           const frames = track.keyframes.map((kf) => kf.frame_index);
           return (
             <div
-              key={ann.id}
+              key={ann.render_key ?? ann.id}
               data-testid="video-track-row"
               aria-selected={selected}
               onClick={(e) => {

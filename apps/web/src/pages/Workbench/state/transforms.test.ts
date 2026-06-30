@@ -100,6 +100,19 @@ describe("annotationToBox", () => {
     expect(box.w).toBe(0.5);
   });
 
+  it("透传前端 render_key,避免乐观创建确认后画布重挂", () => {
+    const ann = {
+      id: "real-1",
+      render_key: "tmp_abc",
+      geometry: { type: "bbox", x: 0, y: 0, w: 0.5, h: 0.5 },
+      class_name: "car",
+      confidence: 0.9,
+      source: "manual",
+    } as any;
+
+    expect(annotationToBox(ann).render_key).toBe("tmp_abc");
+  });
+
   it("无 confidence → 默认 1", () => {
     const ann = {
       id: "a2",

@@ -18,7 +18,7 @@ export type PetMood =
 /** 标注总数踩到这些值时放「庆祝」动效。 */
 export const MILESTONES = [10, 25, 50, 100, 200, 500, 1000] as const;
 
-type LineKey = "idleTalk" | "poke" | "happy" | "celebrate";
+type LineKey = "idleTalk" | "poke" | "celebrate";
 
 const LINES: Record<LineKey, readonly string[]> = {
   // 久坐 / 长停顿时冒泡
@@ -32,8 +32,6 @@ const LINES: Record<LineKey, readonly string[]> = {
   ],
   // 戳一下桌宠
   poke: ["在的", "我守着当前题", "继续看画布", "需要时点我展开"],
-  // 标注数 +1
-  happy: ["+1", "已记下", "稳", "继续"],
   // 里程碑(count 走专属文案)
   celebrate: ["里程碑达成", "进度不错", "又上一个台阶"],
 };

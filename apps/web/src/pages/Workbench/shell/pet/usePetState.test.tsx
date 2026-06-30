@@ -42,7 +42,7 @@ afterEach(() => {
 });
 
 describe("usePetState", () => {
-  it("transient 标注反馈高于 offline / warning 等上下文状态", () => {
+  it("普通标注 +1 不再覆盖 offline / warning 等上下文状态", () => {
     vi.useFakeTimers();
     const { result, rerender } = renderHook(
       ({ context }) => usePetState({ context, poke: 0 }),
@@ -65,13 +65,45 @@ describe("usePetState", () => {
       }),
     });
 
-    expect(result.current.mood).toBe("happy");
+    expect(result.current.mood).toBe("offline");
 
     act(() => {
       vi.advanceTimersByTime(1_900);
     });
 
     expect(result.current.mood).toBe("offline");
+  });
+
+  it("标注数到达里程碑时才短暂庆祝", () => {
+    vi.useFakeTimers();
+    const { result, rerender } = renderHook(
+      ({ context }) => usePetState({ context, poke: 0 }),
+      { initialProps: { context: ctx({ counts: { annotationCount: 9 } }) } },
+    );
+
+    expect(result.current.mood).toBe("idle");
+
+    rerender({ context: ctx({ counts: { annotationCount: 10 } }) });
+    expect(result.current.mood).toBe("celebrate");
+    expect(result.current.message).toBe("10 个达成");
+
+    act(() => {
+      vi.advanceTimersByTime(3_400);
+    });
+
+    expect(result.current.mood).toBe("idle");
+  });
+
+  it("切换任务造成的计数跳变不会触发里程碑庆祝", () => {
+    vi.useFakeTimers();
+    const { result, rerender } = renderHook(
+      ({ context }) => usePetState({ context, poke: 0 }),
+      { initialProps: { context: ctx({ counts: { annotationCount: 2 } }) } },
+    );
+
+    rerender({ context: ctx({ counts: { annotationCount: 10 } }) });
+
+    expect(result.current.mood).toBe("idle");
   });
 
   it("按 offline、warning、aiRunning、candidateReady、holding 的顺序压住低优先级状态", () => {

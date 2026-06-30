@@ -40,6 +40,10 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.20.x 版本段累积在本区；进入 0.21.x 后整体移到 docs/changelogs/0.20.x.md。
 -->
 
+### Fixed
+
+- **工作台落下 / 删除标注时不再出现全屏刷新式闪烁**:图片舞台按稳定媒体身份(`dataset_item_id` / task id)复用已加载背景图,避免标注 mutation 刷新任务列表后拿到新的签名 `file_url` 时误判为换图并重载整张画布;新建标注的乐观 `tmp_*` 条目在服务端真实 id 回来后也保留稳定的前端渲染 key,避免 shape 被卸载再挂载;普通新增 / 更新 / 删除标注不再把桌宠切到“保存中”或“+1”短动画。
+
 ## [0.20.8] - 2026-07-01
 
 ### Changed

@@ -3,7 +3,6 @@ import { MILESTONES, pickLine, type PetMood } from "./petLines";
 
 const IDLE_MS = 45_000; // 久坐阈值:无上下文干扰多久后冒泡
 const TALK_HOLD_MS = 6_000; // 一句话停留时长
-const HAPPY_MS = 1_800;
 const CELEBRATE_MS = 3_400;
 const AI_RUNNING_MIN_MS = 800;
 
@@ -144,38 +143,41 @@ function deriveContextState(
 
 /**
  * 工作台桌宠状态机(v0.20.8 轻量状态代理):
- * - 标注数增长 / 里程碑仍是 transient 最高优先级。
+ * - 标注里程碑仍是 transient 最高优先级。
+ * - 普通标注 +1 不触发气泡/姿态切换,避免高频标注时视觉闪烁。
  * - 常态状态全部从 WorkbenchPetContext 纯前端派生。
  * - 久坐闲聊只在没有工作上下文时出现。
  */
 export function usePetState({ context, poke }: UsePetStateArgs): PetStateResult {
   const [transient, setTransient] = useState<{
-    mood: "happy" | "celebrate";
+    mood: "celebrate";
     message: string;
   } | null>(null);
   const [idleTalk, setIdleTalk] = useState<string | null>(null);
   const [heldAiRunning, setHeldAiRunning] = useState(context.ai.running);
   const aiStartedAt = useRef<number | null>(context.ai.running ? Date.now() : null);
 
-  // 标注总数 +1 → 短暂情绪反应。只认「恰好多一个」:切换任务 / 图片时计数会跳变,
-  // AI 批量采纳是多增量,都不会误触;单次手工新增才是真正的 +1。
+  // 标注里程碑 → 短暂庆祝。普通 +1 不再触发气泡/姿态切换,避免连续标注时视觉闪烁。
   const prevCount = useRef(context.counts.annotationCount);
   useEffect(() => {
     const prev = prevCount.current;
     prevCount.current = context.counts.annotationCount;
     if (context.counts.annotationCount === prev + 1) {
-      const milestone = (MILESTONES as readonly number[]).includes(context.counts.annotationCount);
-      setTransient({
-        mood: milestone ? "celebrate" : "happy",
-        message: pickLine(milestone ? "celebrate" : "happy", context.counts.annotationCount),
-      });
+      const milestone = (MILESTONES as readonly number[]).includes(
+        context.counts.annotationCount,
+      );
+      if (milestone) {
+        setTransient({
+          mood: "celebrate",
+          message: pickLine("celebrate", context.counts.annotationCount),
+        });
+      }
     }
   }, [context.counts.annotationCount]);
 
   useEffect(() => {
     if (!transient) return;
-    const ms = transient.mood === "celebrate" ? CELEBRATE_MS : HAPPY_MS;
-    const t = window.setTimeout(() => setTransient(null), ms);
+    const t = window.setTimeout(() => setTransient(null), CELEBRATE_MS);
     return () => window.clearTimeout(t);
   }, [transient]);
 

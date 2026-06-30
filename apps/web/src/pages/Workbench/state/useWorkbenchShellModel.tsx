@@ -404,6 +404,7 @@ export function useWorkbenchShellModel({
   const imageWidth = task?.image_width ?? null;
   const imageHeight = task?.image_height ?? null;
   const fileUrl = task?.file_url ?? null;
+  const imageMediaKey = task?.dataset_item_id ?? task?.id ?? null;
   const blurhash = task?.blurhash ?? null;
   const thumbnailUrl = task?.thumbnail_url ?? null;
   const isVideoTask = task?.file_type === "video" || currentProject?.type_key === "video-track";
@@ -1981,9 +1982,6 @@ export function useWorkbenchShellModel({
     },
     workflow: {
       saving: isSubmittingTask ||
-        createAnnotation.isPending ||
-        updateAnnotationMut.isPending ||
-        deleteAnnotationMut.isPending ||
         bulkUpdateMut.isPending ||
         groupAnnotationMut.isPending ||
         ungroupAnnotationMut.isPending,
@@ -2000,8 +1998,6 @@ export function useWorkbenchShellModel({
     aiRunning,
     annotationsData?.length,
     bulkUpdateMut.isPending,
-    createAnnotation.isPending,
-    deleteAnnotationMut.isPending,
     groupAnnotationMut.isPending,
     isLocked,
     isSubmittingTask,
@@ -2016,7 +2012,6 @@ export function useWorkbenchShellModel({
     selectionCount,
     selectionSourceKind,
     ungroupAnnotationMut.isPending,
-    updateAnnotationMut.isPending,
   ]);
 
   const toggleLeftSidebar = useCallback(() => {
@@ -2324,6 +2319,7 @@ export function useWorkbenchShellModel({
       },
       image: {
         fileUrl,
+        mediaKey: imageMediaKey,
         blurhash,
         imageWidth,
         imageHeight,

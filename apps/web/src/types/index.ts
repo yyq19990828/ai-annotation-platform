@@ -73,6 +73,7 @@ export interface TaskResponse {
   total_annotations: number;
   total_predictions: number;
   batch_id: string | null;
+  dataset_item_id?: string | null;
   sequence_order: number | null;
   image_width: number | null;
   image_height: number | null;
@@ -383,6 +384,8 @@ export interface Annotation extends AIBox {
   // v0.11.27 · 渲染派生字段：由属性 schema 中标了 style_occluded 的 boolean 属性
   // 为 true 时计算得出（见 transforms.annotationToBox）；驱动虚线+半透视觉。非后端字段。
   occluded?: boolean;
+  // 乐观创建时用于稳定 React/Konva key 的前端内部字段；真实业务 id 仍使用 id。
+  render_key?: string;
   // I12 · Object Group; 同 task 内 group_id 相同的多框为一组 (Ctrl+G 形成).
   group_id?: number | null;
   // v0.18.0 · 落库标注的属性字典(透传供画布标签「标签内容·属性」渲染)。
@@ -416,6 +419,8 @@ export interface AnnotationResponse {
   version?: number;
   created_at: string;
   updated_at: string | null;
+  // 前端内部字段：乐观 tmp 标注被真实 id 替换时保留,避免画布 shape 因 key 改变闪烁。
+  render_key?: string;
 }
 
 // ── Prediction ──────────────────────────────────────────────────────────────

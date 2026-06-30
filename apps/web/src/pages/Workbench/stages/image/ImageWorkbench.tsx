@@ -18,6 +18,7 @@ type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: numbe
 export interface ImageWorkbenchProps {
   readOnly: boolean;
   fileUrl: string | null;
+  mediaKey?: string | null;
   blurhash?: string | null;
   imageWidth?: number | null;
   imageHeight?: number | null;
@@ -116,6 +117,7 @@ export interface ImageWorkbenchProps {
 export function ImageWorkbench({
   readOnly,
   fileUrl,
+  mediaKey,
   blurhash,
   imageWidth,
   imageHeight,
@@ -192,6 +194,7 @@ export function ImageWorkbench({
     <ImageStage
       readOnly={readOnly}
       fileUrl={fileUrl}
+      mediaKey={mediaKey}
       blurhash={blurhash}
       imageWidth={imageWidth}
       imageHeight={imageHeight}
