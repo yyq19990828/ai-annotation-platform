@@ -7,6 +7,7 @@ import { AIInspectorPanel, AIPredictionPopover } from "./AIInspectorPanel";
 import { DeleteConfirmModal } from "./DeleteConfirmModal";
 import { DiscussionPanel } from "./DiscussionPanel";
 import { FloatingPanelShell, type FloatingPanelRect } from "./FloatingPanelShell";
+import { clampFloatingPosition, type FloatingPanelPoint } from "./useDragMove";
 import { SelectedAnnotationCard, type SelectedAnnotationCardProps } from "./SelectedAnnotationCard";
 import { HotkeyCheatSheet } from "./HotkeyCheatSheet";
 import { OfflineQueueDrawer } from "./OfflineQueueDrawer";
@@ -18,7 +19,13 @@ import { Topbar } from "./Topbar";
 import { WorkbenchBanners } from "./WorkbenchBanners";
 import { WorkbenchSettingsDrawer } from "./WorkbenchSettingsDrawer";
 import { WorkbenchStageHost } from "./WorkbenchStageHost";
-import { WorkbenchPet, type WorkbenchPetProps } from "./pet/WorkbenchPet";
+import {
+  WorkbenchPet,
+  WORKBENCH_PET_SIZE,
+  readWorkbenchPetPosition,
+  writeWorkbenchPetPosition,
+  type WorkbenchPetProps,
+} from "./pet/WorkbenchPet";
 import { SIDE_FLOATING_PANEL_MAX_SIZE, SIDE_FLOATING_PANEL_MIN_SIZE } from "./floatingPanelSizing";
 import { GuidePanel } from "../sidebar/GuidePanel";
 
@@ -29,6 +36,7 @@ const RIGHT_SPLIT_TOP_KEY = "workbench.rightSplit.topHeight";
 const RIGHT_SPLIT_TOP_DEFAULT = 360;
 const RIGHT_SPLIT_TOP_MIN = 160;
 const RIGHT_SPLIT_TOP_MAX = 720;
+const PET_CARRY_VISIBLE_HEIGHT = WORKBENCH_PET_SIZE.h / 2;
 
 function readRightSplitTop(): number {
   if (typeof window === "undefined") return RIGHT_SPLIT_TOP_DEFAULT;
@@ -76,6 +84,31 @@ interface WorkbenchLayoutProps {
   pet?: ({ enabled: boolean } & WorkbenchPetProps) | null;
 }
 
+function carriedSelectionFromPet(
+  selectionPosition: FloatingPanelRect,
+  petPosition: FloatingPanelPoint,
+): FloatingPanelRect {
+  const x = petPosition.x + WORKBENCH_PET_SIZE.w / 2 - selectionPosition.w / 2;
+  const y = petPosition.y + PET_CARRY_VISIBLE_HEIGHT - selectionPosition.h;
+  const clamped = clampFloatingPosition(
+    { x, y },
+    { w: selectionPosition.w, h: selectionPosition.h },
+  );
+  return { ...selectionPosition, x: clamped.x, y: clamped.y };
+}
+
+function petPositionFromCarriedSelection(
+  panelPosition: FloatingPanelRect,
+): FloatingPanelPoint {
+  return clampFloatingPosition(
+    {
+      x: panelPosition.x + panelPosition.w / 2 - WORKBENCH_PET_SIZE.w / 2,
+      y: panelPosition.y + panelPosition.h - PET_CARRY_VISIBLE_HEIGHT,
+    },
+    WORKBENCH_PET_SIZE,
+  );
+}
+
 export function WorkbenchLayout({
   gridTemplateColumns,
   taskQueue,
@@ -104,12 +137,21 @@ export function WorkbenchLayout({
 }: WorkbenchLayoutProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [splitTopHeight, setSplitTopHeight] = useState(readRightSplitTop);
+  const [petPosition, setPetPositionState] = useState(readWorkbenchPetPosition);
   const taskQueueDetached = Boolean(floatingTaskQueue?.detached);
   const classPaletteDetached = Boolean(floatingClassPalette?.detached);
   const inspectorDetached = Boolean(floatingInspector?.detached);
   const discussionDetached = Boolean(floatingDiscussion?.detached);
   const rightHasEmbeddedPanel = !inspectorDetached || !discussionDetached;
   const rightShouldRenderEmbeddedPanel = inspector.open && rightHasEmbeddedPanel;
+  const linkedFloatingSelection = pet?.enabled && floatingSelection && !floatingSelection.collapsed
+    ? carriedSelectionFromPet(floatingSelection.position, petPosition)
+    : null;
+
+  const setPetPosition = useCallback((next: FloatingPanelPoint) => {
+    setPetPositionState(next);
+    writeWorkbenchPetPosition(next);
+  }, []);
 
   const onSplitResize = useCallback((next: number) => {
     const clamped = Math.round(next);
@@ -122,6 +164,21 @@ export function WorkbenchLayout({
   useEffect(() => {
     rootRef.current?.style.setProperty("--workbench-grid-template", gridTemplateColumns);
   }, [gridTemplateColumns]);
+
+  const linkedSelectionPositionChange = useCallback(
+    (patch: Partial<FloatingPanelRect>) => {
+      if (!floatingSelection || !linkedFloatingSelection) return;
+      floatingSelection.onPositionChange(patch);
+      if (typeof patch.x === "number" || typeof patch.y === "number") {
+        const nextPanelPosition = {
+          ...linkedFloatingSelection,
+          ...patch,
+        };
+        setPetPosition(petPositionFromCarriedSelection(nextPanelPosition));
+      }
+    },
+    [floatingSelection, linkedFloatingSelection, setPetPosition],
+  );
 
   // 高度用 useElementStyle 注入 CSS 变量：该上段 div 是条件渲染，收起右栏再展开会重新挂载成
   // 新 DOM；若仍用 useRef+useEffect([splitTopHeight])，依赖未变 effect 不重跑 → 新元素拿不到
@@ -274,9 +331,16 @@ export function WorkbenchLayout({
         </FloatingPanelShell>
       )}
 
-      {/* 桌宠开启时吃掉折叠态:折叠小条不渲染(由小精灵举牌代替),仅展开态渲染完整卡。 */}
+      {/* 桌宠开启时吃掉折叠态:折叠小条不渲染(由像素小人举牌代替),仅展开态渲染完整卡。 */}
       {floatingSelection && (!pet?.enabled || !floatingSelection.collapsed) && (
-        <SelectedAnnotationCard {...floatingSelection} />
+        <SelectedAnnotationCard
+          {...floatingSelection}
+          position={linkedFloatingSelection ?? floatingSelection.position}
+          onPositionChange={
+            linkedFloatingSelection ? linkedSelectionPositionChange : floatingSelection.onPositionChange
+          }
+          linkedToPet={Boolean(linkedFloatingSelection)}
+        />
       )}
       {pet?.enabled && (
         <WorkbenchPet
@@ -284,6 +348,8 @@ export function WorkbenchLayout({
           collapsed={pet.collapsed}
           selectionTitle={pet.selectionTitle}
           annotationCount={pet.annotationCount}
+          position={petPosition}
+          onPositionChange={setPetPosition}
           onExpand={pet.onExpand}
         />
       )}

@@ -278,4 +278,36 @@ describe("WorkbenchLayout", () => {
       expect(onDiscussionPositionChange).toHaveBeenCalledWith({ w: 320, h: 320 });
     });
   });
+
+  it("makes the expanded selection card cover the pet upper body in pet mode", () => {
+    window.localStorage.setItem("workbench.pet.pos", JSON.stringify({ x: 500, y: 500 }));
+    render(
+      <WorkbenchLayout
+        {...baseProps}
+        floatingSelection={{
+          title: "car",
+          position: { x: 80, y: 90, w: 300, h: 260 },
+          onPositionChange: vi.fn(),
+          collapsed: false,
+          onCollapse: vi.fn(),
+          onExpand: vi.fn(),
+          children: <div>选中详情</div>,
+        }}
+        pet={{
+          enabled: true,
+          hasSelection: true,
+          collapsed: false,
+          selectionTitle: "car",
+          annotationCount: 0,
+          onExpand: vi.fn(),
+        }}
+      />,
+    );
+
+    const panel = screen.getByText("car").closest("[data-floating-panel]") as HTMLElement;
+    expect(panel.style.getPropertyValue("--floating-panel-x")).toBe("378px");
+    expect(panel.style.getPropertyValue("--floating-panel-y")).toBe("268px");
+    expect(panel.className).toContain("z-overlay-high");
+    expect(screen.getByLabelText("工作台桌宠(可拖动)")).toBeTruthy();
+  });
 });

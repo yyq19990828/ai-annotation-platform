@@ -144,7 +144,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     key: "common.petEnabled",
     category: "common",
     label: "工作台桌宠",
-    description: "常驻像素小精灵:久坐搭话、标注里程碑庆祝;选中标注时举牌(点击展开信息卡)。关闭后折叠态回退纯文字小条",
+    description: "常驻像素小人:久坐轻提示、标注里程碑庆祝;选中标注时举牌(点击展开信息卡)。关闭后折叠态回退纯文字小条",
     control: { type: "toggle", onText: "已开启", offText: "已关闭" },
   },
   {

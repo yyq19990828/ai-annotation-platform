@@ -11,24 +11,24 @@ type LineKey = "idleTalk" | "poke" | "happy" | "celebrate";
 const LINES: Record<LineKey, readonly string[]> = {
   // 久坐 / 长停顿时冒泡
   idleTalk: [
-    "发会儿呆也没关系~",
+    "可以休息一下眼睛",
     "要不要伸个懒腰?",
-    "这张图…我也看不太懂",
-    "喝口水再标吧 💧",
-    "我在的,慢慢来",
+    "这张图先慢慢看",
+    "喝口水再继续",
+    "我在这儿,慢慢来",
     "盯久了记得眨眨眼",
   ],
-  // 戳一下小精灵
-  poke: ["戳我干嘛啦", "在的在的!", "嘿嘿~", "需要我帮忙吗?"],
+  // 戳一下桌宠
+  poke: ["在的", "我守着当前题", "继续看画布", "需要时点我展开"],
   // 标注数 +1
-  happy: ["+1!", "漂亮~", "稳!", "记下了 ✔"],
+  happy: ["+1", "已记下", "稳", "继续"],
   // 里程碑(count 走专属文案)
-  celebrate: ["里程碑达成! 🎉", "厉害了!", "又上一个台阶 🏆"],
+  celebrate: ["里程碑达成", "进度不错", "又上一个台阶"],
 };
 
 export function pickLine(key: LineKey, count?: number): string {
   if (key === "celebrate" && typeof count === "number") {
-    return `${count} 个达成! 🎉`;
+    return `${count} 个达成`;
   }
   const pool = LINES[key];
   return pool[Math.floor(Math.random() * pool.length)];

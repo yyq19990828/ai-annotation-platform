@@ -34,6 +34,8 @@ interface FloatingPanelShellProps {
   onCollapse?: () => void;
   variant?: "default" | "no-merge";
   className?: string;
+  style?: CSSProperties;
+  headerContent?: ReactNode;
   children: ReactNode;
 }
 
@@ -74,6 +76,8 @@ export function FloatingPanelShell({
   onCollapse,
   variant = "default",
   className,
+  style,
+  headerContent,
   children,
 }: FloatingPanelShellProps) {
   const [isResizing, setIsResizing] = useState(false);
@@ -173,6 +177,7 @@ export function FloatingPanelShell({
           "--floating-panel-y": `${position.y}px`,
           "--floating-panel-w": `${position.w}px`,
           "--floating-panel-h": `${position.h}px`,
+          ...style,
         } as FloatingPanelStyle
       }
     >
@@ -180,10 +185,12 @@ export function FloatingPanelShell({
         className="flex min-h-[34px] flex-none cursor-move touch-none items-center justify-between gap-2 border-b border-border bg-card px-2 py-1.5 text-muted-foreground"
         {...drag.handleProps}
       >
-        <div className="inline-flex min-w-0 items-center gap-1.5">
-          <Icon name="move" size={14} />
-          <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs font-semibold text-foreground">{title}</span>
-        </div>
+        {headerContent ?? (
+          <div className="inline-flex min-w-0 items-center gap-1.5">
+            <Icon name="move" size={14} />
+            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs font-semibold text-foreground">{title}</span>
+          </div>
+        )}
         <div
           className="inline-flex items-center gap-1"
           data-floating-panel-no-drag

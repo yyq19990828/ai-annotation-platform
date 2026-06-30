@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import { useDragMove, type FloatingPanelPoint } from "../useDragMove";
-import { PixelSprite } from "./PixelSprite";
+import { DEFAULT_PET_SKIN } from "./petSkins";
 import { usePetMood } from "./usePetMood";
 import styles from "./pet.module.css";
 
@@ -14,15 +14,19 @@ export interface WorkbenchPetProps {
   selectionTitle: string | null;
   /** 当前题标注总数(派生 happy / celebrate)。 */
   annotationCount: number;
+  /** 受控位置;用于让展开面板与桌宠保持锚定联动。 */
+  position?: FloatingPanelPoint;
+  /** 桌宠位置变化。 */
+  onPositionChange?: (position: FloatingPanelPoint) => void;
   /** 展开选中信息卡(点击举牌态精灵时调用)。 */
   onExpand: () => void;
 }
 
-const PET_SIZE = { w: 56, h: 56 } as const;
+export const WORKBENCH_PET_SIZE = { w: 56, h: 56 } as const;
 const PET_POS_KEY = "workbench.pet.pos";
 const DRAG_THRESHOLD = 3;
 
-function readPetPos(): FloatingPanelPoint {
+export function readWorkbenchPetPosition(): FloatingPanelPoint {
   if (typeof window === "undefined") return { x: 0, y: 0 };
   try {
     const raw = window.localStorage.getItem(PET_POS_KEY);
@@ -37,10 +41,18 @@ function readPetPos(): FloatingPanelPoint {
   return { x: window.innerWidth - 230, y: window.innerHeight - 150 };
 }
 
+export function writeWorkbenchPetPosition(position: FloatingPanelPoint): void {
+  try {
+    window.localStorage.setItem(PET_POS_KEY, JSON.stringify(position));
+  } catch {
+    /* best-effort */
+  }
+}
+
 /**
- * v1 工作台桌宠(常驻像素小精灵,纯陪伴层,可拖动)。
+ * v1 工作台桌宠(常驻像素小人,纯陪伴层,可拖动)。
  *
- * 吃掉原选中信息卡的折叠小条:折叠态时由小精灵举牌显类别名、点击展开。
+ * 吃掉原选中信息卡的折叠小条:折叠态时由小人举牌显类别名、点击展开。
  * 可自由拖动,位置记忆到 localStorage;拖动与点击经位移阈值区分。
  * 数据红线:本组件不触碰任何标注数据,情绪全由 props 派生。
  */
@@ -49,13 +61,19 @@ export function WorkbenchPet({
   collapsed,
   selectionTitle,
   annotationCount,
+  position: controlledPosition,
+  onPositionChange,
   onExpand,
 }: WorkbenchPetProps) {
   const [poke, setPoke] = useState(0);
-  const [position, setPosition] = useState<FloatingPanelPoint>(readPetPos);
+  const [uncontrolledPosition, setUncontrolledPosition] = useState<FloatingPanelPoint>(
+    readWorkbenchPetPosition,
+  );
   const movedRef = useRef(false);
   const startRef = useRef<FloatingPanelPoint | null>(null);
   const { mood, line } = usePetMood({ hasSelection, collapsed, annotationCount, poke });
+  const skin = DEFAULT_PET_SKIN;
+  const position = controlledPosition ?? uncontrolledPosition;
 
   const onChange = useCallback((pos: FloatingPanelPoint) => {
     const start = startRef.current;
@@ -65,17 +83,14 @@ export function WorkbenchPet({
     ) {
       movedRef.current = true;
     }
-    setPosition(pos);
-    try {
-      window.localStorage.setItem(PET_POS_KEY, JSON.stringify(pos));
-    } catch {
-      /* best-effort */
-    }
-  }, []);
+    if (!controlledPosition) setUncontrolledPosition(pos);
+    writeWorkbenchPetPosition(pos);
+    onPositionChange?.(pos);
+  }, [controlledPosition, onPositionChange]);
 
   const drag = useDragMove({
     position,
-    size: PET_SIZE,
+    size: WORKBENCH_PET_SIZE,
     onStart: (pos) => {
       startRef.current = pos;
       movedRef.current = false;
@@ -117,7 +132,8 @@ export function WorkbenchPet({
       {bubbleText && (
         <div
           className={cn(
-            "pointer-events-none max-w-[200px] rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground shadow-md",
+            "pointer-events-none max-w-[200px] border bg-card px-2.5 py-1.5 text-xs text-foreground shadow-md",
+            holding ? "rounded-md border-brand" : "rounded-lg border-border",
             styles.bubble,
           )}
         >
@@ -128,7 +144,7 @@ export function WorkbenchPet({
         </div>
       )}
       <span className={styles.bob}>
-        <PixelSprite mood={mood} />
+        {skin.renderSprite({ mood })}
       </span>
     </div>
   );
