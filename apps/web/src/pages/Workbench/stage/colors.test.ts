@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classColor, getTrackColor, TRACK_COLOR_PALETTE } from "./colors";
+import { classColor, colorToHex, getTrackColor, TRACK_COLOR_PALETTE } from "./colors";
 
 function parseOklch(color: string): { lightness: string; chroma: string; hue: number } {
   const match = color.match(/^oklch\((\d+\.\d+) (\d+\.\d+) (\d+\.\d+)\)$/);
@@ -38,5 +38,17 @@ describe("getTrackColor", () => {
     for (const entry of TRACK_COLOR_PALETTE) {
       expect(entry.value.startsWith("oklch(")).toBe(true);
     }
+  });
+});
+
+describe("colorToHex", () => {
+  it("normalizes hex colors without requiring canvas", () => {
+    expect(colorToHex("#f00")).toBe("#ff0000");
+    expect(colorToHex("#00FF80")).toBe("#00ff80");
+  });
+
+  it("parses rgb colors without requiring canvas", () => {
+    expect(colorToHex("rgb(255, 0, 128)")).toBe("#ff0080");
+    expect(colorToHex("rgba(0 128 255 / 0.5)")).toBe("#0080ff");
   });
 });

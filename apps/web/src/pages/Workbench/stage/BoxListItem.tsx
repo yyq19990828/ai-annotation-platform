@@ -268,7 +268,7 @@ export function BoxListItem({
         <div className="relative flex items-center justify-end group/act">
           <div
             className={cn(
-              "absolute right-full top-1/2 z-10 flex -translate-y-1/2 items-center gap-1 rounded-lg border border-border bg-card py-0.5 pl-1.5 pr-1 shadow-md",
+              "absolute right-full top-1/2 z-base flex -translate-y-1/2 items-center gap-1 rounded-lg border border-border bg-card py-0.5 pl-1.5 pr-1 shadow-md",
               "pointer-events-none translate-x-1.5 opacity-0 transition-all duration-200 ease-out",
               "group-hover/act:pointer-events-auto group-hover/act:translate-x-0 group-hover/act:opacity-100",
             )}
