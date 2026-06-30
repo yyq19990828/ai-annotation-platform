@@ -468,7 +468,9 @@ async def test_instances_skips_malformed_backend_without_500(
                                     {
                                         "key": "size",
                                         "title": "尺寸",
-                                        "variants": [{"key": "mobile", "title": "Mobile"}],
+                                        "variants": [
+                                            {"key": "mobile", "title": "Mobile"}
+                                        ],
                                     }
                                 ],
                             }
