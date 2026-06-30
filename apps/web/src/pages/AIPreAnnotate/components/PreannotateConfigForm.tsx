@@ -53,6 +53,11 @@ interface Props {
    * 变体/参数/backend 选择不受影响, 仍渲染。
    */
   hideModelTaskSelector?: boolean;
+  /**
+   * 收起类别白名单行 (默认 false)。该白名单属源整图几何模型, 下游阶段卡里它不参与下游 model 的
+   * class_filter (下游按 parent_class_filter 父框类名筛), 留着是死控件且误导, 由下游卡收起。
+   */
+  hideClassWhitelist?: boolean;
 }
 
 export function PreannotateConfigForm({
@@ -63,6 +68,7 @@ export function PreannotateConfigForm({
   projectMlBackendId,
   backendSelectorLabel = "ML Backend",
   hideModelTaskSelector = false,
+  hideClassWhitelist = false,
 }: Props) {
   // v0.18.12 · 统一「模型任务」选择器: 几何 (yolo) 与文本 (gsam2/sam3) 共用一套 model-first 选择,
   //   只差 prompt vs 类别白名单。doc 走上方「任务类型」, 不在此。
@@ -147,8 +153,10 @@ export function PreannotateConfigForm({
         </div>
       )}
 
-      {/* v0.14.17 · YOLO 类别白名单勾选 ([index]类名). 留空=全部. */}
-      {cfg.isGeometricBackend && (
+      {/* v0.14.17 · YOLO 类别白名单勾选 ([index]类名). 留空=全部.
+          下游卡 (hideClassWhitelist) 不出此行: 该白名单属源整图模型, 下游 model 的 class_filter
+          不取它, 下游按 parent_class_filter (父框类名) 筛, 留着是死控件且误导。 */}
+      {cfg.isGeometricBackend && !hideClassWhitelist && (
         <ClassWhitelistRow
           classes={cfg.geometricModel?.classes}
           selected={cfg.selectedClassIdx}

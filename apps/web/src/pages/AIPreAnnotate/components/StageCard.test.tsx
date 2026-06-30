@@ -54,6 +54,7 @@ describe("StageCard v0.18.5/6", () => {
     mockCfg.selectableModels = [];
     mockCfg.selectedModelId = null;
     mockCfg.selectTaskModel = vi.fn();
+    mockCfg.buildArgs = () => ({ ml_backend_id: "bk2", params: {} });
   });
 
   it("父框类别 chip 来自项目类别, 可点选", () => {
@@ -109,6 +110,14 @@ describe("StageCard v0.18.5/6", () => {
   });
 
   it("backend 有纯分类 model 时, 下游 payload 用分类 model_id + 显示提示", () => {
+    // 「模型任务」整图模型的 class_filter / 变体不应流进下游分类阶段。
+    mockCfg.buildArgs = () => ({
+      ml_backend_id: "bk2",
+      params: {},
+      class_filter: [2], // 源整图检测模型的 index 白名单 — 必须被丢弃
+      model_variants: { series: "n" }, // 源模型的轴 — 必须被下游轴过滤掉
+    });
+    mockCfg.currentVariantSlice = { conf_size: "L", series: "n" };
     mockCfg.capabilitiesQ = {
       isLoading: false,
       data: {
@@ -118,6 +127,7 @@ describe("StageCard v0.18.5/6", () => {
             id: "vehicle-attr-classify",
             task: "classification",
             display_name: "纯分类·吃 ROI",
+            supported_variants: [{ key: "conf_size", variants: [{ value: "L" }] }],
             output_attribute_schema: [
               { key: "color", label: "颜色", type: "select" },
             ],
@@ -134,6 +144,9 @@ describe("StageCard v0.18.5/6", () => {
     const lastPayload = calls[calls.length - 1]?.[1];
     expect(lastPayload?.model_id).toBe("vehicle-attr-classify");
     expect(lastPayload?.task_type).toBe("classification");
+    // 既有小毛病修复: 源 class_filter 不透传; 变体只保留下游 model 自报的轴 (series 被滤掉)。
+    expect(lastPayload?.class_filter).toBeUndefined();
+    expect(lastPayload?.model_variants).toEqual({ conf_size: "L" });
   });
 
   it("backend 暴露 box-seg 时, 走 geometry 下游: payload 直构 (无需 prompt) + 隐藏属性字段", () => {
@@ -229,6 +242,12 @@ describe("StageCard v0.18.5/6", () => {
             is_interactive: false,
             display_name: "文本识别（原子）",
             supported_inputs: ["crop"],
+            // rec 自报 version/size/lang 轴 (与 e2e 同套), payload 据此保留这三轴。
+            supported_variants: [
+              { key: "version", variants: [{ value: "v5" }] },
+              { key: "size", variants: [{ value: "mobile" }] },
+              { key: "lang", variants: [{ value: "universal" }] },
+            ],
             output_attribute_types: ["text", "orientation", "language"],
             output_attribute_schema: [
               { key: "text", label: "识别文本", type: "text" },
@@ -253,6 +272,12 @@ describe("StageCard v0.18.5/6", () => {
     expect(lastPayload?.task_type).toBe("ocr");
     expect(lastPayload?.roi?.mode).toBe("crop");
     expect(lastPayload?.write?.target).toBe("attributes");
+    // 变体按 rec 自报轴保留 version/size/lang (与 e2e 同胞共用同套轴)。
+    expect(lastPayload?.model_variants).toEqual({
+      version: "v5",
+      size: "mobile",
+      lang: "universal",
+    });
   });
 
   it("v0.20.x · 父框类别优先用 parentClassOptions(上游筛完类别), 自由文本可加任意名", () => {

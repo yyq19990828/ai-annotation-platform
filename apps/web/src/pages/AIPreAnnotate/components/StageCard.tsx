@@ -352,17 +352,25 @@ export function StageCard({
           : { roi: { mode: "geometry" as const, pad }, write: { target: "geometry" as const } }),
       };
     }
-    // classify 下游 (现状): 走 buildArgs + 选中分类 model 覆盖。
+    // classify / ocr-rec 下游: 走 buildArgs 取 backend/params, 但**变体按选中下游 model 自己的轴**
+    //   过滤 (与几何下游一致), 不再透传「模型任务」整图模型的轴; 且**不透传源模型的 class_filter**
+    //   —— 其 index 空间属上游整图检测模型, 与下游分类/识别 model 的类别空间无关, 灌进去后端会误用/忽略。
     if (!stageArgs) return null;
     const keyArr = Array.from(writeKeys);
     const labelTrim = label.trim();
+    const downstreamAxisKeys = new Set(
+      (selectedModel?.supported_variants ?? []).map((g) => g.key),
+    );
+    const downstreamVariants: Record<string, string> = {};
+    for (const [k, v] of Object.entries(cfg.currentVariantSlice)) {
+      if (downstreamAxisKeys.has(k)) downstreamVariants[k] = v;
+    }
     return {
       ml_backend_id: stageArgs.ml_backend_id,
       model_id: selectedModel?.id ?? stageArgs.model_id,
       task_type: selectedModel?.task ?? stageArgs.task_type,
-      model_variants: stageArgs.model_variants,
+      model_variants: downstreamVariants,
       params: stageArgs.params,
-      class_filter: stageArgs.class_filter,
       parent_class_filter: classArr.length > 0 ? classArr : undefined,
       roi: { mode: "crop", pad },
       ...(labelTrim ? { label: labelTrim } : {}),
@@ -510,16 +518,26 @@ export function StageCard({
         </div>
       )}
 
-      <PreannotateConfigForm
-        cfg={cfg}
-        backends={backends}
-        selectedBackendId={backendId}
-        onSelectBackend={setBackendId}
-        projectMlBackendId={projectMlBackendId}
-        // 选 rec 等 crop 下游时, 收起整图「模型任务」下拉 (与下方「下游模型」选择器冗余);
-        //   变体/参数仍渲染 (rec 复用 e2e 同胞的 version/size/lang 轴)。
-        hideModelTaskSelector={isOcrRecognize}
-      />
+      {/* ML Backend 选择 (下游卡自持, 置于「下游模型」之上): 先选后端 → 再选下游模型 → 父框类别,
+          模型版本/参数面板 (PreannotateConfigForm) 移到卡片最底部。原由 PreannotateConfigForm 渲染的
+          后端下拉就此上移, 故下方不再向其传 backends/onSelectBackend (避免重复渲染)。 */}
+      {backends.length > 1 && (
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>ML Backend</span>
+          <select
+            value={backendId ?? ""}
+            onChange={(e) => setBackendId(e.target.value || null)}
+            className={styles.promptInput}
+          >
+            {backends.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+                {b.id === projectMlBackendId ? "（项目主后端）" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {/* v0.18.12 · 下游模型选择: 同一 backend 暴露多个可作下游的批量原子时显式选 (分类 / 框→分割)。 */}
       {downstreamModels.length > 1 && (
@@ -677,6 +695,17 @@ export function StageCard({
           )}
         </div>
       )}
+
+      {/* 模型版本 / 推理参数: 置于卡片最后 —— 先定下游模型与父框类别, 再调该模型的版本/尺寸/阈值。
+          backend 选择已上移到顶部, 这里不再传 backends/onSelectBackend (后端下拉由顶部渲染)。
+          下游卡恒收起整图「模型任务」下拉与类别白名单 (真值是上方「下游模型」, 整图轴/类别白名单分属
+          源整图模型, 与下游阶段无关; payload 已按下游 model 自己的轴过滤、不透传源 class_filter)。 */}
+      <PreannotateConfigForm
+        cfg={cfg}
+        projectMlBackendId={projectMlBackendId}
+        hideModelTaskSelector
+        hideClassWhitelist
+      />
     </Card>
   );
 }
