@@ -180,7 +180,7 @@ export function AttributeSchemaEditor({
       ))}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="ghost" onClick={addField}>
+        <Button variant="ghost" size="sm" onClick={addField}>
           <Icon name="plus" size={12} />新增属性
         </Button>
         {recommendedFields.length > 0 && (
@@ -192,11 +192,13 @@ export function AttributeSchemaEditor({
                 type="button"
                 onClick={() => onChange([...value, rf])}
                 title={`一键添加属性「${rf.label || rf.key}」(key=${rf.key})`}
-                className="inline-flex items-center gap-1 rounded-sm border border-dashed border-border px-2 py-1 text-xs text-foreground hover:bg-muted"
+                className="inline-flex h-8 items-center gap-1 rounded-md border border-dashed border-border px-2.5 text-xs text-foreground hover:bg-muted"
               >
                 <Icon name="plus" size={10} />
                 {rf.label || rf.key}
-                <code className="text-2xs text-muted-foreground">{rf.key}</code>
+                {/* 等宽拉丁 key 字体上沉重(无下行字 + cap 偏上), items-center 下墨迹中心比同排 CJK
+                    标签实测高 2px; 下移 2px 让两者墨迹中线对齐 (canvas 字体度量实测, 非拍脑袋)。 */}
+                <code className="translate-y-0.5 text-2xs text-muted-foreground">{rf.key}</code>
               </button>
             ))}
           </>

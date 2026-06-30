@@ -381,7 +381,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
               onChange={onImportJson}
               className="hidden"
             />
-            <span className="inline-flex items-center gap-1 rounded-sm border border-border px-2 py-1 text-xs text-foreground">
+            <span className="inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-sm text-foreground hover:bg-muted">
               <Icon name="plus" size={11} />导入属性
             </span>
           </label>
@@ -512,6 +512,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
       <PrefillFromBackendDialog
         open={prefillOpen}
         onClose={() => setPrefillOpen(false)}
+        projectId={project.id}
         onPrefill={onPrefillFromBackend}
         targetUnitLabel={getToolUnitGroup(activeUnit)?.label ?? activeUnit}
         existingClassNames={(activeBinding?.classRows ?? []).map((r) => r.name)}

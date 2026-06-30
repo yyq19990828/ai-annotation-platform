@@ -47,6 +47,8 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 
 ### Fixed
 
+- **「从 ML Backend 预填配置」拿不到项目接入 backend 的类别**:对话框原读全局 env-configured 实例(`/ml-capabilities/instances`,仅 gsam2/sam3/rapidocr),而 yolo(COCO80)/ onnxtools(车辆类)是**项目级**接入的、不在全局实例里 → 列不出、用户「填不了类别」。现改读本项目已接入且在线的 backend(`/projects/{id}/ml-backends` + 各自 `/capabilities`),yolo 的目标检测/分割/朝向框/关键点等类别正常出现。同时修一个被静态类别自报照出来的**形状 bug**:`/instances` 与对话框把 `classes` 当 `string[]`,但 backend 实际自报 `[{index,name}]` 对象 —— 一旦带类别的 backend 进对话框,类别会渲染成 `[object Object]`;现按 `[{index,name}]` 抽 `name` 渲染。
+- **项目「类别与属性」设置按钮样式不一致**:工具栏「导入属性」是手搓的带边框小盒(rounded-sm + 实线边框 + 较小字号),与同排 ghost 样式的「从 ML Backend 预填」「导出属性 JSON」高低/边框/圆角都不齐;底部「新增属性」用默认尺寸(h-36)挤在更矮的推荐属性 chips(h-27)旁边、高度与字号都不匹配。现统一:「导入属性」对齐 ghost 按钮(去边框、h-8、rounded-md),「新增属性」改 `size="sm"`,推荐 chips 升到 h-8 / rounded-md 与之齐平(保留虚线边框表「建议」语义)。另:推荐 chip 内等宽拉丁 key(text/orientation/language)墨迹中心比同排 CJK 标签实测偏高 2px,下移 2px 做光学居中。
 - **多阶段编排节点图在改下游阶段配置后整图消失**:react-flow 节点整批同步时(`setNodes(flow.nodes)`)用了 `buildFlow` 每次新造、不带已测量尺寸的节点对象,把 react-flow 的 `measured` 测量态清掉 → 节点转 `visibility:hidden`;而「改下游后端 / 切下游模型」这类「同节点 id、仅变 data」的更新不改变节点 DOM 尺寸,挂在其上的 `ResizeObserver` 不再触发 → 节点永远拿不到新测量、卡死隐藏,表现为节点图突然只剩网格背景。现同步时按节点 id 保留上一批的 `measured` 尺寸,仅 data 变不再丢测量态(真改了尺寸时 ResizeObserver 仍会纠正)。
 - **下游分类 / 识别阶段不再被灌入源整图模型的变体轴与类别白名单**:此前下游 payload 的 `model_variants` / `class_filter` 取自「模型任务」选中的整图模型(如上游 YOLO 检测器),而该阶段实际跑的是下游分类 / 识别 model —— 等于把 A 模型的变体和 index 类别白名单贴到 B 模型上,后端会误用或忽略。现下游 `model_variants` 按**选中下游 model 自报的轴**过滤(与框→分割 / crop 检测下游一致),源模型的 `class_filter` 不再透传。OCR 识别下游不受影响(rec 自报 version/size/lang 轴,过滤后保留)。
 

@@ -7,19 +7,20 @@
  *   - 类别 → 工具单位 classRows（同名跳过、自动配色）；
  *   - 属性 → 工具单位 attribute_schema（同 key 覆盖、新 key 追加）。
  *
+ * 数据源 = **本项目已接入的 backend**（GET /projects/{id}/ml-backends + 各自 /capabilities），
+ * 而非全局 env-configured 实例 —— 否则项目级接入的 yolo（COCO80）/ onnxtools（车辆类）拿不到，
+ * 用户「填不了类别」。项目级 /capabilities 的 classes 形状是 `[{index,name}]`，此处抽出 name。
+ *
  * 纯受控：确认后回调 onPrefill({ classes, attributes })，由调用方（ClassesSection）决定合并。
  * 前身 v0.18.0 ImportAttributesFromBackendDialog 仅导属性；v0.20.3 补齐类别、对称化为「预填配置」。
  */
 import { useMemo, useState } from "react";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
-import {
-  useCapabilityInstances,
-  type CapabilityInstance,
-  type CapabilityInstanceModel,
-  type OutputAttributeSchemaItem,
-} from "@/api/mlCapabilities";
+import { mlBackendsApi, type MLModelCapability } from "@/api/ml-backends";
+import type { OutputAttributeSchemaItem } from "@/api/mlCapabilities";
 import type { AttributeField, AttributeFieldType } from "@/api/projects";
 
 const FIELD_TYPE_LABEL: Record<string, string> = {
@@ -57,25 +58,9 @@ export function itemToField(item: OutputAttributeSchemaItem): AttributeField {
 
 interface ModelEntry {
   backendName: string;
-  model: CapabilityInstanceModel;
+  model: MLModelCapability;
   classes: string[];
   schema: OutputAttributeSchemaItem[];
-}
-
-function collectEntries(instances: CapabilityInstance[]): ModelEntry[] {
-  const out: ModelEntry[] = [];
-  for (const inst of instances) {
-    for (const model of inst.models) {
-      // 一锅端 composite 与原子声明同一份属性/类别; 跳过 composite 避免重复预填源。
-      if (model.composition === "composite") continue;
-      const classes = model.classes ?? [];
-      const schema = model.output_attribute_schema ?? [];
-      if (classes.length > 0 || schema.length > 0) {
-        out.push({ backendName: inst.name, model, classes, schema });
-      }
-    }
-  }
-  return out;
 }
 
 export interface PrefillPicked {
@@ -86,6 +71,8 @@ export interface PrefillPicked {
 interface Props {
   open: boolean;
   onClose: () => void;
+  /** v0.20.x · 取本项目已接入 backend 的能力 (含 yolo COCO / onnxtools 车辆类别)。 */
+  projectId: string;
   /** 用户确认预填的类别名 + 属性字段（已按勾选过滤）。 */
   onPrefill: (picked: PrefillPicked) => void;
   /** 当前工具单位名（仅用于文案提示）。 */
@@ -98,16 +85,60 @@ interface Props {
 export function PrefillFromBackendDialog({
   open,
   onClose,
+  projectId,
   onPrefill,
   targetUnitLabel,
   existingClassNames = [],
   existingAttrKeys = [],
 }: Props) {
-  const { data, isLoading, isError } = useCapabilityInstances();
-  const entries = useMemo(
-    () => (data ? collectEntries(data.instances) : []),
-    [data],
+  // 数据源: 本项目已接入且在线的 backend → 各自 /capabilities (含静态自报 classes)。
+  const backendsQ = useQuery({
+    queryKey: ["prefill-project-backends", projectId],
+    queryFn: () => mlBackendsApi.list(projectId),
+    enabled: open,
+    staleTime: 30_000,
+  });
+  const onlineBackends = useMemo(
+    () =>
+      (backendsQ.data ?? []).filter(
+        (b) => b.state === "connected" || b.state === "predicting",
+      ),
+    [backendsQ.data],
   );
+  const capResults = useQueries({
+    queries: onlineBackends.map((b) => ({
+      queryKey: ["prefill-project-backend-caps", projectId, b.id],
+      queryFn: () => mlBackendsApi.capabilities(projectId, b.id),
+      enabled: open,
+      staleTime: 60_000,
+      retry: false,
+    })),
+  });
+
+  const capsLoading =
+    backendsQ.isLoading || capResults.some((r) => r.isLoading);
+  const capsError = backendsQ.isError;
+  // 各 backend caps 的更新时刻拼成稳定签名: 任一就绪即重算 entries (capResults 每渲染新引用)。
+  const capSig = capResults.map((r) => r.dataUpdatedAt).join(",");
+  const entries = useMemo<ModelEntry[]>(() => {
+    const out: ModelEntry[] = [];
+    onlineBackends.forEach((b, i) => {
+      const caps = capResults[i]?.data;
+      for (const model of caps?.models ?? []) {
+        // 一锅端 composite 与原子声明同一份属性/类别; 跳过 composite 避免重复预填源。
+        if (model.composition === "composite") continue;
+        const classes = (model.classes ?? []).map((c) => c.name);
+        const schema = model.output_attribute_schema ?? [];
+        if (classes.length > 0 || schema.length > 0) {
+          out.push({ backendName: b.name, model, classes, schema });
+        }
+      }
+    });
+    return out;
+    // capSig 串化各 caps 更新时刻作稳定依赖, 故不直接列 capResults。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onlineBackends, capSig]);
+
   const existingClasses = useMemo(
     () => new Set(existingClassNames),
     [existingClassNames],
@@ -163,20 +194,20 @@ export function PrefillFromBackendDialog({
           （类别同名跳过、属性同 key 覆盖）。
         </p>
 
-        {isLoading && (
+        {capsLoading && (
           <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-            正在加载 ML Backend 实例…
+            正在加载本项目 ML Backend 能力…
           </div>
         )}
-        {isError && (
+        {capsError && (
           <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-status-danger">
-            加载 ML Backend 实例失败，请稍后重试。
+            加载 ML Backend 能力失败，请稍后重试。
           </div>
         )}
-        {!isLoading && !isError && entries.length === 0 && (
+        {!capsLoading && !capsError && entries.length === 0 && (
           <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-            当前没有任何在线 backend 自报类别或输出属性 schema。需要 backend（如 YOLO 检测、
-            onnxtools 车辆属性）上线后才能预填。
+            本项目已接入的 backend 都没有自报类别或输出属性 schema。需要接入会自报类别（如 YOLO 检测、
+            onnxtools 车辆属性）的在线 backend 后才能预填。
           </div>
         )}
 
@@ -203,7 +234,7 @@ export function PrefillFromBackendDialog({
                   >
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium text-foreground">
-                        {entry.model.display_name}
+                        {entry.model.display_name || entry.model.id}
                       </span>
                       <span className="block truncate text-xs text-muted-foreground">
                         {entry.backendName} · {parts.join(" · ")}
