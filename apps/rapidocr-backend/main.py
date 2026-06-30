@@ -54,13 +54,25 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="rapidocr-backend", version=BACKEND_VERSION, lifespan=lifespan)
 
 
-def _route(model_id: str, r, file_path: str) -> tuple[list[dict[str, Any]], int]:
+def _route(
+    model_id: str, r, file_path: str, params: dict[str, Any] | None = None
+) -> tuple[list[dict[str, Any]], int]:
     assert _predictor is not None
     if model_id == catalog.DET_MODEL_ID:
-        return _predictor.det_one(r, file_path)
+        return _predictor.det_one(r, file_path, params)
     if model_id == catalog.REC_MODEL_ID:
-        return _predictor.rec_one(r, file_path)
-    return _predictor.e2e_one(r, file_path)
+        return _predictor.rec_one(r, file_path, params)
+    return _predictor.e2e_one(r, file_path, params)
+
+
+def _extract_params(context: dict[str, Any]) -> dict[str, Any]:
+    """取运行时阈值 params。协议 v2 结构化路径嵌在 context.params;老 flat 路径平铺在顶层。"""
+    params = context.get("params")
+    out: dict[str, Any] = dict(params) if isinstance(params, dict) else {}
+    for k in ("text_score", "box_thresh", "unclip_ratio"):
+        if k not in out and k in context:
+            out[k] = context[k]
+    return out
 
 
 @app.get("/health")
@@ -118,6 +130,7 @@ def predict(req: BatchPredictRequest) -> BatchPredictResponse:
         raise HTTPException(status_code=503, detail="backend not ready")
     model_id = req.context.get("model_id", catalog.E2E_MODEL_ID)
     variants = req.context.get("model_variants")
+    params = _extract_params(req.context)
     try:
         r = catalog.resolve(model_id, variants)
     except ValueError as exc:
@@ -126,7 +139,7 @@ def predict(req: BatchPredictRequest) -> BatchPredictResponse:
     results: list[PredictionResult] = []
     for t in req.tasks:
         try:
-            items, infer_ms = _route(model_id, r, t.file_path)
+            items, infer_ms = _route(model_id, r, t.file_path, params)
         except Exception as exc:  # noqa: BLE001
             logger.exception("predict failed for task %s", t.id)
             raise HTTPException(status_code=500, detail=str(exc)) from exc

@@ -155,6 +155,38 @@ _ATTR_TEXT = {"key": "text", "label": "识别文本", "type": "text"}
 _ATTR_ORIENT = {"key": "orientation", "label": "方向", "type": "select", "options": ["0", "180"]}
 _ATTR_LANG = {"key": "language", "label": "语言", "type": "select", "options": ["universal", "en"]}
 
+# ---- 运行时可调阈值（透传 RapidOCR __call__/update_params；缺省=引擎默认）。----
+# 平台据此渲染阈值滑块(model.params.properties)，/predict 从 context.params 读取并应用。
+_PARAM_TEXT_SCORE = {
+    "type": "number", "title": "文本置信度阈值", "minimum": 0.0, "maximum": 1.0,
+    "default": 0.5, "description": "识别置信度低于此值的文本被丢弃（调低=保留更多但更杂）。",
+}
+_PARAM_BOX_THRESH = {
+    "type": "number", "title": "检测框阈值", "minimum": 0.0, "maximum": 1.0,
+    "default": 0.5, "description": "文本检测框得分低于此值被过滤（调低=检出更多更碎的框）。",
+}
+_PARAM_UNCLIP_RATIO = {
+    "type": "number", "title": "检测框扩张比", "minimum": 1.0, "maximum": 3.0,
+    "default": 1.6, "description": "检测框向外扩张比例（调大=框更松、更易包全文字）。",
+}
+
+
+def _det_params() -> dict:
+    return {"type": "object", "properties": {
+        "box_thresh": _PARAM_BOX_THRESH, "unclip_ratio": _PARAM_UNCLIP_RATIO,
+    }}
+
+
+def _rec_params() -> dict:
+    return {"type": "object", "properties": {"text_score": _PARAM_TEXT_SCORE}}
+
+
+def _e2e_params() -> dict:
+    return {"type": "object", "properties": {
+        "box_thresh": _PARAM_BOX_THRESH, "unclip_ratio": _PARAM_UNCLIP_RATIO,
+        "text_score": _PARAM_TEXT_SCORE,
+    }}
+
 
 def _det_entry() -> dict:
     return {
@@ -168,6 +200,7 @@ def _det_entry() -> dict:
         "supported_prompts": ["none"],
         "supported_inputs": ["full_image"],
         "supported_geometric_outputs": ["polygon"],
+        "params": _det_params(),
         "supported_variants": [_version_axis(_DET_COMBOS), _size_axis(_DET_COMBOS)],
         "variant_combinations": [list(c) for c in _DET_COMBOS],
         "default_variants": {"version": "v5", "size": "mobile"},
@@ -189,6 +222,7 @@ def _rec_entry() -> dict:
         "supported_geometric_outputs": ["polygon"],
         "output_attribute_types": ["text", "orientation", "language"],
         "output_attribute_schema": [_ATTR_TEXT, _ATTR_ORIENT, _ATTR_LANG],
+        "params": _rec_params(),
         "supported_variants": [_version_axis(_REC_COMBOS), _size_axis(_REC_COMBOS), _lang_axis()],
         "variant_combinations": [list(c) for c in _REC_COMBOS],
         "default_variants": {"version": "v5", "size": "mobile", "lang": "universal"},
@@ -210,6 +244,7 @@ def _e2e_entry() -> dict:
         "supported_geometric_outputs": ["polygon"],
         "output_attribute_types": ["text", "orientation", "language"],
         "output_attribute_schema": [_ATTR_TEXT, _ATTR_ORIENT, _ATTR_LANG],
+        "params": _e2e_params(),
         "supported_variants": [_version_axis(_REC_COMBOS), _size_axis(_REC_COMBOS), _lang_axis()],
         "variant_combinations": [list(c) for c in _REC_COMBOS],
         "default_variants": {"version": "v5", "size": "mobile", "lang": "universal"},

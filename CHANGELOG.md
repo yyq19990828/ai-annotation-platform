@@ -40,6 +40,10 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.20.x 版本段累积在本区；进入 0.21.x 后整体移到 docs/changelogs/0.20.x.md。
 -->
 
+### Added
+
+- rapidocr-backend 自报可调阈值参数,OCR 预标配置面板据此渲染阈值滑块:文本置信度 `text_score`、检测框阈值 `box_thresh`、检测框扩张比 `unclip_ratio`(det 暴露 box/unclip、rec 暴露 text_score、端到端三者全暴露)。`/predict` 从 `context.params` 读取并透传给 RapidOCR 引擎(与 `RapidOCR.__call__` 同口径)。此前 rapidocr 未声明任何 `params`,OCR 路径「无可调参数」,且 `text_score` 在 predictor 写死 0.0(从不过滤低置信度文本)。
+
 ### Changed
 
 - OCR / 文档版面预标配置统一为 model-first,与几何(YOLO)、文本(gsam2/sam3)所有 backend 对齐:**移除 OCR/版面专属的「任务类型」tab 层**,改为把该 backend 全部可批量预标的模型(几何检测/分割 + OCR/版面)铺进同一个「模型任务」下拉。OCR 的端到端 / 检测模型现可见可选(默认端到端),版本(v5/v6)× 尺寸 × 语言变体可调并按 `model_variants` 真正下发后端。此前 OCR 走独立的「任务类型」tab + 静默 `.find` 第一个模型,UI 不出模型选择器(端到端「不出现」),变体被 `hasAnyParams` 判据误判隐藏、即便选了也不下发(永远跑默认 v5/mobile/universal)。

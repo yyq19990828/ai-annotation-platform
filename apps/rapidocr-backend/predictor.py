@@ -91,12 +91,37 @@ class RapidOCRPredictor:
         return RapidOCR(params=params)
 
     # ---------------- 三能力运行 ----------------
-    def _run(self, eng: RapidOCR, img_content: str, *, use_det: bool, use_cls: bool, use_rec: bool):
+    def _run(
+        self,
+        eng: RapidOCR,
+        img_content: str,
+        *,
+        use_det: bool,
+        use_cls: bool,
+        use_rec: bool,
+        params: dict[str, Any] | None = None,
+    ):
         """走 RapidOCR 内部步骤，返回 (ori_img, final_output, orientations)。
 
         orientations 在 build_final_output 过滤前按 valid 索引快照，与最终 boxes/txts 对齐。
+
+        params（可选，来自 /predict context.params）透传给 update_params，与 RapidOCR.__call__
+        同口径的三个运行时阈值；缺省（None）= 引擎默认（text_score/box_thresh≈0.5、unclip≈1.6）。
         """
-        eng.update_params(use_det=use_det, use_cls=use_cls, use_rec=use_rec, text_score=0.0)
+        p = params or {}
+
+        def _f(key: str) -> float | None:
+            v = p.get(key)
+            return float(v) if v is not None else None
+
+        eng.update_params(
+            use_det=use_det,
+            use_cls=use_cls,
+            use_rec=use_rec,
+            text_score=_f("text_score"),
+            box_thresh=_f("box_thresh"),
+            unclip_ratio=_f("unclip_ratio"),
+        )
         ori = eng.load_img(img_content)
         img, op = eng.preprocess_img(ori)
         det_res, cls_res, rec_res, crops = eng.run_ocr_steps(img, op)
@@ -113,10 +138,14 @@ class RapidOCRPredictor:
         final = eng.build_final_output(ori, det_res, cls_res, rec_res, crops, op)
         return ori, final, orientations
 
-    def det_one(self, r: ResolvedEngine, file_path: str) -> tuple[list[dict[str, Any]], int]:
+    def det_one(
+        self, r: ResolvedEngine, file_path: str, params: dict[str, Any] | None = None
+    ) -> tuple[list[dict[str, Any]], int]:
         eng = self._get_engine(r)
         t0 = time.time()
-        ori, final, _ = self._run(eng, file_path, use_det=True, use_cls=False, use_rec=False)
+        ori, final, _ = self._run(
+            eng, file_path, use_det=True, use_cls=False, use_rec=False, params=params
+        )
         infer_ms = int((time.time() - t0) * 1000)
         h, w = ori.shape[:2]
         items: list[dict[str, Any]] = []
@@ -131,10 +160,14 @@ class RapidOCRPredictor:
                 })
         return items, infer_ms
 
-    def rec_one(self, r: ResolvedEngine, file_path: str) -> tuple[list[dict[str, Any]], int]:
+    def rec_one(
+        self, r: ResolvedEngine, file_path: str, params: dict[str, Any] | None = None
+    ) -> tuple[list[dict[str, Any]], int]:
         eng = self._get_engine(r)
         t0 = time.time()
-        _, final, orientations = self._run(eng, file_path, use_det=False, use_cls=True, use_rec=True)
+        _, final, orientations = self._run(
+            eng, file_path, use_det=False, use_cls=True, use_rec=True, params=params
+        )
         infer_ms = int((time.time() - t0) * 1000)
         txts = getattr(final, "txts", None)
         scores = getattr(final, "scores", None)
@@ -152,10 +185,14 @@ class RapidOCRPredictor:
         }
         return [item], infer_ms
 
-    def e2e_one(self, r: ResolvedEngine, file_path: str) -> tuple[list[dict[str, Any]], int]:
+    def e2e_one(
+        self, r: ResolvedEngine, file_path: str, params: dict[str, Any] | None = None
+    ) -> tuple[list[dict[str, Any]], int]:
         eng = self._get_engine(r)
         t0 = time.time()
-        ori, final, orientations = self._run(eng, file_path, use_det=True, use_cls=True, use_rec=True)
+        ori, final, orientations = self._run(
+            eng, file_path, use_det=True, use_cls=True, use_rec=True, params=params
+        )
         infer_ms = int((time.time() - t0) * 1000)
         h, w = ori.shape[:2]
         items: list[dict[str, Any]] = []
