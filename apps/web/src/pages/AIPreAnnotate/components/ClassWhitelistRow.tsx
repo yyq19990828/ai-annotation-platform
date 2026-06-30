@@ -3,8 +3,12 @@
  *
  * 闭集检测器 (YOLO) 暴露模型原生类别表 (model.names) 后, 让用户勾选只检出哪些类 (留空=全部).
  * 平台不做"模型类→项目标签"映射 (NG6): 预标结果仍渲染模型原生类名, 采纳时由人选项目标签.
- * classes 仅在该 task 模型已加载过 (warmup/首次 predict) 才有值; 未就位时本组件提示需预热。
+ * v0.20.x · 类别表改由 backend 静态自报 (COCO80/DOTA15/person, 见各 backend), 免预热、切模型即在;
+ *   再补一个文本输入框 (datalist 自动补全) 按类名快速勾选 —— 类别多时不用在长 chip 列里找。
+ *   仍 index 制 (闭集只能选模型认识的类), 输入命中类名才落选。
  */
+import { useId, useState } from "react";
+
 import styles from "./ProjectDetailPanel.module.css";
 
 function cx(...names: Array<string | false | null | undefined>) {
@@ -22,6 +26,20 @@ interface Props {
 }
 
 export function ClassWhitelistRow({ classes, selected, onChange, onWarm, warming }: Props) {
+  const listId = useId();
+  const [draft, setDraft] = useState("");
+  // 文本输入按类名 (大小写不敏感) 找到 index 并勾选; 命中才清空、未命中保留草稿。
+  const addByName = () => {
+    const q = draft.trim().toLowerCase();
+    if (!q) return;
+    const hit = (classes ?? []).find((c) => c.name.toLowerCase() === q);
+    if (!hit) return;
+    const next = new Set(selected);
+    next.add(hit.index);
+    onChange(next);
+    setDraft("");
+  };
+
   if (!classes || classes.length === 0) {
     return (
       <div className={styles.field}>
@@ -59,6 +77,37 @@ export function ClassWhitelistRow({ classes, selected, onChange, onWarm, warming
         类别筛选（可选，留空=检出全部 {classes.length} 类
         {selected.size > 0 ? `；已选 ${selected.size}` : ""}）
       </span>
+      {/* 文本输入: 按类名快速勾选 (datalist 自动补全), 类别多时免在长 chip 列里找。 */}
+      <div className={styles.presetRow}>
+        <input
+          className={styles.textInput}
+          type="text"
+          list={listId}
+          value={draft}
+          placeholder="输入类名快速勾选，如 person"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addByName();
+            }
+          }}
+        />
+        <datalist id={listId}>
+          {classes.map((c) => (
+            <option key={c.index} value={c.name} />
+          ))}
+        </datalist>
+        <button
+          type="button"
+          className={styles.presetButton}
+          disabled={!draft.trim()}
+          onClick={addByName}
+          title="按类名勾选"
+        >
+          添加
+        </button>
+      </div>
       <div className={styles.aliasList}>
         {classes.map((c) => {
           const active = selected.has(c.index);

@@ -157,17 +157,28 @@ _ATTR_LANG = {"key": "language", "label": "语言", "type": "select", "options":
 
 # ---- 运行时可调阈值（透传 RapidOCR __call__/update_params；缺省=引擎默认）。----
 # 平台据此渲染阈值滑块(model.params.properties)，/predict 从 context.params 读取并应用。
+# RUNTIME_PARAM_DEFAULTS 是这三个旋钮的单一真值：既是 schema 的 default，也是 predictor
+# 缺参时显式回落的值。必须显式回落（而非传 None）——RapidOCR.update_params 对 None 是跳过、
+# 不重置，而 det/rec/e2e 同 variant 共享同一池化引擎，缺参传 None 会让上一次请求的阈值粘在
+# 引擎上、污染后续请求（含跨原子类型、跨项目）。
+RUNTIME_PARAM_DEFAULTS = {"text_score": 0.5, "box_thresh": 0.5, "unclip_ratio": 1.6}
+
+# 注：text_score 只在「同时有 det+rec」的 e2e 路径生效（build_final_output 的 rec-only
+# 分支提前 return、不过 filter_by_text_score），故 rec 原子不暴露任何可调阈值。
 _PARAM_TEXT_SCORE = {
     "type": "number", "title": "文本置信度阈值", "minimum": 0.0, "maximum": 1.0,
-    "default": 0.5, "description": "识别置信度低于此值的文本被丢弃（调低=保留更多但更杂）。",
+    "default": RUNTIME_PARAM_DEFAULTS["text_score"],
+    "description": "识别置信度低于此值的文本被丢弃（调低=保留更多但更杂）。",
 }
 _PARAM_BOX_THRESH = {
     "type": "number", "title": "检测框阈值", "minimum": 0.0, "maximum": 1.0,
-    "default": 0.5, "description": "文本检测框得分低于此值被过滤（调低=检出更多更碎的框）。",
+    "default": RUNTIME_PARAM_DEFAULTS["box_thresh"],
+    "description": "文本检测框得分低于此值被过滤（调低=检出更多更碎的框）。",
 }
 _PARAM_UNCLIP_RATIO = {
     "type": "number", "title": "检测框扩张比", "minimum": 1.0, "maximum": 3.0,
-    "default": 1.6, "description": "检测框向外扩张比例（调大=框更松、更易包全文字）。",
+    "default": RUNTIME_PARAM_DEFAULTS["unclip_ratio"],
+    "description": "检测框向外扩张比例（调大=框更松、更易包全文字）。",
 }
 
 
@@ -175,10 +186,6 @@ def _det_params() -> dict:
     return {"type": "object", "properties": {
         "box_thresh": _PARAM_BOX_THRESH, "unclip_ratio": _PARAM_UNCLIP_RATIO,
     }}
-
-
-def _rec_params() -> dict:
-    return {"type": "object", "properties": {"text_score": _PARAM_TEXT_SCORE}}
 
 
 def _e2e_params() -> dict:
@@ -222,7 +229,7 @@ def _rec_entry() -> dict:
         "supported_geometric_outputs": ["polygon"],
         "output_attribute_types": ["text", "orientation", "language"],
         "output_attribute_schema": [_ATTR_TEXT, _ATTR_ORIENT, _ATTR_LANG],
-        "params": _rec_params(),
+        # rec 原子无可调阈值：text_score 在 rec-only 路径是 no-op（见上方注释）。
         "supported_variants": [_version_axis(_REC_COMBOS), _size_axis(_REC_COMBOS), _lang_axis()],
         "variant_combinations": [list(c) for c in _REC_COMBOS],
         "default_variants": {"version": "v5", "size": "mobile", "lang": "universal"},

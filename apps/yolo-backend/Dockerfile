@@ -71,7 +71,7 @@ RUN ln -sfn /app/checkpoints/weights /app/weights
 
 COPY yolo-backend/main.py yolo-backend/predictor.py yolo-backend/schemas.py \
      yolo-backend/model_pool.py yolo-backend/model_registry.py \
-     yolo-backend/observability.py ./
+     yolo-backend/class_names.py yolo-backend/observability.py ./
 COPY yolo-backend/scripts/ ./scripts/
 COPY yolo-backend/tests/ ./tests/
 

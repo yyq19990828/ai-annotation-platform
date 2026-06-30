@@ -35,7 +35,8 @@ def check_capability_violations(
     判据 (均「显式自报才拦, 缺省放过」, 保持对老 backend 零退化):
     - batchable: resource_profile.batchable 显式为 False (交互/有状态) → 不能进批量预标。
     - class: 写属性的下游 (writes_attributes=True) 且模型显式自报 output_attribute_types
-      但不含 'class' → 作分类下游只会产出空属性。
+      但不含 'class' → 作分类下游只会产出空属性。**OCR/识别下游 (task=ocr) 豁免**: rec 产
+      text/orientation/language (本就不含 class), 写回 text 即有效产出, 非「属性恒空」。
 
     where: 上下文前缀 ("源阶段" / "stage N ")。model_id: 仅用于成句。
     """
@@ -56,7 +57,9 @@ def check_capability_violations(
 
     if writes_attributes:
         types = list(caps.get("output_attribute_types") or [])
-        if types and "class" not in types:
+        # task=ocr 是识别阶段 (产 text 非 class), 不套「分类下游须产 class」判据。
+        is_ocr = caps.get("task") == "ocr"
+        if types and "class" not in types and not is_ocr:
             violations.append(
                 CapabilityViolation(
                     code="no_class_attribute",

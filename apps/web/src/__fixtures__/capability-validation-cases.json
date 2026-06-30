@@ -70,6 +70,26 @@
       },
       "writes_attributes": true,
       "expect_codes": ["no_class_attribute"]
+    },
+    {
+      "name": "ocr recognize downstream: text not class (识别下游 task=ocr → 放行)",
+      "model_caps": {
+        "resource_profile": { "batchable": true },
+        "output_attribute_types": ["text", "orientation", "language"],
+        "task": "ocr"
+      },
+      "writes_attributes": true,
+      "expect_codes": []
+    },
+    {
+      "name": "ocr recognize but not batchable (识别下游 task=ocr 仍受 batchable 拦)",
+      "model_caps": {
+        "resource_profile": { "batchable": false },
+        "output_attribute_types": ["text"],
+        "task": "ocr"
+      },
+      "writes_attributes": true,
+      "expect_codes": ["not_batchable"]
     }
   ]
 }

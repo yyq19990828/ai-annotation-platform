@@ -18,9 +18,11 @@ def test_det_exposes_box_and_unclip():
     assert keys == {"box_thresh", "unclip_ratio"}  # det 无 rec,不暴露 text_score
 
 
-def test_rec_exposes_text_score_only():
-    keys = set(_params(catalog.REC_MODEL_ID))
-    assert keys == {"text_score"}  # rec 无 det,只暴露识别置信度
+def test_rec_exposes_no_params():
+    # rec-only 路径 text_score 是 no-op(build_final_output 提前 return,不过滤),
+    # rec 无 det → 没有任何真正可调阈值,故不暴露 params(避免误导滑块)。
+    ent = {e["id"]: e for e in catalog.model_entries()}
+    assert "params" not in ent[catalog.REC_MODEL_ID]
 
 
 def test_e2e_exposes_all_three():

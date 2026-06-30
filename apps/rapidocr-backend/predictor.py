@@ -21,7 +21,7 @@ from typing import Any
 import numpy as np
 from rapidocr import OCRVersion, RapidOCR
 
-from catalog import ResolvedEngine
+from catalog import RUNTIME_PARAM_DEFAULTS, ResolvedEngine
 
 logger = logging.getLogger("rapidocr-backend.predictor")
 
@@ -106,13 +106,15 @@ class RapidOCRPredictor:
         orientations 在 build_final_output 过滤前按 valid 索引快照，与最终 boxes/txts 对齐。
 
         params（可选，来自 /predict context.params）透传给 update_params，与 RapidOCR.__call__
-        同口径的三个运行时阈值；缺省（None）= 引擎默认（text_score/box_thresh≈0.5、unclip≈1.6）。
+        同口径的三个运行时阈值。缺参回落到 RUNTIME_PARAM_DEFAULTS 并**显式下发**（不传 None）——
+        det/rec/e2e 同 variant 共享池化引擎，update_params 对 None 是跳过不重置，缺参传 None 会
+        让上一次请求的阈值粘在引擎上污染后续请求（含跨原子类型、跨项目）。
         """
         p = params or {}
 
-        def _f(key: str) -> float | None:
+        def _f(key: str) -> float:
             v = p.get(key)
-            return float(v) if v is not None else None
+            return float(v) if v is not None else RUNTIME_PARAM_DEFAULTS[key]
 
         eng.update_params(
             use_det=use_det,

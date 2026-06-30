@@ -47,6 +47,12 @@ interface Props {
   onSelectBackend?: (id: string | null) => void;
   projectMlBackendId?: string | null;
   backendSelectorLabel?: string;
+  /**
+   * 收起整图「模型任务」下拉 (默认 false)。下游阶段卡里另有「下游模型」选择器作真值, 此处的整图
+   * model-first 下拉与之冗余 (尤其选 crop 下游如 rec 时, 整图 det/e2e 选择已无意义), 由调用方收起。
+   * 变体/参数/backend 选择不受影响, 仍渲染。
+   */
+  hideModelTaskSelector?: boolean;
 }
 
 export function PreannotateConfigForm({
@@ -56,6 +62,7 @@ export function PreannotateConfigForm({
   onSelectBackend,
   projectMlBackendId,
   backendSelectorLabel = "ML Backend",
+  hideModelTaskSelector = false,
 }: Props) {
   // v0.18.12 · 统一「模型任务」选择器: 几何 (yolo) 与文本 (gsam2/sam3) 共用一套 model-first 选择,
   //   只差 prompt vs 类别白名单。doc 走上方「任务类型」, 不在此。
@@ -108,7 +115,7 @@ export function PreannotateConfigForm({
       {/* v0.14.17 / v0.18.12 / v0.20.5 · 统一「模型任务」下拉: 几何 (YOLO 闭集)、文本 (gsam2/sam3 开集)、
           OCR/版面 共用同一个下拉 —— 不再为 OCR/版面单设「任务类型」tab。选项 = 该 backend 可批量预标的
           model, value 直接是 model_id, 文案 = 模型市场卡片标题 (display_name)。多于 1 个可选 model 出下拉。 */}
-      {taskModels.length > 1 ? (
+      {hideModelTaskSelector ? null : taskModels.length > 1 ? (
         <label className={styles.field}>
           <span className={styles.fieldLabel}>模型任务</span>
           <select

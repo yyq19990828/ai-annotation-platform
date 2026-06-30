@@ -40,17 +40,24 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.20.x 版本段累积在本区；进入 0.21.x 后整体移到 docs/changelogs/0.20.x.md。
 -->
 
+## [0.20.5] - 2026-06-30
+
 ### Added
 
-- rapidocr-backend 自报可调阈值参数,OCR 预标配置面板据此渲染阈值滑块:文本置信度 `text_score`、检测框阈值 `box_thresh`、检测框扩张比 `unclip_ratio`(det 暴露 box/unclip、rec 暴露 text_score、端到端三者全暴露)。`/predict` 从 `context.params` 读取并透传给 RapidOCR 引擎(与 `RapidOCR.__call__` 同口径)。此前 rapidocr 未声明任何 `params`,OCR 路径「无可调参数」,且 `text_score` 在 predictor 写死 0.0(从不过滤低置信度文本)。
+- rapidocr-backend 自报可调阈值参数,OCR 预标配置面板据此渲染阈值滑块:文本置信度 `text_score`、检测框阈值 `box_thresh`、检测框扩张比 `unclip_ratio`(det 暴露 box/unclip、端到端三者全暴露)。`/predict` 从 `context.params` 读取并透传给 RapidOCR 引擎(与 `RapidOCR.__call__` 同口径)。此前 rapidocr 未声明任何 `params`,OCR 路径「无可调参数」,且 `text_score` 在 predictor 写死 0.0(从不过滤低置信度文本)。
+- **文本识别原子可作跨 backend 编排的下游识别阶段**:多阶段预标的「下游模型」选择器放行 OCR 识别原子(`task=ocr`、`composition=atom`、吃 crop,如 rapidocr 的 `ocr-rec`),支持「上游任意 backend 检测出框 → 裁 crop → 下游 rec 认字、写回 `text`/`orientation`/`language` 属性」的跨 backend 流水线。下游卡角色徽标显示「识别」,选中识别原子时收起与之冗余的整图「模型任务」下拉。此前下游选择器只认 classification/detection/box-seg,识别原子(crop-only、单阶段整图被排除)在编排里无处可选。
 
 ### Changed
 
+- **类别白名单改由 backend 静态自报、不再依赖预热**:YOLO 按 task 静态自报类别表(检测/分割=COCO80、obb=DOTA-15、pose=person),onnxtools 检测模型自报 13 类车辆 —— 进预标面板即可勾选类别,无需先「预热加载类别」,且切换模型后类别表恒在。开集/文本模型(YOLO-World/YOLOE)不套固定类别表。
+- **类别筛选 / 父框类别支持文本输入**:类别筛选新增按类名快速勾选的输入框(datalist 自动补全,闭集仍按模型类别 index 落选);多阶段编排的「父框类别」选项改为优先取**上游阶段筛完的有效类别**(源模型类别 ∩ 源类别白名单;下游只会见到这些框),取不到回落项目类别,并支持自由文本输入任意类名(匹配检测框 class_name)。
 - OCR / 文档版面预标配置统一为 model-first,与几何(YOLO)、文本(gsam2/sam3)所有 backend 对齐:**移除 OCR/版面专属的「任务类型」tab 层**,改为把该 backend 全部可批量预标的模型(几何检测/分割 + OCR/版面)铺进同一个「模型任务」下拉。OCR 的端到端 / 检测模型现可见可选(默认端到端),版本(v5/v6)× 尺寸 × 语言变体可调并按 `model_variants` 真正下发后端。此前 OCR 走独立的「任务类型」tab + 静默 `.find` 第一个模型,UI 不出模型选择器(端到端「不出现」),变体被 `hasAnyParams` 判据误判隐藏、即便选了也不下发(永远跑默认 v5/mobile/universal)。
 - 项目设置「AI 预标注设置」改为**改动即时生效**:项目主后端下拉、IoU 去重阈值滑块各自直接落库(下拉选中即提交、滑块松手即提交),移除「保存 AI 设置」按钮与「有未保存的修改」提示。消除了「下拉 + 保存」与行内「设为主后端」对同一字段的双写。
 
 ### Fixed
 
+- **rapidocr 池化引擎运行时阈值跨请求泄漏**:`RapidOCR.update_params` 对 `None` 入参是跳过不重置,而 predictor 缺参传 `None`,加之 det/rec/e2e 同 variant 共享同一池化引擎 → 上一次请求设的 `box_thresh`/`unclip_ratio`/`text_score` 粘在引擎上、污染后续请求(含跨原子类型、跨项目:A 项目调了阈值会改变 B 项目的检出)。现缺参显式回落到 catalog 声明的默认值(0.5/0.5/1.6)并每次写定,泄漏从结构上消除。
+- **OCR 识别下游被误判「属性恒空」而 422 拒发**:预标编排能力闸门(端点 `check_capability_violations` + 前端 `stageWarning`/StageCard)假定写属性的下游必须产 `class`,而 rec 产 `text`/`orientation`/`language`(本就不含 class)→ 被判 `no_class_attribute`、派发期 422 硬挡、画布误报。现对 `task=ocr` 识别阶段豁免该判据(识别写回 `text` 即有效产出),前后端经共享 fixture 双端同步。
 - 画布内 OCR 单图推理「已完成」却不显示任何框:预标注配置选 OCR 模型时用 `.find(task==="ocr")` 取第一个,命中了 rapidocr 自报顺序中靠前、只吃裁剪图的识别原子 `ocr-rec`(`supported_inputs:["crop"]`),整图被当成一个 crop 喂进识别模型 → 识别不出文本 → 返回空、画布无框(job 仍记成功)。现按 `supported_inputs` 过滤,整图预标(OCR / 文档版面)只选支持 `full_image` 的模型(命中端到端 `ocr-e2e`),crop-only 原子排除;`supported_inputs` 缺字段的老 backend 按兼容默认放行。
 - 设为项目主后端后又被冲回「未设」:此前行内「设为主后端」直接落库,但顶部 AI 设置表单的本地态未跟随同步,导致「保存 AI 设置」按钮假显「有未保存的修改」,误点即把陈旧的空值推回服务端、清掉刚设的主后端(OCR 等项目表现为始终「未接入」)。改为表单态跟随服务端同步、并将主后端设置改为即时生效后,此双写冲突从结构上消除。
 - OCR 项目点击后落到「标注界面尚未实现」兜底、打不开工作台:仪表盘的工作台放行判据从写死的 `type_key` 白名单（`image-det`/`video-track`/`lidar`）改为按媒体维度 `data_type`（`image`/`video`/`lidar`）放行，图像子类型 det/ocr/seg 同走图像渲染栈。此前 OCR backend 与 seed 项目随平台上线时，仪表盘白名单漏列 `image-ocr`，导致 OCR 项目无法进入工作台。

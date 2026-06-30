@@ -11,6 +11,9 @@ const mockCfg: any = {
   configReady: true,
   buildArgs: () => ({ ml_backend_id: "bk2", params: {} }),
   capabilitiesQ: { isLoading: false, data: { models: [] } },
+  selectableModels: [],
+  selectedModelId: null,
+  selectTaskModel: vi.fn(),
 };
 
 vi.mock("./usePreannotateConfig", () => ({
@@ -48,6 +51,9 @@ describe("StageCard v0.18.5/6", () => {
     mockCfg.capabilitiesQ = { isLoading: false, data: { models: [] } };
     mockCfg.configReady = true;
     mockCfg.currentVariantSlice = {};
+    mockCfg.selectableModels = [];
+    mockCfg.selectedModelId = null;
+    mockCfg.selectTaskModel = vi.fn();
   });
 
   it("父框类别 chip 来自项目类别, 可点选", () => {
@@ -204,6 +210,64 @@ describe("StageCard v0.18.5/6", () => {
     expect(lastPayload?.input?.mode).toBe("crop");
     expect(lastPayload?.write?.target).toBe("geometry");
     expect(lastPayload?.model_variants).toEqual({ size: "s" });
+  });
+
+  it("v0.20.x · 选 ocr-rec 下游 → 识别阶段: attributes payload (crop 投递) + 无 no-class 误报", () => {
+    // 跨 backend 编排: 上游 det 出框 → 下游 rapidocr rec 认字。rec 产 text/orientation/language。
+    mockCfg.currentVariantSlice = { version: "v5", size: "mobile", lang: "universal" };
+    // 整图 OCR 同胞 (e2e) 进 selectableModels, 供 StageCard 对齐变体轴 (effect 调 selectTaskModel)。
+    mockCfg.selectableModels = [{ id: "ocr-e2e", task: "ocr" }];
+    mockCfg.selectedModelId = null; // 未对齐 → effect 应调 selectTaskModel 切到 e2e 同胞
+    mockCfg.capabilitiesQ = {
+      isLoading: false,
+      data: {
+        models: [
+          {
+            id: "ocr-rec",
+            task: "ocr",
+            composition: "atom",
+            is_interactive: false,
+            display_name: "文本识别（原子）",
+            supported_inputs: ["crop"],
+            output_attribute_types: ["text", "orientation", "language"],
+            output_attribute_schema: [
+              { key: "text", label: "识别文本", type: "text" },
+            ],
+          },
+        ],
+      },
+    };
+    const onChange = vi.fn();
+    renderCard({ onChange });
+    // 角色徽标 = 识别; 描述 = 在父框 crop 上识别文本
+    expect(screen.getByText("识别")).toBeInTheDocument();
+    expect(screen.getByText(/在父框 crop 上识别文本/)).toBeInTheDocument();
+    // 「不产类别属性」误报不应出现 (rec 产 text 是有效产出)
+    expect(screen.queryByText(/不产类别属性/)).toBeNull();
+    // 已选 rec 下游 → 对齐整图 OCR 同胞 (e2e), 使 configReady + version/size/lang 轴就位
+    expect(mockCfg.selectTaskModel).toHaveBeenCalledWith("ocr-e2e");
+    // 上抛 attributes payload: model_id=ocr-rec + task_type=ocr + crop 投递 + 写属性
+    const calls = onChange.mock.calls;
+    const lastPayload = calls[calls.length - 1]?.[1];
+    expect(lastPayload?.model_id).toBe("ocr-rec");
+    expect(lastPayload?.task_type).toBe("ocr");
+    expect(lastPayload?.roi?.mode).toBe("crop");
+    expect(lastPayload?.write?.target).toBe("attributes");
+  });
+
+  it("v0.20.x · 父框类别优先用 parentClassOptions(上游筛完类别), 自由文本可加任意名", () => {
+    const onChange = vi.fn();
+    renderCard({ onChange, parentClassOptions: ["person", "car"] });
+    // 选项来自上游筛完类别, 而非项目类别 (car/person 在, 项目的 banana 不在)
+    expect(screen.getByRole("button", { name: "person" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "car" })).toBeInTheDocument();
+    // 自由文本: 输入任意名 + 回车 → 进 parent_class_filter (即便不在选项里)
+    const input = screen.getByPlaceholderText("输入类名添加（匹配检测框类名）");
+    fireEvent.change(input, { target: { value: "forklift" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    const calls = onChange.mock.calls;
+    const lastPayload = calls[calls.length - 1]?.[1];
+    expect(lastPayload?.parent_class_filter).toContain("forklift");
   });
 
   it("点类别 chip 选中后再点清空", () => {
