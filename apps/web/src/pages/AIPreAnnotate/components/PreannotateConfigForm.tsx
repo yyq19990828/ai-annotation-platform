@@ -69,17 +69,22 @@ export function PreannotateConfigForm({
 }: Props) {
   // v0.18.12 · 统一「模型任务」选择器: 几何 (yolo) 与文本 (gsam2/sam3) 共用一套 model-first 选择,
   //   只差 prompt vs 类别白名单。doc 走上方「任务类型」, 不在此。
+  // v0.20.5 · doc (OCR / 版面) 也并入统一「模型任务」选择器: 三路同源 model-first。
   const taskModels = cfg.isGeometricBackend
     ? cfg.geometricModels
     : cfg.isTextPath
       ? cfg.textModels
-      : [];
+      : cfg.docModels;
   const taskModel = cfg.isGeometricBackend
     ? cfg.geometricModel
     : cfg.isTextPath
       ? cfg.textModel
-      : undefined;
-  const setTaskModelId = cfg.isGeometricBackend ? cfg.setGeometricTaskId : cfg.setTextTaskId;
+      : cfg.activeDocModel;
+  const setTaskModelId = cfg.isGeometricBackend
+    ? cfg.setGeometricTaskId
+    : cfg.isTextPath
+      ? cfg.setTextTaskId
+      : cfg.setDocTaskId;
   // 选择器的**真值键是 model_id**; 展示**直接用模型市场卡片标题 (display_name)**, 与卡片视图一致 ——
   // 用户在配置面板选的就是市场里那张卡 (同名同 id)。缺 display_name 才回落 task 标签 / id。
   const taskModelLabel = (m: { id: string; task?: string; display_name?: string }) =>
@@ -248,7 +253,9 @@ export function PreannotateConfigForm({
           <div className={styles.mutedText}>
             无法拉取 backend /setup，运行时回落项目级阈值。
           </div>
-        ) : cfg.isDocMode && !cfg.hasAnyParams ? (
+        ) : cfg.isDocMode && !cfg.hasAnyParams && (cfg.variantGroups?.length ?? 0) === 0 ? (
+          // v0.20.5 · 仅当既无 params 又无变体轴时才算「无可调参数」; OCR 可调项全在
+          //   supported_variants(version/size/lang), 此前被 !hasAnyParams 误判隐藏。
           <div className={styles.mutedText}>该任务无可调参数。</div>
         ) : (
           <div className={styles.backendParamsStack}>
@@ -260,7 +267,10 @@ export function PreannotateConfigForm({
               value={cfg.paramsValue}
               onChange={cfg.onVariantOrParamsChange}
             />
-            {(cfg.hasNonVariantParams || !cfg.hasAnyParams) && (
+            {/* v0.20.5 · 有变体轴但无 params 时(OCR)不渲染空 SchemaForm 占位,只留变体选择器;
+                仅当既无非变体 params 又无变体轴时才显「无可配置参数」占位。 */}
+            {(cfg.hasNonVariantParams ||
+              (!cfg.hasAnyParams && (cfg.variantGroups?.length ?? 0) === 0)) && (
               <SchemaForm
                 schema={cfg.paramsSchema}
                 value={cfg.paramsValue}

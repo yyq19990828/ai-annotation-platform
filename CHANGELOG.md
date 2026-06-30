@@ -42,10 +42,12 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 
 ### Changed
 
+- OCR / 文档版面预标配置统一为 model-first,与几何(YOLO)、文本(gsam2/sam3)两路对齐:OCR 也走统一「模型任务」下拉,端到端 / 检测模型可见可选(默认端到端),版本(v5/v6)× 尺寸 × 语言变体可调并按 `model_variants` 真正下发后端。此前 OCR 路径只静默 `.find` 第一个模型、UI 不出任何模型选择器(端到端「不出现」),变体被 `hasAnyParams` 判据误判隐藏、即便选了也不下发(永远跑默认 v5/mobile/universal)。
 - 项目设置「AI 预标注设置」改为**改动即时生效**:项目主后端下拉、IoU 去重阈值滑块各自直接落库(下拉选中即提交、滑块松手即提交),移除「保存 AI 设置」按钮与「有未保存的修改」提示。消除了「下拉 + 保存」与行内「设为主后端」对同一字段的双写。
 
 ### Fixed
 
+- 画布内 OCR 单图推理「已完成」却不显示任何框:预标注配置选 OCR 模型时用 `.find(task==="ocr")` 取第一个,命中了 rapidocr 自报顺序中靠前、只吃裁剪图的识别原子 `ocr-rec`(`supported_inputs:["crop"]`),整图被当成一个 crop 喂进识别模型 → 识别不出文本 → 返回空、画布无框(job 仍记成功)。现按 `supported_inputs` 过滤,整图预标(OCR / 文档版面)只选支持 `full_image` 的模型(命中端到端 `ocr-e2e`),crop-only 原子排除;`supported_inputs` 缺字段的老 backend 按兼容默认放行。
 - 设为项目主后端后又被冲回「未设」:此前行内「设为主后端」直接落库,但顶部 AI 设置表单的本地态未跟随同步,导致「保存 AI 设置」按钮假显「有未保存的修改」,误点即把陈旧的空值推回服务端、清掉刚设的主后端(OCR 等项目表现为始终「未接入」)。改为表单态跟随服务端同步、并将主后端设置改为即时生效后,此双写冲突从结构上消除。
 - OCR 项目点击后落到「标注界面尚未实现」兜底、打不开工作台:仪表盘的工作台放行判据从写死的 `type_key` 白名单（`image-det`/`video-track`/`lidar`）改为按媒体维度 `data_type`（`image`/`video`/`lidar`）放行，图像子类型 det/ocr/seg 同走图像渲染栈。此前 OCR backend 与 seed 项目随平台上线时，仪表盘白名单漏列 `image-ocr`，导致 OCR 项目无法进入工作台。
 

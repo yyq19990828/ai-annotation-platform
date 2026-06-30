@@ -38,6 +38,15 @@ export type PreannotateTaskType = "text" | "ocr" | "doc_layout";
 // v0.14.17 · YOLO 等"多 task 几何 backend"(闭集, supported_prompts=['none']) 的可选 task.
 export const GEOMETRIC_TASKS = ["detection", "segmentation", "keypoint", "obb"];
 
+// 整图预标注(单图/批量)只接受能吃 full_image 投递的 model;显式声明 crop-only
+// 的识别原子(如 rapidocr 的 ocr-rec,只能吃裁剪图)被排除——否则整图喂进 crop 原子,
+// 后端把整图当一个 crop、识别不出有效文本 → 返回空、画布无框(job 仍记成功)。
+// supported_inputs 缺字段 = 老 backend,按平台默认视为支持 full_image(向后兼容)。
+export function supportsFullImageInput(m: MLModelCapability): boolean {
+  const inputs = m.supported_inputs;
+  return !inputs || inputs.length === 0 || inputs.includes("full_image");
+}
+
 export interface PreannotateAlias {
   name: string;
   alias: string;
@@ -114,11 +123,17 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
   });
 
   const ocrModel = useMemo<MLModelCapability | undefined>(
-    () => (capabilitiesQ.data?.models ?? []).find((m) => m.task === "ocr"),
+    () =>
+      (capabilitiesQ.data?.models ?? []).find(
+        (m) => m.task === "ocr" && supportsFullImageInput(m),
+      ),
     [capabilitiesQ.data],
   );
   const docLayoutModel = useMemo<MLModelCapability | undefined>(
-    () => (capabilitiesQ.data?.models ?? []).find((m) => m.task === "doc_layout"),
+    () =>
+      (capabilitiesQ.data?.models ?? []).find(
+        (m) => m.task === "doc_layout" && supportsFullImageInput(m),
+      ),
     [capabilitiesQ.data],
   );
   const availableTaskTypes = useMemo<PreannotateTaskType[]>(() => {
@@ -133,9 +148,30 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
   useEffect(() => {
     if (!availableTaskTypes.includes(taskType)) setTaskType("text");
   }, [availableTaskTypes, taskType]);
-  const activeDocModel =
-    taskType === "ocr" ? ocrModel : taskType === "doc_layout" ? docLayoutModel : undefined;
   const isDocMode = taskType === "ocr" || taskType === "doc_layout";
+
+  // v0.20.5 · doc 路径也 model-first(对齐 geometric/text): 当前任务族(ocr / doc_layout)的
+  //   全部 full_image 模型(排除 crop-only 识别原子如 ocr-rec)进统一「模型任务」下拉。
+  //   此前 doc 模式只 `.find` 第一个、UI 不出选择器, 端到端 e2e 既看不到也选不了。
+  const docModels = useMemo<MLModelCapability[]>(
+    () =>
+      isDocMode
+        ? (capabilitiesQ.data?.models ?? []).filter(
+            (m) => m.task === taskType && supportsFullImageInput(m),
+          )
+        : [],
+    [isDocMode, taskType, capabilitiesQ.data],
+  );
+  const [docTaskId, setDocTaskId] = useState<string | null>(null);
+  useEffect(() => {
+    setDocTaskId((prev) => {
+      if (prev && docModels.some((m) => m.id === prev)) return prev;
+      // 默认偏端到端(composite, 出框 + 文字), 回退第一个。
+      const composite = docModels.find((m) => m.composition === "composite");
+      return (composite ?? docModels[0])?.id ?? null;
+    });
+  }, [backendId, docModels]);
+  const activeDocModel = docModels.find((m) => m.id === docTaskId) ?? docModels[0];
 
   const primaryModel = useMemo<MLModelCapability | undefined>(() => {
     if (isDocMode) return activeDocModel;
@@ -464,7 +500,10 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
         ml_backend_id: backendId,
         model_id: activeDocModel?.id,
         task_type: taskType,
-        params: paramsValue,
+        // v0.20.5 · 把变体轴(version/size/lang)从 params 拆出、按 model_variants 下发,
+        //   否则后端 resolve() 读不到、永远跑默认档(此前 doc 分支漏发 model_variants)。
+        model_variants: variantSlice,
+        params: nonVariantParams,
         predict_mode: predictMode,
       };
     }
@@ -517,6 +556,10 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     hasDocTasks,
     isDocMode,
     activeDocModel,
+    // v0.20.5 · doc (OCR / 版面) model-first: 统一「模型任务」下拉的候选与选中态。
+    docModels,
+    docTaskId,
+    setDocTaskId,
     // 几何 task
     isGeometricBackend,
     geometricModels,
