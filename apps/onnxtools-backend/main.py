@@ -61,6 +61,9 @@ DETECT_MODEL_ID = "vehicle-attr"  # 一锅端:rtdetr 检测 + va 分类(internal
 DETECT_ONLY_MODEL_ID = "vehicle-detect"  # 纯检测:只 rtdetr 出框,属性交下游(public,多阶段上游)
 CLASSIFY_MODEL_ID = "vehicle-attr-classify"  # 纯分类:整图当一辆车,跳过 rtdetr(public,多阶段下游)
 
+# rtdetr 检测器 onnx metadata 为空，车辆类别按域知识静态自报（与 va 分类器 vehicle_type 取值域一致）。
+VEHICLE_TYPES = ["car", "truck", "bus", "tanker", "slagcar", "fire engine", "mixer", "ambulance", "police car", "engineering truck", "hazardous_goods_vehicle", "manned_sweeping_vehicle", "school_bus"]
+
 MODEL_DIR = os.environ.get("ONNXTOOLS_MODEL_DIR", "/app/models")
 DET_MODEL = os.environ.get("ONNXTOOLS_DET_MODEL", "rtdetr-2024080100.onnx")
 VA_MODEL = os.environ.get("ONNXTOOLS_VA_MODEL", "va_260612.onnx")
@@ -259,6 +262,7 @@ def _detect_model_entry() -> dict[str, Any]:
         # 一锅端检测+属性: 整图 / 父框 crop 上跑。
         "supported_inputs": ["full_image", "crop"],
         "supported_geometric_outputs": ["bbox"],
+        "classes": [{"index": i, "name": n} for i, n in enumerate(VEHICLE_TYPES)],
         # 协议③：输出属性类型 + 取值域自描述，供平台一键导入项目 attribute_schema
         "output_attribute_types": ["class"],
         "output_attribute_schema": OUTPUT_ATTRIBUTE_SCHEMA,
@@ -286,6 +290,7 @@ def _detect_only_model_entry() -> dict[str, Any]:
         # 纯检测: 整图 / 父框 crop 上检子物体 (crop-detect 下游)。
         "supported_inputs": ["full_image", "crop"],
         "supported_geometric_outputs": ["bbox"],
+        "classes": [{"index": i, "name": n} for i, n in enumerate(VEHICLE_TYPES)],
         # 纯检测不写属性,不声明 output_attribute_*（属性交下游纯分类原子）。
         "default_thresholds": {"conf": CONF_THRES},
         "resource_profile": {"device": "gpu", "batchable": True},

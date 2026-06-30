@@ -38,6 +38,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+import class_names
 from model_pool import ModelPool
 from model_registry import (
     MODEL_MATRIX,
@@ -464,13 +465,15 @@ def _build_model_entry(
         "default_variants": _default_variants_for(task),
         "params": params if params is not None else _PARAMS_SCHEMA,
     }
-    # v0.14.17: 模型原生类别表 (model.names), 供前端渲染类别白名单. 仅在该 task 模型已加载过
-    # (warmup / 首次 predict 后) 时有值; 未加载时省略, 前端回退"不按类筛选". 读自权重 metadata,
-    # 不硬编码 (官方权重与自训练一视同仁).
-    if _model_pool is not None:
+    # 模型类别表, 供前端渲染类别白名单. 当前权重矩阵全为官方 COCO/DOTA 预训练, 类别表是已知
+    # 真值, 按 task 静态自报 (免预热、切模型稳定). 静态表覆盖 detection/segmentation/obb/keypoint;
+    # 开集 task 无固定类别 (走 _build_openvocab_model_entry, 不经此函数). 若某 task 无静态表
+    # (理论不会), 回退权重 metadata (仅 warmup/首次 predict 后有值).
+    classes = class_names.classes_for_task(task)
+    if classes is None and _model_pool is not None:
         classes = _model_pool.class_names(task)
-        if classes:
-            entry["classes"] = classes
+    if classes:
+        entry["classes"] = classes
     return entry
 
 
