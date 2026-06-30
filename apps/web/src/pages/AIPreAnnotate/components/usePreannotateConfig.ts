@@ -230,6 +230,59 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
   //   文本 (gsam2 / sam3) → **选中文本 task model** 的逐 model 变体 (检测=dino; 分割=sam+dino),
   //   取代旧顶层 union (选检测时不再白显 SAM)。textModel 缺位回落顶层 (能力未就位兜底)。
   const isTextPath = !isDocMode && !isGeometricBackend;
+
+  // v0.20.5 · 统一「模型任务」选择层(对齐所有 backend): 不再为 OCR/文档单设「任务类型」tab,
+  //   把该 backend 全部可批量预标的 full_image 模型(几何检测/分割 + OCR/版面, 排除交互式与
+  //   crop-only 原子如 ocr-rec)铺进同一个下拉。选中 model 后由其 task 派发到内部三路机制
+  //   (taskType + 对应路径选中 id),prompt/类别白名单/变体/输出/buildArgs 仍按原路径生效。
+  const selectableModels = useMemo<MLModelCapability[]>(() => {
+    const seen = new Set<string>();
+    const out: MLModelCapability[] = [];
+    for (const m of capabilitiesQ.data?.models ?? []) {
+      if (m.is_interactive || !supportsFullImageInput(m)) continue;
+      const isGeo = GEOMETRIC_TASKS.includes(m.task ?? "");
+      const isDoc = m.task === "ocr" || m.task === "doc_layout";
+      if ((!isGeo && !isDoc) || seen.has(m.id)) continue;
+      seen.add(m.id);
+      out.push(m);
+    }
+    return out;
+  }, [capabilitiesQ.data]);
+  const selectedModelId = isDocMode
+    ? (activeDocModel?.id ?? null)
+    : isGeometricBackend
+      ? (geometricModel?.id ?? null)
+      : (textModel?.id ?? null);
+  const selectTaskModel = (id: string) => {
+    const m = selectableModels.find((x) => x.id === id);
+    if (!m) return;
+    if (m.task === "ocr" || m.task === "doc_layout") {
+      setTaskType(m.task as PreannotateTaskType);
+      setDocTaskId(id);
+    } else {
+      // 几何/文本路径同走 taskType="text"; 两路选中 id 同步置位, 由 isGeometricBackend 裁决取哪个。
+      setTaskType("text");
+      setGeometricTaskId(id);
+      setTextTaskId(id);
+    }
+  };
+
+  // 默认选中: 当前推导出的 selectedModelId 为空/失效(如纯 OCR backend 无几何/文本 model,
+  //   而 taskType 默认 "text" → 文本路径空)→ 取第一个可选 model 并派发其 taskType, 避免面板悬空。
+  useEffect(() => {
+    if (!selectableModels.length) return;
+    if (selectedModelId && selectableModels.some((m) => m.id === selectedModelId)) return;
+    const first = selectableModels[0];
+    if (first.task === "ocr" || first.task === "doc_layout") {
+      setTaskType(first.task as PreannotateTaskType);
+      setDocTaskId(first.id);
+    } else {
+      setTaskType("text");
+      setGeometricTaskId(first.id);
+      setTextTaskId(first.id);
+    }
+  }, [backendId, selectableModels, selectedModelId]);
+
   const variantSource = useMemo<VariantSource>(
     () =>
       deriveVariantSource({
@@ -556,10 +609,10 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     hasDocTasks,
     isDocMode,
     activeDocModel,
-    // v0.20.5 · doc (OCR / 版面) model-first: 统一「模型任务」下拉的候选与选中态。
-    docModels,
-    docTaskId,
-    setDocTaskId,
+    // v0.20.5 · 统一「模型任务」选择层: 所有 backend(含 OCR/版面)共用一个下拉。
+    selectableModels,
+    selectedModelId,
+    selectTaskModel,
     // 几何 task
     isGeometricBackend,
     geometricModels,

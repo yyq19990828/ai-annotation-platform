@@ -7,13 +7,13 @@ const emptyCfg = {
   backendId: null,
 } as unknown as PreannotateConfig;
 
-// v0.20.5 · doc(OCR)路径 model-first 基础 cfg:可注入 docModels / variantGroups 验证统一选择器与变体渲染。
+// v0.20.5 · OCR 路径走统一「模型任务」下拉的基础 cfg:可注入 selectableModels / variantGroups。
 function docCfg(over: Partial<PreannotateConfig> = {}): PreannotateConfig {
   const e2e = {
     id: "ocr-e2e",
     task: "ocr",
     display_name: "RapidOCR · 端到端 OCR",
-    composition: "composite",
+    composition: "composite" as const,
     supported_inputs: ["full_image"],
   };
   return {
@@ -21,13 +21,11 @@ function docCfg(over: Partial<PreannotateConfig> = {}): PreannotateConfig {
     isGeometricBackend: false,
     isTextPath: false,
     isDocMode: true,
-    hasDocTasks: true,
-    availableTaskTypes: ["text", "ocr"],
     taskType: "ocr",
     setTaskType: vi.fn(),
-    docModels: [e2e],
-    activeDocModel: e2e,
-    setDocTaskId: vi.fn(),
+    selectableModels: [e2e],
+    selectedModelId: "ocr-e2e",
+    selectTaskModel: vi.fn(),
     sourceBatchableWarning: null,
     hasAnyParams: false,
     hasNonVariantParams: false,
@@ -93,7 +91,11 @@ describe("PreannotateConfigForm", () => {
       composition: "composite" as const,
       supported_inputs: ["full_image"],
     };
-    render(<PreannotateConfigForm cfg={docCfg({ docModels: [det, e2e], activeDocModel: e2e })} />);
+    render(
+      <PreannotateConfigForm
+        cfg={docCfg({ selectableModels: [det, e2e], selectedModelId: "ocr-e2e" })}
+      />,
+    );
     expect(screen.getByRole("option", { name: "RapidOCR · 文本检测" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "RapidOCR · 端到端 OCR" })).toBeInTheDocument();
   });

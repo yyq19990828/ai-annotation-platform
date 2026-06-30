@@ -42,7 +42,7 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 
 ### Changed
 
-- OCR / 文档版面预标配置统一为 model-first,与几何(YOLO)、文本(gsam2/sam3)两路对齐:OCR 也走统一「模型任务」下拉,端到端 / 检测模型可见可选(默认端到端),版本(v5/v6)× 尺寸 × 语言变体可调并按 `model_variants` 真正下发后端。此前 OCR 路径只静默 `.find` 第一个模型、UI 不出任何模型选择器(端到端「不出现」),变体被 `hasAnyParams` 判据误判隐藏、即便选了也不下发(永远跑默认 v5/mobile/universal)。
+- OCR / 文档版面预标配置统一为 model-first,与几何(YOLO)、文本(gsam2/sam3)所有 backend 对齐:**移除 OCR/版面专属的「任务类型」tab 层**,改为把该 backend 全部可批量预标的模型(几何检测/分割 + OCR/版面)铺进同一个「模型任务」下拉。OCR 的端到端 / 检测模型现可见可选(默认端到端),版本(v5/v6)× 尺寸 × 语言变体可调并按 `model_variants` 真正下发后端。此前 OCR 走独立的「任务类型」tab + 静默 `.find` 第一个模型,UI 不出模型选择器(端到端「不出现」),变体被 `hasAnyParams` 判据误判隐藏、即便选了也不下发(永远跑默认 v5/mobile/universal)。
 - 项目设置「AI 预标注设置」改为**改动即时生效**:项目主后端下拉、IoU 去重阈值滑块各自直接落库(下拉选中即提交、滑块松手即提交),移除「保存 AI 设置」按钮与「有未保存的修改」提示。消除了「下拉 + 保存」与行内「设为主后端」对同一字段的双写。
 
 ### Fixed

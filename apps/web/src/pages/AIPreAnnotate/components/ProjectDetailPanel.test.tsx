@@ -401,36 +401,38 @@ describe("ProjectDetailPanel v0.9.12", () => {
       });
     }
 
-    it("能力目录无 ocr / doc_layout 时不显示任务类型选择", async () => {
+    it("无 ocr / doc_layout 模型时,文本路径正常出 prompt(无 OCR 选项)", async () => {
       renderUI();
       fireEvent.click(screen.getAllByRole("checkbox", { name: /选择/ })[0]);
       // 等 capabilities query 解析
       await waitFor(() => {
         expect(screen.getByPlaceholderText(/car, person/)).toBeInTheDocument();
       });
-      expect(screen.queryByText("OCR 文字识别")).toBeNull();
+      // v0.20.5 · 已无「任务类型」tab; 这是几何/文本 backend, 不应出现 OCR/版面 model 选项。
+      expect(screen.queryByRole("option", { name: /OCR/ })).toBeNull();
     });
 
-    it("含 ocr 条目时显示任务类型选择, 选 OCR 后隐藏 prompt + 显示静态提示", async () => {
+    it("OCR backend: 统一「模型任务」下拉列出 OCR/版面,默认落 OCR 后隐藏 prompt + 显示静态提示", async () => {
       withOcrCapabilities();
       renderUI();
       fireEvent.click(screen.getAllByRole("checkbox", { name: /选择/ })[0]);
+      // v0.20.5 · 不再有「OCR 文字识别」tab; OCR/版面 model 进统一「模型任务」下拉。
       await waitFor(() => {
-        expect(screen.getByText("OCR 文字识别")).toBeInTheDocument();
+        expect(screen.getByRole("option", { name: "OCR" })).toBeInTheDocument();
       });
-      fireEvent.click(screen.getByText("OCR 文字识别"));
+      expect(screen.getByRole("option", { name: "版面" })).toBeInTheDocument();
+      // 默认选中第一个可选 model(OCR)→ doc 模式: prompt 隐藏 + 静态提示。
       expect(screen.queryByPlaceholderText(/car, person/)).toBeNull();
       expect(screen.getByText(/未配置 text 属性，文本不会入库/)).toBeInTheDocument();
     });
 
-    it("OCR 模式发起预标透传 model_id + task_type, 不带 prompt", async () => {
+    it("OCR 默认模型发起预标透传 model_id + task_type, 不带 prompt", async () => {
       withOcrCapabilities();
       renderUI();
       fireEvent.click(screen.getAllByRole("checkbox", { name: /选择/ })[0]);
       await waitFor(() => {
-        expect(screen.getByText("OCR 文字识别")).toBeInTheDocument();
+        expect(screen.getByRole("option", { name: "OCR" })).toBeInTheDocument();
       });
-      fireEvent.click(screen.getByText("OCR 文字识别"));
       fireEvent.click(screen.getByRole("button", { name: /跑预标.*1 批/ }));
 
       await waitFor(() => {

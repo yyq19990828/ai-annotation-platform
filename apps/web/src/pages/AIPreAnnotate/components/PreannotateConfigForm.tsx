@@ -12,7 +12,7 @@ import { type TextOutputMode } from "@/hooks/usePreannotation";
 import { SchemaForm } from "@/pages/Workbench/components/SchemaForm";
 import { ClassWhitelistRow } from "./ClassWhitelistRow";
 import { PresetRow } from "./PresetRow";
-import { type PreannotateConfig, type PreannotateTaskType } from "./usePreannotateConfig";
+import { type PreannotateConfig } from "./usePreannotateConfig";
 import styles from "./ProjectDetailPanel.module.css";
 
 const OUTPUT_MODE_TABS = ["□ 框", "○ 掩膜", "⊕ 全部"];
@@ -27,16 +27,6 @@ const OUTPUT_MODE_BY_LABEL: Record<string, TextOutputMode> = {
   "⊕ 全部": "both",
 };
 
-const TASK_TYPE_LABELS: Record<PreannotateTaskType, string> = {
-  text: "文本预标",
-  ocr: "OCR 文字识别",
-  doc_layout: "文档版面",
-};
-const TASK_TYPE_BY_LABEL: Record<string, PreannotateTaskType> = {
-  文本预标: "text",
-  "OCR 文字识别": "ocr",
-  文档版面: "doc_layout",
-};
 
 const GEOMETRIC_TASK_LABELS: Record<string, string> = {
   detection: "检测（框）",
@@ -69,22 +59,11 @@ export function PreannotateConfigForm({
 }: Props) {
   // v0.18.12 · 统一「模型任务」选择器: 几何 (yolo) 与文本 (gsam2/sam3) 共用一套 model-first 选择,
   //   只差 prompt vs 类别白名单。doc 走上方「任务类型」, 不在此。
-  // v0.20.5 · doc (OCR / 版面) 也并入统一「模型任务」选择器: 三路同源 model-first。
-  const taskModels = cfg.isGeometricBackend
-    ? cfg.geometricModels
-    : cfg.isTextPath
-      ? cfg.textModels
-      : cfg.docModels;
-  const taskModel = cfg.isGeometricBackend
-    ? cfg.geometricModel
-    : cfg.isTextPath
-      ? cfg.textModel
-      : cfg.activeDocModel;
-  const setTaskModelId = cfg.isGeometricBackend
-    ? cfg.setGeometricTaskId
-    : cfg.isTextPath
-      ? cfg.setTextTaskId
-      : cfg.setDocTaskId;
+  // v0.20.5 · 单一「模型任务」下拉(对齐所有 backend): 候选 = 该 backend 全部可批量预标模型
+  //   (几何检测/分割 + OCR/版面)。不再为 OCR/版面单设「任务类型」tab; 选中 model 由 hook 派发。
+  const taskModels = cfg.selectableModels;
+  const taskModel = cfg.selectableModels?.find((m) => m.id === cfg.selectedModelId) ?? cfg.selectableModels?.[0];
+  const setTaskModelId = cfg.selectTaskModel;
   // 选择器的**真值键是 model_id**; 展示**直接用模型市场卡片标题 (display_name)**, 与卡片视图一致 ——
   // 用户在配置面板选的就是市场里那张卡 (同名同 id)。缺 display_name 才回落 task 标签 / id。
   const taskModelLabel = (m: { id: string; task?: string; display_name?: string }) =>
@@ -126,24 +105,9 @@ export function PreannotateConfigForm({
       ) : (
         <>
 
-      {/* v0.14.9 · 任务类型选择 (backend 暴露 ocr / doc_layout 模型时). */}
-      {cfg.hasDocTasks && (
-        <div className={styles.field}>
-          <span className={styles.fieldLabel}>任务类型</span>
-          <TabRow
-            tabs={cfg.availableTaskTypes.map((t) => TASK_TYPE_LABELS[t])}
-            active={TASK_TYPE_LABELS[cfg.taskType]}
-            onChange={(label) => {
-              const t = TASK_TYPE_BY_LABEL[label];
-              if (t) cfg.setTaskType(t);
-            }}
-          />
-        </div>
-      )}
-
-      {/* v0.14.17 / v0.18.12 · 统一「模型任务」下拉: 几何 (YOLO, 闭集) 与文本 (gsam2/sam3, 开集)
-          共用 —— 选项 = 模型市场卡片 model, value 直接是 model_id (真值键), 文案 = 卡片标题 (display_name)。
-          统一 wire 发 model_id。多于 1 个可选 model 出下拉。 */}
+      {/* v0.14.17 / v0.18.12 / v0.20.5 · 统一「模型任务」下拉: 几何 (YOLO 闭集)、文本 (gsam2/sam3 开集)、
+          OCR/版面 共用同一个下拉 —— 不再为 OCR/版面单设「任务类型」tab。选项 = 该 backend 可批量预标的
+          model, value 直接是 model_id, 文案 = 模型市场卡片标题 (display_name)。多于 1 个可选 model 出下拉。 */}
       {taskModels.length > 1 ? (
         <label className={styles.field}>
           <span className={styles.fieldLabel}>模型任务</span>
