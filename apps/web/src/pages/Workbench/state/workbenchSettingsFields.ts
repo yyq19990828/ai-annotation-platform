@@ -141,6 +141,13 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     control: { type: "slider", min: 3, max: 20, step: 1, format: (v) => `${v}` },
   },
   {
+    key: "common.petEnabled",
+    category: "common",
+    label: "工作台桌宠",
+    description: "常驻像素小精灵:久坐搭话、标注里程碑庆祝;选中标注时举牌(点击展开信息卡)。关闭后折叠态回退纯文字小条",
+    control: { type: "toggle", onText: "已开启", offText: "已关闭" },
+  },
+  {
     key: "common.crossFrameOverlayEnabled",
     category: "common",
     label: "邻帧框叠加",

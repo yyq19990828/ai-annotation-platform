@@ -1,0 +1,80 @@
+/* 工作台桌宠动效:仅 transform / opacity,零颜色(颜色走 SVG fill 属性)。
+   全部包在 prefers-reduced-motion: no-preference 内 —— 用户开启减少动态时自动静止。 */
+
+.sprite {
+  display: block;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .bob {
+    animation: pet-bob 3.2s ease-in-out infinite;
+  }
+
+  .eyes {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: pet-blink 4.8s ease-in-out infinite;
+  }
+
+  .bubble {
+    animation: pet-pop-in 220ms ease-out;
+  }
+
+  .sparkle {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: pet-sparkle 1.2s ease-in-out infinite;
+  }
+
+  .sparkle:nth-of-type(2) {
+    animation-delay: 0.3s;
+  }
+
+  .sparkle:nth-of-type(3) {
+    animation-delay: 0.6s;
+  }
+}
+
+@keyframes pet-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes pet-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.08);
+  }
+}
+
+@keyframes pet-pop-in {
+  0% {
+    transform: translateY(4px) scale(0.92);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes pet-sparkle {
+  0%,
+  100% {
+    transform: scale(0.5);
+    opacity: 0.25;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+}

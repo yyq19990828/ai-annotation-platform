@@ -19520,6 +19520,11 @@
             "title": "Performancetier",
             "type": "string"
           },
+          "petEnabled": {
+            "default": true,
+            "title": "Petenabled",
+            "type": "boolean"
+          },
           "recentClassesLimit": {
             "default": 5,
             "maximum": 20.0,
@@ -19899,7 +19904,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.20.5"
+    "version": "0.20.6"
   },
   "openapi": "3.1.0",
   "paths": {

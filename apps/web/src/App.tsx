@@ -92,6 +92,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useAppStore } from "@/stores/appStore";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { BugReportFAB } from "@/components/bugreport/BugReportFAB";
+import { useFabAutoHideDriver, useFabRevealed } from "@/stores/fabRevealStore";
 import { initBugReportCapture, patchFetchForBugCapture } from "@/utils/bugReportCapture";
 import { PageLoader } from "@/components/PageLoader";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
@@ -226,6 +227,9 @@ function FullScreenWorkbench({ mode }: { mode?: "annotate" | "review" }) {
     initBugReportCapture();
   }, []);
   useHeartbeat();
+  // 右下角按钮列日常隐藏:光标进右下角指定区域才露出。
+  useFabAutoHideDriver();
+  const fabRevealed = useFabRevealed();
 
   return (
     <div className={styles.fullScreenWorkbench}>
@@ -233,7 +237,7 @@ function FullScreenWorkbench({ mode }: { mode?: "annotate" | "review" }) {
         <WorkbenchPage mode={mode} />
       </Suspense>
       <ToastRack />
-      <BugReportFAB onClick={() => openBugDrawer()} />
+      <BugReportFAB hidden={!fabRevealed} onClick={() => openBugDrawer()} />
       {bugDrawerOpen && (
         <Suspense fallback={null}>
           <BugReportDrawer open={bugDrawerOpen} focusBugId={bugDrawerFocusId} onClose={closeBugDrawer} />

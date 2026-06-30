@@ -2420,6 +2420,15 @@ export function useWorkbenchShellModel({
       onClose: closeFloatingDiscussion,
     },
     floatingSelection: selectionCard,
+    // v0.20.x · 工作台桌宠;情绪全由 props 派生(标注数增长/里程碑/久坐),不挂 mutation。
+    pet: {
+      enabled: s.workbenchConfig.common.petEnabled,
+      hasSelection: Boolean(selectionCard),
+      collapsed: selectionCard?.collapsed ?? false,
+      selectionTitle: selectionCard?.title ?? null,
+      annotationCount: annotationsData?.length ?? 0,
+      onExpand: expandSelectionCard,
+    },
     aiPopover: {
       open: aiPopoverOpen && !isVideoTask,
       rightOffset: rightOpen ? rightPx + 44 : 44,

@@ -18,6 +18,7 @@ import { Topbar } from "./Topbar";
 import { WorkbenchBanners } from "./WorkbenchBanners";
 import { WorkbenchSettingsDrawer } from "./WorkbenchSettingsDrawer";
 import { WorkbenchStageHost } from "./WorkbenchStageHost";
+import { WorkbenchPet, type WorkbenchPetProps } from "./pet/WorkbenchPet";
 import { SIDE_FLOATING_PANEL_MAX_SIZE, SIDE_FLOATING_PANEL_MIN_SIZE } from "./floatingPanelSizing";
 import { GuidePanel } from "../sidebar/GuidePanel";
 
@@ -71,6 +72,8 @@ interface WorkbenchLayoutProps {
   floatingDiscussion?: FloatingWorkbenchPanel;
   // v0.16.8 · 选中标注浮动信息卡(图片 / 视频);null = 当前无选中 / 该端不显示。
   floatingSelection?: SelectedAnnotationCardProps | null;
+  // v0.20.x · 工作台桌宠;enabled=false 时不挂载,折叠态回退为纯文字小条。
+  pet?: ({ enabled: boolean } & WorkbenchPetProps) | null;
 }
 
 export function WorkbenchLayout({
@@ -97,6 +100,7 @@ export function WorkbenchLayout({
   floatingInspector,
   floatingDiscussion,
   floatingSelection,
+  pet,
 }: WorkbenchLayoutProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [splitTopHeight, setSplitTopHeight] = useState(readRightSplitTop);
@@ -270,7 +274,19 @@ export function WorkbenchLayout({
         </FloatingPanelShell>
       )}
 
-      {floatingSelection && <SelectedAnnotationCard {...floatingSelection} />}
+      {/* 桌宠开启时吃掉折叠态:折叠小条不渲染(由小精灵举牌代替),仅展开态渲染完整卡。 */}
+      {floatingSelection && (!pet?.enabled || !floatingSelection.collapsed) && (
+        <SelectedAnnotationCard {...floatingSelection} />
+      )}
+      {pet?.enabled && (
+        <WorkbenchPet
+          hasSelection={pet.hasSelection}
+          collapsed={pet.collapsed}
+          selectionTitle={pet.selectionTitle}
+          annotationCount={pet.annotationCount}
+          onExpand={pet.onExpand}
+        />
+      )}
 
       <AIPredictionPopover {...aiPopover} />
       <HotkeyCheatSheet {...hotkeys} />
