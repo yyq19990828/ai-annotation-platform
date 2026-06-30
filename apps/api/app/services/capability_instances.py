@@ -67,6 +67,10 @@ def _shape_models(caps: dict | None) -> list[dict]:
         return []
     out: list[dict] = []
     for m in caps.get("models") or []:
+        # 守卫:某个 backend 自报 "models": [null] / [str] 等非 dict 元素时,m.get(...)
+        # 会抛 AttributeError 直接逃出本路由,/instances 仍然整体 500。在源头跳过即可。
+        if not isinstance(m, dict):
+            continue
         out.append(
             {
                 "id": m.get("id", ""),

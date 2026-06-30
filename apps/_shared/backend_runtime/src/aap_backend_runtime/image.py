@@ -38,4 +38,11 @@ def fetch_image(file_path: str, *, timeout: float = 10.0) -> "Image":
             resp = client.get(file_path)
             resp.raise_for_status()
             return Image.open(io.BytesIO(resp.content)).convert("RGB")
+    # 未知 scheme 显式拒绝,恢复抽取前 sam3/grounded-sam2 的 400 语义:让 fall-through 到
+    # ``Image.open(file_path)`` 会把 s3://… / ftp://… 等当成本地路径,触发
+    # FileNotFoundError/UnidentifiedImageError → FastAPI 500 + 原生 traceback,既丢了
+    # 400 语义又可能泄露内部路径。空 scheme 视为本地路径(urlparse("/abs/path").scheme == "")。
+    # 调用方可装一个 ``@app.exception_handler(ValueError)`` 把它转成 HTTPException(400)。
+    if parsed.scheme and parsed.scheme != "file":
+        raise ValueError(f"unsupported file_path scheme: {parsed.scheme}")
     return Image.open(file_path).convert("RGB")

@@ -43,6 +43,10 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 ### Fixed
 
 - **工作台落下 / 删除标注时不再出现全屏刷新式闪烁**:图片舞台按稳定媒体身份(`dataset_item_id` / task id)复用已加载背景图,避免标注 mutation 刷新任务列表后拿到新的签名 `file_url` 时误判为换图并重载整张画布;新建标注的乐观 `tmp_*` 条目在服务端真实 id 回来后也保留稳定的前端渲染 key,避免 shape 被卸载再挂载;普通新增 / 更新 / 删除标注不再把桌宠切到“保存中”或“+1”短动画。
+- **rapidocr 池化引擎并发请求阈值互踩**:同 `pool_key` 共享 `RapidOCR` 实例,`update_params` 改阈值与之后的 `run_ocr_steps` 之间此前无锁 —— 两个并发请求(典型场景:批量预标多张图同 variant)会让后请求覆盖前请求的 `text_score` / `box_thresh` / `unclip_ratio`,前请求实际跑错阈值。现按 `pool_key` 配 `threading.Lock`,整段 update + run + build 在锁内串行执行。
+- **rapidocr 端到端方向标签贴错文本框**:`orientations` 此前在 `build_final_output` **之前**按「rec_res.txts 非空」索引快照,但 RapidOCR 还会按 `text_score` 二次过滤 → 过滤后的 `final.boxes[i]` 对应原始索引 ≠ `orientations[i]`,e2e 结果里方向标签贴到错的文本框上(`text_score > 0` 时显式出错)。现 orientation 在 `build_final_output` **之后**按 `final.txts` ↔ `rec_res.txts` 顺序游标回填。
+- **`/ml-capabilities/instances` 在 backend 自报 `models: [null]`/`[str]` 时仍整体 500**:此前路由级 `try/except` 捕获 `(ValidationError, KeyError, TypeError)`,但 `_shape_models` 是在 try **之前**跑的,非 dict 元素的 `m.get(...)` 抛 `AttributeError` 直接逃出本路由 —— 跟 v0.20.4 想修的形态相同。现 `_shape_models` 内部对每个 `m` 加 `isinstance(m, dict)` 守卫,源头跳过非 dict 条目。
+- **`aap_backend_runtime.fetch_image` 抽取后丢失 400 语义**:抽取前 `sam3-backend` / `grounded-sam2-backend` 各自的 `_fetch_image` 对未知 scheme 显式抛 `HTTPException(400, "unsupported file_path scheme: ...")`;共享层落地后 `s3://…` / `ftp://…` 等会 fall-through 到 `Image.open(file_path)`,以 `FileNotFoundError` → FastAPI 500 + 原生 traceback 字符串返回(语义回退 + 可能泄露内部路径)。现 `fetch_image` 末尾显式 scheme 校验、unsupported scheme 抛 `ValueError`,sam3 / grounded-sam2 装一个 `@app.exception_handler(ValueError)` 把它转回 400 响应,详情体只含 `"unsupported file_path scheme: <scheme>"`。
 
 ## [0.20.8] - 2026-07-01
 

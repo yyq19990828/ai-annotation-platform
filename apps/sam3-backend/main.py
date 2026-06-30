@@ -87,6 +87,18 @@ IDLE_UNLOAD_SECONDS = float(os.getenv("SAM3_IDLE_UNLOAD_SECONDS", "600"))
 IDLE_CHECK_INTERVAL = float(os.getenv("SAM3_IDLE_CHECK_INTERVAL", "60"))
 
 app = FastAPI(title="sam3-backend", version=BACKEND_VERSION)
+
+
+@app.exception_handler(ValueError)
+async def _value_error_to_400(_request: Request, exc: ValueError):
+    # aap_backend_runtime.fetch_image 对 unsupported scheme 抛 ValueError;此 handler
+    # 把它包成 HTTPException(400) 的等价响应,恢复抽取前 _fetch_image 的 400 语义,并防止
+    # 原生 traceback / 内部路径泄露到响应体。
+    from fastapi.responses import JSONResponse  # noqa: PLC0415
+
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
 _predictor: SAM3Predictor | None = None
 _cache = EmbeddingCache(capacity=EMBEDDING_CACHE_SIZE, sam_variant=MODEL_VERSION)
 _last_request_at: float = time.monotonic()

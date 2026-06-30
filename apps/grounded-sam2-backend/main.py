@@ -92,6 +92,18 @@ VIDEO_IDLE_UNLOAD_SECONDS = float(os.getenv("VIDEO_IDLE_UNLOAD_SECONDS", "600"))
 BACKEND_VERSION = os.getenv("BACKEND_VERSION", "0.10.1")
 
 app = FastAPI(title="grounded-sam2-backend", version=BACKEND_VERSION)
+
+
+@app.exception_handler(ValueError)
+async def _value_error_to_400(_request: Request, exc: ValueError):
+    # aap_backend_runtime.fetch_image 对 unsupported scheme 抛 ValueError;此 handler
+    # 把它包成 HTTPException(400) 的等价响应,恢复抽取前 _fetch_image 的 400 语义,并防止
+    # 原生 traceback / 内部路径泄露到响应体。
+    from fastapi.responses import JSONResponse  # noqa: PLC0415
+
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
 _last_request_at: float = time.monotonic()
 _idle_task: asyncio.Task | None = None
 # v0.10.23 · 额外变体 checkpoint 后台预拉状态 (主变体已由 entrypoint 阻塞下好).

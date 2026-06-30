@@ -98,16 +98,17 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
 
 ## OCR / 文档版面预标
 
-当选中的 backend 在[能力声明协议 v2](../../dev/reference/ml-backend-protocol) 中暴露 `ocr` 或 `doc_layout` 模型条目时（按能力目录派生），面板顶部出现「任务类型」选择器，三选一：
+OCR 与文档版面预标走和几何检测（YOLO）、文本检测（gsam2/sam3）**完全相同的 model-first 配置**：「模型任务」下拉列出 backend 自报的所有可批量预标的模型，OCR 端到端 / 检测模型与几何检测器并列出现，按选中模型自动决定要不要文本 prompt、要不要变体面板。
 
-- **文本预标**（默认）：走原有的纯文本 prompt 批量预标流程。
-- **OCR 文字识别** / **文档版面**：走对应模型条目，请求带 `model_id` + `task_type` 透传给 backend。
+<!-- 历史：曾有 OCR / 文档版面专属的「任务类型」tab 层，since v0.20.5 取消并与几何 / 文本检测的 model-first 配置对齐。-->
 
-选择 OCR 或文档版面后：
+- **选 OCR 端到端模型**（默认值 `ocr-e2e`）：整图直接出文本 polygon + `text` / `orientation` / `language` 属性，不需要文本 prompt；变体面板按模型自报的轴展开 PP-OCRv5/v6 × 尺寸档 × 通用(中英)/英文，调档实际下发后端。
+- **选纯检测模型**（如 `ocr-det`）：只出文本 polygon 框、不写文本属性，适合先批量出框、再走多阶段下游识别。
+- **识别文本去向**：识别出的文本写入 annotation 属性。**项目需先在「类别与属性」配置 `text` 属性，否则文本不会入库** —— 面板给出静态提示，并提供「从 ML Backend 预填配置」入口一键导入 backend 自报的属性 schema。
 
-- **隐藏文本 prompt 控件**：这两类任务不需要文本 prompt，参数面板改用所选 model 条目自带的 params schema（不再用 `/setup.params`）。
-- **识别文本去向**：识别出的文本写入 annotation 属性。**项目需先在「类别与属性」配置 text 属性，否则文本不会入库**——面板会给出静态提示。
-- 切换 backend 或刷新能力目录后，若当前任务类型不再可用，会自动回落到「文本预标」。
+### OCR 识别原子作下游 stage（跨 backend）
+
+OCR 识别原子（`task=ocr`、`composition=atom`、吃 `crop` 输入,如 rapidocr 的 `ocr-rec`）可在多阶段编排里作下游识别阶段:**上游任意 backend 出框 → 裁 crop → 下游 rec 认字并写回 `text` / `orientation` / `language`**。下游卡角色徽标显「识别」,选中识别原子时收起与之冗余的整图「模型任务」下拉。典型链路:`YOLO 检测车牌框 → rapidocr ocr-rec 认字写回 text`。
 
 ## Alias chips
 
