@@ -16,6 +16,10 @@ const EYE = "#111827";
 const MOUTH = "#7f1d1d";
 const BLUSH = "#fda4af";
 const SPARKLE = "#fbbf24";
+const STATUS_BLUE = "#38bdf8";
+const STATUS_AMBER = "#f59e0b";
+const STATUS_RED = "#ef4444";
+const STATUS_GREEN = "#22c55e";
 
 interface PixelHumanSpriteProps {
   mood: PetMood;
@@ -29,10 +33,13 @@ interface PixelHumanSpriteProps {
 export function PixelHumanSprite({ mood, size = 56 }: PixelHumanSpriteProps) {
   const happy = mood === "happy" || mood === "celebrate";
   const celebrate = mood === "celebrate";
-  const holding = mood === "holding";
+  const holding = mood === "holding" || mood === "multiSelected";
   const talking = mood === "idleTalk";
+  const focused = mood === "aiRunning" || mood === "candidateReady" || mood === "selected";
+  const alert = mood === "warning" || mood === "offline";
+  const reviewing = mood === "review";
   const raisedArms = holding || celebrate;
-  const bodyLift = happy ? -1 : 0;
+  const bodyLift = happy ? -1 : mood === "offline" ? 1 : 0;
 
   return (
     <svg
@@ -55,6 +62,38 @@ export function PixelHumanSprite({ mood, size = 56 }: PixelHumanSpriteProps) {
         </g>
       )}
 
+      {mood === "aiRunning" && (
+        <g fill={STATUS_BLUE}>
+          <rect x="21" y="2" width="2" height="2" />
+          <rect x="24" y="2" width="2" height="2" opacity="0.75" />
+          <rect x="18" y="2" width="2" height="2" opacity="0.55" />
+        </g>
+      )}
+
+      {mood === "candidateReady" && (
+        <g fill={STATUS_GREEN}>
+          <rect x="21" y="2" width="5" height="5" />
+          <rect x="22" y="4" width="1" height="2" fill={BOARD} />
+          <rect x="23" y="5" width="2" height="1" fill={BOARD} />
+        </g>
+      )}
+
+      {alert && (
+        <g fill={mood === "offline" ? STATUS_RED : STATUS_AMBER}>
+          <rect x="22" y="2" width="4" height="5" />
+          <rect x="23" y="3" width="2" height="2" fill={BOARD} />
+          <rect x="23" y="6" width="2" height="1" fill={BOARD} />
+        </g>
+      )}
+
+      {reviewing && (
+        <g fill={STATUS_BLUE}>
+          <rect x="21" y="2" width="4" height="4" />
+          <rect x="24" y="6" width="2" height="2" />
+          <rect x="22" y="3" width="2" height="2" fill={BOARD} />
+        </g>
+      )}
+
       <g transform={`translate(0 ${bodyLift})`}>
         {/* Legs */}
         <rect x="10" y="21" width="3" height="4" fill={APRON} />
@@ -70,12 +109,12 @@ export function PixelHumanSprite({ mood, size = 56 }: PixelHumanSpriteProps) {
             <rect x="20" y="12" width="3" height="6" fill={SHIRT_DARK} />
             <rect x="21" y="10" width="3" height="3" fill={SKIN} />
           </g>
-        ) : talking ? (
+        ) : talking || focused || reviewing ? (
           <g>
             <rect x="6" y="16" width="3" height="5" fill={SHIRT_DARK} />
-            <rect x="5" y="15" width="3" height="2" fill={SKIN} />
+            <rect x={focused ? 4 : 5} y={focused ? 14 : 15} width="3" height="2" fill={SKIN} />
             <rect x="19" y="15" width="3" height="6" fill={SHIRT_DARK} />
-            <rect x="21" y="14" width="2" height="3" fill={SKIN} />
+            <rect x="21" y={reviewing ? 13 : 14} width="2" height="3" fill={SKIN} />
           </g>
         ) : (
           <g>
@@ -114,6 +153,13 @@ export function PixelHumanSprite({ mood, size = 56 }: PixelHumanSpriteProps) {
           <g fill={EYE}>
             <rect x="10" y="9" width="3" height="1" />
             <rect x="15" y="9" width="3" height="1" />
+          </g>
+        ) : focused ? (
+          <g fill={EYE}>
+            <rect x="10" y="8" width="2" height="2" />
+            <rect x="16" y="8" width="2" height="2" />
+            <rect x="12" y="8" width="1" height="1" opacity="0.6" />
+            <rect x="18" y="8" width="1" height="1" opacity="0.6" />
           </g>
         ) : (
           <g className={styles.eyes} fill={EYE}>

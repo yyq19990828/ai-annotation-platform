@@ -344,10 +344,7 @@ export function WorkbenchLayout({
       )}
       {pet?.enabled && (
         <WorkbenchPet
-          hasSelection={pet.hasSelection}
-          collapsed={pet.collapsed}
-          selectionTitle={pet.selectionTitle}
-          annotationCount={pet.annotationCount}
+          context={pet.context}
           position={petPosition}
           onPositionChange={setPetPosition}
           onExpand={pet.onExpand}

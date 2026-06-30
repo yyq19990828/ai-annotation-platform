@@ -295,10 +295,13 @@ describe("WorkbenchLayout", () => {
         }}
         pet={{
           enabled: true,
-          hasSelection: true,
-          collapsed: false,
-          selectionTitle: "car",
-          annotationCount: 0,
+          context: {
+            selection: { count: 1, title: "car", collapsed: false, sourceKind: "manual" },
+            ai: { running: false, candidateCount: 0, backendOnline: true },
+            workflow: { saving: false, offline: false, offlineQueueCount: 0, readOnly: false, reviewMode: false },
+            quality: { warningCount: 0, primaryWarning: null },
+            counts: { annotationCount: 0 },
+          },
           onExpand: vi.fn(),
         }}
       />,
@@ -309,5 +312,36 @@ describe("WorkbenchLayout", () => {
     expect(panel.style.getPropertyValue("--floating-panel-y")).toBe("268px");
     expect(panel.className).toContain("z-overlay-high");
     expect(screen.getByLabelText("工作台桌宠(可拖动)")).toBeTruthy();
+  });
+
+  it("falls back to the text capsule when pet mode is disabled", () => {
+    render(
+      <WorkbenchLayout
+        {...baseProps}
+        floatingSelection={{
+          title: "car",
+          position: { x: 80, y: 90, w: 300, h: 260 },
+          onPositionChange: vi.fn(),
+          collapsed: true,
+          onCollapse: vi.fn(),
+          onExpand: vi.fn(),
+          children: <div>选中详情</div>,
+        }}
+        pet={{
+          enabled: false,
+          context: {
+            selection: { count: 1, title: "car", collapsed: true, sourceKind: "manual" },
+            ai: { running: false, candidateCount: 0, backendOnline: true },
+            workflow: { saving: false, offline: false, offlineQueueCount: 0, readOnly: false, reviewMode: false },
+            quality: { warningCount: 0, primaryWarning: null },
+            counts: { annotationCount: 0 },
+          },
+          onExpand: vi.fn(),
+        }}
+      />,
+    );
+
+    expect(screen.getByLabelText("展开选中信息卡(可拖动)")).toBeTruthy();
+    expect(screen.queryByLabelText("工作台桌宠(可拖动)")).toBeNull();
   });
 });

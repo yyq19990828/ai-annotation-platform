@@ -2,18 +2,12 @@ import { useCallback, useRef, useState, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import { useDragMove, type FloatingPanelPoint } from "../useDragMove";
 import { DEFAULT_PET_SKIN } from "./petSkins";
-import { usePetMood } from "./usePetMood";
+import { usePetState, type WorkbenchPetContext } from "./usePetState";
 import styles from "./pet.module.css";
 
 export interface WorkbenchPetProps {
-  /** 当前有选中标注。 */
-  hasSelection: boolean;
-  /** 选中信息卡处于折叠态;true 时桌宠「举牌」代替原折叠小条。 */
-  collapsed: boolean;
-  /** 选中对象标题(举牌文字)。 */
-  selectionTitle: string | null;
-  /** 当前题标注总数(派生 happy / celebrate)。 */
-  annotationCount: number;
+  /** 工作台上下文;全部由前端现有状态派生,不新增后端契约。 */
+  context: WorkbenchPetContext;
   /** 受控位置;用于让展开面板与桌宠保持锚定联动。 */
   position?: FloatingPanelPoint;
   /** 桌宠位置变化。 */
@@ -57,10 +51,7 @@ export function writeWorkbenchPetPosition(position: FloatingPanelPoint): void {
  * 数据红线:本组件不触碰任何标注数据,情绪全由 props 派生。
  */
 export function WorkbenchPet({
-  hasSelection,
-  collapsed,
-  selectionTitle,
-  annotationCount,
+  context,
   position: controlledPosition,
   onPositionChange,
   onExpand,
@@ -71,9 +62,10 @@ export function WorkbenchPet({
   );
   const movedRef = useRef(false);
   const startRef = useRef<FloatingPanelPoint | null>(null);
-  const { mood, line } = usePetMood({ hasSelection, collapsed, annotationCount, poke });
+  const { mood, message } = usePetState({ context, poke });
   const skin = DEFAULT_PET_SKIN;
   const position = controlledPosition ?? uncontrolledPosition;
+  const canExpand = context.selection.count > 0 && context.selection.collapsed;
 
   const onChange = useCallback((pos: FloatingPanelPoint) => {
     const start = startRef.current;
@@ -98,11 +90,10 @@ export function WorkbenchPet({
     onChange,
   });
 
-  const holding = mood === "holding";
-  const bubbleText = holding ? selectionTitle : line;
+  const bubbleText = message;
 
   const act = () => {
-    if (holding) onExpand();
+    if (canExpand) onExpand();
     else setPoke((n) => n + 1);
   };
 
@@ -110,8 +101,9 @@ export function WorkbenchPet({
     // div(非 button):useDragMove 的 isInteractiveTarget 会拦掉 button 的 pointerdown。
     <div
       data-floating-panel
+      data-pet-mood={mood}
       tabIndex={0}
-      aria-label={holding ? `展开选中信息卡:${selectionTitle ?? ""}(可拖动)` : "工作台桌宠(可拖动)"}
+      aria-label={canExpand ? `展开选中信息卡:${context.selection.title ?? ""}(可拖动)` : "工作台桌宠(可拖动)"}
       className={cn(
         "fixed left-[var(--pet-x)] top-[var(--pet-y)] z-popover-elevated flex cursor-grab touch-none select-none flex-col items-center gap-1",
         drag.isDragging && "cursor-grabbing",
@@ -133,14 +125,18 @@ export function WorkbenchPet({
         <div
           className={cn(
             "pointer-events-none max-w-[200px] border bg-card px-2.5 py-1.5 text-xs text-foreground shadow-md",
-            holding ? "rounded-md border-brand" : "rounded-lg border-border",
+            canExpand ? "rounded-md border-brand" : "rounded-lg border-border",
+            mood === "warning" && "border-status-caution bg-status-caution-soft text-status-caution",
+            mood === "offline" && "border-status-danger bg-status-danger-soft text-status-danger",
+            mood === "aiRunning" && "border-brand bg-status-info-soft text-status-info",
+            mood === "candidateReady" && "border-brand bg-status-info-soft text-status-info",
             styles.bubble,
           )}
         >
           <span className="block overflow-hidden text-ellipsis whitespace-nowrap font-medium">
             {bubbleText}
           </span>
-          {holding && <span className="text-muted-foreground">▸ 点我展开</span>}
+          {canExpand && <span className="text-muted-foreground">▸ 点我展开</span>}
         </div>
       )}
       <span className={styles.bob}>

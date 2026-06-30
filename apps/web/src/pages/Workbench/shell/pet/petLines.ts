@@ -1,7 +1,19 @@
 // 工作台桌宠话术池 + 里程碑常量(纯前端,v1 仅陪伴层)。
 // 形式可皮、数据不可皮:这里只产文案,不触碰任何标注数据。
 
-export type PetMood = "idle" | "idleTalk" | "holding" | "happy" | "celebrate";
+export type PetMood =
+  | "idle"
+  | "idleTalk"
+  | "holding"
+  | "selected"
+  | "multiSelected"
+  | "aiRunning"
+  | "candidateReady"
+  | "warning"
+  | "offline"
+  | "review"
+  | "happy"
+  | "celebrate";
 
 /** 标注总数踩到这些值时放「庆祝」动效。 */
 export const MILESTONES = [10, 25, 50, 100, 200, 500, 1000] as const;

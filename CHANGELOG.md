@@ -40,6 +40,12 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.20.x 版本段累积在本区；进入 0.21.x 后整体移到 docs/changelogs/0.20.x.md。
 -->
 
+## [0.20.8] - 2026-07-01
+
+### Changed
+
+- **工作台桌宠增强为低干扰状态代理**:桌宠状态机从 idle / 举牌 / 开心 / 庆祝扩展为上下文驱动的 `selected`、`multiSelected`、`aiRunning`、`candidateReady`、`warning`、`offline`、`review` 等状态;状态输入全部由工作台现有前端状态派生,覆盖多选数量、AI 当前题推理与候选、保存 / 离线 / 只读 / 审核、必填属性缺失、AI 候选未采纳、视频预测 / 插值帧等提示;久坐闲聊降为无上下文时的兜底,AI 运行状态至少保留 800ms 避免闪烁,仍不新增后端接口或标注 mutation。
+
 ## [0.20.7] - 2026-06-30
 
 ### Changed
