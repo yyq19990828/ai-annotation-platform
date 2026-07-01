@@ -1014,6 +1014,18 @@
             ],
             "title": "Lead Time"
           },
+          "parent_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Annotation Id"
+          },
           "parent_prediction_id": {
             "anyOf": [
               {
@@ -19905,7 +19917,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.20.8"
+    "version": "0.20.9"
   },
   "openapi": "3.1.0",
   "paths": {

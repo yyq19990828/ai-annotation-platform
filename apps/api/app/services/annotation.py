@@ -87,6 +87,33 @@ class AnnotationService:
                 ),
             )
 
+    async def _validate_parent_annotation(
+        self, task_id: uuid.UUID, parent_annotation_id: uuid.UUID
+    ) -> None:
+        """v0.20.9 · 父子标注仅一层深度约束（应用层校验，不下沉 DB 约束，留后手支持多层）。
+
+        父框必须: 存在且 active、与子框同一 task（父子限帧内）、自身无 parent
+        （即父不能再有父 → 只允许一层嵌套）。任一不满足返回 400。
+        """
+        from fastapi import HTTPException
+
+        parent = await self.db.get(Annotation, parent_annotation_id)
+        if parent is None or not parent.is_active:
+            raise HTTPException(
+                status_code=400,
+                detail=f"parent annotation {parent_annotation_id} not found or inactive",
+            )
+        if parent.task_id != task_id:
+            raise HTTPException(
+                status_code=400,
+                detail="parent annotation must belong to the same task (parent-child is frame-internal)",
+            )
+        if parent.parent_annotation_id is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="parent-child nesting is limited to one level",
+            )
+
     async def create(
         self,
         task_id: uuid.UUID,
@@ -96,6 +123,7 @@ class AnnotationService:
         geometry: dict,
         confidence: float | None = None,
         parent_prediction_id: uuid.UUID | None = None,
+        parent_annotation_id: uuid.UUID | None = None,
         lead_time: float | None = None,
         attributes: dict | None = None,
         tool_unit_id: str = "bbox",
@@ -105,6 +133,9 @@ class AnnotationService:
 
         if task and task.project_id:
             await self._validate_class_name(task.project_id, tool_unit_id, class_name)
+
+        if parent_annotation_id is not None:
+            await self._validate_parent_annotation(task_id, parent_annotation_id)
 
         annotation = Annotation(
             id=uuid.uuid4(),
@@ -118,6 +149,7 @@ class AnnotationService:
             geometry=geometry,
             confidence=confidence,
             parent_prediction_id=parent_prediction_id,
+            parent_annotation_id=parent_annotation_id,
             lead_time=lead_time,
             attributes=attributes or {},
         )
@@ -346,6 +378,22 @@ class AnnotationService:
         if not annotation:
             return False
         annotation.is_active = False
+        # v0.20.9 · 级联软删子框: 删父框时其所有 active 子框一并软删, 不留 orphan。
+        # 父子仅一层 (create 时约束), 故无需递归。
+        children = (
+            (
+                await self.db.execute(
+                    select(Annotation).where(
+                        Annotation.parent_annotation_id == annotation_id,
+                        Annotation.is_active.is_(True),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for child in children:
+            child.is_active = False
         await self.db.flush()
         await self._update_task_stats(annotation.task_id)
         return True

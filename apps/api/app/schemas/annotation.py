@@ -20,6 +20,8 @@ class AnnotationCreate(BaseModel):
     geometry: Geometry
     confidence: float | None = None
     parent_prediction_id: UUID | None = None
+    # v0.20.9 · 父子标注: 建子框时指向父框 (仅一层, service 层校验). 缺省为顶层框。
+    parent_annotation_id: UUID | None = None
     lead_time: float | None = None
     attributes: AnnotationAttributes | None = None
 

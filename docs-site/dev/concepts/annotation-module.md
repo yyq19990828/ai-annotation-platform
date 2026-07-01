@@ -72,7 +72,7 @@ graph TD
 | `geometry` | JSONB 几何体 |
 | `confidence` | 置信度，可空 |
 | `parent_prediction_id` | 来自哪条 prediction，可空 |
-| `parent_annotation_id` | 派生自哪条 annotation，可空 |
+| `parent_annotation_id` | 父框 id，可空；表「车牌属于车」这类从属层级（仅一层，见下方父子约束） |
 | `group_id` | 「平等成员同组」序号（`BigInteger`，可空；Ctrl+G 成组 / 跨帧链共享），区别于 `parent_annotation_id` 的层级语义 |
 | `lead_time` | 标注耗时 |
 | `attributes` | 扩展属性 |
@@ -85,6 +85,15 @@ graph TD
 - 真实删除走 soft delete，`delete()` 只会把 `is_active` 置 `False`
 - “有效标注数量”同时要求 `is_active=True` 且 `was_cancelled=False`
 - `parent_prediction_id` 让系统能追踪“哪些标注来自 AI 采纳”
+
+#### 父子标注（`parent_annotation_id`）
+
+`parent_annotation_id` 表达「子物属于父物」的层级从属（车牌属于车、零件属于整机），与 `group_id` 的「平等成员同组」是正交的两套关系。约束与行为：
+
+- **仅一层深度**：`AnnotationService._validate_parent_annotation` 在 `create` 时校验——父框须存在且 `is_active`、与子框**同一 task**（父子限帧内）、且父框自身 `parent_annotation_id` 为空。任一不满足返回 `400`。约束放在应用层而非 DB，给未来多层留后手。
+- **级联软删**：`delete()` 软删一个父框时，其全部 `is_active` 子框一并置 `is_active=False`，不留孤儿；`_update_task_stats` 按剩余 active 数重算 task 计数。
+- **创建入口**：`AnnotationCreate` 携带可空 `parent_annotation_id`，`POST /tasks/{task_id}/annotations` 透传给 service 建子框；缺省即顶层框。此前该字段只由视频 `convert` / `split` 内部构造框时写入（见下方轨迹转换）。
+- **前端呈现**：工作台侧栏 `AIInspectorPanel` 按父子缩进渲染（父行下方缩进列出子框），是层级的主结构；`group_id` 分桶为并存的次结构。
 
 ### Geometry union
 

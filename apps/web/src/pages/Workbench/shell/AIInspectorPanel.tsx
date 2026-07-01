@@ -753,7 +753,8 @@ type Row =
     onToggle: () => void;
     key: string;
   }
-  | { kind: "user"; box: Annotation; key: string };
+  /** v0.20.9 · 父子标注: depth=1 的行是子框, 在其父框行下方缩进渲染。 */
+  | { kind: "user"; box: Annotation; key: string; depth?: number };
 
 type FrameFilter = "all" | "current";
 
@@ -960,11 +961,33 @@ function BoxesList({
         key: "user-header",
       });
     }
+    // v0.20.9 · 父子标注: 建 parent → children 映射。子框从顶层迭代中剔除, 改在父框行下方
+    // 缩进渲染 (depth=1)。parent 缩进是 go-forward 唯一主结构; group 分桶为过渡期 legacy
+    // (v0.21.3 移除)。同时挂 group 与 parent 的框以 parent 缩进为准。
+    const userIdSet = new Set(filteredUserBoxes.map((b) => b.id));
+    const childrenByParent = new Map<string, Annotation[]>();
+    for (const b of filteredUserBoxes) {
+      const pid = b.parent_annotation_id;
+      if (pid && userIdSet.has(pid)) {
+        if (!childrenByParent.has(pid)) childrenByParent.set(pid, []);
+        childrenByParent.get(pid)!.push(b);
+      }
+    }
+    // 顶层框: 无 parent, 或 parent 不在当前过滤集内 (跨帧过滤等 → 回落顶层展示, 不隐藏)。
+    const topLevelBoxes = filteredUserBoxes.filter(
+      (b) => !(b.parent_annotation_id && userIdSet.has(b.parent_annotation_id)),
+    );
+    const emitBoxWithChildren = (b: Annotation) => {
+      out.push({ kind: "user", box: b, key: `user-${b.id}` });
+      const kids = childrenByParent.get(b.id);
+      if (kids) kids.forEach((c) => out.push({ kind: "user", box: c, key: `user-${c.id}`, depth: 1 }));
+    };
+
     // v0.10.20 · I12 按 group_id 分桶: 同 group_id (≥2 个成员) → group 卡片头, 展开时下方插入 user 行;
-    // group_id null 或单成员 group → 平铺. 保持 filteredUserBoxes 原顺序内的相对位置.
+    // group_id null 或单成员 group → 平铺. 保持 topLevelBoxes 原顺序内的相对位置.
     const bucketed: { groupId: number | null; boxes: Annotation[] }[] = [];
     const groupBuckets = new Map<number, Annotation[]>();
-    for (const b of filteredUserBoxes) {
+    for (const b of topLevelBoxes) {
       if (typeof b.group_id === "number") {
         if (!groupBuckets.has(b.group_id)) {
           groupBuckets.set(b.group_id, []);
@@ -988,10 +1011,10 @@ function BoxesList({
           key: `user-group-${gid}`,
         });
         if (expanded) {
-          bucket.boxes.forEach((b) => out.push({ kind: "user", box: b, key: `user-${b.id}` }));
+          bucket.boxes.forEach(emitBoxWithChildren);
         }
       } else {
-        bucket.boxes.forEach((b) => out.push({ kind: "user", box: b, key: `user-${b.id}` }));
+        bucket.boxes.forEach(emitBoxWithChildren);
       }
     }
     if (resolvedVideoTrackPanel) out.push({ kind: "videoTracks", key: "video-track-panel" });
@@ -1103,19 +1126,21 @@ function BoxesList({
                 />
               )}
               {r.kind === "user" && (
-                <BoxListItem
-                  b={r.box}
-                  orphan={orphanUserBoxIds?.has(r.box.id) ?? false}
-                  selected={selSet.has(r.box.id)}
-                  imageWidth={imageWidth} imageHeight={imageHeight}
-                  onSelect={(e) => selectBox(r.box, e?.shiftKey)}
-                  onDelete={() => onDeleteUserBox(r.box.id)}
-                  onChangeClass={onChangeUserBoxClass ? () => onChangeUserBoxClass(r.box.id) : undefined}
-                  onToggleFlag={onToggleUserBoxFlag ? (flag) => onToggleUserBoxFlag(r.box.id, flag) : undefined}
-                  onRefine={onRefineUserPolygon && r.box.geometry?.type === "polygon"
-                    ? () => onRefineUserPolygon(r.box.id)
-                    : undefined}
-                />
+                <div className={r.depth ? "ml-3 border-l-2 border-border pl-2" : undefined}>
+                  <BoxListItem
+                    b={r.box}
+                    orphan={orphanUserBoxIds?.has(r.box.id) ?? false}
+                    selected={selSet.has(r.box.id)}
+                    imageWidth={imageWidth} imageHeight={imageHeight}
+                    onSelect={(e) => selectBox(r.box, e?.shiftKey)}
+                    onDelete={() => onDeleteUserBox(r.box.id)}
+                    onChangeClass={onChangeUserBoxClass ? () => onChangeUserBoxClass(r.box.id) : undefined}
+                    onToggleFlag={onToggleUserBoxFlag ? (flag) => onToggleUserBoxFlag(r.box.id, flag) : undefined}
+                    onRefine={onRefineUserPolygon && r.box.geometry?.type === "polygon"
+                      ? () => onRefineUserPolygon(r.box.id)
+                      : undefined}
+                  />
+                </div>
               )}
             </div>
           );

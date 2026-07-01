@@ -283,6 +283,21 @@ describe("AIInspectorPanel", () => {
     expect(onRefinePrediction).toHaveBeenCalledWith(polygonBox);
   });
 
+  it("v0.20.9 · 子框在父框下方缩进渲染 (depth=1 → border-l 包裹)", () => {
+    const parent = makeUserBox("u-parent", "car");
+    const child = { ...makeUserBox("u-child", "plate"), parent_annotation_id: "u-parent" };
+    renderUI({ userBoxes: [parent, child] });
+    // 父子都渲染
+    expect(screen.getByTestId("box-item-u-parent")).toBeInTheDocument();
+    const childItem = screen.getByTestId("box-item-u-child");
+    expect(childItem).toBeInTheDocument();
+    // 子框被缩进包裹 (border-l 连接线), 父框不被包裹
+    expect(childItem.parentElement?.className).toContain("border-l-2");
+    expect(
+      screen.getByTestId("box-item-u-parent").parentElement?.className ?? "",
+    ).not.toContain("border-l-2");
+  });
+
   it("多选时显示 multiSelectionBar", () => {
     const u1 = makeUserBox("u-sel-1");
     const u2 = makeUserBox("u-sel-2");

@@ -40,6 +40,12 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.20.x 版本段累积在本区；进入 0.21.x 后整体移到 docs/changelogs/0.20.x.md。
 -->
 
+## [0.20.9] - 2026-07-01
+
+### Added
+
+- **父子标注：侧栏层级呈现 + 一层深度约束 + 级联删除**：`parent_annotation_id` 此前只被后端视频 split/convert 内部使用、前端从不呈现。现工作台侧栏对带父框的标注按缩进层级渲染（父行下方缩进列出子框，带连接线），让「车牌属于车」「零件属于整机」这类从属关系可见可管；后端 `create` 端点新增 `parent_annotation_id` 入参并做**仅一层嵌套**校验（父框须存在且 active、与子框同一 task、自身无父，任一不满足返回 400），删除父框时**级联软删其全部子框**、task 计数同步更新，不留孤儿。为后续「选中框二次推理产出子框」打底。
+
 ### Fixed
 
 - **能力目录按「协议能力」分组时,yolo / onnxtools 两个 backend 的模型条目全部消失**:`/ml-capabilities/instances` 路由层用 `InstanceModelItem` 对每个 backend 的自报数据做 Pydantic 校验,但 `classes` 字段被误标成 `list[str]`;yolo(COCO 80 类)/ onnxtools(车辆属性类)自报的 `classes` 实际是 `[{index,name}]` 对象数组(与项目级 `MLModelCapability.classes` 同构),校验直接炸出 80+ 个 `ValidationError`,而路由层 `except (ValidationError, KeyError, TypeError)` 会把校验失败的整条 backend 连带其全部模型一起静默跳过 —— 能力目录「协议能力」分组视图因此完全看不到这两个 backend 的任何条目(其余分组不受影响,因为它们走的是另一条不做该层校验的数据源)。现 `classes` 字段类型改为 `list[dict]`,与实际协议形态对齐;同步修正前端 `mlCapabilities.ts` 里同名字段的类型标注,并把此前用错误 `string[]` 夹具验证该行为的回归测试改成真实的 `[{index,name}]` 形态。

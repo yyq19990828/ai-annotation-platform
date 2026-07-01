@@ -223,6 +223,7 @@ async def create_annotation(
         geometry=data.geometry.model_dump(),
         confidence=data.confidence,
         parent_prediction_id=data.parent_prediction_id,
+        parent_annotation_id=data.parent_annotation_id,
         lead_time=data.lead_time,
         attributes=data.attributes,
     )

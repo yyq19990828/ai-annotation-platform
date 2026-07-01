@@ -174,6 +174,8 @@ export function annotationToBox(a: AnnotationResponse, occludedKeys?: Set<string
       : false,
     // I12 · Object Group; null/undefined 表示未分组.
     group_id: a.group_id ?? null,
+    // v0.20.9 · 父子标注; 透传供侧栏缩进呈现。null/undefined 为顶层框。
+    parent_annotation_id: a.parent_annotation_id ?? null,
     // v0.18.0 · 透传属性,供画布标签「标签内容·属性(单帧段)」渲染 (此前漏拷,
     // 导致单帧标签的属性开关无内容可显; AI 候选侧由 predictionsToBoxes 已拷)。
     attributes: a.attributes ?? null,
