@@ -7952,6 +7952,14 @@
       "InstanceModelItem": {
         "description": "实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 url / params 等运维\n信息; v0.14.12 起补 supported_variants + variant_combinations 让前端能按主轴展开\n「具体模型」行; v0.19.2 WS0 起补 supported_inputs + resource_profile, 与项目级\n/capabilities 对齐, 供全局编排选择器消费投递契约/批量画像).",
         "properties": {
+          "classes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Classes",
+            "type": "array"
+          },
           "composition": {
             "default": "atom",
             "title": "Composition",
@@ -19512,6 +19520,11 @@
             "title": "Performancetier",
             "type": "string"
           },
+          "petEnabled": {
+            "default": true,
+            "title": "Petenabled",
+            "type": "boolean"
+          },
           "recentClassesLimit": {
             "default": 5,
             "maximum": 20.0,
@@ -19891,7 +19904,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.19.5"
+    "version": "0.20.8"
   },
   "openapi": "3.1.0",
   "paths": {

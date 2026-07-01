@@ -36,6 +36,20 @@ describe("deriveVideoFrameViews", () => {
     expect(atInterp.entries[0].labelText).toContain("插值");
   });
 
+  it("entry / preview key 使用 render_key,避免 tmp id 确认后重挂", () => {
+    const ann = {
+      ...trackAnn("real-1", "trk1", [
+        { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
+      ]),
+      render_key: "tmp_abc",
+    };
+
+    const v = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 0 });
+
+    expect(v.entries[0].key).toBe("tmp_abc-trk1");
+    expect(v.previews[0].key).toBe("tmp_abc");
+  });
+
   it("遮挡关键帧:虚线 + 标签含遮挡", () => {
     const ann = trackAnn("t1", "trk1", [
       { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual", occluded: true },

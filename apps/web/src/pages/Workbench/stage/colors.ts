@@ -30,12 +30,43 @@ export function displayClassName(name: string): string {
 
 // Canvas(Konva) 用的颜色：通过浏览器 CSS 引擎把 oklch 转换成 hex，并缓存结果。
 const _canvasCache = new Map<string, string>();
+
+function directColorToHex(cssColor: string): string | null {
+  const raw = cssColor.trim();
+  const shortHex = raw.match(/^#([0-9a-fA-F]{3})$/);
+  if (shortHex) {
+    const [r, g, b] = shortHex[1].split("");
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  const longHex = raw.match(/^#([0-9a-fA-F]{6})(?:[0-9a-fA-F]{2})?$/);
+  if (longHex) return `#${longHex[1]}`.toLowerCase();
+
+  const rgb = raw.match(/^rgba?\(\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)/i);
+  if (!rgb) return null;
+  const toByte = (value: string) =>
+    Math.max(0, Math.min(255, Math.round(Number(value))));
+  const [r, g, b] = [toByte(rgb[1]), toByte(rgb[2]), toByte(rgb[3])];
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
+function hasCanvasColorParser(): boolean {
+  return typeof document !== "undefined" &&
+    !(typeof navigator !== "undefined" && /jsdom/i.test(navigator.userAgent));
+}
+
 export function colorToHex(cssColor: string): string {
   if (_canvasCache.has(cssColor)) return _canvasCache.get(cssColor)!;
+  const direct = directColorToHex(cssColor);
+  if (direct) {
+    _canvasCache.set(cssColor, direct);
+    return direct;
+  }
+  if (!hasCanvasColorParser()) return "#888888";
   try {
     const cvs = document.createElement("canvas");
     cvs.width = cvs.height = 1;
-    const ctx = cvs.getContext("2d")!;
+    const ctx = cvs.getContext("2d");
+    if (!ctx) return "#888888";
     ctx.fillStyle = cssColor;
     ctx.fillRect(0, 0, 1, 1);
     const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;

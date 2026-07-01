@@ -40,6 +40,8 @@ export interface WorkbenchCommonPreferences {
   fillOpacity: number;
   /** 选中对象填充加重透明度。 */
   fillOpacitySelected: number;
+  /** v0.20.x · 工作台桌宠(常驻像素小精灵);关闭后选中信息卡折叠态回退为纯文字小条。 */
+  petEnabled: boolean;
 }
 
 /** v0.16.7 · 标签字段 token 全集;class 三段恒显,不入表。 */
@@ -257,6 +259,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     strokeWidth: 1.5,
     fillOpacity: 0.07,
     fillOpacitySelected: 0.12,
+    petEnabled: true,
   },
   image: {
     smoothImage: true,

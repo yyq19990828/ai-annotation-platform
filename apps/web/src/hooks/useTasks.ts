@@ -100,6 +100,7 @@ export function useCreateAnnotation(taskId: string | undefined) {
         attributes: payload.attributes ?? {},
         created_at: new Date().toISOString(),
         updated_at: null,
+        render_key: tmpId,
       };
       qc.setQueryData<AnnotationResponse[]>(
         ["annotations", taskId],
@@ -115,7 +116,11 @@ export function useCreateAnnotation(taskId: string | undefined) {
       if (ctx?.tmpId) {
         qc.setQueryData<AnnotationResponse[]>(
           ["annotations", taskId],
-          (old) => (old ?? []).map((a) => (a.id === ctx.tmpId ? created : a)),
+          (old) => (old ?? []).map((a) =>
+            a.id === ctx.tmpId
+              ? { ...created, render_key: a.render_key ?? ctx.tmpId }
+              : a,
+          ),
         );
       }
       qc.invalidateQueries({ queryKey: ["tasks"] });

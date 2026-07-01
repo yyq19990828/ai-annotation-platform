@@ -539,7 +539,9 @@ async def create_project(
     # v0.19.0 ADR-0044 · 直接指定主 backend (非克隆路径) 时, 同步在新项目建启用关联;
     # 不然 project_ml_backend 缺行, trigger_preannotation 的 is_enabled 校验 404 +
     # ai_enabled 又派生为 true → 工作台显示「已启用 AI 却跑不起来」。
-    main_backend_to_enable = payload.get("ml_backend_id") if source_backend is None else None
+    main_backend_to_enable = (
+        payload.get("ml_backend_id") if source_backend is None else None
+    )
     project = Project(
         id=new_project_id,
         display_id=await next_display_id(db, "projects"),

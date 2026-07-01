@@ -76,7 +76,11 @@ export function useWorkbenchOfflineQueue({
         history.replaceAnnotationId(op.tmpId, real.id);
         queryClient.setQueryData<AnnotationResponse[]>(
           ["annotations", op.taskId],
-          (prev) => (prev ?? []).map((a) => (a.id === op.tmpId ? real : a)),
+          (prev) => (prev ?? []).map((a) =>
+            a.id === op.tmpId
+              ? { ...real, render_key: a.render_key ?? op.tmpId }
+              : a,
+          ),
         );
         // v0.6.3 P0：跨队列替换 tmpId → realId，保后续 update/delete 不 404
         await offlineQueueReplaceAnnotationId(op.tmpId, real.id);

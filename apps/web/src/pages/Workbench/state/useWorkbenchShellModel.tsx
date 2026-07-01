@@ -31,6 +31,7 @@ import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 import { useWorkbenchState } from "./useWorkbenchState";
 import { useToolBindings, classesForUnit } from "./useToolBindings";
 import type { ToolUnitId } from "@/constants/toolUnits";
+import type { AttributeField, ToolBinding, ToolBindings } from "@/api/projects";
 import { useViewportTransform } from "./useViewportTransform";
 import { useIssuePins } from "./useIssuePins";
 import { usePredictionPropagation } from "./usePredictionPropagation";
@@ -82,11 +83,13 @@ import {
   SelectionCardPlaceholder,
   type SelectedAnnotationCardProps,
 } from "../shell/SelectedAnnotationCard";
+import { getMissingRequired } from "../shell/AttributeForm";
 import { ImageSelectionCardContent } from "../shell/ImageSelectionCardContent";
 import { ImageBatchCardContent } from "../shell/ImageBatchCardContent";
 import { VideoBoxBatchCardContent } from "../shell/VideoBoxBatchCardContent";
 import { AIPredictionCardContent } from "../shell/selectionCard/AIPredictionCardContent";
 import { VideoFrameBoxCardContent } from "../shell/selectionCard/VideoFrameBoxCardContent";
+import type { PetSelectionSourceKind, WorkbenchPetContext } from "../shell/pet/usePetState";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
@@ -401,6 +404,7 @@ export function useWorkbenchShellModel({
   const imageWidth = task?.image_width ?? null;
   const imageHeight = task?.image_height ?? null;
   const fileUrl = task?.file_url ?? null;
+  const imageMediaKey = task?.dataset_item_id ?? task?.id ?? null;
   const blurhash = task?.blurhash ?? null;
   const thumbnailUrl = task?.thumbnail_url ?? null;
   const isVideoTask = task?.file_type === "video" || currentProject?.type_key === "video-track";
@@ -857,6 +861,52 @@ export function useWorkbenchShellModel({
       updateProjectMu.mutate({ default_variants: merged });
     },
     [interactiveBackendId, interactiveVariantGroups, currentProject?.default_variants, updateProjectMu],
+  );
+  // v0.20.2 · 「采纳后该属性将丢失」警告的一键补全: 把 active model 自报的属性字段 (warning.fillable)
+  // 补进项目「所有启用工具单位」的 attribute_schema.fields (同 key 覆盖、新 key 追加), 立即落库。
+  // 写项目配置是有副作用操作, 故先 window.confirm 确认 (plan 风险项)。补完后 enabledToolUnits 派生
+  // 收敛, useCapabilityValidation 重算, 该条警告自动消失。
+  const handleFillAttribute = useCallback(
+    (field: AttributeField) => {
+      const tb = currentProject?.tool_bindings;
+      if (!tb) return;
+      const enabledUnits = (Object.keys(tb) as ToolUnitId[]).filter((u) => tb[u]?.enabled);
+      if (enabledUnits.length === 0) {
+        pushToast({ msg: "当前项目没有启用的工具单位, 无法补全属性", kind: "warning" });
+        return;
+      }
+      if (
+        !window.confirm(
+          `将把属性「${field.label}」(key=${field.key}) 补进当前项目所有启用工具单位, 并立即保存。继续?`,
+        )
+      ) {
+        return;
+      }
+      // 仅改启用单位的 attribute_schema; 其余单位 (禁用/未配) 原样保留, 避免误丢配置。
+      const nextTb: ToolBindings = {};
+      for (const [unit, binding] of Object.entries(tb) as [ToolUnitId, ToolBinding][]) {
+        if (!binding) continue;
+        if (!binding.enabled) {
+          nextTb[unit] = binding;
+          continue;
+        }
+        const fields = ((binding.attribute_schema?.fields ?? []) as AttributeField[]).slice();
+        const idx = fields.findIndex((f) => f.key === field.key);
+        if (idx >= 0) fields[idx] = field;
+        else fields.push(field);
+        nextTb[unit] = { ...binding, attribute_schema: { fields } };
+      }
+      updateProjectMu.mutate(
+        { tool_bindings: nextTb },
+        {
+          onSuccess: () =>
+            pushToast({ msg: `已补全属性「${field.label}」到项目`, kind: "success" }),
+          onError: (err) =>
+            pushToast({ msg: "补全属性失败", sub: (err as Error).message, kind: "error" }),
+        },
+      );
+    },
+    [currentProject?.tool_bindings, updateProjectMu, pushToast],
   );
   // AI"配置区"共享状态 (任务类型 / 模型任务 / 类别白名单 / variant / 参数 / 输出形态 / buildArgs);
   // 与批量页 ProjectDetailPanel 同一 hook + PreannotateConfigForm (单一事实源). 驱动批量 AI 面板
@@ -1328,6 +1378,7 @@ export function useWorkbenchShellModel({
   const modeState = mode === "review" ? reviewModeState : annotateModeState;
   const { topbarActions, bannerActions } = modeState;
   const isLocked = modeState.isLocked;
+  const isSubmittingTask = topbarActions.isSubmitting ?? submitTaskMut.isPending;
 
   // v0.16.14 · 选中 AI 预测框反查:预测与普通框共用 s.selectedId,但预测 id 带 pred- 前缀且
   // 只在 aiBoxes(非 visibleAnnotationsData)里,故 selectedAnnotationForPanel 必为 null。
@@ -1336,6 +1387,20 @@ export function useWorkbenchShellModel({
     if (!s.selectedId?.startsWith("pred-") || modeState.diffMode === "final") return null;
     return aiBoxes.find((b) => b.id === s.selectedId) ?? null;
   }, [s.selectedId, modeState.diffMode, aiBoxes]);
+
+  const selectionSourceKind = useMemo<PetSelectionSourceKind>(() => {
+    if (selectedAiBox) return "prediction";
+    const ann = selectedAnnotationForPanel;
+    if (!ann) return "unknown";
+    if (isVideoTask) {
+      if (isVideoTrack(ann)) {
+        return resolveTrackAtFrame(ann.geometry, s.videoFrameIndex)?.source ?? "legacy";
+      }
+      if (isVideoBbox(ann)) return "legacy";
+    }
+    if (ann.source === "prediction_based" || ann.parent_prediction_id) return "prediction";
+    return "manual";
+  }, [isVideoTask, s.videoFrameIndex, selectedAiBox, selectedAnnotationForPanel]);
 
   // v0.11.28：改类悬浮框内联属性编辑——按当前正在改类的标注派生 schema/attributes/提交回调。
   const editingClassAnnotation = useMemo(
@@ -1866,6 +1931,89 @@ export function useWorkbenchShellModel({
     expandSelectionCard,
   ]);
 
+  const selectedAnnotationsForPet = useMemo(
+    () => visibleAnnotationsData.filter((ann) => selectedIds.includes(ann.id)),
+    [selectedIds, visibleAnnotationsData],
+  );
+  const selectedRequiredMissingCount = useMemo(() => {
+    const schema = toolView.attributeSchema;
+    if (!schema || (schema.fields ?? []).length === 0) return 0;
+    let count = 0;
+    for (const ann of selectedAnnotationsForPet) {
+      count += getMissingRequired(schema, ann.class_name, ann.attributes ?? {}).length;
+    }
+    return count;
+  }, [selectedAnnotationsForPet, toolView.attributeSchema]);
+  const selectedHasLockedOrHidden = useMemo(
+    () => selectedAnnotationsForPet.some((ann) => ann.is_locked || ann.is_hidden),
+    [selectedAnnotationsForPet],
+  );
+  const petQuality = useMemo<WorkbenchPetContext["quality"]>(() => {
+    const warnings: string[] = [];
+    if (selectedAiBox) warnings.push("候选待确认");
+    if (selectedRequiredMissingCount > 0) warnings.push("必填属性未填");
+    if (selectionCount > 1 && selectedHasLockedOrHidden) warnings.push("多选含锁定/隐藏");
+    if (selectionSourceKind === "interpolated") warnings.push("插值帧");
+    if (isVideoTask && selectionSourceKind === "prediction" && !selectedAiBox) warnings.push("预测来源");
+    return {
+      warningCount: warnings.length,
+      primaryWarning: warnings[0] ?? null,
+    };
+  }, [
+    selectedAiBox,
+    selectedHasLockedOrHidden,
+    selectedRequiredMissingCount,
+    isVideoTask,
+    selectionCount,
+    selectionSourceKind,
+  ]);
+  const petCandidateCount = (modeState.diffMode !== "final" ? aiBoxes.length : 0) + sam.candidates.length;
+  const petContext = useMemo<WorkbenchPetContext>(() => ({
+    selection: {
+      count: selectionCount,
+      title: selectionCard?.title ?? null,
+      collapsed: selectionCard?.collapsed ?? false,
+      sourceKind: selectionSourceKind,
+    },
+    ai: {
+      running: aiRunning || sam.isRunning,
+      candidateCount: petCandidateCount,
+      backendOnline: undefined,
+    },
+    workflow: {
+      saving: isSubmittingTask ||
+        bulkUpdateMut.isPending ||
+        groupAnnotationMut.isPending ||
+        ungroupAnnotationMut.isPending,
+      offline: !online,
+      offlineQueueCount: queueCount,
+      readOnly: isLocked,
+      reviewMode: mode === "review",
+    },
+    quality: petQuality,
+    counts: {
+      annotationCount: annotationsData?.length ?? 0,
+    },
+  }), [
+    aiRunning,
+    annotationsData?.length,
+    bulkUpdateMut.isPending,
+    groupAnnotationMut.isPending,
+    isLocked,
+    isSubmittingTask,
+    mode,
+    online,
+    petCandidateCount,
+    petQuality,
+    queueCount,
+    sam.isRunning,
+    selectionCard?.collapsed,
+    selectionCard?.title,
+    selectionCount,
+    selectionSourceKind,
+    ungroupAnnotationMut.isPending,
+  ]);
+
   const toggleLeftSidebar = useCallback(() => {
     if (!leftHasEmbeddedPanels) return;
     setLeftOpenState(!leftOpenState);
@@ -1988,7 +2136,7 @@ export function useWorkbenchShellModel({
     topbar: {
       projectName, projectDisplayId,
       task, taskIdx, taskTotal: tasks.length, aiRunning, batchStatus: currentBatchStatus,
-      isSubmitting: topbarActions.isSubmitting ?? submitTaskMut.isPending, confThreshold: s.confThreshold,
+      isSubmitting: isSubmittingTask, confThreshold: s.confThreshold,
       onShowHotkeys: () => setShowHotkeys(true),
       onBack,
       leftSidebarOpen: leftOpen,
@@ -2096,6 +2244,7 @@ export function useWorkbenchShellModel({
                   modelPref.save(id);
                 }}
                 capabilityWarnings={capabilityWarnings}
+                onFillAttribute={handleFillAttribute}
                 interactiveBackends={
                   (activeInteractivePrompt
                     ? routing.candidatesFor(activeInteractivePrompt)
@@ -2170,6 +2319,7 @@ export function useWorkbenchShellModel({
       },
       image: {
         fileUrl,
+        mediaKey: imageMediaKey,
         blurhash,
         imageWidth,
         imageHeight,
@@ -2269,6 +2419,7 @@ export function useWorkbenchShellModel({
       widthMin: sidebarMinPx, widthMax: sidebarMaxPx, widthResetTo: sidebarResetPx,
       onDetach: detachInspector,
       capabilityWarnings,
+      onFillAttribute: handleFillAttribute,
       aiBoxes: modeState.diffMode !== "final" ? aiBoxes : [],
       predictionSourceFilter,
       userBoxes, orphanUserBoxIds: orphanAnnotationIds,
@@ -2371,6 +2522,12 @@ export function useWorkbenchShellModel({
       onClose: closeFloatingDiscussion,
     },
     floatingSelection: selectionCard,
+    // v0.20.x · 工作台桌宠;情绪全由 props 派生(标注数增长/里程碑/久坐),不挂 mutation。
+    pet: {
+      enabled: s.workbenchConfig.common.petEnabled,
+      context: petContext,
+      onExpand: expandSelectionCard,
+    },
     aiPopover: {
       open: aiPopoverOpen && !isVideoTask,
       rightOffset: rightOpen ? rightPx + 44 : 44,

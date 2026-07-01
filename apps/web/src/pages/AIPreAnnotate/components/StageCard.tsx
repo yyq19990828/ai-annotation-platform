@@ -11,7 +11,7 @@
  * 下游 backend 不产属性时给 ⚠ 警示; 键冲突 chip 由容器传 conflictKeys 标红。
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -42,21 +42,27 @@ function cx(...names: Array<string | false | null | undefined>) {
   return names.filter(Boolean).join(" ");
 }
 
-/** 通用 chip 多选 (类别 / 属性键共用)。选中集合即语义值, 空集=全部。conflictKeys 命中的 chip 标红。 */
+/** 通用 chip 多选 (类别 / 属性键共用)。选中集合即语义值, 空集=全部。conflictKeys 命中的 chip 标红。
+ *  allowFreeText=true (父框类别用): 额外渲染文本输入框 (datalist 补全), 可加任意名字 (匹配检测框
+ *  class_name), 且把「已选但不在 options 里」的值也渲染成 chip (否则自由输入的项不可见/不可删)。 */
 function ChipMultiSelect({
   options,
   selected,
   onChange,
   conflictKeys,
   emptyHint,
+  allowFreeText = false,
 }: {
   options: Array<{ value: string; label: string }>;
   selected: Set<string>;
   onChange: (next: Set<string>) => void;
   conflictKeys?: Set<string>;
   emptyHint?: string;
+  allowFreeText?: boolean;
 }) {
-  if (options.length === 0) {
+  const listId = useId();
+  const [draft, setDraft] = useState("");
+  if (options.length === 0 && !allowFreeText) {
     return <span className={styles.mutedText}>{emptyHint ?? "无可选项"}</span>;
   }
   const toggle = (v: string) => {
@@ -65,41 +71,91 @@ function ChipMultiSelect({
     else next.add(v);
     onChange(next);
   };
+  const add = (raw: string) => {
+    const v = raw.trim();
+    if (!v) return;
+    const next = new Set(selected);
+    next.add(v);
+    onChange(next);
+    setDraft("");
+  };
+  // 自由文本模式: chip 列 = options ∪ 已选但不在 options 的值 (保证自由输入项可见可删)。
+  const optionValues = new Set(options.map((o) => o.value));
+  const extraSelected = allowFreeText
+    ? Array.from(selected)
+        .filter((v) => !optionValues.has(v))
+        .map((v) => ({ value: v, label: v }))
+    : [];
+  const allChips = [...options, ...extraSelected];
   return (
-    <div className={styles.aliasList}>
-      {options.map((o) => {
-        const active = selected.has(o.value);
-        const conflict = active && conflictKeys?.has(o.value);
-        return (
+    <>
+      {allowFreeText && (
+        <div className={styles.presetRow}>
+          <input
+            className={styles.textInput}
+            type="text"
+            list={listId}
+            value={draft}
+            placeholder="输入类名添加（匹配检测框类名）"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                add(draft);
+              }
+            }}
+          />
+          <datalist id={listId}>
+            {options.map((o) => (
+              <option key={o.value} value={o.value} />
+            ))}
+          </datalist>
           <button
-            key={o.value}
             type="button"
-            onClick={() => toggle(o.value)}
-            className={cx(
-              styles.aliasChip,
-              active && styles.aliasChipActive,
-              conflict && styles.aliasChipConflict,
-            )}
-            title={conflict ? `属性键 ${o.value} 与其它并行阶段冲突` : o.label}
+            className={styles.presetButton}
+            disabled={!draft.trim()}
+            onClick={() => add(draft)}
+            title="添加类名"
           >
-            <span>
-              {active ? "✓ " : ""}
-              {o.label}
-            </span>
+            添加
           </button>
-        );
-      })}
-      {selected.size > 0 && (
-        <button
-          type="button"
-          onClick={() => onChange(new Set())}
-          className={styles.refillButton}
-          title="清空选择"
-        >
-          清空
-        </button>
+        </div>
       )}
-    </div>
+      <div className={styles.aliasList}>
+        {allChips.map((o) => {
+          const active = selected.has(o.value);
+          const conflict = active && conflictKeys?.has(o.value);
+          return (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => toggle(o.value)}
+              className={cx(
+                styles.aliasChip,
+                active && styles.aliasChipActive,
+                conflict && styles.aliasChipConflict,
+              )}
+              title={conflict ? `属性键 ${o.value} 与其它并行阶段冲突` : o.label}
+            >
+              <span>
+                {active ? "✓ " : ""}
+                {o.label}
+              </span>
+            </button>
+          );
+        })}
+        {selected.size > 0 && (
+          <button
+            type="button"
+            onClick={() => onChange(new Set())}
+            className={styles.refillButton}
+            title="清空选择"
+          >
+            清空
+          </button>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -112,8 +168,11 @@ interface Props {
   projectMlBackendId?: string | null;
   /** 源阶段 backend, 用于默认选一个不同的下游 backend。 */
   sourceBackendId: string | null;
-  /** v0.18.5 · 项目类别 (类名)，父框类别过滤多选的选项。 */
+  /** v0.18.5 · 项目类别 (类名)，父框类别过滤多选的回落选项。 */
   projectClasses: string[];
+  /** v0.20.x · 上游(源/父)阶段筛完的有效类别名 —— 父框类别选项优先取此 (下游只会见到这些框);
+   *  空/缺 → 回落 projectClasses。父框类别另支持自由文本输入, 不限于这些选项。 */
+  parentClassOptions?: string[];
   /** v0.18.5 · 项目 attribute_schema 字段键，写回属性键多选的回落选项 (backend 未自报 schema 时)。 */
   projectAttributeKeys: string[];
   /** v0.18.5 · 本卡 write.keys 中与其它并行阶段冲突的键 (容器算好下发), 命中 chip 标红。 */
@@ -139,6 +198,7 @@ export function StageCard({
   projectMlBackendId,
   sourceBackendId,
   projectClasses,
+  parentClassOptions,
   projectAttributeKeys,
   conflictKeys,
   stat,
@@ -196,10 +256,12 @@ export function StageCard({
     ? cfg.buildArgs("skip_predicted")
     : null;
 
-  // v0.18.2 / v0.18.13 / v0.18.15 · 下游可选 model: 非交互、原子 (composition!=composite) 的批量单元 ——
+  // v0.18.2 / v0.18.13 / v0.18.15 / v0.20.x · 下游可选 model: 非交互、原子 (composition!=composite) 的批量单元 ——
   //   classification (裁 ROI 跑分类, crop 投递, 产属性) / box-seg (segmentation + bbox prompt,
   //   消费上游框出 mask, geometry 投递, 产几何) / detection (普通检测器在父 crop 上检子物体,
-  //   crop 投递 + 坐标回映, 产几何, v0.18.15)。编排只组合 atom: 一锅端 composite / 交互式不作下游。
+  //   crop 投递 + 坐标回映, 产几何, v0.18.15) / ocr 识别 (rec 原子在父 crop 上认字, crop 投递,
+  //   产 text/orientation/language 属性 —— 跨 backend「上游 det → 下游 rec」编排的下游, v0.20.x)。
+  //   编排只组合 atom: 一锅端 composite (如 ocr-e2e) / 交互式不作下游。
   const downstreamModels = useMemo(() => {
     const models = cfg.capabilitiesQ.data?.models ?? [];
     return models.filter(
@@ -208,6 +270,7 @@ export function StageCard({
         !m.is_interactive &&
         (m.task === "classification" ||
           m.task === "detection" ||
+          m.task === "ocr" ||
           (m.task === "segmentation" && (m.supported_prompts ?? []).includes("bbox"))),
     );
   }, [cfg.capabilitiesQ.data]);
@@ -234,6 +297,29 @@ export function StageCard({
   // 产几何的两类下游 (共用: 隐藏属性字段, 允许作父阶段)。isBoxSegGeometry 走 geometry 投递,
   // isCropDetectGeometry 走 crop 投递。
   const isGeometryDownstream = isBoxSegGeometry || isCropDetectGeometry;
+
+  // v0.20.x · 文本识别下游 (rec 原子, task=ocr, crop 投递, 产 text/orientation/language)：
+  //   跨 backend 编排里「上游 det 出框 → 裁 crop → 喂 rec 认字」的下游识别阶段。语义是识别 (非分类),
+  //   走 attributes 投递。rec 是 crop-only, 不在 selectableModels (单阶段整图下拉被排除), 只能在此选。
+  const isOcrRecognize =
+    selectedModel?.task === "ocr" &&
+    selectedModel?.composition !== "composite" &&
+    !selectedModel?.is_interactive;
+
+  // 选中 rec 下游时, 把本卡继承的配置表单切到其整图 OCR 同胞 (e2e): ① 让 cfg.configReady=true (否则
+  //   纯 rec 既非 doc/几何/prompt, stageArgs 为 null), ② 让继承的变体选择器暴露 version/size/lang
+  //   轴 (rec 与 e2e 共用同套轴), payload 的 model_variants 据此对齐 rec。各卡 cfg 独立, 不影响源阶段。
+  const ocrSiblingId = useMemo(
+    () => cfg.selectableModels?.find((m) => m.task === "ocr")?.id ?? null,
+    [cfg.selectableModels],
+  );
+  useEffect(() => {
+    if (isOcrRecognize && ocrSiblingId && cfg.selectedModelId !== ocrSiblingId) {
+      cfg.selectTaskModel(ocrSiblingId);
+    }
+    // selectTaskModel 每渲染新引用; 由 selectedModelId!==ocrSiblingId 守卫收敛, 不入依赖避免每帧重跑。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOcrRecognize, ocrSiblingId, cfg.selectedModelId]);
 
   // 派生 stage payload (不含 stage 序号 / parent_stage, 由容器补)。
   // stageArgs / currentVariantSlice 每次渲染新对象, 用 JSON 串作 useMemo 稳定依赖 (抽出供静态检查)。
@@ -266,17 +352,25 @@ export function StageCard({
           : { roi: { mode: "geometry" as const, pad }, write: { target: "geometry" as const } }),
       };
     }
-    // classify 下游 (现状): 走 buildArgs + 选中分类 model 覆盖。
+    // classify / ocr-rec 下游: 走 buildArgs 取 backend/params, 但**变体按选中下游 model 自己的轴**
+    //   过滤 (与几何下游一致), 不再透传「模型任务」整图模型的轴; 且**不透传源模型的 class_filter**
+    //   —— 其 index 空间属上游整图检测模型, 与下游分类/识别 model 的类别空间无关, 灌进去后端会误用/忽略。
     if (!stageArgs) return null;
     const keyArr = Array.from(writeKeys);
     const labelTrim = label.trim();
+    const downstreamAxisKeys = new Set(
+      (selectedModel?.supported_variants ?? []).map((g) => g.key),
+    );
+    const downstreamVariants: Record<string, string> = {};
+    for (const [k, v] of Object.entries(cfg.currentVariantSlice)) {
+      if (downstreamAxisKeys.has(k)) downstreamVariants[k] = v;
+    }
     return {
       ml_backend_id: stageArgs.ml_backend_id,
       model_id: selectedModel?.id ?? stageArgs.model_id,
       task_type: selectedModel?.task ?? stageArgs.task_type,
-      model_variants: stageArgs.model_variants,
+      model_variants: downstreamVariants,
       params: stageArgs.params,
-      class_filter: stageArgs.class_filter,
       parent_class_filter: classArr.length > 0 ? classArr : undefined,
       roi: { mode: "crop", pad },
       ...(labelTrim ? { label: labelTrim } : {}),
@@ -315,8 +409,12 @@ export function StageCard({
   const selectedModelTypes = selectedModel?.output_attribute_types ?? [];
   const producesClass =
     selectedModelTypes.length > 0 ? selectedModelTypes.includes("class") : undefined;
+  // isOcrRecognize 排除: rec 产 text/orientation/language (本就不含 class), 该警告对识别阶段是误报。
   const showNoClassWarning =
-    !isGeometryDownstream && capabilitiesReady && producesClass === false;
+    !isGeometryDownstream &&
+    !isOcrRecognize &&
+    capabilitiesReady &&
+    producesClass === false;
   // v0.19.2 WS1 · write.keys 与 model 自报 output_attribute_schema 对账 (config-time 警告, 不硬挡):
   // 选的键不在 model schema 字段集 → 该 model 可能不产出。schema 缺失时跳过 (向后兼容)。
   const schemaKeySet = new Set(
@@ -371,7 +469,13 @@ export function StageCard({
         <span className={styles.stageRole}>
           <Icon name="brain" size={13} />
           <Badge variant="accent">
-            {isCropDetectGeometry ? "检测" : isBoxSegGeometry ? "分割" : "分类"}
+            {isCropDetectGeometry
+              ? "检测"
+              : isBoxSegGeometry
+                ? "分割"
+                : isOcrRecognize
+                  ? "识别"
+                  : "分类"}
           </Badge>
           <strong className={styles.sectionTitle}>阶段 {displayIndex}</strong>
         </span>
@@ -414,13 +518,26 @@ export function StageCard({
         </div>
       )}
 
-      <PreannotateConfigForm
-        cfg={cfg}
-        backends={backends}
-        selectedBackendId={backendId}
-        onSelectBackend={setBackendId}
-        projectMlBackendId={projectMlBackendId}
-      />
+      {/* ML Backend 选择 (下游卡自持, 置于「下游模型」之上): 先选后端 → 再选下游模型 → 父框类别,
+          模型版本/参数面板 (PreannotateConfigForm) 移到卡片最底部。原由 PreannotateConfigForm 渲染的
+          后端下拉就此上移, 故下方不再向其传 backends/onSelectBackend (避免重复渲染)。 */}
+      {backends.length > 1 && (
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>ML Backend</span>
+          <select
+            value={backendId ?? ""}
+            onChange={(e) => setBackendId(e.target.value || null)}
+            className={styles.promptInput}
+          >
+            {backends.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+                {b.id === projectMlBackendId ? "（项目主后端）" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {/* v0.18.12 · 下游模型选择: 同一 backend 暴露多个可作下游的批量原子时显式选 (分类 / 框→分割)。 */}
       {downstreamModels.length > 1 && (
@@ -434,7 +551,13 @@ export function StageCard({
             {downstreamModels.map((m) => (
               <option key={m.id} value={m.id}>
                 {(m.display_name || m.id) +
-                  (m.task === "segmentation" ? "（框→分割）" : "（分类）")}
+                  (m.task === "segmentation"
+                    ? "（框→分割）"
+                    : m.task === "ocr"
+                      ? "（识别）"
+                      : m.task === "detection"
+                        ? "（检测）"
+                        : "（分类）")}
               </option>
             ))}
           </select>
@@ -450,6 +573,11 @@ export function StageCard({
         <span className={styles.mutedText}>
           下游模型：{selectedModel?.display_name || selectedModel?.id}（框→分割：消费上游检测框出
           mask，无需 prompt；上方 prompt/输出形态对本阶段不生效，仅 SAM 变体有效）
+        </span>
+      ) : isOcrRecognize ? (
+        <span className={styles.mutedText}>
+          下游模型：{selectedModel?.display_name || selectedModel?.id}（在父框 crop 上识别文本，
+          写回 text/orientation/language 属性；上方仅版本/尺寸/语言变体对本阶段有效）
         </span>
       ) : (
         selectedModel && (
@@ -493,10 +621,14 @@ export function StageCard({
           父框类别（留空=对全部父框跑；按检测框类名匹配）
         </span>
         <ChipMultiSelect
-          options={projectClasses.map((c) => ({ value: c, label: c }))}
+          // 选项优先取上游筛完的类别 (下游只会见到这些框); 取不到回落项目类别。另支持自由文本输入。
+          options={(parentClassOptions?.length ? parentClassOptions : projectClasses).map(
+            (c) => ({ value: c, label: c }),
+          )}
           selected={classFilter}
           onChange={setClassFilter}
-          emptyHint="项目暂无类别配置，留空=对全部父框跑"
+          allowFreeText
+          emptyHint="留空=对全部父框跑"
         />
       </div>
 
@@ -563,6 +695,17 @@ export function StageCard({
           )}
         </div>
       )}
+
+      {/* 模型版本 / 推理参数: 置于卡片最后 —— 先定下游模型与父框类别, 再调该模型的版本/尺寸/阈值。
+          backend 选择已上移到顶部, 这里不再传 backends/onSelectBackend (后端下拉由顶部渲染)。
+          下游卡恒收起整图「模型任务」下拉与类别白名单 (真值是上方「下游模型」, 整图轴/类别白名单分属
+          源整图模型, 与下游阶段无关; payload 已按下游 model 自己的轴过滤、不透传源 class_filter)。 */}
+      <PreannotateConfigForm
+        cfg={cfg}
+        projectMlBackendId={projectMlBackendId}
+        hideModelTaskSelector
+        hideClassWhitelist
+      />
     </Card>
   );
 }

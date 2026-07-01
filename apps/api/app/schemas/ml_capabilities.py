@@ -99,6 +99,9 @@ class InstanceModelItem(BaseModel):
     # 协议③ · 属性输出类型 + schema 自描述 (含 select options), 供「从 backend 导入属性」.
     output_attribute_types: list[str] = []
     output_attribute_schema: list[dict] = []
+    # v0.20.3 · backend 自报的类别清单 (yolo COCO 等)。供前端「从 backend 预填配置」一键
+    # 导入类别——此前本字段在 /instances 被裁掉, 类别只能手抄。缺省 [] 向后兼容。
+    classes: list[str] = []
     modality: str | None = None
     supported_variants: list[InstanceVariantGroup] = []
     variant_combinations: list[list[str]] = []

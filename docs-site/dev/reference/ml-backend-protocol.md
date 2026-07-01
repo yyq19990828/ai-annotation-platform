@@ -659,6 +659,14 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 - 识别文本：写入 prediction result 的 `attributes.text`（必要时 `attributes.language` / `attributes.orientation`，对应 `output_attribute_types` 声明）。
 - 采纳后生成普通 annotation + text 写入 attributes；**项目未配置 text attribute 时不静默丢文本** —— 前端提示「可采纳几何，文本字段不会入库」或要求先配置。
 
+**真实参考 backend `rapidocr`**（[`apps/rapidocr-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/apps/rapidocr-backend)）把 RapidOCR 的 `det → cls → rec` 三段拆为**原子能力 + 端到端编排**，自报三个 model：
+
+- `ocr-det`（`task: "detection"`，原子）：full_image → `polygon` 四点文本框，无属性。
+- `ocr-rec`（`task: "ocr"`，原子）：`crop` → `attributes.text` + `orientation`，内部跑文本行方向分类（cls）做 180° 校正。
+- `ocr-e2e`（`task: "ocr"`，composite）：full_image → `polygon` + text + orientation + language，一次 `/predict` 跑完三段。
+
+文本行方向分类（0/180）语言/版本无关、内化进 rec 与 e2e，不单独暴露为能力。`attributes.language` 按所选识别模型标（`universal` 中英 / `en` 英文），非逐框检测。`supported_variants` 走 version(PP-OCRv5/v6) × size × lang 三轴。平台 pipeline 可把 `ocr-det`（源阶段出框）→ `ocr-rec`（下游吃 crop 出文本）串成编排；`ocr-e2e` 是单 backend 一次跑完的便捷入口。
+
 **Doc Layout**（`task: "doc_layout"`）：
 
 - 输出区域 class：`title` / `paragraph` / `table` / `figure` / `formula` / `list` / `header` / `footer`，落 `class_name`。
@@ -686,7 +694,9 @@ POST /projects/{pid}/ml-backends/{bid}/capabilities/refresh  # 强制重探 /set
 
 **真实推理参考实现（v0.14.12 起）**：[`apps/yolo-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/apps/yolo-backend) —— ultralytics 多任务多系列 backend，覆盖 detection / segmentation(instance) / keypoint / obb 四 task × v8/v9/v10/v11/v12/v26/rt-detr 七系列，共 80 个有效预训练组合。`/setup.models[]` 按 task 拆 4 条目，`supported_variants` 走 series × size 两轴，按预训练矩阵严格过滤。`/predict` 零 adapter 命中 4 种 result type，结果直落平台 `apps/api/app/services/prediction.py::to_internal_shape` → internal Geometry。可作为新接入 backend 的首选骨架参考。
 
-**协议形态参考实现（无真实推理）**：[`docs-site/dev/examples/mock-v2-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/docs-site/dev/examples/mock-v2-backend) —— `/setup` 暴露 YOLO 风格多任务 `models[]`（detection / segmentation / keypoint / obb / classification）+ PaddleOCR / DocLayout 条目，每条带 `task` / `infra` / 几何 / 多轴 `variants`；`/predict` 按 `context.type`（task_type）返回固定 demo 结果，OCR 条目带 `attributes.text`。无真实推理，可直接 `uvicorn main:app --port 9100` 起来做协议 v2 冒烟与接入验证。
+**真实 OCR 参考实现**：[`apps/rapidocr-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/apps/rapidocr-backend) —— RapidOCR(ONNX) backend，`ocr` 任务族首个真实推理实现。把一条 OCR 流水线拆为原子能力（`ocr-det` 检测 + `ocr-rec` 识别）+ 端到端 composite（`ocr-e2e`），详见 §4.1.8。`/setup.models[]` 三条目走 version × size × lang 多轴 `variants`，权重 bind-mount 注入（`download_models.py` 拉取）。可作为「单 backend 把流水线拆成原子 + 编排入口」与 OCR 富属性（text/orientation/language）落点的参考。
+
+**协议形态参考实现（无真实推理）**：[`docs-site/dev/examples/mock-v2-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/docs-site/dev/examples/mock-v2-backend) —— `/setup` 暴露 YOLO 风格多任务 `models[]`（detection / segmentation / keypoint / obb / classification）+ PaddleOCR / DocLayout 条目，每条带 `task` / `infra` / 几何 / 多轴 `variants`；`/predict` 按 `context.type`（task_type）返回固定 demo 结果，OCR 条目带 `attributes.text`。无真实推理，可直接 `uvicorn main:app --port 9100` 起来做协议 v2 冒烟与接入验证；其 PaddleOCR 条目的真实形态即上文 `rapidocr` backend。
 
 **最小 v1 参考实现**：见下文 echo-ml-backend。
 

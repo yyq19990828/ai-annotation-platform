@@ -354,6 +354,17 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     [project?.attribute_schema],
   );
 
+  // v0.20.x · 源阶段「筛完的有效类别」(类名): 源模型类别表 (静态 COCO80 等) ∩ 源类别白名单
+  //   (白名单空 = 全类)。下游卡的「父框类别」选项优先取此 (下游只会见到源筛出的框), 取不到回落
+  //   projectClasses。注: 仅按源阶段算 (覆盖主流单层 det→下游); 多层父为中间阶段时回落自由文本。
+  const sourceEffectiveClasses = useMemo<string[]>(() => {
+    const all = cfg.geometricModel?.classes ?? [];
+    if (all.length === 0) return [];
+    const sel = cfg.selectedClassIdx;
+    const picked = sel.size > 0 ? all.filter((c) => sel.has(c.index)) : all;
+    return picked.map((c) => c.name);
+  }, [cfg.geometricModel, cfg.selectedClassIdx]);
+
   // v0.18.5 / v0.18.15 · 键冲突配置期预警: 多个 attributes 阶段写同一「最终键」(label 前缀后) → 冲突。
   // 与后端校验对齐 (按 label 加完前缀的最终键去重): hat_color 与 shoe_color 不冲突。
   // 算出冲突的最终键 (供顶部提示) + 每卡命中的原始键集 (供 chip 标红)。
@@ -800,6 +811,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                     projectMlBackendId={project?.ml_backend_id}
                     sourceBackendId={selectedBackendId}
                     projectClasses={projectClasses}
+                    parentClassOptions={sourceEffectiveClasses}
                     projectAttributeKeys={projectAttributeKeys}
                     conflictKeys={conflictInfo.perCard[e.sid]}
                     stat={stageStatByIndex.get(i + 1)}

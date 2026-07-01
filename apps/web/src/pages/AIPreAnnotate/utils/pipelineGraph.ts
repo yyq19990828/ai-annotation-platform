@@ -32,12 +32,15 @@ export function producesGeometry(payload: PipelineStagePayload | null | undefine
   return t === "geometry" || t === "intermediate";
 }
 
-/** 角色徽标: crop-detect(input.mode=crop)=检测; 其它产几何=分割; 否则=分类。 */
+/** 角色徽标: crop-detect(input.mode=crop)=检测; 其它产几何=分割; ocr=识别; 否则=分类。 */
 export function roleOf(payload: PipelineStagePayload | null | undefined): StageRole {
   if (producesGeometry(payload)) {
     return payload?.input?.mode === "crop"
       ? { label: "检测", variant: "accent", icon: "box" }
       : { label: "分割", variant: "ai", icon: "sparkles" };
+  }
+  if (payload?.task_type === "ocr") {
+    return { label: "识别", variant: "success", icon: "tag" };
   }
   return { label: "分类", variant: "success", icon: "tag" };
 }
@@ -119,7 +122,8 @@ export function stageWarning(
       return "该模型不接受裁剪图 / 框提示，无法作几何下游（运行将被端点拒绝）";
     return null;
   }
-  if (caps.producesClass === false)
+  // task=ocr 是识别阶段 (产 text/orientation/language 非 class), 不套「分类下游须产 class」判据。
+  if (caps.producesClass === false && payload?.task_type !== "ocr")
     return "该模型不产类别属性（output_attribute_types 不含 class），作分类下游属性恒空";
   if (!caps.producesAttributes)
     return "该后端不自报输出属性，作下游分类只会重新检测、属性恒空";

@@ -13,20 +13,16 @@
 
 from __future__ import annotations
 
-import io
 import logging
 import math
 import time
-from base64 import b64decode
 from typing import Any
-from urllib.parse import urlparse
 
 import re
 
-import httpx
 import numpy as np
+from aap_backend_runtime import fetch_image
 from fastapi import HTTPException
-from PIL import Image
 
 from model_registry import (
     POOL_TASK_OPENVOCAB,
@@ -93,22 +89,6 @@ COCO_KEYPOINT_NAMES: tuple[str, ...] = (
     "left_wrist", "right_wrist", "left_hip", "right_hip",
     "left_knee", "right_knee", "left_ankle", "right_ankle",
 )
-
-
-def _load_image(file_path: str, *, http_timeout: float = 10.0) -> Image.Image:
-    """支持 http(s):// presigned URL / data: base64 / 本地绝对路径."""
-    if file_path.startswith("data:"):
-        # data:image/jpeg;base64,XXXX
-        _, _, b64 = file_path.partition(",")
-        raw = b64decode(b64)
-        return Image.open(io.BytesIO(raw)).convert("RGB")
-    parsed = urlparse(file_path)
-    if parsed.scheme in ("http", "https"):
-        with httpx.Client(timeout=http_timeout, follow_redirects=True) as client:
-            resp = client.get(file_path)
-            resp.raise_for_status()
-            return Image.open(io.BytesIO(resp.content)).convert("RGB")
-    return Image.open(file_path).convert("RGB")
 
 
 def _bbox_to_rectanglelabels(
@@ -234,7 +214,7 @@ class YoloPredictor:
             return await self._predict_visual_prompt(file_path, ctx)
 
         model, cache_hit, load_ms = await self._pool.get(task, variants.series, variants.size)
-        img = _load_image(file_path)
+        img = fetch_image(file_path)
         img_w, img_h = img.size
 
         t0 = time.time()
@@ -303,7 +283,7 @@ class YoloPredictor:
         model, cache_hit, load_ms = await self._pool.get(
             POOL_TASK_OPENVOCAB, series, size
         )
-        img = _load_image(file_path)
+        img = fetch_image(file_path)
         img_w, img_h = img.size
 
         if not classes:
@@ -362,7 +342,7 @@ class YoloPredictor:
         model, cache_hit, load_ms = await self._pool.get(
             POOL_TASK_OPENVOCAB_VP, series, size
         )
-        img = _load_image(file_path)
+        img = fetch_image(file_path)
         img_w, img_h = img.size
 
         # 仅取正框 (YOLOE 无负框), 归一化 xyxy → 像素.

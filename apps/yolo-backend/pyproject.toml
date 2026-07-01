@@ -39,5 +39,5 @@ py-modules = ["main", "predictor", "schemas", "model_pool", "model_registry", "o
 testpaths = ["tests"]
 # 共享包从 apps/_shared/* 注入: Docker 容器内由 `pip install -e /app/protocol_v2` 提供;
 # 本地 pytest 通过 pythonpath 直接定位 src/.
-pythonpath = [".", "../_shared/protocol_v2/src", "../_shared/mask_utils/src"]
+pythonpath = [".", "../_shared/protocol_v2/src", "../_shared/mask_utils/src", "../_shared/backend_runtime/src"]
 asyncio_mode = "auto"

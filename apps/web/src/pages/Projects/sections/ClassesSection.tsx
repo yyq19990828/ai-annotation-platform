@@ -13,8 +13,13 @@ import {
   type AttributeSchema,
 } from "@/api/projects";
 import { AttributeSchemaEditor, validateAttributeFields } from "./AttributeSchemaEditor";
-import { ImportAttributesFromBackendDialog } from "./ImportAttributesFromBackendDialog";
-import { ClassEditor, type ClassRow } from "./ClassEditor";
+import {
+  PrefillFromBackendDialog,
+  type PrefillPicked,
+  itemToField,
+} from "./PrefillFromBackendDialog";
+import { ClassEditor, defaultColorFor, type ClassRow } from "./ClassEditor";
+import { useCapabilityInstances } from "@/api/mlCapabilities";
 import { KeypointSchemaEditor } from "./KeypointSchemaEditor";
 import { ToolUnitTabs } from "./ToolUnitTabs";
 import { resolveClassVisual, type ClassRefLite } from "./resolveClassVisual";
@@ -41,8 +46,8 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
   // v0.17.15 · 同名类跨工具单位批量重命名意图: 开启后重命名不传 tool_unit_id,
   // 后端在所有 enabled unit 内一起改同名类 (强隔离默认仍为单 unit, 默认=现状)。
   const [renameAllUnits, setRenameAllUnits] = useState(false);
-  // v0.18.0 · 从 ML Backend 导入属性对话框开关。
-  const [importBackendOpen, setImportBackendOpen] = useState(false);
+  // v0.18.0 起「从 ML Backend 预填配置」对话框开关 (v0.20.3 由「导入属性」升级为类别+属性)。
+  const [prefillOpen, setPrefillOpen] = useState(false);
 
   useUnsavedWarning(dirty);
 
@@ -89,6 +94,24 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
   };
 
   const activeBinding = bindings[activeUnit];
+
+  // v0.20.1 · 推荐属性字段: 从在线 backend 自报的 output_attribute_schema 取落点类属性
+  // (text/language/orientation) 的完整定义 (含 type/options), 排除当前单位已有 key。
+  // 供 AttributeSchemaEditor 一键填入, 让手建字段的 key 天然对齐协议、不被落点校验漏判。
+  const { data: capInstances } = useCapabilityInstances();
+  const recommendedAttrFields = useMemo(() => {
+    const LANDING = new Set(["text", "language", "orientation"]);
+    const byKey = new Map<string, AttributeField>();
+    for (const inst of capInstances?.instances ?? [])
+      for (const m of inst.models)
+        for (const item of m.output_attribute_schema ?? [])
+          if (LANDING.has(item.key) && !byKey.has(item.key))
+            byKey.set(item.key, itemToField(item));
+    const existing = new Set(
+      (activeBinding?.attributeFields ?? []).map((f) => f.key).filter(Boolean),
+    );
+    return [...byKey.values()].filter((f) => !existing.has(f.key));
+  }, [capInstances, activeBinding]);
 
   // v0.17.15 · alias_to 链接目标: 其它启用工具单位 (≠ 当前) 且有类的 unit。
   const linkTargets = useMemo(
@@ -301,20 +324,36 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
     e.target.value = "";
   };
 
-  // v0.18.0 · 从 ML Backend 导入的字段合并进当前工具单位: 同 key 覆盖、新 key 追加 (保留位置)。
-  const onImportFromBackend = (imported: AttributeField[]) => {
-    const cur = activeBinding?.attributeFields ?? [];
-    const importedByKey = new Map(
-      imported.filter((f) => f.key).map((f) => [f.key, f]),
-    );
-    const merged = cur.map((f) =>
-      f.key && importedByKey.has(f.key) ? importedByKey.get(f.key)! : f,
-    );
-    const existingKeys = new Set(cur.filter((f) => f.key).map((f) => f.key));
-    const additions = imported.filter((f) => !existingKeys.has(f.key));
-    onAttributeChange([...merged, ...additions]);
+  // v0.20.3 · 从 ML Backend 预填进当前工具单位: 属性同 key 覆盖、新 key 追加; 类别同名跳过、
+  // 新名追加 (自动配色)。属性与类别各走一次受控更新, setBindings 函数式叠加安全。
+  const onPrefillFromBackend = ({ classes, attributes }: PrefillPicked) => {
+    if (attributes.length > 0) {
+      const cur = activeBinding?.attributeFields ?? [];
+      const importedByKey = new Map(
+        attributes.filter((f) => f.key).map((f) => [f.key, f]),
+      );
+      const merged = cur.map((f) =>
+        f.key && importedByKey.has(f.key) ? importedByKey.get(f.key)! : f,
+      );
+      const existingKeys = new Set(cur.filter((f) => f.key).map((f) => f.key));
+      const additions = attributes.filter((f) => !existingKeys.has(f.key));
+      onAttributeChange([...merged, ...additions]);
+    }
+    let addedClasses = 0;
+    if (classes.length > 0) {
+      const cur = activeBinding?.classRows ?? [];
+      const existing = new Set(cur.map((r) => r.name));
+      const newRows = classes
+        .filter((n) => !existing.has(n))
+        .map((n) => ({ name: n, color: defaultColorFor(n) }));
+      addedClasses = newRows.length;
+      if (newRows.length > 0) onChange([...cur, ...newRows]);
+    }
+    const parts: string[] = [];
+    if (addedClasses > 0) parts.push(`${addedClasses} 个类别`);
+    if (attributes.length > 0) parts.push(`${attributes.length} 个属性`);
     pushToast({
-      msg: `已导入 ${imported.length} 个属性到 ${activeUnit} 工具单位`,
+      msg: `已预填${parts.join(" + ")}到 ${activeUnit} 工具单位`,
       sub: "记得点「保存」落库",
       kind: "success",
     });
@@ -328,9 +367,9 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => setImportBackendOpen(true)}
+            onClick={() => setPrefillOpen(true)}
           >
-            <Icon name="sparkles" size={11} />从 ML Backend 导入
+            <Icon name="sparkles" size={11} />从 ML Backend 预填
           </Button>
           <Button size="sm" variant="ghost" onClick={onExportJson}>
             <Icon name="download" size={11} />导出属性 JSON
@@ -342,7 +381,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
               onChange={onImportJson}
               className="hidden"
             />
-            <span className="inline-flex items-center gap-1 rounded-sm border border-border px-2 py-1 text-xs text-foreground">
+            <span className="inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-sm text-foreground hover:bg-muted">
               <Icon name="plus" size={11} />导入属性
             </span>
           </label>
@@ -448,6 +487,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
                     value={activeBinding.attributeFields}
                     onChange={onAttributeChange}
                     onConfirmDelete={confirmAttributeDelete}
+                    recommendedFields={recommendedAttrFields}
                   />
                 </section>
               </div>
@@ -469,11 +509,16 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
           </Button>
         </div>
       </div>
-      <ImportAttributesFromBackendDialog
-        open={importBackendOpen}
-        onClose={() => setImportBackendOpen(false)}
-        onImport={onImportFromBackend}
+      <PrefillFromBackendDialog
+        open={prefillOpen}
+        onClose={() => setPrefillOpen(false)}
+        projectId={project.id}
+        onPrefill={onPrefillFromBackend}
         targetUnitLabel={getToolUnitGroup(activeUnit)?.label ?? activeUnit}
+        existingClassNames={(activeBinding?.classRows ?? []).map((r) => r.name)}
+        existingAttrKeys={(activeBinding?.attributeFields ?? [])
+          .map((f) => f.key)
+          .filter(Boolean)}
       />
     </Card>
   );

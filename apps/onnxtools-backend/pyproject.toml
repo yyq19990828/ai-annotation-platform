@@ -28,4 +28,4 @@ py-modules = ["main", "predictor", "schemas", "attribute_schema"]
 testpaths = ["tests"]
 # 共享协议包从 apps/_shared 注入：Docker 内 `pip install -e /app/protocol_v2`；
 # 本地 pytest 走 pythonpath。cv2 需本地环境提供（如 onnxtools 的 .venv）。
-pythonpath = [".", "../_shared/protocol_v2/src"]
+pythonpath = [".", "../_shared/protocol_v2/src", "../_shared/backend_runtime/src"]

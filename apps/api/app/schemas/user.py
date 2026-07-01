@@ -169,6 +169,8 @@ class WorkbenchCommonPreferences(BaseModel):
     fillOpacity: float = Field(default=0.07, ge=0, le=0.6)
     # 选中对象填充加重透明度。
     fillOpacitySelected: float = Field(default=0.12, ge=0, le=0.8)
+    # v0.20.x · 工作台桌宠（常驻像素小精灵）开关；历史偏好缺该字段时默认开启。
+    petEnabled: bool = True
 
     @field_validator("labelContent", mode="before")
     @classmethod

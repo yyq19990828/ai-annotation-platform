@@ -58,6 +58,7 @@ describe("VideoKonvaTrackShape", () => {
 
 describe("VideoKonvaTracksLayer", () => {
   const preview = (selected: boolean): VideoTrackPreviewView => ({
+    key: "trk1",
     id: "trk1",
     color: "#00ff00",
     selected,

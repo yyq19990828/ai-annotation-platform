@@ -49,7 +49,7 @@ export function VideoKonvaTracksLayer({
         const hex = colorToHex(preview.color);
         return (
           <Line
-            key={`preview-line-${preview.id}`}
+            key={`preview-line-${preview.key}`}
             name="video-track-path-preview"
             points={preview.points.flatMap((p) => [p.x * size.w, p.y * size.h])}
             stroke={hex}
@@ -68,7 +68,7 @@ export function VideoKonvaTracksLayer({
             const hex = colorToHex(preview.color);
             return (
               <Circle
-                key={`kf-${preview.id}-${p.frame}`}
+                key={`kf-${preview.key}-${p.frame}`}
                 name="video-track-keyframe-dot"
                 x={p.x * size.w}
                 y={p.y * size.h}

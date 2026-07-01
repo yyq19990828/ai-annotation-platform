@@ -12,7 +12,7 @@ import { type TextOutputMode } from "@/hooks/usePreannotation";
 import { SchemaForm } from "@/pages/Workbench/components/SchemaForm";
 import { ClassWhitelistRow } from "./ClassWhitelistRow";
 import { PresetRow } from "./PresetRow";
-import { type PreannotateConfig, type PreannotateTaskType } from "./usePreannotateConfig";
+import { type PreannotateConfig } from "./usePreannotateConfig";
 import styles from "./ProjectDetailPanel.module.css";
 
 const OUTPUT_MODE_TABS = ["□ 框", "○ 掩膜", "⊕ 全部"];
@@ -27,16 +27,6 @@ const OUTPUT_MODE_BY_LABEL: Record<string, TextOutputMode> = {
   "⊕ 全部": "both",
 };
 
-const TASK_TYPE_LABELS: Record<PreannotateTaskType, string> = {
-  text: "文本预标",
-  ocr: "OCR 文字识别",
-  doc_layout: "文档版面",
-};
-const TASK_TYPE_BY_LABEL: Record<string, PreannotateTaskType> = {
-  文本预标: "text",
-  "OCR 文字识别": "ocr",
-  文档版面: "doc_layout",
-};
 
 const GEOMETRIC_TASK_LABELS: Record<string, string> = {
   detection: "检测（框）",
@@ -57,6 +47,17 @@ interface Props {
   onSelectBackend?: (id: string | null) => void;
   projectMlBackendId?: string | null;
   backendSelectorLabel?: string;
+  /**
+   * 收起整图「模型任务」下拉 (默认 false)。下游阶段卡里另有「下游模型」选择器作真值, 此处的整图
+   * model-first 下拉与之冗余 (尤其选 crop 下游如 rec 时, 整图 det/e2e 选择已无意义), 由调用方收起。
+   * 变体/参数/backend 选择不受影响, 仍渲染。
+   */
+  hideModelTaskSelector?: boolean;
+  /**
+   * 收起类别白名单行 (默认 false)。该白名单属源整图几何模型, 下游阶段卡里它不参与下游 model 的
+   * class_filter (下游按 parent_class_filter 父框类名筛), 留着是死控件且误导, 由下游卡收起。
+   */
+  hideClassWhitelist?: boolean;
 }
 
 export function PreannotateConfigForm({
@@ -66,20 +67,16 @@ export function PreannotateConfigForm({
   onSelectBackend,
   projectMlBackendId,
   backendSelectorLabel = "ML Backend",
+  hideModelTaskSelector = false,
+  hideClassWhitelist = false,
 }: Props) {
   // v0.18.12 · 统一「模型任务」选择器: 几何 (yolo) 与文本 (gsam2/sam3) 共用一套 model-first 选择,
   //   只差 prompt vs 类别白名单。doc 走上方「任务类型」, 不在此。
-  const taskModels = cfg.isGeometricBackend
-    ? cfg.geometricModels
-    : cfg.isTextPath
-      ? cfg.textModels
-      : [];
-  const taskModel = cfg.isGeometricBackend
-    ? cfg.geometricModel
-    : cfg.isTextPath
-      ? cfg.textModel
-      : undefined;
-  const setTaskModelId = cfg.isGeometricBackend ? cfg.setGeometricTaskId : cfg.setTextTaskId;
+  // v0.20.5 · 单一「模型任务」下拉(对齐所有 backend): 候选 = 该 backend 全部可批量预标模型
+  //   (几何检测/分割 + OCR/版面)。不再为 OCR/版面单设「任务类型」tab; 选中 model 由 hook 派发。
+  const taskModels = cfg.selectableModels;
+  const taskModel = cfg.selectableModels?.find((m) => m.id === cfg.selectedModelId) ?? cfg.selectableModels?.[0];
+  const setTaskModelId = cfg.selectTaskModel;
   // 选择器的**真值键是 model_id**; 展示**直接用模型市场卡片标题 (display_name)**, 与卡片视图一致 ——
   // 用户在配置面板选的就是市场里那张卡 (同名同 id)。缺 display_name 才回落 task 标签 / id。
   const taskModelLabel = (m: { id: string; task?: string; display_name?: string }) =>
@@ -121,25 +118,10 @@ export function PreannotateConfigForm({
       ) : (
         <>
 
-      {/* v0.14.9 · 任务类型选择 (backend 暴露 ocr / doc_layout 模型时). */}
-      {cfg.hasDocTasks && (
-        <div className={styles.field}>
-          <span className={styles.fieldLabel}>任务类型</span>
-          <TabRow
-            tabs={cfg.availableTaskTypes.map((t) => TASK_TYPE_LABELS[t])}
-            active={TASK_TYPE_LABELS[cfg.taskType]}
-            onChange={(label) => {
-              const t = TASK_TYPE_BY_LABEL[label];
-              if (t) cfg.setTaskType(t);
-            }}
-          />
-        </div>
-      )}
-
-      {/* v0.14.17 / v0.18.12 · 统一「模型任务」下拉: 几何 (YOLO, 闭集) 与文本 (gsam2/sam3, 开集)
-          共用 —— 选项 = 模型市场卡片 model, value 直接是 model_id (真值键), 文案 = 卡片标题 (display_name)。
-          统一 wire 发 model_id。多于 1 个可选 model 出下拉。 */}
-      {taskModels.length > 1 ? (
+      {/* v0.14.17 / v0.18.12 / v0.20.5 · 统一「模型任务」下拉: 几何 (YOLO 闭集)、文本 (gsam2/sam3 开集)、
+          OCR/版面 共用同一个下拉 —— 不再为 OCR/版面单设「任务类型」tab。选项 = 该 backend 可批量预标的
+          model, value 直接是 model_id, 文案 = 模型市场卡片标题 (display_name)。多于 1 个可选 model 出下拉。 */}
+      {hideModelTaskSelector ? null : taskModels.length > 1 ? (
         <label className={styles.field}>
           <span className={styles.fieldLabel}>模型任务</span>
           <select
@@ -171,8 +153,10 @@ export function PreannotateConfigForm({
         </div>
       )}
 
-      {/* v0.14.17 · YOLO 类别白名单勾选 ([index]类名). 留空=全部. */}
-      {cfg.isGeometricBackend && (
+      {/* v0.14.17 · YOLO 类别白名单勾选 ([index]类名). 留空=全部.
+          下游卡 (hideClassWhitelist) 不出此行: 该白名单属源整图模型, 下游 model 的 class_filter
+          不取它, 下游按 parent_class_filter (父框类名) 筛, 留着是死控件且误导。 */}
+      {cfg.isGeometricBackend && !hideClassWhitelist && (
         <ClassWhitelistRow
           classes={cfg.geometricModel?.classes}
           selected={cfg.selectedClassIdx}
@@ -248,7 +232,9 @@ export function PreannotateConfigForm({
           <div className={styles.mutedText}>
             无法拉取 backend /setup，运行时回落项目级阈值。
           </div>
-        ) : cfg.isDocMode && !cfg.hasAnyParams ? (
+        ) : cfg.isDocMode && !cfg.hasAnyParams && (cfg.variantGroups?.length ?? 0) === 0 ? (
+          // v0.20.5 · 仅当既无 params 又无变体轴时才算「无可调参数」; OCR 可调项全在
+          //   supported_variants(version/size/lang), 此前被 !hasAnyParams 误判隐藏。
           <div className={styles.mutedText}>该任务无可调参数。</div>
         ) : (
           <div className={styles.backendParamsStack}>
@@ -260,7 +246,10 @@ export function PreannotateConfigForm({
               value={cfg.paramsValue}
               onChange={cfg.onVariantOrParamsChange}
             />
-            {(cfg.hasNonVariantParams || !cfg.hasAnyParams) && (
+            {/* v0.20.5 · 有变体轴但无 params 时(OCR)不渲染空 SchemaForm 占位,只留变体选择器;
+                仅当既无非变体 params 又无变体轴时才显「无可配置参数」占位。 */}
+            {(cfg.hasNonVariantParams ||
+              (!cfg.hasAnyParams && (cfg.variantGroups?.length ?? 0) === 0)) && (
               <SchemaForm
                 schema={cfg.paramsSchema}
                 value={cfg.paramsValue}

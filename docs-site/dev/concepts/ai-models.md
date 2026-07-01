@@ -16,7 +16,7 @@ last_reviewed: 2026-06-24
 
 ## 0. Backend 名录
 
-平台当前自维护 **4 个 ML backend**(各为独立 FastAPI 微服务、独立 docker-compose profile,按显存预算自由组合启动)。所有 backend 走同一套[能力声明协议](../reference/ml-backend-protocol),由平台经 `/setup` 探能力 + `/predict` 调推理。
+平台当前自维护 **5 个 ML backend**(各为独立 FastAPI 微服务、独立 docker-compose profile,按显存预算自由组合启动)。所有 backend 走同一套[能力声明协议](../reference/ml-backend-protocol),由平台经 `/setup` 探能力 + `/predict` 调推理。
 
 | Backend | 端口 | profile | 模型族 | 主用途 | composition |
 |---|---|---|---|---|---|
@@ -24,8 +24,9 @@ last_reviewed: 2026-06-24
 | `sam3-backend` | 8002 | `gpu-sam3` | SAM 3 | 交互式分割(下一代 SAM) | `composite` |
 | `yolo-backend` | 8003 | `gpu-yolo` | ultralytics(v8/v11/v12 × det/seg/pose/obb/cls) | 纯批量预标(`supported_prompts=["none"]`),不挤占交互式工具栏 | `composite` |
 | `onnxtools-backend` | 8004 | `gpu-onnxtools` | rtdetr + va | 二阶段车辆属性预标注;多阶段编排原子组合(上游纯检测 + 下游纯分类) | `atom` × 2 + `composite` × 1 |
+| `rapidocr-backend` | 8005 | `gpu-rapidocr` | RapidOCR(ONNX)PP-OCRv5/v6 | OCR 文本检测 / 识别;`det → cls → rec` 拆原子 + 端到端,落点 `text`/`orientation`/`language` | `atom` × 2 + `composite` × 1 |
 
-SAM 系列特化(image embedding 缓存、prompt 路由)集中在 §1–§5。`yolo-backend` / `onnxtools-backend` 的差异化说明放在 §6。
+SAM 系列特化(image embedding 缓存、prompt 路由)集中在 §1–§5。`yolo-backend` / `onnxtools-backend` / `rapidocr-backend` 的差异化说明放在 §6。
 
 ---
 
@@ -268,9 +269,9 @@ histogram_quantile(0.95,
 
 ---
 
-## 6. YOLO / ONNX 通用推理 backend
+## 6. YOLO / ONNX / OCR 通用推理 backend
 
-`grounded-sam2-backend` / `sam3-backend` 之外平台还自维护两个**通用推理 backend**——`yolo-backend` 与 `onnxtools-backend`。两者共性:不交互式(`supported_prompts=["none"]` 或仅 `bbox`),走纯批量预标;镜像与权重均按 backend 自治(`docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile <profile> up`),不影响 SAM 系列。
+`grounded-sam2-backend` / `sam3-backend` 之外平台还自维护三个**通用推理 backend**——`yolo-backend`、`onnxtools-backend` 与 `rapidocr-backend`。三者共性:不交互式(`supported_prompts=["none"]` 或仅 `bbox`),走纯批量预标;镜像与权重均按 backend 自治(`docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile <profile> up`),不影响 SAM 系列。
 
 ### 6.1 yolo-backend(8003 / `gpu-yolo`)
 
@@ -297,6 +298,26 @@ ultralytics 多任务多系列(`detection` / `segmentation` / `pose` / `obb` / `
 **`/unload` + idle-unload**:`POST /unload` 释放全部已加载句柄(模型市场卸载按钮直接生效,UI 零改动);末次推理后空闲 `ONNXTOOLS_IDLE_UNLOAD_SECONDS`(默认 600s)自动卸载。按 model 句柄粒度释放显存——原子化让 detect-only 工作流不再背 va 分类器显存。与 yolo 体验对齐。
 
 **协议 `output_attribute_schema`**:`vehicle-attr` / `vehicle-attr-classify` 在 `/setup` 自报输出属性 schema(含每个 select 字段的 `options`,value + 中文 label),沿 `ml_capabilities` 透传到前端,供「从 ML Backend 导入属性」一键合并进项目工具单位的 `attribute_schema`。`vehicle-detect` 纯检测不写 `attributes`,不声明 `output_attribute_schema`。
+
+### 6.3 rapidocr-backend(8005 / `gpu-rapidocr`)
+
+**平台首个真实 OCR backend**:基于 RapidOCR(ONNX),把 `det → cls → rec` 三段拆为「原子能力 + 端到端编排」,对外自报三个 model,激活协议早留好的 `ocr` 任务族,并成为 `attributes.text` / `orientation` / `language` 落点校验的首个真实 producer。
+
+| `model_id` | `task` | `composition` | `supported_inputs` | 编排定位 |
+|---|---|---|---|---|
+| `ocr-det` | `detection` | `atom` | `full_image` | 整图文本检测,出文本 polygon 框,不写 `attributes` |
+| `ocr-rec` | `ocr` | `atom` | `crop` | 吃裁剪图,内部跑 cls 做 180° 校正,写回 `text` / `orientation` / `language` |
+| `ocr-e2e` | `ocr` | `composite` | `full_image` | 单阶段一锅端 det + cls + rec,出 polygon + 文本属性 |
+
+cls(文本行方向 0/180)**语言/版本无关**,内化进 rec 与 e2e,不单独暴露 model 条目。
+
+**下游识别原子可作跨 backend 编排**:`ocr-rec` 吃 crop,可以做任何上游检测器(YOLO / gsam2 / onnxtools 等)的下游识别阶段——「上游任意 backend 出框 → 裁 crop → 下游 rec 认字写回 `text`」是平台支持的跨 backend 流水线形态。 <!-- since v0.20.5 -->
+
+**变体轴 PP-OCRv5/v6 × 尺寸档 × 通用(中英)/英文**:`ocr-det` / `ocr-rec` / `ocr-e2e` 自报 `supported_variants`(version / size / lang),`/predict context.model_variants` 选档落到 RapidOCR 的 `Det.ocr_version` / `Rec.ocr_version` / `Rec.model_path`。
+
+**引擎池 + 阈值显式下发**:`det` / `rec` / `e2e` 同 variant 共享池化 `RapidOCR` 实例(`pool_key = det+cls+rec` 三件套路径);`update_params` 对 `None` 是跳过不重置,缺参传 `None` 会让上一次请求的 `text_score` / `box_thresh` / `unclip_ratio` 粘在引擎上污染后续请求(含跨原子类型、跨项目)——预测器缺参显式回落 catalog 默认值并每次写定,跨请求泄漏从结构上消除。
+
+**镜像基础**:`nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04`(与瘦身后的 onnxtools 共享 nvidia/cuda runtime base);GPU 可选,缺 GPU 自动 fallback CPU 仍可用。
 
 ---
 

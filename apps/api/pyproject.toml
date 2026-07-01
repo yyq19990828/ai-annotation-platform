@@ -1,6 +1,6 @@
 [project]
 name = "anno-api"
-version = "0.19.5"
+version = "0.20.8"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",

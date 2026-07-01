@@ -8,6 +8,7 @@
 
 | 版本组 | 文件 |
 |--------|------|
+| 0.19.x | [docs/changelogs/0.19.x.md](docs/changelogs/0.19.x.md) |
 | 0.18.x | [docs/changelogs/0.18.x.md](docs/changelogs/0.18.x.md) |
 | 0.17.x | [docs/changelogs/0.17.x.md](docs/changelogs/0.17.x.md) |
 | 0.16.x | [docs/changelogs/0.16.x.md](docs/changelogs/0.16.x.md) |
@@ -36,73 +37,95 @@
 日常变更（含普通 bug 修复）按 Keep a Changelog 类型分组追加到本段：
 Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空组省略）。
 发版时把「## [Unreleased]」重命名为「## [x.y.z] - 日期」，再在其上方留一个空的
-「## [Unreleased]」。0.19.x 版本段累积在本区；进入 0.20.x 后整体移到 docs/changelogs/0.19.x.md。
+「## [Unreleased]」。0.20.x 版本段累积在本区；进入 0.21.x 后整体移到 docs/changelogs/0.20.x.md。
 -->
 
-## [0.19.5] - 2026-06-29
+### Fixed
+
+- **工作台落下 / 删除标注时不再出现全屏刷新式闪烁**:图片舞台按稳定媒体身份(`dataset_item_id` / task id)复用已加载背景图,避免标注 mutation 刷新任务列表后拿到新的签名 `file_url` 时误判为换图并重载整张画布;新建标注的乐观 `tmp_*` 条目在服务端真实 id 回来后也保留稳定的前端渲染 key,避免 shape 被卸载再挂载;普通新增 / 更新 / 删除标注不再把桌宠切到“保存中”或“+1”短动画。
+- **rapidocr 池化引擎并发请求阈值互踩**:同 `pool_key` 共享 `RapidOCR` 实例,`update_params` 改阈值与之后的 `run_ocr_steps` 之间此前无锁 —— 两个并发请求(典型场景:批量预标多张图同 variant)会让后请求覆盖前请求的 `text_score` / `box_thresh` / `unclip_ratio`,前请求实际跑错阈值。现按 `pool_key` 配 `threading.Lock`,整段 update + run + build 在锁内串行执行。
+- **rapidocr 端到端方向标签贴错文本框**:`orientations` 此前在 `build_final_output` **之前**按「rec_res.txts 非空」索引快照,但 RapidOCR 还会按 `text_score` 二次过滤 → 过滤后的 `final.boxes[i]` 对应原始索引 ≠ `orientations[i]`,e2e 结果里方向标签贴到错的文本框上(`text_score > 0` 时显式出错)。现 orientation 在 `build_final_output` **之后**按 `final.txts` ↔ `rec_res.txts` 顺序游标回填。
+- **`/ml-capabilities/instances` 在 backend 自报 `models: [null]`/`[str]` 时仍整体 500**:此前路由级 `try/except` 捕获 `(ValidationError, KeyError, TypeError)`,但 `_shape_models` 是在 try **之前**跑的,非 dict 元素的 `m.get(...)` 抛 `AttributeError` 直接逃出本路由 —— 跟 v0.20.4 想修的形态相同。现 `_shape_models` 内部对每个 `m` 加 `isinstance(m, dict)` 守卫,源头跳过非 dict 条目。
+- **`aap_backend_runtime.fetch_image` 抽取后丢失 400 语义**:抽取前 `sam3-backend` / `grounded-sam2-backend` 各自的 `_fetch_image` 对未知 scheme 显式抛 `HTTPException(400, "unsupported file_path scheme: ...")`;共享层落地后 `s3://…` / `ftp://…` 等会 fall-through 到 `Image.open(file_path)`,以 `FileNotFoundError` → FastAPI 500 + 原生 traceback 字符串返回(语义回退 + 可能泄露内部路径)。现 `fetch_image` 末尾显式 scheme 校验、unsupported scheme 抛 `ValueError`,sam3 / grounded-sam2 装一个 `@app.exception_handler(ValueError)` 把它转回 400 响应,详情体只含 `"unsupported file_path scheme: <scheme>"`。
+
+## [0.20.8] - 2026-07-01
+
+### Changed
+
+- **工作台桌宠增强为低干扰状态代理**:桌宠状态机从 idle / 举牌 / 开心 / 庆祝扩展为上下文驱动的 `selected`、`multiSelected`、`aiRunning`、`candidateReady`、`warning`、`offline`、`review` 等状态;状态输入全部由工作台现有前端状态派生,覆盖多选数量、AI 当前题推理与候选、保存 / 离线 / 只读 / 审核、必填属性缺失、AI 候选未采纳、视频预测 / 插值帧等提示;久坐闲聊降为无上下文时的兜底,AI 运行状态至少保留 800ms 避免闪烁,仍不新增后端接口或标注 mutation。
+
+## [0.20.7] - 2026-06-30
+
+### Changed
+
+- **工作台桌宠默认外观升级为黑白主视觉的像素标注员小人**:保留举牌、拖动、久坐提示、标注 +1 反馈和里程碑庆祝等原行为;展开选中信息卡时,面板会遮住桌宠上半身并只露出下半身,呈现“桌宠驮着信息卡”的联动关系;非桌宠缩起态同步改为按标题长度自适应的短信息胶囊,胶囊与展开面板共用中心锚点和选中对象标题样式,展开 / 收起切换动效按胶囊尺寸缩放;同时新增轻量 `petSkins` 注册基座,后续可继续扩展内置皮肤而不改桌宠主逻辑。
+
+## [0.20.6] - 2026-06-30
 
 ### Added
 
-- AI 预标注编排「能力校验」补齐配置期一层，与派发期 422 对称：源模型选择器、下游阶段卡在**配置期**就对 `batchable=false`（交互 / 有状态模型）与「写属性却不产 `class`」的误配标红预警；保存编排（`PATCH /projects/{id}`）的响应回带 `capability_warnings[]` 软提示。把「存得下不一定跑得了」前移到配置 / 保存时暴露，而非跑到派发才报错；保存只软提示不硬挡（保留「先存草稿、之后换 backend」的合法流，派发期 422 仍是最终闸）。
-- 模型市场「能力目录」卡片新增**批量 / 设备徽标**：模型自报 `resource_profile.batchable` 时显示「可批量」/「交互·有状态」，`device` 显示「GPU/CPU」，让用户一眼看出某模型能否进批量预标、跑在什么设备上，无需进项目编排才发现。`/instances` 视图此前丢弃了 `resource_profile`（仅 `/capabilities` 富数据视图可见），现已透传到协议卡视图与平台内置（env-only）模型卡。缺省字段不显示，向后兼容。
-- **设备感知预标队列路由**：按模型自报的 `resource_profile.device` 把批量预标任务路由到不同 Celery 队列——整条 pipeline 全部 `device=cpu` 进 `ml.cpu` 队列（CPU worker 高并发），任一阶段 `device=gpu` 或未自报则进 `ml` 队列（GPU worker 低并发护显存）。GPU 模型与 CPU 模型不再抢同一并发池：多个 GPU 预标并发不再争显存致 OOM，CPU 模型也不再被 GPU 任务拖慢。docker-compose 拆出 `celery-worker-gpu` / `celery-worker-cpu` 两组 worker（并发经 `CELERY_GPU_CONCURRENCY` / `CELERY_CPU_CONCURRENCY` 配置）。老 backend / 未自报 device / 混合 device 的 pipeline 一律保守落 GPU 队列，与拆分前行为等价、零退化。
+- **工作台桌宠(实验性,常驻像素小精灵)**:取代选中信息卡那枚朴素的折叠小条 —— 折叠态由小精灵「举牌」显当前选中类别名、点击展开完整信息卡;无选中时常驻画布(呼吸 / 眨眼),久坐时冒泡搭话;手工新增一个标注会短暂「开心」,标注总数踩到里程碑(10/25/50/100…)放庆祝火花。可自由拖动,落点记忆到本地。情绪全由前端 props 派生(标注数 +1 / 久坐),不触碰任何标注数据。可在工作台设置「通用 → 工作台桌宠」一键关闭(关闭后折叠态回退为纯文字小条);尊重 `prefers-reduced-motion`(开启减少动态时静止)。本版默认开启用于试用。
 
 ### Changed
 
-- 预标注能力判据（batchable / 分类阶段产 class）抽成 `app/services/pipeline_validation.py` 纯函数，保存路径、派发路径与前端 `stageWarning` 共用同一份 SSOT，并以跨端 fixture 双端断言（vitest + pytest）防判据漂移。
+- **工作台右下角悬浮按钮列(Issue / 像素落点 / BUG 上报)改为日常隐藏**:此前三个 FAB 恒显在右下角,既挡视野也压住桌宠。现默认滑出屏幕右缘隐藏,光标移到右下角指定区域时滑入 + 淡入露出;像素落点模式(armed)进行中强制保持露出,避免移开光标丢失高亮指示。
 
-## [0.19.2] - 2026-06-29
-
-### Added
-
-- **AI 预标注派发期硬校验「跑完必然空结果」的误配**：编排流水线提交时，若所选模型自报 `batchable=false`（交互 / 有状态视频追踪模型）却被放进批量预标，或某分类阶段（`write.target=attributes`）所选模型自报的 `output_attribute_types` 不含 `class`（跑完属性恒空），后端直接返回 422 带可读原因，不再静默跑完一批拿到空结果。模型未自报对应字段（老 backend）时跳过，保持向后兼容。
-- **画布能力校验覆盖更多属性类型**：原先只在模型输出 `text` 属性而项目缺文本字段时提示，现统一覆盖 `text` / `language` / `orientation` 三类——模型声明产出某属性但项目无承接位（语言字段 / 旋转框工具或方向字段）时，给非阻断警告「采纳后该属性将丢失」。`class` 类别刻意不校验（taxonomy 几乎恒在）。
-- **编排卡片属性键对账提示**：分类下游阶段所选「写回属性键」若不在该模型自报的 `output_attribute_schema` 内，卡片给非阻断提示「该模型可能不产出此键」。
-
-### Changed
-
-- **`GET /ml-capabilities/instances` 补透传 `supported_inputs` + `resource_profile`**：原 `/instances` 裁掉了这两个字段，导致走该端点的消费方（模型市场实例视图 / 全局编排选择器）拿不到投递契约与批量画像；现与项目级 `/capabilities` 字段集对齐。
-
-## [0.19.1] - 2026-06-29
-
-### Changed
-
-- **Python SDK 与全局 ML Backend 注册表对齐**（ADR-0044）：`MLBackend.project_id` 从必填放宽为可选（全局 / admin 场景 backend 无项目归属，项目作用域端点仍回填本项目 id）；`ml-backends list` 现只返回**本项目已启用**的全局 backend，`MLBackend.id` 为全局 registry id（同一物理 backend 跨项目返回同一 id），docstring / README 同步说明。脚本里硬编码的旧 per-project backend id 在 0.19.0 迁移后已失效，需改用 registry id。SDK 包版本 → 0.15.17。
+- 多阶段预标**下游阶段卡字段重排为「先选模型、再调参数」的自然顺序**:ML Backend → 下游模型 → 父框类别 → ROI/子物体命名/写回属性键 → 模型版本·尺寸·阈值(后端推理参数)。此前模型版本/参数面板整块渲染在最上方,出现「先选模型版本、再选下游模型」的反直觉顺序;现把后端选择上移到卡片顶部、参数面板下沉到末尾,选完下游模型与父框类别后再调该模型的版本与阈值。
+- 多阶段预标的**下游阶段卡恒收起整图「模型任务」下拉与类别白名单**(此前仅 OCR 识别下游收起)。下游阶段的真值选择器是卡内的「下游模型」,整图 model-first 下拉在下游卡里冗余,其变体轴 / 类别白名单分属源整图模型、与下游阶段无关,留着既困惑又是死控件。下游仍按「父框类别」(父框类名)筛、按「下游模型」选模型,语义不变。
 
 ### Fixed
 
-- **仪表盘「近期审计活动」恒显示「暂无业务事件」**：原实现只取最新 8 条审计日志后在前端过滤掉 `http.*` 请求日志，而审计表被海量 `http.*` 淹没，业务事件早被挤出这 8 条窗口 → 永远过滤为空。改为向服务端传 `business_only=true`（`WHERE action NOT LIKE 'http.%'`）直接取 8 条业务事件。同步修复空状态卡片里活动图标因 `svg{display:block}` 而左对齐、与居中文案错位的问题。
-- **Python SDK TUI 在多项目共享同一 backend 时崩溃**：`aap tui` 的 ML Backend 列表逐项目聚合，0.19.0 全局注册表下同一物理 backend 被多个项目启用会返回同一 registry id，旧逻辑用相同 key 重复 `add_row` 触发 Textual DataTable `DuplicateKey` 异常。改为按 id 去重合并为一行（项目列显示「N 个项目」）。
+- **像素 issue 落点按钮(右下角十字准星 FAB)长期不可见**:其定位类 `bottom-32` 在源码里紧贴模板串插值(`bottom-32${armed?...}`),中间无空格边界,Tailwind v4 的内容扫描器被 `$` 打断、从未把它当作干净候选 token → `.bottom-32` 规则压根没生成 → 按钮丢失纵向定位、掉到视口底边之外(`bottom:-40px`),所以一直看不到(旁边 `bottom-20` 的 Issue 按钮因结尾是反引号、边界干净,不受影响)。现两个 issue FAB 的类名改用 `cn()` 组装,`bottom-32` 作为独立字面量被正常扫描生成,像素落点按钮回到 Issue 按钮上方。
+- **「从 ML Backend 预填配置」拿不到项目接入 backend 的类别**:对话框原读全局 env-configured 实例(`/ml-capabilities/instances`,仅 gsam2/sam3/rapidocr),而 yolo(COCO80)/ onnxtools(车辆类)是**项目级**接入的、不在全局实例里 → 列不出、用户「填不了类别」。现改读本项目已接入且在线的 backend(`/projects/{id}/ml-backends` + 各自 `/capabilities`),yolo 的目标检测/分割/朝向框/关键点等类别正常出现。同时修一个被静态类别自报照出来的**形状 bug**:`/instances` 与对话框把 `classes` 当 `string[]`,但 backend 实际自报 `[{index,name}]` 对象 —— 一旦带类别的 backend 进对话框,类别会渲染成 `[object Object]`;现按 `[{index,name}]` 抽 `name` 渲染。
+- **项目「类别与属性」设置按钮样式不一致**:工具栏「导入属性」是手搓的带边框小盒(rounded-sm + 实线边框 + 较小字号),与同排 ghost 样式的「从 ML Backend 预填」「导出属性 JSON」高低/边框/圆角都不齐;底部「新增属性」用默认尺寸(h-36)挤在更矮的推荐属性 chips(h-27)旁边、高度与字号都不匹配。现统一:「导入属性」对齐 ghost 按钮(去边框、h-8、rounded-md),「新增属性」改 `size="sm"`,推荐 chips 升到 h-8 / rounded-md 与之齐平(保留虚线边框表「建议」语义)。另:推荐 chip 内等宽拉丁 key(text/orientation/language)墨迹中心比同排 CJK 标签实测偏高 2px,下移 2px 做光学居中。
+- **多阶段编排节点图在改下游阶段配置后整图消失**:react-flow 节点整批同步时(`setNodes(flow.nodes)`)用了 `buildFlow` 每次新造、不带已测量尺寸的节点对象,把 react-flow 的 `measured` 测量态清掉 → 节点转 `visibility:hidden`;而「改下游后端 / 切下游模型」这类「同节点 id、仅变 data」的更新不改变节点 DOM 尺寸,挂在其上的 `ResizeObserver` 不再触发 → 节点永远拿不到新测量、卡死隐藏,表现为节点图突然只剩网格背景。现同步时按节点 id 保留上一批的 `measured` 尺寸,仅 data 变不再丢测量态(真改了尺寸时 ResizeObserver 仍会纠正)。
+- **下游分类 / 识别阶段不再被灌入源整图模型的变体轴与类别白名单**:此前下游 payload 的 `model_variants` / `class_filter` 取自「模型任务」选中的整图模型(如上游 YOLO 检测器),而该阶段实际跑的是下游分类 / 识别 model —— 等于把 A 模型的变体和 index 类别白名单贴到 B 模型上,后端会误用或忽略。现下游 `model_variants` 按**选中下游 model 自报的轴**过滤(与框→分割 / crop 检测下游一致),源模型的 `class_filter` 不再透传。OCR 识别下游不受影响(rec 自报 version/size/lang 轴,过滤后保留)。
+- **类名快速勾选下拉过大**:类别筛选的「按类名快速勾选」此前用原生 `<datalist>`,其弹层由浏览器渲染、字号 CSS 控不住,80 类全列出来撑得过大、与四周压小的 UI 字号格格不入。现换成自定义下拉:字号统一 11px、仅在输入时展开匹配项(子串匹配、最多 8 条,带 `[index]` 与已选 `✓`),Enter 选首个匹配、Esc/失焦收起。
 
-## [0.19.0] - 2026-06-29
-
-ML Backend 从「项目子资源」上提为**全局注册表**（ADR-0044）：一个物理 backend 全局只注册一次、所有项目共享其能力快照与并发限速闸，项目侧只做「启用」。
+## [0.20.5] - 2026-06-30
 
 ### Added
 
-- **超管全局注册表 CRUD**：`POST/PUT/DELETE /admin/ml-integrations/registry` + `POST /admin/ml-integrations/registry/{id}/health`，配套模型市场「注册管理」tab 的注册 / 编辑 / 删除 / 健康检查入口。
-- **项目启用勾选清单 API**：`GET /projects/{id}/ml-backends/available`（列全部全局项 + 本项目启用态）、`PUT /projects/{id}/ml-backends/{rid}/enablement`（切换启用 + 写变体覆盖）。
-- **项目设置「ML 模型」「管理 backend」悬浮面板**：集中勾选启用 / 停用全部全局 backend，主表只展示本项目已启用项。
-- **「注册管理」tab 项目启用概览**：超管只读视图，列出每个项目已启用了哪些 backend，附「打开项目设置」入口。
-- 全局注册表列表行展示 `≤N 并发` chip（来源 `max_concurrency`，缺省不显示）。
+- rapidocr-backend 自报可调阈值参数,OCR 预标配置面板据此渲染阈值滑块:文本置信度 `text_score`、检测框阈值 `box_thresh`、检测框扩张比 `unclip_ratio`(det 暴露 box/unclip、端到端三者全暴露)。`/predict` 从 `context.params` 读取并透传给 RapidOCR 引擎(与 `RapidOCR.__call__` 同口径)。此前 rapidocr 未声明任何 `params`,OCR 路径「无可调参数」,且 `text_score` 在 predictor 写死 0.0(从不过滤低置信度文本)。
+- **文本识别原子可作跨 backend 编排的下游识别阶段**:多阶段预标的「下游模型」选择器放行 OCR 识别原子(`task=ocr`、`composition=atom`、吃 crop,如 rapidocr 的 `ocr-rec`),支持「上游任意 backend 检测出框 → 裁 crop → 下游 rec 认字、写回 `text`/`orientation`/`language` 属性」的跨 backend 流水线。下游卡角色徽标显示「识别」,选中识别原子时收起与之冗余的整图「模型任务」下拉。此前下游选择器只认 classification/detection/box-seg,识别原子(crop-only、单阶段整图被排除)在编排里无处可选。
 
 ### Changed
 
-- **backend 数据模型重构**：从「每项目 `ml_backends` 一行、能力快照逐项目复制」改为「全局注册表 `ml_backend_registry`（一物理 backend = 一行 = 一份能力快照 = 一个并发限速闸）+ 项目启用关联 `project_ml_backend`（启用开关 + 项目级变体覆盖）」。env 配置的 backend 启动即自动 upsert 为 `source=env` 注册项（取代旧 `_load_env_only_instances` 临时探测分支）；env 删项时对应行置 `disconnected` 而非删除，保留历史 prediction 溯源。预标归属、DAG 下游、`backends>=2` 门控统一改读「项目已启用」集合。项目作用域旧端点保持向后兼容（注册 = 按 URL 复用 / 新建全局项 + 启用，删除 = 停用）。
-- **数据迁移 `0108`**：按 URL 去重回填全局表 + 生成启用关联，建全量 `old_id → registry_id` 映射统一重写外键三处（`projects.ml_backend_id`、分区表 `predictions.ml_backend_id` 两处）+ 用户偏好三子键（`params_by_backend` / `model_by_backend` / `interactive_backend_by_project`），历史 prediction backend 溯源零丢失。回滚为 forward-only 姿态（去重发生即有损）。
-- **项目设置「ML 模型」UX 精简**：主表只展示本项目已启用的 backend；`ai_enabled` 改为**自动派生**（设了项目主后端即视为启用），不再需要手动开关。
-- **模型市场「注册管理」tab 重设计**：从「按项目分组 + per-project 注册 / 编辑 / 删除」的旧卡片，改为「全局注册表（扁平 · 跨项目共享）+ 只读项目启用概览」两块，并加角色门控——超管做全局增删改查 + 健康检查，项目管理员看到的全局表为**只读**（隐藏 CRUD）。
-- **AIPreAnnotate 多阶段编排门控改读已启用集合**：勾选启用第二个 backend 即可加分类阶段，无需重复注册。
-
-### Removed
-
-- **每项目 backend 注册上限 `max_ml_backends_per_project`**：与多阶段 DAG 需 ≥2 backend 直接冲突；显存保护改由全局行 `max_concurrency` 兜底。
-- **「启用 AI 预标注」手动开关**：冗余，改由 `ai_enabled` 自动派生。
-- **项目级「SAM 文本预标默认输出」选项 `text_output_default`**：已被交互工具栏 + 用户级偏好架空（工作台首次激活 exemplar 后即被用户偏好永久覆盖，批量预标不读此字段）。删 `projects` / `project_templates` 两表列（迁移 `0109`）；工作台文本输出初始值回落用户偏好 → `type_key` 智能默认。
-- **per-backend 项目级阈值覆盖 `box_threshold` / `text_threshold`**：从未被推理路径消费（批量预标只读项目级单值 `project.box_threshold`），且属错误抽象——backend 可调参数本由协议 `/setup.params` 自描述、运行时通用渲染（工作台「当前题 AI」+ `/ai-pre` 跑批配置）。删前端「项目级覆盖」列 + `OverrideCell`、schema / service / API 读写、`project_ml_backend` 两列（迁移 `0110`）；保留 `enabled` / `default_variants`（后者留作未来变体覆盖落点）与项目级 `project.box_threshold` 兜底。
-- **项目作用域注册前端链**（后端兼容端点仍保留）：`MlBackendFormModal` 组件 + `useCreateMLBackend` / `useUpdateMLBackend` / `useDeleteMLBackend` hook + `mlBackendsApi.create` / `update` / `delete` 封装。
+- **类别白名单改由 backend 静态自报、不再依赖预热**:YOLO 按 task 静态自报类别表(检测/分割=COCO80、obb=DOTA-15、pose=person),onnxtools 检测模型自报 13 类车辆 —— 进预标面板即可勾选类别,无需先「预热加载类别」,且切换模型后类别表恒在。开集/文本模型(YOLO-World/YOLOE)不套固定类别表。
+- **类别筛选 / 父框类别支持文本输入**:类别筛选新增按类名快速勾选的输入框(datalist 自动补全,闭集仍按模型类别 index 落选);多阶段编排的「父框类别」选项改为优先取**上游阶段筛完的有效类别**(源模型类别 ∩ 源类别白名单;下游只会见到这些框),取不到回落项目类别,并支持自由文本输入任意类名(匹配检测框 class_name)。
+- OCR / 文档版面预标配置统一为 model-first,与几何(YOLO)、文本(gsam2/sam3)所有 backend 对齐:**移除 OCR/版面专属的「任务类型」tab 层**,改为把该 backend 全部可批量预标的模型(几何检测/分割 + OCR/版面)铺进同一个「模型任务」下拉。OCR 的端到端 / 检测模型现可见可选(默认端到端),版本(v5/v6)× 尺寸 × 语言变体可调并按 `model_variants` 真正下发后端。此前 OCR 走独立的「任务类型」tab + 静默 `.find` 第一个模型,UI 不出模型选择器(端到端「不出现」),变体被 `hasAnyParams` 判据误判隐藏、即便选了也不下发(永远跑默认 v5/mobile/universal)。
+- 项目设置「AI 预标注设置」改为**改动即时生效**:项目主后端下拉、IoU 去重阈值滑块各自直接落库(下拉选中即提交、滑块松手即提交),移除「保存 AI 设置」按钮与「有未保存的修改」提示。消除了「下拉 + 保存」与行内「设为主后端」对同一字段的双写。
 
 ### Fixed
 
-- **并发限速首次真正 per-物理-backend 生效**：旧实现下同一物理 backend 在 N 个项目各持一个独立 semaphore，限速形同虚设；`auth_method` / `auth_token` / `extra_params`（含 `max_concurrency`）现作为端点固有属性随 URL 进全局行，单 backend 一个限速闸。
-- **项目管理员进「模型市场 → 注册管理」tab 不再 403 坏页**：旧卡片调用超管专属 `/admin/ml-integrations/overview`，项目管理员触发 403 致整个 tab 加载失败；重设计后项目管理员走只读全局表，不再触达该端点。
+- **rapidocr 池化引擎运行时阈值跨请求泄漏**:`RapidOCR.update_params` 对 `None` 入参是跳过不重置,而 predictor 缺参传 `None`,加之 det/rec/e2e 同 variant 共享同一池化引擎 → 上一次请求设的 `box_thresh`/`unclip_ratio`/`text_score` 粘在引擎上、污染后续请求(含跨原子类型、跨项目:A 项目调了阈值会改变 B 项目的检出)。现缺参显式回落到 catalog 声明的默认值(0.5/0.5/1.6)并每次写定,泄漏从结构上消除。
+- **OCR 识别下游被误判「属性恒空」而 422 拒发**:预标编排能力闸门(端点 `check_capability_violations` + 前端 `stageWarning`/StageCard)假定写属性的下游必须产 `class`,而 rec 产 `text`/`orientation`/`language`(本就不含 class)→ 被判 `no_class_attribute`、派发期 422 硬挡、画布误报。现对 `task=ocr` 识别阶段豁免该判据(识别写回 `text` 即有效产出),前后端经共享 fixture 双端同步。
+- 画布内 OCR 单图推理「已完成」却不显示任何框:预标注配置选 OCR 模型时用 `.find(task==="ocr")` 取第一个,命中了 rapidocr 自报顺序中靠前、只吃裁剪图的识别原子 `ocr-rec`(`supported_inputs:["crop"]`),整图被当成一个 crop 喂进识别模型 → 识别不出文本 → 返回空、画布无框(job 仍记成功)。现按 `supported_inputs` 过滤,整图预标(OCR / 文档版面)只选支持 `full_image` 的模型(命中端到端 `ocr-e2e`),crop-only 原子排除;`supported_inputs` 缺字段的老 backend 按兼容默认放行。
+- 设为项目主后端后又被冲回「未设」:此前行内「设为主后端」直接落库,但顶部 AI 设置表单的本地态未跟随同步,导致「保存 AI 设置」按钮假显「有未保存的修改」,误点即把陈旧的空值推回服务端、清掉刚设的主后端(OCR 等项目表现为始终「未接入」)。改为表单态跟随服务端同步、并将主后端设置改为即时生效后,此双写冲突从结构上消除。
+- OCR 项目点击后落到「标注界面尚未实现」兜底、打不开工作台:仪表盘的工作台放行判据从写死的 `type_key` 白名单（`image-det`/`video-track`/`lidar`）改为按媒体维度 `data_type`（`image`/`video`/`lidar`）放行，图像子类型 det/ocr/seg 同走图像渲染栈。此前 OCR backend 与 seed 项目随平台上线时，仪表盘白名单漏列 `image-ocr`，导致 OCR 项目无法进入工作台。
+
+## [0.20.4] - 2026-06-30
+
+### Added
+
+- **从 ML Backend 预填项目配置**：项目「类别与属性」页的「从 ML Backend 导入」对话框升级为**类别 + 属性**两区，可一键把 backend 自报的类别（如 YOLO 的 COCO 类）与输出属性 schema 合并进当前工具单位（类别同名跳过、属性同 key 覆盖），免去手抄。此前 backend 自报的 `classes` 在能力实例接口被裁掉、类别只能手抄，现已透传。
+- **手建属性字段推荐 key**：项目「类别与属性」页新建属性时，从在线 backend 自报的输出属性 schema 推荐 `text`/`language`/`orientation` 等落点类字段（含完整类型/选项）一键填入，让手建字段的 key 天然对齐协议、不被工作台「采纳后该属性将丢失」校验漏判。
+- **工作台属性键一键补全**：工作台 active model 自报会产出某属性、但项目缺承接字段时，「采纳后该属性将丢失」警告旁新增「一键补全」CTA，点击（带确认）即把该 model 自报的属性字段补进项目所有启用工具单位（同 key 覆盖、新 key 追加），补完警告自动消失，免去跳去项目设置手工补。
+
+### Changed
+
+- 五个 ML backend 的图片下载、GPU 显存释放、`/versions` 载荷收敛进新共享包 `aap_backend_runtime`，消除跨 backend 的无状态样板复制（此前图片下载 5 份、GPU 释放 3 份各写一遍）。有状态脚手架（model pool / observability）因各 backend 已各自演化，按既定边界保持不动。
+
+### Fixed
+
+- 能力目录端点（`GET /ml-capabilities/instances`）健壮性：某个 backend 自报格式不合规（如 variant 选项缺必填 `value`、`models` 非数组）时，现仅跳过该 backend 并记 warning，而非让一条坏数据的校验异常拖垮整个端点 —— 此前整列构造会因单个 backend 的 `ValidationError` 返回 500，导致所有 backend 的卡片一起从「模型市场 → 能力目录」消失。
+
+## [0.20.0] - 2026-06-29
+
+### Added
+
+- **rapidocr-backend**（平台首个真实 OCR backend，第五个 ML backend）：基于 RapidOCR（ONNX）v3.9.0，把 `det → cls → rec` 三段拆为「原子能力 + 端到端编排」，对外自报三个 model —— `ocr-det`（detection 原子，full_image → polygon 文本框）、`ocr-rec`（ocr 原子，crop → 文本 + 方向 + 语言，内部跑 cls 方向校正）、`ocr-e2e`（ocr composite，full_image → polygon + 文本 + 方向 + 语言）。cls（文本行方向 0/180）语言/版本无关、内化进 rec 与 e2e 不单独暴露。支持 PP-OCRv5/v6 × 尺寸档 × 通用(中英)/英文 变体（`context.model_variants` 选档）。激活了协议早已留好的 `ocr` 任务族，并成为 `attributes.text`/`orientation`/`language` 落点校验的首个真实 producer。端口 8005，base 与 onnxtools 共享 nvidia/cuda runtime，GPU 可选。
+
+### Changed
+
+- onnxtools-backend 镜像基座从 `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` 换成 `nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04`，删除从未被使用的 torch/torchvision/torchaudio（onnxtools 链路只需 onnxruntime-gpu + opencv），镜像体积从 18.3GB 降到 6.11GB（约 -12GB）。系统 cuDNN/CUDA 走标准路径，onnxruntime 的 CUDAExecutionProvider 无需再靠 ENTRYPOINT 的 `LD_LIBRARY_PATH` 拼接 torch 自带 nvidia 库即可启用。

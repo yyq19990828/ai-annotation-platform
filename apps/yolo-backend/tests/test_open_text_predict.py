@@ -87,7 +87,7 @@ class _FakePool:
 def _fake_image(monkeypatch):
     img = MagicMock()
     img.size = (200, 240)  # (W, H)
-    monkeypatch.setattr(pred, "_load_image", lambda *a, **k: img)
+    monkeypatch.setattr(pred, "fetch_image", lambda *a, **k: img)
     return img
 
 

@@ -129,6 +129,7 @@ function SamRefineButton({
 
 interface ImageStageProps {
   fileUrl: string | null;
+  mediaKey?: string | null;
   blurhash?: string | null;
   /** 已知图片尺寸 (task.image_width/height): 有值则翻页时同步算 fit, 不必等 image onload, 首帧即正确。 */
   imageWidth?: number | null;
@@ -372,7 +373,7 @@ function SamCandidateOverlay({
 
 // ── main component ──────────────────────────────────────────────────────────
 export function ImageStage({
-  fileUrl, blurhash, imageWidth, imageHeight, tool, activeClass,
+  fileUrl, mediaKey, blurhash, imageWidth, imageHeight, tool, activeClass,
   selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
   onJoinSelected, onCropSelected,
@@ -440,7 +441,21 @@ export function ImageStage({
   vpRef.current = vp;
   const { ref: setContainerNode, size: vpSize } = useElementSize(containerRef);
 
-  const [image, imageStatus] = useImage(fileUrl ?? "");
+  // file_url is presigned and can change when annotation mutations refetch the
+  // task list. Keep the already loaded source while the underlying media is the
+  // same, otherwise the background image reloads and the whole stage flashes.
+  const imageIdentity = mediaKey ?? fileUrl ?? "";
+  const imageSourceRef = useRef<{ identity: string; url: string | null }>({
+    identity: imageIdentity,
+    url: fileUrl,
+  });
+  if (imageSourceRef.current.identity !== imageIdentity) {
+    imageSourceRef.current = { identity: imageIdentity, url: fileUrl };
+  } else if (!imageSourceRef.current.url && fileUrl) {
+    imageSourceRef.current.url = fileUrl;
+  }
+  const imageSourceUrl = imageSourceRef.current.url;
+  const [image, imageStatus] = useImage(imageSourceUrl ?? "");
   // 已知尺寸 (task 元数据) 优先, 让翻页时无需等 image onload 就能算 fit; 回退到加载后的自然尺寸。
   // 图像与标注都按同一 imgW/imgH 渲染, 故即便已知值与自然值偶有出入也始终对齐 (不产生 jank)。
   const imgW = imageWidth || image?.naturalWidth || 900;
@@ -543,14 +558,14 @@ export function ImageStage({
 
   // 修翻页首帧 jank: vp 跨 task 持久化, 换图瞬间标注会先用上一张的变换画一帧, 等新图 onload
   // 算出 fit 后才 snap → 视觉上标注从左上角小比例缩放到正确位置。修法三点:
-  // (1) fitted 设为 state 并在 fileUrl 变化时**渲染期同步**重置 (render-time setState, 比 effect 早
-  //     一帧, 保证新图首个 render 就 fitted=false); (2) fit 跑在 useLayoutEffect → paint 前 setVp 生效,
+  // (1) fitted 设为 state 并在 media identity 变化时**渲染期同步**重置 (render-time setState,
+  //     比 effect 早一帧, 保证新图首个 render 就 fitted=false); (2) fit 跑在 useLayoutEffect → paint 前 setVp 生效,
   //     onload 那帧的错位永不落屏; (3) 未 fit 完隐藏 Konva 层 (见 konvaHost), 由 blurhash 占位顶着,
   //     揭开时已在正确位置。
   const [fitted, setFitted] = useState(false);
-  const prevFileUrlRef = useRef(fileUrl);
-  if (prevFileUrlRef.current !== fileUrl) {
-    prevFileUrlRef.current = fileUrl;
+  const prevImageIdentityRef = useRef(imageIdentity);
+  if (prevImageIdentityRef.current !== imageIdentity) {
+    prevImageIdentityRef.current = imageIdentity;
     setFitted(false);
   }
   // autoFitOnResize 只应在视口尺寸真正变化（窗口 / 边栏致容器 resize）时重新适应。原条件
@@ -1075,11 +1090,11 @@ export function ImageStage({
       }}
     >
       {/* blurhash 占位（图像加载前） */}
-      {!imageLoaded && fileUrl && blurhash && (
+      {!imageLoaded && imageSourceUrl && blurhash && (
         <BlurhashLayer hash={blurhash} />
       )}
 
-      {!fileUrl && (
+      {!imageSourceUrl && (
         <div className={styles.emptyState}>
           <Icon name="warning" size={32} />
           <div className={styles.emptyStateText}>图像不可用</div>
@@ -1169,6 +1184,7 @@ export function ImageStage({
           {visibleSortedUserBoxes.map((b) => {
             const ov = overrideGeom(b.id);
             const display: Annotation = ov ? { ...b, ...ov } : b;
+            const renderKey = b.render_key ?? b.id;
             // v0.10.28 · 旋转框: 绕中心旋转的 Rect + 顶部旋转手柄。
             if (b.geometry?.type === "rotated_bbox") {
               const g = b.geometry;
@@ -1178,7 +1194,7 @@ export function ImageStage({
               const isPrimarySingleSelect = selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
               return (
                 <KonvaRotatedBox
-                  key={b.id}
+                  key={renderKey}
                   b={b}
                   annotationId={b.id}
                   geometry={liveGeometry}
@@ -1220,7 +1236,7 @@ export function ImageStage({
               const isOnlySelected = selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
               return (
                 <KonvaPolyline
-                  key={b.id}
+                  key={renderKey}
                   b={display}
                   annotationId={b.id}
                   isAi={false}
@@ -1270,7 +1286,7 @@ export function ImageStage({
               const isKpEditable = selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
               return (
                 <KonvaKeypoint
-                  key={b.id}
+                  key={renderKey}
                   b={kpOv ? { ...display, keypoints: liveKps } : display}
                   annotationId={b.id}
                   isAi={false}
@@ -1312,7 +1328,7 @@ export function ImageStage({
                 : !isSelfIntersecting(livePoints).ok);
               return (
                 <KonvaPolygon
-                  key={b.id}
+                  key={renderKey}
                   b={display}
                   annotationId={b.id}
                   isAi={false}
@@ -1362,7 +1378,7 @@ export function ImageStage({
             const isPrimarySingleSelect = selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
             return (
               <KonvaBox
-                key={b.id}
+                key={renderKey}
                 b={display}
                 annotationId={b.id}
                 isAi={false}

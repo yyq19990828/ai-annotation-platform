@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 
 from fastapi import APIRouter, Depends, Request, Response, status
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.user import User
@@ -39,6 +41,8 @@ from app.services.capability_registry import (
 )
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 
 def _build_payload() -> ProtocolCapabilitiesResponse:
@@ -142,16 +146,27 @@ async def get_capability_instances(
     让普通登录用户也能看到完整 model 清单。
     """
     raw = await load_capability_instances(db)
-    return CapabilityInstancesResponse(
-        instances=[
-            CapabilityInstanceItem(
-                source=item["source"],
-                name=item["name"],
-                infra=item["infra"],
-                # v0.14.14 · backend 自报是否支持 POST /warmup (协议 §4.4).
-                warmup_endpoint=bool(item.get("warmup_endpoint", False)),
-                models=[InstanceModelItem(**m) for m in item["models"]],
+    # 逐 backend 构造: 单个 backend 自报格式不合规 (如 variant 选项缺 value / models
+    # 非数组) 只跳过它本身并告警, 而非让一条坏数据的 ValidationError 拖垮整个端点 ——
+    # 否则一个不合规 backend 会让所有 backend 的卡片一起从能力目录消失 (整体 500)。
+    instances: list[CapabilityInstanceItem] = []
+    for item in raw:
+        try:
+            instances.append(
+                CapabilityInstanceItem(
+                    source=item["source"],
+                    name=item["name"],
+                    infra=item["infra"],
+                    # v0.14.14 · backend 自报是否支持 POST /warmup (协议 §4.4).
+                    warmup_endpoint=bool(item.get("warmup_endpoint", False)),
+                    models=[InstanceModelItem(**m) for m in item["models"]],
+                )
             )
-            for item in raw
-        ]
-    )
+        except (ValidationError, KeyError, TypeError) as exc:
+            logger.warning(
+                "跳过自报格式不合规的 backend instance name=%r source=%r: %s",
+                item.get("name"),
+                item.get("source"),
+                exc,
+            )
+    return CapabilityInstancesResponse(instances=instances)

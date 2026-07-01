@@ -252,7 +252,20 @@ function Flow({
         .join(","),
     [flow.nodes],
   );
-  useEffect(() => setNodes(flow.nodes), [flow.nodes, setNodes]);
+  // 整批同步 flow.nodes 时, **按 id 保留上一批已测量的 measured 尺寸** —— buildFlow 每次产全新节点
+  // 对象 (无 measured), 直接整批替换会把 react-flow 已测量态清掉 → 节点转 visibility:hidden; 而节点
+  // DOM 元素未重建、尺寸未变 → 其 ResizeObserver 不再触发 → 永远拿不到新测量 → 节点卡死隐藏 (改下游
+  // 阶段配置等「同 id 仅变 data」时必现)。保留 measured 后, 仅 data 变不丢测量态; 真改了尺寸时
+  // ResizeObserver 仍会触发纠正。
+  useEffect(() => {
+    setNodes((prev) => {
+      const measuredById = new Map(prev.map((n) => [n.id, n.measured]));
+      return flow.nodes.map((n) => {
+        const measured = measuredById.get(n.id);
+        return measured ? { ...n, measured } : n;
+      });
+    });
+  }, [flow.nodes, setNodes]);
   const lastTopoRef = useRef<string>(topoFingerprint);
   useEffect(() => {
     if (lastTopoRef.current !== topoFingerprint) {

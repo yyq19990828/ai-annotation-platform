@@ -105,6 +105,9 @@ export interface CapabilityInstanceModel {
   // 含 select options. 前端「从 ML Backend 导入属性」据此一键导入项目 attribute_schema,
   // 免去手抄选项 + key 对齐。老 backend 缺字段 = 无属性输出。
   output_attribute_schema?: OutputAttributeSchemaItem[];
+  // v0.20.3 · backend 自报的类别清单 (yolo COCO 等). 前端「从 backend 预填配置」据此
+  // 一键导入类别到工具单位, 与导入属性对称。老 backend / 无类别模型缺字段 = 无类别。
+  classes?: string[];
 }
 
 // v0.18.0 · backend 自报的单个输出属性字段 (与项目 AttributeField 同构子集).

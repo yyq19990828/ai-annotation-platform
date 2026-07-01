@@ -123,6 +123,7 @@ interface WorkbenchStageHostVideoProps {
 
 interface WorkbenchStageHostImageProps {
   fileUrl: string | null;
+  mediaKey?: string | null;
   blurhash?: string | null;
   // 已知图片尺寸 (task.image_width/height), 让 ImageStage 翻页时同步算 fit, 不必等 image onload。
   imageWidth?: number | null;
@@ -297,6 +298,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     } = videoProps ?? ({} as WorkbenchStageHostVideoProps);
     const {
       fileUrl,
+      mediaKey,
       blurhash,
       imageWidth,
       imageHeight,
@@ -441,6 +443,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
           <ImageWorkbench
             readOnly={readOnly}
             fileUrl={fileUrl}
+            mediaKey={mediaKey}
             blurhash={blurhash}
             imageWidth={imageWidth}
             imageHeight={imageHeight}

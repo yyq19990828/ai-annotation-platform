@@ -71,7 +71,7 @@ const sharedBindings = {
 };
 
 function renderUI(project: ProjectResponse) {
-  // 包 QueryClientProvider: ClassesSection 内挂的 ImportAttributesFromBackendDialog
+  // 包 QueryClientProvider: ClassesSection 内挂的 PrefillFromBackendDialog
   // 调 useCapabilityInstances(useQuery), 即使 dialog 关闭 hook 也无条件挂载。生产
   // 环境整个 App 在 QueryClient 包装下, 测试须对齐。
   const qc = new QueryClient({

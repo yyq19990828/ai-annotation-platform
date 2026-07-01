@@ -67,6 +67,10 @@ def _shape_models(caps: dict | None) -> list[dict]:
         return []
     out: list[dict] = []
     for m in caps.get("models") or []:
+        # 守卫:某个 backend 自报 "models": [null] / [str] 等非 dict 元素时,m.get(...)
+        # 会抛 AttributeError 直接逃出本路由,/instances 仍然整体 500。在源头跳过即可。
+        if not isinstance(m, dict):
+            continue
         out.append(
             {
                 "id": m.get("id", ""),
@@ -87,6 +91,9 @@ def _shape_models(caps: dict | None) -> list[dict]:
                 # 协议③ · 属性输出类型 + schema 自描述, 供前端「从 backend 导入属性」.
                 "output_attribute_types": list(m.get("output_attribute_types") or []),
                 "output_attribute_schema": list(m.get("output_attribute_schema") or []),
+                # v0.20.3 · 透传 backend 自报的类别清单 (yolo COCO 等), 供前端「从 backend
+                # 预填配置」一键导入类别。extract_capabilities 早已保留, 此前在本层被裁掉。
+                "classes": list(m.get("classes") or []),
                 "modality": m.get("modality"),
                 "supported_variants": list(m.get("supported_variants") or []),
                 "variant_combinations": list(m.get("variant_combinations") or []),

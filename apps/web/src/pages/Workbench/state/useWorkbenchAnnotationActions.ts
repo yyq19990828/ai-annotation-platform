@@ -165,6 +165,7 @@ export function useWorkbenchAnnotationActions({
         attributes: payload.attributes ?? {},
         created_at: new Date().toISOString(),
         updated_at: null,
+        render_key: tmpId,
       };
       setQ<AnnotationResponse[]>(["annotations", taskId], (prev) => [...(prev ?? []), optimistic]);
       s.setSelectedId(tmpId);

@@ -44,6 +44,7 @@ export type VideoEntryView = {
 export type VideoPreviewPoint = { frame: number; x: number; y: number; occluded: boolean };
 
 export type VideoTrackPreviewView = {
+  key: string;
   id: string;
   color: string;
   selected: boolean;
@@ -67,6 +68,10 @@ export type VideoLabelView = {
   text: string;
   opacity?: number;
 };
+
+function annotationRenderKey(ann: AnnotationResponse): string {
+  return ann.render_key ?? ann.id;
+}
 
 export interface VideoFrameViews {
   entries: VideoEntryView[];
@@ -153,6 +158,7 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
           occluded: Boolean(kf.occluded),
         }));
       return {
+        key: annotationRenderKey(ann),
         id: ann.id,
         color: getTrackColor(ann.geometry.track_id, ann.class_name, trackColorOverrides),
         selected: ann.id === selectedId,
@@ -220,10 +226,11 @@ function buildEntryView(
     ? getTrackColor(trackId, ann.class_name, trackColorOverrides)
     : classColor(ann.class_name);
   const trackNumber = trackNumbers.get(ann.id);
+  const renderKey = annotationRenderKey(ann);
   // 状态后缀（· 由 buildTrackLabelText 拼）；插值 / 遮挡互斥。
   const stateSuffix = source === "interpolated" ? "插值" : occluded ? "遮挡" : undefined;
   return {
-    key: `${ann.id}-${trackId ?? "legacy"}`,
+    key: `${renderKey}-${trackId ?? "legacy"}`,
     id: ann.id,
     geom,
     color,
