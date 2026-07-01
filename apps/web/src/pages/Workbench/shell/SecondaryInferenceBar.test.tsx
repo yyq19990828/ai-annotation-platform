@@ -1,7 +1,8 @@
-// v0.20.12 · SecondaryInferenceBar 组件测试:
+// v0.20.16-ui · SecondaryInferenceBar (下拉选能力 + 运行 悬浮面板) 组件测试:
 // - 无能力 / readOnly → 不渲染
-// - 有能力 → 渲染能力按钮; 点击 → 调 run + 成功 toast (几何/属性 sub 文案)
-// - attributes-型缺承接字段 → 出现「补 N 字段」CTA, 点击回调带缺失字段; 运行后 toast 提示缺字段
+// - 有能力 → 渲染分组下拉 + 运行按钮; 运行选中能力 → 调 run + toast (几何/属性 sub)
+// - attributes-型选中且缺承接字段 → 出现补全 CTA; 运行后 warning toast
+// - 有可调参数 → ⚙ 显隐 + 展开参数面板
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, fireEvent, waitFor } from "@testing-library/react";
 import type { MLModelCapability } from "@/api/ml-backends";
@@ -21,7 +22,7 @@ vi.mock("../state/useSecondaryInference", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../state/useSecondaryInference")>();
   return {
-    ...actual, // 保留 missingAttributeFields / buildSecondaryInferencePayload 真实实现
+    ...actual, // 保留 missingAttributeFields / hasConfigurableParams / buildSecondaryInferencePayload 真实实现
     useSecondaryCapabilities: () => ({
       capabilities: capabilitiesRef.current,
       isLoading: false,
@@ -39,7 +40,7 @@ function attrCap(over: Partial<MLModelCapability> = {}): SecondaryCapability {
     backendName: "onnx",
     model: model(over),
     writeTarget: "attributes",
-    label: "分类器",
+    label: (over.display_name as string) || "分类器",
   };
 }
 function geomCap(): SecondaryCapability {
@@ -85,17 +86,18 @@ describe("SecondaryInferenceBar", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("有能力 → 渲染能力按钮", () => {
+  it("有能力 → 渲染能力下拉 + 运行按钮", () => {
     capabilitiesRef.current = [attrCap(), geomCap()];
     const { getByTestId } = render(
       <SecondaryInferenceBar projectId="p" taskId="task-1" annotation={annotation} />,
     );
-    expect(getByTestId("secondary-cap-be-1:m1")).toBeTruthy();
-    expect(getByTestId("secondary-cap-be-2:det")).toBeTruthy();
+    const select = getByTestId("secondary-cap-select") as HTMLSelectElement;
+    expect(select.querySelectorAll("option")).toHaveLength(2);
+    expect(getByTestId("secondary-run")).toBeTruthy();
   });
 
-  it("点击几何能力 → 调 run + 新增子框 toast", async () => {
-    capabilitiesRef.current = [geomCap()];
+  it("选几何能力后运行 → 调 run + 新增子框 toast", async () => {
+    capabilitiesRef.current = [attrCap(), geomCap()];
     mutateAsync.mockResolvedValue({
       annotation: { ...annotation, attributes_meta: {} },
       created_children: [{ id: "c1" }, { id: "c2" }],
@@ -103,7 +105,10 @@ describe("SecondaryInferenceBar", () => {
     const { getByTestId } = render(
       <SecondaryInferenceBar projectId="p" taskId="task-1" annotation={annotation} />,
     );
-    fireEvent.click(getByTestId("secondary-cap-be-2:det"));
+    fireEvent.change(getByTestId("secondary-cap-select"), {
+      target: { value: "be-2:det" },
+    });
+    fireEvent.click(getByTestId("secondary-run"));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
     await waitFor(() =>
       expect(pushToast).toHaveBeenCalledWith(
@@ -130,7 +135,7 @@ describe("SecondaryInferenceBar", () => {
         onEnsureAttributeFields={onEnsure}
       />,
     );
-    fireEvent.click(getByTestId("secondary-fill-be-1:m1"));
+    fireEvent.click(getByTestId("secondary-fill"));
     expect(onEnsure).toHaveBeenCalledWith([
       expect.objectContaining({ key: "color", label: "颜色" }),
     ]);
@@ -153,10 +158,10 @@ describe("SecondaryInferenceBar", () => {
         onEnsureAttributeFields={vi.fn()}
       />,
     );
-    expect(queryByTestId("secondary-fill-be-1:m1")).toBeNull();
+    expect(queryByTestId("secondary-fill")).toBeNull();
   });
 
-  it("有可调参数 → 显示 ⚙, 点击展开参数面板; 无参数 → 无 ⚙", () => {
+  it("选中能力有可调参数 → 显示 ⚙, 点击展开参数面板; 无参数 → 无 ⚙", () => {
     capabilitiesRef.current = [
       attrCap({
         id: "withp",
@@ -165,16 +170,22 @@ describe("SecondaryInferenceBar", () => {
           properties: { score_threshold: { type: "number", default: 0.5 } },
         },
       }),
-      attrCap({ id: "nop" }),
     ];
     const { getByTestId, queryByTestId } = render(
       <SecondaryInferenceBar projectId="p" taskId="task-1" annotation={annotation} />,
     );
-    expect(queryByTestId("secondary-params-toggle-be-1:nop")).toBeNull();
-    const toggle = getByTestId("secondary-params-toggle-be-1:withp");
+    const toggle = getByTestId("secondary-params-toggle");
     expect(queryByTestId("secondary-params-panel")).toBeNull();
     fireEvent.click(toggle);
     expect(getByTestId("secondary-params-panel")).toBeTruthy();
+  });
+
+  it("选中能力无可调参数 → 无 ⚙", () => {
+    capabilitiesRef.current = [attrCap({ id: "nop" })];
+    const { queryByTestId } = render(
+      <SecondaryInferenceBar projectId="p" taskId="task-1" annotation={annotation} />,
+    );
+    expect(queryByTestId("secondary-params-toggle")).toBeNull();
   });
 
   it("运行属性能力写了缺字段的键 → warning toast 提示不显示", async () => {
@@ -191,7 +202,7 @@ describe("SecondaryInferenceBar", () => {
         existingAttributeKeys={new Set()}
       />,
     );
-    fireEvent.click(getByTestId("secondary-cap-be-1:m1"));
+    fireEvent.click(getByTestId("secondary-run"));
     await waitFor(() =>
       expect(pushToast).toHaveBeenCalledWith(
         expect.objectContaining({
