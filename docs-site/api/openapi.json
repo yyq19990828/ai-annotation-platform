@@ -7955,7 +7955,8 @@
           "classes": {
             "default": [],
             "items": {
-              "type": "string"
+              "additionalProperties": true,
+              "type": "object"
             },
             "title": "Classes",
             "type": "array"
