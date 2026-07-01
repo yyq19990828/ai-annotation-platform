@@ -24,8 +24,8 @@ import {
   type SnapMatch,
 } from "./shared/geometry/snap";
 import { BlurhashLayer } from "./BlurhashLayer";
-import { KonvaBox, KonvaPolygon, KonvaRotatedBox, KonvaPolyline, KonvaKeypoint, keypointColorByIndex } from "./ImageStageShapes";
-import { normalizeImageCoordinate, resolveSnapMatch } from "./ImageStage.helpers";
+import { KonvaBox, KonvaPolygon, KonvaRotatedBox, KonvaPolyline, KonvaKeypoint, keypointColorByIndex, SIBLING_HIGHLIGHT_COLOR } from "./ImageStageShapes";
+import { normalizeImageCoordinate, resolveSnapMatch, siblingHighlightChildren } from "./ImageStage.helpers";
 import { BOX_LABEL_FONT_FAMILY } from "./boxVisual";
 import { resolveAnnotationVisual } from "./annotationVisual";
 import {
@@ -481,6 +481,12 @@ export function ImageStage({
     ));
     return buildSnapIndex(polygonAnnotations);
   }, [visibleSortedUserBoxes]);
+  // v0.20.14 · 父子同胞高亮: 恰好单选一个框时, 其直接子框 (parent_annotation_id === 选中框) 描高亮环。
+  // 多选/无选 → 空 (环仅辅助"看清某父框的子框归属", 多选语义模糊故不画)。
+  const siblingHighlightChildBoxes = useMemo(
+    () => siblingHighlightChildren(visibleSortedUserBoxes, selectedId, selSet.size),
+    [visibleSortedUserBoxes, selSet, selectedId],
+  );
 
   // v0.10.4 I2.3 · 当前视口在归一化 [0,1] 空间的 bbox，用于大 polygon 顶点视口粗筛。
   // 加 1 顶点 buffer 防边缘抖动；imgW/imgH 未就绪时返回 undefined（不启用粗筛）。
@@ -1403,6 +1409,23 @@ export function ImageStage({
               />
             );
           })}
+          {/* v0.20.14 · 父子同胞高亮环: 绕每个子框 bbox 画细点线 (统一形状, 免逐 shape 穿 prop);
+              offset 6px 使其在 group 长虚线 (offset 4px) 之外, 二者共存时嵌套不打架。listening=false。 */}
+          {siblingHighlightChildBoxes.map((b) => (
+            <Rect
+              key={`sibling-${b.id}`}
+              x={b.x * imgW - 6 / vp.scale}
+              y={b.y * imgH - 6 / vp.scale}
+              width={b.w * imgW + 12 / vp.scale}
+              height={b.h * imgH + 12 / vp.scale}
+              stroke={SIBLING_HIGHLIGHT_COLOR}
+              strokeWidth={2 / vp.scale}
+              dash={[2 / vp.scale, 2 / vp.scale]}
+              cornerRadius={2 / vp.scale}
+              fill="transparent"
+              listening={false}
+            />
+          ))}
         </Layer>
 
         {/* v0.10.8 · Mask 编辑器临时叠加层 (仅 tool === "mask" 且 active 时挂)。 */}

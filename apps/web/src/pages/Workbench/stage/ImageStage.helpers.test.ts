@@ -1,7 +1,35 @@
 // v0.16.x 第 2 批 · ImageStage 纯几何函数测试守护(伴随从 toImg 提炼,锁定逆变换公式)。
 import { describe, it, expect } from "vitest";
-import { normalizeImageCoordinate, resolveSnapMatch } from "./ImageStage.helpers";
+import { normalizeImageCoordinate, resolveSnapMatch, siblingHighlightChildren } from "./ImageStage.helpers";
 import type { Pt } from "./polygonGeom";
+
+describe("siblingHighlightChildren", () => {
+  const boxes = [
+    { id: "p", parent_annotation_id: null },
+    { id: "c1", parent_annotation_id: "p" },
+    { id: "c2", parent_annotation_id: "p" },
+    { id: "other", parent_annotation_id: "q" },
+  ];
+
+  it("单选父框 → 返回其直接子框", () => {
+    expect(siblingHighlightChildren(boxes, "p", 1).map((b) => b.id)).toEqual([
+      "c1",
+      "c2",
+    ]);
+  });
+
+  it("单选无子框的框 → 空", () => {
+    expect(siblingHighlightChildren(boxes, "other", 1)).toEqual([]);
+  });
+
+  it("多选 → 空 (语义模糊不画环)", () => {
+    expect(siblingHighlightChildren(boxes, "p", 2)).toEqual([]);
+  });
+
+  it("无选 → 空", () => {
+    expect(siblingHighlightChildren(boxes, null, 0)).toEqual([]);
+  });
+});
 
 describe("normalizeImageCoordinate", () => {
   it("逆 viewport 平移/缩放后归一为图坐标", () => {
