@@ -34,6 +34,36 @@ logger = logging.getLogger("app.services.annotation")
 
 VIDEO_BBOX_CONVERSION_LIMIT = 5000
 
+
+def _sync_attributes_meta(
+    old_attrs: dict | None,
+    old_meta: dict | None,
+    new_attrs: dict | None,
+) -> dict:
+    """v0.20.10 · 人工改属性时同步 attributes_meta（键同步是正确性红线）。
+
+    meta 只存 `origin=ai` 的条目；human 属性用「缺省即 human」隐式表达。规则：
+    - 某 AI key 的值**未变** → 保留其 meta（人工没动它，仍是 AI 产物）。
+    - 某 AI key 被人工**改值** → 删 meta（人工覆盖即认领，回落隐式 human）。
+    - 某 key 被**删除**（不在 new_attrs）→ meta 一并消失（不迭代即丢弃）。
+    - 新增的人工 key → 无 meta（隐式 human）。
+    内部键（`_shape_index` 等 `_` 前缀）不进 meta。
+    """
+    old_attrs = old_attrs or {}
+    old_meta = old_meta or {}
+    new_meta: dict = {}
+    for key, val in (new_attrs or {}).items():
+        if key.startswith("_"):
+            continue
+        entry = old_meta.get(key)
+        if entry is None:
+            continue  # 人工产物（隐式 human），不落 meta
+        # 该 key 原是 AI 产物：仅当值未被人工改动才保留 AI 溯源。
+        if key in old_attrs and old_attrs[key] == val:
+            new_meta[key] = entry
+    return new_meta
+
+
 # v0.14.1 · 可跨帧 propagate 的几何类型。视频内 track 几何由 video_tracker_runner
 # 处理(case A 内部), point_mask_3d 跨帧 point_indices 无意义(§5.4 留 v0.15+)。
 PROPAGATABLE_GEOMETRY_TYPES = frozenset(
@@ -182,6 +212,34 @@ class AnnotationService:
         if not prediction:
             return None
 
+        # v0.20.10 · 属性级溯源: 从 PredictionMeta.extra.pipeline 建「AI 富集属性键 → model_ref」
+        # 映射。pipeline 是 stage 级 (非 per-key), 但 enriched key = f"{label}_{k}" if label else k
+        # (与 tasks.py:_run_task_pipeline 一致), 故能精确反推每个键出自哪个 stage 的 backend/model。
+        # PredictionMeta 与 prediction 1:1 (prediction_id unique)。confidence 不在 extra 里, 不编造。
+        from app.db.models.prediction import PredictionMeta
+
+        ai_key_model: dict[str, dict] = {}
+        pred_meta = (
+            await self.db.execute(
+                select(PredictionMeta).where(
+                    PredictionMeta.prediction_id == prediction_id
+                )
+            )
+        ).scalar_one_or_none()
+        pipeline_meta = (pred_meta.extra or {}).get("pipeline") if pred_meta else None
+        if isinstance(pipeline_meta, dict):
+            for st in pipeline_meta.get("stages") or []:
+                if not isinstance(st, dict) or st.get("write_target") != "attributes":
+                    continue
+                label = st.get("label")
+                prefix = f"{label}_" if label else ""
+                model_ref = {
+                    "backend_id": st.get("ml_backend_id"),
+                    "model_id": st.get("model_id"),
+                }
+                for k in st.get("write_keys") or []:
+                    ai_key_model[f"{prefix}{k}"] = model_ref
+
         # v0.9.7 fix · prediction.result 是 LabelStudio 标准, 转内部 schema 后入 annotation
         from app.services.prediction import to_internal_shape
         from app.db.models.project import Project
@@ -284,6 +342,20 @@ class AnnotationService:
                         _akey,
                         _bad,
                     )
+            # v0.20.10 · per-key 溯源: pipeline 富集键标 origin=ai + model_ref; 采纳前
+            # 被人工改过的键 (attribute_overrides) 视为 human 认领, 不标 ai。内部键跳过。
+            overridden = (
+                {k for k in attribute_overrides if not k.startswith("_")}
+                if isinstance(attribute_overrides, dict)
+                else set()
+            )
+            attributes_meta: dict = {}
+            for _akey in attributes:
+                if _akey.startswith("_") or _akey in overridden:
+                    continue
+                _mref = ai_key_model.get(_akey)
+                if _mref is not None:
+                    attributes_meta[_akey] = {"origin": "ai", "model_ref": _mref}
             annotation = Annotation(
                 id=uuid.uuid4(),
                 task_id=prediction.task_id,
@@ -299,6 +371,7 @@ class AnnotationService:
                 confidence=shape.get("confidence"),
                 parent_prediction_id=prediction_id,
                 attributes=attributes,
+                attributes_meta=attributes_meta,
             )
             self.db.add(annotation)
 
@@ -459,6 +532,10 @@ class AnnotationService:
             if class_name is not None:
                 r.class_name = class_name
             if attributes is not None:
+                # v0.20.10 · 同 update: 批量改属性时同步各行 meta（人工认领）。
+                r.attributes_meta = _sync_attributes_meta(
+                    r.attributes, r.attributes_meta, attributes
+                )
                 r.attributes = attributes
             if z_order is not None:
                 r.z_order = z_order
@@ -1105,6 +1182,10 @@ class AnnotationService:
         if confidence is not None:
             annotation.confidence = confidence
         if attributes is not None:
+            # v0.20.10 · 先据旧值算 meta 同步（人工改动即认领），再替换 attributes。
+            annotation.attributes_meta = _sync_attributes_meta(
+                annotation.attributes, annotation.attributes_meta, attributes
+            )
             annotation.attributes = attributes
         # v0.10.5 M4-β · shape 状态位字段级 PATCH（I15）
         if z_order is not None:

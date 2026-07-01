@@ -40,7 +40,11 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.20.x 版本段累积在本区；进入 0.21.x 后整体移到 docs/changelogs/0.20.x.md。
 -->
 
-## [0.20.9] - 2026-07-01
+## [0.20.10] - 2026-07-01
+
+### Added
+
+- **属性级溯源：区分 AI 填充的属性与人工属性**：标注的每个属性 key 现可独立标记来源。新增 `annotations.attributes_meta` JSONB sidecar 列（`{key: {origin: "ai", model_ref}}`，只记 AI 产物，人工属性隐式）。采纳多阶段预标注（`preannotate_pipeline`）产出时，从 `PredictionMeta.extra.pipeline` 精确反推「哪个属性来自哪个 backend / model」并写入 `attributes_meta`；采纳前在工作台改过的属性不标 AI。人工在属性面板改某属性并保存后，该 key 自动回落人工（meta 键与属性严格同步，删属性联动删 meta）。属性面板里 AI 填充的字段旁显一枚极轻 `✦ AI` chip、hover 显模型来源。为「选中框二次推理」的属性溯源打底。
 
 ### Added
 

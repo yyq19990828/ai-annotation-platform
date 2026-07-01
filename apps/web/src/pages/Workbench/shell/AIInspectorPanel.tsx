@@ -275,6 +275,7 @@ export function AIInspectorPanel({
                 schema={attributeSchema}
                 className={selectedAnnotation.class_name}
                 attributes={selectedAnnotation.attributes ?? {}}
+                attributesMeta={selectedAnnotation.attributes_meta}
                 // v0.10.20 · I12 多选批量: 有 onBulkUpdateAttributes 且选中 >1 时 fan-out, 否则单条 PATCH.
                 onChange={(next) => {
                   if (multiCount > 1 && onBulkUpdateAttributes) {

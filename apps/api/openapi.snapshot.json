@@ -1644,6 +1644,12 @@
             "title": "Attributes",
             "type": "object"
           },
+          "attributes_meta": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Attributes Meta",
+            "type": "object"
+          },
           "class_name": {
             "title": "Class Name",
             "type": "string"
@@ -19917,7 +19923,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.20.9"
+    "version": "0.20.10"
   },
   "openapi": "3.1.0",
   "paths": {

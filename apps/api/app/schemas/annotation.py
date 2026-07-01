@@ -215,6 +215,9 @@ class AnnotationOut(BaseModel):
     is_active: bool
     ground_truth: bool = False
     attributes: AnnotationAttributes = {}
+    # v0.20.10 · 属性级溯源 sidecar: {key: {origin, model_ref?, confidence?, at?}}.
+    # 存量行 / 无 AI 属性时为 {}; 前端据此渲染 AI 属性来源 chip。
+    attributes_meta: dict = {}
     # v0.10.5 M4-β · shape 状态位（I15）；旧记录回落默认值。
     z_order: int = 0
     is_locked: bool = False

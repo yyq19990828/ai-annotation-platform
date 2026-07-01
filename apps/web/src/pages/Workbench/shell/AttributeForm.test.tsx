@@ -155,6 +155,37 @@ describe("AttributeForm · v0.10.20 · I12 batch banner", () => {
     expect(getByTestId("attribute-form-batch-banner").textContent).toContain("3");
   });
 
+  it("v0.20.10 · origin=ai 的字段旁渲染 AI 溯源 chip; human 字段不渲染", () => {
+    const { getByTestId, queryByTestId } = render(
+      <AttributeForm
+        schema={schema}
+        className="car"
+        attributes={{ color: "red" }}
+        onChange={() => {}}
+        attributesMeta={{
+          color: { origin: "ai", model_ref: { model_id: "cls", backend_id: "be-1" } },
+        }}
+      />,
+    );
+    const chip = getByTestId("attr-ai-origin-color");
+    expect(chip).not.toBeNull();
+    expect(chip.getAttribute("title")).toContain("cls");
+    // occluded 无 meta → 无 chip
+    expect(queryByTestId("attr-ai-origin-occluded")).toBeNull();
+  });
+
+  it("v0.20.10 · 不传 attributesMeta 时不渲染任何 AI chip", () => {
+    const { queryByTestId } = render(
+      <AttributeForm
+        schema={schema}
+        className="car"
+        attributes={{ color: "red" }}
+        onChange={() => {}}
+      />,
+    );
+    expect(queryByTestId("attr-ai-origin-color")).toBeNull();
+  });
+
   it("batchCount = 1 或未传时不渲染 banner (退化兼容单条编辑)", () => {
     const { queryByTestId, rerender } = render(
       <AttributeForm

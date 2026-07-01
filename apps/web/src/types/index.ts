@@ -393,7 +393,20 @@ export interface Annotation extends AIBox {
   // v0.18.0 · 落库标注的属性字典(透传供画布标签「标签内容·属性」渲染)。
   // 不带则单帧标签的「属性」开关无内容可显 —— AI 候选侧由 AiBox.attributes 承载。
   attributes?: Record<string, unknown> | null;
+  // v0.20.10 · 属性级溯源: 仅含 origin=ai 的 key; 缺省 key 视为 human。
+  attributes_meta?: AttributesMeta | null;
 }
+
+// v0.20.10 · 属性级溯源 sidecar。后端只回写 origin=ai 的 key; 前端据此在属性值旁
+// 显来源 chip。human 属性隐式(不在此 map)。
+export type AttributeOrigin = "ai" | "human";
+export interface AttributeMetaEntry {
+  origin: AttributeOrigin;
+  model_ref?: { backend_id?: string; model_id?: string; version?: string } | null;
+  confidence?: number | null;
+  at?: string | null;
+}
+export type AttributesMeta = Record<string, AttributeMetaEntry>;
 
 export interface AnnotationResponse {
   id: string;
@@ -412,6 +425,8 @@ export interface AnnotationResponse {
   is_active: boolean;
   ground_truth: boolean;
   attributes?: Record<string, unknown>;
+  // v0.20.10 · 属性级溯源 sidecar; 仅含 origin=ai 的 key。
+  attributes_meta?: AttributesMeta;
   // v0.10.5 M4-β · shape 状态位（I15）；后端总是回写，旧记录由迁移默认值兜底。
   z_order?: number;
   is_locked?: boolean;

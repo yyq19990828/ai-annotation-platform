@@ -57,6 +57,13 @@ class Annotation(Base):
     attributes: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict
     )
+    # v0.20.10 · 属性级溯源 sidecar: 每个 attribute key 的来源标记
+    # {key: {origin: "ai"|"human", model_ref?: {...}, confidence?: float, at?: iso}}.
+    # 独立列 (不塞进 attributes 内, 避免污染值空间). 存量行为 {} → 读作全 human.
+    # key 必须与 attributes 同步 (增删属性联动 meta), 见 AnnotationService。
+    attributes_meta: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default="{}", default=dict
+    )
     # v0.10.5 M4-β · CVAT 风格 shape 状态位（ROADMAP I15）。
     z_order: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"

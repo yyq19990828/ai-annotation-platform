@@ -76,6 +76,7 @@ graph TD
 | `group_id` | 「平等成员同组」序号（`BigInteger`，可空；Ctrl+G 成组 / 跨帧链共享），区别于 `parent_annotation_id` 的层级语义 |
 | `lead_time` | 标注耗时 |
 | `attributes` | 扩展属性 |
+| `attributes_meta` | 属性级溯源 sidecar，`{key: {origin, model_ref?}}`（只记 `origin=ai` 的键，见下方属性溯源） |
 | `was_cancelled` | 逻辑取消标记 |
 | `is_active` | 软删除标记 |
 | `version` | 乐观并发控制版本号 |
@@ -129,6 +130,19 @@ graph TD
 - 切类时属性按新类别 `applies_to` 过滤；改类悬浮框（`ClassPickerPopover`）即时联动刷新可见字段
 
 > **历史背景**：v0.11.27 之前 `Annotation` 上有 `is_occluded` 内置布尔列，只影响视觉、不进导出。迁移 `0088_remove_annotation_occlusion` 删除该列；旧项目如需保留遮挡语义，请在 schema 上新增一个 boolean 属性并启用 `style_occluded`。`video_track_bbox.keyframes[i].occluded` 是视频轨迹层面的"目标存在但被遮挡"语义，与 annotation 表无关，未变更。
+
+### 属性级溯源（`attributes_meta`）
+
+`attributes` 是裸 `dict[key, value]`，说不清「某个属性到底人填还是 AI 填」——典型混合体是「人手画的框 + AI 二次推理填的属性」。`attributes_meta`（独立 JSONB 列）给每个属性 key 补一层来源标记。设计取**最小 sidecar**：**只存 `origin=ai` 的键，human 用「缺省即 human」隐式表达**，故存量行 `{}` = 全 human，无需回填。
+
+形状：`{ "<key>": { "origin": "ai", "model_ref": { "backend_id", "model_id" } } }`。
+
+写入与维护（`AnnotationService`）：
+
+- **采纳预测**（`accept_prediction`）：查 `PredictionMeta`（与 prediction 1:1），从 `extra.pipeline.stages[]` 建「AI 富集属性键 → model_ref」映射。pipeline provenance 是 **stage 级、非 per-key**，per-key 靠前缀反推——富集键 = `f"{label}_{k}" if label else k`（与 `tasks.py` `_run_task_pipeline` 一致）。命中键标 `origin=ai` + model_ref；采纳前经 `attribute_overrides` 人工改过的键不标。`confidence` 在 extra 里不存在，不编造。
+- **人工改属性**（`update` / `bulk_update`）：经 `_sync_attributes_meta` 同步——某 AI 键**值被改** → 删其 meta（人工认领，回落隐式 human）；**值未改** → 保留；键被**删除** → meta 联动消失。**键同步是正确性红线**（meta 不得残留已不存在的 key）。
+
+前端：`AnnotationResponse.attributes_meta` 透传到 `AttributeForm`，`origin=ai` 的字段旁渲染极轻 `✦ AI` chip（hover 显 model）。
 
 ### `AnnotationDraft`
 

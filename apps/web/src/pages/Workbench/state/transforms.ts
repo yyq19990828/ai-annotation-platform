@@ -179,6 +179,8 @@ export function annotationToBox(a: AnnotationResponse, occludedKeys?: Set<string
     // v0.18.0 · 透传属性,供画布标签「标签内容·属性(单帧段)」渲染 (此前漏拷,
     // 导致单帧标签的属性开关无内容可显; AI 候选侧由 predictionsToBoxes 已拷)。
     attributes: a.attributes ?? null,
+    // v0.20.10 · 属性级溯源, 供属性面板渲染 AI 来源 chip。
+    attributes_meta: a.attributes_meta ?? null,
   };
 }
 
