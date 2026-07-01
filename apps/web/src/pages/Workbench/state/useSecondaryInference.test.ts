@@ -68,4 +68,13 @@ describe("buildSecondaryInferencePayload", () => {
     );
     expect(payload.write_keys).toBeNull();
   });
+
+  it("params: 用户调过的参数带进请求; 空 → null", () => {
+    const c = cap({ id: "det", task: "detection" }, "geometry");
+    expect(
+      buildSecondaryInferencePayload(c, { score_threshold: 0.4 }).params,
+    ).toEqual({ score_threshold: 0.4 });
+    expect(buildSecondaryInferencePayload(c, {}).params).toBeNull();
+    expect(buildSecondaryInferencePayload(c).params).toBeNull();
+  });
 });

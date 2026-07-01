@@ -4,6 +4,7 @@
 // 工具激活时显)。列出该框可跑的能力 (跨启用 backend, supported_inputs 含 crop): 检测子物 / 分类
 // 属性 / OCR。点击 → 在框 ROI 上同步跑 → 属性写回原框 (带 AI 溯源 chip)、几何建子框 (侧栏缩进)。
 // 无可跑能力时不渲染 (不占位)。
+// v0.20.13 · 有可调参数 (params.properties 除变体外还有字段) 的能力旁给 ⚙, 展开 SchemaForm 调阈值等。
 import { useState } from "react";
 
 import { Button } from "@/components/ui/Button";
@@ -12,7 +13,13 @@ import type { AttributeField } from "@/api/projects";
 import type { AnnotationResponse } from "@/types";
 import { displayClassName } from "../stage/colors";
 import {
+  SchemaForm,
+  deriveDefaults,
+  type JsonSchemaObject,
+} from "../components/SchemaForm";
+import {
   buildSecondaryInferencePayload,
+  hasConfigurableParams,
   missingAttributeFields,
   useRunSecondaryInference,
   useSecondaryCapabilities,
@@ -47,10 +54,25 @@ export function SecondaryInferenceBar({
   const { capabilities } = useSecondaryCapabilities(projectId);
   const run = useRunSecondaryInference(taskId);
   const [runningKey, setRunningKey] = useState<string | null>(null);
+  // v0.20.13 · 每能力的推理参数 (阈值等), 及当前展开参数面板的能力 key。
+  const [paramsByKey, setParamsByKey] = useState<
+    Record<string, Record<string, unknown>>
+  >({});
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   if (readOnly || capabilities.length === 0) return null;
 
   const existing = existingAttributeKeys ?? new Set<string>();
+
+  const toggleParams = (key: string, cap: SecondaryCapability) => {
+    setExpandedKey((cur) => (cur === key ? null : key));
+    // 首次展开: 用 schema 默认值初始化 (只读/变体字段已由 deriveDefaults 排除)。
+    setParamsByKey((prev) =>
+      prev[key]
+        ? prev
+        : { ...prev, [key]: deriveDefaults(cap.model.params as JsonSchemaObject) },
+    );
+  };
 
   const onRun = async (cap: SecondaryCapability) => {
     const key = `${cap.backendId}:${cap.model.id}`;
@@ -58,7 +80,7 @@ export function SecondaryInferenceBar({
     try {
       const resp = await run.mutateAsync({
         annotationId: annotation.id,
-        body: buildSecondaryInferencePayload(cap),
+        body: buildSecondaryInferencePayload(cap, paramsByKey[key]),
       });
       const childCount = resp.created_children.length;
       const attrKeys = Object.keys(resp.annotation.attributes_meta ?? {});
@@ -96,49 +118,86 @@ export function SecondaryInferenceBar({
     }
   };
 
+  const expandedCap = expandedKey
+    ? capabilities.find((c) => `${c.backendId}:${c.model.id}` === expandedKey)
+    : undefined;
+
   return (
     <div
       data-testid="secondary-inference-bar"
-      className="absolute left-1/2 top-3 z-local-5 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 shadow-md"
+      className="absolute left-1/2 top-3 z-local-5 max-w-[calc(100%-1.5rem)] -translate-x-1/2 rounded-md border border-border bg-card shadow-md"
     >
-      <span className="text-2xs text-muted-foreground">
-        对「{displayClassName(annotation.class_name)}」框二次推理
-      </span>
-      {capabilities.map((cap) => {
-        const key = `${cap.backendId}:${cap.model.id}`;
-        const busy = runningKey === key;
-        // attributes-型: 该能力会写、但项目缺承接字段 → 产物写库却不显示, 给「补全」预警。
-        const missing = missingAttributeFields(cap, existing);
-        return (
-          <span key={key} className="flex items-center gap-0.5">
-            <Button
-              size="sm"
-              variant="default"
-              disabled={runningKey !== null}
-              onClick={() => onRun(cap)}
-              title={`${cap.backendName} · ${TARGET_HINT[cap.writeTarget]}`}
-              data-testid={`secondary-cap-${key}`}
-            >
-              {busy ? "运行中…" : cap.label}
-            </Button>
-            {missing.length > 0 && onEnsureAttributeFields && (
+      <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5">
+        <span className="text-2xs text-muted-foreground">
+          对「{displayClassName(annotation.class_name)}」框二次推理
+        </span>
+        {capabilities.map((cap) => {
+          const key = `${cap.backendId}:${cap.model.id}`;
+          const busy = runningKey === key;
+          // attributes-型: 该能力会写、但项目缺承接字段 → 产物写库却不显示, 给「补全」预警。
+          const missing = missingAttributeFields(cap, existing);
+          return (
+            <span key={key} className="flex items-center gap-0.5">
               <Button
                 size="sm"
-                variant="ghost"
+                variant="default"
                 disabled={runningKey !== null}
-                onClick={() => onEnsureAttributeFields(missing)}
-                title={`该模型会输出 ${missing
-                  .map((f) => f.key)
-                  .join(", ")}，但项目缺承接字段（跑了也不显示）。点此补全。`}
-                data-testid={`secondary-fill-${key}`}
-                className="text-amber-600 dark:text-amber-400"
+                onClick={() => onRun(cap)}
+                title={`${cap.backendName} · ${TARGET_HINT[cap.writeTarget]}`}
+                data-testid={`secondary-cap-${key}`}
               >
-                ⚠ 补 {missing.length} 字段
+                {busy ? "运行中…" : cap.label}
               </Button>
-            )}
-          </span>
-        );
-      })}
+              {hasConfigurableParams(cap.model) && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={runningKey !== null}
+                  onClick={() => toggleParams(key, cap)}
+                  title="推理参数 (阈值等)"
+                  data-testid={`secondary-params-toggle-${key}`}
+                  aria-pressed={expandedKey === key}
+                >
+                  ⚙
+                </Button>
+              )}
+              {missing.length > 0 && onEnsureAttributeFields && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={runningKey !== null}
+                  onClick={() => onEnsureAttributeFields(missing)}
+                  title={`该模型会输出 ${missing
+                    .map((f) => f.key)
+                    .join(", ")}，但项目缺承接字段（跑了也不显示）。点此补全。`}
+                  data-testid={`secondary-fill-${key}`}
+                  className="text-amber-600 dark:text-amber-400"
+                >
+                  ⚠ 补 {missing.length} 字段
+                </Button>
+              )}
+            </span>
+          );
+        })}
+      </div>
+      {expandedCap && (
+        <div
+          className="max-h-64 overflow-y-auto border-t border-border px-3 py-1.5"
+          data-testid="secondary-params-panel"
+        >
+          <div className="mb-1 text-2xs text-muted-foreground">
+            {expandedCap.label} · 推理参数
+          </div>
+          <SchemaForm
+            schema={expandedCap.model.params as JsonSchemaObject}
+            value={paramsByKey[expandedKey!] ?? {}}
+            onChange={(next) =>
+              setParamsByKey((prev) => ({ ...prev, [expandedKey!]: next }))
+            }
+            disabled={runningKey !== null}
+          />
+        </div>
+      )}
     </div>
   );
 }

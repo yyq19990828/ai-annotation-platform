@@ -156,6 +156,27 @@ describe("SecondaryInferenceBar", () => {
     expect(queryByTestId("secondary-fill-be-1:m1")).toBeNull();
   });
 
+  it("有可调参数 → 显示 ⚙, 点击展开参数面板; 无参数 → 无 ⚙", () => {
+    capabilitiesRef.current = [
+      attrCap({
+        id: "withp",
+        params: {
+          type: "object",
+          properties: { score_threshold: { type: "number", default: 0.5 } },
+        },
+      }),
+      attrCap({ id: "nop" }),
+    ];
+    const { getByTestId, queryByTestId } = render(
+      <SecondaryInferenceBar projectId="p" taskId="task-1" annotation={annotation} />,
+    );
+    expect(queryByTestId("secondary-params-toggle-be-1:nop")).toBeNull();
+    const toggle = getByTestId("secondary-params-toggle-be-1:withp");
+    expect(queryByTestId("secondary-params-panel")).toBeNull();
+    fireEvent.click(toggle);
+    expect(getByTestId("secondary-params-panel")).toBeTruthy();
+  });
+
   it("运行属性能力写了缺字段的键 → warning toast 提示不显示", async () => {
     capabilitiesRef.current = [attrCap()];
     mutateAsync.mockResolvedValue({

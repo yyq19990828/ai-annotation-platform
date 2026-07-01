@@ -13,6 +13,7 @@ import { mlBackendsApi, type MLModelCapability } from "@/api/ml-backends";
 import type { AttributeField } from "@/api/projects";
 import { tasksApi, type SecondaryInferenceRequest } from "@/api/tasks";
 import { useMLBackends } from "@/hooks/useMLBackends";
+import { isVariantField } from "../components/SchemaForm";
 
 const ALLOWED_ATTR_TYPES = [
   "text",
@@ -58,6 +59,16 @@ function deriveWriteTarget(
 function isCropRunnable(m: MLModelCapability): boolean {
   if (m.is_interactive) return false;
   return (m.supported_inputs ?? []).includes("crop");
+}
+
+/** 该能力是否有可调推理参数 (params.properties 里除变体字段外还有别的)。 */
+export function hasConfigurableParams(m: MLModelCapability): boolean {
+  const props = m.params?.properties;
+  if (!props) return false;
+  return Object.entries(props).some(
+    ([key, raw]) =>
+      !isVariantField(key, (raw ?? {}) as Parameters<typeof isVariantField>[1]),
+  );
 }
 
 /**
@@ -139,9 +150,13 @@ export function missingAttributeFields(
   return out;
 }
 
-/** 把一个能力 + 目标框拼成 secondary-inference 请求。 */
+/**
+ * 把一个能力 + 目标框拼成 secondary-inference 请求。
+ * `params` 为用户在参数面板 (SchemaForm) 调过的推理参数 (阈值等); 空则不带 (后端用模型默认)。
+ */
 export function buildSecondaryInferencePayload(
   cap: SecondaryCapability,
+  params?: Record<string, unknown>,
 ): SecondaryInferenceRequest {
   const m = cap.model;
   // attributes: 只取 backend 声明的输出属性键; 空 → null (=全取, 别发空数组致后端过滤成空)。
@@ -158,6 +173,7 @@ export function buildSecondaryInferencePayload(
     task_type: m.task ?? null,
     write_keys:
       cap.writeTarget === "attributes" && attrKeys.length > 0 ? attrKeys : null,
+    params: params && Object.keys(params).length > 0 ? params : null,
   };
 }
 

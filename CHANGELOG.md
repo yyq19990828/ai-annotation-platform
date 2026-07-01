@@ -40,6 +40,12 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.20.x 版本段累积在本区；进入 0.21.x 后整体移到 docs/changelogs/0.20.x.md。
 -->
 
+## [0.20.13] - 2026-07-01
+
+### Added
+
+- **选中框二次推理支持调参数**：跑单框二次推理时，凡模型有可调参数（阈值等），能力按钮旁多一个 ⚙，点开即在原地按模型参数 schema 渲染参数面板（与批量预标同一套 `SchemaForm`），可为这一次推理调 `score_threshold` 等再跑；不调则沿用模型默认。无可调参数的能力不显示 ⚙。
+
 ## [0.20.12] - 2026-07-01
 
 ### Fixed
