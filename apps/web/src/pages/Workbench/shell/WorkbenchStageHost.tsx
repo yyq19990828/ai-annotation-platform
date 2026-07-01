@@ -2,6 +2,7 @@ import { forwardRef, lazy, Suspense, type ReactNode } from "react";
 import type {
   Annotation,
   AnnotationResponse,
+  Geometry,
   RotatedBboxGeometry,
   TaskVideoFrameTimetableResponse,
   TaskVideoManifestResponse,
@@ -156,7 +157,12 @@ interface WorkbenchStageHostImageProps {
     | { kind: "bbox"; bbox: [number, number, number, number] }
     | { kind: "exemplar"; bbox: [number, number, number, number]; alt: boolean }
   ) => void;
-  onCommitMove: (id: string, before: Geom, after: Geom) => void;
+  onCommitMove: (
+    id: string,
+    before: Geom,
+    after: Geom,
+    childMoves?: { id: string; before: Geometry; after: Geometry }[],
+  ) => void;
   onCommitResize: (id: string, before: Geom, after: Geom) => void;
   onCommitPolygonGeometry: (id: string, before: [number, number][], after: [number, number][]) => void;
   // v0.10.28 · keypoint 节点几何/可见性变更。

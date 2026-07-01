@@ -18,7 +18,7 @@ import { UNKNOWN_CLASS } from "../stage/colors";
 import type { KeypointDraftHandle, PolygonDraftHandle } from "../stage/tools";
 import { toolUnitForTool } from "../stage/tools/toolUnits";
 import { bboxGeom, keypointGeom, polygonGeom, polylineGeom } from "../state/transforms";
-import type { Keypoint } from "@/types";
+import type { Geometry, Keypoint } from "@/types";
 import { randomId } from "@/utils/id";
 import { enqueue } from "../state/offlineQueue";
 import type { useWorkbenchState } from "../state/useWorkbenchState";
@@ -72,7 +72,12 @@ export interface UseWorkbenchAnnotationActionsReturn {
   /** v0.10.28 · 提交折线（不闭合，≥2 顶点）。*/
   submitPolyline: (points: [number, number][]) => void;
   handleDeleteBox: (id: string) => void;
-  handleCommitMove: (id: string, before: Geom, after: Geom) => void;
+  handleCommitMove: (
+    id: string,
+    before: Geom,
+    after: Geom,
+    childMoves?: { id: string; before: Geometry; after: Geometry }[],
+  ) => void;
   handleCommitResize: (id: string, before: Geom, after: Geom) => void;
   handleCommitPolygonGeometry: (id: string, before: Pt[], after: Pt[]) => void;
   /** v0.10.28 · keypoint 节点几何/可见性变更。 */
@@ -494,11 +499,46 @@ export function useWorkbenchAnnotationActions({
   );
 
   const handleCommitMove = useCallback(
-    (id: string, before: Geom, after: Geom) => {
+    (
+      id: string,
+      before: Geom,
+      after: Geom,
+      childMoves?: { id: string; before: Geometry; after: Geometry }[],
+    ) => {
       if (blockIfLocked()) return;
       if (!taskId) return;
       const beforeG = bboxGeom(before);
       const afterG = bboxGeom(after);
+      // v0.20.15 · Alt 拖父联动子: 父 + 子的几何更新作为一个 batch 命令进 history (单次 undo 全回退)。
+      // 各更新独立 mutate; 失败走同款离线兜底 (乐观写 + enqueue), 但 history 只 pushBatch 一次 (不逐条 push)。
+      if (childMoves && childMoves.length > 0) {
+        history.pushBatch([
+          { kind: "update", annotationId: id, before: { geometry: beforeG }, after: { geometry: afterG } },
+          ...childMoves.map((c) => ({
+            kind: "update" as const,
+            annotationId: c.id,
+            before: { geometry: c.before },
+            after: { geometry: c.after },
+          })),
+        ]);
+        const fire = (annotationId: string, geometry: Geometry) => {
+          const p = { geometry };
+          mutations.update.mutate(
+            { annotationId, payload: p },
+            {
+              onError: (err) =>
+                enqueueOnError(err, () => {
+                  optimisticUpdateGeom(annotationId, geometry);
+                  enqueue({ kind: "update", id: randomId(), taskId, annotationId, payload: p, ts: Date.now() });
+                }),
+            },
+          );
+        };
+        fire(id, afterG);
+        for (const c of childMoves) fire(c.id, c.after);
+        pushToast({ msg: `联动搬动 ${childMoves.length} 个子框`, kind: "" });
+        return;
+      }
       const payload = { geometry: afterG };
       mutations.update.mutate(
         { annotationId: id, payload },
@@ -521,7 +561,7 @@ export function useWorkbenchAnnotationActions({
         },
       );
     },
-    [blockIfLocked, mutations, history, taskId, enqueueOnError, optimisticUpdateGeom],
+    [blockIfLocked, mutations, history, taskId, enqueueOnError, optimisticUpdateGeom, pushToast],
   );
 
   const handleCommitResize = useCallback(

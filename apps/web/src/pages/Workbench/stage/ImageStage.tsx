@@ -26,6 +26,7 @@ import {
 import { BlurhashLayer } from "./BlurhashLayer";
 import { KonvaBox, KonvaPolygon, KonvaRotatedBox, KonvaPolyline, KonvaKeypoint, keypointColorByIndex, SIBLING_HIGHLIGHT_COLOR } from "./ImageStageShapes";
 import { normalizeImageCoordinate, resolveSnapMatch, siblingHighlightChildren } from "./ImageStage.helpers";
+import { translateGeometry } from "../state/geometryTranslate";
 import { BOX_LABEL_FONT_FAMILY } from "./boxVisual";
 import { resolveAnnotationVisual } from "./annotationVisual";
 import {
@@ -56,7 +57,7 @@ type Drag =
       cy: number;
       alt: boolean;
     }
-  | { kind: "move"; id: string; start: Geom; sx: number; sy: number; cur: Geom }
+  | { kind: "move"; id: string; start: Geom; sx: number; sy: number; cur: Geom; alt: boolean }
   | { kind: "resize"; id: string; start: Geom; sx: number; sy: number; dir: ResizeDirection; cur: Geom }
   | {
       kind: "resizeRotatedBox";
@@ -204,7 +205,13 @@ interface ImageStageProps {
    * 会话非空时渲染: 正框=绿色实线 (扩召回) / 负框=红色虚线 (排误检), 跟随视口缩放平移。
    */
   samSessionExemplars?: { bbox: [number, number, number, number]; polarity: 1 | 0 }[];
-  onCommitMove?: (id: string, before: Geom, after: Geom) => void;
+  // v0.20.15 · childMoves: Alt 拖父框时同位移的子框 (各自新旧几何), 供上游与父框一并 batch 进单次 undo。
+  onCommitMove?: (
+    id: string,
+    before: Geom,
+    after: Geom,
+    childMoves?: { id: string; before: Geometry; after: Geometry }[],
+  ) => void;
   onCommitResize?: (id: string, before: Geom, after: Geom) => void;
   /** polygon 顶点几何变更（拖动 / Alt 新增 / Shift 删除）；before/after 为完整 points 列表。 */
   onCommitPolygonGeometry?: (id: string, before: Pt[], after: Pt[]) => void;
@@ -814,7 +821,22 @@ export function ImageStage({
           }
         } else if (d.kind === "move") {
           if (d.cur.x !== d.start.x || d.cur.y !== d.start.y) {
-            onCommitMove?.(d.id, d.start, d.cur);
+            // v0.20.15 · Alt 起拖 → 把直接子框按父框实际位移 (已 clamp 的 cur-start) 同步平移,
+            // 与父框一并交给上游 batch (单次 undo)。非 Alt = 现状仅搬父框。
+            let childMoves: { id: string; before: Geometry; after: Geometry }[] | undefined;
+            if (d.alt) {
+              const dx = d.cur.x - d.start.x;
+              const dy = d.cur.y - d.start.y;
+              childMoves = userBoxes
+                .filter((c) => c.parent_annotation_id === d.id && c.geometry)
+                .map((c) => ({
+                  id: c.id,
+                  before: c.geometry as Geometry,
+                  after: translateGeometry(c, dx, dy).geometry,
+                }));
+              if (childMoves.length === 0) childMoves = undefined;
+            }
+            onCommitMove?.(d.id, d.start, d.cur, childMoves);
           }
         } else if (d.kind === "resize") {
           if (d.cur.w > 0.005 && d.cur.h > 0.005 &&
@@ -1399,7 +1421,8 @@ export function ImageStage({
                 onMoveStart={isPrimarySingleSelect ? (e) => {
                   const pt = toImg(e.evt.clientX, e.evt.clientY);
                   if (!pt) return;
-                  setDrag({ kind: "move", id: b.id, start: { x: b.x, y: b.y, w: b.w, h: b.h }, sx: pt.x, sy: pt.y, cur: { x: b.x, y: b.y, w: b.w, h: b.h } });
+                  // v0.20.15 · 按住 Alt 起拖 = 子框联动 (在 commit 处据此把子框同位移一并 batch)。
+                  setDrag({ kind: "move", id: b.id, start: { x: b.x, y: b.y, w: b.w, h: b.h }, sx: pt.x, sy: pt.y, cur: { x: b.x, y: b.y, w: b.w, h: b.h }, alt: e.evt.altKey });
                 } : null}
                 onResizeStart={isPrimarySingleSelect ? (dir, e) => {
                   const pt = toImg(e.evt.clientX, e.evt.clientY);

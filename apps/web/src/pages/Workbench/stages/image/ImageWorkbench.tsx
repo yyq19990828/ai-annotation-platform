@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Annotation, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
+import type { Annotation, Geometry, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import { CanvasToolbar } from "../../stage/CanvasToolbar";
 import { FloatingDock } from "../../shell/FloatingDock";
@@ -71,7 +71,12 @@ export interface ImageWorkbenchProps {
   /** v0.10.2 · 派生自 tool, 非 AI 工具时为 null. */
   samSubTool: SamSubTool | null;
   samPolarity: SamPolarity;
-  onCommitMove: (id: string, before: Geom, after: Geom) => void;
+  onCommitMove: (
+    id: string,
+    before: Geom,
+    after: Geom,
+    childMoves?: { id: string; before: Geometry; after: Geometry }[],
+  ) => void;
   onCommitResize: (id: string, before: Geom, after: Geom) => void;
   onCommitPolygonGeometry: (id: string, before: [number, number][], after: [number, number][]) => void;
   onCommitKeypointGeometry?: (id: string, before: Keypoint[], after: Keypoint[]) => void;

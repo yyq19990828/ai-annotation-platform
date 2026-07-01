@@ -94,7 +94,7 @@ graph TD
 - **仅一层深度**：`AnnotationService._validate_parent_annotation` 在 `create` 时校验——父框须存在且 `is_active`、与子框**同一 task**（父子限帧内）、且父框自身 `parent_annotation_id` 为空。任一不满足返回 `400`。约束放在应用层而非 DB，给未来多层留后手。
 - **级联软删**：`delete()` 软删一个父框时，其全部 `is_active` 子框一并置 `is_active=False`，不留孤儿；`_update_task_stats` 按剩余 active 数重算 task 计数。
 - **创建入口**：`AnnotationCreate` 携带可空 `parent_annotation_id`，`POST /tasks/{task_id}/annotations` 透传给 service 建子框；缺省即顶层框。此前该字段只由视频 `convert` / `split` 内部构造框时写入（见下方轨迹转换）。
-- **前端呈现**：工作台侧栏 `AIInspectorPanel` 按父子缩进渲染（父行下方缩进列出子框），是层级的主结构；`group_id` 分桶为并存的次结构。画布上，恰好单选一个框时，其直接子框描一圈**同胞高亮环**（`ImageStage` 用 `siblingHighlightChildren` 纯函数派生子框集，绕每个子框 bbox 画统一细点线环 `SIBLING_HIGHLIGHT_COLOR`，免逐 shape 穿 prop；offset 6px 与 group 长虚线的 4px 嵌套不打架）。图片任务限定（video/3D 父子走各自轨迹）。
+- **前端呈现**：工作台侧栏 `AIInspectorPanel` 按父子缩进渲染（父行下方缩进列出子框），是层级的主结构；`group_id` 分桶为并存的次结构。画布上，恰好单选一个框时，其直接子框描一圈**同胞高亮环**（`ImageStage` 用 `siblingHighlightChildren` 纯函数派生子框集，绕每个子框 bbox 画统一细点线环 `SIBLING_HIGHLIGHT_COLOR`，免逐 shape 穿 prop；offset 6px 与 group 长虚线的 4px 嵌套不打架）。图片任务限定（video/3D 父子走各自轨迹）。**Alt 拖动联动**：按住 Alt 拖动一个 bbox 父框主体时，其直接子框按父框的实际位移一并平移（复用 `geometryTranslate` 的几何平移，父+子作为 history `batch` 复合命令进单次 undo）；不按 Alt 则仅搬父框。作用面限 `kind:"move"`（bbox 父框主体），与折线插点/关键点的 Alt 交互不冲突。
 
 ### Geometry union
 
