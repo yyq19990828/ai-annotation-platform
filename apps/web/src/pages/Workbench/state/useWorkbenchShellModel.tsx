@@ -867,8 +867,10 @@ export function useWorkbenchShellModel({
   // 补进项目「所有启用工具单位」的 attribute_schema.fields (同 key 覆盖、新 key 追加), 立即落库。
   // 写项目配置是有副作用操作, 故先 window.confirm 确认 (plan 风险项)。补完后 enabledToolUnits 派生
   // 收敛, useCapabilityValidation 重算, 该条警告自动消失。
-  const handleFillAttribute = useCallback(
-    (field: AttributeField) => {
+  // v0.20.12 · 抽出批量核心, 供单框二次推理 (SecondaryInferenceBar) 一次补多字段复用。
+  const applyAttributeFields = useCallback(
+    (fields: AttributeField[], confirmMsg: string) => {
+      if (fields.length === 0) return;
       const tb = currentProject?.tool_bindings;
       if (!tb) return;
       const enabledUnits = (Object.keys(tb) as ToolUnitId[]).filter((u) => tb[u]?.enabled);
@@ -876,13 +878,7 @@ export function useWorkbenchShellModel({
         pushToast({ msg: "当前项目没有启用的工具单位, 无法补全属性", kind: "warning" });
         return;
       }
-      if (
-        !window.confirm(
-          `将把属性「${field.label}」(key=${field.key}) 补进当前项目所有启用工具单位, 并立即保存。继续?`,
-        )
-      ) {
-        return;
-      }
+      if (!window.confirm(confirmMsg)) return;
       // 仅改启用单位的 attribute_schema; 其余单位 (禁用/未配) 原样保留, 避免误丢配置。
       const nextTb: ToolBindings = {};
       for (const [unit, binding] of Object.entries(tb) as [ToolUnitId, ToolBinding][]) {
@@ -891,17 +887,19 @@ export function useWorkbenchShellModel({
           nextTb[unit] = binding;
           continue;
         }
-        const fields = ((binding.attribute_schema?.fields ?? []) as AttributeField[]).slice();
-        const idx = fields.findIndex((f) => f.key === field.key);
-        if (idx >= 0) fields[idx] = field;
-        else fields.push(field);
-        nextTb[unit] = { ...binding, attribute_schema: { fields } };
+        const merged = ((binding.attribute_schema?.fields ?? []) as AttributeField[]).slice();
+        for (const field of fields) {
+          const idx = merged.findIndex((f) => f.key === field.key);
+          if (idx >= 0) merged[idx] = field;
+          else merged.push(field);
+        }
+        nextTb[unit] = { ...binding, attribute_schema: { fields: merged } };
       }
       updateProjectMu.mutate(
         { tool_bindings: nextTb },
         {
           onSuccess: () =>
-            pushToast({ msg: `已补全属性「${field.label}」到项目`, kind: "success" }),
+            pushToast({ msg: `已补全 ${fields.length} 个属性字段到项目`, kind: "success" }),
           onError: (err) =>
             pushToast({ msg: "补全属性失败", sub: (err as Error).message, kind: "error" }),
         },
@@ -909,6 +907,40 @@ export function useWorkbenchShellModel({
     },
     [currentProject?.tool_bindings, updateProjectMu, pushToast],
   );
+  const handleFillAttribute = useCallback(
+    (field: AttributeField) =>
+      applyAttributeFields(
+        [field],
+        `将把属性「${field.label}」(key=${field.key}) 补进当前项目所有启用工具单位, 并立即保存。继续?`,
+      ),
+    [applyAttributeFields],
+  );
+  // v0.20.12 · 二次推理: 一次把多个缺失属性字段补进项目 (SecondaryInferenceBar 用)。
+  const handleEnsureAttributeFields = useCallback(
+    (fields: AttributeField[]) =>
+      applyAttributeFields(
+        fields,
+        `将把 ${fields.length} 个属性字段 (${fields
+          .map((f) => f.key)
+          .join(", ")}) 补进当前项目所有启用工具单位, 并立即保存。继续?`,
+      ),
+    [applyAttributeFields],
+  );
+  // v0.20.12 · 项目所有启用单位已有的属性键集合 (二次推理判定 backend 输出键是否有承接位)。
+  const projectAttributeKeys = useMemo(() => {
+    const tb = currentProject?.tool_bindings;
+    const keys = new Set<string>();
+    if (tb) {
+      for (const b of Object.values(tb) as (ToolBinding | undefined)[]) {
+        if (b?.enabled) {
+          for (const f of (b.attribute_schema?.fields ?? []) as AttributeField[]) {
+            if (f.key) keys.add(f.key);
+          }
+        }
+      }
+    }
+    return keys;
+  }, [currentProject?.tool_bindings]);
   // AI"配置区"共享状态 (任务类型 / 模型任务 / 类别白名单 / variant / 参数 / 输出形态 / buildArgs);
   // 与批量页 ProjectDetailPanel 同一 hook + PreannotateConfigForm (单一事实源). 驱动批量 AI 面板
   // (运行当前题 AI) — 批量线, 用 batchBackendId.
@@ -2273,6 +2305,8 @@ export function useWorkbenchShellModel({
                   taskId={selectedAnnotationForPanel.task_id}
                   annotation={selectedAnnotationForPanel}
                   readOnly={isLocked}
+                  existingAttributeKeys={projectAttributeKeys}
+                  onEnsureAttributeFields={handleEnsureAttributeFields}
                 />
               )}
             <WorkbenchOverlays

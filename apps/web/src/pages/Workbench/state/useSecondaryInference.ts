@@ -10,8 +10,18 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { mlBackendsApi, type MLModelCapability } from "@/api/ml-backends";
+import type { AttributeField } from "@/api/projects";
 import { tasksApi, type SecondaryInferenceRequest } from "@/api/tasks";
 import { useMLBackends } from "@/hooks/useMLBackends";
+
+const ALLOWED_ATTR_TYPES = [
+  "text",
+  "number",
+  "boolean",
+  "select",
+  "multiselect",
+  "range",
+];
 
 export interface SecondaryCapability {
   backendId: string;
@@ -98,6 +108,35 @@ export function useSecondaryCapabilities(projectId: string | undefined): {
     capabilities,
     isLoading: backendsQ.isLoading || capabilityQueries.some((q) => q.isLoading),
   };
+}
+
+/**
+ * 该 attributes-型能力会写、但项目 attribute_schema 缺承接位的字段 (转成可「一键补全」的
+ * AttributeField)。用于 SecondaryInferenceBar 预警「跑了属性也看不见」并提供补全。
+ * 转换逻辑与 useCapabilityValidation 的 v0.20.2 补全载荷同款。
+ */
+export function missingAttributeFields(
+  cap: SecondaryCapability,
+  existingKeys: Set<string>,
+): AttributeField[] {
+  if (cap.writeTarget !== "attributes") return [];
+  const out: AttributeField[] = [];
+  for (const item of cap.model.output_attribute_schema ?? []) {
+    if (!item.key || existingKeys.has(item.key)) continue;
+    const type = (
+      ALLOWED_ATTR_TYPES.includes(item.type) ? item.type : "text"
+    ) as AttributeField["type"];
+    out.push({
+      key: item.key,
+      label: item.label || item.key,
+      type,
+      required: false,
+      ...(item.options?.length
+        ? { options: item.options.map((o) => ({ value: o.value, label: o.label })) }
+        : {}),
+    });
+  }
+  return out;
 }
 
 /** 把一个能力 + 目标框拼成 secondary-inference 请求。 */
