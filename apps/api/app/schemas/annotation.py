@@ -83,6 +83,36 @@ class AnnotationBulkUpdateResponse(BaseModel):
     updated_count: int
 
 
+class SecondaryInferenceRequest(BaseModel):
+    """v0.20.11 · 选中框单框二次推理: 在选中框 ROI 上跑一个能力。
+
+    镜像批量 pipeline 的单个下游阶段 (源=选中框, 无检测阶段)。
+    write_target 决定产物归位: attributes → 写回原框; geometry → 建子框。
+    """
+
+    ml_backend_id: UUID
+    write_target: Literal["attributes", "geometry"] = "attributes"
+    # attributes: 只取这些下游返回键 (None=全取); label 给写回键加前缀 (子命名空间)
+    write_keys: list[str] | None = None
+    label: str | None = None
+    # backend wire 参数 (与批量下游 _build_predict_context 同义)
+    model_id: str | None = None
+    model_variants: dict[str, str] | None = None
+    params: dict | None = None
+    task_type: str | None = None
+    prompt: str | None = None
+    class_filter: list[int] | None = None
+    # ROI 外扩比例 (贴边小目标留边给上下文)
+    pad: float = 0.08
+
+
+class SecondaryInferenceResponse(BaseModel):
+    """更新后的原框 + 新建子框 (几何型)。属性型时 created_children 为空。"""
+
+    annotation: "AnnotationOut"
+    created_children: list["AnnotationOut"] = []
+
+
 class AnnotationGroupRequest(BaseModel):
     """I12 · 创建/合入分组. ids 必须属于同一 task."""
 
@@ -259,6 +289,7 @@ class NeighborAnnotationsResponse(BaseModel):
 
 
 AnnotationListPage.model_rebuild()
+SecondaryInferenceResponse.model_rebuild()
 VideoTrackConvertToBboxesResponse.model_rebuild()
 VideoTrackCompositionResponse.model_rebuild()
 PropagateResponse.model_rebuild()

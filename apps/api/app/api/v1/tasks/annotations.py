@@ -26,6 +26,8 @@ from app.schemas.annotation import (
     PropagateBatchResponse,
     PropagateRequest,
     PropagateResponse,
+    SecondaryInferenceRequest,
+    SecondaryInferenceResponse,
     VideoTrackCompositionRequest,
     VideoTrackCompositionResponse,
     VideoTrackConvertToBboxesRequest,
@@ -33,6 +35,8 @@ from app.schemas.annotation import (
 )
 from app.services.annotation import AnnotationService
 from app.services.audit import AuditAction, AuditService
+from app.services.ml_backend import MLBackendService
+from app.services.secondary_inference import run_secondary_inference
 from app.services.task_lock import TaskLockService
 
 
@@ -247,6 +251,81 @@ async def create_annotation(
     await db.commit()
     await db.refresh(annotation)
     return annotation
+
+
+@router.post(
+    "/{task_id}/annotations/{annotation_id}/secondary-inference",
+    response_model=SecondaryInferenceResponse,
+    status_code=201,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
+async def secondary_inference(
+    task_id: uuid.UUID,
+    annotation_id: uuid.UUID,
+    data: SecondaryInferenceRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """v0.20.11 · 选中框单框二次推理: 在选中框 ROI 上同步跑一个能力, 产物落库。
+
+    属性型写回原框 (origin=ai)、几何型建子框 (parent=选中框)。复用批量 pipeline 下游
+    阶段的 crop 投递 + 产物归位, 不走 worker。
+    """
+    task = await _load_task_or_404(db, task_id)
+    _assert_task_editable(task)
+
+    annotation = await db.get(Annotation, annotation_id)
+    if annotation is None or annotation.task_id != task_id or not annotation.is_active:
+        raise HTTPException(status_code=404, detail="annotation not found")
+
+    ml_svc = MLBackendService(db)
+    backend = await ml_svc.get(data.ml_backend_id)
+    if not backend or not await ml_svc.is_enabled(task.project_id, data.ml_backend_id):
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+
+    updated, children = await run_secondary_inference(
+        db,
+        annotation=annotation,
+        task=task,
+        backend=backend,
+        write_target=data.write_target,
+        write_keys=data.write_keys,
+        label=data.label,
+        model_id=data.model_id,
+        model_variants=data.model_variants,
+        params=data.params,
+        task_type=data.task_type,
+        prompt=data.prompt,
+        class_filter=data.class_filter,
+        pad=data.pad,
+        user_id=current_user.id,
+    )
+    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_UPDATE,
+        target_type="annotation",
+        target_id=str(annotation_id),
+        request=request,
+        status_code=201,
+        detail={
+            "task_id": str(task_id),
+            "secondary_inference": True,
+            "ml_backend_id": str(data.ml_backend_id),
+            "write_target": data.write_target,
+            "created_children": len(children),
+        },
+    )
+    await db.commit()
+    await db.refresh(updated)
+    for c in children:
+        await db.refresh(c)
+    return SecondaryInferenceResponse(
+        annotation=AnnotationOut.model_validate(updated),
+        created_children=[AnnotationOut.model_validate(c) for c in children],
+    )
 
 
 @router.post(

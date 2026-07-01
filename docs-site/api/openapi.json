@@ -14751,6 +14751,154 @@
         "title": "ScreenshotInitResponse",
         "type": "object"
       },
+      "SecondaryInferenceRequest": {
+        "description": "v0.20.11 · 选中框单框二次推理: 在选中框 ROI 上跑一个能力。\n\n镜像批量 pipeline 的单个下游阶段 (源=选中框, 无检测阶段)。\nwrite_target 决定产物归位: attributes → 写回原框; geometry → 建子框。",
+        "properties": {
+          "class_filter": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Filter"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "ml_backend_id": {
+            "format": "uuid",
+            "title": "Ml Backend Id",
+            "type": "string"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "model_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Variants"
+          },
+          "pad": {
+            "default": 0.08,
+            "title": "Pad",
+            "type": "number"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Params"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type"
+          },
+          "write_keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Write Keys"
+          },
+          "write_target": {
+            "default": "attributes",
+            "enum": [
+              "attributes",
+              "geometry"
+            ],
+            "title": "Write Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ml_backend_id"
+        ],
+        "title": "SecondaryInferenceRequest",
+        "type": "object"
+      },
+      "SecondaryInferenceResponse": {
+        "description": "更新后的原框 + 新建子框 (几何型)。属性型时 created_children 为空。",
+        "properties": {
+          "annotation": {
+            "$ref": "#/components/schemas/AnnotationOut"
+          },
+          "created_children": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AnnotationOut"
+            },
+            "title": "Created Children",
+            "type": "array"
+          }
+        },
+        "required": [
+          "annotation"
+        ],
+        "title": "SecondaryInferenceResponse",
+        "type": "object"
+      },
       "SensorCalibration": {
         "additionalProperties": false,
         "description": "v0.13.1 · 相机标定。extrinsic row-major 4x4 外参(16), intrinsic row-major\n3x3 内参(9), rect 为 KITTI 可选矫正矩阵 4x4(16)。存进 DatasetItem.metadata_\n的 \"calibration\" key。投影: extrinsic·[x,y,z,1] → xyz → intrinsic·xyz → 透视除法。",
@@ -19923,7 +20071,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.20.10"
+    "version": "0.20.11"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -33058,6 +33206,75 @@
           }
         ],
         "summary": "Propagate Annotation To Task",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/annotations/{annotation_id}/secondary-inference": {
+      "post": {
+        "description": "v0.20.11 · 选中框单框二次推理: 在选中框 ROI 上同步跑一个能力, 产物落库。\n\n属性型写回原框 (origin=ai)、几何型建子框 (parent=选中框)。复用批量 pipeline 下游\n阶段的 crop 投递 + 产物归位, 不走 worker。",
+        "operationId": "secondary_inference_api_v1_tasks__task_id__annotations__annotation_id__secondary_inference_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecondaryInferenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecondaryInferenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Secondary Inference",
         "tags": [
           "tasks"
         ]

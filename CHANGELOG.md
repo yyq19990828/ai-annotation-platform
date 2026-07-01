@@ -40,6 +40,12 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.20.x 版本段累积在本区；进入 0.21.x 后整体移到 docs/changelogs/0.20.x.md。
 -->
 
+## [0.20.11] - 2026-07-01
+
+### Added
+
+- **选中框二次推理：在单个标注框的小图上跑 AI 能力**：图片工作台选中一个已落库的框时，画布顶部浮出上下文条，列出该框「可跑的能力」（跨项目启用的 ML backend，凡模型 `supported_inputs` 含 `crop` 者：车牌等子物检测 / 车辆属性分类 / OCR）。点击即在框的 ROI 上同步跑一次——**属性型**（分类 / OCR）产物 union 写回原框、标 `origin=ai` 溯源；**几何型**（子检测）产物建**子框**挂在原框下（侧栏缩进可见）。复用批量预标的同一套 crop 投递与产物归位，两个触发面产物结构一致。子检出类名不在项目标签集时回落「未分类待补」，不丢框。新增同步端点 `POST /tasks/{task_id}/annotations/{annotation_id}/secondary-inference`（不走 worker，单框秒回）。
+
 ## [0.20.10] - 2026-07-01
 
 ### Added

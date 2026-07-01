@@ -144,6 +144,14 @@ graph TD
 
 前端：`AnnotationResponse.attributes_meta` 透传到 `AttributeForm`，`origin=ai` 的字段旁渲染极轻 `✦ AI` chip（hover 显 model）。
 
+### 选中框二次推理（single-box secondary inference）
+
+选中一个已落库的框 → 在它的 bbox ROI（crop）上同步跑一个能力（子物检测 / 属性分类 / OCR），产物按类型归位。端点 `POST /tasks/{task_id}/annotations/{annotation_id}/secondary-inference`，service `run_secondary_inference`（`app/services/secondary_inference.py`）。
+
+- **与批量二次推理同一套投递**：复用 `crop_inputs_from_boxes`（裁 ROI + presigned 上传）+ `_build_predict_context` + `merge_classify_attributes` / `remap_geometry_to_image`。区别只是「源」是选中的现成框而非检测阶段，且**同步执行、不走 worker**（单框秒回）。
+- **产物归位**：`write_target="attributes"` → 分类 / OCR 属性 union 回原框，写入键标 `attributes_meta.origin=ai`；`write_target="geometry"` → crop 检出几何回映回原图坐标后建**子框**（`parent_annotation_id=选中框`，`source=prediction_based`）。子检出类名不在项目标签集时回落 `__unknown`（不丢框，NG6 平台不做类映射）。
+- 前端入口是画布顶部 `SecondaryInferenceBar`（选中单框时显），`useSecondaryInference` 跨启用 backend 枚举 `supported_inputs` 含 `crop` 的非交互模型、派生 `write_target`（检测→geometry / 分类·OCR→attributes）。
+
 ### `AnnotationDraft`
 
 `AnnotationDraft` 目前定义在 `apps/api/app/db/models/task_lock.py`，不是独立文件。它保存：

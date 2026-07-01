@@ -56,6 +56,7 @@ import { useCapabilityValidation } from "./useCapabilityValidation";
 import { useAiToolModelPref } from "./useAiToolModelPref";
 import { useInteractiveBackendPref } from "./useInteractiveBackendPref";
 import { InteractiveToolBar } from "../shell/InteractiveToolBar";
+import { SecondaryInferenceBar } from "../shell/SecondaryInferenceBar";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
@@ -2262,6 +2263,18 @@ export function useWorkbenchShellModel({
                 onVariantChange={handleInteractiveVariantChange}
               />
             )}
+            {/* v0.20.11 · 选中单框二次推理入口: 非 AI 工具 (与 InteractiveToolBar 互斥) 且单选一个
+                已落库框时浮顶部, 列该框可跑能力。图片任务 only (视频/3D 走各自轨迹面板)。 */}
+            {!isAIToolId(s.tool) &&
+              stageKind === "image" &&
+              selectedAnnotationForPanel && (
+                <SecondaryInferenceBar
+                  projectId={projectId}
+                  taskId={selectedAnnotationForPanel.task_id}
+                  annotation={selectedAnnotationForPanel}
+                  readOnly={isLocked}
+                />
+              )}
             <WorkbenchOverlays
               pendingDrawing={s.pendingDrawing}
               editingClass={s.editingClass}
